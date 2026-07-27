@@ -250,6 +250,14 @@ export interface MarchDoc {
   army?: ArmyEntry[];
   /** ADR-026: which team slot ('t1'..'t5') this march deployed. A team referenced by an active (non-recalled) march is "out" and skipped as a defender. */
   teamId?: string;
+  /**
+   * March-token art (2026-07-26): the team's leader card's unit-type, resolved once at dispatch (mirrors
+   * team.leaderCardId if set and still in army, else the strongest card by cardPower — same rule as the
+   * client's teamTroops.ts::teamLeaderCard(), see worldsvc/src/leaderUnit.ts::resolveLeaderUnitType) and
+   * frozen onto the march so later card edits, or the requester lacking access to another player's cardInv
+   * (enemy marches), never affect the rendered token. Absent on flat-troop marches (no team attached).
+   */
+  leaderUnitType?: string;
   /** Remaining morale (0..MARCH_MORALE_MAX) computed once at departure from path length (1 lost per tile moved). Bound to this march instance only; scales combat power on arrival (moraleCombatMultiplier). Absent on legacy docs → treated as full (MARCH_MORALE_MAX). */
   morale?: number;
   departAt: number;
@@ -418,6 +426,8 @@ export interface OccupationDoc {
   dueAt: number;         // ms; scheduler settles when now >= dueAt
   /** ADR-026 §2 / idle-team gate (2026-07-15): team slot that won this hold, carried over from MarchDoc.teamId so the team stays "out" through the occupation countdown, not just in transit. */
   teamId?: string;
+  /** Leader unit-type snapshot (march-token art, 2026-07-26), carried over from MarchDoc.leaderUnitType — see MarchDoc for the resolution rule. Absent when the march had no team (flat-troop march). */
+  leaderUnitType?: string;
 }
 
 /**
@@ -440,6 +450,8 @@ export interface StationedDoc {
   army: ArmyEntry[];    // army snapshot (card entries; strength lives in cardState.currentTroops)
   troops: number;       // committed troop count carried when the team arrived (display / recall refund for flat armies)
   sinceAt: number;      // ms the team arrived and became stationed
+  /** Leader unit-type snapshot (march-token art, 2026-07-26), carried over from MarchDoc.leaderUnitType — see MarchDoc for the resolution rule. Absent when the march had no team (flat-troop march). */
+  leaderUnitType?: string;
   /**
    * ADR-051 (P3a): 停留 idle vs 驻扎 garrison. idle = free (defends only its own cell, can be re-commanded);
    * garrison = busy, actively defends its 9-cell footprint (covered via the `cover` reverse index, intercepting

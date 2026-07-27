@@ -11,7 +11,7 @@ import { createLayout } from '../../src/layout/ScalingManager';
 import { InputManager } from '../../src/inputSystem/InputManager';
 import { initI18n } from '../../src/i18n';
 import { FriendsScene, type FriendsSceneCallbacks } from '../../src/scenes/FriendsScene';
-import type { FamilyView } from '../../src/net/WorldApiClient';
+import { WorldApiError, type FamilyView } from '../../src/net/WorldApiClient';
 
 const memStore = (() => {
   const m = new Map<string, string>();
@@ -124,6 +124,48 @@ describe('FriendsScene — family join subview (search + browse list)', () => {
 
     await scene.doJoinFamily('fam:AAA');
     expect(scene.familySubview).toBe('joinById');
+    scene.destroy();
+  });
+
+  it('a successful join drops the Create/Join-by-search buttons from the info subview', async () => {
+    const joinFamily = vi.fn(async () => {});
+    const results = [fam('fam:AAA', 'Alpha', 'AAA'), fam('fam:BBB', 'Beta', 'BBB')];
+    const scene = buildScene({ browseFamilies: async () => results, joinFamily });
+    scene.tab = 'family';
+    scene.slgLoaded = true;
+    scene.slgStatus = { worldId: 'world:1:0', isLeader: false };
+    scene.render();
+    const hitsBefore = scene.hits.length; // tab bar + Create + Join-by-search
+
+    await scene.doJoinFamily('fam:BBB');
+    expect(scene.familyJoinPending).toBe(true);
+    // Success bounces back to the 'info' subview — re-requesting while a request is
+    // outstanding is pointless (server-side ALREADY_REQUESTED), so both entry buttons go away.
+    scene.render();
+    expect(scene.hits.length).toBe(hitsBefore - 2);
+    scene.destroy();
+  });
+
+  it('ALREADY_REQUESTED from the server greys out the row Join buttons instead of showing a raw failure', async () => {
+    const joinFamily = vi.fn(async () => { throw new WorldApiError('ALREADY_REQUESTED', 'already requested'); });
+    const results = [fam('fam:AAA', 'Alpha', 'AAA')];
+    const scene = buildScene({ browseFamilies: async () => results, joinFamily });
+    enterJoinSubview(scene);
+    await Promise.resolve();
+    await Promise.resolve();
+
+    await scene.doJoinFamily('fam:AAA');
+    expect(scene.familyJoinPending).toBe(true);
+    // Stays on the browse list (unlike the success path) so the now-greyed row is visible.
+    expect(scene.familySubview).toBe('joinById');
+    scene.render();
+
+    // Row hits push in pairs (Join button, then row-tap-for-detail) — with one result the
+    // Join button is second-to-last, the row-detail tap is last.
+    const hits = scene.hits as Array<{ fn: () => void }>;
+    const before = joinFamily.mock.calls.length;
+    hits[hits.length - 2]!.fn();
+    expect(joinFamily.mock.calls.length).toBe(before);
     scene.destroy();
   });
 

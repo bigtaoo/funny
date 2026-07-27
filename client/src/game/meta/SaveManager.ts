@@ -11,6 +11,8 @@ import { replayToUploadFrames } from '../../net/replayUpload';
 import type { Replay } from '../types';
 import {
   extractSyncPatch,
+  type EquipmentInstance,
+  type LeanSaveResponse,
   type LevelRecord,
   type SaveData,
 } from './SaveData';
@@ -245,6 +247,27 @@ export class SaveManager {
    */
   adoptServer(save: SaveData): void {
     this.reconcile(save);
+  }
+
+  /**
+   * Adopt an authoritative save pushed back by an /equipment/* mutation (craft/enhance/salvage/reforge/equip)
+   * (EQUIPMENT_DESIGN §3.3 phase 2, 2026-07-26). These responses send `equipmentInv: null` (see
+   * `LeanSaveResponse`) instead of the full ~300-item map, since the caller already has what changed:
+   * the `instance` handed back by craft/enhance/reforge, or the `instanceIds`/`materialId` it sent as
+   * request params for salvage/reforge. Must NOT go through the plain `adoptServer`/`reconcile` path —
+   * that does a wholesale `{...cloud, ...}` replace, and a `null`/missing `equipmentInv` on `cloud` would
+   * wipe the local inventory rather than leave it alone. Instead this reconstructs a full map locally
+   * (existing inventory + the patch) and only then hands it to the same tested `reconcile` pipeline —
+   * the delta bookkeeping is confined to this one seam, everything downstream is unchanged.
+   */
+  adoptServerPartial(
+    save: LeanSaveResponse,
+    patch: { upsert?: EquipmentInstance[]; remove?: string[] },
+  ): void {
+    const equipmentInv = { ...this.save.equipmentInv };
+    for (const id of patch.remove ?? []) delete equipmentInv[id];
+    for (const inst of patch.upsert ?? []) equipmentInv[inst.id] = inst;
+    this.reconcile({ ...save, equipmentInv });
   }
 
   // ── PvE server authority (PVE_INTEGRITY_PLAN §8) ────────────────────────────

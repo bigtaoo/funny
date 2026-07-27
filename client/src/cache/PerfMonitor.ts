@@ -41,11 +41,19 @@ export class PerfMonitor {
   /** Cumulative long-task duration (ms) within the current sampling window; accumulated in the PerformanceObserver callback and reset at window end. */
   private longTaskMs = 0;
   private observer: PerfObserver | null = null;
+  /** Latched (not sampled) hidden flag for the current window — same rationale as anomaly.ts's installAnrWatchdog: a backgrounded/occluded
+   *  tab is throttled by the browser to save power, which tanks the ticker's real fps without any actual JS slowness. Sampling
+   *  document.hidden only at window-end would miss a tab that was hidden mid-window and became visible again before the tick fires. */
+  private hiddenSinceLastWindow = this.isHiddenNow();
+  private onVisibilityChange = (): void => { if (this.isHiddenNow()) this.hiddenSinceLastWindow = true; };
+  private onFreeze = (): void => { this.hiddenSinceLastWindow = true; };
 
   install(ticker: PIXI.Ticker): void {
     this.ticker = ticker;
     ticker.add(this.onTick);
     this.installLongTaskObserver();
+    globalThis.document?.addEventListener?.('visibilitychange', this.onVisibilityChange);
+    globalThis.document?.addEventListener?.('freeze', this.onFreeze);
   }
 
   uninstall(): void {
@@ -53,6 +61,12 @@ export class PerfMonitor {
     this.ticker = null;
     try { this.observer?.disconnect(); } catch { /* ignore */ }
     this.observer = null;
+    globalThis.document?.removeEventListener?.('visibilitychange', this.onVisibilityChange);
+    globalThis.document?.removeEventListener?.('freeze', this.onFreeze);
+  }
+
+  private isHiddenNow(): boolean {
+    return (globalThis as { document?: { hidden?: boolean } }).document?.hidden === true;
   }
 
   private installLongTaskObserver(): void {
@@ -77,6 +91,15 @@ export class PerfMonitor {
     this.accMs = 0;
     this.frames = 0;
     this.longTaskMs = 0;
+
+    // The tab was hidden/backgrounded/occluded at some point during this window: the browser throttles
+    // rAF for power saving, which can legitimately tank fps and stretch deltaMS with no real JS slowness.
+    // Discard this window's sample entirely rather than let it count toward either signal or the streak.
+    if (this.hiddenSinceLastWindow) {
+      this.hiddenSinceLastWindow = this.isHiddenNow();
+      this.lowFpsStreak = 0;
+      return;
+    }
 
     // ① Long-task busy ratio: report immediately if the threshold is breached in a single window (a long task is hard evidence of a saturated main thread).
     if (this.observer && busyRatio >= numFromLs('nw_cpu_busy_warn', DEFAULT_BUSY_WARN)) {

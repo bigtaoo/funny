@@ -748,6 +748,7 @@ export const de: Record<TranslationKey, string> = {
   'social.family.enter': 'Familie betreten',
   'social.family.created': 'Familie gegründet!',
   'social.family.joinRequested': 'Antrag gesendet — wartet auf Genehmigung',
+  'social.family.pending': 'Wartet auf Genehmigung',
   'social.family.createFail': 'Gründung fehlgeschlagen',
   'social.family.joinFail': 'Beitritt fehlgeschlagen, bitte erneut versuchen',
   'social.family.confirm': 'Bestätigen',

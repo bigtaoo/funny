@@ -1,7 +1,8 @@
 // Mongo client factory + collection handles (SERVER_API.md §5, META_DESIGN.md §6.3).
 // Deploy with a single-node replica set to unlock cross-collection transactions; wallet/delivery use single-document atomic updates.
 import { MongoClient, Db, Collection, type MongoClientOptions } from 'mongodb';
-import type { SaveData, EquipmentInstance, CardInstance } from './types';
+import type { SaveData, EquipmentInstance, CardInstance, Affix } from './types';
+import type { EquipRarity } from './equipment';
 import type { StatKey } from './achievements';
 import type { LadderSeasonDoc, LadderSeasonSnapshotDoc } from './season';
 import type { EventTaskDef, EventRewardDef, EventTaskProgress } from './events';
@@ -222,7 +223,7 @@ export interface PveDailyDoc {
  * progress/stars already written); the client then uploads the replay → third-party headless re-simulation via gateway → materials are granted
  * only if the re-simulated star count is >= the claimed count. status:
  * `pending` = awaiting replay, `verified` = re-simulation passed and materials granted, `unverified` = no judge available (benefit-of-doubt, materials granted),
- * `rejected` = re-simulation mismatch, materials not granted (suspicious). `pveUpgrades` is the server-authoritative blueprint snapshot at settlement time (used for re-simulation, prevents drift).
+ * `rejected` = re-simulation mismatch, materials not granted (suspicious). `cardInv`/`equipmentInv` are the server-authoritative Hero Roster blueprint snapshot at settlement time (used for re-simulation, prevents drift).
  */
 export interface PveVerificationDoc {
   _id: string; // verifyId（uuid）
@@ -230,10 +231,14 @@ export interface PveVerificationDoc {
   levelId: string;
   /** Star count claimed by the client (pending re-simulation verification). */
   claimedStars: number;
-  /** @deprecated S3-2 snapshot, replaced by unitLevels from S12 onwards (kept for backward compatibility with old records). */
-  pveUpgrades: Record<string, number>;
-  /** S12 server-authoritative unitLevels snapshot at settlement time (re-simulation blueprint). */
-  unitLevels?: Record<string, number>;
+  /**
+   * CC-1 Hero Roster snapshot (2026-07-26 fix, PVE_INTEGRITY §9): server-authoritative `SaveData.cardInv`/`equipmentInv`
+   * at settlement time, fed to the L1 judge re-simulation so the recompute uses the player's real card levels/gear
+   * instead of the removed pveUpgrades/unitLevels fields (both dead since the engine dropped those GameConfig params
+   * in the CC-1 migration — campaign/siege blueprints are built only from cardInstances/equipmentInv).
+   */
+  cardInv: Record<string, CardInstance>;
+  equipmentInv: Record<string, EquipmentInstance>;
   /** Trigger reason (audit): first | anomaly | sample. */
   reason: string;
   status: 'pending' | 'verified' | 'unverified' | 'rejected';
@@ -412,6 +417,26 @@ export interface EquipmentIdemDoc {
   expireAt: Date; // BSON Date, TTL anchor
 }
 
+/**
+ * Equipment instance, split out of `SaveData.equipmentInv` (perf, 2026-07-26): a heavy account's embedded
+ * equipmentInv/cardInv pushed its save doc to 81KB, and Atlas M0 took ~650-1000ms to read/write it (vs
+ * ~15-40ms for a tiny doc) — every save write (not just equipment ones) was paying to rewrite the whole
+ * embedded map. `_id` = instanceId (unchanged from the old embedded-map key, so idempotencyKey-derived ids
+ * still work everywhere). `locked` moved here too (was on the embedded instance). See `EQUIPMENT_DESIGN.md`
+ * for the migration/ordering discipline (no Mongo transactions in this codebase — see this file's header
+ * comment — so writes here are ordered per-operation to keep the worst case a benign count/drift, never a
+ * duplicated or vanished item).
+ */
+export interface EquipmentInstanceDoc {
+  _id: string; // instanceId
+  accountId: string;
+  defId: string;
+  rarity: EquipRarity;
+  level: number;
+  affixes: Affix[];
+  locked?: boolean;
+}
+
 /** Stamina real-time state (A4). _id = accountId. Whole-row atomic findOneAndUpdate deduction, no rev lock. */
 export interface StaminaDoc {
   _id: string; // accountId
@@ -470,6 +495,8 @@ export interface Collections {
   cardIdem: Collection<CardIdemDoc>;
   // equipment (E2)
   equipmentIdem: Collection<EquipmentIdemDoc>;
+  // equipment instances, split out of SaveData.equipmentInv (perf, 2026-07-26); _id = instanceId
+  equipmentInstances: Collection<EquipmentInstanceDoc>;
   // ladder seasons (S11): single global document (_id='current')
   ladderSeasons: Collection<LadderSeasonDoc>;
   // ladder season settlement snapshots (L2-1): one entry per account per season, written at season close, also serves as idempotency ledger
@@ -534,6 +561,7 @@ export async function createMongo(
     mail: db.collection<MailDoc>('mail'),
     cardIdem: db.collection<CardIdemDoc>('cardIdem'),
     equipmentIdem: db.collection<EquipmentIdemDoc>('equipmentIdem'),
+    equipmentInstances: db.collection<EquipmentInstanceDoc>('equipmentInstances'),
     ladderSeasons: db.collection<LadderSeasonDoc>('ladderSeasons'),
     ladderSeasonSnapshots: db.collection<LadderSeasonSnapshotDoc>('ladderSeasonSnapshots'),
     adsTokens: db.collection<AdsTokenDoc>('adsTokens'),
@@ -592,6 +620,8 @@ export async function createMongo(
     await collections.cardIdem.createIndex({ expireAt: 1 }, { expireAfterSeconds: 0 });
     // equipment idempotency ledger TTL auto-expiry (E2, expireAt is an absolute expiry time → expireAfterSeconds:0).
     await collections.equipmentIdem.createIndex({ expireAt: 1 }, { expireAfterSeconds: 0 });
+    // equipment instances: fetch-all-for-account (GET /save join, /internal/save-fields, migration, cap-count self-heal).
+    await collections.equipmentInstances.createIndex({ accountId: 1 });
     // ad token uniqueness TTL auto-expiry (C2, 48h).
     await collections.adsTokens.createIndex({ expireAt: 1 }, { expireAfterSeconds: 0 });
     // ladder leaderboard: server-wide Top100 + my rank count (S11-SE-5).

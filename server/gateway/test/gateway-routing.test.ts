@@ -36,8 +36,8 @@ class RecordingMatchsvc extends MatchsvcClient {
   constructor() {
     super(null, KEY);
   }
-  override roomCreate(a: string, n: string, p: string, e = '', deck: string[] = []): void { this.calls.push({ m: 'roomCreate', args: [a, n, p, e, deck] }); }
-  override roomJoin(a: string, n: string, p: string, c: string, e = '', deck: string[] = []): void { this.calls.push({ m: 'roomJoin', args: [a, n, p, c, e, deck] }); }
+  override roomCreate(a: string, n: string, p: string, e = '', av = '', deck: string[] = []): void { this.calls.push({ m: 'roomCreate', args: [a, n, p, e, av, deck] }); }
+  override roomJoin(a: string, n: string, p: string, c: string, e = '', av = '', deck: string[] = []): void { this.calls.push({ m: 'roomJoin', args: [a, n, p, c, e, av, deck] }); }
   override roomReady(a: string, r: boolean): void { this.calls.push({ m: 'roomReady', args: [a, r] }); }
   override roomStart(a: string): void { this.calls.push({ m: 'roomStart', args: [a] }); }
   override roomLeave(a: string): void { this.calls.push({ m: 'roomLeave', args: [a] }); }
@@ -147,7 +147,7 @@ describe('Gateway control-plane routing', () => {
     // No deck submitted → gateway resolves to defaultPvpDeck (never the full pool; PVP_LOADOUT §6.3).
     const create = mm.calls.find((c) => c.m === 'roomCreate');
     expect(create?.args.slice(0, 3)).toEqual(['acc-a', 'acc-a', '']);
-    expect(create?.args[4]).toEqual(defaultPvpDeck());
+    expect(create?.args[5]).toEqual(defaultPvpDeck());
   });
 
   it('push is delivered only to the socket that owns the given accountId', async () => {
@@ -223,7 +223,7 @@ describe('Gateway control-plane routing', () => {
     a.send(encodeClient({ room_create: { mode: 0, deck: [...defaultPvpDeck().slice(0, 9), 'runner'] } }));
     await sleep(80);
 
-    const deck = mm.calls.find((c) => c.m === 'roomCreate')?.args[4] as string[] | undefined;
+    const deck = mm.calls.find((c) => c.m === 'roomCreate')?.args[5] as string[] | undefined;
     expect(deck).toBeDefined();
     expect(deck).not.toContain('runner');       // locked at 998 → rejected
     expect(deck).toEqual(defaultPvpDeck());      // invalid deck → default fallback
@@ -241,7 +241,7 @@ describe('Gateway control-plane routing', () => {
 
     const join = mm.calls.find((c) => c.m === 'roomJoin');
     expect(join?.args[3]).toBe('ABC123');
-    expect(join?.args[5]).toEqual(defaultPvpDeck());
+    expect(join?.args[6]).toEqual(defaultPvpDeck());
   });
 
   it('ranked enqueue when meta unavailable → push back RANKED_UNAVAILABLE, and do not enqueue', async () => {

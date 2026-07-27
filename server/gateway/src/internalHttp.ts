@@ -20,10 +20,10 @@ interface JudgeReqBody {
   exclude?: string[];
   /** PvE spot-check re-computation (PVE_INTEGRITY §8.6 L1). */
   levelId?: string;
-  /** @deprecated S3-2 blueprint snapshot, replaced by unitLevels as of S12. */
-  pveUpgrades?: Record<string, number>;
-  /** S12 unit progression level snapshot (unitId→1..9). */
-  unitLevels?: Record<string, number>;
+  /** CC-1 Hero Roster snapshot (2026-07-26 fix, PVE_INTEGRITY §9): JSON of Record<string, CardInstance>. */
+  cardInstancesJson?: string;
+  /** JSON of Record<string, EquipmentInstance>, paired with cardInstancesJson. */
+  equipmentInvJson?: string;
   /** SLG siege defense config JSON string (S8-3b, sent by worldsvc). */
   defenseJson?: string;
   /** Ranked PvP deck restriction (PVP_LOADOUT §6.2). */
@@ -121,8 +121,8 @@ export function startInternalHttp(
             frames: decodeFrames(b.frames),
             exclude: b.exclude ?? [],
             ...(b.levelId ? { levelId: b.levelId } : {}),
-            ...(b.pveUpgrades ? { pveUpgrades: b.pveUpgrades } : {}),
-            ...(b.unitLevels ? { unitLevels: b.unitLevels } : {}),
+            ...(b.cardInstancesJson ? { cardInstancesJson: b.cardInstancesJson } : {}),
+            ...(b.equipmentInvJson ? { equipmentInvJson: b.equipmentInvJson } : {}),
             ...(b.defenseJson ? { defenseJson: b.defenseJson } : {}),
             ...(b.decks ? { decks: b.decks } : {}),
           };

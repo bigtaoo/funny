@@ -3,6 +3,7 @@
 import { TranslationKey } from '../../i18n';
 import { type Constructor, type FriendsSceneBaseCtor } from './base';
 import type { MailView } from '../../net/ApiClient';
+import { WorldApiError } from '../../net/WorldApiClient';
 
 export interface NetworkHandlers {
   refresh(): Promise<void>;
@@ -57,6 +58,9 @@ export function NetworkMixin<TBase extends FriendsSceneBaseCtor>(Base: TBase): T
       this.render();
       try {
         this.slgStatus = await this.cb.loadSLGStatus();
+        // Approval landed (or the leader rejected — either way the pending request is
+        // resolved server-side) — a still-pending request always keeps familyId unset.
+        if (this.slgStatus?.familyId) this.familyJoinPending = false;
       } catch {
         this.slgStatus = null;
       } finally {
@@ -179,6 +183,7 @@ export function NetworkMixin<TBase extends FriendsSceneBaseCtor>(Base: TBase): T
       try {
         await this.cb.joinFamily?.(familyId);
         this.toast('social.family.joinRequested', 'success');
+        this.familyJoinPending = true;
         this.familySubview = 'info';
         this.familyBrowseQuery = '';
         this.familyBrowseResults = [];
@@ -186,8 +191,16 @@ export function NetworkMixin<TBase extends FriendsSceneBaseCtor>(Base: TBase): T
         this.familyDetailView = null;
         this.slgLoaded = false;
         void this.loadSLGStatus();
-      } catch {
-        this.toast('social.family.joinFail');
+      } catch (e) {
+        // ALREADY_REQUESTED means an earlier request (this session or a prior one) is still
+        // pending — not a failure, so surface the same "waiting for approval" state instead of
+        // a retry-inviting error toast.
+        if (e instanceof WorldApiError && e.code === 'ALREADY_REQUESTED') {
+          this.familyJoinPending = true;
+          this.toast('social.family.joinRequested', 'success');
+        } else {
+          this.toast('social.family.joinFail');
+        }
       }
       this.render();
     }

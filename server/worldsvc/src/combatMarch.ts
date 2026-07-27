@@ -25,6 +25,7 @@ import { WorldCore, MARCHABLE_KINDS } from './core';
 import type { MarchView, StationedView } from './worldTypes';
 import { refundTroops } from './combatShared';
 import type { SiegeService } from './combatSiege';
+import { resolveLeaderUnitType } from './leaderUnit';
 
 export class MarchService {
   constructor(
@@ -154,6 +155,10 @@ export class MarchService {
     // after departure without affecting the in-transit march (the army snapshot is persisted with MarchDoc).
     // Neither attack nor occupy, or no team → use flat troops (synthesized generic units at combat time).
     let army: ArmyEntry[] | undefined;
+    // March-token art (2026-07-26): resolved once at dispatch from the deployed team's leader card, frozen onto
+    // the march (see MarchDoc.leaderUnitType) so it renders identically for the owner and for enemies viewing it
+    // in vision (who cannot otherwise read the owner's cardInv). See leaderUnit.ts::resolveLeaderUnitType.
+    let leaderUnitType: string | undefined;
     // ADR-051 (P3c): re-dispatch of an *idle* (停留) field team — commanded again straight from where it stands
     // (move/occupy), without recalling home first. Set inside the team block below; drives the origin override,
     // the from-tile ownership skip, the pool-deduction skip, and the atomic StationedDoc claim before insert.
@@ -191,9 +196,12 @@ export class MarchService {
         fromY = busyStationed!.y;
         army = busyStationed!.army;
         troops = busyStationed!.troops;
+        leaderUnitType = busyStationed!.leaderUnitType;
       } else {
         army = team.army;
         troops = team.army.reduce((s, e) => s + Math.max(1, Math.floor(e.initialHp ?? 0)), 0);
+        const attackerSave = await this.core.meta.getSaveFields(accountId).catch(() => null);
+        leaderUnitType = resolveLeaderUnitType(team, attackerSave?.cardInv ?? {}, attackerSave?.equipmentInv ?? {});
         // D-CITY-9: satchel gates how many troops a SINGLE team may carry per march/siege — independent of the
         // total troopCap pool (troopCapFor/drillYard). Card-army teams carry real strength in cardState.currentTroops
         // (the flat `troops` above degenerates to card count for them, per the CC-3 note below), so sum that instead.
@@ -361,6 +369,7 @@ export class MarchService {
       // ADR-026: record the deployed team slot so it is skipped as a defender while out (meaningful for team-based
       // attacks, occupy marches (2026-07-15), and move orders (2026-07-23) — a moved team stays out until recalled).
       ...((kind === 'attack' || kind === 'occupy' || kind === 'move') && teamId ? { teamId } : {}),
+      ...(leaderUnitType ? { leaderUnitType } : {}),
       // ADR-051 (P3a): a 'move' dispatched with garrison intent parks as a garrison on arrival (applyMove reads
       // this). Default (absent / 'idle') keeps the pre-split 停留 idle behavior.
       ...(kind === 'move' && stationMode === 'garrison' ? { stationMode: 'garrison' as const } : {}),
@@ -802,6 +811,7 @@ export class MarchService {
       troops: m.troops,
       sinceAt: t,
       mode,
+      ...(m.leaderUnitType ? { leaderUnitType: m.leaderUnitType } : {}),
     };
     await cols.stationed.updateOne({ _id: m.toTile }, { $set: doc }, { upsert: true });
     // ADR-051 (P2): register the parked team in the occupancy index (leaveAt=∞) so an enemy march entering this
@@ -863,6 +873,7 @@ export class MarchService {
       troops: hasCardArmy ? 0 : claimed.troops,
       ...(claimed.army && claimed.army.length > 0 ? { army: claimed.army } : {}),
       teamId,
+      ...(claimed.leaderUnitType ? { leaderUnitType: claimed.leaderUnitType } : {}),
       departAt: t,
       arriveAt,
       status: 'marching',
@@ -881,6 +892,7 @@ export class MarchService {
     const own = await cols.stationed.find({ worldId, ownerId: accountId }).toArray();
     const result: StationedView[] = own.map((d) => ({
       tile: d.tile, x: d.x, y: d.y, teamId: d.teamId, troops: d.troops, sinceAt: d.sinceAt, mode: d.mode ?? 'idle', mine: true,
+      ...(d.leaderUnitType ? { leaderUnitType: d.leaderUnitType } : {}),
     }));
 
     // ADR-051 (P4): enemy stationed teams within vision, so the client can render enemy field troops + their
@@ -894,7 +906,10 @@ export class MarchService {
     for (const d of others) {
       if (family.has(d.ownerId)) continue; // own / family — not treated as enemy
       if (!isInVision(sources, d.x, d.y)) continue;
-      result.push({ tile: d.tile, x: d.x, y: d.y, teamId: '', troops: d.troops, sinceAt: d.sinceAt, mode: d.mode ?? 'idle', mine: false });
+      result.push({
+        tile: d.tile, x: d.x, y: d.y, teamId: '', troops: d.troops, sinceAt: d.sinceAt, mode: d.mode ?? 'idle', mine: false,
+        ...(d.leaderUnitType ? { leaderUnitType: d.leaderUnitType } : {}),
+      });
     }
     return result;
   }

@@ -17,6 +17,12 @@ import shieldBearerTaoUrl from '../assets/shieldbearer.tao';
 import maxTaoUrl from '../assets/max.tao';
 import lenaTaoUrl from '../assets/lena.tao';
 import maraTaoUrl from '../assets/mara.tao';
+import ironcladTaoUrl from '../assets/ironclad.tao';
+import runnerTaoUrl from '../assets/runner.tao';
+import harpyTaoUrl from '../assets/harpy.tao';
+import medicTaoUrl from '../assets/medic.tao';
+import berserkerTaoUrl from '../assets/berserker.tao';
+import splitterTaoUrl from '../assets/splitter.tao';
 import { fx, factionInk } from './theme';
 import { drawStickmanDraft } from './stickmanDraft';
 import { targetScreenHeight } from './unitSize';
@@ -24,8 +30,10 @@ import { targetScreenHeight } from './unitSize';
 /**
  * .tao skeletal-animation bundle URL per unit type. Types listed here render as
  * animated stickmen; types absent fall back to the colored-circle placeholder.
+ * Exported for reuse by WorldMapRenderer/fog.ts (march-token art picks the deployed
+ * team's leader unit-type from this same set, 2026-07-26).
  */
-const STICKMAN_ASSETS: Partial<Record<UnitType, string>> = {
+export const STICKMAN_ASSETS: Partial<Record<UnitType, string>> = {
   [UnitType.Infantry]: infantryTaoUrl     as unknown as string,
   [UnitType.Archer]:    archerTaoUrl       as unknown as string,
   [UnitType.ShieldBearer]:  shieldBearerTaoUrl as unknown as string, // shield bearer
@@ -33,6 +41,13 @@ const STICKMAN_ASSETS: Partial<Record<UnitType, string>> = {
   [UnitType.Max]:   maxTaoUrl  as unknown as string,
   [UnitType.Lena]:  lenaTaoUrl as unknown as string,
   [UnitType.Mara]:  maraTaoUrl as unknown as string,
+  // PvE myth creatures (PVP-P5 art) — 6 units authored 2026-07, wired in 2026-07-27.
+  [UnitType.Ironclad]:  ironcladTaoUrl as unknown as string,
+  [UnitType.Runner]:    runnerTaoUrl   as unknown as string,
+  [UnitType.Harpy]:     harpyTaoUrl    as unknown as string,
+  [UnitType.Medic]:     medicTaoUrl    as unknown as string,
+  [UnitType.Berserker]: berserkerTaoUrl as unknown as string,
+  [UnitType.Splitter]:  splitterTaoUrl as unknown as string,
 };
 
 /**

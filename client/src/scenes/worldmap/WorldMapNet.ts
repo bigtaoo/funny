@@ -538,7 +538,9 @@ export class WorldMapNet {
     if (s.marchId) {
       const entry = this.ctx.marchTokenRuntimes.get(s.marchId);
       if (entry) {
-        const durSec = entry.runtime?.currentDuration || 0.6;
+        // A 'dot' LOD token has no clip/duration concept — it's a static sprite, so the default
+        // beat below covers it (its container is torn down the same as a stickman's either way).
+        const durSec = (entry.mode === 'stickman' && entry.runtime?.currentDuration) || 0.6;
         this.ctx.marchAttackUntil.set(s.marchId, Date.now() + durSec * 1000);
       }
     }

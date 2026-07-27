@@ -129,10 +129,24 @@ export function PoolMixin<TBase extends WorldMapRendererBaseCtor>(Base: TBase): 
      * The strict 3×3 requirement is intentional: worldsvc guarantees every capital is a complete
      * same-owner 3×3 (join places all 9 cells; getMe/joinWorld purge any legacy/corrupt base). A tile
      * that fails this test therefore signals bad data rather than a shape we should tolerate here.
+     *
+     * Fast path for the player's OWN base (2026-07-27 bug: "my base flickers then disappears"):
+     * refreshCityLayer() re-runs this check on every redraw (5s march poll, live tile pushes, zoom
+     * changes), each time re-reading all 4 neighbor cells fresh from tileCache. getMap() responses for
+     * overlapping/out-of-order viewport refetches can leave a neighbor cell transiently stale or absent
+     * even though the center is still solidly cached as our own base — the neighbor-based check has no
+     * way to distinguish that from real corruption, so it fails and the sprite gets torn down by the
+     * cleanup pass below (city.ts) until a fully-consistent read comes back around. ctx.me.mainBaseTile
+     * is authoritative and doesn't depend on neighbor-cell cache freshness, so trust it directly instead
+     * of re-deriving the same fact from four separately-fetched cache entries.
      */
     isBaseAnchor(tx: number, ty: number): boolean {
       const c = this.ctx.tileCache.get(`${tx}:${ty}`);
       if (c?.type !== 'base') return false;
+      if (c.mine && this.ctx.me?.mainBaseTile) {
+        const [bx, by] = this.ctx.parseTileId(this.ctx.me.mainBaseTile);
+        if (bx === tx && by === ty) return true;
+      }
       const ownerKey = this.ownerKeyOf(c);
       for (const [dx, dy] of [[-1, 0], [1, 0], [0, -1], [0, 1]] as const) {
         const n = this.ctx.tileCache.get(`${tx + dx}:${ty + dy}`);

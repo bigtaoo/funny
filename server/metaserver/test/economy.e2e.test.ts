@@ -11,6 +11,7 @@ import type {
   UndeliveredOrder,
 } from '../dist/commercialClient.js';
 import type { SystemMailContent } from '../dist/socialsvcClient.js';
+import { seedEquipmentBatch } from './helpers/equipment.js';
 
 const URI = process.env.NW_MONGO_URI ?? 'mongodb://127.0.0.1:27017/?replicaSet=rs0';
 const DB = 'nw_meta_econ_test';
@@ -508,11 +509,13 @@ describe.skipIf(!mongo2)('gacha inventory-full overflow → mail', () => {
     await m.collections.saves.updateOne({ _id: accountId }, { $set: { 'save.cardInv': cardInv } });
   }
 
-  /** Directly fill save.equipmentInv with N dummy instances so a draw starts already at the cap. */
+  /** Directly fill equipmentInstances with N dummy instances so a draw starts already at the cap
+   * (equipment instances moved out of save.equipmentInv in the 2026-07-26 storage split — see equipment.ts). */
   async function fillEquipInv(n: number): Promise<void> {
-    const equipmentInv: Record<string, unknown> = {};
-    for (let i = 0; i < n; i++) equipmentInv[`eq_filler_${i}`] = { id: `eq_filler_${i}`, defId: 'wp_pencil', rarity: 'common', level: 0, affixes: [] };
-    await m.collections.saves.updateOne({ _id: accountId }, { $set: { 'save.equipmentInv': equipmentInv } });
+    const instances = Array.from({ length: n }, (_, i) => ({
+      id: `eq_filler_${i}`, defId: 'wp_pencil', rarity: 'common' as const, level: 0, affixes: [],
+    }));
+    await seedEquipmentBatch(m, accountId, instances);
   }
 
   it('roster full: first 10 overflow cards in one draw are mailed, not coin-compensated', async () => {
@@ -577,7 +580,8 @@ describe.skipIf(!mongo2)('gacha inventory-full overflow → mail', () => {
     comm.nextResults = Array.from({ length: 10 }, () => ({ itemId: 'wp_pencil', rarity: 'common' as const }));
     await app.inject({ method: 'POST', url: '/gacha/draw', headers: auth(), payload: { poolId: 'standard', count: 10 } });
     // Free up room: drop back to 299 entries.
-    await m.collections.saves.updateOne({ _id: accountId }, { $unset: { 'save.equipmentInv.eq_filler_0': '' } });
+    await m.collections.equipmentInstances.deleteOne({ _id: 'eq_filler_0' });
+    await m.collections.saves.updateOne({ _id: accountId }, { $inc: { 'save.equipmentInvCount': -1 } });
     const r = body(await app.inject({ method: 'POST', url: '/gacha/draw', headers: auth(), payload: { poolId: 'standard', count: 10 } }));
     // 1 slot free → 1 instance lands in equipmentInv; remaining 9 overflow, quota reset to 0 first since room was seen.
     expect(r.data.overflow).toMatchObject({ equipMailed: 9, equipCompensatedCoins: 0 });

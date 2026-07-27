@@ -26,11 +26,11 @@ import {
   parseCardKey,
   makeDropInstance,
   EQUIPMENT_INV_CAP,
-  equipmentInvCount,
   accrueRetentionTask,
 } from '@nw/shared';
 import { getOrCreateSave } from '../save.js';
 import { grantCards } from '../cards.js';
+import { toInstanceDoc, assembleEquipmentInv } from '../equipment.js';
 import { insertSystemMail } from '../mail.js';
 import { accrueEventTask } from '../events.js';
 import { nullMetaSocialsvcClient } from '../socialsvcClient.js';
@@ -326,7 +326,13 @@ export function PveMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase & Const
           ? (makeDropInstance(dropCfg.rarity, `drop_${randomUUID()}`) as EquipmentInstance)
           : undefined;
 
-      // Material reward + equipment drop (single atomic write)
+      // Material reward + equipment drop count reservation (single atomic write). The equipment instance
+      // itself is stored in the equipmentInstances collection (2026-07-26 split) — mutateSave's transform
+      // must stay synchronous, so the actual instance upsert happens after this write commits, gated on
+      // `dropGranted` captured by the transform (only the successful attempt's value matters; mutateSave
+      // may invoke this transform more than once on a rev conflict, but the instance upsert below is
+      // idempotent-by-id regardless).
+      let dropGranted = false;
       const out = await this.mutateSave(accountId, (s) => {
         const materials = { ...s.materials };
         const everOwnedMaterial = new Set(s.everOwned?.material ?? []);
@@ -335,19 +341,28 @@ export function PveMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase & Const
           if (n > 0) everOwnedMaterial.add(m);
         }
         let next = { ...s, materials, everOwned: { ...s.everOwned, material: [...everOwnedMaterial] } };
-        // Store equipment (silently skipped when inventory is full)
-        if (pendingDrop && equipmentInvCount(next) < EQUIPMENT_INV_CAP) {
+        // Reserve a count slot for the drop (silently skipped when inventory is full)
+        dropGranted = false;
+        if (pendingDrop && s.equipmentInvCount < EQUIPMENT_INV_CAP) {
           const everOwnedEquip = new Set(next.everOwned?.equipment ?? []);
           everOwnedEquip.add(pendingDrop.defId);
           next = {
             ...next,
-            equipmentInv: { ...(next.equipmentInv ?? {}), [pendingDrop.id]: pendingDrop },
+            equipmentInvCount: s.equipmentInvCount + 1,
             everOwned: { ...next.everOwned, equipment: [...everOwnedEquip] },
           };
+          dropGranted = true;
         }
         return next;
       });
       if ('error' in out) return out;
+      if (dropGranted && pendingDrop) {
+        await cols.equipmentInstances.updateOne(
+          { _id: pendingDrop.id },
+          { $set: toInstanceDoc(pendingDrop, accountId) },
+          { upsert: true },
+        );
+      }
 
       // Card instance grant at level 1 (separate rev loop; compensation coins dropped — [DRAFT: wire commercial]).
       // Level 1 matches every other card source (starters / auction / gacha, §12); players raise cards via feeding, not the drop tier.
@@ -358,9 +373,7 @@ export function PveMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase & Const
         latestSave = cardResult.save;
       }
 
-      // Confirm the drop was actually written (pendingDrop is not stored when inventory is full)
-      const grantedEquipment =
-        pendingDrop && latestSave.equipmentInv?.[pendingDrop.id] ? pendingDrop : undefined;
+      const grantedEquipment = dropGranted ? pendingDrop : undefined;
       return { save: latestSave, granted: grant, grantedCards: cardGrant, grantedEquipment, capped };
     }
 
@@ -434,8 +447,14 @@ export function PveMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase & Const
             accountId,
             levelId,
             claimedStars: stars,
-            pveUpgrades: { ...cur.pveUpgrades }, // legacy snapshot (kept for compatibility)
-            unitLevels: {}, // unitLevels removed in CC-1 (SaveData v4); re-simulation uses cardInv
+            // CC-1 Hero Roster snapshot (2026-07-26 fix, PVE_INTEGRITY §9): server-authoritative, taken at settlement
+            // time — feeds the L1 judge re-simulation blueprint so a legitimately progressed account isn't recomputed
+            // with unleveled, gear-less units (previously pveUpgrades/unitLevels, both dead since the engine dropped
+            // those params in the CC-1 migration; see server/engine/src/types.ts GameConfig).
+            cardInv: { ...cur.cardInv },
+            // equipmentInv was split into its own `equipmentInstances` collection (2026-07-26, equipment.ts) —
+            // `cur.equipmentInv` is no longer populated on the raw save doc, so reassemble it explicitly.
+            equipmentInv: await assembleEquipmentInv(cols, accountId, cur),
             reason,
             status: 'pending',
             // S9-3b: store client-reported counts as an audit comparison baseline (verdict.statsJson is the authoritative source; the reported field is for ops visibility only).
@@ -523,8 +542,8 @@ export function PveMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase & Const
         frames: frames ?? [],
         exclude: [accountId],
         levelId: doc.levelId,
-        pveUpgrades: doc.pveUpgrades,
-        ...(doc.unitLevels ? { unitLevels: doc.unitLevels } : {}),
+        cardInstancesJson: JSON.stringify(doc.cardInv ?? {}),
+        equipmentInvJson: JSON.stringify(doc.equipmentInv ?? {}),
       });
 
       const judgedStars = verdict.stars ?? 0;

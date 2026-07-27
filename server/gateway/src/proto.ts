@@ -70,8 +70,8 @@ export type ServerMsg =
       endFrame: number;
       frames: FrameCmdsOut[];
       levelId: string;
-      pveUpgrades: Record<string, number>;
-      unitLevels: Record<string, number>;
+      cardInstancesJson: string;
+      equipmentInvJson: string;
       topDeck: string[];
       bottomDeck: string[];
     }
@@ -200,8 +200,8 @@ export function encodeServer(msg: ServerMsg): Uint8Array {
             cmds: f.cmds.map((c) => ({ side: c.side, commands: c.commands })),
           })),
           levelId: msg.levelId,
-          pveUpgrades: msg.pveUpgrades,
-          unitLevels: msg.unitLevels,
+          cardInstancesJson: msg.cardInstancesJson,
+          equipmentInvJson: msg.equipmentInvJson,
           defenseJson: '',
           topDeck: msg.topDeck,
           bottomDeck: msg.bottomDeck,

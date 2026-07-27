@@ -12,11 +12,12 @@ import { createHash } from 'node:crypto';
 import type { Collections, SaveData, Rarity, EquipmentInstance } from '@nw/shared';
 import {
   EQUIPMENT_DEFS, GACHA_MATERIAL_GRANTS, makeGachaEquipInstance, EQUIPMENT_INV_CAP,
-  EQUIP_FULL_COMPENSATION_COINS, EQUIP_INV_FULL_MAIL_COUNT, equipmentInvCount, CARD_DEFS,
+  EQUIP_FULL_COMPENSATION_COINS, EQUIP_INV_FULL_MAIL_COUNT, CARD_DEFS,
   type CardDef, PRODUCT_STARTER_GROWTH, GROWTH_PACK_WINDOW_DAYS, findShopItem,
 } from '@nw/shared';
 import { grantCards as grantHeroCards } from './cards.js';
 import { insertSystemMail } from './mail.js';
+import { toInstanceDoc } from './equipment.js';
 import type { MetaSocialsvcClient } from './socialsvcClient.js';
 import type { CommercialClient, GachaResultEntry, WalletView } from './commercialClient.js';
 
@@ -91,6 +92,21 @@ export async function deliverGrant(
   equipInstances?: Record<string, EquipmentInstance>,
   equipMailOverflowCount?: number,
 ): Promise<SaveData> {
+  // Equipment instances live in the equipmentInstances collection (2026-07-26 split, see equipment.ts) —
+  // upsert them independently of the saves write below, idempotent by instanceId (deterministic ids
+  // derived from orderId+index, see deliverLootBox), so a reconciliation retry of this whole call (e.g.
+  // crash before commercial.orderDelivered) is safe to repeat. Not subject to the 300-cap (overflow →
+  // mail/coin, decided by the caller before calling in here — see deliverLootBox). Count is intentionally
+  // NOT precisely $inc'd here (would double-count on a retry, unlike the idempotent upsert above); it
+  // self-heals via the equipmentInv join that runs on the next GET /save / response serialization.
+  for (const [id, inst] of Object.entries(equipInstances ?? {})) {
+    await cols.equipmentInstances.updateOne(
+      { _id: id },
+      { $set: toInstanceDoc(inst, accountId) },
+      { upsert: true },
+    );
+  }
+
   const set: Record<string, unknown> = {
     'save.updatedAt': now,
     'save.wallet.coins': coinsAfter,
@@ -98,8 +114,6 @@ export async function deliverGrant(
   if (pityPatch) {
     for (const [pool, v] of Object.entries(pityPatch)) set[`save.gacha.pity.${pool}`] = v;
   }
-  // Equipment instances are $set one by one (not subject to the 300-cap; overflow → mail/coin, see deliverLootBox).
-  for (const [id, inst] of Object.entries(equipInstances ?? {})) set[`save.equipmentInv.${id}`] = inst;
   if (equipMailOverflowCount !== undefined) set['save.equipMailOverflowCount'] = equipMailOverflowCount;
   const inc: Record<string, number> = { 'save.rev': 1, rev: 1 };
   const grantedMaterialIds: string[] = [];
@@ -107,7 +121,7 @@ export async function deliverGrant(
   const grantedEquipDefIds = [...new Set(Object.values(equipInstances ?? {}).map((inst) => inst.defId))];
   // Lifetime skin/material/equipment-owned ledgers (avatar unlock): additive-only, same rationale as
   // deliverMailGrant above — these gacha-delivered items must stay unlocked even after being
-  // salvaged/consumed/sold, unlike inventory.skins/materials/equipmentInv themselves.
+  // salvaged/consumed/sold, unlike inventory.skins/materials/equipmentInstances themselves.
   const res = await cols.saves.findOneAndUpdate(
     { _id: accountId },
     {
@@ -264,7 +278,7 @@ export async function deliverLootBox(
 ): Promise<{ save: SaveData; overflow: OverflowSummary }> {
   const cur = await cols.saves.findOne({ _id: accountId });
   const owned = cur?.save.inventory.skins ?? [];
-  const invCount = equipmentInvCount(cur?.save.equipmentInv);
+  const invCount = cur?.save.equipmentInvCount ?? 0;
   // Free room right now → the mail quota refills; otherwise carry the persisted counter forward.
   let equipMailOverflowCount = invCount < EQUIPMENT_INV_CAP ? 0 : (cur?.save.equipMailOverflowCount ?? 0);
 

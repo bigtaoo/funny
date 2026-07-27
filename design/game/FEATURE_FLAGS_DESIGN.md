@@ -412,6 +412,14 @@ client_log_debug: { default: false, desc: '客户端日志上报-debug', side: '
 
 **已知未修缺口**：`cpu` 事件不带 `scene`（PerfMonitor 只发 fps/threshold/sustained），持续低帧无法归因到界面；若复发，把 `anrContext()` 的 scene 折进 cpu detail 即可。
 
+### 2026-07-26 · `PerfMonitor` 补「后台/遮挡节流误报」修复（§9.7 cpu）
+
+**动机**：某 web 客户端（publicId 160491111）45 分钟内贴出 9 条 `cpu` "sustained low fps ~10"，间隔异常规律（≈101s 一次），且全程从未触发过"main-thread busy"（Long Tasks 观察器零命中）——说明主线程根本没被 JS 占满，问题不在计算量。这正是 2026-07-15 已经在 `installAnrWatchdog()` 修过的同一类根因：`PerfMonitor.onTick` 从建立起就没有任何 `document.hidden` 判断，标签页被切到后台或被其他窗口整体遮挡时，浏览器为省电会把该页 `requestAnimationFrame` 限流（这正是 `ticker.deltaMS` 唯一可用于估算 fps 的信号源），fps 因此合法地跌到个位数，与真实卡顿无关。
+
+**改动**（`client/src/cache/PerfMonitor.ts`）：给 `PerfMonitor` 补上和 `installAnrWatchdog()` 一致的"锁存"逻辑——`install()` 时挂 `visibilitychange` + Page Lifecycle `freeze` 监听器，只要窗口累积期间出现过 `hidden===true` 就把 `hiddenSinceLastWindow` 锁存为 `true`；`onTick` 在每个采样窗口收尾时先检查这个锁存位，命中就整窗丢弃（不计入 busyRatio/fps 判定，也不累加 `lowFpsStreak`），避免一次背景节流污染的窗口拖慢或误触发后续的连续低帧判定。`uninstall()` 对称移除监听器。
+
+**验证**：新增 `client/test/PerfMonitor.test.ts`（2 例：全程可见的真实持续低帧仍然上报 `cpu` + 采样期间出现过隐藏则不上报），仿照 `anomaly-chain.test.ts` 的 ANR 回归测试结构；`tsc --noEmit` clean，`vitest run test/anomaly-chain.test.ts test/PerfMonitor.test.ts` 17/17 green（未改动既有行为，纯加法）。
+
 ### 2026-07-18 · `texTop` 首次读数确认根因：裸 `removeChildren()` 泄漏 Text/Graphics 纹理（§9.7 mem）
 
 **新一批日志**（build `e2b159f`，`texTop` 首次真正生效）：`https://a.gamestao.com`（CDN 美术）只占 `n=23`，`baseTex` 却有 3200+，其余全是 `pixiid_N`（每条 `n=1`）——说明泄漏源不是 CDN 美术，而是大量**各自独立、无共享 cache key** 的纹理。同批 `anr` 里 `scene` 已可读（`EquipmentScene`/`CardScene`/`LobbyScene`，验证了 §9.7 上一条 keep_classnames 修复已生效上线），卡顿 25–54s。

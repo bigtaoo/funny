@@ -15,6 +15,7 @@ import {
 import type { FastifyInstance } from 'fastify';
 import type { CommercialClient } from '../dist/commercialClient.js';
 import { buildApp } from '../dist/app.js';
+import { seedEquipment } from './helpers/equipment.js';
 
 function makeFakeCommercial(): CommercialClient {
   const coins = new Map<string, number>();
@@ -75,10 +76,7 @@ describe.skipIf(!mongo)('cards backend e2e', () => {
     });
 
   const seedEquipInstance = async (id: string, defId: string) => {
-    await m.collections.saves.updateOne(
-      { _id: accountId },
-      { $set: { [`save.equipmentInv.${id}`]: { id, defId, rarity: 'common', level: 0, affixes: [] } } },
-    );
+    await seedEquipment(m, accountId, { id, defId, rarity: 'common', level: 0, affixes: [] });
   };
 
   const readSave = async () => (await m.collections.saves.findOne({ _id: accountId }))!.save;

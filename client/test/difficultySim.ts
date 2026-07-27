@@ -464,6 +464,8 @@ export interface SimResult {
   escortMinHp: number | null;
   /** Enemy units that reached row 0 (leak_limit objective diagnostic); 0 for levels without leaks. */
   enemyLeaks: number;
+  /** Enemy units the player destroyed (timed_defense kill-ratio diagnostic). */
+  unitsKilled: number;
 }
 
 export interface SimOptions {
@@ -559,6 +561,7 @@ export function simulateLevel(levelOrId: string | LevelDefinition, opts: SimOpti
     peakEnemyHp,
     escortMinHp,
     enemyLeaks: engine.state.enemyLeaks,
+    unitsKilled: endStats[0].unitsKilled,
   };
 }
 

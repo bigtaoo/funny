@@ -161,28 +161,36 @@ message Pong {}
 // to headlessly re-simulate the entire match, obtains the final state hash + winner_side, and reports back via judge_verdict. frames are
 // structurally identical to conn_resync.log (non-empty frames only; command bytes remain game.proto opaque).
 message JudgeRequest {
+  reserved 7, 9; // former pve_upgrades/unit_levels (removed 2026-07-26, replaced by card_instances_json/equipment_inv_json below)
   string             request_id = 1;
   uint64             seed       = 2;
   MatchMode          mode       = 3;
   uint32             end_frame  = 4;
   repeated FrameCmds frames     = 5;
   // PvE spot-check re-simulation (PVE_INTEGRITY §8.6 L1): non-empty level_id → judge re-simulates the level headlessly in campaign mode,
-  // using seed (derived from the level, judge looks up the levels JSON locally) + pve_upgrades (server-authoritative blueprint snapshot,
-  // ensures deterministic re-simulation) + frames (player commands) to run to the final state and compute stars, reported back via judge_verdict.stars.
+  // using seed (derived from the level, judge looks up the levels JSON locally) + card_instances_json/equipment_inv_json (server-authoritative
+  // Hero Roster blueprint snapshot) + frames (player commands) to run to the final state and compute stars, reported back via judge_verdict.stars.
   string                 level_id     = 6;
-  map<string, uint32>    pve_upgrades = 7;
   // SLG siege re-simulation (S8-3, SLG_DESIGN §5.3): non-empty defense_json → judge re-simulates headlessly in siege mode.
   // The defense config is a LevelDefinition JSON (constructed on-the-fly by worldsvc for the attacked tile, opaque to worldsvc,
-  // interpreted only by the client engine); judge uses seed + this config + pve_upgrades (server-authoritative attacker progression snapshot) + frames
-  // (attacker commands) to run to the final state; winner_side=0 → attacker breached (attacker_win), reported back via judge_verdict.
+  // interpreted only by the client engine); judge uses seed + this config + card_instances_json/equipment_inv_json (server-authoritative attacker
+  // progression snapshot) + frames (attacker commands) to run to the final state; winner_side=0 → attacker breached (attacker_win), reported
+  // back via judge_verdict.
   string                 defense_json = 8;
-  // S12 unit progression re-simulation: non-empty unit_levels → judge uses this level map to rebuild the blueprint (replaces pve_upgrades, ensures
-  // that spot-check re-simulations for highly-progressed players use the exact same blueprint as the original match, preventing false verdicts from a weaker blueprint).
-  map<string, uint32>    unit_levels  = 9;
   // Ranked PvP deck restriction (PVP_LOADOUT §6.2): same decks the two real match clients drew from via match_start.top_deck/bottom_deck.
   // Required for a deterministic re-simulation when the original match applied deck-restricted draw filtering; empty on PvE/siege requests.
   repeated string        top_deck     = 10;
   repeated string        bottom_deck  = 11;
+  // CC-1 Hero Roster progression snapshot for PvE/siege headless re-simulation (2026-07-26 fix, PVE_INTEGRITY §9): replaces
+  // the removed pve_upgrades/unit_levels fields (reserved 7/9 above), which the engine had silently ignored since the CC-1
+  // migration (GameConfig dropped them — campaign/siege blueprints are built only from cardInstances/equipmentInv,
+  // server/engine/src/types.ts). Every PvE L1 spot-check re-simulation was therefore recomputing with unleveled, gear-less
+  // units regardless of the player's real Hero Roster progression, causing false `rejected` verdicts for any legitimately
+  // invested account. JSON of Record<string, CardInstance> (shared/types.ts), opaque to gateway/meta, interpreted only by
+  // the judge client engine — same opacity contract as defense_json.
+  string                 card_instances_json = 12;
+  // JSON of Record<string, EquipmentInstance> (shared/types.ts), paired with card_instances_json.
+  string                 equipment_inv_json  = 13;
 }
 
 // ── Social real-time push (S6, SOCIAL_DESIGN §4.2) ─────────────────

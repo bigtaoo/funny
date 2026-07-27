@@ -8,6 +8,7 @@ import { FS } from '../../render/fontScale';
 import { drawSidebarTabs, sidebarNavW, type HubTab } from '../../ui/widgets/HubTabs';
 import { t } from '../../i18n';
 import { buildIcon, type IconKind } from '../../render/icons';
+import { buildMaterialIcon } from '../../render/materialAtlas';
 import { drawScrollIndicator } from '../../ui/widgets/ScrollIndicator';
 import type { EquipmentInstance, CardInstance, EquipRarity } from '../../game/meta/SaveData';
 import { getEquipDef } from '../../game/meta/equipmentDefs';
@@ -267,7 +268,13 @@ export function PickerMixin<TBase extends AuctionSceneBaseCtor>(Base: TBase): TB
           }
         }
       }
-      const fallback: IconKind = entry.cls === 'material' ? (entry.material ?? 'scrap') : entry.cls === 'equipment' ? 'armor' : 'cards';
+      if (entry.cls === 'material') {
+        const icon = buildMaterialIcon(entry.material ?? 'scrap', size, C.dark);
+        icon.x = cx - size / 2; icon.y = cy - size / 2;
+        this.bodyLayer.addChild(icon);
+        return;
+      }
+      const fallback: IconKind = entry.cls === 'equipment' ? 'armor' : 'cards';
       const icon = buildIcon(fallback, size, C.dark);
       icon.x = cx - size / 2; icon.y = cy - size / 2;
       this.bodyLayer.addChild(icon);
