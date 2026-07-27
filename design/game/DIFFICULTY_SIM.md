@@ -511,12 +511,20 @@ no-op，为未来兵种预留正确行为）；找不到就照常退回原有的
 其余 60 关分毫不差。**无回归**，但也没有解决 ch5_lv8 本身的星级抖动（意料之中——已经
 诊断过是受限卡组/splitter 分裂/meteor 被禁等多重问题叠加，flying 卡死只是其中一环）。
 
-**已知局限（留给后续）**：该修复只让 AI "不再往死局车道里瞎砸兵"，没有解决根本问题——
-仍然没有任何兵种能真正命中 flying 敌人。`types.ts:22`/`types.ts:303` 的设计注释明确写
-"只有箭塔和 archer（canTargetFlying）能命中"，但 `config.ts` 里 Archer 的 blueprint
-**从未设置** `canTargetFlying: true`——这是一处文档/数值不一致，且是**真实生产代码**
-（`server/engine/src/config.ts`，非本模拟器），已用 `spawn_task` 另行登记，本次不在
-"修 AI 逻辑"范围内一并改动。
+**已知局限（本节写于 2026-07-05 14:17，38 分钟后已被下条修复过期）**：该修复只让 AI
+"不再往死局车道里瞎砸兵"，当时没有解决根本问题——彼时仍没有任何兵种能真正命中
+flying 敌人。`types.ts:22`/`types.ts:303` 的设计注释明确写"只有箭塔和 archer
+（canTargetFlying）能命中"，但 `config.ts` 里 Archer 的 blueprint 当时**从未设置**
+`canTargetFlying: true`——已用 `spawn_task` 另行登记。
+
+> **✅ 已修复（2026-07-05 14:55，`a601c6df` "弓箭手补齐 canTargetFlying"）**：Archer
+> blueprint 现已带 `canTargetFlying: true`（`server/engine/src/config.ts:179`）。本节
+> `pickUnderBlockedLane`/`pickTowerLane` 的判定逻辑是**动态读 `UNIT_BLUEPRINTS[unitType]
+> ?.canTargetFlying`**（非硬编码"无兵种满足"），config 修复后 AI **自动**能选到 Archer
+> 去覆盖 flying 车道，无需再改模拟器代码。**遗留**：本文档上方 ch5（harpy 卡死）等难度
+> 校准数据是在 config 修复**之前**跑出的，反映的是"AI 无法命中 flying"的旧状态；
+> config 修复后 ch3/ch5/ch6 含 harpy 的关卡理论上应更容易通关，**未重新跑难度矩阵验证**，
+> 是本文档当前最大的过期风险点。
 
 ## ch1 难度矩阵（基线 AI v2，5 种子中位，历史记录）
 
