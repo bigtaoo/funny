@@ -24,6 +24,14 @@ export const MAIL_DEFAULT_TTL_SEC = 30 * 24 * 3600;
 export const MAIL_SUBJECT_MAX = 80;
 export const MAIL_BODY_MAX = 2000;
 
+/**
+ * Maximum length of a UGC report's free-text reason (COMPLIANCE_GLOBAL.md §7 "测试期最低线" — reporting,
+ * paired with the existing block feature). Admin-review-only text, never shown to other players, so it is
+ * NOT run through `censorChat` (that filter exists to protect other players from seeing abusive content,
+ * not to sanitize a note an admin will read).
+ */
+export const REPORT_REASON_MAX = 500;
+
 // ── Deterministic id derivation (no lookup required; computable by either side) ──────────────
 /**
  * Chat conversation id: two accountIds sorted and concatenated (SOC4). Either party can derive

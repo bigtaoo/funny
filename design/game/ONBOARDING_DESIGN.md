@@ -222,6 +222,17 @@
 
 > 采集受 §6 同意门控；EU/UK 未同意则不采上述行为事件。教学**逐 beat 的完成率与卡住时长**是迭代脚本的核心数据。
 
+> **逐节点核实（design-doc-audit-2026-07，对照代码）**：
+> - ✅ **首启/合规通过**：`session_start`（标准）、`gdpr_consent`（`createAppCore.ts`）。
+> - ❌ **intro 完成/跳过**：`IntroScene.ts` 只写本地 `nw_seen_intro` 标记，**没有任何 `analytics.track` 调用**——漏斗在这一节点完全没有数据，无法区分"跳过"与"看完"。
+> - ❌ **登录方式（试玩/匿名/正式）**：未找到区分登录方式的专属事件；`login_gate_hit` 只在已登录会话触发游客态跳转时打点（`nav/social.ts`/`nav/world.ts`），不是登录方式选择本身。
+> - ✅ **教学关开始/教学各 beat/教学毕业**：`tutorial_start`/`tutorial_step`（`step_key`=`orientation_1..7`/`beat_unit`/`beat_building`/`beat_spell`/`freeplay`）/`tutorial_complete`/`tutorial_skip` 全部已接（A9-9，`TutorialDirector.ts`→`GameRenderer`→`game.ts#goTutorial()`），100% 采样，`GET /internal/query?type=tutorial_funnel` 可查——**此前 §8/§9 把这条记成"待补"是过期记录，已订正**。
+> - 🟡 **首胜领奖**：无独立事件，靠 `tutorial_complete`（毕业=首胜）代打，够用但没有单独区分"完成教学"与"实际领到奖励"两个时刻。
+> - ❌ **各功能首次引导 弹出/关闭/再看**：`showFeatureGuide`/`withGuide`（`LobbyScene/overlays.ts` 等）**没有任何 `analytics.track` 调用**——这是漏斗里目前唯一还完全没打点的功能性节点（区别于上面 intro/登录方式两个更偏"次要"的缺口）。
+> - ✅ **次日回访**：`session_start` 时间序列做 D1 cohort（`ANALYTICS_DESIGN.md` §9.5），不需要专属事件。
+>
+> 已 `spawn_task` 登记为独立后续项：补齐 intro 完成/跳过 + 功能首次引导弹出/关闭/再看 两处事件（登录方式节点优先级较低，暂不强制）。
+
 ---
 
 ## 8. 实现挂钩与缺口
@@ -234,13 +245,13 @@
 | **教学关 `ch0_tutorial` JSON**（满 loadout） | ✅ 已建。`client/src/game/campaign/levels/ch0_tutorial.json`，仅入 `CAMPAIGN_LEVELS` 不入 `CAMPAIGN_LEVEL_ORDER`（不计进度） |
 | **TutorialDirector（认知导览 O1–O7 + 卡点暂停门 + 脚本反应 + 自由发挥窗）** | ✅ 已建。`client/src/render/TutorialDirector.ts`（表现层：读同步态差分 + 控时钟 + 控 UI） |
 | **TutorialDrawPolicy（保证引导卡按拍到手，确定性纯引擎）** | ✅ 已建。`@nw/engine Card.ts`，`GameEngine` 据 `id===ch0_tutorial` 注入；含 `enterFreePlay()`（阶段 C 切随机） |
-| `flags.tutorial_done` + 「重看教学」 | ✅ 已加。`tutorial_done` 门控；设置「帮助 → 重看新手教学」重跑。**`tutorial_step` 未做**（见 §10） |
+| `flags.tutorial_done` + 「重看教学」 | ✅ 已加。`tutorial_done` 门控；设置「帮助 → 重看新手教学」重跑。**`SaveData.flags.tutorial_step` 断点续教未做**（见 §10——⚠️ 与下面「FTUE 漏斗埋点」行提到的 `tutorial_step` **同名不同物**：这里指存档断点续教字段，未建；那里指 analyticsvc 的 `tutorial_step` 埋点事件，已建，两者互不影响，勿混淆） |
 | 教学关永不失败兜底（基地不可破） | ✅ 已建。导演每 tick 夹 `baseHp≥1` + GameRenderer 未毕业时吞 `game_over/game_draw`（导演独占终局） |
 | SLG 软门槛（通 ch1 解锁）+ 灰显气泡 | ✅ 已接。`progress.isFirstChapterCleared` + 大厅 `worldLocked` 灰显 + `showInfoToast`「通关第一章解锁」 |
 | **首次功能引导机制（`flags.featSeen.*`）** | ✅ 机制已建。`SaveManager.featSeen/markFeatSeen` + 大厅 `showFeatureGuide` + `withGuide`（match/shop/social/cards/daily/world）+ `guide.*` 全语种。**各子页内「?」按钮未逐页接**（见 §10） |
 | 首胜奖励 + 签到入口引出 | 🟡 毕业=首胜走既有结算链；签到由大厅红点承载，未新增金币龙头（§5） |
 | 年龄门 + EU/UK 同意弹窗 | ❌ 待建（合规，归 COMPLIANCE，开机层） |
-| FTUE 漏斗埋点 | 🟡 analyticsvc 就绪，埋点节点待接 |
+| FTUE 漏斗埋点 | ✅ 已接（design-doc-audit-2026-07 核实：本行与 §9 待办条目此前是过期记录——A9-9 早已落地逐 beat 埋点 `tutorial_step`，`step_key` 覆盖 `tutorial_start→orientation_1..7→beat_unit→beat_building→beat_spell→freeplay→tutorial_complete`，`TutorialDirector.ts`→`GameRenderer`→`game.ts#goTutorial()`→`analytics.track()`；100% 采样，`GET /internal/query?type=tutorial_funnel` 可查逐步转化率，字段权威见 `ANALYTICS_DESIGN.md` §9.9/§9.6。仅剩 §7 提到的「登录方式/首次功能引导 弹出关闭再看/次日回访」几个漏斗节点是否全部接齐未逐项复核，非本次审计范围） |
 
 ---
 
@@ -251,7 +262,7 @@
 3. ✅ **SLG 软门槛**：解锁阈值（`isFirstChapterCleared`）+ 大厅 SLG 入口灰显气泡（通 ch1 点亮）。
 4. **首胜钩子**：教学毕业奖励话术 + 引出每日签到入口（当前走既有结算 + 大厅红点，未做专门话术）。
 5. **合规开机层**（年龄门 + EU/UK 同意，与 COMPLIANCE 联动，海外测试前必须）。
-6. **FTUE 漏斗埋点**接入（§7 节点，重点逐 beat 完成率/卡住时长；已埋 `tutorial_start/complete/skip`，beat 级埋点待补）。
+6. ~~FTUE 漏斗埋点接入~~ ✅ 已完成（`tutorial_start/complete/skip` + 逐 beat `tutorial_step` 全部已埋，见 §8「FTUE 漏斗埋点」行——design-doc-audit-2026-07 核实此条目此前是过期记录）。
 7. 依教学完成率与 D1 数据迭代 beat 脚本与提示文案。
 
 ---

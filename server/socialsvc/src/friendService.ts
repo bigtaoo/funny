@@ -2,7 +2,7 @@
 // Logic aligned with metaserver/src/social.ts; data layer switched to the nw_social collections;
 // publicId reverse-lookup changed to call SocialMetaClient (no direct connection to the accounts database).
 import { randomUUID } from 'node:crypto';
-import type { SocialCollections } from './db';
+import type { SocialCollections, ReportDoc } from './db';
 import type { SocialGatewayClient } from './gatewayClient';
 import type { SocialMetaClient } from './metaClient';
 import type { ProfileView, FriendView, FriendRequestView, ConversationView, ChatMessageView, SocialBadges } from '@nw/shared';
@@ -14,6 +14,7 @@ import {
   CHAT_BODY_MAX,
   CHAT_HISTORY_PAGE_MAX,
   censorChat,
+  REPORT_REASON_MAX,
   type ChatRegion,
 } from '@nw/shared';
 
@@ -284,6 +285,32 @@ export class FriendService {
     if (!target) return false;
     await this.cols.blockList.deleteOne({ _id: blockId(accountId, target.accountId) });
     return true;
+  }
+
+  /**
+   * File a UGC report against another player (design-doc-audit-2026-07, COMPLIANCE_GLOBAL.md §7 "测试期最低线"
+   * — pairs with the existing blockUser above). Deliberately minimal: just captures the report for later admin
+   * review (`status` stays 'open'; no auto-block, no notification pipeline — those are follow-ups, not part of
+   * the pre-launch minimum bar). Reporting yourself is rejected the same way blocking yourself would be.
+   */
+  async reportUser(accountId: string, publicId: string, reason: string): Promise<boolean> {
+    const target = await this.meta.resolveByPublicId(publicId);
+    if (!target || target.accountId === accountId) return false;
+    const trimmed = reason.trim().slice(0, REPORT_REASON_MAX);
+    await this.cols.reports.insertOne({
+      _id: randomUUID(),
+      reporterId: accountId,
+      targetId: target.accountId,
+      reason: trimmed,
+      ts: this.now(),
+      status: 'open',
+    });
+    return true;
+  }
+
+  /** Open reports, oldest first (ops/admin review queue — internal endpoint, no in-app moderation UI yet). */
+  async listOpenReports(limit = 200): Promise<ReportDoc[]> {
+    return this.cols.reports.find({ status: 'open' }).sort({ ts: 1 }).limit(limit).toArray();
   }
 
   // ── Private chat ──────────────────────────────────────────────────────────────────

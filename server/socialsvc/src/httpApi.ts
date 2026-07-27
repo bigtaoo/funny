@@ -320,6 +320,14 @@ export function startHttpApi(
           return send(res, 200, ok({}));
         }
 
+        // Open UGC reports (ops/admin review queue, design-doc-audit-2026-07 COMPLIANCE_GLOBAL.md §7).
+        // No in-app moderation UI yet — this is the minimal viable visibility bar (a DB collection with
+        // zero read access would leave reports permanently invisible to anyone).
+        if (method === 'GET' && path === '/internal/reports') {
+          const limit = numQ(q.get('limit'), 200);
+          return send(res, 200, ok({ reports: await friendSvc.listOpenReports(limit) }));
+        }
+
         return sendErr(res, ErrorCode.NOT_FOUND, 'internal endpoint not found');
       }
 
@@ -540,6 +548,16 @@ export function startHttpApi(
             await friendSvc.unblockUser(accountId, decodeURIComponent(m[1]!));
             return send(res, 200, ok({ ok: true }));
           }
+        }
+        // UGC report (design-doc-audit-2026-07, COMPLIANCE_GLOBAL.md §7 "测试期最低线" — pairs with block above).
+        if (method === 'POST' && path === '/social/friends/report') {
+          const body = await readJson(req);
+          const publicId = typeof body.publicId === 'string' ? body.publicId : null;
+          const reason = typeof body.reason === 'string' ? body.reason : '';
+          if (!publicId) return sendErr(res, ErrorCode.BAD_REQUEST, 'publicId required');
+          const ok2 = await friendSvc.reportUser(accountId, publicId, reason);
+          if (!ok2) return sendErr(res, ErrorCode.NOT_FOUND, 'player not found');
+          return send(res, 200, ok({ ok: true }));
         }
 
         // ── Direct messages (P2) ──────────────────────────────────────────

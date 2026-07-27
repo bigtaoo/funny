@@ -14,6 +14,7 @@ export interface NetworkHandlers {
   doRespond(requestId: string, accept: boolean): Promise<void>;
   doRemove(publicId: string): Promise<void>;
   doBlock(publicId: string): Promise<void>;
+  doReport(publicId: string): Promise<void>;
   doDuel(publicId: string): void;
   doDuelRespond(inviteId: string, accept: boolean): void;
   doCreateFamily(): Promise<void>;
@@ -130,6 +131,11 @@ export function NetworkMixin<TBase extends FriendsSceneBaseCtor>(Base: TBase): T
     async doBlock(publicId: string): Promise<void> {
       try { await this.cb.blockUser(publicId); this.toast('friends.blockedDone', 'success'); } catch { this.toast('friends.error'); }
       void this.refresh();
+    }
+
+    /** UGC report (design-doc-audit-2026-07, COMPLIANCE_GLOBAL.md §7): admin-review-only, does not block/unfriend. */
+    async doReport(publicId: string): Promise<void> {
+      try { await this.cb.reportUser(publicId); this.toast('friends.reportedDone', 'success'); } catch { this.toast('friends.error'); }
     }
 
     doDuel(publicId: string): void {

@@ -726,6 +726,8 @@ export const en: Record<TranslationKey, string> = {
   'friends.tab.world': 'World',
   'friends.tab.mail': 'Mail',
   'friends.message': 'Message',
+  'friends.report': 'Report',
+  'friends.reportedDone': 'Reported',
   'friends.block': 'Block',
   'friends.blockedDone': 'Blocked',
   // Duel invite ("切磋")
