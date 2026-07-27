@@ -1,0 +1,1061 @@
+openapi: 3.1.0
+info:
+  title: Notebook Wars — socialsvc REST API
+  version: "1.0"
+  description: >
+    Social service (socialsvc) REST contract (SOCIAL_SVC_DESIGN.md §4.1). Fifth public face
+    (/social/*): family CRUD + channel, friends, private chat, mail. Auth reuses the meta JWT
+    (verifyToken only, no accounts-DB connection). Self-contained spec (no cross-file $refs) —
+    mirrors the auctionsvc contract pattern (openapi-auction.yml). /internal/* endpoints
+    (X-Internal-Key, called by worldsvc/metaserver/gateway) are intentionally NOT part of this
+    public contract, matching how openapi-world.yml omits worldsvc's /admin/* endpoints.
+
+servers:
+  - url: '{socialBase}'
+    variables:
+      socialBase:
+        default: 'http://localhost:8085'
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+
+    # ── Envelope ─────────────────────────────────────────────────────────────────
+
+    OkResponse:
+      type: object
+      required: [ok]
+      properties:
+        ok:
+          type: boolean
+          enum: [true]
+
+    # ── Family (SS2/SS3, §3.1/§4.1) ───────────────────────────────────────────────
+
+    FamilyRole:
+      type: string
+      enum: [leader, elder, member]
+
+    FamilyView:
+      type: object
+      required: [familyId, name, tag, leaderId, memberCount, prosperity]
+      properties:
+        familyId:
+          type: string
+        name:
+          type: string
+        tag:
+          type: string
+        leaderId:
+          type: string
+        memberCount:
+          type: integer
+        prosperity:
+          type: integer
+        prosperityUpdatedAt:
+          type: integer
+          description: Prosperity decay anchor ms (worldsvc lazily decays sect-aggregate prosperity on read)
+        territoryCount:
+          type: integer
+          description: Territory tile count (worldsvc-owned mirror)
+        sectId:
+          type: string
+          description: Sect the family currently belongs to (worldsvc-owned mirror; absent = independent family)
+        sectName:
+          type: string
+          description: Display name of the sect above, mirrored alongside sectId
+        announcement:
+          type: string
+
+    FamilyMemberView:
+      type: object
+      required: [accountId, role, joinedAt]
+      properties:
+        accountId:
+          type: string
+        role:
+          $ref: '#/components/schemas/FamilyRole'
+        joinedAt:
+          type: integer
+        publicId:
+          type: string
+          description: Resolved via metaserver batchProfiles; absent if the lookup is unavailable or the profile is gone
+        displayName:
+          type: string
+        avatarId:
+          type: string
+          description: Equipped avatar id, composite "<category>:<key>"
+
+    FamilyDetailView:
+      allOf:
+        - $ref: '#/components/schemas/FamilyView'
+        - type: object
+          required: [members]
+          properties:
+            members:
+              type: array
+              items:
+                $ref: '#/components/schemas/FamilyMemberView'
+
+    FamilyJoinRequestView:
+      type: object
+      required: [requestId, accountId, createdAt]
+      properties:
+        requestId:
+          type: string
+        accountId:
+          type: string
+        publicId:
+          type: string
+        displayName:
+          type: string
+        createdAt:
+          type: integer
+
+    FamilyMessageView:
+      type: object
+      required: [id, senderId, senderName, body, ts]
+      properties:
+        id:
+          type: string
+        senderId:
+          type: string
+        senderName:
+          type: string
+        title:
+          type: string
+          description: Sender's equipped title (称号), if any
+        familyName:
+          type: string
+          description: Sender's family name — the family itself, since this channel is family-scoped
+        body:
+          type: string
+        ts:
+          type: integer
+
+    PlayerRankView:
+      type: object
+      properties:
+        rank:
+          type: string
+        elo:
+          type: number
+
+    ProfileExtraView:
+      type: object
+      properties:
+        rank:
+          type: string
+        elo:
+          type: number
+        familyName:
+          type: string
+        sectName:
+          type: string
+
+    # ── Friends / chat / mail (SOCIAL_DESIGN.md §3–§4, migrated to socialsvc P2) ─────────────
+
+    ProfileView:
+      type: object
+      required: [publicId, displayName]
+      properties:
+        publicId:
+          type: string
+        displayName:
+          type: string
+        rank:
+          type: string
+        equippedTitle:
+          type: string
+        avatarId:
+          type: string
+
+    FriendView:
+      type: object
+      required: [publicId, displayName, online]
+      properties:
+        publicId:
+          type: string
+        displayName:
+          type: string
+        online:
+          type: boolean
+        rank:
+          type: string
+        alias:
+          type: string
+          description: Owner-private alias for the friend
+        avatarId:
+          type: string
+
+    FriendRequestView:
+      type: object
+      required: [requestId, fromPublicId, fromName, toPublicId, createdAt]
+      properties:
+        requestId:
+          type: string
+        fromPublicId:
+          type: string
+        fromName:
+          type: string
+        toPublicId:
+          type: string
+        message:
+          type: string
+        createdAt:
+          type: integer
+
+    SocialBadges:
+      type: object
+      required: [friendRequests, chat, mail, total]
+      properties:
+        friendRequests:
+          type: integer
+        chat:
+          type: integer
+        mail:
+          type: integer
+        total:
+          type: integer
+
+    ConversationView:
+      type: object
+      required: [convId, peer, lastTs, unread]
+      properties:
+        convId:
+          type: string
+        peer:
+          $ref: '#/components/schemas/ProfileView'
+        lastBody:
+          type: string
+        lastFrom:
+          type: string
+        lastTs:
+          type: integer
+        unread:
+          type: integer
+
+    ChatMessageView:
+      type: object
+      required: [messageId, convId, fromPublicId, body, kind, ts]
+      properties:
+        messageId:
+          type: string
+        convId:
+          type: string
+        fromPublicId:
+          type: string
+        body:
+          type: string
+        kind:
+          type: string
+          enum: [text, system]
+        ts:
+          type: integer
+
+    MailAttachmentView:
+      type: object
+      required: [kind]
+      properties:
+        kind:
+          type: string
+          enum: [coins, item, skin, material, equipment, card]
+        id:
+          type: string
+        count:
+          type: integer
+        instance:
+          type: object
+          additionalProperties: true
+          description: Present only for kind=equipment|card — the traded instance snapshot
+
+    MailView:
+      type: object
+      required: [mailId, from, subject, body, createdAt, expireAt, read, claimed]
+      properties:
+        mailId:
+          type: string
+        from:
+          type: string
+          description: "'system' or sender publicId"
+        fromName:
+          type: string
+        subject:
+          type: string
+        body:
+          type: string
+        attachments:
+          type: array
+          items:
+            $ref: '#/components/schemas/MailAttachmentView'
+        createdAt:
+          type: integer
+        expireAt:
+          type: integer
+        read:
+          type: boolean
+        claimed:
+          type: boolean
+
+paths:
+
+  # ── Family ─────────────────────────────────────────────────────────────────────
+
+  /social/family/mine:
+    get:
+      operationId: getMyFamily
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: The caller's own family (including member list), or null if not a member
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/OkResponse'
+                  - type: object
+                    properties:
+                      data:
+                        nullable: true
+                        allOf:
+                          - $ref: '#/components/schemas/FamilyDetailView'
+
+  /social/family/search:
+    get:
+      operationId: searchFamilyByTag
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: tag, in: query, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: Family matching the TAG (exact match, case-insensitive), or null
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/OkResponse'
+                  - type: object
+                    properties:
+                      data:
+                        nullable: true
+                        allOf:
+                          - $ref: '#/components/schemas/FamilyView'
+
+  /social/family/browse:
+    get:
+      operationId: browseFamilies
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: q, in: query, required: false, schema: { type: string }, description: Fuzzy name match }
+        - { name: limit, in: query, required: false, schema: { type: integer }, description: 'Default 10, clamped to [1, 50]' }
+      responses:
+        '200':
+          description: Joinable families (open slot), sorted by prosperity desc
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/OkResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: { $ref: '#/components/schemas/FamilyView' }
+
+  /social/family:
+    post:
+      operationId: createFamily
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, tag]
+              properties:
+                name: { type: string }
+                tag: { type: string, description: '2-5 uppercase alphanumeric chars, globally unique' }
+      responses:
+        '201':
+          description: Family created; caller becomes leader
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/OkResponse'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/FamilyDetailView' }
+
+  /social/family/requests:
+    get:
+      operationId: listFamilyJoinRequests
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: Pending join requests for the caller's own family (leader/elder only)
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/OkResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        required: [requests]
+                        properties:
+                          requests:
+                            type: array
+                            items: { $ref: '#/components/schemas/FamilyJoinRequestView' }
+
+  /social/family/requests/{requestId}/respond:
+    post:
+      operationId: respondFamilyJoinRequest
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: requestId, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [accept]
+              properties:
+                accept: { type: boolean, description: 'Rejecting mails the applicant (family.mail.rejected.* i18n key)' }
+      responses:
+        '200':
+          description: Accepted or rejected
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OkResponse' }
+
+  /social/family/{familyId}:
+    get:
+      operationId: getFamily
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: familyId, in: path, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: Family details (including member list), or null if not found
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/OkResponse'
+                  - type: object
+                    properties:
+                      data:
+                        nullable: true
+                        allOf:
+                          - $ref: '#/components/schemas/FamilyDetailView'
+
+  /social/family/{familyId}/join:
+    post:
+      operationId: requestJoinFamily
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: familyId, in: path, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: Join request submitted (pending leader/elder approval); does not add membership yet
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/OkResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        required: [requestId]
+                        properties:
+                          requestId: { type: string }
+
+  /social/family/leave:
+    post:
+      operationId: leaveFamily
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: Left the family (leader must transfer leadership or dissolve first)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OkResponse' }
+
+  /social/family/kick:
+    post:
+      operationId: kickFamilyMember
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [targetId]
+              properties:
+                targetId: { type: string, description: accountId of the member to kick }
+      responses:
+        '200':
+          description: Member kicked (leader can kick anyone; elder can only kick members)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OkResponse' }
+
+  /social/family/role:
+    post:
+      operationId: setFamilyMemberRole
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [targetId, role]
+              properties:
+                targetId: { type: string, description: accountId of the member }
+                role: { $ref: '#/components/schemas/FamilyRole' }
+      responses:
+        '200':
+          description: Role updated (leader only; cannot promote to leader via this endpoint)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OkResponse' }
+
+  /social/family/disband:
+    post:
+      operationId: disbandFamily
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: Family dissolved (leader only)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OkResponse' }
+
+  /social/family/announcement:
+    post:
+      operationId: setFamilyAnnouncement
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [announcement]
+              properties:
+                announcement: { type: string, description: 'Max 200 chars (leader/elder only)' }
+      responses:
+        '200':
+          description: Announcement updated
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OkResponse' }
+
+  /social/family/{familyId}/messages:
+    get:
+      operationId: getFamilyChannel
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: familyId, in: path, required: true, schema: { type: string } }
+        - { name: before, in: query, required: false, schema: { type: integer }, description: 'ms-epoch cursor (reverse-chronological pagination)' }
+        - { name: limit, in: query, required: false, schema: { type: integer }, description: 'Default 30, clamped to [1, 50]' }
+      responses:
+        '200':
+          description: Family channel history (caller must be a member)
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/OkResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: { $ref: '#/components/schemas/FamilyMessageView' }
+    post:
+      operationId: sendFamilyMessage
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: familyId, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [body]
+              properties:
+                body: { type: string }
+                senderName: { type: string, description: 'Client-supplied fallback; server prefers the resolved meta displayName' }
+      responses:
+        '200':
+          description: Message sent (pushed in real time to all other online members)
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/OkResponse'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/FamilyMessageView' }
+
+  # ── Player / profile (cross-cutting profile popup support) ─────────────────────
+
+  /social/player/{accountId}/rank:
+    get:
+      operationId: getPlayerRank
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: accountId, in: path, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: Ladder rank + ELO for an arbitrary player (both fields absent if unranked)
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/OkResponse'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/PlayerRankView' }
+
+  /social/profile/{publicId}/extra:
+    get:
+      operationId: getProfileExtra
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: publicId, in: path, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: Unified profile-popup extras (rank/ELO + family/sect, if any); empty object if unresolvable
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/OkResponse'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/ProfileExtraView' }
+
+  # ── Friends ──────────────────────────────────────────────────────────────────
+
+  /social/friends:
+    get:
+      operationId: getFriends
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: Friend list (includes online status)
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/OkResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        required: [friends]
+                        properties:
+                          friends:
+                            type: array
+                            items: { $ref: '#/components/schemas/FriendView' }
+
+  /social/friends/requests:
+    get:
+      operationId: getFriendRequests
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: Pending friend requests (received + sent)
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/OkResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        required: [incoming, outgoing]
+                        properties:
+                          incoming:
+                            type: array
+                            items: { $ref: '#/components/schemas/FriendRequestView' }
+                          outgoing:
+                            type: array
+                            items: { $ref: '#/components/schemas/FriendRequestView' }
+
+  /social/badges:
+    get:
+      operationId: getSocialBadges
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: Offline badge aggregate (friend requests / unread conversations / unread mail + total)
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/OkResponse'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/SocialBadges' }
+
+  /social/friends/search:
+    post:
+      operationId: searchFriend
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [publicId]
+              properties:
+                publicId: { type: string }
+      responses:
+        '200':
+          description: Player found by public id (404 if not found)
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/OkResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        required: [profile]
+                        properties:
+                          profile: { $ref: '#/components/schemas/ProfileView' }
+
+  /social/friends/request:
+    post:
+      operationId: requestFriend
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [publicId]
+              properties:
+                publicId: { type: string }
+                message: { type: string }
+      responses:
+        '200':
+          description: Friend request sent (or the existing pending request, if one was already outstanding)
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/OkResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        required: [requestId]
+                        properties:
+                          requestId: { type: string }
+
+  /social/friends/respond:
+    post:
+      operationId: respondFriend
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [requestId, accept]
+              properties:
+                requestId: { type: string }
+                accept: { type: boolean }
+      responses:
+        '200':
+          description: Accepted (creates a bidirectional friend edge) or declined
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/OkResponse'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/OkResponse' }
+
+  /social/friends/{publicId}:
+    delete:
+      operationId: removeFriend
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: publicId, in: path, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: Friend removed (bidirectional)
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/OkResponse'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/OkResponse' }
+
+  /social/friends/block:
+    post:
+      operationId: blockFriend
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [publicId]
+              properties:
+                publicId: { type: string }
+      responses:
+        '200':
+          description: Player blocked (removes friendship, blocks requests/messages)
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/OkResponse'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/OkResponse' }
+
+  /social/friends/block/{publicId}:
+    delete:
+      operationId: unblockFriend
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: publicId, in: path, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: Player unblocked
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/OkResponse'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/OkResponse' }
+
+  # ── Direct messages ────────────────────────────────────────────────────────────
+
+  /social/chat/conversations:
+    get:
+      operationId: getConversations
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: Conversation list (per-conversation unread count + last message snippet)
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/OkResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        required: [conversations]
+                        properties:
+                          conversations:
+                            type: array
+                            items: { $ref: '#/components/schemas/ConversationView' }
+
+  /social/chat/{convId}/messages:
+    get:
+      operationId: getChatMessages
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: convId, in: path, required: true, schema: { type: string } }
+        - { name: before, in: query, required: false, schema: { type: integer }, description: 'ms-epoch cursor' }
+        - { name: limit, in: query, required: false, schema: { type: integer }, description: 'Default 30, clamped to [1, 50]' }
+      responses:
+        '200':
+          description: Conversation history (paginated, reverse chronological); 404 if not a member
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/OkResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        required: [messages]
+                        properties:
+                          messages:
+                            type: array
+                            items: { $ref: '#/components/schemas/ChatMessageView' }
+
+  /social/chat/send:
+    post:
+      operationId: sendChatMessage
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: X-Chat-Region, in: header, required: false, schema: { type: string, enum: [global, cn, de, en] }, description: 'Chat-filter region; defaults to global' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [toPublicId, body]
+              properties:
+                toPublicId: { type: string }
+                body: { type: string }
+      responses:
+        '200':
+          description: Message sent (must be mutual friends; rate-limited per account)
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/OkResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        required: [messageId, ts]
+                        properties:
+                          messageId: { type: string }
+                          ts: { type: integer }
+
+  /social/chat/read:
+    post:
+      operationId: markConversationRead
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [convId]
+              properties:
+                convId: { type: string }
+      responses:
+        '200':
+          description: Conversation marked read (clears unread count)
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/OkResponse'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/OkResponse' }
+
+  # ── Mail ─────────────────────────────────────────────────────────────────────
+
+  /social/mail:
+    get:
+      operationId: getMail
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: Inbox (mail list + unread count)
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/OkResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        required: [mail, unread]
+                        properties:
+                          mail:
+                            type: array
+                            items: { $ref: '#/components/schemas/MailView' }
+                          unread: { type: integer }
+
+  /social/mail/{mailId}/read:
+    post:
+      operationId: readMail
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: mailId, in: path, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: Mail marked read (404 if not found)
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/OkResponse'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/OkResponse' }
+
+  /social/mail/{mailId}:
+    delete:
+      operationId: deleteMail
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: mailId, in: path, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: 'Mail deleted (MAIL_HAS_UNCLAIMED_ATTACHMENT error if an attachment has not been claimed yet)'
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/OkResponse'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/OkResponse' }
+
+  /social/mail/send:
+    post:
+      operationId: sendMail
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [toPublicId, subject]
+              properties:
+                toPublicId: { type: string }
+                subject: { type: string }
+                body: { type: string }
+      responses:
+        '200':
+          description: 'Mail sent between players (must be mutual friends; no attachments)'
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/OkResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        required: [mailId]
+                        properties:
+                          mailId: { type: string }

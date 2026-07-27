@@ -3,7 +3,8 @@
 // Generated src/net/openapi.ts is committed; ApiClient pulls types from components['schemas'];
 // contract drift (server schema changed without regen) is caught at tsc time.
 //
-// Also processes openapi-world.yml → src/net/openapi-world.ts (SLG worldsvc three-scene DTOs).
+// Also processes openapi-world.yml → src/net/openapi-world.ts (SLG worldsvc three-scene DTOs)
+// and openapi-social.yml → src/net/openapi-social.ts (socialsvc family/friends/chat/mail DTOs).
 //
 // Run: npm run rest:gen (re-run after changing any openapi*.yml).
 import { spawnSync } from 'node:child_process';
@@ -29,6 +30,11 @@ const pipelines = [
     spec: resolve(root, '..', 'server', 'contracts', 'openapi-world.yml'),
     out: join(outDir, 'openapi-world.ts'),
     label: 'world (openapi-world.yml)',
+  },
+  {
+    spec: resolve(root, '..', 'server', 'contracts', 'openapi-social.yml'),
+    out: join(outDir, 'openapi-social.ts'),
+    label: 'social (openapi-social.yml)',
   },
 ];
 
