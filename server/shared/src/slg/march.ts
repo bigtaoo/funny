@@ -98,7 +98,23 @@ export function findMarchPath(
   // open set: min-heap, elements = [f, flatIdx]
   const heap: [number, number][] = [];
 
-  const h = (x: number, y: number) => Math.abs(x - tx) + Math.abs(y - ty);
+  // Tie-breaking (ADR-049 fix, 2026-07-27): with 4-directional movement, a plain Manhattan heuristic is
+  // exact whenever the path is unobstructed, so EVERY monotone lattice path from start to destination ties
+  // on f = g + h. Without a tie-break, a min-heap A* can end up expanding close to the full dx×dy bounding
+  // rectangle before happening to pop the destination — harmless on the old 500×500 map (max diagonal
+  // ~350×350 ≈ 122,500 cells, well under MAX_NODES), but on the 1500×1500 map (ADR-049) a routine diagonal
+  // march (e.g. dx=dy=600 ≈ 360,000-cell box) blows past MAX_NODES and findMarchPath incorrectly returns
+  // null (PATH_BLOCKED) even though a path obviously exists — confirmed empirically (design-doc-audit-2026-07
+  // econ-sim march-fatigue pass). Nudging h toward the straight line between (fx,fy) and (tx,ty) via a tiny
+  // cross-track bias breaks ties deterministically and cuts exploration back to ~O(distance); TIE_EPS is
+  // small enough that it can never make A* prefer a longer path over a shorter one (max possible cross-track
+  // value is bounded by mapW×mapH, so TIE_EPS × that product stays well under 1 full step of g-cost).
+  const TIE_EPS = 1 / (2 * mapW * mapH + 1);
+  const h = (x: number, y: number) => {
+    const base = Math.abs(x - tx) + Math.abs(y - ty);
+    const cross = Math.abs((x - fx) * (ty - fy) - (tx - fx) * (y - fy));
+    return base + cross * TIE_EPS;
+  };
   const si = fy * mapW + fx;
   g.set(si, 0);
   _slgHeapPush(heap, [h(fx, fy), si]);
