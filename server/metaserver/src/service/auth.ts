@@ -58,7 +58,7 @@ export function AuthMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase & Cons
       if (!isNew) return;
       const { cols, now } = this.deps;
       const save = await getOrCreateSave(cols, accountId, now());
-      if (Object.keys(save.cardInv ?? {}).length > 0) return;
+      if (save.cardInvCount > 0) return;
       await grantCards(cols, now, accountId, [
         CARD_DEFS['lichuang']!,
         CARD_DEFS['chenshou']!,

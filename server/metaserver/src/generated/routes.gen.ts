@@ -2160,7 +2160,7 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                       }
                     }
                   },
-                  "description": "Card instance inventory (instanceId→CardInstance); max 150 entries"
+                  "description": "Card instance inventory (instanceId→CardInstance); max 500 entries"
                 },
                 "cardMailOverflowCount": {
                   "type": "integer",
@@ -2700,7 +2700,7 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                       }
                     }
                   },
-                  "description": "Card instance inventory (instanceId→CardInstance); max 150 entries"
+                  "description": "Card instance inventory (instanceId→CardInstance); max 500 entries"
                 },
                 "cardMailOverflowCount": {
                   "type": "integer",
@@ -3273,7 +3273,7 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                       }
                     }
                   },
-                  "description": "Card instance inventory (instanceId→CardInstance); max 150 entries"
+                  "description": "Card instance inventory (instanceId→CardInstance); max 500 entries"
                 },
                 "cardMailOverflowCount": {
                   "type": "integer",
@@ -3814,7 +3814,7 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                   }
                 }
               },
-              "description": "Card instance inventory (instanceId→CardInstance); max 150 entries"
+              "description": "Card instance inventory (instanceId→CardInstance); max 500 entries"
             },
             "cardMailOverflowCount": {
               "type": "integer",
@@ -4603,7 +4603,7 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                       }
                     }
                   },
-                  "description": "Card instance inventory (instanceId→CardInstance); max 150 entries"
+                  "description": "Card instance inventory (instanceId→CardInstance); max 500 entries"
                 },
                 "cardMailOverflowCount": {
                   "type": "integer",
@@ -5219,7 +5219,7 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                       }
                     }
                   },
-                  "description": "Card instance inventory (instanceId→CardInstance); max 150 entries"
+                  "description": "Card instance inventory (instanceId→CardInstance); max 500 entries"
                 },
                 "cardMailOverflowCount": {
                   "type": "integer",
@@ -5867,7 +5867,7 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                       }
                     }
                   },
-                  "description": "Card instance inventory (instanceId→CardInstance); max 150 entries"
+                  "description": "Card instance inventory (instanceId→CardInstance); max 500 entries"
                 },
                 "cardMailOverflowCount": {
                   "type": "integer",
@@ -6452,7 +6452,7 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                       }
                     }
                   },
-                  "description": "Card instance inventory (instanceId→CardInstance); max 150 entries"
+                  "description": "Card instance inventory (instanceId→CardInstance); max 500 entries"
                 },
                 "cardMailOverflowCount": {
                   "type": "integer",
@@ -7098,7 +7098,7 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                       }
                     }
                   },
-                  "description": "Card instance inventory (instanceId→CardInstance); max 150 entries"
+                  "description": "Card instance inventory (instanceId→CardInstance); max 500 entries"
                 },
                 "cardMailOverflowCount": {
                   "type": "integer",
@@ -7704,7 +7704,7 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                       }
                     }
                   },
-                  "description": "Card instance inventory (instanceId→CardInstance); max 150 entries"
+                  "description": "Card instance inventory (instanceId→CardInstance); max 500 entries"
                 },
                 "cardMailOverflowCount": {
                   "type": "integer",
@@ -8241,7 +8241,7 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                       }
                     }
                   },
-                  "description": "Card instance inventory (instanceId→CardInstance); max 150 entries"
+                  "description": "Card instance inventory (instanceId→CardInstance); max 500 entries"
                 },
                 "cardMailOverflowCount": {
                   "type": "integer",
@@ -8775,7 +8775,7 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                       }
                     }
                   },
-                  "description": "Card instance inventory (instanceId→CardInstance); max 150 entries"
+                  "description": "Card instance inventory (instanceId→CardInstance); max 500 entries"
                 },
                 "cardMailOverflowCount": {
                   "type": "integer",
@@ -9310,7 +9310,7 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                       }
                     }
                   },
-                  "description": "Card instance inventory (instanceId→CardInstance); max 150 entries"
+                  "description": "Card instance inventory (instanceId→CardInstance); max 500 entries"
                 },
                 "cardMailOverflowCount": {
                   "type": "integer",
@@ -9849,7 +9849,7 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                       }
                     }
                   },
-                  "description": "Card instance inventory (instanceId→CardInstance); max 150 entries"
+                  "description": "Card instance inventory (instanceId→CardInstance); max 500 entries"
                 },
                 "cardMailOverflowCount": {
                   "type": "integer",
@@ -10410,7 +10410,7 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                       }
                     }
                   },
-                  "description": "Card instance inventory (instanceId→CardInstance); max 150 entries"
+                  "description": "Card instance inventory (instanceId→CardInstance); max 500 entries"
                 },
                 "cardMailOverflowCount": {
                   "type": "integer",
@@ -10988,7 +10988,7 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                       }
                     }
                   },
-                  "description": "Card instance inventory (instanceId→CardInstance); max 150 entries"
+                  "description": "Card instance inventory (instanceId→CardInstance); max 500 entries"
                 },
                 "cardMailOverflowCount": {
                   "type": "integer",
@@ -11526,7 +11526,7 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                       }
                     }
                   },
-                  "description": "Card instance inventory (instanceId→CardInstance); max 150 entries"
+                  "description": "Card instance inventory (instanceId→CardInstance); max 500 entries"
                 },
                 "cardMailOverflowCount": {
                   "type": "integer",
@@ -12096,7 +12096,7 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                       }
                     }
                   },
-                  "description": "Card instance inventory (instanceId→CardInstance); max 150 entries"
+                  "description": "Card instance inventory (instanceId→CardInstance); max 500 entries"
                 },
                 "cardMailOverflowCount": {
                   "type": "integer",
@@ -12742,7 +12742,7 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                       }
                     }
                   },
-                  "description": "Card instance inventory (instanceId→CardInstance); max 150 entries"
+                  "description": "Card instance inventory (instanceId→CardInstance); max 500 entries"
                 },
                 "cardMailOverflowCount": {
                   "type": "integer",
@@ -13284,7 +13284,7 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                       }
                     }
                   },
-                  "description": "Card instance inventory (instanceId→CardInstance); max 150 entries"
+                  "description": "Card instance inventory (instanceId→CardInstance); max 500 entries"
                 },
                 "cardMailOverflowCount": {
                   "type": "integer",
@@ -13818,7 +13818,7 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                       }
                     }
                   },
-                  "description": "Card instance inventory (instanceId→CardInstance); max 150 entries"
+                  "description": "Card instance inventory (instanceId→CardInstance); max 500 entries"
                 },
                 "cardMailOverflowCount": {
                   "type": "integer",
@@ -14406,7 +14406,7 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                       }
                     }
                   },
-                  "description": "Card instance inventory (instanceId→CardInstance); max 150 entries"
+                  "description": "Card instance inventory (instanceId→CardInstance); max 500 entries"
                 },
                 "cardMailOverflowCount": {
                   "type": "integer",
@@ -14977,7 +14977,7 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                       }
                     }
                   },
-                  "description": "Card instance inventory (instanceId→CardInstance); max 150 entries"
+                  "description": "Card instance inventory (instanceId→CardInstance); max 500 entries"
                 },
                 "cardMailOverflowCount": {
                   "type": "integer",
@@ -15511,7 +15511,7 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                       }
                     }
                   },
-                  "description": "Card instance inventory (instanceId→CardInstance); max 150 entries"
+                  "description": "Card instance inventory (instanceId→CardInstance); max 500 entries"
                 },
                 "cardMailOverflowCount": {
                   "type": "integer",
@@ -16045,7 +16045,7 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                       }
                     }
                   },
-                  "description": "Card instance inventory (instanceId→CardInstance); max 150 entries"
+                  "description": "Card instance inventory (instanceId→CardInstance); max 500 entries"
                 },
                 "cardMailOverflowCount": {
                   "type": "integer",
@@ -16951,7 +16951,7 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                       }
                     }
                   },
-                  "description": "Card instance inventory (instanceId→CardInstance); max 150 entries"
+                  "description": "Card instance inventory (instanceId→CardInstance); max 500 entries"
                 },
                 "cardMailOverflowCount": {
                   "type": "integer",
@@ -17669,7 +17669,7 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                       }
                     }
                   },
-                  "description": "Card instance inventory (instanceId→CardInstance); max 150 entries"
+                  "description": "Card instance inventory (instanceId→CardInstance); max 500 entries"
                 },
                 "cardMailOverflowCount": {
                   "type": "integer",
@@ -18234,7 +18234,7 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                       }
                     }
                   },
-                  "description": "Card instance inventory (instanceId→CardInstance); max 150 entries"
+                  "description": "Card instance inventory (instanceId→CardInstance); max 500 entries"
                 },
                 "cardMailOverflowCount": {
                   "type": "integer",
@@ -19007,7 +19007,7 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                       }
                     }
                   },
-                  "description": "Card instance inventory (instanceId→CardInstance); max 150 entries"
+                  "description": "Card instance inventory (instanceId→CardInstance); max 500 entries"
                 },
                 "cardMailOverflowCount": {
                   "type": "integer",
@@ -19541,7 +19541,7 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                       }
                     }
                   },
-                  "description": "Card instance inventory (instanceId→CardInstance); max 150 entries"
+                  "description": "Card instance inventory (instanceId→CardInstance); max 500 entries"
                 },
                 "cardMailOverflowCount": {
                   "type": "integer",
@@ -20884,7 +20884,7 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                       }
                     }
                   },
-                  "description": "Card instance inventory (instanceId→CardInstance); max 150 entries"
+                  "description": "Card instance inventory (instanceId→CardInstance); max 500 entries"
                 },
                 "cardMailOverflowCount": {
                   "type": "integer",

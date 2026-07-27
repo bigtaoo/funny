@@ -278,8 +278,8 @@ export async function mirrorWalletFrom(
 
 /**
  * Route + deliver one loot-box result set: mat_* → materials, equipment defId → equipment
- * instance, character card defId → hero card grant (grantHeroCards/save.cardInv), everything
- * else → skin. Shared by deliverOrder's loot-box branch (shop/mail/reconcile replay) and
+ * instance, character card defId → hero card grant (grantHeroCards, writes to the `cardInstances`
+ * collection), everything else → skin. Shared by deliverOrder's loot-box branch (shop/mail/reconcile replay) and
  * gachaDraw (which delivers standard-pool draws directly, without going through the
  * commercial order-replay path). Does not mark the order delivered — callers do that
  * themselves (gachaDraw does it fire-and-forget to keep it off the response critical path).
