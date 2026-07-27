@@ -45,7 +45,7 @@ import {
 } from '../economy.js';
 import { nullMetaSocialsvcClient } from '../socialsvcClient.js';
 import type { MetaHandlers } from '../generated/routes.gen.js';
-import { accountIdOf, type Constructor, type MetaBaseCtor } from './base.js';
+import { accountIdOf, clientPlatformOf, type Constructor, type MetaBaseCtor } from './base.js';
 
 const log = createLogger('meta:economy');
 
@@ -152,7 +152,7 @@ export function EconomyMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase & C
 
       const { cols, commercial, now } = this.deps;
       const orderId = randomUUID();
-      const charge = await commercial.shopCharge({ accountId, itemId, cost: def.cost, orderId });
+      const charge = await commercial.shopCharge({ accountId, itemId, cost: def.cost, orderId, clientPlatform: clientPlatformOf(req) });
       if (!charge.ok) {
         if (charge.error === 'INSUFFICIENT_FUNDS') {
           return reply.code(402).send(err(ErrorCode.INSUFFICIENT_FUNDS, 'not enough coins'));
@@ -183,7 +183,7 @@ export function EconomyMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase & C
       // getOrCreateSave doesn't depend on the draw result — kick it off alongside the commercial HTTP round-trip
       // instead of waiting for the response first (was serialized, adding a full Mongo round-trip to the critical path).
       const savePromise = getOrCreateSave(cols, accountId, now());
-      const draw = await commercial.gachaDraw({ accountId, poolId, count, orderId });
+      const draw = await commercial.gachaDraw({ accountId, poolId, count, orderId, clientPlatform: clientPlatformOf(req) });
       if (!draw.ok) {
         if (draw.error === 'INSUFFICIENT_FUNDS') {
           return reply.code(402).send(err(ErrorCode.INSUFFICIENT_FUNDS, 'not enough coins'));
@@ -250,7 +250,7 @@ export function EconomyMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase & C
 
       const { cols, commercial, now } = this.deps;
       const orderId = randomUUID();
-      const r = await commercial.redeemFate({ accountId, itemId, orderId });
+      const r = await commercial.redeemFate({ accountId, itemId, orderId, clientPlatform: clientPlatformOf(req) });
       if (!r.ok) {
         if (r.error === 'FATE_INSUFFICIENT') {
           return reply.code(402).send(err(ErrorCode.FATE_INSUFFICIENT, 'not enough fate points'));
@@ -279,30 +279,60 @@ export function EconomyMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase & C
       return ok({ save, granted: itemId });
     }
 
-    /** Buy the monthly card (GACHA_DESIGN §5). Single-slot: ALREADY_ACTIVE while a card is still running. Real IAP verification is out of scope here (treated as authorized). */
+    /**
+     * Buy the monthly card (GACHA_DESIGN §5). Single-slot: ALREADY_ACTIVE while a card is still running.
+     * Native/WeChat clients must supply the store receipt for real verification (previously this endpoint
+     * granted on a bare authenticated request — "treated as authorized" — with zero proof of payment; that
+     * gap is closed here). Web (Paddle) never calls this REST route directly: the Paddle webhook calls
+     * `commercial.monthlyCardBuy` in-process after its own signature check (see paddle.ts), so it is
+     * unaffected by this gate.
+     */
     async monthlyCardBuy(req: FastifyRequest, reply: FastifyReply) {
       if (!this.ensureCommercial(reply)) return;
       const accountId = accountIdOf(req);
+      const { platform, receipt } = (req.body ?? {}) as { platform?: string; receipt?: string };
+      if (!platform || !receipt) {
+        return reply.code(400).send(err(ErrorCode.BAD_REQUEST, 'missing platform/receipt'));
+      }
       const { cols, commercial, now } = this.deps;
+      const receiptId = `${platform}:${receipt}`;
+      const v = await commercial.verifyNonCoinReceipt({
+        accountId, platform, receipt, receiptId, expectedProduct: 'monthly_card',
+      });
+      if (!v.ok) return reply.code(400).send(err(ErrorCode.INVALID_RECEIPT, 'receipt rejected'));
       const orderId = randomUUID();
-      const r = await commercial.monthlyCardBuy({ accountId, orderId });
+      const clientPlatform = clientPlatformOf(req);
+      const r = await commercial.monthlyCardBuy({ accountId, orderId, rechargePlatform: platform, clientPlatform });
       if (!r.ok) return reply.code(400).send(err(subscriptionErrCode(r.error), r.error));
-      const w = await commercial.getWallet(accountId);
+      const w = await commercial.getWallet(accountId, clientPlatform);
       const save = w
         ? await mirrorWalletFrom(cols, accountId, w, now())
         : await getOrCreateSave(cols, accountId, now());
       return ok({ save });
     }
 
-    /** Buy the year card (GACHA_DESIGN §5): 365-day subscription, same single-slot gate + daily claim as the monthly card. */
+    /**
+     * Buy the year card (GACHA_DESIGN §5): 365-day subscription, same single-slot gate + daily claim as
+     * the monthly card. Same receipt-verification gate as monthlyCardBuy — see its doc comment.
+     */
     async yearCardBuy(req: FastifyRequest, reply: FastifyReply) {
       if (!this.ensureCommercial(reply)) return;
       const accountId = accountIdOf(req);
+      const { platform, receipt } = (req.body ?? {}) as { platform?: string; receipt?: string };
+      if (!platform || !receipt) {
+        return reply.code(400).send(err(ErrorCode.BAD_REQUEST, 'missing platform/receipt'));
+      }
       const { cols, commercial, now } = this.deps;
+      const receiptId = `${platform}:${receipt}`;
+      const v = await commercial.verifyNonCoinReceipt({
+        accountId, platform, receipt, receiptId, expectedProduct: 'year_card',
+      });
+      if (!v.ok) return reply.code(400).send(err(ErrorCode.INVALID_RECEIPT, 'receipt rejected'));
       const orderId = randomUUID();
-      const r = await commercial.yearCardBuy({ accountId, orderId });
+      const clientPlatform = clientPlatformOf(req);
+      const r = await commercial.yearCardBuy({ accountId, orderId, rechargePlatform: platform, clientPlatform });
       if (!r.ok) return reply.code(400).send(err(subscriptionErrCode(r.error), r.error));
-      const w = await commercial.getWallet(accountId);
+      const w = await commercial.getWallet(accountId, clientPlatform);
       const save = w
         ? await mirrorWalletFrom(cols, accountId, w, now())
         : await getOrCreateSave(cols, accountId, now());
@@ -315,9 +345,10 @@ export function EconomyMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase & C
       const accountId = accountIdOf(req);
       const { cols, commercial, now } = this.deps;
       const dayKey = adsDayKey(now());
-      const r = await commercial.monthlyCardClaim({ accountId, dayKey });
+      const clientPlatform = clientPlatformOf(req);
+      const r = await commercial.monthlyCardClaim({ accountId, dayKey, clientPlatform });
       if (!r.ok) return reply.code(400).send(err(ErrorCode.BAD_REQUEST, r.error));
-      const w = await commercial.getWallet(accountId);
+      const w = await commercial.getWallet(accountId, clientPlatform);
       const save = w
         ? await mirrorWalletFrom(cols, accountId, w, now())
         : await getOrCreateSave(cols, accountId, now());
@@ -337,8 +368,9 @@ export function EconomyMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase & C
       const accountId = accountIdOf(req);
       const { tierId } = req.body as { tierId: number };
       const { cols, commercial, now } = this.deps;
+      const clientPlatform = clientPlatformOf(req);
 
-      const wallet = await commercial.getWallet(accountId);
+      const wallet = await commercial.getWallet(accountId, clientPlatform);
       if (!wallet) return reply.code(400).send(err(ErrorCode.BAD_REQUEST, 'wallet unavailable'));
 
       let claimedRewards: RechargeReward[] | null = null;
@@ -373,7 +405,7 @@ export function EconomyMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase & C
       if (coinsReward && coinsReward.count > 0 && commercial.available) {
         try {
           const orderId = `recharge.claim.${accountId}.${tierId}`;
-          const g = await commercial.grant({ accountId, amount: coinsReward.count, reason: 'recharge_milestone_claim', orderId });
+          const g = await commercial.grant({ accountId, amount: coinsReward.count, reason: 'recharge_milestone_claim', orderId, clientPlatform });
           if (g.ok) finalSave = await mirrorCoins(cols, accountId, g.coinsAfter, now());
         } catch (e) {
           req.log.warn({ err: e }, 'recharge milestone claim coin grant failed (coins may be delayed)');
@@ -382,11 +414,24 @@ export function EconomyMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase & C
       return ok({ save: finalSave, rewards });
     }
 
-    /** Buy a starter pack (GACHA_DESIGN §6): starter_draw (rare+ floored 10-pull) or starter_growth (coins + 7-day card). */
+    /**
+     * Buy a starter pack (GACHA_DESIGN §6): starter_draw (¥6, rare+ floored 10-pull) or starter_growth
+     * (¥30, coins + 7-day card) — both are paid first-purchase-funnel products, not free gifts. Requires
+     * a verified store receipt (same gate as monthlyCardBuy/yearCardBuy; previously this endpoint granted
+     * both packs on `cost: 0` with no payment at all — see GACHA_DESIGN §6 implementation note).
+     */
     async starterBuy(req: FastifyRequest, reply: FastifyReply) {
       if (!this.ensureCommercial(reply)) return;
       const accountId = accountIdOf(req);
-      const { productId } = req.body as { productId: string };
+      const { productId, platform, receipt } = req.body as {
+        productId: string; platform?: string; receipt?: string;
+      };
+      if (productId !== PRODUCT_STARTER_GROWTH && productId !== 'starter_draw') {
+        return reply.code(400).send(err(ErrorCode.BAD_REQUEST, 'invalid productId'));
+      }
+      if (!platform || !receipt) {
+        return reply.code(400).send(err(ErrorCode.BAD_REQUEST, 'missing platform/receipt'));
+      }
       const { cols, commercial, now } = this.deps;
 
       // Growth pack: enforce the first-N-days account-age window (best-effort; absent account → allow).
@@ -397,8 +442,16 @@ export function EconomyMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase & C
         }
       }
 
+      const receiptId = `${platform}:${receipt}`;
+      const v = await commercial.verifyNonCoinReceipt({
+        accountId, platform, receipt, receiptId,
+        expectedProduct: productId === PRODUCT_STARTER_GROWTH ? 'starter_growth' : 'starter_draw',
+      });
+      if (!v.ok) return reply.code(400).send(err(ErrorCode.INVALID_RECEIPT, 'receipt rejected'));
+
       const orderId = randomUUID();
-      const r = await commercial.starterBuy({ accountId, productId, orderId });
+      const clientPlatform = clientPlatformOf(req);
+      const r = await commercial.starterBuy({ accountId, productId, orderId, rechargePlatform: platform, clientPlatform });
       if (!r.ok) {
         if (r.error === 'ALREADY_PURCHASED') {
           return reply.code(409).send(err(ErrorCode.ALREADY_PURCHASED, 'already purchased'));
@@ -419,7 +472,7 @@ export function EconomyMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase & C
         );
       }
       // Mirror wallet (coins + monetization: starterUsed / subscription).
-      const w = await commercial.getWallet(accountId);
+      const w = await commercial.getWallet(accountId, clientPlatform);
       const save = w
         ? await mirrorWalletFrom(cols, accountId, w, now())
         : await getOrCreateSave(cols, accountId, now());
@@ -462,7 +515,7 @@ export function EconomyMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase & C
         if (!sigOk) return reply.code(400).send(err(ErrorCode.BAD_REQUEST, 'invalid ad signature'));
       }
 
-      const credit = await commercial.adsCredit({ accountId, amount: ADS_REWARD_COINS, dayKey });
+      const credit = await commercial.adsCredit({ accountId, amount: ADS_REWARD_COINS, dayKey, clientPlatform: clientPlatformOf(req) });
       if (!credit.ok) return reply.code(400).send(err(ErrorCode.BAD_REQUEST, credit.error));
       const save = await mirrorCoins(cols, accountId, credit.coinsAfter, now());
       // B6: record event task "ad.watch" (best-effort).
@@ -480,7 +533,7 @@ export function EconomyMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase & C
       const { cols, commercial, now } = this.deps;
       // receiptId = unique platform receipt id (idempotency key). The dev stub uses platform:receipt; real channel integration uses the platform transaction id.
       const receiptId = `${platform}:${receipt}`;
-      const v = await commercial.rechargeVerify({ accountId, platform, receipt, receiptId });
+      const v = await commercial.rechargeVerify({ accountId, platform, receipt, receiptId, clientPlatform: clientPlatformOf(req) });
       if (!v.ok) {
         if (v.error === 'INVALID_RECEIPT') {
           return reply.code(400).send(err(ErrorCode.INVALID_RECEIPT, 'receipt rejected'));
@@ -500,7 +553,7 @@ export function EconomyMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase & C
         return reply.code(400).send(err(ErrorCode.BAD_REQUEST, 'code required'));
       }
       const { cols, commercial, now } = this.deps;
-      const v = await commercial.promoRedeem({ accountId, code });
+      const v = await commercial.promoRedeem({ accountId, code, clientPlatform: clientPlatformOf(req) });
       if (!v.ok) {
         const statusMap: Record<string, number> = {
           PROMO_NOT_FOUND: 404,

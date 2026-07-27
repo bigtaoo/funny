@@ -21,7 +21,7 @@ import { getOrCreateSave } from '../save.js';
 import { getCurrentSeason } from '../ladderSeason.js';
 import { mirrorCoins } from '../economy.js';
 import type { MetaHandlers } from '../generated/routes.gen.js';
-import { accountIdOf, type Constructor, type MetaBaseCtor } from './base.js';
+import { accountIdOf, clientPlatformOf, type Constructor, type MetaBaseCtor } from './base.js';
 
 /** Minimum gap between two accepted bot-result reports per account — backstops the 30s bot-fallback queue timeout against scripted spam. */
 const BOT_RESULT_MIN_GAP_MS = 15_000;
@@ -135,7 +135,7 @@ export function ProgressionMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase
       }
 
       const orderId = randomUUID();
-      const charge = await commercial.spend({ accountId, amount: BATTLEPASS_BUY_COST, reason: 'battlepass', orderId });
+      const charge = await commercial.spend({ accountId, amount: BATTLEPASS_BUY_COST, reason: 'battlepass', orderId, clientPlatform: clientPlatformOf(req) });
       if (!charge.ok) {
         if (charge.error === 'INSUFFICIENT_FUNDS') {
           return reply.code(402).send(err(ErrorCode.INSUFFICIENT_FUNDS, 'not enough coins'));

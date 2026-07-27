@@ -19,7 +19,7 @@ import { ShopScene, type ShopSceneCallbacks } from '../../src/scenes/ShopScene';
 // Same asset the shop borrows as skin_shop_c1's placeholder art (SKIN_PLACEHOLDER_ART in shop.ts).
 // Under vitest.ui.config.ts every .png import stubs to a 1×1 data-URI string, so this resolves to
 // the exact URL the scene feeds to getArtTexture() — i.e. the same cached PIXI texture object.
-import infantryArtUrl from '../../src/assets/infantry.png';
+import infantryArtUrl from '../../src/assets/units/infantry.png';
 
 const memStore = (() => {
   const m = new Map<string, string>();
@@ -236,19 +236,19 @@ describe('ShopScene — monthly card daily claim greys out once claimed today', 
   });
 });
 
-describe('ShopScene — starter packs show "Free" and disappear once claimed', () => {
+describe('ShopScene — starter packs show their real ¥ price (GACHA_DESIGN §6, not free) and disappear once claimed', () => {
   const flush = () => new Promise((r) => setTimeout(r, 0));
   const STARTER_GROWTH = t('shop.starterGrowth');
-  const FREE = t('shop.free');
 
-  it('shows the Free label and a tappable Buy button before claiming', async () => {
+  it('shows the ¥30 price (not "Free") and a tappable Buy button before claiming', async () => {
     const scene = buildShop({
       getMonetization: () => ({ subscriptionExpiry: 0, starterUsed: [] }),
       buyStarter: async () => ({ ok: true }),
     });
     await flush();
     expect(findLabelPos(scene.container, STARTER_GROWTH)).not.toBeNull();
-    expect(findLabelPos(scene.container, FREE)).not.toBeNull();
+    expect(findLabelPos(scene.container, '¥30')).not.toBeNull();
+    expect(findLabelPos(scene.container, t('shop.free'))).toBeNull();
     scene.destroy();
   });
 

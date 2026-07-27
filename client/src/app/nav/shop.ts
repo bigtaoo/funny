@@ -111,6 +111,18 @@ export function createShopNav(ctx: AppCtx): ShopNav {
     return false;
   }
 
+  /** Poll the authoritative save until `productId` appears in starterUsed (Paddle webhook lag), mirrors pollForCoinIncrease. */
+  async function pollForStarterGrant(productId: string, before: string[]): Promise<boolean> {
+    const delays = [1000, 1500, 2000, 2500, 3000];
+    for (const ms of delays) {
+      await new Promise((r) => setTimeout(r, ms));
+      try { await withTimeout(saveManager.refresh()); } catch { /* keep polling; transient / timed out */ }
+      const used = saveManager.get().monetization?.starterUsed ?? [];
+      if (used.includes(productId) && !before.includes(productId)) return true;
+    }
+    return false;
+  }
+
   /**
    * Monthly/year card purchase (GACHA_DESIGN §5). Branches on the platform store, same as doRechargeCoins:
    * - web ('paddle'): real checkout + webhook grant, async — poll the save for the expiry bump.
@@ -119,26 +131,43 @@ export function createShopNav(ctx: AppCtx): ShopNav {
    *   unchanged pre-existing behavior, out of scope here).
    * Same unbounded-payment-UI timeout policy as doRechargeCoins: only the network legs are bounded.
    */
+  /**
+   * Buy the monthly/year card (GACHA_DESIGN §5), verified by real payment on every platform:
+   * - native ('apple'/'google'): run the store purchase via the injected bridge → the receipt is sent
+   *   to `buyWithReceipt` (POST /monthly-card/buy or /year-card/buy with platform+receipt), which the
+   *   server verifies before granting (2026-07-27: closes a gap where these endpoints used to grant on
+   *   a bare authenticated request with zero proof of payment).
+   * - web ('paddle'): unchanged — checkout overlay → webhook grants server-side.
+   * - anything else (WeChat/CrazyGames/unknown, iapKind()===null): no real payment channel is wired for
+   *   these products yet (same reason the Coins tab is hidden there) — the nav layer doesn't expose
+   *   buyMonthlyCard/buyYearCard at all when iapKind() is null (see createShopNav below), so this branch
+   *   is defensive only.
+   */
   async function doBuySubscription(
     product: 'monthly_card' | 'year_card',
-    buyDirect: () => Promise<{ save: SaveData }>,
+    buyWithReceipt: (platform: string, receipt: string) => Promise<{ save: SaveData }>,
     client: ApiClient,
     onConverted: () => void,
   ): Promise<ShopActionResult> {
     const trackEvent = product === 'monthly_card' ? 'monthly_card_buy' : 'year_card_buy';
-    if (platform.iapKind() !== 'paddle') {
+    const kind = platform.iapKind();
+    if (kind === 'apple' || kind === 'google') {
       try {
-        const { save } = await buyDirect();
+        const { receipt } = await platform.nativeIapPurchase(product); // user-paced native store sheet — unbounded
+        const { save } = await withTimeout(buyWithReceipt(kind, receipt));
         saveManager.adoptServer(save);
         onConverted();
-        analytics.track(trackEvent, {});
+        analytics.track(trackEvent, { platform: kind });
         void scheduleSubscriptionReminder(save.monetization?.subscriptionExpiry ?? 0);
         return { ok: true };
       } catch (e) {
-        const key = e instanceof ApiError && e.code === 'ALREADY_ACTIVE' ? 'shop.cardActive' as const : 'shop.error' as const;
+        const key = e instanceof ApiError && e.code === 'ALREADY_ACTIVE' ? 'shop.cardActive' as const
+          : e instanceof ApiError && e.code === 'INVALID_RECEIPT' ? 'shop.error' as const
+          : e instanceof TimeoutError ? 'common.networkTimeout' as const : 'shop.error' as const;
         return { ok: false, key };
       }
     }
+    if (kind !== 'paddle') return { ok: false, key: 'shop.error' };
     const token = featureFlags?.getPaddleClientToken() ?? null;
     if (!token) { log.warn('paddle subscription: client token unavailable (server NW_PADDLE_CLIENT_TOKEN unset?)'); return { ok: false, key: 'shop.error' }; }
     try {
@@ -154,6 +183,51 @@ export function createShopNav(ctx: AppCtx): ShopNav {
       return granted ? { ok: true } : { ok: false, key: 'shop.monthlyPending' };
     } catch (e) {
       const key = e instanceof ApiError && e.code === 'ALREADY_ACTIVE' ? 'shop.cardActive' as const
+        : e instanceof TimeoutError ? 'common.networkTimeout' as const : 'shop.error' as const;
+      return { ok: false, key };
+    }
+  }
+
+  /**
+   * Buy a one-off starter pack (GACHA_DESIGN §6, ¥6/¥30 paid product), same real-payment gate as
+   * doBuySubscription (2026-07-27: previously granted for free on any platform with `cost: 0`, no
+   * purchase step at all).
+   */
+  async function doBuyStarter(
+    productId: 'starter_draw' | 'starter_growth',
+    client: ApiClient,
+    onConverted: () => void,
+  ): Promise<ShopActionResult> {
+    const kind = platform.iapKind();
+    if (kind === 'apple' || kind === 'google') {
+      try {
+        const { receipt } = await platform.nativeIapPurchase(productId); // user-paced native store sheet — unbounded
+        const { save } = await withTimeout(client.starterBuy(productId, kind, receipt));
+        saveManager.adoptServer(save);
+        onConverted();
+        analytics.track('starter_buy', { product_id: productId, platform: kind });
+        return { ok: true };
+      } catch (e) {
+        const key = e instanceof ApiError && e.code === 'ALREADY_PURCHASED' ? 'shop.alreadyOwned' as const
+          : e instanceof TimeoutError ? 'common.networkTimeout' as const : 'shop.error' as const;
+        return { ok: false, key };
+      }
+    }
+    if (kind !== 'paddle') return { ok: false, key: 'shop.error' };
+    const token = featureFlags?.getPaddleClientToken() ?? null;
+    if (!token) { log.warn('paddle starter: client token unavailable (server NW_PADDLE_CLIENT_TOKEN unset?)'); return { ok: false, key: 'shop.error' }; }
+    try {
+      const { transactionId } = await withTimeout(client.paddleCheckout(productId));
+      const { completed } = await platform.openPaddleCheckout(transactionId, token); // user-paced overlay — unbounded
+      if (!completed) return { ok: false, key: 'shop.rechargeCancelled' };
+      onConverted();
+      analytics.track('starter_buy', { product_id: productId, platform: 'paddle' });
+      // Webhook grants the pack asynchronously (starterUsed + coins/items) — poll the authoritative save.
+      const before = saveManager.get().monetization?.starterUsed ?? [];
+      const granted = await pollForStarterGrant(productId, before);
+      return granted ? { ok: true } : { ok: false, key: 'shop.monthlyPending' };
+    } catch (e) {
+      const key = e instanceof ApiError && e.code === 'ALREADY_PURCHASED' ? 'shop.alreadyOwned' as const
         : e instanceof TimeoutError ? 'common.networkTimeout' as const : 'shop.error' as const;
       return { ok: false, key };
     }
@@ -225,7 +299,13 @@ export function createShopNav(ctx: AppCtx): ShopNav {
           }
         },
       } : {}),
-      // Monetization deals (GACHA_DESIGN §5–§6): monthly card + starter packs, only when online + logged in.
+      // Monetization deals (GACHA_DESIGN §5–§6): monthly/year card + starter packs.
+      // getMonetization/claimMonthlyCard are read/claim-only (safe regardless of purchase capability) and
+      // stay available whenever logged in; the three *buy* callbacks are real-money purchases and are only
+      // exposed when the platform has an actual payment channel wired (apple/google/paddle) — same
+      // `iapKind() !== null` gate as the Coins tab above. WeChat/CrazyGames (iapKind()===null) have no
+      // payment channel for these products yet (WeChat Pay is a TODO, see WechatPlatform.iapKind()), so
+      // ShopScene hides the buy buttons there instead of leaving a button that always fails.
       ...(shopLoggedIn ? {
         getMonetization: () => {
           const m = saveManager.get().monetization;
@@ -237,8 +317,6 @@ export function createShopNav(ctx: AppCtx): ShopNav {
             firstPurchaseUsed: m?.firstPurchaseUsed,
           };
         },
-        buyMonthlyCard: () => doBuySubscription('monthly_card', () => client.monthlyCardBuy(), client, () => { converted = true; }),
-        buyYearCard: () => doBuySubscription('year_card', () => client.yearCardBuy(), client, () => { converted = true; }),
         async claimMonthlyCard() {
           try {
             const { save, claimed } = await client.monthlyCardClaim();
@@ -246,18 +324,16 @@ export function createShopNav(ctx: AppCtx): ShopNav {
             return claimed > 0 ? { ok: true as const } : { ok: false as const, key: 'shop.monthlyNothing' as const };
           } catch { return { ok: false as const, key: 'shop.error' as const }; }
         },
-        async buyStarter(productId: 'starter_draw' | 'starter_growth') {
-          try {
-            const { save } = await client.starterBuy(productId);
-            saveManager.adoptServer(save);
-            converted = true;
-            analytics.track('starter_buy', { product_id: productId });
-            return { ok: true as const };
-          } catch (e) {
-            const key = e instanceof ApiError && e.code === 'ALREADY_PURCHASED' ? 'shop.alreadyOwned' as const : 'shop.error' as const;
-            return { ok: false as const, key };
-          }
-        },
+      } : {}),
+      ...(shopLoggedIn && platform.iapKind() !== null ? {
+        buyMonthlyCard: () => doBuySubscription(
+          'monthly_card', (p, r) => client.monthlyCardBuy(p, r), client, () => { converted = true; },
+        ),
+        buyYearCard: () => doBuySubscription(
+          'year_card', (p, r) => client.yearCardBuy(p, r), client, () => { converted = true; },
+        ),
+        buyStarter: (productId: 'starter_draw' | 'starter_growth') =>
+          doBuyStarter(productId, client, () => { converted = true; }),
       } : {}),
       // Shop group peer tabs (LOBBY_IA_REDESIGN P1.5): gacha / battle pass promoted to top tabs;
       // threading shopBack lets all three pages navigate to each other and return to the same origin (lobby / level-prep).

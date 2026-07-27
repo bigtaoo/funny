@@ -1137,7 +1137,7 @@ if (path.startsWith('/admin/world/')) {
 
 **结论**：`STRONGHOLD_GARRISON_PER_LEVEL=360`、`CROSSING_GARRISON_PER_LEVEL=200`、`STRONGHOLD_LOOT_MATERIAL_PER_LEVEL=4` 三处 DRAFT 标记均已清除（前者战力实测通过，后者经济稀释早已通过只是注释未同步）；`STRONGHOLD_LOOT_PER_LEVEL=5000` 本就非 DRAFT（季内一次性、已有 sanity check）。四项收尾完成，SLG 待调参数值清单清空。
 
-> **⚠️ 基线已变（2026-07-22 兵力池统一，ADR-048）**：上文第 2 点「新手（troopCap=2000）0% 胜率」的前提已失效——统一后新手初始 `TROOP_CAP_BASE=10000`（> 险地守军 3,600），理论上单队即可挑战险地，"新手 0% 胜率"结论不再成立，本节的开放门槛核验须按 10000 基线重跑。第 3 点/Follow-up 中「satchel 可堆到 12,000」现为 **20,000**（`SATCHEL_CARRY_BASE=10000 + 10×1000`）、`SIEGE_SYNTH_ARMY_MAX_TROOPS=9,600` 的 cheap-siege 兜底相应更常触发。上述战力结论按历史记录保留，重测前勿直接引用。
+> **⚠️→✅ 已按新基线重跑（2026-07-27）**：上文第 2 点「新手（troopCap=2000）0% 胜率」的前提确认已失效——`strongholdCombatRun.ts` 的 `SCENARIO_BASE.troops` 直接 import `TROOP_CAP_BASE`，无需改代码即反映新基线，重跑结果：新手（troops=10,000）对险地（守军 3,600）和关隘（守军 1,800）**均 100% 胜率**，"几乎打不过，小额投入即可攻克"的设计意图（§3.1）在当前常量组合下完全不成立——`STRONGHOLD_GARRISON_PER_LEVEL=360`/`CROSSING_GARRISON_PER_LEVEL=200` 需要重新拍板（数量级参考：若要恢复原设计手感，两者大致都需要与 `TROOP_CAP_BASE` 同倍数放大）。第 3 点/Follow-up 中「satchel 可堆到 12,000」现为 **20,000**（`SATCHEL_CARRY_BASE=10000 + 10×1000`）、`SIEGE_SYNTH_ARMY_MAX_TROOPS=9,600` 的 cheap-siege 兜底相应更常触发（未变）。详细数据见 [`ECONOMY_VERIFICATION_LOG.md` §13-SLG-STRONGHOLD.5](ECONOMY_VERIFICATION_LOG.md) 重跑记录；已 `spawn_task` 登记为独立后续项。旧版 troopCap=2000 战力结论按历史记录保留，不要再引用为当前结论。
 
 **Follow-up（2026-07-16，独立 gap 已修复）**：第 3 点记录的路由缺口已在同日修复。`server/worldsvc/src/siegeEngine.ts` 新增 `SIEGE_SYNTH_ARMY_MAX_TROOPS`（=10 车道×16 行×60 血=9,600，`synthesizeArmy` 不发生车道碰撞的兵力上限）与 `shouldUseCheapSiege(...)`：当任一方是 `synthesizeArmy` 铺兵且兵力超过该上限（无论比率是否达到 `SIEGE_CHEAP_RATIO`），或攻守比率达到 `SIEGE_CHEAP_RATIO` 时，一律跳过真实引擎改走 `resolveSiege` 线性结算。已接入 `combatSiege/arrival.ts` 的全部三条路径——`applySiege` 普通地块围攻、`applyStrongholdSiege`、`applyCrossingSiege`——以及 `applyBaseSiege` 主城逐波围攻的每一波（防守方队伍恒为真实编队，从不铺兵，故只需查攻方）。真实卡牌编队（位置由关卡校验器约束、不会车道碰撞）不受影响，只有"无编队、纯兵力数"的旧式出征会命中该守卫。新增单测 `worldsvc/test/siege-cheap-fallback.test.ts`（纯函数，覆盖上限/比率/双向判定）+ `stronghold.e2e.test.ts`、`passage.e2e.test.ts` 各一条回归用例（12,000 兵出征验证 `attacker_win` 且 `siege.seed`/`attackerArmy` 缺失，证明走的是 cheap 路径而非拥堵的真实引擎）。
 
@@ -1190,6 +1190,16 @@ if (path.startsWith('/admin/world/')) {
 - **不做真正的地图/瓦片合并**：两个 shard 各自独立地图从未需要对账，因为合区前置为"先搬空玩家再关闭"，任何时刻只有一张地图有活跃玩家在上面。
 - **不做家族/宗门整体转移**：转区是纯个人操作；一个家族想集体换 shard，需要每个成员各自转区（家族本身跟着任一成员走，不会"卡住"，因为家族不是 shard 数据）。
 - **不做玩家侧 UI**：服务端能力+契约+admin 运维入口已完整；玩家自助转区的选择/确认场景留作后续任务（数据层 `WorldApiClient` 方法已就绪，UI 是纯前端工作，不依赖任何未决的服务端设计）。
+
+### 28.6 修复：转区/合区未清理 `stationed` 集合 + Redis occ/cover 索引（2026-07-27，design-doc-audit-2026-07）
+
+> §28.4 的 TRANSFER_BUSY 阻挡只查了 `marches`/`occupations` 两个集合，`vacatShard`（经 `purgePlayerWorld`）也只删 `tiles`/`playerWorld` 两个集合——`stationed`（2026-07-23 新增的"停留在外"字段部队，`combatMarch.ts`）从一开始就不在两条路径的视野内，本次审计逐代码核实后确认是真实 bug，非误报：
+
+- **玩家主动转区（`transferShard`）此前完全不受 stationed 阻挡**：一名有队伍停留在外（`StationedDoc`）的玩家可以直接转区离开，走后留下的 `StationedDoc` 变成**永久幽灵**——没有 `playerWorld` 文档认领它，玩家自己也再摸不到这个已离开的 shard 去调用 `recallStationed`；该队伍站的格子按"一格一队"规则被永久占用（`combatMarch.ts` 的 `TILE_OCCUPIED` 检查），其他任何人都不能再在那格停留部队；若该队伍是 `garrison` 模式，Redis `cover` 9 格反向索引里的驻防区也一并变成永久幽灵，理论上会一直"拦截"路过的行军。
+- **合区（`mergeShard`）同理**：强制清场时只 `deleteMany` 了 `marches`/`occupations`，`stationed` 文档连同它们的 Redis `occ`/`cover` 条目完全没清——虽然源 shard 随后 `closed`（不再路由新加入，游戏性影响较小），但幽灵文档会一直堆在数据库里，且如果同一 worldId 字符串未来被复用（当前代码未见复用保护），幽灵索引可能对新 shard 产生数据污染。
+- **修复**：`server/worldsvc/src/transfer.ts`——① `transferShard` 的忙碌检查从"march+occupation"扩到"march+occupation+stationed"（`Promise.all` 并发查询，三者任一存在即 `TRANSFER_BUSY`，与既有 march/occupation 阻挡语义一致：玩家必须先 `recallStationed` 再转区）；② `mergeShard` 的强制清场块新增：先查出该玩家在源 shard 的全部 `StationedDoc`，`deleteMany` 前逐条调用 `core.clearOccupancy`（清 Redis occ 条目）+ `mode==='garrison'` 时额外调用 `core.removeCover`（清 9 格反向索引），再删 Mongo 文档——顺序与 `recallStationed`（正常玩家自己触发的清理路径）保持一致，只是这里是批量强制版本。
+- **回归测试**：`server/worldsvc/test/transfer.e2e.test.ts` 新增两例——「stationed 队伍阻挡转区，recall（删除文档）后放行」+「合区强制清理 stationed，源 shard 里不留幽灵文档」；两例改动前跑会失败（转区不受阻挡 / 合区后文档仍在），改动后随全量 20 例（含原 18 例）绿。`@nw/shared` 633 例 + worldsvc 339 例全量无回归。
+- **未覆盖**：本次测试环境 `redis: null`（沿用既有 e2e 约定，`clearOccupancy`/`removeCover` 对 `redis: null` 静默降级不报错），故只在 Mongo 层面断言了 `StationedDoc` 确实被清空；Redis occ/cover 条目的清理调用路径与 `recallStationed`（已在生产验证过的正常清理路径）完全一致，逻辑上可信，但没有专门起一个真实 Redis 的 e2e 去断言 hash 条目消失——如果未来要做，需要一个带 `ioredis-mock` 或真实 Redis 容器的测试环境。
 
 ## 29. NPC 地块基地血量随等级缩放（2026-07-17，方案 2，用户拍板）
 
@@ -1388,3 +1398,17 @@ L1 从需 660 兵降到 300（最小占地 500 现稳赢，直击病灶）；L2/
 **修复**：`isBaseAnchor` 新增一条快速通道——命中的地块若 `tile.mine` 为真，直接用 `ctx.me.mainBaseTile`（服务端权威、随 `getMe`/`joinWorld` 一起下发，不依赖邻格缓存是否刚好新鲜）核对坐标是否吻合；吻合就直接判定为锚点，不再逐邻格重新验证。只对「我自己的基地」生效——其他玩家/NPC 的基地没有这份权威坐标可用，仍走原来的四邻格一致性检查，故意保留的"数据不一致就不画"语义没有被放宽。
 
 **验证**：`client tsc --noEmit -p tsconfig.test.json` 全绿。真实入图需要完整登录 + worldsvc 全栈，本会话起 `dev-up.ps1` 时撞上本机另一个遗留问题（各服务 `node --watch` 进程卡在启动阶段、既不监听端口也不写日志，与本次改动无关，已清理掉卡住的进程）——转而用项目里现成的"离线直构 `WorldMapScene`"调试手法（临时在 `entries/web.ts` 加 `?wmdebug` 分支，套一个立即 resolve 的假 `WorldApiClient`，绕开后端）复现了根因并验证了修复：① 正常渲染出「我的基地」后，手动从 `tileCache` 里删掉锚点的一个邻格（模拟乱序/部分刷新留下的瞬时缺口），修复前的逻辑会让 `isBaseAnchor` 返回 false 从而拆除精灵，修复后精灵原样保留（`citySprites` 仍含 `50:50`，`isBaseAnchor` 仍为 true）；② 用同样手法在假地块里放一个敌方基地，人为弄脏它的一个邻格，确认 `isBaseAnchor` 依旧正确判定为 false、精灵不画——快速通道没有波及非本人基地的既有校验语义。调试分支验证完已从 `entries/web.ts` 撤回，代码库里只留下 `pool.ts` 的正式改动。
+
+## 41. 险地/关隘 NPC 守军常量按 TROOP_CAP_BASE=10000 新基线重新拍板（2026-07-27，修复 §27 因 ADR-048 产生的门槛失效）
+
+**背景**：§27（2026-07-16）用真实引擎核验通过的 `STRONGHOLD_GARRISON_PER_LEVEL=360`/`CROSSING_GARRISON_PER_LEVEL=200` 是围绕"新手 `troopCap=2000`"校准的。2026-07-22 ADR-048（兵力池统一）把 `TROOP_CAP_BASE` 从 2000 一次性提到 10000，但这两个守军常量没有同步调整。2026-07-27 重跑 `strongholdCombatRun.ts`（该脚本 import 常量，无需改代码即反映新基线）确认：新手（troops=10000）对险地（守军仍是旧值 3600）和关隘（守军仍是旧值 1800）都已 100% 胜率——"几乎打不过，小额投入即可攻克"的设计意图完全失效，详见 `ECONOMY_VERIFICATION_LOG.md` §13-SLG-STRONGHOLD.5。
+
+**一次绕远路（记录下来避免重复踩）**：第一轮重新拍板直接用真实 `@nw/engine` 攻城引擎（`strongholdCombat.ts` 的 `simulateCapture`）扫描阈值，试图找一个能在"新手必败、投入 2-3 级必胜"之间稳定的守军值。扫描发现这个安全窗口极窄（仅约 100-175 兵），因为 `synthesizeArmy` 的棋盘容量上限（10 车道 × 16 行 × 60 血 ≈ 9,600 兵，见 `strongholdCombat.ts`/`siegeEngine.ts` 注释）现在几乎正好卡在新的 `TROOP_CAP_BASE=10000` 上——任何在这附近的攻防双方都会撞上引擎"棋盘拥堵导致非单调胜负"的老毛病。
+
+排查后发现这条弯路本可以完全避免：2026-07-16 当天**晚些时候**的另一个提交（`13a7af86`，同一天下午）其实已经把 `SIEGE_CHEAP_RATIO`/`shouldUseCheapSiege` 的棋盘溢出保护接入了 `combatSiege/arrival.ts`——只要防守方（或攻击方）的合成兵力超过棋盘容量上限，生产环境就会**直接跳过真实引擎**，改用便宜的线性公式 `resolveSiege`（纯粹比较 `攻方兵力 > 守方兵力`）。但独立于 worldsvc 之外的 `server/tools/econ-sim/src/strongholdCombat.ts`（用于校准这两个常量的核验脚本）从未同步这个分流逻辑，所以第一轮拍板用的模拟工具其实测的是生产环境**根本不会走到**的一条路径，得出的"极窄安全窗口"结论对生产无意义。
+
+**修复**：①在 `strongholdCombat.ts` 里镜像 `shouldUseCheapSiege`/`SIEGE_SYNTH_ARMY_MAX_TROOPS`（与 `siegeEngine.ts` 保持同步，不能 import，因为 econ-sim 不能依赖 worldsvc 服务包），用真实分流逻辑重新扫描；②确认只要守军值本身就超过棋盘容量（~9,600），生产环境**永远**走线性公式，校准退化为一个舒适、以千为单位留有余量的线性不等式问题，不再需要围绕引擎棋盘拥堵调参；③重新拍板：`STRONGHOLD_GARRISON_PER_LEVEL: 360→1180`（守军 11,800 @ level 10，新手必败，练兵场 +2 级必胜）、`CROSSING_GARRISON_PER_LEVEL: 200→1150`（守军 10,350 @ level 9，新手必败，练兵场 +1 级必胜，如设计意图"比险地更早开放"），且保持"关隘常量 < 险地常量"（避免同等级比较时反直觉地反转，`worldsvc/test/passage.e2e.test.ts` 对此有断言）。
+
+**验证**：`strongholdCombatRun.ts` 重跑两个常量均 PASS；`server/shared/test/siege.test.ts`（39）、`server/tools/econ-sim` 的 `strongholdCombat.test.ts`（11，已改写为验证线性分流不变量而非真实引擎胜率）、`server/worldsvc` 全量 e2e（44 文件/338 用例，含 `stronghold.e2e.test.ts`/`passage.e2e.test.ts`/`siege-cheap-fallback.test.ts`）全绿；`tsc --noEmit` 在 `@nw/shared`/`@nw/econ-sim`/`@nw/worldsvc` 三包均通过。`worldsvc` 两组 e2e 测试里假设"6,000 兵吊打旧守军"的用例已按新守军（11,800/10,350）提到 15,000 兵，"12,000 兵满行囊撞棋盘上限"用例的过时注释（"12,000 是满级练兵场+行囊上限"）一并订正为当前真实上限 20,000（ADR-048 同一次改动带来的）。
+
+**遗留跟进（非本轮范围）**：①`STRONGHOLD_GARRISON_PER_LEVEL`/`CROSSING_GARRISON_PER_LEVEL` 现在的"安全余量"是几百到上千兵的线性比较，不再是引擎棋盘拥堵那种脆弱窗口，但尚未针对装备/学院加成（文档记载最高 +20%）做过鲁棒性复核——如果有人把这个门槛当作"精确卡点"而非"大致正确、后续可微调"来依赖，建议先补测；②`shouldUseCheapSiege` 本身已经解决了"棋盘容量 vs 引擎"的根因问题，但这次踩坑说明**校准工具（`strongholdCombat.ts`）和生产分流逻辑（`siegeEngine.ts`）存在重复实现、容易脱节**——两处未来任何一处改动都需要人工同步另一处，值得考虑做成共享模块或加一个"两者行为一致"的跨包契约测试。

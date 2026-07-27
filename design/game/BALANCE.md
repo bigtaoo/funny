@@ -118,7 +118,7 @@
 | Harpy ×1 | 7 | 兵 | 段位解锁 king（飞行，高费即护栏） |
 | Medic ×1 | 6 | 兵 | 段位解锁 king（PvP override 加小攻击，见 §5.2 注） |
 
-> **PvP = 构筑卡组（PVP_LOADOUT_DESIGN）**，非全池随机。`CARD_DEFINITIONS` 共 24 条：核心 12（infantry/shieldbearer/archer/max/lena/mara 各 ×2）+ 兵营/箭塔 ×2 + haste/meteor + 6 个段位解锁单位各 1 条。基础库 10 种恒可用（6 英雄 + 兵营 + 箭塔 + haste + meteor）；6 个解锁单位按赛季峰值 ELO 开放。卡组 = 10 张、每种 ≤1、≥1 建筑 + ≥1 法术。
+> **PvP = 构筑卡组（PVP_LOADOUT_DESIGN）**，非全池随机。`CARD_DEFINITIONS` 共 24 条：核心 12（infantry/shieldbearer/archer/max/lena/mara 各 ×2）+ 兵营/箭塔 ×2 + haste/meteor + 6 个段位解锁单位各 1 条。基础库 10 种恒可用（6 英雄 + 兵营 + 箭塔 + haste + meteor）；6 个解锁单位按**当前 ELO**（非赛季峰值，PVP_LOADOUT_DESIGN §3 拍板 + `pvpDeck.ts` 注释确认）开放，掉分即掉锁。卡组 = 10 张、每种 ≤1、≥1 建筑 + ≥1 法术。
 
 ## 8. 单位养成（S12-E 校准，2026-06-22）
 

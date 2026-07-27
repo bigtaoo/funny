@@ -33,7 +33,7 @@
 | SLG8 | **统一产出复用既有 PvE 材料**（scrap/lead/binding 等）当 SLG 高阶养成材料，不另造养成货币 | 「产出统一」最省的兑现；S3 已有材料体系，SLG 直接接 |
 | SLG9 | **交易全走拍卖行**（单一机制）；个人交易 = 挂单指定受拍人；高税 + 每日限额 + 部分资源禁挂 反 RMT | 用户拍板；单机制简单、可审计；指定受拍人覆盖「点对点交易」需求；税/限额压住搬砖 |
 | SLG10 | **第七进程 `worldsvc`（有状态）**；状态权威 Mongo + 热态/空间/行军调度 Redis；资源**读时惰性结算** | 大地图态有状态、需空间查询与定时行军；惰性结算省海量 tick 算力 |
-| SLG11 | **复算只算关键战斗**（占地/丢地/家族战/打真人驻军）；非关键信任客户端 + 廉价结算（抽检） | 用户拍板；高价值战斗必防伪造（复用 `judgeRunner`），低价值省算力 |
+| SLG11 | **只有关键战斗（占地/丢地/家族战/打真人驻军）走服务器权威结算**（`runSiegeBattle`，**非** `judgeRunner` 复算，§16/ADR-007 已改）；非关键信任客户端 + 廉价结算（抽检） | 用户拍板；高价值战斗必防伪造（服务器进程内直接算，无需事后复算），低价值省算力 |
 | SLG12 | **资源（DRAFT）**：基础三种 粮食/铁/木材 + 高阶稀有养成材料（复用 scrap/lead/binding）；产率按格子类型与等级分布 | 物产差异驱动交易意愿；可后期换文具主题皮 |
 | SLG13 | **家族 = 升级 social 基建**：家族成员/频道/公告/互助；家族频道 = Redis pub/sub（兑现 SOC6-4） | 复用好友/邮件/presence 基建，频道阶段正好引 Redis |
 
@@ -72,9 +72,9 @@
 | 兵力 / 驻军 / 行军 | 外观皮肤 / 收集 |
 | 赛季资源存量（粮/铁/木） | 天梯段位 / ELO |
 | 繁荣度（赛季内有效）/ 宗门编制 | 账号档案 / 好友关系 |
-| 国家/宗门/家族编制（每季重组） | coin（跨季留存） |
+| 国家/宗门编制（每季重组）；家族的 SLG 归属镜像（`sectId`/繁荣度/活跃度） | coin（跨季留存）/ 家族本体（成员/频道，ADR-021 起持久，见 §8.4） |
 
-> 赛季周期 **2 个月**。重置是变现发动机：战略起跑归零驱动重新肝/充，养成/外观/coin 跨季留存保护投入。
+> 赛季周期 **2 个月**。重置是变现发动机：战略起跑归零驱动重新肝/充，养成/外观/coin 跨季留存保护投入。**家族自 ADR-021（socialsvc 独立管理）起为跨赛季持久实体，与国家/宗门这两个赛季内概念不同——见 §8.4。**
 >
 > **与天梯赛季的边界/对照** → [`SEASON_OVERVIEW.md`](SEASON_OVERVIEW.md)：SLG 大区赛季（2 月）与天梯赛季（6 周）是两套独立系统，两条时钟互不触发；SLG 重置永不动天梯 ELO/段位（上表「保天梯段位/ELO」），写入域隔离见 OVERVIEW §3。
 
@@ -219,10 +219,11 @@
 >
 > **命名说明（2026-07-22 审计）**：本节中文名从"行军士气"改为"行军疲劳"，避免与 [§6.4 卡牌"士气加成"](CHARACTER_CARDS_DESIGN.md)（`(currentTroops/troopCap)×0.2` 的出战 ATK 加成）撞名——两者是完全不同的机制（一个是距离惩罚，一个是满编加成），代码内部字段/函数名（`morale`/`MARCH_MORALE_MAX`/`moraleCombatMultiplier`）不受影响，仅中文叙述改名。
 
-- **规则**：每支行军（`MarchDoc`）出征时获得满额疲劳值 `MARCH_MORALE_MAX=100`，每移动一格消耗 1 点，抵达时的剩余疲劳值 = `100 - 路径格数`（下限 0）。**绑定行军实例，不绑定队伍**——每次出征都从满额重新开始，不与该队伍上一次出征的结果延续。
+- **规则**：每支行军（`MarchDoc`）出征时获得满额疲劳值 `MARCH_MORALE_MAX=100`（归一化上限，非格数），每移动一格消耗 `MARCH_MORALE_MAX / MARCH_MORALE_FLOOR_TILES` 点，抵达时的剩余疲劳值 = `100 - 路径格数 × (100/MARCH_MORALE_FLOOR_TILES)`（下限 0）。**绑定行军实例，不绑定队伍**——每次出征都从满额重新开始，不与该队伍上一次出征的结果延续。
+- **ADR-053 修订（2026-07-27）：疲劳耗尽预算改为比率制**——`MARCH_MORALE_FLOOR_TILES = MARCH_MORALE_FLOOR_RADIUS_RATIO(0.35) × 地图半对角线`，不再是原 ADR-047 的绝对格数 `100`。起因：`100 格`是针对旧 500×500 地图（半对角线≈354 格）拍的数，ADR-049 把地图放大到 1500×1500（半对角线≈1061 格）后从未联动重算，design-doc-audit-2026-07 用真实 A*+省份几何核验发现同省内最远单腿距离（中位 534 格）已 100% 触底，梯度对绝大多数非"家门口"场景名存实亡（详见 [`ECONOMY_VERIFICATION_LOG.md` §13-SLG-MARCH](ECONOMY_VERIFICATION_LOG.md)）。改为比率制后当前地图（1500×1500）的 floor 约 371 格，且未来 `SLG_MAP_W/H` 再变化时自动跟着地图尺寸重新缩放，不用每次手动重算——判据复核见 [`SLG_ECONOMY_CHECK.md` §5.5](SLG_ECONOMY_CHECK.md)。
 - **战力惩罚**：抵达后的战斗力按剩余疲劳值线性缩放，疲劳值 100 → 100% 战力，疲劳值 0 → `MARCH_MORALE_COMBAT_FLOOR=70%` 战力（`moraleCombatMultiplier`，`server/shared/src/slg/march.ts`）；覆盖所有需要战斗的行军类型（`attack`/`occupy`/`sweep`，含驱逐 `applyOccupationExpulsion`），`reinforce`/`return` 不涉及战斗，疲劳值记录但不生效。
 - **架构约束（本期不做的部分）**：行军在服务端不是逐格 tick 的实时模拟——出征时一次性算好完整 A\* 路径并只调度一个到达事件（`combatMarch.ts` `startMarch`/`processDueArrivals`），中途没有"停留"状态。因此**「原地不动每 30 秒回复 1 点」这条回复机制在当前架构下没有天然的触发点**（每次出征本就从满额开始），本期不实现；疲劳值消耗按路径长度一次性算好存在 `MarchDoc.morale`，供到达结算读取。
-- **实现**：`marchMoraleFromPath(path)` 在出征时算好存入 `MarchDoc.morale`（`server/shared/src/slg/march.ts` + `combatMarch.ts`）；到达结算时 `moraleCombatMultiplier(morale)` 缩放攻方有效兵力/军队 HP（`combatSiege/arrival.ts` 的 `applySiege`/`applyStrongholdSiege`/`applyCrossingSiege`/`applySweep`、`combatSiege/occupation.ts` 的 `applyOccupy`/`applyOccupationExpulsion`），廉价公式（`resolveSiege`）与真实引擎战斗（`runSiegeBattle`）两条结算路径都吃这个缩放，保持一致。未暴露到 `MarchView`/openapi 契约（客户端本期不展示疲劳值）。
+- **实现**：`marchMoraleFromPath(path)` 在出征时算好存入 `MarchDoc.morale`（`server/shared/src/slg/march.ts` + `combatMarch.ts`），内部按 `MARCH_MORALE_FLOOR_TILES`（`MARCH_MORALE_FLOOR_RADIUS_RATIO × 地图半对角线`，与 `province.ts` 的 `PROVINCE_*_RADIUS_RATIO` 同一套比率制约定）折算每格消耗；到达结算时 `moraleCombatMultiplier(morale)` 缩放攻方有效兵力/军队 HP（`combatSiege/arrival.ts` 的 `applySiege`/`applyStrongholdSiege`/`applyCrossingSiege`/`applySweep`、`combatSiege/occupation.ts` 的 `applyOccupy`/`applyOccupationExpulsion`），廉价公式（`resolveSiege`）与真实引擎战斗（`runSiegeBattle`）两条结算路径都吃这个缩放，保持一致。未暴露到 `MarchView`/openapi 契约（客户端本期不展示疲劳值）。
 
 ### 4.5 实时野战遭遇系统（停留/驻扎 + 建筑层，ADR-051，2026-07-24）
 
@@ -261,19 +262,20 @@
 >
 > **血量/受伤下行 + UI（任务 #8 已实现）**：`WorldTileView.hp/maxHp`（base/territory/stronghold）与 `PlayerWorldView.teamState`（+ 补齐 `cardState/baseTroopStock`）经 `getMe/getMap` 下行（主动查询，无实时推送）。客户端：`WorldMapScene` 地图建筑血条（**仅受损时显示**，绿→琥珀→红）+ 攻击弹窗 `world.buildingHp` 数值；`TeamsScene` 队伍受伤倒计时徽标（复用 `roster.injured`）。**主城（3×3 base）修正（2026-07-22）**：`tileGraphics.drawHpBar` 画在锚点格所在 tile pool 层，会被覆盖锚点格的 3×3 城市精灵完全挡住 → 受损主城看不到血条。故在 `WorldMapRenderer/city.ts refreshCityLayer` 的城市精灵容器内额外重绘一条血条（`hpbar` 子 `Graphics`，悬于建筑轮廓上方，同样仅 `hp<maxHp` 时显示），覆盖自己/敌方/盟友主城。**`baseTroopStock` 已于 2026-07-22 并入 `playerWorld.troops`，见 §4.3 训练→分兵闭环说明，此处按当时落地原样保留历史记录。**
 
-### 5.1 围攻 = 确定性引擎打防守 config + 录像（SLG5）
+### 5.1 围攻 = 双方预布兵确定性自动战斗（SLG5，**已按 §16/ADR-007 改**）
+
+> 下方流程图为 §16（2026-06-20）现行模型；旧版「真人手操 / 录像上传复算」双形态已被 §16/ADR-007 整体推翻，仅保留在 §12 S8-3 作历史记录。
 
 ```
 进攻发起 → 行军 → 到达目标格 → 触发围攻战
   目标 = 中立/NPC 格      → 扫荡（PvE 形态，系统默认防守，廉价结算/信任客户端，可抽检）
   目标 = 真人领地/驻军格  → 围攻（关键战斗）
-       ├─ 真人手操：进攻方实时打这份确定性防守关（保留车道战术乐趣）
-       └─ 自动扫荡：碾压级目标用 AISystem 当进攻方全自动结算
-  产出：胜负 + 一份 Replay（seed + 进攻方输入流 + 防守 config）
+       └─ 服务器进程内跑确定性引擎：`seed + 攻守双方预布阵`喂给 `runSiegeBattle`，无手操、无进攻方输入流，一次算出唯一权威结果即时落地
+  产出：胜负 + 双方存活兵力（`seed+双方布阵`可供客户端本地重播观战，回放能力见 §16.8 未尽事项）
 ```
 
-- 围攻战本体 = 一个 `GameMode`（如 `'siege'`），防守 config 替代 `LevelDefinition`，由 `WaveDirector`/`AISystem` 驱动防守方。
-- 复用 `ReplayInputSource` / `RecordingInputSource`：围攻 = `seed + 进攻方输入流 + 防守 config`，完全可序列化、可回放、可复算。
+- 围攻战本体 = 一个 `GameMode`（如 `'siege'`），防守 config 替代 `LevelDefinition`，由 `WaveDirector`/`AISystem` 驱动防守方；进攻方阵型同样预先给定（`synthesizeArmy` 兜底或真实布阵），无实时输入。
+- `runSiegeBattle` 内部仍复用 `ReplayInputSource`（喂空帧）驱动引擎跑到终局，但这只是引擎复用手段——对外不存在「进攻方输入流」这个产出，`seed + 双方布阵`本身就唯一确定结果，无需复算。
 
 ### 5.2 战力注入引擎
 
@@ -284,11 +286,11 @@
   - **军队规模**：进攻方携带的兵力 = 这一战的「预算」（携带越多，能出的兵越多）。
 - `buildSiegeBlueprints` 与 `buildCampaignBlueprints` 同一注入口；**天梯 `buildPvpBlueprints` 不接养成（SLG7 红线）**。
 
-### 5.3 复算（SLG11）
+### 5.3 权威结算分级（SLG11，**已按 §16/ADR-007 改**）
 
-- **关键战斗（必复算 + 留录像）**：占领/丢失真人领地、家族战、攻打有真人驻军的格子。`worldsvc` 调 `judgeRunner` 复算结果再落地（领地易主、掠夺入账）。
+- **关键战斗（服务器权威、无手操可跳过）**：占领/丢失真人领地、家族战、攻打有真人驻军的格子。`worldsvc` 进程内直接跑 `runSiegeBattle`（seed+双方预布阵）算出结果并即时落地（领地易主、掠夺入账）——这就是唯一一次计算，不存在「客户端先算、服务器再复算校验」的二段式流程，`judgeRunner` 不参与 SLG。
 - **非关键（信任客户端 / 廉价数值结算，可抽检）**：扫荡自己领地、清中立 NPC、碾压级目标自动战。
-- 阈值（何为「碾压级」可跳过手操/可信任）后期调参。
+- 阈值（何为「碾压级」可走廉价结算）后期调参。
 
 ### 5.4 占领行军 = PvE 战斗 + 占领倒计时（2026-07-13，`feat/occupy-march`）
 
@@ -403,7 +405,7 @@
 ### 8.4 技术基建
 
 - **presence 已按「不假设单实例」设计**，横扩有底子（见 `SOCIAL_DESIGN`）。
-- 家族/宗门/国家编制每赛季重置，但 coin/养成/好友关系跨季保留。
+- **宗门/国家编制每赛季重置**；**家族本体跨季持久**（ADR-021 起，家族是 socialsvc 管理的全局实体，无 worldId）——赛季重置只清家族的 SLG 归属镜像（`sectId`/`territoryCount`/繁荣度/活跃度），家族成员关系、频道历史不受影响。coin/养成/好友关系同样跨季保留。
 
 ---
 
@@ -411,12 +413,12 @@
 
 ### 9.1 第七进程 `worldsvc`（有状态世界服）
 
-- 职责：地图状态机（格子归属/等级/防守 config/资源/驻军）+ 行军调度 + 围攻触发 + 资源惰性结算 + 关键战斗复算编排（调 `judgeRunner`）。
+- 职责：地图状态机（格子归属/等级/防守 config/资源/驻军）+ 行军调度 + 围攻触发 + 资源惰性结算 + 关键战斗权威结算（`runSiegeBattle`，见 §16）。
 - **状态权威在 Mongo**（专属库或 meta 库新集合，DRAFT）；**热态/空间索引/行军定时在 Redis**：
   - 行军 = Redis sorted-set 按到达时刻调度（到点触发围攻/占领/增援）。
   - 资源产出 = 读时按时间戳 delta + 仓储上限惰性结算（**不每格 active tick**，省海量算力）。
   - 空间查询（某区域格子/邻接/家族连地）走 Redis 缓存 + Mongo 地理/网格索引。
-- **围攻战不经 gameserver（D0）**：防守方恒为离线脚本 config，围攻 = 单人打脚本 = 本地 PvE 跑法（`RecordingInputSource` 录制）→ 上传录像 → `worldsvc` 对关键战斗用 `judgeRunner` 复算落地。无锁步、无第二真人，**gameserver 不参与 SLG**。自动扫荡同理（worldsvc headless 跑或信任客户端 + 抽检）。
+- **围攻战不经 gameserver（D0，已按 §16/ADR-007 改）**：防守方恒为离线 config，`worldsvc` 进程内直接跑 `runSiegeBattle`（seed+攻守双方预布阵）headless 算出权威结果即时落地——无手操、无客户端录像上传、无 `judgeRunner` 复算这一步。无锁步、无第二真人，**gameserver 不参与 SLG**。自动扫荡同理（worldsvc headless 跑或信任客户端 + 抽检）。
 
 ### 9.2 与现有进程咬合
 
@@ -425,7 +427,7 @@
 | **meta** | 账号/养成/家族持久数据权威；SLG 玩法 REST 端点（地图查询/行军/挂单/家族操作经 meta 或 worldsvc，分工 DRAFT） |
 | **gateway** | 控制面 WS；SLG 实时推送（行军到达/被攻击告警/家族频道）；**横扩 + Redis account→实例路由** |
 | **matchsvc** | 不参与 SLG（SLG 不走 1v1 配对） |
-| **gameserver** | **不参与 SLG（D0）**——围攻=单人打脚本，本地 PvE 跑法 + 录像上传，无锁步 |
+| **gameserver** | **不参与 SLG（D0）**——围攻由 worldsvc 进程内直接跑权威结算，无锁步、无第二真人 |
 | **commercial** | SLG 全部变现（加速/资源包/科技直购/战令）走其钱包/充值 |
 | **admin** | SLG 运维（异常交易审计/补偿/赛季运营/监控），复用 OPS 基建 |
 | **worldsvc（新）** | 世界状态机 + 行军 + 围攻触发 + 权威围攻结算编排 |
@@ -447,7 +449,7 @@
 | `ReplayInputSource` / `RecordingInputSource` | 围攻 = seed+输入流+防守 config，原样复用 | 零 |
 | `AISystem` | 当防守方 AI / 自动进攻方 | 小（复用 + 调参） |
 | `buildXxxBlueprints` | 加第三套 `buildSiegeBlueprints(养成)`；天梯不动 | 小 |
-| `judgeRunner` / PVE_INTEGRITY 复算 | 关键战斗复算 + 养成权威 | 中（扩展到 SLG） |
+| `runSiegeBattle`（`@nw/engine`）/ PVE_INTEGRITY 养成权威 | 关键战斗权威结算（**非** `judgeRunner` 复算，见 §16/ADR-007）+ 养成数值权威 | 中（扩展到 SLG） |
 | level-editor / `levelSchema` | 防守 config 复用校验 | 小 |
 | social（好友/邮件/presence） | 家族升级版 + 群频道（Redis） | 中（群频道新模型） |
 | commercial | SLG 全部变现 | 小（加商品） |
@@ -558,7 +560,7 @@
   - **(A) meta 代理 worldsvc**（保拓扑：客户端只打 meta，meta 经内部 HTTP 转 worldsvc）——一致但 meta 多一跳、地图轮询压 meta。
   - **(B) worldsvc 自暴露公网 REST**（反代加 `/world/*`、`/family/*`、`/auction/*`）——破"只触达三面"，但地图高频读直连、meta 不背锅。
   - **倾向 (B)**：SLG 地图读频率高，硬塞 meta 不划算；worldsvc 成第四个公网面（REST），鉴权复用 meta JWT（worldsvc 验签即可，不需连 accounts）。**待你拍。**
-- **M12 边界**：worldsvc 为「关键战斗复算」import 确定性引擎 = 既有「裁判」例外的延伸（允许）。**⚠️ P2** 见 §14.9（防守 config 校验是否也走引擎侧 `levelSchema`）。
+- **M12 边界**：worldsvc 为「关键战斗权威结算」（`runSiegeBattle`，非 `judgeRunner` 复算，见 §16/ADR-007）import 确定性引擎 = 既有「裁判」例外的延伸（允许）。**⚠️ P2** 见 §14.9（防守 config 校验是否也走引擎侧 `levelSchema`）。
 
 ### 14.2 坐标与分服
 
@@ -578,8 +580,7 @@
 | `playerWorld` | `worldId:accountId` | `troops, troopCap, resources{ink,paper,graphite,metal,sticker}, yieldRate{...}, lastTickAt, mainBaseTile, defenseRef, materials镜像?, familyId?, rev` | `{worldId,accountId}`、`{familyId}` |
 | `marches` | `marchId` | `worldId, ownerId, fromTile, toTile, kind(attack/reinforce/occupy/sweep/return/move), troops, departAt, arriveAt, status, rev` | `{worldId,ownerId}`、`{arriveAt}` |
 | `stationed` | `tileId` | `worldId, ownerId, tile, x, y, teamId, army, troops, sinceAt`（队伍就地驻留 idle，§38） | `{worldId,ownerId}`、`{worldId,ownerId,teamId}`(unique) |
-| `families` | `familyId` | `worldId, name, tag, leaderId, memberCount, territoryCount, rev` | `{worldId,tag}` 唯一、`{worldId}` |
-| `familyMembers` | `worldId:accountId` | `familyId, role(leader/elder/member), joinedAt` | `{familyId}` |
+| ~~`families`/`familyMembers`~~ | — | **已删除（ADR-021，2026-07-01 起）**：家族数据不再存于 worldsvc 库，家族是 socialsvc 管理的全局持久实体（无 worldId）。worldsvc 仅在 `playerWorld.familyId` 保留只读镜像 + 权威写 `sectId`（经 `POST /internal/family/:familyId/sect` 回写 socialsvc），见 §8.4 / [`SOCIAL_SVC_DESIGN.md`](SOCIAL_SVC_DESIGN.md) §14/O2。 | — |
 | `auctions`（在独立 `auctionsvc` 库，非 world 库） | `auctionId` | `sellerId, itemType, item, qty, price, currency, designatedBuyerId?, expireAt, status(open/sold/expired/cancelled), buyerId?, rev`（**不含 `worldId`**——拍卖与 SLG shard 无关） | `{itemType,status}`、`{sellerId}`、`{designatedBuyerId}`；过期由扫描器处理（**非 TTL**）。机制权威见 [`AUCTION_DESIGN.md`](AUCTION_DESIGN.md) |
 | `sieges` | `siegeId` | `worldId, attackerId, defenderId?, tile, outcome, replayRef?, recomputed, ts` | `{worldId,ts}`、`{attackerId}` |
 
@@ -593,8 +594,8 @@
 |---|---|---|---|
 | 行军调度 | `world:{worldId}:march` | ZSET（score=arriveAt ms） | 到点弹出触发围攻/占领/增援；worldsvc 单点消费 |
 | gateway 路由 | `gw:acct:{accountId}` | STRING（实例 id） | 横扩后跨实例定向 push |
-| 家族频道 | `chan:family:{familyId}` | pub/sub | 群扇出 |
-| 宗门/国家频道 | `chan:sect:{worldId}` | pub/sub | 全服广播 |
+| ~~家族频道~~ | ~~`chan:family:{familyId}`~~ | pub/sub | **已迁出（ADR-021）**：宿主已迁入 socialsvc，键不变但不再由 worldsvc 持有，见 [`SOCIAL_SVC_DESIGN.md`](SOCIAL_SVC_DESIGN.md) §5 |
+| 宗门/国家频道 | `chan:sect:{sectId}`（**注：键是 `sectId` 不是 `worldId`**，与家族频道同宿主迁入 socialsvc，由 worldsvc 传入 sectId） | pub/sub | 全服广播 |
 | 热格缓存 | `world:{worldId}:tile:{x}:{y}` | HASH（可选） | 热点格读缓存，Mongo 为权威 |
 | 视区订阅 | `world:{worldId}:sub:{accountId}` | STRING/HASH | 玩家当前订阅的区域，worldsvc 据此定向推 tile/march 事件（P9） |
 
@@ -602,7 +603,7 @@
 
 ### 14.5 proto 新增（`transport.proto`，仅 server→client 推送）
 
-> 与 social 同原则（SOC3）：**SLG 玩家动作走 REST**（行军/挂单/家族/设防），**实时事件走 WS push**；真人手操围攻战本体走既有 game 数据面（`game.proto` 不变）。故只加 server→client。
+> 与 social 同原则（SOC3）：**SLG 玩家动作走 REST**（行军/挂单/家族/设防），**实时事件走 WS push**；围攻战本体不经 gameserver、不用 `game.proto`（服务器进程内直接算权威结果，见 §16/ADR-007，无手操）。故只加 server→client。
 
 新增 `ServerMsg` 分支（字段 DRAFT）：
 - `march_update`（`marchId, kind, fromTile, toTile, arriveAt, status`）— 自己/可见行军状态
@@ -631,13 +632,9 @@ POST /world/sweep                   扫荡（自己领地/中立 NPC，廉价结
 # 兵力
 POST /world/troops/train            训练（入队，消耗粮+时间）
 POST /world/troops/speedup          加速（变现，走 commercial）
-# 家族
-POST /family                        建家族
-GET  /family/{id}                   家族详情+成员
-POST /family/{id}/join              申请/加入
-POST /family/{id}/leave             退出
-POST /family/{id}/donate            互助捐献
-GET  /family/{id}/channel?before    频道历史（若落库）
+# 家族（⚠️ 已整体迁出 worldsvc，2026-06-29 P4 完成，ADR-021）：
+# 客户端直调 socialsvc /social/family/*（建/查/申请/审批/退出/踢人/改角色/解散/频道），
+# worldsvc 不再暴露 /family/* 代理路由，下列列表仅作历史存档，见 SOCIAL_SVC_DESIGN.md §6
 # 拍卖行（已迁至独立服务 auctionsvc，端口 18086，与 worldId/shard 无关；反代 /auction→auctionsvc，见 §14.1 P1 / AUCTION_DESIGN）
 GET  /auction?itemType&...          浏览挂单
 POST /auction                       挂单（可带 designatedBuyerId）
@@ -667,7 +664,7 @@ GET  /world/season                  当前赛季/重置时间/大比状态
 
 | # | 决策 | 落地约束 |
 |---|---|---|
-| **D0** | **围攻不经 gameserver**：单人打离线脚本 = 本地 PvE 跑法 + 录像上传 + worldsvc 复算关键战斗 | gameserver 不背 SLG 依赖；siege 流程 = 战役 PvE + S1-RP 录像 + judge 复算的组合 |
+| **D0** | **围攻不经 gameserver**：worldsvc 进程内直接跑 `runSiegeBattle`（seed+双方预布阵）headless 算出权威结果即时落地（**已按 §16/ADR-007 改**，取代本行原「本地 PvE 跑法+录像上传+judge 复算」旧描述） | gameserver 不背 SLG 依赖；siege 流程 = 引擎 headless 跑一次到终局，无客户端录像上传、无 judge 复算 |
 | **P1** | **worldsvc 自暴露公网 REST**（第四公网面：`/world/*` `/family/*`），复用 meta JWT（仅 `verifyToken` 验签，不连 accounts 库）。**拍卖 `/auction/*` 已迁出至独立 `auctionsvc`（端口 18086，全服单实例，与 worldId 无关），2026-07-06** | 反代加各组路由；拓扑原则更新为「客户端触达 meta + worldsvc(REST) + auctionsvc(REST) + gateway + game(WS)」 |
 | **P2** | **worldsvc import 确定性引擎 + `levelSchema`**（M12「裁判例外」延伸）：复算 + 防守 config 校验都走引擎侧 | 绑 `engineVersion`；worldsvc 随引擎版本重构建；防守 config 是引擎 `LevelDefinition` 的受限子集 |
 | **P4** | **新 `sieges` 集合（world 库）** + 自带录像存储（复用 `replayBlobs` 模式），客户端经 worldsvc 取回回放 | 不跨库依赖 meta `matches`；录像 opaque bytes，engineVersion 自校验 |
@@ -702,7 +699,7 @@ GET  /world/season                  当前赛季/重置时间/大比状态
 - **U11 视区订阅推送扇出**：300-500 人地图 `tile_update`/`march_update` 风暴，需节流/聚合（P9 订阅模型的规模化）；密集首府区域尤需注意。（原文按 1 万人量级写，已随 U4 复核降级，风险等级相应降低但机制仍需做）
 - **U12 worldsvc 单点 march 调度**：ZSET 到点消费是单点；300-500 人规模下压力显著小于原 1 万人估算，前期单进程可接受，暂不需要选主/分片。
 - **U13 多步原子性**：占地/丢地改 `yieldRate` 与读时惰性结算的并发（rev 守卫够不够）；拍卖成交（扣卖方挂存 + 给买方 + 抽税）的跨文档幂等与回滚；门主被打全宗门资源 -50% 的大规模写操作原子性。
-- **U14 A\* 寻路性能（ADR-049 后重新提起）**：地图已放大到 1500×1500，`findMarchPath` 最坏情况计算量随之上升，但受 `MAX_NODES=500_000` 安全帽约束（=全图 22%，合法长途行军仍够用；触顶 → `null` → `PATH_BLOCKED`，不挂起）。障碍密度仅 ~2.8%（散点非长墙）+ 曼哈顿一致启发使常规行军探索节点≈路径长度量级。登记为**监控项**：若长河阻隔场景实测触顶频繁误拒合法行军，再评估路径缓存/分块寻路/按图放大 `MAX_NODES`。
+- **U14 A\* 寻路性能（ADR-049 后重新提起）✅ 已确认+已修复（2026-07-27）**：地图已放大到 1500×1500，`findMarchPath` 最坏情况计算量随之上升——本条原为"监控项"，design-doc-audit-2026-07 的 econ-sim 行军疲劳核验中实测复现：**根因不是长河阻隔，而是 4 方向移动 + 精确 Manhattan 启发式在无障碍网格上对任意 (dx,dy) 都"平局"**（起止点间所有单调格路径代价相同），朴素 A* 在无平局打破策略时可能要展开接近整个 dx×dy 包围盒才能确认最优解——旧 500×500 地图最坏对角距离（~350×350≈122,500 格）安全落在 `MAX_NODES=500,000` 内从未暴露；新图上常规对角距离（如 dx=dy=600，包围盒 360,000 格）就能顶穿这个上限，导致明明可达的目标被误判 `PATH_BLOCKED`。**修复**：`server/shared/src/slg/march.ts` 的启发式加了一个极小的"叉积"平局打破偏置（偏向起止点连线，系数 `1/(2·mapW·mapH+1)`，数学上保证不会选到比最优解更长的路径），把探索量从 O(dx·dy) 降到接近 O(dx+dy)。回归测试见 `worldsvc/test/pathfinding.test.ts`「长距离对角行军」用例；详见 [`ECONOMY_VERIFICATION_LOG.md` §13-SLG-MARCH.4](ECONOMY_VERIFICATION_LOG.md)。**注**：跨 crossing（桥/栈道）未占领时仍会被正确判定为不可达（`PATH_BLOCKED`）——这是 ADR-034 的既定省份隔离设计（见 §13-SLG-MARCH.1），不受本次修复影响。
 - **U15 Voronoi 分区计算**：首府坐标固定后，Voronoi 分区可预计算并缓存（或实时算），每格 tileId 的国家归属查询路径确定（worldsvc 内存缓存 + Mongo 按需）。
 
 ---

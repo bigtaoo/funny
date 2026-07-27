@@ -195,7 +195,7 @@
 2. **混编**：`CombatSystem.findTarget` **不受 Moving/Waiting 状态门控**，只按同列前方 `range` 扫描——远程兵排在肉盾（重甲/盾兵）身后，只要敌人进它射程就能越过肉盾开火。坦克前 + 弓箭后 = 队伍本身变威胁，而非送菜。
 3. **密度**：小半径单位（疾行 radius 250 = 0.5 格）同列能塞 ~2× 密，把「单行排队」变成真正成团的兵海。
 
-**当前真正接入引擎的关卡旋钮只有 `noBuild` + `startCoins`**（`GameEngine` line ~89）。`board.blocked`（阻挡移动）、`activeLanes`、`hazards`、`crossWaypoints`、`leak_limit` objective **均未实现**，`levelSchema` 只 pass-through 不消费——**勿在关卡里依赖它们**。要做 chokepoint / 变道 / 机关需先补 `Board`（blocked 移动阻挡）、`MovementSystem`（crossWaypoints）、`HazardSystem`（§4.5）、`checkWinCondition`（§4.6）。
+> **已全量实现（2026-06-19 起，本段警告过期已删）**：下方 §4.5–§4.7 列出的旋钮——`board.blocked`（阻挡移动，§4.2 MidCross auto-detour）、`activeLanes`（§4.8.3）、`hazards`（`HazardSystem`）、`crossWaypoints`（§4.2）、`leak_limit`/`destroy_base`/`boss`/`escort` objective（§4.8.2）——**均已接入引擎并有 267+ 用例覆盖**，权威实现清单见 §4.8/§4.9，可放心在关卡里依赖它们。`multi_objective` 仍是唯一推迟项（需"被保护子实体"系统，见 §4.6）。
 
 ### 4.5 环境机关 / 关卡修饰符（对应保卫萝卜的魔法球 / 天气 / 机关）
 

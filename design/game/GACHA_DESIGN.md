@@ -175,7 +175,7 @@
 
 首次付费转化是变现的关键节点。拟设两个新手向产品：
 
-> **实现现状（2026-07-15）**：`commercial/src/service/starter.ts` 的 `starterBuy` 当前对两款礼包都是 `cost: 0`（免费发放，仅 `starterUsed` 单账号一次门控），下表的 ¥6 / ¥30 定价尚未接入真实 IAP 扣款。客户端 `ShopScene` 相应展示为「免费」而非价格，且一旦 `starterUsed` 包含该 id 就直接从卡片列表移除（不再展示置灰的「已拥有」卡）。真实定价上线前请勿依赖下表价格做客户端展示。
+> **✅ 已接入真实扣款（2026-07-27，取代 2026-07-15 记录的 `cost: 0` 免费发放缺口）**：`POST /starter/buy` 现要求 `platform`+`receipt`，metaserver 经 `commercial.verifyNonCoinReceipt` 校验通过（apple/google 走真实商店收据；web 走 Paddle checkout + webhook，`paddle.ts` 新增 `starter_draw`/`starter_growth` 两个保留键）才会调用底层 `starterBuy` 发货——不再是"服务器直接当已授权"。客户端 `ShopScene` 相应展示为真实 ¥6 / ¥30 价格（`STARTER_DRAW_YUAN`/`STARTER_GROWTH_YUAN`，`shop.ts`），不再显示「免费」；一旦 `starterUsed` 包含该 id 仍从卡片列表移除（不变）。WeChat/CrazyGames（无支付渠道）不展示这两张卡的购买按钮。
 
 ### 6.1 首抽包
 

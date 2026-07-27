@@ -7,10 +7,14 @@
 //
 // DTO types are generated from server/contracts/openapi-world.yml via npm run rest:gen
 // → src/net/openapi-world.ts. Do NOT hand-edit these type aliases.
+// AuctionView is the exception: auctionsvc is a standalone service with its own contract
+// (server/contracts/openapi-auction.yml → src/net/openapi-auction.ts, AUCTION_DESIGN §9).
 
 import { getWorldBaseUrl, getSocialBaseUrl } from './config';
 import type { IStorage } from '../platform/IPlatform';
 import type { components } from './openapi-world';
+import type { components as socialComponents } from './openapi-social';
+import type { components as auctionComponents } from './openapi-auction';
 
 // ── Generated DTO type aliases (single source of truth = openapi-world.yml) ──
 
@@ -40,60 +44,15 @@ export type MarchView = components['schemas']['MarchView'];
 export type OccupationView = components['schemas']['OccupationView'];
 export type StationedView = components['schemas']['StationedView'];
 
-// Family DTOs are NOT in openapi-world.yml: family moved to socialsvc (/social/family/*, no
-// openapi contract of its own). Shapes are hand-mirrored from server/socialsvc/src/familyService.ts —
-// keep in sync manually when that file's FamilyView/FamilyMemberView/FamilyMessageView change.
-export interface FamilyMemberView {
-  accountId: string;
-  role: 'leader' | 'elder' | 'member';
-  joinedAt: number;
-  /** Resolved by socialsvc via metaClient; absent if the profile lookup failed. */
-  publicId?: string;
-  displayName?: string;
-  /** Equipped avatar id (composite "<category>:<key>"), resolved by socialsvc via metaClient. */
-  avatarId?: string;
-}
-export interface FamilyView {
-  familyId: string;
-  name: string;
-  tag: string;
-  leaderId: string;
-  memberCount: number;
-  prosperity: number;
-  /** Territory tile count (worldsvc-owned mirror, SLG_DESIGN §8.2/§17.4). */
-  territoryCount?: number;
-  /** Sect the family currently belongs to (worldsvc-owned mirror; absent = independent family). */
-  sectId?: string;
-  /** Display name of the sect above, mirrored alongside sectId. */
-  sectName?: string;
-  announcement?: string;
-}
-export interface FamilyDetailView extends FamilyView {
-  members: FamilyMemberView[];
-}
-/** A pending join request awaiting leader/elder approval — hand-mirrored from FamilyJoinRequestView (familyService.ts). */
-export interface FamilyJoinRequestView {
-  requestId: string;
-  accountId: string;
-  publicId?: string;
-  displayName?: string;
-  createdAt: number;
-}
-export interface FamilyMessageView {
-  id: string;
-  senderId: string;
-  senderName: string;
-  /** Sender's equipped title (称号), if any. */
-  title?: string;
-  /** Sender's sect name (宗门), if any. */
-  sectName?: string;
-  /** Sender's family name (家族), if any. */
-  familyName?: string;
-  body: string;
-  ts: number;
-}
+// Family DTOs are generated from server/contracts/openapi-social.yml (socialsvc's own contract,
+// SOCIAL_SVC_DESIGN.md §4.1) via npm run rest:gen → src/net/openapi-social.ts. Do NOT hand-edit these type aliases.
+export type FamilyMemberView = socialComponents['schemas']['FamilyMemberView'];
+export type FamilyView = socialComponents['schemas']['FamilyView'];
+export type FamilyDetailView = socialComponents['schemas']['FamilyDetailView'];
+export type FamilyJoinRequestView = socialComponents['schemas']['FamilyJoinRequestView'];
+export type FamilyMessageView = socialComponents['schemas']['FamilyMessageView'];
 
-export type AuctionView = components['schemas']['AuctionView'];
+export type AuctionView = auctionComponents['schemas']['AuctionView'];
 export type NationView = components['schemas']['NationView'];
 export type SeasonView = components['schemas']['SeasonView'];
 export type SlgShopItemView = components['schemas']['SlgShopItemView'];

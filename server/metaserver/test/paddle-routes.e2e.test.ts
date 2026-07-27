@@ -41,7 +41,8 @@ class FakeCommercial implements CommercialClient {
   readonly available = true;
   coins = new Map<string, number>();
   subscriptions = new Map<string, { expiry: number; lastClaimDayKey?: string }>();
-  /** orderId → granted, so monthlyCardBuy/yearCardBuy/paddleComplete replay idempotently like the real service. */
+  starterUsed = new Map<string, string[]>();
+  /** orderId → granted, so monthlyCardBuy/yearCardBuy/paddleComplete/starterBuy replay idempotently like the real service. */
   claimedOrders = new Set<string>();
   events: Array<{ transactionId: string; eventType: string; status?: string; accountId?: string }> = [];
   now = () => Date.now();
@@ -58,10 +59,37 @@ class FakeCommercial implements CommercialClient {
       fatePoints: 0,
       subscriptionExpiry: sub?.expiry ?? 0,
       subscriptionLastClaimDay: sub?.lastClaimDayKey,
-      starterUsed: [],
+      starterUsed: this.starterUsed.get(id) ?? [],
       firstPurchaseUsed: false,
       totalRechargeCents: 0,
     };
+  }
+
+  /** Minimal starter pack fake (GACHA_DESIGN §6): once-per-account, mirrors the real service's shape closely
+   * enough to exercise paddle.ts's webhook → deliverOrder path (starter_draw delivers one gacha result). */
+  async starterBuy(a: { accountId: string; productId: string; orderId: string }) {
+    if (this.claimedOrders.has(a.orderId)) {
+      const used = this.starterUsed.get(a.accountId) ?? [];
+      return { ok: true as const, coinsAfter: this.bal(a.accountId), subscriptionExpiry: this.subscriptions.get(a.accountId)?.expiry ?? 0, results: used.includes(a.productId) ? [] : [] };
+    }
+    const used = this.starterUsed.get(a.accountId) ?? [];
+    if (used.includes(a.productId)) return { ok: false as const, error: 'ALREADY_PURCHASED' };
+    this.claimedOrders.add(a.orderId);
+    this.starterUsed.set(a.accountId, [...used, a.productId]);
+    if (a.productId === 'starter_growth') {
+      this.coins.set(a.accountId, this.bal(a.accountId) + 3300);
+      return { ok: true as const, coinsAfter: this.bal(a.accountId), subscriptionExpiry: this.subscriptions.get(a.accountId)?.expiry ?? 0, results: [] };
+    }
+    return { ok: true as const, coinsAfter: this.bal(a.accountId), subscriptionExpiry: this.subscriptions.get(a.accountId)?.expiry ?? 0, results: [{ itemId: 'skin_l1', rarity: 'legendary' as const }] };
+  }
+
+  async orderDelivered(_a: { orderId: string; refundCoins?: number }) {
+    return { ok: true as const };
+  }
+
+  async grant(a: { accountId: string; amount: number; reason: string; orderId: string }) {
+    this.coins.set(a.accountId, this.bal(a.accountId) + a.amount);
+    return { ok: true as const, coinsAfter: this.bal(a.accountId) };
   }
 
   private subscriptionCardBuy(accountId: string, orderId: string, days: number) {
@@ -136,7 +164,8 @@ describe.skipIf(!mongo)('paddle routes e2e (checkout + webhook)', () => {
 
     process.env.NW_PADDLE_API_KEY = 'sk_test_fake';
     process.env.NW_PADDLE_WEBHOOK_SECRET = WEBHOOK_SECRET;
-    process.env.NW_PADDLE_PRICE_IDS = 't499:pri_499,monthly_card:pri_monthly,year_card:pri_year';
+    process.env.NW_PADDLE_PRICE_IDS =
+      't499:pri_499,monthly_card:pri_monthly,year_card:pri_year,starter_draw:pri_starter_draw,starter_growth:pri_starter_growth';
 
     // createPaddleTransaction hits the real Paddle API via global fetch — stub it so checkout tests never
     // touch the network. Returns a fresh fake transaction id per call.
@@ -230,6 +259,21 @@ describe.skipIf(!mongo)('paddle routes e2e (checkout + webhook)', () => {
       const r = body(await app.inject({ method: 'POST', url: '/shop/paddle/checkout', headers: auth(), payload: { tierId: 'monthly_card' } }));
       expect(r.ok).toBe(true);
     });
+
+    it('starter_draw with no prior purchase → creates a checkout for the mapped starter price (GACHA_DESIGN §6)', async () => {
+      const r = body(await app.inject({ method: 'POST', url: '/shop/paddle/checkout', headers: auth(), payload: { tierId: 'starter_draw' } }));
+      expect(r.ok).toBe(true);
+      const callBody = JSON.parse((fetchMock.mock.calls[0]![1] as RequestInit).body as string);
+      expect(callBody.items[0].price_id).toBe('pri_starter_draw');
+    });
+
+    it('starter_growth already purchased → 400 ALREADY_PURCHASED, never reaches Paddle', async () => {
+      comm.starterUsed.set(accountId, ['starter_growth']);
+      const r = body(await app.inject({ method: 'POST', url: '/shop/paddle/checkout', headers: auth(), payload: { tierId: 'starter_growth' } }));
+      expect(r.ok).toBe(false);
+      expect(r.error.code).toBe('ALREADY_PURCHASED');
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
   });
 
   describe('POST /paddle/webhook', () => {
@@ -322,6 +366,41 @@ describe.skipIf(!mongo)('paddle routes e2e (checkout + webhook)', () => {
       expect(comm.subscriptions.get(accountId)).toBeUndefined();
       expect(comm.events).toHaveLength(1);
       expect(comm.events[0]!.eventType).toBe('transaction.payment_failed');
+    });
+
+    it('transaction.completed for starter_draw price → grants the pack + delivers the gacha result into the save (GACHA_DESIGN §6)', async () => {
+      const r = await postWebhook({
+        event_type: 'transaction.completed',
+        data: { id: 'tx-starter-draw-1', status: 'completed', custom_data: { accountId }, items: [{ price: { id: 'pri_starter_draw' }, quantity: 1 }] },
+      });
+      expect(r.statusCode).toBe(200);
+      expect(comm.starterUsed.get(accountId)).toContain('starter_draw');
+      const save = body(await app.inject({ method: 'GET', url: '/save', headers: auth() }));
+      expect(save.data.save.inventory.skins).toContain('skin_l1');
+    });
+
+    it('transaction.completed for starter_growth price → grants coins, mirrored into the save', async () => {
+      const r = await postWebhook({
+        event_type: 'transaction.completed',
+        data: { id: 'tx-starter-growth-1', status: 'completed', custom_data: { accountId }, items: [{ price: { id: 'pri_starter_growth' }, quantity: 1 }] },
+      });
+      expect(r.statusCode).toBe(200);
+      expect(comm.starterUsed.get(accountId)).toContain('starter_growth');
+      expect(comm.bal(accountId)).toBe(3300);
+      const save = body(await app.inject({ method: 'GET', url: '/save', headers: auth() }));
+      expect(save.data.save.wallet.coins).toBe(3300);
+    });
+
+    it('redelivered starter webhook (same transactionId) is idempotent — no double grant', async () => {
+      const payload = {
+        event_type: 'transaction.completed',
+        data: { id: 'tx-starter-replay', status: 'completed', custom_data: { accountId }, items: [{ price: { id: 'pri_starter_growth' }, quantity: 1 }] },
+      };
+      await postWebhook(payload);
+      const coinsAfterFirst = comm.bal(accountId);
+      const r2 = await postWebhook(payload); // Paddle's at-least-once redelivery
+      expect(r2.statusCode).toBe(200);
+      expect(comm.bal(accountId)).toBe(coinsAfterFirst);
     });
   });
 });

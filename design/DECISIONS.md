@@ -155,9 +155,10 @@
   - **身份/存档/天梯**：web + CrazyGames **共享同一套全球部署**（Cloudflare 前端 + 欧洲 VPS + Atlas）。两端用户可共存、可绑定合并。
   - **中国（微信）= 物理独立部署**：中国大陆玩家个人信息按 PIPL/网络安全法须**境内存储** → 微信线跑完全独立的境内栈（境内云 + 境内 Mongo），账号/存档/钱包均不与全球区互通。承接 ADR-019「中国独立」与 ADR-013「Global/CN 合规拆分」，此处补「数据驻留」为隔离的法律根因。**延后实现**，先做全球区。
   - **钱包/充值币按支付渠道隔离**：`SaveData.wallet.coins` 当前为全局单一钱包。上线微信/苹果/谷歌前必须改造——**站外渠道（如 Stripe）购买的虚拟货币不得在微信/苹果内消费**（违反各平台"不得消费站外购买虚拟货币"条款）。落地方式：充值币标记来源渠道，或钱包按平台隔离。**现在就要记入数据结构设计**，避免后期迁移。
+    > **2026-07-27 落地**：选了"充值币标记来源渠道"这条（否决"钱包按平台隔离"=iOS/Android 各自独立部署——会牺牲本条已支持的跨端同账号游玩能力，且 `IOS_RELEASE.md §4.2` 既定计划本就是原生 IAP 复用同一套西方大区部署）。`wallets.coins` 保留为免费池（广告/胜场/兑换码等非充值来源，处处可花），新增 `wallets.recharged:{web?,apple?,google?}` 按渠道标记的充值池，花费时以请求平台（客户端新增 `X-NW-Platform` 头）门控只可花「免费池 + 匹配渠道桶」。详细机制见 [`game/COMMERCIAL_DESIGN.md §11`](game/COMMERCIAL_DESIGN.md#11-钱包按支付渠道隔离adr-020-2026-07-27)。微信仍是完全独立部署/独立库，天然合规、不受影响。
   - **CrazyGames**：门户限制主要在前端行为（禁站外支付/外链跳转），账号层可与 web 共享，无需隔离。
 - **未决/待查**：微信小游戏、CrazyGames、苹果/谷歌的开发者协议中"虚拟货币跨渠道流通"的具体条款原文（上线对应平台前逐条核实）。
-- **影响**：[`product/deploy-cloudflare.md`](product/deploy-cloudflare.md) 新增「平台隔离边界」节为现行口径；钱包改造待在 [`game/ECONOMY_BALANCE.md`](game/ECONOMY_BALANCE.md) / [`game/ACCOUNT_DESIGN.md`](game/ACCOUNT_DESIGN.md) 补「充值币渠道标记」字段设计（缺口，上线渠道前收口）。
+- **影响**：[`product/deploy-cloudflare.md`](product/deploy-cloudflare.md) 新增「平台隔离边界」节为现行口径；钱包渠道隔离机制见 [`game/COMMERCIAL_DESIGN.md §11`](game/COMMERCIAL_DESIGN.md#11-钱包按支付渠道隔离adr-020-2026-07-27)（已实现，不再是缺口）。
 
 ## ADR-021 独立 socialsvc = 第五公网面，推翻 SOC1 — Accepted — 2026-06-28
 
@@ -587,3 +588,27 @@
 - **待审点拍板（提议默认全采纳）**：O1 路过敌方领地 garrison **不**触发 pass-through 战斗（拦截靠驻扎/箭塔，否则领地不可穿行）；O2 建筑只能建**己方/家族领地**格；O3 箭塔数值/驻扎维护/步进疲劳进 `config.ts` 标 DRAFT；O4 逐格步进事件量登记监控 + 粗粒度降级预案；O5 相邻格对穿不触发遭遇，接受为常态。
 - **分阶段**：P1 实时行军基础（路径持久化+步进+`occ`，行为对齐现状）→ P2 遭遇引擎（场景1/2+`runSiegeBattle`）→ P3 停留/驻扎拆分+`cover`+驻扎拦截+就地占领 → P4 客户端实时野战视图 → P5 建筑层。每阶段独立可验证、独立合入当日分支。
 - **影响**（预估，详见设计文档 §6）：`worldsvc`（`db.ts`/`combatMarch.ts`/新 `combatSiege/encounter.ts`/`corePush.ts`/`territory.ts`/建筑 API/`httpApi.ts`）、`@nw/shared`（`walkable` 接入建筑、`config.ts` 数值）、`openapi-world.yml`；客户端 `WorldMap*` + `WorldMapRenderer` + 三语 i18n。
+
+## ADR-052 F2P 月度金币产出基线从 "~300" 重定为 "~2,900–8,700"（补跑总产出核算） — Accepted — 2026-07-27
+
+- **问题**：2026-07-27 文档全量审计发现，ADR-011/ADR-014 与 [`ECONOMY_NUMBERS.md`](game/ECONOMY_NUMBERS.md) §13.2/§13.3 反复写"须并入 §9 总产出模拟"/"计入 §6.1 月度 ~300 预算"，但该"总产出模拟"从未真正被创建或跑过——ECONOMY_NUMBERS 的 §9 实际是「与其他系统的硬墙」，不是任何产出表；§6.1/§8 的月度估算也从未把已实装的 `VICTORY_COINS_BY_RANK`（分段胜利金币，2026-07 前后落地）、`SEASON_PEAK_COINS`（赛季峰值金币）、战令免费轨里程碑金币三项并进来算。三项分别独立核算时看起来都"温和"（各自都过了自己的经济红线检查），但从未被人一起加总过。
+- **决策**：新增 [`ECONOMY_NUMBERS.md` §6.4](game/ECONOMY_NUMBERS.md#64-月度总产出核算2026-07-27审计补齐取代此前从未真正跑过的并入-9承诺) 作为真正的月度总产出核算表，取代"~300/月"这条早期目标基线：保守档（金段位/日均 3 胜）≈ **2,927/月**，高段档（王者/日均 10 胜封顶）≈ **8,663/月**。`ADS_DAILY_CAP`/`AD_COIN`（2026-06-27 已收敛到 10×5）不是问题所在——胜利金币（王者上限 5,400/月）和赛季峰值（王者 857/月）才是两个此前完全没被计入过的变量，且胜利金币的日历上限（`VICTORY_DAILY_WIN_CAP=10`）对高活跃玩家形同虚设，是结构杠杆最大的调参入口。
+- **为什么不算"经济崩了"**：三项各自的拍板（ADR-009 广告金币、§2.3b 胜利金币、§13.2 赛季峰值、§13.3 战令）在各自的经济红线检查里都是合理的——问题纯粹是"没人把三者放一起重算总量、重定基线"，属于治理缺口而非设计缺陷。本 ADR 不改任何数值，只补齐核算并更新基线认知。
+- **影响**：[`ECONOMY_NUMBERS.md`](game/ECONOMY_NUMBERS.md) §6.1/§6.4/§13.2/§13.3 已更新指针；[`EVENTS_DESIGN.md`](game/EVENTS_DESIGN.md) §6"活动是最容易冲垮 F2P ~300 金币/月预算"这条红线措辞已改指向 §6.4，原则（不新增金币龙头）不变。上线前若认为总产出仍偏高，建议优先动 `VICTORY_DAILY_WIN_CAP` 或 `SEASON_PEAK_COINS` 高段值，而非再压广告——本 ADR 只是补账，具体调参留待上线后数据验证。
+
+## ADR-053 行军疲劳预算改为地图比率制，修复 ADR-047 vs ADR-049 的漂移 — Accepted — 2026-07-27
+
+- **问题**：design-doc-audit-2026-07 用真实 A*+真实省份几何跨 10 个世界种子核验行军疲劳梯度（[`ECONOMY_VERIFICATION_LOG.md` §13-SLG-MARCH](game/ECONOMY_VERIFICATION_LOG.md)），发现 ADR-047 拍定的 `MARCH_MORALE_MAX=100`（绝对格数）是针对旧 500×500 地图（半对角线≈354 格）算的数，ADR-049（2026-07-22）把地图放大到 1500×1500（半对角线≈1061 格）后从未联动重算——同省内最远单腿距离中位数已达 534 格，是 100 格预算的 5 倍多，同省常规行动触底比例 100%，"越远越亏"的设计意图对除"家门口"外的几乎所有场景已名存实亡（判据见 [`SLG_ECONOMY_CHECK.md` §5.5](game/SLG_ECONOMY_CHECK.md)）。
+- **决策**：疲劳耗尽预算从绝对格数改为**地图几何比率制**（与 `province.ts` 的 `PROVINCE_*_RADIUS_RATIO` 同一套约定）——新增 `MARCH_MORALE_FLOOR_RADIUS_RATIO=0.35`（`server/shared/src/slg/core.ts`），`MARCH_MORALE_FLOOR_TILES = MARCH_MORALE_FLOOR_RADIUS_RATIO × 地图半对角线`（`server/shared/src/slg/march.ts`），当前 1500×1500 地图下约 371 格。`MARCH_MORALE_MAX=100` 保留，语义从"100 格"改为"归一化上限 100 点"，每格消耗 = `MARCH_MORALE_MAX / MARCH_MORALE_FLOOR_TILES`；`moraleCombatMultiplier`/`MarchDoc.morale` 的取值范围（0..100）与结算逻辑不变，无需数据迁移。
+- **为什么选比率制而非直接把常量从 100 改成 300**：两者在当前地图尺寸下数值效果接近（0.35 比率折算约 371 格，与"3 倍→300"的量级一致），但比率制额外解决了**复发问题**——ADR-032→ADR-049 地图尺寸已经变过一次且很可能还会再变，绝对常量制要求每次地图改动都有人记得同步重算（本次审计前从未有人做过这一步）；比率制让 `SLG_MAP_W/H` 未来任何变化都自动重新缩放疲劳梯度，与地图上其它所有几何相关常量（`PROVINCE_CORE_RADIUS_RATIO` 等）的既有约定一致。
+- **数值选取**：0.35 并非直接复用 ADR-047 原始比率（100/354≈0.28）——0.28 折算到新地图约 297 格，实测同省最远单腿距离触底比例仍达 90%（因样本呈明显阶梯分布：252/344/392/528/534...格几个集中档位），未达 §5.5 判据"≤80%"；0.35（约 371 格）跑赢 344 格这一档，触底比例回落到 70%，满足判据，同时"家门口"短途仍 0% 触底（判据 ≤20%）。
+- **验证**：`server/shared`（含 `march.test.ts` 改为从 `MARCH_MORALE_FLOOR_TILES` 派生期望值而非硬编码）633 单测全绿，`tsc --noEmit` 全绿；`worldsvc` 44 个测试文件 339 例全绿（含 `siege.e2e.test.ts` 一处硬编码旧公式的断言改为复算真实公式）；`server/tools/econ-sim/src/marchFatigueRun.ts` 重跑：家门口触底 0%（≤20% 判据 PASS），省内最远单腿触底 70%（≤80% 判据 PASS）。结论登记见 `ECONOMY_VERIFICATION_LOG.md` §13-SLG-MARCH.5、`SLG_ECONOMY_CHECK.md` §5.5/§9。
+- **影响**：`server/shared/src/slg/core.ts`（新增 `MARCH_MORALE_FLOOR_RADIUS_RATIO`）、`march.ts`（`MARCH_MORALE_FLOOR_TILES` + `marchMoraleFromPath` 改写，导入 `province.ts` 的 `_MAP_HALF_DIAGONAL`）；`server/tools/econ-sim/src/marchFatigue.ts`/`marchFatigueRun.ts`（改用真实共享常量，不再自行假设 1 点/格）；[`SLG_DESIGN.md` §4.4](game/SLG_DESIGN.md) 同步。未暴露到客户端/openapi（沿用 ADR-047 既有的"疲劳值不展示"决定），因此本次改动零客户端改动。
+
+## ADR-054 SLG 险地持久材料掉率下调（4→0.8/级）修复 ADR-049 引入的经济稀释破线 — Accepted — 2026-07-27
+
+- **问题**：ADR-049（2026-07-22）把 `SLG_MAP_W/H` 从 500 扩到 1500，明确"密度不变、画布变大"——但险地是逐格 Bernoulli 抽样，密度不变意味着险地**绝对数量**随地图**面积**线性增长（`server/tools/econ-sim/src/strongholdRun.ts` 在 1500×1500 上重跑 100 种子实测：中位 2,817、max 3,286，约为 500×500 时代中位 567/max 636 的 5 倍）。险地占领发放的持久材料 `binding`（`strongholdMaterialLoot`，进 `SaveData.materials`，A 轨 §2.3 15% 人均稀释红线覆盖的一条持久龙头）没有跟着调整，而摊薄分母 `SLG_WORLD_CAPACITY_TARGET=400`（服务器人口设计常量，ADR-032/U4，与地图尺寸无关）也没有变——两个此前独立拍板、互不相关的常量，因为 ADR-049 只改了地图尺寸这一个变量，被动地把稀释度从旧版安全的 12.6%（500×500+等级10，max 世界×100%占领）推到 **65.2%**（1500×1500，同一场景），9 个「世界档位×占领率」验证格里 8 个突破 15% 红线（详见 `ECONOMY_VERIFICATION_LOG.md` §13-SLG-STRONGHOLD.2b）。
+- **决策**：`STRONGHOLD_LOOT_MATERIAL_PER_LEVEL`（`server/shared/src/slg/siege.ts`）从 `4` 下调到 **`0.8`**——险地固定生成于地图等级上限（现 10 级），单次掠夺从 40 binding 降到 **8 binding**。三个候选修复方向的取舍：① 调低险地生成密度让绝对数量不随地图放大——否决，直接违背 ADR-049"密度不变、画布变大"的既定决策，且会把大地图的险地密度压到比原始"~0.3%极稀疏"意图更稀疏，本末倒置；② 上调 `SLG_WORLD_CAPACITY_TARGET` 匹配大地图——否决，要压回 15% 内需要把人口容量目标从 400 上调到 ~1,740，远超 ADR-032/U4 拍板的 300–500 区间，牵连匹配/分片/社交等一整套下游系统；③ 下调持久材料掉率——**采纳**，不触碰另外两条已拍板的决策，只收紧真正因地图放大而失控的那个量。
+- **数值校准**：目标是让 max 世界×100%占领（历史上最严苛的验证格）的稀释度回落到与 500×500+等级10 时代（12.6%）同量级的安全余量，而非勉强压线；`0.8` 使该格稀释度为 **13.0%**（vs 15% 红线，2 个百分点余量），全部 9 个验证格 PASS。
+- **实现**：`server/shared/src/slg/siege.ts`（常量 + 注释校准依据）；`server/shared/test/siege.test.ts`（`strongholdMaterialLoot` 期望值同步更新，改用真实生效等级 10 而非任意等级 2，避免非整数掉落量断言）；`server/tools/econ-sim/src/stronghold.ts`（头部注释里的旧倍率说明同步）。`server/worldsvc/test/stronghold.e2e.test.ts` 断言走 `strongholdMaterialLoot()` 动态求值，无需改动，复跑 6/6 全绿；`server/shared` 单测 39/39 全绿；`tsc --noEmit` 全绿。
+- **影响**：纯服务器经济常量调整，客户端无引用需要同步改动（未见任何硬编码旧掉率的 UI 文案）。险地占领给玩家的持久 `binding` 收益从 40/次降到 8/次——这是一次实质性削弱，属于本次修复的直接代价，非附带影响。

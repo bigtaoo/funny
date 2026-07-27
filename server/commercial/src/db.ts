@@ -2,6 +2,7 @@
 // physically isolated from the meta database. Collections: wallets / ledger / orders / recharges / gachaHistory.
 import { MongoClient, Db, Collection, type MongoClientOptions } from 'mongodb';
 import type { Rarity, LimitedPoolConfig, CustomPoolCategory } from '@nw/shared';
+import type { RechargeChannel } from './spendChannel';
 
 /** Balance (single-document atomic update + optimistic lock rev). pity embedded in the same document (design default A: coin deduction + pity counter in one atomic operation). */
 export interface WalletDoc {
@@ -23,6 +24,15 @@ export interface WalletDoc {
    * coins update — see credit()'s rechargeUsdCents ref. Absent = 0 (never purchased / pre-feature wallet).
    */
   totalRechargeCents?: number;
+  /**
+   * Real-money top-up balance, tagged by payment-channel bucket (ADR-020, spendChannel.ts). Spendable only
+   * when the request's client platform maps to that same bucket — prevents e.g. Paddle-bought coins being
+   * spent inside the iOS app, which would violate Apple's anti-circumvention IAP terms. `coins` remains the
+   * always-spendable free pool (earned via ads/victory/promo/refund/grant, or grandfathered pre-migration
+   * recharges — this wallet shipped before channel tagging existed, so historical balances are not
+   * retroactively split by channel). Absent/0 per key = no top-up on that channel yet.
+   */
+  recharged?: Partial<Record<RechargeChannel, number>>;
   updatedAt: number;
 }
 
@@ -78,6 +88,12 @@ export interface RechargeDoc {
   usdCents?: number;
   /** Set once this receipt has been refunded (paddleRefund), so a re-delivered refund event is a no-op. */
   refundedAt?: number;
+  /**
+   * Present only for non-coin receipts (subscription cards / starter packs, verifyNonCoinReceipt) —
+   * absent for ordinary coin recharges. Lets a replayed receiptId be checked against the caller's
+   * expected product, so a monthly-card receipt can't later be replayed as a year-card/starter claim.
+   */
+  product?: 'monthly_card' | 'year_card' | 'starter_draw' | 'starter_growth';
 }
 
 /**

@@ -28,7 +28,7 @@ export async function pageAnalytics(ctx: Ctx): Promise<void> {
 
     const [
       summary, evCounts, dau, funnel, regions, osDist, loginHour, retention, firstSession,
-      levelFunnel, tutorialFunnel, sceneFunnel, browserDist, deviceTypeDist, geoDist, badgeDist,
+      levelFunnel, tutorialFunnel, sceneFunnel, featureGuideFunnel, browserDist, deviceTypeDist, geoDist, badgeDist,
     ] = await Promise.allSettled([
       api.analyticsSummary(),
       api.analyticsEvents('event_counts', days),
@@ -42,6 +42,7 @@ export async function pageAnalytics(ctx: Ctx): Promise<void> {
       api.analyticsEvents('level_funnel', days),
       api.analyticsEvents('tutorial_funnel', days),
       api.analyticsEvents('scene_funnel', days),
+      api.analyticsEvents('feature_guide_funnel', days),
       api.analyticsEvents('browser_dist', days),
       api.analyticsEvents('device_type_dist', days),
       api.analyticsEvents('geo_dist', days),
@@ -187,6 +188,36 @@ export async function pageAnalytics(ctx: Ctx): Promise<void> {
       body.append(h('div', { class: 'card' },
         h('div', { class: 'muted' }, `Level funnel — 20 levels with the lowest completion rate (last ${days} days)`),
         t,
+      ));
+    }
+
+    // First-time feature-guide funnel (design-doc-audit-2026-07) — shown/closed/replay per feature.
+    // "replays" stays 0 for every row until the per-page "?" re-open button is wired (ONBOARDING_DESIGN §8/§10).
+    if (featureGuideFunnel.status === 'fulfilled' && featureGuideFunnel.value.available && featureGuideFunnel.value.feature_guide_funnel?.length) {
+      const rows = featureGuideFunnel.value.feature_guide_funnel;
+      const t2 = h('table', {},
+        h('tr', {},
+          h('th', {}, 'Feature'),
+          h('th', { style: 'text-align:right' }, 'Shown'),
+          h('th', { style: 'text-align:right' }, 'Closed'),
+          h('th', { style: 'text-align:right' }, 'Replays'),
+          h('th', { style: 'text-align:right' }, 'Close rate'),
+          h('th', {}, ''),
+        ),
+      );
+      for (const r of rows) {
+        t2.append(h('tr', {},
+          h('td', {}, r.feature),
+          h('td', { style: 'text-align:right' }, String(r.shown)),
+          h('td', { style: 'text-align:right' }, String(r.closed)),
+          h('td', { style: 'text-align:right' }, String(r.replays)),
+          h('td', { style: 'text-align:right' }, r.close_rate !== undefined ? pct(r.close_rate) : '—'),
+          h('td', {}, barCell(r.close_rate ?? 0, 1)),
+        ));
+      }
+      body.append(h('div', { class: 'card' },
+        h('div', { class: 'muted' }, `First-time feature guide — shown/closed/replay per feature (last ${days} days)`),
+        t2,
       ));
     }
 

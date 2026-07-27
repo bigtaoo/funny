@@ -1,17 +1,20 @@
 // Ad reward + tiered victory coin credit (§2.3b). victoryCredit authoritatively enforces the daily win cap.
 import { VICTORY_DAILY_WIN_CAP } from '@nw/shared';
 import type { CommercialBaseCtor, Constructor, Result } from './base';
+import { effectiveCoins, spendChannelOf } from '../spendChannel';
 
 export interface RewardsHandlers {
   adsCredit(args: {
     accountId: string;
     amount: number;
     dayKey: string;
+    clientPlatform?: string;
   }): Promise<Result<{ coinsAfter: number }>>;
   victoryCredit(args: {
     accountId: string;
     amount: number;
     dayKey: string;
+    clientPlatform?: string;
   }): Promise<Result<{ coinsAfter: number; credited: number; capped: boolean }>>;
 }
 
@@ -22,10 +25,11 @@ export function RewardsMixin<TBase extends CommercialBaseCtor>(Base: TBase): TBa
       accountId: string;
       amount: number;
       dayKey: string;
+      clientPlatform?: string;
     }): Promise<Result<{ coinsAfter: number }>> {
       const amount = Math.max(0, Math.floor(args.amount));
       if (amount === 0) return { ok: false, error: 'BAD_REQUEST' };
-      const coinsAfter = await this.credit(args.accountId, amount, 'ads', {});
+      const coinsAfter = await this.credit(args.accountId, amount, 'ads', { clientPlatform: args.clientPlatform });
       return { ok: true, coinsAfter };
     }
 
@@ -39,6 +43,7 @@ export function RewardsMixin<TBase extends CommercialBaseCtor>(Base: TBase): TBa
       accountId: string;
       amount: number;
       dayKey: string;
+      clientPlatform?: string;
     }): Promise<Result<{ coinsAfter: number; credited: number; capped: boolean }>> {
       const amount = Math.max(0, Math.floor(args.amount));
       if (amount === 0) return { ok: false, error: 'BAD_REQUEST' };
@@ -58,9 +63,9 @@ export function RewardsMixin<TBase extends CommercialBaseCtor>(Base: TBase): TBa
       if (!slot) {
         // Daily cap reached: do not credit coins.
         const w = await this.cols.wallets.findOne({ _id: args.accountId });
-        return { ok: true, coinsAfter: w?.coins ?? 0, credited: 0, capped: true };
+        return { ok: true, coinsAfter: effectiveCoins(w, spendChannelOf(args.clientPlatform)), credited: 0, capped: true };
       }
-      const coinsAfter = await this.credit(args.accountId, amount, 'victory', {});
+      const coinsAfter = await this.credit(args.accountId, amount, 'victory', { clientPlatform: args.clientPlatform });
       return { ok: true, coinsAfter, credited: amount, capped: false };
     }
   };

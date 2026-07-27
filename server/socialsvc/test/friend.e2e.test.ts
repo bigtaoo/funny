@@ -3,7 +3,7 @@
 // relationship + cancels pending requests), unfriend, private chat (friend-gated, censored,
 // rate-limited), conversation list + history pagination + unread badges.
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
-import { FRIEND_CAP, friendEdgeId } from '@nw/shared';
+import { FRIEND_CAP, friendEdgeId, REPORT_REASON_MAX } from '@nw/shared';
 import type { SocialMongo } from '../src/db';
 import { FriendService } from '../src/friendService';
 import { tryConnect, FakeMeta, FakeGateway } from './harness';
@@ -27,6 +27,7 @@ describe.skipIf(!mongo)('socialsvc FriendService e2e', () => {
       m.collections.blockList.deleteMany({}),
       m.collections.conversations.deleteMany({}),
       m.collections.chatMessages.deleteMany({}),
+      m.collections.reports.deleteMany({}),
     ]);
     nowMs = 1_000_000;
     meta = new FakeMeta().add('a', 'P-A', 'Alice').add('b', 'P-B', 'Bob').add('c', 'P-C', 'Cara');
@@ -134,6 +135,37 @@ describe.skipIf(!mongo)('socialsvc FriendService e2e', () => {
     // unblock restores the ability to request.
     expect(await svc.unblockUser('a', 'P-B')).toBe(true);
     expect((await svc.requestFriend('a', 'P-B', undefined)).kind).toBe('ok');
+  });
+
+  // ── UGC report (design-doc-audit-2026-07, COMPLIANCE_GLOBAL.md §7) ────────────────────
+
+  it('reportUser: captures the report (open, oldest-first) without touching friendship/block state', async () => {
+    await befriend('a', 'P-B', 'b');
+    expect(await svc.reportUser('a', 'P-B', 'spamming private chat')).toBe(true);
+    nowMs += 1000;
+    expect(await svc.reportUser('a', 'P-C', 'harassment')).toBe(true);
+
+    // Friendship (a↔b) is untouched — reporting is not the same action as blocking.
+    expect(await m.collections.friendEdges.countDocuments({})).toBe(2);
+
+    const open = await svc.listOpenReports();
+    expect(open).toHaveLength(2);
+    expect(open[0]).toMatchObject({ reporterId: 'a', targetId: 'b', reason: 'spamming private chat', status: 'open' });
+    expect(open[1]).toMatchObject({ reporterId: 'a', targetId: 'c', reason: 'harassment', status: 'open' });
+  });
+
+  it('reportUser: rejects reporting yourself or a nonexistent player', async () => {
+    expect(await svc.reportUser('a', 'P-A', 'self-report attempt')).toBe(false);
+    expect(await svc.reportUser('a', 'P-NOPE', 'ghost')).toBe(false);
+    expect(await svc.listOpenReports()).toHaveLength(0);
+  });
+
+  it('reportUser: reason is trimmed and capped at REPORT_REASON_MAX', async () => {
+    const tooLong = 'x'.repeat(600);
+    await svc.reportUser('a', 'P-B', `  ${tooLong}  `);
+    const [doc] = await svc.listOpenReports();
+    expect(doc!.reason.length).toBe(REPORT_REASON_MAX);
+    expect(doc!.reason.startsWith(' ')).toBe(false); // leading/trailing whitespace trimmed first
   });
 
   it('removeFriend: deletes both edges and pushes an unfriend update', async () => {

@@ -48,6 +48,18 @@ export function accountIdOf(req: FastifyRequest): string {
   return id;
 }
 
+/**
+ * Client-declared request platform (X-NW-Platform header: 'ios' | 'android' | 'web' | 'wechat' | 'crazygames'),
+ * forwarded verbatim to commercial as `clientPlatform` — determines which recharged-pool bucket (ADR-020,
+ * server/commercial/src/spendChannel.ts) a wallet mutation may spend from / display alongside the free pool.
+ * Absent/unrecognized header → undefined, which commercial defaults to the 'web' bucket (today's behavior for
+ * every client that predates this header).
+ */
+export function clientPlatformOf(req: FastifyRequest): string | undefined {
+  const h = req.headers['x-nw-platform'];
+  return typeof h === 'string' && h ? h : undefined;
+}
+
 /** In-process sliding-window rate limiter keyed by IP/key. */
 export class SlidingRateLimiter {
   private readonly windows = new Map<string, number[]>();

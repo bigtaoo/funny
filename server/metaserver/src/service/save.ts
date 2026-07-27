@@ -14,7 +14,7 @@ import { getDisplayName, ensurePublicId, hasFreeRename } from '../accounts.js';
 import { mirrorWalletFrom, reconcileUndelivered } from '../economy.js';
 import { nullMetaSocialsvcClient } from '../socialsvcClient.js';
 import type { MetaHandlers } from '../generated/routes.gen.js';
-import { accountIdOf, type Constructor, type MetaBaseCtor } from './base.js';
+import { accountIdOf, clientPlatformOf, type Constructor, type MetaBaseCtor } from './base.js';
 
 type SaveHandlers = Pick<
   MetaHandlers,
@@ -66,7 +66,7 @@ export function SaveMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase & Cons
       if (commercial.available) {
         try {
           await reconcileUndelivered(cols, commercial, this.deps.socialsvc ?? nullMetaSocialsvcClient, accountId, now());
-          const w = await commercial.getWallet(accountId);
+          const w = await commercial.getWallet(accountId, clientPlatformOf(req));
           if (w) await mirrorWalletFrom(cols, accountId, w, now());
         } catch (e) {
           req.log.warn({ err: e }, 'commercial reconcile/mirror failed (serving local save)');

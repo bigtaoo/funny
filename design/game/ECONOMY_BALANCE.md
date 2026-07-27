@@ -95,7 +95,7 @@
 **Dev 桩兜底档位 & CI 修复（2026-07-01）**
 - 档位键从 `small/mid/large` 改名为 `t099…t9999`（feat/paddle-iap）后，IAP dev 桩的兜底档位仍指向已删除的 `small`，导致 E2E 无 `tier:` 前缀的 `topup_<uid>` 收据解析出 `undefined` coins → 充值报错、full-link E2E 两条 recharge 断言失败。
 - 修复：新增 `economy.ts DEV_STUB_DEFAULT_TIER = 't499'`（550 coins > 500 改名费），`iap.ts devVerify` / `service.ts devVerifyReceipt` 两处兜底改引用之；补 `commercial/test/iap.test.ts` 无前缀路径回归用例（原用例只覆盖 `tier:` 前缀，漏掉此路径）。
-- ⚠️ **遗留**：`iap.ts` 内真实支付 productId/金额兜底表（`resolveCoinsFromProductId` / `resolveCoinsFromAmount` 的 `DEFAULTS`）仍映射到已删除的 `small/mid/large`，未设 `NW_IAP_PRODUCT_MAP`/`NW_IAP_AMOUNT_MAP` 时 Apple/Google/微信/Stripe 会发 0 coins。CI 不覆盖（走 dev 桩），属潜伏 bug，须先定 app store productId 命名约定再修（独立任务）。
+- **✅ 已修复（`1fb57a39` "fix(iap): resync built-in IAP tier fallbacks to t099..t9999"）**：`resolveCoinsFromProductId`/`resolveCoinsFromAmount` 不再是硬编码的 `small/mid/large` 兜底表，改为**从 `IAP_TIERS`/`IAP_TIERS_LIST` 动态派生**——`resolveCoinsFromProductId` 按约定 `${NW_IAP_BUNDLE}.coins.<tierId>` 拼字符串再查 `tierMap[tierId]`，`resolveCoinsFromAmount` 直接遍历 `IAP_TIERS_LIST.usdCents` 找匹配——档位改名/增删不会再让兜底表漂移。未设 `NW_IAP_PRODUCT_MAP`/`NW_IAP_AMOUNT_MAP` 时按此约定兜底而非发 0 coins（微信因计价 fen 与经济配置无关，仍**必须**设 `NW_IAP_AMOUNT_MAP`，见 `iap.ts` 注释）。
 
 **客户端接线待办（App 层）**
 
@@ -242,7 +242,7 @@ PvP 天梯 **9 个段位/称号**。两类金币产出：
 
 | Sink | 卖什么 | 落点 | 备注 |
 |---|---|---|---|
-| 洗练基础金币化 | 尝试次数（买不到确定结果） | EQUIPMENT_DESIGN §7.8 / ECONOMY_NUMBERS §5.3 | 每次洗练收基础金币，不止 2 技能锁定费；⚠️ 代码现仅扣材料，待补 |
+| 洗练基础金币化 | 尝试次数（买不到确定结果） | EQUIPMENT_DESIGN §7.8 / ECONOMY_NUMBERS §5.3 | 每次洗练收基础金币，不止 2 技能锁定费；**✅ 已实装**（`reforgeEquipment` 走 `commercial.spend` 扣费，见 EQUIPMENT_DESIGN §7.8） |
 | SLG 便利（迁城令 / 开新地块 / 宗门科技捐献） | 方便（不买上限/战力） | SLG_CITY_DESIGN / SLG_DESIGN | ADR-022「coin 只买加速」之外的扩展，红线相同 |
 | 外观广度（主城/城池皮肤·宗门旗徽·头像框·称号装饰·战斗特效·录像装饰） | 体面（纯外观） | 文具 bone-slot 程序绘制，近零美术成本 | 买空图鉴后仍可花钱的长尾去处 |
 | PvE 多人副本（co-op）产出消耗 | 内容 | CAMPAIGN_DESIGN | 非 SLG 鲸鱼的装备/角色卡战力消耗出口 |

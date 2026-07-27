@@ -5,11 +5,13 @@ import {
   MARCH_SPEED_SEC_PER_TILE,
   MARCH_MORALE_MAX,
   MARCH_MORALE_COMBAT_FLOOR,
+  MARCH_MORALE_FLOOR_RADIUS_RATIO,
   RESOURCE_YIELD_BASE,
   type ResourceType,
   type TileType,
 } from './core';
 import { proceduralTile } from './mapgen';
+import { _MAP_HALF_DIAGONAL } from './province';
 
 /**
  * Per-tile hourly yield (added to `playerWorld.yieldRate` after claiming). Pure function.
@@ -98,7 +100,23 @@ export function findMarchPath(
   // open set: min-heap, elements = [f, flatIdx]
   const heap: [number, number][] = [];
 
-  const h = (x: number, y: number) => Math.abs(x - tx) + Math.abs(y - ty);
+  // Tie-breaking (ADR-049 fix, 2026-07-27): with 4-directional movement, a plain Manhattan heuristic is
+  // exact whenever the path is unobstructed, so EVERY monotone lattice path from start to destination ties
+  // on f = g + h. Without a tie-break, a min-heap A* can end up expanding close to the full dx×dy bounding
+  // rectangle before happening to pop the destination — harmless on the old 500×500 map (max diagonal
+  // ~350×350 ≈ 122,500 cells, well under MAX_NODES), but on the 1500×1500 map (ADR-049) a routine diagonal
+  // march (e.g. dx=dy=600 ≈ 360,000-cell box) blows past MAX_NODES and findMarchPath incorrectly returns
+  // null (PATH_BLOCKED) even though a path obviously exists — confirmed empirically (design-doc-audit-2026-07
+  // econ-sim march-fatigue pass). Nudging h toward the straight line between (fx,fy) and (tx,ty) via a tiny
+  // cross-track bias breaks ties deterministically and cuts exploration back to ~O(distance); TIE_EPS is
+  // small enough that it can never make A* prefer a longer path over a shorter one (max possible cross-track
+  // value is bounded by mapW×mapH, so TIE_EPS × that product stays well under 1 full step of g-cost).
+  const TIE_EPS = 1 / (2 * mapW * mapH + 1);
+  const h = (x: number, y: number) => {
+    const base = Math.abs(x - tx) + Math.abs(y - ty);
+    const cross = Math.abs((x - fx) * (ty - fy) - (tx - fx) * (y - fy));
+    return base + cross * TIE_EPS;
+  };
   const si = fy * mapW + fx;
   g.set(si, 0);
   _slgHeapPush(heap, [h(fx, fy), si]);
@@ -151,12 +169,21 @@ export function marchStepArriveAt(departAt: number, stepIndex: number): number {
 }
 
 /**
- * Remaining morale (out of MARCH_MORALE_MAX) for a march given its full path: 1 point lost per tile moved
- * (path includes the start cell, so the cost is path.length - 1 tiles), floored at 0. Bound to the march
- * instance — every departure starts fresh at MARCH_MORALE_MAX regardless of the team's history.
+ * Tiles a march can cover before morale bottoms out, at the CURRENT map size (ADR-053). A ratio of the map's
+ * half-diagonal rather than a flat constant — see MARCH_MORALE_FLOOR_RADIUS_RATIO for why (auto-rescales with
+ * SLG_MAP_W/H instead of silently going stale, as the flat MARCH_MORALE_MAX=100 tiles did across ADR-049).
+ */
+export const MARCH_MORALE_FLOOR_TILES = MARCH_MORALE_FLOOR_RADIUS_RATIO * _MAP_HALF_DIAGONAL;
+
+/**
+ * Remaining morale (out of MARCH_MORALE_MAX) for a march given its full path: cost per tile is
+ * MARCH_MORALE_MAX / MARCH_MORALE_FLOOR_TILES (path includes the start cell, so tiles moved = path.length - 1),
+ * floored at 0. Bound to the march instance — every departure starts fresh at MARCH_MORALE_MAX regardless of
+ * the team's history.
  */
 export function marchMoraleFromPath(path: PathCell[]): number {
-  return Math.max(0, MARCH_MORALE_MAX - Math.max(0, path.length - 1));
+  const tiles = Math.max(0, path.length - 1);
+  return Math.max(0, MARCH_MORALE_MAX - tiles * (MARCH_MORALE_MAX / MARCH_MORALE_FLOOR_TILES));
 }
 
 /**

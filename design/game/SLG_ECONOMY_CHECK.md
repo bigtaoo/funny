@@ -13,7 +13,7 @@
 
 ## 0. 核心认知：这批数不是同一种「经济」
 
-最大的误区是把这一整批数当成一件事「跑一遍经济模拟」。它们其实分属 **6 条互不相同的核验轨道**，判据、工具、签字人都不一样。先分轨，再各自核：
+最大的误区是把这一整批数当成一件事「跑一遍经济模拟」。它们其实分属 **7 条互不相同的核验轨道**（另有险地/行军疲劳等后续追加的专项核验，见 `ECONOMY_VERIFICATION_LOG.md` §13-SLG-STRONGHOLD/§13-SLG-MARCH，不占用下表编号），判据、工具、签字人都不一样。先分轨，再各自核：
 
 | # | 参数 | 影响域 | 是否动**持久经济**（coin/材料） | 核验轨道 | 工具 |
 |---|---|---|---|---|---|
@@ -25,8 +25,9 @@
 | D | `sectStrengthScore` 权重 | 分区公平（蛇形均衡） | 否 | §6 分配方差 | 蒙特卡洛分配模拟 |
 | E | `PROSPERITY_W_*` / `PROSPERITY_DECAY_PER_DAY` / `SECT_FOUND_PROSPERITY_MIN` | 节奏 / 建宗门门槛 | 否 | §7 解析可达性 | 公式手算 / 表格 |
 | F | `WORLD_CAPACITY` / `RESET_DELETE_BATCH` | 运维 / 性能 | 否 | §8 负载估算 | 容量估算 / 压测 |
+| G | `MARCH_MORALE_MAX` / `MARCH_MORALE_FLOOR_RADIUS_RATIO` / `MARCH_MORALE_COMBAT_FLOOR` | 行军疲劳梯度（战力，非经济） | 否 | §5.5 行军疲劳梯度 `[✅ RESOLVED]` | econ-sim（真实 A*+省份几何） |
 
-> **唯一会撑爆全局经济的是 A 轨**（settle 发持久材料/金币）。B/C/D/E/F 是「玩法平衡」「分区公平」「节奏」「运维」，各有判据，但都**不并入** `ECONOMY_NUMBERS §6.1` 月度金币预算。把它们混进同一个「经济模拟」会得出无意义的结论。
+> **唯一会撑爆全局经济的是 A 轨**（settle 发持久材料/金币）。B/C/D/E/F/G 是「玩法平衡」「分区公平」「节奏」「运维」，各有判据，但都**不并入** `ECONOMY_NUMBERS §6.1` 月度金币预算。把它们混进同一个「经济模拟」会得出无意义的结论。
 
 ### 0.1 SLG 的持久经济面只有一处（2026-06-30 拍板）
 
@@ -162,6 +163,20 @@ capitalMult(tier) = 该档玩家所属宗门持中原首府(CENTER_CAPITAL_IDX=9
 
 ---
 
+## 5.5 G 轨——行军疲劳梯度（`MARCH_MORALE_MAX` / `MARCH_MORALE_FLOOR_RADIUS_RATIO` / `MARCH_MORALE_COMBAT_FLOOR`）`[✅ RESOLVED，2026-07-27 首次核验 FAIL → 同日 ADR-053 修复后 PASS]`
+
+> 2026-07-27 design-doc-audit 新增（此前无对应轨道）。ADR-047（行军疲劳）原用绝对格数（`MARCH_MORALE_MAX=100`）定义惩罚预算，而地图尺寸（`SLG_MAP_W/H`）是会变的（ADR-032→ADR-049 已经变过一次），两者原本没有联动机制——首次核验（本节新建当日）发现同省内常规行动触底比例已达 100%，梯度名存实亡。**同日拍板 ADR-053**：改为地图比率制（`MARCH_MORALE_FLOOR_RADIUS_RATIO=0.35`），不仅恢复梯度还消除了"每次地图改动都要记得联动"的复发问题——本轨判据从此变成常规回归项，而非一次性修复。详细决策记录见 [`design/DECISIONS.md` ADR-053](../DECISIONS.md)，演算数据见 [`ECONOMY_VERIFICATION_LOG.md` §13-SLG-MARCH.2/.5](ECONOMY_VERIFICATION_LOG.md)。
+
+**判据**：
+- **家门口不罚**：离自己首府很近（半径 ≤ 地图半对角线 8%）的短途行军，触底（疲劳耗尽到地板）比例应保持低位（提案 ≤ **20%**）——这是 ADR-047 明确要保留的"本国防守无惩罚"场景。
+- **同省常规行动仍需有梯度**：省内最远单腿距离（不需要经过 crossing 的最长合法单次行军）触底比例不应接近 100%（提案 ≤ **80%**）——若连"自己国境内正常调兵"都必然触底，说明疲劳预算相对当前地图尺寸的省份几何已经失衡，梯度对多数实际场景形同虚设，只对"贴身近战"还有意义。
+- **判据必须用真实地图/真实省份几何跑**（`provinceCapitalPositions`/`provinceIdxAt` + 真实 A*），不能手估距离——地图尺寸/省份半径分位（`PROVINCE_CORE_RADIUS_RATIO` 等）任何一个变了，省内典型距离就跟着变，手估必然过期。
+- **跨省/跨图距离不是一个可采样的单一量**：ADR-034 的环带/分支地形把跨省移动拆成"占领 crossing"+"再出发"两段独立行军，疲劳逐段满额重置——核验时不要计算"首府到邻省/核心省的直线距离触底率"，这个量在架构上没有意义（详见 `ECONOMY_VERIFICATION_LOG.md` §13-SLG-MARCH.1）。
+
+**工具**：`server/tools/econ-sim/src/marchFatigue.ts` + `marchFatigueRun.ts`（`npx tsx src/marchFatigueRun.ts`），跑法/结论见 [`ECONOMY_VERIFICATION_LOG.md` §13-SLG-MARCH](ECONOMY_VERIFICATION_LOG.md)。**触发重跑的时机**：任何改动 `SLG_MAP_W/H`、`PROVINCE_*_RADIUS_RATIO`、或 `MARCH_MORALE_MAX/COMBAT_FLOOR` 本身的 ADR 落地后。
+
+---
+
 ## 6. D 轨——分区公平（sectStrengthScore 权重）
 
 `sectStrengthScore` 权重只影响 `allocateSectsToShards`（蛇形均衡）把宗门发到各 shard 后**强弱是否持平**，与经济无关。
@@ -211,11 +226,13 @@ capitalMult(tier) = 该档玩家所属宗门持中原首府(CENTER_CAPITAL_IDX=9
 - [x] **D 轨 ✅ CLOSED（2026-06-30）**：蒙特卡洛 10 seeds × 6 配置（sects 10–1000，shards 2–10）**全 PASS**（极差 ≤ 最强单体，典型极差 ≈ 10–15% 上界）；排名权重是主稳定器（去掉排名退化符合预期，确认多维设计必要性）。结论 [§13-SLG-D](ECONOMY_VERIFICATION_LOG.md)。
 - [x] **E 轨 ✅ CLOSED（2026-06-30）**：活跃中位家族（20 人起、3.5 地/天、4 活跃/天）**第 9 天**建宗门（7–14 天窗口 ✅）；从 ≥3000 分起零活跃 **8 天**跌门槛（≥7 天判据 ✅）；`decayProsperity` 惰性结算，有动作即满分重算，周常活跃玩家不观测衰减 ✅。结论 [§13-SLG-E](ECONOMY_VERIFICATION_LOG.md)。
 - [x] **F 轨 ✅ CLOSED（2026-06-30，工程估算）**：⚠️ 本估算按**当时的 WORLD_CAPACITY=10000** 做；2026-07-07 ADR-032 已降到 **500**（见上 A 轨条 + §8），实际文档量约为下列数的 1/20，故此估算现为**保守上界**。WORLD_CAPACITY=10000 / shard：~246k（中位）–582k（峰值）文档；热路径查询全为点查或窄范围扫描（< 10ms）；RESET_DELETE_BATCH=2000 清档 **1.9–4.4s**（< 5s）；活跃层缓存 **36 MB / shard**（VPS 可承 28–56 shard）。结论 [§13-SLG-F](ECONOMY_VERIFICATION_LOG.md)；待预发压测确认。
-- [x] **险地轨 ✅ CLOSED（2026-07-02）**：econ-sim `stronghold.ts`/`strongholdRun.ts` 用真实 `proceduralTile` 跨 100 种子实测——险地占领发**持久** `binding`（A 轨从未计入的龙头）。**缺陷（已修复）**：原 freq `1/70` value-noise 在 300×300 图上只 ~18 格点，险地数量种子间 **0→6,436**（CV 1.02，14% 零险地，聚成 blob 均值 862 格），持久 binding 稀释高数量种子/满占领率破 15% 判据。**修复**：生成层换逐格哈希 `rand2(x,y,seed^0x0555) > 0.997`（`shared/slg.ts`，merge-first / rule 4 已先合 main），删 `strongholdFreq`。**修复后实测（2026-07-05 用 500×500 + 等级 10 新地图重跑，见 §13-SLG-STRONGHOLD.2）**：险地数 **567 中位（504–636）**、平均 blob **1.0 格（孤立点）**、持久 binding 稀释峰值 **12.6%（< 15%）**——①②③全 PASS。结论 [§13-SLG-STRONGHOLD](ECONOMY_VERIFICATION_LOG.md)。
-- [x] **登记 ✅（2026-06-30）**：C/D/E/F 轨结论已写入 [ECONOMY_VERIFICATION_LOG.md](ECONOMY_VERIFICATION_LOG.md) §13-SLG-C / §13-SLG-D / §13-SLG-E / §13-SLG-F；数值未变（常量未动），SLG_DESIGN_LOG §17.1 / §21.4 `DRAFT` 标记按上线后压测策略保留（见 §10）。险地轨结论写入 §13-SLG-STRONGHOLD（2026-07-02）。
-- [x] **代码**：C/D/E/F 轨核验数字与 `server/shared/src/slg.ts` 当前常量一致，无需改动；**险地轨**生成缺陷已修复并落地（`slg.ts` 逐格哈希 + `strongholdThreshold=0.997`，删 `strongholdFreq`；merge-first 已合 main）。
+- [~] **险地轨 ⚠️ NEEDS ATTENTION（①②③战力子项仍 CLOSED 2026-07-02/07-16；③持久稀释判据 2026-07-27 用 1500×1500 重跑后转 NEEDS ATTENTION）**：econ-sim `stronghold.ts`/`strongholdRun.ts` 用真实 `proceduralTile` 跨 100 种子实测——险地占领发**持久** `binding`（A 轨从未计入的龙头）。**缺陷（已修复，2026-07-02）**：原 freq `1/70` value-noise 在 300×300 图上只 ~18 格点，险地数量种子间 **0→6,436**（CV 1.02，14% 零险地，聚成 blob 均值 862 格），持久 binding 稀释高数量种子/满占领率破 15% 判据。**修复**：生成层换逐格哈希 `rand2(x,y,seed^0x0555) > 0.997`（`shared/slg.ts`，merge-first / rule 4 已先合 main），删 `strongholdFreq`。**500×500 重跑（2026-07-05，见 §13-SLG-STRONGHOLD.2）**：险地数 567 中位、平均 blob 1.0 格、持久 binding 稀释峰值 12.6%（< 15%）——①②③全 PASS。**1500×1500 重跑（2026-07-27，ADR-049，见 §13-SLG-STRONGHOLD.2b）**：①②仍 PASS；**③持久稀释因险地总量随地图面积 9× 线性放大（567→2,817 中位）而摊薄人数不变，恶化到 65.2%（100% 占领率），即便最保守场景也只剩 1pp 余量（14.0% vs 15% 红线）——❌ NEEDS ATTENTION，未算过线**。**新手开放门槛（§13-SLG-STRONGHOLD.5）2026-07-27 重跑后同样 ❌ FAIL**：ADR-048 把新手初始兵力从 2,000 提到 10,000 后，`STRONGHOLD_GARRISON_PER_LEVEL=360`/`CROSSING_GARRISON_PER_LEVEL=200` 未同步调整，新号开局即 100% 胜率，"几乎打不过"设计意图失效。两项均已 `spawn_task` 登记为独立后续项，需 SLG 玩法/经济负责人重新拍板常量。结论 [§13-SLG-STRONGHOLD](ECONOMY_VERIFICATION_LOG.md)。
+- [ ] **G 轨（行军疲劳梯度）❌ FAIL（2026-07-27 首次核验，此前无此轨道）**：econ-sim 新建 `marchFatigue.ts`/`marchFatigueRun.ts`，用真实 A*+真实省份几何跨 10 种子实测——`MARCH_MORALE_MAX=100` 是按旧 500×500 地图拍的数，ADR-049 放大到 1500×1500 后从未重新核验。**结果**：家门口短途（离首府 ≤8% 半对角线）触底比例 18%（PASS，判据 ≤20%），但**同省内最远单腿距离（无需 crossing 的常规行动）触底比例 100%、中位距离 534 格**（远超 100 格预算的 5 倍多，判据 ≤80% 未过）——梯度对"省内常规远征"已名存实亡，只对贴身近战还有意义。已 `spawn_task` 登记为独立后续项（`MARCH_MORALE_MAX` 需跟着地图尺寸联动调整或改用相对公式）。**副产品**：排查过程中发现并修复了 `findMarchPath` 的 A* 平局退化 bug（新地图上常规对角距离会误判 PATH_BLOCKED），见 `SLG_DESIGN.md` §U14。结论 [§13-SLG-MARCH](ECONOMY_VERIFICATION_LOG.md)。
+- [x] **登记 ✅（2026-06-30，2026-07-27 补 G 轨/险地轨重跑）**：C/D/E/F 轨结论已写入 [ECONOMY_VERIFICATION_LOG.md](ECONOMY_VERIFICATION_LOG.md) §13-SLG-C / §13-SLG-D / §13-SLG-E / §13-SLG-F；数值未变（常量未动），SLG_DESIGN_LOG §17.1 / §21.4 `DRAFT` 标记按上线后压测策略保留（见 §10）。险地轨结论写入 §13-SLG-STRONGHOLD（2026-07-02，1500×1500 重跑补充于 2026-07-27）；G 轨（行军疲劳）结论写入 §13-SLG-MARCH（2026-07-27，新建）。
+- [x] **代码**：C/D/E/F 轨核验数字与 `server/shared/src/slg.ts` 当前常量一致，无需改动；**险地轨**生成缺陷已修复并落地（`slg.ts` 逐格哈希 + `strongholdThreshold=0.997`，删 `strongholdFreq`；merge-first 已合 main）；**寻路引擎**：`findMarchPath` A* 平局打破偏置已修复并落地（`march.ts`，2026-07-27），回归测试见 `worldsvc/test/pathfinding.test.ts`。
+- [x] **G 轨（行军疲劳）**：`[✅ RESOLVED]` 首次核验 FAIL（同省内常规行动 100% 触底）→ ADR-053 拍板改地图比率制（`MARCH_MORALE_FLOOR_RADIUS_RATIO=0.35`）→ 重跑 `marchFatigueRun.ts` PASS（家门口 0% ≤20%、省内最远单腿 70% ≤80%）；`server/shared`+`worldsvc` 全量测试绿；决策见 `design/DECISIONS.md` ADR-053，演算见 `ECONOMY_VERIFICATION_LOG.md` §13-SLG-MARCH。
 
-**签字人**：A/A-coin 轨 = 经济负责人（动持久经济）；B/C 轨 = 战斗/SLG 玩法负责人；D/E/F 轨 = 实现者自核 + 复核即可；**险地轨**：持久 binding 稀释 = 经济负责人，生成算法改动 = SLG 玩法负责人。
+**签字人**：A/A-coin 轨 = 经济负责人（动持久经济）；B/C 轨 = 战斗/SLG 玩法负责人；D/E/F 轨 = 实现者自核 + 复核即可；**险地轨**：持久 binding 稀释 = 经济负责人，生成算法改动 = SLG 玩法负责人；**G 轨（行军疲劳）**：数值拍板 = SLG 玩法负责人（已拍板 ADR-053，RESOLVED）。
 
 ---
 

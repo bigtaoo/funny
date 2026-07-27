@@ -129,7 +129,7 @@ const resVsCap = SEASON_RES_PER_STRONGHOLD / NUMBERS.RESOURCE_CAP;
 console.log(`  season-resource loot per capture = ${fmt(SEASON_RES_PER_STRONGHOLD)} to one resType (§3.1, one-time, season-clears)`);
 console.log(`    = ${pct(resVsCap)} of RESOURCE_CAP (${fmt(NUMBERS.RESOURCE_CAP)}) — a meaningful but capped one-off injection; season-internal (B-track, no persistent impact).`);
 console.log(`  NPC garrison = ${fmt(STRONGHOLD_NPC_GARRISON)} troops at level ${NUMBERS.STRONGHOLD_LEVEL}.`);
-console.log(`    base troop cap = ${fmt(NUMBERS.TROOP_CAP_BASE)} (drillYard grows to 12,000). A ${fmt(STRONGHOLD_NPC_GARRISON)}-troop NPC + base defender`);
+console.log(`    base troop cap = ${fmt(NUMBERS.TROOP_CAP_BASE)} (drillYard grows to 20,000, ADR-048). A ${fmt(STRONGHOLD_NPC_GARRISON)}-troop NPC + base defender`);
 console.log(`    advantage gates strongholds behind tech/equipment (slg.ts:1055) → capture rate is realistically ≤ 50%, not 100%.\n`);
 
 // ── verdict ──────────────────────────────────────────────────────────────────

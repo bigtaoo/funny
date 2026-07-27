@@ -1,8 +1,10 @@
 // Recharge (IAP receipt verify) + Paddle webhook completion (§6.5). receiptId idempotency + first-purchase
 // bonus CAS + cross-account receipt guard. claimFirstPurchaseBonus is recharge-only (kept private here).
 import { FIRST_PURCHASE_BONUS_MULTIPLIER } from '@nw/shared';
+import type { IapProductKind } from '../iap';
 import type { CommercialBaseCtor, Constructor, Result } from './base';
 import type { PaddleEventDoc } from '../db';
+import { effectiveCoins, rechargeChannelOf, spendChannelOf } from '../spendChannel';
 
 export interface RechargeHandlers {
   rechargeVerify(args: {
@@ -10,7 +12,23 @@ export interface RechargeHandlers {
     platform: string;
     receipt: string;
     receiptId: string;
+    clientPlatform?: string;
   }): Promise<Result<{ coinsAfter: number; coinsGranted: number }>>;
+  /**
+   * Verify a receipt resolves to a specific non-coin SKU (monthly/year card, starter pack) before the
+   * caller (metaserver's subscription/starter HTTP handlers) is allowed to grant it — closes the
+   * "treated as authorized" gap where those endpoints used to grant on a bare authenticated request with
+   * no proof of payment at all (GACHA_DESIGN §5/§6). Idempotent on receiptId like rechargeVerify; does
+   * NOT itself grant anything — the caller still calls monthlyCardBuy/yearCardBuy/starterBuy after this
+   * returns ok, same two-step shape as iapVerify → credit.
+   */
+  verifyNonCoinReceipt(args: {
+    accountId: string;
+    platform: string;
+    receipt: string;
+    receiptId: string;
+    expectedProduct: IapProductKind;
+  }): Promise<Result<{ product: IapProductKind }>>;
   paddleComplete(args: {
     accountId: string;
     transactionId: string;
@@ -19,6 +37,9 @@ export interface RechargeHandlers {
      * already resolved priceId × quantity into this. Absent/0 = not tracked (e.g. unmapped priceId). */
     usdCents?: number;
   }): Promise<Result<{ coinsAfter: number; coinsGranted: number }>>;
+  // (paddleComplete has no clientPlatform — it's a server-side webhook callback, not a client request;
+  // its channel is always 'web' since Paddle only serves the web build. Its returned coinsAfter therefore
+  // reflects the 'web' bucket, which is what the next same-session web wallet fetch will also show.)
   /**
    * Decrement totalRechargeCents for a refunded Paddle transaction (GACHA_DESIGN §13, ADR-045): looks up the
    * original recharge's stored usdCents and subtracts it (floored at 0). Idempotent via refundedAt — a
@@ -60,14 +81,16 @@ export function RechargeMixin<TBase extends CommercialBaseCtor>(Base: TBase): TB
       platform: string;
       receipt: string;
       receiptId: string;
+      clientPlatform?: string;
     }): Promise<Result<{ coinsAfter: number; coinsGranted: number }>> {
+      const displayChannel = spendChannelOf(args.clientPlatform);
       const existing = await this.cols.recharges.findOne({ _id: args.receiptId });
       if (existing) {
         // Receipt already consumed: replay only if it belongs to the same account (return that account's balance);
         // otherwise reject — prevents mirroring another account's balance to the requester (cross-account balance leak).
         if (existing.accountId !== args.accountId) return { ok: false, error: 'INVALID_RECEIPT' };
         const w = await this.cols.wallets.findOne({ _id: existing.accountId });
-        return { ok: true, coinsAfter: w?.coins ?? 0, coinsGranted: existing.coinsGranted };
+        return { ok: true, coinsAfter: effectiveCoins(w, displayChannel), coinsGranted: existing.coinsGranted };
       }
       const v = await this.verifyReceipt(args.platform, args.receipt);
       if (!v.ok) return { ok: false, error: 'INVALID_RECEIPT' };
@@ -92,7 +115,7 @@ export function RechargeMixin<TBase extends CommercialBaseCtor>(Base: TBase): TB
           // Same cross-account guard: if the receipt was already claimed by a different account, reject.
           if (r && r.accountId !== args.accountId) return { ok: false, error: 'INVALID_RECEIPT' };
           const w = await this.cols.wallets.findOne({ _id: args.accountId });
-          return { ok: true, coinsAfter: w?.coins ?? 0, coinsGranted: r?.coinsGranted ?? v.coins };
+          return { ok: true, coinsAfter: effectiveCoins(w, displayChannel), coinsGranted: r?.coinsGranted ?? v.coins };
         }
         throw e;
       }
@@ -106,11 +129,59 @@ export function RechargeMixin<TBase extends CommercialBaseCtor>(Base: TBase): TB
       if (coinsGranted !== v.coins) {
         await this.cols.recharges.updateOne({ _id: args.receiptId }, { $set: { coinsGranted } });
       }
+      // Real money: fund the recharged bucket matching the VERIFIED platform (ADR-020), not the free pool.
+      // rechargeChannelOf returns null for unrecognized platform strings (dev-stub `dev`/`dev-*`) — falls
+      // back to `channel: undefined` (free pool), same as before this feature existed.
       const coinsAfter = await this.credit(args.accountId, coinsGranted, 'recharge', {
         receiptId: args.receiptId,
         rechargeUsdCents: usdCents,
+        channel: rechargeChannelOf(args.platform) ?? undefined,
+        clientPlatform: args.clientPlatform,
       });
       return { ok: true, coinsAfter, coinsGranted };
+    }
+
+    async verifyNonCoinReceipt(args: {
+      accountId: string;
+      platform: string;
+      receipt: string;
+      receiptId: string;
+      expectedProduct: IapProductKind;
+    }): Promise<Result<{ product: IapProductKind }>> {
+      const existing = await this.cols.recharges.findOne({ _id: args.receiptId });
+      if (existing) {
+        // Cross-account guard (mirrors rechargeVerify) + cross-product guard: a receipt already consumed
+        // for a different product (or a different account) can't be replayed to claim this one.
+        if (existing.accountId !== args.accountId) return { ok: false, error: 'INVALID_RECEIPT' };
+        if (existing.product !== args.expectedProduct) return { ok: false, error: 'INVALID_RECEIPT' };
+        return { ok: true, product: args.expectedProduct };
+      }
+      const v = await this.verifyReceipt(args.platform, args.receipt);
+      if (!v.ok || !v.product || v.product !== args.expectedProduct) {
+        return { ok: false, error: 'INVALID_RECEIPT' };
+      }
+      try {
+        await this.cols.recharges.insertOne({
+          _id: args.receiptId,
+          accountId: args.accountId,
+          platform: args.platform,
+          coinsGranted: 0,
+          status: 'granted',
+          rawReceipt: args.receipt,
+          ts: this.now(),
+          product: v.product,
+        });
+      } catch (e) {
+        if ((e as { code?: number }).code === 11000) {
+          const r = await this.cols.recharges.findOne({ _id: args.receiptId });
+          if (!r || r.accountId !== args.accountId || r.product !== args.expectedProduct) {
+            return { ok: false, error: 'INVALID_RECEIPT' };
+          }
+          return { ok: true, product: args.expectedProduct };
+        }
+        throw e;
+      }
+      return { ok: true, product: args.expectedProduct };
     }
 
     /**
@@ -129,7 +200,7 @@ export function RechargeMixin<TBase extends CommercialBaseCtor>(Base: TBase): TB
       if (existing) {
         if (existing.accountId !== args.accountId) return { ok: false, error: 'INVALID_RECEIPT' };
         const w = await this.cols.wallets.findOne({ _id: existing.accountId });
-        return { ok: true, coinsAfter: w?.coins ?? 0, coinsGranted: existing.coinsGranted };
+        return { ok: true, coinsAfter: effectiveCoins(w, 'web'), coinsGranted: existing.coinsGranted };
       }
 
       await this.ensureWallet(args.accountId);
@@ -153,13 +224,15 @@ export function RechargeMixin<TBase extends CommercialBaseCtor>(Base: TBase): TB
           const r = await this.cols.recharges.findOne({ _id: receiptId });
           if (r && r.accountId !== args.accountId) return { ok: false, error: 'INVALID_RECEIPT' };
           const w = await this.cols.wallets.findOne({ _id: args.accountId });
-          return { ok: true, coinsAfter: w?.coins ?? 0, coinsGranted: r?.coinsGranted ?? coinsGranted };
+          return { ok: true, coinsAfter: effectiveCoins(w, 'web'), coinsGranted: r?.coinsGranted ?? coinsGranted };
         }
         throw e;
       }
+      // Paddle only serves the web build — always the 'web' bucket (ADR-020), never a client-declared platform.
       const coinsAfter = await this.credit(args.accountId, coinsGranted, 'recharge', {
         receiptId,
         rechargeUsdCents: usdCents,
+        channel: 'web',
       });
       return { ok: true, coinsAfter, coinsGranted };
     }

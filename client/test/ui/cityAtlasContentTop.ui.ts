@@ -1,7 +1,8 @@
 // Coverage for the 2026-07-22 HP-bar-floats-above-short-buildings fix (see worldMapBaseHpBar.ui.ts
 // for the city.ts wiring test). This file tests the data layer directly: cityAtlasLoader's and
 // playerBaseAtlasLoader's getContentTopFracForLevel getters, against the REAL atlas JSON bundled
-// with the client (not mocked) — so it fails the moment a future re-pack of either atlas drops the
+// with the client (not mocked — both loaders now read the shared, merged world_atlas.json, see
+// worldAtlas.ts) — so it fails the moment a future re-pack of either atlas drops the
 // `contentTop` field, or the getters' frame-name resolution (per-level vs tier fallback) drifts out
 // of sync with getCityTextureForLevel's own resolution.
 //
@@ -14,12 +15,15 @@ import { describe, it, expect } from 'vitest';
 import { cityTier } from '@nw/shared';
 import { getCityContentTopFracForLevel } from '../../src/render/cityAtlasLoader';
 import { getPlayerBaseContentTopFracForLevel } from '../../src/render/playerBaseAtlasLoader';
-import cityAtlasData from '../../src/assets/slg/city_atlas.json';
-import playerBaseAtlasData from '../../src/assets/slg/playerbase_atlas.json';
+import worldAtlasData from '../../src/assets/slg/world_atlas.json';
 
 type FrameMap = Record<string, { contentTop?: number }>;
-const cityFrames = (cityAtlasData as { frames: FrameMap }).frames;
-const playerBaseFrames = (playerBaseAtlasData as { frames: FrameMap }).frames;
+const worldFrames = (worldAtlasData as { frames: FrameMap }).frames;
+// world_atlas.json is shared by 6 merged atlases (worldAtlas.ts) — scope down to each
+// loader's own frames (disjoint `city_*` / `playerbase_*` prefixes) so this doesn't
+// assert contentTop against unrelated frame families (e.g. terrain_*) that never had it.
+const cityFrames = Object.fromEntries(Object.entries(worldFrames).filter(([k]) => k.startsWith('city_')));
+const playerBaseFrames = Object.fromEntries(Object.entries(worldFrames).filter(([k]) => k.startsWith('playerbase_')));
 
 describe('cityAtlasLoader.getCityContentTopFracForLevel (real atlas data)', () => {
   it('every baked frame has a contentTop in [0,1) — the fix depends on this being present', () => {

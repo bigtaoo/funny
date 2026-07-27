@@ -3,7 +3,7 @@
 import { randomUUID } from 'node:crypto';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { ErrorCode, err, ok, signToken } from '@nw/shared';
-import { regionFromAcceptLanguage } from '@nw/shared';
+import { regionFromAcceptLanguage, censorChat } from '@nw/shared';
 import { validateLoginId, validatePassword, validateDisplayName } from '@nw/shared';
 import { RENAME_COST } from '@nw/shared';
 import { CARD_DEFS } from '@nw/shared';
@@ -26,7 +26,7 @@ import { createOAuthService, OAuthError, type OAuthProvider } from '../oauth.js'
 import { grantCards } from '../cards.js';
 import { mirrorCoins } from '../economy.js';
 import type { MetaHandlers } from '../generated/routes.gen.js';
-import { accountIdOf, SlidingRateLimiter, type Constructor, type MetaBaseCtor } from './base.js';
+import { accountIdOf, clientPlatformOf, SlidingRateLimiter, type Constructor, type MetaBaseCtor } from './base.js';
 
 type AuthHandlers = Pick<
   MetaHandlers,
@@ -314,6 +314,16 @@ export function AuthMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase & Cons
       if (nameErr) return reply.code(400).send(err(ErrorCode.BAD_REQUEST, nameErr));
       const name = displayName.trim();
 
+      // UGC governance (COMPLIANCE_GLOBAL.md §7): the design doc has long said displayName rename "should go
+      // through the same filter" as private chat, but this handler never actually called it — displayName is
+      // persistent and shown to every other player who sees this account, unlike an ephemeral chat message, so
+      // (unlike censorChat's mask-and-deliver policy for chat) a hit here REJECTS the rename outright rather
+      // than saving a masked "****" as a permanent name. Checked before the paid path spends any coins.
+      const region = regionFromAcceptLanguage(req.headers['accept-language']);
+      if (censorChat(name, region).hit) {
+        return reply.code(400).send(err(ErrorCode.BAD_REQUEST, 'display name contains disallowed words'));
+      }
+
       const { cols, commercial, now } = this.deps;
 
       // One-time free rename for players who still carry a default name (never chose one).
@@ -325,7 +335,7 @@ export function AuthMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase & Cons
 
       if (!this.ensureCommercial(reply)) return;
       const orderId = randomUUID();
-      const charge = await commercial.spend({ accountId, amount: RENAME_COST, reason: 'rename', orderId });
+      const charge = await commercial.spend({ accountId, amount: RENAME_COST, reason: 'rename', orderId, clientPlatform: clientPlatformOf(req) });
       if (!charge.ok) {
         if (charge.error === 'INSUFFICIENT_FUNDS') {
           return reply.code(402).send(err(ErrorCode.INSUFFICIENT_FUNDS, 'not enough coins'));

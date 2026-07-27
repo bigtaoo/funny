@@ -12,12 +12,17 @@ import {
 import type { GachaResultEntry } from '../db';
 import { rollStarterPack } from '../gacha';
 import type { CommercialBaseCtor, Constructor, Result } from './base';
+import { effectiveCoins, rechargeChannelOf, spendChannelOf } from '../spendChannel';
 
 export interface StarterHandlers {
   starterBuy(args: {
     accountId: string;
     productId: string;
     orderId: string;
+    /** The caller's VERIFIED recharge platform (verifyNonCoinReceipt) — mapped to a recharged-pool bucket
+     * via rechargeChannelOf (ADR-020) for starter_growth's coins. Irrelevant for starter_draw (no coins). */
+    rechargePlatform?: string;
+    clientPlatform?: string;
   }): Promise<Result<{ coinsAfter: number; subscriptionExpiry: number; results: GachaResultEntry[] }>>;
 }
 
@@ -33,16 +38,19 @@ export function StarterMixin<TBase extends CommercialBaseCtor>(Base: TBase): TBa
       accountId: string;
       productId: string;
       orderId: string;
+      rechargePlatform?: string;
+      clientPlatform?: string;
     }): Promise<Result<{ coinsAfter: number; subscriptionExpiry: number; results: GachaResultEntry[] }>> {
       if (args.productId !== PRODUCT_STARTER_DRAW && args.productId !== PRODUCT_STARTER_GROWTH) {
         return { ok: false, error: 'BAD_REQUEST' };
       }
+      const displayChannel = spendChannelOf(args.clientPlatform);
       const existing = await this.cols.orders.findOne({ _id: args.orderId });
       if (existing) {
         const w = await this.cols.wallets.findOne({ _id: existing.accountId });
         return {
           ok: true,
-          coinsAfter: w?.coins ?? 0,
+          coinsAfter: effectiveCoins(w, displayChannel),
           subscriptionExpiry: w?.subscription?.expiry ?? 0,
           results: existing.result.results ?? [],
         };
@@ -60,26 +68,33 @@ export function StarterMixin<TBase extends CommercialBaseCtor>(Base: TBase): TBa
       if (args.productId === PRODUCT_STARTER_DRAW) {
         const std = findGachaPool('standard')!;
         const results = rollStarterPack(std, STARTER_DRAW_COUNT, STARTER_DRAW_FLOOR, this.rng);
+        const coinsAfter = effectiveCoins(claimed, displayChannel);
         await this.cols.orders.insertOne({
           _id: args.orderId,
           accountId: args.accountId,
           kind: 'starter',
           cost: 0,
           status: 'charged', // meta delivers the pack items, then marks delivered
-          coinsAfter: claimed.coins,
+          coinsAfter,
           result: { results, poolId: 'standard' },
           ts: now,
         });
-        return { ok: true, coinsAfter: claimed.coins, subscriptionExpiry: claimed.subscription?.expiry ?? 0, results };
+        return { ok: true, coinsAfter, subscriptionExpiry: claimed.subscription?.expiry ?? 0, results };
       }
 
-      // starter_growth: coins + 7-day card (no items to deliver → order lands delivered).
+      // starter_growth: coins + 7-day card (no items to deliver → order lands delivered). Real money (¥30) —
+      // fund the caller's verified recharge channel (ADR-020), not the free pool.
       const { coinsAfter, expiry } = await this.applySubscription(
         args.accountId,
         GROWTH_PACK_CARD_DAYS,
         GROWTH_PACK_COINS,
         now,
-        { orderId: args.orderId, reason: 'starter_growth' },
+        {
+          orderId: args.orderId,
+          reason: 'starter_growth',
+          channel: args.rechargePlatform ? (rechargeChannelOf(args.rechargePlatform) ?? undefined) : undefined,
+          clientPlatform: args.clientPlatform,
+        },
       );
       await this.cols.orders.insertOne({
         _id: args.orderId,

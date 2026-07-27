@@ -4,6 +4,16 @@
 import { createServer, type Server, type IncomingMessage, type ServerResponse } from 'http';
 import { createLogger, type InternalAuthVerifier, type CustomPoolCategory } from '@nw/shared';
 import type { CommercialService } from './service';
+import type { IapProductKind } from './iap';
+
+const NON_COIN_PRODUCT_KINDS: readonly IapProductKind[] = [
+  'monthly_card', 'year_card', 'starter_draw', 'starter_growth',
+];
+function nonCoinProduct(v: unknown): IapProductKind | null {
+  return typeof v === 'string' && (NON_COIN_PRODUCT_KINDS as readonly string[]).includes(v)
+    ? (v as IapProductKind)
+    : null;
+}
 
 const log = createLogger('commercial:internal');
 
@@ -32,6 +42,8 @@ function send(res: ServerResponse, status: number, body: unknown): void {
 
 const str = (v: unknown): string => (typeof v === 'string' ? v : '');
 const num = (v: unknown, d: number): number => (typeof v === 'number' ? v : d);
+/** Client-declared request platform (X-NW-Platform, threaded by meta) — optional, undefined when absent. */
+const strOpt = (v: unknown): string | undefined => (typeof v === 'string' ? v : undefined);
 
 export function startInternalHttp(
   opts: { host: string; port: number; internalAuth: InternalAuthVerifier },
@@ -59,7 +71,8 @@ export function startInternalHttp(
         if (req.method === 'GET' && url.pathname === '/internal/wallet') {
           const accountId = url.searchParams.get('accountId');
           if (!accountId) return send(res, 400, { ok: false, error: 'accountId required' });
-          return send(res, 200, { ok: true, ...(await svc.getWallet(accountId)) });
+          const clientPlatform = url.searchParams.get('clientPlatform') ?? undefined;
+          return send(res, 200, { ok: true, ...(await svc.getWallet(accountId, clientPlatform)) });
         }
         if (req.method === 'GET' && url.pathname === '/internal/orders/undelivered') {
           const accountId = url.searchParams.get('accountId');
@@ -106,6 +119,7 @@ export function startInternalHttp(
                 itemId: str(b.itemId),
                 cost: num(b.cost, 0),
                 orderId: str(b.orderId),
+                clientPlatform: strOpt(b.clientPlatform),
               }),
             );
           case '/internal/spend':
@@ -117,6 +131,7 @@ export function startInternalHttp(
                 amount: num(b.amount, 0),
                 reason: str(b.reason),
                 orderId: str(b.orderId),
+                clientPlatform: strOpt(b.clientPlatform),
               }),
             );
           case '/internal/grant':
@@ -128,6 +143,7 @@ export function startInternalHttp(
                 amount: num(b.amount, 0),
                 reason: str(b.reason),
                 orderId: str(b.orderId),
+                clientPlatform: strOpt(b.clientPlatform),
               }),
             );
           case '/internal/gacha/draw':
@@ -139,6 +155,7 @@ export function startInternalHttp(
                 poolId: str(b.poolId),
                 count: num(b.count, 1),
                 orderId: str(b.orderId),
+                clientPlatform: strOpt(b.clientPlatform),
               }),
             );
           case '/internal/order/delivered':
@@ -159,8 +176,24 @@ export function startInternalHttp(
                 platform: str(b.platform),
                 receipt: str(b.receipt),
                 receiptId: str(b.receiptId),
+                clientPlatform: strOpt(b.clientPlatform),
               }),
             );
+          case '/internal/nonCoinReceipt/verify': {
+            const expectedProduct = nonCoinProduct(b.expectedProduct);
+            if (!expectedProduct) return send(res, 400, { ok: false, error: 'bad expectedProduct' });
+            return send(
+              res,
+              200,
+              await svc.verifyNonCoinReceipt({
+                accountId: str(b.accountId),
+                platform: str(b.platform),
+                receipt: str(b.receipt),
+                receiptId: str(b.receiptId),
+                expectedProduct,
+              }),
+            );
+          }
           case '/internal/ads/credit':
             return send(
               res,
@@ -169,6 +202,7 @@ export function startInternalHttp(
                 accountId: str(b.accountId),
                 amount: num(b.amount, 0),
                 dayKey: str(b.dayKey),
+                clientPlatform: strOpt(b.clientPlatform),
               }),
             );
           case '/internal/victory/credit':
@@ -179,6 +213,7 @@ export function startInternalHttp(
                 accountId: str(b.accountId),
                 amount: num(b.amount, 0),
                 dayKey: str(b.dayKey),
+                clientPlatform: strOpt(b.clientPlatform),
               }),
             );
           case '/internal/promo/redeem':
@@ -188,6 +223,7 @@ export function startInternalHttp(
               await svc.promoRedeem({
                 accountId: str(b.accountId),
                 code: str(b.code),
+                clientPlatform: strOpt(b.clientPlatform),
               }),
             );
           case '/internal/promo/codes': {
@@ -289,25 +325,40 @@ export function startInternalHttp(
                 accountId: str(b.accountId),
                 itemId: str(b.itemId),
                 orderId: str(b.orderId),
+                clientPlatform: strOpt(b.clientPlatform),
               }),
             );
           case '/internal/monthly-card/buy':
             return send(
               res,
               200,
-              await svc.monthlyCardBuy({ accountId: str(b.accountId), orderId: str(b.orderId) }),
+              await svc.monthlyCardBuy({
+                accountId: str(b.accountId),
+                orderId: str(b.orderId),
+                rechargePlatform: strOpt(b.rechargePlatform),
+                clientPlatform: strOpt(b.clientPlatform),
+              }),
             );
           case '/internal/year-card/buy':
             return send(
               res,
               200,
-              await svc.yearCardBuy({ accountId: str(b.accountId), orderId: str(b.orderId) }),
+              await svc.yearCardBuy({
+                accountId: str(b.accountId),
+                orderId: str(b.orderId),
+                rechargePlatform: strOpt(b.rechargePlatform),
+                clientPlatform: strOpt(b.clientPlatform),
+              }),
             );
           case '/internal/monthly-card/claim':
             return send(
               res,
               200,
-              await svc.monthlyCardClaim({ accountId: str(b.accountId), dayKey: str(b.dayKey) }),
+              await svc.monthlyCardClaim({
+                accountId: str(b.accountId),
+                dayKey: str(b.dayKey),
+                clientPlatform: strOpt(b.clientPlatform),
+              }),
             );
           case '/internal/starter/buy':
             return send(
@@ -317,6 +368,8 @@ export function startInternalHttp(
                 accountId: str(b.accountId),
                 productId: str(b.productId),
                 orderId: str(b.orderId),
+                rechargePlatform: strOpt(b.rechargePlatform),
+                clientPlatform: strOpt(b.clientPlatform),
               }),
             );
           default:

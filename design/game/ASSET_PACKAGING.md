@@ -120,7 +120,8 @@ interface AssetIO {
 | `client/src/render/LoadingOverlay.ts` | PIXI 手绘加载界面（进度条） |
 | `client/src/app.ts` | `startApp` 内嵌 L0 闸门（构造 overlay → `await preloadBoot` → 销毁 → 进首屏） |
 | `client/src/render/stickman/StickmanRuntime.ts` | `_parse` 经 `assetIO().loadBinary` 取字节 |
-| `client/src/render/{decorAtlas,labelDecor,decorCAtlas}.ts` | atlas 纹理源经 `assetIO().textureSource` |
+| `client/src/render/spriteAtlas.ts` | **`createAtlasLoader` 工厂**——每个 PixiJS Spritesheet atlas 的解码/缓存/idempotent-load 单一实现，所有 atlas loader 模块都是它的薄封装 |
+| `client/src/render/{decorMergedAtlas,iconsAtlas,worldAtlas}.ts` | 三组合并 atlas 的共享加载实例（见 §8），纹理源经 `assetIO().textureSource` |
 | `client/webpack.config.js` | `TARGET=wechat` 分支：单 IIFE→`wechatgame/pixigame.js`、asset `publicPath=NW_ASSET_CDN`+发 `cdn/` |
 | `client/src/entries/wechat.ts` | 无条件 `setAssetIO(new WechatAssetIO())`（微信无 fetch） |
 | `client/wechatgame/{game.js,game.json,project.private.config.json}` | 微信壳层 + `packOptions.ignore`（排除 `cdn/`、`.map`） |
@@ -134,3 +135,23 @@ interface AssetIO {
 2. ~~**L1 PNG 经 AssetIO**~~：**已完成（2026-06-30）**——见 §4.2 preloadTextures + URL alias 方案。
 3. ~~**Web JS code-split**~~：**已决定不做（2026-06-30）**。微信不支持运行时 `import()`、套壳全量本地化，受益平台仅 Web；风险大于收益，正式放弃。
 4. **L0 瘦身复核**：定期核对 `bootManifest`，把"非首局必现"的项降级回 L1。
+
+---
+
+## 8. `client/src/assets/` 目录整理 + atlas 合并（2026-07-27）
+
+**目录**：顶层散落的兵种/法术/称号/建筑 PNG+`.tao` 按现有 `avatars/decor/equipment/factions/gacha/material/shop/slg` 子目录范式收进 `units/`（12 兵种立绘+`.tao`）、`spells/`（4 张法术图）、`titles/`（4 张称号图）、`buildings/`（3 张建筑卡图 + `base_upgrade_atlas`）；根目录只留 `logo.png` 和 4 个平台/清单 `.ts` 文件（见 §6）。`.DS_Store` 已清进 `.gitignore`。
+
+**Atlas 合并**：14 组小 atlas 中，"同一时机一起加载"的三组合并成单页，减少 L0/场景入口的并发请求数（不改变加载时机）：
+
+| 合并后 | 原子集 | 触发时机 |
+|---|---|---|
+| `assets/decor/decor_merged_atlas.{png,json}` | `decor_atlas`(A组) + `decor_c_atlas`(C组) + 4 张 `label_*.png` | L0 启动闸门（原 3 个 boot step 并 1） |
+| `assets/icons/icons_atlas.{png,json}` | `equipment` + `material` + `factions` + `avatars` | L0 启动闸门（原 4 个 boot step 并 1） |
+| `assets/slg/world_atlas.{png,json}` | `terrain` + `city` + `playerbase` + `res` + `building` + `city_bld` | WorldMapScene 构造的 `Promise.all`（前 5 者）+ CityScene 的 res/city_bld 配对 |
+
+frame 名称互不冲突（合并前用脚本核对过），故直接共享一份 Spritesheet：`decorAtlas.ts`/`decorCAtlas.ts`/`labelDecor.ts` 三个模块的导出函数名/签名完全不变，内部改成读同一个 `decorMergedAtlas` 实例（`decorFrameNames`/`decorCFrameNames` 按 `decor_`/`decoc_` 前缀从共享 sheet 里过滤，避免枚举出对方组的帧）；`equipmentAtlas.ts` 等 4 个模块、以及 6 个 SLG loader 模块同理改读 `iconsAtlas`/`worldAtlas` 共享实例，因为查找都是显式 key（无跨组枚举需求）不需要过滤。
+
+12 个 atlas loader 模块（含合并前后）本身也有大量重复的"解码 BaseTexture + parse Spritesheet + idempotent 缓存"样板，收进 `client/src/render/spriteAtlas.ts` 的 `createAtlasLoader(url, data, label, texOptions?)` 工厂，各模块只剩薄封装。
+
+**合并脚本**：`art/scripts/mergeAtlasPages.js`（通用 shelf-packing + frame 坐标平移，共享库）+ `art/scripts/mergeAssetAtlases.js`（本次三组任务的具体清单）。每个源 atlas 整页 blit 进新画布（不重新裁切单个精灵），故 `rotated`/`spriteSourceSize` 等字段原样保留；再次运行需要 `NODE_PATH="$(pwd)/client/node_modules" node art/scripts/mergeAssetAtlases.js`。

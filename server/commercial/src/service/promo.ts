@@ -15,6 +15,7 @@ export interface PromoHandlers {
   promoRedeem(args: {
     accountId: string;
     code: string;
+    clientPlatform?: string;
   }): Promise<Result<{ coinsAfter: number; coinsGranted: number }>>;
 }
 
@@ -63,6 +64,7 @@ export function PromoMixin<TBase extends CommercialBaseCtor>(Base: TBase): TBase
     async promoRedeem(args: {
       accountId: string;
       code: string;
+      clientPlatform?: string;
     }): Promise<Result<{ coinsAfter: number; coinsGranted: number }>> {
       const code = args.code.trim().toUpperCase();
       const def = await this.cols.promoCodes.findOne({ _id: code });
@@ -90,7 +92,7 @@ export function PromoMixin<TBase extends CommercialBaseCtor>(Base: TBase): TBase
 
       // Atomically increment redemption count (best-effort; does not hard-guard the total — soft check above is sufficient; at most 1 over-limit concurrently).
       await this.cols.promoCodes.updateOne({ _id: code }, { $inc: { redeemed: 1 } });
-      const coinsAfter = await this.credit(args.accountId, def.coins, 'promo', {});
+      const coinsAfter = await this.credit(args.accountId, def.coins, 'promo', { clientPlatform: args.clientPlatform });
       return { ok: true, coinsAfter, coinsGranted: def.coins };
     }
   };

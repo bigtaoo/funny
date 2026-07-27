@@ -97,6 +97,10 @@ base64 -i AuthKey_XXXX.p8 -o asckey.b64
 
 > 客户端请求的 Product ID 由 `AppDelegate.swift` 自动派生自 App 的 Bundle ID（`<bundleId>.coins.<tierId>`），与上表一致，无需额外配置。
 
+> **钱包渠道隔离（ADR-020，已实现，无需额外配置）**：iOS IAP 充值的金币落在钱包的 `recharged.apple` 桶，只有
+> 声明 `X-NW-Platform: ios`（原生壳自动发送，见 `client/src/net/ApiClient/base.ts`）的请求才可见/可花，不会与
+> web(Paddle) 充值的余额混用（反之亦然）。机制细节见 [`COMMERCIAL_DESIGN.md §11`](COMMERCIAL_DESIGN.md#11-钱包按支付渠道隔离adr-020-2026-07-27)。
+
 ## 5. 构建与发布
 
 **自动**：推一个 tag 触发。

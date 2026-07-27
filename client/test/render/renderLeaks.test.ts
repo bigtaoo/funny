@@ -144,18 +144,11 @@ vi.mock('pixi.js-legacy', () => {
 });
 
 // ── webpack-served PNG/JSON assets ─────────────────────────────────────────────
-vi.mock('../../src/assets/decor/battle/decor_atlas.png',  () => ({ default: 'decor-atlas.png' }));
-vi.mock('../../src/assets/decor/battle/decor_atlas.json', () => ({
-  default: { frames: {}, meta: { size: { w: 256, h: 256 }, app: '', version: '', image: '', format: 'RGBA8888', scale: '1', smartupdate: '' } },
+// decorAtlas/decorCAtlas/labelDecor now all share one merged atlas (decorMergedAtlas.ts).
+vi.mock('../../src/assets/decor/decor_merged_atlas.png',  () => ({ default: 'decor-merged-atlas.png' }));
+vi.mock('../../src/assets/decor/decor_merged_atlas.json', () => ({
+  default: { frames: {}, meta: { size: { w: 1024, h: 675 }, app: '', version: '', image: '', format: 'RGBA8888', scale: '1', smartupdate: '' } },
 }));
-vi.mock('../../src/assets/decor/decor_c_atlas.png',  () => ({ default: 'decor-c-atlas.png' }));
-vi.mock('../../src/assets/decor/decor_c_atlas.json', () => ({
-  default: { frames: {}, meta: { size: { w: 256, h: 256 }, app: '', version: '', image: '', format: 'RGBA8888', scale: '1', smartupdate: '' } },
-}));
-vi.mock('../../src/assets/decor/battle/label_boss.png',       () => ({ default: 'label-boss.png' }));
-vi.mock('../../src/assets/decor/battle/label_start.png',      () => ({ default: 'label-start.png' }));
-vi.mock('../../src/assets/decor/battle/label_win.png',        () => ({ default: 'label-win.png' }));
-vi.mock('../../src/assets/decor/battle/label_arrow_here.png', () => ({ default: 'label-arrow.png' }));
 
 // ── JSZip stub (used by StickmanRuntime) ───────────────────────────────────────
 vi.mock('jszip', () => ({
@@ -201,12 +194,16 @@ afterEach(() => {
 // ─────────────────────────────────────────────────────────────────────────────
 describe('BaseTexture listener leak — on() vs once()', () => {
 
-  it('decorAtlas: uses once() so listeners self-remove after load', async () => {
+  it('decorMergedAtlas: uses once() so listeners self-remove after load (shared by decorAtlas/decorCAtlas/labelDecor)', async () => {
     const onceSpy = vi.spyOn(PIXI.BaseTexture.prototype, 'once');
     const onSpy   = vi.spyOn(PIXI.BaseTexture.prototype, 'on');
 
-    await loadDecorAtlas();
+    // decorAtlas (A-group), decorCAtlas (C-group) and labelDecor (battle corner
+    // labels) all now read from one merged atlas — calling all three loaders
+    // must still only decode ONE BaseTexture (idempotent, shared in-flight promise).
+    await Promise.all([loadDecorAtlas(), loadDecorCAtlas(), loadLabelDecor()]);
 
+    expect(mockTexInstances).toHaveLength(1);
     expect(onceSpy).toHaveBeenCalledWith('loaded', expect.any(Function));
     expect(onceSpy).toHaveBeenCalledWith('error',  expect.any(Function));
     // Regression: if reverted to on(), this fails
@@ -220,40 +217,6 @@ describe('BaseTexture listener leak — on() vs once()', () => {
     // This is expected behaviour for both on() and once(); not a meaningful leak
     // because BaseTexture is only loaded once and then held alive anyway.
     expect(tex.listenerCount('error')).toBe(1);
-  });
-
-  it('decorCAtlas: uses once() so listeners self-remove after load', async () => {
-    const onceSpy = vi.spyOn(PIXI.BaseTexture.prototype, 'once');
-    const onSpy   = vi.spyOn(PIXI.BaseTexture.prototype, 'on');
-
-    await loadDecorCAtlas();
-
-    expect(onceSpy).toHaveBeenCalledWith('loaded', expect.any(Function));
-    expect(onceSpy).toHaveBeenCalledWith('error',  expect.any(Function));
-    expect(onSpy).not.toHaveBeenCalledWith('loaded', expect.any(Function));
-    expect(onSpy).not.toHaveBeenCalledWith('error',  expect.any(Function));
-
-    const tex = mockTexInstances[0]!;
-    expect(tex.listenerCount('loaded')).toBe(0);
-    expect(tex.listenerCount('error')).toBe(1);
-  });
-
-  it('labelDecor: all four PNG textures use once(), no stale loaded-listeners', async () => {
-    const onceSpy = vi.spyOn(PIXI.BaseTexture.prototype, 'once');
-    const onSpy   = vi.spyOn(PIXI.BaseTexture.prototype, 'on');
-
-    await loadLabelDecor();
-
-    // Four PNGs → four BaseTexture instances, each calling once() twice (loaded + error).
-    expect(mockTexInstances).toHaveLength(4);
-    expect(onceSpy).toHaveBeenCalledTimes(8);
-    expect(onSpy).not.toHaveBeenCalledWith('loaded', expect.any(Function));
-    expect(onSpy).not.toHaveBeenCalledWith('error',  expect.any(Function));
-
-    for (const tex of mockTexInstances) {
-      expect(tex.listenerCount('loaded')).toBe(0); // fired → self-removed
-      expect(tex.listenerCount('error')).toBe(1);  // not fired → stays (expected)
-    }
   });
 
 });

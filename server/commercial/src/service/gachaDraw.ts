@@ -4,6 +4,7 @@ import { gachaCost, customPoolCost, FATE_POINT_REDEEM_COST } from '@nw/shared';
 import type { GachaResultEntry } from '../db';
 import { rollGacha, rollCustomGacha } from '../gacha';
 import type { CommercialBaseCtor, Constructor, Result } from './base';
+import { effectiveCoins, spendChannelOf } from '../spendChannel';
 
 export interface GachaDrawHandlers {
   gachaDraw(args: {
@@ -11,6 +12,7 @@ export interface GachaDrawHandlers {
     poolId: string;
     count: number;
     orderId: string;
+    clientPlatform?: string;
   }): Promise<
     Result<{
       orderId: string;
@@ -25,6 +27,7 @@ export interface GachaDrawHandlers {
     accountId: string;
     itemId: string;
     orderId: string;
+    clientPlatform?: string;
   }): Promise<Result<{ orderId: string; itemId: string; coinsAfter: number; fatePointsAfter: number }>>;
 }
 
@@ -36,6 +39,7 @@ export function GachaDrawMixin<TBase extends CommercialBaseCtor>(Base: TBase): T
       poolId: string;
       count: number;
       orderId: string;
+      clientPlatform?: string;
     }): Promise<
       Result<{
         orderId: string;
@@ -73,7 +77,8 @@ export function GachaDrawMixin<TBase extends CommercialBaseCtor>(Base: TBase): T
       const cost =
         resolved.kind === 'custom' ? customPoolCost(resolved.cfg, args.count) : gachaCost(resolved.pool, args.count);
 
-      if (wallet.coins < cost) return { ok: false, error: 'INSUFFICIENT_FUNDS' };
+      const channel = spendChannelOf(args.clientPlatform);
+      if (effectiveCoins(wallet, channel) < cost) return { ok: false, error: 'INSUFFICIENT_FUNDS' };
 
       const prevPity = wallet.gacha.pity[args.poolId] ?? 0;
       // Custom pools (§12) have NO pity, NO soft-pity and NO featured-legendary/Fate logic — a plain weighted roll.
@@ -127,21 +132,21 @@ export function GachaDrawMixin<TBase extends CommercialBaseCtor>(Base: TBase): T
         }
         throw e;
       }
-      // Debit coins + update pity for this pool (+ credit fate points); single-document atomic op with $gte guard.
-      const charged = await this.cols.wallets.findOneAndUpdate(
-        { _id: args.accountId, coins: { $gte: cost } },
-        {
-          $inc: { coins: -cost, rev: 1, ...(fateGained > 0 ? { fatePoints: fateGained } : {}) },
-          $set: { [`gacha.pity.${args.poolId}`]: pityAfter, updatedAt: this.now() },
-        },
-        { returnDocument: 'after' },
+      // Debit effective balance (free pool first, then this platform's recharged bucket, ADR-020) + update pity
+      // for this pool (+ credit fate points); single-document atomic op with an effective-balance $expr guard.
+      const charged = await this.debitEffective(
+        args.accountId,
+        cost,
+        channel,
+        fateGained > 0 ? { fatePoints: fateGained } : {},
+        { [`gacha.pity.${args.poolId}`]: pityAfter },
       );
       if (!charged) {
         // Insufficient funds (raced drain after the pre-check): release the reserved slot before returning.
         await this.cols.orders.deleteOne({ _id: args.orderId });
         return { ok: false, error: 'INSUFFICIENT_FUNDS' };
       }
-      const coinsAfter = charged.coins;
+      const coinsAfter = effectiveCoins(charged, channel);
       const fatePointsAfter = charged.fatePoints ?? 0;
 
       await this.cols.orders.updateOne({ _id: args.orderId }, { $set: { coinsAfter } });
@@ -175,6 +180,7 @@ export function GachaDrawMixin<TBase extends CommercialBaseCtor>(Base: TBase): T
       accountId: string;
       itemId: string;
       orderId: string;
+      clientPlatform?: string;
     }): Promise<Result<{ orderId: string; itemId: string; coinsAfter: number; fatePointsAfter: number }>> {
       const existing = await this.cols.orders.findOne({ _id: args.orderId });
       if (existing) {
@@ -233,12 +239,13 @@ export function GachaDrawMixin<TBase extends CommercialBaseCtor>(Base: TBase): T
         return { ok: false, error: 'FATE_INSUFFICIENT' };
       }
 
-      await this.cols.orders.updateOne({ _id: args.orderId }, { $set: { coinsAfter: charged.coins } });
+      const coinsAfter = effectiveCoins(charged, spendChannelOf(args.clientPlatform));
+      await this.cols.orders.updateOne({ _id: args.orderId }, { $set: { coinsAfter } });
       return {
         ok: true,
         orderId: args.orderId,
         itemId: args.itemId,
-        coinsAfter: charged.coins,
+        coinsAfter,
         fatePointsAfter: charged.fatePoints ?? 0,
       };
     }

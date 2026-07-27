@@ -167,6 +167,7 @@ export class Api {
       window_days: number;
       funnel: { step: string; count: number; conversion_rate?: number }[];
     };
+    feature_guide_funnel?: { feature: string; shown: number; closed: number; replays: number; close_rate?: number }[];
     browser_dist?: { browser: string; devices: number }[];
     device_type_dist?: { device_type: string; devices: number }[];
     geo_dist?: { country: string; devices: number }[];

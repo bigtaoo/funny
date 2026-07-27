@@ -49,6 +49,18 @@ export const DEFAULT_CONFIG: AnalyticsConfig = {
     tutorial_start:    { sample: 1.0 },
     tutorial_complete: { sample: 1.0 },
     tutorial_skip:  { sample: 1.0 },
+    // Intro-story funnel node (ONBOARDING_DESIGN §7, design-doc-audit-2026-07): the only step in the
+    // funnel enumeration that previously had zero data — IntroScene wrote the local nw_seen_intro flag
+    // but never called analytics.track. 100% sampled like tutorial_start/complete, same rationale.
+    intro_complete: { sample: 1.0 },
+    intro_skip:     { sample: 1.0 },
+    // First-time feature-guide funnel (ONBOARDING_DESIGN §4.1/§7): showFeatureGuide/withGuide
+    // (client/src/app/nav/lobby.ts) previously had zero analytics.track calls. feature_guide_replay is
+    // reserved for the per-page "?" re-open button, which is not wired yet (ONBOARDING_DESIGN §8/§10) —
+    // config is added ahead of time so it isn't missed once that UI lands.
+    feature_guide_shown:  { sample: 1.0 },
+    feature_guide_closed: { sample: 1.0 },
+    feature_guide_replay: { sample: 1.0 },
     // Fine-grained tutorial-step / nav funnels (A9-9): must be 100% sampled, same reasoning as
     // tutorial_start/complete above — sampling them would distort the step-by-step drop-off.
     tutorial_step:  { sample: 1.0 },
@@ -172,17 +184,22 @@ export interface OnboardingStep {
 }
 
 /**
- * Ordered onboarding funnel: open → tutorial start → tutorial finished → first real battle → first clear.
- * Drop-off between adjacent steps localises where day-1 players quit; tutorial_complete ÷ tutorial_start
- * is the tutorial completion rate.
+ * Ordered onboarding funnel: open → intro seen → tutorial start → tutorial finished → first real battle →
+ * first clear. Drop-off between adjacent steps localises where day-1 players quit; tutorial_complete ÷
+ * tutorial_start is the tutorial completion rate.
  *
  * Every step here is derived from a 100%-sampled event (see DEFAULT_CONFIG) so the counts are directly
- * comparable. Deliberately excludes screen_view-derived milestones (intro / lobby arrival) — screen_view
- * is sampled at 5%, so folding it in would show sampling-driven cliffs rather than real drop-off. Those
- * scenes still appear (sample-affected) in the action breakdown.
+ * comparable. Deliberately excludes screen_view-derived milestones (e.g. lobby arrival) — screen_view is
+ * sampled at 5%, so folding it in would show sampling-driven cliffs rather than real drop-off. `intro_seen`
+ * is the exception: it reads dedicated 100%-sampled `intro_complete`/`intro_skip` events (not screen_view),
+ * added design-doc-audit-2026-07 — this funnel previously had no data for the intro step at all. Scenes
+ * still appear (sample-affected) in the action breakdown below.
  */
 export const ONBOARDING_STEPS: OnboardingStep[] = [
   { key: 'session_start', reached: () => true }, // baseline = whole cohort (all had a first session_start)
+  // intro_complete/intro_skip (design-doc-audit-2026-07) are 100%-sampled like the rest of this funnel —
+  // unlike screen_view (5%), they belong here instead of being excluded per the comment above.
+  { key: 'intro_seen', reached: (e) => e.has('intro_complete') || e.has('intro_skip') },
   { key: 'tutorial_start', reached: (e) => e.has('tutorial_start') },
   { key: 'tutorial_complete', reached: (e) => e.has('tutorial_complete') },
   { key: 'first_battle', reached: (e) => e.has('game_start') }, // first non-tutorial battle
@@ -246,6 +263,19 @@ export interface LevelFunnelRow {
   completion_rate?: number;
 }
 
+// ─── First-time feature-guide funnel (design-doc-audit-2026-07) ──────────────
+// feature_guide_shown/feature_guide_closed carry props.feature (client/src/app/nav/lobby.ts withGuide);
+// same distinct-device-per-event-per-key aggregation as queryLevelFunnel above. feature_guide_replay is
+// included so the row exists once the per-page "?" re-open button (ONBOARDING_DESIGN §8/§10, not wired
+// yet) starts emitting it — until then replays stays 0 for every feature.
+export interface FeatureGuideFunnelRow {
+  feature: string;
+  shown: number;
+  closed: number;
+  replays: number;
+  close_rate?: number;
+}
+
 // ─── Device / geo distributions (A9-9) ────────────────────────────────────────
 export interface BrowserRow { browser: string; devices: number }
 export interface DeviceTypeRow { device_type: string; devices: number }
@@ -286,6 +316,7 @@ export interface QueryResult {
   level_funnel?: LevelFunnelRow[];
   tutorial_funnel?: StepFunnelResult;
   scene_funnel?: StepFunnelResult;
+  feature_guide_funnel?: FeatureGuideFunnelRow[];
   browser_dist?: BrowserRow[];
   device_type_dist?: DeviceTypeRow[];
   geo_dist?: GeoRow[];
@@ -714,6 +745,47 @@ export class AnalyticsService {
         completion_rate: v.attempts > 0 ? v.completes / v.attempts : undefined,
       }))
       .sort((a, b) => (a.completion_rate ?? 1) - (b.completion_rate ?? 1));
+  }
+
+  /**
+   * Per-feature guide funnel (design-doc-audit-2026-07): distinct-device shown/closed/replay counts per
+   * feature (props.feature, e.g. match/shop/social/cards/daily/world), sorted by close rate ascending so
+   * the guides players dismiss the least (lowest close/shown) surface first. Same shape as
+   * queryLevelFunnel above.
+   */
+  async queryFeatureGuideFunnel(days: number, platform?: string): Promise<FeatureGuideFunnelRow[]> {
+    const since = new Date(dayStart(this.now()) - (days - 1) * 86400_000);
+    const match: Record<string, unknown> = {
+      ts: { $gte: since },
+      event: { $in: ['feature_guide_shown', 'feature_guide_closed', 'feature_guide_replay'] },
+      'props.feature': { $exists: true, $ne: null },
+    };
+    if (platform) match['platform'] = platform;
+    const pipeline = [
+      { $match: match },
+      { $group: { _id: { feature: '$props.feature', event: '$event', device: '$device_id' } } },
+      { $group: { _id: { feature: '$_id.feature', event: '$_id.event' }, count: { $sum: 1 } } },
+    ];
+    const rows = await this.cols.events
+      .aggregate<{ _id: { feature: unknown; event: string }; count: number }>(pipeline)
+      .toArray();
+
+    const byFeature = new Map<string, { shown: number; closed: number; replays: number }>();
+    for (const r of rows) {
+      const feature = String(r._id.feature);
+      if (!byFeature.has(feature)) byFeature.set(feature, { shown: 0, closed: 0, replays: 0 });
+      const entry = byFeature.get(feature)!;
+      if (r._id.event === 'feature_guide_shown') entry.shown = r.count;
+      else if (r._id.event === 'feature_guide_closed') entry.closed = r.count;
+      else if (r._id.event === 'feature_guide_replay') entry.replays = r.count;
+    }
+    return [...byFeature.entries()]
+      .map(([feature, v]) => ({
+        feature,
+        ...v,
+        close_rate: v.shown > 0 ? v.closed / v.shown : undefined,
+      }))
+      .sort((a, b) => (a.close_rate ?? 1) - (b.close_rate ?? 1));
   }
 
   /** Browser distribution (A9-9): unique device count by server-derived browser (from session_start). */
