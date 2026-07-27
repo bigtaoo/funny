@@ -281,7 +281,7 @@ socialsvc 收到后：从 Redis 查对应频道的在线成员列表，批量调
 
 - ✅ `worldsvc/test/family.e2e.test.ts` 删除（family 逻辑已迁 socialsvc，应由 socialsvc 自带测试覆盖）；`worldsvc/test/sect.e2e.test.ts` 解除对已删除 `FamilyService` 的依赖——SectService 仍只**读** `families`/`familyMembers` 两集合，故测试 fixture 改为直接 `insertOne`（新增 `insertFamily`/`makeFamily`/`joinFamily` 本地 helper，繁荣度门槛数学等价复现）。
 - ✅ `worldsvc/src/socialsvcClient.ts` 删除死方法 `proxy()`（接口 + `HttpWorldSocialsvcClient` + `nullWorldSocialsvcClient` 三处）——httpApi 已无 `/family/*` 路由，无人调用。
-- ✅ `contracts/openapi-world.yml` 删除 `/family/*` 路径块 + 仅被其引用的孤儿 schema（`FamilyMemberView`/`FamilyView`/`FamilyMessageView`）；`SectMemberFamilyView` 保留（宗门路径仍用）。**注：socialsvc 暂无 OpenAPI 契约**（`contracts/` 只覆盖 metaserver 与 worldsvc），迁出的 `/social/family/*` 公网路由当前无契约声明——为后续待办，本次未补。
+- ✅ `contracts/openapi-world.yml` 删除 `/family/*` 路径块 + 仅被其引用的孤儿 schema（`FamilyMemberView`/`FamilyView`/`FamilyMessageView`）；`SectMemberFamilyView` 保留（宗门路径仍用）。**注：socialsvc 暂无 OpenAPI 契约**（`contracts/` 只覆盖 metaserver 与 worldsvc），迁出的 `/social/family/*` 公网路由当前无契约声明——为后续待办，本次未补（已于 2026-07-27 补齐，见 §9）。
 - ✅ 注释去 `/family`：`worldsvc` 的 `config.ts`/`httpApi.ts`/`index.ts`/`socialsvcClient.ts` 头部。
 
 **openapi-world.ts 重新同步 + 连带修复（2026-07-01）**：`client/src/net/openapi-world.ts` 在上述 P4 补漏之后一直未重新执行 `npm run rest:gen`，导致客户端仍手工 alias 着已从 yml 删除的 `FamilyMemberView`/`FamilyView`/`FamilyMessageView`。本次重新生成并顺带修复了因此暴露出的存量 bug：
@@ -335,3 +335,16 @@ socialsvc 收到后：从 Redis 查对应频道的在线成员列表，批量调
 | O2 | 存量 worldsvc 家族（有 worldId）的迁移优先级？ | ✅ 已解决（2026-07-01）：worldsvc 本地 `families`/`familyMembers` 集合已整体移除，无需迁移脚本——家族身份统一在 socialsvc，worldsvc 只保留 `sectId`/`territoryCount`/`prosperity`/`activity` 的写回镜像，见 §6 宗门功能修复 |
 | O3 | socialsvc 是否需要独立 JWT secret，还是复用 meta 的？ | 复用 meta JWT secret，verifyToken 同一套；避免双密钥管理 |
 | O4 | 家族繁荣度（进 SLG 建宗门的门槛）由谁维护？ | socialsvc 记 `prosperity`（家族活跃/捐献累积），worldsvc 读镜像判断门槛 |
+
+---
+
+## 9. OpenAPI 契约补齐（2026-07-27）
+
+参照 auctionsvc 已有模式（`contracts/scripts/gen-openapi-auction.mjs` + `auctionsvc/package.json` 的 `gen:api:auction`/`gen:api:auction:check`），为 socialsvc 补齐第三份服务契约（此前 `contracts/` 只覆盖 metaserver `openapi.yml` + worldsvc `openapi-world.yml` + auctionsvc `openapi-auction.yml`）：
+
+- **`contracts/openapi-social.yml`**（自包含，无跨文件 `$ref`，1061 行，17 个 schema，34 个 operation）：覆盖 `server/socialsvc/src/httpApi.ts` 里全部公网 `/social/*` 端点——家族 15 个（含 CRUD/成员/加入审批/公告/频道）+ 玩家档案 2 个（rank/profile extra）+ 好友 9 个 + 私聊 4 个 + 邮件 4 个；`/internal/*` 端点（`X-Internal-Key`，供 worldsvc/metaserver/gateway 调用）比照 worldsvc `/admin/*` 的先例不进公开契约。
+- **`contracts/scripts/gen-openapi-social.mjs`**：仿 `gen-openapi-auction.mjs` 改名而来，解析 yml → 生成 `socialsvc/src/generated/routes.gen.ts`（`SocialOperationId`/`SOCIAL_ROUTES`/`SOCIAL_*_SCHEMAS`，CD 可 diff 的路由表，ADR-023 P2 build-time 契约校验）。
+- **`socialsvc/package.json`** 新增 `gen:api:social`/`gen:api:social:check` 两个 script + `js-yaml` devDependency（codegen 脚本依赖）。
+- **`client/scripts/gen-openapi.mjs`** 新增第三条 pipeline（`openapi-social.yml` → `src/net/openapi-social.ts`），随 `npm run rest:gen` 一并生成。
+- **`client/src/net/WorldApiClient.ts`**：`FamilyView`/`FamilyMemberView`/`FamilyDetailView`/`FamilyJoinRequestView`/`FamilyMessageView` 五个类型从手写别名切换为 `import type { components as socialComponents } from './openapi-social'` 的 `socialComponents['schemas'][...]` 引用（2026-07-01 那次 `senderId`/`senderName` 猜错字段的事故正是本次补契约要防止的问题类）。切换后 `tsc --noEmit`（client 全量 + test 配置）+ webpack `build:web` + `vitest run`（781 例）+ socialsvc 自身 `tsc --noEmit` + `vitest run`（73 例）全部通过，无字段不匹配暴露——说明这五个类型此前已经手动保持同步、无当前活跃 bug，本次补契约的价值在于把"保持同步"从人工纪律变成 build-time 强制。
+- 好友/私聊/邮件的 `FriendView`/`ChatMessageView`/`MailView` 等类型客户端目前经由 `client/src/net/ApiClient/*`（metaserver 代理路径 `/friends`、`/chat/*`、`/mail*`）访问，类型早已从 metaserver 自己的 `openapi.yml`（§4.1 已有同名 schema）生成，未在 `WorldApiClient.ts` 手写，故本次不涉及改动——`openapi-social.yml` 里的对应 schema 是 socialsvc 真实 `/social/friends`、`/social/chat/*`、`/social/mail*` 端点的独立契约，供未来客户端改为直连 socialsvc（或其他服务调用 socialsvc）时使用。

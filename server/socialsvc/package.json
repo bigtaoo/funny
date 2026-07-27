@@ -8,7 +8,9 @@
     "typecheck": "tsc --noEmit",
     "dev": "node --watch --import tsx src/index.ts",
     "start": "node dist/index.js",
-    "test": "vitest run"
+    "test": "vitest run",
+    "gen:api:social": "node ../contracts/scripts/gen-openapi-social.mjs",
+    "gen:api:social:check": "node ../contracts/scripts/gen-openapi-social.mjs --check"
   },
   "dependencies": {
     "@nw/shared": "*",
@@ -16,6 +18,7 @@
   },
   "devDependencies": {
     "@types/node": "^22.10.0",
+    "js-yaml": "^4.1.0",
     "mongodb-memory-server": "^11.2.0",
     "tsx": "^4.19.2",
     "typescript": "^5.7.2",
