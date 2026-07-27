@@ -1,6 +1,6 @@
 # Notebook Wars — 拍卖行设计（Auction House）
 
-> 状态：主干 ✅ + 反 RMT 闸门 C/E/G + 竞拍 B + **装备交易 A** + **异常审计 D（admin G7 已接，已切到 auctionsvc）** 全 ✅；**双入口（大厅 + SLG 世界地图）已接**；**去 SLG/worldId 耦合 + 独立 auctionsvc 拆分（见 §9，2026-07-06 拍板；任务1-7 全部完成——Caddy/compose/CI 已切流量到 auctionsvc，worldsvc 旧拍卖代码已删，client 拍卖方法已去 `worldId` 依赖）** · 权威：本文（拍卖行**机制**单一来源） · 更新：2026-07-06
+> 状态：主干 ✅ + 反 RMT 闸门 C/E/G + 竞拍 B + **装备交易 A** + **异常审计 D（admin G7 已接，已切到 auctionsvc）** 全 ✅；**双入口（大厅 + SLG 世界地图）已接**；**去 SLG/worldId 耦合 + 独立 auctionsvc 拆分（见 §9，2026-07-06 拍板；任务1-9 全部完成，任务10（2026-07-27）补完 client codegen 最后一步——Caddy/compose/CI 已切流量到 auctionsvc，worldsvc 旧拍卖代码已删，client 拍卖方法已去 `worldId` 依赖，`AuctionView` 类型也已真正切到 `openapi-auction.yml` 自己的契约）** · 权威：本文（拍卖行**机制**单一来源） · 更新：2026-07-27
 >
 > 配套阅读：[`COMMERCIAL_DESIGN.md`](COMMERCIAL_DESIGN.md)（金币钱包 spend/grant，拍卖结算走它）、[`ECONOMY_BALANCE.md`](ECONOMY_BALANCE.md)（货币政策/反通胀哲学）、[`ECONOMY_NUMBERS.md`](ECONOMY_NUMBERS.md)（数值演算）、[`SERVER_API.md`](SERVER_API.md)（接口契约）、[`OPS_DESIGN.md`](OPS_DESIGN.md)（反 RMT 审计工单复用）、[`EQUIPMENT_DESIGN.md`](EQUIPMENT_DESIGN.md)/[`CHARACTER_CARDS_DESIGN.md`](CHARACTER_CARDS_DESIGN.md)（装备/角色卡实例定义）、[`SLG_DESIGN.md`](SLG_DESIGN.md)（仅材料 `scrap/lead/binding` 的产出侧定义共享，拍卖机制本身与 SLG 世界/赛季生命周期无关，见 §9 拍板说明）。
 >
@@ -443,6 +443,15 @@ designatedBuyerId?, expireAt(ms), status, buyerId?, rev
   - **base 路由**：`/auction/*` 走 `getWorldBaseUrl()`（同源时 Caddy 代理到 auctionsvc:18086）；该 describe 的 `beforeAll` 把 `globalThis.__NW_WORLD_BASE__` 指到 `NW_AUCTION_BASE`（默认 `http://127.0.0.1:18086`），`afterAll` 还原。auctionsvc 探活失败则**整块 skip + warn**（它是 dev-up 额外进程，非本文件其余用例的硬前置）。
   - **基础设施**：`server/dev-up.ps1` 加 `auction` 进程（`NW_AUCTION_PORT=18086` + meta/commercial internal URL）+ health 探测；`client/vitest.e2e.config.ts` 补 `@nw/shared` alias（引 `AUCTION_DURATIONS_SEC`/`AUCTION_TAX_RATE`）。
   - **验收**：client `tsc --noEmit -p tsconfig.test.json` 绿；`test:e2e -t "auction full-link"` 在本机（无 auctionsvc）按预期 skip 且文件加载无误。真·live-stack 全绿验证需 `npm run dev:all`（现已含 auctionsvc）后跑。
+
+### 拍卖任务10：补完任务7遗留缺口——client 真正切到 `openapi-auction.yml` ✅（2026-07-27）
+
+- [x] **依赖**：任务7（当时有意搁置，见其"未动"条目）。背景：socialsvc 契约任务（`SOCIAL_SVC_DESIGN.md` §9）收尾时顺带巡查其它服务的 client codegen 接线情况，发现 `AuctionView` 一直是任务7遗留的半成品——`client/scripts/gen-openapi.mjs` 从未加过 `openapi-auction.yml` 的流水线，`WorldApiClient.ts` 的 `AuctionView` 仍从 `openapi-world.ts`（`server/contracts/openapi-world.yml` 手工复制的过期副本）导入。
+- **发现的真 drift（先于接线本身）**：diff 两份契约发现 `openapi-world.yml` 的 `AuctionView` 是 2026-07-06 拆分前的旧快照——多余的 `worldId`（早已从 `auctionsvc` 去耦合，见 §9 拍板）、`itemType` 枚举缺 `skin`；而**当前**的 `server/contracts/openapi-auction.yml` 反而漏了 `topBid` 字段——`auctionService.ts`/`docToView()` 一直有条件返回 `topBid`，且 client `AuctionScene/list.ts`/`bid.ts` 早就在读 `auc.topBid`（显示"当前最高出价" vs "起拍价"），只是因为 client 类型来源一直没切过去，这个契约 bug 从未在 `tsc` 里现形。
+- **改动**：① `server/contracts/openapi-auction.yml`：`AuctionView` 补回 `topBid?: {bidderId, amount, ts}`（与 `openapi-world.yml` 旧副本、`auctionService.ts` 内部接口对齐）；② `client/scripts/gen-openapi.mjs` 新增第三条流水线 `openapi-auction.yml → src/net/openapi-auction.ts`；③ `WorldApiClient.ts`：`AuctionView` 改从 `auctionComponents['schemas']['AuctionView']`（新文件）导入，去掉对 `openapi-world.ts` 里那份的依赖，文件头注释同步说明 `AuctionView` 是唯一例外（源自 auctionsvc 自己的契约）；④ `server/contracts/openapi-world.yml` 删除整段死代码——`AuctionView` schema + `/auction/{list,mine,create,{auctionId}/buy,{auctionId}/bid,{auctionId}/cancel}` 六个 path（worldsvc 早已不服务 `/auction/*`，Caddy 直接转发到 `auctionsvc:18086`，`worldsvc/src/httpApi.ts` 注释也明确写"已迁移"——纯遗留，无运行时影响）；⑤ 连带重新生成两个服务的 `routes.gen.ts`（`auctionsvc` 因 schema 加字段、`worldsvc` 因删 path+schema 都变"stale"）。
+- **范围之外（有意不做）**：`createAuction`/`AuctionScene` 的 `itemType` 仍不支持 `'skin'`——皮肤交易目前只有服务端能力（`auctionsvc`），UI 从未接入 picker，任务9 已记录过同样的结论；本次只是切换类型来源，不新增功能。`sellerName`/`totalPrice`/`currency` 等字段在两份契约里 required 标注的细微差异（均非新引入）未动，不影响生成的 TS 类型（本来就是 optional）。
+- **验收**：client `tsc --noEmit`（`tsconfig.json` + `tsconfig.test.json`）绿；`npm run build:web` 绿（仅预期内的 asset-size 警告）；client `vitest run`（110 文件 781 例）全绿；`auctionsvc`/`worldsvc` 各自 `npm run gen:api:*:check` 绿、`typecheck` 绿、`test`（分别 5 文件 71 例 / 44 文件 338 例）全绿。
+- **踩坑记**：worktree 内 `client/node_modules` 无 `@nw/*` 依赖，直接 junction 到主仓即可省掉一次安装；`server/node_modules` 含 `@nw/shared`/`@nw/engine` 等 workspace 包，按 [[worktrees]] 的陷阱说明老实 `npm install` + 分别 `npm run build`（两个包的 `dist/` 不存在会导致下游 `tsc` 报 `Cannot find module '@nw/shared'`，和本次改动无关，纯粹是新 worktree 的构建顺序问题）。
 
 ### 出售物品选择页：左侧类目栏 + 图标卡放大 1.5x（2026-07-09）
 

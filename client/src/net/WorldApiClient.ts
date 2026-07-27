@@ -7,11 +7,14 @@
 //
 // DTO types are generated from server/contracts/openapi-world.yml via npm run rest:gen
 // → src/net/openapi-world.ts. Do NOT hand-edit these type aliases.
+// AuctionView is the exception: auctionsvc is a standalone service with its own contract
+// (server/contracts/openapi-auction.yml → src/net/openapi-auction.ts, AUCTION_DESIGN §9).
 
 import { getWorldBaseUrl, getSocialBaseUrl } from './config';
 import type { IStorage } from '../platform/IPlatform';
 import type { components } from './openapi-world';
 import type { components as socialComponents } from './openapi-social';
+import type { components as auctionComponents } from './openapi-auction';
 
 // ── Generated DTO type aliases (single source of truth = openapi-world.yml) ──
 
@@ -49,7 +52,7 @@ export type FamilyDetailView = socialComponents['schemas']['FamilyDetailView'];
 export type FamilyJoinRequestView = socialComponents['schemas']['FamilyJoinRequestView'];
 export type FamilyMessageView = socialComponents['schemas']['FamilyMessageView'];
 
-export type AuctionView = components['schemas']['AuctionView'];
+export type AuctionView = auctionComponents['schemas']['AuctionView'];
 export type NationView = components['schemas']['NationView'];
 export type SeasonView = components['schemas']['SeasonView'];
 export type SlgShopItemView = components['schemas']['SlgShopItemView'];
