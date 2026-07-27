@@ -4,6 +4,16 @@
 import { createServer, type Server, type IncomingMessage, type ServerResponse } from 'http';
 import { createLogger, type InternalAuthVerifier, type CustomPoolCategory } from '@nw/shared';
 import type { CommercialService } from './service';
+import type { IapProductKind } from './iap';
+
+const NON_COIN_PRODUCT_KINDS: readonly IapProductKind[] = [
+  'monthly_card', 'year_card', 'starter_draw', 'starter_growth',
+];
+function nonCoinProduct(v: unknown): IapProductKind | null {
+  return typeof v === 'string' && (NON_COIN_PRODUCT_KINDS as readonly string[]).includes(v)
+    ? (v as IapProductKind)
+    : null;
+}
 
 const log = createLogger('commercial:internal');
 
@@ -161,6 +171,21 @@ export function startInternalHttp(
                 receiptId: str(b.receiptId),
               }),
             );
+          case '/internal/nonCoinReceipt/verify': {
+            const expectedProduct = nonCoinProduct(b.expectedProduct);
+            if (!expectedProduct) return send(res, 400, { ok: false, error: 'bad expectedProduct' });
+            return send(
+              res,
+              200,
+              await svc.verifyNonCoinReceipt({
+                accountId: str(b.accountId),
+                platform: str(b.platform),
+                receipt: str(b.receipt),
+                receiptId: str(b.receiptId),
+                expectedProduct,
+              }),
+            );
+          }
           case '/internal/ads/credit':
             return send(
               res,

@@ -124,6 +124,18 @@ export interface CommercialClient {
     receipt: string;
     receiptId: string;
   }): Promise<Body<{ coinsAfter: number; coinsGranted: number }>>;
+  /**
+   * Verify a receipt resolves to a specific non-coin SKU (monthly/year card, starter pack) before
+   * granting it — closes the gap where `/monthly-card/buy` etc. used to grant on a bare authenticated
+   * request with no proof of payment (GACHA_DESIGN §5/§6). Does not itself grant anything.
+   */
+  verifyNonCoinReceipt(args: {
+    accountId: string;
+    platform: string;
+    receipt: string;
+    receiptId: string;
+    expectedProduct: 'monthly_card' | 'year_card' | 'starter_draw' | 'starter_growth';
+  }): Promise<Body<{ product: string }>>;
   adsCredit(args: {
     accountId: string;
     amount: number;
@@ -350,6 +362,16 @@ export class HttpCommercialClient implements CommercialClient {
       '/internal/recharge/verify',
       args,
     );
+  }
+
+  verifyNonCoinReceipt(args: {
+    accountId: string;
+    platform: string;
+    receipt: string;
+    receiptId: string;
+    expectedProduct: 'monthly_card' | 'year_card' | 'starter_draw' | 'starter_growth';
+  }) {
+    return this.post<{ product: string }>('/internal/nonCoinReceipt/verify', args);
   }
 
   adsCredit(args: { accountId: string; amount: number; dayKey: string }) {

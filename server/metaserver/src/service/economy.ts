@@ -279,11 +279,27 @@ export function EconomyMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase & C
       return ok({ save, granted: itemId });
     }
 
-    /** Buy the monthly card (GACHA_DESIGN §5). Single-slot: ALREADY_ACTIVE while a card is still running. Real IAP verification is out of scope here (treated as authorized). */
+    /**
+     * Buy the monthly card (GACHA_DESIGN §5). Single-slot: ALREADY_ACTIVE while a card is still running.
+     * Native/WeChat clients must supply the store receipt for real verification (previously this endpoint
+     * granted on a bare authenticated request — "treated as authorized" — with zero proof of payment; that
+     * gap is closed here). Web (Paddle) never calls this REST route directly: the Paddle webhook calls
+     * `commercial.monthlyCardBuy` in-process after its own signature check (see paddle.ts), so it is
+     * unaffected by this gate.
+     */
     async monthlyCardBuy(req: FastifyRequest, reply: FastifyReply) {
       if (!this.ensureCommercial(reply)) return;
       const accountId = accountIdOf(req);
+      const { platform, receipt } = (req.body ?? {}) as { platform?: string; receipt?: string };
+      if (!platform || !receipt) {
+        return reply.code(400).send(err(ErrorCode.BAD_REQUEST, 'missing platform/receipt'));
+      }
       const { cols, commercial, now } = this.deps;
+      const receiptId = `${platform}:${receipt}`;
+      const v = await commercial.verifyNonCoinReceipt({
+        accountId, platform, receipt, receiptId, expectedProduct: 'monthly_card',
+      });
+      if (!v.ok) return reply.code(400).send(err(ErrorCode.INVALID_RECEIPT, 'receipt rejected'));
       const orderId = randomUUID();
       const r = await commercial.monthlyCardBuy({ accountId, orderId });
       if (!r.ok) return reply.code(400).send(err(subscriptionErrCode(r.error), r.error));
@@ -294,11 +310,23 @@ export function EconomyMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase & C
       return ok({ save });
     }
 
-    /** Buy the year card (GACHA_DESIGN §5): 365-day subscription, same single-slot gate + daily claim as the monthly card. */
+    /**
+     * Buy the year card (GACHA_DESIGN §5): 365-day subscription, same single-slot gate + daily claim as
+     * the monthly card. Same receipt-verification gate as monthlyCardBuy — see its doc comment.
+     */
     async yearCardBuy(req: FastifyRequest, reply: FastifyReply) {
       if (!this.ensureCommercial(reply)) return;
       const accountId = accountIdOf(req);
+      const { platform, receipt } = (req.body ?? {}) as { platform?: string; receipt?: string };
+      if (!platform || !receipt) {
+        return reply.code(400).send(err(ErrorCode.BAD_REQUEST, 'missing platform/receipt'));
+      }
       const { cols, commercial, now } = this.deps;
+      const receiptId = `${platform}:${receipt}`;
+      const v = await commercial.verifyNonCoinReceipt({
+        accountId, platform, receipt, receiptId, expectedProduct: 'year_card',
+      });
+      if (!v.ok) return reply.code(400).send(err(ErrorCode.INVALID_RECEIPT, 'receipt rejected'));
       const orderId = randomUUID();
       const r = await commercial.yearCardBuy({ accountId, orderId });
       if (!r.ok) return reply.code(400).send(err(subscriptionErrCode(r.error), r.error));
@@ -382,11 +410,24 @@ export function EconomyMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase & C
       return ok({ save: finalSave, rewards });
     }
 
-    /** Buy a starter pack (GACHA_DESIGN §6): starter_draw (rare+ floored 10-pull) or starter_growth (coins + 7-day card). */
+    /**
+     * Buy a starter pack (GACHA_DESIGN §6): starter_draw (¥6, rare+ floored 10-pull) or starter_growth
+     * (¥30, coins + 7-day card) — both are paid first-purchase-funnel products, not free gifts. Requires
+     * a verified store receipt (same gate as monthlyCardBuy/yearCardBuy; previously this endpoint granted
+     * both packs on `cost: 0` with no payment at all — see GACHA_DESIGN §6 implementation note).
+     */
     async starterBuy(req: FastifyRequest, reply: FastifyReply) {
       if (!this.ensureCommercial(reply)) return;
       const accountId = accountIdOf(req);
-      const { productId } = req.body as { productId: string };
+      const { productId, platform, receipt } = req.body as {
+        productId: string; platform?: string; receipt?: string;
+      };
+      if (productId !== PRODUCT_STARTER_GROWTH && productId !== 'starter_draw') {
+        return reply.code(400).send(err(ErrorCode.BAD_REQUEST, 'invalid productId'));
+      }
+      if (!platform || !receipt) {
+        return reply.code(400).send(err(ErrorCode.BAD_REQUEST, 'missing platform/receipt'));
+      }
       const { cols, commercial, now } = this.deps;
 
       // Growth pack: enforce the first-N-days account-age window (best-effort; absent account → allow).
@@ -396,6 +437,13 @@ export function EconomyMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase & C
           return reply.code(403).send(err(ErrorCode.NO_PERMISSION, 'growth pack window closed'));
         }
       }
+
+      const receiptId = `${platform}:${receipt}`;
+      const v = await commercial.verifyNonCoinReceipt({
+        accountId, platform, receipt, receiptId,
+        expectedProduct: productId === PRODUCT_STARTER_GROWTH ? 'starter_growth' : 'starter_draw',
+      });
+      if (!v.ok) return reply.code(400).send(err(ErrorCode.INVALID_RECEIPT, 'receipt rejected'));
 
       const orderId = randomUUID();
       const r = await commercial.starterBuy({ accountId, productId, orderId });

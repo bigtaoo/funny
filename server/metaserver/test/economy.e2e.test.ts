@@ -139,6 +139,14 @@ class FakeCommercial implements CommercialClient {
     this.totalRecharge.set(a.accountId, (this.totalRecharge.get(a.accountId) ?? 0) + usdCents);
     return { ok: true as const, coinsAfter: this.bal(a.accountId), coinsGranted: coins };
   }
+  async verifyNonCoinReceipt(a: {
+    accountId: string; platform: string; receipt: string; receiptId: string; expectedProduct: string;
+  }) {
+    if (!a.receipt.startsWith('product:')) return { ok: false as const, error: 'INVALID_RECEIPT' };
+    const kind = a.receipt.slice(8);
+    if (kind !== a.expectedProduct) return { ok: false as const, error: 'INVALID_RECEIPT' };
+    return { ok: true as const, product: kind };
+  }
   async adsCredit(a: { accountId: string; amount: number; dayKey: string }) {
     this.coins.set(a.accountId, this.bal(a.accountId) + a.amount);
     return { ok: true as const, coinsAfter: this.bal(a.accountId) };
@@ -391,7 +399,10 @@ describe.skipIf(!mongo)('meta economy orchestration e2e', () => {
   });
 
   it('monthly card claim: subscriptionLastClaimDay survives response serialization (regression — openapi.yml Monetization schema silently dropped this field, so Fastify\'s response schema stripped it even though the server computed it correctly; ShopScene.ts compared it to "today" and never showed the claimed state)', async () => {
-    await app.inject({ method: 'POST', url: '/monthly-card/buy', headers: auth() });
+    await app.inject({
+      method: 'POST', url: '/monthly-card/buy', headers: auth(),
+      payload: { platform: 'dev', receipt: 'product:monthly_card' },
+    });
     const dayKey = new Date(fakeNow).toISOString().slice(0, 10);
 
     const r1 = body(await app.inject({ method: 'POST', url: '/monthly-card/claim', headers: auth() }));
@@ -409,7 +420,10 @@ describe.skipIf(!mongo)('meta economy orchestration e2e', () => {
   });
 
   it('starter growth: buy within the 7-day window succeeds and mirrors starterUsed + eligibility', async () => {
-    const r = body(await app.inject({ method: 'POST', url: '/starter/buy', headers: auth(), payload: { productId: 'starter_growth' } }));
+    const r = body(await app.inject({
+      method: 'POST', url: '/starter/buy', headers: auth(),
+      payload: { productId: 'starter_growth', platform: 'dev', receipt: 'product:starter_growth' },
+    }));
     expect(r.data.save.monetization.starterUsed).toContain('starter_growth');
     expect(r.data.save.wallet.coins).toBe(3300);
     // Already claimed — eligibility mirror is irrelevant now (client hides the card via starterUsed), but must not read false.
@@ -418,7 +432,10 @@ describe.skipIf(!mongo)('meta economy orchestration e2e', () => {
 
   it('starter growth: window closed (account older than 7 days) → 403, card left unclaimed, eligibility mirrored false so the client can hide it (2026-07-15 fix — client used to keep showing a Buy button that always 403s)', async () => {
     fakeNow += 8 * 24 * 60 * 60 * 1000; // account was created at the original fakeNow in beforeEach
-    const r = await app.inject({ method: 'POST', url: '/starter/buy', headers: auth(), payload: { productId: 'starter_growth' } });
+    const r = await app.inject({
+      method: 'POST', url: '/starter/buy', headers: auth(),
+      payload: { productId: 'starter_growth', platform: 'dev', receipt: 'product:starter_growth' },
+    });
     expect(r.statusCode).toBe(403);
     expect(comm.starterUsed.get(accountId)).toBeUndefined(); // never charged/claimed
     const save = body(await app.inject({ method: 'GET', url: '/save', headers: auth() }));
@@ -427,13 +444,22 @@ describe.skipIf(!mongo)('meta economy orchestration e2e', () => {
 
   it('starter draw: not gated by account age — still buyable after the growth pack window closes', async () => {
     fakeNow += 8 * 24 * 60 * 60 * 1000;
-    const r = body(await app.inject({ method: 'POST', url: '/starter/buy', headers: auth(), payload: { productId: 'starter_draw' } }));
+    const r = body(await app.inject({
+      method: 'POST', url: '/starter/buy', headers: auth(),
+      payload: { productId: 'starter_draw', platform: 'dev', receipt: 'product:starter_draw' },
+    }));
     expect(r.data.save.monetization.starterUsed).toContain('starter_draw');
   });
 
   it('starter growth: already purchased → 409', async () => {
-    await app.inject({ method: 'POST', url: '/starter/buy', headers: auth(), payload: { productId: 'starter_growth' } });
-    const r = await app.inject({ method: 'POST', url: '/starter/buy', headers: auth(), payload: { productId: 'starter_growth' } });
+    await app.inject({
+      method: 'POST', url: '/starter/buy', headers: auth(),
+      payload: { productId: 'starter_growth', platform: 'dev', receipt: 'product:starter_growth' },
+    });
+    const r = await app.inject({
+      method: 'POST', url: '/starter/buy', headers: auth(),
+      payload: { productId: 'starter_growth', platform: 'dev', receipt: 'product:starter_growth' },
+    });
     expect(r.statusCode).toBe(409);
   });
 

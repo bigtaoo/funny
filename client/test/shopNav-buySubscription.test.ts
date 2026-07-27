@@ -1,7 +1,11 @@
-// Regression/coverage for createShopNav's buyMonthlyCard/buyYearCard (2026-07-25, COMMERCIAL_DESIGN.md §10.7):
-// on web (iapKind()==='paddle') these now run a real Paddle checkout + poll for the save's subscriptionExpiry
-// bump, instead of granting immediately — mirrors doRechargeCoins/pollForCoinIncrease. Native/hidden-store
-// platforms are unchanged (still call the direct grant endpoint).
+// Regression/coverage for createShopNav's buyMonthlyCard/buyYearCard:
+// - web (iapKind()==='paddle') runs a real Paddle checkout + poll for the save's subscriptionExpiry bump
+//   (2026-07-25, COMMERCIAL_DESIGN.md §10.7) — mirrors doRechargeCoins/pollForCoinIncrease.
+// - native (apple/google) runs the real store purchase via nativeIapPurchase() and sends the resulting
+//   receipt to the server for verification (2026-07-27: previously granted on a bare authenticated
+//   request with zero proof of payment, see COMMERCIAL_DESIGN §10.7 / GACHA_DESIGN §5).
+// - WeChat/CrazyGames (iapKind()===null) never get buyMonthlyCard/buyYearCard exposed at all (no payment
+//   channel wired for these products yet).
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { createShopNav } from '../src/app/nav/shop';
 import type { AppCtx, AppState, Nav } from '../src/app/appCtx';
@@ -23,11 +27,12 @@ class MemStorage implements IStorage {
 
 interface FakeApiOpts {
   iapKind: 'paddle' | 'apple' | 'google' | null;
-  /** paddleCheckout / monthlyCardBuy / yearCardBuy behavior for this test. */
+  /** paddleCheckout / monthlyCardBuy / yearCardBuy / nativeIapPurchase behavior for this test. */
   paddleCheckout?: (tierId: string) => Promise<{ transactionId: string }>;
-  monthlyCardBuy?: () => ReturnType<ApiClient['monthlyCardBuy']>;
-  yearCardBuy?: () => ReturnType<ApiClient['yearCardBuy']>;
+  monthlyCardBuy?: (platform: string, receipt: string) => ReturnType<ApiClient['monthlyCardBuy']>;
+  yearCardBuy?: (platform: string, receipt: string) => ReturnType<ApiClient['yearCardBuy']>;
   openPaddleCheckout?: (transactionId: string, token: string) => Promise<{ completed: boolean }>;
+  nativeIapPurchase?: (tierId: string) => Promise<{ receipt: string }>;
   /** subscriptionExpiry the save should report the NEXT time saveManager.refresh() is called (simulates the webhook having landed). */
   expiryAfterRefresh?: number;
 }
@@ -53,6 +58,7 @@ function buildShopNav(opts: FakeApiOpts) {
     storage,
     iapKind: () => opts.iapKind,
     openPaddleCheckout: opts.openPaddleCheckout ?? (async () => ({ completed: true })),
+    nativeIapPurchase: opts.nativeIapPurchase ?? (async () => ({ receipt: 'stub-receipt' })),
   } as unknown as IPlatform;
 
   const saveManager = new SaveManager({ store: new LocalSaveStore(storage), api: fakeApi });
@@ -95,25 +101,67 @@ function buildShopNav(opts: FakeApiOpts) {
 }
 
 describe('createShopNav — buyMonthlyCard/buyYearCard', () => {
-  describe('native/hidden-store platforms (iapKind !== paddle): unchanged direct-grant behavior', () => {
-    it('apple: calls the direct grant endpoint, no Paddle checkout involved', async () => {
-      let directCalled = false;
+  describe('native platforms (apple/google): real store purchase + receipt verification', () => {
+    it('apple: runs the native store purchase, sends the receipt to the server, no Paddle checkout involved', async () => {
+      let nativeCalledWith: string | undefined;
+      let serverCalledWith: { platform: string; receipt: string } | undefined;
+      let checkoutCalled = false;
       const { views } = buildShopNav({
         iapKind: 'apple',
-        monthlyCardBuy: async () => { directCalled = true; return { save: { ...makeNewSave(), monetization: { fatePoints: 0, subscriptionExpiry: Date.now() + 30 * 86400000, starterUsed: [] } } }; },
+        nativeIapPurchase: async (tierId) => { nativeCalledWith = tierId; return { receipt: 'apple-receipt-123' }; },
+        monthlyCardBuy: async (platform, receipt) => {
+          serverCalledWith = { platform, receipt };
+          return { save: { ...makeNewSave(), monetization: { fatePoints: 0, subscriptionExpiry: Date.now() + 30 * 86400000, starterUsed: [] } } };
+        },
+        paddleCheckout: async () => { checkoutCalled = true; return { transactionId: 'x' }; },
       });
       const res = await views.shop!.buyMonthlyCard!();
-      expect(directCalled).toBe(true);
+      expect(nativeCalledWith).toBe('monthly_card');
+      expect(serverCalledWith).toEqual({ platform: 'apple', receipt: 'apple-receipt-123' });
+      expect(checkoutCalled).toBe(false);
       expect(res.ok).toBe(true);
     });
 
-    it('apple: ALREADY_ACTIVE from the direct endpoint maps to shop.cardActive', async () => {
+    it('apple: ALREADY_ACTIVE from the server (after a valid receipt) maps to shop.cardActive', async () => {
       const { views } = buildShopNav({
         iapKind: 'apple',
         monthlyCardBuy: async () => { throw new ApiError('ALREADY_ACTIVE', 'active'); },
       });
       const res = await views.shop!.buyMonthlyCard!();
       expect(res).toEqual({ ok: false, key: 'shop.cardActive' });
+    });
+
+    it('apple: server rejects the receipt (INVALID_RECEIPT) → shop.error, subscription not adopted', async () => {
+      const { views } = buildShopNav({
+        iapKind: 'apple',
+        monthlyCardBuy: async () => { throw new ApiError('INVALID_RECEIPT', 'receipt rejected'); },
+      });
+      const res = await views.shop!.buyMonthlyCard!();
+      expect(res).toEqual({ ok: false, key: 'shop.error' });
+    });
+
+    it('apple: user cancels the native store sheet → shop.error, server never called', async () => {
+      let serverCalled = false;
+      const { views } = buildShopNav({
+        iapKind: 'apple',
+        nativeIapPurchase: async () => { throw new Error('user cancelled'); },
+        monthlyCardBuy: async () => { serverCalled = true; return { save: makeNewSave() }; },
+      });
+      const res = await views.shop!.buyMonthlyCard!();
+      expect(res).toEqual({ ok: false, key: 'shop.error' });
+      expect(serverCalled).toBe(false);
+    });
+  });
+
+  describe('WeChat/CrazyGames (iapKind === null): no payment channel wired, buy buttons not exposed', () => {
+    it('buyMonthlyCard/buyYearCard/buyStarter are absent from the nav (ShopScene hides the buttons)', () => {
+      const { views } = buildShopNav({ iapKind: null });
+      expect(views.shop!.buyMonthlyCard).toBeUndefined();
+      expect(views.shop!.buyYearCard).toBeUndefined();
+      expect(views.shop!.buyStarter).toBeUndefined();
+      // Read-only monetization state stays available regardless of purchase capability.
+      expect(views.shop!.getMonetization).toBeDefined();
+      expect(views.shop!.claimMonthlyCard).toBeDefined();
     });
   });
 

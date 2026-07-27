@@ -236,19 +236,19 @@ describe('ShopScene — monthly card daily claim greys out once claimed today', 
   });
 });
 
-describe('ShopScene — starter packs show "Free" and disappear once claimed', () => {
+describe('ShopScene — starter packs show their real ¥ price (GACHA_DESIGN §6, not free) and disappear once claimed', () => {
   const flush = () => new Promise((r) => setTimeout(r, 0));
   const STARTER_GROWTH = t('shop.starterGrowth');
-  const FREE = t('shop.free');
 
-  it('shows the Free label and a tappable Buy button before claiming', async () => {
+  it('shows the ¥30 price (not "Free") and a tappable Buy button before claiming', async () => {
     const scene = buildShop({
       getMonetization: () => ({ subscriptionExpiry: 0, starterUsed: [] }),
       buyStarter: async () => ({ ok: true }),
     });
     await flush();
     expect(findLabelPos(scene.container, STARTER_GROWTH)).not.toBeNull();
-    expect(findLabelPos(scene.container, FREE)).not.toBeNull();
+    expect(findLabelPos(scene.container, '¥30')).not.toBeNull();
+    expect(findLabelPos(scene.container, t('shop.free'))).toBeNull();
     scene.destroy();
   });
 

@@ -147,6 +147,7 @@ export async function buildApp(opts: BuildAppOpts): Promise<FastifyInstance> {
     cols: opts.cols,
     commercial,
     now,
+    socialsvc,
     getAccountId(req) {
       const token = extractBearer(req.headers['authorization']);
       if (!token) return null;
