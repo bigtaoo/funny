@@ -26,6 +26,7 @@ import {
   OCCUPY_MIN_TROOPS,
   TROOP_CAP_BASE,
   MARCH_MORALE_MAX,
+  MARCH_MORALE_FLOOR_TILES,
   moraleCombatMultiplier,
   type ResourceType,
 } from '@nw/shared';
@@ -303,7 +304,8 @@ describe.skipIf(!mongo)('worldsvc siege e2e', () => {
     // crossings in between on this fixture), so the server's path-length-based morale cost matches the raw
     // Manhattan distance exactly; effective (post-morale) troops determine the cheap-formula survivor count.
     const dist = Math.abs(tgt.x - 5) + Math.abs(tgt.y - 5);
-    const morale = Math.max(0, MARCH_MORALE_MAX - dist);
+    // ADR-053: cost per tile is MARCH_MORALE_MAX / MARCH_MORALE_FLOOR_TILES (ratio of map half-diagonal), not flat 1/tile.
+    const morale = Math.max(0, MARCH_MORALE_MAX - dist * (MARCH_MORALE_MAX / MARCH_MORALE_FLOOR_TILES));
     const effTroops = Math.round(troops * moraleCombatMultiplier(morale));
     expect(me.troops).toBe(TROOP_CAP_BASE - troops + (effTroops - npc));
     // Loot = SWEEP_LOOT_PER_LEVEL × level (resType≠ink, no yield contamination).

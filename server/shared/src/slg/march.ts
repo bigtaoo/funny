@@ -5,11 +5,13 @@ import {
   MARCH_SPEED_SEC_PER_TILE,
   MARCH_MORALE_MAX,
   MARCH_MORALE_COMBAT_FLOOR,
+  MARCH_MORALE_FLOOR_RADIUS_RATIO,
   RESOURCE_YIELD_BASE,
   type ResourceType,
   type TileType,
 } from './core';
 import { proceduralTile } from './mapgen';
+import { _MAP_HALF_DIAGONAL } from './province';
 
 /**
  * Per-tile hourly yield (added to `playerWorld.yieldRate` after claiming). Pure function.
@@ -167,12 +169,21 @@ export function marchStepArriveAt(departAt: number, stepIndex: number): number {
 }
 
 /**
- * Remaining morale (out of MARCH_MORALE_MAX) for a march given its full path: 1 point lost per tile moved
- * (path includes the start cell, so the cost is path.length - 1 tiles), floored at 0. Bound to the march
- * instance — every departure starts fresh at MARCH_MORALE_MAX regardless of the team's history.
+ * Tiles a march can cover before morale bottoms out, at the CURRENT map size (ADR-053). A ratio of the map's
+ * half-diagonal rather than a flat constant — see MARCH_MORALE_FLOOR_RADIUS_RATIO for why (auto-rescales with
+ * SLG_MAP_W/H instead of silently going stale, as the flat MARCH_MORALE_MAX=100 tiles did across ADR-049).
+ */
+export const MARCH_MORALE_FLOOR_TILES = MARCH_MORALE_FLOOR_RADIUS_RATIO * _MAP_HALF_DIAGONAL;
+
+/**
+ * Remaining morale (out of MARCH_MORALE_MAX) for a march given its full path: cost per tile is
+ * MARCH_MORALE_MAX / MARCH_MORALE_FLOOR_TILES (path includes the start cell, so tiles moved = path.length - 1),
+ * floored at 0. Bound to the march instance — every departure starts fresh at MARCH_MORALE_MAX regardless of
+ * the team's history.
  */
 export function marchMoraleFromPath(path: PathCell[]): number {
-  return Math.max(0, MARCH_MORALE_MAX - Math.max(0, path.length - 1));
+  const tiles = Math.max(0, path.length - 1);
+  return Math.max(0, MARCH_MORALE_MAX - tiles * (MARCH_MORALE_MAX / MARCH_MORALE_FLOOR_TILES));
 }
 
 /**

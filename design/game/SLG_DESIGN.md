@@ -219,10 +219,11 @@
 >
 > **命名说明（2026-07-22 审计）**：本节中文名从"行军士气"改为"行军疲劳"，避免与 [§6.4 卡牌"士气加成"](CHARACTER_CARDS_DESIGN.md)（`(currentTroops/troopCap)×0.2` 的出战 ATK 加成）撞名——两者是完全不同的机制（一个是距离惩罚，一个是满编加成），代码内部字段/函数名（`morale`/`MARCH_MORALE_MAX`/`moraleCombatMultiplier`）不受影响，仅中文叙述改名。
 
-- **规则**：每支行军（`MarchDoc`）出征时获得满额疲劳值 `MARCH_MORALE_MAX=100`，每移动一格消耗 1 点，抵达时的剩余疲劳值 = `100 - 路径格数`（下限 0）。**绑定行军实例，不绑定队伍**——每次出征都从满额重新开始，不与该队伍上一次出征的结果延续。
+- **规则**：每支行军（`MarchDoc`）出征时获得满额疲劳值 `MARCH_MORALE_MAX=100`（归一化上限，非格数），每移动一格消耗 `MARCH_MORALE_MAX / MARCH_MORALE_FLOOR_TILES` 点，抵达时的剩余疲劳值 = `100 - 路径格数 × (100/MARCH_MORALE_FLOOR_TILES)`（下限 0）。**绑定行军实例，不绑定队伍**——每次出征都从满额重新开始，不与该队伍上一次出征的结果延续。
+- **ADR-053 修订（2026-07-27）：疲劳耗尽预算改为比率制**——`MARCH_MORALE_FLOOR_TILES = MARCH_MORALE_FLOOR_RADIUS_RATIO(0.35) × 地图半对角线`，不再是原 ADR-047 的绝对格数 `100`。起因：`100 格`是针对旧 500×500 地图（半对角线≈354 格）拍的数，ADR-049 把地图放大到 1500×1500（半对角线≈1061 格）后从未联动重算，design-doc-audit-2026-07 用真实 A*+省份几何核验发现同省内最远单腿距离（中位 534 格）已 100% 触底，梯度对绝大多数非"家门口"场景名存实亡（详见 [`ECONOMY_VERIFICATION_LOG.md` §13-SLG-MARCH](ECONOMY_VERIFICATION_LOG.md)）。改为比率制后当前地图（1500×1500）的 floor 约 371 格，且未来 `SLG_MAP_W/H` 再变化时自动跟着地图尺寸重新缩放，不用每次手动重算——判据复核见 [`SLG_ECONOMY_CHECK.md` §5.5](SLG_ECONOMY_CHECK.md)。
 - **战力惩罚**：抵达后的战斗力按剩余疲劳值线性缩放，疲劳值 100 → 100% 战力，疲劳值 0 → `MARCH_MORALE_COMBAT_FLOOR=70%` 战力（`moraleCombatMultiplier`，`server/shared/src/slg/march.ts`）；覆盖所有需要战斗的行军类型（`attack`/`occupy`/`sweep`，含驱逐 `applyOccupationExpulsion`），`reinforce`/`return` 不涉及战斗，疲劳值记录但不生效。
 - **架构约束（本期不做的部分）**：行军在服务端不是逐格 tick 的实时模拟——出征时一次性算好完整 A\* 路径并只调度一个到达事件（`combatMarch.ts` `startMarch`/`processDueArrivals`），中途没有"停留"状态。因此**「原地不动每 30 秒回复 1 点」这条回复机制在当前架构下没有天然的触发点**（每次出征本就从满额开始），本期不实现；疲劳值消耗按路径长度一次性算好存在 `MarchDoc.morale`，供到达结算读取。
-- **实现**：`marchMoraleFromPath(path)` 在出征时算好存入 `MarchDoc.morale`（`server/shared/src/slg/march.ts` + `combatMarch.ts`）；到达结算时 `moraleCombatMultiplier(morale)` 缩放攻方有效兵力/军队 HP（`combatSiege/arrival.ts` 的 `applySiege`/`applyStrongholdSiege`/`applyCrossingSiege`/`applySweep`、`combatSiege/occupation.ts` 的 `applyOccupy`/`applyOccupationExpulsion`），廉价公式（`resolveSiege`）与真实引擎战斗（`runSiegeBattle`）两条结算路径都吃这个缩放，保持一致。未暴露到 `MarchView`/openapi 契约（客户端本期不展示疲劳值）。
+- **实现**：`marchMoraleFromPath(path)` 在出征时算好存入 `MarchDoc.morale`（`server/shared/src/slg/march.ts` + `combatMarch.ts`），内部按 `MARCH_MORALE_FLOOR_TILES`（`MARCH_MORALE_FLOOR_RADIUS_RATIO × 地图半对角线`，与 `province.ts` 的 `PROVINCE_*_RADIUS_RATIO` 同一套比率制约定）折算每格消耗；到达结算时 `moraleCombatMultiplier(morale)` 缩放攻方有效兵力/军队 HP（`combatSiege/arrival.ts` 的 `applySiege`/`applyStrongholdSiege`/`applyCrossingSiege`/`applySweep`、`combatSiege/occupation.ts` 的 `applyOccupy`/`applyOccupationExpulsion`），廉价公式（`resolveSiege`）与真实引擎战斗（`runSiegeBattle`）两条结算路径都吃这个缩放，保持一致。未暴露到 `MarchView`/openapi 契约（客户端本期不展示疲劳值）。
 
 ### 4.5 实时野战遭遇系统（停留/驻扎 + 建筑层，ADR-051，2026-07-24）
 

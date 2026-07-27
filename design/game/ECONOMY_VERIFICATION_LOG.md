@@ -442,7 +442,7 @@ TileDoc 占大头（20–50×/玩家），`proceduralTile()` 按需计算未占�
 
 ---
 
-## 13-SLG-MARCH. 行军疲劳梯度核验（ADR-047 vs ADR-049 地图放大）`[❌ FAIL，2026-07-27 首次核验]`
+## 13-SLG-MARCH. 行军疲劳梯度核验（ADR-047 vs ADR-049 地图放大）`[✅ RESOLVED，2026-07-27 首次核验 FAIL → 同日 ADR-053 修复后 PASS，见 §13-SLG-MARCH.5]`
 
 > 触发原因：design-doc-audit-2026-07 审计发现 ADR-047（行军疲劳，2026-07-21）的 `MARCH_MORALE_MAX=100`（走满 100 格耗尽疲劳、降到 `MARCH_MORALE_COMBAT_FLOOR=70%` 战力）是针对**旧 500×500 地图**（半对角线 ≈354 格）拍的数，ADR-049（2026-07-22）把地图放大到 1500×1500（半对角线 ≈1061 格）后从未重新核验这个"100 格"预算相对新地图的省份几何是否还合理。此前**没有现成的 econ-sim 脚本**覆盖这一项，本轮新建。
 
@@ -476,4 +476,21 @@ TileDoc 占大头（20–50×/玩家），`proceduralTile()` 按需计算未占�
 - **发现**：4 方向移动 + 精确 Manhattan 启发式在无障碍网格上对任意 (dx,dy) 都是"平局"（同一起止点之间所有单调格路径代价相同），朴素 A* 在没有平局打破策略时可能需要展开接近整个 dx×dy 包围盒才能确认最优路径——旧 500×500 地图最大对角距离（约 350×350≈122,500 格）安全落在 `MAX_NODES=500,000` 内从未暴露；新 1500×1500 地图上，常规对角距离（如 dx=dy=600,包围盒 360,000 格）就能把这个数字顶穿，导致合法可达的目标被误判 `PATH_BLOCKED`。
 - **修复**：`server/shared/src/slg/march.ts` 的启发式函数加了一个极小的"叉积"平局打破偏置（偏向起止点连线),偏置系数按 `1/(2·mapW·mapH+1)` 取值,数学上保证不会让 A* 选到比最优解更长的路径（只打破同代价平局的展开顺序）,把探索量从 O(dx·dy) 降到接近 O(dx+dy)。修复后验证：旧图最大对角距离（700 格）、新图同等距离、以及新图内同省不跨 crossing 的长途（如 534 格量级）均能快速找到最优路径；跨 crossing 的合法阻塔场景（本来就该返回不可达）行为不变。
 - **验证**：`npx tsx src/_diag.ts`（临时诊断脚本，已删除）确认修复前后对照；已补充回归测试 `server/worldsvc/test/pathfinding.test.ts`「长距离对角行军」用例，覆盖 1500×1500 地图上 dx=dy=600 量级的可达路径。
+
+### 13-SLG-MARCH.5 修复落地（ADR-053，同日 2026-07-27）+ 复核 PASS
+
+> §13-SLG-MARCH.3 结论提出两个方向供 SLG 玩法负责人拍板：① `MARCH_MORALE_MAX` 同比例放大到 300；② 疲劳消耗改为相对量纲（路径格数 / 地图特征尺度）。拍板选择 **方向②**——见 [`design/DECISIONS.md` ADR-053](../DECISIONS.md) 完整决策记录。
+
+- **实现**：新增 `MARCH_MORALE_FLOOR_RADIUS_RATIO`（`server/shared/src/slg/core.ts`），`MARCH_MORALE_FLOOR_TILES = MARCH_MORALE_FLOOR_RADIUS_RATIO × 地图半对角线`（`server/shared/src/slg/march.ts`，复用 `province.ts` 的 `_MAP_HALF_DIAGONAL`）；`marchMoraleFromPath` 每格消耗从固定 1 点改为 `MARCH_MORALE_MAX / MARCH_MORALE_FLOOR_TILES` 点。`MARCH_MORALE_MAX=100` 保留但语义从"格数"改为"归一化上限"；`moraleCombatMultiplier`/`MarchDoc.morale` 取值范围/结算逻辑不变，无需迁移。
+- **比率取值（0.35）不是拍脑袋**：先试原始比率 100/354≈0.28（折算新图约 297 格）重跑 `marchFatigueRun.ts`，intra-province-far 触底比例仍达 90%（判据要求 ≤80%）——原因是该类别的格数分布呈明显阶梯（252/344/392/528/534...几个集中档位，非连续分布），297 格卡在 252 档之上、344 档之下，只吃掉 16/165≈10% 的样本。改用 0.35（约 371 格），跨过 344 这一档（16+32=48/165≈29% 样本），触底比例回落到 70%，满足判据；home 类别在两个比率下都是 0%（判据 ≤20%），无冲突。
+- **复核结果（10 种子 × 4 样本/类别，`marchFatigueRun.ts` 重跑）**：
+
+| 类别 | n | 中位格数 | 中位战力乘子 | 触底比例（≥371 格） | 判据 |
+|---|---|---|---|---|---|
+| home（近首府短途） | 227 | 60 | 0.952 | **0%** | ≤20% → PASS |
+| intra-province-far（同省内最远单腿） | 165 | 534 | 0.700 | **70%** | ≤80% → PASS |
+| random-pair（信息性基线） | 6（40 次尝试仅 6 次单腿可达，15%） | 485 | 0.700 | 67% | 信息性，不作判据 |
+
+- **回归验证**：`server/shared` 633 单测全绿（`march.test.ts` 9 例改为从 `MARCH_MORALE_FLOOR_TILES` 派生期望值，不再硬编码 1 点/格）+ `tsc --noEmit` 全绿；`server/worldsvc` 44 文件 339 例全绿（`siege.e2e.test.ts` 一处断言原先手写"`MARCH_MORALE_MAX - dist`"旧公式，已改为复算真实公式，否则会被新公式判为回归失败）。
+- **结论**：`[✅ PASS]` 行军疲劳梯度已恢复——家门口场景保持近零惩罚，同省常规行动的触底比例从 100% 降到 70%，梯度对多数场景重新有意义；且比率制修复了根本问题（地图尺寸再变化时自动重新缩放，无需人工记得联动）。本节状态由 FAIL 更新为 RESOLVED。
 
