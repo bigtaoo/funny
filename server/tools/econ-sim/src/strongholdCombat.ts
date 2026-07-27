@@ -1,25 +1,36 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// Stronghold/crossing COMBAT-POWER calibration (SLG_ECONOMY_CHECK §21.4 follow-up, 2026-07-16).
+// Stronghold/crossing COMBAT-POWER calibration (SLG_ECONOMY_CHECK §21.4 follow-up, 2026-07-16;
+// corrected 2026-07-27, see the "IMPORTANT CORRECTION" block below before trusting anything about
+// "board-depth fragility" you may have seen in an earlier version of this file or of the verification log).
 //
 // The A-track / stronghold-track runners (index.ts, strongholdRun.ts) validate the RESOURCE-FAUCET
 // side of STRONGHOLD_GARRISON_PER_LEVEL / CROSSING_GARRISON_PER_LEVEL (density, dilution, one-off
 // loot vs cap). They never actually fight the NPC garrison — "is this beatable, and by whom" was
 // asserted from a napkin-HP comparison in the siege.ts source comments, not measured.
 //
-// This module answers that with the real deterministic `@nw/engine` driving the exact same
-// `buildSiegeBattle` (attacker army + defender garrison + dual bases + timeout) construction worldsvc
-// uses (server/worldsvc/src/siegeEngine.ts `runSiegeBattle`) — reimplemented standalone here (same
-// pattern as client/test/pvpSim.ts: a self-contained sim reusing @nw/engine primitives directly,
-// rather than importing worldsvc's module, which would pull cross-package relative paths outside this
-// package's tsc rootDir). Reusing the production engine (rather than re-deriving a parallel
-// Lanchester-style formula, as siegeRun.ts does for the cheap-path C-track) is deliberate:
-// stronghold/crossing sieges always go through the real engine, so any answer not measured through
-// that exact mechanic could be wrong in a way a formula-based check would never catch.
+// This module answers that by reproducing worldsvc's ACTUAL production decision (server/worldsvc/src/
+// siegeEngine.ts `shouldUseCheapSiege` + combatSiege/arrival.ts, wired in commit 13a7af86, 2026-07-16):
+// most stronghold/crossing garrisons are large enough to overflow `synthesizeArmy`'s board-placement
+// capacity, so production deliberately SKIPS the real `@nw/engine` auto-battle and settles via the cheap
+// linear `resolveSiege` (attacker wins iff troops > garrison) instead. This module mirrors that same
+// routing decision (see `shouldUseCheapSiege`/`SIEGE_SYNTH_ARMY_MAX_TROOPS` below, kept in lockstep with
+// siegeEngine.ts's copy — duplicated rather than imported because this package cannot depend on the
+// worldsvc service package, see the tsc-rootDir note in strongholdCombatRun.ts's original header).
 //
-// Both NPC garrisons are effectively FIXED-level in practice (not a 1..5 range as the old siege.ts
-// comments implied): strongholds always generate at SLG_MAP_MAX_LEVEL (§14/stronghold.ts), and
-// auto-crossings always generate at max(2, SLG_MAP_MAX_LEVEL-1) (mapgen.ts:216). So this only needs
-// to test one garrison size per building type, across a spread of attacker troop-count scenarios.
+// ⚠️ IMPORTANT CORRECTION (2026-07-27): the 2026-07-16 first pass of this file called the real engine
+// UNCONDITIONALLY (no shouldUseCheapSiege mirror at all) and used that to hand-tune STRONGHOLD_GARRISON_PER_LEVEL
+// /CROSSING_GARRISON_PER_LEVEL around the engine's ~9,600-troop board-depth cliff — appropriate at the time,
+// since TROOP_CAP_BASE was 2000 and no realistic garrison came anywhere near that cliff. When ADR-048
+// (2026-07-22) raised TROOP_CAP_BASE to 10000, a same-day-but-earlier commit (13a7af86, 2026-07-16 15:20,
+// i.e. LATER THE SAME DAY as this file's original version) had ALREADY wired shouldUseCheapSiege's overflow
+// guard into production specifically to route around that cliff — but this standalone file was never updated
+// to mirror it. The result: an initial 2026-07-27 recalibration pass of this file (since corrected) spent a lot
+// of effort hand-tuning STRONGHOLD_GARRISON_PER_LEVEL/CROSSING_GARRISON_PER_LEVEL to a razor-thin ~100-175-troop
+// "safe band" that dodged the real engine's board-depth cliff — a problem that DOES NOT ACTUALLY OCCUR IN
+// PRODUCTION, because any garrison this large already triggers the overflow guard and never reaches the real
+// engine at all. Moral: keep this file's routing logic in lockstep with siegeEngine.ts, or recalibrations here
+// will optimize for a mechanism production doesn't use. See ECONOMY_VERIFICATION_LOG.md §13-SLG-STRONGHOLD.5
+// for the full incident writeup.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import {
@@ -39,9 +50,11 @@ import {
   buildSiegeBattle,
   strongholdGarrison,
   passageGarrison,
+  resolveSiege,
   SLG_MAP_MAX_LEVEL,
   TROOP_CAP_BASE,
   DRILL_TROOPCAP_STEP,
+  SIEGE_CHEAP_RATIO,
 } from '@nw/shared';
 
 /** Real garrison sizes at the levels these buildings actually generate at (not a hypothetical 1..5 range). */
@@ -53,6 +66,34 @@ export const CROSSING_GARRISON = passageGarrison(CROSSING_LEVEL);
 // Default synthesized unit = Infantry (mirrors worldsvc/src/siegeEngine.ts SYNTH_UNIT; troops = HP, §16.1).
 const HP_PER_UNIT = UNIT_BLUEPRINTS[UnitType.Infantry].hp;
 const TICK_MARGIN = 600; // same margin as siegeEngine.ts, guards against pathological stalemates
+
+/**
+ * Max troop count `synthesizeArmy` can place without lane/row collisions (10 attack lanes × 16 spawnable
+ * rows × 60 HP/unit). Mirrors `SIEGE_SYNTH_ARMY_MAX_TROOPS` in worldsvc/src/siegeEngine.ts exactly — keep
+ * these two in lockstep (see the IMPORTANT CORRECTION note above for what happens when they drift apart).
+ */
+export const SIEGE_SYNTH_ARMY_MAX_TROOPS = ATTACK_LANES.length * (TOP_SPAWN_ROW - BOTTOM_SPAWN_ROW + 1) * HP_PER_UNIT;
+
+/**
+ * Mirrors worldsvc/src/siegeEngine.ts `shouldUseCheapSiege` exactly: whether a siege skips the real engine
+ * and settles via the cheap linear `resolveSiege` instead — true when a synthesized side would overflow
+ * board capacity (independent of the ratio check), or when the attacker holds an overwhelming ratio advantage.
+ * Both stronghold and crossing garrisons are ALWAYS synthesized (no real per-unit layout), so in practice: any
+ * garrison above {@link SIEGE_SYNTH_ARMY_MAX_TROOPS} makes this always true, for every attacker, regardless of
+ * the attacker's own army composition or size.
+ */
+export function shouldUseCheapSiege(opts: {
+  attackerTroops: number;
+  defenderTroops: number;
+  attackerSynthesized: boolean;
+  defenderSynthesized: boolean;
+}): boolean {
+  const { attackerTroops, defenderTroops, attackerSynthesized, defenderSynthesized } = opts;
+  if (attackerSynthesized && attackerTroops > SIEGE_SYNTH_ARMY_MAX_TROOPS) return true;
+  if (defenderSynthesized && defenderTroops > SIEGE_SYNTH_ARMY_MAX_TROOPS) return true;
+  if (attackerTroops <= 0) return false;
+  return defenderTroops > 0 ? attackerTroops >= defenderTroops * SIEGE_CHEAP_RATIO : true;
+}
 
 /** Deterministic round-robin army layout from a flat troop count (mirrors siegeEngine.ts synthesizeArmy). */
 function synthesizeArmy(troops: number, role: 'attacker' | 'defender'): GarrisonEntry[] {
@@ -80,31 +121,43 @@ export interface ProgressionScenario {
 }
 
 /** Fresh/new player: base troop cap (drillYard=0), no satchel investment. Design intent: "nearly always lose". */
-export const SCENARIO_BASE: ProgressionScenario = { label: 'fresh (troopCap=2000)', troops: TROOP_CAP_BASE };
+export const SCENARIO_BASE: ProgressionScenario = { label: `fresh (troopCap=${TROOP_CAP_BASE})`, troops: TROOP_CAP_BASE };
 /**
- * Mildly-invested player: drillYard/satchel raised ~2-3 levels (troops 4000-5000) — the empirically-found
- * threshold where the stronghold flips winnable (see strongholdCombatRun.ts sweep). NOT "maxed" — deliberately
- * modest, to show the gate opens well before endgame investment.
+ * Modestly-invested player: drillYard raised 2 levels — the threshold where the STRONGHOLD (heavier gate)
+ * flips winnable under the cheap linear model (see strongholdCombatRun.ts). The CROSSING (lighter gate)
+ * already opens one level earlier, at +1; that scenario is built inline where tested (e.g.
+ * strongholdCombat.test.ts) rather than exported here, since the two buildings intentionally open at
+ * different investment levels.
+ *
+ * 2026-07-27 re-calibration (ADR-048 TROOP_CAP_BASE 2000→10000): was `troopCap=4500, drillYard~3` under the
+ * old baseline. Both garrisons now comfortably exceed {@link SIEGE_SYNTH_ARMY_MAX_TROOPS}, so — per the
+ * IMPORTANT CORRECTION in this file's header — production always resolves these fights via the cheap linear
+ * `resolveSiege` (attacker wins iff troops > garrison), not the real engine. That makes this a simple,
+ * comfortable (multi-thousand-troop-margin) calibration, unlike the razor-thin band a naive real-engine-only
+ * simulation would suggest.
  */
-export const SCENARIO_INVESTED: ProgressionScenario = { label: 'invested (troopCap=4500, drillYard~3)', troops: TROOP_CAP_BASE + 2 * DRILL_TROOPCAP_STEP + 500 };
-// Deliberately NOT tested here: a maxed troopCap/satchel deployment (12,000 troops in one march) hits a
-// separate, genuine engine limitation — synthesizeArmy's round-robin placement runs out of board depth
-// (10 attack lanes × 16 spawnable rows ≈ 9,600-troop capacity at 60 HP/unit) and produces non-monotonic,
-// occasionally-losing outcomes purely from lane congestion / battle-timeout, unrelated to the garrison
-// constants below. `SIEGE_CHEAP_RATIO` (shared/slg/siege.ts) was designed to route lopsided fights like this
-// away from the real engine, but is not actually wired into worldsvc's stronghold/crossing siege dispatch
-// (combatSiege/arrival.ts calls runSiegeBattle unconditionally) — flagged as a follow-up, see SLG_DESIGN_LOG §21.4.
-//
-// Also deliberately not tested: unit-level (equipment/card) progression. Even if wired, siege blueprints
-// are ONE shared table for the whole board (@nw/engine engine/base.ts), so a per-unit-type buff would lift
-// attacker AND defender Infantry equally — troop count is the only lever that differentiates this same-type
-// matchup, which is what this harness varies.
+export const SCENARIO_INVESTED: ProgressionScenario = { label: `invested (troopCap=${TROOP_CAP_BASE + 2 * DRILL_TROOPCAP_STEP}, drillYard+2)`, troops: TROOP_CAP_BASE + 2 * DRILL_TROOPCAP_STEP };
+// Deliberately NOT tested here: unit-level (equipment/card) progression. Under the cheap linear path this is
+// low-risk to ignore: an equipment/academy attacker-power bonus (up to +20% elsewhere, see
+// SLG_NPC_BASE_HP_PER_LEVEL's doc comment) just proportionally raises effective troops in a straight-line
+// formula — it can shift WHICH drillYard level first opens the gate, but never produces a non-monotonic
+// surprise the way it would have under the real-engine board-depth regime this file used to (incorrectly)
+// simulate. Also unaffected: a maxed troopCap/satchel deployment (SATCHEL_CARRY_BASE + 10 satchel levels =
+// 20,000 troops) — comfortably a cheap-path win against either garrison, no board-depth congestion risk at all
+// once the cheap path is correctly modeled (see `simulateCapture` below).
 
 /**
- * Runs one authoritative siege (real `@nw/engine`) and returns whether the attacker won.
- * Deterministic — same scenario + seed → identical result.
+ * Runs one authoritative siege and returns whether the attacker won — mirroring worldsvc's actual dispatch:
+ * `shouldUseCheapSiege` first (both garrisons here are always synthesized, matching production), falling back
+ * to the real `@nw/engine` auto-battle only when neither side would overflow the board and the fight isn't
+ * ratio-overwhelming. Deterministic in both branches — same scenario + seed → identical result (the cheap
+ * branch is deterministic regardless of seed).
  */
 export function simulateCapture(garrison: number, tileLevel: number, scenario: ProgressionScenario, seed: number): { attackerWin: boolean; attackerSurvivors: number } {
+  if (shouldUseCheapSiege({ attackerTroops: scenario.troops, defenderTroops: garrison, attackerSynthesized: true, defenderSynthesized: true })) {
+    const res = resolveSiege(scenario.troops, garrison);
+    return { attackerWin: res.outcome === 'attacker_win', attackerSurvivors: res.attackerSurvivors };
+  }
   const attackerArmy = synthesizeArmy(scenario.troops, 'attacker');
   const defenderConfig = { garrison: synthesizeArmy(garrison, 'defender') };
   const levelObj = buildSiegeBattle({ army: attackerArmy }, defenderConfig, tileLevel, seed);
@@ -119,7 +172,8 @@ export function simulateCapture(garrison: number, tileLevel: number, scenario: P
   return { attackerWin: engine.state.winner === Side.Bottom, attackerSurvivors: atkHp };
 }
 
-/** Win rate for a scenario across N seeds (siege outcome depends on seed via engine PRNG-driven combat variance, e.g. crit rolls). */
+/** Win rate for a scenario across N seeds (only varies when the real engine runs — the cheap linear path is
+ *  deterministic and gives the same win/loss for every seed; kept plural for a uniform call signature). */
 export function winRateOver(garrison: number, tileLevel: number, scenario: ProgressionScenario, seeds: number[]): { winRate: number; avgAttackerSurvivors: number } {
   let wins = 0;
   let survivorSum = 0;

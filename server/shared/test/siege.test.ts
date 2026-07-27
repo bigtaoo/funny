@@ -59,7 +59,7 @@ describe('npcGarrison / strongholdGarrison / strongholdMaterialLoot', () => {
   it('is linear by level, floored at level 1', () => {
     expect(npcGarrison(0)).toBe(npcGarrison(1));
     expect(npcGarrison(3)).toBe(120 * 3);
-    expect(strongholdGarrison(5)).toBe(360 * 5);
+    expect(strongholdGarrison(5)).toBe(1180 * 5);
   });
 
   it('material loot scales linearly by level (real strongholds are always level 10 — see STRONGHOLD_LEVEL — so both asserted levels land on whole-number qty)', () => {

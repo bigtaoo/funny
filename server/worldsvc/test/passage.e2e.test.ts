@@ -160,8 +160,8 @@ describe.skipIf(!mongo)('worldsvc crossing (bridge/plankway) e2e', () => {
 
   it('attack wins: crossing KEEPS its bridge type + becomes mine + survivors garrison + sieges attacker_win', async () => {
     await svc.joinWorld(W, 'a', base.x, base.y);
-    await setTroops('a', 6000); // overwhelming → guaranteed win over the passage garrison
-    const mv = await svc.startMarch(W, 'a', base.x, base.y, bridge.x, bridge.y, 'attack', 6000);
+    await setTroops('a', 15_000); // overwhelming (drillYard+5) → guaranteed win over the passage garrison (10,440)
+    const mv = await svc.startMarch(W, 'a', base.x, base.y, bridge.x, bridge.y, 'attack', 15_000);
     expect(mv).toMatchObject({ kind: 'attack', status: 'marching' });
     expect(pushes.find((p) => p.msg.kind === 'under_attack')).toBeUndefined(); // NPC defender
 
@@ -182,8 +182,8 @@ describe.skipIf(!mongo)('worldsvc crossing (bridge/plankway) e2e', () => {
   it('attack wins with a family: captured crossing carries familyId (so allies get transit via passableGateKeys)', async () => {
     await svc.joinWorld(W, 'a', base.x, base.y);
     await m.collections.playerWorld.updateOne({ _id: playerWorldId(W, 'a') }, { $set: { familyId: 'fam-1' } });
-    await setTroops('a', 6000);
-    const mv = await svc.startMarch(W, 'a', base.x, base.y, bridge.x, bridge.y, 'attack', 6000);
+    await setTroops('a', 15_000);
+    const mv = await svc.startMarch(W, 'a', base.x, base.y, bridge.x, bridge.y, 'attack', 15_000);
     nowMs = mv.arriveAt;
     await svc.processDueArrivals();
 
@@ -194,7 +194,7 @@ describe.skipIf(!mongo)('worldsvc crossing (bridge/plankway) e2e', () => {
 
   it('attack loses: crossing not captured, remains an ownerless procedural bridge', async () => {
     await svc.joinWorld(W, 'a', base.x, base.y);
-    await setTroops('a', 500); // meets the siege minimum but far below the passage garrison (1800) → guaranteed loss
+    await setTroops('a', 500); // meets the siege minimum but far below the passage garrison (10,440) → guaranteed loss
     const mv = await svc.startMarch(W, 'a', base.x, base.y, bridge.x, bridge.y, 'attack', 500);
     nowMs = mv.arriveAt;
     expect(await svc.processDueArrivals()).toBe(1);
@@ -208,8 +208,9 @@ describe.skipIf(!mongo)('worldsvc crossing (bridge/plankway) e2e', () => {
 
   it('overwhelming synthesized army (12,000 troops, beyond synthesizeArmy board capacity of 9,600) still resolves attacker_win via the cheap fallback — not the flaky congested-engine path', async () => {
     await svc.joinWorld(W, 'a', base.x, base.y);
-    // Same board-overflow guard as the stronghold test: 12,000 = the max satchel/troopCap a maxed drillYard+satchel
-    // allows (D-CITY-9), well past synthesizeArmy's 10 lanes × 16 rows × 60hp = 9,600 troop placement capacity.
+    // Same board-overflow guard as the stronghold test: 12,000 is past synthesizeArmy's 10 lanes × 16 rows ×
+    // 60hp = 9,600 troop placement capacity (well below the actual max satchel/troopCap a maxed drillYard+
+    // satchel allows, 20,000, D-CITY-9) — plenty to exercise the overflow guard and beat the 10,440 garrison.
     await setTroops('a', 12_000);
     const mv = await svc.startMarch(W, 'a', base.x, base.y, bridge.x, bridge.y, 'attack', 12_000);
     nowMs = mv.arriveAt;
