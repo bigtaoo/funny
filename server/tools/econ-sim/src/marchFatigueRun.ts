@@ -13,9 +13,9 @@ const pct = (n: number) => `${(n * 100).toFixed(0)}%`;
 const SEEDS = Array.from({ length: 10 }, (_, i) => i * 104729 + 3);
 const SAMPLES_PER_CATEGORY = 4;
 
-bar('SLG march-fatigue gradient check (ADR-047 vs ADR-049 map enlargement)');
-console.log(`MARCH_MORALE_MAX=${MARCH_MORALE_MAX} tiles-to-floor, floor multiplier=${MARCH_MORALE_COMBAT_FLOOR}`);
-console.log(`map half-diagonal = ${HALF_DIAGONAL.toFixed(0)} tiles → ${FLOOR_TILES} tiles = ${pct(FLOOR_TILES / HALF_DIAGONAL)} of the map's full reach\n`);
+bar('SLG march-fatigue gradient check (ADR-052 ratio-based budget, post ADR-047/ADR-049)');
+console.log(`MARCH_MORALE_MAX=${MARCH_MORALE_MAX} points, floor multiplier=${MARCH_MORALE_COMBAT_FLOOR}`);
+console.log(`map half-diagonal = ${HALF_DIAGONAL.toFixed(0)} tiles → floor at ${FLOOR_TILES.toFixed(0)} tiles = ${pct(FLOOR_TILES / HALF_DIAGONAL)} of the map's full reach (ADR-052 ratio)\n`);
 
 const all: MarchSample[] = [];
 let randomPairAttempted = 0;
@@ -30,7 +30,7 @@ for (const seed of SEEDS) {
 }
 const rows = summarize(all);
 
-console.log('\ncategory              n   median-tiles  median-mult  %-at-floor(≥100 tiles)');
+console.log(`\ncategory              n   median-tiles  median-mult  %-at-floor(≥${FLOOR_TILES.toFixed(0)} tiles)`);
 console.log('─'.repeat(78));
 for (const r of rows) {
   console.log(
@@ -49,9 +49,10 @@ const intra = rows.find((r) => r.category === 'intra-province-far')!;
 console.log(`  home (short local marches):        ${pct(home.pctAtFloor)} hit the floor — expected near-0%, this is the "no penalty near home" case.`);
 console.log(`  intra-province-far (longest legal single-leg march within your own province): ${pct(intra.pctAtFloor)} hit the floor, median tiles=${intra.medianTiles}.`);
 
+const homeFail = home.pctAtFloor > 0.2;
 const gradientDead = intra.pctAtFloor >= 0.8;
-console.log(`\n  [${gradientDead ? 'FAIL' : 'PASS'}] ${gradientDead ? 'the gradient is effectively dead for ordinary same-province marches' : 'a real gradient still exists for same-province marches'}`
-  + ` — MARCH_MORALE_MAX=100 vs. a province now spanning hundreds of tiles across means even routine`
-  + ` same-nation combat (not just cross-map expeditions) commonly maxes out the fatigue floor.`);
+console.log(`\n  [${homeFail ? 'FAIL' : 'PASS'}] home floor rate ${pct(home.pctAtFloor)} vs ≤20% ceiling (SLG_ECONOMY_CHECK §5.5).`);
+console.log(`  [${gradientDead ? 'FAIL' : 'PASS'}] ${gradientDead ? 'the gradient is effectively dead for ordinary same-province marches' : 'a real gradient still exists for same-province marches'}`
+  + ` — intra-province-far floor rate ${pct(intra.pctAtFloor)} vs ≤80% ceiling (SLG_ECONOMY_CHECK §5.5).`);
 
 console.log('\nRegister conclusions → ECONOMY_VERIFICATION_LOG.md (new §13-SLG-MARCH)');

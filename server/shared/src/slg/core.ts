@@ -294,10 +294,19 @@ export const SLG_GEN = {
 export const TROOP_CAP_BASE = 10000;
 export const MARCH_SPEED_SEC_PER_TILE = 6; // seconds of march time per tile
 export const MARCH_MIN_TROOPS = 1; // minimum troops required to send a march
-/** Morale ceiling for a fresh march (out of 100). Bound to the march instance — resets to full on every departure. */
+/** Morale ceiling for a fresh march (normalized to 100 points). Bound to the march instance — resets to full on every departure. */
 export const MARCH_MORALE_MAX = 100;
 /** Combat-power multiplier floor at zero morale — a long-distance march still fights at 70% strength, never worse. */
 export const MARCH_MORALE_COMBAT_FLOOR = 0.7;
+/**
+ * ADR-053: fraction of the map's half-diagonal a march can cover before morale bottoms out — replaces the
+ * old flat "100 tiles" absolute budget (ADR-047), which was calibrated against the 500×500 map (half-diagonal
+ * ≈354 tiles, ratio ≈0.28) and silently went stale when ADR-049 tripled the map to 1500×1500 without a matching
+ * retune (design-doc-audit-2026-07, see ECONOMY_VERIFICATION_LOG.md §13-SLG-MARCH). Expressing the budget as a
+ * ratio of map geometry (like PROVINCE_*_RADIUS_RATIO) means a future SLG_MAP_W/H change rescales the morale
+ * gradient automatically instead of requiring someone to remember to retune a hardcoded tile count.
+ */
+export const MARCH_MORALE_FLOOR_RADIUS_RATIO = 0.35;
 export const RESOURCE_CAP = 200_000;
 export const RESOURCE_YIELD_BASE = 100; // base yield per tile per hour (× level multiplier)
 export const PROTECTION_SEC = 8 * 3600; // protection duration for new players / after home-city is destroyed

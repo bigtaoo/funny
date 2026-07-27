@@ -39,6 +39,7 @@ import {
   SLG_MAP_H,
   MARCH_MORALE_MAX,
   MARCH_MORALE_COMBAT_FLOOR,
+  MARCH_MORALE_FLOOR_TILES,
   findMarchPath,
   moraleCombatMultiplier,
   provinceCapitalPositions,
@@ -49,8 +50,8 @@ import {
 } from '@nw/shared';
 
 export const HALF_DIAGONAL = Math.sqrt((SLG_MAP_W / 2) ** 2 + (SLG_MAP_H / 2) ** 2);
-/** Tile count at which a march has fully exhausted MARCH_MORALE_MAX and sits at the combat floor. */
-export const FLOOR_TILES = MARCH_MORALE_MAX;
+/** Tile count at which a march has fully exhausted MARCH_MORALE_MAX and sits at the combat floor (ADR-052: ratio-derived, not the flat MARCH_MORALE_MAX). */
+export const FLOOR_TILES = MARCH_MORALE_FLOOR_TILES;
 
 export interface MarchSample {
   category: 'home' | 'intra-province-far' | 'random-pair';
@@ -66,9 +67,9 @@ function pathTiles(world: string, fx: number, fy: number, tx: number, ty: number
 }
 
 function toSample(category: MarchSample['category'], tiles: number): MarchSample {
-  // marchMoraleFromPath(path) is pure arithmetic on path.length (MAX - (length-1)); compute directly
-  // from the tile count instead of constructing a throwaway PathCell[] just to satisfy its signature.
-  const m = Math.max(0, MARCH_MORALE_MAX - tiles);
+  // marchMoraleFromPath(path) is pure arithmetic on path.length (ADR-052: MAX - tiles*(MAX/FLOOR_TILES));
+  // compute directly from the tile count instead of constructing a throwaway PathCell[] just to satisfy its signature.
+  const m = Math.max(0, MARCH_MORALE_MAX - tiles * (MARCH_MORALE_MAX / FLOOR_TILES));
   return { category, tiles, morale: m, moraleMult: moraleCombatMultiplier(m) };
 }
 

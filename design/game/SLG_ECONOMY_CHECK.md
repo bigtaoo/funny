@@ -25,7 +25,7 @@
 | D | `sectStrengthScore` 权重 | 分区公平（蛇形均衡） | 否 | §6 分配方差 | 蒙特卡洛分配模拟 |
 | E | `PROSPERITY_W_*` / `PROSPERITY_DECAY_PER_DAY` / `SECT_FOUND_PROSPERITY_MIN` | 节奏 / 建宗门门槛 | 否 | §7 解析可达性 | 公式手算 / 表格 |
 | F | `WORLD_CAPACITY` / `RESET_DELETE_BATCH` | 运维 / 性能 | 否 | §8 负载估算 | 容量估算 / 压测 |
-| G | `MARCH_MORALE_MAX` / `MARCH_MORALE_COMBAT_FLOOR` | 行军疲劳梯度（战力，非经济） | 否 | §5.5 行军疲劳梯度 | econ-sim（真实 A*+省份几何） |
+| G | `MARCH_MORALE_MAX` / `MARCH_MORALE_FLOOR_RADIUS_RATIO` / `MARCH_MORALE_COMBAT_FLOOR` | 行军疲劳梯度（战力，非经济） | 否 | §5.5 行军疲劳梯度 `[✅ RESOLVED]` | econ-sim（真实 A*+省份几何） |
 
 > **唯一会撑爆全局经济的是 A 轨**（settle 发持久材料/金币）。B/C/D/E/F/G 是「玩法平衡」「分区公平」「节奏」「运维」，各有判据，但都**不并入** `ECONOMY_NUMBERS §6.1` 月度金币预算。把它们混进同一个「经济模拟」会得出无意义的结论。
 
@@ -163,9 +163,9 @@ capitalMult(tier) = 该档玩家所属宗门持中原首府(CENTER_CAPITAL_IDX=9
 
 ---
 
-## 5.5 G 轨——行军疲劳梯度（`MARCH_MORALE_MAX` / `MARCH_MORALE_COMBAT_FLOOR`）
+## 5.5 G 轨——行军疲劳梯度（`MARCH_MORALE_MAX` / `MARCH_MORALE_FLOOR_RADIUS_RATIO` / `MARCH_MORALE_COMBAT_FLOOR`）`[✅ RESOLVED，2026-07-27 首次核验 FAIL → 同日 ADR-053 修复后 PASS]`
 
-> 2026-07-27 design-doc-audit 新增（此前无对应轨道）。ADR-047（行军疲劳）用绝对格数（`MARCH_MORALE_MAX=100`）定义惩罚预算，而地图尺寸（`SLG_MAP_W/H`）是会变的（ADR-032→ADR-049 已经变过一次），两者原本没有联动机制——本轨的存在就是为了在每次地图尺寸变化后能有一个明确的判据去重新核验这条常量是否还站得住，而不是像 2026-07-27 之前那样直到审计才发现漂移。
+> 2026-07-27 design-doc-audit 新增（此前无对应轨道）。ADR-047（行军疲劳）原用绝对格数（`MARCH_MORALE_MAX=100`）定义惩罚预算，而地图尺寸（`SLG_MAP_W/H`）是会变的（ADR-032→ADR-049 已经变过一次），两者原本没有联动机制——首次核验（本节新建当日）发现同省内常规行动触底比例已达 100%，梯度名存实亡。**同日拍板 ADR-053**：改为地图比率制（`MARCH_MORALE_FLOOR_RADIUS_RATIO=0.35`），不仅恢复梯度还消除了"每次地图改动都要记得联动"的复发问题——本轨判据从此变成常规回归项，而非一次性修复。详细决策记录见 [`design/DECISIONS.md` ADR-053](../DECISIONS.md)，演算数据见 [`ECONOMY_VERIFICATION_LOG.md` §13-SLG-MARCH.2/.5](ECONOMY_VERIFICATION_LOG.md)。
 
 **判据**：
 - **家门口不罚**：离自己首府很近（半径 ≤ 地图半对角线 8%）的短途行军，触底（疲劳耗尽到地板）比例应保持低位（提案 ≤ **20%**）——这是 ADR-047 明确要保留的"本国防守无惩罚"场景。
@@ -230,8 +230,9 @@ capitalMult(tier) = 该档玩家所属宗门持中原首府(CENTER_CAPITAL_IDX=9
 - [ ] **G 轨（行军疲劳梯度）❌ FAIL（2026-07-27 首次核验，此前无此轨道）**：econ-sim 新建 `marchFatigue.ts`/`marchFatigueRun.ts`，用真实 A*+真实省份几何跨 10 种子实测——`MARCH_MORALE_MAX=100` 是按旧 500×500 地图拍的数，ADR-049 放大到 1500×1500 后从未重新核验。**结果**：家门口短途（离首府 ≤8% 半对角线）触底比例 18%（PASS，判据 ≤20%），但**同省内最远单腿距离（无需 crossing 的常规行动）触底比例 100%、中位距离 534 格**（远超 100 格预算的 5 倍多，判据 ≤80% 未过）——梯度对"省内常规远征"已名存实亡，只对贴身近战还有意义。已 `spawn_task` 登记为独立后续项（`MARCH_MORALE_MAX` 需跟着地图尺寸联动调整或改用相对公式）。**副产品**：排查过程中发现并修复了 `findMarchPath` 的 A* 平局退化 bug（新地图上常规对角距离会误判 PATH_BLOCKED），见 `SLG_DESIGN.md` §U14。结论 [§13-SLG-MARCH](ECONOMY_VERIFICATION_LOG.md)。
 - [x] **登记 ✅（2026-06-30，2026-07-27 补 G 轨/险地轨重跑）**：C/D/E/F 轨结论已写入 [ECONOMY_VERIFICATION_LOG.md](ECONOMY_VERIFICATION_LOG.md) §13-SLG-C / §13-SLG-D / §13-SLG-E / §13-SLG-F；数值未变（常量未动），SLG_DESIGN_LOG §17.1 / §21.4 `DRAFT` 标记按上线后压测策略保留（见 §10）。险地轨结论写入 §13-SLG-STRONGHOLD（2026-07-02，1500×1500 重跑补充于 2026-07-27）；G 轨（行军疲劳）结论写入 §13-SLG-MARCH（2026-07-27，新建）。
 - [x] **代码**：C/D/E/F 轨核验数字与 `server/shared/src/slg.ts` 当前常量一致，无需改动；**险地轨**生成缺陷已修复并落地（`slg.ts` 逐格哈希 + `strongholdThreshold=0.997`，删 `strongholdFreq`；merge-first 已合 main）；**寻路引擎**：`findMarchPath` A* 平局打破偏置已修复并落地（`march.ts`，2026-07-27），回归测试见 `worldsvc/test/pathfinding.test.ts`。
+- [x] **G 轨（行军疲劳）**：`[✅ RESOLVED]` 首次核验 FAIL（同省内常规行动 100% 触底）→ ADR-053 拍板改地图比率制（`MARCH_MORALE_FLOOR_RADIUS_RATIO=0.35`）→ 重跑 `marchFatigueRun.ts` PASS（家门口 0% ≤20%、省内最远单腿 70% ≤80%）；`server/shared`+`worldsvc` 全量测试绿；决策见 `design/DECISIONS.md` ADR-053，演算见 `ECONOMY_VERIFICATION_LOG.md` §13-SLG-MARCH。
 
-**签字人**：A/A-coin 轨 = 经济负责人（动持久经济）；B/C 轨 = 战斗/SLG 玩法负责人；D/E/F 轨 = 实现者自核 + 复核即可；**险地轨**：持久 binding 稀释 = 经济负责人，生成算法改动 = SLG 玩法负责人；**G 轨（行军疲劳）**：数值拍板 = SLG 玩法负责人。
+**签字人**：A/A-coin 轨 = 经济负责人（动持久经济）；B/C 轨 = 战斗/SLG 玩法负责人；D/E/F 轨 = 实现者自核 + 复核即可；**险地轨**：持久 binding 稀释 = 经济负责人，生成算法改动 = SLG 玩法负责人；**G 轨（行军疲劳）**：数值拍板 = SLG 玩法负责人（已拍板 ADR-053，RESOLVED）。
 
 ---
 
