@@ -2,7 +2,7 @@
 import type { FastifyInstance } from 'fastify';
 import { INITIAL_ELO, createLogger, hashPassword, validatePassword } from '@nw/shared';
 import { getProfile, resolveByPublicId, searchAccounts } from '../accounts.js';
-import { profileOf } from '../social.js';
+import { profilesOf } from '../social.js';
 import type { InternalCtx } from './context.js';
 
 const log = createLogger('meta:internal');
@@ -167,11 +167,9 @@ export function registerAccountRoutes(app: FastifyInstance, ctx: InternalCtx): v
       return reply.send({ profiles: {} });
     }
     const ids = (accountIds as unknown[]).filter((id): id is string => typeof id === 'string').slice(0, 200);
+    const found = await profilesOf(cols, ids);
     const profiles: Record<string, object> = {};
-    await Promise.all(ids.map(async (id) => {
-      const p = await profileOf(cols, id);
-      if (p) profiles[id] = p;
-    }));
+    for (const [id, p] of found) profiles[id] = p;
     return reply.send({ profiles });
   });
 
