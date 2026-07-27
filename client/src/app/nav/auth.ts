@@ -34,7 +34,7 @@ export function createAuthNav(ctx: AppCtx): Pick<Nav, 'goIntro' | 'goLogin' | 'd
     analytics.track('screen_view', { scene: 'IntroScene' });
     views.showIntro({
       onFinish(skipped) {
-        if (skipped) analytics.track('tutorial_skip', { step: 'intro' });
+        analytics.track(skipped ? 'intro_skip' : 'intro_complete', {});
         saveManager.setFlag(SEEN_INTRO_FLAG, true);
         gateConsent(() => void resolveEntry());
       },

@@ -224,14 +224,14 @@
 
 > **逐节点核实（design-doc-audit-2026-07，对照代码）**：
 > - ✅ **首启/合规通过**：`session_start`（标准）、`gdpr_consent`（`createAppCore.ts`）。
-> - ❌ **intro 完成/跳过**：`IntroScene.ts` 只写本地 `nw_seen_intro` 标记，**没有任何 `analytics.track` 调用**——漏斗在这一节点完全没有数据，无法区分"跳过"与"看完"。
-> - ❌ **登录方式（试玩/匿名/正式）**：未找到区分登录方式的专属事件；`login_gate_hit` 只在已登录会话触发游客态跳转时打点（`nav/social.ts`/`nav/world.ts`），不是登录方式选择本身。
+> - ✅ **intro 完成/跳过**：`intro_complete`/`intro_skip`（`app/nav/auth.ts` `goIntro()` 的 `onFinish(skipped)`），100% 采样，已纳入 `ANALYTICS_DESIGN.md` §9.6 `ONBOARDING_STEPS` 的 `intro_seen` 步骤——**本行此前记「`IntroScene.ts` 无埋点」已补齐（同一批次修复）**。
+> - ❌ **登录方式（试玩/匿名/正式）**：未找到区分登录方式的专属事件；`login_gate_hit` 只在已登录会话触发游客态跳转时打点（`nav/social.ts`/`nav/world.ts`），不是登录方式选择本身。优先级较低，暂不强制。
 > - ✅ **教学关开始/教学各 beat/教学毕业**：`tutorial_start`/`tutorial_step`（`step_key`=`orientation_1..7`/`beat_unit`/`beat_building`/`beat_spell`/`freeplay`）/`tutorial_complete`/`tutorial_skip` 全部已接（A9-9，`TutorialDirector.ts`→`GameRenderer`→`game.ts#goTutorial()`），100% 采样，`GET /internal/query?type=tutorial_funnel` 可查——**此前 §8/§9 把这条记成"待补"是过期记录，已订正**。
 > - 🟡 **首胜领奖**：无独立事件，靠 `tutorial_complete`（毕业=首胜）代打，够用但没有单独区分"完成教学"与"实际领到奖励"两个时刻。
-> - ❌ **各功能首次引导 弹出/关闭/再看**：`showFeatureGuide`/`withGuide`（`LobbyScene/overlays.ts` 等）**没有任何 `analytics.track` 调用**——这是漏斗里目前唯一还完全没打点的功能性节点（区别于上面 intro/登录方式两个更偏"次要"的缺口）。
+> - 🟡 **各功能首次引导 弹出/关闭/再看**：`feature_guide_shown`/`feature_guide_closed{feature}` 已接（`LobbyScene/overlays.ts`+`app/nav/lobby.ts` 的 `withGuide`），100% 采样，`GET /internal/query?type=feature_guide_funnel` 可查。**「再看」`feature_guide_replay` 事件名/采样已预留，但客户端尚无调用点**——见 §8/§10「各子页内「?」按钮未逐页接」，仍是独立待办。
 > - ✅ **次日回访**：`session_start` 时间序列做 D1 cohort（`ANALYTICS_DESIGN.md` §9.5），不需要专属事件。
 >
-> 已 `spawn_task` 登记为独立后续项：补齐 intro 完成/跳过 + 功能首次引导弹出/关闭/再看 两处事件（登录方式节点优先级较低，暂不强制）。
+> intro 完成/跳过 + 功能首次引导弹出/关闭两处事件已补齐（design-doc-audit-2026-07 后续跟进，见 `ANALYTICS_DESIGN.md` §12.5）；「再看」事件与登录方式节点仍待后续接入（登录方式优先级较低，暂不强制）。
 
 ---
 
@@ -248,7 +248,7 @@
 | `flags.tutorial_done` + 「重看教学」 | ✅ 已加。`tutorial_done` 门控；设置「帮助 → 重看新手教学」重跑。**`SaveData.flags.tutorial_step` 断点续教未做**（见 §10——⚠️ 与下面「FTUE 漏斗埋点」行提到的 `tutorial_step` **同名不同物**：这里指存档断点续教字段，未建；那里指 analyticsvc 的 `tutorial_step` 埋点事件，已建，两者互不影响，勿混淆） |
 | 教学关永不失败兜底（基地不可破） | ✅ 已建。导演每 tick 夹 `baseHp≥1` + GameRenderer 未毕业时吞 `game_over/game_draw`（导演独占终局） |
 | SLG 软门槛（通 ch1 解锁）+ 灰显气泡 | ✅ 已接。`progress.isFirstChapterCleared` + 大厅 `worldLocked` 灰显 + `showInfoToast`「通关第一章解锁」 |
-| **首次功能引导机制（`flags.featSeen.*`）** | ✅ 机制已建。`SaveManager.featSeen/markFeatSeen` + 大厅 `showFeatureGuide` + `withGuide`（match/shop/social/cards/daily/world）+ `guide.*` 全语种。**各子页内「?」按钮未逐页接**（见 §10） |
+| **首次功能引导机制（`flags.featSeen.*`）** | ✅ 机制已建。`SaveManager.featSeen/markFeatSeen` + 大厅 `showFeatureGuide` + `withGuide`（match/shop/social/cards/daily/world）+ `guide.*` 全语种 + `feature_guide_shown/closed` 埋点（design-doc-audit-2026-07 补齐，见 §7）。**各子页内「?」按钮未逐页接**（见 §10），因此 `feature_guide_replay` 事件暂无调用点 |
 | 首胜奖励 + 签到入口引出 | 🟡 毕业=首胜走既有结算链；签到由大厅红点承载，未新增金币龙头（§5） |
 | 年龄门 + EU/UK 同意弹窗 | ❌ 待建（合规，归 COMPLIANCE，开机层） |
 | FTUE 漏斗埋点 | ✅ 已接（design-doc-audit-2026-07 核实：本行与 §9 待办条目此前是过期记录——A9-9 早已落地逐 beat 埋点 `tutorial_step`，`step_key` 覆盖 `tutorial_start→orientation_1..7→beat_unit→beat_building→beat_spell→freeplay→tutorial_complete`，`TutorialDirector.ts`→`GameRenderer`→`game.ts#goTutorial()`→`analytics.track()`；100% 采样，`GET /internal/query?type=tutorial_funnel` 可查逐步转化率，字段权威见 `ANALYTICS_DESIGN.md` §9.9/§9.6。仅剩 §7 提到的「登录方式/首次功能引导 弹出关闭再看/次日回访」几个漏斗节点是否全部接齐未逐项复核，非本次审计范围） |
@@ -277,6 +277,6 @@
 - **永不失败**：导演每 tick 夹 `bottomPlayer.baseHp≥1` + GameRenderer 在 `tutorial && !finished` 时吞掉 `game_over/game_draw`，导演经 `forceTutorialVictory()` 独占终局。
 - **认知导览简化**：O1–O7 当前为「全屏暗化 + 居中指令卡 + 下一步」，**未做聚光灯挖洞/反向箭头**（设计原意），靠文案讲透。后续可加 spotlight cutout。
 - **`tutorial_step` 未持久化**：`SaveData.flags` 是 `Record<string,boolean>`，存不了数字步进；教学短且永不失败，未毕业（`tutorial_done=false`）下次启动从头重跑，不做断点续教。如需，另开 `SaveData` 字段。
-- **首次功能引导**：`featSeen.<id>` 用扁平 flag 键（不改 schema）。首启引导在**大厅**弹（`LobbyScene.showFeatureGuide` + core `withGuide` 包 match/shop/social/cards/daily/world），关闭后续接导航。**各子页内常驻「?」重看按钮未逐页接**——当前重看入口=设置「重看新手教学」(重跑教学关) + 各功能首次 `withGuide`；逐页「?」复用同一 `guide.*` i18n，后续在各 Scene 加按钮即可。拍卖在大世界内，未单独接首启引导。
+- **首次功能引导**：`featSeen.<id>` 用扁平 flag 键（不改 schema）。首启引导在**大厅**弹（`LobbyScene.showFeatureGuide` + core `withGuide` 包 match/shop/social/cards/daily/world），关闭后续接导航。**各子页内常驻「?」重看按钮未逐页接**——当前重看入口=设置「重看新手教学」(重跑教学关) + 各功能首次 `withGuide`；逐页「?」复用同一 `guide.*` i18n，后续在各 Scene 加按钮即可。拍卖在大世界内，未单独接首启引导。design-doc-audit-2026-07 后续跟进已给 `withGuide` 接上 `feature_guide_shown/closed` 埋点（§7）；`feature_guide_replay` 已预留但要等这里的「?」按钮落地才有调用点。
 - **FTUE 注入点**：`createAppCore.goLobby` 一次性闸门——本会话首次将进大厅且 `!tutorial_done` → 改走 `goTutorial()`（步骤 ⑤，在登录/试玩之后、大厅之前）。
 - **验证**：engine `tsc -b` + 18 项引擎测试通过；client `tsc --noEmit` + 生产 webpack 构建通过。

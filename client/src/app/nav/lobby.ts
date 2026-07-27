@@ -154,7 +154,11 @@ export function createLobbyNav(ctx: AppCtx): Pick<Nav, 'goLobby'> {
     function withGuide(featureId: string, titleKey: TranslationKey, bodyKey: TranslationKey, navFn: () => void): void {
       if (saveManager.featSeen(featureId)) { navFn(); return; }
       saveManager.markFeatSeen(featureId);
-      lobby.showFeatureGuide(titleKey, bodyKey, navFn);
+      analytics.track('feature_guide_shown', { feature: featureId });
+      lobby.showFeatureGuide(titleKey, bodyKey, () => {
+        analytics.track('feature_guide_closed', { feature: featureId });
+        navFn();
+      });
     }
     const lobby = views.showLobby({
       onStartGame(_opponentName: string) {

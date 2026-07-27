@@ -307,6 +307,48 @@ describe.skipIf(!mongo)('analyticsvc e2e', () => {
     expect(dist.find((r) => r.badge === 'IRON_WALL' && r.result === 'loss')?.count).toBe(1);
   });
 
+  // ─── feature_guide_funnel (design-doc-audit-2026-07) ──────────────────────
+
+  it('GET /internal/query?type=feature_guide_funnel aggregates shown/closed/replays by feature', async () => {
+    const now = Date.now();
+    const mk = (device: string, feature: string, event: string) => ({
+      session_id: `sess-fg-${device}`, device_id: device, platform: 'web', os: 'Windows', game_version: '0.1.0', locale: 'en',
+      events: [{ event, ts: now, props: { feature } }],
+    });
+    for (const batch of [
+      mk('fg-1', 'shop', 'feature_guide_shown'),
+      mk('fg-1', 'shop', 'feature_guide_closed'),
+      mk('fg-2', 'shop', 'feature_guide_shown'),
+      mk('fg-3', 'social', 'feature_guide_shown'),
+      mk('fg-3', 'social', 'feature_guide_closed'),
+    ]) {
+      const post = await fetch(`${base}/analytics/events`, {
+        method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(batch),
+      });
+      expect(post.status).toBe(200);
+    }
+    await new Promise((r) => setTimeout(r, 200));
+
+    const res = await fetch(`${base}/internal/query?type=feature_guide_funnel&days=7`, { headers: { 'x-internal-key': INTERNAL_KEY } });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      ok: boolean;
+      data: { type: string; feature_guide_funnel: { feature: string; shown: number; closed: number; replays: number; close_rate?: number }[] };
+    };
+    expect(body.ok).toBe(true);
+    expect(body.data.type).toBe('feature_guide_funnel');
+    const rows = body.data.feature_guide_funnel;
+    const shop = rows.find((r) => r.feature === 'shop');
+    expect(shop?.shown).toBe(2);
+    expect(shop?.closed).toBe(1);
+    expect(shop?.replays).toBe(0);
+    expect(shop?.close_rate).toBeCloseTo(0.5);
+    const social = rows.find((r) => r.feature === 'social');
+    expect(social?.shown).toBe(1);
+    expect(social?.closed).toBe(1);
+    expect(social?.close_rate).toBeCloseTo(1);
+  });
+
   // ─── login_hour ──────────────────────────────────────────────────────────
 
   it('GET /internal/query?type=login_hour returns 24 hour buckets', async () => {
@@ -428,6 +470,7 @@ describe.skipIf(!mongo)('analyticsvc e2e', () => {
       // N1 — full graduation: reaches every funnel step, plus a shop_open action.
       ev('fs-n1', 'fs-N1', 'session_start', 3600_000),
       ev('fs-n1', 'fs-N1', 'screen_view', 3600_100, 'IntroScene'),
+      ev('fs-n1', 'fs-N1', 'intro_complete', 3600_150),
       ev('fs-n1', 'fs-N1', 'tutorial_start', 3600_200),
       ev('fs-n1', 'fs-N1', 'tutorial_complete', 3600_300),
       ev('fs-n1', 'fs-N1', 'screen_view', 3600_400, 'LobbyScene'),
@@ -451,12 +494,14 @@ describe.skipIf(!mongo)('analyticsvc e2e', () => {
     // Only N1 + N2 are new in-window; V1 is a returning veteran.
     expect(res.cohort_size).toBe(2);
 
-    // Funnel is built from 100%-sampled events only (no screen_view-derived steps).
+    // Funnel is built from 100%-sampled events only (no screen_view-derived steps) — intro_seen is
+    // the exception, reading dedicated intro_complete/intro_skip events (design-doc-audit-2026-07).
     const step = (k: string) => res.funnel.find((f) => f.step === k);
     expect(res.funnel.map((f) => f.step)).toEqual([
-      'session_start', 'tutorial_start', 'tutorial_complete', 'first_battle', 'first_clear',
+      'session_start', 'intro_seen', 'tutorial_start', 'tutorial_complete', 'first_battle', 'first_clear',
     ]);
     expect(step('session_start')?.count).toBe(2);
+    expect(step('intro_seen')?.count).toBe(1); // only N1 emitted intro_complete
     expect(step('tutorial_start')?.count).toBe(2);
     expect(step('tutorial_complete')?.count).toBe(1); // only N1 finished
     expect(step('first_battle')?.count).toBe(1);
