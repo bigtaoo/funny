@@ -6,6 +6,7 @@ import { ui as C, txt, sketchPanel, sketchButton, seedFor, tearDownChildren } fr
 import { snapFont } from '../../render/fontScale';
 import { t } from '../../i18n';
 import { buildIcon } from '../../render/icons';
+import { buildMaterialIcon, type MaterialKind } from '../../render/materialAtlas';
 import { caretDisplay } from '../../render/inputDisplay';
 import { AUCTION_DURATION_SEC, type Constructor, type AuctionSceneBaseCtor } from './base';
 
@@ -60,7 +61,10 @@ export function CreateFormMixin<TBase extends AuctionSceneBaseCtor>(Base: TBase)
       const field = sketchPanel(mw - 20 * SCALE, 30 * SCALE, { fill: 0xfaf9f5, border: selLabel ? C.accent : C.mid, seed: seedFor(cy, 2, mw - 20 * SCALE) });
       field.x = mx + 10 * SCALE; field.y = cy + 18 * SCALE;
       ml.addChild(field);
-      const ic = buildIcon(this.itemKind(this.createClass, this.createMaterial), 16 * SCALE, selLabel ? C.dark : C.mid);
+      const itemIconKind = this.itemKind(this.createClass, this.createMaterial);
+      const ic = itemIconKind === 'scrap' || itemIconKind === 'lead' || itemIconKind === 'binding'
+        ? buildMaterialIcon(itemIconKind as MaterialKind, 16 * SCALE, selLabel ? C.dark : C.mid)
+        : buildIcon(itemIconKind, 16 * SCALE, selLabel ? C.dark : C.mid);
       ic.x = mx + 16 * SCALE; ic.y = cy + 24 * SCALE;
       ml.addChild(ic);
       const fl = txt(selLabel ?? t('auction.tapChoose'), snapFont(12 * SCALE), selLabel ? C.dark : C.mid);

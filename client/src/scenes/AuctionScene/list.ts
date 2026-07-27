@@ -8,6 +8,7 @@ import { t } from '../../i18n';
 import type { AuctionView } from '../../net/WorldApiClient';
 import type { EquipmentInstance, CardInstance } from '../../game/meta/SaveData';
 import { buildIcon, type IconKind } from '../../render/icons';
+import { buildMaterialIcon, type MaterialKind } from '../../render/materialAtlas';
 import { drawScrollIndicator } from '../../ui/widgets/ScrollIndicator';
 import { getEquipDef } from '../../game/meta/equipmentDefs';
 import { buildEquipIcon } from '../../render/equipmentAtlas';
@@ -334,8 +335,13 @@ export function ListMixin<TBase extends AuctionSceneBaseCtor>(Base: TBase): TBas
           }
         }
       }
-      // Material listing (or an equipment/card def that vanished) → dedicated icon glyph fallback.
-      const icon = buildIcon(this.itemKind(auc.itemType, auc.item?.['material'] as string | undefined), size, C.dark);
+      // Material listing (or an equipment/card def that vanished) → dedicated icon (bitmap-first,
+      // mirrors every other material-icon site — EquipmentScene/GachaScene/DailyScene/etc, see
+      // materialAtlas.ts's "every material-icon site MUST go through here" contract).
+      const kind = this.itemKind(auc.itemType, auc.item?.['material'] as string | undefined);
+      const icon = kind === 'scrap' || kind === 'lead' || kind === 'binding'
+        ? buildMaterialIcon(kind as MaterialKind, size, C.dark)
+        : buildIcon(kind, size, C.dark);
       icon.x = cx - size / 2; icon.y = cy - size / 2;
       this.bodyLayer.addChild(icon);
     }
