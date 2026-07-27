@@ -112,7 +112,7 @@ describe('march-token walk animation (2026-07-15)', () => {
   it('ignores an unrecognized leaderUnitType and falls back to the kind-based default', () => {
     const scene = buildScene();
     const march = marchRight('m1', 'occupy');
-    march.leaderUnitType = 'berserker'; // a PvE-only unit type with no authored .tao rig
+    march.leaderUnitType = 'siege_tower'; // not a real UnitType — must never reach STICKMAN_ASSETS
     scene.ctx.marches = [march];
     scene.update(1 / 60);
 
