@@ -7,6 +7,7 @@ import Fastify from 'fastify';
 import { makeNewSave, type Collections, type SaveData } from '@nw/shared';
 import { registerAccountRoutes } from '../src/internal/accountRoutes.js';
 import type { InternalCtx } from '../src/internal/context.js';
+import { AccountCache } from '../src/accountCache.js';
 import { FakeCollection } from './helpers/fakeCollection.js';
 import { fakeGateway, fakeCommercial, ThrowingSocialsvc } from './helpers/fakeClients.js';
 
@@ -32,6 +33,8 @@ function build(seedAccounts: AccountDoc[] = [], seedSaves: SaveDocRow[] = []) {
     commercial: fakeCommercial(),
     socialsvc: new ThrowingSocialsvc(),
     authed: (key) => key === KEY,
+    redis: null,
+    accountCache: new AccountCache(),
   };
   const app = Fastify();
   registerAccountRoutes(app, ctx);

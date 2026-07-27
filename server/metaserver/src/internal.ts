@@ -13,6 +13,7 @@ import type { GatewayClient } from './gatewayClient.js';
 import type { CommercialClient } from './commercialClient.js';
 import { nullMetaSocialsvcClient, type MetaSocialsvcClient } from './socialsvcClient.js';
 import type { InternalCtx } from './internal/context.js';
+import { AccountCache } from './accountCache.js';
 import { registerAccountRoutes } from './internal/accountRoutes.js';
 import { registerMailRoutes } from './internal/mailRoutes.js';
 import { registerMatchReportRoutes } from './internal/matchReport.js';
@@ -37,19 +38,24 @@ export interface InternalDeps {
   socialsvc?: MetaSocialsvcClient;
   /** Active-match Redis client (login-reconnect-prompt): cleared here when gameserver reports a match as finished. null = feature disabled. */
   redis?: RedisLike | null;
+  /** Ban-status / publicId reverse-lookup cache (2026-07-27); should be the SAME instance passed to
+   *  MetaService's deps so an admin ban here is visible to rejectIfBanned. Defaults to a fresh instance
+   *  (fine for callers — tests — that don't otherwise care about sharing it with a MetaService). */
+  accountCache?: AccountCache;
 }
 
 export function registerInternalRoutes(app: FastifyInstance, deps: InternalDeps): void {
   const { cols, internalKey, internalKeys, now, gateway, commercial } = deps;
   const socialsvc = deps.socialsvc ?? nullMetaSocialsvcClient;
   const redis = deps.redis ?? null;
+  const accountCache = deps.accountCache ?? new AccountCache();
 
   // Centralized verifier: timing-safe + strict per-caller (NW_INTERNAL_KEYS) + single shared-key fallback.
   const auth = createInternalAuth({ keys: internalKeys, legacyKey: internalKey });
   const authed = (key: unknown): boolean =>
     auth.verify({ 'x-internal-key': typeof key === 'string' ? key : undefined }).ok;
 
-  const ctx: InternalCtx = { cols, now, gateway, commercial, socialsvc, authed, redis };
+  const ctx: InternalCtx = { cols, now, gateway, commercial, socialsvc, authed, redis, accountCache };
 
   registerAccountRoutes(app, ctx);
   registerMailRoutes(app, ctx);
