@@ -305,13 +305,13 @@ TileDoc 占大头（20–50×/玩家），`proceduralTile()` 按需计算未占�
 
 ---
 
-## 13-SLG-STRONGHOLD. 险地生成 / 掠夺数值核验（§21.4 STRONGHOLD_*）`[全图口径已修复·CLOSED 2026-07-02，已用 500×500+等级10 重跑 2026-07-05，战力模拟补测 2026-07-16；分环带公平性 2026-07-22 发现 NEEDS ATTENTION，见 .6；1500×1500+TROOP_CAP_BASE=10000 重跑 2026-07-27：③持久稀释判据已修复回 PASS（ADR-054，见 .2b），.5 新手开放门槛判据转 NEEDS ATTENTION（未在本次范围内修复，见 .5）]`
+## 13-SLG-STRONGHOLD. 险地生成 / 掠夺数值核验（§21.4 STRONGHOLD_*）`[全图口径已修复·CLOSED 2026-07-02，已用 500×500+等级10 重跑 2026-07-05，战力模拟补测 2026-07-16；分环带公平性 2026-07-22 发现 NEEDS ATTENTION，见 .6；1500×1500+TROOP_CAP_BASE=10000 重跑 2026-07-27：③持久稀释判据已修复回 PASS（ADR-054，见 .2b），.5 新手开放门槛判据同日晚些时候修复回 PASS（守军常量重新拍板，见 .5）]`
 
 > 脚本：`server/tools/econ-sim/src/stronghold.ts` + `strongholdRun.ts`（`npx tsx src/strongholdRun.ts`）。用**真实生成器** `proceduralTile` 在真实地图（`SLG_MAP_W×SLG_MAP_H`，动态 import，随 ADR-032/033 自动跟新）跨 100 个世界种子实测，非手估密度。**2026-07-05 用 500×500 + `SLG_MAP_MAX_LEVEL=10`（ADR-032）+ 三层环带布局（ADR-033）重跑**，下表已更新为新数字；结论（PASS/CLOSED）不变。
 >
-> **✅ ADR-049（2026-07-22）地图放大到 1500×1500 后已于 2026-07-27 重跑并修复**：①②仍 PASS（逐格比率量，放大后不变）；③持久 binding 稀释一度因险地绝对数随面积暴涨而突破 15% 红线，已通过下调 `STRONGHOLD_LOOT_MATERIAL_PER_LEVEL`（ADR-054）修复并复核通过——详见 **.2b**。同一轮重跑还发现一个**独立**问题：ADR-048（2026-07-22）把 `TROOP_CAP_BASE` 提到 10,000 后，§13-SLG-STRONGHOLD.5 的"新手打不过险地/关隘"战力门槛结论已失效（新手开局兵力已超守军，开局即 100% 胜率）——与本条持久稀释无关，**未在本次修复范围内**，详见 .5 的重跑记录（NEEDS ATTENTION，待经济/SLG 玩法负责人另行拍板）。
+> **✅ ADR-049（2026-07-22）地图放大到 1500×1500 后已于 2026-07-27 重跑并修复**：①②仍 PASS（逐格比率量，放大后不变）；③持久 binding 稀释一度因险地绝对数随面积暴涨而突破 15% 红线，已通过下调 `STRONGHOLD_LOOT_MATERIAL_PER_LEVEL`（ADR-054）修复并复核通过——详见 **.2b**。同一轮重跑还发现一个**独立**问题：ADR-048（2026-07-22）把 `TROOP_CAP_BASE` 提到 10,000 后，§13-SLG-STRONGHOLD.5 的"新手打不过险地/关隘"战力门槛结论已失效（新手开局兵力已超守军，开局即 100% 胜率）——与本条持久稀释无关；**同一天晚些时候已通过重新拍板 `STRONGHOLD_GARRISON_PER_LEVEL`/`CROSSING_GARRISON_PER_LEVEL` 修复回 PASS**，详见 .5 的完整记录（含一次绕远路的教训：`shouldUseCheapSiege` 分流逻辑早已修复了引擎棋盘拥堵问题，但独立的核验脚本一度没同步镜像，见 .5 正文）。
 >
-> **为何单列**：险地占领发**持久**养成材料 `binding`（`applyStrongholdSiege` → `strongholdMaterialLoot` → `meta.grantMaterial`，`worldsvc/src/service.ts:1789-1790`）——这是 A 轨聚合（`index.ts`，只数 `SETTLE_REWARDS`+细水）**从未计入**的一条持久龙头。故按 A 轨 §2.3 15% 人均稀释判据核。季资源掠夺（`5000×level` 到单一 resType）与 NPC 守军（`360×level`）属季内/战斗面，一并 sanity。
+> **为何单列**：险地占领发**持久**养成材料 `binding`（`applyStrongholdSiege` → `strongholdMaterialLoot` → `meta.grantMaterial`，`worldsvc/src/service.ts:1789-1790`）——这是 A 轨聚合（`index.ts`，只数 `SETTLE_REWARDS`+细水）**从未计入**的一条持久龙头。故按 A 轨 §2.3 15% 人均稀释判据核。季资源掠夺（`5000×level` 到单一 resType）与 NPC 守军（`1180×level`，2026-07-27 重新拍板，见 .5）属季内/战斗面，一并 sanity。
 >
 > **修复（2026-07-02）**：险地判定从平滑 value-noise 换成**逐格哈希** `rand2(x,y,seed^0x0555) > strongholdThreshold`（`shared/slg.ts`，merge-first / rule 4），阈值 `0.92 → 0.997`，删去无用的 `SLG_GEN.strongholdFreq`。①②③三项由 FAIL/CONDITIONAL 全转 **PASS**（下表 = 修复后实测）。
 
@@ -322,7 +322,7 @@ TileDoc 占大头（20–50×/玩家），`proceduralTile()` 按需计算未占�
 | `SLG_GEN.strongholdThreshold` | `0.997` | **逐格** hash `rand2(x,y,seed^0x0555)` > 此值 → 险地；= 逐格 Bernoulli(p=1−0.997=0.003) 抽样 |
 | `SLG_GEN.strongholdMinDistRatio` | `0.25` | 中心 25% 半径内不生成（护新手） |
 | ~~`SLG_GEN.strongholdFreq`~~ | ~~`1/70`~~ | **已删**：逐格哈希不用频率（旧平滑噪声遗留） |
-| `STRONGHOLD_GARRISON_PER_LEVEL` | `360` | 每级 NPC 守军 → level **10**（地图上限，ADR-032 起 5→10）险地 = **3,600 兵** |
+| `STRONGHOLD_GARRISON_PER_LEVEL` | `1180`（2026-07-27 从 `360` 重新拍板，见 .5；此前 `TROOP_CAP_BASE=2000` 时代为 `360`） | 每级 NPC 守军 → level **10**（地图上限，ADR-032 起 5→10）险地 = **11,800 兵** |
 | `STRONGHOLD_LOOT_PER_LEVEL` | `5000` | 每级季资源掠夺 → level 10 = **50,000**（单 resType，一次性，季末清零） |
 | `STRONGHOLD_LOOT_MATERIAL(_PER_LEVEL)` | `binding` / `0.8`（ADR-054，2026-07-27 从 `4` 下调，见 .2b；此前 500×500 时代为 `4`） | 每级持久材料掠夺 → level 10 = **8 binding**（进 SaveData，**持久**） |
 
@@ -397,7 +397,7 @@ TileDoc 占大头（20–50×/玩家），`proceduralTile()` 按需计算未占�
 ### 13-SLG-STRONGHOLD.3 结论
 
 - **判决（500×500+等级10 重跑，2026-07-05，历史值——地图尺寸已于 ADR-049 变为 1500×1500，当前数字见 .2b）**：①密度/方差 **✅ PASS**（中位 0.23%，CV 0.05，0% 零险地，504→636 跨度）；②blob 聚团 **✅ PASS**（平均 blob 1.0 格）；③持久龙头 **✅ PASS**（全种子 × 满占领率稀释 ≤ 12.6% ≪ 15%，但比旧版 2.8% 余量明显收窄——等级上限翻倍是主因，非地图尺寸）；④季资源/守军 **✅ sane**。
-- **判决（1500×1500 重跑+修复后，2026-07-27，见 §13-SLG-STRONGHOLD.2b）**：①②①b 仍 **✅ PASS**（逐格比率量不受地图尺寸影响；①b 分环带不均问题独立于本次修复，仍 NEEDS ATTENTION，见 .6）；**③持久龙头 ✅ PASS**（一度因险地绝对数随面积暴涨到 max×100%=65.2% 突破红线，已通过 `STRONGHOLD_LOOT_MATERIAL_PER_LEVEL` 4→0.8（ADR-054）修复，复跑 max×100%=13.0%，余量对齐 500×500 时代基线）；④仍 sane。**STRONGHOLD TRACK 保持 CLOSED**——但同一轮重跑发现的 §13-SLG-STRONGHOLD.5"新手开放门槛"问题（ADR-048 `TROOP_CAP_BASE=10000` 导致新手开局 100% 胜率）是**另一个独立问题**，仍为 NEEDS ATTENTION，未在本次修复范围内，见 .5。
+- **判决（1500×1500 重跑+修复后，2026-07-27，见 §13-SLG-STRONGHOLD.2b）**：①②①b 仍 **✅ PASS**（逐格比率量不受地图尺寸影响；①b 分环带不均问题独立于本次修复，仍 NEEDS ATTENTION，见 .6）；**③持久龙头 ✅ PASS**（一度因险地绝对数随面积暴涨到 max×100%=65.2% 突破红线，已通过 `STRONGHOLD_LOOT_MATERIAL_PER_LEVEL` 4→0.8（ADR-054）修复，复跑 max×100%=13.0%，余量对齐 500×500 时代基线）；④仍 sane。**STRONGHOLD TRACK 保持 CLOSED**——同一轮重跑发现的 §13-SLG-STRONGHOLD.5"新手开放门槛"问题（ADR-048 `TROOP_CAP_BASE=10000` 导致新手开局 100% 胜率）是**另一个独立问题**，已于同日晚些时候通过重新拍板 `STRONGHOLD_GARRISON_PER_LEVEL`/`CROSSING_GARRISON_PER_LEVEL` 修复回 PASS，详见 .5。
 - **修复历史**：`shared/slg.ts` 逐格哈希 + 阈值 0.997（2026-07-02，公共依赖，已按 rule 4 先合 main）；`p=0.003` 目标密度经经济负责人确认。
 - **回归**：`stronghold.e2e.test.ts` 动态扫描险地格，逐格哈希下每世界 ≈567 险地、≥1 概率≈1，天然存活，已复验通过（worldsvc 210 例全绿）。
 
@@ -407,7 +407,7 @@ TileDoc 占大头（20–50×/玩家），`proceduralTile()` 按需计算未占�
 - 季资源掠夺季末清零、禁挂（[[project-currency-canon]]），不入持久经济。
 - **2026-07-27 更新（ADR-049→ADR-054）**：地图放大到 1500×1500 后险地绝对数量随面积增长到中位 2,817/max 3,286（约 5×，非 ADR-049 header 估算的 9×），而摊薄分母 `SLG_WORLD_CAPACITY_TARGET=400` 不变，binding 稀释峰值一度恶化到 **65.2%**（远超 15% 红线）。修复：`STRONGHOLD_LOOT_MATERIAL_PER_LEVEL` 4→0.8（level10 单次掠夺 40→8 binding），不改动地图密度（ADR-049 决策）或人口容量（ADR-032 决策）。修复后峰值回落到 **13.0%**，详见 §13-SLG-STRONGHOLD.2b。
 
-### 13-SLG-STRONGHOLD.5 战力模拟补测（2026-07-16，`[已修复·CLOSED]`）
+### 13-SLG-STRONGHOLD.5 战力模拟补测（2026-07-16 首跑，2026-07-27 因 ADR-048 重跑发现 FAIL 并当日修复，`[✅ 已修复·CLOSED]`）
 
 > §13-SLG-STRONGHOLD.1-4 只验证了「资源龙头/密度」面；`STRONGHOLD_GARRISON_PER_LEVEL`/`CROSSING_GARRISON_PER_LEVEL` 是否真的「能打下」从未实测过，只是源码注释里的手估 HP 对比。本节用真实 `@nw/engine` 攻城引擎补测。
 >
@@ -428,6 +428,15 @@ TileDoc 占大头（20–50×/玩家），`proceduralTile()` 按需计算未占�
 
 - **根因**：ADR-048（2026-07-22）把 `TROOP_CAP_BASE` 从 2,000 一次性提到 10,000（兵力池统一，新号开局即满额），而 `STRONGHOLD_GARRISON_PER_LEVEL=360`/`CROSSING_GARRISON_PER_LEVEL=200` 两个常量当时是围绕"新手 2,000 兵、几乎打不过"的设计意图校准的（本节 2026-07-16 结论）——两者本应联动，但 ADR-048 的兵力池调整没有同步重新核算险地/关隘守军。10,000 兵新手 vs 3,600/1,800 守军的兵力比已达 2.8×/5.6×，在真实引擎下开局即 100% 胜率，**"几乎打不过，小额投入即可攻克"的设计意图（§3.1）在当前常量组合下完全不成立**——险地/关隘从"练兵场约 3 级才能打"的中期目标，退化成了"出生即可秒开"的摆设。
 - **[FAIL]** 本节 2026-07-16 的 PASS 结论**不再适用于当前常量基线**，`STRONGHOLD_GARRISON_PER_LEVEL`/`CROSSING_GARRISON_PER_LEVEL` 需要重新拍板（供参考：若想恢复"约 2-3 级练兵场投入才能打"的原设计手感，两个常量大致都需要与 `TROOP_CAP_BASE` 同倍数放大，即 360→1800、200→1000 量级，但具体数值应由 SLG 玩法负责人结合真实引擎重新扫描阈值确定，不在本次审计范围内单方面拍板）。已 `spawn_task` 登记为独立后续项，跟踪标题「险地/关隘 NPC 守军常量需按 TROOP_CAP_BASE=10000 新基线重新校准，当前新手开局即可 100% 攻破」。
+
+**重新拍板 + 修复（2026-07-27，同日晚些时候，`[✅ PASS]`）**：
+
+> 第一次尝试直接用真实 `@nw/engine` 攻城引擎（`strongholdCombat.ts` 的 `simulateCapture`，当时尚未镜像下面提到的分流逻辑）扫描阈值，试图在"新手必败、投入 2-3 级必胜"之间找一个稳定的守军值，结果只找到一个约 100-175 兵宽的极窄安全窗口——因为 `synthesizeArmy` 的棋盘容量上限（~9,600 兵，见上面"新发现"条目）现在几乎正好卡在新的 `TROOP_CAP_BASE=10000` 上。排查后发现这条弯路本可完全避免：2026-07-16 当天**下午晚些时候**的另一个提交（`13a7af86`，同一天，晚于本节最初核验）其实已经把 `shouldUseCheapSiege`/`SIEGE_SYNTH_ARMY_MAX_TROOPS` 棋盘溢出保护接入了 `combatSiege/arrival.ts`——只要防守方（险地/关隘守军恒为合成兵力）超过棋盘容量上限，生产环境就会**直接跳过真实引擎**、改用便宜的线性公式 `resolveSiege`（纯粹比较攻方兵力 vs 守方兵力）。但独立于 worldsvc 之外的 `strongholdCombat.ts` 核验脚本从未同步这个分流逻辑，导致第一次拍板测的其实是生产环境根本不会走到的一条路径，"极窄安全窗口"结论对生产没有意义。
+
+- **修复**：①在 `strongholdCombat.ts` 里镜像 `shouldUseCheapSiege`/`SIEGE_SYNTH_ARMY_MAX_TROOPS`（与 `worldsvc/src/siegeEngine.ts` 保持同步，不能 import——econ-sim 不能依赖 worldsvc 服务包）；②确认只要守军值本身超过棋盘容量（~9,600），生产环境**永远**走线性公式，校准退化为一个舒适、以千为单位留有余量的线性不等式问题；③重新拍板：`STRONGHOLD_GARRISON_PER_LEVEL: 360→1180`（守军 11,800 @ level 10，新手必败，练兵场 +2 级必胜）、`CROSSING_GARRISON_PER_LEVEL: 200→1150`（守军 10,350 @ level 9，新手必败，练兵场 +1 级必胜，比险地更早开放，符合原设计意图），并保持"关隘常量 < 险地常量"（避免同等级比较时反直觉地反转，`worldsvc/test/passage.e2e.test.ts` 对此有断言）。
+- **验证**：`strongholdCombatRun.ts` 重跑两个常量均 **PASS**（新手 troops=10,000 两者胜率 0%；险地投入 2 级/关隘投入 1 级后胜率 100%）；`server/shared/test/siege.test.ts`（39 例）、`server/tools/econ-sim` 的 `strongholdCombat.test.ts`（11 例，已改写为验证线性分流不变量而非真实引擎胜率）、`server/worldsvc` 全量 e2e（44 文件/338 用例，含 `stronghold.e2e.test.ts`/`passage.e2e.test.ts`/`siege-cheap-fallback.test.ts`）全绿；`tsc --noEmit` 在 `@nw/shared`/`@nw/econ-sim`/`@nw/worldsvc` 三包均通过。`worldsvc` 两组 e2e 里假设"6,000 兵吊打旧守军"的用例已按新守军提到 15,000 兵，"12,000 兵满行囊撞棋盘上限"用例里过时的"12,000 是满级练兵场+行囊上限"注释一并订正为当前真实上限 20,000（ADR-048 带来的）。
+- **结论**：`STRONGHOLD_GARRISON_PER_LEVEL=1180`、`CROSSING_GARRISON_PER_LEVEL=1150`——"几乎打不过，小额投入即可攻克"的设计意图（§3.1）在 `TROOP_CAP_BASE=10000` 新基线下恢复成立。**本节重新 CLOSED**。
+- **遗留跟进（非本轮范围）**：①目前的"安全余量"是几百到上千兵的线性比较，不再是引擎棋盘拥堵那种脆弱窗口，但尚未针对装备/学院加成（§13-SLG-NPC-BASEHP 记载最高 +20%）做过鲁棒性复核——如果未来有人把这个门槛当作"精确卡点"而非"大致正确、可微调"来依赖，建议先补测；②`shouldUseCheapSiege` 本身已解决了"棋盘容量 vs 引擎"的根因问题，但这次踩坑说明**校准工具（`strongholdCombat.ts`）与生产分流逻辑（`siegeEngine.ts`）是两份重复实现，容易脱节**——值得考虑做成共享模块，或至少加一个跨包契约测试锁定二者行为一致。详见 `SLG_DESIGN_LOG.md` §41。
 
 ### 13-SLG-STRONGHOLD.6 分环带（ADR-034 outer/resource/core）密度公平性核验（2026-07-22，`[⚠️ NEEDS ATTENTION，非本轮 CLOSED]`）
 

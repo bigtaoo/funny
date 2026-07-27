@@ -44,7 +44,7 @@ export const MAP_TILES = SLG_MAP_W * SLG_MAP_H;
 export const STRONGHOLD_LEVEL = SLG_MAP_MAX_LEVEL;
 export const BINDING_PER_STRONGHOLD = strongholdMaterialLoot(STRONGHOLD_LEVEL).qty; // 0.8×level persistent material (ADR-054)
 export const SEASON_RES_PER_STRONGHOLD = STRONGHOLD_LOOT_PER_LEVEL * STRONGHOLD_LEVEL; // one-time season resource
-export const STRONGHOLD_NPC_GARRISON = strongholdGarrison(STRONGHOLD_LEVEL); // 360×level troops
+export const STRONGHOLD_NPC_GARRISON = strongholdGarrison(STRONGHOLD_LEVEL); // 1180×level troops (re-calibrated 2026-07-27)
 export const LOOT_MATERIAL = STRONGHOLD_LOOT_MATERIAL as MaterialKey;
 
 /** Count strongholds by running the real procedural generator over the full map for one world seed. */

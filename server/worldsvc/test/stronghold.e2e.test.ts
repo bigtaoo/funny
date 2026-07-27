@@ -162,10 +162,10 @@ describe.skipIf(!mongo)('worldsvc stronghold e2e (G8)', () => {
 
   it('attack wins (overwhelming force): captured as territory mine + surviving garrison + rich reward + sieges attacker_win + push', async () => {
     await svc.joinWorld(W, 'a', base.x, base.y);
-    await setTroops('a', 6000); // well-developed army, far exceeds the stronghold garrison → guaranteed win
+    await setTroops('a', 15_000); // well-developed army (drillYard+5), far exceeds the stronghold garrison (11,500) → guaranteed win
     const before = (await svc.getMe(W, 'a')).resources!;
 
-    const mv = await svc.startMarch(W, 'a', base.x, base.y, sh.x, sh.y, 'attack', 6000);
+    const mv = await svc.startMarch(W, 'a', base.x, base.y, sh.x, sh.y, 'attack', 15_000);
     expect(mv).toMatchObject({ kind: 'attack', status: 'marching' });
     // Stronghold PvE: defender is an NPC, no under_attack push.
     expect(pushes.find((p) => p.msg.kind === 'under_attack')).toBeUndefined();
@@ -233,10 +233,11 @@ describe.skipIf(!mongo)('worldsvc stronghold e2e (G8)', () => {
 
   it('overwhelming synthesized army (12,000 troops, beyond synthesizeArmy board capacity of 9,600) still resolves attacker_win via the cheap fallback — not the flaky congested-engine path', async () => {
     await svc.joinWorld(W, 'a', base.x, base.y);
-    // 12,000 = the max satchel/troopCap a maxed drillYard+satchel allows (D-CITY-9); well past the 10×10 lane×row
-    // ×60hp = 9,600 troop board capacity that used to make the real engine congest and time out (defender wins
-    // regardless of true strength). Without the SIEGE_CHEAP_RATIO/overflow guard this was non-monotonic
-    // (9,000 loses, 9,600 wins, 10,000 loses again); with it, any troop count this large must deterministically win.
+    // 12,000 is past the 10×10 lane×row ×60hp = 9,600 troop board capacity that used to make the real engine
+    // congest and time out (defender wins regardless of true strength) — well below the actual max satchel/
+    // troopCap a maxed drillYard+satchel allows (20,000, D-CITY-9), but plenty to exercise the overflow guard.
+    // Without the SIEGE_CHEAP_RATIO/overflow guard this was non-monotonic (9,000 loses, 9,600 wins, 10,000 loses
+    // again); with it, any troop count this large must deterministically win (also now above the 11,500 garrison).
     await setTroops('a', 12_000);
     const mv = await svc.startMarch(W, 'a', base.x, base.y, sh.x, sh.y, 'attack', 12_000);
     nowMs = mv.arriveAt;

@@ -23,21 +23,39 @@ export function npcGarrison(level: number): number {
   return NPC_GARRISON_PER_LEVEL * Math.max(1, level);
 }
 
-// ── G8 stronghold (§3.1) values (combat-power calibrated 2026-07-16, see SLG_DESIGN_LOG §21.4 follow-up) ────────────
+// ── G8 stronghold (§3.1) values (combat-power calibrated 2026-07-16, RE-calibrated 2026-07-27 for ADR-048
+// TROOP_CAP_BASE=10000 baseline, see SLG_DESIGN_LOG §21.4 follow-up + ECONOMY_VERIFICATION_LOG.md §13-SLG-STRONGHOLD.5) ────
 /**
  * Stronghold system NPC garrison strength per level. Strongholds always generate at `SLG_MAP_MAX_LEVEL` (currently
- * 10, stronghold.ts), so the garrison a player actually faces is fixed at 3600 troops, not a hypothetical 1..5 range
+ * 10, stronghold.ts), so the garrison a player actually faces is fixed at 11800 troops, not a hypothetical 1..5 range
  * (an earlier version of this comment assumed max level 5 / 1800 — stale; the map's max level moved to 10 without
  * updating this note). Far stronger than ordinary tile garrison (GARRISON_PER_TILE=500) and sweep NPCs
  * (NPC_GARRISON_PER_LEVEL=120); "extremely hard to conquer" (§3.1). **Combat-power confirmed, not just asserted**
- * (`server/tools/econ-sim/src/strongholdCombatRun.ts`, real `@nw/engine` siege auto-battle): a fresh player
- * (troopCap=2000) loses outright (0% win rate across seeds); a modestly-invested one (troopCap≈4500, ~3 drillYard
- * levels) reliably wins (100%) — delivering on SLG7 selling combat power / U7 overwhelming tier as a real, not free,
- * gate. Caveat: single-deployment troop counts above ~9600 hit an unrelated engine board-depth limit and produce
- * non-monotonic outcomes (see strongholdCombat.ts header) — that's a follow-up item, not a reason to retune this
- * constant.
+ * (`server/tools/econ-sim/src/strongholdCombatRun.ts`): a fresh player (troopCap=TROOP_CAP_BASE=10000) loses
+ * outright; a modestly-invested one (troopCap=12000, 2 drillYard levels) reliably wins — delivering on SLG7
+ * selling combat power / U7 overwhelming tier as a real, not free, gate.
+ *
+ * **2026-07-27 re-calibration note (ADR-048 TROOP_CAP_BASE 2000→10000).** This garrison (11800) is comfortably
+ * above `SIEGE_SYNTH_ARMY_MAX_TROOPS` (~9,600 troops, worldsvc/src/siegeEngine.ts — the board-depth capacity of
+ * `synthesizeArmy`'s round-robin placement, 10 attack lanes × 16 spawnable rows × 60 HP/unit). That matters
+ * because worldsvc's `shouldUseCheapSiege` (wired into combatSiege/arrival.ts since commit 13a7af86, 2026-07-16)
+ * routes ANY siege where a synthesized side's troops exceed that capacity to the cheap linear `resolveSiege`
+ * (attacker wins iff troops > garrison) instead of the real `@nw/engine` auto-battle — and both stronghold and
+ * crossing garrisons are always synthesized. So in production this gate is, and must be calibrated as, a plain
+ * linear comparison against `TROOP_CAP_BASE`/`DRILL_TROOPCAP_STEP`, not a real-engine combat simulation: fresh
+ * (10000) < 11800 < drillYard+2 (12000), giving comfortable several-hundred-troop margins on both sides of the
+ * threshold — nothing like the "razor-thin band you must dodge the engine's board-depth cliff to find" that a
+ * naive real-engine-only simulation would suggest (and that an earlier same-day recalibration pass of this
+ * constant mistakenly optimized for, before the `shouldUseCheapSiege` mirror was added to strongholdCombat.ts —
+ * see that file's header and ECONOMY_VERIFICATION_LOG.md §13-SLG-STRONGHOLD.5 for the full incident writeup).
+ * The per-level value (1180) is deliberately kept above {@link CROSSING_GARRISON_PER_LEVEL} (1150) so a
+ * same-level comparison still holds "stronghold garrison > crossing garrison" (worldsvc/test/passage.e2e.test.ts
+ * asserts this) even though crossings spawn one level lower (9 vs. 10) — the two constants' *totals* (11800 vs.
+ * 10350) already differ from the level gap alone, but keeping the per-level ordering too avoids a surprising
+ * inversion. Re-run `strongholdCombatRun.ts` after any future change to TROOP_CAP_BASE, DRILL_TROOPCAP_STEP, or
+ * SIEGE_SYNTH_ARMY_MAX_TROOPS rather than assuming a proportional rescale holds.
  */
-export const STRONGHOLD_GARRISON_PER_LEVEL = 360;
+export const STRONGHOLD_GARRISON_PER_LEVEL = 1180;
 /** Stronghold system garrison (linear by tile level; §3.1 overwhelmingly strong default defensive config). */
 export function strongholdGarrison(level: number): number {
   return STRONGHOLD_GARRISON_PER_LEVEL * Math.max(1, level);
@@ -48,13 +66,19 @@ export const STRONGHOLD_LOOT_PER_LEVEL = 5000;
 // ── Crossing buildings (bridge / plankway) garrison (gate→bridge/plankway migration) ────────────
 /**
  * NPC garrison per level for a crossing building (bridge/plankway). Auto-crossings always generate at
- * `max(2, SLG_MAP_MAX_LEVEL-1)` (currently 9, mapgen.ts), so the garrison actually faced is fixed at 1800 troops.
+ * `max(2, SLG_MAP_MAX_LEVEL-1)` (currently 9, mapgen.ts), so the garrison actually faced is fixed at 10350 troops.
  * A crossing is a strategic choke — harder than an ordinary tile (NPC_GARRISON_PER_LEVEL=120) but well below a
- * stronghold (360), so an early player can force a passage but still needs a real army: a siege-to-pass gate, not
- * a free arc. **Combat-power confirmed** (strongholdCombatRun.ts): a fresh player (troopCap=2000) loses outright;
- * a single drillYard level (troopCap=3000) opens it — lighter investment than the stronghold's ~3 levels, as intended.
+ * stronghold (11800), so an early player can force a passage but still needs a real army: a siege-to-pass gate,
+ * not a free arc. **Combat-power confirmed** (strongholdCombatRun.ts): a fresh player (troopCap=TROOP_CAP_BASE=10000)
+ * loses outright; a single drillYard level (troopCap=11000) opens it — lighter investment than the stronghold's 2
+ * levels, as intended. Re-calibrated 2026-07-27 alongside {@link STRONGHOLD_GARRISON_PER_LEVEL} for the same
+ * ADR-048 TROOP_CAP_BASE=10000 baseline — **see that constant's doc comment for why this is a plain linear
+ * calibration** (this garrison also exceeds `SIEGE_SYNTH_ARMY_MAX_TROOPS`, so `shouldUseCheapSiege` routes it to
+ * the cheap path too): fresh (10000) < 10350 < drillYard+1 (11000), ~350/650-troop margins either side. Kept
+ * below STRONGHOLD_GARRISON_PER_LEVEL (1150 < 1180) so the two buildings' per-level toughness still orders the
+ * same way as their totals — see that constant's doc comment for why the ordering is asserted explicitly.
  */
-export const CROSSING_GARRISON_PER_LEVEL = 200;
+export const CROSSING_GARRISON_PER_LEVEL = 1150;
 /** Crossing-building (bridge/plankway) NPC garrison (linear by tile level). */
 export function passageGarrison(level: number): number {
   return CROSSING_GARRISON_PER_LEVEL * Math.max(1, level);

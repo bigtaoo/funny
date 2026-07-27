@@ -1398,3 +1398,17 @@ L1 从需 660 兵降到 300（最小占地 500 现稳赢，直击病灶）；L2/
 **修复**：`isBaseAnchor` 新增一条快速通道——命中的地块若 `tile.mine` 为真，直接用 `ctx.me.mainBaseTile`（服务端权威、随 `getMe`/`joinWorld` 一起下发，不依赖邻格缓存是否刚好新鲜）核对坐标是否吻合；吻合就直接判定为锚点，不再逐邻格重新验证。只对「我自己的基地」生效——其他玩家/NPC 的基地没有这份权威坐标可用，仍走原来的四邻格一致性检查，故意保留的"数据不一致就不画"语义没有被放宽。
 
 **验证**：`client tsc --noEmit -p tsconfig.test.json` 全绿。真实入图需要完整登录 + worldsvc 全栈，本会话起 `dev-up.ps1` 时撞上本机另一个遗留问题（各服务 `node --watch` 进程卡在启动阶段、既不监听端口也不写日志，与本次改动无关，已清理掉卡住的进程）——转而用项目里现成的"离线直构 `WorldMapScene`"调试手法（临时在 `entries/web.ts` 加 `?wmdebug` 分支，套一个立即 resolve 的假 `WorldApiClient`，绕开后端）复现了根因并验证了修复：① 正常渲染出「我的基地」后，手动从 `tileCache` 里删掉锚点的一个邻格（模拟乱序/部分刷新留下的瞬时缺口），修复前的逻辑会让 `isBaseAnchor` 返回 false 从而拆除精灵，修复后精灵原样保留（`citySprites` 仍含 `50:50`，`isBaseAnchor` 仍为 true）；② 用同样手法在假地块里放一个敌方基地，人为弄脏它的一个邻格，确认 `isBaseAnchor` 依旧正确判定为 false、精灵不画——快速通道没有波及非本人基地的既有校验语义。调试分支验证完已从 `entries/web.ts` 撤回，代码库里只留下 `pool.ts` 的正式改动。
+
+## 41. 险地/关隘 NPC 守军常量按 TROOP_CAP_BASE=10000 新基线重新拍板（2026-07-27，修复 §27 因 ADR-048 产生的门槛失效）
+
+**背景**：§27（2026-07-16）用真实引擎核验通过的 `STRONGHOLD_GARRISON_PER_LEVEL=360`/`CROSSING_GARRISON_PER_LEVEL=200` 是围绕"新手 `troopCap=2000`"校准的。2026-07-22 ADR-048（兵力池统一）把 `TROOP_CAP_BASE` 从 2000 一次性提到 10000，但这两个守军常量没有同步调整。2026-07-27 重跑 `strongholdCombatRun.ts`（该脚本 import 常量，无需改代码即反映新基线）确认：新手（troops=10000）对险地（守军仍是旧值 3600）和关隘（守军仍是旧值 1800）都已 100% 胜率——"几乎打不过，小额投入即可攻克"的设计意图完全失效，详见 `ECONOMY_VERIFICATION_LOG.md` §13-SLG-STRONGHOLD.5。
+
+**一次绕远路（记录下来避免重复踩）**：第一轮重新拍板直接用真实 `@nw/engine` 攻城引擎（`strongholdCombat.ts` 的 `simulateCapture`）扫描阈值，试图找一个能在"新手必败、投入 2-3 级必胜"之间稳定的守军值。扫描发现这个安全窗口极窄（仅约 100-175 兵），因为 `synthesizeArmy` 的棋盘容量上限（10 车道 × 16 行 × 60 血 ≈ 9,600 兵，见 `strongholdCombat.ts`/`siegeEngine.ts` 注释）现在几乎正好卡在新的 `TROOP_CAP_BASE=10000` 上——任何在这附近的攻防双方都会撞上引擎"棋盘拥堵导致非单调胜负"的老毛病。
+
+排查后发现这条弯路本可以完全避免：2026-07-16 当天**晚些时候**的另一个提交（`13a7af86`，同一天下午）其实已经把 `SIEGE_CHEAP_RATIO`/`shouldUseCheapSiege` 的棋盘溢出保护接入了 `combatSiege/arrival.ts`——只要防守方（或攻击方）的合成兵力超过棋盘容量上限，生产环境就会**直接跳过真实引擎**，改用便宜的线性公式 `resolveSiege`（纯粹比较 `攻方兵力 > 守方兵力`）。但独立于 worldsvc 之外的 `server/tools/econ-sim/src/strongholdCombat.ts`（用于校准这两个常量的核验脚本）从未同步这个分流逻辑，所以第一轮拍板用的模拟工具其实测的是生产环境**根本不会走到**的一条路径，得出的"极窄安全窗口"结论对生产无意义。
+
+**修复**：①在 `strongholdCombat.ts` 里镜像 `shouldUseCheapSiege`/`SIEGE_SYNTH_ARMY_MAX_TROOPS`（与 `siegeEngine.ts` 保持同步，不能 import，因为 econ-sim 不能依赖 worldsvc 服务包），用真实分流逻辑重新扫描；②确认只要守军值本身就超过棋盘容量（~9,600），生产环境**永远**走线性公式，校准退化为一个舒适、以千为单位留有余量的线性不等式问题，不再需要围绕引擎棋盘拥堵调参；③重新拍板：`STRONGHOLD_GARRISON_PER_LEVEL: 360→1180`（守军 11,800 @ level 10，新手必败，练兵场 +2 级必胜）、`CROSSING_GARRISON_PER_LEVEL: 200→1150`（守军 10,350 @ level 9，新手必败，练兵场 +1 级必胜，如设计意图"比险地更早开放"），且保持"关隘常量 < 险地常量"（避免同等级比较时反直觉地反转，`worldsvc/test/passage.e2e.test.ts` 对此有断言）。
+
+**验证**：`strongholdCombatRun.ts` 重跑两个常量均 PASS；`server/shared/test/siege.test.ts`（39）、`server/tools/econ-sim` 的 `strongholdCombat.test.ts`（11，已改写为验证线性分流不变量而非真实引擎胜率）、`server/worldsvc` 全量 e2e（44 文件/338 用例，含 `stronghold.e2e.test.ts`/`passage.e2e.test.ts`/`siege-cheap-fallback.test.ts`）全绿；`tsc --noEmit` 在 `@nw/shared`/`@nw/econ-sim`/`@nw/worldsvc` 三包均通过。`worldsvc` 两组 e2e 测试里假设"6,000 兵吊打旧守军"的用例已按新守军（11,800/10,350）提到 15,000 兵，"12,000 兵满行囊撞棋盘上限"用例的过时注释（"12,000 是满级练兵场+行囊上限"）一并订正为当前真实上限 20,000（ADR-048 同一次改动带来的）。
+
+**遗留跟进（非本轮范围）**：①`STRONGHOLD_GARRISON_PER_LEVEL`/`CROSSING_GARRISON_PER_LEVEL` 现在的"安全余量"是几百到上千兵的线性比较，不再是引擎棋盘拥堵那种脆弱窗口，但尚未针对装备/学院加成（文档记载最高 +20%）做过鲁棒性复核——如果有人把这个门槛当作"精确卡点"而非"大致正确、后续可微调"来依赖，建议先补测；②`shouldUseCheapSiege` 本身已经解决了"棋盘容量 vs 引擎"的根因问题，但这次踩坑说明**校准工具（`strongholdCombat.ts`）和生产分流逻辑（`siegeEngine.ts`）存在重复实现、容易脱节**——两处未来任何一处改动都需要人工同步另一处，值得考虑做成共享模块或加一个"两者行为一致"的跨包契约测试。
