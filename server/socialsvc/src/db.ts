@@ -1,6 +1,6 @@
 // socialsvc dedicated database factory (nw_social, SOCIAL_SVC_DESIGN §3).
 // P1 collections: families / familyMembers / familyMessages (no worldId).
-// P2 collections: friendEdges / friendRequests / blockList / conversations / chatMessages / mails.
+// P2 collections: friendEdges / friendRequests / blockList / conversations / chatMessages / mails / reports.
 import { MongoClient, Db, Collection } from 'mongodb';
 import type { FamilyRole, MailDoc } from '@nw/shared';
 import { FAMILY_MSG_RETENTION_SEC, CHAT_RETENTION_SEC } from '@nw/shared';
@@ -30,6 +30,22 @@ export interface BlockDoc {
   owner: string;
   target: string;
   ts: number;
+}
+
+/**
+ * UGC report (design-doc-audit-2026-07, COMPLIANCE_GLOBAL.md §7 "测试期最低线"): a player flagging another
+ * player's displayName/private-chat behavior for admin review. Deliberately minimal — no in-app moderation
+ * workflow yet (`status` is always 'open' at creation; reviewing/actioning is an ops-side follow-up), this
+ * just ensures reports are captured and queryable instead of having no capture path at all (the state before
+ * this: 拉黑/block existed, 举报/report did not).
+ */
+export interface ReportDoc {
+  _id: string;      // uuid
+  reporterId: string;
+  targetId: string;
+  reason: string;   // free-text reason (capped, see REPORT_REASON_MAX); admin-only, not shown to other players, so not run through censorChat
+  ts: number;
+  status: 'open';
 }
 
 export interface ConversationDoc {
@@ -147,6 +163,7 @@ export interface SocialCollections {
   conversations: Collection<ConversationDoc>;
   chatMessages: Collection<ChatMessageDoc>;
   mails: Collection<MailDoc>;
+  reports: Collection<ReportDoc>;
 }
 
 export interface SocialMongo {
@@ -170,10 +187,11 @@ export async function createSocialMongo(uri: string, dbName: string): Promise<So
   const conversations = db.collection<ConversationDoc>('conversations');
   const chatMessages = db.collection<ChatMessageDoc>('chatMessages');
   const mails = db.collection<MailDoc>('mails');
+  const reports = db.collection<ReportDoc>('reports');
 
   const collections: SocialCollections = {
     families, familyMembers, familyMessages, familyJoinRequests,
-    friendEdges, friendRequests, blockList, conversations, chatMessages, mails,
+    friendEdges, friendRequests, blockList, conversations, chatMessages, mails, reports,
   };
 
   async function ensureIndexes(): Promise<void> {
@@ -212,6 +230,10 @@ export async function createSocialMongo(uri: string, dbName: string): Promise<So
     // mails: auto-expired via TTL
     await mails.createIndex({ to: 1, createdAt: -1 });
     await mails.createIndex({ expireAt: 1 }, { expireAfterSeconds: 0 });
+
+    // reports: admin review queue (open reports first, oldest first) + per-target lookup
+    await reports.createIndex({ status: 1, ts: 1 });
+    await reports.createIndex({ targetId: 1 });
   }
 
   return {

@@ -19,6 +19,7 @@ export interface SocialApi {
   removeFriend(publicId: string): Promise<void>;
   blockUser(publicId: string): Promise<void>;
   unblockUser(publicId: string): Promise<void>;
+  reportUser(publicId: string, reason: string): Promise<void>;
   getConversations(): Promise<ConversationView[]>;
   getMessages(convId: string, before?: number, limit?: number): Promise<ChatMessageView[]>;
   sendChat(toPublicId: string, body: string): Promise<{ messageId: string; ts: number }>;
@@ -83,6 +84,11 @@ export function SocialMixin<TBase extends ApiClientBaseCtor>(Base: TBase): TBase
     /** Unblock a user. */
     async unblockUser(publicId: string): Promise<void> {
       await this.request<{ ok: boolean }>('DELETE', `/friends/block/${encodeURIComponent(publicId)}`);
+    }
+
+    /** File a UGC report against another player (design-doc-audit-2026-07, COMPLIANCE_GLOBAL.md §7). Admin-review-only; does not block/unfriend. */
+    async reportUser(publicId: string, reason: string): Promise<void> {
+      await this.post<{ ok: boolean }>('/friends/report', { publicId, reason });
     }
 
     // ── Social: private chat (S6-2, requires login token). Send via REST; receive messages via gateway push (NetSession). ──

@@ -96,6 +96,19 @@ describe.skipIf(!mongo)('one-time free rename e2e', () => {
     expect(save.displayName).toBe('FirstFree'); // unchanged by the failed paid rename
   });
 
+  it('rename is rejected when the name hits the sensitive-word filter (COMPLIANCE_GLOBAL.md §7, design-doc-audit-2026-07)', async () => {
+    // 'shit' is in chatFilter.ts's global word list (always active regardless of Accept-Language) —
+    // displayName rename must go through the same filter chat already uses, not just a length check.
+    const { token } = await authDevice('free-dev-badname');
+    const r = await rename(token, 'shitlord');
+    expect(r.statusCode).toBe(400);
+    // The free rename must NOT have been consumed by the rejected attempt.
+    expect((await getSave(token)).freeRename).toBe(true);
+    // A clean name still works afterwards.
+    const r2 = await rename(token, 'CleanName');
+    expect(r2.statusCode).toBe(200);
+  });
+
   it('registering with an explicit displayName grants no free rename', async () => {
     const r = await app.inject({ method: 'POST', url: '/auth/register', payload: { loginId: 'fr4@test.com', password: 'pw123456', displayName: 'Picked' } });
     const { token } = body(r).data as { token: string };

@@ -252,6 +252,7 @@ export function FriendsListMixin<TBase extends FriendsSceneBaseCtor>(Base: TBase
         ...(f.avatarId ? { avatarId: f.avatarId } : {}),
         actions: [
           { labelKey: 'friends.message', fn: () => this.cb.openChat(f.publicId, f.alias || f.displayName) },
+          { labelKey: 'friends.report', fn: () => void this.doReport(f.publicId), danger: true },
           { labelKey: 'friends.block', fn: () => void this.doBlock(f.publicId), danger: true },
         ],
       });

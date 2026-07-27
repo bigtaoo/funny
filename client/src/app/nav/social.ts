@@ -62,6 +62,9 @@ export function createSocialNav(ctx: AppCtx): Pick<Nav, 'goFriends' | 'goMail' |
       },
       removeFriend: (publicId) => client.removeFriend(publicId),
       blockUser: (publicId) => client.blockUser(publicId),
+      // Reason is admin-review-only (never shown to other players), so a plain literal is fine here —
+      // no need to route it through i18n like player-facing text.
+      reportUser: (publicId) => client.reportUser(publicId, 'reported from profile popup'),
       duelInvite: (publicId) => session?.duelInvite(publicId, resolvePvpDeck()),
       duelRespond: (inviteId, accept) => session?.duelRespond(inviteId, accept, resolvePvpDeck()),
       // Direct messages (entry point is the friend profile popup)

@@ -29,7 +29,7 @@
 | iOS 隐私营养标签 + ATT | Apple | iOS | analyticsvc 采集项 | ❌ 待填 |
 | Google Play 数据安全表 | Google | Android | analyticsvc 采集项 | ❌ 待填 |
 | 应用内删除账号入口 | Apple 5.1.1(v)（有注册即强制） | iOS（Android 跟进） | account / save / commercial | ❌ 待建 |
-| UGC 治理（昵称 / 私聊） | 平台 + 各地区 | 全 | social 私聊 / displayName | 🟡 有基础敏感词，缺举报 |
+| UGC 治理（昵称 / 私聊） | 平台 + 各地区 | 全 | social 私聊 / displayName | ✅ 敏感词过滤 + 拉黑 + 举报（2026-07-27 补齐，见 §7） |
 
 ---
 
@@ -109,8 +109,8 @@
 ## 7. UGC 治理（昵称 / 私聊）
 
 - 平台对**用户可输入内容**（displayName、私聊）要求有治理手段，否则社交类分级 + 审核风险上升。
-- **现状**：SOCIAL §敏感词——私聊一期做**发送端 meta 侧基础敏感词过滤**（替换/拒发）；displayName 改名也应过同一过滤。
-- **测试期最低线**：①昵称/私聊敏感词过滤;②**举报 + 拉黑**入口（拉黑 social 已有，**举报待补**）。完整人工审核/分级后置。
+- **现状**：SOCIAL §敏感词——私聊一期做**发送端 meta 侧基础敏感词过滤**（替换/拒发）；displayName 改名也应过同一过滤（✅ 2026-07-27 design-doc-audit 已补——此前 `validateDisplayName` 只查长度,`profileRename` 从未实际调用过 `censorChat`,是文档写了意图但代码没跟上的真实缺口；现在 `auth.ts` 的 `profileRename` 在扣费前先跑 `censorChat`,命中即拒绝改名（不是聊天那种"替换发出"策略——常驻昵称命中直接拒绝更合适，回归测试见 `account-free-rename.e2e.test.ts`）。
+- **测试期最低线**：①昵称/私聊敏感词过滤;②**举报 + 拉黑**入口（✅ 2026-07-27 design-doc-audit 已补——`POST /social/friends/report`，`friendService.ts` 新增 `reportUser`/`listOpenReports`，`ReportDoc` 独立集合，客户端 `ProfilePopup` 好友资料卡新增「举报」按钮，与既有「拉黑」并列。**故意做得很轻**：仅捕获举报（`status` 恒为 `open`）供 `GET /internal/reports` 拉取人工审核，不自动拉黑/不发通知——这些是后续增强，非首发最低线要求。当前仅接入好友列表这一个入口，其它 UGC 展示面（世界频道/家族成员）复用同一套 API 加按钮即可扩展）。完整人工审核 UI/分级后置。
 
 ---
 
@@ -120,7 +120,7 @@
 - [ ] 隐私政策页上线（公开 URL）+ 客户端登录页/设置页可点
 - [ ] 抽卡概率公示页（§4）
 - [ ] 删除账号入口 + `POST /account/delete`（§3.5）
-- [ ] 昵称/私聊敏感词 + 举报/拉黑（§7）
+- [x] 昵称/私聊敏感词 + 举报/拉黑（§7，2026-07-27 举报补齐）
 - [ ] EU/UK 同意弹窗 + 撤回开关（§3.3）
 
 ### iOS 专属
@@ -150,7 +150,7 @@
 | 抽卡掉率数据 | commercial `GachaPool.weight` + pity | 公示页 + `displayRates` 回执字段 + i18n |
 | 内购 | `iapVerify` dev 桩 | 平台 IAP/Billing SDK + 真票据校验 |
 | 账号删除 | account 模型 + `POST /account/delete` 契约（SERVER_API §2.10） | meta 编排实现（删/匿名化 + 跨服务联动） |
-| UGC | social 敏感词 + 拉黑 | 举报入口 + displayName 过滤接管 |
+| UGC | social 敏感词 + 拉黑 + 举报 + displayName 过滤（2026-07-27 全部补齐） | — |
 | 隐私政策入口 | — | LoginScene / SettingsScene 链接 |
 
 ---
@@ -162,5 +162,5 @@
 3. **删除账号入口 + 端点**（iOS 强制）。
 4. **平台 IAP/Billing 接入**（替换 dev 桩——变现前必须）。
 5. **EU/UK 同意弹窗**（地区粗判 + 复用 analytics 开关）。
-6. **举报入口 + displayName 过滤**（社交治理补齐）。
+6. ~~举报入口 + displayName 过滤（社交治理补齐）~~ ✅ 2026-07-27 已完成，见 §7。
 7. 分级问卷 / 数据表 / 隐私标签填写（上架表单阶段，依赖 §3.2 定稿）。

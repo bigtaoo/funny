@@ -91,3 +91,11 @@ TC-防刷-3 存档不改钱包：[ ]PASS（e2e）[ ]真机抽查 PASS [ ]FAIL
 
 > 首次实测后粘贴填好的记录副本并标注 PASS/FAIL。
 > （尚未执行 — 待全栈构建 + 各平台打包就绪后进行；充值真 SDK 接入后需复测充值与防刷。）
+
+### 5.1 尝试记录（2026-07-27，design-doc-audit-2026-07，环境受限，非正式执行）
+
+> 本次尝试用 `game-public`（本地 client 指向真实生产后端 `https://api.gamestao.com`）在 Browser 面板里走 Web/CrazyGames 平台路径，**遇到环境限制未能完成**：
+> - Browser 面板本次会话无法合成画面（`screenshot` 恒报 "pane is not displayed"），且游戏是 PixiJS canvas 渲染、没有可访问的 DOM 树（`read_page` 返回空）——两者叠加导致**无法进行任何真正的交互式人工 QA**（登录/点击/截图核对全部做不到，只能盲点）。
+> - iOS / Android / 微信原生包、真机双设备这几项**本来就超出这个执行环境的能力范围**（没有真机、没有微信开发者工具、没有 Xcode/Android Studio）。
+> - **唯一能验证的**：client 成功连上生产后端（`GET /bootstrap?platform=web -> 200 ok`，console 无报错，静态资源全部 200）——这只是网络连通性信号，**不等于走完了本清单任何一步**，不应记为 PASS。
+> - **结论：本清单仍是"尚未执行"状态**，不要把上面的连通性检查误读成验收通过。需要一个能看见画面/能操作真机的环境（人工或有效的浏览器自动化）才能真正走一遍。

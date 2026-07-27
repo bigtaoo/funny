@@ -733,6 +733,8 @@ export const zh = {
   'friends.tab.world': '世界',
   'friends.tab.mail': '邮件',
   'friends.message': '发消息',
+  'friends.report': '举报',
+  'friends.reportedDone': '已举报',
   'friends.block': '拉黑',
   'friends.blockedDone': '已拉黑',
   // Duel invite ("切磋")
