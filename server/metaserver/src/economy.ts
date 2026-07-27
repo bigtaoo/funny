@@ -210,6 +210,17 @@ export async function mirrorCoins(
   return cur.save;
 }
 
+/** Recursively sorts object keys so two structurally-identical objects stringify the same regardless of
+ * insertion order (Mongo preserves storage order, which need not match a freshly-built plain object's). */
+function stableStringify(v: unknown): string {
+  if (Array.isArray(v)) return `[${v.map(stableStringify).join(',')}]`;
+  if (v && typeof v === 'object') {
+    const keys = Object.keys(v as Record<string, unknown>).sort();
+    return `{${keys.map((k) => `${JSON.stringify(k)}:${stableStringify((v as Record<string, unknown>)[k])}`).join(',')}}`;
+  }
+  return JSON.stringify(v);
+}
+
 /** Pull the authoritative balance + pity + monetization state from commercial and write the mirror (refreshed alongside GET /save). */
 export async function mirrorWalletFrom(
   cols: Collections,
@@ -224,6 +235,28 @@ export async function mirrorWalletFrom(
     const acct = await cols.accounts.findOne({ _id: accountId }, { projection: { createdAt: 1 } });
     starterGrowthEligible = !acct || now - acct.createdAt <= GROWTH_PACK_WINDOW_DAYS * 86400000;
   }
+  const monetization = {
+    fatePoints: wallet.fatePoints,
+    subscriptionExpiry: wallet.subscriptionExpiry,
+    subscriptionLastClaimDay: wallet.subscriptionLastClaimDay,
+    starterUsed: wallet.starterUsed,
+    starterGrowthEligible,
+    firstPurchaseUsed: wallet.firstPurchaseUsed,
+    totalRechargeCents: wallet.totalRechargeCents,
+  };
+  // GET /save calls this on every read (not just after a real purchase/ad/gacha), so an unconditional
+  // write here made every read of the save also bump the optimistic-lock rev — racing any in-flight
+  // client PUT /save into a spurious 409. Skip the write entirely when the mirror is already current
+  // (2026-07-27 audit); this trades an unconditional write for a read that only sometimes escalates to one.
+  const cur = await cols.saves.findOne({ _id: accountId });
+  if (
+    cur &&
+    cur.save.wallet?.coins === wallet.coins &&
+    stableStringify(cur.save.gacha?.pity) === stableStringify(wallet.pity) &&
+    stableStringify(cur.save.monetization) === stableStringify(monetization)
+  ) {
+    return cur.save;
+  }
   const res = await cols.saves.findOneAndUpdate(
     { _id: accountId },
     {
@@ -231,24 +264,16 @@ export async function mirrorWalletFrom(
       $set: {
         'save.wallet.coins': wallet.coins,
         'save.gacha.pity': wallet.pity,
-        'save.monetization': {
-          fatePoints: wallet.fatePoints,
-          subscriptionExpiry: wallet.subscriptionExpiry,
-          subscriptionLastClaimDay: wallet.subscriptionLastClaimDay,
-          starterUsed: wallet.starterUsed,
-          starterGrowthEligible,
-          firstPurchaseUsed: wallet.firstPurchaseUsed,
-          totalRechargeCents: wallet.totalRechargeCents,
-        },
+        'save.monetization': monetization,
         'save.updatedAt': now,
       },
     },
     { returnDocument: 'after' },
   );
   if (res) return res.save;
-  const cur = await cols.saves.findOne({ _id: accountId });
-  if (!cur) throw new Error('save missing after wallet mirror');
-  return cur.save;
+  const fallback = await cols.saves.findOne({ _id: accountId });
+  if (!fallback) throw new Error('save missing after wallet mirror');
+  return fallback.save;
 }
 
 /**
