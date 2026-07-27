@@ -3,7 +3,7 @@ import { ATTACK_LANES, BOARD_COLS, BOARD_ROWS } from '../game/config';
 import { Side, sideToOwner } from '../game';
 import { ILayout, Rect } from '../layout/ILayout';
 import { ObjectPool } from '../cache/ObjectPool';
-import baseTexUrl from '../assets/game_base.png';
+import baseTexUrl from '../assets/buildings/game_base.png';
 import { SketchPen } from './sketch';
 import { palette, fx, factionInk } from './theme';
 import { bake } from './bake';

@@ -2,19 +2,19 @@
  * baseUpgradeAtlasLoader.ts — battle-base upgrade-tier sprite atlas loader.
  *
  * Two hand-drawn images at 256px each, packed into
- * `assets/base_upgrade_atlas.{png,json}` (see `art/ui/game/pack_base_atlas.js`):
+ * `assets/buildings/base_upgrade_atlas.{png,json}` (see `art/ui/game/pack_base_atlas.js`):
  *   base_lv1 — castle-town (walled settlement, upgradeLevel 1)
  *   base_lv2 — palace (grandest tier, upgradeLevel 2 = max)
  *
- * Tier 0 (no upgrade) keeps using the original `assets/game_base.png`, loaded
+ * Tier 0 (no upgrade) keeps using the original `assets/buildings/game_base.png`, loaded
  * synchronously at L0 boot — this atlas only covers the upgrade tiers, lazy-loaded
  * like `cityAtlasLoader.ts`. Failure is non-fatal: `BoardView` keeps the current
  * texture until the atlas resolves.
  */
 import * as PIXI from 'pixi.js-legacy';
 import { assetIO } from '../assets/assetIO';
-import atlasUrl from '../assets/base_upgrade_atlas.png';
-import atlasData from '../assets/base_upgrade_atlas.json';
+import atlasUrl from '../assets/buildings/base_upgrade_atlas.png';
+import atlasData from '../assets/buildings/base_upgrade_atlas.json';
 
 let sheet: PIXI.Spritesheet | null = null;
 let loading: Promise<void> | null = null;

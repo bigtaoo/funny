@@ -22,9 +22,7 @@
  * tao/anna colour is defined, so no call site can drift.
  */
 import * as PIXI from 'pixi.js-legacy';
-import { assetIO } from '../assets/assetIO';
-import atlasUrl from '../assets/factions/factions.png';
-import atlasData from '../assets/factions/factions.json';
+import { iconsAtlas as atlas } from './iconsAtlas';
 import { getCachedDisplay } from '../ui/widgets/uiCache';
 import { SketchPen } from './sketch';
 import type { Faction } from '../game/meta/cardDefs';
@@ -35,30 +33,12 @@ export const FACTION_COLOR: Record<Faction, number> = {
   anna: 0xcc4466, // red ink
 };
 
-let sheet: PIXI.Spritesheet | null = null;
-let loading: Promise<void> | null = null;
-
 /**
  * Decode + parse the totem atlas. Idempotent; rejects on decode error (callers
  * degrade to the procedural glyph). Wired into bootManifest L0, mirroring the
  * equipment atlas.
  */
-export async function loadFactionAtlas(): Promise<void> {
-  if (sheet) return;
-  if (loading) return loading;
-  loading = (async () => {
-    const baseTex = new PIXI.BaseTexture(await assetIO().textureSource(atlasUrl as string));
-    await new Promise<void>((resolve, reject) => {
-      if (baseTex.valid) { resolve(); return; }
-      baseTex.once('loaded', () => resolve());
-      baseTex.once('error', (err: unknown) => reject(new Error(`faction atlas load error: ${String(err)}`)));
-    });
-    const ss = new PIXI.Spritesheet(baseTex, atlasData as unknown as PIXI.ISpritesheetData);
-    await ss.parse();
-    sheet = ss;
-  })();
-  return loading;
-}
+export const loadFactionAtlas = atlas.load;
 
 // ── Placeholder glyphs (swap for the totem atlas when art arrives) ──────────
 
@@ -116,7 +96,7 @@ const DRAW_FACTION: Record<Faction, (g: PIXI.Graphics, s: number, color: number)
  * null until it is loaded — callers fall back to the procedural glyph.
  */
 export function getFactionIconTexture(faction: Faction): PIXI.Texture | null {
-  return sheet ? (sheet.textures[faction] ?? null) : null;
+  return atlas.getTexture(faction);
 }
 
 /**

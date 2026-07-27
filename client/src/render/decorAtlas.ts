@@ -1,8 +1,9 @@
 /**
  * decorAtlas.ts — the battlefield "doodle layer" sprite atlas (art-direction §6.2,
- * A-group). A single 256×256 TexturePacker sheet of hand-drawn margin doodles
- * (sun / star / heart / scribble …) that BoardView snaps onto the paper just
- * outside the grid and bakes into a static texture.
+ * A-group). Hand-drawn margin doodles (sun / star / heart / scribble …) that
+ * BoardView snaps onto the paper just outside the grid and bakes into a static
+ * texture. Packed into the shared decorMergedAtlas (see that module) alongside
+ * the C-group and battle corner labels; frame names are the `decor_*` subset.
  *
  * Loaded once at app boot (`loadDecorAtlas`, fire-and-forget — see app.ts) and
  * shared across every battle. The PNG decodes asynchronously, so BoardView only
@@ -15,27 +16,17 @@
  * Lines are the original ink colour (not white), so they are used as-is and must
  * NOT be tinted to a faction colour (§6.2 note).
  */
-import * as PIXI from 'pixi.js-legacy';
-import { assetIO } from '../assets/assetIO';
-import atlasUrl from '../assets/decor/battle/decor_atlas.png';
-import atlasData from '../assets/decor/battle/decor_atlas.json';
-
-let sheet: PIXI.Spritesheet | null = null;
-let loading: Promise<void> | null = null;
+import { decorMergedAtlas as atlas, framesWithPrefix } from './decorMergedAtlas';
 
 /** True once the atlas PNG has decoded and frames are parsed. */
-export function isDecorReady(): boolean {
-  return sheet !== null;
-}
+export const isDecorReady = atlas.isReady;
 
 /** Texture for a frame name (e.g. `decor_sun`), or null if not loaded/unknown. */
-export function getDecorTexture(name: string): PIXI.Texture | null {
-  return sheet ? (sheet.textures[name] ?? null) : null;
-}
+export const getDecorTexture = atlas.getTexture;
 
-/** All available frame names (empty until loaded). */
+/** A-group frame names only (empty until loaded). */
 export function decorFrameNames(): string[] {
-  return sheet ? Object.keys(sheet.textures) : [];
+  return framesWithPrefix('decor_');
 }
 
 /**
@@ -44,19 +35,4 @@ export function decorFrameNames(): string[] {
  * PNG decode error so the boot caller can log it; callers may ignore the result
  * (decorations are optional ambience).
  */
-export async function loadDecorAtlas(): Promise<void> {
-  if (sheet) return;
-  if (loading) return loading;
-  loading = (async () => {
-    const baseTex = new PIXI.BaseTexture(await assetIO().textureSource(atlasUrl as string));
-    await new Promise<void>((resolve, reject) => {
-      if (baseTex.valid) { resolve(); return; }
-      baseTex.once('loaded', () => resolve());
-      baseTex.once('error', (err: unknown) => reject(new Error(`decor atlas load error: ${String(err)}`)));
-    });
-    const ss = new PIXI.Spritesheet(baseTex, atlasData as PIXI.ISpritesheetData);
-    await ss.parse();
-    sheet = ss;
-  })();
-  return loading;
-}
+export const loadDecorAtlas = atlas.load;

@@ -81,11 +81,9 @@ vi.mock('pixi.js-legacy', () => {
   };
 });
 
-// ── webpack-served PNG assets pulled in transitively via labelDecor ─────────────
-vi.mock('../../src/assets/decor/battle/label_boss.png',       () => ({ default: 'label-boss.png' }));
-vi.mock('../../src/assets/decor/battle/label_start.png',      () => ({ default: 'label-start.png' }));
-vi.mock('../../src/assets/decor/battle/label_win.png',        () => ({ default: 'label-win.png' }));
-vi.mock('../../src/assets/decor/battle/label_arrow_here.png', () => ({ default: 'label-arrow.png' }));
+// ── webpack-served PNG/JSON assets pulled in transitively via labelDecor ────────
+vi.mock('../../src/assets/decor/decor_merged_atlas.png',  () => ({ default: 'decor-merged-atlas.png' }));
+vi.mock('../../src/assets/decor/decor_merged_atlas.json', () => ({ default: { frames: {}, meta: { size: { w: 1024, h: 675 } } } }));
 
 // ── Imports (after all vi.mock declarations) ───────────────────────────────────
 import { HUDView } from '../../src/render/HUDView';

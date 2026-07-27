@@ -12,44 +12,20 @@
  * a failed load is non-fatal and degrades to the procedural glyph.
  */
 import * as PIXI from 'pixi.js-legacy';
-import { assetIO } from '../assets/assetIO';
-import atlasUrl from '../assets/material/material.png';
-import atlasData from '../assets/material/material.json';
+import { iconsAtlas as atlas } from './iconsAtlas';
 import { buildIcon, type IconKind } from './icons';
-
-let sheet: PIXI.Spritesheet | null = null;
-let loading: Promise<void> | null = null;
 
 /** The material kinds backed by an atlas frame. */
 export type MaterialKind = 'scrap' | 'lead' | 'binding';
 
 /** True once the atlas PNG has decoded and frames are parsed. */
-export function isMaterialAtlasReady(): boolean {
-  return sheet !== null;
-}
+export const isMaterialAtlasReady = atlas.isReady;
 
 /** Texture for a material kind (`scrap`/`lead`/`binding`), or null if not loaded / unknown. */
-export function getMaterialIconTexture(kind: string): PIXI.Texture | null {
-  return sheet ? (sheet.textures[kind] ?? null) : null;
-}
+export const getMaterialIconTexture = atlas.getTexture;
 
 /** Decode + parse the atlas. Idempotent. Rejects on decode error (callers degrade gracefully). */
-export async function loadMaterialAtlas(): Promise<void> {
-  if (sheet) return;
-  if (loading) return loading;
-  loading = (async () => {
-    const baseTex = new PIXI.BaseTexture(await assetIO().textureSource(atlasUrl as string));
-    await new Promise<void>((resolve, reject) => {
-      if (baseTex.valid) { resolve(); return; }
-      baseTex.once('loaded', () => resolve());
-      baseTex.once('error', (err: unknown) => reject(new Error(`material atlas load error: ${String(err)}`)));
-    });
-    const ss = new PIXI.Spritesheet(baseTex, atlasData as PIXI.ISpritesheetData);
-    await ss.parse();
-    sheet = ss;
-  })();
-  return loading;
-}
+export const loadMaterialAtlas = atlas.load;
 
 /**
  * Single source of truth for a crafting-material picture. Returns the AI bitmap
