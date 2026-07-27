@@ -7,10 +7,10 @@
  * (unbounded id space) and keep falling back to the generic glyph.
  */
 import * as PIXI from 'pixi.js-legacy';
-import founderArtUrl from '../assets/title_founder.png';
-import conquerorArtUrl from '../assets/title_conqueror.png';
-import veteranArtUrl from '../assets/title_veteran.png';
-import newbieArtUrl from '../assets/title_newbie.png';
+import founderArtUrl from '../assets/titles/title_founder.png';
+import conquerorArtUrl from '../assets/titles/title_conqueror.png';
+import veteranArtUrl from '../assets/titles/title_veteran.png';
+import newbieArtUrl from '../assets/titles/title_newbie.png';
 
 export const TITLE_ICON_URLS: Record<string, string> = {
   'event.founder':     founderArtUrl as string,

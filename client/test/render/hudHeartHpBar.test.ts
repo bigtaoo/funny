@@ -141,10 +141,8 @@ vi.mock('pixi.js-legacy', () => {
   };
 });
 
-vi.mock('../../src/assets/decor/battle/label_boss.png',       () => ({ default: 'label-boss.png' }));
-vi.mock('../../src/assets/decor/battle/label_start.png',      () => ({ default: 'label-start.png' }));
-vi.mock('../../src/assets/decor/battle/label_win.png',        () => ({ default: 'label-win.png' }));
-vi.mock('../../src/assets/decor/battle/label_arrow_here.png', () => ({ default: 'label-arrow.png' }));
+vi.mock('../../src/assets/decor/decor_merged_atlas.png',  () => ({ default: 'decor-merged-atlas.png' }));
+vi.mock('../../src/assets/decor/decor_merged_atlas.json', () => ({ default: { frames: {}, meta: { size: { w: 1024, h: 675 } } } }));
 
 import { HUDView } from '../../src/render/HUDView';
 import { BASE_HP } from '../../src/game/config';

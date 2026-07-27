@@ -2,25 +2,21 @@
 // an atlas JSON packed BEFORE pack_*_atlas.js started emitting `contentTop` (or a frame that's
 // simply missing) must not throw or return undefined — the HP bar offset math in
 // WorldMapRenderer/city.ts multiplies this value directly, so `undefined` would poison it into
-// NaN. Mocks the JSON imports (not the whole loader module, unlike worldMapBaseHpBar.ui.ts) to a
-// frame set with no `contentTop` field at all, standing in for a stale/pre-fix atlas.
+// NaN. Mocks the JSON import (not the whole loader module, unlike worldMapBaseHpBar.ui.ts) to a
+// frame set with no `contentTop` field at all, standing in for a stale/pre-fix atlas. cityAtlasLoader
+// and playerBaseAtlasLoader now both read the same shared world_atlas.json (see worldAtlas.ts), so
+// one mock with both frame families covers both loaders.
 
 import { describe, it, expect, vi } from 'vitest';
 
-vi.mock('../../src/assets/slg/city_atlas.json', () => ({
+vi.mock('../../src/assets/slg/world_atlas.json', () => ({
   default: {
     frames: {
       city_lv1: { frame: { x: 0, y: 0, w: 256, h: 256 } },
       city_lv2: { frame: { x: 256, y: 0, w: 256, h: 256 } },
       city_lv3: { frame: { x: 512, y: 0, w: 256, h: 256 } },
       city_lv4: { frame: { x: 768, y: 0, w: 256, h: 256 } },
-    },
-  },
-}));
-vi.mock('../../src/assets/slg/playerbase_atlas.json', () => ({
-  default: {
-    frames: {
-      playerbase_l1: { frame: { x: 0, y: 0, w: 256, h: 256 } },
+      playerbase_l1: { frame: { x: 0, y: 256, w: 256, h: 256 } },
     },
   },
 }));

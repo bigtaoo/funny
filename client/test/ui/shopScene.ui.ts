@@ -19,7 +19,7 @@ import { ShopScene, type ShopSceneCallbacks } from '../../src/scenes/ShopScene';
 // Same asset the shop borrows as skin_shop_c1's placeholder art (SKIN_PLACEHOLDER_ART in shop.ts).
 // Under vitest.ui.config.ts every .png import stubs to a 1×1 data-URI string, so this resolves to
 // the exact URL the scene feeds to getArtTexture() — i.e. the same cached PIXI texture object.
-import infantryArtUrl from '../../src/assets/infantry.png';
+import infantryArtUrl from '../../src/assets/units/infantry.png';
 
 const memStore = (() => {
   const m = new Map<string, string>();

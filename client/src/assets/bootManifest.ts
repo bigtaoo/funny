@@ -12,26 +12,21 @@
 import { UnitType } from '../game/types';
 import { StickmanRuntime } from '../render/stickman/StickmanRuntime';
 import { targetScreenHeight } from '../render/unitSize';
-import { loadDecorAtlas } from '../render/decorAtlas';
-import { loadLabelDecor } from '../render/labelDecor';
-import { loadDecorCAtlas } from '../render/decorCAtlas';
-import { loadEquipmentAtlas } from '../render/equipmentAtlas';
-import { loadMaterialAtlas } from '../render/materialAtlas';
-import { loadFactionAtlas } from '../render/factionIcon';
-import { loadAvatarAtlas } from '../render/avatarAtlas';
+import { decorMergedAtlas } from '../render/decorMergedAtlas';
+import { iconsAtlas } from '../render/iconsAtlas';
 import { preloadTexture } from './preloadTextures';
 
 // Starter-trio skeletal bundles + card illustrations — the only units the first
 // battle (tutorial / first PvE) can field. Anna's trio (max/lena/mara) is L1.
-import infantryTaoUrl from './infantry.tao';
-import archerTaoUrl from './archer.tao';
-import shieldBearerTaoUrl from './shieldbearer.tao';
-import infantryArtUrl from './infantry.png';
-import archerArtUrl from './archer.png';
-import shieldBearerArtUrl from './shieldbearer.png';
-import baseArtUrl from './game_base.png';
-import barracksArtUrl from './game_infantry_barracks.png';
-import towerArtUrl from './game_archer_barracks.png';
+import infantryTaoUrl from './units/infantry.tao';
+import archerTaoUrl from './units/archer.tao';
+import shieldBearerTaoUrl from './units/shieldbearer.tao';
+import infantryArtUrl from './units/infantry.png';
+import archerArtUrl from './units/archer.png';
+import shieldBearerArtUrl from './units/shieldbearer.png';
+import baseArtUrl from './buildings/game_base.png';
+import barracksArtUrl from './buildings/game_infantry_barracks.png';
+import towerArtUrl from './buildings/game_archer_barracks.png';
 import logoArtUrl from './logo.png';
 
 interface BootStep {
@@ -55,13 +50,11 @@ const STEPS: BootStep[] = [
   { id: 'art:barracks',     run: () => preloadTexture(barracksArtUrl as string) },
   { id: 'art:tower',        run: () => preloadTexture(towerArtUrl    as string) },
   { id: 'art:logo',         run: () => preloadTexture(logoArtUrl    as string) },
-  { id: 'decor:atlas',      run: () => loadDecorAtlas() },
-  { id: 'decor:labels',     run: () => loadLabelDecor() },
-  { id: 'decor:c',          run: () => loadDecorCAtlas() },
-  { id: 'equip:atlas',      run: () => loadEquipmentAtlas() },
-  { id: 'material:atlas',   run: () => loadMaterialAtlas() },
-  { id: 'faction:atlas',    run: () => loadFactionAtlas() },
-  { id: 'avatar:atlas',     run: () => loadAvatarAtlas() },
+  // decor A/C groups + battle corner labels are one merged atlas (decorMergedAtlas.ts);
+  // equipment/material/faction/avatar icons are another (iconsAtlas.ts) — each is a
+  // single decode shared by several modules, so it's one boot step per merged file.
+  { id: 'decor:merged',     run: () => decorMergedAtlas.load() },
+  { id: 'icons:merged',     run: () => iconsAtlas.load() },
 ];
 
 /**

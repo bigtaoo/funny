@@ -8,41 +8,17 @@
  * degrades to the procedural `buildIcon` glyph.
  */
 import * as PIXI from 'pixi.js-legacy';
-import { assetIO } from '../assets/assetIO';
-import atlasUrl from '../assets/avatars/avatars.png';
-import atlasData from '../assets/avatars/avatars.json';
+import { iconsAtlas as atlas } from './iconsAtlas';
 import { buildIcon, type IconKind } from './icons';
 
-let sheet: PIXI.Spritesheet | null = null;
-let loading: Promise<void> | null = null;
-
 /** True once the atlas PNG has decoded and frames are parsed. */
-export function isAvatarAtlasReady(): boolean {
-  return sheet !== null;
-}
+export const isAvatarAtlasReady = atlas.isReady;
 
 /** Texture for a preset avatar icon key, or null if not loaded / unknown. */
-export function getAvatarIconTexture(key: string): PIXI.Texture | null {
-  return sheet ? (sheet.textures[key] ?? null) : null;
-}
+export const getAvatarIconTexture = atlas.getTexture;
 
 /** Decode + parse the atlas. Idempotent. Rejects on decode error (callers degrade gracefully). */
-export async function loadAvatarAtlas(): Promise<void> {
-  if (sheet) return;
-  if (loading) return loading;
-  loading = (async () => {
-    const baseTex = new PIXI.BaseTexture(await assetIO().textureSource(atlasUrl as string));
-    await new Promise<void>((resolve, reject) => {
-      if (baseTex.valid) { resolve(); return; }
-      baseTex.once('loaded', () => resolve());
-      baseTex.once('error', (err: unknown) => reject(new Error(`avatar atlas load error: ${String(err)}`)));
-    });
-    const ss = new PIXI.Spritesheet(baseTex, atlasData as PIXI.ISpritesheetData);
-    await ss.parse();
-    sheet = ss;
-  })();
-  return loading;
-}
+export const loadAvatarAtlas = atlas.load;
 
 /**
  * Single source of truth for a preset avatar icon picture. Returns the AI bitmap
