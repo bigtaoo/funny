@@ -24,8 +24,10 @@ import { targetScreenHeight } from './unitSize';
 /**
  * .tao skeletal-animation bundle URL per unit type. Types listed here render as
  * animated stickmen; types absent fall back to the colored-circle placeholder.
+ * Exported for reuse by WorldMapRenderer/fog.ts (march-token art picks the deployed
+ * team's leader unit-type from this same set, 2026-07-26).
  */
-const STICKMAN_ASSETS: Partial<Record<UnitType, string>> = {
+export const STICKMAN_ASSETS: Partial<Record<UnitType, string>> = {
   [UnitType.Infantry]: infantryTaoUrl     as unknown as string,
   [UnitType.Archer]:    archerTaoUrl       as unknown as string,
   [UnitType.ShieldBearer]:  shieldBearerTaoUrl as unknown as string, // shield bearer

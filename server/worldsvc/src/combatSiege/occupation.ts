@@ -283,6 +283,7 @@ export function OccupationMixin<TBase extends SiegeServiceBaseCtor>(Base: TBase)
         garrison: survivors,
         dueAt,
         ...(m.teamId ? { teamId: m.teamId } : {}),
+        ...(m.leaderUnitType ? { leaderUnitType: m.leaderUnitType } : {}),
       };
       await cols.occupations.updateOne({ _id: m.toTile }, { $set: occDoc }, { upsert: true });
       await this.core.scheduleOccupation(m.worldId, m.toTile, dueAt);
@@ -358,6 +359,7 @@ export function OccupationMixin<TBase extends SiegeServiceBaseCtor>(Base: TBase)
         garrison: d.garrison,
         dueAt: d.dueAt,
         ...(d.teamId ? { teamId: d.teamId } : {}),
+        ...(d.leaderUnitType ? { leaderUnitType: d.leaderUnitType } : {}),
       }));
     }
 
@@ -414,6 +416,7 @@ export function OccupationMixin<TBase extends SiegeServiceBaseCtor>(Base: TBase)
             // ADR-051 (P3a): a team that just captured a tile stays 停留 idle by default (可再动/就地占领); it does
             // not auto-garrison. No cover registered (idle only defends its own cell). 驻扎 is an explicit intent.
             mode: 'idle',
+            ...(d.leaderUnitType ? { leaderUnitType: d.leaderUnitType } : {}),
           };
           await cols.stationed.updateOne({ _id: d.tile }, { $set: stDoc }, { upsert: true });
           // ADR-051 (P2): register the parked team in the occupancy index so an enemy march entering this tile

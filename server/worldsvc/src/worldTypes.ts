@@ -175,6 +175,8 @@ export interface MarchView {
   mine?: boolean;
   /** ADR-026: which team slot ('t1'..'t5') this march deployed, if any (own marches only). */
   teamId?: string;
+  /** March-token art (2026-07-26): the deployed team's leader unit-type, resolved once at dispatch — see MarchDoc.leaderUnitType. Present for own AND enemy marches (server-resolved, no cardInv exposure). Absent on flat-troop marches. */
+  leaderUnitType?: string;
 }
 
 /** Occupation-hold view (REST response — own holds only; 2026-07-15 team-management cancel feature). */
@@ -187,6 +189,8 @@ export interface OccupationView {
   dueAt: number;
   /** Which team slot ('t1'..'t5') is tied up holding this tile, if the march was dispatched with one. */
   teamId?: string;
+  /** March-token art (2026-07-26): carried over from the winning MarchDoc.leaderUnitType — see MarchDoc for the resolution rule. */
+  leaderUnitType?: string;
 }
 
 /** ADR-051 (P5): player-built structure view (arrowTower / blocker). hp/hpMax intel-gated out of vision. */
@@ -213,6 +217,8 @@ export interface StationedView {
   /** ADR-051 (P4): whether this team belongs to the requester (false = enemy stationed team within vision).
    * Absent → treat as own (legacy). teamId is blanked for enemy teams. */
   mine?: boolean;
+  /** March-token art (2026-07-26): carried over from the originating MarchDoc.leaderUnitType — see MarchDoc for the resolution rule. Not blanked for enemy teams (unlike teamId) since it reveals no team/card identity, only a unit-type enum already visible on the token's own animation. */
+  leaderUnitType?: string;
 }
 
 /** Maximum viewport radius (prevents fetching too many tiles at once; hard cap before P9 viewport subscription model scales up). */

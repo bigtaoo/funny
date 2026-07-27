@@ -81,15 +81,43 @@ function makeFakeRuntime() {
 }
 
 describe('march-token walk animation (2026-07-15)', () => {
-  it('pools one entry per in-flight march, kind-mapped from march.kind', () => {
+  it('pools one entry per in-flight march, unit-type-mapped from march.kind (no leaderUnitType)', () => {
     const scene = buildScene();
     scene.ctx.marches = [marchRight('m1', 'occupy'), marchRight('m2', 'attack')];
     scene.update(1 / 60);
 
     const runtimes = scene.ctx.marchTokenRuntimes as Map<string, { runtime: unknown; kind: string }>;
     expect(runtimes.size).toBe(2);
-    expect(runtimes.get('m1')?.kind).toBe('normal');
-    expect(runtimes.get('m2')?.kind).toBe('siege'); // attack → shield-bearer ("siege") per design doc
+    // Fallback (no leaderUnitType, e.g. a flat-troop march): infantry, or shield-bearer for attack —
+    // same default as the pre-2026-07-26 normal/siege split (see fog.ts::resolveMarchUnitType).
+    expect(runtimes.get('m1')?.kind).toBe('infantry');
+    expect(runtimes.get('m2')?.kind).toBe('shieldbearer');
+
+    scene.destroy();
+  });
+
+  it('prefers march.leaderUnitType over the kind-based default when present (2026-07-26)', () => {
+    const scene = buildScene();
+    const march = marchRight('m1', 'attack');
+    march.leaderUnitType = 'archer'; // team led by an archer card, even though kind === 'attack'
+    scene.ctx.marches = [march];
+    scene.update(1 / 60);
+
+    const runtimes = scene.ctx.marchTokenRuntimes as Map<string, { runtime: unknown; kind: string }>;
+    expect(runtimes.get('m1')?.kind).toBe('archer');
+
+    scene.destroy();
+  });
+
+  it('ignores an unrecognized leaderUnitType and falls back to the kind-based default', () => {
+    const scene = buildScene();
+    const march = marchRight('m1', 'occupy');
+    march.leaderUnitType = 'berserker'; // a PvE-only unit type with no authored .tao rig
+    scene.ctx.marches = [march];
+    scene.update(1 / 60);
+
+    const runtimes = scene.ctx.marchTokenRuntimes as Map<string, { runtime: unknown; kind: string }>;
+    expect(runtimes.get('m1')?.kind).toBe('infantry');
 
     scene.destroy();
   });
@@ -136,7 +164,7 @@ describe('march-token walk animation (2026-07-15)', () => {
     scene.update(1 / 60);
 
     expect(fake.destroy).toHaveBeenCalledTimes(1);
-    expect(runtimes.get('m1')?.kind).toBe('siege');
+    expect(runtimes.get('m1')?.kind).toBe('shieldbearer');
     // A fresh placeholder replaces the destroyed runtime (re-loading the siege asset).
     expect(runtimes.get('m1')?.runtime).not.toBe(fake);
 

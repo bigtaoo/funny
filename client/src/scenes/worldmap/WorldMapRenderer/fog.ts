@@ -9,17 +9,56 @@ import { drawStar } from '../tileGraphics';
 import { StickmanRuntime } from '../../../render/stickman/StickmanRuntime';
 import { UnitType } from '../../../game/types';
 import { targetScreenHeight } from '../../../render/unitSize';
-import infantryTaoUrl from '../../../assets/infantry.tao';
-import shieldBearerTaoUrl from '../../../assets/shieldbearer.tao';
+import { STICKMAN_ASSETS } from '../../../render/UnitView';
+import { buildAvatar, makeAvatarId } from '../../../render/avatar';
 import { type Constructor, type WorldMapRendererBaseCtor } from './base';
+import type { MapTokenEntry } from '../WorldMapContext';
+import * as PIXI from 'pixi.js-legacy';
 
-/** March-token art (art-direction TODO: replace with dedicated march-sprite assets — see design/game/ART_DIRECTION.md).
- * Battle's normal-troop rig stands for every march except attack, which borrows the shield-bearer
- * rig as the closest thing to a "siege" identity (no distinct siege UnitType exists yet). */
-const MARCH_TOKEN_ASSET: Record<'normal' | 'siege', { url: string; type: UnitType }> = {
-  normal: { url: infantryTaoUrl as unknown as string, type: UnitType.Infantry },
-  siege:  { url: shieldBearerTaoUrl as unknown as string, type: UnitType.ShieldBearer },
-};
+/**
+ * March/occupy/stationed token art (2026-07-26): prefers the deployed team's actual leader
+ * unit-type (server-resolved once at dispatch — see MarchView.leaderUnitType / design/game/
+ * WORLD_MAP_ART_SPEC.md), so e.g. an archer-led team's march rides an archer rig instead of the
+ * old fixed normal/siege split. Falls back to the pre-2026-07-26 default (shield-bearer for an
+ * attack/siege identity, infantry otherwise) for flat-troop marches/holds with no team attached.
+ * Guilds/banners are intentionally out of scope here (see the WORLD_MAP_ART_SPEC TODO) — this
+ * only swaps which of the 6 already-authored unit rigs represents the token.
+ */
+function resolveMarchUnitType(fallbackKind: string | undefined, leaderUnitType: string | undefined): UnitType {
+  if (leaderUnitType && STICKMAN_ASSETS[leaderUnitType as UnitType]) return leaderUnitType as UnitType;
+  return fallbackKind === 'attack' ? UnitType.ShieldBearer : UnitType.Infantry;
+}
+
+function marchTokenAssetFor(unitType: UnitType): { url: string; type: UnitType } {
+  const url = STICKMAN_ASSETS[unitType] ?? STICKMAN_ASSETS[UnitType.Infantry]!;
+  return { url, type: unitType };
+}
+
+/**
+ * Shared per-frame budget (2026-07-26) capping how many march/occupy/stationed tokens render as a
+ * full StickmanRuntime skeleton (6-12 sprites + per-frame bone updates) across all three systems
+ * combined — a large siege can have far more in-flight/holding/stationed squads than are worth
+ * animating individually (design/game/WORLD_MAP_ART_SPEC.md perf TODO). Tokens beyond the budget
+ * render as a single lightweight static portrait disc instead (see buildAvatar). Existing tokens
+ * keep whatever mode they were created with (no mid-life demotion/promotion, to avoid flicker) —
+ * the budget only gates NEW tokens, so it bounds the rate new skeletons can spin up, not a hard cap
+ * on total live tokens (each still counts against it for as long as it's alive, see renderOverlay).
+ */
+export const STICKMAN_TOKEN_BUDGET = 80;
+
+/** Build the lightweight LOD-downgrade token — a static portrait disc, no per-frame skeleton cost. */
+function buildDotToken(tp: number, unitType: UnitType): PIXI.Container {
+  return buildAvatar(Math.max(16, tp * 0.9), '', 7, makeAvatarId('hero', unitType));
+}
+
+/** Tear down either token-entry variant (also used by lifecycle.ts::destroy()). */
+export function destroyTokenEntry(entry: MapTokenEntry): void {
+  if (entry.mode === 'stickman') entry.runtime?.destroy();
+  else entry.sprite.destroy({ children: true });
+}
+
+/** Shared mutable counter threaded through a single renderOverlay(dt) pass (see STICKMAN_TOKEN_BUDGET). */
+export interface StickmanBudget { remaining: number; }
 
 export interface FogHandlers {
   renderMapL3(): void;
@@ -27,9 +66,9 @@ export interface FogHandlers {
   renderOccupyFrontier(): void;
   renderGarrisonZones(): void;
   renderOverlay(dt?: number): void;
-  syncMarchTokens(dt: number): void;
-  syncOccupyTokens(dt: number): void;
-  syncStationedTokens(dt: number): void;
+  syncMarchTokens(dt: number, budget: StickmanBudget): void;
+  syncOccupyTokens(dt: number, budget: StickmanBudget): void;
+  syncStationedTokens(dt: number, budget: StickmanBudget): void;
   renderMap(): void;
 }
 
@@ -289,18 +328,21 @@ export function FogMixin<TBase extends WorldMapRendererBaseCtor>(Base: TBase): T
         }
       }
 
-      this.syncMarchTokens(dt);
-      this.syncOccupyTokens(dt);
-      this.syncStationedTokens(dt);
+      // Shared across all three sync calls (2026-07-26): marches get first claim on the budget (most
+      // visually important / dynamic), then occupations, then stationed — see STICKMAN_TOKEN_BUDGET.
+      const budget: StickmanBudget = { remaining: STICKMAN_TOKEN_BUDGET };
+      this.syncMarchTokens(dt, budget);
+      this.syncOccupyTokens(dt, budget);
+      this.syncStationedTokens(dt, budget);
     }
 
     /**
      * Walk-cycle sprite riding each visible march's route (replaces the earlier plain diamond
-     * token — art-direction TODO: swap MARCH_TOKEN_ASSET for dedicated march-sprite assets once
-     * authored). One pooled StickmanRuntime per in-flight march, keyed by marchId; runtimes for
-     * marches no longer present (arrived, cancelled, or scrolled past zoom<3) are torn down.
+     * token). One pooled token per in-flight march, keyed by marchId — 'stickman' mode (subject to
+     * STICKMAN_TOKEN_BUDGET) or the 'dot' LOD downgrade past budget (see MapTokenEntry). Runtimes
+     * for marches no longer present (arrived, cancelled, or scrolled past zoom<3) are torn down.
      */
-    syncMarchTokens(dt: number): void {
+    syncMarchTokens(dt: number, budget: StickmanBudget): void {
       const live = new Set<string>();
       if (this.ctx.zoom < 3) {
         const now = Date.now();
@@ -325,35 +367,52 @@ export function FogMixin<TBase extends WorldMapRendererBaseCtor>(Base: TBase): T
           const mirrorX = px < fpx;
 
           live.add(march.marchId);
-          const kind = march.kind === 'attack' ? 'siege' : 'normal';
+          const unitType = resolveMarchUnitType(march.kind, march.leaderUnitType);
           let entry = this.ctx.marchTokenRuntimes.get(march.marchId);
-          if (entry && entry.kind !== kind) {
-            entry.runtime?.destroy();
+          if (entry && entry.kind !== unitType) {
+            destroyTokenEntry(entry);
             this.ctx.marchTokenRuntimes.delete(march.marchId);
             entry = undefined;
           }
           if (!entry) {
-            // Placeholder while the (cached-after-first-use) .tao asset loads — the runtime
-            // itself needs a resolved TaoAsset, so it's built async and starts absent/invisible.
-            entry = { runtime: null, kind };
-            this.ctx.marchTokenRuntimes.set(march.marchId, entry);
-            const { url, type } = MARCH_TOKEN_ASSET[kind];
-            const target = tp * 1.1;
-            StickmanRuntime.loadAsset(url, targetScreenHeight(type)).then((asset) => {
-              const current = this.ctx.marchTokenRuntimes.get(march.marchId);
-              if (!current || current !== entry) return; // march ended or asset swapped meanwhile
-              const runtime = new StickmanRuntime(asset, { targetHeight: target, mirrorX, showShadow: false });
-              this.ctx.marchTokenLayer.addChild(runtime.container);
-              current.runtime = runtime;
-            }).catch(err => { console.warn(`[WorldMap] march token .tao failed to load (${kind}):`, err); });
+            if (budget.remaining > 0) {
+              budget.remaining--;
+              // Placeholder while the (cached-after-first-use) .tao asset loads — the runtime
+              // itself needs a resolved TaoAsset, so it's built async and starts absent/invisible.
+              const stickmanEntry: MapTokenEntry = { mode: 'stickman', runtime: null, kind: unitType };
+              entry = stickmanEntry;
+              this.ctx.marchTokenRuntimes.set(march.marchId, entry);
+              const { url, type } = marchTokenAssetFor(unitType);
+              const target = tp * 1.1;
+              StickmanRuntime.loadAsset(url, targetScreenHeight(type)).then((asset) => {
+                const current = this.ctx.marchTokenRuntimes.get(march.marchId);
+                if (!current || current !== stickmanEntry) return; // march ended or asset swapped meanwhile
+                const runtime = new StickmanRuntime(asset, { targetHeight: target, mirrorX, showShadow: false });
+                this.ctx.marchTokenLayer.addChild(runtime.container);
+                stickmanEntry.runtime = runtime;
+              }).catch(err => { console.warn(`[WorldMap] march token .tao failed to load (${unitType}):`, err); });
+            } else {
+              // LOD downgrade (2026-07-26): past STICKMAN_TOKEN_BUDGET live tokens, render a single
+              // static portrait disc instead of spinning up another full skeleton.
+              const sprite = buildDotToken(tp, unitType);
+              this.ctx.marchTokenLayer.addChild(sprite);
+              entry = { mode: 'dot', sprite, kind: unitType };
+              this.ctx.marchTokenRuntimes.set(march.marchId, entry);
+            }
+          } else if (entry.mode === 'stickman') {
+            budget.remaining--; // existing stickman tokens still hold their slot
           }
-          if (entry.runtime) {
-            entry.runtime.setSilhouette(march.mine === false ? ENEMY_BASE_TINT : null); // enemy march = flat blue (ADR-051 P4)
-            entry.runtime.syncState('moving');
-            entry.runtime.update(dt);
-            entry.runtime.container.position.set(hx, hy);
-            const baseScaleX = Math.abs(entry.runtime.container.scale.x);
-            entry.runtime.container.scale.x = mirrorX ? -baseScaleX : baseScaleX;
+          if (entry.mode === 'stickman') {
+            if (entry.runtime) {
+              entry.runtime.setSilhouette(march.mine === false ? ENEMY_BASE_TINT : null); // enemy march = flat blue (ADR-051 P4)
+              entry.runtime.syncState('moving');
+              entry.runtime.update(dt);
+              entry.runtime.container.position.set(hx, hy);
+              const baseScaleX = Math.abs(entry.runtime.container.scale.x);
+              entry.runtime.container.scale.x = mirrorX ? -baseScaleX : baseScaleX;
+            }
+          } else {
+            entry.sprite.position.set(hx - entry.sprite.width / 2, hy - entry.sprite.height / 2);
           }
         }
       }
@@ -364,14 +423,14 @@ export function FogMixin<TBase extends WorldMapRendererBaseCtor>(Base: TBase): T
         if (attackUntil != null && now < attackUntil) {
           // Resolved as an attack (occupy/siege) — keep the token alive playing 'attacking'
           // instead of tearing it down instantly; position stays wherever it last was.
-          if (entry.runtime) {
+          if (entry.mode === 'stickman' && entry.runtime) {
             entry.runtime.syncState('attacking');
             entry.runtime.update(dt);
           }
           continue;
         }
         this.ctx.marchAttackUntil.delete(id);
-        entry.runtime?.destroy();
+        destroyTokenEntry(entry);
         this.ctx.marchTokenRuntimes.delete(id);
       }
     }
@@ -384,7 +443,7 @@ export function FogMixin<TBase extends WorldMapRendererBaseCtor>(Base: TBase): T
      * StickmanRuntime.syncState), so simply calling it every frame the hold is still active
      * makes the swing repeat for as long as the countdown runs.
      */
-    syncOccupyTokens(dt: number): void {
+    syncOccupyTokens(dt: number, budget: StickmanBudget): void {
       const live = new Set<string>();
       if (this.ctx.zoom < 3) {
         const tp = this.ctx.tp;
@@ -395,29 +454,50 @@ export function FogMixin<TBase extends WorldMapRendererBaseCtor>(Base: TBase): T
           const cx = this.ctx.panX + s.x;
           const cy = this.ctx.panY + s.y;
 
+          const unitType = resolveMarchUnitType('attack', o.leaderUnitType);
           let entry = this.ctx.occupyTokenRuntimes.get(key);
-          if (!entry) {
-            entry = { runtime: null };
-            this.ctx.occupyTokenRuntimes.set(key, entry);
-            const { url, type } = MARCH_TOKEN_ASSET.siege;
-            StickmanRuntime.loadAsset(url, targetScreenHeight(type)).then((asset) => {
-              const current = this.ctx.occupyTokenRuntimes.get(key);
-              if (!current || current !== entry) return; // hold ended meanwhile
-              const runtime = new StickmanRuntime(asset, { targetHeight: tp * 1.1, showShadow: false });
-              this.ctx.marchTokenLayer.addChild(runtime.container);
-              current.runtime = runtime;
-            }).catch(err => { console.warn('[WorldMap] occupy token .tao failed to load:', err); });
+          if (entry && entry.kind !== unitType) {
+            destroyTokenEntry(entry);
+            this.ctx.occupyTokenRuntimes.delete(key);
+            entry = undefined;
           }
-          if (entry.runtime) {
-            entry.runtime.syncState('attacking');
-            entry.runtime.update(dt);
-            entry.runtime.container.position.set(cx, cy);
+          if (!entry) {
+            if (budget.remaining > 0) {
+              budget.remaining--;
+              const stickmanEntry: MapTokenEntry = { mode: 'stickman', runtime: null, kind: unitType };
+              entry = stickmanEntry;
+              this.ctx.occupyTokenRuntimes.set(key, entry);
+              const { url, type } = marchTokenAssetFor(unitType);
+              StickmanRuntime.loadAsset(url, targetScreenHeight(type)).then((asset) => {
+                const current = this.ctx.occupyTokenRuntimes.get(key);
+                if (!current || current !== stickmanEntry) return; // hold ended meanwhile
+                const runtime = new StickmanRuntime(asset, { targetHeight: tp * 1.1, showShadow: false });
+                this.ctx.marchTokenLayer.addChild(runtime.container);
+                stickmanEntry.runtime = runtime;
+              }).catch(err => { console.warn('[WorldMap] occupy token .tao failed to load:', err); });
+            } else {
+              const sprite = buildDotToken(tp, unitType);
+              this.ctx.marchTokenLayer.addChild(sprite);
+              entry = { mode: 'dot', sprite, kind: unitType };
+              this.ctx.occupyTokenRuntimes.set(key, entry);
+            }
+          } else if (entry.mode === 'stickman') {
+            budget.remaining--;
+          }
+          if (entry.mode === 'stickman') {
+            if (entry.runtime) {
+              entry.runtime.syncState('attacking');
+              entry.runtime.update(dt);
+              entry.runtime.container.position.set(cx, cy);
+            }
+          } else {
+            entry.sprite.position.set(cx - entry.sprite.width / 2, cy - entry.sprite.height / 2);
           }
         }
       }
       for (const [key, entry] of this.ctx.occupyTokenRuntimes) {
         if (live.has(key)) continue;
-        entry.runtime?.destroy();
+        destroyTokenEntry(entry);
         this.ctx.occupyTokenRuntimes.delete(key);
       }
     }
@@ -431,7 +511,7 @@ export function FogMixin<TBase extends WorldMapRendererBaseCtor>(Base: TBase): T
      * rig. 驻扎 vs 停留 is conveyed by the 3×3 zone aura (renderGarrisonZones), not the token itself. Mirrors
      * syncOccupyTokens' pooled-runtime pattern; runtimes for tiles no longer stationed are torn down.
      */
-    syncStationedTokens(dt: number): void {
+    syncStationedTokens(dt: number, budget: StickmanBudget): void {
       const live = new Set<string>();
       if (this.ctx.zoom < 3) {
         const tp = this.ctx.tp;
@@ -442,30 +522,51 @@ export function FogMixin<TBase extends WorldMapRendererBaseCtor>(Base: TBase): T
           const cx = this.ctx.panX + scr.x;
           const cy = this.ctx.panY + scr.y;
 
+          const unitType = resolveMarchUnitType(undefined, s.leaderUnitType);
           let entry = this.ctx.stationedTokenRuntimes.get(key);
-          if (!entry) {
-            entry = { runtime: null };
-            this.ctx.stationedTokenRuntimes.set(key, entry);
-            const { url, type } = MARCH_TOKEN_ASSET.normal;
-            StickmanRuntime.loadAsset(url, targetScreenHeight(type)).then((asset) => {
-              const current = this.ctx.stationedTokenRuntimes.get(key);
-              if (!current || current !== entry) return; // team moved/recalled meanwhile
-              const runtime = new StickmanRuntime(asset, { targetHeight: tp * 1.1, showShadow: false });
-              this.ctx.marchTokenLayer.addChild(runtime.container);
-              current.runtime = runtime;
-            }).catch(err => { console.warn('[WorldMap] stationed token .tao failed to load:', err); });
+          if (entry && entry.kind !== unitType) {
+            destroyTokenEntry(entry);
+            this.ctx.stationedTokenRuntimes.delete(key);
+            entry = undefined;
           }
-          if (entry.runtime) {
-            entry.runtime.setSilhouette(s.mine === false ? ENEMY_BASE_TINT : null); // enemy = flat blue; own keeps art
-            entry.runtime.syncState('idle'); // unknown state → 'idle' clip (STATE_ANIM fallback)
-            entry.runtime.update(dt);
-            entry.runtime.container.position.set(cx, cy);
+          if (!entry) {
+            if (budget.remaining > 0) {
+              budget.remaining--;
+              const stickmanEntry: MapTokenEntry = { mode: 'stickman', runtime: null, kind: unitType };
+              entry = stickmanEntry;
+              this.ctx.stationedTokenRuntimes.set(key, entry);
+              const { url, type } = marchTokenAssetFor(unitType);
+              StickmanRuntime.loadAsset(url, targetScreenHeight(type)).then((asset) => {
+                const current = this.ctx.stationedTokenRuntimes.get(key);
+                if (!current || current !== stickmanEntry) return; // team moved/recalled meanwhile
+                const runtime = new StickmanRuntime(asset, { targetHeight: tp * 1.1, showShadow: false });
+                this.ctx.marchTokenLayer.addChild(runtime.container);
+                stickmanEntry.runtime = runtime;
+              }).catch(err => { console.warn('[WorldMap] stationed token .tao failed to load:', err); });
+            } else {
+              const sprite = buildDotToken(tp, unitType);
+              this.ctx.marchTokenLayer.addChild(sprite);
+              entry = { mode: 'dot', sprite, kind: unitType };
+              this.ctx.stationedTokenRuntimes.set(key, entry);
+            }
+          } else if (entry.mode === 'stickman') {
+            budget.remaining--;
+          }
+          if (entry.mode === 'stickman') {
+            if (entry.runtime) {
+              entry.runtime.setSilhouette(s.mine === false ? ENEMY_BASE_TINT : null); // enemy = flat blue; own keeps art
+              entry.runtime.syncState('idle'); // unknown state → 'idle' clip (STATE_ANIM fallback)
+              entry.runtime.update(dt);
+              entry.runtime.container.position.set(cx, cy);
+            }
+          } else {
+            entry.sprite.position.set(cx - entry.sprite.width / 2, cy - entry.sprite.height / 2);
           }
         }
       }
       for (const [key, entry] of this.ctx.stationedTokenRuntimes) {
         if (live.has(key)) continue;
-        entry.runtime?.destroy();
+        destroyTokenEntry(entry);
         this.ctx.stationedTokenRuntimes.delete(key);
       }
     }

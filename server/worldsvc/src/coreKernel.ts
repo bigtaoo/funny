@@ -72,6 +72,7 @@ export class WorldCoreKernel {
       arriveAt: m.arriveAt,
       status: m.status,
       ...(m.teamId ? { teamId: m.teamId } : {}),
+      ...(m.leaderUnitType ? { leaderUnitType: m.leaderUnitType } : {}),
     };
   }
 }

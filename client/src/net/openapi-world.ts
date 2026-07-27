@@ -1033,6 +1033,8 @@ export interface components {
             mine?: boolean;
             /** @description ADR-026: which team slot ('t1'..'t5') this march deployed, if any. Only present on the requester's own marches; used client-side to grey out busy teams in the team picker. */
             teamId?: string;
+            /** @description March-token art (2026-07-26): the deployed team's leader unit-type (engine UnitType string, e.g. 'infantry'/'archer'/'max'), resolved server-side once at dispatch and frozen onto the march. Present for own AND enemy marches (reveals only a unit-type enum, not team/card identity). Absent on flat-troop marches (no team attached). */
+            leaderUnitType?: string;
         };
         OccupationView: {
             tile: string;
@@ -1043,6 +1045,8 @@ export interface components {
             dueAt: number;
             /** @description Which team slot ('t1'..'t5') is tied up holding this tile, if the march was dispatched with one. */
             teamId?: string;
+            /** @description March-token art (2026-07-26): carried over from the winning march's leaderUnitType — see MarchView.leaderUnitType. */
+            leaderUnitType?: string;
         };
         TileStructureView: {
             /**
@@ -1075,6 +1079,8 @@ export interface components {
             mode?: "idle" | "garrison";
             /** @description ADR-051 (P4): whether this stationed team belongs to the requester (false = enemy stationed team within vision). Absent → treat as own (legacy). teamId is blanked for enemy teams (not the requester's slot). */
             mine?: boolean;
+            /** @description March-token art (2026-07-26): carried over from the originating march's leaderUnitType — see MarchView.leaderUnitType. Not blanked for enemy teams (reveals only a unit-type enum, not team/card identity). */
+            leaderUnitType?: string;
         };
         AuctionView: {
             auctionId: string;
