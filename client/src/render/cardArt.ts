@@ -16,6 +16,12 @@ import shieldBearerArtUrl from '../assets/shieldbearer.png';
 import maxArtUrl from '../assets/max.png';
 import lenaArtUrl from '../assets/lena.png';
 import maraArtUrl from '../assets/mara.png';
+import ironcladArtUrl from '../assets/Ironclad.png';
+import runnerArtUrl from '../assets/runner.png';
+import harpyArtUrl from '../assets/harpy.png';
+import medicArtUrl from '../assets/medic.png';
+import berserkerArtUrl from '../assets/berserker.png';
+import splitterArtUrl from '../assets/splitter.png';
 import barracksArtUrl from '../assets/game_infantry_barracks.png';
 import towerArtUrl from '../assets/game_archer_barracks.png';
 import spellHasteArtUrl from '../assets/spell_haste.png';
@@ -31,6 +37,12 @@ export const CARD_ART_URLS: Record<string, string> = {
   [`unit_${UnitType.Max}`]:               maxArtUrl as string,
   [`unit_${UnitType.Lena}`]:              lenaArtUrl as string,
   [`unit_${UnitType.Mara}`]:              maraArtUrl as string,
+  [`unit_${UnitType.Ironclad}`]:           ironcladArtUrl as string,
+  [`unit_${UnitType.Runner}`]:             runnerArtUrl as string,
+  [`unit_${UnitType.Harpy}`]:              harpyArtUrl as string,
+  [`unit_${UnitType.Medic}`]:              medicArtUrl as string,
+  [`unit_${UnitType.Berserker}`]:          berserkerArtUrl as string,
+  [`unit_${UnitType.Splitter}`]:           splitterArtUrl as string,
   [`building_${BuildingType.Barracks}`]:   barracksArtUrl as string,
   [`building_${BuildingType.ArrowTower}`]: towerArtUrl as string,
   [`spell_${SpellType.Haste}`]:            spellHasteArtUrl as string,
