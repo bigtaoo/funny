@@ -10,6 +10,13 @@
 // No Redis URL configured → returns null, real-time channel push AND cross-instance kick are both disabled
 // (single-instance deployments don't need either — the local onConnection() eviction already covers it).
 // Dynamic ioredis import: compiles even when ioredis is not installed (mirrors worldsvc/redis.ts).
+//
+// Presence tracking (2026-07-27 mid-term audit item 5/5): Gateway.presenceOf answers "is this account
+// online" purely from its own in-process `conns` map, which is correct today (single gateway instance,
+// ecosystem.config.cjs) but would under-report for accounts connected to a sibling instance if gateway is
+// ever scaled out. Per-account presence keys (not a single SADD/SREM set — see markOnline below for why)
+// let any instance answer the query for accounts connected elsewhere, reusing this same pub/sub connection
+// rather than opening a third Redis client.
 import { createLogger, GW_PUSH_REDIS_CHANNEL } from '@nw/shared';
 import type { PushMsg } from './matchsvcClient';
 
@@ -19,6 +26,15 @@ const log = createLogger('gateway:redis');
 type BroadcastEnvelope =
   | { recipients: string[]; msg: PushMsg }
   | { kick: { accountId: string; originInstanceId: string } };
+
+/** TTL for a presence key: must be refreshed at least once per HEARTBEAT_MS (Gateway.ts, 30s) sweep to
+ *  survive; if an instance crashes without closing its sockets cleanly, its accounts' presence self-heals
+ *  (expires) within this window instead of staying "online" forever. */
+const PRESENCE_TTL_MS = 60_000;
+
+function presenceKey(accountId: string): string {
+  return `nw:gw:online:${accountId}`;
+}
 
 export interface GatewaySubscriber {
   quit(): Promise<void>;
@@ -30,6 +46,15 @@ export interface GatewaySubscriber {
    * failing the new login over — worst case a stale connection lingers until its own heartbeat times out).
    */
   publishKick(accountId: string, originInstanceId: string): Promise<void>;
+  /** Call on connect: marks accountId online, visible to every gateway instance's presenceOf. */
+  markOnline(accountId: string): Promise<void>;
+  /** Call on disconnect: immediate cleanup (TTL would also catch it, but no reason to wait). */
+  markOffline(accountId: string): Promise<void>;
+  /** Call from the heartbeat sweep for every still-alive local connection, to keep its presence key from expiring. */
+  refreshOnline(accountId: string): Promise<void>;
+  /** Cross-instance batch presence check — Gateway.presenceOf calls this only for accountIds not found in
+   *  its own local `conns` (so a single-instance deployment never touches Redis for this at all). */
+  onlineAccountIds(accountIds: string[]): Promise<Set<string>>;
 }
 
 /**
@@ -82,6 +107,43 @@ export async function connectGatewaySubscriber(
           await pubClient.publish(GW_PUSH_REDIS_CHANNEL, JSON.stringify({ kick: { accountId, originInstanceId } }));
         } catch (e) {
           log.warn('kick publish failed', { accountId, err: (e as Error).message });
+        }
+      },
+      markOnline: async (accountId) => {
+        try {
+          await pubClient.set(presenceKey(accountId), '1', 'PX', PRESENCE_TTL_MS);
+        } catch (e) {
+          log.warn('presence markOnline failed', { accountId, err: (e as Error).message });
+        }
+      },
+      markOffline: async (accountId) => {
+        try {
+          await pubClient.del(presenceKey(accountId));
+        } catch (e) {
+          log.warn('presence markOffline failed', { accountId, err: (e as Error).message });
+        }
+      },
+      refreshOnline: async (accountId) => {
+        try {
+          await pubClient.pexpire(presenceKey(accountId), PRESENCE_TTL_MS);
+        } catch (e) {
+          log.warn('presence refresh failed', { accountId, err: (e as Error).message });
+        }
+      },
+      onlineAccountIds: async (accountIds) => {
+        if (accountIds.length === 0) return new Set();
+        try {
+          const pipeline = pubClient.pipeline();
+          for (const id of accountIds) pipeline.exists(presenceKey(id));
+          const results = await pipeline.exec();
+          const online = new Set<string>();
+          accountIds.forEach((id, i) => {
+            if (results?.[i]?.[1] === 1) online.add(id);
+          });
+          return online;
+        } catch (e) {
+          log.warn('presence batch query failed', { count: accountIds.length, err: (e as Error).message });
+          return new Set(); // fail closed: an unreachable Redis reports these accounts offline, not online
         }
       },
     };

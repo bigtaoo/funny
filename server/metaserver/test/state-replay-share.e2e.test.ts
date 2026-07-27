@@ -100,4 +100,21 @@ describe.skipIf(!mongo)('state replay share e2e', () => {
     });
     expect(res.statusCode).toBe(400);
   });
+
+  it('per-account share-minting rate limit (STATE_REPLAY_SHARE_PER_HOUR=20): the 21st share in an hour is rejected (2026-07-27 — previously untested; the underlying limiter used to be a hand-rolled Map with a memory leak, now consolidated into createRateLimiter/base.ts)', async () => {
+    for (let i = 0; i < 20; i++) {
+      const res = await app.inject({
+        method: 'POST', url: '/replay/share',
+        headers: { authorization: `Bearer ${token}` },
+        payload: { blob: `${sampleBlob}-${i}` },
+      });
+      expect(res.statusCode).toBe(200);
+    }
+    const over = await app.inject({
+      method: 'POST', url: '/replay/share',
+      headers: { authorization: `Bearer ${token}` },
+      payload: { blob: `${sampleBlob}-over` },
+    });
+    expect(over.statusCode).toBe(429);
+  });
 });

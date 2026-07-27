@@ -26,7 +26,7 @@ import { createOAuthService, OAuthError, type OAuthProvider } from '../oauth.js'
 import { grantCards } from '../cards.js';
 import { mirrorCoins } from '../economy.js';
 import type { MetaHandlers } from '../generated/routes.gen.js';
-import { accountIdOf, clientPlatformOf, SlidingRateLimiter, type Constructor, type MetaBaseCtor } from './base.js';
+import { accountIdOf, clientPlatformOf, createRateLimiter, type RateLimiter, type Constructor, type MetaBaseCtor } from './base.js';
 
 type AuthHandlers = Pick<
   MetaHandlers,
@@ -39,16 +39,17 @@ export function AuthMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase & Cons
     private readonly oauth = createOAuthService();
 
     /**
-     * Login/register IP rate limit (S4-3): at most authRateLimit auth attempts per IP within 15 minutes (prevents brute-force credential stuffing).
-     * In-process approximation (per-instance when scaled out — sufficient to defend against single-machine attacks; precise global limiting requires Redis).
+     * Login/register IP rate limit (S4-3): at most authRateLimit auth attempts per IP within 15 minutes
+     * (prevents brute-force credential stuffing). Redis-backed when configured (2026-07-27, precise across
+     * instances); in-process fallback otherwise — see createRateLimiter/SlidingRateLimiter in base.ts.
      * Disabled when authRateLimit=0 (for CI/tests).
      */
-    private readonly authRate: { allow(key: string, now: number): boolean } =
+    private readonly authRate: RateLimiter =
       this.deps.authRateLimit > 0
-        ? new SlidingRateLimiter(this.deps.authRateLimit, 15 * 60 * 1000)
-        : { allow: () => true };
+        ? createRateLimiter(this.deps.redis, 'auth', this.deps.authRateLimit, 15 * 60 * 1000)
+        : { allow: async () => true };
 
-    private allowAuthAttempt(req: FastifyRequest, now: number): boolean {
+    private async allowAuthAttempt(req: FastifyRequest, now: number): Promise<boolean> {
       const ip = req.ip ?? 'unknown';
       return this.authRate.allow(ip, now);
     }
@@ -100,7 +101,7 @@ export function AuthMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase & Cons
     }
 
     async authRegister(req: FastifyRequest, reply: FastifyReply) {
-      if (!this.allowAuthAttempt(req, this.deps.now())) {
+      if (!(await this.allowAuthAttempt(req, this.deps.now()))) {
         return reply.code(429).send(err(ErrorCode.RATE_LIMITED, 'too many auth attempts, try later'));
       }
       const { loginId, password, displayName } = req.body as {
@@ -133,7 +134,7 @@ export function AuthMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase & Cons
     }
 
     async authLogin(req: FastifyRequest, reply: FastifyReply) {
-      if (!this.allowAuthAttempt(req, this.deps.now())) {
+      if (!(await this.allowAuthAttempt(req, this.deps.now()))) {
         return reply.code(429).send(err(ErrorCode.RATE_LIMITED, 'too many auth attempts, try later'));
       }
       const { loginId, password } = req.body as { loginId: string; password: string };
@@ -199,7 +200,7 @@ export function AuthMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase & Cons
      * The server exchanges the code for an access_token → retrieves sub → upserts the account.
      */
     async authOAuth(req: FastifyRequest, reply: FastifyReply) {
-      if (!this.allowAuthAttempt(req, this.deps.now())) {
+      if (!(await this.allowAuthAttempt(req, this.deps.now()))) {
         return reply.code(429).send(err(ErrorCode.RATE_LIMITED, 'too many auth attempts, try later'));
       }
       const { provider, code, redirectUri } = req.body as {
