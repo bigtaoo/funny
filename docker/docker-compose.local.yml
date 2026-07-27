@@ -95,8 +95,11 @@ services:
       NW_COMM_HOST: 0.0.0.0
       NW_COMM_MONGO_URI: mongodb://mongo:27017/?replicaSet=rs0
       NW_COMM_MONGO_DB: ${NW_COMM_MONGO_DB:-notebook_wars_commercial}
+      # victoryDaily counter (2026-07-27, moved off Mongo — shared/src/dailyCounter.ts).
+      NW_REDIS_URL: redis://redis:6379
     depends_on:
       mongo: { condition: service_healthy }
+      redis: { condition: service_started }
     restart: unless-stopped
 
   gateway:

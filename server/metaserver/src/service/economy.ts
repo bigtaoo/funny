@@ -493,18 +493,18 @@ export function EconomyMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase & C
       const { adToken, platform } = req.body as { adToken: string; platform?: string };
       if (!adToken) return reply.code(400).send(err(ErrorCode.BAD_REQUEST, 'missing adToken'));
 
-      const { cols, commercial, now } = this.deps;
+      const { cols, commercial, now, redis } = this.deps;
       const ts = now();
       const dayKey = adsDayKey(ts);
 
       // 30-minute interval gate (C2).
-      const intervalOk = await checkAdInterval(cols, accountId, dayKey, ts, ADS_MIN_INTERVAL_MS);
+      const intervalOk = await checkAdInterval(redis, accountId, dayKey, ts, ADS_MIN_INTERVAL_MS);
       if (!intervalOk) {
         return reply.code(429).send(err(ErrorCode.DAILY_CAP_REACHED, 'ad cooldown not elapsed'));
       }
 
       // Daily cap (C2).
-      const allowed = await bumpAdsCap(cols, accountId, dayKey, ADS_DAILY_CAP, ts);
+      const allowed = await bumpAdsCap(redis, accountId, dayKey, ADS_DAILY_CAP);
       if (!allowed) {
         return reply.code(429).send(err(ErrorCode.DAILY_CAP_REACHED, 'daily ad cap reached'));
       }

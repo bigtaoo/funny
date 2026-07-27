@@ -27,6 +27,7 @@ import {
   makeDropInstance,
   EQUIPMENT_INV_CAP,
   accrueRetentionTask,
+  bumpCappedCounter,
 } from '@nw/shared';
 import { getOrCreateSave } from '../save.js';
 import { grantCards, assembleCardInv } from '../cards.js';
@@ -131,21 +132,11 @@ function applyMaterialAndEquipmentGrant(
 
 export function PveMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase & Constructor<PveHandlers> {
   return class extends Base {
-    /** Increment today's "material-rewarding clear" count by 1 (only claims a slot and returns true when below cap), same two-step pattern as bumpAdsCap. */
+    /** Increment today's "material-rewarding clear" count by 1 (only claims a slot and returns true when
+     *  below cap). Redis-backed (2026-07-27, moved off Mongo's pveDaily — see shared/src/dailyCounter.ts). */
     private async bumpPveRewardCap(accountId: string, now: number): Promise<boolean> {
       const dayKey = new Date(now).toISOString().slice(0, 10);
-      const id = `${accountId}:${dayKey}`;
-      await this.deps.cols.pveDaily.updateOne(
-        { _id: id },
-        { $setOnInsert: { _id: id, accountId, dayKey, rewardedClears: 0, ts: now } },
-        { upsert: true },
-      );
-      const res = await this.deps.cols.pveDaily.findOneAndUpdate(
-        { _id: id, rewardedClears: { $lt: PVE_DAILY_CLEAR_REWARD_CAP } },
-        { $inc: { rewardedClears: 1 }, $set: { ts: now } },
-        { returnDocument: 'after' },
-      );
-      return !!res;
+      return bumpCappedCounter(this.deps.redis, 'pveDaily', accountId, dayKey, 'rewardedClears', PVE_DAILY_CLEAR_REWARD_CAP);
     }
 
     /**

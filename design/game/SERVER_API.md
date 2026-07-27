@@ -149,7 +149,7 @@ POST /pve/verify   { verifyId, frames }        → { save: SaveData, status: 've
 POST /pve/upgrade  { upgradeId }               → { save: SaveData } | INSUFFICIENT_MATERIALS
 ```
 
-- **`/pve/clear`**：校验 level 存在 + **已解锁**（前置关在 `progress.cleared` 内）+ `stars≤3` → 按 `grantForClear(levelId,isFirst)` 在**每日上限**（`PVE_DAILY_CLEAR_REWARD_CAP`，按 `dayKey` 原子计数，类比 `victoryDaily`）内发材料；首通额外发首通奖励 + 解锁下一关 + 记星（取 max）→ 原子写 `progress/stars/materials`（rev 守卫）→ 回推权威 save。超上限：仍写 progress/stars，材料不发（`capped:true`）。
+- **`/pve/clear`**：校验 level 存在 + **已解锁**（前置关在 `progress.cleared` 内）+ `stars≤3` → 按 `grantForClear(levelId,isFirst)` 在**每日上限**（`PVE_DAILY_CLEAR_REWARD_CAP`，按 `dayKey` 原子计数，Redis 存储，类比 `victoryDaily`，均见 §5 的 `dailyCounter.ts` 说明）内发材料；首通额外发首通奖励 + 解锁下一关 + 记星（取 max）→ 原子写 `progress/stars/materials`（rev 守卫）→ 回推权威 save。超上限：仍写 progress/stars，材料不发（`capped:true`）。
 - **抽检复算（L1，复用 S1-J 对等裁判）**：`shouldSpotCheck` 命中（首通恒查 / 开局 `pveSnapshot` 与服务器权威 `pveUpgrades` 不符「开局战力不符→必作弊」/ 按 `PVE_VERIFY_SAMPLE_RATE` 随机）→ 暂扣材料、记 `pveVerifications{status:pending}`、回 `{needsReplay:true, verifyId}`；客户端补传录像帧调 `/pve/verify` → meta 经 `gateway.judge` 派第三方无头复算 → 复算星数 ≥ 声称则发材料(`verified`)，< 声称则不发(`rejected`)，无裁判可裁则 benefit-of-doubt 照发(`unverified`)。
 - **`/pve/upgrade`**：服务器按 `PVE_UPGRADE_COSTS` 校验材料足够 → 扣材料 + `pveUpgrades[id]+1` → 回推 save。**仅在线**（离线客户端禁用入口，离线通关入本地 `pendingClears` 队列、上线 flush）。
 - 两端点均返回完整权威 SaveData（客户端 adopt 镜像，同经济回执）。
@@ -337,10 +337,11 @@ enum RoomPhase { WAITING = 0; READY = 1; COUNTDOWN = 2; IN_MATCH = 3; OVER = 4; 
 | `walletLog` | `{ accountId, delta, reason, balAfter, ts }` | 货币流水（审计 / 防刷） |
 | `iapReceipts` | `{ _id: receiptId, accountId, granted, ts }` | 验单幂等 |
 | `matches` | `{ roomId, mode, seed, players, winner, reason, hashOk, replay?, replayRef?, ts }` | 对局归档（friendly/ranked 都记）；`players[]` 归档时 enrich 每方 `{ side, accountId, displayName?, publicId?, eloDelta?, eloAfter? }`（昵称/publicId 快照定格、`eloDelta` 仅 ranked，供 `GET /match/history`）；`replay` 内嵌录像（小局，非空帧日志零成本内嵌，`cmds[].commands` 为 BSON binary opaque）；`replayRef` 指向外部存储（大局，待办）。索引 `{ 'players.accountId': 1, ts: -1 }` 支撑战绩查询 |
-| `pveDaily` | `{ _id: accountId+dayKey, clears, ts }` | PvE 每日发材料的通关次数计数（`PVE_DAILY_CLEAR_REWARD_CAP`，按 dayKey 原子计数，同 `adsDaily`，§2.7） |
 | `pveVerifications` | `{ _id: verifyId, accountId, levelId, stars, pveUpgrades, status, ts }` | PvE 抽检复算账本（`status: pending|verified|rejected|unverified`，存服务器权威 `pveUpgrades` 快照防漂移，§2.7） |
 | `ladderSeasons` | `{ _id:'current', seasonNo, startAt, endAt, state }` | 天梯赛季时钟（**单文档**，admin roll 推进；§2.11 / SEASON §3） |
 
+> `adsDaily`/`pveDaily`/`victoryDaily`（广告观看 cap、PvE 每日发材料通关次数、天梯胜场金币 cap）2026-07-27 起已从 Mongo 迁到 Redis（`shared/src/dailyCounter.ts`，键 `nw:{ns}:{accountId}:{dayKey}`），不再是 Mongo 集合——原三张表此前从未建索引/TTL，无界增长；Redis 版本原子 `HINCRBY`+cap 校验一次往返，48h 滑动 TTL 自动清理。Redis 未配置/不可用时退化为进程内计数（当前 meta/commercial 均单实例部署，退化态计数仍然正确，只是不扛进程重启）。
+>
 > 装备实例 v1 内嵌 `saves.equipmentInv`（小体量），膨胀后迁独立集合 `equipment`（索引 `accountId`、`accountId+instanceId`，§2.8 / EQUIPMENT §18.3）；活动 `EventDef` 配置由 admin 下发存运营库，玩家进度内嵌 save（§2.9）；`saves.pvp` 扩赛季字段 + `battlePass` 块无独立集合，加复合索引 `{ 'save.pvp.seasonNo':1, 'save.pvp.elo':-1 }`（§2.11）。
 >
 > 天梯积分存 `saves.pvp`（elo/rank/wins/losses/streak，服务器权威）；`gameserver` 在 ranked 局末用单文档原子更新写入。
@@ -560,7 +561,7 @@ POST /internal/ads/credit  { accountId, amount, dayKey } → { ok, coinsAfter }
 
 - **幂等**：消费用 meta 生成的 `orderId`，充值用平台 `receiptId`；重放返回原结果不重扣/不重发（commercial 端 orders/recharges 唯一 `_id` 守卫）。
 - **一致性**：扣币（commercial）+ 发货（meta）是 saga——meta 据回执发货后调 `/internal/order/delivered` 闭环；崩溃则下次 `GET /save` 拉 `orders/undelivered` 补发（皮肤 `SaveData.deliveredOrders` $addToSet 幂等）。详见 `COMMERCIAL_DESIGN.md §6`。
-- **库迁移**：`gachaHistory`/`walletLog`/`iapReceipts` 已从 meta 库（`shared/src/mongo.ts`）移除，在 commercial 库重建为 `gachaHistory`/`ledger`/`recharges`（+ `wallets`/`orders`）。meta 库新增 `adsDaily`（广告 cap 计数）。
+- **库迁移**：`gachaHistory`/`walletLog`/`iapReceipts` 已从 meta 库（`shared/src/mongo.ts`）移除，在 commercial 库重建为 `gachaHistory`/`ledger`/`recharges`（+ `wallets`/`orders`）。`adsDaily`（广告 cap 计数）/`victoryDaily`（胜场金币 cap）2026-07-27 起改存 Redis，不再是 meta/commercial 库的 Mongo 集合（见 §5）。
 - **未实现**：`results[].dupeConverted` 改由 meta 据库存判重复（commercial 不持有 inventory）；重复退币 S5 暂缓（见 `COMMERCIAL_DESIGN §6`）；`recharge` 平台验签为 dev 桩。
 
 ---

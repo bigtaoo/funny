@@ -176,16 +176,6 @@ export interface PvpPlaySequenceDoc {
   plays: { side: number; frame: number; cardType: string }[];
 }
 
-/** Daily ad cap counter (S5-5, authoritative in meta, not surfaced to client sync segment to prevent abuse). _id = `${accountId}:${dayKey}`. */
-export interface AdsDailyDoc {
-  _id: string;
-  accountId: string;
-  dayKey: string;
-  count: number;
-  ts: number;
-  lastAdAt?: number; // timestamp of the last ad (30-min cooldown gate)
-}
-
 /** Ad token uniqueness (C2): SHA-256 hash of adToken, TTL 48h auto-expiry. _id = tokenHash. */
 export interface AdsTokenDoc {
   _id: string;   // SHA-256(adToken) hex
@@ -209,14 +199,6 @@ export interface ReplayBlobDoc {
   expireAt?: Date;
 }
 
-/** PvE daily material-rewarding clear count (server-authoritative, anti-abuse). _id = `${accountId}:${dayKey}`. */
-export interface PveDailyDoc {
-  _id: string;
-  accountId: string;
-  dayKey: string;
-  rewardedClears: number;
-  ts: number;
-}
 
 /**
  * PvE clear replay spot-check re-simulation record (PVE_INTEGRITY §8.6 L1). Sampled clears are recorded here first (materials not yet granted,
@@ -498,9 +480,7 @@ export interface Collections {
   saves: Collection<SaveDoc>;
   accounts: Collection<AccountDoc>;
   matches: Collection<MatchDoc>;
-  adsDaily: Collection<AdsDailyDoc>;
   replayBlobs: Collection<ReplayBlobDoc>;
-  pveDaily: Collection<PveDailyDoc>;
   pveVerifications: Collection<PveVerificationDoc>;
   antiCheatReviews: Collection<AntiCheatReviewDoc>;
   // PvE anti-cheat (S4-4)
@@ -572,9 +552,7 @@ export async function createMongo(
     saves: db.collection<SaveDoc>('saves'),
     accounts: db.collection<AccountDoc>('accounts'),
     matches: db.collection<MatchDoc>('matches'),
-    adsDaily: db.collection<AdsDailyDoc>('adsDaily'),
     replayBlobs: db.collection<ReplayBlobDoc>('replayBlobs'),
-    pveDaily: db.collection<PveDailyDoc>('pveDaily'),
     pveVerifications: db.collection<PveVerificationDoc>('pveVerifications'),
     antiCheatReviews: db.collection<AntiCheatReviewDoc>('antiCheatReviews'),
     pveRejections: db.collection<PveRejectDoc>('pveRejections'),

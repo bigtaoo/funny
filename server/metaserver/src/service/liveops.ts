@@ -126,11 +126,11 @@ export function LiveOpsMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase & C
     /** Read current retention state (including definition tables; used by the client to render the calendar/task cards). */
     async getRetention(req: FastifyRequest) {
       const accountId = accountIdOf(req);
-      const { cols, now } = this.deps;
+      const { cols, now, redis } = this.deps;
       const tsMs = now();
       const save = await getOrCreateSave(cols, accountId, tsMs);
       const retention = resetStaleRetention(save.retention, tsMs);
-      const adsStatus = await peekAdsStatus(cols, accountId, adsDayKey(tsMs), ADS_MIN_INTERVAL_MS, tsMs);
+      const adsStatus = await peekAdsStatus(redis, accountId, adsDayKey(tsMs), ADS_MIN_INTERVAL_MS, tsMs);
       return ok({
         checkin: retention.checkin ?? null,
         daily: retention.daily ?? null,

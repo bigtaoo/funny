@@ -90,7 +90,6 @@ function fakeColsWithAccounts(
     pveVerifications: { findOne: vi.fn(async () => null), insertOne: vi.fn(), updateOne: vi.fn() },
     pveRejections: { insertOne: vi.fn() },
     mails: { findOne: vi.fn(async () => null), insertOne: vi.fn(), updateOne: vi.fn() },
-    adsDaily: { findOne: vi.fn(async () => null), findOneAndUpdate: vi.fn() },
     adsTokens: { insertOne: vi.fn() },
     replayBlobs: { findOne: vi.fn(async () => null), insertOne: vi.fn() },
     replayShares: { findOne: vi.fn(async () => null), insertOne: vi.fn() },

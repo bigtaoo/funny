@@ -67,6 +67,8 @@ module.exports = {
           process.env.NW_MONGO_URI ||
           'mongodb://127.0.0.1:27017/?replicaSet=rs0',
         NW_COMM_MONGO_DB: process.env.NW_COMM_MONGO_DB || 'notebook_wars_commercial',
+        // victoryDaily counter (2026-07-27, moved off Mongo — shared/src/dailyCounter.ts).
+        NW_REDIS_URL: process.env.NW_REDIS_URL || 'redis://127.0.0.1:6379',
       },
     },
     {
