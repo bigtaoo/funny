@@ -18,6 +18,7 @@ export * from './shop';
 export * from './prosperity';
 export * from './mapgen';
 export * from './mapEdit';
+export * from './mapRle';
 export * from './march';
 export * from './siege';
 export * from './transfer';

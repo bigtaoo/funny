@@ -151,7 +151,7 @@ cp .env.example .env        # 填 NW_JWT_SECRET / NW_DOMAIN
 - **T10 `batch-profiles` 从 2N 次查询改成 2 次 `$in`**：`internal/account/batch-profiles` 原本对每个 accountId 调一次 `profileOf`（每次 2 个 findOne，且 accounts 侧完全没投影，连密码哈希都拉回来），100 个好友 = 200 次查询。抽出 `toProfileView` 纯函数做单一事实来源，新增 `profilesOf` 批量版：`accounts`/`saves` 各一次 `$in` + 投影 + 内存 join。
 - **T11 `pveClear`/`pveVerify` 写放大合并**（本轮改动量最大）：正常通关此前最多做 4 次独立的整存档读改写（`writeClearProgress`/`grantClearReward` 的材料写/`accrueJudgedPveStats`/`bumpRetentionTask`），彼此的 SaveData 改动互不依赖结果（只有每日奖励封顶判定 + 装备掉落骰子必须在进 `mutateSave` 事务前决定——事务函数可能因 rev 冲突被重试多次，不能塞不确定性逻辑），于是合并进一次 `mutateSave`（新 `settleNormalClear`，进度/星级/篇章成就 + 材料/装备槽位 + 判定后统计 + 每日任务全在一次写里）；章节卡/掉落卡的发放仍走独立的共享 `grantCards`（gacha/邮件/拍卖行共用，不能重复）。`pveVerify` 的判定后发放（`grantClearReward`+`accrueJudgedPveStats` 两次写）套用同一模式合并成 `deliverVerifiedClearReward`。抽出两个纯函数 `applyClearProgress`/`applyMaterialAndEquipmentGrant` 供两条路径共享。正常通关：4 次整存档写 → 1 次；判定后发放：2 次 → 1 次。
 
-**未做、明确列为中期项**（架构级改动，风险/工作量大，本轮未动）：`cardInv`（最多 500 张卡）拆成独立集合（复刻 `equipmentInstances` 2026-07-26 的拆法，**✅ 已于 2026-07-27 完成，见下**）；`mapBaselines` 改行程编码存储或回归纯 `proceduralTile`（当前一次开服克隆一张 1500×1500 地图模板会物化 225 万文档，仅在 ops 激活自定义模板时触发）；`adsDaily`/`pveDaily`/`victoryDaily` 这类日计数器迁到 Redis TTL key；`rejectIfBanned`/`publicId` 查询加缓存层；进程内限流器（认证/异常上报/分享额度）+ presence 查询在真正横向扩容前需要迁移到 Redis。
+**未做、明确列为中期项**（架构级改动，风险/工作量大，本轮未动）：`cardInv`（最多 500 张卡）拆成独立集合（复刻 `equipmentInstances` 2026-07-26 的拆法，**✅ 已于 2026-07-27 完成，见下**）；`mapBaselines` 改行程编码存储或回归纯 `proceduralTile`（当前一次开服克隆一张 1500×1500 地图模板会物化 225 万文档，仅在 ops 激活自定义模板时触发，**✅ 已于 2026-07-27 完成，见下**）；`adsDaily`/`pveDaily`/`victoryDaily` 这类日计数器迁到 Redis TTL key；`rejectIfBanned`/`publicId` 查询加缓存层；进程内限流器（认证/异常上报/分享额度）+ presence 查询在真正横向扩容前需要迁移到 Redis。
 
 ## cardInv 存储拆分（2026-07-27，中期项第 1 项）
 
@@ -160,3 +160,11 @@ cp .env.example .env        # 填 NW_JWT_SECRET / NW_DOMAIN
 完整设计记录（含交叉依赖踩坑点、并发安全设计取舍）见 [`design/game/CHARACTER_CARDS_DESIGN.md`](../design/game/CHARACTER_CARDS_DESIGN.md) §17 CC-15；[`design/game/EQUIPMENT_DESIGN.md`](../design/game/EQUIPMENT_DESIGN.md) §3.3 补了一条交叉更新说明（`isEquipped`/`equipEquipment` 改查 `cardInstances`）。迁移脚本 `server/metaserver/scripts/migrateCardInv.ts`（幂等、断点续跑，**必须先在生产跑到 100% 完成再部署新代码**）。
 
 验证：metaserver 54 文件/678 测试、worldsvc 44/341、auctionsvc 5/71 全绿（后两者只读拼好的 map，零源码改动）。
+
+## mapBaselines 行程编码重设计（2026-07-27，中期项第 2 项）
+
+真正的病根不是 `cloneActiveTemplateInto`（每次开服/重置的克隆），而是 `generateTemplate`（模板首包生成）——1500×1500 地图逐格调用 `proceduralTile()` 后原样物化成 225 万份 `mapTemplateTiles` 文档，克隆只是把这份稠密数据原样搬到 `mapBaselines` 再来一遍。地形有大量连续同值横向条带（河/山连续带，资源/中立地块间稀疏散落特殊格），改行程编码（RLE）：`server/shared/src/slg/mapRle.ts` 新增 `encodeRow`/`decodeRow`/`tileAtX`/`sliceRuns`/`applyEditsToRow` 纯函数；存储从「每格一文档」改成「每**行**一文档、行内一组压缩区间」——集合改名 `mapTemplateTiles`→`mapTemplateRows`、`mapBaselines`→`mapBaselineRows`（新旧 `_id` 格式不同，用改名而非原地换 shape 避免新代码的范围查询意外命中旧稠密文档解 `.runs` 崩溃）。外部契约（`MapTemplateTile` 单格形状、`getTiles`/`saveTilesDiff` API、`tileCount` 统计口径）完全不变，压缩/解压全封装在 `mapTemplateService.ts`/`coreMap.ts` 内部。
+
+完整设计记录见 [`design/game/SLG_DESIGN_LOG.md`](../design/game/SLG_DESIGN_LOG.md) §24 第 4 条（2026-07-27）。迁移脚本 `server/worldsvc/scripts/migrateMapBaselinesToRle.ts`（幂等、不删旧集合，留给 ops 确认后手动清理；若从未真正激活过自定义模板则无需迁移）。
+
+验证：`shared/test/mapRle.test.ts`（14 例新增纯函数测试）+ `worldsvc/test/map-template.e2e.test.ts`（9 例，重写裸集合断言 + 新增「10×10 模板只落地 10 行文档」回归锁定）；shared 647/647、worldsvc 341/341 全绿。

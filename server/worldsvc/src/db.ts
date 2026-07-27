@@ -14,6 +14,7 @@ import type {
   SettleTier,
   BuildingKey,
   PathCell,
+  TileRun,
 } from '@nw/shared';
 import { FAMILY_MSG_RETENTION_SEC, troopCapFor } from '@nw/shared';
 import type { Filter } from 'mongodb';
@@ -536,35 +537,31 @@ export interface MapTemplateDoc {
   updatedAt: number;
 }
 
-/** One tile of a map template (§24 Layer A — design-time, edited via the admin map editor, not runtime state). */
-export interface MapTemplateTileDoc {
-  _id: string; // `${templateId}:${x}:${y}`
+/**
+ * One row of a map template, run-length-encoded (§24 Layer A; storage redesign 2026-07-27 — see
+ * shared/src/slg/mapRle.ts header). Replaces the pre-2026-07-27 per-cell `MapTemplateTileDoc`
+ * (`${templateId}:${x}:${y}`, one doc per cell — 2.25M docs at SLG_MAP_W×SLG_MAP_H): terrain has long
+ * horizontal runs, so one doc per row (height docs, e.g. 1500) with a compact run list covers the same data.
+ */
+export interface MapTemplateRowDoc {
+  _id: string; // `${templateId}:${y}`
   templateId: string;
-  x: number;
   y: number;
-  type: TileType;
-  level: number;
-  resType?: ResourceType;
-  /** For type=obstacle only: river vs mountain art (§24 art-parity). Same optional field as MapTemplateTile. */
-  obstacleKind?: ObstacleKind;
+  runs: TileRun[];
 }
 
 /**
- * Per-world terrain baseline, cloned (copied, not referenced) from a template's tiles at world-open time (§24).
- * Consumed by the runtime read path (WorldCoreMap.getMap/getTile): for a tile with no TileDoc override, this
- * baseline is the terrain, falling back to proceduralTile() only when no baseline row exists (no active template
- * at world-open). Same shape as MapTemplateTile — carry any new terrain field added there through here too.
+ * Per-world terrain baseline row, cloned (copied, not referenced) from a template's rows at world-open time
+ * (§24). Consumed by the runtime read path (WorldCoreMap.getMap/getTile): for a tile with no TileDoc
+ * override, this baseline is the terrain, falling back to proceduralTile() only when no baseline row exists
+ * (no active template at world-open). Same run-length shape as MapTemplateRowDoc, keyed by worldId instead
+ * of templateId. Replaces the pre-2026-07-27 per-cell `MapBaselineTileDoc` (see MapTemplateRowDoc above).
  */
-export interface MapBaselineTileDoc {
-  _id: string; // `${worldId}:${x}:${y}`
+export interface MapBaselineRowDoc {
+  _id: string; // `${worldId}:${y}`
   worldId: string;
-  x: number;
   y: number;
-  type: TileType;
-  level: number;
-  resType?: ResourceType;
-  /** For type=obstacle only: river vs mountain art (§24 art-parity). Cloned from MapTemplateTileDoc.obstacleKind. */
-  obstacleKind?: ObstacleKind;
+  runs: TileRun[];
 }
 
 export interface WorldCollections {
@@ -585,8 +582,8 @@ export interface WorldCollections {
   shardAllocations: Collection<ShardAllocationDoc>;
   shardTransfers: Collection<ShardTransferDoc>;
   mapTemplates: Collection<MapTemplateDoc>;
-  mapTemplateTiles: Collection<MapTemplateTileDoc>;
-  mapBaselines: Collection<MapBaselineTileDoc>;
+  mapTemplateRows: Collection<MapTemplateRowDoc>;
+  mapBaselineRows: Collection<MapBaselineRowDoc>;
 }
 
 export interface WorldMongo {
@@ -633,8 +630,8 @@ export async function createWorldMongo(
     shardAllocations: db.collection<ShardAllocationDoc>('shardAllocations'),
     shardTransfers: db.collection<ShardTransferDoc>('shardTransfers'),
     mapTemplates: db.collection<MapTemplateDoc>('mapTemplates'),
-    mapTemplateTiles: db.collection<MapTemplateTileDoc>('mapTemplateTiles'),
-    mapBaselines: db.collection<MapBaselineTileDoc>('mapBaselines'),
+    mapTemplateRows: db.collection<MapTemplateRowDoc>('mapTemplateRows'),
+    mapBaselineRows: db.collection<MapBaselineRowDoc>('mapBaselineRows'),
   };
 
   async function ensureIndexes(): Promise<void> {
@@ -745,9 +742,11 @@ export async function createWorldMongo(
     await collections.shardAllocations.createIndex({ season: 1 });
     // G6 mid-season transfer cooldown (§27): _id is already accountId (unique by definition); no secondary index needed.
     // Map templates (§24): viewport bbox reads scan by templateId + x/y range; active lookup for the "which template do new worlds clone" query.
-    await collections.mapTemplateTiles.createIndex({ templateId: 1, x: 1, y: 1 });
+    // Row-level range queries (viewport bbox reads decode the needed y-range then filter x in-memory —
+    // see mapTemplateService.ts/coreMap.ts); `_id` (`templateId:y` / `worldId:y`) already covers exact-row lookups.
+    await collections.mapTemplateRows.createIndex({ templateId: 1, y: 1 });
     await collections.mapTemplates.createIndex({ active: 1 });
-    await collections.mapBaselines.createIndex({ worldId: 1, x: 1, y: 1 });
+    await collections.mapBaselineRows.createIndex({ worldId: 1, y: 1 });
   }
 
   /**
