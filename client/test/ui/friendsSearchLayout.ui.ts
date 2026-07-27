@@ -47,7 +47,7 @@ function buildFriends(
     addFriend: async () => {},
     respond: async () => {},
     removeFriend: async () => {},
-    blockUser: async () => {}, duelInvite: () => {}, duelRespond: () => {},
+    blockUser: async () => {}, reportUser: async () => {}, duelInvite: () => {}, duelRespond: () => {},
     openChat() {},
     loadMail: async () => ({ mail: [], unread: 0 }),
     markMailRead: async () => {},
