@@ -10,8 +10,23 @@
 // its cloud sync is scheduled together with WeChat online compliance; currently SaveManager degrades to local-only (offline-first) when baseUrl / fetch is absent.
 import { netLog } from '../log';
 import type { ApiResp } from './types';
+import { clientPlatformName } from '../../app/appConstants';
+import { getNativeBilling } from '../../platform/iap';
 
 const log = netLog('api');
+
+/**
+ * Request platform declared to the server (X-NW-Platform, ADR-020): which recharged-pool bucket this session
+ * may spend from / display alongside the free pool (server/commercial/src/spendChannel.ts). A native shell
+ * (Capacitor iOS/Android) injects `window.NWBilling` at runtime — the same signal `platform/iap.ts` uses to
+ * route recharges to Apple/Google — so it's checked first; anything else falls back to the build-time TARGET
+ * (web/wechat/crazygames), which can't distinguish a native shell on its own (mobile reuses the web bundle).
+ */
+function requestPlatformHeader(): string {
+  const native = getNativeBilling();
+  if (native) return native.kind === 'apple' ? 'ios' : 'android';
+  return clientPlatformName();
+}
 
 export class ApiError extends Error {
   constructor(public readonly code: string, message: string) {
@@ -60,7 +75,7 @@ export class ApiClientBase {
     body?: unknown,
     extraHeaders?: Record<string, string>,
   ): Promise<Response> {
-    const headers: Record<string, string> = { ...extraHeaders };
+    const headers: Record<string, string> = { 'x-nw-platform': requestPlatformHeader(), ...extraHeaders };
     if (body !== undefined) headers['content-type'] = 'application/json';
     if (this.token) headers['authorization'] = `Bearer ${this.token}`;
     log.debug(`${method} ${path}`);

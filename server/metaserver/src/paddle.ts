@@ -404,9 +404,10 @@ export function registerPaddleRoutes(app: FastifyInstance, deps: PaddleDeps): vo
             app.log.warn(`paddle webhook: subscription tx ${transactionId} reported quantity ${rawQuantity}, ignoring (grants exactly one card)`);
           }
           const orderId = `paddle:${transactionId}`;
+          // Real money via Paddle (web-only store) — tags the 'web' recharged bucket (ADR-020), not the free pool.
           const result = subscriptionProduct === 'monthly'
-            ? await deps.commercial.monthlyCardBuy({ accountId, orderId })
-            : await deps.commercial.yearCardBuy({ accountId, orderId });
+            ? await deps.commercial.monthlyCardBuy({ accountId, orderId, rechargePlatform: 'paddle' })
+            : await deps.commercial.yearCardBuy({ accountId, orderId, rechargePlatform: 'paddle' });
           if (!result.ok) {
             // Real money already changed hands but the grant was refused (e.g. an extreme same-instant
             // race against another purchase slipping past the checkout-time pre-check) — log for CS/refund
@@ -417,7 +418,7 @@ export function registerPaddleRoutes(app: FastifyInstance, deps: PaddleDeps): vo
             });
             return reply.code(200).send('processed');
           }
-          const w = await deps.commercial.getWallet(accountId);
+          const w = await deps.commercial.getWallet(accountId, 'web'); // Paddle is web-only (ADR-020)
           if (w) await mirrorWalletFrom(deps.cols, accountId, w, deps.now());
           return reply.code(200).send('ok');
         }
@@ -431,7 +432,8 @@ export function registerPaddleRoutes(app: FastifyInstance, deps: PaddleDeps): vo
             app.log.warn(`paddle webhook: starter pack tx ${transactionId} reported quantity ${rawQuantity}, ignoring (grants exactly one pack)`);
           }
           const orderId = `paddle:${transactionId}`;
-          const result = await deps.commercial.starterBuy({ accountId, productId: starterProduct, orderId });
+          // Real money via Paddle (web-only store) — tags the 'web' recharged bucket (ADR-020) for starter_growth's coins.
+          const result = await deps.commercial.starterBuy({ accountId, productId: starterProduct, orderId, rechargePlatform: 'paddle' });
           if (!result.ok) {
             // Real money already changed hands but the grant was refused (e.g. an extreme same-instant
             // race, or the checkout-time pre-check window closing between checkout and webhook) — log
@@ -449,7 +451,7 @@ export function registerPaddleRoutes(app: FastifyInstance, deps: PaddleDeps): vo
               result.coinsAfter, null, deps.now(),
             );
           }
-          const w = await deps.commercial.getWallet(accountId);
+          const w = await deps.commercial.getWallet(accountId, 'web'); // Paddle is web-only (ADR-020)
           if (w) await mirrorWalletFrom(deps.cols, accountId, w, deps.now());
           return reply.code(200).send('ok');
         }

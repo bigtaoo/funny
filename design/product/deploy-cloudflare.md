@@ -293,7 +293,7 @@ docker compose -f observability/docker-compose.obs.yml --env-file observability/
 两条硬约束：
 
 1. **中国玩家数据须境内存储**（PIPL/网络安全法）→ 微信线 = 完全独立部署，不与本套全球部署互通。承接 ADR-019/ADR-013，**延后实现**。
-2. **充值币按支付渠道隔离**：站外渠道（Paddle/Stripe）购买的虚拟货币不得在微信/苹果内消费（违反平台条款）。**2026-07-27 现状复核**：微信线本就完全独立部署（独立库，见上表），跨渠道混用无从发生；真正暴露的窗口是 **iOS/Android 原生 IAP 与 web(Paddle) 共享同一套全局部署 + 同一个全局 `wallet.coins`**（DEPLOY_TOPOLOGY「西方大区」Meta 层单实例托管）——`server/commercial/src/db.ts RechargeDoc` 已按次记录 `platform`（`'apple'|'google'|'wechat'|'stripe'|...`），**逐笔来源已可查**，但花费侧（shop/gacha/equipment/auction 各处 `commercial.spend`）不区分币的来源渠道，仍是全局单池——**当前无实际违规**（原生 IAP 客户端尚未接入任何应用商店真实购买，见 IOS_RELEASE.md 待办），但一旦 iOS/Android 上线且与 web 共享部署，需要在花费侧补上「按渠道限定可花池」或从架构上把原生渠道也隔离部署（参考微信）。**改造仍未做**，上线 iOS/Android 前必须定案，本轮审计不在其列（结构复杂，涉及 wallet 拆分/花费路径改造，需单独排期）。
+2. **充值币按支付渠道隔离**：站外渠道（Paddle/Stripe）购买的虚拟货币不得在微信/苹果内消费（违反平台条款）。微信线本就完全独立部署（独立库，见上表），跨渠道混用无从发生；真正的暴露窗口是 **iOS/Android 原生 IAP 与 web(Paddle) 共享同一套全局部署 + 同一个 `wallets` 集合**（DEPLOY_TOPOLOGY「西方大区」Meta 层单实例托管）。**已实现（2026-07-27）**：`wallets.coins` 保留为免费池（广告/胜场/兑换码/退款等非充值来源，处处可花），新增按渠道标记的充值池 `wallets.recharged:{web,apple,google}`（渠道来自 `RechargeDoc.platform` 映射），花费侧新增按「请求平台」（客户端 `X-NW-Platform` 头）门控——任一花费请求只能动用「免费池 + 请求平台对应的渠道桶」，先扣免费池、免费池不够再扣渠道桶。否决了"原生渠道也照搬微信独立部署"的方案：会牺牲已支持的跨端同账号游玩能力，且改造范围本身比预想小（花费侧只有两处原子扣款，充值侧只有三处真实付费入口）。机制细节 + 取舍记录见 [`game/COMMERCIAL_DESIGN.md §11`](../game/COMMERCIAL_DESIGN.md#11-钱包按支付渠道隔离adr-020-2026-07-27)。当前 `recharged.apple`/`.google` 在生产恒为 0（ASC 的 7 个 IAP 商品尚未建，见 IOS_RELEASE.md）——机制已就绪，等真实原生 IAP 上线即自动生效，无需再改。
 
 CrazyGames 限制只在前端（禁站外支付/外链），账号层与 web 共享即可。
 

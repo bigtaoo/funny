@@ -26,7 +26,7 @@ import { createOAuthService, OAuthError, type OAuthProvider } from '../oauth.js'
 import { grantCards } from '../cards.js';
 import { mirrorCoins } from '../economy.js';
 import type { MetaHandlers } from '../generated/routes.gen.js';
-import { accountIdOf, SlidingRateLimiter, type Constructor, type MetaBaseCtor } from './base.js';
+import { accountIdOf, clientPlatformOf, SlidingRateLimiter, type Constructor, type MetaBaseCtor } from './base.js';
 
 type AuthHandlers = Pick<
   MetaHandlers,
@@ -325,7 +325,7 @@ export function AuthMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase & Cons
 
       if (!this.ensureCommercial(reply)) return;
       const orderId = randomUUID();
-      const charge = await commercial.spend({ accountId, amount: RENAME_COST, reason: 'rename', orderId });
+      const charge = await commercial.spend({ accountId, amount: RENAME_COST, reason: 'rename', orderId, clientPlatform: clientPlatformOf(req) });
       if (!charge.ok) {
         if (charge.error === 'INSUFFICIENT_FUNDS') {
           return reply.code(402).send(err(ErrorCode.INSUFFICIENT_FUNDS, 'not enough coins'));

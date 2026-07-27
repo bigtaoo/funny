@@ -35,7 +35,7 @@ import { insertSystemMail } from '../mail.js';
 import { accrueEventTask } from '../events.js';
 import { nullMetaSocialsvcClient } from '../socialsvcClient.js';
 import type { MetaHandlers } from '../generated/routes.gen.js';
-import { accountIdOf, STAMINA_CAP, STAMINA_REGEN_MS, type Constructor, type MetaBaseCtor } from './base.js';
+import { accountIdOf, clientPlatformOf, STAMINA_CAP, STAMINA_REGEN_MS, type Constructor, type MetaBaseCtor } from './base.js';
 
 type PveHandlers = Pick<MetaHandlers, 'purchaseStamina' | 'pveEnter' | 'pveClear' | 'pveVerify' | 'pveUpgrade'>;
 
@@ -165,7 +165,7 @@ export function PveMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase & Const
       }
       const COST_COINS = 30;
       const orderId = randomUUID();
-      const spendRes = await commercial.spend({ accountId, amount: COST_COINS, reason: 'stamina_purchase', orderId });
+      const spendRes = await commercial.spend({ accountId, amount: COST_COINS, reason: 'stamina_purchase', orderId, clientPlatform: clientPlatformOf(req) });
       if (!spendRes.ok) {
         return reply.code(402).send(err(ErrorCode.INSUFFICIENT_FUNDS, 'not enough coins'));
       }

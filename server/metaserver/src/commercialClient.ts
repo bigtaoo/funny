@@ -47,18 +47,22 @@ type Body<T> = ({ ok: true } & T) | { ok: false; error: string };
 /** meta-side commercial client interface (allows injecting a fake implementation in unit tests). */
 export interface CommercialClient {
   readonly available: boolean;
-  getWallet(accountId: string): Promise<WalletView | null>;
+  /** `clientPlatform` (X-NW-Platform, ADR-020): which recharged bucket the returned `coins` should include
+   * alongside the free pool — prevents e.g. a Paddle-bought balance leaking into the iOS app's display. */
+  getWallet(accountId: string, clientPlatform?: string): Promise<WalletView | null>;
   shopCharge(args: {
     accountId: string;
     itemId: string;
     cost: number;
     orderId: string;
+    clientPlatform?: string;
   }): Promise<Body<{ orderId: string; coinsAfter: number; status: string }>>;
   gachaDraw(args: {
     accountId: string;
     poolId: string;
     count: number;
     orderId: string;
+    clientPlatform?: string;
   }): Promise<
     Body<{
       orderId: string;
@@ -85,29 +89,40 @@ export interface CommercialClient {
     accountId: string;
     itemId: string;
     orderId: string;
+    clientPlatform?: string;
   }): Promise<Body<{ orderId: string; itemId: string; coinsAfter: number; fatePointsAfter: number }>>;
   monthlyCardBuy(args: {
     accountId: string;
     orderId: string;
+    /** The verified recharge platform (apple/google/wechat from verifyNonCoinReceipt, 'paddle' from the
+     * webhook) — tags which recharged bucket funds the immediate coins (ADR-020). */
+    rechargePlatform?: string;
+    clientPlatform?: string;
   }): Promise<Body<{ coinsAfter: number; subscriptionExpiry: number }>>;
   yearCardBuy(args: {
     accountId: string;
     orderId: string;
+    rechargePlatform?: string;
+    clientPlatform?: string;
   }): Promise<Body<{ coinsAfter: number; subscriptionExpiry: number }>>;
   monthlyCardClaim(args: {
     accountId: string;
     dayKey: string;
+    clientPlatform?: string;
   }): Promise<Body<{ coinsAfter: number; claimed: number; subscriptionExpiry: number }>>;
   starterBuy(args: {
     accountId: string;
     productId: string;
     orderId: string;
+    rechargePlatform?: string;
+    clientPlatform?: string;
   }): Promise<Body<{ coinsAfter: number; subscriptionExpiry: number; results: GachaResultEntry[] }>>;
   spend(args: {
     accountId: string;
     amount: number;
     reason: string;
     orderId: string;
+    clientPlatform?: string;
   }): Promise<Body<{ coinsAfter: number }>>;
   /** Pure coin grant (mail attachment claim S6-3), orderId is idempotent. amount=0 only reserves the idempotency slot without adding coins. */
   grant(args: {
@@ -115,6 +130,7 @@ export interface CommercialClient {
     amount: number;
     reason: string;
     orderId: string;
+    clientPlatform?: string;
   }): Promise<Body<{ coinsAfter: number }>>;
   orderDelivered(args: { orderId: string; refundCoins?: number }): Promise<Body<{}>>;
   undeliveredOrders(accountId: string): Promise<UndeliveredOrder[]>;
@@ -123,6 +139,7 @@ export interface CommercialClient {
     platform: string;
     receipt: string;
     receiptId: string;
+    clientPlatform?: string;
   }): Promise<Body<{ coinsAfter: number; coinsGranted: number }>>;
   /**
    * Verify a receipt resolves to a specific non-coin SKU (monthly/year card, starter pack) before
@@ -140,15 +157,18 @@ export interface CommercialClient {
     accountId: string;
     amount: number;
     dayKey: string;
+    clientPlatform?: string;
   }): Promise<Body<{ coinsAfter: number }>>;
   victoryCredit(args: {
     accountId: string;
     amount: number;
     dayKey: string;
+    clientPlatform?: string;
   }): Promise<Body<{ coinsAfter: number; credited: number; capped: boolean }>>;
   promoRedeem(args: {
     accountId: string;
     code: string;
+    clientPlatform?: string;
   }): Promise<Body<{ coinsAfter: number; coinsGranted: number }>>;
   createPromoCode(args: {
     code: string;
@@ -233,12 +253,11 @@ export class HttpCommercialClient implements CommercialClient {
     return (await res.json()) as Body<T>;
   }
 
-  async getWallet(accountId: string): Promise<WalletView | null> {
+  async getWallet(accountId: string, clientPlatform?: string): Promise<WalletView | null> {
     if (!this.baseUrl) return null;
-    const res = await fetch(
-      `${this.baseUrl}/internal/wallet?accountId=${encodeURIComponent(accountId)}`,
-      { headers: this.headers() },
-    );
+    const q = new URLSearchParams({ accountId });
+    if (clientPlatform) q.set('clientPlatform', clientPlatform);
+    const res = await fetch(`${this.baseUrl}/internal/wallet?${q}`, { headers: this.headers() });
     const b = (await res.json()) as Body<WalletView>;
     return b.ok
       ? {
@@ -254,14 +273,14 @@ export class HttpCommercialClient implements CommercialClient {
       : null;
   }
 
-  shopCharge(args: { accountId: string; itemId: string; cost: number; orderId: string }) {
+  shopCharge(args: { accountId: string; itemId: string; cost: number; orderId: string; clientPlatform?: string }) {
     return this.post<{ orderId: string; coinsAfter: number; status: string }>(
       '/internal/shop/charge',
       args,
     );
   }
 
-  gachaDraw(args: { accountId: string; poolId: string; count: number; orderId: string }) {
+  gachaDraw(args: { accountId: string; poolId: string; count: number; orderId: string; clientPlatform?: string }) {
     return this.post<{
       orderId: string;
       coinsAfter: number;
@@ -300,46 +319,46 @@ export class HttpCommercialClient implements CommercialClient {
     return this.listPools(true, now);
   }
 
-  redeemFate(args: { accountId: string; itemId: string; orderId: string }) {
+  redeemFate(args: { accountId: string; itemId: string; orderId: string; clientPlatform?: string }) {
     return this.post<{ orderId: string; itemId: string; coinsAfter: number; fatePointsAfter: number }>(
       '/internal/fate/redeem',
       args,
     );
   }
 
-  monthlyCardBuy(args: { accountId: string; orderId: string }) {
+  monthlyCardBuy(args: { accountId: string; orderId: string; rechargePlatform?: string; clientPlatform?: string }) {
     return this.post<{ coinsAfter: number; subscriptionExpiry: number }>(
       '/internal/monthly-card/buy',
       args,
     );
   }
 
-  yearCardBuy(args: { accountId: string; orderId: string }) {
+  yearCardBuy(args: { accountId: string; orderId: string; rechargePlatform?: string; clientPlatform?: string }) {
     return this.post<{ coinsAfter: number; subscriptionExpiry: number }>(
       '/internal/year-card/buy',
       args,
     );
   }
 
-  monthlyCardClaim(args: { accountId: string; dayKey: string }) {
+  monthlyCardClaim(args: { accountId: string; dayKey: string; clientPlatform?: string }) {
     return this.post<{ coinsAfter: number; claimed: number; subscriptionExpiry: number }>(
       '/internal/monthly-card/claim',
       args,
     );
   }
 
-  starterBuy(args: { accountId: string; productId: string; orderId: string }) {
+  starterBuy(args: { accountId: string; productId: string; orderId: string; rechargePlatform?: string; clientPlatform?: string }) {
     return this.post<{ coinsAfter: number; subscriptionExpiry: number; results: GachaResultEntry[] }>(
       '/internal/starter/buy',
       args,
     );
   }
 
-  spend(args: { accountId: string; amount: number; reason: string; orderId: string }) {
+  spend(args: { accountId: string; amount: number; reason: string; orderId: string; clientPlatform?: string }) {
     return this.post<{ coinsAfter: number }>('/internal/spend', args);
   }
 
-  grant(args: { accountId: string; amount: number; reason: string; orderId: string }) {
+  grant(args: { accountId: string; amount: number; reason: string; orderId: string; clientPlatform?: string }) {
     return this.post<{ coinsAfter: number }>('/internal/grant', args);
   }
 
@@ -357,7 +376,7 @@ export class HttpCommercialClient implements CommercialClient {
     return b.ok ? b.orders : [];
   }
 
-  rechargeVerify(args: { accountId: string; platform: string; receipt: string; receiptId: string }) {
+  rechargeVerify(args: { accountId: string; platform: string; receipt: string; receiptId: string; clientPlatform?: string }) {
     return this.post<{ coinsAfter: number; coinsGranted: number }>(
       '/internal/recharge/verify',
       args,
@@ -374,18 +393,18 @@ export class HttpCommercialClient implements CommercialClient {
     return this.post<{ product: string }>('/internal/nonCoinReceipt/verify', args);
   }
 
-  adsCredit(args: { accountId: string; amount: number; dayKey: string }) {
+  adsCredit(args: { accountId: string; amount: number; dayKey: string; clientPlatform?: string }) {
     return this.post<{ coinsAfter: number }>('/internal/ads/credit', args);
   }
 
-  victoryCredit(args: { accountId: string; amount: number; dayKey: string }) {
+  victoryCredit(args: { accountId: string; amount: number; dayKey: string; clientPlatform?: string }) {
     return this.post<{ coinsAfter: number; credited: number; capped: boolean }>(
       '/internal/victory/credit',
       args,
     );
   }
 
-  promoRedeem(args: { accountId: string; code: string }) {
+  promoRedeem(args: { accountId: string; code: string; clientPlatform?: string }) {
     return this.post<{ coinsAfter: number; coinsGranted: number }>('/internal/promo/redeem', args);
   }
 

@@ -155,9 +155,10 @@
   - **身份/存档/天梯**：web + CrazyGames **共享同一套全球部署**（Cloudflare 前端 + 欧洲 VPS + Atlas）。两端用户可共存、可绑定合并。
   - **中国（微信）= 物理独立部署**：中国大陆玩家个人信息按 PIPL/网络安全法须**境内存储** → 微信线跑完全独立的境内栈（境内云 + 境内 Mongo），账号/存档/钱包均不与全球区互通。承接 ADR-019「中国独立」与 ADR-013「Global/CN 合规拆分」，此处补「数据驻留」为隔离的法律根因。**延后实现**，先做全球区。
   - **钱包/充值币按支付渠道隔离**：`SaveData.wallet.coins` 当前为全局单一钱包。上线微信/苹果/谷歌前必须改造——**站外渠道（如 Stripe）购买的虚拟货币不得在微信/苹果内消费**（违反各平台"不得消费站外购买虚拟货币"条款）。落地方式：充值币标记来源渠道，或钱包按平台隔离。**现在就要记入数据结构设计**，避免后期迁移。
+    > **2026-07-27 落地**：选了"充值币标记来源渠道"这条（否决"钱包按平台隔离"=iOS/Android 各自独立部署——会牺牲本条已支持的跨端同账号游玩能力，且 `IOS_RELEASE.md §4.2` 既定计划本就是原生 IAP 复用同一套西方大区部署）。`wallets.coins` 保留为免费池（广告/胜场/兑换码等非充值来源，处处可花），新增 `wallets.recharged:{web?,apple?,google?}` 按渠道标记的充值池，花费时以请求平台（客户端新增 `X-NW-Platform` 头）门控只可花「免费池 + 匹配渠道桶」。详细机制见 [`game/COMMERCIAL_DESIGN.md §11`](game/COMMERCIAL_DESIGN.md#11-钱包按支付渠道隔离adr-020-2026-07-27)。微信仍是完全独立部署/独立库，天然合规、不受影响。
   - **CrazyGames**：门户限制主要在前端行为（禁站外支付/外链跳转），账号层可与 web 共享，无需隔离。
 - **未决/待查**：微信小游戏、CrazyGames、苹果/谷歌的开发者协议中"虚拟货币跨渠道流通"的具体条款原文（上线对应平台前逐条核实）。
-- **影响**：[`product/deploy-cloudflare.md`](product/deploy-cloudflare.md) 新增「平台隔离边界」节为现行口径；钱包改造待在 [`game/ECONOMY_BALANCE.md`](game/ECONOMY_BALANCE.md) / [`game/ACCOUNT_DESIGN.md`](game/ACCOUNT_DESIGN.md) 补「充值币渠道标记」字段设计（缺口，上线渠道前收口）。
+- **影响**：[`product/deploy-cloudflare.md`](product/deploy-cloudflare.md) 新增「平台隔离边界」节为现行口径；钱包渠道隔离机制见 [`game/COMMERCIAL_DESIGN.md §11`](game/COMMERCIAL_DESIGN.md#11-钱包按支付渠道隔离adr-020-2026-07-27)（已实现，不再是缺口）。
 
 ## ADR-021 独立 socialsvc = 第五公网面，推翻 SOC1 — Accepted — 2026-06-28
 

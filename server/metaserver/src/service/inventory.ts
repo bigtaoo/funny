@@ -6,7 +6,7 @@ import { ErrorCode, ERROR_HTTP_STATUS, err, ok } from '@nw/shared';
 import { craftEquipment, enhanceEquipment, salvageEquipment, equipEquipment, reforgeEquipment } from '../equipment.js';
 import { fuseCards, setCardLock } from '../cards.js';
 import type { MetaHandlers } from '../generated/routes.gen.js';
-import { accountIdOf, type Constructor, type MetaBaseCtor } from './base.js';
+import { accountIdOf, clientPlatformOf, type Constructor, type MetaBaseCtor } from './base.js';
 
 type InventoryHandlers = Pick<
   MetaHandlers,
@@ -37,7 +37,7 @@ export function InventoryMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase &
       const accountId = accountIdOf(req);
       const { instanceId, idempotencyKey, useProtect } = req.body as { instanceId: string; idempotencyKey: string; useProtect?: boolean };
       const { cols, commercial, now } = this.deps;
-      const r = await enhanceEquipment(cols, commercial, now, accountId, instanceId, idempotencyKey, useProtect === true);
+      const r = await enhanceEquipment(cols, commercial, now, accountId, instanceId, idempotencyKey, useProtect === true, clientPlatformOf(req));
       if ('error' in r) return reply.code(ERROR_HTTP_STATUS[r.code] ?? 400).send(err(r.code as ErrorCode, r.error));
       return ok({ success: r.success, instance: r.instance, save: r.save });
     }
@@ -84,7 +84,7 @@ export function InventoryMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase &
         idempotencyKey: string;
       };
       const { cols, commercial, now } = this.deps;
-      const r = await reforgeEquipment(cols, commercial, now, accountId, targetId, materialId, idempotencyKey);
+      const r = await reforgeEquipment(cols, commercial, now, accountId, targetId, materialId, idempotencyKey, clientPlatformOf(req));
       if ('error' in r) return reply.code(ERROR_HTTP_STATUS[r.code] ?? 400).send(err(r.code as ErrorCode, r.error));
       return ok({ instance: r.instance, save: r.save });
     }

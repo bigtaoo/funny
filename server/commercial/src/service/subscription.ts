@@ -8,19 +8,28 @@ import {
   YEAR_CARD_IMMEDIATE_COINS,
 } from '@nw/shared';
 import type { CommercialBaseCtor, Constructor, Result } from './base';
+import { effectiveCoins, rechargeChannelOf, spendChannelOf } from '../spendChannel';
 
 export interface SubscriptionHandlers {
   monthlyCardBuy(args: {
     accountId: string;
     orderId: string;
+    /** The caller's VERIFIED recharge platform (apple/google/wechat from verifyNonCoinReceipt, or 'paddle'
+     * from the webhook) — mapped to a recharged-pool bucket via rechargeChannelOf (ADR-020). Absent = free
+     * pool (should not happen post the receipt-verify gate, but a safe default). */
+    rechargePlatform?: string;
+    clientPlatform?: string;
   }): Promise<Result<{ coinsAfter: number; subscriptionExpiry: number }>>;
   yearCardBuy(args: {
     accountId: string;
     orderId: string;
+    rechargePlatform?: string;
+    clientPlatform?: string;
   }): Promise<Result<{ coinsAfter: number; subscriptionExpiry: number }>>;
   monthlyCardClaim(args: {
     accountId: string;
     dayKey: string;
+    clientPlatform?: string;
   }): Promise<Result<{ coinsAfter: number; claimed: number; subscriptionExpiry: number }>>;
 }
 
@@ -32,26 +41,46 @@ export function SubscriptionMixin<TBase extends CommercialBaseCtor>(
     async monthlyCardBuy(args: {
       accountId: string;
       orderId: string;
+      rechargePlatform?: string;
+      clientPlatform?: string;
     }): Promise<Result<{ coinsAfter: number; subscriptionExpiry: number }>> {
-      return this.subscriptionCardBuy({ ...args, days: MONTHLY_CARD_DAYS, immediateCoins: MONTHLY_CARD_IMMEDIATE_COINS });
+      return this.subscriptionCardBuy({
+        accountId: args.accountId,
+        orderId: args.orderId,
+        clientPlatform: args.clientPlatform,
+        channel: args.rechargePlatform ? (rechargeChannelOf(args.rechargePlatform) ?? undefined) : undefined,
+        days: MONTHLY_CARD_DAYS,
+        immediateCoins: MONTHLY_CARD_IMMEDIATE_COINS,
+      });
     }
 
     /** Activate the year card (GACHA_DESIGN §5): 365-day subscription + 600 immediate coins. Same daily claim as the monthly card. */
     async yearCardBuy(args: {
       accountId: string;
       orderId: string;
+      rechargePlatform?: string;
+      clientPlatform?: string;
     }): Promise<Result<{ coinsAfter: number; subscriptionExpiry: number }>> {
-      return this.subscriptionCardBuy({ ...args, days: YEAR_CARD_DAYS, immediateCoins: YEAR_CARD_IMMEDIATE_COINS });
+      return this.subscriptionCardBuy({
+        accountId: args.accountId,
+        orderId: args.orderId,
+        clientPlatform: args.clientPlatform,
+        channel: args.rechargePlatform ? (rechargeChannelOf(args.rechargePlatform) ?? undefined) : undefined,
+        days: YEAR_CARD_DAYS,
+        immediateCoins: YEAR_CARD_IMMEDIATE_COINS,
+      });
     }
 
     /**
      * Claim the monthly card's daily coins (GACHA_DESIGN §5): +MONTHLY_CARD_DAILY_COINS, once per UTC day.
-     * Atomically guarded on an active subscription (expiry > now) AND lastClaimDayKey !== dayKey.
+     * Atomically guarded on an active subscription (expiry > now) AND lastClaimDayKey !== dayKey. Always credits
+     * the free `coins` pool (spendable everywhere) — this is a retention drip, not a real-money top-up.
      * Returns claimed:0 (no error) when there is no active card or it was already claimed today.
      */
     async monthlyCardClaim(args: {
       accountId: string;
       dayKey: string;
+      clientPlatform?: string;
     }): Promise<Result<{ coinsAfter: number; claimed: number; subscriptionExpiry: number }>> {
       const now = this.now();
       await this.ensureWallet(args.accountId);
@@ -63,18 +92,20 @@ export function SubscriptionMixin<TBase extends CommercialBaseCtor>(
         },
         { returnDocument: 'after' },
       );
+      const channel = spendChannelOf(args.clientPlatform);
       if (!res) {
         const w = await this.cols.wallets.findOne({ _id: args.accountId });
-        return { ok: true, coinsAfter: w?.coins ?? 0, claimed: 0, subscriptionExpiry: w?.subscription?.expiry ?? 0 };
+        return { ok: true, coinsAfter: effectiveCoins(w, channel), claimed: 0, subscriptionExpiry: w?.subscription?.expiry ?? 0 };
       }
+      const coinsAfter = effectiveCoins(res, channel);
       await this.cols.ledger.insertOne({
         accountId: args.accountId,
         delta: MONTHLY_CARD_DAILY_COINS,
-        balanceAfter: res.coins,
+        balanceAfter: coinsAfter,
         reason: 'monthly_card_daily',
         ts: now,
       });
-      return { ok: true, coinsAfter: res.coins, claimed: MONTHLY_CARD_DAILY_COINS, subscriptionExpiry: res.subscription?.expiry ?? 0 };
+      return { ok: true, coinsAfter, claimed: MONTHLY_CARD_DAILY_COINS, subscriptionExpiry: res.subscription?.expiry ?? 0 };
     }
   };
 }

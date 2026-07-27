@@ -3,6 +3,7 @@
 import { findShopItem } from '@nw/shared';
 import type { OrderDoc } from '../db';
 import type { CommercialBaseCtor, Constructor, Result } from './base';
+import { effectiveCoins, spendChannelOf } from '../spendChannel';
 
 export interface ShopHandlers {
   shopCharge(args: {
@@ -10,18 +11,21 @@ export interface ShopHandlers {
     itemId: string;
     cost: number;
     orderId: string;
+    clientPlatform?: string;
   }): Promise<Result<{ orderId: string; coinsAfter: number; status: OrderDoc['status'] }>>;
   spend(args: {
     accountId: string;
     amount: number;
     reason: string;
     orderId: string;
+    clientPlatform?: string;
   }): Promise<Result<{ coinsAfter: number }>>;
   grant(args: {
     accountId: string;
     amount: number;
     reason: string;
     orderId: string;
+    clientPlatform?: string;
   }): Promise<Result<{ coinsAfter: number }>>;
 }
 
@@ -33,6 +37,7 @@ export function ShopMixin<TBase extends CommercialBaseCtor>(Base: TBase): TBase 
       itemId: string;
       cost: number;
       orderId: string;
+      clientPlatform?: string;
     }): Promise<Result<{ orderId: string; coinsAfter: number; status: OrderDoc['status'] }>> {
       const existing = await this.cols.orders.findOne({ _id: args.orderId });
       if (existing) {
@@ -63,17 +68,14 @@ export function ShopMixin<TBase extends CommercialBaseCtor>(Base: TBase): TBase 
         }
         throw e;
       }
-      const charged = await this.cols.wallets.findOneAndUpdate(
-        { _id: args.accountId, coins: { $gte: args.cost } },
-        { $inc: { coins: -args.cost, rev: 1 }, $set: { updatedAt: this.now() } },
-        { returnDocument: 'after' },
-      );
+      const channel = spendChannelOf(args.clientPlatform);
+      const charged = await this.debitEffective(args.accountId, args.cost, channel);
       if (!charged) {
         // Insufficient funds: release the reserved slot so a later top-up can retry the same orderId.
         await this.cols.orders.deleteOne({ _id: args.orderId });
         return { ok: false, error: 'INSUFFICIENT_FUNDS' };
       }
-      const coinsAfter = charged.coins;
+      const coinsAfter = effectiveCoins(charged, channel);
 
       await this.cols.orders.updateOne({ _id: args.orderId }, { $set: { coinsAfter } });
       await this.cols.ledger.insertOne({
@@ -96,6 +98,7 @@ export function ShopMixin<TBase extends CommercialBaseCtor>(Base: TBase): TBase 
       amount: number;
       reason: string;
       orderId: string;
+      clientPlatform?: string;
     }): Promise<Result<{ coinsAfter: number }>> {
       const existing = await this.cols.orders.findOne({ _id: args.orderId });
       if (existing) return { ok: true, coinsAfter: existing.coinsAfter };
@@ -124,17 +127,14 @@ export function ShopMixin<TBase extends CommercialBaseCtor>(Base: TBase): TBase 
         }
         throw e;
       }
-      const charged = await this.cols.wallets.findOneAndUpdate(
-        { _id: args.accountId, coins: { $gte: amount } },
-        { $inc: { coins: -amount, rev: 1 }, $set: { updatedAt: this.now() } },
-        { returnDocument: 'after' },
-      );
+      const channel = spendChannelOf(args.clientPlatform);
+      const charged = await this.debitEffective(args.accountId, amount, channel);
       if (!charged) {
         // Insufficient funds: release the reserved slot so a later top-up can retry the same orderId.
         await this.cols.orders.deleteOne({ _id: args.orderId });
         return { ok: false, error: 'INSUFFICIENT_FUNDS' };
       }
-      const coinsAfter = charged.coins;
+      const coinsAfter = effectiveCoins(charged, channel);
 
       await this.cols.orders.updateOne({ _id: args.orderId }, { $set: { coinsAfter } });
       await this.cols.ledger.insertOne({
@@ -158,6 +158,7 @@ export function ShopMixin<TBase extends CommercialBaseCtor>(Base: TBase): TBase 
       amount: number;
       reason: string;
       orderId: string;
+      clientPlatform?: string;
     }): Promise<Result<{ coinsAfter: number }>> {
       const existing = await this.cols.orders.findOne({ _id: args.orderId });
       if (existing) return { ok: true, coinsAfter: existing.coinsAfter };
@@ -185,8 +186,8 @@ export function ShopMixin<TBase extends CommercialBaseCtor>(Base: TBase): TBase 
       }
       const coinsAfter =
         amount > 0
-          ? await this.credit(args.accountId, amount, args.reason, { orderId: args.orderId })
-          : (await this.ensureWallet(args.accountId)).coins;
+          ? await this.credit(args.accountId, amount, args.reason, { orderId: args.orderId, clientPlatform: args.clientPlatform })
+          : effectiveCoins(await this.ensureWallet(args.accountId), spendChannelOf(args.clientPlatform));
       await this.cols.orders.updateOne({ _id: args.orderId }, { $set: { coinsAfter } });
       return { ok: true, coinsAfter };
     }

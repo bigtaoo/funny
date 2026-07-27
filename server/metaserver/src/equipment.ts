@@ -412,6 +412,7 @@ export async function enhanceEquipment(
   instanceId: string,
   idempotencyKey: string,
   useProtect = false,
+  clientPlatform?: string,
 ): Promise<{ success: boolean; instance: EquipmentInstance; save: SaveData } | EquipError> {
   if (!instanceId) return { error: 'instanceId required', code: 'BAD_REQUEST' };
   if (!idempotencyKey) return { error: 'idempotencyKey required', code: 'BAD_REQUEST' };
@@ -427,7 +428,7 @@ export async function enhanceEquipment(
       { $set: toInstanceDoc(r.instance, accountId) },
       { upsert: true },
     );
-    const save = await settleEquipCoins(cols, commercial, now, accountId, idempotencyKey, r.coins);
+    const save = await settleEquipCoins(cols, commercial, now, accountId, idempotencyKey, r.coins, 'equip_enhance', clientPlatform);
     return { success: r.success, instance: r.instance, save: leanSave(save) };
   }
 
@@ -449,7 +450,7 @@ export async function enhanceEquipment(
     if ((cur.materials?.[mat] ?? 0) < qty) return { error: `insufficient ${mat}`, code: 'INSUFFICIENT_MATERIALS' };
   }
   // Pre-validate coins (commercial authoritative; insufficient → no state changes, friendly 402).
-  const wallet = await commercial.getWallet(accountId);
+  const wallet = await commercial.getWallet(accountId, clientPlatform);
   if ((wallet?.coins ?? 0) < cost.coins) return { error: 'not enough coins', code: 'INSUFFICIENT_FUNDS' };
 
   const success = rollEnhanceSuccess(idempotencyKey, fromLevel);
@@ -538,7 +539,7 @@ export async function enhanceEquipment(
         { _id: instanceId, level: fromLevel },
         { $set: toInstanceDoc(instanceAfter, accountId) },
       );
-      const saveFinal = await settleEquipCoins(cols, commercial, now, accountId, idempotencyKey, cost.coins);
+      const saveFinal = await settleEquipCoins(cols, commercial, now, accountId, idempotencyKey, cost.coins, 'equip_enhance', clientPlatform);
       return { success, instance: instanceAfter, save: leanSave(saveFinal) };
     }
     // rev conflict → re-read and retry
@@ -557,9 +558,10 @@ async function settleEquipCoins(
   idempotencyKey: string,
   coins: number,
   reason = 'equip_enhance',
+  clientPlatform?: string,
 ): Promise<SaveData> {
   if (coins > 0 && commercial.available) {
-    const charge = await commercial.spend({ accountId, amount: coins, reason, orderId: idempotencyKey });
+    const charge = await commercial.spend({ accountId, amount: coins, reason, orderId: idempotencyKey, clientPlatform });
     if (charge.ok) return mirrorCoins(cols, accountId, charge.coinsAfter, now());
   }
   return getOrCreateSave(cols, accountId, now());
@@ -678,6 +680,7 @@ export async function reforgeEquipment(
   targetId: string,
   materialId: string,
   idempotencyKey: string,
+  clientPlatform?: string,
 ): Promise<{ instance: EquipmentInstance; save: SaveData } | EquipError> {
   if (!idempotencyKey) return { error: 'idempotencyKey required', code: 'BAD_REQUEST' };
   if (targetId === materialId) return { error: 'target and material must differ', code: 'BAD_REQUEST' };
@@ -693,7 +696,7 @@ export async function reforgeEquipment(
       { upsert: true },
     );
     await cols.equipmentInstances.deleteOne({ _id: materialId });
-    const save = await settleEquipCoins(cols, commercial, now, accountId, idempotencyKey, r.coins ?? 0, 'equip_reforge');
+    const save = await settleEquipCoins(cols, commercial, now, accountId, idempotencyKey, r.coins ?? 0, 'equip_reforge', clientPlatform);
     return { instance: r.instance, save: leanSave(save) };
   }
 
@@ -732,7 +735,7 @@ export async function reforgeEquipment(
 
   // Reforge coin fee (ADR-030): charged every attempt on top of the fuel item. Pre-validate (commercial authoritative; insufficient → no state changes).
   const coins = reforgeCoinCost(target.rarity);
-  const wallet = await commercial.getWallet(accountId);
+  const wallet = await commercial.getWallet(accountId, clientPlatform);
   if ((wallet?.coins ?? 0) < coins) return { error: 'not enough coins', code: 'INSUFFICIENT_FUNDS' };
 
   // Deterministic re-roll (idempotencyKey used as seed)
@@ -758,7 +761,7 @@ export async function reforgeEquipment(
         { upsert: true },
       );
       await cols.equipmentInstances.deleteOne({ _id: materialId });
-      const save = await settleEquipCoins(cols, commercial, now, accountId, idempotencyKey, r.coins ?? 0, 'equip_reforge');
+      const save = await settleEquipCoins(cols, commercial, now, accountId, idempotencyKey, r.coins ?? 0, 'equip_reforge', clientPlatform);
       return { instance: r.instance, save: leanSave(save) };
     }
     throw e;
@@ -795,7 +798,7 @@ export async function reforgeEquipment(
     );
     if (res) {
       // Save committed → deduct coins (idemKey idempotent) + mirror. If coin deduction is interrupted the replay path re-settles.
-      const saveFinal = await settleEquipCoins(cols, commercial, now, accountId, idempotencyKey, coins, 'equip_reforge');
+      const saveFinal = await settleEquipCoins(cols, commercial, now, accountId, idempotencyKey, coins, 'equip_reforge', clientPlatform);
       return { instance: reforged, save: leanSave(saveFinal) };
     }
   }

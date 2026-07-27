@@ -28,6 +28,7 @@ import type {
 } from '../db';
 import { isCustomPoolDoc } from '../db';
 import type { RandInt } from '../gacha';
+import { displayChannelOf, effectiveCoins, spendChannelOf, type RechargeChannel } from '../spendChannel';
 import type { IapProductKind } from '../iap';
 
 /** A resolved, drawable pool: either a derived/static GachaPoolDef or an ops-authored custom config (§12). */
@@ -105,10 +106,15 @@ export function devVerifyReceipt(
   return { ok: true, coins, usdCents: usdCentsForTier(IAP_TIERS[tier] ? tier : DEV_STUB_DEFAULT_TIER) };
 }
 
-/** Project a wallet document into the meta-facing view (defaults for lazily-absent monetization fields). */
-export function walletView(w: WalletDoc | null): WalletView {
+/**
+ * Project a wallet document into the meta-facing view (defaults for lazily-absent monetization fields).
+ * `coins` is the EFFECTIVE balance for `clientPlatform` (free pool + that platform's recharged bucket, ADR-020
+ * spendChannel.ts) — not the raw `WalletDoc.coins` field. Omitting `clientPlatform` defaults to the 'web'
+ * bucket (today's behavior for every currently-live client).
+ */
+export function walletView(w: WalletDoc | null, clientPlatform?: string): WalletView {
   return {
-    coins: w?.coins ?? 0,
+    coins: effectiveCoins(w, spendChannelOf(clientPlatform)),
     pity: w?.gacha.pity ?? {},
     fatePoints: w?.fatePoints ?? 0,
     subscriptionExpiry: w?.subscription?.expiry ?? 0,
@@ -192,9 +198,9 @@ export class CommercialServiceBase {
   }
 
   /** GET /internal/wallet: returns balance + all pity counters + monetization state (§5–§7). */
-  async getWallet(accountId: string): Promise<WalletView> {
+  async getWallet(accountId: string, clientPlatform?: string): Promise<WalletView> {
     const w = await this.cols.wallets.findOne({ _id: accountId });
-    return walletView(w);
+    return walletView(w, clientPlatform);
   }
 
   /**
@@ -212,26 +218,30 @@ export class CommercialServiceBase {
   }
 
   /**
-   * Credit coins + write ledger entry (shared by recharge/ads/refund). Atomic $inc; returns the new balance.
-   * `ref.rechargeUsdCents`, when present (real-money recharge callers only), bumps `totalRechargeCents` in
-   * the SAME atomic update (GACHA_DESIGN §13) — deliberately the pre-first-purchase-bonus USD amount, since
-   * this counter tracks actual money spent, not the (possibly doubled) coins granted.
+   * Credit coins + write ledger entry (shared by recharge/ads/refund). Atomic $inc; returns the new EFFECTIVE
+   * balance for `clientPlatform` (ADR-020 spendChannel.ts). `ref.rechargeUsdCents`, when present (real-money
+   * recharge callers only), bumps `totalRechargeCents` in the SAME atomic update (GACHA_DESIGN §13) —
+   * deliberately the pre-first-purchase-bonus USD amount, since this counter tracks actual money spent, not
+   * the (possibly doubled) coins granted.
+   * `ref.channel`, when present, funds `recharged.<channel>` instead of the free `coins` pool — set only by
+   * genuinely channel-verified real-money credits (recharge/paddleComplete); every other credit reason (ads,
+   * victory, promo, refund, grant, subscription daily claim) stays on the free pool, spendable everywhere.
    */
   protected async credit(
     accountId: string,
     amount: number,
     reason: string,
-    ref: { orderId?: string; receiptId?: string; rechargeUsdCents?: number },
+    ref: { orderId?: string; receiptId?: string; rechargeUsdCents?: number; channel?: RechargeChannel; clientPlatform?: string },
   ): Promise<number> {
     await this.ensureWallet(accountId);
-    const inc: Record<string, number> = { coins: amount, rev: 1 };
+    const inc: Record<string, number> = ref.channel ? { [`recharged.${ref.channel}`]: amount, rev: 1 } : { coins: amount, rev: 1 };
     if (ref.rechargeUsdCents) inc.totalRechargeCents = ref.rechargeUsdCents;
     const res = await this.cols.wallets.findOneAndUpdate(
       { _id: accountId },
       { $inc: inc, $set: { updatedAt: this.now() } },
       { returnDocument: 'after' },
     );
-    const coinsAfter = res!.coins;
+    const coinsAfter = effectiveCoins(res, displayChannelOf(ref.channel, ref.clientPlatform));
     await this.cols.ledger.insertOne({
       accountId,
       delta: amount,
@@ -245,19 +255,57 @@ export class CommercialServiceBase {
   }
 
   /**
+   * Atomically debit `amount` from a wallet's EFFECTIVE spendable balance for `channel` (free `coins` pool +
+   * that channel's `recharged` bucket, ADR-020 spendChannel.ts) — draining `coins` first so a restricted
+   * real-money bucket is preserved as long as the free pool can cover the cost. Returns null when the
+   * effective balance is insufficient (guard failed, nothing debited) — callers map this to INSUFFICIENT_FUNDS.
+   * `extraSet`/`extraSetOnUpdate` let callers (gachaDraw's pity) piggyback extra fields on the SAME atomic op.
+   */
+  protected async debitEffective(
+    accountId: string,
+    amount: number,
+    channel: RechargeChannel,
+    extraInc: Record<string, number> = {},
+    extraSet: Record<string, unknown> = {},
+  ): Promise<WalletDoc | null> {
+    const rk = `recharged.${channel}`;
+    return this.cols.wallets.findOneAndUpdate(
+      { _id: accountId, $expr: { $gte: [{ $add: ['$coins', { $ifNull: [`$${rk}`, 0] }] }, amount] } },
+      [
+        {
+          $set: {
+            [rk]: { $max: [0, { $add: [{ $ifNull: [`$${rk}`, 0] }, { $min: [0, { $subtract: ['$coins', amount] }] }] }] },
+            coins: { $max: [0, { $subtract: ['$coins', amount] }] },
+            rev: { $add: ['$rev', 1] },
+            updatedAt: this.now(),
+            ...Object.fromEntries(Object.entries(extraInc).map(([k, v]) => [k, { $add: [{ $ifNull: [`$${k}`, 0] }, v] }])),
+            ...extraSet,
+          },
+        },
+      ],
+      { returnDocument: 'after' },
+    );
+  }
+
+  /**
    * Extend the subscription by `days` (stacking = extend from max(now, current expiry)) + optionally credit
    * `immediateCoins`, in one atomic aggregation-pipeline update. Writes a ledger entry for the immediate coins.
    * Callers gate idempotency upstream (order slot / starterUsed claim) so this never double-applies.
+   * `ref.channel`, when present, funds `recharged.<channel>` instead of the free `coins` pool (set only by the
+   * Paddle-webhook-verified card purchase, §10.7 — the legacy "treated as authorized" native/WeChat/CrazyGames
+   * path passes no channel since it isn't real money yet). Returned `coinsAfter` is the EFFECTIVE balance for
+   * `ref.clientPlatform` (defaults to 'web').
    */
   protected async applySubscription(
     accountId: string,
     days: number,
     immediateCoins: number,
     now: number,
-    ref: { orderId?: string; reason?: string },
+    ref: { orderId?: string; reason?: string; channel?: RechargeChannel; clientPlatform?: string },
   ): Promise<{ coinsAfter: number; expiry: number }> {
     await this.ensureWallet(accountId);
     const ms = days * 86400000;
+    const coinsField = ref.channel ? `recharged.${ref.channel}` : 'coins';
     const res = await this.cols.wallets.findOneAndUpdate(
       { _id: accountId },
       [
@@ -266,7 +314,7 @@ export class CommercialServiceBase {
             'subscription.expiry': {
               $add: [{ $max: [{ $ifNull: ['$subscription.expiry', now] }, now] }, ms],
             },
-            coins: { $add: ['$coins', immediateCoins] },
+            [coinsField]: { $add: [{ $ifNull: [`$${coinsField}`, 0] }, immediateCoins] },
             rev: { $add: ['$rev', 1] },
             updatedAt: now,
           },
@@ -274,7 +322,7 @@ export class CommercialServiceBase {
       ],
       { returnDocument: 'after' },
     );
-    const coinsAfter = res!.coins;
+    const coinsAfter = effectiveCoins(res, displayChannelOf(ref.channel, ref.clientPlatform));
     if (immediateCoins > 0) {
       await this.cols.ledger.insertOne({
         accountId,
@@ -291,19 +339,26 @@ export class CommercialServiceBase {
   /**
    * Shared monthly/year card activation (GACHA_DESIGN §5). Idempotent by orderId, and globally single-slot:
    * refuses with ALREADY_ACTIVE while any subscription is still running (buy → use up → rebuy), so cards no longer
-   * stack open-endedly. Extends the subscription by `days` and grants `immediateCoins` at once. Real IAP receipt
-   * verification is the caller's concern (meta); here it is treated as an already-authorized purchase.
+   * stack open-endedly. Extends the subscription by `days` and grants `immediateCoins` at once. Real receipt
+   * verification (native/WeChat: verifyNonCoinReceipt; web: Paddle webhook signature) happens in the caller
+   * (meta) BEFORE this is invoked — see monthlyCardBuy/yearCardBuy's `channel` doc.
    */
   protected async subscriptionCardBuy(args: {
     accountId: string;
     orderId: string;
     days: number;
     immediateCoins: number;
+    /** Funds `recharged.<channel>` instead of the free pool — the caller's verified recharge platform (ADR-020),
+     * mapped via spendChannel.ts's rechargeChannelOf. Absent = free pool (should not happen post-gate, but a
+     * safe default). Also used as the display bucket for the returned `coinsAfter` unless `clientPlatform`
+     * overrides it (see displayChannelOf). */
+    channel?: RechargeChannel;
+    clientPlatform?: string;
   }): Promise<Result<{ coinsAfter: number; subscriptionExpiry: number }>> {
     const existing = await this.cols.orders.findOne({ _id: args.orderId });
     if (existing) {
       const w = await this.cols.wallets.findOne({ _id: existing.accountId });
-      return { ok: true, coinsAfter: w?.coins ?? 0, subscriptionExpiry: w?.subscription?.expiry ?? 0 };
+      return { ok: true, coinsAfter: effectiveCoins(w, displayChannelOf(args.channel, args.clientPlatform)), subscriptionExpiry: w?.subscription?.expiry ?? 0 };
     }
     const now = this.now();
     // Claim the order slot first. Concurrent replays of the SAME orderId race here; only one wins, the rest take the
@@ -324,7 +379,7 @@ export class CommercialServiceBase {
     } catch (e) {
       if ((e as { code?: number }).code === 11000) {
         const w = await this.cols.wallets.findOne({ _id: args.accountId });
-        return { ok: true, coinsAfter: w?.coins ?? 0, subscriptionExpiry: w?.subscription?.expiry ?? 0 };
+        return { ok: true, coinsAfter: effectiveCoins(w, displayChannelOf(args.channel, args.clientPlatform)), subscriptionExpiry: w?.subscription?.expiry ?? 0 };
       }
       throw e;
     }
@@ -340,7 +395,7 @@ export class CommercialServiceBase {
       args.days,
       args.immediateCoins,
       now,
-      { orderId: args.orderId },
+      { orderId: args.orderId, channel: args.channel, clientPlatform: args.clientPlatform },
     );
     await this.cols.orders.updateOne({ _id: args.orderId }, { $set: { coinsAfter } });
     return { ok: true, coinsAfter, subscriptionExpiry: expiry };

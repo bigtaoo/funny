@@ -470,3 +470,112 @@ ShopScene → buyMonthlyCard()/buyYearCard() → createAppCore.doBuySubscription
   `server/metaserver/test/paddle-routes.e2e.test.ts`（新增新手包 checkout+webhook 5 例，含幂等重放）、
   `client/test/shopNav-buySubscription.test.ts`（原生购买+收据传递+取消/拒绝路径+null-iapKind 隐藏按钮断言）、
   `client/test/ui/shopScene.ui.ts`（¥ 价格取代"免费"标签）全部更新并通过。
+
+---
+
+## 11. 钱包按支付渠道隔离（ADR-020，2026-07-27）
+
+> 状态：✅ 已实现（西方大区共享部署内）。解决 [`DECISIONS.md` ADR-020](../DECISIONS.md#adr-020-跨平台账号钱包隔离边界--accepted--2026-06-23)
+> 遗留的"钱包/充值币按支付渠道隔离"缺口：站外渠道购买的虚拟货币不得在 Apple/Google 内消费（反之亦然），否则违反
+> 各平台的 IAP 反绕过条款。触发原因：iOS/Android 原生 IAP 一旦上线（`IOS_RELEASE.md` 记录 7 个 IAP 商品尚未在
+> App Store Connect 建好，原生购买尚未真正上线），会与 web(Paddle) 共享**同一套全局部署 + 同一个 `wallets` 集合**
+> （§7：commercial 单实例托管，`NW_IAP_BUNDLE` 只是换个环境变量，走的还是这份代码/这份库）——不像微信线是完全独立
+> 部署（ADR-019/020），跨渠道混用在这里是真实可能发生的。
+
+### 11.1 两个方案的取舍
+
+评估过两个方向：
+
+1. **钱包按支付渠道拆分可花池**（本方案，已实现）：`wallets.coins` 保持为免费池（广告/胜场/兑换码/退款等非充值
+   来源，处处可花），新增 `wallets.recharged: {web?, apple?, google?}` 按渠道标记的充值池，只有请求平台匹配的
+   渠道才可花/可见。
+2. **iOS/Android 各自独立部署**（照搬微信的隔离模式）：否决。理由——
+   - `accounts.ts` 的身份隔离本就是"默认独立 accountId，用户主动 `bind*` 才跨端合并"（ADR-020 原文），**跨平台
+     用同一账号是一个活的、有意为之的功能**（例如 web 上用密码注册，之后在 iOS App 用同一账号登录），不是像微信
+     那样被 PIPL 强制切断——若原生走独立部署，这个已支持的多端游玩能力会被牺牲，且"同一个逻辑账号分裂在两套库
+     里"比"同一个钱包内部按渠道分桶"更难维护一致的天梯/存档体验。
+   - `IOS_RELEASE.md §4.2` 的既定计划本就是原生 IAP 复用同一套 VPS commercial 服务（只改 `NW_IAP_BUNDLE`），
+     若改独立部署是对已成型上线计划的大改，收益（隔离更彻底）不及成本（部署复杂度、账号体验倒退）。
+   - 实际改造范围也比预想小：debit（花费）侧集中在 `shop.ts`/`gachaDraw.ts` 两处原子扣款，credit（充值）侧只有
+     `recharge.ts`/`subscription.ts`/`starter.ts` 三处真实来自付费渠道，其余（ads/victory/promo/refund/grant）
+     天然是免费池，无需改造。
+
+### 11.2 数据结构
+
+```ts
+// server/commercial/src/spendChannel.ts
+type RechargeChannel = 'web' | 'apple' | 'google';        // 微信不进这张表——完全独立部署/独立库，天然合规
+
+// server/commercial/src/db.ts WalletDoc 新增字段
+recharged?: Partial<Record<RechargeChannel, number>>;       // 按渠道标记的充值余额；缺省/历史钱包 = {} 全 0
+```
+
+- **`coins`（既有字段）语义不变**：免费获得的币（广告奖励/胜场奖励/兑换码/退款/邮件补偿/月卡每日签到等），任何
+  平台随时可花——这也是**迁移前存量余额的归属**：本功能上线前累积的 `coins` 一律留在免费池，不回溯拆分到具体
+  渠道（不可能精确复原历史来源，且上线时 Apple/Google 真实充值余额为 0，这个简化零风险）。
+- **`recharged.<channel>`**：只有下列三处真金白银的入账会写入，其余一律进免费池：
+  - `recharge.ts` 的 `rechargeVerify`/`paddleComplete`（IAP/Paddle 充值验单成功）——渠道来自验单本身的 `platform`
+    参数（`paddle`/`stripe` → `web`；`apple` → `apple`；`google` → `google`），经 `rechargeChannelOf()` 映射。
+  - `subscription.ts` 的 `monthlyCardBuy`/`yearCardBuy`、`starter.ts` 的 `starterBuy`（`starter_growth`）——这三个
+    端点自 §10.8 起也要求真实验单，其即赠 coins 同理按 `rechargePlatform` 归渠道；Paddle webhook 调用路径硬编码
+    `rechargePlatform:'paddle'`（该路径就是 web 专属，无需再猜）。
+
+### 11.3 花费侧：按「请求平台」门控
+
+新增 `X-NW-Platform` 请求头（客户端声明，`ios`/`android`/`web`/`wechat`/`crazygames`）：
+
+```
+client/src/net/ApiClient/base.ts  fetchRaw()
+  ── 探测 window.NWBilling.kind（原生壳注入，同 §10.2 复用的信号）→ 'ios'/'android'
+     否则回退构建期 TARGET → 'web'/'wechat'/'crazygames'
+  ── 每次请求都带上，metaserver 用 clientPlatformOf(req) 读取并转发给 commercial 作 clientPlatform 参数
+```
+
+commercial 内部把 `clientPlatform` 映射为「本次请求可花的渠道桶」（`spendChannelOf()`：`ios→apple`，
+`android→google`，其余（含缺省，兼容还没升级到这版客户端的旧请求）`→web`），**任一花费请求的有效余额 = 免费池
++ 该渠道桶**，扣款顺序**先扣免费池，免费池不够再扣渠道桶**（`base.ts` 的 `debitEffective()`，用 MongoDB 聚合
+管道 `$expr` 做原子守卫 + 拆分扣减，同文档一次 `findOneAndUpdate` 完成，与既有扣币模式一致零事务）：
+
+```
+effectiveCoins(wallet, channel) = wallet.coins + (wallet.recharged?.[channel] ?? 0)
+```
+
+余额展示同理：`GET /internal/wallet` 现在接受可选 `clientPlatform`，返回的 `coins` 就是上面这个"对本次请求平台
+而言的有效余额"——**同一个账号在 web 和 iOS 上可能看到不同的 `coins` 数字**，这是设计的直接后果而非 bug：例如
+一个绑定了同一账号的玩家，web 端 Paddle 充的钱在 iOS App 里不可见/不可花，反之亦然；免费池部分两端看到的永远
+一致。`getSave`（每次登录/刷新的主入口）已接入这套显示逻辑；`grant()` 类纯免费加币的少数边角调用点（邮件补偿、
+背包满溢补偿、battlepass_claim 等）暂未逐一穿透 `clientPlatform`，其返回的 `coinsAfter` 在跨渠道场景下可能有
+短暂的展示口径偏差（下次任意一次 `getSave`/spend 自动纠正）——不影响可花性，已知取舍，见 §11.5。
+
+### 11.4 落地范围（改了什么）
+
+- `server/commercial/src/spendChannel.ts`（新增）：`RechargeChannel` + `rechargeChannelOf`/`spendChannelOf`/
+  `effectiveCoins`/`displayChannelOf` 四个纯函数，全部单测覆盖（`test/spendChannel.test.ts`）。
+- `server/commercial/src/db.ts`：`WalletDoc.recharged` 字段。
+- `server/commercial/src/service/base.ts`：`credit()`/新增 `debitEffective()`/`getWallet()`/`applySubscription()`/
+  `subscriptionCardBuy()` 均加 `channel`（充值目标渠道）+ `clientPlatform`（展示/花费渠道）参数。
+- `server/commercial/src/service/{shop,gachaDraw,recharge,subscription,starter,rewards,promo}.ts`：所有扣款/加币
+  调用点穿透上述参数；`internalHttp.ts` 对应端点解析 `clientPlatform`/`rechargePlatform` 请求体字段。
+- `server/metaserver/src/service/base.ts`：新增 `clientPlatformOf(req)`（读 `X-NW-Platform`）。`economy.ts`/
+  `auth.ts`（改名扣币）/`progression.ts`（战令购买）/`pve.ts`（体力购买）/`equipment.ts`（强化/重铸扣币）/
+  `save.ts`（`getSave` 余额镜像）/`paddle.ts`（webhook 侧硬编码 `web` 渠道）全部穿透。**未刻意选择不改**的是
+  纯免费加币的边角调用点（§11.3 末段），风险已评估为可接受。
+- `client/src/net/ApiClient/base.ts`：`fetchRaw()` 加 `X-NW-Platform` 请求头。
+- 测试：`server/commercial/test/spendChannel.test.ts`（纯函数单测）+
+  `server/commercial/test/walletChannelIsolation.e2e.test.ts`（真实 Mongo e2e：apple/web 充值互相不可见不可花、
+  免费池处处可花、扣款先免费池后渠道桶、Paddle webhook 路径同样隔离），随现有 136 条 commercial 用例一起跑绿。
+
+### 11.5 已知取舍 / 后续跟进
+
+- **存量余额不回溯拆分渠道**（§11.2）：接受，见上。
+- **少数纯免费 grant 调用点未穿透 `clientPlatform`**（§11.3 末段）：只影响那次响应里 `coinsAfter` 的展示口径，
+  不影响可花性/资金安全，下次 `getSave`/任意花费请求自动纠正。若未来发现体验上确有感知，可补齐（清单：
+  `liveops.ts` 签到/成就/每日任务、`social.ts` 邮件领取、`progression.ts` 战令领取、根 `economy.ts` 的背包满溢
+  币补偿、`ads.ts` 独立广告端点）。
+- **月卡/年卡/新手包在原生渠道的真实验单尚未上线**（`IOS_RELEASE.md` 待办：ASC 7 个 IAP 商品未建）：`recharged`
+  的 `apple`/`google` 桶目前在生产环境恒为 0，这也是为什么现在改动是安全的——没有真实资金需要迁移，赶在有真实
+  资金之前把机制落地正是本次改造的目的（`DECISIONS.md` ADR-020 原文："现在就要记入数据结构设计，避免后期迁移"）。
+- **`X-NW-Platform` 是客户端自报的**，不是身份鉴权边界：伪造该头顶多是"在自己的钱包里选错桶"，不构成跨账号越权
+  （每个账号的 `wallets` 文档仍按 `accountId` 隔离），且原生 App 二进制里这个值是硬编码派生自 `window.NWBilling`
+  /构建期 `TARGET`，普通玩家无法在不修改客户端的情况下伪造；与本仓其余客户端可信边界的处理方式一致（如
+  `platform` 字段用于广告奖励的信号验证同样只做签名校验，不做"客户端绝对可信"假设之外的加固）。
