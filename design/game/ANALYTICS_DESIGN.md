@@ -239,10 +239,11 @@ scene 取值：`IntroScene / LobbyScene / LoginScene / CampaignMapScene / LevelP
 |---|---|---|
 | `churn_signal` | `reason, scene` | reason: background/explicit_exit/idle_10min |
 | `tutorial_start` / `tutorial_complete` | `level_id` | 开始/完成新手引导（§9.6 引导漏斗用） |
-| `tutorial_skip` | `step` | 跳过引导 |
+| `tutorial_skip` | `step` | 跳过引导（`step:'tutorial'`，来自 `game.ts`；`step:'intro'` 已改用专属 `intro_skip`，见下） |
 | `tutorial_step` | `level_id, phase, step_key, step_index` | 教程内部小步骤（§9.7 教程步骤漏斗用），`step_key` 见 `TUTORIAL_ORDERED_KEYS` |
 | `nav_checkpoint` | `scene` | 场景级漏斗用（§9.7），100% 采样，仅在 `screen_view` 命中场景白名单时自动补发 |
 | `login_gate_hit` | `scene` | 离线功能门控弹「需要登录」 |
+| `intro_complete` / `intro_skip` | — | 首启故事 `IntroScene` 看完/跳过（`app/nav/auth.ts` `goIntro` 的 `onFinish(skipped)`），design-doc-audit-2026-07 补齐——此前这一步完全没有埋点。100% 采样，纳入 §9.6 `ONBOARDING_STEPS` 的 `intro_seen` 步骤 |
 
 ### 5.7 成就漏斗（Achievement，S9-8）
 
@@ -266,6 +267,19 @@ scene 取值：`IntroScene / LobbyScene / LoginScene / CampaignMapScene / LevelP
 
 - **聚合查询**：analyticsvc `/internal/query?type=badge_dist&days=N` → `queryBadgeDist`，按 `(mode, result, hero)` 分组计数（计**局数**非设备数），返回 `{ mode, result, badge, count }[]`。经 admin `/admin/analytics/events` 透传，ops「Analytics」页按 mode 各出一张透视表（徽章行 × win/loss/draw 列 + 合计 + 占比条）。
 - **健康判据**：某个 badge 在某 mode 下占比逼近 100% = 校准退化（人人同称号）；理想是多个徽章都有可观占比、且随打法变化。这正是 §4.26 把 `REF_EFFICIENT` 5→12 之后要盯的指标。
+
+### 5.9 首次功能引导（Feature guide，design-doc-audit-2026-07）
+
+`showFeatureGuide`/`withGuide`（`client/src/scenes/LobbyScene/overlays.ts` + `client/src/app/nav/lobby.ts`，机制见 `ONBOARDING_DESIGN.md` §4.1）此前**无任何埋点**——ONBOARDING_DESIGN §7 的漏斗节点「各功能首次引导 弹出/关闭/再看」完全没有数据。新增三个事件，均 `sample:1.0`：
+
+| 事件 | 必填属性 | 说明 |
+|---|---|---|
+| `feature_guide_shown` | `feature` | 首次打开某功能页时弹出引导卡（`feature` ∈ `match/shop/social/cards/daily/world/auction`，即 `withGuide` 的 `featureId`） |
+| `feature_guide_closed` | `feature` | 玩家点「知道了」关闭引导卡（`clearGuide`），紧随其后才导航进入该功能 |
+| `feature_guide_replay` | `feature` | 通过页面内「?」按钮重新打开已看过的引导。**尚未产出数据**——`ONBOARDING_DESIGN.md` §8/§10 记录「各子页内「?」按钮未逐页接」是独立待办；本次只预留事件名 + 采样配置，避免该 UI 落地时又漏配采样 |
+
+- **口径**：`shown`/`closed` 是配对的——`withGuide` 只在 `saveManager.featSeen(featureId)` 为 false 时才弹卡（并立即 `markFeatSeen`），所以同一账号同一 feature 理论上只会有一条 `shown` + 一条 `closed`（除非中途被销毁场景打断，见 `overlays.ts` 的 `destroyed` 早退分支，那种情况下两者都不会发）。
+- **聚合查询**：`GET /internal/query?type=feature_guide_funnel` → `AnalyticsService.queryFeatureGuideFunnel(days, platform?)`，按 `props.feature` 分组统计去重设备的 shown/closed/replays，按关闭率（`closed/shown`）**升序**返回——关闭率低的（=玩家没关就走/引导没读完）排最前，与 `level_funnel` 的排序哲学一致（越可能有问题的排越前）。ops「Analytics」页新增一张卡，`replays` 列在「?」按钮接入前恒为 0。
 
 ---
 
@@ -557,8 +571,8 @@ cohort（某日活跃设备）
 
 回答「玩家**第一次进游戏**都做了什么、在哪一步流失、多少人过了新手引导」。`AnalyticsService.queryFirstSession(days)` 先取每个设备**最早的 `session_start`**，只保留其首次会话落在窗口 `[今起前 days 天, 今日结束]` 内的设备（= 新用户 cohort），随后所有统计**只看这一次首次会话**（按 `session_id` 关联，与老用户彻底隔离）。
 
-- **新手引导漏斗** `funnel`（有序、逐步转化）：`ONBOARDING_STEPS`（`service.ts`）= 打开 → 开始引导 → **完成引导** → 首战 → 首通。相邻步转化率定位首日流失点；`tutorial_complete ÷ tutorial_start` 即引导完成率。步骤判定基于首次会话的事件集合，改 `ONBOARDING_STEPS` 一处即可增删步骤。
-  - **采样一致性（关键）**：漏斗每步都取自 **100% 采样事件**（`session_start / tutorial_start / tutorial_complete / game_start / level_complete`，见 `DEFAULT_CONFIG`），各步计数才可直接相比。**故意不含** intro/进大厅这类 `screen_view` 派生里程碑——`screen_view` 只 5% 采样，混进来会把采样损耗误显示成流失悬崖。`tutorial_start/complete` 本来漏配、回落到 `defaultSample=0.1`，本次一并提到 1.0（否则引导完成率失真）。
+- **新手引导漏斗** `funnel`（有序、逐步转化）：`ONBOARDING_STEPS`（`service.ts`）= 打开 → **看完/跳过 intro** → 开始引导 → **完成引导** → 首战 → 首通。相邻步转化率定位首日流失点；`tutorial_complete ÷ tutorial_start` 即引导完成率。步骤判定基于首次会话的事件集合，改 `ONBOARDING_STEPS` 一处即可增删步骤。
+  - **采样一致性（关键）**：漏斗每步都取自 **100% 采样事件**（`session_start / intro_complete|intro_skip / tutorial_start / tutorial_complete / game_start / level_complete`，见 `DEFAULT_CONFIG`），各步计数才可直接相比。**故意不含**进大厅这类 `screen_view` 派生里程碑——`screen_view` 只 5% 采样，混进来会把采样损耗误显示成流失悬崖。`intro_seen` 步骤是例外：它读的是专属 `intro_complete`/`intro_skip` 事件而非 `screen_view`，design-doc-audit-2026-07 补入（此前这一步完全没数据，见 §5.6 事件表、`ONBOARDING_DESIGN.md` §7 的核实记录）。`tutorial_start/complete` 本来漏配、回落到 `defaultSample=0.1`，此前已一并提到 1.0（否则引导完成率失真）。
 - **首会话行为分布** `actions`：首次会话里命中的场景（`screen_view` 的 scene，`kind:'scene'`）与语义动作（除 `session_start/session_end/screen_view/churn_signal` 外的全部事件名，含 `ui_click`，`kind:'action'`）各自的去重设备数 + 占 cohort 比例，按覆盖降序。回答「首日玩家都点了哪些功能」。
   - action 行多为 100% 采样事件（`game_start/shop_buy/gacha_draw/tutorial_*/ui_click…`），可信；**scene 行来自 5% 采样的 `screen_view`，系统性欠采**（ops 卡片已标注）。因此「首日点了哪个按钮」主要看 `ui_click`（如 `lobby.shop`）与语义动作，而非 scene 行。
 - **口径注意**：「最早」仅在事件保留窗口内判定（events TTL=90 天）。真正首次会话早于保留期、却在窗口内回流的设备，不会被误判为新用户。
@@ -566,6 +580,7 @@ cohort（某日活跃设备）
 
 ```
 新用户 cohort（首次 session_start 在窗口内的设备）
+    ↓ intro_complete | intro_skip  看完/跳过首启故事
     ↓ tutorial_start               开始引导
     ↓ tutorial_complete            完成引导  ← 引导完成率
     ↓ game_start                   首战（非引导局）
@@ -583,6 +598,8 @@ cohort（某日活跃设备）
 **场景/页面级漏斗** `GET /internal/query?type=scene_funnel`：`screen_view` 只 5% 采样（见 9.6 的采样告诫），不足以支撑可靠的按场景漏斗。因此新增 100% 采样事件 `nav_checkpoint`，由 `client/src/analytics/index.ts` 的 `track()` 在 `screen_view` 命中场景白名单 `NAV_CHECKPOINT_SCENES`（`LoginScene/IntroScene/LobbyScene/CampaignMapScene/LevelPrepScene/GameScene`，对应 analyticsvc 的 `SCENE_FUNNEL_SCENES`）时自动补发，覆盖「登录→引导→大厅→选关→备战→开战」核心新客路径。cohort = 窗口内所有 `session_start` 的 session（不限于首次会话）。
 
 三者共用同一套 cohort-funnel 引擎（`AnalyticsService.computeStepFunnel`），ops 页面共用 `renderStepFunnel()` 渲染函数。
+
+**功能引导漏斗** `GET /internal/query?type=feature_guide_funnel`（design-doc-audit-2026-07）：`AnalyticsService.queryFeatureGuideFunnel(days, platform?)`，与关卡级漏斗同一套写法——对 `feature_guide_shown/feature_guide_closed/feature_guide_replay` 按 `props.feature` 分组统计去重设备数，按关闭率**升序**返回。字段定义见 §5.9。与 `level_funnel` 一样是「按 key 独立计数」，不是 cohort-funnel（不复用 `computeStepFunnel`）。
 
 ### 9.8 设备 / 地理分布（A9-9）
 
@@ -633,7 +650,7 @@ cohort（某日活跃设备）
 | 社交 | `friend_add` | `goFriends()` respond(accept) 成功 |
 | 社交 | `pvp_room_create{mode}` | `goRoom()` createRoom/createRanked/queueRanked |
 | 社交 | `pvp_match_start{mode}` | `goGameNet()` |
-| 流失 | `tutorial_skip{step}` | `IntroScene` 跳过按钮（`onFinish(skipped)` 回传） |
+| 流失 | `tutorial_skip{step}` | `IntroScene` 跳过按钮（`onFinish(skipped)` 回传）——`step:'intro'` 一支已被 §12.5 的专属 `intro_skip` 取代 |
 | 流失 | `login_gate_hit{scene}` | `goFriends`/`goWorldEntry` 离线门控 |
 | 导航 | `screen_view` 补 7 场景 | Settings/Shop/Gacha/LevelPrep/Collection/Stats/Result |
 | 关卡 | `level_abandon{phase:'prep'}` | `goLevelPrep()` onBack |
@@ -650,3 +667,18 @@ cohort（某日活跃设备）
 ### 12.4 采样配置补全
 
 `service.ts` `DEFAULT_CONFIG` 补入新事件采样率（`shop_close/gacha_draw/recharge/friend_add/pvp_room_create/pvp_match_start/tutorial_skip/login_gate_hit` 均 `1.0`），避免落入 `defaultSample:0.1` 漏采转化/流失事件。
+
+### 12.5 补齐 intro + 首次功能引导埋点（design-doc-audit-2026-07）
+
+设计文档审计（`ONBOARDING_DESIGN.md` §7）逐节点核实漏斗埋点覆盖度时发现两处此前完全没有 `analytics.track` 调用的功能性缺口，本次一并补齐：
+
+| 节点 | 补入事件 | 落点 |
+|---|---|---|
+| intro 完成/跳过 | `intro_complete` / `intro_skip`（100% 采样，取代 `tutorial_skip{step:'intro'}`） | `client/src/app/nav/auth.ts` `goIntro()` 的 `onFinish(skipped)` |
+| 首次功能引导 弹出/关闭 | `feature_guide_shown` / `feature_guide_closed{feature}`（100% 采样） | `client/src/app/nav/lobby.ts` `withGuide()` |
+| 首次功能引导 再看（预留） | `feature_guide_replay{feature}`（配置已加，尚无客户端调用点） | 待 `ONBOARDING_DESIGN.md` §8/§10 的页面内「?」按钮接入后补 |
+
+同时：
+- `ONBOARDING_STEPS`（§9.6）新增 `intro_seen` 步骤（`intro_complete` 或 `intro_skip` 命中即算），首次纳入 intro 到「首次会话新手引导漏斗」。
+- 新增查询类型 `GET /internal/query?type=feature_guide_funnel`（`AnalyticsService.queryFeatureGuideFunnel`，写法同 `queryLevelFunnel`），ops「Analytics」页新增对应卡片。字段定义见 §5.9，查询说明见 §9.7。
+- 登录方式（试玩/匿名/正式）节点仍未接专属事件——优先级较低，本次不强制，留给后续迭代（`ONBOARDING_DESIGN.md` §7 已记录）。

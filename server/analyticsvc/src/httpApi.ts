@@ -179,6 +179,10 @@ export function startHttpApi(
           const scene_funnel = await svc.querySceneFunnel(days);
           return send(res, 200, ok({ type, scene_funnel }));
         }
+        if (type === 'feature_guide_funnel') {
+          const feature_guide_funnel = await svc.queryFeatureGuideFunnel(days, platform);
+          return send(res, 200, ok({ type, feature_guide_funnel }));
+        }
         if (type === 'browser_dist') {
           const browser_dist = await svc.queryBrowserDist(days);
           return send(res, 200, ok({ type, browser_dist }));
