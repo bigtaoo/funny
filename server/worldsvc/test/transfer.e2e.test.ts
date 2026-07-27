@@ -9,7 +9,7 @@ import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import {
   playerWorldId, SLG_MAP_W, SLG_MAP_H, SHARD_TRANSFER_COOLDOWN_MS,
 } from '@nw/shared';
-import { createWorldMongo, type WorldMongo, type MarchDoc, type OccupationDoc } from '../src/db';
+import { createWorldMongo, type WorldMongo, type MarchDoc, type OccupationDoc, type StationedDoc } from '../src/db';
 import { WorldService } from '../src/service';
 
 const URI = process.env.NW_MONGO_URI ?? 'mongodb://127.0.0.1:27017/?replicaSet=rs0';
@@ -38,6 +38,7 @@ describe.skipIf(!mongo)('worldsvc G6 shard transfer/merge e2e (§27)', () => {
     await Promise.all([
       c.worlds.deleteMany({}), c.playerWorld.deleteMany({}), c.tiles.deleteMany({}),
       c.marches.deleteMany({}), c.occupations.deleteMany({}), c.shardTransfers.deleteMany({}),
+      c.stationed.deleteMany({}),
     ]);
   }
   beforeEach(wipe);
@@ -123,6 +124,39 @@ describe.skipIf(!mongo)('worldsvc G6 shard transfer/merge e2e (§27)', () => {
     };
     await m.collections.occupations.insertOne(hold);
     await expect(svc.transferShard('p1', a, b)).rejects.toMatchObject({ code: 'TRANSFER_BUSY' });
+  });
+
+  it('blocks transfer while a team is stationed (parked in the field) in the source shard (design-doc-audit-2026-07 gap)', async () => {
+    // Without this check, transferShard would leave a StationedDoc behind in a still-open source shard
+    // that nobody could ever recall (no playerWorld doc left to own it) — a ghost that permanently squats
+    // its tile under the "one park per tile" rule (combatMarch.ts), plus a stale Redis occ/cover entry.
+    const [a, b] = await twoShards(42);
+    await svc.joinWorld(a, 'p1');
+    const stationed: StationedDoc = {
+      _id: `${a}:5:5`, worldId: a, ownerId: 'p1', tile: `${a}:5:5`, x: 5, y: 5,
+      teamId: 't1', army: [], troops: 10, sinceAt: 1,
+    };
+    await m.collections.stationed.insertOne(stationed);
+    await expect(svc.transferShard('p1', a, b)).rejects.toMatchObject({ code: 'TRANSFER_BUSY' });
+    // Recalling (i.e. the doc no longer exists) unblocks it, same as the march/occupation cases above.
+    await m.collections.stationed.deleteOne({ _id: stationed._id });
+    await expect(svc.transferShard('p1', a, b)).resolves.toBeTruthy();
+  });
+
+  it('mergeShard force-clears stationed teams too (design-doc-audit-2026-07 gap) — no ghost doc survives in the closed source shard', async () => {
+    const [a, b] = await twoShards(43);
+    await svc.joinWorld(a, 'p1');
+    const stationed: StationedDoc = {
+      _id: `${a}:6:6`, worldId: a, ownerId: 'p1', tile: `${a}:6:6`, x: 6, y: 6,
+      teamId: 't1', army: [], troops: 10, sinceAt: 1, mode: 'garrison',
+    };
+    await m.collections.stationed.insertOne(stationed);
+
+    const r = await svc.mergeShard(a, b);
+    expect(r.moved).toBe(1);
+    expect(r.failed).toEqual([]);
+    // No leftover StationedDoc in the (now closed) source shard for this account.
+    expect(await m.collections.stationed.findOne({ _id: stationed._id })).toBeNull();
   });
 
   it('enforces the per-account cooldown within a season, but not across seasons', async () => {
