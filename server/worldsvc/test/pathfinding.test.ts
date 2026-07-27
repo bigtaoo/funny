@@ -5,6 +5,7 @@ import {
   findMarchPath,
   marchDurationFromPath,
   proceduralTile,
+  provinceIdxAt,
   MARCH_SPEED_SEC_PER_TILE,
   SLG_MAP_W,
   SLG_MAP_H,
@@ -57,6 +58,46 @@ describe('findMarchPath', () => {
       const dy = Math.abs(path[i].y - path[i - 1].y);
       expect(dx + dy).toBe(1); // exactly 1 tile per step, 4 directions
     }
+  });
+
+  it('long diagonal march on the real 1500×1500 map resolves (ADR-049 A* tie-break regression, 2026-07-27)', () => {
+    // Before the tie-break fix, 4-directional movement + an exact Manhattan heuristic ties on EVERY
+    // monotone lattice path between two points, so a plain min-heap A* could need to expand close to
+    // the full dx×dy bounding box before confirming the optimal path. On the old 500×500 map the worst
+    // case (~350×350≈122,500 cells) stayed under MAX_NODES=500,000; on the new 1500×1500 map (ADR-049)
+    // a routine diagonal distance like dx=dy=600 (360,000-cell box) blew past it and findMarchPath
+    // incorrectly returned null (PATH_BLOCKED) for an obviously-reachable open-ground destination
+    // (design-doc-audit-2026-07, ECONOMY_VERIFICATION_LOG.md §13-SLG-MARCH.4).
+    //
+    // A fixed coordinate pair isn't safe here: ADR-034's ring/river-chord/branch terrain is seed-derived,
+    // so a hardcoded (fx,fy)->(tx,ty) can land on a genuinely-blocking band for some seeds (a real block,
+    // not the tie-break bug). Instead, search within a single province's mid-radius band (same technique
+    // as econ-sim's marchFatigue.ts intra-province-far sampling) for a long-diagonal pair this seed
+    // actually leaves open, then assert on that pair — this isolates the tie-break fix from the (correct,
+    // separate) crossing-gate behavior.
+    const cx = SLG_MAP_W / 2, cy = SLG_MAP_H / 2;
+    const sectorWidth = (2 * Math.PI) / 6;
+    let found: { fx: number; fy: number; tx: number; ty: number } | null = null;
+    for (let spread = 0.9; spread >= 0.4 && !found; spread -= 0.1) {
+      const r = 0.65 * Math.sqrt(cx * cx + cy * cy);
+      const a1 = sectorWidth * (0.5 - spread / 2);
+      const a2 = sectorWidth * (0.5 + spread / 2);
+      const fx = Math.round(cx + r * Math.cos(a1));
+      const fy = Math.round(cy + r * Math.sin(a1));
+      const tx = Math.round(cx + r * Math.cos(a2));
+      const ty = Math.round(cy + r * Math.sin(a2));
+      if (provinceIdxAt(fx, fy) !== provinceIdxAt(tx, ty)) continue;
+      if (Math.abs(tx - fx) + Math.abs(ty - fy) < 400) continue; // want a genuinely long diagonal, not a short hop
+      const path = findMarchPath(W_OPEN, SLG_MAP_W, SLG_MAP_H, fx, fy, tx, ty, new Set());
+      if (path) found = { fx, fy, tx, ty };
+    }
+    expect(found).not.toBeNull();
+    const { fx, fy, tx, ty } = found!;
+    const path = findMarchPath(W_OPEN, SLG_MAP_W, SLG_MAP_H, fx, fy, tx, ty, new Set());
+    expect(path).not.toBeNull();
+    // Must find the OPTIMAL path (Manhattan distance), not merely SOME path — the tie-break must never
+    // cause A* to settle for a longer-than-optimal route.
+    expect(path!.length - 1).toBe(Math.abs(tx - fx) + Math.abs(ty - fy));
   });
 });
 
