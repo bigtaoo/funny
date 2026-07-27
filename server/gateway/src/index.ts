@@ -37,7 +37,10 @@ async function main(): Promise<void> {
     gateway.routeBroadcast,
     gateway.routeKick,
   );
-  if (subscriber) gateway.setKickPublisher((accountId, originInstanceId) => void subscriber.publishKick(accountId, originInstanceId));
+  if (subscriber) {
+    gateway.setKickPublisher((accountId, originInstanceId) => void subscriber.publishKick(accountId, originInstanceId));
+    gateway.setPresenceStore(subscriber);
+  }
 
   const shutdown = (): void => {
     gateway.close();

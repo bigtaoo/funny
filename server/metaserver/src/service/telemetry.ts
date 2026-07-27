@@ -7,7 +7,7 @@ import { ok, FLAG_KEYS, flagDefault, extractBearer, verifyToken, FLAG_PLATFORMS 
 import { ErrorCode, err } from '@nw/shared';
 import { buildLokiPayload, buildAnomalyLokiPayload, pushToLoki, type ClientLogEntry, type ClientAnomalyEvent } from '../clientLog.js';
 import type { MetaHandlers } from '../generated/routes.gen.js';
-import { SlidingRateLimiter, type Constructor, type MetaBaseCtor } from './base.js';
+import { createRateLimiter, type Constructor, type MetaBaseCtor } from './base.js';
 
 type TelemetryHandlers = Pick<
   MetaHandlers,
@@ -19,8 +19,10 @@ const CLIENT_LOG_KEYS = FLAG_KEYS.filter((k) => k.startsWith('client_log_'));
 
 export function TelemetryMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase & Constructor<TelemetryHandlers> {
   return class extends Base {
-    /** Rate limit for "full coverage" anomaly event uploads, keyed by IP: at most 30 POST /client/anomaly requests per IP per 60s (guards against Loki flooding). In-process approximation. */
-    private readonly anomalyRate = new SlidingRateLimiter(30, 60 * 1000);
+    /** Rate limit for "full coverage" anomaly event uploads, keyed by IP: at most 30 POST /client/anomaly
+     *  requests per IP per 60s (guards against Loki flooding). Redis-backed when configured (2026-07-27,
+     *  precise across instances); in-process fallback otherwise — see createRateLimiter in base.ts. */
+    private readonly anomalyRate = createRateLimiter(this.deps.redis, 'anomaly', 30, 60 * 1000);
 
     /** Parse the flag evaluation context from the request: platform/publicId from query params + optional accountId from token. */
     private flagCtx(req: FastifyRequest): FlagContext {
@@ -123,7 +125,7 @@ export function TelemetryMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase &
         return reply.code(400).send(err(ErrorCode.BAD_REQUEST, 'missing events'));
       }
       // IP rate limit: over-limit is silently discarded (no 4xx, to prevent clients from retrying based on the response / probing the rate limit threshold).
-      if (!this.anomalyRate.allow(req.ip ?? 'unknown', this.deps.now())) return ok({ accepted: 0 });
+      if (!(await this.anomalyRate.allow(req.ip ?? 'unknown', this.deps.now()))) return ok({ accepted: 0 });
 
       // publicId is optional (anomalies can occur before login); defaults to 'anon' and is still reported to enable statistics on anonymous anomalies.
       const publicId = typeof body.publicId === 'string' && body.publicId ? body.publicId : 'anon';

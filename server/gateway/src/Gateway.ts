@@ -22,6 +22,7 @@ import {
 import type { MatchsvcClient, PushMsg } from './matchsvcClient';
 import type { MetaClient } from './metaClient';
 import type { SocialsvcClient } from './socialsvcClient';
+import type { GatewaySubscriber } from './redis';
 
 const HEARTBEAT_MS = 30_000;
 /** Maximum wait time for judge re-computation + report (includes network round-trip + client running the full match). */
@@ -87,6 +88,9 @@ export class Gateway {
   /** Set once Redis connects (index.ts); null in single-instance/no-Redis deployments, where the
    *  local eviction in onConnection() already fully covers same-account takeover. */
   private kickPublisher: ((accountId: string, originInstanceId: string) => void) | null = null;
+  /** Set once Redis connects (index.ts, same subscriber as kickPublisher above); null = presenceOf only
+   *  ever sees this instance's own connections (correct for today's single-instance deployment). */
+  private presenceStore: GatewaySubscriber | null = null;
   /** In-flight judge requests (requestId → pending). Cleared when a verdict arrives or on timeout. */
   private readonly pendingJudges = new Map<string, PendingJudge>();
   private judgeSeq = 0;
@@ -148,6 +152,11 @@ export class Gateway {
     this.kickPublisher = fn;
   }
 
+  /** Wired by index.ts once Redis connects — lets presenceOf() see accounts connected to a sibling instance. */
+  setPresenceStore(store: GatewaySubscriber): void {
+    this.presenceStore = store;
+  }
+
   /**
    * Cross-instance account takeover (2026-07-18, §8.4): received via Redis from another gateway
    * instance's onConnection(). Skip our own echo (we already evicted synchronously, in-process,
@@ -171,13 +180,24 @@ export class Gateway {
   /** Real-time stats aggregation (admin GET /internal/stats, OPS_DESIGN §4.1/§8): current number of online connections. */
   readonly stats = (): { online: number } => ({ online: this.conns.size });
 
-  /** Batch online-status query (used by meta to mark the online flag on friend lists). accountId → whether there is an active connection. */
-  readonly presenceOf = (accountIds: string[]): Record<string, boolean> => {
+  /**
+   * Batch online-status query (used by meta to mark the online flag on friend lists). accountId → whether
+   * there is an active connection — on THIS instance, or (2026-07-27) on a sibling instance via Redis, for
+   * any id not found locally. Checks local `conns` first so a single-instance deployment (today's reality)
+   * never touches Redis for this at all, and an id found locally never needs the (slower, best-effort) cross-
+   * instance round trip.
+   */
+  readonly presenceOf = async (accountIds: string[]): Promise<Record<string, boolean>> => {
     const out: Record<string, boolean> = {};
+    const unresolved: string[] = [];
     for (const id of accountIds) {
       const conn = this.conns.get(id);
-      out[id] = !!conn && conn.ws.readyState === conn.ws.OPEN;
+      if (conn && conn.ws.readyState === conn.ws.OPEN) out[id] = true;
+      else unresolved.push(id);
     }
+    if (unresolved.length === 0) return out;
+    const online = this.presenceStore ? await this.presenceStore.onlineAccountIds(unresolved) : new Set<string>();
+    for (const id of unresolved) out[id] = online.has(id);
     return out;
   };
 
@@ -282,6 +302,7 @@ export class Gateway {
     this.matchsvc.connected(accountId);
     // Friend online-status broadcast (SOC9): notify online friends that I came online + push me a snapshot of online friends.
     void this.broadcastPresence(accountId, true);
+    void this.presenceStore?.markOnline(accountId);
 
     ws.on('message', (data: Buffer, isBinary: boolean) => {
       conn.alive = true;
@@ -304,6 +325,7 @@ export class Gateway {
         this.matchsvc.disconnected(accountId);
         // Notify online friends that I went offline (no self-push; conn is already removed).
         void this.broadcastPresence(accountId, false);
+        void this.presenceStore?.markOffline(accountId);
       }
       // If this account was acting as a judge, immediately cancel its in-flight requests (no need to wait for timeout).
       for (const [id, p] of this.pendingJudges) {
@@ -584,6 +606,9 @@ export class Gateway {
       } catch {
         /* ignore */
       }
+      // Keep this account's cross-instance presence key from expiring (redis.ts PRESENCE_TTL_MS is sized
+      // to survive exactly one of these HEARTBEAT_MS gaps, so a crashed instance's accounts self-heal).
+      void this.presenceStore?.refreshOnline(conn.accountId);
     }
   }
 }
