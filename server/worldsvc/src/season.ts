@@ -341,8 +341,17 @@ export class SeasonService {
     )];
 
     // ③ Batch-delete large collections (tiles/marches/playerWorld/sieges may have tens of thousands of records).
+    // siegeDamage/occupations/stationed were missing here until 2026-07-27 (audit finding): each holds
+    // worldId-scoped rows tied to tiles/marches this loop already wipes, and a leftover `stationed` row
+    // in particular can trip its {worldId,ownerId,teamId} unique index for a returning player next season.
+    // mapBaselines is handled separately by the caller (httpApi's /admin/world/reset), which re-clones it
+    // from the active template exactly like /admin/world/open does — deleting it here without a re-clone
+    // would silently replace a hand-authored template layout with raw proceduralTile generation.
     const deleted: Record<string, number> = {};
-    for (const c of ['tiles', 'marches', 'playerWorld', 'nations', 'sieges', 'sects', 'sectMessages'] as const) {
+    for (const c of [
+      'tiles', 'marches', 'playerWorld', 'nations', 'sieges', 'sects', 'sectMessages',
+      'siegeDamage', 'occupations', 'stationed',
+    ] as const) {
       deleted[c] = await deleteInBatches(cols[c] as never, { worldId }, RESET_DELETE_BATCH);
     }
 

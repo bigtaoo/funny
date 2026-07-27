@@ -184,6 +184,11 @@ export function startHttpApi(
             }
             if (aurl.pathname === '/admin/world/reset') {
               const reset = await svc.resetSeason(worldId);
+              // §24 (2026-07-27 audit finding): mirrors /admin/world/open's clone step. resetSeason re-stamps
+              // mapW/mapH from current config, so a stale baseline from before a map-size change (or a template
+              // swap) must be replaced, not left in place — cloneActiveTemplateInto deletes+re-clones from
+              // whichever template is active now (still a safe no-op if none is).
+              await mapTemplateSvc.cloneActiveTemplateInto(worldId);
               return send(res, 200, ok(reset));
             }
             if (aurl.pathname === '/admin/world/close') {
