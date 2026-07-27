@@ -140,6 +140,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/account/cancel-deletion": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Undo a pending soft-delete within the 7-day grace period (C5-b), given the confirmToken from DELETE /account */
+        post: operations["cancelAccountDeletion"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/account/gdpr-consent": {
         parameters: {
             query?: never;
@@ -1127,6 +1144,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/friends/report": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** File a UGC report against another player (admin-review-only; does not block/unfriend) */
+        post: operations["reportUser"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/chat/conversations": {
         parameters: {
             query?: never;
@@ -1461,10 +1495,11 @@ export interface components {
             cardInventory?: {
                 [key: string]: number;
             };
-            /** @description Card instance inventory (instanceId→CardInstance); max 150 entries */
+            /** @description Card instance inventory (instanceId→CardInstance); max 500 entries */
             cardInv?: {
                 [key: string]: components["schemas"]["CardInstance"];
             };
+            cardInvCount?: number;
             cardMailOverflowCount?: number;
             equipMailOverflowCount?: number;
             equipped: {
@@ -1472,6 +1507,12 @@ export interface components {
             };
             flags: {
                 [key: string]: boolean;
+            };
+            everOwned?: {
+                hero?: string[];
+                equipment?: string[];
+                material?: string[];
+                skin?: string[];
             };
             /** @description Lifetime cumulative stats (StatKey→value), monotonically increasing, server-authoritative */
             stats?: {
@@ -1486,6 +1527,7 @@ export interface components {
             equipmentInv?: {
                 [key: string]: components["schemas"]["EquipmentInstance"];
             } | null;
+            equipmentInvCount?: number;
             retention?: {
                 checkin?: {
                     monthKey: string;
@@ -1756,6 +1798,7 @@ export interface components {
             screen_w?: number;
             screen_h?: number;
             dpr?: number;
+            consent?: boolean;
             events: components["schemas"]["AnalyticsEvent"][];
         };
     };
@@ -2047,6 +2090,40 @@ export interface operations {
             401: components["responses"]["ErrorResp"];
         };
     };
+    cancelAccountDeletion: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    confirmToken: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Deletion cancelled; account restored to normal standing */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {boolean} */
+                        ok: true;
+                        data: {
+                            ok: boolean;
+                        };
+                    };
+                };
+            };
+            400: components["responses"]["ErrorResp"];
+            401: components["responses"]["ErrorResp"];
+        };
+    };
     recordGdprConsent: {
         parameters: {
             query?: never;
@@ -2143,6 +2220,7 @@ export interface operations {
                             publicId?: string;
                             gatewayUrl?: string;
                             freeRename?: boolean;
+                            serverNow?: number;
                             activeMatch?: {
                                 roomId: string;
                                 gameUrl: string;
@@ -3072,6 +3150,7 @@ export interface operations {
                         data: {
                             coinsAfter: number;
                             coinsGranted: number;
+                            save: components["schemas"]["SaveData"];
                         };
                     };
                 };
@@ -3438,6 +3517,8 @@ export interface operations {
                                 publicId: string;
                                 elo: number;
                                 pvpRank: string;
+                                /** @description Entry-owner equipped title id (save.equipped.title), absent when none equipped */
+                                equippedTitle?: string;
                             }[];
                             /** @description Caller's own standing this season (absent when they have not played a ranked match this season). Rank may exceed 100. */
                             me?: {
@@ -4246,6 +4327,41 @@ export interface operations {
                 };
             };
             401: components["responses"]["ErrorResp"];
+        };
+    };
+    reportUser: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    publicId: string;
+                    reason?: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {boolean} */
+                        ok: true;
+                        data: {
+                            ok: boolean;
+                        };
+                    };
+                };
+            };
+            401: components["responses"]["ErrorResp"];
+            404: components["responses"]["ErrorResp"];
         };
     };
     getConversations: {

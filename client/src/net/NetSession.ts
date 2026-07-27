@@ -34,6 +34,7 @@ import {
   type SiegeResult,
   type FamilyMsg,
   type SectMsg,
+  type NationMsg,
   type DuelInvited,
   type DuelCancelled,
 } from './proto/transport';
@@ -71,6 +72,7 @@ export interface NetSessionHandlers {
   onSiegeResult?(s: SiegeResult): void;
   onFamilyMsg?(f: FamilyMsg): void;
   onSectMsg?(s: SectMsg): void;
+  onNationMsg?(n: NationMsg): void;
   // —— Friend challenge ("切磋", ADR friends-duel-confirm). Accepting skips straight to onMatchStart
   // (via match_found, same as any other match) — there is no separate "accepted" handler. ——
   onDuelInvited?(d: DuelInvited): void;
@@ -85,6 +87,17 @@ export class NetSession {
   readonly input: NetInputSource;
 
   handlers: NetSessionHandlers = {};
+  /**
+   * Handlers that must survive scene navigation, unlike `handlers` above — every scene wholesale
+   * *replaces* `handlers` on entry (`session.handlers = {...}`), so anything bound only there is
+   * silently dropped the moment the player navigates away. Duel invites ("切磋") can arrive while
+   * the recipient is anywhere in the app, not just on FriendsScene (the only scene that used to
+   * bind `onDuelInvited`) — previously the invite was dropped outright unless the recipient
+   * happened to already be sitting on Friends, and the inviter would see a confusing
+   * duel_cancelled{reason:'timeout'} 60s later (P0-8, comm-audit-2026-07-27 finding B9). Set once
+   * at session creation (createAppCore.getNetSession); never reassigned by scene code.
+   */
+  globalHandlers: Pick<NetSessionHandlers, 'onDuelInvited'> = {};
 
   private roomId = '';
   private localSide = -1;
@@ -278,8 +291,11 @@ export class NetSession {
       this.handlers.onFamilyMsg?.(msg.familyMsg);
     } else if (msg.sectMsg) {
       this.handlers.onSectMsg?.(msg.sectMsg);
+    } else if (msg.nationMsg) {
+      this.handlers.onNationMsg?.(msg.nationMsg);
     } else if (msg.duelInvited) {
       this.handlers.onDuelInvited?.(msg.duelInvited);
+      this.globalHandlers.onDuelInvited?.(msg.duelInvited);
     } else if (msg.duelCancelled) {
       this.handlers.onDuelCancelled?.(msg.duelCancelled);
     }

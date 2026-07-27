@@ -97,6 +97,9 @@ export async function init(
     os,
     game_version: gameVersion,
     locale: getLocale(),
+    // track() only ever queues events after consentGranted is true (see below), so every
+    // batch that reaches the queue is post-consent by construction.
+    consent: consentGranted,
     ...deviceFields,
   });
 
@@ -157,19 +160,22 @@ export function click(id: string, extra: Record<string, unknown> = {}): void {
 export function track(event: string, props: Record<string, unknown> = {}): void {
   if (!consentGranted) return; // GDPR gate (L1-1): no telemetry before consent
   if (!queue || !sessionId) return;
-  if (!shouldTrack(event)) return;
 
+  // screen_view bookkeeping + the nav_checkpoint companion event run unconditionally on
+  // *this* event's own consent/queue gates above, deliberately ahead of the shouldTrack(event)
+  // check below — nav_checkpoint has its own 100%-sample config entry (see analyticsvc
+  // service.ts DEFAULT_CONFIG) and must not inherit screen_view's 5% sampling outcome, or it
+  // only ever fires on the ~5% of screen_view calls that already passed that check.
   if (event === 'screen_view') {
     const scene = props['scene'] as string | undefined;
     if (scene) scenesVisited.push(scene);
     queue.checkpoint(); // flush before adding new screen event
-    // Fully-sampled companion event for the scene-level funnel (A9-9) — screen_view itself is
-    // 5%-sampled and too noisy to drive a reliable per-scene funnel.
     if (scene && NAV_CHECKPOINT_SCENES.has(scene)) {
       track('nav_checkpoint', { scene });
     }
   }
 
+  if (!shouldTrack(event)) return;
   queue.push({ event, ts: Date.now(), props });
 }
 

@@ -29,12 +29,71 @@ export async function getOrCreateSave(
   return fresh ? fresh.save : save;
 }
 
+/** Preset avatar slot ids (avatar.ts AVATAR_DEFS, indices 0-7) — always unlocked, no ownership check.
+ *  Single source of truth for both the PUT /save trust boundary below and service/liveops.ts's
+ *  equipAvatar (which reuses isAvatarOwned instead of duplicating this set/logic). */
+export const PRESET_AVATAR_IDS = new Set(['0', '1', '2', '3', '4', '5', '6', '7']);
+
+/**
+ * Whether `avatarId` (composite "<category>:<key>", or a bare preset digit for backward compat) is
+ * unlocked for this account. Every category except preset requires the key to appear in the
+ * account's lifetime-owned records (titles[] / everOwned.* / inventory.skins) — obtained once,
+ * unlocked forever, even if the item has since been salvaged/consumed/sold.
+ */
+export function isAvatarOwned(save: SaveData, avatarId: string): boolean {
+  if (PRESET_AVATAR_IDS.has(avatarId)) return true;
+  const sep = avatarId.indexOf(':');
+  const category = sep < 0 ? avatarId : avatarId.slice(0, sep);
+  const key = sep < 0 ? '' : avatarId.slice(sep + 1);
+  switch (category) {
+    case 'preset': return true;
+    case 'title': return (save.titles ?? []).includes(key);
+    case 'hero': return (save.everOwned?.hero ?? []).includes(key);
+    case 'equip': return (save.everOwned?.equipment ?? []).includes(key);
+    case 'material': return (save.everOwned?.material ?? []).includes(key);
+    case 'skin': return (save.inventory?.skins ?? []).includes(key) || (save.everOwned?.skin ?? []).includes(key);
+    default: return false;
+  }
+}
+
+/** Whether `skinId` is unlocked for equipping (current inventory or the lifetime-owned ledger). */
+export function isSkinOwned(save: SaveData, skinId: string): boolean {
+  return (save.inventory?.skins ?? []).includes(skinId) || (save.everOwned?.skin ?? []).includes(skinId);
+}
+
+/**
+ * Ownership-validates every entry of an incoming `equipped` map before it's allowed to replace the
+ * stored map wholesale (PUT /save is a full-map replace, not a per-key merge — see applySyncPatch).
+ * service/liveops.ts's equipTitle/equipAvatar already validate title/avatar ownership, but the client
+ * never calls those dedicated endpoints — the only path it actually uses to write `equipped` is
+ * PUT /save, which had zero ownership checks: a modified client could equip an unowned title/avatar/
+ * skin (comm-audit-2026-07-27 finding B12). Unrecognized keys (a future equip slot this function
+ * doesn't know about yet) pass through unchecked rather than being dropped, so this only needs to be
+ * extended when a new *sensitive* slot is added, not for every new key in general.
+ */
+export function sanitizeEquipped(save: SaveData, equipped: Record<string, string>): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const [key, value] of Object.entries(equipped)) {
+    if (key === 'title') {
+      if ((save.titles ?? []).includes(value)) out[key] = value;
+    } else if (key === 'avatar') {
+      if (isAvatarOwned(save, value)) out[key] = value;
+    } else if (key.startsWith('skin:')) {
+      if (isSkinOwned(save, value)) out[key] = value;
+    } else {
+      out[key] = value;
+    }
+  }
+  return out;
+}
+
 /**
  * Merges only the client-sync section into the save; server-authoritative sections remain unchanged (SERVER_API.md §2.2).
  * Hard trust boundary: only the 2 whitelisted fields from the patch are read (equipped/flags); any extra fields
  * (wallet/inventory/gacha/pvp authoritative sections, and progress/materials/pveUpgrades which became
  * server-authoritative as of PVE_INTEGRITY_PLAN §8) are structurally discarded — the HTTP body is untyped,
- * so client-supplied extras are never persisted.
+ * so client-supplied extras are never persisted. `equipped` is additionally ownership-validated per-entry
+ * (sanitizeEquipped) before being allowed to overwrite the stored map — see its doc comment for why.
  * The latter three sections are written exclusively by /pve/* and ranked settlement.
  * Exported for always-run unit tests (e2e verifies only when Mongo is running; this function is pure logic and must be covered unconditionally).
  */
@@ -48,7 +107,7 @@ export function applySyncPatch(
     ...prev,
     rev: nextRev,
     updatedAt: now,
-    ...(patch.equipped ? { equipped: patch.equipped } : {}),
+    ...(patch.equipped ? { equipped: sanitizeEquipped(prev, patch.equipped) } : {}),
     ...(patch.flags ? { flags: patch.flags } : {}),
   };
 }

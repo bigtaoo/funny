@@ -14,7 +14,7 @@ import { RenderMixin } from './FamilyScene/render';
 import { InputMixin } from './FamilyScene/input';
 import { ActionsMixin } from './FamilyScene/actions';
 
-export type { FamilySceneCallbacks } from './FamilyScene/base';
+export type { FamilySceneCallbacks, FamilySceneView } from './FamilyScene/base';
 
 const Assembled = ActionsMixin(
   InputMixin(

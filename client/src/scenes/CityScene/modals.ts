@@ -4,6 +4,7 @@ import { t } from '../../i18n';
 import { ui as C, txt, scaledTxt, sketchPanel, seedFor } from '../../render/sketchUi';
 import { FS } from '../../render/fontScale';
 import { formatDuration } from '../worldmap/formatDuration';
+import { serverNow } from '../../net/serverClock';
 import { buildIcon } from '../../render/icons';
 import type { BuildingKey } from '../../net/WorldApiClient';
 import {
@@ -249,7 +250,7 @@ export function ModalsMixin<TBase extends CitySceneBaseCtor>(Base: TBase): TBase
       const queueFull = trainQueue.length >= queueMax;
       const capLeft = Math.max(0, tc - ts - queuedQty);
       const ink = Math.floor(resources?.ink ?? 0);
-      const now = Date.now();
+      const now = serverNow();
       for (const e of trainQueue) {
         const sec = Math.max(0, Math.ceil((e.completeAt - now) / 1000));
         const ql = st(t('city.trainEntry').replace('{n}', String(e.qty)).replace('{time}', formatDuration(sec)), FS.tiny, C.dark);

@@ -100,6 +100,10 @@ export function SaveMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase & Cons
         save,
         publicId,
         freeRename,
+        // Clock-offset sample (P1-1): lets the client correct its local clock against every SLG/
+        // economy countdown it computes from a server-issued epoch timestamp (march ETA, build/train
+        // queue, subscription expiry, speedup pricing, …) — see client/src/net/serverClock.ts.
+        serverNow: now(),
         ...(displayName ? { displayName } : {}),
         ...this.gatewayField,
         ...(await this.activeMatchFieldFor(accountId)),

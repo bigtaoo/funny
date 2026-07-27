@@ -1571,169 +1571,181 @@ export const WORLD_RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
           "type": "object",
           "properties": {
             "data": {
-              "type": "object",
-              "required": [
-                "joined"
-              ],
-              "properties": {
-                "joined": {
-                  "type": "boolean"
-                },
-                "worldId": {
-                  "type": "string",
-                  "description": "The shard worldId the player belongs to (G6/§20: returned from join-season resolution; the client uses this to enter the world)"
-                },
-                "troops": {
-                  "type": "integer"
-                },
-                "troopCap": {
-                  "type": "integer"
-                },
-                "resources": {
+              "allOf": [
+                {
                   "type": "object",
-                  "additionalProperties": {
-                    "type": "number"
-                  }
-                },
-                "yieldRate": {
-                  "type": "object",
-                  "additionalProperties": {
-                    "type": "number"
-                  }
-                },
-                "mainBaseTile": {
-                  "type": "string"
-                },
-                "familyId": {
-                  "type": "string"
-                },
-                "territoryCount": {
-                  "type": "integer"
-                },
-                "trainingQueue": {
-                  "type": "array",
-                  "description": "Training queue (S8-2, ordered by completeAt ascending). The client uses this to render the queue countdown (C4).",
-                  "items": {
-                    "type": "object",
-                    "required": [
-                      "qty",
-                      "startAt",
-                      "completeAt"
-                    ],
-                    "properties": {
-                      "qty": {
+                  "required": [
+                    "joined"
+                  ],
+                  "properties": {
+                    "joined": {
+                      "type": "boolean"
+                    },
+                    "worldId": {
+                      "type": "string",
+                      "description": "The shard worldId the player belongs to (G6/§20: returned from join-season resolution; the client uses this to enter the world)"
+                    },
+                    "troops": {
+                      "type": "integer"
+                    },
+                    "troopCap": {
+                      "type": "integer"
+                    },
+                    "resources": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "number"
+                      }
+                    },
+                    "yieldRate": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "number"
+                      }
+                    },
+                    "mainBaseTile": {
+                      "type": "string"
+                    },
+                    "familyId": {
+                      "type": "string"
+                    },
+                    "territoryCount": {
+                      "type": "integer"
+                    },
+                    "trainingQueue": {
+                      "type": "array",
+                      "description": "Training queue (S8-2, ordered by completeAt ascending). The client uses this to render the queue countdown (C4).",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "qty",
+                          "startAt",
+                          "completeAt"
+                        ],
+                        "properties": {
+                          "qty": {
+                            "type": "integer"
+                          },
+                          "startAt": {
+                            "type": "integer",
+                            "format": "int64"
+                          },
+                          "completeAt": {
+                            "type": "integer",
+                            "format": "int64"
+                          }
+                        }
+                      }
+                    },
+                    "buildings": {
+                      "type": "object",
+                      "description": "Home-city building levels (SLG_CITY_DESIGN P1; desk≥1, others≥0 when present). Keys are BuildingKey values.",
+                      "additionalProperties": {
                         "type": "integer"
-                      },
-                      "startAt": {
-                        "type": "integer",
-                        "format": "int64"
-                      },
-                      "completeAt": {
-                        "type": "integer",
-                        "format": "int64"
                       }
+                    },
+                    "buildQueue": {
+                      "type": "array",
+                      "description": "Build queue (SLG_CITY_DESIGN §4, ordered by completeAt ascending). The client CityScene renders countdowns from this.",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "key",
+                          "toLevel",
+                          "startAt",
+                          "completeAt"
+                        ],
+                        "properties": {
+                          "key": {
+                            "type": "string",
+                            "description": "Home-city building identifier (SLG_CITY_DESIGN). P1 buildable: desk/inkPot/paperTray/graphiteMill/metalForge/stickerShop/cabinet/drillYard; wall/academy are P2.",
+                            "enum": [
+                              "desk",
+                              "inkPot",
+                              "paperTray",
+                              "graphiteMill",
+                              "metalForge",
+                              "stickerShop",
+                              "cabinet",
+                              "drillYard",
+                              "wall",
+                              "academy",
+                              "satchel"
+                            ]
+                          },
+                          "toLevel": {
+                            "type": "integer"
+                          },
+                          "startAt": {
+                            "type": "integer",
+                            "format": "int64"
+                          },
+                          "completeAt": {
+                            "type": "integer",
+                            "format": "int64"
+                          }
+                        }
+                      }
+                    },
+                    "cardState": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "object",
+                        "required": [
+                          "currentTroops"
+                        ],
+                        "properties": {
+                          "currentTroops": {
+                            "type": "integer",
+                            "description": "Troops currently allocated to this card"
+                          },
+                          "injuredUntil": {
+                            "type": "integer",
+                            "nullable": true,
+                            "description": "Unix ms timestamp when injury ends; null = not injured"
+                          },
+                          "teamId": {
+                            "type": "string",
+                            "nullable": true,
+                            "description": "Team this card is assigned to"
+                          }
+                        }
+                      },
+                      "description": "Map of cardInstanceId → CardSLGState (troops, injury, teamId)"
+                    },
+                    "teamState": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "object",
+                        "properties": {
+                          "injuredUntil": {
+                            "type": "integer",
+                            "nullable": true,
+                            "description": "Unix ms timestamp when the team's injury lock ends; null/absent = not injured. Injured teams never defend."
+                          }
+                        }
+                      },
+                      "description": "Map of teamId (t1..t5) → TeamSLGState. Present only for teams with active state."
+                    },
+                    "hp": {
+                      "type": "integer",
+                      "description": "D-CITY-8: own main base's current persistent durability, same field name/semantics as WorldTileView.hp (wall-level-derived cap, self-regenerating). Absent when the player has no resolved main base yet."
+                    },
+                    "maxHp": {
+                      "type": "integer",
+                      "description": "D-CITY-8: own main base's durability cap (= baseDurabilityMax(wall level)). Client renders the durability bar as hp/maxHp."
                     }
                   }
                 },
-                "buildings": {
+                {
                   "type": "object",
-                  "description": "Home-city building levels (SLG_CITY_DESIGN P1; desk≥1, others≥0 when present). Keys are BuildingKey values.",
-                  "additionalProperties": {
-                    "type": "integer"
-                  }
-                },
-                "buildQueue": {
-                  "type": "array",
-                  "description": "Build queue (SLG_CITY_DESIGN §4, ordered by completeAt ascending). The client CityScene renders countdowns from this.",
-                  "items": {
-                    "type": "object",
-                    "required": [
-                      "key",
-                      "toLevel",
-                      "startAt",
-                      "completeAt"
-                    ],
-                    "properties": {
-                      "key": {
-                        "type": "string",
-                        "description": "Home-city building identifier (SLG_CITY_DESIGN). P1 buildable: desk/inkPot/paperTray/graphiteMill/metalForge/stickerShop/cabinet/drillYard; wall/academy are P2.",
-                        "enum": [
-                          "desk",
-                          "inkPot",
-                          "paperTray",
-                          "graphiteMill",
-                          "metalForge",
-                          "stickerShop",
-                          "cabinet",
-                          "drillYard",
-                          "wall",
-                          "academy",
-                          "satchel"
-                        ]
-                      },
-                      "toLevel": {
-                        "type": "integer"
-                      },
-                      "startAt": {
-                        "type": "integer",
-                        "format": "int64"
-                      },
-                      "completeAt": {
-                        "type": "integer",
-                        "format": "int64"
-                      }
+                  "properties": {
+                    "serverNow": {
+                      "type": "integer"
                     }
                   }
-                },
-                "cardState": {
-                  "type": "object",
-                  "additionalProperties": {
-                    "type": "object",
-                    "required": [
-                      "currentTroops"
-                    ],
-                    "properties": {
-                      "currentTroops": {
-                        "type": "integer",
-                        "description": "Troops currently allocated to this card"
-                      },
-                      "injuredUntil": {
-                        "type": "integer",
-                        "nullable": true,
-                        "description": "Unix ms timestamp when injury ends; null = not injured"
-                      },
-                      "teamId": {
-                        "type": "string",
-                        "nullable": true,
-                        "description": "Team this card is assigned to"
-                      }
-                    }
-                  },
-                  "description": "Map of cardInstanceId → CardSLGState (troops, injury, teamId)"
-                },
-                "teamState": {
-                  "type": "object",
-                  "additionalProperties": {
-                    "type": "object",
-                    "properties": {
-                      "injuredUntil": {
-                        "type": "integer",
-                        "nullable": true,
-                        "description": "Unix ms timestamp when the team's injury lock ends; null/absent = not injured. Injured teams never defend."
-                      }
-                    }
-                  },
-                  "description": "Map of teamId (t1..t5) → TeamSLGState. Present only for teams with active state."
-                },
-                "hp": {
-                  "type": "integer",
-                  "description": "D-CITY-8: own main base's current persistent durability, same field name/semantics as WorldTileView.hp (wall-level-derived cap, self-regenerating). Absent when the player has no resolved main base yet."
-                },
-                "maxHp": {
-                  "type": "integer",
-                  "description": "D-CITY-8: own main base's durability cap (= baseDurabilityMax(wall level)). Client renders the durability bar as hp/maxHp."
                 }
-              }
+              ]
             }
           }
         }
@@ -2190,18 +2202,192 @@ export const WORLD_RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
   },
   "abandonTile": {
     "200": {
-      "type": "object",
-      "required": [
-        "ok"
-      ],
-      "properties": {
-        "ok": {
-          "type": "boolean",
-          "enum": [
-            true
-          ]
+      "allOf": [
+        {
+          "type": "object",
+          "required": [
+            "ok"
+          ],
+          "properties": {
+            "ok": {
+              "type": "boolean",
+              "enum": [
+                true
+              ]
+            }
+          }
+        },
+        {
+          "type": "object",
+          "properties": {
+            "data": {
+              "type": "object",
+              "required": [
+                "joined"
+              ],
+              "properties": {
+                "joined": {
+                  "type": "boolean"
+                },
+                "worldId": {
+                  "type": "string",
+                  "description": "The shard worldId the player belongs to (G6/§20: returned from join-season resolution; the client uses this to enter the world)"
+                },
+                "troops": {
+                  "type": "integer"
+                },
+                "troopCap": {
+                  "type": "integer"
+                },
+                "resources": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "number"
+                  }
+                },
+                "yieldRate": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "number"
+                  }
+                },
+                "mainBaseTile": {
+                  "type": "string"
+                },
+                "familyId": {
+                  "type": "string"
+                },
+                "territoryCount": {
+                  "type": "integer"
+                },
+                "trainingQueue": {
+                  "type": "array",
+                  "description": "Training queue (S8-2, ordered by completeAt ascending). The client uses this to render the queue countdown (C4).",
+                  "items": {
+                    "type": "object",
+                    "required": [
+                      "qty",
+                      "startAt",
+                      "completeAt"
+                    ],
+                    "properties": {
+                      "qty": {
+                        "type": "integer"
+                      },
+                      "startAt": {
+                        "type": "integer",
+                        "format": "int64"
+                      },
+                      "completeAt": {
+                        "type": "integer",
+                        "format": "int64"
+                      }
+                    }
+                  }
+                },
+                "buildings": {
+                  "type": "object",
+                  "description": "Home-city building levels (SLG_CITY_DESIGN P1; desk≥1, others≥0 when present). Keys are BuildingKey values.",
+                  "additionalProperties": {
+                    "type": "integer"
+                  }
+                },
+                "buildQueue": {
+                  "type": "array",
+                  "description": "Build queue (SLG_CITY_DESIGN §4, ordered by completeAt ascending). The client CityScene renders countdowns from this.",
+                  "items": {
+                    "type": "object",
+                    "required": [
+                      "key",
+                      "toLevel",
+                      "startAt",
+                      "completeAt"
+                    ],
+                    "properties": {
+                      "key": {
+                        "type": "string",
+                        "description": "Home-city building identifier (SLG_CITY_DESIGN). P1 buildable: desk/inkPot/paperTray/graphiteMill/metalForge/stickerShop/cabinet/drillYard; wall/academy are P2.",
+                        "enum": [
+                          "desk",
+                          "inkPot",
+                          "paperTray",
+                          "graphiteMill",
+                          "metalForge",
+                          "stickerShop",
+                          "cabinet",
+                          "drillYard",
+                          "wall",
+                          "academy",
+                          "satchel"
+                        ]
+                      },
+                      "toLevel": {
+                        "type": "integer"
+                      },
+                      "startAt": {
+                        "type": "integer",
+                        "format": "int64"
+                      },
+                      "completeAt": {
+                        "type": "integer",
+                        "format": "int64"
+                      }
+                    }
+                  }
+                },
+                "cardState": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "object",
+                    "required": [
+                      "currentTroops"
+                    ],
+                    "properties": {
+                      "currentTroops": {
+                        "type": "integer",
+                        "description": "Troops currently allocated to this card"
+                      },
+                      "injuredUntil": {
+                        "type": "integer",
+                        "nullable": true,
+                        "description": "Unix ms timestamp when injury ends; null = not injured"
+                      },
+                      "teamId": {
+                        "type": "string",
+                        "nullable": true,
+                        "description": "Team this card is assigned to"
+                      }
+                    }
+                  },
+                  "description": "Map of cardInstanceId → CardSLGState (troops, injury, teamId)"
+                },
+                "teamState": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "object",
+                    "properties": {
+                      "injuredUntil": {
+                        "type": "integer",
+                        "nullable": true,
+                        "description": "Unix ms timestamp when the team's injury lock ends; null/absent = not injured. Injured teams never defend."
+                      }
+                    }
+                  },
+                  "description": "Map of teamId (t1..t5) → TeamSLGState. Present only for teams with active state."
+                },
+                "hp": {
+                  "type": "integer",
+                  "description": "D-CITY-8: own main base's current persistent durability, same field name/semantics as WorldTileView.hp (wall-level-derived cap, self-regenerating). Absent when the player has no resolved main base yet."
+                },
+                "maxHp": {
+                  "type": "integer",
+                  "description": "D-CITY-8: own main base's durability cap (= baseDurabilityMax(wall level)). Client renders the durability bar as hp/maxHp."
+                }
+              }
+            }
+          }
         }
-      }
+      ]
     }
   },
   "relocateBase": {
@@ -2415,148 +2601,322 @@ export const WORLD_RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
           "type": "object",
           "properties": {
             "data": {
-              "type": "object",
-              "required": [
-                "x",
-                "y",
-                "type",
-                "level"
-              ],
-              "properties": {
-                "x": {
-                  "type": "integer"
-                },
-                "y": {
-                  "type": "integer"
-                },
-                "type": {
-                  "type": "string",
-                  "enum": [
-                    "neutral",
-                    "resource",
-                    "territory",
-                    "familyKeep",
-                    "center",
-                    "base",
-                    "obstacle",
-                    "bridge",
-                    "plankway",
-                    "stronghold"
-                  ]
-                },
-                "level": {
-                  "type": "integer"
-                },
-                "resType": {
-                  "type": "string",
-                  "enum": [
-                    "ink",
-                    "paper",
-                    "graphite",
-                    "metal",
-                    "sticker"
-                  ]
-                },
-                "obstacleKind": {
-                  "type": "string",
-                  "enum": [
-                    "river",
-                    "mountain"
-                  ],
-                  "description": "For type=obstacle only: river vs mountain art (§24). Carried from the per-world terrain baseline (mapBaselines, cloned from the active map template) or proceduralTile, so map-editor-painted rivers/mountains render correctly on the client instead of the client re-deriving a possibly-different kind locally."
-                },
-                "occupied": {
-                  "type": "boolean"
-                },
-                "mine": {
-                  "type": "boolean"
-                },
-                "ownerPublicId": {
-                  "type": "string",
-                  "description": "Occupier's 9-digit public id (populated when meta service is available)"
-                },
-                "ownerName": {
-                  "type": "string",
-                  "description": "Occupier's display name (populated when meta service is available)"
-                },
-                "familyId": {
-                  "type": "string"
-                },
-                "garrison": {
-                  "type": "integer"
-                },
-                "hp": {
-                  "type": "integer",
-                  "description": "ADR-026 §1: current building HP of this attackable tile (main base anchor / territory / stronghold). Absent = full HP (client falls back to maxHp). Populated for occupied/attackable tiles within vision."
-                },
-                "maxHp": {
-                  "type": "integer",
-                  "description": "ADR-026 §1: building max HP = level × SLG_BASE_HP_PER_LEVEL. Client renders the HP bar as hp/maxHp."
-                },
-                "protectedUntil": {
-                  "type": "number"
-                },
-                "contestedUntil": {
-                  "type": "number",
-                  "description": "ADR-037 (§5.4): this tile is mid occupation-hold — an occupy march won its PvE battle against the system garrison but the hold countdown has not yet elapsed (no owner yet). ms epoch when the hold resolves into ownership, unless expelled first by another attack/occupy march."
-                },
-                "contestedByMe": {
-                  "type": "boolean",
-                  "description": "ADR-037 (§5.4): the pending occupier is the requester themself (\"I'm holding\" vs. \"someone else is holding\")."
-                },
-                "watchtower": {
-                  "type": "boolean",
-                  "description": "§18 G5 V2：A watchtower has been built on this tile (large-radius persistent vision source). The client renders the tower marker."
-                },
-                "structure": {
+              "allOf": [
+                {
                   "type": "object",
                   "required": [
-                    "kind",
+                    "x",
+                    "y",
+                    "type",
                     "level"
                   ],
                   "properties": {
-                    "kind": {
+                    "x": {
+                      "type": "integer"
+                    },
+                    "y": {
+                      "type": "integer"
+                    },
+                    "type": {
                       "type": "string",
                       "enum": [
-                        "arrowTower",
-                        "blocker"
-                      ],
-                      "description": "arrowTower: chips passing enemies over its 3×3 footprint (no stop). blocker: hard path obstacle enemies must destroy."
+                        "neutral",
+                        "resource",
+                        "territory",
+                        "familyKeep",
+                        "center",
+                        "base",
+                        "obstacle",
+                        "bridge",
+                        "plankway",
+                        "stronghold"
+                      ]
                     },
                     "level": {
                       "type": "integer"
                     },
-                    "hp": {
-                      "type": "integer",
-                      "description": "Current durability (intel-gated — omitted out of vision). Reduced only by an attack march; 0 → removed."
+                    "resType": {
+                      "type": "string",
+                      "enum": [
+                        "ink",
+                        "paper",
+                        "graphite",
+                        "metal",
+                        "sticker"
+                      ]
                     },
-                    "hpMax": {
-                      "type": "integer",
-                      "description": "Max durability (intel-gated — omitted out of vision)."
+                    "obstacleKind": {
+                      "type": "string",
+                      "enum": [
+                        "river",
+                        "mountain"
+                      ],
+                      "description": "For type=obstacle only: river vs mountain art (§24). Carried from the per-world terrain baseline (mapBaselines, cloned from the active map template) or proceduralTile, so map-editor-painted rivers/mountains render correctly on the client instead of the client re-deriving a possibly-different kind locally."
+                    },
+                    "occupied": {
+                      "type": "boolean"
                     },
                     "mine": {
+                      "type": "boolean"
+                    },
+                    "ownerPublicId": {
+                      "type": "string",
+                      "description": "Occupier's 9-digit public id (populated when meta service is available)"
+                    },
+                    "ownerName": {
+                      "type": "string",
+                      "description": "Occupier's display name (populated when meta service is available)"
+                    },
+                    "familyId": {
+                      "type": "string"
+                    },
+                    "garrison": {
+                      "type": "integer"
+                    },
+                    "hp": {
+                      "type": "integer",
+                      "description": "ADR-026 §1: current building HP of this attackable tile (main base anchor / territory / stronghold). Absent = full HP (client falls back to maxHp). Populated for occupied/attackable tiles within vision."
+                    },
+                    "maxHp": {
+                      "type": "integer",
+                      "description": "ADR-026 §1: building max HP = level × SLG_BASE_HP_PER_LEVEL. Client renders the HP bar as hp/maxHp."
+                    },
+                    "protectedUntil": {
+                      "type": "number"
+                    },
+                    "contestedUntil": {
+                      "type": "number",
+                      "description": "ADR-037 (§5.4): this tile is mid occupation-hold — an occupy march won its PvE battle against the system garrison but the hold countdown has not yet elapsed (no owner yet). ms epoch when the hold resolves into ownership, unless expelled first by another attack/occupy march."
+                    },
+                    "contestedByMe": {
                       "type": "boolean",
-                      "description": "Whether the requester built this structure (client shows Demolish only on own structures)."
+                      "description": "ADR-037 (§5.4): the pending occupier is the requester themself (\"I'm holding\" vs. \"someone else is holding\")."
+                    },
+                    "watchtower": {
+                      "type": "boolean",
+                      "description": "§18 G5 V2：A watchtower has been built on this tile (large-radius persistent vision source). The client renders the tower marker."
+                    },
+                    "structure": {
+                      "type": "object",
+                      "required": [
+                        "kind",
+                        "level"
+                      ],
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "enum": [
+                            "arrowTower",
+                            "blocker"
+                          ],
+                          "description": "arrowTower: chips passing enemies over its 3×3 footprint (no stop). blocker: hard path obstacle enemies must destroy."
+                        },
+                        "level": {
+                          "type": "integer"
+                        },
+                        "hp": {
+                          "type": "integer",
+                          "description": "Current durability (intel-gated — omitted out of vision). Reduced only by an attack march; 0 → removed."
+                        },
+                        "hpMax": {
+                          "type": "integer",
+                          "description": "Max durability (intel-gated — omitted out of vision)."
+                        },
+                        "mine": {
+                          "type": "boolean",
+                          "description": "Whether the requester built this structure (client shows Demolish only on own structures)."
+                        }
+                      }
+                    },
+                    "visible": {
+                      "type": "boolean",
+                      "description": "G5 vision: whether this tile is within the requester's current field of view. true = dynamic layer returned as-is; false = outside vision range, only the procedurally-generated base terrain is returned (all dynamic-layer data hidden, including the \"occupied\" signal). Populated only for /world/map viewport reads."
+                    },
+                    "ally": {
+                      "type": "boolean",
+                      "description": "G5: this tile is owned by a family ally (within vision, not self). Client renders with friendly colour."
+                    },
+                    "allySect": {
+                      "type": "boolean",
+                      "description": "G5: this tile is owned by a member of an allied sect of the player's own sect (within vision, not self, not family). Alliances do not share vision; only distinguished on the map with a yellow border (§8.2, attacking/capturing between allies is forbidden)."
+                    },
+                    "deskLevel": {
+                      "type": "integer",
+                      "description": "Main-base anchor only: owner's `desk` building level (1-10), mirrored from playerWorld onto the anchor tile whenever a desk upgrade completes. Drives the player-base art frame (playerbase_l{n}) on the requester's own base tile (see design/product/player-base-image-prompts.md); absent = level 1."
                     }
                   }
                 },
-                "visible": {
-                  "type": "boolean",
-                  "description": "G5 vision: whether this tile is within the requester's current field of view. true = dynamic layer returned as-is; false = outside vision range, only the procedurally-generated base terrain is returned (all dynamic-layer data hidden, including the \"occupied\" signal). Populated only for /world/map viewport reads."
-                },
-                "ally": {
-                  "type": "boolean",
-                  "description": "G5: this tile is owned by a family ally (within vision, not self). Client renders with friendly colour."
-                },
-                "allySect": {
-                  "type": "boolean",
-                  "description": "G5: this tile is owned by a member of an allied sect of the player's own sect (within vision, not self, not family). Alliances do not share vision; only distinguished on the map with a yellow border (§8.2, attacking/capturing between allies is forbidden)."
-                },
-                "deskLevel": {
-                  "type": "integer",
-                  "description": "Main-base anchor only: owner's `desk` building level (1-10), mirrored from playerWorld onto the anchor tile whenever a desk upgrade completes. Drives the player-base art frame (playerbase_l{n}) on the requester's own base tile (see design/product/player-base-image-prompts.md); absent = level 1."
+                {
+                  "type": "object",
+                  "properties": {
+                    "me": {
+                      "type": "object",
+                      "required": [
+                        "joined"
+                      ],
+                      "properties": {
+                        "joined": {
+                          "type": "boolean"
+                        },
+                        "worldId": {
+                          "type": "string",
+                          "description": "The shard worldId the player belongs to (G6/§20: returned from join-season resolution; the client uses this to enter the world)"
+                        },
+                        "troops": {
+                          "type": "integer"
+                        },
+                        "troopCap": {
+                          "type": "integer"
+                        },
+                        "resources": {
+                          "type": "object",
+                          "additionalProperties": {
+                            "type": "number"
+                          }
+                        },
+                        "yieldRate": {
+                          "type": "object",
+                          "additionalProperties": {
+                            "type": "number"
+                          }
+                        },
+                        "mainBaseTile": {
+                          "type": "string"
+                        },
+                        "familyId": {
+                          "type": "string"
+                        },
+                        "territoryCount": {
+                          "type": "integer"
+                        },
+                        "trainingQueue": {
+                          "type": "array",
+                          "description": "Training queue (S8-2, ordered by completeAt ascending). The client uses this to render the queue countdown (C4).",
+                          "items": {
+                            "type": "object",
+                            "required": [
+                              "qty",
+                              "startAt",
+                              "completeAt"
+                            ],
+                            "properties": {
+                              "qty": {
+                                "type": "integer"
+                              },
+                              "startAt": {
+                                "type": "integer",
+                                "format": "int64"
+                              },
+                              "completeAt": {
+                                "type": "integer",
+                                "format": "int64"
+                              }
+                            }
+                          }
+                        },
+                        "buildings": {
+                          "type": "object",
+                          "description": "Home-city building levels (SLG_CITY_DESIGN P1; desk≥1, others≥0 when present). Keys are BuildingKey values.",
+                          "additionalProperties": {
+                            "type": "integer"
+                          }
+                        },
+                        "buildQueue": {
+                          "type": "array",
+                          "description": "Build queue (SLG_CITY_DESIGN §4, ordered by completeAt ascending). The client CityScene renders countdowns from this.",
+                          "items": {
+                            "type": "object",
+                            "required": [
+                              "key",
+                              "toLevel",
+                              "startAt",
+                              "completeAt"
+                            ],
+                            "properties": {
+                              "key": {
+                                "type": "string",
+                                "description": "Home-city building identifier (SLG_CITY_DESIGN). P1 buildable: desk/inkPot/paperTray/graphiteMill/metalForge/stickerShop/cabinet/drillYard; wall/academy are P2.",
+                                "enum": [
+                                  "desk",
+                                  "inkPot",
+                                  "paperTray",
+                                  "graphiteMill",
+                                  "metalForge",
+                                  "stickerShop",
+                                  "cabinet",
+                                  "drillYard",
+                                  "wall",
+                                  "academy",
+                                  "satchel"
+                                ]
+                              },
+                              "toLevel": {
+                                "type": "integer"
+                              },
+                              "startAt": {
+                                "type": "integer",
+                                "format": "int64"
+                              },
+                              "completeAt": {
+                                "type": "integer",
+                                "format": "int64"
+                              }
+                            }
+                          }
+                        },
+                        "cardState": {
+                          "type": "object",
+                          "additionalProperties": {
+                            "type": "object",
+                            "required": [
+                              "currentTroops"
+                            ],
+                            "properties": {
+                              "currentTroops": {
+                                "type": "integer",
+                                "description": "Troops currently allocated to this card"
+                              },
+                              "injuredUntil": {
+                                "type": "integer",
+                                "nullable": true,
+                                "description": "Unix ms timestamp when injury ends; null = not injured"
+                              },
+                              "teamId": {
+                                "type": "string",
+                                "nullable": true,
+                                "description": "Team this card is assigned to"
+                              }
+                            }
+                          },
+                          "description": "Map of cardInstanceId → CardSLGState (troops, injury, teamId)"
+                        },
+                        "teamState": {
+                          "type": "object",
+                          "additionalProperties": {
+                            "type": "object",
+                            "properties": {
+                              "injuredUntil": {
+                                "type": "integer",
+                                "nullable": true,
+                                "description": "Unix ms timestamp when the team's injury lock ends; null/absent = not injured. Injured teams never defend."
+                              }
+                            }
+                          },
+                          "description": "Map of teamId (t1..t5) → TeamSLGState. Present only for teams with active state."
+                        },
+                        "hp": {
+                          "type": "integer",
+                          "description": "D-CITY-8: own main base's current persistent durability, same field name/semantics as WorldTileView.hp (wall-level-derived cap, self-regenerating). Absent when the player has no resolved main base yet."
+                        },
+                        "maxHp": {
+                          "type": "integer",
+                          "description": "D-CITY-8: own main base's durability cap (= baseDurabilityMax(wall level)). Client renders the durability bar as hp/maxHp."
+                        }
+                      }
+                    }
+                  }
                 }
-              }
+              ]
             }
           }
         }
@@ -2584,148 +2944,322 @@ export const WORLD_RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
           "type": "object",
           "properties": {
             "data": {
-              "type": "object",
-              "required": [
-                "x",
-                "y",
-                "type",
-                "level"
-              ],
-              "properties": {
-                "x": {
-                  "type": "integer"
-                },
-                "y": {
-                  "type": "integer"
-                },
-                "type": {
-                  "type": "string",
-                  "enum": [
-                    "neutral",
-                    "resource",
-                    "territory",
-                    "familyKeep",
-                    "center",
-                    "base",
-                    "obstacle",
-                    "bridge",
-                    "plankway",
-                    "stronghold"
-                  ]
-                },
-                "level": {
-                  "type": "integer"
-                },
-                "resType": {
-                  "type": "string",
-                  "enum": [
-                    "ink",
-                    "paper",
-                    "graphite",
-                    "metal",
-                    "sticker"
-                  ]
-                },
-                "obstacleKind": {
-                  "type": "string",
-                  "enum": [
-                    "river",
-                    "mountain"
-                  ],
-                  "description": "For type=obstacle only: river vs mountain art (§24). Carried from the per-world terrain baseline (mapBaselines, cloned from the active map template) or proceduralTile, so map-editor-painted rivers/mountains render correctly on the client instead of the client re-deriving a possibly-different kind locally."
-                },
-                "occupied": {
-                  "type": "boolean"
-                },
-                "mine": {
-                  "type": "boolean"
-                },
-                "ownerPublicId": {
-                  "type": "string",
-                  "description": "Occupier's 9-digit public id (populated when meta service is available)"
-                },
-                "ownerName": {
-                  "type": "string",
-                  "description": "Occupier's display name (populated when meta service is available)"
-                },
-                "familyId": {
-                  "type": "string"
-                },
-                "garrison": {
-                  "type": "integer"
-                },
-                "hp": {
-                  "type": "integer",
-                  "description": "ADR-026 §1: current building HP of this attackable tile (main base anchor / territory / stronghold). Absent = full HP (client falls back to maxHp). Populated for occupied/attackable tiles within vision."
-                },
-                "maxHp": {
-                  "type": "integer",
-                  "description": "ADR-026 §1: building max HP = level × SLG_BASE_HP_PER_LEVEL. Client renders the HP bar as hp/maxHp."
-                },
-                "protectedUntil": {
-                  "type": "number"
-                },
-                "contestedUntil": {
-                  "type": "number",
-                  "description": "ADR-037 (§5.4): this tile is mid occupation-hold — an occupy march won its PvE battle against the system garrison but the hold countdown has not yet elapsed (no owner yet). ms epoch when the hold resolves into ownership, unless expelled first by another attack/occupy march."
-                },
-                "contestedByMe": {
-                  "type": "boolean",
-                  "description": "ADR-037 (§5.4): the pending occupier is the requester themself (\"I'm holding\" vs. \"someone else is holding\")."
-                },
-                "watchtower": {
-                  "type": "boolean",
-                  "description": "§18 G5 V2：A watchtower has been built on this tile (large-radius persistent vision source). The client renders the tower marker."
-                },
-                "structure": {
+              "allOf": [
+                {
                   "type": "object",
                   "required": [
-                    "kind",
+                    "x",
+                    "y",
+                    "type",
                     "level"
                   ],
                   "properties": {
-                    "kind": {
+                    "x": {
+                      "type": "integer"
+                    },
+                    "y": {
+                      "type": "integer"
+                    },
+                    "type": {
                       "type": "string",
                       "enum": [
-                        "arrowTower",
-                        "blocker"
-                      ],
-                      "description": "arrowTower: chips passing enemies over its 3×3 footprint (no stop). blocker: hard path obstacle enemies must destroy."
+                        "neutral",
+                        "resource",
+                        "territory",
+                        "familyKeep",
+                        "center",
+                        "base",
+                        "obstacle",
+                        "bridge",
+                        "plankway",
+                        "stronghold"
+                      ]
                     },
                     "level": {
                       "type": "integer"
                     },
-                    "hp": {
-                      "type": "integer",
-                      "description": "Current durability (intel-gated — omitted out of vision). Reduced only by an attack march; 0 → removed."
+                    "resType": {
+                      "type": "string",
+                      "enum": [
+                        "ink",
+                        "paper",
+                        "graphite",
+                        "metal",
+                        "sticker"
+                      ]
                     },
-                    "hpMax": {
-                      "type": "integer",
-                      "description": "Max durability (intel-gated — omitted out of vision)."
+                    "obstacleKind": {
+                      "type": "string",
+                      "enum": [
+                        "river",
+                        "mountain"
+                      ],
+                      "description": "For type=obstacle only: river vs mountain art (§24). Carried from the per-world terrain baseline (mapBaselines, cloned from the active map template) or proceduralTile, so map-editor-painted rivers/mountains render correctly on the client instead of the client re-deriving a possibly-different kind locally."
+                    },
+                    "occupied": {
+                      "type": "boolean"
                     },
                     "mine": {
+                      "type": "boolean"
+                    },
+                    "ownerPublicId": {
+                      "type": "string",
+                      "description": "Occupier's 9-digit public id (populated when meta service is available)"
+                    },
+                    "ownerName": {
+                      "type": "string",
+                      "description": "Occupier's display name (populated when meta service is available)"
+                    },
+                    "familyId": {
+                      "type": "string"
+                    },
+                    "garrison": {
+                      "type": "integer"
+                    },
+                    "hp": {
+                      "type": "integer",
+                      "description": "ADR-026 §1: current building HP of this attackable tile (main base anchor / territory / stronghold). Absent = full HP (client falls back to maxHp). Populated for occupied/attackable tiles within vision."
+                    },
+                    "maxHp": {
+                      "type": "integer",
+                      "description": "ADR-026 §1: building max HP = level × SLG_BASE_HP_PER_LEVEL. Client renders the HP bar as hp/maxHp."
+                    },
+                    "protectedUntil": {
+                      "type": "number"
+                    },
+                    "contestedUntil": {
+                      "type": "number",
+                      "description": "ADR-037 (§5.4): this tile is mid occupation-hold — an occupy march won its PvE battle against the system garrison but the hold countdown has not yet elapsed (no owner yet). ms epoch when the hold resolves into ownership, unless expelled first by another attack/occupy march."
+                    },
+                    "contestedByMe": {
                       "type": "boolean",
-                      "description": "Whether the requester built this structure (client shows Demolish only on own structures)."
+                      "description": "ADR-037 (§5.4): the pending occupier is the requester themself (\"I'm holding\" vs. \"someone else is holding\")."
+                    },
+                    "watchtower": {
+                      "type": "boolean",
+                      "description": "§18 G5 V2：A watchtower has been built on this tile (large-radius persistent vision source). The client renders the tower marker."
+                    },
+                    "structure": {
+                      "type": "object",
+                      "required": [
+                        "kind",
+                        "level"
+                      ],
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "enum": [
+                            "arrowTower",
+                            "blocker"
+                          ],
+                          "description": "arrowTower: chips passing enemies over its 3×3 footprint (no stop). blocker: hard path obstacle enemies must destroy."
+                        },
+                        "level": {
+                          "type": "integer"
+                        },
+                        "hp": {
+                          "type": "integer",
+                          "description": "Current durability (intel-gated — omitted out of vision). Reduced only by an attack march; 0 → removed."
+                        },
+                        "hpMax": {
+                          "type": "integer",
+                          "description": "Max durability (intel-gated — omitted out of vision)."
+                        },
+                        "mine": {
+                          "type": "boolean",
+                          "description": "Whether the requester built this structure (client shows Demolish only on own structures)."
+                        }
+                      }
+                    },
+                    "visible": {
+                      "type": "boolean",
+                      "description": "G5 vision: whether this tile is within the requester's current field of view. true = dynamic layer returned as-is; false = outside vision range, only the procedurally-generated base terrain is returned (all dynamic-layer data hidden, including the \"occupied\" signal). Populated only for /world/map viewport reads."
+                    },
+                    "ally": {
+                      "type": "boolean",
+                      "description": "G5: this tile is owned by a family ally (within vision, not self). Client renders with friendly colour."
+                    },
+                    "allySect": {
+                      "type": "boolean",
+                      "description": "G5: this tile is owned by a member of an allied sect of the player's own sect (within vision, not self, not family). Alliances do not share vision; only distinguished on the map with a yellow border (§8.2, attacking/capturing between allies is forbidden)."
+                    },
+                    "deskLevel": {
+                      "type": "integer",
+                      "description": "Main-base anchor only: owner's `desk` building level (1-10), mirrored from playerWorld onto the anchor tile whenever a desk upgrade completes. Drives the player-base art frame (playerbase_l{n}) on the requester's own base tile (see design/product/player-base-image-prompts.md); absent = level 1."
                     }
                   }
                 },
-                "visible": {
-                  "type": "boolean",
-                  "description": "G5 vision: whether this tile is within the requester's current field of view. true = dynamic layer returned as-is; false = outside vision range, only the procedurally-generated base terrain is returned (all dynamic-layer data hidden, including the \"occupied\" signal). Populated only for /world/map viewport reads."
-                },
-                "ally": {
-                  "type": "boolean",
-                  "description": "G5: this tile is owned by a family ally (within vision, not self). Client renders with friendly colour."
-                },
-                "allySect": {
-                  "type": "boolean",
-                  "description": "G5: this tile is owned by a member of an allied sect of the player's own sect (within vision, not self, not family). Alliances do not share vision; only distinguished on the map with a yellow border (§8.2, attacking/capturing between allies is forbidden)."
-                },
-                "deskLevel": {
-                  "type": "integer",
-                  "description": "Main-base anchor only: owner's `desk` building level (1-10), mirrored from playerWorld onto the anchor tile whenever a desk upgrade completes. Drives the player-base art frame (playerbase_l{n}) on the requester's own base tile (see design/product/player-base-image-prompts.md); absent = level 1."
+                {
+                  "type": "object",
+                  "properties": {
+                    "me": {
+                      "type": "object",
+                      "required": [
+                        "joined"
+                      ],
+                      "properties": {
+                        "joined": {
+                          "type": "boolean"
+                        },
+                        "worldId": {
+                          "type": "string",
+                          "description": "The shard worldId the player belongs to (G6/§20: returned from join-season resolution; the client uses this to enter the world)"
+                        },
+                        "troops": {
+                          "type": "integer"
+                        },
+                        "troopCap": {
+                          "type": "integer"
+                        },
+                        "resources": {
+                          "type": "object",
+                          "additionalProperties": {
+                            "type": "number"
+                          }
+                        },
+                        "yieldRate": {
+                          "type": "object",
+                          "additionalProperties": {
+                            "type": "number"
+                          }
+                        },
+                        "mainBaseTile": {
+                          "type": "string"
+                        },
+                        "familyId": {
+                          "type": "string"
+                        },
+                        "territoryCount": {
+                          "type": "integer"
+                        },
+                        "trainingQueue": {
+                          "type": "array",
+                          "description": "Training queue (S8-2, ordered by completeAt ascending). The client uses this to render the queue countdown (C4).",
+                          "items": {
+                            "type": "object",
+                            "required": [
+                              "qty",
+                              "startAt",
+                              "completeAt"
+                            ],
+                            "properties": {
+                              "qty": {
+                                "type": "integer"
+                              },
+                              "startAt": {
+                                "type": "integer",
+                                "format": "int64"
+                              },
+                              "completeAt": {
+                                "type": "integer",
+                                "format": "int64"
+                              }
+                            }
+                          }
+                        },
+                        "buildings": {
+                          "type": "object",
+                          "description": "Home-city building levels (SLG_CITY_DESIGN P1; desk≥1, others≥0 when present). Keys are BuildingKey values.",
+                          "additionalProperties": {
+                            "type": "integer"
+                          }
+                        },
+                        "buildQueue": {
+                          "type": "array",
+                          "description": "Build queue (SLG_CITY_DESIGN §4, ordered by completeAt ascending). The client CityScene renders countdowns from this.",
+                          "items": {
+                            "type": "object",
+                            "required": [
+                              "key",
+                              "toLevel",
+                              "startAt",
+                              "completeAt"
+                            ],
+                            "properties": {
+                              "key": {
+                                "type": "string",
+                                "description": "Home-city building identifier (SLG_CITY_DESIGN). P1 buildable: desk/inkPot/paperTray/graphiteMill/metalForge/stickerShop/cabinet/drillYard; wall/academy are P2.",
+                                "enum": [
+                                  "desk",
+                                  "inkPot",
+                                  "paperTray",
+                                  "graphiteMill",
+                                  "metalForge",
+                                  "stickerShop",
+                                  "cabinet",
+                                  "drillYard",
+                                  "wall",
+                                  "academy",
+                                  "satchel"
+                                ]
+                              },
+                              "toLevel": {
+                                "type": "integer"
+                              },
+                              "startAt": {
+                                "type": "integer",
+                                "format": "int64"
+                              },
+                              "completeAt": {
+                                "type": "integer",
+                                "format": "int64"
+                              }
+                            }
+                          }
+                        },
+                        "cardState": {
+                          "type": "object",
+                          "additionalProperties": {
+                            "type": "object",
+                            "required": [
+                              "currentTroops"
+                            ],
+                            "properties": {
+                              "currentTroops": {
+                                "type": "integer",
+                                "description": "Troops currently allocated to this card"
+                              },
+                              "injuredUntil": {
+                                "type": "integer",
+                                "nullable": true,
+                                "description": "Unix ms timestamp when injury ends; null = not injured"
+                              },
+                              "teamId": {
+                                "type": "string",
+                                "nullable": true,
+                                "description": "Team this card is assigned to"
+                              }
+                            }
+                          },
+                          "description": "Map of cardInstanceId → CardSLGState (troops, injury, teamId)"
+                        },
+                        "teamState": {
+                          "type": "object",
+                          "additionalProperties": {
+                            "type": "object",
+                            "properties": {
+                              "injuredUntil": {
+                                "type": "integer",
+                                "nullable": true,
+                                "description": "Unix ms timestamp when the team's injury lock ends; null/absent = not injured. Injured teams never defend."
+                              }
+                            }
+                          },
+                          "description": "Map of teamId (t1..t5) → TeamSLGState. Present only for teams with active state."
+                        },
+                        "hp": {
+                          "type": "integer",
+                          "description": "D-CITY-8: own main base's current persistent durability, same field name/semantics as WorldTileView.hp (wall-level-derived cap, self-regenerating). Absent when the player has no resolved main base yet."
+                        },
+                        "maxHp": {
+                          "type": "integer",
+                          "description": "D-CITY-8: own main base's durability cap (= baseDurabilityMax(wall level)). Client renders the durability bar as hp/maxHp."
+                        }
+                      }
+                    }
+                  }
                 }
-              }
+              ]
             }
           }
         }
@@ -3015,69 +3549,243 @@ export const WORLD_RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
           "type": "object",
           "properties": {
             "data": {
-              "type": "object",
-              "required": [
-                "marchId",
-                "kind",
-                "fromTile",
-                "toTile",
-                "troops",
-                "departAt",
-                "arriveAt",
-                "status"
-              ],
-              "properties": {
-                "marchId": {
-                  "type": "string"
+              "allOf": [
+                {
+                  "type": "object",
+                  "required": [
+                    "marchId",
+                    "kind",
+                    "fromTile",
+                    "toTile",
+                    "troops",
+                    "departAt",
+                    "arriveAt",
+                    "status"
+                  ],
+                  "properties": {
+                    "marchId": {
+                      "type": "string"
+                    },
+                    "kind": {
+                      "type": "string",
+                      "enum": [
+                        "attack",
+                        "reinforce",
+                        "occupy",
+                        "sweep",
+                        "scout",
+                        "return",
+                        "move"
+                      ]
+                    },
+                    "fromTile": {
+                      "type": "string"
+                    },
+                    "toTile": {
+                      "type": "string"
+                    },
+                    "troops": {
+                      "type": "integer"
+                    },
+                    "departAt": {
+                      "type": "number"
+                    },
+                    "arriveAt": {
+                      "type": "number"
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "marching",
+                        "returning",
+                        "arrived"
+                      ]
+                    },
+                    "mine": {
+                      "type": "boolean",
+                      "description": "G5: whether this march belongs to the requester (false = enemy march within vision range)"
+                    },
+                    "teamId": {
+                      "type": "string",
+                      "description": "ADR-026: which team slot ('t1'..'t5') this march deployed, if any. Only present on the requester's own marches; used client-side to grey out busy teams in the team picker."
+                    },
+                    "leaderUnitType": {
+                      "type": "string",
+                      "description": "March-token art (2026-07-26): the deployed team's leader unit-type (engine UnitType string, e.g. 'infantry'/'archer'/'max'), resolved server-side once at dispatch and frozen onto the march. Present for own AND enemy marches (reveals only a unit-type enum, not team/card identity). Absent on flat-troop marches (no team attached)."
+                    }
+                  }
                 },
-                "kind": {
-                  "type": "string",
-                  "enum": [
-                    "attack",
-                    "reinforce",
-                    "occupy",
-                    "sweep",
-                    "scout",
-                    "return",
-                    "move"
-                  ]
-                },
-                "fromTile": {
-                  "type": "string"
-                },
-                "toTile": {
-                  "type": "string"
-                },
-                "troops": {
-                  "type": "integer"
-                },
-                "departAt": {
-                  "type": "number"
-                },
-                "arriveAt": {
-                  "type": "number"
-                },
-                "status": {
-                  "type": "string",
-                  "enum": [
-                    "marching",
-                    "returning",
-                    "arrived"
-                  ]
-                },
-                "mine": {
-                  "type": "boolean",
-                  "description": "G5: whether this march belongs to the requester (false = enemy march within vision range)"
-                },
-                "teamId": {
-                  "type": "string",
-                  "description": "ADR-026: which team slot ('t1'..'t5') this march deployed, if any. Only present on the requester's own marches; used client-side to grey out busy teams in the team picker."
-                },
-                "leaderUnitType": {
-                  "type": "string",
-                  "description": "March-token art (2026-07-26): the deployed team's leader unit-type (engine UnitType string, e.g. 'infantry'/'archer'/'max'), resolved server-side once at dispatch and frozen onto the march. Present for own AND enemy marches (reveals only a unit-type enum, not team/card identity). Absent on flat-troop marches (no team attached)."
+                {
+                  "type": "object",
+                  "properties": {
+                    "me": {
+                      "type": "object",
+                      "required": [
+                        "joined"
+                      ],
+                      "properties": {
+                        "joined": {
+                          "type": "boolean"
+                        },
+                        "worldId": {
+                          "type": "string",
+                          "description": "The shard worldId the player belongs to (G6/§20: returned from join-season resolution; the client uses this to enter the world)"
+                        },
+                        "troops": {
+                          "type": "integer"
+                        },
+                        "troopCap": {
+                          "type": "integer"
+                        },
+                        "resources": {
+                          "type": "object",
+                          "additionalProperties": {
+                            "type": "number"
+                          }
+                        },
+                        "yieldRate": {
+                          "type": "object",
+                          "additionalProperties": {
+                            "type": "number"
+                          }
+                        },
+                        "mainBaseTile": {
+                          "type": "string"
+                        },
+                        "familyId": {
+                          "type": "string"
+                        },
+                        "territoryCount": {
+                          "type": "integer"
+                        },
+                        "trainingQueue": {
+                          "type": "array",
+                          "description": "Training queue (S8-2, ordered by completeAt ascending). The client uses this to render the queue countdown (C4).",
+                          "items": {
+                            "type": "object",
+                            "required": [
+                              "qty",
+                              "startAt",
+                              "completeAt"
+                            ],
+                            "properties": {
+                              "qty": {
+                                "type": "integer"
+                              },
+                              "startAt": {
+                                "type": "integer",
+                                "format": "int64"
+                              },
+                              "completeAt": {
+                                "type": "integer",
+                                "format": "int64"
+                              }
+                            }
+                          }
+                        },
+                        "buildings": {
+                          "type": "object",
+                          "description": "Home-city building levels (SLG_CITY_DESIGN P1; desk≥1, others≥0 when present). Keys are BuildingKey values.",
+                          "additionalProperties": {
+                            "type": "integer"
+                          }
+                        },
+                        "buildQueue": {
+                          "type": "array",
+                          "description": "Build queue (SLG_CITY_DESIGN §4, ordered by completeAt ascending). The client CityScene renders countdowns from this.",
+                          "items": {
+                            "type": "object",
+                            "required": [
+                              "key",
+                              "toLevel",
+                              "startAt",
+                              "completeAt"
+                            ],
+                            "properties": {
+                              "key": {
+                                "type": "string",
+                                "description": "Home-city building identifier (SLG_CITY_DESIGN). P1 buildable: desk/inkPot/paperTray/graphiteMill/metalForge/stickerShop/cabinet/drillYard; wall/academy are P2.",
+                                "enum": [
+                                  "desk",
+                                  "inkPot",
+                                  "paperTray",
+                                  "graphiteMill",
+                                  "metalForge",
+                                  "stickerShop",
+                                  "cabinet",
+                                  "drillYard",
+                                  "wall",
+                                  "academy",
+                                  "satchel"
+                                ]
+                              },
+                              "toLevel": {
+                                "type": "integer"
+                              },
+                              "startAt": {
+                                "type": "integer",
+                                "format": "int64"
+                              },
+                              "completeAt": {
+                                "type": "integer",
+                                "format": "int64"
+                              }
+                            }
+                          }
+                        },
+                        "cardState": {
+                          "type": "object",
+                          "additionalProperties": {
+                            "type": "object",
+                            "required": [
+                              "currentTroops"
+                            ],
+                            "properties": {
+                              "currentTroops": {
+                                "type": "integer",
+                                "description": "Troops currently allocated to this card"
+                              },
+                              "injuredUntil": {
+                                "type": "integer",
+                                "nullable": true,
+                                "description": "Unix ms timestamp when injury ends; null = not injured"
+                              },
+                              "teamId": {
+                                "type": "string",
+                                "nullable": true,
+                                "description": "Team this card is assigned to"
+                              }
+                            }
+                          },
+                          "description": "Map of cardInstanceId → CardSLGState (troops, injury, teamId)"
+                        },
+                        "teamState": {
+                          "type": "object",
+                          "additionalProperties": {
+                            "type": "object",
+                            "properties": {
+                              "injuredUntil": {
+                                "type": "integer",
+                                "nullable": true,
+                                "description": "Unix ms timestamp when the team's injury lock ends; null/absent = not injured. Injured teams never defend."
+                              }
+                            }
+                          },
+                          "description": "Map of teamId (t1..t5) → TeamSLGState. Present only for teams with active state."
+                        },
+                        "hp": {
+                          "type": "integer",
+                          "description": "D-CITY-8: own main base's current persistent durability, same field name/semantics as WorldTileView.hp (wall-level-derived cap, self-regenerating). Absent when the player has no resolved main base yet."
+                        },
+                        "maxHp": {
+                          "type": "integer",
+                          "description": "D-CITY-8: own main base's durability cap (= baseDurabilityMax(wall level)). Client renders the durability bar as hp/maxHp."
+                        }
+                      }
+                    }
+                  }
                 }
-              }
+              ]
             }
           }
         }
@@ -4904,18 +5612,192 @@ export const WORLD_RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
   },
   "buySlgShopItem": {
     "200": {
-      "type": "object",
-      "required": [
-        "ok"
-      ],
-      "properties": {
-        "ok": {
-          "type": "boolean",
-          "enum": [
-            true
-          ]
+      "allOf": [
+        {
+          "type": "object",
+          "required": [
+            "ok"
+          ],
+          "properties": {
+            "ok": {
+              "type": "boolean",
+              "enum": [
+                true
+              ]
+            }
+          }
+        },
+        {
+          "type": "object",
+          "properties": {
+            "data": {
+              "type": "object",
+              "required": [
+                "joined"
+              ],
+              "properties": {
+                "joined": {
+                  "type": "boolean"
+                },
+                "worldId": {
+                  "type": "string",
+                  "description": "The shard worldId the player belongs to (G6/§20: returned from join-season resolution; the client uses this to enter the world)"
+                },
+                "troops": {
+                  "type": "integer"
+                },
+                "troopCap": {
+                  "type": "integer"
+                },
+                "resources": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "number"
+                  }
+                },
+                "yieldRate": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "number"
+                  }
+                },
+                "mainBaseTile": {
+                  "type": "string"
+                },
+                "familyId": {
+                  "type": "string"
+                },
+                "territoryCount": {
+                  "type": "integer"
+                },
+                "trainingQueue": {
+                  "type": "array",
+                  "description": "Training queue (S8-2, ordered by completeAt ascending). The client uses this to render the queue countdown (C4).",
+                  "items": {
+                    "type": "object",
+                    "required": [
+                      "qty",
+                      "startAt",
+                      "completeAt"
+                    ],
+                    "properties": {
+                      "qty": {
+                        "type": "integer"
+                      },
+                      "startAt": {
+                        "type": "integer",
+                        "format": "int64"
+                      },
+                      "completeAt": {
+                        "type": "integer",
+                        "format": "int64"
+                      }
+                    }
+                  }
+                },
+                "buildings": {
+                  "type": "object",
+                  "description": "Home-city building levels (SLG_CITY_DESIGN P1; desk≥1, others≥0 when present). Keys are BuildingKey values.",
+                  "additionalProperties": {
+                    "type": "integer"
+                  }
+                },
+                "buildQueue": {
+                  "type": "array",
+                  "description": "Build queue (SLG_CITY_DESIGN §4, ordered by completeAt ascending). The client CityScene renders countdowns from this.",
+                  "items": {
+                    "type": "object",
+                    "required": [
+                      "key",
+                      "toLevel",
+                      "startAt",
+                      "completeAt"
+                    ],
+                    "properties": {
+                      "key": {
+                        "type": "string",
+                        "description": "Home-city building identifier (SLG_CITY_DESIGN). P1 buildable: desk/inkPot/paperTray/graphiteMill/metalForge/stickerShop/cabinet/drillYard; wall/academy are P2.",
+                        "enum": [
+                          "desk",
+                          "inkPot",
+                          "paperTray",
+                          "graphiteMill",
+                          "metalForge",
+                          "stickerShop",
+                          "cabinet",
+                          "drillYard",
+                          "wall",
+                          "academy",
+                          "satchel"
+                        ]
+                      },
+                      "toLevel": {
+                        "type": "integer"
+                      },
+                      "startAt": {
+                        "type": "integer",
+                        "format": "int64"
+                      },
+                      "completeAt": {
+                        "type": "integer",
+                        "format": "int64"
+                      }
+                    }
+                  }
+                },
+                "cardState": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "object",
+                    "required": [
+                      "currentTroops"
+                    ],
+                    "properties": {
+                      "currentTroops": {
+                        "type": "integer",
+                        "description": "Troops currently allocated to this card"
+                      },
+                      "injuredUntil": {
+                        "type": "integer",
+                        "nullable": true,
+                        "description": "Unix ms timestamp when injury ends; null = not injured"
+                      },
+                      "teamId": {
+                        "type": "string",
+                        "nullable": true,
+                        "description": "Team this card is assigned to"
+                      }
+                    }
+                  },
+                  "description": "Map of cardInstanceId → CardSLGState (troops, injury, teamId)"
+                },
+                "teamState": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "object",
+                    "properties": {
+                      "injuredUntil": {
+                        "type": "integer",
+                        "nullable": true,
+                        "description": "Unix ms timestamp when the team's injury lock ends; null/absent = not injured. Injured teams never defend."
+                      }
+                    }
+                  },
+                  "description": "Map of teamId (t1..t5) → TeamSLGState. Present only for teams with active state."
+                },
+                "hp": {
+                  "type": "integer",
+                  "description": "D-CITY-8: own main base's current persistent durability, same field name/semantics as WorldTileView.hp (wall-level-derived cap, self-regenerating). Absent when the player has no resolved main base yet."
+                },
+                "maxHp": {
+                  "type": "integer",
+                  "description": "D-CITY-8: own main base's durability cap (= baseDurabilityMax(wall level)). Client renders the durability bar as hp/maxHp."
+                }
+              }
+            }
+          }
         }
-      }
+      ]
     }
   },
   "listSects": {

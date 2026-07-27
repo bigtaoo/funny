@@ -23,6 +23,10 @@ export interface BatchMeta {
   screen_w?: number;
   screen_h?: number;
   dpr?: number;
+  /** GDPR consent (C5-c, L1-1). track() already gates all queuing on consent having been
+   *  granted, so every batch reaching flush()/flushSync() is post-consent — this just
+   *  makes that fact visible to the server, which discards identified batches without it. */
+  consent: boolean;
 }
 
 const FLUSH_INTERVAL_MS = 30_000;

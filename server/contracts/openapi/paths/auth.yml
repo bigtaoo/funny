@@ -239,6 +239,39 @@
                     confirmToken: { type: string }
       '401': { $ref: '#/components/responses/ErrorResp' }
 
+/account/cancel-deletion:
+  post:
+    operationId: cancelAccountDeletion
+    tags: [auth]
+    summary: Undo a pending soft-delete within the 7-day grace period (C5-b), given the confirmToken from DELETE /account
+    security: [{ bearerAuth: [] }]
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [confirmToken]
+            properties:
+              confirmToken: { type: string }
+    responses:
+      '200':
+        description: Deletion cancelled; account restored to normal standing
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [ok, data]
+              properties:
+                ok: { type: boolean, enum: [true] }
+                data:
+                  type: object
+                  required: [ok]
+                  properties:
+                    ok: { type: boolean }
+      '400': { $ref: '#/components/responses/ErrorResp' }
+      '401': { $ref: '#/components/responses/ErrorResp' }
+
 /account/gdpr-consent:
   post:
     operationId: recordGdprConsent

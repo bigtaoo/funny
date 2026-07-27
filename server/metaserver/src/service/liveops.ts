@@ -31,7 +31,7 @@ import {
   ADS_MIN_INTERVAL_MS,
   type EquipmentInstance,
 } from '@nw/shared';
-import { getOrCreateSave } from '../save.js';
+import { getOrCreateSave, isAvatarOwned, PRESET_AVATAR_IDS } from '../save.js';
 import { mirrorCoins, adsDayKey, peekAdsStatus } from '../economy.js';
 import { grantTitleToPlayer } from '../titles.js';
 import { getEventsForAccount, claimEventReward } from '../events.js';
@@ -46,9 +46,6 @@ type LiveOpsHandlers = Pick<
   | 'getAchievements' | 'claimAchievement' | 'getRetention' | 'claimCheckin' | 'claimDailyReward'
   | 'getEvents' | 'claimEventReward' | 'getTitles' | 'equipTitle' | 'equipAvatar'
 >;
-
-/** Preset avatar slot ids (avatar.ts AVATAR_DEFS, indices 0-7) — always unlocked, no ownership check. */
-const PRESET_AVATAR_IDS = new Set(['0', '1', '2', '3', '4', '5', '6', '7']);
 
 export function LiveOpsMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase & Constructor<LiveOpsHandlers> {
   return class extends Base {
@@ -375,21 +372,7 @@ export function LiveOpsMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase & C
         if (PRESET_AVATAR_IDS.has(avatarId)) {
           return { ...s, equipped: { ...s.equipped, avatar: avatarId } };
         }
-        const sep = avatarId.indexOf(':');
-        const category = sep < 0 ? avatarId : avatarId.slice(0, sep);
-        const key = sep < 0 ? '' : avatarId.slice(sep + 1);
-        const owned = (() => {
-          switch (category) {
-            case 'preset': return true;
-            case 'title': return (s.titles ?? []).includes(key);
-            case 'hero': return (s.everOwned?.hero ?? []).includes(key);
-            case 'equip': return (s.everOwned?.equipment ?? []).includes(key);
-            case 'material': return (s.everOwned?.material ?? []).includes(key);
-            case 'skin': return (s.inventory?.skins ?? []).includes(key) || (s.everOwned?.skin ?? []).includes(key);
-            default: return false;
-          }
-        })();
-        if (!owned) return 'NOT_OWNED';
+        if (!isAvatarOwned(s, avatarId)) return 'NOT_OWNED';
         return { ...s, equipped: { ...s.equipped, avatar: avatarId } };
       });
       if ('error' in out) {

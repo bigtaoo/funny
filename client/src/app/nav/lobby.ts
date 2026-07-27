@@ -6,6 +6,7 @@ import { hasClaimable, reachedTierKeys } from '../../game/meta/achievements';
 import { getPvpUnlockedCards, validatePvpDeckClient, PVP_DECK_SIZE } from '../../game/meta/pvpLoadout';
 import { WorldApiClient } from '../../net/WorldApiClient';
 import { getWorldBaseUrl } from '../../net/config';
+import { serverNow } from '../../net/serverClock';
 import type { LobbyView } from '../AppViews';
 import type { AppCtx, Nav } from '../appCtx';
 import type { AIDifficulty } from '../../game';
@@ -80,7 +81,7 @@ export function createLobbyNav(ctx: AppCtx): Pick<Nav, 'goLobby'> {
   function computeShopCardClaimable(): boolean {
     const m = saveManager.get().monetization;
     if (!m) return false;
-    const active = (m.subscriptionExpiry ?? 0) > Date.now();
+    const active = (m.subscriptionExpiry ?? 0) > serverNow();
     if (!active) return false;
     const todayKey = new Date().toISOString().slice(0, 10);
     return m.subscriptionLastClaimDay !== todayKey;

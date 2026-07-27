@@ -1266,7 +1266,9 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["OkResponse"] & {
-                        data?: components["schemas"]["PlayerWorldView"];
+                        data?: components["schemas"]["PlayerWorldView"] & {
+                            serverNow?: number;
+                        };
                     };
                 };
             };
@@ -1399,13 +1401,15 @@ export interface operations {
             };
         };
         responses: {
-            /** @description Abandoned */
+            /** @description Abandoned — returns the updated player world state (resources/territory refreshed) */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["OkResponse"];
+                    "application/json": components["schemas"]["OkResponse"] & {
+                        data?: components["schemas"]["PlayerWorldView"];
+                    };
                 };
             };
         };
@@ -1457,14 +1461,16 @@ export interface operations {
             };
         };
         responses: {
-            /** @description Watchtower built */
+            /** @description Watchtower built — data.me carries the updated player world state (resources spent) */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
                     "application/json": components["schemas"]["OkResponse"] & {
-                        data?: components["schemas"]["WorldTileView"];
+                        data?: components["schemas"]["WorldTileView"] & {
+                            me?: components["schemas"]["PlayerWorldView"];
+                        };
                     };
                 };
             };
@@ -1489,14 +1495,16 @@ export interface operations {
             };
         };
         responses: {
-            /** @description Structure built */
+            /** @description Structure built — data.me carries the updated player world state (resources spent) */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
                     "application/json": components["schemas"]["OkResponse"] & {
-                        data?: components["schemas"]["WorldTileView"];
+                        data?: components["schemas"]["WorldTileView"] & {
+                            me?: components["schemas"]["PlayerWorldView"];
+                        };
                     };
                 };
             };
@@ -1585,14 +1593,16 @@ export interface operations {
             };
         };
         responses: {
-            /** @description March started */
+            /** @description March started — data.me carries the updated player world state (troops/resources spent) */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
                     "application/json": components["schemas"]["OkResponse"] & {
-                        data?: components["schemas"]["MarchView"];
+                        data?: components["schemas"]["MarchView"] & {
+                            me?: components["schemas"]["PlayerWorldView"];
+                        };
                     };
                 };
             };
@@ -2235,13 +2245,15 @@ export interface operations {
             };
         };
         responses: {
-            /** @description Item bought */
+            /** @description Item bought — returns the updated player world state (resources/effect applied) */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["OkResponse"];
+                    "application/json": components["schemas"]["OkResponse"] & {
+                        data?: components["schemas"]["PlayerWorldView"];
+                    };
                 };
             };
         };

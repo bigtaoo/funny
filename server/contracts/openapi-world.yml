@@ -753,7 +753,15 @@ paths:
                   - $ref: '#/components/schemas/OkResponse'
                   - type: object
                     properties:
-                      data: { $ref: '#/components/schemas/PlayerWorldView' }
+                      data:
+                        allOf:
+                          - $ref: '#/components/schemas/PlayerWorldView'
+                          - type: object
+                            properties:
+                              # Server epoch ms at response time (P1-1 clock-offset sample) — see
+                              # client/src/net/serverClock.ts. Only this endpoint carries it (the
+                              # highest-frequency SLG round-trip), not every PlayerWorldView consumer.
+                              serverNow: { type: integer }
 
   /world/season/transfer/targets:
     get:
@@ -881,10 +889,18 @@ paths:
                 y: { type: integer }
       responses:
         '200':
-          description: Abandoned
+          # P1-3 (comm-audit-2026-07-27): the handler already returns the full updated PlayerWorldView
+          # (territory.ts abandonTile) — this contract previously under-declared it as bare OkResponse,
+          # which is exactly why the client discarded the response and issued a separate GET /world/me.
+          description: Abandoned — returns the updated player world state (resources/territory refreshed)
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/OkResponse' }
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/OkResponse'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/PlayerWorldView' }
 
   /world/relocate:
     post:
@@ -932,7 +948,10 @@ paths:
                 y: { type: integer }
       responses:
         '200':
-          description: Watchtower built
+          # P1-3 (comm-audit-2026-07-27): the resource cost is deducted from the player's own state, not
+          # visible on the tile itself, so the client legitimately needs both — httpApi.ts attaches `me`
+          # alongside the tile so it doesn't have to make a separate GET /world/me round-trip.
+          description: Watchtower built — data.me carries the updated player world state (resources spent)
           content:
             application/json:
               schema:
@@ -940,7 +959,12 @@ paths:
                   - $ref: '#/components/schemas/OkResponse'
                   - type: object
                     properties:
-                      data: { $ref: '#/components/schemas/WorldTileView' }
+                      data:
+                        allOf:
+                          - $ref: '#/components/schemas/WorldTileView'
+                          - type: object
+                            properties:
+                              me: { $ref: '#/components/schemas/PlayerWorldView' }
 
   /world/structure:
     post:
@@ -961,7 +985,9 @@ paths:
                 kind: { type: string, enum: [arrowTower, blocker] }
       responses:
         '200':
-          description: Structure built
+          # P1-3: same reasoning as /world/watchtower above — attach `me` so the client doesn't need a
+          # separate GET /world/me for the resources it just spent.
+          description: Structure built — data.me carries the updated player world state (resources spent)
           content:
             application/json:
               schema:
@@ -969,7 +995,12 @@ paths:
                   - $ref: '#/components/schemas/OkResponse'
                   - type: object
                     properties:
-                      data: { $ref: '#/components/schemas/WorldTileView' }
+                      data:
+                        allOf:
+                          - $ref: '#/components/schemas/WorldTileView'
+                          - type: object
+                            properties:
+                              me: { $ref: '#/components/schemas/PlayerWorldView' }
 
   /world/structure/demolish:
     post:
@@ -1045,7 +1076,12 @@ paths:
                   description: "ADR-051 (P3a): kind=move dispatch intent — 'garrison' parks the team as a 驻扎 garrison (defends its 3×3 footprint); default/absent → 停留 idle. Ignored for other kinds."
       responses:
         '200':
-          description: March started
+          # P1-3 (comm-audit-2026-07-27): dispatch deducts troops/resources from the player's own state,
+          # not visible on the march itself, so httpApi.ts attaches `me` alongside it — the client can
+          # locally append this march to its cached list and adopt `me` directly, instead of following
+          # up with GET /world/march + GET /world/me (the exact "3 requests to confirm 1 action" pattern
+          # the audit flagged).
+          description: March started — data.me carries the updated player world state (troops/resources spent)
           content:
             application/json:
               schema:
@@ -1053,7 +1089,12 @@ paths:
                   - $ref: '#/components/schemas/OkResponse'
                   - type: object
                     properties:
-                      data: { $ref: '#/components/schemas/MarchView' }
+                      data:
+                        allOf:
+                          - $ref: '#/components/schemas/MarchView'
+                          - type: object
+                            properties:
+                              me: { $ref: '#/components/schemas/PlayerWorldView' }
 
   /world/march/{marchId}/recall:
     post:
@@ -1594,10 +1635,17 @@ paths:
                 itemId: { type: string }
       responses:
         '200':
-          description: Item bought
+          # P1-3 (comm-audit-2026-07-27): buySlgShopItem already returns the full updated PlayerWorldView
+          # (shop.ts) — same under-declaration bug as /world/abandon above.
+          description: Item bought — returns the updated player world state (resources/effect applied)
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/OkResponse' }
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/OkResponse'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/PlayerWorldView' }
 
   # ── Sect (S8-4b) ──────────────────────────────────────────────────────────────
 

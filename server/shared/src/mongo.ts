@@ -51,6 +51,12 @@ export interface AccountDoc {
   };
   /** C5-b soft-delete timestamp; once set, auth returns ACCOUNT_DELETED and data is asynchronously purged after 7 days. */
   deletedAt?: number;
+  /**
+   * C5-b cancellation token, minted alongside deletedAt and required by POST /account/cancel-deletion
+   * to undo a soft-delete within the 7-day grace period. Cleared (along with deletedAt) on successful
+   * cancellation, or once the grace period elapses (the eventual purge job clears the whole account).
+   */
+  deletionConfirmToken?: string;
 }
 
 /**

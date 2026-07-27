@@ -15,6 +15,7 @@ import type { IStorage } from '../platform/IPlatform';
 import type { components } from './openapi-world';
 import type { components as socialComponents } from './openapi-social';
 import type { components as auctionComponents } from './openapi-auction';
+import { sampleServerNow } from './serverClock';
 
 // ── Generated DTO type aliases (single source of truth = openapi-world.yml) ──
 
@@ -205,7 +206,10 @@ export class WorldApiClient {
   // ── World ──────────────────────────────────────────────────────────────────
 
   async getMe(worldId: string): Promise<PlayerWorldView> {
-    return this.req('GET', `/world/me?worldId=${encodeURIComponent(worldId)}`);
+    const data = await this.req<PlayerWorldView & { serverNow?: number }>('GET', `/world/me?worldId=${encodeURIComponent(worldId)}`);
+    // P1-1 clock-offset sample — getMe is the highest-frequency SLG round-trip.
+    if (typeof data.serverNow === 'number') sampleServerNow(data.serverNow);
+    return data;
   }
 
   async getMap(worldId: string, cx: number, cy: number, r: number): Promise<WorldMapView> {
@@ -279,7 +283,10 @@ export class WorldApiClient {
     return this.req('POST', '/world/occupy', { worldId, x, y });
   }
 
-  async abandonTile(worldId: string, x: number, y: number): Promise<{ ok: true }> {
+  /** Abandon an owned tile. Returns the updated player world state (P1-3: was mis-declared as bare
+   *  {ok:true} — the server always returned the full PlayerWorldView, so the caller can adopt it
+   *  directly instead of following up with a separate GET /world/me). */
+  async abandonTile(worldId: string, x: number, y: number): Promise<PlayerWorldView> {
     return this.req('POST', '/world/abandon', { worldId, x, y });
   }
 
@@ -288,13 +295,16 @@ export class WorldApiClient {
     return this.req('POST', '/world/relocate', { worldId, x, y });
   }
 
-  /** Build a watchtower (spend WATCHTOWER_COST resources on owned territory at (x,y) to create a large-radius persistent vision source; §18 G5 V2). Returns the tile view after construction. */
-  async buildWatchtower(worldId: string, x: number, y: number): Promise<WorldTileView> {
+  /** Build a watchtower (spend WATCHTOWER_COST resources on owned territory at (x,y) to create a large-radius persistent vision source; §18 G5 V2).
+   *  Returns the built tile plus `me` (P1-3: resource cost isn't visible on the tile itself; the caller
+   *  adopts `me` directly instead of a separate GET /world/me). */
+  async buildWatchtower(worldId: string, x: number, y: number): Promise<WorldTileView & { me: PlayerWorldView }> {
     return this.req('POST', '/world/watchtower', { worldId, x, y });
   }
 
-  /** ADR-051 (P5): build a player structure (arrowTower / blocker) on own or same-family territory at (x,y). */
-  async buildStructure(worldId: string, x: number, y: number, kind: 'arrowTower' | 'blocker'): Promise<WorldTileView> {
+  /** ADR-051 (P5): build a player structure (arrowTower / blocker) on own or same-family territory at (x,y).
+   *  Returns the built tile plus `me` (P1-3, same reasoning as buildWatchtower above). */
+  async buildStructure(worldId: string, x: number, y: number, kind: 'arrowTower' | 'blocker'): Promise<WorldTileView & { me: PlayerWorldView }> {
     return this.req('POST', '/world/structure', { worldId, x, y, kind });
   }
 
@@ -303,6 +313,9 @@ export class WorldApiClient {
     return this.req('POST', '/world/structure/demolish', { worldId, x, y });
   }
 
+  /** Returns the created march plus `me` (P1-3: committed troops/resources aren't visible on the march
+   *  itself; the caller adopts `me` directly and locally appends the march to its cached list, instead
+   *  of following up with GET /world/march + GET /world/me). */
   async startMarch(
     worldId: string,
     fromX: number, fromY: number,
@@ -313,7 +326,7 @@ export class WorldApiClient {
     /** ADR-051 (P3a/P4): 'garrison' parks the arriving team as a 驻扎 garrison (defends its 3×3 footprint, stays busy);
      * omitted / 'idle' keeps it 停留 idle (free to re-command). Only honored server-side for kind='move'. */
     stationMode?: 'idle' | 'garrison',
-  ): Promise<MarchView> {
+  ): Promise<MarchView & { me: PlayerWorldView }> {
     return this.req('POST', '/world/march', {
       worldId, fromX, fromY, toX, toY, kind, troops,
       ...(teamId ? { teamId } : {}),
@@ -408,7 +421,10 @@ export class WorldApiClient {
     return this.req('GET', '/world/shop/items');
   }
 
-  async buyShopItem(worldId: string, itemId: string): Promise<{ ok: true }> {
+  /** Returns the updated player world state (P1-3: was mis-declared as bare {ok:true} — the server
+   *  always returned the full PlayerWorldView, so the caller can adopt it directly instead of a
+   *  separate GET /world/me). */
+  async buyShopItem(worldId: string, itemId: string): Promise<PlayerWorldView> {
     return this.req('POST', '/world/shop/buy', { worldId, itemId });
   }
 

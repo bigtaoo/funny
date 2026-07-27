@@ -738,6 +738,9 @@ export const de: Record<TranslationKey, string> = {
   'friends.duel.timeout': 'Duell-Einladung abgelaufen',
   'friends.duel.offline': 'Freund ist offline',
   'friends.duel.notFound': 'Spieler nicht gefunden',
+  // Global toast (any scene, P0-8): the in-scene banner (friends.duelInviteBanner) only shows while
+  // sitting on FriendsScene, so this fires everywhere else the invite arrives.
+  'friends.duel.invitedToast': '{name} fordert dich zum Duell heraus — sieh bei Freunden nach',
   'social.noSlg': 'Betritt zuerst die Welt',
   'social.family.none': 'Nicht in einer Familie',
   'social.family.create': 'Familie gründen',

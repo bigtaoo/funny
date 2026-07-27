@@ -148,6 +148,9 @@ schemas:
         type: object
         additionalProperties: { $ref: '#/components/schemas/CardInstance' }
         description: Card instance inventory (instanceId→CardInstance); max 500 entries
+      # Cheap cap-check mirror of the `cardInstances` collection count (CARD_INV_CAP); may drift slightly,
+      # never more authoritative than an actual count. Declared so it isn't silently stripped.
+      cardInvCount: { type: integer, minimum: 0 }
       # Persistent roster/inventory-full overflow-mail counters (CHARACTER_CARDS_DESIGN §4 / EQUIPMENT_DESIGN §3.3).
       # Absent in legacy saves = 0 (lazy default). See gachaDraw's `overflow` response for the per-draw toast summary.
       cardMailOverflowCount: { type: integer, minimum: 0 }
@@ -158,6 +161,25 @@ schemas:
       flags:
         type: object
         additionalProperties: { type: boolean }
+      # —— Lifetime-owned ledger (avatar-unlock across hero/equipment/material/skin categories, shared/src/types.ts
+      # SaveData.everOwned). Server-authoritative, additive-only; may be absent in legacy saves, not required.
+      # ⚠ Must be declared: client reads save.everOwned directly (app/nav/auth.ts) for avatar-unlock checks —
+      # an undeclared property here is silently stripped by fast-json-stringify response serialization.
+      everOwned:
+        type: object
+        properties:
+          hero:
+            type: array
+            items: { type: string }
+          equipment:
+            type: array
+            items: { type: string }
+          material:
+            type: array
+            items: { type: string }
+          skin:
+            type: array
+            items: { type: string }
       # —— Achievement system (server-authoritative, ACHIEVEMENT_DESIGN §3). Lazily created; may be absent in legacy saves, not required ——
       stats:
         type: object
@@ -184,6 +206,9 @@ schemas:
         type: object
         nullable: true
         additionalProperties: { $ref: '#/components/schemas/EquipmentInstance' }
+      # Cheap cap-check mirror of the `equipmentInstances` collection count (EQUIPMENT_INV_CAP); may drift
+      # slightly, never more authoritative than an actual count. Declared so it isn't silently stripped.
+      equipmentInvCount: { type: integer, minimum: 0 }
       # —— Retention (B5, RETENTION_DESIGN §4). Server-authoritative, not uploaded via PUT /save; may be absent in legacy saves, not required.
       # ⚠ Must be declared: otherwise response serialization strips retention (same +undefined regression as §10.1) → adoptServer
       # overwrites local save.retention with undefined → check-in claimable always resets to slot 1 (stuck on day 1).
@@ -556,6 +581,11 @@ schemas:
       screen_w:     { type: integer }
       screen_h:     { type: integer }
       dpr:          { type: number }
+      # GDPR consent (C5-c, L1-1). The client only ever queues events after the player has
+      # accepted the consent dialog (or already consented in a prior session), so every batch
+      # it sends reflects `true` here. Server-side: identified batches (JWT present) with this
+      # unset/false are discarded (see analyticsvc httpApi.ts); anonymous batches pass through.
+      consent:      { type: boolean }
       events:
         type: array
         maxItems: 100

@@ -36,7 +36,7 @@ import { BattlePassScene, type BattlePassCallbacks } from './scenes/BattlePassSc
 import { RechargeScene, type RechargeCallbacks } from './scenes/RechargeScene';
 import { TitlesScene, type TitlesSceneCallbacks } from './scenes/TitlesScene';
 import { WorldMapScene, type WorldMapCallbacks, type WorldMapView } from './scenes/WorldMapScene';
-import { FamilyScene, type FamilySceneCallbacks } from './scenes/FamilyScene';
+import { FamilyScene, type FamilySceneCallbacks, type FamilySceneView } from './scenes/FamilyScene';
 import { SectScene, type SectSceneCallbacks, type SectSceneView } from './scenes/SectScene';
 import { AuctionScene, type AuctionSceneCallbacks } from './scenes/AuctionScene';
 import { DefenseEditorScene, type DefenseEditorCallbacks } from './scenes/DefenseEditorScene';
@@ -306,6 +306,7 @@ class PixiAppViews implements AppViews {
       applyTileUpdate:  (tu) => scene.applyTileUpdate(tu),
       applyUnderAttack: (u) => scene.applyUnderAttack(u),
       applySiegeResult: (s) => scene.applySiegeResult(s),
+      applyNationMsg:   (n) => scene.applyNationMsg(n),
     };
   }
 
@@ -322,8 +323,8 @@ class PixiAppViews implements AppViews {
     return scene;
   }
 
-  showFamily(cb: FamilySceneCallbacks, opts?: MountOpts): void {
-    this.mountSlg('FamilyScene', () => new FamilyScene(this.layout, this.input, cb), opts);
+  showFamily(cb: FamilySceneCallbacks, opts?: MountOpts): FamilySceneView {
+    return this.mountSlg('FamilyScene', () => new FamilyScene(this.layout, this.input, cb), opts);
   }
 
   showSect(cb: SectSceneCallbacks, opts?: MountOpts): SectSceneView {

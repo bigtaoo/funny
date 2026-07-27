@@ -10,7 +10,7 @@ import type { AddressInfo } from 'net';
 import { createAnalyticsMongo, type AnalyticsMongo } from '../src/db';
 import { AnalyticsService } from '../src/service';
 import { startHttpApi } from '../src/httpApi';
-import { createInternalAuth } from '@nw/shared';
+import { createInternalAuth, signToken } from '@nw/shared';
 
 const URI = process.env.NW_MONGO_URI ?? 'mongodb://127.0.0.1:27017/?replicaSet=rs0';
 const DB = 'nw_analytics_test';
@@ -133,6 +133,67 @@ describe.skipIf(!mongo)('analyticsvc e2e', () => {
     });
     expect(res.status).toBe(200);
     await new Promise((r) => setTimeout(r, 200));
+  });
+
+  // P0-1 (comm-audit-2026-07-27 finding B1): identified batches (JWT present) require consent=true
+  // to be persisted — the client-side consent field is new (this test proves the server side of the
+  // contract, which was already correctly implemented; the bug was entirely client-side never sending it).
+  it('identified batch (JWT) without consent=true is silently discarded, not persisted', async () => {
+    const token = signToken('acc-consent-1', { secret: SECRET });
+    const now = Date.now();
+    const res = await fetch(`${base}/analytics/events`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
+      body: JSON.stringify({
+        session_id: 'sess-consent-1', device_id: 'dev-consent-1', platform: 'web', os: '', game_version: '', locale: '',
+        // A neutral event name — session_start specifically is aggregated by other tests in this file
+        // (event_counts/dau/funnel/login_hour/retention all hardcode totals against it), and this
+        // shared-DB suite doesn't reset between tests.
+        events: [{ event: 'consent_test_marker', ts: now }],
+        // consent omitted (as a pre-fix client would have sent)
+      }),
+    });
+    expect(res.status).toBe(200); // discarded silently, not an error (preserves UX per the design)
+    await new Promise((r) => setTimeout(r, 200));
+    const count = await mongo!.collections.events.countDocuments({ session_id: 'sess-consent-1' });
+    expect(count).toBe(0);
+  });
+
+  it('identified batch (JWT) with consent=true is persisted', async () => {
+    const token = signToken('acc-consent-2', { secret: SECRET });
+    const now = Date.now();
+    const res = await fetch(`${base}/analytics/events`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
+      body: JSON.stringify({
+        // Reuses dev-001 (already counted as a unique device by the first ingestion test above) rather
+        // than a fresh device_id, so this doesn't bump the DAU total other tests assert against.
+        session_id: 'sess-consent-2', device_id: 'dev-001', platform: 'web', os: '', game_version: '', locale: '',
+        consent: true,
+        events: [{ event: 'consent_test_marker', ts: now }],
+      }),
+    });
+    expect(res.status).toBe(200);
+    await new Promise((r) => setTimeout(r, 200));
+    const count = await mongo!.collections.events.countDocuments({ session_id: 'sess-consent-2' });
+    expect(count).toBeGreaterThan(0);
+  });
+
+  it('anonymous batch (no JWT) is persisted regardless of consent (no PII to gate)', async () => {
+    const now = Date.now();
+    const res = await fetch(`${base}/analytics/events`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        // Same reasoning as above — reuse dev-002 to avoid changing the DAU/retention cohort size.
+        session_id: 'sess-consent-3', device_id: 'dev-002', platform: 'web', os: '', game_version: '', locale: '',
+        events: [{ event: 'consent_test_marker', ts: now }],
+      }),
+    });
+    expect(res.status).toBe(200);
+    await new Promise((r) => setTimeout(r, 200));
+    const count = await mongo!.collections.events.countDocuments({ session_id: 'sess-consent-3' });
+    expect(count).toBeGreaterThan(0);
   });
 
   it('POST /analytics/events empty events array → 400', async () => {

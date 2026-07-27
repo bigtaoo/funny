@@ -126,6 +126,12 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
     if (!api || !gw) return null;
     state.netSession = new NetSession(platform, gw, api, () => platform.getAuthCredential());
     state.netSession.handlers.onMatchStart = (info) => nav.goGameNet(info);
+    // Duel invites ("切磋") must reach the player regardless of which scene they're currently on —
+    // unlike `handlers` above, `globalHandlers` is never reassigned by scene code, so this stays
+    // bound for the lifetime of the session (P0-8, comm-audit-2026-07-27 finding B9).
+    state.netSession.globalHandlers.onDuelInvited = (d) => {
+      showToastMessage(t('friends.duel.invitedToast', { name: d.fromName }), 'success');
+    };
     return state.netSession;
   }
 

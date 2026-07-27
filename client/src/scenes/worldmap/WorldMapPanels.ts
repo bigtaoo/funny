@@ -5,6 +5,7 @@ import { drawScrollIndicator } from '../../ui/widgets/ScrollIndicator';
 import { buildIcon } from '../../render/icons';
 import { FS, snapFont } from '../../render/fontScale';
 import { WorldApiError } from '../../net/WorldApiClient';
+import { serverNow } from '../../net/serverClock';
 import { proceduralTile } from '@nw/shared';
 import { loadResAtlas, getResTexture, isResAtlasReady } from '../../render/resAtlasLoader';
 import { loadCityAtlas, getCityTexture, isCityAtlasReady } from '../../render/cityAtlasLoader';
@@ -224,7 +225,7 @@ export class WorldMapPanels {
         const MAX_VISIBLE_MARCHES = 5;
         const visibleMarches = myMarches.slice(0, MAX_VISIBLE_MARCHES);
         const overflowCount = myMarches.length - visibleMarches.length;
-        const now = Date.now();
+        const now = serverNow();
         const MARCH_KIND_ICON: Record<string, IconKind> = {
           attack: 'swords', reinforce: 'armor', scout: 'scope', return: 'replay', occupy: 'flag',
         };
@@ -609,7 +610,7 @@ export class WorldMapPanels {
         addText(t(statusKey as Parameters<typeof t>[0]), px + 14, cy, 11); cy += 18;
         addText(t('world.seasonPop').replace('{pop}', String(s.population)).replace('{cap}', String(s.capacity)), px + 14, cy, 11); cy += 18;
         if (s.resetAt) {
-          const days = Math.max(0, Math.ceil((s.resetAt - Date.now()) / 86400000));
+          const days = Math.max(0, Math.ceil((s.resetAt - serverNow()) / 86400000));
           addText(t('world.seasonReset').replace('{d}', String(days)), px + 14, cy, 11); cy += 18;
         }
       }
@@ -883,7 +884,7 @@ export class WorldMapPanels {
       ml.addChild(empty);
     } else {
       const rowH = 40;
-      const now = Date.now();
+      const now = serverNow();
       const listLayer = this.beginScrollList(px, ly, pw, bodyBottom - ly, rows.length * rowH, () => this.renderReplayPanel());
       let ry = ly - this.ctx.infoScrollY;
       for (const s of rows) {

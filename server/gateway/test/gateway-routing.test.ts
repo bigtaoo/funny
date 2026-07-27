@@ -36,12 +36,12 @@ class RecordingMatchsvc extends MatchsvcClient {
   constructor() {
     super(null, KEY);
   }
-  override roomCreate(a: string, n: string, p: string, e = '', av = '', deck: string[] = []): void { this.calls.push({ m: 'roomCreate', args: [a, n, p, e, av, deck] }); }
-  override roomJoin(a: string, n: string, p: string, c: string, e = '', av = '', deck: string[] = []): void { this.calls.push({ m: 'roomJoin', args: [a, n, p, c, e, av, deck] }); }
+  override async roomCreate(a: string, n: string, p: string, e = '', av = '', deck: string[] = []): Promise<boolean> { this.calls.push({ m: 'roomCreate', args: [a, n, p, e, av, deck] }); return true; }
+  override async roomJoin(a: string, n: string, p: string, c: string, e = '', av = '', deck: string[] = []): Promise<boolean> { this.calls.push({ m: 'roomJoin', args: [a, n, p, c, e, av, deck] }); return true; }
   override roomReady(a: string, r: boolean): void { this.calls.push({ m: 'roomReady', args: [a, r] }); }
   override roomStart(a: string): void { this.calls.push({ m: 'roomStart', args: [a] }); }
   override roomLeave(a: string): void { this.calls.push({ m: 'roomLeave', args: [a] }); }
-  override enqueue(a: string, n: string, p: string, e: number): void { this.calls.push({ m: 'enqueue', args: [a, n, p, e] }); }
+  override async enqueue(a: string, n: string, p: string, e: number): Promise<boolean> { this.calls.push({ m: 'enqueue', args: [a, n, p, e] }); return true; }
   override connected(a: string): void { this.calls.push({ m: 'connected', args: [a] }); }
   override disconnected(a: string): void { this.calls.push({ m: 'disconnected', args: [a] }); }
   override duelInvite(a: string, n: string, p: string, e: string, av: string, to: string, deck: string[] = []): void {
@@ -50,6 +50,22 @@ class RecordingMatchsvc extends MatchsvcClient {
   override duelRespond(a: string, inviteId: string, accept: boolean, n = '', p = '', e = '', av = '', deck: string[] = []): void {
     this.calls.push({ m: 'duelRespond', args: [a, inviteId, accept, n, p, e, av, deck] });
   }
+}
+
+/**
+ * matchsvc stub simulating total delivery failure (postInternal exhausted all retries and never
+ * reached matchsvc at all) — as opposed to RecordingMatchsvc, which always "succeeds". Used to
+ * verify the gateway pushes an explicit room_error instead of leaving the client's searching/
+ * connecting UI stuck forever with no signal (P0-7, comm-audit-2026-07-27 finding B8).
+ */
+class FailingMatchsvc extends MatchsvcClient {
+  readonly calls: { m: string; args: unknown[] }[] = [];
+  constructor() { super(null, KEY); }
+  override async roomCreate(a: string, n: string, p: string, e = '', av = '', deck: string[] = []): Promise<boolean> { this.calls.push({ m: 'roomCreate', args: [a, n, p, e, av, deck] }); return false; }
+  override async roomJoin(a: string, n: string, p: string, c: string, e = '', av = '', deck: string[] = []): Promise<boolean> { this.calls.push({ m: 'roomJoin', args: [a, n, p, c, e, av, deck] }); return false; }
+  override async enqueue(a: string, n: string, p: string, e: number): Promise<boolean> { this.calls.push({ m: 'enqueue', args: [a, n, p, e] }); return false; }
+  override connected(a: string): void { this.calls.push({ m: 'connected', args: [a] }); }
+  override disconnected(a: string): void { this.calls.push({ m: 'disconnected', args: [a] }); }
 }
 
 /** MetaClient stub reporting a fixed ELO (available), so deck-unlock gating can be exercised. */
@@ -257,6 +273,48 @@ describe('Gateway control-plane routing', () => {
     expect(err['code']).toBe('RANKED_UNAVAILABLE');
     await sleep(40);
     expect(mm.calls.some((c) => c.m === 'enqueue')).toBe(false);
+  });
+
+  it('ranked enqueue: matchsvc unreachable after retries → push back RANKED_UNAVAILABLE (regression, B8)', async () => {
+    const port = 19524;
+    const mm = new FailingMatchsvc();
+    startGateway(port, mm, new FakeMeta(1200)); // meta available → reaches matchsvc.enqueue this time
+    const a = await connect(port, 'acc-a');
+
+    const errP = waitForServer(a, 'room_error');
+    a.send(encodeClient({ room_create: { mode: 1 } })); // RANKED
+
+    const err = await errP;
+    expect(err['code']).toBe('RANKED_UNAVAILABLE');
+    expect(mm.calls.some((c) => c.m === 'enqueue')).toBe(true);
+  });
+
+  it('friendly room create: matchsvc unreachable after retries → push back MATCHMAKING_UNAVAILABLE (regression, B8)', async () => {
+    const port = 19525;
+    const mm = new FailingMatchsvc();
+    startGateway(port, mm, new FakeMeta(1200));
+    const a = await connect(port, 'acc-a');
+
+    const errP = waitForServer(a, 'room_error');
+    a.send(encodeClient({ room_create: { mode: 0 } })); // friendly
+
+    const err = await errP;
+    expect(err['code']).toBe('MATCHMAKING_UNAVAILABLE');
+    expect(mm.calls.some((c) => c.m === 'roomCreate')).toBe(true);
+  });
+
+  it('friendly room join: matchsvc unreachable after retries → push back MATCHMAKING_UNAVAILABLE (regression, B8)', async () => {
+    const port = 19526;
+    const mm = new FailingMatchsvc();
+    startGateway(port, mm, new FakeMeta(1200));
+    const a = await connect(port, 'acc-a');
+
+    const errP = waitForServer(a, 'room_error');
+    a.send(encodeClient({ room_join: { code: 'ABC123' } }));
+
+    const err = await errP;
+    expect(err['code']).toBe('MATCHMAKING_UNAVAILABLE');
+    expect(mm.calls.some((c) => c.m === 'roomJoin')).toBe(true);
   });
 
   // ── Friend challenge ("切磋", ADR friends-duel-confirm) ─────────────────────
