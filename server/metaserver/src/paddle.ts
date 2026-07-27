@@ -10,7 +10,9 @@
 //   NW_PADDLE_CLIENT_TOKEN      Paddle.js client-side token (sent to client via /bootstrap; ptok_…)
 //   NW_PADDLE_PRICE_IDS         Tier → Paddle price ID map: "t499:pri_xxx,t999:pri_yyy,..."
 //                               Also carries the subscription products (GACHA_DESIGN §5) under the
-//                               reserved keys `monthly_card` / `year_card`, e.g. "...,monthly_card:pri_zzz,year_card:pri_www"
+//                               reserved keys `monthly_card` / `year_card`, and the starter packs
+//                               (GACHA_DESIGN §6) under `starter_draw` / `starter_growth`, e.g.
+//                               "...,monthly_card:pri_zzz,year_card:pri_www,starter_draw:pri_aaa,starter_growth:pri_bbb"
 //   NW_PADDLE_SANDBOX           "true" = use sandbox API (default false)
 //
 // Paddle webhook signature (h1 scheme):
@@ -20,9 +22,11 @@
 
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
-import { IAP_TIERS, IAP_TIERS_LIST } from '@nw/shared';
+import { IAP_TIERS, IAP_TIERS_LIST, PRODUCT_STARTER_GROWTH, GROWTH_PACK_WINDOW_DAYS } from '@nw/shared';
 import type { CommercialClient } from './commercialClient.js';
-import { mirrorCoins, mirrorWalletFrom } from './economy.js';
+import { mirrorCoins, mirrorWalletFrom, deliverOrder } from './economy.js';
+import { getOrCreateSave } from './save.js';
+import { nullMetaSocialsvcClient, type MetaSocialsvcClient } from './socialsvcClient.js';
 import type { Collections } from '@nw/shared';
 
 const PADDLE_PROD_API = 'https://api.paddle.com';
@@ -85,6 +89,23 @@ export function subscriptionForPriceId(priceId: string): 'monthly' | 'year' | nu
     if (pid !== priceId) continue;
     if (tierKey === 'monthly_card') return 'monthly';
     if (tierKey === 'year_card') return 'year';
+  }
+  return null;
+}
+
+/**
+ * Resolves a Paddle price ID to a starter pack product (GACHA_DESIGN §6, ¥6/¥30 first-purchase-funnel
+ * SKUs), same reserved-key mapping style as subscriptionForPriceId.
+ */
+export function starterProductForPriceId(priceId: string): 'starter_draw' | 'starter_growth' | null {
+  const raw = process.env.NW_PADDLE_PRICE_IDS ?? '';
+  for (const pair of raw.split(',')) {
+    const colonIdx = pair.indexOf(':');
+    if (colonIdx < 0) continue;
+    const tierKey = pair.slice(0, colonIdx).trim();
+    const pid = pair.slice(colonIdx + 1).trim();
+    if (pid !== priceId) continue;
+    if (tierKey === 'starter_draw' || tierKey === 'starter_growth') return tierKey;
   }
   return null;
 }
@@ -207,6 +228,7 @@ interface PaddleDeps {
   cols: Collections;
   commercial: CommercialClient;
   now: () => number;
+  socialsvc?: MetaSocialsvcClient;
   /** JWT-verified accountId extractor (reuses meta auth). null = not logged in. */
   getAccountId(req: FastifyRequest): string | null;
 }
@@ -229,10 +251,12 @@ export function registerPaddleRoutes(app: FastifyInstance, deps: PaddleDeps): vo
       }
 
       const { tierId } = req.body as { tierId?: string };
-      // tierId is either a coin tier (IAP_TIERS) or one of the subscription products (GACHA_DESIGN §5),
-      // which share the same checkout+webhook plumbing but aren't coin-tier priced.
+      // tierId is either a coin tier (IAP_TIERS), one of the subscription products (GACHA_DESIGN §5), or
+      // one of the starter packs (GACHA_DESIGN §6) — all three share the same checkout+webhook plumbing
+      // but aren't coin-tier priced.
       const isSubscription = tierId === 'monthly_card' || tierId === 'year_card';
-      if (!tierId || (!IAP_TIERS[tierId] && !isSubscription)) {
+      const isStarter = tierId === 'starter_draw' || tierId === PRODUCT_STARTER_GROWTH;
+      if (!tierId || (!IAP_TIERS[tierId] && !isSubscription && !isStarter)) {
         return reply
           .code(400)
           .send({ ok: false, error: { code: 'INVALID_TIER', message: 'unknown product' } });
@@ -247,6 +271,26 @@ export function registerPaddleRoutes(app: FastifyInstance, deps: PaddleDeps): vo
           return reply
             .code(400)
             .send({ ok: false, error: { code: 'ALREADY_ACTIVE', message: 'subscription already active' } });
+        }
+      }
+
+      if (isStarter) {
+        // Same once-per-account (+ growth pack's first-N-days window) pre-checks the direct /starter/buy
+        // route enforces — refuse before charging rather than take payment for a grant the server will
+        // end up refusing (mirrors the subscription pre-check above).
+        const wallet = await deps.commercial.getWallet(accountId);
+        if (wallet?.starterUsed?.includes(tierId)) {
+          return reply
+            .code(400)
+            .send({ ok: false, error: { code: 'ALREADY_PURCHASED', message: 'starter pack already purchased' } });
+        }
+        if (tierId === PRODUCT_STARTER_GROWTH) {
+          const acct = await deps.cols.accounts.findOne({ _id: accountId });
+          if (acct && deps.now() - acct.createdAt > GROWTH_PACK_WINDOW_DAYS * 86400000) {
+            return reply
+              .code(400)
+              .send({ ok: false, error: { code: 'NO_PERMISSION', message: 'growth pack window closed' } });
+          }
         }
       }
 
@@ -372,6 +416,38 @@ export function registerPaddleRoutes(app: FastifyInstance, deps: PaddleDeps): vo
               transactionId, eventType: 'transaction.completed', status, accountId, rawEvent: rawBody,
             });
             return reply.code(200).send('processed');
+          }
+          const w = await deps.commercial.getWallet(accountId);
+          if (w) await mirrorWalletFrom(deps.cols, accountId, w, deps.now());
+          return reply.code(200).send('ok');
+        }
+
+        // Starter pack (GACHA_DESIGN §6, ¥6/¥30): once-per-account, may deliver loot-box items
+        // (starter_draw) alongside coins/card (starter_growth). Same idempotency shape as the
+        // subscription branch above.
+        const starterProduct = starterProductForPriceId(priceId);
+        if (starterProduct) {
+          if (typeof rawQuantity === 'number' && Number.isFinite(rawQuantity) && rawQuantity !== 1) {
+            app.log.warn(`paddle webhook: starter pack tx ${transactionId} reported quantity ${rawQuantity}, ignoring (grants exactly one pack)`);
+          }
+          const orderId = `paddle:${transactionId}`;
+          const result = await deps.commercial.starterBuy({ accountId, productId: starterProduct, orderId });
+          if (!result.ok) {
+            // Real money already changed hands but the grant was refused (e.g. an extreme same-instant
+            // race, or the checkout-time pre-check window closing between checkout and webhook) — log
+            // for CS/refund lookup instead of silently dropping it.
+            app.log.error(`paddle webhook: starter pack grant failed ${result.error} tx=${transactionId}`);
+            await deps.commercial.recordPaddleEvent({
+              transactionId, eventType: 'transaction.completed', status, accountId, rawEvent: rawBody,
+            });
+            return reply.code(200).send('processed');
+          }
+          if (result.results.length > 0) {
+            await deliverOrder(
+              deps.cols, deps.commercial, deps.socialsvc ?? nullMetaSocialsvcClient, accountId,
+              { _id: orderId, kind: 'starter', result: { results: result.results, poolId: 'standard' } },
+              result.coinsAfter, null, deps.now(),
+            );
           }
           const w = await deps.commercial.getWallet(accountId);
           if (w) await mirrorWalletFrom(deps.cols, accountId, w, deps.now());

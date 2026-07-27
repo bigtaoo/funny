@@ -167,8 +167,18 @@
   post:
     operationId: monthlyCardBuy
     tags: [gacha]
-    summary: Buy the monthly card (GACHA_DESIGN §5; single-slot — 400 ALREADY_ACTIVE while a card is still running)
+    summary: Buy the monthly card (GACHA_DESIGN §5; requires a verified store receipt — 400 INVALID_RECEIPT on mismatch; single-slot — 400 ALREADY_ACTIVE while a card is still running). Web (Paddle) never calls this route — the Paddle webhook grants it server-side after its own signature check.
     security: [{ bearerAuth: [] }]
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [platform, receipt]
+            properties:
+              platform: { type: string }
+              receipt: { type: string }
     responses:
       '200':
         description: Success
@@ -190,8 +200,18 @@
   post:
     operationId: yearCardBuy
     tags: [gacha]
-    summary: Buy the year card (GACHA_DESIGN §5; 365-day subscription, single-slot — 400 ALREADY_ACTIVE while a card is still running)
+    summary: Buy the year card (GACHA_DESIGN §5; 365-day subscription; requires a verified store receipt — 400 INVALID_RECEIPT on mismatch; single-slot — 400 ALREADY_ACTIVE while a card is still running). Web (Paddle) never calls this route — the Paddle webhook grants it server-side after its own signature check.
     security: [{ bearerAuth: [] }]
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [platform, receipt]
+            properties:
+              platform: { type: string }
+              receipt: { type: string }
     responses:
       '200':
         description: Success
@@ -273,7 +293,7 @@
   post:
     operationId: starterBuy
     tags: [gacha]
-    summary: Buy a one-off starter pack (GACHA_DESIGN §6)
+    summary: Buy a one-off starter pack (GACHA_DESIGN §6, ¥6/¥30 paid product — requires a verified store receipt, 400 INVALID_RECEIPT on mismatch)
     security: [{ bearerAuth: [] }]
     requestBody:
       required: true
@@ -281,9 +301,11 @@
         application/json:
           schema:
             type: object
-            required: [productId]
+            required: [productId, platform, receipt]
             properties:
               productId: { type: string, enum: [starter_draw, starter_growth] }
+              platform: { type: string }
+              receipt: { type: string }
     responses:
       '200':
         description: Success

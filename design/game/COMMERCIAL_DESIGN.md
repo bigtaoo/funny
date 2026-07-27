@@ -400,8 +400,8 @@ metaserver /paddle/webhook（HMAC 校验后）
 
 ### 10.7 月卡/年卡接入真实 Paddle 扣款（2026-07-25）
 
-> 状态：✅ 已实现（web/Paddle）。原生（Apple/Google）与隐藏渠道（微信/CrazyGames）维持旧的直接授权行为，范围外——
-> 这两类平台目前没有真实订阅 IAP 基础设施（原生商店的"订阅"概念与本仓一次性天数延长的 grant 模型不同，是独立项目）。
+> 状态：✅ 已实现（web/Paddle）。**原生（Apple/Google）与隐藏渠道（微信/CrazyGames）的"直接授权"缺口已于
+> 2026-07-27 关闭，见 §10.8**——本节写完时那条缺口还在，是当时的一个已知范围裁剪，后来被审计发现是真实资损口。
 
 此前 `buyMonthlyCard`/`buyYearCard`（`GACHA_DESIGN.md §5`）无论平台都直接调 `POST /monthly-card/buy` /
 `/year-card/buy`，服务端"当作已授权购买"立即生效——玩家点 Buy 就直接拿到卡，网页端从未真的走过 Paddle 扣款
@@ -435,3 +435,38 @@ ShopScene → buyMonthlyCard()/buyYearCard() → createAppCore.doBuySubscription
 - **同实例竞态**：`subscriptionCardBuy` 的单卡门控在 webhook 时仍会兜底（极端情况——两个标签页同时下单——checkout
   时的预检查没拦住），此时钱已经真扣了但卡拒发，走 `recordPaddleEvent` 留痕供客服/退款排查（同 §10.5 的落地方式），
   不静默丢弃。
+
+### 10.8 月卡/年卡/新手包关闭原生+隐藏渠道的"直接授权"缺口（2026-07-27 审计）
+
+> 状态：✅ 已实现（server 端全渠道 + web/Paddle 全链路 + 原生客户端接线；微信 Pay 仍是 TODO，见下）。
+> **取代 §10.7 状态行"原生/隐藏渠道维持旧的直接授权行为，范围外"这条**——§10.7 只补了 web，原生/微信这条"范围外"
+> 遗留正是 2026-07-27 审计发现的资损口：`/monthly-card/buy`、`/year-card/buy`、`/starter/buy` 三个端点对**所有**平台
+> （包括原生/微信）都从不校验支付，任何拿到有效登录态的请求直接调用即可免费拿到订阅/新手包。
+
+- **服务器权威结算侧**：三个端点现一律要求请求体带 `platform`+`receipt`，metaserver 先调新增内部端点
+  `commercial.verifyNonCoinReceipt`（`server/commercial/src/service/recharge.ts`）——复用 `rechargeVerify` 同一套
+  `receiptId` 幂等 + 跨账号防重放模式，但校验的是"这张收据解析出的商品是否等于调用方期望的商品"而非金币数额。
+  `iap.ts` 的 `resolveNonCoinProduct`/`resolveNonCoinProductFromAmount` 新增非金币 SKU 解析（apple/google 走
+  product_id 约定 `${NW_IAP_BUNDLE}.sub.monthly`/`.sub.year`/`.starter.draw`/`.starter.growth`，与 `NW_IAP_PRODUCT_MAP`
+  同一套环境变量；wechat/stripe 走金额匹配，无内置默认——按现有 WeChat 金额映射的先例，未显式配置则拒绝而非放行）。
+  校验不过 → `400 INVALID_RECEIPT`，不再"当作已授权"。
+- **web（Paddle）**：月卡/年卡不变（§10.7 已覆盖）；**新手包首次接入 Paddle**——`NW_PADDLE_PRICE_IDS` 新增
+  `starter_draw`/`starter_growth` 两个保留键，`/shop/paddle/checkout` 加同款预检查（`starterUsed`/成长包 7 天窗口），
+  webhook 新分支 `starterProductForPriceId` 命中后调 `commercial.starterBuy` + `deliverOrder`（新手抽走战利品路由，
+  成长包只发币/月卡，无实物）。
+- **原生（apple/google）客户端**：`client/src/app/nav/shop.ts` 的 `doBuySubscription`/新增 `doBuyStarter` 现在真的调用
+  `platform.nativeIapPurchase(productKind)` 拿收据，再把 `(platform, receipt)` 传给
+  `monthlyCardBuy`/`yearCardBuy`/`starterBuy`（`ApiClient` 三个方法签名同步加两参）——不再是拿到 `iapKind()!=='paddle'`
+  就直接免费发货。真实商店侧的 product id 仍需运营在 App Store Connect/Play Console 建好（`IOS_RELEASE.md` 待办），
+  在此之前原生渠道这几个按钮点了会因收据校验失败报错，**不会再误发免费货**（fail-closed，这是本次修复的核心诉求）。
+- **微信/CrazyGames（`iapKind()===null`）**：这两个平台目前没有任何支付渠道接入（WeChat Pay 仍是
+  `WechatPlatform.iapKind()` 里标注的 TODO；CrazyGames 走自己的 portal 变现，不支持站外支付）——`createShopNav` 现在
+  只在 `iapKind()!==null` 时才把 `buyMonthlyCard`/`buyYearCard`/`buyStarter` 三个回调塞进 nav 对象，`ShopScene` 按
+  既有"回调不存在就不渲染按钮"惯例（`rechargeCoins`/Coins 页签同款）自动隐藏这三张卡的购买按钮，而不是留一个点了必
+  400 的死按钮。`getMonetization`/`claimMonthlyCard`（纯读/纯已购领取，无支付语义）不受影响，登录即可用。
+- **客户端价格展示**：`ShopScene` 新手包卡片此前硬编码显示"免费"（`shop.free`），现改为 `yuanPrice`（¥6/¥30，同
+  `STARTER_DRAW_YUAN`/`STARTER_GROWTH_YUAN`），与月卡/年卡同一套价格渲染。
+- **测试**：`server/metaserver/test/economy.e2e.test.ts`（三端点补 `platform`/`receipt`）、
+  `server/metaserver/test/paddle-routes.e2e.test.ts`（新增新手包 checkout+webhook 5 例，含幂等重放）、
+  `client/test/shopNav-buySubscription.test.ts`（原生购买+收据传递+取消/拒绝路径+null-iapKind 隐藏按钮断言）、
+  `client/test/ui/shopScene.ui.ts`（¥ 价格取代"免费"标签）全部更新并通过。

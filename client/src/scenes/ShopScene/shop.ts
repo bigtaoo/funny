@@ -28,13 +28,17 @@ const SKIN_PLACEHOLDER_ART: Record<string, string> = {
   skin_shop_e1: shieldBearerArtUrl as string,
 };
 
-// Subscription-card display prices (¥). Mirror of @nw/shared MONTHLY/YEAR_CARD_PRICE_YUAN; these drive the
-// strike-through + savings badge only, no client-side coin debit. On web the buy button now runs a real Paddle
-// checkout for this amount (nav/shop.ts doBuySubscription); native/hidden-store platforms still treat the buy
-// as already-authorized (no IAP wired there yet). Year = 12×¥30 (¥360) at ~10% off → ¥298.
+// Subscription-card / starter-pack display prices (¥). Mirror of GACHA_DESIGN §5/§6; these drive the
+// strike-through + savings badge / price label only, no client-side coin debit. On web the buy button
+// runs a real Paddle checkout for this amount; native (apple/google) runs the real store purchase via
+// nativeIapPurchase() (nav/shop.ts doBuySubscription/doBuyStarter) — both platforms require a verified
+// receipt before the server grants anything (2026-07-27, closes a prior "treated as authorized" gap).
+// Year = 12×¥30 (¥360) at ~10% off → ¥298.
 const MONTHLY_CARD_YUAN = 30;
 const YEAR_CARD_YUAN = 298;
 const YEAR_CARD_LIST_YUAN = 360;
+const STARTER_DRAW_YUAN = 6;
+const STARTER_GROWTH_YUAN = 30;
 
 export interface ShopHandlers {
   drawShopGrid(body: PIXI.Container, top: number): void;
@@ -136,22 +140,24 @@ export function ShopMixin<TBase extends ShopSceneBaseCtor>(Base: TBase): TBase &
         });
       }
 
-      // Starter packs: free one-time grants. Drop the card entirely once claimed — a disabled
-      // "Owned" tile sitting in the grid forever reads as a broken purchase, not a claimed reward.
+      // Starter packs: one-time paid first-purchase-funnel products (GACHA_DESIGN §6, ¥6/¥30 — NOT free;
+      // 2026-07-27 fix, see STARTER_DRAW_YUAN/STARTER_GROWTH_YUAN above). Drop the card entirely once
+      // claimed — a disabled "Owned" tile sitting in the grid forever reads as a broken purchase, not a
+      // claimed reward. Unbounded: the buy button may run a real store purchase sheet / Paddle overlay.
       if (this.cb.buyStarter) {
-        const packs: { id: 'starter_draw' | 'starter_growth'; label: TranslationKey; icon: IconKind; art: string }[] = [
-          { id: 'starter_draw', label: 'shop.starterDraw', icon: 'capsule', art: starterDrawArtUrl as string },
-          { id: 'starter_growth', label: 'shop.starterGrowth', icon: 'gift', art: starterGrowthArtUrl as string },
+        const packs: { id: 'starter_draw' | 'starter_growth'; label: TranslationKey; icon: IconKind; art: string; yuan: number }[] = [
+          { id: 'starter_draw', label: 'shop.starterDraw', icon: 'capsule', art: starterDrawArtUrl as string, yuan: STARTER_DRAW_YUAN },
+          { id: 'starter_growth', label: 'shop.starterGrowth', icon: 'gift', art: starterGrowthArtUrl as string, yuan: STARTER_GROWTH_YUAN },
         ];
         for (const pk of packs) {
           if (mon.starterUsed.includes(pk.id)) continue;
           if (pk.id === 'starter_growth' && mon.starterGrowthEligible === false) continue;
           specs.push({
             icon: pk.icon, iconColor: C.gold, artUrl: pk.art, title: t(pk.label),
-            lines: [{ text: t('shop.free'), color: C.green }],
+            yuanPrice: pk.yuan,
             buttons: [{
               label: t('shop.buy'), enabled: !busy, primary: true,
-              fn: () => void this.runDeal(() => this.cb.buyStarter!(pk.id), 'shop.bought', t(pk.label)),
+              fn: () => void this.runUnboundedDeal(() => this.cb.buyStarter!(pk.id), 'shop.bought', t(pk.label)),
             }],
           });
         }

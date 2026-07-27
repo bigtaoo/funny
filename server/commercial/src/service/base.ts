@@ -28,6 +28,7 @@ import type {
 } from '../db';
 import { isCustomPoolDoc } from '../db';
 import type { RandInt } from '../gacha';
+import type { IapProductKind } from '../iap';
 
 /** A resolved, drawable pool: either a derived/static GachaPoolDef or an ops-authored custom config (§12). */
 export type ResolvedPool = { kind: 'derived'; pool: GachaPoolDef } | { kind: 'custom'; cfg: CustomPoolConfig };
@@ -67,20 +68,38 @@ export interface CommercialDeps {
   /** RNG source for gacha draws (default: crypto true-random; tests inject a fixed seed to reproduce pity). */
   rng?: RandInt;
   /**
-   * Receipt verification function for recharge (S4-1).
+   * Receipt verification function for recharge (S4-1) and non-coin SKUs (verifyNonCoinReceipt).
    * Supports async (WeChat/Stripe require network requests); falls back to the built-in dev stub when omitted.
-   * Dev stub: receipt is formatted as `tier:<tierId>` (e.g. `tier:t499`) and grants the corresponding coin tier; any other non-empty value grants the default dev-stub tier (DEV_STUB_DEFAULT_TIER).
+   * Dev stub: receipt is formatted as `tier:<tierId>` (e.g. `tier:t499`) and grants the corresponding coin tier;
+   * `product:<kind>` (e.g. `product:monthly_card`) resolves a non-coin SKU instead (coins:0, product set);
+   * any other non-empty value grants the default dev-stub tier (DEV_STUB_DEFAULT_TIER).
    * `usdCents` (GACHA_DESIGN §13): the real USD price of the tier, used to bump totalRechargeCents; absent/0 = not tracked.
    */
   verifyReceipt?: (
     platform: string,
     receipt: string,
-  ) => Promise<{ ok: boolean; coins: number; usdCents?: number }> | { ok: boolean; coins: number; usdCents?: number };
+  ) =>
+    | Promise<{ ok: boolean; coins: number; usdCents?: number; product?: IapProductKind }>
+    | { ok: boolean; coins: number; usdCents?: number; product?: IapProductKind };
 }
 
+const NON_COIN_KINDS_BASE: readonly IapProductKind[] = [
+  'monthly_card', 'year_card', 'starter_draw', 'starter_growth',
+];
+
 /** Dev stub (used only in unit tests / when no real payment channel is configured). */
-export function devVerifyReceipt(_platform: string, receipt: string): { ok: boolean; coins: number; usdCents: number } {
+export function devVerifyReceipt(
+  _platform: string,
+  receipt: string,
+): { ok: boolean; coins: number; usdCents: number; product?: IapProductKind } {
   if (!receipt) return { ok: false, coins: 0, usdCents: 0 };
+  if (receipt.startsWith('product:')) {
+    const kind = receipt.slice(8);
+    if ((NON_COIN_KINDS_BASE as readonly string[]).includes(kind)) {
+      return { ok: true, coins: 0, usdCents: 0, product: kind as IapProductKind };
+    }
+    return { ok: false, coins: 0, usdCents: 0 };
+  }
   const tier = receipt.startsWith('tier:') ? receipt.slice(5) : DEV_STUB_DEFAULT_TIER;
   const coins = IAP_TIERS[tier] ?? IAP_TIERS[DEV_STUB_DEFAULT_TIER]!;
   return { ok: true, coins, usdCents: usdCentsForTier(IAP_TIERS[tier] ? tier : DEV_STUB_DEFAULT_TIER) };
@@ -139,7 +158,7 @@ export class CommercialServiceBase {
   protected readonly verifyReceipt: (
     platform: string,
     receipt: string,
-  ) => Promise<{ ok: boolean; coins: number; usdCents?: number }>;
+  ) => Promise<{ ok: boolean; coins: number; usdCents?: number; product?: IapProductKind }>;
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   constructor(...args: any[]) {

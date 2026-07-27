@@ -473,7 +473,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Buy the monthly card (GACHA_DESIGN §5; single-slot — 400 ALREADY_ACTIVE while a card is still running) */
+        /** Buy the monthly card (GACHA_DESIGN §5; requires a verified store receipt — 400 INVALID_RECEIPT on mismatch; single-slot — 400 ALREADY_ACTIVE while a card is still running). Web (Paddle) never calls this route — the Paddle webhook grants it server-side after its own signature check. */
         post: operations["monthlyCardBuy"];
         delete?: never;
         options?: never;
@@ -490,7 +490,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Buy the year card (GACHA_DESIGN §5; 365-day subscription, single-slot — 400 ALREADY_ACTIVE while a card is still running) */
+        /** Buy the year card (GACHA_DESIGN §5; 365-day subscription; requires a verified store receipt — 400 INVALID_RECEIPT on mismatch; single-slot — 400 ALREADY_ACTIVE while a card is still running). Web (Paddle) never calls this route — the Paddle webhook grants it server-side after its own signature check. */
         post: operations["yearCardBuy"];
         delete?: never;
         options?: never;
@@ -541,7 +541,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Buy a one-off starter pack (GACHA_DESIGN §6) */
+        /** Buy a one-off starter pack (GACHA_DESIGN §6, ¥6/¥30 paid product — requires a verified store receipt, 400 INVALID_RECEIPT on mismatch) */
         post: operations["starterBuy"];
         delete?: never;
         options?: never;
@@ -2806,7 +2806,14 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    platform: string;
+                    receipt: string;
+                };
+            };
+        };
         responses: {
             /** @description Success */
             200: {
@@ -2833,7 +2840,14 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    platform: string;
+                    receipt: string;
+                };
+            };
+        };
         responses: {
             /** @description Success */
             200: {
@@ -2929,6 +2943,8 @@ export interface operations {
                 "application/json": {
                     /** @enum {string} */
                     productId: "starter_draw" | "starter_growth";
+                    platform: string;
+                    receipt: string;
                 };
             };
         };

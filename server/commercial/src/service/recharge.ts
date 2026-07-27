@@ -1,6 +1,7 @@
 // Recharge (IAP receipt verify) + Paddle webhook completion (§6.5). receiptId idempotency + first-purchase
 // bonus CAS + cross-account receipt guard. claimFirstPurchaseBonus is recharge-only (kept private here).
 import { FIRST_PURCHASE_BONUS_MULTIPLIER } from '@nw/shared';
+import type { IapProductKind } from '../iap';
 import type { CommercialBaseCtor, Constructor, Result } from './base';
 import type { PaddleEventDoc } from '../db';
 
@@ -11,6 +12,21 @@ export interface RechargeHandlers {
     receipt: string;
     receiptId: string;
   }): Promise<Result<{ coinsAfter: number; coinsGranted: number }>>;
+  /**
+   * Verify a receipt resolves to a specific non-coin SKU (monthly/year card, starter pack) before the
+   * caller (metaserver's subscription/starter HTTP handlers) is allowed to grant it — closes the
+   * "treated as authorized" gap where those endpoints used to grant on a bare authenticated request with
+   * no proof of payment at all (GACHA_DESIGN §5/§6). Idempotent on receiptId like rechargeVerify; does
+   * NOT itself grant anything — the caller still calls monthlyCardBuy/yearCardBuy/starterBuy after this
+   * returns ok, same two-step shape as iapVerify → credit.
+   */
+  verifyNonCoinReceipt(args: {
+    accountId: string;
+    platform: string;
+    receipt: string;
+    receiptId: string;
+    expectedProduct: IapProductKind;
+  }): Promise<Result<{ product: IapProductKind }>>;
   paddleComplete(args: {
     accountId: string;
     transactionId: string;
@@ -111,6 +127,49 @@ export function RechargeMixin<TBase extends CommercialBaseCtor>(Base: TBase): TB
         rechargeUsdCents: usdCents,
       });
       return { ok: true, coinsAfter, coinsGranted };
+    }
+
+    async verifyNonCoinReceipt(args: {
+      accountId: string;
+      platform: string;
+      receipt: string;
+      receiptId: string;
+      expectedProduct: IapProductKind;
+    }): Promise<Result<{ product: IapProductKind }>> {
+      const existing = await this.cols.recharges.findOne({ _id: args.receiptId });
+      if (existing) {
+        // Cross-account guard (mirrors rechargeVerify) + cross-product guard: a receipt already consumed
+        // for a different product (or a different account) can't be replayed to claim this one.
+        if (existing.accountId !== args.accountId) return { ok: false, error: 'INVALID_RECEIPT' };
+        if (existing.product !== args.expectedProduct) return { ok: false, error: 'INVALID_RECEIPT' };
+        return { ok: true, product: args.expectedProduct };
+      }
+      const v = await this.verifyReceipt(args.platform, args.receipt);
+      if (!v.ok || !v.product || v.product !== args.expectedProduct) {
+        return { ok: false, error: 'INVALID_RECEIPT' };
+      }
+      try {
+        await this.cols.recharges.insertOne({
+          _id: args.receiptId,
+          accountId: args.accountId,
+          platform: args.platform,
+          coinsGranted: 0,
+          status: 'granted',
+          rawReceipt: args.receipt,
+          ts: this.now(),
+          product: v.product,
+        });
+      } catch (e) {
+        if ((e as { code?: number }).code === 11000) {
+          const r = await this.cols.recharges.findOne({ _id: args.receiptId });
+          if (!r || r.accountId !== args.accountId || r.product !== args.expectedProduct) {
+            return { ok: false, error: 'INVALID_RECEIPT' };
+          }
+          return { ok: true, product: args.expectedProduct };
+        }
+        throw e;
+      }
+      return { ok: true, product: args.expectedProduct };
     }
 
     /**

@@ -628,6 +628,36 @@ const BODY_SCHEMAS: Record<string, unknown> = {
       }
     }
   },
+  "monthlyCardBuy": {
+    "type": "object",
+    "required": [
+      "platform",
+      "receipt"
+    ],
+    "properties": {
+      "platform": {
+        "type": "string"
+      },
+      "receipt": {
+        "type": "string"
+      }
+    }
+  },
+  "yearCardBuy": {
+    "type": "object",
+    "required": [
+      "platform",
+      "receipt"
+    ],
+    "properties": {
+      "platform": {
+        "type": "string"
+      },
+      "receipt": {
+        "type": "string"
+      }
+    }
+  },
   "claimRechargeMilestone": {
     "type": "object",
     "required": [
@@ -643,7 +673,9 @@ const BODY_SCHEMAS: Record<string, unknown> = {
   "starterBuy": {
     "type": "object",
     "required": [
-      "productId"
+      "productId",
+      "platform",
+      "receipt"
     ],
     "properties": {
       "productId": {
@@ -652,6 +684,12 @@ const BODY_SCHEMAS: Record<string, unknown> = {
           "starter_draw",
           "starter_growth"
         ]
+      },
+      "platform": {
+        "type": "string"
+      },
+      "receipt": {
+        "type": "string"
       }
     }
   },

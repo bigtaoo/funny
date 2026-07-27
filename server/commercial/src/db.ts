@@ -78,6 +78,12 @@ export interface RechargeDoc {
   usdCents?: number;
   /** Set once this receipt has been refunded (paddleRefund), so a re-delivered refund event is a no-op. */
   refundedAt?: number;
+  /**
+   * Present only for non-coin receipts (subscription cards / starter packs, verifyNonCoinReceipt) —
+   * absent for ordinary coin recharges. Lets a replayed receiptId be checked against the caller's
+   * expected product, so a monthly-card receipt can't later be replayed as a year-card/starter claim.
+   */
+  product?: 'monthly_card' | 'year_card' | 'starter_draw' | 'starter_growth';
 }
 
 /**
