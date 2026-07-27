@@ -592,7 +592,7 @@
 
 | 用途 | key | 类型 | 说明 |
 |---|---|---|---|
-| 行军调度 | `world:{worldId}:march` | ZSET（score=arriveAt ms） | 到点弹出触发围攻/占领/增援；worldsvc 单点消费 |
+| ~~行军调度~~ | ~~`world:{worldId}:march`~~ | ~~ZSET（score=arriveAt ms）~~ | **已删除（2026-07-27 审计）**：`zrangebyscore`（唯一读法）从未被调用，纯写放大；到点判定实际全靠 Mongo `arriveAt`/`nextStepAt` 索引扫描，见 `claudedocs/server.md` |
 | gateway 路由 | `gw:acct:{accountId}` | STRING（实例 id） | 横扩后跨实例定向 push |
 | ~~家族频道~~ | ~~`chan:family:{familyId}`~~ | pub/sub | **已迁出（ADR-021）**：宿主已迁入 socialsvc，键不变但不再由 worldsvc 持有，见 [`SOCIAL_SVC_DESIGN.md`](SOCIAL_SVC_DESIGN.md) §5 |
 | 宗门/国家频道 | `chan:sect:{sectId}`（**注：键是 `sectId` 不是 `worldId`**，与家族频道同宿主迁入 socialsvc，由 worldsvc 传入 sectId） | pub/sub | 全服广播 |

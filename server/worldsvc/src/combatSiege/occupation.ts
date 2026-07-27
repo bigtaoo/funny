@@ -220,7 +220,6 @@ export function OccupationMixin<TBase extends SiegeServiceBaseCtor>(Base: TBase)
         // processDueOccupations tick that may have already settled/claimed it — in that case just proceed to
         // start our own hold on top of whatever ownership now stands, re-validated by the blocked check upstream).
         await cols.occupations.deleteOne({ _id: tile._id, ownerId: tile.contestedBy });
-        await this.core.unscheduleOccupation(m.worldId, tile._id);
         if (hasCardArmy) await writeOccupyCardState(this.core, m, pw, res.attackerSurvivors, t);
         const proc = proceduralTile(m.worldId, tile.x, tile.y);
         await this.startOccupationHold(m, pw, proc, tile.x, tile.y, res.attackerSurvivors, t, replay);
@@ -286,7 +285,6 @@ export function OccupationMixin<TBase extends SiegeServiceBaseCtor>(Base: TBase)
         ...(m.leaderUnitType ? { leaderUnitType: m.leaderUnitType } : {}),
       };
       await cols.occupations.updateOne({ _id: m.toTile }, { $set: occDoc }, { upsert: true });
-      await this.core.scheduleOccupation(m.worldId, m.toTile, dueAt);
 
       void this.core.bumpFamilyActivity(m.worldId, pw.familyId, 1);
       const siege = await this.recordSiege(m, undefined, 'attacker_win', t, replay);
@@ -312,7 +310,6 @@ export function OccupationMixin<TBase extends SiegeServiceBaseCtor>(Base: TBase)
       for (const d of due) {
         const claimed = await cols.occupations.findOneAndDelete({ _id: d._id, ownerId: d.ownerId, dueAt: d.dueAt });
         if (!claimed) continue; // lost to a concurrent expulsion / processor
-        await this.core.unscheduleOccupation(claimed.worldId, claimed._id);
         try {
           await this.settleOccupation(claimed, t);
         } catch (e) {
@@ -335,7 +332,6 @@ export function OccupationMixin<TBase extends SiegeServiceBaseCtor>(Base: TBase)
       const { cols } = this.core.deps;
       const claimed = await cols.occupations.findOneAndDelete({ worldId, ownerId: accountId, teamId });
       if (!claimed) throw new SlgError('OCCUPATION_NOT_FOUND', 'No active occupation-hold for this team');
-      await this.core.unscheduleOccupation(worldId, claimed._id);
       await cols.tiles.updateOne(
         { _id: claimed.tile },
         { $unset: { contestedBy: '', contestedUntil: '', contestedGarrison: '', contestedFamilyId: '' } },

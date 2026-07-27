@@ -20,7 +20,10 @@ services:
   redis:
     image: redis:7-alpine
     container_name: nw-redis
-    command: ["redis-server", "--appendonly", "yes"]
+    # maxmemory cap + allkeys-lru: everything stored here (occ/cover spatial index, activeMatch) is best-effort
+    # cache/scheduling state, never a source of truth (Mongo/in-flight state is authoritative) — degrading via
+    # eviction under memory pressure is safe, unbounded host-memory growth on a resource-constrained VPS is not.
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory", "256mb", "--maxmemory-policy", "allkeys-lru"]
     volumes:
       - redis-data:/data
     healthcheck:
@@ -71,9 +74,15 @@ services:
       NW_PADDLE_CLIENT_TOKEN: ${NW_PADDLE_CLIENT_TOKEN:-}
       NW_PADDLE_PRICE_IDS: ${NW_PADDLE_PRICE_IDS:-}
       NW_PADDLE_SANDBOX: ${NW_PADDLE_SANDBOX:-}
+      # Active-match resume tracking (login-reconnect-prompt) — shares the same Redis as matchsvc, which
+      # writes this key on match start. Missing here meant matchsvc wrote it but meta could never read or
+      # clear it: resume prompts were silently dead in prod despite being fully implemented (found 2026-07-27).
+      NW_REDIS_URL: ${NW_REDIS_URL:-redis://redis:6379}
     depends_on:
       commercial:
         condition: service_started
+      redis:
+        condition: service_healthy
     restart: unless-stopped
 
   commercial:

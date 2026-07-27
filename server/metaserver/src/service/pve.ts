@@ -39,6 +39,11 @@ import { accountIdOf, clientPlatformOf, STAMINA_CAP, STAMINA_REGEN_MS, type Cons
 
 type PveHandlers = Pick<MetaHandlers, 'purchaseStamina' | 'pveEnter' | 'pveClear' | 'pveVerify' | 'pveUpgrade'>;
 
+/** pveVerifications TTL (2026-07-27 audit finding: this collection had no expiry at all). Only applies to
+ * verified/unverified outcomes — a `rejected` verdict unsets it (kept forever for ops review, like a
+ * disputed match's MatchDoc.expireAt), since that's the small minority that actually carries replay frames. */
+const PVE_VERIFICATION_RETENTION_MS = 30 * 24 * 3600 * 1000;
+
 /** Default stamina cost per level (A4, flat rate 2026-07-06): overridable per-level via PveLevelConfig.staminaCost. */
 const DEFAULT_STAMINA_COST = 10;
 
@@ -50,6 +55,78 @@ function normUpgrades(u: Record<string, number>): Record<string, number> {
     if (v > 0) out[k] = v;
   }
   return out;
+}
+
+/**
+ * Pure computation shared by writeClearProgress (spot-check path) and the consolidated normal-clear
+ * transform below: advance progress/stars, bump the chaptersCleared achievement stat on a first chapter
+ * clear, and report whether this call is the one that newly cleared a chapter (drives the chapter-card
+ * grant). No I/O — safe to call from inside a mutateSave transform (which may run more than once on retry).
+ */
+function applyClearProgress(
+  s: SaveData,
+  levelId: string,
+  stars: number,
+): { next: SaveData; newlyClearedChapter?: string } {
+  const cleared = s.progress.cleared.includes(levelId)
+    ? s.progress.cleared
+    : [...s.progress.cleared, levelId];
+  const stars2 = Math.max(s.progress.stars[levelId] ?? 0, stars) as 1 | 2 | 3;
+  // Achievement stat (S9-3, ACHIEVEMENT_DESIGN §4.2.2): accumulate campaign.chaptersCleared on first chapter clear.
+  // $max semantics → increments only on first clear, not on replays. Lazy default creation: if no chapters
+  // cleared (count=0) and no existing stats, stats is not instantiated (saves storage).
+  const chapters = chaptersClearedCount(cleared);
+  const prevChapters = s.stats?.['campaign.chaptersCleared'] ?? 0;
+  const stats =
+    chapters > prevChapters
+      ? { ...(s.stats ?? {}), 'campaign.chaptersCleared': chapters }
+      : s.stats;
+  // Chapter-clear exclusive card (CHARACTER_CARDS_DESIGN §4): a new chapter is cleared iff the finale-count
+  // rose relative to the *prior* cleared set. Compare cleared arrays directly (robust to lazy/seeded stats,
+  // which may lag). The finale just added is `levelId` → the newly cleared chapter is chapterOf(levelId).
+  const newlyClearedChapter =
+    chapters > chaptersClearedCount(s.progress.cleared) ? chapterOf(levelId) : undefined;
+  return {
+    next: {
+      ...s,
+      progress: { ...s.progress, cleared, stars: { ...s.progress.stars, [levelId]: stars2 } },
+      ...(stats !== s.stats ? { stats } : {}),
+    },
+    newlyClearedChapter,
+  };
+}
+
+/**
+ * Pure computation shared by settleNormalClear and deliverVerifiedClearReward: apply a precomputed
+ * material grant + reserve an equipmentInvCount slot for a precomputed equipment drop (silently skipped
+ * when inventory is full). No I/O, no randomness — the equipment drop itself must be rolled with
+ * Math.random() *before* entering mutateSave (a transform may run more than once on retry, which would
+ * double-roll a synchronous dice inside it).
+ */
+function applyMaterialAndEquipmentGrant(
+  s: SaveData,
+  grant: Record<string, number>,
+  pendingDrop: EquipmentInstance | undefined,
+): { next: SaveData; dropGranted: boolean } {
+  const materials = { ...s.materials };
+  const everOwnedMaterial = new Set(s.everOwned?.material ?? []);
+  for (const [m, n] of Object.entries(grant)) {
+    materials[m] = (materials[m] ?? 0) + n;
+    if (n > 0) everOwnedMaterial.add(m);
+  }
+  let next: SaveData = { ...s, materials, everOwned: { ...s.everOwned, material: [...everOwnedMaterial] } };
+  let dropGranted = false;
+  if (pendingDrop && s.equipmentInvCount < EQUIPMENT_INV_CAP) {
+    const everOwnedEquip = new Set(next.everOwned?.equipment ?? []);
+    everOwnedEquip.add(pendingDrop.defId);
+    next = {
+      ...next,
+      equipmentInvCount: s.equipmentInvCount + 1,
+      everOwned: { ...next.everOwned, equipment: [...everOwnedEquip] },
+    };
+    dropGranted = true;
+  }
+  return { next, dropGranted };
 }
 
 export function PveMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase & Constructor<PveHandlers> {
@@ -199,29 +276,9 @@ export function PveMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase & Const
     ): Promise<{ save: SaveData; newlyClearedChapter?: string } | { error: string }> {
       let newlyClearedChapter: string | undefined;
       const out = await this.mutateSave(accountId, (s) => {
-        const cleared = s.progress.cleared.includes(levelId)
-          ? s.progress.cleared
-          : [...s.progress.cleared, levelId];
-        const stars2 = Math.max(s.progress.stars[levelId] ?? 0, stars) as 1 | 2 | 3;
-        // Achievement stat (S9-3, ACHIEVEMENT_DESIGN §4.2.2): accumulate campaign.chaptersCleared on first chapter clear,
-        // in the same mutateSave transaction as progress (rev guard) — naturally authoritative and tamper-resistant. $max semantics → increments only on first clear, not on replays.
-        // Lazy default creation: if no chapters cleared (count=0) and no existing stats, stats is not instantiated (saves storage).
-        const chapters = chaptersClearedCount(cleared);
-        const prevChapters = s.stats?.['campaign.chaptersCleared'] ?? 0;
-        const stats =
-          chapters > prevChapters
-            ? { ...(s.stats ?? {}), 'campaign.chaptersCleared': chapters }
-            : s.stats;
-        // Chapter-clear exclusive card (CHARACTER_CARDS_DESIGN §4): a new chapter is cleared iff the finale-count
-        // rose relative to the *prior* cleared set. Compare cleared arrays directly (robust to lazy/seeded stats,
-        // which may lag). The finale just added is `levelId` → the newly cleared chapter is chapterOf(levelId).
-        newlyClearedChapter =
-          chapters > chaptersClearedCount(s.progress.cleared) ? chapterOf(levelId) : undefined;
-        return {
-          ...s,
-          progress: { ...s.progress, cleared, stars: { ...s.progress.stars, [levelId]: stars2 } },
-          ...(stats !== s.stats ? { stats } : {}),
-        };
+        const r = applyClearProgress(s, levelId, stars);
+        newlyClearedChapter = r.newlyClearedChapter;
+        return r.next;
       });
       if ('error' in out) return out;
       return { save: out.save, newlyClearedChapter };
@@ -230,7 +287,8 @@ export function PveMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase & Const
     /**
      * Chapter-clear exclusive reward (CHARACTER_CARDS_DESIGN §4): grant a level-2 instance of the chapter's
      * anchor character card (§5.1 mapping) on the FIRST clear of that chapter's finale. Distinct from the
-     * per-level drop (level 1, {@link grantClearReward}) — this is a one-time chapter reward, not farmable.
+     * per-level drop (level 1, granted via settleNormalClear/deliverVerifiedClearReward) — this is a
+     * one-time chapter reward, not farmable.
      * The caller invokes this only when {@link writeClearProgress} detected a new chapter clear, so it is
      * idempotent by construction (fires once per chapter). Roster-full → coin compensation, best-effort via
      * commercial (same path as gacha CC-5, economy.ts); the deterministic orderId also dedupes a retry.
@@ -259,48 +317,24 @@ export function PveMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase & Const
     }
 
     /**
-     * PvE stat feed (S9-3b): accumulate the in-match achievement counters (`kill.*`/`cast.*`) returned by the judge's re-simulation into the player's lifetime stats.
-     * If statsJson fails to parse or is not an object → skip; passes through {@link sanitizePvpReportedStats} (L1 caps as a backstop against "colluding with the judge to farm stats";
-     * out-of-bounds data is discarded entirely, without blocking material delivery); empty increments do not instantiate stats (lazy creation).
-     * Errors are not thrown (stat feeding is a best-effort side effect and must never block the material delivery main path — the coin pool is small and one-time, §4.4).
+     * Shared precompute for both settleNormalClear and deliverVerifiedClearReward: decide what's actually
+     * grantable within the daily cap (CC-2), map the card drop to Hero Roster CardDefs, and roll the
+     * equipment drop. Must run *before* entering any mutateSave transform: the daily-cap bump touches a
+     * different collection (pveDaily) than the save, and the equipment roll uses Math.random() — a
+     * mutateSave transform may run more than once on a rev conflict and must stay synchronous/deterministic.
      */
-    private async accrueJudgedPveStats(accountId: string, statsJson: string | undefined): Promise<void> {
-      if (!statsJson) return;
-      let reported: Record<string, number>;
-      try {
-        const parsed = JSON.parse(statsJson) as unknown;
-        if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return;
-        reported = parsed as Record<string, number>;
-      } catch {
-        return;
-      }
-      const clean = sanitizePvpReportedStats(reported);
-      if (!clean || Object.keys(clean).length === 0) return; // L1 out-of-bounds rejected / nothing to accumulate
-      await this.mutateSave(accountId, (s) => {
-        const stats = accrueStats(s.stats, clean);
-        return stats === s.stats ? s : { ...s, stats };
-      });
-    }
-
-    /**
-     * Deliver level rewards within the daily cap (material reward + card instance grants, CC-2).
-     * Material reward is written atomically in a single mutateSave transaction.
-     * Card rewards are mapped to CardDef instances and granted at level=2 via the async grantCards
-     * (own rev loop, separate call). Equipment drop is rolled independently of the daily cap.
-     * Returns actually delivered amounts (all empty if capped) + capped flag + save.
-     */
-    private async grantClearReward(
+    private async prepareClearReward(
       accountId: string,
       levelId: string,
       reward: Record<string, number>,
     ): Promise<{
-      save: SaveData;
-      granted: Record<string, number>;
-      grantedCards: Record<string, number>;
-      grantedEquipment?: EquipmentInstance;
       capped: boolean;
-    } | { error: string }> {
-      const { cols, now } = this.deps;
+      grant: Record<string, number>;
+      cardGrant: Record<string, number>;
+      defsToGrant: CardDef[];
+      pendingDrop: EquipmentInstance | undefined;
+    }> {
+      const { now } = this.deps;
       const cardReward = levelCardReward(levelId);
       const hasReward = Object.keys(reward).length > 0 || Object.keys(cardReward).length > 0;
       const capped = hasReward ? !(await this.bumpPveRewardCap(accountId, now())) : false;
@@ -326,32 +360,143 @@ export function PveMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase & Const
           ? (makeDropInstance(dropCfg.rarity, `drop_${randomUUID()}`) as EquipmentInstance)
           : undefined;
 
-      // Material reward + equipment drop count reservation (single atomic write). The equipment instance
-      // itself is stored in the equipmentInstances collection (2026-07-26 split) — mutateSave's transform
-      // must stay synchronous, so the actual instance upsert happens after this write commits, gated on
-      // `dropGranted` captured by the transform (only the successful attempt's value matters; mutateSave
-      // may invoke this transform more than once on a rev conflict, but the instance upsert below is
-      // idempotent-by-id regardless).
+      return { capped, grant, cardGrant, defsToGrant, pendingDrop };
+    }
+
+    /**
+     * Consolidated normal-clear settlement (2026-07-27 write-amplification audit). Before this, one level
+     * clear did up to 4 separate full-document read-modify-writes of the save (writeClearProgress,
+     * grantClearReward's material/equipment write, accrueJudgedPveStats, bumpRetentionTask) — each its own
+     * mutateSave call, each re-reading and rewriting the same document. None of their SaveData mutations
+     * depend on each other's *results* (only prepareClearReward's daily-cap check and equipment dice roll
+     * must be decided before entering the transform), so progress/stars/chapter-stat, material +
+     * equipment-slot grant, judged-stat accrual, and the daily retention-task bump now land in ONE
+     * mutateSave call. grantChapterClearCard and the card-drop grant stay separate calls: both go through
+     * the shared grantCards primitive (also used by gacha/mail/auction), which owns its own rev-guarded
+     * write against cardInv and must not be duplicated here.
+     */
+    private async settleNormalClear(
+      accountId: string,
+      levelId: string,
+      stars: number,
+      reward: Record<string, number>,
+      clientStats: Record<string, number> | undefined,
+    ): Promise<{
+      save: SaveData;
+      granted: Record<string, number>;
+      grantedCards: Record<string, number>;
+      grantedEquipment?: EquipmentInstance;
+      capped: boolean;
+      newlyClearedChapter?: string;
+    } | { error: string }> {
+      const { cols, now } = this.deps;
+      const { capped, grant, cardGrant, defsToGrant, pendingDrop } =
+        await this.prepareClearReward(accountId, levelId, reward);
+
+      // PvE stat feed (S9-3b): passes through sanitizePvpReportedStats (L1 caps as a backstop against
+      // "colluding with the judge to farm stats"; out-of-bounds data is discarded entirely, without blocking
+      // material delivery). Empty/invalid input → no accrual.
+      let cleanStats: Record<string, number> | undefined;
+      if (clientStats) {
+        const clean = sanitizePvpReportedStats(clientStats);
+        if (clean && Object.keys(clean).length > 0) cleanStats = clean;
+      }
+
+      // ── One consolidated read-modify-write ──
+      let newlyClearedChapter: string | undefined;
       let dropGranted = false;
       const out = await this.mutateSave(accountId, (s) => {
-        const materials = { ...s.materials };
-        const everOwnedMaterial = new Set(s.everOwned?.material ?? []);
-        for (const [m, n] of Object.entries(grant)) {
-          materials[m] = (materials[m] ?? 0) + n;
-          if (n > 0) everOwnedMaterial.add(m);
+        const progressResult = applyClearProgress(s, levelId, stars);
+        newlyClearedChapter = progressResult.newlyClearedChapter;
+        const grantResult = applyMaterialAndEquipmentGrant(progressResult.next, grant, pendingDrop);
+        dropGranted = grantResult.dropGranted;
+        let next = grantResult.next;
+        if (cleanStats) {
+          const stats = accrueStats(next.stats, cleanStats);
+          if (stats !== next.stats) next = { ...next, stats };
         }
-        let next = { ...s, materials, everOwned: { ...s.everOwned, material: [...everOwnedMaterial] } };
-        // Reserve a count slot for the drop (silently skipped when inventory is full)
-        dropGranted = false;
-        if (pendingDrop && s.equipmentInvCount < EQUIPMENT_INV_CAP) {
-          const everOwnedEquip = new Set(next.everOwned?.equipment ?? []);
-          everOwnedEquip.add(pendingDrop.defId);
-          next = {
-            ...next,
-            equipmentInvCount: s.equipmentInvCount + 1,
-            everOwned: { ...next.everOwned, equipment: [...everOwnedEquip] },
-          };
-          dropGranted = true;
+        // B5: record daily task "clear PvE" (idempotent, no-op if already recorded today) in the same write.
+        const nextRetention = accrueRetentionTask(next.retention, 'pve.clear', now());
+        if (nextRetention !== next.retention) next = { ...next, retention: nextRetention };
+        return next;
+      });
+      if ('error' in out) return out;
+      if (dropGranted && pendingDrop) {
+        await cols.equipmentInstances.updateOne(
+          { _id: pendingDrop.id },
+          { $set: toInstanceDoc(pendingDrop, accountId) },
+          { upsert: true },
+        );
+      }
+
+      // Card instance grant at level 1 (separate rev loop via the shared grantCards primitive; compensation
+      // coins dropped — [DRAFT: wire commercial]). Level 1 matches every other card source (starters /
+      // auction / gacha, §12); players raise cards via feeding, not the drop tier.
+      let latestSave = out.save;
+      if (defsToGrant.length > 0) {
+        const cardResult = await grantCards(cols, now, accountId, defsToGrant);
+        if ('error' in cardResult) return cardResult;
+        latestSave = cardResult.save;
+      }
+
+      const grantedEquipment = dropGranted ? pendingDrop : undefined;
+      return {
+        save: latestSave,
+        granted: grant,
+        grantedCards: cardGrant,
+        grantedEquipment,
+        capped,
+        newlyClearedChapter,
+      };
+    }
+
+    /**
+     * Consolidated post-verification reward delivery for the pveVerify (L1 spot-check) path — same
+     * write-amplification fix as settleNormalClear, scoped to this caller's actual writes: material/
+     * equipment grant + judged-stat accrual in one mutateSave. Progress/stars were already written at
+     * spot-check submission time (writeClearProgress), and this path does not bump the daily retention
+     * task or event task — that asymmetry (spot-checked clears don't count toward them) is pre-existing
+     * behavior, unchanged by this consolidation. `statsJson` is the judge's re-simulation output (only
+     * passed for a 'verified' verdict — pveVerify passes undefined for 'unverified' benefit-of-doubt
+     * deliveries) and is parsed the same defensive way accrueJudgedPveStats used to.
+     */
+    private async deliverVerifiedClearReward(
+      accountId: string,
+      levelId: string,
+      reward: Record<string, number>,
+      statsJson: string | undefined,
+    ): Promise<{
+      save: SaveData;
+      granted: Record<string, number>;
+      grantedCards: Record<string, number>;
+      grantedEquipment?: EquipmentInstance;
+      capped: boolean;
+    } | { error: string }> {
+      const { cols, now } = this.deps;
+      const { capped, grant, cardGrant, defsToGrant, pendingDrop } =
+        await this.prepareClearReward(accountId, levelId, reward);
+
+      let cleanStats: Record<string, number> | undefined;
+      if (statsJson) {
+        try {
+          const parsed = JSON.parse(statsJson) as unknown;
+          if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+            const clean = sanitizePvpReportedStats(parsed as Record<string, number>);
+            if (clean && Object.keys(clean).length > 0) cleanStats = clean;
+          }
+        } catch {
+          // malformed statsJson → skip accrual, same as accrueJudgedPveStats's original try/catch
+        }
+      }
+
+      let dropGranted = false;
+      const out = await this.mutateSave(accountId, (s) => {
+        const grantResult = applyMaterialAndEquipmentGrant(s, grant, pendingDrop);
+        dropGranted = grantResult.dropGranted;
+        let next = grantResult.next;
+        if (cleanStats) {
+          const stats = accrueStats(next.stats, cleanStats);
+          if (stats !== next.stats) next = { ...next, stats };
         }
         return next;
       });
@@ -364,8 +509,6 @@ export function PveMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase & Const
         );
       }
 
-      // Card instance grant at level 1 (separate rev loop; compensation coins dropped — [DRAFT: wire commercial]).
-      // Level 1 matches every other card source (starters / auction / gacha, §12); players raise cards via feeding, not the drop tier.
       let latestSave = out.save;
       if (defsToGrant.length > 0) {
         const cardResult = await grantCards(cols, now, accountId, defsToGrant);
@@ -460,6 +603,7 @@ export function PveMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase & Const
             // S9-3b: store client-reported counts as an audit comparison baseline (verdict.statsJson is the authoritative source; the reported field is for ops visibility only).
             ...(clientStats ? { reportedStats: clientStats } : {}),
             ts: now(),
+            expireAt: new Date(now() + PVE_VERIFICATION_RETENTION_MS),
           });
           const saveWithSt = { ...progSave, stamina: await this.readStaminaSnapshot(accountId, now()) };
           return ok({
@@ -473,27 +617,20 @@ export function PveMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase & Const
         }
       }
 
-      // Normal clear: write progress/stars then deliver materials + unit cards (within the daily cap, S12-C).
-      const prog = await this.writeClearProgress(accountId, levelId, stars);
-      if ('error' in prog) return reply.code(409).send(err(ErrorCode.REV_CONFLICT, prog.error));
-      // Chapter-clear exclusive card (§4), granted BEFORE grantClearReward so its subsequent re-read of the save
-      // reflects the level-2 anchor card in the returned snapshot. Fires once per chapter (first-clear detection).
-      if (prog.newlyClearedChapter) await this.grantChapterClearCard(accountId, prog.newlyClearedChapter);
-      const granted = await this.grantClearReward(accountId, levelId, level.reward);
+      // Normal clear: progress/stars + materials/cards/judged-stats/retention settle in one consolidated
+      // write (settleNormalClear, 2026-07-27 — previously 4 separate full-document mutateSave calls).
+      const granted = await this.settleNormalClear(accountId, levelId, stars, level.reward, clientStats);
       if ('error' in granted) return reply.code(409).send(err(ErrorCode.REV_CONFLICT, granted.error));
-      // S9-3b: non-spot-check path — accept client-reported stats, pass through L1 caps, then write to achievement counters.
-      if (clientStats) await this.accrueJudgedPveStats(accountId, JSON.stringify(clientStats));
-      // B5: record daily task "clear PvE" (idempotent, no-op if already recorded today).
-      await this.bumpRetentionTask(accountId, 'pve.clear');
+      // Chapter-clear exclusive card (§4): fires once per chapter (first-clear detection), granted after the
+      // consolidated write so its own re-read of the save reflects the level-2 anchor card in the response.
+      let latestSave = granted.save;
+      if (granted.newlyClearedChapter) {
+        const s2 = await this.grantChapterClearCard(accountId, granted.newlyClearedChapter);
+        if (s2) latestSave = s2;
+      }
       // B6: record event task "pve.clear" (best-effort).
       accrueEventTask(cols, accountId, 'pve.clear', now()).catch(() => {});
-      // Merge the retention update into the returned save so the client sees the task completion immediately after adoptServer.
-      const nextRetention = accrueRetentionTask(granted.save.retention, 'pve.clear', now());
-      const saveWithSt = {
-        ...granted.save,
-        ...(nextRetention !== granted.save.retention ? { retention: nextRetention } : {}),
-        stamina: await this.readStaminaSnapshot(accountId, now()),
-      };
+      const saveWithSt = { ...latestSave, stamina: await this.readStaminaSnapshot(accountId, now()) };
       return ok({
         save: saveWithSt,
         granted: granted.granted,
@@ -565,6 +702,9 @@ export function PveMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase & Const
             // clear later instead of only having the judge's verdict; kept out of the common verified/unverified path.
             ...(rejected ? { frames: frames ?? [], endFrame: Math.floor(endFrame) || 0 } : {}),
           },
+          // A rejected doc is kept forever for ops review (mirrors MatchDoc.expireAt's disputed-match carve-out);
+          // verified/unverified keep the expireAt set at insert.
+          ...(rejected ? { $unset: { expireAt: '' as const } } : {}),
         },
       );
 
@@ -631,11 +771,16 @@ export function PveMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase & Const
         return ok({ save: s, granted: {}, capped: false, verified: false });
       }
       // PvE stat feed (S9-3b, ACHIEVEMENT_DESIGN §6.2): only when the **judge successfully re-simulated** (status==='verified', not benefit-of-doubt 'unverified'),
-      // accumulate the judge-authoritative in-match kill/cast counts into lifetime stats.
+      // accumulate the judge-authoritative in-match kill/cast counts into lifetime stats, in the same
+      // consolidated write as the material/equipment grant (deliverVerifiedClearReward).
       // The judge is a random third-party headless re-simulation → players cannot fabricate it; still passes through L1 caps as a cheap backstop against
       // "player colluding with the judge to farm stats" (out-of-bounds data discarded entirely, does not block material delivery). A2: counts are only written at this server-authoritative settlement point.
-      if (status === 'verified') await this.accrueJudgedPveStats(accountId, verdict.statsJson);
-      const granted = await this.grantClearReward(accountId, doc.levelId, level.reward);
+      const granted = await this.deliverVerifiedClearReward(
+        accountId,
+        doc.levelId,
+        level.reward,
+        status === 'verified' ? verdict.statsJson : undefined,
+      );
       if ('error' in granted) return reply.code(409).send(err(ErrorCode.REV_CONFLICT, granted.error));
       return ok({
         save: granted.save,

@@ -1,9 +1,13 @@
 // worldsvc Redis connection (S8-0, first introduction of Redis; META_DESIGN §6.7 / SOCIAL_DESIGN SOC7).
-// S8-0 only establishes the optional connection skeleton — the actual uses (march scheduling
-// ZSET `world:{w}:march`, family/sect channel pub/sub, gateway horizontal-scaling routing,
-// hot-cell cache) are wired in S8-1/S8-2/S8-4. No Redis URL by default → returns null;
-// worldsvc degrades gracefully (march arrival scanning falls back to Mongo arriveAt index,
-// channel features disabled).
+// Current uses: family/sect channel pub/sub (publish) + the ADR-051 occupancy/coverage spatial index
+// (hset/hget/hdel). No Redis URL by default → returns null; worldsvc degrades gracefully (march arrival
+// scanning falls back to Mongo arriveAt index, channel features disabled, encounter/interception disabled).
+//
+// 2026-07-27: this interface used to also declare zadd/zrangebyscore/zrem (march/siegeDamage/occupation
+// wake-up ZSETs) and get/set — all dead: the ZSETs were written on every march step but zrangebyscore was
+// never called anywhere in src/ (the Mongo due-time scan was always the sole consumer), and get/set had no
+// callers at all. Removed along with their write sites (corePush.ts, combatMarch.ts, combatSiege/*) rather
+// than left as unread I/O — see claudedocs/server.md for the audit that found this.
 //
 // Implementation note: dynamic import with a variable specifier so tsc can compile even when
 // ioredis is not installed (Redis is a production dependency; it need not be installed during
@@ -11,12 +15,7 @@
 
 /** Minimal Redis interface used by worldsvc (extend as needed; types are independent of the concrete ioredis implementation). */
 export interface WorldRedis {
-  zadd(key: string, score: number, member: string): Promise<unknown>;
-  zrangebyscore(key: string, min: number | string, max: number | string): Promise<string[]>;
-  zrem(key: string, ...members: string[]): Promise<unknown>;
   publish(channel: string, message: string): Promise<unknown>;
-  get(key: string): Promise<string | null>;
-  set(key: string, value: string): Promise<unknown>;
   // ADR-051 (P1): hash ops for the field-unit occupancy index (`world:{w}:occ`, field=tileId → occupant JSON).
   hset(key: string, field: string, value: string): Promise<unknown>;
   hget(key: string, field: string): Promise<string | null>;

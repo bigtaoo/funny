@@ -260,7 +260,6 @@ export function EncounterMixin<TBase extends SiegeServiceBaseCtor>(Base: TBase):
         } else if (defMarch) {
           const claimed = await cols.marches.findOneAndDelete({ _id: defenderOcc.id, status: 'marching' });
           if (claimed) {
-            await core.unscheduleMarch(claimed.worldId, claimed._id);
             void core.pushMarch(defOwnerId, core.marchView({ ...claimed, status: 'recalled' }));
           }
         }

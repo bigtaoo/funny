@@ -54,12 +54,7 @@ if (!mongo) console.warn(`[worldsvc.occ.e2e] Mongo unreachable (${URI}) — skip
 /** Minimal in-memory Redis implementing exactly the WorldRedis surface worldsvc touches (ZSET no-op-ish + hash). */
 class FakeRedis implements WorldRedis {
   private hashes = new Map<string, Map<string, string>>();
-  async zadd(): Promise<unknown> { return 0; }
-  async zrangebyscore(): Promise<string[]> { return []; }
-  async zrem(): Promise<unknown> { return 0; }
   async publish(): Promise<unknown> { return 0; }
-  async get(): Promise<string | null> { return null; }
-  async set(): Promise<unknown> { return 'OK'; }
   async hset(key: string, field: string, value: string): Promise<unknown> {
     let h = this.hashes.get(key);
     if (!h) { h = new Map(); this.hashes.set(key, h); }
