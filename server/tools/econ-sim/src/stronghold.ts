@@ -5,7 +5,7 @@
 // aggregation never counted: on capture, `applyStrongholdSiege` grants a PERSISTENT
 // progression material via `meta.grantMaterial` (worldsvc/src/service.ts:1789-1790):
 //
-//     const matLoot = strongholdMaterialLoot(proc.level);          // binding, 4×level
+//     const matLoot = strongholdMaterialLoot(proc.level);          // binding, 0.8×level (re-tuned 2026-07-27, ADR-052)
 //     meta.grantMaterial(ownerId, matLoot.material, matLoot.qty, …) // -> SaveData.materials
 //
 // That is a persistent `binding` faucet outside SETTLE_REWARDS + trickle, so it belongs
@@ -42,7 +42,7 @@ import { MATERIAL_COIN_VALUE, REGULAR_MONTHLY_MATERIAL, type MaterialKey } from 
 export const MAP_TILES = SLG_MAP_W * SLG_MAP_H;
 /** Strongholds always spawn at the map max level (proceduralTile: type 'stronghold' → level SLG_MAP_MAX_LEVEL). */
 export const STRONGHOLD_LEVEL = SLG_MAP_MAX_LEVEL;
-export const BINDING_PER_STRONGHOLD = strongholdMaterialLoot(STRONGHOLD_LEVEL).qty; // 4×level persistent material
+export const BINDING_PER_STRONGHOLD = strongholdMaterialLoot(STRONGHOLD_LEVEL).qty; // 0.8×level persistent material (ADR-052)
 export const SEASON_RES_PER_STRONGHOLD = STRONGHOLD_LOOT_PER_LEVEL * STRONGHOLD_LEVEL; // one-time season resource
 export const STRONGHOLD_NPC_GARRISON = strongholdGarrison(STRONGHOLD_LEVEL); // 360×level troops
 export const LOOT_MATERIAL = STRONGHOLD_LOOT_MATERIAL as MaterialKey;

@@ -587,3 +587,11 @@
 - **待审点拍板（提议默认全采纳）**：O1 路过敌方领地 garrison **不**触发 pass-through 战斗（拦截靠驻扎/箭塔，否则领地不可穿行）；O2 建筑只能建**己方/家族领地**格；O3 箭塔数值/驻扎维护/步进疲劳进 `config.ts` 标 DRAFT；O4 逐格步进事件量登记监控 + 粗粒度降级预案；O5 相邻格对穿不触发遭遇，接受为常态。
 - **分阶段**：P1 实时行军基础（路径持久化+步进+`occ`，行为对齐现状）→ P2 遭遇引擎（场景1/2+`runSiegeBattle`）→ P3 停留/驻扎拆分+`cover`+驻扎拦截+就地占领 → P4 客户端实时野战视图 → P5 建筑层。每阶段独立可验证、独立合入当日分支。
 - **影响**（预估，详见设计文档 §6）：`worldsvc`（`db.ts`/`combatMarch.ts`/新 `combatSiege/encounter.ts`/`corePush.ts`/`territory.ts`/建筑 API/`httpApi.ts`）、`@nw/shared`（`walkable` 接入建筑、`config.ts` 数值）、`openapi-world.yml`；客户端 `WorldMap*` + `WorldMapRenderer` + 三语 i18n。
+
+## ADR-052 SLG 险地持久材料掉率下调（4→0.8/级）修复 ADR-049 引入的经济稀释破线 — Accepted — 2026-07-27
+
+- **问题**：ADR-049（2026-07-22）把 `SLG_MAP_W/H` 从 500 扩到 1500，明确"密度不变、画布变大"——但险地是逐格 Bernoulli 抽样，密度不变意味着险地**绝对数量**随地图**面积**线性增长（`server/tools/econ-sim/src/strongholdRun.ts` 在 1500×1500 上重跑 100 种子实测：中位 2,817、max 3,286，约为 500×500 时代中位 567/max 636 的 5 倍）。险地占领发放的持久材料 `binding`（`strongholdMaterialLoot`，进 `SaveData.materials`，A 轨 §2.3 15% 人均稀释红线覆盖的一条持久龙头）没有跟着调整，而摊薄分母 `SLG_WORLD_CAPACITY_TARGET=400`（服务器人口设计常量，ADR-032/U4，与地图尺寸无关）也没有变——两个此前独立拍板、互不相关的常量，因为 ADR-049 只改了地图尺寸这一个变量，被动地把稀释度从旧版安全的 12.6%（500×500+等级10，max 世界×100%占领）推到 **65.2%**（1500×1500，同一场景），9 个「世界档位×占领率」验证格里 8 个突破 15% 红线（详见 `ECONOMY_VERIFICATION_LOG.md` §13-SLG-STRONGHOLD.2b）。
+- **决策**：`STRONGHOLD_LOOT_MATERIAL_PER_LEVEL`（`server/shared/src/slg/siege.ts`）从 `4` 下调到 **`0.8`**——险地固定生成于地图等级上限（现 10 级），单次掠夺从 40 binding 降到 **8 binding**。三个候选修复方向的取舍：① 调低险地生成密度让绝对数量不随地图放大——否决，直接违背 ADR-049"密度不变、画布变大"的既定决策，且会把大地图的险地密度压到比原始"~0.3%极稀疏"意图更稀疏，本末倒置；② 上调 `SLG_WORLD_CAPACITY_TARGET` 匹配大地图——否决，要压回 15% 内需要把人口容量目标从 400 上调到 ~1,740，远超 ADR-032/U4 拍板的 300–500 区间，牵连匹配/分片/社交等一整套下游系统；③ 下调持久材料掉率——**采纳**，不触碰另外两条已拍板的决策，只收紧真正因地图放大而失控的那个量。
+- **数值校准**：目标是让 max 世界×100%占领（历史上最严苛的验证格）的稀释度回落到与 500×500+等级10 时代（12.6%）同量级的安全余量，而非勉强压线；`0.8` 使该格稀释度为 **13.0%**（vs 15% 红线，2 个百分点余量），全部 9 个验证格 PASS。
+- **实现**：`server/shared/src/slg/siege.ts`（常量 + 注释校准依据）；`server/shared/test/siege.test.ts`（`strongholdMaterialLoot` 期望值同步更新，改用真实生效等级 10 而非任意等级 2，避免非整数掉落量断言）；`server/tools/econ-sim/src/stronghold.ts`（头部注释里的旧倍率说明同步）。`server/worldsvc/test/stronghold.e2e.test.ts` 断言走 `strongholdMaterialLoot()` 动态求值，无需改动，复跑 6/6 全绿；`server/shared` 单测 39/39 全绿；`tsc --noEmit` 全绿。
+- **影响**：纯服务器经济常量调整，客户端无引用需要同步改动（未见任何硬编码旧掉率的 UI 文案）。险地占领给玩家的持久 `binding` 收益从 40/次降到 8/次——这是一次实质性削弱，属于本次修复的直接代价，非附带影响。

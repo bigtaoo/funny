@@ -64,10 +64,17 @@ export function passageGarrison(level: number): number {
  * Additional progression material drop on stronghold conquest (§19.5 "unified with G4 progression material flow"): single rare material `binding`
  * (gates rare/epic equipment; scarce through normal map routes), linear by tile level, delivered to SaveData.materials unified progression pool
  * (not a season resource; persists across seasons, SLG4). Economic-simulation validated (`strongholdRun.ts` §③): persistent-faucet dilution vs.
- * regular grind stays ≤15% even at full-world capture, so the quantity is confirmed as-is (was DRAFT pending that check; check has since passed).
+ * regular grind stays ≤15% even at full-world capture.
+ * **Re-tuned 2026-07-27 (ADR-052)**: ADR-049's map enlargement (500×500→1500×1500) kept per-tile stronghold density constant by design, but
+ * that meant the world's absolute stronghold COUNT grew with map area (median ~567→~2,817, max ~636→~3,286) while `SLG_WORLD_CAPACITY_TARGET`
+ * (the dilution denominator, a server-population design constant unrelated to map area) stayed at 400 — pushing dilution from a safe 12.6% up to
+ * 65.2% at the worst-case seed. Lowering this constant (was 4) is the correct lever: it leaves the ADR-049 map-size/density decision and the
+ * ADR-032 world-capacity decision both untouched, and directly re-caps the one thing that actually grew unboundedly — the persistent faucet's
+ * per-capture size. 0.8×level10 = 8/capture restores ~13.0% worst-case dilution, matching the old design's safety margin (see
+ * ECONOMY_VERIFICATION_LOG.md §13-SLG-STRONGHOLD.2b).
  */
 export const STRONGHOLD_LOOT_MATERIAL = 'binding';
-export const STRONGHOLD_LOOT_MATERIAL_PER_LEVEL = 4;
+export const STRONGHOLD_LOOT_MATERIAL_PER_LEVEL = 0.8;
 /** Stronghold material drop (pure function, computable on either end): {material, qty}; qty is linear by tile level. */
 export function strongholdMaterialLoot(level: number): { material: string; qty: number } {
   return { material: STRONGHOLD_LOOT_MATERIAL, qty: STRONGHOLD_LOOT_MATERIAL_PER_LEVEL * Math.max(1, level) };
