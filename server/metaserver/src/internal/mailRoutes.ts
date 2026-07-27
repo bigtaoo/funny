@@ -26,7 +26,7 @@ interface SystemMailBody {
 }
 
 export function registerMailRoutes(app: FastifyInstance, ctx: InternalCtx): void {
-  const { cols, authed, gateway, socialsvc } = ctx;
+  const { cols, authed, gateway, socialsvc, accountCache } = ctx;
 
   // POST /internal/mail/system/preview → { ok, recipientCount }
   app.post('/internal/mail/system/preview', async (req, reply) => {
@@ -39,7 +39,7 @@ export function registerMailRoutes(app: FastifyInstance, ctx: InternalCtx): void
       return reply.send({ ok: true, recipientCount });
     }
     const publicId = b.target && 'publicId' in b.target ? b.target.publicId : '';
-    const accountId = await resolveByPublicId(cols, publicId);
+    const accountId = await resolveByPublicId(accountCache, cols, publicId);
     return reply.send({ ok: true, recipientCount: accountId ? 1 : 0 });
   });
 
@@ -99,7 +99,7 @@ export function registerMailRoutes(app: FastifyInstance, ctx: InternalCtx): void
         ? (b as { accountId: string }).accountId
         : null;
     const publicId = b.target && 'publicId' in b.target ? b.target.publicId : '';
-    const accountId = directAccountId ?? (await resolveByPublicId(cols, publicId));
+    const accountId = directAccountId ?? (await resolveByPublicId(accountCache, cols, publicId));
     if (!accountId) return reply.send({ ok: false, recipientCount: 0, error: 'recipient not found' });
     let r: { mailId: string; inserted: boolean; hasAttachment: boolean };
     try {

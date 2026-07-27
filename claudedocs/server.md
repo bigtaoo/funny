@@ -151,7 +151,7 @@ cp .env.example .env        # 填 NW_JWT_SECRET / NW_DOMAIN
 - **T10 `batch-profiles` 从 2N 次查询改成 2 次 `$in`**：`internal/account/batch-profiles` 原本对每个 accountId 调一次 `profileOf`（每次 2 个 findOne，且 accounts 侧完全没投影，连密码哈希都拉回来），100 个好友 = 200 次查询。抽出 `toProfileView` 纯函数做单一事实来源，新增 `profilesOf` 批量版：`accounts`/`saves` 各一次 `$in` + 投影 + 内存 join。
 - **T11 `pveClear`/`pveVerify` 写放大合并**（本轮改动量最大）：正常通关此前最多做 4 次独立的整存档读改写（`writeClearProgress`/`grantClearReward` 的材料写/`accrueJudgedPveStats`/`bumpRetentionTask`），彼此的 SaveData 改动互不依赖结果（只有每日奖励封顶判定 + 装备掉落骰子必须在进 `mutateSave` 事务前决定——事务函数可能因 rev 冲突被重试多次，不能塞不确定性逻辑），于是合并进一次 `mutateSave`（新 `settleNormalClear`，进度/星级/篇章成就 + 材料/装备槽位 + 判定后统计 + 每日任务全在一次写里）；章节卡/掉落卡的发放仍走独立的共享 `grantCards`（gacha/邮件/拍卖行共用，不能重复）。`pveVerify` 的判定后发放（`grantClearReward`+`accrueJudgedPveStats` 两次写）套用同一模式合并成 `deliverVerifiedClearReward`。抽出两个纯函数 `applyClearProgress`/`applyMaterialAndEquipmentGrant` 供两条路径共享。正常通关：4 次整存档写 → 1 次；判定后发放：2 次 → 1 次。
 
-**未做、明确列为中期项**（架构级改动，风险/工作量大，本轮未动）：`cardInv`（最多 500 张卡）拆成独立集合（复刻 `equipmentInstances` 2026-07-26 的拆法，**✅ 已于 2026-07-27 完成，见下**）；`mapBaselines` 改行程编码存储或回归纯 `proceduralTile`（当前一次开服克隆一张 1500×1500 地图模板会物化 225 万文档，仅在 ops 激活自定义模板时触发，**✅ 已于 2026-07-27 完成，见下**）；`adsDaily`/`pveDaily`/`victoryDaily` 这类日计数器迁到 Redis TTL key（**✅ 已于 2026-07-27 完成，见下**）；`rejectIfBanned`/`publicId` 查询加缓存层；进程内限流器（认证/异常上报/分享额度）+ presence 查询在真正横向扩容前需要迁移到 Redis。
+**未做、明确列为中期项**（架构级改动，风险/工作量大，本轮未动）：`cardInv`（最多 500 张卡）拆成独立集合（复刻 `equipmentInstances` 2026-07-26 的拆法，**✅ 已于 2026-07-27 完成，见下**）；`mapBaselines` 改行程编码存储或回归纯 `proceduralTile`（当前一次开服克隆一张 1500×1500 地图模板会物化 225 万文档，仅在 ops 激活自定义模板时触发，**✅ 已于 2026-07-27 完成，见下**）；`adsDaily`/`pveDaily`/`victoryDaily` 这类日计数器迁到 Redis TTL key（**✅ 已于 2026-07-27 完成，见下**）；`rejectIfBanned`/`publicId` 查询加缓存层（**✅ 已于 2026-07-27 完成，见下**）；进程内限流器（认证/异常上报/分享额度）+ presence 查询在真正横向扩容前需要迁移到 Redis。
 
 ## cardInv 存储拆分（2026-07-27，中期项第 1 项）
 
@@ -176,6 +176,16 @@ cp .env.example .env        # 填 NW_JWT_SECRET / NW_DOMAIN
 **redis=null 时不是「功能禁用」，是进程内 Map 兜底**：这三个计数器是反作弊硬顶，跟 `activeMatch`/`worldsvc` 那种「丢了只是体验降级」的 Redis 用法性质不同，所以刻意没有复用「优雅降级」的写法。`metaserver`/`commercial` 目前都是单实例部署（`ecosystem.config.cjs` `instances:1`），进程内计数在这个拓扑下就是正确的全局计数——只是不扛进程重启，不像真 Redis。`server/shared/src/dailyCounter.ts` 顶部注释记了完整推理；`docker-compose.{cloud,prod}.yml` 的 Redis 淘汰策略注释也补了一句：这类计数器即使被 LRU 淘汰也只是某账号当天的上限提前重置，影响有界、自愈，不影响"淘汰整体安全"的结论。
 
 commercial 此前完全没有 Redis 依赖，本次新增：`config.ts` 补 `NW_REDIS_URL`（复用 metaserver/matchsvc 同名变量，同一个 Redis 实例）、`index.ts` 用新增的 `connectDailyCounterRedis` 连接（metaserver 则直接复用已有的 `connectActiveMatchRedis` 连接，不开第二个连接）。四份部署文件（`docker-compose.{local,cloud,prod}.yml`、`ecosystem.config.cjs`、`dev-up.ps1`、`.env.example`）同步补上；仿照 T1 的做法在 `matchsvc/test/deploy-config.test.ts` 加了 commercial 侧的同款回归测试。
+
+## rejectIfBanned/publicId 查询加缓存层（2026-07-27，中期项第 4 项）
+
+`rejectIfBanned`（每次 auth + 每次 `/pve/enter`/`/pve/clear` 都查一次 `accounts.flags`/`deletedAt`）和 `resolveByPublicId`（socialsvc 好友/邮件按 publicId 操作时的反查，`/internal/account/by-public-id`）都是已建索引的单文档查询，本身不贵——贵的是跨公网到 Atlas M0 的那一次网络往返，缓存命中直接省掉整趟往返，而不是优化查询计划。新增 `metaserver/src/accountCache.ts` 的 `AccountCache` 类，两个方法各自一张 `TtlMap`：`getBanStatus`（60s TTL，安全网性质——`/ban`/`/unban`/`deleteAccount` 三处写入点已显式调用 `invalidateBanStatus` 立即失效，60s 只是兜底未来某个忘记失效的新写入点）、`getAccountIdByPublicId`（1h TTL，`publicId` 一旦分配永不改变，长 TTL 纯粹是内存卫生，不是过期正确性的考量；未命中永不缓存，避免拼写错误把"查无此人"焊死）。
+
+**刻意不做成模块级单例**（对比 `dailyCounter.ts` 的 `LocalBackend` 单例）：`internal-accounts.test.ts` 等好几个测试文件在同一进程内反复复用同一批字面量 fixture（如 publicId `'123456789'`），且每个用例给它接的 `flags.banned`/`displayName` 不同——模块级单例会让前一个用例缓存的结果泄漏进下一个用例。`AccountCache` 改成每次 `buildApp` 构造一个实例，`MetaService`（走 `rejectIfBanned` 的公开路由）和 `registerInternalRoutes`（走 ban/unban/by-public-id 的内部路由）共享同一个实例——这样管理员 ban 才能立刻反映到下一次公开路由的检查，而不是各查各的、互不通气。
+
+`resolveByPublicId` 签名从 `(cols, publicId)` 改成 `(cache, cols, publicId)`（3 处调用点：`accountRoutes.ts` ×2、`mailRoutes.ts` ×2，均已改）。
+
+**验证**：新增 `metaserver/test/accountCache.test.ts`（8 例单测：命中不二次查询、不同 key 独立缓存、`invalidateBanStatus` 后立即重查、miss 不缓存）；`auth-password.e2e.test.ts` 新增一条端到端回归——真实 Mongo，注册→管理员 ban→**立即**下一次登录 403、再 unban→**立即**下一次登录 200，专门验证"失效是显式的，不是等 60s TTL 过期"这个正确性关键点，而不只是验证"有缓存"。metaserver 55 文件/689 测试、socialsvc 5 文件/76 测试全绿；`tsc -b` 全 13 个 server 包全绿。
 
 `shared/src/mongo.ts` 删 `AdsDailyDoc`/`PveDailyDoc`（+ `Collections` 字段/`createMongo` 实例化）；`commercial/src/db.ts` 删 `VictoryDailyDoc`（+ 同上）。`metaserver/test/ads.test.ts` 原先用手搓假 Mongo collection 模拟 `checkAdInterval`/`bumpAdsCap` 的行为，改成 `redis=null` 走真实进程内兜底逻辑（实际验证生产代码路径，而非模拟出的行为）。
 

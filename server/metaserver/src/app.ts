@@ -15,6 +15,7 @@ const log = createLogger('meta');
 import { makeSecurityHandlers } from './auth.js';
 import { extractBearer, verifyToken } from '@nw/shared';
 import { registerInternalRoutes } from './internal.js';
+import { AccountCache } from './accountCache.js';
 import { HttpCommercialClient, type CommercialClient } from './commercialClient.js';
 import { HttpGatewayClient, type GatewayClient } from './gatewayClient.js';
 import { HttpMetaSocialsvcClient, nullMetaSocialsvcClient } from './socialsvcClient.js';
@@ -132,6 +133,9 @@ export async function buildApp(opts: BuildAppOpts): Promise<FastifyInstance> {
   const socialsvc =
     opts.socialsvc ?? (opts.socialsvcUrl ? new HttpMetaSocialsvcClient(opts.socialsvcUrl, opts.internalKey) : nullMetaSocialsvcClient);
   const redis = opts.redis ?? null;
+  // Shared with registerInternalRoutes below so an admin ban/unban (internal API) invalidates the same
+  // cache rejectIfBanned (public API) reads — one instance per buildApp call, see accountCache.ts.
+  const accountCache = new AccountCache();
   const service = new MetaService({
     cols: opts.cols,
     jwt: opts.jwt,
@@ -145,6 +149,7 @@ export async function buildApp(opts: BuildAppOpts): Promise<FastifyInstance> {
     lokiPushUrl: opts.lokiPushUrl ?? null,
     socialsvc,
     redis,
+    accountCache,
   });
 
   // Ad platform SSV callbacks (platform-initiated; no player authentication).
@@ -172,6 +177,7 @@ export async function buildApp(opts: BuildAppOpts): Promise<FastifyInstance> {
     cols: opts.cols,
     internalKey: opts.internalKey,
     internalKeys: internalKeysFromEnv(),
+    accountCache,
     now,
     gateway,
     commercial,

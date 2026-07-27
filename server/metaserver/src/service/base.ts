@@ -8,6 +8,7 @@ import { ErrorCode, err, accrueRetentionTask, getActiveMatch } from '@nw/shared'
 import { getOrCreateSave } from '../save.js';
 import type { CommercialClient } from '../commercialClient.js';
 import type { GatewayClient } from '../gatewayClient.js';
+import type { AccountCache } from '../accountCache.js';
 
 export interface ServiceDeps {
   cols: Collections;
@@ -30,6 +31,9 @@ export interface ServiceDeps {
   socialsvc: import('../socialsvcClient.js').MetaSocialsvcClient | null;
   /** Active-match Redis client (login-reconnect-prompt): getSave() reads it to surface a "resume your match?" hint. null = feature disabled. */
   redis: RedisLike | null;
+  /** Ban-status / publicId reverse-lookup cache (2026-07-27), shared with registerInternalRoutes so an
+   *  admin ban/unban via the internal API is visible to this process's next rejectIfBanned check. */
+  accountCache: AccountCache;
 }
 
 // ── Mixin plumbing ────────────────────────────────────────────────────────────
@@ -109,14 +113,15 @@ export class MetaServiceBase {
     return false;
   }
 
-  /** C4/C5-b: Check account-level ban / soft-delete flags; if flagged, reject the request and return true. */
+  /** C4/C5-b: Check account-level ban / soft-delete flags; if flagged, reject the request and return true.
+   *  Cached (2026-07-27, accountCache.ts) — a cache hit skips the Mongo round trip entirely. */
   protected async rejectIfBanned(cols: ServiceDeps['cols'], accountId: string, reply: FastifyReply): Promise<boolean> {
-    const doc = await cols.accounts.findOne({ _id: accountId }, { projection: { flags: 1, deletedAt: 1 } });
-    if (doc?.deletedAt) {
+    const status = await this.deps.accountCache.getBanStatus(cols, accountId);
+    if (status.deletedAt) {
       void reply.code(410).send(err(ErrorCode.ACCOUNT_DELETED, 'account deleted'));
       return true;
     }
-    if (doc?.flags?.banned) {
+    if (status.banned) {
       void reply.code(403).send(err(ErrorCode.ACCOUNT_BANNED, 'account banned'));
       return true;
     }

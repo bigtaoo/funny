@@ -175,9 +175,10 @@ export function AuthMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase & Cons
      */
     async deleteAccount(req: FastifyRequest) {
       const accountId = accountIdOf(req);
-      const { cols, now } = this.deps;
+      const { cols, now, accountCache } = this.deps;
       const confirmToken = randomUUID();
       await cols.accounts.updateOne({ _id: accountId }, { $set: { deletedAt: now() } });
+      accountCache.invalidateBanStatus(accountId);
       return ok({ confirmToken });
     }
 
