@@ -129,9 +129,17 @@ export class MetaServiceBase {
     transform: (s: SaveData) => SaveData | string,
   ): Promise<{ save: SaveData } | { error: string }> {
     const { cols, now } = this.deps;
-    await getOrCreateSave(cols, accountId, now());
+    // Try the plain read first — by the time any mutateSave call happens the doc has almost always already
+    // been created (GET /save's own getOrCreateSave runs first in practice), so this is the hot path.
+    // getOrCreateSave is only reached on a genuine first-ever touch (2026-07-27 audit: this used to run
+    // unconditionally, then the loop below immediately re-read the same doc it had just returned/created —
+    // a guaranteed redundant read on every single call).
+    let doc = await cols.saves.findOne({ _id: accountId });
+    if (!doc) {
+      await getOrCreateSave(cols, accountId, now());
+      doc = await cols.saves.findOne({ _id: accountId });
+    }
     for (let attempt = 0; attempt < 4; attempt++) {
-      const doc = await cols.saves.findOne({ _id: accountId });
       if (!doc) return { error: 'NOT_FOUND' };
       const out = transform(doc.save);
       if (typeof out === 'string') return { error: out };
@@ -143,6 +151,7 @@ export class MetaServiceBase {
       );
       if (res) return { save: res.save };
       // rev conflict (concurrent client PUT of equipped/flags or concurrent pve write) → re-read and retry
+      doc = await cols.saves.findOne({ _id: accountId });
     }
     return { error: 'REV_CONFLICT' };
   }
