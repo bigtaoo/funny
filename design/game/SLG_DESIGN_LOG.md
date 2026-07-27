@@ -1378,3 +1378,13 @@ L1 从需 660 兵降到 300（最小占地 500 现稳赢，直击病灶）；L2/
 **i18n 新增**：`world.team.cards`（复用位替代旧 `world.defense.garrison` 在攻击模式下的调用点）、`world.team.leader`、`world.team.leaderHint`、`world.team.leaderNeedsCard`，三语言（zh/en/de）齐备；`world.defense.garrison` 词条本身保留给防守编辑器（防守模式的建筑/驻军统计与本次改动无关）。
 
 **验证**：`server/worldsvc tsc --noEmit` 全绿；worldsvc `teams.e2e.test.ts` 新增 2 例（`leaderCardId` 随保存/领队离队清空往返；`getTeams` 自愈直接写入文档、army 里不存在的幽灵领队）+ 修正 1 处集合访问器笔误，15 例全绿（需 `docker compose up -d` 起 Mongo）；client `tsc --noEmit -p tsconfig.test.json` 全绿；`teamTroops.test.ts` 新增 `teamTroopCap`/`teamLeaderCard` 8 例；`defenseEditorAttackCards.ui.ts` 新增领队工具 5 例；`cityScene.ui.ts` 更新兩例文案改名断言 + 新增 1 例 carried/cap 断言；全量 `vitest.ui.config.ts`（88 文件）除 5 个与本次改动无关的既有失败（`worldMapBaseClick`/`worldMapScoutDisabled`/`marchTokenAnimation`/`modalScaleAndBackButton`/`worldMapOccupyTeamPicker` 各自的既有断言，主分支同样失败，已核实非本次改动引入）外全部通过。真实入图截图未做——本次纯代码改动，无可交互 dev server 场景需要截图核对（团队卡布局改动细小，头像资源已在编辑器验证过渲染管线）。
+
+## 40. 「我的基地」进图后一闪即消失修复（2026-07-27，用户截图报告）
+
+**背景（用户截图报告）**：进入 SLG 世界地图后地图区域整体空白，右侧 Troops/Territory 状态卡（HUD，不依赖地块缓存）数据正常，唯独玩家自己的基地建筑精灵短暂显示一下就消失，此后不再出现。
+
+**根因**：`WorldMapRenderer/pool.ts` 的 `isBaseAnchor(tx,ty)`——用来判定一格是否是 3×3 基地的中心锚点，从而只画一次城市精灵——要求该格及其 4 个正交邻格**当次调用时**都能在 `tileCache` 里读到 `type:'base'` 且同一 owner。`refreshCityLayer()`（`city.ts`）每次重绘（5s 行军轮询、地块推送、切换缩放级别……）都会重新跑一遍这个判定；判定失败的格子不会被加进当次 `seen` 集合，紧随其后的清理逻辑就会把它已经画出来的城市精灵整个销毁。问题在于：`loadMapViewport()`/`getMap()` 对同一 3×3 的多次刷新之间没有互斥（不像 `WorldMapNet` 别处用 `pendingTeamIds` 挡重复派单那样），一旦两次视口取图请求乱序落地，或某次推送只重取了部分格子，中心格明明还稳稳缓存着「这是我的基地」，某个邻格却可能读到瞬时缺失/陈旧的数据——邻格判定一失手，整座已经画出来的基地精灵就被拆掉，直到某次刷新凑巧四邻格又同时一致才会重新出现。这与截图里「一闪就没」的现象完全吻合。
+
+**修复**：`isBaseAnchor` 新增一条快速通道——命中的地块若 `tile.mine` 为真，直接用 `ctx.me.mainBaseTile`（服务端权威、随 `getMe`/`joinWorld` 一起下发，不依赖邻格缓存是否刚好新鲜）核对坐标是否吻合；吻合就直接判定为锚点，不再逐邻格重新验证。只对「我自己的基地」生效——其他玩家/NPC 的基地没有这份权威坐标可用，仍走原来的四邻格一致性检查，故意保留的"数据不一致就不画"语义没有被放宽。
+
+**验证**：`client tsc --noEmit -p tsconfig.test.json` 全绿。真实入图需要完整登录 + worldsvc 全栈，本会话起 `dev-up.ps1` 时撞上本机另一个遗留问题（各服务 `node --watch` 进程卡在启动阶段、既不监听端口也不写日志，与本次改动无关，已清理掉卡住的进程）——转而用项目里现成的"离线直构 `WorldMapScene`"调试手法（临时在 `entries/web.ts` 加 `?wmdebug` 分支，套一个立即 resolve 的假 `WorldApiClient`，绕开后端）复现了根因并验证了修复：① 正常渲染出「我的基地」后，手动从 `tileCache` 里删掉锚点的一个邻格（模拟乱序/部分刷新留下的瞬时缺口），修复前的逻辑会让 `isBaseAnchor` 返回 false 从而拆除精灵，修复后精灵原样保留（`citySprites` 仍含 `50:50`，`isBaseAnchor` 仍为 true）；② 用同样手法在假地块里放一个敌方基地，人为弄脏它的一个邻格，确认 `isBaseAnchor` 依旧正确判定为 false、精灵不画——快速通道没有波及非本人基地的既有校验语义。调试分支验证完已从 `entries/web.ts` 撤回，代码库里只留下 `pool.ts` 的正式改动。
