@@ -128,6 +128,30 @@
 > **TODO（美术）**：等专门的行军动画素材（含旗帜/头像等帮会标识）出图后替换 `MARCH_TOKEN_ASSET`；
 > 目前旗帜/头像暂不做，涉及帮会图标体系，留待后续。
 >
+> **按队伍真实领队兵种显示 — ✅ 已接入（2026-07-26，零新增美术，复用已有 6 种骨骼资产）**：
+> 上面"兵种素材暂时二选一"的写死映射已废弃。`worldsvc` 在 `startMarch` 派发时（`combatMarch.ts`）用
+> `leaderUnit.ts::resolveLeaderUnitType()`（镜像客户端 `teamTroops.ts::teamLeaderCard()` 的选取规则：
+> 显式 `team.leaderCardId` 优先，否则按 `cardPower` 取全队最强卡）算出队伍领队卡的兵种，一次性冻结进
+> `MarchDoc.leaderUnitType`（不随后续改队伍/换卡变化，敌我双方看到的都是派发那一刻的领队），随
+> `OccupationDoc`/`StationedDoc` 沿途传递（占领保持、驻扎沿用同一份快照）。**对敌方行军同样生效**——
+> 由服务端算好、只下发最终兵种枚举（不暴露队伍/卡牌明细），不像 `teamId` 那样对敌方置空。
+> 客户端 `fog.ts::resolveMarchUnitType()` 优先读 `march.leaderUnitType`（若不在已知 6 种骨骼资产内则
+> 兜底），否则退回原 kind 二选一逻辑（无队伍的散兵行军）。三套令牌（march/occupy/stationed）全部改用
+> 同一套解析。回归测试：`client/test/ui/marchTokenAnimation.ui.ts`（新增 leaderUnitType 分支用例）+
+> `server/worldsvc/test/leader-unit.test.ts`（纯函数单测）。
+>
+> **大量同屏令牌的性能分级（LOD）— ✅ 已接入（2026-07-26）**：千支队伍同屏攻城场景下，"每条行军一个
+> 全骨骼 `StickmanRuntime`"（6-12 个 sprite + 每帧骨骼更新）成本会线性爆炸。`fog.ts` 新增跨
+> march/occupy/stationed 三套令牌共享的 `STICKMAN_TOKEN_BUDGET`（=80）：`renderOverlay(dt)` 每帧起一个
+> 共享预算对象依次传给三个 `syncXxxTokens`，marches 优先占用、其次 occupations、最后 stationed；预算
+> 耗尽后新建的令牌退化成 `buildAvatar()` 画的静态头像圆点（1 个 sprite，无骨骼开销），复用领队兵种
+> 对应的 `hero:<unit>` 头像。已存在的令牌不会中途升降级（避免闪烁），只有新建令牌受预算门控，因此
+> 预算约束的是"新令牌的建造速率"而非"存活总数的硬上限"——但每个存活的骨骼令牌仍会持续占位。
+> 视口裁剪（只渲染屏幕可见范围内的令牌）评估后**未采用**：现有 UI 回归测试大量依赖"无论镜头在哪都能
+> 稳定拿到令牌池"这一行为，屏幕位置裁剪会让离屏但仍在数据里的令牌拿不到骨骼实例，需要大改测试装置来
+> 配摄像机位置，收益（避免离屏渲染）在预算机制已经兜底总数上限后不再是关键——数量预算已经把最坏情况
+> 锁死在 O(budget) 而不是 O(实际行军数)。回归测试：`client/test/ui/marchTokenLod.ui.ts`。
+>
 > **占领/攻城到达 — ✅ 已修复（2026-07-16）**：此前令牌抵达目的地时 `syncMarchTokens()` 直接
 > `destroy()`，攻击方令牌瞬间消失、从未播放 `attack` 动画。现在 `SiegeDoc`/`siege_result` 推送
 > 携带 `marchId`（`combatSiege/helpers.ts::recordSiege` + `corePush.ts::pushSiege` + `transport.proto`），

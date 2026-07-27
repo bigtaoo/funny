@@ -7,6 +7,7 @@ import { loadTerrainAtlas } from '../../../render/terrainAtlasLoader';
 import { loadBuildingAtlas } from '../../../render/buildingAtlasLoader';
 import { tearDownChildren } from '../../../render/sketchUi';
 import { type Constructor, type WorldMapRendererBaseCtor } from './base';
+import { destroyTokenEntry } from './fog';
 
 export interface LifecycleHandlers {
   update(dt: number): void;
@@ -76,12 +77,12 @@ export function LifecycleMixin<TBase extends WorldMapRendererBaseCtor>(Base: TBa
       this.ctx.pool = [];
       for (const c of this.ctx.citySprites.values()) c.destroy({ children: true });
       this.ctx.citySprites.clear();
-      for (const { runtime } of this.ctx.marchTokenRuntimes.values()) runtime?.destroy();
+      for (const entry of this.ctx.marchTokenRuntimes.values()) destroyTokenEntry(entry);
       this.ctx.marchTokenRuntimes.clear();
       this.ctx.marchAttackUntil.clear();
-      for (const { runtime } of this.ctx.occupyTokenRuntimes.values()) runtime?.destroy();
+      for (const entry of this.ctx.occupyTokenRuntimes.values()) destroyTokenEntry(entry);
       this.ctx.occupyTokenRuntimes.clear();
-      for (const { runtime } of this.ctx.stationedTokenRuntimes.values()) runtime?.destroy();
+      for (const entry of this.ctx.stationedTokenRuntimes.values()) destroyTokenEntry(entry);
       this.ctx.stationedTokenRuntimes.clear();
     }
   };

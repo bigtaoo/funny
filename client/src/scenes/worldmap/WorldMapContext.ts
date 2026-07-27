@@ -14,6 +14,21 @@ import type { WorldMapNet } from './WorldMapNet';
 import type { WorldMapInput } from './WorldMapInput';
 import type { StickmanRuntime } from '../../render/stickman/StickmanRuntime';
 
+/**
+ * A live march/occupy/stationed token (fog.ts syncMarchTokens/syncOccupyTokens/syncStationedTokens).
+ * 'stickman' renders a full StickmanRuntime skeleton (walk/attack/idle clips; `runtime` is null
+ * while the cached-after-first-use .tao asset is still loading). 'dot' (2026-07-26 LOD downgrade,
+ * design/game/WORLD_MAP_ART_SPEC.md) is a single lightweight static portrait disc, used once the
+ * live token count exceeds STICKMAN_TOKEN_BUDGET (siege-scale march counts) so cost stays O(budget)
+ * instead of O(live count) regardless of how many squads are actually in transit/holding/stationed.
+ * `kind` is the resolved unit-type key driving asset choice (see fog.ts resolveMarchUnitType) — kept
+ * as the same field name across both variants and across march/occupy/stationed for a uniform
+ * kind-changed → destroy-and-rebuild check.
+ */
+export type MapTokenEntry =
+  | { mode: 'stickman'; runtime: StickmanRuntime | null; kind: string }
+  | { mode: 'dot'; sprite: PIXI.Container; kind: string };
+
 // ── Public callbacks ────────────────────────────────────────────────────────
 export interface WorldMapCallbacks {
   onBack(): void;
@@ -103,9 +118,8 @@ export class WorldMapContext {
   overlayGfx!: PIXI.Graphics;
   /** March walk-cycle sprites, above overlayGfx so they read on top of the route line/arrowhead. */
   marchTokenLayer!: PIXI.Container;
-  /** marchId → live StickmanRuntime riding that march's route (fog.ts syncMarchTokens). `runtime` is
-   * null while the (cached-after-first-use) .tao asset is still loading. */
-  marchTokenRuntimes: Map<string, { runtime: StickmanRuntime | null; kind: string }> = new Map();
+  /** marchId → live token entry riding that march's route (fog.ts syncMarchTokens) — see MapTokenEntry. */
+  marchTokenRuntimes: Map<string, MapTokenEntry> = new Map();
   /** marchId → epoch-ms deadline to keep playing the 'attacking' clip after the march has
    * resolved (arrived off `ctx.marches`) instead of tearing its token down instantly (§ occupy
    * attack-animation fix). Populated by WorldMapNet.applySiegeResult, consumed/expired in
@@ -114,12 +128,12 @@ export class WorldMapContext {
   /** tile key ("x:y") → live StickmanRuntime playing 'attacking' for the *entire* duration of one of
    * my own occupation holds (ctx.occupations), not just the brief post-arrival beat covered by
    * marchAttackUntil above — the user wants the attack motion to keep repeating for as long as the
-   * hold countdown runs, not fire once and vanish. Synced in fog.ts syncOccupyTokens. */
-  occupyTokenRuntimes: Map<string, { runtime: StickmanRuntime | null }> = new Map();
-  /** tile key ("x:y") → live StickmanRuntime standing idle on one of my stationed tiles (ctx.stationed).
+   * hold countdown runs, not fire once and vanish. Synced in fog.ts syncOccupyTokens — see MapTokenEntry. */
+  occupyTokenRuntimes: Map<string, MapTokenEntry> = new Map();
+  /** tile key ("x:y") → live token standing idle on one of my stationed tiles (ctx.stationed).
    * Unlike march/occupy tokens these are NOT torn down on arrival — the team stands there until moved or
-   * recalled (2026-07-23 field-stationing). Synced in fog.ts syncStationedTokens. */
-  stationedTokenRuntimes: Map<string, { runtime: StickmanRuntime | null }> = new Map();
+   * recalled (2026-07-23 field-stationing). Synced in fog.ts syncStationedTokens — see MapTokenEntry. */
+  stationedTokenRuntimes: Map<string, MapTokenEntry> = new Map();
   hudLayer!: PIXI.Container;
   /** Title bar + back button — static, drawn once (unlike hudLayer, which is torn down on every ~5s march-poll re-render). */
   topLayer!: PIXI.Container;
