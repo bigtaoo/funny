@@ -1191,6 +1191,16 @@ if (path.startsWith('/admin/world/')) {
 - **不做家族/宗门整体转移**：转区是纯个人操作；一个家族想集体换 shard，需要每个成员各自转区（家族本身跟着任一成员走，不会"卡住"，因为家族不是 shard 数据）。
 - **不做玩家侧 UI**：服务端能力+契约+admin 运维入口已完整；玩家自助转区的选择/确认场景留作后续任务（数据层 `WorldApiClient` 方法已就绪，UI 是纯前端工作，不依赖任何未决的服务端设计）。
 
+### 28.6 修复：转区/合区未清理 `stationed` 集合 + Redis occ/cover 索引（2026-07-27，design-doc-audit-2026-07）
+
+> §28.4 的 TRANSFER_BUSY 阻挡只查了 `marches`/`occupations` 两个集合，`vacatShard`（经 `purgePlayerWorld`）也只删 `tiles`/`playerWorld` 两个集合——`stationed`（2026-07-23 新增的"停留在外"字段部队，`combatMarch.ts`）从一开始就不在两条路径的视野内，本次审计逐代码核实后确认是真实 bug，非误报：
+
+- **玩家主动转区（`transferShard`）此前完全不受 stationed 阻挡**：一名有队伍停留在外（`StationedDoc`）的玩家可以直接转区离开，走后留下的 `StationedDoc` 变成**永久幽灵**——没有 `playerWorld` 文档认领它，玩家自己也再摸不到这个已离开的 shard 去调用 `recallStationed`；该队伍站的格子按"一格一队"规则被永久占用（`combatMarch.ts` 的 `TILE_OCCUPIED` 检查），其他任何人都不能再在那格停留部队；若该队伍是 `garrison` 模式，Redis `cover` 9 格反向索引里的驻防区也一并变成永久幽灵，理论上会一直"拦截"路过的行军。
+- **合区（`mergeShard`）同理**：强制清场时只 `deleteMany` 了 `marches`/`occupations`，`stationed` 文档连同它们的 Redis `occ`/`cover` 条目完全没清——虽然源 shard 随后 `closed`（不再路由新加入，游戏性影响较小），但幽灵文档会一直堆在数据库里，且如果同一 worldId 字符串未来被复用（当前代码未见复用保护），幽灵索引可能对新 shard 产生数据污染。
+- **修复**：`server/worldsvc/src/transfer.ts`——① `transferShard` 的忙碌检查从"march+occupation"扩到"march+occupation+stationed"（`Promise.all` 并发查询，三者任一存在即 `TRANSFER_BUSY`，与既有 march/occupation 阻挡语义一致：玩家必须先 `recallStationed` 再转区）；② `mergeShard` 的强制清场块新增：先查出该玩家在源 shard 的全部 `StationedDoc`，`deleteMany` 前逐条调用 `core.clearOccupancy`（清 Redis occ 条目）+ `mode==='garrison'` 时额外调用 `core.removeCover`（清 9 格反向索引），再删 Mongo 文档——顺序与 `recallStationed`（正常玩家自己触发的清理路径）保持一致，只是这里是批量强制版本。
+- **回归测试**：`server/worldsvc/test/transfer.e2e.test.ts` 新增两例——「stationed 队伍阻挡转区，recall（删除文档）后放行」+「合区强制清理 stationed，源 shard 里不留幽灵文档」；两例改动前跑会失败（转区不受阻挡 / 合区后文档仍在），改动后随全量 20 例（含原 18 例）绿。`@nw/shared` 633 例 + worldsvc 339 例全量无回归。
+- **未覆盖**：本次测试环境 `redis: null`（沿用既有 e2e 约定，`clearOccupancy`/`removeCover` 对 `redis: null` 静默降级不报错），故只在 Mongo 层面断言了 `StationedDoc` 确实被清空；Redis occ/cover 条目的清理调用路径与 `recallStationed`（已在生产验证过的正常清理路径）完全一致，逻辑上可信，但没有专门起一个真实 Redis 的 e2e 去断言 hash 条目消失——如果未来要做，需要一个带 `ioredis-mock` 或真实 Redis 容器的测试环境。
+
 ## 29. NPC 地块基地血量随等级缩放（2026-07-17，方案 2，用户拍板）
 
 **背景/病灶**：用户实测「打一级地，打败了敌方所有的兵，但自己的兵不足以摧毁基地」。根因：**NPC 地块**（占地 `applyOccupy` / 驱逐 `applyOccupationExpulsion` / 领地 `buildDefenderConfig` / 据点 `applyStrongholdSiege` / 关口）走**单场** `runSiegeBattle`（objective=`destroy_base`），其引擎内象征基地血量此前恒为 `BASE_HP=100`，**与地块等级无关**。而基地不是"慢慢磨"——每个走到基地格的单位一次性造成自己的 `siegeValue`（合成步兵=11）后当场消失（`MovementSystem`）。于是一级地驻军仅 `npcGarrison(1)=120`（=2 步兵）微不足道，但要凑够 ~10 个幸存步兵抵达基地才推得平 100 血；`OCCUPY_MIN_TROOPS=500` 的最小占地兵力清完守军后幸存不足 → 超时 → 守方胜（防守方偏置）。**玩家主城/领地侧本无此问题**：走 ADR-026 分波，象征基地钉死 `defenderBaseLevel:0` 只当终结器，真实血量是 `TileDoc.hp = baseDurabilityMax(墙等级)`——已随基地等级缩放。缺口只在 NPC 单场路径。

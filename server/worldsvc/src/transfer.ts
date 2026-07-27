@@ -50,10 +50,13 @@ export class TransferService {
 
   /**
    * Player-initiated mid-season transfer (§27). Guards: must be in `fromWorldId`, target must be a different
-   * open/active shard in the same season with room, no in-flight march/occupation (must recall/wait first —
-   * an in-flight march referencing a tile in the shard being vacated would otherwise become a dangling
-   * cross-shard reference, exactly what patrolShardIsolation's `crossWorldMarches` check exists to catch), and
-   * a per-account cooldown (anti shard-hopping/scouting). Forfeits all shard-scoped state in `fromWorldId`
+   * open/active shard in the same season with room, no in-flight march/occupation/stationed team (must
+   * recall/wait first — an in-flight march or a team parked in the field referencing a tile in the shard
+   * being vacated would otherwise become a dangling cross-shard reference: a ghost `StationedDoc` the player
+   * can never recall (no playerWorld doc left to own it) that permanently squats the tile via the "one
+   * park per tile" rule and its stale Redis occ/cover entries — see design-doc-audit-2026-07, SLG_DESIGN_LOG
+   * §27's TRANSFER_BUSY gap), and a per-account cooldown (anti shard-hopping/scouting). Forfeits all
+   * shard-scoped state in `fromWorldId`
    * (via purgePlayerWorld) and re-joins `toWorldId` fresh (via joinWorld) — no stat migration, see module header.
    *
    * Residual risk (accepted, matches this codebase's existing single-document-CAS convention — no
@@ -84,11 +87,12 @@ export class TransferService {
       throw new SlgError('TRANSFER_COOLDOWN', 'Must wait before transferring again');
     }
 
-    const [busyMarch, busyHold] = await Promise.all([
+    const [busyMarch, busyHold, busyStationed] = await Promise.all([
       cols.marches.findOne({ worldId: fromWorldId, ownerId: accountId, status: { $ne: 'recalled' } }),
       cols.occupations.findOne({ worldId: fromWorldId, ownerId: accountId }),
+      cols.stationed.findOne({ worldId: fromWorldId, ownerId: accountId }),
     ]);
-    if (busyMarch || busyHold) throw new SlgError('TRANSFER_BUSY', 'An in-flight march or occupation-hold blocks transfer; recall/wait for it first');
+    if (busyMarch || busyHold || busyStationed) throw new SlgError('TRANSFER_BUSY', 'An in-flight march, occupation-hold, or stationed team blocks transfer; recall/wait for it first');
 
     await this.vacateShard(fromWorldId, accountId);
     const view = await this.territory.joinWorld(toWorldId, accountId);
@@ -135,12 +139,23 @@ export class TransferService {
     let moved = 0;
     for (const pw of players) {
       try {
-        // Force-clear anything that would otherwise block a voluntary transfer: delete in-flight marches and
-        // occupation holds outright (not a refund/recall — the shard is closing, there is no "later" for
-        // these to resolve into; troops committed to them are simply gone, same as any other shard-scoped
-        // asset forfeited by vacateShard below).
+        // Force-clear anything that would otherwise block a voluntary transfer: delete in-flight marches,
+        // occupation holds, and stationed (parked-in-the-field) teams outright (not a refund/recall — the
+        // shard is closing, there is no "later" for these to resolve into; troops committed to them are
+        // simply gone, same as any other shard-scoped asset forfeited by vacateShard below). Stationed teams
+        // additionally hold a Redis occ entry (and, for garrison-mode teams, a 9-cell cover entry) that must
+        // be cleared alongside the Mongo doc — left alone, that tile becomes an eternal ghost that no one
+        // (the source shard included) can ever park a team on again, per the "one park per tile" rule.
         await cols.marches.deleteMany({ worldId: sourceWorldId, ownerId: pw.accountId });
         await cols.occupations.deleteMany({ worldId: sourceWorldId, ownerId: pw.accountId });
+        const stationedDocs = await cols.stationed.find({ worldId: sourceWorldId, ownerId: pw.accountId }).toArray();
+        if (stationedDocs.length > 0) {
+          await cols.stationed.deleteMany({ worldId: sourceWorldId, ownerId: pw.accountId });
+          for (const sd of stationedDocs) {
+            await this.core.clearOccupancy(sourceWorldId, sd.tile, sd.tile);
+            if (sd.mode === 'garrison') await this.core.removeCover(sourceWorldId, sd.x, sd.y, sd.tile);
+          }
+        }
         await this.vacateShard(sourceWorldId, pw.accountId);
         await this.territory.joinWorld(targetWorldId, pw.accountId);
         moved++;
