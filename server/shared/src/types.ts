@@ -206,10 +206,21 @@ export interface SaveData {
   equipmentInvCount: number;
 
   // —— Hero Roster / card instance system (CC-1, CHARACTER_CARDS_DESIGN §2). Server-authoritative; not writable via PUT /save. ——
-  // Hard cap: 150 cards. Equipment loadout now lives in CardInstance.gear (not a top-level gear field).
-  // v3→v4 migration: unitLevels + gear are dropped (incompatible with new model); cardInv starts empty;
-  // new-account onboarding gifts 3 starter cards (CHARACTER_CARDS_DESIGN §4).
-  cardInv: Record<string, CardInstance>; // instanceId → CardInstance; max 150 entries
+  // Hard cap: 500 cards (CARD_INV_CAP, raised from 150 on 2026-07-19). Equipment loadout lives in
+  // CardInstance.gear (not a top-level gear field). v3→v4 migration: unitLevels + gear are dropped
+  // (incompatible with new model); cardInv starts empty; new-account onboarding gifts 3 starter cards
+  // (CHARACTER_CARDS_DESIGN §4).
+  // Card instances themselves live in the `cardInstances` collection since 2026-07-27 (perf, mirrors the
+  // equipmentInv split of 2026-07-26 — see EQUIPMENT_DESIGN.md / CHARACTER_CARDS_DESIGN.md): an embedded
+  // map of up to 500 cards was a second unbounded contributor to save-doc bloat on Atlas M0. This field is
+  // never written back to the `saves` document; it is only ever populated transiently for a wire response
+  // (GET /save / /internal/save-fields join it in via `assembleCardInv`). Absent (undefined) on the raw
+  // Mongo document at all times.
+  cardInv?: Record<string, CardInstance>; // instanceId → CardInstance; populated transiently, never persisted
+  // Cheap cap-check mirror of `cardInstances` count for this account (CARD_INV_CAP); may drift by a small,
+  // self-healing amount (see GET /save's join, which corrects it opportunistically) — never treat as more
+  // authoritative than an actual `cardInstances` count for a security-sensitive check.
+  cardInvCount: number;
 
   // —— Roster/inventory-full overflow mail counters (CHARACTER_CARDS_DESIGN §4 / EQUIPMENT_DESIGN §3.3). ——
   // While cardInv/equipmentInv stays at its cap, the first CARD_INV_OVERFLOW_BUFFER overflow items per type are
@@ -239,7 +250,12 @@ export type SyncPatch = Partial<Pick<SaveData, 'equipped' | 'flags'>>;
 // equipmentInvCount mirror. Migration script backfills the collection + count and $unsets the embedded
 // field for every existing account before the new code is deployed (see EQUIPMENT_DESIGN.md); no client
 // change (GET /save still returns the full equipmentInv map, joined server-side).
-export const SAVE_VERSION = 5;
+// v6 (2026-07-27): cardInv split out to the `cardInstances` collection (perf, same rationale as v5) +
+// added cardInvCount mirror. Migration script (migrateCardInv.ts) backfills the collection + count and
+// $unsets the embedded field for every existing account before the new code is deployed (see
+// CHARACTER_CARDS_DESIGN.md); no client change (GET /save still returns the full cardInv map, joined
+// server-side).
+export const SAVE_VERSION = 6;
 
 /** Default save data for a new account. All authoritative sections start from zero. */
 export function makeNewSave(accountId: string, now: number): SaveData {
@@ -272,6 +288,6 @@ export function makeNewSave(accountId: string, now: number): SaveData {
     equipped: { title: STARTER_TITLE },
     flags: {},
     equipmentInvCount: 0,
-    cardInv: {},
+    cardInvCount: 0,
   };
 }

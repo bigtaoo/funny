@@ -29,7 +29,7 @@ import {
   accrueRetentionTask,
 } from '@nw/shared';
 import { getOrCreateSave } from '../save.js';
-import { grantCards } from '../cards.js';
+import { grantCards, assembleCardInv } from '../cards.js';
 import { toInstanceDoc, assembleEquipmentInv } from '../equipment.js';
 import { insertSystemMail } from '../mail.js';
 import { accrueEventTask } from '../events.js';
@@ -373,7 +373,7 @@ export function PveMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase & Const
      * equipment-slot grant, judged-stat accrual, and the daily retention-task bump now land in ONE
      * mutateSave call. grantChapterClearCard and the card-drop grant stay separate calls: both go through
      * the shared grantCards primitive (also used by gacha/mail/auction), which owns its own rev-guarded
-     * write against cardInv and must not be duplicated here.
+     * writes (cardInvCount mirror + the `cardInstances` collection) and must not be duplicated here.
      */
     private async settleNormalClear(
       accountId: string,
@@ -594,7 +594,9 @@ export function PveMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase & Const
             // time — feeds the L1 judge re-simulation blueprint so a legitimately progressed account isn't recomputed
             // with unleveled, gear-less units (previously pveUpgrades/unitLevels, both dead since the engine dropped
             // those params in the CC-1 migration; see server/engine/src/types.ts GameConfig).
-            cardInv: { ...cur.cardInv },
+            // cardInv was split into its own `cardInstances` collection (2026-07-27, cards.ts) —
+            // `cur.cardInv` is no longer populated on the raw save doc, so reassemble it explicitly.
+            cardInv: await assembleCardInv(cols, accountId, cur),
             // equipmentInv was split into its own `equipmentInstances` collection (2026-07-26, equipment.ts) —
             // `cur.equipmentInv` is no longer populated on the raw save doc, so reassemble it explicitly.
             equipmentInv: await assembleEquipmentInv(cols, accountId, cur),

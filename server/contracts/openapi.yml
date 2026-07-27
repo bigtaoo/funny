@@ -260,7 +260,7 @@ components:
           type: object
           additionalProperties:
             $ref: '#/components/schemas/CardInstance'
-          description: Card instance inventory (instanceId→CardInstance); max 150 entries
+          description: Card instance inventory (instanceId→CardInstance); max 500 entries
         cardMailOverflowCount:
           type: integer
           minimum: 0

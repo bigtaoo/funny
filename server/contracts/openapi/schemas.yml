@@ -140,11 +140,14 @@ schemas:
         type: object
         additionalProperties: { type: integer, minimum: 0 }
         description: Unit card inventory `${unitId}:${level}`→count; kept for save compatibility; retired after CC cleanup
-      # —— Hero Roster (CC-1/CC-2, CHARACTER_CARDS_DESIGN §2). Server-authoritative; not writable via PUT /save. Hard cap 150. ——
+      # —— Hero Roster (CC-1/CC-2, CHARACTER_CARDS_DESIGN §2). Server-authoritative; not writable via PUT /save.
+      # Hard cap 500 (CARD_INV_CAP, raised from 150 on 2026-07-19). Instances live in the `cardInstances`
+      # collection since 2026-07-27 (perf); GET /save / /internal/save-fields still send the full map (joined
+      # server-side) — wire format is unchanged by the storage split. ——
       cardInv:
         type: object
         additionalProperties: { $ref: '#/components/schemas/CardInstance' }
-        description: Card instance inventory (instanceId→CardInstance); max 150 entries
+        description: Card instance inventory (instanceId→CardInstance); max 500 entries
       # Persistent roster/inventory-full overflow-mail counters (CHARACTER_CARDS_DESIGN §4 / EQUIPMENT_DESIGN §3.3).
       # Absent in legacy saves = 0 (lazy default). See gachaDraw's `overflow` response for the per-draw toast summary.
       cardMailOverflowCount: { type: integer, minimum: 0 }

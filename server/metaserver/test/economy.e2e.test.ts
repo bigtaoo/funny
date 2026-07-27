@@ -12,6 +12,7 @@ import type {
 } from '../dist/commercialClient.js';
 import type { SystemMailContent } from '../dist/socialsvcClient.js';
 import { seedEquipmentBatch } from './helpers/equipment.js';
+import { seedCardBatch } from './helpers/cards.js';
 
 const URI = process.env.NW_MONGO_URI ?? 'mongodb://127.0.0.1:27017/?replicaSet=rs0';
 const DB = 'nw_meta_econ_test';
@@ -528,11 +529,16 @@ describe.skipIf(!mongo2)('gacha inventory-full overflow → mail', () => {
     await m.close();
   });
 
-  /** Directly fill save.cardInv with N dummy instances (bypassing gacha) so a draw starts already at the cap. */
+  /** Directly fill `cardInstances` with exactly N dummy instances so a draw starts already at the cap
+   * (card instances moved out of save.cardInv in the 2026-07-27 storage split — see cards.ts). Clears
+   * the account's existing cards first (the 3 auto-granted starter cards) — the old direct
+   * `$set: {'save.cardInv': cardInv}` replaced the whole map, so this mirrors that semantics. */
   async function fillCardInv(n: number): Promise<void> {
-    const cardInv: Record<string, unknown> = {};
-    for (let i = 0; i < n; i++) cardInv[`card_filler_${i}`] = { id: `card_filler_${i}`, defId: 'lichuang', level: 1, gear: {}, locked: false };
-    await m.collections.saves.updateOne({ _id: accountId }, { $set: { 'save.cardInv': cardInv } });
+    await m.collections.cardInstances.deleteMany({ accountId });
+    const instances = Array.from({ length: n }, (_, i) => ({
+      id: `card_filler_${i}`, defId: 'lichuang', level: 1, gear: {}, locked: false,
+    }));
+    await seedCardBatch(m, accountId, instances);
   }
 
   /** Directly fill equipmentInstances with N dummy instances so a draw starts already at the cap
@@ -578,9 +584,10 @@ describe.skipIf(!mongo2)('gacha inventory-full overflow → mail', () => {
     // real write path's convention) so it can't be silently clobbered by the first draw's still-in-flight
     // fire-and-forget bumpRetentionTask (service/base.ts mutateSave) racing to land its own stale-read rewrite —
     // without this, mutateSave's optimistic-lock rev-check has nothing to detect the conflict against.
+    await m.collections.cardInstances.deleteOne({ _id: 'card_filler_0' });
     await m.collections.saves.updateOne(
       { _id: accountId },
-      { $unset: { 'save.cardInv.card_filler_0': '' }, $inc: { rev: 1, 'save.rev': 1 } },
+      { $inc: { 'save.cardInvCount': -1, rev: 1, 'save.rev': 1 } },
     );
     const r = body(await app.inject({ method: 'POST', url: '/gacha/draw', headers: auth(), payload: { poolId: 'standard', count: 10 } }));
     // 1 slot free → 1 card lands in cardInv; remaining 9 overflow, and since room was seen the mail quota reset to 0 first.

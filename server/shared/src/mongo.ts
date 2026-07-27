@@ -1,7 +1,7 @@
 // Mongo client factory + collection handles (SERVER_API.md §5, META_DESIGN.md §6.3).
 // Deploy with a single-node replica set to unlock cross-collection transactions; wallet/delivery use single-document atomic updates.
 import { MongoClient, Db, Collection, type MongoClientOptions } from 'mongodb';
-import type { SaveData, EquipmentInstance, CardInstance, Affix } from './types';
+import type { SaveData, EquipmentInstance, CardInstance, Affix, GearSlotMap } from './types';
 import type { EquipRarity } from './equipment';
 import type { StatKey } from './achievements';
 import type { LadderSeasonDoc, LadderSeasonSnapshotDoc } from './season';
@@ -441,6 +441,22 @@ export interface EquipmentInstanceDoc {
   locked?: boolean;
 }
 
+/**
+ * Card instance, split out of `SaveData.cardInv` (perf, 2026-07-27 audit, same rationale + convention
+ * as `EquipmentInstanceDoc` above): the Hero Roster (up to 500 cards) was a second unbounded contributor
+ * to save-doc bloat on Atlas M0, alongside equipment. `_id` = instanceId (unchanged from the old embedded
+ * map key). No Mongo transactions in this codebase (see this file's header) — cross-collection
+ * consistency here follows the same ordering-discipline / idempotency house style as equipmentInstances.
+ */
+export interface CardInstanceDoc {
+  _id: string; // instanceId
+  accountId: string;
+  defId: string;
+  level: number;
+  gear: GearSlotMap;
+  locked: boolean;
+}
+
 /** Stamina real-time state (A4). _id = accountId. Whole-row atomic findOneAndUpdate deduction, no rev lock. */
 export interface StaminaDoc {
   _id: string; // accountId
@@ -501,6 +517,8 @@ export interface Collections {
   equipmentIdem: Collection<EquipmentIdemDoc>;
   // equipment instances, split out of SaveData.equipmentInv (perf, 2026-07-26); _id = instanceId
   equipmentInstances: Collection<EquipmentInstanceDoc>;
+  // card instances, split out of SaveData.cardInv (perf, 2026-07-27); _id = instanceId
+  cardInstances: Collection<CardInstanceDoc>;
   // ladder seasons (S11): single global document (_id='current')
   ladderSeasons: Collection<LadderSeasonDoc>;
   // ladder season settlement snapshots (L2-1): one entry per account per season, written at season close, also serves as idempotency ledger
@@ -566,6 +584,7 @@ export async function createMongo(
     cardIdem: db.collection<CardIdemDoc>('cardIdem'),
     equipmentIdem: db.collection<EquipmentIdemDoc>('equipmentIdem'),
     equipmentInstances: db.collection<EquipmentInstanceDoc>('equipmentInstances'),
+    cardInstances: db.collection<CardInstanceDoc>('cardInstances'),
     ladderSeasons: db.collection<LadderSeasonDoc>('ladderSeasons'),
     ladderSeasonSnapshots: db.collection<LadderSeasonSnapshotDoc>('ladderSeasonSnapshots'),
     adsTokens: db.collection<AdsTokenDoc>('adsTokens'),
@@ -629,6 +648,8 @@ export async function createMongo(
     await collections.equipmentIdem.createIndex({ expireAt: 1 }, { expireAfterSeconds: 0 });
     // equipment instances: fetch-all-for-account (GET /save join, /internal/save-fields, migration, cap-count self-heal).
     await collections.equipmentInstances.createIndex({ accountId: 1 });
+    // card instances: fetch-all-for-account (GET /save join, /internal/save-fields, migration, cap-count self-heal).
+    await collections.cardInstances.createIndex({ accountId: 1 });
     // ad token uniqueness TTL auto-expiry (C2, 48h).
     await collections.adsTokens.createIndex({ expireAt: 1 }, { expireAfterSeconds: 0 });
     // ladder leaderboard: server-wide Top100 + my rank count (S11-SE-5).
