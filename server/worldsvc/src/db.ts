@@ -374,6 +374,9 @@ export interface SiegeDoc {
   replayRef?: string;
   recomputed: boolean;
   ts: number;
+  /** TTL anchor (BSON Date; Mongo TTL only works on Date, `ts` above is a plain number) — SIEGE_RETENTION_SEC
+   * safety net, 2026-07-27 audit finding (this collection previously had no expiry at all). */
+  expireAt: Date;
   /**
    * G3-2c replay spectator: persists the inputs of the authoritative battle (seed + both sides' formations + tile level).
    * The client uses this to reconstruct buildSiegeBattle and headless-replay with the same seed → exactly reproduces
@@ -708,6 +711,9 @@ export async function createWorldMongo(
     // listSieges' `defenderId` branch of its $or had no supporting index — a full COLLSCAN on every
     // replay-browser open, growing with `sieges` (which has no TTL; 2026-07-26 VPS CPU investigation).
     await collections.sieges.createIndex({ worldId: 1, defenderId: 1 });
+    // TTL safety net (2026-07-27 audit finding): resetSeason already wipes this per-world at every season
+    // reset; this only bounds growth if a reset is delayed/skipped. See SIEGE_RETENTION_SEC's comment.
+    await collections.sieges.createIndex({ expireAt: 1 }, { expireAfterSeconds: 0 });
     // ADR-026: delayed building-HP settlement scan (mirrors marches.arriveAt: due-time polling is the sole mechanism).
     await collections.siegeDamage.createIndex({ dueAt: 1 });
     await collections.siegeDamage.createIndex({ tile: 1 });

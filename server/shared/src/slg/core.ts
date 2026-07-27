@@ -347,6 +347,13 @@ export function truncateOrgName(name: string, maxWidth: number = ORG_NAME_WIDTH_
 }
 /** Family channel message retention duration (seconds); TTL anchor field must be a BSON Date (see FamilyMessageDoc note in db.ts). */
 export const FAMILY_MSG_RETENTION_SEC = 7 * 24 * 3600; // 7 days
+/**
+ * Siege battle-report retention (seconds, 2026-07-27 audit finding: sieges had no TTL at all). resetSeason's
+ * batch-delete already wipes worldId-scoped sieges at every season reset, so this is a safety net for a
+ * long-running/delayed-reset season rather than the primary cleanup mechanism — set generously above a
+ * typical season length, not tightly.
+ */
+export const SIEGE_RETENTION_SEC = 30 * 24 * 3600; // 30 days
 /** Maximum body length for a single family channel message. */
 export const FAMILY_MSG_BODY_MAX = 500;
 // ── Sect (S8-4b, §2.1 / §8.2) ──────────────────────────────

@@ -255,6 +255,10 @@ export interface PveVerificationDoc {
   frames?: { frame: number; cmds: { side: number; commands: string }[] }[];
   endFrame?: number;
   ts: number;
+  /** TTL anchor (BSON Date; Mongo TTL only works on Date, `ts` above is a plain number), 2026-07-27 audit
+   * finding — mirrors MatchDoc.expireAt's pattern: set at insert (pending), then unset once judged `rejected`
+   * (kept forever for ops review, like a disputed match) or left as-is for verified/unverified. */
+  expireAt?: Date;
 }
 
 /**
@@ -599,6 +603,9 @@ export async function createMongo(
     await collections.matches.createIndex({ mode: 1, audited: 1, ts: 1 });
     // PvE spot-check records: query by account + time (audit / clean up pending settlements).
     await collections.pveVerifications.createIndex({ accountId: 1, ts: -1 });
+    // TTL safety net (2026-07-27 audit finding: this collection had no expiry at all, and can carry a full
+    // replay `frames[]` for rejected docs). Only set for verified/unverified — see PveVerificationDoc.expireAt.
+    await collections.pveVerifications.createIndex({ expireAt: 1 }, { expireAfterSeconds: 0 });
     // achievement anti-cheat review queue (S9-7): query history by account + open queue.
     await collections.antiCheatReviews.createIndex({ accountId: 1, ts: -1 });
     await collections.antiCheatReviews.createIndex({ status: 1, ts: -1 });

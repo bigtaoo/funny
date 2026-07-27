@@ -39,6 +39,11 @@ import { accountIdOf, clientPlatformOf, STAMINA_CAP, STAMINA_REGEN_MS, type Cons
 
 type PveHandlers = Pick<MetaHandlers, 'purchaseStamina' | 'pveEnter' | 'pveClear' | 'pveVerify' | 'pveUpgrade'>;
 
+/** pveVerifications TTL (2026-07-27 audit finding: this collection had no expiry at all). Only applies to
+ * verified/unverified outcomes — a `rejected` verdict unsets it (kept forever for ops review, like a
+ * disputed match's MatchDoc.expireAt), since that's the small minority that actually carries replay frames. */
+const PVE_VERIFICATION_RETENTION_MS = 30 * 24 * 3600 * 1000;
+
 /** Default stamina cost per level (A4, flat rate 2026-07-06): overridable per-level via PveLevelConfig.staminaCost. */
 const DEFAULT_STAMINA_COST = 10;
 
@@ -460,6 +465,7 @@ export function PveMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase & Const
             // S9-3b: store client-reported counts as an audit comparison baseline (verdict.statsJson is the authoritative source; the reported field is for ops visibility only).
             ...(clientStats ? { reportedStats: clientStats } : {}),
             ts: now(),
+            expireAt: new Date(now() + PVE_VERIFICATION_RETENTION_MS),
           });
           const saveWithSt = { ...progSave, stamina: await this.readStaminaSnapshot(accountId, now()) };
           return ok({
@@ -565,6 +571,9 @@ export function PveMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase & Const
             // clear later instead of only having the judge's verdict; kept out of the common verified/unverified path.
             ...(rejected ? { frames: frames ?? [], endFrame: Math.floor(endFrame) || 0 } : {}),
           },
+          // A rejected doc is kept forever for ops review (mirrors MatchDoc.expireAt's disputed-match carve-out);
+          // verified/unverified keep the expireAt set at insert.
+          ...(rejected ? { $unset: { expireAt: '' as const } } : {}),
         },
       );
 
