@@ -273,6 +273,26 @@ export const AUCTION_RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> =
                   "buyoutPrice": {
                     "type": "number",
                     "description": "Auction buyout unit price floor (optional)"
+                  },
+                  "topBid": {
+                    "type": "object",
+                    "description": "Current highest bid (unit price; coins are held in escrow)",
+                    "required": [
+                      "bidderId",
+                      "amount",
+                      "ts"
+                    ],
+                    "properties": {
+                      "bidderId": {
+                        "type": "string"
+                      },
+                      "amount": {
+                        "type": "number"
+                      },
+                      "ts": {
+                        "type": "number"
+                      }
+                    }
                   }
                 }
               }
@@ -393,6 +413,26 @@ export const AUCTION_RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> =
                   "buyoutPrice": {
                     "type": "number",
                     "description": "Auction buyout unit price floor (optional)"
+                  },
+                  "topBid": {
+                    "type": "object",
+                    "description": "Current highest bid (unit price; coins are held in escrow)",
+                    "required": [
+                      "bidderId",
+                      "amount",
+                      "ts"
+                    ],
+                    "properties": {
+                      "bidderId": {
+                        "type": "string"
+                      },
+                      "amount": {
+                        "type": "number"
+                      },
+                      "ts": {
+                        "type": "number"
+                      }
+                    }
                   }
                 }
               }
@@ -559,6 +599,26 @@ export const AUCTION_RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> =
                 "buyoutPrice": {
                   "type": "number",
                   "description": "Auction buyout unit price floor (optional)"
+                },
+                "topBid": {
+                  "type": "object",
+                  "description": "Current highest bid (unit price; coins are held in escrow)",
+                  "required": [
+                    "bidderId",
+                    "amount",
+                    "ts"
+                  ],
+                  "properties": {
+                    "bidderId": {
+                      "type": "string"
+                    },
+                    "amount": {
+                      "type": "number"
+                    },
+                    "ts": {
+                      "type": "number"
+                    }
+                  }
                 }
               }
             }
@@ -692,6 +752,26 @@ export const AUCTION_RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> =
                 "buyoutPrice": {
                   "type": "number",
                   "description": "Auction buyout unit price floor (optional)"
+                },
+                "topBid": {
+                  "type": "object",
+                  "description": "Current highest bid (unit price; coins are held in escrow)",
+                  "required": [
+                    "bidderId",
+                    "amount",
+                    "ts"
+                  ],
+                  "properties": {
+                    "bidderId": {
+                      "type": "string"
+                    },
+                    "amount": {
+                      "type": "number"
+                    },
+                    "ts": {
+                      "type": "number"
+                    }
+                  }
                 }
               }
             }
