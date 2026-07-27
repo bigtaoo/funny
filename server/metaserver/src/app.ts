@@ -148,7 +148,7 @@ export async function buildApp(opts: BuildAppOpts): Promise<FastifyInstance> {
   });
 
   // Ad platform SSV callbacks (platform-initiated; no player authentication).
-  registerAdCallbackRoutes(app, { cols: opts.cols, commercial, now });
+  registerAdCallbackRoutes(app, { cols: opts.cols, commercial, now, redis });
 
   // Paddle Billing routes: player checkout session + Paddle webhook.
   registerPaddleRoutes(app, {

@@ -19,9 +19,13 @@ services:
   redis:
     image: redis:7-alpine
     container_name: nw-redis
-    # maxmemory cap + allkeys-lru: everything stored here (occ/cover spatial index, activeMatch) is best-effort
-    # cache/scheduling state, never a source of truth (Mongo/in-flight state is authoritative) — degrading via
-    # eviction under memory pressure is safe, unbounded host-memory growth on a resource-constrained VPS is not.
+    # maxmemory cap + allkeys-lru: most of what's stored here (occ/cover spatial index, activeMatch) is
+    # best-effort cache/scheduling state, never a source of truth (Mongo/in-flight state is authoritative) —
+    # degrading via eviction under memory pressure is safe, unbounded host-memory growth on a resource-
+    # constrained VPS is not. The one exception (adsDaily/pveDaily/victoryDaily anti-abuse counters,
+    # 2026-07-27, shared/src/dailyCounter.ts) tolerates eviction too: worst case is one account's daily cap
+    # resetting early for the rest of that one day — bounded, self-healing, and a vanishingly small share of
+    # this cache's key volume, so it doesn't change the eviction-is-safe conclusion.
     command: ["redis-server", "--appendonly", "yes", "--maxmemory", "256mb", "--maxmemory-policy", "allkeys-lru"]
     volumes:
       - redis-data:/data
@@ -118,8 +122,12 @@ services:
       # Dedicated DB (defaults to same Mongo instance with a different DB name; scaling to a separate instance only requires changing these two).
       NW_COMM_MONGO_URI: mongodb://mongo:27017/?replicaSet=rs0
       NW_COMM_MONGO_DB: ${NW_COMM_MONGO_DB:-notebook_wars_commercial}
+      # victoryDaily counter (2026-07-27, moved off Mongo — shared/src/dailyCounter.ts).
+      NW_REDIS_URL: ${NW_REDIS_URL:-redis://redis:6379}
     depends_on:
       mongo:
+        condition: service_healthy
+      redis:
         condition: service_healthy
     restart: unless-stopped
 

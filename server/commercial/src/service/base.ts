@@ -19,6 +19,7 @@ import {
   type GachaPoolDef,
   type CustomPoolConfig,
   type LimitedPoolConfig,
+  type RedisLike,
 } from '@nw/shared';
 import type {
   CommercialCollections,
@@ -82,6 +83,9 @@ export interface CommercialDeps {
   ) =>
     | Promise<{ ok: boolean; coins: number; usdCents?: number; product?: IapProductKind }>
     | { ok: boolean; coins: number; usdCents?: number; product?: IapProductKind };
+  /** victoryDaily counter backend (2026-07-27, moved off Mongo — shared/src/dailyCounter.ts). null (the
+   *  default in every test in this package) = correct-for-single-instance in-process counter, not a disabled cap. */
+  redis?: RedisLike | null;
 }
 
 const NON_COIN_KINDS_BASE: readonly IapProductKind[] = [
@@ -161,6 +165,7 @@ export class CommercialServiceBase {
   protected readonly cols: CommercialCollections;
   protected readonly now: () => number;
   protected readonly rng?: RandInt;
+  protected readonly redis: RedisLike | null;
   protected readonly verifyReceipt: (
     platform: string,
     receipt: string,
@@ -173,6 +178,7 @@ export class CommercialServiceBase {
     this.cols = deps.cols;
     this.now = deps.now;
     this.rng = deps.rng;
+    this.redis = deps.redis ?? null;
     const raw = deps.verifyReceipt ?? devVerifyReceipt;
     // Uniformly wrap as async to be compatible with both the synchronous dev stub and async real receipt verifiers.
     this.verifyReceipt = (p, r) => Promise.resolve(raw(p, r));

@@ -4,7 +4,7 @@ import { createCommercialMongo } from './db';
 import { CommercialService } from './service';
 import { startInternalHttp } from './internalHttp';
 import { loadCommercialEnv } from './config';
-import { loadInternalAuth, IAP_TIERS, createLogger, startHeartbeat } from '@nw/shared';
+import { loadInternalAuth, IAP_TIERS, createLogger, startHeartbeat, connectDailyCounterRedis } from '@nw/shared';
 import { createReceiptVerifier } from './iap';
 
 async function main(): Promise<void> {
@@ -28,7 +28,12 @@ async function main(): Promise<void> {
   const verifyReceipt = (platform: string, receipt: string) =>
     createReceiptVerifier(IAP_TIERS)(platform, receipt);
 
-  const svc = new CommercialService({ cols: mongo.collections, now: () => Date.now(), verifyReceipt });
+  // victoryDaily counter (2026-07-27, moved off Mongo — shared/src/dailyCounter.ts). Unlike metaserver,
+  // commercial has no other Redis use yet, so it opens its own connection here (metaserver reuses the one
+  // it already holds for active-match tracking instead of opening a second one for adsDaily/pveDaily).
+  const redis = await connectDailyCounterRedis(env.redisUrl);
+
+  const svc = new CommercialService({ cols: mongo.collections, now: () => Date.now(), verifyReceipt, redis });
   const server = startInternalHttp(
     { host: env.host, port: env.port, internalAuth: loadInternalAuth(env.internalKey) },
     svc,
@@ -43,7 +48,8 @@ async function main(): Promise<void> {
   process.on('SIGTERM', shutdown);
 
   console.log(
-    `commercial internal HTTP on :${env.port} (meta-only); db=${env.commMongoDb}`,
+    `commercial internal HTTP on :${env.port} (meta-only); db=${env.commMongoDb}; ` +
+      `victoryDaily redis=${redis ? 'connected' : 'in-process fallback'}`,
   );
   startHeartbeat(createLogger('commercial')); // Liveness heartbeat: one info log every 5 minutes when idle
 }

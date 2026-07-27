@@ -57,3 +57,18 @@ describe('deploy config — metaserver redis wiring (2026-07-27)', () => {
     });
   }
 });
+
+describe('deploy config — commercial redis wiring (2026-07-27)', () => {
+  // victoryDaily (the tiered ranked-win coin cap) moved off Mongo to Redis (mid-term item 3/5 of the
+  // 2026-07-27 audit, shared/src/dailyCounter.ts). Missing NW_REDIS_URL here doesn't break anything
+  // (the cap falls back to a correct-for-single-instance in-process counter — see that module's doc
+  // comment) but silently forfeits the point of the migration: the counter resets on every commercial
+  // restart/redeploy instead of surviving it, and Atlas round trips come back for this one write path.
+  for (const file of COMPOSE_FILES) {
+    it(`${file}: commercial injects NW_REDIS_URL pointing to redis (otherwise victoryDaily silently falls back to a per-process counter that resets on every redeploy)`, () => {
+      const env = loadServiceEnv(file, 'commercial');
+      expect(env.NW_REDIS_URL, 'commercial missing NW_REDIS_URL → victoryDaily loses cross-restart persistence').toBeTruthy();
+      expect(env.NW_REDIS_URL).toContain('redis');
+    });
+  }
+});

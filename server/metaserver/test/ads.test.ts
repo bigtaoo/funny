@@ -3,7 +3,7 @@
 //         WeChat ad SSV callback signature, AdMob SSV verification fallback (conservatively reject on network failure).
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { createHmac } from 'node:crypto';
-import { hashAdToken, recordAdToken, checkAdInterval, peekAdsStatus } from '../src/economy.js';
+import { hashAdToken, recordAdToken, checkAdInterval, peekAdsStatus, bumpAdsCap } from '../src/economy.js';
 import { verifyAdPlatformToken } from '../src/ads.js';
 
 // ── token uniqueness ──────────────────────────────────────────────────────────────
@@ -51,79 +51,76 @@ describe('recordAdToken', () => {
 });
 
 // ── 30-min interval gate ─────────────────────────────────────────────────────────────
+// checkAdInterval/peekAdsStatus are Redis-backed (2026-07-27, moved off Mongo's adsDaily — see
+// shared/src/dailyCounter.ts). Passing redis=null here exercises the same in-process fallback that
+// production uses whenever Redis is unconfigured/unreachable — a real counter, not a stub of one, since
+// metaserver runs as a single instance anyway (see dailyCounter.ts's module doc comment).
 
 describe('checkAdInterval', () => {
   const INTERVAL = 30 * 60 * 1000; // 30min
 
-  function makeCol() {
-    let lastAdAt: number | undefined;
-    return {
-      updateOne: vi.fn(async () => {}),
-      findOneAndUpdate: vi.fn(async (_filter: unknown, _update: unknown) => {
-        const filter = _filter as { _id: string; $or?: { lastAdAt?: unknown }[] };
-        const needsInterval = filter.$or !== undefined;
-        if (!needsInterval) return { _id: 'x' }; // cap filter (non-interval call)
-        // Simulate the interval gate: only update when lastAdAt is unset or the interval has elapsed
-        const update = _update as { $set: { lastAdAt: number } };
-        const newTs = update.$set.lastAdAt;
-        if (lastAdAt === undefined || newTs - lastAdAt >= INTERVAL) {
-          lastAdAt = newTs;
-          return { _id: 'x', lastAdAt };
-        }
-        return null; // interval not yet elapsed
-      }),
-    };
-  }
-
   it('first call (no lastAdAt) always passes', async () => {
-    const col = makeCol();
-    const cols = { adsDaily: col } as unknown as Parameters<typeof checkAdInterval>[0];
-    expect(await checkAdInterval(cols, 'acc1', '2026-06-22', 1000, INTERVAL)).toBe(true);
+    expect(await checkAdInterval(null, `acc-first-${Math.random()}`, '2026-06-22', 1000, INTERVAL)).toBe(true);
   });
 
   it('second call within 30min fails', async () => {
-    const col = makeCol();
-    const cols = { adsDaily: col } as unknown as Parameters<typeof checkAdInterval>[0];
+    const acc = `acc-within-${Math.random()}`;
     const base = Date.now();
-    await checkAdInterval(cols, 'acc1', '2026-06-22', base, INTERVAL);
-    expect(await checkAdInterval(cols, 'acc1', '2026-06-22', base + 10 * 60 * 1000, INTERVAL)).toBe(false);
+    await checkAdInterval(null, acc, '2026-06-22', base, INTERVAL);
+    expect(await checkAdInterval(null, acc, '2026-06-22', base + 10 * 60 * 1000, INTERVAL)).toBe(false);
   });
 
   it('second call after 30min passes', async () => {
-    const col = makeCol();
-    const cols = { adsDaily: col } as unknown as Parameters<typeof checkAdInterval>[0];
+    const acc = `acc-after-${Math.random()}`;
     const base = 1_000_000;
-    await checkAdInterval(cols, 'acc1', '2026-06-22', base, INTERVAL);
-    expect(await checkAdInterval(cols, 'acc1', '2026-06-22', base + INTERVAL + 1, INTERVAL)).toBe(true);
+    await checkAdInterval(null, acc, '2026-06-22', base, INTERVAL);
+    expect(await checkAdInterval(null, acc, '2026-06-22', base + INTERVAL + 1, INTERVAL)).toBe(true);
   });
 });
 
 // ── peekAdsStatus (read-only status for GET /retention, DailyScene "Ads" tab) ────────────
 
 describe('peekAdsStatus', () => {
-  function makeCol(doc: { count: number; lastAdAt?: number } | null) {
-    return {
-      findOne: vi.fn(async () => doc),
-    } as unknown as Parameters<typeof peekAdsStatus>[0]['adsDaily'] extends infer T ? { adsDaily: T } : never;
-  }
-
   it('no doc yet (never watched today) → watchedToday 0, available now', async () => {
-    const cols = { adsDaily: makeCol(null) } as Parameters<typeof peekAdsStatus>[0];
-    const r = await peekAdsStatus(cols, 'acc1', '2026-06-22', 10 * 60 * 1000, 1_000_000);
+    const r = await peekAdsStatus(null, `acc-fresh-${Math.random()}`, '2026-06-22', 10 * 60 * 1000, 1_000_000);
     expect(r).toEqual({ watchedToday: 0, nextAvailableAt: 0 });
   });
 
   it('watched, still cooling down → nextAvailableAt in the future', async () => {
-    const cols = { adsDaily: makeCol({ count: 2, lastAdAt: 1_000_000 }) } as Parameters<typeof peekAdsStatus>[0];
-    const r = await peekAdsStatus(cols, 'acc1', '2026-06-22', 10 * 60 * 1000, 1_000_000 + 60_000);
+    const acc = `acc-cooling-${Math.random()}`;
+    await bumpAdsCap(null, acc, '2026-06-22', 5);
+    await bumpAdsCap(null, acc, '2026-06-22', 5);
+    await checkAdInterval(null, acc, '2026-06-22', 1_000_000, 10 * 60 * 1000);
+    const r = await peekAdsStatus(null, acc, '2026-06-22', 10 * 60 * 1000, 1_000_000 + 60_000);
     expect(r.watchedToday).toBe(2);
     expect(r.nextAvailableAt).toBe(1_000_000 + 10 * 60 * 1000);
   });
 
   it('watched, cooldown already elapsed → nextAvailableAt is 0 (available now)', async () => {
-    const cols = { adsDaily: makeCol({ count: 3, lastAdAt: 1_000_000 }) } as Parameters<typeof peekAdsStatus>[0];
-    const r = await peekAdsStatus(cols, 'acc1', '2026-06-22', 10 * 60 * 1000, 1_000_000 + 11 * 60 * 1000);
+    const acc = `acc-elapsed-${Math.random()}`;
+    await bumpAdsCap(null, acc, '2026-06-22', 5);
+    await bumpAdsCap(null, acc, '2026-06-22', 5);
+    await bumpAdsCap(null, acc, '2026-06-22', 5);
+    await checkAdInterval(null, acc, '2026-06-22', 1_000_000, 10 * 60 * 1000);
+    const r = await peekAdsStatus(null, acc, '2026-06-22', 10 * 60 * 1000, 1_000_000 + 11 * 60 * 1000);
     expect(r).toEqual({ watchedToday: 3, nextAvailableAt: 0 });
+  });
+});
+
+// ── bumpAdsCap (daily cap) ───────────────────────────────────────────────────────────
+
+describe('bumpAdsCap', () => {
+  it('allows up to cap, denies the next one', async () => {
+    const acc = `acc-cap-${Math.random()}`;
+    for (let i = 0; i < 5; i++) expect(await bumpAdsCap(null, acc, '2026-06-22', 5)).toBe(true);
+    expect(await bumpAdsCap(null, acc, '2026-06-22', 5)).toBe(false);
+  });
+
+  it('different dayKey resets the cap', async () => {
+    const acc = `acc-daykey-${Math.random()}`;
+    for (let i = 0; i < 5; i++) await bumpAdsCap(null, acc, '2026-06-22', 5);
+    expect(await bumpAdsCap(null, acc, '2026-06-22', 5)).toBe(false);
+    expect(await bumpAdsCap(null, acc, '2026-06-23', 5)).toBe(true);
   });
 });
 

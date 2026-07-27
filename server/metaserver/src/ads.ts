@@ -14,7 +14,7 @@
 
 import { createHash, createVerify, createHmac } from 'node:crypto';
 import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
-import type { Collections } from '@nw/shared';
+import type { Collections, RedisLike } from '@nw/shared';
 import { ADS_REWARD_COINS, ADS_DAILY_CAP, ADS_MIN_INTERVAL_MS } from '@nw/shared';
 import type { CommercialClient } from './commercialClient.js';
 import { adsDayKey, bumpAdsCap, mirrorCoins, checkAdInterval, recordAdToken, hashAdToken } from './economy.js';
@@ -143,6 +143,7 @@ interface CallbackDeps {
   cols: Collections;
   commercial: CommercialClient;
   now: () => number;
+  redis: RedisLike | null;
 }
 
 /**
@@ -169,7 +170,7 @@ export function registerAdCallbackRoutes(app: FastifyInstance, deps: CallbackDep
       const valid = await verifyAdmobCallback(rawQuery, signature, key_id);
       if (!valid) return reply.code(400).send('invalid signature');
 
-      const { cols, commercial, now } = deps;
+      const { cols, commercial, now, redis } = deps;
       const ts = now();
       const dayKey = adsDayKey(ts);
 
@@ -179,8 +180,8 @@ export function registerAdCallbackRoutes(app: FastifyInstance, deps: CallbackDep
       if (!unique) return reply.code(200).send('already processed'); // idempotent: return 200
 
       // Daily cap.
-      const intervalOk = await checkAdInterval(cols, accountId, dayKey, ts, ADS_MIN_INTERVAL_MS);
-      const allowed = intervalOk && await bumpAdsCap(cols, accountId, dayKey, ADS_DAILY_CAP, ts);
+      const intervalOk = await checkAdInterval(redis, accountId, dayKey, ts, ADS_MIN_INTERVAL_MS);
+      const allowed = intervalOk && await bumpAdsCap(redis, accountId, dayKey, ADS_DAILY_CAP);
       if (!allowed) return reply.code(200).send('cap reached'); // Google requires 200, otherwise it retries
 
       const credit = await commercial.adsCredit({ accountId, amount: ADS_REWARD_COINS, dayKey });
@@ -206,7 +207,7 @@ export function registerAdCallbackRoutes(app: FastifyInstance, deps: CallbackDep
 
       // Use openid as accountId (already bound to an account in the WeChat environment).
       const accountId = openid;
-      const { cols, commercial, now } = deps;
+      const { cols, commercial, now, redis } = deps;
       const ts = now();
       const dayKey = adsDayKey(ts);
 
@@ -214,8 +215,8 @@ export function registerAdCallbackRoutes(app: FastifyInstance, deps: CallbackDep
       const unique = await recordAdToken(cols, tokenHash, accountId, ts);
       if (!unique) return reply.code(200).send(JSON.stringify({ errcode: 0, errmsg: 'ok' }));
 
-      const intervalOk = await checkAdInterval(cols, accountId, dayKey, ts, ADS_MIN_INTERVAL_MS);
-      const allowed = intervalOk && await bumpAdsCap(cols, accountId, dayKey, ADS_DAILY_CAP, ts);
+      const intervalOk = await checkAdInterval(redis, accountId, dayKey, ts, ADS_MIN_INTERVAL_MS);
+      const allowed = intervalOk && await bumpAdsCap(redis, accountId, dayKey, ADS_DAILY_CAP);
       if (!allowed) return reply.code(200).send(JSON.stringify({ errcode: 0, errmsg: 'cap' }));
 
       const credit = await commercial.adsCredit({ accountId, amount: ADS_REWARD_COINS, dayKey });

@@ -9,11 +9,12 @@
 //    re-grant recalculation is not idempotent); only new skins are granted for now; the channel
 //    in commercial is already prepared.
 import { createHash } from 'node:crypto';
-import type { Collections, SaveData, Rarity, EquipmentInstance } from '@nw/shared';
+import type { Collections, SaveData, Rarity, EquipmentInstance, RedisLike } from '@nw/shared';
 import {
   EQUIPMENT_DEFS, GACHA_MATERIAL_GRANTS, makeGachaEquipInstance, EQUIPMENT_INV_CAP,
   EQUIP_FULL_COMPENSATION_COINS, EQUIP_INV_FULL_MAIL_COUNT, CARD_DEFS,
   type CardDef, PRODUCT_STARTER_GROWTH, GROWTH_PACK_WINDOW_DAYS, findShopItem,
+  bumpCappedCounter, readCounterField, bumpGuardedTimestamp,
 } from '@nw/shared';
 import { grantCards as grantHeroCards } from './cards.js';
 import { insertSystemMail } from './mail.js';
@@ -477,28 +478,15 @@ export function adsDayKey(now: number): string {
 
 /**
  * Ad cap: atomically increment today's count; returns false (deny delivery) if the count exceeds cap.
- * Uses a document keyed by _id=`${accountId}:${dayKey}` with $inc guarded by count<cap.
+ * Redis-backed (2026-07-27, moved off Mongo's adsDaily — see shared/src/dailyCounter.ts for the design).
  */
 export async function bumpAdsCap(
-  cols: Collections,
+  redis: RedisLike | null,
   accountId: string,
   dayKey: string,
   cap: number,
-  now: number,
 ): Promise<boolean> {
-  const id = `${accountId}:${dayKey}`;
-  // First upsert to ensure the document exists, then do the guarded $inc.
-  await cols.adsDaily.updateOne(
-    { _id: id },
-    { $setOnInsert: { _id: id, accountId, dayKey, count: 0, ts: now } },
-    { upsert: true },
-  );
-  const res = await cols.adsDaily.findOneAndUpdate(
-    { _id: id, count: { $lt: cap } },
-    { $inc: { count: 1 }, $set: { ts: now } },
-    { returnDocument: 'after' },
-  );
-  return !!res;
+  return bumpCappedCounter(redis, 'adsDaily', accountId, dayKey, 'count', cap);
 }
 
 /** SHA-256 hash of an ad token (hex). Used for deduplication in adsTokens. */
@@ -532,39 +520,27 @@ export async function recordAdToken(
 
 /** 30-minute interval gate (C2): atomically updates lastAdAt; returns false if less than minIntervalMs has elapsed since the last ad. */
 export async function checkAdInterval(
-  cols: Collections,
+  redis: RedisLike | null,
   accountId: string,
   dayKey: string,
   now: number,
   minIntervalMs: number,
 ): Promise<boolean> {
-  const id = `${accountId}:${dayKey}`;
-  await cols.adsDaily.updateOne(
-    { _id: id },
-    { $setOnInsert: { _id: id, accountId, dayKey, count: 0, ts: now } },
-    { upsert: true },
-  );
-  const res = await cols.adsDaily.findOneAndUpdate(
-    {
-      _id: id,
-      $or: [{ lastAdAt: { $exists: false } }, { lastAdAt: { $lte: now - minIntervalMs } }],
-    },
-    { $set: { lastAdAt: now } },
-    { returnDocument: 'after' },
-  );
-  return !!res;
+  return bumpGuardedTimestamp(redis, 'adsDaily', accountId, dayKey, 'lastAdAt', minIntervalMs, now);
 }
 
 /** Read-only snapshot of today's ad-watch state, for GET /retention (DailyScene "Ads" tab). Does not mutate. */
 export async function peekAdsStatus(
-  cols: Collections,
+  redis: RedisLike | null,
   accountId: string,
   dayKey: string,
   minIntervalMs: number,
   now: number,
 ): Promise<{ watchedToday: number; nextAvailableAt: number }> {
-  const doc = await cols.adsDaily.findOne({ _id: `${accountId}:${dayKey}` });
-  const watchedToday = doc?.count ?? 0;
-  const nextAvailableAt = doc?.lastAdAt ? doc.lastAdAt + minIntervalMs : 0;
+  const [watchedToday, lastAdAt] = await Promise.all([
+    readCounterField(redis, 'adsDaily', accountId, dayKey, 'count'),
+    readCounterField(redis, 'adsDaily', accountId, dayKey, 'lastAdAt'),
+  ]);
+  const nextAvailableAt = lastAdAt ? lastAdAt + minIntervalMs : 0;
   return { watchedToday, nextAvailableAt: nextAvailableAt > now ? nextAvailableAt : 0 };
 }

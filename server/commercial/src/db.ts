@@ -123,15 +123,6 @@ export interface GachaHistoryDoc {
   ts: number;
 }
 
-/** Daily victory coin claim counter (_id=`accountId:dayKey` → number of wins paid out so far), enforces the daily cap. */
-export interface VictoryDailyDoc {
-  _id: string; // `${accountId}:${dayKey}`
-  accountId: string;
-  dayKey: string;
-  wins: number; // wins paid out today (capped at VICTORY_DAILY_WIN_CAP)
-  ts: number;
-}
-
 /** Promo code definition (B-PROMO). _id = code string (normalized to uppercase). */
 export interface PromoCodeDoc {
   _id: string; // code (already normalized to uppercase)
@@ -198,7 +189,6 @@ export interface CommercialCollections {
   recharges: Collection<RechargeDoc>;
   paddleEvents: Collection<PaddleEventDoc>;
   gachaHistory: Collection<GachaHistoryDoc>;
-  victoryDaily: Collection<VictoryDailyDoc>;
   promoCodes: Collection<PromoCodeDoc>;
   promoRedemptions: Collection<PromoRedemptionDoc>;
   gachaPools: Collection<GachaPoolDoc>;
@@ -237,7 +227,6 @@ export async function createCommercialMongo(
     recharges: db.collection<RechargeDoc>('recharges'),
     paddleEvents: db.collection<PaddleEventDoc>('paddleEvents'),
     gachaHistory: db.collection<GachaHistoryDoc>('gachaHistory'),
-    victoryDaily: db.collection<VictoryDailyDoc>('victoryDaily'),
     promoCodes: db.collection<PromoCodeDoc>('promoCodes'),
     promoRedemptions: db.collection<PromoRedemptionDoc>('promoRedemptions'),
     gachaPools: db.collection<GachaPoolDoc>('gachaPools'),
