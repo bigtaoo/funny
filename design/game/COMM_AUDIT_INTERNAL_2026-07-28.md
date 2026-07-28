@@ -97,3 +97,7 @@
 **踩坑**：item 8 的 sectId 镜像改动波及 9 个 worldsvc 测试文件里的 `FakeSocialsvc.getMember` 假实现——它们各自手写的返回对象没有带上 `sectId` 字段，导致改用本地字段读取后这些测试从"通过"变成"读到 undefined"。逐个补齐后全部恢复通过；教训与批次 G 一致：**改一个被多处测试用假对象实现的接口字段，必须搜出所有实现点一并更新**，不能只改生产代码。
 
 **建议下一步**：批次 F 收尾后本文档可关闭；上表里"推迟"的 3 项（presence 双实现合并、`/gw/judge` proto 清理、内部响应信封统一）如需处理，另开新任务。
+
+## 补充：P0-7 引入的 CORS 回归（2026-07-28 发现并修复）
+
+用户反馈"进不去 SLG"（浏览器 Network 面板 `active-season`/`resolve`/`enter` 全部标红、`Provisional headers are shown`）。排查发现 P0-7 让客户端（`client/src/net/ApiClient/base.ts:78`、`WorldApiClient.ts:183`）在**每个请求**上无条件带上 `X-NW-Platform` 头，但 worldsvc（`httpApi.ts:52`）和 auctionsvc（`httpApi.ts:42`）的 `access-control-allow-headers` 硬编码列表当时没有同步加上 `x-nw-platform`——浏览器跨域预检（OPTIONS）因请求头不在白名单里被拒，真实请求根本发不出去（curl 因不走预检未受影响，直接调用返回一切正常，一度掩盖了问题）。影响面：所有浏览器客户端对 worldsvc（SLG 全部功能）和 auctionsvc（拍卖行）的请求，非单一账号/单次抖动。已在两处 `access-control-allow-headers` 补上 `x-nw-platform`。**教训**：给某个内部请求头新增用途时，要同时检查该请求头会经过哪些走硬编码 CORS 白名单（而非 `@fastify/cors { origin: true }` 动态放行）的裸 HTTP 服务——meta 用 fastify cors 插件不受影响，worldsvc/auctionsvc/socialsvc/analyticsvc/admin 五个手写 `access-control-allow-headers` 的服务都需要人工同步。
