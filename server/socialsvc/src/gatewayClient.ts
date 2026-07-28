@@ -49,6 +49,12 @@ export interface SocialGatewayClient {
   readonly available: boolean;
   push(accountId: string, msg: SocialPushMsg): Promise<void>;
   pushMany(accountIds: string[], msg: SocialPushMsg): Promise<void>;
+  /**
+   * Batch push (comm-audit batch F item 5): each target gets its own accountId+msg, delivered in one
+   * /gw/push/batch round trip instead of one /gw/push call per target. Use when targets carry distinct
+   * messages (e.g. presence fan-out); pushMany already covers the "same msg, many recipients" case.
+   */
+  pushBatch(targets: { accountId: string; msg: SocialPushMsg }[]): Promise<void>;
   /** Batch presence query (used for friend lists). Returns an accountId→bool map. */
   presence(accountIds: string[]): Promise<Record<string, boolean>>;
   /** Invalidate the gateway's friend cache after a friend-relationship change (re-fetch presence broadcast scope). Best-effort. */
@@ -77,8 +83,17 @@ export class HttpSocialGatewayClient implements SocialGatewayClient {
   }
 
   async pushMany(accountIds: string[], msg: SocialPushMsg): Promise<void> {
-    if (!this.baseUrl || accountIds.length === 0) return;
-    await Promise.allSettled(accountIds.map((id) => this.push(id, msg)));
+    if (accountIds.length === 0) return;
+    await this.pushBatch(accountIds.map((accountId) => ({ accountId, msg })));
+  }
+
+  async pushBatch(targets: { accountId: string; msg: SocialPushMsg }[]): Promise<void> {
+    if (!this.baseUrl || targets.length === 0) return;
+    await postInternal(`${this.baseUrl}/gw/push/batch`, { targets }, {
+      caller: 'socialsvc',
+      key: this.internalKey,
+      label: '/gw/push/batch',
+    });
   }
 
   async presence(accountIds: string[]): Promise<Record<string, boolean>> {
@@ -109,6 +124,7 @@ export const nullSocialGatewayClient: SocialGatewayClient = {
   available: false,
   async push() { /* no-op */ },
   async pushMany() { /* no-op */ },
+  async pushBatch() { /* no-op */ },
   async presence() { return {}; },
   async invalidateFriends() { /* no-op */ },
 };

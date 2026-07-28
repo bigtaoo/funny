@@ -11,7 +11,8 @@ import {
 } from '@nw/shared';
 import type { GachaResultEntry } from '../db';
 import { rollStarterPack } from '../gacha';
-import type { CommercialBaseCtor, Constructor, Result } from './base';
+import type { CommercialBaseCtor, Constructor, Result, WalletView } from './base';
+import { walletView } from './base';
 import { effectiveCoins, rechargeChannelOf, spendChannelOf } from '../spendChannel';
 
 export interface StarterHandlers {
@@ -23,7 +24,7 @@ export interface StarterHandlers {
      * via rechargeChannelOf (ADR-020) for starter_growth's coins. Irrelevant for starter_draw (no coins). */
     rechargePlatform?: string;
     clientPlatform?: string;
-  }): Promise<Result<{ coinsAfter: number; subscriptionExpiry: number; results: GachaResultEntry[] }>>;
+  }): Promise<Result<{ coinsAfter: number; subscriptionExpiry: number; results: GachaResultEntry[]; wallet: WalletView }>>;
 }
 
 export function StarterMixin<TBase extends CommercialBaseCtor>(Base: TBase): TBase & Constructor<StarterHandlers> {
@@ -40,7 +41,7 @@ export function StarterMixin<TBase extends CommercialBaseCtor>(Base: TBase): TBa
       orderId: string;
       rechargePlatform?: string;
       clientPlatform?: string;
-    }): Promise<Result<{ coinsAfter: number; subscriptionExpiry: number; results: GachaResultEntry[] }>> {
+    }): Promise<Result<{ coinsAfter: number; subscriptionExpiry: number; results: GachaResultEntry[]; wallet: WalletView }>> {
       if (args.productId !== PRODUCT_STARTER_DRAW && args.productId !== PRODUCT_STARTER_GROWTH) {
         return { ok: false, error: 'BAD_REQUEST' };
       }
@@ -53,6 +54,7 @@ export function StarterMixin<TBase extends CommercialBaseCtor>(Base: TBase): TBa
           coinsAfter: effectiveCoins(w, displayChannel),
           subscriptionExpiry: w?.subscription?.expiry ?? 0,
           results: existing.result.results ?? [],
+          wallet: walletView(w, args.clientPlatform),
         };
       }
       const now = this.now();
@@ -79,12 +81,13 @@ export function StarterMixin<TBase extends CommercialBaseCtor>(Base: TBase): TBa
           result: { results, poolId: 'standard' },
           ts: now,
         });
-        return { ok: true, coinsAfter, subscriptionExpiry: claimed.subscription?.expiry ?? 0, results };
+        return { ok: true, coinsAfter, subscriptionExpiry: claimed.subscription?.expiry ?? 0, results, wallet: walletView(claimed, args.clientPlatform) };
       }
 
       // starter_growth: coins + 7-day card (no items to deliver → order lands delivered). Real money (¥30) —
       // fund the caller's verified recharge channel (ADR-020), not the free pool.
-      const { coinsAfter, expiry } = await this.applySubscription(
+      const growthChannel = args.rechargePlatform ? (rechargeChannelOf(args.rechargePlatform) ?? undefined) : undefined;
+      const { coinsAfter, expiry, wallet } = await this.applySubscription(
         args.accountId,
         GROWTH_PACK_CARD_DAYS,
         GROWTH_PACK_COINS,
@@ -92,7 +95,7 @@ export function StarterMixin<TBase extends CommercialBaseCtor>(Base: TBase): TBa
         {
           orderId: args.orderId,
           reason: 'starter_growth',
-          channel: args.rechargePlatform ? (rechargeChannelOf(args.rechargePlatform) ?? undefined) : undefined,
+          channel: growthChannel,
           clientPlatform: args.clientPlatform,
         },
       );
@@ -107,7 +110,7 @@ export function StarterMixin<TBase extends CommercialBaseCtor>(Base: TBase): TBa
         deliveredAt: now,
         ts: now,
       });
-      return { ok: true, coinsAfter, subscriptionExpiry: expiry, results: [] };
+      return { ok: true, coinsAfter, subscriptionExpiry: expiry, results: [], wallet: walletView(wallet, args.clientPlatform, growthChannel) };
     }
   };
 }

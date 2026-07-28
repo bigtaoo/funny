@@ -200,7 +200,7 @@ export class MarchService {
       } else {
         army = team.army;
         troops = team.army.reduce((s, e) => s + Math.max(1, Math.floor(e.initialHp ?? 0)), 0);
-        const attackerSave = await this.core.meta.getSaveFields(accountId).catch(() => null);
+        const attackerSave = await this.core.meta.getSaveFields(accountId, ['cardInv', 'equipmentInv']).catch(() => null);
         leaderUnitType = resolveLeaderUnitType(team, attackerSave?.cardInv ?? {}, attackerSave?.equipmentInv ?? {});
         // D-CITY-9: satchel gates how many troops a SINGLE team may carry per march/siege — independent of the
         // total troopCap pool (troopCapFor/drillYard). Card-army teams carry real strength in cardState.currentTroops

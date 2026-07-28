@@ -458,17 +458,22 @@ export async function reconcileUndelivered(
   socialsvc: MetaSocialsvcClient,
   accountId: string,
   now: number,
-): Promise<void> {
+  clientPlatform?: string,
+): Promise<WalletView | null> {
   const orders = await commercial.undeliveredOrders(accountId);
+  // Fetched once, outside the loop: deliverOrder never mutates commercial's wallet (coins/pity/subscription)
+  // for any order kind, so the balance is identical across every iteration for this accountId (comm-audit
+  // batch F item 4 — this used to be one getWallet round trip per undelivered order, plus a further redundant
+  // one right after in getSave — now callers reuse this return value instead of re-fetching).
+  const w = await commercial.getWallet(accountId, clientPlatform);
   for (const o of orders) {
-    // Use the authoritative balance fetched from commercial for the mirror (no second deduction).
-    const w = await commercial.getWallet(accountId);
     const pityPatch =
       o.kind === 'gacha' && o.result.poolId && w
         ? { [o.result.poolId]: w.pity[o.result.poolId] ?? 0 }
         : null;
     await deliverOrder(cols, commercial, socialsvc, accountId, o, w?.coins ?? 0, pityPatch, now);
   }
+  return w;
 }
 
 /** UTC calendar-day key (for ad cap resets). `now` is injected for testability. */

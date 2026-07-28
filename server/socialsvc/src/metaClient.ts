@@ -12,6 +12,12 @@ export interface SocialMetaClient {
   batchProfiles(accountIds: string[]): Promise<Map<string, ProfileView>>;
   /** Ladder rank + ELO for one accountId (unified profile popup, S8-4 family/friends rank display). Null on lookup failure. */
   getPlayerRank(accountId: string): Promise<{ rank?: string; elo?: number } | null>;
+  /**
+   * publicId → accountId + rank/elo in a single round trip (comm-audit batch F item 2): meta's
+   * /internal/player already accepts publicId directly, so the profile-popup "extra" lookup no longer
+   * needs its own resolveByPublicId hop before calling getPlayerRank. Not found → null.
+   */
+  getPlayerRankByPublicId(publicId: string): Promise<{ accountId: string; rank?: string; elo?: number } | null>;
 }
 
 export class HttpSocialMetaClient implements SocialMetaClient {
@@ -64,6 +70,21 @@ export class HttpSocialMetaClient implements SocialMetaClient {
     const data = r.body;
     return { ...(data.rank ? { rank: data.rank } : {}), ...(data.elo !== undefined ? { elo: data.elo } : {}) };
   }
+
+  async getPlayerRankByPublicId(publicId: string): Promise<{ accountId: string; rank?: string; elo?: number } | null> {
+    const r = await fetchInternalJson<{ accountId?: string; rank?: string; elo?: number }>(
+      `${this.baseUrl}/internal/player?publicId=${encodeURIComponent(publicId)}`,
+      { caller: 'socialsvc', key: this.internalKey, timeoutMs: 5000, label: 'meta /internal/player' },
+    );
+    const accountId = r.ok ? r.body?.accountId : undefined;
+    if (!accountId) return null;
+    const data = r.body!;
+    return {
+      accountId,
+      ...(data.rank ? { rank: data.rank } : {}),
+      ...(data.elo !== undefined ? { elo: data.elo } : {}),
+    };
+  }
 }
 
 export const nullSocialMetaClient: SocialMetaClient = {
@@ -71,4 +92,5 @@ export const nullSocialMetaClient: SocialMetaClient = {
   async resolveByPublicId() { return null; },
   async batchProfiles() { return new Map(); },
   async getPlayerRank() { return null; },
+  async getPlayerRankByPublicId() { return null; },
 };

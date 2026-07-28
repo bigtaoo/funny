@@ -182,7 +182,14 @@ export function EncounterMixin<TBase extends SiegeServiceBaseCtor>(Base: TBase):
       //    no morale, base blueprints — same asymmetry as applyBaseSiege). ──
       const rawA = m.army ?? [];
       const aHasCard = rawA.some((e) => !!e.cardInstanceId);
-      const aSave = aHasCard ? await core.meta.getSaveFields(m.ownerId).catch(() => null) : null;
+      const dHasCard = defRaw.some((e) => !!e.cardInstanceId);
+      // Attacker/defender snapshots are independent internal-HTTP round trips — fetch them together instead of
+      // sequentially (comm-audit batch F item 6). Defender only ever needs cardInv (no per-card gear buff on
+      // defence, same v1 simplification as applyBaseSiege).
+      const [aSave, dSave] = await Promise.all([
+        aHasCard ? core.meta.getSaveFields(m.ownerId, ['cardInv', 'equipmentInv']).catch(() => null) : Promise.resolve(null),
+        dHasCard ? core.meta.getSaveFields(defOwnerId, ['cardInv']).catch(() => null) : Promise.resolve(null),
+      ]);
       const moraleMult = moraleCombatMultiplier(m.morale ?? MARCH_MORALE_MAX);
       const attackerArmy: GarrisonEntry[] = scaleArmyByRatio(
         aHasCard
@@ -193,14 +200,12 @@ export function EncounterMixin<TBase extends SiegeServiceBaseCtor>(Base: TBase):
       let aCardInstances: EngineCardInstance[] | undefined;
       let aCardEquipInv: EngineEquipInv | undefined;
       if (aHasCard && aSave) {
-        const { cardInstances, engEquipInv } = toEngineCardInstances(rawA, aSave.cardInv, aSave.equipmentInv);
+        const { cardInstances, engEquipInv } = toEngineCardInstances(rawA, aSave.cardInv ?? {}, aSave.equipmentInv ?? {});
         aCardInstances = cardInstances;
         aCardEquipInv = engEquipInv;
       }
 
-      const dHasCard = defRaw.some((e) => !!e.cardInstanceId);
       const defPw = await cols.playerWorld.findOne({ _id: playerWorldId(m.worldId, defOwnerId) });
-      const dSave = dHasCard ? await core.meta.getSaveFields(defOwnerId).catch(() => null) : null;
       const defenderGarrison: GarrisonEntry[] = toDefenderFormation(
         dHasCard
           ? resolveCardArmy(defRaw, defPw?.cardState ?? {}, dSave?.cardInv ?? {})

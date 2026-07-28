@@ -52,7 +52,11 @@ export class TerritoryService {
 
     // SS7: resolve the familyId read-only mirror once up front (subsequent family changes are not written back;
     // clients read from /social/family/mine). Used for both auto-spawn placement and the playerWorld mirror below.
-    const familyId = await this.core.socialsvc.getFamilyId(accountId).catch(() => null) ?? undefined;
+    // comm-audit batch F item 8b: use getMember (not getFamilyId) so sectId can be captured in the same
+    // one-time snapshot, letting vision/penalty code read it locally instead of a separate round trip later.
+    const mem = await this.core.socialsvc.getMember(accountId).catch(() => null);
+    const familyId = mem?.familyId ?? undefined;
+    const sectId = mem?.sectId;
 
     let spawn: { x: number; y: number; level: number; resType?: ResourceType };
     if (x !== undefined && y !== undefined) {
@@ -124,6 +128,7 @@ export class TerritoryService {
       mainBaseTile: tid,
       buildings,
       ...(familyId ? { familyId } : {}),
+      ...(sectId ? { sectId } : {}),
       rev: 0,
     };
     await cols.playerWorld.insertOne(pw);

@@ -280,26 +280,32 @@ export function registerEconomyRoutes(app: FastifyInstance, ctx: InternalCtx): v
   });
 
   // ── Progression snapshot (E8, called by worldsvc siege engine authoritative computation) ────────────────────────────────
-  // GET /internal/save-fields?accountId=  → { pveUpgrades, unitLevels, gear, equipmentInv }
-  //   Returns the attacker's progression-related fields for worldsvc to pass into buildSiegeBlueprints for authoritative blueprint computation.
+  // GET /internal/save-fields?accountId=&fields=cardInv,equipmentInv  → { cardInv?, equipmentInv? }
+  //   Returns the attacker/defender's progression-related fields for worldsvc to pass into buildSiegeBlueprints
+  //   for authoritative blueprint computation. `fields` (comm-audit batch F item 6) narrows the projection to
+  //   only what the caller needs — omit for both (default). `pveUpgrades` was dropped from the wire (2026-07-28):
+  //   the siege engine never read it (siegeEngine.ts runSiegeBattle deprecated/unused param).
   //   If the account does not exist, treats it as a new account (returns empty defaults); does not return 404 to avoid freezing a march.
   app.get('/internal/save-fields', async (req, reply) => {
     if (!authed(req.headers)) return reply.code(401).send({ ok: false, error: 'unauthorized' });
-    const accountId = (req.query as Record<string, string>).accountId;
+    const { accountId, fields: fieldsParam } = req.query as Record<string, string>;
     if (!accountId) return reply.code(400).send({ ok: false, error: 'accountId required' });
+    const want = fieldsParam ? new Set(fieldsParam.split(',')) : null; // null = both (default)
+    const wantCard = !want || want.has('cardInv');
+    const wantEquip = !want || want.has('equipmentInv');
     const doc = await cols.saves.findOne({ _id: accountId });
     const s = doc?.save;
     // Equipment/card instances live in their own collections (2026-07-26/2026-07-27 splits, see
     // equipment.ts/cards.ts) — join them in here for wire-format compatibility (worldsvc's siege engine
     // expects the full maps, unchanged). Null-safe for an unknown account (no doc → still returns {}
     // rather than erroring, same as before).
-    const [equipmentInv, cardInv] = s
-      ? await Promise.all([assembleEquipmentInv(cols, accountId, s), assembleCardInv(cols, accountId, s)])
-      : [{}, {}];
+    const [cardInv, equipmentInv] = await Promise.all([
+      wantCard ? (s ? assembleCardInv(cols, accountId, s) : {}) : undefined,
+      wantEquip ? (s ? assembleEquipmentInv(cols, accountId, s) : {}) : undefined,
+    ]);
     return reply.send({
-      pveUpgrades: s?.pveUpgrades ?? {},
-      cardInv,
-      equipmentInv,
+      ...(wantCard ? { cardInv } : {}),
+      ...(wantEquip ? { equipmentInv } : {}),
     });
   });
 }

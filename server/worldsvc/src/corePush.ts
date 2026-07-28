@@ -5,6 +5,7 @@ import { baseFootprintCells, tileId } from '@nw/shared';
 import { WorldCoreYield } from './coreYield';
 import type { MarchView } from './worldTypes';
 import type { SiegeDoc, TileDoc } from './db';
+import type { PlayerProfile } from './metaClient';
 
 /**
  * ADR-051: one entry in the field-unit occupancy index (`world:{worldId}:occ`, field=tileId). Describes the unit
@@ -150,17 +151,23 @@ export class WorldCorePush extends WorldCoreYield {
       status: v.status,
     });
   }
-  async pushTile(accountId: string, t: TileDoc): Promise<void> {
-    const ownerProfile = (t.ownerId && this.meta.available)
-      ? await this.meta.getProfile(t.ownerId).catch(() => null)
-      : null;
+  /**
+   * `ownerProfile`: pass a pre-resolved profile to skip this method's own meta fetch — used by
+   * pushTileToObservers (comm-audit batch F item 7), which resolves the tile owner's profile once and
+   * fans it out to every observer instead of each push re-fetching the same accountId's profile.
+   * Omit (undefined) to fetch as before — every other call site still does its own single fetch.
+   */
+  async pushTile(accountId: string, t: TileDoc, ownerProfile?: PlayerProfile | null): Promise<void> {
+    const profile = ownerProfile !== undefined
+      ? ownerProfile
+      : (t.ownerId && this.meta.available) ? await this.meta.getProfile(t.ownerId).catch(() => null) : null;
     await this.gateway.push(accountId, {
       kind: 'tile_update',
       tileId: t._id,
       type: t.type,
       level: t.level,
-      ownerPublicId: ownerProfile?.publicId ?? '',
-      ownerName: ownerProfile?.displayName ?? '',
+      ownerPublicId: profile?.publicId ?? '',
+      ownerName: profile?.displayName ?? '',
       familyId: t.familyId ?? '',
       protectedUntil: t.protectedUntil ?? 0,
     });

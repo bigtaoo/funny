@@ -135,9 +135,10 @@ export function SiegeHelpersMixin<TBase extends SiegeServiceBaseCtor>(Base: TBas
       const { cols } = this.core.deps;
       const defPw = await cols.playerWorld.findOne({ _id: playerWorldId(worldId, defenderId) });
       if (!defPw?.familyId) return;
-      const [fam] = await this.core.socialsvc.getFamiliesByIds([defPw.familyId]);
-      if (!fam?.sectId) return;
-      const sect = await cols.sects.findOne({ _id: fam.sectId });
+      // comm-audit batch F item 8b: sectId is mirrored onto PlayerWorldDoc at joinWorld — no
+      // getFamiliesByIds([defPw.familyId]) round trip needed just to read it.
+      if (!defPw.sectId) return;
+      const sect = await cols.sects.findOne({ _id: defPw.sectId });
       if (!sect || sect.leaderId !== defenderId) return; // only triggers when the sect leader's base is destroyed
 
       const memberFamilies = await this.core.socialsvc.getFamiliesBySect(sect._id);

@@ -131,7 +131,7 @@ export function OccupationMixin<TBase extends SiegeServiceBaseCtor>(Base: TBase)
       let cardInstances: EngineCardInstance[] | undefined;
       let cardEquipInv: EngineEquipInv | undefined;
       if (hasCardArmy && attackerSave) {
-        const { cardInstances: ci, engEquipInv } = toEngineCardInstances(rawArmy, attackerSave.cardInv, attackerSave.equipmentInv);
+        const { cardInstances: ci, engEquipInv } = toEngineCardInstances(rawArmy, attackerSave.cardInv ?? {}, attackerSave.equipmentInv ?? {});
         cardInstances = ci;
         cardEquipInv = engEquipInv;
       }
@@ -195,7 +195,7 @@ export function OccupationMixin<TBase extends SiegeServiceBaseCtor>(Base: TBase)
       let cardInstances: EngineCardInstance[] | undefined;
       let cardEquipInv: EngineEquipInv | undefined;
       if (hasCardArmy && attackerSave) {
-        const { cardInstances: ci, engEquipInv } = toEngineCardInstances(rawArmy, attackerSave.cardInv, attackerSave.equipmentInv);
+        const { cardInstances: ci, engEquipInv } = toEngineCardInstances(rawArmy, attackerSave.cardInv ?? {}, attackerSave.equipmentInv ?? {});
         cardInstances = ci;
         cardEquipInv = engEquipInv;
       }
