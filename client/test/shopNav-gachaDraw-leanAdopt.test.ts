@@ -78,7 +78,10 @@ describe('shop.ts draw(): adopts the lean gacha response via adoptServerPartial,
   it('merges cardGrants/equipmentGrants onto the existing inventory, keeping prior instances', async () => {
     const { views, saveManager } = buildShopNav(async () => ({
       save: { ...makeNewSave(), rev: 2, cardInv: null, equipmentInv: null },
-      results: [{ itemId: 'suyuan', rarity: 'epic' }, { itemId: 'wp_marker', rarity: 'rare' }],
+      results: [
+        { itemId: 'suyuan', rarity: 'epic', duplicate: false },
+        { itemId: 'wp_marker', rarity: 'rare', duplicate: false },
+      ],
       overflow: { cardMailed: 0, cardCompensatedCoins: 0, equipMailed: 0, equipCompensatedCoins: 0 },
       cardGrants: [NEW_CARD],
       equipmentGrants: [NEW_EQUIP],
@@ -102,7 +105,7 @@ describe('shop.ts draw(): adopts the lean gacha response via adoptServerPartial,
   it('a draw that grants nothing new (skins/materials only) leaves the existing inventory untouched', async () => {
     const { views, saveManager } = buildShopNav(async () => ({
       save: { ...makeNewSave(), rev: 2, cardInv: null, equipmentInv: null },
-      results: [{ itemId: 'mat_scrap', rarity: 'common' }],
+      results: [{ itemId: 'mat_scrap', rarity: 'common', duplicate: false }],
       overflow: { cardMailed: 0, cardCompensatedCoins: 0, equipMailed: 0, equipCompensatedCoins: 0 },
       cardGrants: [],
       equipmentGrants: [],
