@@ -1513,6 +1513,7 @@ export const de: Record<TranslationKey, string> = {
   'reconnect.body': 'Du hast noch ein laufendes Match. Möchtest du dich wieder verbinden und fortsetzen?',
   'reconnect.accept': 'Wieder verbinden',
   'reconnect.decline': 'Nicht jetzt',
+  'reconnect.gone': 'Dieses Match ist nicht mehr verfügbar. Zurück zur Lobby.',
 
   // ── Gacha-Wahrscheinlichkeiten (Apple 3.1.1, L1-3) ──────────────────────────
   'gacha.oddsDetail.button': 'Chancen',

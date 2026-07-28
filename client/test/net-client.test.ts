@@ -20,8 +20,8 @@ class FakeSocket implements IGameSocket {
   open(): void {
     this.h.onOpen();
   }
-  closeRemote(): void {
-    this.h.onClose(1006, 'abnormal');
+  closeRemote(code = 1006): void {
+    this.h.onClose(code, 'abnormal');
   }
   message(bytes: Uint8Array): void {
     this.h.onMessage(bytes);
@@ -187,6 +187,62 @@ describe('NetClient connect / reconnect', () => {
     sockets[0]!.message(bytes);
     expect(msgs).toHaveLength(1);
     expect((msgs[0] as { roomError?: { code: string } }).roomError?.code).toBe('ROOM_FULL');
+  });
+
+  it('4409 (replaced) is always fatal — no reconnect attempt', async () => {
+    const { platform, sockets } = fakePlatform();
+    const onReconnect = vi.fn();
+    const client = new NetClient(platform, {
+      url: 'ws://x/ws',
+      tokenProvider: async () => 'tok',
+      backoffMs: [5],
+      pingIntervalMs: 0,
+      handlers: { onServerMsg: () => {}, onReconnect },
+    });
+    client.connect();
+    await tick();
+    sockets[0]!.open();
+    sockets[0]!.closeRemote(4409);
+    expect(client.getState()).toBe('closed');
+    await sleep(20);
+    expect(sockets).toHaveLength(1); // no reconnect attempt spawned
+  });
+
+  it('without extraFatalCloseCodes, 4401 is treated as a transient drop and keeps retrying (gateway connection: tokenProvider can mint a fresh JWT on retry)', async () => {
+    const { platform, sockets } = fakePlatform();
+    const client = new NetClient(platform, {
+      url: 'ws://x/ws',
+      tokenProvider: async () => 'tok',
+      backoffMs: [5],
+      pingIntervalMs: 0,
+      handlers: { onServerMsg: () => {} },
+    });
+    client.connect();
+    await tick();
+    sockets[0]!.open();
+    sockets[0]!.closeRemote(4401);
+    expect(client.getState()).toBe('reconnecting');
+    await sleep(20);
+    expect(sockets).toHaveLength(2); // retried
+  });
+
+  it('extraFatalCloseCodes opts a code into the same "give up" behavior as 4409 (login-reconnect-prompt: resumed match ticket for a room that no longer exists)', async () => {
+    const { platform, sockets } = fakePlatform();
+    const client = new NetClient(platform, {
+      url: 'ws://x/ws',
+      tokenProvider: async () => 'tok',
+      backoffMs: [5],
+      pingIntervalMs: 0,
+      extraFatalCloseCodes: [4401, 4403],
+      handlers: { onServerMsg: () => {} },
+    });
+    client.connect();
+    await tick();
+    sockets[0]!.open();
+    sockets[0]!.closeRemote(4401);
+    expect(client.getState()).toBe('closed');
+    await sleep(20);
+    expect(sockets).toHaveLength(1); // no reconnect attempt spawned
   });
 
   it('drops sends while not open', async () => {

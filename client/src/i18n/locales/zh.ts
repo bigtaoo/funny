@@ -1527,6 +1527,7 @@ export const zh = {
   'reconnect.body': '你还有一场对局尚未结束，是否重新连接并继续？',
   'reconnect.accept': '返回对局',
   'reconnect.decline': '暂不',
+  'reconnect.gone': '这场对局已经结束或不存在，已返回大厅',
 
   // ── Gacha drop-rate disclosure (Apple 3.1.1, L1-3) ───────────────────────
   'gacha.oddsDetail.button': '概率详情',
