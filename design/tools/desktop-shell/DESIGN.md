@@ -136,6 +136,7 @@ interface GitSyncController {
 - `version.json` 比对目前设计为轮询，非 push；工具产物更新到用户看到提示之间有最长一个轮询周期的延迟，可接受。
 - 多个工具各自远程托管，意味着多一份"发布到哪"的运维（沿用 Cloudflare Pages/Workers，非新增基础设施）。
 - 外包 git 凭证的权限收窄方案未定（细粒度 PAT scope、是否限制只能开 PR 不能直接推 main 等），留到真正实现 §5 时再定。
+- **本地打包正式安装包（`electron-builder --win`）需要 Windows 开发者模式打开**（设置 → 搜索"开发者模式" / `ms-settings:developers`）——不开的话，`electron-builder` 内部下载解压 `winCodeSign` 工具包（即使无证书、`win.verifyUpdateCodeSignature: false` 也绕不开这一步）会因为包里两个 macOS 符号链接文件在 Windows 非开发者模式下建不了而反复失败。开发者模式打开后一次成功，无需其它配置改动（2026-07-28 实测：`Notebook Wars 工具箱 Setup 0.1.0.exe`）。
 
 ---
 
