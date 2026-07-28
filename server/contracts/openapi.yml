@@ -4196,6 +4196,70 @@ paths:
           $ref: '#/components/responses/ErrorResp'
         '403':
           $ref: '#/components/responses/ErrorResp'
+  /lobby/badges:
+    get:
+      operationId: getLobbyBadges
+      tags:
+        - save
+      summary: 'Aggregated lobby red-dot fetch (P1-4, comm-audit-2026-07-27): merges GET /social/badges + GET /achievements + GET /retention (claimable only) + GET /events (availability only) into one call, replacing the 4-request waterfall the client used to fire on every lobby entry.'
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - ok
+                  - data
+                properties:
+                  ok:
+                    type: boolean
+                    enum:
+                      - true
+                  data:
+                    type: object
+                    required:
+                      - social
+                      - achievements
+                      - retentionClaimable
+                      - eventsAvailable
+                    properties:
+                      social:
+                        $ref: '#/components/schemas/SocialBadges'
+                      achievements:
+                        type: object
+                        required:
+                          - defs
+                          - stats
+                          - achievements
+                        properties:
+                          defs:
+                            type: array
+                            items:
+                              $ref: '#/components/schemas/Achievement'
+                          stats:
+                            type: object
+                            additionalProperties:
+                              type: integer
+                          achievements:
+                            $ref: '#/components/schemas/SaveData/properties/achievements'
+                      retentionClaimable:
+                        type: object
+                        required:
+                          - checkin
+                          - daily
+                        properties:
+                          checkin:
+                            type: boolean
+                          daily:
+                            type: boolean
+                      eventsAvailable:
+                        type: boolean
+        '401':
+          $ref: '#/components/responses/ErrorResp'
   /friends:
     get:
       operationId: getFriends

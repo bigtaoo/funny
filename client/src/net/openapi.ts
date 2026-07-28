@@ -991,6 +991,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/lobby/badges": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Aggregated lobby red-dot fetch (P1-4, comm-audit-2026-07-27): merges GET /social/badges + GET /achievements + GET /retention (claimable only) + GET /events (availability only) into one call, replacing the 4-request waterfall the client used to fire on every lobby entry. */
+        get: operations["getLobbyBadges"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/friends": {
         parameters: {
             query?: never;
@@ -4048,6 +4065,45 @@ export interface operations {
             };
             401: components["responses"]["ErrorResp"];
             403: components["responses"]["ErrorResp"];
+        };
+    };
+    getLobbyBadges: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {boolean} */
+                        ok: true;
+                        data: {
+                            social: components["schemas"]["SocialBadges"];
+                            achievements: {
+                                defs: components["schemas"]["Achievement"][];
+                                stats: {
+                                    [key: string]: number;
+                                };
+                                achievements: components["schemas"]["SaveData"]["achievements"];
+                            };
+                            retentionClaimable: {
+                                checkin: boolean;
+                                daily: boolean;
+                            };
+                            eventsAvailable: boolean;
+                        };
+                    };
+                };
+            };
+            401: components["responses"]["ErrorResp"];
         };
     };
     getFriends: {

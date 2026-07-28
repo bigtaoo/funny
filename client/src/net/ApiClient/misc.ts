@@ -2,9 +2,10 @@
 // config / targeted client log collection (FEATURE_FLAGS_DESIGN §9).
 import type { SaveData } from '../../game/meta/SaveData';
 import { type Constructor, type ApiClientBaseCtor } from './base';
-import type { RetentionView, EventView } from './types';
+import type { RetentionView, EventView, LobbyBadgesView } from './types';
 
 export interface MiscApi {
+  getLobbyBadges(): Promise<LobbyBadgesView>;
   getRetention(): Promise<RetentionView>;
   claimCheckin(): Promise<{ save: SaveData; day: number; reward: { kind: string; count: number; id?: string } }>;
   claimDailyReward(): Promise<{ save: SaveData; coins: number }>;
@@ -37,6 +38,11 @@ export interface MiscApi {
 
 export function MiscMixin<TBase extends ApiClientBaseCtor>(Base: TBase): TBase & Constructor<MiscApi> {
   return class extends Base {
+    /** Aggregated lobby red-dot fetch (P1-4, comm-audit-2026-07-27): social badges + achievements + retention/events claimable flags in one round-trip, replacing goLobby()'s old 4-request waterfall. */
+    async getLobbyBadges(): Promise<LobbyBadgesView> {
+      return this.request<LobbyBadgesView>('GET', '/lobby/badges');
+    }
+
     // ── Retention (B5, RETENTION_DESIGN): check-in calendar + daily tasks. ───────────────────────────────
     /** Fetch retention state (calendar/daily progress + definition table). */
     async getRetention(): Promise<RetentionView> {

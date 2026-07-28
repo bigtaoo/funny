@@ -40,12 +40,15 @@ import { grantCards } from '../cards.js';
 import { grantEquipment } from '../equipment.js';
 import type { MetaHandlers } from '../generated/routes.gen.js';
 import { accountIdOf, type Constructor, type MetaBaseCtor } from './base.js';
+import type { SocialBadges } from '@nw/shared';
 
 type LiveOpsHandlers = Pick<
   MetaHandlers,
   | 'getAchievements' | 'claimAchievement' | 'getRetention' | 'claimCheckin' | 'claimDailyReward'
-  | 'getEvents' | 'claimEventReward' | 'getTitles' | 'equipTitle' | 'equipAvatar'
+  | 'getEvents' | 'claimEventReward' | 'getTitles' | 'equipTitle' | 'equipAvatar' | 'getLobbyBadges'
 >;
+
+const ZERO_SOCIAL_BADGES: SocialBadges = { friendRequests: 0, chat: 0, mail: 0, total: 0 };
 
 export function LiveOpsMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase & Constructor<LiveOpsHandlers> {
   return class extends Base {
@@ -314,6 +317,39 @@ export function LiveOpsMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase & C
         return reply.code(code).send(err(errCode, result.error));
       }
       return reply.send({ ok: true, data: { pointsLeft: result.pointsLeft, reward: result.reward } });
+    }
+
+    /**
+     * Aggregated lobby red-dot fetch (P1-4, comm-audit-2026-07-27): merges social badges (proxied to
+     * socialsvc) + achievement defs/stats/claimed + retention claimable flags + events-available into
+     * one call, replacing the 4-request waterfall goLobby() used to fire on every online lobby entry.
+     * Best-effort on the social slice — socialsvc being down degrades to zeroed counts rather than
+     * failing the whole response, matching the old per-call try/catch semantics on the client.
+     */
+    async getLobbyBadges(req: FastifyRequest) {
+      const accountId = accountIdOf(req);
+      const { cols, now, socialsvc } = this.deps;
+      const tsMs = now();
+      const auth = (req.headers.authorization ?? '') as string;
+      const [save, events, socialResult] = await Promise.all([
+        getOrCreateSave(cols, accountId, tsMs),
+        getEventsForAccount(cols, accountId, tsMs),
+        socialsvc?.available ? socialsvc.proxy('GET', '/social/badges', null, auth) : Promise.resolve(null),
+      ]);
+      const retention = resetStaleRetention(save.retention, tsMs);
+      const social =
+        socialResult && socialResult.status === 200
+          ? ((socialResult.data as { data: SocialBadges }).data ?? ZERO_SOCIAL_BADGES)
+          : ZERO_SOCIAL_BADGES;
+      return ok({
+        social,
+        achievements: { defs: ACHIEVEMENTS, stats: save.stats ?? {}, achievements: save.achievements ?? {} },
+        retentionClaimable: {
+          checkin: nextCheckinDay(retention, tsMs) !== null,
+          daily: dailyRewardClaimable(retention, tsMs),
+        },
+        eventsAvailable: events.length > 0,
+      });
     }
 
     /** Read all titles granted to the current account (including derived source/seasonNo) + currently equipped title. */
