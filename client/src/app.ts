@@ -48,7 +48,7 @@ import { ConsentDialog, type ConsentCallbacks } from './render/ConsentDialog';
 import { ReconnectPromptDialog, type ReconnectPromptCallbacks } from './render/ReconnectPromptDialog';
 import { OwnerId, ownerToSide, Side } from './game';
 import type { Replay, LevelDefinition } from './game';
-import { ScalingManager, createLayout } from './layout/ScalingManager';
+import { ScalingManager, createLayout, resettledLayout } from './layout/ScalingManager';
 import { InputManager } from './inputSystem/InputManager';
 import type { ILayout } from './layout/ILayout';
 import { installGlobalErrorHandlers, setToastSink } from './net/log';
@@ -466,18 +466,14 @@ export async function startApp(
   platform.onAppReady();
   await platform.onLoadingComplete();
 
-  // WebKit can report env(safe-area-inset-*) as 0 on the very first synchronous script pass
-  // after a cold load (viewport-fit=cover hasn't finished settling yet) — the initial `insets`
-  // read above can undercount the notch/status-bar inset, letting the top HUD (coins, back
-  // button) land under it. The asset-preload gate we just awaited takes far longer than that
-  // settle delay, so re-read here and rescale if it changed, before any scene is built.
+  // See resettledLayout() (layout/ScalingManager.ts): the asset-preload gate we just awaited
+  // takes far longer than WebKit's env(safe-area-inset-*) settle delay, so re-checking here
+  // catches a stale boot-time (often 0) inset before any scene is built.
   const settledInsets = platform.getSafeAreaInsets?.();
-  if (settledInsets && (
-    settledInsets.top !== insets?.top || settledInsets.right !== insets?.right ||
-    settledInsets.bottom !== insets?.bottom || settledInsets.left !== insets?.left
-  )) {
-    const { width: settledW, height: settledH } = platform.getScreenSize();
-    layout = createLayout(settledW, settledH, Side.Bottom, settledInsets);
+  const { width: settledW, height: settledH } = platform.getScreenSize();
+  const relaidLayout = resettledLayout(settledW, settledH, insets, settledInsets);
+  if (relaidLayout) {
+    layout = relaidLayout;
     scaling.resize(settledW, settledH, layout, settledInsets);
   }
 
