@@ -5,7 +5,7 @@
 //
 // Same shape as commercialClient: HTTP implementation + interface (makes it easy to inject a fake judge in tests).
 
-import { internalHeaders, postInternal } from '@nw/shared';
+import { fetchInternalJson, internalHeaders, postInternal } from '@nw/shared';
 
 /** Replay frame (command bytes are base64-encoded for JSON safety; gateway decodes back to bytes and pushes to the judge client). */
 export interface JudgeFrame {
@@ -76,17 +76,18 @@ export class HttpGatewayClient implements GatewayClient {
   /** Error / not configured / no candidate → {ok:false} (meta falls back to voiding the verdict, not convicting). */
   async judge(req: JudgeReq): Promise<JudgeRes> {
     if (!this.baseUrl) return { ok: false };
-    try {
-      const res = await fetch(`${this.baseUrl}/gw/judge`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json', ...internalHeaders('meta', this.internalKey) },
-        body: JSON.stringify(req),
-      });
-      if (!res.ok) return { ok: false };
-      return (await res.json()) as JudgeRes;
-    } catch {
-      return { ok: false };
-    }
+    // timeoutMs 25s deliberately exceeds gateway's 20s JUDGE_TIMEOUT_MS: gateway's own timeout
+    // fires first and meta receives an explicit {ok:false} response instead of aborting locally.
+    const r = await fetchInternalJson<JudgeRes>(`${this.baseUrl}/gw/judge`, {
+      caller: 'meta',
+      key: this.internalKey,
+      method: 'POST',
+      body: req,
+      timeoutMs: 25_000,
+      label: '/gw/judge',
+    });
+    if (!r.ok || !r.body) return { ok: false };
+    return r.body;
   }
 
   async push(accountId: string, msg: SocialPushMsg): Promise<void> {
