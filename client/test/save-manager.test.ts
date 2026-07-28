@@ -5,7 +5,7 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { SaveManager } from '../src/game/meta/SaveManager';
 import { LocalSaveStore } from '../src/game/meta/SaveStore';
-import { makeNewSave, type SaveData } from '../src/game/meta';
+import { makeNewSave, type CardInstance, type EquipmentInstance, type SaveData } from '../src/game/meta';
 import { ApiError, type ApiClient } from '../src/net/ApiClient';
 import type { IStorage } from '../src/platform/IPlatform';
 
@@ -267,6 +267,77 @@ describe('SaveManager.adoptServer stale-response guard (out-of-order gacha draw 
 
     expect(mgr.get().rev).toBe(6);
     expect(mgr.get().wallet.coins).toBe(150);
+  });
+});
+
+describe('SaveManager.adoptServerPartial (EQUIPMENT_DESIGN §3.3 phase 2, extended to cards 2026-07-28)', () => {
+  const EXISTING_CARD: CardInstance = { id: 'card_a', defId: 'lichuang', level: 1, gear: {}, locked: false };
+  const EXISTING_EQUIP: EquipmentInstance = { id: 'eq_a', defId: 'wp_pencil', rarity: 'common', level: 0, affixes: [] };
+
+  function seededManager(): SaveManager {
+    const store = new LocalSaveStore(new MemStorage());
+    const mgr = new SaveManager({ store, api: fakeApi(makeNewSave('a', 1)) });
+    mgr.adoptServer({
+      ...makeNewSave('a', 1),
+      rev: 1,
+      cardInv: { [EXISTING_CARD.id]: EXISTING_CARD },
+      equipmentInv: { [EXISTING_EQUIP.id]: EXISTING_EQUIP },
+    });
+    return mgr;
+  }
+
+  it('cardUpsert adds a new card without touching existing cardInv/equipmentInv entries', () => {
+    const mgr = seededManager();
+    const newCard: CardInstance = { id: 'card_b', defId: 'suyuan', level: 1, gear: {}, locked: false };
+
+    mgr.adoptServerPartial(
+      { ...makeNewSave('a', 1), rev: 2, cardInv: null, equipmentInv: null },
+      { cardUpsert: [newCard] },
+    );
+
+    expect(mgr.get().cardInv).toEqual({ [EXISTING_CARD.id]: EXISTING_CARD, [newCard.id]: newCard });
+    expect(mgr.get().equipmentInv).toEqual({ [EXISTING_EQUIP.id]: EXISTING_EQUIP }); // untouched
+  });
+
+  it('cardRemove deletes a fused-away card without touching equipmentInv', () => {
+    const mgr = seededManager();
+
+    mgr.adoptServerPartial(
+      { ...makeNewSave('a', 1), rev: 2, cardInv: null, equipmentInv: null },
+      { cardRemove: [EXISTING_CARD.id] },
+    );
+
+    expect(mgr.get().cardInv).toEqual({});
+    expect(mgr.get().equipmentInv).toEqual({ [EXISTING_EQUIP.id]: EXISTING_EQUIP });
+  });
+
+  it('upsert (equipment) and cardUpsert together patch both maps in one call', () => {
+    const mgr = seededManager();
+    const newCard: CardInstance = { id: 'card_b', defId: 'suyuan', level: 1, gear: {}, locked: false };
+    const newEquip: EquipmentInstance = { id: 'eq_b', defId: 'wp_marker', rarity: 'rare', level: 0, affixes: [] };
+
+    mgr.adoptServerPartial(
+      { ...makeNewSave('a', 1), rev: 2, cardInv: null, equipmentInv: null },
+      { upsert: [newEquip], cardUpsert: [newCard] },
+    );
+
+    expect(Object.keys(mgr.get().cardInv)).toHaveLength(2);
+    expect(Object.keys(mgr.get().equipmentInv)).toHaveLength(2);
+    expect(mgr.get().cardInv[newCard.id]).toEqual(newCard);
+    expect(mgr.get().equipmentInv[newEquip.id]).toEqual(newEquip);
+  });
+
+  it('an equipment-only patch (no cardUpsert/cardRemove) is a no-op for cardInv — existing equipment-only call sites are unaffected', () => {
+    const mgr = seededManager();
+    const newEquip: EquipmentInstance = { id: 'eq_b', defId: 'wp_marker', rarity: 'rare', level: 0, affixes: [] };
+
+    mgr.adoptServerPartial(
+      { ...makeNewSave('a', 1), rev: 2, equipmentInv: null },
+      { upsert: [newEquip] },
+    );
+
+    expect(mgr.get().cardInv).toEqual({ [EXISTING_CARD.id]: EXISTING_CARD }); // untouched
+    expect(Object.keys(mgr.get().equipmentInv)).toHaveLength(2);
   });
 });
 
