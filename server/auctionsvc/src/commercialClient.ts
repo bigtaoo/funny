@@ -5,7 +5,7 @@
 // NW_COMMERCIAL_INTERNAL_URL not configured → available=false → coin trading unavailable (graceful degradation notice to player).
 // Migrated verbatim from server/worldsvc/src/commercialClient.ts (caller name updated to 'auctionsvc').
 
-import { internalHeaders } from '@nw/shared';
+import { fetchInternalJson } from '@nw/shared';
 
 export interface AuctionCommercialClient {
   readonly available: boolean;
@@ -25,19 +25,20 @@ export class HttpAuctionCommercialClient implements AuctionCommercialClient {
 
   async spend(accountId: string, amount: number, orderId: string): Promise<void> {
     if (!this.baseUrl) throw new Error('commercial service not configured');
-    const res = await fetch(`${this.baseUrl}/internal/spend`, {
+    const res = await fetchInternalJson<{ ok: boolean; error?: string }>(`${this.baseUrl}/internal/spend`, {
+      caller: 'auctionsvc',
+      key: this.internalKey,
       method: 'POST',
-      headers: { 'content-type': 'application/json', ...internalHeaders('auctionsvc', this.internalKey) },
-      body: JSON.stringify({ accountId, amount, orderId }),
+      body: { accountId, amount, orderId },
+      timeoutMs: 5000,
+      label: '/internal/spend',
     });
+    // Money path: a network error / timeout (status 0, body null) must NOT silently pass — throw.
+    if (res.body === null) throw new Error(res.error ?? `spend failed: ${res.status}`);
     // commercial's /internal/spend always answers HTTP 200; business failures (e.g. INSUFFICIENT_FUNDS)
     // are carried in the JSON body as {ok:false, error}, not the HTTP status — res.ok alone can't detect them.
-    if (!res.ok) {
-      const body = (await res.json().catch(() => ({}))) as { error?: string };
-      throw new Error(body.error ?? `spend failed: ${res.status}`);
-    }
-    const body = (await res.json()) as { ok: boolean; error?: string };
-    if (!body.ok) throw new Error(body.error ?? 'spend failed');
+    if (!res.ok) throw new Error(res.body.error ?? `spend failed: ${res.status}`);
+    if (!res.body.ok) throw new Error(res.body.error ?? 'spend failed');
   }
 }
 

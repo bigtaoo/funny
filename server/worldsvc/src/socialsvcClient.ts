@@ -2,7 +2,7 @@
 // Internal API (/internal/*): X-Internal-Key, used to look up familyId/membership, delegate channel pushes,
 // and (sect follow-up) mirror sectId + refresh prosperity — worldsvc no longer keeps its own family/familyMembers
 // mirror (dead since the P4 family→socialsvc migration; see SLG_DESIGN §8.2 note).
-import { internalHeaders, type FamilyRole } from '@nw/shared';
+import { fetchInternalJson, type FamilyRole } from '@nw/shared';
 
 /** Push channel descriptor (the channel field in the /internal/push request body). */
 export type SocialsvcChannel =
@@ -71,131 +71,105 @@ export class HttpWorldSocialsvcClient implements WorldSocialsvcClient {
     return this.baseUrl !== null;
   }
 
+  private opts(label: string) {
+    return { caller: 'worldsvc' as const, key: this.internalKey, timeoutMs: 5000, label };
+  }
+
   async getFamilyId(accountId: string): Promise<string | null> {
     if (!this.baseUrl) return null;
-    try {
-      const res = await fetch(
-        `${this.baseUrl}/internal/family/by-account/${encodeURIComponent(accountId)}`,
-        { headers: internalHeaders('worldsvc', this.internalKey) },
-      );
-      if (!res.ok) return null;
-      const json = (await res.json()) as { data?: { familyId?: string | null } };
-      return json.data?.familyId ?? null;
-    } catch {
-      return null;
-    }
+    const res = await fetchInternalJson<{ data?: { familyId?: string | null } }>(
+      `${this.baseUrl}/internal/family/by-account/${encodeURIComponent(accountId)}`,
+      this.opts('/internal/family/by-account'),
+    );
+    if (!res.ok) return null;
+    return res.body?.data?.familyId ?? null;
   }
 
   async getMember(accountId: string): Promise<FamilyMembership | null> {
     if (!this.baseUrl) return null;
-    try {
-      const res = await fetch(
-        `${this.baseUrl}/internal/family/member/${encodeURIComponent(accountId)}`,
-        { headers: internalHeaders('worldsvc', this.internalKey) },
-      );
-      if (!res.ok) return null;
-      const json = (await res.json()) as { data?: { member?: FamilyMembership | null } };
-      return json.data?.member ?? null;
-    } catch {
-      return null;
-    }
+    const res = await fetchInternalJson<{ data?: { member?: FamilyMembership | null } }>(
+      `${this.baseUrl}/internal/family/member/${encodeURIComponent(accountId)}`,
+      this.opts('/internal/family/member'),
+    );
+    if (!res.ok) return null;
+    return res.body?.data?.member ?? null;
   }
 
   async getFamiliesByIds(familyIds: string[]): Promise<FamilySummary[]> {
     if (!this.baseUrl || familyIds.length === 0) return [];
-    try {
-      const res = await fetch(`${this.baseUrl}/internal/family/batch`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json', ...internalHeaders('worldsvc', this.internalKey) },
-        body: JSON.stringify({ familyIds }),
-      });
-      if (!res.ok) return [];
-      const json = (await res.json()) as { data?: { families?: FamilySummary[] } };
-      return json.data?.families ?? [];
-    } catch {
-      return [];
-    }
+    const res = await fetchInternalJson<{ data?: { families?: FamilySummary[] } }>(
+      `${this.baseUrl}/internal/family/batch`,
+      { ...this.opts('/internal/family/batch'), method: 'POST', body: { familyIds } },
+    );
+    if (!res.ok) return [];
+    return res.body?.data?.families ?? [];
   }
 
   async getFamiliesBySect(sectId: string): Promise<FamilySummary[]> {
     if (!this.baseUrl) return [];
-    try {
-      const res = await fetch(
-        `${this.baseUrl}/internal/family/by-sect/${encodeURIComponent(sectId)}`,
-        { headers: internalHeaders('worldsvc', this.internalKey) },
-      );
-      if (!res.ok) return [];
-      const json = (await res.json()) as { data?: { families?: FamilySummary[] } };
-      return json.data?.families ?? [];
-    } catch {
-      return [];
-    }
+    const res = await fetchInternalJson<{ data?: { families?: FamilySummary[] } }>(
+      `${this.baseUrl}/internal/family/by-sect/${encodeURIComponent(sectId)}`,
+      this.opts('/internal/family/by-sect'),
+    );
+    if (!res.ok) return [];
+    return res.body?.data?.families ?? [];
   }
 
   async setSect(familyId: string, sectId: string | null, sectName?: string | null): Promise<void> {
     if (!this.baseUrl) return;
-    try {
-      await fetch(`${this.baseUrl}/internal/family/${encodeURIComponent(familyId)}/sect`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json', ...internalHeaders('worldsvc', this.internalKey) },
-        body: JSON.stringify({ sectId, sectName }),
-      });
-    } catch {
+    const res = await fetchInternalJson(
+      `${this.baseUrl}/internal/family/${encodeURIComponent(familyId)}/sect`,
+      { ...this.opts('/internal/family/:id/sect'), method: 'POST', body: { sectId, sectName } },
+    );
+    if (!res.ok) {
       // best-effort: worldsvc remains authoritative for sectId; a failed mirror write only stales the client-facing socialsvc copy.
+      console.error('[worldsvc] socialsvc.setSect failed', { familyId, sectId, status: res.status, err: res.error });
     }
   }
 
   async bumpActivity(familyId: string, delta: number): Promise<void> {
     if (!this.baseUrl) return;
-    try {
-      await fetch(`${this.baseUrl}/internal/family/activity`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json', ...internalHeaders('worldsvc', this.internalKey) },
-        body: JSON.stringify({ familyId, delta }),
-      });
-    } catch {
+    const res = await fetchInternalJson(
+      `${this.baseUrl}/internal/family/activity`,
+      { ...this.opts('/internal/family/activity'), method: 'POST', body: { familyId, delta } },
+    );
+    if (!res.ok) {
       // best-effort: activity is a soft prosperity input, not worth failing the caller's main flow.
+      console.error('[worldsvc] socialsvc.bumpActivity failed', { familyId, delta, status: res.status, err: res.error });
     }
   }
 
   async refreshProsperity(familyId: string, territoryCount: number): Promise<number> {
     if (!this.baseUrl) return 0;
-    try {
-      const res = await fetch(`${this.baseUrl}/internal/family/${encodeURIComponent(familyId)}/prosperity/refresh`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json', ...internalHeaders('worldsvc', this.internalKey) },
-        body: JSON.stringify({ territoryCount }),
-      });
-      if (!res.ok) return 0;
-      const json = (await res.json()) as { data?: { prosperity?: number } };
-      return json.data?.prosperity ?? 0;
-    } catch {
-      return 0;
-    }
+    const res = await fetchInternalJson<{ data?: { prosperity?: number } }>(
+      `${this.baseUrl}/internal/family/${encodeURIComponent(familyId)}/prosperity/refresh`,
+      { ...this.opts('/internal/family/:id/prosperity/refresh'), method: 'POST', body: { territoryCount } },
+    );
+    if (!res.ok) return 0;
+    return res.body?.data?.prosperity ?? 0;
   }
 
   async resetSlgState(familyId: string): Promise<void> {
     if (!this.baseUrl) return;
-    try {
-      await fetch(`${this.baseUrl}/internal/family/${encodeURIComponent(familyId)}/slg-reset`, {
-        method: 'POST',
-        headers: internalHeaders('worldsvc', this.internalKey),
-      });
-    } catch {
+    const res = await fetchInternalJson(
+      `${this.baseUrl}/internal/family/${encodeURIComponent(familyId)}/slg-reset`,
+      { ...this.opts('/internal/family/:id/slg-reset'), method: 'POST' },
+    );
+    if (!res.ok) {
       // best-effort: a failed reset only leaves stale season stats on socialsvc's mirror until the next refresh.
+      console.error('[worldsvc] socialsvc.resetSlgState failed', { familyId, status: res.status, err: res.error });
     }
   }
 
   async push(channel: SocialsvcChannel, event: string, payload: unknown, targets?: string[]): Promise<void> {
     if (!this.baseUrl) return;
-    try {
-      await fetch(`${this.baseUrl}/internal/push`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json', ...internalHeaders('worldsvc', this.internalKey) },
-        body: JSON.stringify({ channel, event, payload, ...(targets ? { targets } : {}) }),
-      });
-    } catch {
+    const res = await fetchInternalJson(
+      `${this.baseUrl}/internal/push`,
+      { ...this.opts('/internal/push'), method: 'POST', body: { channel, event, payload, ...(targets ? { targets } : {}) } },
+    );
+    if (!res.ok) {
       // best-effort: push failure does not affect messages already persisted to the DB; clients can fetch via REST.
+      console.error('[worldsvc] socialsvc.push failed', { event, status: res.status, err: res.error });
     }
   }
 }

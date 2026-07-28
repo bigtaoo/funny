@@ -4,7 +4,7 @@
 // Migrated from server/worldsvc/src/metaClient.ts — drops getProfile/getSaveFields/grantTitle (not used by auction),
 // adds escrowSkin/grantSkin (§9 task2 metaserver skin escrow capability).
 
-import { internalHeaders, SlgError, type EquipmentInstance, type CardInstance, ErrorCode } from '@nw/shared';
+import { fetchInternalJson, SlgError, type EquipmentInstance, type CardInstance, ErrorCode } from '@nw/shared';
 
 export interface AuctionMetaClient {
   readonly available: boolean;
@@ -36,116 +36,108 @@ export class HttpAuctionMetaClient implements AuctionMetaClient {
     return this.baseUrl !== null;
   }
 
+  private opts(label: string) {
+    return { caller: 'auctionsvc' as const, key: this.internalKey, method: 'POST' as const, timeoutMs: 5000, label };
+  }
+
   async deductMaterial(accountId: string, material: string, qty: number, orderId: string): Promise<void> {
     if (!this.baseUrl) throw new Error('meta service not configured');
-    const res = await fetch(`${this.baseUrl}/internal/materials/deduct`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json', ...internalHeaders('auctionsvc', this.internalKey) },
-      body: JSON.stringify({ accountId, material, qty, orderId }),
-    });
+    const res = await fetchInternalJson<{ error?: string }>(
+      `${this.baseUrl}/internal/materials/deduct`,
+      { ...this.opts('/internal/materials/deduct'), body: { accountId, material, qty, orderId } },
+    );
     if (!res.ok) {
-      const body = (await res.json().catch(() => ({}))) as { error?: string };
-      throw new Error(body.error ?? `deductMaterial failed: ${res.status}`);
+      throw new Error(res.body?.error ?? res.error ?? `deductMaterial failed: ${res.status}`);
     }
   }
 
   async grantMaterial(accountId: string, material: string, qty: number, orderId: string): Promise<void> {
     if (!this.baseUrl) return;
-    try {
-      await fetch(`${this.baseUrl}/internal/materials/grant`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json', ...internalHeaders('auctionsvc', this.internalKey) },
-        body: JSON.stringify({ accountId, material, qty, orderId }),
-      });
-    } catch (e) {
-      console.error('[auctionsvc] meta.grantMaterial failed', { accountId, material, qty, orderId, err: (e as Error).message });
+    const res = await fetchInternalJson(
+      `${this.baseUrl}/internal/materials/grant`,
+      { ...this.opts('/internal/materials/grant'), body: { accountId, material, qty, orderId } },
+    );
+    if (!res.ok) {
+      // Delivery reliability (retry + compensation) is a later batch; for now make the loss visible.
+      console.error('[auctionsvc] meta.grantMaterial failed', { accountId, material, qty, orderId, status: res.status, err: res.error });
     }
   }
 
   async escrowEquipment(accountId: string, instanceId: string, orderId: string): Promise<EquipmentInstance> {
     if (!this.baseUrl) throw new Error('meta service not configured');
-    const res = await fetch(`${this.baseUrl}/internal/equipment/escrow`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json', ...internalHeaders('auctionsvc', this.internalKey) },
-      body: JSON.stringify({ accountId, instanceId, orderId }),
-    });
-    const body = (await res.json().catch(() => ({}))) as { instance?: EquipmentInstance; code?: string; error?: string };
+    const res = await fetchInternalJson<{ instance?: EquipmentInstance; code?: string; error?: string }>(
+      `${this.baseUrl}/internal/equipment/escrow`,
+      { ...this.opts('/internal/equipment/escrow'), body: { accountId, instanceId, orderId } },
+    );
+    const body = res.body ?? {};
     if (!res.ok || !body.instance) {
       const code = body.code;
       if (code === 'EQUIP_LOCKED' || code === 'EQUIP_IN_USE' || code === 'EQUIP_NOT_FOUND') throw new SlgError(code);
-      throw new SlgError('BAD_REQUEST', body.error ?? `escrowEquipment failed: ${res.status}`);
+      throw new SlgError('BAD_REQUEST', body.error ?? res.error ?? `escrowEquipment failed: ${res.status}`);
     }
     return body.instance;
   }
 
   async grantEquipment(accountId: string, instance: EquipmentInstance, orderId: string): Promise<void> {
     if (!this.baseUrl) return;
-    try {
-      await fetch(`${this.baseUrl}/internal/equipment/grant`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json', ...internalHeaders('auctionsvc', this.internalKey) },
-        body: JSON.stringify({ accountId, instance, orderId }),
-      });
-    } catch (e) {
-      console.error('[auctionsvc] meta.grantEquipment failed', { accountId, instanceId: instance.id, orderId, err: (e as Error).message });
+    const res = await fetchInternalJson(
+      `${this.baseUrl}/internal/equipment/grant`,
+      { ...this.opts('/internal/equipment/grant'), body: { accountId, instance, orderId } },
+    );
+    if (!res.ok) {
+      console.error('[auctionsvc] meta.grantEquipment failed', { accountId, instanceId: instance.id, orderId, status: res.status, err: res.error });
     }
   }
 
   async escrowCard(accountId: string, instanceId: string, orderId: string): Promise<CardInstance> {
     if (!this.baseUrl) throw new Error('meta service not configured');
-    const res = await fetch(`${this.baseUrl}/internal/cards/escrow`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json', ...internalHeaders('auctionsvc', this.internalKey) },
-      body: JSON.stringify({ accountId, instanceId, orderId }),
-    });
-    const body = (await res.json().catch(() => ({}))) as { instance?: CardInstance; code?: string; error?: string };
+    const res = await fetchInternalJson<{ instance?: CardInstance; code?: string; error?: string }>(
+      `${this.baseUrl}/internal/cards/escrow`,
+      { ...this.opts('/internal/cards/escrow'), body: { accountId, instanceId, orderId } },
+    );
+    const body = res.body ?? {};
     if (!res.ok || !body.instance) {
       const code = body.code;
       if (code === ErrorCode.CARD_NOT_FOUND || code === ErrorCode.CARD_HAS_GEAR) throw new SlgError(code);
-      throw new SlgError('BAD_REQUEST', body.error ?? `escrowCard failed: ${res.status}`);
+      throw new SlgError('BAD_REQUEST', body.error ?? res.error ?? `escrowCard failed: ${res.status}`);
     }
     return body.instance;
   }
 
   async grantCard(accountId: string, instance: CardInstance, orderId: string): Promise<void> {
     if (!this.baseUrl) return;
-    try {
-      await fetch(`${this.baseUrl}/internal/cards/grant`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json', ...internalHeaders('auctionsvc', this.internalKey) },
-        body: JSON.stringify({ accountId, instance, orderId }),
-      });
-    } catch (e) {
-      console.error('[auctionsvc] meta.grantCard failed', { accountId, instanceId: instance.id, orderId, err: (e as Error).message });
+    const res = await fetchInternalJson(
+      `${this.baseUrl}/internal/cards/grant`,
+      { ...this.opts('/internal/cards/grant'), body: { accountId, instance, orderId } },
+    );
+    if (!res.ok) {
+      console.error('[auctionsvc] meta.grantCard failed', { accountId, instanceId: instance.id, orderId, status: res.status, err: res.error });
     }
   }
 
   async escrowSkin(accountId: string, skinId: string, orderId: string): Promise<string> {
     if (!this.baseUrl) throw new Error('meta service not configured');
-    const res = await fetch(`${this.baseUrl}/internal/skins/escrow`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json', ...internalHeaders('auctionsvc', this.internalKey) },
-      body: JSON.stringify({ accountId, skinId, orderId }),
-    });
-    const body = (await res.json().catch(() => ({}))) as { skinId?: string; code?: string; error?: string };
+    const res = await fetchInternalJson<{ skinId?: string; code?: string; error?: string }>(
+      `${this.baseUrl}/internal/skins/escrow`,
+      { ...this.opts('/internal/skins/escrow'), body: { accountId, skinId, orderId } },
+    );
+    const body = res.body ?? {};
     if (!res.ok || !body.skinId) {
       const code = body.code;
       if (code === ErrorCode.SKIN_IN_USE || code === ErrorCode.SKIN_NOT_FOUND) throw new SlgError(code);
-      throw new SlgError('BAD_REQUEST', body.error ?? `escrowSkin failed: ${res.status}`);
+      throw new SlgError('BAD_REQUEST', body.error ?? res.error ?? `escrowSkin failed: ${res.status}`);
     }
     return body.skinId;
   }
 
   async grantSkin(accountId: string, skinId: string, orderId: string): Promise<void> {
     if (!this.baseUrl) return;
-    try {
-      await fetch(`${this.baseUrl}/internal/skins/grant`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json', ...internalHeaders('auctionsvc', this.internalKey) },
-        body: JSON.stringify({ accountId, skinId, orderId }),
-      });
-    } catch (e) {
-      console.error('[auctionsvc] meta.grantSkin failed', { accountId, skinId, orderId, err: (e as Error).message });
+    const res = await fetchInternalJson(
+      `${this.baseUrl}/internal/skins/grant`,
+      { ...this.opts('/internal/skins/grant'), body: { accountId, skinId, orderId } },
+    );
+    if (!res.ok) {
+      console.error('[auctionsvc] meta.grantSkin failed', { accountId, skinId, orderId, status: res.status, err: res.error });
     }
   }
 }

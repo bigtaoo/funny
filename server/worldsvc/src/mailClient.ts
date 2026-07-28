@@ -3,7 +3,7 @@
 // Direct delivery by accountId (meta single-send branch skips publicId resolution when accountId is provided, see internal.ts §17.5).
 // NW_META_INTERNAL_URL not configured → available=false → settlement does not send rewards (best-effort; does not block settlement).
 
-import { internalHeaders } from '@nw/shared';
+import { fetchInternalJson } from '@nw/shared';
 
 export interface WorldMailAttachment {
   // 'material' → SaveData.materials unified progression pool (SLG8 season rewards); 'item' → inventory.items general bucket.
@@ -37,24 +37,27 @@ export class HttpWorldMailClient implements WorldMailClient {
 
   async sendSystemMail(accountId: string, dispatchKey: string, content: WorldMailContent): Promise<void> {
     if (!this.baseUrl) return;
-    try {
-      const res = await fetch(`${this.baseUrl}/internal/mail/system/send`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json', ...internalHeaders('worldsvc', this.internalKey) },
-        body: JSON.stringify({
-          dispatchKey,
-          accountId,
-          subject: content.subject,
-          body: content.body,
-          attachments: content.attachments ?? [],
-          expireDays: content.expireDays ?? 0,
-        }),
-      });
-      if (!res.ok) {
-        console.error('[worldsvc] mail.sendSystemMail non-ok', { accountId, dispatchKey, status: res.status });
-      }
-    } catch (e) {
-      console.error('[worldsvc] mail.sendSystemMail failed', { accountId, dispatchKey, err: (e as Error).message });
+    const res = await fetchInternalJson<{ ok?: boolean; error?: string }>(`${this.baseUrl}/internal/mail/system/send`, {
+      caller: 'worldsvc',
+      key: this.internalKey,
+      method: 'POST',
+      body: {
+        dispatchKey,
+        accountId,
+        subject: content.subject,
+        body: content.body,
+        attachments: content.attachments ?? [],
+        expireDays: content.expireDays ?? 0,
+      },
+      timeoutMs: 5000,
+      label: '/internal/mail/system/send',
+    });
+    if (!res.ok) {
+      console.error('[worldsvc] mail.sendSystemMail failed', { accountId, dispatchKey, status: res.status, err: res.error });
+    } else if (res.body?.ok === false) {
+      // meta answers HTTP 200 with {ok:false} when the recipient is unknown or socialsvc persistence failed —
+      // HTTP status alone can't detect a dropped mail. Retry/compensation is a later batch; make the loss visible.
+      console.error('[worldsvc] mail.sendSystemMail rejected', { accountId, dispatchKey, err: res.body.error });
     }
   }
 }
