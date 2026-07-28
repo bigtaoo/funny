@@ -1,4 +1,4 @@
-import { internalHeaders, type MapTemplateSummary, type MapTemplateTile } from '@nw/shared';
+import { fetchInternalJson, type MapTemplateSummary, type MapTemplateTile } from '@nw/shared';
 
 // ── SLG season operations (worldsvc /admin/world/*, G7/§17.7) ────────
 /** Operational summary for one world region (used in list views). */
@@ -44,68 +44,75 @@ export class HttpWorldClient implements WorldClient {
     return this.baseUrl !== null;
   }
 
+  /** Season lifecycle ops (open/settle/reset/close/merge) are synchronous long operations on the
+   *  worldsvc side (full-map settlement / player moves); a 10s client deadline would cut them off
+   *  mid-flight, so they get a long one. Server-side storm control is a separate batch (comm-audit E). */
+  private static readonly SEASON_OP_TIMEOUT_MS = 120000;
+
   async listWorlds(): Promise<SlgWorldSummary[]> {
     if (!this.baseUrl) return [];
-    const res = await fetch(`${this.baseUrl}/admin/world/list`, {
-      headers: internalHeaders('admin', this.internalKey),
+    const r = await fetchInternalJson<{ ok?: boolean; data?: SlgWorldSummary[] }>(`${this.baseUrl}/admin/world/list`, {
+      caller: 'admin',
+      key: this.internalKey,
+      timeoutMs: 10000,
+      label: 'worldsvc /admin/world/list',
     });
-    if (!res.ok) throw new Error(`listWorlds failed: HTTP ${res.status}`);
-    const body = (await res.json()) as { ok?: boolean; data?: SlgWorldSummary[] };
-    return body.data ?? [];
+    if (!r.ok) throw new Error(`listWorlds failed: ${r.status ? `HTTP ${r.status}` : r.error ?? 'network error'}`);
+    return r.body?.data ?? [];
   }
 
-  private async post(path: string, payload: Record<string, unknown>): Promise<unknown> {
+  private async request(
+    method: 'GET' | 'POST' | 'PUT' | 'DELETE',
+    path: string,
+    payload?: Record<string, unknown>,
+    timeoutMs = 10000,
+  ): Promise<unknown> {
     if (!this.baseUrl) throw new Error('worldsvc not configured');
-    const res = await fetch(`${this.baseUrl}${path}`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json', ...internalHeaders('admin', this.internalKey) },
-      body: JSON.stringify(payload),
+    // Throws on failure (as before, where non-2xx / ok:false threw and network errors bubbled) —
+    // these are operator-initiated actions and the ops frontend must see the error.
+    const r = await fetchInternalJson<{ ok?: boolean; data?: unknown; error?: { message?: string } }>(`${this.baseUrl}${path}`, {
+      caller: 'admin',
+      key: this.internalKey,
+      method,
+      ...(payload !== undefined ? { body: payload } : {}),
+      timeoutMs,
+      label: `worldsvc ${method} ${path}`,
     });
-    const body = (await res.json().catch(() => ({}))) as { ok?: boolean; data?: unknown; error?: { message?: string } };
-    if (!res.ok || body.ok === false) {
-      throw new Error(body.error?.message ?? `${path} failed: HTTP ${res.status}`);
+    if (!r.ok || r.body?.ok === false) {
+      throw new Error(r.body?.error?.message ?? `${path} failed: ${r.status ? `HTTP ${r.status}` : r.error ?? 'network error'}`);
     }
-    return body.data;
+    return r.body?.data;
+  }
+
+  private post(path: string, payload: Record<string, unknown>, timeoutMs?: number): Promise<unknown> {
+    return this.request('POST', path, payload, timeoutMs);
   }
 
   async openWorld(worldId: string, season: number, shard: number, capacity: number): Promise<void> {
-    await this.post('/admin/world/open', { worldId, season, shard, capacity });
+    await this.post('/admin/world/open', { worldId, season, shard, capacity }, HttpWorldClient.SEASON_OP_TIMEOUT_MS);
   }
   async settleWorld(worldId: string): Promise<unknown> {
-    return this.post('/admin/world/settle', { worldId });
+    return this.post('/admin/world/settle', { worldId }, HttpWorldClient.SEASON_OP_TIMEOUT_MS);
   }
   async resetWorld(worldId: string): Promise<unknown> {
-    return this.post('/admin/world/reset', { worldId });
+    return this.post('/admin/world/reset', { worldId }, HttpWorldClient.SEASON_OP_TIMEOUT_MS);
   }
   async closeWorld(worldId: string): Promise<void> {
-    await this.post('/admin/world/close', { worldId });
+    await this.post('/admin/world/close', { worldId }, HttpWorldClient.SEASON_OP_TIMEOUT_MS);
   }
   async mergeWorld(worldId: string, targetWorldId: string): Promise<{ moved: number; failed: string[] }> {
-    return (await this.post('/admin/world/merge', { worldId, targetWorldId })) as { moved: number; failed: string[] };
+    return (await this.post('/admin/world/merge', { worldId, targetWorldId }, HttpWorldClient.SEASON_OP_TIMEOUT_MS)) as {
+      moved: number;
+      failed: string[];
+    };
   }
 
-  private async get(path: string): Promise<unknown> {
-    if (!this.baseUrl) throw new Error('worldsvc not configured');
-    const res = await fetch(`${this.baseUrl}${path}`, { headers: internalHeaders('admin', this.internalKey) });
-    const body = (await res.json().catch(() => ({}))) as { ok?: boolean; data?: unknown; error?: { message?: string } };
-    if (!res.ok || body.ok === false) {
-      throw new Error(body.error?.message ?? `${path} failed: HTTP ${res.status}`);
-    }
-    return body.data;
+  private get(path: string): Promise<unknown> {
+    return this.request('GET', path);
   }
 
-  private async putOrDelete(method: 'PUT' | 'DELETE', path: string, payload?: Record<string, unknown>): Promise<unknown> {
-    if (!this.baseUrl) throw new Error('worldsvc not configured');
-    const res = await fetch(`${this.baseUrl}${path}`, {
-      method,
-      headers: { 'content-type': 'application/json', ...internalHeaders('admin', this.internalKey) },
-      ...(payload ? { body: JSON.stringify(payload) } : {}),
-    });
-    const body = (await res.json().catch(() => ({}))) as { ok?: boolean; data?: unknown; error?: { message?: string } };
-    if (!res.ok || body.ok === false) {
-      throw new Error(body.error?.message ?? `${path} failed: HTTP ${res.status}`);
-    }
-    return body.data;
+  private putOrDelete(method: 'PUT' | 'DELETE', path: string, payload?: Record<string, unknown>): Promise<unknown> {
+    return this.request(method, path, payload);
   }
 
   // ── Map templates (§24 Layer A, admin map editor) ──

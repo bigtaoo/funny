@@ -1,4 +1,4 @@
-import { internalHeaders, type LiveStats } from '@nw/shared';
+import { fetchInternalJson, type LiveStats } from '@nw/shared';
 import { log } from './shared';
 
 // ── Stats (gateway / matchsvc) ────────────────────────────
@@ -51,16 +51,15 @@ export class HttpStatsClient implements StatsClient {
   }
 
   private async get<T>(url: string, tag: string): Promise<T | null> {
-    try {
-      const res = await fetch(url, { headers: internalHeaders('admin', this.internalKey) });
-      if (!res.ok) {
-        log.warn('stats fetch non-2xx', { tag, status: res.status });
-        return null;
-      }
-      return (await res.json()) as T;
-    } catch (e) {
-      log.warn('stats fetch failed', { tag, err: (e as Error).message });
-      return null;
-    }
+    // Degrades to null on any failure (sampling must not block), as before.
+    const r = await fetchInternalJson<T>(url, {
+      caller: 'admin',
+      key: this.internalKey,
+      timeoutMs: 10000,
+      log,
+      label: `${tag} /internal/stats`,
+    });
+    if (!r.ok || !r.body) return null;
+    return r.body;
   }
 }

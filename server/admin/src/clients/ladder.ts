@@ -1,4 +1,4 @@
-import { internalHeaders } from '@nw/shared';
+import { fetchInternalJson } from '@nw/shared';
 
 // ── Ladder season (meta /admin/ladder/season/roll, SE-3) ─────────────────────
 export interface LadderSeasonInfo {
@@ -26,26 +26,29 @@ export class HttpLadderClient implements LadderClient {
 
   async rollSeason(): Promise<LadderSeasonInfo> {
     if (!this.metaBaseUrl) throw new Error('meta not configured');
-    const res = await fetch(`${this.metaBaseUrl}/admin/ladder/season/roll`, {
+    // Season roll is a synchronous long operation (rank settlement over the whole ladder);
+    // give it a long deadline instead of the default so the client doesn't cut it off.
+    const r = await fetchInternalJson<{ season?: LadderSeasonInfo }>(`${this.metaBaseUrl}/admin/ladder/season/roll`, {
+      caller: 'admin',
+      key: this.internalKey,
       method: 'POST',
-      headers: internalHeaders('admin', this.internalKey),
+      timeoutMs: 120000,
+      label: 'meta /admin/ladder/season/roll',
     });
-    if (!res.ok) throw new Error(`rollSeason HTTP ${res.status}`);
-    const body = (await res.json()) as { season: LadderSeasonInfo };
-    return body.season;
+    if (!r.ok || !r.body?.season) throw new Error(`rollSeason ${r.status ? `HTTP ${r.status}` : r.error ?? 'network error'}`);
+    return r.body.season;
   }
 
   async getCurrentSeason(): Promise<LadderSeasonInfo | null> {
     if (!this.metaBaseUrl) return null;
-    try {
-      const res = await fetch(`${this.metaBaseUrl}/internal/ladder/season/current`, {
-        headers: internalHeaders('admin', this.internalKey),
-      });
-      if (!res.ok) return null;
-      const body = (await res.json()) as { season?: LadderSeasonInfo };
-      return body.season ?? null;
-    } catch {
-      return null;
-    }
+    // Degrades to null on any failure, as before.
+    const r = await fetchInternalJson<{ season?: LadderSeasonInfo }>(`${this.metaBaseUrl}/internal/ladder/season/current`, {
+      caller: 'admin',
+      key: this.internalKey,
+      timeoutMs: 10000,
+      label: 'meta /internal/ladder/season/current',
+    });
+    if (!r.ok || !r.body) return null;
+    return r.body.season ?? null;
   }
 }

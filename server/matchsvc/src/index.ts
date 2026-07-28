@@ -9,7 +9,7 @@ import { Matchsvc } from './Matchsvc';
 import { GameRegistry } from './GameRegistry';
 import { GatewayClient } from './gatewayClient';
 import { startInternalHttp } from './internalHttp';
-import { createLogger, startHeartbeat, FeatureFlagCache, internalHeaders, loadInternalAuth, connectActiveMatchRedis } from '@nw/shared';
+import { createLogger, startHeartbeat, FeatureFlagCache, fetchInternalJson, loadInternalAuth, connectActiveMatchRedis } from '@nw/shared';
 
 const log = createLogger('matchsvc:flags');
 
@@ -22,12 +22,17 @@ async function main(): Promise<void> {
   const flags = new FeatureFlagCache({
     fetchAll: async () => {
       if (!adminUrl) return [];
-      const res = await fetch(`${adminUrl}/admin/internal/flags`, {
-        headers: internalHeaders('matchsvc', env.internalKey),
+      // Bounded deadline so a wedged admin can't hang the 30s poll loop; throwing on
+      // failure keeps the FeatureFlagCache "stale cache on error" semantics (onError).
+      const r = await fetchInternalJson<{ flags?: unknown[] }>(`${adminUrl}/admin/internal/flags`, {
+        caller: 'matchsvc',
+        key: env.internalKey,
+        timeoutMs: 5000,
+        label: 'admin /admin/internal/flags',
       });
-      if (!res.ok) throw new Error(`admin flags ${res.status}`);
-      const body = (await res.json()) as { flags?: unknown[] };
-      return Array.isArray(body.flags) ? body.flags : [];
+      if (!r.ok) throw new Error(`admin flags ${r.status ? String(r.status) : r.error ?? 'network error'}`);
+      const flags = r.body?.flags;
+      return Array.isArray(flags) ? flags : [];
     },
     ...(env.region ? { region: env.region } : {}),
     onError: (e) => log.warn('flag refresh failed (keeping cache)', { err: (e as Error).message }),
