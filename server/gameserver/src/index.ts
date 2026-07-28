@@ -21,15 +21,32 @@ type WsWithConn = WebSocket & { [CONN]?: Connection };
 async function registerWithMatchsvc(env: ReturnType<typeof loadGameEnv>): Promise<void> {
   if (!env.matchsvcInternalUrl || !env.publicWsUrl) return;
   const headers = { 'content-type': 'application/json', ...internalHeaders('gameserver', env.internalKey) };
-  try {
-    await fetch(`${env.matchsvcInternalUrl}/mm/game/register`, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify({ gameId: env.gameId, wsUrl: env.publicWsUrl, capacity: env.capacity }),
-    });
-    console.log(`[gameserver] registered with matchsvc as ${env.gameId} (${env.publicWsUrl})`);
-  } catch (e) {
-    console.warn('[gameserver] matchsvc register failed (will retry via heartbeat):', (e as Error).message);
+  // Retry here, in this loop: heartbeat does NOT re-register (GameRegistry.heartbeat drops
+  // unknown gameIds), so a lost register used to leave this instance permanently absent from
+  // the registry (startup race vs matchsvc) with only the static fallback masking it.
+  for (let attempt = 0; ; attempt++) {
+    try {
+      const res = await fetch(`${env.matchsvcInternalUrl}/mm/game/register`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ gameId: env.gameId, wsUrl: env.publicWsUrl, capacity: env.capacity }),
+        signal: AbortSignal.timeout(5000),
+      });
+      try {
+        await res.body?.cancel();
+      } catch {
+        /* already closed */
+      }
+      if (res.ok) {
+        console.log(`[gameserver] registered with matchsvc as ${env.gameId} (${env.publicWsUrl})`);
+        return;
+      }
+      console.warn(`[gameserver] matchsvc register rejected (status ${res.status})`);
+      if (res.status >= 400 && res.status < 500) return; // auth/config error — retrying won't help
+    } catch (e) {
+      console.warn('[gameserver] matchsvc register failed:', (e as Error).message);
+    }
+    await new Promise((r) => setTimeout(r, Math.min(30_000, 2000 * 2 ** Math.min(attempt, 4))));
   }
 }
 
@@ -59,8 +76,9 @@ function main(): void {
     const ticketStr = url.searchParams.get('ticket');
     let claims;
     try {
-      // Signature verification only; exp constrains the initial connection — reconnects reuse
-      // the same ticket and ignore expiry (an active room no longer checks exp).
+      // Signature verification only here; exp is enforced below for INITIAL joins only —
+      // reconnects reuse the same ticket while the room is live, so expiry must not apply
+      // to them (60s disconnect grace > 30s ticket TTL).
       claims = verifyTicket(ticketStr ?? '', { key: env.internalKey }, { ignoreExpiration: true });
     } catch (e) {
       log.warn('WS handshake rejected: invalid ticket', {
@@ -68,6 +86,18 @@ function main(): void {
         err: (e as Error).message,
       });
       ws.close(4401, 'invalid ticket');
+      return;
+    }
+    // Enforce exp on the initial handshake (comm-audit-internal-2026-07-28 P0-10): before this,
+    // no layer ever checked exp — the ticket.ts contract said "RoomManager checks exp itself"
+    // but it never did, so NW_TICKET_TTL_SEC was dead config and a leaked ticket could open a
+    // fresh room indefinitely. An existing room means reconnect/takeover → expiry ignored.
+    if (typeof claims.exp === 'number' && claims.exp * 1000 < Date.now() && !manager.roomExists(claims.roomId)) {
+      log.warn('WS handshake rejected: expired ticket for a room that no longer exists', {
+        accountId: claims.accountId,
+        roomId: claims.roomId,
+      });
+      ws.close(4401, 'ticket expired');
       return;
     }
 
@@ -140,10 +170,13 @@ function main(): void {
     void fetch(`${env.matchsvcInternalUrl}/mm/game/heartbeat`, {
       method: 'POST',
       headers: { 'content-type': 'application/json', ...internalHeaders('gameserver', env.internalKey) },
-      body: JSON.stringify({ gameId: env.gameId, load: wss.clients.size, rooms: 0 }),
-    }).catch(() => {
-      /* retry on next cycle */
-    });
+      body: JSON.stringify({ gameId: env.gameId, load: wss.clients.size }),
+      signal: AbortSignal.timeout(5000),
+    })
+      .then((res) => res.body?.cancel())
+      .catch(() => {
+        /* retry on next cycle */
+      });
   }, REGISTER_HEARTBEAT_MS);
   registerTimer.unref?.();
 
@@ -152,13 +185,18 @@ function main(): void {
     clearInterval(registerTimer);
   });
 
+  let shuttingDown = false;
   const shutdown = (): void => {
+    if (shuttingDown) return;
+    shuttingDown = true;
     clearInterval(heartbeat);
     clearInterval(registerTimer);
     manager.destroyAll();
     wss.close();
     http.close();
-    process.exit(0);
+    // Give queued (failed/timed-out) match reports a bounded chance to reach meta —
+    // the retry queue is in-memory only, so exiting immediately loses those settlements.
+    void reporter.flush(10_000).finally(() => process.exit(0));
   };
   process.on('SIGINT', shutdown);
   process.on('SIGTERM', shutdown);

@@ -287,6 +287,8 @@ export class Room {
         hashOk: true,
       });
     }, GRACE_MS);
+    // Like launchTimer/metronome, don't hold the process open just for a grace window.
+    this.graceTimer.unref?.();
   }
 
   /**

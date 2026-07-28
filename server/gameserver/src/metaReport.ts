@@ -76,13 +76,16 @@ export class MetaReporter {
 
   private async post(body: unknown): Promise<{ ok: boolean; elo?: EloBySide } | null> {
     if (!this.baseUrl) return null;
-    // Explicit timeout (undici has none) — reports carry replay frames so allow 10s;
-    // the existing room_id-idempotent retry queue covers a timed-out report.
+    // Explicit timeout (undici has none). Must exceed meta's worst case: a hash-mismatch
+    // ranked report blocks inside meta on the /gw/judge round-trip (JUDGE_TIMEOUT_MS = 20s)
+    // plus settlement. The old 10s guaranteed a timeout on every mismatch report, and the
+    // 1s-later retry then raced the still-running first settlement (double settleElo before
+    // meta's reservation guard existed). 35s > 20s judge + settlement headroom.
     const res = await fetch(`${this.baseUrl}/internal/match/report`, {
       method: 'POST',
       headers: { 'content-type': 'application/json', ...internalHeaders('gameserver', this.internalKey) },
       body: JSON.stringify(body),
-      signal: AbortSignal.timeout(10_000),
+      signal: AbortSignal.timeout(35_000),
     });
     if (!res.ok) {
       // Drain the body so the socket returns to undici's pool (unconsumed bodies wedge
@@ -102,13 +105,31 @@ export class MetaReporter {
     void this.drain();
   }
 
+  /**
+   * Best-effort shutdown drain: wait (bounded) for queued reports to reach meta before the
+   * process exits — the queue lives in memory only, so exiting with entries still queued
+   * loses those settlements permanently (clients already got their elo-less match_over).
+   */
+  async flush(maxWaitMs: number): Promise<void> {
+    const deadline = Date.now() + maxWaitMs;
+    while (this.queue.length > 0 && Date.now() < deadline) {
+      await new Promise((r) => setTimeout(r, 200));
+    }
+    if (this.queue.length > 0) {
+      console.warn(`[gameserver] shutdown with ${this.queue.length} unreported match settlement(s) still queued`);
+    }
+  }
+
   /** Background retry queue (exponential back-off; idempotent key room_id prevents duplicate settlement). */
   private async drain(): Promise<void> {
     if (this.draining || !this.baseUrl) return;
     this.draining = true;
     while (this.queue.length > 0) {
       const item = this.queue[0]!;
-      const delay = Math.min(30_000, 1000 * 2 ** Math.min(item.attempts, 5));
+      // First retry waits 5s (not 1s): if the original request merely timed out, meta may
+      // still be settling it — the reservation guard makes a concurrent retry a no-op, but
+      // an early retry is still a wasted round-trip while meta is at its busiest.
+      const delay = Math.min(30_000, 5000 * 2 ** Math.min(item.attempts, 3));
       await new Promise((r) => setTimeout(r, delay));
       try {
         const res = await this.post(item.body);
