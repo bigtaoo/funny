@@ -6,7 +6,7 @@
 // RedisLike mirrors activeMatch.ts's convention: `any`-typed (ioredis's real types aren't worth importing
 // for the handful of methods used here), dynamic import elsewhere so tsc compiles without ioredis installed.
 //
-// Unlike activeMatch/roomRegistry/worldsvc's Redis usage (all "optional infra, degrades to a lesser
+// Unlike activeMatch/worldsvc's Redis usage (all "optional infra, degrades to a lesser
 // experience"), these counters gate real anti-abuse caps — losing them isn't a UX nicety, it's a farmable
 // economy hole. So when `redis` is null (unconfigured, or the connection failed), a per-process in-memory
 // fallback takes over instead of silently disabling the cap. This is exactly as correct as Mongo was for the

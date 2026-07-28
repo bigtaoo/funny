@@ -470,17 +470,6 @@ export function startHttpApi(
           }
         }
 
-        // Ladder rank + ELO for an arbitrary player (unified profile popup — family roster / world chat
-        // sender / friends list all open the same popup and want the same "rank" line self-profile already had).
-        {
-          const m = /^\/social\/player\/([^/]+)\/rank$/.exec(path);
-          if (method === 'GET' && m) {
-            const targetId = decodeURIComponent(m[1]!);
-            const rank = await meta.getPlayerRank(targetId);
-            return send(res, 200, ok(rank ?? {}));
-          }
-        }
-
         // Unified profile-popup extras (rank/ELO + family/sect, if any) for an arbitrary player, looked
         // up by public id — the single place every ProfilePopup instance fetches this from (friends
         // list / family roster / world chat / battle opponent), instead of each screen threading its

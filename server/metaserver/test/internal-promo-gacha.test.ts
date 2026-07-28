@@ -67,7 +67,10 @@ describe('GET/POST /admin/promo/codes', () => {
   });
 });
 
-describe('GET/POST /admin/gacha/pools', () => {
+// POST /admin/gacha/pools (creating a *limited* pool, as opposed to /pools/custom below) was removed
+// (comm-audit-internal-2026-07-28 P2): no caller anywhere in the codebase — admin's GachaPoolsClient
+// never had a create-limited-pool method, only list/catalog/createCustom/close.
+describe('GET /admin/gacha/pools', () => {
   it('no key → 401', async () => {
     const { app } = build();
     const res = await app.inject({ method: 'GET', url: '/admin/gacha/pools' });
@@ -80,24 +83,9 @@ describe('GET/POST /admin/gacha/pools', () => {
     expect(res.statusCode).toBe(503);
   });
 
-  it('missing required fields or startAt>=endAt → 400', async () => {
-    const { app } = build();
-    const res = await app.inject({
-      method: 'POST', url: '/admin/gacha/pools', headers: authHeaders,
-      payload: { id: 'p1', name: 'Banner', featuredLegendary: 'hero1', startAt: 2000, endAt: 1000 },
-    });
-    expect(res.statusCode).toBe(400);
-  });
-
-  it('create + list round-trip', async () => {
-    const { app } = build();
-    const create = await app.inject({
-      method: 'POST', url: '/admin/gacha/pools', headers: authHeaders,
-      payload: { id: 'p1', name: 'Banner', featuredLegendary: 'hero1', startAt: 1000, endAt: 2000, createdBy: 'ops1' },
-    });
-    expect(create.statusCode).toBe(200);
-    expect(JSON.parse(create.payload)).toEqual({ ok: true, id: 'p1' });
-
+  it('lists pools present in the underlying store', async () => {
+    const { app, commercial } = build();
+    commercial.pools.set('p1', { id: 'p1', name: 'Banner', kind: 'limited' });
     const list = await app.inject({ method: 'GET', url: '/admin/gacha/pools', headers: authHeaders });
     expect(JSON.parse(list.payload).pools).toHaveLength(1);
   });
@@ -172,8 +160,11 @@ describe('POST /admin/gacha/pools/close', () => {
   it('closes an existing pool early', async () => {
     const { app, commercial } = build();
     await app.inject({
-      method: 'POST', url: '/admin/gacha/pools', headers: authHeaders,
-      payload: { id: 'p1', name: 'Banner', featuredLegendary: 'hero1', startAt: 1000, endAt: 2000 },
+      method: 'POST', url: '/admin/gacha/pools/custom', headers: authHeaders,
+      payload: {
+        id: 'p1', name: 'Banner', costSingle: 100, startAt: 1000, endAt: 2000,
+        categories: [{ category: 'skin', weight: 1, items: [{ itemId: 'skin_e1', weight: 1 }] }],
+      },
     });
     const res = await app.inject({ method: 'POST', url: '/admin/gacha/pools/close', headers: authHeaders, payload: { id: 'p1' } });
     expect(res.statusCode).toBe(200);

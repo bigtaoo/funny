@@ -74,10 +74,6 @@ export interface CommercialClient {
     }>
   >;
   // ── Limited pools + monetization (GACHA_DESIGN §2/§5/§6/§7) ──
-  createLimitedPool(args: {
-    config: LimitedPoolConfig;
-    createdBy: string;
-  }): Promise<Body<{ id: string }>>;
   createCustomPool(args: {
     config: CustomPoolConfig;
     createdBy: string;
@@ -301,10 +297,6 @@ export class HttpCommercialClient implements CommercialClient {
       fateGained: number;
       fatePointsAfter: number;
     }>('/internal/gacha/draw', args);
-  }
-
-  createLimitedPool(args: { config: LimitedPoolConfig; createdBy: string }) {
-    return this.post<{ id: string }>('/internal/gacha/pool', args);
   }
 
   createCustomPool(args: { config: CustomPoolConfig; createdBy: string }) {

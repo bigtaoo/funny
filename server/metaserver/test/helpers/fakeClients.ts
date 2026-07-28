@@ -55,10 +55,6 @@ export function fakeCommercial(available = true): CommercialClient & {
     async listPromoCodes() {
       return [...promoCodes.values()] as never[];
     },
-    async createLimitedPool(a: { config: Record<string, unknown>; createdBy: string }) {
-      pools.set(a.config.id as string, { ...a.config, kind: 'limited', createdBy: a.createdBy });
-      return { ok: true as const, id: a.config.id as string };
-    },
     async createCustomPool(a: { config: Record<string, unknown>; createdBy: string }) {
       pools.set(a.config.id as string, { ...a.config, kind: 'custom', createdBy: a.createdBy });
       return { ok: true as const, id: a.config.id as string };

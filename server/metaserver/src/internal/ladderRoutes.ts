@@ -38,53 +38,6 @@ export function registerLadderRoutes(app: FastifyInstance, ctx: InternalCtx): vo
     return reply.send({ ok: true, season });
   });
 
-  // ── POST /admin/grant-title ───────────────────────────────────────────────────────
-  // admin manually grants a title (S10, TITLE_DESIGN §8 admin grant). Idempotent: no-op if already owned.
-  app.post('/admin/grant-title', async (req, reply) => {
-    if (!authed(req.headers['x-internal-key'])) {
-      return reply.code(401).send({ ok: false, error: 'unauthorized' });
-    }
-    const { accountId, titleId } = req.body as { accountId?: string; titleId?: string };
-    if (!accountId || !titleId) {
-      return reply.code(400).send({ ok: false, error: 'accountId and titleId required' });
-    }
-    try {
-      await grantTitleToPlayer(cols, accountId, titleId, now());
-      log.info('POST /admin/grant-title', { accountId, titleId });
-      return reply.send({ ok: true });
-    } catch (e) {
-      log.error('grant-title failed', { accountId, titleId, err: (e as Error).message });
-      return reply.code(500).send({ ok: false, error: 'grant failed' });
-    }
-  });
-
-  // ── GET /internal/leaderboard ─────────────────────────────────────────────────────
-  // Server-wide Top100 (S11-SE-5, SEASON_DESIGN §5). Authenticated via X-Internal-Key for admin queries; player-facing equivalent is service.ts getLeaderboard.
-  app.get('/internal/leaderboard', async (req, reply) => {
-    if (!authed(req.headers['x-internal-key'])) {
-      return reply.code(401).send({ ok: false, error: 'unauthorized' });
-    }
-    const season = await getCurrentSeason(cols, now());
-    const top = await cols.saves
-      .find({ 'save.pvp.seasonNo': season.seasonNo })
-      .sort({ 'save.pvp.elo': -1 })
-      .limit(100)
-      .project({ _id: 1, 'save.pvp': 1, 'save.equipped': 1 })
-      .toArray();
-    const accounts = await Promise.all(
-      top.map((d) => cols.accounts.findOne({ _id: d._id }, { projection: { displayName: 1, publicId: 1 } })),
-    );
-    const entries = top.map((d, i) => ({
-      rank: i + 1,
-      accountId: d._id,
-      displayName: accounts[i]?.displayName,
-      publicId: accounts[i]?.publicId,
-      elo: (d as unknown as { save: { pvp: { elo: number; rank: string } } }).save.pvp.elo,
-      rankId: (d as unknown as { save: { pvp: { rank: string } } }).save.pvp.rank,
-    }));
-    return reply.send({ season, top: entries });
-  });
-
   // POST /internal/title/grant  { accountId, titleId }
   //   → Grant title (idempotent, called from SLG/worldsvc season settlement). Authenticated via X-Internal-Key.
   app.post('/internal/title/grant', async (req, reply) => {

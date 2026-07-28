@@ -10,8 +10,6 @@ export interface AuctionMetaClient {
   readonly available: boolean;
   /** Deduct material (inverse of the cancel-and-refund operation for listing on auction). Throws an Error containing INSUFFICIENT_RESOURCES if insufficient. */
   deductMaterial(accountId: string, material: string, qty: number, orderId: string): Promise<void>;
-  /** Grant material (to buyer on sale, or back to seller on cancel / expiry). Best-effort; failures are logged but not rolled back. */
-  grantMaterial(accountId: string, material: string, qty: number, orderId: string): Promise<void>;
   /** Escrow equipment for auction: removes from seller's inventory and returns an instance snapshot (stored in the listing doc). Equipped / locked / not found → throws SlgError. */
   escrowEquipment(accountId: string, instanceId: string, orderId: string): Promise<EquipmentInstance>;
   /** Transfer or return equipment: writes the instance snapshot into the target account's inventory (to buyer on sale, or back to seller on cancel / expiry). Best-effort; failures are logged but not rolled back. */
@@ -48,18 +46,6 @@ export class HttpAuctionMetaClient implements AuctionMetaClient {
     );
     if (!res.ok) {
       throw new Error(res.body?.error ?? res.error ?? `deductMaterial failed: ${res.status}`);
-    }
-  }
-
-  async grantMaterial(accountId: string, material: string, qty: number, orderId: string): Promise<void> {
-    if (!this.baseUrl) return;
-    const res = await fetchInternalJson(
-      `${this.baseUrl}/internal/materials/grant`,
-      { ...this.opts('/internal/materials/grant'), body: { accountId, material, qty, orderId } },
-    );
-    if (!res.ok) {
-      // Delivery reliability (retry + compensation) is a later batch; for now make the loss visible.
-      console.error('[auctionsvc] meta.grantMaterial failed', { accountId, material, qty, orderId, status: res.status, err: res.error });
     }
   }
 
@@ -145,7 +131,6 @@ export class HttpAuctionMetaClient implements AuctionMetaClient {
 export const nullAuctionMetaClient: AuctionMetaClient = {
   available: false,
   async deductMaterial() { throw new Error('meta service not configured'); },
-  async grantMaterial() { /* no-op */ },
   async escrowEquipment() { throw new Error('meta service not configured'); },
   async grantEquipment() { /* no-op */ },
   async escrowCard() { throw new Error('meta service not configured'); },

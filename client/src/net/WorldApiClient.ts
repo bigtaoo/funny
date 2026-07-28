@@ -526,12 +526,6 @@ export class WorldApiClient {
     return this.req('GET', `/social/family/${encodeURIComponent(familyId)}/messages${qs}`, undefined, 10_000, getSocialBaseUrl());
   }
 
-  /** Ladder rank + ELO for an arbitrary accountId (unified profile popup) — both fields absent if the
-   *  player has no ranked history yet. */
-  async getPlayerRank(accountId: string): Promise<{ rank?: string; elo?: number }> {
-    return this.req('GET', `/social/player/${encodeURIComponent(accountId)}/rank`, undefined, 10_000, getSocialBaseUrl());
-  }
-
   /** Unified profile-popup extras (rank/ELO + family/sect, if any) for an arbitrary player, looked up
    *  by public id — {@link ProfilePopup} fetches this itself on open rather than each screen threading
    *  its own copy of the same fields. All fields absent when the player has none of them. */
