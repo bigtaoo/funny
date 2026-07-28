@@ -155,9 +155,14 @@ schemas:
       # Absent in legacy saves = 0 (lazy default). See gachaDraw's `overflow` response for the per-draw toast summary.
       cardMailOverflowCount: { type: integer, minimum: 0 }
       equipMailOverflowCount: { type: integer, minimum: 0 }
+      # Server-authoritative, client read-only outside dedicated mutation endpoints: /title/equip,
+      # /avatar/equip, /skin/equip write individual keys (each with its own ownership validation).
+      # Not writable via PUT /save (that endpoint no longer exists — see DECISIONS.md).
       equipped:
         type: object
         additionalProperties: { type: string }
+      # Server-authoritative, client read-only outside PUT /flags (no per-key ownership semantics,
+      # just onboarding/consent/tutorial-seen style booleans).
       flags:
         type: object
         additionalProperties: { type: boolean }
@@ -196,7 +201,7 @@ schemas:
               items: { type: integer, minimum: 1, maximum: 3 }
         description: achId→set of already-claimed tier numbers, idempotent to prevent double-claiming
       # —— Equipment system (server-authoritative, EQUIPMENT_DESIGN §3.1). May be absent in legacy saves, not required ——
-      # Written only by /equipment/* endpoints; not writable via PUT /save (not in SyncPatch).
+      # Written only by /equipment/* endpoints; there is no generic client-sync endpoint (PUT /save removed).
       # nullable (2026-07-26, EQUIPMENT_DESIGN §3.3 phase 2): /equipment/* mutation responses (craft/
       # enhance/salvage/reforge/equip) send this as null on purpose — the client already has what changed
       # via the response's own `instance` field or the `instanceIds`/`materialId` it sent as request
@@ -289,12 +294,6 @@ schemas:
   # —— Client sync patch (PUT /save only accepts these fields, §2.2) ——
   # From PVE_INTEGRITY_PLAN §8 onward, progress/materials/pveUpgrades become server-authoritative
   # (written only by /pve/* + ranked settlement); PUT /save is narrowed to equipped/flags only.
-  SyncPatch:
-    type: object
-    properties:
-      equipped: { $ref: '#/components/schemas/SaveData/properties/equipped' }
-      flags: { $ref: '#/components/schemas/SaveData/properties/flags' }
-
   AuthResult:
     type: object
     required: [token, accountId, isNew, isAnonymous]

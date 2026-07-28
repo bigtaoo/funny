@@ -138,14 +138,16 @@ export interface SaveData {
    */
   pveUpgrades: Record<string, number>;
   /**
-   * Cosmetic equipment (slot→skinId). Visual only; sent up with the sync section.
-   * Two kinds of keys share this map: `title` (equipped title, TITLE_DESIGN §2) and
-   * `skin:<UnitType>` (equipped skin per character, one slot per character since a skin
-   * never targets more than one UnitType — see game/meta/skinDefs.ts, LOBBY_IA_REDESIGN §15).
+   * Cosmetic equipment (slot→skinId). Server-authoritative, client read-only outside the dedicated
+   * mutation endpoints (SaveManager.equipTitle/equipAvatar/equipSkin — each with its own ownership
+   * validation server-side). Two kinds of keys share this map: `title` (equipped title, TITLE_DESIGN §2)
+   * and `skin:<UnitType>` (equipped skin per character, one slot per character since a skin never
+   * targets more than one UnitType — see game/meta/skinDefs.ts, LOBBY_IA_REDESIGN §15).
    */
   equipped: Record<string, string>;
+  /** Server-authoritative, client read-only outside SaveManager.setFlag (PUT /flags) — no per-key ownership semantics, just onboarding/consent/tutorial-seen style booleans. */
   flags: Record<string, boolean>;
-  /** PvP deck builder selection (P3, PVP_LOADOUT §8). Local-only; NOT in SyncPatch. */
+  /** PvP deck builder selection (P3, PVP_LOADOUT §8). Local-only, never synced to the server at all. */
   pvpDeck?: string[];
 
   // —— Hero Roster (CHARACTER_CARDS_DESIGN §2.3, SAVE_VERSION 4). Server-authoritative, client read-only. ——
@@ -158,21 +160,15 @@ export interface SaveData {
   equipmentInv: Record<string, EquipmentInstance>;
 
   // —— Achievement system (server-authoritative, ACHIEVEMENT_DESIGN §3). Lazy-created: absent defaults to all-zero / empty;
-  //    legacy saves are not migrated; client read-only (not sent up on PUT /save, A2). antiCheat is not pushed down, so the mirror excludes it. ——
+  //    legacy saves are not migrated; client read-only. antiCheat is not pushed down, so the mirror excludes it. ——
   stats?: Record<string, number>; // lifetime cumulative statistics (StatKey→value), monotonically increasing
   achievements?: Record<string, { claimedTiers: number[] }>; // achId→subset of claimed tier indices
 }
 
 /**
- * Client sync section accepted by PUT /save (SERVER_API.md §2.2). Server-authoritative sections are never sent up.
- * Structurally identical to SyncPatch in server/shared/src/types.ts.
- */
-export type SyncPatch = Partial<Pick<SaveData, 'equipped' | 'flags'>>;
-
-/**
  * Wire shape returned by the /equipment/* mutation endpoints (craft/enhance/salvage/reforge/equip)
  * (EQUIPMENT_DESIGN §3.3 phase 2, 2026-07-26). Unlike every other `save: SaveData` response (GET /save,
- * putSave, pveClear, ...), these deliberately send `equipmentInv: null` — the caller already has what
+ * pveClear, ...), these deliberately send `equipmentInv: null` — the caller already has what
  * changed via the response's own `instance` field or the `instanceIds`/`materialId` it sent as request
  * params, so the server skips reassembling the full map. Kept distinct from `SaveData` (whose
  * `equipmentInv` is always a real map once held in memory) so the compiler catches any code that tries
@@ -182,9 +178,6 @@ export type SyncPatch = Partial<Pick<SaveData, 'equipped' | 'flags'>>;
 export type LeanSaveResponse = Omit<SaveData, 'equipmentInv'> & {
   equipmentInv?: Record<string, EquipmentInstance> | null;
 };
-
-/** Field names for the client sync section (single source of truth for push extraction / merge). */
-export const SYNC_KEYS = ['equipped', 'flags'] as const;
 
 // v2 (2026-06-21): Added equipmentInv + gear (equipment system E0). See migrate.ts for v1→v2 migration.
 // v3 (2026-06-21): Unit progression rework (S12) — added unitLevels + cardInventory, pveUpgrades marked deprecated.
@@ -222,10 +215,3 @@ export function makeNewSave(accountId = '', now = 0): SaveData {
   };
 }
 
-/** Extract only the client sync section (equipped/flags) for push upload. */
-export function extractSyncPatch(save: SaveData): Required<SyncPatch> {
-  return {
-    equipped: save.equipped,
-    flags: save.flags,
-  };
-}

@@ -1,22 +1,25 @@
 // Cloud sync orchestration (S0-5). Offline-first + server-authoritative:
 //   · On startup call loadLocal (immediately playable, works without network).
-//   · bootstrap(): auth → pull → reconcile by rev/section authority → push if needed.
-//   · update(): mutate the client-sync section → saveLocal immediately → debounce 2s then push.
-//   · push sends If-Match: rev; 409 → pull-merge (server-authoritative sections use server value, progress union-merged) then retry once.
+//   · bootstrap(): auth → pull → reconcile (server value always wins — see reconcile()'s doc comment).
+//   · Every writable field (equipped.*/flags.*/equipmentInv/cardInv/wallet/progress/...) goes through its
+//     own dedicated server round trip; there is no generic client-sync push any more (PUT /save removed,
+//     DECISIONS.md "equipped/flags server-authoritative") — a refresh always reflects true server state,
+//     it can no longer perpetuate a locally-corrupted equipped/flags value forever.
 // Network unavailable / ApiClient not configured → silently degrade to local-only (no error thrown to caller).
 
 import type { AuthCredential } from '../../platform/IPlatform';
 import { ApiError, type ApiClient, type ActiveMatchInfo } from '../../net/ApiClient';
 import { replayToUploadFrames } from '../../net/replayUpload';
 import type { Replay } from '../types';
+import type { UnitType } from '../types';
 import {
-  extractSyncPatch,
   type EquipmentInstance,
   type LeanSaveResponse,
   type LevelRecord,
   type SaveData,
 } from './SaveData';
 import { migrate } from './migrate';
+import { skinEquipKey } from './skinDefs';
 import { replayIdFor } from './ReplayStore';
 import type { PendingClear, PendingStaminaSpend, SaveStore } from './SaveStore';
 import { serverNow } from '../../net/serverClock';
@@ -32,8 +35,6 @@ export interface SaveManagerOpts {
   api?: ApiClient;
   /** Retrieve the platform anonymous credential (S0-4); only needed when api is configured. */
   getCredential?: () => Promise<AuthCredential>;
-  /** Upload debounce window (ms), default 2000 (§3.3). */
-  debounceMs?: number;
   /**
    * Account profile returned from the cloud; called back after bootstrap/refresh pulls it. Used for client persistence / UI refresh / online connectivity.
    * `gatewayUrl`: the control-plane WS address delivered by the server (not hardcoded on the client; see ApiClient.AuthResult).
@@ -41,18 +42,7 @@ export interface SaveManagerOpts {
   onProfile?: (profile: { displayName?: string; publicId?: string; gatewayUrl?: string; freeRename?: boolean }) => void;
   /** Retrieve a local replay (ReplayStore); during L1 spot-check, offline flush uses replayId to fetch and upload for server re-validation (§8.6). */
   loadReplay?: (id: string) => Replay | null;
-  /** Inject timer functions (for testing); defaults to globalThis. */
-  setTimer?: (cb: () => void, ms: number) => unknown;
-  clearTimer?: (h: unknown) => void;
-  /**
-   * Called once when cloud save uploads fail consecutively beyond the threshold (notifies the player that progress may not be synced). Resets after one successful upload,
-   * so it will not spam every 2s. Background sync is silent under offline-first; this only breaks silence on sustained failure.
-   */
-  onSyncError?: () => void;
 }
-
-/** Number of consecutive upload failures before notifying the player (avoids reacting to one-off network blips). */
-const SYNC_FAIL_THRESHOLD = 3;
 
 export class SaveManager {
   private save: SaveData;
@@ -61,7 +51,6 @@ export class SaveManager {
   private readonly getCredential?: () => Promise<AuthCredential>;
   private readonly onProfile?: (profile: { displayName?: string; publicId?: string; gatewayUrl?: string; freeRename?: boolean }) => void;
   private readonly loadReplay?: (id: string) => Replay | null;
-  private readonly onSyncError?: () => void;
   /**
    * Login-reconnect-prompt: the most recent activeMatch seen from a getSave() response, or null if the
    * last check found none. Read-and-clear via consumeActiveMatch() so only the login entry points (which
@@ -69,15 +58,6 @@ export class SaveManager {
    * post-match ELO refresh) don't accidentally retrigger the resume prompt.
    */
   private pendingActiveMatch: ActiveMatchInfo | null = null;
-  private syncFailStreak = 0;     // consecutive upload failure count
-  private syncErrorNotified = false; // whether the player has already been notified in the current failure streak (to avoid spamming)
-  private readonly debounceMs: number;
-  private readonly setTimer: (cb: () => void, ms: number) => unknown;
-  private readonly clearTimer: (h: unknown) => void;
-
-  private pushTimer: unknown = null;
-  private pushing = false;
-  private dirty = false; // local changes within the debounce window not yet uploaded
   private pending: PendingClear[]; // offline queue of clears awaiting settlement (PVE_INTEGRITY_PLAN §8.4)
   private pendingStamina: PendingStaminaSpend[]; // offline queue of stamina spends awaiting server settlement (A4)
 
@@ -87,35 +67,9 @@ export class SaveManager {
     this.getCredential = opts.getCredential;
     this.onProfile = opts.onProfile;
     this.loadReplay = opts.loadReplay;
-    this.onSyncError = opts.onSyncError;
-    this.debounceMs = opts.debounceMs ?? 2000;
-    this.setTimer =
-      opts.setTimer ?? ((cb, ms) => (globalThis as typeof globalThis).setTimeout(cb, ms));
-    this.clearTimer = opts.clearTimer ?? ((h) => (globalThis as typeof globalThis).clearTimeout(h as never));
     this.save = this.store.loadLocal();
     this.pending = this.store.loadPending();
     this.pendingStamina = this.store.loadPendingStamina();
-    this.bindLifecycle();
-  }
-
-  /**
-   * Best-effort flush on app hide / exit (mirrors analytics/index.ts's bindSessionLifecycle). Without
-   * this, flush() had zero callers anywhere in the app — the debounced push (default 2s) meant closing
-   * the tab / backgrounding the app within that window silently dropped the last edit (comm-audit-
-   * 2026-07-27 finding B11). `visibilitychange`→hidden (backgrounding, the common mobile exit path) is
-   * the reliable case since the page keeps running briefly; `beforeunload` (desktop tab/window close)
-   * and `wx.onHide` are covered too, on the same "can't hurt, might help" basis as the analytics queue's
-   * equivalent hooks — none of these await the result since unload handlers can't block on async work.
-   */
-  private bindLifecycle(): void {
-    if (typeof document !== 'undefined') {
-      document.addEventListener('visibilitychange', () => {
-        if (document.visibilityState === 'hidden') void this.flush();
-      });
-      window.addEventListener('beforeunload', () => { void this.flush(); });
-    }
-    const wx = (globalThis as { wx?: { onHide?: (cb: () => void) => void } }).wx;
-    if (wx?.onHide) wx.onHide(() => void this.flush());
   }
 
   /** Current in-memory save (synchronously readable; UI balances etc. read from here and are refreshed by server push-back). */
@@ -124,28 +78,38 @@ export class SaveManager {
   }
 
   /**
-   * Mutate the client-sync section: the mutator modifies the draft directly (progress/materials/pveUpgrades/equipped/flags),
-   * saves locally immediately, and schedules a debounced upload. Authoritative sections (wallet/inventory/gacha/pvp)
-   * must not be mutated here — they are governed by server push-back.
+   * Mutate a local mirror field and save locally. For fields the server also computes independently
+   * (pvp.elo/rank after a ranked match, stamina after a WS push), this just keeps the in-memory copy in
+   * sync with what the server already told the client via another channel — nothing is uploaded from
+   * here. Do NOT use this for equipped/flags (use equipTitle/equipAvatar/equipSkin/setFlag — each goes
+   * through its own validated server round trip) or any other server-authoritative section.
    */
   update(mutator: (draft: SaveData) => void): void {
     mutator(this.save);
     this.store.saveLocal(this.save);
-    this.dirty = true;
-    this.schedulePush();
   }
 
-  /** Mutate local-only fields (not in SyncPatch) and save locally without triggering a server push. */
+  /** Mutate local-only fields (never synced to the server at all) and save locally. */
   patchLocal(patch: Pick<Partial<import('./SaveData').SaveData>, 'pvpDeck'>): void {
     Object.assign(this.save, patch);
     this.store.saveLocal(this.save);
   }
 
-  /** Set a single flag (e.g. nw_seen_intro). */
+  /**
+   * Set one client-preference flag (server-authoritative, PUT /flags — onboarding/consent/tutorial-seen
+   * style booleans, no ownership semantics). Writes the local mirror immediately for instant UI feedback,
+   * then fires the server round trip in the background; the response's reconcile() confirms it, and on
+   * failure a follow-up refresh() re-pulls true server state — so a rejected/lost write self-corrects on
+   * the very next sync instead of silently diverging forever (see reconcile()'s doc comment).
+   */
   setFlag(key: string, value: boolean): void {
-    this.update((d) => {
-      d.flags[key] = value;
-    });
+    this.save.flags[key] = value;
+    this.store.saveLocal(this.save);
+    if (!this.online()) return;
+    this.api!.setFlag(key, value).then(
+      (res) => this.reconcile(res.save),
+      () => { void this.refresh(); },
+    );
   }
 
   getFlag(key: string): boolean {
@@ -154,7 +118,7 @@ export class SaveManager {
 
   /**
    * First-time feature onboarding (ONBOARDING_DESIGN §4.1): whether the player has already seen the onboarding tour for a given feature page.
-   * The flat key `featSeen.<id>` is stored in the sync-section flags (Record<string,boolean>); no SaveData schema change required.
+   * The flat key `featSeen.<id>` is stored in the flags map (Record<string,boolean>); no SaveData schema change required.
    */
   featSeen(featureId: string): boolean {
     return this.save.flags[`featSeen.${featureId}`] === true;
@@ -163,6 +127,37 @@ export class SaveManager {
   /** Mark a feature's onboarding tour as seen (will no longer auto-popup after being seen/dismissed; the page "?" button can force a replay without clearing this flag). */
   markFeatSeen(featureId: string): void {
     this.setFlag(`featSeen.${featureId}`, true);
+  }
+
+  /** Select the displayed title (TITLE_DESIGN §7); empty/null unequips. Same optimistic-write + self-correcting pattern as setFlag — see its doc comment. */
+  equipTitle(titleId: string | null): void {
+    this.optimisticEquip('title', titleId, () => this.api!.equipTitle(titleId ?? ''));
+  }
+
+  /** Select the displayed avatar (composite "<category>:<key>"); empty/null unequips. Same optimistic-write + self-correcting pattern as setFlag. */
+  equipAvatar(avatarId: string | null): void {
+    this.optimisticEquip('avatar', avatarId, () => this.api!.equipAvatar(avatarId ?? ''));
+  }
+
+  /** Equip/unequip a character skin (one slot per UnitType, LOBBY_IA_REDESIGN §15); skinId null unequips. Same optimistic-write + self-correcting pattern as setFlag. */
+  equipSkin(unitType: UnitType, skinId: string | null): void {
+    this.optimisticEquip(skinEquipKey(unitType), skinId, () => this.api!.equipSkin(unitType, skinId));
+  }
+
+  /**
+   * Shared optimistic-write helper for equipTitle/equipAvatar/equipSkin: writes `equipped[key]` locally
+   * for instant UI feedback, then fires the server round trip in the background. A rejected request
+   * (unowned item, 403) or a network failure is corrected by the follow-up refresh() — never left stuck,
+   * unlike the old "local always wins" client-sync merge this replaces.
+   */
+  private optimisticEquip(key: string, value: string | null, call: () => Promise<{ save: SaveData }>): void {
+    if (value) this.save.equipped[key] = value; else delete this.save.equipped[key];
+    this.store.saveLocal(this.save);
+    if (!this.online()) return;
+    call().then(
+      (res) => this.reconcile(res.save),
+      () => { void this.refresh(); },
+    );
   }
 
   /**
@@ -246,14 +241,10 @@ export class SaveManager {
   }
 
   /**
-   * Discard the client-sync sections (equipped/flags/pvpDeck) from the in-memory local save.
-   * reconcile() always merges these over the incoming cloud value (`{ ...cloud.equipped, ...local.equipped }`)
-   * so that offline edits survive a sync — but that means, without this, whatever account we just logged
-   * out of leaks its equipped avatar/title and flags (including gdprConsent) into the next account that
-   * logs in, since adoptSession()'s reconcile() has no other way to tell "stale previous-account local
-   * state" apart from "legitimate offline edit made under the account now syncing". Call from doLogout()
-   * before the next login. Authoritative sections (wallet/cardInv/etc.) don't need this: reconcile() always
-   * replaces them wholesale from cloud, never merges local into them.
+   * Blank the in-memory equipped/flags/pvpDeck immediately on logout, purely to avoid a visual flash of
+   * the previous account's avatar/title/flags in the gap before the next login's reconcile() resolves —
+   * reconcile() itself always takes the cloud value for equipped/flags now (see its doc comment), so this
+   * is a UI nicety, not a correctness requirement. Call from doLogout() before the next login.
    */
   clearSyncedLocalSections(): void {
     this.save.equipped = {};
@@ -264,7 +255,6 @@ export class SaveManager {
 
   /**
    * Adopt an authoritative save pushed back by a server-side economy operation (shop/gacha/recharge/ad) (S2).
-   * Authoritative sections (wallet/inventory/gacha/pvp etc.) use the server value; client-sync sections are merged from local.
    * Unlike refresh, this directly consumes the receipt without issuing an additional request.
    */
   adoptServer(save: SaveData): void {
@@ -272,7 +262,7 @@ export class SaveManager {
   }
 
   /**
-   * Adopt an authoritative save pushed back by an /equipment/* mutation (craft/enhance/salvage/reforge/equip)
+   * Adopt an authoritative save pushed back by an /equipment/* mutation (craft/enhance/salvage/reforge)
    * (EQUIPMENT_DESIGN §3.3 phase 2, 2026-07-26). These responses send `equipmentInv: null` (see
    * `LeanSaveResponse`) instead of the full ~300-item map, since the caller already has what changed:
    * the `instance` handed back by craft/enhance/reforge, or the `instanceIds`/`materialId` it sent as
@@ -487,101 +477,22 @@ export class SaveManager {
     }
   }
 
-  /** Cancel the debounce timer immediately and force an upload (call before scene transitions / exit). */
-  async flush(): Promise<void> {
-    if (this.pushTimer != null) {
-      this.clearTimer(this.pushTimer);
-      this.pushTimer = null;
-    }
-    await this.push();
-  }
-
-  // ── Internal ────────────────────────────────────────────────
-
-  private schedulePush(): void {
-    if (!this.api?.hasToken()) return; // not connected → local-only
-    if (this.pushTimer != null) this.clearTimer(this.pushTimer);
-    this.pushTimer = this.setTimer(() => {
-      this.pushTimer = null;
-      void this.push();
-    }, this.debounceMs);
-  }
-
-  private async push(): Promise<void> {
-    if (!this.api?.hasToken() || this.pushing || !this.dirty) return;
-    this.pushing = true;
-    try {
-      this.dirty = false;
-      const res = await this.api.putSave(this.save.rev, extractSyncPatch(this.save));
-      // putSave returning (including 409 conflict) means the server is reachable → reset failure streak.
-      this.syncFailStreak = 0;
-      this.syncErrorNotified = false;
-      if (res.kind === 'ok') {
-        this.adoptCloud(res.save);
-      } else {
-        // 409: merge from cloud then retry once (using the new rev after reconciliation).
-        this.reconcile(res.save);
-        const retry = await this.api.putSave(this.save.rev, extractSyncPatch(this.save));
-        if (retry.kind === 'ok') this.adoptCloud(retry.save);
-        else this.reconcile(retry.save); // still conflicting → adopt cloud, push again next time
-      }
-    } catch {
-      this.dirty = true; // network blip → mark dirty, retry next time
-      // Notify only after consecutive failures reach the threshold (sporadic failures are silent under offline-first; sustained failure breaks the silence).
-      this.syncFailStreak++;
-      if (this.syncFailStreak >= SYNC_FAIL_THRESHOLD && !this.syncErrorNotified) {
-        this.syncErrorNotified = true;
-        this.onSyncError?.();
-      }
-    } finally {
-      this.pushing = false;
-    }
-  }
-
   /**
-   * Overwrite local state with cloud values (on a successful push receipt).
-   * putSave only changes equipped/flags, not progress; if local has clears not yet confirmed by the cloud
-   * (applyLocalClear from an in-flight pveClear, or entries queued pending settlement after a network blip),
-   * preserve them to prevent the push receipt from overwriting optimistic writes.
-   * best is a purely local display stat (never uploaded) → take the union of better values, consistent with reconcile.
-   */
-  private adoptCloud(cloudRaw: SaveData): void {
-    // Cloud saves are adopted verbatim; run them through migrate/fillDefaults so a document written by
-    // an older client (missing client-only fields like cardInv/equipmentInv added in later versions) is
-    // backfilled to the current shape. Without this, `Object.values(cardInv)` on campaign start throws
-    // "can't convert undefined to object".
-    const cloud = migrate(cloudRaw);
-    const local = this.save;
-    // Clears present locally but absent from cloud: from an in-flight pveClear (applyLocalClear already written but not yet persisted by the server).
-    const localExtra = local.progress.cleared.filter((id) => !cloud.progress.cleared.includes(id));
-    this.save = {
-      ...cloud,
-      progress: {
-        cleared: localExtra.length > 0 ? [...cloud.progress.cleared, ...localExtra] : cloud.progress.cleared,
-        stars: localExtra.reduce((acc, id) => {
-          const v = local.progress.stars[id];
-          return v !== undefined ? { ...acc, [id]: Math.max((acc[id] ?? 0) as number, v) as 1 | 2 | 3 } : acc;
-        }, { ...cloud.progress.stars } as Record<string, 1 | 2 | 3>),
-        best: mergeBest(local.progress.best, cloud.progress.best),
-      },
-      // pvpDeck is local-only (never synced to server); preserve from local.
-      ...(local.pvpDeck ? { pvpDeck: local.pvpDeck } : {}),
-    };
-    this.store.saveLocal(this.save);
-  }
-
-  /**
-   * reconcile: all server-authoritative sections use the cloud value. Since PVE_INTEGRITY_PLAN §8,
-   * progress (cleared/stars) / materials / pveUpgrades are also server-authoritative → take cloud
-   * (no longer union-merged or max-taken); only equipped/flags are client-sync sections and are
-   * overwritten with local values. progress.best is a local display stat (never uploaded, carries no
-   * reward semantics) → union of better values preserves local data.
-   * rev/accountId taken from cloud.
+   * reconcile: every server-authoritative section (which, as of this refactor, is everything except
+   * pvpDeck) always takes the cloud value — no client-side field is ever allowed to permanently override
+   * a fresh server pull any more. progress.best is a local display stat (never uploaded, carries no
+   * reward semantics) → union of better values preserves local data. rev/accountId taken from cloud.
+   * This is what makes a plain refresh (bootstrap/refresh/adoptSession all funnel through here) a genuine
+   * cure-all: whatever got a client-local field into a wrong state — a race, a rejected optimistic write
+   * in equipTitle/equipAvatar/equipSkin/setFlag, a bug — the very next successful sync always overwrites
+   * it with server truth. There is deliberately no "local wins" branch left (that used to apply to
+   * equipped/flags forever, with no way for any future sync to correct a bad local value — see git
+   * history / DECISIONS.md "equipped/flags server-authoritative" for the incident that prompted this).
    */
   private reconcile(cloudRaw: SaveData): void {
-    // Normalize the raw cloud document to the current shape before adopting (see adoptCloud): an older
-    // account's save may lack client-only fields (cardInv/equipmentInv), which would otherwise crash the
-    // campaign start path. migrate is idempotent for a complete save.
+    // Normalize the raw cloud document to the current shape before adopting: an older account's save may
+    // lack client-only fields (cardInv/equipmentInv), which would otherwise crash the campaign start path.
+    // migrate is idempotent for a complete save.
     const cloud = migrate(cloudRaw);
     // Drop a stale/out-of-order response: several call sites (bootstrap/refresh/adoptServer) fire from
     // rapid-fire user actions (e.g. mashing gacha draw) without a busy-guard, so responses can land out
@@ -593,39 +504,18 @@ export class SaveManager {
     // next action on it (e.g. fuse) 404s CARD_NOT_FOUND.
     if (cloud.rev < this.save.rev) return;
     const local = this.save;
-    const equipped = { ...cloud.equipped, ...local.equipped };
-    const flags = { ...cloud.flags, ...local.flags };
     this.save = {
-      ...cloud, // authoritative sections (including progress.cleared/stars / materials / pveUpgrades) + rev/accountId from cloud
+      ...cloud, // authoritative sections (equipped/flags/progress.cleared·stars/materials/pveUpgrades/cardInv/equipmentInv/wallet/...) + rev/accountId, all from cloud
       progress: {
         cleared: cloud.progress.cleared,
         stars: cloud.progress.stars,
         best: mergeBest(local.progress.best, cloud.progress.best),
       },
-      equipped,
-      flags,
-      // pvpDeck is local-only (never synced to server); preserve from local on every reconcile.
+      // pvpDeck is local-only (never synced to server at all); preserve from local on every reconcile.
       ...(local.pvpDeck ? { pvpDeck: local.pvpDeck } : {}),
     };
     this.store.saveLocal(this.save);
-    // Only mark dirty if the merge actually surfaced a local equipped/flags edit the cloud doesn't have
-    // yet — reconcile() runs after every GET /save (bootstrap/refresh/adoptSession, plus the 409 retry
-    // path in push()), which fires far more often than the player actually edits equipped/flags between
-    // syncs. Unconditionally marking dirty here meant the very next unrelated update() call (any flag
-    // set, any scene) would trigger a same-content PUT /save purely because a read happened — a phantom
-    // write on every read (comm-audit-2026-07-27 finding B11).
-    if (!shallowEqualRecord(equipped, cloud.equipped) || !shallowEqualRecord(flags, cloud.flags)) {
-      this.dirty = true;
-    }
   }
-}
-
-/** Flat Record<string, primitive> equality (equipped/flags shape) — same key count, same values. */
-function shallowEqualRecord(a: Record<string, unknown>, b: Record<string, unknown>): boolean {
-  const ak = Object.keys(a);
-  const bk = Object.keys(b);
-  if (ak.length !== bk.length) return false;
-  return ak.every((k) => a[k] === b[k]);
 }
 
 /** best: union of keys; shorter time / fewer leaked units wins (if one side is absent, take the present one). */

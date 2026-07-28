@@ -1,9 +1,8 @@
 // Wire DTOs + hand-written view types for the metaserver REST client (see ../ApiClient.ts assembly).
 //
 // ── Wire DTOs: sourced from openapi.yml codegen (contracts as single source of truth, `npm run rest:gen`).
-//    Contract drift is surfaced at tsc time. SaveData/SyncPatch/Rarity still use the client-side meta mirror
+//    Contract drift is surfaced at tsc time. SaveData/Rarity still use the client-side meta mirror
 //    (domain types, intentionally hand-maintained); purely wire-protocol DTOs (shop/gacha/auth/history) are aliased from the generated schema here.
-import type { SaveData } from '../../game/meta/SaveData';
 import type { components, operations } from '../openapi';
 
 type Schemas = components['schemas'];
@@ -72,8 +71,3 @@ export type LobbyBadgesView =
 export type ApiResp<T> =
   | { ok: true; data: T }
   | { ok: false; error: { code: string; message: string } };
-
-/** PUT /save result: on success, returns the normalised save; on 409 conflict, returns the current server-side value. */
-export type PushResult =
-  | { kind: 'ok'; save: SaveData }
-  | { kind: 'conflict'; save: SaveData };

@@ -599,7 +599,7 @@ LeaderboardScene 前三名用 🥇🥈🥉 emoji。新增 **1 个** `icons.ts` �
 ### 服务端同步（Phase B）
 
 - `save.equipped.avatar`（复用既有 `equipped: Record<string,string>` 通用装配袋，同 `equipped.title` 的写法，无需 schema 迁移）。
-- `PUT /avatar/equip`（`server/metaserver/src/service/liveops.ts` 的 `equipAvatar`，仿照 `equipTitle` 结构）：`preset:*` 恒许可；其余品类校验 `titles[]`/`everOwned.*`/`inventory.skins`，不满足 → 403。客户端实际走法与 `equipTitle` 一致——`onSetAvatar` 直接 `saveManager.update(d => d.equipped.avatar = id)`，由既有 `PUT /save`（equipped/flags 通用同步段）推送，`equipAvatar` REST 端点作为有实际校验的官方契约保留（同 `equipTitle` 现状，client 暂未直接调用）。
+- `PUT /avatar/equip`（`server/metaserver/src/service/liveops.ts` 的 `equipAvatar`，仿照 `equipTitle` 结构）：`preset:*` 恒许可；其余品类校验 `titles[]`/`everOwned.*`/`inventory.skins`，不满足 → 403。**客户端自 ADR-056（2026-07-28）起直接调用此端点**——`onSetAvatar` 走 `saveManager.equipAvatar(id)`（先写本地镜像即时反馈，再后台调用 `PUT /avatar/equip` 确认）；此前有一段时期该端点已实现但客户端并未接入，实际写路径是通用 `PUT /save`（同 `equipTitle` 当时的状况），该通用端点已随 ADR-056 整个下线。
 - `ProfileView`/`FriendView`（`server/shared/src/social.ts` + `openapi/schemas.yml`）加 `avatarId?`；`profileOf()`/`getProfile()`（metaserver `social.ts`/`accounts.ts`）比照 `equippedTitle` 读取 `equipped.avatar`；`FamilyMemberView`（socialsvc `familyService.ts`）、`getFriends()`（socialsvc `friendService.ts`）同步透传。
 - 对战对手信息：`opponentAvatarId` 沿 `opponentTitle` 的既有链路整条打通——`gateway/metaClient.ts` → `Gateway.ts` → `matchsvc`（`Matchmaking.ts`/`Matchsvc.ts`/`internalHttp.ts`）→ `TicketClaims`（`server/shared/src/ticket.ts`）→ `gameserver`（`RoomManager.ts`/`Room.ts`）→ `transport.proto`（`MatchStart.opponent_avatar_id = 11`）→ 客户端 `NetInputSource.ts`/`nav/result.ts`。
 - 客户端展示：`ProfilePopup.ProfileData.avatarId`（此前完全未接，永远走首字母兜底——本次一并修掉）、`FriendsScene`/`FamilyScene` 的成员行头像。

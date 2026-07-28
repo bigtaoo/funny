@@ -80,10 +80,9 @@ export async function buildApp(opts: BuildAppOpts): Promise<FastifyInstance> {
   // Equipment/card storage split backstop (2026-07-26 equipmentInv, 2026-07-27 cardInv — see
   // equipment.ts/cards.ts headers): both instance types live in their own collections now, not embedded
   // in SaveData. ~30 handlers across auth/save/pve/economy/liveops/cards/ladderSeason return a
-  // `save: SaveData` (either nested under `ok()`'s `{data:{save}}` envelope, or — putSave's 409 conflict
-  // case — at the top level); rather than trust every one of those call sites to remember an explicit
-  // join, this single hook is the centralized guarantee that no OTHER response can ever accidentally
-  // ship without the full maps.
+  // `save: SaveData` nested under `ok()`'s `{data:{save}}` envelope; rather than trust every one of
+  // those call sites to remember an explicit join, this single hook is the centralized guarantee that
+  // no OTHER response can ever accidentally ship without the full maps.
   // equipment.ts's own mutation endpoints (craft/enhance/salvage/reforge/equip) are the deliberate
   // exception (phase 2, EQUIPMENT_DESIGN §3.3): they set `equipmentInv: null` (via `leanSave`), not
   // `undefined` — this hook only backfills on `undefined` ("forgot to populate"), so `null` ("explicitly

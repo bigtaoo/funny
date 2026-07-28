@@ -408,6 +408,74 @@
       '401': { $ref: '#/components/responses/ErrorResp' }
       '403': { $ref: '#/components/responses/ErrorResp' }
 
+/skin/equip:
+  put:
+    operationId: equipSkin
+    tags: [save]
+    summary: Equip/unequip a character skin (writes equipped["skin:<unitType>"] and pushes save). One slot per character (LOBBY_IA_REDESIGN §15); skinId null unequips. Requires lifetime ownership (inventory.skins / everOwned.skin).
+    security: [{ bearerAuth: [] }]
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [unitType]
+            properties:
+              unitType: { type: string, description: "Character UnitType this skin slot targets, e.g. archer" }
+              skinId: { type: string, nullable: true, description: "Skin id to equip; null unequips the slot" }
+    responses:
+      '200':
+        description: Success
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [ok, data]
+              properties:
+                ok: { type: boolean, enum: [true] }
+                data:
+                  type: object
+                  required: [save]
+                  properties:
+                    save: { $ref: '#/components/schemas/SaveData' }
+      '401': { $ref: '#/components/responses/ErrorResp' }
+      '403': { $ref: '#/components/responses/ErrorResp' }
+
+/flags:
+  put:
+    operationId: setFlag
+    tags: [save]
+    summary: Set one client-preference flag by key (writes flags.<key> and pushes save) — onboarding/consent/tutorial-seen style booleans with no ownership semantics.
+    security: [{ bearerAuth: [] }]
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [key, value]
+            properties:
+              key: { type: string, description: "Flag key, e.g. tutorial_done, gdprConsent, featSeen.<featureId>" }
+              value: { type: boolean }
+    responses:
+      '200':
+        description: Success
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [ok, data]
+              properties:
+                ok: { type: boolean, enum: [true] }
+                data:
+                  type: object
+                  required: [save]
+                  properties:
+                    save: { $ref: '#/components/schemas/SaveData' }
+      '400': { $ref: '#/components/responses/ErrorResp' }
+      '401': { $ref: '#/components/responses/ErrorResp' }
+
 /lobby/badges:
   get:
     operationId: getLobbyBadges

@@ -1,12 +1,12 @@
 // Save/sync + match history/replay + replay-share handlers.
-// getSave reconciles the wallet mirror, runs lazy season migration, and injects the stamina snapshot;
-// putSave is the optimistic-locked client sync (progress/materials/pveUpgrades are NOT accepted here —
-// they are written only at PvE/PvP authoritative settlement, trust boundary §8.3).
+// getSave reconciles the wallet mirror, runs lazy season migration, and injects the stamina snapshot.
+// There is no generic client-sync write endpoint any more (PUT /save removed) — every writable field
+// (equipped.*/flags.*/equipmentInv/cardInv/wallet/...) goes through its own validated endpoint; see
+// DECISIONS.md "equipped/flags server-authoritative".
 import { randomUUID, randomBytes } from 'node:crypto';
 import type { FastifyReply, FastifyRequest } from 'fastify';
-import type { SyncPatch } from '@nw/shared';
 import { ErrorCode, err, ok, STARTER_TITLE } from '@nw/shared';
-import { getOrCreateSave, putSave, writeMigratedSave } from '../save.js';
+import { getOrCreateSave, writeMigratedSave } from '../save.js';
 import { readArchivedMeta, readArchivedReplayGz } from '../replayArchive.js';
 import { grantTitleToPlayer } from '../titles.js';
 import { getCurrentSeason, migrateIfStale } from '../ladderSeason.js';
@@ -18,7 +18,7 @@ import { accountIdOf, clientPlatformOf, createRateLimiter, type Constructor, typ
 
 type SaveHandlers = Pick<
   MetaHandlers,
-  | 'getSave' | 'putSave' | 'getMatchHistory' | 'getMatchReplay'
+  | 'getSave' | 'getMatchHistory' | 'getMatchReplay'
   | 'createReplayShare' | 'getReplayByShare' | 'createStateReplayShare' | 'getStateReplayShare'
 >;
 
@@ -104,33 +104,6 @@ export function SaveMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase & Cons
         ...this.gatewayField,
         ...(await this.activeMatchFieldFor(accountId)),
       });
-    }
-
-    async putSave(req: FastifyRequest, reply: FastifyReply) {
-      const accountId = accountIdOf(req);
-      const ifMatch = req.headers['if-match'];
-      const clientRev = Number(Array.isArray(ifMatch) ? ifMatch[0] : ifMatch);
-      if (!Number.isFinite(clientRev)) {
-        return reply
-          .code(400)
-          .send(err(ErrorCode.BAD_REQUEST, 'If-Match header must be a numeric rev'));
-      }
-      const { save: patch } = req.body as { save: SyncPatch };
-      const result = await putSave(
-        this.deps.cols,
-        accountId,
-        clientRev,
-        patch,
-        this.deps.now(),
-      );
-      if (result.kind === 'conflict') {
-        return reply.code(409).send({
-          ok: false,
-          error: { code: ErrorCode.REV_CONFLICT, message: 'rev conflict' },
-          save: result.save,
-        });
-      }
-      return ok({ save: result.save });
     }
 
     /** Recent match history (ranked / friendly): retrieves a concise summary from archived matches from the current account's perspective. */
