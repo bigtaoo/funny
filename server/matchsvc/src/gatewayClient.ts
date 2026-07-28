@@ -42,8 +42,17 @@ export class GatewayClient {
   private async pushAsync(accountId: string, msg: PushMsg, roomId?: string): Promise<void> {
     if (this.redis) {
       try {
-        await this.redis.publish(GW_PUSH_REDIS_CHANNEL, JSON.stringify({ recipients: [accountId], msg }));
-        return;
+        // publish() returns the number of subscribers that received the message. 0 means no
+        // gateway instance is currently subscribed (e.g. gateway restarting) — treating that
+        // as success used to silently strand players on match_found (comm-audit-internal
+        // 2026-07-28 P0-2: ticket already signed, player already dequeued, nobody delivered).
+        // The roomId rides along for cross-process log correlation (observability/README).
+        const receivers = (await this.redis.publish(
+          GW_PUSH_REDIS_CHANNEL,
+          JSON.stringify({ recipients: [accountId], msg, ...(roomId ? { roomId } : {}) }),
+        )) as number;
+        if (typeof receivers !== 'number' || receivers > 0) return;
+        log.warn('redis publish reached 0 subscribers, falling back to direct HTTP', { accountId, kind: msg.kind, roomId });
       } catch (e) {
         log.warn('redis publish failed, falling back to direct HTTP', { accountId, kind: msg.kind, err: (e as Error).message });
       }

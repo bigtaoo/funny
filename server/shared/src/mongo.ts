@@ -107,6 +107,16 @@ export interface MatchDoc {
   winner: number;
   reason: string;
   hashOk: boolean;
+  /**
+   * Settlement reservation (comm-audit-internal-2026-07-28 P0-1). Set on the placeholder doc that
+   * /internal/match/report upserts ATOMICALLY (unique roomId index) before running settleElo, so a
+   * gameserver retry racing a still-running first settlement dedups instead of double-crediting
+   * ELO/coins. Cleared (via replaceOne) when the real archive doc lands; a crashed settlement
+   * leaves a stale reservation that a retry may take over after MATCH_SETTLING_TAKEOVER_MS.
+   */
+  settling?: boolean;
+  /** Timestamp of the (latest) settlement attempt owning the reservation; see `settling`. */
+  settlingAt?: number;
   /** C3: set to true when hash is inconsistent and the peer judge could not intervene (visible in admin /admin/mismatches). */
   hashMismatch?: boolean;
   /** Pointer to externally-stored replay (large matches); reserved, not yet used. */

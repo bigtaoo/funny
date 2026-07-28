@@ -24,7 +24,7 @@ const log = createLogger('gateway:redis');
 
 /** Fan-out envelope received from Redis: either a push (message + recipient list) or a kick (evict stale connection). */
 type BroadcastEnvelope =
-  | { recipients: string[]; msg: PushMsg }
+  | { recipients: string[]; msg: PushMsg; roomId?: string }
   | { kick: { accountId: string; originInstanceId: string } };
 
 /** TTL for a presence key: must be refreshed at least once per HEARTBEAT_MS (Gateway.ts, 30s) sweep to
@@ -66,7 +66,7 @@ export interface GatewaySubscriber {
  */
 export async function connectGatewaySubscriber(
   url: string | undefined,
-  onBroadcast: (recipients: string[], msg: PushMsg) => void,
+  onBroadcast: (recipients: string[], msg: PushMsg, roomId?: string) => void,
   onKick: (accountId: string, originInstanceId: string) => void,
 ): Promise<GatewaySubscriber | null> {
   if (!url) return null;
@@ -85,7 +85,7 @@ export async function connectGatewaySubscriber(
       try {
         const env = JSON.parse(payload) as BroadcastEnvelope;
         if ('kick' in env && env.kick) onKick(env.kick.accountId, env.kick.originInstanceId);
-        else if ('recipients' in env && Array.isArray(env.recipients) && env.msg) onBroadcast(env.recipients, env.msg);
+        else if ('recipients' in env && Array.isArray(env.recipients) && env.msg) onBroadcast(env.recipients, env.msg, env.roomId);
       } catch (e) {
         log.warn('bad broadcast payload', { err: (e as Error).message });
       }
