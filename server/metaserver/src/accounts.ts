@@ -9,6 +9,7 @@ import {
   randomPlayerName,
   verifyPassword,
 } from '@nw/shared';
+import type { AccountCache } from './accountCache.js';
 
 /**
  * Best-effort: writes the lazily inferred compliance region back to the account on auth
@@ -236,13 +237,18 @@ export async function ensurePublicId(cols: Collections, accountId: string): Prom
   throw new Error('failed to allocate publicId after retries');
 }
 
-/** Reverse-lookup accountId by 9-digit public id (admin player.lookup, OPS_DESIGN §4.1). Returns null if not found. */
+/**
+ * Reverse-lookup accountId by 9-digit public id (admin player.lookup OPS_DESIGN §4.1; also the socialsvc
+ * friend/mail-by-publicId path, /internal/account/by-public-id). Returns null if not found.
+ * Cached (2026-07-27, accountCache.ts) — a cache hit skips the Mongo round trip entirely; the mapping is
+ * assigned once and never changes, so there's no invalidation to wire up.
+ */
 export async function resolveByPublicId(
+  cache: AccountCache,
   cols: Collections,
   publicId: string,
 ): Promise<string | null> {
-  const doc = await cols.accounts.findOne({ publicId }, { projection: { _id: 1 } });
-  return doc?._id ?? null;
+  return cache.getAccountIdByPublicId(cols, publicId);
 }
 
 /** Escape regex metacharacters — treat ops-entered input as a literal string fed to $regex, preventing injection / ReDoS. */

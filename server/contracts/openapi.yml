@@ -260,7 +260,10 @@ components:
           type: object
           additionalProperties:
             $ref: '#/components/schemas/CardInstance'
-          description: Card instance inventory (instanceId→CardInstance); max 150 entries
+          description: Card instance inventory (instanceId→CardInstance); max 500 entries
+        cardInvCount:
+          type: integer
+          minimum: 0
         cardMailOverflowCount:
           type: integer
           minimum: 0
@@ -275,6 +278,25 @@ components:
           type: object
           additionalProperties:
             type: boolean
+        everOwned:
+          type: object
+          properties:
+            hero:
+              type: array
+              items:
+                type: string
+            equipment:
+              type: array
+              items:
+                type: string
+            material:
+              type: array
+              items:
+                type: string
+            skin:
+              type: array
+              items:
+                type: string
         stats:
           type: object
           additionalProperties:
@@ -299,6 +321,9 @@ components:
           nullable: true
           additionalProperties:
             $ref: '#/components/schemas/EquipmentInstance'
+        equipmentInvCount:
+          type: integer
+          minimum: 0
         retention:
           type: object
           properties:
@@ -943,6 +968,8 @@ components:
           type: integer
         dpr:
           type: number
+        consent:
+          type: boolean
         events:
           type: array
           maxItems: 100
@@ -1310,6 +1337,51 @@ paths:
                         type: string
         '401':
           $ref: '#/components/responses/ErrorResp'
+  /account/cancel-deletion:
+    post:
+      operationId: cancelAccountDeletion
+      tags:
+        - auth
+      summary: Undo a pending soft-delete within the 7-day grace period (C5-b), given the confirmToken from DELETE /account
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - confirmToken
+              properties:
+                confirmToken:
+                  type: string
+      responses:
+        '200':
+          description: Deletion cancelled; account restored to normal standing
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - ok
+                  - data
+                properties:
+                  ok:
+                    type: boolean
+                    enum:
+                      - true
+                  data:
+                    type: object
+                    required:
+                      - ok
+                    properties:
+                      ok:
+                        type: boolean
+        '400':
+          $ref: '#/components/responses/ErrorResp'
+        '401':
+          $ref: '#/components/responses/ErrorResp'
   /account/gdpr-consent:
     post:
       operationId: recordGdprConsent
@@ -1449,6 +1521,8 @@ paths:
                         type: string
                       freeRename:
                         type: boolean
+                      serverNow:
+                        type: integer
                       activeMatch:
                         type: object
                         required:
@@ -2752,11 +2826,14 @@ paths:
                     required:
                       - coinsAfter
                       - coinsGranted
+                      - save
                     properties:
                       coinsAfter:
                         type: integer
                       coinsGranted:
                         type: integer
+                      save:
+                        $ref: '#/components/schemas/SaveData'
         '400':
           $ref: '#/components/responses/ErrorResp'
         '401':
@@ -3292,6 +3369,9 @@ paths:
                               type: integer
                             pvpRank:
                               type: string
+                            equippedTitle:
+                              type: string
+                              description: Entry-owner equipped title id (save.equipped.title), absent when none equipped
                       me:
                         type: object
                         description: Caller's own standing this season (absent when they have not played a ranked match this season). Rank may exceed 100.
@@ -4116,6 +4196,70 @@ paths:
           $ref: '#/components/responses/ErrorResp'
         '403':
           $ref: '#/components/responses/ErrorResp'
+  /lobby/badges:
+    get:
+      operationId: getLobbyBadges
+      tags:
+        - save
+      summary: 'Aggregated lobby red-dot fetch (P1-4, comm-audit-2026-07-27): merges GET /social/badges + GET /achievements + GET /retention (claimable only) + GET /events (availability only) into one call, replacing the 4-request waterfall the client used to fire on every lobby entry.'
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - ok
+                  - data
+                properties:
+                  ok:
+                    type: boolean
+                    enum:
+                      - true
+                  data:
+                    type: object
+                    required:
+                      - social
+                      - achievements
+                      - retentionClaimable
+                      - eventsAvailable
+                    properties:
+                      social:
+                        $ref: '#/components/schemas/SocialBadges'
+                      achievements:
+                        type: object
+                        required:
+                          - defs
+                          - stats
+                          - achievements
+                        properties:
+                          defs:
+                            type: array
+                            items:
+                              $ref: '#/components/schemas/Achievement'
+                          stats:
+                            type: object
+                            additionalProperties:
+                              type: integer
+                          achievements:
+                            $ref: '#/components/schemas/SaveData/properties/achievements'
+                      retentionClaimable:
+                        type: object
+                        required:
+                          - checkin
+                          - daily
+                        properties:
+                          checkin:
+                            type: boolean
+                          daily:
+                            type: boolean
+                      eventsAvailable:
+                        type: boolean
+        '401':
+          $ref: '#/components/responses/ErrorResp'
   /friends:
     get:
       operationId: getFriends
@@ -4482,6 +4626,53 @@ paths:
                       ok:
                         type: boolean
         '401':
+          $ref: '#/components/responses/ErrorResp'
+  /friends/report:
+    post:
+      operationId: reportUser
+      tags:
+        - friends
+      summary: File a UGC report against another player (admin-review-only; does not block/unfriend)
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - publicId
+              properties:
+                publicId:
+                  type: string
+                reason:
+                  type: string
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - ok
+                  - data
+                properties:
+                  ok:
+                    type: boolean
+                    enum:
+                      - true
+                  data:
+                    type: object
+                    required:
+                      - ok
+                    properties:
+                      ok:
+                        type: boolean
+        '401':
+          $ref: '#/components/responses/ErrorResp'
+        '404':
           $ref: '#/components/responses/ErrorResp'
   /chat/conversations:
     get:

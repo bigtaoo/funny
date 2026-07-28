@@ -3,7 +3,7 @@ import type { FastifyInstance } from 'fastify';
 import type { SaveData, EquipmentInstance, CardInstance } from '@nw/shared';
 import { createLogger, ERROR_HTTP_STATUS } from '@nw/shared';
 import { escrowEquipment, grantEquipment, assembleEquipmentInv } from '../equipment.js';
-import { grantCard } from '../cards.js';
+import { escrowCard, grantCard, assembleCardInv } from '../cards.js';
 import { escrowSkin, grantSkin } from '../skin.js';
 import type { InternalCtx } from './context.js';
 
@@ -105,7 +105,7 @@ export function registerEconomyRoutes(app: FastifyInstance, ctx: InternalCtx): v
 
   // ── Card escrow / grant (CC-5, called by worldsvc auction card transactions) ─────────────────────
   // POST /internal/cards/escrow  { accountId, instanceId, orderId } → { instance }
-  //   Listing escrow: validate gear all empty (§11 rule) → remove from cardInv → return snapshot (worldsvc stores in listing doc).
+  //   Listing escrow: validate gear all empty (§11 rule) → remove from cardInstances → return snapshot (worldsvc stores in listing doc).
   app.post('/internal/cards/escrow', async (req, reply) => {
     if (!authed(req.headers['x-internal-key'])) return reply.code(401).send({ ok: false, error: 'unauthorized' });
     const { accountId, instanceId, orderId } = req.body as {
@@ -116,31 +116,14 @@ export function registerEconomyRoutes(app: FastifyInstance, ctx: InternalCtx): v
     if (!accountId || !instanceId || !orderId) {
       return reply.code(400).send({ ok: false, error: 'accountId + instanceId + orderId required' });
     }
-    for (let attempt = 0; attempt < 3; attempt++) {
-      const doc = await cols.saves.findOne({ _id: accountId });
-      if (!doc) return reply.code(404).send({ ok: false, error: 'save not found', code: 'NOT_FOUND' });
-      const card = doc.save.cardInv?.[instanceId];
-      if (!card) return reply.code(404).send({ ok: false, error: 'card not found', code: 'CARD_NOT_FOUND' });
-      if (Object.values(card.gear).some((v) => !!v)) {
-        return reply.code(409).send({ ok: false, error: 'card has equipped gear; unequip before listing', code: 'CARD_HAS_GEAR' });
-      }
-      const nextCardInv = { ...(doc.save.cardInv ?? {}) };
-      delete nextCardInv[instanceId];
-      const next = { ...doc.save, rev: doc.save.rev + 1, updatedAt: now(), cardInv: nextCardInv };
-      const res = await cols.saves.findOneAndUpdate(
-        { _id: accountId, rev: doc.rev },
-        { $set: { save: next, rev: next.rev } },
-      );
-      if (res) {
-        log.info('card escrowed', { accountId, instanceId, orderId });
-        return reply.send({ ok: true, instance: card });
-      }
-    }
-    return reply.code(409).send({ ok: false, error: 'rev conflict, retry', code: 'REV_CONFLICT' });
+    const r = await escrowCard(cols, now, accountId, instanceId, orderId);
+    if ('error' in r) return reply.code(ERROR_HTTP_STATUS[r.code] ?? 400).send({ ok: false, error: r.error, code: r.code });
+    log.info('card escrowed', { accountId, instanceId, orderId });
+    return reply.send({ ok: true, instance: r.instance });
   });
 
   // POST /internal/cards/grant  { accountId, instance, orderId } → { ok }
-  //   Sale transfer (to buyer) / cancellation·expiry·season-end return (to seller): writes the instance snapshot into cardInv.
+  //   Sale transfer (to buyer) / cancellation·expiry·season-end return (to seller): writes the instance snapshot into cardInstances.
   //   No cap check — a card returned from escrow or sold to a buyer is always delivered (the buyer paid coins for it).
   app.post('/internal/cards/grant', async (req, reply) => {
     if (!authed(req.headers['x-internal-key'])) return reply.code(401).send({ ok: false, error: 'unauthorized' });
@@ -223,13 +206,16 @@ export function registerEconomyRoutes(app: FastifyInstance, ctx: InternalCtx): v
     if (!accountId) return reply.code(400).send({ ok: false, error: 'accountId required' });
     const doc = await cols.saves.findOne({ _id: accountId });
     const s = doc?.save;
-    // Equipment instances live in their own collection (2026-07-26 split, see equipment.ts) — join them
-    // in here for wire-format compatibility (worldsvc's siege engine expects the full map, unchanged).
-    // Null-safe for an unknown account (no doc → still returns {} rather than erroring, same as before).
-    const equipmentInv = s ? await assembleEquipmentInv(cols, accountId, s) : {};
+    // Equipment/card instances live in their own collections (2026-07-26/2026-07-27 splits, see
+    // equipment.ts/cards.ts) — join them in here for wire-format compatibility (worldsvc's siege engine
+    // expects the full maps, unchanged). Null-safe for an unknown account (no doc → still returns {}
+    // rather than erroring, same as before).
+    const [equipmentInv, cardInv] = s
+      ? await Promise.all([assembleEquipmentInv(cols, accountId, s), assembleCardInv(cols, accountId, s)])
+      : [{}, {}];
     return reply.send({
       pveUpgrades: s?.pveUpgrades ?? {},
-      cardInv: s?.cardInv ?? {},
+      cardInv,
       equipmentInv,
     });
   });

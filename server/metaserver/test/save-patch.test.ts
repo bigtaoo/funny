@@ -94,3 +94,78 @@ describe('applySyncPatch trust boundary', () => {
     expect(prev.rev).toBe(0);
   });
 });
+
+// P0-11 (comm-audit-2026-07-27 finding B12): PUT /save is a full-map replace of `equipped` with zero
+// ownership checks, while the two dedicated endpoints (service/liveops.ts equipTitle/equipAvatar) that
+// DO validate ownership are never called by the client — this is the only path that actually writes
+// equipped, and it must reject/strip entries the account doesn't own.
+describe('applySyncPatch equipped ownership validation', () => {
+  it('title: only an owned title is accepted; an unowned one is stripped', () => {
+    const prev = makeNewSave('acc', 0);
+    prev.titles = ['starter', 'season1_gold'];
+
+    const owned = applySyncPatch(prev, { equipped: { title: 'season1_gold' } }, NOW, 1);
+    expect(owned.equipped).toEqual({ title: 'season1_gold' });
+
+    const unowned = applySyncPatch(prev, { equipped: { title: 'legendary_champion' } }, NOW, 1);
+    expect(unowned.equipped).toEqual({}); // stripped, not persisted
+  });
+
+  it('avatar: preset digits are always allowed with no ownership check', () => {
+    const prev = makeNewSave('acc', 0);
+    const next = applySyncPatch(prev, { equipped: { avatar: '3' } }, NOW, 1);
+    expect(next.equipped).toEqual({ avatar: '3' });
+  });
+
+  it('avatar: composite id requires the category-specific lifetime-owned record; unowned is stripped', () => {
+    const prev = makeNewSave('acc', 0);
+    prev.everOwned = { hero: ['lichuang'] };
+
+    const owned = applySyncPatch(prev, { equipped: { avatar: 'hero:lichuang' } }, NOW, 1);
+    expect(owned.equipped).toEqual({ avatar: 'hero:lichuang' });
+
+    const unowned = applySyncPatch(prev, { equipped: { avatar: 'hero:never_obtained' } }, NOW, 1);
+    expect(unowned.equipped).toEqual({});
+  });
+
+  it('avatar: title/equip/material/skin categories each check their own lifetime-owned bucket', () => {
+    const prev = makeNewSave('acc', 0);
+    prev.titles = ['season1_gold'];
+    prev.everOwned = { equipment: ['sword_def'], material: ['scrap'] };
+    prev.inventory.skins = ['owned_skin'];
+
+    expect(applySyncPatch(prev, { equipped: { avatar: 'title:season1_gold' } }, NOW, 1).equipped).toEqual({ avatar: 'title:season1_gold' });
+    expect(applySyncPatch(prev, { equipped: { avatar: 'equip:sword_def' } }, NOW, 1).equipped).toEqual({ avatar: 'equip:sword_def' });
+    expect(applySyncPatch(prev, { equipped: { avatar: 'material:scrap' } }, NOW, 1).equipped).toEqual({ avatar: 'material:scrap' });
+    expect(applySyncPatch(prev, { equipped: { avatar: 'skin:owned_skin' } }, NOW, 1).equipped).toEqual({ avatar: 'skin:owned_skin' });
+    expect(applySyncPatch(prev, { equipped: { avatar: 'material:never_had' } }, NOW, 1).equipped).toEqual({});
+  });
+
+  it('skin:<UnitType> equip slot requires the skin in inventory.skins or everOwned.skin', () => {
+    const prev = makeNewSave('acc', 0);
+    prev.inventory.skins = ['scholar_gold'];
+    prev.everOwned = { skin: ['warrior_festival'] };
+
+    const fromInventory = applySyncPatch(prev, { equipped: { 'skin:Scholar': 'scholar_gold' } }, NOW, 1);
+    expect(fromInventory.equipped).toEqual({ 'skin:Scholar': 'scholar_gold' });
+
+    // Auction-escrowed away from inventory.skins but still in the lifetime-owned ledger — still allowed.
+    const fromLedger = applySyncPatch(prev, { equipped: { 'skin:Warrior': 'warrior_festival' } }, NOW, 1);
+    expect(fromLedger.equipped).toEqual({ 'skin:Warrior': 'warrior_festival' });
+
+    const unowned = applySyncPatch(prev, { equipped: { 'skin:Warrior': 'never_owned_skin' } }, NOW, 1);
+    expect(unowned.equipped).toEqual({});
+  });
+
+  it('a mixed patch strips only the unowned entries, keeping the owned ones', () => {
+    const prev = makeNewSave('acc', 0);
+    prev.titles = ['starter'];
+    prev.inventory.skins = ['scholar_gold'];
+
+    const next = applySyncPatch(prev, {
+      equipped: { title: 'starter', avatar: 'hero:never_obtained', 'skin:Scholar': 'scholar_gold' },
+    }, NOW, 1);
+
+    expect(next.equipped).toEqual({ title: 'starter', 'skin:Scholar': 'scholar_gold' });
+  });
+});

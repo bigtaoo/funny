@@ -198,6 +198,13 @@ export async function createSocialMongo(uri: string, dbName: string): Promise<So
     // families
     await families.createIndex({ tag: 1 }, { unique: true });
     await families.createIndex({ leaderId: 1 });
+    // browseFamilies (join-picker) was a COLLSCAN + blocking sort: `memberCount` alone can't serve a
+    // `{$lt: FAMILY_CAP}` range + `prosperity desc` sort together, and FAMILY_CAP matches almost every
+    // family (low selectivity) — so sort-first is the right shape: walk prosperity desc, check the
+    // memberCount bound per candidate. Found 2026-07-27 audit.
+    await families.createIndex({ prosperity: -1, memberCount: 1 });
+    // getFamiliesBySect (worldsvc sect roster / leave-vote) had no index on sectId — COLLSCAN.
+    await families.createIndex({ sectId: 1 }, { sparse: true });
 
     // familyMembers
     await familyMembers.createIndex({ familyId: 1 });

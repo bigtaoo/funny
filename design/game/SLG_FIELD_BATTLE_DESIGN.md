@@ -73,7 +73,7 @@
 ### 3.3 行军改为逐格步进
 - **MarchDoc 持久化路径**：新增 `path: {x,y}[]`（A* 结果不再丢弃）、`departAt`。每格踏入时刻 `enterTime_i = departAt + Σ(前 i 格时长)`（本期按 `MARCH_SPEED_SEC_PER_TILE` 均匀；疲劳不影响时长，仅影响战力，见 ADR-047）。
 - **步进事件**：不再是「一个到点事件」，而是行军沿途每格一个「步进事件」。为控制调度量，**每次只调度下一步**（步进时更新 Redis 占格 + 做踏格检查 + 调度下一步），到终点执行原 `applyArrival` 逻辑。
-- 调度基础设施沿用 Redis ZSET（[`corePush.ts`](../../server/worldsvc/src/corePush.ts) `scheduleMarch`），score 改为下一步的 `enterTime`；scheduler 弹出到期步进（复用 [`scheduler.ts:22`](../../server/worldsvc/src/scheduler.ts) 的 tick，但读 Redis ZSET 到期项，不扫 Mongo 全表）。
+- ~~调度基础设施沿用 Redis ZSET（`scheduleMarch`），score 改为下一步的 `enterTime`~~ **订正（2026-07-27 审计）**：实际落地并非这套 Redis ZSET 方案——`scheduleMarch`/`zrangebyscore` 从未真正接上（写了没人读），已整段删除。步进调度实际靠 `MarchDoc.nextStepAt` + [`scheduler.ts:22`](../../server/worldsvc/src/scheduler.ts) 同一个 2s tick 的 Mongo 索引扫描（`{worldId,status}`/`{nextStepAt}`），与到点判定同一套机制，并非「不扫 Mongo 全表」的 O(1) 弹出。
 
 > **性能注记**：长途行军事件数 = 路径格数（1500×1500 图下横断约数百格）。事件驱动、每步 O(1)，但总事件量比现状（1 事件/行军）显著上升，登记为**监控项**；如压力过大，退化方案为「粗粒度步进」（每 N 格一检查 + 到达前精算拦截点）。
 

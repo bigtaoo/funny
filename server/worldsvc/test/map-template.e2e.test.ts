@@ -3,7 +3,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { Server } from 'http';
 import type { AddressInfo } from 'net';
-import { proceduralTile } from '@nw/shared';
+import { proceduralTile, tileAtX } from '@nw/shared';
 import { createWorldMongo, type WorldMongo } from '../src/db';
 import { WorldService } from '../src/service';
 import { MapTemplateService } from '../src/mapTemplateService';
@@ -74,6 +74,12 @@ describe.skipIf(!mongo)('worldsvc map template e2e (§24)', () => {
     const b2 = (await r2.json()) as { data: { tileCount: number; version: number } };
     expect(b2.data.tileCount).toBe(100); // no duplicate/leftover rows from the first generation
     expect(b2.data.version).toBe(2);
+
+    // Storage redesign (2026-07-27): the 100 logical cells are backed by `height` row docs (10), run-length
+    // encoded — not one doc per cell (see shared/src/slg/mapRle.ts). This is the actual fix for the
+    // 225万-document mapBaselines blowup the 2026-07-27 audit flagged (root cause was generateTemplate's
+    // per-cell materialization, which cloneActiveTemplateInto then copied verbatim into mapBaselines).
+    expect(await m.collections.mapTemplateRows.countDocuments({ templateId: 'tpl-a' })).toBe(10);
   });
 
   it('list returns the generated template', async () => {
@@ -120,21 +126,21 @@ describe.skipIf(!mongo)('worldsvc map template e2e (§24)', () => {
     expect(list.data.map((t) => t.templateId)).not.toContain('tpl-b');
   });
 
-  it('opening a world clones the active template into mapBaselines (copy, not a live reference)', async () => {
+  it('opening a world clones the active template into mapBaselineRows (copy, not a live reference)', async () => {
     const openRes = await fetch(`${base}/admin/world/open`, {
       method: 'POST', headers, body: JSON.stringify({ worldId: 's9-tpl', season: 9, shard: 1, capacity: 100 }),
     });
     expect(openRes.status).toBe(200);
 
-    const cloned = await m.collections.mapBaselines.find({ worldId: 's9-tpl' }).toArray();
-    expect(cloned.length).toBe(100); // tpl-a is 10x10
+    const cloned = await m.collections.mapBaselineRows.find({ worldId: 's9-tpl' }).toArray();
+    expect(cloned.length).toBe(10); // tpl-a is 10x10 → 10 row docs (run-length-encoded, not 100 cell docs)
 
     // Editing the template afterwards must not retroactively change the already-cloned world baseline.
     await fetch(`${base}/admin/world/map-templates/tpl-a/tiles`, {
       method: 'PUT', headers, body: JSON.stringify({ tiles: [{ x: 1, y: 1, type: 'bridge', level: 9 }] }),
     });
-    const stillCloned = await m.collections.mapBaselines.findOne({ _id: 's9-tpl:1:1' });
-    expect(stillCloned?.type).not.toBe('bridge');
+    const stillClonedRow = await m.collections.mapBaselineRows.findOne({ _id: 's9-tpl:1' });
+    expect(tileAtX(stillClonedRow!.runs, 1)?.type).not.toBe('bridge');
   });
 
   it('a published template edit reaches the runtime map read via the per-world baseline (§24 read-path)', async () => {
@@ -150,8 +156,9 @@ describe.skipIf(!mongo)('worldsvc map template e2e (§24)', () => {
     });
     expect(openRes.status).toBe(200);
 
-    // The clone carried the edit (incl. obstacleKind) into the world's baseline...
-    const baseline = await m.collections.mapBaselines.findOne({ _id: `${wid}:2:3` });
+    // The clone carried the edit (incl. obstacleKind) into the world's baseline row...
+    const baselineRow = await m.collections.mapBaselineRows.findOne({ _id: `${wid}:3` });
+    const baseline = tileAtX(baselineRow!.runs, 2);
     expect(baseline?.type).toBe('obstacle');
     expect(baseline?.level).toBe(9);
     expect(baseline?.obstacleKind).toBe('river');
@@ -170,9 +177,9 @@ describe.skipIf(!mongo)('worldsvc map template e2e (§24)', () => {
   });
 
   it('a world with no baseline rows falls back to proceduralTile (fallback preserved)', async () => {
-    // Never opened/cloned → no mapBaselines rows for this worldId → runtime reads fall back to proceduralTile.
+    // Never opened/cloned → no mapBaselineRows rows for this worldId → runtime reads fall back to proceduralTile.
     const wid = 'no-baseline-world';
-    expect(await m.collections.mapBaselines.countDocuments({ worldId: wid })).toBe(0);
+    expect(await m.collections.mapBaselineRows.countDocuments({ worldId: wid })).toBe(0);
 
     const view = await svc.getMap(wid, 'reader-acct', 5, 5, 1);
     const tile = view.tiles.find((t) => t.x === 5 && t.y === 5)!;

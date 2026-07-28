@@ -10,6 +10,9 @@ export interface CommercialEnv extends ServerEnv {
   commMongoUri: string;
   /** commercial dedicated database name (physically separate from the meta database). */
   commMongoDb: string;
+  /** Redis URL for the victoryDaily counter (2026-07-27, moved off Mongo — shared/src/dailyCounter.ts).
+   *  null = unconfigured; falls back to a correct-for-single-instance in-process counter, not a disabled cap. */
+  redisUrl: string | null;
 }
 
 export function loadCommercialEnv(): CommercialEnv {
@@ -20,5 +23,6 @@ export function loadCommercialEnv(): CommercialEnv {
     host: process.env.NW_COMM_HOST ?? '0.0.0.0',
     commMongoUri: process.env.NW_COMM_MONGO_URI ?? base.mongoUri,
     commMongoDb: process.env.NW_COMM_MONGO_DB ?? 'notebook_wars_commercial',
+    redisUrl: process.env.NW_REDIS_URL ?? null,
   };
 }

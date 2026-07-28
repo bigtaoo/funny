@@ -91,6 +91,16 @@ export async function createAuctionMongo(
     await collections.auctions.createIndex({ expireAt: 1 });
     // C Daily quota: TTL auto-cleared (expiresAt is BSON Date; Mongo TTL only works on Date).
     await collections.auctionDaily.createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 });
+    // listAuctions (browse) was a COLLSCAN + blocking in-memory sort on `price` — neither {itemType,status}
+    // nor any other existing index has `status` as a usable prefix for the {status,price} sort. These two
+    // cover both real query shapes: category-filtered browse (itemType given) and "all" browse (itemType
+    // omitted). {status,itemType,price} also gives `status`-only queries (scanAnomalies) an index prefix,
+    // turning that COLLSCAN into an index scan too. Found 2026-07-27 in a full Mongo/Redis read-path audit.
+    await collections.auctions.createIndex({ status: 1, itemType: 1, price: 1 });
+    await collections.auctions.createIndex({ status: 1, price: 1 });
+    // purgeClosedListings runs hourly and filters/sorts by closedAt with no supporting index (COLLSCAN);
+    // low urgency (scheduled, not request-path) but cheap to fix alongside the above.
+    await collections.auctions.createIndex({ closedAt: 1 });
   }
 
   return {

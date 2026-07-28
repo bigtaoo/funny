@@ -14,6 +14,7 @@ import {
   buildingLevel,
   npcBaseHp,
   SECT_LEADER_PENALTY_RATE,
+  SIEGE_RETENTION_SEC,
   type ResourceType,
   type SiegeOutcome,
 } from '@nw/shared';
@@ -80,6 +81,7 @@ export function SiegeHelpersMixin<TBase extends SiegeServiceBaseCtor>(Base: TBas
         outcome,
         recomputed: false,
         ts: t,
+        expireAt: new Date(t + SIEGE_RETENTION_SEC * 1000),
         ...(replay
           ? {
               seed: replay.seed,

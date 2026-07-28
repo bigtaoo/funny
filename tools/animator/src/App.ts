@@ -187,6 +187,10 @@ export class App {
     );
     void autoSave.bootstrap();
 
+    // Desktop shell content hot-update: shell asks for an immediate save before
+    // reloading to a newer build (design/tools/desktop-shell/DESIGN.md §4.2).
+    window.nwDesktop?.onRequestSave(() => autoSave.requestFlush());
+
     bus.emit('status', 'Ready');
   }
 }

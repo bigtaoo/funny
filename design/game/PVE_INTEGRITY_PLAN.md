@@ -48,7 +48,7 @@
 | 录制 | `RecordingInputSource`（S1-RP）已包 PvE 自建局 | 直接产 PvE 录像 |
 | 回放/复算 | `ReplayInputSource` + `judgeRunner`（S1-J） | PvE judge = 同一套无头复算 |
 | 录像持久化 | `matches.replay` / `replayBlobs` / `replayRef`（本次 S1-RP） | PvE 录像同套存取 |
-| 速率计数 | `adsDaily` / `victoryDaily` 按 dayKey 原子计数 | PvE 每日材料上限同款 |
+| 速率计数 | `adsDaily` / `victoryDaily` 按 dayKey 原子计数（2026-07-27 起 Redis，`shared/src/dailyCounter.ts`） | PvE 每日材料上限同款 |
 | 关卡规则权威 | `levels/*.json` + `parseLevelDefinition`（已是服务器可读单一来源） | 服务器重算奖励/前置 |
 
 ## 4. ⚠️ 根问题（最关键的待拍板项）
@@ -132,7 +132,7 @@ metaserver 严禁 import `client/src/game`（M12）。故 PvE **经济数据**�
 
 `materials`/`progress`/`pveUpgrades` 仍存 meta `saves` 文档（不像钱包迁 commercial），但**只有
 `/pve/*` + ranked 结算路径**能写，`putSave` 不接受。写用乐观锁 rev 守卫（同 `applyPvp`/`putSave`），
-与客户端 `PUT /save`（只改 equipped/flags）并发安全。每日上限用 `pveDaily` 计数集合（同 `adsDaily`）。
+与客户端 `PUT /save`（只改 equipped/flags）并发安全。每日上限用 Redis 计数（同 `adsDaily`，2026-07-27 起从 Mongo `pveDaily` 集合迁出，`shared/src/dailyCounter.ts`）。
 
 **客户端 adoptCloud 并发安全（2026-06-28 修）**：`push()` 防抖 2 s 后上行，与 `pveClear` 并发飞出时存在竞态：
 若服务端先处理 `putSave`（快）、后处理 `pveClear`（慢），`putSave` 回执快到时云端快照还没有新通关，

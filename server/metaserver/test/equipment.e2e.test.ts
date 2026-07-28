@@ -21,6 +21,7 @@ import type { FastifyInstance } from 'fastify';
 import type { CommercialClient } from '../dist/commercialClient.js';
 import { buildApp } from '../dist/app.js';
 import { seedEquipment, seedEquipmentBatch, readEquipmentInv } from './helpers/equipment.js';
+import { readCardInv } from './helpers/cards.js';
 
 /** Minimal fake commercial client: only getWallet/spend are real (enhance uses coins); everything else is stubbed. */
 function makeFakeCommercial(): CommercialClient & {
@@ -391,8 +392,7 @@ describe.skipIf(!mongo)('equipment backend e2e', () => {
   // ── E4 Equip (CC-2: gear now lives in CardInstance.gear[slot]) ────────────────────────────
   /** Return the first card instance id from the starter roster (granted on account creation). */
   const starterCardId = async () => {
-    const s = await readSave();
-    return Object.keys(s.cardInv ?? {})[0]!;
+    return Object.keys(await readCardInv(m, accountId))[0]!;
   };
 
   it('equip: equip → CardInstance.gear[slot]; unequip → removed', async () => {

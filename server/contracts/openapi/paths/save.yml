@@ -27,6 +27,9 @@
                     gatewayUrl: { type: string }
                     # True when the player still holds their one-time free rename (current display name is a system-assigned default). Client shows a free rename button.
                     freeRename: { type: boolean }
+                    # Server epoch ms at response time (P1-1 clock-offset sample) — client corrects its local
+                    # clock against this for any countdown computed from a server-issued epoch timestamp.
+                    serverNow: { type: integer }
                     # Present when this account has a match still in progress (login-reconnect-prompt): the client offers to reconnect straight into it.
                     # ticket is the original match-start ticket (gameserver's handshake ignores its exp, so it remains usable for the match's lifetime).
                     activeMatch:

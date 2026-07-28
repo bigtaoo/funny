@@ -413,7 +413,6 @@ export class MarchService {
         ? { $set: { resources, lastTickAt: t }, $inc: { rev: 1 } }
         : { $set: { resources, lastTickAt: t }, $inc: { troops: -troops, rev: 1 } },
     );
-    await this.core.scheduleMarch(worldId, mid, arriveAt);
     const view = this.core.marchView(doc);
     void this.core.pushMarch(accountId, view);
     // G5-2 reverse vision push: push this march to observers whose vision covers its path (enemy march entering your vision triggers a push, V4).
@@ -477,7 +476,6 @@ export class MarchService {
       const cur = m.path[m.stepIndex];
       if (cur) await this.core.clearOccupancy(worldId, tileId(worldId, cur.x, cur.y), mid);
     }
-    await this.core.scheduleMarch(worldId, mid, backArrive); // update score on the same member (ZSET)
     const view = this.core.marchView(claimed);
     void this.core.pushMarch(accountId, view);
     return view;
@@ -509,8 +507,9 @@ export class MarchService {
 
   /**
    * Arrival processing: scan all in-transit marches with arriveAt ≤ now, atomically claim them (findOneAndDelete), then apply effects by kind.
-   * The Mongo `arriveAt` index scan is authoritative (works across worlds and without Redis); the Redis ZSET is only a precise wake-up hint
-   * (maintained by scheduleMarch, §14.4). Returns the number of marches processed. worldsvc single-consumer (U12; single-process is acceptable for early stage).
+   * The Mongo `arriveAt` index scan is the sole mechanism (2026-07-27: the Redis ZSET wake-up hint this docstring
+   * used to describe was write-only — nothing ever read it back — and was removed as dead I/O; see corePush.ts history).
+   * Returns the number of marches processed. worldsvc single-consumer (U12; single-process is acceptable for early stage).
    */
   async processDueArrivals(nowMs?: number): Promise<number> {
     const { cols } = this.core.deps;
@@ -540,7 +539,6 @@ export class MarchService {
         // or concurrent processor.
         const claimed = await cols.marches.findOneAndDelete({ _id: m._id, status: 'marching' });
         if (!claimed) continue;
-        await this.core.unscheduleMarch(claimed.worldId, claimed._id);
         await this.applyArrival(claimed, t);
         n++;
       }
@@ -553,8 +551,9 @@ export class MarchService {
    * cell entered and (P2b) resolving a field encounter whenever the cell already holds an ENEMY unit. Returns
    * true iff the march is fully handled and must not be rescheduled — either it reached its final path cell and
    * its arrival was applied (claimed+deleted), or it was destroyed by a lost en-route encounter (also deleted).
-   * Otherwise the step cursor (stepIndex/nextStepAt) is persisted and the ZSET wake-up rescheduled to the next
-   * step. The occupancy write stays best-effort (Redis-absent = no encounters, arrival still correct via Mongo).
+   * Otherwise the step cursor (stepIndex/nextStepAt) is persisted; the next processDueArrivals scan (Mongo
+   * nextStepAt) picks it up. The occupancy write stays best-effort (Redis-absent = no encounters, arrival still
+   * correct via Mongo).
    */
   private async advanceMarch(m: MarchDoc, t: number): Promise<boolean> {
     const { cols } = this.core.deps;
@@ -616,7 +615,6 @@ export class MarchService {
               // Wiped by tower fire mid-route: delete the march. `left` is already vacated; no occ was written on `tid`.
               const claimed = await cols.marches.findOneAndDelete({ _id: m._id, status: 'marching' });
               if (claimed) {
-                await this.core.unscheduleMarch(claimed.worldId, claimed._id);
                 void this.core.pushMarch(m.ownerId, this.core.marchView({ ...claimed, status: 'recalled' }));
               }
               return true; // fully handled (removed) — do not reschedule
@@ -641,7 +639,6 @@ export class MarchService {
           // encounter). `left` is already vacated and we never wrote our occ on `tid`, so nothing to clear.
           const claimed = await cols.marches.findOneAndDelete({ _id: m._id, status: 'marching' });
           if (claimed) {
-            await this.core.unscheduleMarch(claimed.worldId, claimed._id);
             void this.core.pushMarch(m.ownerId, this.core.marchView({ ...claimed, status: 'recalled' }));
           }
           return true; // fully handled (removed) — do not reschedule
@@ -677,19 +674,18 @@ export class MarchService {
       // occupancy entry for the final cell (applyArrival may re-register it as a stationed team via P3).
       const claimed = await cols.marches.findOneAndDelete({ _id: m._id, status: 'marching' });
       if (!claimed) return false; // lost to a concurrent recall / processor
-      await this.core.unscheduleMarch(claimed.worldId, claimed._id);
       await this.core.clearOccupancy(claimed.worldId, claimed.toTile, claimed._id);
       await this.applyArrival(claimed, t);
       return true;
     }
-    // Mid-route: persist the new cursor and reschedule the next step. Guard on status:'marching' AND kind≠return
-    // so a concurrent recall (which flips to a return leg and $unsets the cursor) is never clobbered back.
+    // Mid-route: persist the new cursor. Guard on status:'marching' AND kind≠return so a concurrent recall
+    // (which flips to a return leg and $unsets the cursor) is never clobbered back. The next processDueArrivals
+    // scan (Mongo nextStepAt) picks up the advance from here.
     const nextStepAt = marchStepArriveAt(m.departAt, idx + 1);
-    const res = await cols.marches.updateOne(
+    await cols.marches.updateOne(
       { _id: m._id, status: 'marching', kind: { $ne: 'return' } },
       { $set: { stepIndex: idx, nextStepAt }, $inc: { rev: 1 } },
     );
-    if (res.matchedCount > 0) await this.core.scheduleMarch(m.worldId, m._id, nextStepAt);
     return false;
   }
 
@@ -767,7 +763,6 @@ export class MarchService {
       rev: 0,
     };
     await cols.marches.insertOne(back);
-    await this.core.scheduleMarch(m.worldId, back._id, back.arriveAt);
     void this.core.pushMarch(m.ownerId, this.core.marchView(back));
   }
 
@@ -880,7 +875,6 @@ export class MarchService {
       rev: 0,
     };
     await cols.marches.insertOne(back);
-    await this.core.scheduleMarch(worldId, back._id, arriveAt);
     const view = this.core.marchView(back);
     void this.core.pushMarch(accountId, view);
     return view;

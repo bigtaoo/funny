@@ -139,4 +139,25 @@ describe.skipIf(!mongo)('metaserver auth password e2e', () => {
     });
     expect(body(r).data.isAnonymous).toBe(true);
   });
+
+  it('ban takes effect on the very next login (accountCache.ts invalidation, not a stale-allow window): admin ban -> immediate 403, admin unban -> immediate 200 again', async () => {
+    const { accountId } = body(await register('gina', 'secret123')).data;
+    const banHeaders = { 'x-internal-key': 'test-internal-key' };
+
+    // rejectIfBanned's cache is populated by the registration call above (it also gates auth). A stale
+    // cache would let this login through for up to BAN_STATUS_TTL_MS after the ban — asserting "immediate"
+    // here is the point: it must be invalidated on write, not merely eventually consistent.
+    const banRes = await app.inject({ method: 'POST', url: `/internal/accounts/${accountId}/ban`, headers: banHeaders });
+    expect(banRes.statusCode).toBe(200);
+
+    const bannedLogin = await login('gina', 'secret123');
+    expect(bannedLogin.statusCode).toBe(403);
+    expect(body(bannedLogin).error.code).toBe('ACCOUNT_BANNED');
+
+    const unbanRes = await app.inject({ method: 'POST', url: `/internal/accounts/${accountId}/unban`, headers: banHeaders });
+    expect(unbanRes.statusCode).toBe(200);
+
+    const restoredLogin = await login('gina', 'secret123');
+    expect(restoredLogin.statusCode).toBe(200);
+  });
 });

@@ -345,7 +345,6 @@ export function SiegeArrivalMixin<TBase extends SiegeServiceBaseCtor>(Base: TBas
           dueAt: t + SLG_SIEGE_DAMAGE_DELAY_MS,
         };
         await cols.siegeDamage.updateOne({ _id: dmg._id }, { $setOnInsert: dmg }, { upsert: true });
-        await this.core.scheduleSiegeDamage(m.worldId, dmg._id, dmg.dueAt);
       } else if (attackerSurvivors > 0) {
         // Attacker repelled: survivors retreat and return to the troop pool immediately (flat/legacy armies
         // only — a card army's survivors were already written to cardState above, not the pool).

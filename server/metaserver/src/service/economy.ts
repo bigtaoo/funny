@@ -194,12 +194,17 @@ export function EconomyMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase & C
         return reply.code(400).send(err(ErrorCode.BAD_REQUEST, draw.error));
       }
       // Route each result: mat_* → materials, equipment defId → equipment instance, character card
-      // defId → hero card grant (save.cardInv via grantHeroCards), everything else → skin (idempotent
+      // defId → hero card grant (cardInstances via grantHeroCards), everything else → skin (idempotent
       // inventory.skins add; duplicate-to-coin conversion deferred to S5, see economy.ts comment).
       // `marked` (new/duplicate badges for the reveal UI) is computed on the full raw result list,
-      // checking cards against cardInv defIds (not inventory.skins) since that's where they land.
-      const cur = await savePromise;
-      const ownedCardDefIds = Object.values(cur.cardInv).map((c) => c.defId);
+      // checking cards against owned cardInstances defIds (not inventory.skins) since that's where they
+      // land. Cards moved to their own collection (2026-07-27 split, cards.ts) — a projected defId-only
+      // query here is lighter than the old in-memory map read (and lighter than a full assembleCardInv join).
+      const [cur, ownedCardDocs] = await Promise.all([
+        savePromise,
+        cols.cardInstances.find({ accountId }, { projection: { defId: 1 } }).toArray(),
+      ]);
+      const ownedCardDefIds = ownedCardDocs.map((d) => d.defId);
       const { marked } = markDuplicates(cur.inventory.skins, ownedCardDefIds, draw.results);
       const { save, overflow } = await deliverLootBox(
         cols,
@@ -459,9 +464,12 @@ export function EconomyMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase & C
         return reply.code(400).send(err(ErrorCode.BAD_REQUEST, r.error));
       }
 
-      const before = await getOrCreateSave(cols, accountId, now());
       // Mark new/dup for the reveal BEFORE delivery mutates the skin set (mirrors gachaDraw's convention).
-      const beforeCardDefIds = Object.values(before.cardInv).map((c) => c.defId);
+      const [before, beforeCardDocs] = await Promise.all([
+        getOrCreateSave(cols, accountId, now()),
+        cols.cardInstances.find({ accountId }, { projection: { defId: 1 } }).toArray(),
+      ]);
+      const beforeCardDefIds = beforeCardDocs.map((d) => d.defId);
       const marked = markDuplicates(before.inventory.skins, beforeCardDefIds, r.results).marked;
       // starter_draw delivers pack items (loot-box routing); starter_growth grants coins/subscription only (no items).
       if (r.results.length > 0) {
@@ -485,18 +493,18 @@ export function EconomyMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase & C
       const { adToken, platform } = req.body as { adToken: string; platform?: string };
       if (!adToken) return reply.code(400).send(err(ErrorCode.BAD_REQUEST, 'missing adToken'));
 
-      const { cols, commercial, now } = this.deps;
+      const { cols, commercial, now, redis } = this.deps;
       const ts = now();
       const dayKey = adsDayKey(ts);
 
       // 30-minute interval gate (C2).
-      const intervalOk = await checkAdInterval(cols, accountId, dayKey, ts, ADS_MIN_INTERVAL_MS);
+      const intervalOk = await checkAdInterval(redis, accountId, dayKey, ts, ADS_MIN_INTERVAL_MS);
       if (!intervalOk) {
         return reply.code(429).send(err(ErrorCode.DAILY_CAP_REACHED, 'ad cooldown not elapsed'));
       }
 
       // Daily cap (C2).
-      const allowed = await bumpAdsCap(cols, accountId, dayKey, ADS_DAILY_CAP, ts);
+      const allowed = await bumpAdsCap(redis, accountId, dayKey, ADS_DAILY_CAP);
       if (!allowed) {
         return reply.code(429).send(err(ErrorCode.DAILY_CAP_REACHED, 'daily ad cap reached'));
       }

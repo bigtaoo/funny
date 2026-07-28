@@ -1,7 +1,7 @@
 // Mongo client factory + collection handles (SERVER_API.md §5, META_DESIGN.md §6.3).
 // Deploy with a single-node replica set to unlock cross-collection transactions; wallet/delivery use single-document atomic updates.
 import { MongoClient, Db, Collection, type MongoClientOptions } from 'mongodb';
-import type { SaveData, EquipmentInstance, CardInstance, Affix } from './types';
+import type { SaveData, EquipmentInstance, CardInstance, Affix, GearSlotMap } from './types';
 import type { EquipRarity } from './equipment';
 import type { StatKey } from './achievements';
 import type { LadderSeasonDoc, LadderSeasonSnapshotDoc } from './season';
@@ -51,6 +51,12 @@ export interface AccountDoc {
   };
   /** C5-b soft-delete timestamp; once set, auth returns ACCOUNT_DELETED and data is asynchronously purged after 7 days. */
   deletedAt?: number;
+  /**
+   * C5-b cancellation token, minted alongside deletedAt and required by POST /account/cancel-deletion
+   * to undo a soft-delete within the 7-day grace period. Cleared (along with deletedAt) on successful
+   * cancellation, or once the grace period elapses (the eventual purge job clears the whole account).
+   */
+  deletionConfirmToken?: string;
 }
 
 /**
@@ -176,16 +182,6 @@ export interface PvpPlaySequenceDoc {
   plays: { side: number; frame: number; cardType: string }[];
 }
 
-/** Daily ad cap counter (S5-5, authoritative in meta, not surfaced to client sync segment to prevent abuse). _id = `${accountId}:${dayKey}`. */
-export interface AdsDailyDoc {
-  _id: string;
-  accountId: string;
-  dayKey: string;
-  count: number;
-  ts: number;
-  lastAdAt?: number; // timestamp of the last ad (30-min cooldown gate)
-}
-
 /** Ad token uniqueness (C2): SHA-256 hash of adToken, TTL 48h auto-expiry. _id = tokenHash. */
 export interface AdsTokenDoc {
   _id: string;   // SHA-256(adToken) hex
@@ -209,14 +205,6 @@ export interface ReplayBlobDoc {
   expireAt?: Date;
 }
 
-/** PvE daily material-rewarding clear count (server-authoritative, anti-abuse). _id = `${accountId}:${dayKey}`. */
-export interface PveDailyDoc {
-  _id: string;
-  accountId: string;
-  dayKey: string;
-  rewardedClears: number;
-  ts: number;
-}
 
 /**
  * PvE clear replay spot-check re-simulation record (PVE_INTEGRITY §8.6 L1). Sampled clears are recorded here first (materials not yet granted,
@@ -255,6 +243,10 @@ export interface PveVerificationDoc {
   frames?: { frame: number; cmds: { side: number; commands: string }[] }[];
   endFrame?: number;
   ts: number;
+  /** TTL anchor (BSON Date; Mongo TTL only works on Date, `ts` above is a plain number), 2026-07-27 audit
+   * finding — mirrors MatchDoc.expireAt's pattern: set at insert (pending), then unset once judged `rejected`
+   * (kept forever for ops review, like a disputed match) or left as-is for verified/unverified. */
+  expireAt?: Date;
 }
 
 /**
@@ -437,6 +429,22 @@ export interface EquipmentInstanceDoc {
   locked?: boolean;
 }
 
+/**
+ * Card instance, split out of `SaveData.cardInv` (perf, 2026-07-27 audit, same rationale + convention
+ * as `EquipmentInstanceDoc` above): the Hero Roster (up to 500 cards) was a second unbounded contributor
+ * to save-doc bloat on Atlas M0, alongside equipment. `_id` = instanceId (unchanged from the old embedded
+ * map key). No Mongo transactions in this codebase (see this file's header) — cross-collection
+ * consistency here follows the same ordering-discipline / idempotency house style as equipmentInstances.
+ */
+export interface CardInstanceDoc {
+  _id: string; // instanceId
+  accountId: string;
+  defId: string;
+  level: number;
+  gear: GearSlotMap;
+  locked: boolean;
+}
+
 /** Stamina real-time state (A4). _id = accountId. Whole-row atomic findOneAndUpdate deduction, no rev lock. */
 export interface StaminaDoc {
   _id: string; // accountId
@@ -478,9 +486,7 @@ export interface Collections {
   saves: Collection<SaveDoc>;
   accounts: Collection<AccountDoc>;
   matches: Collection<MatchDoc>;
-  adsDaily: Collection<AdsDailyDoc>;
   replayBlobs: Collection<ReplayBlobDoc>;
-  pveDaily: Collection<PveDailyDoc>;
   pveVerifications: Collection<PveVerificationDoc>;
   antiCheatReviews: Collection<AntiCheatReviewDoc>;
   // PvE anti-cheat (S4-4)
@@ -497,6 +503,8 @@ export interface Collections {
   equipmentIdem: Collection<EquipmentIdemDoc>;
   // equipment instances, split out of SaveData.equipmentInv (perf, 2026-07-26); _id = instanceId
   equipmentInstances: Collection<EquipmentInstanceDoc>;
+  // card instances, split out of SaveData.cardInv (perf, 2026-07-27); _id = instanceId
+  cardInstances: Collection<CardInstanceDoc>;
   // ladder seasons (S11): single global document (_id='current')
   ladderSeasons: Collection<LadderSeasonDoc>;
   // ladder season settlement snapshots (L2-1): one entry per account per season, written at season close, also serves as idempotency ledger
@@ -550,9 +558,7 @@ export async function createMongo(
     saves: db.collection<SaveDoc>('saves'),
     accounts: db.collection<AccountDoc>('accounts'),
     matches: db.collection<MatchDoc>('matches'),
-    adsDaily: db.collection<AdsDailyDoc>('adsDaily'),
     replayBlobs: db.collection<ReplayBlobDoc>('replayBlobs'),
-    pveDaily: db.collection<PveDailyDoc>('pveDaily'),
     pveVerifications: db.collection<PveVerificationDoc>('pveVerifications'),
     antiCheatReviews: db.collection<AntiCheatReviewDoc>('antiCheatReviews'),
     pveRejections: db.collection<PveRejectDoc>('pveRejections'),
@@ -562,6 +568,7 @@ export async function createMongo(
     cardIdem: db.collection<CardIdemDoc>('cardIdem'),
     equipmentIdem: db.collection<EquipmentIdemDoc>('equipmentIdem'),
     equipmentInstances: db.collection<EquipmentInstanceDoc>('equipmentInstances'),
+    cardInstances: db.collection<CardInstanceDoc>('cardInstances'),
     ladderSeasons: db.collection<LadderSeasonDoc>('ladderSeasons'),
     ladderSeasonSnapshots: db.collection<LadderSeasonSnapshotDoc>('ladderSeasonSnapshots'),
     adsTokens: db.collection<AdsTokenDoc>('adsTokens'),
@@ -599,6 +606,9 @@ export async function createMongo(
     await collections.matches.createIndex({ mode: 1, audited: 1, ts: 1 });
     // PvE spot-check records: query by account + time (audit / clean up pending settlements).
     await collections.pveVerifications.createIndex({ accountId: 1, ts: -1 });
+    // TTL safety net (2026-07-27 audit finding: this collection had no expiry at all, and can carry a full
+    // replay `frames[]` for rejected docs). Only set for verified/unverified — see PveVerificationDoc.expireAt.
+    await collections.pveVerifications.createIndex({ expireAt: 1 }, { expireAfterSeconds: 0 });
     // achievement anti-cheat review queue (S9-7): query history by account + open queue.
     await collections.antiCheatReviews.createIndex({ accountId: 1, ts: -1 });
     await collections.antiCheatReviews.createIndex({ status: 1, ts: -1 });
@@ -622,6 +632,8 @@ export async function createMongo(
     await collections.equipmentIdem.createIndex({ expireAt: 1 }, { expireAfterSeconds: 0 });
     // equipment instances: fetch-all-for-account (GET /save join, /internal/save-fields, migration, cap-count self-heal).
     await collections.equipmentInstances.createIndex({ accountId: 1 });
+    // card instances: fetch-all-for-account (GET /save join, /internal/save-fields, migration, cap-count self-heal).
+    await collections.cardInstances.createIndex({ accountId: 1 });
     // ad token uniqueness TTL auto-expiry (C2, 48h).
     await collections.adsTokens.createIndex({ expireAt: 1 }, { expireAfterSeconds: 0 });
     // ladder leaderboard: server-wide Top100 + my rank count (S11-SE-5).

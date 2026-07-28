@@ -14,7 +14,7 @@ import { getDisplayName, ensurePublicId, hasFreeRename } from '../accounts.js';
 import { mirrorWalletFrom, reconcileUndelivered } from '../economy.js';
 import { nullMetaSocialsvcClient } from '../socialsvcClient.js';
 import type { MetaHandlers } from '../generated/routes.gen.js';
-import { accountIdOf, clientPlatformOf, type Constructor, type MetaBaseCtor } from './base.js';
+import { accountIdOf, clientPlatformOf, createRateLimiter, type Constructor, type MetaBaseCtor } from './base.js';
 
 type SaveHandlers = Pick<
   MetaHandlers,
@@ -37,19 +37,14 @@ const STATE_REPLAY_SHARE_PER_HOUR = 20;
 export function SaveMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase & Constructor<SaveHandlers> {
   return class extends Base {
     /**
-     * State-stream share minting rate limit (REPLAY_SHARE_DESIGN §3.1): sliding window of mint counts per account within the last 1 hour.
-     * In-process approximation (per-instance when meta scales out — sufficient to prevent flooding). Returns true = allowed and recorded.
+     * State-stream share minting rate limit (REPLAY_SHARE_DESIGN §3.1): sliding window of mint counts per
+     * account within the last 1 hour. Redis-backed when configured (2026-07-27, precise across instances);
+     * in-process fallback otherwise — see createRateLimiter in base.ts (this used to be a hand-rolled
+     * duplicate of that same sliding-window logic with the same never-evicts-idle-keys leak; consolidated).
      */
-    private readonly stateShareRate = new Map<string, number[]>();
-    private allowStateShare(accountId: string, now: number): boolean {
-      const win = this.stateShareRate.get(accountId)?.filter((t) => now - t < 3_600_000) ?? [];
-      if (win.length >= STATE_REPLAY_SHARE_PER_HOUR) {
-        this.stateShareRate.set(accountId, win);
-        return false;
-      }
-      win.push(now);
-      this.stateShareRate.set(accountId, win);
-      return true;
+    private readonly stateShareRate = createRateLimiter(this.deps.redis, 'share', STATE_REPLAY_SHARE_PER_HOUR, 3_600_000);
+    private async allowStateShare(accountId: string, now: number): Promise<boolean> {
+      return this.stateShareRate.allow(accountId, now);
     }
 
     async getSave(req: FastifyRequest) {
@@ -100,6 +95,10 @@ export function SaveMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase & Cons
         save,
         publicId,
         freeRename,
+        // Clock-offset sample (P1-1): lets the client correct its local clock against every SLG/
+        // economy countdown it computes from a server-issued epoch timestamp (march ETA, build/train
+        // queue, subscription expiry, speedup pricing, …) — see client/src/net/serverClock.ts.
+        serverNow: now(),
         ...(displayName ? { displayName } : {}),
         ...this.gatewayField,
         ...(await this.activeMatchFieldFor(accountId)),
@@ -241,7 +240,7 @@ export function SaveMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase & Cons
       const { cols, now } = this.deps;
       const ts = now();
 
-      if (!this.allowStateShare(accountId, ts)) {
+      if (!(await this.allowStateShare(accountId, ts))) {
         return reply.code(429).send(err(ErrorCode.RATE_LIMITED, 'too many shares, try later'));
       }
 

@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8" />
+<title>NW Tool</title>
+<style>
+  html, body { margin: 0; padding: 0; height: 100%; background: #1e1e24; color: #ddd; font-family: system-ui, sans-serif; }
+  #list { display: flex; flex-direction: column; padding: 8px; gap: 4px; }
+  button.tool-btn {
+    all: unset;
+    cursor: pointer;
+    padding: 10px 12px;
+    border-radius: 6px;
+    font-size: 13px;
+  }
+  button.tool-btn:hover { background: #2c2c34; }
+  button.tool-btn.active { background: #3a5fd9; color: #fff; }
+  #update-banner {
+    display: none;
+    margin: 8px;
+    padding: 10px;
+    border-radius: 6px;
+    background: #3a2f0a;
+    border: 1px solid #a97e1f;
+    font-size: 12px;
+    line-height: 1.5;
+  }
+  #update-banner.visible { display: block; }
+  #update-banner button {
+    all: unset;
+    cursor: pointer;
+    margin-top: 6px;
+    display: inline-block;
+    padding: 4px 10px;
+    border-radius: 4px;
+    background: #a97e1f;
+    color: #1e1e24;
+    font-size: 12px;
+  }
+</style>
+</head>
+<body>
+  <div id="update-banner"></div>
+  <div id="list"></div>
+  <script src="sidebar.js"></script>
+</body>
+</html>

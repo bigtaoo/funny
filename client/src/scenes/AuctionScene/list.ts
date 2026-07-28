@@ -13,6 +13,7 @@ import { drawScrollIndicator } from '../../ui/widgets/ScrollIndicator';
 import { getEquipDef } from '../../game/meta/equipmentDefs';
 import { buildEquipIcon } from '../../render/equipmentAtlas';
 import { CARD_DEFS } from '../../game/meta/cardDefs';
+import { serverNow } from '../../net/serverClock';
 import { UNIT_ART_URLS, getArtTexture } from '../../render/cardArt';
 import { FILTER_H, AUC_CELL_GAP, AUC_CELL_H, AUC_CELL_W_TARGET, FILTERS, type AucFilter, type AucTab } from './base';
 import { type Constructor, type AuctionSceneBaseCtor } from './base';
@@ -144,7 +145,7 @@ export function ListMixin<TBase extends AuctionSceneBaseCtor>(Base: TBase): TBas
       this.scrollRegionTop = listY;
       this.scrollRegionBottom = listY + availH;
 
-      const now = Date.now();
+      const now = serverNow();
       auctions.forEach((auc, i) => {
         const col = i % cols;
         const row = Math.floor(i / cols);

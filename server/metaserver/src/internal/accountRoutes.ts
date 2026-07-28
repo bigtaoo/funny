@@ -2,13 +2,13 @@
 import type { FastifyInstance } from 'fastify';
 import { INITIAL_ELO, createLogger, hashPassword, validatePassword } from '@nw/shared';
 import { getProfile, resolveByPublicId, searchAccounts } from '../accounts.js';
-import { profileOf } from '../social.js';
+import { profilesOf } from '../social.js';
 import type { InternalCtx } from './context.js';
 
 const log = createLogger('meta:internal');
 
 export function registerAccountRoutes(app: FastifyInstance, ctx: InternalCtx): void {
-  const { cols, authed, now } = ctx;
+  const { cols, authed, now, accountCache } = ctx;
 
   // ── GET /internal/elo?accountId= ──────────────────────────────────────
   app.get('/internal/elo', async (req, reply) => {
@@ -65,7 +65,7 @@ export function registerAccountRoutes(app: FastifyInstance, ctx: InternalCtx): v
     }
     let accountId: string | null;
     if (publicId) {
-      accountId = await resolveByPublicId(cols, publicId);
+      accountId = await resolveByPublicId(accountCache, cols, publicId);
     } else {
       const exists = await cols.accounts.findOne({ _id: accountIdQ! }, { projection: { _id: 1 } });
       accountId = exists?._id ?? null;
@@ -151,7 +151,7 @@ export function registerAccountRoutes(app: FastifyInstance, ctx: InternalCtx): v
       return reply.code(401).send({ ok: false, error: 'unauthorized' });
     }
     const { publicId } = req.params as { publicId: string };
-    const accountId = await resolveByPublicId(cols, publicId);
+    const accountId = await resolveByPublicId(accountCache, cols, publicId);
     if (!accountId) return reply.code(404).send({ ok: false, error: 'not found' });
     const profile = await getProfile(cols, accountId);
     return reply.send({ accountId, profile });
@@ -167,11 +167,9 @@ export function registerAccountRoutes(app: FastifyInstance, ctx: InternalCtx): v
       return reply.send({ profiles: {} });
     }
     const ids = (accountIds as unknown[]).filter((id): id is string => typeof id === 'string').slice(0, 200);
+    const found = await profilesOf(cols, ids);
     const profiles: Record<string, object> = {};
-    await Promise.all(ids.map(async (id) => {
-      const p = await profileOf(cols, id);
-      if (p) profiles[id] = p;
-    }));
+    for (const [id, p] of found) profiles[id] = p;
     return reply.send({ profiles });
   });
 
@@ -200,6 +198,7 @@ export function registerAccountRoutes(app: FastifyInstance, ctx: InternalCtx): v
     const doc = await cols.accounts.findOne({ _id: id }, { projection: { _id: 1 } });
     if (!doc) return reply.code(404).send({ ok: false, error: 'account not found' });
     await cols.accounts.updateOne({ _id: id }, { $set: { 'flags.banned': true } });
+    accountCache.invalidateBanStatus(id);
     return reply.send({ ok: true });
   });
 
@@ -215,6 +214,7 @@ export function registerAccountRoutes(app: FastifyInstance, ctx: InternalCtx): v
     await cols.accounts.updateOne({ _id: id }, { $unset: { 'flags.banned': '' } });
     // Also clear the save-layer pveBanned flag to prevent the account from being blocked by pveClear after unbanning.
     await cols.saves.updateOne({ _id: id }, { $unset: { 'save.antiCheat.pveBanned': '' } });
+    accountCache.invalidateBanStatus(id);
     return reply.send({ ok: true });
   });
 

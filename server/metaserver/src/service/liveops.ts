@@ -31,7 +31,7 @@ import {
   ADS_MIN_INTERVAL_MS,
   type EquipmentInstance,
 } from '@nw/shared';
-import { getOrCreateSave } from '../save.js';
+import { getOrCreateSave, isAvatarOwned, PRESET_AVATAR_IDS } from '../save.js';
 import { mirrorCoins, adsDayKey, peekAdsStatus } from '../economy.js';
 import { grantTitleToPlayer } from '../titles.js';
 import { getEventsForAccount, claimEventReward } from '../events.js';
@@ -40,15 +40,15 @@ import { grantCards } from '../cards.js';
 import { grantEquipment } from '../equipment.js';
 import type { MetaHandlers } from '../generated/routes.gen.js';
 import { accountIdOf, type Constructor, type MetaBaseCtor } from './base.js';
+import type { SocialBadges } from '@nw/shared';
 
 type LiveOpsHandlers = Pick<
   MetaHandlers,
   | 'getAchievements' | 'claimAchievement' | 'getRetention' | 'claimCheckin' | 'claimDailyReward'
-  | 'getEvents' | 'claimEventReward' | 'getTitles' | 'equipTitle' | 'equipAvatar'
+  | 'getEvents' | 'claimEventReward' | 'getTitles' | 'equipTitle' | 'equipAvatar' | 'getLobbyBadges'
 >;
 
-/** Preset avatar slot ids (avatar.ts AVATAR_DEFS, indices 0-7) — always unlocked, no ownership check. */
-const PRESET_AVATAR_IDS = new Set(['0', '1', '2', '3', '4', '5', '6', '7']);
+const ZERO_SOCIAL_BADGES: SocialBadges = { friendRequests: 0, chat: 0, mail: 0, total: 0 };
 
 export function LiveOpsMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase & Constructor<LiveOpsHandlers> {
   return class extends Base {
@@ -126,11 +126,11 @@ export function LiveOpsMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase & C
     /** Read current retention state (including definition tables; used by the client to render the calendar/task cards). */
     async getRetention(req: FastifyRequest) {
       const accountId = accountIdOf(req);
-      const { cols, now } = this.deps;
+      const { cols, now, redis } = this.deps;
       const tsMs = now();
       const save = await getOrCreateSave(cols, accountId, tsMs);
       const retention = resetStaleRetention(save.retention, tsMs);
-      const adsStatus = await peekAdsStatus(cols, accountId, adsDayKey(tsMs), ADS_MIN_INTERVAL_MS, tsMs);
+      const adsStatus = await peekAdsStatus(redis, accountId, adsDayKey(tsMs), ADS_MIN_INTERVAL_MS, tsMs);
       return ok({
         checkin: retention.checkin ?? null,
         daily: retention.daily ?? null,
@@ -319,6 +319,39 @@ export function LiveOpsMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase & C
       return reply.send({ ok: true, data: { pointsLeft: result.pointsLeft, reward: result.reward } });
     }
 
+    /**
+     * Aggregated lobby red-dot fetch (P1-4, comm-audit-2026-07-27): merges social badges (proxied to
+     * socialsvc) + achievement defs/stats/claimed + retention claimable flags + events-available into
+     * one call, replacing the 4-request waterfall goLobby() used to fire on every online lobby entry.
+     * Best-effort on the social slice — socialsvc being down degrades to zeroed counts rather than
+     * failing the whole response, matching the old per-call try/catch semantics on the client.
+     */
+    async getLobbyBadges(req: FastifyRequest) {
+      const accountId = accountIdOf(req);
+      const { cols, now, socialsvc } = this.deps;
+      const tsMs = now();
+      const auth = (req.headers.authorization ?? '') as string;
+      const [save, events, socialResult] = await Promise.all([
+        getOrCreateSave(cols, accountId, tsMs),
+        getEventsForAccount(cols, accountId, tsMs),
+        socialsvc?.available ? socialsvc.proxy('GET', '/social/badges', null, auth) : Promise.resolve(null),
+      ]);
+      const retention = resetStaleRetention(save.retention, tsMs);
+      const social =
+        socialResult && socialResult.status === 200
+          ? ((socialResult.data as { data: SocialBadges }).data ?? ZERO_SOCIAL_BADGES)
+          : ZERO_SOCIAL_BADGES;
+      return ok({
+        social,
+        achievements: { defs: ACHIEVEMENTS, stats: save.stats ?? {}, achievements: save.achievements ?? {} },
+        retentionClaimable: {
+          checkin: nextCheckinDay(retention, tsMs) !== null,
+          daily: dailyRewardClaimable(retention, tsMs),
+        },
+        eventsAvailable: events.length > 0,
+      });
+    }
+
     /** Read all titles granted to the current account (including derived source/seasonNo) + currently equipped title. */
     async getTitles(req: FastifyRequest) {
       const accountId = accountIdOf(req);
@@ -375,21 +408,7 @@ export function LiveOpsMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase & C
         if (PRESET_AVATAR_IDS.has(avatarId)) {
           return { ...s, equipped: { ...s.equipped, avatar: avatarId } };
         }
-        const sep = avatarId.indexOf(':');
-        const category = sep < 0 ? avatarId : avatarId.slice(0, sep);
-        const key = sep < 0 ? '' : avatarId.slice(sep + 1);
-        const owned = (() => {
-          switch (category) {
-            case 'preset': return true;
-            case 'title': return (s.titles ?? []).includes(key);
-            case 'hero': return (s.everOwned?.hero ?? []).includes(key);
-            case 'equip': return (s.everOwned?.equipment ?? []).includes(key);
-            case 'material': return (s.everOwned?.material ?? []).includes(key);
-            case 'skin': return (s.inventory?.skins ?? []).includes(key) || (s.everOwned?.skin ?? []).includes(key);
-            default: return false;
-          }
-        })();
-        if (!owned) return 'NOT_OWNED';
+        if (!isAvatarOwned(s, avatarId)) return 'NOT_OWNED';
         return { ...s, equipped: { ...s.equipped, avatar: avatarId } };
       });
       if ('error' in out) {

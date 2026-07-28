@@ -46,6 +46,7 @@ import { buildIcon, type IconKind } from '../../render/icons';
 import { loadResAtlas, getResTexture } from '../../render/resAtlasLoader';
 import { loadCityBldAtlas, getCityBldTexture } from '../../render/cityBldAtlasLoader';
 import { getArtTexture } from '../../render/cardArt';
+import { serverNow } from '../../net/serverClock';
 import type { SaveData } from '../../game/meta/SaveData';
 
 // ── Public interface ─────────────────────────────────────────────────────────
@@ -153,6 +154,9 @@ export class CitySceneBase {
   protected meLoadedAt = 0;
   /** Accumulates update() dt; drives the once-per-second resource-total tick. */
   protected simTimer = 0;
+  /** Guards against overlapping getMe() calls from the once-per-second queue-completion check
+   *  below (queueRefreshPending). */
+  protected queueRefreshPending = false;
   /** Resource-bar total labels, repopulated each render() and updated in place per second by
    *  tickResourceTotals() — a text-only nudge that avoids a full scene rebuild every second. */
   protected resTotalLbls: Array<{ rt: ResourceType; lbl: PIXI.Text }> = [];
@@ -205,7 +209,33 @@ export class CitySceneBase {
     if (this.scrollDirty) { this.scrollDirty = false; this.render(); }
     if (this.bt.tick(dt)) this.render();
     this.simTimer += dt;
-    if (this.simTimer >= 1) { this.simTimer = 0; this.tickResourceTotals(); }
+    if (this.simTimer >= 1) {
+      this.simTimer = 0;
+      this.tickResourceTotals();
+      this.checkQueueCompletion();
+    }
+  }
+
+  /**
+   * Build/train queue completion has no push and no other refresh path — worldsvc's 2s scheduler
+   * settles the queue server-side but never notifies gateway, so without this the countdown text
+   * only updates on the next render() (scroll/action-driven) and the finished entry never
+   * disappears until the player leaves and re-enters CityScene (P0-9, comm-audit-2026-07-27
+   * finding B10). Once a queue entry's completeAt has passed, re-fetch `me` — if the server hasn't
+   * processed it yet (scheduler lag), the entry is still there and this simply retries next tick.
+   */
+  private checkQueueCompletion(): void {
+    if (this.queueRefreshPending || this.destroyed || !this.me) return;
+    const now = Date.now();
+    const due =
+      (this.me.buildQueue ?? []).some(q => q.completeAt <= now) ||
+      (this.me.trainingQueue ?? []).some(q => q.completeAt <= now);
+    if (!due) return;
+    this.queueRefreshPending = true;
+    this.cb.worldApi.getMe(this.cb.worldId)
+      .then(me => { if (!this.destroyed) { this.setMe(me); this.render(); } })
+      .catch(() => { /* offline: retry next tick */ })
+      .finally(() => { this.queueRefreshPending = false; });
   }
 
   /** Advance the resource-bar total labels in place (no full render). Mirrors worldsvc settle():
@@ -321,7 +351,11 @@ export class CitySceneBase {
     if (this.bt.busy) return;
     const entry = this.me?.buildQueue?.find(q => q.key === key);
     if (!entry) return;
-    const secsLeft = Math.max(0, Math.ceil((entry.completeAt - Date.now()) / 1000));
+    // serverNow() (P1-1): this determines how many coins are actually charged, so it must use the
+    // same server-corrected clock as the price the player was shown (render.ts's renderBuildQueue) —
+    // a client with a fast/slow local clock would otherwise over/under-charge relative to the
+    // server's real remaining time (comm-audit-2026-07-27 finding).
+    const secsLeft = Math.max(0, Math.ceil((entry.completeAt - serverNow()) / 1000));
     const coins = Math.ceil(secsLeft / BUILD_SPEEDUP_SECS_PER_COIN);
     this.bt.start();
     this.render();

@@ -15,7 +15,7 @@ import { accountIdOf, type Constructor, type MetaBaseCtor } from './base.js';
 type SocialHandlers = Pick<
   MetaHandlers,
   | 'getFriends' | 'getFriendRequests' | 'getSocialBadges' | 'searchFriend' | 'requestFriend'
-  | 'respondFriend' | 'removeFriend' | 'blockUser' | 'unblockUser' | 'getConversations'
+  | 'respondFriend' | 'removeFriend' | 'blockUser' | 'unblockUser' | 'reportUser' | 'getConversations'
   | 'getMessages' | 'sendChat' | 'readChat' | 'getMail' | 'readMail' | 'deleteMail'
   | 'claimMail' | 'sendMail'
 >;
@@ -74,6 +74,10 @@ export function SocialMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase & Co
     async unblockUser(req: FastifyRequest, reply: FastifyReply) {
       const { publicId } = req.params as { publicId: string };
       return this.proxySocial(req, reply, `/social/friends/block/${encodeURIComponent(publicId)}`);
+    }
+
+    async reportUser(req: FastifyRequest, reply: FastifyReply) {
+      return this.proxySocial(req, reply, '/social/friends/report', req.body);
     }
 
     async getConversations(req: FastifyRequest, reply: FastifyReply) {

@@ -16,6 +16,7 @@ import type { FastifyInstance } from 'fastify';
 import type { CommercialClient } from '../dist/commercialClient.js';
 import { buildApp } from '../dist/app.js';
 import { seedEquipment } from './helpers/equipment.js';
+import { seedCard as seedCardDoc, readCardInv } from './helpers/cards.js';
 
 function makeFakeCommercial(): CommercialClient {
   const coins = new Map<string, number>();
@@ -58,13 +59,11 @@ describe.skipIf(!mongo)('cards backend e2e', () => {
       payload: { targetId, materialIds, idempotencyKey },
     });
 
-  /** Directly seeds a CardInstance into save.cardInv (bypassing grantCards) — used to build up
-   * enough same-faction same-level materials for fusion tests beyond the 3 starter cards. */
+  /** Directly seeds a CardInstance into `cardInstances` (bypassing grantCards) — used to build up
+   * enough same-faction same-level materials for fusion tests beyond the 3 starter cards. Doesn't bump
+   * `cardInvCount` — the next response join (assembleCardInv) self-heals it, same as production. */
   const seedCard = async (id: string, defId: string, level = 1, locked = false): Promise<void> => {
-    await m.collections.saves.updateOne(
-      { _id: accountId },
-      { $set: { [`save.cardInv.${id}`]: { id, defId, level, gear: {}, locked } } },
-    );
+    await seedCardDoc(m, accountId, { id, defId, level, gear: {}, locked });
   };
 
   const equip = (slot: string, instanceId: string | null, cardInstanceId: string) =>
@@ -80,8 +79,8 @@ describe.skipIf(!mongo)('cards backend e2e', () => {
   };
 
   const readSave = async () => (await m.collections.saves.findOne({ _id: accountId }))!.save;
-  const cardIds = async () => Object.keys((await readSave()).cardInv ?? {});
-  const cardById = async (id: string) => (await readSave()).cardInv?.[id];
+  const cardIds = async () => Object.keys(await readCardInv(m, accountId));
+  const cardById = async (id: string) => (await readCardInv(m, accountId))[id];
 
   beforeEach(async () => {
     await m.db.dropDatabase();
@@ -103,10 +102,10 @@ describe.skipIf(!mongo)('cards backend e2e', () => {
     });
 
     it('starter cards are lichuang/chenshou/suyuan at level 1, not locked', async () => {
-      const save = await readSave();
-      const defIds = Object.values(save.cardInv ?? {}).map((c) => c.defId).sort();
+      const inv = await readCardInv(m, accountId);
+      const defIds = Object.values(inv).map((c) => c.defId).sort();
       expect(defIds).toEqual(['chenshou', 'lichuang', 'suyuan']);
-      for (const card of Object.values(save.cardInv ?? {})) {
+      for (const card of Object.values(inv)) {
         expect(card.level).toBe(1);
         expect(card.locked).toBe(false);
         expect(card.gear).toEqual({});
@@ -133,8 +132,7 @@ describe.skipIf(!mongo)('cards backend e2e', () => {
       const tok = r.data.token;
       // Fetch save to ensure it exists
       await app.inject({ method: 'GET', url: '/save', headers: { authorization: `Bearer ${tok}` } });
-      const doc = await m.collections.saves.findOne({ _id: r.data.accountId });
-      const ids = Object.keys(doc!.save.cardInv ?? {});
+      const ids = Object.keys(await readCardInv(m, r.data.accountId));
       expect(ids).toHaveLength(3);
     });
   });
@@ -147,8 +145,8 @@ describe.skipIf(!mongo)('cards backend e2e', () => {
     beforeEach(async () => {
       // Starter grants only 3 tao cards; fusion needs the target + FUSION_MATERIAL_COUNT (5)
       // same-level same-faction materials, so seed extras directly.
-      const save = await readSave();
-      const taoCards = Object.values(save.cardInv!).filter((c) => CARD_DEFS[c.defId]?.faction === 'tao');
+      const inv = await readCardInv(m, accountId);
+      const taoCards = Object.values(inv).filter((c) => CARD_DEFS[c.defId]?.faction === 'tao');
       targetId = taoCards[0]!.id;
       const existingMaterials = taoCards.slice(1).map((c) => c.id); // 2 remaining starters
       const extraIds = ['seed_m1', 'seed_m2', 'seed_m3'];
@@ -172,10 +170,7 @@ describe.skipIf(!mongo)('cards backend e2e', () => {
     });
 
     it('fuse: material at a different level than the target → 400 BAD_REQUEST', async () => {
-      await m.collections.saves.updateOne(
-        { _id: accountId },
-        { $set: { [`save.cardInv.${materialIds[0]}.level`]: 2 } },
-      );
+      await m.collections.cardInstances.updateOne({ _id: materialIds[0] }, { $set: { level: 2 } });
       const res = await fuse(targetId, materialIds, 'ik-fuse-lvmismatch');
       expect(res.statusCode).toBe(400);
     });
@@ -190,10 +185,7 @@ describe.skipIf(!mongo)('cards backend e2e', () => {
     });
 
     it('fuse: locked material → 400 CARD_LOCKED', async () => {
-      await m.collections.saves.updateOne(
-        { _id: accountId },
-        { $set: { [`save.cardInv.${materialIds[0]}.locked`]: true } },
-      );
+      await m.collections.cardInstances.updateOne({ _id: materialIds[0] }, { $set: { locked: true } });
       const res = await fuse(targetId, materialIds, 'ik-locked');
       expect(res.statusCode).toBe(400);
       expect(body(res).error.code).toBe('CARD_LOCKED');
@@ -228,15 +220,9 @@ describe.skipIf(!mongo)('cards backend e2e', () => {
     });
 
     it('fuse: target already at MAX_CARD_LEVEL → 400 BAD_REQUEST', async () => {
-      await m.collections.saves.updateOne(
-        { _id: accountId },
-        { $set: { [`save.cardInv.${targetId}.level`]: MAX_CARD_LEVEL } },
-      );
+      await m.collections.cardInstances.updateOne({ _id: targetId }, { $set: { level: MAX_CARD_LEVEL } });
       for (const id of materialIds) {
-        await m.collections.saves.updateOne(
-          { _id: accountId },
-          { $set: { [`save.cardInv.${id}.level`]: MAX_CARD_LEVEL } },
-        );
+        await m.collections.cardInstances.updateOne({ _id: id }, { $set: { level: MAX_CARD_LEVEL } });
       }
       const res = await fuse(targetId, materialIds, 'ik-maxlevel');
       expect(res.statusCode).toBe(400);
@@ -278,8 +264,8 @@ describe.skipIf(!mongo)('cards backend e2e', () => {
     });
 
     it('locked card is rejected as fusion material → 400 CARD_LOCKED', async () => {
-      const save = await readSave();
-      const taoCards = Object.values(save.cardInv!).filter((c) => CARD_DEFS[c.defId]?.faction === 'tao');
+      const inv = await readCardInv(m, accountId);
+      const taoCards = Object.values(inv).filter((c) => CARD_DEFS[c.defId]?.faction === 'tao');
       const targetId = taoCards[0]!.id;
       const materialId = taoCards[1]!.id;
       const extraIds = ['lock_seed1', 'lock_seed2', 'lock_seed3', 'lock_seed4'];
@@ -343,8 +329,8 @@ describe.skipIf(!mongo)('cards backend e2e', () => {
     });
 
     it('full cycle: lock blocks fusion → unlock re-enables it', async () => {
-      const save = await readSave();
-      const taoCards = Object.values(save.cardInv!).filter((c) => CARD_DEFS[c.defId]?.faction === 'tao');
+      const inv = await readCardInv(m, accountId);
+      const taoCards = Object.values(inv).filter((c) => CARD_DEFS[c.defId]?.faction === 'tao');
       const targetId = taoCards[0]!.id;
       const materialId = taoCards[1]!.id;
       const extraIds = ['cycle_seed1', 'cycle_seed2', 'cycle_seed3', 'cycle_seed4'];

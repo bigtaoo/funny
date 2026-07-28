@@ -1,0 +1,44 @@
+{
+  "name": "nw-desktop-shell",
+  "productName": "NW Tool",
+  "version": "0.1.0",
+  "private": true,
+  "main": "dist/main.js",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "start": "npm run build && electron .",
+    "pack": "npm run build && electron-builder --dir"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.9",
+    "electron": "^31.3.1",
+    "electron-builder": "^24.13.3",
+    "typescript": "^5.9.3"
+  },
+  "dependencies": {
+    "electron-updater": "^6.3.9"
+  },
+  "build": {
+    "appId": "com.notebookwars.desktopshell",
+    "productName": "NW Tool",
+    "icon": "build/icon.png",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "renderer/**/*"
+    ],
+    "win": {
+      "verifyUpdateCodeSignature": false
+    },
+    "publish": {
+      "provider": "github",
+      "owner": "bigtaoo",
+      "repo": "funny"
+    }
+  },
+  "allowScripts": {
+    "electron@31.7.7": true
+  }
+}

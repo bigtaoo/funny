@@ -33,7 +33,8 @@ export interface EventDoc {
   geo_city?: string;
 }
 
-/** Session summary document (permanent). */
+/** Session summary document. 90-day TTL on `started_at` (2026-07-27 audit finding: this was genuinely
+ * permanent while `events`, the collection it's derived from, already expires at 90 days — same window here). */
 export interface SessionDoc {
   _id: string; // session_id
   user_id?: string;
@@ -109,8 +110,9 @@ export async function createAnalyticsMongo(uri: string, dbName: string): Promise
     await events.createIndex({ device_type: 1, ts: -1 }, { sparse: true });
     await events.createIndex({ geo_country: 1, ts: -1 }, { sparse: true });
     await events.createIndex({ ip: 1, ts: -1 }, { sparse: true });
-    // sessions
+    // sessions: TTL 90 days, same window as events (2026-07-27 audit finding: previously permanent)
     await sessions.createIndex({ started_at: -1 });
+    await sessions.createIndex({ started_at: 1 }, { expireAfterSeconds: 7776000 });
     await sessions.createIndex({ device_id: 1, started_at: -1 });
     await sessions.createIndex({ ip: 1, started_at: -1 }, { sparse: true }); // account-protection: find sessions sharing an IP
     // funnels_daily
