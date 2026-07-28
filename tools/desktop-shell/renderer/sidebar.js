@@ -1,5 +1,26 @@
 (function () {
   var listEl = document.getElementById('list');
+  var bannerEl = document.getElementById('update-banner');
+
+  function showBanner(info) {
+    var label = info.kind === 'app' ? '工具箱有新版本' : '当前工具有新版本，已自动保存工作';
+    bannerEl.innerHTML = '';
+    var text = document.createElement('div');
+    text.textContent = label;
+    var btn = document.createElement('button');
+    btn.textContent = '刷新';
+    btn.addEventListener('click', function () {
+      window.nwShell.applyUpdate();
+    });
+    bannerEl.appendChild(text);
+    bannerEl.appendChild(btn);
+    bannerEl.classList.add('visible');
+  }
+
+  function hideBanner() {
+    bannerEl.classList.remove('visible');
+    bannerEl.innerHTML = '';
+  }
 
   function render(tools, activeId) {
     listEl.innerHTML = '';
@@ -30,4 +51,6 @@
     render(tools, tools[0] && tools[0].id);
   });
   window.nwShell.onActiveChanged(setActive);
+  window.nwShell.onUpdateAvailable(showBanner);
+  window.nwShell.onUpdateCleared(hideBanner);
 })();

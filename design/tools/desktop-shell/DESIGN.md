@@ -150,6 +150,11 @@ interface GitSyncController {
 ## 8. 分期
 
 - **P1**（✅ 代码完成，`tools/desktop-shell/`）：Electron 壳骨架——窗口 + 侧边栏（`BrowserView`，工具列表 + 切换 + 高亮）+ 内容 `BrowserView`（默认加载 animator dev server）；`contextBridge` 双桥接口先占位——`window.nwShell`（侧边栏用，`listTools`/`switchTool`/`onActiveChanged`）+ `window.nwDesktop`（工具页面用，`git.*` 全部 `not_implemented`、`onRequestSave`/`onUpdateAvailable` 先跑通订阅链路，不接真实更新源；开发菜单"模拟：请求当前工具保存/内容有新版本"手动触发）。验证：`tsc` 编译通过；真实启动 + CDP (`--remote-debugging-port`) 核对侧边栏渲染 4 个工具按钮、`switchTool` 正确切换内容 `BrowserView` URL 并回传高亮、`window.nwDesktop.git.*` 返回约定的 `not_implemented` 结构。
-- **P2**：壳级自动更新（`electron-updater` + GitHub Releases）。
-- **P3**：工具内容级热更新（`version.json` 比对 + autosave-then-prompt-then-reload 流程），先在 animator 上验证，再接入其余工具。
-- **P4**（外包真正接入前）：`GitSyncController` 真实实现（`isomorphic-git` + 权限收窄 token + 自动开 PR）。
+- **P2**（✅ 代码完成）：壳级自动更新——`src/appUpdater.ts`，`electron-updater` + `package.json` `build.publish`（GitHub Releases，`owner: bigtaoo, repo: funny`）。启动 10s 后查一次 + 每 4h 复查；`update-downloaded` 走 §4 统一的 `showUpdateNotice('app', ...)` 提示，用户点刷新或空闲达阈值后 `quitAndInstall()`。**`app.isPackaged` 为 false（未打包直跑源码）时整体跳过**——本地 `npm start` 开发不受影响；真正生效需要仓库实际发布过 Release（外部动作，未做，留给用户决定何时发布）。
+- **P3**（✅ 代码完成，已在 animator 上端到端验证）：
+  - `src/updateNotifier.ts`：壳级/内容级共用的"合适时机"提示——发一条到侧边栏（`shell:update-available`），用户点击侧边栏"刷新"按钮（`shell:apply-update` IPC）或 `powerMonitor.getSystemIdleTime() ≥ 120s` 自动应用；同一时间只保留一条待处理通知。侧边栏 UI 见 `renderer/index.html`/`sidebar.js` 的 `#update-banner`。
+  - `src/contentUpdatePoller.ts`：每 5 分钟（+ 窗口重新获得焦点时提前查一次）拉当前工具的 `/version.json` 跟基线比对；切换工具时同步清空基线（`setActiveTool`），首次加载/热更新触发的 reload 都在 `did-finish-load` 里重新确认基线（`confirmBaseline`）。检测到 hash 变化 → 发 `nw:request-save`（3s 超时兜底）→ 展示提示 → 应用时 `webContents.reload()`。离线/无 manifest 时 `fetch` 失败直接跳过本轮，不算错误。
+  - 四个工具的 `webpack.config.js` 都加了 `VersionManifestPlugin`（`compilation.hooks.processAssets` 阶段，对全部资源文件名+大小求 sha256 产出 `version.json`；4 份互相独立的小类，未抽公共文件，与 animator `interpolate.ts` 的既有"小工具允许重复"惯例一致）——dev server 直接把它当编译产物一并 serve，不需要额外配置。
+  - animator 侧接了真实落盘：`AutoSaveController` 新增公开方法 `requestFlush()`（包一层私有 `flushNow()`），`App.ts` 里 `window.nwDesktop?.onRequestSave(() => autoSave.requestFlush())`；其余三个工具目前没有自动保存机制，`onRequestSave` 暂不接（按设计留空）。
+  - **端到端验证**（非只读代码）：临时把轮询间隔调到 3s、加调试日志，实际改动 animator 源码触发 webpack 重新编译 → `version.json` hash 真的变了 → 轮询检测到 → 侧边栏弹出"当前工具有新版本，已自动保存工作 · 刷新" → 通过 CDP 调 `window.nwShell.applyUpdate()` 模拟点击 → 内容视图 reload、提示消失、基线刷新到新 hash。验证完成后已还原成正式的 5 分钟轮询间隔并删掉调试日志。
+- **P4**（外包真正接入前）：`GitSyncController` 真实实现（`isomorphic-git` + 权限收窄 token + 自动开 PR）——本次未做。
