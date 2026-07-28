@@ -31,7 +31,7 @@ import type { GachaSceneCallbacks } from '../scenes/GachaScene';
 import type { CampaignMapCallbacks } from '../scenes/CampaignMapScene';
 import type { LevelPrepCallbacks } from '../scenes/LevelPrepScene';
 import type { CardCodexCallbacks } from '../scenes/CardCodexScene';
-import type { CardCallbacks } from '../scenes/CardScene';
+import type { CardCallbacks, CardRosterView } from '../scenes/CardScene';
 import type { EquipmentCallbacks } from '../scenes/EquipmentScene';
 import type { StatsCallbacks } from '../scenes/StatsScene';
 import type { AchievementCallbacks } from '../scenes/AchievementScene';
@@ -187,8 +187,8 @@ export interface AppViews {
   showLevelPrep(cb: LevelPrepCallbacks): void;
   /** Read-only full card compendium, Career hub peer of Stats/Titles/Achievements (LOBBY_IA_REDESIGN §15). */
   showCardCodex(cb: CardCodexCallbacks): void;
-  /** Hero Roster (CC-6): owned card instances — level / troops / gear / feed / lock. Server-authoritative; requires login. Entry point per CHARACTER_CARDS_DESIGN §10. */
-  showCardRoster(cb: CardCallbacks): void;
+  /** Hero Roster (CC-6): owned card instances — level / troops / gear / feed / lock. Server-authoritative; requires login. Entry point per CHARACTER_CARDS_DESIGN §10. Returns a handle so a late-resolving SLG fetch can patch the already-open roster in place — see CardRosterView. */
+  showCardRoster(cb: CardCallbacks): CardRosterView;
   /** Equipment system (E5): inventory / forging / enhancement / dismantling / equipping. Server-authoritative; requires login. */
   showEquipment(cb: EquipmentCallbacks): void;
   showStats(cb: StatsCallbacks): void;

@@ -27,7 +27,7 @@ import { SettingsScene, type SettingsSceneCallbacks } from './scenes/SettingsSce
 import { CampaignMapScene, type CampaignMapCallbacks } from './scenes/CampaignMapScene';
 import { LevelPrepScene, type LevelPrepCallbacks } from './scenes/LevelPrepScene';
 import { CardCodexScene, type CardCodexCallbacks } from './scenes/CardCodexScene';
-import { CardScene, type CardCallbacks } from './scenes/CardScene';
+import { CardScene, type CardCallbacks, type CardRosterView } from './scenes/CardScene';
 import { EquipmentScene, type EquipmentCallbacks } from './scenes/EquipmentScene';
 import { StatsScene, type StatsCallbacks } from './scenes/StatsScene';
 import { AchievementScene, type AchievementCallbacks } from './scenes/AchievementScene';
@@ -185,9 +185,11 @@ class PixiAppViews implements AppViews {
     this.manager.goto(this.timedBuild('CardCodexScene', () => new CardCodexScene(this.layout, this.input, cb)));
   }
 
-  showCardRoster(cb: CardCallbacks): void {
+  showCardRoster(cb: CardCallbacks): CardRosterView {
     this.leaveLobby();
-    this.manager.goto(this.timedBuild('CardScene', () => new CardScene(this.layout, this.input, cb)));
+    const scene = this.timedBuild('CardScene', () => new CardScene(this.layout, this.input, cb));
+    this.manager.goto(scene);
+    return { applyCardState: () => scene.applyCardState() };
   }
 
   showEquipment(cb: EquipmentCallbacks): void {

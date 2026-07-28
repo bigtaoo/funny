@@ -14,7 +14,7 @@ import { FeedMixin } from './CardScene/feed';
 import { ActionsMixin } from './CardScene/actions';
 import { SkinsMixin } from './CardScene/skins';
 
-export type { CardCallbacks, CardActionResult } from './CardScene/base';
+export type { CardCallbacks, CardActionResult, CardRosterView } from './CardScene/base';
 
 const Assembled = ActionsMixin(
   FeedMixin(
