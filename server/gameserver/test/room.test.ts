@@ -96,6 +96,20 @@ describe('Room', () => {
     expect(lastOf(c0, 'match_start')).toBeDefined();
   });
 
+  it('rosterAccountIds() reflects both accountIds once seated, even before match launch', () => {
+    room.addPlayer(asConn(c0), 'n0', '');
+    expect(room.rosterAccountIds).toEqual(['acc-0']);
+    room.addPlayer(asConn(c1), 'n1', '');
+    expect(room.rosterAccountIds).toEqual(['acc-0', 'acc-1']);
+  });
+
+  it('rosterAccountIds() is immutable once seated: a same-tick "already reported" removeSlot on disconnect does not shrink it (login-reconnect-prompt shutdown cleanup relies on this, 2026-07-28)', () => {
+    startMatch();
+    room.reportResult(0, 'H', 0);
+    room.reportResult(1, 'H', 0); // both reported → settled, may prune slots
+    expect(room.rosterAccountIds).toEqual(['acc-0', 'acc-1']);
+  });
+
   it('tickBatch sorted by side ascending (same side preserves arrival order)', () => {
     startMatch();
     room.submitCmd(0, new Uint8Array([1]));
