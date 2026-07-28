@@ -45,22 +45,27 @@ async function presenceFanOut(
   const onlineFriendIds = friendIds.filter((id) => presenceMap[id]);
   if (onlineFriendIds.length === 0 && !online) return;
 
+  // comm-audit batch F item 5: both fan-outs below used to be their own round trip(s) — "I came online/
+  // offline" to every online friend (pushMany → N /gw/push calls) and, on coming online, each friend's
+  // status pushed back to me (N more calls). Collapsed into a single targets[] batch (one /gw/push/batch
+  // HTTP round trip covering all of it) instead of up to 2×onlineFriendIds.length individual pushes.
+  const targets: { accountId: string; msg: SocialPushMsg }[] = [];
+
   // Push to online friends: I came online / went offline
-  if (onlineFriendIds.length > 0) {
-    await gateway.pushMany(onlineFriendIds, { kind: 'friend_presence', publicId: myPublicId, online });
+  for (const fid of onlineFriendIds) {
+    targets.push({ accountId: fid, msg: { kind: 'friend_presence', publicId: myPublicId, online } });
   }
 
   // On coming online: push each online friend's status back to me (so I know who is online)
   if (online && onlineFriendIds.length > 0) {
     const friendPids = await friendSvc.batchPublicIds(onlineFriendIds);
-    await Promise.allSettled(
-      onlineFriendIds.map((fid) => {
-        const pid = friendPids.get(fid);
-        if (!pid) return Promise.resolve();
-        return gateway.push(accountId, { kind: 'friend_presence', publicId: pid, online: true });
-      }),
-    );
+    for (const fid of onlineFriendIds) {
+      const pid = friendPids.get(fid);
+      if (pid) targets.push({ accountId, msg: { kind: 'friend_presence', publicId: pid, online: true } });
+    }
   }
+
+  if (targets.length > 0) await gateway.pushBatch(targets);
 }
 
 function readJson(req: IncomingMessage): Promise<Record<string, unknown>> {
@@ -244,12 +249,13 @@ export function startHttpApi(
             return sendErr(res, ErrorCode.BAD_REQUEST, 'dispatchKey + accountIds + content required');
           }
           const r = await mailSvc.bulkInsertSystemMail(dispatchKey, accountIds, content);
-          // Push a notification badge to newly inserted recipients
+          // Push a notification badge to newly inserted recipients — one /gw/push/batch round trip instead
+          // of one /gw/push call per recipient (comm-audit batch F item 5; up to 500 per meta chunk).
           if (r.insertedAccountIds.length > 0) {
-            for (const aid of r.insertedAccountIds) {
-              // best-effort, does not affect the current response
-              void gateway.push(aid, { kind: 'mail_new', mailId: `${dispatchKey}:${aid}`, hasAttachment: r.hasAttachment });
-            }
+            void gateway.pushBatch(r.insertedAccountIds.map((aid) => ({
+              accountId: aid,
+              msg: { kind: 'mail_new' as const, mailId: `${dispatchKey}:${aid}`, hasAttachment: r.hasAttachment },
+            }))); // best-effort, does not affect the current response
           }
           return send(res, 200, ok(r));
         }
@@ -311,6 +317,20 @@ export function startHttpApi(
             const body = await readJson(req);
             const territoryCount = typeof body.territoryCount === 'number' ? body.territoryCount : 0;
             const prosperity = await familySvc.refreshProsperity(familyId, territoryCount);
+            return send(res, 200, ok({ prosperity }));
+          }
+        }
+
+        // Merged activity bump + prosperity refresh (comm-audit batch F item 9): worldsvc's bumpFamilyActivity
+        // always calls these two back-to-back for the same familyId — one round trip instead of two.
+        {
+          const m = /^\/internal\/family\/([^/]+)\/activity-and-prosperity$/.exec(path);
+          if (method === 'POST' && m) {
+            const familyId = decodeURIComponent(m[1]!);
+            const body = await readJson(req);
+            const delta = typeof body.delta === 'number' ? body.delta : 1;
+            const territoryCount = typeof body.territoryCount === 'number' ? body.territoryCount : 0;
+            const prosperity = await familySvc.bumpActivityAndProsperity(familyId, delta, territoryCount);
             return send(res, 200, ok({ prosperity }));
           }
         }
@@ -480,15 +500,14 @@ export function startHttpApi(
           const m = /^\/social\/profile\/([^/]+)\/extra$/.exec(path);
           if (method === 'GET' && m) {
             const publicId = decodeURIComponent(m[1]!);
-            const resolved = await meta.resolveByPublicId(publicId);
+            // comm-audit batch F item 2: was resolveByPublicId + getPlayerRank (two sequential meta hops) —
+            // meta's /internal/player already accepts publicId directly, collapsing this to one hop.
+            const resolved = await meta.getPlayerRankByPublicId(publicId);
             if (!resolved) return send(res, 200, ok({}));
-            const [rank, mem] = await Promise.all([
-              meta.getPlayerRank(resolved.accountId),
-              familySvc.getMember(resolved.accountId),
-            ]);
+            const mem = await familySvc.getMember(resolved.accountId);
             return send(res, 200, ok({
-              ...(rank?.rank ? { rank: rank.rank } : {}),
-              ...(rank?.elo !== undefined ? { elo: rank.elo } : {}),
+              ...(resolved.rank ? { rank: resolved.rank } : {}),
+              ...(resolved.elo !== undefined ? { elo: resolved.elo } : {}),
               ...(mem?.name ? { familyName: mem.name } : {}),
               ...(mem?.sectName ? { sectName: mem.sectName } : {}),
             }));

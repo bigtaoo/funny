@@ -262,17 +262,36 @@ describe('GET /internal/save-fields', () => {
     const { app } = build();
     const res = await app.inject({ method: 'GET', url: '/internal/save-fields?accountId=ghost', headers: authHeaders });
     expect(res.statusCode).toBe(200);
-    expect(JSON.parse(res.payload)).toEqual({ pveUpgrades: {}, cardInv: {}, equipmentInv: {} });
+    expect(JSON.parse(res.payload)).toEqual({ cardInv: {}, equipmentInv: {} });
   });
 
-  it('existing account → returns pveUpgrades/cardInv/equipmentInv snapshot', async () => {
+  it('existing account → returns cardInv/equipmentInv snapshot (pveUpgrades dropped from the wire, comm-audit batch F item 6 — the siege engine never read it)', async () => {
     const { app } = build(
       [saveRow('a', { pveUpgrades: { atk: 3 } } as Partial<SaveData>)],
       [cardRow('c1', 'a')],
     );
     const res = await app.inject({ method: 'GET', url: '/internal/save-fields?accountId=a', headers: authHeaders });
     const body = JSON.parse(res.payload);
-    expect(body.pveUpgrades).toEqual({ atk: 3 });
+    expect(body.pveUpgrades).toBeUndefined();
     expect(Object.keys(body.cardInv)).toEqual(['c1']);
+  });
+
+  it('fields=cardInv → only cardInv is returned (batch F item 6 projection narrowing)', async () => {
+    const { app } = build(
+      [saveRow('a', {} as Partial<SaveData>)],
+      [cardRow('c1', 'a')],
+    );
+    const res = await app.inject({ method: 'GET', url: '/internal/save-fields?accountId=a&fields=cardInv', headers: authHeaders });
+    const body = JSON.parse(res.payload);
+    expect(Object.keys(body.cardInv)).toEqual(['c1']);
+    expect(body.equipmentInv).toBeUndefined();
+  });
+
+  it('fields=equipmentInv → only equipmentInv is returned', async () => {
+    const { app } = build([saveRow('a', {} as Partial<SaveData>)], [cardRow('c1', 'a')]);
+    const res = await app.inject({ method: 'GET', url: '/internal/save-fields?accountId=a&fields=equipmentInv', headers: authHeaders });
+    const body = JSON.parse(res.payload);
+    expect(body.cardInv).toBeUndefined();
+    expect(body.equipmentInv).toEqual({});
   });
 });

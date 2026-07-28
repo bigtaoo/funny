@@ -485,15 +485,18 @@ export class Gateway {
       });
       return;
     }
-    const { elo } = await this.meta.getElo(accountId);
+    const identity = await this.meta.getMatchIdentity(accountId);
     // The player may have disconnected during the await → only enqueue if still online.
     if (!this.conns.has(accountId)) {
       log.warn('ranked enqueue aborted: account dropped during ELO fetch', { accountId });
       return;
     }
+    const elo = identity.elo;
     const deck = this.resolvedDeck(accountId, submittedDeck, elo);
-    const { name, publicId, equippedTitle, avatarId } = await this.resolveProfile(accountId);
-    if (!this.conns.has(accountId)) return;
+    const name = identity.displayName || displayName(accountId);
+    const publicId = identity.publicId ?? '';
+    const equippedTitle = identity.equippedTitle ?? '';
+    const avatarId = identity.avatarId ?? '';
     log.info('-> matchsvc enqueue', { accountId, elo, deckSize: deck.length });
     const ok = await this.matchsvc.enqueue(accountId, name, publicId, elo, equippedTitle, avatarId, '', deck);
     // Retries are already exhausted inside matchsvc.enqueue (see matchsvcClient's postInternal
@@ -511,11 +514,13 @@ export class Gateway {
    * gating). Without this, an empty/unvalidated deck lets the engine fall back to the full card pool.
    */
   private async createRoomValidated(accountId: string, submittedDeck: string[]): Promise<void> {
-    const { elo } = await this.meta.getElo(accountId);
+    const identity = await this.meta.getMatchIdentity(accountId);
     if (!this.conns.has(accountId)) return;
-    const deck = this.resolvedDeck(accountId, submittedDeck, elo);
-    const { name, publicId, equippedTitle, avatarId } = await this.resolveProfile(accountId);
-    if (!this.conns.has(accountId)) return;
+    const deck = this.resolvedDeck(accountId, submittedDeck, identity.elo);
+    const name = identity.displayName || displayName(accountId);
+    const publicId = identity.publicId ?? '';
+    const equippedTitle = identity.equippedTitle ?? '';
+    const avatarId = identity.avatarId ?? '';
     const ok = await this.matchsvc.roomCreate(accountId, name, publicId, equippedTitle, avatarId, deck);
     // No retry inside roomCreate (not idempotent) — a single failed attempt still deserves an
     // explicit error instead of leaving the "connecting" UI stuck with no signal (P0-7).
@@ -527,11 +532,13 @@ export class Gateway {
 
   /** Friendly room join: same current-elo deck gating as create (PVP_LOADOUT §6.3). */
   private async joinRoomValidated(accountId: string, code: string, submittedDeck: string[]): Promise<void> {
-    const { elo } = await this.meta.getElo(accountId);
+    const identity = await this.meta.getMatchIdentity(accountId);
     if (!this.conns.has(accountId)) return;
-    const deck = this.resolvedDeck(accountId, submittedDeck, elo);
-    const { name, publicId, equippedTitle, avatarId } = await this.resolveProfile(accountId);
-    if (!this.conns.has(accountId)) return;
+    const deck = this.resolvedDeck(accountId, submittedDeck, identity.elo);
+    const name = identity.displayName || displayName(accountId);
+    const publicId = identity.publicId ?? '';
+    const equippedTitle = identity.equippedTitle ?? '';
+    const avatarId = identity.avatarId ?? '';
     const ok = await this.matchsvc.roomJoin(accountId, name, publicId, code, equippedTitle, avatarId, deck);
     if (!ok && this.conns.has(accountId)) {
       log.warn('room join failed: notifying client', { accountId });
@@ -558,11 +565,13 @@ export class Gateway {
       this.push(accountId, { kind: 'duel_cancelled', inviteId: '', reason: 'offline' });
       return;
     }
-    const { elo } = await this.meta.getElo(accountId);
+    const identity = await this.meta.getMatchIdentity(accountId);
     if (!this.conns.has(accountId)) return;
-    const deck = this.resolvedDeck(accountId, submittedDeck, elo);
-    const { name, publicId, equippedTitle, avatarId } = await this.resolveProfile(accountId);
-    if (!this.conns.has(accountId)) return;
+    const deck = this.resolvedDeck(accountId, submittedDeck, identity.elo);
+    const name = identity.displayName || displayName(accountId);
+    const publicId = identity.publicId ?? '';
+    const equippedTitle = identity.equippedTitle ?? '';
+    const avatarId = identity.avatarId ?? '';
     this.matchsvc.duelInvite(accountId, name, publicId, equippedTitle, avatarId, resolved.accountId, deck);
   }
 
@@ -573,11 +582,13 @@ export class Gateway {
       this.matchsvc.duelRespond(accountId, inviteId, false);
       return;
     }
-    const { elo } = await this.meta.getElo(accountId);
+    const identity = await this.meta.getMatchIdentity(accountId);
     if (!this.conns.has(accountId)) return;
-    const deck = this.resolvedDeck(accountId, submittedDeck, elo);
-    const { name, publicId, equippedTitle, avatarId } = await this.resolveProfile(accountId);
-    if (!this.conns.has(accountId)) return;
+    const deck = this.resolvedDeck(accountId, submittedDeck, identity.elo);
+    const name = identity.displayName || displayName(accountId);
+    const publicId = identity.publicId ?? '';
+    const equippedTitle = identity.equippedTitle ?? '';
+    const avatarId = identity.avatarId ?? '';
     this.matchsvc.duelRespond(accountId, inviteId, true, name, publicId, equippedTitle, avatarId, deck);
   }
 
@@ -594,16 +605,6 @@ export class Gateway {
       return defaultPvpDeck();
     }
     return submitted;
-  }
-
-  /**
-   * Player display profile: fetches the real nickname and 9-digit numeric publicId from meta.
-   * If meta is unavailable or no profile exists, falls back to the first 12 characters of accountId for the name
-   * and an empty string for publicId (room creation still works, the name just won't be user-friendly).
-   */
-  private async resolveProfile(accountId: string): Promise<{ name: string; publicId: string; equippedTitle: string; avatarId: string }> {
-    const p = await this.meta.getProfile(accountId);
-    return { name: p.displayName || displayName(accountId), publicId: p.publicId ?? '', equippedTitle: p.equippedTitle ?? '', avatarId: p.avatarId ?? '' };
   }
 
   private sendPong(accountId: string): void {

@@ -210,21 +210,21 @@ export function DetailMixin<TBase extends EquipmentSceneBaseCtor>(Base: TBase): 
       const stackIds = salvageable ? this.stackSiblingIds(save, inst) : [inst.id];
       const actions: CellAction[] = [];
 
-      if (!maxed && this.canAffordEnhance(save, enhanceCost(inst.level)) && !busy) {
+      if (!maxed && this.canAffordEnhance(save, enhanceCost(inst.level))) {
         // Opens the detail modal rather than firing directly (unlike the other actions below):
         // enhance takes the protect-stone toggle as a parameter, which only the modal exposes.
-        actions.push({ key: 'enhance', label: t('equip.enhance'), icon: 'hammer', fill: C.dark, stroke: C.accent, fn: () => this.openDetail(inst.id) });
+        actions.push({ key: 'enhance', label: t('equip.enhance'), icon: 'hammer', fill: C.dark, stroke: C.accent, disabled: busy, fn: () => this.openDetail(inst.id) });
       }
-      if (slot && !busy) {
+      if (slot) {
         if (equipped) {
           // Unequip: in bag mode the item may be on any card → look up its owner; otherwise the active card.
-          actions.push({ key: 'unequip', label: t('equip.unequip'), icon: 'close', fill: 0xf0e0e0, stroke: C.red, fn: () => {
+          actions.push({ key: 'unequip', label: t('equip.unequip'), icon: 'close', fill: 0xf0e0e0, stroke: C.red, disabled: busy, fn: () => {
             const cardId = this.bag ? this.ownerCardId(save, inst.id) : this.cb.activeCardInstanceId;
             if (cardId) void this.doEquip(slot, null, cardId);
           } });
         } else {
           // Equip: in bag mode we don't know the target card yet → open the card picker; otherwise the active card.
-          actions.push({ key: 'equip', label: t('equip.equip'), icon: 'check', fill: C.dark, stroke: C.green, fn: () => {
+          actions.push({ key: 'equip', label: t('equip.equip'), icon: 'check', fill: C.dark, stroke: C.green, disabled: busy, fn: () => {
             if (this.bag) this.beginAssign(inst.id, slot);
             else void this.doEquip(slot, inst.id, this.cb.activeCardInstanceId);
           } });
@@ -237,13 +237,13 @@ export function DetailMixin<TBase extends EquipmentSceneBaseCtor>(Base: TBase): 
               && m.level === 0 && !this.equippedIds(save).has(m.id),
           )
         : false;
-      if (!!requiredMatRarity && hasMaterials && !equipped && !inst.locked && !busy) {
-        actions.push({ key: 'reforge', label: t('equip.reforge'), icon: 'replay', fill: 0x3355aa, stroke: 0x6688dd, fn: () => this.openReforgeSelect(inst) });
+      if (!!requiredMatRarity && hasMaterials && !equipped && !inst.locked) {
+        actions.push({ key: 'reforge', label: t('equip.reforge'), icon: 'replay', fill: 0x3355aa, stroke: 0x6688dd, disabled: busy, fn: () => this.openReforgeSelect(inst) });
       }
-      if (salvageable && !busy) {
-        actions.push({ key: 'salvage', label: t('equip.salvage'), icon: 'scrap', fill: 0xeeeeee, stroke: C.mid, fn: () => this.confirmSalvage(inst, stackIds.length) });
+      if (salvageable) {
+        actions.push({ key: 'salvage', label: t('equip.salvage'), icon: 'scrap', fill: 0xeeeeee, stroke: C.mid, disabled: busy, fn: () => this.confirmSalvage(inst, stackIds.length) });
         if (stackIds.length > 1) {
-          actions.push({ key: 'salvageAll', label: t('equip.salvageAll'), icon: 'scrap', fill: 0xeeeeee, stroke: C.mid, fn: () => this.confirmSalvageAll(inst, stackIds) });
+          actions.push({ key: 'salvageAll', label: t('equip.salvageAll'), icon: 'scrap', fill: 0xeeeeee, stroke: C.mid, disabled: busy, fn: () => this.confirmSalvageAll(inst, stackIds) });
         }
       }
       return actions;
@@ -256,7 +256,12 @@ export function DetailMixin<TBase extends EquipmentSceneBaseCtor>(Base: TBase): 
 
     private async doEnhance(instanceId: string): Promise<void> {
       if (this.bt.busy) return;
-      this.bt.start(); this.render();
+      const levelBefore = this.cb.getSave().equipmentInv[instanceId]?.level ?? 0;
+      this.bt.start();
+      // Busy-start only needs the modal's confirm button to grey out (see instanceActions' `disabled:
+      // busy`) — the grid itself doesn't change yet, so skip the full render() here (2026-07-28 fix,
+      // see doEnhance's finally below for the matching skip on the result side).
+      this.refreshChromeAndModal();
       const save = this.cb.getSave();
       const protectCount = save.inventory?.items?.[PROTECT_ENHANCE_ITEM_ID] ?? 0;
       const useProtect = this.useProtectEnhance && protectCount > 0;
@@ -276,7 +281,15 @@ export function DetailMixin<TBase extends EquipmentSceneBaseCtor>(Base: TBase): 
         this.showToast(t(e instanceof TimeoutError ? 'common.networkTimeout' : 'equip.err.generic'), C.red);
       } finally {
         this.bt.stop();
-        this.render();
+        const levelAfter = this.cb.getSave().equipmentInv[instanceId]?.level ?? levelBefore;
+        // A level change can reshuffle the grid (a level-0 stack splits off its own row, or the
+        // level-desc sort reorders it within its rarity group) — refreshInstanceCell() checks for
+        // that itself and returns false if so, in which case a full render() is the only safe option.
+        // No level change (a failed/errored attempt) never reshuffles anything, so the grid doesn't
+        // need touching at all — just the coin/materials spent and the modal's own state.
+        const gridOk = levelAfter === levelBefore || this.refreshInstanceCell(instanceId);
+        if (gridOk) this.refreshChromeAndModal();
+        else this.render();
       }
     }
 

@@ -76,6 +76,9 @@ class FakeMeta extends MetaClient {
   override async getProfile(): Promise<{ displayName?: string; publicId?: string; equippedTitle?: string }> {
     return { displayName: 'Player', publicId: '100000001', equippedTitle: '' };
   }
+  override async getMatchIdentity(): Promise<{ elo: number; displayName?: string; publicId?: string; equippedTitle?: string; avatarId?: string }> {
+    return { elo: this.elo, displayName: 'Player', publicId: '100000001', equippedTitle: '' };
+  }
 }
 
 /** MetaClient stub for duel-invite tests: fixed elo + a configurable publicId → accountId directory. */
@@ -87,6 +90,10 @@ class FakeMetaWithDirectory extends MetaClient {
     // Reverse-lookup for readable names/publicIds in assertions below (real meta would look these up by accountId).
     const publicId = Object.entries(this.directory).find(([, acc]) => acc === accountId)?.[0] ?? '';
     return { displayName: `name-${accountId}`, publicId, equippedTitle: '', avatarId: '' };
+  }
+  override async getMatchIdentity(accountId: string): Promise<{ elo: number; displayName?: string; publicId?: string; equippedTitle?: string; avatarId?: string }> {
+    const publicId = Object.entries(this.directory).find(([, acc]) => acc === accountId)?.[0] ?? '';
+    return { elo: 1000, displayName: `name-${accountId}`, publicId, equippedTitle: '', avatarId: '' };
   }
   override async resolveByPublicId(publicId: string): Promise<{ accountId: string } | null> {
     const accountId = this.directory[publicId];

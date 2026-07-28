@@ -39,6 +39,7 @@ import { ENGINE_VERSION } from '@nw/engine';
 import type { TileDoc, PlayerWorldDoc, MarchDoc, SiegeDamageDoc } from '../db';
 import { lootSummary, emptyResources } from '../core';
 import type { SiegeReplayInputs } from '../worldTypes';
+import type { SaveFields } from '../metaClient';
 import { refundTroops } from '../combatShared';
 import type { SiegeServiceBaseCtor, Constructor } from './base';
 
@@ -121,7 +122,15 @@ export function SiegeArrivalMixin<TBase extends SiegeServiceBaseCtor>(Base: TBas
       const effGarrison = nationDefenseStrength(baseTile.garrison ?? 0, inOwnNation);
 
       // E8/CC-3: fetch attacker's progression snapshot early (needed for card army resolution + blueprint injection).
-      const attackerSave = await this.core.meta.getSaveFields(m.ownerId).catch(() => null);
+      // For a base siege, also kick off the defender's card-only snapshot here so it runs in parallel with the
+      // attacker fetch instead of after (comm-audit batch F item 6 — applyBaseSiege used to fetch it itself,
+      // sequentially, once this method reached it); defender only ever needs cardInv (no per-card gear buff on
+      // defence — see applyBaseSiege's doc comment).
+      const isBaseSiege = target.type === 'base';
+      const [attackerSave, defenderSaveForBase] = await Promise.all([
+        this.core.meta.getSaveFields(m.ownerId, ['cardInv', 'equipmentInv']).catch(() => null),
+        isBaseSiege ? this.core.meta.getSaveFields(defenderId, ['cardInv']).catch(() => null) : Promise.resolve(null),
+      ]);
 
       // Attacker formation (G3-2c): marched with a team → use the real formation snapshot (m.army); otherwise synthesize from flat troop count as fallback (v1 bridge).
       // CC-3: when army entries carry cardInstanceId, resolve to engine GarrisonEntry[] via cardState.currentTroops + CARD_DEFS.unitType.
@@ -142,7 +151,7 @@ export function SiegeArrivalMixin<TBase extends SiegeServiceBaseCtor>(Base: TBas
       let cardInstances: EngineCardInstance[] | undefined;
       let cardEquipInv: EngineEquipInv | undefined;
       if (hasCardArmy && attackerSave) {
-        const { cardInstances: ci, engEquipInv } = toEngineCardInstances(rawArmy, attackerSave.cardInv, attackerSave.equipmentInv);
+        const { cardInstances: ci, engEquipInv } = toEngineCardInstances(rawArmy, attackerSave.cardInv ?? {}, attackerSave.equipmentInv ?? {});
         cardInstances = ci;
         cardEquipInv = engEquipInv;
       }
@@ -172,6 +181,7 @@ export function SiegeArrivalMixin<TBase extends SiegeServiceBaseCtor>(Base: TBas
         await this.applyBaseSiege(
           m, pw, baseTile, defenderId, defender, inOwnNation,
           attackerArmy, cardInstances, cardEquipInv, siegeAcademy, attackerSave?.cardInv ?? {}, attackerSynthesized, t,
+          defenderSaveForBase,
         );
         return;
       }
@@ -230,6 +240,7 @@ export function SiegeArrivalMixin<TBase extends SiegeServiceBaseCtor>(Base: TBas
       attackerCardInv: Record<string, CardInstance>,
       attackerSynthesized: boolean,
       t: number,
+      defenderSave: SaveFields | null,
     ): Promise<void> {
       const { cols } = this.core.deps;
       const tileLevel = baseTile.level ?? 1;
@@ -243,7 +254,7 @@ export function SiegeArrivalMixin<TBase extends SiegeServiceBaseCtor>(Base: TBas
       const outTeams = new Set(activeMarches.map((x) => x.teamId).filter((id): id is string => !!id));
 
       // Defender card inventory (resolve team card armies → unit type + troop count). v1: defender cards use base blueprints on defence (no per-card level/gear buff; follow-up).
-      const defenderSave = await this.core.meta.getSaveFields(defenderId).catch(() => null);
+      // defenderSave is pre-fetched by the caller (applySiege), in parallel with the attacker's own fetch.
       const defCardInv = defenderSave?.cardInv ?? {};
       const defCardState = defender?.cardState ?? {};
       const teamState = defender?.teamState ?? {};
@@ -388,7 +399,7 @@ export function SiegeArrivalMixin<TBase extends SiegeServiceBaseCtor>(Base: TBas
 
       const garrison = strongholdGarrison(proc.level);
       // E8/CC-3: fetch attacker's progression snapshot (equipment for the legacy path; cardInv+equipmentInv for a real card army).
-      const attackerSave = await this.core.meta.getSaveFields(m.ownerId).catch(() => null);
+      const attackerSave = await this.core.meta.getSaveFields(m.ownerId, ['cardInv', 'equipmentInv']).catch(() => null);
       // Morale (行军疲劳, not the card 士气加成): scale attacker strength by the march's remaining morale (see applySiege above for detail).
       const moraleMult = moraleCombatMultiplier(m.morale ?? MARCH_MORALE_MAX);
       const effTroops = Math.round(m.troops * moraleMult);
@@ -401,7 +412,7 @@ export function SiegeArrivalMixin<TBase extends SiegeServiceBaseCtor>(Base: TBas
       let cardInstances: EngineCardInstance[] | undefined;
       let cardEquipInv: EngineEquipInv | undefined;
       if (hasCardArmy && attackerSave) {
-        const { cardInstances: ci, engEquipInv } = toEngineCardInstances(rawArmy, attackerSave.cardInv, attackerSave.equipmentInv);
+        const { cardInstances: ci, engEquipInv } = toEngineCardInstances(rawArmy, attackerSave.cardInv ?? {}, attackerSave.equipmentInv ?? {});
         cardInstances = ci;
         cardEquipInv = engEquipInv;
       }
@@ -426,7 +437,6 @@ export function SiegeArrivalMixin<TBase extends SiegeServiceBaseCtor>(Base: TBas
         try {
           res = runSiegeBattle({
             attackerArmy, defenderConfig, tileLevel, seed,
-            pveUpgrades: attackerSave?.pveUpgrades,
             cardInstances, equipmentInv: cardEquipInv,
           });
         } catch (err) {
@@ -525,7 +535,7 @@ export function SiegeArrivalMixin<TBase extends SiegeServiceBaseCtor>(Base: TBas
       }
 
       const garrison = passageGarrison(proc.level);
-      const attackerSave = await this.core.meta.getSaveFields(m.ownerId).catch(() => null);
+      const attackerSave = await this.core.meta.getSaveFields(m.ownerId, ['cardInv', 'equipmentInv']).catch(() => null);
       // Morale (行军疲劳, not the card 士气加成): scale attacker strength by the march's remaining morale (see applySiege above for detail).
       const moraleMult = moraleCombatMultiplier(m.morale ?? MARCH_MORALE_MAX);
       const effTroops = Math.round(m.troops * moraleMult);
@@ -538,7 +548,7 @@ export function SiegeArrivalMixin<TBase extends SiegeServiceBaseCtor>(Base: TBas
       let cardInstances: EngineCardInstance[] | undefined;
       let cardEquipInv: EngineEquipInv | undefined;
       if (hasCardArmy && attackerSave) {
-        const { cardInstances: ci, engEquipInv } = toEngineCardInstances(rawArmy, attackerSave.cardInv, attackerSave.equipmentInv);
+        const { cardInstances: ci, engEquipInv } = toEngineCardInstances(rawArmy, attackerSave.cardInv ?? {}, attackerSave.equipmentInv ?? {});
         cardInstances = ci;
         cardEquipInv = engEquipInv;
       }
@@ -559,7 +569,6 @@ export function SiegeArrivalMixin<TBase extends SiegeServiceBaseCtor>(Base: TBas
         try {
           res = runSiegeBattle({
             attackerArmy, defenderConfig, tileLevel, seed,
-            pveUpgrades: attackerSave?.pveUpgrades,
             cardInstances, equipmentInv: cardEquipInv,
           });
         } catch (err) {

@@ -65,6 +65,22 @@ export function txt(label: string, size: number, color: number, bold = false, wo
 }
 
 /**
+ * `txt()` variant with an outline — for text that may sit over a variable
+ * (caller-controlled or artwork) background, where a flat fill can lose
+ * contrast depending on what's underneath (e.g. gacha reveal hint over
+ * rarity-coloured cards). The stroke guarantees legibility regardless.
+ */
+export function txtOutlined(
+  label: string, size: number, color: number, strokeColor: number, strokeWidth = 3, bold = false,
+): PIXI.Text {
+  return makeText(label, {
+    fontSize: size, fill: color, fontFamily: 'monospace',
+    fontWeight: bold ? 'bold' : 'normal',
+    stroke: strokeColor, strokeThickness: strokeWidth,
+  });
+}
+
+/**
  * `txt()` factory for content that lives inside a container scaled up after layout —
  * the "popup-scale-to-80%" convention (see CardSceneBase/EquipmentSceneBase's `modalScale`
  * and CityScene's `renderDetailModal`): a modal is laid out in a small local frame, then

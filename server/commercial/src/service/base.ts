@@ -29,7 +29,7 @@ import type {
 } from '../db';
 import { isCustomPoolDoc } from '../db';
 import type { RandInt } from '../gacha';
-import { displayChannelOf, effectiveCoins, spendChannelOf, type RechargeChannel } from '../spendChannel';
+import { displayChannelOf, effectiveCoins, type RechargeChannel } from '../spendChannel';
 import type { IapProductKind } from '../iap';
 
 /** A resolved, drawable pool: either a derived/static GachaPoolDef or an ops-authored custom config (§12). */
@@ -116,9 +116,9 @@ export function devVerifyReceipt(
  * spendChannel.ts) — not the raw `WalletDoc.coins` field. Omitting `clientPlatform` defaults to the 'web'
  * bucket (today's behavior for every currently-live client).
  */
-export function walletView(w: WalletDoc | null, clientPlatform?: string): WalletView {
+export function walletView(w: WalletDoc | null, clientPlatform?: string, fundedChannel?: RechargeChannel): WalletView {
   return {
-    coins: effectiveCoins(w, spendChannelOf(clientPlatform)),
+    coins: effectiveCoins(w, displayChannelOf(fundedChannel, clientPlatform)),
     pity: w?.gacha.pity ?? {},
     fatePoints: w?.fatePoints ?? 0,
     subscriptionExpiry: w?.subscription?.expiry ?? 0,
@@ -308,7 +308,7 @@ export class CommercialServiceBase {
     immediateCoins: number,
     now: number,
     ref: { orderId?: string; reason?: string; channel?: RechargeChannel; clientPlatform?: string },
-  ): Promise<{ coinsAfter: number; expiry: number }> {
+  ): Promise<{ coinsAfter: number; expiry: number; wallet: WalletDoc | null }> {
     await this.ensureWallet(accountId);
     const ms = days * 86400000;
     const coinsField = ref.channel ? `recharged.${ref.channel}` : 'coins';
@@ -339,7 +339,7 @@ export class CommercialServiceBase {
         ts: now,
       });
     }
-    return { coinsAfter, expiry: res!.subscription?.expiry ?? now + ms };
+    return { coinsAfter, expiry: res!.subscription?.expiry ?? now + ms, wallet: res };
   }
 
   /**
@@ -360,11 +360,16 @@ export class CommercialServiceBase {
      * overrides it (see displayChannelOf). */
     channel?: RechargeChannel;
     clientPlatform?: string;
-  }): Promise<Result<{ coinsAfter: number; subscriptionExpiry: number }>> {
+  }): Promise<Result<{ coinsAfter: number; subscriptionExpiry: number; wallet: WalletView }>> {
     const existing = await this.cols.orders.findOne({ _id: args.orderId });
     if (existing) {
       const w = await this.cols.wallets.findOne({ _id: existing.accountId });
-      return { ok: true, coinsAfter: effectiveCoins(w, displayChannelOf(args.channel, args.clientPlatform)), subscriptionExpiry: w?.subscription?.expiry ?? 0 };
+      return {
+        ok: true,
+        coinsAfter: effectiveCoins(w, displayChannelOf(args.channel, args.clientPlatform)),
+        subscriptionExpiry: w?.subscription?.expiry ?? 0,
+        wallet: walletView(w, args.clientPlatform, args.channel),
+      };
     }
     const now = this.now();
     // Claim the order slot first. Concurrent replays of the SAME orderId race here; only one wins, the rest take the
@@ -385,7 +390,12 @@ export class CommercialServiceBase {
     } catch (e) {
       if ((e as { code?: number }).code === 11000) {
         const w = await this.cols.wallets.findOne({ _id: args.accountId });
-        return { ok: true, coinsAfter: effectiveCoins(w, displayChannelOf(args.channel, args.clientPlatform)), subscriptionExpiry: w?.subscription?.expiry ?? 0 };
+        return {
+          ok: true,
+          coinsAfter: effectiveCoins(w, displayChannelOf(args.channel, args.clientPlatform)),
+          subscriptionExpiry: w?.subscription?.expiry ?? 0,
+          wallet: walletView(w, args.clientPlatform, args.channel),
+        };
       }
       throw e;
     }
@@ -396,15 +406,20 @@ export class CommercialServiceBase {
       await this.cols.orders.deleteOne({ _id: args.orderId });
       return { ok: false, error: 'ALREADY_ACTIVE' };
     }
-    const { coinsAfter, expiry } = await this.applySubscription(
+    const applied = await this.applySubscription(
       args.accountId,
       args.days,
       args.immediateCoins,
       now,
       { orderId: args.orderId, channel: args.channel, clientPlatform: args.clientPlatform },
     );
-    await this.cols.orders.updateOne({ _id: args.orderId }, { $set: { coinsAfter } });
-    return { ok: true, coinsAfter, subscriptionExpiry: expiry };
+    await this.cols.orders.updateOne({ _id: args.orderId }, { $set: { coinsAfter: applied.coinsAfter } });
+    return {
+      ok: true,
+      coinsAfter: applied.coinsAfter,
+      subscriptionExpiry: applied.expiry,
+      wallet: walletView(applied.wallet, args.clientPlatform, args.channel),
+    };
   }
 }
 

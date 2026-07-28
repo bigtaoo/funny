@@ -404,12 +404,13 @@ export class CityService {
     if (!pw) throw new SlgError('TILE_NOT_OWNED', 'Not yet in the world');
     const teams = pw.teams ?? [];
     if (teams.length === 0) return teams;
-    const save = await this.core.meta.getSaveFields(accountId).catch(() => null);
+    const save = await this.core.meta.getSaveFields(accountId, ['cardInv']).catch(() => null);
     if (!save) return teams; // meta unreachable; degrade without touching stored data
 
     let changed = false;
+    const cardInv = save.cardInv ?? {};
     const cleaned = teams.map((team) => {
-      const { army } = sanitizeCardArmy(team.army, save.cardInv);
+      const { army } = sanitizeCardArmy(team.army, cardInv);
       if (army.length !== team.army.length) changed = true;
       const healed = withValidLeader(team, army);
       if (healed.leaderCardId !== team.leaderCardId) changed = true;
@@ -485,13 +486,14 @@ export class CityService {
     const pwId = playerWorldId(worldId, accountId);
     const pw = await this.core.deps.cols.playerWorld.findOne({ _id: pwId });
     if (!pw) throw new SlgError('TILE_NOT_OWNED', 'Not yet in the world');
-    const save = await this.core.meta.getSaveFields(accountId).catch(() => null);
+    const save = await this.core.meta.getSaveFields(accountId, ['cardInv']).catch(() => null);
     if (!save) throw new SlgError('INTERNAL', 'Card inventory unavailable, please retry');
+    const cardInv = save.cardInv ?? {};
 
     const cardIds = new Set<string>();
     const cleanedTeams: TeamTemplate[] = [];
     for (const team of teams) {
-      const { army, resolved } = sanitizeCardArmy(team.army, save.cardInv);
+      const { army, resolved } = sanitizeCardArmy(team.army, cardInv);
       for (const e of army) {
         if (cardIds.has(e.cardInstanceId!)) throw new SlgError('BAD_REQUEST', `Card ${e.cardInstanceId} assigned to multiple teams`);
         cardIds.add(e.cardInstanceId!);

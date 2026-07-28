@@ -11,7 +11,7 @@ import {
 } from '@nw/shared';
 import { WorldCoreSpawn } from './coreSpawn';
 import { marchVisionRadius, tileVisionRadius } from './coreHelpers';
-import { refreshFamilyProsperity } from './prosperity';
+import { computeTerritoryCount } from './prosperity';
 import type { TileDoc } from './db';
 
 export class WorldCoreVision extends WorldCoreSpawn {
@@ -37,9 +37,10 @@ export class WorldCoreVision extends WorldCoreSpawn {
     const result = new Set<string>();
     const myPw = await cols.playerWorld.findOne({ _id: playerWorldId(worldId, accountId) });
     if (!myPw?.familyId) return result;
-    const [myFam] = await this.socialsvc.getFamiliesByIds([myPw.familyId]);
-    if (!myFam?.sectId) return result;
-    const mySect = await cols.sects.findOne({ _id: myFam.sectId });
+    // comm-audit batch F item 8b: sectId is mirrored onto PlayerWorldDoc at joinWorld (same SS7 tradeoff as
+    // familyId) — no getFamiliesByIds([myPw.familyId]) round trip needed just to read it.
+    if (!myPw.sectId) return result;
+    const mySect = await cols.sects.findOne({ _id: myPw.sectId });
     const allyIds = mySect?.allySectIds ?? [];
     if (allyIds.length === 0) return result;
     const allyFamilies = (await Promise.all(allyIds.map((sid) => this.socialsvc.getFamiliesBySect(sid)))).flat();
@@ -64,10 +65,9 @@ export class WorldCoreVision extends WorldCoreSpawn {
     const myPw = await cols.playerWorld.findOne({ _id: playerWorldId(worldId, accountId) });
     if (!myPw?.familyId) return result;
     const famIds = new Set<string>([myPw.familyId]); // own family always friendly
-    const [myFam] = await this.socialsvc.getFamiliesByIds([myPw.familyId]);
-    if (myFam?.sectId) {
-      const mySect = await cols.sects.findOne({ _id: myFam.sectId });
-      const sectIds = [myFam.sectId, ...(mySect?.allySectIds ?? [])]; // own sect + allied sects
+    if (myPw.sectId) {
+      const mySect = await cols.sects.findOne({ _id: myPw.sectId });
+      const sectIds = [myPw.sectId, ...(mySect?.allySectIds ?? [])]; // own sect + allied sects
       const fams = (await Promise.all(sectIds.map((sid) => this.socialsvc.getFamiliesBySect(sid)))).flat();
       for (const f of fams) famIds.add(f.familyId);
     }
@@ -167,7 +167,13 @@ export class WorldCoreVision extends WorldCoreSpawn {
   /** G5-2: push a tile change to all observers whose vision covers it (exclude parties already pushed individually, such as the tile owner / defender). */
   async pushTileToObservers(t: TileDoc, exclude: ReadonlySet<string>): Promise<void> {
     const observers = await this.visionObservers(t.worldId, [{ x: t.x, y: t.y }], exclude);
-    for (const acct of observers) void this.pushTile(acct, t);
+    if (observers.length === 0) return;
+    // comm-audit batch F item 7: resolve the tile owner's profile once here instead of each observer's
+    // pushTile call independently re-fetching the same t.ownerId.
+    const ownerProfile = (t.ownerId && this.meta.available)
+      ? await this.meta.getProfile(t.ownerId).catch(() => null)
+      : null;
+    for (const acct of observers) void this.pushTile(acct, t, ownerProfile);
   }
 
   /**
@@ -277,8 +283,11 @@ export class WorldCoreVision extends WorldCoreSpawn {
   async bumpFamilyActivity(worldId: string, familyId: string | undefined, delta: number): Promise<void> {
     if (!familyId) return;
     try {
-      await this.socialsvc.bumpActivity(familyId, delta);
-      await refreshFamilyProsperity(this.deps.cols, this.socialsvc, worldId, familyId);
+      // comm-audit batch F item 9: territoryCount is a local Mongo read (worldsvc's own tiles/playerWorld),
+      // independent of the socialsvc call — compute it first, then bump+refresh in a single socialsvc hop
+      // instead of two sequential ones (bumpActivity, then refreshProsperity).
+      const territoryCount = await computeTerritoryCount(this.deps.cols, worldId, familyId);
+      await this.socialsvc.bumpActivityAndProsperity(familyId, delta, territoryCount);
     } catch (e) {
       console.error('[worldsvc] bumpFamilyActivity failed', { worldId, familyId, err: (e as Error).message });
     }

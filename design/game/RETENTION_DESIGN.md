@@ -7,6 +7,9 @@
 > - `server/shared/src/types.ts` — `SaveData.retention?: RetentionSave`
 > - `server/metaserver/src/service.ts` — `getRetention` / `claimCheckin` / `claimDailyReward` + PvE/ads 打点
 > - `server/metaserver/src/internal.ts` — PvP 结算时 `pvp.match` 打点（内嵌 `applyPvp`）
+> - ✅（2026-07-28 修复）PvE 打点此前只在 `pveClear` 的 normal-clear 路径调用，spot-check 分支（`pveVerify`/
+>   `deliverVerifiedClearReward`）从未打点——当天首通任意关卡必进 spot-check（`shouldSpotCheck` 对 `isFirstClear`
+>   短路 true），导致"通关任意 PvE 关卡"每日任务对正常推图玩家经常无法完成。详见 [`PVE_INTEGRITY_PLAN.md §9`](PVE_INTEGRITY_PLAN.md)。
 > - `server/contracts/openapi.yml` — `GET /retention` / `POST /retention/checkin` / `POST /retention/daily/claim`
 > - `client/src/game/meta/retention.ts` — 客户端镜像纯函数
 > - `client/src/game/meta/SaveData.ts` — `retention?` 字段

@@ -73,13 +73,27 @@
 
 ## 实施记录（2026-07-28 完成）
 
-**已完整实施**：批次 A（内部 HTTP 客户端全量迁移到 `fetchInternalJson`）、批次 B（6 处部署配置漏配修复 + deploy-config lint 扩展 33 例）、批次 C（结算超时矛盾/match_found 投递/judge 随机化/readJson 内存 bug）、批次 D（grant 端点 orderId 去重 + claimMail 回滚）、批次 E（赛季结算有界并发）、批次 G（约 15 项死代码删除，3 项改判保留）、批次 H 的认证 caller 透传 + save-fields 契约清理。
+**已完整实施**：批次 A（内部 HTTP 客户端全量迁移到 `fetchInternalJson`）、批次 B（6 处部署配置漏配修复 + deploy-config lint 扩展 33 例）、批次 C（结算超时矛盾/match_found 投递/judge 随机化/readJson 内存 bug）、批次 D（grant 端点 orderId 去重 + claimMail 回滚）、批次 E（赛季结算有界并发）、批次 G（约 15 项死代码删除，3 项改判保留）、批次 H 的认证 caller 透传 + save-fields 契约清理、批次 F（P1 合并优化，见下）。
 
-**验证方法**：每个批次落地后跑对应包的 `tsc -b` + 该包全量 vitest；批次 G 后额外跑过一次 11 个 server 包的完整交叉测试（因为批次 D 当时误删了 `matchsvc.roomStart()`——审计判断"业务效果是 no-op"没错，但遗漏了 `matchsvc.test.ts`/`gateway-routing.test.ts`/`matchsvcClient.test.ts` 三个测试文件直接调用该方法验证这个 no-op 行为+ 拒绝路径，删方法本身而非只让它"实际不可达"，破坏了 9 个通过中的测试。当时只验证了 metaserver/socialsvc 两个包，未做跨包扫描，隔了一轮才在全量扫描中发现——已在后续提交里逐字恢复。这次踩坑的教训：**任何触及 A 服务但被 B 服务测试直接引用的符号，删除前必须跑 B 服务的测试**，不能只验证改动落地的那个包）。
+**验证方法**：每个批次落地后跑对应包的 `tsc -b` + 该包全量 vitest；批次 G 后额外跑过一次 11 个 server 包的完整交叉测试（因为批次 D 当时误删了 `matchsvc.roomStart()`——审计判断"业务效果是 no-op"没错，但遗漏了 `matchsvc.test.ts`/`gateway-routing.test.ts`/`matchsvcClient.test.ts` 三个测试文件直接调用该方法验证这个 no-op 行为+ 拒绝路径，删方法本身而非只让它"实际不可达"，破坏了 9 个通过中的测试。当时只验证了 metaserver/socialsvc 两个包，未做跨包扫描，隔了一轮才在全量扫描中发现——已在后续提交里逐字恢复。这次踩坑的教训：**任何触及 A 服务但被 B 服务测试直接引用的符号，删除前必须跑 B 服务的测试**，不能只验证改动落地的那个包）。批次 F 沿用同一纪律，10 项落地后跑了一次全部 11 个 server 包（gateway/matchsvc/gameserver/metaserver/commercial/admin/worldsvc/socialsvc/analyticsvc/auctionsvc/botsvc）的完整 vitest，1663 个测试全绿，零回归。
 
-**本轮未做，明确留作后续任务**：
-- **批次 F（P1 合并优化）整体未动**：match-identity 合并端点、socialsvc profile/extra 单跳化、月卡尾跳省略、`GET /save` wallet N+1、gateway 批量 push、save-fields 批量+缓存、worldsvc getProfile batch-profiles 化、世界频道发言并行化等，均为已诊断、方案已在本文档"二、可合并的通信"章节写清楚的条目，尚未实现。原因：批次 A-E+G+H 已覆盖全部 P0 + 部分 P2，属于本轮"先堵资金/正确性缺口"的优先级；F 是纯性能/延迟优化，风险可控、但改动量不小（每项都要新增/改端点+双端联调+回归测试），适合开一条独立任务专门做。
-- 上表中标"推迟"的 3 项（presence 双实现合并、`/gw/judge` proto 清理、内部响应信封统一）。
-- 世界频道发言 5 跳链路的 socialsvc `member` 端点带回 `sectId` 优化（消 15 处 `getFamiliesByIds([单元素])`）——诊断已写入文档，未实现。
+### 批次 F（P1 合并/优化，2026-07-28 完成，独立分支 feat/comm-audit-batch-f）
 
-**建议下一步**：单独开一条任务做批次 F（可参考本文档"二"章节的诊断直接排期），完成后这份文档可关闭。
+10 项全部落地。实现前用 3 个探索 agent 重新通读了每一项在当前代码里的真实调用点，发现原文档三处描述与实际代码有出入，经用户逐一拍板后按以下口径执行（详见批次 F 任务记录）：
+
+| # | 项目 | 落地方式 | 备注 |
+|---|---|---|---|
+| 1 | match-identity 合并端点 | meta `/internal/player` 补 `equippedTitle`/`avatarId`；gateway 新增 `getMatchIdentity()`，替换 5 处 `getElo`+`resolveProfile` 调用 | `handleDuelInvite` 三跳降为两跳（`resolveByPublicId` 查目标 + `getMatchIdentity` 查发起人，两者本就是不同账号，无法再合并） |
+| 2 | socialsvc profile/extra 单跳化 | 新增 `getPlayerRankByPublicId`，直接命中 meta `/internal/player?publicId=`，去掉自己的 `resolveByPublicId` 跳 | 原文档说"循环内调用"，实测是两跳链非循环，按实际情况做 |
+| 3 | 月卡/年卡/starter 购买尾跳 | commercial 四个 buy/claim 方法响应体加 `wallet: WalletView`；meta 侧优先用 `r.wallet`，缺失（如测试假实现未提供）时仍回退 `getWallet()` | 保留回退分支是关键——若直接假设 wallet 一定存在，会让任何暂未升级的 CommercialClient 实现（测试假对象）静默丢失钱包镜像，已在实现过程中被 3 个 e2e 测试当场验证到 |
+| 4 | `GET /save` 钱包 N+1 | `reconcileUndelivered` 循环外只取一次 wallet；`save.ts` 复用其返回值，不再重复调用 | 新增 `clientPlatform` 参数贯穿，避免和 P0-7 的 iOS/Android 计费隔离修复冲突 |
+| 5 | gateway 批量 push + presence 回旋镖 | gateway 新增 `POST /gw/push/batch`（`{targets:{accountId,msg}[]}`，进程内循环投递，零新网络跳）；socialsvc `pushMany` 改走它；presence 双循环合并成一次 `pushBatch`；mail 系统通知裸 for 循环同样改批量 | 未引入 Redis（原计划的两条路线之一）——socialsvc 此前完全没有 Redis 依赖，为了省这点跳数新增一条基础设施依赖 + 部署配置的风险收益比更差，选了纯 HTTP 批量端点 |
+| 6 | save-fields 裁剪/并行/去死字段 | 端点加 `?fields=cardInv,equipmentInv` 可选投影；`pveUpgrades` 整体从响应里删除（引擎从不读）；worldsvc 9 个调用点按需只请求需要的字段；`encounter.ts`/`arrival.ts` 的攻防两次串行拉取改 `Promise.all` | `arrival.ts` 的 base-siege 分支额外把 defender 快照提前到 `applySiege` 顶部并行获取，下传给 `applyBaseSiege`（原先在里面单独串行拉取） |
+| 7 | worldsvc getProfile N+1 | 新增 `WorldMetaClient.batchProfiles`（复用 meta 已有的 `/internal/account/batch-profiles`）；`coreMap.ts` 视口 owner 解析改一次批量；`pushTileToObservers` 提前解析一次 owner profile，`pushTile` 加可选第三参跳过重复 fetch | 其余 16 处单目标 `pushTile` 调用点不受影响（不传第三参，行为不变） |
+| 8 | 世界频道 5 跳 + sectId 镜像 | `getMember` 加 `sectId`（socialsvc + worldsvc 双侧接口）；15 处 `getFamiliesByIds([单元素])` 里 14 处消掉；`PlayerWorldDoc` 新增 `sectId` 字段，走跟 `familyId` 相同的 `joinWorld` 一次性快照（SS7 既有决策，非新引入的持续同步） | 剩 1 处（`sectService.ts` 里 `voteRemoveLeader` 查被提名人的宗门）确认无法消——跟当前 accountId 无关，是另一个家族 |
+| 9 | bumpActivity+refreshProsperity 合并 | socialsvc 新增 `POST /internal/family/:id/activity-and-prosperity`（一次 `$inc`+重算+`$set`）；worldsvc `bumpFamilyActivity` 先在本地算好 `territoryCount`（独立于 socialsvc 调用），再一次调用合并端点 | 保留原有两个独立端点/方法不删——尚有其它潜在调用方，只加不减 |
+| 10 | admin gacha catalog 本地化 | `gachaCatalog()` 直接调 `@nw/shared` 的纯函数 `catalogByCategory()`，删掉 `HttpGachaPoolsClient.catalog()` 整个方法 + 网络调用 | 其余 6 个 promo/paddle/gacha 端点保持 admin→meta→commercial 三跳不变——用户拍板：admin 访问量小，不值得为省这点流量捅破"commercial 只信任 meta"的隔离边界；promo 路由本身未注册（死代码）不在本次范围 |
+
+**踩坑**：item 8 的 sectId 镜像改动波及 9 个 worldsvc 测试文件里的 `FakeSocialsvc.getMember` 假实现——它们各自手写的返回对象没有带上 `sectId` 字段，导致改用本地字段读取后这些测试从"通过"变成"读到 undefined"。逐个补齐后全部恢复通过；教训与批次 G 一致：**改一个被多处测试用假对象实现的接口字段，必须搜出所有实现点一并更新**，不能只改生产代码。
+
+**建议下一步**：批次 F 收尾后本文档可关闭；上表里"推迟"的 3 项（presence 双实现合并、`/gw/judge` proto 清理、内部响应信封统一）如需处理，另开新任务。

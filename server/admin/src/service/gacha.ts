@@ -1,5 +1,5 @@
 // Custom gacha pool management (GACHA_DESIGN §12, gacha.pools.manage). Proxies the meta gacha-pools store + audit.
-import type { CustomPoolConfig, GachaCategory, GachaCatalogItem } from '@nw/shared';
+import { catalogByCategory, type CustomPoolConfig, type GachaCategory, type GachaCatalogItem } from '@nw/shared';
 import type { AdminGachaPool } from '../clients';
 import type { Actor, AdminBaseCtor, Constructor } from './base';
 import { AdminError } from './errors';
@@ -20,10 +20,13 @@ export function GachaMixin<TBase extends AdminBaseCtor>(Base: TBase): TBase & Co
       return this.gachaPools.list();
     }
 
-    /** The item catalogue (grouped by category) an operator may place in a custom pool. */
+    /**
+     * The item catalogue (grouped by category) an operator may place in a custom pool. comm-audit batch F
+     * item 10: this is a pure function over @nw/shared's static GACHA_CATALOG — compute it locally instead
+     * of round-tripping to meta (which also removes a spurious 503 whenever meta happens to be unreachable).
+     */
     async gachaCatalog(): Promise<Record<GachaCategory, GachaCatalogItem[]>> {
-      if (!this.gachaPools.available) throw new AdminError(503, 'gacha_unavailable', 'meta not configured');
-      return this.gachaPools.catalog();
+      return catalogByCategory();
     }
 
     /** Create/replace an ops-authored custom pool; meta-side validation failure throws EventsClientError (httpApi → 4xx). Audited. */

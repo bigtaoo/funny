@@ -70,7 +70,10 @@ class FakeSocialsvc implements WorldSocialsvcClient {
     if (!m) return null;
     const f = this.families.get(m.familyId);
     if (!f) return null;
-    return { familyId: m.familyId, role: m.role, leaderId: f.leaderId, name: f.name, tag: f.tag, memberCount: f.memberCount };
+    return {
+      familyId: m.familyId, role: m.role, leaderId: f.leaderId, name: f.name, tag: f.tag, memberCount: f.memberCount,
+      ...(f.sectId ? { sectId: f.sectId } : {}),
+    };
   }
 
   async getFamiliesByIds(familyIds: string[]): Promise<FamilySummary[]> {
@@ -97,6 +100,16 @@ class FakeSocialsvc implements WorldSocialsvcClient {
   async refreshProsperity(familyId: string, territoryCount: number): Promise<number> {
     const f = this.families.get(familyId);
     if (!f) return 0;
+    f.prosperity = familyProsperity(territoryCount, f.memberCount, f.activity);
+    f.prosperityUpdatedAt = Date.now();
+    f.territoryCount = territoryCount;
+    return f.prosperity;
+  }
+
+  async bumpActivityAndProsperity(familyId: string, delta: number, territoryCount: number): Promise<number> {
+    const f = this.families.get(familyId);
+    if (!f) return 0;
+    f.activity += delta;
     f.prosperity = familyProsperity(territoryCount, f.memberCount, f.activity);
     f.prosperityUpdatedAt = Date.now();
     f.territoryCount = territoryCount;

@@ -12,24 +12,22 @@ export interface PlayerProfile {
 }
 
 /**
- * Attacker progression snapshot required for authoritative siege engine calculation (E8 + CC-3, /internal/save-fields).
+ * Progression snapshot required for authoritative siege engine calculation (E8 + CC-3, /internal/save-fields).
  *
- * `unitLevels`/`gear` were removed here (comm-audit-internal-2026-07-28): they had drifted from what
- * meta's /internal/save-fields actually returns (`{pveUpgrades, cardInv, equipmentInv}` —
- * metaserver/src/internal/economyRoutes.ts) — this interface still declared them as required, silently
- * `undefined` at runtime (the `fetchInternalJson<SaveFields>` generic trusted the declared shape with
- * no runtime validation). Harmless in practice because worldsvc's own
- * `runSiegeBattle` (siegeEngine.ts) never reads its deprecated `unitLevels`/`equipment` parameters
- * either (CC-3 replaced them with cardInstances+equipmentInv) — but the dead declaration + silent cast
- * made that non-obvious. `pveUpgrades` stays: meta genuinely returns it on the wire (it's just that
- * runSiegeBattle's `pveUpgrades` param is separately deprecated/unread).
+ * `unitLevels`/`gear`/`pveUpgrades` were removed here (comm-audit-internal-2026-07-28 batch F item 6):
+ * none of them are read by worldsvc's own `runSiegeBattle` (siegeEngine.ts) — `unitLevels`/`equipment` were
+ * replaced by cardInstances+equipmentInv (CC-3), and `pveUpgrades` was a separately-deprecated/unread param.
+ * `equipmentInv`/`cardInv` are each optional now: callers request only the field(s) they use via the
+ * `fields` param (batch F — several sites, e.g. defenders, only ever needed `cardInv`).
  */
 export interface SaveFields {
-  pveUpgrades: Record<string, number>;
-  equipmentInv: Record<string, EquipmentInstance>;
+  equipmentInv?: Record<string, EquipmentInstance>;
   /** CC-3: card instance inventory for unit-type + equipment resolution at siege time. */
-  cardInv: Record<string, CardInstance>;
+  cardInv?: Record<string, CardInstance>;
 }
+
+/** Which /internal/save-fields projections to request — omit entirely for the full (default) set. */
+export type SaveField = 'cardInv' | 'equipmentInv';
 
 export interface WorldMetaClient {
   readonly available: boolean;
@@ -37,8 +35,10 @@ export interface WorldMetaClient {
   grantMaterial(accountId: string, material: string, qty: number, orderId: string): Promise<void>;
   /** Get a player's public profile (publicId / displayName). Returns null on failure; caller degrades gracefully without showing a display name. */
   getProfile(accountId: string): Promise<PlayerProfile | null>;
-  /** Get the attacker's progression snapshot (authoritative siege engine calculation, E8). Returns null on failure → engine degrades without equipment calculation (march is not blocked). */
-  getSaveFields(accountId: string): Promise<SaveFields | null>;
+  /** Batch profile lookup (comm-audit batch F item 7): same accountId→PlayerProfile shape as getProfile, one round trip for many ids via meta's /internal/account/batch-profiles. Returns only the ids meta actually found. */
+  batchProfiles(accountIds: string[]): Promise<Map<string, PlayerProfile>>;
+  /** Get the attacker/defender's progression snapshot (authoritative siege engine calculation, E8). `fields` narrows which projections are fetched (omit = both). Returns null on failure → engine degrades without equipment calculation (march is not blocked). */
+  getSaveFields(accountId: string, fields?: SaveField[]): Promise<SaveFields | null>;
   /** Grant a title (S10, SLG season settlement → write to meta). Best-effort; failures are logged but do not block settlement. */
   grantTitle(accountId: string, titleId: string): Promise<void>;
 }
@@ -78,10 +78,24 @@ export class HttpWorldMetaClient implements WorldMetaClient {
     return res.ok ? res.body : null;
   }
 
-  async getSaveFields(accountId: string): Promise<SaveFields | null> {
+  async batchProfiles(accountIds: string[]): Promise<Map<string, PlayerProfile>> {
+    if (!this.baseUrl || accountIds.length === 0) return new Map();
+    const res = await fetchInternalJson<{ profiles?: Record<string, PlayerProfile> }>(
+      `${this.baseUrl}/internal/account/batch-profiles`,
+      { caller: 'worldsvc', key: this.internalKey, method: 'POST', body: { accountIds }, timeoutMs: 5000, label: '/internal/account/batch-profiles' },
+    );
+    const out = new Map<string, PlayerProfile>();
+    if (res.ok && res.body?.profiles) {
+      for (const [id, p] of Object.entries(res.body.profiles)) out.set(id, p);
+    }
+    return out;
+  }
+
+  async getSaveFields(accountId: string, fields?: SaveField[]): Promise<SaveFields | null> {
     if (!this.baseUrl) return null;
+    const q = fields && fields.length > 0 ? `&fields=${fields.join(',')}` : '';
     const res = await fetchInternalJson<SaveFields>(
-      `${this.baseUrl}/internal/save-fields?accountId=${encodeURIComponent(accountId)}`,
+      `${this.baseUrl}/internal/save-fields?accountId=${encodeURIComponent(accountId)}${q}`,
       { caller: 'worldsvc', key: this.internalKey, timeoutMs: 5000, label: '/internal/save-fields' },
     );
     return res.ok ? res.body : null;
@@ -107,6 +121,7 @@ export const nullWorldMetaClient: WorldMetaClient = {
   available: false,
   async grantMaterial() { /* no-op */ },
   async getProfile() { return null; },
+  async batchProfiles() { return new Map(); },
   async getSaveFields() { return null; },
   async grantTitle() { /* no-op */ },
 };

@@ -55,6 +55,13 @@ export class FakeMeta implements SocialMetaClient {
     if (!p) return null;
     return { ...(p.rank ? { rank: p.rank } : {}) };
   }
+
+  async getPlayerRankByPublicId(publicId: string): Promise<{ accountId: string; rank?: string; elo?: number } | null> {
+    const accountId = this.byPublicId.get(publicId);
+    if (!accountId) return null;
+    const p = this.byAccount.get(accountId);
+    return { accountId, ...(p?.rank ? { rank: p.rank } : {}) };
+  }
 }
 
 /** Recording SocialGatewayClient. Captures every push/pushMany; presence is configurable. */
@@ -69,6 +76,9 @@ export class FakeGateway implements SocialGatewayClient {
   }
   async pushMany(accountIds: string[], msg: SocialPushMsg): Promise<void> {
     for (const accountId of accountIds) this.pushes.push({ accountId, msg });
+  }
+  async pushBatch(targets: { accountId: string; msg: SocialPushMsg }[]): Promise<void> {
+    for (const t of targets) this.pushes.push(t);
   }
   async presence(accountIds: string[]): Promise<Record<string, boolean>> {
     const out: Record<string, boolean> = {};

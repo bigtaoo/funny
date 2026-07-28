@@ -6,7 +6,7 @@ import { InputManager } from '../inputSystem/InputManager';
 import { t, TranslationKey } from '../i18n';
 import type { Rarity } from '../game/meta/SaveData';
 import type { GachaOverflow, GachaPool, GachaResultEntry } from '../net/ApiClient';
-import { ui as C, txt, buildPaperBackground, sketchPanel, seedFor, drawLoadingOverlay, tearDownChildren } from '../render/sketchUi';
+import { ui as C, txt, txtOutlined, buildPaperBackground, sketchPanel, seedFor, drawLoadingOverlay, tearDownChildren } from '../render/sketchUi';
 import { showToastMessage } from '../net/log';
 import { buildDecorCLayer } from '../render/decorCLayer';
 import { gachaCardTexture, gachaFrameTexture, gachaBannerTexture, preloadGachaTextures } from '../render/gachaArt';
@@ -559,8 +559,14 @@ export class GachaScene implements Scene {
       this.drawResultCard(r, cx, cy, cellW, cellH, i + 1);
     });
 
-    const hint = txt(t('gacha.tapContinue'), FS.label, C.light);
-    hint.anchor.set(0.5, 0.5); hint.x = w / 2; hint.y = Math.round(h * 0.92);
+    // A 10-pull's 2-row grid can reach as far down as the default hint slot; anchor
+    // below the actual grid bottom instead of a fixed fraction, and outline the text
+    // so it reads over both dark (epic/legendary) and light (common) card stock.
+    const gridBottom = startY + gridH;
+    const hint = txtOutlined(t('gacha.tapContinue'), FS.label, C.light, C.dark, 3);
+    hint.anchor.set(0.5, 0.5);
+    hint.x = w / 2;
+    hint.y = Math.min(Math.round(h * 0.97), Math.max(Math.round(h * 0.92), Math.round(gridBottom + h * 0.03)));
     this.container.addChild(hint);
   }
 

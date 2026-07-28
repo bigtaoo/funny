@@ -97,6 +97,25 @@ export function startInternalHttp(
           send(res, 200, { ok: true });
           return;
         }
+        // Batch push (comm-audit batch F item 5): one HTTP round trip instead of one /gw/push call per
+        // target — each target's accountId+msg is delivered in-process (gateway.push is a local socket
+        // lookup, not a network hop), so this collapses N HTTP calls into 1 without changing delivery
+        // semantics (still best-effort per target). Covers both "same msg, many recipients" (fan-out)
+        // and "many msgs, one recipient" (e.g. presence fan-out telling one account about several friends).
+        if (req.method === 'POST' && req.url === '/gw/push/batch') {
+          const b = (await readJson(req)) as { targets?: { accountId?: string; msg?: PushMsg; roomId?: string }[] };
+          const targets = Array.isArray(b.targets) ? b.targets : [];
+          if (targets.length === 0) {
+            send(res, 400, { ok: false, error: 'targets required' });
+            return;
+          }
+          log.debug('recv /gw/push/batch', { count: targets.length });
+          for (const t of targets) {
+            if (t.accountId && t.msg) gateway.push(t.accountId, t.msg, t.roomId);
+          }
+          send(res, 200, { ok: true });
+          return;
+        }
         // Real-time stats aggregation (admin monitoring/sampling, OPS_DESIGN §4.1): current online connection count.
         if (req.method === 'GET' && req.url === '/internal/stats') {
           send(res, 200, gateway.stats());

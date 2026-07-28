@@ -1,4 +1,4 @@
-import { fetchInternalJson, type CustomPoolConfig, type GachaCatalogItem, type GachaCategory } from '@nw/shared';
+import { fetchInternalJson, type CustomPoolConfig } from '@nw/shared';
 import { EventsClientError } from './events';
 
 // ── Custom gacha pool management (meta /admin/gacha/*, GACHA_DESIGN §12, gacha.pools.manage) ────────
@@ -23,7 +23,6 @@ export interface AdminGachaPool {
 export interface GachaPoolsClient {
   readonly available: boolean;
   list(): Promise<AdminGachaPool[]>;
-  catalog(): Promise<Record<GachaCategory, GachaCatalogItem[]>>;
   createCustom(config: CustomPoolConfig, createdBy: string): Promise<{ id: string }>;
   close(id: string): Promise<{ id: string }>;
 }
@@ -46,18 +45,6 @@ export class HttpGachaPoolsClient implements GachaPoolsClient {
     });
     if (!r.ok) throw new EventsClientError(r.status || 502, `list gacha pools ${r.status ? `HTTP ${r.status}` : r.error ?? 'network error'}`);
     return r.body?.pools ?? [];
-  }
-
-  async catalog(): Promise<Record<GachaCategory, GachaCatalogItem[]>> {
-    if (!this.metaBaseUrl) throw new EventsClientError(503, 'meta not configured');
-    const r = await fetchInternalJson<{ catalog?: Record<GachaCategory, GachaCatalogItem[]>; error?: string }>(`${this.metaBaseUrl}/admin/gacha/catalog`, {
-      caller: 'admin',
-      key: this.internalKey,
-      timeoutMs: 10000,
-      label: 'meta /admin/gacha/catalog',
-    });
-    if (!r.ok || !r.body?.catalog) throw new EventsClientError(r.status || 502, r.body?.error ?? r.error ?? `catalog HTTP ${r.status}`);
-    return r.body.catalog;
   }
 
   async createCustom(config: CustomPoolConfig, createdBy: string): Promise<{ id: string }> {
