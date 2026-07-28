@@ -51,7 +51,9 @@
 
 ## P2（死代码删除 / 治理）
 
-**确认删除**：meta `POST /admin/grant-title`、`GET /internal/leaderboard`、`POST /admin/gacha/pools`+commercial `/internal/gacha/pool`+`createLimitedPool`（双层死链）、`GatewayClient.presence/invalidateFriends`、`GET /internal/social/friends` 恒空链+gateway friendsCache 全链+socialsvc 6 次空转 invalidate、`settleSeasonForPlayer` commercial 死参数链、`orderDelivered({refundCoins})`、`/internal/elo` seasonPeakElo、meta `/analytics/*` 501 stub；matchsvc `Matchsvc.cancel`、`/mm/room/start` 三层链、heartbeat `rooms` 字段、`stats().capacity`；gateway `/gw/judge` `defenseJson` 死字段+client `runSiegeJudge` 不可达块；`shared/roomRegistry.ts` 整模块；socialsvc `GET /internal/reports`、`GET /social/player/:id/rank`；auctionsvc `grantMaterial`；admin `/admin/mismatches`、`/admin/suspicious-pve`、`GET+POST /admin/promo/codes` 三层死链。
+**计划删除清单（实施结果见下方"实施记录"，部分项目核实/落地时有调整）**：meta `POST /admin/grant-title`、`GET /internal/leaderboard`、`POST /admin/gacha/pools`+commercial `/internal/gacha/pool`+`createLimitedPool`（双层死链）、`GatewayClient.presence/invalidateFriends`、`GET /internal/social/friends` 恒空链+gateway friendsCache 全链+socialsvc 6 次空转 invalidate、`settleSeasonForPlayer` commercial 死参数链、`orderDelivered({refundCoins})`、`/internal/elo` seasonPeakElo、meta `/analytics/*` 501 stub；matchsvc `Matchsvc.cancel`、`/mm/room/start` 三层链、heartbeat `rooms` 字段、`stats().capacity`；gateway `/gw/judge` `defenseJson` 死字段+client `runSiegeJudge` 不可达块；`shared/roomRegistry.ts` 整模块；socialsvc `GET /internal/reports`、`GET /social/player/:id/rank`；auctionsvc `grantMaterial`；admin `/admin/mismatches`、`/admin/suspicious-pve`、`GET+POST /admin/promo/codes` 三层死链。
+
+**实施时的两处偏差**（核实后发现清单本身有误判，均已在"实施记录"和"拍板决策"表中记录）：`/mm/room/start` 三层链和 `Matchsvc.cancel` 中，前者被证实**不是**死代码（`matchsvc.test.ts`/gateway 两个测试文件直接调用验证其 no-op+拒绝语义，删除后破坏 9 个测试，已恢复）；`socialsvc GET /internal/reports` 也**不是**死代码（自身注释记载为合规最小可见性兜底，刻意保留可达但暂无调用方）。其余清单项目均按原计划确认删除。
 
 **治理**：meta `authed()` 透传 `x-internal-caller`（当前审计归因恒 null）；botsvc capacityClient 改 `internalHeaders`（strict 模式下现状会 401）；meta 44 处手写认证改 preHandler；worldsvc 500 响应泄漏内部异常（对齐 auctionsvc 已修的 comm-audit B15）。
 
@@ -65,8 +67,19 @@
 | botsvc 直调 commercial 月卡（绕收据校验） | 保留 + 注释标记 | 内部端口网络隔离为第一道防线；机器人无真实收据，走 meta 路径不可行；在端点处加注释声明该旁路仅限 botsvc |
 | gateway `nw:gw:online:*` presence key 单实例零收益 | 保留 | 2026-07-27 为横扩预留、经用户确认的设计，仅记录成本 |
 | 内部响应信封三套并存 | 推迟 | 收敛涉及全部调用方同步改动，风险/收益比差，留独立任务 |
-| presence 扇出双份实现（gateway meta 回退版 vs socialsvc 版） | 随 P2 死链清理一并删 gateway 回退版 | prod 恒配置 socialsvc，回退分支依赖的 `/internal/social/friends` 恒返回空，本就名存实亡 |
+| presence 扇出双份实现（gateway meta 回退版 vs socialsvc 版） | **推迟**（原计划随 P2 一并删，实施时改为推迟） | 触及 gateway+meta+socialsvc 三方调用点，比本轮其它 P2 项侵入面大很多；本轮 P2 只做了单一/双文件的低风险删除，这项留独立任务 |
+| socialsvc `GET /internal/reports` | **保留**（原判定死代码，核实后撤销） | 端点自身注释明确记载是"合规最小可见性兜底"（design-doc-audit-2026-07 COMPLIANCE_GLOBAL.md §7）——无调用方是刻意的（尚无运营 UI，靠手动可达性满足合规要求），不是遗留死代码，同 botsvc `/internal/bots/*` 先例 |
+| `/gw/judge` `defenseJson` 死字段 + client `runSiegeJudge` 不可达块 | **推迟** | 需要 5 个服务的 proto 重新生成 + 校验，风险/收益比本轮其它项低 |
 
-## 实施记录
+## 实施记录（2026-07-28 完成）
 
-（随批次进度补充；验证证据见各批次提交信息。）
+**已完整实施**：批次 A（内部 HTTP 客户端全量迁移到 `fetchInternalJson`）、批次 B（6 处部署配置漏配修复 + deploy-config lint 扩展 33 例）、批次 C（结算超时矛盾/match_found 投递/judge 随机化/readJson 内存 bug）、批次 D（grant 端点 orderId 去重 + claimMail 回滚）、批次 E（赛季结算有界并发）、批次 G（约 15 项死代码删除，3 项改判保留）、批次 H 的认证 caller 透传 + save-fields 契约清理。
+
+**验证方法**：每个批次落地后跑对应包的 `tsc -b` + 该包全量 vitest；批次 G 后额外跑过一次 11 个 server 包的完整交叉测试（因为批次 D 当时误删了 `matchsvc.roomStart()`——审计判断"业务效果是 no-op"没错，但遗漏了 `matchsvc.test.ts`/`gateway-routing.test.ts`/`matchsvcClient.test.ts` 三个测试文件直接调用该方法验证这个 no-op 行为+ 拒绝路径，删方法本身而非只让它"实际不可达"，破坏了 9 个通过中的测试。当时只验证了 metaserver/socialsvc 两个包，未做跨包扫描，隔了一轮才在全量扫描中发现——已在后续提交里逐字恢复。这次踩坑的教训：**任何触及 A 服务但被 B 服务测试直接引用的符号，删除前必须跑 B 服务的测试**，不能只验证改动落地的那个包）。
+
+**本轮未做，明确留作后续任务**：
+- **批次 F（P1 合并优化）整体未动**：match-identity 合并端点、socialsvc profile/extra 单跳化、月卡尾跳省略、`GET /save` wallet N+1、gateway 批量 push、save-fields 批量+缓存、worldsvc getProfile batch-profiles 化、世界频道发言并行化等，均为已诊断、方案已在本文档"二、可合并的通信"章节写清楚的条目，尚未实现。原因：批次 A-E+G+H 已覆盖全部 P0 + 部分 P2，属于本轮"先堵资金/正确性缺口"的优先级；F 是纯性能/延迟优化，风险可控、但改动量不小（每项都要新增/改端点+双端联调+回归测试），适合开一条独立任务专门做。
+- 上表中标"推迟"的 3 项（presence 双实现合并、`/gw/judge` proto 清理、内部响应信封统一）。
+- 世界频道发言 5 跳链路的 socialsvc `member` 端点带回 `sectId` 优化（消 15 处 `getFamiliesByIds([单元素])`）——诊断已写入文档，未实现。
+
+**建议下一步**：单独开一条任务做批次 F（可参考本文档"二"章节的诊断直接排期），完成后这份文档可关闭。
