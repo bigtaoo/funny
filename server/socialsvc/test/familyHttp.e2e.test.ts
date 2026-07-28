@@ -73,18 +73,6 @@ describe.skipIf(!mongo)('socialsvc family HTTP routes e2e', () => {
     expect((await r.json()).error.code).toBe('UNAUTHENTICATED');
   });
 
-  it('GET /social/player/:accountId/rank: returns the rank the meta client resolved', async () => {
-    const r = await fetch(`${base}/social/player/leader-a/rank`, { headers: auth });
-    expect(r.status).toBe(200);
-    expect((await r.json()).data).toEqual({ rank: 'gold' });
-  });
-
-  it('GET /social/player/:accountId/rank: unranked/unknown account → empty object, not an error', async () => {
-    const r = await fetch(`${base}/social/player/no-such-account/rank`, { headers: auth });
-    expect(r.status).toBe(200);
-    expect((await r.json()).data).toEqual({});
-  });
-
   // Unified profile-popup extras (rank/ELO + family/sect by publicId) — the single fetch every
   // ProfilePopup instance makes on open, replacing what used to be threaded through per-caller.
   it('GET /social/profile/:publicId/extra: rank + family (leader-a is in AlphaKnight, no sect yet)', async () => {

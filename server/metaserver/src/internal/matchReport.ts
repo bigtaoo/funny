@@ -47,6 +47,10 @@ const REPLAY_INLINE_MAX_BYTES = 256 * 1024;
 
 /** Storage cleanup TTL for non-disputed matches (7 days — bots have only been live a week, so 30d bought no headroom; see MatchDoc.expireAt). */
 const MATCH_RETENTION_MS = 7 * 24 * 3600 * 1000;
+// How long a settlement reservation (see the reservation block below) may sit before a retry is
+// allowed to assume the previous owner crashed and settle in its place. Must comfortably exceed
+// the worst-case in-flight settlement (20s judge round-trip + Mongo/commercial writes).
+const MATCH_SETTLING_TAKEOVER_MS = 2 * 60_000;
 
 interface EloResult {
   delta: number;
@@ -72,7 +76,7 @@ export function registerMatchReportRoutes(app: FastifyInstance, ctx: InternalCtx
 
   // ── POST /internal/match/report ───────────────────────────────────────
   app.post('/internal/match/report', async (req, reply) => {
-    if (!authed(req.headers['x-internal-key'])) {
+    if (!authed(req.headers)) {
       return reply.code(401).send({ ok: false, error: 'unauthorized' });
     }
     const body = req.body as ReportBody;
@@ -85,9 +89,54 @@ export function registerMatchReportRoutes(app: FastifyInstance, ctx: InternalCtx
       hashOk: body.hash_ok,
     });
 
-    // Idempotent: if the same room_id has already been archived, return ok immediately (resends do not re-settle).
-    const existing = await cols.matches.findOne({ roomId: body.room_id });
-    if (existing) return reply.send({ ok: true });
+    // Idempotency + double-settlement guard (comm-audit-internal-2026-07-28 P0-1).
+    // The old shape was read-check → settle → insertOne: a gameserver retry arriving while the
+    // first request was still inside settleElo (guaranteed before the 10s→35s timeout fix on
+    // every hash-mismatch report, since the judge round-trip alone is up to 20s) missed the
+    // findOne and settled a second time — the unique roomId index only stopped the final
+    // archive write, not the ELO/coin credits that had already happened. Now we RESERVE the
+    // roomId atomically (upsert on the unique index) before settling:
+    //   - fresh upsert → we own the settlement;
+    //   - reservation exists & younger than the takeover window → a settlement is in flight,
+    //     return ok (the retry queue's job is persistence, not response payload — the elo-less
+    //     match_over already went out when the first attempt timed out);
+    //   - reservation exists & stale → the previous owner presumably crashed mid-settle; take
+    //     over and settle (retries stay safe: takeover is itself an atomic guarded update);
+    //   - full archive doc (settling absent) → already settled, plain idempotent return.
+    // The placeholder uses mode '__settling__' so mode-filtered queries (audit sampling,
+    // balance pipeline) never see it, and carries expireAt as a last-resort TTL for orphans.
+    const reservation = await cols.matches.updateOne(
+      { roomId: body.room_id },
+      {
+        $setOnInsert: {
+          roomId: body.room_id,
+          mode: '__settling__',
+          seed: body.seed,
+          players: [],
+          winner: -1,
+          reason: 'settling',
+          hashOk: body.hash_ok,
+          settling: true,
+          settlingAt: now(),
+          ts: now(),
+          expireAt: new Date(now() + 60 * 60_000),
+        },
+      },
+      { upsert: true },
+    );
+    if (reservation.upsertedCount === 0) {
+      const existing = await cols.matches.findOne({ roomId: body.room_id }, { projection: { settling: 1, settlingAt: 1 } });
+      if (!existing || !existing.settling) return reply.send({ ok: true }); // already archived
+      const takeover = await cols.matches.updateOne(
+        { roomId: body.room_id, settling: true, settlingAt: { $lt: now() - MATCH_SETTLING_TAKEOVER_MS } },
+        { $set: { settlingAt: now() } },
+      );
+      if (takeover.modifiedCount === 0) {
+        log.info('duplicate report while settlement in flight — deduped', { roomId: body.room_id });
+        return reply.send({ ok: true });
+      }
+      log.warn('taking over stale settlement reservation', { roomId: body.room_id });
+    }
 
     // Login-reconnect-prompt: the match is over one way or another (base/disconnect/mismatch) — clear
     // the cached resume ticket for every side so a later re-login no longer offers to resume it.
@@ -194,12 +243,13 @@ export function registerMatchReportRoutes(app: FastifyInstance, ctx: InternalCtx
       ts: now(),
       ...(expireAt ? { expireAt } : {}),
     };
+    // replaceOne (not insertOne): the reservation placeholder we upserted before settling is
+    // sitting on this roomId — replacing it atomically clears `settling` and lands the real
+    // archive doc in one step. upsert:true covers the takeover edge where the placeholder's
+    // last-resort TTL fired mid-settlement.
     await cols.matches
-      .insertOne(matchDoc)
-      .catch((e) => {
-        // Idempotency race: a unique-index conflict means a concurrent request already archived the match; ignore.
-        if ((e as { code?: number }).code !== 11000) log.error('archive match failed', { err: (e as Error).message });
-      });
+      .replaceOne({ roomId: body.room_id }, matchDoc, { upsert: true })
+      .catch((e) => log.error('archive match failed', { roomId: body.room_id, err: (e as Error).message }));
 
     // Cold-tier disk archive (2026-07-20, S1-RP): fire-and-forget, never awaited/blocking the response;
     // skips disputed matches (already kept indefinitely in Mongo). No-op if NW_REPLAY_ARCHIVE_DIR is unset.
@@ -238,7 +288,7 @@ export function registerMatchReportRoutes(app: FastifyInstance, ctx: InternalCtx
   // ── GET /internal/mismatches (C3) ─────────────────────────────────────────
   // Returns the list of matches with hashMismatch=true within the last 24h (admin call).
   app.get('/internal/mismatches', async (req, reply) => {
-    if (!authed(req.headers['x-internal-key'])) {
+    if (!authed(req.headers)) {
       return reply.code(401).send({ ok: false, error: 'unauthorized' });
     }
     const since = now() - 24 * 3600 * 1000;
@@ -254,7 +304,7 @@ export function registerMatchReportRoutes(app: FastifyInstance, ctx: InternalCtx
   // ── GET /internal/pvp-card-stats (BALANCE P1) ──────────────────────────────
   // Aggregates pvpCardStats across days into per-card totals (optionally filtered by mode/since); admin call.
   app.get('/internal/pvp-card-stats', async (req, reply) => {
-    if (!authed(req.headers['x-internal-key'])) {
+    if (!authed(req.headers)) {
       return reply.code(401).send({ ok: false, error: 'unauthorized' });
     }
     const query = req.query as { mode?: string; since?: string };

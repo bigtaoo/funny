@@ -140,10 +140,12 @@ export class Gateway {
    * This way worldsvc emits a single message for a sect of ≤900 members, and the fan-out cost
    * falls on each gateway's local socket writes.
    */
-  readonly routeBroadcast = (recipients: string[], msg: PushMsg): void => {
+  readonly routeBroadcast = (recipients: string[], msg: PushMsg, roomId?: string): void => {
     for (const accountId of recipients) {
       const conn = this.conns.get(accountId);
-      if (conn && conn.ws.readyState === conn.ws.OPEN) this.push(accountId, msg);
+      // roomId (when the publisher included it — matchsvc does) keeps the cross-process log
+      // correlation that the HTTP /gw/push path always had (observability/README).
+      if (conn && conn.ws.readyState === conn.ws.OPEN) this.push(accountId, msg, roomId);
     }
   };
 
@@ -454,15 +456,22 @@ export class Gateway {
     });
   }
 
-  /** Picks one online player who has canJudge set and is not in the exclude list (any one will do; single-judge model). */
+  /**
+   * Picks one online player who has canJudge set and is not in the exclude list (single-judge model).
+   * Uniformly random among candidates (comm-audit-internal-2026-07-28 P0-10): the old "first match
+   * in conns iteration order" both over-drafted long-lived connections and let a colluder park an
+   * early connection to reliably occupy the judge seat for an accomplice's disputes.
+   */
   private pickJudge(exclude: string[]): GwConn | null {
+    const candidates: GwConn[] = [];
     for (const conn of this.conns.values()) {
       if (!conn.canJudge) continue;
       if (conn.ws.readyState !== conn.ws.OPEN) continue;
       if (exclude.includes(conn.accountId)) continue;
-      return conn;
+      candidates.push(conn);
     }
-    return null;
+    if (candidates.length === 0) return null;
+    return candidates[Math.floor(Math.random() * candidates.length)]!;
   }
 
   /** Ranked enqueue: fetches ELO from meta first (keeping matchsvc DB-free), validates deck, then enqueues. */

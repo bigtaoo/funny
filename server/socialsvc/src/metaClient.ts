@@ -1,7 +1,7 @@
 // socialsvc → metaserver internal client (P2).
 // Used for publicId→accountId reverse-lookup + batch profile retrieval (friend list / request display names).
 // Both internal endpoints are implemented in metaserver/src/internal.ts (NW_META_INTERNAL_URL).
-import { internalHeaders } from '@nw/shared';
+import { fetchInternalJson } from '@nw/shared';
 import type { ProfileView } from '@nw/shared';
 
 export interface SocialMetaClient {
@@ -23,51 +23,46 @@ export class HttpSocialMetaClient implements SocialMetaClient {
   get available(): boolean { return true; }
 
   async resolveByPublicId(publicId: string): Promise<{ accountId: string; profile: ProfileView } | null> {
-    try {
-      const res = await fetch(
-        `${this.baseUrl}/internal/account/by-public-id/${encodeURIComponent(publicId)}`,
-        { headers: internalHeaders('socialsvc', this.internalKey) },
-      );
-      if (res.status === 404) return null;
-      if (!res.ok) return null;
-      return (await res.json()) as { accountId: string; profile: ProfileView };
-    } catch {
-      return null;
-    }
+    // Degrades to null on 404 (not found) and on any failure, as before.
+    const r = await fetchInternalJson<{ accountId: string; profile: ProfileView }>(
+      `${this.baseUrl}/internal/account/by-public-id/${encodeURIComponent(publicId)}`,
+      { caller: 'socialsvc', key: this.internalKey, timeoutMs: 5000, label: 'meta /internal/account/by-public-id' },
+    );
+    if (!r.ok || !r.body) return null;
+    return r.body;
   }
 
   async batchProfiles(accountIds: string[]): Promise<Map<string, ProfileView>> {
     const out = new Map<string, ProfileView>();
     if (accountIds.length === 0) return out;
-    try {
-      const res = await fetch(`${this.baseUrl}/internal/account/batch-profiles`, {
+    // Best-effort: any failure returns whatever was collected (empty map), as before.
+    const r = await fetchInternalJson<{ profiles: Record<string, ProfileView> }>(
+      `${this.baseUrl}/internal/account/batch-profiles`,
+      {
+        caller: 'socialsvc',
+        key: this.internalKey,
         method: 'POST',
-        headers: { 'content-type': 'application/json', ...internalHeaders('socialsvc', this.internalKey) },
-        body: JSON.stringify({ accountIds }),
-      });
-      if (!res.ok) return out;
-      const data = (await res.json()) as { profiles: Record<string, ProfileView> };
-      for (const [id, p] of Object.entries(data.profiles)) {
-        out.set(id, p);
-      }
-    } catch {
-      // best-effort
+        body: { accountIds },
+        timeoutMs: 5000,
+        label: 'meta /internal/account/batch-profiles',
+      },
+    );
+    if (!r.ok || !r.body?.profiles) return out;
+    for (const [id, p] of Object.entries(r.body.profiles)) {
+      out.set(id, p);
     }
     return out;
   }
 
   async getPlayerRank(accountId: string): Promise<{ rank?: string; elo?: number } | null> {
-    try {
-      const res = await fetch(
-        `${this.baseUrl}/internal/player?accountId=${encodeURIComponent(accountId)}`,
-        { headers: internalHeaders('socialsvc', this.internalKey) },
-      );
-      if (!res.ok) return null;
-      const data = (await res.json()) as { rank?: string; elo?: number };
-      return { ...(data.rank ? { rank: data.rank } : {}), ...(data.elo !== undefined ? { elo: data.elo } : {}) };
-    } catch {
-      return null;
-    }
+    // Degrades to null on any failure, as before.
+    const r = await fetchInternalJson<{ rank?: string; elo?: number }>(
+      `${this.baseUrl}/internal/player?accountId=${encodeURIComponent(accountId)}`,
+      { caller: 'socialsvc', key: this.internalKey, timeoutMs: 5000, label: 'meta /internal/player' },
+    );
+    if (!r.ok || !r.body) return null;
+    const data = r.body;
+    return { ...(data.rank ? { rank: data.rank } : {}), ...(data.elo !== undefined ? { elo: data.elo } : {}) };
   }
 }
 

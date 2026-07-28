@@ -55,10 +55,6 @@ export function fakeCommercial(available = true): CommercialClient & {
     async listPromoCodes() {
       return [...promoCodes.values()] as never[];
     },
-    async createLimitedPool(a: { config: Record<string, unknown>; createdBy: string }) {
-      pools.set(a.config.id as string, { ...a.config, kind: 'limited', createdBy: a.createdBy });
-      return { ok: true as const, id: a.config.id as string };
-    },
     async createCustomPool(a: { config: Record<string, unknown>; createdBy: string }) {
       pools.set(a.config.id as string, { ...a.config, kind: 'custom', createdBy: a.createdBy });
       return { ok: true as const, id: a.config.id as string };
@@ -86,6 +82,7 @@ export class FakeSocialsvc implements MetaSocialsvcClient {
   mail = new Map<string, { _id: string; to: string; subject: string; body: string; attachments?: unknown[] }>();
   async proxy(): Promise<never> { throw new Error('not used in this test'); }
   async claimMail(): Promise<never> { throw new Error('not used in this test'); }
+  async unclaimMail(): Promise<void> { /* not used in this test */ }
   async insertSystemMail(dispatchKey: string, to: string, content: SystemMailContent) {
     const mailId = `${dispatchKey}:${to}`;
     const hasAttachment = !!content.attachments?.length;
@@ -111,6 +108,7 @@ export class ThrowingSocialsvc implements MetaSocialsvcClient {
   available = false;
   async proxy(): Promise<never> { throw new Error('socialsvc not configured'); }
   async claimMail(): Promise<never> { throw new Error('socialsvc not configured'); }
+  async unclaimMail(): Promise<never> { throw new Error('socialsvc not configured'); }
   async insertSystemMail(): Promise<never> { throw new Error('socialsvc not configured'); }
   async bulkInsertSystemMail(): Promise<never> { throw new Error('socialsvc not configured'); }
 }

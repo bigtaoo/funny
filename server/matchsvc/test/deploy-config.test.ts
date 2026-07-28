@@ -58,6 +58,94 @@ describe('deploy config — metaserver redis wiring (2026-07-27)', () => {
   }
 });
 
+describe('deploy config — worldsvc internal-URL wiring (comm-audit-internal-2026-07-28 P0-6)', () => {
+  // prod was missing NW_META_INTERNAL_URL (season mails/titles silently no-op'd, stronghold loot
+  // vanished, setTeams threw INTERNAL); NW_ADMIN_INTERNAL_URL was missing EVERYWHERE (the SLG
+  // shop-price cache never started, so the ops price panel was permanently inert with no log).
+  // Same failure family as the 2026-07-04 world-chat fee gap — lint every internal URL worldsvc
+  // consumes so the next new environment can't silently drop one.
+  const REQUIRED: Record<string, string> = {
+    NW_GATEWAY_INTERNAL_URL: 'gateway',
+    NW_SOCIALSVC_INTERNAL_URL: 'socialsvc',
+    NW_COMMERCIAL_INTERNAL_URL: 'commercial',
+    NW_META_INTERNAL_URL: 'metaserver',
+    NW_ADMIN_INTERNAL_URL: 'admin',
+  };
+  for (const file of COMPOSE_FILES) {
+    for (const [key, host] of Object.entries(REQUIRED)) {
+      it(`${file}: worldsvc injects ${key}`, () => {
+        const env = loadServiceEnv(file, 'worldsvc');
+        expect(env[key], `worldsvc missing ${key}`).toBeTruthy();
+        expect(env[key]).toContain(host);
+      });
+    }
+  }
+});
+
+describe('deploy config — admin ops-proxy wiring (comm-audit-internal-2026-07-28 P0-6)', () => {
+  for (const file of COMPOSE_FILES) {
+    it(`${file}: admin injects NW_WORLD_INTERNAL_URL + NW_AUCTION_INTERNAL_URL (otherwise the whole SLG ops surface throws 'not configured')`, () => {
+      const env = loadServiceEnv(file, 'admin');
+      expect(env.NW_WORLD_INTERNAL_URL, 'admin missing NW_WORLD_INTERNAL_URL').toBeTruthy();
+      expect(env.NW_AUCTION_INTERNAL_URL, 'admin missing NW_AUCTION_INTERNAL_URL').toBeTruthy();
+    });
+  }
+});
+
+describe('deploy config — metaserver feature-flag wiring (comm-audit-internal-2026-07-28)', () => {
+  for (const file of COMPOSE_FILES) {
+    it(`${file}: metaserver injects NW_ADMIN_INTERNAL_URL (otherwise flag polling never starts)`, () => {
+      const env = loadServiceEnv(file, 'metaserver');
+      expect(env.NW_ADMIN_INTERNAL_URL, 'metaserver missing NW_ADMIN_INTERNAL_URL → flags always defaulted').toBeTruthy();
+    });
+  }
+});
+
+describe('deploy config — pm2 ecosystem parity (comm-audit-internal-2026-07-28 P0-6)', () => {
+  // The pm2 path had drifted far behind compose: NO app block had NW_ADMIN_INTERNAL_URL (flag +
+  // shop-price polling dead), nw-world lacked meta/commercial URLs (season rewards lost, every
+  // coin sink hard-failing), nw-admin lacked world/auction/analytics URLs (SLG ops dead). compose
+  // gets fixed when incidents happen; ecosystem.config.cjs was consistently forgotten — lint it
+  // against the same expectations.
+  // eslint-disable-next-line @typescript-eslint/no-require-imports, @typescript-eslint/no-var-requires
+  const ecosystem = require(join(__dirname, '..', '..', 'ecosystem.config.cjs')) as {
+    apps: { name: string; env: Record<string, string | undefined> }[];
+  };
+  const appEnv = (name: string): Record<string, string | undefined> => {
+    const app = ecosystem.apps.find((a) => a.name === name);
+    if (!app) throw new Error(`ecosystem.config.cjs: app ${name} missing`);
+    return app.env;
+  };
+  const CASES: [app: string, key: string][] = [
+    ['nw-meta', 'NW_ADMIN_INTERNAL_URL'],
+    ['nw-matchsvc', 'NW_ADMIN_INTERNAL_URL'],
+    ['nw-world', 'NW_META_INTERNAL_URL'],
+    ['nw-world', 'NW_COMMERCIAL_INTERNAL_URL'],
+    ['nw-world', 'NW_ADMIN_INTERNAL_URL'],
+    ['nw-world', 'NW_GATEWAY_INTERNAL_URL'],
+    ['nw-world', 'NW_SOCIALSVC_INTERNAL_URL'],
+    ['nw-admin', 'NW_WORLD_INTERNAL_URL'],
+    ['nw-admin', 'NW_AUCTION_INTERNAL_URL'],
+    ['nw-admin', 'NW_ANALYTICS_BASE_URL'],
+  ];
+  for (const [app, key] of CASES) {
+    it(`ecosystem.config.cjs: ${app} injects ${key}`, () => {
+      expect(appEnv(app)[key], `${app} missing ${key}`).toBeTruthy();
+    });
+  }
+});
+
+describe('deploy config — local compose worldsvc socialsvc wiring (comm-audit-internal-2026-07-28)', () => {
+  // local was the odd one out here: prod/cloud had NW_SOCIALSVC_INTERNAL_URL, local didn't →
+  // every sect operation in the local full stack failed with NOT_IN_FAMILY.
+  it('docker-compose.local.yml: worldsvc injects NW_SOCIALSVC_INTERNAL_URL', () => {
+    const text = readFileSync(join(__dirname, '..', '..', '..', 'docker', 'docker-compose.local.yml'), 'utf8');
+    const doc = yaml.load(text) as ComposeDoc;
+    const env = doc.services?.worldsvc?.environment;
+    expect(env?.NW_SOCIALSVC_INTERNAL_URL, 'local worldsvc missing NW_SOCIALSVC_INTERNAL_URL → sect ops NOT_IN_FAMILY').toBeTruthy();
+  });
+});
+
 describe('deploy config — commercial redis wiring (2026-07-27)', () => {
   // victoryDaily (the tiered ranked-win coin cap) moved off Mongo to Redis (mid-term item 3/5 of the
   // 2026-07-27 audit, shared/src/dailyCounter.ts). Missing NW_REDIS_URL here doesn't break anything

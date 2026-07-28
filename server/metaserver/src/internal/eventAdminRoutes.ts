@@ -12,13 +12,13 @@ export function registerEventAdminRoutes(app: FastifyInstance, ctx: InternalCtx)
 
   // GET /admin/events — all events (including not-yet-started and ended).
   app.get('/admin/events', async (req, reply) => {
-    if (!authed(req.headers['x-internal-key'])) return reply.code(401).send({ ok: false, error: 'unauthorized' });
+    if (!authed(req.headers)) return reply.code(401).send({ ok: false, error: 'unauthorized' });
     const events = await adminListEvents(cols);
     return reply.send({ ok: true, events });
   });
   // POST /admin/events — create an event. body = EventInput.
   app.post('/admin/events', async (req, reply) => {
-    if (!authed(req.headers['x-internal-key'])) return reply.code(401).send({ ok: false, error: 'unauthorized' });
+    if (!authed(req.headers)) return reply.code(401).send({ ok: false, error: 'unauthorized' });
     const r = await adminCreateEvent(cols, req.body as EventInput, now());
     if (!r.ok) {
       const code = r.error === 'DUPLICATE_ID' ? 409 : 400;
@@ -29,7 +29,7 @@ export function registerEventAdminRoutes(app: FastifyInstance, ctx: InternalCtx)
   });
   // PATCH /admin/events/:id — full replacement of event definition. body = EventInput.
   app.patch('/admin/events/:id', async (req, reply) => {
-    if (!authed(req.headers['x-internal-key'])) return reply.code(401).send({ ok: false, error: 'unauthorized' });
+    if (!authed(req.headers)) return reply.code(401).send({ ok: false, error: 'unauthorized' });
     const { id } = req.params as { id: string };
     const r = await adminUpdateEvent(cols, id, req.body as EventInput);
     if (!r.ok) {
@@ -41,7 +41,7 @@ export function registerEventAdminRoutes(app: FastifyInstance, ctx: InternalCtx)
   });
   // DELETE /admin/events/:id — delete event definition (participation history is retained).
   app.delete('/admin/events/:id', async (req, reply) => {
-    if (!authed(req.headers['x-internal-key'])) return reply.code(401).send({ ok: false, error: 'unauthorized' });
+    if (!authed(req.headers)) return reply.code(401).send({ ok: false, error: 'unauthorized' });
     const { id } = req.params as { id: string };
     const r = await adminDeleteEvent(cols, id);
     if (!r.ok) return reply.code(404).send({ ok: false, error: r.error });

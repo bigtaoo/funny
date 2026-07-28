@@ -88,8 +88,8 @@ export class WorldService extends WorldCore {
   trainTroops(worldId: string, accountId: string, qty: number): Promise<PlayerWorldView> {
     return this.city.trainTroops(worldId, accountId, qty);
   }
-  speedupTraining(worldId: string, accountId: string, coins: number): Promise<PlayerWorldView> {
-    return this.city.speedupTraining(worldId, accountId, coins);
+  speedupTraining(worldId: string, accountId: string, coins: number, clientPlatform?: string): Promise<PlayerWorldView> {
+    return this.city.speedupTraining(worldId, accountId, coins, clientPlatform);
   }
   processCompletedTraining(nowMs?: number): Promise<number> {
     return this.city.processCompletedTraining(nowMs);
@@ -97,8 +97,8 @@ export class WorldService extends WorldCore {
   upgradeBuilding(worldId: string, accountId: string, key: BuildingKey): Promise<PlayerWorldView> {
     return this.city.upgradeBuilding(worldId, accountId, key);
   }
-  speedupBuild(worldId: string, accountId: string, coins: number): Promise<PlayerWorldView> {
-    return this.city.speedupBuild(worldId, accountId, coins);
+  speedupBuild(worldId: string, accountId: string, coins: number, clientPlatform?: string): Promise<PlayerWorldView> {
+    return this.city.speedupBuild(worldId, accountId, coins, clientPlatform);
   }
   processCompletedBuilds(nowMs?: number): Promise<number> {
     return this.city.processCompletedBuilds(nowMs);
@@ -112,8 +112,8 @@ export class WorldService extends WorldCore {
   distributeTroops(worldId: string, accountId: string, allocations: Record<string, number>): Promise<void> {
     return this.city.distributeTroops(worldId, accountId, allocations);
   }
-  recoverCard(worldId: string, accountId: string, cardInstanceId: string): Promise<void> {
-    return this.city.recoverCard(worldId, accountId, cardInstanceId);
+  recoverCard(worldId: string, accountId: string, cardInstanceId: string, clientPlatform?: string): Promise<void> {
+    return this.city.recoverCard(worldId, accountId, cardInstanceId, clientPlatform);
   }
 
   // ── season / multi-shard (season.ts) ─────────────────────────
@@ -221,8 +221,8 @@ export class WorldService extends WorldCore {
   listTerritories(worldId: string, accountId: string): Promise<WorldTileView[]> {
     return this.territory.listTerritories(worldId, accountId);
   }
-  relocateBase(worldId: string, accountId: string, x: number, y: number): Promise<PlayerWorldView> {
-    return this.territory.relocateBase(worldId, accountId, x, y);
+  relocateBase(worldId: string, accountId: string, x: number, y: number, clientPlatform?: string): Promise<PlayerWorldView> {
+    return this.territory.relocateBase(worldId, accountId, x, y, clientPlatform);
   }
   buildWatchtower(worldId: string, accountId: string, x: number, y: number): Promise<WorldTileView> {
     return this.territory.buildWatchtower(worldId, accountId, x, y);
@@ -236,8 +236,8 @@ export class WorldService extends WorldCore {
   }
 
   // ── SLG shop (shop.ts) ──────────────────────────────────────
-  buySlgShopItem(worldId: string, accountId: string, itemId: string): Promise<PlayerWorldView> {
-    return this.shop.buySlgShopItem(worldId, accountId, itemId);
+  buySlgShopItem(worldId: string, accountId: string, itemId: string, clientPlatform?: string): Promise<PlayerWorldView> {
+    return this.shop.buySlgShopItem(worldId, accountId, itemId, clientPlatform);
   }
   getSlgShopItems(): typeof SLG_SHOP_ITEMS {
     return this.shop.getSlgShopItems();

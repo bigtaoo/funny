@@ -19,6 +19,14 @@ const MM_INTERNAL = process.env.NW_MATCHSVC_INTERNAL_URL || 'http://127.0.0.1:80
 const COMM_INTERNAL = process.env.NW_COMMERCIAL_INTERNAL_URL || 'http://127.0.0.1:8092';
 // socialsvc internal base URL (gateway/worldsvc → socialsvc fan-out/delegation, S6).
 const SOCIAL_INTERNAL = process.env.NW_SOCIALSVC_INTERNAL_URL || 'http://127.0.0.1:8085';
+// admin internal base URL (meta/matchsvc feature-flag polling + worldsvc SLG shop-price polling).
+// ⚠ comm-audit-internal-2026-07-28: this was missing from EVERY pm2 app block, so under pm2 the
+// flag caches and the SLG shop-price cache silently never started (compose files had it; pm2 didn't).
+const ADMIN_INTERNAL = process.env.NW_ADMIN_INTERNAL_URL || 'http://127.0.0.1:8083';
+// worldsvc / auctionsvc / analyticsvc internal base URLs (admin ops proxy targets).
+const WORLD_INTERNAL = process.env.NW_WORLD_INTERNAL_URL || 'http://127.0.0.1:18084';
+const AUCTION_INTERNAL = process.env.NW_AUCTION_INTERNAL_URL || 'http://127.0.0.1:18086';
+const ANALYTICS_BASE = process.env.NW_ANALYTICS_BASE_URL || 'http://127.0.0.1:18085';
 
 const common = {
   NW_JWT_SECRET: process.env.NW_JWT_SECRET, // must be provided by the environment in production
@@ -49,6 +57,7 @@ module.exports = {
         // Active-match resume tracking (login-reconnect-prompt, shared with matchsvc). Missing this
         // meant the resume prompt was silently dead in prod (matchsvc wrote the key, meta never read it).
         NW_REDIS_URL: process.env.NW_REDIS_URL || 'redis://127.0.0.1:6379',
+        NW_ADMIN_INTERNAL_URL: ADMIN_INTERNAL, // feature-flag polling (was missing → flags always defaulted)
       },
     },
     {
@@ -103,6 +112,7 @@ module.exports = {
         NW_GAME_PUBLIC_WS_URL: GAME_PUBLIC_WS,
         // Active-match resume tracking + multi-instance gateway push fan-out (2026-07-18).
         NW_REDIS_URL: process.env.NW_REDIS_URL || 'redis://127.0.0.1:6379',
+        NW_ADMIN_INTERNAL_URL: ADMIN_INTERNAL, // feature-flag polling (was missing → flags always defaulted)
       },
     },
     {
@@ -139,6 +149,13 @@ module.exports = {
         NW_WORLD_REDIS_URL: process.env.NW_WORLD_REDIS_URL || 'redis://127.0.0.1:6379',
         NW_GATEWAY_INTERNAL_URL: GW_INTERNAL, // real-time event push-back via /gw/push
         NW_SOCIALSVC_INTERNAL_URL: SOCIAL_INTERNAL,
+        // ⚠ comm-audit-internal-2026-07-28: all three below were missing under pm2.
+        // Without META: season mails/titles no-op, stronghold loot lost, setTeams throws INTERNAL.
+        // Without COMMERCIAL: world chat / sect creation / relocation / shop / speedups all hard-fail.
+        // Without ADMIN: SlgShopPriceCache never starts (ops price overrides inert).
+        NW_META_INTERNAL_URL: META_BASE,
+        NW_COMMERCIAL_INTERNAL_URL: COMM_INTERNAL,
+        NW_ADMIN_INTERNAL_URL: ADMIN_INTERNAL,
       },
     },
     {
@@ -163,6 +180,11 @@ module.exports = {
         NW_META_BASE_URL: META_BASE, // player.lookup / system mail endpoints
         NW_GATEWAY_INTERNAL_URL: GW_INTERNAL, // GET /internal/stats online count
         NW_MATCHSVC_INTERNAL_URL: MM_INTERNAL, // GET /internal/stats matchmaking pool
+        // ⚠ comm-audit-internal-2026-07-28: compose files had these, pm2 didn't → the whole SLG
+        // ops surface (season open/settle/reset, map templates, auction audit) threw "not configured".
+        NW_WORLD_INTERNAL_URL: WORLD_INTERNAL,
+        NW_AUCTION_INTERNAL_URL: AUCTION_INTERNAL,
+        NW_ANALYTICS_BASE_URL: ANALYTICS_BASE,
       },
     },
     {

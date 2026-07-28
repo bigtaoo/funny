@@ -30,7 +30,7 @@ export function registerMailRoutes(app: FastifyInstance, ctx: InternalCtx): void
 
   // POST /internal/mail/system/preview → { ok, recipientCount }
   app.post('/internal/mail/system/preview', async (req, reply) => {
-    if (!authed(req.headers['x-internal-key'])) {
+    if (!authed(req.headers)) {
       return reply.code(401).send({ ok: false, error: 'unauthorized' });
     }
     const b = req.body as Pick<SystemMailBody, 'scope' | 'target'>;
@@ -45,7 +45,7 @@ export function registerMailRoutes(app: FastifyInstance, ctx: InternalCtx): void
 
   // POST /internal/mail/system/send → { ok, recipientCount }
   app.post('/internal/mail/system/send', async (req, reply) => {
-    if (!authed(req.headers['x-internal-key'])) {
+    if (!authed(req.headers)) {
       return reply.code(401).send({ ok: false, error: 'unauthorized' });
     }
     const b = req.body as SystemMailBody;

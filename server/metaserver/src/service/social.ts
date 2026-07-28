@@ -3,7 +3,9 @@
 // claim, then meta performs the actual attachment delivery (coins/equipment/cards/skins/materials).
 import { randomUUID } from 'node:crypto';
 import type { FastifyReply, FastifyRequest } from 'fastify';
-import { ErrorCode, err, ok } from '@nw/shared';
+import { ErrorCode, err, ok, createLogger } from '@nw/shared';
+
+const log = createLogger('meta:social');
 import { getOrCreateSave } from '../save.js';
 import { splitAttachments } from '../mail.js';
 import { grantEquipment } from '../equipment.js';
@@ -129,27 +131,49 @@ export function SocialMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase & Co
       if ('error' in claimedResult) {
         if (claimedResult.error === 'NOT_FOUND') return reply.code(404).send(err(ErrorCode.NOT_FOUND, 'mail not found'));
         if (claimedResult.error === 'NO_ATTACHMENT') return reply.code(400).send(err(ErrorCode.NO_ATTACHMENT, 'no attachment'));
-        return reply.code(409).send(err(ErrorCode.ALREADY_CLAIMED, 'already claimed'));
+        if (claimedResult.error === 'ALREADY_CLAIMED') return reply.code(409).send(err(ErrorCode.ALREADY_CLAIMED, 'already claimed'));
+        // SOCIAL_UNAVAILABLE (P0-4): the claim's actual outcome is unknown — do NOT tell the player
+        // "not found" (it may exist and may even now be claimed). 503 is retryable and correct either
+        // way: if the claim never landed, retrying claims it fresh; if it did land, the retry's own
+        // claimMail call comes back ALREADY_CLAIMED instead of hitting this branch again.
+        return reply.code(503).send(err(ErrorCode.NOT_IMPLEMENTED, 'mail service temporarily unavailable, please retry'));
       }
       const attachments = claimedResult.doc.attachments ?? [];
       if (attachments.length === 0) return reply.code(400).send(err(ErrorCode.NO_ATTACHMENT, 'no attachment'));
       const split = splitAttachments(attachments);
-      if (split.coins > 0 && !commercial.available) {
-        return reply.code(503).send(err(ErrorCode.NOT_IMPLEMENTED, 'commercial service unavailable'));
+      // Delivery must fully succeed once the mail is marked claimed — a partial failure here used
+      // to strand the attachment (mail stuck claimed-but-undelivered, unrecoverable: claiming again
+      // returns ALREADY_CLAIMED). Any failure now rolls the claim back via unclaimMail so the mail
+      // returns to unclaimed and the player can simply retry (P0-4).
+      try {
+        if (split.coins > 0 && !commercial.available) {
+          throw new Error('commercial service unavailable');
+        }
+        let coinsAfter: number | null = null;
+        if (split.coins > 0) {
+          const g = await commercial.grant({ accountId, amount: split.coins, reason: 'mail', orderId });
+          if (!g.ok) throw new Error('commercial grant failed');
+          coinsAfter = g.coinsAfter;
+        }
+        // Equipment/card instance snapshots (auction escrow-out): write back to equipmentInv/cardInv by instance.id.
+        // Idempotent both ways — claimMailAtomic already gates single-shot claim, and grant* overwrites by id.
+        for (const inst of split.equipment) {
+          const r = await grantEquipment(cols, now, accountId, inst);
+          if ('error' in r) throw new Error(`grantEquipment failed: ${r.error}`);
+        }
+        for (const inst of split.cards) {
+          const r = await grantCard(cols, now, accountId, inst);
+          if ('error' in r) throw new Error(`grantCard failed: ${r.error}`);
+        }
+        const cur = await getOrCreateSave(cols, accountId, now());
+        const newSkins = split.skins.filter((s) => !cur.inventory.skins.includes(s));
+        const save = await deliverMailGrant(cols, accountId, orderId, newSkins, split.items, coinsAfter, now(), split.materials);
+        return ok({ save });
+      } catch (e) {
+        log.error('mail claim delivery failed — rolling back the claim', { mailId: id, accountId, orderId, err: (e as Error).message });
+        await this.deps.socialsvc.unclaimMail(id, accountId, orderId);
+        return reply.code(503).send(err(ErrorCode.NOT_IMPLEMENTED, 'delivery failed, please retry'));
       }
-      let coinsAfter: number | null = null;
-      if (split.coins > 0) {
-        const g = await commercial.grant({ accountId, amount: split.coins, reason: 'mail', orderId });
-        if (g.ok) coinsAfter = g.coinsAfter;
-      }
-      // Equipment/card instance snapshots (auction escrow-out): write back to equipmentInv/cardInv by instance.id.
-      // Idempotent both ways — claimMailAtomic already gates single-shot claim, and grant* overwrites by id.
-      for (const inst of split.equipment) await grantEquipment(cols, now, accountId, inst);
-      for (const inst of split.cards) await grantCard(cols, now, accountId, inst);
-      const cur = await getOrCreateSave(cols, accountId, now());
-      const newSkins = split.skins.filter((s) => !cur.inventory.skins.includes(s));
-      const save = await deliverMailGrant(cols, accountId, orderId, newSkins, split.items, coinsAfter, now(), split.materials);
-      return ok({ save });
     }
 
     async sendMail(req: FastifyRequest, reply: FastifyReply) {

@@ -1,7 +1,7 @@
 // socialsvc → gateway internal push (SOCIAL_SVC_DESIGN §5).
 // socialsvc is the dispatch layer for all channel pushes, delivered to gateway via /gw/push (accountId → socket).
 // If gateway is not configured → push is a no-op (fallback: client relies on polling).
-import { internalHeaders, postInternal } from '@nw/shared';
+import { fetchInternalJson, postInternal } from '@nw/shared';
 
 export type SocialPushMsg =
   | {
@@ -83,16 +83,16 @@ export class HttpSocialGatewayClient implements SocialGatewayClient {
 
   async presence(accountIds: string[]): Promise<Record<string, boolean>> {
     if (!this.baseUrl || accountIds.length === 0) return {};
-    try {
-      const qs = encodeURIComponent(accountIds.join(','));
-      const res = await fetch(`${this.baseUrl}/gw/presence?accounts=${qs}`, {
-        headers: internalHeaders('socialsvc', this.internalKey),
-      });
-      if (!res.ok) return {};
-      return (await res.json()) as Record<string, boolean>;
-    } catch {
-      return {};
-    }
+    // Degrades to {} (everyone shown offline) on any failure, as before.
+    const qs = encodeURIComponent(accountIds.join(','));
+    const r = await fetchInternalJson<Record<string, boolean>>(`${this.baseUrl}/gw/presence?accounts=${qs}`, {
+      caller: 'socialsvc',
+      key: this.internalKey,
+      timeoutMs: 5000,
+      label: '/gw/presence',
+    });
+    if (!r.ok || !r.body) return {};
+    return r.body;
   }
 
   async invalidateFriends(accountId: string): Promise<void> {

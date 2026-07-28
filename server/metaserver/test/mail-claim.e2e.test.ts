@@ -22,13 +22,17 @@ import { buildApp } from '../dist/app.js';
 import { MailService } from '../../socialsvc/dist/mailService.js';
 import { createSocialMongo, type SocialMongo } from '../../socialsvc/dist/db.js';
 
-function makeFakeCommercial(): CommercialClient {
+function makeFakeCommercial(opts: { failFirstNGrants?: number } = {}): CommercialClient {
   const coins = new Map<string, number>();
   const granted = new Set<string>();
+  let grantCalls = 0;
+  const failFirstNGrants = opts.failFirstNGrants ?? 0;
   return {
     available: true,
     async getWallet(id: string) { return { coins: coins.get(id) ?? 0, pity: {} }; },
     async grant(a: { accountId: string; amount: number; reason: string; orderId: string }) {
+      grantCalls++;
+      if (grantCalls <= failFirstNGrants) return { ok: false as const, error: 'INJECTED_FAILURE' };
       if (granted.has(a.orderId)) return { ok: true as const, coinsAfter: coins.get(a.accountId) ?? 0 };
       const next = (coins.get(a.accountId) ?? 0) + a.amount;
       coins.set(a.accountId, next);
@@ -54,7 +58,7 @@ const meta = await tryConnectMeta();
 const social = await tryConnectSocial();
 if (!meta || !social) console.warn('[mail-claim.e2e] Mongo unreachable — skipping.');
 
-/** Minimal socialsvc internal HTTP shim: only /internal/mail/:id/claim (mirrors httpApi.ts's real handler 1:1). */
+/** Minimal socialsvc internal HTTP shim: /internal/mail/:id/{claim,unclaim} (mirrors httpApi.ts's real handlers 1:1). */
 function startMinimalSocialInternal(mailSvc: MailService, internalKey: string): Server {
   const internalAuth = loadInternalAuth(internalKey);
   return createServer((req, res) => {
@@ -69,9 +73,9 @@ function startMinimalSocialInternal(mailSvc: MailService, internalKey: string): 
         res.end(JSON.stringify(data));
       };
       if (!internalAuth.verify(req.headers).ok) return send(401, err(ErrorCode.UNAUTHENTICATED, 'no key'));
-      const m = /^\/internal\/mail\/([^/]+)\/claim$/.exec(path);
-      if (req.method === 'POST' && m) {
-        const mailId = decodeURIComponent(m[1]!);
+      const claimMatch = /^\/internal\/mail\/([^/]+)\/claim$/.exec(path);
+      if (req.method === 'POST' && claimMatch) {
+        const mailId = decodeURIComponent(claimMatch[1]!);
         const result = await mailSvc.claimMailAtomic(body.accountId, mailId, body.orderId);
         if ('error' in result) {
           const code = result.error === 'NOT_FOUND' ? ErrorCode.NOT_FOUND
@@ -79,6 +83,12 @@ function startMinimalSocialInternal(mailSvc: MailService, internalKey: string): 
           return send(200, err(code, result.error));
         }
         return send(200, ok({ doc: result.doc }));
+      }
+      const unclaimMatch = /^\/internal\/mail\/([^/]+)\/unclaim$/.exec(path);
+      if (req.method === 'POST' && unclaimMatch) {
+        const mailId = decodeURIComponent(unclaimMatch[1]!);
+        const result = await mailSvc.unclaimMailAtomic(body.accountId, mailId, body.orderId);
+        return send(200, ok(result));
       }
       send(404, err(ErrorCode.NOT_FOUND, 'no route'));
     })();
@@ -209,5 +219,47 @@ describe.skipIf(!meta || !social)('mail claim: real cross-service wire (metaserv
     // None of the non-skin attachments leaked into the skin set.
     expect(b.data.save.inventory.skins).not.toContain('protect_enhance');
     expect(b.data.save.inventory.skins).not.toContain('scrap');
+  });
+
+  // comm-audit-internal-2026-07-28 P0-4: a post-claim delivery failure must not strand the mail
+  // claimed-but-undelivered. Before this fix, the coin grant failing after claimMailAtomic had
+  // already marked the mail claimed left it permanently unclaimable (ALREADY_CLAIMED forever) with
+  // the attachment never delivered.
+  it('coin grant fails after the mail is marked claimed → claim rolled back, mail is claimable again and eventually succeeds', async () => {
+    const mailSvc = new MailService({
+      cols: s.collections,
+      gateway: { available: false, push: async () => {}, pushMany: async () => {}, presence: async () => ({}), invalidateFriends: async () => {} },
+      meta: { available: false, resolveByPublicId: async () => null, batchProfiles: async () => new Map() },
+      now: () => Date.now(),
+    });
+    const dispatchKey = `comp.rollback.${accountId}`;
+    await mailSvc.insertSystemMail(dispatchKey, accountId, {
+      subject: 'comp.mail.subject',
+      body: 'comp.mail.body',
+      attachments: [{ kind: 'coins', count: 300 }],
+      expireDays: 30,
+    });
+    const mailId = `${dispatchKey}:${accountId}`;
+
+    // Separate app instance pointed at the SAME socialsvc server, but with a commercial client
+    // whose first grant() call fails — simulating commercial being briefly unreachable/erroring.
+    const failingApp = await buildApp({
+      cols: m.collections, jwt, internalKey: IK, commercial: makeFakeCommercial({ failFirstNGrants: 1 }),
+      socialsvc: new HttpMetaSocialsvcClient(`http://127.0.0.1:${socialPort}`, IK),
+    });
+    try {
+      const r1 = await failingApp.inject({ method: 'POST', url: `/mail/${encodeURIComponent(mailId)}/claim`, headers: auth(), payload: {} });
+      expect(r1.statusCode).toBe(503); // delivery failed, not a silent success
+
+      // The mail must be claimable again (rolled back), not permanently ALREADY_CLAIMED.
+      const doc = await s.collections.mails.findOne({ _id: mailId });
+      expect(doc?.claimedAt).toBeUndefined();
+
+      const r2 = await failingApp.inject({ method: 'POST', url: `/mail/${encodeURIComponent(mailId)}/claim`, headers: auth(), payload: {} });
+      expect(r2.statusCode).toBe(200); // retry succeeds now that the injected failure has been consumed
+      expect(body(r2).data.save.wallet.coins).toBe(300);
+    } finally {
+      await failingApp.close();
+    }
   });
 });

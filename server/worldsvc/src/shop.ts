@@ -12,7 +12,7 @@ export class ShopService {
    * SLG shop purchase (item definitions in SLG_SHOP_ITEMS, DB-overridable via the admin shop price panel — §8/G7).
    * Deducts coins → takes effect immediately (speedup/resource pack/protection shield/battle pass written to playerWorld).
    */
-  async buySlgShopItem(worldId: string, accountId: string, itemId: string): Promise<PlayerWorldView> {
+  async buySlgShopItem(worldId: string, accountId: string, itemId: string, clientPlatform?: string): Promise<PlayerWorldView> {
     if (!isSlgShopItemId(itemId)) throw new SlgError('NOT_FOUND', 'Item not found');
     const item = this.core.shopPrices?.resolveItem(itemId) ?? SLG_SHOP_ITEMS.find((i) => i.id === itemId)!;
 
@@ -30,7 +30,7 @@ export class ShopService {
     }
 
     const orderId = `slg_shop:${worldId}:${accountId}:${itemId}:${now()}`;
-    await this.core.commercial.spend(accountId, item.cost, orderId);
+    await this.core.commercial.spend(accountId, item.cost, orderId, clientPlatform);
 
     const t = now();
     const resources = this.core.settle(pw, t);

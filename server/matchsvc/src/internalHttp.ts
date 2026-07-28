@@ -15,7 +15,12 @@ function readJson(req: IncomingMessage): Promise<Record<string, unknown>> {
     let body = '';
     req.on('data', (c) => {
       body += c;
-      if (body.length > 1 << 20) reject(new Error('payload too large'));
+      if (body.length > 1 << 20) {
+        // Stop reading — a settled promise doesn't stop 'data' events, so without destroy()
+        // an oversized body kept accumulating into `body` unbounded (OOM risk, P0-9).
+        req.destroy();
+        reject(new Error('payload too large'));
+      }
     });
     req.on('end', () => {
       try {

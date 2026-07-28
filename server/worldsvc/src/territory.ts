@@ -256,7 +256,7 @@ export class TerritoryService {
    * Validation: joined + target in bounds + not center/obstacle/bridge/plankway + unoccupied by anyone. All territory is retained (only passive relocation loses territory).
    * Effect: deduct coins → delete old base tile → write base tile at new location (carrying old garrison and remaining protection shield) → update mainBaseTile + recompute yield.
    */
-  async relocateBase(worldId: string, accountId: string, x: number, y: number): Promise<PlayerWorldView> {
+  async relocateBase(worldId: string, accountId: string, x: number, y: number, clientPlatform?: string): Promise<PlayerWorldView> {
     const { cols, now } = this.core.deps;
     const pw = await cols.playerWorld.findOne({ _id: playerWorldId(worldId, accountId) });
     if (!pw || !pw.mainBaseTile) throw new SlgError('TILE_NOT_OWNED', 'Not yet in the world');
@@ -276,7 +276,7 @@ export class TerritoryService {
 
     // Deduct coins first (failure throws INSUFFICIENT_FUNDS; map state is not modified).
     const orderId = `slg_relocate:${worldId}:${accountId}:${now()}`;
-    await this.core.commercial.spend(accountId, RELOCATE_COST, orderId);
+    await this.core.commercial.spend(accountId, RELOCATE_COST, orderId, clientPlatform);
 
     const t = now();
     const oldBase = await cols.tiles.findOne({ _id: pw.mainBaseTile });

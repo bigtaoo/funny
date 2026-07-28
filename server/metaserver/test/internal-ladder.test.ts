@@ -1,5 +1,5 @@
 // Route-level tests for internal/ladderRoutes.ts (split out of internal.ts):
-//   admin/ladder/season/roll, internal/ladder/season/current, admin/grant-title, internal/leaderboard, internal/title/grant.
+//   admin/ladder/season/roll, internal/ladder/season/current, internal/title/grant.
 // rollSeason's settlement internals (mail/title/snapshot idempotency) are already covered in depth by
 // season-close.test.ts at the function level — these tests only verify the HTTP route wiring (auth/params/status codes).
 // Uses Fastify inject + in-memory fake cols (no Mongo) — same style as internal.test.ts.
@@ -42,7 +42,7 @@ function build(opts: { saves?: SaveDocRow[]; accounts?: AccountDoc[]; season?: L
     gateway: fakeGateway(),
     commercial,
     socialsvc,
-    authed: (key) => key === KEY,
+    authed: (headers) => headers['x-internal-key'] === KEY,
   };
   const app = Fastify();
   registerLadderRoutes(app, ctx);
@@ -102,38 +102,6 @@ describe('POST /admin/ladder/season/roll', () => {
   });
 });
 
-describe('POST /admin/grant-title', () => {
-  it('no key → 401', async () => {
-    const { app } = build();
-    const res = await app.inject({ method: 'POST', url: '/admin/grant-title', payload: {} });
-    expect(res.statusCode).toBe(401);
-  });
-
-  it('missing params → 400', async () => {
-    const { app } = build();
-    const res = await app.inject({ method: 'POST', url: '/admin/grant-title', headers: authHeaders, payload: { accountId: 'a' } });
-    expect(res.statusCode).toBe(400);
-  });
-
-  it('grants a title to an existing save (idempotent on repeat)', async () => {
-    const { app, saves } = build({ saves: [saveRow('a', 1200)] });
-    const res = await app.inject({
-      method: 'POST', url: '/admin/grant-title', headers: authHeaders,
-      payload: { accountId: 'a', titleId: 'ops.special' },
-    });
-    expect(res.statusCode).toBe(200);
-    expect((saves.docs.get('a')!.save as { titles?: string[] }).titles).toContain('ops.special');
-
-    const res2 = await app.inject({
-      method: 'POST', url: '/admin/grant-title', headers: authHeaders,
-      payload: { accountId: 'a', titleId: 'ops.special' },
-    });
-    expect(res2.statusCode).toBe(200);
-    // makeNewSave seeds the newbie starter title; the admin grant appends ops.special (idempotent).
-    expect((saves.docs.get('a')!.save as { titles?: string[] }).titles).toEqual(['event.newbie', 'ops.special']);
-  });
-});
-
 describe('POST /internal/title/grant', () => {
   it('no key → 401', async () => {
     const { app } = build();
@@ -165,26 +133,5 @@ describe('POST /internal/title/grant', () => {
     });
     expect(res.statusCode).toBe(200);
     expect(JSON.parse(res.payload)).toEqual({ ok: true });
-  });
-});
-
-describe('GET /internal/leaderboard', () => {
-  it('no key → 401', async () => {
-    const { app } = build();
-    const res = await app.inject({ method: 'GET', url: '/internal/leaderboard' });
-    expect(res.statusCode).toBe(401);
-  });
-
-  it('returns Top100 sorted by elo desc, scoped to the current season', async () => {
-    const { app } = build({
-      saves: [saveRow('a', 1200), saveRow('b', 1800), saveRow('c', 1500), saveRow('old', 2000, 0 /* stale season */)],
-      accounts: [{ _id: 'a', displayName: 'Alice' }, { _id: 'b', displayName: 'Bob' }, { _id: 'c', displayName: 'Carl' }],
-      season: { _id: 'current', seasonNo: 1, startAt: 0, endAt: 9999, state: 'active' },
-    });
-    const res = await app.inject({ method: 'GET', url: '/internal/leaderboard', headers: authHeaders });
-    expect(res.statusCode).toBe(200);
-    const body = JSON.parse(res.payload);
-    expect(body.top.map((e: { accountId: string }) => e.accountId)).toEqual(['b', 'c', 'a']);
-    expect(body.top[0]).toMatchObject({ rank: 1, accountId: 'b', displayName: 'Bob', elo: 1800 });
   });
 });

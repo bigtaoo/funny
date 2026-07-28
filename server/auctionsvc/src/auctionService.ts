@@ -568,7 +568,7 @@ export class AuctionService {
    * If buyer deduction succeeds but a subsequent step fails: item remains in sold state; ops admin can look up orderId and manually redeliver.
    * Auction listings (saleMode='auction') do not go through this path — bidding/buyout uses placeBid.
    */
-  async buyAuction(buyerId: string, auctionId: string): Promise<AuctionView> {
+  async buyAuction(buyerId: string, auctionId: string, clientPlatform?: string): Promise<AuctionView> {
     const { cols, now, commercial } = this.deps;
 
     const doc = await cols.auctions.findOne({ _id: auctionId });
@@ -591,7 +591,7 @@ export class AuctionService {
     const buyOrderId = `auction_buy:${auctionId}`;
 
     // 1. Deduct coins from buyer (insufficient funds → throw, no sale)
-    await commercial.spend(buyerId, totalPrice, buyOrderId);
+    await commercial.spend(buyerId, totalPrice, buyOrderId, clientPlatform);
 
     // 2. Atomic status open→sold (prevents concurrent double-purchase)
     const updated = await cols.auctions.findOneAndUpdate(
@@ -623,7 +623,7 @@ export class AuctionService {
    * Validate → daily cap → escrow bid coins → atomic topBid write (rev guard) → refund previous bidder → anti-snipe extension.
    * If amount reaches/exceeds buyoutPrice → immediate settlement (item to bidder, seller receives post-tax proceeds; coins already escrowed, no second deduction).
    */
-  async placeBid(bidderId: string, auctionId: string, amount: number): Promise<AuctionView> {
+  async placeBid(bidderId: string, auctionId: string, amount: number, clientPlatform?: string): Promise<AuctionView> {
     const { cols, now, commercial } = this.deps;
     if (amount <= 0) throw new SlgError('BAD_REQUEST');
 
@@ -661,7 +661,7 @@ export class AuctionService {
     const bidOrderId = `auction_bid:${auctionId}:${bidderId}:${amount}`;
 
     // 1. Escrow bid coins (insufficient funds → throw, topBid unchanged)
-    await commercial.spend(bidderId, escrowTotal, bidOrderId);
+    await commercial.spend(bidderId, escrowTotal, bidOrderId, clientPlatform);
 
     // 2. Anti-snipe: bid placed within window before expiry → extend expireAt by the same window
     const ts = now();

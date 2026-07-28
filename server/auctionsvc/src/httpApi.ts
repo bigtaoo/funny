@@ -113,6 +113,10 @@ export function startHttpApi(
       } catch {
         return sendErr(res, ErrorCode.UNAUTHENTICATED, 'authentication required');
       }
+      // X-NW-Platform (ADR-020, comm-audit-internal-2026-07-28 P0-7): which recharged-pool bucket a
+      // spend should draw from — auction purchases used to always default to the 'web' bucket.
+      const clientPlatformHeader = req.headers['x-nw-platform'];
+      const clientPlatform = typeof clientPlatformHeader === 'string' && clientPlatformHeader ? clientPlatformHeader : undefined;
 
       try {
         if (method === 'GET' && path === '/auction/list') {
@@ -162,13 +166,13 @@ export function startHttpApi(
             const body = await readJson(req);
             const amount = Number(body.amount);
             if (!Number.isFinite(amount)) return sendErr(res, ErrorCode.BAD_REQUEST, 'amount required');
-            return send(res, 200, ok(await auctionSvc.placeBid(accountId, decodeURIComponent(m[1]!), amount)));
+            return send(res, 200, ok(await auctionSvc.placeBid(accountId, decodeURIComponent(m[1]!), amount, clientPlatform)));
           }
         }
         {
           const m = /^\/auction\/([^/]+)\/buy$/.exec(path);
           if (method === 'POST' && m) {
-            return send(res, 200, ok(await auctionSvc.buyAuction(accountId, decodeURIComponent(m[1]!))));
+            return send(res, 200, ok(await auctionSvc.buyAuction(accountId, decodeURIComponent(m[1]!), clientPlatform)));
           }
         }
         {

@@ -4,7 +4,7 @@
 // client can offer "resume your match?" right after login — independent of the existing mid-session
 // conn_resume/conn_resync grace-period reconnect, which only covers a live WS session.
 //
-// Redis is optional infrastructure here (mirrors gateway/worldsvc/roomRegistry.ts): no URL configured,
+// Redis is optional infrastructure here (mirrors gateway/worldsvc's Redis usage): no URL configured,
 // or connection failure, degrades to "feature disabled" rather than breaking login/matchmaking.
 import { createLogger } from './logger';
 
@@ -33,7 +33,7 @@ export type RedisLike = any;
 /**
  * Connect to Redis for active-match tracking. Returns null when unconfigured or unreachable
  * (dynamic ioredis import — compiles even when ioredis isn't installed, same pattern as
- * gateway/src/redis.ts and roomRegistry.ts's createRedisRoomRegistry).
+ * gateway/src/redis.ts).
  */
 export async function connectActiveMatchRedis(url: string | null): Promise<RedisLike | null> {
   if (!url) return null;

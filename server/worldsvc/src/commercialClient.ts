@@ -2,12 +2,17 @@
 // commercial internal HTTP (/internal/spend · /internal/grant) mirrors meta shape, X-Internal-Key auth.
 // NW_COMMERCIAL_INTERNAL_URL not configured → available=false → coin transactions unavailable (graceful degradation notice to player).
 
-import { internalHeaders } from '@nw/shared';
+import { fetchInternalJson } from '@nw/shared';
 
 export interface WorldCommercialClient {
   readonly available: boolean;
-  /** Deduct coins from an account. Insufficient funds → throws an Error containing INSUFFICIENT_FUNDS. */
-  spend(accountId: string, amount: number, orderId: string): Promise<void>;
+  /**
+   * Deduct coins from an account. Insufficient funds → throws an Error containing INSUFFICIENT_FUNDS.
+   * `clientPlatform` (ADR-020, X-NW-Platform) picks which recharged bucket (apple/google/web) to spend
+   * from; absent → commercial defaults to 'web' (comm-audit-internal-2026-07-28 P0-7: this used to be
+   * unconditional — iOS/Android SLG purchases silently drew from the web bucket).
+   */
+  spend(accountId: string, amount: number, orderId: string, clientPlatform?: string): Promise<void>;
   /** Credit coins to an account (e.g. refund). Best-effort; logs failure but does not roll back a completed spend. */
   grant(accountId: string, amount: number, orderId: string): Promise<void>;
 }
@@ -22,33 +27,37 @@ export class HttpWorldCommercialClient implements WorldCommercialClient {
     return this.baseUrl !== null;
   }
 
-  async spend(accountId: string, amount: number, orderId: string): Promise<void> {
+  async spend(accountId: string, amount: number, orderId: string, clientPlatform?: string): Promise<void> {
     if (!this.baseUrl) throw new Error('commercial service not configured');
-    const res = await fetch(`${this.baseUrl}/internal/spend`, {
+    const res = await fetchInternalJson<{ ok: boolean; error?: string }>(`${this.baseUrl}/internal/spend`, {
+      caller: 'worldsvc',
+      key: this.internalKey,
       method: 'POST',
-      headers: { 'content-type': 'application/json', ...internalHeaders('worldsvc', this.internalKey) },
-      body: JSON.stringify({ accountId, amount, orderId }),
+      body: { accountId, amount, orderId, ...(clientPlatform ? { clientPlatform } : {}) },
+      timeoutMs: 5000,
+      label: '/internal/spend',
     });
+    // Money path: a network error / timeout (status 0, body null) must NOT silently pass — throw.
+    if (res.body === null) throw new Error(res.error ?? `spend failed: ${res.status}`);
     // commercial's /internal/spend always answers HTTP 200; business failures (e.g. INSUFFICIENT_FUNDS)
     // are carried in the JSON body as {ok:false, error}, not the HTTP status — res.ok alone can't detect them.
-    if (!res.ok) {
-      const body = (await res.json().catch(() => ({}))) as { error?: string };
-      throw new Error(body.error ?? `spend failed: ${res.status}`);
-    }
-    const body = (await res.json()) as { ok: boolean; error?: string };
-    if (!body.ok) throw new Error(body.error ?? 'spend failed');
+    if (!res.ok) throw new Error(res.body.error ?? `spend failed: ${res.status}`);
+    if (!res.body.ok) throw new Error(res.body.error ?? 'spend failed');
   }
 
   async grant(accountId: string, amount: number, orderId: string): Promise<void> {
     if (!this.baseUrl) return; // no-op when not configured
-    try {
-      await fetch(`${this.baseUrl}/internal/grant`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json', ...internalHeaders('worldsvc', this.internalKey) },
-        body: JSON.stringify({ accountId, amount, orderId }),
-      });
-    } catch (e) {
-      console.error('[worldsvc] commercial.grant failed', { accountId, amount, orderId, err: (e as Error).message });
+    const res = await fetchInternalJson(`${this.baseUrl}/internal/grant`, {
+      caller: 'worldsvc',
+      key: this.internalKey,
+      method: 'POST',
+      body: { accountId, amount, orderId },
+      timeoutMs: 5000,
+      label: '/internal/grant',
+    });
+    if (!res.ok) {
+      // Best-effort (does not roll back a completed spend), but the loss must be visible.
+      console.error('[worldsvc] commercial.grant failed', { accountId, amount, orderId, status: res.status, err: res.error });
     }
   }
 }

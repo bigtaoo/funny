@@ -33,15 +33,15 @@ $logDir = Join-Path $server 'logs'
 # Run node directly (not via npm) so the PowerShell WindowTitle we set is not
 # clobbered by nested `npm run` — each window stays titled `nw:<name>`.
 $procs = @(
-  @{ name = 'meta';       dir = 'metaserver'; env = @{ NW_COMMERCIAL_INTERNAL_URL = 'http://127.0.0.1:18082'; NW_GATEWAY_PUBLIC_WS_URL = 'ws://localhost:8086/gw'; NW_SOCIALSVC_INTERNAL_URL = 'http://127.0.0.1:8085'; NW_REDIS_URL = 'redis://127.0.0.1:6379' } }
+  @{ name = 'meta';       dir = 'metaserver'; env = @{ NW_COMMERCIAL_INTERNAL_URL = 'http://127.0.0.1:18082'; NW_GATEWAY_PUBLIC_WS_URL = 'ws://localhost:8086/gw'; NW_SOCIALSVC_INTERNAL_URL = 'http://127.0.0.1:8085'; NW_REDIS_URL = 'redis://127.0.0.1:6379'; NW_ADMIN_INTERNAL_URL = 'http://127.0.0.1:18083' } }
   @{ name = 'gateway';    dir = 'gateway';    env = @{ NW_MATCHSVC_INTERNAL_URL  = 'http://127.0.0.1:8091'; NW_GW_PORT = '8086'; NW_META_BASE_URL = 'http://127.0.0.1:18080'; NW_GW_REDIS_URL = 'redis://127.0.0.1:6379' } }
-  @{ name = 'matchsvc';   dir = 'matchsvc';   env = @{ NW_GATEWAY_INTERNAL_URL   = 'http://127.0.0.1:8090'; NW_GAME_PUBLIC_WS_URL = 'ws://127.0.0.1:8081/ws'; NW_REDIS_URL = 'redis://127.0.0.1:6379' } }
+  @{ name = 'matchsvc';   dir = 'matchsvc';   env = @{ NW_GATEWAY_INTERNAL_URL   = 'http://127.0.0.1:8090'; NW_GAME_PUBLIC_WS_URL = 'ws://127.0.0.1:8081/ws'; NW_REDIS_URL = 'redis://127.0.0.1:6379'; NW_ADMIN_INTERNAL_URL = 'http://127.0.0.1:18083' } }
   @{ name = 'game';       dir = 'gameserver'; env = @{ NW_MATCHSVC_INTERNAL_URL  = 'http://127.0.0.1:8091' } }
   @{ name = 'commercial'; dir = 'commercial'; env = @{ NW_REDIS_URL = 'redis://127.0.0.1:6379' } }
   @{ name = 'social';     dir = 'socialsvc';  env = @{ NW_SOCIAL_PORT = '8085'; NW_GATEWAY_INTERNAL_URL = 'http://127.0.0.1:8090'; NW_META_INTERNAL_URL = 'http://127.0.0.1:18080' } }
-  @{ name = 'world';      dir = 'worldsvc';   env = @{ NW_WORLD_PORT = '18084'; NW_GATEWAY_INTERNAL_URL = 'http://127.0.0.1:8090'; NW_SOCIALSVC_INTERNAL_URL = 'http://127.0.0.1:8085'; NW_WORLD_REDIS_URL = 'redis://127.0.0.1:6379' } }
+  @{ name = 'world';      dir = 'worldsvc';   env = @{ NW_WORLD_PORT = '18084'; NW_GATEWAY_INTERNAL_URL = 'http://127.0.0.1:8090'; NW_SOCIALSVC_INTERNAL_URL = 'http://127.0.0.1:8085'; NW_WORLD_REDIS_URL = 'redis://127.0.0.1:6379'; NW_META_INTERNAL_URL = 'http://127.0.0.1:18080'; NW_COMMERCIAL_INTERNAL_URL = 'http://127.0.0.1:18082'; NW_ADMIN_INTERNAL_URL = 'http://127.0.0.1:18083' } }
   @{ name = 'auction';    dir = 'auctionsvc'; env = @{ NW_AUCTION_PORT = '18086'; NW_META_INTERNAL_URL = 'http://127.0.0.1:18080'; NW_COMMERCIAL_INTERNAL_URL = 'http://127.0.0.1:18082' } }
-  @{ name = 'admin';      dir = 'admin';      env = @{ NW_GATEWAY_INTERNAL_URL = 'http://127.0.0.1:8090'; NW_MATCHSVC_INTERNAL_URL = 'http://127.0.0.1:8091'; NW_META_BASE_URL = 'http://127.0.0.1:18080'; NW_ADMIN_SEED_USER = 'root'; NW_ADMIN_SEED_PASS = 'rootpass'; NW_ANALYTICS_BASE_URL = 'http://127.0.0.1:18085' } }
+  @{ name = 'admin';      dir = 'admin';      env = @{ NW_GATEWAY_INTERNAL_URL = 'http://127.0.0.1:8090'; NW_MATCHSVC_INTERNAL_URL = 'http://127.0.0.1:8091'; NW_META_BASE_URL = 'http://127.0.0.1:18080'; NW_ADMIN_SEED_USER = 'root'; NW_ADMIN_SEED_PASS = 'rootpass'; NW_ANALYTICS_BASE_URL = 'http://127.0.0.1:18085'; NW_WORLD_INTERNAL_URL = 'http://127.0.0.1:18084'; NW_AUCTION_INTERNAL_URL = 'http://127.0.0.1:18086' } }
   @{ name = 'analytics';  dir = 'analyticsvc'; env = @{ NW_ANALYTICS_PORT = '18085' } }
   @{ name = 'botsvc';     dir = 'botsvc';     env = @{ NW_BOT_PORT = '18087'; NW_META_BASE_URL = 'http://127.0.0.1:18080'; NW_SOCIAL_BASE_URL = 'http://127.0.0.1:8085'; NW_WORLD_BASE_URL = 'http://127.0.0.1:18084'; NW_GATEWAY_INTERNAL_URL = 'http://127.0.0.1:8090'; NW_GATEWAY_WS_URL = 'ws://127.0.0.1:8086/gw'; NW_COMMERCIAL_INTERNAL_URL = 'http://127.0.0.1:18082' } }
 )

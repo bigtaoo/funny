@@ -32,7 +32,7 @@ function build(seedAccounts: AccountDoc[] = [], seedSaves: SaveDocRow[] = []) {
     gateway: fakeGateway(),
     commercial: fakeCommercial(),
     socialsvc: new ThrowingSocialsvc(),
-    authed: (key) => key === KEY,
+    authed: (headers) => headers['x-internal-key'] === KEY,
     redis: null,
     accountCache: new AccountCache(),
   };

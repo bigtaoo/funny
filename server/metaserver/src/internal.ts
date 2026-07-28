@@ -52,8 +52,12 @@ export function registerInternalRoutes(app: FastifyInstance, deps: InternalDeps)
 
   // Centralized verifier: timing-safe + strict per-caller (NW_INTERNAL_KEYS) + single shared-key fallback.
   const auth = createInternalAuth({ keys: internalKeys, legacyKey: internalKey });
-  const authed = (key: unknown): boolean =>
-    auth.verify({ 'x-internal-key': typeof key === 'string' ? key : undefined }).ok;
+  // Takes the full request headers (not just x-internal-key) so createInternalAuth also sees
+  // x-internal-caller for audit attribution (comm-audit-internal-2026-07-28): the old signature threw
+  // away everything but the key, so in non-strict/fallback mode every one of meta's 40+ internal
+  // routes attributed its caller as null in verify()'s result — a rejected call couldn't be traced
+  // back to which service sent it.
+  const authed = (headers: Record<string, string | string[] | undefined>): boolean => auth.verify(headers).ok;
 
   const ctx: InternalCtx = { cols, now, gateway, commercial, socialsvc, authed, redis, accountCache };
 

@@ -1,4 +1,4 @@
-import { internalHeaders, type EventDoc, type EventInput } from '@nw/shared';
+import { fetchInternalJson, type EventDoc, type EventInput } from '@nw/shared';
 
 // ── Limited-time event management (meta /admin/events, B6 events.manage) ────────
 export interface EventsClient {
@@ -27,12 +27,15 @@ export class HttpEventsClient implements EventsClient {
 
   async list(): Promise<EventDoc[]> {
     if (!this.metaBaseUrl) return [];
-    const res = await fetch(`${this.metaBaseUrl}/admin/events`, {
-      headers: internalHeaders('admin', this.internalKey),
+    const r = await fetchInternalJson<{ events?: EventDoc[] }>(`${this.metaBaseUrl}/admin/events`, {
+      caller: 'admin',
+      key: this.internalKey,
+      timeoutMs: 10000,
+      label: 'meta /admin/events',
     });
-    if (!res.ok) throw new EventsClientError(res.status, `list events HTTP ${res.status}`);
-    const body = (await res.json()) as { events?: EventDoc[] };
-    return body.events ?? [];
+    // status 0 = network error / timeout → surface as 502 so the ops frontend sees the failure.
+    if (!r.ok) throw new EventsClientError(r.status || 502, `list events ${r.status ? `HTTP ${r.status}` : r.error ?? 'network error'}`);
+    return r.body?.events ?? [];
   }
 
   async create(input: EventInput): Promise<EventDoc> {
@@ -43,27 +46,32 @@ export class HttpEventsClient implements EventsClient {
   }
   async remove(eventId: string): Promise<void> {
     if (!this.metaBaseUrl) throw new EventsClientError(503, 'meta not configured');
-    const res = await fetch(`${this.metaBaseUrl}/admin/events/${encodeURIComponent(eventId)}`, {
+    const path = `/admin/events/${encodeURIComponent(eventId)}`;
+    const r = await fetchInternalJson<{ detail?: string; error?: string }>(`${this.metaBaseUrl}${path}`, {
+      caller: 'admin',
+      key: this.internalKey,
       method: 'DELETE',
-      headers: internalHeaders('admin', this.internalKey),
+      timeoutMs: 10000,
+      label: `meta DELETE ${path}`,
     });
-    if (!res.ok) {
-      const body = (await res.json().catch(() => ({}))) as { detail?: string; error?: string };
-      throw new EventsClientError(res.status, body.detail ?? body.error ?? `delete event HTTP ${res.status}`);
+    if (!r.ok) {
+      throw new EventsClientError(r.status || 502, r.body?.detail ?? r.body?.error ?? r.error ?? `delete event HTTP ${r.status}`);
     }
   }
 
-  private async write(method: string, path: string, input: EventInput): Promise<EventDoc> {
+  private async write(method: 'POST' | 'PATCH', path: string, input: EventInput): Promise<EventDoc> {
     if (!this.metaBaseUrl) throw new EventsClientError(503, 'meta not configured');
-    const res = await fetch(`${this.metaBaseUrl}${path}`, {
+    const r = await fetchInternalJson<{ event?: EventDoc; detail?: string; error?: string }>(`${this.metaBaseUrl}${path}`, {
+      caller: 'admin',
+      key: this.internalKey,
       method,
-      headers: { 'content-type': 'application/json', ...internalHeaders('admin', this.internalKey) },
-      body: JSON.stringify(input),
+      body: input,
+      timeoutMs: 10000,
+      label: `meta ${method} ${path}`,
     });
-    const body = (await res.json().catch(() => ({}))) as { event?: EventDoc; detail?: string; error?: string };
-    if (!res.ok || !body.event) {
-      throw new EventsClientError(res.status, body.detail ?? body.error ?? `${path} HTTP ${res.status}`);
+    if (!r.ok || !r.body?.event) {
+      throw new EventsClientError(r.status || 502, r.body?.detail ?? r.body?.error ?? r.error ?? `${path} HTTP ${r.status}`);
     }
-    return body.event;
+    return r.body.event;
   }
 }

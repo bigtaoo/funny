@@ -1,4 +1,4 @@
-import { internalHeaders } from '@nw/shared';
+import { fetchInternalJson } from '@nw/shared';
 import { EventsClientError } from './events';
 
 // ── Promo code client (B-PROMO) ────────────────────────────
@@ -30,25 +30,29 @@ export class HttpPromoClient implements PromoClient {
 
   async list(): Promise<PromoCodeView[]> {
     if (!this.metaBaseUrl) return [];
-    const res = await fetch(`${this.metaBaseUrl}/admin/promo/codes`, {
-      headers: internalHeaders('admin', this.internalKey),
+    const r = await fetchInternalJson<{ codes?: PromoCodeView[] }>(`${this.metaBaseUrl}/admin/promo/codes`, {
+      caller: 'admin',
+      key: this.internalKey,
+      timeoutMs: 10000,
+      label: 'meta GET /admin/promo/codes',
     });
-    if (!res.ok) throw new EventsClientError(res.status, `list promo codes HTTP ${res.status}`);
-    const body = (await res.json()) as { codes?: PromoCodeView[] };
-    return body.codes ?? [];
+    if (!r.ok) throw new EventsClientError(r.status || 502, `list promo codes ${r.status ? `HTTP ${r.status}` : r.error ?? 'network error'}`);
+    return r.body?.codes ?? [];
   }
 
   async create(args: { code: string; coins: number; expiresAt?: number; totalLimit?: number; note?: string; createdBy: string }): Promise<{ code: string }> {
     if (!this.metaBaseUrl) throw new EventsClientError(503, 'meta not configured');
-    const res = await fetch(`${this.metaBaseUrl}/admin/promo/codes`, {
+    const r = await fetchInternalJson<{ code?: string; error?: string }>(`${this.metaBaseUrl}/admin/promo/codes`, {
+      caller: 'admin',
+      key: this.internalKey,
       method: 'POST',
-      headers: { 'content-type': 'application/json', ...internalHeaders('admin', this.internalKey) },
-      body: JSON.stringify(args),
+      body: args,
+      timeoutMs: 10000,
+      label: 'meta POST /admin/promo/codes',
     });
-    const body = (await res.json().catch(() => ({}))) as { code?: string; error?: string };
-    if (!res.ok || !body.code) {
-      throw new EventsClientError(res.status, body.error ?? `create promo code HTTP ${res.status}`);
+    if (!r.ok || !r.body?.code) {
+      throw new EventsClientError(r.status || 502, r.body?.error ?? r.error ?? `create promo code HTTP ${r.status}`);
     }
-    return { code: body.code };
+    return { code: r.body.code };
   }
 }

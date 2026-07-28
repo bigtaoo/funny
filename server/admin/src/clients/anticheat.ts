@@ -1,4 +1,4 @@
-import { internalHeaders, type AntiCheatReviewDoc } from '@nw/shared';
+import { fetchInternalJson, type AntiCheatReviewDoc } from '@nw/shared';
 import { log } from './shared';
 
 // ── Achievement anti-cheat review queue (meta /internal/anticheat/reviews, S9-7) ──────────────
@@ -25,38 +25,34 @@ export class HttpAntiCheatClient implements AntiCheatClient {
 
   async listReviews(opts?: { accountId?: string; status?: string; limit?: number }): Promise<AntiCheatReviewRow[]> {
     if (!this.metaBaseUrl) return [];
-    try {
-      const qs = new URLSearchParams();
-      if (opts?.accountId) qs.set('accountId', opts.accountId);
-      if (opts?.status) qs.set('status', opts.status);
-      if (opts?.limit) qs.set('limit', String(opts.limit));
-      const res = await fetch(`${this.metaBaseUrl}/internal/anticheat/reviews?${qs}`, {
-        headers: internalHeaders('admin', this.internalKey),
-      });
-      if (!res.ok) {
-        log.warn('anticheat reviews non-2xx', { status: res.status });
-        return [];
-      }
-      const body = (await res.json()) as { reviews?: AntiCheatReviewRow[] };
-      return body.reviews ?? [];
-    } catch (e) {
-      log.warn('anticheat reviews failed', { err: (e as Error).message });
-      return [];
-    }
+    const qs = new URLSearchParams();
+    if (opts?.accountId) qs.set('accountId', opts.accountId);
+    if (opts?.status) qs.set('status', opts.status);
+    if (opts?.limit) qs.set('limit', String(opts.limit));
+    // Degrades to [] on any failure (network / timeout / non-2xx), as before.
+    const r = await fetchInternalJson<{ reviews?: AntiCheatReviewRow[] }>(`${this.metaBaseUrl}/internal/anticheat/reviews?${qs}`, {
+      caller: 'admin',
+      key: this.internalKey,
+      timeoutMs: 10000,
+      log,
+      label: 'meta /internal/anticheat/reviews',
+    });
+    if (!r.ok || !r.body) return [];
+    return r.body.reviews ?? [];
   }
 
   async resolveReview(id: string, resolution: 'dismissed' | 'banned', resolvedBy: string): Promise<{ ok: boolean }> {
     if (!this.metaBaseUrl) return { ok: false };
-    try {
-      const res = await fetch(`${this.metaBaseUrl}/internal/anticheat/reviews/${encodeURIComponent(id)}/resolve`, {
-        method: 'POST',
-        headers: { ...internalHeaders('admin', this.internalKey), 'content-type': 'application/json' },
-        body: JSON.stringify({ resolution, resolvedBy }),
-      });
-      return { ok: res.ok };
-    } catch (e) {
-      log.warn('resolve anticheat review failed', { err: (e as Error).message });
-      return { ok: false };
-    }
+    // Failure (network / non-2xx) reports {ok:false}, as before.
+    const r = await fetchInternalJson<{ ok?: boolean }>(`${this.metaBaseUrl}/internal/anticheat/reviews/${encodeURIComponent(id)}/resolve`, {
+      caller: 'admin',
+      key: this.internalKey,
+      method: 'POST',
+      body: { resolution, resolvedBy },
+      timeoutMs: 10000,
+      log,
+      label: 'meta /internal/anticheat/reviews/:id/resolve',
+    });
+    return { ok: r.ok };
   }
 }

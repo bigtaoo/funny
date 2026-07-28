@@ -12,14 +12,14 @@ export function registerPromoGachaRoutes(app: FastifyInstance, ctx: InternalCtx)
   // ── Promo code management ──────────────────────────────────────────────
   // GET /admin/promo/codes — list all promo codes.
   app.get('/admin/promo/codes', async (req, reply) => {
-    if (!authed(req.headers['x-internal-key'])) return reply.code(401).send({ ok: false, error: 'unauthorized' });
+    if (!authed(req.headers)) return reply.code(401).send({ ok: false, error: 'unauthorized' });
     if (!commercial.available) return reply.code(503).send({ ok: false, error: 'commercial unavailable' });
     const codes = await commercial.listPromoCodes();
     return reply.send({ ok: true, codes });
   });
   // POST /admin/promo/codes — create a promo code. body = { code, coins, expiresAt?, totalLimit?, note?, createdBy }
   app.post('/admin/promo/codes', async (req, reply) => {
-    if (!authed(req.headers['x-internal-key'])) return reply.code(401).send({ ok: false, error: 'unauthorized' });
+    if (!authed(req.headers)) return reply.code(401).send({ ok: false, error: 'unauthorized' });
     if (!commercial.available) return reply.code(503).send({ ok: false, error: 'commercial unavailable' });
     const b = req.body as Record<string, unknown>;
     const code = typeof b.code === 'string' ? b.code.trim().toUpperCase() : '';
@@ -41,50 +41,20 @@ export function registerPromoGachaRoutes(app: FastifyInstance, ctx: InternalCtx)
   // ── Limited gacha pool management ──────────────────────────────────────
   // GET /admin/gacha/pools — list all limited pool configs.
   app.get('/admin/gacha/pools', async (req, reply) => {
-    if (!authed(req.headers['x-internal-key'])) return reply.code(401).send({ ok: false, error: 'unauthorized' });
+    if (!authed(req.headers)) return reply.code(401).send({ ok: false, error: 'unauthorized' });
     if (!commercial.available) return reply.code(503).send({ ok: false, error: 'commercial unavailable' });
     const pools = await commercial.listLimitedPools();
     return reply.send({ ok: true, pools });
   });
-  // POST /admin/gacha/pools — create/replace a limited pool. body = { id, name, featuredLegendary, startAt, endAt, fillerLegendaries?, createdBy }
-  app.post('/admin/gacha/pools', async (req, reply) => {
-    if (!authed(req.headers['x-internal-key'])) return reply.code(401).send({ ok: false, error: 'unauthorized' });
-    if (!commercial.available) return reply.code(503).send({ ok: false, error: 'commercial unavailable' });
-    const b = req.body as Record<string, unknown>;
-    const id = typeof b.id === 'string' ? b.id.trim() : '';
-    const name = typeof b.name === 'string' ? b.name.trim() : '';
-    const featuredLegendary = typeof b.featuredLegendary === 'string' ? b.featuredLegendary.trim() : '';
-    const startAt = typeof b.startAt === 'number' ? b.startAt : 0;
-    const endAt = typeof b.endAt === 'number' ? b.endAt : 0;
-    if (!id || !name || !featuredLegendary || !(endAt > startAt)) {
-      return reply.code(400).send({ ok: false, error: 'id + name + featuredLegendary + startAt<endAt required' });
-    }
-    const r = await commercial.createLimitedPool({
-      config: {
-        id,
-        name,
-        featuredLegendary,
-        startAt,
-        endAt,
-        ...(Array.isArray(b.fillerLegendaries)
-          ? { fillerLegendaries: (b.fillerLegendaries as unknown[]).filter((x): x is string => typeof x === 'string') }
-          : {}),
-      },
-      createdBy: typeof b.createdBy === 'string' ? b.createdBy : 'unknown',
-    });
-    if (!r.ok) return reply.code(400).send({ ok: false, error: r.error });
-    log.info('POST /admin/gacha/pools', { id: r.id });
-    return reply.send({ ok: true, id: r.id });
-  });
   // GET /admin/gacha/catalog — the item catalogue (grouped by category) an operator may place in a custom pool (§12).
   app.get('/admin/gacha/catalog', async (req, reply) => {
-    if (!authed(req.headers['x-internal-key'])) return reply.code(401).send({ ok: false, error: 'unauthorized' });
+    if (!authed(req.headers)) return reply.code(401).send({ ok: false, error: 'unauthorized' });
     return reply.send({ ok: true, catalog: catalogByCategory() });
   });
   // POST /admin/gacha/pools/custom — create/replace an ops-authored custom pool (GACHA_DESIGN §12).
   // body = { id, name, costSingle, costTen?, startAt, endAt, categories:[{category,weight,items:[{itemId,weight}]}], createdBy }
   app.post('/admin/gacha/pools/custom', async (req, reply) => {
-    if (!authed(req.headers['x-internal-key'])) return reply.code(401).send({ ok: false, error: 'unauthorized' });
+    if (!authed(req.headers)) return reply.code(401).send({ ok: false, error: 'unauthorized' });
     if (!commercial.available) return reply.code(503).send({ ok: false, error: 'commercial unavailable' });
     const b = req.body as Record<string, unknown>;
     const categories = Array.isArray(b.categories)
@@ -120,7 +90,7 @@ export function registerPromoGachaRoutes(app: FastifyInstance, ctx: InternalCtx)
   });
   // POST /admin/gacha/pools/close — close a limited or custom pool early. body = { id }
   app.post('/admin/gacha/pools/close', async (req, reply) => {
-    if (!authed(req.headers['x-internal-key'])) return reply.code(401).send({ ok: false, error: 'unauthorized' });
+    if (!authed(req.headers)) return reply.code(401).send({ ok: false, error: 'unauthorized' });
     if (!commercial.available) return reply.code(503).send({ ok: false, error: 'commercial unavailable' });
     const b = req.body as Record<string, unknown>;
     const id = typeof b.id === 'string' ? b.id.trim() : '';

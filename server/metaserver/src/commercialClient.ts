@@ -1,6 +1,6 @@
 // commercial internal client (S5-5): meta calls commercial via internal HTTP (X-Internal-Key) to
 // handle coin deduction / gacha draws / bookkeeping. Contract: SERVER_API.md §9 / COMMERCIAL_DESIGN §5. meta is the sole caller of commercial.
-import { internalHeaders, type Rarity, type LimitedPoolConfig, type CustomPoolConfig } from '@nw/shared';
+import { fetchInternalJson, type Rarity, type LimitedPoolConfig, type CustomPoolConfig } from '@nw/shared';
 
 export interface GachaResultEntry {
   itemId: string;
@@ -74,10 +74,6 @@ export interface CommercialClient {
     }>
   >;
   // ── Limited pools + monetization (GACHA_DESIGN §2/§5/§6/§7) ──
-  createLimitedPool(args: {
-    config: LimitedPoolConfig;
-    createdBy: string;
-  }): Promise<Body<{ id: string }>>;
   createCustomPool(args: {
     config: CustomPoolConfig;
     createdBy: string;
@@ -240,26 +236,38 @@ export class HttpCommercialClient implements CommercialClient {
     this.available = !!baseUrl;
   }
 
-  private headers(): Record<string, string> {
-    return { 'content-type': 'application/json', ...internalHeaders('meta', this.internalKey) };
+  private async post<T>(path: string, body: unknown): Promise<Body<T>> {
+    const r = await fetchInternalJson<Body<T>>(`${this.baseUrl}${path}`, {
+      caller: 'meta',
+      key: this.internalKey,
+      method: 'POST',
+      body,
+      timeoutMs: 5000,
+      label: path,
+    });
+    // Business errors (402/409 …) come back as parsed JSON in r.body and are returned to the
+    // caller unchanged. Only a network error / timeout / non-JSON response leaves body null —
+    // keep throwing there so callers' existing catch → 500 behavior is preserved.
+    if (r.body === null) throw new Error(`commercial ${path} failed: ${r.error ?? `status ${r.status}`}`);
+    return r.body;
   }
 
-  private async post<T>(path: string, body: unknown): Promise<Body<T>> {
-    const res = await fetch(`${this.baseUrl}${path}`, {
-      method: 'POST',
-      headers: this.headers(),
-      body: JSON.stringify(body),
+  private async getJson<T>(pathAndQuery: string): Promise<Body<T> | null> {
+    const r = await fetchInternalJson<Body<T>>(`${this.baseUrl}${pathAndQuery}`, {
+      caller: 'meta',
+      key: this.internalKey,
+      timeoutMs: 5000,
+      label: pathAndQuery.split('?')[0]!,
     });
-    return (await res.json()) as Body<T>;
+    return r.body;
   }
 
   async getWallet(accountId: string, clientPlatform?: string): Promise<WalletView | null> {
     if (!this.baseUrl) return null;
     const q = new URLSearchParams({ accountId });
     if (clientPlatform) q.set('clientPlatform', clientPlatform);
-    const res = await fetch(`${this.baseUrl}/internal/wallet?${q}`, { headers: this.headers() });
-    const b = (await res.json()) as Body<WalletView>;
-    return b.ok
+    const b = await this.getJson<WalletView>(`/internal/wallet?${q}`);
+    return b?.ok
       ? {
           coins: b.coins,
           pity: b.pity,
@@ -291,10 +299,6 @@ export class HttpCommercialClient implements CommercialClient {
     }>('/internal/gacha/draw', args);
   }
 
-  createLimitedPool(args: { config: LimitedPoolConfig; createdBy: string }) {
-    return this.post<{ id: string }>('/internal/gacha/pool', args);
-  }
-
   createCustomPool(args: { config: CustomPoolConfig; createdBy: string }) {
     return this.post<{ id: string }>('/internal/gacha/pool/custom', args);
   }
@@ -306,9 +310,8 @@ export class HttpCommercialClient implements CommercialClient {
   private async listPools(active: boolean, now?: number): Promise<GachaPoolView[]> {
     if (!this.baseUrl) return [];
     const q = active ? `?active=1&now=${now ?? 0}` : '';
-    const res = await fetch(`${this.baseUrl}/internal/gacha/pools${q}`, { headers: this.headers() });
-    const b = (await res.json()) as Body<{ pools: GachaPoolView[] }>;
-    return b.ok ? b.pools : [];
+    const b = await this.getJson<{ pools: GachaPoolView[] }>(`/internal/gacha/pools${q}`);
+    return b?.ok ? b.pools : [];
   }
 
   listLimitedPools(): Promise<GachaPoolView[]> {
@@ -368,12 +371,10 @@ export class HttpCommercialClient implements CommercialClient {
 
   async undeliveredOrders(accountId: string): Promise<UndeliveredOrder[]> {
     if (!this.baseUrl) return [];
-    const res = await fetch(
-      `${this.baseUrl}/internal/orders/undelivered?accountId=${encodeURIComponent(accountId)}`,
-      { headers: this.headers() },
+    const b = await this.getJson<{ orders: UndeliveredOrder[] }>(
+      `/internal/orders/undelivered?accountId=${encodeURIComponent(accountId)}`,
     );
-    const b = (await res.json()) as Body<{ orders: UndeliveredOrder[] }>;
-    return b.ok ? b.orders : [];
+    return b?.ok ? b.orders : [];
   }
 
   rechargeVerify(args: { accountId: string; platform: string; receipt: string; receiptId: string; clientPlatform?: string }) {
@@ -421,9 +422,8 @@ export class HttpCommercialClient implements CommercialClient {
 
   async listPromoCodes(): Promise<PromoCodeView[]> {
     if (!this.baseUrl) return [];
-    const res = await fetch(`${this.baseUrl}/internal/promo/codes`, { headers: this.headers() });
-    const b = (await res.json()) as Body<{ codes: PromoCodeView[] }>;
-    return b.ok ? b.codes : [];
+    const b = await this.getJson<{ codes: PromoCodeView[] }>('/internal/promo/codes');
+    return b?.ok ? b.codes : [];
   }
 
   paddleComplete(args: { accountId: string; transactionId: string; coins: number; usdCents?: number }) {
@@ -458,16 +458,14 @@ export class HttpCommercialClient implements CommercialClient {
     if (args.accountId) q.set('accountId', args.accountId);
     if (args.transactionId) q.set('transactionId', args.transactionId);
     if (args.limit) q.set('limit', String(args.limit));
-    const res = await fetch(`${this.baseUrl}/internal/paddle/events?${q}`, { headers: this.headers() });
-    const b = (await res.json()) as Body<{ events: PaddleEventView[] }>;
-    return b.ok ? b.events : [];
+    const b = await this.getJson<{ events: PaddleEventView[] }>(`/internal/paddle/events?${q}`);
+    return b?.ok ? b.events : [];
   }
 
   async auditCoinGains(dayKey: string, minGain: number): Promise<CoinGainRow[]> {
     if (!this.baseUrl) return [];
     const q = new URLSearchParams({ dayKey, minGain: String(minGain) });
-    const res = await fetch(`${this.baseUrl}/internal/audit/coin-gains?${q}`, { headers: this.headers() });
-    const b = (await res.json()) as Body<{ accounts: CoinGainRow[] }>;
-    return b.ok ? b.accounts : [];
+    const b = await this.getJson<{ accounts: CoinGainRow[] }>(`/internal/audit/coin-gains?${q}`);
+    return b?.ok ? b.accounts : [];
   }
 }
