@@ -190,7 +190,7 @@ export function ProgressionMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase
           case 'NOT_REACHED':
             return reply.code(400).send(err(ErrorCode.BAD_REQUEST, 'level not reached'));
           case 'PASS_REQUIRED':
-            return reply.code(403).send(err(ErrorCode.NOT_FOUND, 'battle pass not purchased'));
+            return reply.code(403).send(err(ErrorCode.NO_PERMISSION, 'battle pass not purchased'));
           case 'ALREADY_CLAIMED':
             return reply.code(409).send(err(ErrorCode.ALREADY_CLAIMED, 'already claimed'));
           default:

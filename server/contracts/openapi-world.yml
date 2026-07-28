@@ -846,6 +846,88 @@ paths:
                     properties:
                       data: { $ref: '#/components/schemas/PlayerWorldView' }
 
+  /world/enter:
+    post:
+      operationId: enterWorld
+      description: >-
+        Aggregated SLG-entry fetch (P1-5, comm-audit-2026-07-27): resolves getMe+joinWorld server-side
+        (so the base tile is known before the map window is picked), then composes season/nations/map(or
+        mapSparse)/marches/occupations/stationed/worldChannel in parallel — one round-trip replacing the
+        9-request waterfall WorldMapNet.loadData() used to fire on every world-map entry. `r` is the
+        viewport radius the client already computes from its own canvas size (independent of map center);
+        the server centers the returned map window on the resolved mainBaseTile itself. Exactly one of
+        `map` / `mapSparse` is populated, matching zoom (1 → map; 2/3 → mapSparse, lod mid/thin).
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [worldId, r]
+              properties:
+                worldId: { type: string }
+                r: { type: integer, description: Viewport radius (tiles), from the client's own canvas-size computation. }
+                zoom: { type: integer, enum: [1, 2, 3], default: 1 }
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/OkResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        required: [season, nations, me, marches, occupations, stationed, worldChannel]
+                        properties:
+                          season:
+                            allOf: [{ $ref: '#/components/schemas/SeasonView' }]
+                            nullable: true
+                            description: Null if this worldId has no provisioned world doc yet (should not happen for a real client-resolved shard; kept nullable to match getSeason's own return type).
+                          nations:
+                            type: array
+                            items: { $ref: '#/components/schemas/NationView' }
+                          me:
+                            allOf:
+                              - $ref: '#/components/schemas/PlayerWorldView'
+                              - type: object
+                                required: [justJoined]
+                                properties:
+                                  serverNow: { type: integer }
+                                  justJoined:
+                                    type: boolean
+                                    description: True only the first time this account is placed in this world (server-resolved, replaces the client's own wasJoined-diff logic).
+                          map: { $ref: '#/components/schemas/WorldMapView' }
+                          mapSparse: { $ref: '#/components/schemas/WorldMapSparseView' }
+                          marches:
+                            type: array
+                            items: { $ref: '#/components/schemas/MarchView' }
+                          occupations:
+                            type: array
+                            items: { $ref: '#/components/schemas/OccupationView' }
+                          stationed:
+                            type: array
+                            items: { $ref: '#/components/schemas/StationedView' }
+                          worldChannel:
+                            type: array
+                            description: Same shape as GET /nation/channel (not itself contract-declared — pre-existing gap, P2 backlog).
+                            items:
+                              type: object
+                              required: [id, senderId, senderName, senderPublicId, body, ts]
+                              properties:
+                                id:             { type: string }
+                                senderId:       { type: string }
+                                senderName:     { type: string }
+                                senderPublicId: { type: string }
+                                title:          { type: string }
+                                sectName:       { type: string }
+                                familyName:     { type: string }
+                                body:           { type: string }
+                                ts:             { type: integer }
+
   /world/occupy:
     post:
       operationId: occupyTile

@@ -36,39 +36,67 @@ export class WorldMapNet {
    */
   private pendingTeamIds = new Set<string>();
 
+  /**
+   * Aggregated SLG-entry fetch (P1-5, comm-audit-2026-07-27): one `POST /world/enter` round-trip
+   * replaces what used to be a 9-request waterfall (season, nations, me, join, map/mapSparse,
+   * march+occupations+stationed, worldChannel) fired serially/semi-parallel on every world-map entry.
+   * The server resolves getMe+joinWorld itself (ADR-025 heal-on-entry semantics unchanged — see
+   * worldsvc httpApi.ts's /world/enter handler) and centers the returned map window on the resolved
+   * base tile, so the client no longer needs to know the base tile before requesting the map.
+   */
   async loadData(): Promise<void> {
     if (this.ctx.destroyed) return;
-    // Map bounds + nations are world-static; fetch once up front (best-effort).
     try {
-      const season = await this.ctx.cb.worldApi.getSeason(this.ctx.cb.worldId);
-      this.ctx.season = season;
-      if (season.mapW > 0) this.ctx.mapW = season.mapW;
-      if (season.mapH > 0) this.ctx.mapH = season.mapH;
-    } catch { /* offline — keep defaults */ }
-    try {
-      this.ctx.nations = await this.ctx.cb.worldApi.getNations(this.ctx.cb.worldId);
-    } catch { /* offline — no nation overlay */ }
-    try {
-      this.ctx.me = await this.ctx.cb.worldApi.getMe(this.ctx.cb.worldId);
-      // Ensure a valid 3×3 capital exists on entry (ADR-025). joinWorld is the single heal point:
-      //   • not joined     → system auto-places the capital (§3.4, prefers proximity to family);
-      //   • healthy 3×3    → idempotent no-op, returns current state;
-      //   • corrupt/legacy → worldsvc purges the stale data and re-places a fresh 3×3, so the player
-      //     re-enters as a brand-new user (fixes a pre-ADR-025 single-tile base rendering no city).
-      // Always call it (not only when unjoined) so a corrupt base can't leave the player stuck.
-      // World full / no slot / offline → keep whatever getMe returned; do not block map entry.
-      const wasJoined = this.ctx.me.joined;
-      try {
-        this.ctx.me = await this.ctx.cb.worldApi.joinWorld(this.ctx.cb.worldId);
-        if (!wasJoined) this.ctx.panels.showToast(t('world.myBase'));
-      } catch { /* world full / no slot available / offline — keep current state */ }
-      if (this.ctx.me.mainBaseTile) {
-        const [bx, by] = this.ctx.parseTileId(this.ctx.me.mainBaseTile);
+      // r is purely a function of canvas size (independent of pan/center), so it's safe to read before
+      // this.ctx.me / the camera center are known — see WorldMapRenderer/viewport.ts's viewportCenter().
+      const { r } = this.ctx.view.viewportCenter();
+      const entry = await this.ctx.cb.worldApi.enterWorld(this.ctx.cb.worldId, r, this.ctx.zoom);
+
+      // season is null only if this worldId has no provisioned world doc yet (should not happen for a
+      // real client-resolved shard) — degrade gracefully and keep the existing mapW/mapH defaults.
+      if (entry.season) {
+        this.ctx.season = entry.season;
+        if (entry.season.mapW > 0) this.ctx.mapW = entry.season.mapW;
+        if (entry.season.mapH > 0) this.ctx.mapH = entry.season.mapH;
+      }
+      this.ctx.nations = entry.nations;
+
+      // Ensure a valid 3×3 capital exists on entry (ADR-025) — resolved server-side now (see handler
+      // comment above); `justJoined` replaces the old local wasJoined-diff to gate the welcome toast.
+      this.ctx.me = entry.me;
+      if (entry.me.justJoined) this.ctx.panels.showToast(t('world.myBase'));
+      if (entry.me.mainBaseTile) {
+        const [bx, by] = this.ctx.parseTileId(entry.me.mainBaseTile);
         this.ctx.view.centerAt(bx, by);
       }
-      await this.loadMapViewport();
-      await this.refreshMarches();
-      await this.refreshWorldChat();
+
+      if (entry.map) {
+        for (const tile of entry.map.tiles) {
+          this.ctx.tileCache.set(`${tile.x}:${tile.y}`, tile);
+        }
+      } else if (entry.mapSparse) {
+        for (const s of entry.mapSparse.tiles) {
+          // Synthesize a minimal WorldTileView; will be overwritten with full data when zoom 1 loads
+          this.ctx.tileCache.set(`${s.x}:${s.y}`, {
+            x: s.x,
+            y: s.y,
+            type: s.type as WorldTileView['type'],
+            level: 1,
+            occupied: true,
+            ...(s.mine ? { mine: true } : {}),
+            ...(s.ally ? { ally: true } : {}),
+            ...(s.allySect ? { allySect: true } : {}),
+          });
+        }
+      }
+
+      this.ctx.marches = entry.marches;
+      this.ctx.occupations = entry.occupations;
+      this.ctx.stationed = entry.stationed;
+
+      this.ctx.worldChatLatest = entry.worldChannel[0] ?? null; // server returns newest-first
+      const seenTs = this.ctx.getWorldChatSeenTs();
+      this.ctx.worldChatUnread = entry.worldChannel.filter((m) => m.ts > seenTs).length;
     } catch { /* offline OK */ }
     if (!this.ctx.destroyed) { this.ctx.view.renderMap(); this.ctx.panels.renderHud(); }
   }

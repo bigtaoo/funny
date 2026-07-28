@@ -12,7 +12,7 @@
 
 import { getWorldBaseUrl, getSocialBaseUrl } from './config';
 import type { IStorage } from '../platform/IPlatform';
-import type { components } from './openapi-world';
+import type { components, operations } from './openapi-world';
 import type { components as socialComponents } from './openapi-social';
 import type { components as auctionComponents } from './openapi-auction';
 import { sampleServerNow } from './serverClock';
@@ -70,6 +70,10 @@ export type SectMessageView = components['schemas']['SectMessageView'];
 export type SectVoteResult = components['schemas']['SectVoteResult'];
 export type BuildingKey = components['schemas']['BuildingKey'];
 export type CardSLGState = components['schemas']['CardSLGState'];
+
+/** GET-alike aggregated response for POST /world/enter (P1-5, comm-audit-2026-07-27). */
+export type EnterWorldView =
+  NonNullable<operations['enterWorld']['responses']['200']['content']['application/json']['data']>;
 
 /** Rank/ELO/family/sect for an arbitrary player, fetched by public id (see {@link getProfileExtra}). */
 export interface PlayerProfileExtra {
@@ -247,6 +251,21 @@ export class WorldApiClient {
   /** Enter the world: the system automatically places the player's city (§3.4; prefers near family → outer-ring newcomer zone); spawn point is server-determined, player does not pass coordinates. */
   async joinWorld(worldId: string): Promise<PlayerWorldView> {
     return this.req('POST', '/world/join', { worldId });
+  }
+
+  /**
+   * Aggregated SLG-entry fetch (P1-5, comm-audit-2026-07-27): merges getMe+joinWorld+getMap(or
+   * getMapSparse)+getMarches+getOccupations+getStationed+getSeason+getNations+getWorldChannel into one
+   * round-trip, replacing the 9-request waterfall WorldMapNet.loadData() used to fire on every
+   * world-map entry. `r` is the viewport radius (independent of map center — the server derives cx/cy
+   * itself from the resolved mainBaseTile); `zoom` picks `map` (1) vs `mapSparse` (2/3).
+   */
+  async enterWorld(worldId: string, r: number, zoom: 1 | 2 | 3): Promise<EnterWorldView> {
+    const data = await this.req<EnterWorldView & { me: PlayerWorldView & { serverNow?: number } }>(
+      'POST', '/world/enter', { worldId, r, zoom },
+    );
+    if (typeof data.me.serverNow === 'number') sampleServerNow(data.me.serverNow);
+    return data;
   }
 
   /** Mid-season shard transfer (G6/§27): candidate destination shards for the player's current shard. */

@@ -341,6 +341,28 @@ export function startHttpApi(
           return send(res, 200, ok(await svc.joinWorld(worldId, accountId)));
         }
 
+        // ── Aggregated SLG-entry fetch (P1-5, comm-audit-2026-07-27): one round-trip replacing the
+        // 9-request waterfall WorldMapNet.loadData() used to fire on every world-map entry. The
+        // composition itself lives in svc.enterWorld (unit/e2e-testable in isolation); this handler
+        // just adds the sibling nationChannelSvc read and shapes the HTTP response. ──
+        if (method === 'POST' && path === '/world/enter') {
+          const body = await readJson(req);
+          const worldId = typeof body.worldId === 'string' ? body.worldId : null;
+          if (!worldId) return sendErr(res, ErrorCode.BAD_REQUEST, 'worldId required');
+          const r = numQ(typeof body.r === 'number' ? String(body.r) : null, 10);
+          const zoom = body.zoom === 2 || body.zoom === 3 ? body.zoom : 1;
+
+          const [entry, worldChannel] = await Promise.all([
+            svc.enterWorld(worldId, accountId, r, zoom),
+            nationChannelSvc.getChannel(worldId, accountId, undefined, 20),
+          ]);
+          return send(res, 200, ok({
+            ...entry,
+            me: { ...entry.me, serverNow: Date.now() },
+            worldChannel,
+          }));
+        }
+
         // ── Occupy / abandon / relocate / watchtower (S8-1, implemented, requires coordinates) ──
         if (
           method === 'POST' &&

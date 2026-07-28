@@ -450,3 +450,18 @@
 - **拍板方案（顶栏/底栏改色，CTA 保持纯黑）**：反过来做——`START MATCH` 按钮保留 `C.dark` 填充 + 原有蓝色描边（找回小人剪影），顶栏和底部导航改用新色 `C.cover`（`0x3a352f`，比 `C.dark` 暖一丝、亮一丝的深棕灰，定义于 `base.ts` 的 `C` 调色板）。差值刻意选得小：肉眼能分辨"这两条是外框、中间是按钮"，但不会像金色那样跳出来抢戏。真人截图确认效果满意，未再调整。
 - **涉及文件**：`client/src/scenes/LobbyScene/base.ts`（`C.cover` 常量）、`client/src/scenes/LobbyScene/build.ts`（顶栏 `titleBg`、底栏 `navBg` 两处填充色改用 `C.cover`）。
 - **验证**：`tsc --noEmit` 干净；真人在本地 dev server（`localhost:9090`）截图确认两版效果（金色版 → 否决；`cover` 版 → 通过）。未新增自动化测试（纯配色调整，无行为变化）。
+
+## 19. 大厅 4 个红点请求合并为单次 `GET /lobby/badges`（2026-07-27/28，comm-audit-2026-07-27 P1-4）
+
+> 状态：**已实现**。承 2026-07-27 前后端通信全审计（详见 `SLG_DESIGN_LOG.md` §42 开头说明），本条是 P1 优先级的第 4 项，纯网络层改动，不涉及视觉。
+
+**背景**：`goLobby()`（`client/src/app/nav/lobby.ts`）每次在线进大厅（非 resize 重绘）都会并发发出 4 个独立请求刷新红点：`getSocialBadges`（社交总红点，本身已经是 socialsvc 内部聚合好友请求/未读会话/未读邮件的产物）、`getAchievements`（算「是否有可领成就」+ 顺带做已达成 tier 差分弹 toast）、`getRetention`（算签到/日常任务是否可领 + 顺带排 iOS 本地提醒）、`getEvents`（算「是否有进行中活动」，实际只用了 `length>0`）。
+
+**方案**：metaserver 新增聚合端点 `GET /lobby/badges`（`server/metaserver/src/service/liveops.ts` 的 `getLobbyBadges`，挂在 `LiveOpsMixin`，此前已持有 achievements/retention/events 的读取逻辑）：内部用 `Promise.all` 并发——本地读一次 `save`（achievements/retention 复用同一份，省一次 `getOrCreateSave`）、`getEventsForAccount`、以及（若 socialsvc 已配置）代理一次 `/social/badges`；socialsvc 未配置或非 200 时 `social` 降级为全零对象而不是整个响应失败，对齐旧客户端每个红点各自 try/catch 的"尽力而为"语义。响应体：`{ social, achievements:{defs,stats,achievements}, retentionClaimable:{checkin,daily}, eventsAvailable }`——`achievements` 特意保留完整 `defs`/`stats`/`achievements`（而非只给一个布尔）因为客户端的 tier 差分 toast 逻辑需要完整数据；`retentionClaimable`/`eventsAvailable` 则只给红点真正消费的布尔，不搬未用到的日历/任务/广告详情。客户端 `refreshLobbyBadges()`（原 `refreshAchievementBadge`/`refreshRetentionBadge`/`refreshEventsAvailable` 三个函数合并，`refreshSocialBadge` 保留独立——它还服务于好友请求/聊天/邮件的实时推送刷新，不适合并进"进大厅一次性聚合"这条路径）原样保留成就 tier 差分 toast、每日提醒排程两处业务逻辑，只是把数据源从 4 次网络请求换成 1 次聚合响应里的字段。
+
+**契约**：`server/contracts/openapi/paths/liveops.yml` 新增 `/lobby/badges`（复用既有 `SocialBadges`/`Achievement` schema）；`bundle-openapi.mjs`/`gen-openapi-server.mjs` 重生成（metaserver 走 fastify-openapi-glue 自动路由，无需手写分派，与 worldsvc 手写路由不同）。
+
+**测试**：`server/metaserver/test/lobby-badges.e2e.test.ts`（新增，3 例，真实 Mongo + fastify `app.inject`）——覆盖 socialsvc 未配置（全零降级）、socialsvc 正常代理（数值透传）、socialsvc 配置但返回非 200（同样降级为全零而非整体失败）三种场景，且逐字段断言 `achievements.defs`/`stats`/`achievements` 未被 fastify-openapi-glue 按 schema 序列化时静默裁掉（P0 审计里 B2/B3 那批"契约漏声明字段被吞"bug 的同类回归防护）。
+
+**验证**：`server/metaserver`、`client`（`tsc --noEmit`）全绿；`server/metaserver` 全量 vitest 56 文件/697 例全绿；`client` 单元 112/794 + UI 92/807 全绿；contract codegen check 无漂移；`client` 生产 webpack 构建成功。未做真人截图走查——本次红点数值/toast/提醒逻辑完全复用旧代码路径未改变，只换了数据来源，真正的行为验证靠 e2e 断言具体字段值而非肉眼看红点是否显示，比截图更精确；且本机当时无法起完整后端栈（同 `SLG_DESIGN_LOG.md` §42 verification 一节的说明）。
+- **涉及文件**：`server/contracts/openapi/paths/liveops.yml`、`server/metaserver/src/service/liveops.ts`、`server/metaserver/test/lobby-badges.e2e.test.ts`（新增）、`client/src/net/ApiClient/{misc,types}.ts`、`client/src/net/ApiClient.ts`、`client/src/app/nav/lobby.ts`。
