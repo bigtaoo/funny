@@ -2189,6 +2189,7 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                 },
                 "cardInv": {
                   "type": "object",
+                  "nullable": true,
                   "additionalProperties": {
                     "type": "object",
                     "required": [
@@ -2766,6 +2767,7 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                 },
                 "cardInv": {
                   "type": "object",
+                  "nullable": true,
                   "additionalProperties": {
                     "type": "object",
                     "required": [
@@ -3379,6 +3381,7 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                 },
                 "cardInv": {
                   "type": "object",
+                  "nullable": true,
                   "additionalProperties": {
                     "type": "object",
                     "required": [
@@ -3957,6 +3960,7 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
             },
             "cardInv": {
               "type": "object",
+              "nullable": true,
               "additionalProperties": {
                 "type": "object",
                 "required": [
@@ -4783,6 +4787,7 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                 },
                 "cardInv": {
                   "type": "object",
+                  "nullable": true,
                   "additionalProperties": {
                     "type": "object",
                     "required": [
@@ -5436,6 +5441,7 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                 },
                 "cardInv": {
                   "type": "object",
+                  "nullable": true,
                   "additionalProperties": {
                     "type": "object",
                     "required": [
@@ -6121,6 +6127,7 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                 },
                 "cardInv": {
                   "type": "object",
+                  "nullable": true,
                   "additionalProperties": {
                     "type": "object",
                     "required": [
@@ -6743,6 +6750,7 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                 },
                 "cardInv": {
                   "type": "object",
+                  "nullable": true,
                   "additionalProperties": {
                     "type": "object",
                     "required": [
@@ -7110,554 +7118,562 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
           "required": [
             "save",
             "results",
-            "overflow"
+            "overflow",
+            "cardGrants",
+            "equipmentGrants"
           ],
           "properties": {
             "save": {
-              "type": "object",
-              "required": [
-                "version",
-                "accountId",
-                "rev",
-                "updatedAt",
-                "wallet",
-                "inventory",
-                "gacha",
-                "pvp",
-                "progress",
-                "materials",
-                "pveUpgrades",
-                "equipped",
-                "flags"
-              ],
-              "properties": {
-                "version": {
-                  "type": "integer"
-                },
-                "accountId": {
-                  "type": "string"
-                },
-                "rev": {
-                  "type": "integer"
-                },
-                "updatedAt": {
-                  "type": "integer"
-                },
-                "wallet": {
+              "allOf": [
+                {
                   "type": "object",
                   "required": [
-                    "coins"
+                    "version",
+                    "accountId",
+                    "rev",
+                    "updatedAt",
+                    "wallet",
+                    "inventory",
+                    "gacha",
+                    "pvp",
+                    "progress",
+                    "materials",
+                    "pveUpgrades",
+                    "equipped",
+                    "flags"
                   ],
                   "properties": {
-                    "coins": {
-                      "type": "integer",
-                      "minimum": 0
-                    }
-                  }
-                },
-                "inventory": {
-                  "type": "object",
-                  "required": [
-                    "skins",
-                    "items"
-                  ],
-                  "properties": {
-                    "skins": {
-                      "type": "array",
-                      "items": {
-                        "type": "string"
-                      }
-                    },
-                    "items": {
-                      "type": "object",
-                      "additionalProperties": {
-                        "type": "integer"
-                      }
-                    }
-                  }
-                },
-                "gacha": {
-                  "type": "object",
-                  "required": [
-                    "pity"
-                  ],
-                  "properties": {
-                    "pity": {
-                      "type": "object",
-                      "additionalProperties": {
-                        "type": "integer"
-                      }
-                    }
-                  }
-                },
-                "monetization": {
-                  "type": "object",
-                  "required": [
-                    "fatePoints",
-                    "subscriptionExpiry",
-                    "starterUsed"
-                  ],
-                  "properties": {
-                    "fatePoints": {
-                      "type": "integer",
-                      "minimum": 0,
-                      "description": "Fate Points balance (§7)"
-                    },
-                    "subscriptionExpiry": {
-                      "type": "integer",
-                      "description": "monthly card end timestamp (ms); 0 = none (§5)"
-                    },
-                    "subscriptionLastClaimDay": {
-                      "type": "string",
-                      "description": "UTC day (YYYY-MM-DD) of the last daily-coin claim; absent = never claimed (§5)"
-                    },
-                    "starterUsed": {
-                      "type": "array",
-                      "items": {
-                        "type": "string"
-                      },
-                      "description": "one-off product ids already purchased (§6)"
-                    },
-                    "starterGrowthEligible": {
-                      "type": "boolean",
-                      "description": "still inside the growth pack first-N-days account-age window; absent = eligible (legacy saves) (§6)"
-                    },
-                    "firstPurchaseUsed": {
-                      "type": "boolean",
-                      "description": "true once the first-purchase 2× bonus has been claimed; absent = not yet used (legacy saves) — gates the first-purchase-double shop badge"
-                    },
-                    "totalRechargeCents": {
-                      "type": "integer",
-                      "minimum": 0,
-                      "description": "lifetime cumulative real-money spend in usdCents (§13); absent = 0"
-                    }
-                  }
-                },
-                "deliveredOrders": {
-                  "type": "array",
-                  "items": {
-                    "type": "string"
-                  }
-                },
-                "pvp": {
-                  "type": "object",
-                  "required": [
-                    "elo",
-                    "rank",
-                    "wins",
-                    "losses",
-                    "streak"
-                  ],
-                  "properties": {
-                    "elo": {
+                    "version": {
                       "type": "integer"
                     },
-                    "rank": {
+                    "accountId": {
                       "type": "string"
                     },
-                    "wins": {
+                    "rev": {
                       "type": "integer"
                     },
-                    "losses": {
+                    "updatedAt": {
                       "type": "integer"
                     },
-                    "streak": {
-                      "type": "integer"
-                    },
-                    "seasonNo": {
-                      "type": "integer",
-                      "description": "Current season number"
-                    },
-                    "seasonPeakElo": {
-                      "type": "integer",
-                      "description": "Peak ELO for current season"
-                    },
-                    "seasonPeakRank": {
-                      "type": "string",
-                      "description": "Peak rank for current season"
-                    },
-                    "reachedRanks": {
-                      "type": "array",
-                      "items": {
-                        "type": "string"
-                      },
-                      "description": "All-time first-reached rank list (lifetime ledger)"
-                    }
-                  }
-                },
-                "stamina": {
-                  "type": "object",
-                  "required": [
-                    "current",
-                    "regenAt"
-                  ],
-                  "properties": {
-                    "current": {
-                      "type": "integer",
-                      "minimum": 0,
-                      "maximum": 120,
-                      "description": "Current stamina"
-                    },
-                    "regenAt": {
-                      "type": "integer",
-                      "description": "Timestamp (ms) when the next 1 stamina regenerates; 0 when full"
-                    }
-                  }
-                },
-                "titles": {
-                  "type": "array",
-                  "items": {
-                    "type": "string"
-                  },
-                  "description": "Set of owned title ids (awarded by season settlement / achievement / admin; order reflects acquisition order)"
-                },
-                "battlePass": {
-                  "type": "object",
-                  "required": [
-                    "seasonNo",
-                    "xp",
-                    "level",
-                    "hasPass",
-                    "claimedFree",
-                    "claimedPaid"
-                  ],
-                  "properties": {
-                    "seasonNo": {
-                      "type": "integer"
-                    },
-                    "xp": {
-                      "type": "integer"
-                    },
-                    "level": {
-                      "type": "integer",
-                      "minimum": 0,
-                      "maximum": 30
-                    },
-                    "hasPass": {
-                      "type": "boolean"
-                    },
-                    "claimedFree": {
-                      "type": "array",
-                      "items": {
-                        "type": "integer"
-                      }
-                    },
-                    "claimedPaid": {
-                      "type": "array",
-                      "items": {
-                        "type": "integer"
-                      }
-                    }
-                  }
-                },
-                "rechargeMilestone": {
-                  "type": "object",
-                  "required": [
-                    "claimed"
-                  ],
-                  "properties": {
-                    "claimed": {
-                      "type": "array",
-                      "items": {
-                        "type": "integer"
-                      },
-                      "description": "Tier ids already claimed (lifetime, never reset)"
-                    }
-                  }
-                },
-                "progress": {
-                  "type": "object",
-                  "required": [
-                    "cleared",
-                    "stars",
-                    "best"
-                  ],
-                  "properties": {
-                    "cleared": {
-                      "type": "array",
-                      "items": {
-                        "type": "string"
-                      }
-                    },
-                    "stars": {
-                      "type": "object",
-                      "additionalProperties": {
-                        "type": "integer",
-                        "minimum": 1,
-                        "maximum": 3
-                      }
-                    },
-                    "best": {
-                      "type": "object",
-                      "additionalProperties": {
-                        "type": "object",
-                        "properties": {
-                          "timeMs": {
-                            "type": "integer"
-                          },
-                          "leaked": {
-                            "type": "integer"
-                          }
-                        },
-                        "additionalProperties": true
-                      }
-                    }
-                  }
-                },
-                "materials": {
-                  "type": "object",
-                  "additionalProperties": {
-                    "type": "integer"
-                  }
-                },
-                "pveUpgrades": {
-                  "type": "object",
-                  "additionalProperties": {
-                    "type": "integer"
-                  }
-                },
-                "cardInventory": {
-                  "type": "object",
-                  "additionalProperties": {
-                    "type": "integer",
-                    "minimum": 0
-                  },
-                  "description": "Unit card inventory `${unitId}:${level}`→count; kept for save compatibility; retired after CC cleanup"
-                },
-                "cardInv": {
-                  "type": "object",
-                  "additionalProperties": {
-                    "type": "object",
-                    "required": [
-                      "id",
-                      "defId",
-                      "level",
-                      "gear",
-                      "locked"
-                    ],
-                    "properties": {
-                      "id": {
-                        "type": "string",
-                        "description": "Unique instance id (e.g. 'card_a1b2c3')"
-                      },
-                      "defId": {
-                        "type": "string",
-                        "description": "Card definition id (references CARD_DEFS)"
-                      },
-                      "level": {
-                        "type": "integer",
-                        "minimum": 1,
-                        "maximum": 9
-                      },
-                      "gear": {
-                        "type": "object",
-                        "additionalProperties": {
-                          "type": "string"
-                        },
-                        "description": "Per-slot equipped equipment instance ids (slot→equipmentInstanceId)"
-                      },
-                      "locked": {
-                        "type": "boolean",
-                        "description": "Locked cards cannot be used as fusion material"
-                      }
-                    }
-                  },
-                  "description": "Card instance inventory (instanceId→CardInstance); max 500 entries"
-                },
-                "cardInvCount": {
-                  "type": "integer",
-                  "minimum": 0
-                },
-                "cardMailOverflowCount": {
-                  "type": "integer",
-                  "minimum": 0
-                },
-                "equipMailOverflowCount": {
-                  "type": "integer",
-                  "minimum": 0
-                },
-                "equipped": {
-                  "type": "object",
-                  "additionalProperties": {
-                    "type": "string"
-                  }
-                },
-                "flags": {
-                  "type": "object",
-                  "additionalProperties": {
-                    "type": "boolean"
-                  }
-                },
-                "everOwned": {
-                  "type": "object",
-                  "properties": {
-                    "hero": {
-                      "type": "array",
-                      "items": {
-                        "type": "string"
-                      }
-                    },
-                    "equipment": {
-                      "type": "array",
-                      "items": {
-                        "type": "string"
-                      }
-                    },
-                    "material": {
-                      "type": "array",
-                      "items": {
-                        "type": "string"
-                      }
-                    },
-                    "skin": {
-                      "type": "array",
-                      "items": {
-                        "type": "string"
-                      }
-                    }
-                  }
-                },
-                "stats": {
-                  "type": "object",
-                  "additionalProperties": {
-                    "type": "integer"
-                  },
-                  "description": "Lifetime cumulative stats (StatKey→value), monotonically increasing, server-authoritative"
-                },
-                "achievements": {
-                  "type": "object",
-                  "additionalProperties": {
-                    "type": "object",
-                    "required": [
-                      "claimedTiers"
-                    ],
-                    "properties": {
-                      "claimedTiers": {
-                        "type": "array",
-                        "items": {
-                          "type": "integer",
-                          "minimum": 1,
-                          "maximum": 3
-                        }
-                      }
-                    }
-                  },
-                  "description": "achId→set of already-claimed tier numbers, idempotent to prevent double-claiming"
-                },
-                "equipmentInv": {
-                  "type": "object",
-                  "nullable": true,
-                  "additionalProperties": {
-                    "type": "object",
-                    "required": [
-                      "id",
-                      "defId",
-                      "rarity",
-                      "level",
-                      "affixes"
-                    ],
-                    "properties": {
-                      "id": {
-                        "type": "string"
-                      },
-                      "defId": {
-                        "type": "string"
-                      },
-                      "rarity": {
-                        "type": "string",
-                        "enum": [
-                          "common",
-                          "fine",
-                          "rare",
-                          "epic"
-                        ]
-                      },
-                      "level": {
-                        "type": "integer",
-                        "minimum": 0,
-                        "maximum": 9
-                      },
-                      "affixes": {
-                        "type": "array",
-                        "items": {
-                          "type": "object",
-                          "required": [
-                            "id",
-                            "value"
-                          ],
-                          "properties": {
-                            "id": {
-                              "type": "string"
-                            },
-                            "value": {
-                              "type": "number"
-                            }
-                          }
-                        }
-                      },
-                      "locked": {
-                        "type": "boolean"
-                      }
-                    }
-                  }
-                },
-                "equipmentInvCount": {
-                  "type": "integer",
-                  "minimum": 0
-                },
-                "retention": {
-                  "type": "object",
-                  "properties": {
-                    "checkin": {
+                    "wallet": {
                       "type": "object",
                       "required": [
-                        "monthKey",
-                        "claimedDays"
+                        "coins"
                       ],
                       "properties": {
-                        "monthKey": {
+                        "coins": {
+                          "type": "integer",
+                          "minimum": 0
+                        }
+                      }
+                    },
+                    "inventory": {
+                      "type": "object",
+                      "required": [
+                        "skins",
+                        "items"
+                      ],
+                      "properties": {
+                        "skins": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "items": {
+                          "type": "object",
+                          "additionalProperties": {
+                            "type": "integer"
+                          }
+                        }
+                      }
+                    },
+                    "gacha": {
+                      "type": "object",
+                      "required": [
+                        "pity"
+                      ],
+                      "properties": {
+                        "pity": {
+                          "type": "object",
+                          "additionalProperties": {
+                            "type": "integer"
+                          }
+                        }
+                      }
+                    },
+                    "monetization": {
+                      "type": "object",
+                      "required": [
+                        "fatePoints",
+                        "subscriptionExpiry",
+                        "starterUsed"
+                      ],
+                      "properties": {
+                        "fatePoints": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "description": "Fate Points balance (§7)"
+                        },
+                        "subscriptionExpiry": {
+                          "type": "integer",
+                          "description": "monthly card end timestamp (ms); 0 = none (§5)"
+                        },
+                        "subscriptionLastClaimDay": {
+                          "type": "string",
+                          "description": "UTC day (YYYY-MM-DD) of the last daily-coin claim; absent = never claimed (§5)"
+                        },
+                        "starterUsed": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          },
+                          "description": "one-off product ids already purchased (§6)"
+                        },
+                        "starterGrowthEligible": {
+                          "type": "boolean",
+                          "description": "still inside the growth pack first-N-days account-age window; absent = eligible (legacy saves) (§6)"
+                        },
+                        "firstPurchaseUsed": {
+                          "type": "boolean",
+                          "description": "true once the first-purchase 2× bonus has been claimed; absent = not yet used (legacy saves) — gates the first-purchase-double shop badge"
+                        },
+                        "totalRechargeCents": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "description": "lifetime cumulative real-money spend in usdCents (§13); absent = 0"
+                        }
+                      }
+                    },
+                    "deliveredOrders": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "pvp": {
+                      "type": "object",
+                      "required": [
+                        "elo",
+                        "rank",
+                        "wins",
+                        "losses",
+                        "streak"
+                      ],
+                      "properties": {
+                        "elo": {
+                          "type": "integer"
+                        },
+                        "rank": {
                           "type": "string"
                         },
-                        "claimedDays": {
+                        "wins": {
+                          "type": "integer"
+                        },
+                        "losses": {
+                          "type": "integer"
+                        },
+                        "streak": {
+                          "type": "integer"
+                        },
+                        "seasonNo": {
+                          "type": "integer",
+                          "description": "Current season number"
+                        },
+                        "seasonPeakElo": {
+                          "type": "integer",
+                          "description": "Peak ELO for current season"
+                        },
+                        "seasonPeakRank": {
+                          "type": "string",
+                          "description": "Peak rank for current season"
+                        },
+                        "reachedRanks": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          },
+                          "description": "All-time first-reached rank list (lifetime ledger)"
+                        }
+                      }
+                    },
+                    "stamina": {
+                      "type": "object",
+                      "required": [
+                        "current",
+                        "regenAt"
+                      ],
+                      "properties": {
+                        "current": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 120,
+                          "description": "Current stamina"
+                        },
+                        "regenAt": {
+                          "type": "integer",
+                          "description": "Timestamp (ms) when the next 1 stamina regenerates; 0 when full"
+                        }
+                      }
+                    },
+                    "titles": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      },
+                      "description": "Set of owned title ids (awarded by season settlement / achievement / admin; order reflects acquisition order)"
+                    },
+                    "battlePass": {
+                      "type": "object",
+                      "required": [
+                        "seasonNo",
+                        "xp",
+                        "level",
+                        "hasPass",
+                        "claimedFree",
+                        "claimedPaid"
+                      ],
+                      "properties": {
+                        "seasonNo": {
+                          "type": "integer"
+                        },
+                        "xp": {
+                          "type": "integer"
+                        },
+                        "level": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 30
+                        },
+                        "hasPass": {
+                          "type": "boolean"
+                        },
+                        "claimedFree": {
                           "type": "array",
                           "items": {
                             "type": "integer"
                           }
                         },
-                        "lastClaimedDayKey": {
-                          "type": "string"
+                        "claimedPaid": {
+                          "type": "array",
+                          "items": {
+                            "type": "integer"
+                          }
                         }
                       }
                     },
-                    "daily": {
+                    "rechargeMilestone": {
                       "type": "object",
                       "required": [
-                        "dayKey",
-                        "completedTasks",
-                        "taskPoints",
-                        "rewardClaimed"
+                        "claimed"
                       ],
                       "properties": {
-                        "dayKey": {
-                          "type": "string"
-                        },
-                        "completedTasks": {
-                          "type": "object",
-                          "additionalProperties": {
+                        "claimed": {
+                          "type": "array",
+                          "items": {
                             "type": "integer"
+                          },
+                          "description": "Tier ids already claimed (lifetime, never reset)"
+                        }
+                      }
+                    },
+                    "progress": {
+                      "type": "object",
+                      "required": [
+                        "cleared",
+                        "stars",
+                        "best"
+                      ],
+                      "properties": {
+                        "cleared": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
                           }
                         },
-                        "taskPoints": {
-                          "type": "integer"
+                        "stars": {
+                          "type": "object",
+                          "additionalProperties": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 3
+                          }
                         },
-                        "rewardClaimed": {
-                          "type": "boolean"
+                        "best": {
+                          "type": "object",
+                          "additionalProperties": {
+                            "type": "object",
+                            "properties": {
+                              "timeMs": {
+                                "type": "integer"
+                              },
+                              "leaked": {
+                                "type": "integer"
+                              }
+                            },
+                            "additionalProperties": true
+                          }
+                        }
+                      }
+                    },
+                    "materials": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "integer"
+                      }
+                    },
+                    "pveUpgrades": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "integer"
+                      }
+                    },
+                    "cardInventory": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "integer",
+                        "minimum": 0
+                      },
+                      "description": "Unit card inventory `${unitId}:${level}`→count; kept for save compatibility; retired after CC cleanup"
+                    },
+                    "cardInv": {
+                      "type": "object",
+                      "nullable": true,
+                      "additionalProperties": {
+                        "type": "object",
+                        "required": [
+                          "id",
+                          "defId",
+                          "level",
+                          "gear",
+                          "locked"
+                        ],
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "description": "Unique instance id (e.g. 'card_a1b2c3')"
+                          },
+                          "defId": {
+                            "type": "string",
+                            "description": "Card definition id (references CARD_DEFS)"
+                          },
+                          "level": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 9
+                          },
+                          "gear": {
+                            "type": "object",
+                            "additionalProperties": {
+                              "type": "string"
+                            },
+                            "description": "Per-slot equipped equipment instance ids (slot→equipmentInstanceId)"
+                          },
+                          "locked": {
+                            "type": "boolean",
+                            "description": "Locked cards cannot be used as fusion material"
+                          }
+                        }
+                      },
+                      "description": "Card instance inventory (instanceId→CardInstance); max 500 entries"
+                    },
+                    "cardInvCount": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "cardMailOverflowCount": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "equipMailOverflowCount": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "equipped": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "string"
+                      }
+                    },
+                    "flags": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "boolean"
+                      }
+                    },
+                    "everOwned": {
+                      "type": "object",
+                      "properties": {
+                        "hero": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "equipment": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "material": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "skin": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    },
+                    "stats": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "integer"
+                      },
+                      "description": "Lifetime cumulative stats (StatKey→value), monotonically increasing, server-authoritative"
+                    },
+                    "achievements": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "object",
+                        "required": [
+                          "claimedTiers"
+                        ],
+                        "properties": {
+                          "claimedTiers": {
+                            "type": "array",
+                            "items": {
+                              "type": "integer",
+                              "minimum": 1,
+                              "maximum": 3
+                            }
+                          }
+                        }
+                      },
+                      "description": "achId→set of already-claimed tier numbers, idempotent to prevent double-claiming"
+                    },
+                    "equipmentInv": {
+                      "type": "object",
+                      "nullable": true,
+                      "additionalProperties": {
+                        "type": "object",
+                        "required": [
+                          "id",
+                          "defId",
+                          "rarity",
+                          "level",
+                          "affixes"
+                        ],
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "defId": {
+                            "type": "string"
+                          },
+                          "rarity": {
+                            "type": "string",
+                            "enum": [
+                              "common",
+                              "fine",
+                              "rare",
+                              "epic"
+                            ]
+                          },
+                          "level": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 9
+                          },
+                          "affixes": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "required": [
+                                "id",
+                                "value"
+                              ],
+                              "properties": {
+                                "id": {
+                                  "type": "string"
+                                },
+                                "value": {
+                                  "type": "number"
+                                }
+                              }
+                            }
+                          },
+                          "locked": {
+                            "type": "boolean"
+                          }
+                        }
+                      }
+                    },
+                    "equipmentInvCount": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "retention": {
+                      "type": "object",
+                      "properties": {
+                        "checkin": {
+                          "type": "object",
+                          "required": [
+                            "monthKey",
+                            "claimedDays"
+                          ],
+                          "properties": {
+                            "monthKey": {
+                              "type": "string"
+                            },
+                            "claimedDays": {
+                              "type": "array",
+                              "items": {
+                                "type": "integer"
+                              }
+                            },
+                            "lastClaimedDayKey": {
+                              "type": "string"
+                            }
+                          }
+                        },
+                        "daily": {
+                          "type": "object",
+                          "required": [
+                            "dayKey",
+                            "completedTasks",
+                            "taskPoints",
+                            "rewardClaimed"
+                          ],
+                          "properties": {
+                            "dayKey": {
+                              "type": "string"
+                            },
+                            "completedTasks": {
+                              "type": "object",
+                              "additionalProperties": {
+                                "type": "integer"
+                              }
+                            },
+                            "taskPoints": {
+                              "type": "integer"
+                            },
+                            "rewardClaimed": {
+                              "type": "boolean"
+                            }
+                          }
                         }
                       }
                     }
                   }
                 }
-              }
+              ],
+              "description": "Lean (2026-07-28): `cardInv`/`equipmentInv` are always `null` on this response — the highest-frequency card/equipment-granting endpoint skips the full-inventory join on every call. Adopt via SaveManager.adoptServerPartial with `cardGrants`/ `equipmentGrants` below as the upsert patch, never the plain adoptServer/reconcile."
             },
             "results": {
               "type": "array",
@@ -7729,6 +7745,103 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                   "minimum": 0
                 }
               }
+            },
+            "cardGrants": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": [
+                  "id",
+                  "defId",
+                  "level",
+                  "gear",
+                  "locked"
+                ],
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "description": "Unique instance id (e.g. 'card_a1b2c3')"
+                  },
+                  "defId": {
+                    "type": "string",
+                    "description": "Card definition id (references CARD_DEFS)"
+                  },
+                  "level": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 9
+                  },
+                  "gear": {
+                    "type": "object",
+                    "additionalProperties": {
+                      "type": "string"
+                    },
+                    "description": "Per-slot equipped equipment instance ids (slot→equipmentInstanceId)"
+                  },
+                  "locked": {
+                    "type": "boolean",
+                    "description": "Locked cards cannot be used as fusion material"
+                  }
+                }
+              },
+              "description": "Card instances this draw actually added to cardInv (never the mailed-overflow ones)."
+            },
+            "equipmentGrants": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": [
+                  "id",
+                  "defId",
+                  "rarity",
+                  "level",
+                  "affixes"
+                ],
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "defId": {
+                    "type": "string"
+                  },
+                  "rarity": {
+                    "type": "string",
+                    "enum": [
+                      "common",
+                      "fine",
+                      "rare",
+                      "epic"
+                    ]
+                  },
+                  "level": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9
+                  },
+                  "affixes": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "required": [
+                        "id",
+                        "value"
+                      ],
+                      "properties": {
+                        "id": {
+                          "type": "string"
+                        },
+                        "value": {
+                          "type": "number"
+                        }
+                      }
+                    }
+                  },
+                  "locked": {
+                    "type": "boolean"
+                  }
+                }
+              },
+              "description": "Equipment instances this draw actually added to equipmentInv (never the mailed-overflow ones)."
             }
           }
         }
@@ -8069,6 +8182,7 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                 },
                 "cardInv": {
                   "type": "object",
+                  "nullable": true,
                   "additionalProperties": {
                     "type": "object",
                     "required": [
@@ -8643,6 +8757,7 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                 },
                 "cardInv": {
                   "type": "object",
+                  "nullable": true,
                   "additionalProperties": {
                     "type": "object",
                     "required": [
@@ -9214,6 +9329,7 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                 },
                 "cardInv": {
                   "type": "object",
+                  "nullable": true,
                   "additionalProperties": {
                     "type": "object",
                     "required": [
@@ -9786,6 +9902,7 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                 },
                 "cardInv": {
                   "type": "object",
+                  "nullable": true,
                   "additionalProperties": {
                     "type": "object",
                     "required": [
@@ -10362,6 +10479,7 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                 },
                 "cardInv": {
                   "type": "object",
+                  "nullable": true,
                   "additionalProperties": {
                     "type": "object",
                     "required": [
@@ -10960,6 +11078,7 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                 },
                 "cardInv": {
                   "type": "object",
+                  "nullable": true,
                   "additionalProperties": {
                     "type": "object",
                     "required": [
@@ -11575,6 +11694,7 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                 },
                 "cardInv": {
                   "type": "object",
+                  "nullable": true,
                   "additionalProperties": {
                     "type": "object",
                     "required": [
@@ -12150,6 +12270,7 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                 },
                 "cardInv": {
                   "type": "object",
+                  "nullable": true,
                   "additionalProperties": {
                     "type": "object",
                     "required": [
@@ -12732,6 +12853,7 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                 },
                 "cardInv": {
                   "type": "object",
+                  "nullable": true,
                   "additionalProperties": {
                     "type": "object",
                     "required": [
@@ -13304,6 +13426,7 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                 },
                 "cardInv": {
                   "type": "object",
+                  "nullable": true,
                   "additionalProperties": {
                     "type": "object",
                     "required": [
@@ -13987,6 +14110,7 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                 },
                 "cardInv": {
                   "type": "object",
+                  "nullable": true,
                   "additionalProperties": {
                     "type": "object",
                     "required": [
@@ -14566,6 +14690,7 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                 },
                 "cardInv": {
                   "type": "object",
+                  "nullable": true,
                   "additionalProperties": {
                     "type": "object",
                     "required": [
@@ -15137,6 +15262,7 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                 },
                 "cardInv": {
                   "type": "object",
+                  "nullable": true,
                   "additionalProperties": {
                     "type": "object",
                     "required": [
@@ -15762,6 +15888,7 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                 },
                 "cardInv": {
                   "type": "object",
+                  "nullable": true,
                   "additionalProperties": {
                     "type": "object",
                     "required": [
@@ -16370,6 +16497,7 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                 },
                 "cardInv": {
                   "type": "object",
+                  "nullable": true,
                   "additionalProperties": {
                     "type": "object",
                     "required": [
@@ -16941,6 +17069,7 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                 },
                 "cardInv": {
                   "type": "object",
+                  "nullable": true,
                   "additionalProperties": {
                     "type": "object",
                     "required": [
@@ -17512,6 +17641,7 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                 },
                 "cardInv": {
                   "type": "object",
+                  "nullable": true,
                   "additionalProperties": {
                     "type": "object",
                     "required": [
@@ -18459,6 +18589,7 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                 },
                 "cardInv": {
                   "type": "object",
+                  "nullable": true,
                   "additionalProperties": {
                     "type": "object",
                     "required": [
@@ -19214,6 +19345,7 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                 },
                 "cardInv": {
                   "type": "object",
+                  "nullable": true,
                   "additionalProperties": {
                     "type": "object",
                     "required": [
@@ -19816,6 +19948,7 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                 },
                 "cardInv": {
                   "type": "object",
+                  "nullable": true,
                   "additionalProperties": {
                     "type": "object",
                     "required": [
@@ -20626,6 +20759,7 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                 },
                 "cardInv": {
                   "type": "object",
+                  "nullable": true,
                   "additionalProperties": {
                     "type": "object",
                     "required": [
@@ -21197,6 +21331,7 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                 },
                 "cardInv": {
                   "type": "object",
+                  "nullable": true,
                   "additionalProperties": {
                     "type": "object",
                     "required": [
@@ -22763,6 +22898,7 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                 },
                 "cardInv": {
                   "type": "object",
+                  "nullable": true,
                   "additionalProperties": {
                     "type": "object",
                     "required": [

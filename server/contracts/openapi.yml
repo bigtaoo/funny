@@ -258,6 +258,7 @@ components:
           description: Unit card inventory `${unitId}:${level}`→count; kept for save compatibility; retired after CC cleanup
         cardInv:
           type: object
+          nullable: true
           additionalProperties:
             $ref: '#/components/schemas/CardInstance'
           description: Card instance inventory (instanceId→CardInstance); max 500 entries
@@ -2363,9 +2364,13 @@ paths:
                       - save
                       - results
                       - overflow
+                      - cardGrants
+                      - equipmentGrants
                     properties:
                       save:
-                        $ref: '#/components/schemas/SaveData'
+                        allOf:
+                          - $ref: '#/components/schemas/SaveData'
+                        description: 'Lean (2026-07-28): `cardInv`/`equipmentInv` are always `null` on this response — the highest-frequency card/equipment-granting endpoint skips the full-inventory join on every call. Adopt via SaveManager.adoptServerPartial with `cardGrants`/ `equipmentGrants` below as the upsert patch, never the plain adoptServer/reconcile.'
                       results:
                         type: array
                         items:
@@ -2391,6 +2396,16 @@ paths:
                           equipCompensatedCoins:
                             type: integer
                             minimum: 0
+                      cardGrants:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/CardInstance'
+                        description: Card instances this draw actually added to cardInv (never the mailed-overflow ones).
+                      equipmentGrants:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/EquipmentInstance'
+                        description: Equipment instances this draw actually added to equipmentInv (never the mailed-overflow ones).
         '402':
           $ref: '#/components/responses/ErrorResp'
         '404':

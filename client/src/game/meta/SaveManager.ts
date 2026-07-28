@@ -11,6 +11,7 @@ import { replayToUploadFrames } from '../../net/replayUpload';
 import type { Replay } from '../types';
 import {
   extractSyncPatch,
+  type CardInstance,
   type EquipmentInstance,
   type LeanSaveResponse,
   type LevelRecord,
@@ -273,23 +274,28 @@ export class SaveManager {
 
   /**
    * Adopt an authoritative save pushed back by an /equipment/* mutation (craft/enhance/salvage/reforge/equip)
-   * (EQUIPMENT_DESIGN §3.3 phase 2, 2026-07-26). These responses send `equipmentInv: null` (see
-   * `LeanSaveResponse`) instead of the full ~300-item map, since the caller already has what changed:
-   * the `instance` handed back by craft/enhance/reforge, or the `instanceIds`/`materialId` it sent as
-   * request params for salvage/reforge. Must NOT go through the plain `adoptServer`/`reconcile` path —
-   * that does a wholesale `{...cloud, ...}` replace, and a `null`/missing `equipmentInv` on `cloud` would
-   * wipe the local inventory rather than leave it alone. Instead this reconstructs a full map locally
-   * (existing inventory + the patch) and only then hands it to the same tested `reconcile` pipeline —
-   * the delta bookkeeping is confined to this one seam, everything downstream is unchanged.
+   * (EQUIPMENT_DESIGN §3.3 phase 2, 2026-07-26) or by /gacha/draw (2026-07-28). These responses send
+   * `equipmentInv`/`cardInv` as `null` (see `LeanSaveResponse`) instead of the full map, since the caller
+   * already has what changed: the `instance` handed back by craft/enhance/reforge, the `instanceIds`/
+   * `materialId` it sent as request params for salvage/reforge, or gacha draw's own `cardGrants`/
+   * `equipmentGrants`. Must NOT go through the plain `adoptServer`/`reconcile` path — that does a
+   * wholesale `{...cloud, ...}` replace, and a `null`/missing `equipmentInv`/`cardInv` on `cloud` would
+   * wipe the local inventory rather than leave it alone. Instead this reconstructs full maps locally
+   * (existing inventory + the patch) and only then hands them to the same tested `reconcile` pipeline —
+   * the delta bookkeeping is confined to this one seam, everything downstream is unchanged. `cardUpsert`/
+   * `cardRemove` default to a no-op patch so existing equipment-only call sites are unaffected.
    */
   adoptServerPartial(
     save: LeanSaveResponse,
-    patch: { upsert?: EquipmentInstance[]; remove?: string[] },
+    patch: { upsert?: EquipmentInstance[]; remove?: string[]; cardUpsert?: CardInstance[]; cardRemove?: string[] },
   ): void {
     const equipmentInv = { ...this.save.equipmentInv };
     for (const id of patch.remove ?? []) delete equipmentInv[id];
     for (const inst of patch.upsert ?? []) equipmentInv[inst.id] = inst;
-    this.reconcile({ ...save, equipmentInv });
+    const cardInv = { ...this.save.cardInv };
+    for (const id of patch.cardRemove ?? []) delete cardInv[id];
+    for (const inst of patch.cardUpsert ?? []) cardInv[inst.id] = inst;
+    this.reconcile({ ...save, equipmentInv, cardInv });
   }
 
   // ── PvE server authority (PVE_INTEGRITY_PLAN §8) ────────────────────────────

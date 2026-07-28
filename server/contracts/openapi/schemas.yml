@@ -144,8 +144,12 @@ schemas:
       # Hard cap 500 (CARD_INV_CAP, raised from 150 on 2026-07-19). Instances live in the `cardInstances`
       # collection since 2026-07-27 (perf); GET /save / /internal/save-fields still send the full map (joined
       # server-side) — wire format is unchanged by the storage split. ——
+      # nullable (2026-07-28, same phase-2 treatment as equipmentInv below): /gacha/draw sends this as
+      # null on purpose — the client already has what changed via the response's own `cardGrants` field,
+      # so the server skips reassembling the full map on the highest-frequency card-granting endpoint.
       cardInv:
         type: object
+        nullable: true
         additionalProperties: { $ref: '#/components/schemas/CardInstance' }
         description: Card instance inventory (instanceId→CardInstance); max 500 entries
       # Cheap cap-check mirror of the `cardInstances` collection count (CARD_INV_CAP); may drift slightly,

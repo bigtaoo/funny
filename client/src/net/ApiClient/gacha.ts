@@ -1,11 +1,21 @@
 // Gacha pools/draws + monetized card products (GACHA_DESIGN, requires login token).
-import type { SaveData } from '../../game/meta/SaveData';
+import type { CardInstance, EquipmentInstance, LeanSaveResponse, SaveData } from '../../game/meta/SaveData';
 import { type Constructor, type ApiClientBaseCtor } from './base';
 import type { GachaOverflow, GachaPool, GachaResultEntry, RechargeReward } from './types';
 
 export interface GachaApi {
   getGachaPools(): Promise<GachaPool[]>;
-  gachaDraw(poolId: string, count: 1 | 10): Promise<{ save: SaveData; results: GachaResultEntry[]; overflow: GachaOverflow }>;
+  /**
+   * Lean response (2026-07-28, EQUIPMENT_DESIGN §3.3-style phase 2): `save.cardInv`/`equipmentInv` are
+   * always `null` — nothing stops a player mashing "draw" back to back, so this is the highest-frequency
+   * card/equipment-granting endpoint and skips the full-inventory join + transfer on every call.
+   * `cardGrants`/`equipmentGrants` carry the instances this draw actually added (never the mailed-overflow
+   * ones — see `overflow`). Adopt via `SaveManager.adoptServerPartial`, never the plain `adoptServer`.
+   */
+  gachaDraw(poolId: string, count: 1 | 10): Promise<{
+    save: LeanSaveResponse; results: GachaResultEntry[]; overflow: GachaOverflow;
+    cardGrants: CardInstance[]; equipmentGrants: EquipmentInstance[];
+  }>;
   redeemFate(itemId: string): Promise<{ save: SaveData; granted: string }>;
   monthlyCardBuy(platform: string, receipt: string): Promise<{ save: SaveData }>;
   yearCardBuy(platform: string, receipt: string): Promise<{ save: SaveData }>;
@@ -31,11 +41,14 @@ export function GachaMixin<TBase extends ApiClientBaseCtor>(Base: TBase): TBase 
     async gachaDraw(
       poolId: string,
       count: 1 | 10,
-    ): Promise<{ save: SaveData; results: GachaResultEntry[]; overflow: GachaOverflow }> {
-      return this.post<{ save: SaveData; results: GachaResultEntry[]; overflow: GachaOverflow }>('/gacha/draw', {
-        poolId,
-        count,
-      });
+    ): Promise<{
+      save: LeanSaveResponse; results: GachaResultEntry[]; overflow: GachaOverflow;
+      cardGrants: CardInstance[]; equipmentGrants: EquipmentInstance[];
+    }> {
+      return this.post<{
+        save: LeanSaveResponse; results: GachaResultEntry[]; overflow: GachaOverflow;
+        cardGrants: CardInstance[]; equipmentGrants: EquipmentInstance[];
+      }>('/gacha/draw', { poolId, count });
     }
 
     /** Redeem Fate Points for a chosen past-featured legendary (GACHA_DESIGN §7). Insufficient → ApiError('FATE_INSUFFICIENT'). */

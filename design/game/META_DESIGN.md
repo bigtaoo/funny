@@ -378,6 +378,8 @@ message Replay {
 
 **Phase 2（后期做）**：Loki（存储）+ Grafana Alloy（tail `server/logs/*.log` 或 Docker stdout）+ Grafana（查询 `{svc=…} | json | roomId=…`）。docker-compose 观测栈 + Alloy 配置待建，方案与示意配置已记入 `server/observability/README.md`。
 
+**✅ 2026-07-28 补：metaserver 访问日志按状态码分级 + 4xx/5xx 带 body**——此前 `app.ts` 的 `onResponse` 访问日志钩子对所有响应（2xx~5xx）统一打 `info`，且从不带请求体；排障一个具体失败请求（如"这次 404 CARD_NOT_FOUND 到底发的是哪个卡 ID"）只能指望报告者自己截 DevTools Network 面板，访问日志本身完全没有这个信息。现改为：状态码 ≥500 → `error`，≥400 → `warn`（都附带 `body`），其余仍是 `info`（不带 body，避免正常流量日志体积/敏感信息双重膨胀）。`setErrorHandler`（Fastify 抛出型错误——schema 校验失败、security handler 抛错）同步补上 body。body 经 `redactedBodyForLog` 处理：按 key（大小写不敏感）红线掉 `password`/`newPassword`/`oldPassword`/`receipt`/`token`/`secret`，序列化后超 4000B 直接整体替换成"体积超限"提示（不做部分截断，避免拼出非法 JSON）。落地 = `server/metaserver/src/app.ts`，回归测试 `server/metaserver/test/access-log.test.ts`。
+
 ---
 
 ## 7. G — 元系统 UI / 场景

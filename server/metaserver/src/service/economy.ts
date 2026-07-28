@@ -206,7 +206,7 @@ export function EconomyMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase & C
       ]);
       const ownedCardDefIds = ownedCardDocs.map((d) => d.defId);
       const { marked } = markDuplicates(cur.inventory.skins, ownedCardDefIds, draw.results);
-      const { save, overflow } = await deliverLootBox(
+      const { save, overflow, cardGrants, equipmentGrants } = await deliverLootBox(
         cols,
         commercial,
         this.deps.socialsvc ?? nullMetaSocialsvcClient,
@@ -243,7 +243,19 @@ export function EconomyMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase & C
           },
         };
       }
-      return ok({ save: saveWithRet2, results: marked, overflow });
+      // Lean response (2026-07-28, same phase-2 treatment as /equipment/* — see shared/src/types.ts
+      // cardInv/equipmentInv doc comments): this is the highest-frequency card/equipment-granting
+      // endpoint (nothing stops a player mashing "draw" back to back), so paying for a fresh
+      // cardInstances/equipmentInstances join on every single call — and shipping the whole map back
+      // over the wire — is pure waste when `cardGrants`/`equipmentGrants` already say exactly what
+      // changed. The client reconstructs its local copy via SaveManager.adoptServerPartial.
+      return ok({
+        save: { ...saveWithRet2, cardInv: null, equipmentInv: null },
+        results: marked,
+        overflow,
+        cardGrants,
+        equipmentGrants,
+      });
     }
 
     /** Fate Point redemption (GACHA_DESIGN §7): 30 points → one self-chosen past-featured legendary skin. */

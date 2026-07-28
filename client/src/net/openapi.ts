@@ -1515,7 +1515,7 @@ export interface components {
             /** @description Card instance inventory (instanceId→CardInstance); max 500 entries */
             cardInv?: {
                 [key: string]: components["schemas"]["CardInstance"];
-            };
+            } | null;
             cardInvCount?: number;
             cardMailOverflowCount?: number;
             equipMailOverflowCount?: number;
@@ -2841,6 +2841,7 @@ export interface operations {
                         /** @enum {boolean} */
                         ok: true;
                         data: {
+                            /** @description Lean (2026-07-28): `cardInv`/`equipmentInv` are always `null` on this response — the highest-frequency card/equipment-granting endpoint skips the full-inventory join on every call. Adopt via SaveManager.adoptServerPartial with `cardGrants`/ `equipmentGrants` below as the upsert patch, never the plain adoptServer/reconcile. */
                             save: components["schemas"]["SaveData"];
                             results: components["schemas"]["GachaResult"][];
                             /** @description Roster/inventory-full overflow summary for this draw (CHARACTER_CARDS_DESIGN §4 / EQUIPMENT_DESIGN §3.3): the first 10 overflow items per type since that inventory last had free space are mailed as real instances; the rest are coin-compensated. All-zero when nothing overflowed. */
@@ -2850,6 +2851,10 @@ export interface operations {
                                 equipMailed: number;
                                 equipCompensatedCoins: number;
                             };
+                            /** @description Card instances this draw actually added to cardInv (never the mailed-overflow ones). */
+                            cardGrants: components["schemas"]["CardInstance"][];
+                            /** @description Equipment instances this draw actually added to equipmentInv (never the mailed-overflow ones). */
+                            equipmentGrants: components["schemas"]["EquipmentInstance"][];
                         };
                     };
                 };

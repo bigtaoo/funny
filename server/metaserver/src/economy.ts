@@ -9,7 +9,7 @@
 //    re-grant recalculation is not idempotent); only new skins are granted for now; the channel
 //    in commercial is already prepared.
 import { createHash } from 'node:crypto';
-import type { Collections, SaveData, Rarity, EquipmentInstance, RedisLike } from '@nw/shared';
+import type { Collections, SaveData, Rarity, EquipmentInstance, CardInstance, RedisLike } from '@nw/shared';
 import {
   EQUIPMENT_DEFS, GACHA_MATERIAL_GRANTS, makeGachaEquipInstance, EQUIPMENT_INV_CAP,
   EQUIP_FULL_COMPENSATION_COINS, EQUIP_INV_FULL_MAIL_COUNT, CARD_DEFS,
@@ -290,6 +290,11 @@ export async function mirrorWalletFrom(
  * real instances instead of being coin-compensated; the persistent per-account counter lives on
  * save.cardMailOverflowCount / save.equipMailOverflowCount. Returned `overflow` lets gachaDraw
  * surface a "inventory full" toast.
+ *
+ * `cardGrants`/`equipmentGrants` are the instances actually landed in cardInv/equipmentInv by this
+ * call (never the mailed-overflow ones — those aren't in the inventory yet) — gachaDraw (2026-07-28)
+ * hands these back instead of the full inventory maps, see the `cardInv`/`equipmentInv` doc comment
+ * in shared/src/types.ts.
  */
 export async function deliverLootBox(
   cols: Collections,
@@ -301,7 +306,7 @@ export async function deliverLootBox(
   coinsAfter: number,
   pityPatch: Record<string, number> | null,
   now: number,
-): Promise<{ save: SaveData; overflow: OverflowSummary }> {
+): Promise<{ save: SaveData; overflow: OverflowSummary; cardGrants: CardInstance[]; equipmentGrants: EquipmentInstance[] }> {
   const cur = await cols.saves.findOne({ _id: accountId });
   const owned = cur?.save.inventory.skins ?? [];
   const invCount = cur?.save.equipmentInvCount ?? 0;
@@ -369,6 +374,7 @@ export async function deliverLootBox(
   let finalSave = save;
   let cardMailed = 0;
   let cardCompensatedCoins = 0;
+  let cardGrants: CardInstance[] = [];
   if (cardDefs.length > 0) {
     const cardResult = await grantHeroCards(cols, () => now, accountId, cardDefs, 1, {
       socialsvc,
@@ -378,6 +384,7 @@ export async function deliverLootBox(
       finalSave = cardResult.save;
       cardMailed = cardResult.mailedCount;
       cardCompensatedCoins = cardResult.compensatedCoins;
+      cardGrants = cardResult.instances;
       if (cardResult.compensatedCoins > 0 && commercial.available) {
         await commercial.grant({
           accountId,
@@ -392,6 +399,8 @@ export async function deliverLootBox(
   return {
     save: finalSave,
     overflow: { cardMailed, cardCompensatedCoins, equipMailed: equipMailInstances.length, equipCompensatedCoins },
+    cardGrants,
+    equipmentGrants: Object.values(equipInstances),
   };
 }
 

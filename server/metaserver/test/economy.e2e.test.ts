@@ -337,9 +337,23 @@ describe.skipIf(!mongo)('meta economy orchestration e2e', () => {
     comm.nextResults = [{ itemId: 'suyuan', rarity: 'epic' }];
     const r = body(await app.inject({ method: 'POST', url: '/gacha/draw', headers: auth(), payload: { poolId: 'standard', count: 1 } }));
     expect(r.data.results[0]).toMatchObject({ itemId: 'suyuan', rarity: 'epic' });
-    const cards: Array<{ defId: string }> = Object.values(r.data.save.cardInv ?? {});
-    expect(cards.some((c) => c.defId === 'suyuan')).toBe(true);
+    // Lean response (2026-07-28): save.cardInv is always null here — the actual delta is cardGrants.
+    expect(r.data.save.cardInv).toBeNull();
+    expect(r.data.cardGrants.some((c: { defId: string }) => c.defId === 'suyuan')).toBe(true);
     expect(r.data.save.inventory.skins).not.toContain('suyuan');
+  });
+
+  it('gacha: equipment result lands in equipmentInv via equipmentGrants (lean response, 2026-07-28) — save.equipmentInv stays null', async () => {
+    comm.coins.set(accountId, 1000);
+    comm.nextResults = [{ itemId: 'wp_marker', rarity: 'rare' }];
+    const r = body(await app.inject({ method: 'POST', url: '/gacha/draw', headers: auth(), payload: { poolId: 'standard', count: 1 } }));
+    expect(r.data.results[0]).toMatchObject({ itemId: 'wp_marker', rarity: 'rare' });
+    expect(r.data.save.equipmentInv).toBeNull();
+    expect(r.data.equipmentGrants).toHaveLength(1);
+    expect(r.data.equipmentGrants[0]).toMatchObject({ defId: 'wp_marker', rarity: 'rare' });
+    // GET /save still does the full join (unaffected by gachaDraw's lean response) — the instance really landed.
+    const after = body(await app.inject({ method: 'GET', url: '/save', headers: auth() }));
+    expect(after.data.save.equipmentInv[r.data.equipmentGrants[0].id]).toMatchObject({ defId: 'wp_marker' });
   });
 
   it('gacha: card NEW badge checks cardInv, not inventory.skins (regression — markDuplicates only checked inventory.skins, so an already-owned card kept showing NEW on every later draw since cards never land in inventory.skins)', async () => {
@@ -555,7 +569,7 @@ describe.skipIf(!mongo2)('gacha inventory-full overflow → mail', () => {
     comm.nextResults = Array.from({ length: 10 }, () => ({ itemId: 'lichuang', rarity: 'common' as const }));
     const r = body(await app.inject({ method: 'POST', url: '/gacha/draw', headers: auth(), payload: { poolId: 'standard', count: 10 } }));
     expect(r.data.overflow).toMatchObject({ cardMailed: 10, cardCompensatedCoins: 0 });
-    expect(Object.keys(r.data.save.cardInv)).toHaveLength(CARD_INV_CAP); // none of the 10 landed in cardInv
+    expect(r.data.cardGrants).toHaveLength(0); // none of the 10 landed in cardInv — all mailed
     expect(r.data.save.cardMailOverflowCount).toBe(10);
     const cardMail = socialsvc.sent.find((s) => s.content.attachments?.[0]?.kind === 'card');
     expect(cardMail?.content.attachments).toHaveLength(10);
@@ -600,7 +614,7 @@ describe.skipIf(!mongo2)('gacha inventory-full overflow → mail', () => {
     comm.nextResults = Array.from({ length: 10 }, () => ({ itemId: 'wp_pencil', rarity: 'common' as const }));
     const r = body(await app.inject({ method: 'POST', url: '/gacha/draw', headers: auth(), payload: { poolId: 'standard', count: 10 } }));
     expect(r.data.overflow).toMatchObject({ equipMailed: 10, equipCompensatedCoins: 0 });
-    expect(Object.keys(r.data.save.equipmentInv)).toHaveLength(300);
+    expect(r.data.equipmentGrants).toHaveLength(0); // none of the 10 landed in equipmentInv — all mailed
     expect(r.data.save.equipMailOverflowCount).toBe(10);
     const equipMail = socialsvc.sent.find((s) => s.content.attachments?.[0]?.kind === 'equipment');
     expect(equipMail?.content.attachments).toHaveLength(10);

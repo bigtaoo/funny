@@ -26,6 +26,35 @@ const here = dirname(fileURLToPath(import.meta.url));
 // Routes are no longer loaded from this path at runtime (ADR-023: build-time codegen).
 export const SPEC_PATH = resolve(here, '../../contracts/openapi.yml');
 
+// Request-body fields that must never reach a log line verbatim, matched case-insensitively against
+// top-level keys (covers /auth/* password/newPassword, /*/buy receipt, any future token/secret field).
+const SENSITIVE_BODY_KEYS = new Set(['password', 'newpassword', 'oldpassword', 'receipt', 'token', 'secret']);
+const LOG_BODY_MAX_BYTES = 4000;
+
+/**
+ * Request body for an error/warn access-log line (2026-07-28): redacts known-sensitive fields and caps
+ * the size before it's attached to a log entry — bodyLimit is 4MB (state-stream replay uploads), so an
+ * unredacted/uncapped body could both leak credentials and blow up the log line. Returns undefined for
+ * a missing/non-object body (e.g. a request that failed to parse at all) so the log field is omitted
+ * rather than showing `body=null`.
+ */
+function redactedBodyForLog(body: unknown): unknown {
+  if (body === null || body === undefined || typeof body !== 'object') return undefined;
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(body as Record<string, unknown>)) {
+    out[k] = SENSITIVE_BODY_KEYS.has(k.toLowerCase()) ? '[redacted]' : v;
+  }
+  let json: string;
+  try {
+    json = JSON.stringify(out);
+  } catch {
+    return '[unserializable body]';
+  }
+  return json.length > LOG_BODY_MAX_BYTES
+    ? `[body omitted: ${json.length}B exceeds ${LOG_BODY_MAX_BYTES}B log cap]`
+    : out;
+}
+
 export interface BuildAppOpts {
   cols: Collections;
   jwt: JwtConfig;
@@ -71,10 +100,17 @@ export async function buildApp(opts: BuildAppOpts): Promise<FastifyInstance> {
 
   // Human-readable request/response log (for debugging, replacing pino JSON). One line per request on completion: method path status elapsed.
   // Health probes are excluded from logging (polling noise).
+  // Level escalates with the status code (2026-07-28): 4xx → warn, 5xx → error, both carry the
+  // (redacted, size-capped) request body — previously every response logged at `info` with no body at
+  // all, so diagnosing a specific failed request (e.g. "which card id did this 404 CARD_NOT_FOUND
+  // actually send?") required the reporter's own DevTools Network tab; the access log alone had nothing.
   app.addHook('onResponse', async (req, reply) => {
     if (req.url === '/health') return;
     const ms = Math.round(reply.elapsedTime ?? 0);
-    log.info(`${req.method} ${req.url} -> ${reply.statusCode}`, { ms });
+    const msg = `${req.method} ${req.url} -> ${reply.statusCode}`;
+    if (reply.statusCode >= 500) log.error(msg, { ms, body: redactedBodyForLog(req.body) });
+    else if (reply.statusCode >= 400) log.warn(msg, { ms, body: redactedBodyForLog(req.body) });
+    else log.info(msg, { ms });
   });
 
   // Equipment/card storage split backstop (2026-07-26 equipmentInv, 2026-07-27 cardInv — see
@@ -89,7 +125,9 @@ export async function buildApp(opts: BuildAppOpts): Promise<FastifyInstance> {
   // `undefined` — this hook only backfills on `undefined` ("forgot to populate"), so `null` ("explicitly
   // omitted, caller already knows what changed") passes through untouched, and those endpoints skip the
   // `equipmentInstances.find({accountId})` entirely instead of paying for it just to throw it away.
-  // cardInv has no such `null` opt-out (phase 2 not done for cards); it only needs the `undefined` branch.
+  // cardInv got the same `null` opt-out on 2026-07-28, starting with gachaDraw (the highest-frequency
+  // card-granting endpoint — see its `cardGrants` response field / shared/src/types.ts's cardInv doc
+  // comment); other card-touching handlers still return `undefined` and get the full join here.
   app.addHook('preSerialization', async (_req, _reply, payload) => {
     const p = payload as { save?: SaveData; data?: { save?: SaveData } } | null;
     const save = p?.data?.save ?? p?.save;
@@ -116,8 +154,11 @@ export async function buildApp(opts: BuildAppOpts): Promise<FastifyInstance> {
     const code =
       status === 401 ? 'UNAUTHENTICATED' : status === 400 ? 'BAD_REQUEST' : 'INTERNAL';
     // 5xx = real problem (include stack), 4xx = expected validation failure (single line only).
-    if (status >= 500) log.error(`${req.method} ${req.url} ${status} ${code}`, { err: error.stack ?? error.message });
-    else log.warn(`${req.method} ${req.url} ${status} ${code}`, { message: error.message });
+    // Body included (2026-07-28, redacted/size-capped — see redactedBodyForLog): this is the thrown-
+    // exception path (schema validation, security-handler throws), a different code path from the
+    // onResponse hook above, which only sees normally-returned (non-thrown) 4xx/5xx responses.
+    if (status >= 500) log.error(`${req.method} ${req.url} ${status} ${code}`, { err: error.stack ?? error.message, body: redactedBodyForLog(req.body) });
+    else log.warn(`${req.method} ${req.url} ${status} ${code}`, { message: error.message, body: redactedBodyForLog(req.body) });
     reply.code(status).send({ ok: false, error: { code, message: error.message } });
   });
 
