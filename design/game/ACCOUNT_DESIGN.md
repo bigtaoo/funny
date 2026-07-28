@@ -170,6 +170,8 @@ initI18n
 
 > **订正（2026-07-25，avatar-leak-across-account-switch bug）**：「本地存档保留」不能整段照字面实现——`reconcile` 对 `equipped`/`flags` 是**本地覆盖云端**（§4.4 就是靠这点让单机转正的进度不丢），但这条规则默认「本地 = 当前账号自己的离线改动」。若真按登出即保留本地存档，账号 A 登出、账号 B 登入时，A 残留在内存里的 `equipped`（含头像/称号）与 `flags`（含 `gdprConsent`）会被当成「A 的离线改动」原样合并进 B 的会话，甚至被标脏后反向覆盖 B 云端的存档。修复：`doLogout()` 现在会调用 `SaveManager.clearSyncedLocalSections()` 清空内存中的 `equipped`/`flags`/`pvpDeck`（`client/src/game/meta/SaveManager.ts`），并清掉头像的本地 fallback key `nw_player_avatar`（`client/src/app/nav/auth.ts`）——权威段（wallet/cardInv 等）不受影响，`reconcile` 本来就整段以云端为准。§4.3/4.4 的「单机转正」路径不受影响：`accountId` 从空串首次写入不算「切换」，所以离线试玩的头像/进度依旧照常并入登录后的账号。
 
+> **订正（2026-07-28，stale-response-rollback bug）**：`reconcile` 对权威段（wallet/cardInv/equipmentInv 等）原是无条件整段采用云端值（`{...cloud}`），没有拿 `cloud.rev` 跟本地已持有的 `rev`比较。多数调用方（gacha 连抽连点等）没有 busy 防抖，短时间内会有多个请求同时在途；网络/DB 抖动下响应可能乱序到达——一个更早发出但更慢返回的请求，其响应可能晚于一个更晚发出但更快返回的请求到达。旧逻辑会把这个"迟到的旧响应"整段采纳，把 `cardInv`/`wallet` 等权威段**回滚**到更早的快照，连带"复活"本应已被消耗（如已合成掉）的卡牌实例——这些复活的 ID 服务端早已物理删除，玩家一操作立刻 404 CARD_NOT_FOUND，且现象必现于「连点抽卡 → 立即合成」。修复：`reconcile()` 现在会丢弃 `cloud.rev` 低于本地已持有 `rev` 的响应（`client/src/game/meta/SaveManager.ts`），乱序到达的旧响应不再覆盖更新的状态。
+
 > JWT 仍由 meta 签（`shared/src/jwt.ts`，30d）。持久化 token 只是免去重输密码，过期/失效仍回登录。
 
 ---

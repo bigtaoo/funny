@@ -583,6 +583,15 @@ export class SaveManager {
     // account's save may lack client-only fields (cardInv/equipmentInv), which would otherwise crash the
     // campaign start path. migrate is idempotent for a complete save.
     const cloud = migrate(cloudRaw);
+    // Drop a stale/out-of-order response: several call sites (bootstrap/refresh/adoptServer) fire from
+    // rapid-fire user actions (e.g. mashing gacha draw) without a busy-guard, so responses can land out
+    // of order — a slow earlier request's response arriving after a faster later one's. Since every
+    // server mutation bumps `rev`, a lower rev than what's already loaded is unambiguously older data;
+    // adopting it wholesale (`...cloud`) would roll authoritative sections like cardInv/wallet back to
+    // that earlier snapshot, silently resurrecting instances (cards/equipment) already consumed by a
+    // mutation the client has already reconciled — the resurrected id has no server-side backing, so the
+    // next action on it (e.g. fuse) 404s CARD_NOT_FOUND.
+    if (cloud.rev < this.save.rev) return;
     const local = this.save;
     const equipped = { ...cloud.equipped, ...local.equipped };
     const flags = { ...cloud.flags, ...local.flags };

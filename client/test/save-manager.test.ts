@@ -224,6 +224,52 @@ describe('SaveManager lifecycle flush (P0-10, comm-audit-2026-07-27 finding B11)
   });
 });
 
+describe('SaveManager.adoptServer stale-response guard (out-of-order gacha draw responses)', () => {
+  // Regression (2026-07-28): rapid-fire actions that each call adoptServer (e.g. mashing the gacha draw
+  // button) have no client-side busy-guard, so responses can arrive out of order — a slow earlier
+  // request's response landing after a faster later one's. reconcile() used to adopt whatever `save` it
+  // was given unconditionally, so a stale response would roll cardInv/wallet back to an earlier snapshot,
+  // resurrecting an instance already consumed (e.g. fused away) by the newer state — the resurrected id
+  // has no server-side backing, so the next action on it 404s CARD_NOT_FOUND.
+  it('a lower-rev response arriving after a higher-rev one is dropped, not adopted', () => {
+    const store = new LocalSaveStore(new MemStorage());
+    const mgr = new SaveManager({ store, api: fakeApi(makeNewSave('a', 1)) });
+
+    const newer = makeNewSave('a', 1);
+    newer.rev = 5;
+    newer.wallet.coins = 100;
+    mgr.adoptServer(newer);
+    expect(mgr.get().wallet.coins).toBe(100);
+
+    // A slower, earlier-sent request's response finally arrives — lower rev, stale coin balance.
+    const stale = makeNewSave('a', 1);
+    stale.rev = 3;
+    stale.wallet.coins = 40;
+    mgr.adoptServer(stale);
+
+    expect(mgr.get().rev).toBe(5);
+    expect(mgr.get().wallet.coins).toBe(100); // not rolled back to the stale snapshot
+  });
+
+  it('a same-or-higher-rev response is still adopted normally', () => {
+    const store = new LocalSaveStore(new MemStorage());
+    const mgr = new SaveManager({ store, api: fakeApi(makeNewSave('a', 1)) });
+
+    const first = makeNewSave('a', 1);
+    first.rev = 5;
+    first.wallet.coins = 100;
+    mgr.adoptServer(first);
+
+    const next = makeNewSave('a', 1);
+    next.rev = 6;
+    next.wallet.coins = 150;
+    mgr.adoptServer(next);
+
+    expect(mgr.get().rev).toBe(6);
+    expect(mgr.get().wallet.coins).toBe(150);
+  });
+});
+
 describe('SaveManager.adoptSession (SA-3/SA-4 session adoption)', () => {
   it('after login, adopt accountId + pull/reconcile: authoritative data (including progress) taken from cloud', async () => {
     const store = new LocalSaveStore(new MemStorage());
