@@ -16,6 +16,7 @@ import type { components, operations } from './openapi-world';
 import type { components as socialComponents } from './openapi-social';
 import type { components as auctionComponents } from './openapi-auction';
 import { sampleServerNow } from './serverClock';
+import { requestPlatformHeader } from './ApiClient/base';
 
 // ── Generated DTO type aliases (single source of truth = openapi-world.yml) ──
 
@@ -176,7 +177,10 @@ export class WorldApiClient {
     const base = baseOverride ?? getWorldBaseUrl();
     const url = base + path;
     const token = this.token();
-    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    // X-NW-Platform (ADR-020): which recharged-pool bucket a spend should draw from. Worldsvc/auction
+    // spend paths never sent this (comm-audit-internal-2026-07-28 P0-7) — iOS/Android players got
+    // charged from the web bucket for SLG/auction purchases, same field ApiClient/base.ts sends.
+    const headers: Record<string, string> = { 'Content-Type': 'application/json', 'X-NW-Platform': requestPlatformHeader() };
     if (token) headers['Authorization'] = `Bearer ${token}`;
 
     const ctrl = new AbortController();

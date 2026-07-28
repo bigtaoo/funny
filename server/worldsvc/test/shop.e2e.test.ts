@@ -28,11 +28,11 @@ describe.skipIf(!mongo)('worldsvc SLG shop e2e', () => {
   const m = mongo!;
   let nowMs = 1_000_000;
   const now = () => nowMs;
-  let spent: { accountId: string; amount: number }[];
+  let spent: { accountId: string; amount: number; clientPlatform?: string }[];
 
   const fakeCommercial: WorldCommercialClient = {
     available: true,
-    async spend(accountId, amount) { spent.push({ accountId, amount }); },
+    async spend(accountId, amount, _orderId, clientPlatform) { spent.push({ accountId, amount, clientPlatform }); },
     async grant() { /* no-op */ },
   };
 
@@ -59,6 +59,16 @@ describe.skipIf(!mongo)('worldsvc SLG shop e2e', () => {
     expect(spent).toEqual([{ accountId: 'a', amount: item.cost }]);
     const after = await svc.getMe(W, 'a');
     expect(after.resources!.ink - before).toBe(item.effect['each']);
+  });
+
+  // comm-audit-internal-2026-07-28 P0-7: worldsvc used to never forward the caller's platform to
+  // commercial's /internal/spend, so iOS/Android SLG purchases silently drew from the web bucket
+  // (ADR-020 channel isolation). buySlgShopItem is one of 7 spend call sites patched together.
+  it('forwards the caller-supplied clientPlatform through to commercial.spend', async () => {
+    const svc = new WorldService({ cols: m.collections, redis: null, commercial: fakeCommercial, mapW: SLG_MAP_W, mapH: SLG_MAP_H, now });
+    await svc.joinWorld(W, 'a', 10, 10);
+    await svc.buySlgShopItem(W, 'a', 'slg_res_s', 'ios');
+    expect(spent[0]!.clientPlatform).toBe('ios');
   });
 
   it('admin override present → uses the discounted cost + overridden effect instead of the code default', async () => {

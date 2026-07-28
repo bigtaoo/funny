@@ -6,8 +6,13 @@ import { fetchInternalJson } from '@nw/shared';
 
 export interface WorldCommercialClient {
   readonly available: boolean;
-  /** Deduct coins from an account. Insufficient funds → throws an Error containing INSUFFICIENT_FUNDS. */
-  spend(accountId: string, amount: number, orderId: string): Promise<void>;
+  /**
+   * Deduct coins from an account. Insufficient funds → throws an Error containing INSUFFICIENT_FUNDS.
+   * `clientPlatform` (ADR-020, X-NW-Platform) picks which recharged bucket (apple/google/web) to spend
+   * from; absent → commercial defaults to 'web' (comm-audit-internal-2026-07-28 P0-7: this used to be
+   * unconditional — iOS/Android SLG purchases silently drew from the web bucket).
+   */
+  spend(accountId: string, amount: number, orderId: string, clientPlatform?: string): Promise<void>;
   /** Credit coins to an account (e.g. refund). Best-effort; logs failure but does not roll back a completed spend. */
   grant(accountId: string, amount: number, orderId: string): Promise<void>;
 }
@@ -22,13 +27,13 @@ export class HttpWorldCommercialClient implements WorldCommercialClient {
     return this.baseUrl !== null;
   }
 
-  async spend(accountId: string, amount: number, orderId: string): Promise<void> {
+  async spend(accountId: string, amount: number, orderId: string, clientPlatform?: string): Promise<void> {
     if (!this.baseUrl) throw new Error('commercial service not configured');
     const res = await fetchInternalJson<{ ok: boolean; error?: string }>(`${this.baseUrl}/internal/spend`, {
       caller: 'worldsvc',
       key: this.internalKey,
       method: 'POST',
-      body: { accountId, amount, orderId },
+      body: { accountId, amount, orderId, ...(clientPlatform ? { clientPlatform } : {}) },
       timeoutMs: 5000,
       label: '/internal/spend',
     });

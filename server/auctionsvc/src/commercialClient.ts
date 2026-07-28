@@ -9,8 +9,12 @@ import { fetchInternalJson } from '@nw/shared';
 
 export interface AuctionCommercialClient {
   readonly available: boolean;
-  /** Deduct coins from buyer (purchasing an auction item). Insufficient funds → throws an Error containing INSUFFICIENT_FUNDS. */
-  spend(accountId: string, amount: number, orderId: string): Promise<void>;
+  /**
+   * Deduct coins from buyer (purchasing an auction item). Insufficient funds → throws an Error
+   * containing INSUFFICIENT_FUNDS. `clientPlatform` (ADR-020) picks the recharged bucket to spend
+   * from; absent → commercial defaults to 'web' (comm-audit-internal-2026-07-28 P0-7).
+   */
+  spend(accountId: string, amount: number, orderId: string, clientPlatform?: string): Promise<void>;
 }
 
 export class HttpAuctionCommercialClient implements AuctionCommercialClient {
@@ -23,13 +27,13 @@ export class HttpAuctionCommercialClient implements AuctionCommercialClient {
     return this.baseUrl !== null;
   }
 
-  async spend(accountId: string, amount: number, orderId: string): Promise<void> {
+  async spend(accountId: string, amount: number, orderId: string, clientPlatform?: string): Promise<void> {
     if (!this.baseUrl) throw new Error('commercial service not configured');
     const res = await fetchInternalJson<{ ok: boolean; error?: string }>(`${this.baseUrl}/internal/spend`, {
       caller: 'auctionsvc',
       key: this.internalKey,
       method: 'POST',
-      body: { accountId, amount, orderId },
+      body: { accountId, amount, orderId, ...(clientPlatform ? { clientPlatform } : {}) },
       timeoutMs: 5000,
       label: '/internal/spend',
     });

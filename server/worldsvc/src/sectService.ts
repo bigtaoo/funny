@@ -160,7 +160,7 @@ export class SectService {
   }
 
   /** Create a sect: requester must be a family leader and their family must not already belong to a sect; deducts SECT_CREATE_COST coins; TAG must be unique within the world. */
-  async createSect(worldId: string, requesterId: string, name: string, tag: string): Promise<SectDetailView> {
+  async createSect(worldId: string, requesterId: string, name: string, tag: string, clientPlatform?: string): Promise<SectDetailView> {
     const { cols } = this.deps;
     const fam = await this.requireFamilyLeader(requesterId);
     const [famSummary] = await this.socialsvc.getFamiliesByIds([fam.familyId]);
@@ -177,7 +177,7 @@ export class SectService {
 
     // Deduct coins first (founding cost). Failure → throws INSUFFICIENT_FUNDS (mapped by commercial); nothing is written to the DB.
     const orderId = `sect_create:${sid}:${this.deps.now()}`;
-    await this.commercial.spend(requesterId, SECT_CREATE_COST, orderId);
+    await this.commercial.spend(requesterId, SECT_CREATE_COST, orderId, clientPlatform);
 
     const doc: SectDoc = {
       _id: sid,

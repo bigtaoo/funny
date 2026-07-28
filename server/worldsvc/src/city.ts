@@ -108,7 +108,7 @@ export class CityService {
    * time is subtracted from the front of the queue, with overflow carrying to the next batch. Expired batches are immediately dequeued and added to troops.
    * Calls commercial.spend() to deduct coins (no speedup if this fails).
    */
-  async speedupTraining(worldId: string, accountId: string, coins: number): Promise<PlayerWorldView> {
+  async speedupTraining(worldId: string, accountId: string, coins: number, clientPlatform?: string): Promise<PlayerWorldView> {
     const { cols, now } = this.core.deps;
     coins = Math.max(1, Math.floor(coins));
     const pw = await cols.playerWorld.findOne({ _id: playerWorldId(worldId, accountId) });
@@ -120,7 +120,7 @@ export class CityService {
     const speedupDiscountMult = pw.hasBattlePass ? 1 / 0.85 : 1;
     const speedSec = coins * TROOP_SPEEDUP_SECS_PER_COIN * speedupDiscountMult;
     const orderId = `slg_speedup:${worldId}:${accountId}:${now()}`;
-    await this.core.commercial.spend(accountId, coins, orderId);
+    await this.core.commercial.spend(accountId, coins, orderId, clientPlatform);
 
     // Re-fetch latest doc from Mongo (may have changed during the spend call; ensures idempotency)
     const fresh = await cols.playerWorld.findOne({ _id: pw._id });
@@ -260,7 +260,7 @@ export class CityService {
    * Spend coins to speed up the build queue (mirrors speedupTraining): coins → reduced duration (BUILD_SPEEDUP_SECS_PER_COIN s/coin,
    * hasBattlePass discount), time subtracted from the front with overflow cascading. Builds whose completeAt reaches now are applied immediately.
    */
-  async speedupBuild(worldId: string, accountId: string, coins: number): Promise<PlayerWorldView> {
+  async speedupBuild(worldId: string, accountId: string, coins: number, clientPlatform?: string): Promise<PlayerWorldView> {
     const { cols, now } = this.core.deps;
     coins = Math.max(1, Math.floor(coins));
     const pw = await cols.playerWorld.findOne({ _id: playerWorldId(worldId, accountId) });
@@ -270,7 +270,7 @@ export class CityService {
     const speedupDiscountMult = pw.hasBattlePass ? 1 / 0.85 : 1;
     const speedSec = coins * BUILD_SPEEDUP_SECS_PER_COIN * speedupDiscountMult;
     const orderId = `slg_build_speedup:${worldId}:${accountId}:${now()}`;
-    await this.core.commercial.spend(accountId, coins, orderId);
+    await this.core.commercial.spend(accountId, coins, orderId, clientPlatform);
 
     const fresh = await cols.playerWorld.findOne({ _id: pw._id });
     if (!fresh) return this.core.getMe(worldId, accountId);
@@ -562,7 +562,7 @@ export class CityService {
    * Recover an injured card by spending CARD_RECOVER_COIN_COST coins (CC-3, CHARACTER_CARDS_DESIGN §7.2).
    * Clears injuredUntil. Throws CARD_NOT_INJURED if card is not currently injured.
    */
-  async recoverCard(worldId: string, accountId: string, cardInstanceId: string): Promise<void> {
+  async recoverCard(worldId: string, accountId: string, cardInstanceId: string, clientPlatform?: string): Promise<void> {
     const { cols, now } = this.core.deps;
     const pwId = playerWorldId(worldId, accountId);
     const pw = await cols.playerWorld.findOne({ _id: pwId });
@@ -573,7 +573,7 @@ export class CityService {
     if (!cs?.injuredUntil || cs.injuredUntil <= nowMs) throw new SlgError('BAD_REQUEST', `Card ${cardInstanceId} is not injured`);
 
     // Deduct coins via commercial client (spend throws INSUFFICIENT_FUNDS if not enough).
-    await this.core.commercial.spend(accountId, CARD_RECOVER_COIN_COST, `recover:${cardInstanceId}`);
+    await this.core.commercial.spend(accountId, CARD_RECOVER_COIN_COST, `recover:${cardInstanceId}`, clientPlatform);
 
     await cols.playerWorld.updateOne(
       { _id: pwId },
