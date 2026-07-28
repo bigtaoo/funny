@@ -14,6 +14,7 @@ import {
   type LadderSeasonDoc,
   type RankId,
   createLogger,
+  runBounded,
 } from '@nw/shared';
 import type { CommercialClient } from './commercialClient.js';
 import { insertSystemMail } from './mail.js';
@@ -183,6 +184,17 @@ export interface SeasonSettleSummary {
  * on the player's next pvp read/write (batch-rewriting the entire saves collection at season end is high-risk
  * and unnecessary — settlement is read-only + writes mail/title/snapshot; player ELO is migrated on return, idempotent).
  */
+// Bounded concurrency for per-player settlement (comm-audit-internal-2026-07-28 P0-5): this used to
+// be a fully serial `for await` loop — one socialsvc mail round-trip per participant, one at a time.
+// Safe, but on a large ranked population it meant a season roll could run for a very long time
+// (admin's ladder/season/roll HTTP call has a 120s client-side timeout — see deploy-config test).
+// Each iteration's work (settleSeasonForPlayer + a snapshot upsert) is independent per accountId,
+// so bounding concurrency (not fully parallelizing — see boundedConcurrency.ts header) is safe.
+const SETTLE_PARTICIPANTS_CONCURRENCY = 8;
+// How many cursor docs to buffer before processing a bounded-concurrency batch — keeps a single
+// season roll from loading the entire participant list into memory at once.
+const SETTLE_PARTICIPANTS_BATCH_SIZE = 200;
+
 export async function settleSeasonParticipants(
   cols: Collections,
   commercial: CommercialClient,
@@ -192,8 +204,7 @@ export async function settleSeasonParticipants(
 ): Promise<{ settled: number; rewarded: number }> {
   let settled = 0;
   let rewarded = 0;
-  const cursor = cols.saves.find({ 'save.pvp.seasonNo': seasonNo });
-  for await (const doc of cursor) {
+  const settleOne = async (doc: SaveDoc): Promise<void> => {
     try {
       const summary = await settleSeasonForPlayer(cols, commercial, socialsvc, doc._id, doc.save, seasonNo, now);
       settled++;
@@ -222,7 +233,18 @@ export async function settleSeasonParticipants(
         err: (e as Error).message,
       });
     }
+  };
+
+  const cursor = cols.saves.find({ 'save.pvp.seasonNo': seasonNo });
+  let batch: SaveDoc[] = [];
+  for await (const doc of cursor) {
+    batch.push(doc);
+    if (batch.length >= SETTLE_PARTICIPANTS_BATCH_SIZE) {
+      await runBounded(batch, SETTLE_PARTICIPANTS_CONCURRENCY, settleOne);
+      batch = [];
+    }
   }
+  if (batch.length > 0) await runBounded(batch, SETTLE_PARTICIPANTS_CONCURRENCY, settleOne);
   log.info('settleSeasonParticipants done', { seasonNo, settled, rewarded });
   return { settled, rewarded };
 }

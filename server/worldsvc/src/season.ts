@@ -15,8 +15,12 @@ import {
   worldShardId,
   shardCountForPopulation,
   allocateSectsToShards,
+  runBounded,
   type SectStrength,
 } from '@nw/shared';
+
+/** Fan-out concurrency cap for per-account settlement side effects (mail/title grants). See boundedConcurrency.ts. */
+const SETTLE_FANOUT_CONCURRENCY = 8;
 import { ENGINE_VERSION } from '@nw/engine';
 import { WorldCore, deleteInBatches } from './core';
 import { aggregateSectProsperity } from './prosperity';
@@ -255,22 +259,26 @@ export class SeasonService {
           ...base.skins.map((id) => ({ kind: 'skin' as const, id })),
           ...(base.coins ? [{ kind: 'coins' as const, count: base.coins }] : []),
         ];
-        for (const acct of accounts) {
-          void this.core.mail.sendSystemMail(acct, dispatchKey, {
+        // Bounded fan-out (comm-audit-internal-2026-07-28 P0-5): a large region can have thousands
+        // of accounts in one ranking entity (e.g. the winning sect) — firing all their mail+title
+        // grants as unbounded concurrent requests is the exact connection-pool-wedging burst
+        // internalFetch.ts's header comment warns about, just at 1000x the scale that caused it.
+        await runBounded(accounts, SETTLE_FANOUT_CONCURRENCY, async (acct) => {
+          await this.core.mail.sendSystemMail(acct, dispatchKey, {
             subject: 'slg.settle.subject',
             body: `slg.settle.body|rank=${r.rank}|tier=${tier}|nations=${r.nationCount}`,
             attachments,
             expireDays: 30,
-          });
+          }).catch((e) => console.error('[worldsvc] settle sendSystemMail failed', { acct, dispatchKey, err: (e as Error).message }));
           if (base.titleKey) {
             // Stamp the season onto the title id (slg.s{N}.{key}) so it follows the naming convention → correct weight,
             // source, and i18n on the client (TITLE_DESIGN §3). grantTitle is idempotent ($addToSet) on the meta side.
             const titleId = slgTitleId(w.season, base.titleKey);
-            void this.core.meta.grantTitle(acct, titleId).catch((e) =>
+            await this.core.meta.grantTitle(acct, titleId).catch((e) =>
               console.error('[worldsvc] settle grantTitle failed', { acct, titleId, err: (e as Error).message }),
             );
           }
-        }
+        });
       }
 
       // Extra settlement reward for battle-pass holders (S8-8 extra-settlement-reward tier): sent once per holder regardless of tier.
@@ -281,14 +289,14 @@ export class SeasonService {
       const bpAttachments = Object.entries(BP_SETTLE_EXTRA.items)
         .filter(([, n]) => n > 0)
         .map(([id, count]) => ({ kind: 'material' as const, id, count }));
-      for (const pw of bpPlayers) {
-        void this.core.mail.sendSystemMail(pw.accountId, bpDispatchKey, {
+      await runBounded(bpPlayers, SETTLE_FANOUT_CONCURRENCY, async (pw) => {
+        await this.core.mail.sendSystemMail(pw.accountId, bpDispatchKey, {
           subject: 'slg.settle.bp.subject',
           body: 'slg.settle.bp.body',
           attachments: bpAttachments,
           expireDays: 30,
-        });
-      }
+        }).catch((e) => console.error('[worldsvc] settle bp sendSystemMail failed', { accountId: pw.accountId, err: (e as Error).message }));
+      });
     }
 
     return ranking;
@@ -357,7 +365,13 @@ export class SeasonService {
 
     // ④ Zero season state (territory/prosperity/activity reset to 0 + clear sect affiliation) for families that played in this world.
     // Family identity/membership itself persists across seasons on socialsvc — only the SLG mirror is reset here.
-    await Promise.all(activeFamilyIds.map((fid) => this.core.socialsvc.resetSlgState(fid)));
+    // Bounded (comm-audit-internal-2026-07-28 P0-5): a full-population region can have hundreds of
+    // families; unbounded Promise.all fired them all as concurrent socialsvc requests at once.
+    await runBounded(activeFamilyIds, SETTLE_FANOUT_CONCURRENCY, (fid) =>
+      this.core.socialsvc.resetSlgState(fid).catch((e) =>
+        console.error('[worldsvc] resetSlgState failed', { familyId: fid, err: (e as Error).message }),
+      ),
+    );
 
     // ⑤ Reopen (re-pin engineVersion to the current process version, C7; fresh settleAt clock for the recycled world, §17.14).
     // Re-stamp mapW/mapH from the current process config too: a reset wipes every tile/nation and re-inits capitals

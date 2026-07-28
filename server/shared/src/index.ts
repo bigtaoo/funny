@@ -25,6 +25,7 @@ export * from './admin';
 export * from './config';
 export * from './internalAuth';
 export * from './internalFetch';
+export * from './boundedConcurrency';
 export * from './logger';
 export * from './heartbeat';
 export * from './season';
