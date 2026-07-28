@@ -63,11 +63,12 @@ export function createAuthNav(ctx: AppCtx): Pick<Nav, 'goIntro' | 'goLogin' | 'd
       playerName: playerName(),
       avatarId: avatarId(),
       onSetAvatar: (id) => {
-        // Local write is the offline-mode / not-yet-synced fallback; saveManager.update marks the
-        // save dirty and pushes equipped via the existing generic PUT /save sync (same mechanism
-        // TitlesScene's onEquip uses for equipped['title']) — this is what other players' clients see.
+        // PLAYER_AVATAR_KEY is the pure-offline-mode fallback (avatarId() in createAppCore.ts falls
+        // back to it when there's no account/equipped.avatar at all) — kept even though the real,
+        // server-authoritative avatar now goes through equipAvatar (PUT /avatar/equip, ownership-
+        // validated) rather than the old generic PUT /save sync.
         platform.storage.setItem(PLAYER_AVATAR_KEY, id);
-        saveManager.update((d) => { d.equipped['avatar'] = id; });
+        saveManager.equipAvatar(id);
       },
       ownedTitles: saveManager.get().titles ?? [],
       ownedSkins: saveManager.get().inventory.skins,

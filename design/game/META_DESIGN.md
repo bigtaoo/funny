@@ -106,8 +106,8 @@ interface SaveData {
   };
   materials: Record<string, number>;    // 关卡掉落材料（PvE 升级货币，M6）
   pveUpgrades: Record<string, number>;  // 升级 key → 等级（硬墙隔离）
-  equipped: Record<string, string>;     // unitType → 装备皮肤 id（纯外观）
-  flags: Record<string, boolean>;       // nw_seen_intro 等通用标记
+  equipped: Record<string, string>;     // unitType → 装备皮肤 id（纯外观）；服务器权威，ADR-056 起走 /title|avatar|skin/equip
+  flags: Record<string, boolean>;       // nw_seen_intro 等通用标记；服务器权威，ADR-056 起走 PUT /flags
 }
 ```
 
@@ -119,9 +119,9 @@ interface SaveData {
 interface SaveStore {
   loadLocal(): SaveData | null;          // 复用 IPlatform.storage（key: nw_save_v1）
   saveLocal(d: SaveData): void;
-  pull(accountId: string): Promise<SaveData | null>;
-  push(d: SaveData): Promise<PushResult>; // 带 If-Match: rev 乐观锁
 }
+// 云端读写不再走这层通用抽象：GET /save 拉取 + 各字段专属服务器接口写入，见 §3.3（ADR-056）。
+// 早期版本这里有 pull()/push()：`PUT /save` 通用同步端点已下线，不再有对应方法。
 
 const MIGRATIONS: ((d: any) => any)[] = [ /* v0→v1, v1→v2 ... */ ];
 function migrate(raw: any): SaveData { /* 按 version 顺序套用 */ }
@@ -136,9 +136,9 @@ function migrate(raw: any): SaveData { /* 按 version 顺序套用 */ }
 | 层 | v1 做法 | 说明 |
 |---|---|---|
 | **身份** | 匿名账号：微信 `wx.login`→code 换 openid；Web/CrazyGames 用设备 UUID（本地持久化）作 key | 零摩擦，无注册登录；`accountId` 预留后期绑手机 / 第三方 |
-| **同步协议** | 离线优先 + 服务器权威：启动 `pull` → 比 `rev` → 本地高则 `push`、云高则覆盖本地；写操作先写本地、防抖 2s 后 `push` | LWW + 单调 `rev` |
-| **冲突** | `push` 带 `If-Match: rev`，服务器 rev 更高返回 409 → 客户端 `pull` 后合并：`progress` 取并集、**服务器权威段一律以服务器为准** | 钱永远服务器说了算 |
-| **服务器权威段写入** | **不经过 save push**：买东西 / 开盲盒 / 充值是**独立服务器 API**，直接改 Mongo 钱包 + 库存，再回推最新 `SaveData` | 客户端永不直接写 `wallet` |
+| **同步协议** | 离线优先起播（`loadLocal` 本地可玩）+ **全字段服务器权威**（ADR-056，2026-07-28 起）：`bootstrap()/refresh()/adoptSession()` 拉 `GET /save` → `reconcile()` 整段以云端为准（本地只有 `pvpDeck` 例外，纯本地never同步）；不存在任何"客户端先写、攒批再传"的通用同步端点——`PUT /save` 已整个下线 | 无 LWW，`rev` 只用于丢弃乱序响应（见下） |
+| **写入** | 每个可写字段各有自己的专属服务器接口（`/equipment/*`、`/pve/*`、`/title\|avatar\|skin/equip`、`/flags`、经济类端点…），响应即最新 `SaveData`；`SaveManager` 对 `equipTitle/equipAvatar/equipSkin/setFlag` 这类低风险字段先写本地镜像做即时反馈，再后台请求确认——失败/被拒会在下一次 `reconcile()` 被服务器真值覆盖纠正，绝不会永久停留在错误的本地值上（这正是"刷新治百病"的机制保证） | 客户端永不直接写任何权威字段 |
+| **乱序丢弃** | `reconcile()` 若收到的 `cloud.rev` 低于本地已持有的 `rev` 直接整段丢弃（防止连点抽卡等场景下一个慢请求的旧响应后到，把 `cardInv`/`wallet` 滚回早前快照、复活已被消耗的实例 id） | `rev` 单调递增，仅由服务器写操作推进 |
 
 ---
 

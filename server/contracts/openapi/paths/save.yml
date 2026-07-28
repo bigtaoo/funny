@@ -41,53 +41,6 @@
                         ticket: { type: string }
                         mode: { type: string, enum: [friendly, ranked] }
       '401': { $ref: '#/components/responses/ErrorResp' }
-  put:
-    operationId: putSave
-    tags: [save]
-    summary: Push client sync patch (optimistic lock via If-Match rev)
-    security: [{ bearerAuth: [] }]
-    parameters:
-      - name: If-Match
-        in: header
-        required: true
-        schema: { type: string }
-        description: The rev held by the client
-    requestBody:
-      required: true
-      content:
-        application/json:
-          schema:
-            type: object
-            required: [save]
-            properties:
-              save: { $ref: '#/components/schemas/SyncPatch' }
-    responses:
-      '200':
-        description: Success — returns normalized save
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [ok, data]
-              properties:
-                ok: { type: boolean, enum: [true] }
-                data:
-                  type: object
-                  required: [save]
-                  properties:
-                    save: { $ref: '#/components/schemas/SaveData' }
-      '409':
-        description: REV_CONFLICT, includes current server-side value
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [ok, error]
-              properties:
-                ok: { type: boolean, enum: [false] }
-                error: { $ref: '#/components/schemas/Error' }
-                save: { $ref: '#/components/schemas/SaveData' }
-      '401': { $ref: '#/components/responses/ErrorResp' }
 
 /match/history:
   get:

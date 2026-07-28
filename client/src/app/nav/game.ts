@@ -205,13 +205,7 @@ export function createGameNav(ctx: AppCtx): GameNav {
         } : {}),
         getOwnedSkins: () => saveManager.get().inventory.skins,
         getEquippedSkin: (unitType) => saveManager.get().equipped[skinEquipKey(unitType)] ?? null,
-        equipSkin: (unitType, skinId) => {
-          saveManager.update((d) => {
-            const key = skinEquipKey(unitType);
-            if (skinId === null) delete d.equipped[key];
-            else d.equipped[key] = skinId;
-          });
-        },
+        equipSkin: (unitType, skinId) => saveManager.equipSkin(unitType, skinId),
       });
     };
 
@@ -467,7 +461,7 @@ export function createGameNav(ctx: AppCtx): GameNav {
       titles: save.titles ?? [],
       equippedTitle: save.equipped['title'] ?? '',
       onEquip(titleId: string) {
-        saveManager.update((d) => { d.equipped['title'] = titleId; });
+        saveManager.equipTitle(titleId || null);
       },
       onOpenStats: () => goStats(back),
       onOpenAchievements: () => goAchievements(back),

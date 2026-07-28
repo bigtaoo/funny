@@ -1,4 +1,7 @@
-// save-service end-to-end (S0-7 acceptance): auth → JWT → GET/PUT save → optimistic lock 409 → concurrent writes → hard wall.
+// save-service end-to-end (S0-7 acceptance): auth → JWT → GET /save. PUT /save (the old generic
+// client-sync endpoint) has been removed — equipped/flags mutation + optimistic-lock/concurrency
+// coverage now lives in liveops-equip.test.ts and mutateSave's own retry loop (server/metaserver/src/
+// service/base.ts), neither of which needs Mongo.
 // Requires a real Mongo single-node replica set: `cd server && docker compose up -d`.
 // Entire suite is skipped when Mongo is unreachable (does not block CI without a DB); prints a warning.
 // Imports from the build artifact dist (NodeNext .js extensions are awkward under vitest source resolution); run `tsc -b` first.
@@ -78,90 +81,19 @@ describe.skipIf(!mongo)('metaserver save-service e2e', () => {
     expect(save.wallet.coins).toBe(0);
   });
 
-  it('PUT /save optimistic lock: If-Match hit writes rev+1, stale rev → 409 + current server value', async () => {
-    const { token } = await authDevice('device-3');
-    const auth = { authorization: `Bearer ${token}` };
-    // Account creation already wrote the starter roster → base rev is 1 (see GET /save test above).
-
-    const ok = await app.inject({
-      method: 'PUT',
-      url: '/save',
-      headers: { ...auth, 'if-match': '1' },
-      // materials is a server-authoritative field (§8); PUT does not accept it → only flags are persisted.
-      payload: { save: { flags: { seenIntro: true }, materials: { wood: 5 } } },
-    });
-    expect(ok.statusCode).toBe(200);
-    const saved = body(ok).data.save;
-    expect(saved.rev).toBe(2);
-    expect(saved.flags.seenIntro).toBe(true);
-    expect(saved.materials.wood).toBeUndefined(); // server-authoritative; not overwritten by PUT
-
-    const stale = await app.inject({
-      method: 'PUT',
-      url: '/save',
-      headers: { ...auth, 'if-match': '1' },
-      payload: { save: { flags: { x: true } } },
-    });
-    expect(stale.statusCode).toBe(409);
-    const c = body(stale);
-    expect(c.error.code).toBe('REV_CONFLICT');
-    expect(c.save.rev).toBe(2);
-  });
-
-  it('concurrent PUTs with same rev → exactly one 200, one 409', async () => {
+  it('concurrent flag writes with the same starting rev → both eventually apply (mutateSave retries internally, no client-visible conflict)', async () => {
     const { token } = await authDevice('device-4');
     const auth = { authorization: `Bearer ${token}` };
-    await app.inject({
-      method: 'PUT',
-      url: '/save',
-      headers: { ...auth, 'if-match': '0' },
-      payload: { save: { flags: { init: true } } },
-    });
     const [r1, r2] = await Promise.all([
-      app.inject({
-        method: 'PUT',
-        url: '/save',
-        headers: { ...auth, 'if-match': '1' },
-        payload: { save: { flags: { a: true } } },
-      }),
-      app.inject({
-        method: 'PUT',
-        url: '/save',
-        headers: { ...auth, 'if-match': '1' },
-        payload: { save: { flags: { b: true } } },
-      }),
+      app.inject({ method: 'PUT', url: '/flags', headers: auth, payload: { key: 'a', value: true } }),
+      app.inject({ method: 'PUT', url: '/flags', headers: auth, payload: { key: 'b', value: true } }),
     ]);
-    const codes = [r1.statusCode, r2.statusCode].sort();
-    expect(codes).toEqual([200, 409]);
-  });
-
-  it('hard wall: PUT carrying authoritative fields (wallet/materials/progress) are ignored', async () => {
-    const { token } = await authDevice('device-5');
-    const auth = { authorization: `Bearer ${token}` };
-    await app.inject({
-      method: 'PUT',
-      url: '/save',
-      headers: { ...auth, 'if-match': '1' }, // base rev 1 after starter-roster grant on account creation
-      // SyncPatch only accepts equipped/flags → all other fields are discarded even if the client injects them (§8)
-      payload: {
-        save: {
-          flags: { c: true },
-          wallet: { coins: 999999 },
-          materials: { scrap: 999 },
-          progress: { cleared: ['ch_stress'], stars: {}, best: {} },
-        },
-      },
-    });
-    const r = await app.inject({
-      method: 'GET',
-      url: '/save',
-      headers: auth,
-    });
+    expect(r1.statusCode).toBe(200);
+    expect(r2.statusCode).toBe(200);
+    const r = await app.inject({ method: 'GET', url: '/save', headers: auth });
     const save = body(r).data.save;
-    expect(save.wallet.coins).toBe(0);
-    expect(save.materials).toEqual({});
-    expect(save.progress.cleared).toEqual([]);
-    expect(save.flags.c).toBe(true); // legitimate sync field written as expected
+    expect(save.flags.a).toBe(true);
+    expect(save.flags.b).toBe(true);
   });
 
   // ── Match history (archive enrich + GET /match/history) ─────────────────────────────

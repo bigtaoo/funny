@@ -1,7 +1,7 @@
 // Equipment inventory backend (E2 crafting + worldsvc auction escrow/transfer). EQUIPMENT_DESIGN §3 / §6 / §18.
 //
-// Fully server-authoritative (L2): equipment instances are written exclusively by this module;
-// PUT /save cannot write them (SyncPatch has been narrowed).
+// Fully server-authoritative (L2): equipment instances are written exclusively by this module.
+// There is no generic client-sync write endpoint at all (PUT /save removed) — see DECISIONS.md.
 //
 // Storage (2026-07-26, perf): instances live in the `equipmentInstances` collection (_id=instanceId),
 // NOT embedded in SaveData.equipmentInv anymore — an embedded map blew up save-doc size (81KB for a

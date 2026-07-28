@@ -28,7 +28,7 @@ equipped['title'] = titleId;   // 当前佩戴展示的 titleId
 ```
 
 - `titles` 进**服务器权威段**：仅由 ranked 赛季结算 / worldsvc SLG 结算 / 成就 claim / admin 授予，玩家无法伪造。
-- 佩戴走**已有 `SyncPatch`（`equipped`）**，零新写接口；服务端在 `PUT /save` 校验 **`equipped.title ∈ titles`**，否则拒绝/落回。
+- 佩戴走专属端点 `PUT /title/equip`（`{titleId}` → 校验 **`titleId ∈ titles`**，否则 403）；`equipped.title` 与 `equipped`/`flags` 的其余字段一样是纯服务器权威段，无任何客户端可写的通用同步接口（ADR-056，取代了本文写下时还存在的 `PUT /save`/`SyncPatch` 通用同步端点）。
 - 赛季峰值追踪：`pvp` 段加 `seasonPeakRank`（赛季内最高段位，赛季结算时读它授称号再清零）。
 - **定义表**：`@nw/shared` 维护 `TITLE_DEFS: Record<TitleId, { weight: number; source; ... }>`（硬编码，同 `Achievement` 定义表风格），`weight` 即跨来源序的唯一来源（§6.1）。赛季类 titleId 按模板生成（`ladder.s{N}.{rank}` 共用同 `rank` 的 weight）。
 

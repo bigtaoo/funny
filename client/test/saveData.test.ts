@@ -4,7 +4,6 @@ import {
   migrate,
   SAVE_VERSION,
   SAVE_STORAGE_KEY,
-  extractSyncPatch,
 } from '../src/game/meta';
 import { LocalSaveStore } from '../src/game/meta/SaveStore';
 import type { IStorage } from '../src/platform/IPlatform';
@@ -103,19 +102,5 @@ describe('LocalSaveStore round-trip (S0-3)', () => {
     s.flags.seen_intro = false;
     store.saveLocal(s);
     expect(store.loadLocal().flags.seen_intro).toBe(false);
-  });
-});
-
-describe('extractSyncPatch (S0-1 / PvE server-authoritative §8)', () => {
-  it('narrowed to equipped/flags only (progress/materials/pveUpgrades are server-authoritative and no longer uploaded)', () => {
-    const patch = extractSyncPatch(makeNewSave());
-    expect(Object.keys(patch).sort()).toEqual(['equipped', 'flags'].sort());
-    // authoritative sections are never uploaded
-    expect('wallet' in patch).toBe(false);
-    expect('pvp' in patch).toBe(false);
-    // From §8 onward these three sections are also server-authoritative (written only by /pve/*); PUT /save rejects them
-    expect('progress' in patch).toBe(false);
-    expect('materials' in patch).toBe(false);
-    expect('pveUpgrades' in patch).toBe(false);
   });
 });

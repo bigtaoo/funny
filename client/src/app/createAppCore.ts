@@ -80,9 +80,6 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
     // L1 spot-check (§8.6): when a queued offline flush is selected for verification, fetch the
     // local replay by replayId and submit it for re-evaluation.
     loadReplay: (id) => replayStore.load(id),
-    // Cloud save background sync persistently failing → show a one-time global fallback toast
-    // (progress may not have reached the cloud).
-    onSyncError: () => showToastMessage(t('common.syncFailed')),
     onProfile: ({ displayName, publicId, gatewayUrl: gw, freeRename }) => {
       applyGatewayUrl(gw);
       // Cache the server-authoritative free-rename entitlement so the settings screen can render it offline.

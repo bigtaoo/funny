@@ -80,7 +80,7 @@ export interface SaveData {
   };
   gacha: { pity: Record<string, number> };
   // —— Monetization mirror (GACHA_DESIGN §5–§7). Read-only mirror of commercial authority (fate points / monthly card /
-  //    starter packs), written by meta after economy operations + refreshed alongside GET /save. Lazily created; not in SyncPatch. ——
+  //    starter packs), written by meta after economy operations + refreshed alongside GET /save. Lazily created; client read-only. ——
   monetization?: {
     fatePoints: number; // Fate Points balance (§7)
     subscriptionExpiry: number; // monthly card end timestamp (ms); 0 = none (§5)
@@ -233,13 +233,6 @@ export interface SaveData {
   cardMailOverflowCount?: number;
   equipMailOverflowCount?: number;
 }
-
-/**
- * Client sync fields accepted by PUT /save (SERVER_API.md §2.2).
- * From PVE_INTEGRITY_PLAN §8 onward, progress/materials/pveUpgrades are promoted to server-authoritative
- * (written only by /pve/* + ranked settlement), narrowing PUT /save to equipped/flags only.
- */
-export type SyncPatch = Partial<Pick<SaveData, 'equipped' | 'flags'>>;
 
 // v2 (2026-06-21): Added equipmentInv + gear (equipment system E0). Additive fields only; does not touch equipped.
 // Old saves lazily default via `?? {}` at read sites; no destructive migration.
