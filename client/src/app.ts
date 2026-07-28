@@ -441,7 +441,7 @@ export async function startApp(
   setToastSink((text, kind) => globalToast.show(text, kind === 'success' ? C.green : C.red));
 
   const insets = platform.getSafeAreaInsets?.();
-  const layout: ILayout = createLayout(screenW, screenH, Side.Bottom, insets);
+  let layout: ILayout = createLayout(screenW, screenH, Side.Bottom, insets);
   const scaling = new ScalingManager(app, layout, insets);
   const input = new InputManager();
   // The manager freezes `input` for the span of each scene-fade: taps bypass Pixi (DOM-fed), so the
@@ -465,6 +465,21 @@ export async function startApp(
 
   platform.onAppReady();
   await platform.onLoadingComplete();
+
+  // WebKit can report env(safe-area-inset-*) as 0 on the very first synchronous script pass
+  // after a cold load (viewport-fit=cover hasn't finished settling yet) — the initial `insets`
+  // read above can undercount the notch/status-bar inset, letting the top HUD (coins, back
+  // button) land under it. The asset-preload gate we just awaited takes far longer than that
+  // settle delay, so re-read here and rescale if it changed, before any scene is built.
+  const settledInsets = platform.getSafeAreaInsets?.();
+  if (settledInsets && (
+    settledInsets.top !== insets?.top || settledInsets.right !== insets?.right ||
+    settledInsets.bottom !== insets?.bottom || settledInsets.left !== insets?.left
+  )) {
+    const { width: settledW, height: settledH } = platform.getScreenSize();
+    layout = createLayout(settledW, settledH, Side.Bottom, settledInsets);
+    scaling.resize(settledW, settledH, layout, settledInsets);
+  }
 
   // wrapViews (test-only) mutates methods on this same instance in place — pixiViews stays a
   // valid handle for onResized below regardless of whether it ran.
