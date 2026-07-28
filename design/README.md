@@ -129,7 +129,8 @@
 | 文档 | 范围 |
 |---|---|
 | [animator/ARCHITECTURE.md](tools/animator/ARCHITECTURE.md) · [REQUIREMENTS.md](tools/animator/REQUIREMENTS.md) | 骨骼动画编辑器（端口 9091） |
-| [animator/WORKSPACE_SYNC.md](tools/animator/WORKSPACE_SYNC.md) | **animator 在线工作区 + 云盘→仓库同步桥（Cloudflare Pages + Supabase + 自动 PR；状态：设计中）** |
+| [animator/WORKSPACE_SYNC.md](tools/animator/WORKSPACE_SYNC.md) | animator 在线工作区 + 云盘→仓库同步桥（Cloudflare Pages + Supabase + 自动 PR；**⚠️ 方向已被 desktop-shell/DESIGN.md 取代，见 ADR-055，已合并代码暂未下线**） |
+| [desktop-shell/DESIGN.md](tools/desktop-shell/DESIGN.md) | **工具桌面壳（Electron，多工具挂载 + 壳/内容双层自动更新 + 预留 git 提交接口；状态：设计中）** |
 | [level-editor/DESIGN.md](tools/level-editor/DESIGN.md) | 关卡编辑器（端口 9092） |
 | [map-editor/DESIGN.md](tools/map-editor/DESIGN.md) | SLG 大地图编辑器（端口 9095） |
 | [vfx-editor/DESIGN.md](tools/vfx-editor/DESIGN.md) | 特效编辑器（端口 9094，方案 A 墨线矢量程序特效；状态：设计中） |
