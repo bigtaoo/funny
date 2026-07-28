@@ -108,10 +108,10 @@ describe('Matchsvc friendly', () => {
     const { svc, last } = setup();
     const deckA = [...defaultPvpDeck().slice(0, 9), 'runner']; // a distinct, deck-sized list for side 0
     const deckB = defaultPvpDeck();
-    svc.roomCreate('a', 'Alice', '100000001', '', deckA);
+    svc.roomCreate('a', 'Alice', '100000001', '', '', deckA);
     const rs = last('a', 'room_state');
     if (rs?.kind !== 'room_state') throw new Error();
-    svc.roomJoin('b', 'Bob', '100000002', rs.code, '', deckB);
+    svc.roomJoin('b', 'Bob', '100000002', rs.code, '', '', deckB);
     svc.roomReady('a', true);
     svc.roomReady('b', true);
     svc.roomStart('a');
@@ -228,7 +228,7 @@ describe('Matchsvc bot-fallback (feature flag match_bot_fallback)', () => {
         flags: cache,
         botFallbackMs: 30_000,
       });
-      svc.enqueue('lonely', 'L', '100000001', 1000, '', 'web');
+      svc.enqueue('lonely', 'L', '100000001', 1000, '', '', 'web');
       vi.advanceTimersByTime(31_000);
       const bot = pushed.find((p) => p.acc === 'lonely' && p.msg.kind === 'match_bot');
       expect(bot).toBeDefined();
@@ -257,7 +257,7 @@ describe('Matchsvc bot-fallback (feature flag match_bot_fallback)', () => {
         flags: cache,
         botFallbackMs: 30_000,
       });
-      svc.enqueue('lonely', 'L', '100000001', 1000, '', 'web');
+      svc.enqueue('lonely', 'L', '100000001', 1000, '', '', 'web');
       vi.advanceTimersByTime(60_000);
       expect(pushed.some((p) => p.msg.kind === 'match_bot')).toBe(false);
       expect(svc.stats().queue).toBe(1); // still in queue
@@ -278,7 +278,7 @@ describe('Matchsvc bot-fallback (feature flag match_bot_fallback)', () => {
         flags: cache,
         botFallbackMs: 30_000,
       });
-      svc.enqueue('lonely', 'L', '100000001', 1000, '', 'web');
+      svc.enqueue('lonely', 'L', '100000001', 1000, '', '', 'web');
       vi.advanceTimersByTime(31_000); // first timeout: flag is off → keep waiting, entry remains in queue
       expect(pushed.some((p) => p.msg.kind === 'match_bot')).toBe(false);
       expect(svc.stats().queue).toBe(1);
