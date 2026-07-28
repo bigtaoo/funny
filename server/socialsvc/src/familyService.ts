@@ -46,7 +46,9 @@ export interface FamilyMembershipView {
   name: string;
   tag: string;
   memberCount: number;
-  /** Sect the family belongs to, if any (mirrored from FamilyDoc.sectName). */
+  /** Sect the family belongs to, if any (mirrored from FamilyDoc.sectId/sectName). */
+  sectId?: string;
+  /** Display name of the sect above, mirrored alongside sectId. */
   sectName?: string;
 }
 
@@ -524,7 +526,9 @@ export class FamilyService {
     if (!fam) return null;
     return {
       familyId: mem.familyId, role: mem.role, leaderId: fam.leaderId, name: fam.name, tag: fam.tag,
-      memberCount: fam.memberCount, ...(fam.sectName ? { sectName: fam.sectName } : {}),
+      memberCount: fam.memberCount,
+      ...(fam.sectId ? { sectId: fam.sectId } : {}),
+      ...(fam.sectName ? { sectName: fam.sectName } : {}),
     };
   }
 
@@ -558,6 +562,27 @@ export class FamilyService {
    */
   async refreshProsperity(familyId: string, territoryCount: number): Promise<number> {
     const fam = await this.deps.cols.families.findOne({ _id: familyId });
+    if (!fam) return 0;
+    const prosperity = familyProsperity(territoryCount, fam.memberCount, fam.activity ?? 0);
+    await this.deps.cols.families.updateOne(
+      { _id: familyId },
+      { $set: { prosperity, prosperityUpdatedAt: this.deps.now(), territoryCount } },
+    );
+    return prosperity;
+  }
+
+  /**
+   * Merged bumpActivity + refreshProsperity (comm-audit batch F item 9): worldsvc's bumpFamilyActivity
+   * always calls both back-to-back for the same familyId, so do the $inc then recompute-and-$set in one
+   * round trip instead of two sequential internal-HTTP hops (same "one hop, multiple Mongo ops" shape as
+   * resetSlgState below). Returns the new prosperity value (0 on unknown family, same as refreshProsperity).
+   */
+  async bumpActivityAndProsperity(familyId: string, delta: number, territoryCount: number): Promise<number> {
+    const fam = await this.deps.cols.families.findOneAndUpdate(
+      { _id: familyId },
+      { $inc: { activity: delta } },
+      { returnDocument: 'after' },
+    );
     if (!fam) return 0;
     const prosperity = familyProsperity(territoryCount, fam.memberCount, fam.activity ?? 0);
     await this.deps.cols.families.updateOne(

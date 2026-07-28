@@ -50,6 +50,27 @@ export class MetaClient {
   }
 
   /**
+   * Merged elo+profile lookup (comm-audit batch F item 1): collapses the enqueue/room/duel-respond
+   * paths' getElo()+getProfile() double hop into meta's existing /internal/player endpoint.
+   * meta not configured / error → INITIAL_ELO + empty profile (same degrade as the two calls it replaces).
+   */
+  async getMatchIdentity(accountId: string): Promise<{ elo: number; displayName?: string; publicId?: string; equippedTitle?: string; avatarId?: string }> {
+    if (!this.baseUrl) return { elo: INITIAL_ELO };
+    const r = await this.get<{ elo?: number; displayName?: string; publicId?: string; equippedTitle?: string; avatarId?: string }>(
+      `/internal/player?accountId=${encodeURIComponent(accountId)}`,
+      '/internal/player',
+    );
+    if (!r.ok || !r.body) return { elo: INITIAL_ELO };
+    return {
+      elo: typeof r.body.elo === 'number' ? r.body.elo : INITIAL_ELO,
+      ...(r.body.displayName ? { displayName: r.body.displayName } : {}),
+      ...(r.body.publicId ? { publicId: r.body.publicId } : {}),
+      ...(r.body.equippedTitle ? { equippedTitle: r.body.equippedTitle } : {}),
+      ...(r.body.avatarId ? { avatarId: r.body.avatarId } : {}),
+    };
+  }
+
+  /**
    * publicId → accountId reverse lookup (friend-challenge invite, ADR friends-duel-confirm): the
    * client only ever knows a friend's publicId, never their accountId. Mirrors socialsvc's
    * HttpSocialMetaClient.resolveByPublicId — same metaserver endpoint, different caller header.

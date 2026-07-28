@@ -222,6 +222,13 @@ export interface PlayerWorldDoc {
    */
   teamState?: Record<string, { injuredUntil?: number }>;
   familyId?: string;
+  /**
+   * Sect the family belonged to at joinWorld time (comm-audit batch F item 8b) — same SS7 read-only-mirror
+   * tradeoff as familyId above (resolved once up front, subsequent sect changes are not written back; live
+   * value lives in socialsvc's FamilyDoc.sectId). Lets vision/penalty code read sectId locally instead of an
+   * extra getFamiliesByIds([familyId]) round trip.
+   */
+  sectId?: string;
   trainingQueue?: TrainingEntry[]; // training queue (S8-2, ≤ TROOP_TRAIN_QUEUE_MAX entries)
   /** Mirror of `trainingQueue[0].completeAt`, absent when the queue is empty — see `trainingQueueOps`. Indexed; scheduler-only, never read by clients. */
   nextTrainingCompleteAt?: number;

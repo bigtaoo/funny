@@ -19,6 +19,9 @@ export interface FamilyMembership {
   name: string;
   tag: string;
   memberCount: number;
+  /** Sect the family belongs to, if any (comm-audit batch F item 8 — lets callers read sectId straight off
+   *  getMember instead of a separate getFamiliesByIds([familyId]) round trip). */
+  sectId?: string;
 }
 
 /** Family identity + SLG mirror fields (mirrors socialsvc's FamilyView). */
@@ -51,6 +54,12 @@ export interface WorldSocialsvcClient {
   bumpActivity(familyId: string, delta: number): Promise<void>;
   /** Internal: recompute + persist prosperity from a worldsvc-supplied territoryCount. Returns the new value (0 on failure/unknown family). */
   refreshProsperity(familyId: string, territoryCount: number): Promise<number>;
+  /**
+   * Internal: bumpActivity + refreshProsperity in one round trip (comm-audit batch F item 9) — the only caller
+   * (bumpFamilyActivity) always did both back-to-back for the same familyId. Returns the new prosperity value
+   * (0 on failure/unknown family, same as refreshProsperity).
+   */
+  bumpActivityAndProsperity(familyId: string, delta: number, territoryCount: number): Promise<number>;
   /** Internal: zero all SLG season state (territory/prosperity/activity/sect) on world reset; family identity/membership is untouched. */
   resetSlgState(familyId: string): Promise<void>;
   /**
@@ -149,6 +158,19 @@ export class HttpWorldSocialsvcClient implements WorldSocialsvcClient {
     return res.body?.data?.prosperity ?? 0;
   }
 
+  async bumpActivityAndProsperity(familyId: string, delta: number, territoryCount: number): Promise<number> {
+    if (!this.baseUrl) return 0;
+    const res = await fetchInternalJson<{ data?: { prosperity?: number } }>(
+      `${this.baseUrl}/internal/family/${encodeURIComponent(familyId)}/activity-and-prosperity`,
+      { ...this.opts('/internal/family/:id/activity-and-prosperity'), method: 'POST', body: { delta, territoryCount } },
+    );
+    if (!res.ok) {
+      console.error('[worldsvc] socialsvc.bumpActivityAndProsperity failed', { familyId, delta, territoryCount, status: res.status, err: res.error });
+      return 0;
+    }
+    return res.body?.data?.prosperity ?? 0;
+  }
+
   async resetSlgState(familyId: string): Promise<void> {
     if (!this.baseUrl) return;
     const res = await fetchInternalJson(
@@ -183,6 +205,7 @@ export const nullWorldSocialsvcClient: WorldSocialsvcClient = {
   async setSect() { /* no-op */ },
   async bumpActivity() { /* no-op */ },
   async refreshProsperity() { return 0; },
+  async bumpActivityAndProsperity() { return 0; },
   async resetSlgState() { /* no-op */ },
   async push() { /* no-op */ },
 };

@@ -80,21 +80,20 @@ export class NationChannelService {
     // Resolve publicId + display name + title from meta (source of truth for renames); best-effort,
     // falls back to the client-supplied senderName if meta is unavailable or profile not found —
     // a stale/incorrect client-side cache must never be preferred over the account's real name.
-    const profile = this.meta.available ? await this.meta.getProfile(accountId).catch(() => null) : null;
+    // Family + sect name (world chat spans every family/sect, unlike the family/sect-scoped channels
+    // where the sender's own family/sect is already known) is independent of the profile fetch — run
+    // both in parallel instead of sequentially (comm-audit batch F item 8), and read sectId straight off
+    // getMember (no more getFamiliesByIds([mem.familyId]) round trip).
+    const [profile, mem] = await Promise.all([
+      this.meta.available ? this.meta.getProfile(accountId).catch(() => null) : Promise.resolve(null),
+      this.socialsvc.available ? this.socialsvc.getMember(accountId).catch(() => null) : Promise.resolve(null),
+    ]);
     const senderPublicId = profile?.publicId ?? '';
     const resolvedSenderName = profile?.displayName ?? senderName;
     const title = profile?.equippedTitle;
 
-    // Resolve family + sect name (world chat spans every family/sect, unlike the family/sect-scoped
-    // channels where the sender's own family/sect is already known); best-effort, both absent if the
-    // sender is family-less or the family isn't in a sect.
-    const mem = this.socialsvc.available ? await this.socialsvc.getMember(accountId).catch(() => null) : null;
     const familyName = mem?.name;
-    let sectName: string | undefined;
-    if (mem) {
-      const [famSummary] = await this.socialsvc.getFamiliesByIds([mem.familyId]).catch(() => []);
-      if (famSummary?.sectId) sectName = (await cols.sects.findOne({ _id: famSummary.sectId }))?.name;
-    }
+    const sectName = mem?.sectId ? (await cols.sects.findOne({ _id: mem.sectId }))?.name : undefined;
 
     const msgDoc: NationMessageDoc = {
       _id: msgId,

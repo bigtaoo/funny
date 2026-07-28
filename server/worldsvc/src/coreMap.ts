@@ -71,15 +71,11 @@ export class WorldCoreMap extends WorldCoreVision {
         .filter((o) => o.ownerId && o.ownerId !== accountId)
         .map((o) => o.ownerId!),
     )];
-    const profileMap = new Map<string, PlayerProfile>();
-    if (otherOwnerIds.length > 0 && this.meta.available) {
-      const results = await Promise.allSettled(
-        otherOwnerIds.map((id) => this.meta.getProfile(id).then((p) => ({ id, p }))),
-      );
-      for (const r of results) {
-        if (r.status === 'fulfilled' && r.value.p) profileMap.set(r.value.id, r.value.p);
-      }
-    }
+    // comm-audit batch F item 7: was N individual getProfile round trips (one per distinct owner in the
+    // viewport); meta's /internal/account/batch-profiles resolves them all in one call.
+    const profileMap = otherOwnerIds.length > 0 && this.meta.available
+      ? await this.meta.batchProfiles(otherOwnerIds)
+      : new Map<string, PlayerProfile>();
 
     const tiles: WorldTileView[] = [];
     for (let y = y0; y <= y1; y++) {

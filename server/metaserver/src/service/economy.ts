@@ -309,7 +309,9 @@ export function EconomyMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase & C
       const clientPlatform = clientPlatformOf(req);
       const r = await commercial.monthlyCardBuy({ accountId, orderId, rechargePlatform: platform, clientPlatform });
       if (!r.ok) return reply.code(400).send(err(subscriptionErrCode(r.error), r.error));
-      const w = await commercial.getWallet(accountId, clientPlatform);
+      // r.wallet (comm-audit batch F item 3) saves the extra getWallet round trip when the caller populates it;
+      // fall back to a fresh fetch for any CommercialClient implementation that doesn't yet (test doubles).
+      const w = r.wallet ?? (await commercial.getWallet(accountId, clientPlatform));
       const save = w
         ? await mirrorWalletFrom(cols, accountId, w, now())
         : await getOrCreateSave(cols, accountId, now());
@@ -337,7 +339,7 @@ export function EconomyMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase & C
       const clientPlatform = clientPlatformOf(req);
       const r = await commercial.yearCardBuy({ accountId, orderId, rechargePlatform: platform, clientPlatform });
       if (!r.ok) return reply.code(400).send(err(subscriptionErrCode(r.error), r.error));
-      const w = await commercial.getWallet(accountId, clientPlatform);
+      const w = r.wallet ?? (await commercial.getWallet(accountId, clientPlatform));
       const save = w
         ? await mirrorWalletFrom(cols, accountId, w, now())
         : await getOrCreateSave(cols, accountId, now());
@@ -353,7 +355,7 @@ export function EconomyMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase & C
       const clientPlatform = clientPlatformOf(req);
       const r = await commercial.monthlyCardClaim({ accountId, dayKey, clientPlatform });
       if (!r.ok) return reply.code(400).send(err(ErrorCode.BAD_REQUEST, r.error));
-      const w = await commercial.getWallet(accountId, clientPlatform);
+      const w = r.wallet ?? (await commercial.getWallet(accountId, clientPlatform));
       const save = w
         ? await mirrorWalletFrom(cols, accountId, w, now())
         : await getOrCreateSave(cols, accountId, now());
@@ -479,8 +481,10 @@ export function EconomyMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase & C
           r.coinsAfter, null, now(),
         );
       }
-      // Mirror wallet (coins + monetization: starterUsed / subscription).
-      const w = await commercial.getWallet(accountId, clientPlatform);
+      // Mirror wallet (coins + monetization: starterUsed / subscription). deliverOrder above only marks
+      // delivery + writes cards/skins/materials — it never touches coins/pity/subscription, so r.wallet
+      // (when the caller populates it) is still authoritative here without a re-fetch.
+      const w = r.wallet ?? (await commercial.getWallet(accountId, clientPlatform));
       const save = w
         ? await mirrorWalletFrom(cols, accountId, w, now())
         : await getOrCreateSave(cols, accountId, now());

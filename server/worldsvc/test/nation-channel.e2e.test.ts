@@ -361,7 +361,7 @@ describe.skipIf(!mongo)('NationChannelService e2e', () => {
         leaderFamilyId: 'fam1', leaderId: 'alice', memberFamilyCount: 1,
         allySectIds: [], prosperity: 0, rev: 1,
       });
-      const mem: FamilyMembership = { familyId: 'fam1', role: 'leader', leaderId: 'alice', name: 'WangFam', tag: 'WANG', memberCount: 1 };
+      const mem: FamilyMembership = { familyId: 'fam1', role: 'leader', leaderId: 'alice', name: 'WangFam', tag: 'WANG', memberCount: 1, sectId: 'sect1' };
       const families: FamilySummary[] = [{ familyId: 'fam1', name: 'WangFam', tag: 'WANG', leaderId: 'alice', memberCount: 1, prosperity: 0, sectId: 'sect1' }];
 
       const svc = new NationChannelService({

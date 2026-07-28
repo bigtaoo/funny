@@ -7,7 +7,8 @@ import {
   YEAR_CARD_DAYS,
   YEAR_CARD_IMMEDIATE_COINS,
 } from '@nw/shared';
-import type { CommercialBaseCtor, Constructor, Result } from './base';
+import type { CommercialBaseCtor, Constructor, Result, WalletView } from './base';
+import { walletView } from './base';
 import { effectiveCoins, rechargeChannelOf, spendChannelOf } from '../spendChannel';
 
 export interface SubscriptionHandlers {
@@ -19,18 +20,18 @@ export interface SubscriptionHandlers {
      * pool (should not happen post the receipt-verify gate, but a safe default). */
     rechargePlatform?: string;
     clientPlatform?: string;
-  }): Promise<Result<{ coinsAfter: number; subscriptionExpiry: number }>>;
+  }): Promise<Result<{ coinsAfter: number; subscriptionExpiry: number; wallet: WalletView }>>;
   yearCardBuy(args: {
     accountId: string;
     orderId: string;
     rechargePlatform?: string;
     clientPlatform?: string;
-  }): Promise<Result<{ coinsAfter: number; subscriptionExpiry: number }>>;
+  }): Promise<Result<{ coinsAfter: number; subscriptionExpiry: number; wallet: WalletView }>>;
   monthlyCardClaim(args: {
     accountId: string;
     dayKey: string;
     clientPlatform?: string;
-  }): Promise<Result<{ coinsAfter: number; claimed: number; subscriptionExpiry: number }>>;
+  }): Promise<Result<{ coinsAfter: number; claimed: number; subscriptionExpiry: number; wallet: WalletView }>>;
 }
 
 export function SubscriptionMixin<TBase extends CommercialBaseCtor>(
@@ -43,7 +44,7 @@ export function SubscriptionMixin<TBase extends CommercialBaseCtor>(
       orderId: string;
       rechargePlatform?: string;
       clientPlatform?: string;
-    }): Promise<Result<{ coinsAfter: number; subscriptionExpiry: number }>> {
+    }): Promise<Result<{ coinsAfter: number; subscriptionExpiry: number; wallet: WalletView }>> {
       return this.subscriptionCardBuy({
         accountId: args.accountId,
         orderId: args.orderId,
@@ -60,7 +61,7 @@ export function SubscriptionMixin<TBase extends CommercialBaseCtor>(
       orderId: string;
       rechargePlatform?: string;
       clientPlatform?: string;
-    }): Promise<Result<{ coinsAfter: number; subscriptionExpiry: number }>> {
+    }): Promise<Result<{ coinsAfter: number; subscriptionExpiry: number; wallet: WalletView }>> {
       return this.subscriptionCardBuy({
         accountId: args.accountId,
         orderId: args.orderId,
@@ -81,7 +82,7 @@ export function SubscriptionMixin<TBase extends CommercialBaseCtor>(
       accountId: string;
       dayKey: string;
       clientPlatform?: string;
-    }): Promise<Result<{ coinsAfter: number; claimed: number; subscriptionExpiry: number }>> {
+    }): Promise<Result<{ coinsAfter: number; claimed: number; subscriptionExpiry: number; wallet: WalletView }>> {
       const now = this.now();
       await this.ensureWallet(args.accountId);
       const res = await this.cols.wallets.findOneAndUpdate(
@@ -95,7 +96,13 @@ export function SubscriptionMixin<TBase extends CommercialBaseCtor>(
       const channel = spendChannelOf(args.clientPlatform);
       if (!res) {
         const w = await this.cols.wallets.findOne({ _id: args.accountId });
-        return { ok: true, coinsAfter: effectiveCoins(w, channel), claimed: 0, subscriptionExpiry: w?.subscription?.expiry ?? 0 };
+        return {
+          ok: true,
+          coinsAfter: effectiveCoins(w, channel),
+          claimed: 0,
+          subscriptionExpiry: w?.subscription?.expiry ?? 0,
+          wallet: walletView(w, args.clientPlatform),
+        };
       }
       const coinsAfter = effectiveCoins(res, channel);
       await this.cols.ledger.insertOne({
@@ -105,7 +112,13 @@ export function SubscriptionMixin<TBase extends CommercialBaseCtor>(
         reason: 'monthly_card_daily',
         ts: now,
       });
-      return { ok: true, coinsAfter, claimed: MONTHLY_CARD_DAILY_COINS, subscriptionExpiry: res.subscription?.expiry ?? 0 };
+      return {
+        ok: true,
+        coinsAfter,
+        claimed: MONTHLY_CARD_DAILY_COINS,
+        subscriptionExpiry: res.subscription?.expiry ?? 0,
+        wallet: walletView(res, args.clientPlatform),
+      };
     }
   };
 }

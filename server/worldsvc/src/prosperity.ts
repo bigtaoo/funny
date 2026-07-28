@@ -16,9 +16,22 @@ export function effectiveProsperity(fam: Pick<FamilySummary, 'prosperity' | 'pro
 }
 
 /**
- * Recompute family prosperity via socialsvc (§17.4 explicit refresh point).
  * territory = number of tiles occupied by family members currently joined to this world (via PlayerWorldDoc.familyId,
- * SS7 mirror). member/activity are supplied by socialsvc from its own FamilyDoc. Best-effort: failure returns 0.
+ * SS7 mirror). Local-only (worldsvc's own collections) — no socialsvc round trip.
+ */
+export async function computeTerritoryCount(
+  cols: WorldCollections,
+  worldId: string,
+  familyId: string,
+): Promise<number> {
+  const members = await cols.playerWorld.find({ worldId, familyId }).project({ accountId: 1 }).toArray();
+  const ids = members.map((m) => (m as unknown as { accountId: string }).accountId);
+  return ids.length > 0 ? cols.tiles.countDocuments({ worldId, ownerId: { $in: ids } }) : 0;
+}
+
+/**
+ * Recompute family prosperity via socialsvc (§17.4 explicit refresh point).
+ * member/activity are supplied by socialsvc from its own FamilyDoc. Best-effort: failure returns 0.
  */
 export async function refreshFamilyProsperity(
   cols: WorldCollections,
@@ -26,11 +39,7 @@ export async function refreshFamilyProsperity(
   worldId: string,
   familyId: string,
 ): Promise<number> {
-  const members = await cols.playerWorld.find({ worldId, familyId }).project({ accountId: 1 }).toArray();
-  const ids = members.map((m) => (m as unknown as { accountId: string }).accountId);
-  const territoryCount = ids.length > 0
-    ? await cols.tiles.countDocuments({ worldId, ownerId: { $in: ids } })
-    : 0;
+  const territoryCount = await computeTerritoryCount(cols, worldId, familyId);
   return socialsvc.refreshProsperity(familyId, territoryCount);
 }
 

@@ -94,25 +94,25 @@ export interface CommercialClient {
      * webhook) — tags which recharged bucket funds the immediate coins (ADR-020). */
     rechargePlatform?: string;
     clientPlatform?: string;
-  }): Promise<Body<{ coinsAfter: number; subscriptionExpiry: number }>>;
+  }): Promise<Body<{ coinsAfter: number; subscriptionExpiry: number; wallet?: WalletView }>>;
   yearCardBuy(args: {
     accountId: string;
     orderId: string;
     rechargePlatform?: string;
     clientPlatform?: string;
-  }): Promise<Body<{ coinsAfter: number; subscriptionExpiry: number }>>;
+  }): Promise<Body<{ coinsAfter: number; subscriptionExpiry: number; wallet?: WalletView }>>;
   monthlyCardClaim(args: {
     accountId: string;
     dayKey: string;
     clientPlatform?: string;
-  }): Promise<Body<{ coinsAfter: number; claimed: number; subscriptionExpiry: number }>>;
+  }): Promise<Body<{ coinsAfter: number; claimed: number; subscriptionExpiry: number; wallet?: WalletView }>>;
   starterBuy(args: {
     accountId: string;
     productId: string;
     orderId: string;
     rechargePlatform?: string;
     clientPlatform?: string;
-  }): Promise<Body<{ coinsAfter: number; subscriptionExpiry: number; results: GachaResultEntry[] }>>;
+  }): Promise<Body<{ coinsAfter: number; subscriptionExpiry: number; results: GachaResultEntry[]; wallet?: WalletView }>>;
   spend(args: {
     accountId: string;
     amount: number;
@@ -330,28 +330,28 @@ export class HttpCommercialClient implements CommercialClient {
   }
 
   monthlyCardBuy(args: { accountId: string; orderId: string; rechargePlatform?: string; clientPlatform?: string }) {
-    return this.post<{ coinsAfter: number; subscriptionExpiry: number }>(
+    return this.post<{ coinsAfter: number; subscriptionExpiry: number; wallet?: WalletView }>(
       '/internal/monthly-card/buy',
       args,
     );
   }
 
   yearCardBuy(args: { accountId: string; orderId: string; rechargePlatform?: string; clientPlatform?: string }) {
-    return this.post<{ coinsAfter: number; subscriptionExpiry: number }>(
+    return this.post<{ coinsAfter: number; subscriptionExpiry: number; wallet?: WalletView }>(
       '/internal/year-card/buy',
       args,
     );
   }
 
   monthlyCardClaim(args: { accountId: string; dayKey: string; clientPlatform?: string }) {
-    return this.post<{ coinsAfter: number; claimed: number; subscriptionExpiry: number }>(
+    return this.post<{ coinsAfter: number; claimed: number; subscriptionExpiry: number; wallet?: WalletView }>(
       '/internal/monthly-card/claim',
       args,
     );
   }
 
   starterBuy(args: { accountId: string; productId: string; orderId: string; rechargePlatform?: string; clientPlatform?: string }) {
-    return this.post<{ coinsAfter: number; subscriptionExpiry: number; results: GachaResultEntry[] }>(
+    return this.post<{ coinsAfter: number; subscriptionExpiry: number; results: GachaResultEntry[]; wallet?: WalletView }>(
       '/internal/starter/buy',
       args,
     );
