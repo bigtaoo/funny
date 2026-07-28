@@ -8,7 +8,7 @@ export function registerPaddleEventRoutes(app: FastifyInstance, ctx: InternalCtx
 
   // GET /admin/paddle/events?accountId=&transactionId=&limit= — list logged Paddle events.
   app.get('/admin/paddle/events', async (req, reply) => {
-    if (!authed(req.headers['x-internal-key'])) return reply.code(401).send({ ok: false, error: 'unauthorized' });
+    if (!authed(req.headers)) return reply.code(401).send({ ok: false, error: 'unauthorized' });
     if (!commercial.available) return reply.code(503).send({ ok: false, error: 'commercial unavailable' });
     const q = req.query as Record<string, string | undefined>;
     const events = await commercial.listPaddleEvents({

@@ -12,7 +12,7 @@ export function registerAccountRoutes(app: FastifyInstance, ctx: InternalCtx): v
 
   // ── GET /internal/elo?accountId= ──────────────────────────────────────
   app.get('/internal/elo', async (req, reply) => {
-    if (!authed(req.headers['x-internal-key'])) {
+    if (!authed(req.headers)) {
       return reply.code(401).send({ ok: false, error: 'unauthorized' });
     }
     const accountId = (req.query as { accountId?: string }).accountId;
@@ -27,7 +27,7 @@ export function registerAccountRoutes(app: FastifyInstance, ctx: InternalCtx): v
   // ── GET /internal/profile?accountId= ──────────────────────────────────
   // gateway uses this to display room players by display name (#publicId) instead of accountId. publicId is lazily generated.
   app.get('/internal/profile', async (req, reply) => {
-    if (!authed(req.headers['x-internal-key'])) {
+    if (!authed(req.headers)) {
       return reply.code(401).send({ ok: false, error: 'unauthorized' });
     }
     const accountId = (req.query as { accountId?: string }).accountId;
@@ -40,7 +40,7 @@ export function registerAccountRoutes(app: FastifyInstance, ctx: InternalCtx): v
   // admin backend fuzzy player search (OPS_DESIGN §4.1): a single keyword matches publicId/accountId/loginId/display name,
   // returns the hit list (summary); full details are fetched via /internal/player. q < 2 chars returns empty; limit 1..50.
   app.get('/internal/players/search', async (req, reply) => {
-    if (!authed(req.headers['x-internal-key'])) {
+    if (!authed(req.headers)) {
       return reply.code(401).send({ ok: false, error: 'unauthorized' });
     }
     const q = (req.query as { q?: string }).q;
@@ -53,7 +53,7 @@ export function registerAccountRoutes(app: FastifyInstance, ctx: InternalCtx): v
   // ── GET /internal/player?publicId= | ?accountId= ─────────────────────
   // admin backend player detail (OPS_DESIGN §4.1 player.lookup): reverse-lookup profile summary by 9-digit publicId or accountId.
   app.get('/internal/player', async (req, reply) => {
-    if (!authed(req.headers['x-internal-key'])) {
+    if (!authed(req.headers)) {
       return reply.code(401).send({ ok: false, error: 'unauthorized' });
     }
     const { publicId, accountId: accountIdQ } = req.query as {
@@ -92,7 +92,7 @@ export function registerAccountRoutes(app: FastifyInstance, ctx: InternalCtx): v
   // admin backend anti-cheat review queue (S9-7, ACHIEVEMENT_DESIGN §4.4): lists over-reported records flagged by offline sampling.
   // Default status=open; can be filtered by accountId; limit 1..100.
   app.get('/internal/anticheat/reviews', async (req, reply) => {
-    if (!authed(req.headers['x-internal-key'])) {
+    if (!authed(req.headers)) {
       return reply.code(401).send({ ok: false, error: 'unauthorized' });
     }
     const q = req.query as { accountId?: string; status?: string; limit?: string };
@@ -114,7 +114,7 @@ export function registerAccountRoutes(app: FastifyInstance, ctx: InternalCtx): v
   // Marks a review record resolved. Does NOT itself ban — the caller (admin backend) bans separately via
   // POST /internal/accounts/:id/ban when resolution='banned', so there is exactly one ban code path.
   app.post('/internal/anticheat/reviews/:id/resolve', async (req, reply) => {
-    if (!authed(req.headers['x-internal-key'])) {
+    if (!authed(req.headers)) {
       return reply.code(401).send({ ok: false, error: 'unauthorized' });
     }
     const { id } = req.params as { id: string };
@@ -133,7 +133,7 @@ export function registerAccountRoutes(app: FastifyInstance, ctx: InternalCtx): v
   // ── GET /internal/social/friends?accountId= ──────────────────────────
   // gateway uses this to determine the presence broadcast scope (pushes friend_presence to the user's online friends on connect/disconnect).
   app.get('/internal/social/friends', async (req, reply) => {
-    if (!authed(req.headers['x-internal-key'])) {
+    if (!authed(req.headers)) {
       return reply.code(401).send({ ok: false, error: 'unauthorized' });
     }
     const accountId = (req.query as { accountId?: string }).accountId;
@@ -147,7 +147,7 @@ export function registerAccountRoutes(app: FastifyInstance, ctx: InternalCtx): v
 
   // GET /internal/account/by-public-id/:publicId → { accountId, profile }
   app.get('/internal/account/by-public-id/:publicId', async (req, reply) => {
-    if (!authed(req.headers['x-internal-key'])) {
+    if (!authed(req.headers)) {
       return reply.code(401).send({ ok: false, error: 'unauthorized' });
     }
     const { publicId } = req.params as { publicId: string };
@@ -159,7 +159,7 @@ export function registerAccountRoutes(app: FastifyInstance, ctx: InternalCtx): v
 
   // POST /internal/account/batch-profiles → { profiles: { [accountId]: ProfileView } }
   app.post('/internal/account/batch-profiles', async (req, reply) => {
-    if (!authed(req.headers['x-internal-key'])) {
+    if (!authed(req.headers)) {
       return reply.code(401).send({ ok: false, error: 'unauthorized' });
     }
     const { accountIds } = req.body as { accountIds?: unknown };
@@ -176,7 +176,7 @@ export function registerAccountRoutes(app: FastifyInstance, ctx: InternalCtx): v
   // ── GET /internal/suspicious-pve (C4) ─────────────────────────────────────────
   // Returns the list of accounts with pveWarnings > 0 (for admin manual review).
   app.get('/internal/suspicious-pve', async (req, reply) => {
-    if (!authed(req.headers['x-internal-key'])) {
+    if (!authed(req.headers)) {
       return reply.code(401).send({ ok: false, error: 'unauthorized' });
     }
     const accounts = await cols.accounts
@@ -191,7 +191,7 @@ export function registerAccountRoutes(app: FastifyInstance, ctx: InternalCtx): v
   // ── POST /internal/accounts/:id/ban (S4-4) ─────────────────────────────────────
   // Admin manual ban: sets accounts.flags.banned = true. Idempotent.
   app.post('/internal/accounts/:id/ban', async (req, reply) => {
-    if (!authed(req.headers['x-internal-key'])) {
+    if (!authed(req.headers)) {
       return reply.code(401).send({ ok: false, error: 'unauthorized' });
     }
     const { id } = req.params as { id: string };
@@ -205,7 +205,7 @@ export function registerAccountRoutes(app: FastifyInstance, ctx: InternalCtx): v
   // ── POST /internal/accounts/:id/unban (S4-4) ───────────────────────────────────
   // Admin unban: clears accounts.flags.banned + antiCheat.pveBanned (removes save-layer ban). Idempotent.
   app.post('/internal/accounts/:id/unban', async (req, reply) => {
-    if (!authed(req.headers['x-internal-key'])) {
+    if (!authed(req.headers)) {
       return reply.code(401).send({ ok: false, error: 'unauthorized' });
     }
     const { id } = req.params as { id: string };
@@ -224,7 +224,7 @@ export function registerAccountRoutes(app: FastifyInstance, ctx: InternalCtx): v
   // Only rewrites the hash of an *existing* password credential; does not create one, since accounts
   // without password.loginId (anonymous/wechat-only) have no username to log back in with anyway.
   app.post('/internal/accounts/:id/reset-password', async (req, reply) => {
-    if (!authed(req.headers['x-internal-key'])) {
+    if (!authed(req.headers)) {
       return reply.code(401).send({ ok: false, error: 'unauthorized' });
     }
     const { id } = req.params as { id: string };

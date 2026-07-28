@@ -76,7 +76,7 @@ export function registerMatchReportRoutes(app: FastifyInstance, ctx: InternalCtx
 
   // ── POST /internal/match/report ───────────────────────────────────────
   app.post('/internal/match/report', async (req, reply) => {
-    if (!authed(req.headers['x-internal-key'])) {
+    if (!authed(req.headers)) {
       return reply.code(401).send({ ok: false, error: 'unauthorized' });
     }
     const body = req.body as ReportBody;
@@ -288,7 +288,7 @@ export function registerMatchReportRoutes(app: FastifyInstance, ctx: InternalCtx
   // ── GET /internal/mismatches (C3) ─────────────────────────────────────────
   // Returns the list of matches with hashMismatch=true within the last 24h (admin call).
   app.get('/internal/mismatches', async (req, reply) => {
-    if (!authed(req.headers['x-internal-key'])) {
+    if (!authed(req.headers)) {
       return reply.code(401).send({ ok: false, error: 'unauthorized' });
     }
     const since = now() - 24 * 3600 * 1000;
@@ -304,7 +304,7 @@ export function registerMatchReportRoutes(app: FastifyInstance, ctx: InternalCtx
   // ── GET /internal/pvp-card-stats (BALANCE P1) ──────────────────────────────
   // Aggregates pvpCardStats across days into per-card totals (optionally filtered by mode/since); admin call.
   app.get('/internal/pvp-card-stats', async (req, reply) => {
-    if (!authed(req.headers['x-internal-key'])) {
+    if (!authed(req.headers)) {
       return reply.code(401).send({ ok: false, error: 'unauthorized' });
     }
     const query = req.query as { mode?: string; since?: string };

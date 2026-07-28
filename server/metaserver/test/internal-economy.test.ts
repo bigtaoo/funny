@@ -36,7 +36,7 @@ function build(seedSaves: SaveDocRow[] = [], seedCards: CardInstanceRow[] = []) 
     gateway: fakeGateway(),
     commercial: fakeCommercial(),
     socialsvc: new ThrowingSocialsvc(),
-    authed: (key) => key === KEY,
+    authed: (headers) => headers['x-internal-key'] === KEY,
   };
   const app = Fastify();
   registerEconomyRoutes(app, ctx);

@@ -2,7 +2,7 @@
 // meta internal HTTP (/internal/materials/* · /internal/profile), authenticated with X-Internal-Key.
 // NW_META_INTERNAL_URL not configured → available=false → material grants + owner display names unavailable.
 
-import { fetchInternalJson, type GearLoadout, type EquipmentInstance, type CardInstance } from '@nw/shared';
+import { fetchInternalJson, type EquipmentInstance, type CardInstance } from '@nw/shared';
 
 export interface PlayerProfile {
   publicId?: string;
@@ -11,11 +11,21 @@ export interface PlayerProfile {
   equippedTitle?: string;
 }
 
-/** Attacker progression snapshot required for authoritative siege engine calculation (E8 + CC-3, /internal/save-fields). */
+/**
+ * Attacker progression snapshot required for authoritative siege engine calculation (E8 + CC-3, /internal/save-fields).
+ *
+ * `unitLevels`/`gear` were removed here (comm-audit-internal-2026-07-28): they had drifted from what
+ * meta's /internal/save-fields actually returns (`{pveUpgrades, cardInv, equipmentInv}` —
+ * metaserver/src/internal/economyRoutes.ts) — this interface still declared them as required, silently
+ * `undefined` at runtime (the `fetchInternalJson<SaveFields>` generic trusted the declared shape with
+ * no runtime validation). Harmless in practice because worldsvc's own
+ * `runSiegeBattle` (siegeEngine.ts) never reads its deprecated `unitLevels`/`equipment` parameters
+ * either (CC-3 replaced them with cardInstances+equipmentInv) — but the dead declaration + silent cast
+ * made that non-obvious. `pveUpgrades` stays: meta genuinely returns it on the wire (it's just that
+ * runSiegeBattle's `pveUpgrades` param is separately deprecated/unread).
+ */
 export interface SaveFields {
   pveUpgrades: Record<string, number>;
-  unitLevels: Record<string, number>;
-  gear: GearLoadout;
   equipmentInv: Record<string, EquipmentInstance>;
   /** CC-3: card instance inventory for unit-type + equipment resolution at siege time. */
   cardInv: Record<string, CardInstance>;

@@ -20,7 +20,7 @@ function build(commercialAvailable = true) {
     gateway: fakeGateway(),
     commercial,
     socialsvc: new ThrowingSocialsvc(),
-    authed: (key) => key === KEY,
+    authed: (headers) => headers['x-internal-key'] === KEY,
   };
   const app = Fastify();
   registerPromoGachaRoutes(app, ctx);

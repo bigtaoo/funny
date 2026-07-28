@@ -12,7 +12,7 @@ export interface InternalCtx {
   commercial: CommercialClient;
   socialsvc: MetaSocialsvcClient;
   /** Verifies X-Internal-Key (timing-safe, strict per-caller + legacy shared-key fallback). */
-  authed: (key: unknown) => boolean;
+  authed: (headers: Record<string, string | string[] | undefined>) => boolean;
   /** Active-match Redis client (login-reconnect-prompt); null = feature disabled (nothing to clear). */
   redis: RedisLike | null;
   /** Ban-status / publicId reverse-lookup cache (2026-07-27, accountCache.ts), shared with MetaService. */

@@ -25,7 +25,7 @@ function build(seedAccounts: AccountDoc[] = []) {
     gateway,
     commercial: fakeCommercial(),
     socialsvc,
-    authed: (key) => key === KEY,
+    authed: (headers) => headers['x-internal-key'] === KEY,
     redis: null,
     accountCache: new AccountCache(),
   };

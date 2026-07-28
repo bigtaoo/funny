@@ -42,7 +42,7 @@ function build(opts: { saves?: SaveDocRow[]; accounts?: AccountDoc[]; season?: L
     gateway: fakeGateway(),
     commercial,
     socialsvc,
-    authed: (key) => key === KEY,
+    authed: (headers) => headers['x-internal-key'] === KEY,
   };
   const app = Fastify();
   registerLadderRoutes(app, ctx);

@@ -15,7 +15,7 @@ export function registerLadderRoutes(app: FastifyInstance, ctx: InternalCtx): vo
   // Before rolling, eagerly settles all participants from the previous season (rank reward mail + season title + snapshot, idempotent).
   // CAS idempotent: concurrent or accidental re-entry returns the current season without advancing again.
   app.post('/admin/ladder/season/roll', async (req, reply) => {
-    if (!authed(req.headers['x-internal-key'])) {
+    if (!authed(req.headers)) {
       return reply.code(401).send({ ok: false, error: 'unauthorized' });
     }
     try {
@@ -31,7 +31,7 @@ export function registerLadderRoutes(app: FastifyInstance, ctx: InternalCtx): vo
   // ── GET /internal/ladder/season/current ──────────────────────────────────────────
   // ops backend fetches current ladder season info (used to highlight when endAt is approaching).
   app.get('/internal/ladder/season/current', async (req, reply) => {
-    if (!authed(req.headers['x-internal-key'])) {
+    if (!authed(req.headers)) {
       return reply.code(401).send({ ok: false, error: 'unauthorized' });
     }
     const season = await getCurrentSeason(cols, now());
@@ -41,7 +41,7 @@ export function registerLadderRoutes(app: FastifyInstance, ctx: InternalCtx): vo
   // POST /internal/title/grant  { accountId, titleId }
   //   → Grant title (idempotent, called from SLG/worldsvc season settlement). Authenticated via X-Internal-Key.
   app.post('/internal/title/grant', async (req, reply) => {
-    if (!authed(req.headers['x-internal-key'])) return reply.code(401).send({ ok: false, error: 'unauthorized' });
+    if (!authed(req.headers)) return reply.code(401).send({ ok: false, error: 'unauthorized' });
     const { accountId, titleId } = req.body as { accountId?: string; titleId?: string };
     if (!accountId || !titleId) {
       return reply.code(400).send({ ok: false, error: 'accountId + titleId required' });
