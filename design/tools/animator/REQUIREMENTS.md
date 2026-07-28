@@ -281,10 +281,12 @@ sprite.scale    = keyframe.scaleX × binding.scaleX
 
 | 操作 | 文件 | 说明 |
 |---|---|---|
-| Export .tao | `.tao` | 游戏引擎用：动画 JSON + spritesheet；File System Access API 保存 |
-| Save .tao.editor | `.tao.editor` | 编辑器存档：保留原始图片 + 完整编辑状态；随时加载继续编辑 |
-| Import .tao | `.tao` | 恢复游戏导出包（从 spritesheet 抠图还原各骨骼 Blob） |
-| Load .tao.editor | `.tao.editor` | 恢复完整编辑会话（图片 + 动画 + 绑定 + 骨骼长度） |
+| Export .tao | `.tao` | 游戏引擎用：动画 JSON + spritesheet；写到已加载 `.tao.editor` 的同目录（桌面壳直接写；浏览器复用本次会话记住的保存 handle），不重复弹框 |
+| Save .tao.editor | `.tao.editor` | 编辑器存档：保留原始图片 + 完整编辑状态；直接覆盖已加载的文件，不重复弹框 |
+| Load .tao.editor | `.tao.editor` | 恢复完整编辑会话（图片 + 动画 + 绑定 + 骨骼长度）；只在此处弹一次文件选择框，记住的路径/handle 供之后的 Save/Export 复用 |
+| 另存为 | `.tao.editor` | 存一份新文件（弹一次保存框），之后的 Save/Export 目标切到这份新文件（同 Word/Photoshop 惯例） |
+
+**2026-07-28**：`Import .tao` 按钮已移除（实际没人用——项目内没有只有 `.tao` 没有 `.tao.editor` 的场景），换成"另存为"。Save/Export 从"每次都弹原生/浏览器保存框选路径"改成"记住 Load 时的文件身份，直接覆盖/派生同目录路径"，桌面壳（`tools/desktop-shell`）内用原生 IPC 落盘（`window.nwDesktop.fs.*`），脱离壳单独跑时退回浏览器 File System Access API（`showOpenFilePicker`/`showSaveFilePicker`，记住 handle 复用；Export 因浏览器 API 拿不到目录，首次仍需弹一次框）。见 [`design/tools/desktop-shell/DESIGN.md`](../desktop-shell/DESIGN.md) §3/§8。
 
 ---
 

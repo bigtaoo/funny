@@ -2,6 +2,7 @@ import { app, BrowserWindow, BrowserView, ipcMain, Menu, MenuItemConstructorOpti
 import * as path from 'path';
 import { TOOLS, DEFAULT_TOOL_ID, ToolConfig, resolveToolUrl } from './tools';
 import { registerGitSyncHandlers } from './gitSync';
+import { registerFsHandlers } from './fsBridge';
 import { initUpdateNotifier, showUpdateNotice } from './updateNotifier';
 import { initAppUpdater } from './appUpdater';
 import * as contentUpdatePoller from './contentUpdatePoller';
@@ -109,6 +110,7 @@ ipcMain.on('nw:save-ack', () => {
 });
 
 registerGitSyncHandlers();
+registerFsHandlers(() => mainWindow);
 
 app.whenReady().then(() => {
   createWindow();

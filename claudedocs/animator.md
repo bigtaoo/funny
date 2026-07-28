@@ -19,7 +19,7 @@ cd tools/animator && npm run start   # 端口 9091
 - **11 根固定骨骼**：root → spine → head / 4 臂 / 4 腿
 - **FK**：`Skeleton.computeFK(rootX, rootY, transforms, lengthScales?)` 纯函数；hit-test 须传 `state.boneLengthScales`
 - **关键帧插值**：`sampleClip(clip, t)` 无外部依赖，可复制到游戏引擎
-- **导出格式**：`.tao`（JSZip + spritesheet.png + animation.json v2）；`.tao.editor`（保留原始图 + 编辑状态）
+- **导出格式**：`.tao`（JSZip + spritesheet.png + animation.json v2）；`.tao.editor`（保留原始图 + 编辑状态）。Load 记住文件身份（桌面壳路径 / 浏览器 File System Access handle），Save 直接覆盖、Export 直接落到同目录，都不重复弹框；"导入 .tao" 已移除，换成"另存为"（存一份新 `.tao.editor` 并把之后的 Save/Export 目标切过去）
 - **多工程自动保存**：IndexedDB 库 `nw-animator`（`meta`+`blobs` 两 store），脏事件停手 1.5s debounce 静默存当前工程，启动恢复上次工程；底部栏工程下拉 + 增删改复制 + 状态点。编排见 `AutoSaveController`，存储见 `ProjectStore`，UI 见 `ProjectPanel`（设计 §11）。**注意**：浏览器本地存储，换浏览器/清缓存即失；重要成果仍需 `Save .editor` 导磁盘。`Load .editor` 会覆盖当前选中工程
 - **骨骼长度**：`AppState.boneLengthScales`（稀疏 Map）序列化进两种格式
 - **编辑器模式**：`'skin'`（静息姿调 Binding）/ `'animate'`（关键帧编辑）；快捷键 `S`
@@ -54,7 +54,7 @@ cd tools/animator && npm run start   # 端口 9091
 | `src/animation/AnimationController.ts` | clip CRUD + 播放 + 关键帧操作 |
 | `src/animation/interpolate.ts` | `sampleClip` 插值（无依赖，游戏侧共享） |
 | `src/images/ImageController.ts` | 逐张 PNG 导入、Blob + PIXI.Texture 管理 |
-| `src/io/IOController.ts` | `.tao` 导出 / 导入；`.tao.editor` 存档（`buildEditorBlob`/`loadEditorBlob` 复用） |
+| `src/io/IOController.ts` | `.tao` 导出；`.tao.editor` 存档（`buildEditorBlob`/`loadEditorBlob` 复用）；桌面壳 `window.nwDesktop.fs` / 浏览器 File System Access API 双路径 |
 | `src/io/ProjectStore.ts` | IndexedDB 工程库（`meta`+`blobs` 两 store） |
 | `src/io/AutoSaveController.ts` | 多工程自动保存 + 切换 + 启动恢复 |
 | `src/ui/ProjectPanel.ts` | 底部栏工程下拉 + 增删改复制 + 自动保存状态点 |
