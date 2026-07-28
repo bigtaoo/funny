@@ -86,6 +86,9 @@ export function startInternalHttp(
           case '/mm/room/ready':
             svc.roomReady(str(b.accountId), Boolean(b.ready));
             break;
+          case '/mm/room/start':
+            svc.roomStart(str(b.accountId));
+            break;
           case '/mm/room/leave':
             svc.roomLeave(str(b.accountId));
             break;
