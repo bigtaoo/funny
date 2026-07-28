@@ -135,12 +135,15 @@ export interface Rect { x: number; y: number; w: number; h: number; }
 
 /**
  * A single on-card action button (Enhance / Equip / Unequip / Reforge / Salvage / Salvage All).
- * Only *available* actions are emitted — unavailable ones are omitted entirely rather than shown
- * disabled (the detail modal used to grey them out; per the 2026-07-22 pass they now live on the
- * grid cell and hidden = unavailable). `fn` fires the action directly (equip / confirm dialog /
- * material picker), bypassing the info modal — except Enhance, whose `fn` opens that modal instead
- * (it needs the modal's protect-stone toggle before it can commit, 2026-07-22b). See
- * DetailMixin.instanceActions.
+ * Only *available* actions are emitted — unavailable ones (unaffordable enhance, reforge without a
+ * matching material, salvage on an equipped/locked piece, …) are omitted entirely rather than shown
+ * disabled, so the grid cell hides them rather than greying them out. A momentarily-busy action
+ * (another action already in flight) is the one exception — it stays in the list with `disabled:
+ * true` instead of being omitted (2026-07-28 fix: omitting it shrank the button band and resized
+ * every cell's icon frame for the whole grid while any single action was in flight, reading as the
+ * grid getting "stretched"). `fn` fires the action directly (equip / confirm dialog / material
+ * picker), bypassing the info modal — except Enhance, whose `fn` opens that modal instead (it needs
+ * the modal's protect-stone toggle before it can commit, 2026-07-22b). See DetailMixin.instanceActions.
  */
 export interface CellAction {
   key: string;
@@ -148,6 +151,7 @@ export interface CellAction {
   icon: IconKind;
   fill: number;
   stroke: number;
+  disabled?: boolean;
   fn: () => void;
 }
 
@@ -186,6 +190,9 @@ export class EquipmentSceneBase {
   /** Title-bar height, set from the shared header in build() — drives all body layout below it. */
   protected headerH = 0;
   protected bodyLayer!: PIXI.Container;
+  /** Coin/materials readout band — kept out of bodyLayer so an enhance/craft round-trip can refresh
+   *  spent materials via refreshChromeAndModal() without tearing down (and relayout-ing) the grid. */
+  protected materialsLayer!: PIXI.Container;
   protected modalLayer!: PIXI.Container;
   protected loadingLayer!: PIXI.Container;
   /** Drawn *after* the static header chrome so the coin/material readout sits on top of the header bar (same row as the title), not in a separate band below it. */
@@ -231,7 +238,9 @@ export class EquipmentSceneBase {
   private flipStars: { obj: PIXI.DisplayObject; phase: number }[] = [];
   private flipT = 0;
 
-  protected hitRects: { rect: Rect; action: () => void }[] = [];
+  /** owner (instance id) tags a grid-cell button/body hit so refreshInstanceCell() can drop and
+   *  re-add just that cell's hits without touching the rest of the list — see InventoryMixin. */
+  protected hitRects: { rect: Rect; action: () => void; owner?: string }[] = [];
   protected modalHits: { rect: Rect; action: () => void }[] = [];
   protected modalOpen = false;
   /**
@@ -283,6 +292,8 @@ export class EquipmentSceneBase {
 
     this.bodyLayer = new PIXI.Container();
     this.container.addChild(this.bodyLayer);
+    this.materialsLayer = new PIXI.Container();
+    this.container.addChild(this.materialsLayer);
     this.modalLayer = new PIXI.Container();
     this.container.addChild(this.modalLayer);
     this.loadingLayer = new PIXI.Container();
@@ -313,6 +324,10 @@ export class EquipmentSceneBase {
     this.renderHeaderCurrency();
     this.renderSidebar();
     if (this.assign) {
+      // The card picker replaces the header row entirely — hide the materials band left over from
+      // whatever tab was showing before assign mode started (renderHeaderRow/renderMaterialsBand
+      // aren't called on this path).
+      tearDownChildren(this.materialsLayer);
       this.renderAssign(this.cb.getSave());
       if (this.bt.loadingVisible) drawLoadingOverlay(this.loadingLayer, this.w, this.h, this.bt.dots, t('common.processing'));
       return;
@@ -326,6 +341,24 @@ export class EquipmentSceneBase {
     if (this.detailId) this.openDetail(this.detailId);
     else if (this.modalOpen) this.closeModal();
 
+    if (this.bt.loadingVisible) drawLoadingOverlay(this.loadingLayer, this.w, this.h, this.bt.dots, t('common.processing'));
+  }
+
+  /**
+   * Cheap alternative to a full render() for actions that spend materials/coins and toggle busy
+   * state but don't change the grid's layout (see DetailMixin.doEnhance): refreshes the header coin
+   * readout, the materials band, the open detail modal (busy/cost/rate all read from it) and the
+   * loading overlay — everything except the sidebar and the item grid.
+   */
+  protected refreshChromeAndModal(): void {
+    if (this.destroyed) return;
+    this.renderHeaderCurrency();
+    const { w, h, landscape } = this;
+    const leftW = sidebarNavW(w, h, landscape);
+    this.renderMaterialsBand(leftW, this.headerH, w - leftW);
+    tearDownChildren(this.loadingLayer);
+    if (this.detailId) this.openDetail(this.detailId);
+    else if (this.modalOpen) this.closeModal();
     if (this.bt.loadingVisible) drawLoadingOverlay(this.loadingLayer, this.w, this.h, this.bt.dots, t('common.processing'));
   }
 
@@ -360,10 +393,11 @@ export class EquipmentSceneBase {
    * renderHeaderCurrency) so the labels no longer collide with the title on the narrow portrait bar.
    */
   protected renderMaterialsBand(x: number, y: number, w: number): void {
+    tearDownChildren(this.materialsLayer);
     const save = this.cb.getSave();
     const bg = new PIXI.Graphics();
     bg.beginFill(0xf3f1ea).drawRect(x, y, w, MAT_BAND_H).endFill();
-    this.bodyLayer.addChild(bg);
+    this.materialsLayer.addChild(bg);
 
     const midY = y + MAT_BAND_H / 2;
     const iconSize = Math.round(MAT_BAND_H * 0.44);
@@ -373,10 +407,10 @@ export class EquipmentSceneBase {
       const cx = x + i * slotW + Math.round(slotW * 0.1);
       const ic = buildMaterialIcon(m as MaterialKind, iconSize, MAT_COLOR[m] ?? C.mid);
       ic.x = cx; ic.y = midY - iconSize / 2;
-      this.bodyLayer.addChild(ic);
+      this.materialsLayer.addChild(ic);
       const lbl = txt(`${t(`material.${m}` as TranslationKey)} ${save.materials[m] ?? 0}`, fontSize, C.dark);
       lbl.anchor.set(0, 0.5); lbl.x = cx + iconSize + 6; lbl.y = midY;
-      this.bodyLayer.addChild(lbl);
+      this.materialsLayer.addChild(lbl);
     });
   }
 
@@ -677,6 +711,12 @@ export interface EquipmentSceneBase {
   renderSidebar(): void;
   renderInventory(bodyTop: number): void;
   renderSlotFilter(x: number, y: number, w: number): void;
+  /**
+   * Redraw a single grid cell in place instead of a full renderInventory relayout — see
+   * InventoryMixin. Returns false (caller should fall back to render()) when the cell isn't
+   * currently tracked, or the sort/grouping may have changed since the last full render.
+   */
+  refreshInstanceCell(instanceId: string): boolean;
   renderCraft(bodyTop: number): void;
   renderAssign(save: SaveData): void;
   cancelAssign(): void;

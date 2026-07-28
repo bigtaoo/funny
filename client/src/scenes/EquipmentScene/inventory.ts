@@ -2,7 +2,7 @@
 // (three equip slots for the active card), and the item grid (icon-card cells, stacked by defId+rarity).
 import * as PIXI from 'pixi.js-legacy';
 import { t, type TranslationKey } from '../../i18n';
-import { ui as C, txt, sketchPanel, seedFor, marginLineX } from '../../render/sketchUi';
+import { ui as C, txt, sketchPanel, seedFor, marginLineX, tearDownChildren } from '../../render/sketchUi';
 import { FS } from '../../render/fontScale';
 import { drawSidebarTabs, sidebarNavW, type HubTab } from '../../ui/widgets/HubTabs';
 import { drawScrollIndicator } from '../../ui/widgets/ScrollIndicator';
@@ -40,6 +40,92 @@ export function InventoryMixin<TBase extends EquipmentSceneBaseCtor>(Base: TBase
     private get collapsedSections(): Set<SectionKey> {
       return (this._collapsedSections ??= new Set<SectionKey>());
     }
+
+    /**
+     * Per-instance cell container + on-screen rect from the last renderInventory layout pass —
+     * lets refreshInstanceCell() redraw a single cell in place instead of a full relayout. Only
+     * populated for on-screen, non-header rows; cleared and rebuilt on every full renderInventory.
+     *
+     * Declared with NO initializer (unlike a plain `= new Map()`) for the same reason as
+     * `_collapsedSections` above: the base class constructor calls render() — which assigns these
+     * via renderInventory() — before this mixin's own field initializers run; a `= new Map()` here
+     * would still execute right after `super()` and clobber that first render's population with an
+     * empty map. renderInventory() always assigns a fresh value before anything reads these, so
+     * there's no window where they're read while genuinely unset.
+     */
+    private cellContainers!: Map<string, PIXI.Container>;
+    private cellRects!: Map<string, { x: number; y: number; w: number }>;
+    /**
+     * Ordered signature (header/item keys + stack counts) of the last renderInventory's display
+     * entries. refreshInstanceCell() recomputes this fresh and compares — a mismatch means an
+     * enhance's level-up reshuffled the stack grouping or the level-desc sort order, so the cached
+     * cell rects are no longer trustworthy and it must fall back to a full render().
+     */
+    private lastEntrySig!: string[];
+
+    /** Filter + sort pass shared by renderInventory and refreshInstanceCell (kept identical so a
+     *  fast-path signature comparison is meaningful). */
+    private sortedInstances(save: SaveData): EquipmentInstance[] {
+      const allInstances = Object.values(save.equipmentInv);
+      const instances = this.filterSlot === 'all'
+        ? allInstances
+        : allInstances.filter(x => getEquipDef(x.defId)?.slot === this.filterSlot);
+      const rarOrder: EquipRarity[] = ['epic', 'rare', 'fine', 'common'];
+      const equippedIds = this.equippedIds(save);
+      instances.sort((a, b) => {
+        const ea = equippedIds.has(a.id) ? 0 : 1;
+        const eb = equippedIds.has(b.id) ? 0 : 1;
+        if (ea !== eb) return ea - eb;
+        const ra = rarOrder.indexOf(a.rarity) - rarOrder.indexOf(b.rarity);
+        if (ra !== 0) return ra;
+        if (b.level !== a.level) return b.level - a.level;
+        return a.id < b.id ? -1 : 1;
+      });
+      return instances;
+    }
+
+    private entrySignature(entries: DisplayEntry[]): string[] {
+      return entries.map(e => (e.kind === 'header' ? `h:${e.key}` : `i:${e.inst.id}:${e.count}`));
+    }
+
+    /**
+     * Redraw one grid cell in place (level/affix/action changes only) after an enhance whose level
+     * change doesn't reorder or regroup the list, instead of a full renderInventory relayout — see
+     * DetailMixin.doEnhance. Returns false (caller falls back to render()) when the cell isn't
+     * on-screen/tracked, the entries signature changed since the last full render (stack split or a
+     * level-desc reorder within the same rarity group), or the instance is also mirrored in the
+     * loadout strip above (equipped gear needs that refreshed too).
+     */
+    refreshInstanceCell(instanceId: string): boolean {
+      if (this.activeTab !== 'inv' || this.assign) return false;
+      const container = this.cellContainers.get(instanceId);
+      const rect = this.cellRects.get(instanceId);
+      if (!container || container.destroyed || !rect) return false;
+
+      const save = this.cb.getSave();
+      const inst = save.equipmentInv[instanceId];
+      if (!inst) return false;
+      const equippedIds = this.equippedIds(save);
+      if (equippedIds.has(instanceId)) return false;
+
+      const entries = this.buildDisplayEntries(this.sortedInstances(save), equippedIds);
+      const sig = this.entrySignature(entries);
+      if (sig.length !== this.lastEntrySig.length || sig.some((s, i) => s !== this.lastEntrySig[i])) return false;
+      const entry = entries.find(
+        (e): e is Extract<DisplayEntry, { kind: 'item' }> => e.kind === 'item' && e.inst.id === instanceId,
+      );
+      if (!entry) return false;
+
+      tearDownChildren(container);
+      this.hitRects = this.hitRects.filter((h) => h.owner !== instanceId);
+      const outerLayer = this.bodyLayer;
+      this.bodyLayer = container;
+      this.renderInstanceCell(inst, rect.x, rect.y, rect.w, entry.isEquipped, entry.count);
+      this.bodyLayer = outerLayer;
+      this.lastEntrySig = sig;
+      return true;
+    }
+
     /**
      * Left sidebar rail, stacked inside the notebook-margin gutter (`marginLineX`) below the
      * header: the progression group nav [<peer>|Equipment] (LOBBY_IA_REDESIGN P1.5, only when
@@ -101,33 +187,24 @@ export function InventoryMixin<TBase extends EquipmentSceneBaseCtor>(Base: TBase
       if (!this.bag) { this.renderLoadout(save, bodyTop, left); listY = bodyTop + LOADOUT_H; }
       const availH = h - listY - 8;
 
-      const allInstances = Object.values(save.equipmentInv);
-      const instances = this.filterSlot === 'all'
-        ? allInstances
-        : allInstances.filter(x => getEquipDef(x.defId)?.slot === this.filterSlot);
+      const instances = this.sortedInstances(save);
 
       if (instances.length === 0) {
         const lbl = txt(t('equip.invEmpty'), FS.heading, C.mid);
         lbl.anchor.set(0.5, 0.5); lbl.x = w / 2; lbl.y = listY + availH / 2;
         this.bodyLayer.addChild(lbl);
         this.maxScroll = 0;
+        this.lastEntrySig = [];
+        this.cellContainers = new Map();
+        this.cellRects = new Map();
         return;
       }
 
-      // Sort: equipped first, then rarity desc, then level desc — stable, deterministic.
-      const rarOrder: EquipRarity[] = ['epic', 'rare', 'fine', 'common'];
+      // Sort: equipped first, then rarity desc, then level desc — stable, deterministic (see
+      // sortedInstances()).
       const equippedIds = this.equippedIds(save);
-      instances.sort((a, b) => {
-        const ea = equippedIds.has(a.id) ? 0 : 1;
-        const eb = equippedIds.has(b.id) ? 0 : 1;
-        if (ea !== eb) return ea - eb;
-        const ra = rarOrder.indexOf(a.rarity) - rarOrder.indexOf(b.rarity);
-        if (ra !== 0) return ra;
-        if (b.level !== a.level) return b.level - a.level;
-        return a.id < b.id ? -1 : 1;
-      });
-
       const entries = this.buildDisplayEntries(instances, equippedIds);
+      this.lastEntrySig = this.entrySignature(entries);
       // Item cells start right of the sidebar rail; right pad stays one CELL_GAP.
       const gridLeft = left + CELL_GAP;
       const avail = w - gridLeft - CELL_GAP;
@@ -182,14 +259,24 @@ export function InventoryMixin<TBase extends EquipmentSceneBaseCtor>(Base: TBase
       clip.beginFill(0xffffff).drawRect(0, listY, w, listH).endFill();
       this.bodyLayer.addChild(clip);
       gridLayer.mask = clip;
+      this.cellContainers = new Map();
+      this.cellRects = new Map();
       const outerLayer = this.bodyLayer;
       this.bodyLayer = gridLayer;
       for (const p of placed) {
         const y = listY + p.off - this.scrollY;
         const eh = p.kind === 'header' ? SECTION_H : EQUIP_CELL_H;
         if (y + eh < listY || y > listY + listH) continue;
-        if (p.kind === 'header') this.renderSectionHeader(p.label, p.key, y);
-        else this.renderInstanceCell(p.inst, p.x, y, cellW, p.isEquipped, p.count);
+        if (p.kind === 'header') { this.renderSectionHeader(p.label, p.key, y); continue; }
+        // Each item cell gets its own container (rather than drawing loose into gridLayer) so
+        // refreshInstanceCell() can tear down and redraw just this one cell in place later.
+        const cellC = new PIXI.Container();
+        gridLayer.addChild(cellC);
+        this.cellContainers.set(p.inst.id, cellC);
+        this.cellRects.set(p.inst.id, { x: p.x, y, w: cellW });
+        this.bodyLayer = cellC;
+        this.renderInstanceCell(p.inst, p.x, y, cellW, p.isEquipped, p.count);
+        this.bodyLayer = gridLayer;
       }
       this.bodyLayer = outerLayer;
 
@@ -443,9 +530,10 @@ export function InventoryMixin<TBase extends EquipmentSceneBaseCtor>(Base: TBase
 
       // Action buttons along the bottom of the cell, spanning its full width. Each is an icon-forward
       // button (glyph on top, small label under it) so every operation is a tap away on this one
-      // screen — no need to open the item first. Only available actions are drawn (hidden =
-      // unavailable). Pushed to hitRects *before* the full-cell rect below so a button tap wins over
-      // the card-body detail tap.
+      // screen — no need to open the item first. Only truly-unavailable actions are omitted (hidden);
+      // a momentarily-busy one stays put but greyed (see CellAction.disabled) so the button band
+      // never changes height while a request is in flight. Pushed to hitRects *before* the full-cell
+      // rect below so a button tap wins over the card-body detail tap.
       if (actions.length > 0) {
         const n = actions.length;
         const bgap = 5;
@@ -453,12 +541,14 @@ export function InventoryMixin<TBase extends EquipmentSceneBaseCtor>(Base: TBase
         const bw = (cellW - pad * 2 - bgap * (n - 1)) / n;
         actions.forEach((a, i) => {
           const bx = x + pad + i * (bw + bgap);
-          const g = sketchPanel(bw, btnBandH, { fill: a.fill, border: a.stroke, seed: seedFor(bx, by, bw) });
+          const fill = a.disabled ? C.btnOff : a.fill;
+          const stroke = a.disabled ? C.mid : a.stroke;
+          const g = sketchPanel(bw, btnBandH, { fill, border: stroke, seed: seedFor(bx, by, bw) });
           g.x = bx; g.y = by;
           this.bodyLayer.addChild(g);
-          // Light ink on the dark/blue fills, dark on the pale (salvage/unequip) fills.
-          const onDark = a.fill === C.dark || a.fill === 0x3355aa;
-          const inkColor = onDark ? C.light : C.dark;
+          // Light ink on the dark/blue fills, dark on the pale (salvage/unequip) fills; muted grey once disabled.
+          const onDark = !a.disabled && (a.fill === C.dark || a.fill === 0x3355aa);
+          const inkColor = a.disabled ? C.mid : (onDark ? C.light : C.dark);
           const iconSz = 20;
           const ic = buildIcon(a.icon, iconSz, inkColor);
           ic.x = bx + bw / 2 - iconSz / 2; ic.y = by + 5;
@@ -467,12 +557,12 @@ export function InventoryMixin<TBase extends EquipmentSceneBaseCtor>(Base: TBase
           lbl.anchor.set(0.5, 0.5); lbl.x = bx + bw / 2; lbl.y = by + btnBandH - 10;
           if (lbl.width > bw - 4) lbl.scale.set(Math.max(0.35, (bw - 4) / lbl.width));
           this.bodyLayer.addChild(lbl);
-          this.hitRects.push({ rect: { x: bx, y: by, w: bw, h: btnBandH }, action: a.fn });
+          if (!a.disabled) this.hitRects.push({ rect: { x: bx, y: by, w: bw, h: btnBandH }, owner: inst.id, action: a.fn });
         });
       }
 
       // Card body (outside the buttons) opens the info modal — affixes, enhance rate/cost, protect toggle.
-      this.hitRects.push({ rect: { x, y, w: cellW, h: EQUIP_CELL_H }, action: () => this.openDetail(inst.id) });
+      this.hitRects.push({ rect: { x, y, w: cellW, h: EQUIP_CELL_H }, owner: inst.id, action: () => this.openDetail(inst.id) });
     }
   };
 }

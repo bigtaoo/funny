@@ -412,6 +412,22 @@ buildSiegeBlueprints(levels, equipped, inv)
 - **词条直显**：右侧信息列在稀有度/已装备标签下方，直接列出该件的词条描述（`affixDesc`，如 `Health +10%` / `Crit Damage +21%`），主词条用 accent 高亮色、副/特技用中性深色——与详情弹窗（`DetailMixin.openDetail`）的词条配色语言一致，玩家不用点开就能比较货架上的件。
 - **数量角标移至右上角**：堆叠数量（`×N`）从信息列移到卡片右上角，与锁定图标共用同一角（二者互斥——按 `buildDisplayEntries` 的堆叠规则，锁定件恒为独立行、`count` 恒为 1，不会与角标数量同框）。
 
+### 11.3 实现记录（2026-07-28，✅）— 强化点击导致背包整页重绘 + 格子"抖动"
+
+**症状**：点一次「强化」，弹窗背后的背包列表可见地重绘一次，且格子看起来"被拉扯了一下"（截图反馈：整个装备界面被重排）。
+
+**根因**（两处叠加）：
+1. `DetailMixin.doEnhance` 在请求开始和结束各调一次整场景 `render()`——`EquipmentSceneBase.render()` 是唯一入口，每次都 `tearDownChildren(bodyLayer)` 后整表重建，没有增量更新路径，一次强化触发两次全量重绘。
+2. 更关键的是格子"尺寸"本身会变：`InventoryMixin.renderInstanceCell` 里格子内部图标框 `imgBox` 的高度取决于 `actions.length > 0 ? 46 : 0`（操作按钮行是否存在），而 `DetailMixin.instanceActions()` 此前把**所有**操作按钮的可用性都判了 `&& !this.bt.busy`——一旦进入 busy，**全列表所有格子的按钮行同时消失**，图标框瞬间变大；busy 结束按钮回来，图标框缩回去。外层卡片尺寸没变，但内部图标框大小随 busy 状态整体跳动，配合两次全量重绘，读感就是"背景被拉扯了一下"。
+
+**修复**：
+- **按钮置灰而非隐藏**（`CellAction.disabled`）：`instanceActions()` 不再用 `!busy` 决定按钮是否存在，只用它标记 `disabled`；`renderInstanceCell` 里 `disabled` 的按钮改画 `C.btnOff` 灰底+不注册点击（而非从数组里整个去掉），按钮行高度（进而 `imgBox`）不再随 busy 变化。
+- **单格增量重绘**（`InventoryMixin.refreshInstanceCell`）：每个格子在 `renderInventory` 布局时包一层专属 `PIXI.Container`（`cellContainers`/`cellRects` 缓存），配合"入场签名"（`entrySignature`，排序后的 entries 键序列）判断这次强化是否可能引发堆叠拆分/同稀有度按等级重排——签名不变就只 `tearDownChildren` 重绘这一个格子；签名变化（或该件已装备、需要同步 loadout 条）则回退整页 `render()`。
+- **doEnhance 改用增量刷新**：busy 开始时只刷新弹窗+loading（`refreshChromeAndModal`，走独立的 `materialsLayer`，不碰网格）；结果返回后按"等级是否变化 + 单格增量是否成功"决定是整页 `render()` 还是只 `refreshChromeAndModal()`——等级没变（强化失败/报错）时网格完全不碰。
+- **踩坑记录**：`cellContainers`/`cellRects`/`lastEntrySig` 最初写成带初值的字段（`= new Map()`），结果被 mixin 字段初始化顺序坑了一次——`EquipmentSceneBase` 构造函数里的首次 `render()` 先于 `InventoryMixin` 自己的字段初始化器跑完，带初值的字段声明会在 `super()` 返回后把 `render()` 刚填好的数据整个覆盖成空 Map（与文件里 `_collapsedSections` 那条注释是同一个坑）。改成不带初值的 `!:` 声明（`useDefineForClassFields` 在本项目 `tsconfig`（`target: ES2020`）下为 false，无初值的字段声明不产生运行时赋值）解决。
+
+**回归测试**：`client/test/ui/equipmentEnhanceIncrementalRedraw.ui.ts`——成功强化只重绘目标格子（用容器引用/子对象引用相等断言"另一个格子完全没被碰过"）、失败强化完全不碰网格、busy 状态下格子图标框尺寸与空闲时一致。
+
 ---
 
 ## 12. 经济联动
