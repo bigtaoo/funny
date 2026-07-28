@@ -122,9 +122,6 @@ export class MatchsvcClient {
   roomReady(accountId: string, ready: boolean): void {
     void this.post('/mm/room/ready', { accountId, ready });
   }
-  roomStart(accountId: string): void {
-    void this.post('/mm/room/start', { accountId });
-  }
   // leave is idempotent (no-op if not in room/queue) and non-self-healing (a lost
   // leave strands a zombie queue entry / room) → retry.
   roomLeave(accountId: string): void {

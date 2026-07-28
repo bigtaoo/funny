@@ -204,6 +204,21 @@ export function startHttpApi(
           }
         }
 
+        // comm-audit-internal-2026-07-28 P0-4: roll back a claim when metaserver's post-claim delivery
+        // (commercial.grant / equipment / cards) fails, so the attachment isn't lost forever.
+        {
+          const m = /^\/internal\/mail\/([^/]+)\/unclaim$/.exec(path);
+          if (method === 'POST' && m) {
+            const mailId = decodeURIComponent(m[1]!);
+            const body = await readJson(req);
+            const accountId = typeof body.accountId === 'string' ? body.accountId : null;
+            const orderId = typeof body.orderId === 'string' ? body.orderId : null;
+            if (!accountId || !orderId) return sendErr(res, ErrorCode.BAD_REQUEST, 'accountId + orderId required');
+            const result = await mailSvc.unclaimMailAtomic(accountId, mailId, orderId);
+            return send(res, 200, ok(result));
+          }
+        }
+
         // P2: send a single system mail (called by metaserver admin / season settlement)
         if (method === 'POST' && path === '/internal/mail/system') {
           const body = await readJson(req);

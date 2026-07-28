@@ -22,11 +22,14 @@ function saveRow(id: string, extra: Partial<SaveData> = {}): SaveDocRow {
 
 interface CardInstanceRow { _id: string; accountId: string; defId: string; level: number; gear: Record<string, string>; locked: boolean }
 
+interface GrantOrderRow { _id: string; accountId: string; kind: string; ts: number; expireAt: Date }
+
 function build(seedSaves: SaveDocRow[] = [], seedCards: CardInstanceRow[] = []) {
   const saves = new FakeCollection<SaveDocRow>().seed(...seedSaves);
   const equipmentInstances = new FakeCollection<{ _id: string; accountId: string }>();
   const cardInstances = new FakeCollection<CardInstanceRow>().seed(...seedCards);
-  const cols = { saves, equipmentInstances, cardInstances } as unknown as Collections;
+  const internalGrantOrders = new FakeCollection<GrantOrderRow>();
+  const cols = { saves, equipmentInstances, cardInstances, internalGrantOrders } as unknown as Collections;
   const ctx: InternalCtx = {
     cols,
     now: () => 1000,
@@ -37,7 +40,7 @@ function build(seedSaves: SaveDocRow[] = [], seedCards: CardInstanceRow[] = []) 
   };
   const app = Fastify();
   registerEconomyRoutes(app, ctx);
-  return { app, saves, cardInstances };
+  return { app, saves, cardInstances, internalGrantOrders };
 }
 
 function card(id: string, extra: Partial<CardInstance> = {}): CardInstance {
@@ -118,6 +121,36 @@ describe('POST /internal/materials/grant', () => {
     expect(res.statusCode).toBe(200);
     expect(JSON.parse(res.payload)).toEqual({ ok: true, after: 7 });
     expect((saves.docs.get('a')!.save.materials as Record<string, number>).iron).toBe(7);
+  });
+
+  // comm-audit-internal-2026-07-28 batch D: orderId dedup (a caller retry after a timeout must not double-grant).
+  it('same orderId retried after success → deduped, no double-grant', async () => {
+    const { app, saves } = build([saveRow('a')]);
+    const payload = { accountId: 'a', material: 'iron', qty: 7, orderId: 'dup-1' };
+    const r1 = await app.inject({ method: 'POST', url: '/internal/materials/grant', headers: authHeaders, payload });
+    expect(r1.statusCode).toBe(200);
+    const r2 = await app.inject({ method: 'POST', url: '/internal/materials/grant', headers: authHeaders, payload });
+    expect(r2.statusCode).toBe(200);
+    expect(JSON.parse(r2.payload)).toEqual({ ok: true, deduped: true });
+    expect((saves.docs.get('a')!.save.materials as Record<string, number>).iron).toBe(7); // not 14
+  });
+
+  it('different orderId → grants twice', async () => {
+    const { app, saves } = build([saveRow('a')]);
+    await app.inject({ method: 'POST', url: '/internal/materials/grant', headers: authHeaders, payload: { accountId: 'a', material: 'iron', qty: 7, orderId: 'o-a' } });
+    await app.inject({ method: 'POST', url: '/internal/materials/grant', headers: authHeaders, payload: { accountId: 'a', material: 'iron', qty: 7, orderId: 'o-b' } });
+    expect((saves.docs.get('a')!.save.materials as Record<string, number>).iron).toBe(14);
+  });
+
+  it('orderId reservation is released after a failed grant, so a retry can go through', async () => {
+    const { app, saves, internalGrantOrders } = build([]); // no 'ghost' save → grant 404s
+    const payload = { accountId: 'ghost', material: 'iron', qty: 7, orderId: 'o-fail' };
+    const r1 = await app.inject({ method: 'POST', url: '/internal/materials/grant', headers: authHeaders, payload });
+    expect(r1.statusCode).toBe(404);
+    expect(internalGrantOrders.docs.has('o-fail')).toBe(false); // reservation released
+    saves.seed(saveRow('ghost'));
+    const r2 = await app.inject({ method: 'POST', url: '/internal/materials/grant', headers: authHeaders, payload });
+    expect(r2.statusCode).toBe(200); // retry with the same orderId succeeds, not deduped-away
   });
 });
 

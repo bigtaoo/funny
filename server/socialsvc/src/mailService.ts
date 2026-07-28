@@ -102,6 +102,23 @@ export class MailService {
     return { doc: claimed };
   }
 
+  /**
+   * Roll back a claim (comm-audit-internal-2026-07-28 P0-4): metaserver calls this when delivering
+   * the attachment payload (commercial.grant / equipment / cards) fails AFTER claimMailAtomic already
+   * marked the mail claimed — without this, a failed delivery permanently loses the attachment (the
+   * mail is stuck claimed-but-never-delivered and can never be claimed again). Only reverses a claim
+   * this exact orderId made (claimOrderId guard), so it can't undo someone else's successful claim
+   * (e.g. a stale/duplicate retry racing a real claim). Idempotent: unclaiming an already-unclaimed
+   * or claimed-by-a-different-order mail is a no-op ok:true.
+   */
+  async unclaimMailAtomic(accountId: string, mailId: string, orderId: string): Promise<{ ok: true }> {
+    await this.cols.mails.updateOne(
+      { _id: mailId, to: accountId, claimOrderId: orderId },
+      { $unset: { claimedAt: '', claimOrderId: '' } },
+    );
+    return { ok: true };
+  }
+
   /** Send mail between players (must be mutual friends; no attachments). */
   async sendPlayerMail(
     accountId: string,

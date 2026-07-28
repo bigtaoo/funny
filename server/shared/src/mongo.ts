@@ -455,6 +455,21 @@ export interface CardInstanceDoc {
   locked: boolean;
 }
 
+/**
+ * Internal grant idempotency ledger (comm-audit-internal-2026-07-28 batch D): dedups the orderId of
+ * /internal/{materials,equipment,cards,skins}/grant calls so an internal caller (worldsvc/auctionsvc)
+ * can safely retry after a timeout without double-granting. `_id` = orderId (caller-supplied, globally
+ * unique per business operation). Inserted BEFORE the grant executes; deleted again if the grant fails,
+ * so a failed attempt never blocks a retry. TTL 7 days — long enough to cover any realistic retry window.
+ */
+export interface InternalGrantOrderDoc {
+  _id: string; // orderId
+  accountId: string;
+  kind: 'material' | 'equipment' | 'card' | 'skin';
+  ts: number;
+  expireAt: Date; // TTL anchor (7 days, expireAfterSeconds: 0)
+}
+
 /** Stamina real-time state (A4). _id = accountId. Whole-row atomic findOneAndUpdate deduction, no rev lock. */
 export interface StaminaDoc {
   _id: string; // accountId
@@ -511,6 +526,8 @@ export interface Collections {
   cardIdem: Collection<CardIdemDoc>;
   // equipment (E2)
   equipmentIdem: Collection<EquipmentIdemDoc>;
+  // internal grant idempotency ledger (comm-audit-internal-2026-07-28): orderId dedup for /internal/*/grant
+  internalGrantOrders: Collection<InternalGrantOrderDoc>;
   // equipment instances, split out of SaveData.equipmentInv (perf, 2026-07-26); _id = instanceId
   equipmentInstances: Collection<EquipmentInstanceDoc>;
   // card instances, split out of SaveData.cardInv (perf, 2026-07-27); _id = instanceId
@@ -577,6 +594,7 @@ export async function createMongo(
     mail: db.collection<MailDoc>('mail'),
     cardIdem: db.collection<CardIdemDoc>('cardIdem'),
     equipmentIdem: db.collection<EquipmentIdemDoc>('equipmentIdem'),
+    internalGrantOrders: db.collection<InternalGrantOrderDoc>('internalGrantOrders'),
     equipmentInstances: db.collection<EquipmentInstanceDoc>('equipmentInstances'),
     cardInstances: db.collection<CardInstanceDoc>('cardInstances'),
     ladderSeasons: db.collection<LadderSeasonDoc>('ladderSeasons'),
@@ -640,6 +658,8 @@ export async function createMongo(
     await collections.cardIdem.createIndex({ expireAt: 1 }, { expireAfterSeconds: 0 });
     // equipment idempotency ledger TTL auto-expiry (E2, expireAt is an absolute expiry time → expireAfterSeconds:0).
     await collections.equipmentIdem.createIndex({ expireAt: 1 }, { expireAfterSeconds: 0 });
+    // internal grant idempotency ledger TTL auto-expiry (7 days, see InternalGrantOrderDoc).
+    await collections.internalGrantOrders.createIndex({ expireAt: 1 }, { expireAfterSeconds: 0 });
     // equipment instances: fetch-all-for-account (GET /save join, /internal/save-fields, migration, cap-count self-heal).
     await collections.equipmentInstances.createIndex({ accountId: 1 });
     // card instances: fetch-all-for-account (GET /save join, /internal/save-fields, migration, cap-count self-heal).

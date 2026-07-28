@@ -86,6 +86,7 @@ export class FakeSocialsvc implements MetaSocialsvcClient {
   mail = new Map<string, { _id: string; to: string; subject: string; body: string; attachments?: unknown[] }>();
   async proxy(): Promise<never> { throw new Error('not used in this test'); }
   async claimMail(): Promise<never> { throw new Error('not used in this test'); }
+  async unclaimMail(): Promise<void> { /* not used in this test */ }
   async insertSystemMail(dispatchKey: string, to: string, content: SystemMailContent) {
     const mailId = `${dispatchKey}:${to}`;
     const hasAttachment = !!content.attachments?.length;
@@ -111,6 +112,7 @@ export class ThrowingSocialsvc implements MetaSocialsvcClient {
   available = false;
   async proxy(): Promise<never> { throw new Error('socialsvc not configured'); }
   async claimMail(): Promise<never> { throw new Error('socialsvc not configured'); }
+  async unclaimMail(): Promise<never> { throw new Error('socialsvc not configured'); }
   async insertSystemMail(): Promise<never> { throw new Error('socialsvc not configured'); }
   async bulkInsertSystemMail(): Promise<never> { throw new Error('socialsvc not configured'); }
 }

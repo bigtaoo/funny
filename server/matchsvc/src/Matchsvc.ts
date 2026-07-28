@@ -187,10 +187,6 @@ export class Matchsvc {
     log.info('enqueued for ranked', { accountId, elo, queueSize: this.matchmaking.size });
   }
 
-  cancel(accountId: string): void {
-    this.matchmaking.remove(accountId);
-  }
-
   /**
    * Decision point when a player has waited beyond the threshold (default 30s): if feature flag
    * `match_bot_fallback` is enabled for this player, dequeue and push match_bot (client opens a
@@ -296,27 +292,10 @@ export class Matchsvc {
     }
   }
 
-  /**
-   * Host (side 0) starts the match after both players are ready. Both-ready now auto-starts via
-   * {@link roomReady}; this entry point is kept for backwards compatibility with older clients that
-   * send an explicit start button press (the room will already be destroyed at that point →
-   * roomOf returns undefined → no-op).
-   */
-  roomStart(accountId: string): void {
-    const room = this.roomOf(accountId);
-    if (!room || room.phase >= RoomPhase.IN_MATCH) return;
-    const host = room.slots.find((s) => s.side === 0);
-    if (!host || host.accountId !== accountId) return;
-    if (room.slots.length !== 2 || !room.slots.every((s) => s.ready)) return;
-
-    const [s0, s1] = room.slots;
-    this.destroyRoom(room); // lobby room's job done; match state is now owned by gameserver
-    this.startMatch(
-      'friendly',
-      { accountId: s0!.accountId, name: s0!.name, publicId: s0!.publicId, equippedTitle: s0!.equippedTitle, avatarId: s0!.avatarId, deck: s0!.deck },
-      { accountId: s1!.accountId, name: s1!.name, publicId: s1!.publicId, equippedTitle: s1!.equippedTitle, avatarId: s1!.avatarId, deck: s1!.deck },
-    );
-  }
+  // roomStart was removed (comm-audit-internal-2026-07-28 P2): both-ready auto-starts via
+  // roomReady, so the explicit start hop (gateway /mm/room/start → here) was a guaranteed
+  // no-op — the room is already destroyed by the time a start click arrives. The gateway
+  // still accepts the room_start WS message for protocol compat and drops it locally.
 
   /** Leave the room / cancel queuing. */
   roomLeave(accountId: string): void {

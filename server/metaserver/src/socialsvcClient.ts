@@ -16,8 +16,20 @@ export interface MetaSocialsvcClient {
   readonly available: boolean;
   /** Pass through the player JWT and proxy to the socialsvc /social/* endpoint. Returns status + JSON body. */
   proxy(method: string, path: string, body: unknown, authorization: string): Promise<{ status: number; data: unknown }>;
-  /** Atomic mail claim (socialsvc /internal/mail/:id/claim). Returns the mail doc or an error. */
-  claimMail(mailId: string, accountId: string, orderId: string): Promise<{ doc: MailDoc } | { error: 'NOT_FOUND' | 'NO_ATTACHMENT' | 'ALREADY_CLAIMED' }>;
+  /**
+   * Atomic mail claim (socialsvc /internal/mail/:id/claim). Returns the mail doc or an error.
+   * `SOCIAL_UNAVAILABLE` (comm-audit-internal-2026-07-28 P0-4) is distinct from `NOT_FOUND` — it
+   * means the request never got a definite answer from socialsvc (timeout/network/unexpected
+   * payload), so the caller must NOT tell the player "mail not found" (the mail may in fact exist
+   * and even be claimed already); it should surface as a retryable 503 instead.
+   */
+  claimMail(
+    mailId: string,
+    accountId: string,
+    orderId: string,
+  ): Promise<{ doc: MailDoc } | { error: 'NOT_FOUND' | 'NO_ATTACHMENT' | 'ALREADY_CLAIMED' | 'SOCIAL_UNAVAILABLE' }>;
+  /** Roll back a claim this orderId made, after post-claim delivery failed (best-effort; see mailService.unclaimMailAtomic). */
+  unclaimMail(mailId: string, accountId: string, orderId: string): Promise<void>;
   /** Write a single system mail (socialsvc /internal/mail/system, idempotent upsert). Throws if socialsvc is unreachable/unconfigured. */
   insertSystemMail(
     dispatchKey: string,
@@ -71,7 +83,11 @@ export class HttpMetaSocialsvcClient implements MetaSocialsvcClient {
     }
   }
 
-  async claimMail(mailId: string, accountId: string, orderId: string): Promise<{ doc: MailDoc } | { error: 'NOT_FOUND' | 'NO_ATTACHMENT' | 'ALREADY_CLAIMED' }> {
+  async claimMail(
+    mailId: string,
+    accountId: string,
+    orderId: string,
+  ): Promise<{ doc: MailDoc } | { error: 'NOT_FOUND' | 'NO_ATTACHMENT' | 'ALREADY_CLAIMED' | 'SOCIAL_UNAVAILABLE' }> {
     const r = await fetchInternalJson<{ ok?: boolean; data?: { doc: MailDoc }; error?: string }>(
       `${this.baseUrl}/internal/mail/${encodeURIComponent(mailId)}/claim`,
       { caller: 'meta', key: this.internalKey, method: 'POST', body: { accountId, orderId }, timeoutMs: 5000, label: '/internal/mail/:id/claim' },
@@ -80,10 +96,29 @@ export class HttpMetaSocialsvcClient implements MetaSocialsvcClient {
     if (!r.ok || !data?.ok) {
       const e = data?.error;
       if (e === 'NOT_FOUND' || e === 'NO_ATTACHMENT' || e === 'ALREADY_CLAIMED') return { error: e };
-      // Network error / timeout / unexpected payload → NOT_FOUND, matching the previous catch path.
-      return { error: 'NOT_FOUND' };
+      // Network error / timeout / unexpected payload → the mail's actual claim state is unknown
+      // (P0-4: it used to be mapped to NOT_FOUND, telling the player a mail that may well exist
+      // — and may even now be claimed — "doesn't exist"). Surface as retryable instead.
+      return { error: 'SOCIAL_UNAVAILABLE' };
     }
     return { doc: data.data!.doc };
+  }
+
+  async unclaimMail(mailId: string, accountId: string, orderId: string): Promise<void> {
+    // Best-effort: if this also fails, the mail is stuck claimed-but-undelivered — logged so ops
+    // can manually compensate (comp-ticket flow), same posture as other best-effort mirror writes.
+    const r = await fetchInternalJson(`${this.baseUrl}/internal/mail/${encodeURIComponent(mailId)}/unclaim`, {
+      caller: 'meta',
+      key: this.internalKey,
+      method: 'POST',
+      body: { accountId, orderId },
+      timeoutMs: 5000,
+      label: '/internal/mail/:id/unclaim',
+    });
+    if (!r.ok) {
+      // eslint-disable-next-line no-console
+      console.error('[meta] unclaimMail failed — mail may be stuck claimed-but-undelivered', { mailId, accountId, orderId, status: r.status });
+    }
   }
 
   async insertSystemMail(
@@ -123,7 +158,8 @@ export class HttpMetaSocialsvcClient implements MetaSocialsvcClient {
 export const nullMetaSocialsvcClient: MetaSocialsvcClient = {
   available: false,
   async proxy() { return { status: 503, data: { ok: false, error: 'socialsvc unavailable' } }; },
-  async claimMail() { return { error: 'NOT_FOUND' }; },
+  async claimMail() { return { error: 'SOCIAL_UNAVAILABLE' as const }; },
+  async unclaimMail() { /* nothing was ever claimed via a client that was never available */ },
   async insertSystemMail() { throw new Error('socialsvc not configured'); },
   async bulkInsertSystemMail() { throw new Error('socialsvc not configured'); },
 };

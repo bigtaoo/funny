@@ -367,7 +367,11 @@ export class Gateway {
         this.matchsvc.roomReady(accountId, msg.ready);
         break;
       case 'room_start':
-        this.matchsvc.roomStart(accountId);
+        // Deliberate no-op (comm-audit-internal-2026-07-28 P2): matchsvc auto-starts the match
+        // the moment both sides are ready, so by the time the host's start click arrives the
+        // lobby room is already gone — the whole gateway→matchsvc /mm/room/start hop was a
+        // guaranteed no-op and has been removed. The WS message stays accepted for protocol
+        // compat (current clients still send it from the room screen's start button).
         break;
       case 'room_leave':
         this.matchsvc.roomLeave(accountId);
