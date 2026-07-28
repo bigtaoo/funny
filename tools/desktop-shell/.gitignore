@@ -1,3 +1,2 @@
-release/
-release-portable/
+release*/
 *.zip
