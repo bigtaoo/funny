@@ -1,5 +1,6 @@
 {
   "name": "nw-desktop-shell",
+  "productName": "NW Tool",
   "version": "0.1.0",
   "private": true,
   "main": "dist/main.js",
@@ -19,7 +20,8 @@
   },
   "build": {
     "appId": "com.notebookwars.desktopshell",
-    "productName": "Notebook Wars 工具箱",
+    "productName": "NW Tool",
+    "icon": "build/icon.png",
     "directories": {
       "output": "release"
     },

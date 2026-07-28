@@ -89,6 +89,14 @@ interface NwDesktopBridge {
 
 **取舍**：各工具的生产构建**远程托管**（沿用 `WORKSPACE_SYNC.md` 里已经跑通的 Cloudflare Pages/Workers 部署方式，去掉 Supabase 那部分），壳内 `BrowserView` 直接指向托管地址，而不是把工具产物打包进安装包——这样迭代工具功能（加个按钮、修个 bug）不需要发新壳安装包，外包美术也不用重装桌面应用。
 
+**✅ 已接线（2026-07-28）**：四个工具其实早就各自有生产部署（`wrangler/<tool>.jsonc` + `.github/workflows/<tool>-deploy.yml`，实测均 200）：
+- animator → `https://animator.tao-wang-go.workers.dev`
+- vfx-editor → `https://vfx.gamestao.com`
+- level-editor → `https://level.gamestao.com`
+- map-editor → `https://slg.gamestao.com`
+
+`tools.ts` 的 `ToolConfig` 加了 `prodUrl` 字段，`resolveToolUrl(tool)` 按 `app.isPackaged` 二选一：装好的正式包直接连生产地址，`electron .` 跑源码开发时仍走本地 dev server——两者用同一套代码，不用改配置切换。`contentUpdatePoller` 的 `version.json` 轮询也走同一个 `resolveToolUrl`，生产/开发模式下检测的是各自实际加载的那个地址。
+
 - 每个工具构建时额外产出 `version.json`（CI 构建阶段写：commit sha 或对 `index.html` 引用到的所有 hashed 文件名做一次组合 hash）。
 - 壳加载某工具页面时记下当前 `version.json` 的值；之后定时（如 5 分钟）或页面重新获得焦点时，重新拉取该工具的 `version.json` 比对。
 - **检测到变化后的流程**：
@@ -159,3 +167,4 @@ interface GitSyncController {
   - animator 侧接了真实落盘：`AutoSaveController` 新增公开方法 `requestFlush()`（包一层私有 `flushNow()`），`App.ts` 里 `window.nwDesktop?.onRequestSave(() => autoSave.requestFlush())`；其余三个工具目前没有自动保存机制，`onRequestSave` 暂不接（按设计留空）。
   - **端到端验证**（非只读代码）：临时把轮询间隔调到 3s、加调试日志，实际改动 animator 源码触发 webpack 重新编译 → `version.json` hash 真的变了 → 轮询检测到 → 侧边栏弹出"当前工具有新版本，已自动保存工作 · 刷新" → 通过 CDP 调 `window.nwShell.applyUpdate()` 模拟点击 → 内容视图 reload、提示消失、基线刷新到新 hash。验证完成后已还原成正式的 5 分钟轮询间隔并删掉调试日志。
 - **P4**（外包真正接入前）：`GitSyncController` 真实实现（`isomorphic-git` + 权限收窄 token + 自动开 PR）——本次未做。
+- **生产地址接线 + 品牌化（2026-07-28）**：`tools.ts` 加 `prodUrl` + `resolveToolUrl()`（见 §4.2），装好的正式包默认连生产、开发跑源码默认连本地，验证过两种模式各自正确。品牌名从占位的"Notebook Wars 工具箱"改为 **NW Tool**（`package.json` 根 `productName` + `build.productName` + 窗口标题 + 侧边栏 `<title>`，一并改）；图标用仓库既有游戏品牌 logo（`art/logo/derived/logo-1024.png` → `tools/desktop-shell/build/icon.png`，electron-builder 按约定路径自动转 ico），验证：提取打包出的 exe 图标核对过确实是这个盾形 logo。
