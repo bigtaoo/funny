@@ -236,7 +236,7 @@ export function createResultNav(ctx: AppCtx): ResultNav {
     replay?: Replay,
     elo?: EloResult,
     profiles?: { opponent?: ProfileData; local?: ProfileData },
-    outroText?: string,
+    outroTexts?: string[],
     onPlayAgain?: () => void,
     playAgainLabel?: string,
     onReturnToLobby?: () => void,
@@ -254,7 +254,7 @@ export function createResultNav(ctx: AppCtx): ResultNav {
       localOwner,
       ...(elo ? { elo } : {}),
       ...(profiles ? { profiles } : {}),
-      ...(outroText ? { outroText } : {}),
+      ...(outroTexts ? { outroTexts } : {}),
       cb: {
         // Falling through to the lobby (no dedicated "play again") is leaving the match — fades.
         onPlayAgain() { (onPlayAgain ?? (() => nav.goLobby({ fade: true })))(); },

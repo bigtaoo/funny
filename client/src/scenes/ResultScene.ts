@@ -180,7 +180,7 @@ export class ResultScene implements Scene {
     localOwner: OwnerId = 0,
     elo?: EloResult,
     profiles?: ResultProfiles,
-    outroText?: string,
+    outroTexts?: string[],
   ) {
     this.container = new PIXI.Container();
     this.w  = w;
@@ -190,8 +190,8 @@ export class ResultScene implements Scene {
     this.profiles = profiles;
     this.popup = new ProfilePopup(w, h, cb.getProfileExtra);
 
-    if (outroText) {
-      this.buildOutroOverlay(outroText, () => {
+    if (outroTexts && outroTexts.length > 0) {
+      this.buildOutroOverlay(outroTexts, 0, () => {
         this.build(winner, stats, cb);
         this.container.addChild(this.popup.container);
       });
@@ -208,8 +208,12 @@ export class ResultScene implements Scene {
     this.container.destroy({ children: true });
   }
 
-  /** Full-screen tap-through outro overlay; calls onDone to reveal the result. */
-  private buildOutroOverlay(text: string, onDone: () => void): void {
+  /**
+   * Full-screen tap-through outro overlay; pages through `texts` one screen per tap, then calls
+   * onDone to reveal the result. Every level but ch6_lv10 passes a single-element array, so this
+   * behaves exactly like the old one-screen overlay for them.
+   */
+  private buildOutroOverlay(texts: string[], index: number, onDone: () => void): void {
     const { w, h } = this;
 
     const bg = new PIXI.Graphics();
@@ -218,7 +222,7 @@ export class ResultScene implements Scene {
 
     const margin = Math.round(w * 0.08);
     const fontSize = FS.heading;
-    const body = makeText(text, {
+    const body = makeText(texts[index]!, {
       fontSize,
       fill: 0xe8dfc0,
       wordWrap: true,
@@ -250,7 +254,11 @@ export class ResultScene implements Scene {
       // swallows every click on whatever onDone() builds next (badges/buttons never respond).
       this.container.eventMode = 'passive';
       tearDownChildren(this.container);
-      onDone();
+      if (index + 1 < texts.length) {
+        this.buildOutroOverlay(texts, index + 1, onDone);
+      } else {
+        onDone();
+      }
     });
   }
 

@@ -105,7 +105,16 @@ export interface LevelDefinition {
   /** Clear rewards: coins, exclusive skin, story unlock, star thresholds (§7). */
   rewards?: LevelRewards;
   /** i18n story keys for intro / outro narration (§8). */
-  story?: { introKey?: TranslationKey; outroKey?: TranslationKey };
+  story?: {
+    introKey?: TranslationKey;
+    outroKey?: TranslationKey;
+    /**
+     * Optional second tap-through screen shown after `outroKey`, before the result panel.
+     * Reserved for the campaign's real-world frame-story close (ch6_lv10 only); every other
+     * level omits it and gets the single-screen outro it always had.
+     */
+    epilogueKey?: TranslationKey;
+  };
   /** Optional display-name key for this level, shown in CampaignMapScene. Falls back to chapter/position label. */
   nameKey?: TranslationKey;
   /** Optional pre-battle briefing text key, shown in LevelPrepScene. Omitted for pure-combat levels. */

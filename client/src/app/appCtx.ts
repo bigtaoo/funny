@@ -91,7 +91,7 @@ export interface Nav {
     replay?: Replay,
     elo?: EloResult,
     profiles?: { opponent?: ProfileData; local?: ProfileData },
-    outroText?: string,
+    outroTexts?: string[],
     onPlayAgain?: () => void,
     playAgainLabel?: string,
     onReturnToLobby?: () => void,
