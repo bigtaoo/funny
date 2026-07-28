@@ -198,6 +198,9 @@ services:
       # Auction coin trading + world-chat 50-coin fee (nationChannelService) both go through commercial; missing this
       # → commercial.available=false → both silently skip coin deduction instead of erroring.
       NW_COMMERCIAL_INTERNAL_URL: http://commercial:8092
+      # ⚠ comm-audit-internal-2026-07-28: without it SlgShopPriceCache never starts, so the ops
+      # shop-price panel silently never applies to worldsvc (shop falls back to code defaults).
+      NW_ADMIN_INTERNAL_URL: http://admin:8083
     depends_on:
       redis:
         condition: service_healthy

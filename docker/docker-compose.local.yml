@@ -174,11 +174,17 @@ services:
       NW_GATEWAY_INTERNAL_URL: http://gateway:8090
       NW_COMMERCIAL_INTERNAL_URL: http://commercial:8092
       NW_META_INTERNAL_URL: http://metaserver:8080
+      # ⚠ comm-audit-internal-2026-07-28: prod/cloud had this but local didn't → every sect op
+      # in the local stack failed with NOT_IN_FAMILY (getMember() null when socialsvc is absent).
+      NW_SOCIALSVC_INTERNAL_URL: http://socialsvc:8085
+      # Same audit: without it SlgShopPriceCache never starts (ops shop-price panel inert).
+      NW_ADMIN_INTERNAL_URL: http://admin:18083
     depends_on:
       mongo: { condition: service_healthy }
       redis: { condition: service_started }
       gateway: { condition: service_started }
       commercial: { condition: service_started }
+      socialsvc: { condition: service_started }
     restart: unless-stopped
 
   # auctionsvc: auction house, decoupled from worldId (auction task5, AUCTION_DESIGN §9); proxied via nginx same-origin.

@@ -225,6 +225,13 @@ services:
       # Auction coin trading + world-chat 50-coin fee (nationChannelService) both go through commercial; missing this
       # → commercial.available=false → both silently skip coin deduction instead of erroring.
       NW_COMMERCIAL_INTERNAL_URL: http://commercial:8092
+      # ⚠ Was missing until comm-audit-internal-2026-07-28: without it meta.available=false → season
+      # settlement mails/titles silently no-op, stronghold loot vanishes, setTeams throws INTERNAL,
+      # and siege card armies resolve against an empty cardInv (cloud/local had it; prod didn't).
+      NW_META_INTERNAL_URL: http://metaserver:8080
+      # ⚠ Same audit: without it SlgShopPriceCache never starts (index.ts gates on adminInternalUrl),
+      # so the ops shop-price panel silently never applies to worldsvc.
+      NW_ADMIN_INTERNAL_URL: http://admin:8083
     depends_on:
       mongo:
         condition: service_healthy
@@ -233,6 +240,8 @@ services:
       socialsvc:
         condition: service_started
       commercial:
+        condition: service_started
+      metaserver:
         condition: service_started
     restart: unless-stopped
 
