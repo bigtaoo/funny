@@ -27,6 +27,9 @@
       "dist/**/*",
       "renderer/**/*"
     ],
+    "win": {
+      "verifyUpdateCodeSignature": false
+    },
     "publish": {
       "provider": "github",
       "owner": "bigtaoo",
