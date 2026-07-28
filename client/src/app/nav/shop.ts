@@ -9,6 +9,7 @@ import { hasBattlePassClaimable } from '../../game/meta/battlepass';
 import { hasRechargeClaimable } from '../../game/meta/rechargeMilestone';
 import { scheduleSubscriptionReminder } from '../../platform/localReminders';
 import type { SaveData } from '../../game/meta/SaveData';
+import { serverNow } from '../../net/serverClock';
 
 type ShopNav = Pick<Nav, 'goShop' | 'goGacha' | 'goDaily' | 'goEvents' | 'goBattlePass' | 'goRecharge'>;
 
@@ -24,7 +25,7 @@ export function createShopNav(ctx: AppCtx): ShopNav {
   function shopCardBadgeClaimable(): boolean {
     const m = saveManager.get().monetization;
     if (!m) return false;
-    if ((m.subscriptionExpiry ?? 0) <= Date.now()) return false;
+    if ((m.subscriptionExpiry ?? 0) <= serverNow()) return false;
     const todayKey = new Date().toISOString().slice(0, 10);
     return m.subscriptionLastClaimDay !== todayKey;
   }

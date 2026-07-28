@@ -68,6 +68,43 @@ function fakeCols(seed: Record<string, SaveData>): { cols: Collections; matches:
         matches.push(doc);
         return { insertedId: doc.roomId };
       },
+      // Settlement reservation guard (comm-audit-internal-2026-07-28 P0-1): upsert-on-unique-roomId
+      // + guarded takeover update + final replaceOne. Mirrors just enough Mongo semantics for the
+      // reservation flow: $setOnInsert only applies when no doc matches the filter's roomId.
+      updateOne: async (
+        q: { roomId: string; settling?: boolean; settlingAt?: { $lt: number } },
+        u: { $setOnInsert?: Record<string, unknown>; $set?: Record<string, unknown> },
+        opts?: { upsert?: boolean },
+      ) => {
+        const existing = matches.find(
+          (m) =>
+            m.roomId === q.roomId &&
+            (q.settling === undefined || m.settling === q.settling) &&
+            (q.settlingAt?.$lt === undefined || (m.settlingAt as number) < q.settlingAt.$lt),
+        );
+        if (existing) {
+          if (u.$set) Object.assign(existing, u.$set);
+          return { matchedCount: 1, modifiedCount: u.$set ? 1 : 0, upsertedCount: 0 };
+        }
+        // No match: only a roomId-only filter with upsert inserts (the takeover update never upserts).
+        if (opts?.upsert && q.settling === undefined && !matches.some((m) => m.roomId === q.roomId)) {
+          matches.push({ roomId: q.roomId, ...(u.$setOnInsert ?? {}) });
+          return { matchedCount: 0, modifiedCount: 0, upsertedCount: 1 };
+        }
+        return { matchedCount: 0, modifiedCount: 0, upsertedCount: 0 };
+      },
+      replaceOne: async (q: { roomId: string }, doc: { roomId: string }, opts?: { upsert?: boolean }) => {
+        const idx = matches.findIndex((m) => m.roomId === q.roomId);
+        if (idx >= 0) {
+          matches[idx] = doc;
+          return { matchedCount: 1, modifiedCount: 1, upsertedCount: 0 };
+        }
+        if (opts?.upsert) {
+          matches.push(doc);
+          return { matchedCount: 0, modifiedCount: 0, upsertedCount: 1 };
+        }
+        return { matchedCount: 0, modifiedCount: 0, upsertedCount: 0 };
+      },
       // Minimal chainable cursor for GET /internal/mismatches (C3): .find({hashMismatch,ts:{$gte}}).sort({ts:-1}).limit(200).project(...).toArray()
       find: (q: { hashMismatch?: boolean; ts?: { $gte: number } }) => {
         let items = matches.filter(

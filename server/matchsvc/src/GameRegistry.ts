@@ -44,19 +44,19 @@ export class GameRegistry {
     inst.lastSeen = this.now();
   }
 
-  /** Real-time aggregate (admin monitoring, OPS_DESIGN §4.1): healthy instance count + total load/capacity. */
-  stats(): { instances: number; load: number; capacity: number } {
+  /** Real-time aggregate (admin monitoring, OPS_DESIGN §4.1): healthy instance count + total load. */
+  stats(): { instances: number; load: number } {
     const t = this.now();
     let instances = 0;
     let load = 0;
-    let capacity = 0;
     for (const inst of this.instances.values()) {
       if (t - inst.lastSeen > STALE_MS) continue; // unhealthy, exclude from aggregate
       instances++;
       load += inst.load;
-      capacity += inst.capacity;
+      // per-instance capacity still drives pick(); the aggregate had no consumer
+      // (Matchsvc.stats() and the admin client both dropped it) so it's gone.
     }
-    return { instances, load, capacity };
+    return { instances, load };
   }
 
   /** Picks the wsUrl of the least-loaded healthy instance; falls back to the fallback address when no registered instances exist (null = no game available). */

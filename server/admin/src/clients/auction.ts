@@ -1,4 +1,4 @@
-import { internalHeaders, type AuctionAnomaly, type AuctionListingAdminView, type AuctionListingQuery } from '@nw/shared';
+import { fetchInternalJson, type AuctionAnomaly, type AuctionListingAdminView, type AuctionListingQuery } from '@nw/shared';
 
 // ── Auction anomaly scan (auctionsvc /internal/audit/anomalies, G7/§17.7) ──────────
 // Auction task5 (AUCTION_DESIGN §9): auctionsvc is now the sole owner of auction state, decoupled from
@@ -25,12 +25,16 @@ export class HttpAuctionClient implements AuctionClient {
     if (!this.baseUrl) return [];
     const qs = new URLSearchParams();
     if (windowSec != null) qs.set('windowSec', String(windowSec));
-    const res = await fetch(`${this.baseUrl}/internal/audit/anomalies?${qs}`, {
-      headers: internalHeaders('admin', this.internalKey),
+    // Throws on failure (as before, where non-2xx threw and network errors bubbled) —
+    // ops must see auction scan failures, not a silently empty result.
+    const r = await fetchInternalJson<{ ok?: boolean; data?: AuctionAnomaly[] }>(`${this.baseUrl}/internal/audit/anomalies?${qs}`, {
+      caller: 'admin',
+      key: this.internalKey,
+      timeoutMs: 10000,
+      label: 'auctionsvc /internal/audit/anomalies',
     });
-    if (!res.ok) throw new Error(`scanAnomalies failed: HTTP ${res.status}`);
-    const body = (await res.json()) as { ok?: boolean; data?: AuctionAnomaly[] };
-    return body.data ?? [];
+    if (!r.ok) throw new Error(`scanAnomalies failed: ${r.status ? `HTTP ${r.status}` : r.error ?? 'network error'}`);
+    return r.body?.data ?? [];
   }
 
   async queryListings(filter: AuctionListingQuery): Promise<AuctionListingAdminView[]> {
@@ -41,11 +45,13 @@ export class HttpAuctionClient implements AuctionClient {
     if (filter.status) qs.set('status', filter.status);
     if (filter.itemName) qs.set('itemName', filter.itemName);
     if (filter.limit != null) qs.set('limit', String(filter.limit));
-    const res = await fetch(`${this.baseUrl}/internal/audit/listings?${qs}`, {
-      headers: internalHeaders('admin', this.internalKey),
+    const r = await fetchInternalJson<{ ok?: boolean; data?: AuctionListingAdminView[] }>(`${this.baseUrl}/internal/audit/listings?${qs}`, {
+      caller: 'admin',
+      key: this.internalKey,
+      timeoutMs: 10000,
+      label: 'auctionsvc /internal/audit/listings',
     });
-    if (!res.ok) throw new Error(`queryListings failed: HTTP ${res.status}`);
-    const body = (await res.json()) as { ok?: boolean; data?: AuctionListingAdminView[] };
-    return body.data ?? [];
+    if (!r.ok) throw new Error(`queryListings failed: ${r.status ? `HTTP ${r.status}` : r.error ?? 'network error'}`);
+    return r.body?.data ?? [];
   }
 }

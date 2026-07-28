@@ -30,6 +30,7 @@
                           publicId: { type: string }
                           elo: { type: integer }
                           pvpRank: { type: string }
+                          equippedTitle: { type: string, description: 'Entry-owner equipped title id (save.equipped.title), absent when none equipped' }
                     me:
                       type: object
                       description: "Caller's own standing this season (absent when they have not played a ranked match this season). Rank may exceed 100."

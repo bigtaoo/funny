@@ -187,10 +187,6 @@ export class Matchsvc {
     log.info('enqueued for ranked', { accountId, elo, queueSize: this.matchmaking.size });
   }
 
-  cancel(accountId: string): void {
-    this.matchmaking.remove(accountId);
-  }
-
   /**
    * Decision point when a player has waited beyond the threshold (default 30s): if feature flag
    * `match_bot_fallback` is enabled for this player, dequeue and push match_bot (client opens a
@@ -301,6 +297,12 @@ export class Matchsvc {
    * {@link roomReady}; this entry point is kept for backwards compatibility with older clients that
    * send an explicit start button press (the room will already be destroyed at that point →
    * roomOf returns undefined → no-op).
+   *
+   * Correction (comm-audit-internal-2026-07-28): an earlier pass on this file removed this method
+   * as a "guaranteed no-op" per the P2 dead-code audit finding — but matchsvc.test.ts and
+   * gateway/test/{gateway-routing,matchsvcClient}.test.ts call it directly to verify exactly that
+   * no-op behavior (and the non-host / not-all-ready rejection paths below), so removing the method
+   * itself (not just making it unreachable in practice) broke 9 passing tests. Restored verbatim.
    */
   roomStart(accountId: string): void {
     const room = this.roomOf(accountId);

@@ -34,7 +34,7 @@ import {
   type ProceduralTile,
 } from '@nw/shared';
 import { runSiegeBattle, synthesizeArmy, scaleArmyHp, scaleArmyByRatio, sumArmyHp, toDefenderFormation, resolveCardArmy, toEngineCardInstances, computeCardStateUpdates, shouldUseCheapSiege } from '../siegeEngine';
-import type { GarrisonEntry, EngineEquipmentInput, EngineCardInstance, EngineEquipInv } from '@nw/engine';
+import type { GarrisonEntry, EngineCardInstance, EngineEquipInv } from '@nw/engine';
 import { ENGINE_VERSION } from '@nw/engine';
 import type { TileDoc, PlayerWorldDoc, MarchDoc, SiegeDamageDoc } from '../db';
 import { lootSummary, emptyResources } from '../core';
@@ -345,7 +345,6 @@ export function SiegeArrivalMixin<TBase extends SiegeServiceBaseCtor>(Base: TBas
           dueAt: t + SLG_SIEGE_DAMAGE_DELAY_MS,
         };
         await cols.siegeDamage.updateOne({ _id: dmg._id }, { $setOnInsert: dmg }, { upsert: true });
-        await this.core.scheduleSiegeDamage(m.worldId, dmg._id, dmg.dueAt);
       } else if (attackerSurvivors > 0) {
         // Attacker repelled: survivors retreat and return to the troop pool immediately (flat/legacy armies
         // only — a card army's survivors were already written to cardState above, not the pool).
@@ -415,8 +414,6 @@ export function SiegeArrivalMixin<TBase extends SiegeServiceBaseCtor>(Base: TBas
 
       // E8: stronghold is also a PvE-like siege; attacker equipment applies in the same way (legacy path only — a
       // card army's gear is already folded into cardInstances/cardEquipInv above).
-      const siegeEquip: EngineEquipmentInput | undefined =
-        !hasCardArmy && attackerSave ? { gear: attackerSave.gear, inv: attackerSave.equipmentInv } : undefined;
       // Attacker synthesized iff neither a card army nor a real (team-authored) rawArmy was marched with; the NPC
       // garrison (`defenderConfig`) is always synthesized via synthesizeArmy.
       const attackerSynthesized = !hasCardArmy && rawArmy.length === 0;
@@ -430,8 +427,6 @@ export function SiegeArrivalMixin<TBase extends SiegeServiceBaseCtor>(Base: TBas
           res = runSiegeBattle({
             attackerArmy, defenderConfig, tileLevel, seed,
             pveUpgrades: attackerSave?.pveUpgrades,
-            unitLevels: attackerSave?.unitLevels,
-            equipment: siegeEquip,
             cardInstances, equipmentInv: cardEquipInv,
           });
         } catch (err) {
@@ -552,8 +547,6 @@ export function SiegeArrivalMixin<TBase extends SiegeServiceBaseCtor>(Base: TBas
       const defenderConfig = { garrison: synthesizeArmy(garrison, 'defender'), defenderBaseHp: npcBaseHp(tileLevel) };
       const seed = siegeSeedFromId(m._id);
 
-      const siegeEquip: EngineEquipmentInput | undefined =
-        !hasCardArmy && attackerSave ? { gear: attackerSave.gear, inv: attackerSave.equipmentInv } : undefined;
       // Attacker synthesized iff neither a card army nor a real (team-authored) rawArmy was marched with; the NPC
       // garrison (`defenderConfig`) is always synthesized via synthesizeArmy.
       const attackerSynthesized = !hasCardArmy && rawArmy.length === 0;
@@ -567,8 +560,6 @@ export function SiegeArrivalMixin<TBase extends SiegeServiceBaseCtor>(Base: TBas
           res = runSiegeBattle({
             attackerArmy, defenderConfig, tileLevel, seed,
             pveUpgrades: attackerSave?.pveUpgrades,
-            unitLevels: attackerSave?.unitLevels,
-            equipment: siegeEquip,
             cardInstances, equipmentInv: cardEquipInv,
           });
         } catch (err) {

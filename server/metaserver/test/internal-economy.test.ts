@@ -20,25 +20,37 @@ function saveRow(id: string, extra: Partial<SaveData> = {}): SaveDocRow {
   return { _id: id, save: s, rev: s.rev };
 }
 
-function build(seedSaves: SaveDocRow[] = []) {
+interface CardInstanceRow { _id: string; accountId: string; defId: string; level: number; gear: Record<string, string>; locked: boolean }
+
+interface GrantOrderRow { _id: string; accountId: string; kind: string; ts: number; expireAt: Date }
+
+function build(seedSaves: SaveDocRow[] = [], seedCards: CardInstanceRow[] = []) {
   const saves = new FakeCollection<SaveDocRow>().seed(...seedSaves);
   const equipmentInstances = new FakeCollection<{ _id: string; accountId: string }>();
-  const cols = { saves, equipmentInstances } as unknown as Collections;
+  const cardInstances = new FakeCollection<CardInstanceRow>().seed(...seedCards);
+  const internalGrantOrders = new FakeCollection<GrantOrderRow>();
+  const cols = { saves, equipmentInstances, cardInstances, internalGrantOrders } as unknown as Collections;
   const ctx: InternalCtx = {
     cols,
     now: () => 1000,
     gateway: fakeGateway(),
     commercial: fakeCommercial(),
     socialsvc: new ThrowingSocialsvc(),
-    authed: (key) => key === KEY,
+    authed: (headers) => headers['x-internal-key'] === KEY,
   };
   const app = Fastify();
   registerEconomyRoutes(app, ctx);
-  return { app, saves };
+  return { app, saves, cardInstances, internalGrantOrders };
 }
 
 function card(id: string, extra: Partial<CardInstance> = {}): CardInstance {
-  return { id, defId: 'lichuang', level: 1, xp: 0, gear: {}, locked: false, ...extra };
+  return { id, defId: 'lichuang', level: 1, gear: {}, locked: false, ...extra };
+}
+
+/** Card instance seeded directly into the `cardInstances` fake collection (bypasses the API). */
+function cardRow(id: string, accountId: string, extra: Partial<CardInstance> = {}): CardInstanceRow {
+  const c = card(id, extra);
+  return { _id: c.id, accountId, defId: c.defId, level: c.level, gear: c.gear, locked: c.locked };
 }
 
 describe('POST /internal/materials/deduct', () => {
@@ -110,6 +122,36 @@ describe('POST /internal/materials/grant', () => {
     expect(JSON.parse(res.payload)).toEqual({ ok: true, after: 7 });
     expect((saves.docs.get('a')!.save.materials as Record<string, number>).iron).toBe(7);
   });
+
+  // comm-audit-internal-2026-07-28 batch D: orderId dedup (a caller retry after a timeout must not double-grant).
+  it('same orderId retried after success → deduped, no double-grant', async () => {
+    const { app, saves } = build([saveRow('a')]);
+    const payload = { accountId: 'a', material: 'iron', qty: 7, orderId: 'dup-1' };
+    const r1 = await app.inject({ method: 'POST', url: '/internal/materials/grant', headers: authHeaders, payload });
+    expect(r1.statusCode).toBe(200);
+    const r2 = await app.inject({ method: 'POST', url: '/internal/materials/grant', headers: authHeaders, payload });
+    expect(r2.statusCode).toBe(200);
+    expect(JSON.parse(r2.payload)).toEqual({ ok: true, deduped: true });
+    expect((saves.docs.get('a')!.save.materials as Record<string, number>).iron).toBe(7); // not 14
+  });
+
+  it('different orderId → grants twice', async () => {
+    const { app, saves } = build([saveRow('a')]);
+    await app.inject({ method: 'POST', url: '/internal/materials/grant', headers: authHeaders, payload: { accountId: 'a', material: 'iron', qty: 7, orderId: 'o-a' } });
+    await app.inject({ method: 'POST', url: '/internal/materials/grant', headers: authHeaders, payload: { accountId: 'a', material: 'iron', qty: 7, orderId: 'o-b' } });
+    expect((saves.docs.get('a')!.save.materials as Record<string, number>).iron).toBe(14);
+  });
+
+  it('orderId reservation is released after a failed grant, so a retry can go through', async () => {
+    const { app, saves, internalGrantOrders } = build([]); // no 'ghost' save → grant 404s
+    const payload = { accountId: 'ghost', material: 'iron', qty: 7, orderId: 'o-fail' };
+    const r1 = await app.inject({ method: 'POST', url: '/internal/materials/grant', headers: authHeaders, payload });
+    expect(r1.statusCode).toBe(404);
+    expect(internalGrantOrders.docs.has('o-fail')).toBe(false); // reservation released
+    saves.seed(saveRow('ghost'));
+    const r2 = await app.inject({ method: 'POST', url: '/internal/materials/grant', headers: authHeaders, payload });
+    expect(r2.statusCode).toBe(200); // retry with the same orderId succeeds, not deduped-away
+  });
 });
 
 describe('POST /internal/cards/escrow', () => {
@@ -146,7 +188,7 @@ describe('POST /internal/cards/escrow', () => {
   });
 
   it('card with equipped gear → 409 CARD_HAS_GEAR (§11 rule: unequip before listing)', async () => {
-    const { app } = build([saveRow('a', { cardInv: { c1: card('c1', { gear: { weapon: 'eq1' } }) } } as Partial<SaveData>)]);
+    const { app } = build([saveRow('a')], [cardRow('c1', 'a', { gear: { weapon: 'eq1' } })]);
     const res = await app.inject({
       method: 'POST', url: '/internal/cards/escrow', headers: authHeaders,
       payload: { accountId: 'a', instanceId: 'c1', orderId: 'o1' },
@@ -155,9 +197,8 @@ describe('POST /internal/cards/escrow', () => {
     expect(JSON.parse(res.payload).code).toBe('CARD_HAS_GEAR');
   });
 
-  it('happy path: removes card from cardInv, returns its snapshot', async () => {
-    const inst = card('c1');
-    const { app, saves } = build([saveRow('a', { cardInv: { c1: inst } } as Partial<SaveData>)]);
+  it('happy path: removes card from cardInstances, returns its snapshot', async () => {
+    const { app, cardInstances } = build([saveRow('a')], [cardRow('c1', 'a')]);
     const res = await app.inject({
       method: 'POST', url: '/internal/cards/escrow', headers: authHeaders,
       payload: { accountId: 'a', instanceId: 'c1', orderId: 'o1' },
@@ -166,7 +207,7 @@ describe('POST /internal/cards/escrow', () => {
     const body = JSON.parse(res.payload);
     expect(body.ok).toBe(true);
     expect(body.instance).toMatchObject({ id: 'c1', defId: 'lichuang' });
-    expect(saves.docs.get('a')!.save.cardInv).toEqual({});
+    expect(cardInstances.docs.has('c1')).toBe(false);
   });
 });
 
@@ -192,15 +233,15 @@ describe('POST /internal/cards/grant', () => {
     expect(res.statusCode).toBe(404);
   });
 
-  it('happy path: writes the instance snapshot into cardInv (idempotent overwrite by id)', async () => {
-    const { app, saves } = build([saveRow('a')]);
+  it('happy path: writes the instance snapshot into cardInstances (idempotent overwrite by id)', async () => {
+    const { app, cardInstances } = build([saveRow('a')]);
     const res = await app.inject({
       method: 'POST', url: '/internal/cards/grant', headers: authHeaders,
       payload: { accountId: 'a', instance: card('c1', { level: 3 }), orderId: 'o1' },
     });
     expect(res.statusCode).toBe(200);
     expect(JSON.parse(res.payload)).toEqual({ ok: true });
-    expect((saves.docs.get('a')!.save.cardInv as Record<string, CardInstance>).c1).toMatchObject({ id: 'c1', level: 3 });
+    expect(cardInstances.docs.get('c1')).toMatchObject({ _id: 'c1', level: 3 });
   });
 });
 
@@ -225,10 +266,10 @@ describe('GET /internal/save-fields', () => {
   });
 
   it('existing account → returns pveUpgrades/cardInv/equipmentInv snapshot', async () => {
-    const { app } = build([saveRow('a', {
-      pveUpgrades: { atk: 3 },
-      cardInv: { c1: card('c1') },
-    } as Partial<SaveData>)]);
+    const { app } = build(
+      [saveRow('a', { pveUpgrades: { atk: 3 } } as Partial<SaveData>)],
+      [cardRow('c1', 'a')],
+    );
     const res = await app.inject({ method: 'GET', url: '/internal/save-fields?accountId=a', headers: authHeaders });
     const body = JSON.parse(res.payload);
     expect(body.pveUpgrades).toEqual({ atk: 3 });

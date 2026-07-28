@@ -227,13 +227,6 @@ export function startHttpApi(opts: HttpApiOpts, svc: AdminService): Server {
           return send(res, 200, { ok: true });
         }
 
-        // ── Hash mismatch match list (C3) ──
-        if (method === 'GET' && path === '/admin/mismatches') {
-          requireCap(actor, 'anticheat.view');
-          const rows = await svc.listMismatches();
-          return send(res, 200, { ok: true, mismatches: rows });
-        }
-
         // ── PvP card win-rate report (BALANCE data pipeline P1) ──
         if (method === 'GET' && path === '/admin/pvp-card-stats') {
           requireCap(actor, 'analytics.view');
@@ -241,13 +234,6 @@ export function startHttpApi(opts: HttpApiOpts, svc: AdminService): Server {
           const since = url.searchParams.get('since') ?? undefined;
           const cards = await svc.listPvpCardStats({ mode, since });
           return send(res, 200, { ok: true, cards });
-        }
-
-        // ── PvE suspicious account list (C4) ──
-        if (method === 'GET' && path === '/admin/suspicious-pve') {
-          requireCap(actor, 'anticheat.view');
-          const rows = await svc.listSuspiciousPve();
-          return send(res, 200, { ok: true, accounts: rows });
         }
 
         // ── Manual ban / unban (S4-4) ──
@@ -554,26 +540,6 @@ export function startHttpApi(opts: HttpApiOpts, svc: AdminService): Server {
           return send(res, 200, { ok: true });
         }
 
-        // ── Promo code management (B-PROMO, promo.manage) ──
-        if (method === 'GET' && path === '/admin/promo/codes') {
-          requireCap(actor, 'promo.manage');
-          return send(res, 200, { ok: true, codes: await svc.listPromoCodes() });
-        }
-        if (method === 'POST' && path === '/admin/promo/codes') {
-          requireCap(actor, 'promo.manage');
-          const b = await readJson(req);
-          const code = typeof b.code === 'string' ? b.code : '';
-          const coins = typeof b.coins === 'number' ? b.coins : 0;
-          if (!code || coins <= 0) throw new AdminError(400, 'bad_request', 'code + coins required');
-          const result = await svc.createPromoCode(actor, {
-            code,
-            coins,
-            ...(typeof b.expiresAt === 'number' ? { expiresAt: b.expiresAt } : {}),
-            ...(typeof b.totalLimit === 'number' ? { totalLimit: b.totalLimit } : {}),
-            ...(typeof b.note === 'string' && b.note ? { note: b.note } : {}),
-          });
-          return send(res, 200, { ok: true, ...result });
-        }
 
         // ── Paddle webhook event log (support/CS lookup, paddle.events.view) ──
         if (method === 'GET' && path === '/admin/paddle/events') {

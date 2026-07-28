@@ -1,4 +1,4 @@
-import { internalHeaders } from '@nw/shared';
+import { fetchInternalJson } from '@nw/shared';
 import { log } from './shared';
 
 // ── hash mismatch query (C3) ──────────────────────────────────
@@ -27,19 +27,15 @@ export class HttpMismatchClient implements MismatchClient {
 
   async listMismatches(): Promise<MismatchRow[]> {
     if (!this.metaBaseUrl) return [];
-    try {
-      const res = await fetch(`${this.metaBaseUrl}/internal/mismatches`, {
-        headers: internalHeaders('admin', this.internalKey),
-      });
-      if (!res.ok) {
-        log.warn('mismatches non-2xx', { status: res.status });
-        return [];
-      }
-      const body = (await res.json()) as { matches?: MismatchRow[] };
-      return body.matches ?? [];
-    } catch (e) {
-      log.warn('mismatches fetch failed', { err: (e as Error).message });
-      return [];
-    }
+    // Degrades to [] on any failure, as before.
+    const r = await fetchInternalJson<{ matches?: MismatchRow[] }>(`${this.metaBaseUrl}/internal/mismatches`, {
+      caller: 'admin',
+      key: this.internalKey,
+      timeoutMs: 10000,
+      log,
+      label: 'meta /internal/mismatches',
+    });
+    if (!r.ok || !r.body) return [];
+    return r.body.matches ?? [];
   }
 }

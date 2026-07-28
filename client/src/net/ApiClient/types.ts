@@ -64,6 +64,11 @@ export interface RetentionView {
   ads: { watchedToday: number; cap: number; rewardCoins: number; cooldownMs: number; nextAvailableAt: number };
 }
 
+// —— Aggregated lobby badges (P1-4, comm-audit-2026-07-27) ——
+/** GET /lobby/badges response: merges social/achievements/retention/events into one round-trip for lobby entry. */
+export type LobbyBadgesView =
+  operations['getLobbyBadges']['responses']['200']['content']['application/json']['data'];
+
 export type ApiResp<T> =
   | { ok: true; data: T }
   | { ok: false; error: { code: string; message: string } };

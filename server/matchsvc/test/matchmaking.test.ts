@@ -74,7 +74,7 @@ describe('Matchmaking', () => {
         botFallbackMs: 30_000,
         onTimeout: (e) => timeouts.push(e.accountId),
       });
-      mm.enqueue('a', 'a', '', 1000, '', 'web');
+      mm.enqueue('a', 'a', '', 1000, '', '', 'web');
       mm.tick();
       expect(timeouts).toEqual([]); // threshold not yet reached
       t = 30_000;
@@ -113,7 +113,7 @@ describe('Matchmaking', () => {
         botFallbackMs: 1000,
         onTimeout: (e) => seen.push(e.platform),
       });
-      mm.enqueue('a', 'a', '', 1000, '', 'wechat');
+      mm.enqueue('a', 'a', '', 1000, '', '', 'wechat');
       t = 1000;
       mm.tick();
       expect(seen).toEqual(['wechat']);

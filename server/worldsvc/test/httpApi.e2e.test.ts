@@ -224,6 +224,11 @@ describe.skipIf(!mongo)('worldsvc httpApi e2e', () => {
     expect(body.ok).toBe(true);
     expect(body.data).toMatchObject({ kind: 'occupy', status: 'marching' });
     expect(typeof body.data.marchId).toBe('string');
+    // P1-3 (comm-audit-2026-07-27): the response carries `me` (troops/resources committed aren't
+    // visible on the march itself) so the client can adopt it directly instead of a follow-up
+    // GET /world/me — this was the whole point of the change, so lock it in.
+    expect(body.data.me).toBeDefined();
+    expect(typeof body.data.me.mainBaseTile === 'string' || body.data.me.mainBaseTile === undefined).toBe(true);
   });
 
   it('POST /world/march missing coordinates → 400', async () => {

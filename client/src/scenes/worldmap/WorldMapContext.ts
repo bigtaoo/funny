@@ -7,7 +7,7 @@ import { DEFAULT_MAP_SIZE } from './constants';
 import type { ILayout } from '../../layout/ILayout';
 import type { ZoomCfg, PoolSlot } from './zoom';
 import type { WorldApiClient, WorldTileView, PlayerWorldView, MarchView, OccupationView, StationedView, NationView, SeasonView, SlgShopItemView, WorldChatMessage, SiegeSummaryView } from '../../net/WorldApiClient';
-import type { MarchUpdate, TileUpdate, UnderAttack, SiegeResult } from '../../net/proto/transport';
+import type { MarchUpdate, TileUpdate, UnderAttack, SiegeResult, NationMsg } from '../../net/proto/transport';
 import type { WorldMapRenderer } from './WorldMapRenderer';
 import type { WorldMapPanels } from './WorldMapPanels';
 import type { WorldMapNet } from './WorldMapNet';
@@ -66,6 +66,7 @@ export interface WorldMapView {
   applyTileUpdate(t: TileUpdate): void;
   applyUnderAttack(u: UnderAttack): void;
   applySiegeResult(s: SiegeResult): void;
+  applyNationMsg(n: NationMsg): void;
 }
 
 export class WorldMapContext {
@@ -159,8 +160,12 @@ export class WorldMapContext {
   // arrives (applySiegeResult), or a routine land-grab win is misread as a defensive loss ("Territory lost").
   myOccupyTiles: Set<string> = new Set();
   toastTimer = 0;
+  /** Accumulates update() dt; drives the once-per-second HUD countdown refresh (P1-1) — march/siege
+   *  remaining-time text previously only advanced on the ~5s poll tick or an incoming push, so it sat
+   *  visibly frozen in between. Runs independently of push arrivals: this only repaints existing
+   *  state, it never fetches (the poll itself was removed in P1-2 — see WorldMapNet.start()). */
+  hudTickTimer = 0;
   destroyed = false;
-  marchPoll: ReturnType<typeof setInterval> | null = null;
   readonly unsubs: (() => void)[] = [];
   /** Marches badge (top-right stack) toggles between collapsed count and the full expanded list (§25). */
   marchesExpanded = false;

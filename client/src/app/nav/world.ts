@@ -65,6 +65,7 @@ export function createWorldNav(ctx: AppCtx): WorldNav {
           onTileUpdate:  (tu) => view.applyTileUpdate(tu),
           onUnderAttack: (u) => view.applyUnderAttack(u),
           onSiegeResult: (s) => view.applySiegeResult(s),
+          onNationMsg:   (n) => view.applyNationMsg(n),
         };
         session.connect();
       }
@@ -183,7 +184,7 @@ export function createWorldNav(ctx: AppCtx): WorldNav {
   // alive underneath when the hub was opened from the world map (see goWorldMap.returnToMap).
   function goFamilyHub(worldApi: WorldApiClient, worldId: string, onExit: () => void = () => goWorldMap(worldApi, worldId), overlay = false): void {
     const myAccountId = saveManager.get().accountId;
-    views.showFamily({
+    const view = views.showFamily({
       onBack: onExit,
       onOpenSect() { goSectHub(worldApi, worldId, onExit, overlay); },
       onNavTab(tab) {
@@ -199,6 +200,22 @@ export function createWorldNav(ctx: AppCtx): WorldNav {
       getFriendPublicIds: async () => new Set((await api!.getFriends()).map((f) => f.publicId)),
       openChat: (peerPublicId, peerName) => nav.goChat(peerPublicId, peerName, { overlay, onBack: () => goFamilyHub(worldApi, worldId, onExit, overlay) }),
     }, { overlay });
+    // Keep the gateway connected + forward live family-channel messages into the scene
+    // (socialsvc → gateway → here). Offline → REST history poll. Mirrors goSectHub below.
+    const session = getNetSession();
+    if (session) {
+      session.handlers = {
+        onMatchStart: (info) => nav.goGameNet(info),
+        onFamilyMsg: (f) => view.applyFamilyMsg({
+          id: `push:${f.ts}:${f.fromPublicId}`,
+          senderId: f.fromPublicId,
+          senderName: f.fromName,
+          body: f.text,
+          ts: f.ts,
+        }),
+      };
+      session.connect();
+    }
   }
 
   function goSectHub(worldApi: WorldApiClient, worldId: string, onExit: () => void = () => goWorldMap(worldApi, worldId), overlay = false): void {

@@ -145,16 +145,16 @@ function leanSave(save: SaveData): SaveData {
 
 /**
  * Returns whether an equipment instance is currently equipped by any card in the Hero Roster.
- * Scans every CardInstance.gear (CC-2); an equipped item cannot be listed for auction or removed.
- * Unchanged by the storage split — cardInv still lives in the save document.
+ * cardInv moved to its own `cardInstances` collection (2026-07-27 split, cards.ts) — queries directly
+ * for a card whose gear references this instance (one of the fixed EQUIP_SLOTS keys), instead of
+ * scanning an in-memory map that no longer exists on the save document.
  */
-function isEquipped(save: SaveData, instanceId: string): boolean {
-  for (const card of Object.values(save.cardInv ?? {})) {
-    for (const slotId of Object.values(card.gear ?? {})) {
-      if (slotId === instanceId) return true;
-    }
-  }
-  return false;
+async function isEquipped(cols: Collections, accountId: string, instanceId: string): Promise<boolean> {
+  const match = await cols.cardInstances.findOne({
+    accountId,
+    $or: EQUIP_SLOTS.map((slot) => ({ [`gear.${slot}`]: instanceId })),
+  });
+  return !!match;
 }
 
 /**
@@ -286,10 +286,7 @@ export async function escrowEquipment(
   const existing = await cols.equipmentIdem.findOne({ _id: orderId });
   if (existing?.op === 'escrow') return { instance: existing.result as EquipmentInstance };
 
-  const [cur, instDoc] = await Promise.all([
-    getOrCreateSave(cols, accountId, now()),
-    cols.equipmentInstances.findOne({ _id: instanceId, accountId }),
-  ]);
+  const instDoc = await cols.equipmentInstances.findOne({ _id: instanceId, accountId });
   if (!instDoc) {
     // Concurrently escrowed (idem already written) → replay; otherwise the instance genuinely does not exist.
     const replay = await cols.equipmentIdem.findOne({ _id: orderId });
@@ -298,7 +295,7 @@ export async function escrowEquipment(
   }
   const inst = fromInstanceDoc(instDoc);
   if (inst.locked) return { error: 'equipment locked', code: 'EQUIP_LOCKED' };
-  if (isEquipped(cur, instanceId)) return { error: 'equipment in use (equipped)', code: 'EQUIP_IN_USE' };
+  if (await isEquipped(cols, accountId, instanceId)) return { error: 'equipment in use (equipped)', code: 'EQUIP_IN_USE' };
 
   // Destructive op: remove from equipmentInstances once, up front (idempotent delete — safe even if the
   // saves-side rev-guard below has to loop on a concurrent write to this account's save, since we never
@@ -599,17 +596,14 @@ export async function salvageEquipment(
   // Validate + accumulate refund (using current instances/save; not re-checked after this point — see
   // the up-front destructive delete below, which commits to this validation rather than re-checking
   // against a partially-mutated batch on a later retry).
-  const [cur, instDocs] = await Promise.all([
-    getOrCreateSave(cols, accountId, now()),
-    cols.equipmentInstances.find({ _id: { $in: ids }, accountId }).toArray(),
-  ]);
+  const instDocs = await cols.equipmentInstances.find({ _id: { $in: ids }, accountId }).toArray();
   const instMap = new Map(instDocs.map((d) => [d._id, fromInstanceDoc(d)]));
   const refunded: Record<string, number> = {};
   for (const id of ids) {
     const inst = instMap.get(id);
     if (!inst) return { error: `equipment instance not found: ${id}`, code: 'EQUIP_NOT_FOUND' };
     if (inst.locked) return { error: `equipment locked: ${id}`, code: 'EQUIP_LOCKED' };
-    if (isEquipped(cur, id)) return { error: `equipment in use: ${id}`, code: 'EQUIP_IN_USE' };
+    if (await isEquipped(cols, accountId, id)) return { error: `equipment in use: ${id}`, code: 'EQUIP_IN_USE' };
     if (!isSalvageable(inst.rarity, inst.level)) return { error: `not salvageable (${inst.rarity} +${inst.level}): ${id}`, code: 'NOT_SALVAGEABLE' };
     for (const [mat, qty] of Object.entries(salvageRefund(inst.defId))) refunded[mat] = (refunded[mat] ?? 0) + qty;
   }
@@ -703,14 +697,13 @@ export async function reforgeEquipment(
   // Reforge is a coin sink (ADR-030): coins go through commercial authority; if not configured, reforge is unavailable (same 503 as enhance/shop).
   if (!commercial.available) return { error: 'commercial service unavailable', code: 'NOT_IMPLEMENTED' };
 
-  const [cur, targetDoc, materialDoc] = await Promise.all([
-    getOrCreateSave(cols, accountId, now()),
+  const [targetDoc, materialDoc] = await Promise.all([
     cols.equipmentInstances.findOne({ _id: targetId, accountId }),
     cols.equipmentInstances.findOne({ _id: materialId, accountId }),
   ]);
   if (!targetDoc) return { error: 'target equipment not found', code: 'EQUIP_NOT_FOUND' };
   const target = fromInstanceDoc(targetDoc);
-  if (isEquipped(cur, targetId)) return { error: 'target is equipped', code: 'EQUIP_IN_USE' };
+  if (await isEquipped(cols, accountId, targetId)) return { error: 'target is equipped', code: 'EQUIP_IN_USE' };
   if (target.locked) return { error: 'target is locked', code: 'EQUIP_LOCKED' };
 
   const requiredMatRarity = REFORGE_MATERIAL_RARITY[target.rarity];
@@ -718,7 +711,7 @@ export async function reforgeEquipment(
 
   if (!materialDoc) return { error: 'material equipment not found', code: 'EQUIP_NOT_FOUND' };
   const material = fromInstanceDoc(materialDoc);
-  if (isEquipped(cur, materialId)) return { error: 'material is equipped', code: 'EQUIP_IN_USE' };
+  if (await isEquipped(cols, accountId, materialId)) return { error: 'material is equipped', code: 'EQUIP_IN_USE' };
 
   const targetDef = EQUIPMENT_DEFS[target.defId];
   const matDef = EQUIPMENT_DEFS[material.defId];
@@ -812,10 +805,11 @@ export async function reforgeEquipment(
  * Equips or unequips one item onto a specific card instance (CC-2, CHARACTER_CARDS_DESIGN §5).
  * Pure state change, no randomness, no resources → naturally idempotent, no idemKey needed.
  * instanceId=null unequips the slot; otherwise validates instance existence + slot match (INVALID_SLOT).
- * cardInstanceId must reference an existing CardInstance in save.cardInv; gear is written to
- * CardInstance.gear[slot] (CC-2 per-card loadout; CHARACTER_CARDS_DESIGN §5).
- * Never touches equipmentInstances (only cardInv.gear, a pointer) — the storage split does not change
- * this function's saves-only write, just where the pointed-to instance's own data lives.
+ * cardInstanceId must reference an existing CardInstance in the `cardInstances` collection (2026-07-27
+ * split, cards.ts); gear is written to CardInstance.gear[slot] (CC-2 per-card loadout;
+ * CHARACTER_CARDS_DESIGN §5). Never touches equipmentInstances (only the card's gear, a pointer).
+ * Doesn't touch `saves` at all anymore: gear lives entirely on the card document now, so there is
+ * nothing left in the save doc for this mutation to change (no rev bump needed).
  */
 export async function equipEquipment(
   cols: Collections,
@@ -835,30 +829,15 @@ export async function equipEquipment(
     if (def && def.slot !== slot) return { error: `slot mismatch: ${instDoc.defId} is ${def.slot}`, code: 'INVALID_SLOT' };
   }
 
-  for (let attempt = 0; attempt < REV_RETRIES; attempt++) {
-    const doc = await cols.saves.findOne({ _id: accountId });
-    if (!doc) return { error: 'save not found', code: 'NOT_FOUND' };
-    const save = doc.save;
+  const cardDoc = await cols.cardInstances.findOne({ _id: cardInstanceId, accountId });
+  if (!cardDoc) return { error: 'card instance not found', code: 'NOT_FOUND' };
 
-    const card = (save.cardInv ?? {})[cardInstanceId];
-    if (!card) return { error: 'card instance not found', code: 'NOT_FOUND' };
+  const updatedGear = { ...(cardDoc.gear ?? {}) };
+  if (instanceId === null) delete (updatedGear as Record<string, string | undefined>)[slot];
+  else (updatedGear as Record<string, string>)[slot] = instanceId;
 
-    const updatedGear = { ...(card.gear ?? {}) };
-    if (instanceId === null) delete (updatedGear as Record<string, string | undefined>)[slot];
-    else (updatedGear as Record<string, string>)[slot] = instanceId;
+  await cols.cardInstances.updateOne({ _id: cardInstanceId, accountId }, { $set: { gear: updatedGear } });
 
-    const updatedCard = { ...card, gear: updatedGear };
-    const next: SaveData = {
-      ...save,
-      rev: save.rev + 1,
-      updatedAt: now(),
-      cardInv: { ...(save.cardInv ?? {}), [cardInstanceId]: updatedCard },
-    };
-    const res = await cols.saves.findOneAndUpdate(
-      { _id: accountId, rev: doc.rev },
-      { $set: { save: next, rev: next.rev } },
-    );
-    if (res) return { save: leanSave(next) };
-  }
-  return { error: 'rev conflict, retry', code: 'REV_CONFLICT' };
+  const save = await getOrCreateSave(cols, accountId, now());
+  return { save: leanSave(save) };
 }

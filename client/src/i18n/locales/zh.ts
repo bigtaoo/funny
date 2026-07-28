@@ -745,6 +745,9 @@ export const zh = {
   'friends.duel.timeout': '切磋邀请已超时',
   'friends.duel.offline': '好友不在线，无法切磋',
   'friends.duel.notFound': '找不到该玩家',
+  // Global toast (any scene, P0-8): the in-scene banner (friends.duelInviteBanner) only shows while
+  // sitting on FriendsScene, so this fires everywhere else the invite arrives.
+  'friends.duel.invitedToast': '{name} 邀请你切磋，去好友页查看',
   // Family tab (embedded inside social hub, S6-4)
   'social.noSlg': '进入大世界后才能使用此功能',
   'social.family.none': '未加入任何家族',

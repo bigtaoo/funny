@@ -27,6 +27,7 @@ class FakeSocialsvc implements MetaSocialsvcClient {
   mail = new Map<string, { _id: string; to: string; subject: string; body: string; attachments?: unknown[] }>();
   async proxy(): Promise<never> { throw new Error('not used in this test'); }
   async claimMail(): Promise<never> { throw new Error('not used in this test'); }
+  async unclaimMail(): Promise<void> { /* not used in this test */ }
   async insertSystemMail(
     dispatchKey: string,
     to: string,
@@ -204,6 +205,26 @@ describe('settleSeasonParticipants (L2-1 end-of-season close loop)', () => {
     expect(titlesOf(f, 'alice')).toEqual(['event.newbie', ladderTitleId(1, 'master')]); // starter title + one master, no duplicate
     expect(await f.snaps.countDocuments()).toBe(1); // snapshot deduplicated by composite _id
     expect(f.snaps.docs.get('1:alice')!.ts).toBe(100); // $setOnInsert does not overwrite the first settlement
+  });
+
+  // comm-audit-internal-2026-07-28 P0-5: settlement fan-out is now bounded-concurrency batches
+  // rather than one-at-a-time. This pins that concurrent processing doesn't cross-contaminate
+  // results (each participant's own elo/rank/snapshot, not another's) at a scale (50) large enough
+  // to exercise multiple concurrency-cap batches and multiple cursor-buffer batches.
+  it('bounded-concurrency fan-out settles every participant correctly (no cross-contamination) at scale', async () => {
+    const seed: Record<string, number> = {};
+    for (let i = 0; i < 50; i++) seed[`p${i}`] = 1500 + i; // distinct peak elo per player
+    const f = makeFake(seed);
+    const res = await settleSeasonParticipants(f.cols, commercial, f.socialsvc, 1, 100);
+
+    expect(res.settled).toBe(50);
+    expect(await f.snaps.countDocuments()).toBe(50);
+    for (let i = 0; i < 50; i++) {
+      const snap = f.snaps.docs.get(`1:p${i}`)!;
+      expect(snap.accountId).toBe(`p${i}`);
+      expect(snap.peakElo).toBe(1500 + i);
+      expect(titlesOf(f, `p${i}`)).toContain(ladderTitleId(1, eloToRank(1500 + i)));
+    }
   });
 });
 

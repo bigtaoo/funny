@@ -48,6 +48,74 @@ const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms
  * transient failures (network error / 5xx) up to `retries` times. A 4xx is treated
  * as terminal (bad request / auth) and never retried.
  */
+export interface InternalFetchOpts extends InternalPostOpts {
+  /** HTTP method. Default GET (the classic bare-fetch gap: postInternal only ever covered POST pushes). */
+  method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
+  /** JSON body (POST/PUT/PATCH only). */
+  body?: unknown;
+}
+
+export interface InternalJsonResult<T> {
+  /** True iff a 2xx came back (the parsed body of a 4xx/5xx is still in `body` when the peer sent JSON). */
+  ok: boolean;
+  /** HTTP status, or 0 on network error / timeout. */
+  status: number;
+  /** Parsed JSON body; null when the response wasn't JSON or the request never completed. */
+  body: T | null;
+  /** Failure description when status is 0 or the body failed to parse. */
+  error?: string;
+}
+
+/**
+ * JSON round-trip to an internal endpoint with the same three guarantees as
+ * postInternal (drained body, per-attempt timeout, bounded retry) but returning
+ * the parsed response instead of a boolean. Never throws and never hangs:
+ * network errors / timeouts surface as `{ok:false, status:0}`. Non-2xx JSON
+ * bodies are still parsed and returned — internal APIs signal business errors
+ * (INSUFFICIENT_FUNDS 402, REV_CONFLICT 409, …) as JSON on error statuses and
+ * callers depend on reading them. Retries (opt-in) apply only to network
+ * errors and 5xx, never 4xx; leave retries=0 for non-idempotent commands.
+ */
+export async function fetchInternalJson<T>(url: string, opts: InternalFetchOpts): Promise<InternalJsonResult<T>> {
+  const { caller, key, method = 'GET', timeoutMs = 5000, retries = 0, backoffMs = 150, log, label = url } = opts;
+  const headers: Record<string, string> = { ...internalHeaders(caller, key) };
+  let payload: string | undefined;
+  if (opts.body !== undefined) {
+    headers['content-type'] = 'application/json';
+    payload = JSON.stringify(opts.body);
+  }
+  let last: InternalJsonResult<T> = { ok: false, status: 0, body: null, error: 'unreachable' };
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      const res = await fetch(url, { method, headers, body: payload, signal: AbortSignal.timeout(timeoutMs) });
+      try {
+        // .json() consumes (= drains) the body; a non-JSON payload still needs an
+        // explicit cancel or the socket stays checked out of the pool (file header).
+        const parsed = (await res.json()) as T;
+        last = { ok: res.ok, status: res.status, body: parsed };
+      } catch (parseErr) {
+        try {
+          await res.body?.cancel();
+        } catch {
+          /* already consumed / closed */
+        }
+        last = { ok: false, status: res.status, body: null, error: `non-JSON response: ${(parseErr as Error).message}` };
+      }
+      if (res.ok) return last;
+      if (res.status >= 400 && res.status < 500) {
+        // Business/auth error — the parsed body (if any) is the answer; never retry.
+        return last;
+      }
+      // 5xx falls through to retry
+    } catch (e) {
+      last = { ok: false, status: 0, body: null, error: (e as Error).message };
+    }
+    if (attempt < retries) await sleep(backoffMs * 2 ** attempt + Math.floor(Math.random() * backoffMs));
+  }
+  if (!last.ok) log?.warn('internal fetch failed', { path: label, method, attempts: retries + 1, status: last.status, err: last.error });
+  return last;
+}
+
 export async function postInternal(url: string, body: unknown, opts: InternalPostOpts): Promise<boolean> {
   const { caller, key, timeoutMs = 5000, retries = 0, backoffMs = 150, log, label = url } = opts;
   const headers = { 'content-type': 'application/json', ...internalHeaders(caller, key) };

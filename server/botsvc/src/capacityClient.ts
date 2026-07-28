@@ -1,18 +1,27 @@
 // Capacity signal (BOTSVC_DESIGN §4): polls gateway's EXISTING GET /internal/stats (OPS_DESIGN §4.1/§8
 // admin monitoring endpoint) — no new gateway code needed, botsvc just reuses the same online-count.
+import { fetchInternalJson } from '@nw/shared';
+
 export class CapacityClient {
   constructor(
     private readonly gatewayInternalUrl: string,
     private readonly internalKey: string,
   ) {}
 
+  /** Throws on failure (network / timeout / non-2xx) — the scheduler catches, warns once, and
+   *  treats the missing signal as "shedding disabled" (unchanged degradation; the explicit
+   *  timeout just makes a stuck gateway fail fast instead of hanging the scheduling pass). */
   async onlineCount(): Promise<number> {
-    const res = await fetch(`${this.gatewayInternalUrl}/internal/stats`, {
-      headers: { 'x-internal-key': this.internalKey },
+    const r = await fetchInternalJson<{ online: number }>(`${this.gatewayInternalUrl}/internal/stats`, {
+      caller: 'botsvc',
+      key: this.internalKey,
+      timeoutMs: 5000,
+      label: 'gateway /internal/stats',
     });
-    if (!res.ok) throw new Error(`gateway /internal/stats failed: ${res.status}`);
-    const body = (await res.json()) as { online: number };
-    return body.online;
+    if (!r.ok || !r.body) {
+      throw new Error(`gateway /internal/stats failed: ${r.status ? String(r.status) : r.error ?? 'network error'}`);
+    }
+    return r.body.online;
   }
 }
 

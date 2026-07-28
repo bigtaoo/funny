@@ -2,10 +2,10 @@
 // The top layer of the WorldCore chain: full & sparse viewport reads with fog-of-war,
 // single-tile reads, the settled player-state read (getMe), and the tile→view mappers.
 // No behavior change — methods copied verbatim from the original core.ts.
-import { proceduralTile, tileId, playerWorldId, isInVision } from '@nw/shared';
+import { proceduralTile, tileId, playerWorldId, isInVision, sliceRuns, tileAtX, type ProceduralTile } from '@nw/shared';
 import { WorldCoreVision } from './coreVision';
 import { siegeHpView } from './coreHelpers';
-import type { TileDoc, MapBaselineTileDoc } from './db';
+import type { TileDoc } from './db';
 import type { PlayerProfile } from './metaClient';
 import {
   MAP_VIEW_MAX_RADIUS,
@@ -36,13 +36,21 @@ export class WorldCoreMap extends WorldCoreVision {
       .toArray();
     const byKey = new Map(overrides.map((t) => [`${t.x}:${t.y}`, t]));
 
-    // §24 Layer A: batch-fetch the per-world terrain baseline for the viewport bbox (cloned from the active map
-    // template at world-open — carries admin map-editor edits). A tile with no baseline row falls back to
-    // proceduralTile(). Same viewport bbox shape as the tiles fetch above; keeps this off the per-tile query path.
-    const baselines = await cols.mapBaselines
-      .find({ worldId, x: { $gte: x0, $lte: x1 }, y: { $gte: y0, $lte: y1 } })
+    // §24 Layer A: batch-fetch the per-world terrain baseline rows for the viewport's y-range (cloned from the
+    // active map template at world-open — carries admin map-editor edits; run-length-encoded, 2026-07-27
+    // storage redesign — see shared/src/slg/mapRle.ts). A tile with no baseline row falls back to
+    // proceduralTile(). Decoded + sliced to the x-range in-memory per row, off the per-tile query path.
+    const baselineRows = await cols.mapBaselineRows
+      .find({ worldId, y: { $gte: y0, $lte: y1 } })
       .toArray();
-    const baseByKey = new Map(baselines.map((b) => [`${b.x}:${b.y}`, b]));
+    const baseByKey = new Map<string, ProceduralTile>();
+    for (const row of baselineRows) {
+      for (const r of sliceRuns(row.runs, x0, x1)) {
+        for (let x = r.x0; x <= r.x1; x++) {
+          baseByKey.set(`${x}:${row.y}`, { type: r.type, level: r.level, ...(r.resType ? { resType: r.resType } : {}), ...(r.obstacleKind ? { obstacleKind: r.obstacleKind } : {}) });
+        }
+      }
+    }
 
     const now = this.deps.now(); // D-CITY-8: shared `now` for lazy durability regen across the whole viewport batch
     // G5 vision: compute the requester's currently visible tile set (own/family territory + capitals + in-transit marches).
@@ -147,12 +155,13 @@ export class WorldCoreMap extends WorldCoreVision {
 
   /** Single-tile details. DB override takes priority; otherwise falls back to the §24 terrain baseline (then proceduralTile). G5: outside vision, returns only the terrain baseline (same as getMap, prevents getTile from bypassing the fog of war). */
   async getTile(worldId: string, accountId: string, x: number, y: number): Promise<WorldTileView> {
-    // Fetch the override and the §24 terrain baseline together (single-tile reads on both keyed by tileId).
-    const [o, baseline] = await Promise.all([
+    // Fetch the override (single-tile, keyed by tileId) and the §24 terrain baseline row (keyed by worldId:y,
+    // run-length-encoded — see shared/src/slg/mapRle.ts) together, then pick out this x from the row's runs.
+    const [o, baselineRow] = await Promise.all([
       this.deps.cols.tiles.findOne({ _id: tileId(worldId, x, y) }),
-      this.deps.cols.mapBaselines.findOne({ _id: tileId(worldId, x, y) }),
+      this.deps.cols.mapBaselineRows.findOne({ _id: `${worldId}:${y}` }),
     ]);
-    if (!o) return this.terrainView(worldId, x, y, baseline);
+    if (!o) return this.terrainView(worldId, x, y, baselineRow ? tileAtX(baselineRow.runs, x) : undefined);
     const sources = await this.computeVisionSources(worldId, accountId, x, x, y, y);
     const ownerProfile = (o.ownerId && o.ownerId !== accountId && this.meta.available)
       ? await this.meta.getProfile(o.ownerId).catch(() => null) : undefined;
@@ -248,12 +257,13 @@ export class WorldCoreMap extends WorldCoreVision {
   }
 
   /**
-   * Terrain baseline for a tile that has no TileDoc override. Prefers the per-world mapBaselines row (§24 Layer A,
+   * Terrain baseline for a tile that has no TileDoc override. Prefers the per-world baseline (§24 Layer A,
    * cloned from the active map template at world-open — carries admin map-editor edits: painted rivers/mountains,
-   * moved cities); falls back to proceduralTile() when there is no baseline row (no template was active at open time).
-   * Vision/fog gating is unchanged: terrain is never fog-gated, so callers add `visible` exactly as before.
+   * moved cities; already decoded from its run-length-encoded row by the caller); falls back to proceduralTile()
+   * when there is no baseline for this cell (no template was active at open time). Vision/fog gating is
+   * unchanged: terrain is never fog-gated, so callers add `visible` exactly as before.
    */
-  private terrainView(worldId: string, x: number, y: number, baseline?: MapBaselineTileDoc | null): WorldTileView {
+  private terrainView(worldId: string, x: number, y: number, baseline?: ProceduralTile): WorldTileView {
     if (baseline) {
       return { x, y, type: baseline.type, level: baseline.level, ...(baseline.resType ? { resType: baseline.resType } : {}), ...(baseline.obstacleKind ? { obstacleKind: baseline.obstacleKind } : {}) };
     }

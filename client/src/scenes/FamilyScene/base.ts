@@ -48,6 +48,11 @@ export interface FamilySceneCallbacks {
   openChat(peerPublicId: string, peerName: string): void;
 }
 
+/** Handle returned by showFamily so the core can push live family-channel messages in. */
+export interface FamilySceneView {
+  applyFamilyMsg(msg: FamilyMessageView): void;
+}
+
 export type FamilyTab = 'members' | 'channel';
 export type ViewMode = 'loading' | 'noFamily' | 'create' | 'myFamily';
 
@@ -516,6 +521,7 @@ export interface FamilySceneBase {
   loadMyFamily(familyId: string): Promise<void>;
   loadChannel(): Promise<void>;
   loadJoinRequests(): Promise<void>;
+  applyFamilyMsg(msg: FamilyMessageView): void;
   // render
   renderLoading(): void;
   renderNoFamily(): void;

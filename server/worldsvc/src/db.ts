@@ -14,6 +14,7 @@ import type {
   SettleTier,
   BuildingKey,
   PathCell,
+  TileRun,
 } from '@nw/shared';
 import { FAMILY_MSG_RETENTION_SEC, troopCapFor } from '@nw/shared';
 import type { Filter } from 'mongodb';
@@ -374,6 +375,9 @@ export interface SiegeDoc {
   replayRef?: string;
   recomputed: boolean;
   ts: number;
+  /** TTL anchor (BSON Date; Mongo TTL only works on Date, `ts` above is a plain number) — SIEGE_RETENTION_SEC
+   * safety net, 2026-07-27 audit finding (this collection previously had no expiry at all). */
+  expireAt: Date;
   /**
    * G3-2c replay spectator: persists the inputs of the authoritative battle (seed + both sides' formations + tile level).
    * The client uses this to reconstruct buildSiegeBattle and headless-replay with the same seed → exactly reproduces
@@ -533,35 +537,31 @@ export interface MapTemplateDoc {
   updatedAt: number;
 }
 
-/** One tile of a map template (§24 Layer A — design-time, edited via the admin map editor, not runtime state). */
-export interface MapTemplateTileDoc {
-  _id: string; // `${templateId}:${x}:${y}`
+/**
+ * One row of a map template, run-length-encoded (§24 Layer A; storage redesign 2026-07-27 — see
+ * shared/src/slg/mapRle.ts header). Replaces the pre-2026-07-27 per-cell `MapTemplateTileDoc`
+ * (`${templateId}:${x}:${y}`, one doc per cell — 2.25M docs at SLG_MAP_W×SLG_MAP_H): terrain has long
+ * horizontal runs, so one doc per row (height docs, e.g. 1500) with a compact run list covers the same data.
+ */
+export interface MapTemplateRowDoc {
+  _id: string; // `${templateId}:${y}`
   templateId: string;
-  x: number;
   y: number;
-  type: TileType;
-  level: number;
-  resType?: ResourceType;
-  /** For type=obstacle only: river vs mountain art (§24 art-parity). Same optional field as MapTemplateTile. */
-  obstacleKind?: ObstacleKind;
+  runs: TileRun[];
 }
 
 /**
- * Per-world terrain baseline, cloned (copied, not referenced) from a template's tiles at world-open time (§24).
- * Consumed by the runtime read path (WorldCoreMap.getMap/getTile): for a tile with no TileDoc override, this
- * baseline is the terrain, falling back to proceduralTile() only when no baseline row exists (no active template
- * at world-open). Same shape as MapTemplateTile — carry any new terrain field added there through here too.
+ * Per-world terrain baseline row, cloned (copied, not referenced) from a template's rows at world-open time
+ * (§24). Consumed by the runtime read path (WorldCoreMap.getMap/getTile): for a tile with no TileDoc
+ * override, this baseline is the terrain, falling back to proceduralTile() only when no baseline row exists
+ * (no active template at world-open). Same run-length shape as MapTemplateRowDoc, keyed by worldId instead
+ * of templateId. Replaces the pre-2026-07-27 per-cell `MapBaselineTileDoc` (see MapTemplateRowDoc above).
  */
-export interface MapBaselineTileDoc {
-  _id: string; // `${worldId}:${x}:${y}`
+export interface MapBaselineRowDoc {
+  _id: string; // `${worldId}:${y}`
   worldId: string;
-  x: number;
   y: number;
-  type: TileType;
-  level: number;
-  resType?: ResourceType;
-  /** For type=obstacle only: river vs mountain art (§24 art-parity). Cloned from MapTemplateTileDoc.obstacleKind. */
-  obstacleKind?: ObstacleKind;
+  runs: TileRun[];
 }
 
 export interface WorldCollections {
@@ -582,8 +582,8 @@ export interface WorldCollections {
   shardAllocations: Collection<ShardAllocationDoc>;
   shardTransfers: Collection<ShardTransferDoc>;
   mapTemplates: Collection<MapTemplateDoc>;
-  mapTemplateTiles: Collection<MapTemplateTileDoc>;
-  mapBaselines: Collection<MapBaselineTileDoc>;
+  mapTemplateRows: Collection<MapTemplateRowDoc>;
+  mapBaselineRows: Collection<MapBaselineRowDoc>;
 }
 
 export interface WorldMongo {
@@ -630,8 +630,8 @@ export async function createWorldMongo(
     shardAllocations: db.collection<ShardAllocationDoc>('shardAllocations'),
     shardTransfers: db.collection<ShardTransferDoc>('shardTransfers'),
     mapTemplates: db.collection<MapTemplateDoc>('mapTemplates'),
-    mapTemplateTiles: db.collection<MapTemplateTileDoc>('mapTemplateTiles'),
-    mapBaselines: db.collection<MapBaselineTileDoc>('mapBaselines'),
+    mapTemplateRows: db.collection<MapTemplateRowDoc>('mapTemplateRows'),
+    mapBaselineRows: db.collection<MapBaselineRowDoc>('mapBaselineRows'),
   };
 
   async function ensureIndexes(): Promise<void> {
@@ -642,8 +642,17 @@ export async function createWorldMongo(
     await collections.tiles.createIndex({ worldId: 1, x: 1, y: 1 });
     await collections.tiles.createIndex({ ownerId: 1 });
     await collections.tiles.createIndex({ familyId: 1 });
+    // Vision's `contestedBy` branch of its $or (computeVisionSources) had no supporting index — only the
+    // `ownerId` side of the $or could use one. Sparse: most tiles never carry contestedBy (2026-07-27 audit).
+    await collections.tiles.createIndex({ contestedBy: 1 }, { sparse: true });
     await collections.playerWorld.createIndex({ worldId: 1, accountId: 1 });
     await collections.playerWorld.createIndex({ familyId: 1 });
+    // settleSeason's battle-pass payout scan (`find({worldId, hasBattlePass:true})`) had no supporting index —
+    // COLLSCAN over every playerWorld doc in the world. Partial: only battle-pass holders are indexed (2026-07-27 audit).
+    await collections.playerWorld.createIndex(
+      { worldId: 1, hasBattlePass: 1 },
+      { partialFilterExpression: { hasBattlePass: true } },
+    );
     // Due-training scan (processCompletedTraining, every 2s): was `trainingQueue.0.completeAt` with no
     // supporting index — a full COLLSCAN every tick, cost scaling with total playerWorld doc count rather
     // than online-player count (2026-07-26 VPS CPU investigation). Partial: only docs with an active queue
@@ -658,7 +667,12 @@ export async function createWorldMongo(
       { partialFilterExpression: { nextBuildCompleteAt: { $exists: true } } },
     );
     await collections.marches.createIndex({ worldId: 1, ownerId: 1 });
-    // On-time scan fallback (primary scheduling uses Redis ZSET, S8-2; degrades to Mongo polling without Redis).
+    // getMarches' vision-gated "other players' marches" branch does `find({worldId, status:'marching'})`
+    // with no supporting index (world scoping alone was not a usable prefix without status). Called on every
+    // client poll (~5s), so worth indexing even though most live marches already carry status:'marching'.
+    await collections.marches.createIndex({ worldId: 1, status: 1 });
+    // Due-time scan (2026-07-27: sole arrival mechanism — the Redis wake-up ZSET this comment used to
+    // describe was write-only and was removed as dead I/O, see redis.ts history).
     await collections.marches.createIndex({ arriveAt: 1 });
     // ADR-051 (P1): stepping marches are driven off their next per-tile step time; the arrival scan matches on
     // nextStepAt for them (and falls back to arriveAt for legacy/return legs that carry no stepping cursor).
@@ -694,11 +708,19 @@ export async function createWorldMongo(
     // listSieges' `defenderId` branch of its $or had no supporting index — a full COLLSCAN on every
     // replay-browser open, growing with `sieges` (which has no TTL; 2026-07-26 VPS CPU investigation).
     await collections.sieges.createIndex({ worldId: 1, defenderId: 1 });
-    // ADR-026: delayed building-HP settlement scan (mirrors marches.arriveAt: due-time polling; Redis ZSET optional later).
+    // TTL safety net (2026-07-27 audit finding): resetSeason already wipes this per-world at every season
+    // reset; this only bounds growth if a reset is delayed/skipped. See SIEGE_RETENTION_SEC's comment.
+    await collections.sieges.createIndex({ expireAt: 1 }, { expireAfterSeconds: 0 });
+    // ADR-026: delayed building-HP settlement scan (mirrors marches.arriveAt: due-time polling is the sole mechanism).
     await collections.siegeDamage.createIndex({ dueAt: 1 });
     await collections.siegeDamage.createIndex({ tile: 1 });
-    // ADR-037 (§5.4): occupation-hold settlement scan (mirrors siegeDamage.dueAt: due-time polling; Redis ZSET optional wake-up hint).
+    // ADR-037 (§5.4): occupation-hold settlement scan (mirrors siegeDamage.dueAt: due-time polling is the sole mechanism).
     await collections.occupations.createIndex({ dueAt: 1 });
+    // TEAM_BUSY gate (`findOne({worldId,ownerId,teamId})`, every march dispatch) and getStationed's
+    // `find({worldId,ownerId})` had no supporting index beyond {dueAt} — COLLSCAN on the hottest occupation
+    // read path. Compound covers both (teamId optional trailing key still lets the {worldId,ownerId} prefix
+    // serve the two-field query). Found 2026-07-27 audit.
+    await collections.occupations.createIndex({ worldId: 1, ownerId: 1, teamId: 1 });
     // Stationed teams (2026-07-23): listed per owner (getStationed); the partial-unique {worldId,ownerId,teamId}
     // is the counterpart of the marches team-unique index — together they enforce "a team holds ONE active state"
     // across in-transit marches, occupation holds, and now field stationing. Wrapped best-effort like the marches one.
@@ -720,9 +742,11 @@ export async function createWorldMongo(
     await collections.shardAllocations.createIndex({ season: 1 });
     // G6 mid-season transfer cooldown (§27): _id is already accountId (unique by definition); no secondary index needed.
     // Map templates (§24): viewport bbox reads scan by templateId + x/y range; active lookup for the "which template do new worlds clone" query.
-    await collections.mapTemplateTiles.createIndex({ templateId: 1, x: 1, y: 1 });
+    // Row-level range queries (viewport bbox reads decode the needed y-range then filter x in-memory —
+    // see mapTemplateService.ts/coreMap.ts); `_id` (`templateId:y` / `worldId:y`) already covers exact-row lookups.
+    await collections.mapTemplateRows.createIndex({ templateId: 1, y: 1 });
     await collections.mapTemplates.createIndex({ active: 1 });
-    await collections.mapBaselines.createIndex({ worldId: 1, x: 1, y: 1 });
+    await collections.mapBaselineRows.createIndex({ worldId: 1, y: 1 });
   }
 
   /**

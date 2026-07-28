@@ -5,7 +5,7 @@
 //
 // Same shape as commercialClient: HTTP implementation + interface (makes it easy to inject a fake judge in tests).
 
-import { internalHeaders, postInternal } from '@nw/shared';
+import { fetchInternalJson, postInternal } from '@nw/shared';
 
 /** Replay frame (command bytes are base64-encoded for JSON safety; gateway decodes back to bytes and pushes to the judge client). */
 export interface JudgeFrame {
@@ -57,10 +57,6 @@ export interface GatewayClient {
   judge(req: JudgeReq): Promise<JudgeRes>;
   /** Push a targeted social message by accountId (dropped if gateway is offline). Best-effort, does not throw. */
   push(accountId: string, msg: SocialPushMsg): Promise<void>;
-  /** Batch presence query (marks the online flag in friend lists); returns all-false if gateway is unavailable or errors. */
-  presence(accountIds: string[]): Promise<Record<string, boolean>>;
-  /** Invalidate gateway's friend cache after a friendship change (forces presence broadcast scope to be re-fetched). Best-effort. */
-  invalidateFriends(accountId: string): Promise<void>;
 }
 
 export class HttpGatewayClient implements GatewayClient {
@@ -76,17 +72,18 @@ export class HttpGatewayClient implements GatewayClient {
   /** Error / not configured / no candidate → {ok:false} (meta falls back to voiding the verdict, not convicting). */
   async judge(req: JudgeReq): Promise<JudgeRes> {
     if (!this.baseUrl) return { ok: false };
-    try {
-      const res = await fetch(`${this.baseUrl}/gw/judge`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json', ...internalHeaders('meta', this.internalKey) },
-        body: JSON.stringify(req),
-      });
-      if (!res.ok) return { ok: false };
-      return (await res.json()) as JudgeRes;
-    } catch {
-      return { ok: false };
-    }
+    // timeoutMs 25s deliberately exceeds gateway's 20s JUDGE_TIMEOUT_MS: gateway's own timeout
+    // fires first and meta receives an explicit {ok:false} response instead of aborting locally.
+    const r = await fetchInternalJson<JudgeRes>(`${this.baseUrl}/gw/judge`, {
+      caller: 'meta',
+      key: this.internalKey,
+      method: 'POST',
+      body: req,
+      timeoutMs: 25_000,
+      label: '/gw/judge',
+    });
+    if (!r.ok || !r.body) return { ok: false };
+    return r.body;
   }
 
   async push(accountId: string, msg: SocialPushMsg): Promise<void> {
@@ -99,26 +96,4 @@ export class HttpGatewayClient implements GatewayClient {
     });
   }
 
-  async presence(accountIds: string[]): Promise<Record<string, boolean>> {
-    if (!this.baseUrl || accountIds.length === 0) return {};
-    try {
-      const qs = encodeURIComponent(accountIds.join(','));
-      const res = await fetch(`${this.baseUrl}/gw/presence?accounts=${qs}`, {
-        headers: internalHeaders('meta', this.internalKey),
-      });
-      if (!res.ok) return {};
-      return (await res.json()) as Record<string, boolean>;
-    } catch {
-      return {};
-    }
-  }
-
-  async invalidateFriends(accountId: string): Promise<void> {
-    if (!this.baseUrl) return;
-    await postInternal(`${this.baseUrl}/gw/social/invalidate`, { accountId }, {
-      caller: 'meta',
-      key: this.internalKey,
-      label: '/gw/social/invalidate',
-    });
-  }
 }

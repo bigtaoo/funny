@@ -110,6 +110,41 @@ describe('NetClient connect / reconnect', () => {
     expect(onReconnect).toHaveBeenCalledTimes(1); // fires only on reconnect open, not on first connect
   });
 
+  it('connect() during a pending reconnect does not spawn a second socket (regression)', async () => {
+    // Bug: connect() only short-circuited on 'connecting'/'open', so calling it while 'reconnecting'
+    // (e.g. NetSession.connect() re-invoked on every scene entry) raced a second openSocket() under
+    // the same `gen` alongside the pending backoff timer's own retry — two live sockets, each free to
+    // stomp `this.socket`/state to 'closed' on the other's close and permanently kill reconnection.
+    const { platform, sockets } = fakePlatform();
+    const onReconnect = vi.fn();
+    const client = new NetClient(platform, {
+      url: 'ws://x/ws',
+      tokenProvider: async () => 'tok',
+      backoffMs: [10],
+      pingIntervalMs: 0,
+      handlers: { onServerMsg: () => {}, onReconnect },
+    });
+    client.connect();
+    await tick();
+    sockets[0]!.open();
+    sockets[0]!.closeRemote(); // abnormal disconnect → 'reconnecting' + backoff timer scheduled
+    expect(client.getState()).toBe('reconnecting');
+
+    client.connect(); // scene-entry-style idempotent re-call while a reconnect is already pending
+    await tick();
+    expect(sockets).toHaveLength(1); // must not have opened a second socket yet
+
+    await sleep(30); // let the original backoff timer fire
+    expect(sockets).toHaveLength(2); // exactly one reconnect attempt, not two
+    sockets[1]!.open();
+    expect(client.getState()).toBe('open');
+    expect(onReconnect).toHaveBeenCalledTimes(1);
+
+    // The single reconnected socket must survive — no orphaned duplicate free to clobber it closed.
+    sockets[1]!.closeRemote();
+    expect(client.getState()).toBe('reconnecting');
+  });
+
   it('does not reconnect after intentional disconnect (ignores stale callbacks)', async () => {
     const { platform, sockets } = fakePlatform();
     const onReconnect = vi.fn();

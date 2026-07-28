@@ -19,6 +19,7 @@ import {
 import { migrate } from './migrate';
 import { replayIdFor } from './ReplayStore';
 import type { PendingClear, PendingStaminaSpend, SaveStore } from './SaveStore';
+import { serverNow } from '../../net/serverClock';
 
 // Stamina constants (A4) — mirrors server/metaserver/src/service/base.ts STAMINA_CAP/STAMINA_REGEN_MS,
 // needed here so entering a level can deduct correctly even fully offline (no server round-trip available).
@@ -94,6 +95,27 @@ export class SaveManager {
     this.save = this.store.loadLocal();
     this.pending = this.store.loadPending();
     this.pendingStamina = this.store.loadPendingStamina();
+    this.bindLifecycle();
+  }
+
+  /**
+   * Best-effort flush on app hide / exit (mirrors analytics/index.ts's bindSessionLifecycle). Without
+   * this, flush() had zero callers anywhere in the app — the debounced push (default 2s) meant closing
+   * the tab / backgrounding the app within that window silently dropped the last edit (comm-audit-
+   * 2026-07-27 finding B11). `visibilitychange`→hidden (backgrounding, the common mobile exit path) is
+   * the reliable case since the page keeps running briefly; `beforeunload` (desktop tab/window close)
+   * and `wx.onHide` are covered too, on the same "can't hurt, might help" basis as the analytics queue's
+   * equivalent hooks — none of these await the result since unload handlers can't block on async work.
+   */
+  private bindLifecycle(): void {
+    if (typeof document !== 'undefined') {
+      document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'hidden') void this.flush();
+      });
+      window.addEventListener('beforeunload', () => { void this.flush(); });
+    }
+    const wx = (globalThis as { wx?: { onHide?: (cb: () => void) => void } }).wx;
+    if (wx?.onHide) wx.onHide(() => void this.flush());
   }
 
   /** Current in-memory save (synchronously readable; UI balances etc. read from here and are refreshed by server push-back). */
@@ -304,7 +326,7 @@ export class SaveManager {
       return false;
     }
     const current = regen.current - cost;
-    const regenAt = regen.regenAt !== 0 ? regen.regenAt : current < STAMINA_CAP ? Date.now() + STAMINA_REGEN_MS : 0;
+    const regenAt = regen.regenAt !== 0 ? regen.regenAt : current < STAMINA_CAP ? serverNow() + STAMINA_REGEN_MS : 0;
     this.save.stamina = { current, regenAt };
     this.store.saveLocal(this.save);
     if (this.online()) {
@@ -320,7 +342,10 @@ export class SaveManager {
 
   /** Apply natural regen to the local stamina mirror (same algorithm as server deductStamina/readStaminaSnapshot) without persisting; caller decides whether/how to save the result. */
   private regenStamina(): { current: number; regenAt: number } {
-    const now = Date.now();
+    // serverNow() (P1-1): regenAt may hold a server-issued value (from a prior pveEnter response) —
+    // comparing it against the client's raw local clock would under/over-count regen ticks by the
+    // clock's drift each time this runs.
+    const now = serverNow();
     let { current, regenAt } = this.save.stamina ?? { current: STAMINA_CAP, regenAt: 0 };
     if (current < STAMINA_CAP && regenAt > 0 && now >= regenAt) {
       const ticks = Math.floor((now - regenAt) / STAMINA_REGEN_MS) + 1;
@@ -559,6 +584,8 @@ export class SaveManager {
     // campaign start path. migrate is idempotent for a complete save.
     const cloud = migrate(cloudRaw);
     const local = this.save;
+    const equipped = { ...cloud.equipped, ...local.equipped };
+    const flags = { ...cloud.flags, ...local.flags };
     this.save = {
       ...cloud, // authoritative sections (including progress.cleared/stars / materials / pveUpgrades) + rev/accountId from cloud
       progress: {
@@ -566,15 +593,30 @@ export class SaveManager {
         stars: cloud.progress.stars,
         best: mergeBest(local.progress.best, cloud.progress.best),
       },
-      equipped: { ...cloud.equipped, ...local.equipped },
-      flags: { ...cloud.flags, ...local.flags },
+      equipped,
+      flags,
       // pvpDeck is local-only (never synced to server); preserve from local on every reconcile.
       ...(local.pvpDeck ? { pvpDeck: local.pvpDeck } : {}),
     };
     this.store.saveLocal(this.save);
-    // equipped/flags may differ from cloud (local overwrites); mark dirty for the next upload.
-    this.dirty = true;
+    // Only mark dirty if the merge actually surfaced a local equipped/flags edit the cloud doesn't have
+    // yet — reconcile() runs after every GET /save (bootstrap/refresh/adoptSession, plus the 409 retry
+    // path in push()), which fires far more often than the player actually edits equipped/flags between
+    // syncs. Unconditionally marking dirty here meant the very next unrelated update() call (any flag
+    // set, any scene) would trigger a same-content PUT /save purely because a read happened — a phantom
+    // write on every read (comm-audit-2026-07-27 finding B11).
+    if (!shallowEqualRecord(equipped, cloud.equipped) || !shallowEqualRecord(flags, cloud.flags)) {
+      this.dirty = true;
+    }
   }
+}
+
+/** Flat Record<string, primitive> equality (equipped/flags shape) — same key count, same values. */
+function shallowEqualRecord(a: Record<string, unknown>, b: Record<string, unknown>): boolean {
+  const ak = Object.keys(a);
+  const bk = Object.keys(b);
+  if (ak.length !== bk.length) return false;
+  return ak.every((k) => a[k] === b[k]);
 }
 
 /** best: union of keys; shorter time / fewer leaked units wins (if one side is absent, take the present one). */

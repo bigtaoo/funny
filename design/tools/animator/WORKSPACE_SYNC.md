@@ -1,6 +1,6 @@
 # Animator 在线工作区 + 云盘→仓库同步桥
 
-> 状态：设计中 · 更新：2026-06-23
+> 状态：设计中 · **⚠️ 方向已被 [desktop-shell/DESIGN.md](../desktop-shell/DESIGN.md) 取代（ADR-055，2026-07-28）：协作/外包方向改为 Electron 桌面壳 + 本地 git，不再往本文方向投入。P1/P2 已合并代码暂不下线，本文内容保留供参考。** · 更新：2026-06-23
 > 范围：让 animator 部署到线上（Cloudflare Pages），协作者免本地部署即可做动画；动画存到共享云工作区，再自动同步回 git 仓库（PR 把关）。
 > 关联：[ARCHITECTURE.md](ARCHITECTURE.md)（编辑器架构）· [claudedocs/file-formats.md](../../../claudedocs/file-formats.md)（.tao / .tao.editor 格式）· [claudedocs/animator.md](../../../claudedocs/animator.md)（快查）
 

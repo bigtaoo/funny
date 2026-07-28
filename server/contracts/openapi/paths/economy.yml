@@ -431,10 +431,11 @@
                 ok: { type: boolean, enum: [true] }
                 data:
                   type: object
-                  required: [coinsAfter, coinsGranted]
+                  required: [coinsAfter, coinsGranted, save]
                   properties:
                     coinsAfter: { type: integer }
                     coinsGranted: { type: integer }
+                    save: { $ref: '#/components/schemas/SaveData' }
       '400': { $ref: '#/components/responses/ErrorResp' }
       '401': { $ref: '#/components/responses/ErrorResp' }
       '404': { $ref: '#/components/responses/ErrorResp' }

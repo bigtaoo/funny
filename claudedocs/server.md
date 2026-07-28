@@ -105,7 +105,7 @@ cp .env.example .env        # 填 NW_JWT_SECRET / NW_DOMAIN
 - `auctions.expireAt` **故意非 TTL**——过期需结算退还托管物/竞拍结拍，用普通索引+扫描器
 - **拍卖行反 RMT（S8-5，2026-06-21）**：每日限额（`auctionDaily` 集合 TTL 计数 lists/buys）+ 价格护栏（`auctionPrices` 滑窗中位数 refPrice + 静态回退，越界 `PRICE_OUT_OF_RANGE`）+ 绑定禁挂机制（`AUCTION_BANNED_MATERIALS` 空集）+ 季末冻结（settling 拒挂）/ 清算（`clearWorldOnReset` 退还，挂在 `/admin/world/reset`）+ 竞拍（`saleMode=auction`：`placeBid` 托管/防狙击/买断，`/auction/{id}/bid`）。机制权威 `design/game/AUCTION_DESIGN.md`
 - **异常交易审计（D/G7 反 RMT，2026-06-21，SLG_DESIGN §17.13）**：下单硬闸（限额/护栏/禁挂）管不到「合谋账号价格带内反复定向倒货」→ 加离线检测：`AuctionDoc.soldAt`（sold 时写）+ `AuctionService.scanAnomalies` 拉近期 sold 投影 → shared 纯函数 `detectAuctionAnomalies` 按「卖家→买家」有向配对聚合（repeated/designated/high_value 信号，severity high/medium）；内部端点 `GET /admin/world/audit/anomalies`（X-Internal-Key，并入 `/admin/world/*` 分支）。admin 侧立审计工单见 admin 要点
-- Redis（`NW_WORLD_REDIS_URL`）：行军 ZSET 仅精确唤醒提示，处理不依赖；缺 Redis 静默降级
+- Redis（`NW_WORLD_REDIS_URL`）：仅用于 ADR-051 占用/覆盖空间索引（`occ`/`cover` 哈希，遭遇战/拦截判定用）+ 宗门频道横扩 pub/sub；缺 Redis 静默降级。行军/攻城伤害/占领的调度 ZSET 已于 2026-07-27 整体删除（只写不读，见下方审计条目）——到达处理**只靠** Mongo `arriveAt`/`dueAt`/`nextStepAt` 扫描
 - **世界频道扣费漏配（2026-07-04）**：`prod`/`cloud` 两份 compose 的 `worldsvc` 环境块漏配 `NW_COMMERCIAL_INTERNAL_URL`（`local` 早已配对）→ `commercial.available=false` → `nationChannelService.sendMessage` 的 `WORLD_CHAT_COST=50` 扣款分支被静默跳过（`if (commercial.available)` 降级设计本为拍卖行不可用兜底，误伤了世界发言扣费）——不报错、不提示玩家，纯粹「该扣的没扣」。修复：`docker-compose.prod.yml`/`docker-compose.cloud.yml` 补上该变量 + `depends_on: commercial`。VPS 生效只需 `docker compose -f server/docker-compose.prod.yml up -d worldsvc`（改的是环境变量，不用重新 build）。这类「某进程 `xxx.available` 门控的付费/扣费分支」在新增 compose 环境时要对照 `local` 逐项核对，不能只抄 depends_on 图省事漏抄对应 env。
 - **宗门频道横扩推送（S8-4c）**：worldsvc `gatewayClient.broadcast` publish `{recipients,msg}` 到 Redis channel `nw:gw:push`（`GW_PUSH_REDIS_CHANNEL`），各 gateway 实例订阅后 `routeBroadcast` 只推本机在线收件人；无 Redis 降级逐个 HTTP push。gateway 须配 `NW_GW_REDIS_URL`（与 worldsvc 同一 Redis）。push 分支新增 `sect_msg`/`family_msg`（proto `SectBroadcast`→`SectMsg`）
 - **主城迁城（S8-4c，所有玩家通用）**：主动 `service.relocateBase`（花 `RELOCATE_COST=500` coin 迁主城到合法空格，**保留领地**，沿用旧保护罩；`POST /world/relocate`）；被动 `passiveRelocate`（`applySiege` 主城被破 → `deleteMany({ownerId})` **失全部领地** + 随机落新址上保护罩，门主叠加全宗门 -50%）。客户端 `WorldMapScene` 中立格菜单「迁城到此」+ `NetSession.onSectMsg`/`SectScene.applySectMsg` 实时频道
@@ -134,3 +134,87 @@ cp .env.example .env        # 填 NW_JWT_SECRET / NW_DOMAIN
 - **称号端点（L2-2）**：`GET /titles`（含 `parseTitleId` 派生 source/seasonNo）+ `PUT /title/equip`（仅已授予；空串卸下；回推 SaveData）。存储复用 `save.titles[]`/`save.equipped.title`。codegen 重生顺带修复了 `client/src/net/openapi.ts` 此前累积的漂移
 - **IAP 凭据加固（L2-3）**：`createReceiptVerifier` 在 `NODE_ENV=production` 下强制关闭 dev 桩（缺凭据 fail closed，不发币）；`commercial/src/index.ts` 引导期对 `production+NW_IAP_DEV=true` 拒启。凭据申请/配置/上线 checklist 见 `design/game/IAP_CREDENTIALS.md`，环境变量样板见 `server/.env.example`
 - **充值幂等防跨账号泄露（防御加固，2026-06-29）**：`rechargeVerify` 的 `receiptId` 幂等回放分支此前无视消费者归属——若同一 receiptId 先被 A 账号消费，B 账号再带同 receiptId 来会回读并返回 **A 的钱包余额**，metaserver `iapVerify` 据此 `mirrorCoins` 把 A 的余额写进 B（跨账号余额泄露）。真实平台票据全局唯一不可触发，但 E2E 复用常量 dev 票据时中招。修复：两条回放路径（`existing` 命中 + E11000 并发竞态回读）均加 `accountId` 归属校验，他账号占用 → `INVALID_RECEIPT` 拒绝；同账号重放仍正常返回本账号余额。新增 e2e 用例 `server/commercial/test/service.e2e.test.ts`「同 receiptId 被他账号占用 → 拒绝」
+
+## Mongo/Redis 全面读写审计 + 修复（2026-07-27）
+
+针对 Atlas M0（跨公网、连接数上限 500）这套生产部署，做了一轮全服务 Mongo 存储方式 + Redis 缓存方式 + 读写路径的审计（65 个集合、4 个探索代理并行覆盖 meta/commercial/social/world/auction/analytics），按优先级修复。完整原始审计发现见本次会话记录；这里只记落地的改动，供以后核对代码时用。
+
+- **T1 metaserver 从未收到 `NW_REDIS_URL`**：prod/cloud compose、`ecosystem.config.cjs`、`dev-up.ps1`、`.env.example` 全部漏配——matchsvc 每场对局写 `nw:activeMatch:{accountId}`（断线重连提示），meta 却一直读不到也清不掉，功能在生产环境**完整实现却从未生效**。已在上述 5 处补上 `NW_REDIS_URL`，并仿照既有 `matchsvc/test/deploy-config.test.ts` 的套路加了 metaserver 侧同款回归测试。顺带发现 `ioredis` 对 metaserver/matchsvc 是**未声明依赖**（靠 workspace hoisting 侥幸工作），已在两处 `package.json` 显式声明。
+- **T2 Redis 无 `maxmemory`/淘汰策略**：prod/cloud/local 三份 compose 补 `--maxmemory 256mb --maxmemory-policy allkeys-lru`——这里存的东西（occ/cover 空间索引、activeMatch）全是「丢了会降级但不会错」的缓存态，宁可被 LRU 淘汰也不要把 VPS 内存撑爆。
+- **T3 补 5 个缺失索引**：`auctionsvc.auctions` 加 `{status,itemType,price}` + `{status,price}`（浏览拍卖行原本是 COLLSCAN + 内存排序）+ `{closedAt}`（小时级清理任务）；`worldsvc.occupations` 加 `{worldId,ownerId,teamId}`（每次行军出兵的 TEAM_BUSY 门禁原本裸扫）；`worldsvc.playerWorld` 加 `hasBattlePass` 部分索引（赛季结算扫描）；`worldsvc.tiles` 加 `{contestedBy}` 稀疏索引（见 T4）；`socialsvc.families` 加 `{prosperity,memberCount}`（家族浏览，`memberCount<CAP` 命中率极高，排序字段放前更优）+ `{sectId}` 稀疏索引。
+- **T4 worldsvc「全图视野扫描」的真实病根其实是缺索引，不是缺视口限界**：最初怀疑 `getMarches`/`getStationed`（客户端每 5s 轮询）需要把视野计算限制到摄像机视口才能避免全图扫描，深入后发现这个思路是错的——玩家的视野天然跟随其领地分布而非摄像机位置，若按视口裁剪会破坏「离开自己基地也能收到偷袭警报」这个设计意图。真正的病根是 `computeVisionSources` 的 `tiles.find` 里 `$or:[{ownerId:$in},{contestedBy:$in}]` 两个分支只有一个有索引——MongoDB 对 `$or` 要求每个分支都能用上索引才会走索引方案，否则整体退化为 COLLSCAN。T3 补的 `contestedBy` 稀疏索引直接解决了这个全图扫描；另外给 `marches` 补了 `{worldId,status}` 索引（`getMarches` 的「他人行军」分支原本无支撑索引）。**没有做**、也不建议做客户端视口阈值改造。
+- **T5 `GET /save` 曾经是一次写**：`mirrorWalletFrom`（`GET /save` 每次都调）无条件 `$inc save.rev`，导致纯读路径持续 bump 乐观锁计数器，跟任何并发的客户端 `PUT /save` 抢 409。现在先读一遍当前镜像状态比对（`stableStringify` 做 key 顺序无关比较），值没变就直接返回、不写。
+- **T6 删除只写不读的 Redis 调度 ZSET**：`world:{w}:march`/`:siegeDamage`/`:occupation` 三个 ZSET 只有 `zadd`/`zrem` 调用点，`zrangebyscore`（唯一读法）在 `src/` 里零调用——到达处理从一开始就完全靠 Mongo `arriveAt`/`dueAt`/`nextStepAt` 扫描。整段删除（`corePush.ts` + `combatMarch.ts`/`combatSiege/*` 共 14 处调用点），顺带清了 `WorldRedis` 接口里同样零调用的 `get`/`set`。
+- **T7 `resetSeason` 漏删 4 个集合**：`siegeDamage`/`occupations`/`stationed`/`mapBaselines` 原本不在批量删除列表里；残留的 `stationed` 行会撞 `{worldId,ownerId,teamId}` 唯一索引，坑到回流玩家。前三个直接加进 `season.ts` 的 `deleteInBatches` 循环；`mapBaselines` 不一样——它是"开服时克隆当前激活地图模板"的产物（`cloneActiveTemplateInto`），删了不重新克隆会让世界悄悄退化成纯 `proceduralTile` 生成、丢失人工地图模板布局。仿照 `/admin/world/open` 的做法，在 `/admin/world/reset` 里也调一次 `cloneActiveTemplateInto`（无激活模板时仍是安全空操作）。
+- **T8 补 3 处缺失 TTL**：`analyticsvc.sessions`（`events` 早有 90 天 TTL，`sessions` 却"永久"）补同款 90 天；`worldsvc.sieges`（`resetSeason` 已经按 worldId 清，这里只是防季节没及时重置的兜底）加 `SIEGE_RETENTION_SEC=30d` + `expireAt` 字段；`metaserver.pveVerifications`（`rejected` 判定的记录会带完整 replay frames）加 30 天 `expireAt`，但仿照 `MatchDoc` 对 disputed 局的处理——`rejected` 判定会把 `expireAt` 撤销（永久留痕供人工复核），`verified`/`unverified` 才真正过期。
+- **T9 `mutateSave` 去掉保底多余读**：原来无条件 `getOrCreateSave`（1-2 次读）+ 重试循环第一次迭代立刻 `findOne` 重读同一份文档——每次 mutateSave 调用都白白多读一次。改成先直接 `findOne`，只有真的没查到（账号第一次触碰存档，事实上几乎不会发生，因为 `GET /save` 自己的 `getOrCreateSave` 早就建好了）才走 `getOrCreateSave` 兜底。
+- **T10 `batch-profiles` 从 2N 次查询改成 2 次 `$in`**：`internal/account/batch-profiles` 原本对每个 accountId 调一次 `profileOf`（每次 2 个 findOne，且 accounts 侧完全没投影，连密码哈希都拉回来），100 个好友 = 200 次查询。抽出 `toProfileView` 纯函数做单一事实来源，新增 `profilesOf` 批量版：`accounts`/`saves` 各一次 `$in` + 投影 + 内存 join。
+- **T11 `pveClear`/`pveVerify` 写放大合并**（本轮改动量最大）：正常通关此前最多做 4 次独立的整存档读改写（`writeClearProgress`/`grantClearReward` 的材料写/`accrueJudgedPveStats`/`bumpRetentionTask`），彼此的 SaveData 改动互不依赖结果（只有每日奖励封顶判定 + 装备掉落骰子必须在进 `mutateSave` 事务前决定——事务函数可能因 rev 冲突被重试多次，不能塞不确定性逻辑），于是合并进一次 `mutateSave`（新 `settleNormalClear`，进度/星级/篇章成就 + 材料/装备槽位 + 判定后统计 + 每日任务全在一次写里）；章节卡/掉落卡的发放仍走独立的共享 `grantCards`（gacha/邮件/拍卖行共用，不能重复）。`pveVerify` 的判定后发放（`grantClearReward`+`accrueJudgedPveStats` 两次写）套用同一模式合并成 `deliverVerifiedClearReward`。抽出两个纯函数 `applyClearProgress`/`applyMaterialAndEquipmentGrant` 供两条路径共享。正常通关：4 次整存档写 → 1 次；判定后发放：2 次 → 1 次。
+
+**中期项列表（5 项，全部已于 2026-07-27 完成，见下）**：`cardInv`（最多 500 张卡）拆成独立集合（复刻 `equipmentInstances` 2026-07-26 的拆法）；`mapBaselines` 改行程编码存储（当前一次开服克隆一张 1500×1500 地图模板会物化 225 万文档，仅在 ops 激活自定义模板时触发）；`adsDaily`/`pveDaily`/`victoryDaily` 这类日计数器迁到 Redis TTL key；`rejectIfBanned`/`publicId` 查询加缓存层；进程内限流器（认证/异常上报/分享额度）迁 Redis + gateway presence 查询支持跨实例。
+
+## cardInv 存储拆分（2026-07-27，中期项第 1 项）
+
+照抄 `equipmentInstances`（2026-07-26）的拆法，把 `SaveData.cardInv`（最多 500 张卡）从内嵌 map 拆到独立集合 `cardInstances`（`_id`=instanceId，`{accountId:1}` 索引）+ `SaveData.cardInvCount` 镜像字段。线格式不变（`GET /save`/`/internal/save-fields` 现拼 `assembleCardInv`），`app.ts` 的 `preSerialization` 钩子同一处扩展。只做「阶段一」（存储拆分），不做装备那样的「阶段二」（响应精简 leanSave/null）。
+
+完整设计记录（含交叉依赖踩坑点、并发安全设计取舍）见 [`design/game/CHARACTER_CARDS_DESIGN.md`](../design/game/CHARACTER_CARDS_DESIGN.md) §17 CC-15；[`design/game/EQUIPMENT_DESIGN.md`](../design/game/EQUIPMENT_DESIGN.md) §3.3 补了一条交叉更新说明（`isEquipped`/`equipEquipment` 改查 `cardInstances`）。迁移脚本 `server/metaserver/scripts/migrateCardInv.ts`（幂等、断点续跑，**必须先在生产跑到 100% 完成再部署新代码**）。
+
+验证：metaserver 54 文件/678 测试、worldsvc 44/341、auctionsvc 5/71 全绿（后两者只读拼好的 map，零源码改动）。
+
+## mapBaselines 行程编码重设计（2026-07-27，中期项第 2 项）
+
+真正的病根不是 `cloneActiveTemplateInto`（每次开服/重置的克隆），而是 `generateTemplate`（模板首包生成）——1500×1500 地图逐格调用 `proceduralTile()` 后原样物化成 225 万份 `mapTemplateTiles` 文档，克隆只是把这份稠密数据原样搬到 `mapBaselines` 再来一遍。地形有大量连续同值横向条带（河/山连续带，资源/中立地块间稀疏散落特殊格），改行程编码（RLE）：`server/shared/src/slg/mapRle.ts` 新增 `encodeRow`/`decodeRow`/`tileAtX`/`sliceRuns`/`applyEditsToRow` 纯函数；存储从「每格一文档」改成「每**行**一文档、行内一组压缩区间」——集合改名 `mapTemplateTiles`→`mapTemplateRows`、`mapBaselines`→`mapBaselineRows`（新旧 `_id` 格式不同，用改名而非原地换 shape 避免新代码的范围查询意外命中旧稠密文档解 `.runs` 崩溃）。外部契约（`MapTemplateTile` 单格形状、`getTiles`/`saveTilesDiff` API、`tileCount` 统计口径）完全不变，压缩/解压全封装在 `mapTemplateService.ts`/`coreMap.ts` 内部。
+
+完整设计记录见 [`design/game/SLG_DESIGN_LOG.md`](../design/game/SLG_DESIGN_LOG.md) §24 第 4 条（2026-07-27）。迁移脚本 `server/worldsvc/scripts/migrateMapBaselinesToRle.ts`（幂等、不删旧集合，留给 ops 确认后手动清理；若从未真正激活过自定义模板则无需迁移）。
+
+验证：`shared/test/mapRle.test.ts`（14 例新增纯函数测试）+ `worldsvc/test/map-template.e2e.test.ts`（9 例，重写裸集合断言 + 新增「10×10 模板只落地 10 行文档」回归锁定）；shared 647/647、worldsvc 341/341 全绿。
+
+## adsDaily/pveDaily/victoryDaily 迁 Redis（2026-07-27，中期项第 3 项）
+
+三张日计数器集合（`adsDaily`/`pveDaily`/`victoryDaily`）从未建过索引/TTL，无界增长；每次写都是「upsert 建文档 + 再一次 guarded `findOneAndUpdate`」两次跨公网 Atlas 往返。改用 `server/shared/src/dailyCounter.ts`：键 `nw:{ns}:{accountId}:{dayKey}`，cap 型计数器（`count`/`rewardedClears`/`wins`）用 `HINCRBY` 原子自增后判断是否超顶、超了就自己回滚一次（不需要 Lua——`HINCRBY` 本身在 Redis 端原子，谁的自增结果超顶谁回滚，纯并发安全）；ad 冷却闸（`lastAdAt` 时间戳，非计数器）需要「不存在或早于 minInterval 前才写」的判断，靠一个小 Lua 脚本原子完成。TTL 48 小时滑动，仅作存储兜底，从不参与判定——判定永远是纯算术比较调用方传入的 `now`，不看 Redis 自己的时钟/TTL 倒计时，否则测试里推进假时钟会跟真实经过时间脱节。
+
+**redis=null 时不是「功能禁用」，是进程内 Map 兜底**：这三个计数器是反作弊硬顶，跟 `activeMatch`/`worldsvc` 那种「丢了只是体验降级」的 Redis 用法性质不同，所以刻意没有复用「优雅降级」的写法。`metaserver`/`commercial` 目前都是单实例部署（`ecosystem.config.cjs` `instances:1`），进程内计数在这个拓扑下就是正确的全局计数——只是不扛进程重启，不像真 Redis。`server/shared/src/dailyCounter.ts` 顶部注释记了完整推理；`docker-compose.{cloud,prod}.yml` 的 Redis 淘汰策略注释也补了一句：这类计数器即使被 LRU 淘汰也只是某账号当天的上限提前重置，影响有界、自愈，不影响"淘汰整体安全"的结论。
+
+commercial 此前完全没有 Redis 依赖，本次新增：`config.ts` 补 `NW_REDIS_URL`（复用 metaserver/matchsvc 同名变量，同一个 Redis 实例）、`index.ts` 用新增的 `connectDailyCounterRedis` 连接（metaserver 则直接复用已有的 `connectActiveMatchRedis` 连接，不开第二个连接）。四份部署文件（`docker-compose.{local,cloud,prod}.yml`、`ecosystem.config.cjs`、`dev-up.ps1`、`.env.example`）同步补上；仿照 T1 的做法在 `matchsvc/test/deploy-config.test.ts` 加了 commercial 侧的同款回归测试。
+
+`shared/src/mongo.ts` 删 `AdsDailyDoc`/`PveDailyDoc`（+ `Collections` 字段/`createMongo` 实例化）；`commercial/src/db.ts` 删 `VictoryDailyDoc`（+ 同上）。`metaserver/test/ads.test.ts` 原先用手搓假 Mongo collection 模拟 `checkAdInterval`/`bumpAdsCap` 的行为，改成 `redis=null` 走真实进程内兜底逻辑（实际验证生产代码路径，而非模拟出的行为）。
+
+验证：另外手写脚本连本机真实 Redis（`redis://127.0.0.1:6379`）跑了一遍 `bumpCappedCounter`/`bumpGuardedTimestamp`/`readCounterField`，确认 Lua 脚本 + HINCRBY 回滚在真 ioredis 上行为正确（cap 顶住第 4 次、TTL 落地 172800s）——测试套件本身全程 `redis=null`，不会覆盖这条路径。metaserver 54 文件/678 测试、commercial 11 文件/136 测试、matchsvc `deploy-config.test.ts` 全绿；`tsc -b shared engine metaserver gateway matchsvc gameserver commercial worldsvc auctionsvc admin analyticsvc botsvc socialsvc` 全绿。
+
+## rejectIfBanned/publicId 查询加缓存层（2026-07-27，中期项第 4 项）
+
+`rejectIfBanned`（每次 auth + 每次 `/pve/enter`/`/pve/clear` 都查一次 `accounts.flags`/`deletedAt`）和 `resolveByPublicId`（socialsvc 好友/邮件按 publicId 操作时的反查，`/internal/account/by-public-id`）都是已建索引的单文档查询，本身不贵——贵的是跨公网到 Atlas M0 的那一次网络往返，缓存命中直接省掉整趟往返，而不是优化查询计划。新增 `metaserver/src/accountCache.ts` 的 `AccountCache` 类，两个方法各自一张 `TtlMap`：`getBanStatus`（60s TTL，安全网性质——`/ban`/`/unban`/`deleteAccount` 三处写入点已显式调用 `invalidateBanStatus` 立即失效，60s 只是兜底未来某个忘记失效的新写入点）、`getAccountIdByPublicId`（1h TTL，`publicId` 一旦分配永不改变，长 TTL 纯粹是内存卫生，不是过期正确性的考量；未命中永不缓存，避免拼写错误把"查无此人"焊死）。
+
+**刻意不做成模块级单例**（对比 `dailyCounter.ts` 的 `LocalBackend` 单例）：`internal-accounts.test.ts` 等好几个测试文件在同一进程内反复复用同一批字面量 fixture（如 publicId `'123456789'`），且每个用例给它接的 `flags.banned`/`displayName` 不同——模块级单例会让前一个用例缓存的结果泄漏进下一个用例。`AccountCache` 改成每次 `buildApp` 构造一个实例，`MetaService`（走 `rejectIfBanned` 的公开路由）和 `registerInternalRoutes`（走 ban/unban/by-public-id 的内部路由）共享同一个实例——这样管理员 ban 才能立刻反映到下一次公开路由的检查，而不是各查各的、互不通气。
+
+`resolveByPublicId` 签名从 `(cols, publicId)` 改成 `(cache, cols, publicId)`（4 处调用点：`accountRoutes.ts` ×2、`mailRoutes.ts` ×2，均已改——`mailRoutes.ts` 的两处最初被漏检，靠改完签名后 `tsc -b` 报「Expected 3 arguments, but got 2」才发现，而不是靠人工 grep）。
+
+**验证**：新增 `metaserver/test/accountCache.test.ts`（8 例单测：命中不二次查询、不同 key 独立缓存、`invalidateBanStatus` 后立即重查、miss 不缓存）；`auth-password.e2e.test.ts` 新增一条端到端回归——真实 Mongo，注册→管理员 ban→**立即**下一次登录 403、再 unban→**立即**下一次登录 200，专门验证"失效是显式的，不是等 60s TTL 过期"这个正确性关键点，而不只是验证"有缓存"。metaserver 55 文件/689 测试、socialsvc 5 文件/76 测试全绿；`tsc -b` 全 13 个 server 包全绿。
+
+## 进程内限流器迁 Redis + gateway presence 跨实例查询（2026-07-27，中期项第 5 项，也是本轮 5 项中最后一项）
+
+原审计条目把这两个子项打包成一条，但调查后发现它们性质不同，先跟用户确认了处理方式（用户选择两个都做）：
+
+- **限流器（认证/异常上报/分享额度）**：三处 `SlidingRateLimiter`/手搓 `Map`（`auth.ts` 按 IP、`telemetry.ts` 按 IP、`save.ts` 按 accountId）都有一个**现在就存在、与是否横向扩容无关的真 bug**——原实现只在读取时过滤数组内的旧时间戳，从不删除数组已变空的 key，`windows`/`stateShareRate` 这两张 Map 随进程存活时间无界增长（每个见过的 IP/accountId 永久占一个条目）。这个泄漏是本轮审计顺带发现的，不是当初把这条目列进"迁 Redis 待办"的原因（原因是"精确的全局限流需要 Redis"，见 `SlidingRateLimiter` 原注释）。
+- **修复**：`service/base.ts` 新增 `RateLimiter` 接口 + `createRateLimiter(redis, ns, limit, windowMs)` 工厂——配置了 Redis 就用 `RedisSlidingRateLimiter`（`ZADD`/`ZREMRANGEBYSCORE`/`ZCARD` 的 sorted set，靠一个小 Lua 脚本原子完成"剪掉过期成员→计数→未超顶才写入"，避免两个并发请求都在写入前通过计数检查而双重放行），没配置就退回修好泄漏的 `SlidingRateLimiter`（新增 `maybeSweep`：每次 `allow()` 调用时最多每 `windowMs` 触发一次全表清扫，删掉全部过期的 key——不用后台 timer，因为 timer 会在测试套件反复 `buildApp()` 构造的大量短生命周期 `MetaService` 实例间泄漏）。`save.ts` 的 `stateShareRate` 原本是独立手搓实现（同款泄漏），本次直接改用共享的 `createRateLimiter`，顺便去重。TTL 只作存储兜底，判定仍是纯算术比较调用方 `now`，同 `dailyCounter.ts` 的约定。
+- **gateway presence 跨实例查询**：`Gateway.presenceOf`（meta 拉好友列表在线标记用的批量查询）此前纯读本实例内存 `conns`，单实例部署下完全正确——**没有当前 bug**，唯一价值是"以后如果真的多开 gateway 实例"，但项目当前无横向扩容计划。用户确认后仍按原计划做：复用 gateway 已有的 `NW_GW_REDIS_URL` 连接（`connectGatewaySubscriber` 已经为宗门频道 fan-out 开了一路 pub/sub + 一路 publish 连接，presence 直接复用后者，不开第三路），扩展 `GatewaySubscriber` 接口加 `markOnline`/`markOffline`/`refreshOnline`/`onlineAccountIds`（每账号一个 TTL key，非单一 SET——单一 SET 无法给成员单独设置过期，进程崩溃不清连接会导致该账号永久"在线"）。`onConnection`/WS `close`/心跳 `sweep()`（30s 一次）分别挂 `markOnline`/`markOffline`/`refreshOnline`；`presenceOf` 先查本地 `conns`，只有本地未命中的 accountId 才查 Redis——单实例部署因此永远不会碰 Redis，本地命中的账号也永远不需要那趟（更慢的、尽力而为的）跨实例往返。
+- **验证**：`metaserver/test/rateLimiter.test.ts`（8 例：`SlidingRateLimiter` 限流行为 + 内存泄漏修复的直接验证——反射读私有 `windows` 字段确认清扫后表大小有界 + `RedisSlidingRateLimiter` 连本机真实 Redis 的 Lua 脚本冒烟）；`state-replay-share.e2e.test.ts` 新增分享额度打满的端到端回归（此前零覆盖）；另写脚本经真实 `buildApp` + 真实 Redis 验证 `/auth/register` 限流端到端生效。`gateway/test/redis-presence.e2e.test.ts`（6 例：直接测 `GatewaySubscriber` 的 presence 原语 + 两个真实 `Gateway` 实例共享同一个 Redis，验证 A 的连接对 B 的 `presenceOf` 可见、断线后 B 很快看不到、没接 Redis 时退化回纯本地行为不变）。metaserver 56 文件/697 测试、gateway 4 文件/30 测试全绿；`tsc -b` 全 13 个 server 包全绿。
+
+## 服务器间通信协议全面审计 + 修复（2026-07-28，comm-audit-internal-2026-07-28）
+
+承 2026-07-27 前后端请求瀑布审计之后，这轮切到**服务与服务之间**：4 个探索代理并行覆盖 11 个进程的全部内部端点/出站客户端/Redis 通道（meta、gateway+matchsvc+gameserver、worldsvc+auctionsvc、social+admin+analytics+botsvc+commercial），产出 P0/P1/P2 分级发现，用户拍板"全部修复"。完整发现清单、决策表、逐批实施记录见 [`design/game/COMM_AUDIT_INTERNAL_2026-07-28.md`](../design/game/COMM_AUDIT_INTERNAL_2026-07-28.md)；这里只记落地要点。
+
+- **P0-1 结算超时矛盾**：gameserver 上报超时曾是 10s，短于 meta 处理 hash 不一致时 `/gw/judge` 最长 20s 的等待——每一场 mismatch 局的首次上报必然超时，重试时机与仍在跑的首次结算竞态，可能双发 ELO/金币。修复：上报超时提到 35s；meta `/internal/match/report` 改为原子预留（`matches` 集合 upsert 唯一 roomId，2 分钟陈旧接管窗口）再结算再 `replaceOne` 落地，重复请求天然去重。
+- **P0-2 `match_found` 投递**：matchsvc 经 Redis publish 推送 `match_found` 时不看订阅者数量，gateway 重启窗口内 publish 成功也判定"已送达"，玩家永久卡在"搜索中"。修复：0 订阅者时回落 HTTP。
+- **P0-4 `claimMail` 跨库完整性**：领取附件邮件时，网络错误此前被伪装成 `NOT_FOUND`（玩家看到"邮件不存在"，实际可能已标记 claimed）；发货任一步骤失败会让邮件永久卡在"已领取但未发货"状态（再领报 `ALREADY_CLAIMED`）。新增 socialsvc `POST /internal/mail/:id/unclaim`（幂等，仅回滚本 orderId 的领取）；meta 侧发货全程包在 try/catch，失败即回滚领取状态，503 提示可重试。
+- **P0-5 赛季结算调用风暴**：worldsvc 赛季结算对每个获奖账号发一次不限并发的邮件+称号授予（大区赢家宗门可达数千账号），meta 天梯赛季结算则是完全串行逐人处理。新增 `shared/src/boundedConcurrency.ts`（`runBounded`），四处收口到并发上限 8；meta 侧额外按 200 条一批处理 Mongo 游标，避免一次性把整赛季参与者读进内存。
+- **P0-6 部署配置漏配**：prod compose 的 worldsvc 块缺 `NW_META_INTERNAL_URL`（赛季奖励/称号静默丢失、编队保存直接抛错）和 `NW_ADMIN_INTERNAL_URL`（商店改价面板永久无效且无日志）；`ecosystem.config.cjs`（pm2 部署路径）**全部 app 块**都没有 `NW_ADMIN_INTERNAL_URL`（flag 轮询死掉），`nw-world`/`nw-admin` 块还各缺另外几个内部 URL。全部补齐 + `matchsvc/test/deploy-config.test.ts` 扩到 33 例覆盖每个漏配组合。
+- **P0-7 计费渠道隔离**：worldsvc/auctionsvc 调 commercial `/internal/spend` 从不传 `clientPlatform`（ADR-020），iOS/Android 玩家的 SLG/拍卖消费全部从 web 充值桶扣钱。client 补 `X-NW-Platform` 头（`WorldApiClient` 统一请求路径），worldsvc 7 处 spend 调用点 + auctionsvc 2 处全部穿线。
+- **基础设施纪律**：`shared/src/internalFetch.ts` 新增 `fetchInternalJson<T>`（JSON 版的 `postInternal`：超时+drain+4xx JSON 业务错误保留+永不抛）；此前全仓只有 `/gw/push` 这一条路径走过封装，其余（meta→commercial 29 方法、admin 15 个 client、worldsvc/auctionsvc/socialsvc 全部出站）都是裸 fetch。本轮全部迁移。
+- **死代码清理**（约 15 项，详见设计文档"确认删除"清单）：meta 的 `/admin/grant-title`（`/internal/title/grant` 的重复实现）、`/internal/leaderboard`、`/admin/gacha/pools`(POST)+commercial `/internal/gacha/pool`+`createLimitedPool`；`GatewayClient.presence/invalidateFriends`；socialsvc `/social/player/:id/rank`+client `getPlayerRank`（被 `/social/profile/:publicId/extra` 取代）；auctionsvc `grantMaterial`（材料走邮件附件交付）；admin 的 `/admin/mismatches`、`/admin/suspicious-pve`、`/admin/promo/codes`(GET+POST)（ops 前端零消费）；`shared/roomRegistry.ts` 整模块（从未接入 matchsvc 自己的内存房间表）。**踩坑记录**：`matchsvc.roomStart()`/`/mm/room/start` 最初也判定为死代码删除，但 `matchsvc.test.ts`/`gateway-routing.test.ts`/`matchsvcClient.test.ts` 直接调用它验证 no-op+拒绝语义，删方法本身破坏了 9 个通过中的测试——只验证了改动落地的 metaserver/socialsvc 两个包，隔一轮全量 11 包扫描才发现，已逐字恢复。教训：改一个被其它包测试直接引用的符号，必须连带跑那个包的测试，不能只测自己改的包。
+- **认证一致性**：meta 内部路由的 `authed()` 原来只收 `x-internal-key` 值，丢弃 `x-internal-caller`——非 strict 模式下所有 40+ 内部路由的审计 caller 恒为 null。签名改收整个 `req.headers`，41 处调用点批量替换。
+- **save-fields 契约拍板**：`/internal/save-fields` 契约漂移（worldsvc 侧 `SaveFields` 声明 `unitLevels`/`gear` 为必填，meta 实际从不返回）核实后确认引擎侧 `runSiegeBattle` 从不读这两个已标 `@deprecated` 的参数（CC-3 后改用 `cardInstances`+`equipmentInv`）——删声明和对应调用点，而非补字段。
+
+**未完成，留独立任务**：P1 合并优化（match-identity 合并端点、`GET /save` wallet N+1、socialsvc profile/extra 单跳化、save-fields 批量+缓存等一长串已诊断待实现项）——诊断已写入设计文档，本轮聚焦 P0 正确性缺口 + 已完成的 P2 清理，性能优化留下一轮。
+
+**验证**：11 个 server 包全量 `tsc -b` + vitest 交叉扫描（除 matchsvc 2 个与本轮无关的既有失败——已 spawn 独立任务跟踪），client `tsc --noEmit` 全绿。

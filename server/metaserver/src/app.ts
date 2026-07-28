@@ -7,6 +7,7 @@ import type { Collections, JwtConfig, FeatureFlagCache, RedisLike, SaveData } fr
 import { createLogger, internalKeysFromEnv } from '@nw/shared';
 import { MetaService } from './service.js';
 import { assembleEquipmentInv } from './equipment.js';
+import { assembleCardInv } from './cards.js';
 import { registerAdCallbackRoutes } from './ads.js';
 import { registerPaddleRoutes } from './paddle.js';
 
@@ -14,6 +15,7 @@ const log = createLogger('meta');
 import { makeSecurityHandlers } from './auth.js';
 import { extractBearer, verifyToken } from '@nw/shared';
 import { registerInternalRoutes } from './internal.js';
+import { AccountCache } from './accountCache.js';
 import { HttpCommercialClient, type CommercialClient } from './commercialClient.js';
 import { HttpGatewayClient, type GatewayClient } from './gatewayClient.js';
 import { HttpMetaSocialsvcClient, nullMetaSocialsvcClient } from './socialsvcClient.js';
@@ -75,26 +77,33 @@ export async function buildApp(opts: BuildAppOpts): Promise<FastifyInstance> {
     log.info(`${req.method} ${req.url} -> ${reply.statusCode}`, { ms });
   });
 
-  // Equipment storage split backstop (2026-07-26, perf — see equipment.ts header): equipment instances
-  // live in their own collection now, not embedded in SaveData.equipmentInv. ~30 handlers across
-  // auth/save/pve/economy/liveops/cards/ladderSeason return a `save: SaveData` (either nested under
-  // `ok()`'s `{data:{save}}` envelope, or — putSave's 409 conflict case — at the top level); rather than
-  // trust every one of those call sites to remember an explicit join, this single hook is the centralized
-  // guarantee that no OTHER response can ever accidentally ship without the full map.
+  // Equipment/card storage split backstop (2026-07-26 equipmentInv, 2026-07-27 cardInv — see
+  // equipment.ts/cards.ts headers): both instance types live in their own collections now, not embedded
+  // in SaveData. ~30 handlers across auth/save/pve/economy/liveops/cards/ladderSeason return a
+  // `save: SaveData` (either nested under `ok()`'s `{data:{save}}` envelope, or — putSave's 409 conflict
+  // case — at the top level); rather than trust every one of those call sites to remember an explicit
+  // join, this single hook is the centralized guarantee that no OTHER response can ever accidentally
+  // ship without the full maps.
   // equipment.ts's own mutation endpoints (craft/enhance/salvage/reforge/equip) are the deliberate
   // exception (phase 2, EQUIPMENT_DESIGN §3.3): they set `equipmentInv: null` (via `leanSave`), not
   // `undefined` — this hook only backfills on `undefined` ("forgot to populate"), so `null` ("explicitly
   // omitted, caller already knows what changed") passes through untouched, and those endpoints skip the
   // `equipmentInstances.find({accountId})` entirely instead of paying for it just to throw it away.
+  // cardInv has no such `null` opt-out (phase 2 not done for cards); it only needs the `undefined` branch.
   app.addHook('preSerialization', async (_req, _reply, payload) => {
     const p = payload as { save?: SaveData; data?: { save?: SaveData } } | null;
     const save = p?.data?.save ?? p?.save;
-    // opts.cols.equipmentInstances may be absent in tests that build their own minimal fake Collections
-    // (many unit-style suites drive buildApp() directly with a hand-rolled `{saves, accounts}` stub, not
-    // the full interface) — skip gracefully rather than throwing, same defensive style as the rest of
-    // this codebase's optional-dependency checks (e.g. `commercial.available`).
-    if (save && typeof save === 'object' && save.accountId && save.equipmentInv === undefined && opts.cols.equipmentInstances) {
-      save.equipmentInv = await assembleEquipmentInv(opts.cols, save.accountId, save);
+    // opts.cols.equipmentInstances/cardInstances may be absent in tests that build their own minimal fake
+    // Collections (many unit-style suites drive buildApp() directly with a hand-rolled `{saves, accounts}`
+    // stub, not the full interface) — skip gracefully rather than throwing, same defensive style as the
+    // rest of this codebase's optional-dependency checks (e.g. `commercial.available`).
+    if (save && typeof save === 'object' && save.accountId) {
+      if (save.equipmentInv === undefined && opts.cols.equipmentInstances) {
+        save.equipmentInv = await assembleEquipmentInv(opts.cols, save.accountId, save);
+      }
+      if (save.cardInv === undefined && opts.cols.cardInstances) {
+        save.cardInv = await assembleCardInv(opts.cols, save.accountId, save);
+      }
     }
     return payload;
   });
@@ -124,6 +133,9 @@ export async function buildApp(opts: BuildAppOpts): Promise<FastifyInstance> {
   const socialsvc =
     opts.socialsvc ?? (opts.socialsvcUrl ? new HttpMetaSocialsvcClient(opts.socialsvcUrl, opts.internalKey) : nullMetaSocialsvcClient);
   const redis = opts.redis ?? null;
+  // Shared with registerInternalRoutes below so an admin ban/unban (internal API) invalidates the same
+  // cache rejectIfBanned (public API) reads — one instance per buildApp call, see accountCache.ts.
+  const accountCache = new AccountCache();
   const service = new MetaService({
     cols: opts.cols,
     jwt: opts.jwt,
@@ -137,10 +149,11 @@ export async function buildApp(opts: BuildAppOpts): Promise<FastifyInstance> {
     lokiPushUrl: opts.lokiPushUrl ?? null,
     socialsvc,
     redis,
+    accountCache,
   });
 
   // Ad platform SSV callbacks (platform-initiated; no player authentication).
-  registerAdCallbackRoutes(app, { cols: opts.cols, commercial, now });
+  registerAdCallbackRoutes(app, { cols: opts.cols, commercial, now, redis });
 
   // Paddle Billing routes: player checkout session + Paddle webhook.
   registerPaddleRoutes(app, {
@@ -164,6 +177,7 @@ export async function buildApp(opts: BuildAppOpts): Promise<FastifyInstance> {
     cols: opts.cols,
     internalKey: opts.internalKey,
     internalKeys: internalKeysFromEnv(),
+    accountCache,
     now,
     gateway,
     commercial,

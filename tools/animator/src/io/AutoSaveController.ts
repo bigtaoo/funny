@@ -170,6 +170,12 @@ export class AutoSaveController {
     }
   }
 
+  /** Public entry point for external callers (e.g. the desktop shell's content
+   *  hot-update flow) to force an immediate flush — see window.nwDesktop.onRequestSave. */
+  async requestFlush(): Promise<void> {
+    return this.flushNow();
+  }
+
   /** Cancel the debounce and flush immediately if there are unsaved edits. */
   private async flushNow(): Promise<void> {
     if (this.saveTimer !== null) { clearTimeout(this.saveTimer); this.saveTimer = null; }

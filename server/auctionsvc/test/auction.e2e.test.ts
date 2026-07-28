@@ -43,7 +43,7 @@ if (!mongo) {
 }
 
 describe.skipIf(!mongo)('AuctionService e2e', () => {
-  const spends: Array<{ account: string; amount: number; orderId: string }> = [];
+  const spends: Array<{ account: string; amount: number; orderId: string; clientPlatform?: string }> = [];
   const materialDeducts: Array<{ account: string; material: string; qty: number; orderId: string }> = [];
   const materialGrants: Array<{ account: string; material: string; qty: number; orderId: string }> = [];
   // Equipment: simulated meta inventory (Map<account, Map<instanceId, instance>>) + escrow/transfer log.
@@ -71,8 +71,8 @@ describe.skipIf(!mongo)('AuctionService e2e', () => {
 
   const commercial: AuctionCommercialClient = {
     available: true,
-    async spend(accountId, amount, orderId) {
-      spends.push({ account: accountId, amount, orderId });
+    async spend(accountId, amount, orderId, clientPlatform) {
+      spends.push({ account: accountId, amount, orderId, clientPlatform });
     },
   };
 
@@ -229,6 +229,17 @@ describe.skipIf(!mongo)('AuctionService e2e', () => {
     // escrow-out: seller proceeds also delivered via system mail (no direct wallet credit)
     expect(mailAtt('alice', 'auction_buy:')).toMatchObject({ kind: 'coins', count: 60 - tax });
     expect(mailFor('alice', 'auction_buy:')?.content.subject).toBe('auction.mail.proceeds.subject');
+  });
+
+  // comm-audit-internal-2026-07-28 P0-7: auctionsvc used to never forward the caller's platform to
+  // commercial's /internal/spend, so iOS/Android auction purchases silently drew from the web bucket.
+  it('forwards the caller-supplied clientPlatform through to commercial.spend', async () => {
+    const view = await svc.createAuction({
+      sellerId: 'alice', itemType: 'material',
+      item: { material: 'lead' }, qty: 1, price: 30, durationSec: DUR,
+    });
+    await svc.buyAuction('bob', view.auctionId, 'android');
+    expect(spends[0]!.clientPlatform).toBe('android');
   });
 
   it('buy own auction → BAD_REQUEST', async () => {

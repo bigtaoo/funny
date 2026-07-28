@@ -17,6 +17,11 @@ export class RoomManager {
 
   constructor(private readonly deps: RoomManagerDeps) {}
 
+  /** Whether a live room exists for this roomId (used to tell reconnects from initial joins). */
+  roomExists(roomId: string): boolean {
+    return this.rooms.has(roomId);
+  }
+
   /**
    * Called after a ticket handshake: find/create a room by roomId and join the specified side.
    * Cross-validation — the second ticket's seed/mode must match the room established by the first

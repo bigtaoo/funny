@@ -26,7 +26,6 @@ export function SiegeDamageMixin<TBase extends SiegeServiceBaseCtor>(Base: TBase
       for (const d of due) {
         const claimed = await cols.siegeDamage.findOneAndDelete({ _id: d._id });
         if (!claimed) continue; // lost to a concurrent processor
-        await this.core.unscheduleSiegeDamage(claimed.worldId, claimed._id);
         try {
           await this.settleSiegeDamage(claimed, t);
         } catch (e) {

@@ -9,6 +9,7 @@ import type { FastifyInstance } from 'fastify';
 import { buildApp } from '../dist/app.js';
 import type { GatewayClient, JudgeReq, JudgeRes } from '../dist/gatewayClient.js';
 import { seedEquipment } from './helpers/equipment.js';
+import { seedCard } from './helpers/cards.js';
 
 const URI = process.env.NW_MONGO_URI ?? 'mongodb://127.0.0.1:27017/?replicaSet=rs0';
 const DB = 'nw_meta_pveverify_test';
@@ -104,7 +105,12 @@ describe.skipIf(!mongo)('pve L1 verify e2e', () => {
     const seededEquipment = { id: 'eq_test', defId: 'test_weapon', rarity: 'epic' as const, level: 9, affixes: [{ id: 'm_atk', value: 80 }] };
     const seededEquipmentInv = { eq_test: seededEquipment };
     const accountId = (await m.collections.accounts.findOne({}))!._id;
-    await m.collections.saves.updateOne({ _id: accountId }, { $set: { 'save.cardInv': seededCardInv } });
+    // cardInv lives in its own `cardInstances` collection since the 2026-07-27 storage split (cards.ts) —
+    // replace the account's whole roster (starter cards included) with just the seeded card, mirroring the
+    // old direct `$set: {'save.cardInv': seededCardInv}` replace-the-whole-map semantics.
+    await m.collections.cardInstances.deleteMany({ accountId });
+    await seedCard(m, accountId, seededCardInv.card_test);
+    await m.collections.saves.updateOne({ _id: accountId }, { $set: { 'save.cardInvCount': 1 } });
     // equipmentInv lives in its own `equipmentInstances` collection since the 2026-07-26 storage split (equipment.ts).
     await seedEquipment(m, accountId, seededEquipment);
     gateway.next = { ok: true, stars: 3 };

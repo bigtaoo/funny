@@ -1,4 +1,4 @@
-import { internalHeaders, type CustomPoolConfig, type GachaCatalogItem, type GachaCategory } from '@nw/shared';
+import { fetchInternalJson, type CustomPoolConfig, type GachaCatalogItem, type GachaCategory } from '@nw/shared';
 import { EventsClientError } from './events';
 
 // ── Custom gacha pool management (meta /admin/gacha/*, GACHA_DESIGN §12, gacha.pools.manage) ────────
@@ -38,45 +38,53 @@ export class HttpGachaPoolsClient implements GachaPoolsClient {
 
   async list(): Promise<AdminGachaPool[]> {
     if (!this.metaBaseUrl) return [];
-    const res = await fetch(`${this.metaBaseUrl}/admin/gacha/pools`, {
-      headers: internalHeaders('admin', this.internalKey),
+    const r = await fetchInternalJson<{ pools?: AdminGachaPool[] }>(`${this.metaBaseUrl}/admin/gacha/pools`, {
+      caller: 'admin',
+      key: this.internalKey,
+      timeoutMs: 10000,
+      label: 'meta /admin/gacha/pools',
     });
-    if (!res.ok) throw new EventsClientError(res.status, `list gacha pools HTTP ${res.status}`);
-    const body = (await res.json()) as { pools?: AdminGachaPool[] };
-    return body.pools ?? [];
+    if (!r.ok) throw new EventsClientError(r.status || 502, `list gacha pools ${r.status ? `HTTP ${r.status}` : r.error ?? 'network error'}`);
+    return r.body?.pools ?? [];
   }
 
   async catalog(): Promise<Record<GachaCategory, GachaCatalogItem[]>> {
     if (!this.metaBaseUrl) throw new EventsClientError(503, 'meta not configured');
-    const res = await fetch(`${this.metaBaseUrl}/admin/gacha/catalog`, {
-      headers: internalHeaders('admin', this.internalKey),
+    const r = await fetchInternalJson<{ catalog?: Record<GachaCategory, GachaCatalogItem[]>; error?: string }>(`${this.metaBaseUrl}/admin/gacha/catalog`, {
+      caller: 'admin',
+      key: this.internalKey,
+      timeoutMs: 10000,
+      label: 'meta /admin/gacha/catalog',
     });
-    const body = (await res.json().catch(() => ({}))) as { catalog?: Record<GachaCategory, GachaCatalogItem[]>; error?: string };
-    if (!res.ok || !body.catalog) throw new EventsClientError(res.status, body.error ?? `catalog HTTP ${res.status}`);
-    return body.catalog;
+    if (!r.ok || !r.body?.catalog) throw new EventsClientError(r.status || 502, r.body?.error ?? r.error ?? `catalog HTTP ${r.status}`);
+    return r.body.catalog;
   }
 
   async createCustom(config: CustomPoolConfig, createdBy: string): Promise<{ id: string }> {
     if (!this.metaBaseUrl) throw new EventsClientError(503, 'meta not configured');
-    const res = await fetch(`${this.metaBaseUrl}/admin/gacha/pools/custom`, {
+    const r = await fetchInternalJson<{ id?: string; detail?: string; error?: string }>(`${this.metaBaseUrl}/admin/gacha/pools/custom`, {
+      caller: 'admin',
+      key: this.internalKey,
       method: 'POST',
-      headers: { 'content-type': 'application/json', ...internalHeaders('admin', this.internalKey) },
-      body: JSON.stringify({ ...config, createdBy }),
+      body: { ...config, createdBy },
+      timeoutMs: 10000,
+      label: 'meta /admin/gacha/pools/custom',
     });
-    const body = (await res.json().catch(() => ({}))) as { id?: string; detail?: string; error?: string };
-    if (!res.ok || !body.id) throw new EventsClientError(res.status, body.detail ?? body.error ?? `create pool HTTP ${res.status}`);
-    return { id: body.id };
+    if (!r.ok || !r.body?.id) throw new EventsClientError(r.status || 502, r.body?.detail ?? r.body?.error ?? r.error ?? `create pool HTTP ${r.status}`);
+    return { id: r.body.id };
   }
 
   async close(id: string): Promise<{ id: string }> {
     if (!this.metaBaseUrl) throw new EventsClientError(503, 'meta not configured');
-    const res = await fetch(`${this.metaBaseUrl}/admin/gacha/pools/close`, {
+    const r = await fetchInternalJson<{ id?: string; error?: string }>(`${this.metaBaseUrl}/admin/gacha/pools/close`, {
+      caller: 'admin',
+      key: this.internalKey,
       method: 'POST',
-      headers: { 'content-type': 'application/json', ...internalHeaders('admin', this.internalKey) },
-      body: JSON.stringify({ id }),
+      body: { id },
+      timeoutMs: 10000,
+      label: 'meta /admin/gacha/pools/close',
     });
-    const body = (await res.json().catch(() => ({}))) as { id?: string; error?: string };
-    if (!res.ok || !body.id) throw new EventsClientError(res.status, body.error ?? `close pool HTTP ${res.status}`);
-    return { id: body.id };
+    if (!r.ok || !r.body?.id) throw new EventsClientError(r.status || 502, r.body?.error ?? r.error ?? `close pool HTTP ${r.status}`);
+    return { id: r.body.id };
   }
 }

@@ -30,8 +30,22 @@ describe('GatewayClient.push', () => {
 
     expect(published).toHaveLength(1);
     expect(published[0]!.channel).toBe('nw:gw:push');
-    expect(JSON.parse(published[0]!.message)).toEqual({ recipients: ['acc-1'], msg: ROOM_STATE });
+    // roomId rides along for cross-process log correlation (comm-audit-internal-2026-07-28).
+    expect(JSON.parse(published[0]!.message)).toEqual({ recipients: ['acc-1'], msg: ROOM_STATE, roomId: 'room-1' });
     expect(global.fetch).not.toHaveBeenCalled();
+  });
+
+  it('redis publish reaches 0 subscribers: falls back to direct HTTP (P0-2 — gateway restart window)', async () => {
+    // ioredis publish() resolves with the subscriber count; 0 means no gateway is listening —
+    // treating that as delivered used to strand players on match_found.
+    const redis = fakeRedis(async () => 0);
+    const client = new GatewayClient('http://gateway:8090', 'key', redis);
+    client.push('acc-1', ROOM_STATE, 'room-1');
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+    const [url] = (global.fetch as ReturnType<typeof vi.fn>).mock.calls[0]!;
+    expect(String(url)).toContain('/gw/push');
   });
 
   it('redis publish throws: falls back to direct HTTP', async () => {

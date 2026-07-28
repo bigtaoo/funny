@@ -1,4 +1,4 @@
-import { internalHeaders, type CompAttachment, type CompTarget } from '@nw/shared';
+import { fetchInternalJson, type CompAttachment, type CompTarget } from '@nw/shared';
 
 // ── Mail delivery (meta system mail endpoint, OPS_DESIGN §4.1 / §3.3) ─────
 // Compensation execution = create a system mail (wallet is never touched). Endpoint implemented per SOCIAL_DESIGN S6-3, mail backend built in parallel;
@@ -47,37 +47,37 @@ export class HttpMailDispatcher implements MailDispatcher {
 
   async send(req: MailSendReq): Promise<MailSendRes> {
     if (!this.metaBaseUrl) return { ok: false, error: 'mail backend unavailable' };
-    try {
-      const res = await fetch(`${this.metaBaseUrl}/internal/mail/system/send`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json', ...internalHeaders('admin', this.internalKey) },
-        body: JSON.stringify(req),
-      });
-      if (res.status === 404 || res.status === 501) {
-        return { ok: false, error: 'mail endpoint not yet available (S6-3)' };
-      }
-      if (!res.ok) return { ok: false, error: `mail send failed: HTTP ${res.status}` };
-      return (await res.json()) as MailSendRes;
-    } catch (e) {
-      return { ok: false, error: (e as Error).message };
+    // Global compensation mail fans out to every account (synchronous on the meta side)
+    // → long deadline. No retries: the ticket layer retries with the same dispatchKey.
+    const r = await fetchInternalJson<MailSendRes>(`${this.metaBaseUrl}/internal/mail/system/send`, {
+      caller: 'admin',
+      key: this.internalKey,
+      method: 'POST',
+      body: req,
+      timeoutMs: 60000,
+      label: 'meta /internal/mail/system/send',
+    });
+    if (r.status === 404 || r.status === 501) {
+      return { ok: false, error: 'mail endpoint not yet available (S6-3)' };
     }
+    if (!r.ok || !r.body) return { ok: false, error: r.status ? `mail send failed: HTTP ${r.status}` : r.error ?? 'network error' };
+    return r.body;
   }
 
   async preview(req: MailPreviewReq): Promise<MailPreviewRes> {
     if (!this.metaBaseUrl) return { ok: false, recipientCount: 0, error: 'mail backend unavailable' };
-    try {
-      const res = await fetch(`${this.metaBaseUrl}/internal/mail/system/preview`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json', ...internalHeaders('admin', this.internalKey) },
-        body: JSON.stringify(req),
-      });
-      if (res.status === 404 || res.status === 501) {
-        return { ok: false, recipientCount: 0, error: 'mail endpoint not yet available (S6-3)' };
-      }
-      if (!res.ok) return { ok: false, recipientCount: 0, error: `preview failed: HTTP ${res.status}` };
-      return (await res.json()) as MailPreviewRes;
-    } catch (e) {
-      return { ok: false, recipientCount: 0, error: (e as Error).message };
+    const r = await fetchInternalJson<MailPreviewRes>(`${this.metaBaseUrl}/internal/mail/system/preview`, {
+      caller: 'admin',
+      key: this.internalKey,
+      method: 'POST',
+      body: req,
+      timeoutMs: 10000,
+      label: 'meta /internal/mail/system/preview',
+    });
+    if (r.status === 404 || r.status === 501) {
+      return { ok: false, recipientCount: 0, error: 'mail endpoint not yet available (S6-3)' };
     }
+    if (!r.ok || !r.body) return { ok: false, recipientCount: 0, error: r.status ? `preview failed: HTTP ${r.status}` : r.error ?? 'network error' };
+    return r.body;
   }
 }

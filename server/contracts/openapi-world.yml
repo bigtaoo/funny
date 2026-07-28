@@ -753,7 +753,15 @@ paths:
                   - $ref: '#/components/schemas/OkResponse'
                   - type: object
                     properties:
-                      data: { $ref: '#/components/schemas/PlayerWorldView' }
+                      data:
+                        allOf:
+                          - $ref: '#/components/schemas/PlayerWorldView'
+                          - type: object
+                            properties:
+                              # Server epoch ms at response time (P1-1 clock-offset sample) — see
+                              # client/src/net/serverClock.ts. Only this endpoint carries it (the
+                              # highest-frequency SLG round-trip), not every PlayerWorldView consumer.
+                              serverNow: { type: integer }
 
   /world/season/transfer/targets:
     get:
@@ -838,6 +846,88 @@ paths:
                     properties:
                       data: { $ref: '#/components/schemas/PlayerWorldView' }
 
+  /world/enter:
+    post:
+      operationId: enterWorld
+      description: >-
+        Aggregated SLG-entry fetch (P1-5, comm-audit-2026-07-27): resolves getMe+joinWorld server-side
+        (so the base tile is known before the map window is picked), then composes season/nations/map(or
+        mapSparse)/marches/occupations/stationed/worldChannel in parallel — one round-trip replacing the
+        9-request waterfall WorldMapNet.loadData() used to fire on every world-map entry. `r` is the
+        viewport radius the client already computes from its own canvas size (independent of map center);
+        the server centers the returned map window on the resolved mainBaseTile itself. Exactly one of
+        `map` / `mapSparse` is populated, matching zoom (1 → map; 2/3 → mapSparse, lod mid/thin).
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [worldId, r]
+              properties:
+                worldId: { type: string }
+                r: { type: integer, description: Viewport radius (tiles), from the client's own canvas-size computation. }
+                zoom: { type: integer, enum: [1, 2, 3], default: 1 }
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/OkResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        required: [season, nations, me, marches, occupations, stationed, worldChannel]
+                        properties:
+                          season:
+                            allOf: [{ $ref: '#/components/schemas/SeasonView' }]
+                            nullable: true
+                            description: Null if this worldId has no provisioned world doc yet (should not happen for a real client-resolved shard; kept nullable to match getSeason's own return type).
+                          nations:
+                            type: array
+                            items: { $ref: '#/components/schemas/NationView' }
+                          me:
+                            allOf:
+                              - $ref: '#/components/schemas/PlayerWorldView'
+                              - type: object
+                                required: [justJoined]
+                                properties:
+                                  serverNow: { type: integer }
+                                  justJoined:
+                                    type: boolean
+                                    description: True only the first time this account is placed in this world (server-resolved, replaces the client's own wasJoined-diff logic).
+                          map: { $ref: '#/components/schemas/WorldMapView' }
+                          mapSparse: { $ref: '#/components/schemas/WorldMapSparseView' }
+                          marches:
+                            type: array
+                            items: { $ref: '#/components/schemas/MarchView' }
+                          occupations:
+                            type: array
+                            items: { $ref: '#/components/schemas/OccupationView' }
+                          stationed:
+                            type: array
+                            items: { $ref: '#/components/schemas/StationedView' }
+                          worldChannel:
+                            type: array
+                            description: Same shape as GET /nation/channel (not itself contract-declared — pre-existing gap, P2 backlog).
+                            items:
+                              type: object
+                              required: [id, senderId, senderName, senderPublicId, body, ts]
+                              properties:
+                                id:             { type: string }
+                                senderId:       { type: string }
+                                senderName:     { type: string }
+                                senderPublicId: { type: string }
+                                title:          { type: string }
+                                sectName:       { type: string }
+                                familyName:     { type: string }
+                                body:           { type: string }
+                                ts:             { type: integer }
+
   /world/occupy:
     post:
       operationId: occupyTile
@@ -881,10 +971,18 @@ paths:
                 y: { type: integer }
       responses:
         '200':
-          description: Abandoned
+          # P1-3 (comm-audit-2026-07-27): the handler already returns the full updated PlayerWorldView
+          # (territory.ts abandonTile) — this contract previously under-declared it as bare OkResponse,
+          # which is exactly why the client discarded the response and issued a separate GET /world/me.
+          description: Abandoned — returns the updated player world state (resources/territory refreshed)
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/OkResponse' }
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/OkResponse'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/PlayerWorldView' }
 
   /world/relocate:
     post:
@@ -932,7 +1030,10 @@ paths:
                 y: { type: integer }
       responses:
         '200':
-          description: Watchtower built
+          # P1-3 (comm-audit-2026-07-27): the resource cost is deducted from the player's own state, not
+          # visible on the tile itself, so the client legitimately needs both — httpApi.ts attaches `me`
+          # alongside the tile so it doesn't have to make a separate GET /world/me round-trip.
+          description: Watchtower built — data.me carries the updated player world state (resources spent)
           content:
             application/json:
               schema:
@@ -940,7 +1041,12 @@ paths:
                   - $ref: '#/components/schemas/OkResponse'
                   - type: object
                     properties:
-                      data: { $ref: '#/components/schemas/WorldTileView' }
+                      data:
+                        allOf:
+                          - $ref: '#/components/schemas/WorldTileView'
+                          - type: object
+                            properties:
+                              me: { $ref: '#/components/schemas/PlayerWorldView' }
 
   /world/structure:
     post:
@@ -961,7 +1067,9 @@ paths:
                 kind: { type: string, enum: [arrowTower, blocker] }
       responses:
         '200':
-          description: Structure built
+          # P1-3: same reasoning as /world/watchtower above — attach `me` so the client doesn't need a
+          # separate GET /world/me for the resources it just spent.
+          description: Structure built — data.me carries the updated player world state (resources spent)
           content:
             application/json:
               schema:
@@ -969,7 +1077,12 @@ paths:
                   - $ref: '#/components/schemas/OkResponse'
                   - type: object
                     properties:
-                      data: { $ref: '#/components/schemas/WorldTileView' }
+                      data:
+                        allOf:
+                          - $ref: '#/components/schemas/WorldTileView'
+                          - type: object
+                            properties:
+                              me: { $ref: '#/components/schemas/PlayerWorldView' }
 
   /world/structure/demolish:
     post:
@@ -1045,7 +1158,12 @@ paths:
                   description: "ADR-051 (P3a): kind=move dispatch intent — 'garrison' parks the team as a 驻扎 garrison (defends its 3×3 footprint); default/absent → 停留 idle. Ignored for other kinds."
       responses:
         '200':
-          description: March started
+          # P1-3 (comm-audit-2026-07-27): dispatch deducts troops/resources from the player's own state,
+          # not visible on the march itself, so httpApi.ts attaches `me` alongside it — the client can
+          # locally append this march to its cached list and adopt `me` directly, instead of following
+          # up with GET /world/march + GET /world/me (the exact "3 requests to confirm 1 action" pattern
+          # the audit flagged).
+          description: March started — data.me carries the updated player world state (troops/resources spent)
           content:
             application/json:
               schema:
@@ -1053,7 +1171,12 @@ paths:
                   - $ref: '#/components/schemas/OkResponse'
                   - type: object
                     properties:
-                      data: { $ref: '#/components/schemas/MarchView' }
+                      data:
+                        allOf:
+                          - $ref: '#/components/schemas/MarchView'
+                          - type: object
+                            properties:
+                              me: { $ref: '#/components/schemas/PlayerWorldView' }
 
   /world/march/{marchId}/recall:
     post:
@@ -1594,10 +1717,17 @@ paths:
                 itemId: { type: string }
       responses:
         '200':
-          description: Item bought
+          # P1-3 (comm-audit-2026-07-27): buySlgShopItem already returns the full updated PlayerWorldView
+          # (shop.ts) — same under-declaration bug as /world/abandon above.
+          description: Item bought — returns the updated player world state (resources/effect applied)
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/OkResponse' }
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/OkResponse'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/PlayerWorldView' }
 
   # ── Sect (S8-4b) ──────────────────────────────────────────────────────────────
 

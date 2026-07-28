@@ -263,6 +263,40 @@
                     ok: { type: boolean }
       '401': { $ref: '#/components/responses/ErrorResp' }
 
+/friends/report:
+  post:
+    operationId: reportUser
+    tags: [friends]
+    summary: File a UGC report against another player (admin-review-only; does not block/unfriend)
+    security: [{ bearerAuth: [] }]
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [publicId]
+            properties:
+              publicId: { type: string }
+              reason: { type: string }
+    responses:
+      '200':
+        description: Success
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [ok, data]
+              properties:
+                ok: { type: boolean, enum: [true] }
+                data:
+                  type: object
+                  required: [ok]
+                  properties:
+                    ok: { type: boolean }
+      '401': { $ref: '#/components/responses/ErrorResp' }
+      '404': { $ref: '#/components/responses/ErrorResp' }
+
 /chat/conversations:
   get:
     operationId: getConversations

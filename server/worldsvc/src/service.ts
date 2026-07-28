@@ -88,8 +88,8 @@ export class WorldService extends WorldCore {
   trainTroops(worldId: string, accountId: string, qty: number): Promise<PlayerWorldView> {
     return this.city.trainTroops(worldId, accountId, qty);
   }
-  speedupTraining(worldId: string, accountId: string, coins: number): Promise<PlayerWorldView> {
-    return this.city.speedupTraining(worldId, accountId, coins);
+  speedupTraining(worldId: string, accountId: string, coins: number, clientPlatform?: string): Promise<PlayerWorldView> {
+    return this.city.speedupTraining(worldId, accountId, coins, clientPlatform);
   }
   processCompletedTraining(nowMs?: number): Promise<number> {
     return this.city.processCompletedTraining(nowMs);
@@ -97,8 +97,8 @@ export class WorldService extends WorldCore {
   upgradeBuilding(worldId: string, accountId: string, key: BuildingKey): Promise<PlayerWorldView> {
     return this.city.upgradeBuilding(worldId, accountId, key);
   }
-  speedupBuild(worldId: string, accountId: string, coins: number): Promise<PlayerWorldView> {
-    return this.city.speedupBuild(worldId, accountId, coins);
+  speedupBuild(worldId: string, accountId: string, coins: number, clientPlatform?: string): Promise<PlayerWorldView> {
+    return this.city.speedupBuild(worldId, accountId, coins, clientPlatform);
   }
   processCompletedBuilds(nowMs?: number): Promise<number> {
     return this.city.processCompletedBuilds(nowMs);
@@ -112,8 +112,8 @@ export class WorldService extends WorldCore {
   distributeTroops(worldId: string, accountId: string, allocations: Record<string, number>): Promise<void> {
     return this.city.distributeTroops(worldId, accountId, allocations);
   }
-  recoverCard(worldId: string, accountId: string, cardInstanceId: string): Promise<void> {
-    return this.city.recoverCard(worldId, accountId, cardInstanceId);
+  recoverCard(worldId: string, accountId: string, cardInstanceId: string, clientPlatform?: string): Promise<void> {
+    return this.city.recoverCard(worldId, accountId, cardInstanceId, clientPlatform);
   }
 
   // ── season / multi-shard (season.ts) ─────────────────────────
@@ -169,6 +169,49 @@ export class WorldService extends WorldCore {
   joinWorld(worldId: string, accountId: string, x?: number, y?: number): Promise<PlayerWorldView> {
     return this.territory.joinWorld(worldId, accountId, x, y);
   }
+
+  /**
+   * Aggregated SLG-entry fetch (P1-5, comm-audit-2026-07-27): resolves getMe+joinWorld first (so the
+   * base tile is known before the map window is picked), then composes season/nations/map(or
+   * mapSparse)/marches/occupations/stationed in parallel — the facade-level composition backing
+   * `POST /world/enter`, which replaces the 9-request waterfall WorldMapNet.loadData() used to fire on
+   * every world-map entry (the world-channel piece is a sibling service, composed by httpApi.ts).
+   * `r` is the viewport radius the client already computes from its own canvas size (independent of
+   * map center); `me.justJoined` replaces the client's own local wasJoined-diff (used to gate the
+   * "this is your new base" welcome toast) since the pre-join intermediate state is no longer visible
+   * to the client once getMe+joinWorld are resolved server-side.
+   */
+  async enterWorld(worldId: string, accountId: string, r: number, zoom: 1 | 2 | 3) {
+    let me = await this.getMe(worldId, accountId);
+    const wasJoined = me.joined;
+    let joinSucceeded = false;
+    try {
+      me = await this.joinWorld(worldId, accountId);
+      joinSucceeded = true;
+    } catch { /* world full / no slot available — keep pre-join state, map entry still proceeds */ }
+    const justJoined = !wasJoined && joinSucceeded;
+
+    const cx = me.mainBaseTile ? this.coordX(me.mainBaseTile) : Math.floor(this.deps.mapW / 2);
+    const cy = me.mainBaseTile ? this.coordY(me.mainBaseTile) : Math.floor(this.deps.mapH / 2);
+    const lod = zoom === 3 ? 'thin' : 'mid';
+
+    const [season, nations, map, mapSparse, marches, occupations, stationed] = await Promise.all([
+      this.getSeason(worldId),
+      this.getNations(worldId),
+      zoom === 1 ? this.getMap(worldId, accountId, cx, cy, r) : Promise.resolve(undefined),
+      zoom !== 1 ? this.getMapSparse(worldId, accountId, cx, cy, r, lod) : Promise.resolve(undefined),
+      this.getMarches(worldId, accountId),
+      this.getOccupations(worldId, accountId),
+      this.getStationed(worldId, accountId),
+    ]);
+
+    return {
+      season, nations, marches, occupations, stationed,
+      me: { ...me, justJoined },
+      ...(map ? { map } : {}),
+      ...(mapSparse ? { mapSparse } : {}),
+    };
+  }
   occupyTile(worldId: string, accountId: string, x: number, y: number): Promise<WorldTileView> {
     return this.territory.occupyTile(worldId, accountId, x, y);
   }
@@ -178,8 +221,8 @@ export class WorldService extends WorldCore {
   listTerritories(worldId: string, accountId: string): Promise<WorldTileView[]> {
     return this.territory.listTerritories(worldId, accountId);
   }
-  relocateBase(worldId: string, accountId: string, x: number, y: number): Promise<PlayerWorldView> {
-    return this.territory.relocateBase(worldId, accountId, x, y);
+  relocateBase(worldId: string, accountId: string, x: number, y: number, clientPlatform?: string): Promise<PlayerWorldView> {
+    return this.territory.relocateBase(worldId, accountId, x, y, clientPlatform);
   }
   buildWatchtower(worldId: string, accountId: string, x: number, y: number): Promise<WorldTileView> {
     return this.territory.buildWatchtower(worldId, accountId, x, y);
@@ -193,8 +236,8 @@ export class WorldService extends WorldCore {
   }
 
   // ── SLG shop (shop.ts) ──────────────────────────────────────
-  buySlgShopItem(worldId: string, accountId: string, itemId: string): Promise<PlayerWorldView> {
-    return this.shop.buySlgShopItem(worldId, accountId, itemId);
+  buySlgShopItem(worldId: string, accountId: string, itemId: string, clientPlatform?: string): Promise<PlayerWorldView> {
+    return this.shop.buySlgShopItem(worldId, accountId, itemId, clientPlatform);
   }
   getSlgShopItems(): typeof SLG_SHOP_ITEMS {
     return this.shop.getSlgShopItems();

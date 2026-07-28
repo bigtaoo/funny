@@ -11,7 +11,8 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@nw/shared": "*"
+    "@nw/shared": "*",
+    "ioredis": "^5.4.1"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",

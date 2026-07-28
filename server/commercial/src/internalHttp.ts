@@ -264,26 +264,6 @@ export function startInternalHttp(
               rawEvent: str(b.rawEvent),
             });
             return send(res, 200, { ok: true });
-          case '/internal/gacha/pool': {
-            const cfg = (b.config ?? {}) as Record<string, unknown>;
-            return send(
-              res,
-              200,
-              await svc.createLimitedPool({
-                config: {
-                  id: str(cfg.id),
-                  name: str(cfg.name),
-                  featuredLegendary: str(cfg.featuredLegendary),
-                  startAt: num(cfg.startAt, 0),
-                  endAt: num(cfg.endAt, 0),
-                  ...(Array.isArray(cfg.fillerLegendaries)
-                    ? { fillerLegendaries: (cfg.fillerLegendaries as unknown[]).map((x) => str(x)) }
-                    : {}),
-                },
-                createdBy: str(b.createdBy),
-              }),
-            );
-          }
           case '/internal/gacha/pool/custom': {
             const cfg = (b.config ?? {}) as Record<string, unknown>;
             const categories = Array.isArray(cfg.categories)

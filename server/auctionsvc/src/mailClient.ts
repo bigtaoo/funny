@@ -4,7 +4,7 @@
 // NW_META_INTERNAL_URL not configured → available=false → delivery/return does not send mail (best-effort; does not block settlement).
 // Migrated from server/worldsvc/src/mailClient.ts (caller name updated to 'auctionsvc').
 
-import { internalHeaders, type EquipmentInstance, type CardInstance } from '@nw/shared';
+import { fetchInternalJson, type EquipmentInstance, type CardInstance } from '@nw/shared';
 
 export interface AuctionMailAttachment {
   // 'material' → SaveData.materials unified progression pool; 'skin' → inventory.skins array.
@@ -42,24 +42,27 @@ export class HttpAuctionMailClient implements AuctionMailClient {
 
   async sendSystemMail(accountId: string, dispatchKey: string, content: AuctionMailContent): Promise<void> {
     if (!this.baseUrl) return;
-    try {
-      const res = await fetch(`${this.baseUrl}/internal/mail/system/send`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json', ...internalHeaders('auctionsvc', this.internalKey) },
-        body: JSON.stringify({
-          dispatchKey,
-          accountId,
-          subject: content.subject,
-          body: content.body,
-          attachments: content.attachments ?? [],
-          expireDays: content.expireDays ?? 0,
-        }),
-      });
-      if (!res.ok) {
-        console.error('[auctionsvc] mail.sendSystemMail non-ok', { accountId, dispatchKey, status: res.status });
-      }
-    } catch (e) {
-      console.error('[auctionsvc] mail.sendSystemMail failed', { accountId, dispatchKey, err: (e as Error).message });
+    const res = await fetchInternalJson<{ ok?: boolean; error?: string }>(`${this.baseUrl}/internal/mail/system/send`, {
+      caller: 'auctionsvc',
+      key: this.internalKey,
+      method: 'POST',
+      body: {
+        dispatchKey,
+        accountId,
+        subject: content.subject,
+        body: content.body,
+        attachments: content.attachments ?? [],
+        expireDays: content.expireDays ?? 0,
+      },
+      timeoutMs: 5000,
+      label: '/internal/mail/system/send',
+    });
+    if (!res.ok) {
+      console.error('[auctionsvc] mail.sendSystemMail failed', { accountId, dispatchKey, status: res.status, err: res.error });
+    } else if (res.body?.ok === false) {
+      // meta answers HTTP 200 with {ok:false} when the recipient is unknown or socialsvc persistence failed —
+      // HTTP status alone can't detect a dropped mail. Retry/compensation is a later batch; make the loss visible.
+      console.error('[auctionsvc] mail.sendSystemMail rejected', { accountId, dispatchKey, err: res.body.error });
     }
   }
 }

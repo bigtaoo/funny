@@ -2,7 +2,7 @@
 //  · refresh() (S1-R): after the server authoritatively updates the ranked stats (pvp) at match end, client pull + reconcile reflects them immediately.
 //  · PvE server authority (PVE_INTEGRITY_PLAN §8): progress/materials/pveUpgrades are taken from the cloud (no more union/max merge);
 //    level clear / upgrade go through /pve/* endpoints; offline clears are queued and flushed on reconnect.
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 import { SaveManager } from '../src/game/meta/SaveManager';
 import { LocalSaveStore } from '../src/game/meta/SaveStore';
 import { makeNewSave, type SaveData } from '../src/game/meta';
@@ -96,6 +96,131 @@ describe('SaveManager.refresh (S1-R)', () => {
     });
     await mgr.refresh();
     expect(seen).toBe('Frank');
+  });
+});
+
+describe('SaveManager.reconcile dirty flag (P0-10, comm-audit-2026-07-27 finding B11)', () => {
+  /** fakeApi + putSave call recording, so flush()/push() behavior is directly observable. */
+  function fakeApiWithPutSave(cloud: SaveData, hasToken = true) {
+    const putSaveCalls: number[] = [];
+    const api = {
+      hasToken: () => hasToken,
+      getSave: async () => ({ save: cloud }),
+      putSave: async (rev: number) => { putSaveCalls.push(rev); return { kind: 'ok' as const, save: cloud }; },
+    } as unknown as ApiClient;
+    return { api, putSaveCalls };
+  }
+
+  it('a read (refresh) that surfaces no real local edit does not trigger a phantom PUT /save', async () => {
+    const store = new LocalSaveStore(new MemStorage());
+    const local = makeNewSave('a', 1);
+    local.equipped = { skin: 'same_skin' };
+    local.flags = { seen_intro: true };
+    store.saveLocal(local);
+
+    // Cloud already has exactly what local has — nothing to reconcile.
+    const cloud = makeNewSave('a', 1);
+    cloud.equipped = { skin: 'same_skin' };
+    cloud.flags = { seen_intro: true };
+    const { api, putSaveCalls } = fakeApiWithPutSave(cloud);
+
+    const mgr = new SaveManager({ store, api });
+    await mgr.refresh();
+    await mgr.flush(); // would fire a PUT immediately if (and only if) dirty were (wrongly) set
+
+    expect(putSaveCalls).toHaveLength(0);
+  });
+
+  it('a read that surfaces a genuine local equipped/flags edit still marks dirty and pushes', async () => {
+    const store = new LocalSaveStore(new MemStorage());
+    const local = makeNewSave('a', 1);
+    local.equipped = { skin: 'local_skin' }; // real offline edit cloud doesn't have yet
+    store.saveLocal(local);
+
+    const cloud = makeNewSave('a', 1); // no skin equipped in the cloud
+    const { api, putSaveCalls } = fakeApiWithPutSave(cloud);
+
+    const mgr = new SaveManager({ store, api });
+    await mgr.refresh();
+    await mgr.flush();
+
+    expect(putSaveCalls).toHaveLength(1);
+  });
+});
+
+describe('SaveManager lifecycle flush (P0-10, comm-audit-2026-07-27 finding B11)', () => {
+  function fakeDocWindow() {
+    const docListeners = new Map<string, Array<() => void>>();
+    const winListeners = new Map<string, Array<() => void>>();
+    const doc = {
+      visibilityState: 'visible' as 'visible' | 'hidden',
+      addEventListener: (type: string, cb: () => void) => {
+        (docListeners.get(type) ?? docListeners.set(type, []).get(type)!).push(cb);
+      },
+    };
+    const win = {
+      addEventListener: (type: string, cb: () => void) => {
+        (winListeners.get(type) ?? winListeners.set(type, []).get(type)!).push(cb);
+      },
+    };
+    return {
+      doc, win,
+      fireDoc: (type: string) => (docListeners.get(type) ?? []).forEach((f) => f()),
+      fireWin: (type: string) => (winListeners.get(type) ?? []).forEach((f) => f()),
+    };
+  }
+
+  afterEach(() => { vi.unstubAllGlobals(); });
+
+  it('visibilitychange → hidden triggers a flush (previously flush() had zero callers anywhere)', async () => {
+    const { doc, win, fireDoc } = fakeDocWindow();
+    vi.stubGlobal('document', doc);
+    vi.stubGlobal('window', win);
+
+    const store = new LocalSaveStore(new MemStorage());
+    const local = makeNewSave('a', 1);
+    local.equipped = { skin: 'local_skin' };
+    store.saveLocal(local);
+    const cloud = makeNewSave('a', 1);
+    const putSaveCalls: number[] = [];
+    const api = {
+      hasToken: () => true,
+      getSave: async () => ({ save: cloud }),
+      putSave: async (rev: number) => { putSaveCalls.push(rev); return { kind: 'ok' as const, save: cloud }; },
+    } as unknown as ApiClient;
+    const mgr = new SaveManager({ store, api });
+    await mgr.refresh(); // marks dirty (local skin edit cloud doesn't have)
+
+    doc.visibilityState = 'hidden';
+    fireDoc('visibilitychange');
+    await Promise.resolve(); await Promise.resolve(); // let the fire-and-forget flush()/push() promise settle
+
+    expect(putSaveCalls).toHaveLength(1);
+  });
+
+  it('beforeunload triggers a flush', async () => {
+    const { doc, win, fireWin } = fakeDocWindow();
+    vi.stubGlobal('document', doc);
+    vi.stubGlobal('window', win);
+
+    const store = new LocalSaveStore(new MemStorage());
+    const local = makeNewSave('a', 1);
+    local.equipped = { skin: 'local_skin' };
+    store.saveLocal(local);
+    const cloud = makeNewSave('a', 1);
+    const putSaveCalls: number[] = [];
+    const api = {
+      hasToken: () => true,
+      getSave: async () => ({ save: cloud }),
+      putSave: async (rev: number) => { putSaveCalls.push(rev); return { kind: 'ok' as const, save: cloud }; },
+    } as unknown as ApiClient;
+    const mgr = new SaveManager({ store, api });
+    await mgr.refresh();
+
+    fireWin('beforeunload');
+    await Promise.resolve(); await Promise.resolve();
+
+    expect(putSaveCalls).toHaveLength(1);
   });
 });
 

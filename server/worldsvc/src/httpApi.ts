@@ -13,11 +13,14 @@ import {
   loadInternalAuth,
   SlgError,
   BUILDING_KEYS,
+  createLogger,
   type MarchKind,
   type BuildingKey,
 } from '@nw/shared';
 import type { WorldService } from './service';
 import type { TeamTemplate } from './db';
+
+const log = createLogger('worldsvc');
 import type { SectService } from './sectService';
 import type { NationChannelService } from './nationChannelService';
 import type { WorldSocialsvcClient } from './socialsvcClient';
@@ -143,7 +146,11 @@ export function startHttpApi(
               return sendErr(res, ErrorCode.NOT_FOUND, 'not found');
             } catch (e) {
               if (e instanceof SlgError) return sendErr(res, e.code, e.message);
-              return send(res, 500, err(ErrorCode.INTERNAL, (e as Error).message));
+              // Never leak the raw exception message (stack traces, file paths, DB error text) to
+              // the caller — comm-audit-2026-07-27 finding B15, mirrored here 2026-07-28 (auctionsvc
+              // already had this fix; worldsvc did not).
+              log.error('unhandled error (map-templates)', { err: e instanceof Error ? e : String(e) });
+              return send(res, 500, err(ErrorCode.INTERNAL, 'internal server error'));
             }
           }
 
@@ -166,7 +173,8 @@ export function startHttpApi(
               return send(res, 200, ok(await svc.allocateNextSeason(seasonNum, cap)));
             } catch (e) {
               if (e instanceof SlgError) return sendErr(res, e.code, e.message);
-              return send(res, 500, err(ErrorCode.INTERNAL, (e as Error).message));
+              log.error('unhandled error (allocate)', { err: e instanceof Error ? e : String(e) });
+              return send(res, 500, err(ErrorCode.INTERNAL, 'internal server error'));
             }
           }
           const worldId = typeof body.worldId === 'string' ? body.worldId : null;
@@ -184,6 +192,11 @@ export function startHttpApi(
             }
             if (aurl.pathname === '/admin/world/reset') {
               const reset = await svc.resetSeason(worldId);
+              // §24 (2026-07-27 audit finding): mirrors /admin/world/open's clone step. resetSeason re-stamps
+              // mapW/mapH from current config, so a stale baseline from before a map-size change (or a template
+              // swap) must be replaced, not left in place — cloneActiveTemplateInto deletes+re-clones from
+              // whichever template is active now (still a safe no-op if none is).
+              await mapTemplateSvc.cloneActiveTemplateInto(worldId);
               return send(res, 200, ok(reset));
             }
             if (aurl.pathname === '/admin/world/close') {
@@ -199,7 +212,8 @@ export function startHttpApi(
             return sendErr(res, ErrorCode.NOT_FOUND, 'not found');
           } catch (e) {
             if (e instanceof SlgError) return sendErr(res, e.code, e.message);
-            return send(res, 500, err(ErrorCode.INTERNAL, (e as Error).message));
+            log.error('unhandled error (season ops)', { err: e instanceof Error ? e : String(e) });
+            return send(res, 500, err(ErrorCode.INTERNAL, 'internal server error'));
           }
         }
       }
@@ -217,13 +231,22 @@ export function startHttpApi(
       const url = new URL(req.url ?? '', `http://${req.headers.host ?? 'world'}`);
       const path = url.pathname;
       const q = url.searchParams;
+      // X-NW-Platform (ADR-020, comm-audit-internal-2026-07-28 P0-7): which recharged-pool bucket a
+      // spend should draw from — mirrors metaserver's clientPlatformOf. Threaded into every coin-sink
+      // call below (speedup/build/sect/chat/relocate/shop) so worldsvc no longer defaults everyone to
+      // the 'web' bucket regardless of platform.
+      const clientPlatformHeader = req.headers['x-nw-platform'];
+      const clientPlatform = typeof clientPlatformHeader === 'string' && clientPlatformHeader ? clientPlatformHeader : undefined;
 
       try {
         // ── Map and territory (GET, implemented) ──
         if (method === 'GET' && path === '/world/me') {
           const worldId = q.get('worldId');
           if (!worldId) return sendErr(res, ErrorCode.BAD_REQUEST, 'worldId required');
-          return send(res, 200, ok(await svc.getMe(worldId, accountId)));
+          // serverNow (P1-1 clock-offset sample): getMe is the highest-frequency SLG round-trip, so
+          // it's the natural place for the client to (re-)calibrate against server-issued epoch
+          // timestamps (march ETA, build/train queue completeAt, …) — see client/src/net/serverClock.ts.
+          return send(res, 200, ok({ ...(await svc.getMe(worldId, accountId)), serverNow: Date.now() }));
         }
         if (method === 'GET' && path === '/world/map') {
           const worldId = q.get('worldId');
@@ -333,6 +356,28 @@ export function startHttpApi(
           return send(res, 200, ok(await svc.joinWorld(worldId, accountId)));
         }
 
+        // ── Aggregated SLG-entry fetch (P1-5, comm-audit-2026-07-27): one round-trip replacing the
+        // 9-request waterfall WorldMapNet.loadData() used to fire on every world-map entry. The
+        // composition itself lives in svc.enterWorld (unit/e2e-testable in isolation); this handler
+        // just adds the sibling nationChannelSvc read and shapes the HTTP response. ──
+        if (method === 'POST' && path === '/world/enter') {
+          const body = await readJson(req);
+          const worldId = typeof body.worldId === 'string' ? body.worldId : null;
+          if (!worldId) return sendErr(res, ErrorCode.BAD_REQUEST, 'worldId required');
+          const r = numQ(typeof body.r === 'number' ? String(body.r) : null, 10);
+          const zoom = body.zoom === 2 || body.zoom === 3 ? body.zoom : 1;
+
+          const [entry, worldChannel] = await Promise.all([
+            svc.enterWorld(worldId, accountId, r, zoom),
+            nationChannelSvc.getChannel(worldId, accountId, undefined, 20),
+          ]);
+          return send(res, 200, ok({
+            ...entry,
+            me: { ...entry.me, serverNow: Date.now() },
+            worldChannel,
+          }));
+        }
+
         // ── Occupy / abandon / relocate / watchtower (S8-1, implemented, requires coordinates) ──
         if (
           method === 'POST' &&
@@ -351,10 +396,13 @@ export function startHttpApi(
             return send(res, 200, ok(await svc.occupyTile(worldId, accountId, x, y)));
           }
           if (path === '/world/relocate') {
-            return send(res, 200, ok(await svc.relocateBase(worldId, accountId, x, y)));
+            return send(res, 200, ok(await svc.relocateBase(worldId, accountId, x, y, clientPlatform)));
           }
           if (path === '/world/watchtower') {
-            return send(res, 200, ok(await svc.buildWatchtower(worldId, accountId, x, y)));
+            // P1-3: attach `me` (resources spent aren't visible on the tile itself) so the client
+            // doesn't need a separate GET /world/me round-trip after every watchtower build.
+            const tile = await svc.buildWatchtower(worldId, accountId, x, y);
+            return send(res, 200, ok({ ...tile, me: await svc.getMe(worldId, accountId) }));
           }
           return send(res, 200, ok(await svc.abandonTile(worldId, accountId, x, y)));
         }
@@ -369,7 +417,11 @@ export function startHttpApi(
           if (!worldId) return sendErr(res, ErrorCode.BAD_REQUEST, 'worldId required');
           if (!Number.isFinite(x) || !Number.isFinite(y)) return sendErr(res, ErrorCode.BAD_REQUEST, 'x/y required');
           if (!kind) return sendErr(res, ErrorCode.BAD_REQUEST, 'kind must be arrowTower or blocker');
-          return send(res, 200, ok(await svc.buildStructure(worldId, accountId, x, y, kind)));
+          // P1-3: attach `me` — same reasoning as /world/watchtower above.
+          {
+            const tile = await svc.buildStructure(worldId, accountId, x, y, kind);
+            return send(res, 200, ok({ ...tile, me: await svc.getMe(worldId, accountId) }));
+          }
         }
         if (method === 'POST' && path === '/world/structure/demolish') {
           const body = await readJson(req);
@@ -399,11 +451,13 @@ export function startHttpApi(
           if (![fromX, fromY, toX, toY].every(Number.isFinite)) {
             return sendErr(res, ErrorCode.BAD_REQUEST, 'fromX/fromY/toX/toY required');
           }
-          return send(
-            res,
-            200,
-            ok(await svc.startMarch(worldId, accountId, fromX, fromY, toX, toY, kind as MarchKind, troops, teamId, stationMode)),
-          );
+          {
+            // P1-3: attach `me` (troops/resources committed to the march aren't visible on the march
+            // itself) — the client adopts this directly and locally appends the march to its cached
+            // list, instead of following up with GET /world/march + GET /world/me.
+            const march = await svc.startMarch(worldId, accountId, fromX, fromY, toX, toY, kind as MarchKind, troops, teamId, stationMode);
+            return send(res, 200, ok({ ...march, me: await svc.getMe(worldId, accountId) }));
+          }
         }
         {
           const m = /^\/world\/march\/([^/]+)\/recall$/.exec(path);
@@ -506,7 +560,7 @@ export function startHttpApi(
           const cardInstanceId = typeof body.cardInstanceId === 'string' ? body.cardInstanceId : null;
           if (!worldId) return sendErr(res, ErrorCode.BAD_REQUEST, 'worldId required');
           if (!cardInstanceId) return sendErr(res, ErrorCode.BAD_REQUEST, 'cardInstanceId required');
-          await svc.recoverCard(worldId, accountId, cardInstanceId);
+          await svc.recoverCard(worldId, accountId, cardInstanceId, clientPlatform);
           return send(res, 200, ok({}));
         }
 
@@ -525,7 +579,7 @@ export function startHttpApi(
           const coins = Number(body.coins);
           if (!worldId) return sendErr(res, ErrorCode.BAD_REQUEST, 'worldId required');
           if (!Number.isFinite(coins) || coins < 1) return sendErr(res, ErrorCode.BAD_REQUEST, 'coins required');
-          return send(res, 200, ok(await svc.speedupTraining(worldId, accountId, coins)));
+          return send(res, 200, ok(await svc.speedupTraining(worldId, accountId, coins, clientPlatform)));
         }
 
         // ── Home-city buildings (SLG_CITY_DESIGN P1+P2, implemented) ──
@@ -543,7 +597,7 @@ export function startHttpApi(
           const coins = Number(body.coins);
           if (!worldId) return sendErr(res, ErrorCode.BAD_REQUEST, 'worldId required');
           if (!Number.isFinite(coins) || coins < 1) return sendErr(res, ErrorCode.BAD_REQUEST, 'coins required');
-          return send(res, 200, ok(await svc.speedupBuild(worldId, accountId, coins)));
+          return send(res, 200, ok(await svc.speedupBuild(worldId, accountId, coins, clientPlatform)));
         }
 
         // ── Siege replay spectator view (G3-2c, seed + both-side formations, readable by both attacker and defender) ──
@@ -584,7 +638,7 @@ export function startHttpApi(
           const name = typeof body.name === 'string' ? body.name : null;
           const tag = typeof body.tag === 'string' ? body.tag : null;
           if (!worldId || !name || !tag) return sendErr(res, ErrorCode.BAD_REQUEST, 'worldId + name + tag required');
-          return send(res, 200, ok(await sectSvc.createSect(worldId, accountId, name, tag)));
+          return send(res, 200, ok(await sectSvc.createSect(worldId, accountId, name, tag, clientPlatform)));
         }
         if (method === 'POST' && path === '/sect/join') {
           const body = await readJson(req);
@@ -654,7 +708,7 @@ export function startHttpApi(
           const msgBody = typeof body.body === 'string' ? body.body : null;
           const senderName = typeof body.senderName === 'string' ? body.senderName : accountId;
           if (!worldId || !msgBody) return sendErr(res, ErrorCode.BAD_REQUEST, 'worldId + body required');
-          return send(res, 200, ok(await nationChannelSvc.sendMessage(worldId, accountId, senderName, msgBody)));
+          return send(res, 200, ok(await nationChannelSvc.sendMessage(worldId, accountId, senderName, msgBody, clientPlatform)));
         }
         if (method === 'GET' && path === '/nation/channel') {
           const worldId = q.get('worldId');
@@ -700,7 +754,7 @@ export function startHttpApi(
           const worldId = typeof body.worldId === 'string' ? body.worldId : null;
           const itemId = typeof body.itemId === 'string' ? body.itemId : null;
           if (!worldId || !itemId) return sendErr(res, ErrorCode.BAD_REQUEST, 'worldId + itemId required');
-          return send(res, 200, ok(await svc.buySlgShopItem(worldId, accountId, itemId)));
+          return send(res, 200, ok(await svc.buySlgShopItem(worldId, accountId, itemId, clientPlatform)));
         }
 
         // Season management /admin/world/* has been moved out of the JWT branch to use X-Internal-Key (C4/§17.7, see internal branch above).
@@ -708,7 +762,8 @@ export function startHttpApi(
         return sendErr(res, ErrorCode.NOT_FOUND, 'not found');
       } catch (e) {
         if (e instanceof SlgError) return sendErr(res, e.code, e.message);
-        send(res, 500, err(ErrorCode.INTERNAL, (e as Error).message));
+        log.error('unhandled error', { err: e instanceof Error ? e : String(e) });
+        send(res, 500, err(ErrorCode.INTERNAL, 'internal server error'));
       }
     })();
   });

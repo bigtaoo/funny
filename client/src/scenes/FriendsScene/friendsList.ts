@@ -6,6 +6,7 @@ import { FS, snapFont } from '../../render/fontScale';
 import type { FriendView, FriendRequestView } from '../../net/ApiClient';
 import { buildAvatar } from '../../render/avatar';
 import { rankLabel, type Constructor, type FriendsSceneBaseCtor } from './base';
+import { serverNow } from '../../net/serverClock';
 
 export interface FriendsListHandlers {
   drawList(): void;
@@ -141,7 +142,7 @@ export function FriendsListMixin<TBase extends FriendsSceneBaseCtor>(Base: TBase
       sketchAccentBar(bg, rh, C.red, seedFor(rx, rh, 9));
       layer.addChild(bg);
 
-      const secsLeft = Math.max(0, Math.ceil((invite.expiresAt - Date.now()) / 1000));
+      const secsLeft = Math.max(0, Math.ceil((invite.expiresAt - serverNow()) / 1000));
       const label = txt(t('friends.duelInviteBanner', { name: invite.fromName || invite.fromPublicId, secs: secsLeft }),
         snapFont(Math.round(rh * 0.28)), C.dark, true);
       label.anchor.set(0, 0.5); label.x = rx + Math.round(rw * 0.06); label.y = y + rh * 0.5;

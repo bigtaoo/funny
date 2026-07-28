@@ -22,7 +22,7 @@ const log = netLog('api');
  * route recharges to Apple/Google — so it's checked first; anything else falls back to the build-time TARGET
  * (web/wechat/crazygames), which can't distinguish a native shell on its own (mobile reuses the web bundle).
  */
-function requestPlatformHeader(): string {
+export function requestPlatformHeader(): string {
   const native = getNativeBilling();
   if (native) return native.kind === 'apple' ? 'ios' : 'android';
   return clientPlatformName();

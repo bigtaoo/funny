@@ -2,7 +2,9 @@
 // deck-unlock validation) before enqueueing for ranked, and pass it into matchsvc enqueue so matchsvc
 // stays DB-free (SERVER_API.md §8.5).
 // Internal auth: X-Internal-Key (shared NW_INTERNAL_KEY). meta unavailable → fall back to initial rating.
-import { INITIAL_ELO, internalHeaders } from '@nw/shared';
+// All calls go through fetchInternalJson (5s timeout, drained body, never throws) and degrade to their
+// documented fallback values on any failure.
+import { INITIAL_ELO, fetchInternalJson } from '@nw/shared';
 
 export class MetaClient {
   constructor(
@@ -14,19 +16,24 @@ export class MetaClient {
     return this.baseUrl !== null;
   }
 
+  private get<T>(pathAndQuery: string, label: string) {
+    return fetchInternalJson<T>(`${this.baseUrl}${pathAndQuery}`, {
+      caller: 'gateway',
+      key: this.internalKey,
+      timeoutMs: 5000,
+      label,
+    });
+  }
+
   /** Fetch current ELO; meta not configured / error → return INITIAL_ELO. */
   async getElo(accountId: string): Promise<{ elo: number }> {
     if (!this.baseUrl) return { elo: INITIAL_ELO };
-    try {
-      const url = `${this.baseUrl}/internal/elo?accountId=${encodeURIComponent(accountId)}`;
-      const res = await fetch(url, { headers: internalHeaders('gateway', this.internalKey) });
-      if (!res.ok) return { elo: INITIAL_ELO };
-      const body = (await res.json()) as { elo?: number };
-      const elo = typeof body.elo === 'number' ? body.elo : INITIAL_ELO;
-      return { elo };
-    } catch {
-      return { elo: INITIAL_ELO };
-    }
+    const r = await this.get<{ elo?: number }>(
+      `/internal/elo?accountId=${encodeURIComponent(accountId)}`,
+      '/internal/elo',
+    );
+    if (!r.ok || !r.body) return { elo: INITIAL_ELO };
+    return { elo: typeof r.body.elo === 'number' ? r.body.elo : INITIAL_ELO };
   }
 
   /**
@@ -35,14 +42,11 @@ export class MetaClient {
    */
   async getProfile(accountId: string): Promise<{ displayName?: string; publicId?: string; equippedTitle?: string; avatarId?: string }> {
     if (!this.baseUrl) return {};
-    try {
-      const url = `${this.baseUrl}/internal/profile?accountId=${encodeURIComponent(accountId)}`;
-      const res = await fetch(url, { headers: internalHeaders('gateway', this.internalKey) });
-      if (!res.ok) return {};
-      return (await res.json()) as { displayName?: string; publicId?: string; equippedTitle?: string; avatarId?: string };
-    } catch {
-      return {};
-    }
+    const r = await this.get<{ displayName?: string; publicId?: string; equippedTitle?: string; avatarId?: string }>(
+      `/internal/profile?accountId=${encodeURIComponent(accountId)}`,
+      '/internal/profile',
+    );
+    return r.ok && r.body ? r.body : {};
   }
 
   /**
@@ -53,15 +57,12 @@ export class MetaClient {
    */
   async resolveByPublicId(publicId: string): Promise<{ accountId: string } | null> {
     if (!this.baseUrl) return null;
-    try {
-      const url = `${this.baseUrl}/internal/account/by-public-id/${encodeURIComponent(publicId)}`;
-      const res = await fetch(url, { headers: internalHeaders('gateway', this.internalKey) });
-      if (!res.ok) return null;
-      const body = (await res.json()) as { accountId?: string };
-      return body.accountId ? { accountId: body.accountId } : null;
-    } catch {
-      return null;
-    }
+    const r = await this.get<{ accountId?: string }>(
+      `/internal/account/by-public-id/${encodeURIComponent(publicId)}`,
+      '/internal/account/by-public-id',
+    );
+    if (!r.ok || !r.body?.accountId) return null;
+    return { accountId: r.body.accountId };
   }
 
   /**
@@ -69,14 +70,11 @@ export class MetaClient {
    */
   async getFriends(accountId: string): Promise<string[]> {
     if (!this.baseUrl) return [];
-    try {
-      const url = `${this.baseUrl}/internal/social/friends?accountId=${encodeURIComponent(accountId)}`;
-      const res = await fetch(url, { headers: internalHeaders('gateway', this.internalKey) });
-      if (!res.ok) return [];
-      const body = (await res.json()) as { friends?: string[] };
-      return Array.isArray(body.friends) ? body.friends : [];
-    } catch {
-      return [];
-    }
+    const r = await this.get<{ friends?: string[] }>(
+      `/internal/social/friends?accountId=${encodeURIComponent(accountId)}`,
+      '/internal/social/friends',
+    );
+    if (!r.ok || !r.body) return [];
+    return Array.isArray(r.body.friends) ? r.body.friends : [];
   }
 }

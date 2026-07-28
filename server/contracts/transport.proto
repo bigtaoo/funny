@@ -282,12 +282,11 @@ message NationMsg {
   string text           = 4;
   uint64 ts             = 5;
 }
-message WorldEvent {
-  string kind    = 1;   // season_open | season_settle | grand_tourney | …
-  string payload = 2;   // JSON (DRAFT; structure varies by event kind)
-}
-
 message ServerMsg {
+  // former world_event (season_open/season_settle/… broadcast, DRAFT never wired up — Gateway.ts's push-kind
+  // switch never had a case for it; superseded by nation_msg for world/nation broadcast). Removed 2026-07-28
+  // (comm-audit-2026-07-27 P2 cleanup).
+  reserved 22;
   oneof body {
     RoomState    room_state    = 1;
     MatchStart   match_start   = 2;
@@ -310,7 +309,6 @@ message ServerMsg {
     SiegeResult       siege_result    = 19;
     FamilyMsg         family_msg      = 20;
     SectMsg           sect_msg        = 21;
-    WorldEvent        world_event     = 22;
     NationMsg         nation_msg      = 23;
     MatchBot          match_bot       = 24;
     DuelInvited       duel_invited    = 25;

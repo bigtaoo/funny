@@ -1,6 +1,6 @@
 // metaserver process bootstrap: connect Mongo → buildApp → listen.
 // Reverse proxy forwards /api/* to this process (SERVER_API.md §0).
-import { createMongo, createLogger, startHeartbeat, FeatureFlagCache, internalHeaders, connectActiveMatchRedis, type JwtConfig } from '@nw/shared';
+import { createMongo, createLogger, startHeartbeat, FeatureFlagCache, fetchInternalJson, connectActiveMatchRedis, type JwtConfig } from '@nw/shared';
 import { loadMetaEnv } from './config.js';
 import { buildApp, SPEC_PATH } from './app.js';
 import { HttpGatewayClient } from './gatewayClient.js';
@@ -58,17 +58,19 @@ async function main() {
   const flags = new FeatureFlagCache({
     fetchAll: async () => {
       if (!adminUrl) return [];
-      const res = await fetch(`${adminUrl}/admin/internal/flags`, {
-        headers: internalHeaders('meta', env.internalKey),
+      // fetchInternalJson bounds the request (5s timeout) and drains the body; re-throw on
+      // failure so FeatureFlagCache keeps its previous cache and reports via onError.
+      const r = await fetchInternalJson<{ flags?: unknown[] }>(`${adminUrl}/admin/internal/flags`, {
+        caller: 'meta',
+        key: env.internalKey,
+        label: '/admin/internal/flags',
       });
-      if (!res.ok) throw new Error(`admin flags ${res.status}`);
-      const body = (await res.json()) as { flags?: unknown[] };
-      return Array.isArray(body.flags) ? body.flags : [];
+      if (!r.ok) throw new Error(`admin flags ${r.status}${r.error ? ` (${r.error})` : ''}`);
+      return Array.isArray(r.body?.flags) ? r.body.flags : [];
     },
     ...(env.region ? { region: env.region } : {}),
     onError: (e) => log.warn('flag refresh failed (keeping cache)', { err: (e as Error).message }),
   });
-  if (adminUrl) await flags.start();
 
   const redis = await connectActiveMatchRedis(env.redisUrl);
 
@@ -146,6 +148,12 @@ async function main() {
   process.on('SIGTERM', shutdown);
 
   await app.listen({ port: env.port, host: env.host });
+
+  // Start flag polling only AFTER listen: flags.start() awaits one full refresh, so doing it
+  // earlier let an unreachable admin block metaserver startup entirely. FeatureFlagCache
+  // degrades safely before the first successful refresh (flags evaluate to their defaults).
+  if (adminUrl) await flags.start();
+
   log.info(`metaserver up on ${env.host}:${env.port}`, {
     spec: SPEC_PATH,
     commercial: env.commercialUrl ?? 'disabled',

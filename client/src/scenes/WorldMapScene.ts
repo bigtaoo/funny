@@ -12,7 +12,7 @@
 import type { ILayout } from '../layout/ILayout';
 import type { InputManager } from '../inputSystem/InputManager';
 import type { Scene } from './SceneManager';
-import type { MarchUpdate, TileUpdate, UnderAttack, SiegeResult } from '../net/proto/transport';
+import type { MarchUpdate, TileUpdate, UnderAttack, SiegeResult, NationMsg } from '../net/proto/transport';
 import { WorldMapContext, type WorldMapCallbacks } from './worldmap/WorldMapContext';
 import { WorldMapRenderer } from './worldmap/WorldMapRenderer';
 import { WorldMapPanels } from './worldmap/WorldMapPanels';
@@ -77,6 +77,7 @@ export class WorldMapScene implements Scene {
   applyTileUpdate(tu: TileUpdate): void { this.ctx.net.applyTileUpdate(tu); }
   applyUnderAttack(u: UnderAttack): void { this.ctx.net.applyUnderAttack(u); }
   applySiegeResult(s: SiegeResult): void { this.ctx.net.applySiegeResult(s); }
+  applyNationMsg(n: NationMsg): void { this.ctx.net.applyNationMsg(n); }
 
   destroy(): void {
     this.ctx.destroyed = true;

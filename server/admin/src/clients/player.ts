@@ -1,4 +1,4 @@
-import { internalHeaders } from '@nw/shared';
+import { fetchInternalJson } from '@nw/shared';
 import { log } from './shared';
 
 // ── Player lookup (meta, player.lookup) ────────────────────
@@ -55,57 +55,50 @@ export class HttpPlayerClient implements PlayerClient {
 
   private async lookup(qs: string): Promise<PlayerProfile | null> {
     if (!this.metaBaseUrl) return null;
-    try {
-      const res = await fetch(`${this.metaBaseUrl}/internal/player?${qs}`, {
-        headers: internalHeaders('admin', this.internalKey),
-      });
-      if (res.status === 404) return null;
-      if (!res.ok) {
-        log.warn('player lookup non-2xx', { status: res.status });
-        return null;
-      }
-      return (await res.json()) as PlayerProfile;
-    } catch (e) {
-      log.warn('player lookup failed', { err: (e as Error).message });
+    // 404 (not found) and any failure both degrade to null, as before.
+    const r = await fetchInternalJson<PlayerProfile>(`${this.metaBaseUrl}/internal/player?${qs}`, {
+      caller: 'admin',
+      key: this.internalKey,
+      timeoutMs: 10000,
+      label: 'meta /internal/player',
+    });
+    if (r.status === 404) return null;
+    if (!r.ok || !r.body) {
+      log.warn('player lookup failed', { status: r.status, err: r.error });
       return null;
     }
+    return r.body;
   }
 
   async search(q: string, limit: number): Promise<PlayerSummary[]> {
     if (!this.metaBaseUrl) return [];
-    try {
-      const res = await fetch(
-        `${this.metaBaseUrl}/internal/players/search?q=${encodeURIComponent(q)}&limit=${limit}`,
-        { headers: internalHeaders('admin', this.internalKey) },
-      );
-      if (!res.ok) {
-        log.warn('player search non-2xx', { status: res.status });
-        return [];
-      }
-      return ((await res.json()) as { players: PlayerSummary[] }).players;
-    } catch (e) {
-      log.warn('player search failed', { err: (e as Error).message });
-      return [];
-    }
+    // Degrades to [] on any failure, as before.
+    const r = await fetchInternalJson<{ players: PlayerSummary[] }>(
+      `${this.metaBaseUrl}/internal/players/search?q=${encodeURIComponent(q)}&limit=${limit}`,
+      { caller: 'admin', key: this.internalKey, timeoutMs: 10000, log, label: 'meta /internal/players/search' },
+    );
+    if (!r.ok || !r.body) return [];
+    return r.body.players;
   }
 
   async resetPassword(accountId: string, password: string): Promise<ResetPasswordResult> {
     if (!this.metaBaseUrl) return { ok: false, error: 'player backend unavailable' };
-    try {
-      const res = await fetch(
-        `${this.metaBaseUrl}/internal/accounts/${encodeURIComponent(accountId)}/reset-password`,
-        {
-          method: 'POST',
-          headers: { ...internalHeaders('admin', this.internalKey), 'content-type': 'application/json' },
-          body: JSON.stringify({ password }),
-        },
-      );
-      if (res.ok) return { ok: true };
-      const body = (await res.json().catch(() => ({}))) as { error?: string };
-      return { ok: false, error: body.error ?? `http ${res.status}` };
-    } catch (e) {
-      log.warn('reset player password failed', { err: (e as Error).message });
+    const r = await fetchInternalJson<{ error?: string }>(
+      `${this.metaBaseUrl}/internal/accounts/${encodeURIComponent(accountId)}/reset-password`,
+      {
+        caller: 'admin',
+        key: this.internalKey,
+        method: 'POST',
+        body: { password },
+        timeoutMs: 10000,
+        label: 'meta /internal/accounts/:id/reset-password',
+      },
+    );
+    if (r.ok) return { ok: true };
+    if (r.status === 0) {
+      log.warn('reset player password failed', { err: r.error });
       return { ok: false, error: 'request failed' };
     }
+    return { ok: false, error: r.body?.error ?? `http ${r.status}` };
   }
 }

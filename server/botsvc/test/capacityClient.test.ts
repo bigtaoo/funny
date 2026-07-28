@@ -10,17 +10,34 @@ describe('CapacityClient.onlineCount', () => {
   });
 
   it('sends x-internal-key — gateway /internal/stats 401s without it', async () => {
-    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ online: 7 }) });
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200, json: async () => ({ online: 7 }) });
     global.fetch = fetchMock as unknown as typeof fetch;
 
     const client = new CapacityClient('http://gateway.internal', 'the-key');
     const online = await client.onlineCount();
 
     expect(online).toBe(7);
+    // fetchInternalJson adds the caller-identity header + a per-attempt timeout signal.
     expect(fetchMock).toHaveBeenCalledWith(
       'http://gateway.internal/internal/stats',
-      expect.objectContaining({ headers: { 'x-internal-key': 'the-key' } }),
+      expect.objectContaining({
+        headers: expect.objectContaining({ 'x-internal-key': 'the-key', 'x-internal-caller': 'botsvc' }),
+        signal: expect.any(AbortSignal),
+      }),
     );
+  });
+
+  it('throws on failure so the scheduler falls back to shedding-disabled', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 503,
+      json: async () => ({ error: 'down' }),
+      body: { cancel: async () => undefined },
+    });
+    global.fetch = fetchMock as unknown as typeof fetch;
+
+    const client = new CapacityClient('http://gateway.internal', 'the-key');
+    await expect(client.onlineCount()).rejects.toThrow('gateway /internal/stats failed: 503');
   });
 });
 

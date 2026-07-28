@@ -60,6 +60,7 @@ export class NationChannelService {
     accountId: string,
     senderName: string,
     body: string,
+    clientPlatform?: string,
   ): Promise<NationMessageView> {
     const { cols } = this.deps;
 
@@ -72,7 +73,7 @@ export class NationChannelService {
     // guard let posts through for free whenever worldsvc was started without NW_COMMERCIAL_INTERNAL_URL.
     // If commercial is unconfigured, spend() throws → the message is rejected, never posted free.
     const orderId = `world_chat:${worldId}:${accountId}:${ts}`;
-    await this.deps.commercial.spend(accountId, WORLD_CHAT_COST, orderId);
+    await this.deps.commercial.spend(accountId, WORLD_CHAT_COST, orderId, clientPlatform);
     const seq = ++msgSeq;
     const msgId = `nm:${worldId}:${ts}:${seq}`;
 

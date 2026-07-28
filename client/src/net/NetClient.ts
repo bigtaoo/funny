@@ -69,9 +69,18 @@ export class NetClient {
     return this.state;
   }
 
-  /** Establish a connection (idempotent: ignored if already connected or connecting). */
+  /**
+   * Establish a connection (idempotent: ignored if already connected, connecting, or mid-reconnect).
+   * Callers (NetSession.connect()) invoke this on nearly every scene entry as a cheap "ensure
+   * connected" no-op — it must never start a second concurrent socket. 'reconnecting' covers both
+   * an in-flight openSocket() retry and a pending backoff timer; letting either of those run its
+   * course (rather than racing a fresh openSocket() alongside it under the same `gen`, since only
+   * disconnect() bumps `gen`) avoids two live sockets silently clobbering `this.socket` and
+   * `this.state` on each other's close/open — the second one to close would otherwise stomp the
+   * first back to 'closed' and disable further reconnection entirely.
+   */
   connect(): void {
-    if (this.state === 'connecting' || this.state === 'open') return;
+    if (this.state === 'connecting' || this.state === 'open' || this.state === 'reconnecting') return;
     this.intentional = false;
     this.attempt = 0;
     this.everOpened = false;

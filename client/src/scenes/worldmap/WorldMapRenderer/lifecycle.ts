@@ -23,6 +23,16 @@ export function LifecycleMixin<TBase extends WorldMapRendererBaseCtor>(Base: TBa
         this.ctx.loadingAngle += dt * 4;
         this.ctx.loadingSpinner.rotation = this.ctx.loadingAngle;
       }
+      // Once-per-second HUD countdown refresh (P1-1): march/siege remaining-time text previously only
+      // advanced on the ~5s poll tick or an incoming push, sitting visibly frozen in between. This just
+      // repaints the HUD from existing state — no network — so it's cheap and safe to run continuously
+      // (and is the prerequisite for P1-2 removing the poll: without it, countdowns would freeze
+      // entirely once nothing periodically calls renderHud()).
+      this.ctx.hudTickTimer += dt;
+      if (this.ctx.hudTickTimer >= 1) {
+        this.ctx.hudTickTimer = 0;
+        this.ctx.panels.renderHud();
+      }
       if (this.ctx.toastTimer > 0) {
         this.ctx.toastTimer -= dt * 1000;
         if (this.ctx.toastTimer <= 0) tearDownChildren(this.ctx.toastLayer);

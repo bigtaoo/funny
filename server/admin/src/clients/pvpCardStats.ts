@@ -1,4 +1,4 @@
-import { internalHeaders } from '@nw/shared';
+import { fetchInternalJson } from '@nw/shared';
 import { log } from './shared';
 
 // ── PvP card win-rate query (BALANCE data pipeline P1) ─────────────────
@@ -25,23 +25,19 @@ export class HttpPvpCardStatsClient implements PvpCardStatsClient {
 
   async listPvpCardStats(filter: { mode?: string; since?: string }): Promise<PvpCardStatRow[]> {
     if (!this.metaBaseUrl) return [];
-    try {
-      const qs = new URLSearchParams();
-      if (filter.mode) qs.set('mode', filter.mode);
-      if (filter.since) qs.set('since', filter.since);
-      const suffix = qs.toString() ? `?${qs.toString()}` : '';
-      const res = await fetch(`${this.metaBaseUrl}/internal/pvp-card-stats${suffix}`, {
-        headers: internalHeaders('admin', this.internalKey),
-      });
-      if (!res.ok) {
-        log.warn('pvp-card-stats non-2xx', { status: res.status });
-        return [];
-      }
-      const body = (await res.json()) as { cards?: PvpCardStatRow[] };
-      return body.cards ?? [];
-    } catch (e) {
-      log.warn('pvp-card-stats fetch failed', { err: (e as Error).message });
-      return [];
-    }
+    const qs = new URLSearchParams();
+    if (filter.mode) qs.set('mode', filter.mode);
+    if (filter.since) qs.set('since', filter.since);
+    const suffix = qs.toString() ? `?${qs.toString()}` : '';
+    // Degrades to [] on any failure, as before.
+    const r = await fetchInternalJson<{ cards?: PvpCardStatRow[] }>(`${this.metaBaseUrl}/internal/pvp-card-stats${suffix}`, {
+      caller: 'admin',
+      key: this.internalKey,
+      timeoutMs: 10000,
+      log,
+      label: 'meta /internal/pvp-card-stats',
+    });
+    if (!r.ok || !r.body) return [];
+    return r.body.cards ?? [];
   }
 }

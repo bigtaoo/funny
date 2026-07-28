@@ -5,6 +5,7 @@ import Fastify from 'fastify';
 import type { Collections } from '@nw/shared';
 import { registerMailRoutes } from '../src/internal/mailRoutes.js';
 import type { InternalCtx } from '../src/internal/context.js';
+import { AccountCache } from '../src/accountCache.js';
 import { FakeCollection } from './helpers/fakeCollection.js';
 import { fakeGateway, fakeCommercial, FakeSocialsvc } from './helpers/fakeClients.js';
 
@@ -24,7 +25,9 @@ function build(seedAccounts: AccountDoc[] = []) {
     gateway,
     commercial: fakeCommercial(),
     socialsvc,
-    authed: (key) => key === KEY,
+    authed: (headers) => headers['x-internal-key'] === KEY,
+    redis: null,
+    accountCache: new AccountCache(),
   };
   const app = Fastify();
   registerMailRoutes(app, ctx);

@@ -11,8 +11,11 @@ import {
   verifyToken,
   loadInternalAuth,
   SlgError,
+  createLogger,
 } from '@nw/shared';
 import type { AuctionService } from './auctionService';
+
+const log = createLogger('auctionsvc');
 
 function readJson(req: IncomingMessage): Promise<Record<string, unknown>> {
   return new Promise((resolve, reject) => {
@@ -110,6 +113,10 @@ export function startHttpApi(
       } catch {
         return sendErr(res, ErrorCode.UNAUTHENTICATED, 'authentication required');
       }
+      // X-NW-Platform (ADR-020, comm-audit-internal-2026-07-28 P0-7): which recharged-pool bucket a
+      // spend should draw from — auction purchases used to always default to the 'web' bucket.
+      const clientPlatformHeader = req.headers['x-nw-platform'];
+      const clientPlatform = typeof clientPlatformHeader === 'string' && clientPlatformHeader ? clientPlatformHeader : undefined;
 
       try {
         if (method === 'GET' && path === '/auction/list') {
@@ -159,13 +166,13 @@ export function startHttpApi(
             const body = await readJson(req);
             const amount = Number(body.amount);
             if (!Number.isFinite(amount)) return sendErr(res, ErrorCode.BAD_REQUEST, 'amount required');
-            return send(res, 200, ok(await auctionSvc.placeBid(accountId, decodeURIComponent(m[1]!), amount)));
+            return send(res, 200, ok(await auctionSvc.placeBid(accountId, decodeURIComponent(m[1]!), amount, clientPlatform)));
           }
         }
         {
           const m = /^\/auction\/([^/]+)\/buy$/.exec(path);
           if (method === 'POST' && m) {
-            return send(res, 200, ok(await auctionSvc.buyAuction(accountId, decodeURIComponent(m[1]!))));
+            return send(res, 200, ok(await auctionSvc.buyAuction(accountId, decodeURIComponent(m[1]!), clientPlatform)));
           }
         }
         {
@@ -178,7 +185,12 @@ export function startHttpApi(
         return sendErr(res, ErrorCode.NOT_FOUND, 'not found');
       } catch (e) {
         if (e instanceof SlgError) return sendErr(res, e.code, e.message);
-        send(res, 500, err(ErrorCode.INTERNAL, (e as Error).message));
+        // Unexpected (non-SlgError) failure: log server-side for diagnosis, but never leak the raw
+        // exception message to the client — (e as Error).message can carry internal details (stack
+        // traces, file paths, DB error text) that shouldn't reach a player (comm-audit-2026-07-27
+        // finding B15; mirrors socialsvc's httpApi.ts equivalent catch-all).
+        log.error('unhandled error', { err: e instanceof Error ? e : String(e) });
+        send(res, 500, err(ErrorCode.INTERNAL, 'internal server error'));
       }
     })();
   });
