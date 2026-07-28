@@ -326,6 +326,7 @@ export function ListMixin<TBase extends CardSceneBaseCtor>(Base: TBase): TBase &
         const instId = card.gear[slot];
         const inst = instId ? save.equipmentInv?.[instId] : undefined;
         const icon = buildEquipIcon(inst?.defId, slot, inst?.rarity ?? 'common', gearIconSize, seedFor(x, y, i + 1));
+        icon.name = `gearIcon:${slot}`; // test hook: see gearIconSize2x.ui.ts
         icon.alpha = inst ? 1 : 0.35;
         icon.position.set(x + cellW - pad - gearIconSize / 2 - (2 - i) * gearStep, gearCenterY);
         this.bodyLayer.addChild(icon);
