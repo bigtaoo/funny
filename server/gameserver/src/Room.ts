@@ -127,6 +127,11 @@ export class Room {
     return this.slots.length >= 2;
   }
 
+  /** Snapshot of every accountId that has ever joined this room (immutable roster — see field doc above). Used at gameserver shutdown to notify meta which players' login-reconnect-prompt cache should be cleared since this room is about to vanish with no end-of-match report. */
+  get rosterAccountIds(): string[] {
+    return this.roster.map((r) => r.accountId);
+  }
+
   /** Room seed (used by RoomManager to cross-check the second ticket). */
   get seedValue(): number {
     return this.seed;

@@ -34,6 +34,16 @@ export interface NetClientOptions {
   handlers: NetClientHandlers;
   /** Reconnect backoff delays (ms); capped at the last value once exhausted. Default [500,1000,2000,4000,8000]. */
   backoffMs?: number[];
+  /**
+   * WS close codes that must never trigger a reconnect attempt, beyond the always-fatal 4409
+   * ('replaced' — reconnecting would just evict the session that took over right back). Opt-in
+   * per connection because whether a code is "fatal" depends on tokenProvider's semantics: the
+   * game (data-plane) connection's tokenProvider replays a fixed ticket, so 4401/4403 (expired
+   * ticket for a room that's gone / ticket-room mismatch) can never succeed on retry — but the
+   * gateway (control-plane) connection's tokenProvider can mint a fresh JWT on each attempt
+   * (NetSession.freshToken), so its 4401 (stale/expired token) is transient and must keep retrying.
+   */
+  extraFatalCloseCodes?: number[];
   /** Application-layer heartbeat interval (ms); keeps the connection alive and produces visible traffic for the server. Default 25000; 0 = disabled. */
   pingIntervalMs?: number;
   /** Log tag (distinguishes the gateway / game connections). Default 'ws'. */
@@ -55,6 +65,7 @@ export class NetClient {
   private readonly backoff: number[];
   private readonly pingIntervalMs: number;
   private readonly log: NetLogger;
+  private readonly fatalCloseCodes: ReadonlySet<number>;
 
   constructor(
     private readonly platform: IPlatform,
@@ -63,6 +74,7 @@ export class NetClient {
     this.backoff = opt.backoffMs ?? DEFAULT_BACKOFF;
     this.pingIntervalMs = opt.pingIntervalMs ?? 25_000;
     this.log = netLog(opt.tag ?? 'ws');
+    this.fatalCloseCodes = new Set([4409, ...(opt.extraFatalCloseCodes ?? [])]);
   }
 
   getState(): NetState {
@@ -200,11 +212,11 @@ export class NetClient {
         if (gen !== this.gen || this.intentional) return;
         this.stopPing();
         this.socket = null;
-        // 4409 'replaced': the server evicted us because another live session (another
-        // tab/device) took over this account. Reconnecting would evict that session and
-        // start an infinite ping-pong war — so give up instead of reconnecting.
-        if (code === 4409) {
-          this.log.warn('socket closed: replaced by another session; not reconnecting');
+        // Permanent rejections (4409 always; see fatalCloseCodes doc for the opt-in ones) —
+        // retrying would just replay the same rejection forever, so give up instead of burning
+        // backoff cycles against something that will never succeed.
+        if (this.fatalCloseCodes.has(code)) {
+          this.log.warn('socket closed: permanent rejection, not reconnecting', { code });
           this.setState('closed');
           return;
         }

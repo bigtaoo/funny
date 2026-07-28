@@ -125,7 +125,7 @@ describe('offerResume via doAuth() (fresh password login)', () => {
     expect(goLobbyCalls).toEqual([]); // lobby nav deferred to the dialog's callbacks
   });
 
-  it('onReconnect calls NetSession.rejoinMatch with the cached gameUrl/ticket', async () => {
+  it('onReconnect calls NetSession.rejoinMatch with the cached gameUrl/ticket + an onFailed callback', async () => {
     const saveManager = fakeSaveManager({ activeMatch: SAMPLE_MATCH });
     const views = fakeViews();
     const { ctx, netSession } = buildCtx({ saveManager, views });
@@ -137,7 +137,25 @@ describe('offerResume via doAuth() (fresh password login)', () => {
 
     const cb = views.calls.showReconnectPrompt[0]!;
     cb.onReconnect();
-    expect(netSession.rejoinMatch).toHaveBeenCalledWith(SAMPLE_MATCH.gameUrl, SAMPLE_MATCH.ticket);
+    expect(netSession.rejoinMatch).toHaveBeenCalledWith(SAMPLE_MATCH.gameUrl, SAMPLE_MATCH.ticket, expect.any(Function));
+  });
+
+  it('rejoinMatch onFailed (cached room is gone, e.g. gameserver restarted mid-match) bails to the lobby instead of leaving the dialog stuck forever (2026-07-28)', async () => {
+    const saveManager = fakeSaveManager({ activeMatch: SAMPLE_MATCH });
+    const views = fakeViews();
+    const { ctx, netSession, goLobbyCalls } = buildCtx({ saveManager, views });
+    const authNav = createAuthNav(ctx);
+
+    authNav.goLogin();
+    views.triggerLogin('user', 'pw');
+    await settle();
+
+    const cb = views.calls.showReconnectPrompt[0]!;
+    cb.onReconnect();
+    const onFailed = netSession.rejoinMatch.mock.calls[0]![2] as () => void;
+    onFailed();
+
+    expect(goLobbyCalls).toEqual([{ offline: false }]);
   });
 
   it('onDecline goes to the lobby', async () => {

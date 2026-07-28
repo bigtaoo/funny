@@ -3,7 +3,8 @@ import * as analytics from '../../analytics';
 import { ApiError, type AuthResult } from '../../net/ApiClient';
 import type { AuthOutcome } from '../../scenes/LoginScene';
 import type { RenameOutcome } from '../../scenes/SettingsScene';
-import type { TranslationKey } from '../../i18n';
+import { t, type TranslationKey } from '../../i18n';
+import { showToastMessage } from '../../net/log';
 import type { AppCtx, Nav } from '../appCtx';
 import {
   SEEN_INTRO_FLAG, TOKEN_KEY, PLAYER_NAME_KEY, PLAYER_PUBLIC_ID_KEY, PLAYER_AVATAR_KEY, RENAME_COST,
@@ -23,7 +24,17 @@ export function createAuthNav(ctx: AppCtx): Pick<Nav, 'goIntro' | 'goLogin' | 'd
     const m = saveManager.consumeActiveMatch();
     if (!m) return false;
     views.showReconnectPrompt({
-      onReconnect: () => getNetSession()?.rejoinMatch(m.gameUrl, m.ticket),
+      onReconnect: () => {
+        const session = getNetSession();
+        if (!session) { afterDecline(); return; }
+        // onFailed: the cached room is actually gone (e.g. gameserver restarted mid-match) —
+        // NetClient has already given up retrying (fatal close code), so bail to the lobby
+        // instead of leaving the player parked on this dialog forever.
+        session.rejoinMatch(m.gameUrl, m.ticket, () => {
+          showToastMessage(t('reconnect.gone'));
+          afterDecline();
+        });
+      },
       onDecline: afterDecline,
     });
     return true;

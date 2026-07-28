@@ -191,12 +191,19 @@ function main(): void {
     shuttingDown = true;
     clearInterval(heartbeat);
     clearInterval(registerTimer);
+    // Capture before destroyAll() wipes the rooms (login-reconnect-prompt, 2026-07-28): any room
+    // still in progress at shutdown never gets an end-of-match report, so its players' cached
+    // "resume your match?" flag would otherwise linger (bounded only by the 1h TTL) and offer to
+    // reconnect into a room this restart just destroyed.
+    const abandonedAccountIds = manager.activeAccountIds();
     manager.destroyAll();
     wss.close();
     http.close();
     // Give queued (failed/timed-out) match reports a bounded chance to reach meta —
     // the retry queue is in-memory only, so exiting immediately loses those settlements.
-    void reporter.flush(10_000).finally(() => process.exit(0));
+    void Promise.all([reporter.flush(10_000), reporter.abandon(abandonedAccountIds)]).finally(() =>
+      process.exit(0),
+    );
   };
   process.on('SIGINT', shutdown);
   process.on('SIGTERM', shutdown);

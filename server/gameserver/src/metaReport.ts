@@ -74,6 +74,34 @@ export class MetaReporter {
     }
   }
 
+  /**
+   * Best-effort shutdown notification (login-reconnect-prompt, 2026-07-28): these accountIds'
+   * rooms are being wiped without a normal end-of-match report, so /internal/match/report's
+   * clearActiveMatch never runs for them — this clears their cached "resume your match?" flag
+   * directly so a later login doesn't offer to reconnect into a room that no longer exists.
+   * Not queued for retry like report(): unlike a match settlement this is purely a UX cache
+   * clear, and the existing activeMatch TTL already bounds a failed/lost call (same safety-net
+   * reasoning as a crash losing this call entirely).
+   */
+  async abandon(accountIds: string[]): Promise<void> {
+    if (!this.baseUrl || accountIds.length === 0) return;
+    try {
+      const res = await fetch(`${this.baseUrl}/internal/match/abandon`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', ...internalHeaders('gameserver', this.internalKey) },
+        body: JSON.stringify({ accountIds }),
+        signal: AbortSignal.timeout(5000),
+      });
+      try {
+        await res.body?.cancel();
+      } catch {
+        /* already closed */
+      }
+    } catch {
+      /* best-effort; TTL bounds the lingering entry */
+    }
+  }
+
   private async post(body: unknown): Promise<{ ok: boolean; elo?: EloBySide } | null> {
     if (!this.baseUrl) return null;
     // Explicit timeout (undici has none). Must exceed meta's worst case: a hash-mismatch

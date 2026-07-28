@@ -215,9 +215,15 @@ export class NetSession {
    * (cached ticket from the original match_found — gameserver's handshake ignores ticket exp, so it
    * remains usable for the match's lifetime). Goes through the same connectGame() path as a live
    * match_found; handlers.onMatchStart fires once the server replies with match_start as usual.
+   *
+   * `onFailed` fires once if the room is actually gone (e.g. a deploy restarted gameserver after
+   * this ticket was cached) — the server rejects with a fatal close code (4401/4403, see
+   * NetClient's extraFatalCloseCodes) instead of the transient drops a live match reconnect would
+   * hit, so the caller can bail out to the lobby instead of leaving the "resume?" prompt waiting
+   * on a socket that NetClient has already given up retrying.
    */
-  rejoinMatch(gameUrl: string, ticket: string): void {
-    this.connectGame(gameUrl, ticket);
+  rejoinMatch(gameUrl: string, ticket: string, onFailed?: () => void): void {
+    this.connectGame(gameUrl, ticket, onFailed);
   }
 
   // ── Routing ──────────────────────────────────────────────────────────────────
@@ -310,8 +316,13 @@ export class NetSession {
     // match_start is surfaced via NetInputSource.onMatchStart (above).
   }
 
-  /** Got match_found → connect the data-plane WS with the signed ticket. */
-  private connectGame(gameUrl: string, ticket: string): void {
+  /**
+   * Got match_found → connect the data-plane WS with the signed ticket.
+   * `onFailed` (login-reconnect-prompt resume only, undefined on the normal match_found path):
+   * fires once if the socket closes without ever having opened — i.e. the fatal-rejection path
+   * (see NetClient's extraFatalCloseCodes), not a transient drop that will keep retrying.
+   */
+  private connectGame(gameUrl: string, ticket: string, onFailed?: () => void): void {
     // Same ticket = a re-sent match_found for the *current* match → ignore.
     if (this.game && this.ticket === ticket) return;
     // A different ticket means a NEW match (e.g. queueing again after the last
@@ -325,14 +336,23 @@ export class NetSession {
     }
     log.info('connecting data plane (game)', { gameUrl });
     this.ticket = ticket;
+    let everOpened = false;
     this.game = new NetClient(this.platform, {
       url: gameUrl,
       tag: 'game',
       queryParam: 'ticket',
       tokenProvider: () => Promise.resolve(this.ticket),
+      // A resumed match's ticket is a fixed, cached value (unlike the gateway connection's
+      // freshToken(), which can mint a new token on each retry) — an expired-ticket-for-a-gone-room
+      // or room-mismatch rejection can never succeed on retry, so treat them as fatal here too.
+      extraFatalCloseCodes: onFailed ? [4401, 4403] : undefined,
       handlers: {
         onServerMsg: (m) => this.routeData(m),
-        onStateChange: (s) => this.handlers.onNetState?.(s),
+        onStateChange: (s) => {
+          if (s === 'open') everOpened = true;
+          else if (s === 'closed' && !everOpened) onFailed?.();
+          this.handlers.onNetState?.(s);
+        },
         // Mid-match game-plane reconnect → ask the server to replay frames past
         // our watermark and resume the metronome (S1-4).
         onReconnect: () => {

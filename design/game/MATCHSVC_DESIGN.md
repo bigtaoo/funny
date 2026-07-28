@@ -184,6 +184,20 @@ POST /internal/match/report
 - **Redis 可选**：matchsvc/metaserver 均新增 `NW_REDIS_URL`（`redisUrl: string | null`），未配置时整条链路静默禁用（写入/清除 no-op，`getSave()` 不带该字段）——本地/测试环境没有 Redis 不影响正常开局和登录。
 - **client 侧**：`SaveManager` 用"读后清空"语义（`consumeActiveMatch()`）而非直接暴露字段，避免对局结算后常见的 `refresh()`（如 `pvp` 段刷新）误触发弹窗；只有 `auth.ts` 的三条登录入口显式调用一次。弹窗是仿 `ConsentDialog` 的独立全屏 Scene `ReconnectPromptDialog`（两个按钮，非强制单选），确认后走 `NetSession.rejoinMatch(gameUrl, ticket)`——内部复用既有的私有 `connectGame()`，重连成功后既有的 `onMatchStart` 流程自动接管场景跳转，未新增连接逻辑。
 
+### 9.1 陈旧 activeMatch 卡死重连提示（2026-07-28 修复）
+
+**症状**：gameserver 部署重启（对局还没打完）后，玩家下次登录被弹出"未完成的对局"提示，点 Reconnect 后对话框**永久卡住不消失**——不是缓存 vs 实时的问题（本来就是缓存，见 §9），是两处真 bug 叠加：
+
+1. **清除只挂在"正常结束"上**：Redis `nw:activeMatch:<accountId>` 唯一的清除点是 `/internal/match/report`（§9「清除」），而 gameserver 重启时房间还在内存里，从未走到这个上报——记录只能干等 1 小时 TTL 兜底过期，这期间每次登录都会重新弹出。
+2. **`NetClient` 对陈旧 ticket 无限重试**：`rejoinMatch` 复用缓存的原始 ticket 连 gameserver；房间已不存在时，gameserver 握手按 `ticket.exp` 判过期直接 `ws.close(4401/4403, ...)`（`server/gameserver/src/index.ts` 的 `!manager.roomExists(roomId)` 分支）。但 `NetClient.onClose` 此前只把 `4409`('replaced') 当永久拒绝，`4401`/`4403` 被当成普通掉线走 backoff 无限重连——同一个必然失败的握手每 8s 重试一次，`ReconnectPromptDialog` 永远等不到 `onMatchStart` 或任何失败信号，停在原地。
+
+**修复**（两处独立、可叠加生效，前者让后者几乎不会触发，后者兜底前者失效/崩溃场景）：
+
+- **gameserver 优雅关闭时主动清**：`RoomManager.activeAccountIds()`（新增，读 `Room.rosterAccountIds`，`destroyAll()` 之前调用）收集所有还在进行中的房间的 accountId，`MetaReporter.abandon(accountIds)`（新增，复用现有 `/internal/match/report` 的内部鉴权/超时约定，无settlement/归档，纯清除）POST 到新端点 `POST /internal/match/abandon`（`metaserver/src/internal/matchReport.ts`，鉴权/`clearActiveMatch` 复用与 `/internal/match/report` 完全相同的写法）。硬崩溃（无 SIGTERM 时间窗）不覆盖，仍靠 TTL 兜底——与既有安全网哲学一致，不过度设计。
+- **client 侧对陈旧 ticket 快速失败**：`NetClient` 新增按连接实例可选的 `extraFatalCloseCodes`（默认仅 `4409`）——网关（control-plane）连接的 `tokenProvider`（`freshToken()`）每次重连能拿到全新 token，`4401` 在那条连接上仍是真的"稍后重试可能成功"，不能一刀切；只有 `NetSession.connectGame` 在 `rejoinMatch` 路径（传了 `onFailed` 时）才把 `4401`/`4403` 一并标记为永久拒绝——这条连接的 ticket 是固定重放的缓存值，重试不会变。`onFailed` 一次性回调（首次 `open` 之前就 `closed`）让 `auth.ts` 的 `offerResume` 能在真失败时弹 toast（`reconnect.gone`）+ 退回大厅，而不是让对话框悬空等待一个已经放弃重连的连接。
+
+**验证**：`gameserver/test/roomManager.test.ts`/`metaserver/test/internal.test.ts`/`client/test/auth-reconnect-prompt.test.ts` 补充对应用例（见各自 test 文件）；`tsc -b` 全量 server 包 + client `tsc --noEmit` 通过。
+
 ## 10. 好友切磋邀请（friend duel invite，2026-07-25 补文档）
 
 好友列表页新增"切磋"按钮：A 邀请在线好友 B → B 60 秒内接受/拒绝/超时 → 接受则两人直接进同一局，**不走 `RoomScene` 的手动房间码流程**，而是直接复用 §3 的 `startMatch('friendly', a, b)`——省掉了创建房间/交换码/双方 ready 的整套 UI 交互，两个 accountId 一早就都知道。

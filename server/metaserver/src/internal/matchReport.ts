@@ -285,6 +285,29 @@ export function registerMatchReportRoutes(app: FastifyInstance, ctx: InternalCtx
     return reply.send({ ok: true, ...(eloBySide ? { elo: eloBySide } : {}) });
   });
 
+  // ── POST /internal/match/abandon ──────────────────────────────────────────
+  // gameserver graceful shutdown (login-reconnect-prompt, 2026-07-28): rooms still in progress at
+  // shutdown time are wiped from memory with no end-of-match report, so the clearActiveMatch call
+  // above (which only fires from /internal/match/report) never runs for them. Without this, a
+  // deploy mid-match leaves the Redis flag lingering (bounded only by its 1h TTL) and the next
+  // login offers to "resume" into a room that no longer exists. No settlement/archival here —
+  // purely a cache clear, so unlike /internal/match/report there is nothing to reconcile/dedupe.
+  app.post('/internal/match/abandon', async (req, reply) => {
+    if (!authed(req.headers)) {
+      return reply.code(401).send({ ok: false, error: 'unauthorized' });
+    }
+    const body = req.body as { accountIds?: unknown };
+    const accountIds = Array.isArray(body?.accountIds)
+      ? body.accountIds.filter((a): a is string => typeof a === 'string')
+      : [];
+    if (accountIds.length > 0) {
+      await clearActiveMatch(redis, ...accountIds).catch((e) =>
+        log.warn('clearActiveMatch (abandon) failed', { err: (e as Error).message }),
+      );
+    }
+    return reply.send({ ok: true });
+  });
+
   // ── GET /internal/mismatches (C3) ─────────────────────────────────────────
   // Returns the list of matches with hashMismatch=true within the last 24h (admin call).
   app.get('/internal/mismatches', async (req, reply) => {

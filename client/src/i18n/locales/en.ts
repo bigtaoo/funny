@@ -1509,6 +1509,7 @@ export const en: Record<TranslationKey, string> = {
   'reconnect.body': 'You have a match still in progress. Would you like to reconnect and continue?',
   'reconnect.accept': 'Reconnect',
   'reconnect.decline': 'Not Now',
+  'reconnect.gone': 'That match is no longer available. Back to the lobby.',
 
   // ── Gacha odds disclosure (Apple 3.1.1, L1-3) ───────────────────────────────
   'gacha.oddsDetail.button': 'Odds',
