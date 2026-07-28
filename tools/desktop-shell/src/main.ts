@@ -1,6 +1,6 @@
 import { app, BrowserWindow, BrowserView, ipcMain, Menu, MenuItemConstructorOptions } from 'electron';
 import * as path from 'path';
-import { TOOLS, DEFAULT_TOOL_ID, ToolConfig } from './tools';
+import { TOOLS, DEFAULT_TOOL_ID, ToolConfig, resolveToolUrl } from './tools';
 import { registerGitSyncHandlers } from './gitSync';
 import { initUpdateNotifier, showUpdateNotice } from './updateNotifier';
 import { initAppUpdater } from './appUpdater';
@@ -25,7 +25,7 @@ function switchTool(toolId: string): void {
   if (!tool || !contentView) return;
   activeToolId = tool.id;
   contentUpdatePoller.setActiveTool(tool, contentView);
-  contentView.webContents.loadURL(tool.devUrl).catch((err) => {
+  contentView.webContents.loadURL(resolveToolUrl(tool)).catch((err) => {
     console.error(`[desktop-shell] 加载工具 ${tool.id} 失败：`, err);
   });
   sidebarView?.webContents.send('tool:active', activeToolId);
@@ -39,7 +39,7 @@ function createWindow(): void {
   mainWindow = new BrowserWindow({
     width: 1280,
     height: 800,
-    title: 'Notebook Wars — 工具箱',
+    title: 'NW Tool',
   });
 
   sidebarView = new BrowserView({

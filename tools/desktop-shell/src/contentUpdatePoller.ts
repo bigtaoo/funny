@@ -1,5 +1,6 @@
 import { BrowserView } from 'electron';
 import type { ToolConfig } from './tools';
+import { resolveToolUrl } from './tools';
 import { showUpdateNotice } from './updateNotifier';
 
 /**
@@ -23,7 +24,7 @@ let saveAckWaiters: Array<() => void> = [];
 
 async function fetchVersion(tool: ToolConfig): Promise<VersionManifest | null> {
   try {
-    const url = new URL('/version.json', tool.devUrl).toString();
+    const url = new URL('/version.json', resolveToolUrl(tool)).toString();
     const res = await fetch(url);
     if (!res.ok) return null;
     return (await res.json()) as VersionManifest;
