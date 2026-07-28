@@ -38,7 +38,7 @@ import type { FriendsSceneCallbacks } from '../../src/scenes/FriendsScene';
 import type { ChatSceneCallbacks } from '../../src/scenes/ChatScene';
 import type { GameSceneCallbacks, GameSceneOptions } from '../../src/scenes/GameScene';
 import type { WorldMapCallbacks } from '../../src/scenes/WorldMapScene';
-import type { FamilySceneCallbacks } from '../../src/scenes/FamilyScene';
+import type { FamilySceneCallbacks, FamilySceneView } from '../../src/scenes/FamilyScene';
 import type { SectSceneCallbacks, SectSceneView } from '../../src/scenes/SectScene';
 import type { AuctionSceneCallbacks } from '../../src/scenes/AuctionScene';
 import type { DefenseEditorCallbacks } from '../../src/scenes/DefenseEditorScene';
@@ -227,9 +227,9 @@ export class HeadlessAppViews implements AppViews {
 
   showWorldMap(_cb: WorldMapCallbacks): WorldMapView {
     this.screen = 'worldMap';
-    return { applyMarchUpdate: () => {}, applyTileUpdate: () => {}, applyUnderAttack: () => {}, applySiegeResult: () => {} };
+    return { applyMarchUpdate: () => {}, applyTileUpdate: () => {}, applyUnderAttack: () => {}, applySiegeResult: () => {}, applyNationMsg: () => {} };
   }
-  showFamily(_cb: FamilySceneCallbacks, _opts?: MountOpts): void { this.screen = 'family'; }
+  showFamily(_cb: FamilySceneCallbacks, _opts?: MountOpts): FamilySceneView { this.screen = 'family'; return { applyFamilyMsg() {} }; }
   showSect(_cb: SectSceneCallbacks, _opts?: MountOpts): SectSceneView { this.screen = 'sect'; return { applySectMsg() {} }; }
   // Capture the auction callbacks so a test can drive the real auction flow the way the
   // AuctionScene would: cb.worldApi is the REAL WorldApiClient the app core built from the

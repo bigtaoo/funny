@@ -37,6 +37,7 @@ import type {
   DuelCancelled,
 } from '../../net/proto/transport';
 import type { WorldChatMessage, FamilyView, FamilyDetailView } from '../../net/WorldApiClient';
+import { serverNow } from '../../net/serverClock';
 
 // ── FriendsScene (S6-1/S6-2/S6-3/S6-4) — Social Hub ─────────────────────────
 //
@@ -276,7 +277,7 @@ export class FriendsSceneBase {
       // Local-only countdown display; if it runs out before the server's own duel_cancelled/match_found
       // arrives, just hide the banner — the authoritative outcome (declined/timeout) always resolves
       // server-side regardless of what this client shows in the meantime.
-      if (Date.now() >= this.incomingDuelInvite.expiresAt) {
+      if (serverNow() >= this.incomingDuelInvite.expiresAt) {
         this.incomingDuelInvite = null;
         this.render();
       } else {
@@ -307,7 +308,7 @@ export class FriendsSceneBase {
   applyMailNew(_m: MailNew): void { void this.refresh(); }
 
   applyDuelInvited(d: DuelInvited): void {
-    this.incomingDuelInvite = { inviteId: d.inviteId, fromPublicId: d.fromPublicId, fromName: d.fromName, expiresAt: Date.now() + 60_000 };
+    this.incomingDuelInvite = { inviteId: d.inviteId, fromPublicId: d.fromPublicId, fromName: d.fromName, expiresAt: serverNow() + 60_000 };
     this.render();
   }
 

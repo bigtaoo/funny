@@ -4,6 +4,7 @@ import type { AuthCredential } from '../../platform/IPlatform';
 import type { SaveData, SyncPatch } from '../../game/meta/SaveData';
 import { type Constructor, type ApiClientBaseCtor, ApiError } from './base';
 import type { AuthResult, ActiveMatchInfo, ApiResp, PushResult } from './types';
+import { sampleServerNow } from '../serverClock';
 
 export interface AuthApi {
   auth(cred: AuthCredential): Promise<AuthResult>;
@@ -11,6 +12,7 @@ export interface AuthApi {
   login(loginId: string, password: string): Promise<AuthResult>;
   changePassword(oldPassword: string, newPassword: string): Promise<void>;
   deleteAccount(): Promise<{ confirmToken: string }>;
+  cancelAccountDeletion(confirmToken: string): Promise<void>;
   recordGdprConsent(consent: boolean): Promise<void>;
   getSave(): Promise<{ save: SaveData; displayName?: string; publicId?: string; gatewayUrl?: string; freeRename?: boolean; activeMatch?: ActiveMatchInfo }>;
   rename(displayName: string): Promise<{ save: SaveData; displayName: string; freeRename?: boolean }>;
@@ -55,11 +57,19 @@ export function AuthMixin<TBase extends ApiClientBaseCtor>(Base: TBase): TBase &
 
     // ── Account compliance (C5, requires login token) ────────────────────────────────────────────
     /**
-     * Soft-delete account (C5-b, Apple 5.1.1(v)): server sets `deletedAt`; data is purged asynchronously after a 7-day grace period.
-     * Re-logging in during the grace period restores the account. Returns a confirmation token (for auditing). Callers should clear the local token/save and return to the login screen.
+     * Soft-delete account (C5-b, Apple 5.1.1(v)): server sets `deletedAt`; data is purged asynchronously
+     * after a 7-day grace period. Returns a confirmation token — pass it to cancelAccountDeletion()
+     * within the grace period (same session, before the token/save are cleared) to undo. Once the
+     * caller clears the local token and returns to the login screen, the account can no longer be
+     * un-deleted through this session (logging back in does NOT restore it — see cancelAccountDeletion).
      */
     async deleteAccount(): Promise<{ confirmToken: string }> {
       return this.request<{ confirmToken: string }>('DELETE', '/account');
+    }
+
+    /** Undo a pending soft-delete within the 7-day grace period (C5-b), using the token deleteAccount() returned. */
+    async cancelAccountDeletion(confirmToken: string): Promise<void> {
+      await this.post<{ ok: true }>('/account/cancel-deletion', { confirmToken });
     }
 
     /** Record GDPR consent (C5-c): server writes `flags.gdprConsent`. Must not be called when no token is held (anonymous / not logged in). */
@@ -77,7 +87,10 @@ export function AuthMixin<TBase extends ApiClientBaseCtor>(Base: TBase): TBase &
         gatewayUrl?: string;
         freeRename?: boolean;
         activeMatch?: ActiveMatchInfo;
+        serverNow?: number;
       }>('GET', '/save');
+      // P1-1 clock-offset sample — GET /save is the highest-frequency authenticated round-trip.
+      if (typeof data.serverNow === 'number') sampleServerNow(data.serverNow);
       return {
         save: data.save,
         displayName: data.displayName,

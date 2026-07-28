@@ -7,6 +7,7 @@ import { FS } from '../../render/fontScale';
 import { drawScrollIndicator } from '../../ui/widgets/ScrollIndicator';
 import { peekViewportH } from '../../ui/widgets/scrollPeek';
 import { formatDuration } from '../worldmap/formatDuration';
+import { serverNow } from '../../net/serverClock';
 import { teamSlotId, teamSlotName, TEAM_CAP, teamTroopCap, teamLeaderCard } from '../../game/meta/teamTroops';
 import { buildIcon } from '../../render/icons';
 import { cardInstanceArtUrl } from '../../render/cardArt';
@@ -264,7 +265,7 @@ export function RenderMixin<TBase extends CitySceneBaseCtor>(Base: TBase): TBase
       const cx0 = this.contentX;
       const w = this.w - cx0;
       const queue = this.me?.buildQueue ?? [];
-      const now = Date.now();
+      const now = serverNow();
 
       const panH = queue.length > 0 ? 72 : 51;
       const pg = sketchPanel(w - 16, panH, { fill: C.paper, border: C.line, width: 1, seed: seedFor(w, panH, 5) });

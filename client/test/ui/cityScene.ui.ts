@@ -532,3 +532,54 @@ describe('CityScene build-queue countdown label (2026-07-15 formatDuration fix)'
     expect(formatDuration(3725)).toBe('1:02:05');
   });
 });
+
+describe('CityScene queue-completion refresh (P0-9, comm-audit-2026-07-27 finding B10)', () => {
+  // worldsvc's build/train queue completion has no push and no other refresh path — without this,
+  // a finished queue entry sits in the UI (still counting down past zero) until the player leaves
+  // and re-enters the scene. update()'s once-per-second tick must detect a past-due completeAt and
+  // re-fetch `me`, picking up the server's already-cleared queue.
+  type UpdateableScene = { update(dt: number): void };
+
+  function stubWorldApiQueueDone(pastCompleteAt: number): { api: WorldApiClient; getMeCalls: number[] } {
+    const calls: number[] = [];
+    let call = 0;
+    const before = { resources: {}, buildings: {}, buildQueue: [{ key: 'wall', completeAt: pastCompleteAt }], cardState: {}, teamState: {} } as unknown as PlayerWorldView;
+    const after = { resources: {}, buildings: {}, buildQueue: [], cardState: {}, teamState: {} } as unknown as PlayerWorldView;
+    const api = {
+      getMe: () => { calls.push(++call); return Promise.resolve(call === 1 ? before : after); },
+      getTeams: () => Promise.resolve([]),
+      getMarches: () => Promise.resolve([]),
+      getOccupations: () => Promise.resolve([]),
+    } as unknown as WorldApiClient;
+    return { api, getMeCalls: calls };
+  }
+
+  it('re-fetches me() once a build-queue entry\'s completeAt has passed, and clears the queue in place', async () => {
+    const { api, getMeCalls } = stubWorldApiQueueDone(Date.now() - 5000); // already due
+    const cb: CitySceneCallbacks = { onBack: () => {}, worldApi: api, worldId: 'world:1:0' };
+    const scene = new CityScene(createLayout(...PORTRAIT), new InputManager(), cb);
+    await new Promise((r) => setTimeout(r, 0)); // initial load() resolves with the "before" me
+
+    expect(getMeCalls).toEqual([1]);
+    (scene as unknown as UpdateableScene).update(1); // crosses the 1s tick threshold → checkQueueCompletion
+    await new Promise((r) => setTimeout(r, 0)); // let the re-fetch promise resolve
+
+    expect(getMeCalls).toEqual([1, 2]); // exactly one refresh, not a storm
+    expect((scene as unknown as { me: PlayerWorldView | null }).me?.buildQueue).toEqual([]);
+    scene.destroy();
+  });
+
+  it('does not re-fetch when nothing in the queue is due yet', async () => {
+    const { api, getMeCalls } = stubWorldApiQueueDone(Date.now() + 60_000); // not due for another minute
+    const cb: CitySceneCallbacks = { onBack: () => {}, worldApi: api, worldId: 'world:1:0' };
+    const scene = new CityScene(createLayout(...PORTRAIT), new InputManager(), cb);
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(getMeCalls).toEqual([1]);
+    (scene as unknown as UpdateableScene).update(1);
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(getMeCalls).toEqual([1]); // no extra call
+    scene.destroy();
+  });
+});

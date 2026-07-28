@@ -6,6 +6,7 @@ import { hasClaimable, reachedTierKeys } from '../../game/meta/achievements';
 import { getPvpUnlockedCards, validatePvpDeckClient, PVP_DECK_SIZE } from '../../game/meta/pvpLoadout';
 import { WorldApiClient } from '../../net/WorldApiClient';
 import { getWorldBaseUrl } from '../../net/config';
+import { serverNow } from '../../net/serverClock';
 import type { LobbyView } from '../AppViews';
 import type { AppCtx, Nav } from '../appCtx';
 import type { AIDifficulty } from '../../game';
@@ -42,16 +43,28 @@ export function createLobbyNav(ctx: AppCtx): Pick<Nav, 'goLobby'> {
     } catch { /* best-effort red dot — leave the cached value in place */ }
   }
 
-  /** Re-fetch achievements and push the "any tier claimable" dot into the lobby (best-effort). */
-  async function refreshAchievementBadge(view: LobbyView): Promise<void> {
+  /**
+   * One-shot aggregated refresh for lobby entry (P1-4, comm-audit-2026-07-27): social + achievements +
+   * retention/events claimable flags via a single `GET /lobby/badges` round-trip, replacing what used
+   * to be 4 separate requests fired together on every online lobby entry. Best-effort — a failure
+   * leaves every dot at its cached/default value, same as the old per-endpoint try/catch behavior.
+   * Real-time social-push updates (friend request / chat / mail) still go through the lighter
+   * `refreshSocialBadge` below, not this aggregated call.
+   */
+  async function refreshLobbyBadges(view: LobbyView): Promise<void> {
     if (!api || state.offlineMode || !platform.storage.getItem(TOKEN_KEY)) return;
     try {
-      const d = await api.getAchievements();
-      state.achievementClaimable = hasClaimable(d.defs, d.stats, d.achievements);
+      const b = await api.getLobbyBadges();
+
+      state.socialBadgeTotal = b.social.total;
+      state.mailBadgeCount = b.social.mail;
+      view.applySocialBadge(b.social.total, b.social.mail);
+
+      state.achievementClaimable = hasClaimable(b.achievements.defs, b.achievements.stats, b.achievements.achievements);
       view.applyAchievementBadge(state.achievementClaimable);
 
       // S9-5b: diff reached tiers vs the baseline → one aggregated "unlocked" toast (§7).
-      const reached = reachedTierKeys(d.defs, d.stats);
+      const reached = reachedTierKeys(b.achievements.defs, b.achievements.stats);
       if (state.achievementReached !== null) {
         const freshIds = new Set<string>();
         reached.forEach((k) => {
@@ -68,7 +81,16 @@ export function createLobbyNav(ctx: AppCtx): Pick<Nav, 'goLobby'> {
         }
       }
       state.achievementReached = reached;
-    } catch { /* best-effort red dot — leave the cached value in place */ }
+
+      view.applyRetentionBadge(b.retentionClaimable.checkin || b.retentionClaimable.daily);
+      const reasons: DailyReminderReason[] = [];
+      if (computeShopCardClaimable()) reasons.push('monthlyCard');
+      if (b.retentionClaimable.daily) reasons.push('dailyTask');
+      if (b.retentionClaimable.checkin) reasons.push('checkin');
+      void scheduleDailyReminder(reasons);
+
+      view.applyEventsAvailable(b.eventsAvailable);
+    } catch { /* best-effort — leave every dot at its cached/default value */ }
   }
 
   /**
@@ -80,7 +102,7 @@ export function createLobbyNav(ctx: AppCtx): Pick<Nav, 'goLobby'> {
   function computeShopCardClaimable(): boolean {
     const m = saveManager.get().monetization;
     if (!m) return false;
-    const active = (m.subscriptionExpiry ?? 0) > Date.now();
+    const active = (m.subscriptionExpiry ?? 0) > serverNow();
     if (!active) return false;
     const todayKey = new Date().toISOString().slice(0, 10);
     return m.subscriptionLastClaimDay !== todayKey;
@@ -90,34 +112,6 @@ export function createLobbyNav(ctx: AppCtx): Pick<Nav, 'goLobby'> {
   function refreshShopBadge(view: LobbyView): void {
     state.shopCardClaimable = computeShopCardClaimable();
     view.applyShopBadge(state.shopCardClaimable);
-  }
-
-  /**
-   * Re-fetch retention claimable state, push the daily red dot into the lobby (B5, best-effort),
-   * and — iOS only — re-arm the recurring "today's rewards are waiting" local notification
-   * (localReminders.ts) with whatever's outstanding right now, bundling in the monthly-card claim
-   * from the same local check the shop nav dot uses. A failed fetch leaves both untouched.
-   */
-  async function refreshRetentionBadge(view: LobbyView): Promise<void> {
-    if (!api || state.offlineMode || !platform.storage.getItem(TOKEN_KEY)) { view.applyRetentionBadge(false); return; }
-    try {
-      const r = await api.getRetention();
-      view.applyRetentionBadge(r.claimable.checkin || r.claimable.daily);
-      const reasons: DailyReminderReason[] = [];
-      if (computeShopCardClaimable()) reasons.push('monthlyCard');
-      if (r.claimable.daily) reasons.push('dailyTask');
-      if (r.claimable.checkin) reasons.push('checkin');
-      void scheduleDailyReminder(reasons);
-    } catch { /* leave the dot off on failure */ }
-  }
-
-  /** Probe for an active event window so the events entry only appears when there's something to show (B6, best-effort). */
-  async function refreshEventsAvailable(view: LobbyView): Promise<void> {
-    if (!api || state.offlineMode || !platform.storage.getItem(TOKEN_KEY)) { view.applyEventsAvailable(false); return; }
-    try {
-      const events = await api.getEvents();
-      view.applyEventsAvailable(events.length > 0);
-    } catch { /* leave the entry hidden on failure */ }
   }
 
   function goLobby(opts?: { offline?: boolean; fromResize?: boolean; fade?: boolean }): void {
@@ -254,10 +248,7 @@ export function createLobbyNav(ctx: AppCtx): Pick<Nav, 'goLobby'> {
         };
         session.connect();
       }
-      if (!opts?.fromResize) void refreshSocialBadge(lobby);
-      if (!opts?.fromResize) void refreshAchievementBadge(lobby);
-      if (!opts?.fromResize) void refreshRetentionBadge(lobby);
-      if (!opts?.fromResize) void refreshEventsAvailable(lobby);
+      if (!opts?.fromResize) void refreshLobbyBadges(lobby);
       // Card daily-reward dot is derived from the local mirrored save (no fetch) — recompute
       // on every entry so it clears the instant the user claims and returns to the lobby.
       refreshShopBadge(lobby);

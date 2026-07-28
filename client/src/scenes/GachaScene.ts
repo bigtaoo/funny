@@ -25,6 +25,7 @@ import { drawScrollIndicator } from '../ui/widgets/ScrollIndicator';
 import { peekViewportH } from '../ui/widgets/scrollPeek';
 import { FS, snapFont } from '../render/fontScale';
 import { wheelScrollY } from '../ui/wheelScroll';
+import { serverNow } from '../net/serverClock';
 
 /** itemId prefix → material icon glyph (mat_scrap/mat_lead/mat_binding). */
 const MATERIAL_ICON: Record<string, 'scrap' | 'lead' | 'binding'> = {
@@ -419,7 +420,7 @@ export class GachaScene implements Scene {
     // Limited / custom pool expiry countdown (banner bottom-left). Server only serves in-window pools,
     // so this normally counts down; a cached pool that just lapsed shows "Ended".
     if (pool.limited && pool.endAt) {
-      const remain = pool.endAt - Date.now();
+      const remain = pool.endAt - serverNow();
       const cdLabel =
         remain <= 0
           ? t('gacha.pool.ended')

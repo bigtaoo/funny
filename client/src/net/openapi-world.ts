@@ -136,6 +136,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/world/enter": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Aggregated SLG-entry fetch (P1-5, comm-audit-2026-07-27): resolves getMe+joinWorld server-side (so the base tile is known before the map window is picked), then composes season/nations/map(or mapSparse)/marches/occupations/stationed/worldChannel in parallel — one round-trip replacing the 9-request waterfall WorldMapNet.loadData() used to fire on every world-map entry. `r` is the viewport radius the client already computes from its own canvas size (independent of map center); the server centers the returned map window on the resolved mainBaseTile itself. Exactly one of `map` / `mapSparse` is populated, matching zoom (1 → map; 2/3 → mapSparse, lod mid/thin). */
+        post: operations["enterWorld"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/world/occupy": {
         parameters: {
             query?: never;
@@ -1266,7 +1283,9 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["OkResponse"] & {
-                        data?: components["schemas"]["PlayerWorldView"];
+                        data?: components["schemas"]["PlayerWorldView"] & {
+                            serverNow?: number;
+                        };
                     };
                 };
             };
@@ -1354,6 +1373,67 @@ export interface operations {
             };
         };
     };
+    enterWorld: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    worldId: string;
+                    /** @description Viewport radius (tiles) */
+                    r: number;
+                    /**
+                     * @default 1
+                     * @enum {integer}
+                     */
+                    zoom?: 1 | 2 | 3;
+                };
+            };
+        };
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OkResponse"] & {
+                        data?: {
+                            /** @description Null if this worldId has no provisioned world doc yet (should not happen for a real client-resolved shard; kept nullable to match getSeason's own return type). */
+                            season: components["schemas"]["SeasonView"] | null;
+                            nations: components["schemas"]["NationView"][];
+                            me: components["schemas"]["PlayerWorldView"] & {
+                                serverNow?: number;
+                                /** @description True only the first time this account is placed in this world (server-resolved, replaces the client's own wasJoined-diff logic). */
+                                justJoined: boolean;
+                            };
+                            map?: components["schemas"]["WorldMapView"];
+                            mapSparse?: components["schemas"]["WorldMapSparseView"];
+                            marches: components["schemas"]["MarchView"][];
+                            occupations: components["schemas"]["OccupationView"][];
+                            stationed: components["schemas"]["StationedView"][];
+                            /** @description Same shape as GET /nation/channel (not itself contract-declared — pre-existing gap, P2 backlog). */
+                            worldChannel: {
+                                id: string;
+                                senderId: string;
+                                senderName: string;
+                                senderPublicId: string;
+                                title?: string;
+                                sectName?: string;
+                                familyName?: string;
+                                body: string;
+                                ts: number;
+                            }[];
+                        };
+                    };
+                };
+            };
+        };
+    };
     occupyTile: {
         parameters: {
             query?: never;
@@ -1399,13 +1479,15 @@ export interface operations {
             };
         };
         responses: {
-            /** @description Abandoned */
+            /** @description Abandoned — returns the updated player world state (resources/territory refreshed) */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["OkResponse"];
+                    "application/json": components["schemas"]["OkResponse"] & {
+                        data?: components["schemas"]["PlayerWorldView"];
+                    };
                 };
             };
         };
@@ -1457,14 +1539,16 @@ export interface operations {
             };
         };
         responses: {
-            /** @description Watchtower built */
+            /** @description Watchtower built — data.me carries the updated player world state (resources spent) */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
                     "application/json": components["schemas"]["OkResponse"] & {
-                        data?: components["schemas"]["WorldTileView"];
+                        data?: components["schemas"]["WorldTileView"] & {
+                            me?: components["schemas"]["PlayerWorldView"];
+                        };
                     };
                 };
             };
@@ -1489,14 +1573,16 @@ export interface operations {
             };
         };
         responses: {
-            /** @description Structure built */
+            /** @description Structure built — data.me carries the updated player world state (resources spent) */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
                     "application/json": components["schemas"]["OkResponse"] & {
-                        data?: components["schemas"]["WorldTileView"];
+                        data?: components["schemas"]["WorldTileView"] & {
+                            me?: components["schemas"]["PlayerWorldView"];
+                        };
                     };
                 };
             };
@@ -1585,14 +1671,16 @@ export interface operations {
             };
         };
         responses: {
-            /** @description March started */
+            /** @description March started — data.me carries the updated player world state (troops/resources spent) */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
                     "application/json": components["schemas"]["OkResponse"] & {
-                        data?: components["schemas"]["MarchView"];
+                        data?: components["schemas"]["MarchView"] & {
+                            me?: components["schemas"]["PlayerWorldView"];
+                        };
                     };
                 };
             };
@@ -2235,13 +2323,15 @@ export interface operations {
             };
         };
         responses: {
-            /** @description Item bought */
+            /** @description Item bought — returns the updated player world state (resources/effect applied) */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["OkResponse"];
+                    "application/json": components["schemas"]["OkResponse"] & {
+                        data?: components["schemas"]["PlayerWorldView"];
+                    };
                 };
             };
         };

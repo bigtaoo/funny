@@ -89,15 +89,19 @@ export class MatchsvcClient {
     return this.baseUrl !== null;
   }
 
-  // fire-and-forget: the real result comes back asynchronously over /gw/push, not in
-  // the HTTP response. `retries` is reserved for the non-self-healing, idempotent-on-
-  // receiver commands (enqueue / leave) — see postInternal's header for why.
-  private post(path: string, body: Record<string, unknown>, retries = 0): void {
+  // Fire-and-forget in the sense that the real *success* result comes back asynchronously
+  // over /gw/push, not in the HTTP response — but the caller still gets the boolean so it
+  // can push a room_error when the command never reached matchsvc at all (all retries
+  // exhausted), instead of leaving the player's "searching"/"connecting" UI stuck forever
+  // with zero feedback (P0-7, comm-audit-2026-07-27 finding B8). `retries` is reserved for
+  // the non-self-healing, idempotent-on-receiver commands (enqueue / leave) — see
+  // postInternal's header for why.
+  private post(path: string, body: Record<string, unknown>, retries = 0): Promise<boolean> {
     if (!this.baseUrl) {
       log.warn('matchsvc not configured: command dropped', { path });
-      return;
+      return Promise.resolve(false);
     }
-    void postInternal(`${this.baseUrl}${path}`, body, {
+    return postInternal(`${this.baseUrl}${path}`, body, {
       caller: 'gateway',
       key: this.internalKey,
       retries,
@@ -109,27 +113,27 @@ export class MatchsvcClient {
   // roomCreate / roomJoin are NOT idempotent on the matchsvc side (a re-landed dup
   // would create a second room / push ALREADY_IN_ROOM), so they stay retries=0 — the
   // player can simply click again. They still get the body-drain + timeout fix.
-  roomCreate(accountId: string, name: string, publicId: string, equippedTitle = '', avatarId = '', deck: string[] = []): void {
-    this.post('/mm/room/create', { accountId, name, publicId, equippedTitle, avatarId, deck });
+  roomCreate(accountId: string, name: string, publicId: string, equippedTitle = '', avatarId = '', deck: string[] = []): Promise<boolean> {
+    return this.post('/mm/room/create', { accountId, name, publicId, equippedTitle, avatarId, deck });
   }
-  roomJoin(accountId: string, name: string, publicId: string, code: string, equippedTitle = '', avatarId = '', deck: string[] = []): void {
-    this.post('/mm/room/join', { accountId, name, publicId, code, equippedTitle, avatarId, deck });
+  roomJoin(accountId: string, name: string, publicId: string, code: string, equippedTitle = '', avatarId = '', deck: string[] = []): Promise<boolean> {
+    return this.post('/mm/room/join', { accountId, name, publicId, code, equippedTitle, avatarId, deck });
   }
   roomReady(accountId: string, ready: boolean): void {
-    this.post('/mm/room/ready', { accountId, ready });
+    void this.post('/mm/room/ready', { accountId, ready });
   }
   roomStart(accountId: string): void {
-    this.post('/mm/room/start', { accountId });
+    void this.post('/mm/room/start', { accountId });
   }
   // leave is idempotent (no-op if not in room/queue) and non-self-healing (a lost
   // leave strands a zombie queue entry / room) → retry.
   roomLeave(accountId: string): void {
-    this.post('/mm/room/leave', { accountId }, 2);
+    void this.post('/mm/room/leave', { accountId }, 2);
   }
   // enqueue is idempotent (matchsvc dedups by accountId) and non-self-healing (a lost
   // enqueue strands the player on "searching") → retry. This is the 0/20 fix.
-  enqueue(accountId: string, name: string, publicId: string, elo: number, equippedTitle = '', avatarId = '', platform = '', deck: string[] = []): void {
-    this.post('/mm/queue/enqueue', { accountId, name, publicId, elo, equippedTitle, avatarId, platform, deck }, 2);
+  enqueue(accountId: string, name: string, publicId: string, elo: number, equippedTitle = '', avatarId = '', platform = '', deck: string[] = []): Promise<boolean> {
+    return this.post('/mm/queue/enqueue', { accountId, name, publicId, elo, equippedTitle, avatarId, platform, deck }, 2);
   }
   connected(accountId: string): void {
     this.post('/mm/conn/connected', { accountId });

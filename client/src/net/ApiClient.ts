@@ -42,6 +42,7 @@ export type {
   AchievementsView,
   EventView,
   RetentionView,
+  LobbyBadgesView,
   PushResult,
 } from './ApiClient/types';
 

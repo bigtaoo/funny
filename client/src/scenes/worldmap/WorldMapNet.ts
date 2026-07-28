@@ -3,6 +3,7 @@ import { t } from '../../i18n';
 import { ui as C, txt, buildPaperBackground, sketchPanel, seedFor, tearDownChildren } from '../../render/sketchUi';
 import { buildIcon } from '../../render/icons';
 import { WorldApiError } from '../../net/WorldApiClient';
+import { serverNow } from '../../net/serverClock';
 import type { TeamTemplate } from '../../net/WorldApiClient';
 import { carriedTroops } from '../../game/meta/teamTroops';
 import { proceduralTile, ARROW_TOWER_COST, BLOCKER_COST } from '@nw/shared';
@@ -17,7 +18,7 @@ import { makeZoomCfgs } from './zoom';
 import { drawTileL1, drawTileL2, drawResMotif, drawResMotifFallback, drawCityIcon, drawHpBar, placeBuildingSprite, drawStar } from './tileGraphics';
 import type { IconKind } from '../../render/icons';
 import type { WorldApiClient, WorldTileView, PlayerWorldView, MarchView, NationView, SeasonView, SlgShopItemView } from '../../net/WorldApiClient';
-import type { MarchUpdate, TileUpdate, UnderAttack, SiegeResult } from '../../net/proto/transport';
+import type { MarchUpdate, TileUpdate, UnderAttack, SiegeResult, NationMsg } from '../../net/proto/transport';
 import type { ProceduralTile } from '@nw/shared';
 import type { TerrainTextureName } from '../../render/terrainAtlasLoader';
 import type { ZoomCfg, PoolSlot } from './zoom';
@@ -35,39 +36,67 @@ export class WorldMapNet {
    */
   private pendingTeamIds = new Set<string>();
 
+  /**
+   * Aggregated SLG-entry fetch (P1-5, comm-audit-2026-07-27): one `POST /world/enter` round-trip
+   * replaces what used to be a 9-request waterfall (season, nations, me, join, map/mapSparse,
+   * march+occupations+stationed, worldChannel) fired serially/semi-parallel on every world-map entry.
+   * The server resolves getMe+joinWorld itself (ADR-025 heal-on-entry semantics unchanged — see
+   * worldsvc httpApi.ts's /world/enter handler) and centers the returned map window on the resolved
+   * base tile, so the client no longer needs to know the base tile before requesting the map.
+   */
   async loadData(): Promise<void> {
     if (this.ctx.destroyed) return;
-    // Map bounds + nations are world-static; fetch once up front (best-effort).
     try {
-      const season = await this.ctx.cb.worldApi.getSeason(this.ctx.cb.worldId);
-      this.ctx.season = season;
-      if (season.mapW > 0) this.ctx.mapW = season.mapW;
-      if (season.mapH > 0) this.ctx.mapH = season.mapH;
-    } catch { /* offline — keep defaults */ }
-    try {
-      this.ctx.nations = await this.ctx.cb.worldApi.getNations(this.ctx.cb.worldId);
-    } catch { /* offline — no nation overlay */ }
-    try {
-      this.ctx.me = await this.ctx.cb.worldApi.getMe(this.ctx.cb.worldId);
-      // Ensure a valid 3×3 capital exists on entry (ADR-025). joinWorld is the single heal point:
-      //   • not joined     → system auto-places the capital (§3.4, prefers proximity to family);
-      //   • healthy 3×3    → idempotent no-op, returns current state;
-      //   • corrupt/legacy → worldsvc purges the stale data and re-places a fresh 3×3, so the player
-      //     re-enters as a brand-new user (fixes a pre-ADR-025 single-tile base rendering no city).
-      // Always call it (not only when unjoined) so a corrupt base can't leave the player stuck.
-      // World full / no slot / offline → keep whatever getMe returned; do not block map entry.
-      const wasJoined = this.ctx.me.joined;
-      try {
-        this.ctx.me = await this.ctx.cb.worldApi.joinWorld(this.ctx.cb.worldId);
-        if (!wasJoined) this.ctx.panels.showToast(t('world.myBase'));
-      } catch { /* world full / no slot available / offline — keep current state */ }
-      if (this.ctx.me.mainBaseTile) {
-        const [bx, by] = this.ctx.parseTileId(this.ctx.me.mainBaseTile);
+      // r is purely a function of canvas size (independent of pan/center), so it's safe to read before
+      // this.ctx.me / the camera center are known — see WorldMapRenderer/viewport.ts's viewportCenter().
+      const { r } = this.ctx.view.viewportCenter();
+      const entry = await this.ctx.cb.worldApi.enterWorld(this.ctx.cb.worldId, r, this.ctx.zoom);
+
+      // season is null only if this worldId has no provisioned world doc yet (should not happen for a
+      // real client-resolved shard) — degrade gracefully and keep the existing mapW/mapH defaults.
+      if (entry.season) {
+        this.ctx.season = entry.season;
+        if (entry.season.mapW > 0) this.ctx.mapW = entry.season.mapW;
+        if (entry.season.mapH > 0) this.ctx.mapH = entry.season.mapH;
+      }
+      this.ctx.nations = entry.nations;
+
+      // Ensure a valid 3×3 capital exists on entry (ADR-025) — resolved server-side now (see handler
+      // comment above); `justJoined` replaces the old local wasJoined-diff to gate the welcome toast.
+      this.ctx.me = entry.me;
+      if (entry.me.justJoined) this.ctx.panels.showToast(t('world.myBase'));
+      if (entry.me.mainBaseTile) {
+        const [bx, by] = this.ctx.parseTileId(entry.me.mainBaseTile);
         this.ctx.view.centerAt(bx, by);
       }
-      await this.loadMapViewport();
-      await this.refreshMarches();
-      await this.refreshWorldChat();
+
+      if (entry.map) {
+        for (const tile of entry.map.tiles) {
+          this.ctx.tileCache.set(`${tile.x}:${tile.y}`, tile);
+        }
+      } else if (entry.mapSparse) {
+        for (const s of entry.mapSparse.tiles) {
+          // Synthesize a minimal WorldTileView; will be overwritten with full data when zoom 1 loads
+          this.ctx.tileCache.set(`${s.x}:${s.y}`, {
+            x: s.x,
+            y: s.y,
+            type: s.type as WorldTileView['type'],
+            level: 1,
+            occupied: true,
+            ...(s.mine ? { mine: true } : {}),
+            ...(s.ally ? { ally: true } : {}),
+            ...(s.allySect ? { allySect: true } : {}),
+          });
+        }
+      }
+
+      this.ctx.marches = entry.marches;
+      this.ctx.occupations = entry.occupations;
+      this.ctx.stationed = entry.stationed;
+
+      this.ctx.worldChatLatest = entry.worldChannel[0] ?? null; // server returns newest-first
+      const seenTs = this.ctx.getWorldChatSeenTs();
+      this.ctx.worldChatUnread = entry.worldChannel.filter((m) => m.ts > seenTs).length;
     } catch { /* offline OK */ }
     if (!this.ctx.destroyed) { this.ctx.view.renderMap(); this.ctx.panels.renderHud(); }
   }
@@ -204,11 +233,16 @@ export class WorldMapNet {
     const [fx, fy] = this.ctx.parseTileId(me.mainBaseTile);
     try {
       // troops=1 is a placeholder; the server overwrites it with the team's committed troop count (§16.2).
-      const march = await this.ctx.cb.worldApi.startMarch(this.ctx.cb.worldId, fx, fy, tx, ty, kind, 1, teamId, stationMode);
+      // P1-3 (comm-audit-2026-07-27): startMarch's response already carries the created march + updated
+      // `me` (troops/resources committed) — locally append/adopt both instead of following up with
+      // GET /world/march + GET /world/me. `mine` isn't set on the raw march object (only getMarches'
+      // list-assembly stamps it, since only it knows who's asking) — a march THIS call just dispatched
+      // is unconditionally the caller's own, so it's safe to stamp true here directly.
+      const { me, ...march } = await this.ctx.cb.worldApi.startMarch(this.ctx.cb.worldId, fx, fy, tx, ty, kind, 1, teamId, stationMode);
       if (kind === 'attack') this.ctx.myAttackTiles.add(march.toTile);
       else if (kind === 'occupy') this.ctx.myOccupyTiles.add(march.toTile);
-      this.ctx.marches = await this.ctx.cb.worldApi.getMarches(this.ctx.cb.worldId);
-      this.ctx.me = await this.ctx.cb.worldApi.getMe(this.ctx.cb.worldId);
+      this.ctx.marches = [...this.ctx.marches, { ...march, mine: true }];
+      if (me) this.ctx.me = me; // defensive: never null out the cached state if a response omits it
       this.ctx.panels.showToast(t('world.dispatched'));
       this.ctx.view.renderMap(); this.ctx.panels.renderHud();
     } catch (e) {
@@ -236,11 +270,12 @@ export class WorldMapNet {
     if (troops < 1) { this.ctx.panels.showToast(t('world.err.noTroops'), C.red); return; }
     const [fx, fy] = this.ctx.parseTileId(me.mainBaseTile);
     try {
-      const march = await this.ctx.cb.worldApi.startMarch(this.ctx.cb.worldId, fx, fy, tx, ty, kind, troops);
+      // P1-3: see doMarchTeam's comment above — adopt march + me from the response directly.
+      const { me, ...march } = await this.ctx.cb.worldApi.startMarch(this.ctx.cb.worldId, fx, fy, tx, ty, kind, troops);
       if (kind === 'attack') this.ctx.myAttackTiles.add(march.toTile);
       else if (kind === 'occupy') this.ctx.myOccupyTiles.add(march.toTile);
-      this.ctx.marches = await this.ctx.cb.worldApi.getMarches(this.ctx.cb.worldId);
-      this.ctx.me = await this.ctx.cb.worldApi.getMe(this.ctx.cb.worldId);
+      this.ctx.marches = [...this.ctx.marches, { ...march, mine: true }];
+      if (me) this.ctx.me = me; // defensive: never null out the cached state if a response omits it
       this.ctx.panels.showToast(t('world.dispatched'));
       this.ctx.view.renderMap(); this.ctx.panels.renderHud();
     } catch (e) {
@@ -262,9 +297,10 @@ export class WorldMapNet {
     if ((me.troops ?? 0) < 1) { this.ctx.panels.showToast(t('world.err.noTroops'), C.red); return; }
     const [fx, fy] = this.ctx.parseTileId(me.mainBaseTile);
     try {
-      await this.ctx.cb.worldApi.startMarch(this.ctx.cb.worldId, fx, fy, tx, ty, 'scout', 1);
-      this.ctx.marches = await this.ctx.cb.worldApi.getMarches(this.ctx.cb.worldId);
-      this.ctx.me = await this.ctx.cb.worldApi.getMe(this.ctx.cb.worldId);
+      // P1-3: see doMarchTeam's comment above — adopt march + me from the response directly.
+      const { me, ...march } = await this.ctx.cb.worldApi.startMarch(this.ctx.cb.worldId, fx, fy, tx, ty, 'scout', 1);
+      this.ctx.marches = [...this.ctx.marches, { ...march, mine: true }];
+      if (me) this.ctx.me = me; // defensive: never null out the cached state if a response omits it
       this.ctx.panels.showToast(t('world.scoutSent'));
       this.ctx.view.renderMap(); this.ctx.panels.renderHud();
     } catch (e) {
@@ -367,8 +403,10 @@ export class WorldMapNet {
   async doWatchtower(tx: number, ty: number): Promise<void> {
     this.ctx.panels.closeModal();
     try {
-      await this.ctx.cb.worldApi.buildWatchtower(this.ctx.cb.worldId, tx, ty);
-      this.ctx.me = await this.ctx.cb.worldApi.getMe(this.ctx.cb.worldId); // resources deducted — refresh local state
+      // P1-3: buildWatchtower's response now carries `me` (resources deducted) directly — adopt it
+      // instead of a separate GET /world/me.
+      const { me } = await this.ctx.cb.worldApi.buildWatchtower(this.ctx.cb.worldId, tx, ty);
+      if (me) this.ctx.me = me; // defensive: never null out the cached state if a response omits it
       this.ctx.tileCache.clear();                                  // new tower expands vision → re-fetch entire viewport to reveal tiles
       await this.loadMapViewport();
       this.ctx.panels.showToast(t('world.watchtowerBuilt'));
@@ -398,8 +436,10 @@ export class WorldMapNet {
   async doBuildStructure(tx: number, ty: number, kind: 'arrowTower' | 'blocker'): Promise<void> {
     this.ctx.panels.closeModal();
     try {
-      await this.ctx.cb.worldApi.buildStructure(this.ctx.cb.worldId, tx, ty, kind);
-      this.ctx.me = await this.ctx.cb.worldApi.getMe(this.ctx.cb.worldId); // resources deducted — refresh
+      // P1-3: buildStructure's response now carries `me` (resources deducted) directly — adopt it
+      // instead of a separate GET /world/me.
+      const { me } = await this.ctx.cb.worldApi.buildStructure(this.ctx.cb.worldId, tx, ty, kind);
+      if (me) this.ctx.me = me; // defensive: never null out the cached state if a response omits it
       this.ctx.tileCache.delete(`${tx}:${ty}`);
       await this.loadMapViewport();
       this.ctx.panels.showToast(t('world.structureBuilt'));
@@ -425,8 +465,9 @@ export class WorldMapNet {
   async doAbandon(tx: number, ty: number): Promise<void> {
     this.ctx.panels.closeModal();
     try {
-      await this.ctx.cb.worldApi.abandonTile(this.ctx.cb.worldId, tx, ty);
-      this.ctx.me = await this.ctx.cb.worldApi.getMe(this.ctx.cb.worldId);
+      // P1-3: abandonTile already returns the full updated player world state — adopt it directly
+      // instead of a separate GET /world/me (was previously discarded and re-fetched, see finding B).
+      this.ctx.me = await this.ctx.cb.worldApi.abandonTile(this.ctx.cb.worldId, tx, ty);
       // Remove from cache so it shows as empty
       this.ctx.tileCache.delete(`${tx}:${ty}`);
       await this.loadMapViewport();
@@ -449,8 +490,8 @@ export class WorldMapNet {
    * refreshes the list in place instead of closing the modal. */
   async doAbandonFromList(tx: number, ty: number): Promise<void> {
     try {
-      await this.ctx.cb.worldApi.abandonTile(this.ctx.cb.worldId, tx, ty);
-      this.ctx.me = await this.ctx.cb.worldApi.getMe(this.ctx.cb.worldId);
+      // P1-3: same as doAbandon above — adopt `me` from the response directly.
+      this.ctx.me = await this.ctx.cb.worldApi.abandonTile(this.ctx.cb.worldId, tx, ty);
       this.ctx.tileCache.delete(`${tx}:${ty}`);
       await Promise.all([this.loadMapViewport(), this.refreshTerritories()]);
       this.ctx.view.renderMap(); this.ctx.panels.renderHud();
@@ -468,9 +509,10 @@ export class WorldMapNet {
 
   async doBuyShopItem(itemId: string): Promise<void> {
     try {
-      await this.ctx.cb.worldApi.buyShopItem(this.ctx.cb.worldId, itemId);
+      // P1-3: buyShopItem already returns the full updated player world state — adopt it directly
+      // instead of a separate refreshMe() round-trip.
+      this.ctx.me = await this.ctx.cb.worldApi.buyShopItem(this.ctx.cb.worldId, itemId);
       this.ctx.panels.showToast(t('world.shopBought'));
-      await this.refreshMe();
       if (this.ctx.territoryPanelOpen && this.ctx.territoryTab === 'world') this.ctx.panels.renderTerritoryPanel();
     } catch (e) {
       this.ctx.panels.showToast(this.errorMsg(e), C.red);
@@ -498,6 +540,19 @@ export class WorldMapNet {
     void this.refreshMarches();
   }
 
+  /**
+   * Real-time world/nation channel message (gateway push, worldsvc → gateway). Previously dropped
+   * entirely (client had no onNationMsg handler) while a 5s poll (refreshWorldChat) re-fetched the
+   * same data — this updates the HUD's latest-message + unread count immediately from the push
+   * payload instead of waiting on the next poll tick.
+   */
+  applyNationMsg(n: NationMsg): void {
+    if (this.ctx.destroyed) return;
+    this.ctx.worldChatLatest = { id: `push:${n.ts}:${n.fromPublicId}`, senderId: n.fromPublicId, senderPublicId: n.fromPublicId, senderName: n.fromName, body: n.text, ts: n.ts };
+    if (n.ts > this.ctx.getWorldChatSeenTs()) this.ctx.worldChatUnread += 1;
+    if (!this.ctx.destroyed) this.ctx.panels.renderHud();
+  }
+
   applyTileUpdate(tu: TileUpdate): void {
     if (this.ctx.destroyed) return;
     // D-CITY-8: flag whether this push is our own main base losing durability, so the full-screen
@@ -519,7 +574,7 @@ export class WorldMapNet {
   applyUnderAttack(u: UnderAttack): void {
     if (this.ctx.destroyed) return;
     const [tx, ty] = this.ctx.parseTileId(u.tile);
-    const sec = Math.max(0, Math.ceil((u.arriveAt - Date.now()) / 1000));
+    const sec = Math.max(0, Math.ceil((u.arriveAt - serverNow()) / 1000));
     const name = u.attackerName || ('#' + (u.attackerPublicId || '?'));
     this.ctx.panels.showToast(
       `${t('world.underAttack')} ${t('world.underAttackMsg')
@@ -606,15 +661,24 @@ export class WorldMapNet {
 
   // ── Pan ───────────────────────────────────────────────────────────────────
 
-  // ── Lifecycle: march poll, split out of the original WorldMapScene ctor+destroy ──
+  // ── Lifecycle: split out of the original WorldMapScene ctor+destroy ──
 
-  start(): void {
-    this.ctx.marchPoll = setInterval(() => {
-      if (!this.ctx.destroyed) { this.refreshMarches(); this.refreshWorldChat(); }
-    }, 5000);
-  }
+  /**
+   * P1-2 (comm-audit-2026-07-27): this used to run a 5s setInterval re-fetching
+   * marches/occupations/stationed/worldChannel unconditionally — 100% redundant with the gateway
+   * push channel, which already fires on every actual state change:
+   *   - march dispatch/recall/arrival  → march_update  → applyMarchUpdate()   → refreshMarches()
+   *   - siege settlement               → siege_result  → applySiegeResult()  → refreshMarches() (+ me/map)
+   *   - world/nation chat message      → nation_msg    → applyNationMsg()    (P0-5, local update, no refetch)
+   * Push delivery latency (worldsvc's 2s scheduler tick) was already *lower* than the poll interval,
+   * so the timer was pure background tax, not a reliability backstop. What replaced it as the
+   * "nothing periodically refreshes anymore" concern is the per-second HUD tick (P1-1,
+   * WorldMapRenderer/lifecycle.ts) — that keeps countdown text moving between events using the
+   * already-cached state, so removing this timer doesn't freeze the display, only the extra requests.
+   * start()/destroy() are kept as the lifecycle hook pair WorldMapScene already calls; both are now
+   * no-ops rather than removing the pairing from every call site.
+   */
+  start(): void { /* intentionally no-op — see doc comment above */ }
 
-  destroy(): void {
-    if (this.ctx.marchPoll) { clearInterval(this.ctx.marchPoll); this.ctx.marchPoll = null; }
-  }
+  destroy(): void { /* intentionally no-op — nothing left to tear down (see start()) */ }
 }

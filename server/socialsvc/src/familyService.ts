@@ -442,6 +442,7 @@ export class FamilyService {
     const profiles = this.meta.available ? await this.meta.batchProfiles([accountId]) : new Map();
     const resolvedSenderName = profiles.get(accountId)?.displayName ?? senderName;
     const title = profiles.get(accountId)?.equippedTitle;
+    const fromPublicId = profiles.get(accountId)?.publicId ?? '';
     const familyDoc = await cols.families.findOne({ _id: mem.familyId });
     const familyName = familyDoc?.name;
 
@@ -463,7 +464,7 @@ export class FamilyService {
       .toArray();
     await this.gateway.pushMany(
       otherMembers.map((m) => m.accountId),
-      { kind: 'family_msg', familyId: mem.familyId, fromAccountId: accountId, fromName: resolvedSenderName, title, familyName, body, ts },
+      { kind: 'family_msg', familyId: mem.familyId, fromPublicId, fromName: resolvedSenderName, title, familyName, body, ts },
     );
 
     return { id: msgId, senderId: accountId, senderName: resolvedSenderName, title, familyName, body, ts };

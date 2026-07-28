@@ -429,13 +429,6 @@ export interface NationMsg {
   ts: number;
 }
 
-export interface WorldEvent {
-  /** season_open | season_settle | grand_tourney | … */
-  kind: string;
-  /** JSON (DRAFT; structure varies by event kind) */
-  payload: string;
-}
-
 export interface ServerMsg {
   roomState?: RoomState | undefined;
   matchStart?: MatchStart | undefined;
@@ -458,7 +451,6 @@ export interface ServerMsg {
   siegeResult?: SiegeResult | undefined;
   familyMsg?: FamilyMsg | undefined;
   sectMsg?: SectMsg | undefined;
-  worldEvent?: WorldEvent | undefined;
   nationMsg?: NationMsg | undefined;
   matchBot?: MatchBot | undefined;
   duelInvited?: DuelInvited | undefined;
@@ -3819,64 +3811,6 @@ export const NationMsg: MessageFns<NationMsg> = {
   },
 };
 
-function createBaseWorldEvent(): WorldEvent {
-  return { kind: "", payload: "" };
-}
-
-export const WorldEvent: MessageFns<WorldEvent> = {
-  encode(message: WorldEvent, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
-    if (message.kind !== "") {
-      writer.uint32(10).string(message.kind);
-    }
-    if (message.payload !== "") {
-      writer.uint32(18).string(message.payload);
-    }
-    return writer;
-  },
-
-  decode(input: BinaryReader | Uint8Array, length?: number): WorldEvent {
-    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
-    const end = length === undefined ? reader.len : reader.pos + length;
-    const message = createBaseWorldEvent();
-    while (reader.pos < end) {
-      const tag = reader.uint32();
-      switch (tag >>> 3) {
-        case 1: {
-          if (tag !== 10) {
-            break;
-          }
-
-          message.kind = reader.string();
-          continue;
-        }
-        case 2: {
-          if (tag !== 18) {
-            break;
-          }
-
-          message.payload = reader.string();
-          continue;
-        }
-      }
-      if ((tag & 7) === 4 || tag === 0) {
-        break;
-      }
-      reader.skip(tag & 7);
-    }
-    return message;
-  },
-
-  create<I extends Exact<DeepPartial<WorldEvent>, I>>(base?: I): WorldEvent {
-    return WorldEvent.fromPartial(base ?? ({} as any));
-  },
-  fromPartial<I extends Exact<DeepPartial<WorldEvent>, I>>(object: I): WorldEvent {
-    const message = createBaseWorldEvent();
-    message.kind = object.kind ?? "";
-    message.payload = object.payload ?? "";
-    return message;
-  },
-};
-
 function createBaseServerMsg(): ServerMsg {
   return {
     roomState: undefined,
@@ -3900,7 +3834,6 @@ function createBaseServerMsg(): ServerMsg {
     siegeResult: undefined,
     familyMsg: undefined,
     sectMsg: undefined,
-    worldEvent: undefined,
     nationMsg: undefined,
     matchBot: undefined,
     duelInvited: undefined,
@@ -3972,9 +3905,6 @@ export const ServerMsg: MessageFns<ServerMsg> = {
     }
     if (message.sectMsg !== undefined) {
       SectMsg.encode(message.sectMsg, writer.uint32(170).fork()).join();
-    }
-    if (message.worldEvent !== undefined) {
-      WorldEvent.encode(message.worldEvent, writer.uint32(178).fork()).join();
     }
     if (message.nationMsg !== undefined) {
       NationMsg.encode(message.nationMsg, writer.uint32(186).fork()).join();
@@ -4166,14 +4096,6 @@ export const ServerMsg: MessageFns<ServerMsg> = {
           message.sectMsg = SectMsg.decode(reader, reader.uint32());
           continue;
         }
-        case 22: {
-          if (tag !== 178) {
-            break;
-          }
-
-          message.worldEvent = WorldEvent.decode(reader, reader.uint32());
-          continue;
-        }
         case 23: {
           if (tag !== 186) {
             break;
@@ -4280,9 +4202,6 @@ export const ServerMsg: MessageFns<ServerMsg> = {
       : undefined;
     message.sectMsg = (object.sectMsg !== undefined && object.sectMsg !== null)
       ? SectMsg.fromPartial(object.sectMsg)
-      : undefined;
-    message.worldEvent = (object.worldEvent !== undefined && object.worldEvent !== null)
-      ? WorldEvent.fromPartial(object.worldEvent)
       : undefined;
     message.nationMsg = (object.nationMsg !== undefined && object.nationMsg !== null)
       ? NationMsg.fromPartial(object.nationMsg)

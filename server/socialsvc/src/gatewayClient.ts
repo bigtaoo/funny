@@ -7,7 +7,7 @@ export type SocialPushMsg =
   | {
       kind: 'family_msg';
       familyId: string;
-      fromAccountId: string;
+      fromPublicId: string;
       fromName: string;
       title?: string;
       familyName?: string;
@@ -19,7 +19,7 @@ export type SocialPushMsg =
       // Delegated push: forwarded from worldsvc/metaserver via /internal/push
       kind: 'sect_msg';
       sectId: string;
-      fromAccountId: string;
+      fromPublicId: string;
       fromName: string;
       title?: string;
       sectName?: string;
@@ -30,7 +30,7 @@ export type SocialPushMsg =
   | {
       kind: 'nation_msg';
       worldId: string;
-      fromAccountId: string;
+      fromPublicId: string;
       fromName: string;
       title?: string;
       sectName?: string;

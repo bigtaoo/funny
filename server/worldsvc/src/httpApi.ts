@@ -228,7 +228,10 @@ export function startHttpApi(
         if (method === 'GET' && path === '/world/me') {
           const worldId = q.get('worldId');
           if (!worldId) return sendErr(res, ErrorCode.BAD_REQUEST, 'worldId required');
-          return send(res, 200, ok(await svc.getMe(worldId, accountId)));
+          // serverNow (P1-1 clock-offset sample): getMe is the highest-frequency SLG round-trip, so
+          // it's the natural place for the client to (re-)calibrate against server-issued epoch
+          // timestamps (march ETA, build/train queue completeAt, …) — see client/src/net/serverClock.ts.
+          return send(res, 200, ok({ ...(await svc.getMe(worldId, accountId)), serverNow: Date.now() }));
         }
         if (method === 'GET' && path === '/world/map') {
           const worldId = q.get('worldId');
@@ -338,6 +341,28 @@ export function startHttpApi(
           return send(res, 200, ok(await svc.joinWorld(worldId, accountId)));
         }
 
+        // ── Aggregated SLG-entry fetch (P1-5, comm-audit-2026-07-27): one round-trip replacing the
+        // 9-request waterfall WorldMapNet.loadData() used to fire on every world-map entry. The
+        // composition itself lives in svc.enterWorld (unit/e2e-testable in isolation); this handler
+        // just adds the sibling nationChannelSvc read and shapes the HTTP response. ──
+        if (method === 'POST' && path === '/world/enter') {
+          const body = await readJson(req);
+          const worldId = typeof body.worldId === 'string' ? body.worldId : null;
+          if (!worldId) return sendErr(res, ErrorCode.BAD_REQUEST, 'worldId required');
+          const r = numQ(typeof body.r === 'number' ? String(body.r) : null, 10);
+          const zoom = body.zoom === 2 || body.zoom === 3 ? body.zoom : 1;
+
+          const [entry, worldChannel] = await Promise.all([
+            svc.enterWorld(worldId, accountId, r, zoom),
+            nationChannelSvc.getChannel(worldId, accountId, undefined, 20),
+          ]);
+          return send(res, 200, ok({
+            ...entry,
+            me: { ...entry.me, serverNow: Date.now() },
+            worldChannel,
+          }));
+        }
+
         // ── Occupy / abandon / relocate / watchtower (S8-1, implemented, requires coordinates) ──
         if (
           method === 'POST' &&
@@ -359,7 +384,10 @@ export function startHttpApi(
             return send(res, 200, ok(await svc.relocateBase(worldId, accountId, x, y)));
           }
           if (path === '/world/watchtower') {
-            return send(res, 200, ok(await svc.buildWatchtower(worldId, accountId, x, y)));
+            // P1-3: attach `me` (resources spent aren't visible on the tile itself) so the client
+            // doesn't need a separate GET /world/me round-trip after every watchtower build.
+            const tile = await svc.buildWatchtower(worldId, accountId, x, y);
+            return send(res, 200, ok({ ...tile, me: await svc.getMe(worldId, accountId) }));
           }
           return send(res, 200, ok(await svc.abandonTile(worldId, accountId, x, y)));
         }
@@ -374,7 +402,11 @@ export function startHttpApi(
           if (!worldId) return sendErr(res, ErrorCode.BAD_REQUEST, 'worldId required');
           if (!Number.isFinite(x) || !Number.isFinite(y)) return sendErr(res, ErrorCode.BAD_REQUEST, 'x/y required');
           if (!kind) return sendErr(res, ErrorCode.BAD_REQUEST, 'kind must be arrowTower or blocker');
-          return send(res, 200, ok(await svc.buildStructure(worldId, accountId, x, y, kind)));
+          // P1-3: attach `me` — same reasoning as /world/watchtower above.
+          {
+            const tile = await svc.buildStructure(worldId, accountId, x, y, kind);
+            return send(res, 200, ok({ ...tile, me: await svc.getMe(worldId, accountId) }));
+          }
         }
         if (method === 'POST' && path === '/world/structure/demolish') {
           const body = await readJson(req);
@@ -404,11 +436,13 @@ export function startHttpApi(
           if (![fromX, fromY, toX, toY].every(Number.isFinite)) {
             return sendErr(res, ErrorCode.BAD_REQUEST, 'fromX/fromY/toX/toY required');
           }
-          return send(
-            res,
-            200,
-            ok(await svc.startMarch(worldId, accountId, fromX, fromY, toX, toY, kind as MarchKind, troops, teamId, stationMode)),
-          );
+          {
+            // P1-3: attach `me` (troops/resources committed to the march aren't visible on the march
+            // itself) — the client adopts this directly and locally appends the march to its cached
+            // list, instead of following up with GET /world/march + GET /world/me.
+            const march = await svc.startMarch(worldId, accountId, fromX, fromY, toX, toY, kind as MarchKind, troops, teamId, stationMode);
+            return send(res, 200, ok({ ...march, me: await svc.getMe(worldId, accountId) }));
+          }
         }
         {
           const m = /^\/world\/march\/([^/]+)\/recall$/.exec(path);

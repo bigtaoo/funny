@@ -1,5 +1,5 @@
 // Data loading for the family scene: fetch membership, family detail, and channel messages.
-import type { FamilyDetailView } from '../../net/WorldApiClient';
+import type { FamilyDetailView, FamilyMessageView } from '../../net/WorldApiClient';
 import { type Constructor, type FamilySceneBaseCtor } from './base';
 
 export interface DataHandlers {
@@ -7,6 +7,7 @@ export interface DataHandlers {
   loadMyFamily(familyId: string): Promise<void>;
   loadChannel(): Promise<void>;
   loadJoinRequests(): Promise<void>;
+  applyFamilyMsg(msg: FamilyMessageView): void;
 }
 
 export function DataMixin<TBase extends FamilySceneBaseCtor>(Base: TBase): TBase & Constructor<DataHandlers> {
@@ -64,6 +65,22 @@ export function DataMixin<TBase extends FamilySceneBaseCtor>(Base: TBase): TBase
         this.joinRequests = [];
       }
       if (!this.destroyed) this.render();
+    }
+
+    /**
+     * Received a real-time family channel message (gateway push, socialsvc → gateway) → deduplicate,
+     * insert, and re-render if needed. Mirrors SectScene's applySectMsg; messages are newest-first
+     * (consistent with getFamilyChannel), so new messages are unshifted to the front.
+     */
+    applyFamilyMsg(msg: FamilyMessageView): void {
+      if (this.destroyed) return;
+      if (this.messages.some((m) => m.ts === msg.ts && m.senderId === msg.senderId && m.body === msg.body)) {
+        return; // deduplicate with polling / resend
+      }
+      this.messages.unshift(msg);
+      // Landscape shows the channel column permanently (split view), so re-render regardless of
+      // the active tab; portrait only needs it while the channel tab is showing.
+      if (this.mode === 'myFamily' && (this.landscape || this.activeTab === 'channel')) this.render();
     }
   };
 }

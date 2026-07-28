@@ -1413,3 +1413,39 @@ L1 从需 660 兵降到 300（最小占地 500 现稳赢，直击病灶）；L2/
 **验证**：`strongholdCombatRun.ts` 重跑两个常量均 PASS；`server/shared/test/siege.test.ts`（39）、`server/tools/econ-sim` 的 `strongholdCombat.test.ts`（11，已改写为验证线性分流不变量而非真实引擎胜率）、`server/worldsvc` 全量 e2e（44 文件/338 用例，含 `stronghold.e2e.test.ts`/`passage.e2e.test.ts`/`siege-cheap-fallback.test.ts`）全绿；`tsc --noEmit` 在 `@nw/shared`/`@nw/econ-sim`/`@nw/worldsvc` 三包均通过。`worldsvc` 两组 e2e 测试里假设"6,000 兵吊打旧守军"的用例已按新守军（11,800/10,350）提到 15,000 兵，"12,000 兵满行囊撞棋盘上限"用例的过时注释（"12,000 是满级练兵场+行囊上限"）一并订正为当前真实上限 20,000（ADR-048 同一次改动带来的）。
 
 **遗留跟进（非本轮范围）**：①`STRONGHOLD_GARRISON_PER_LEVEL`/`CROSSING_GARRISON_PER_LEVEL` 现在的"安全余量"是几百到上千兵的线性比较，不再是引擎棋盘拥堵那种脆弱窗口，但尚未针对装备/学院加成（文档记载最高 +20%）做过鲁棒性复核——如果有人把这个门槛当作"精确卡点"而非"大致正确、后续可微调"来依赖，建议先补测；②`shouldUseCheapSiege` 本身已经解决了"棋盘容量 vs 引擎"的根因问题，但这次踩坑说明**校准工具（`strongholdCombat.ts`）和生产分流逻辑（`siegeEngine.ts`）存在重复实现、容易脱节**——两处未来任何一处改动都需要人工同步另一处，值得考虑做成共享模块或加一个"两者行为一致"的跨包契约测试。
+
+## 42. 进 SLG 世界地图的 9 跳请求瀑布合并为单次 `POST /world/enter`（2026-07-27/28，comm-audit-2026-07-27 P1-5）
+
+> 状态：**已实现**。承 2026-07-27 前后端通信全审计（4 个子代理并行扫 meta/world/auction/social 的 REST/WS/契约，产出 15 P0 + P1/P2 backlog，用户拍板"按顺序全部修复"）。本条是 P1 优先级的第 5 项；同批 P1 的 P1-1（`serverClock.ts` 时钟纠偏）、P1-2（世界地图删除 5s 轮询定时器）、P1-3（`startMarch`/`buildWatchtower`/`buildStructure` 响应挂 `me`，顺带修正 `abandonTile`/`buySlgShopItem` 契约错报）已在 `ea8f569c` 提交；本条完成收尾。
+
+**背景**：`WorldMapNet.loadData()`（进 SLG 地图时唯一入口，`WorldMapScene` 构造函数里 `void ctx.net.loadData()`）原本依次/半并行发 9 个请求：`getSeason`→`getNations`→`getMe`→`joinWorld`→（据 `me.mainBaseTile` 定位相机后）`getMap`/`getMapSparse`→`Promise.all([getMarches, getOccupations, getStationed])`→`getWorldChannel`。前 6 跳里 `getMap` 真正依赖 `joinWorld` 的结果（相机需先按 `mainBaseTile` 居中才能算出视口窗口 `cx/cy`），其余请求彼此独立、只是凑巧写成了顺序代码。
+
+**方案**：把「先解出 base tile 再决定地图窗口」这一步整体挪到服务端——worldsvc 新增 `WorldService.enterWorld(worldId, accountId, r, zoom)`（`server/worldsvc/src/service.ts`）：内部先 `getMe`→`joinWorld`（复用既有 ADR-025 heal-on-entry 语义不变），从解出的 `mainBaseTile` 直接算 `cx/cy`（无基地/世界满员兜底为地图几何中心），再用 `Promise.all` 并发拉 `season`/`nations`/`map`或`mapSparse`（按 `zoom` 二选一）/`marches`/`occupations`/`stationed`。`r`（视口半径）由客户端自己算好传入——它只取决于画布尺寸，不依赖尚未知道的相机中心，`WorldMapRenderer/viewport.ts` 的 `viewportCenter()` 本来就把这两者分开算。`nation/channel`（世界频道，本就没有 openapi-world.yml 契约声明，遗留缺口记为 P2）由 `httpApi.ts` 的 `/world/enter` 路由处理器并行拉取后拼进最终响应——保持 `WorldService` 的组合逻辑不依赖兄弟服务 `NationChannelService`，方便独立单测。`justJoined`（是否本次首次落户，用于"这是你的新家"欢迎 toast）改由服务端算好回传——原客户端逻辑靠"先读一次 getMe 存 wasJoined，再读一次 joinWorld 结果比较"，一旦两次读并成一次就再也看不到中间态，故服务端在 `joinWorld` 调用前后各取一次快照算出该布尔值直接下发。
+
+**未改动**：`WorldMapNet` 的 `loadMapViewport()`/`refreshMarches()`/`refreshWorldChat()`/`refreshMe()` 四个方法本身保留不动——它们在平移换视口、点击后局部刷新、5s 行军轮询（P1-2 已删的是*进图时*那次，其余轮询点未受影响）等场景下仍被独立调用；只有 `loadData()`（进图那一次性入口）改为调用新的 `enterWorld()` 单次聚合请求。
+
+**契约**：`server/contracts/openapi-world.yml` 新增 `POST /world/enter`（`worldId` + `r` + `zoom` 请求体；响应聚合 `season`/`nations`/`me`(含 `justJoined`)/`map`或`mapSparse`/`marches`/`occupations`/`stationed`/`worldChannel`）。`season` 字段声明为 `nullable`（世界文档未建时 `getSeason` 本就返回 `null`，客户端相应地保留旧代码"season 拉取失败则维持默认 mapW/mapH"的降级路径，没有像 P0 那批 bug 一样对 null 解引用）。worldsvc 路由仍是手写 `if (method/path)` 分派（无 fastify-openapi-glue），故契约变更需分别跑 `gen:api:world`（重生成 `routes.gen.ts`，CI diff 用，httpApi.ts 路由本身仍手写）与 client 的 `rest:gen`（`openapi-world.ts`）。
+
+**测试**：`server/worldsvc/test/enter-world.e2e.test.ts`（新增，4 例，真实 Mongo）——首次进入即 join 且 `justJoined:true`、地图窗口覆盖新基地锚点；二次进入 `justJoined:false`；`zoom` 2/3 出 `mapSparse` 不出 `map`；未建世界文档时 `season` 为 `null`（契约可空分支的回归覆盖）。
+
+**验证**：`server/worldsvc`、`server/metaserver`、`client`（`tsc --noEmit`）三包全绿；`server/worldsvc` 全量 vitest 45 文件/345 例全绿；`client` 单元 112/794 + UI 92/807 全绿；contract codegen（`bundle-openapi.mjs --check` / `gen-openapi-server.mjs --check` / `gen-openapi-world.mjs --check`）三者均 check-passed，无漂移；`client` 生产 webpack 构建（`build:web`）成功。未做真人截图走查——本机 Docker Desktop 的 Linux engine 未起（`docker ps` 报 npipe 不可达），也没有原生 Mongo/Redis，无法拉起完整后端栈；改以贴近生产路径的真实 e2e/单元测试作为验证证据（同 §40 一次遇到 dev-up.ps1 卡住时的既有先例）。
+
+## 43. comm-audit-2026-07-27 P2 契约治理清理项——分拣结果（2026-07-28）
+
+> P1 全部收尾（§42）后，按原审计留下的 8 项 P2 backlog（契约治理/死代码清理，优先级低于 P0/P1，原计划"有时间再做"）逐项核实现状再决定取舍，而非照单全收地全改——8 项里有 2 项审计当时的判断本身已经不成立，动手前先核实省下了返工。
+
+**已修复（2 项，风险小、范围明确）**：
+- **协议字段 `world_event`（`transport.proto`）确认死代码**：字段设计于 `SLG_DESIGN.md`§一个"赛季事件推送"草案，但 `Gateway.ts` 的推送分派 `switch`（`toServerMsg`）从未加过对应 `case`，client 也没有任何地方读 `message.worldEvent`——从 `nation_msg` 上线后就被后者取代，纯遗留占位。按本仓既有先例（`JudgeRequest reserved 7,9`，2026-07-26 移除 `pve_upgrades`/`unit_levels` 时立的规矩）在 `ServerMsg` 内加 `reserved 22;` + 说明注释，删除 `world_event` 字段本体与整个 `WorldEvent` message 定义，`metaserver`/`gateway`/`gameserver`/`botsvc`/`client` 五处各自 `npm run proto:gen` 重新生成。
+- **`progression.ts` 错误码/HTTP 状态错配**：`claimBattlePass` 的 `PASS_REQUIRED`（付费轨未购买）分支原写成 `reply.code(403).send(err(ErrorCode.NOT_FOUND, ...))`——HTTP 403 配了语义为"未找到"的 `ErrorCode.NOT_FOUND`，与本仓共享的 `ERROR_HTTP_STATUS[NOT_FOUND]=404` 映射表不一致（worldsvc/auctionsvc/socialsvc 都统一走这张表，metaserver 因为手写 `reply.code(N)` 才会在个别点位跟表脱节）。改用语义相符、同样映射到 403 的 `ErrorCode.NO_PERMISSION`（`economy.ts:446` 的"growth pack window closed"已是同一用法的先例）。
+
+**核实后判定无需修复（2 项，原审计误判）**：
+- **`defense_json`"死字段"判定不成立**：该字段其实是 SLG 攻城 headless 判定重放的活跃载荷（`judgeRunner.ts` 的 `runSiegeJudge` 分支），2026-07-26 的提交还专门把新字段类比它的"opacity contract"——原审计这条结论有误，予以撤销，不做任何改动。
+- **"meta/socialsvc 社交端点重复实现"判定不成立**：`server/metaserver/src/service/social.ts` 除 `claimMail`（文件头注释已说明：socialsvc 原子标记领取态，meta 负责实际发货，职责分工非重复）外，其余全部是纯代理转发，未发现重复业务逻辑。
+
+**明确推迟（4 项，需要独立会话，本轮不动）**：
+- **`world`/`auction`/`social` 三份 openapi 契约缺 4xx/5xx 错误响应声明**：核实属实（三份契约 100% 路径都只声明了 `'200'`，且均无 `ErrorResp` 组件），添加本身对代码生成零风险（生成脚本对无 `content` 的 `$ref` 响应本就静默跳过），但体量不小（约 90 个 path，需逐个补两三行），留作下一轮契约治理任务单独做，不跟这次的 P1 收尾混在一起。
+- **`/pve/upgrade` 死代码清理**：服务端路由/测试仍完整存在，但客户端唯一调用点 `SaveManager.upgrade()` 已标 `@deprecated` 且零调用方——删除牵涉契约片段、生成产物、`MetaHandlers` 类型、client `ApiClient`/`SaveManager`、既有 e2e 用例改写，跨 client+server+生成产物+测试多处，非"删几行"的量级，留作独立任务。
+- **`SERVER_API.md` §3/§8.4 与实现严重漂移**：文档还写着控制面"JSON 或 protobuf 均可"，实际早已切到纯二进制 protobuf `Envelope`；且 §3/§8.4 的推送种类表遗漏了 `friend_*`/`chat_message`/`mail_new`/`march_update`/`family_msg`/`nation_msg` 等十几个已上线的推送类型——不是小修，需要逐条核对 `Gateway.ts` 当前行为重写两张协议表，留作独立文档任务。
+- **`GET /save` 响应瘦身**：`EQUIPMENT_DESIGN.md`§已有明确记录——"阶段二"瘦身已在 2026-07-26 为五个装备操作端点做过，`GET /save` 当时就被**有意排除**在外（该响应本来就要带材料/金币/进度等大量必需字段，瘦身收益不如那五个纯装备接口），本轮若要重新动它等于推翻两天前才做的、有理有据的决定，需要重新论证再改，不在本轮范围内。
+
+**验证**：`server/metaserver`/`server/gateway`/`server/gameserver`/`server/botsvc`/`client` 五包 `tsc --noEmit` 全绿；对应 vitest 全量分别为 metaserver 56/697、gateway 3/27、gameserver 3/46、botsvc 9/39、client 单元 112/794，均绿（worldsvc 未受本轮 P2 改动影响，沿用 §42 的 45/345）。`grep WorldEvent` 确认五处生成产物均已清除。

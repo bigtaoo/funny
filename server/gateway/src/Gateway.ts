@@ -486,7 +486,14 @@ export class Gateway {
     const { name, publicId, equippedTitle, avatarId } = await this.resolveProfile(accountId);
     if (!this.conns.has(accountId)) return;
     log.info('-> matchsvc enqueue', { accountId, elo, deckSize: deck.length });
-    this.matchsvc.enqueue(accountId, name, publicId, elo, equippedTitle, avatarId, '', deck);
+    const ok = await this.matchsvc.enqueue(accountId, name, publicId, elo, equippedTitle, avatarId, '', deck);
+    // Retries are already exhausted inside matchsvc.enqueue (see matchsvcClient's postInternal
+    // retries=2) — a false here means the command never landed at all, so the client's
+    // "searching" UI would otherwise wait forever with no signal (P0-7, comm-audit finding B8).
+    if (!ok && this.conns.has(accountId)) {
+      log.warn('ranked enqueue failed after retries: notifying client', { accountId });
+      this.push(accountId, { kind: 'room_error', code: 'RANKED_UNAVAILABLE', message: 'matchmaking unreachable' });
+    }
   }
 
   /**
@@ -500,7 +507,13 @@ export class Gateway {
     const deck = this.resolvedDeck(accountId, submittedDeck, elo);
     const { name, publicId, equippedTitle, avatarId } = await this.resolveProfile(accountId);
     if (!this.conns.has(accountId)) return;
-    this.matchsvc.roomCreate(accountId, name, publicId, equippedTitle, avatarId, deck);
+    const ok = await this.matchsvc.roomCreate(accountId, name, publicId, equippedTitle, avatarId, deck);
+    // No retry inside roomCreate (not idempotent) — a single failed attempt still deserves an
+    // explicit error instead of leaving the "connecting" UI stuck with no signal (P0-7).
+    if (!ok && this.conns.has(accountId)) {
+      log.warn('room create failed: notifying client', { accountId });
+      this.push(accountId, { kind: 'room_error', code: 'MATCHMAKING_UNAVAILABLE', message: 'matchmaking unreachable' });
+    }
   }
 
   /** Friendly room join: same current-elo deck gating as create (PVP_LOADOUT §6.3). */
@@ -510,7 +523,11 @@ export class Gateway {
     const deck = this.resolvedDeck(accountId, submittedDeck, elo);
     const { name, publicId, equippedTitle, avatarId } = await this.resolveProfile(accountId);
     if (!this.conns.has(accountId)) return;
-    this.matchsvc.roomJoin(accountId, name, publicId, code, equippedTitle, avatarId, deck);
+    const ok = await this.matchsvc.roomJoin(accountId, name, publicId, code, equippedTitle, avatarId, deck);
+    if (!ok && this.conns.has(accountId)) {
+      log.warn('room join failed: notifying client', { accountId });
+      this.push(accountId, { kind: 'room_error', code: 'MATCHMAKING_UNAVAILABLE', message: 'matchmaking unreachable' });
+    }
   }
 
   /**

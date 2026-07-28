@@ -47,7 +47,7 @@ import type { RoomSceneCallbacks } from '../scenes/RoomScene';
 import type { FriendsSceneCallbacks } from '../scenes/FriendsScene';
 import type { ChatSceneCallbacks } from '../scenes/ChatScene';
 import type { WorldMapCallbacks, WorldMapView } from '../scenes/WorldMapScene';
-import type { FamilySceneCallbacks } from '../scenes/FamilyScene';
+import type { FamilySceneCallbacks, FamilySceneView } from '../scenes/FamilyScene';
 import type { SectSceneCallbacks, SectSceneView } from '../scenes/SectScene';
 import type { AuctionSceneCallbacks } from '../scenes/AuctionScene';
 import type { DefenseEditorCallbacks } from '../scenes/DefenseEditorScene';
@@ -227,8 +227,8 @@ export interface AppViews {
   showChat(cb: ChatSceneCallbacks, opts?: MountOpts): ChatView;
   /** SLG world map (S8). Returns a handle the core forwards live SLG pushes to. Always cross-fades in — entering the SLG. */
   showWorldMap(cb: WorldMapCallbacks): WorldMapView;
-  /** SLG family hub (S8-4). `opts.overlay` opens it over the live SLG map (see {@link MountOpts}). */
-  showFamily(cb: FamilySceneCallbacks, opts?: MountOpts): void;
+  /** SLG family hub (S8-4). Returns a handle the core forwards live family-channel pushes to. `opts.overlay` opens it over the live SLG map (see {@link MountOpts}). */
+  showFamily(cb: FamilySceneCallbacks, opts?: MountOpts): FamilySceneView;
   /** SLG sect hub (S8-4b). Returns a handle the core forwards live sect-channel pushes to. `opts.overlay` opens it over the live SLG map. */
   showSect(cb: SectSceneCallbacks, opts?: MountOpts): SectSceneView;
   /** SLG auction house (S8-5). `opts.overlay` opens it over the live SLG map (see {@link MountOpts}). */
