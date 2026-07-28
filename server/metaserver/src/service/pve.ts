@@ -444,10 +444,11 @@ export function PveMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase & Const
     /**
      * Consolidated post-verification reward delivery for the pveVerify (L1 spot-check) path — same
      * write-amplification fix as settleNormalClear, scoped to this caller's actual writes: material/
-     * equipment grant + judged-stat accrual in one mutateSave. Progress/stars were already written at
-     * spot-check submission time (writeClearProgress), and this path does not bump the daily retention
-     * task or event task — that asymmetry (spot-checked clears don't count toward them) is pre-existing
-     * behavior, unchanged by this consolidation. `statsJson` is the judge's re-simulation output (only
+     * equipment grant + judged-stat accrual + daily retention task in one mutateSave (event task is bumped
+     * separately by the caller, pveVerify, mirroring pveClear's B6 call). Progress/stars were already
+     * written at spot-check submission time (writeClearProgress). Fixed 2026-07-28: this path used to skip
+     * the retention/event tasks entirely, so "Clear any PvE level" silently stayed incomplete for any
+     * first-time-clear-of-the-day (always spot-checked) or ~10%-sampled clear. `statsJson` is the judge's re-simulation output (only
      * passed for a 'verified' verdict — pveVerify passes undefined for 'unverified' benefit-of-doubt
      * deliveries) and is parsed the same defensive way accrueJudgedPveStats used to.
      */
@@ -489,6 +490,12 @@ export function PveMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase & Const
           const stats = accrueStats(next.stats, cleanStats);
           if (stats !== next.stats) next = { ...next, stats };
         }
+        // Fix (2026-07-28): spot-checked clears used to skip the daily/event "clear PvE level" tasks
+        // entirely (see settleNormalClear's B5 comment for the counterpart on the non-spot-check path).
+        // Bump it here too once the reward is actually delivered (verified or benefit-of-doubt unverified;
+        // rejected clears never reach this function).
+        const nextRetention = accrueRetentionTask(next.retention, 'pve.clear', now());
+        if (nextRetention !== next.retention) next = { ...next, retention: nextRetention };
         return next;
       });
       if ('error' in out) return out;
@@ -775,6 +782,8 @@ export function PveMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase & Const
         status === 'verified' ? verdict.statsJson : undefined,
       );
       if ('error' in granted) return reply.code(409).send(err(ErrorCode.REV_CONFLICT, granted.error));
+      // B6 counterpart for the spot-check path (best-effort, mirrors the normal-clear path in pveClear).
+      accrueEventTask(cols, accountId, 'pve.clear', now()).catch(() => {});
       return ok({
         save: granted.save,
         granted: granted.granted,

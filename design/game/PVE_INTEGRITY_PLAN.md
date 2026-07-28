@@ -245,6 +245,21 @@ bump（字段不变）。客户端 `extractSyncPatch` 去掉这三段；服务�
   e2e 用例断言 `gateway.judge()` 收到的 `cardInstancesJson`/`equipmentInvJson` 与账号真实 `cardInv`/`equipmentInv`
   完全一致。
 
+- ✅（2026-07-28 修复）**spot-check 路径的通关从不计入每日/活动"通关任意 PvE 关卡"任务**：`pve.ts`
+  `pveClear` 分两条结算路径——`settleNormalClear`（B5/B6 会调 `accrueRetentionTask('pve.clear')` +
+  `accrueEventTask('pve.clear')`）和 spot-check 分支（`shouldSpotCheck` 命中时不发材料，转 `/pve/verify`
+  异步结算，走 `deliverVerifiedClearReward`）。此前 `deliverVerifiedClearReward` 从未调用这两个打点
+  函数（旧注释曾把这写成"pre-existing 的既有行为，本次改动不动它"，见 `e66daa26` commit message）。
+  而 `shouldSpotCheck` 对**当天首次通关某关**是**必定命中**的（`isFirstClear` 直接短路 true）——也就是说
+  按主线正常推图的玩家，只要当天打的是没通关过的新关（如首通某章某关），"通关任意 PvE 关卡"的每日任务
+  必定不会被计入；只有重复刷已通关关卡（走 ~10% 随机抽检之外的路径）才会命中 `settleNormalClear` 计入。
+  账号 `tao` 通关 ch3-2（当日首通）复现。**修复**：`deliverVerifiedClearReward` 的 `mutateSave` 里
+  同步调 `accrueRetentionTask(next.retention, 'pve.clear', now())`（幂等，同一天多次调用只记一次，
+  `pveClear` 的 spot-check 分支和 `pveVerify` 是两次独立请求也不会重复计分）；`pveVerify` 在
+  `deliverVerifiedClearReward` 成功后追加 `accrueEventTask(cols, accountId, 'pve.clear', now())`
+  （best-effort，镜像 `pveClear` 里 B6 的调用方式）。`rejected` 路径提前 return，不受影响（依然不计入，
+  符合"作弊嫌疑不给任务奖励"的预期）。
+
 - **⚠️ 新发现的相关 gap（2026-07-26 排查副产品，未修）：L0"开局战力不符"异常检测自 CC-1 起永久失效**：
   `pve.ts:412-416` 的 `blueprintMismatch` 判据比较客户端上报的 `unitLevels`/`pveUpgrades`（`/pve/clear` 请求体，
   §0"开局战力不符→必作弊"的判据来源）与服务器权威值；但客户端 `SaveManager.recordClear` 目前**永远**只传
