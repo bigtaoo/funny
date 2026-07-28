@@ -534,8 +534,15 @@ export function createGameNav(ctx: AppCtx): GameNav {
           level_id: levelId,
           ...matchBadgeTelemetry(stats[0]),
         });
-        const outroText = (winner === 0 && level.story?.outroKey) ? t(level.story.outroKey as TranslationKey) : undefined;
-        void nav.goResult(winner, stats, 0, kept, undefined, undefined, outroText, goCampaignMap, t('result.backToMap'));
+        // Ch6's last level chains a second screen (epilogueKey) after the usual chapter outro —
+        // the campaign's real-world frame-story close. Every other level's story has no
+        // epilogueKey, so this stays a single-element array for them.
+        const outroTexts = winner === 0
+          ? [level.story?.outroKey, level.story?.epilogueKey]
+              .filter((k): k is TranslationKey => !!k)
+              .map((k) => t(k))
+          : undefined;
+        void nav.goResult(winner, stats, 0, kept, undefined, undefined, outroTexts, goCampaignMap, t('result.backToMap'));
       },
       onExitToLobby() {
         analytics.track('level_abandon', { level_id: levelId, phase: 'in_game' });

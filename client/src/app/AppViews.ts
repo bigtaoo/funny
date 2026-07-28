@@ -159,8 +159,8 @@ export interface ResultViewProps {
   elo?: EloResult;
   profiles?: { opponent?: ProfileData; local?: ProfileData };
   cb: ResultSceneCallbacks;
-  /** Pre-translated outro story text shown as a tap-through overlay before the result. */
-  outroText?: string;
+  /** Pre-translated outro story screens, shown as tap-through overlays (in order) before the result. */
+  outroTexts?: string[];
 }
 
 /**
