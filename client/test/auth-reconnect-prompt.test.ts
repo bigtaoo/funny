@@ -28,6 +28,7 @@ function fakeSaveManager(opts: { activeMatch?: ActiveMatchInfo | null; accountId
     adoptSession: vi.fn(async () => true),
     bootstrap: vi.fn(async () => true),
     clearSyncedLocalSections: vi.fn(),
+    resetForLogout: vi.fn(async () => {}),
     get: vi.fn(() => ({ accountId: opts.accountId ?? 'acc-1' })),
     consumeActiveMatch: vi.fn(() => {
       const m = pending;

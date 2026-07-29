@@ -24,6 +24,7 @@
 
 import { recentClientLogs, netLog, setErrorSink } from './log';
 import { getApiBaseUrl } from './config';
+import type { IStorage } from '../platform/IPlatform';
 
 const log = netLog('anomaly');
 
@@ -54,8 +55,21 @@ function platformName(): string {
   return t === 'wechat' || t === 'crazygames' ? t : 'web';
 }
 
+// Injected once from app.ts (platform.storage) so this module works on WeChat mini-game, which has
+// no global `localStorage` — reading straight off `globalThis.localStorage` silently returns nothing
+// there. Defaults to a `globalThis.localStorage` shim so existing tests (which stub the global) and
+// any pre-injection calls keep working on web.
+let storage: IStorage = {
+  getItem: (k) => { try { return globalThis.localStorage?.getItem(k) ?? null; } catch { return null; } },
+  setItem: (k, v) => { try { globalThis.localStorage?.setItem(k, v); } catch { /* ignore */ } },
+  removeItem: (k) => { try { globalThis.localStorage?.removeItem(k); } catch { /* ignore */ } },
+};
+
+/** Wire in the real platform storage (call once from app.ts, alongside initCrashSentinel/installAnomalyWatchers). */
+export function setAnomalyStorage(s: IStorage): void { storage = s; }
+
 function readPublicId(): string | null {
-  try { return globalThis.localStorage?.getItem('nw_player_public_id') ?? null; } catch { return null; }
+  try { return storage.getItem('nw_player_public_id'); } catch { return null; }
 }
 
 /** Build version baked in at compile time (short commit hash; '0.0.0' if unbaked). Attributes a recurring anomaly to a specific deploy — e.g. to rule out a long-open tab still running pre-fix code. */
@@ -307,8 +321,8 @@ const HEARTBEAT_MS = 15_000;
 
 interface Sentinel { startedAt: number; lastSeenAt: number; cleanExit?: boolean; lastError?: string; }
 
-function lsGet(k: string): string | null { try { return globalThis.localStorage?.getItem(k) ?? null; } catch { return null; } }
-function lsSet(k: string, v: string): void { try { globalThis.localStorage?.setItem(k, v); } catch { /* ignore */ } }
+function lsGet(k: string): string | null { try { return storage.getItem(k); } catch { return null; } }
+function lsSet(k: string, v: string): void { try { storage.setItem(k, v); } catch { /* ignore */ } }
 
 let sentinel: Sentinel | null = null;
 

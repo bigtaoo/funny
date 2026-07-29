@@ -180,9 +180,10 @@ Windows 上可做的验证仅限 `tsc --noEmit` + `webpack --env TARGET=mobile`�
 2. `capacitor.config.ts`：保持 `webDir: 'dist'`（本地包仍是首装兜底），**不设** `server.url`（那是路线 A）；已加手动模式插件配置：
    ```ts
    plugins: {
-     CapacitorUpdater: { autoUpdate: false, resetWhenUpdate: true },
+     CapacitorUpdater: { autoUpdate: false, resetWhenUpdate: true, autoDeletePrevious: true, autoDeleteFailed: true },
    },
    ```
+   `autoDeletePrevious`/`autoDeleteFailed` 本是插件 v6 自身默认值（均为 `true`），2026-07-29 客户端资源管理审计核实后**显式**写出，防止未来 `@capgo/capacitor-updater` 大版本升级悄悄改默认值、导致旧 OTA 包在设备本地无限累积（审计初稿曾误读插件 README 示例配置块里的 `false` 为默认值，已用 `node_modules/@capgo/capacitor-updater` 的 `definitions.d.ts`/README 默认值表核实更正）。
 3. OTA 逻辑在 [`src/platform/ota.ts`](../../client/src/platform/ota.ts) 的 `checkOtaUpdate()`，由 [`src/entries/mobile.ts`](../../client/src/entries/mobile.ts) 在 `startApp` 后 `void checkOtaUpdate()` 触发：`notifyAppReady()` → 拉 manifest → 版本 + `minNativeVersion` 比对 → `download()` → `next({id})`。
 4. **首个带插件的壳必须先走一次 App Store 发布**（§5）——OTA 无法给自己引导安装。此后纯 JS 改动才能走 OTA。
 

@@ -34,9 +34,15 @@ const MIGRATIONS: Array<(d: AnyObj) => AnyObj> = [
   },
   // v3 → v4: Hero Roster (CC-1). unitLevels + cardInventory + gear are dropped in favour of cardInv;
   // cardInv / equipmentInv are additive-only fields that fillDefaults backfills with {} (progression
-  // restarts per-card from L1). Just pin the version number so the chain length matches SAVE_VERSION.
+  // restarts per-card from L1). Explicitly delete the three retired fields (2026-07-29 fix,
+  // client-resource-mgmt audit) — fillDefaults' "preserve extra keys beyond def" pass (below) would
+  // otherwise carry them forward in the serialized save forever, since they're no longer part of
+  // SaveData/makeNewSave() and so never get overwritten, only ever silently accumulated.
   (d) => {
     d.version = 4;
+    delete d.unitLevels;
+    delete d.cardInventory;
+    delete d.gear;
     return d;
   },
   // v4 → v5: CollectionScene retirement (LOBBY_IA_REDESIGN §15 / ADR-038). Skin equip moves from the

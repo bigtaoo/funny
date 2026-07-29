@@ -283,6 +283,37 @@ export class SaveManager {
   }
 
   /**
+   * Full local reset on explicit logout (2026-07-29 fix — see `client-resource-mgmt-audit-2026-07-29`
+   * memory / claudedocs/client-modules.md): unlike clearSyncedLocalSections (equipped/flags/pvpDeck only,
+   * kept purely to avoid a UI flash of the old avatar/title before the next reconcile), this drops the
+   * ENTIRE local save (wallet/progress/cardInv/equipmentInv/materials/...) plus the offline pending-clear
+   * and pending-stamina-spend queues. Without this, a player who logs out and then either (a) plays
+   * offline before any next login, or (b) logs into a *different* account that later reconciles online,
+   * would see/keep the departing account's meta progress — and worse, any offline-queued PvE clears/
+   * stamina spends still sitting in `this.pending`/`this.pendingStamina` would get flushed and credited
+   * to whichever account is authenticated the next time `flushPending()` runs, i.e. a genuine cross-
+   * account reward leak, not just a display glitch.
+   *
+   * Best-effort flushes those queues first (while the departing account's token is still valid — callers
+   * MUST call this before `api.setToken(null)`) so real offline progress isn't silently discarded; a
+   * failed/offline flush is intentionally dropped afterward rather than kept, since holding onto another
+   * account's pending queue past logout is exactly the bug this fixes.
+   */
+  async resetForLogout(): Promise<void> {
+    if (this.online()) {
+      await this.flushPending();
+      await this.flushPendingStamina();
+    }
+    this.pending = [];
+    this.pendingStamina = [];
+    this.store.savePending(this.pending);
+    this.store.savePendingStamina(this.pendingStamina);
+    this.store.clearLocal();
+    this.save = this.store.loadLocal(); // fresh default save (migrate(null) → makeNewSave())
+    for (const listener of this.listeners) listener();
+  }
+
+  /**
    * Adopt an authoritative save pushed back by a server-side economy operation (shop/gacha/recharge/ad) (S2).
    * Unlike refresh, this directly consumes the receipt without issuing an additional request.
    */
