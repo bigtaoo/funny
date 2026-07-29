@@ -121,6 +121,57 @@ describe.skipIf(!mongo)('commercial service — idempotency / concurrency / boun
     expect((await ledgerOf('mch')).filter((l) => l.reason === 'monthly_card').length).toBe(1);
   });
 
+  // Regression for the audit-followup-fixes-0729 review: the sequential "resumes a stale charged order"
+  // test above doesn't prove concurrent resumers can't both finish the grant — `isStaleClaim` alone is a
+  // plain read with no atomicity between two callers that both cross the grace window together. Fire
+  // several concurrent resume attempts at once and confirm the `healClaimedAt` CAS (claimOrderResume,
+  // base.ts) lets exactly one of them run applySubscription.
+  it('monthlyCardBuy: CONCURRENT stale-claim resumers finish the grant exactly once (regression: claimOrderResume CAS)', async () => {
+    await m.collections.orders.insertOne({
+      _id: 'crashed-mc-concurrent',
+      accountId: 'mcc',
+      kind: 'grant',
+      cost: 0,
+      status: 'charged',
+      coinsAfter: 0,
+      result: {},
+      ts: t,
+    });
+    t += 20000; // past REPLAY_HEAL_GRACE_MS for every concurrent caller below
+    const calls = Array.from({ length: 8 }, () => svc.monthlyCardBuy({ accountId: 'mcc', orderId: 'crashed-mc-concurrent' }));
+    const res = await Promise.all(calls);
+    expect(res.every((r) => r.ok)).toBe(true);
+    // Exactly one caller won the resume CAS and ran applySubscription; the rest read the resulting wallet
+    // snapshot. 600 (not a multiple of 600), and exactly one ledger row, proves it ran once, not N times.
+    expect((await svc.getWallet('mcc')).coins).toBe(600);
+    expect((await m.collections.orders.findOne({ _id: 'crashed-mc-concurrent' }))?.status).toBe('delivered');
+    expect((await ledgerOf('mcc')).filter((l) => l.reason === 'monthly_card').length).toBe(1);
+  });
+
+  // Same shared claimOrderResume CAS (base.ts), exercised through starterBuy's growth-pack resume branch
+  // (starter.ts) instead of subscriptionCardBuy — a distinct call site that could independently have
+  // forgotten to check the CAS result even if the helper itself is correct.
+  it('starterBuy growth: CONCURRENT stale-claim resumers finish the grant exactly once (regression: claimOrderResume CAS)', async () => {
+    await m.collections.orders.insertOne({
+      _id: 'crashed-sg-concurrent',
+      accountId: 'sgc',
+      kind: 'grant',
+      cost: 0,
+      status: 'charged',
+      coinsAfter: 0,
+      result: {},
+      ts: t,
+    });
+    t += 20000;
+    const calls = Array.from({ length: 8 }, () =>
+      svc.starterBuy({ accountId: 'sgc', productId: 'starter_growth', orderId: 'crashed-sg-concurrent' }),
+    );
+    const res = await Promise.all(calls);
+    expect(res.every((r) => r.ok)).toBe(true);
+    expect((await m.collections.orders.findOne({ _id: 'crashed-sg-concurrent' }))?.status).toBe('delivered');
+    expect((await ledgerOf('sgc')).filter((l) => l.reason === 'starter_growth').length).toBe(1);
+  });
+
   it('monthlyCardBuy: does NOT resume a charged order still within the grace window', async () => {
     await m.collections.orders.insertOne({
       _id: 'fresh-mc',
@@ -296,6 +347,31 @@ describe.skipIf(!mongo)('commercial service — idempotency / concurrency / boun
     // No heal attempted — the winner's own credit() (not simulated here) is trusted to land on its own.
     expect((await ledgerOf('hc2')).filter((l) => l.reason === 'recharge').length).toBe(0);
     expect((await svc.getWallet('hc2')).coins).toBe(0);
+  });
+
+  // Regression for the audit-followup-fixes-0729 review: the sequential heal test above doesn't prove
+  // concurrent healers can't both credit — `isStaleClaim` is a plain read with no atomicity between two
+  // callers that both cross the grace window together. Fire several concurrent stale-claim replays at once
+  // and confirm the `healedAt` CAS (healRechargeCredit, recharge.ts) lets exactly one of them run credit().
+  it('rechargeVerify: CONCURRENT stale-claim healers credit a dropped recharge exactly once (regression: healedAt CAS)', async () => {
+    await fund('hcc', 0); // ensure a full wallet doc exists
+    await m.collections.recharges.insertOne({
+      _id: 'crashed-rc-concurrent',
+      accountId: 'hcc',
+      platform: 'web',
+      coinsGranted: 550,
+      status: 'granted',
+      rawReceipt: 'tier:t499',
+      ts: t,
+    });
+    t += 20000; // past REPLAY_HEAL_GRACE_MS for every concurrent caller below
+    const calls = Array.from({ length: 8 }, () =>
+      svc.rechargeVerify({ accountId: 'hcc', platform: 'web', receipt: 'tier:t499', receiptId: 'crashed-rc-concurrent' }),
+    );
+    const res = await Promise.all(calls);
+    expect(res.every((r) => r.ok)).toBe(true);
+    expect((await svc.getWallet('hcc')).coins).toBe(550);
+    expect((await ledgerOf('hcc')).filter((l) => l.reason === 'recharge').length).toBe(1);
   });
 
   it('rechargeVerify: concurrent same receiptId from two accounts → one credit, the other rejected (no cross-account leak)', async () => {
@@ -511,6 +587,34 @@ describe.skipIf(!mongo)('commercial service — idempotency / concurrency / boun
     // Only the call that wins the status:'charged'→'delivered' race may credit; 700+50, never 700+8×50.
     expect((await svc.getWallet('odc')).coins).toBe(750);
     expect((await ledgerOf('odc')).filter((l) => l.reason === 'gacha_refund').length).toBe(1);
+  });
+
+  // Regression for the audit-followup-fixes-0729 review: healOrderRefund's isStaleClaim gate is a plain
+  // ledger-absence read with no atomicity of its own — two concurrent stale-claim delivery callbacks could
+  // both see "no ledger entry yet" and both credit the refund. Simulate a crash between the delivered-status
+  // flip and the refund credit (hand-insert an already-'delivered' order with refundCoins recorded but no
+  // matching ledger entry, deliveredAt stale) and confirm the `healClaimedAt` CAS (orders.ts) lets exactly
+  // one of several concurrent callbacks credit it.
+  it('orderDelivered: CONCURRENT stale-claim healers credit a dropped refund exactly once (regression: healClaimedAt CAS)', async () => {
+    await fund('odcc', 1000);
+    await m.collections.orders.insertOne({
+      _id: 'odcc1',
+      accountId: 'odcc',
+      kind: 'gacha',
+      cost: 300,
+      status: 'delivered',
+      coinsAfter: 700,
+      result: {},
+      refundCoins: 50,
+      deliveredAt: t,
+      ts: t,
+    });
+    t += 20000; // past REPLAY_HEAL_GRACE_MS for every concurrent caller below
+    const calls = Array.from({ length: 8 }, () => svc.orderDelivered({ orderId: 'odcc1', refundCoins: 50 }));
+    const res = await Promise.all(calls);
+    expect(res.every((r) => r.ok)).toBe(true);
+    expect((await svc.getWallet('odcc')).coins).toBe(1050); // 1000 funded + refunded exactly once
+    expect((await ledgerOf('odcc')).filter((l) => l.reason === 'gacha_refund').length).toBe(1);
   });
 
   // ── paddleRefund: totalRechargeCents decremented exactly once under concurrent redelivery ──
