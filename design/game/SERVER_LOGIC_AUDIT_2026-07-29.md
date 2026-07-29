@@ -23,6 +23,7 @@
 | 11 | socialsvc `leaveFamily`/`kickMember` 并发双发会重复 `$inc memberCount:-1`（同一成员被删两次判定，实际只删一次）；worldsvc `resetSeason` 未清理 ADR-051 的 `occ`/`cover` Redis 索引；auctionsvc `scanAnomalies` 的 5000 条上限无排序无告警，可静默漏检最近成交 | `socialsvc/src/familyService.ts`、`worldsvc/src/{corePush,season}.ts`、`auctionsvc/src/auctionService.ts` | deleteOne 的 `deletedCount` 门控 decrement；`WorldCorePush.clearSpatialIndexes`；`scanAnomalies` 按 soldAt desc 排序（新索引）+ 命中上限时告警 | 中 |
 | 12 | socialsvc/analyticsvc/botsvc/commercial 内部端口的 `readJson` 超 1MB 只 reject 不 `destroy()`（同一 bug 07-28 只修了 gateway/matchsvc）；auctionsvc `createAuction` 的 qty 未强制整数；admin `retryTicket` 无原子 claim，并发点击可重复触发 `mail.send` | 各文件 `httpApi.ts`/`internalHttp.ts`、`auctionsvc/src/{httpApi,auctionService}.ts`、`admin/src/service/tickets.ts` | 补 `req.destroy()`；qty 校验改 `Number.isInteger`；`retryTicket` 补 `retryLockedAt` CAS（mirrors approveTicket 既有的状态 CAS） | 中 |
 | 13 | matchsvc 赛前状态（好友房间/排位队列/切磋邀请）纯内存，进程重启即丢，且无主动通知客户端的机制 | `matchsvc/src/{Matchsvc,Matchmaking}.ts` | 独立跟进分支 `matchsvc-prematch-persist`（2026-07-29 同日）：新增 Redis 写透传 + 启动 rehydrate + 新增 `queue_state`/`prematch_lost` push 消息类型，详见 `claudedocs/server.md` 对应条目 | 中 |
+| 14 | worldsvc `getMarches`/`getStationed` 每次调用都拉全服在途行军/驻防再在 JS 里按视野过滤；`computeMarchPath` 每次行军做 3 次缺索引支撑的近全表 `tiles` 扫描 | `worldsvc/src/{combatMarch,db,coreHelpers}.ts` | 两步：①`tiles` 补 `{worldId,type}` + 稀疏 `{worldId,'structure.kind'}` 索引，覆盖 computeMarchPath 的关口/被占主城/阻挡建筑三次扫描；②`MarchDoc` 补 `minX/maxX/minY/maxY`（leg 两端点 bbox，一次性写入，swap 不变，故 recall 不用重算）+ 复合索引，`getMarches`/`getStationed` 敌方分支改用调用方"领地/视野包围盒"（由已算好的 `computeVisionSources` 结果推出，非重新查询）下推进 Mongo 查询，敌方 `isInVision` 精确过滤只在 bbox 缩小后的结果集上跑；`getStationed` 去掉低效的 `{$ne:accountId}`，改包围盒范围 + 内存排除自身。历史 march 文档缺 bbox 字段的懒迁移见 server.md 对应条目 | 中 |
 
 ## 尝试后回退
 
@@ -31,7 +32,7 @@
 ## 已知但本轮未处理（严重度较低或需要更大改动，非本轮范围）
 
 - ~~**matchsvc 赛前状态**（好友房间/排位队列/切磋邀请）纯内存态，进程重启即丢，且无主动通知客户端的机制——只有配对成功后才有 Redis 兜底~~。**已于同日以独立分支 `matchsvc-prematch-persist` 解决**（见上方已修复表第 13 条 + `claudedocs/server.md`），当时判断"需要设计改动而非局部修复"，用户随即拍板两个方案（重启主动通知 + Redis 全量持久化）都做，不再是遗留项。
-- **worldsvc `getMarches`/`getStationed`** 每个在线玩家 5s 轮询都拉全服在途行军/驻防；`computeMarchPath` 每次行军做 3 次缺索引支撑的近全表扫描。结构性开销，需要重新设计查询模式（如按视野裁剪 + 补索引），非局部修复。
+- ~~**worldsvc `getMarches`/`getStationed`** 每个在线玩家 5s 轮询都拉全服在途行军/驻防；`computeMarchPath` 每次行军做 3 次缺索引支撑的近全表扫描。结构性开销，需要重新设计查询模式（如按视野裁剪 + 补索引），非局部修复~~。**已于同日以独立分支 `worldsvc-march-query-opt` 解决**（见上方已修复表第 14 条 + `claudedocs/server.md`）。
 - **worldsvc `siegeEngine`** 势均力敌的攻城战同步跑满额引擎 tick，阻塞事件循环；`shouldUseCheapSiege` 已覆盖大部分悬殊战斗，剩余部分需要 worker 线程或分片计算才能根治。
 - **admin 四眼审批例外**：具 `admin.manage` 权限者可临时 disable 其他审批人后自批——策略决策，非 bug。
 - **`shared/dailyCounter.ts` 的 `LocalBackend.expire()`**：注释假设 Redis 只是"短暂降级"，若长期不可用会无界增长；概率低（生产 Redis 未观察到长期故障历史），留观察。
@@ -46,7 +47,7 @@
 |---|---|
 | metaserver | 731（+2 跳过，与本轮无关） |
 | commercial | 144 |
-| worldsvc | 350 |
+| worldsvc | 359（含本次 #13 新增 9 例，见 `test/march-query-opt.e2e.test.ts`） |
 | gateway | 27（+6 跳过，需真实 Redis） |
 | gameserver | 58 |
 | socialsvc | 78 |

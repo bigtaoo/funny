@@ -14,6 +14,7 @@ import {
   type TileType,
   type ResourceType,
   type MarchKind,
+  type VisionSource,
 } from '@nw/shared';
 import type { TileDoc } from './db';
 
@@ -88,4 +89,33 @@ export function lootSummary(loot: Record<ResourceType, number>): string {
   return RESOURCE_TYPES.filter((rt) => (loot[rt] ?? 0) > 0)
     .map((rt) => `${rt}+${loot[rt]}`)
     .join(',');
+}
+
+/**
+ * Query-optimization (2026-07-29): bounding box of a march leg's two endpoints, for MarchDoc.minX/maxX/minY/maxY.
+ * getMarches' vision math (`marchInterpPos`) always interpolates linearly between fromTile and toTile (never
+ * the bent A* `path`), so the true position at any instant during this leg is guaranteed to fall inside this
+ * box — it can be computed once at leg-creation and never needs updating while the leg is in flight.
+ */
+export function legBox(x1: number, y1: number, x2: number, y2: number): { minX: number; maxX: number; minY: number; maxY: number } {
+  return { minX: Math.min(x1, x2), maxX: Math.max(x1, x2), minY: Math.min(y1, y2), maxY: Math.max(y1, y2) };
+}
+
+/**
+ * Query-optimization (2026-07-29): the viewer's territory/vision bounding box, derived from an already-computed
+ * `VisionSource[]` (own + family territory/capitals/marches — see coreVision.ts::computeVisionSources), used to
+ * push a coarse range filter into the enemy-march/enemy-stationed Mongo queries before the exact per-position
+ * `isInVision` check runs in JS. Null when the viewer has no vision sources at all (e.g. not yet joined /
+ * no territory) — callers should skip the enemy query entirely in that case, since nothing could possibly be visible.
+ */
+export function sourcesBoundingBox(sources: readonly VisionSource[]): { loX: number; hiX: number; loY: number; hiY: number } | null {
+  if (sources.length === 0) return null;
+  let loX = Infinity, hiX = -Infinity, loY = Infinity, hiY = -Infinity;
+  for (const s of sources) {
+    loX = Math.min(loX, s.x - s.radius);
+    hiX = Math.max(hiX, s.x + s.radius);
+    loY = Math.min(loY, s.y - s.radius);
+    hiY = Math.max(hiY, s.y + s.radius);
+  }
+  return { loX, hiX, loY, hiY };
 }
