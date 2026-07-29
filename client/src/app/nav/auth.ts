@@ -179,7 +179,18 @@ export function createAuthNav(ctx: AppCtx): Pick<Nav, 'goIntro' | 'goLogin' | 'd
       // Immediately re-fetch the bootstrap after receiving publicId so targeted log capture
       // takes effect without waiting for the next 120-second polling cycle (best-effort).
       void featureFlags?.refresh();
+      // Snapshot flags set before this account existed (intro dismissal, GDPR consent — both
+      // `setFlag()` while `online()` is false, i.e. local-write-only, no server push) so they
+      // can be replayed after adoptSession: the account's first-ever reconcile() takes `flags`
+      // wholesale from the brand-new cloud save (`{}`, ADR-056), which would otherwise silently
+      // wipe them — and since they're never re-shown once SEEN_INTRO_FLAG/GDPR_CONSENT_FLAG look
+      // set locally, a next app restart (a fresh SaveManager reading this account's persisted
+      // save) would see them false again with nothing left to re-set them.
+      const preLoginFlags = { ...saveManager.get().flags };
       await saveManager.adoptSession(res.accountId);
+      for (const [key, value] of Object.entries(preLoginFlags)) {
+        if (value && saveManager.getFlag(key) !== true) saveManager.setFlag(key, true);
+      }
       if (!offerResume(() => nav.goLobby({ offline: false }))) nav.goLobby({ offline: false });
       return { ok: true };
     } catch (e) {
@@ -219,20 +230,13 @@ export function createAuthNav(ctx: AppCtx): Pick<Nav, 'goIntro' | 'goLogin' | 'd
       nav.goLobby({ offline: false });
       return;
     }
-    if (!api) { console.error('[debug-restart] no api, offline lobby'); nav.goLobby({ offline: true }); return; }
+    if (!api) { nav.goLobby({ offline: true }); return; }
     const token = platform.storage.getItem(TOKEN_KEY);
-    console.error('[debug-restart] resolveEntry token branch', { hasToken: !!token, accountId: saveManager.get().accountId });
     if (token) {
       api.setToken(token);
       void saveManager
         .adoptSession(saveManager.get().accountId)
-        .then((ok) => {
-          console.error('[debug-restart] adoptSession resolved', { ok, gatewayUrl: state.gatewayUrl });
-          return offerResume(() => nav.goLobby({ offline: false }));
-        })
-        .then((resumed) => console.error('[debug-restart] offerResume result', { resumed }))
-        .catch((e) => console.error('[debug-restart] adoptSession/offerResume threw', e));
-      console.error('[debug-restart] calling goLobby immediately', { gatewayUrl: state.gatewayUrl });
+        .then(() => offerResume(() => nav.goLobby({ offline: false })));
       nav.goLobby({ offline: false });
       return;
     }

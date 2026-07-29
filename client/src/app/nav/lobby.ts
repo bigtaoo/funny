@@ -115,7 +115,6 @@ export function createLobbyNav(ctx: AppCtx): Pick<Nav, 'goLobby'> {
   }
 
   function goLobby(opts?: { offline?: boolean; fromResize?: boolean; fade?: boolean }): void {
-    console.error('[debug-restart] goLobby entered', { opts, firstLobbyHandled: state.firstLobbyHandled, tutorialDone: saveManager.getFlag(TUTORIAL_DONE_FLAG), gatewayUrl: state.gatewayUrl });
     // FTUE step ⑤: on the first lobby entry of this session, redirect to the dedicated tutorial
     // level if it has not been completed (ONBOARDING_DESIGN §2).
     // One-shot gate — subsequent returns to the lobby from child scenes do not re-trigger; resize redraws skip it too.
@@ -123,7 +122,6 @@ export function createLobbyNav(ctx: AppCtx): Pick<Nav, 'goLobby'> {
       state.firstLobbyHandled = true;
       if (!saveManager.getFlag(TUTORIAL_DONE_FLAG)) {
         if (opts?.offline !== undefined) state.offlineMode = opts.offline;
-        console.error('[debug-restart] goLobby -> goTutorial (flag false)');
         nav.goTutorial();
         return;
       }
@@ -156,7 +154,6 @@ export function createLobbyNav(ctx: AppCtx): Pick<Nav, 'goLobby'> {
         navFn();
       });
     }
-    console.error('[debug-restart] about to call views.showLobby', { online, loggedIn });
     const lobby = views.showLobby({
       onStartGame(_opponentName: string) {
         analytics.click('lobby.practice');
