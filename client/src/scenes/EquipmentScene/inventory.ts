@@ -418,8 +418,9 @@ export function InventoryMixin<TBase extends EquipmentSceneBaseCtor>(Base: TBase
           }
           this.hitRects.push({ rect: { x, y: cy, w: cellW, h: cellH }, action: () => this.openDetail(inst.id) });
         } else {
-          // Empty slot: darken the glyph alpha (0.40) and add the "empty" label so the player can clearly identify available equip positions.
-          this.addGlyph(slot, 'common', x + cellW / 2, cy + cellH * 0.45, 28, seedFor(i, 13, cellW), 0.40);
+          // Empty slot: addGlyph renders the hollow "+" placeholder (no defId), paired
+          // with the "empty" label so the player can clearly identify open positions.
+          this.addGlyph(slot, 'common', x + cellW / 2, cy + cellH * 0.45, 28, seedFor(i, 13, cellW), 1);
           const empty = txt(t('equip.slotEmpty'), FS.micro, C.mid);
           empty.anchor.set(0.5, 0.5); empty.x = x + cellW / 2; empty.y = cy + cellH * 0.88;
           this.bodyLayer.addChild(empty);

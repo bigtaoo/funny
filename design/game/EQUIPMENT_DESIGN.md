@@ -897,3 +897,16 @@ buildSiegeBlueprints(levels, equipped, inv)
 资产整理：三张源图重命名为 `scrap.png`/`lead.webp`/`binding.webp`（原为 AI 工具生成的随机编码文件名），`build-atlas.js` 的 `ENTRIES` 同步更新为新文件名，重新打包 `material.png/json`（384×128，帧名不变）。
 
 验证：`node build-atlas.js` 打包成功；用 sharp 把 `scrap` 帧缩到 28×28（对齐签到格子实际图标尺寸 `ch*0.26`）人工核对，折角撕边纸的剪影清晰可辨，未再糊成色块。client `tsc --noEmit` 未跑（仅素材/构建脚本变更，无 TS 改动）。
+
+### 20.13 实现记录（2026-07-29，✅）— 空槽图标改为镂空 + 号（不再是暗淡实心 glyph）
+
+背景：用户看 Hero Roster 网格截图，把某几张卡底部的槽位图标误认成"已装备的低阶道具"，实际是空槽——`buildEquipIcon`（§20.8）里空槽走的是 `drawEquipmentGlyph(slot, rarity='common', ...)` 再由调用方把 `icon.alpha` 压到 0.3～0.4，本质上仍是一件"变暗的 common 稀有度实心装备"，与真实穿戴的 common 装备只有透明度这一个区分维度，density 高的网格里很容易看漏。
+
+拍板（用户）：槽位形状提示要保留（玩家仍需一眼看出这是武器/护甲/饰品槽），但空槽必须与"任何真实装备"在观感上分类不同，不能靠透明度这种容易被忽略的弱信号；且优先级明确——**能程序绘制满足需求就用程序绘制，只有程序绘制明显拉低品质时才考虑额外出图**（复杂度/工作量让位于游戏品质，但不是无条件加美术资源）。
+
+落地（纯客户端，零新资产，仍在 `equipmentGlyph.ts` 程序绘制范畴内）：
+- 新增 `drawEmptySlotGlyph(g, slot, size, seed)`：复用各槽位的基础形状（武器=斜置笔形、护甲=矩形书封、饰品=打孔挂牌），但**不填充**、描边统一用与稀有度无关的中性灰 `EMPTY_INK`（0xb0aaa0），中心叠加一个不透明的"+"。
+- `buildEquipIcon`（§20.8 的唯一装备图标出处）新增分支：`defId` 为 `undefined`（即真正的空槽）时直接返回 `drawEmptySlotGlyph`，不再退化成"稀有度 common 的实心 glyph + 调用方自行调透明度"；`defId` 有值但图集贴图缺失（图集未加载完/未知 id，极少见）时仍走原 §20.3 实心 glyph 兜底——语义上这仍是"一件真实装备，只是位图还没出来"，与"空槽"是两回事，不能混用同一条兜底路径。
+- 三处调用点（`CardScene/list.ts` 网格、`CardScene/detail.ts` 详情弹窗、`EquipmentScene/inventory.ts` 背包格）删掉各自「`inst ? 1 : 0.3～0.4`」的透明度分支，统一 `alpha = 1`——镂空+加号本身已经是区分信号，不需要再叠一层透明度。
+
+验证：client `tsc --noEmit` 全绿；`npm run test:ui` 中 equipment/roster 相关既有套件（`equipmentGridLayout`/`equipmentAssignGrid`/`cardRosterApplyCardState` 等）全绿，其余 50 个套件失败是本机已知的 `jsonwebtoken` workspace 链接缺口（详见 `claudedocs/worktrees.md` 陷阱记录），与本次改动无关。因后端未起无法走完整登录截图 Hero Roster，改用 `?equipDemo` 临时调试入口（`entries/web.ts` 分支 + 一次性 demo 模块，验证后已删除）直接构造 `PIXI.Application` 调用 `drawEmptySlotGlyph`/`drawEquipmentGlyph` 网格渲染，肉眼确认三个槽位的镂空+加号版本与 common/fine/rare/epic 实心版本能一眼区分。
