@@ -117,6 +117,8 @@ export interface SettingsSceneCallbacks {
   freeRename?: boolean;
   /** Current server-authoritative coin balance. */
   getCoins?(): number;
+  /** Subscribe to SaveManager writes; re-renders this scene when the wallet changes elsewhere. Push the returned unsub onto `unsubs`. */
+  onSaveChanged?(listener: () => void): () => void;
   /** Spend coins to change the display name. */
   onRename?(name: string): Promise<RenameOutcome>;
 }
@@ -183,6 +185,7 @@ export class SettingsScene implements Scene {
       if (next !== null) { this.pickerScrollY = next; this.render(); }
     }));
     this.setupHiddenInput();
+    if (cb.onSaveChanged) this.unsubs.push(cb.onSaveChanged(() => this.render()));
     this.render();
   }
 

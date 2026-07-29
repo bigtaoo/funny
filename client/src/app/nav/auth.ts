@@ -93,6 +93,7 @@ export function createAuthNav(ctx: AppCtx): Pick<Nav, 'goIntro' | 'goLogin' | 'd
             renameCost: RENAME_COST,
             freeRename: platform.storage.getItem(FREE_RENAME_KEY) === '1',
             getCoins: () => saveManager.get().wallet.coins,
+            onSaveChanged: (listener: () => void) => saveManager.subscribe(listener),
             onRename: doRename,
           }
         : {}),

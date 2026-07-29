@@ -57,7 +57,7 @@ const LAYOUT = { designWidth: 1280, designHeight: 800 } as ILayout;
 const CB: WorldMapCallbacks = {
   onBack() {}, onOpenChat() {}, onOpenAuction() {}, onReplaySiege() {}, onOpenCity() {},
   onOpenDefense() {}, worldApi: {} as WorldMapCallbacks['worldApi'],
-  worldId: 'w1', playerName: 'dbg', accountId: 'acc_dbg',
+  worldId: 'w1', playerName: 'dbg', accountId: 'acc_dbg', storage: memStore,
 };
 
 /** A real scene wiring (WorldMapScene's own constructor, minus WorldMapNet — no network). */

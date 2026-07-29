@@ -132,6 +132,7 @@ export function createSocialNav(ctx: AppCtx): Pick<Nav, 'goFriends' | 'goMail' |
         sendWorldChat: async (body, senderName) => { const wid = await ensureWorldId(); await worldApi.sendWorldChannelMessage(wid, body, senderName); },
         playerName: () => playerName(),
         getCoins: () => saveManager.get().wallet.coins,
+        onSaveChanged: (listener: () => void) => saveManager.subscribe(listener),
         // World-chat posts are charged in the commercial service by worldsvc; GET /save
         // re-mirrors that authoritative balance so the HUD coin count reflects the spend.
         refreshWallet: async () => {

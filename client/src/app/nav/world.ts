@@ -38,6 +38,7 @@ export function createWorldNav(ctx: AppCtx): WorldNav {
       onBack() { nav.goLobby(); },
       worldApi,
       getSave: () => saveManager.get(),
+      onSaveChanged: (listener: () => void) => saveManager.subscribe(listener),
       reloadSave: async () => { await saveManager.refresh(); },
       myAccountId: saveManager.get().accountId,
     });
@@ -93,6 +94,7 @@ export function createWorldNav(ctx: AppCtx): WorldNav {
         worldId,
         getCoins: () => saveManager.get().wallet.coins,
         getSave: () => saveManager.get(),
+        onSaveChanged: (listener: () => void) => saveManager.subscribe(listener),
       }, { overlay: true });
     };
 
@@ -111,6 +113,7 @@ export function createWorldNav(ctx: AppCtx): WorldNav {
       playerName: playerName(),
       accountId: saveManager.get().accountId,
       getCoins: () => saveManager.get().wallet.coins,
+      storage: platform.storage,
     });
     bindMapNet();
   }
@@ -232,6 +235,7 @@ export function createWorldNav(ctx: AppCtx): WorldNav {
       myAccountId,
       playerName: playerName(),
       getCoins: () => saveManager.get().wallet.coins,
+      onSaveChanged: (listener: () => void) => saveManager.subscribe(listener),
       refreshWallet: async () => { await saveManager.refresh(); },
     }, { overlay });
     // Keep the gateway connected + forward live sect-channel messages into the scene
@@ -257,6 +261,7 @@ export function createWorldNav(ctx: AppCtx): WorldNav {
       onBack: opts?.onBack ?? (() => goWorldMap(worldApi, worldId)),
       worldApi,
       getSave: () => saveManager.get(),
+      onSaveChanged: (listener: () => void) => saveManager.subscribe(listener),
       reloadSave: async () => { await saveManager.refresh(); },
       myAccountId: saveManager.get().accountId,
     }, { overlay: opts?.overlay });

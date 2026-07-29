@@ -193,8 +193,15 @@ export interface LobbySceneCallbacks {
   playerName: string;
   /** Server-authoritative ladder standing (SaveData.pvp); shown as a header badge. */
   pvp?: { rank: string; elo: number };
-  /** Server-authoritative soft-currency balance (SaveData.wallet.coins); shown in the header (online only). */
-  coins?: number;
+  /**
+   * Live soft-currency balance getter (SaveData.wallet.coins mirror); shown in the header (online only).
+   * A closure rather than a snapshot value so the header re-renders with the current balance instead of
+   * whatever it was at the moment `showLobby` was called (matches the getCoins convention used by every
+   * other nav module — see nav/world.ts/shop.ts/social.ts).
+   */
+  getCoins?(): number;
+  /** Subscribe to SaveManager writes; rebuilds the header when the wallet changes elsewhere (e.g. a purchase in a screen navigated away from and back via resize). Push the returned unsub onto `unsubs`. */
+  onSaveChanged?(listener: () => void): () => void;
   /** SA-4: offline single-player mode — online entries route to login instead. */
   offline?: boolean;
   /** Open the login screen (offline mode header chip + gated online entries). */
@@ -326,6 +333,7 @@ export class LobbySceneBase {
     this.build();
 
     this.unsubs.push(input.onDown((x, y) => this.handleDown(x, y)));
+    if (cb.onSaveChanged) this.unsubs.push(cb.onSaveChanged(() => { if (!this.destroyed) this.rebuild(); }));
 
     // Header coin balance uses the shop's AI atlas glyph (buildCoinIcon); rebuild once it's
     // decoded so the lobby doesn't stay stuck on the procedural fallback glyph.

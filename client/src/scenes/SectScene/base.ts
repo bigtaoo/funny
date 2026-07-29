@@ -49,6 +49,8 @@ export interface SectSceneCallbacks {
   getCoins(): number;
   /** Re-syncs the local wallet cache after a spend the commercial service applied server-side (createSect). */
   refreshWallet(): Promise<void>;
+  /** Subscribe to SaveManager writes; re-renders this scene when a concurrently-mounted peer scene (e.g. the world map underneath) changes the wallet. Push the returned unsub onto `unsubs`. */
+  onSaveChanged?(listener: () => void): () => void;
 }
 
 /** Handle returned by showSect so the core can push live sect-channel messages in. */
@@ -168,6 +170,7 @@ export class SectSceneBase {
     this.unsubs.push(input.onMove((x, y) => this.handleMove(x, y)));
     this.unsubs.push(input.onUp((x, y) => this.handleUp(x, y)));
     this.unsubs.push(input.onWheel((x, y, deltaY) => this.handleWheel(x, y, deltaY)));
+    if (cb.onSaveChanged) this.unsubs.push(cb.onSaveChanged(() => { if (!this.destroyed) this.render(); }));
   }
 
   /** Width of the social hub rail left of the notebook binding line (matches every other left-edge tab rail). */
