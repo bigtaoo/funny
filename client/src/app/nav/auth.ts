@@ -219,13 +219,20 @@ export function createAuthNav(ctx: AppCtx): Pick<Nav, 'goIntro' | 'goLogin' | 'd
       nav.goLobby({ offline: false });
       return;
     }
-    if (!api) { nav.goLobby({ offline: true }); return; }
+    if (!api) { console.error('[debug-restart] no api, offline lobby'); nav.goLobby({ offline: true }); return; }
     const token = platform.storage.getItem(TOKEN_KEY);
+    console.error('[debug-restart] resolveEntry token branch', { hasToken: !!token, accountId: saveManager.get().accountId });
     if (token) {
       api.setToken(token);
       void saveManager
         .adoptSession(saveManager.get().accountId)
-        .then(() => offerResume(() => nav.goLobby({ offline: false })));
+        .then((ok) => {
+          console.error('[debug-restart] adoptSession resolved', { ok, gatewayUrl: state.gatewayUrl });
+          return offerResume(() => nav.goLobby({ offline: false }));
+        })
+        .then((resumed) => console.error('[debug-restart] offerResume result', { resumed }))
+        .catch((e) => console.error('[debug-restart] adoptSession/offerResume threw', e));
+      console.error('[debug-restart] calling goLobby immediately', { gatewayUrl: state.gatewayUrl });
       nav.goLobby({ offline: false });
       return;
     }
