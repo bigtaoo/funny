@@ -229,7 +229,7 @@ export function EncounterMixin<TBase extends SiegeServiceBaseCtor>(Base: TBase):
         replay = null;
       } else {
         try {
-          res = runSiegeBattle({ attackerArmy, defenderConfig, tileLevel, seed, cardInstances: aCardInstances, equipmentInv: aCardEquipInv });
+          res = await runSiegeBattle({ attackerArmy, defenderConfig, tileLevel, seed, cardInstances: aCardInstances, equipmentInv: aCardEquipInv });
         } catch (err) {
           console.error('[worldsvc] field encounter engine failed — fallback to cheap resolve', { tile: tid, err: (err as Error).message });
           res = resolveSiege(attackerHp, defenderHp);

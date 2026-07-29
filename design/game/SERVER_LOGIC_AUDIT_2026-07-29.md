@@ -22,6 +22,7 @@
 | 10 | 4 处无界内存增长：gateway `friendsCache`/`publicIdCache`（socialsvc 降级路径专用，从不清理）、socialsvc `chatRate`、metaserver `accountCache.TtlMap`、gameserver `Room.pending`（单 tick 内无上限，洪水攻击可撑大 replay） | `gateway/src/Gateway.ts`、`socialsvc/src/friendService.ts`、`metaserver/src/accountCache.ts`、`gameserver/src/Room.ts` | 前三者补 sweep-on-traffic（同 `SlidingRateLimiter.maybeSweep` 套路）/断线清理；Room 补 `MAX_PENDING_PER_TICK=200` | 中 |
 | 11 | socialsvc `leaveFamily`/`kickMember` 并发双发会重复 `$inc memberCount:-1`（同一成员被删两次判定，实际只删一次）；worldsvc `resetSeason` 未清理 ADR-051 的 `occ`/`cover` Redis 索引；auctionsvc `scanAnomalies` 的 5000 条上限无排序无告警，可静默漏检最近成交 | `socialsvc/src/familyService.ts`、`worldsvc/src/{corePush,season}.ts`、`auctionsvc/src/auctionService.ts` | deleteOne 的 `deletedCount` 门控 decrement；`WorldCorePush.clearSpatialIndexes`；`scanAnomalies` 按 soldAt desc 排序（新索引）+ 命中上限时告警 | 中 |
 | 12 | socialsvc/analyticsvc/botsvc/commercial 内部端口的 `readJson` 超 1MB 只 reject 不 `destroy()`（同一 bug 07-28 只修了 gateway/matchsvc）；auctionsvc `createAuction` 的 qty 未强制整数；admin `retryTicket` 无原子 claim，并发点击可重复触发 `mail.send` | 各文件 `httpApi.ts`/`internalHttp.ts`、`auctionsvc/src/{httpApi,auctionService}.ts`、`admin/src/service/tickets.ts` | 补 `req.destroy()`；qty 校验改 `Number.isInteger`；`retryTicket` 补 `retryLockedAt` CAS（mirrors approveTicket 既有的状态 CAS） | 中 |
+| 13 | worldsvc `siegeEngine` 势均力敌攻城战同步跑满额引擎（最长 ~18,600 tick）阻塞事件循环——`shouldUseCheapSiege` 已过滤掉悬殊战斗，剩下恰好是过滤不掉、必然走引擎的那部分（2026-07-29 独立 worktree `feat/siegeengine-worker-threads` 后续处理，同日审计的第 3 条未处理项） | `worldsvc/src/siegeEngine.ts`、`combatSiege/{arrival,occupation,encounter}.ts` | 新增常驻 `worker_threads` 池（`siegeWorkerPool.ts` + worker 入口 `siegeWorker.ts`，池大小 `os.cpus().length-1` 可环境变量覆盖）：原同步 `runSiegeBattle` 改名为 `runSiegeBattleSync`（worker 内直接调用），主线程侧 `runSiegeBattle` 改为 async，向池提交任务 await 结果——6 处调用点全部 `await` 化，Mongo 读写不变仍在主线程。池自带崩溃自愈（'error'/'exit' 触发替换+reject 在飞任务）、任务超时兜底（30s 默认，终止卡死 worker）、排队（不拒绝、不降级）。详见 `claudedocs/server.md` 对应条目 | 高 |
 
 ## 尝试后回退
 
@@ -31,7 +32,6 @@
 
 - **matchsvc 赛前状态**（好友房间/排位队列/切磋邀请）纯内存态，进程重启即丢，且无主动通知客户端的机制——只有配对成功后才有 Redis 兜底。修复需要引入持久化或至少一个"进程重启后主动踢出等待中连接"的机制，属于设计改动而非局部修复。
 - **worldsvc `getMarches`/`getStationed`** 每个在线玩家 5s 轮询都拉全服在途行军/驻防；`computeMarchPath` 每次行军做 3 次缺索引支撑的近全表扫描。结构性开销，需要重新设计查询模式（如按视野裁剪 + 补索引），非局部修复。
-- **worldsvc `siegeEngine`** 势均力敌的攻城战同步跑满额引擎 tick，阻塞事件循环；`shouldUseCheapSiege` 已覆盖大部分悬殊战斗，剩余部分需要 worker 线程或分片计算才能根治。
 - **gateway 控制消息无 per-connection 限流**（room_create/duel_invite 等），与 metaserver REST 侧已有的按 IP/账号限流不对称。
 - **admin 四眼审批例外**：具 `admin.manage` 权限者可临时 disable 其他审批人后自批——策略决策，非 bug。
 - **`shared/dailyCounter.ts` 的 `LocalBackend.expire()`**：注释假设 Redis 只是"短暂降级"，若长期不可用会无界增长；概率低（生产 Redis 未观察到长期故障历史），留观察。
@@ -44,7 +44,7 @@
 |---|---|
 | metaserver | 731（+2 跳过，与本轮无关） |
 | commercial | 144 |
-| worldsvc | 350 |
+| worldsvc | 350（siegeEngine worker 池后续项另加 10 例，见条目 13） |
 | gateway | 27（+6 跳过，需真实 Redis） |
 | gameserver | 58 |
 | socialsvc | 78 |
