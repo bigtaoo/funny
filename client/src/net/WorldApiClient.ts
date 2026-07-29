@@ -17,6 +17,7 @@ import type { components as socialComponents } from './openapi-social';
 import type { components as auctionComponents } from './openapi-auction';
 import { sampleServerNow } from './serverClock';
 import { requestPlatformHeader } from './ApiClient/base';
+import { currentChatRegion } from './chatRegion';
 
 // ── Generated DTO type aliases (single source of truth = openapi-world.yml) ──
 
@@ -173,6 +174,7 @@ export class WorldApiClient {
     body?: unknown,
     timeoutMs = 10_000,
     baseOverride?: string,
+    extraHeaders?: Record<string, string>,
   ): Promise<T> {
     const base = baseOverride ?? getWorldBaseUrl();
     const url = base + path;
@@ -180,7 +182,7 @@ export class WorldApiClient {
     // X-NW-Platform (ADR-020): which recharged-pool bucket a spend should draw from. Worldsvc/auction
     // spend paths never sent this (comm-audit-internal-2026-07-28 P0-7) — iOS/Android players got
     // charged from the web bucket for SLG/auction purchases, same field ApiClient/base.ts sends.
-    const headers: Record<string, string> = { 'Content-Type': 'application/json', 'X-NW-Platform': requestPlatformHeader() };
+    const headers: Record<string, string> = { 'Content-Type': 'application/json', 'X-NW-Platform': requestPlatformHeader(), ...extraHeaders };
     if (token) headers['Authorization'] = `Bearer ${token}`;
 
     const ctrl = new AbortController();
@@ -468,7 +470,7 @@ export class WorldApiClient {
   }
 
   async createFamily(name: string, tag: string): Promise<FamilyDetailView> {
-    return this.req('POST', '/social/family', { name, tag }, 10_000, getSocialBaseUrl());
+    return this.req('POST', '/social/family', { name, tag }, 10_000, getSocialBaseUrl(), { 'X-Chat-Region': currentChatRegion() });
   }
 
   /** Submit a request to join a family — leader/elder approval required before membership takes effect. */
@@ -512,7 +514,7 @@ export class WorldApiClient {
   }
 
   async sendFamilyMessage(familyId: string, body: string, senderName?: string): Promise<{ id: string }> {
-    return this.req('POST', `/social/family/${encodeURIComponent(familyId)}/messages`, { body, ...(senderName ? { senderName } : {}) }, 10_000, getSocialBaseUrl());
+    return this.req('POST', `/social/family/${encodeURIComponent(familyId)}/messages`, { body, ...(senderName ? { senderName } : {}) }, 10_000, getSocialBaseUrl(), { 'X-Chat-Region': currentChatRegion() });
   }
 
   async getFamilyChannel(

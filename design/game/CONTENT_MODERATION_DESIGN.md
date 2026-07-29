@@ -219,10 +219,12 @@ interface AppealDoc {
 - ~~O-CM2~~ **已拍板（2026-07-29）**：阈值表按 §4.2 默认值实现，不调整。
 - ~~O-CM3~~ **已拍板（2026-07-29）**：不分举报严重度，统一每次 -20 分。
 - **O-CM4**（已知缺口，非本设计引入，仍未拍板）：gateway/WS 层不检查封禁状态，已连接会话在被封禁/限时封禁后不会被强制断开——建议另开任务修复，不在本次范围内。
-- **O-CM5**（2026-07-29 实现 P1/P2 时发现的独立缺口）：客户端从未实际发送 `X-Chat-Region` 请求头（`openapi-social.yml` 里声明了但 `WorldApiClient.ts`/私聊发送从未设置），导致地区专属词表（cn/de/en）在真实请求里从未生效，只有 global 词表起作用。已 spawn 一个独立任务跟进（不阻塞本设计的服务端实现，服务端头缺失时安全兜底为 global）。
+- ~~O-CM5~~ **已修复（2026-07-29）**：客户端从未实际发送 `X-Chat-Region` 请求头，导致地区专属词表（cn/de/en）在真实请求里从未生效，只有 global 词表起作用。修复：新增 `client/src/net/chatRegion.ts`（`currentChatRegion()`，镜像服务端 `regionFromLocale` 的 zh→cn/de→de/en→en 映射，取自玩家当前 i18n locale），接入 `WorldApiClient.createFamily`/`sendFamilyMessage` 与 `ApiClient.sendChat` 三个调用点。修复过程中额外发现并修复了一个会阻断此修复本身的伴生 bug：`server/socialsvc/src/httpApi.ts` 的手写 CORS `access-control-allow-headers` 清单没有 `x-chat-region`，会导致真实浏览器在预检（preflight OPTIONS）阶段整体拦截请求（与 2026-07-28 `X-NW-Platform` CORS 停机同一类问题，见 `claudedocs/server.md`/`COMM_AUDIT_INTERNAL_2026-07-28.md`）——已一并加入该清单。worldsvc 的 `/sect/create`、`/nation/message` 走的是 `regionFromAcceptLanguage(Accept-Language)`，是浏览器原生自动发送的标准头，不受本 gap 影响，未改动。验证：`server/socialsvc/test/chatRegionHttp.e2e.test.ts`（真实 HTTP + 真实 Mongo，四个用例覆盖三个端点的“带头/不带头”对照）、`server/socialsvc/test/cors-headers.test.ts`（新增一条 X-Chat-Region 预检回归）、`client/test/net-x-chat-region.test.ts`（三个客户端调用点按 locale 发送正确 header），以及一次真实浏览器（web-e2e 入口 + `window.__nwE2E`）dev-server 走查：locale=en 时创建含 `私服` 的家族名成功（201，region 落到 en/global 词表未命中），切到 locale=zh 后同样的名字被拒（400 BAD_REQUEST，命中 cn 词表），且能看到真实的 CORS 预检 OPTIONS 往返。
 
 ---
 
 ## 9. 实现记录
 
-> （待实现后追加：完成阶段、实际字段/端点形态、与设计的差异。）
+- **2026-07-29，O-CM5 修复**：客户端 `X-Chat-Region` 请求头补齐 + 伴生 CORS gap 修复，详见 §8 O-CM5。
+
+> （P1-P5 主线待实现后追加：完成阶段、实际字段/端点形态、与设计的差异。）

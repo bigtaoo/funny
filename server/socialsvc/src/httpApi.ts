@@ -96,7 +96,7 @@ function send(res: ServerResponse, status: number, body: unknown): void {
   res.writeHead(status, {
     'content-type': 'application/json',
     'access-control-allow-origin': '*',
-    'access-control-allow-headers': 'authorization,content-type,x-internal-key,x-internal-caller,x-nw-platform',
+    'access-control-allow-headers': 'authorization,content-type,x-internal-key,x-internal-caller,x-nw-platform,x-chat-region',
     'access-control-allow-methods': 'GET,POST,PUT,OPTIONS',
   });
   res.end(JSON.stringify(body));

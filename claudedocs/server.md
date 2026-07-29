@@ -293,3 +293,12 @@ commercial 此前完全没有 Redis 依赖，本次新增：`config.ts` 补 `NW_
 - **gateway `rate_limited` 缺 i18n 分支**：`FriendsScene` 落进默认档位显示"找不到该玩家"（比通用兜底更误导）；补分支 + 三语言文案。
 
 验证同上（13 包 tsc -b 全绿；commercial/metaserver/worldsvc/client 全量 vitest 全绿）。四处 CAS 修复均补了并发复现回归测试（`Promise.all` 并发调用足以触发"读后写"竞态，无需额外调度器 hack），且逐条对修复前代码回退验证过确实会失败，详见 [`SERVER_LOGIC_AUDIT_2026-07-29.md`](../design/game/SERVER_LOGIC_AUDIT_2026-07-29.md) 末尾"并发回归测试补齐"节。
+
+## O-CM5 修复：客户端补发 `X-Chat-Region` + 伴生 CORS gap（2026-07-29）
+
+`CONTENT_MODERATION_DESIGN.md` §1 现状盘点发现的独立缺口：`openapi-social.yml` 给 `/social/chat/send`、`/social/family`、`/social/family/{familyId}/messages` 都声明了可选头 `X-Chat-Region`，socialsvc 也确实按头值选敏感词区域词表，但客户端从未实际发送过这个头——三处调用点全部静默落到 `?? 'global'` 兜底，cn/de/en 区域词表在真实请求里从未生效。
+
+- **修复**：新增 `client/src/net/chatRegion.ts`（`currentChatRegion()`，取当前 i18n locale 映射到 `ChatRegion`，zh→cn/de→de/en→en，镜像 `server/shared/src/chatFilter.ts` 的 `regionFromLocale`——账号级 `AccountDoc.region` 是服务端私有字段，客户端没有对应信息源，i18n locale 是现成的最佳代理信号）。接入 `WorldApiClient.createFamily`/`sendFamilyMessage`（`req()` 新增可选 `extraHeaders` 形参）与 `ApiClient.sendChat`（`ApiClientBase.request`/`post` 补齐 `extraHeaders` 透传到已有的 `fetchRaw`）三个调用点。
+- **伴生 CORS gap**（会阻断此修复本身，真实浏览器会在预检 OPTIONS 阶段整体拦截请求，curl/Node fetch 测试不触发预检所以看不出来）：`server/socialsvc/src/httpApi.ts` 手写的 `access-control-allow-headers` 清单没有 `x-chat-region`——与 07-28 `X-NW-Platform` CORS 停机同一类问题（见本文档"服务器间通信协议全面审计"节 P0-7 关联段落），这次是在功能落地前、真实浏览器走查时主动发现并修复，未造成生产事故。
+- **worldsvc 未改动**：`/sect/create`、`/nation/message` 走的是 `regionFromAcceptLanguage(Accept-Language)`，浏览器 fetch 会自动带上这个标准头，不受此 gap 影响。
+- **验证**：`server/socialsvc/test/chatRegionHttp.e2e.test.ts`（新增，真实 HTTP + 真实 Mongo，四例覆盖三个端点的带头/不带头对照）、`cors-headers.test.ts` 新增一条 `x-chat-region` 预检回归、`client/test/net-x-chat-region.test.ts`（新增，三个客户端调用点按 locale 断言实际发出的头）；另在无 Docker 环境下用 `mongodb-memory-server` 缓存的 `mongod` 二进制单开真实 Mongo + metaserver + socialsvc + client `web-e2e` 入口跑了一次真实浏览器走查——locale=en 时创建含 cn 词表专属词"私服"的家族名成功创建（201，落到 en/global 词表未命中），切到 locale=zh 后同样名字被拒（400，命中 cn 词表），且能看到真实的 CORS 预检 OPTIONS 往返。client 846 例 + socialsvc 84 例 vitest 全绿，两包 `tsc --noEmit`/`tsc -b` 全绿。
