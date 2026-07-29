@@ -78,6 +78,11 @@ interface AdminAccountDoc {
 | `slg.audit.view` 看拍卖异常扫描+审计队列（G7 反 RMT） | ✓ | ✓ | – | ✓ |
 | `slg.audit.manage` 立/裁定异常交易审计工单（G7 反 RMT） | ✓ | ✓ | – | – |
 | `slg.shop.manage` SLG 商城商品价格/效果覆盖（G7，§8/S8-8） | ✓ | ✓ | – | – |
+| `reports.view` 查举报审核队列（`CONTENT_MODERATION_DESIGN.md` §5） | ✓ | ✓ | ✓ | ✓ |
+| `reports.action` 裁定举报（dismiss/uphold，联动信誉分处罚） | ✓ | ✓ | – | – |
+| `appeals.view` 查申诉队列 | ✓ | ✓ | ✓ | ✓ |
+| `appeals.action` 裁定申诉（approve/deny，撤销 mute/ban） | ✓ | ✓ | – | – |
+| `moderation.wordlist.manage` 管理敏感词库外部覆盖表 | ✓ | ✓ | – | – |
 | `audit.view.all` 看全部审计 | ✓ | – | – | – |
 | `audit.view.self` 看自己操作（登录即有） | ✓ | ✓ | ✓ | ✓ |
 | `events.manage` 限时活动创建/编辑/下线（B6，EVENTS_DESIGN §10） | ✓ | ✓ | – | – |

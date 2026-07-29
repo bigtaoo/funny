@@ -30,7 +30,7 @@
 | SOC7 | **频道（帮会/家族/国家）= 独立 `social` 服务 + Redis pub/sub**，SLG 上线后做 | 群频道是多对多扇出、跨 gateway 实例广播，必须 Redis；正好作为 Redis 的引入里程碑（M22）。一期不碰 |
 | SOC8 | **社交数据不进 `SaveData`** | 好友/邮件/会话是按需查询的关系数据、非存档根；放 SaveData 会让每次同步背上无关负载。未读红点也走查询不走同步段 |
 | SOC9 | **gateway 横扩 + Redis 路由是近期里程碑**（单 gateway 实例 ~3000 并发上限，用户 2026-06-16 拍）。`/gw/push` 与 presence 广播**从一开始就按「不假设单实例」设计**：内部 push 以 `accountId` 为目标、不依赖「目标连在本实例」；多实例时 meta→gateway 经 Redis 路由（`account→实例` 或频道 pub/sub），单实例期本地直投 | 联机玩家上规模后 gateway 必然多实例；契约层（push 消息形状）不变，仅 gateway 内部投递从「本地 map」升级为「Redis 路由」。提前定好接口不假设单实例，避免横扩时改契约。注意 §4.1 的 presence 广播在多实例下：好友可能连在别的实例，上下线广播需经 Redis fan-out。**2026-07-27 补完**：`gateway.presenceOf`（meta 拉好友列表在线标记用的批量查询，非 §4.1 的实时广播）此前一直只读本实例 `conns`，多实例下会漏报连在别的实例上的账号——现改为本地未命中时才查 Redis（每账号一个 TTL key，`markOnline`/`markOffline`/`refreshOnline` 挂在 onConnection/close/心跳 sweep 上，复用既有 `NW_GW_REDIS_URL` 连接，不新开一路）。`broadcastPresence`（好友上下线实时推送）本身仍是纯本地投递，未在本轮改动范围内 |
-| SOC10 | **敏感词过滤分国家/地区配置**（用户 2026-06-16 拍） | 不同地区合规要求不同；过滤器按 locale/region 加载词表（`shared` 侧可配置表，S6-2 落地），不写死单一词库。✅ 已接通（2026-06-16）：`AccountDoc.region` 在 auth 时由 `Accept-Language` 头惰性推断并持久化（`regionFromAcceptLanguage`），私聊按**发送方账号 region** 选词表（`getRegion`→`censorChat`），零客户端/契约改动 |
+| SOC10 | **敏感词过滤分国家/地区配置**（用户 2026-06-16 拍） | 不同地区合规要求不同；过滤器按 locale/region 加载词表（`shared` 侧可配置表，S6-2 落地），不写死单一词库。✅ 已接通（2026-06-16）：`AccountDoc.region` 在 auth 时由 `Accept-Language` 头惰性推断并持久化（`regionFromAcceptLanguage`），私聊按**发送方账号 region** 选词表（`getRegion`→`censorChat`），零客户端/契约改动。⚠️ 2026-07-29 起，敏感词/举报/处罚/审核治理的后续演进权威已迁移至 [`CONTENT_MODERATION_DESIGN.md`](CONTENT_MODERATION_DESIGN.md)（ADR-057），本行保留历史记录不再更新 |
 
 ---
 
