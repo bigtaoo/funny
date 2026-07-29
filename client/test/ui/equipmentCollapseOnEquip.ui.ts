@@ -1,7 +1,9 @@
-// Regression coverage for "穿戴装备时，equipped 部分默认折叠起来" (2026-07-29): after a successful
-// equip, the Equipped section should fold itself back down so the backpack list the player was just
-// browsing doesn't visually jump/shrink underneath it. Unequip (and a failed equip) must NOT touch
-// the collapse state — only a successful equip does.
+// Regression coverage for two related 2026-07-29 UX fixes on successful equip:
+//  1. "穿戴装备时，equipped 部分默认折叠起来" — the Equipped section folds itself back down so the
+//     backpack list the player was just browsing doesn't visually jump/shrink underneath it.
+//  2. "装备完之后，这个界面能自动关闭，回到角色卡界面" — a successful *equip* (not unequip) leaves the
+//     Equipment scene entirely via cb.onBack(), returning to wherever it was opened from (Hero Roster).
+// Unequip and a failed equip must do neither — the player stays on this screen, section left open.
 //
 // Runs under the headless PIXI adapter (vitest.ui.config.ts). Run: npm run test:ui
 import { describe, it, expect } from 'vitest';
@@ -40,10 +42,13 @@ function buildSave(): SaveData {
   return save;
 }
 
-function buildScene(equip: (slot: EquipSlot, inst: string | null, cardId: string) => Promise<EquipResult>): EquipmentScene {
+function buildScene(
+  equip: (slot: EquipSlot, inst: string | null, cardId: string) => Promise<EquipResult>,
+  onBack: () => void = () => {},
+): EquipmentScene {
   const save = buildSave();
   const cb: EquipmentCallbacks = {
-    onBack() {},
+    onBack,
     getSave: () => save,
     craft: async () => ({ ok: true }),
     enhance: async () => ({ ok: true, success: true, level: 1 }),
@@ -84,6 +89,41 @@ describe('EquipmentScene — Equipped section auto-collapses after a successful 
     await internals.doEquip('weapon', 'inst_wp', 'card1');
 
     expect(internals.collapsedSections.has('equipped')).toBe(false);
+    scene.destroy();
+  });
+});
+
+describe('EquipmentScene — leaves the scene (cb.onBack) after a successful equip', () => {
+  it('calls cb.onBack() once doEquip resolves ok with a non-null instanceId', async () => {
+    let backCalls = 0;
+    const scene = buildScene(async () => ({ ok: true }), () => { backCalls++; });
+    const internals = scene as unknown as SceneInternals;
+
+    await internals.doEquip('weapon', 'inst_wp', 'card1');
+
+    expect(backCalls).toBe(1);
+    scene.destroy();
+  });
+
+  it('does NOT call cb.onBack() on unequip (instanceId = null)', async () => {
+    let backCalls = 0;
+    const scene = buildScene(async () => ({ ok: true }), () => { backCalls++; });
+    const internals = scene as unknown as SceneInternals;
+
+    await internals.doEquip('weapon', null, 'card1');
+
+    expect(backCalls).toBe(0);
+    scene.destroy();
+  });
+
+  it('does NOT call cb.onBack() when the server rejects the equip', async () => {
+    let backCalls = 0;
+    const scene = buildScene(async () => ({ ok: false, key: 'equip.err.generic' }), () => { backCalls++; });
+    const internals = scene as unknown as SceneInternals;
+
+    await internals.doEquip('weapon', 'inst_wp', 'card1');
+
+    expect(backCalls).toBe(0);
     scene.destroy();
   });
 });
