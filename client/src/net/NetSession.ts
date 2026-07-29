@@ -77,6 +77,15 @@ export interface NetSessionHandlers {
   // (via match_found, same as any other match) — there is no separate "accepted" handler. ——
   onDuelInvited?(d: DuelInvited): void;
   onDuelCancelled?(d: DuelCancelled): void;
+  /**
+   * matchsvc restart-safety (matchsvc-prematch-persist, 2026-07-29): this account's pre-match state
+   * (room/queue/duel) could not be recovered after a matchsvc restart. NetSession already reacts
+   * internally — queue: silently re-submits ranked matchmaking (no player-visible interruption); room:
+   * synthesizes onRoomError so the room picker bounces back exactly like any other unhappy path; duel:
+   * synthesizes onDuelCancelled so the pending-invite banner clears — this handler is for optional
+   * additional UI/telemetry only, not required for correctness.
+   */
+  onPreMatchLost?(context: 'room' | 'queue' | 'duel'): void;
 }
 
 export class NetSession {
@@ -103,6 +112,10 @@ export class NetSession {
   private localSide = -1;
   /** Stored match ticket — reused verbatim on game-plane reconnect. */
   private ticket = '';
+  /** Deck used for the most recent createRanked() call this session — remembered so a
+   *  prematch_lost{context:'queue'} push (matchsvc restart-safety) can silently re-submit the same
+   *  ranked matchmaking request without the player having to notice or retype anything. */
+  private lastRankedDeck: string[] | null = null;
 
   constructor(
     private readonly platform: IPlatform,
@@ -186,6 +199,7 @@ export class NetSession {
   }
   /** Enter the ranked queue (server pairs by ELO + auto-starts → match_found). */
   createRanked(deck: string[] = []): void {
+    this.lastRankedDeck = deck;
     this.gateway.createRoom(MatchMode.RANKED, deck);
   }
   cancelQueue(): void {
@@ -304,6 +318,27 @@ export class NetSession {
       this.globalHandlers.onDuelInvited?.(msg.duelInvited);
     } else if (msg.duelCancelled) {
       this.handlers.onDuelCancelled?.(msg.duelCancelled);
+    } else if (msg.queueState) {
+      // matchsvc restart-safety rehydrate refresh only (matchsvc-prematch-persist, 2026-07-29): confirms
+      // the "searching…" spinner is still backed by a real server-side queue entry. No client action
+      // needed — the spinner already reflects this optimistically since createRanked() was called.
+      log.info('queue_state (rehydrate refresh)');
+    } else if (msg.preMatchLost) {
+      const context = msg.preMatchLost.context as 'room' | 'queue' | 'duel';
+      log.warn('prematch_lost', { context });
+      if (context === 'queue' && this.lastRankedDeck) {
+        // Self-healing: silently re-submit ranked matchmaking with the same deck — no player-visible
+        // interruption, the "searching…" spinner never has to change state.
+        this.createRanked(this.lastRankedDeck);
+      } else if (context === 'duel') {
+        // Clear the pending invite banner exactly like any other unhappy-path duel_cancelled.
+        this.handlers.onDuelCancelled?.({ inviteId: '', reason: 'lost' });
+      } else {
+        // context === 'room', or 'queue' with no remembered deck (defensive fallback) — bounce back to
+        // the room picker exactly like any other unhappy-path room_error.
+        this.handlers.onRoomError?.({ code: 'PREMATCH_LOST', message: 'matchsvc restarted and lost this room' });
+      }
+      this.handlers.onPreMatchLost?.(context);
     }
   }
 

@@ -121,6 +121,10 @@ export type ServerMsg =
   | { case: 'nation_msg'; worldId: string; fromPublicId: string; fromName: string; body: string; ts: number }
   | { case: 'duel_invited'; inviteId: string; fromPublicId: string; fromName: string }
   | { case: 'duel_cancelled'; inviteId: string; reason: string }
+  // matchsvc restart-safety (matchsvc-prematch-persist, 2026-07-29): pushed once rehydrate completes,
+  // see transport.proto's QueueState/PreMatchLost doc comments.
+  | { case: 'queue_state' }
+  | { case: 'pre_match_lost'; context: string }
   | { case: 'pong' };
 
 export function decodeClient(buf: Uint8Array): ClientMsg {
@@ -249,6 +253,12 @@ export function encodeServer(msg: ServerMsg): Uint8Array {
       break;
     case 'duel_cancelled':
       server = { duelCancelled: { inviteId: msg.inviteId, reason: msg.reason } };
+      break;
+    case 'queue_state':
+      server = { queueState: {} };
+      break;
+    case 'pre_match_lost':
+      server = { preMatchLost: { context: msg.context } };
       break;
     case 'pong':
       server = { pong: {} };

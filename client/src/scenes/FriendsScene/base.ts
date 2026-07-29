@@ -323,6 +323,9 @@ export class FriendsSceneBase {
       d.reason === 'declined' ? 'friends.duel.declined'
       : d.reason === 'timeout' ? 'friends.duel.timeout'
       : d.reason === 'offline' ? 'friends.duel.offline'
+      // matchsvc restart-safety (matchsvc-prematch-persist, 2026-07-29): synthesized locally by
+      // NetSession from a prematch_lost push when this outstanding invite couldn't be recovered.
+      : d.reason === 'lost' ? 'friends.duel.lost'
       : 'friends.duel.notFound';
     this.toast(key);
     this.render();

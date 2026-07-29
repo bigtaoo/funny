@@ -51,6 +51,11 @@ async function main(): Promise<void> {
     redis,
   });
 
+  // matchsvc-prematch-persist (2026-07-29): rebuild rooms/queue/duel invites from Redis (no-op when
+  // redis is null) BEFORE accepting internal HTTP traffic — gateway/gameserver must never observe a
+  // matchsvc that's up but hasn't finished reconstructing its in-memory state yet.
+  await matchsvc.rehydrate();
+
   const internal = startInternalHttp(
     { host: env.host, port: env.internalPort, internalAuth: loadInternalAuth(env.internalKey) },
     matchsvc,
@@ -73,6 +78,7 @@ async function main(): Promise<void> {
       `bot-fallback after ${env.botFallbackMs}ms`,
   );
   console.log(`active-match redis: ${redis ? 'connected' : 'disabled (resume-prompt data not persisted)'}`);
+  console.log(`pre-match persistence (rooms/queue/duel invites): ${redis ? 'connected (rehydrated on startup)' : 'disabled (pure in-memory, resets on restart)'}`);
   startHeartbeat(createLogger('matchsvc')); // Liveness heartbeat: one info log every 5 minutes when idle
 }
 

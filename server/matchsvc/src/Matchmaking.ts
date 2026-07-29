@@ -46,6 +46,19 @@ export interface MatchmakingOpts {
   botFallbackMs?: number;
   /** Timeout callback (fired once per entry). Whether to actually fall back is decided by the caller based on feature flags. */
   onTimeout?: (entry: QueueEntry) => void;
+  /**
+   * Fired synchronously right after an entry is admitted to the queue (fresh enqueue, or a re-enqueue that
+   * replaces a stale one) — matchsvc-prematch-persist (2026-07-29) write-through hook so the caller can
+   * mirror the entry to Redis. Not fired by rehydrateEntry() (that path is loading an already-persisted
+   * entry back in, not creating a new one to persist).
+   */
+  onEnqueued?: (entry: QueueEntry) => void;
+  /**
+   * Fired synchronously right after an entry leaves the queue for any reason — explicit removal (cancel /
+   * bot-fallback dequeue), or a successful pairing — matchsvc-prematch-persist write-through hook so the
+   * caller can clear the Redis mirror. Not fired for an accountId that was never actually queued.
+   */
+  onDequeued?: (accountId: string) => void;
 }
 
 export class Matchmaking {
@@ -59,6 +72,8 @@ export class Matchmaking {
   private readonly autoTick: boolean;
   private readonly botFallbackMs: number;
   private readonly onTimeout?: (entry: QueueEntry) => void;
+  private readonly onEnqueued?: (entry: QueueEntry) => void;
+  private readonly onDequeued?: (accountId: string) => void;
 
   constructor(
     /** Callback on successful pair: this class handles removal from the queue; room creation is handled by the caller. */
@@ -72,6 +87,8 @@ export class Matchmaking {
     this.autoTick = opts.autoTick ?? true;
     this.botFallbackMs = opts.botFallbackMs ?? 0;
     if (opts.onTimeout) this.onTimeout = opts.onTimeout;
+    if (opts.onEnqueued) this.onEnqueued = opts.onEnqueued;
+    if (opts.onDequeued) this.onDequeued = opts.onDequeued;
   }
 
   has(accountId: string): boolean {
@@ -85,15 +102,38 @@ export class Matchmaking {
   /** Enqueue (re-enqueuing the same account replaces the old entry and resets the wait timer). Attempts one pairing pass after enqueuing. */
   enqueue(accountId: string, name: string, publicId: string, elo: number, equippedTitle = '', avatarId = '', platform = '', deck: string[] = []): void {
     this.remove(accountId);
-    this.queue.push({ accountId, name, publicId, equippedTitle, avatarId, elo, enqueuedAt: this.now(), platform, deck });
+    const entry: QueueEntry = { accountId, name, publicId, equippedTitle, avatarId, elo, enqueuedAt: this.now(), platform, deck };
+    this.queue.push(entry);
+    this.onEnqueued?.(entry);
     this.ensureTimer();
     this.tick();
   }
 
   /** Dequeue (cancel matchmaking / disconnect / already paired). Stops the scan timer when the queue becomes empty. */
   remove(accountId: string): void {
+    const had = this.queue.some((e) => e.accountId === accountId);
     this.queue = this.queue.filter((e) => e.accountId !== accountId);
+    if (had) this.onDequeued?.(accountId);
     if (this.queue.length === 0) this.stopTimer();
+  }
+
+  /**
+   * matchsvc-prematch-persist rehydrate: re-admit an entry loaded back from Redis, preserving its original
+   * enqueuedAt (no onEnqueued fired — it's already persisted, this isn't a new write). Call
+   * {@link rehydrateDone} once after rehydrating every entry to start the scan timer and attempt one
+   * pairing pass (entries that were already a valid match at restart time pair immediately, same as they
+   * would have on the next natural tick() had the process never restarted).
+   */
+  rehydrateEntry(entry: QueueEntry): void {
+    this.queue.push(entry);
+  }
+
+  /** See {@link rehydrateEntry}. No-op if nothing was rehydrated. */
+  rehydrateDone(): void {
+    if (this.queue.length > 0) {
+      this.ensureTimer();
+      this.tick();
+    }
   }
 
   /**
@@ -126,6 +166,9 @@ export class Matchmaking {
         }
         this.queue = this.queue.filter((e) => !paired.has(e.accountId));
         if (this.queue.length === 0) this.stopTimer();
+        // Bypasses remove() (the filter above is inlined for the whole paired set at once), so fire the
+        // same write-through hook remove() would have fired, before onPair's startMatch() runs.
+        for (const accountId of paired) this.onDequeued?.(accountId);
         for (const [a, b] of pairs) this.onPair(a, b);
       }
     }

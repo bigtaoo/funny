@@ -860,5 +860,9 @@ function toServerMsg(msg: PushMsg): ServerMsg {
       return { case: 'duel_invited', inviteId: msg.inviteId, fromPublicId: msg.fromPublicId, fromName: msg.fromName };
     case 'duel_cancelled':
       return { case: 'duel_cancelled', inviteId: msg.inviteId, reason: msg.reason };
+    case 'queue_state':
+      return { case: 'queue_state' };
+    case 'prematch_lost':
+      return { case: 'pre_match_lost', context: msg.context };
   }
 }

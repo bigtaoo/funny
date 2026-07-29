@@ -237,7 +237,7 @@ commercial 此前完全没有 Redis 依赖，本次新增：`config.ts` 补 `NW_
 - **admin `retryTicket` 无原子 claim**：并发点击可重复触发 `mail.send`；补 `retryLockedAt` CAS（mirrors `approveTicket` 既有状态 CAS）。
 - **尝试后回退**：`decompressReplayDoc` 异步化在 `matchReport.ts` 的每场排位赛热路径上暴露了 `pvp-card-stats.e2e.test.ts` 对该 fire-and-forget 链路"近乎同步完成"的隐含时序假设——改成真异步后测试断言跑在链路完成前。已回退保持同步；根治需要连带把测试改成 poll 或引入更强的一致性保证，留独立任务。
 
-**未处理（更大改动或更低优先级，非本轮范围）**：matchsvc 赛前状态纯内存无持久化；worldsvc `getMarches`/`getStationed` 全服拉取 + `computeMarchPath` 缺索引扫描（结构性，需要重新设计查询模式）；`siegeEngine` 势均力敌攻城同步阻塞事件循环（需 worker 线程）；admin 四眼审批例外（策略决策）；`dailyCounter.LocalBackend` 长期 Redis 故障下无界增长（概率低）。gateway 控制消息无 per-connection 限流已于同日追加任务补齐，见下条。
+**未处理（更大改动或更低优先级，非本轮范围）**：~~matchsvc 赛前状态纯内存无持久化~~（同日以独立分支解决，见下文"matchsvc 赛前状态持久化"节）；worldsvc `getMarches`/`getStationed` 全服拉取 + `computeMarchPath` 缺索引扫描（结构性，需要重新设计查询模式）；`siegeEngine` 势均力敌攻城同步阻塞事件循环（需 worker 线程）；~~gateway 控制消息无 per-connection 限流~~（同日以独立分支解决，见下条）；admin 四眼审批例外（策略决策）；`dailyCounter.LocalBackend` 长期 Redis 故障下无界增长（概率低）。
 
 ## gateway 控制消息 per-connection 限流补齐（2026-07-29 追加，known-gap #4）
 
@@ -251,3 +251,19 @@ commercial 此前完全没有 Redis 依赖，本次新增：`config.ts` 补 `NW_
 **验证**：`npx tsc -b` 全 13 个 server 包（含新增的 shared/gateway 改动）全绿。`shared/test/rateLimiter.test.ts`（8 例，从 metaserver 原样搬来，含 Redis 冒烟 skipIf）+ `metaserver/test/rateLimiter.test.ts`（收窄为 2 例薄再导出冒烟，验证 `./service/base.js` 仍可用）+ metaserver 全量 724 测试（1 个此前因 worktree 未 `npm install`/未 build `socialsvc` 导致的环境性失败，build 后即绿，与本次改动无关）。gateway 新增 `test/rate-limit.test.ts`（6 例：TIGHT 超限拒绝+反馈、duel_invite 超限→`duel_cancelled{rate_limited}`、TIGHT/STANDARD 互不干扰、无限流 case 不受影响、无 Redis 时内存降级仍生效、Redis 共享两实例场景 skipIf——本机无本地 Redis 故跳过，同 `redis-presence.e2e.test.ts` 既有约定）；gateway 全量 32 测试 + 7 跳过全绿。
 
 **验证**：13 个 server 包 `tsc -b` 全绿；改动涉及的 10 个包 vitest 全绿（metaserver 731、commercial 144、worldsvc 350、gateway 27、gameserver 58、socialsvc 78、analyticsvc 25、admin 45、auctionsvc 77、botsvc 40，均含新增回归测试）。
+
+## matchsvc 赛前状态持久化（2026-07-29，matchsvc-prematch-persist）
+
+承上一节"已知但本轮未处理"的第一条：好友房间/排位队列/切磋邀请此前纯内存，matchsvc 重启即全丢，且客户端只能靠自己的（远长于服务端故障恢复时间的）超时才会发觉。用户拍板两个方案都做——重启后主动通知 + Redis 全量持久化。
+
+- **新增 keyspace**（`server/matchsvc/src/persist.ts`，仿 `shared/src/activeMatch.ts` 的 backend 写法：`connect*Redis()` 复用 matchsvc 已有的单一 Redis 连接、`saveX/deleteX/loadAllX` 全 null-safe、失败只 warn 不抛）：
+  - `nw:room:{roomId}` + `nw:roomByAccount:{accountId}`（滑动 TTL 3600s，量级参照 `activeMatch.ts` 的 `ACTIVE_MATCH_TTL_SEC`，而非 `REAP_MS`——好友房间可能长时间等待对方输入房间码）；
+  - `nw:queue`（ZSET，member=accountId、score=enqueuedAt，天然维持等待顺序）+ `nw:queueEntry:{accountId}`（无 TTL——内存态本身也没有自然过期，只在出队时清）；
+  - `nw:duel:{inviteId}` + `nw:duelByAccount:{fromAccountId}`（固定 TTL 75s，略大于 `DUEL_TIMEOUT_MS=60s`）。
+  - 每个 keyspace 都有一个"影子指针"设计：`nw:room:*`/`nw:duel:*` 存正文，`nw:roomByAccount:*`/`nw:duelByAccount:*`/`nw:queue` ZSET 存反查——两者理论上应同生共死（同一次 `multi().exec()` 写入），但 Redis `allkeys-lru` 淘汰策略下可能因访问频率差异被不对称淘汰（正文更大更容易被挑中）；rehydrate 时检测到"反查指针在、正文没了"就判定为该 accountId 的状态**丢失**，这是 `prematch_lost` 推送的判定依据（而不是尝试猜测"从没写成功过"这种没有任何 Redis 痕迹的边缘情况——那种情况本质上无法检测，只能靠这条影子指针机制覆盖能覆盖的那部分）。
+- **写透传**：`Matchsvc.ts` 现有的每个 mutation 点（`roomCreate`/`roomJoin`/`roomReady`/`removeFromRoom`/`destroyRoom`/`onConnected`/`onDisconnected`/`duelInvite`/`duelRespond`/`expireDuel`/`cancelDuel`）各配一次对应读写；`Matchmaking.ts` 新增 `onEnqueued`/`onDequeued` 回调钩子（`enqueue()`/`remove()`/`tick()` 内部配对分支各触发一次），由 `Matchsvc` 构造时注入 `saveQueueEntry`/`deleteQueueEntry`。没配 `NW_REDIS_URL` 时这些调用全部 no-op，行为与改动前完全一致（不要求生产必须有 Redis）。
+- **启动 rehydrate**（`Matchsvc.rehydrate()`，`index.ts` 在 `startInternalHttp` 之前 `await` 它）：从 Redis 载回 room/queue/duel 到内存 Map/数组后，主动推送刷新——房间成员重新收到 `room_state`；排位队列条目收到新增的 `queue_state`（纯 rehydrate 确认消息，proto 里无字段）；排位重建后先跑一次配对（`Matchmaking.rehydrateDone()`），已经凑对的直接收到 `match_found` 而不是 `queue_state`；切磋邀请按剩余窗口重新 `setTimeout`（窗口已过的按正常超时处理，推 `duel_cancelled{reason:'timeout'}`）。任何一类"反查指针在、正文丢了"的账号收到新增的 `prematch_lost{context:'room'|'queue'|'duel'}`。
+- **新增 proto 消息类型**（`contracts/transport.proto` `ServerMsg` oneof 新增字段 27/28）：`QueueState{}`（无字段，纯确认）、`PreMatchLost{context: string}`。gateway 侧 `matchsvcClient.ts`/`proto.ts`/`Gateway.ts` 的 `toServerMsg` 分支同步增加两个 `PushMsg` kind（`queue_state`/`prematch_lost`）。四个受影响的 server 包（gateway/gameserver/metaserver + client）各自的 `npm run proto:gen`（buf codegen）已重新生成并提交。
+- **客户端**（`client/src/net/NetSession.ts`）：收到 `queue_state` 时纯日志（UI 已经乐观展示"搜索中"，无需动作）；收到 `prematch_lost` 时按 context 分流——`queue` 且本会话记得上次排位的 deck（`lastRankedDeck`）→ 静默重新调用 `createRanked()`（`room.error.prematchLost` 提示语一次都不会出现，玩家无感知）；`duel` → 合成一次 `onDuelCancelled({reason:'lost'})` 复用现有"切磋邀请已失效"横幅逻辑（`FriendsScene`，新增 i18n `friends.duel.lost`）；`room`（或 `queue` 但没记住 deck 的兜底分支）→ 合成一次 `onRoomError({code:'PREMATCH_LOST'})` 复用现有"退回房间选择+toast"逻辑（`RoomScene`，新增 i18n `room.error.prematchLost`）。三语言（zh/en/de）文案已补。
+
+**验证**：新增 `matchsvc/test/persist.test.ts`（18 例，纯 Redis 读写原语，假 Redis client）+ `matchsvc/test/rehydrate.test.ts`（14 例，覆盖写透传实际发生、rehydrate 正确重建内存态且仍可继续操作、配对/超时的边界情况、`prematch_lost` 触发条件）；matchsvc 既有 75 例回归全绿（合计 107 例）。13 个 server 包 `tsc -b` 全绿；client `tsc --noEmit` 全绿、843 例 vitest 全绿。gateway（27 例）/gameserver/metaserver/shared 既有测试套件全绿（proto 重生成无回归）。
