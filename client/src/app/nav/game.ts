@@ -178,6 +178,7 @@ export function createGameNav(ctx: AppCtx): GameNav {
         onBack() { back(); },
         initialTab,
         getSave: () => saveManager.get(),
+        onSaveChanged: (listener: () => void) => saveManager.subscribe(listener),
         getCardState: () => liveCardState,
         getTeamName: (teamId) => liveTeamNames?.[teamId],
         async fuseCards(targetCardId, materialCardIds) {
@@ -300,6 +301,7 @@ export function createGameNav(ctx: AppCtx): GameNav {
       activeCardInstanceId: cardInstanceId,
       ...(initialFilterSlot ? { initialFilterSlot } : {}),
       getSave: () => saveManager.get(),
+      onSaveChanged: (listener: () => void) => saveManager.subscribe(listener),
       async craft(defId: string) {
         try {
           const { save, instance } = await client.craftEquipment(defId, genUuid());

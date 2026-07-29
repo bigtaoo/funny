@@ -369,6 +369,7 @@ const SCENES: Array<{ name: string; build: (w: number, h: number) => Scene }> = 
         worldId: 'world:1:0',
         playerName: 'Tester',
         accountId: 'acc_test',
+        storage: memStore,
       }),
   },
   {

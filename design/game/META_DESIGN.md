@@ -140,6 +140,10 @@ function migrate(raw: any): SaveData { /* 按 version 顺序套用 */ }
 | **写入** | 每个可写字段各有自己的专属服务器接口（`/equipment/*`、`/pve/*`、`/title\|avatar\|skin/equip`、`/flags`、经济类端点…），响应即最新 `SaveData`；`SaveManager` 对 `equipTitle/equipAvatar/equipSkin/setFlag` 这类低风险字段先写本地镜像做即时反馈，再后台请求确认——失败/被拒会在下一次 `reconcile()` 被服务器真值覆盖纠正，绝不会永久停留在错误的本地值上（这正是"刷新治百病"的机制保证） | 客户端永不直接写任何权威字段 |
 | **乱序丢弃** | `reconcile()` 若收到的 `cloud.rev` 低于本地已持有的 `rev` 直接整段丢弃（防止连点抽卡等场景下一个慢请求的旧响应后到，把 `cardInv`/`wallet` 滚回早前快照、复活已被消耗的实例 id） | `rev` 单调递增，仅由服务器写操作推进 |
 
+> **变更通知（2026-07-29 起）**：`SaveManager.subscribe(listener): unsub` 在每次本地写入（`persist()`，即 `update`/`patchLocal`/`setFlag`/`optimisticEquip`）和每次 `reconcile()` 后同步触发所有监听者（无 payload，监听者自己重新 `get()`）。此前每个界面读到的都是"构造时快照值"或"自己下次 render 才会重新求值的闭包"，当 `WorldMapScene` 与其 overlay（`CityScene`/`FriendsScene`/`SectScene`/`AuctionScene`）同时挂载时，一方花钱后另一方的余额显示不会自动刷新，只能靠对方自己下次重绘。现在 `nav/*.ts` 把 `(fn) => saveManager.subscribe(fn)` 作为 `onSaveChanged` 回调注入到所有展示 `wallet.coins`/`getSave()` 的界面（Shop/Gacha/BattlePass/Recharge/CardRoster/Equipment/Friends/Sect/Auction/City/Lobby/Settings），各自在构造函数里 `if (cb.onSaveChanged) this.unsubs.push(cb.onSaveChanged(() => this.render()))`，退订走既有的 `unsubs`/`destroy()` 契约（同 `InputManager.onDown/onMove/onUp` 的模式，见 `claudedocs/client-modules.md` 输入订阅泄漏契约）。**`WorldMapScene` 本身未接入**——它对 `getCoins` 的唯一消费点在世界商城子 Tab 内，属于"打开时才画一次"的 pull 式面板，重构 `WorldMapRenderer` 的 build/redraw 管线风险与收益不成比例，故按现状保留（打开时自然读到最新值）。回调设计上用 `(fn) => saveManager.subscribe(fn)` 包一层箭头函数而非 `saveManager.subscribe.bind(saveManager)`——后者在测试里构造一个不含 `subscribe` 方法的假 `saveManager`（`as unknown as AppCtx['saveManager']`）时会在 `showXxx()` 调用瞬间就抛 `Cannot read properties of undefined`，箭头函数把属性访问推迟到真正调用时，多个既有测试因此不用逐一打补丁。
+>
+> 顺带把 `nav/lobby.ts` 传给 `LobbySceneCallbacks` 的 `coins: number`（构造时快照）统一改成了 `getCoins(): number`（闭包），和其余 nav 模块的约定一致——此前大厅是全代码库唯一一处传值而非传 getter 的地方。
+
 ---
 
 ## 4. C — 经济系统

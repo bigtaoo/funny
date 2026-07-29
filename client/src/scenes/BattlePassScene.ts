@@ -35,6 +35,8 @@ export interface BattlePassCallbacks {
   onBack(): void;
   /** Current server-authoritative coin balance (read from SaveData), shown top-right in the header. */
   getCoins(): number;
+  /** Subscribe to SaveManager writes; re-renders this scene when a concurrently-mounted peer scene changes the wallet. Push the returned unsub onto `unsubs`. */
+  onSaveChanged?(listener: () => void): () => void;
   /**
    * Get the current save's battle pass data. Returns undefined when not yet joined this season.
    * Omitted when offline/not logged in → shows "login to view".
@@ -126,6 +128,7 @@ export class BattlePassScene implements Scene {
     this.unsubs.push(input.onMove((x, y) => this.handleMove(x, y)));
     this.unsubs.push(input.onUp(() => this.handleUp()));
     this.unsubs.push(input.onWheel((_x, y, deltaY) => this.handleWheel(y, deltaY)));
+    if (cb.onSaveChanged) this.unsubs.push(cb.onSaveChanged(() => this.render()));
     this.render();
   }
 

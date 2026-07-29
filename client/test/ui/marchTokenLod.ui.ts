@@ -41,6 +41,7 @@ function buildScene() {
     onBack() {}, onOpenChat() {}, onOpenAuction() {}, onReplaySiege() {},
     onOpenCity() {}, onOpenDefense() {},
     worldApi: stubWorldApi(), worldId: 'world:1:0', playerName: 'Tester', accountId: 'acc_test',
+    storage: memStore,
   }) as any;
 }
 

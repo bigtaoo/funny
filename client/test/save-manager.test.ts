@@ -681,3 +681,49 @@ describe('SaveManager.spendStaminaForLevel (A4)', () => {
     expect(mgr.get().stamina?.current).toBeLessThan(10);
   });
 });
+
+describe('SaveManager.subscribe (2026-07-29)', () => {
+  it('fires on a local write (update/patchLocal/setFlag) and on reconcile (refresh)', async () => {
+    const store = new LocalSaveStore(new MemStorage());
+    store.saveLocal(makeNewSave('a', 1));
+    const cloud = makeNewSave('a', 1);
+    cloud.pvp = { elo: 1300, rank: 'gold', wins: 1, losses: 0, streak: 1 };
+    const mgr = new SaveManager({ store, api: fakeApi(cloud) });
+
+    let fired = 0;
+    const unsub = mgr.subscribe(() => { fired += 1; });
+
+    mgr.update((s) => { s.wallet.coins += 10; });
+    expect(fired).toBe(1);
+
+    mgr.patchLocal({ pvpDeck: ['a', 'b'] });
+    expect(fired).toBe(2);
+
+    await mgr.refresh(); // reconcile() also persists
+    expect(fired).toBe(3);
+
+    unsub();
+    mgr.update((s) => { s.wallet.coins += 10; });
+    expect(fired).toBe(3); // unsubscribed listener no longer called
+  });
+
+  it('multiple subscribers are all notified independently', () => {
+    const store = new LocalSaveStore(new MemStorage());
+    store.saveLocal(makeNewSave('a', 1));
+    const mgr = new SaveManager({ store });
+
+    let a = 0;
+    let b = 0;
+    const unsubA = mgr.subscribe(() => { a += 1; });
+    mgr.subscribe(() => { b += 1; });
+
+    mgr.update((s) => { s.wallet.coins += 1; });
+    expect(a).toBe(1);
+    expect(b).toBe(1);
+
+    unsubA();
+    mgr.update((s) => { s.wallet.coins += 1; });
+    expect(a).toBe(1); // no longer subscribed
+    expect(b).toBe(2);
+  });
+});

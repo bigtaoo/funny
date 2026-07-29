@@ -102,6 +102,8 @@ export interface FriendsSceneCallbacks {
   playerName?(): string;
   /** Current coin balance — shown top-right on the world channel tab (each post costs coins). */
   getCoins?(): number;
+  /** Subscribe to SaveManager writes; re-renders this scene when a concurrently-mounted peer scene (e.g. the world map underneath) changes the wallet. Push the returned unsub onto `unsubs`. */
+  onSaveChanged?(listener: () => void): () => void;
   /**
    * Re-sync the authoritative wallet after a server-side coin spend (world-chat post).
    * World-chat coins are debited in the commercial service by worldsvc, which never touches
@@ -259,6 +261,7 @@ export class FriendsSceneBase {
     this.unsubs.push(input.onMove((x, y) => this.onPointerMove(x, y)));
     this.unsubs.push(input.onUp((x, y) => this.onPointerUp(x, y)));
     this.unsubs.push(input.onWheel((x, y, deltaY) => this.onWheel(y, deltaY)));
+    if (cb.onSaveChanged) this.unsubs.push(cb.onSaveChanged(() => this.render()));
 
     this.render();
     void this.refresh();

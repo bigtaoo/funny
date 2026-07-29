@@ -292,9 +292,9 @@ export function BuildMixin<TBase extends LobbySceneBaseCtor>(Base: TBase): TBase
         // ("98948k" vs "Gold · 1271"), which left the frames ragged and
         // misaligned. Icons align on a common left edge; text is left-anchored
         // right after the icon; both frames end flush at chipX (+chipPad).
-        const hasCoins = typeof this.cb.coins === 'number';
-        const coinLbl = hasCoins
-          ? txt(fmtCoins(this.cb.coins as number), FS.label, C.gold, true) : null;
+        const coins = this.cb.getCoins?.();
+        const coinLbl = typeof coins === 'number'
+          ? txt(fmtCoins(coins), FS.label, C.gold, true) : null;
         const rankName = t(('rank.' + pvp.rank) as TranslationKey);
         const badge = pvp.rank === 'unranked' ? rankName : `${rankName} · ${pvp.elo}`;
         const tierColor = TIER_COLORS[pvp.rank] ?? C.light;

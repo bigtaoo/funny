@@ -38,6 +38,8 @@ export interface AuctionSceneCallbacks {
    * (equipmentInv / cardInv). Optional: without it, only material listing is offered.
    */
   getSave?(): SaveData;
+  /** Subscribe to SaveManager writes; re-renders this scene when a concurrently-mounted peer scene changes the save. Push the returned unsub onto `unsubs`. */
+  onSaveChanged?(listener: () => void): () => void;
   /**
    * Re-pull the authoritative save after an equipment/card listing (the server escrows the
    * instance, removing it from inventory). Optional; no-op when absent (e.g. tests).
@@ -206,6 +208,7 @@ export class AuctionSceneBase {
     this.unsubs.push(input.onMove((x, y) => this.handleMove(x, y)));
     this.unsubs.push(input.onUp((x, y) => this.handleUp(x, y)));
     this.unsubs.push(input.onWheel((_x, y, deltaY) => this.handleWheel(y, deltaY)));
+    if (cb.onSaveChanged) this.unsubs.push(cb.onSaveChanged(() => { if (!this.destroyed) this.render(); }));
   }
 
   private build(): void {
