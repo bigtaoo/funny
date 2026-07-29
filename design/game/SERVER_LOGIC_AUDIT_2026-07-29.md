@@ -69,4 +69,11 @@
 - **siegeWorkerPool 排队任务的超时保护在 `submit()` 时就武装**（而非任务真正被派发给 worker 时），单一次 `setTimeout` 用掉后不会重新武装——高负载下排队超过 `taskTimeoutMs` 的任务一旦真正开始跑就永久失去挂死检测，卡死的 worker 再也不会被替换（这正是这个池设计上要处理的高负载场景）。修复：把计时器的武装从 `submit()` 移到 `dispatch()`（任务真正分配给空闲 worker 的那一刻），`PendingTask.timer` 相应改为可空。新增回归测试 `worldsvc/test/siegeWorkerPool.test.ts`（"dispatch-time arming regression"）+ 专用 fixture `test/fixtures/slowThenHangWorker.ts`：让若干正常任务先在单 worker 上排队耗掉超过 `taskTimeoutMs` 的时间，验证目标任务在真正派发后仍能获得完整的挂死保护窗口（对修复前代码回退验证过：该用例确实会失败/挂起，不是空转通过的假回归测试）。
 - **gateway 限流的 `rate_limited` 拒绝原因没有对应 i18n 分支**：`friends.duel.rateLimited` 缺失时，`FriendsScene.applyDuelCancelled` 落进默认档位显示"找不到该玩家"——比通用兜底文案更糟，是主动误导。修复：补 `rate_limited` 分支 + 三语言 `friends.duel.rateLimited` 文案。
 
-**验证**：13 个 server 包 `tsc -b` 全绿；client `tsc --noEmit -p tsconfig.test.json` + `webpack --mode production` 全绿。commercial 144/144、metaserver 727/727、worldsvc 370/370（含新增 1 例回归测试）全量 vitest 全绿；client 843/843（118 文件）全量 vitest 全绿。回归测试新增于 `worldsvc/test/siegeWorkerPool.test.ts`（siege 池），其余三处修复靠既有 e2e 套件（`metaserver/test/equipment.e2e.test.ts` 的"equip an instance already equipped on a DIFFERENT card"用例、`commercial` 全量套件、client 全量套件）验证未破坏既有行为——未新增针对性的并发复现测试（并发双发本身难以在单进程 vitest 里稳定复现，CAS 逻辑的正确性靠代码走查而非新测试断言）。
+**验证**：13 个 server 包 `tsc -b` 全绿；client `tsc --noEmit -p tsconfig.test.json` + `webpack --mode production` 全绿。commercial 149/149（含新增 5 例）、metaserver 728/728（含新增 1 例）、worldsvc 370/370（含新增 1 例）全量 vitest 全绿；client 843/843（118 文件）全量 vitest 全绿。
+
+**并发回归测试补齐（同日追加，audit-followup-fixes-tests-0729）**：最初判断"并发双发难以在单进程 vitest 里稳定复现"过于悲观——Fastify `app.inject` 和真实 Mongo 驱动的调用本身就是异步的，`Promise.all` 并发发起多个请求足以让"读后写"竞态真实触发，不需要额外的调度器 hack。为 4 处 CAS 修复各补了一条并发复现测试，且逐条对修复前代码回退验证过确实会失败（不是空转通过的假回归）：
+- `metaserver/test/equipment.e2e.test.ts`「CONCURRENT equip of the SAME instance onto DIFFERENT cards」——6 张卡并发装同一 instanceId，退回旧代码时 6 个请求里 5 个都返回 200（真实复制），修复后稳定 1 赢 5 输
+- `commercial/test/service-idempotency.e2e.test.ts` 新增 4 例：`rechargeVerify`/`orderDelivered`/`monthlyCardBuy`（`claimOrderResume` 共享路径）/`starterBuy growth`（`claimOrderResume` 另一调用点）各自的"8 个并发过期治愈请求只应生效一次"——退回旧代码时金币/邮件被发了 4–8 倍（如 550→4400），修复后精确等于单次发放量
+- `commercial/test/promo.test.ts` 新增 1 例：同款并发治愈场景，8 个请求应恰好 1 个 `ok:true`、7 个 `PROMO_ALREADY_USED`
+
+siegeWorkerPool 的排队超时回归测试（见上文）此前已补齐，未变。
