@@ -44,6 +44,7 @@ import {
   type CardInstance,
 } from '@nw/shared';
 import type { ArmyEntry, CardSLGState } from './db';
+import { getSiegeWorkerPool } from './siegeWorkerPool';
 
 /** Default synthesized unit type = Infantry (basic melee, full HP 60 = unit troop equivalent). §16.5 full-HP capacity table is pending tuning. */
 const SYNTH_UNIT = UnitType.Infantry;
@@ -363,8 +364,15 @@ export interface SiegeBattleInput {
  *
  * Deterministic: same seed + same armies → tick-for-tick identical (fixed-point arithmetic + injected PRNG).
  * Settlement goes through the single landing point at service.landSiege (G3-1), decoupled from this function.
+ *
+ * **Pure + synchronous** — this is the actual CPU-bound computation (the `runHeadless` while-loop can run
+ * up to ~18,600 ticks for an evenly-matched base siege, see siegeWorkerPool.ts). It is the function that
+ * runs *inside* the worker thread (siegeWorker.ts calls it directly); the main thread must never call this
+ * directly (it would block the event loop for the whole battle) — main-thread callers use {@link runSiegeBattle}
+ * instead, which dispatches to the worker pool. Exported for the worker + for tests that want the raw
+ * synchronous result without pool overhead.
  */
-export function runSiegeBattle(input: SiegeBattleInput): SiegeResolution {
+export function runSiegeBattleSync(input: SiegeBattleInput): SiegeResolution {
   const { attackerArmy, defenderConfig, tileLevel, seed, cardInstances, equipmentInv, siegeAcademy } = input;
 
   const levelObj = buildSiegeBattle({ army: attackerArmy }, defenderConfig, tileLevel, seed);
@@ -407,4 +415,20 @@ export function runSiegeBattle(input: SiegeBattleInput): SiegeResolution {
   }
   // Defense holds: defender survivors remain at the tile; attacker survivors retreat and return to the troop pool.
   return { outcome, attackerSurvivors: Math.floor(atkHp), defenderSurvivors: Math.floor(defHp) };
+}
+
+/**
+ * Main-thread entry point (server-logic-audit-2026-07-29, item 3): dispatches to the process-wide
+ * {@link SiegeWorkerPool} instead of running {@link runSiegeBattleSync} directly, so the potentially
+ * ~18,600-tick computation never blocks worldsvc's event loop. Every existing call site
+ * (combatSiege/{arrival,occupation,encounter}.ts) already awaits inside an async function and already
+ * wraps the call in try/catch for engine-failure fallback to the cheap linear formula — `await
+ * runSiegeBattle(...)` is a drop-in replacement for the old synchronous call.
+ *
+ * Determinism is unaffected: same seed + same armies + same engine code → identical result, only the
+ * thread it runs on changed. Rejects (instead of throwing) on bad input (level validation failure) or pool
+ * failure (worker crash/timeout) — callers' existing catch blocks handle both identically to a thrown error.
+ */
+export async function runSiegeBattle(input: SiegeBattleInput): Promise<SiegeResolution> {
+  return getSiegeWorkerPool().submit(input);
 }

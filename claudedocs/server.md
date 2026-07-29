@@ -238,7 +238,7 @@ commercial 此前完全没有 Redis 依赖，本次新增：`config.ts` 补 `NW_
 - **admin `retryTicket` 无原子 claim**：并发点击可重复触发 `mail.send`；补 `retryLockedAt` CAS（mirrors `approveTicket` 既有状态 CAS）。
 - **尝试后回退**：`decompressReplayDoc` 异步化在 `matchReport.ts` 的每场排位赛热路径上暴露了 `pvp-card-stats.e2e.test.ts` 对该 fire-and-forget 链路"近乎同步完成"的隐含时序假设——改成真异步后测试断言跑在链路完成前。已回退保持同步；根治需要连带把测试改成 poll 或引入更强的一致性保证，留独立任务。
 
-**未处理（更大改动或更低优先级，非本轮范围）**：~~matchsvc 赛前状态纯内存无持久化~~（同日以独立分支解决，见下文"matchsvc 赛前状态持久化"节）；worldsvc `getMarches`/`getStationed` 全服拉取 + `computeMarchPath` 缺索引扫描（结构性，需要重新设计查询模式）；`siegeEngine` 势均力敌攻城同步阻塞事件循环（需 worker 线程）；~~gateway 控制消息无 per-connection 限流~~（同日以独立分支解决，见下条）；admin 四眼审批例外（策略决策）；`dailyCounter.LocalBackend` 长期 Redis 故障下无界增长（概率低）。
+**未处理（更大改动或更低优先级，非本轮范围）**：~~matchsvc 赛前状态纯内存无持久化~~（同日以独立分支解决，见下文"matchsvc 赛前状态持久化"节）；~~worldsvc `getMarches`/`getStationed` 全服拉取 + `computeMarchPath` 缺索引扫描~~（同日以独立分支解决，见"SLG worldsvc 要点"对应条目）；~~`siegeEngine` 势均力敌攻城同步阻塞事件循环~~（同日以独立分支解决，见下方"siegeEngine 移入 worker_threads 池"节）；~~gateway 控制消息无 per-connection 限流~~（同日以独立分支解决，见下条）；admin 四眼审批例外（策略决策）；`dailyCounter.LocalBackend` 长期 Redis 故障下无界增长（概率低）。
 
 ## gateway 控制消息 per-connection 限流补齐（2026-07-29 追加，known-gap #4）
 
@@ -268,3 +268,17 @@ commercial 此前完全没有 Redis 依赖，本次新增：`config.ts` 补 `NW_
 - **客户端**（`client/src/net/NetSession.ts`）：收到 `queue_state` 时纯日志（UI 已经乐观展示"搜索中"，无需动作）；收到 `prematch_lost` 时按 context 分流——`queue` 且本会话记得上次排位的 deck（`lastRankedDeck`）→ 静默重新调用 `createRanked()`（`room.error.prematchLost` 提示语一次都不会出现，玩家无感知）；`duel` → 合成一次 `onDuelCancelled({reason:'lost'})` 复用现有"切磋邀请已失效"横幅逻辑（`FriendsScene`，新增 i18n `friends.duel.lost`）；`room`（或 `queue` 但没记住 deck 的兜底分支）→ 合成一次 `onRoomError({code:'PREMATCH_LOST'})` 复用现有"退回房间选择+toast"逻辑（`RoomScene`，新增 i18n `room.error.prematchLost`）。三语言（zh/en/de）文案已补。
 
 **验证**：新增 `matchsvc/test/persist.test.ts`（18 例，纯 Redis 读写原语，假 Redis client）+ `matchsvc/test/rehydrate.test.ts`（14 例，覆盖写透传实际发生、rehydrate 正确重建内存态且仍可继续操作、配对/超时的边界情况、`prematch_lost` 触发条件）；matchsvc 既有 75 例回归全绿（合计 107 例）。13 个 server 包 `tsc -b` 全绿；client `tsc --noEmit` 全绿、843 例 vitest 全绿。gateway（27 例）/gameserver/metaserver/shared 既有测试套件全绿（proto 重生成无回归）。
+
+## siegeEngine 移入 worker_threads 池（2026-07-29，独立 worktree `feat/siegeengine-worker-threads`）
+
+承上一条 07-29 审计"已知但本轮未处理"第 3 条：`runSiegeBattle`（`worldsvc/src/siegeEngine.ts`）内部经 `runHeadless`（`@nw/engine`）跑一个完全同步的 tick while 循环，势均力敌的攻城战（`shouldUseCheapSiege` 筛不掉的那部分）最长可同步跑 `SIEGE_BATTLE_TIMEOUT_TICKS(18000)+TICK_MARGIN(600)` tick，期间独占 worldsvc 事件循环（调用来自 `scheduler.ts` 的后台 `setInterval` tick，不是同步 HTTP handler，但一样卡住进程上所有其它请求/结算）。
+
+- **方案**：新增常驻 `worker_threads` 池，而非"每场战斗现起 worker"（起 worker 有 tens-of-ms 级开销）也不是"每 N tick 让出一次"的过渡方案（用户已拍板结构性方案）。
+- **`worldsvc/src/siegeWorkerPool.ts`**：`SiegeWorkerPool` 类，构造时起 `size`（默认 `os.cpus().length-1`，`NW_SIEGE_WORKER_POOL_SIZE` 覆盖）个 worker；简单的"空闲 worker 或排队"调度（无需引第三方库）。崩溃自愈：worker `'error'`/`'exit'`（非 0）触发替换——reject 该 worker 在飞的任务、`splice` 出列表、`terminate()`、`spawnWorker()` 补位；`retiring` 标志防止同一次崩溃的 `'error'`+`'exit'` 双重处理。任务级超时（默认 30s，`NW_SIEGE_WORKER_TASK_TIMEOUT_MS` 覆盖）：卡死 worker 会被强制 `terminate()` 并替换，而不是让某个任务永久悬空吃掉一个槽位。排队不设上限、不拒绝（S8-3b 场景是后台调度 tick，允许排队等待）。进程内单例 `getSiegeWorkerPool()`（首次调用时才 construct，避免 worker 内部 `import` `siegeEngine.ts` 时递归起 worker-within-worker）+ `shutdownSiegeWorkerPool()`（挂 `index.ts` 的 `shutdown()`）。
+- **`worldsvc/src/siegeWorker.ts`**：worker 入口，`parentPort.on('message', ...)` 收 `SiegeBattleInput` → 调 `runSiegeBattleSync`（原 `runSiegeBattle`，纯计算逻辑本身零改动）→ postMessage 回 `SiegeResolution` 或错误字符串。全程无 Mongo 访问，所有落库仍在主线程。
+- **`siegeEngine.ts`**：原来唯一导出的同步 `runSiegeBattle` 改名 `runSiegeBattleSync`（worker 内直接调）；新增 async `runSiegeBattle(input)` 作为主线程入口，内部 `getSiegeWorkerPool().submit(input)`。6 个调用点（`combatSiege/{arrival.ts×4, occupation.ts×2, encounter.ts×1}`，均已在 `try{ res = runSiegeBattle(...) }catch` 内且外层函数已是 `async`）改 `await runSiegeBattle(...)`——纯改调用位置，无需重构调用方。
+- **dev/prod 双模路径**：`__filename.endsWith('.ts')` 判断当前是 tsx 直跑源码（dev `node --import tsx`、vitest）还是 `tsc -b` 编译产物；前者时 worker 也指向 `.ts` 并传 `execArgv:['--import','tsx']`（worker 是独立 V8 isolate，不继承父进程 CLI 标志），后者指向编译好的 `dist/siegeWorker.js`，无需额外 execArgv，`tsx` 保持纯 devDependency。
+- **踩坑（`worker.unref()`）**：最初图"短生命周期脚本忘记 `close()` 不至于挂起"给 worker 加了 `.unref()`，结果编译产物冒烟测试时静默无输出——`.unref()` 让"等待 worker 消息"不再计入事件循环活跃度，若调用方脚本自己没有其它 ref'd 句柄（无 HTTP server/DB 连接），Node 会在 worker 结果送达前就判定循环已空自行退出，任务结果被无声丢弃。worldsvc 真实进程永远有 HTTP server/Mongo/scheduler 定时器等其它 ref'd 句柄所以从未观察到，但对未来任何独立脚本消费这个池都是地雷——已去掉 `.unref()`，改为完全依赖显式 `close()`（已接入 `index.ts` 的 `shutdown()`；测试文件 `afterEach` 里各自 close）。
+- **确定性**：同 seed+同双方阵容+同引擎代码，只是换了执行线程——`siegeWorkerPool.test.ts` 直接断言 `pool.submit(input)` 的结果与主线程 `runSiegeBattleSync(input)` 逐字段相等；原有 `siege`/`base-siege`/`stronghold`/`passage`/`nation-bonus`/`field-encounter` 等 e2e 断言值全部不变（执行位置改动，非数值改动）。
+- **新增测试** `worldsvc/test/siegeWorkerPool.test.ts`（10 例）+ 两个测试 fixture worker（`test/fixtures/{crashWorker,hangWorker}.ts`，仅测试用，让崩溃/挂起可确定性复现）：基本调度（提交→结果、单 worker 排队多任务、坏输入 reject 不拖垮 worker）、崩溃自愈（单/双 worker 各自崩溃后 `pool.size` 不变、坏 worker 只影响自己在飞的任务）、任务超时强制替换、`close()` 语义、以及"白拿的好处"验证——6 个满板大规模战斗（`SIEGE_SYNTH_ARMY_MAX_TROOPS` 双方）在 6-worker 池上 warm-up 后并发耗时 vs 同款输入主线程串行 `runSiegeBattleSync` 循环耗时，断言并行版本快过串行版本 30% 以上（真实跨核，而非池内排队假并行）——这也印证了 `scheduler.ts` 的 `Promise.allSettled` 现在能真正跨核并行多场攻城，不再是同线程抢时间片。
+- **验证**：`worldsvc` 47 文件/360 测试全绿（含新增 10 例）；`tsc -b` 全 13 个 server 包全绿。

@@ -15,6 +15,7 @@ import { HttpWorldMetaClient, nullWorldMetaClient } from './metaClient';
 import { HttpWorldMailClient, nullWorldMailClient } from './mailClient';
 import { HttpWorldSocialsvcClient, nullWorldSocialsvcClient } from './socialsvcClient';
 import { loadWorldsvcEnv } from './config';
+import { shutdownSiegeWorkerPool } from './siegeWorkerPool';
 
 async function main(): Promise<void> {
   const env = loadWorldsvcEnv();
@@ -114,6 +115,7 @@ async function main(): Promise<void> {
   const shutdown = async (): Promise<void> => {
     scheduler.stop();
     server.close();
+    await shutdownSiegeWorkerPool();
     if (redis) await redis.quit().catch(() => {});
     await mongo.close();
     process.exit(0);
