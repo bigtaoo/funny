@@ -188,6 +188,10 @@ export class HeadlessAppViews implements AppViews {
 
   showGame(cb: GameSceneCallbacks, opts: GameSceneOptions): void {
     this.screen = 'game';
+    // Headless: skip the FTUE tutorial level entirely, matching a player who dismisses it —
+    // post-ADR-056 reconcile() no longer lets a harness-seeded local `tutorial_done` flag
+    // survive the first cloud sync, so goTutorial() would otherwise fire on every fresh account.
+    if (opts.tutorial) { cb.onExitToLobby?.(); return; }
     const { engine, buildReplay } = createLocalMatch({
       ...(opts.level ? { level: opts.level } : {}),
       ...(opts.cardInstances ? { cardInstances: opts.cardInstances } : {}),
