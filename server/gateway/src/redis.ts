@@ -17,7 +17,7 @@
 // ever scaled out. Per-account presence keys (not a single SADD/SREM set — see markOnline below for why)
 // let any instance answer the query for accounts connected elsewhere, reusing this same pub/sub connection
 // rather than opening a third Redis client.
-import { createLogger, GW_PUSH_REDIS_CHANNEL } from '@nw/shared';
+import { createLogger, GW_PUSH_REDIS_CHANNEL, type RedisLike } from '@nw/shared';
 import type { PushMsg } from './matchsvcClient';
 
 const log = createLogger('gateway:redis');
@@ -55,6 +55,11 @@ export interface GatewaySubscriber {
   /** Cross-instance batch presence check — Gateway.presenceOf calls this only for accountIds not found in
    *  its own local `conns` (so a single-instance deployment never touches Redis for this at all). */
   onlineAccountIds(accountIds: string[]): Promise<Set<string>>;
+  /** Dedicated ioredis client for Gateway's per-connection control-message rate limiter (SERVER_LOGIC_AUDIT_
+   *  2026-07-29 known-gap #4). A separate connection from subClient (subscriber mode, can't issue other
+   *  commands) and pubClient (already used for kick/presence pub-sub traffic) — reused via createRateLimiter
+   *  from @nw/shared, same as metaserver's auth/telemetry/save limiters. */
+  readonly rateLimitClient: RedisLike;
 }
 
 /**
@@ -98,10 +103,16 @@ export async function connectGatewaySubscriber(
     const pubClient = subClient.duplicate();
     pubClient.on('error', (e: Error) => log.error('redis publish-connection error', { err: e.message }));
 
+    // Dedicated connection for the rate limiter's EVAL calls — kept separate from pubClient so a bursty
+    // rate-limit workload can't head-of-line block presence/kick publishes (or vice versa) on the same socket.
+    const rateLimitClient = subClient.duplicate();
+    rateLimitClient.on('error', (e: Error) => log.error('redis rate-limit-connection error', { err: e.message }));
+
     return {
       quit: async () => {
-        await Promise.allSettled([subClient.quit(), pubClient.quit()]);
+        await Promise.allSettled([subClient.quit(), pubClient.quit(), rateLimitClient.quit()]);
       },
+      rateLimitClient,
       publishKick: async (accountId, originInstanceId) => {
         try {
           await pubClient.publish(GW_PUSH_REDIS_CHANNEL, JSON.stringify({ kick: { accountId, originInstanceId } }));

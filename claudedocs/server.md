@@ -237,6 +237,17 @@ commercial 此前完全没有 Redis 依赖，本次新增：`config.ts` 补 `NW_
 - **admin `retryTicket` 无原子 claim**：并发点击可重复触发 `mail.send`；补 `retryLockedAt` CAS（mirrors `approveTicket` 既有状态 CAS）。
 - **尝试后回退**：`decompressReplayDoc` 异步化在 `matchReport.ts` 的每场排位赛热路径上暴露了 `pvp-card-stats.e2e.test.ts` 对该 fire-and-forget 链路"近乎同步完成"的隐含时序假设——改成真异步后测试断言跑在链路完成前。已回退保持同步；根治需要连带把测试改成 poll 或引入更强的一致性保证，留独立任务。
 
-**未处理（更大改动或更低优先级，非本轮范围）**：matchsvc 赛前状态纯内存无持久化；worldsvc `getMarches`/`getStationed` 全服拉取 + `computeMarchPath` 缺索引扫描（结构性，需要重新设计查询模式）；`siegeEngine` 势均力敌攻城同步阻塞事件循环（需 worker 线程）；gateway 控制消息无 per-connection 限流；admin 四眼审批例外（策略决策）；`dailyCounter.LocalBackend` 长期 Redis 故障下无界增长（概率低）。
+**未处理（更大改动或更低优先级，非本轮范围）**：matchsvc 赛前状态纯内存无持久化；worldsvc `getMarches`/`getStationed` 全服拉取 + `computeMarchPath` 缺索引扫描（结构性，需要重新设计查询模式）；`siegeEngine` 势均力敌攻城同步阻塞事件循环（需 worker 线程）；admin 四眼审批例外（策略决策）；`dailyCounter.LocalBackend` 长期 Redis 故障下无界增长（概率低）。gateway 控制消息无 per-connection 限流已于同日追加任务补齐，见下条。
+
+## gateway 控制消息 per-connection 限流补齐（2026-07-29 追加，known-gap #4）
+
+补上 07-29 审计"已知但本轮未处理"清单第 4 条：`Gateway.handle()`（`server/gateway/src/Gateway.ts`）此前对 room_create/room_join/room_ready/room_start/room_leave/duel_invite/duel_respond 完全没有限流，脚本客户端可无限速刷 matchsvc，`duel_invite` 还能直接刷屏骚扰其他玩家。
+
+- **限流器搬家**：`RateLimiter`/`SlidingRateLimiter`/`RedisSlidingRateLimiter`/`createRateLimiter`（连同 07-27 补的 `maybeSweep` 内存泄漏修复）从 `metaserver/src/service/base.ts` 整体搬到 `server/shared/src/rateLimiter.ts`（纯提取，逻辑字节不变），`@nw/shared` 桶导出。`metaserver/src/service/base.ts` 改成 `export { ... } from '@nw/shared'` 的薄再导出——auth.ts/save.ts/telemetry.ts 三处既有调用点（分别是登录 IP、异常上报 IP、存档分享 accountId 限流）全部 `import ... from './base.js'` 不变，零改动。
+- **分级限额**：两档，都以 accountId 为 key，60s 滑动窗口：**TIGHT**（`NW_GW_RATE_LIMIT_TIGHT`，默认 10/min）管 `room_create`/`room_join`/`duel_invite`——会创建状态或通知其他玩家，比 metaserver telemetry 的 30/min 更紧；**STANDARD**（`NW_GW_RATE_LIMIT_STANDARD`，默认 20/min）管 `duel_respond`/`room_ready`/`room_leave`/`room_start`——只作用于玩家自己已持有的状态。`ping`/`client_caps`/`judge_verdict` 不限（ping 是最热路径，judge_verdict 是可信的战斗结果上报）。`Gateway.handle()` 拆成「限流门禁」+ `dispatch()`（原 switch 逻辑原样保留），未命中限流表的 case 直接同步进 `dispatch`，不额外走一次 Promise。
+- **降级路径**：`Gateway` 构造时先用 `createRateLimiter(null, ...)`（内存版）；`index.ts` 里 `connectGatewaySubscriber` 连上 Redis 后调用既有的 `setPresenceStore`，同一处顺带把两个限流器重建成 Redis 版——单实例/无 Redis 部署（今天的现实）自动留在内存版，跟 `dailyCounter`/`accountCache` 同款降级哲学一致。Redis 连接本身：`redis.ts` 的 `GatewaySubscriber` 新增 `rateLimitClient`（`subClient.duplicate()` 单开一路，不复用 presence 的 `pubClient`，避免限流的 `EVAL` 突发和 presence 的 `SET`/`PEXPIRE` 互相排队）。
+- **限流反馈**：命中限流不再静默丢弃。`duel_invite` 复用已有的 `duel_cancelled` 通道（`reason:'rate_limited'`，跟 `not_found`/`offline` 同一个字段是纯字符串，零协议改动）；其余 gated case 复用 `room_error{code:'RATE_LIMITED', message}` 通用错误通道。均未改 `transport.proto`。
+
+**验证**：`npx tsc -b` 全 13 个 server 包（含新增的 shared/gateway 改动）全绿。`shared/test/rateLimiter.test.ts`（8 例，从 metaserver 原样搬来，含 Redis 冒烟 skipIf）+ `metaserver/test/rateLimiter.test.ts`（收窄为 2 例薄再导出冒烟，验证 `./service/base.js` 仍可用）+ metaserver 全量 724 测试（1 个此前因 worktree 未 `npm install`/未 build `socialsvc` 导致的环境性失败，build 后即绿，与本次改动无关）。gateway 新增 `test/rate-limit.test.ts`（6 例：TIGHT 超限拒绝+反馈、duel_invite 超限→`duel_cancelled{rate_limited}`、TIGHT/STANDARD 互不干扰、无限流 case 不受影响、无 Redis 时内存降级仍生效、Redis 共享两实例场景 skipIf——本机无本地 Redis 故跳过，同 `redis-presence.e2e.test.ts` 既有约定）；gateway 全量 32 测试 + 7 跳过全绿。
 
 **验证**：13 个 server 包 `tsc -b` 全绿；改动涉及的 10 个包 vitest 全绿（metaserver 731、commercial 144、worldsvc 350、gateway 27、gameserver 58、socialsvc 78、analyticsvc 25、admin 45、auctionsvc 77、botsvc 40，均含新增回归测试）。

@@ -21,7 +21,13 @@ async function main(): Promise<void> {
   const meta = new MetaClient(env.metaBaseUrl, env.internalKey);
   const matchsvc = new MatchsvcClient(env.matchsvcInternalUrl, env.internalKey);
   const socialsvc = new SocialsvcClient(env.socialsvcInternalUrl, env.internalKey);
-  const gateway = new Gateway({ host: env.host, port: env.port }, jwt, matchsvc, meta, socialsvc);
+  const gateway = new Gateway(
+    { host: env.host, port: env.port, rateLimitTight: env.rateLimitTight, rateLimitStandard: env.rateLimitStandard },
+    jwt,
+    matchsvc,
+    meta,
+    socialsvc,
+  );
 
   const internal = startInternalHttp(
     { host: '0.0.0.0', port: env.internalPort, internalAuth: loadInternalAuth(env.internalKey) },

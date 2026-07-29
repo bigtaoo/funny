@@ -15,6 +15,13 @@ export interface GatewayEnv extends ServerEnv {
   redisUrl: string | undefined;
   /** socialsvc internal base URL (P3: presence events POST /internal/presence/online|offline); absent = gateway handles online-friend broadcast directly. */
   socialsvcInternalUrl: string | null;
+  /** Per-accountId/minute cap for control messages that create state or notify another player
+   *  (room_create/room_join/duel_invite) — SERVER_LOGIC_AUDIT_2026-07-29 known-gap #4. Tighter than
+   *  metaserver telemetry's 30/min because these are more attractive to script abuse and affect other players. */
+  rateLimitTight: number;
+  /** Per-accountId/minute cap for control messages acting on state the player already owns
+   *  (duel_respond/room_ready/room_leave/room_start) — same or a bit looser than rateLimitTight. */
+  rateLimitStandard: number;
 }
 
 export function loadGatewayEnv(): GatewayEnv {
@@ -27,5 +34,7 @@ export function loadGatewayEnv(): GatewayEnv {
     matchsvcInternalUrl: process.env.NW_MATCHSVC_INTERNAL_URL ?? null,
     redisUrl: process.env.NW_GW_REDIS_URL || undefined,
     socialsvcInternalUrl: process.env.NW_SOCIALSVC_INTERNAL_URL ?? null,
+    rateLimitTight: Number(process.env.NW_GW_RATE_LIMIT_TIGHT ?? 10),
+    rateLimitStandard: Number(process.env.NW_GW_RATE_LIMIT_STANDARD ?? 20),
   };
 }

@@ -32,9 +32,10 @@
 - **matchsvc 赛前状态**（好友房间/排位队列/切磋邀请）纯内存态，进程重启即丢，且无主动通知客户端的机制——只有配对成功后才有 Redis 兜底。修复需要引入持久化或至少一个"进程重启后主动踢出等待中连接"的机制，属于设计改动而非局部修复。
 - **worldsvc `getMarches`/`getStationed`** 每个在线玩家 5s 轮询都拉全服在途行军/驻防；`computeMarchPath` 每次行军做 3 次缺索引支撑的近全表扫描。结构性开销，需要重新设计查询模式（如按视野裁剪 + 补索引），非局部修复。
 - **worldsvc `siegeEngine`** 势均力敌的攻城战同步跑满额引擎 tick，阻塞事件循环；`shouldUseCheapSiege` 已覆盖大部分悬殊战斗，剩余部分需要 worker 线程或分片计算才能根治。
-- **gateway 控制消息无 per-connection 限流**（room_create/duel_invite 等），与 metaserver REST 侧已有的按 IP/账号限流不对称。
 - **admin 四眼审批例外**：具 `admin.manage` 权限者可临时 disable 其他审批人后自批——策略决策，非 bug。
 - **`shared/dailyCounter.ts` 的 `LocalBackend.expire()`**：注释假设 Redis 只是"短暂降级"，若长期不可用会无界增长；概率低（生产 Redis 未观察到长期故障历史），留观察。
+
+> **第 4 条（gateway 控制消息无 per-connection 限流）已于 2026-07-29 同日追加任务补齐**：`RateLimiter`/`SlidingRateLimiter`/`RedisSlidingRateLimiter`/`createRateLimiter` 从 metaserver 搬到 `@nw/shared`；gateway `handle()` 按消息类型分两档限流（TIGHT 10/min 管 room_create/room_join/duel_invite，STANDARD 20/min 管 duel_respond/room_ready/room_leave/room_start，均以 accountId 为 key，ping/client_caps/judge_verdict 不限）；无 Redis 时退化为内存限流器，配了 `NW_GW_REDIS_URL` 则升级为跨实例精确的 Redis 版；命中限流复用 `duel_cancelled`/`room_error` 显式反馈客户端，不静默丢弃。详见 [`claudedocs/server.md`](../../claudedocs/server.md) "gateway 控制消息 per-connection 限流补齐" 一节。
 
 ## 验证
 
