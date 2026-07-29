@@ -4,6 +4,7 @@ import { InputManager } from '../../inputSystem/InputManager';
 import { WechatAdapter } from '../../inputSystem/WechatAdapter';
 import type { Locale } from '../../i18n';
 import type { IapKind } from '../iap';
+import { reportAnomaly } from '../../net/anomaly';
 
 /**
  * WeChat mini-game platform adapter.
@@ -17,6 +18,7 @@ declare const wx: {
   getStorageSync(key: string): string | undefined;
   setStorageSync(key: string, value: string): void;
   removeStorageSync(key: string): void;
+  getStorageInfoSync(): { currentSize: number; limitSize: number; keys: string[] };
   onTouchStart(cb: (res: WxTouchEvent) => void): void;
   onTouchEnd(cb: (res: WxTouchEvent) => void): void;
   onTouchMove(cb: (res: WxTouchEvent) => void): void;
@@ -80,7 +82,19 @@ class WechatStorage implements IStorage {
     }
   }
   setItem(key: string, value: string): void {
-    try { wx.setStorageSync(key, value); } catch { /* ignore */ }
+    try {
+      wx.setStorageSync(key, value);
+    } catch (e) {
+      // WeChat's ~10MB per-mini-game storage quota throws here on overflow — previously swallowed
+      // entirely silently (audit 2026-07-29), so a save that failed to persist looked identical to
+      // one that succeeded until the player lost progress on relaunch. `getStorageInfoSync` is
+      // best-effort (itself wrapped) purely for diagnostics in the report — never lets a failure
+      // here throw back into the caller (IStorage.setItem must never throw).
+      let usage: { currentSize?: number; limitSize?: number } = {};
+      try { const info = wx.getStorageInfoSync(); usage = { currentSize: info.currentSize, limitSize: info.limitSize }; }
+      catch { /* diagnostics only */ }
+      reportAnomaly('jserror', `[wechat-storage] setItem('${key}') failed`, { err: String(e), ...usage });
+    }
   }
   removeItem(key: string): void {
     try { wx.removeStorageSync(key); } catch { /* ignore */ }

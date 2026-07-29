@@ -286,6 +286,97 @@ describe('SaveManager.adoptSession (SA-3/SA-4 session adoption)', () => {
   });
 });
 
+// Regression fix (2026-07-29, client-resource-mgmt audit): clearSyncedLocalSections alone only blanks
+// equipped/flags/pvpDeck — wallet/progress/cardInv/equipmentInv and the offline pending-clear/stamina
+// queues all survived a logout, which could leak account A's meta progress into pure offline play or,
+// worse, get account A's offline-queued settlements flushed and credited under account B's token.
+describe('SaveManager.resetForLogout (2026-07-29 cross-account leak fix)', () => {
+  function pveApiWithClear(hasToken: boolean) {
+    const clearCalls: Array<{ levelId: string; stars: number }> = [];
+    const api = {
+      hasToken: () => hasToken,
+      getSave: async () => ({ save: makeNewSave('a', 1) }),
+      pveClear: async (levelId: string, stars: number) => {
+        clearCalls.push({ levelId, stars });
+        return { save: makeNewSave('a', 1), granted: {}, capped: false };
+      },
+      pveEnter: async () => ({ stamina: { current: 100, regenAt: 0 } }),
+    } as unknown as ApiClient;
+    return { api, clearCalls };
+  }
+
+  it('wipes the entire local save (wallet/progress/cardInv), not just equipped/flags', async () => {
+    const store = new LocalSaveStore(new MemStorage());
+    const local = makeNewSave('acc-a', 1);
+    local.wallet.coins = 500;
+    local.progress.cleared = ['ch1_lv1'];
+    local.cardInv = { c1: { id: 'c1', defId: 'hero1', level: 1 } as unknown as CardInstance };
+    store.saveLocal(local);
+
+    const { api } = pveApiWithClear(false); // offline: flush is skipped, only the wipe matters here
+    const mgr = new SaveManager({ store, api });
+    await mgr.resetForLogout();
+
+    expect(mgr.get().wallet.coins).toBe(0);
+    expect(mgr.get().progress.cleared).toEqual([]);
+    expect(mgr.get().cardInv).toEqual({});
+    // Persisted, not just in-memory: a fresh instance reading the same storage also sees a clean save.
+    expect(store.loadLocal().wallet.coins).toBe(0);
+  });
+
+  it('clears the offline pending-clear/stamina queues so they cannot be flushed under the next account', async () => {
+    const store = new LocalSaveStore(new MemStorage());
+    store.saveLocal(makeNewSave('acc-a', 1));
+    const { api } = pveApiWithClear(false);
+    const mgr = new SaveManager({ store, api });
+
+    await mgr.recordClear('ch1_lv1', 2); // offline → queued, not settled
+    mgr.spendStaminaForLevel('ch1_lv1', 10); // offline → queued, not settled
+    expect(mgr.getPendingClears()).toHaveLength(1);
+    expect(mgr.getPendingStaminaSpends()).toHaveLength(1);
+
+    await mgr.resetForLogout();
+
+    expect(mgr.getPendingClears()).toEqual([]);
+    expect(mgr.getPendingStaminaSpends()).toEqual([]);
+    // Reloading from storage confirms the queues were wiped there too, not just in-memory.
+    const mgr2 = new SaveManager({ store, api });
+    expect(mgr2.getPendingClears()).toEqual([]);
+    expect(mgr2.getPendingStaminaSpends()).toEqual([]);
+  });
+
+  it('online: best-effort flushes the pending queue (under the still-valid token) before wiping', async () => {
+    const store = new LocalSaveStore(new MemStorage());
+    store.saveLocal(makeNewSave('acc-a', 1));
+    const offlineApi = pveApiWithClear(false).api;
+    const mgr = new SaveManager({ store, api: offlineApi });
+    await mgr.recordClear('ch1_lv1', 2); // queued while offline
+    expect(mgr.getPendingClears()).toHaveLength(1);
+
+    // Now "back online" (still account A's token) at the moment logout is triggered.
+    const { api: onlineApi, clearCalls } = pveApiWithClear(true);
+    (mgr as unknown as { api: ApiClient }).api = onlineApi;
+    await mgr.resetForLogout();
+
+    expect(clearCalls).toEqual([{ levelId: 'ch1_lv1', stars: 2 }]); // settled under A's token, not discarded
+    expect(mgr.getPendingClears()).toEqual([]);
+  });
+
+  it('offline at logout: pending queue is discarded (not carried over), local save still wiped', async () => {
+    const store = new LocalSaveStore(new MemStorage());
+    store.saveLocal(makeNewSave('acc-a', 1));
+    const { api } = pveApiWithClear(false);
+    const mgr = new SaveManager({ store, api });
+    await mgr.recordClear('ch1_lv1', 2);
+    expect(mgr.getPendingClears()).toHaveLength(1);
+
+    await mgr.resetForLogout(); // still offline: flush is skipped entirely (this.online() is false)
+
+    expect(mgr.getPendingClears()).toEqual([]); // discarded, not left to leak into the next account
+    expect(mgr.get().wallet.coins).toBe(0); // full wipe still happened
+  });
+});
+
 describe('SaveManager.setFlag / equipTitle / equipAvatar / equipSkin (server-authoritative, optimistic local write)', () => {
   function fakeEquipApi(hasToken = true) {
     const calls: Array<{ kind: string; args: unknown[] }> = [];

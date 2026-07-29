@@ -519,7 +519,15 @@ export class StickmanRuntime {
   static loadAsset(url: string, targetHeight?: number): Promise<TaoAsset> {
     let p = this._cache.get(url);
     if (!p) {
-      p = parseTaoAsset(url, targetHeight);
+      p = parseTaoAsset(url, targetHeight).catch((e) => {
+        // Reset the cache entry so a later loadAsset(url) call (e.g. after a network blip clears
+        // up) retries instead of replaying this same rejection forever (audit 2026-07-29: a
+        // transient failure used to permanently negative-cache a unit's rig — including L0 boot
+        // units like infantry/archer/shieldbearer — for the rest of the session, stuck showing a
+        // placeholder circle even once the network recovers).
+        this._cache.delete(url);
+        throw e;
+      });
       this._cache.set(url, p);
     }
     return p;

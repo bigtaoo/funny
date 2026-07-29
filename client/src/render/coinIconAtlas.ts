@@ -46,15 +46,24 @@ export async function loadCoinIconAtlas(): Promise<void> {
   if (sheet) return;
   if (loading) return loading;
   loading = (async () => {
-    const baseTex = new PIXI.BaseTexture(await assetIO().textureSource(atlasUrl as string));
-    await new Promise<void>((resolve, reject) => {
-      if (baseTex.valid) { resolve(); return; }
-      baseTex.once('loaded', () => resolve());
-      baseTex.once('error', (err: unknown) => reject(new Error(`coin icon atlas load error: ${String(err)}`)));
-    });
-    const ss = new PIXI.Spritesheet(baseTex, atlasData as PIXI.ISpritesheetData);
-    await ss.parse();
-    sheet = ss;
+    try {
+      const baseTex = new PIXI.BaseTexture(await assetIO().textureSource(atlasUrl as string));
+      await new Promise<void>((resolve, reject) => {
+        if (baseTex.valid) { resolve(); return; }
+        baseTex.once('loaded', () => resolve());
+        baseTex.once('error', (err: unknown) => reject(new Error(`coin icon atlas load error: ${String(err)}`)));
+      });
+      const ss = new PIXI.Spritesheet(baseTex, atlasData as PIXI.ISpritesheetData);
+      await ss.parse();
+      sheet = ss;
+    } catch (e) {
+      // See spriteAtlas.ts's createAtlasLoader for the rationale: without this reset, a transient
+      // failure (network blip) permanently negative-caches the atlas for the rest of the session —
+      // every coin balance display would fall back to the procedural icon forever, even after the
+      // network recovers, until the next full reload.
+      loading = null;
+      throw e;
+    }
   })();
   return loading;
 }

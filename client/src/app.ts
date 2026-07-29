@@ -8,7 +8,7 @@ import * as PIXI from 'pixi.js-legacy';
 import { IPlatform } from './platform/IPlatform';
 import { MemoryMonitor } from './cache/MemoryMonitor';
 import { PerfMonitor } from './cache/PerfMonitor';
-import { initCrashSentinel, installAnomalyWatchers, recordConstructSample, recordRenderSample } from './net/anomaly';
+import { initCrashSentinel, installAnomalyWatchers, setAnomalyStorage, recordConstructSample, recordRenderSample } from './net/anomaly';
 import { SceneManager, type Scene } from './scenes/SceneManager';
 import { IntroScene } from './scenes/IntroScene';
 import { LobbyScene, type LobbySceneCallbacks } from './scenes/LobbyScene';
@@ -431,6 +431,10 @@ export async function startApp(
   // The crash sentinel is installed before the anomaly watchers (it reads the previous
   // session's sentinel and files a crash report if the session exited abnormally);
   // the watchers then take over the page-exit beacon / webgl / watchdog.
+  // Must run before initCrashSentinel/installAnomalyWatchers: WeChat mini-game has no global
+  // `localStorage`, so the crash sentinel + publicId attribution need the real platform storage
+  // (platform.storage) instead of silently reading nothing there.
+  setAnomalyStorage(platform.storage);
   initCrashSentinel();
   installAnomalyWatchers({ canvas: app.view as unknown as { addEventListener?: (t: string, cb: (e: unknown) => void) => void } });
 

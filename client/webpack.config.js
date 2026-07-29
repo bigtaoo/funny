@@ -1,4 +1,5 @@
 const path = require('path');
+const fs = require('fs');
 const HtmlWebpackPlugin = require('html-webpack-plugin');
 const webpack = require('webpack');
 const CopyPlugin = require('copy-webpack-plugin');
@@ -133,6 +134,28 @@ module.exports = (env, argv) => {
           });
         },
       }] : []),
+      // High-res/compressed asset split (client-resource-mgmt audit 2026-07-29): the native app
+      // shell (Capacitor + Capgo OTA) bundles its assets locally and mostly reads from its own
+      // persistent cache between infrequent OTA updates, so it can afford noticeably larger source
+      // art than web/WeChat/CrazyGames, where the same file is re-fetched over the network (subject
+      // to the L0 boot-manifest budget, ASSET_PACKAGING §4) every session. Convention: any asset
+      // that grows a same-directory `<name>.hires.<ext>` sibling automatically resolves to that
+      // sibling on the `mobile` build only — every other target keeps importing the base (kept
+      // deliberately compressed/small) file, and call sites never change. Purely opt-in: an asset
+      // with no `.hires` sibling is completely unaffected on every target. First applied to
+      // logo.png (497KB @512px, ~25% of the L0 boot budget) → a 129KB @256px default (plenty for
+      // its actual ~150-160 design-px header display size) + a 1.9MB @1024px mobile-only sibling.
+      ...(isMobile ? [
+        new webpack.NormalModuleReplacementPlugin(
+          /\.(png|jpe?g|webp)$/i,
+          (resource) => {
+            if (/\.hires\.[^.]+$/i.test(resource.request)) return; // already the hi-res file itself
+            const hiresRequest = resource.request.replace(/(\.[^.]+)$/, '.hires$1');
+            const abs = path.resolve(resource.context, hiresRequest);
+            if (fs.existsSync(abs)) resource.request = hiresRequest;
+          },
+        ),
+      ] : []),
       new webpack.DefinePlugin({
         TARGET: JSON.stringify(targetPlatform),
         'globalThis.__NW_API_BASE__': JSON.stringify(apiBase),

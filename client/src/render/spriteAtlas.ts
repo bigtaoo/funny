@@ -44,15 +44,23 @@ export function createAtlasLoader(
     if (sheet) return Promise.resolve();
     if (loading) return loading;
     loading = (async () => {
-      const baseTex = new PIXI.BaseTexture(await assetIO().textureSource(url), texOptions);
-      await new Promise<void>((resolve, reject) => {
-        if (baseTex.valid) { resolve(); return; }
-        baseTex.once('loaded', () => resolve());
-        baseTex.once('error', (err: unknown) => reject(new Error(`${label} atlas load error: ${String(err)}`)));
-      });
-      const ss = new PIXI.Spritesheet(baseTex, data);
-      await ss.parse();
-      sheet = ss;
+      try {
+        const baseTex = new PIXI.BaseTexture(await assetIO().textureSource(url), texOptions);
+        await new Promise<void>((resolve, reject) => {
+          if (baseTex.valid) { resolve(); return; }
+          baseTex.once('loaded', () => resolve());
+          baseTex.once('error', (err: unknown) => reject(new Error(`${label} atlas load error: ${String(err)}`)));
+        });
+        const ss = new PIXI.Spritesheet(baseTex, data);
+        await ss.parse();
+        sheet = ss;
+      } catch (e) {
+        // Reset the in-flight promise so a later load() call (e.g. after a network blip clears up)
+        // retries instead of replaying this same rejection forever (audit 2026-07-29: a transient
+        // failure used to permanently negative-cache the atlas for the rest of the session).
+        loading = null;
+        throw e;
+      }
     })();
     return loading;
   }
