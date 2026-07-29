@@ -2,7 +2,7 @@
 
 > 状态：设计中 · 权威：本文（用户名/家族名/宗门名/聊天治理的单一入口，取代 `SOCIAL_DESIGN.md` SOC10 与 `COMPLIANCE_GLOBAL.md` §7 的临时描述）· 更新：2026-07-29
 >
-> 拍板（2026-07-29，用户）：①"全部加"——把此前讨论的四层防御（预防/检测/后果/审核+申诉）一次性设计完整，先文档后编码；② 检测层第一期**不接第三方语义审核 API**，纯自建（正常化预处理 + 词库 + 举报 + 信誉分处罚），后续视需要再加；③ 后台审核/申诉面板这次一起做（`tools/ops`）。
+> 拍板（2026-07-29，用户）：①"全部加"——把此前讨论的四层防御（预防/检测/后果/审核+申诉）一次性设计完整，先文档后编码；② 检测层第一期**不接第三方语义审核 API**，纯自建（正常化预处理 + 词库 + 举报 + 信誉分处罚），后续视需要再加；③ 后台审核/申诉面板这次一起做（`tools/ops`）；④ 信誉分**自动衰减**（每 30 天 +10，CM8）；⑤ 分级阈值/举报扣分单一档位均按 §4.2 默认值实现（O-CM1/O-CM2/O-CM3 已拍板）。
 >
 > 配套阅读：`SOCIAL_SVC_DESIGN.md`（socialsvc 边界/ReportDoc 现状）、`OPS_DESIGN.md`（admin RBAC/审计/唯一封号执行路径 OPS 系列决策）、`ACCOUNT_DESIGN.md`（AccountDoc）、`COMPLIANCE_GLOBAL.md` §7/`COMPLIANCE_CN.md`（UGC 治理的合规动因）。
 
@@ -56,7 +56,9 @@
 | CM5 | 五个覆盖缺口全部接入 `censorChat`，策略沿用各自场景既有先例：**长期展示类内容**（注册首次昵称、家族名、宗门名）命中即**拒绝**创建/请求（与改名一致）；**聊天类内容**（家族频道、世界/国家频道）命中**打码**照常发出（与私聊一致） | 沿用项目已确立的"展示内容拒绝、聊天内容打码"两套策略，不引入第三种新策略 |
 | CM6 | 新增 `AccountDoc.flags.reputationScore`（默认 100，下限 0）+ `flags.mutedUntil`（epoch ms，聊天禁用窗口）+ `flags.bannedUntil`（epoch ms，限时封禁，登录侧按现有 `rejectIfBanned` 同一入口检查）。既有 `flags.banned: boolean` 语义不变，专指**永久封禁** | 复用现有字段命名习惯（`flags.*`），限时封禁与禁言都是"到期自动失效"的时间戳字段，不需要额外的定时任务解除 |
 | CM7 | 处罚执行收敛到 metaserver 新增 `POST /internal/accounts/:id/penalty`（唯一处罚执行路径，扩展 OPS 系列"唯一封号路径"原则）：扣减 `reputationScore`，按阈值表（§4.2）决定是否叠加 mute/temp-ban/ban，写回 + 失效 `AccountCache` | 与"全库只有一条封号执行路径"（2026-07-18，`452ea23b`）同一纪律：所有处罚来源（举报确认、未来的反作弊/其它治理）都走这一条端点，不各自维护封禁逻辑 |
-| CM8 | 信誉分**本期不设自动衰减/恢复**；恢复只能靠 admin 人工调整（走审计） | 衰减曲线是纯游戏设计权衡（多久算"洗白"、要不要区分严重程度），本期不臆造具体数值，列为开放问题 O-CM1，需要用户后续拍板 |
+| CM7.1 | 家族/世界频道禁言检查**不新增网络往返**：`socialsvc`/`worldsvc` 都没有 `accounts` 集合的直接连接，但两边的 `sendMessage()` 本来就已经在每次发送时调用 `meta.getProfile()`/`meta.batchProfiles()` 解析 displayName/title——把 `mutedUntil` 塞进这个既有响应即可，复用同一次调用，不必为禁言检查单独打一次 metaserver 内部 API | 检查点已经存在（每条消息都会问 meta 要 profile），加字段比加调用便宜；私聊（DM）走同样机制，因为 `friendService.sendMessage` 同样已经调用 `meta.batchProfiles` |
+| CM8 | 信誉分**自动衰减**（用户 2026-07-29 拍板，取代原"本期不设"草案）：每 30 天未被扣分的账号 `+10`（封顶 100），靠每日定时任务（`reputationDecayAt` 时间戳到期即触发）扫描，不需要玩家主动触发任何请求 | 纯人工调整会让长期不活跃/未再犯的玩家永远卡在低分档位，自动回血给"确实改了"的玩家一个恢复路径；30 天/+10 是用户确认的起步值，后续可调 |
+| CM8.1 | 衰减实现：`flags.reputationDecayAt`（epoch ms，下次可衰减时间）随每次处罚写入 `now()+30d`；metaserver 新增每日 `setInterval` 扫描 `reputationScore<100 且 reputationDecayAt<=now` 的账号，`+10` 封顶 100，仍 <100 则把 `reputationDecayAt` 续到 `now()+30d`，否则清掉该字段（已回满不用再扫）。`accounts` 集合按 `flags.reputationDecayAt` 加**部分索引**（只覆盖该字段存在的文档），避免全表扫描——与 worldsvc `nextBuildCompleteAt`/`nextTrainingCompleteAt` 的部分索引惯例一致 | 每日扫描 + 部分索引是本仓库现成的惯例（`worldsvc` 建/练队列到期扫描同款手法），不是新发明的机制；批量步进而非逐账号定时器，避免海量 setTimeout |
 | CM9 | `ReportDoc.status` 从恒定 `'open'` 扩展为 `'open' \| 'dismissed' \| 'upheld'`；新增 `POST /internal/reports/:id/resolve`（socialsvc，仅改 `status`，不碰信誉分）。举报确认后的信誉分扣减由 **admin** 在同一次操作里额外调用 metaserver 的 CM7 端点 | 沿用"admin 是唯一跨服务副作用协调者"的既有架构（对照 `TradeAuditTicketView` 的 `actioned` 自动封号也是由 admin 触发，不是 worldsvc/socialsvc 互相直连） |
 | CM10 | 新增申诉：`AppealDoc` 集合落在 **metaserver**（因为申诉针对的是账号级处罚状态，metaserver 是 `AccountDoc` 权威）；玩家侧 `POST /account/appeal`（仅当账号当前有生效处罚时可提交）；admin 侧 `GET /internal/appeals` + `POST /internal/appeals/:id/resolve`，批准时清除对应的 `mutedUntil`/`bannedUntil`/`banned`，**不自动恢复信誉分**（如需恢复由 admin 另行走人工调整，审计留痕） | 申诉"撤销限制"和"恢复信誉分"是两件事，强行耦合会让恢复逻辑变复杂（可能还有其它未撤销的确认举报压着分数）；拆开处理更简单也更诚实 |
 | CM11 | `tools/ops` 新增 `pages/reports.ts`（举报审核队列，模板抄 `pages/suspicions.ts`）+ `pages/appeals.ts`（申诉队列）；新增能力 `reports.view`/`reports.action`/`appeals.view`/`appeals.action`，`super`/`ops` 角色持有，`support`/`viewer` 只给 `.view` | 与现有 `anticheat.view`/`anticheat.action` 的角色分配惯例一致 |
@@ -118,13 +120,14 @@ region 来源：家族/宗门名创建用创建者账号的 `AccountDoc.region`�
 // server/shared/src/mongo.ts AccountDoc.flags 新增字段
 flags?: {
   ...
-  reputationScore?: number; // 缺省视为 100，下限 0
+  reputationScore?: number;  // 缺省视为 100，下限 0
+  reputationDecayAt?: number; // epoch ms；下次 +10 自动衰减的时间，CM8.1
   mutedUntil?: number;      // epoch ms；聊天发送前检查，与 rejectIfBanned 平级但独立的新检查点
   bannedUntil?: number;     // epoch ms；限时封禁，登录侧复用 rejectIfBanned 逻辑一并检查
 };
 ```
 
-分级阈值（**初始默认值，标记 O-CM2，可调**）：
+分级阈值（**用户 2026-07-29 确认，按此实现**）：
 
 | reputationScore 区间 | 动作 |
 |---|---|
@@ -133,7 +136,7 @@ flags?: {
 | ≤ 40 | 限时封禁 7d（`bannedUntil = now + 7d`） |
 | ≤ 20 | 永久封禁（`flags.banned = true`，复用既有封号路径） |
 
-每次确认举报（`upheld`）扣 20 分（单一档位，不分举报严重度——严重度分级留作 O-CM3）。到达的**最严档位**生效，不会因为后续小分数波动被"降级"回退。
+每次确认举报（`upheld`）扣 20 分（**用户 2026-07-29 确认：单一档位，不分举报严重度**，后续如需要再加分级）。到达的**最严档位**生效，不会因为后续小分数波动被"降级"回退。
 
 `POST /internal/accounts/:id/penalty`（metaserver，`X-Internal-Key`，唯一处罚执行路径）：
 ```
@@ -210,12 +213,13 @@ interface AppealDoc {
 
 ---
 
-## 8. 开放问题（待用户拍板）
+## 8. 开放问题
 
-- **O-CM1**：信誉分要不要设计衰减/恢复机制？多久算"洗白"？还是完全靠人工调整？
-- **O-CM2**：§4.2 阈值表（80/60/40/20 分界，24h 禁言/7d 限时封禁）是占位默认值，需要确认是否符合期望的严厉程度。
-- **O-CM3**：确认举报是否需要区分严重度（如"骂人"vs"发广告链接"vs"仇恨言论"扣分不同）？本期只做单一档位（每次 -20 分）。
-- **O-CM4**（已知缺口，非本设计引入）：gateway/WS 层不检查封禁状态，已连接会话在被封禁/限时封禁后不会被强制断开——建议另开任务修复，不在本次范围内。
+- ~~O-CM1~~ **已拍板（2026-07-29）**：信誉分自动衰减，每 30 天 +10，见 CM8/CM8.1。
+- ~~O-CM2~~ **已拍板（2026-07-29）**：阈值表按 §4.2 默认值实现，不调整。
+- ~~O-CM3~~ **已拍板（2026-07-29）**：不分举报严重度，统一每次 -20 分。
+- **O-CM4**（已知缺口，非本设计引入，仍未拍板）：gateway/WS 层不检查封禁状态，已连接会话在被封禁/限时封禁后不会被强制断开——建议另开任务修复，不在本次范围内。
+- **O-CM5**（2026-07-29 实现 P1/P2 时发现的独立缺口）：客户端从未实际发送 `X-Chat-Region` 请求头（`openapi-social.yml` 里声明了但 `WorldApiClient.ts`/私聊发送从未设置），导致地区专属词表（cn/de/en）在真实请求里从未生效，只有 global 词表起作用。已 spawn 一个独立任务跟进（不阻塞本设计的服务端实现，服务端头缺失时安全兜底为 global）。
 
 ---
 
