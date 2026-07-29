@@ -326,6 +326,10 @@ export class FriendsSceneBase {
       // matchsvc restart-safety (matchsvc-prematch-persist, 2026-07-29): synthesized locally by
       // NetSession from a prematch_lost push when this outstanding invite couldn't be recovered.
       : d.reason === 'lost' ? 'friends.duel.lost'
+      // gateway per-connection rate limit (2026-07-29): TIGHT-tier duel_invite throttled server-side.
+      // Was previously falling into the 'notFound' default below, which reads as an outright wrong
+      // "player not found" message rather than a rate-limit notice.
+      : d.reason === 'rate_limited' ? 'friends.duel.rateLimited'
       : 'friends.duel.notFound';
     this.toast(key);
     this.render();

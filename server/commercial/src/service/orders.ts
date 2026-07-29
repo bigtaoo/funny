@@ -46,14 +46,22 @@ export function OrdersMixin<TBase extends CommercialBaseCtor>(Base: TBase): TBas
      * Gated by isStaleClaim (base.ts): within the grace window after delivery, just report ok like before —
      * a duplicate delivery callback for the SAME orderId arriving milliseconds apart (the common case) must
      * not race the winner's still-in-flight refund credit. Only a callback arriving well after delivery heals
-     * a genuinely dropped refund (crash between the status flip and the credit call).
+     * a genuinely dropped refund (crash between the status flip and the credit call). Past the window, the
+     * ledger-absence read is still just a plain read — two stale-claim healers landing together would both
+     * see no ledger entry and both credit(). The `healClaimedAt` CAS on the order doc closes that: only the
+     * caller whose findOneAndUpdate matches proceeds to credit().
      */
     private async healOrderRefund(order: OrderDoc): Promise<Result<{}>> {
       const refund = order.refundCoins ?? 0;
       if (refund <= 0) return { ok: true };
       if (!this.isStaleClaim(order.deliveredAt ?? order.ts)) return { ok: true };
       const landed = await this.cols.ledger.findOne({ accountId: order.accountId, orderId: order._id });
-      if (!landed) await this.credit(order.accountId, refund, 'gacha_refund', { orderId: order._id });
+      if (landed) return { ok: true };
+      const claimed = await this.cols.orders.findOneAndUpdate(
+        { _id: order._id, healClaimedAt: { $exists: false } },
+        { $set: { healClaimedAt: this.now() } },
+      );
+      if (claimed) await this.credit(order.accountId, refund, 'gacha_refund', { orderId: order._id });
       return { ok: true };
     }
 

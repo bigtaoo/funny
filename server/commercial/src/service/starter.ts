@@ -56,7 +56,9 @@ export function StarterMixin<TBase extends CommercialBaseCtor>(Base: TBase): TBa
         // call is merely slow (not crashed) must not redo applySubscription itself (double-grant); only
         // resume for real once the claim is stale enough that the original is presumed dead.
         if (existing.status === 'charged' && existing.kind === 'grant') {
-          if (this.isStaleClaim(existing.ts)) return this.finishStarterGrowth(args, existing.accountId);
+          if (this.isStaleClaim(existing.ts) && (await this.claimOrderResume(args.orderId))) {
+            return this.finishStarterGrowth(args, existing.accountId);
+          }
           const w0 = await this.cols.wallets.findOne({ _id: existing.accountId });
           return {
             ok: true,

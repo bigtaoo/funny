@@ -59,7 +59,14 @@ interface PendingTask {
   input: SiegeBattleInput;
   resolve: (r: SiegeResolution) => void;
   reject: (e: Error) => void;
-  timer: NodeJS.Timeout;
+  /**
+   * Hang-guard timer, armed only once the task is actually handed to a worker (see `dispatch`) — null while
+   * still sitting in `queue`. Arming it at `submit()` time instead (the original implementation) meant a
+   * task that waited in the queue longer than `taskTimeoutMs` under load lost its hang protection forever:
+   * the one-shot timer fired while the task had no assigned worker (`onTaskTimeout` no-ops on that, by
+   * design, since a queued task isn't "hung"), and nothing ever re-armed it once a worker picked it up.
+   */
+  timer: NodeJS.Timeout | null;
 }
 
 interface PoolWorker {
@@ -134,7 +141,7 @@ export class SiegeWorkerPool {
     entry.currentTaskId = null;
     if (!task) return; // already timed out / worker replaced — response arrived late, discard
     this.pending.delete(msg.taskId);
-    clearTimeout(task.timer);
+    if (task.timer) clearTimeout(task.timer);
     if (msg.ok) task.resolve(msg.result);
     else task.reject(new Error(msg.error));
     this.dispatch();
@@ -157,7 +164,7 @@ export class SiegeWorkerPool {
       const task = this.pending.get(entry.currentTaskId);
       if (task) {
         this.pending.delete(entry.currentTaskId);
-        clearTimeout(task.timer);
+        if (task.timer) clearTimeout(task.timer);
         task.reject(new Error(`siege worker crashed mid-battle: ${err.message}`));
       }
     }
@@ -173,16 +180,15 @@ export class SiegeWorkerPool {
     if (this.closed) return Promise.reject(new Error('siege worker pool is closed'));
     return new Promise<SiegeResolution>((resolve, reject) => {
       const taskId = this.nextTaskId++;
-      const timer = setTimeout(() => this.onTaskTimeout(taskId), this.taskTimeoutMs);
-      timer.unref?.();
-      this.queue.push({ taskId, input, resolve, reject, timer });
+      // No timer yet — armed in `dispatch()` once a worker actually picks this up (see PendingTask.timer doc).
+      this.queue.push({ taskId, input, resolve, reject, timer: null });
       this.dispatch();
     });
   }
 
   private onTaskTimeout(taskId: number): void {
     const task = this.pending.get(taskId);
-    if (!task) return; // already resolved, or still queued (queued tasks haven't started their clock's real work yet — still fine to let them keep waiting)
+    if (!task) return; // already resolved (queued-but-undispatched tasks have no timer and can't reach here)
     this.pending.delete(taskId);
     // Find and retire whichever worker is stuck on this task — it's hung (bad engine bug / infinite loop),
     // not merely slow, so terminating it (rather than waiting indefinitely) keeps the pool from shrinking
@@ -197,6 +203,11 @@ export class SiegeWorkerPool {
       const idle = this.workers.find((w) => w.currentTaskId == null);
       if (!idle) return;
       const task = this.queue.shift()!;
+      // Arm the hang-guard timer now that the task is actually running on a worker, not back when it was
+      // merely submitted (see PendingTask.timer doc) — a task that waited a while in queue still gets the
+      // full `taskTimeoutMs` from the moment real work starts.
+      task.timer = setTimeout(() => this.onTaskTimeout(task.taskId), this.taskTimeoutMs);
+      task.timer.unref?.();
       idle.currentTaskId = task.taskId;
       this.pending.set(task.taskId, task);
       const req: TaskRequest = { taskId: task.taskId, input: task.input };
@@ -213,11 +224,11 @@ export class SiegeWorkerPool {
   async close(): Promise<void> {
     this.closed = true;
     for (const task of this.queue.splice(0)) {
-      clearTimeout(task.timer);
+      if (task.timer) clearTimeout(task.timer);
       task.reject(new Error('siege worker pool closed'));
     }
     for (const task of this.pending.values()) {
-      clearTimeout(task.timer);
+      if (task.timer) clearTimeout(task.timer);
       task.reject(new Error('siege worker pool closed'));
     }
     this.pending.clear();

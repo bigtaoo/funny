@@ -9,6 +9,7 @@ import { runSiegeBattleSync, synthesizeArmy, SIEGE_SYNTH_ARMY_MAX_TROOPS, type S
 
 const CRASH_WORKER = path.join(__dirname, 'fixtures', 'crashWorker.ts');
 const HANG_WORKER = path.join(__dirname, 'fixtures', 'hangWorker.ts');
+const SLOW_THEN_HANG_WORKER = path.join(__dirname, 'fixtures', 'slowThenHangWorker.ts');
 
 /** A real, non-trivial siege battle input (full-board armies) — deterministic, CPU-heavy enough (tens of ms)
  * to make wall-clock parallelism comparisons meaningful without making the test suite slow. */
@@ -113,6 +114,29 @@ describe('SiegeWorkerPool task timeout', () => {
     await expect(pool.submit(bigEvenBattle(1))).rejects.toThrow(/timed out/);
     expect(Date.now() - start).toBeGreaterThanOrEqual(190); // allow a few ms of scheduling slop
     expect(pool.size).toBe(1); // hung worker was terminated + replaced
+  });
+});
+
+describe('SiegeWorkerPool task timeout (dispatch-time arming regression)', () => {
+  it('a task queued behind several quick-but-non-instant tasks past taskTimeoutMs still gets full hang protection once it is actually dispatched', async () => {
+    // Single worker so tasks run strictly one at a time. The fixture answers each of the first 5 messages
+    // after ~150ms and hangs on the 6th. That 6th task sits in `queue` for ~750ms (5 × 150ms) before a
+    // worker is ever free for it — well past the 400ms per-task timeout — then hangs once actually
+    // dispatched. Both the per-message delay and the timeout are generous relative to each other so that
+    // worker-thread cold-start jitter on the very first message can't by itself trip the timeout.
+    //
+    // Before the fix, the 6th task's hang-guard timer was armed at submit() time (t≈0) and fired at t≈400ms
+    // while the task was still queued — a documented no-op (queued tasks aren't in `pending` yet) — leaving
+    // nothing to ever re-arm it once the task was later dispatched onto a worker that then hangs on it
+    // forever (test would time out rather than reject). The fix arms the timer only in `dispatch()`, so the
+    // 6th task gets its own full 400ms of hang protection starting from when it actually begins running.
+    const pool = makePool(1, 400, SLOW_THEN_HANG_WORKER);
+    const inputs = Array.from({ length: 6 }, (_, i) => bigEvenBattle(i));
+    const submissions = inputs.map((inp) => pool.submit(inp));
+
+    await expect(Promise.all(submissions.slice(0, 5))).resolves.toBeDefined();
+    await expect(submissions[5]).rejects.toThrow(/timed out/);
+    expect(pool.size).toBe(1); // hung worker detected + replaced
   });
 });
 

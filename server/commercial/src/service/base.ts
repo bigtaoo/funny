@@ -360,6 +360,23 @@ export class CommercialServiceBase {
   }
 
   /**
+   * Atomic CAS guard for resuming a stale 'charged' order (subscriptionCardBuy/starterBuy growth-pack resume
+   * branches, both past isStaleClaim): only the caller whose findOneAndUpdate matches (healClaimedAt still
+   * absent) may proceed to finishSubscriptionCardBuy/finishStarterGrowth. Without this, two concurrent
+   * stale-claim resumers racing the SAME orderId would both pass isStaleClaim (no ledger check exists here —
+   * applySubscription itself doesn't check-before-crediting) and both run applySubscription, double-crediting
+   * coins and double-extending the subscription. The loser reads the current wallet snapshot instead, same
+   * as the non-stale "still likely in-flight" branch already does.
+   */
+  protected async claimOrderResume(orderId: string): Promise<boolean> {
+    const res = await this.cols.orders.findOneAndUpdate(
+      { _id: orderId, status: 'charged', healClaimedAt: { $exists: false } },
+      { $set: { healClaimedAt: this.now() } },
+    );
+    return res !== null;
+  }
+
+  /**
    * Shared monthly/year card activation (GACHA_DESIGN §5). Idempotent by orderId, and globally single-slot:
    * refuses with ALREADY_ACTIVE while any subscription is still running (buy → use up → rebuy), so cards no longer
    * stack open-endedly. Extends the subscription by `days` and grants `immediateCoins` at once. Real receipt
@@ -388,16 +405,16 @@ export class CommercialServiceBase {
       // shortly produce. A claim that's still 'charged' well past the grace window means the original
       // attempt crashed and nobody will ever finish it — resume for real then.
       if (existing.status === 'charged') {
-        if (!this.isStaleClaim(existing.ts)) {
-          const w = await this.cols.wallets.findOne({ _id: existing.accountId });
-          return {
-            ok: true,
-            coinsAfter: effectiveCoins(w, displayChannelOf(args.channel, args.clientPlatform)),
-            subscriptionExpiry: w?.subscription?.expiry ?? 0,
-            wallet: walletView(w, args.clientPlatform, args.channel),
-          };
+        if (this.isStaleClaim(existing.ts) && (await this.claimOrderResume(args.orderId))) {
+          return this.finishSubscriptionCardBuy(args);
         }
-        return this.finishSubscriptionCardBuy(args);
+        const w = await this.cols.wallets.findOne({ _id: existing.accountId });
+        return {
+          ok: true,
+          coinsAfter: effectiveCoins(w, displayChannelOf(args.channel, args.clientPlatform)),
+          subscriptionExpiry: w?.subscription?.expiry ?? 0,
+          wallet: walletView(w, args.clientPlatform, args.channel),
+        };
       }
       const w = await this.cols.wallets.findOne({ _id: existing.accountId });
       return {
@@ -426,7 +443,9 @@ export class CommercialServiceBase {
       if ((e as { code?: number }).code === 11000) {
         const r = await this.cols.orders.findOne({ _id: args.orderId });
         if (r?.status === 'charged') {
-          if (this.isStaleClaim(r.ts)) return this.finishSubscriptionCardBuy(args);
+          if (this.isStaleClaim(r.ts) && (await this.claimOrderResume(args.orderId))) {
+            return this.finishSubscriptionCardBuy(args);
+          }
           const w0 = await this.cols.wallets.findOne({ _id: args.accountId });
           return {
             ok: true,

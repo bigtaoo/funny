@@ -85,21 +85,31 @@ export function RechargeMixin<TBase extends CommercialBaseCtor>(Base: TBase): TB
      * house style as equipment.ts's idempotent-replay branches. Gated by isStaleClaim (base.ts): within
      * the grace window this just reads the current balance like before, so concurrent duplicates of the
      * SAME receiptId (the common case, still in-flight) don't race the true winner and double-credit.
+     * Past the window, the ledger-absence read alone is still just a plain read — two stale-claim healers
+     * arriving together would both see no ledger entry and both call credit(). The `healedAt` CAS on the
+     * recharges doc itself (findOneAndUpdate) closes that: only the caller whose update actually matches
+     * proceeds to credit(); the loser falls through to read whatever balance is currently there.
      */
     private async healRechargeCredit(
-      doc: { accountId: string; coinsGranted: number; platform: string; usdCents?: number; ts: number },
+      doc: { _id: string; accountId: string; coinsGranted: number; platform: string; usdCents?: number; ts: number },
       receiptId: string,
       clientPlatform: string | undefined,
     ): Promise<number> {
       if (this.isStaleClaim(doc.ts)) {
         const already = await this.cols.ledger.findOne({ accountId: doc.accountId, receiptId });
         if (!already) {
-          return this.credit(doc.accountId, doc.coinsGranted, 'recharge', {
-            receiptId,
-            rechargeUsdCents: doc.usdCents,
-            channel: rechargeChannelOf(doc.platform) ?? undefined,
-            clientPlatform,
-          });
+          const claimed = await this.cols.recharges.findOneAndUpdate(
+            { _id: doc._id, healedAt: { $exists: false } },
+            { $set: { healedAt: this.now() } },
+          );
+          if (claimed) {
+            return this.credit(doc.accountId, doc.coinsGranted, 'recharge', {
+              receiptId,
+              rechargeUsdCents: doc.usdCents,
+              channel: rechargeChannelOf(doc.platform) ?? undefined,
+              clientPlatform,
+            });
+          }
         }
       }
       const w = await this.cols.wallets.findOne({ _id: doc.accountId });

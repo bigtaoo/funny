@@ -453,6 +453,17 @@ export interface CardInstanceDoc {
   level: number;
   gear: GearSlotMap;
   locked: boolean;
+  /**
+   * Mirror of `Object.values(gear).filter(Boolean)` (2026-07-29, closes an equip-duplication race): kept in
+   * lockstep with `gear` on every write so a unique multikey index on this field can enforce, at the Mongo
+   * level, that no equipment instanceId is ever present in two cards' `gear` at once. Without this, the
+   * pre-write "is this instance equipped elsewhere" check in equipEquipment (metaserver/src/equipment.ts) is
+   * a plain read with no atomicity against a concurrent equip of the SAME instance onto a DIFFERENT card —
+   * both requests could pass the check before either writes. Absent/empty arrays don't collide (sparse
+   * multikey index contributes no entries for an empty array), so this self-heals on next touch for legacy
+   * docs written before this field existed — no eager migration needed (same convention as march bbox).
+   */
+  gearInstanceIds?: string[];
 }
 
 /**
@@ -664,6 +675,12 @@ export async function createMongo(
     await collections.equipmentInstances.createIndex({ accountId: 1 });
     // card instances: fetch-all-for-account (GET /save join, /internal/save-fields, migration, cap-count self-heal).
     await collections.cardInstances.createIndex({ accountId: 1 });
+    // unique multikey guard (2026-07-29): no equipment instanceId may appear in more than one card's
+    // gearInstanceIds across the whole collection — the atomic backstop behind equipEquipment's pre-write
+    // check (see CardInstanceDoc.gearInstanceIds doc comment). Sparse: docs without the field (not yet
+    // touched by the new code) and empty arrays contribute no index entries, so this can't collide with
+    // legacy data during rollout.
+    await collections.cardInstances.createIndex({ gearInstanceIds: 1 }, { unique: true, sparse: true });
     // ad token uniqueness TTL auto-expiry (C2, 48h).
     await collections.adsTokens.createIndex({ expireAt: 1 }, { expireAfterSeconds: 0 });
     // ladder leaderboard: server-wide Top100 + my rank count (S11-SE-5).
