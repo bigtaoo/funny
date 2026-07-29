@@ -320,6 +320,33 @@ describe('rollReforgedAffixes', () => {
   it('throws on unknown defId', () => {
     expect(() => rollReforgedAffixes('nope', 'k', [])).toThrow();
   });
+
+  // Answers "does reforge strengthen the existing sub-affixes, or replace them?" — it's a full
+  // replace: each sub-affix is an independent fresh draw from SUB_AFFIX_POOL, unrelated to what
+  // was rolled before. There is no "keep and buff" path for sub-affixes (only the main affix is
+  // ever preserved, and only enhancement — not reforge — scales it).
+  it('re-rolls each sub-affix from the pool\'s own value range, independent of the previous value (replace, not an increment on it)', () => {
+    // Feed a below-range current value for every candidate id: if reforge "strengthened" the old
+    // roll, results would stay anchored near/below it; because it actually replaces, values always
+    // land back inside the pool's own [lo, hi], regardless of what was there before.
+    const current = [{ id: 'm_hp', value: 10 }, { id: 's_atk', value: 0 }];
+    for (let i = 0; i < 20; i++) {
+      const reforged = rollReforgedAffixes('ar_leather', `seed-${i}`, current);
+      for (const af of reforged.filter((a) => a.id.startsWith('s_'))) {
+        const [, lo, hi] = SUB_AFFIX_POOL.find(([id]) => id === af.id)!;
+        expect(af.value).toBeGreaterThanOrEqual(lo);
+        expect(af.value).toBeLessThanOrEqual(hi);
+      }
+    }
+  });
+
+  it('can drop a previously-held sub-affix id entirely (full replace, not additive/kept-and-buffed)', () => {
+    const current = [{ id: 'm_hp', value: 10 }, { id: 's_critmult', value: 30 }];
+    const anyDropped = Array.from({ length: 30 }, (_, i) =>
+      rollReforgedAffixes('ar_leather', `drop-${i}`, current),
+    ).some((reforged) => !reforged.some((a) => a.id === 's_critmult'));
+    expect(anyDropped).toBe(true); // if reforge only strengthened held affixes, s_critmult would survive every time
+  });
 });
 
 describe('REFORGE_MATERIAL_RARITY', () => {
