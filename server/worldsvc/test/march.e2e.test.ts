@@ -14,6 +14,7 @@ import {
   OCCUPY_MIN_TROOPS,
   TROOP_CAP_BASE,
   npcGarrison,
+  playerWorldId,
 } from '@nw/shared';
 import { createWorldMongo, type WorldMongo } from '../src/db';
 import { WorldService } from '../src/service';
@@ -210,6 +211,35 @@ describe.skipIf(!mongo)('worldsvc march e2e', () => {
     // Troops returned to pool (minus the permanent ADR-039 connector tile); target tile not occupied.
     expect((await svc.getMe(W, 'a')).troops).toBe(TROOP_CAP_BASE - GARRISON_PER_TILE);
     expect((await svc.getTile(W, 'a', target.x, target.y)).mine).toBeUndefined();
+  });
+
+  // Regression for the 2026-07-29 audit fix: the pre-flight `pw.troops < troops` check reads a
+  // possibly-stale pool balance; the actual deduction used to be an unconditional `$inc`, so two
+  // concurrent marches could both pass the pre-flight check and both deduct, driving troops negative
+  // (over-deploying more troops than the account actually has). The deduction is now guarded by an
+  // atomic `troops: {$gte: troops}` filter, so exactly one of the two concurrent departures below wins.
+  it('startMarch: two concurrent departures that together exceed the pool → exactly one succeeds, troops never go negative', async () => {
+    await svc.joinWorld(W, 'a', 5, 5);
+    const t1 = findCoord((t) => t.type === 'resource' || t.type === 'neutral', 30, 30);
+    const t2 = findCoord((t) => t.type === 'resource' || t.type === 'neutral', 60, 60);
+    await connect(svc, 'a', t1);
+    await connect(svc, 'a', t2);
+    // Force the pool down to just enough for ONE of the two 500-troop departures below, not both.
+    await m.collections.playerWorld.updateOne({ _id: playerWorldId(W, 'a') }, { $set: { troops: 600 } });
+
+    const [r1, r2] = await Promise.allSettled([
+      svc.startMarch(W, 'a', 5, 5, t1.x, t1.y, 'occupy', OCCUPY_MIN_TROOPS),
+      svc.startMarch(W, 'a', 5, 5, t2.x, t2.y, 'occupy', OCCUPY_MIN_TROOPS),
+    ]);
+    const outcomes = [r1, r2];
+    const fulfilled = outcomes.filter((r) => r.status === 'fulfilled');
+    const rejected = outcomes.filter((r) => r.status === 'rejected');
+    expect(fulfilled.length).toBe(1);
+    expect(rejected.length).toBe(1);
+    expect((rejected[0] as PromiseRejectedResult).reason).toMatchObject({ code: 'NO_TROOPS' });
+    // Exactly one march's worth of troops (500) left the pool — never negative, never both.
+    expect((await svc.getMe(W, 'a')).troops).toBe(100);
+    expect(await m.collections.marches.countDocuments({ worldId: W, ownerId: 'a', status: 'marching' })).toBe(1);
   });
 
   it('validation: departing from non-owned tile / center / already own / insufficient troops / siege type', async () => {

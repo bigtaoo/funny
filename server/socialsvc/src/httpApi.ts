@@ -73,7 +73,13 @@ function readJson(req: IncomingMessage): Promise<Record<string, unknown>> {
     let body = '';
     req.on('data', (c) => {
       body += c;
-      if (body.length > 1 << 20) reject(new Error('payload too large'));
+      if (body.length > 1 << 20) {
+        // Stop reading — a settled promise doesn't stop 'data' events, so without destroy() an
+        // oversized body kept accumulating into `body` unbounded (OOM risk, P0-9 — this internal-port
+        // fix was applied to gateway/matchsvc in the 2026-07-28 comm audit but missed this public port).
+        req.destroy();
+        reject(new Error('payload too large'));
+      }
     });
     req.on('end', () => {
       try {
@@ -90,7 +96,7 @@ function send(res: ServerResponse, status: number, body: unknown): void {
   res.writeHead(status, {
     'content-type': 'application/json',
     'access-control-allow-origin': '*',
-    'access-control-allow-headers': 'authorization,content-type,x-internal-key,x-internal-caller',
+    'access-control-allow-headers': 'authorization,content-type,x-internal-key,x-internal-caller,x-nw-platform',
     'access-control-allow-methods': 'GET,POST,PUT,OPTIONS',
   });
   res.end(JSON.stringify(body));

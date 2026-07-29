@@ -101,6 +101,9 @@ export async function createAuctionMongo(
     // purgeClosedListings runs hourly and filters/sorts by closedAt with no supporting index (COLLSCAN);
     // low urgency (scheduled, not request-path) but cheap to fix alongside the above.
     await collections.auctions.createIndex({ closedAt: 1 });
+    // scanAnomalies (anti-RMT audit) sorts by soldAt desc before its 5000-doc cap (2026-07-29 audit fix) —
+    // without this index that sort would be an in-memory COLLSCAN+sort over every sold doc ever recorded.
+    await collections.auctions.createIndex({ status: 1, soldAt: -1 });
   }
 
   return {

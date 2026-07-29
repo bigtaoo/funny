@@ -28,6 +28,11 @@ const START_FRAME = 0;
 // Maximum wait time after the first player joins for the second to connect (covers ticket TTL + buffer).
 // If no match starts within the timeout, destroy the waiting room to prevent "got a ticket but never connected" room leaks.
 const LAUNCH_TIMEOUT_MS = 35_000;
+// Generous upper bound on cmd_submit calls accepted within a single 100ms tick window (well above any
+// legitimate input burst for a turn-based card game) — without it, a connection that floods cmd_submit
+// can grow `pending` (and, once flushed, the match-long `log`/replay) without bound for as long as it
+// keeps sending, since M12 forbids decoding the opaque command bytes to apply any content-aware limit.
+const MAX_PENDING_PER_TICK = 200;
 
 /**
  * Embedded replay (S1-RP) — the non-empty frame log retained for reconnection serves as the replay;
@@ -211,6 +216,10 @@ export class Room {
   submitCmd(side: number, commands: Uint8Array): void {
     if (this.phase !== RoomPhase.IN_MATCH) return;
     if (!this.hasSide(side)) return;
+    if (this.pending.length >= MAX_PENDING_PER_TICK) {
+      log.warn('cmd_submit dropped: per-tick cap reached', { roomId: this.roomId, side, cap: MAX_PENDING_PER_TICK });
+      return;
+    }
     this.pending.push({ side, commands });
   }
 

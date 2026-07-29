@@ -827,6 +827,15 @@ export async function equipEquipment(
     if (!instDoc) return { error: 'equipment instance not found', code: 'EQUIP_NOT_FOUND' };
     const def = EQUIPMENT_DEFS[instDoc.defId];
     if (def && def.slot !== slot) return { error: `slot mismatch: ${instDoc.defId} is ${def.slot}`, code: 'INVALID_SLOT' };
+    // Must not already be equipped on a DIFFERENT card — without this check the same instanceId could be
+    // written into two cards' gear[slot] at once, doubling its stat contribution (equipment duplication).
+    // Re-equipping the same instance onto the SAME card/slot (no-op) is allowed through.
+    const equippedOn = await cols.cardInstances.findOne({
+      accountId,
+      _id: { $ne: cardInstanceId },
+      $or: EQUIP_SLOTS.map((s) => ({ [`gear.${s}`]: instanceId })),
+    });
+    if (equippedOn) return { error: 'equipment in use (equipped)', code: 'EQUIP_IN_USE' };
   }
 
   const cardDoc = await cols.cardInstances.findOne({ _id: cardInstanceId, accountId });

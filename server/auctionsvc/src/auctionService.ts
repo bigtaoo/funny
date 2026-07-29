@@ -12,6 +12,7 @@
 //   G Price guardrail — dynamic sliding-window refPrice + range check (falls back to static values on cold start)
 //   B Auction bidding — saleMode='auction': start price / increment / escrow / anti-snipe / settle on expire
 import {
+  createLogger,
   AUCTION_TAX_RATE,
   AUCTION_MAX_LISTINGS,
   AUCTION_DURATIONS_SEC,
@@ -45,6 +46,8 @@ import type { AuctionCollections, AuctionDoc } from './db';
 import type { AuctionCommercialClient } from './commercialClient';
 import type { AuctionMetaClient } from './metaClient';
 import type { AuctionMailClient, AuctionMailAttachment } from './mailClient';
+
+const log = createLogger('auctionsvc:service');
 
 export interface AuctionView {
   auctionId: string;
@@ -450,9 +453,13 @@ export class AuctionService {
     const { cols, now, meta } = this.deps;
 
     if (!AUCTION_DURATIONS_SEC.includes(durationSec)) throw new SlgError('BAD_REQUEST');
-    // Equipment, card and skin qty is always 1 (non-stackable unique instances); material qty must be > 0.
+    // Equipment, card and skin qty is always 1 (non-stackable unique instances); material qty must be a
+    // positive integer (httpApi.ts already checks this at the HTTP boundary; re-checked here since this
+    // is the only entry point that ever reaches meta.deductMaterial/mail-attachment count with `qty`, and
+    // those don't validate it themselves — a fractional value here would flow straight into an integer
+    // material count).
     const effectiveQty = (itemType === 'equipment' || itemType === 'card' || itemType === 'skin') ? 1 : qty;
-    if (effectiveQty <= 0) throw new SlgError('BAD_REQUEST');
+    if (!Number.isInteger(effectiveQty) || effectiveQty <= 0) throw new SlgError('BAD_REQUEST');
 
     // Validate sale mode parameters and determine listing unit price (used for browse sorting + guardrail check)
     let unitPrice: number; // buyout unit price / auction start unit price
@@ -832,10 +839,20 @@ export class AuctionService {
     const since = this.deps.now() - windowSec * 1000;
     // sold documents may include legacy records without soldAt → do not filter by soldAt in Mongo (would miss old docs); fetch all sold docs
     // then window-filter by soldTs in memory (sold volume is far smaller than open — acceptable).
+    // Sorted desc by soldAt (2026-07-29 audit fix, {status,soldAt} index in db.ts) so the 5000-doc cap — if
+    // ever hit — drops the OLDEST sold docs first, not an arbitrary natural-order slice that could silently
+    // exclude the most recent trades from the anti-RMT audit window. Legacy docs without soldAt sort last
+    // (missing field sorts as null, which is smallest) and are dropped first of all, which is also correct:
+    // soldTs() falls back to parsing the auctionId's embedded listing timestamp for those, so they're the
+    // least reliable/least-recent-by-construction records anyway.
     const docs = await this.deps.cols.auctions
       .find({ status: 'sold' })
+      .sort({ soldAt: -1 })
       .limit(5000)
       .toArray();
+    if (docs.length >= 5000) {
+      log.warn('scanAnomalies: 5000-doc cap reached — oldest sold docs beyond the cap were excluded', { windowSec });
+    }
     const trades: AuctionTradeRecord[] = [];
     for (const doc of docs) {
       if (!doc.buyerId) continue;
