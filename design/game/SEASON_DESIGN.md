@@ -622,3 +622,11 @@ migrateSaveIfStale 自己（D3）→ bp = save.battlePass（缺省视为未参�
 - 顺带修了一个由此暴露的正确性问题：`scrollCellDefs` 的可见性过滤原来用"当次渲染时的 scrollY"筛选是否在视口内——但拖动不再触发全量渲染后，这个过滤会导致玩家直接拖到底部时，那些初始渲染时不在视口内的关卡格子永远进不了缓存，滚过去也点不了。改为无条件缓存所有 `claimable` 格子（越界点击本身会被 `handleDown` 的实时坐标判定挡掉，不需要预先过滤）。
 
 测试：`client/test/ui/battlePassScroll.ui.ts`（新增 3 例：拖动复用同一个 `scrollContainer` 实例；`scrollContainer.y` 精确随 `dy` 平移；初始视口外的格子滚动进来后仍可点击领取）。
+
+### 15.4 战令面板：当前等级行独立高亮（2026-07-29）
+
+**问题**：奖励格四态（可领/已领/未达/付费锁）的着色只反映领取状态，玩家自己当前所在等级一旦已领取，视觉上和其它任意已领级别完全一样，找不到"我在第几级"（用户截图标出 Lv.10 行诉求）。
+
+**改动**（`client/src/scenes/BattlePassScene.ts`）：新增 `drawCurrentLevelFrame`，在渲染奖励轨时，若某行 `level === currentLevel`，在该行免费/付费两格外圈描一个跨两列的圆角描边框（`C.accent` 蓝，3px，独立于格子本身的四态填色/描边），与四态着色完全解耦——无论该级是可领/已领，当前等级永远多这一圈框。
+
+测试：沿用既有 `battlePassScroll.ui.ts`/`battlePassClaimOverlay.ui.ts`（19 例全绿）+ `tsc --noEmit` 通过；未加新用例断言描边本身（现有 headless PIXI 适配器不产出像素，只做结构冒烟）。
