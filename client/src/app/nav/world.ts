@@ -74,7 +74,11 @@ export function createWorldNav(ctx: AppCtx): WorldNav {
 
     // Close an SLG panel and reveal the live map underneath: pop the overlay (map resumes, no rebuild)
     // and re-bind the map's push handlers (see bindMapNet). This is what every panel's back button runs.
-    const returnToMap = (): void => { views.hideOverlay(); bindMapNet(); };
+    // refreshMe() re-fetches cardState/troops/resources: City/the team editor/the auction house can all
+    // change them, but (ADR-044) the map itself never tears down+rebuilds to pick that up on its own —
+    // without this, a team just given troops in the formation editor keeps reading its stale (often 0)
+    // troop count back on the map and silently drops out of the occupy/attack team picker ("No teams yet").
+    const returnToMap = (): void => { views.hideOverlay(); bindMapNet(); view.refreshMe(); };
 
     // Home Desk (CityScene) as an overlay; its "edit team" detour swaps in the formation editor as a
     // sibling overlay (map still alive underneath), and backing out of that rebuilds the City overlay.

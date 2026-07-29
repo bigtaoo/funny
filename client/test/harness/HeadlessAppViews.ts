@@ -236,7 +236,7 @@ export class HeadlessAppViews implements AppViews {
 
   showWorldMap(_cb: WorldMapCallbacks): WorldMapView {
     this.screen = 'worldMap';
-    return { applyMarchUpdate: () => {}, applyTileUpdate: () => {}, applyUnderAttack: () => {}, applySiegeResult: () => {}, applyNationMsg: () => {} };
+    return { applyMarchUpdate: () => {}, applyTileUpdate: () => {}, applyUnderAttack: () => {}, applySiegeResult: () => {}, applyNationMsg: () => {}, refreshMe: () => {} };
   }
   showFamily(_cb: FamilySceneCallbacks, _opts?: MountOpts): FamilySceneView { this.screen = 'family'; return { applyFamilyMsg() {} }; }
   showSect(_cb: SectSceneCallbacks, _opts?: MountOpts): SectSceneView { this.screen = 'sect'; return { applySectMsg() {} }; }

@@ -309,6 +309,7 @@ class PixiAppViews implements AppViews {
       applyUnderAttack: (u) => scene.applyUnderAttack(u),
       applySiegeResult: (s) => scene.applySiegeResult(s),
       applyNationMsg:   (n) => scene.applyNationMsg(n),
+      refreshMe:        () => scene.refreshMe(),
     };
   }
 
