@@ -48,6 +48,14 @@ export interface AccountDoc {
     pveWarnings?: number; // cumulative PvE suspicious attempt count (visibility only, no longer a ban trigger — see AntiCheatReviewDoc pve_reject)
     banned?: boolean;     // set only via ops manual ban (anticheat.action) after human review; auth returns ACCOUNT_BANNED
     gdprConsent?: boolean; // C5-c GDPR consent (must be true to record analytics events)
+    /** CONTENT_MODERATION_DESIGN.md CM6: content-moderation reputation, 0-100, absent = 100 (never penalized). Only written by POST /internal/accounts/:id/penalty (the sole enforcement-execution path) and the daily decay sweep. */
+    reputationScore?: number;
+    /** CM8.1: next time this account is eligible for the +10 automatic decay tick; absent once fully healed (score===100). */
+    reputationDecayAt?: number;
+    /** CM6: epoch ms until which chat sends are rejected (checked at sendMessage call sites, not at login — independent of `banned`/`bannedUntil`). */
+    mutedUntil?: number;
+    /** CM6: epoch ms until which auth is rejected (temp ban); checked alongside `banned` in rejectIfBanned. Auto-expires — no unban action needed. */
+    bannedUntil?: number;
   };
   /** C5-b soft-delete timestamp; once set, auth returns ACCOUNT_DELETED and data is asynchronously purged after 7 days. */
   deletedAt?: number;
@@ -632,6 +640,14 @@ export async function createMongo(
     );
     // 9-digit numeric public id globally unique (sparse, lazily back-filled for legacy accounts).
     await collections.accounts.createIndex({ publicId: 1 }, { sparse: true, unique: true });
+    // CONTENT_MODERATION_DESIGN.md CM8.1: reputation-decay daily sweep scans accounts due for a tick.
+    // Partial index (only documents where the field exists) — same pattern as worldsvc's
+    // nextBuildCompleteAt/nextTrainingCompleteAt — keeps the scan to the (small) penalized-account
+    // subset instead of a full collection scan; the field is cleared once an account fully heals to 100.
+    await collections.accounts.createIndex(
+      { 'flags.reputationDecayAt': 1 },
+      { partialFilterExpression: { 'flags.reputationDecayAt': { $exists: true } } },
+    );
     await collections.matches.createIndex({ ts: -1 });
     // storage cleanup TTL (non-disputed matches only, see MatchDoc.expireAt doc comment): 296MB/39K docs with no
     // cleanup was the sole driver of Atlas storage alerts at 3 real players + 100 bots.

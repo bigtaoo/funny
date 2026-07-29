@@ -1,6 +1,6 @@
 # Notebook Wars — 内容治理设计（敏感词 / 举报 / 处罚 / 申诉）
 
-> 状态：设计中 · 权威：本文（用户名/家族名/宗门名/聊天治理的单一入口，取代 `SOCIAL_DESIGN.md` SOC10 与 `COMPLIANCE_GLOBAL.md` §7 的临时描述）· 更新：2026-07-29
+> 状态：实现中（P1/P2/P3 已完成，P4/P5 待实现，见 §6/§9）· 权威：本文（用户名/家族名/宗门名/聊天治理的单一入口，取代 `SOCIAL_DESIGN.md` SOC10 与 `COMPLIANCE_GLOBAL.md` §7 的临时描述）· 更新：2026-07-29
 >
 > 拍板（2026-07-29，用户）：①"全部加"——把此前讨论的四层防御（预防/检测/后果/审核+申诉）一次性设计完整，先文档后编码；② 检测层第一期**不接第三方语义审核 API**，纯自建（正常化预处理 + 词库 + 举报 + 信誉分处罚），后续视需要再加；③ 后台审核/申诉面板这次一起做（`tools/ops`）；④ 信誉分**自动衰减**（每 30 天 +10，CM8）；⑤ 分级阈值/举报扣分单一档位均按 §4.2 默认值实现（O-CM1/O-CM2/O-CM3 已拍板）。
 >
@@ -226,3 +226,21 @@ interface AppealDoc {
 ## 9. 实现记录
 
 > （待实现后追加：完成阶段、实际字段/端点形态、与设计的差异。）
+
+### 9.1 P1+P2：归一化 + 词库外部化 + 五处覆盖缺口（2026-07-29）
+
+- `shared/chatFilter.ts`：`normalizeForFilter`（全半角/零宽字符/绕过符号/leetspeak）+ `WordlistCache`（镜像 `FeatureFlagCache`/`SlgShopPriceCache` 的轮询缓存模式）+ `censorChat` 两遍匹配（原文子串 → 归一化兜底，归一化命中时整条打码）。
+- `server/admin`：新增 `moderationWordlists` 集合 + `GET /admin/internal/moderation-wordlists`（内部轮询源）+ `POST/DELETE /admin/moderation/wordlists/:region/words`（RBAC，`moderation.wordlist.manage`）。
+- 覆盖缺口按设计接入：metaserver `authRegister`（拒绝）、socialsvc `createFamily`（拒绝）/`familyService.sendMessage`（打码）、worldsvc `sectService.createSect`（拒绝）/`nationChannelService.sendMessage`（打码）。`friendService.sendMessage`（既有私聊）顺带接入 DB 覆盖词表（此前只有内置词表）。
+- 与设计的差异：无实质偏离；家族/宗门/私聊/世界频道 region 来源统一为发送者账号 `region`（家族/私聊走 `X-Chat-Region` 请求头——但 2026-07-29 实现时发现**客户端从未真正发送这个头**，见 O-CM5，已 spawn 独立任务）。
+- 回归测试：`shared/test/chatFilter.test.ts`（+16 例：归一化/两遍匹配/`WordlistCache`/`sanitizeWordlistOverrideDoc`）、`metaserver/test/account-free-rename.e2e.test.ts`（+2 例）、`socialsvc/test/family.e2e.test.ts`（+2 例）、`worldsvc/test/sect.e2e.test.ts`/`nation-channel.e2e.test.ts`（各 +1 例）、`admin/test/moderation.e2e.test.ts`（新增，8 例）。
+
+### 9.2 P3：信誉分 + 分级处罚（2026-07-29）
+
+- `shared/mongo.ts`：`AccountDoc.flags` 新增 `reputationScore`/`reputationDecayAt`/`mutedUntil`/`bannedUntil`；`accounts` 集合新增 `flags.reputationDecayAt` 部分索引（衰减扫描用）。
+- `shared/api.ts`：新增 `ErrorCode.ACCOUNT_MUTED`（403）。
+- `metaserver/src/moderation.ts`（新文件）：`actionForScore`（§4.2 阈值表纯函数）+ `applyPenalty`（唯一处罚执行路径：读-改-写 + "只加严不减轻" + 到期即续 30 天衰减时钟）。新增 `POST /internal/accounts/:id/penalty`；`accountCache.ts`/`rejectIfBanned` 扩展支持 `bannedUntil`（限时封禁，登录侧与永久封禁同一入口检查）。
+- `metaserver/src/reputationDecay.ts`（新文件）：`decayReputationOnce`（每日 `setInterval`，镜像 `coinAnomalyAudit.ts` 编排风格，`batchLimit` 有界批处理）。
+- CM7.1 落地：`ProfileView`/worldsvc 本地 `PlayerProfile` 新增 `mutedUntil`；metaserver 的 `getProfile`（`accounts.ts`，worldsvc 用）与 `profileOf`/`profilesOf`（`social.ts`，socialsvc/私聊用）都在既有查询里顺带带出 `mutedUntil`，三个 `sendMessage` 调用点在**扣费/落库之前**检查并拒绝（`ACCOUNT_MUTED` / `SocialError:'MUTED'`），零额外跨服务往返。
+- 与设计的差异：`§4.2` 中 mermaid 式描述"读当前 reputationScore→+delta→clamp"与实际 `applyPenalty` 实现一致；`mutedUntil`/`bannedUntil` 的"只加严不减轻"用 `Math.max(既有, 新计算)` 实现，而不是简单覆盖——设计文档原文未明确这一细节，属于实现时补的具体化，不算偏离。
+- 回归测试：`metaserver/test/moderation-penalty.e2e.test.ts`（新增，11 例：阈值表/升级不降级/永封不可撤/内部端点/`rejectIfBanned` 限时封禁）、`reputation-decay.e2e.test.ts`（新增，5 例）、`socialsvc/test/family.e2e.test.ts`+`friend.e2e.test.ts`（各 +1 例禁言拒绝）、`worldsvc/test/nation-channel.e2e.test.ts`（+1 例，含"禁言时不扣费"断言）。

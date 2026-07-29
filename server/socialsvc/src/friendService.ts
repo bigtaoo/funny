@@ -25,7 +25,8 @@ export type SocialError =
   | 'ALREADY_FRIEND'
   | 'FRIEND_CAP_REACHED'
   | 'NOT_FRIEND'
-  | 'BLOCKED';
+  | 'BLOCKED'
+  | 'MUTED';
 
 interface Deps {
   cols: SocialCollections;
@@ -366,6 +367,8 @@ export class FriendService {
 
     const fromProfile = await this.meta.batchProfiles([accountId]).then((m) => m.get(accountId) ?? null);
     if (!fromProfile) return { kind: 'error', error: 'BAD_REQUEST' };
+    // CONTENT_MODERATION_DESIGN.md CM7.1: mute check piggybacked on this profile fetch (no extra round trip).
+    if (fromProfile.mutedUntil && fromProfile.mutedUntil > this.now()) return { kind: 'error', error: 'MUTED' };
 
     const body = censorChat(trimmed, region, this.wordlists).text;
     const convId = conversationId(accountId, to);

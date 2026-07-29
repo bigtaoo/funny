@@ -454,6 +454,16 @@ export class FamilyService {
     const mem = await cols.familyMembers.findOne({ _id: accountId });
     if (!mem) throw new SlgError('NOT_IN_FAMILY');
     if (!body || body.length > FAMILY_MSG_BODY_MAX) throw new SlgError('BAD_REQUEST');
+
+    // Resolve display name + title from meta (source of truth for renames); best-effort, falls back
+    // to the client-supplied senderName if meta is unavailable or profile not found — a stale/incorrect
+    // client-side cache must never be preferred over the account's real name. Fetched before censoring
+    // the body (CONTENT_MODERATION_DESIGN.md CM7.1): profiles.mutedUntil is the mute-enforcement check,
+    // piggybacked on this call rather than a separate round trip.
+    const profiles = this.meta.available ? await this.meta.batchProfiles([accountId]) : new Map();
+    const mutedUntil = profiles.get(accountId)?.mutedUntil;
+    if (mutedUntil && mutedUntil > this.deps.now()) throw new SlgError('ACCOUNT_MUTED');
+
     // CONTENT_MODERATION_DESIGN.md CM5: family chat is ephemeral like DM/world chat — mask on hit,
     // never reject delivery.
     body = censorChat(body, region, this.deps.wordlists).text;
@@ -461,11 +471,6 @@ export class FamilyService {
     const ts = this.deps.now();
     const seq = ++msgSeq;
     const msgId = `fm:${mem.familyId}:${ts}:${seq}`;
-
-    // Resolve display name + title from meta (source of truth for renames); best-effort, falls back
-    // to the client-supplied senderName if meta is unavailable or profile not found — a stale/incorrect
-    // client-side cache must never be preferred over the account's real name.
-    const profiles = this.meta.available ? await this.meta.batchProfiles([accountId]) : new Map();
     const resolvedSenderName = profiles.get(accountId)?.displayName ?? senderName;
     const title = profiles.get(accountId)?.equippedTitle;
     const fromPublicId = profiles.get(accountId)?.publicId ?? '';

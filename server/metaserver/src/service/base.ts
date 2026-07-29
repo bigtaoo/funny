@@ -101,7 +101,7 @@ export class MetaServiceBase {
     return false;
   }
 
-  /** C4/C5-b: Check account-level ban / soft-delete flags; if flagged, reject the request and return true.
+  /** C4/C5-b/CM6: Check account-level ban / temp-ban / soft-delete flags; if flagged, reject the request and return true.
    *  Cached (2026-07-27, accountCache.ts) — a cache hit skips the Mongo round trip entirely. */
   protected async rejectIfBanned(cols: ServiceDeps['cols'], accountId: string, reply: FastifyReply): Promise<boolean> {
     const status = await this.deps.accountCache.getBanStatus(cols, accountId);
@@ -111,6 +111,11 @@ export class MetaServiceBase {
     }
     if (status.banned) {
       void reply.code(403).send(err(ErrorCode.ACCOUNT_BANNED, 'account banned'));
+      return true;
+    }
+    // CONTENT_MODERATION_DESIGN.md CM6: a temp ban auto-expires — no unban action needed once bannedUntil passes.
+    if (status.bannedUntil && status.bannedUntil > this.deps.now()) {
+      void reply.code(403).send(err(ErrorCode.ACCOUNT_BANNED, 'account temporarily banned'));
       return true;
     }
     return false;

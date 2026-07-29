@@ -61,6 +61,8 @@ export interface ProfileView {
   equippedTitle?: string;
   /** Equipped avatar (composite "<category>:<key>", see avatar.ts), if any. */
   avatarId?: string;
+  /** CONTENT_MODERATION_DESIGN.md CM7.1: epoch ms until which this account is muted, if currently muted. Piggybacked on the profile fetch every sendMessage() already makes — no extra round trip for the mute check. */
+  mutedUntil?: number;
 }
 
 export interface FriendView {

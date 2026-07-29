@@ -196,6 +196,15 @@ describe.skipIf(!mongo)('socialsvc FriendService e2e', () => {
     expect(await svc.sendMessage('a', 'P-A', 'self', 'global')).toMatchObject({ error: 'BAD_REQUEST' });
   });
 
+  it('sendMessage: rejects delivery while the sender is muted (CONTENT_MODERATION_DESIGN.md CM6/CM7.1)', async () => {
+    await befriend('a', 'P-B', 'b');
+    meta.mute('a', nowMs + 3600_000); // muted 1h into the future
+    await expect(svc.sendMessage('a', 'P-B', 'hey', 'global')).resolves.toMatchObject({ error: 'MUTED' });
+    // Once the mute has expired, the same sender can post again.
+    nowMs += 3600_001;
+    await expect(svc.sendMessage('a', 'P-B', 'hey again', 'global')).resolves.toMatchObject({ kind: 'ok' });
+  });
+
   it('getConversations / getMessages / markConversationRead: peer view, history, unread clear', async () => {
     await befriend('a', 'P-B', 'b');
     nowMs = 10_000; await svc.sendMessage('a', 'P-B', 'one', 'global');

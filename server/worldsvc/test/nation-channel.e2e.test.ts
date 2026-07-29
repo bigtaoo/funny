@@ -100,6 +100,33 @@ describe.skipIf(!mongo)('NationChannelService e2e', () => {
     expect(result.body).toBe('what the ****');
   });
 
+  it('sendMessage: rejects delivery while the sender is muted, and does not charge WORLD_CHAT_COST for the rejected attempt (CONTENT_MODERATION_DESIGN.md CM6/CM7.1)', async () => {
+    let nowMs = 1000;
+    const mutedMeta: WorldMetaClient = {
+      available: true,
+      async getProfile(id) { return id === 'alice' ? { publicId: 'alice#0042', displayName: 'Alice', mutedUntil: 5000 } : null; },
+      async grantMaterial() { /* no-op */ },
+      async batchProfiles() { return new Map(); },
+      async getSaveFields() { return null; },
+      async grantTitle() { /* no-op */ },
+    };
+    const svc = new NationChannelService({
+      cols: mongo!.collections,
+      gateway: fakeGateway,
+      commercial: fakeCommercial,
+      meta: mutedMeta,
+      now: () => nowMs,
+    });
+    await expect(svc.sendMessage(W, 'alice', 'Alice', 'hey')).rejects.toMatchObject({ code: 'ACCOUNT_MUTED' });
+    expect(spends).toHaveLength(0); // rejected before the coin charge, per CM7.1 reordering
+
+    // Once the mute has expired, the same account can post (and is charged normally).
+    nowMs = 5001;
+    const result = await svc.sendMessage(W, 'alice', 'Alice', 'hey again');
+    expect(result.body).toBe('hey again');
+    expect(spends).toHaveLength(1);
+  });
+
   // Regression: posting must ALWAYS charge WORLD_CHAT_COST coins. The old `if (commercial.available)`
   // guard let posts through for free whenever worldsvc lacked NW_COMMERCIAL_INTERNAL_URL.
   describe('regression: a world-chat post is never free', () => {

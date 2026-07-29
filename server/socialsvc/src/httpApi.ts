@@ -106,7 +106,7 @@ function sendErr(res: ServerResponse, code: ErrorCode, message: string): void {
   send(res, ERROR_HTTP_STATUS[code] ?? 400, err(code, message));
 }
 
-type SocialError = 'NOT_FOUND' | 'BAD_REQUEST' | 'ALREADY_FRIEND' | 'FRIEND_CAP_REACHED' | 'NOT_FRIEND' | 'BLOCKED';
+type SocialError = 'NOT_FOUND' | 'BAD_REQUEST' | 'ALREADY_FRIEND' | 'FRIEND_CAP_REACHED' | 'NOT_FRIEND' | 'BLOCKED' | 'MUTED';
 function sendSocialErr(res: ServerResponse, e: SocialError): void {
   switch (e) {
     case 'NOT_FOUND': return sendErr(res, ErrorCode.NOT_FOUND, 'not found');
@@ -114,6 +114,7 @@ function sendSocialErr(res: ServerResponse, e: SocialError): void {
     case 'FRIEND_CAP_REACHED': return sendErr(res, ErrorCode.FRIEND_CAP_REACHED, 'friend cap reached');
     case 'NOT_FRIEND': return sendErr(res, ErrorCode.NOT_FRIEND, 'not friends');
     case 'BLOCKED': return sendErr(res, ErrorCode.BLOCKED, 'blocked');
+    case 'MUTED': return sendErr(res, ErrorCode.ACCOUNT_MUTED, 'muted');
     default: return sendErr(res, ErrorCode.BAD_REQUEST, 'bad request');
   }
 }

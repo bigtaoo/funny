@@ -3,13 +3,13 @@ import type { Collections, ProfileView } from '@nw/shared';
 import { eloToRank, INITIAL_ELO } from '@nw/shared';
 
 /** Fields actually needed to build a ProfileView — used as the projection on both the single and batch paths. */
-const ACCOUNT_PROFILE_PROJECTION = { publicId: 1, displayName: 1 } as const;
+const ACCOUNT_PROFILE_PROJECTION = { publicId: 1, displayName: 1, 'flags.mutedUntil': 1 } as const;
 const SAVE_PROFILE_PROJECTION = { 'save.pvp.elo': 1, 'save.equipped': 1 } as const;
 
 /** Shared transform for both profileOf and batch-profiles — single source of truth for the business rules
  * (rank derivation, displayName fallback, equipped title/avatar extraction). No publicId → invisible (null). */
 function toProfileView(
-  account: { publicId?: string; displayName?: string } | null | undefined,
+  account: { publicId?: string; displayName?: string; flags?: { mutedUntil?: number } } | null | undefined,
   save: { save: { pvp: { elo: number }; equipped?: Record<string, unknown> } } | null | undefined,
 ): ProfileView | null {
   if (!account?.publicId) return null;
@@ -23,6 +23,7 @@ function toProfileView(
     rank: eloToRank(elo),
     ...(equippedTitle ? { equippedTitle } : {}),
     ...(avatarId ? { avatarId } : {}),
+    ...(account.flags?.mutedUntil ? { mutedUntil: account.flags.mutedUntil } : {}),
   };
 }
 

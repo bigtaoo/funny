@@ -17,6 +17,8 @@ import type { Collections } from '@nw/shared';
 interface BanStatus {
   banned: boolean;
   deletedAt: number | undefined;
+  /** CONTENT_MODERATION_DESIGN.md CM6: epoch ms until which auth is rejected (temp ban); undefined/past = not currently temp-banned. */
+  bannedUntil: number | undefined;
 }
 
 // Safety net only: the known mutation sites (ban/unban/deleteAccount) invalidate explicitly on write, so a
@@ -78,12 +80,16 @@ export class AccountCache {
     const cached = this.banStatus.get(accountId);
     if (cached) return cached;
     const doc = await cols.accounts.findOne({ _id: accountId }, { projection: { flags: 1, deletedAt: 1 } });
-    const status: BanStatus = { banned: !!doc?.flags?.banned, deletedAt: doc?.deletedAt };
+    const status: BanStatus = {
+      banned: !!doc?.flags?.banned,
+      deletedAt: doc?.deletedAt,
+      bannedUntil: doc?.flags?.bannedUntil,
+    };
     this.banStatus.set(accountId, status);
     return status;
   }
 
-  /** Call after any write to accounts.flags.banned / accounts.deletedAt for this account (ban/unban/deleteAccount). */
+  /** Call after any write to accounts.flags.banned / .bannedUntil / accounts.deletedAt for this account (ban/unban/deleteAccount/penalty). */
   invalidateBanStatus(accountId: string): void {
     this.banStatus.delete(accountId);
   }
