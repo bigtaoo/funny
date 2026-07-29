@@ -30,6 +30,8 @@ import { RECHARGE_TIERS, type RechargeTierDef, type RechargeReward } from '../ga
 export interface RechargeCallbacks {
   onBack(): void;
   getCoins(): number;
+  /** Subscribe to SaveManager writes; re-renders this scene when a concurrently-mounted peer scene changes the wallet. Push the returned unsub onto `unsubs`. */
+  onSaveChanged?(listener: () => void): () => void;
   /** Current cumulative recharge progress + claimed tier ids. Omitted when offline/not logged in → shows "login to view". */
   getData?(): { totalRechargeCents: number; claimed: number[] };
   /** Claim a tier reward. Returns the granted rewards (for the toast). */
@@ -101,6 +103,7 @@ export class RechargeScene implements Scene {
       const next = wheelScrollY(sv.y, sv.y + sv.h, y, deltaY, this.scrollY, this.scrollMax);
       if (next !== null) { this.scrollY = next; this.updateScrollPosition(); }
     }));
+    if (cb.onSaveChanged) this.unsubs.push(cb.onSaveChanged(() => this.render()));
     this.render();
   }
 

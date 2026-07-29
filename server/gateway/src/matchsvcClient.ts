@@ -77,7 +77,10 @@ export type PushMsg =
   | { kind: 'nation_msg'; worldId: string; fromPublicId: string; fromName: string; body: string; ts: number }
   // Friend challenge ("切磋", ADR friends-duel-confirm) — see matchsvc's own PushMsg doc comment.
   | { kind: 'duel_invited'; inviteId: string; fromPublicId: string; fromName: string }
-  | { kind: 'duel_cancelled'; inviteId: string; reason: string };
+  | { kind: 'duel_cancelled'; inviteId: string; reason: string }
+  // matchsvc restart-safety (matchsvc-prematch-persist, 2026-07-29) — see matchsvc's own PushMsg doc comment.
+  | { kind: 'queue_state' }
+  | { kind: 'prematch_lost'; context: string };
 
 export class MatchsvcClient {
   constructor(

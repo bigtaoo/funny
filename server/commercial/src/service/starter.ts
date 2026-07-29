@@ -48,6 +48,26 @@ export function StarterMixin<TBase extends CommercialBaseCtor>(Base: TBase): TBa
       const displayChannel = spendChannelOf(args.clientPlatform);
       const existing = await this.cols.orders.findOne({ _id: args.orderId });
       if (existing) {
+        // status:'charged' on the growth-pack path means a prior attempt claimed the slot but hasn't
+        // flipped it to 'delivered' yet (see the insert below, same fix as subscriptionCardBuy in
+        // base.ts). starter_draw orders are always inserted 'charged' by design (meta delivers the pack
+        // items later) and must NOT be resumed here — only growth-pack orders (kind:'grant') carry
+        // unfinished applySubscription work. Gated by isStaleClaim: a retry landing while the original
+        // call is merely slow (not crashed) must not redo applySubscription itself (double-grant); only
+        // resume for real once the claim is stale enough that the original is presumed dead.
+        if (existing.status === 'charged' && existing.kind === 'grant') {
+          if (this.isStaleClaim(existing.ts) && (await this.claimOrderResume(args.orderId))) {
+            return this.finishStarterGrowth(args, existing.accountId);
+          }
+          const w0 = await this.cols.wallets.findOne({ _id: existing.accountId });
+          return {
+            ok: true,
+            coinsAfter: effectiveCoins(w0, displayChannel),
+            subscriptionExpiry: w0?.subscription?.expiry ?? 0,
+            results: [],
+            wallet: walletView(w0, args.clientPlatform),
+          };
+        }
         const w = await this.cols.wallets.findOne({ _id: existing.accountId });
         return {
           ok: true,
@@ -84,11 +104,31 @@ export function StarterMixin<TBase extends CommercialBaseCtor>(Base: TBase): TBa
         return { ok: true, coinsAfter, subscriptionExpiry: claimed.subscription?.expiry ?? 0, results, wallet: walletView(claimed, args.clientPlatform) };
       }
 
-      // starter_growth: coins + 7-day card (no items to deliver → order lands delivered). Real money (¥30) —
-      // fund the caller's verified recharge channel (ADR-020), not the free pool.
+      // starter_growth: coins + 7-day card. Reserve the order slot as 'charged' BEFORE applySubscription
+      // runs (not after) — a crash between the two must leave a resumable 'charged' row, not report
+      // fabricated success while the grant never happened (see the existing-order branch above).
+      await this.cols.orders.insertOne({
+        _id: args.orderId,
+        accountId: args.accountId,
+        kind: 'grant',
+        cost: 0,
+        status: 'charged',
+        coinsAfter: 0,
+        result: {},
+        ts: now,
+      });
+      return this.finishStarterGrowth(args, args.accountId);
+    }
+
+    private async finishStarterGrowth(
+      args: { accountId: string; orderId: string; rechargePlatform?: string; clientPlatform?: string },
+      accountId: string,
+    ): Promise<Result<{ coinsAfter: number; subscriptionExpiry: number; results: GachaResultEntry[]; wallet: WalletView }>> {
+      const now = this.now();
+      // Real money (¥30) — fund the caller's verified recharge channel (ADR-020), not the free pool.
       const growthChannel = args.rechargePlatform ? (rechargeChannelOf(args.rechargePlatform) ?? undefined) : undefined;
       const { coinsAfter, expiry, wallet } = await this.applySubscription(
-        args.accountId,
+        accountId,
         GROWTH_PACK_CARD_DAYS,
         GROWTH_PACK_COINS,
         now,
@@ -99,17 +139,10 @@ export function StarterMixin<TBase extends CommercialBaseCtor>(Base: TBase): TBa
           clientPlatform: args.clientPlatform,
         },
       );
-      await this.cols.orders.insertOne({
-        _id: args.orderId,
-        accountId: args.accountId,
-        kind: 'grant',
-        cost: 0,
-        status: 'delivered',
-        coinsAfter,
-        result: {},
-        deliveredAt: now,
-        ts: now,
-      });
+      await this.cols.orders.updateOne(
+        { _id: args.orderId },
+        { $set: { status: 'delivered', coinsAfter, deliveredAt: now } },
+      );
       return { ok: true, coinsAfter, subscriptionExpiry: expiry, results: [], wallet: walletView(wallet, args.clientPlatform, growthChannel) };
     }
   };

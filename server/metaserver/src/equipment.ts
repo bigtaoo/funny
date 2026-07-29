@@ -827,6 +827,15 @@ export async function equipEquipment(
     if (!instDoc) return { error: 'equipment instance not found', code: 'EQUIP_NOT_FOUND' };
     const def = EQUIPMENT_DEFS[instDoc.defId];
     if (def && def.slot !== slot) return { error: `slot mismatch: ${instDoc.defId} is ${def.slot}`, code: 'INVALID_SLOT' };
+    // Must not already be equipped on a DIFFERENT card — without this check the same instanceId could be
+    // written into two cards' gear[slot] at once, doubling its stat contribution (equipment duplication).
+    // Re-equipping the same instance onto the SAME card/slot (no-op) is allowed through.
+    const equippedOn = await cols.cardInstances.findOne({
+      accountId,
+      _id: { $ne: cardInstanceId },
+      $or: EQUIP_SLOTS.map((s) => ({ [`gear.${s}`]: instanceId })),
+    });
+    if (equippedOn) return { error: 'equipment in use (equipped)', code: 'EQUIP_IN_USE' };
   }
 
   const cardDoc = await cols.cardInstances.findOne({ _id: cardInstanceId, accountId });
@@ -835,8 +844,20 @@ export async function equipEquipment(
   const updatedGear = { ...(cardDoc.gear ?? {}) };
   if (instanceId === null) delete (updatedGear as Record<string, string | undefined>)[slot];
   else (updatedGear as Record<string, string>)[slot] = instanceId;
+  const updatedGearInstanceIds = Object.values(updatedGear).filter((v): v is string => !!v);
 
-  await cols.cardInstances.updateOne({ _id: cardInstanceId, accountId }, { $set: { gear: updatedGear } });
+  try {
+    await cols.cardInstances.updateOne(
+      { _id: cardInstanceId, accountId },
+      { $set: { gear: updatedGear, gearInstanceIds: updatedGearInstanceIds } },
+    );
+  } catch (e) {
+    // Unique multikey index on gearInstanceIds (mongo.ts) is the atomic backstop behind the "equipped
+    // elsewhere" read above: a concurrent equip of the SAME instanceId onto a DIFFERENT card that raced
+    // past that check lands here instead of silently duplicating the instance's stat contribution.
+    if ((e as { code?: number }).code === 11000) return { error: 'equipment in use (equipped)', code: 'EQUIP_IN_USE' };
+    throw e;
+  }
 
   const save = await getOrCreateSave(cols, accountId, now());
   return { save: leanSave(save) };

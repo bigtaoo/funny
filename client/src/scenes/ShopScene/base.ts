@@ -45,6 +45,12 @@ export interface ShopSceneCallbacks {
   onBack(): void;
   /** Current server-authoritative coin balance (read from SaveData). */
   getCoins(): number;
+  /**
+   * Subscribe to SaveManager writes (SaveManager.subscribe) — re-renders this scene when another
+   * concurrently-mounted scene (e.g. this Shop overlay's peer or a sibling tab) changes the wallet.
+   * Returns an unsubscribe function; caller must push it onto `unsubs` and let destroy() call it.
+   */
+  onSaveChanged?(listener: () => void): () => void;
   /** Owned skin ids (to mark already-purchased items). */
   getOwnedSkins(): string[];
   loadItems(): Promise<ShopItem[]>;
@@ -187,6 +193,7 @@ export class ShopSceneBase {
       if (next !== null) { this.scrollY = next; this.scrollDirty = true; }
     }));
     if (cb.redeemPromo) this.setupHiddenInput();
+    if (cb.onSaveChanged) this.unsubs.push(cb.onSaveChanged(() => this.render()));
     this.render();
     void this.loadItems();
     loadCoinIconAtlas()

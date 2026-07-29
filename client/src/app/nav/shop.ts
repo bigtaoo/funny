@@ -252,6 +252,7 @@ export function createShopNav(ctx: AppCtx): ShopNav {
         if (onBack) onBack(); else nav.goLobby();
       },
       getCoins: () => saveManager.get().wallet.coins,
+      onSaveChanged: (listener: () => void) => saveManager.subscribe(listener),
       getOwnedSkins: () => saveManager.get().inventory.skins,
       loadItems: () => client.getShopItems(),
       async buy(itemId) {
@@ -366,6 +367,7 @@ export function createShopNav(ctx: AppCtx): ShopNav {
       ...(inGroup && bpAvail ? { openBattlePass: () => goBattlePass({ shopBack }), getBattlePassBadge: battlePassBadgeClaimable } : {}),
       ...(inGroup && bpAvail ? { openRecharge: () => goRecharge({ shopBack }), getRechargeBadge: rechargeBadgeClaimable } : {}),
       getCoins: () => saveManager.get().wallet.coins,
+      onSaveChanged: (listener: () => void) => saveManager.subscribe(listener),
       getPity: (poolId) => saveManager.get().gacha.pity[poolId] ?? 0,
       getFatePoints: () => saveManager.get().monetization?.fatePoints ?? 0,
       loadPools: () => client.getGachaPools(),
@@ -489,6 +491,7 @@ export function createShopNav(ctx: AppCtx): ShopNav {
       // Same peer-tab rule as Gacha's onBack above: leave the group directly, don't detour through Shop.
       onBack: () => { if (shopBack) shopBack(); else nav.goLobby(); },
       getCoins: () => saveManager.get().wallet.coins,
+      onSaveChanged: (listener: () => void) => saveManager.subscribe(listener),
       ...(inGroup ? { openShop: () => goShop(shopBack), getShopBadge: shopCardBadgeClaimable, openGacha: () => goGacha({ shopBack }) } : {}),
       ...(inGroup && coinsAvail ? { openCoins: () => goShop(shopBack, 'coins') } : {}),
       ...(inGroup && loggedIn ? { openRecharge: () => goRecharge({ shopBack }), getRechargeBadge: rechargeBadgeClaimable } : {}),
@@ -530,6 +533,7 @@ export function createShopNav(ctx: AppCtx): ShopNav {
     views.showRecharge({
       onBack: () => { if (shopBack) shopBack(); else nav.goLobby(); },
       getCoins: () => saveManager.get().wallet.coins,
+      onSaveChanged: (listener: () => void) => saveManager.subscribe(listener),
       ...(inGroup ? { openShop: () => goShop(shopBack), getShopBadge: shopCardBadgeClaimable, openGacha: () => goGacha({ shopBack }) } : {}),
       ...(inGroup && coinsAvail ? { openCoins: () => goShop(shopBack, 'coins') } : {}),
       ...(inGroup && loggedIn ? { openBattlePass: () => goBattlePass({ shopBack }), getBattlePassBadge: battlePassBadgeClaimable } : {}),

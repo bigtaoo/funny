@@ -7,7 +7,15 @@ import type { Scheduler } from './scheduler';
 function readJson(req: IncomingMessage): Promise<Record<string, unknown>> {
   return new Promise((resolve, reject) => {
     let body = '';
-    req.on('data', (c) => (body += c));
+    req.on('data', (c) => {
+      body += c;
+      // Same 1MB cap + destroy() as every other internal port in this codebase (P0-9) — this one had no
+      // cap at all, so an oversized body would accumulate into `body` unbounded (OOM risk).
+      if (body.length > 1 << 20) {
+        req.destroy();
+        reject(new Error('payload too large'));
+      }
+    });
     req.on('end', () => {
       try {
         resolve(body ? (JSON.parse(body) as Record<string, unknown>) : {});

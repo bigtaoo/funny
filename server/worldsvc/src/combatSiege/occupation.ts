@@ -141,7 +141,7 @@ export function OccupationMixin<TBase extends SiegeServiceBaseCtor>(Base: TBase)
       let res: SiegeResolution;
       let replay: SiegeReplayInputs | null = { seed, attackerArmy, defenderConfig, tileLevel };
       try {
-        res = runSiegeBattle({ attackerArmy, defenderConfig, tileLevel, seed, cardInstances, equipmentInv: cardEquipInv });
+        res = await runSiegeBattle({ attackerArmy, defenderConfig, tileLevel, seed, cardInstances, equipmentInv: cardEquipInv });
       } catch (err) {
         console.error('[worldsvc] occupy siege engine failed — fallback to cheap resolve', {
           tile: m.toTile,
@@ -205,7 +205,7 @@ export function OccupationMixin<TBase extends SiegeServiceBaseCtor>(Base: TBase)
       let res: SiegeResolution;
       let replay: SiegeReplayInputs | null = { seed, attackerArmy, defenderConfig, tileLevel };
       try {
-        res = runSiegeBattle({ attackerArmy, defenderConfig, tileLevel, seed, cardInstances, equipmentInv: cardEquipInv });
+        res = await runSiegeBattle({ attackerArmy, defenderConfig, tileLevel, seed, cardInstances, equipmentInv: cardEquipInv });
       } catch (err) {
         console.error('[worldsvc] occupation expulsion siege engine failed — fallback to cheap resolve', {
           tile: m.toTile,

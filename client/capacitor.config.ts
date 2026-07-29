@@ -23,9 +23,16 @@ const config: CapacitorConfig = {
     // src/platform/ota.ts (fetch our own manifest → download → arm next()), so Capgo's own
     // autoUpdate loop stays off. resetWhenUpdate drops any staged OTA bundle when the native
     // shell itself is upgraded through the App Store, so the fresh binary starts clean.
+    // autoDeletePrevious/autoDeleteFailed are already the plugin's own defaults (v6, both `true`
+    // — confirmed against node_modules/@capgo/capacitor-updater's definitions.d.ts/README, not
+    // the plugin's example config block which misleadingly shows `false` as sample values) and
+    // were previously left unset here; pinned explicitly so a future @capgo major bump can't
+    // silently flip local device storage back to unbounded OTA-bundle accumulation.
     CapacitorUpdater: {
       autoUpdate: false,
       resetWhenUpdate: true,
+      autoDeletePrevious: true,
+      autoDeleteFailed: true,
     },
   },
 };

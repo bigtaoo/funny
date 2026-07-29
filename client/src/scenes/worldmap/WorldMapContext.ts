@@ -13,6 +13,7 @@ import type { WorldMapPanels } from './WorldMapPanels';
 import type { WorldMapNet } from './WorldMapNet';
 import type { WorldMapInput } from './WorldMapInput';
 import type { StickmanRuntime } from '../../render/stickman/StickmanRuntime';
+import type { IStorage } from '../../platform/IPlatform';
 
 /**
  * A live march/occupy/stationed token (fog.ts syncMarchTokens/syncOccupyTokens/syncStationedTokens).
@@ -55,6 +56,9 @@ export interface WorldMapCallbacks {
   accountId: string;
   /** live coin balance getter (SaveData.wallet mirror) — shown in the SLG shop. */
   getCoins?: () => number;
+  /** Platform storage (IPlatform.storage) — world-chat read-marker persistence must go through this,
+   * not the global `localStorage`, so it also works under the WeChat mini-game runtime (no DOM storage). */
+  storage: IStorage;
 }
 
 /** March kinds the deploy dialog can dispatch (occupy/reinforce/attack/sweep). */
@@ -234,14 +238,14 @@ export class WorldMapContext {
   }
 
   getWorldChatSeenTs(): number {
-    const raw = localStorage.getItem(this.worldChatSeenKey());
+    const raw = this.cb.storage.getItem(this.worldChatSeenKey());
     return raw ? Number(raw) || 0 : 0;
   }
 
   /** Marks all currently-fetched chat as read (called when the player opens the chat overlay). */
   markWorldChatSeen(): void {
     const ts = this.worldChatLatest?.ts ?? Date.now();
-    localStorage.setItem(this.worldChatSeenKey(), String(ts));
+    this.cb.storage.setItem(this.worldChatSeenKey(), String(ts));
     this.worldChatUnread = 0;
   }
 

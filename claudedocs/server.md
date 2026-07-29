@@ -111,6 +111,7 @@ cp .env.example .env        # 填 NW_JWT_SECRET / NW_DOMAIN
 - **主城迁城（S8-4c，所有玩家通用）**：主动 `service.relocateBase`（花 `RELOCATE_COST=500` coin 迁主城到合法空格，**保留领地**，沿用旧保护罩；`POST /world/relocate`）；被动 `passiveRelocate`（`applySiege` 主城被破 → `deleteMany({ownerId})` **失全部领地** + 随机落新址上保护罩，门主叠加全宗门 -50%）。客户端 `WorldMapScene` 中立格菜单「迁城到此」+ `NetSession.onSectMsg`/`SectScene.applySectMsg` 实时频道
 - **国民加成（S8-6.5 / G1）**：`NATION_BONUS_PRODUCTION=0.10` 在 `recomputeYield`（己方占领首府的 Voronoi 区内格产率 ×1.1）、`NATION_BONUS_DEFENSE=0.15` 在 `applySiege`（守军处己方首府区经 `shared.nationDefenseStrength` ×1.15 再喂 `resolveSiege`）。归属判定 v1 = 首府占领者即国民代表（无逐玩家国籍字段）；NPC 扫荡不享
 - **S8-3b（待办）**：围攻经 `/gw/judge` 引擎复算替代廉价线性结算（判负翻转 = G3，仍 log mismatch 未启用）
+- **`getMarches`/`getStationed`/`computeMarchPath` 查询优化（2026-07-29，接续 07-27 审计"已知但本轮未处理"第二条）**：两步。①`computeMarchPath`（`combatMarch.ts`）三次缺索引 `tiles` 扫描（关口 bridge/plankway、被占主城、阻挡建筑）补 `{worldId,type}` + 稀疏 `{worldId,'structure.kind'}` 两个索引（`db.ts`），纯加索引无行为改动。②结构性下推：`MarchDoc` 新增 `minX/maxX/minY/maxY`（`db.ts`）——leg 两端点（fromTile/toTile）的 bbox，一次性写入（`coreHelpers.ts::legBox`），**不是**逐 tick 更新的"当前坐标"——因为 `getMarches` 的视野判定（`marchInterpPos`）从来就是 fromTile→toTile 的直线插值，从不看 ADR-051 那条会拐弯的 A* `path`，所以整段行程的插值位置必然落在这个 bbox 内，端点互换（recall 时 from/to 对调）不改变 bbox，故 `recallMarch` 不需要重算（但仍顺手重算一遍，见下）。`getMarches`/`getStationed` 敌方分支改用调用方"领地/视野包围盒"（`coreHelpers.ts::sourcesBoundingBox`，直接从已经算好的 `computeVisionSources` 返回值推导，不是另发一次查询）下推进 Mongo `find` 条件，敌方精确 `isInVision` 过滤只在 bbox 缩小后的结果集上跑；`getStationed` 顺带去掉了落不到 `{worldId,ownerId}` 索引前缀的低效 `$ne:accountId`，改成 bbox 范围 + 内存排除自身。历史 march 文档缺 bbox 字段**未做离线迁移**：字段可从 `fromTile`/`toTile` 100% 推导，`marches` 本身是瞬时集合（到达/召回即删除），且 `recallMarch` 会在触碰到的任何 legacy 文档上无条件重算 bbox（自愈）——影响面仅限"该行军在剩余行程内对其他玩家的视野观测暂时不可见"，不影响到达结算/兵力等权威状态；仍提供了 `scripts/migrateMarchBbox.ts`（幂等、`--dry-run`）供想立即补齐的场景使用，脚本头部注释记录了"为什么不是发布前置条件"的完整推理。回归测试 `test/march-query-opt.e2e.test.ts`（9 例：4 个索引走向断言 + bbox 写入正确性 + 视野内/外过滤 + legacy 文档自愈）。
 
 ## 经济核验工具（econ-sim，A 轨）
 
@@ -218,3 +219,77 @@ commercial 此前完全没有 Redis 依赖，本次新增：`config.ts` 补 `NW_
 **未完成，留独立任务**：P1 合并优化（match-identity 合并端点、`GET /save` wallet N+1、socialsvc profile/extra 单跳化、save-fields 批量+缓存等一长串已诊断待实现项）——诊断已写入设计文档，本轮聚焦 P0 正确性缺口 + 已完成的 P2 清理，性能优化留下一轮。
 
 **验证**：11 个 server 包全量 `tsc -b` + vitest 交叉扫描（除 matchsvc 2 个与本轮无关的既有失败——已 spawn 独立任务跟踪），client `tsc --noEmit` 全绿。
+
+## 服务器逻辑全面审计 + 修复（2026-07-29，server-logic-audit-2026-07-29）
+
+承前两轮（07-27 存储方式、07-28 服务间通信）之后，这轮切到**单进程内部业务逻辑本身**：算法复杂度/内存管理/数据结构设计/输入校验健壮性/单进程容错。完整发现清单、决策表、逐项修复记录见 [`design/game/SERVER_LOGIC_AUDIT_2026-07-29.md`](../design/game/SERVER_LOGIC_AUDIT_2026-07-29.md)；这里只记落地要点。
+
+- **装备复制漏权**：`equipEquipment`（metaserver）从不调用项目自己写好的 `isEquipped()` 占用检查，同一装备实例可同时装到两张卡上复制战力。补检查。
+- **commercial 资金丢失风险（6 处）**：rechargeVerify/paddleComplete/promoRedeem/orderDelivered/subscriptionCardBuy/starterBuy growth 均是"先落地已发放记录、再执行 credit 副作用"，崩溃在两步之间会让钱永久丢失且无法重放补发。引入 `isStaleClaim` 宽限窗口（15s，`CommercialServiceBase`）：窗口内维持原状（不与真正的并发赢家抢跑），窗口外验证 ledger/order 状态并补发（verify-and-heal）。
+- **worldsvc troops 并发扣负**：`startMarch`/`occupyTile` 是 check-then-act，并发双发可把 troops 打成负数；改用 `city.ts` 训练花费已用的 `findOneAndUpdate({troops:{$gte:cost}})` 原子写法。
+- **gateway/gameserver `maxPayload` 缺失**：WebSocketServer 未设置，补 1MB。
+- **socialsvc CORS 头漏 `x-nw-platform`**：07-28 修了 worldsvc/auctionsvc，socialsvc 被漏，补上。
+- **analyticsvc 埋点 `ts` 无边界校验**：可永久绕开 90 天 TTL 或污染按天聚合；`clampEventTs` 限制在 [-24h,+5min]。
+- **4 处无界内存增长**：admin `loginAttempts`（攻击者可控 key）、gateway `friendsCache`/`publicIdCache`、socialsvc `chatRate`、metaserver `accountCache.TtlMap` 均补 sweep-on-traffic（同既有 `SlidingRateLimiter.maybeSweep` 套路）；gameserver `Room.pending` 补 `MAX_PENDING_PER_TICK=200` 防洪水攻击撑大 replay。
+- **socialsvc family memberCount 双重递减**：`leaveFamily`/`kickMember` 并发双发会重复 `$inc -1`；`deleteOne` 的 `deletedCount` 门控 decrement。
+- **worldsvc `resetSeason` 未清理 Redis 幽灵索引**：ADR-051 的 `occ`/`cover` 哈希未随季重置清理；新增 `WorldCorePush.clearSpatialIndexes`。
+- **auctionsvc `scanAnomalies` 静默截断**：5000 条上限无排序无告警可能漏检最近成交；改按 `soldAt desc` 排序（新索引）+ 命中上限时告警。
+- **readJson 内存泄漏遗漏面**：07-28 只修了 gateway/matchsvc 的 `destroy()` 缺失，这轮补齐 socialsvc/analyticsvc/commercial/botsvc 四个内部端口。
+- **admin `retryTicket` 无原子 claim**：并发点击可重复触发 `mail.send`；补 `retryLockedAt` CAS（mirrors `approveTicket` 既有状态 CAS）。
+- **尝试后回退**：`decompressReplayDoc` 异步化在 `matchReport.ts` 的每场排位赛热路径上暴露了 `pvp-card-stats.e2e.test.ts` 对该 fire-and-forget 链路"近乎同步完成"的隐含时序假设——改成真异步后测试断言跑在链路完成前。已回退保持同步；根治需要连带把测试改成 poll 或引入更强的一致性保证，留独立任务。
+
+**未处理（更大改动或更低优先级，非本轮范围）**：~~matchsvc 赛前状态纯内存无持久化~~（同日以独立分支解决，见下文"matchsvc 赛前状态持久化"节）；~~worldsvc `getMarches`/`getStationed` 全服拉取 + `computeMarchPath` 缺索引扫描~~（同日以独立分支解决，见"SLG worldsvc 要点"对应条目）；~~`siegeEngine` 势均力敌攻城同步阻塞事件循环~~（同日以独立分支解决，见下方"siegeEngine 移入 worker_threads 池"节）；~~gateway 控制消息无 per-connection 限流~~（同日以独立分支解决，见下条）；admin 四眼审批例外（策略决策）；`dailyCounter.LocalBackend` 长期 Redis 故障下无界增长（概率低）。
+
+## gateway 控制消息 per-connection 限流补齐（2026-07-29 追加，known-gap #4）
+
+补上 07-29 审计"已知但本轮未处理"清单第 4 条：`Gateway.handle()`（`server/gateway/src/Gateway.ts`）此前对 room_create/room_join/room_ready/room_start/room_leave/duel_invite/duel_respond 完全没有限流，脚本客户端可无限速刷 matchsvc，`duel_invite` 还能直接刷屏骚扰其他玩家。
+
+- **限流器搬家**：`RateLimiter`/`SlidingRateLimiter`/`RedisSlidingRateLimiter`/`createRateLimiter`（连同 07-27 补的 `maybeSweep` 内存泄漏修复）从 `metaserver/src/service/base.ts` 整体搬到 `server/shared/src/rateLimiter.ts`（纯提取，逻辑字节不变），`@nw/shared` 桶导出。`metaserver/src/service/base.ts` 改成 `export { ... } from '@nw/shared'` 的薄再导出——auth.ts/save.ts/telemetry.ts 三处既有调用点（分别是登录 IP、异常上报 IP、存档分享 accountId 限流）全部 `import ... from './base.js'` 不变，零改动。
+- **分级限额**：两档，都以 accountId 为 key，60s 滑动窗口：**TIGHT**（`NW_GW_RATE_LIMIT_TIGHT`，默认 10/min）管 `room_create`/`room_join`/`duel_invite`——会创建状态或通知其他玩家，比 metaserver telemetry 的 30/min 更紧；**STANDARD**（`NW_GW_RATE_LIMIT_STANDARD`，默认 20/min）管 `duel_respond`/`room_ready`/`room_leave`/`room_start`——只作用于玩家自己已持有的状态。`ping`/`client_caps`/`judge_verdict` 不限（ping 是最热路径，judge_verdict 是可信的战斗结果上报）。`Gateway.handle()` 拆成「限流门禁」+ `dispatch()`（原 switch 逻辑原样保留），未命中限流表的 case 直接同步进 `dispatch`，不额外走一次 Promise。
+- **降级路径**：`Gateway` 构造时先用 `createRateLimiter(null, ...)`（内存版）；`index.ts` 里 `connectGatewaySubscriber` 连上 Redis 后调用既有的 `setPresenceStore`，同一处顺带把两个限流器重建成 Redis 版——单实例/无 Redis 部署（今天的现实）自动留在内存版，跟 `dailyCounter`/`accountCache` 同款降级哲学一致。Redis 连接本身：`redis.ts` 的 `GatewaySubscriber` 新增 `rateLimitClient`（`subClient.duplicate()` 单开一路，不复用 presence 的 `pubClient`，避免限流的 `EVAL` 突发和 presence 的 `SET`/`PEXPIRE` 互相排队）。
+- **限流反馈**：命中限流不再静默丢弃。`duel_invite` 复用已有的 `duel_cancelled` 通道（`reason:'rate_limited'`，跟 `not_found`/`offline` 同一个字段是纯字符串，零协议改动）；其余 gated case 复用 `room_error{code:'RATE_LIMITED', message}` 通用错误通道。均未改 `transport.proto`。
+
+**验证**：`npx tsc -b` 全 13 个 server 包（含新增的 shared/gateway 改动）全绿。`shared/test/rateLimiter.test.ts`（8 例，从 metaserver 原样搬来，含 Redis 冒烟 skipIf）+ `metaserver/test/rateLimiter.test.ts`（收窄为 2 例薄再导出冒烟，验证 `./service/base.js` 仍可用）+ metaserver 全量 724 测试（1 个此前因 worktree 未 `npm install`/未 build `socialsvc` 导致的环境性失败，build 后即绿，与本次改动无关）。gateway 新增 `test/rate-limit.test.ts`（6 例：TIGHT 超限拒绝+反馈、duel_invite 超限→`duel_cancelled{rate_limited}`、TIGHT/STANDARD 互不干扰、无限流 case 不受影响、无 Redis 时内存降级仍生效、Redis 共享两实例场景 skipIf——本机无本地 Redis 故跳过，同 `redis-presence.e2e.test.ts` 既有约定）；gateway 全量 32 测试 + 7 跳过全绿。
+
+**验证**：13 个 server 包 `tsc -b` 全绿；改动涉及的 10 个包 vitest 全绿（metaserver 731、commercial 144、worldsvc 350、gateway 27、gameserver 58、socialsvc 78、analyticsvc 25、admin 45、auctionsvc 77、botsvc 40，均含新增回归测试）。
+
+## matchsvc 赛前状态持久化（2026-07-29，matchsvc-prematch-persist）
+
+承上一节"已知但本轮未处理"的第一条：好友房间/排位队列/切磋邀请此前纯内存，matchsvc 重启即全丢，且客户端只能靠自己的（远长于服务端故障恢复时间的）超时才会发觉。用户拍板两个方案都做——重启后主动通知 + Redis 全量持久化。
+
+- **新增 keyspace**（`server/matchsvc/src/persist.ts`，仿 `shared/src/activeMatch.ts` 的 backend 写法：`connect*Redis()` 复用 matchsvc 已有的单一 Redis 连接、`saveX/deleteX/loadAllX` 全 null-safe、失败只 warn 不抛）：
+  - `nw:room:{roomId}` + `nw:roomByAccount:{accountId}`（滑动 TTL 3600s，量级参照 `activeMatch.ts` 的 `ACTIVE_MATCH_TTL_SEC`，而非 `REAP_MS`——好友房间可能长时间等待对方输入房间码）；
+  - `nw:queue`（ZSET，member=accountId、score=enqueuedAt，天然维持等待顺序）+ `nw:queueEntry:{accountId}`（无 TTL——内存态本身也没有自然过期，只在出队时清）；
+  - `nw:duel:{inviteId}` + `nw:duelByAccount:{fromAccountId}`（固定 TTL 75s，略大于 `DUEL_TIMEOUT_MS=60s`）。
+  - 每个 keyspace 都有一个"影子指针"设计：`nw:room:*`/`nw:duel:*` 存正文，`nw:roomByAccount:*`/`nw:duelByAccount:*`/`nw:queue` ZSET 存反查——两者理论上应同生共死（同一次 `multi().exec()` 写入），但 Redis `allkeys-lru` 淘汰策略下可能因访问频率差异被不对称淘汰（正文更大更容易被挑中）；rehydrate 时检测到"反查指针在、正文没了"就判定为该 accountId 的状态**丢失**，这是 `prematch_lost` 推送的判定依据（而不是尝试猜测"从没写成功过"这种没有任何 Redis 痕迹的边缘情况——那种情况本质上无法检测，只能靠这条影子指针机制覆盖能覆盖的那部分）。
+- **写透传**：`Matchsvc.ts` 现有的每个 mutation 点（`roomCreate`/`roomJoin`/`roomReady`/`removeFromRoom`/`destroyRoom`/`onConnected`/`onDisconnected`/`duelInvite`/`duelRespond`/`expireDuel`/`cancelDuel`）各配一次对应读写；`Matchmaking.ts` 新增 `onEnqueued`/`onDequeued` 回调钩子（`enqueue()`/`remove()`/`tick()` 内部配对分支各触发一次），由 `Matchsvc` 构造时注入 `saveQueueEntry`/`deleteQueueEntry`。没配 `NW_REDIS_URL` 时这些调用全部 no-op，行为与改动前完全一致（不要求生产必须有 Redis）。
+- **启动 rehydrate**（`Matchsvc.rehydrate()`，`index.ts` 在 `startInternalHttp` 之前 `await` 它）：从 Redis 载回 room/queue/duel 到内存 Map/数组后，主动推送刷新——房间成员重新收到 `room_state`；排位队列条目收到新增的 `queue_state`（纯 rehydrate 确认消息，proto 里无字段）；排位重建后先跑一次配对（`Matchmaking.rehydrateDone()`），已经凑对的直接收到 `match_found` 而不是 `queue_state`；切磋邀请按剩余窗口重新 `setTimeout`（窗口已过的按正常超时处理，推 `duel_cancelled{reason:'timeout'}`）。任何一类"反查指针在、正文丢了"的账号收到新增的 `prematch_lost{context:'room'|'queue'|'duel'}`。
+- **新增 proto 消息类型**（`contracts/transport.proto` `ServerMsg` oneof 新增字段 27/28）：`QueueState{}`（无字段，纯确认）、`PreMatchLost{context: string}`。gateway 侧 `matchsvcClient.ts`/`proto.ts`/`Gateway.ts` 的 `toServerMsg` 分支同步增加两个 `PushMsg` kind（`queue_state`/`prematch_lost`）。四个受影响的 server 包（gateway/gameserver/metaserver + client）各自的 `npm run proto:gen`（buf codegen）已重新生成并提交。
+- **客户端**（`client/src/net/NetSession.ts`）：收到 `queue_state` 时纯日志（UI 已经乐观展示"搜索中"，无需动作）；收到 `prematch_lost` 时按 context 分流——`queue` 且本会话记得上次排位的 deck（`lastRankedDeck`）→ 静默重新调用 `createRanked()`（`room.error.prematchLost` 提示语一次都不会出现，玩家无感知）；`duel` → 合成一次 `onDuelCancelled({reason:'lost'})` 复用现有"切磋邀请已失效"横幅逻辑（`FriendsScene`，新增 i18n `friends.duel.lost`）；`room`（或 `queue` 但没记住 deck 的兜底分支）→ 合成一次 `onRoomError({code:'PREMATCH_LOST'})` 复用现有"退回房间选择+toast"逻辑（`RoomScene`，新增 i18n `room.error.prematchLost`）。三语言（zh/en/de）文案已补。
+
+**验证**：新增 `matchsvc/test/persist.test.ts`（18 例，纯 Redis 读写原语，假 Redis client）+ `matchsvc/test/rehydrate.test.ts`（14 例，覆盖写透传实际发生、rehydrate 正确重建内存态且仍可继续操作、配对/超时的边界情况、`prematch_lost` 触发条件）；matchsvc 既有 75 例回归全绿（合计 107 例）。13 个 server 包 `tsc -b` 全绿；client `tsc --noEmit` 全绿、843 例 vitest 全绿。gateway（27 例）/gameserver/metaserver/shared 既有测试套件全绿（proto 重生成无回归）。
+
+## siegeEngine 移入 worker_threads 池（2026-07-29，独立 worktree `feat/siegeengine-worker-threads`）
+
+承上一条 07-29 审计"已知但本轮未处理"第 3 条：`runSiegeBattle`（`worldsvc/src/siegeEngine.ts`）内部经 `runHeadless`（`@nw/engine`）跑一个完全同步的 tick while 循环，势均力敌的攻城战（`shouldUseCheapSiege` 筛不掉的那部分）最长可同步跑 `SIEGE_BATTLE_TIMEOUT_TICKS(18000)+TICK_MARGIN(600)` tick，期间独占 worldsvc 事件循环（调用来自 `scheduler.ts` 的后台 `setInterval` tick，不是同步 HTTP handler，但一样卡住进程上所有其它请求/结算）。
+
+- **方案**：新增常驻 `worker_threads` 池，而非"每场战斗现起 worker"（起 worker 有 tens-of-ms 级开销）也不是"每 N tick 让出一次"的过渡方案（用户已拍板结构性方案）。
+- **`worldsvc/src/siegeWorkerPool.ts`**：`SiegeWorkerPool` 类，构造时起 `size`（默认 `os.cpus().length-1`，`NW_SIEGE_WORKER_POOL_SIZE` 覆盖）个 worker；简单的"空闲 worker 或排队"调度（无需引第三方库）。崩溃自愈：worker `'error'`/`'exit'`（非 0）触发替换——reject 该 worker 在飞的任务、`splice` 出列表、`terminate()`、`spawnWorker()` 补位；`retiring` 标志防止同一次崩溃的 `'error'`+`'exit'` 双重处理。任务级超时（默认 30s，`NW_SIEGE_WORKER_TASK_TIMEOUT_MS` 覆盖）：卡死 worker 会被强制 `terminate()` 并替换，而不是让某个任务永久悬空吃掉一个槽位。排队不设上限、不拒绝（S8-3b 场景是后台调度 tick，允许排队等待）。进程内单例 `getSiegeWorkerPool()`（首次调用时才 construct，避免 worker 内部 `import` `siegeEngine.ts` 时递归起 worker-within-worker）+ `shutdownSiegeWorkerPool()`（挂 `index.ts` 的 `shutdown()`）。
+- **`worldsvc/src/siegeWorker.ts`**：worker 入口，`parentPort.on('message', ...)` 收 `SiegeBattleInput` → 调 `runSiegeBattleSync`（原 `runSiegeBattle`，纯计算逻辑本身零改动）→ postMessage 回 `SiegeResolution` 或错误字符串。全程无 Mongo 访问，所有落库仍在主线程。
+- **`siegeEngine.ts`**：原来唯一导出的同步 `runSiegeBattle` 改名 `runSiegeBattleSync`（worker 内直接调）；新增 async `runSiegeBattle(input)` 作为主线程入口，内部 `getSiegeWorkerPool().submit(input)`。6 个调用点（`combatSiege/{arrival.ts×4, occupation.ts×2, encounter.ts×1}`，均已在 `try{ res = runSiegeBattle(...) }catch` 内且外层函数已是 `async`）改 `await runSiegeBattle(...)`——纯改调用位置，无需重构调用方。
+- **dev/prod 双模路径**：`__filename.endsWith('.ts')` 判断当前是 tsx 直跑源码（dev `node --import tsx`、vitest）还是 `tsc -b` 编译产物；前者时 worker 也指向 `.ts` 并传 `execArgv:['--import','tsx']`（worker 是独立 V8 isolate，不继承父进程 CLI 标志），后者指向编译好的 `dist/siegeWorker.js`，无需额外 execArgv，`tsx` 保持纯 devDependency。
+- **踩坑（`worker.unref()`）**：最初图"短生命周期脚本忘记 `close()` 不至于挂起"给 worker 加了 `.unref()`，结果编译产物冒烟测试时静默无输出——`.unref()` 让"等待 worker 消息"不再计入事件循环活跃度，若调用方脚本自己没有其它 ref'd 句柄（无 HTTP server/DB 连接），Node 会在 worker 结果送达前就判定循环已空自行退出，任务结果被无声丢弃。worldsvc 真实进程永远有 HTTP server/Mongo/scheduler 定时器等其它 ref'd 句柄所以从未观察到，但对未来任何独立脚本消费这个池都是地雷——已去掉 `.unref()`，改为完全依赖显式 `close()`（已接入 `index.ts` 的 `shutdown()`；测试文件 `afterEach` 里各自 close）。
+- **确定性**：同 seed+同双方阵容+同引擎代码，只是换了执行线程——`siegeWorkerPool.test.ts` 直接断言 `pool.submit(input)` 的结果与主线程 `runSiegeBattleSync(input)` 逐字段相等；原有 `siege`/`base-siege`/`stronghold`/`passage`/`nation-bonus`/`field-encounter` 等 e2e 断言值全部不变（执行位置改动，非数值改动）。
+- **新增测试** `worldsvc/test/siegeWorkerPool.test.ts`（10 例）+ 两个测试 fixture worker（`test/fixtures/{crashWorker,hangWorker}.ts`，仅测试用，让崩溃/挂起可确定性复现）：基本调度（提交→结果、单 worker 排队多任务、坏输入 reject 不拖垮 worker）、崩溃自愈（单/双 worker 各自崩溃后 `pool.size` 不变、坏 worker 只影响自己在飞的任务）、任务超时强制替换、`close()` 语义、以及"白拿的好处"验证——6 个满板大规模战斗（`SIEGE_SYNTH_ARMY_MAX_TROOPS` 双方）在 6-worker 池上 warm-up 后并发耗时 vs 同款输入主线程串行 `runSiegeBattleSync` 循环耗时，断言并行版本快过串行版本 30% 以上（真实跨核，而非池内排队假并行）——这也印证了 `scheduler.ts` 的 `Promise.allSettled` 现在能真正跨核并行多场攻城，不再是同线程抢时间片。
+- **验证**：`worldsvc` 47 文件/360 测试全绿（含新增 10 例）；`tsc -b` 全 13 个 server 包全绿。
+
+## 三日重构复核 + 追加修复（2026-07-29，audit-followup-fixes-0729）
+
+对本轮（server-logic-audit）+ 同日三个跟进分支（matchsvc 持久化、worldsvc 查询优化、siegeEngine worker 池）+ gateway 限流做了一次跨客户端/服务器、服务器/服务器协作一致性的复核。完整发现清单见 [`SERVER_LOGIC_AUDIT_2026-07-29.md`](../design/game/SERVER_LOGIC_AUDIT_2026-07-29.md) "二次复核" 节；这里只记落地要点：
+
+- **装备复制竞态**（本轮表格 #1 的修复本身不完整）：`equipEquipment` 补的占用检查是读后写，并发装到两张卡的竞态没堵上。`CardInstanceDoc` 新增 `gearInstanceIds`（`gear` 非空值镜像）+ 唯一多键索引，Mongo 层保证同一 instanceId 不会同时出现在两个文档里；写入捕获 E11000 转译为 `EQUIP_IN_USE`。稀疏索引 + 空数组不占索引项，历史文档自愈无需迁移。
+- **commercial 资金双发竞态**（本轮表格 #2 的修复本身不完整）：`isStaleClaim` 宽限窗口只防"仍在飞的正常请求"，过了窗口的两个并发治愈请求仍能都读到"未入账"再都 credit。`RechargeDoc`/`OrderDoc`/`PromoRedemptionDoc` 各补 CAS 标记字段（`healedAt`/`healClaimedAt`），治愈前先原子声明，只有赢家才继续 credit/续做；`subscriptionCardBuy`/`starterBuy` growth 共享新增的 `CommercialServiceBase.claimOrderResume()`。
+- **siegeWorkerPool 任务超时计时器原来在 `submit()` 入队时就武装**，而非任务真正派发给 worker 时——高负载下排队超过 `taskTimeoutMs` 的任务一旦真正开始跑就永久失去挂死检测（一次性 `setTimeout` 早已在排队期间空耗掉，且从不重新武装），卡死的 worker 再也不会被替换。改为在 `dispatch()`（任务真正分配给空闲 worker 那一刻）才武装计时器；`PendingTask.timer` 相应改为可空。新增回归测试 + fixture `test/fixtures/slowThenHangWorker.ts`（对修复前代码回退验证过确实会失败，不是空转通过的假回归）。
+- **gateway `rate_limited` 缺 i18n 分支**：`FriendsScene` 落进默认档位显示"找不到该玩家"（比通用兜底更误导）；补分支 + 三语言文案。
+
+验证同上（13 包 tsc -b 全绿；commercial/metaserver/worldsvc/client 全量 vitest 全绿）。四处 CAS 修复均补了并发复现回归测试（`Promise.all` 并发调用足以触发"读后写"竞态，无需额外调度器 hack），且逐条对修复前代码回退验证过确实会失败，详见 [`SERVER_LOGIC_AUDIT_2026-07-29.md`](../design/game/SERVER_LOGIC_AUDIT_2026-07-29.md) 末尾"并发回归测试补齐"节。

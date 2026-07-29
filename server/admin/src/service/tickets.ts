@@ -205,7 +205,17 @@ export function TicketsMixin<TBase extends AdminBaseCtor>(Base: TBase): TBase & 
       if (!doc) throw new AdminError(404, 'not_found', 'no such ticket');
       if (doc.status !== 'failed') throw new AdminError(409, 'conflict', `ticket is ${doc.status}`);
       this.requireCap(actor, requiredApproveCapability(doc.scope, doc.amountTier));
-      return this.execute(doc);
+      // Atomic claim (mirrors approveTicket's status CAS): only the caller that wins this update actually
+      // executes. The loser of a concurrent double-click gets 409 instead of also calling mail.send —
+      // execute() clears retryLockedAt on every path (success or failure), so a later, non-concurrent
+      // retry is never blocked by a stale claim.
+      const claimed = await this.cols.compTickets.findOneAndUpdate(
+        { _id: id, status: 'failed', retryLockedAt: { $exists: false } },
+        { $set: { retryLockedAt: this.now() } },
+        { returnDocument: 'after' },
+      );
+      if (!claimed) throw new AdminError(409, 'conflict', 'retry already in progress');
+      return this.execute(claimed);
     }
 
     /**
@@ -231,7 +241,7 @@ export function TicketsMixin<TBase extends AdminBaseCtor>(Base: TBase): TBase & 
               executedAt: this.now(),
               ...(typeof res.recipientCount === 'number' ? { recipientCount: res.recipientCount } : {}),
             },
-            $unset: { error: '' },
+            $unset: { error: '', retryLockedAt: '' },
           },
           { returnDocument: 'after' },
         );
@@ -244,7 +254,7 @@ export function TicketsMixin<TBase extends AdminBaseCtor>(Base: TBase): TBase & 
       const err = res.error ?? 'mail dispatch failed';
       const updated = await this.cols.compTickets.findOneAndUpdate(
         { _id: doc._id },
-        { $set: { status: 'failed', error: err } },
+        { $set: { status: 'failed', error: err }, $unset: { retryLockedAt: '' } },
         { returnDocument: 'after' },
       );
       log.warn('ticket execute failed', { ticketId: doc._id, err });

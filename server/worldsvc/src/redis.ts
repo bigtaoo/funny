@@ -21,6 +21,11 @@ export interface WorldRedis {
   hget(key: string, field: string): Promise<string | null>;
   hdel(key: string, ...fields: string[]): Promise<unknown>;
   quit(): Promise<unknown>;
+  // Whole-key delete (2026-07-29 audit fix): resetSeason uses this to drop the occ/cover hashes for a
+  // worldId being recycled — without it, stale entries survive a reset and can affect a future season on
+  // the same worldId (see WorldCorePush.clearSpatialIndexes). Optional so existing test fakes that only
+  // exercise the per-field hset/hget/hdel occupancy/coverage paths don't all need a stub implementation.
+  del?(key: string): Promise<unknown>;
 }
 
 export async function connectRedis(url: string | undefined): Promise<WorldRedis | null> {

@@ -335,6 +335,26 @@ function toDateStr(ts: number): string {
   return new Date(ts).toISOString().slice(0, 10);
 }
 
+// Bounds for client-declared event timestamps (2026-07-29 audit fix): `events.ts`/`sessions.started_at`
+// are the fields the 90-day TTL indexes key off (server.md's Mongo/Redis audit, T8), and also the fields
+// DAU/retention/funnel aggregation bucket by day (dayStart/toDateStr above) — an unclamped future value
+// would let a record evade TTL expiry forever, and an unclamped past/negative value would land in the
+// wrong day-bucket and skew those aggregates. The window is generous (absorbs real clock skew + batched/
+// retried sends), not tight validation — out-of-range or non-finite falls back to server time.
+const MAX_EVENT_TS_PAST_MS = 24 * 60 * 60 * 1000;
+const MAX_EVENT_TS_FUTURE_MS = 5 * 60 * 1000;
+function clampEventTs(raw: unknown, now: number): Date {
+  if (
+    typeof raw === 'number' &&
+    Number.isFinite(raw) &&
+    raw >= now - MAX_EVENT_TS_PAST_MS &&
+    raw <= now + MAX_EVENT_TS_FUTURE_MS
+  ) {
+    return new Date(raw);
+  }
+  return new Date(now);
+}
+
 export class AnalyticsService {
   constructor(
     private readonly cols: AnalyticsCollections,
@@ -880,7 +900,7 @@ export class AnalyticsService {
       locale: batch.locale ?? '',
       event: String(e.event),
       props: e.props ?? {},
-      ts: new Date(typeof e.ts === 'number' ? e.ts : this.now()),
+      ts: clampEventTs(e.ts, this.now()),
       ...deviceFields,
     }));
 
@@ -900,7 +920,7 @@ export class AnalyticsService {
             device_id: batch.device_id ?? '',
             platform: batch.platform ?? 'web',
             os: batch.os ?? '',
-            started_at: new Date(typeof sessionStart.ts === 'number' ? sessionStart.ts : this.now()),
+            started_at: clampEventTs(sessionStart.ts, this.now()),
             scenes_visited: [],
             ...deviceFields,
           },
@@ -916,7 +936,7 @@ export class AnalyticsService {
         { _id: batch.session_id },
         {
           $set: {
-            ended_at: new Date(typeof sessionEnd.ts === 'number' ? sessionEnd.ts : this.now()),
+            ended_at: clampEventTs(sessionEnd.ts, this.now()),
             ...(typeof props['duration_sec'] === 'number' ? { duration_sec: props['duration_sec'] } : {}),
             ...(Array.isArray(props['scenes_visited']) ? { scenes_visited: props['scenes_visited'] as string[] } : {}),
           },

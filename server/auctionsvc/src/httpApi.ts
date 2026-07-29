@@ -139,7 +139,7 @@ export function startHttpApi(
           const durationSec = Number(body.durationSec);
           const designatedBuyerId = typeof body.designatedBuyerId === 'string' ? body.designatedBuyerId : undefined;
           const saleMode = body.saleMode === 'auction' ? 'auction' : 'fixed';
-          if (!itemType || !item || !Number.isFinite(qty) || !Number.isFinite(durationSec)) {
+          if (!itemType || !item || !Number.isInteger(qty) || !Number.isFinite(durationSec)) {
             return sendErr(res, ErrorCode.BAD_REQUEST, 'itemType + item + qty + durationSec required');
           }
           // fixed → price required; auction → startPrice required, buyoutPrice optional

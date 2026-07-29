@@ -85,8 +85,12 @@ export class AdminServiceBase {
   protected readonly promo: PromoClient;
   protected readonly paddleEvents: PaddleEventsClient;
   protected readonly now: () => number;
-  /** Login failure rate-limit table (keyed by username, in-memory). */
+  /** Login failure rate-limit table (keyed by attacker-controlled username, in-memory). */
   protected readonly loginAttempts = new Map<string, LoginAttempt>();
+  /** Last full-table sweep of `loginAttempts` (auth.ts's maybeSweepLoginAttempts) — without it, failed
+   * logins against nonexistent usernames (never hit the `.delete()` on success) grow this map without
+   * bound for as long as the process lives. */
+  protected lastLoginAttemptsSweepAt = 0;
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   constructor(...args: any[]) {

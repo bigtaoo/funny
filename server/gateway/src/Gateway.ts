@@ -8,7 +8,15 @@
 // Ranked enqueue fetches ELO from meta before joining the queue.
 import { randomUUID } from 'crypto';
 import { WebSocketServer, type WebSocket } from 'ws';
-import { verifyToken, createLogger, validatePvpDeck, defaultPvpDeck, type JwtConfig } from '@nw/shared';
+import {
+  verifyToken,
+  createLogger,
+  validatePvpDeck,
+  defaultPvpDeck,
+  createRateLimiter,
+  type JwtConfig,
+  type RateLimiter,
+} from '@nw/shared';
 
 const log = createLogger('gateway');
 import {
@@ -27,6 +35,33 @@ import type { GatewaySubscriber } from './redis';
 const HEARTBEAT_MS = 30_000;
 /** Maximum wait time for judge re-computation + report (includes network round-trip + client running the full match). */
 const JUDGE_TIMEOUT_MS = 20_000;
+
+/**
+ * Per-connection control-message rate limiting (SERVER_LOGIC_AUDIT_2026-07-29 known-gap #4): before this,
+ * `handle()` dispatched every control message unconditionally — a scripted client could hammer room_create/
+ * duel_invite as fast as the socket allows, spamming matchsvc and, for duel_invite, spamming *other* players
+ * with invites. Two tiers, both keyed by accountId (reusing @nw/shared's createRateLimiter, same
+ * in-process/Redis-backed pair as metaserver's auth/telemetry/save limiters):
+ *   - TIGHT: creates state or notifies another player (room_create/room_join/duel_invite) — the more
+ *     attractive abuse target, so a stricter cap than metaserver telemetry's 30/min (NW_AUTH_RATE_LIMIT-style
+ *     env override below).
+ *   - STANDARD: acts on state the player already owns (duel_respond/room_ready/room_leave/room_start) —
+ *     same or a bit looser, since there's no third party to spam and the actions are more "clicky".
+ * judge_verdict/client_caps/ping stay unlimited (ping is the hottest path; judge_verdict is a trusted
+ * peer-judge report, not an abuse surface — see pickJudge's uniform-random selection).
+ */
+const RATE_LIMIT_WINDOW_MS = 60_000;
+/** Production values are read from env by config.ts (NW_GW_RATE_LIMIT_TIGHT/NW_GW_RATE_LIMIT_STANDARD,
+ *  loadGatewayEnv) and passed in via the constructor opts below; these are just the fallback when a caller
+ *  (tests, or a future embedder) doesn't pass one. */
+const DEFAULT_RATE_LIMIT_TIGHT = 10;
+const DEFAULT_RATE_LIMIT_STANDARD = 20;
+
+type RateLimitTier = 'tight' | 'standard';
+/** ClientMsg.case values gated by the TIGHT tier. */
+const TIGHT_CASES = new Set(['room_create', 'room_join', 'duel_invite']);
+/** ClientMsg.case values gated by the STANDARD tier. */
+const STANDARD_CASES = new Set(['duel_respond', 'room_ready', 'room_leave', 'room_start']);
 
 interface GwConn {
   accountId: string;
@@ -98,18 +133,33 @@ export class Gateway {
   private readonly friendsCache = new Map<string, string[]>();
   /** publicId cache (accountId → publicId); reused for presence broadcasts to avoid querying meta on every event. */
   private readonly publicIdCache = new Map<string, string>();
+  /** Configured limits (kept so setPresenceStore can rebuild both limiters against a Redis client once one connects). */
+  private readonly tightLimit: number;
+  private readonly standardLimit: number;
+  /** In-process fallback until (if ever) setPresenceStore wires a Redis client — same "start local, upgrade
+   *  to precise-across-instances once Redis is up" shape as metaserver's createRateLimiter call sites. */
+  private rateLimiters: Record<RateLimitTier, RateLimiter>;
 
   constructor(
-    opts: { host: string; port: number },
+    opts: { host: string; port: number; rateLimitTight?: number; rateLimitStandard?: number },
     private readonly jwt: JwtConfig,
     private readonly matchsvc: MatchsvcClient,
     private readonly meta: MetaClient,
     private readonly socialsvc?: SocialsvcClient,
   ) {
-    this.wss = new WebSocketServer({ host: opts.host, port: opts.port, path: '/gw' });
+    // maxPayload: `ws` defaults to 100MB per frame with no cap otherwise. Control-plane messages (room/duel/
+    // judge JSON, matching internalHttp.ts's own 1MB request-body cap) are tiny — this just bounds the
+    // memory/CPU an authenticated connection can force by sending an oversized frame.
+    this.wss = new WebSocketServer({ host: opts.host, port: opts.port, path: '/gw', maxPayload: 1 << 20 });
     this.wss.on('connection', (ws, req) => this.onConnection(ws, req.url, req.headers.host));
     this.heartbeat = setInterval(() => this.sweep(), HEARTBEAT_MS);
     this.wss.on('close', () => clearInterval(this.heartbeat));
+    this.tightLimit = opts.rateLimitTight ?? DEFAULT_RATE_LIMIT_TIGHT;
+    this.standardLimit = opts.rateLimitStandard ?? DEFAULT_RATE_LIMIT_STANDARD;
+    this.rateLimiters = {
+      tight: createRateLimiter(null, 'gw-tight', this.tightLimit, RATE_LIMIT_WINDOW_MS),
+      standard: createRateLimiter(null, 'gw-standard', this.standardLimit, RATE_LIMIT_WINDOW_MS),
+    };
   }
 
   /** matchsvc → player: looks up the socket by accountId and pushes a message. Drops silently if the player is offline. */
@@ -154,9 +204,16 @@ export class Gateway {
     this.kickPublisher = fn;
   }
 
-  /** Wired by index.ts once Redis connects — lets presenceOf() see accounts connected to a sibling instance. */
+  /** Wired by index.ts once Redis connects — lets presenceOf() see accounts connected to a sibling instance.
+   *  Also upgrades the rate limiters from the in-process fallback to the Redis-backed implementation (using
+   *  the subscriber's dedicated rateLimitClient connection), so the per-accountId limits are precise across
+   *  gateway instances instead of each instance keeping its own independent count. */
   setPresenceStore(store: GatewaySubscriber): void {
     this.presenceStore = store;
+    this.rateLimiters = {
+      tight: createRateLimiter(store.rateLimitClient, 'gw-tight', this.tightLimit, RATE_LIMIT_WINDOW_MS),
+      standard: createRateLimiter(store.rateLimitClient, 'gw-standard', this.standardLimit, RATE_LIMIT_WINDOW_MS),
+    };
   }
 
   /**
@@ -325,8 +382,14 @@ export class Gateway {
         this.conns.delete(accountId);
         log.info('WS closed', { accountId, code, online: this.conns.size });
         this.matchsvc.disconnected(accountId);
-        // Notify online friends that I went offline (no self-push; conn is already removed).
-        void this.broadcastPresence(accountId, false);
+        // Notify online friends that I went offline (no self-push; conn is already removed). Clear this
+        // account's friendsCache/publicIdCache entries only AFTER that finishes (it needs them to know
+        // who to notify) — without this, both caches (fallback-path-only, when socialsvc is down) grow
+        // for the life of the process, one entry per account ever seen, never evicted.
+        void this.broadcastPresence(accountId, false).finally(() => {
+          this.friendsCache.delete(accountId);
+          this.publicIdCache.delete(accountId);
+        });
         void this.presenceStore?.markOffline(accountId);
       }
       // If this account was acting as a judge, immediately cancel its in-flight requests (no need to wait for timeout).
@@ -342,7 +405,48 @@ export class Gateway {
     });
   }
 
+  /** Rate-limit gate (see RATE_LIMIT_WINDOW_MS/TIGHT_CASES/STANDARD_CASES above), then dispatch. Split out
+   *  from dispatch() so the hot, unlimited cases (ping/client_caps/judge_verdict) never pay for the async
+   *  limiter round trip — only messages in a gated tier take the Promise-then detour. */
   private handle(accountId: string, msg: ReturnType<typeof decodeClient>): void {
+    const tier = this.tierOf(msg.case);
+    if (!tier) {
+      this.dispatch(accountId, msg);
+      return;
+    }
+    void this.rateLimiters[tier].allow(accountId, Date.now()).then((allowed) => {
+      if (allowed) {
+        this.dispatch(accountId, msg);
+        return;
+      }
+      log.warn('rate limited', { accountId, case: msg.case, tier });
+      this.pushRateLimited(accountId, msg);
+    });
+  }
+
+  private tierOf(kase: ReturnType<typeof decodeClient>['case']): RateLimitTier | null {
+    if (TIGHT_CASES.has(kase)) return 'tight';
+    if (STANDARD_CASES.has(kase)) return 'standard';
+    return null;
+  }
+
+  /** Explicit client feedback on a rate-limited control message (never silently dropped, per
+   *  SERVER_LOGIC_AUDIT_2026-07-29 known-gap #4). duel_invite reuses the existing duel_cancelled channel
+   *  (same one used for not_found/offline) since the client already listens on it for this action; every
+   *  other gated case reuses room_error's generic {code,message} shape. */
+  private pushRateLimited(accountId: string, msg: ReturnType<typeof decodeClient>): void {
+    if (msg.case === 'duel_invite') {
+      this.push(accountId, { kind: 'duel_cancelled', inviteId: '', reason: 'rate_limited' });
+      return;
+    }
+    this.push(accountId, {
+      kind: 'room_error',
+      code: 'RATE_LIMITED',
+      message: `too many ${msg.case} requests, slow down`,
+    });
+  }
+
+  private dispatch(accountId: string, msg: ReturnType<typeof decodeClient>): void {
     // ping is too frequent for info logging; use debug only; all other control messages are logged at info (main integration path).
     if (msg.case !== 'ping') log.info(`recv ${msg.case}`, { accountId });
     switch (msg.case) {
@@ -756,5 +860,9 @@ function toServerMsg(msg: PushMsg): ServerMsg {
       return { case: 'duel_invited', inviteId: msg.inviteId, fromPublicId: msg.fromPublicId, fromName: msg.fromName };
     case 'duel_cancelled':
       return { case: 'duel_cancelled', inviteId: msg.inviteId, reason: msg.reason };
+    case 'queue_state':
+      return { case: 'queue_state' };
+    case 'prematch_lost':
+      return { case: 'pre_match_lost', context: msg.context };
   }
 }

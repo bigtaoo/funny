@@ -63,6 +63,8 @@ export type FateRedeemResult =
 export interface GachaSceneCallbacks {
   onBack(): void;
   getCoins(): number;
+  /** Subscribe to SaveManager writes; re-renders this scene when a concurrently-mounted peer scene changes the wallet. Push the returned unsub onto `unsubs`. */
+  onSaveChanged?(listener: () => void): () => void;
   /** Current pity counter for a pool (server-authoritative mirror in SaveData). */
   getPity(poolId: string): number;
   /** Fate Points balance (server-authoritative mirror; GACHA_DESIGN §7). */
@@ -149,6 +151,7 @@ export class GachaScene implements Scene {
     this.unsubs.push(input.onMove((_x, y) => this.handleOddsMove(y)));
     this.unsubs.push(input.onUp(() => this.handleOddsUp()));
     this.unsubs.push(input.onWheel((_x, y, deltaY) => this.handleOddsWheel(y, deltaY)));
+    if (cb.onSaveChanged) this.unsubs.push(cb.onSaveChanged(() => this.render()));
     this.render();
     void this.loadPools();
     void preloadGachaTextures();

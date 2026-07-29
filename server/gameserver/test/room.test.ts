@@ -125,6 +125,20 @@ describe('Room', () => {
     expect(cmds.map((s) => s.commands[0])).toEqual([1, 2, 9]);
   });
 
+  // Regression for the 2026-07-29 audit fix: submitCmd used to push onto `pending` with no bound —
+  // a connection flooding cmd_submit within a single 100ms tick window could grow `pending` (and, once
+  // flushed, the match-long replay `log`) without limit, since M12 forbids decoding the opaque command
+  // bytes to apply any content-aware limit. MAX_PENDING_PER_TICK caps it well above any legitimate burst.
+  it('submitCmd drops excess commands once the per-tick cap is reached, does not grow pending unbounded', () => {
+    startMatch();
+    for (let i = 0; i < 250; i++) room.submitCmd(0, new Uint8Array([1]));
+    vi.advanceTimersByTime(100);
+
+    const fb = lastOf(c0, 'frame_batch')!;
+    expect(fb.frames).toHaveLength(1);
+    expect(fb.frames[0]!.cmds).toHaveLength(200); // MAX_PENDING_PER_TICK, not 250
+  });
+
   it('idle window only sends watermark; curFrame increments by 3 each tick monotonically', () => {
     startMatch();
     vi.advanceTimersByTime(100);

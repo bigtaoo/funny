@@ -194,6 +194,31 @@ describe.skipIf(!mongo)('socialsvc FamilyService e2e', () => {
     await expectErr(svc.leaveFamily('stranger'), 'NOT_IN_FAMILY');
   });
 
+  // Regression for the 2026-07-29 audit fix: leaveFamily used to unconditionally $inc memberCount by -1
+  // after deleteOne, regardless of whether that call actually removed a row. Two concurrent calls
+  // targeting the same member (e.g. a network retry of leaveFamily, or leaveFamily racing kickMember on
+  // the same account) would both decrement even though only one deleteOne actually removed anything —
+  // double-counting a single removal and drifting memberCount BELOW the real member row count (the
+  // unsafe direction: under-counting lets the family creep past FAMILY_CAP instead of just blocking a
+  // join prematurely).
+  it('leaveFamily: concurrent duplicate calls for the same member decrement memberCount only once', async () => {
+    const fam = await svc.createFamily('leader', 'Racers', 'RACE');
+    await svc.joinFamily('m1', fam.familyId);
+    await svc.joinFamily('m2', fam.familyId); // memberCount = 3 (leader + m1 + m2)
+
+    const results = await Promise.allSettled([svc.leaveFamily('m1'), svc.leaveFamily('m1')]);
+    expect(results.filter((r) => r.status === 'fulfilled').length).toBeGreaterThanOrEqual(1);
+    expect((await svc.getFamily(fam.familyId))!.memberCount).toBe(2); // leader + m2, not 1
+  });
+
+  it('kickMember: concurrently kicking the same target (racing leaveFamily) decrements memberCount only once', async () => {
+    const fam = await svc.createFamily('leader', 'Racers2', 'RAC2');
+    await svc.joinFamily('m1', fam.familyId); // memberCount = 2
+
+    await Promise.allSettled([svc.kickMember('leader', 'm1'), svc.leaveFamily('m1')]);
+    expect((await svc.getFamily(fam.familyId))!.memberCount).toBe(1); // just the leader, not 0
+  });
+
   // ── Permissions ──────────────────────────────────────────────────────────────
 
   it('kickMember: leader kicks anyone; elder kicks only members; member cannot kick', async () => {

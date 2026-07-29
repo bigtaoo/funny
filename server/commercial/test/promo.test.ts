@@ -133,6 +133,74 @@ describe.skipIf(!mongo)('promo code system', () => {
     expect(r.error).toBe('PROMO_EXHAUSTED');
   });
 
+  // Regression for the 2026-07-29 audit fix: the promoRedemptions slot is reserved BEFORE credit() runs,
+  // so a crash between the two used to stamp the code "used" forever with the coins never granted.
+  // Simulate that crash (hand-insert the reserved redemption, skip credit) and verify a LATER redeem call
+  // (past the isStaleClaim grace window) heals the missing credit instead of just erroring
+  // PROMO_ALREADY_USED with the coins gone for good.
+  it('heals a credit dropped by a crash between reserve and credit (stale claim)', async () => {
+    await svc.createPromoCode({ code: 'CRASHED', coins: 300, createdBy: 'admin1' });
+    await m.collections.promoRedemptions.insertOne({
+      _id: 'acc1:CRASHED',
+      accountId: 'acc1',
+      code: 'CRASHED',
+      coinsGranted: 300,
+      ts: t,
+    });
+    t += 20000; // past REPLAY_HEAL_GRACE_MS
+    const r = await svc.promoRedeem({ accountId: 'acc1', code: 'CRASHED' });
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.coinsGranted).toBe(300);
+    expect((await m.collections.wallets.findOne({ _id: 'acc1' }))?.coins).toBe(300);
+    expect(await m.collections.ledger.countDocuments({ accountId: 'acc1', reason: 'promo' })).toBe(1);
+
+    // A second replay must not heal again.
+    const r2 = await svc.promoRedeem({ accountId: 'acc1', code: 'CRASHED' });
+    expect(r2.ok).toBe(false);
+    expect((await m.collections.wallets.findOne({ _id: 'acc1' }))?.coins).toBe(300);
+  });
+
+  // Regression for the audit-followup-fixes-0729 review: the sequential heal test above (single call)
+  // doesn't prove concurrent healers can't double-credit — `isStaleClaim` plus a ledger-absence read is
+  // still just a plain read with no atomicity of its own. Fire several concurrent stale-claim redeem calls
+  // at once and confirm the `healedAt` CAS (healOrRejectPromoReplay, promo.ts) lets exactly one win.
+  it('CONCURRENT stale-claim healers credit a dropped promo grant exactly once (regression: healedAt CAS)', async () => {
+    await svc.createPromoCode({ code: 'RACE', coins: 250, createdBy: 'admin1' });
+    await m.collections.promoRedemptions.insertOne({
+      _id: 'acc3:RACE',
+      accountId: 'acc3',
+      code: 'RACE',
+      coinsGranted: 250,
+      ts: t,
+    });
+    t += 20000; // past REPLAY_HEAL_GRACE_MS for every concurrent caller below
+    const calls = Array.from({ length: 8 }, () => svc.promoRedeem({ accountId: 'acc3', code: 'RACE' }));
+    const res = await Promise.all(calls);
+    // Exactly one caller wins the healedAt CAS and credits; the rest lose and report PROMO_ALREADY_USED
+    // (same as any other contested replay of an already-legitimately-redeemed code).
+    expect(res.filter((r) => r.ok).length).toBe(1);
+    expect(res.filter((r) => !r.ok && r.error === 'PROMO_ALREADY_USED').length).toBe(7);
+    expect((await m.collections.wallets.findOne({ _id: 'acc3' }))?.coins).toBe(250);
+    expect(await m.collections.ledger.countDocuments({ accountId: 'acc3', reason: 'promo' })).toBe(1);
+  });
+
+  it('does NOT heal a redemption still within the grace window', async () => {
+    await svc.createPromoCode({ code: 'FRESH', coins: 300, createdBy: 'admin1' });
+    await m.collections.promoRedemptions.insertOne({
+      _id: 'acc2:FRESH',
+      accountId: 'acc2',
+      code: 'FRESH',
+      coinsGranted: 300,
+      ts: t, // claimed "just now"
+    });
+    const r = await svc.promoRedeem({ accountId: 'acc2', code: 'FRESH' });
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect(r.error).toBe('PROMO_ALREADY_USED');
+    expect(await m.collections.ledger.countDocuments({ accountId: 'acc2', reason: 'promo' })).toBe(0);
+  });
+
   it('redemption writes a ledger entry with reason=promo', async () => {
     await svc.createPromoCode({ code: 'PROMO2025', coins: 200, createdBy: 'admin1' });
     await svc.promoRedeem({ accountId: 'acc1', code: 'PROMO2025' });

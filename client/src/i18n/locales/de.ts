@@ -290,6 +290,7 @@ export const de: Record<TranslationKey, string> = {
   'room.error.ranked': 'Rangliste nicht verfügbar',
   'room.error.noServer': 'Online-Spiel nicht verfügbar',
   'room.error.generic': 'Etwas ist schiefgelaufen',
+  'room.error.prematchLost': 'Verbindung zurückgesetzt — bitte erneut versuchen',
 
   // ── Spielerprofil-Popup (Avatar antippen zum Ansehen) ────────────────────────
   'profile.title': 'Spielerprofil',
@@ -741,6 +742,8 @@ export const de: Record<TranslationKey, string> = {
   'friends.duel.timeout': 'Duell-Einladung abgelaufen',
   'friends.duel.offline': 'Freund ist offline',
   'friends.duel.notFound': 'Spieler nicht gefunden',
+  'friends.duel.lost': 'Duell-Einladung verloren — bitte erneut versuchen',
+  'friends.duel.rateLimited': 'Zu viele Duell-Einladungen — bitte kurz warten',
   // Global toast (any scene, P0-8): the in-scene banner (friends.duelInviteBanner) only shows while
   // sitting on FriendsScene, so this fires everywhere else the invite arrives.
   'friends.duel.invitedToast': '{name} fordert dich zum Duell heraus — sieh bei Freunden nach',

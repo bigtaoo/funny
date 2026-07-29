@@ -144,6 +144,41 @@ describe.skipIf(!mongo)('AuctionService.scanAnomalies e2e', () => {
     expect(anomalies[0]!.trades).toBe(AUDIT_PAIR_MIN_TRADES);
   });
 
+  // Regression for the 2026-07-29 audit fix: scanAnomalies used to `find({status:'sold'}).limit(5000)`
+  // with no sort, so once total sold volume exceeds the cap, whichever 5000 docs Mongo's natural order
+  // happens to return first could silently exclude the most recent trades from the anti-RMT audit window
+  // entirely — sorting desc by soldAt now guarantees the cap drops the OLDEST docs first, not the newest.
+  it('when sold volume exceeds the 5000-doc cap, recent trades are still detected (oldest docs dropped first)', async () => {
+    // Bulk-insert 5001 old, unrelated sold docs (outside the audit window, different seller/buyer pairs)
+    // so they can never trigger detection themselves — they exist purely to exceed the cap.
+    const oldTs = nowMs - (AUDIT_WINDOW_SEC * 1000 + 3600_000);
+    const filler = Array.from({ length: 5001 }, (_, i) => ({
+      _id: `a:filler${i}:${oldTs}:${i}`,
+      sellerId: `filler-seller-${i}`,
+      itemType: 'material' as const,
+      item: { material: 'scrap' as const },
+      qty: 1,
+      price: 1,
+      currency: 'coins' as const,
+      expireAt: oldTs,
+      status: 'sold' as const,
+      buyerId: `filler-buyer-${i}`,
+      soldAt: oldTs,
+      saleMode: 'fixed' as const,
+      rev: 2,
+    }));
+    await mongo!.collections.auctions.insertMany(filler);
+
+    // Recent, real anomaly — inserted last (highest soldAt), must survive the cap.
+    for (let i = 0; i < AUDIT_PAIR_MIN_TRADES; i++) {
+      await seedSold({ seller: 'A', buyer: 'B', unitPrice: 10 });
+    }
+
+    const anomalies = await svc.scanAnomalies();
+    expect(anomalies).toHaveLength(1);
+    expect(anomalies[0]).toMatchObject({ sellerId: 'A', buyerId: 'B', trades: AUDIT_PAIR_MIN_TRADES });
+  }, 30_000);
+
   it('direction matters: A→B and B→A are different pairs, counted independently', async () => {
     for (let i = 0; i < AUDIT_PAIR_MIN_TRADES; i++) await seedSold({ seller: 'A', buyer: 'B', unitPrice: 10 });
     await seedSold({ seller: 'B', buyer: 'A', unitPrice: 10 }); // reverse direction: only 1 trade, does not trigger

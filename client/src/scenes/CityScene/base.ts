@@ -60,6 +60,8 @@ export interface CitySceneCallbacks {
   onEditTeam?(teamId: string, teamName: string): void;
   /** Current authoritative save — the team row needs cardInv for each team's troop cap + leader portrait. */
   getSave?(): SaveData;
+  /** Subscribe to SaveManager writes; re-renders this scene when a concurrently-mounted peer scene (e.g. Auction opened as a sibling overlay) changes the wallet. Push the returned unsub onto `unsubs`. */
+  onSaveChanged?(listener: () => void): () => void;
 }
 
 // ── Constants ────────────────────────────────────────────────────────────────
@@ -201,6 +203,7 @@ export class CitySceneBase {
       const next = wheelScrollY(this.regionTop, this.regionBottom, y, deltaY, this.scrollY, this.scrollMax);
       if (next !== null) { this.scrollY = next; this.scrollDirty = true; }
     }));
+    if (cb.onSaveChanged) this.unsubs.push(cb.onSaveChanged(() => { if (!this.destroyed) this.render(); }));
     this.render();
     void this.load();
   }

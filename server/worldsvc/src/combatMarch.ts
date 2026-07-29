@@ -24,6 +24,7 @@ import type { MarchDoc, ArmyEntry, StationedDoc, PlayerWorldDoc } from './db';
 import { WorldCore, MARCHABLE_KINDS } from './core';
 import type { MarchView, StationedView } from './worldTypes';
 import { refundTroops } from './combatShared';
+import { legBox, sourcesBoundingBox } from './coreHelpers';
 import type { SiegeService } from './combatSiege';
 import { resolveLeaderUnitType } from './leaderUnit';
 
@@ -379,6 +380,7 @@ export class MarchService {
       stepIndex: 0,
       nextStepAt,
       status: 'marching',
+      ...legBox(fromX, fromY, toX, toY),
       rev: 0,
     };
     // ADR-051 (P3c): for an idle re-dispatch, atomically claim (remove) the StationedDoc *before* inserting the new
@@ -407,12 +409,23 @@ export class MarchService {
     }
     // Deduct troops on departure (in-transit; not in the pool) — skipped for card armies, whose strength
     // already lives in cardState.currentTroops and never touches playerWorld.troops (see hasCardArmy above).
-    await cols.playerWorld.updateOne(
-      { _id: pw._id },
-      hasCardArmy || idleRedispatch
-        ? { $set: { resources, lastTickAt: t }, $inc: { rev: 1 } }
-        : { $set: { resources, lastTickAt: t }, $inc: { troops: -troops, rev: 1 } },
-    );
+    // The `pw.troops < troops` check above is only a fast-fail on a possibly-stale read; the real guard is
+    // this atomic `troops: {$gte: troops}` filter — without it, two concurrent dispatches can both pass the
+    // early check and both $inc, driving troops negative (over-deploying more troops than the account has).
+    if (hasCardArmy || idleRedispatch) {
+      await cols.playerWorld.updateOne({ _id: pw._id }, { $set: { resources, lastTickAt: t }, $inc: { rev: 1 } });
+    } else {
+      const deducted = await cols.playerWorld.updateOne(
+        { _id: pw._id, troops: { $gte: troops } },
+        { $set: { resources, lastTickAt: t }, $inc: { troops: -troops, rev: 1 } },
+      );
+      if (deducted.matchedCount === 0) {
+        // Lost the race the fast-fail check above couldn't catch: roll back the march just inserted so the
+        // account isn't left with a phantom in-flight march that drained no pool troops.
+        await cols.marches.deleteOne({ _id: mid });
+        throw new SlgError('NO_TROOPS', 'Insufficient troops');
+      }
+    }
     const view = this.core.marchView(doc);
     void this.core.pushMarch(accountId, view);
     // G5-2 reverse vision push: push this march to observers whose vision covers its path (enemy march entering your vision triggers a push, V4).
@@ -455,6 +468,12 @@ export class MarchService {
     // ADR-051 (P1): drop the stepping cursor ($unset path/stepIndex/nextStepAt) — the return leg reverts to the
     // legacy single-arrival model (arriveAt-driven; it does not step tile-by-tile and so is not subject to P2
     // en-route encounters, per the agreed scope). backArrive keeps the existing time-based return semantics.
+    // Query-optimization (2026-07-29): the box is swap-invariant (swapping the two endpoints yields the same
+    // min/max), so a doc that already carries minX/maxX/minY/maxY needs no change here — but recomputing it
+    // unconditionally from the pre-flip from/toTile also means a pre-migration legacy doc (missing the fields
+    // entirely) self-heals the moment it is recalled, instead of staying invisible to enemy vision queries for
+    // the rest of its lifetime.
+    const box = legBox(this.core.coordX(m.fromTile), this.core.coordY(m.fromTile), this.core.coordX(m.toTile), this.core.coordY(m.toTile));
     const claimed = await cols.marches.findOneAndUpdate(
       { _id: mid, status: 'marching', kind: { $ne: 'return' } },
       {
@@ -464,6 +483,7 @@ export class MarchService {
           toTile: m.fromTile,
           departAt: t,
           arriveAt: backArrive,
+          ...box,
         },
         $unset: { path: '', stepIndex: '', nextStepAt: '' },
         $inc: { rev: 1 },
@@ -492,7 +512,25 @@ export class MarchService {
     const family = await this.core.familyMemberIds(worldId, accountId);
     const sources = await this.core.computeVisionSources(worldId, accountId, 0, mapW - 1, 0, mapH - 1);
     const t = now();
-    const others = await cols.marches.find({ worldId, status: 'marching' }).toArray();
+    // Query-optimization (2026-07-29): this used to be `find({worldId,status:'marching'})` — every in-transit
+    // march in the whole world, filtered by interpolated position in JS. Push a coarse "does this march's
+    // whole visited range even overlap the viewer's vision bounding box" filter into Mongo first (see
+    // MarchDoc.minX/maxX/minY/maxY doc comment); the exact per-position isInVision check below still runs on
+    // the (now much smaller) candidate set. No vision sources at all (e.g. not yet joined) → nothing could
+    // possibly be visible, skip the query entirely.
+    const box = sourcesBoundingBox(sources);
+    const others = box
+      ? await cols.marches
+          .find({
+            worldId,
+            status: 'marching',
+            minX: { $lte: box.hiX },
+            maxX: { $gte: box.loX },
+            minY: { $lte: box.hiY },
+            maxY: { $gte: box.loY },
+          })
+          .toArray()
+      : [];
     for (const d of others) {
       if (family.has(d.ownerId)) continue; // own / family — no duplicate and not treated as enemy
       const pos = marchInterpPos(
@@ -760,6 +798,8 @@ export class MarchService {
       departAt: t,
       arriveAt: t + Math.max(0, m.arriveAt - m.departAt),
       status: 'marching',
+      // Same two endpoints as the outbound leg (just swapped) → same box (see MarchDoc doc comment).
+      ...legBox(this.core.coordX(m.toTile), this.core.coordY(m.toTile), this.core.coordX(m.fromTile), this.core.coordY(m.fromTile)),
       rev: 0,
     };
     await cols.marches.insertOne(back);
@@ -872,6 +912,7 @@ export class MarchService {
       departAt: t,
       arriveAt,
       status: 'marching',
+      ...legBox(claimed.x, claimed.y, bx, by),
       rev: 0,
     };
     await cols.marches.insertOne(back);
@@ -896,8 +937,19 @@ export class MarchService {
     // and leaking it would collide with our own slot ids in the client's team-busy gate.
     const family = await this.core.familyMemberIds(worldId, accountId);
     const sources = await this.core.computeVisionSources(worldId, accountId, 0, mapW - 1, 0, mapH - 1);
-    const others = await cols.stationed.find({ worldId, ownerId: { $ne: accountId } }).toArray();
+    // Query-optimization (2026-07-29): this used to be `find({worldId, ownerId:{$ne:accountId}})` — every
+    // stationed team in the whole world (`$ne` falls outside the {worldId,ownerId} index prefix, so it
+    // degenerated to a per-world scan). Stationed teams don't move, so their (x,y) is exact (no derived box
+    // needed, unlike marches): push the viewer's vision bounding box straight into the query, then exclude
+    // self in-memory on the now much smaller result (cheaper than trying to index around `$ne`).
+    const box = sourcesBoundingBox(sources);
+    const others = box
+      ? await cols.stationed
+          .find({ worldId, x: { $gte: box.loX, $lte: box.hiX }, y: { $gte: box.loY, $lte: box.hiY } })
+          .toArray()
+      : [];
     for (const d of others) {
+      if (d.ownerId === accountId) continue; // self — already listed above as `mine:true`
       if (family.has(d.ownerId)) continue; // own / family — not treated as enemy
       if (!isInVision(sources, d.x, d.y)) continue;
       result.push({

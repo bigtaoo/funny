@@ -123,15 +123,20 @@ export function AnalyticsMixin<TBase extends AdminBaseCtor>(Base: TBase): TBase 
     }> {
       const live = await this.liveStats();
       const since = this.now() - 24 * 3600 * 1000;
+      // One aggregation across all metrics instead of METRIC_KEYS.length separate `.find().toArray()`
+      // calls that pulled every snapshot in the window into app memory just to reduce() avg/peak/samples
+      // — the driver/server can do that reduction without ever materializing the raw docs client-side.
+      const grouped = await this.cols.metricSnapshots
+        .aggregate<{ _id: MetricKey; avg: number; peak: number; samples: number }>([
+          { $match: { metric: { $in: METRIC_KEYS }, ts: { $gte: since } } },
+          { $group: { _id: '$metric', avg: { $avg: '$value' }, peak: { $max: '$value' }, samples: { $sum: 1 } } },
+        ])
+        .toArray();
+      const byMetric = new Map(grouped.map((g) => [g._id, g]));
       const last24h = {} as Record<MetricKey, { avg: number; peak: number; samples: number }>;
       for (const metric of METRIC_KEYS) {
-        const docs = await this.cols.metricSnapshots
-          .find({ metric, ts: { $gte: since } })
-          .toArray();
-        const samples = docs.length;
-        const sum = docs.reduce((s, d) => s + d.value, 0);
-        const peak = docs.reduce((m, d) => Math.max(m, d.value), 0);
-        last24h[metric] = { avg: samples ? sum / samples : 0, peak, samples };
+        const g = byMetric.get(metric);
+        last24h[metric] = { avg: g?.avg ?? 0, peak: g?.peak ?? 0, samples: g?.samples ?? 0 };
       }
       const tickets = {} as Record<CompTicketStatus, number>;
       for (const st of ALL_TICKET_STATUS) {

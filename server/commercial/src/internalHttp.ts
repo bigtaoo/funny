@@ -22,7 +22,12 @@ function readJson(req: IncomingMessage): Promise<Record<string, unknown>> {
     let body = '';
     req.on('data', (c) => {
       body += c;
-      if (body.length > 1 << 20) reject(new Error('payload too large'));
+      if (body.length > 1 << 20) {
+        // Stop reading — a settled promise doesn't stop 'data' events, so without destroy() an
+        // oversized body kept accumulating into `body` unbounded (OOM risk, P0-9).
+        req.destroy();
+        reject(new Error('payload too large'));
+      }
     });
     req.on('end', () => {
       try {
@@ -41,7 +46,10 @@ function send(res: ServerResponse, status: number, body: unknown): void {
 }
 
 const str = (v: unknown): string => (typeof v === 'string' ? v : '');
-const num = (v: unknown, d: number): number => (typeof v === 'number' ? v : d);
+// Number.isFinite (not just typeof) — JSON.parse happily produces NaN-free numbers but a caller could
+// still send Infinity/-Infinity (JSON has no literal for it, but this is also called on values already
+// parsed as JS numbers elsewhere); an unguarded value reaching a bare `$inc` can corrupt wallet.coins.
+const num = (v: unknown, d: number): number => (typeof v === 'number' && Number.isFinite(v) ? v : d);
 /** Client-declared request platform (X-NW-Platform, threaded by meta) — optional, undefined when absent. */
 const strOpt = (v: unknown): string | undefined => (typeof v === 'string' ? v : undefined);
 
@@ -356,7 +364,11 @@ export function startInternalHttp(
             return send(res, 404, { ok: false, error: 'not found' });
         }
       } catch (e) {
-        send(res, 400, { ok: false, error: (e as Error).message });
+        // e.message can carry a raw third-party payment provider response body (iap.ts's
+        // `${resp.status}: ${body}` errors) — log it server-side for diagnosis but never echo it back
+        // verbatim; meta (the only caller) doesn't need more than "this internal call failed".
+        log.error(`internal request failed url=${req.url}: ${(e as Error).message}`);
+        send(res, 400, { ok: false, error: 'INTERNAL_ERROR' });
       }
     })();
   });

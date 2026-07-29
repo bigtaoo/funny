@@ -288,6 +288,26 @@ export interface MarchDoc {
    * on arrival (applyMove writes it to StationedDoc.mode). Only meaningful for kind='move'; absent → 'idle'.
    */
   stationMode?: 'idle' | 'garrison';
+  /**
+   * Query-optimization (2026-07-29, worldsvc march/stationed query audit): bounding box of this leg's two
+   * endpoints (fromTile/toTile), i.e. `[min(fromX,toX), max(fromX,toX)] × [min(fromY,toY), max(fromY,toY)]`.
+   * getMarches' vision-gated "enemy march" branch used to pull EVERY in-transit march in the world
+   * (`find({worldId,status:'marching'})`) and filter by interpolated position in JS; these four fields let
+   * that query push a coarse "does this march's whole visited range even overlap the viewer's vision
+   * bounding box" filter down into Mongo first. Deliberately a static per-leg box, not a live "current
+   * position": getMarches' vision math (`marchInterpPos`) has always been a straight-line interpolation
+   * between fromTile and toTile — never the bent A* `path` used for encounter-checking — so the true
+   * position at any instant is guaranteed to lie inside this box for the box's entire lifetime; no per-tick
+   * write-amplification is needed to keep it fresh. Computed once at creation (`legBox`, coreHelpers.ts) by
+   * every code path that inserts a MarchDoc (startMarch, autoReturnScout, recallStationed) and re-affirmed
+   * (not recomputed — swapping the two endpoints yields the same box) by recallMarch's outbound→return flip
+   * so a legacy doc missing these fields self-heals the moment it is recalled. Absent on pre-2026-07-29 docs
+   * still in flight at deploy time — see migrateMarchBbox.ts for the one-time backfill.
+   */
+  minX?: number;
+  maxX?: number;
+  minY?: number;
+  maxY?: number;
   rev: number;
 }
 
@@ -649,6 +669,16 @@ export async function createWorldMongo(
     await collections.tiles.createIndex({ worldId: 1, x: 1, y: 1 });
     await collections.tiles.createIndex({ ownerId: 1 });
     await collections.tiles.createIndex({ familyId: 1 });
+    // computeMarchPath (2026-07-29 audit): every march dispatch/recall does 3 near-full scans of `tiles` —
+    // crossings (`type:{$in:['bridge','plankway']}`), enemy-blocked capitals (`type:'base', ownerId:{$nin:...}`),
+    // and player-built blockers (`structure.kind:'blocker'`) — none of which had a supporting index beyond
+    // {worldId,x,y} (useless without knowing x/y up front). This compound index serves the first two
+    // (an equality-narrowed `type:'base'` scan is far smaller than the whole tiles collection even though
+    // `$nin` itself isn't index-selective) with a single index.
+    await collections.tiles.createIndex({ worldId: 1, type: 1 });
+    // Player-built structures (blockers/arrow towers) are rare — most tiles never carry `structure` at all —
+    // so sparse keeps this index small while still covering the third computeMarchPath scan.
+    await collections.tiles.createIndex({ worldId: 1, 'structure.kind': 1 }, { sparse: true });
     // Vision's `contestedBy` branch of its $or (computeVisionSources) had no supporting index — only the
     // `ownerId` side of the $or could use one. Sparse: most tiles never carry contestedBy (2026-07-27 audit).
     await collections.tiles.createIndex({ contestedBy: 1 }, { sparse: true });
@@ -678,6 +708,12 @@ export async function createWorldMongo(
     // with no supporting index (world scoping alone was not a usable prefix without status). Called on every
     // client poll (~5s), so worth indexing even though most live marches already carry status:'marching'.
     await collections.marches.createIndex({ worldId: 1, status: 1 });
+    // getMarches' enemy-march branch (2026-07-29 audit): narrows the `{worldId,status:'marching'}` scan above
+    // by the viewer's territory/vision bounding box (minX/maxX/minY/maxY, see MarchDoc doc comment) before the
+    // exact per-position `isInVision` filter runs in JS. Mongo can only treat one of these four as a true
+    // range bound per index (the rest ride along as a residual filter on the already-narrowed candidate set),
+    // but that is still a large win over the full per-world scan this replaces.
+    await collections.marches.createIndex({ worldId: 1, status: 1, minX: 1, maxX: 1, minY: 1, maxY: 1 });
     // Due-time scan (2026-07-27: sole arrival mechanism — the Redis wake-up ZSET this comment used to
     // describe was write-only and was removed as dead I/O, see redis.ts history).
     await collections.marches.createIndex({ arriveAt: 1 });
@@ -732,6 +768,12 @@ export async function createWorldMongo(
     // is the counterpart of the marches team-unique index — together they enforce "a team holds ONE active state"
     // across in-transit marches, occupation holds, and now field stationing. Wrapped best-effort like the marches one.
     await collections.stationed.createIndex({ worldId: 1, ownerId: 1 });
+    // getStationed's enemy-team branch (2026-07-29 audit): used to be `find({worldId, ownerId:{$ne:accountId}})`
+    // — `$ne` falls outside the {worldId,ownerId} index prefix, so it degenerated to a per-world scan of every
+    // stationed team in the world. Replaced by a viewer territory/vision bounding-box range filter on the
+    // team's fixed (x,y) (stationed teams don't move, unlike marches — no derived box needed); self-exclusion
+    // is now a cheap in-memory check on the already box-narrowed result instead of driving the index.
+    await collections.stationed.createIndex({ worldId: 1, x: 1, y: 1 });
     try {
       await collections.stationed.createIndex(
         { worldId: 1, ownerId: 1, teamId: 1 },

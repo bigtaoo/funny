@@ -1,6 +1,6 @@
 # 资源分包与加载策略（ASSET_PACKAGING）
 
-> 状态：实现中 · 权威：本文（资源分层/加载/分包的单一来源）· 更新：2026-06-29
+> 状态：实现中 · 权威：本文（资源分层/加载/分包的单一来源）· 更新：2026-07-29（§9 新增 Web/App 资源分级）
 
 游戏要在 **Web（含 CrazyGames）/ 微信小游戏 / 手机套壳** 三个平台发布，三者对"资源何时进内存"的约束完全不同。本文锁定：
 
@@ -108,6 +108,8 @@ interface AssetIO {
 
 若以 Capacitor/WebView 套壳或离线包发布：**所有资源随包本地化**，`AssetIO` 用默认 `WebAssetIO`（或一个指向本地目录的实现），无网络流式、L0/L1 区分对它无意义，整包 ~10 MB 完全可接受。无需额外机制，仅确保 asset base 指向本地。
 
+手机套壳大部分时候读本地缓存、靠 Capgo OTA（`platform/ota.ts`）定期整包更新，不像 Web/微信每局会话都要经网络下载同一份资源——因此能负担明显更大的源图；详见 §9 的高清/压缩分级机制。
+
 ---
 
 ## 6. 关键文件
@@ -122,7 +124,7 @@ interface AssetIO {
 | `client/src/render/stickman/StickmanRuntime.ts` | `_parse` 经 `assetIO().loadBinary` 取字节 |
 | `client/src/render/spriteAtlas.ts` | **`createAtlasLoader` 工厂**——每个 PixiJS Spritesheet atlas 的解码/缓存/idempotent-load 单一实现，所有 atlas loader 模块都是它的薄封装 |
 | `client/src/render/{decorMergedAtlas,iconsAtlas,worldAtlas}.ts` | 三组合并 atlas 的共享加载实例（见 §8），纹理源经 `assetIO().textureSource` |
-| `client/webpack.config.js` | `TARGET=wechat` 分支：单 IIFE→`wechatgame/pixigame.js`、asset `publicPath=NW_ASSET_CDN`+发 `cdn/` |
+| `client/webpack.config.js` | `TARGET=wechat` 分支：单 IIFE→`wechatgame/pixigame.js`、asset `publicPath=NW_ASSET_CDN`+发 `cdn/`；`TARGET=mobile` 分支：`NormalModuleReplacementPlugin` 做 `.hires` 兄弟文件重定向（见 §9） |
 | `client/src/entries/wechat.ts` | 无条件 `setAssetIO(new WechatAssetIO())`（微信无 fetch） |
 | `client/wechatgame/{game.js,game.json,project.private.config.json}` | 微信壳层 + `packOptions.ignore`（排除 `cdn/`、`.map`） |
 | `client/public/web/index.html` | 预 boot CSS 加载占位 |
@@ -155,3 +157,20 @@ frame 名称互不冲突（合并前用脚本核对过），故直接共享一�
 12 个 atlas loader 模块（含合并前后）本身也有大量重复的"解码 BaseTexture + parse Spritesheet + idempotent 缓存"样板，收进 `client/src/render/spriteAtlas.ts` 的 `createAtlasLoader(url, data, label, texOptions?)` 工厂，各模块只剩薄封装。
 
 **合并脚本**：`art/scripts/mergeAtlasPages.js`（通用 shelf-packing + frame 坐标平移，共享库）+ `art/scripts/mergeAssetAtlases.js`（本次三组任务的具体清单）。每个源 atlas 整页 blit 进新画布（不重新裁切单个精灵），故 `rotated`/`spriteSourceSize` 等字段原样保留；再次运行需要 `NODE_PATH="$(pwd)/client/node_modules" node art/scripts/mergeAssetAtlases.js`。
+
+---
+
+## 9. Web/App 资源分级：`.hires` 同目录变体（2026-07-29，客户端资源管理审计）
+
+**动机**：手机套壳（mobile target）靠 Capgo OTA 定期整包更新，绝大多数时候直接读本地已下载/已打包的资源，不像 Web/WeChat/CrazyGames 那样每次会话都要经网络传输同一份文件——因此手机端能负担明显更大的源图，而 Web 端应保持偏压缩，避免拖慢首屏（尤其 L0 闸门项）。`logo.png` 是第一个具体案例：原先所有平台共用同一份 512px/497KB 图（占 L0 闸门总体积 ~25%），现拆成 Web/微信/CrazyGames 用的 256px/129KB 压缩默认版 + 手机专属 1024px/1.9MB 高清版。
+
+**机制**（`client/webpack.config.js`，`isMobile` 分支）：任意 `.png`/`.jpg`/`.jpeg`/`.webp` 资源，只要同目录下存在同名 `<name>.hires.<ext>` 兄弟文件，`mobile` 构建会把该 import 自动重定向到这个兄弟文件；其余三个平台（web/wechat/crazygames）不受影响，始终用基础文件。用 `webpack.NormalModuleReplacementPlugin` 在 module resolve 阶段做路径替换，**完全按约定生效、无需改调用方代码**——某个资源要不要分级，纯粹取决于是否存在对应的 `.hires` 兄弟文件；没有就照旧只有一份，两平台共用。
+
+**新增一项资源分级的步骤**：
+1. 准备好压缩版（作为该资源现有的默认文件）+ 高清版；
+2. 高清版存成同目录 `<原文件名>.hires.<ext>`（例如 `foo.png` → `foo.hires.png`）；
+3. 不改任何 import 调用点——`webpack --env TARGET=mobile` 自动选高清版，其余 target 自动选压缩版。
+
+**已应用**：`client/src/assets/logo.png`（256px/129KB，L0 闸门项，见 `bootManifest.ts`）+ `client/src/assets/logo.hires.png`（1024px/1.9MB，均来自既有 `art/logo/derived/` 输出，非新生成美术）。
+
+**后续候选**：其余 L0/常驻大图（如登录/大厅背景类，若未来引入）可按同一约定接入，无需再动 webpack 配置。

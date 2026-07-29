@@ -28,3 +28,30 @@ describe('migrate v4 → v5 (skin slot per character)', () => {
     expect(Object.keys(save.equipped).some((k) => k.startsWith('skin:'))).toBe(false);
   });
 });
+
+// v3 → v4 migration test (2026-07-29 fix, client-resource-mgmt audit): unitLevels/cardInventory/gear
+// were retired in favour of cardInv, but the migration step only bumped `version` without deleting
+// them — fillDefaults' "preserve extra keys beyond def" pass then carried them forward in the
+// serialized save forever (harmless bytes today with no real pre-v4 saves in prod, but exactly the
+// kind of unbounded-in-principle field a future migration could accidentally start reading again).
+describe('migrate v3 → v4 (Hero Roster: retired fields are actually deleted, not just superseded)', () => {
+  it('drops unitLevels/cardInventory/gear from a pre-v4 save instead of carrying them forward', () => {
+    const raw = {
+      version: 3,
+      unitLevels: { infantry: 5 },
+      cardInventory: { c1: { level: 3 } },
+      gear: { weapon: 'sword1' },
+    };
+    const save = migrate(raw);
+    expect(save.version).toBe(SAVE_VERSION);
+    expect((save as unknown as Record<string, unknown>).unitLevels).toBeUndefined();
+    expect((save as unknown as Record<string, unknown>).cardInventory).toBeUndefined();
+    expect((save as unknown as Record<string, unknown>).gear).toBeUndefined();
+  });
+
+  it('a save already at v4+ with none of the retired fields is unaffected (no accidental deletion of real fields)', () => {
+    const raw = { version: 4, cardInv: { c1: { id: 'c1', defId: 'hero1' } } };
+    const save = migrate(raw);
+    expect(save.cardInv).toEqual({ c1: { id: 'c1', defId: 'hero1' } });
+  });
+});

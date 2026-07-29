@@ -74,7 +74,7 @@ export function PromoMixin<TBase extends CommercialBaseCtor>(Base: TBase): TBase
 
       const redemptionId = `${args.accountId}:${code}`;
       const existing = await this.cols.promoRedemptions.findOne({ _id: redemptionId });
-      if (existing) return { ok: false, error: 'PROMO_ALREADY_USED' };
+      if (existing) return this.healOrRejectPromoReplay(existing, redemptionId, args.clientPlatform);
 
       const redemption: PromoRedemptionDoc = {
         _id: redemptionId,
@@ -86,14 +86,54 @@ export function PromoMixin<TBase extends CommercialBaseCtor>(Base: TBase): TBase
       try {
         await this.cols.promoRedemptions.insertOne(redemption);
       } catch (e) {
-        if ((e as { code?: number }).code === 11000) return { ok: false, error: 'PROMO_ALREADY_USED' };
+        if ((e as { code?: number }).code === 11000) {
+          const r = await this.cols.promoRedemptions.findOne({ _id: redemptionId });
+          if (r) return this.healOrRejectPromoReplay(r, redemptionId, args.clientPlatform);
+          return { ok: false, error: 'PROMO_ALREADY_USED' };
+        }
         throw e;
       }
 
       // Atomically increment redemption count (best-effort; does not hard-guard the total — soft check above is sufficient; at most 1 over-limit concurrently).
       await this.cols.promoCodes.updateOne({ _id: code }, { $inc: { redeemed: 1 } });
-      const coinsAfter = await this.credit(args.accountId, def.coins, 'promo', { clientPlatform: args.clientPlatform });
+      const coinsAfter = await this.credit(args.accountId, def.coins, 'promo', {
+        orderId: redemptionId,
+        clientPlatform: args.clientPlatform,
+      });
       return { ok: true, coinsAfter, coinsGranted: def.coins };
+    }
+
+    /**
+     * The redemption slot is reserved (promoRedemptions insert) BEFORE credit() runs, same ordering as
+     * rechargeVerify — a crash between the two would otherwise stamp the code "used" with the coins never
+     * granted, and every retry after that would hit this branch and report PROMO_ALREADY_USED forever.
+     * The ledger entry credit() writes is keyed on orderId=redemptionId, so its absence reliably means the
+     * credit never landed; heal it instead of erroring (verify-and-heal, matches healRechargeCredit).
+     * Gated by isStaleClaim (base.ts): within the grace window this just reports PROMO_ALREADY_USED like
+     * before, so concurrent duplicate submissions (still in-flight) don't race the true winner. Past the
+     * window, the ledger-absence read is still just a plain read — two stale-claim healers landing together
+     * would both see no ledger entry and both credit(). The `healedAt` CAS on the redemption doc closes
+     * that: only the caller whose findOneAndUpdate matches proceeds to credit(); the loser reports
+     * PROMO_ALREADY_USED, same as any other contested replay of an already-legitimately-redeemed code.
+     */
+    private async healOrRejectPromoReplay(
+      redemption: PromoRedemptionDoc,
+      redemptionId: string,
+      clientPlatform: string | undefined,
+    ): Promise<Result<{ coinsAfter: number; coinsGranted: number }>> {
+      if (!this.isStaleClaim(redemption.ts)) return { ok: false, error: 'PROMO_ALREADY_USED' };
+      const landed = await this.cols.ledger.findOne({ accountId: redemption.accountId, orderId: redemptionId });
+      if (landed) return { ok: false, error: 'PROMO_ALREADY_USED' };
+      const claimed = await this.cols.promoRedemptions.findOneAndUpdate(
+        { _id: redemptionId, healedAt: { $exists: false } },
+        { $set: { healedAt: this.now() } },
+      );
+      if (!claimed) return { ok: false, error: 'PROMO_ALREADY_USED' };
+      const coinsAfter = await this.credit(redemption.accountId, redemption.coinsGranted, 'promo', {
+        orderId: redemptionId,
+        clientPlatform,
+      });
+      return { ok: true, coinsAfter, coinsGranted: redemption.coinsGranted };
     }
   };
 }

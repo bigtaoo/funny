@@ -102,6 +102,8 @@ export interface FriendsSceneCallbacks {
   playerName?(): string;
   /** Current coin balance — shown top-right on the world channel tab (each post costs coins). */
   getCoins?(): number;
+  /** Subscribe to SaveManager writes; re-renders this scene when a concurrently-mounted peer scene (e.g. the world map underneath) changes the wallet. Push the returned unsub onto `unsubs`. */
+  onSaveChanged?(listener: () => void): () => void;
   /**
    * Re-sync the authoritative wallet after a server-side coin spend (world-chat post).
    * World-chat coins are debited in the commercial service by worldsvc, which never touches
@@ -259,6 +261,7 @@ export class FriendsSceneBase {
     this.unsubs.push(input.onMove((x, y) => this.onPointerMove(x, y)));
     this.unsubs.push(input.onUp((x, y) => this.onPointerUp(x, y)));
     this.unsubs.push(input.onWheel((x, y, deltaY) => this.onWheel(y, deltaY)));
+    if (cb.onSaveChanged) this.unsubs.push(cb.onSaveChanged(() => this.render()));
 
     this.render();
     void this.refresh();
@@ -320,6 +323,13 @@ export class FriendsSceneBase {
       d.reason === 'declined' ? 'friends.duel.declined'
       : d.reason === 'timeout' ? 'friends.duel.timeout'
       : d.reason === 'offline' ? 'friends.duel.offline'
+      // matchsvc restart-safety (matchsvc-prematch-persist, 2026-07-29): synthesized locally by
+      // NetSession from a prematch_lost push when this outstanding invite couldn't be recovered.
+      : d.reason === 'lost' ? 'friends.duel.lost'
+      // gateway per-connection rate limit (2026-07-29): TIGHT-tier duel_invite throttled server-side.
+      // Was previously falling into the 'notFound' default below, which reads as an outright wrong
+      // "player not found" message rather than a rate-limit notice.
+      : d.reason === 'rate_limited' ? 'friends.duel.rateLimited'
       : 'friends.duel.notFound';
     this.toast(key);
     this.render();

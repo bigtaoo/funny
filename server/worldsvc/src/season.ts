@@ -362,6 +362,10 @@ export class SeasonService {
     ] as const) {
       deleted[c] = await deleteInBatches(cols[c] as never, { worldId }, RESET_DELETE_BATCH);
     }
+    // ADR-051 Redis spatial indexes (occ/cover) are worldId-scoped like the Mongo collections just wiped
+    // above but live outside Mongo — clear them too so a recycled worldId doesn't inherit stale entries
+    // (2026-07-29 audit fix; see WorldCorePush.clearSpatialIndexes).
+    await this.core.clearSpatialIndexes(worldId);
 
     // ④ Zero season state (territory/prosperity/activity reset to 0 + clear sect affiliation) for families that played in this world.
     // Family identity/membership itself persists across seasons on socialsvc — only the SLG mirror is reset here.

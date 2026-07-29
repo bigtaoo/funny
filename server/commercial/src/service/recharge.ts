@@ -75,6 +75,47 @@ export function RechargeMixin<TBase extends CommercialBaseCtor>(Base: TBase): TB
       return result !== null;
     }
 
+    /**
+     * Replay-safe balance for an already-consumed receipt. The recharges record is written BEFORE
+     * credit() runs (reserves the receiptId first so concurrent duplicates can't double-grant) — if a
+     * crash lands between that insert and the credit() $inc, a naive replay would read the current
+     * (un-credited) balance and report success, silently losing the coins forever with no trace of
+     * failure. Heal it instead: the ledger entry is written atomically as part of credit() and keyed on
+     * receiptId, so its absence is a reliable signal the credit never landed — same verify-and-heal
+     * house style as equipment.ts's idempotent-replay branches. Gated by isStaleClaim (base.ts): within
+     * the grace window this just reads the current balance like before, so concurrent duplicates of the
+     * SAME receiptId (the common case, still in-flight) don't race the true winner and double-credit.
+     * Past the window, the ledger-absence read alone is still just a plain read — two stale-claim healers
+     * arriving together would both see no ledger entry and both call credit(). The `healedAt` CAS on the
+     * recharges doc itself (findOneAndUpdate) closes that: only the caller whose update actually matches
+     * proceeds to credit(); the loser falls through to read whatever balance is currently there.
+     */
+    private async healRechargeCredit(
+      doc: { _id: string; accountId: string; coinsGranted: number; platform: string; usdCents?: number; ts: number },
+      receiptId: string,
+      clientPlatform: string | undefined,
+    ): Promise<number> {
+      if (this.isStaleClaim(doc.ts)) {
+        const already = await this.cols.ledger.findOne({ accountId: doc.accountId, receiptId });
+        if (!already) {
+          const claimed = await this.cols.recharges.findOneAndUpdate(
+            { _id: doc._id, healedAt: { $exists: false } },
+            { $set: { healedAt: this.now() } },
+          );
+          if (claimed) {
+            return this.credit(doc.accountId, doc.coinsGranted, 'recharge', {
+              receiptId,
+              rechargeUsdCents: doc.usdCents,
+              channel: rechargeChannelOf(doc.platform) ?? undefined,
+              clientPlatform,
+            });
+          }
+        }
+      }
+      const w = await this.cols.wallets.findOne({ _id: doc.accountId });
+      return effectiveCoins(w, spendChannelOf(clientPlatform));
+    }
+
     /** Verify recharge receipt + credit coins (commercial verifies platform receipts; dev uses the stub). receiptId idempotency. */
     async rechargeVerify(args: {
       accountId: string;
@@ -83,14 +124,13 @@ export function RechargeMixin<TBase extends CommercialBaseCtor>(Base: TBase): TB
       receiptId: string;
       clientPlatform?: string;
     }): Promise<Result<{ coinsAfter: number; coinsGranted: number }>> {
-      const displayChannel = spendChannelOf(args.clientPlatform);
       const existing = await this.cols.recharges.findOne({ _id: args.receiptId });
       if (existing) {
         // Receipt already consumed: replay only if it belongs to the same account (return that account's balance);
         // otherwise reject — prevents mirroring another account's balance to the requester (cross-account balance leak).
         if (existing.accountId !== args.accountId) return { ok: false, error: 'INVALID_RECEIPT' };
-        const w = await this.cols.wallets.findOne({ _id: existing.accountId });
-        return { ok: true, coinsAfter: effectiveCoins(w, displayChannel), coinsGranted: existing.coinsGranted };
+        const coinsAfter = await this.healRechargeCredit(existing, args.receiptId, args.clientPlatform);
+        return { ok: true, coinsAfter, coinsGranted: existing.coinsGranted };
       }
       const v = await this.verifyReceipt(args.platform, args.receipt);
       if (!v.ok) return { ok: false, error: 'INVALID_RECEIPT' };
@@ -114,8 +154,10 @@ export function RechargeMixin<TBase extends CommercialBaseCtor>(Base: TBase): TB
           const r = await this.cols.recharges.findOne({ _id: args.receiptId });
           // Same cross-account guard: if the receipt was already claimed by a different account, reject.
           if (r && r.accountId !== args.accountId) return { ok: false, error: 'INVALID_RECEIPT' };
-          const w = await this.cols.wallets.findOne({ _id: args.accountId });
-          return { ok: true, coinsAfter: effectiveCoins(w, displayChannel), coinsGranted: r?.coinsGranted ?? v.coins };
+          const coinsAfter = r
+            ? await this.healRechargeCredit(r, args.receiptId, args.clientPlatform)
+            : effectiveCoins(await this.cols.wallets.findOne({ _id: args.accountId }), spendChannelOf(args.clientPlatform));
+          return { ok: true, coinsAfter, coinsGranted: r?.coinsGranted ?? v.coins };
         }
         throw e;
       }
@@ -195,12 +237,19 @@ export function RechargeMixin<TBase extends CommercialBaseCtor>(Base: TBase): TB
       coins: number;
       usdCents?: number;
     }): Promise<Result<{ coinsAfter: number; coinsGranted: number }>> {
+      // meta forwards these straight from the internal HTTP body (internalHttp.ts's `num()` only
+      // guards typeof+finite, not sign/range) — this is the only remaining check before an unconditional
+      // wallet $inc, so it must reject bad values rather than trust the caller.
+      if (!Number.isFinite(args.coins) || args.coins <= 0) return { ok: false, error: 'BAD_REQUEST' };
+      if (args.usdCents !== undefined && (!Number.isFinite(args.usdCents) || args.usdCents < 0)) {
+        return { ok: false, error: 'BAD_REQUEST' };
+      }
       const receiptId = `paddle:${args.transactionId}`;
       const existing = await this.cols.recharges.findOne({ _id: receiptId });
       if (existing) {
         if (existing.accountId !== args.accountId) return { ok: false, error: 'INVALID_RECEIPT' };
-        const w = await this.cols.wallets.findOne({ _id: existing.accountId });
-        return { ok: true, coinsAfter: effectiveCoins(w, 'web'), coinsGranted: existing.coinsGranted };
+        const coinsAfter = await this.healRechargeCredit(existing, receiptId, undefined);
+        return { ok: true, coinsAfter, coinsGranted: existing.coinsGranted };
       }
 
       await this.ensureWallet(args.accountId);
@@ -223,8 +272,10 @@ export function RechargeMixin<TBase extends CommercialBaseCtor>(Base: TBase): TB
         if ((e as { code?: number }).code === 11000) {
           const r = await this.cols.recharges.findOne({ _id: receiptId });
           if (r && r.accountId !== args.accountId) return { ok: false, error: 'INVALID_RECEIPT' };
-          const w = await this.cols.wallets.findOne({ _id: args.accountId });
-          return { ok: true, coinsAfter: effectiveCoins(w, 'web'), coinsGranted: r?.coinsGranted ?? coinsGranted };
+          const coinsAfter = r
+            ? await this.healRechargeCredit(r, receiptId, undefined)
+            : effectiveCoins(await this.cols.wallets.findOne({ _id: args.accountId }), 'web');
+          return { ok: true, coinsAfter, coinsGranted: r?.coinsGranted ?? coinsGranted };
         }
         throw e;
       }

@@ -93,6 +93,7 @@ export function createAuthNav(ctx: AppCtx): Pick<Nav, 'goIntro' | 'goLogin' | 'd
             renameCost: RENAME_COST,
             freeRename: platform.storage.getItem(FREE_RENAME_KEY) === '1',
             getCoins: () => saveManager.get().wallet.coins,
+            onSaveChanged: (listener: () => void) => saveManager.subscribe(listener),
             onRename: doRename,
           }
         : {}),
@@ -211,7 +212,13 @@ export function createAuthNav(ctx: AppCtx): Pick<Nav, 'goIntro' | 'goLogin' | 'd
     // Otherwise this account's equipped avatar/title/flags survive in saveManager's in-memory save
     // and reconcile() merges them into whichever account logs in next (see clearSyncedLocalSections' doc).
     saveManager.clearSyncedLocalSections();
-    api?.setToken(null);
+    // Full reset (2026-07-29): wipes wallet/progress/cardInv/... + offline pending-clear/stamina queues too,
+    // not just equipped/flags — otherwise the departing account's meta progress can leak into pure offline
+    // play before the next login, and its offline-queued settlements could get flushed under the NEXT
+    // account's token (see resetForLogout's doc). Must run (and attempt its best-effort flush) BEFORE
+    // api.setToken(null) below, while the departing account's token is still valid — hence deferring the
+    // token clear to .finally() rather than calling it inline like the rest of this function.
+    void saveManager.resetForLogout().finally(() => api?.setToken(null));
     // Tear down any live gateway connection too — otherwise it keeps sitting there
     // authenticated as the account we just logged out of (see doAuth's reset for why).
     state.netSession?.close();

@@ -207,7 +207,7 @@ export function SiegeArrivalMixin<TBase extends SiegeServiceBaseCtor>(Base: TBas
         replay = null;
       } else {
         try {
-          res = runSiegeBattle({ attackerArmy, defenderConfig, tileLevel, seed, cardInstances, equipmentInv: cardEquipInv, siegeAcademy });
+          res = await runSiegeBattle({ attackerArmy, defenderConfig, tileLevel, seed, cardInstances, equipmentInv: cardEquipInv, siegeAcademy });
         } catch (err) {
           console.error('[worldsvc] siege engine failed — fallback to cheap resolve', { tile: m.toTile, err: (err as Error).message });
           res = resolveSiege(effTroops, effGarrison);
@@ -293,7 +293,7 @@ export function SiegeArrivalMixin<TBase extends SiegeServiceBaseCtor>(Base: TBas
           res = resolveSiege(deployedHp, sumArmyHp(defArmy));
         } else {
           try {
-            res = runSiegeBattle({ attackerArmy: survivorArmy, defenderConfig, tileLevel, seed, cardInstances, equipmentInv: cardEquipInv, siegeAcademy });
+            res = await runSiegeBattle({ attackerArmy: survivorArmy, defenderConfig, tileLevel, seed, cardInstances, equipmentInv: cardEquipInv, siegeAcademy });
           } catch (err) {
             console.error('[worldsvc] base wave siege engine failed — cheap fallback', { tile: baseTile._id, wave: i, err: (err as Error).message });
             res = resolveSiege(deployedHp, sumArmyHp(defArmy));
@@ -435,7 +435,7 @@ export function SiegeArrivalMixin<TBase extends SiegeServiceBaseCtor>(Base: TBas
         replay = null;
       } else {
         try {
-          res = runSiegeBattle({
+          res = await runSiegeBattle({
             attackerArmy, defenderConfig, tileLevel, seed,
             cardInstances, equipmentInv: cardEquipInv,
           });
@@ -567,7 +567,7 @@ export function SiegeArrivalMixin<TBase extends SiegeServiceBaseCtor>(Base: TBas
         replay = null;
       } else {
         try {
-          res = runSiegeBattle({
+          res = await runSiegeBattle({
             attackerArmy, defenderConfig, tileLevel, seed,
             cardInstances, equipmentInv: cardEquipInv,
           });

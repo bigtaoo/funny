@@ -21,7 +21,7 @@ import type { FastifyInstance } from 'fastify';
 import type { CommercialClient } from '../dist/commercialClient.js';
 import { buildApp } from '../dist/app.js';
 import { seedEquipment, seedEquipmentBatch, readEquipmentInv } from './helpers/equipment.js';
-import { readCardInv } from './helpers/cards.js';
+import { readCardInv, seedCard } from './helpers/cards.js';
 
 /** Minimal fake commercial client: only getWallet/spend are real (enhance uses coins); everything else is stubbed. */
 function makeFakeCommercial(): CommercialClient & {
@@ -439,6 +439,63 @@ describe.skipIf(!mongo)('equipment backend e2e', () => {
     const cardId = await starterCardId();
     await equip('weapon', 'w4', cardId);
     expect(body(await salvage(['w4'], 'sk-equipped')).error.code).toBe('EQUIP_IN_USE');
+  });
+
+  // Regression for the 2026-07-29 audit fix: equipEquipment used to skip the isEquipped() check that every
+  // other mutation (salvage/enhance/reforge, above) already applies, so the same instanceId could be
+  // written into TWO cards' gear[slot] at once and double-count its stat bonus (equipment duplication).
+  it('equip an instance already equipped on a DIFFERENT card → 409 EQUIP_IN_USE (no duplication)', async () => {
+    await seedInstance('w5', 'wp_pencil', 0);
+    const cardA = await starterCardId();
+    const cardB = 'card_second_' + cardA;
+    await seedCard(m, accountId, { id: cardB, defId: 'card_test', level: 1, gear: {}, locked: false });
+    await equip('weapon', 'w5', cardA);
+    const res = await equip('weapon', 'w5', cardB);
+    expect(res.statusCode).toBe(409);
+    expect(body(res).error.code).toBe('EQUIP_IN_USE');
+    // Still only equipped on the original card — never landed on the second.
+    const inv = await readCardInv(m, accountId);
+    expect(inv[cardA].gear?.weapon).toBe('w5');
+    expect(inv[cardB].gear?.weapon).toBeUndefined();
+  });
+
+  // Regression for the audit-followup-fixes-0729 review: the sequential test above (two SEQUENTIAL equip
+  // calls) doesn't prove concurrent equips of the same instance can't both land — the pre-write occupancy
+  // check (cardInstances.findOne "equipped elsewhere?") is a plain read with no atomicity of its own, so two
+  // concurrent requests can both pass it before either writes. The unique multikey index on
+  // CardInstanceDoc.gearInstanceIds (mongo.ts) is the actual guard: fire several concurrent equip attempts
+  // of the SAME instanceId onto DIFFERENT cards at once and confirm exactly one wins (200), the rest get
+  // 409 EQUIP_IN_USE, and the instance never lands on more than one card's gear.
+  it('CONCURRENT equip of the SAME instance onto DIFFERENT cards → exactly one wins, no duplication (regression: gearInstanceIds unique index)', async () => {
+    await seedInstance('wrace', 'wp_pencil', 0);
+    const cardA = await starterCardId();
+    const otherCards = await Promise.all(
+      Array.from({ length: 5 }, async (_, i) => {
+        const id = `card_race_${i}_${cardA}`;
+        await seedCard(m, accountId, { id, defId: 'card_test', level: 1, gear: {}, locked: false });
+        return id;
+      }),
+    );
+    const targets = [cardA, ...otherCards];
+    const results = await Promise.all(targets.map((cardId) => equip('weapon', 'wrace', cardId)));
+    const wins = results.filter((r) => r.statusCode === 200);
+    const losses = results.filter((r) => r.statusCode === 409);
+    expect(wins.length).toBe(1);
+    expect(losses.length).toBe(targets.length - 1);
+    expect(losses.every((r) => body(r).error.code === 'EQUIP_IN_USE')).toBe(true);
+    // Exactly one card in the whole roster ended up holding the instance — never two.
+    const inv = await readCardInv(m, accountId);
+    const holders = targets.filter((cardId) => inv[cardId]?.gear?.weapon === 'wrace');
+    expect(holders.length).toBe(1);
+  });
+
+  it('re-equipping the same instance on the SAME card/slot is a no-op, not EQUIP_IN_USE', async () => {
+    await seedInstance('w6', 'wp_pencil', 0);
+    const cardId = await starterCardId();
+    await equip('weapon', 'w6', cardId);
+    const res = await equip('weapon', 'w6', cardId);
+    expect(res.statusCode).toBe(200);
+    expect(body(res).data.save.cardInv[cardId].gear.weapon).toBe('w6');
   });
 
   // ── E6 Reforge ───────────────────────────────────────────────────────────────────

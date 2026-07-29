@@ -65,6 +65,8 @@ export interface EquipmentCallbacks {
   trailingPeers?: { labelKey: TranslationKey; icon?: IconKind; onSelect(): void }[];
   /** Read the current authoritative save (server pushes after each action → adoptServer; this scene re-reads and redraws). */
   getSave(): SaveData;
+  /** Subscribe to SaveManager writes; re-renders this scene when a concurrently-mounted peer scene changes the save (wallet/inventory/...). Push the returned unsub onto `unsubs`. */
+  onSaveChanged?(listener: () => void): () => void;
   craft(defId: string): Promise<EquipResult>;
   /** When useProtect=true, consume a protect-enhance item; on failure no materials are lost (E7 §6.2). */
   enhance(instanceId: string, useProtect?: boolean): Promise<EnhanceResult>;
@@ -280,6 +282,7 @@ export class EquipmentSceneBase {
       const next = wheelScrollY(this.scrollRegionTop, this.scrollRegionBottom, y, deltaY, this.scrollY, this.maxScroll);
       if (next !== null) { this.scrollY = next; this.scrollDirty = true; }
     }));
+    if (cb.onSaveChanged) this.unsubs.push(cb.onSaveChanged(() => this.render()));
   }
 
   protected build(): void {

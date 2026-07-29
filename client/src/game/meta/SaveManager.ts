@@ -61,6 +61,16 @@ export class SaveManager {
   private pendingActiveMatch: ActiveMatchInfo | null = null;
   private pending: PendingClear[]; // offline queue of clears awaiting settlement (PVE_INTEGRITY_PLAN §8.4)
   private pendingStamina: PendingStaminaSpend[]; // offline queue of stamina spends awaiting server settlement (A4)
+  /**
+   * Change listeners (2026-07-29): fired after every local write (persist()) and after reconcile().
+   * Lets scenes that stay mounted alongside another live scene (SceneManager overlay — e.g. CityScene
+   * over WorldMapScene) react to a save change made by the other one, instead of only refreshing on
+   * their own next render() pass or a full navigation rebuild. Synchronous, no payload (listeners just
+   * re-read `get()` themselves) — mirrors the existing InputManager subscribe/unsub convention (see
+   * CLAUDE.md's "input subscription leak" contract): callers MUST keep the returned unsub and invoke it
+   * from their own destroy(), or the closure (and whatever it captures) leaks for the rest of the session.
+   */
+  private readonly listeners = new Set<() => void>();
 
   constructor(opts: SaveManagerOpts) {
     this.store = opts.store;
@@ -79,6 +89,24 @@ export class SaveManager {
   }
 
   /**
+   * Subscribe to local save changes (any persist()/reconcile() call — wallet/progress/equipped/flags/...).
+   * Returns an unsubscribe function; the caller (typically a scene's constructor) must invoke it from its
+   * own destroy() (`this.unsubs.push(saveManager.subscribe(...))`, same idiom as InputManager.onDown/onMove/onUp)
+   * — a dropped return value leaks the closure for the rest of the session. Fires synchronously and with no
+   * payload; listeners re-read `get()` themselves rather than being handed a diff.
+   */
+  subscribe(listener: () => void): () => void {
+    this.listeners.add(listener);
+    return () => { this.listeners.delete(listener); };
+  }
+
+  /** Write the in-memory save to local storage and notify subscribers. Every mutation in this class funnels through here (replaces the old bare `store.saveLocal(this.save)` call at each site) so no write point can forget to notify. */
+  private persist(): void {
+    this.store.saveLocal(this.save);
+    for (const listener of this.listeners) listener();
+  }
+
+  /**
    * Mutate a local mirror field and save locally. For fields the server also computes independently
    * (pvp.elo/rank after a ranked match, stamina after a WS push), this just keeps the in-memory copy in
    * sync with what the server already told the client via another channel — nothing is uploaded from
@@ -87,13 +115,13 @@ export class SaveManager {
    */
   update(mutator: (draft: SaveData) => void): void {
     mutator(this.save);
-    this.store.saveLocal(this.save);
+    this.persist();
   }
 
   /** Mutate local-only fields (never synced to the server at all) and save locally. */
   patchLocal(patch: Pick<Partial<import('./SaveData').SaveData>, 'pvpDeck'>): void {
     Object.assign(this.save, patch);
-    this.store.saveLocal(this.save);
+    this.persist();
   }
 
   /**
@@ -105,7 +133,7 @@ export class SaveManager {
    */
   setFlag(key: string, value: boolean): void {
     this.save.flags[key] = value;
-    this.store.saveLocal(this.save);
+    this.persist();
     if (!this.online()) return;
     this.api!.setFlag(key, value).then(
       (res) => this.reconcile(res.save),
@@ -153,7 +181,7 @@ export class SaveManager {
    */
   private optimisticEquip(key: string, value: string | null, call: () => Promise<{ save: SaveData }>): void {
     if (value) this.save.equipped[key] = value; else delete this.save.equipped[key];
-    this.store.saveLocal(this.save);
+    this.persist();
     if (!this.online()) return;
     call().then(
       (res) => this.reconcile(res.save),
@@ -171,7 +199,7 @@ export class SaveManager {
       const cred = await this.getCredential();
       const auth = await this.api.auth(cred);
       this.save.accountId = auth.accountId;
-      this.store.saveLocal(this.save);
+      this.persist();
 
       const cloud = await this.api.getSave();
       this.reconcile(cloud.save);
@@ -237,7 +265,7 @@ export class SaveManager {
    */
   async adoptSession(accountId: string): Promise<boolean> {
     this.save.accountId = accountId;
-    this.store.saveLocal(this.save);
+    this.persist();
     return this.refresh();
   }
 
@@ -251,7 +279,38 @@ export class SaveManager {
     this.save.equipped = {};
     this.save.flags = {};
     delete this.save.pvpDeck;
-    this.store.saveLocal(this.save);
+    this.persist();
+  }
+
+  /**
+   * Full local reset on explicit logout (2026-07-29 fix — see `client-resource-mgmt-audit-2026-07-29`
+   * memory / claudedocs/client-modules.md): unlike clearSyncedLocalSections (equipped/flags/pvpDeck only,
+   * kept purely to avoid a UI flash of the old avatar/title before the next reconcile), this drops the
+   * ENTIRE local save (wallet/progress/cardInv/equipmentInv/materials/...) plus the offline pending-clear
+   * and pending-stamina-spend queues. Without this, a player who logs out and then either (a) plays
+   * offline before any next login, or (b) logs into a *different* account that later reconciles online,
+   * would see/keep the departing account's meta progress — and worse, any offline-queued PvE clears/
+   * stamina spends still sitting in `this.pending`/`this.pendingStamina` would get flushed and credited
+   * to whichever account is authenticated the next time `flushPending()` runs, i.e. a genuine cross-
+   * account reward leak, not just a display glitch.
+   *
+   * Best-effort flushes those queues first (while the departing account's token is still valid — callers
+   * MUST call this before `api.setToken(null)`) so real offline progress isn't silently discarded; a
+   * failed/offline flush is intentionally dropped afterward rather than kept, since holding onto another
+   * account's pending queue past logout is exactly the bug this fixes.
+   */
+  async resetForLogout(): Promise<void> {
+    if (this.online()) {
+      await this.flushPending();
+      await this.flushPendingStamina();
+    }
+    this.pending = [];
+    this.pendingStamina = [];
+    this.store.savePending(this.pending);
+    this.store.savePendingStamina(this.pendingStamina);
+    this.store.clearLocal();
+    this.save = this.store.loadLocal(); // fresh default save (migrate(null) → makeNewSave())
+    for (const listener of this.listeners) listener();
   }
 
   /**
@@ -318,17 +377,17 @@ export class SaveManager {
     const regen = this.regenStamina();
     if (regen.current < cost) {
       this.save.stamina = regen; // still persist the regen catch-up even when entry is blocked
-      this.store.saveLocal(this.save);
+      this.persist();
       return false;
     }
     const current = regen.current - cost;
     const regenAt = regen.regenAt !== 0 ? regen.regenAt : current < STAMINA_CAP ? serverNow() + STAMINA_REGEN_MS : 0;
     this.save.stamina = { current, regenAt };
-    this.store.saveLocal(this.save);
+    this.persist();
     if (this.online()) {
       this.api!.pveEnter(levelId).then((res) => {
         this.save.stamina = res.stamina;
-        this.store.saveLocal(this.save);
+        this.persist();
       }).catch(() => this.enqueueStaminaSpend({ levelId, cost, ts: Date.now() }));
     } else {
       this.enqueueStaminaSpend({ levelId, cost, ts: Date.now() });
@@ -364,7 +423,7 @@ export class SaveManager {
       try {
         const res = await this.api!.pveEnter(head.levelId);
         this.save.stamina = res.stamina;
-        this.store.saveLocal(this.save);
+        this.persist();
         this.pendingStamina.shift();
         this.store.savePendingStamina(this.pendingStamina);
       } catch (e) {
@@ -448,7 +507,7 @@ export class SaveManager {
     if (!p.cleared.includes(levelId)) p.cleared.push(levelId);
     const s = Math.max(1, Math.min(3, Math.round(stars))) as 1 | 2 | 3;
     if ((p.stars[levelId] ?? 0) < s) p.stars[levelId] = s;
-    this.store.saveLocal(this.save);
+    this.persist();
   }
 
   private enqueueClear(entry: PendingClear): void {
@@ -520,7 +579,7 @@ export class SaveManager {
       // pvpDeck is local-only (never synced to server at all); preserve from local on every reconcile.
       ...(local.pvpDeck ? { pvpDeck: local.pvpDeck } : {}),
     };
-    this.store.saveLocal(this.save);
+    this.persist();
   }
 }
 

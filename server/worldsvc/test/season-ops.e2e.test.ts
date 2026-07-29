@@ -19,6 +19,7 @@ import { WorldService } from '../src/service';
 import { startHttpApi } from '../src/httpApi';
 import type { WorldMailClient, WorldMailContent } from '../src/mailClient';
 import type { WorldSocialsvcClient, SocialsvcChannel, FamilyMembership, FamilySummary } from '../src/socialsvcClient';
+import type { WorldRedis } from '../src/redis';
 
 const URI = process.env.NW_MONGO_URI ?? 'mongodb://127.0.0.1:27017/?replicaSet=rs0';
 const DB = 'nw_world_seasonops_test';
@@ -280,6 +281,44 @@ describe.skipIf(!mongo)('worldsvc season ops e2e', () => {
     const [aa] = await socialsvc.getFamiliesByIds([familyId(W, 'AA')]);
     expect(aa).toMatchObject({ prosperity: 0 });
     expect(aa!.sectId).toBeUndefined();
+  });
+
+  // Regression for the 2026-07-29 audit fix: resetSeason wiped tiles/marches/occupations/stationed in
+  // Mongo but never cleared the ADR-051 occ/cover Redis hashes — a recycled worldId could inherit stale
+  // spatial-index entries (a parked-team `leaveAt` is MAX_SAFE_INTEGER, so it never naturally expires)
+  // that affect a brand-new season's P2/P3b encounter/interception checks.
+  it('reset: clears the occ/cover Redis spatial indexes for the worldId being recycled', async () => {
+    const hashes = new Map<string, Map<string, string>>();
+    const fakeRedis: WorldRedis = {
+      async publish() { return 0; },
+      async hset(key, field, value) {
+        let h = hashes.get(key);
+        if (!h) { h = new Map(); hashes.set(key, h); }
+        h.set(field, value);
+        return 1;
+      },
+      async hget(key, field) { return hashes.get(key)?.get(field) ?? null; },
+      async hdel() { return 0; },
+      async del(key) { return hashes.delete(key) ? 1 : 0; },
+      async quit() { return 'OK'; },
+    };
+    await fakeRedis.hset(`world:${W}:occ`, 'tile-1', '{"kind":"stationed"}');
+    await fakeRedis.hset(`world:${W}:cover`, 'tile-2', '{"a":{"kind":"tower"}}');
+
+    // seed() creates its own `svc` wired with redis:null — build a second WorldService sharing the same
+    // Mongo collections + freshly-seeded socialsvc/families but with `fakeRedis`, purely to exercise the
+    // Redis cleanup path resetSeason should now take.
+    await seed('active');
+    const redisSvc = new WorldService({
+      cols: m.collections, redis: fakeRedis, socialsvc, mapW: SLG_MAP_W, mapH: SLG_MAP_H, mail: fakeMail, now: () => 1_700_000_000_000,
+    });
+    await redisSvc.settleSeason(W);
+    expect(hashes.has(`world:${W}:occ`)).toBe(true);
+    expect(hashes.has(`world:${W}:cover`)).toBe(true);
+
+    await redisSvc.resetSeason(W);
+    expect(hashes.has(`world:${W}:occ`)).toBe(false);
+    expect(hashes.has(`world:${W}:cover`)).toBe(false);
   });
 
   it('reset: re-stamps mapW/mapH from current process config (an enlarged map is adopted by recycled regions)', async () => {

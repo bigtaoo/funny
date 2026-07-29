@@ -40,6 +40,8 @@ export type CardSceneTab = 'list' | 'skins';
 export interface CardCallbacks {
   onBack(): void;
   getSave(): SaveData;
+  /** Subscribe to SaveManager writes; re-renders this scene when a concurrently-mounted peer scene changes the save (wallet/inventory/...). Push the returned unsub onto `unsubs`. */
+  onSaveChanged?(listener: () => void): () => void;
   /** SLG per-card state (troops/injury/teamId); undefined when outside SLG. */
   getCardState?(): Record<string, CardSLGState> | undefined;
   /** Human-readable name for an SLG team id; undefined when outside SLG or the team can't be resolved. */
@@ -246,6 +248,7 @@ export class CardSceneBase {
       const next = wheelScrollY(this.scrollRegionTop, this.scrollRegionBottom, y, deltaY, this.scrollY, this.maxScroll);
       if (next !== null) { this.scrollY = next; this.scrollDirty = true; }
     }));
+    if (cb.onSaveChanged) this.unsubs.push(cb.onSaveChanged(() => this.render()));
   }
 
   private build(): void {

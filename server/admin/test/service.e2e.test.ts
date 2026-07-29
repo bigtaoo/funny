@@ -4,6 +4,7 @@
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import { createAdminMongo, type AdminMongo } from '../src/db';
 import { AdminService, AdminError, type Actor } from '../src/service';
+import { LOGIN_WINDOW_MS } from '../src/service/base';
 import { seedSuperAdmin } from '../src/seed';
 import type {
   AntiCheatClient,
@@ -152,6 +153,26 @@ describe.skipIf(!mongo)('admin service e2e', () => {
     await expect(svc.authenticate('root', 'rootpass')).rejects.toMatchObject({ status: 429 });
     // Case/whitespace normalization maps to the same rate-limit key.
     await expect(svc.authenticate(' ROOT ', 'rootpass')).rejects.toMatchObject({ status: 429 });
+  });
+
+  // Regression for the 2026-07-29 audit fix: `loginAttempts` is keyed by attacker-controlled username with
+  // no account-existence check before the table is touched — failed logins against nonexistent usernames
+  // (never hit the `.delete()` on success, see the test above) used to grow this map without bound for
+  // the life of the process. maybeSweepLoginAttempts now piggybacks a cleanup pass onto normal login
+  // traffic once the window has fully elapsed.
+  it('loginAttempts sweeps out stale entries (attacker-controlled usernames) once their window has elapsed', async () => {
+    for (let i = 0; i < 20; i++) {
+      await expect(svc.authenticate(`nosuchuser-${i}`, 'wrong')).rejects.toMatchObject({ status: 401 });
+    }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const attempts = (svc as any).loginAttempts as Map<string, unknown>;
+    expect(attempts.size).toBeGreaterThanOrEqual(20);
+
+    t += LOGIN_WINDOW_MS + 1000; // past the window — every entry above is now stale and unlocked
+    // Any call re-enters authenticate() and triggers maybeSweepLoginAttempts (runs at most once per
+    // LOGIN_WINDOW_MS); this one also adds exactly one fresh entry for 'nosuchuser-999'.
+    await expect(svc.authenticate('nosuchuser-999', 'wrong')).rejects.toMatchObject({ status: 401 });
+    expect(attempts.size).toBe(1);
   });
 
   it('support initiates + ops approves personal compensation (normal) → auto-executes and delivers mail', async () => {
@@ -306,6 +327,34 @@ describe.skipIf(!mongo)('admin service e2e', () => {
     expect(mail.sent[0]!.dispatchKey).toBe(dk);
   });
 
+  // Regression for the 2026-07-29 audit fix: retryTicket used to read status==='failed' and call
+  // execute() with no atomic claim in between (unlike approveTicket, which does a status CAS before
+  // execute()) — two concurrent retryTicket calls (a double-click) would both pass the check and both
+  // call mail.send. The dispatchKey makes actual mail delivery idempotent server-side, but this still
+  // wasted a redundant network call and double-wrote the audit log; now only one call wins the claim.
+  it('retryTicket: concurrent double-click only executes once, the loser gets 409', async () => {
+    const cs = await actorOf(svc, 'csr');
+    const root = await actorOf(svc, 'root');
+    const t1 = await svc.initiateTicket(cs, {
+      scope: 'single',
+      target: { publicId: '123456789' },
+      mail: { subject: 's', body: 'b', attachments: [{ kind: 'coins', count: 10 }], expireDays: 30 },
+      reason: 'r',
+    });
+    mail.failNext = true;
+    await svc.approveTicket(root, t1.id); // → failed
+    mail.sent.length = 0; // isolate the retry attempts below
+
+    const [r1, r2] = await Promise.allSettled([svc.retryTicket(root, t1.id), svc.retryTicket(root, t1.id)]);
+    const fulfilled = [r1, r2].filter((r) => r.status === 'fulfilled');
+    const rejected = [r1, r2].filter((r) => r.status === 'rejected');
+    expect(fulfilled).toHaveLength(1);
+    expect(rejected).toHaveLength(1);
+    expect((rejected[0] as PromiseRejectedResult).reason).toMatchObject({ status: 409 });
+    expect(mail.sent).toHaveLength(1); // exactly one mail.send call, not two
+    expect((await m.collections.compTickets.findOne({ _id: t1.id }))!.status).toBe('executed');
+  });
+
   it('audit visibility: super-admin sees all entries, ops sees only their own', async () => {
     const root = await actorOf(svc, 'root');
     const ops = await actorOf(svc, 'opsy');
@@ -404,6 +453,24 @@ describe.skipIf(!mongo)('admin service e2e', () => {
     const points = await svc.trend({ metric: 'online' });
     expect(points).toHaveLength(2);
     expect(points[0]!.value).toBe(5);
+  });
+
+  // Regression for the 2026-07-29 audit fix: analyticsSummary used to run one unlimited
+  // `find({metric,ts:{$gte}}).toArray()` per METRIC_KEY, pulling every last-24h snapshot into app memory
+  // just to reduce() avg/peak/samples. Replaced with a single $group aggregation across all metrics —
+  // this asserts the aggregated numbers are still correct (avg/peak/samples), not just "doesn't throw".
+  it('analyticsSummary aggregates avg/peak/samples per metric over the last 24h', async () => {
+    await svc.sampleOnce(); // online=5, queue=2, rooms=1, gameInstances=1, gameLoad=3
+    await svc.sampleOnce(); // same stub values again
+    const summary = await svc.analyticsSummary();
+    expect(summary.last24h.online).toEqual({ avg: 5, peak: 5, samples: 2 });
+    expect(summary.last24h.queue).toEqual({ avg: 2, peak: 2, samples: 2 });
+    expect(summary.last24h.gameLoad).toEqual({ avg: 3, peak: 3, samples: 2 });
+    // A metric with zero samples in the window reports zeroed-out stats, not undefined/NaN.
+    const untouched = await m.collections.metricSnapshots.deleteMany({});
+    expect(untouched.deletedCount).toBeGreaterThan(0);
+    const empty = await svc.analyticsSummary();
+    expect(empty.last24h.online).toEqual({ avg: 0, peak: 0, samples: 0 });
   });
 
   it('account management: create account + cannot disable/demote self', async () => {

@@ -339,11 +339,41 @@ export interface DuelInvited {
 
 /**
  * Pushed back to the inviter on the unhappy path only (accept never reaches here — see DuelInvited doc).
- * reason: declined | timeout | offline | not_found.
+ * reason: declined | timeout | offline | not_found | lost (matchsvc restarted and this outstanding sent
+ * invite could not be recovered — see PreMatchLost below; the inviter's client treats it the same as any
+ * other unhappy-path cancellation).
  */
 export interface DuelCancelled {
   inviteId: string;
   reason: string;
+}
+
+/**
+ * ── matchsvc restart-safety (matchsvc-prematch-persist, 2026-07-29) ──────────
+ * matchsvc's pre-match state (friendly rooms / ranked queue / outstanding "切磋" invites) is rehydrated
+ * from Redis on startup (see server/matchsvc/src/rehydrate.ts). These two pushes are matchsvc's active
+ * notification to affected accounts once rehydrate completes, instead of silently waiting for the
+ * client's own (much longer) timeout to notice nothing is happening server-side.
+ *
+ * Ranked-queue entry survived the restart (rehydrated from `nw:queue`) — a refresh confirming the
+ * "searching…" spinner is still backed by a real queue entry. No fields: it carries no new information,
+ * only the fact that matchsvc is alive and this account is still queued (mirrors RoomState/DuelInvited,
+ * which are already re-pushed verbatim on rehydrate/reconnect rather than needing new fields).
+ */
+export interface QueueState {
+}
+
+/**
+ * A player's pre-match state could not be recovered after a matchsvc restart — created and lost before
+ * ever reaching Redis (the write races an immediate crash), or Redis itself was unavailable/flushed.
+ * Without this push the client would wait indefinitely on a spinner/banner matchsvc has no memory of.
+ * context identifies what was lost so the client can react appropriately: "room" (bounce to the room
+ * picker), "queue" (silently re-submit ranked matchmaking — self-healing, no player-visible interruption),
+ * "duel" (clear the pending invite banner) — the same three domains as the rehydrate keyspaces
+ * (nw:room* /nw:queue/nw:duel*).
+ */
+export interface PreMatchLost {
+  context: string;
 }
 
 /**
@@ -455,6 +485,8 @@ export interface ServerMsg {
   matchBot?: MatchBot | undefined;
   duelInvited?: DuelInvited | undefined;
   duelCancelled?: DuelCancelled | undefined;
+  queueState?: QueueState | undefined;
+  preMatchLost?: PreMatchLost | undefined;
 }
 
 /** One Envelope per frame on the wire */
@@ -3105,6 +3137,86 @@ export const DuelCancelled: MessageFns<DuelCancelled> = {
   },
 };
 
+function createBaseQueueState(): QueueState {
+  return {};
+}
+
+export const QueueState: MessageFns<QueueState> = {
+  encode(_: QueueState, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    return writer;
+  },
+
+  decode(input: BinaryReader | Uint8Array, length?: number): QueueState {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    const end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBaseQueueState();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+      }
+      if ((tag & 7) === 4 || tag === 0) {
+        break;
+      }
+      reader.skip(tag & 7);
+    }
+    return message;
+  },
+
+  create<I extends Exact<DeepPartial<QueueState>, I>>(base?: I): QueueState {
+    return QueueState.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<QueueState>, I>>(_: I): QueueState {
+    const message = createBaseQueueState();
+    return message;
+  },
+};
+
+function createBasePreMatchLost(): PreMatchLost {
+  return { context: "" };
+}
+
+export const PreMatchLost: MessageFns<PreMatchLost> = {
+  encode(message: PreMatchLost, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    if (message.context !== "") {
+      writer.uint32(10).string(message.context);
+    }
+    return writer;
+  },
+
+  decode(input: BinaryReader | Uint8Array, length?: number): PreMatchLost {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    const end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBasePreMatchLost();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1: {
+          if (tag !== 10) {
+            break;
+          }
+
+          message.context = reader.string();
+          continue;
+        }
+      }
+      if ((tag & 7) === 4 || tag === 0) {
+        break;
+      }
+      reader.skip(tag & 7);
+    }
+    return message;
+  },
+
+  create<I extends Exact<DeepPartial<PreMatchLost>, I>>(base?: I): PreMatchLost {
+    return PreMatchLost.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<PreMatchLost>, I>>(object: I): PreMatchLost {
+    const message = createBasePreMatchLost();
+    message.context = object.context ?? "";
+    return message;
+  },
+};
+
 function createBaseMarchUpdate(): MarchUpdate {
   return { marchId: "", kind: "", fromTile: "", toTile: "", arriveAt: 0, status: "" };
 }
@@ -3838,6 +3950,8 @@ function createBaseServerMsg(): ServerMsg {
     matchBot: undefined,
     duelInvited: undefined,
     duelCancelled: undefined,
+    queueState: undefined,
+    preMatchLost: undefined,
   };
 }
 
@@ -3917,6 +4031,12 @@ export const ServerMsg: MessageFns<ServerMsg> = {
     }
     if (message.duelCancelled !== undefined) {
       DuelCancelled.encode(message.duelCancelled, writer.uint32(210).fork()).join();
+    }
+    if (message.queueState !== undefined) {
+      QueueState.encode(message.queueState, writer.uint32(218).fork()).join();
+    }
+    if (message.preMatchLost !== undefined) {
+      PreMatchLost.encode(message.preMatchLost, writer.uint32(226).fork()).join();
     }
     return writer;
   },
@@ -4128,6 +4248,22 @@ export const ServerMsg: MessageFns<ServerMsg> = {
           message.duelCancelled = DuelCancelled.decode(reader, reader.uint32());
           continue;
         }
+        case 27: {
+          if (tag !== 218) {
+            break;
+          }
+
+          message.queueState = QueueState.decode(reader, reader.uint32());
+          continue;
+        }
+        case 28: {
+          if (tag !== 226) {
+            break;
+          }
+
+          message.preMatchLost = PreMatchLost.decode(reader, reader.uint32());
+          continue;
+        }
       }
       if ((tag & 7) === 4 || tag === 0) {
         break;
@@ -4214,6 +4350,12 @@ export const ServerMsg: MessageFns<ServerMsg> = {
       : undefined;
     message.duelCancelled = (object.duelCancelled !== undefined && object.duelCancelled !== null)
       ? DuelCancelled.fromPartial(object.duelCancelled)
+      : undefined;
+    message.queueState = (object.queueState !== undefined && object.queueState !== null)
+      ? QueueState.fromPartial(object.queueState)
+      : undefined;
+    message.preMatchLost = (object.preMatchLost !== undefined && object.preMatchLost !== null)
+      ? PreMatchLost.fromPartial(object.preMatchLost)
       : undefined;
     return message;
   },
