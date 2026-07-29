@@ -69,6 +69,14 @@ export interface OrderDoc {
   refundCoins?: number; // duplicate refund coins computed by meta in the delivery callback (credited on delivered)
   deliveredAt?: number;
   ts: number;
+  /**
+   * CAS guard (base.ts's claimOrderResume / orders.ts's healOrderRefund): set the instant a caller claims
+   * the exclusive right to run this order's pending side effect (resume a stale 'charged' grant, or credit
+   * a missed delivery refund). Without it, two concurrent stale-claim healers both pass their isStaleClaim
+   * + ledger-absence reads (neither has credited yet) and both proceed to credit/applySubscription —
+   * a double-grant. Only the caller whose findOneAndUpdate matches (field still absent) proceeds.
+   */
+  healClaimedAt?: number;
 }
 
 /** Top-up receipt (idempotency key receiptId + duplicate coin prevention). */
@@ -88,6 +96,12 @@ export interface RechargeDoc {
   usdCents?: number;
   /** Set once this receipt has been refunded (paddleRefund), so a re-delivered refund event is a no-op. */
   refundedAt?: number;
+  /**
+   * CAS guard (recharge.ts's healRechargeCredit): set the instant a caller claims the exclusive right to
+   * heal this stale receipt's missed credit. Without it, two concurrent stale-claim healers both pass the
+   * isStaleClaim + ledger-absence reads and both call credit() — a double-grant.
+   */
+  healedAt?: number;
   /**
    * Present only for non-coin receipts (subscription cards / starter packs, verifyNonCoinReceipt) —
    * absent for ordinary coin recharges. Lets a replayed receiptId be checked against the caller's
@@ -142,6 +156,12 @@ export interface PromoRedemptionDoc {
   code: string;
   coinsGranted: number;
   ts: number;
+  /**
+   * CAS guard (promo.ts's healOrRejectPromoReplay): set the instant a caller claims the exclusive right to
+   * heal this stale redemption's missed credit. Without it, two concurrent stale-claim healers both pass
+   * the isStaleClaim + ledger-absence reads and both call credit() — a double-grant.
+   */
+  healedAt?: number;
 }
 
 /**

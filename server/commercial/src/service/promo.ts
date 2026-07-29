@@ -110,7 +110,11 @@ export function PromoMixin<TBase extends CommercialBaseCtor>(Base: TBase): TBase
      * The ledger entry credit() writes is keyed on orderId=redemptionId, so its absence reliably means the
      * credit never landed; heal it instead of erroring (verify-and-heal, matches healRechargeCredit).
      * Gated by isStaleClaim (base.ts): within the grace window this just reports PROMO_ALREADY_USED like
-     * before, so concurrent duplicate submissions (still in-flight) don't race the true winner.
+     * before, so concurrent duplicate submissions (still in-flight) don't race the true winner. Past the
+     * window, the ledger-absence read is still just a plain read — two stale-claim healers landing together
+     * would both see no ledger entry and both credit(). The `healedAt` CAS on the redemption doc closes
+     * that: only the caller whose findOneAndUpdate matches proceeds to credit(); the loser reports
+     * PROMO_ALREADY_USED, same as any other contested replay of an already-legitimately-redeemed code.
      */
     private async healOrRejectPromoReplay(
       redemption: PromoRedemptionDoc,
@@ -120,6 +124,11 @@ export function PromoMixin<TBase extends CommercialBaseCtor>(Base: TBase): TBase
       if (!this.isStaleClaim(redemption.ts)) return { ok: false, error: 'PROMO_ALREADY_USED' };
       const landed = await this.cols.ledger.findOne({ accountId: redemption.accountId, orderId: redemptionId });
       if (landed) return { ok: false, error: 'PROMO_ALREADY_USED' };
+      const claimed = await this.cols.promoRedemptions.findOneAndUpdate(
+        { _id: redemptionId, healedAt: { $exists: false } },
+        { $set: { healedAt: this.now() } },
+      );
+      if (!claimed) return { ok: false, error: 'PROMO_ALREADY_USED' };
       const coinsAfter = await this.credit(redemption.accountId, redemption.coinsGranted, 'promo', {
         orderId: redemptionId,
         clientPlatform,

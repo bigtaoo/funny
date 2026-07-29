@@ -743,6 +743,7 @@ export const en: Record<TranslationKey, string> = {
   'friends.duel.offline': 'Friend is offline',
   'friends.duel.notFound': 'Player not found',
   'friends.duel.lost': 'Duel invite lost — please try again',
+  'friends.duel.rateLimited': 'Too many duel invites — please wait a moment',
   // Global toast (any scene, P0-8): the in-scene banner (friends.duelInviteBanner) only shows while
   // sitting on FriendsScene, so this fires everywhere else the invite arrives.
   'friends.duel.invitedToast': '{name} challenged you to a duel — check Friends',

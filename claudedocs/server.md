@@ -282,3 +282,14 @@ commercial 此前完全没有 Redis 依赖，本次新增：`config.ts` 补 `NW_
 - **确定性**：同 seed+同双方阵容+同引擎代码，只是换了执行线程——`siegeWorkerPool.test.ts` 直接断言 `pool.submit(input)` 的结果与主线程 `runSiegeBattleSync(input)` 逐字段相等；原有 `siege`/`base-siege`/`stronghold`/`passage`/`nation-bonus`/`field-encounter` 等 e2e 断言值全部不变（执行位置改动，非数值改动）。
 - **新增测试** `worldsvc/test/siegeWorkerPool.test.ts`（10 例）+ 两个测试 fixture worker（`test/fixtures/{crashWorker,hangWorker}.ts`，仅测试用，让崩溃/挂起可确定性复现）：基本调度（提交→结果、单 worker 排队多任务、坏输入 reject 不拖垮 worker）、崩溃自愈（单/双 worker 各自崩溃后 `pool.size` 不变、坏 worker 只影响自己在飞的任务）、任务超时强制替换、`close()` 语义、以及"白拿的好处"验证——6 个满板大规模战斗（`SIEGE_SYNTH_ARMY_MAX_TROOPS` 双方）在 6-worker 池上 warm-up 后并发耗时 vs 同款输入主线程串行 `runSiegeBattleSync` 循环耗时，断言并行版本快过串行版本 30% 以上（真实跨核，而非池内排队假并行）——这也印证了 `scheduler.ts` 的 `Promise.allSettled` 现在能真正跨核并行多场攻城，不再是同线程抢时间片。
 - **验证**：`worldsvc` 47 文件/360 测试全绿（含新增 10 例）；`tsc -b` 全 13 个 server 包全绿。
+
+## 三日重构复核 + 追加修复（2026-07-29，audit-followup-fixes-0729）
+
+对本轮（server-logic-audit）+ 同日三个跟进分支（matchsvc 持久化、worldsvc 查询优化、siegeEngine worker 池）+ gateway 限流做了一次跨客户端/服务器、服务器/服务器协作一致性的复核。完整发现清单见 [`SERVER_LOGIC_AUDIT_2026-07-29.md`](../design/game/SERVER_LOGIC_AUDIT_2026-07-29.md) "二次复核" 节；这里只记落地要点：
+
+- **装备复制竞态**（本轮表格 #1 的修复本身不完整）：`equipEquipment` 补的占用检查是读后写，并发装到两张卡的竞态没堵上。`CardInstanceDoc` 新增 `gearInstanceIds`（`gear` 非空值镜像）+ 唯一多键索引，Mongo 层保证同一 instanceId 不会同时出现在两个文档里；写入捕获 E11000 转译为 `EQUIP_IN_USE`。稀疏索引 + 空数组不占索引项，历史文档自愈无需迁移。
+- **commercial 资金双发竞态**（本轮表格 #2 的修复本身不完整）：`isStaleClaim` 宽限窗口只防"仍在飞的正常请求"，过了窗口的两个并发治愈请求仍能都读到"未入账"再都 credit。`RechargeDoc`/`OrderDoc`/`PromoRedemptionDoc` 各补 CAS 标记字段（`healedAt`/`healClaimedAt`），治愈前先原子声明，只有赢家才继续 credit/续做；`subscriptionCardBuy`/`starterBuy` growth 共享新增的 `CommercialServiceBase.claimOrderResume()`。
+- **siegeWorkerPool 任务超时计时器原来在 `submit()` 入队时就武装**，而非任务真正派发给 worker 时——高负载下排队超过 `taskTimeoutMs` 的任务一旦真正开始跑就永久失去挂死检测（一次性 `setTimeout` 早已在排队期间空耗掉，且从不重新武装），卡死的 worker 再也不会被替换。改为在 `dispatch()`（任务真正分配给空闲 worker 那一刻）才武装计时器；`PendingTask.timer` 相应改为可空。新增回归测试 + fixture `test/fixtures/slowThenHangWorker.ts`（对修复前代码回退验证过确实会失败，不是空转通过的假回归）。
+- **gateway `rate_limited` 缺 i18n 分支**：`FriendsScene` 落进默认档位显示"找不到该玩家"（比通用兜底更误导）；补分支 + 三语言文案。
+
+验证同上（13 包 tsc -b 全绿；commercial/metaserver/worldsvc/client 全量 vitest 全绿）。

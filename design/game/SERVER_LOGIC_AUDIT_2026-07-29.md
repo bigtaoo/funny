@@ -56,3 +56,17 @@
 | admin | 45 |
 | auctionsvc | 77 |
 | botsvc | 40 |
+
+## 二次复核：两处"修复"本身仍有并发漏洞（2026-07-29 追加，audit-followup-fixes-0729）
+
+对本轮 + 同日另外三个跟进分支（matchsvc 持久化、worldsvc 查询优化、siegeEngine worker 池、gateway 限流）做了一次跨客户端/服务器、服务器/服务器协作一致性的复核（6 个方向并行审计，逐条对照实际代码而非只读文档）。多数结论是"文档描述与代码一致，未发现问题"；发现 4 处需要修的问题，其中 2 处是本文档表格里已经标记"已修复"的条目本身仍不完整：
+
+- **表格 #1（装备复制）仍有竞态**：`equipEquipment` 补的 `isEquipped()` 检查是"读后写"（check-then-act），检查（`cardInstances.findOne`）到写入（`updateOne`）之间没有原子性——同一个 `instanceId` 被并发装到两张不同卡上时，两个请求都能在对方写入前通过"未被占用"检查，复现原本要修的复制 bug。修复：`CardInstanceDoc` 新增 `gearInstanceIds`（`gear` 的非空值镜像，随 `gear` 同步写入）+ 唯一多键索引（`{gearInstanceIds:1}, {unique:true, sparse:true}`）——Mongo 层保证同一 instanceId 不会同时出现在两个文档的这个数组里，`equipEquipment` 写入时捕获 E11000 转译为既有的 `EQUIP_IN_USE`。稀疏索引 + 空数组不产生索引项，历史未触碰过的 `CardInstanceDoc`（无此字段）在下次被 `equipEquipment` 写入时自愈，无需迁移脚本（同 march bbox 的"自愈不迁移"惯例）。
+- **表格 #2（commercial 资金丢失）healRechargeCredit 等的宽限窗口本身能被绕过双发**：`isStaleClaim` 只保证"仍在飞的正常请求不被误判为丢失"，但过了宽限窗口后，`healRechargeCredit`/`healOrderRefund`/`healOrRejectPromoReplay`/`subscriptionCardBuy`/`starterBuy` growth 分支各自的"查 ledger 无记录 → 调用 credit()"仍是读后写，两个都过了窗口的并发请求可以都读到"未入账"再都调用 `credit()`，双发金币/双延订阅——是原本要修的资金问题的镜像版本。修复：`RechargeDoc`/`OrderDoc`/`PromoRedemptionDoc` 各补一个 CAS 标记字段（`healedAt`/`healClaimedAt`），治愈/续做前先 `findOneAndUpdate({_id, 标记字段:{$exists:false}}, {$set:{标记字段:now}})`，只有赢得这次原子声明的调用方才继续执行 `credit()`/`applySubscription()`；`subscriptionCardBuy`（monthly/year card）与 `starterBuy` growth 分支共享新增的 `CommercialServiceBase.claimOrderResume()` 助手（此前完全没有 ledger 或任何检查就直接续做，风险最大）。
+
+另外两处独立发现：
+
+- **siegeWorkerPool 排队任务的超时保护在 `submit()` 时就武装**（而非任务真正被派发给 worker 时），单一次 `setTimeout` 用掉后不会重新武装——高负载下排队超过 `taskTimeoutMs` 的任务一旦真正开始跑就永久失去挂死检测，卡死的 worker 再也不会被替换（这正是这个池设计上要处理的高负载场景）。修复：把计时器的武装从 `submit()` 移到 `dispatch()`（任务真正分配给空闲 worker 的那一刻），`PendingTask.timer` 相应改为可空。新增回归测试 `worldsvc/test/siegeWorkerPool.test.ts`（"dispatch-time arming regression"）+ 专用 fixture `test/fixtures/slowThenHangWorker.ts`：让若干正常任务先在单 worker 上排队耗掉超过 `taskTimeoutMs` 的时间，验证目标任务在真正派发后仍能获得完整的挂死保护窗口（对修复前代码回退验证过：该用例确实会失败/挂起，不是空转通过的假回归测试）。
+- **gateway 限流的 `rate_limited` 拒绝原因没有对应 i18n 分支**：`friends.duel.rateLimited` 缺失时，`FriendsScene.applyDuelCancelled` 落进默认档位显示"找不到该玩家"——比通用兜底文案更糟，是主动误导。修复：补 `rate_limited` 分支 + 三语言 `friends.duel.rateLimited` 文案。
+
+**验证**：13 个 server 包 `tsc -b` 全绿；client `tsc --noEmit -p tsconfig.test.json` + `webpack --mode production` 全绿。commercial 144/144、metaserver 727/727、worldsvc 370/370（含新增 1 例回归测试）全量 vitest 全绿；client 843/843（118 文件）全量 vitest 全绿。回归测试新增于 `worldsvc/test/siegeWorkerPool.test.ts`（siege 池），其余三处修复靠既有 e2e 套件（`metaserver/test/equipment.e2e.test.ts` 的"equip an instance already equipped on a DIFFERENT card"用例、`commercial` 全量套件、client 全量套件）验证未破坏既有行为——未新增针对性的并发复现测试（并发双发本身难以在单进程 vitest 里稳定复现，CAS 逻辑的正确性靠代码走查而非新测试断言）。

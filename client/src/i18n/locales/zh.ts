@@ -752,6 +752,7 @@ export const zh = {
   'friends.duel.notFound': '找不到该玩家',
   // 服务器重启后原有切磋邀请丢失（matchsvc-prematch-persist），提示邀请方重新发起。
   'friends.duel.lost': '切磋邀请已失效，请重新发起',
+  'friends.duel.rateLimited': '切磋邀请过于频繁，请稍后再试',
   // Global toast (any scene, P0-8): the in-scene banner (friends.duelInviteBanner) only shows while
   // sitting on FriendsScene, so this fires everywhere else the invite arrives.
   'friends.duel.invitedToast': '{name} 邀请你切磋，去好友页查看',
