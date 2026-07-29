@@ -707,6 +707,44 @@ describe('SaveManager.subscribe (2026-07-29)', () => {
     expect(fired).toBe(3); // unsubscribed listener no longer called
   });
 
+  it('fires on setFlag/equipTitle/equipAvatar (optimisticEquip) even fully offline (no api configured — the local write is the only persist(), no background network confirmation to race)', () => {
+    const store = new LocalSaveStore(new MemStorage());
+    store.saveLocal(makeNewSave('a', 1));
+    const mgr = new SaveManager({ store }); // no api → online() is false
+
+    let fired = 0;
+    mgr.subscribe(() => { fired += 1; });
+
+    mgr.setFlag('seen_intro', true);
+    expect(fired).toBe(1);
+    expect(mgr.getFlag('seen_intro')).toBe(true);
+
+    mgr.equipTitle('champion');
+    expect(fired).toBe(2);
+    expect(mgr.get().equipped.title).toBe('champion');
+
+    mgr.equipAvatar('preset:3');
+    expect(fired).toBe(3);
+  });
+
+  it('fires on spendStaminaForLevel (both the successful-deduct and the insufficient-balance-but-regen-persisted paths)', () => {
+    const store = new LocalSaveStore(new MemStorage());
+    const local = makeNewSave('a', 1);
+    local.stamina = { current: 50, regenAt: 0 };
+    store.saveLocal(local);
+    const mgr = new SaveManager({ store }); // offline → deduction queues instead of hitting the network
+
+    let fired = 0;
+    mgr.subscribe(() => { fired += 1; });
+
+    expect(mgr.spendStaminaForLevel('ch1_lv1', 10)).toBe(true);
+    expect(fired).toBe(1);
+
+    // Insufficient balance still persists the regen catch-up (see regenStamina doc comment) → still notifies.
+    expect(mgr.spendStaminaForLevel('ch1_lv1', 10_000)).toBe(false);
+    expect(fired).toBe(2);
+  });
+
   it('multiple subscribers are all notified independently', () => {
     const store = new LocalSaveStore(new MemStorage());
     store.saveLocal(makeNewSave('a', 1));
