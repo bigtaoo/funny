@@ -54,12 +54,12 @@ export class ApiClientBase {
   }
 
   // ── Internal ────────────────────────────────────────────────
-  protected async post<T>(path: string, body: unknown): Promise<T> {
-    return this.request<T>('POST', path, body);
+  protected async post<T>(path: string, body: unknown, extraHeaders?: Record<string, string>): Promise<T> {
+    return this.request<T>('POST', path, body, extraHeaders);
   }
 
-  protected async request<T>(method: string, path: string, body?: unknown): Promise<T> {
-    const res = await this.fetchRaw(method, path, body);
+  protected async request<T>(method: string, path: string, body?: unknown, extraHeaders?: Record<string, string>): Promise<T> {
+    const res = await this.fetchRaw(method, path, body, extraHeaders);
     const json = (await res.json()) as ApiResp<T>;
     if (!json.ok) {
       log.error(`${method} ${path} -> ${res.status} ${json.error.code}`, json.error.message);

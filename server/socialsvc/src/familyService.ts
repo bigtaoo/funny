@@ -11,7 +11,10 @@ import {
   orgNameWidth,
   SlgError,
   familyProsperity,
+  censorChat,
   type FamilyRole,
+  type ChatRegion,
+  type WordlistCache,
 } from '@nw/shared';
 import type { SocialCollections, FamilyDoc, FamilyMemberDoc, FamilyMessageDoc, FamilyJoinRequestDoc } from './db';
 import type { SocialGatewayClient } from './gatewayClient';
@@ -96,6 +99,8 @@ export interface FamilyServiceDeps {
   meta?: SocialMetaClient;
   /** Used to mail the applicant when their join request is rejected (SS3.x). Omitted in tests that don't exercise that path. */
   mail?: MailService;
+  /** Content-moderation word list overlay cache (CONTENT_MODERATION_DESIGN.md §3.2); omit = built-in REGION_WORDLISTS only. */
+  wordlists?: WordlistCache;
 }
 
 /** In-process monotonic sequence number to prevent message ID collisions within the same millisecond. */
@@ -191,6 +196,7 @@ export class FamilyService {
     leaderId: string,
     name: string,
     tag: string,
+    region: ChatRegion = 'global',
   ): Promise<FamilyDetailView> {
     const cols = this.deps.cols;
     const now = this.deps.now();
@@ -202,6 +208,9 @@ export class FamilyService {
     if (!/^[A-Z0-9]{2,5}$/.test(tagUpper)) throw new SlgError('BAD_REQUEST');
     const nameWidth = name ? orgNameWidth(name) : 0;
     if (nameWidth < ORG_NAME_WIDTH_MIN || nameWidth > ORG_NAME_WIDTH_MAX) throw new SlgError('BAD_REQUEST');
+    // CONTENT_MODERATION_DESIGN.md CM5: family name is long-lived/public like a display name, not
+    // ephemeral chat — a hit rejects creation outright rather than persisting a masked name.
+    if (censorChat(name, region, this.deps.wordlists).hit) throw new SlgError('BAD_REQUEST');
 
     const fid = makeFamilyId(tagUpper);
 
@@ -438,12 +447,16 @@ export class FamilyService {
     accountId: string,
     senderName: string,
     body: string,
+    region: ChatRegion = 'global',
   ): Promise<FamilyMessageView> {
     const cols = this.deps.cols;
 
     const mem = await cols.familyMembers.findOne({ _id: accountId });
     if (!mem) throw new SlgError('NOT_IN_FAMILY');
     if (!body || body.length > FAMILY_MSG_BODY_MAX) throw new SlgError('BAD_REQUEST');
+    // CONTENT_MODERATION_DESIGN.md CM5: family chat is ephemeral like DM/world chat — mask on hit,
+    // never reject delivery.
+    body = censorChat(body, region, this.deps.wordlists).text;
 
     const ts = this.deps.now();
     const seq = ++msgSeq;

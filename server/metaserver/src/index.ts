@@ -1,6 +1,6 @@
 // metaserver process bootstrap: connect Mongo → buildApp → listen.
 // Reverse proxy forwards /api/* to this process (SERVER_API.md §0).
-import { createMongo, createLogger, startHeartbeat, FeatureFlagCache, fetchInternalJson, connectActiveMatchRedis, type JwtConfig } from '@nw/shared';
+import { createMongo, createLogger, startHeartbeat, FeatureFlagCache, WordlistCache, fetchInternalJson, connectActiveMatchRedis, type JwtConfig } from '@nw/shared';
 import { loadMetaEnv } from './config.js';
 import { buildApp, SPEC_PATH } from './app.js';
 import { HttpGatewayClient } from './gatewayClient.js';
@@ -72,6 +72,23 @@ async function main() {
     onError: (e) => log.warn('flag refresh failed (keeping cache)', { err: (e as Error).message }),
   });
 
+  // Content-moderation word list overlay cache (CONTENT_MODERATION_DESIGN.md §3.2): polls admin for raw
+  // per-region overlay docs and merges them onto REGION_WORDLISTS locally via censorChat. Same
+  // NW_ADMIN_INTERNAL_URL gotcha as `flags` above — unset → overlay stays empty, built-in word list still enforced.
+  const wordlists = new WordlistCache({
+    fetchAll: async () => {
+      if (!adminUrl) return [];
+      const r = await fetchInternalJson<{ items?: unknown[] }>(`${adminUrl}/admin/internal/moderation-wordlists`, {
+        caller: 'meta',
+        key: env.internalKey,
+        label: '/admin/internal/moderation-wordlists',
+      });
+      if (!r.ok) throw new Error(`admin moderation-wordlists ${r.status}${r.error ? ` (${r.error})` : ''}`);
+      return Array.isArray(r.body?.items) ? r.body.items : [];
+    },
+    onError: (e) => log.warn('wordlist refresh failed (keeping cache)', { err: (e as Error).message }),
+  });
+
   const redis = await connectActiveMatchRedis(env.redisUrl);
 
   // Cold-tier replay archive (S1-RP, 2026-07-20): local VPS disk mirror, no-op unless
@@ -87,6 +104,7 @@ async function main() {
     gatewayPublicUrl: env.gatewayPublicUrl,
     authRateLimit: env.authRateLimit,
     flags,
+    wordlists,
     region: env.region,
     lokiPushUrl: env.lokiPushUrl,
     socialsvcUrl: env.socialsvcInternalUrl,
@@ -153,6 +171,7 @@ async function main() {
   // earlier let an unreachable admin block metaserver startup entirely. FeatureFlagCache
   // degrades safely before the first successful refresh (flags evaluate to their defaults).
   if (adminUrl) await flags.start();
+  if (adminUrl) await wordlists.start();
 
   log.info(`metaserver up on ${env.host}:${env.port}`, {
     spec: SPEC_PATH,

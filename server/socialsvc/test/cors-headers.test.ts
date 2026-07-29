@@ -42,6 +42,20 @@ describe('socialsvc CORS headers', () => {
     }
   });
 
+  // O-CM5 (CONTENT_MODERATION_DESIGN.md §8): client/src/net/chatRegion.ts now sends X-Chat-Region on
+  // createFamily/sendFamilyMessage/sendChat — same class of gap as X-NW-Platform above (custom header,
+  // not CORS-safelisted) would have silently reintroduced a preflight block on every real browser.
+  it('allows the X-Chat-Region header the client sends on family/chat calls (preflight OPTIONS)', async () => {
+    const { server, baseUrl } = await startServer();
+    try {
+      const res = await fetch(`${baseUrl}/social/family`, { method: 'OPTIONS' });
+      const allowHeaders = res.headers.get('access-control-allow-headers') ?? '';
+      expect(allowHeaders.toLowerCase().split(',').map((h) => h.trim())).toContain('x-chat-region');
+    } finally {
+      server.close();
+    }
+  });
+
   it('also carries it on real responses (GET /health)', async () => {
     const { server, baseUrl } = await startServer();
     try {

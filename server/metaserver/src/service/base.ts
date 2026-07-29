@@ -3,7 +3,7 @@
 // mixin; each business domain lives in its own sibling file as an `XMixin(Base)` and is chained
 // together into the final MetaService. Domain-local state/helpers stay in their own mixin file.
 import type { FastifyReply, FastifyRequest } from 'fastify';
-import type { Collections, JwtConfig, SaveData, FeatureFlagCache, RedisLike } from '@nw/shared';
+import type { Collections, JwtConfig, SaveData, FeatureFlagCache, RedisLike, WordlistCache } from '@nw/shared';
 import { ErrorCode, err, accrueRetentionTask, getActiveMatch } from '@nw/shared';
 // Rate limiter (RateLimiter/SlidingRateLimiter/RedisSlidingRateLimiter/createRateLimiter) moved to
 // @nw/shared 2026-07-29 (SERVER_LOGIC_AUDIT_2026-07-29 known-gap #4: gateway needed the same in-process/
@@ -28,6 +28,8 @@ export interface ServiceDeps {
   authRateLimit: number;
   /** Feature flag cache (evaluated for the public /bootstrap endpoint; FEATURE_FLAGS_DESIGN §9.3). null = no flag source, bootstrap always returns an empty map. */
   flags: FeatureFlagCache | null;
+  /** Content-moderation word list overlay cache (CONTENT_MODERATION_DESIGN.md §3.2). null = built-in REGION_WORDLISTS only, no ops-managed overlay. */
+  wordlists: WordlistCache | null;
   /** Deployment region (injected into flag evaluation context). */
   region: string | null;
   /** Loki push URL (POST /client/log forwards client logs; null = silently dropped). */

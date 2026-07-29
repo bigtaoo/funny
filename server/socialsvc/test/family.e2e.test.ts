@@ -64,6 +64,15 @@ describe.skipIf(!mongo)('socialsvc FamilyService e2e', () => {
     await expectErr(svc.createFamily('m1', 'Tag Clash', 'AAA'), 'ALREADY_IN_FAMILY');         // duplicate tag → unique index
   });
 
+  it('createFamily: rejects a name that hits the sensitive-word filter (CONTENT_MODERATION_DESIGN.md CM5)', async () => {
+    // 'shit' is in chatFilter.ts's global word list — family name is long-lived/public like a
+    // displayName, so a hit rejects creation outright rather than persisting a masked name.
+    await expectErr(svc.createFamily('leader', 'Shit Family', 'BAD1'), 'BAD_REQUEST');
+    // Rejected creation must not have left the caller "in a family" — a clean retry succeeds.
+    const fam = await svc.createFamily('leader', 'Clean Family', 'CLN1');
+    expect(fam.name).toBe('Clean Family');
+  });
+
   it('createFamily: accepts a name exactly at the width cap (6 汉字 = width 12)', async () => {
     const fam = await svc.createFamily('leader', '六个汉字上限', 'CAP6');
     expect(fam.name).toBe('六个汉字上限');
@@ -295,6 +304,12 @@ describe.skipIf(!mongo)('socialsvc FamilyService e2e', () => {
     await expectErr(svc.sendMessage('leader', 'Leader', ''), 'BAD_REQUEST');
     await expectErr(svc.sendMessage('leader', 'Leader', 'x'.repeat(FAMILY_MSG_BODY_MAX + 1)), 'BAD_REQUEST');
     void fam;
+  });
+
+  it('sendMessage: masks a sensitive word instead of rejecting delivery (CONTENT_MODERATION_DESIGN.md CM5, mask-not-reject like DM/world chat)', async () => {
+    await svc.createFamily('leader', 'Maskers', 'MASK');
+    const result = await svc.sendMessage('leader', 'Leader', 'what the fuck');
+    expect(result.body).toBe('what the ****');
   });
 
   // Regression: senderName must never trust a stale client-side cache (e.g. leftover from before

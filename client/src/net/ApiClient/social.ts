@@ -8,6 +8,7 @@ import type {
   ConversationView,
   ChatMessageView,
 } from './types';
+import { currentChatRegion } from '../chatRegion';
 
 export interface SocialApi {
   getFriends(): Promise<FriendView[]>;
@@ -110,7 +111,7 @@ export function SocialMixin<TBase extends ApiClientBaseCtor>(Base: TBase): TBase
 
     /** Send a private chat message. Not friends → ApiError('NOT_FRIEND'); blocked → 'BLOCKED'; rate limited → 'RATE_LIMITED' (429). */
     async sendChat(toPublicId: string, body: string): Promise<{ messageId: string; ts: number }> {
-      return this.post<{ messageId: string; ts: number }>('/chat/send', { toPublicId, body });
+      return this.post<{ messageId: string; ts: number }>('/chat/send', { toPublicId, body }, { 'X-Chat-Region': currentChatRegion() });
     }
 
     /** Mark a conversation as read (clears unread count). */
