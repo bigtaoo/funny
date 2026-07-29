@@ -218,8 +218,31 @@ message MailNew { string mail_id = 1; bool has_attachment = 2; }
 // into MatchFound (via matchsvc's existing startMatch), so there is no separate "duel accepted" push.
 message DuelInvited { string invite_id = 1; string from_public_id = 2; string from_name = 3; }
 // Pushed back to the inviter on the unhappy path only (accept never reaches here — see DuelInvited doc).
-// reason: declined | timeout | offline | not_found.
+// reason: declined | timeout | offline | not_found | lost (matchsvc restarted and this outstanding sent
+// invite could not be recovered — see PreMatchLost below; the inviter's client treats it the same as any
+// other unhappy-path cancellation).
 message DuelCancelled { string invite_id = 1; string reason = 2; }
+
+// ── matchsvc restart-safety (matchsvc-prematch-persist, 2026-07-29) ──────────
+// matchsvc's pre-match state (friendly rooms / ranked queue / outstanding "切磋" invites) is rehydrated
+// from Redis on startup (see server/matchsvc/src/rehydrate.ts). These two pushes are matchsvc's active
+// notification to affected accounts once rehydrate completes, instead of silently waiting for the
+// client's own (much longer) timeout to notice nothing is happening server-side.
+//
+// Ranked-queue entry survived the restart (rehydrated from `nw:queue`) — a refresh confirming the
+// "searching…" spinner is still backed by a real queue entry. No fields: it carries no new information,
+// only the fact that matchsvc is alive and this account is still queued (mirrors RoomState/DuelInvited,
+// which are already re-pushed verbatim on rehydrate/reconnect rather than needing new fields).
+message QueueState {}
+
+// A player's pre-match state could not be recovered after a matchsvc restart — created and lost before
+// ever reaching Redis (the write races an immediate crash), or Redis itself was unavailable/flushed.
+// Without this push the client would wait indefinitely on a spinner/banner matchsvc has no memory of.
+// context identifies what was lost so the client can react appropriately: "room" (bounce to the room
+// picker), "queue" (silently re-submit ranked matchmaking — self-healing, no player-visible interruption),
+// "duel" (clear the pending invite banner) — the same three domains as the rehydrate keyspaces
+// (nw:room*/nw:queue/nw:duel*).
+message PreMatchLost { string context = 1; } // "room" | "queue" | "duel"
 
 // ── SLG world map (S8): server→client push only ──────────────────
 // Same principle as social (SOC3 / §14.5): SLG player actions go via REST to worldsvc (single writer),
@@ -313,6 +336,8 @@ message ServerMsg {
     MatchBot          match_bot       = 24;
     DuelInvited       duel_invited    = 25;
     DuelCancelled     duel_cancelled  = 26;
+    QueueState        queue_state     = 27;
+    PreMatchLost      pre_match_lost  = 28;
   }
 }
 

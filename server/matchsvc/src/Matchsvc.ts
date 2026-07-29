@@ -17,12 +17,24 @@ import { randomUUID, randomInt } from 'crypto';
 import { signTicket, createLogger, defaultPvpDeck, pickBotDifficulty, randomPlayerName, setActiveMatch, type FeatureFlagCache, type RedisLike, type TicketClaims } from '@nw/shared';
 import { Matchmaking, type QueueEntry } from './Matchmaking';
 import { GameRegistry } from './GameRegistry';
+import {
+  saveRoom,
+  clearRoomAccount,
+  deleteRoom,
+  loadAllRooms,
+  saveQueueEntry,
+  deleteQueueEntry,
+  loadAllQueueEntries,
+  saveDuelInvite,
+  deleteDuelInvite,
+  loadAllDuelInvites,
+} from './persist';
 
 const log = createLogger('matchsvc');
 
 // RoomPhase enum values mirror contracts/transport.proto (encoding is the gateway's responsibility;
 // matchsvc only passes through the integer phase).
-const RoomPhase = {
+export const RoomPhase = {
   WAITING: 0,
   READY: 1,
   COUNTDOWN: 2,
@@ -52,9 +64,18 @@ export type PushMsg =
   // → accountId before calling duelInvite). Accepting skips straight to match_found (startMatch) —
   // there is no separate "duel accepted" push.
   | { kind: 'duel_invited'; inviteId: string; fromPublicId: string; fromName: string }
-  // Pushed back to the inviter on the unhappy path only. reason: declined | timeout | offline | not_found
-  // (the last two originate at the gateway, before a matchsvc invite record even exists).
-  | { kind: 'duel_cancelled'; inviteId: string; reason: string };
+  // Pushed back to the inviter on the unhappy path only. reason: declined | timeout | offline | not_found | lost
+  // (the middle two originate at the gateway, before a matchsvc invite record even exists; lost originates
+  // at matchsvc rehydrate — see prematch_lost below).
+  | { kind: 'duel_cancelled'; inviteId: string; reason: string }
+  // ── matchsvc restart-safety (matchsvc-prematch-persist, 2026-07-29) ──────────
+  // Pushed to every account whose pre-match state was rehydrated from Redis after a matchsvc restart
+  // (see rehydrate.ts), instead of silently waiting for the client's own much-longer timeout.
+  // queue_state: ranked-queue entry survived the restart — a no-op refresh confirming it's still active.
+  | { kind: 'queue_state' }
+  // prematch_lost: this account's pre-match state (room/queue/duel) could not be recovered (created and
+  // lost before ever reaching Redis, or Redis itself was unavailable/flushed at restart time).
+  | { kind: 'prematch_lost'; context: 'room' | 'queue' | 'duel' };
 
 /**
  * Push callback. `roomId` is a cross-process correlation id — it is included in logs across
@@ -64,7 +85,7 @@ export type PushMsg =
  */
 export type Push = (accountId: string, msg: PushMsg, roomId?: string) => void;
 
-interface Slot {
+export interface Slot {
   accountId: string;
   name: string;
   publicId: string;
@@ -78,17 +99,18 @@ interface Slot {
   ready: boolean;
   connected: boolean;
 }
-interface Room {
+export interface Room {
   roomId: string;
   code: string;
   slots: Slot[];
   phase: number;
-  /** Timer that cleans up the room after all players disconnect. */
+  /** Timer that cleans up the room after all players disconnect. Excluded from Redis persistence
+   *  (persist.ts's PersistedRoom) — rehydrate re-arms a fresh one if needed (see rehydrate()). */
   reapTimer: NodeJS.Timeout | null;
 }
 
 /** Player identity + loadout carried by a pending duel invite, same shape startMatch() takes for each side. */
-interface DuelPlayer {
+export interface DuelPlayer {
   accountId: string;
   name: string;
   publicId: string;
@@ -96,7 +118,7 @@ interface DuelPlayer {
   avatarId: string;
   deck: string[];
 }
-interface DuelInvite {
+export interface DuelInvite {
   inviteId: string;
   from: DuelPlayer;
   toAccountId: string;
@@ -153,6 +175,10 @@ export class Matchsvc {
       autoTick: opts.autoTick,
       botFallbackMs: opts.botFallbackMs ?? 30_000,
       onTimeout: (e) => this.onQueueTimeout(e),
+      // matchsvc-prematch-persist (2026-07-29): write-through the ranked queue to Redis (no-op when
+      // this.redis is null — see persist.ts's null-safe convention).
+      onEnqueued: (e) => void saveQueueEntry(this.redis, e),
+      onDequeued: (accountId) => void deleteQueueEntry(this.redis, accountId),
     });
   }
 
@@ -168,6 +194,95 @@ export class Matchsvc {
       gameInstances: g.instances,
       gameLoad: g.load,
     };
+  }
+
+  // ───────────────────────── Restart-safety rehydrate (matchsvc-prematch-persist, 2026-07-29) ─────────────────────────
+
+  /**
+   * Loads pre-match state (rooms / ranked queue / duel invites) back from Redis into the in-memory
+   * Maps/array, then actively pushes a refresh to every affected account instead of leaving them to
+   * notice via their own (much longer) client-side timeout that matchsvc forgot about them.
+   *
+   * No-op when `this.redis` is null — matchsvc remains exactly as before this feature existed (pure
+   * in-memory, NW_REDIS_URL fully optional; see MatchsvcOpts.redis doc comment).
+   *
+   * Caller contract (index.ts): await this BEFORE calling startInternalHttp, so gateway/gameserver never
+   * see a matchsvc that looks up but hasn't actually rebuilt its in-memory state yet.
+   */
+  async rehydrate(): Promise<void> {
+    if (!this.redis) return;
+    const startedAt = this.now();
+
+    // ── Friendly rooms ──
+    const { rooms: persistedRooms, lostAccountIds: lostRoomAccountIds } = await loadAllRooms(this.redis);
+    for (const p of persistedRooms) {
+      if (this.rooms.has(p.roomId)) continue; // defensive only — one process, one rehydrate call
+      const room: Room = { ...p, reapTimer: null };
+      this.rooms.set(room.roomId, room);
+      this.byCode.set(room.code, room.roomId);
+      for (const s of room.slots) this.accountRoom.set(s.accountId, room.roomId);
+      // A matchsvc restart tells us nothing about whether the gateway connections behind these slots are
+      // still live (gateway is a separate process) — conservatively re-arm the full grace period for any
+      // room that was already fully disconnected at its last write, so it isn't pinned in memory forever
+      // with no live timer to reap it.
+      if (room.slots.length > 0 && room.slots.every((s) => !s.connected)) {
+        room.reapTimer = setTimeout(() => this.destroyRoom(room), REAP_MS);
+        room.reapTimer.unref?.();
+      }
+    }
+
+    // ── Ranked queue ──
+    const { entries: queueEntries, lostAccountIds: lostQueueAccountIds } = await loadAllQueueEntries(this.redis);
+    for (const e of queueEntries) this.matchmaking.rehydrateEntry(e);
+    // May immediately pair entries that were already a valid match at restart time (same as a normal
+    // tick() would have) — do this before the queue_state push below so we don't tell someone "still
+    // searching" right before superseding it with match_found.
+    this.matchmaking.rehydrateDone();
+
+    // ── Friend-challenge ("切磋") duel invites ──
+    const { invites: duelInvites, lostFromAccountIds: lostDuelAccountIds } = await loadAllDuelInvites(this.redis);
+    const stillPendingInviteIds = new Set<string>();
+    for (const inv of duelInvites) {
+      const remaining = inv.expiresAt - this.now();
+      if (remaining <= 0) {
+        // Already past its window by the time we came back up — resolve it exactly like a normal timeout.
+        void deleteDuelInvite(this.redis, inv.inviteId, inv.from.accountId);
+        this.push(inv.from.accountId, { kind: 'duel_cancelled', inviteId: inv.inviteId, reason: 'timeout' });
+        continue;
+      }
+      const timer = setTimeout(() => this.expireDuel(inv.inviteId), remaining);
+      timer.unref?.();
+      this.duelInvites.set(inv.inviteId, { inviteId: inv.inviteId, from: inv.from, toAccountId: inv.toAccountId, timer });
+      this.pendingDuelByAccount.set(inv.from.accountId, inv.inviteId);
+      stillPendingInviteIds.add(inv.inviteId);
+    }
+
+    // ── Active notification ──
+    for (const room of this.rooms.values()) {
+      for (const s of room.slots) this.pushRoomState(s.accountId, room);
+    }
+    for (const e of queueEntries) {
+      // Skip accounts that got paired during rehydrateDone() above — they already received match_found.
+      if (this.matchmaking.has(e.accountId)) this.push(e.accountId, { kind: 'queue_state' });
+    }
+    for (const accountId of lostQueueAccountIds) this.push(accountId, { kind: 'prematch_lost', context: 'queue' });
+    for (const inv of duelInvites) {
+      if (stillPendingInviteIds.has(inv.inviteId)) {
+        this.push(inv.toAccountId, { kind: 'duel_invited', inviteId: inv.inviteId, fromPublicId: inv.from.publicId, fromName: inv.from.name });
+      }
+    }
+    for (const accountId of lostDuelAccountIds) this.push(accountId, { kind: 'prematch_lost', context: 'duel' });
+    for (const accountId of lostRoomAccountIds) this.push(accountId, { kind: 'prematch_lost', context: 'room' });
+
+    log.info('rehydrate complete', {
+      rooms: persistedRooms.length,
+      queueEntries: queueEntries.length,
+      queueLost: lostQueueAccountIds.length,
+      duelInvites: duelInvites.length,
+      duelLost: lostDuelAccountIds.length,
+      roomLost: lostRoomAccountIds.length,
+      ms: this.now() - startedAt,
+    });
   }
 
   // ───────────────────────── ranked matchmaking ─────────────────────────
@@ -242,6 +357,7 @@ export class Matchsvc {
     this.byCode.set(code, roomId);
     this.accountRoom.set(accountId, roomId);
     log.info('room created', { accountId, code, roomId });
+    void saveRoom(this.redis, room);
     this.broadcast(room);
   }
 
@@ -265,6 +381,7 @@ export class Matchsvc {
     room.slots.push({ accountId, name, publicId, equippedTitle, avatarId, deck, side: 1, ready: false, connected: true });
     this.accountRoom.set(accountId, room.roomId);
     log.info('room joined', { accountId, code, roomId: room.roomId });
+    void saveRoom(this.redis, room);
     this.broadcast(room);
   }
 
@@ -276,6 +393,7 @@ export class Matchsvc {
     slot.ready = ready;
     const allReady = room.slots.length === 2 && room.slots.every((s) => s.ready);
     room.phase = allReady ? RoomPhase.READY : RoomPhase.WAITING;
+    void saveRoom(this.redis, room);
     this.broadcast(room);
 
     // Both players ready → start automatically. Previously this only flipped the
@@ -341,11 +459,13 @@ export class Matchsvc {
     if (prevId) this.cancelDuel(prevId, 'declined');
 
     const inviteId = randomUUID();
+    const expiresAt = this.now() + DUEL_TIMEOUT_MS;
     const timer = setTimeout(() => this.expireDuel(inviteId), DUEL_TIMEOUT_MS);
     timer.unref?.();
     this.duelInvites.set(inviteId, { inviteId, from, toAccountId, timer });
     this.pendingDuelByAccount.set(from.accountId, inviteId);
     log.info('duel invite sent', { from: from.accountId, toAccountId, inviteId });
+    void saveDuelInvite(this.redis, { inviteId, from, toAccountId, expiresAt });
     this.push(toAccountId, { kind: 'duel_invited', inviteId, fromPublicId: from.publicId, fromName: from.name });
   }
 
@@ -360,6 +480,7 @@ export class Matchsvc {
     clearTimeout(invite.timer);
     this.duelInvites.delete(inviteId);
     this.pendingDuelByAccount.delete(invite.from.accountId);
+    void deleteDuelInvite(this.redis, inviteId, invite.from.accountId);
     if (!accept || !profile) {
       log.info('duel declined', { inviteId, from: invite.from.accountId, toAccountId });
       this.push(invite.from.accountId, { kind: 'duel_cancelled', inviteId, reason: 'declined' });
@@ -376,6 +497,7 @@ export class Matchsvc {
     if (!invite) return;
     this.duelInvites.delete(inviteId);
     this.pendingDuelByAccount.delete(invite.from.accountId);
+    void deleteDuelInvite(this.redis, inviteId, invite.from.accountId);
     log.info('duel invite timed out', { inviteId, from: invite.from.accountId });
     this.push(invite.from.accountId, { kind: 'duel_cancelled', inviteId, reason: 'timeout' });
   }
@@ -387,6 +509,7 @@ export class Matchsvc {
     clearTimeout(invite.timer);
     this.duelInvites.delete(inviteId);
     this.pendingDuelByAccount.delete(invite.from.accountId);
+    void deleteDuelInvite(this.redis, inviteId, invite.from.accountId);
     this.push(invite.from.accountId, { kind: 'duel_cancelled', inviteId, reason });
   }
 
@@ -403,6 +526,7 @@ export class Matchsvc {
         clearTimeout(room.reapTimer);
         room.reapTimer = null;
       }
+      void saveRoom(this.redis, room);
       this.broadcast(room);
     } else {
       this.pushRoomState(accountId, room); // resend only to this player
@@ -417,11 +541,12 @@ export class Matchsvc {
     const slot = room.slots.find((s) => s.accountId === accountId);
     if (!slot) return;
     slot.connected = false;
-    this.broadcast(room);
     if (room.slots.every((s) => !s.connected)) {
       room.reapTimer = setTimeout(() => this.destroyRoom(room), REAP_MS);
       room.reapTimer.unref?.();
     }
+    void saveRoom(this.redis, room);
+    this.broadcast(room);
   }
 
   // ───────────────────────── game registry ─────────────────────────
@@ -514,6 +639,9 @@ export class Matchsvc {
   private removeFromRoom(room: Room, accountId: string): void {
     room.slots = room.slots.filter((s) => s.accountId !== accountId);
     this.accountRoom.delete(accountId);
+    // The departing account's own reverse-lookup key is never covered by destroyRoom's/saveRoom's slot
+    // iteration below (both only see the *remaining* slots) — clear it explicitly either way.
+    void clearRoomAccount(this.redis, accountId);
     if (room.slots.length === 0) {
       this.destroyRoom(room);
       return;
@@ -522,6 +650,7 @@ export class Matchsvc {
     room.slots[0]!.side = 0;
     room.slots[0]!.ready = false;
     room.phase = RoomPhase.WAITING;
+    void saveRoom(this.redis, room);
     this.broadcast(room);
   }
 
@@ -533,6 +662,7 @@ export class Matchsvc {
     for (const s of room.slots) this.accountRoom.delete(s.accountId);
     this.byCode.delete(room.code);
     this.rooms.delete(room.roomId);
+    void deleteRoom(this.redis, room);
   }
 
   private playersView(room: Room): PlayerView[] {
