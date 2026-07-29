@@ -55,6 +55,16 @@ export function getGatewayWsUrl(storage?: IStorage): string | null {
   return api.replace(/^http/, 'ws').replace(/\/api$/, '/gw');
 }
 
+// Persist the server-handed-back gateway URL (from auth/save) as the override, so the NEXT boot's
+// synchronous, pre-auth `getGatewayWsUrl()` call (used to seed state before the async bootstrap/
+// adoptSession round trip lands) reads back the real address instead of re-deriving a possibly-wrong
+// one from the API base — deployments where meta and gateway aren't same-origin/path-derivable
+// (e.g. this repo's CI stack: meta on :18080, gateway on :8086/gw) would otherwise attempt the first
+// post-restart connection against the wrong endpoint.
+export function persistGatewayWsUrl(storage: IStorage, url: string): void {
+  storage.setItem(GATEWAY_WS_OVERRIDE_KEY, url);
+}
+
 // worldsvc REST base URL resolution (S8).
 // Priority: build-time injected __NW_WORLD_BASE__ > '' (same-origin, Caddy forwards /world/* to worldsvc).
 // Empty string in production when unconfigured (same-origin path); dev default: http://localhost:18084.
