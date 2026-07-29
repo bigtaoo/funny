@@ -41,6 +41,7 @@ export type AdminCapability =
   | 'gacha.pools.manage' // ops-authored custom gacha pools (GACHA_DESIGN §12): create / close festival pools
   | 'promo.manage' // promo-code create / view (B-PROMO)
   | 'paddle.events.view' // Paddle webhook event log lookup (support/CS: "why didn't this payment go through", COMMERCIAL_DESIGN §10.4)
+  | 'moderation.wordlist.manage' // manage the DB overlay word lists (CONTENT_MODERATION_DESIGN.md §3.2)
   | 'admin.manage'; // account / role management
 
 /**
@@ -77,6 +78,7 @@ export const ROLE_CAPABILITIES: Record<AdminRole, readonly AdminCapability[]> = 
     'gacha.pools.manage',
     'promo.manage',
     'paddle.events.view',
+    'moderation.wordlist.manage',
     'admin.manage',
   ],
   ops: [
@@ -102,6 +104,7 @@ export const ROLE_CAPABILITIES: Record<AdminRole, readonly AdminCapability[]> = 
     'gacha.pools.manage',
     'promo.manage',
     'paddle.events.view',
+    'moderation.wordlist.manage',
   ],
   support: [
     'monitor.view',
@@ -314,7 +317,8 @@ export type AuditAction =
   | 'event.delete'
   | 'gacha.pool.create'
   | 'gacha.pool.close'
-  | 'promo.create';
+  | 'promo.create'
+  | 'moderation.wordlist.update';
 
 export interface AuditEntryView {
   id: string;

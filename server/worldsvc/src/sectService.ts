@@ -25,6 +25,9 @@ import {
   ORG_NAME_WIDTH_MAX,
   orgNameWidth,
   SlgError,
+  censorChat,
+  type ChatRegion,
+  type WordlistCache,
 } from '@nw/shared';
 import type { WorldCollections, SectDoc, SectMessageDoc } from './db';
 import type { WorldCommercialClient } from './commercialClient';
@@ -85,6 +88,8 @@ export interface SectServiceDeps {
   socialsvc?: WorldSocialsvcClient;
   /** meta client for publicId resolution in chat messages; default = fromPublicId left empty. */
   meta?: WorldMetaClient;
+  /** Content-moderation word list overlay cache (CONTENT_MODERATION_DESIGN.md §3.2); omit = built-in REGION_WORDLISTS only. */
+  wordlists?: WordlistCache;
 }
 
 /** In-process monotonic sequence number to prevent message id collisions within the same millisecond. */
@@ -160,7 +165,14 @@ export class SectService {
   }
 
   /** Create a sect: requester must be a family leader and their family must not already belong to a sect; deducts SECT_CREATE_COST coins; TAG must be unique within the world. */
-  async createSect(worldId: string, requesterId: string, name: string, tag: string, clientPlatform?: string): Promise<SectDetailView> {
+  async createSect(
+    worldId: string,
+    requesterId: string,
+    name: string,
+    tag: string,
+    clientPlatform?: string,
+    region: ChatRegion = 'global',
+  ): Promise<SectDetailView> {
     const { cols } = this.deps;
     const fam = await this.requireFamilyLeader(requesterId);
     if (fam.sectId) throw new SlgError('ALREADY_IN_SECT');
@@ -170,6 +182,11 @@ export class SectService {
     const nameWidth = name ? orgNameWidth(name) : 0;
     if (nameWidth < ORG_NAME_WIDTH_MIN || nameWidth > ORG_NAME_WIDTH_MAX) {
       throw new SlgError('BAD_REQUEST', 'Name must be 2–12 display units (full-width chars count as 2)');
+    }
+    // CONTENT_MODERATION_DESIGN.md CM5: sect name is long-lived/public like a display name, not
+    // ephemeral chat — a hit rejects creation outright rather than persisting a masked name.
+    if (censorChat(name, region, this.deps.wordlists).hit) {
+      throw new SlgError('BAD_REQUEST', 'Name contains disallowed words');
     }
 
     const sid = makeSectId(worldId, tagUpper);

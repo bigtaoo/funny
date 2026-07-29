@@ -16,6 +16,7 @@ import {
   censorChat,
   REPORT_REASON_MAX,
   type ChatRegion,
+  type WordlistCache,
 } from '@nw/shared';
 
 export type SocialError =
@@ -31,6 +32,8 @@ interface Deps {
   gateway: SocialGatewayClient;
   meta: SocialMetaClient;
   now: () => number;
+  /** Content-moderation word list overlay cache (CONTENT_MODERATION_DESIGN.md §3.2); omit = built-in REGION_WORDLISTS only. */
+  wordlists?: WordlistCache;
 }
 
 async function hasBlock(cols: SocialCollections, owner: string, target: string): Promise<boolean> {
@@ -46,12 +49,14 @@ export class FriendService {
   private readonly gateway: SocialGatewayClient;
   private readonly meta: SocialMetaClient;
   private readonly now: () => number;
+  private readonly wordlists: WordlistCache | undefined;
 
   constructor(deps: Deps) {
     this.cols = deps.cols;
     this.gateway = deps.gateway;
     this.meta = deps.meta;
     this.now = deps.now;
+    this.wordlists = deps.wordlists;
   }
 
   // ── Friends ──────────────────────────────────────────────────────────────────
@@ -362,7 +367,7 @@ export class FriendService {
     const fromProfile = await this.meta.batchProfiles([accountId]).then((m) => m.get(accountId) ?? null);
     if (!fromProfile) return { kind: 'error', error: 'BAD_REQUEST' };
 
-    const body = censorChat(trimmed, region).text;
+    const body = censorChat(trimmed, region, this.wordlists).text;
     const convId = conversationId(accountId, to);
     const messageId = randomUUID();
     const now = this.now();

@@ -22,12 +22,14 @@ import { TicketsMixin } from './service/tickets';
 import { AnalyticsMixin } from './service/analytics';
 import { FlagsMixin } from './service/flags';
 import { ShopMixin } from './service/shop';
+import { ModerationMixin } from './service/moderation';
 
 export { AdminError } from './service/errors';
 export type { Actor, AdminServiceDeps } from './service/base';
 export { ADMIN_ROLES };
 
-const Assembled = ShopMixin(
+const Assembled = ModerationMixin(
+  ShopMixin(
   FlagsMixin(
   AnalyticsMixin(
     TicketsMixin(
@@ -51,6 +53,7 @@ const Assembled = ShopMixin(
         ),
       ),
     ),
+  ),
   ),
   ),
 );

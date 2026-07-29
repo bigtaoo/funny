@@ -407,7 +407,8 @@ export function startHttpApi(
           const name = typeof body.name === 'string' ? body.name : null;
           const tag = typeof body.tag === 'string' ? body.tag : null;
           if (!name || !tag) return sendErr(res, ErrorCode.BAD_REQUEST, 'name + tag required');
-          return send(res, 201, ok(await familySvc.createFamily(accountId, name, tag)));
+          const familyRegion = (req.headers['x-chat-region'] as ChatRegion | undefined) ?? 'global';
+          return send(res, 201, ok(await familySvc.createFamily(accountId, name, tag, familyRegion)));
         }
 
         // Must be checked before the generic GET /social/family/:id route below, since "requests"
@@ -490,7 +491,8 @@ export function startHttpApi(
               const msgBody = typeof body.body === 'string' ? body.body : null;
               const senderName = typeof body.senderName === 'string' ? body.senderName : accountId;
               if (!msgBody) return sendErr(res, ErrorCode.BAD_REQUEST, 'body required');
-              return send(res, 200, ok(await familySvc.sendMessage(accountId, senderName, msgBody)));
+              const familyChatRegion = (req.headers['x-chat-region'] as ChatRegion | undefined) ?? 'global';
+              return send(res, 200, ok(await familySvc.sendMessage(accountId, senderName, msgBody, familyChatRegion)));
             }
             void familyId; // suppress unused var
           }

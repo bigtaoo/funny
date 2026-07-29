@@ -118,6 +118,19 @@ export function AuthMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase & Cons
       if (pwErr) return reply.code(400).send(err(ErrorCode.WEAK_PASSWORD, pwErr));
 
       const region = regionFromAcceptLanguage(req.headers['accept-language']);
+
+      // CONTENT_MODERATION_DESIGN.md CM5: a user-supplied displayName at registration is just as
+      // persistent/public as one set via profileRename, but until now this path skipped both length
+      // validation and censorChat entirely — an unfiltered name went straight into registerWithPassword.
+      // Same reject-on-hit policy as profileRename (display names are long-lived, not ephemeral chat).
+      if (displayName !== undefined) {
+        const nameErr = validateDisplayName(displayName);
+        if (nameErr) return reply.code(400).send(err(ErrorCode.BAD_REQUEST, nameErr));
+        if (censorChat(displayName.trim(), region, this.deps.wordlists ?? undefined).hit) {
+          return reply.code(400).send(err(ErrorCode.BAD_REQUEST, 'display name contains disallowed words'));
+        }
+      }
+
       const result = await registerWithPassword(
         this.deps.cols,
         loginId,
@@ -364,7 +377,7 @@ export function AuthMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase & Cons
       // (unlike censorChat's mask-and-deliver policy for chat) a hit here REJECTS the rename outright rather
       // than saving a masked "****" as a permanent name. Checked before the paid path spends any coins.
       const region = regionFromAcceptLanguage(req.headers['accept-language']);
-      if (censorChat(name, region).hit) {
+      if (censorChat(name, region, this.deps.wordlists ?? undefined).hit) {
         return reply.code(400).send(err(ErrorCode.BAD_REQUEST, 'display name contains disallowed words'));
       }
 
