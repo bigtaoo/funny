@@ -65,6 +65,58 @@ export function drawEquipmentGlyph(
   }
 }
 
+/** Placeholder ink for empty slots — deliberately outside MEDIA/rarity so an empty
+ *  slot can never be color-matched to a real (always filled) common-rarity item. */
+const EMPTY_INK = 0xb0aaa0;
+
+/**
+ * Draw an empty-slot placeholder: a hollow (unfilled) version of the slot's base
+ * shape plus a centered "+", instead of the filled/rarity-tinted glyph a real item
+ * gets. Still hints the slot's item type (weapon/armor/trinket) so the row doesn't
+ * lose that context, but reads unambiguously as "nothing here, tap to add" rather
+ * than as a dim low-rarity item — the previous approach (real glyph at low alpha)
+ * was mistaken for an actually-equipped common item at a glance (roster feedback).
+ */
+export function drawEmptySlotGlyph(
+  g: PIXI.Graphics,
+  slot: EquipSlot,
+  size: number,
+  seed = 1,
+): void {
+  const pen = new SketchPen(g, seed);
+  const r = (size / 2) * 0.8;
+  const lw = Math.max(1.2, size * 0.045);
+
+  switch (slot) {
+    case 'weapon': {
+      const A = { x: -r * 0.7, y: r * 0.75 };
+      const B = { x: r * 0.45, y: -r * 0.45 };
+      const tip = { x: r * 0.75, y: -r * 0.78 };
+      pen.stroke([A, B], { color: EMPTY_INK, width: r * 0.36, taper: 0.85, alpha: 0.55, double: false });
+      pen.stroke([B, tip], { color: EMPTY_INK, width: lw * 1.4, taper: 0.15, alpha: 0.7, double: false });
+      break;
+    }
+    case 'armor': {
+      const w = r * 1.3, h = r * 1.7;
+      pen.rect(-w / 2, -h / 2, w, h, { color: EMPTY_INK, width: lw, alpha: 0.7, double: false });
+      break;
+    }
+    case 'trinket': {
+      const w = r * 1.0, h = r * 1.5;
+      const x = -w / 2, y = -h * 0.42;
+      pen.rect(x, y, w, h, { color: EMPTY_INK, width: lw, alpha: 0.7, double: false });
+      pen.circle(0, y + h * 0.16, r * 0.16, { color: EMPTY_INK, width: lw * 0.8, alpha: 0.7, double: false });
+      break;
+    }
+  }
+
+  // Centered "+" drawn crisp on top so the add-affordance always reads clearly,
+  // regardless of how faint the per-slot outline is.
+  const plusR = r * 0.32;
+  pen.line(-plusR, 0, plusR, 0, { color: EMPTY_INK, width: lw * 1.3, alpha: 0.95, double: false });
+  pen.line(0, -plusR, 0, plusR, { color: EMPTY_INK, width: lw * 1.3, alpha: 0.95, double: false });
+}
+
 // ── weapon = a pen/pencil/marker drawn on the diagonal ─────────────────────────
 
 function drawPen(

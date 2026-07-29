@@ -310,11 +310,14 @@ export function ListMixin<TBase extends CardSceneBaseCtor>(Base: TBase): TBase &
         tag.x = ax; tag.y = ay; this.bodyLayer.addChild(tag); ay += 20;
       }
 
-      // Gear slot icons (weapon/armor/trinket) — the actual equipped item art, or a dimmed
-      // gray procedural glyph when the slot is empty (matches renderDetailGearSlots' treatment,
-      // replacing the old 3-dot filled/empty indicator). Sized 2x the original 22px badges so
-      // rarity/art actually reads at this density; the row shrinks (never below the old 22px)
-      // rather than spill onto the portrait if the info column is ever too narrow to fit it.
+      // Gear slot icons (weapon/armor/trinket) — the actual equipped item art, or the
+      // hollow "+" placeholder when the slot is empty (matches renderDetailGearSlots'
+      // treatment). buildEquipIcon already renders empty slots as a distinct outline
+      // glyph, so no extra dimming is needed here (a dimmed real-item glyph used to
+      // read as a low-rarity equipped item at a glance). Sized 2x the original 22px
+      // badges so rarity/art actually reads at this density; the row shrinks (never
+      // below the old 22px) rather than spill onto the portrait if the info column is
+      // ever too narrow to fit it.
       const gearIconSizeTarget = 44;
       const gearGapTarget = 4;
       const gearRowWTarget = gearIconSizeTarget * 3 + gearGapTarget * 2;
@@ -327,7 +330,6 @@ export function ListMixin<TBase extends CardSceneBaseCtor>(Base: TBase): TBase &
         const inst = instId ? save.equipmentInv?.[instId] : undefined;
         const icon = buildEquipIcon(inst?.defId, slot, inst?.rarity ?? 'common', gearIconSize, seedFor(x, y, i + 1));
         icon.name = `gearIcon:${slot}`; // test hook: see gearIconSize2x.ui.ts
-        icon.alpha = inst ? 1 : 0.35;
         icon.position.set(x + cellW - pad - gearIconSize / 2 - (2 - i) * gearStep, gearCenterY);
         this.bodyLayer.addChild(icon);
       });

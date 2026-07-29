@@ -394,9 +394,11 @@ export function DetailMixin<TBase extends CardSceneBaseCtor>(Base: TBase): TBase
 
         const iconCx = x + cellW / 2;
         const iconCy = cy + 6 + iconSize / 2;
+        // buildEquipIcon already renders the hollow "+" placeholder for an empty
+        // slot, so it doesn't need dimming (a dimmed real-item glyph used to read
+        // as a low-rarity equipped item at a glance).
         const icon = buildEquipIcon(inst?.defId, slot, inst?.rarity ?? 'common', iconSize, seedFor(i, 8, cellW));
         icon.position.set(iconCx, iconCy);
-        icon.alpha = inst ? 1 : 0.3;
         root.addChild(icon);
 
         const slotLbl = this.stxt(t(`equip.slot.${slot}` as TranslationKey), FS.micro, inst ? C.mid : C.light);
