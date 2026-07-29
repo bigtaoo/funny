@@ -106,7 +106,10 @@ export class Gateway {
     private readonly meta: MetaClient,
     private readonly socialsvc?: SocialsvcClient,
   ) {
-    this.wss = new WebSocketServer({ host: opts.host, port: opts.port, path: '/gw' });
+    // maxPayload: `ws` defaults to 100MB per frame with no cap otherwise. Control-plane messages (room/duel/
+    // judge JSON, matching internalHttp.ts's own 1MB request-body cap) are tiny — this just bounds the
+    // memory/CPU an authenticated connection can force by sending an oversized frame.
+    this.wss = new WebSocketServer({ host: opts.host, port: opts.port, path: '/gw', maxPayload: 1 << 20 });
     this.wss.on('connection', (ws, req) => this.onConnection(ws, req.url, req.headers.host));
     this.heartbeat = setInterval(() => this.sweep(), HEARTBEAT_MS);
     this.wss.on('close', () => clearInterval(this.heartbeat));
@@ -325,8 +328,14 @@ export class Gateway {
         this.conns.delete(accountId);
         log.info('WS closed', { accountId, code, online: this.conns.size });
         this.matchsvc.disconnected(accountId);
-        // Notify online friends that I went offline (no self-push; conn is already removed).
-        void this.broadcastPresence(accountId, false);
+        // Notify online friends that I went offline (no self-push; conn is already removed). Clear this
+        // account's friendsCache/publicIdCache entries only AFTER that finishes (it needs them to know
+        // who to notify) — without this, both caches (fallback-path-only, when socialsvc is down) grow
+        // for the life of the process, one entry per account ever seen, never evicted.
+        void this.broadcastPresence(accountId, false).finally(() => {
+          this.friendsCache.delete(accountId);
+          this.publicIdCache.delete(accountId);
+        });
         void this.presenceStore?.markOffline(accountId);
       }
       // If this account was acting as a judge, immediately cancel its in-flight requests (no need to wait for timeout).

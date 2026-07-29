@@ -133,6 +133,50 @@ describe.skipIf(!mongo)('promo code system', () => {
     expect(r.error).toBe('PROMO_EXHAUSTED');
   });
 
+  // Regression for the 2026-07-29 audit fix: the promoRedemptions slot is reserved BEFORE credit() runs,
+  // so a crash between the two used to stamp the code "used" forever with the coins never granted.
+  // Simulate that crash (hand-insert the reserved redemption, skip credit) and verify a LATER redeem call
+  // (past the isStaleClaim grace window) heals the missing credit instead of just erroring
+  // PROMO_ALREADY_USED with the coins gone for good.
+  it('heals a credit dropped by a crash between reserve and credit (stale claim)', async () => {
+    await svc.createPromoCode({ code: 'CRASHED', coins: 300, createdBy: 'admin1' });
+    await m.collections.promoRedemptions.insertOne({
+      _id: 'acc1:CRASHED',
+      accountId: 'acc1',
+      code: 'CRASHED',
+      coinsGranted: 300,
+      ts: t,
+    });
+    t += 20000; // past REPLAY_HEAL_GRACE_MS
+    const r = await svc.promoRedeem({ accountId: 'acc1', code: 'CRASHED' });
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.coinsGranted).toBe(300);
+    expect((await m.collections.wallets.findOne({ _id: 'acc1' }))?.coins).toBe(300);
+    expect(await m.collections.ledger.countDocuments({ accountId: 'acc1', reason: 'promo' })).toBe(1);
+
+    // A second replay must not heal again.
+    const r2 = await svc.promoRedeem({ accountId: 'acc1', code: 'CRASHED' });
+    expect(r2.ok).toBe(false);
+    expect((await m.collections.wallets.findOne({ _id: 'acc1' }))?.coins).toBe(300);
+  });
+
+  it('does NOT heal a redemption still within the grace window', async () => {
+    await svc.createPromoCode({ code: 'FRESH', coins: 300, createdBy: 'admin1' });
+    await m.collections.promoRedemptions.insertOne({
+      _id: 'acc2:FRESH',
+      accountId: 'acc2',
+      code: 'FRESH',
+      coinsGranted: 300,
+      ts: t, // claimed "just now"
+    });
+    const r = await svc.promoRedeem({ accountId: 'acc2', code: 'FRESH' });
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect(r.error).toBe('PROMO_ALREADY_USED');
+    expect(await m.collections.ledger.countDocuments({ accountId: 'acc2', reason: 'promo' })).toBe(0);
+  });
+
   it('redemption writes a ledger entry with reason=promo', async () => {
     await svc.createPromoCode({ code: 'PROMO2025', coins: 200, createdBy: 'admin1' });
     await svc.promoRedeem({ accountId: 'acc1', code: 'PROMO2025' });

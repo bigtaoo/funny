@@ -184,6 +184,23 @@ export class CommercialServiceBase {
     this.verifyReceipt = (p, r) => Promise.resolve(raw(p, r));
   }
 
+  /**
+   * Grace window before an idempotency-key row reserved but not yet credited/delivered (recharges /
+   * promoRedemptions / orders, all claimed via a unique-index insert BEFORE the costly side of the
+   * operation runs) is treated as abandoned by a crashed attempt and safe to resume/heal. Concurrent
+   * duplicate submissions of the SAME key (the common case — client retries a slow request, or the
+   * network duplicates it) lose the unique-insert race within milliseconds while the true winner is
+   * still very much alive and about to finish; healing/resuming during that window would race the
+   * winner and double-credit. The crash-recovery case this grace period exists for (the winning process
+   * died mid-flight) only matters on a MUCH later retry (after a client-visible timeout or restart), so
+   * erring long here costs nothing but a slower recovery.
+   */
+  protected static readonly REPLAY_HEAL_GRACE_MS = 15000;
+
+  protected isStaleClaim(claimedAtMs: number): boolean {
+    return this.now() - claimedAtMs > CommercialServiceBase.REPLAY_HEAL_GRACE_MS;
+  }
+
   /** Fetch or create the wallet (upserts coins:0 rev:0 on first access). */
   protected async ensureWallet(accountId: string): Promise<WalletDoc> {
     const res = await this.cols.wallets.findOneAndUpdate(
@@ -363,6 +380,25 @@ export class CommercialServiceBase {
   }): Promise<Result<{ coinsAfter: number; subscriptionExpiry: number; wallet: WalletView }>> {
     const existing = await this.cols.orders.findOne({ _id: args.orderId });
     if (existing) {
+      // status:'charged' means a prior attempt claimed the slot but hasn't flipped it to 'delivered' yet
+      // (see the insert below — it now reserves as 'charged', not 'delivered', so this is observable).
+      // Only resume once the claim is stale (base.ts isStaleClaim) — a concurrent duplicate of the SAME
+      // orderId landing here milliseconds after the true winner claimed it must NOT redo the gate-check +
+      // applySubscription itself (that would double-grant); it just reads a snapshot like the winner will
+      // shortly produce. A claim that's still 'charged' well past the grace window means the original
+      // attempt crashed and nobody will ever finish it — resume for real then.
+      if (existing.status === 'charged') {
+        if (!this.isStaleClaim(existing.ts)) {
+          const w = await this.cols.wallets.findOne({ _id: existing.accountId });
+          return {
+            ok: true,
+            coinsAfter: effectiveCoins(w, displayChannelOf(args.channel, args.clientPlatform)),
+            subscriptionExpiry: w?.subscription?.expiry ?? 0,
+            wallet: walletView(w, args.clientPlatform, args.channel),
+          };
+        }
+        return this.finishSubscriptionCardBuy(args);
+      }
       const w = await this.cols.wallets.findOne({ _id: existing.accountId });
       return {
         ok: true,
@@ -371,24 +407,34 @@ export class CommercialServiceBase {
         wallet: walletView(w, args.clientPlatform, args.channel),
       };
     }
-    const now = this.now();
-    // Claim the order slot first. Concurrent replays of the SAME orderId race here; only one wins, the rest take the
-    // E11000 branch and return the existing grant (idempotent). The single-slot gate is applied AFTER the slot is
-    // claimed so it never intercepts an idempotent replay — only the unique winner of this orderId evaluates it.
+    // Claim the order slot first (status:'charged' — not yet delivered). Concurrent replays of the SAME
+    // orderId race here; only one wins, the rest take the E11000 branch and resume/return the existing
+    // grant (idempotent). The single-slot gate is applied AFTER the slot is claimed so it never intercepts
+    // an idempotent replay — only the unique winner of this orderId evaluates it.
     try {
       await this.cols.orders.insertOne({
         _id: args.orderId,
         accountId: args.accountId,
         kind: 'grant',
         cost: 0,
-        status: 'delivered',
+        status: 'charged',
         coinsAfter: 0,
         result: {},
-        deliveredAt: now,
-        ts: now,
+        ts: this.now(),
       });
     } catch (e) {
       if ((e as { code?: number }).code === 11000) {
+        const r = await this.cols.orders.findOne({ _id: args.orderId });
+        if (r?.status === 'charged') {
+          if (this.isStaleClaim(r.ts)) return this.finishSubscriptionCardBuy(args);
+          const w0 = await this.cols.wallets.findOne({ _id: args.accountId });
+          return {
+            ok: true,
+            coinsAfter: effectiveCoins(w0, displayChannelOf(args.channel, args.clientPlatform)),
+            subscriptionExpiry: w0?.subscription?.expiry ?? 0,
+            wallet: walletView(w0, args.clientPlatform, args.channel),
+          };
+        }
         const w = await this.cols.wallets.findOne({ _id: args.accountId });
         return {
           ok: true,
@@ -399,8 +445,26 @@ export class CommercialServiceBase {
       }
       throw e;
     }
+    return this.finishSubscriptionCardBuy(args);
+  }
+
+  /**
+   * Runs the single-slot gate + applySubscription + delivery flip for an order slot already claimed as
+   * 'charged' (fresh claim or resumed replay — see subscriptionCardBuy). Only ever reaches applySubscription
+   * once per orderId: a 'charged' row is a dead giveaway no prior call got far enough to flip it to
+   * 'delivered', and the unique orderId insert guarantees at most one caller gets past the claim itself.
+   */
+  private async finishSubscriptionCardBuy(args: {
+    accountId: string;
+    orderId: string;
+    days: number;
+    immediateCoins: number;
+    channel?: RechargeChannel;
+    clientPlatform?: string;
+  }): Promise<Result<{ coinsAfter: number; subscriptionExpiry: number; wallet: WalletView }>> {
+    const now = this.now();
     // Single-slot gate: refuse a distinct purchase while a card is still active (buy → use up → rebuy). Roll back the
-    // just-claimed slot so the account isn't left with a phantom grant order and a later (post-expiry) retry works.
+    // claimed slot so the account isn't left with a phantom grant order and a later (post-expiry) retry works.
     const wallet = await this.ensureWallet(args.accountId);
     if ((wallet.subscription?.expiry ?? 0) > now) {
       await this.cols.orders.deleteOne({ _id: args.orderId });
@@ -413,7 +477,10 @@ export class CommercialServiceBase {
       now,
       { orderId: args.orderId, channel: args.channel, clientPlatform: args.clientPlatform },
     );
-    await this.cols.orders.updateOne({ _id: args.orderId }, { $set: { coinsAfter: applied.coinsAfter } });
+    await this.cols.orders.updateOne(
+      { _id: args.orderId },
+      { $set: { status: 'delivered', coinsAfter: applied.coinsAfter, deliveredAt: now } },
+    );
     return {
       ok: true,
       coinsAfter: applied.coinsAfter,

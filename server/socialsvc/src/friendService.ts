@@ -317,9 +317,25 @@ export class FriendService {
 
   /** Per-minute message send rate limiter (in-process sliding window). */
   private readonly chatRate = new Map<string, number[]>();
+  private lastChatRateSweepAt = 0;
+  private static readonly CHAT_RATE_WINDOW_MS = 60_000;
+
+  /** Piggyback a full cleanup pass onto normal chat traffic (at most once per window) instead of a
+   * background timer — same pattern as metaserver's SlidingRateLimiter.maybeSweep. Without it, every
+   * account that has ever sent a chat message keeps a (possibly now-empty) entry in this map forever. */
+  private maybeSweepChatRate(now: number): void {
+    if (now - this.lastChatRateSweepAt < FriendService.CHAT_RATE_WINDOW_MS) return;
+    this.lastChatRateSweepAt = now;
+    for (const [k, timestamps] of this.chatRate) {
+      const fresh = timestamps.filter((t) => now - t < FriendService.CHAT_RATE_WINDOW_MS);
+      if (fresh.length === 0) this.chatRate.delete(k);
+      else if (fresh.length !== timestamps.length) this.chatRate.set(k, fresh);
+    }
+  }
 
   allowChat(accountId: string, now: number, ratePerMin = 30): boolean {
-    const win = this.chatRate.get(accountId)?.filter((t) => now - t < 60_000) ?? [];
+    this.maybeSweepChatRate(now);
+    const win = this.chatRate.get(accountId)?.filter((t) => now - t < FriendService.CHAT_RATE_WINDOW_MS) ?? [];
     if (win.length >= ratePerMin) return false;
     win.push(now);
     this.chatRate.set(accountId, win);

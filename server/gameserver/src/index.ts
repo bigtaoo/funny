@@ -68,7 +68,10 @@ function main(): void {
     res.writeHead(426, { 'content-type': 'text/plain' });
     res.end('Upgrade Required');
   });
-  const wss = new WebSocketServer({ server: http, path: '/ws' });
+  // maxPayload: `ws` defaults to 100MB per frame with no cap otherwise. PlayerCommand frames (M12 opaque
+  // bytes, never decoded here) are small per-turn inputs — 1MB is generous headroom while still bounding
+  // memory/CPU an authenticated connection can force per message.
+  const wss = new WebSocketServer({ server: http, path: '/ws', maxPayload: 1 << 20 });
 
   wss.on('connection', (ws: WebSocket, req) => {
     // Handshake auth: ?ticket=<matchsvc-signed ticket> (M18).

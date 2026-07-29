@@ -50,6 +50,10 @@ export function SaveMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase & Cons
     async getSave(req: FastifyRequest) {
       const accountId = accountIdOf(req);
       const { cols, commercial, now } = this.deps;
+      // Kicked off now, awaited only where needed below (season migration check) — independent of the
+      // save/wallet reconciliation chain that follows (different collection, no shared state), so there's
+      // no reason to make it wait behind that chain instead of overlapping with it.
+      const currentSeasonPromise = getCurrentSeason(cols, now());
       await getOrCreateSave(cols, accountId, now()); // ensure save document exists
       // Starter title backfill (TITLE_DESIGN §6): idempotent grant of the newbie title. New accounts already
       // have it from makeNewSave; this heals pre-existing accounts created before the starter grant was wired.
@@ -72,7 +76,7 @@ export function SaveMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase & Cons
       // Lazy season migration (S11): if pvp.seasonNo is behind, settle previous-season rewards + soft-reset + update battle pass.
       try {
         const socialsvc = this.deps.socialsvc ?? nullMetaSocialsvcClient;
-        const currentSeason = await getCurrentSeason(cols, now());
+        const currentSeason = await currentSeasonPromise;
         const r = await migrateIfStale(cols, commercial, socialsvc, save, currentSeason, now());
         if (r.migrated) {
           save = await writeMigratedSave(
@@ -85,13 +89,17 @@ export function SaveMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase & Cons
       } catch (e) {
         req.log.warn({ err: e }, 'season migrate failed (serving pre-migration save)');
       }
-      // Stamina snapshot injection (A4): stamina is stored in a separate collection and merged into the save mirror on response.
-      const stamina = await this.readStaminaSnapshot(accountId, now());
+      // Stamina snapshot injection (A4): stamina is stored in a separate collection and merged into the save
+      // mirror on response. These four reads are mutually independent (different collections/fields, none
+      // consumes another's result) — same Promise.all pattern as accounts.ts's getProfile.
+      const [stamina, displayName, publicId, freeRename] = await Promise.all([
+        this.readStaminaSnapshot(accountId, now()),
+        getDisplayName(cols, accountId),
+        ensurePublicId(cols, accountId),
+        // freeRename: the player still holds their one-time free rename (current name is a system default).
+        hasFreeRename(cols, accountId),
+      ]);
       save = { ...save, stamina };
-      const displayName = await getDisplayName(cols, accountId);
-      const publicId = await ensurePublicId(cols, accountId);
-      // freeRename: the player still holds their one-time free rename (current name is a system default).
-      const freeRename = await hasFreeRename(cols, accountId);
       return ok({
         save,
         publicId,

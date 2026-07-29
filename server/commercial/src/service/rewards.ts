@@ -27,7 +27,9 @@ export function RewardsMixin<TBase extends CommercialBaseCtor>(Base: TBase): TBa
       dayKey: string;
       clientPlatform?: string;
     }): Promise<Result<{ coinsAfter: number }>> {
-      const amount = Math.max(0, Math.floor(args.amount));
+      // Guard finiteness before flooring/clamping: Math.floor(Infinity)===Infinity, which would sail
+      // through the `=== 0` check below and reach credit()'s unconditional wallet $inc.
+      const amount = Number.isFinite(args.amount) ? Math.max(0, Math.floor(args.amount)) : 0;
       if (amount === 0) return { ok: false, error: 'BAD_REQUEST' };
       const coinsAfter = await this.credit(args.accountId, amount, 'ads', { clientPlatform: args.clientPlatform });
       return { ok: true, coinsAfter };
@@ -45,7 +47,9 @@ export function RewardsMixin<TBase extends CommercialBaseCtor>(Base: TBase): TBa
       dayKey: string;
       clientPlatform?: string;
     }): Promise<Result<{ coinsAfter: number; credited: number; capped: boolean }>> {
-      const amount = Math.max(0, Math.floor(args.amount));
+      // Guard finiteness before flooring/clamping: Math.floor(Infinity)===Infinity, which would sail
+      // through the `=== 0` check below and reach credit()'s unconditional wallet $inc.
+      const amount = Number.isFinite(args.amount) ? Math.max(0, Math.floor(args.amount)) : 0;
       if (amount === 0) return { ok: false, error: 'BAD_REQUEST' };
 
       const allowed = await bumpCappedCounter(this.redis, 'victoryDaily', args.accountId, args.dayKey, 'wins', VICTORY_DAILY_WIN_CAP);

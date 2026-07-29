@@ -363,8 +363,15 @@ export class FamilyService {
     if (!memDoc) throw new SlgError('NOT_IN_FAMILY');
     if (memDoc.role === 'leader') throw new SlgError('BAD_REQUEST');
 
-    await cols.familyMembers.deleteOne({ _id: accountId });
-    await cols.families.updateOne({ _id: memDoc.familyId }, { $inc: { memberCount: -1 } });
+    const deleted = await cols.familyMembers.deleteOne({ _id: accountId });
+    // Only decrement if THIS call actually removed a row — without the guard, a concurrent duplicate
+    // call (e.g. a network retry of leaveFamily, or racing with kickMember on the same account) that
+    // loses the deleteOne race would still unconditionally decrement, double-counting a single removal
+    // and drifting memberCount below the family's actual member row count (the unsafe direction: an
+    // under-count lets the family creep past FAMILY_CAP instead of just blocking joins prematurely).
+    if (deleted.deletedCount > 0) {
+      await cols.families.updateOne({ _id: memDoc.familyId }, { $inc: { memberCount: -1 } });
+    }
   }
 
   /** Kick a member (leader can kick anyone; elder can only kick members). */
@@ -381,8 +388,12 @@ export class FamilyService {
     if (requesterMem.role === 'elder' && targetMem.role === 'elder') throw new SlgError('NO_PERMISSION');
     if (requesterMem.role === 'member') throw new SlgError('NO_PERMISSION');
 
-    await cols.familyMembers.deleteOne({ _id: targetId });
-    await cols.families.updateOne({ _id: requesterMem.familyId }, { $inc: { memberCount: -1 } });
+    const deleted = await cols.familyMembers.deleteOne({ _id: targetId });
+    // Same guard as leaveFamily: only decrement if this call actually removed the row (protects against
+    // a concurrent leaveFamily/kickMember racing on the same target double-decrementing memberCount).
+    if (deleted.deletedCount > 0) {
+      await cols.families.updateOne({ _id: requesterMem.familyId }, { $inc: { memberCount: -1 } });
+    }
   }
 
   /** Set a member's role (leader only). */

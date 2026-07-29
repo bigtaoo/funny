@@ -33,6 +33,7 @@ interface Entry<V> {
 
 class TtlMap<V> {
   private store = new Map<string, Entry<V>>();
+  private lastSweepAt = 0;
   constructor(private readonly ttlMs: number) {}
 
   get(key: string): V | undefined {
@@ -45,8 +46,23 @@ class TtlMap<V> {
     return e.value;
   }
 
+  // Piggyback a full cleanup pass onto normal cache-miss traffic (at most once per ttlMs) instead of a
+  // background timer — same reasoning as metaserver's SlidingRateLimiter.maybeSweep: `get()` only evicts
+  // the ONE key it happens to look up, so a key that's set once and never looked up again (e.g. an
+  // account that logs in once and never returns) would otherwise sit in this per-process, never-reset
+  // cache for the life of the (long-running) process.
+  private maybeSweep(now: number): void {
+    if (now - this.lastSweepAt < this.ttlMs) return;
+    this.lastSweepAt = now;
+    for (const [k, e] of this.store) {
+      if (e.expiresAt <= now) this.store.delete(k);
+    }
+  }
+
   set(key: string, value: V): void {
-    this.store.set(key, { value, expiresAt: Date.now() + this.ttlMs });
+    const now = Date.now();
+    this.maybeSweep(now);
+    this.store.set(key, { value, expiresAt: now + this.ttlMs });
   }
 
   delete(key: string): void {

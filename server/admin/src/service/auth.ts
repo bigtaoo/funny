@@ -24,6 +24,7 @@ export function AuthMixin<TBase extends AdminBaseCtor>(Base: TBase): TBase & Con
     /** Verify account credentials. Returns the account on success (for httpApi to sign a token); throws AdminError on failure. Audits both success and failure. */
     async authenticate(username: string, password: string, ip?: string): Promise<AdminAccountDoc> {
       const key = (username ?? '').trim().toLowerCase();
+      this.maybeSweepLoginAttempts();
       // Rate-limit gate: reject immediately at threshold without even checking the password (prevents brute force + timing side-channel).
       const lockedFor = this.loginLockedMs(key);
       if (lockedFor > 0) {
@@ -50,6 +51,23 @@ export function AuthMixin<TBase extends AdminBaseCtor>(Base: TBase): TBase & Con
       await this.cols.adminAccounts.updateOne({ _id: doc._id }, { $set: { lastLoginAt: this.now() } });
       await this.audit(doc._id, 'login', { ...(ip ? { ip } : {}) });
       return doc;
+    }
+
+    /**
+     * Piggyback a full cleanup pass onto normal login traffic (at most once per LOGIN_WINDOW_MS) instead
+     * of a background timer — same pattern as metaserver's SlidingRateLimiter.maybeSweep, chosen for the
+     * same reason: a timer would leak across short-lived AdminService instances constructed per test.
+     * `key` is an attacker-controlled username with no account-existence check before this table is
+     * touched (recordLoginFailure runs on every failed attempt, including nonexistent usernames), so
+     * without a sweep this map grows without bound for the life of the process.
+     */
+    private maybeSweepLoginAttempts(): void {
+      const now = this.now();
+      if (now - this.lastLoginAttemptsSweepAt < LOGIN_WINDOW_MS) return;
+      this.lastLoginAttemptsSweepAt = now;
+      for (const [k, a] of this.loginAttempts) {
+        if (a.lockedUntil <= now && now - a.windowStart > LOGIN_WINDOW_MS) this.loginAttempts.delete(k);
+      }
     }
 
     /** Whether the account is currently locked; returns remaining lockout milliseconds (0 = not locked). */

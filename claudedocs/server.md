@@ -218,3 +218,25 @@ commercial 此前完全没有 Redis 依赖，本次新增：`config.ts` 补 `NW_
 **未完成，留独立任务**：P1 合并优化（match-identity 合并端点、`GET /save` wallet N+1、socialsvc profile/extra 单跳化、save-fields 批量+缓存等一长串已诊断待实现项）——诊断已写入设计文档，本轮聚焦 P0 正确性缺口 + 已完成的 P2 清理，性能优化留下一轮。
 
 **验证**：11 个 server 包全量 `tsc -b` + vitest 交叉扫描（除 matchsvc 2 个与本轮无关的既有失败——已 spawn 独立任务跟踪），client `tsc --noEmit` 全绿。
+
+## 服务器逻辑全面审计 + 修复（2026-07-29，server-logic-audit-2026-07-29）
+
+承前两轮（07-27 存储方式、07-28 服务间通信）之后，这轮切到**单进程内部业务逻辑本身**：算法复杂度/内存管理/数据结构设计/输入校验健壮性/单进程容错。完整发现清单、决策表、逐项修复记录见 [`design/game/SERVER_LOGIC_AUDIT_2026-07-29.md`](../design/game/SERVER_LOGIC_AUDIT_2026-07-29.md)；这里只记落地要点。
+
+- **装备复制漏权**：`equipEquipment`（metaserver）从不调用项目自己写好的 `isEquipped()` 占用检查，同一装备实例可同时装到两张卡上复制战力。补检查。
+- **commercial 资金丢失风险（6 处）**：rechargeVerify/paddleComplete/promoRedeem/orderDelivered/subscriptionCardBuy/starterBuy growth 均是"先落地已发放记录、再执行 credit 副作用"，崩溃在两步之间会让钱永久丢失且无法重放补发。引入 `isStaleClaim` 宽限窗口（15s，`CommercialServiceBase`）：窗口内维持原状（不与真正的并发赢家抢跑），窗口外验证 ledger/order 状态并补发（verify-and-heal）。
+- **worldsvc troops 并发扣负**：`startMarch`/`occupyTile` 是 check-then-act，并发双发可把 troops 打成负数；改用 `city.ts` 训练花费已用的 `findOneAndUpdate({troops:{$gte:cost}})` 原子写法。
+- **gateway/gameserver `maxPayload` 缺失**：WebSocketServer 未设置，补 1MB。
+- **socialsvc CORS 头漏 `x-nw-platform`**：07-28 修了 worldsvc/auctionsvc，socialsvc 被漏，补上。
+- **analyticsvc 埋点 `ts` 无边界校验**：可永久绕开 90 天 TTL 或污染按天聚合；`clampEventTs` 限制在 [-24h,+5min]。
+- **4 处无界内存增长**：admin `loginAttempts`（攻击者可控 key）、gateway `friendsCache`/`publicIdCache`、socialsvc `chatRate`、metaserver `accountCache.TtlMap` 均补 sweep-on-traffic（同既有 `SlidingRateLimiter.maybeSweep` 套路）；gameserver `Room.pending` 补 `MAX_PENDING_PER_TICK=200` 防洪水攻击撑大 replay。
+- **socialsvc family memberCount 双重递减**：`leaveFamily`/`kickMember` 并发双发会重复 `$inc -1`；`deleteOne` 的 `deletedCount` 门控 decrement。
+- **worldsvc `resetSeason` 未清理 Redis 幽灵索引**：ADR-051 的 `occ`/`cover` 哈希未随季重置清理；新增 `WorldCorePush.clearSpatialIndexes`。
+- **auctionsvc `scanAnomalies` 静默截断**：5000 条上限无排序无告警可能漏检最近成交；改按 `soldAt desc` 排序（新索引）+ 命中上限时告警。
+- **readJson 内存泄漏遗漏面**：07-28 只修了 gateway/matchsvc 的 `destroy()` 缺失，这轮补齐 socialsvc/analyticsvc/commercial/botsvc 四个内部端口。
+- **admin `retryTicket` 无原子 claim**：并发点击可重复触发 `mail.send`；补 `retryLockedAt` CAS（mirrors `approveTicket` 既有状态 CAS）。
+- **尝试后回退**：`decompressReplayDoc` 异步化在 `matchReport.ts` 的每场排位赛热路径上暴露了 `pvp-card-stats.e2e.test.ts` 对该 fire-and-forget 链路"近乎同步完成"的隐含时序假设——改成真异步后测试断言跑在链路完成前。已回退保持同步；根治需要连带把测试改成 poll 或引入更强的一致性保证，留独立任务。
+
+**未处理（更大改动或更低优先级，非本轮范围）**：matchsvc 赛前状态纯内存无持久化；worldsvc `getMarches`/`getStationed` 全服拉取 + `computeMarchPath` 缺索引扫描（结构性，需要重新设计查询模式）；`siegeEngine` 势均力敌攻城同步阻塞事件循环（需 worker 线程）；gateway 控制消息无 per-connection 限流；admin 四眼审批例外（策略决策）；`dailyCounter.LocalBackend` 长期 Redis 故障下无界增长（概率低）。
+
+**验证**：13 个 server 包 `tsc -b` 全绿；改动涉及的 10 个包 vitest 全绿（metaserver 731、commercial 144、worldsvc 350、gateway 27、gameserver 58、socialsvc 78、analyticsvc 25、admin 45、auctionsvc 77、botsvc 40，均含新增回归测试）。

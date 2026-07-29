@@ -111,6 +111,45 @@ describe.skipIf(!mongo)('analyticsvc e2e', () => {
     await new Promise((r) => setTimeout(r, 200));
   });
 
+  // Regression for the 2026-07-29 audit fix: a client-declared `ts` used to be trusted verbatim (only
+  // `typeof === 'number'` checked). `events.ts` is the field the 90-day TTL index keys off — an unbounded
+  // future value would let the record evade expiry forever; an unbounded past/negative value would land
+  // in the wrong day-bucket for DAU/retention aggregation. Both are now clamped to server time.
+  it('POST /analytics/events clamps an out-of-range client ts to server time (TTL escape / day-bucket poisoning)', async () => {
+    const before = Date.now();
+    const batch = {
+      session_id: 'sess-ts-abuse',
+      // Reuses 'dev-001' (already counted toward today's DAU by the first test above) and non-funnel-step
+      // event names — a fresh device_id or a FUNNEL_STEPS name here would itself inflate the DAU/funnel
+      // assertions later in this file; this test only cares about where `ts` lands, not those aggregates.
+      device_id: 'dev-001',
+      platform: 'web',
+      os: 'Windows',
+      game_version: '0.1.0',
+      locale: 'en',
+      events: [
+        { event: 'ts_abuse_future', ts: before + 365 * 24 * 60 * 60 * 1000 }, // 1 year in the future
+        { event: 'ts_abuse_past', ts: -1_000_000_000 }, // deep in the past / effectively negative
+        { event: 'ts_abuse_nan', ts: NaN },
+      ],
+    };
+    const res = await fetch(`${base}/analytics/events`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(batch),
+    });
+    expect(res.status).toBe(200);
+    await new Promise((r) => setTimeout(r, 200));
+    const after = Date.now();
+    const docs = await mongo!.collections.events.find({ session_id: 'sess-ts-abuse' }).toArray();
+    expect(docs).toHaveLength(3);
+    for (const d of docs) {
+      const stored = d.ts.getTime();
+      expect(stored).toBeGreaterThanOrEqual(before - 1000);
+      expect(stored).toBeLessThanOrEqual(after + 1000);
+    }
+  });
+
   it('POST /analytics/events second device + screen_view (partial funnel)', async () => {
     const now = Date.now();
     const batch = {

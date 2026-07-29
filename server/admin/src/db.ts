@@ -55,6 +55,10 @@ export interface CompTicketDoc {
   dispatchKey: string;
   recipientCount?: number;
   error?: string;
+  /** Atomic claim guard for retryTicket (2026-07-29 audit fix) — set while a retry's execute() call is
+   * in flight, cleared once it settles either way. Without it, two concurrent retryTicket calls (a
+   * double-click) both pass the `status==='failed'` read-check and both call execute()/mail.send. */
+  retryLockedAt?: number;
 }
 
 /** SLG abnormal-trade audit ticket (G7 anti-RMT). The anomalous snapshot is frozen when the ticket is filed; single-reviewer adjudication with full audit trail. */

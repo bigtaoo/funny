@@ -191,13 +191,22 @@ export class TerritoryService {
     await cols.tiles.updateOne({ _id: tid }, { $set: tileDoc }, { upsert: true });
 
     const yieldRate = await this.core.recomputeYield(worldId, accountId);
-    await cols.playerWorld.updateOne(
-      { _id: pw._id },
+    // The `pw.troops < GARRISON_PER_TILE` check above is only a fast-fail on a possibly-stale read; guard
+    // the actual deduction atomically too — two concurrent occupyTile calls (or occupy + startMarch racing
+    // on the same pool) could otherwise both pass the early check and both $inc, driving troops negative.
+    const deducted = await cols.playerWorld.updateOne(
+      { _id: pw._id, troops: { $gte: GARRISON_PER_TILE } },
       {
         $set: { resources, yieldRate, lastTickAt: t },
         $inc: { troops: -GARRISON_PER_TILE, rev: 1 },
       },
     );
+    if (deducted.matchedCount === 0) {
+      // Lost the race: roll back the tile claim just written so the account isn't left owning a tile with
+      // no garrison ever actually deducted from its pool.
+      await cols.tiles.deleteOne({ _id: tid });
+      throw new SlgError('NO_TROOPS', 'Insufficient troops to garrison the tile');
+    }
     const after = await cols.tiles.findOne({ _id: tid });
     if (after) await this.core.pushTileToObservers(after, new Set([accountId])); // G5-2: new territory is visible to observers within vision
     // §17.4 activity increment: direct occupation (S8-1 path) → occupier's family +1 (including prosperity refresh).

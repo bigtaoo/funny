@@ -198,6 +198,17 @@ describe.skipIf(!mongo)('AuctionService e2e', () => {
     })).rejects.toMatchObject({ code: 'BAD_REQUEST' });
   });
 
+  // Regression for the 2026-07-29 audit fix: createAuction only checked `qty <= 0`, not integer-ness — a
+  // fractional material qty (e.g. 1.5) would flow straight through to meta.deductMaterial and the mail
+  // attachment `count` field, neither of which validates it themselves (auctionsvc is the only caller).
+  it('fractional material qty → BAD_REQUEST (material deduction never triggered)', async () => {
+    await expect(svc.createAuction({
+      sellerId: 'alice', itemType: 'material',
+      item: { material: 'scrap' }, qty: 1.5, price: 10, durationSec: DUR,
+    })).rejects.toMatchObject({ code: 'BAD_REQUEST' });
+    expect(materialDeducts).toHaveLength(0);
+  });
+
   it('listing exceeds cap → AUCTION_LIMIT_REACHED', async () => {
     // price must fall within the scrap static reference price guardrail band (ref=10 → [5,20]), use 10.
     for (let i = 0; i < AUCTION_MAX_LISTINGS; i++) {

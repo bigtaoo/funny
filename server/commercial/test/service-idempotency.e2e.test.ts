@@ -91,6 +91,54 @@ describe.skipIf(!mongo)('commercial service — idempotency / concurrency / boun
     expect((await ledgerOf('mcx')).filter((l) => l.reason === 'monthly_card').length).toBe(1);
   });
 
+  // Regression for the 2026-07-29 audit fix: the order slot used to be claimed as status:'delivered'
+  // immediately, so a crash between the claim and applySubscription would permanently stamp the order
+  // "done" while the days-extension + immediateCoins grant never happened. It's now claimed as 'charged'
+  // first; simulate the crash (hand-insert a 'charged' order, skip applySubscription) and verify a LATER
+  // call (past the grace window) resumes and completes the grant exactly once.
+  it('monthlyCardBuy: resumes a stale charged order left by a crash before applySubscription ran', async () => {
+    await m.collections.orders.insertOne({
+      _id: 'crashed-mc',
+      accountId: 'mch',
+      kind: 'grant',
+      cost: 0,
+      status: 'charged',
+      coinsAfter: 0,
+      result: {},
+      ts: t,
+    });
+    t += 20000; // past REPLAY_HEAL_GRACE_MS
+    const res = await svc.monthlyCardBuy({ accountId: 'mch', orderId: 'crashed-mc' });
+    expect(res.ok).toBe(true);
+    expect((await svc.getWallet('mch')).coins).toBe(600);
+    expect((await m.collections.orders.findOne({ _id: 'crashed-mc' }))?.status).toBe('delivered');
+    expect((await ledgerOf('mch')).filter((l) => l.reason === 'monthly_card').length).toBe(1);
+
+    // A second call after completion must not resume again (already 'delivered').
+    const replay = await svc.monthlyCardBuy({ accountId: 'mch', orderId: 'crashed-mc' });
+    expect(replay.ok).toBe(true);
+    expect((await svc.getWallet('mch')).coins).toBe(600);
+    expect((await ledgerOf('mch')).filter((l) => l.reason === 'monthly_card').length).toBe(1);
+  });
+
+  it('monthlyCardBuy: does NOT resume a charged order still within the grace window', async () => {
+    await m.collections.orders.insertOne({
+      _id: 'fresh-mc',
+      accountId: 'mch2',
+      kind: 'grant',
+      cost: 0,
+      status: 'charged',
+      coinsAfter: 0,
+      result: {},
+      ts: t, // claimed "just now"
+    });
+    const res = await svc.monthlyCardBuy({ accountId: 'mch2', orderId: 'fresh-mc' });
+    expect(res.ok).toBe(true);
+    // No resume attempted — the (unsimulated) winner is trusted to finish on its own.
+    expect((await m.collections.orders.findOne({ _id: 'fresh-mc' }))?.status).toBe('charged');
+    expect((await ledgerOf('mch2')).filter((l) => l.reason === 'monthly_card').length).toBe(0);
+  });
+
   it('shopCharge: SEQUENTIAL duplicate orderId debits exactly once (idempotent replay)', async () => {
     await fund('scs', 1000);
     const first = await svc.shopCharge({ accountId: 'scs', itemId: 'skin_shop_c1', cost: 300, orderId: 'seq-shop' });
@@ -201,6 +249,55 @@ describe.skipIf(!mongo)('commercial service — idempotency / concurrency / boun
     expect((await ledgerOf('rc')).filter((l) => l.reason === 'recharge').length).toBe(1);
   });
 
+  // Regression for the 2026-07-29 audit fix: the `recharges` reserve-insert happens BEFORE credit() runs,
+  // so a crash between the two would otherwise stamp the receipt "granted" with the coins never credited,
+  // and every future replay would read that stale (un-credited) state and report fabricated success
+  // forever. Simulate exactly that crash (hand-insert the reserved receipt, skip credit) and verify a
+  // LATER replay (past the isStaleClaim grace window — see base.ts) heals the missing credit instead of
+  // silently losing it. A replay landing WITHIN the grace window must NOT heal (that's what the
+  // concurrent test above guards — a live concurrent duplicate must not race the true winner).
+  it('rechargeVerify: heals a credit dropped by a crash between reserve and credit (stale claim)', async () => {
+    await fund('hc', 0); // ensure a full wallet doc exists
+    await m.collections.recharges.insertOne({
+      _id: 'crashed-rc',
+      accountId: 'hc',
+      platform: 'web',
+      coinsGranted: 550,
+      status: 'granted',
+      rawReceipt: 'tier:t499',
+      ts: t,
+    });
+    t += 20000; // past REPLAY_HEAL_GRACE_MS — the original attempt is presumed dead, not merely slow
+    const res = await svc.rechargeVerify({ accountId: 'hc', platform: 'web', receipt: 'tier:t499', receiptId: 'crashed-rc' });
+    expect(res.ok && res.coinsGranted).toBe(550);
+    expect((await svc.getWallet('hc')).coins).toBe(550);
+    expect((await ledgerOf('hc')).filter((l) => l.reason === 'recharge').length).toBe(1);
+
+    // A second replay must not heal again (already landed) — ledger stays at exactly one entry.
+    const replay = await svc.rechargeVerify({ accountId: 'hc', platform: 'web', receipt: 'tier:t499', receiptId: 'crashed-rc' });
+    expect(replay.ok && replay.coinsAfter).toBe(550);
+    expect((await svc.getWallet('hc')).coins).toBe(550);
+    expect((await ledgerOf('hc')).filter((l) => l.reason === 'recharge').length).toBe(1);
+  });
+
+  it('rechargeVerify: does NOT heal a claim still within the grace window (avoids racing a live in-flight winner)', async () => {
+    await fund('hc2', 0);
+    await m.collections.recharges.insertOne({
+      _id: 'fresh-rc',
+      accountId: 'hc2',
+      platform: 'web',
+      coinsGranted: 550,
+      status: 'granted',
+      rawReceipt: 'tier:t499',
+      ts: t, // claimed "just now" — a live winner could still be mid-flight
+    });
+    const res = await svc.rechargeVerify({ accountId: 'hc2', platform: 'web', receipt: 'tier:t499', receiptId: 'fresh-rc' });
+    expect(res.ok).toBe(true);
+    // No heal attempted — the winner's own credit() (not simulated here) is trusted to land on its own.
+    expect((await ledgerOf('hc2')).filter((l) => l.reason === 'recharge').length).toBe(0);
+    expect((await svc.getWallet('hc2')).coins).toBe(0);
+  });
+
   it('rechargeVerify: concurrent same receiptId from two accounts → one credit, the other rejected (no cross-account leak)', async () => {
     const [a, b] = await Promise.all([
       svc.rechargeVerify({ accountId: 'accA', platform: 'web', receipt: 'tier:t499', receiptId: 'shared-rc' }),
@@ -231,6 +328,23 @@ describe.skipIf(!mongo)('commercial service — idempotency / concurrency / boun
     // A SECOND, distinct purchase gets no bonus (firstPurchasedAt already claimed).
     const r3 = await svc.paddleComplete({ accountId: 'pd', transactionId: 'txn-2', coins: 550 });
     expect(r3.ok && r3.coinsGranted).toBe(550);
+  });
+
+  // Regression for the 2026-07-29 audit fix: paddleComplete had no non-negative/finite validation on
+  // coins/usdCents at all — a bad webhook value (e.g. JSON `1e400`, which JSON.parse silently overflows
+  // to Infinity) would sail into credit()'s unconditional $inc and corrupt wallet.coins to Infinity.
+  it('paddleComplete: rejects non-positive / non-finite coins as BAD_REQUEST, does not touch the wallet', async () => {
+    for (const coins of [0, -100, Infinity, -Infinity, NaN]) {
+      const r = await svc.paddleComplete({ accountId: 'pdbad', transactionId: `txn-bad-${coins}`, coins });
+      expect(r).toEqual({ ok: false, error: 'BAD_REQUEST' });
+    }
+    expect((await svc.getWallet('pdbad')).coins).toBe(0);
+    expect(await m.collections.recharges.countDocuments({ accountId: 'pdbad' })).toBe(0);
+  });
+
+  it('paddleComplete: rejects non-finite usdCents as BAD_REQUEST', async () => {
+    const r = await svc.paddleComplete({ accountId: 'pdbad2', transactionId: 'txn-bad-usd', coins: 550, usdCents: Infinity });
+    expect(r).toEqual({ ok: false, error: 'BAD_REQUEST' });
   });
 
   it('paddleComplete: replaying another account’s transactionId is rejected (INVALID_RECEIPT)', async () => {

@@ -103,7 +103,7 @@ export function ShopMixin<TBase extends CommercialBaseCtor>(Base: TBase): TBase 
       const existing = await this.cols.orders.findOne({ _id: args.orderId });
       if (existing) return { ok: true, coinsAfter: existing.coinsAfter };
 
-      const amount = Math.max(0, Math.floor(args.amount));
+      const amount = Number.isFinite(args.amount) ? Math.max(0, Math.floor(args.amount)) : 0;
       if (amount === 0) return { ok: false, error: 'BAD_REQUEST' };
 
       await this.ensureWallet(args.accountId);
@@ -163,7 +163,9 @@ export function ShopMixin<TBase extends CommercialBaseCtor>(Base: TBase): TBase 
       const existing = await this.cols.orders.findOne({ _id: args.orderId });
       if (existing) return { ok: true, coinsAfter: existing.coinsAfter };
 
-      const amount = Math.max(0, Math.floor(args.amount));
+      // Guard finiteness before flooring/clamping: Math.floor(Infinity)===Infinity, which would sail
+      // through the `amount > 0` check below and reach credit()'s unconditional wallet $inc.
+      const amount = Number.isFinite(args.amount) ? Math.max(0, Math.floor(args.amount)) : 0;
       // First claim the idempotent order slot (unique _id prevents concurrent duplicate grants), then credit coins + backfill coinsAfter.
       try {
         await this.cols.orders.insertOne({

@@ -407,12 +407,23 @@ export class MarchService {
     }
     // Deduct troops on departure (in-transit; not in the pool) — skipped for card armies, whose strength
     // already lives in cardState.currentTroops and never touches playerWorld.troops (see hasCardArmy above).
-    await cols.playerWorld.updateOne(
-      { _id: pw._id },
-      hasCardArmy || idleRedispatch
-        ? { $set: { resources, lastTickAt: t }, $inc: { rev: 1 } }
-        : { $set: { resources, lastTickAt: t }, $inc: { troops: -troops, rev: 1 } },
-    );
+    // The `pw.troops < troops` check above is only a fast-fail on a possibly-stale read; the real guard is
+    // this atomic `troops: {$gte: troops}` filter — without it, two concurrent dispatches can both pass the
+    // early check and both $inc, driving troops negative (over-deploying more troops than the account has).
+    if (hasCardArmy || idleRedispatch) {
+      await cols.playerWorld.updateOne({ _id: pw._id }, { $set: { resources, lastTickAt: t }, $inc: { rev: 1 } });
+    } else {
+      const deducted = await cols.playerWorld.updateOne(
+        { _id: pw._id, troops: { $gte: troops } },
+        { $set: { resources, lastTickAt: t }, $inc: { troops: -troops, rev: 1 } },
+      );
+      if (deducted.matchedCount === 0) {
+        // Lost the race the fast-fail check above couldn't catch: roll back the march just inserted so the
+        // account isn't left with a phantom in-flight march that drained no pool troops.
+        await cols.marches.deleteOne({ _id: mid });
+        throw new SlgError('NO_TROOPS', 'Insufficient troops');
+      }
+    }
     const view = this.core.marchView(doc);
     void this.core.pushMarch(accountId, view);
     // G5-2 reverse vision push: push this march to observers whose vision covers its path (enemy march entering your vision triggers a push, V4).

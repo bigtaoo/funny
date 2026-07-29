@@ -139,6 +139,23 @@ export class WorldCorePush extends WorldCoreYield {
     }
   }
 
+  /**
+   * Drop the occ/cover spatial-index hashes for a world being reset (2026-07-29 audit fix). resetSeason
+   * wipes tiles/marches/occupations/stationed in Mongo but never cleared these two Redis hashes — if the
+   * same worldId is recycled for a new season, stale entries (a parked-team `leaveAt` is
+   * MAX_SAFE_INTEGER, so it never naturally expires) could affect the P2/P3b encounter/interception
+   * checks for tiles a brand-new player now occupies. Best-effort like every other write in this file —
+   * a failed/absent Redis only means these indexes go stale rather than resetSeason itself failing.
+   */
+  async clearSpatialIndexes(worldId: string): Promise<void> {
+    if (!this.deps.redis?.del) return;
+    try {
+      await Promise.all([this.deps.redis.del(this.occKey(worldId)), this.deps.redis.del(this.coverKey(worldId))]);
+    } catch {
+      /* best-effort */
+    }
+  }
+
   // ── Real-time push (best-effort, §14.5) ──
   async pushMarch(accountId: string, v: MarchView): Promise<void> {
     await this.gateway.push(accountId, {
