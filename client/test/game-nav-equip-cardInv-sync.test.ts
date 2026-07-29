@@ -103,4 +103,37 @@ describe('createGameNav — equip() keeps the local cardInv mirror in sync (2026
     expect(res.ok).toBe(true);
     expect(ctx.saveManager.get().cardInv.card1.gear.weapon).toBeUndefined();
   });
+
+  it('equipping one slot does not touch the card\'s other already-equipped slots', async () => {
+    const save = makeNewSave('acc_test', 1);
+    save.cardInv = {
+      card1: { id: 'card1', defId: 'lichuang', level: 1, locked: false, gear: { armor: 'inst_ar', trinket: 'inst_tk' } },
+    };
+    const { ctx, getEquipment } = buildCtx(save);
+    const { goEquipment: goEquip } = createGameNav(ctx);
+    goEquip(() => {}, 'none', 'card1');
+    const cb = getEquipment()!;
+
+    const res = await cb.equip('weapon', 'inst_wp', 'card1');
+    expect(res.ok).toBe(true);
+
+    const gear = ctx.saveManager.get().cardInv.card1.gear;
+    expect(gear).toEqual({ armor: 'inst_ar', trinket: 'inst_tk', weapon: 'inst_wp' });
+  });
+
+  it('swapping an already-equipped slot for a different instance replaces it (no leftover duplicate)', async () => {
+    const save = makeNewSave('acc_test', 1);
+    save.cardInv = { card1: { id: 'card1', defId: 'lichuang', level: 1, locked: false, gear: { weapon: 'inst_wp_old' } } };
+    const { ctx, getEquipment } = buildCtx(save);
+    const { goEquipment: goEquip } = createGameNav(ctx);
+    goEquip(() => {}, 'none', 'card1');
+    const cb = getEquipment()!;
+
+    const res = await cb.equip('weapon', 'inst_wp_new', 'card1');
+    expect(res.ok).toBe(true);
+
+    const gear = ctx.saveManager.get().cardInv.card1.gear;
+    expect(gear.weapon).toBe('inst_wp_new');
+    expect(Object.keys(gear)).toEqual(['weapon']); // old instance id is gone, not left dangling alongside the new one
+  });
 });

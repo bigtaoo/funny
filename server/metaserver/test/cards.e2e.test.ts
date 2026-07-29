@@ -392,4 +392,31 @@ describe.skipIf(!mongo)('cards backend e2e', () => {
       expect([200, 400, 409]).toContain(r.ok !== undefined ? 200 : (r.statusCode ?? 400));
     });
   });
+
+  // Targeted coverage for the CC-16 production incident (CHARACTER_CARDS_DESIGN.md): the migration
+  // script never having run left every account in a "partial" shape — some cards already living only
+  // in `cardInstances` (anything created after the 2026-07-27 app-code cutover), one leftover legacy
+  // card still sitting in the embedded `save.cardInv` field (anything from before it). This checks
+  // whether `GET /save`'s response actually merges both, or silently drops the cardInstances-only ones.
+  describe('GET /save for an account in the CC-16 partial-migration shape', () => {
+    it('still includes the cardInstances-only cards, not just the leftover legacy one', async () => {
+      const starterIds = await cardIds(); // 3 starter cards, already cardInstances-only (see "new account initialization" above)
+
+      // Simulate the exact partial state found on the reporting account: one more card that never
+      // got migrated, injected straight into the embedded field (bypassing the API, as a stale
+      // pre-cutover write would have left it).
+      await m.collections.saves.updateOne(
+        { _id: accountId },
+        { $set: { 'save.cardInv': { legacyCard: { id: 'legacyCard', defId: 'max', level: 1, gear: {}, locked: false } } } },
+      );
+
+      const res = await app.inject({ method: 'GET', url: '/save', headers: auth() });
+      const inv = body(res).data.save.cardInv as Record<string, unknown>;
+
+      // The whole point: the 3 cardInstances-only starters must still be visible alongside the
+      // leftover legacy card — not silently disappear from the roster just because `save.cardInv`
+      // happens to be a non-empty (but incomplete) object rather than `undefined`.
+      expect(Object.keys(inv).sort()).toEqual([...starterIds, 'legacyCard'].sort());
+    });
+  });
 });
