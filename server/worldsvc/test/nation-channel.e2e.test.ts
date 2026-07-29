@@ -89,6 +89,17 @@ describe.skipIf(!mongo)('NationChannelService e2e', () => {
     expect(history[0].body).toBe('hello world');
   });
 
+  it('sendMessage: masks a sensitive word instead of rejecting delivery (CONTENT_MODERATION_DESIGN.md CM5, mask-not-reject like DM/family chat)', async () => {
+    const svc = new NationChannelService({
+      cols: mongo!.collections,
+      gateway: fakeGateway,
+      commercial: fakeCommercial,
+      now: () => 1000,
+    });
+    const result = await svc.sendMessage(W, 'alice', 'Alice', 'what the fuck');
+    expect(result.body).toBe('what the ****');
+  });
+
   // Regression: posting must ALWAYS charge WORLD_CHAT_COST coins. The old `if (commercial.available)`
   // guard let posts through for free whenever worldsvc lacked NW_COMMERCIAL_INTERNAL_URL.
   describe('regression: a world-chat post is never free', () => {

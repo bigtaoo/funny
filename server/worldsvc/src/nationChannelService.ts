@@ -2,7 +2,7 @@
 // All players within the same world can post; messages are fanned out to online gateway members via
 // Redis pub/sub. Without Redis the service degrades to O(n) HTTP push. Offline members fetch
 // history via REST (TTL 7 days).
-import { FAMILY_MSG_BODY_MAX, SlgError } from '@nw/shared';
+import { FAMILY_MSG_BODY_MAX, SlgError, censorChat, type ChatRegion, type WordlistCache } from '@nw/shared';
 import type { WorldCollections, NationMessageDoc } from './db';
 import type { HttpWorldGatewayClient } from './gatewayClient';
 import type { WorldCommercialClient } from './commercialClient';
@@ -37,6 +37,8 @@ interface Deps {
   socialsvc?: WorldSocialsvcClient;
   /** meta client for publicId resolution in chat messages; omit to leave fromPublicId empty. */
   meta?: WorldMetaClient;
+  /** Content-moderation word list overlay cache (CONTENT_MODERATION_DESIGN.md §3.2); omit = built-in REGION_WORDLISTS only. */
+  wordlists?: WordlistCache;
 }
 
 let msgSeq = 0;
@@ -61,10 +63,14 @@ export class NationChannelService {
     senderName: string,
     body: string,
     clientPlatform?: string,
+    region: ChatRegion = 'global',
   ): Promise<NationMessageView> {
     const { cols } = this.deps;
 
     if (!body || body.length > FAMILY_MSG_BODY_MAX) throw new SlgError('BAD_REQUEST');
+    // CONTENT_MODERATION_DESIGN.md CM5: world/nation chat is ephemeral like DM/family chat —
+    // mask on hit, never reject delivery.
+    body = censorChat(body, region, this.deps.wordlists).text;
 
     const ts = this.deps.now();
 

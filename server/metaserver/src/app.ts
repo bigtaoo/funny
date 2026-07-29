@@ -3,7 +3,7 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import Fastify, { type FastifyInstance } from 'fastify';
 import cors from '@fastify/cors';
-import type { Collections, JwtConfig, FeatureFlagCache, RedisLike, SaveData } from '@nw/shared';
+import type { Collections, JwtConfig, FeatureFlagCache, RedisLike, SaveData, WordlistCache } from '@nw/shared';
 import { createLogger, internalKeysFromEnv } from '@nw/shared';
 import { MetaService } from './service.js';
 import { assembleEquipmentInv } from './equipment.js';
@@ -74,6 +74,8 @@ export interface BuildAppOpts {
   authRateLimit?: number;
   /** Feature flag cache (used for public /bootstrap evaluation). null/omitted = no flag source; bootstrap always returns an empty map. */
   flags?: FeatureFlagCache | null;
+  /** Content-moderation word list overlay cache (CONTENT_MODERATION_DESIGN.md §3.2). null/omitted = built-in REGION_WORDLISTS only. */
+  wordlists?: WordlistCache | null;
   /** Deployment region (injected into the flag evaluation context). */
   region?: string | null;
   /** Loki push URL (POST /client/log is forwarded here; null = silently discarded). */
@@ -185,6 +187,7 @@ export async function buildApp(opts: BuildAppOpts): Promise<FastifyInstance> {
     gateway,
     authRateLimit: opts.authRateLimit ?? 20,
     flags: opts.flags ?? null,
+    wordlists: opts.wordlists ?? null,
     region: opts.region ?? null,
     lokiPushUrl: opts.lokiPushUrl ?? null,
     socialsvc,

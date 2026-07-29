@@ -139,6 +139,25 @@ export function startHttpApi(opts: HttpApiOpts, svc: AdminService): Server {
         }
         return;
       }
+      // ── Internal endpoint: raw content-moderation word list overlays (X-Internal-Key; metaserver/socialsvc/worldsvc have no DB connection to admin) ──
+      // Same shape as the internal flags/slg-shop-prices endpoints above: raw overlay docs only, consumers
+      // merge them onto REGION_WORDLISTS locally via WordlistCache (CONTENT_MODERATION_DESIGN.md §3.2).
+      if (req.method === 'GET' && (req.url ?? '').split('?')[0] === '/admin/internal/moderation-wordlists') {
+        if (!internalAuth.verify(req.headers).ok) {
+          log.warn('internal moderation-wordlists request rejected: bad X-Internal-Key', {
+            caller: req.headers['x-internal-caller'],
+          });
+          send(res, 401, { ok: false, error: 'unauthorized' });
+          return;
+        }
+        try {
+          send(res, 200, { ok: true, items: await svc.getInternalWordlists() });
+        } catch (e) {
+          log.error('internal moderation-wordlists fetch failed', { err: (e as Error).message });
+          send(res, 500, { ok: false, error: 'internal error' });
+        }
+        return;
+      }
 
       const url = new URL(req.url ?? '', `http://${req.headers.host ?? 'admin'}`);
       const path = url.pathname;
@@ -364,6 +383,28 @@ export function startHttpApi(opts: HttpApiOpts, svc: AdminService): Server {
             ...(b.effect !== undefined ? { effect: b.effect } : {}),
           });
           return send(res, 200, { ok: true, item });
+        }
+
+        // ── Content-moderation word list overlays (moderation.wordlist.manage, CONTENT_MODERATION_DESIGN §3.2) ──
+        if (method === 'GET' && path === '/admin/moderation/wordlists') {
+          requireCap(actor, 'moderation.wordlist.manage');
+          return send(res, 200, { ok: true, regions: await svc.getWordlistConfig() });
+        }
+        const wordlistAdd = /^\/admin\/moderation\/wordlists\/([^/]+)\/words$/.exec(path);
+        if (method === 'POST' && wordlistAdd) {
+          requireCap(actor, 'moderation.wordlist.manage');
+          const region = decodeURIComponent(wordlistAdd[1]!);
+          const b = await readJson(req);
+          const doc = await svc.addWord(actor, region, str(b.word));
+          return send(res, 200, { ok: true, doc });
+        }
+        const wordlistRemove = /^\/admin\/moderation\/wordlists\/([^/]+)\/words\/([^/]+)$/.exec(path);
+        if (method === 'DELETE' && wordlistRemove) {
+          requireCap(actor, 'moderation.wordlist.manage');
+          const region = decodeURIComponent(wordlistRemove[1]!);
+          const word = decodeURIComponent(wordlistRemove[2]!);
+          const doc = await svc.removeWord(actor, region, word);
+          return send(res, 200, { ok: true, doc });
         }
 
         // ── Account management (superadmin) ──

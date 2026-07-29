@@ -1,6 +1,6 @@
 // worldsvc process bootstrap (S8-0 + S8-4 + S8-5): connect dedicated DB → optional Redis → services → public REST listen.
 // SLG_DESIGN §14.1 P1: worldsvc is a public face (reverse proxy /world → this process; /auction moved to auctionsvc, §9 task 6).
-import { SLG_MAP_W, SLG_MAP_H, createLogger, startHeartbeat, SlgShopPriceCache, fetchInternalJson } from '@nw/shared';
+import { SLG_MAP_W, SLG_MAP_H, createLogger, startHeartbeat, SlgShopPriceCache, WordlistCache, fetchInternalJson } from '@nw/shared';
 import { createWorldMongo } from './db';
 import { connectRedis } from './redis';
 import { WorldService } from './service';
@@ -67,6 +67,26 @@ async function main(): Promise<void> {
   });
   if (env.adminInternalUrl) void shopPrices.start();
 
+  // Content-moderation word list overlay cache (CONTENT_MODERATION_DESIGN.md §3.2): same polling shape
+  // as shopPrices above — no DB connection to admin, stale cache used when unreachable, code defaults
+  // used if never fetched.
+  const wordlists = new WordlistCache({
+    fetchAll: async () => {
+      if (!env.adminInternalUrl) return [];
+      const res = await fetchInternalJson<{ items?: unknown[] }>(`${env.adminInternalUrl}/admin/internal/moderation-wordlists`, {
+        caller: 'worldsvc',
+        key: env.internalKey,
+        timeoutMs: 5000,
+        label: '/admin/internal/moderation-wordlists',
+      });
+      if (!res.ok) throw new Error(`admin moderation-wordlists ${res.status}${res.error ? ` (${res.error})` : ''}`);
+      const items = res.body?.items;
+      return Array.isArray(items) ? items : [];
+    },
+    onError: (e) => console.warn('[worldsvc] wordlist refresh failed (keeping cache)', (e as Error).message),
+  });
+  if (env.adminInternalUrl) void wordlists.start();
+
   const svc = new WorldService({
     cols: mongo.collections,
     redis,
@@ -87,6 +107,7 @@ async function main(): Promise<void> {
     gateway,
     socialsvc,
     meta,
+    wordlists,
     now: () => Date.now(),
   });
 
@@ -96,6 +117,7 @@ async function main(): Promise<void> {
     commercial,
     socialsvc,
     meta,
+    wordlists,
     now: () => Date.now(),
   });
 

@@ -1,7 +1,7 @@
 // socialsvc process bootstrap (SOCIAL_SVC_DESIGN §7).
 // Fifth public face: /social/*, port 8085. nw_social dedicated database; auth reuses the meta JWT.
 // P1: family  P2: friends / private-chat / mail  P3: presence events
-import { createLogger, startHeartbeat } from '@nw/shared';
+import { createLogger, startHeartbeat, WordlistCache, fetchInternalJson } from '@nw/shared';
 import { loadSocialsvcEnv } from './config';
 import { createSocialMongo } from './db';
 import { FamilyService } from './familyService';
@@ -25,10 +25,30 @@ async function main(): Promise<void> {
     ? new HttpSocialMetaClient(env.metaInternalUrl, env.internalKey)
     : nullSocialMetaClient;
 
+  // Content-moderation word list overlay cache (CONTENT_MODERATION_DESIGN.md §3.2): no DB connection
+  // to admin, stale cache used when unreachable, code defaults used if never fetched.
+  const wordlists = new WordlistCache({
+    fetchAll: async () => {
+      if (!env.adminInternalUrl) return [];
+      const res = await fetchInternalJson<{ items?: unknown[] }>(`${env.adminInternalUrl}/admin/internal/moderation-wordlists`, {
+        caller: 'socialsvc',
+        key: env.internalKey,
+        timeoutMs: 5000,
+        label: '/admin/internal/moderation-wordlists',
+      });
+      if (!res.ok) throw new Error(`admin moderation-wordlists ${res.status}${res.error ? ` (${res.error})` : ''}`);
+      const items = res.body?.items;
+      return Array.isArray(items) ? items : [];
+    },
+    onError: (e) => console.warn('[socialsvc] wordlist refresh failed (keeping cache)', (e as Error).message),
+  });
+  if (env.adminInternalUrl) void wordlists.start();
+
   const friendSvc = new FriendService({
     cols: mongo.collections,
     gateway,
     meta,
+    wordlists,
     now: () => Date.now(),
   });
 
@@ -44,6 +64,7 @@ async function main(): Promise<void> {
     gateway,
     meta,
     mail: mailSvc,
+    wordlists,
     now: () => Date.now(),
   });
 
