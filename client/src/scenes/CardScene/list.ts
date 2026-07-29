@@ -33,6 +33,59 @@ export interface ListHandlers {
 export function ListMixin<TBase extends CardSceneBaseCtor>(Base: TBase): TBase & Constructor<ListHandlers> {
   return class extends Base {
     /**
+     * Per-card cell container + on-screen rect from the last renderList layout pass — lets
+     * applyCardState()/refreshCardCell() redraw a single cell in place (SLG border/troop/team-tag
+     * only) instead of a full relayout when cb.getCardState() data changes after the roster is
+     * already open. Repopulated on every renderList pass; a card's cell position/size never
+     * depends on SLG state, so there's no need to invalidate these across a state-only refresh.
+     *
+     * Declared with NO initializer (see EquipmentScene InventoryMixin's identical comment on
+     * cellContainers/cellRects): the base class constructor calls render() — which populates these
+     * via renderList() — before this mixin's own field initializers would run, and a `= new Map()`
+     * here would clobber that first population with an empty map right after `super()`.
+     */
+    private cellContainers!: Map<string, PIXI.Container>;
+    private cellRects!: Map<string, { x: number; y: number; w: number }>;
+
+    /**
+     * Redraw one roster cell in place (its SLG-derived border/troop-count/deployed-tag) — see
+     * applyCardState(). Returns false (caller has nothing to fall back to; the cell just stays as
+     * last rendered) when the cell isn't currently tracked, e.g. scrolled out of view since the
+     * last full render.
+     */
+    private refreshCardCell(cardId: string): boolean {
+      const container = this.cellContainers.get(cardId);
+      const rect = this.cellRects.get(cardId);
+      if (!container || container.destroyed || !rect) return false;
+      const save = this.cb.getSave();
+      const card = save.cardInv?.[cardId];
+      if (!card) return false;
+
+      tearDownChildren(container);
+      this.hitRects = this.hitRects.filter((h) => h.owner !== cardId);
+      const state = this.cb.getCardState?.()?.[cardId];
+      const outerLayer = this.bodyLayer;
+      this.bodyLayer = container;
+      this.renderCardCell(card, rect.x, rect.y, rect.w, state, Date.now(), save);
+      this.bodyLayer = outerLayer;
+      return true;
+    }
+
+    /**
+     * Patch the SLG-derived parts of every currently-tracked roster cell (+ the detail modal, if
+     * open) in place after cb.getCardState()/getTeamName() data changes — e.g. game.ts'
+     * goCardRoster's worldsvc fetch resolving after the roster already gave up and opened without
+     * it. Deliberately not a full render(): the grid's layout (card order/position/size) never
+     * depends on SLG state, so rebuilding the sidebar/header/scroll position would just be wasted
+     * work (and would reset scroll position — a visible regression a full re-render would cause).
+     */
+    applyCardState(): void {
+      if (this.tab !== 'list') return;
+      for (const cardId of this.cellContainers.keys()) this.refreshCardCell(cardId);
+      if (this.detailId) this.openDetail(this.detailId);
+    }
+
+    /**
      * Progression group nav [Cards|Equipment?|Skins] (LOBBY_IA_REDESIGN §15): a vertical rail stacked
      * inside the left notebook-margin gutter (`marginLineX`), below the header. Equipment only appears
      * when injected (openEquipmentBag, server-authoritative → online-only); Cards/Skins are always
@@ -87,6 +140,8 @@ export function ListMixin<TBase extends CardSceneBaseCtor>(Base: TBase): TBase &
         lbl.style.wordWrap = true; lbl.style.wordWrapWidth = w - 32;
         this.bodyLayer.addChild(lbl);
         this.maxScroll = 0;
+        this.cellContainers = new Map();
+        this.cellRects = new Map();
         return;
       }
 
@@ -112,13 +167,24 @@ export function ListMixin<TBase extends CardSceneBaseCtor>(Base: TBase): TBase &
       this.maxScroll = maxScroll;
 
       const now = Date.now();
+      this.cellContainers = new Map();
+      this.cellRects = new Map();
+      const outerLayer = this.bodyLayer;
       sorted.forEach((card, i) => {
         const col = i % cols;
         const row = Math.floor(i / cols);
         const x = left + col * (cellW + ROSTER_GAP);
         const y = listY + ROSTER_GAP + row * (CARD_CELL_H + ROSTER_GAP) - this.scrollY;
         if (y + CARD_CELL_H >= listY && y <= listY + availH) {
+          // Each cell renders into its own container (child of the same outer bodyLayer) so a later
+          // applyCardState() can tear down and redraw just this one cell — see refreshCardCell().
+          const cellC = new PIXI.Container();
+          outerLayer.addChild(cellC);
+          this.cellContainers.set(card.id, cellC);
+          this.cellRects.set(card.id, { x, y, w: cellW });
+          this.bodyLayer = cellC;
           this.renderCardCell(card, x, y, cellW, cardState[card.id], now, save);
+          this.bodyLayer = outerLayer;
         }
       });
 
@@ -231,7 +297,9 @@ export function ListMixin<TBase extends CardSceneBaseCtor>(Base: TBase): TBase &
       }
 
       // Status tag (deployed / injured) — named to the actual team when the caller can resolve it.
+      // Deployed gets a bit of extra breathing room above it so it doesn't read as just another stat row.
       if (inTeam) {
+        ay += 6;
         const teamName = state?.teamId ? this.cb.getTeamName?.(state.teamId) : undefined;
         const tagText = teamName ? t('roster.inTeamNamed').replace('{team}', teamName) : t('roster.inTeam');
         const tag = txt(`[${tagText}]`, FS.tiny, C.accent, true);
@@ -244,15 +312,21 @@ export function ListMixin<TBase extends CardSceneBaseCtor>(Base: TBase): TBase &
 
       // Gear slot icons (weapon/armor/trinket) — the actual equipped item art, or a dimmed
       // gray procedural glyph when the slot is empty (matches renderDetailGearSlots' treatment,
-      // replacing the old 3-dot filled/empty indicator).
-      const gearIconSize = 22;
-      const gearGap = 4;
-      const gearStep = gearIconSize + gearGap;
+      // replacing the old 3-dot filled/empty indicator). Sized 2x the original 22px badges so
+      // rarity/art actually reads at this density; the row shrinks (never below the old 22px)
+      // rather than spill onto the portrait if the info column is ever too narrow to fit it.
+      const gearIconSizeTarget = 44;
+      const gearGapTarget = 4;
+      const gearRowWTarget = gearIconSizeTarget * 3 + gearGapTarget * 2;
+      const gearScale = gearRowWTarget > rightW ? Math.max(0.5, rightW / gearRowWTarget) : 1;
+      const gearIconSize = gearIconSizeTarget * gearScale;
+      const gearStep = gearIconSize + gearGapTarget * gearScale;
       const gearCenterY = y + CARD_CELL_H - pad - gearIconSize / 2;
       (['weapon', 'armor', 'trinket'] as EquipSlot[]).forEach((slot, i) => {
         const instId = card.gear[slot];
         const inst = instId ? save.equipmentInv?.[instId] : undefined;
         const icon = buildEquipIcon(inst?.defId, slot, inst?.rarity ?? 'common', gearIconSize, seedFor(x, y, i + 1));
+        icon.name = `gearIcon:${slot}`; // test hook: see gearIconSize2x.ui.ts
         icon.alpha = inst ? 1 : 0.35;
         icon.position.set(x + cellW - pad - gearIconSize / 2 - (2 - i) * gearStep, gearCenterY);
         this.bodyLayer.addChild(icon);
@@ -261,6 +335,7 @@ export function ListMixin<TBase extends CardSceneBaseCtor>(Base: TBase): TBase &
       this.hitRects.push({
         rect: { x, y, w: cellW, h: CARD_CELL_H },
         action: () => this.openDetail(card.id),
+        owner: card.id,
       });
     }
   };

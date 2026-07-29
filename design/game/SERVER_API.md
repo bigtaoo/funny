@@ -90,14 +90,12 @@ POST /profile/rename (JWT) { displayName }  → { save: SaveData, displayName } 
 - **公开数字 id + 房间昵称（publicId，2026-06-15）**：账号文档加 `publicId`（9 位数字、稀疏唯一索引），首次鉴权 `ensurePublicId` 惰性生成（碰撞换号重试，旧账号下次 auth 补）。`AuthResult` + `GET /save` 回带 `publicId`（accountId 仅服务器内部标识，绝不面向玩家）。新增内部端口 `GET /internal/profile?accountId=`（X-Internal-Key）→ `{ displayName?, publicId }`，gateway 据此把 `room_state` 里的玩家显示为**昵称（#publicId）**而非 accountId 前缀（meta 不可用则回退 id 前缀）。`PlayerSlot` 加 `public_id`（field 5，proto 双端重生）。**身份修正**：客户端 `NetSession` 连 gateway 时优先用 REST 已登录 token，不再用设备凭证重鉴权——否则登录用户在房间里会是设备匿名账号。openapi 的 `AuthResult` / save 响应 schema 须声明 `publicId`（同 `gatewayUrl`，防 `fast-json-stringify` 剥字段）。
 - **gateway 地址下发（`gatewayUrl`，2026-06-14）**：客户端**只硬编码 meta 的 HTTP 地址**——gateway 控制面 WS 地址由 auth/save 回包下发（`AuthResult.gatewayUrl` + `GET /save` 的 `gatewayUrl`），game 数据面地址由 `match_found.game_url` 下发，都实时获取不静态配置。meta 经环境变量 `NW_GATEWAY_PUBLIC_WS_URL`（如 `ws://host:8082/gw` / `wss://host/gw`）得知公开地址；未配置则不下发（客户端退回构建期 fallback `getGatewayWsUrl`：生产同源由 `/api`→`/gw` 推导）。四个 auth 端点 + `GET /save`（token 续登无 auth 回包，故 save 也带）均回带。**注**：openapi 响应 schema 必须声明 `gatewayUrl`，否则 fastify `fast-json-stringify` 静默剥掉 schema 外字段。
 
-### 2.2 存档（save-service，`META_TASKS.md` S0-7）
+### 2.2 存档（save-service，`META_TASKS.md` S0-7；**ADR-056 起 `PUT /save` 已整个下线**）
 ```
 GET  /save                                     → { save: SaveData, displayName?, publicId?, gatewayUrl? }  // 当前账号（顺带回带展示名 + 公开 id + gateway 地址）
-PUT  /save     (If-Match: <rev>)  { save }     → { save: SaveData }      // 成功回推规范化后的存档
-                                                 | 409 REV_CONFLICT { save }  // 当前云端值
 GET  /match/history?limit=<1..50>              → { matches: MatchHistoryEntry[] }  // 最近对战（默认 20），按 ts 倒序
 ```
-- PUT 只接受**客户端同步段**字段（progress / materials / pveUpgrades / equipped / flags）；服务器权威段被忽略（以服务端值为准回推）。
+- **不存在通用的 `PUT /save`**：`SaveData` 已无任何字段走"客户端攒批写、服务器整段接收"的模式——`progress`/`materials`/`pveUpgrades`/`equipmentInv`/`cardInv` 早在 ADR-006/ADR-010/CC-2 就已移到 `/pve/*`/`/equipment/*`/`/cards/*`；`equipped`/`flags`（曾是最后仅剩的两段）自 **ADR-056**（2026-07-28）起也改走各自专属端点：`PUT /title/equip`·`PUT /avatar/equip`·`PUT /skin/equip`（各自所有权校验）+ `PUT /flags`（`{key,value}`，无所有权语义）。原因：旧模型下 `reconcile()` 对 `equipped`/`flags` 永远"本地覆盖云端"，本地一旦被写脏就再也无法被任何刷新纠正；改成每字段专属端点后，客户端只做"先写本地镜像即时反馈、后台请求确认"，`reconcile()` 对所有字段一律云端为准——任何脏本地状态最迟下次同步必被纠正。
 - **对战历史（`GET /match/history`，2026-06-15）**：从归档 `matches` 取当前账号视角的精简摘要（无录像/帧日志）。`MatchHistoryEntry = { roomId, mode(friendly|ranked), result(win|loss|unknown), opponentName?, opponentPublicId?, eloDelta?, ts }`——`result` 由 `matches.winner` 对比我方 side 推导（winner<0 / 未知 → unknown）；`opponentName`/`opponentPublicId` 与 `eloDelta` 取自归档时 enrich 进 `matches.players` 的快照（昵称在归档当刻定格，事后改名不回填；`eloDelta` 仅 ranked 成功结算时有）。查询走索引 `{ 'players.accountId': 1, ts: -1 }`。客户端 `StatsScene` 仅登录在线时拉取（离线显「登录后查看」）。
 
 > **修订（2026-06-14，M21）**：§2.3~2.6 的经济端点**对客户端不变**（仍是 meta 的公开 REST），但服务端实现改为 **meta 编排 → 内部调 commercial 服务**（钱包/扣币/RNG/充值在 commercial 独立库，物品由 meta 发货）。`save.wallet/gacha` 降级为只读镜像。内部契约见 **§9**；流程见 `COMMERCIAL_DESIGN.md §6`。
@@ -140,7 +138,7 @@ POST /iap/verify      { platform, receipt }    → { save: SaveData, granted: nu
 
 ### 2.7 PvE 养成（服务器权威，ADR-006 / `PVE_INTEGRITY_PLAN.md §8`）
 
-> `progress.cleared` / `progress.stars` / `materials` / `pveUpgrades` 自 ADR-006 起**服务器权威**——`PUT /save` 同步段收窄为仅 `equipped`/`flags`，这四段只能经下列端点写。奖励按 `@nw/shared/pveRewards.ts` 服务器重算，不信客户端自报数额。
+> `progress.cleared` / `progress.stars` / `materials` / `pveUpgrades` 自 ADR-006 起**服务器权威**——这四段只能经下列端点写（当时的表述是"`PUT /save` 同步段收窄为仅 `equipped`/`flags`"；`PUT /save` 本身已于 ADR-056 整个下线，见 §2.2）。奖励按 `@nw/shared/pveRewards.ts` 服务器重算，不信客户端自报数额。
 
 ```
 POST /pve/clear    { levelId, stars, pveSnapshot?, replayRef? }
@@ -156,7 +154,7 @@ POST /pve/upgrade  { upgradeId }               → { save: SaveData } | INSUFFIC
 
 ### 2.8 装备养成（服务器权威，ADR-010 / ADR-012 / `EQUIPMENT_DESIGN.md §18`）
 
-> 装备实例段（`equipmentInv`）移出 `PUT /save` 可写范围，全部由 `/equipment/*` 服务器权威端点写（同 §2.7）。穿戴影响 SLG 战力，亦走专用端点不并进 `PUT /save`。所有变更类端点带客户端生成的 `idempotencyKey`，服务器记 (key→结果) 账本重放首次结果（不二次扣料/二次掷骰），范式借 commercial `deliveredOrders`。
+> 装备实例段（`equipmentInv`）全部由 `/equipment/*` 服务器权威端点写（同 §2.7；`PUT /save` 已下线，见 §2.2）。穿戴影响 SLG 战力，亦走专用端点。所有变更类端点带客户端生成的 `idempotencyKey`，服务器记 (key→结果) 账本重放首次结果（不二次扣料/二次掷骰），范式借 commercial `deliveredOrders`。
 
 ```
 POST /equipment/craft    { defId, idempotencyKey }                          → { save, instance|stackDelta }
@@ -175,7 +173,7 @@ POST /equipment/equip    { slot, instanceId|null, unitType? }              → {
 
 ### 2.8a 角色卡实例（服务器权威，`CHARACTER_CARDS_DESIGN.md §3` 融合改制 CC-2/CC-4）
 
-> 卡实例段（`cardInv`）同样移出 `PUT /save` 可写范围，由 `/cards/*` 服务器权威端点写。喂卡升级=融合 5 张同阵营同级材料。
+> 卡实例段（`cardInv`）同样由 `/cards/*` 服务器权威端点写（`PUT /save` 已下线，见 §2.2）。喂卡升级=融合 5 张同阵营同级材料。
 
 ```
 POST /cards/fuse    { targetId, materialIds[5], idempotencyKey }  → { card, save } | 400/404/409
@@ -231,7 +229,7 @@ POST /internal/ladder/season/roll          (X-Internal-Key) → { season }   # a
 
 ### 2.12 称号（服务器权威，`TITLE_DESIGN.md §9 L2-2`）
 
-> 称号是唯一对外身份名片：`SaveData.titles[]`（服务器权威，`$addToSet` 授予，`PUT /save` 不可写）+ `equipped.title`（佩戴位）。称号随 `GET /save` 回推可展示，下列两端点为 L2-2 补的独立读/换接口（设计对齐，机制权威见 `TITLE_DESIGN.md`）。
+> 称号是唯一对外身份名片：`SaveData.titles[]`（服务器权威，`$addToSet` 授予，无客户端可写接口）+ `equipped.title`（佩戴位，服务器权威，客户端只能经 `PUT /title/equip` 写，ADR-056）。称号随 `GET /save` 回推可展示，下列两端点为 L2-2 补的独立读/换接口（设计对齐，机制权威见 `TITLE_DESIGN.md`）。
 
 ```
 GET  /titles               (JWT) → { titles: { id, source, seasonNo? }[], equipped }
@@ -239,8 +237,9 @@ PUT  /title/equip          (JWT) { titleId }  → { save: SaveData }  | 403（�
 ```
 
 - **`GET /titles`**：`source`/`seasonNo` 由 `parseTitleId`（`@nw/shared/titles.ts`，服务端/客户端共用）从 titleId 命名约定（`<来源>.<赛季?>.<key>`）派生。授予时间不入库，故不返回 `grantedAt`。
-- **`PUT /title/equip`**：仅允许已授予称号（未授予 403）；空串 = 卸下；写 `save.equipped.title` 并回推完整 `SaveData`。
+- **`PUT /title/equip`**：仅允许已授予称号（未授予 403）；空串 = 卸下；写 `save.equipped.title` 并回推完整 `SaveData`。**客户端实际调用点**：`SaveManager.equipTitle()`（先本地镜像即时反馈，再后台调用此端点确认；ADR-056 起——此前有一段时期该端点已实现但客户端并未接入，实际写路径是通用 `PUT /save`，2026-07-27 comm-audit finding B12 曾为此专门加过防御性校验）。
 - 授予路径在 meta 内部单点 `grantTitle`（ranked 赛季结算 / SLG 赛季结算 / 成就 claim / admin 授予），非玩家可调。自动佩戴最高 `weight` 称号（`TITLE_DEFS`）。
+- **头像/皮肤同一模式**：`PUT /avatar/equip`（`equipped.avatar`）、`PUT /skin/equip`（`equipped["skin:<unitType>"]`，新增）机制与 `PUT /title/equip` 一致，各自校验对应的所有权记录（`titles[]`/`everOwned.*`/`inventory.skins`）；`PUT /flags`（`{key,value}`）覆盖剩余无所有权语义的 `flags.*` 布尔标记（`tutorial_done`/`gdprConsent`/`featSeen.<id>` 等）。四者是 `SaveData` 上仅剩两段"客户端可写字段"（`equipped`/`flags`）现在的完整写入面——`PUT /save` 已下线，见 §2.2。
 
 ---
 
@@ -323,7 +322,7 @@ enum RoomPhase { WAITING = 0; READY = 1; COUNTDOWN = 2; IN_MATCH = 3; OVER = 4; 
 - **ranked 匹配 / ELO（S1-R 已落地）**：
   - 入队：`room_create{mode:ranked}` → 服务器读 `saves.pvp.elo` 入匹配队列（需 Mongo，否则 `RANKED_UNAVAILABLE`）；按 ELO 邻近配对，等待越久可接受分差越宽（初值 `base 100 + 50/s`）；配对即建房直接开局（无 ready/房主环节）。`room_leave`（不在房内）= 取消匹配。
   - 胜负判定（**无服务器裁判**，S1-J 未做）：`match_result{ state_hash, winner_side }` 双方齐 → **hash 与 winner_side 均一致才认**该胜方、结算 ELO；任一不一致 → 作废（`mismatch`，不动 ELO）。掉线/认输 → 服务器权威判对手胜并结算。防一端谎报刷分。
-  - ELO：K=32 标准公式、零和、分不为负；段位 9 段（`shared/ladder.ts` 与客户端展示同源，阈值见 `ECONOMY_BALANCE.md §2.3`）；`saves.pvp` 经单文档原子更新（rev 守卫 + 重试，整体替换 save，避免与 `PUT /save` 互覆盖）写 `elo/rank/wins/losses/streak`。
+  - ELO：K=32 标准公式、零和、分不为负；段位 9 段（`shared/ladder.ts` 与客户端展示同源，阈值见 `ECONOMY_BALANCE.md §2.3`）；`saves.pvp` 经单文档原子更新（rev 守卫 + 重试，整体替换 save，避免与其它并发写者互覆盖）写 `elo/rank/wins/losses/streak`。
 
 ---
 

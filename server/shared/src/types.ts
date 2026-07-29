@@ -80,7 +80,7 @@ export interface SaveData {
   };
   gacha: { pity: Record<string, number> };
   // —— Monetization mirror (GACHA_DESIGN §5–§7). Read-only mirror of commercial authority (fate points / monthly card /
-  //    starter packs), written by meta after economy operations + refreshed alongside GET /save. Lazily created; not in SyncPatch. ——
+  //    starter packs), written by meta after economy operations + refreshed alongside GET /save. Lazily created; client read-only. ——
   monetization?: {
     fatePoints: number; // Fate Points balance (§7)
     subscriptionExpiry: number; // monthly card end timestamp (ms); 0 = none (§5)
@@ -215,8 +215,11 @@ export interface SaveData {
   // map of up to 500 cards was a second unbounded contributor to save-doc bloat on Atlas M0. This field is
   // never written back to the `saves` document; it is only ever populated transiently for a wire response
   // (GET /save / /internal/save-fields join it in via `assembleCardInv`). Absent (undefined) on the raw
-  // Mongo document at all times.
-  cardInv?: Record<string, CardInstance>; // instanceId → CardInstance; populated transiently, never persisted
+  // Mongo document at all times. `/gacha/draw` (2026-07-28, same phase-2 treatment as equipmentInv above)
+  // sets it to `null` instead: the response's own `cardGrants` field carries the newly-created instances,
+  // so the caller reconstructs its local copy instead of paying for a fresh `cardInstances.find({accountId})`
+  // (and the bytes to ship it) on every single draw — the highest-frequency card-inv-touching endpoint.
+  cardInv?: Record<string, CardInstance> | null; // instanceId → CardInstance; populated transiently, never persisted; null = intentionally omitted (see above)
   // Cheap cap-check mirror of `cardInstances` count for this account (CARD_INV_CAP); may drift by a small,
   // self-healing amount (see GET /save's join, which corrects it opportunistically) — never treat as more
   // authoritative than an actual `cardInstances` count for a security-sensitive check.
@@ -230,13 +233,6 @@ export interface SaveData {
   cardMailOverflowCount?: number;
   equipMailOverflowCount?: number;
 }
-
-/**
- * Client sync fields accepted by PUT /save (SERVER_API.md §2.2).
- * From PVE_INTEGRITY_PLAN §8 onward, progress/materials/pveUpgrades are promoted to server-authoritative
- * (written only by /pve/* + ranked settlement), narrowing PUT /save to equipped/flags only.
- */
-export type SyncPatch = Partial<Pick<SaveData, 'equipped' | 'flags'>>;
 
 // v2 (2026-06-21): Added equipmentInv + gear (equipment system E0). Additive fields only; does not touch equipped.
 // Old saves lazily default via `?? {}` at read sites; no destructive migration.

@@ -23,6 +23,19 @@ export class RoomManager {
   }
 
   /**
+   * All accountIds currently rostered in a live room (any phase, WAITING or IN_MATCH). Read at
+   * shutdown, before destroyAll() wipes them, so the caller can tell meta to clear their
+   * login-reconnect-prompt cache — these rooms are about to disappear with no end-of-match report.
+   */
+  activeAccountIds(): string[] {
+    const ids = new Set<string>();
+    for (const room of this.rooms.values()) {
+      for (const accountId of room.rosterAccountIds) ids.add(accountId);
+    }
+    return [...ids];
+  }
+
+  /**
    * Called after a ticket handshake: find/create a room by roomId and join the specified side.
    * Cross-validation — the second ticket's seed/mode must match the room established by the first
    * ticket; otherwise the join is rejected (prevents forgery / mismatched pairing).

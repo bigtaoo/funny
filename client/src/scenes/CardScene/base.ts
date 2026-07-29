@@ -75,6 +75,16 @@ export interface CardCallbacks {
   initialTab?: CardSceneTab;
 }
 
+/**
+ * Handle returned by AppViews.showCardRoster, letting the caller push a late-arriving SLG fetch
+ * (getCardState/getTeamName data resolving after the roster already opened without it) into an
+ * already-open roster — see game.ts goCardRoster.
+ */
+export interface CardRosterView {
+  /** Re-render just the SLG-derived bits of already-visible cells; see CardSceneBase.applyCardState. */
+  applyCardState(): void;
+}
+
 export const MODAL_DIM = 0x000000;
 
 // Roster grid: icon-card cells — a full-height portrait on the left with all the
@@ -137,7 +147,9 @@ export class CardSceneBase {
   protected backRect: Rect = { x: 0, y: 0, w: 0, h: 0 };
   /** Title-bar height, set from the shared header in build() — drives all body layout below it. */
   protected headerH = 0;
-  protected hitRects: { rect: Rect; action: () => void }[] = [];
+  /** `owner` (card instance id) tags a roster-cell hit so applyCardState()'s refresh can drop and
+   *  re-add just that cell's hit without touching the rest of the list — see ListMixin.refreshCardCell. */
+  protected hitRects: { rect: Rect; action: () => void; owner?: string }[] = [];
   protected modalHits: { rect: Rect; action: () => void }[] = [];
   /**
    * Drag-slider hit zones for the modal layer (feed quantity slider, 2026-07-18): unlike modalHits
@@ -448,6 +460,14 @@ export interface CardSceneBase {
   renderHeaderCurrency(): void;
   renderList(): void;
   renderCardCell(card: CardInstance, x: number, y: number, cellW: number, state: CardSLGState | undefined, now: number, save: SaveData): void;
+  /**
+   * Re-render only the SLG-derived bits (border color / troop count / deployed tag, + the detail
+   * modal if open) of already-visible roster cells, after cb.getCardState()/getTeamName() data
+   * changes — e.g. a worldsvc fetch that resolved after the roster's own load window gave up
+   * (game.ts goCardRoster). No full render(): a card cell's position/size never depends on SLG
+   * state, so nothing else needs touching.
+   */
+  applyCardState(): void;
   openDetail(cardId: string): void;
   renderDetailGearSlots(card: CardInstance, mx: number, cy: number, mw: number, save: SaveData): void;
   openFuseSelect(target: CardInstance): void;

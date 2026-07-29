@@ -1183,7 +1183,7 @@ describe('ResultScene — outro tap-through leaves buttons clickable', () => {
       [zeroStats(0), zeroStats(1)],
       { onPlayAgain() { playAgainCalls++; }, onBack() { backCalls++; } },
       0, undefined, undefined,
-      'Some outro story text.', // outroText — arms the tap-through overlay path
+      ['Some outro story text.'], // outroTexts — arms the tap-through overlay path
     );
 
     // Before the tap: the outro overlay owns the screen, so the CTA doesn't exist yet.
@@ -1220,7 +1220,7 @@ describe('ResultScene — outro tap-through leaves buttons clickable', () => {
       [zeroStats(0), zeroStats(1)],
       { onPlayAgain() {}, onBack() {} },
       0, undefined, undefined,
-      'Some outro story text.',
+      ['Some outro story text.'],
     );
     emitTap(scene.container, 'pointerdown');
     // 'none' prunes the whole subtree (the exact bug); 'passive' (the container

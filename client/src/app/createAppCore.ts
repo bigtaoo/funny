@@ -17,7 +17,7 @@ import type { Replay } from '../game';
 import { initI18n, t } from '../i18n';
 import { LocalSaveStore, SaveManager, ReplayStore } from '../game/meta';
 import { ApiClient } from '../net/ApiClient';
-import { getApiBaseUrl, getGatewayWsUrl } from '../net/config';
+import { getApiBaseUrl, getGatewayWsUrl, persistGatewayWsUrl } from '../net/config';
 import { NetSession } from '../net/NetSession';
 import { FeatureFlags } from '../net/featureFlags';
 import { showToastMessage } from '../net/log';
@@ -80,9 +80,6 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
     // L1 spot-check (§8.6): when a queued offline flush is selected for verification, fetch the
     // local replay by replayId and submit it for re-evaluation.
     loadReplay: (id) => replayStore.load(id),
-    // Cloud save background sync persistently failing → show a one-time global fallback toast
-    // (progress may not have reached the cloud).
-    onSyncError: () => showToastMessage(t('common.syncFailed')),
     onProfile: ({ displayName, publicId, gatewayUrl: gw, freeRename }) => {
       applyGatewayUrl(gw);
       // Cache the server-authoritative free-rename entitlement so the settings screen can render it offline.
@@ -139,6 +136,7 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
   function applyGatewayUrl(url?: string): void {
     if (!url || url === state.gatewayUrl) return;
     state.gatewayUrl = url;
+    persistGatewayWsUrl(platform.storage, url);
     if (state.netSession) { state.netSession.close(); state.netSession = null; }
     if (state.inLobby) nav.goLobby();
   }

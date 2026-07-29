@@ -200,8 +200,7 @@ export interface paths {
         };
         /** Fetch the current account's save */
         get: operations["getSave"];
-        /** Push client sync patch (optimistic lock via If-Match rev) */
-        put: operations["putSave"];
+        put?: never;
         post?: never;
         delete?: never;
         options?: never;
@@ -991,6 +990,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/skin/equip": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Equip/unequip a character skin (writes equipped["skin:<unitType>"] and pushes save). One slot per character (LOBBY_IA_REDESIGN §15); skinId null unequips. Requires lifetime ownership (inventory.skins / everOwned.skin). */
+        put: operations["equipSkin"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/flags": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Set one client-preference flag by key (writes flags.<key> and pushes save) — onboarding/consent/tutorial-seen style booleans with no ownership semantics. */
+        put: operations["setFlag"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/lobby/badges": {
         parameters: {
             query?: never;
@@ -1515,7 +1548,7 @@ export interface components {
             /** @description Card instance inventory (instanceId→CardInstance); max 500 entries */
             cardInv?: {
                 [key: string]: components["schemas"]["CardInstance"];
-            };
+            } | null;
             cardInvCount?: number;
             cardMailOverflowCount?: number;
             equipMailOverflowCount?: number;
@@ -1597,10 +1630,6 @@ export interface components {
             };
             /** @description Locked cards cannot be used as fusion material */
             locked: boolean;
-        };
-        SyncPatch: {
-            equipped?: components["schemas"]["SaveData"]["equipped"];
-            flags?: components["schemas"]["SaveData"]["flags"];
         };
         AuthResult: {
             token: string;
@@ -2252,56 +2281,6 @@ export interface operations {
             401: components["responses"]["ErrorResp"];
         };
     };
-    putSave: {
-        parameters: {
-            query?: never;
-            header: {
-                /** @description The rev held by the client */
-                "If-Match": string;
-            };
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": {
-                    save: components["schemas"]["SyncPatch"];
-                };
-            };
-        };
-        responses: {
-            /** @description Success — returns normalized save */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        /** @enum {boolean} */
-                        ok: true;
-                        data: {
-                            save: components["schemas"]["SaveData"];
-                        };
-                    };
-                };
-            };
-            401: components["responses"]["ErrorResp"];
-            /** @description REV_CONFLICT, includes current server-side value */
-            409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        /** @enum {boolean} */
-                        ok: false;
-                        error: components["schemas"]["Error"];
-                        save?: components["schemas"]["SaveData"];
-                    };
-                };
-            };
-        };
-    };
     getMatchHistory: {
         parameters: {
             query?: {
@@ -2841,6 +2820,7 @@ export interface operations {
                         /** @enum {boolean} */
                         ok: true;
                         data: {
+                            /** @description Lean (2026-07-28): `cardInv`/`equipmentInv` are always `null` on this response — the highest-frequency card/equipment-granting endpoint skips the full-inventory join on every call. Adopt via SaveManager.adoptServerPartial with `cardGrants`/ `equipmentGrants` below as the upsert patch, never the plain adoptServer/reconcile. */
                             save: components["schemas"]["SaveData"];
                             results: components["schemas"]["GachaResult"][];
                             /** @description Roster/inventory-full overflow summary for this draw (CHARACTER_CARDS_DESIGN §4 / EQUIPMENT_DESIGN §3.3): the first 10 overflow items per type since that inventory last had free space are mailed as real instances; the rest are coin-compensated. All-zero when nothing overflowed. */
@@ -2850,6 +2830,10 @@ export interface operations {
                                 equipMailed: number;
                                 equipCompensatedCoins: number;
                             };
+                            /** @description Card instances this draw actually added to cardInv (never the mailed-overflow ones). */
+                            cardGrants: components["schemas"]["CardInstance"][];
+                            /** @description Equipment instances this draw actually added to equipmentInv (never the mailed-overflow ones). */
+                            equipmentGrants: components["schemas"]["EquipmentInstance"][];
                         };
                     };
                 };
@@ -4065,6 +4049,79 @@ export interface operations {
             };
             401: components["responses"]["ErrorResp"];
             403: components["responses"]["ErrorResp"];
+        };
+    };
+    equipSkin: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description Character UnitType this skin slot targets, e.g. archer */
+                    unitType: string;
+                    /** @description Skin id to equip; null unequips the slot */
+                    skinId?: string | null;
+                };
+            };
+        };
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {boolean} */
+                        ok: true;
+                        data: {
+                            save: components["schemas"]["SaveData"];
+                        };
+                    };
+                };
+            };
+            401: components["responses"]["ErrorResp"];
+            403: components["responses"]["ErrorResp"];
+        };
+    };
+    setFlag: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description Flag key, e.g. tutorial_done, gdprConsent, featSeen.<featureId> */
+                    key: string;
+                    value: boolean;
+                };
+            };
+        };
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {boolean} */
+                        ok: true;
+                        data: {
+                            save: components["schemas"]["SaveData"];
+                        };
+                    };
+                };
+            };
+            400: components["responses"]["ErrorResp"];
+            401: components["responses"]["ErrorResp"];
         };
     };
     getLobbyBadges: {

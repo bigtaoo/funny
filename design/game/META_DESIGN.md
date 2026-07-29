@@ -106,8 +106,8 @@ interface SaveData {
   };
   materials: Record<string, number>;    // 关卡掉落材料（PvE 升级货币，M6）
   pveUpgrades: Record<string, number>;  // 升级 key → 等级（硬墙隔离）
-  equipped: Record<string, string>;     // unitType → 装备皮肤 id（纯外观）
-  flags: Record<string, boolean>;       // nw_seen_intro 等通用标记
+  equipped: Record<string, string>;     // unitType → 装备皮肤 id（纯外观）；服务器权威，ADR-056 起走 /title|avatar|skin/equip
+  flags: Record<string, boolean>;       // nw_seen_intro 等通用标记；服务器权威，ADR-056 起走 PUT /flags
 }
 ```
 
@@ -119,9 +119,9 @@ interface SaveData {
 interface SaveStore {
   loadLocal(): SaveData | null;          // 复用 IPlatform.storage（key: nw_save_v1）
   saveLocal(d: SaveData): void;
-  pull(accountId: string): Promise<SaveData | null>;
-  push(d: SaveData): Promise<PushResult>; // 带 If-Match: rev 乐观锁
 }
+// 云端读写不再走这层通用抽象：GET /save 拉取 + 各字段专属服务器接口写入，见 §3.3（ADR-056）。
+// 早期版本这里有 pull()/push()：`PUT /save` 通用同步端点已下线，不再有对应方法。
 
 const MIGRATIONS: ((d: any) => any)[] = [ /* v0→v1, v1→v2 ... */ ];
 function migrate(raw: any): SaveData { /* 按 version 顺序套用 */ }
@@ -136,9 +136,9 @@ function migrate(raw: any): SaveData { /* 按 version 顺序套用 */ }
 | 层 | v1 做法 | 说明 |
 |---|---|---|
 | **身份** | 匿名账号：微信 `wx.login`→code 换 openid；Web/CrazyGames 用设备 UUID（本地持久化）作 key | 零摩擦，无注册登录；`accountId` 预留后期绑手机 / 第三方 |
-| **同步协议** | 离线优先 + 服务器权威：启动 `pull` → 比 `rev` → 本地高则 `push`、云高则覆盖本地；写操作先写本地、防抖 2s 后 `push` | LWW + 单调 `rev` |
-| **冲突** | `push` 带 `If-Match: rev`，服务器 rev 更高返回 409 → 客户端 `pull` 后合并：`progress` 取并集、**服务器权威段一律以服务器为准** | 钱永远服务器说了算 |
-| **服务器权威段写入** | **不经过 save push**：买东西 / 开盲盒 / 充值是**独立服务器 API**，直接改 Mongo 钱包 + 库存，再回推最新 `SaveData` | 客户端永不直接写 `wallet` |
+| **同步协议** | 离线优先起播（`loadLocal` 本地可玩）+ **全字段服务器权威**（ADR-056，2026-07-28 起）：`bootstrap()/refresh()/adoptSession()` 拉 `GET /save` → `reconcile()` 整段以云端为准（本地只有 `pvpDeck` 例外，纯本地never同步）；不存在任何"客户端先写、攒批再传"的通用同步端点——`PUT /save` 已整个下线 | 无 LWW，`rev` 只用于丢弃乱序响应（见下） |
+| **写入** | 每个可写字段各有自己的专属服务器接口（`/equipment/*`、`/pve/*`、`/title\|avatar\|skin/equip`、`/flags`、经济类端点…），响应即最新 `SaveData`；`SaveManager` 对 `equipTitle/equipAvatar/equipSkin/setFlag` 这类低风险字段先写本地镜像做即时反馈，再后台请求确认——失败/被拒会在下一次 `reconcile()` 被服务器真值覆盖纠正，绝不会永久停留在错误的本地值上（这正是"刷新治百病"的机制保证） | 客户端永不直接写任何权威字段 |
+| **乱序丢弃** | `reconcile()` 若收到的 `cloud.rev` 低于本地已持有的 `rev` 直接整段丢弃（防止连点抽卡等场景下一个慢请求的旧响应后到，把 `cardInv`/`wallet` 滚回早前快照、复活已被消耗的实例 id） | `rev` 单调递增，仅由服务器写操作推进 |
 
 ---
 
@@ -377,6 +377,8 @@ message Replay {
 **Phase 1（已落地）**：五进程共用 `@nw/shared` 的 `createLogger(service)`，双 sink——控制台可读单行 +（`NW_LOG_DIR` 设置时）`<service>.log` 每条一行 JSON（`{t,level,svc,msg,...data}`，append、按根服务名分文件、Loki-ready）。级别 `NW_LOG_LEVEL`。`dev-up.ps1` 自动注入 `NW_LOG_DIR=server/logs`。埋点覆盖匹配全链路（WS 连/断、控制命令收发、ranked 入队/配对/开局、`GAME_UNAVAILABLE`、push 下发/丢弃、跨服务 HTTP 失败）。**correlation id = `roomId`** 贯穿 matchsvc→gateway push（`/gw/push` 体携带，仅日志）+ game/meta，可按整局聚合。客户端 `net/log.ts` 同期落地（控制台 + 全局异常钩子，不上送服务端）。
 
 **Phase 2（后期做）**：Loki（存储）+ Grafana Alloy（tail `server/logs/*.log` 或 Docker stdout）+ Grafana（查询 `{svc=…} | json | roomId=…`）。docker-compose 观测栈 + Alloy 配置待建，方案与示意配置已记入 `server/observability/README.md`。
+
+**✅ 2026-07-28 补：metaserver 访问日志按状态码分级 + 4xx/5xx 带 body**——此前 `app.ts` 的 `onResponse` 访问日志钩子对所有响应（2xx~5xx）统一打 `info`，且从不带请求体；排障一个具体失败请求（如"这次 404 CARD_NOT_FOUND 到底发的是哪个卡 ID"）只能指望报告者自己截 DevTools Network 面板，访问日志本身完全没有这个信息。现改为：状态码 ≥500 → `error`，≥400 → `warn`（都附带 `body`），其余仍是 `info`（不带 body，避免正常流量日志体积/敏感信息双重膨胀）。`setErrorHandler`（Fastify 抛出型错误——schema 校验失败、security handler 抛错）同步补上 body。body 经 `redactedBodyForLog` 处理：按 key（大小写不敏感）红线掉 `password`/`newPassword`/`oldPassword`/`receipt`/`token`/`secret`，序列化后超 4000B 直接整体替换成"体积超限"提示（不做部分截断，避免拼出非法 JSON）。落地 = `server/metaserver/src/app.ts`，回归测试 `server/metaserver/test/access-log.test.ts`。
 
 ---
 

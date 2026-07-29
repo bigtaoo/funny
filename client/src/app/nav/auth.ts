@@ -3,7 +3,8 @@ import * as analytics from '../../analytics';
 import { ApiError, type AuthResult } from '../../net/ApiClient';
 import type { AuthOutcome } from '../../scenes/LoginScene';
 import type { RenameOutcome } from '../../scenes/SettingsScene';
-import type { TranslationKey } from '../../i18n';
+import { t, type TranslationKey } from '../../i18n';
+import { showToastMessage } from '../../net/log';
 import type { AppCtx, Nav } from '../appCtx';
 import {
   SEEN_INTRO_FLAG, TOKEN_KEY, PLAYER_NAME_KEY, PLAYER_PUBLIC_ID_KEY, PLAYER_AVATAR_KEY, RENAME_COST,
@@ -23,7 +24,17 @@ export function createAuthNav(ctx: AppCtx): Pick<Nav, 'goIntro' | 'goLogin' | 'd
     const m = saveManager.consumeActiveMatch();
     if (!m) return false;
     views.showReconnectPrompt({
-      onReconnect: () => getNetSession()?.rejoinMatch(m.gameUrl, m.ticket),
+      onReconnect: () => {
+        const session = getNetSession();
+        if (!session) { afterDecline(); return; }
+        // onFailed: the cached room is actually gone (e.g. gameserver restarted mid-match) —
+        // NetClient has already given up retrying (fatal close code), so bail to the lobby
+        // instead of leaving the player parked on this dialog forever.
+        session.rejoinMatch(m.gameUrl, m.ticket, () => {
+          showToastMessage(t('reconnect.gone'));
+          afterDecline();
+        });
+      },
       onDecline: afterDecline,
     });
     return true;
@@ -52,11 +63,12 @@ export function createAuthNav(ctx: AppCtx): Pick<Nav, 'goIntro' | 'goLogin' | 'd
       playerName: playerName(),
       avatarId: avatarId(),
       onSetAvatar: (id) => {
-        // Local write is the offline-mode / not-yet-synced fallback; saveManager.update marks the
-        // save dirty and pushes equipped via the existing generic PUT /save sync (same mechanism
-        // TitlesScene's onEquip uses for equipped['title']) — this is what other players' clients see.
+        // PLAYER_AVATAR_KEY is the pure-offline-mode fallback (avatarId() in createAppCore.ts falls
+        // back to it when there's no account/equipped.avatar at all) — kept even though the real,
+        // server-authoritative avatar now goes through equipAvatar (PUT /avatar/equip, ownership-
+        // validated) rather than the old generic PUT /save sync.
         platform.storage.setItem(PLAYER_AVATAR_KEY, id);
-        saveManager.update((d) => { d.equipped['avatar'] = id; });
+        saveManager.equipAvatar(id);
       },
       ownedTitles: saveManager.get().titles ?? [],
       ownedSkins: saveManager.get().inventory.skins,
@@ -167,7 +179,18 @@ export function createAuthNav(ctx: AppCtx): Pick<Nav, 'goIntro' | 'goLogin' | 'd
       // Immediately re-fetch the bootstrap after receiving publicId so targeted log capture
       // takes effect without waiting for the next 120-second polling cycle (best-effort).
       void featureFlags?.refresh();
+      // Snapshot flags set before this account existed (intro dismissal, GDPR consent — both
+      // `setFlag()` while `online()` is false, i.e. local-write-only, no server push) so they
+      // can be replayed after adoptSession: the account's first-ever reconcile() takes `flags`
+      // wholesale from the brand-new cloud save (`{}`, ADR-056), which would otherwise silently
+      // wipe them — and since they're never re-shown once SEEN_INTRO_FLAG/GDPR_CONSENT_FLAG look
+      // set locally, a next app restart (a fresh SaveManager reading this account's persisted
+      // save) would see them false again with nothing left to re-set them.
+      const preLoginFlags = { ...saveManager.get().flags };
       await saveManager.adoptSession(res.accountId);
+      for (const [key, value] of Object.entries(preLoginFlags)) {
+        if (value && saveManager.getFlag(key) !== true) saveManager.setFlag(key, true);
+      }
       if (!offerResume(() => nav.goLobby({ offline: false }))) nav.goLobby({ offline: false });
       return { ok: true };
     } catch (e) {

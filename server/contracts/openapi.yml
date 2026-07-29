@@ -258,6 +258,7 @@ components:
           description: Unit card inventory `${unitId}:${level}`→count; kept for save compatibility; retired after CC cleanup
         cardInv:
           type: object
+          nullable: true
           additionalProperties:
             $ref: '#/components/schemas/CardInstance'
           description: Card instance inventory (instanceId→CardInstance); max 500 entries
@@ -459,13 +460,6 @@ components:
         locked:
           type: boolean
           description: Locked cards cannot be used as fusion material
-    SyncPatch:
-      type: object
-      properties:
-        equipped:
-          $ref: '#/components/schemas/SaveData/properties/equipped'
-        flags:
-          $ref: '#/components/schemas/SaveData/properties/flags'
     AuthResult:
       type: object
       required:
@@ -1544,73 +1538,6 @@ paths:
                               - ranked
         '401':
           $ref: '#/components/responses/ErrorResp'
-    put:
-      operationId: putSave
-      tags:
-        - save
-      summary: Push client sync patch (optimistic lock via If-Match rev)
-      security:
-        - bearerAuth: []
-      parameters:
-        - name: If-Match
-          in: header
-          required: true
-          schema:
-            type: string
-          description: The rev held by the client
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required:
-                - save
-              properties:
-                save:
-                  $ref: '#/components/schemas/SyncPatch'
-      responses:
-        '200':
-          description: Success — returns normalized save
-          content:
-            application/json:
-              schema:
-                type: object
-                required:
-                  - ok
-                  - data
-                properties:
-                  ok:
-                    type: boolean
-                    enum:
-                      - true
-                  data:
-                    type: object
-                    required:
-                      - save
-                    properties:
-                      save:
-                        $ref: '#/components/schemas/SaveData'
-        '401':
-          $ref: '#/components/responses/ErrorResp'
-        '409':
-          description: REV_CONFLICT, includes current server-side value
-          content:
-            application/json:
-              schema:
-                type: object
-                required:
-                  - ok
-                  - error
-                properties:
-                  ok:
-                    type: boolean
-                    enum:
-                      - false
-                  error:
-                    $ref: '#/components/schemas/Error'
-                  save:
-                    $ref: '#/components/schemas/SaveData'
   /match/history:
     get:
       operationId: getMatchHistory
@@ -2363,9 +2290,13 @@ paths:
                       - save
                       - results
                       - overflow
+                      - cardGrants
+                      - equipmentGrants
                     properties:
                       save:
-                        $ref: '#/components/schemas/SaveData'
+                        allOf:
+                          - $ref: '#/components/schemas/SaveData'
+                        description: 'Lean (2026-07-28): `cardInv`/`equipmentInv` are always `null` on this response — the highest-frequency card/equipment-granting endpoint skips the full-inventory join on every call. Adopt via SaveManager.adoptServerPartial with `cardGrants`/ `equipmentGrants` below as the upsert patch, never the plain adoptServer/reconcile.'
                       results:
                         type: array
                         items:
@@ -2391,6 +2322,16 @@ paths:
                           equipCompensatedCoins:
                             type: integer
                             minimum: 0
+                      cardGrants:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/CardInstance'
+                        description: Card instances this draw actually added to cardInv (never the mailed-overflow ones).
+                      equipmentGrants:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/EquipmentInstance'
+                        description: Equipment instances this draw actually added to equipmentInv (never the mailed-overflow ones).
         '402':
           $ref: '#/components/responses/ErrorResp'
         '404':
@@ -4195,6 +4136,105 @@ paths:
         '401':
           $ref: '#/components/responses/ErrorResp'
         '403':
+          $ref: '#/components/responses/ErrorResp'
+  /skin/equip:
+    put:
+      operationId: equipSkin
+      tags:
+        - save
+      summary: Equip/unequip a character skin (writes equipped["skin:<unitType>"] and pushes save). One slot per character (LOBBY_IA_REDESIGN §15); skinId null unequips. Requires lifetime ownership (inventory.skins / everOwned.skin).
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - unitType
+              properties:
+                unitType:
+                  type: string
+                  description: Character UnitType this skin slot targets, e.g. archer
+                skinId:
+                  type: string
+                  nullable: true
+                  description: Skin id to equip; null unequips the slot
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - ok
+                  - data
+                properties:
+                  ok:
+                    type: boolean
+                    enum:
+                      - true
+                  data:
+                    type: object
+                    required:
+                      - save
+                    properties:
+                      save:
+                        $ref: '#/components/schemas/SaveData'
+        '401':
+          $ref: '#/components/responses/ErrorResp'
+        '403':
+          $ref: '#/components/responses/ErrorResp'
+  /flags:
+    put:
+      operationId: setFlag
+      tags:
+        - save
+      summary: Set one client-preference flag by key (writes flags.<key> and pushes save) — onboarding/consent/tutorial-seen style booleans with no ownership semantics.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - key
+                - value
+              properties:
+                key:
+                  type: string
+                  description: Flag key, e.g. tutorial_done, gdprConsent, featSeen.<featureId>
+                value:
+                  type: boolean
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - ok
+                  - data
+                properties:
+                  ok:
+                    type: boolean
+                    enum:
+                      - true
+                  data:
+                    type: object
+                    required:
+                      - save
+                    properties:
+                      save:
+                        $ref: '#/components/schemas/SaveData'
+        '400':
+          $ref: '#/components/responses/ErrorResp'
+        '401':
           $ref: '#/components/responses/ErrorResp'
   /lobby/badges:
     get:

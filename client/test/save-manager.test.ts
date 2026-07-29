@@ -2,10 +2,10 @@
 //  · refresh() (S1-R): after the server authoritatively updates the ranked stats (pvp) at match end, client pull + reconcile reflects them immediately.
 //  · PvE server authority (PVE_INTEGRITY_PLAN §8): progress/materials/pveUpgrades are taken from the cloud (no more union/max merge);
 //    level clear / upgrade go through /pve/* endpoints; offline clears are queued and flushed on reconnect.
-import { describe, it, expect, vi, afterEach } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import { SaveManager } from '../src/game/meta/SaveManager';
 import { LocalSaveStore } from '../src/game/meta/SaveStore';
-import { makeNewSave, type SaveData } from '../src/game/meta';
+import { makeNewSave, type CardInstance, type EquipmentInstance, type SaveData } from '../src/game/meta';
 import { ApiError, type ApiClient } from '../src/net/ApiClient';
 import type { IStorage } from '../src/platform/IPlatform';
 
@@ -58,18 +58,20 @@ describe('SaveManager.refresh (S1-R)', () => {
     expect(mgr.get().materials).toEqual({ scrap: 3 });
   });
 
-  it('equipped/flags remain client-synced (local overrides cloud)', async () => {
+  it('equipped/flags are server-authoritative: cloud always wins over a stale/corrupted local value', async () => {
     const store = new LocalSaveStore(new MemStorage());
     const local = makeNewSave('a', 1);
-    local.equipped = { skin: 'local_skin' };
-    local.flags = { seen_intro: true };
+    local.equipped = { skin: 'local_skin' }; // e.g. a bad local value from some client-side bug
+    local.flags = { seen_intro: false };
     store.saveLocal(local);
 
     const cloud = makeNewSave('a', 1);
     cloud.equipped = { skin: 'cloud_skin' };
+    cloud.flags = { seen_intro: true };
     const mgr = new SaveManager({ store, api: fakeApi(cloud) });
     await mgr.refresh();
-    expect(mgr.get().equipped.skin).toBe('local_skin'); // local overrides cloud
+    // No client-side field can permanently override a fresh server pull any more — a refresh always heals.
+    expect(mgr.get().equipped.skin).toBe('cloud_skin');
     expect(mgr.get().flags.seen_intro).toBe(true);
   });
 
@@ -99,128 +101,120 @@ describe('SaveManager.refresh (S1-R)', () => {
   });
 });
 
-describe('SaveManager.reconcile dirty flag (P0-10, comm-audit-2026-07-27 finding B11)', () => {
-  /** fakeApi + putSave call recording, so flush()/push() behavior is directly observable. */
-  function fakeApiWithPutSave(cloud: SaveData, hasToken = true) {
-    const putSaveCalls: number[] = [];
-    const api = {
-      hasToken: () => hasToken,
-      getSave: async () => ({ save: cloud }),
-      putSave: async (rev: number) => { putSaveCalls.push(rev); return { kind: 'ok' as const, save: cloud }; },
-    } as unknown as ApiClient;
-    return { api, putSaveCalls };
-  }
-
-  it('a read (refresh) that surfaces no real local edit does not trigger a phantom PUT /save', async () => {
+describe('SaveManager.adoptServer stale-response guard (out-of-order gacha draw responses)', () => {
+  // Regression (2026-07-28): rapid-fire actions that each call adoptServer (e.g. mashing the gacha draw
+  // button) have no client-side busy-guard, so responses can arrive out of order — a slow earlier
+  // request's response landing after a faster later one's. reconcile() used to adopt whatever `save` it
+  // was given unconditionally, so a stale response would roll cardInv/wallet back to an earlier snapshot,
+  // resurrecting an instance already consumed (e.g. fused away) by the newer state — the resurrected id
+  // has no server-side backing, so the next action on it 404s CARD_NOT_FOUND.
+  it('a lower-rev response arriving after a higher-rev one is dropped, not adopted', () => {
     const store = new LocalSaveStore(new MemStorage());
-    const local = makeNewSave('a', 1);
-    local.equipped = { skin: 'same_skin' };
-    local.flags = { seen_intro: true };
-    store.saveLocal(local);
+    const mgr = new SaveManager({ store, api: fakeApi(makeNewSave('a', 1)) });
 
-    // Cloud already has exactly what local has — nothing to reconcile.
-    const cloud = makeNewSave('a', 1);
-    cloud.equipped = { skin: 'same_skin' };
-    cloud.flags = { seen_intro: true };
-    const { api, putSaveCalls } = fakeApiWithPutSave(cloud);
+    const newer = makeNewSave('a', 1);
+    newer.rev = 5;
+    newer.wallet.coins = 100;
+    mgr.adoptServer(newer);
+    expect(mgr.get().wallet.coins).toBe(100);
 
-    const mgr = new SaveManager({ store, api });
-    await mgr.refresh();
-    await mgr.flush(); // would fire a PUT immediately if (and only if) dirty were (wrongly) set
+    // A slower, earlier-sent request's response finally arrives — lower rev, stale coin balance.
+    const stale = makeNewSave('a', 1);
+    stale.rev = 3;
+    stale.wallet.coins = 40;
+    mgr.adoptServer(stale);
 
-    expect(putSaveCalls).toHaveLength(0);
+    expect(mgr.get().rev).toBe(5);
+    expect(mgr.get().wallet.coins).toBe(100); // not rolled back to the stale snapshot
   });
 
-  it('a read that surfaces a genuine local equipped/flags edit still marks dirty and pushes', async () => {
+  it('a same-or-higher-rev response is still adopted normally', () => {
     const store = new LocalSaveStore(new MemStorage());
-    const local = makeNewSave('a', 1);
-    local.equipped = { skin: 'local_skin' }; // real offline edit cloud doesn't have yet
-    store.saveLocal(local);
+    const mgr = new SaveManager({ store, api: fakeApi(makeNewSave('a', 1)) });
 
-    const cloud = makeNewSave('a', 1); // no skin equipped in the cloud
-    const { api, putSaveCalls } = fakeApiWithPutSave(cloud);
+    const first = makeNewSave('a', 1);
+    first.rev = 5;
+    first.wallet.coins = 100;
+    mgr.adoptServer(first);
 
-    const mgr = new SaveManager({ store, api });
-    await mgr.refresh();
-    await mgr.flush();
+    const next = makeNewSave('a', 1);
+    next.rev = 6;
+    next.wallet.coins = 150;
+    mgr.adoptServer(next);
 
-    expect(putSaveCalls).toHaveLength(1);
+    expect(mgr.get().rev).toBe(6);
+    expect(mgr.get().wallet.coins).toBe(150);
   });
 });
 
-describe('SaveManager lifecycle flush (P0-10, comm-audit-2026-07-27 finding B11)', () => {
-  function fakeDocWindow() {
-    const docListeners = new Map<string, Array<() => void>>();
-    const winListeners = new Map<string, Array<() => void>>();
-    const doc = {
-      visibilityState: 'visible' as 'visible' | 'hidden',
-      addEventListener: (type: string, cb: () => void) => {
-        (docListeners.get(type) ?? docListeners.set(type, []).get(type)!).push(cb);
-      },
-    };
-    const win = {
-      addEventListener: (type: string, cb: () => void) => {
-        (winListeners.get(type) ?? winListeners.set(type, []).get(type)!).push(cb);
-      },
-    };
-    return {
-      doc, win,
-      fireDoc: (type: string) => (docListeners.get(type) ?? []).forEach((f) => f()),
-      fireWin: (type: string) => (winListeners.get(type) ?? []).forEach((f) => f()),
-    };
+describe('SaveManager.adoptServerPartial (EQUIPMENT_DESIGN §3.3 phase 2, extended to cards 2026-07-28)', () => {
+  const EXISTING_CARD: CardInstance = { id: 'card_a', defId: 'lichuang', level: 1, gear: {}, locked: false };
+  const EXISTING_EQUIP: EquipmentInstance = { id: 'eq_a', defId: 'wp_pencil', rarity: 'common', level: 0, affixes: [] };
+
+  function seededManager(): SaveManager {
+    const store = new LocalSaveStore(new MemStorage());
+    const mgr = new SaveManager({ store, api: fakeApi(makeNewSave('a', 1)) });
+    mgr.adoptServer({
+      ...makeNewSave('a', 1),
+      rev: 1,
+      cardInv: { [EXISTING_CARD.id]: EXISTING_CARD },
+      equipmentInv: { [EXISTING_EQUIP.id]: EXISTING_EQUIP },
+    });
+    return mgr;
   }
 
-  afterEach(() => { vi.unstubAllGlobals(); });
+  it('cardUpsert adds a new card without touching existing cardInv/equipmentInv entries', () => {
+    const mgr = seededManager();
+    const newCard: CardInstance = { id: 'card_b', defId: 'suyuan', level: 1, gear: {}, locked: false };
 
-  it('visibilitychange → hidden triggers a flush (previously flush() had zero callers anywhere)', async () => {
-    const { doc, win, fireDoc } = fakeDocWindow();
-    vi.stubGlobal('document', doc);
-    vi.stubGlobal('window', win);
+    mgr.adoptServerPartial(
+      { ...makeNewSave('a', 1), rev: 2, cardInv: null, equipmentInv: null },
+      { cardUpsert: [newCard] },
+    );
 
-    const store = new LocalSaveStore(new MemStorage());
-    const local = makeNewSave('a', 1);
-    local.equipped = { skin: 'local_skin' };
-    store.saveLocal(local);
-    const cloud = makeNewSave('a', 1);
-    const putSaveCalls: number[] = [];
-    const api = {
-      hasToken: () => true,
-      getSave: async () => ({ save: cloud }),
-      putSave: async (rev: number) => { putSaveCalls.push(rev); return { kind: 'ok' as const, save: cloud }; },
-    } as unknown as ApiClient;
-    const mgr = new SaveManager({ store, api });
-    await mgr.refresh(); // marks dirty (local skin edit cloud doesn't have)
-
-    doc.visibilityState = 'hidden';
-    fireDoc('visibilitychange');
-    await Promise.resolve(); await Promise.resolve(); // let the fire-and-forget flush()/push() promise settle
-
-    expect(putSaveCalls).toHaveLength(1);
+    expect(mgr.get().cardInv).toEqual({ [EXISTING_CARD.id]: EXISTING_CARD, [newCard.id]: newCard });
+    expect(mgr.get().equipmentInv).toEqual({ [EXISTING_EQUIP.id]: EXISTING_EQUIP }); // untouched
   });
 
-  it('beforeunload triggers a flush', async () => {
-    const { doc, win, fireWin } = fakeDocWindow();
-    vi.stubGlobal('document', doc);
-    vi.stubGlobal('window', win);
+  it('cardRemove deletes a fused-away card without touching equipmentInv', () => {
+    const mgr = seededManager();
 
-    const store = new LocalSaveStore(new MemStorage());
-    const local = makeNewSave('a', 1);
-    local.equipped = { skin: 'local_skin' };
-    store.saveLocal(local);
-    const cloud = makeNewSave('a', 1);
-    const putSaveCalls: number[] = [];
-    const api = {
-      hasToken: () => true,
-      getSave: async () => ({ save: cloud }),
-      putSave: async (rev: number) => { putSaveCalls.push(rev); return { kind: 'ok' as const, save: cloud }; },
-    } as unknown as ApiClient;
-    const mgr = new SaveManager({ store, api });
-    await mgr.refresh();
+    mgr.adoptServerPartial(
+      { ...makeNewSave('a', 1), rev: 2, cardInv: null, equipmentInv: null },
+      { cardRemove: [EXISTING_CARD.id] },
+    );
 
-    fireWin('beforeunload');
-    await Promise.resolve(); await Promise.resolve();
+    expect(mgr.get().cardInv).toEqual({});
+    expect(mgr.get().equipmentInv).toEqual({ [EXISTING_EQUIP.id]: EXISTING_EQUIP });
+  });
 
-    expect(putSaveCalls).toHaveLength(1);
+  it('upsert (equipment) and cardUpsert together patch both maps in one call', () => {
+    const mgr = seededManager();
+    const newCard: CardInstance = { id: 'card_b', defId: 'suyuan', level: 1, gear: {}, locked: false };
+    const newEquip: EquipmentInstance = { id: 'eq_b', defId: 'wp_marker', rarity: 'rare', level: 0, affixes: [] };
+
+    mgr.adoptServerPartial(
+      { ...makeNewSave('a', 1), rev: 2, cardInv: null, equipmentInv: null },
+      { upsert: [newEquip], cardUpsert: [newCard] },
+    );
+
+    expect(Object.keys(mgr.get().cardInv)).toHaveLength(2);
+    expect(Object.keys(mgr.get().equipmentInv)).toHaveLength(2);
+    expect(mgr.get().cardInv[newCard.id]).toEqual(newCard);
+    expect(mgr.get().equipmentInv[newEquip.id]).toEqual(newEquip);
+  });
+
+  it('an equipment-only patch (no cardUpsert/cardRemove) is a no-op for cardInv — existing equipment-only call sites are unaffected', () => {
+    const mgr = seededManager();
+    const newEquip: EquipmentInstance = { id: 'eq_b', defId: 'wp_marker', rarity: 'rare', level: 0, affixes: [] };
+
+    mgr.adoptServerPartial(
+      { ...makeNewSave('a', 1), rev: 2, equipmentInv: null },
+      { upsert: [newEquip] },
+    );
+
+    expect(mgr.get().cardInv).toEqual({ [EXISTING_CARD.id]: EXISTING_CARD }); // untouched
+    expect(Object.keys(mgr.get().equipmentInv)).toHaveLength(2);
   });
 });
 
@@ -255,12 +249,13 @@ describe('SaveManager.adoptSession (SA-3/SA-4 session adoption)', () => {
     expect(mgr.get().accountId).toBe('real-123');
   });
 
-  // Regression (2026-07-25): reconcile() always merges local.equipped/flags over cloud (by design,
-  // so offline edits under the *same* account survive a sync — see the previous describe block).
-  // But doLogout() never reset that in-memory local state, so account A's equipped avatar/title and
-  // flags (e.g. gdprConsent) leaked into account B's session on the very next adoptSession() — and,
-  // since reconcile() marks the save dirty, would even get pushed back and overwrite B's cloud save.
-  it('without clearSyncedLocalSections(), a previous account\'s equipped avatar leaks into the next account adopted', async () => {
+  // Historical regression (2026-07-25): back when reconcile() merged local.equipped/flags over cloud
+  // (local always won, forever — see DECISIONS.md "equipped/flags server-authoritative" for why that
+  // was replaced), doLogout() not resetting in-memory local state let account A's equipped avatar/flags
+  // leak into account B's very next adoptSession(). Now that reconcile() always takes the cloud value
+  // for equipped/flags, that leak is structurally impossible even without clearSyncedLocalSections() —
+  // it remains purely a "don't flash A's avatar during the async gap before B's reconcile resolves" nicety.
+  it('adoptSession alone (no clearSyncedLocalSections) already reflects the new account\'s cloud state — no leak', async () => {
     const store = new LocalSaveStore(new MemStorage());
     const local = makeNewSave('acc-a', 1);
     local.equipped = { avatar: 'preset:3' }; // account A's chosen avatar, still resident in-memory
@@ -271,11 +266,11 @@ describe('SaveManager.adoptSession (SA-3/SA-4 session adoption)', () => {
     const mgr = new SaveManager({ store, api: fakeApi(cloudB) });
     await mgr.adoptSession('acc-b'); // simulates doAuth() logging into B without a prior doLogout() reset
 
-    expect(mgr.get().equipped.avatar).toBe('preset:3'); // bug: B sees A's avatar
-    expect(mgr.get().flags.gdprConsent).toBe(true); // bug: B silently inherits A's consent flag
+    expect(mgr.get().equipped.avatar).toBeUndefined(); // B does not inherit A's avatar
+    expect(mgr.get().flags.gdprConsent).toBeUndefined(); // B does not inherit A's consent flag
   });
 
-  it('clearSyncedLocalSections() before the next adoptSession() prevents the leak (doLogout() fix)', async () => {
+  it('clearSyncedLocalSections() blanks equipped/flags/pvpDeck immediately (pre-reconcile UI nicety)', () => {
     const store = new LocalSaveStore(new MemStorage());
     const local = makeNewSave('acc-a', 1);
     local.equipped = { avatar: 'preset:3' };
@@ -283,16 +278,104 @@ describe('SaveManager.adoptSession (SA-3/SA-4 session adoption)', () => {
     local.pvpDeck = ['card1', 'card2'];
     store.saveLocal(local);
 
-    const cloudB = makeNewSave('acc-b', 1);
-    const mgr = new SaveManager({ store, api: fakeApi(cloudB) });
+    const mgr = new SaveManager({ store, api: fakeApi(makeNewSave('acc-b', 1)) });
     mgr.clearSyncedLocalSections(); // called from doLogout()
     expect(mgr.get().equipped).toEqual({});
     expect(mgr.get().flags).toEqual({});
     expect(mgr.get().pvpDeck).toBeUndefined();
+  });
+});
 
-    await mgr.adoptSession('acc-b');
-    expect(mgr.get().equipped.avatar).toBeUndefined();
-    expect(mgr.get().flags.gdprConsent).toBeUndefined();
+describe('SaveManager.setFlag / equipTitle / equipAvatar / equipSkin (server-authoritative, optimistic local write)', () => {
+  function fakeEquipApi(hasToken = true) {
+    const calls: Array<{ kind: string; args: unknown[] }> = [];
+    let nextSave: SaveData | Error = makeNewSave('a', 1);
+    const api = {
+      hasToken: () => hasToken,
+      getSave: async () => ({ save: makeNewSave('a', 1) }),
+      setFlag: async (key: string, value: boolean) => {
+        calls.push({ kind: 'setFlag', args: [key, value] });
+        if (nextSave instanceof Error) throw nextSave;
+        return { save: nextSave };
+      },
+      equipTitle: async (titleId: string) => {
+        calls.push({ kind: 'equipTitle', args: [titleId] });
+        if (nextSave instanceof Error) throw nextSave;
+        return { save: nextSave };
+      },
+      equipAvatar: async (avatarId: string) => {
+        calls.push({ kind: 'equipAvatar', args: [avatarId] });
+        if (nextSave instanceof Error) throw nextSave;
+        return { save: nextSave };
+      },
+      equipSkin: async (unitType: string, skinId: string | null) => {
+        calls.push({ kind: 'equipSkin', args: [unitType, skinId] });
+        if (nextSave instanceof Error) throw nextSave;
+        return { save: nextSave };
+      },
+    } as unknown as ApiClient;
+    return { api, calls, setNextSave: (s: SaveData | Error) => { nextSave = s; } };
+  }
+
+  it('setFlag: writes the local mirror immediately, then confirms via the server response', async () => {
+    const store = new LocalSaveStore(new MemStorage());
+    store.saveLocal(makeNewSave('a', 1));
+    const { api, calls, setNextSave } = fakeEquipApi();
+    const confirmed = makeNewSave('a', 1);
+    confirmed.flags = { tutorial_done: true };
+    setNextSave(confirmed);
+
+    const mgr = new SaveManager({ store, api });
+    mgr.setFlag('tutorial_done', true);
+    expect(mgr.get().flags.tutorial_done).toBe(true); // instant local feedback
+    await Promise.resolve(); await Promise.resolve();
+    expect(calls).toEqual([{ kind: 'setFlag', args: ['tutorial_done', true] }]);
+    expect(mgr.get().flags.tutorial_done).toBe(true); // confirmed by the server response
+  });
+
+  it('equipTitle/equipAvatar/equipSkin call their dedicated endpoints and adopt the response', async () => {
+    const store = new LocalSaveStore(new MemStorage());
+    store.saveLocal(makeNewSave('a', 1));
+    const { api, calls } = fakeEquipApi();
+    const mgr = new SaveManager({ store, api });
+
+    mgr.equipTitle('ladder.s3.gold');
+    mgr.equipAvatar('preset:3');
+    mgr.equipSkin('Scholar' as never, 'scholar_gold');
+    await Promise.resolve(); await Promise.resolve();
+
+    expect(calls).toEqual([
+      { kind: 'equipTitle', args: ['ladder.s3.gold'] },
+      { kind: 'equipAvatar', args: ['preset:3'] },
+      { kind: 'equipSkin', args: ['Scholar', 'scholar_gold'] },
+    ]);
+  });
+
+  it('a rejected/failed equip call self-corrects on the next sync instead of leaving the local guess stuck', async () => {
+    const store = new LocalSaveStore(new MemStorage());
+    store.saveLocal(makeNewSave('a', 1));
+    const { api, setNextSave } = fakeEquipApi();
+    setNextSave(new ApiError('BAD_REQUEST', 'title not owned'));
+
+    const mgr = new SaveManager({ store, api });
+    mgr.equipTitle('never_owned');
+    expect(mgr.get().equipped.title).toBe('never_owned'); // optimistic guess, briefly wrong
+    await Promise.resolve(); await Promise.resolve(); await Promise.resolve();
+    // Failure triggers a background refresh() → getSave() returns the true (unequipped) cloud state.
+    expect(mgr.get().equipped.title).toBeUndefined();
+  });
+
+  it('offline: writes the local mirror only, never calls the server', () => {
+    const store = new LocalSaveStore(new MemStorage());
+    store.saveLocal(makeNewSave('a', 1));
+    const { api, calls } = fakeEquipApi(false);
+    const mgr = new SaveManager({ store, api });
+
+    mgr.setFlag('seen_intro', true);
+    mgr.equipAvatar('preset:5');
+    expect(mgr.get().flags.seen_intro).toBe(true);
+    expect(mgr.get().equipped.avatar).toBe('preset:5');
+    expect(calls).toEqual([]);
   });
 });
 

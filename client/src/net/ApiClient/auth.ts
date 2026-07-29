@@ -1,9 +1,10 @@
-// Auth / account / cloud-save domain: token exchange, password accounts, GDPR/deletion, and the
-// optimistic-locked save get/put/rename endpoints.
+// Auth / account / cloud-save domain: token exchange, password accounts, GDPR/deletion, the save
+// get/rename endpoints, and the per-field server-authoritative cosmetic/flag mutations (equipped/flags
+// have no generic client-sync endpoint any more — see DECISIONS.md "equipped/flags server-authoritative").
 import type { AuthCredential } from '../../platform/IPlatform';
-import type { SaveData, SyncPatch } from '../../game/meta/SaveData';
-import { type Constructor, type ApiClientBaseCtor, ApiError } from './base';
-import type { AuthResult, ActiveMatchInfo, ApiResp, PushResult } from './types';
+import type { SaveData } from '../../game/meta/SaveData';
+import { type Constructor, type ApiClientBaseCtor } from './base';
+import type { AuthResult, ActiveMatchInfo } from './types';
 import { sampleServerNow } from '../serverClock';
 
 export interface AuthApi {
@@ -16,7 +17,14 @@ export interface AuthApi {
   recordGdprConsent(consent: boolean): Promise<void>;
   getSave(): Promise<{ save: SaveData; displayName?: string; publicId?: string; gatewayUrl?: string; freeRename?: boolean; activeMatch?: ActiveMatchInfo }>;
   rename(displayName: string): Promise<{ save: SaveData; displayName: string; freeRename?: boolean }>;
-  putSave(rev: number, patch: SyncPatch): Promise<PushResult>;
+  /** Select the displayed title; empty string unequips. Ownership-validated server-side. */
+  equipTitle(titleId: string): Promise<{ save: SaveData }>;
+  /** Select the displayed avatar (composite "<category>:<key>"); empty string unequips. Ownership-validated server-side. */
+  equipAvatar(avatarId: string): Promise<{ save: SaveData }>;
+  /** Equip/unequip a character skin; skinId null unequips the slot. Ownership-validated server-side. */
+  equipSkin(unitType: string, skinId: string | null): Promise<{ save: SaveData }>;
+  /** Set one client-preference flag by key (onboarding/consent/tutorial-seen — no ownership semantics). */
+  setFlag(key: string, value: boolean): Promise<{ save: SaveData }>;
 }
 
 export function AuthMixin<TBase extends ApiClientBaseCtor>(Base: TBase): TBase & Constructor<AuthApi> {
@@ -110,22 +118,20 @@ export function AuthMixin<TBase extends ApiClientBaseCtor>(Base: TBase): TBase &
       return this.post<{ save: SaveData; displayName: string; freeRename?: boolean }>('/profile/rename', { displayName });
     }
 
-    /**
-     * Push a client sync patch with optimistic locking via If-Match: rev.
-     * 200 → ok + normalised save; 409 → conflict + current server-side value (no exception thrown; caller handles pull-merge).
-     */
-    async putSave(rev: number, patch: SyncPatch): Promise<PushResult> {
-      const res = await this.fetchRaw('PUT', '/save', { save: patch }, { 'If-Match': String(rev) });
-      const json = (await res.json()) as ApiResp<{ save: SaveData }> & { save?: SaveData };
-      if (res.status === 409) {
-        // 409 envelope: { ok:false, error, save: current server-side value }
-        if (json.save) return { kind: 'conflict', save: json.save };
-        throw new ApiError('REV_CONFLICT', 'rev conflict without server save');
-      }
-      if (!json.ok) {
-        throw new ApiError(json.error.code, json.error.message);
-      }
-      return { kind: 'ok', save: json.data.save };
+    async equipTitle(titleId: string): Promise<{ save: SaveData }> {
+      return this.request<{ save: SaveData }>('PUT', '/title/equip', { titleId });
+    }
+
+    async equipAvatar(avatarId: string): Promise<{ save: SaveData }> {
+      return this.request<{ save: SaveData }>('PUT', '/avatar/equip', { avatarId });
+    }
+
+    async equipSkin(unitType: string, skinId: string | null): Promise<{ save: SaveData }> {
+      return this.request<{ save: SaveData }>('PUT', '/skin/equip', { unitType, skinId });
+    }
+
+    async setFlag(key: string, value: boolean): Promise<{ save: SaveData }> {
+      return this.request<{ save: SaveData }>('PUT', '/flags', { key, value });
     }
   };
 }

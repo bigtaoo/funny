@@ -637,6 +637,55 @@ describe('internal routes', () => {
   });
 });
 
+describe('POST /internal/match/abandon (gameserver graceful-shutdown cleanup, 2026-07-28)', () => {
+  it('no key → 401', async () => {
+    const app = build(fakeCols({}).cols);
+    const res = await app.inject({ method: 'POST', url: '/internal/match/abandon', payload: { accountIds: ['a'] } });
+    expect(res.statusCode).toBe(401);
+    await app.close();
+  });
+
+  it('clears activeMatch redis keys for every accountId in the body', async () => {
+    const redis = { del: vi.fn().mockResolvedValue(1) };
+    const app = build(fakeCols({}).cols, fakeGateway(), fakeCommercial(false), undefined, redis);
+    const res = await app.inject({
+      method: 'POST',
+      url: '/internal/match/abandon',
+      headers: { 'x-internal-key': KEY },
+      payload: { accountIds: ['a', 'b'] },
+    });
+    expect(res.json()).toEqual({ ok: true });
+    expect(redis.del).toHaveBeenCalledWith('nw:activeMatch:a', 'nw:activeMatch:b');
+    await app.close();
+  });
+
+  it('empty/missing accountIds → ok, no redis call', async () => {
+    const redis = { del: vi.fn().mockResolvedValue(1) };
+    const app = build(fakeCols({}).cols, fakeGateway(), fakeCommercial(false), undefined, redis);
+    const res = await app.inject({
+      method: 'POST',
+      url: '/internal/match/abandon',
+      headers: { 'x-internal-key': KEY },
+      payload: {},
+    });
+    expect(res.json()).toEqual({ ok: true });
+    expect(redis.del).not.toHaveBeenCalled();
+    await app.close();
+  });
+
+  it('no redis configured → still succeeds (feature silently disabled)', async () => {
+    const app = build(fakeCols({}).cols); // no redis arg
+    const res = await app.inject({
+      method: 'POST',
+      url: '/internal/match/abandon',
+      headers: { 'x-internal-key': KEY },
+      payload: { accountIds: ['a'] },
+    });
+    expect(res.json()).toEqual({ ok: true });
+    await app.close();
+  });
+});
+
 describe('GET /internal/mismatches (C3)', () => {
   it('no key → 401', async () => {
     const app = build(fakeCols({}).cols);

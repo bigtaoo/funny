@@ -69,10 +69,22 @@ interface NwDesktopBridge {
   // 壳→工具页面的推送式事件（main 用 webContents.send 发起，preload 转成订阅接口）：
   onRequestSave(cb: () => void | Promise<void>): () => void;   // 取消订阅函数；内容热更新触发的"立即保存"钩子，见 §4.2
   onUpdateAvailable(cb: (info: { kind: 'app' | 'content'; toolId?: string }) => void): () => void;
+  fs: FsBridge;   // 本地磁盘文件读写，见下 · ✅ 已实现（2026-07-28）
+}
+
+interface FsBridge {
+  openFile(filters: Array<{ name: string; extensions: string[] }>):
+    Promise<{ canceled: boolean; path?: string; data?: ArrayBuffer; error?: string }>;
+  writeFile(path: string, data: ArrayBuffer): Promise<{ ok: boolean; error?: string }>;
+  saveFileAs(
+    opts: { defaultPath?: string; filters: Array<{ name: string; extensions: string[] }> },
+    data: ArrayBuffer,
+  ): Promise<{ canceled: boolean; path?: string; error?: string }>;
 }
 ```
 
 - `onRequestSave(cb)`：工具页面在 `App.ts`（或等价组合根）里订阅一次，把 `cb` 映射到各自已有的立即落盘方法（如 animator 的 `AutoSaveController.flushNow()`）。preload 侧收到后台请求后调用 `cb()`，完成/超时都会回发一个 ack（`nw:save-ack`），供壳侧判断是否可以继续往下走"提示刷新"。没有自动保存机制的工具（如尚无 autosave 的 vfx-editor）可以先传空函数，不阻塞。
+- `fs.*`（`src/fsBridge.ts`，`ipcMain.handle('fs:openFile'|'fs:writeFile'|'fs:saveFileAs', ...)`）：主进程用原生 `dialog.showOpenDialog`/`showSaveDialog` + `fs/promises` 直接读写磁盘，绕开浏览器 File System Access API 的沙箱限制（拿不到已打开文件所在目录、写权限要反复确认）。`openFile` 弹一次原生选择框，返回路径 + 内容；`writeFile` 直接按给定绝对路径覆盖写，不弹框；`saveFileAs` 弹一次保存框返回新路径。工具页面据此实现"Load 选一次文件、Save 直接覆盖原文件、Export 直接落到同目录、另存为才再问一次路径"——animator 的 `IOController` 是首个接入方（`isDesktop()` 判断 `window.nwDesktop?.fs` 是否存在，不存在时退回浏览器 `showOpenFilePicker`/`showSaveFilePicker` 方案，两条路径都记住文件 handle/路径供后续 Save/Export 直接复用，唯独浏览器方案因为拿不到目录、Export 首次仍需弹一次框）。
 
 ---
 
@@ -168,3 +180,5 @@ interface GitSyncController {
   - **端到端验证**（非只读代码）：临时把轮询间隔调到 3s、加调试日志，实际改动 animator 源码触发 webpack 重新编译 → `version.json` hash 真的变了 → 轮询检测到 → 侧边栏弹出"当前工具有新版本，已自动保存工作 · 刷新" → 通过 CDP 调 `window.nwShell.applyUpdate()` 模拟点击 → 内容视图 reload、提示消失、基线刷新到新 hash。验证完成后已还原成正式的 5 分钟轮询间隔并删掉调试日志。
 - **P4**（外包真正接入前）：`GitSyncController` 真实实现（`isomorphic-git` + 权限收窄 token + 自动开 PR）——本次未做。
 - **生产地址接线 + 品牌化（2026-07-28）**：`tools.ts` 加 `prodUrl` + `resolveToolUrl()`（见 §4.2），装好的正式包默认连生产、开发跑源码默认连本地，验证过两种模式各自正确。品牌名从占位的"Notebook Wars 工具箱"改为 **NW Tool**（`package.json` 根 `productName` + `build.productName` + 窗口标题 + 侧边栏 `<title>`，一并改）；图标用仓库既有游戏品牌 logo（`art/logo/derived/logo-1024.png` → `tools/desktop-shell/build/icon.png`，electron-builder 按约定路径自动转 ico），验证：提取打包出的 exe 图标核对过确实是这个盾形 logo。
+  - **修正（2026-07-28）**：`logo-1024.png` 是 master 版（全细节手绘），按 ADR-027 只适合 ≥128px；electron-builder 从单张源图生成的 `.ico` 包含 16/32/48 等小尺寸，用 master 会像用户反馈那样"太花"。改用 `art/logo/logo-simple.png`（1024²，扁平版，ADR-027 里定义给 ≤64px 场景）覆盖 `tools/desktop-shell/build/icon.png`，其余打包逻辑不变。
+- **本地文件 I/O 桥接落地（2026-07-28）**：新增 `src/fsBridge.ts`（原生对话框 + `fs/promises`，见 §3 `fs.*`），`main.ts` 里 `registerFsHandlers(() => mainWindow)`；`preload.ts` 挂到 `window.nwDesktop.fs`。动机：animator 的 Load/Save/Export/Import 全部走浏览器 File System Access API 的 `showOpenFilePicker`/`showSaveFilePicker`，每次都要弹一次选择框——用户反馈"加载选一次文件就行，保存该直接覆盖原文件，导出该直接落到同目录，不用每次再问"，但纯浏览器 API 拿不到"已打开文件所在目录"，做不到无弹窗导出。方案是平台区分：壳内用这层原生 IPC（`openFile`/`writeFile`/`saveFileAs`），路径记在内存里，Save/Export 全程不弹框；脱离壳单独跑时退回浏览器 API（Load 用 `showOpenFilePicker` 取 handle 而不是 `<input type=file>`，这样 Save 也能复用 handle 直接覆盖；Export 首次因为拿不到目录仍需弹一次框，之后复用同一个 handle 不再弹）。animator `IOController` 是首个接入方，其它三个工具的 IO 目前不是同一套按钮结构（`vfx-editor`/`level-editor`/`map-editor` 各自更简单的单一保存流程），未跟着改，需要时再单独接。同时把原来"导入 .tao"按钮换成"另存为"（`saveEditorProjectAs()`）——导入功能实际没人用，另存为则复用同一套桥接把当前工程存一份新文件，并像 Word/Photoshop 一样把之后的 Save/Export 目标切到新文件。

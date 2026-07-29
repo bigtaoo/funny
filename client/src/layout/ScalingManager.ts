@@ -37,6 +37,34 @@ export function createLayout(
   return new PortraitLayout(availW, availH, localSide);
 }
 
+const ZERO_INSETS: SafeAreaInsets = { top: 0, right: 0, bottom: 0, left: 0 };
+
+// createLayout()/ScalingManager both default a missing insets arg to all-zero, so an
+// undefined reading and an explicit all-zero one are the same layout — compare normalized.
+function insetsEqual(a: SafeAreaInsets | undefined, b: SafeAreaInsets | undefined): boolean {
+  const na = a ?? ZERO_INSETS;
+  const nb = b ?? ZERO_INSETS;
+  return na.top === nb.top && na.right === nb.right && na.bottom === nb.bottom && na.left === nb.left;
+}
+
+/**
+ * WebKit can report `env(safe-area-inset-*)` as 0 on the very first synchronous read after a
+ * cold load, before `viewport-fit=cover` has settled — so a boot-time inset read can undercount
+ * the notch/status-bar inset. Compares a later ("settled") reading against the boot-time one and
+ * returns a freshly computed layout if they differ, or `null` if nothing changed (the common
+ * case — callers should skip the rescale then).
+ */
+export function resettledLayout(
+  screenW: number,
+  screenH: number,
+  initialInsets: SafeAreaInsets | undefined,
+  settledInsets: SafeAreaInsets | undefined,
+  localSide: Side = Side.Bottom,
+): ILayout | null {
+  if (!settledInsets || insetsEqual(settledInsets, initialInsets)) return null;
+  return createLayout(screenW, screenH, localSide, settledInsets);
+}
+
 /**
  * ScalingManager — wraps a PIXI.Application and provides two containers:
  *

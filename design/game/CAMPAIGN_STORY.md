@@ -311,7 +311,7 @@ Mara 想：方家是忘不了彼此，Hartmann 是记得住自己。但记得住
 ```
 campaign.ch{N}.lv{N}.name    关卡名
 campaign.ch{N}.lv{N}.brief   关卡简报（仅故事关和氛围关有此键）
-campaign.ending              尾声文字
+campaign.epilogue            真实层「尾声」（仅 Ch6 Lv10 通关后，追加在 campaign.ch6.outro 之后展示）
 ```
 
 示例：
@@ -345,3 +345,13 @@ campaign.ch2.lv1.name   = "三强"
 - [x] LevelPrepScene 简报展示面板（`LevelPrepScene.ts:293-311`），`createAppCore.ts:620` 翻译 `briefKey`→`brief` 传入
 
 - [x] CampaignMapScene 章节头展示叙事者归属：标题下方加一行「陶的笔记本 / Anna 的笔记本」（odd 章=陶，even 章=Anna，对应框架表），i18n key `campaign.notebookOwner.tao` / `.anna`（zh/en/de）；`buildHeader` 加可选 `subtitleStr` 参数，章节页传入、TOC 不传
+
+### 真实层框架落地（2026-07-28）
+
+此前六章 intro/brief/outro 已完整承载想象层叙事，但 `world.md` 的「序」（陶：孤独但聪明的转学孩子，父亲送笔记本）与「尾声」（父亲读两本笔记本，陶和 Anna 带着新本子出发）在客户端里完全没有落点——开场 `IntroScene` 是与叙事无关的通用套话，结局也只停在 Ch6 outro 的想象层"信任"点题。本次补上这两处：
+
+- [x] 开场：`IntroScene.ts` 的 `story.line.*`（zh/en/de）从 4 行通用套话换成真实的「序」——陶的成绩/孤独/父亲的笔记本/画进本子里的世界，扩到 7 行；机制本身（`STORY_LINE_KEYS` 数组驱动的逐行淡入）不变，纯内容替换
+- [x] 开场插画（父亲递笔记本，与第 3 行同步淡入到 0.6 常驻）+ 每行最多等 5 秒自动前进（最后一行例外，等显式 tap 才结束，避免来不及看完就被带去隐私同意页）：详见 [`intro-story-art-prompts.md`](../product/intro-story-art-prompts.md)「代码接线计划」
+- [x] 结局：`LevelDefinition.story` 加 `epilogueKey?`（`server/engine/src/campaign/LevelDefinition.ts` + `levelSchema.ts` 解析），只有 `ch6_lv10.json` 使用，值为新增的 `campaign.epilogue`（zh/en/de，真实层「尾声」文案）
+- [x] outro 通路从单屏扩成多屏：`ResultScene.buildOutroOverlay` 改接收 `string[]`，逐屏 tap-through，最后一屏 tap 才展示结算面板；`Nav.goResult` / `AppViews.ResultViewProps` 的 `outroText` 相应改名 `outroTexts: string[]`。Ch1–Ch5（数组长度 1）行为不变，仅 Ch6 Lv10 通关追加 `campaign.epilogue` 作为第二屏
+- 不引入的东西：Anna 是陶真实朋友这件事，仍只在结局（`campaign.epilogue`）揭晓，中途六章 intro/brief/outro 不提前剧透——维持 `world.md` 原有的悬念结构

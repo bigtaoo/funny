@@ -40,7 +40,7 @@ src/
 │   └── ContextMenu.ts         右键菜单（easing 切换等）
 │
 ├── io/
-│   ├── IOController.ts        .tao 导出（JSZip + shelf bin-packing + canvas PNG）/ 导入；.tao.editor 存档（buildEditorBlob / loadEditorBlob 复用）
+│   ├── IOController.ts        .tao 导出（JSZip + shelf bin-packing + canvas PNG）；.tao.editor 存档（buildEditorBlob / loadEditorBlob 复用）；桌面壳原生 fs / 浏览器 File System Access API 双路径，Load 记住的文件身份供 Save 直接覆盖、Export 直接落到同目录
 │   ├── ProjectStore.ts        IndexedDB 工程库（meta + blobs 两 store）
 │   └── AutoSaveController.ts  多工程自动保存 + 切换 + 启动恢复（见 §11）
 │

@@ -2,7 +2,8 @@
 // to be gated entirely behind `api` (goCardRoster bailed straight to `back()` when offline, matching
 // the retired CollectionScene's fallback role). Now the roster itself works read-only offline — server-
 // authoritative mutations (feed/lock/gear) fail gracefully instead of the page being unreachable, and
-// skin equip (a client-sync-section write, not a server call) works the same online or offline.
+// skin equip's local mirror updates instantly offline too (SaveManager.equipSkin writes it unconditionally
+// before attempting the — now server-authoritative, PUT /skin/equip — sync call; see SaveManager.ts).
 //
 // Hand-built AppCtx style, same as careerNav-backNavigation.test.ts / game-nav-fight-again.test.ts.
 import { describe, it, expect } from 'vitest';
@@ -43,6 +44,11 @@ function buildCtx(opts: { online: boolean }): {
     saveManager: {
       get: () => save,
       update: (mutator: (d: typeof save) => void) => mutator(save),
+      // Mirrors SaveManager.equipSkin's local-write-first behavior (offline or online, see SaveManager.ts).
+      equipSkin: (unitType: UnitType, skinId: string | null) => {
+        const key = `skin:${unitType}`;
+        if (skinId) save.equipped[key] = skinId; else delete save.equipped[key];
+      },
     } as unknown as AppCtx['saveManager'],
     replayStore: {} as unknown as AppCtx['replayStore'],
     featureFlags: null,

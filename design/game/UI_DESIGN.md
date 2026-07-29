@@ -12,7 +12,7 @@
 |---|---|
 | **笔记本/手绘风** | 米色纸底 + 横线 + 红色页边线 + 等宽字体（monospace）。沿用 `LobbyScene` 的 `C` 调色板，不另起视觉体系 |
 | **设计空间 + Contain 缩放** | 所有坐标用设计空间；`ScalingManager` 单比例映射到真机。场景内用 `layout.designWidth/Height` 的**百分比**布局（见 `LobbyScene.build()`）。**竖屏设计高度是动态的**（2026-07 改）：宽度固定 1080，高度 = `round(1080 × 安全区高/安全区宽)`，下限 1920——即竖屏设计空间的**长宽比跟随设备安全区**，故 iPhone 13（~9:19.5）等高瘦屏用 fit-to-width 铺满、**不再上下留米色黑边**（此前固定 1080×1920 在高屏被 Contain 居中，上下各浪费 ~18%）。**横屏同理动态化**（2026-07 改）：高度固定 1080，宽度 = `round(1080 × 安全区宽/安全区高)`，下限 1920——即横屏长宽比也跟随安全区，高瘦屏横握用 fit-to-height 铺满、不再左右留黑边；棋盘水平居中，底部条左/右锚定、中间手牌区随宽度伸缩。详见 [`design/game/DESIGN.md` 渲染/布局节] 与 `layout/{PortraitLayout,LandscapeLayout}.ts` |
-| **安全区（刘海/灵动岛/Home 指示条）** | `IPlatform.getSafeAreaInsets()`（Web 读 `env(safe-area-inset-*)`，需 `viewport-fit=cover`）返回 CSS px 内边距；`createLayout` 用它缩小竖屏"可绘制区"来算设计高度，`ScalingManager` 把整个 `gameLayer` 平移进安全区内——**所有场景（战斗+菜单）统一避开刘海/指示条，无需各场景单独处理**。`bgLayer` 仍 Cover 铺满整屏（含安全区外的窄带），故边缘露的是背景纸而非硬边 |
+| **安全区（刘海/灵动岛/Home 指示条）** | `IPlatform.getSafeAreaInsets()`（Web 读 `env(safe-area-inset-*)`，需 `viewport-fit=cover`）返回 CSS px 内边距；`createLayout` 用它缩小竖屏"可绘制区"来算设计高度，`ScalingManager` 把整个 `gameLayer` 平移进安全区内——**所有场景（战斗+菜单）统一避开刘海/指示条，无需各场景单独处理**。`bgLayer` 仍 Cover 铺满整屏（含安全区外的窄带），故边缘露的是背景纸而非硬边。**冷启动竞态**（2026-07-28 修）：WebKit 在页面刚加载时首次同步读 `env(safe-area-inset-*)` 可能仍返回 0（`viewport-fit=cover` 还没生效完），导致 iPhone 13 等设备竖屏首屏顶部 HUD（金币/返回按钮）贴到 `y=0` 而非贴到刘海/状态栏下方，与系统状态栏重叠、返回按钮命中区也跟着偏移；`startApp()`（`app.ts`）在资源预加载 `await` 完成、首个场景构建前会**重新读一次**安全区，值有变化就重建 `layout` 并 `scaling.resize()`，构建首个场景时已用上稳定后的正确值 |
 | **双朝向自适应** | 每个菜单场景都要在竖屏/横屏下成立：竖屏纵向堆叠、横屏左右分栏。用 `layout.orientation` 分支或纯百分比让其自然伸缩 |
 | **触屏优先** | 命中区够大（≥ 设计空间 ~80px 高）；列表用滚动而非密集排布；复用 `InputManager.onDown` |
 | **零硬编码文案** | 全走 `t(key)`，`zh.ts` 唯一来源，`en`/`de` 编译强制全翻 |
@@ -599,7 +599,7 @@ LeaderboardScene 前三名用 🥇🥈🥉 emoji。新增 **1 个** `icons.ts` �
 ### 服务端同步（Phase B）
 
 - `save.equipped.avatar`（复用既有 `equipped: Record<string,string>` 通用装配袋，同 `equipped.title` 的写法，无需 schema 迁移）。
-- `PUT /avatar/equip`（`server/metaserver/src/service/liveops.ts` 的 `equipAvatar`，仿照 `equipTitle` 结构）：`preset:*` 恒许可；其余品类校验 `titles[]`/`everOwned.*`/`inventory.skins`，不满足 → 403。客户端实际走法与 `equipTitle` 一致——`onSetAvatar` 直接 `saveManager.update(d => d.equipped.avatar = id)`，由既有 `PUT /save`（equipped/flags 通用同步段）推送，`equipAvatar` REST 端点作为有实际校验的官方契约保留（同 `equipTitle` 现状，client 暂未直接调用）。
+- `PUT /avatar/equip`（`server/metaserver/src/service/liveops.ts` 的 `equipAvatar`，仿照 `equipTitle` 结构）：`preset:*` 恒许可；其余品类校验 `titles[]`/`everOwned.*`/`inventory.skins`，不满足 → 403。**客户端自 ADR-056（2026-07-28）起直接调用此端点**——`onSetAvatar` 走 `saveManager.equipAvatar(id)`（先写本地镜像即时反馈，再后台调用 `PUT /avatar/equip` 确认）；此前有一段时期该端点已实现但客户端并未接入，实际写路径是通用 `PUT /save`（同 `equipTitle` 当时的状况），该通用端点已随 ADR-056 整个下线。
 - `ProfileView`/`FriendView`（`server/shared/src/social.ts` + `openapi/schemas.yml`）加 `avatarId?`；`profileOf()`/`getProfile()`（metaserver `social.ts`/`accounts.ts`）比照 `equippedTitle` 读取 `equipped.avatar`；`FamilyMemberView`（socialsvc `familyService.ts`）、`getFriends()`（socialsvc `friendService.ts`）同步透传。
 - 对战对手信息：`opponentAvatarId` 沿 `opponentTitle` 的既有链路整条打通——`gateway/metaClient.ts` → `Gateway.ts` → `matchsvc`（`Matchmaking.ts`/`Matchsvc.ts`/`internalHttp.ts`）→ `TicketClaims`（`server/shared/src/ticket.ts`）→ `gameserver`（`RoomManager.ts`/`Room.ts`）→ `transport.proto`（`MatchStart.opponent_avatar_id = 11`）→ 客户端 `NetInputSource.ts`/`nav/result.ts`。
 - 客户端展示：`ProfilePopup.ProfileData.avatarId`（此前完全未接，永远走首字母兜底——本次一并修掉）、`FriendsScene`/`FamilyScene` 的成员行头像。

@@ -31,7 +31,7 @@ import {
   ADS_MIN_INTERVAL_MS,
   type EquipmentInstance,
 } from '@nw/shared';
-import { getOrCreateSave, isAvatarOwned, PRESET_AVATAR_IDS } from '../save.js';
+import { getOrCreateSave, isAvatarOwned, isSkinOwned, PRESET_AVATAR_IDS } from '../save.js';
 import { mirrorCoins, adsDayKey, peekAdsStatus } from '../economy.js';
 import { grantTitleToPlayer } from '../titles.js';
 import { getEventsForAccount, claimEventReward } from '../events.js';
@@ -45,8 +45,12 @@ import type { SocialBadges } from '@nw/shared';
 type LiveOpsHandlers = Pick<
   MetaHandlers,
   | 'getAchievements' | 'claimAchievement' | 'getRetention' | 'claimCheckin' | 'claimDailyReward'
-  | 'getEvents' | 'claimEventReward' | 'getTitles' | 'equipTitle' | 'equipAvatar' | 'getLobbyBadges'
+  | 'getEvents' | 'claimEventReward' | 'getTitles' | 'equipTitle' | 'equipAvatar' | 'equipSkin'
+  | 'setFlag' | 'getLobbyBadges'
 >;
+
+/** Flag keys must be non-empty and reasonably short (dynamic namespace includes `featSeen.<featureId>`) — guards against a malformed client body writing garbage keys into the flags map. */
+const MAX_FLAG_KEY_LEN = 100;
 
 const ZERO_SOCIAL_BADGES: SocialBadges = { friendRequests: 0, chat: 0, mail: 0, total: 0 };
 
@@ -415,6 +419,55 @@ export function LiveOpsMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase & C
         if (out.error === 'NOT_OWNED') {
           return reply.code(403).send(err(ErrorCode.BAD_REQUEST, 'avatar item not owned'));
         }
+        return reply.code(409).send(err(ErrorCode.REV_CONFLICT, out.error));
+      }
+      return ok({ save: out.save });
+    }
+
+    /**
+     * Equip/unequip a character skin → write save.equipped["skin:<unitType>"] → push back the full save.
+     * One slot per character (LOBBY_IA_REDESIGN §15); skinId null unequips. The unitType→skin target
+     * mapping (SKIN_TARGET_UNIT) lives only in the client (game/meta/skinDefs.ts) — the server does not
+     * need it here, it only validates that the *skin itself* is owned (isSkinOwned), same depth as the
+     * old sanitizeEquipped path this replaces.
+     */
+    async equipSkin(req: FastifyRequest, reply: FastifyReply) {
+      const accountId = accountIdOf(req);
+      const { unitType, skinId } = req.body as { unitType?: string; skinId?: string | null };
+      if (!unitType) {
+        return reply.code(400).send(err(ErrorCode.BAD_REQUEST, 'unitType required'));
+      }
+      const key = `skin:${unitType}`;
+      const out = await this.mutateSave(accountId, (s) => {
+        if (skinId === '' || skinId == null) {
+          const rest = { ...s.equipped };
+          delete rest[key];
+          return { ...s, equipped: rest };
+        }
+        if (!isSkinOwned(s, skinId)) return 'NOT_OWNED';
+        return { ...s, equipped: { ...s.equipped, [key]: skinId } };
+      });
+      if ('error' in out) {
+        if (out.error === 'NOT_OWNED') {
+          return reply.code(403).send(err(ErrorCode.BAD_REQUEST, 'skin not owned'));
+        }
+        return reply.code(409).send(err(ErrorCode.REV_CONFLICT, out.error));
+      }
+      return ok({ save: out.save });
+    }
+
+    /**
+     * Set one client-preference flag by key → write save.flags[key] → push back the full save.
+     * No ownership semantics (unlike equipped.*) — onboarding/consent/tutorial-seen style booleans only.
+     */
+    async setFlag(req: FastifyRequest, reply: FastifyReply) {
+      const accountId = accountIdOf(req);
+      const { key, value } = req.body as { key?: string; value?: boolean };
+      if (!key || key.length > MAX_FLAG_KEY_LEN || typeof value !== 'boolean') {
+        return reply.code(400).send(err(ErrorCode.BAD_REQUEST, 'invalid key/value'));
+      }
+      const out = await this.mutateSave(accountId, (s) => ({ ...s, flags: { ...s.flags, [key]: value } }));
+      if ('error' in out) {
         return reply.code(409).send(err(ErrorCode.REV_CONFLICT, out.error));
       }
       return ok({ save: out.save });

@@ -371,8 +371,10 @@ export function createShopNav(ctx: AppCtx): ShopNav {
       loadPools: () => client.getGachaPools(),
       async draw(poolId, count) {
         try {
-          const { save, results, overflow } = await client.gachaDraw(poolId, count);
-          saveManager.adoptServer(save);
+          const { save, results, overflow, cardGrants, equipmentGrants } = await client.gachaDraw(poolId, count);
+          // Lean response (save.cardInv/equipmentInv are null) — adopt the patch, not the plain
+          // adoptServer, or the null would wipe the locally-held inventory (see adoptServerPartial doc).
+          saveManager.adoptServerPartial(save, { cardUpsert: cardGrants, upsert: equipmentGrants });
           analytics.track('gacha_draw', { pool_id: poolId, count });
           return { ok: true, results, overflow };
         } catch (e) {

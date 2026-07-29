@@ -49,7 +49,7 @@ function send(res: ServerResponse, status: number, body: unknown): void {
     'content-type': 'application/json',
     // Public-facing surface: CORS aligned with meta (fully open in dev, tightened by reverse proxy in production).
     'access-control-allow-origin': '*',
-    'access-control-allow-headers': 'authorization,content-type,x-internal-key,x-internal-caller',
+    'access-control-allow-headers': 'authorization,content-type,x-internal-key,x-internal-caller,x-nw-platform',
     'access-control-allow-methods': 'GET,POST,PUT,DELETE,OPTIONS',
   });
   res.end(JSON.stringify(body));

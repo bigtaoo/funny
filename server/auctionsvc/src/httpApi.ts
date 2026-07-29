@@ -39,7 +39,7 @@ function send(res: ServerResponse, status: number, body: unknown): void {
   res.writeHead(status, {
     'content-type': 'application/json',
     'access-control-allow-origin': '*',
-    'access-control-allow-headers': 'authorization,content-type,x-internal-key,x-internal-caller',
+    'access-control-allow-headers': 'authorization,content-type,x-internal-key,x-internal-caller,x-nw-platform',
     'access-control-allow-methods': 'GET,POST,OPTIONS',
   });
   res.end(JSON.stringify(body));

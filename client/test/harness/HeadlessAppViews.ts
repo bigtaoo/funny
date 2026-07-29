@@ -29,7 +29,7 @@ import type { GachaSceneCallbacks } from '../../src/scenes/GachaScene';
 import type { CampaignMapCallbacks } from '../../src/scenes/CampaignMapScene';
 import type { LevelPrepCallbacks } from '../../src/scenes/LevelPrepScene';
 import type { CardCodexCallbacks } from '../../src/scenes/CardCodexScene';
-import type { CardCallbacks } from '../../src/scenes/CardScene';
+import type { CardCallbacks, CardRosterView } from '../../src/scenes/CardScene';
 import type { EquipmentCallbacks } from '../../src/scenes/EquipmentScene';
 import type { StatsCallbacks } from '../../src/scenes/StatsScene';
 import type { ReplaySceneCallbacks } from '../../src/scenes/ReplayScene';
@@ -151,7 +151,12 @@ export class HeadlessAppViews implements AppViews {
   showCampaignMap(cb: CampaignMapCallbacks): void { this.screen = 'campaignMap'; this.campaignMap = cb; }
   showLevelPrep(cb: LevelPrepCallbacks): void { this.screen = 'levelPrep'; this.levelPrep = cb; }
   showCardCodex(cb: CardCodexCallbacks): void { this.screen = 'cardCodex'; this.cardCodex = cb; }
-  showCardRoster(cb: CardCallbacks): void { this.screen = 'cardRoster'; this.cardRoster = cb; }
+  showCardRoster(cb: CardCallbacks): CardRosterView {
+    this.screen = 'cardRoster'; this.cardRoster = cb;
+    // No real grid to patch here — a test drives goCardRoster's late-data path via cb.getCardState()
+    // directly, so this is a no-op stub, not a functioning redraw.
+    return { applyCardState: () => {} };
+  }
   showEquipment(cb: EquipmentCallbacks): void { this.screen = 'equipment'; this.equipment = cb; }
   showStats(cb: StatsCallbacks): void { this.screen = 'stats'; this.stats = cb; }
   showAchievements(_cb: AchievementCallbacks): void { this.screen = 'achievements'; }
@@ -183,6 +188,10 @@ export class HeadlessAppViews implements AppViews {
 
   showGame(cb: GameSceneCallbacks, opts: GameSceneOptions): void {
     this.screen = 'game';
+    // Headless: skip the FTUE tutorial level entirely, matching a player who dismisses it —
+    // post-ADR-056 reconcile() no longer lets a harness-seeded local `tutorial_done` flag
+    // survive the first cloud sync, so goTutorial() would otherwise fire on every fresh account.
+    if (opts.tutorial) { cb.onExitToLobby?.(); return; }
     const { engine, buildReplay } = createLocalMatch({
       ...(opts.level ? { level: opts.level } : {}),
       ...(opts.cardInstances ? { cardInstances: opts.cardInstances } : {}),

@@ -41,7 +41,7 @@ function deref(node: Node): Node {
 
 /**
  * Recursively resolve every $ref into an inline copy (ajv.compile() is only given this schema in
- * isolation — no addSchema() registry — so nested $refs like #/components/schemas/SyncPatch must be
+ * isolation — no addSchema() registry — so nested $refs like #/components/schemas/SaveData must be
  * flattened first, mirroring what the codegen script does for routes.gen.ts).
  */
 function resolveDeep(node: Node, guard: ReadonlySet<string> = new Set()): Node {

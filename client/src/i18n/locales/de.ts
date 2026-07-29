@@ -182,10 +182,13 @@ export const de: Record<TranslationKey, string> = {
   'badge.efficient.short': '{n} vernichtet',
 
   // ── Intro beim ersten Start (Hintergrundgeschichte) ───────────────────────
-  'story.line.1': 'Spät in der Nacht liegt ein aufgeschlagenes Heft auf dem Schulpult.',
-  'story.line.2': 'Zwischen den unberührten Seiten erwachen Kritzel-Soldaten – aufgeteilt in zwei Armeen.',
-  'story.line.3': 'Bleistifte sind Speere, Radiergummis sind Mauern, und die Gitterlinien sind ihr Schlachtfeld.',
-  'story.line.4': 'Befehlige deine Kritzel-Legion und zerstöre die gegnerische Basis vor Tagesanbruch!',
+  'story.line.1': 'Taos Noten waren immer gut gewesen – so gut, dass selbst er es ein bisschen sinnlos fand.',
+  'story.line.2': 'Diese Stadt war weit weg von zu Hause, Freunde gab es wenige, und er hatte sich daran gewöhnt, allein zu sein.',
+  'story.line.3': 'An seinem Geburtstag reichte ihm sein Vater ein Heft. „Schreib was auf“, sagte er.',
+  'story.line.4': 'Er wusste nicht, was er aufschreiben sollte. Die erste Seite blieb lange leer.',
+  'story.line.5': 'Später zeichnete er eine kleine Figur darauf. Dann noch eine.',
+  'story.line.6': 'Die Figuren bekamen Namen, Orte, zu denen sie mussten, Kämpfe, die sie austragen mussten.',
+  'story.line.7': 'Daraus wurde eine ganze Welt – in der nicht zählte, wer am klügsten war, sondern ob jemand deinen nächsten Schritt verstand.',
   'story.tapToContinue': 'Zum Fortfahren tippen',
   'story.skip': 'Überspringen »',
 
@@ -1352,6 +1355,7 @@ export const de: Record<TranslationKey, string> = {
   'campaign.ch5.outro': 'Im Finale warten: Hartmann.\nMara sieht Su Yuan. Beide halten kurz inne.\nSu Yuan weiß, dass dies ihr bisher bestes Spiel sein wird.\nNicht wegen des Sieges – weil die Gruppe gegenüber sie zwingt, alles einzusetzen, was sie können.',
   'campaign.ch6.intro': 'Seit der Niederlage gegen Fang trägt Mara eine Frage mit sich.\nKeine Worte, keine Signale – und doch kannte jeder den nächsten Schritt.\nWie heißt dieses Ding?\nDas Sekten-Turnier hat begonnen, und Mara hat noch immer keine Antwort.',
   'campaign.ch6.outro': 'Nach diesem Kampf fand Mara endlich ihre Antwort.\nNicht weil sie gewann – sie fand sie beim Spielen.\nDrei Menschen, jeder klar in sich selbst, zusammen stärker.\nDieses Ding heißt: voneinander wissen, wer man ist.',
+  'campaign.epilogue': 'Jahre später packte Tao seine Sachen, um zu gehen. Anna reichte ihm ihr Heft, ohne zu erklären, warum.\nSein Vater fand beide Hefte im leeren Zimmer, übereinandergestapelt, und las von der ersten bis zur letzten Seite.\nDie Zeile, die er hatte schreiben wollen, schrieb er nie – manche Dinge brauchen keinen Kommentar.\nWeiter weg gingen Tao und Anna, mit einem neuen Heft, der ersten Seite einer anderen Geschichte entgegen.',
 
   // ── Saison-Banner / Abrechnung (SE-6) ────────────────────────────────────────
   'season.banner': 'Saison {no} · noch {days} T.',
@@ -1509,6 +1513,7 @@ export const de: Record<TranslationKey, string> = {
   'reconnect.body': 'Du hast noch ein laufendes Match. Möchtest du dich wieder verbinden und fortsetzen?',
   'reconnect.accept': 'Wieder verbinden',
   'reconnect.decline': 'Nicht jetzt',
+  'reconnect.gone': 'Dieses Match ist nicht mehr verfügbar. Zurück zur Lobby.',
 
   // ── Gacha-Wahrscheinlichkeiten (Apple 3.1.1, L1-3) ──────────────────────────
   'gacha.oddsDetail.button': 'Chancen',

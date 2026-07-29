@@ -517,6 +517,9 @@ export function parseLevelDefinition(raw: unknown, ctx = 'level'): LevelDefiniti
     if (raw.story.outroKey !== undefined) {
       story.outroKey = str(raw.story.outroKey, `${ctx}.story.outroKey`) as NonNullable<LevelDefinition['story']>['outroKey'];
     }
+    if (raw.story.epilogueKey !== undefined) {
+      story.epilogueKey = str(raw.story.epilogueKey, `${ctx}.story.epilogueKey`) as NonNullable<LevelDefinition['story']>['epilogueKey'];
+    }
     level.story = story;
   }
 

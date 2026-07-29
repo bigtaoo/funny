@@ -113,4 +113,26 @@ describe('RoomManager (ticket relay)', () => {
     expect(c0.closedWith).toEqual({ code: 4409, reason: 'replaced' });
     expect(c0New.closedWith).toBeNull();
   });
+
+  it('activeAccountIds() reports every accountId rostered across live rooms, deduped, across WAITING and IN_MATCH phases', () => {
+    const mgr = newManager();
+    const c0 = makeConn('R1', 0, 'a');
+    mgr.join(asConn(c0), 'a', '', SEED, MatchMode.FRIENDLY); // R1 still WAITING (only one side)
+    const c1a = makeConn('R2', 0, 'b');
+    const c1b = makeConn('R2', 1, 'c');
+    mgr.join(asConn(c1a), 'b', '', SEED, MatchMode.FRIENDLY);
+    mgr.join(asConn(c1b), 'c', '', SEED, MatchMode.FRIENDLY); // R2 now IN_MATCH
+
+    expect(new Set(mgr.activeAccountIds())).toEqual(new Set(['a', 'b', 'c']));
+  });
+
+  it('activeAccountIds() excludes accounts from destroyed rooms', () => {
+    const mgr = newManager();
+    const c0 = makeConn('R1', 0, 'a');
+    const c1 = makeConn('R1', 1, 'b');
+    mgr.join(asConn(c0), 'a', '', SEED, MatchMode.FRIENDLY);
+    mgr.join(asConn(c1), 'b', '', SEED, MatchMode.FRIENDLY);
+    mgr.destroyAll();
+    expect(mgr.activeAccountIds()).toEqual([]);
+  });
 });

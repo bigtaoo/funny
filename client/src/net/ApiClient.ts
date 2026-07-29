@@ -43,7 +43,6 @@ export type {
   EventView,
   RetentionView,
   LobbyBadgesView,
-  PushResult,
 } from './ApiClient/types';
 
 const Assembled = MiscMixin(

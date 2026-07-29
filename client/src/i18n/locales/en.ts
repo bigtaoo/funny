@@ -182,10 +182,13 @@ export const en: Record<TranslationKey, string> = {
   'badge.efficient.short': '{n} kills',
 
   // ── First-launch intro (background story) ─────────────────────────────────
-  'story.line.1': 'Late at night, a notebook lies open on a school desk.',
-  'story.line.2': 'Between the untouched pages, doodle soldiers quietly awaken — split into two armies.',
-  'story.line.3': 'Pencils are spears, erasers are walls, and the grid lines are their battlefield.',
-  'story.line.4': 'Command your doodle legion and destroy the enemy base before dawn!',
+  'story.line.1': 'Tao\'s grades had always been good — good enough that even he found it a little pointless.',
+  'story.line.2': 'This city was far from home, friends were few, and he\'d gotten used to being on his own.',
+  'story.line.3': 'On his birthday, his father handed him a notebook. "Write something down," he said.',
+  'story.line.4': 'He didn\'t know what to write. The first page stayed blank for a long time.',
+  'story.line.5': 'Later, he drew a little figure on it. Then another.',
+  'story.line.6': 'The figures got names, places to go, battles they had to fight.',
+  'story.line.7': 'It became a whole world — where what mattered most wasn\'t who was smartest, but whether someone understood your next move.',
   'story.tapToContinue': 'Tap to continue',
   'story.skip': 'Skip »',
 
@@ -1352,6 +1355,7 @@ export const en: Record<TranslationKey, string> = {
   'campaign.ch5.outro': 'Across the finals bracket: Hartmann.\nMara sees Su Yuan. Both pause for a half-second.\nSu Yuan knows today will be the best match they have ever played.\nNot because of winning — because the squad across the line will force them to use everything they know.',
   'campaign.ch6.intro': 'Since losing to Fang, Mara has carried one question.\nNo words, no signals — yet each of them knew the other\'s next step.\nWhat is that thing called?\nThe sect tournament has begun, and Mara still has no answer.',
   'campaign.ch6.outro': 'After that match, Mara finally found her answer.\nNot because she won — she found it while playing.\nThree people, each clear in themselves, stronger together.\nThat thing is called: knowing who the other person is.',
+  'campaign.epilogue': 'Years later, Tao packed his things to leave. Anna handed him her notebook, without explaining why.\nHis father found both notebooks in the empty room, stacked together, and read from the first page to the last.\nThe line he\'d meant to write, he never wrote — some things don\'t need a comment.\nFarther on, Tao and Anna, with a new notebook, walked toward the first page of another story.',
 
   // ── Season banner / settlement (SE-6) ────────────────────────────────────────
   'season.banner': 'Season {no} · {days}d left',
@@ -1509,6 +1513,7 @@ export const en: Record<TranslationKey, string> = {
   'reconnect.body': 'You have a match still in progress. Would you like to reconnect and continue?',
   'reconnect.accept': 'Reconnect',
   'reconnect.decline': 'Not Now',
+  'reconnect.gone': 'That match is no longer available. Back to the lobby.',
 
   // ── Gacha odds disclosure (Apple 3.1.1, L1-3) ───────────────────────────────
   'gacha.oddsDetail.button': 'Odds',

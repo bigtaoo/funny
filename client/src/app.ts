@@ -27,7 +27,7 @@ import { SettingsScene, type SettingsSceneCallbacks } from './scenes/SettingsSce
 import { CampaignMapScene, type CampaignMapCallbacks } from './scenes/CampaignMapScene';
 import { LevelPrepScene, type LevelPrepCallbacks } from './scenes/LevelPrepScene';
 import { CardCodexScene, type CardCodexCallbacks } from './scenes/CardCodexScene';
-import { CardScene, type CardCallbacks } from './scenes/CardScene';
+import { CardScene, type CardCallbacks, type CardRosterView } from './scenes/CardScene';
 import { EquipmentScene, type EquipmentCallbacks } from './scenes/EquipmentScene';
 import { StatsScene, type StatsCallbacks } from './scenes/StatsScene';
 import { AchievementScene, type AchievementCallbacks } from './scenes/AchievementScene';
@@ -48,7 +48,7 @@ import { ConsentDialog, type ConsentCallbacks } from './render/ConsentDialog';
 import { ReconnectPromptDialog, type ReconnectPromptCallbacks } from './render/ReconnectPromptDialog';
 import { OwnerId, ownerToSide, Side } from './game';
 import type { Replay, LevelDefinition } from './game';
-import { ScalingManager, createLayout } from './layout/ScalingManager';
+import { ScalingManager, createLayout, resettledLayout } from './layout/ScalingManager';
 import { InputManager } from './inputSystem/InputManager';
 import type { ILayout } from './layout/ILayout';
 import { installGlobalErrorHandlers, setToastSink } from './net/log';
@@ -185,9 +185,11 @@ class PixiAppViews implements AppViews {
     this.manager.goto(this.timedBuild('CardCodexScene', () => new CardCodexScene(this.layout, this.input, cb)));
   }
 
-  showCardRoster(cb: CardCallbacks): void {
+  showCardRoster(cb: CardCallbacks): CardRosterView {
     this.leaveLobby();
-    this.manager.goto(this.timedBuild('CardScene', () => new CardScene(this.layout, this.input, cb)));
+    const scene = this.timedBuild('CardScene', () => new CardScene(this.layout, this.input, cb));
+    this.manager.goto(scene);
+    return { applyCardState: () => scene.applyCardState() };
   }
 
   showEquipment(cb: EquipmentCallbacks): void {
@@ -256,7 +258,7 @@ class PixiAppViews implements AppViews {
       props.localOwner,
       props.elo,
       props.profiles,
-      props.outroText,
+      props.outroTexts,
     )));
   }
 
@@ -441,7 +443,7 @@ export async function startApp(
   setToastSink((text, kind) => globalToast.show(text, kind === 'success' ? C.green : C.red));
 
   const insets = platform.getSafeAreaInsets?.();
-  const layout: ILayout = createLayout(screenW, screenH, Side.Bottom, insets);
+  let layout: ILayout = createLayout(screenW, screenH, Side.Bottom, insets);
   const scaling = new ScalingManager(app, layout, insets);
   const input = new InputManager();
   // The manager freezes `input` for the span of each scene-fade: taps bypass Pixi (DOM-fed), so the
@@ -465,6 +467,17 @@ export async function startApp(
 
   platform.onAppReady();
   await platform.onLoadingComplete();
+
+  // See resettledLayout() (layout/ScalingManager.ts): the asset-preload gate we just awaited
+  // takes far longer than WebKit's env(safe-area-inset-*) settle delay, so re-checking here
+  // catches a stale boot-time (often 0) inset before any scene is built.
+  const settledInsets = platform.getSafeAreaInsets?.();
+  const { width: settledW, height: settledH } = platform.getScreenSize();
+  const relaidLayout = resettledLayout(settledW, settledH, insets, settledInsets);
+  if (relaidLayout) {
+    layout = relaidLayout;
+    scaling.resize(settledW, settledH, layout, settledInsets);
+  }
 
   // wrapViews (test-only) mutates methods on this same instance in place — pixiViews stays a
   // valid handle for onResized below regardless of whether it ran.

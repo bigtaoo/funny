@@ -186,10 +186,13 @@ export const zh = {
   'badge.efficient.short': '{n} 消灭',
 
   // ── First-launch intro (background story) ────────────────────────────────
-  'story.line.1': '深夜的课桌上，一本摊开的笔记本。',
-  'story.line.2': '无人翻动的纸页间，涂鸦士兵悄悄苏醒，分成了两个阵营。',
-  'story.line.3': '铅笔是长矛，橡皮是壁垒，格线就是它们的战场。',
-  'story.line.4': '指挥你的涂鸦军团，在天亮之前，摧毁对方的基地！',
+  'story.line.1': '陶的成绩一直很好——好到他自己都觉得，没什么意思。',
+  'story.line.2': '这座城市很远，朋友不算多，他习惯了自己待着。',
+  'story.line.3': '生日那天，父亲递给他一个笔记本，说："记点东西吧。"',
+  'story.line.4': '他不知道要记什么，第一页空了很久。',
+  'story.line.5': '后来，他在上面画了一个小人。又画了一个。',
+  'story.line.6': '小人有了名字，有了要去的地方，有了非打不可的仗。',
+  'story.line.7': '那是一整个世界——最要紧的不是谁更聪明，是有没有人懂你的下一步。',
   'story.tapToContinue': '点击继续',
   'story.skip': '跳过 »',
 
@@ -1364,6 +1367,7 @@ export const zh = {
   'campaign.ch5.outro': '决赛的对面，走出来的是 Hartmann。\nMara 看见了苏远，两个人都停了一下。\n苏远知道今天会是他们打过的最好的一场。\n不是因为赢，是因为对面那支队会让他们把每一件会的事情都用上。',
   'campaign.ch6.intro': '从输给方家那天起，Mara 一直带着一个问题。\n他们之间不说话，没有信号，但每个人都知道彼此下一步。\n那个东西，叫什么名字？\n宗门大比开始了，Mara 还没有答案。',
   'campaign.ch6.outro': '那场对决之后，Mara 终于找到了答案。\n不是赢了才找到的，是在打的过程里找到的。\n三个人，各自清晰，合在一起更强。\n那个东西，叫做：彼此知道对方是谁。',
+  'campaign.epilogue': '多年以后，陶收拾行李准备离开。Anna 把她的本子递过来，没有解释为什么。\n父亲在空出来的房间里，找到了两个本子，摞在一起，从第一页读到了最后一页。\n那行他想写的字，最终没有写下——有些东西，不需要批注。\n更远处，陶和 Anna，带着新的本子，走向另一个故事的第一页。',
 
   // ── Ranked season banner / settlement popup (SE-6) ────────────────────────────
   'season.banner': '赛季 {no} · 剩余 {days} 天',
@@ -1523,6 +1527,7 @@ export const zh = {
   'reconnect.body': '你还有一场对局尚未结束，是否重新连接并继续？',
   'reconnect.accept': '返回对局',
   'reconnect.decline': '暂不',
+  'reconnect.gone': '这场对局已经结束或不存在，已返回大厅',
 
   // ── Gacha drop-rate disclosure (Apple 3.1.1, L1-3) ───────────────────────
   'gacha.oddsDetail.button': '概率详情',

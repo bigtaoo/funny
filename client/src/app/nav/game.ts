@@ -13,6 +13,7 @@ import { genUuid } from '../../platform/uuid';
 import type { EquipSlot } from '../../game/meta/SaveData';
 import { toEngineCardInstances, CARD_DEFS } from '../../game/meta/cardDefs';
 import { WorldApiClient, type CardSLGState } from '../../net/WorldApiClient';
+import type { CardRosterView } from '../../scenes/CardScene';
 import type { IconKind } from '../../render/icons';
 import { matchBadgeTelemetry } from '../../scenes/ResultScene';
 import type { AppCtx, Nav } from '../appCtx';
@@ -22,6 +23,9 @@ import { pickPracticeDifficulty } from './lobby';
 type GameNav = Pick<Nav,
   'goGame' | 'goCampaignMap' | 'goLevelPrep' | 'goCardRoster' | 'goEquipment' |
   'goStats' | 'goLeaderboard' | 'goAchievements' | 'goCampaign' | 'goTutorial' | 'goTitles' | 'goCodex'>;
+
+/** See goCardRoster's SLG-fetch comment. */
+const CARD_ROSTER_SLG_BUDGET_MS = 2500;
 
 export function createGameNav(ctx: AppCtx): GameNav {
   const { api, saveManager, platform, state, views, nav, keepReplay, resolvePvpDeck, resolveWorldShard } = ctx;
@@ -162,13 +166,20 @@ export function createGameNav(ctx: AppCtx): GameNav {
     state.inLobby = false;
     analytics.track('screen_view', { scene: 'CardScene' });
 
-    const openRoster = (cardState?: Record<string, CardSLGState>, teamNames?: Record<string, string>): void => {
-      views.showCardRoster({
+    // Backs getCardState/getTeamName below; openRoster() closes over these by reference, so
+    // reassigning them after the roster is already open (see the late-arrival branch further down)
+    // is visible the next time either callback is *called* — but nothing calls them again on its
+    // own, hence the paired view.applyCardState() to actually trigger a redraw.
+    let liveCardState: Record<string, CardSLGState> | undefined;
+    let liveTeamNames: Record<string, string> | undefined;
+
+    const openRoster = (): CardRosterView => {
+      return views.showCardRoster({
         onBack() { back(); },
         initialTab,
         getSave: () => saveManager.get(),
-        ...(cardState ? { getCardState: () => cardState } : {}),
-        ...(teamNames ? { getTeamName: (teamId: string) => teamNames[teamId] } : {}),
+        getCardState: () => liveCardState,
+        getTeamName: (teamId) => liveTeamNames?.[teamId],
         async fuseCards(targetCardId, materialCardIds) {
           if (!client) return { ok: false as const, key: 'roster.err.offline' as TranslationKey };
           try {
@@ -194,44 +205,43 @@ export function createGameNav(ctx: AppCtx): GameNav {
         } : {}),
         getOwnedSkins: () => saveManager.get().inventory.skins,
         getEquippedSkin: (unitType) => saveManager.get().equipped[skinEquipKey(unitType)] ?? null,
-        equipSkin: (unitType, skinId) => {
-          saveManager.update((d) => {
-            const key = skinEquipKey(unitType);
-            if (skinId === null) delete d.equipped[key];
-            else d.equipped[key] = skinId;
-          });
-        },
+        equipSkin: (unitType, skinId) => saveManager.equipSkin(unitType, skinId),
       });
     };
 
     // SLG per-card state (troop count / deployed team) lives in worldsvc's PlayerWorldView, separate
     // from the account-scoped SaveData mirror — fetch it best-effort before opening the roster so
-    // troop cap / deployed-team status render on first paint (CardScene has no live-refresh hook once
-    // shown, unlike WorldMapView/LobbyView's apply* methods, so a late-arriving fetch couldn't update it
-    // anyway). Silently falls back to no SLG state when offline, logged out, or the player has never
-    // touched the SLG (getMe/getTeams failure) — the roster still works, it just won't show those fields.
-    // Bounded to 1.5s regardless of resolveWorldShard's own 3s worldsvc-unreachable fallback: unlike
-    // the explicit "enter the SLG" flow (goWorldEntry), the roster is a frequently-tapped lobby screen
-    // and shouldn't inherit that full stall if worldsvc is slow/down — better to just open without
-    // troop/team data than freeze the lobby for multiple seconds.
+    // troop cap / deployed-team status render on first paint. Silently falls back to no SLG state
+    // when offline, logged out, or the player has never touched the SLG (getMe/getTeams failure) —
+    // the roster still works, it just won't show those fields.
+    //
+    // Bounded to CARD_ROSTER_SLG_BUDGET_MS regardless of resolveWorldShard's own 3s
+    // worldsvc-unreachable fallback: unlike the explicit "enter the SLG" flow (goWorldEntry), the
+    // roster is a frequently-tapped lobby screen and shouldn't inherit that full stall if worldsvc
+    // is slow/down — better to open without troop/team data than freeze the lobby for multiple
+    // seconds. (2026-07-28+1: the budget used to be a flat 1.5s, tighter than resolveWorldShard's own
+    // worst case, so a merely-slow-not-down worldsvc reliably lost the SLG fetch entirely — every
+    // card in the roster looked never-deployed even when worldsvc/Mongo eventually did answer.
+    // Widened to 2.5s, and — since CardScene now exposes applyCardState() (see
+    // CardScene/base.ts) — a fetch that resolves *after* the give-up no longer gets silently
+    // dropped: it patches the already-open roster's SLG-derived bits (border/troop-count/team-tag)
+    // in place instead of redrawing the whole screen.)
     const token = platform.storage.getItem(TOKEN_KEY);
     if (online && token) {
       const worldApi = new WorldApiClient(platform.storage);
-      let settled = false;
-      const giveUp = setTimeout(() => { if (!settled) { settled = true; openRoster(); } }, 1500);
+      let opened = false;
+      let view: CardRosterView | null = null;
+      const openNow = (): void => { if (!opened) { opened = true; view = openRoster(); } };
+      const giveUp = setTimeout(openNow, CARD_ROSTER_SLG_BUDGET_MS);
       resolveWorldShard(worldApi, (worldId) => {
         Promise.all([worldApi.getMe(worldId), worldApi.getTeams(worldId)])
           .then(([me, teams]) => {
-            if (settled) return;
-            settled = true; clearTimeout(giveUp);
-            const teamNames = Object.fromEntries(teams.map((tt) => [tt.id, tt.name]));
-            openRoster(me.cardState, teamNames);
+            liveCardState = me.cardState;
+            liveTeamNames = Object.fromEntries(teams.map((tt) => [tt.id, tt.name]));
+            if (!opened) { clearTimeout(giveUp); openNow(); }
+            else view?.applyCardState();
           })
-          .catch(() => {
-            if (settled) return;
-            settled = true; clearTimeout(giveUp);
-            openRoster();
-          });
+          .catch(() => { clearTimeout(giveUp); openNow(); });
       });
     } else {
       openRoster();
@@ -451,7 +461,7 @@ export function createGameNav(ctx: AppCtx): GameNav {
       titles: save.titles ?? [],
       equippedTitle: save.equipped['title'] ?? '',
       onEquip(titleId: string) {
-        saveManager.update((d) => { d.equipped['title'] = titleId; });
+        saveManager.equipTitle(titleId || null);
       },
       onOpenStats: () => goStats(back),
       onOpenAchievements: () => goAchievements(back),
@@ -534,8 +544,15 @@ export function createGameNav(ctx: AppCtx): GameNav {
           level_id: levelId,
           ...matchBadgeTelemetry(stats[0]),
         });
-        const outroText = (winner === 0 && level.story?.outroKey) ? t(level.story.outroKey as TranslationKey) : undefined;
-        void nav.goResult(winner, stats, 0, kept, undefined, undefined, outroText, goCampaignMap, t('result.backToMap'));
+        // Ch6's last level chains a second screen (epilogueKey) after the usual chapter outro —
+        // the campaign's real-world frame-story close. Every other level's story has no
+        // epilogueKey, so this stays a single-element array for them.
+        const outroTexts = winner === 0
+          ? [level.story?.outroKey, level.story?.epilogueKey]
+              .filter((k): k is TranslationKey => !!k)
+              .map((k) => t(k))
+          : undefined;
+        void nav.goResult(winner, stats, 0, kept, undefined, undefined, outroTexts, goCampaignMap, t('result.backToMap'));
       },
       onExitToLobby() {
         analytics.track('level_abandon', { level_id: levelId, phase: 'in_game' });

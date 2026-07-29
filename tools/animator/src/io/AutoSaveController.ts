@@ -84,7 +84,7 @@ export class AutoSaveController {
     const meta = (await this.store.listMeta()).find(m => m.id === id);
     if (!blob || !meta) { this.bus.emit('error', 'Project not found'); return; }
 
-    await this.runSuspended(() => this.io.loadEditorBlob(blob, meta.name));
+    await this.runSuspended(async () => { await this.io.loadEditorBlob(blob, meta.name); });
     this.setActive(id, meta.name);
     this.bus.emit('autosave:state', 'saved');
   }
