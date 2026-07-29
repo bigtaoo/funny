@@ -294,6 +294,8 @@ export const zh = {
   'room.error.ranked': '排位暂不可用',
   'room.error.noServer': '联机服务不可用',
   'room.error.generic': '出错了，请重试',
+  // 服务器重启后原有房间/排位状态丢失（matchsvc-prematch-persist），退回房间选择界面并提示重试。
+  'room.error.prematchLost': '连接已重置，请重新发起',
 
   // ── Player profile popup (tap avatar to view, Profile Popup) ─────────────
   'profile.title': '玩家资料',
@@ -748,6 +750,8 @@ export const zh = {
   'friends.duel.timeout': '切磋邀请已超时',
   'friends.duel.offline': '好友不在线，无法切磋',
   'friends.duel.notFound': '找不到该玩家',
+  // 服务器重启后原有切磋邀请丢失（matchsvc-prematch-persist），提示邀请方重新发起。
+  'friends.duel.lost': '切磋邀请已失效，请重新发起',
   // Global toast (any scene, P0-8): the in-scene banner (friends.duelInviteBanner) only shows while
   // sitting on FriendsScene, so this fires everywhere else the invite arrives.
   'friends.duel.invitedToast': '{name} 邀请你切磋，去好友页查看',

@@ -551,6 +551,9 @@ function roomErrorKey(code: string): TranslationKey {
     case 'ROOM_FULL':          return 'room.error.full';
     case 'ALREADY_IN_ROOM':    return 'room.error.alreadyIn';
     case 'RANKED_UNAVAILABLE': return 'room.error.ranked';
+    // matchsvc restart-safety (matchsvc-prematch-persist, 2026-07-29): synthesized locally by
+    // NetSession from a prematch_lost push, not a real server RoomError.code.
+    case 'PREMATCH_LOST':      return 'room.error.prematchLost';
     default:                   return 'room.error.generic';
   }
 }
