@@ -72,6 +72,10 @@ export class WorldMapScene implements Scene {
     this.ctx.unsubs.length = 0;
   }
 
+  /** See {@link WorldMapView.refreshMe}. Fire-and-forget: refreshMe() itself no-ops if the scene
+   * has since been destroyed and swallows offline errors, leaving the last-known state cached. */
+  refreshMe(): void { void this.ctx.net.refreshMe(); }
+
   // ── Live push (worldsvc → gateway → NetSession → here, §14.5) ────────────────
   applyMarchUpdate(m: MarchUpdate): void { this.ctx.net.applyMarchUpdate(m); }
   applyTileUpdate(tu: TileUpdate): void { this.ctx.net.applyTileUpdate(tu); }

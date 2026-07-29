@@ -329,7 +329,19 @@ export function createGameNav(ctx: AppCtx): GameNav {
       async equip(slot: EquipSlot, instanceId: string | null, cid: string) {
         try {
           const { save } = await client.equipEquipment(slot, instanceId, cid);
-          saveManager.adoptServerPartial(save, {}); // equip only moves cardInv.gear pointers; equipmentInv itself never changes
+          // The response is lean (cardInv omitted, EQUIPMENT_DESIGN §3.3 phase 2) — equip only moves a
+          // gear pointer on `cid`'s card, so mirror that single mutation locally via cardUpsert instead
+          // of leaving the local cardInv stale (adoptServerPartial's own cardInv reconstruction otherwise
+          // just re-applies the unchanged local copy, so nothing reflected the new/removed gear pointer
+          // until the next full save refresh — CardScene/the Equipped loadout strip stayed stuck showing
+          // the pre-equip gear, 2026-07-29 fix). Mirrors equipEquipment's own gear[slot] mutation exactly.
+          const card = saveManager.get().cardInv[cid];
+          const cardUpsert = card ? (() => {
+            const gear = { ...card.gear };
+            if (instanceId === null) delete gear[slot]; else gear[slot] = instanceId;
+            return [{ ...card, gear }];
+          })() : undefined;
+          saveManager.adoptServerPartial(save, { cardUpsert });
           analytics.track('equip_equip', { slot, instance_id: instanceId ?? '', card_instance_id: cid });
           return { ok: true as const };
         } catch (e) { return { ok: false as const, key: equipErrKey(e) }; }

@@ -71,6 +71,9 @@ export interface WorldMapView {
   applyUnderAttack(u: UnderAttack): void;
   applySiegeResult(s: SiegeResult): void;
   applyNationMsg(n: NationMsg): void;
+  /** Re-fetch `me` (cardState/troops/resources) — call when an overlay that may have changed it
+   * (City/team editor/defense editor/auction) is popped and the map becomes interactive again. */
+  refreshMe(): void;
 }
 
 export class WorldMapContext {

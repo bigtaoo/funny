@@ -605,10 +605,12 @@ export const zh = {
   'equip.confirmReforge': '消耗【{material}】洗练【{target}】的副词条？（主词条不变）',
   // Affixes ({v} = numeric value; primary affix is scaled up according to enhancement level for display)
   'affix.m_atk': '攻击 +{v}%',
+  'affix.m_siege': '攻城值 +{v}%',
   'affix.m_hp': '生命 +{v}%',
   'affix.m_spd': '移速 +{v}%',
   'affix.m_crit': '暴击率 +{v}%',
   'affix.s_atk': '攻击 +{v}%',
+  'affix.s_siege': '攻城值 +{v}%',
   'affix.s_hp': '生命 +{v}%',
   'affix.s_armor': '护甲 +{v}',
   'affix.s_spd': '移速 +{v}%',
