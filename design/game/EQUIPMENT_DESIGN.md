@@ -552,6 +552,8 @@ buildSiegeBlueprints(levels, equipped, inv)
 
 **素材仅收未强化装备（服务端补齐校验，2026-07-22 追加）**：同日客户端改动（本节上方"操作按钮..."一条同批次）把选材 UI（`reforge.ts openReforgeSelect`）和 Reforge 按钮预检（`detail.ts instanceActions hasMaterials`）都收紧成只提供 `level===0`（从未强化过）的装备当素材，避免玩家不小心把强化过的装备当燃料烧掉——但排查发现 `reforgeEquipment()`（`server/metaserver/src/equipment.ts`）本身从未校验过 `material.level`，只查了槽位/稀有度，一台改过的客户端或直接调 API 仍可传入已强化件的 `instanceId` 当 `materialId`，服务端照单全收，静默销毁该装备沉没的强化材料/词条。补一条服务端校验：素材 `level !== 0` 直接拒（新错误码 `INVALID_MATERIAL_LEVEL`，与 `INVALID_RARITY`/`NOT_REFORGE_ELIGIBLE` 同风格，未加进 `@nw/shared ErrorCode`——这两个既有错误码本就没进那张表，走 `ERROR_HTTP_STATUS[...] ?? 400` 兜底），`openapi/paths/inventory.yml` 的 `materialId` 描述同步注明"must be unenhanced (level 0)"。测试见 [equipment.e2e.test.ts](../../server/metaserver/test/equipment.e2e.test.ts)。
 
+**穿戴成功后 Equipped 分区自动折叠（2026-07-29 追加）**：真人反馈——穿戴装备后 Equipped 分区（§CC-16 前更早引入，见上方"分区标题放大+可折叠"一条）仍停留在展开状态，玩家刚穿好装备想接着看 Backpack 里的下一件时要先手动点掉 Equipped 才能腾出空间。`collapsedSections` 原来只声明在 `InventoryMixin`（`inventory.ts`）里，`DetailMixin.doEquip`（`detail.ts`）拿不到（mixin 各自独立的泛型约束只看得到 `EquipmentSceneBase` 自身成员，看不到其他 mixin 加的字段）。修复：把 `collapsedSections`（连同其类型 `SectionKey`）从 `InventoryMixin` 挪到公共基类 `EquipmentSceneBase`（`base.ts`）——这里字段初始化早于构造函数里的首次 `render()` 调用，顺带甩掉了原先 `inventory.ts` 里那个懒加载 getter 的历史包袱（迁移前的写法是为了绕开"mixin 子类字段初始化晚于首次 render"的坑，见上文"踩坑记录"，挪到基类后该坑不复存在）。`detail.ts` 的 `doEquip` 成功穿戴（`instanceId` 非空，区别于卸下）后 `collapsedSections.add('equipped')`。新增回归测试 [equipmentCollapseOnEquip.ui.ts](../../client/test/ui/equipmentCollapseOnEquip.ui.ts)：穿戴成功→折叠、卸下→不折叠、服务端拒绝→不折叠，三种场景各一例。验证：`tsc --noEmit` + 全部 equipment UI 测试（9 文件/28 项）全绿。
+
 #### E2 掉落 faucet + E6 洗练 实现记录（2026-06-22，✅）
 
 **E2 关卡掉落 faucet**

@@ -350,8 +350,14 @@ export function DetailMixin<TBase extends EquipmentSceneBaseCtor>(Base: TBase): 
       this.bt.start();
       try {
         const res = await withTimeout(this.cb.equip(slot, instanceId, cardId));
-        if (res.ok) this.showToast(instanceId ? t('equip.equipped') : t('equip.unequipped'), C.green);
-        else this.showToast(t(res.key), C.red);
+        if (res.ok) {
+          this.showToast(instanceId ? t('equip.equipped') : t('equip.unequipped'), C.green);
+          // Equipping (not unequipping) folds the Equipped strip back down so the backpack list
+          // the player was just browsing doesn't visually jump/shrink under it (2026-07-29 UX fix).
+          if (instanceId) this.collapsedSections.add('equipped');
+        } else {
+          this.showToast(t(res.key), C.red);
+        }
       } catch (e) {
         this.showToast(t(e instanceof TimeoutError ? 'common.networkTimeout' : 'equip.err.generic'), C.red);
       } finally {
