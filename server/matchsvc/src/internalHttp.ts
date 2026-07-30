@@ -84,16 +84,16 @@ export function startInternalHttp(
             svc.roomJoin(str(b.accountId), str(b.name), str(b.publicId), str(b.code), str(b.equippedTitle), str(b.avatarId), strArr(b.deck));
             break;
           case '/mm/room/ready':
-            svc.roomReady(str(b.accountId), Boolean(b.ready));
+            await svc.roomReady(str(b.accountId), Boolean(b.ready));
             break;
           case '/mm/room/start':
-            svc.roomStart(str(b.accountId));
+            await svc.roomStart(str(b.accountId));
             break;
           case '/mm/room/leave':
             svc.roomLeave(str(b.accountId));
             break;
           case '/mm/queue/enqueue':
-            svc.enqueue(str(b.accountId), str(b.name), str(b.publicId), num(b.elo, 1000), str(b.equippedTitle), str(b.avatarId), str(b.platform), strArr(b.deck));
+            await svc.enqueue(str(b.accountId), str(b.name), str(b.publicId), num(b.elo, 1000), str(b.equippedTitle), str(b.avatarId), str(b.platform), strArr(b.deck));
             break;
           case '/mm/conn/connected':
             svc.onConnected(str(b.accountId));
@@ -113,7 +113,7 @@ export function startInternalHttp(
             );
             break;
           case '/mm/duel/respond':
-            svc.duelRespond(
+            await svc.duelRespond(
               str(b.accountId), str(b.inviteId), Boolean(b.accept),
               b.accept
                 ? {

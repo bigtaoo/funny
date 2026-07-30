@@ -433,19 +433,29 @@ export function AuthMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase & Cons
         return reply.code(400).send(err(ErrorCode.BAD_REQUEST, 'no active enforcement to appeal'));
       }
 
-      await cols.appeals.insertOne({
-        _id: randomUUID(),
-        accountId,
-        reason: trimmed.slice(0, APPEAL_REASON_MAX),
-        enforcementSnapshot: {
-          ...(flags?.banned ? { banned: true } : {}),
-          ...(bannedUntilActive ? { bannedUntil: flags!.bannedUntil } : {}),
-          ...(mutedUntilActive ? { mutedUntil: flags!.mutedUntil } : {}),
-          ...(typeof flags?.reputationScore === 'number' ? { reputationScore: flags.reputationScore } : {}),
-        },
-        status: 'open',
-        createdAt: nowMs,
-      });
+      try {
+        await cols.appeals.insertOne({
+          _id: randomUUID(),
+          accountId,
+          reason: trimmed.slice(0, APPEAL_REASON_MAX),
+          enforcementSnapshot: {
+            ...(flags?.banned ? { banned: true } : {}),
+            ...(bannedUntilActive ? { bannedUntil: flags!.bannedUntil } : {}),
+            ...(mutedUntilActive ? { mutedUntil: flags!.mutedUntil } : {}),
+            ...(typeof flags?.reputationScore === 'number' ? { reputationScore: flags.reputationScore } : {}),
+          },
+          status: 'open',
+          createdAt: nowMs,
+        });
+      } catch (e) {
+        // Unique partial index on {accountId, status:'open'} (mongo.ts) is the atomic backstop behind the
+        // findOne check above: two concurrent submits from the same account can both pass that read, but
+        // only one insertOne wins here.
+        if ((e as { code?: number }).code === 11000) {
+          return reply.code(409).send(err(ErrorCode.ALREADY_REQUESTED, 'an appeal is already pending for this account'));
+        }
+        throw e;
+      }
       return ok({ ok: true });
     }
   };

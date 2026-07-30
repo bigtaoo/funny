@@ -627,6 +627,7 @@
   - `flags.*`（含动态 `featSeen.<id>` 命名空间）新增通用 `PUT /flags`（`{key,value}`，无所有权语义，走整段 `flags` 对象替换避免 key 里天然带的字面点号被 Mongo 点号路径语法误解析成嵌套字段）。
   - `SaveManager` 新增 `equipTitle/equipAvatar/equipSkin/setFlag` 四个方法：先写本地镜像（即时 UI 反馈）→ 后台发请求 → 成功走 `reconcile()` 确认、失败触发一次 `refresh()` 自我纠正——不同于旧模型的"本地写了就算数"，这里任何被拒绝/丢失的写入最迟下一次同步就会被服务器真值覆盖回来。
   - `reconcile()` 删除 `equipped`/`flags` 的本地优先合并分支，改成跟其它字段一样整段取云端——这是让"刷新治百病"成立的关键：以后无论本地怎么写脏，下一次成功同步必定纠正。
+- **追记（audit-followup-fixes-0730，2026-07-30）**：`reconcile()` 另有一处"过期响应"防护——`cloud.rev < local.rev` 时整段丢弃（防止 gacha 连点等并发请求乱序到达时用旧响应回滚 cardInv/wallet）——但 `rev` 是**按账号**单调递增的计数器，不是全局的。设备在匿名/访客账号上玩一阵积累出较高的 `rev` 后，若不经登出直接登录/注册一个新账号（`doAuth()` 的 `adoptSession()→refresh()→reconcile()` 之间没有任何 rev 重置），新账号自己天然较低的 `rev` 会被误判成"过期响应"整体丢弃——UI 上 `accountId` 已经切换成新账号，但钱包/进度等权威字段仍停留在旧账号的值上。根因是该守卫拿 `local.accountId`（`this.save.accountId`）当"是否同一账号"的判据，而 `bootstrap()`/`adoptSession()` 都会在真正拉取云端数据**之前**就抢先把 `this.save.accountId` 写成登录目标账号，导致判据本身先被污染。修复：新增 `SaveManager.reconciledAccountId`（只在 `reconcile()` 内部更新，构造函数/`resetForLogout()` 用当前 `this.save.accountId` 初始化），守卫改为 `cloud.accountId === this.reconciledAccountId && cloud.rev < local.rev`——账号一旦切换，`reconciledAccountId` 仍如实指向旧账号，新账号的首次 reconcile 因此被正确识别为"不是同账号的过期响应"，整体照单全收云端数据。回归测试：`client/test/save-manager.test.ts` 新增"adoptSession into a different, newer account is not dropped by the old account's higher accumulated rev"（对回退代码验证过确实会失败：新账号的 `rev`/`wallet.coins` 会被冻结在旧账号的高 rev 值上）。
 
 ## ADR-057 内容治理体系（敏感词归一化 + 词库外部化 + 举报处理闭环 + 信誉分分级处罚 + 审核/申诉后台） — Accepted — 2026-07-29
 
