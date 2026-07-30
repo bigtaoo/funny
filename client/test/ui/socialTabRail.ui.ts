@@ -18,8 +18,8 @@ import * as PIXI from 'pixi.js-legacy';
 import { describe, it, expect } from 'vitest';
 import { createLayout } from '../../src/layout/ScalingManager';
 import { InputManager } from '../../src/inputSystem/InputManager';
-import { initI18n } from '../../src/i18n';
-import { sidebarNavW, sidebarItemHeight } from '../../src/ui/widgets/HubTabs';
+import { initI18n, t, type TranslationKey } from '../../src/i18n';
+import { sidebarNavW, bottomNavH } from '../../src/ui/widgets/HubTabs';
 
 import { FamilyScene } from '../../src/scenes/FamilyScene';
 import { SectScene } from '../../src/scenes/SectScene';
@@ -58,43 +58,79 @@ const SECT_FIXTURE: SectDetailView = {
   allySectIds: [], prosperity: 0, memberFamilies: [],
 };
 
-// TAB_DEFS order in socialTabRail.ts — used to compute each cell's click point directly
-// through the scene's real input path (handleDown), same as a live pointer tap would.
+// TAB_DEFS order in socialTabRail.ts.
 const TAB_ORDER: SocialTab[] = ['friends', 'family', 'sect', 'world', 'mail'];
 
-// Cells stack with a small gap (HubTabs.ts's `drawSidebarTabs`, not exported since it's an internal
-// layout constant) between fixed-height `sidebarItemHeight` cells — no longer a stretch-to-fill
-// `(h - top) / 5` split (see 09adf922, which switched the rail's cell layout to match every other
-// hub's fixed cell size, leaving the rail short of the full available height).
-function railCellPitch(h: number): number {
-  return sidebarItemHeight(h) + Math.round(h * 0.015);
+// socialTabRail.ts's TAB_DEFS translation keys (not exported — it's an internal table), needed
+// to locate each tab's actual rendered position by its label text rather than recomputing rail/
+// bottom-bar geometry (which differs by orientation and shifts when tabs are hidden).
+const TAB_LABEL_KEY: Record<SocialTab, TranslationKey> = {
+  friends: 'friends.tab.friends',
+  family: 'friends.tab.family',
+  sect: 'friends.tab.sect',
+  world: 'friends.tab.world',
+  mail: 'friends.tab.mail',
+};
+
+/** All rendered positions of a PIXI.Text node with this exact text — tab labels are anchored
+ *  (0.5, 0.5), so .x/.y IS the center (see sidebarRailOrientation.ui.ts). Returns every match,
+ *  not just the first, since FriendsScene's own header title repeats the active tab's label
+ *  (`t('friends.tab.' + this.tab)`) — see tabLabelPos below for how that's disambiguated. */
+function findAllLabelPos(container: PIXI.Container, label: string): Array<{ x: number; y: number }> {
+  const out: Array<{ x: number; y: number }> = [];
+  const walk = (node: PIXI.Container): void => {
+    if (node instanceof PIXI.Text && node.text === label) { out.push({ x: node.x, y: node.y }); return; }
+    for (const c of node.children) walk(c as PIXI.Container);
+  };
+  walk(container);
+  return out;
 }
 
-/** FamilyScene/SectScene rail sits under their static full-width header (`headerH`) and
- *  dispatches clicks through `handleDown` + `handleUp` — the hit action fires on pointer-up now
- *  (ScrollTapGesture defers taps so a drag scrolls the body instead of firing a rail tab). */
+/**
+ * Locate a rail/bottom-bar tab's click point by its rendered label, not by recomputed cell
+ * geometry: landscape's sidebar (`drawSidebarTabs`) stacks fixed-height cells regardless of tab
+ * count, while portrait's bottom bar (`drawBottomNavTabs`, LOBBY_IA_REDESIGN.md §18/§20) splits
+ * the full width evenly across however many tabs are actually visible — a hidden tab (see the
+ * `hidden` describe block below) changes every other cell's width/x in the bottom bar, so a
+ * fixed index-to-pixel formula silently drifts once any tab is hidden. Reading the real rendered
+ * position sidesteps both orientation and hidden-tab bookkeeping entirely.
+ *
+ * Returns null when the tab is entirely absent from the render (hidden via socialTabRail.ts's
+ * `hidden` param — its cell doesn't exist at all, unlike the active cell which renders but has
+ * no hit rect) — there is nothing to tap in that case.
+ */
+function tabLabelPos(scene: any, tab: SocialTab): { x: number; y: number } | null {
+  const label = t(TAB_LABEL_KEY[tab]);
+  const positions = findAllLabelPos(scene.container, label);
+  if (positions.length === 0) return null;
+  // Disambiguate against a header title repeating the same text: the real tab cell sits inside
+  // the rail band (landscape: left of the rail width) or the bottom-bar band (portrait: within
+  // bottomNavH of the screen bottom); a header title never does.
+  const inBar = scene.landscape
+    ? positions.filter((p) => p.x < sidebarNavW(scene.w, scene.h, true))
+    : positions.filter((p) => p.y >= scene.h - bottomNavH(scene.h));
+  return inBar[0] ?? positions[0]!;
+}
+
+/** FamilyScene/SectScene dispatch clicks through `handleDown` + `handleUp` — the hit action
+ *  fires on pointer-up (ScrollTapGesture defers taps so a drag scrolls the body instead of
+ *  firing a rail tab). A tab hidden from the rail entirely (see `tabLabelPos`) has nothing to
+ *  tap, so the click is skipped rather than landing on whatever geometry happens to occupy the
+ *  old fixed slot. */
 function clickRailTab(scene: any, tab: SocialTab): void {
-  const index = TAB_ORDER.indexOf(tab);
-  const railW = sidebarNavW(scene.w, scene.h, scene.landscape);
-  const top = scene.headerH as number;
-  const pitch = railCellPitch(scene.h);
-  const x = Math.round(railW / 2);
-  const y = top + index * pitch + Math.round(sidebarItemHeight(scene.h) / 2);
-  scene.handleDown(x, y);
-  scene.handleUp(x, y);
+  const pos = tabLabelPos(scene, tab);
+  if (!pos) return;
+  scene.handleDown(pos.x, pos.y);
+  scene.handleUp(pos.x, pos.y);
 }
 
-/** FriendsScene has no `headerH` field — its rail sits under `bodyTop` and dispatches
- *  through the pointer-down/up click path (`onPointerDown` + `onPointerUp`), not `handleDown`. */
+/** FriendsScene dispatches through the pointer-down/up click path (`onPointerDown` +
+ *  `onPointerUp`), not `handleDown`. */
 function clickFriendsRailTab(scene: any, tab: SocialTab): void {
-  const index = TAB_ORDER.indexOf(tab);
-  const railW = sidebarNavW(scene.w, scene.h, scene.landscape);
-  const top = scene.bodyTop as number;
-  const pitch = railCellPitch(scene.h);
-  const x = Math.round(railW / 2);
-  const y = top + index * pitch + Math.round(sidebarItemHeight(scene.h) / 2);
-  scene.onPointerDown(x, y);
-  scene.onPointerUp(x, y);
+  const pos = tabLabelPos(scene, tab);
+  if (!pos) return;
+  scene.onPointerDown(pos.x, pos.y);
+  scene.onPointerUp(pos.x, pos.y);
 }
 
 describe('FamilyScene — social tab rail (onNavTab wiring)', () => {

@@ -19,6 +19,7 @@ import * as PIXI from 'pixi.js-legacy';
 import { createLayout } from '../../src/layout/ScalingManager';
 import { InputManager } from '../../src/inputSystem/InputManager';
 import { initI18n } from '../../src/i18n';
+import { bottomNavH } from '../../src/ui/widgets/HubTabs';
 
 import { LoginScene } from '../../src/scenes/LoginScene';
 import { FamilyScene } from '../../src/scenes/FamilyScene';
@@ -294,10 +295,15 @@ describe('FriendsScene — family/sect/world tab carets', () => {
     enterSlgTab(scene, 'world');
     scene.render();
     // The input hit is the wide field pinned to the bottom of the content column; the send
-    // button sits to its right. Exclude the vertical tab rail (x === 0, left of the binding
-    // line) so "leftmost bottom hit" resolves to the input field, not a rail cell.
+    // button sits to its right. [W, H] = [800, 1280] is portrait, so the 5-tab social rail
+    // (render/socialTabRail.ts) renders as a bottom nav bar spanning the full width
+    // (LOBBY_IA_REDESIGN.md §18/§20) rather than the old left sidebar — excluding just x === 0
+    // no longer keeps it out of "leftmost bottom hit", since its cells span x>0 too. Exclude
+    // anything at/below the nav bar's own top edge (bodyBottom already reserves bottomNavH
+    // above it, so the input field itself sits clear of that band).
     const hits = scene.hits as Array<{ rect: { x: number; y: number; w: number; h: number }; fn: () => void }>;
-    const bottom = hits.filter((hh) => hh.rect.y > H * 0.8 && hh.rect.x > 0);
+    const navTop = scene.landscape ? Infinity : scene.h - bottomNavH(scene.h);
+    const bottom = hits.filter((hh) => hh.rect.y > H * 0.8 && hh.rect.x > 0 && hh.rect.y < navTop);
     const inputHit = bottom.reduce((a, b) => (b.rect.x < a.rect.x ? b : a));
     inputHit.fn(); // simulate the tap
 

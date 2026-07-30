@@ -229,8 +229,14 @@ describe('FamilyScene — portrait keeps the tab switch', () => {
 
 describe('FamilyScene — portrait info band long-name handling', () => {
   it('truncates a long name with an ellipsis instead of colliding with the member count', async () => {
+    // Name is longer than it used to be: LOBBY_IA_REDESIGN.md §18/§20 (2026-07-30) changed
+    // `railW` to return 0 in portrait (the left rail became a bottom nav bar instead), which
+    // frees up the ~216px it used to reserve here — renderInfoBand's `maxNameW` is
+    // `w - 12 - (railW + 12) - countLbl.width - 16`, so with railW===0 a name short enough to
+    // need truncation before now fits without it. This name is long enough to still require
+    // truncation at the new, wider available width.
     const longFamily = makeFamily({
-      name: 'Longwinded Scholars Guild', tag: 'LSGLD', memberCount: 1, prosperity: 123456,
+      name: 'Longwinded Scholars and Historians Guild of the Realm', tag: 'LSGLD', memberCount: 1, prosperity: 123456,
     });
     const scene = buildSceneAtWidth(390, 844, 'portrait', longFamily, []);
     await flush(scene);
