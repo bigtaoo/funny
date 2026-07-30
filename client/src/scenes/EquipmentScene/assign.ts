@@ -8,7 +8,7 @@ import { FS } from '../../render/fontScale';
 import { buildIcon } from '../../render/icons';
 import { FACTION_COLOR } from '../../render/factionIcon';
 import { UNIT_ART_URLS, getArtTexture } from '../../render/cardArt';
-import { sidebarNavW } from '../../ui/widgets/HubTabs';
+import { sidebarNavW, bottomNavH } from '../../ui/widgets/HubTabs';
 import { drawScrollIndicator } from '../../ui/widgets/ScrollIndicator';
 import { peekViewportH } from '../../ui/widgets/scrollPeek';
 import type { SaveData, EquipSlot, CardInstance } from '../../game/meta/SaveData';
@@ -70,7 +70,11 @@ export function AssignMixin<TBase extends EquipmentSceneBaseCtor>(Base: TBase): 
       if (!inst) { this.assign = null; this.render(); return; }
       const slot = this.assign.slot;
 
-      const sidebarW = sidebarNavW(w, h, this.landscape);
+      // Landscape: the sidebar rail persists to the left (base.ts's renderSidebar draws it before
+      // this sub-mode's body), so the title bar/grid start clear of it. Portrait's peer-level nav is
+      // a bottom bar instead (§18) — no width reservation, but availH reserves bottomNavH off the
+      // bottom when that bar is actually shown (same hasGroupNav gate as Inventory/Craft).
+      const sidebarW = this.landscape ? sidebarNavW(w, h, true) : 0;
       const top = this.headerH;
       const barBg = new PIXI.Graphics();
       barBg.beginFill(0xf3f1ea).drawRect(sidebarW, top, w - sidebarW, RES_H).endFill();
@@ -80,7 +84,7 @@ export function AssignMixin<TBase extends EquipmentSceneBaseCtor>(Base: TBase): 
       this.bodyLayer.addChild(title);
 
       const listY = top + RES_H;
-      const availH = h - listY - 8;
+      const availH = h - listY - 8 - (!this.landscape && this.hasGroupNav ? bottomNavH(h) : 0);
       const cards = Object.values(save.cardInv ?? {});
       if (cards.length === 0) {
         const lbl = txt(t('equip.assignEmpty'), FS.heading, C.mid);

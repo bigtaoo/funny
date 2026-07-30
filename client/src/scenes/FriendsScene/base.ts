@@ -16,7 +16,7 @@ import { FS, snapFont } from '../../render/fontScale';
 import { buildIcon } from '../../render/icons';
 import { buildDecorCLayer } from '../../render/decorCLayer';
 import { drawSocialTabRail, type SocialTab } from '../../render/socialTabRail';
-import { sidebarNavW } from '../../ui/widgets/HubTabs';
+import { sidebarNavW, bottomNavH } from '../../ui/widgets/HubTabs';
 import { drawScrollIndicator } from '../../ui/widgets/ScrollIndicator';
 import { drawSceneHeader, drawHeaderCurrency } from '../../ui/widgets/SceneHeader';
 import { wheelScrollY } from '../../ui/wheelScroll';
@@ -463,15 +463,16 @@ export class FriendsSceneBase {
   }
 
   // ── Left navigation rail + content column geometry ─────────────────────────────
-  // The 5 tabs live in the sidebar-nav rail LEFT of the red binding line (sidebarNavW, matching
-  // every other left-edge tab rail in the game); all body content sits in the column to its
-  // right. Every drawer routes its x math through cX/cW/cCX so the tab rail and content never
-  // overlap.
-  /** Width of the vertical tab rail. */
+  // Landscape: the 5 tabs live in a sidebar-nav rail LEFT of the red binding line (sidebarNavW,
+  // matching every other left-edge tab rail in the game); all body content sits in the column to
+  // its right. Portrait draws the 5 tabs as a bottom nav bar instead (§18), so the content column
+  // no longer reserves any width for a rail — `railW` is 0 there and `cX`/`cW` fall back to a flat
+  // margin. Every drawer routes its x math through cX/cW/cCX so this stays a single edit point.
+  /** Width of the vertical tab rail (0 in portrait — see above). */
   protected get railW(): number {
-    return sidebarNavW(this.w, this.h, this.landscape);
+    return this.landscape ? sidebarNavW(this.w, this.h, true) : 0;
   }
-  /** Left edge of the content column (just right of the binding line). */
+  /** Left edge of the content column (just right of the binding line, or a flat margin in portrait). */
   protected get cX(): number {
     return this.railW + Math.round(this.w * 0.02);
   }
@@ -482,6 +483,17 @@ export class FriendsSceneBase {
   /** Horizontal center of the content column (replaces w/2 for centered content). */
   protected get cCX(): number {
     return this.cX + this.cW / 2;
+  }
+  /**
+   * Bottom edge for scrollable/pinned-to-bottom content. Portrait's tab bar is always shown at the
+   * screen bottom (drawTabBar has no orientation gate), so content there stops `bottomNavH` short of
+   * `h` instead of running to the edge; landscape's rail doesn't occupy this space so no reservation
+   * is needed. Used in place of the old `h - Math.round(h * 0.02)` wherever content sits below the
+   * tab bar — the standalone search subview (search.ts) hides the tab bar entirely and keeps the
+   * plain `h`-relative math instead.
+   */
+  protected get bodyBottom(): number {
+    return this.h - Math.round(this.h * 0.02) - (this.landscape ? 0 : bottomNavH(this.h));
   }
 
   protected toast(key: TranslationKey, kind: ToastKind = 'error'): void {

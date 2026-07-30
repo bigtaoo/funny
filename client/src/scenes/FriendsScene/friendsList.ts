@@ -27,7 +27,7 @@ export function FriendsListMixin<TBase extends FriendsSceneBaseCtor>(Base: TBase
       this.addButton(t('friends.room'), aX0 + aW + aGap, aY, aW, aH, C.dark, C.gold, () => this.cb.onOpenRoom());
 
       this.regionTop = aY + aH + Math.round(h * 0.02);
-      this.regionBottom = h - Math.round(h * 0.02);
+      this.regionBottom = this.bodyBottom;
       const regionH = this.regionBottom - this.regionTop;
 
       const clip = new PIXI.Graphics();

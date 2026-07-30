@@ -10,7 +10,7 @@ import { FS, snapFont } from '../render/fontScale';
 import { buildCoinIcon } from '../render/coinIconAtlas';
 import { buildDecorCLayer } from '../render/decorCLayer';
 import { drawSceneHeader, drawHeaderCurrency, HEADER_ACCENT } from '../ui/widgets/SceneHeader';
-import { drawSidebarTabs, sidebarNavW, type HubTab } from '../ui/widgets/HubTabs';
+import { drawSidebarTabs, drawBottomNavTabs, sidebarNavW, bottomNavH, type HubTab } from '../ui/widgets/HubTabs';
 import { drawScrollIndicator } from '../ui/widgets/ScrollIndicator';
 import { BusyTracker, withTimeout, TimeoutError } from '../ui/busyTracker';
 import { showToastMessage, type ToastKind } from '../net/log';
@@ -113,6 +113,14 @@ export class BattlePassScene implements Scene {
   private scrollContainer: PIXI.Container | null = null;
   private bodyTopY = 0;
   private staticHits: Hit[] = [];
+  /**
+   * Portrait's bottom nav bar hits (§18) — kept separate from `staticHits` because drawSidebar()
+   * runs *after* the scroll body is built (so the bar visually paints on top of it), which is after
+   * `staticHits` was already captured. `updateScrollPosition()` prepends this on every rebuild
+   * (including the drag fast-path) so the bar stays tappable mid-drag. Empty in landscape, where
+   * the rail is drawn early and folds into `staticHits` as before.
+   */
+  private navHits: Hit[] = [];
   private scrollCellDefs: Array<{ x: number; cellY: number; w: number; h: number; fn: () => void }> = [];
   /** Scroll viewport rect (mask bounds), cached so the drag fast-path can redraw the indicator. */
   private scrollView: Rect = { x: 0, y: 0, w: 0, h: 0 };
@@ -172,7 +180,8 @@ export class BattlePassScene implements Scene {
     // steal a tap meant for the header/XP bar. Keep only cells whose rect intersects the viewport.
     const vTop = this.scrollView.y;
     const vBot = this.scrollView.y + this.scrollView.h;
-    this.hits = this.staticHits.concat(
+    this.hits = this.navHits.concat(
+      this.staticHits,
       this.scrollCellDefs
         .map((d) => ({ rect: { x: d.x, y: this.bodyTopY - sy + d.cellY, w: d.w, h: d.h }, fn: d.fn }))
         .filter((hit) => hit.rect.y + hit.rect.h > vTop && hit.rect.y < vBot),
@@ -197,9 +206,11 @@ export class BattlePassScene implements Scene {
   }
 
   /**
-   * Shop group nav [Shop|Coins|Gacha|BattlePass] (LOBBY_IA_REDESIGN §9), battle pass active: a
-   * vertical rail (`sidebarNavW`, matching every other hub's left tab rail). Only drawn in group
-   * context (openShop injected). Consumes no vertical space — render() shifts body content start x instead.
+   * Shop group nav [Shop|Coins|Gacha|BattlePass] (LOBBY_IA_REDESIGN §9), battle pass active. Only
+   * drawn in group context (openShop injected). Landscape: a vertical rail (`sidebarNavW`, matching
+   * every other hub's left tab rail) — consumes no vertical space, render() shifts body content
+   * start x instead. Portrait: a bottom nav bar instead (§18), drawn after the body (see render())
+   * so it's never run under by the scroll track; hits are unshifted to the front to match.
    */
   private drawSidebar(tbH: number): void {
     if (!this.cb.openShop) return;
@@ -218,19 +229,32 @@ export class BattlePassScene implements Scene {
       tabs.push({ label: t('recharge.title'), active: false, icon: 'coinChest', badge: this.cb.getRechargeBadge?.() ?? false });
       actions.push(() => this.cb.openRecharge?.());
     }
-    const sidebarW = sidebarNavW(w, h, landscape);
-    const { hits } = drawSidebarTabs(this.container, sidebarW, tbH, h, tabs, (i) => actions[i]?.());
+    const onSelect = (i: number): void => actions[i]?.();
+    if (!landscape) {
+      const barH = bottomNavH(h);
+      const { hits } = drawBottomNavTabs(this.container, w, h - barH, barH, tabs, onSelect);
+      // Kept in navHits (see field doc) rather than unshifted into `this.hits` directly — the
+      // scroll-content render path rebuilds `this.hits` via updateScrollPosition() right after this
+      // call, which folds navHits back in; the no-scroll early-return path never calls
+      // updateScrollPosition(), so it also unshifts directly here to take effect immediately.
+      this.navHits = hits.map((hit) => ({ rect: hit.rect, fn: hit.fn }));
+      this.hits.unshift(...hits);
+      return;
+    }
+    const sidebarW = sidebarNavW(w, h, true);
+    const { hits } = drawSidebarTabs(this.container, sidebarW, tbH, h, tabs, onSelect);
     this.hits.push(...hits);
   }
 
   /**
-   * Content column bounds: left edge shifts right of the sidebar rail when in the shop group
-   * (else the standalone 5%-of-w pad); right edge always keeps the 5%-of-w pad.
+   * Content column bounds: left edge shifts right of the sidebar rail when in the shop group AND
+   * landscape (portrait's bottom bar reserves no width — else the standalone 5%-of-w pad); right
+   * edge always keeps the 5%-of-w pad.
    */
   private contentBounds(): { x0: number; w: number } {
     const { w, h, landscape } = this;
     const rightPad = Math.round(w * 0.05);
-    const x0 = this.cb.openShop ? sidebarNavW(w, h, landscape) + Math.round(w * 0.02) : rightPad;
+    const x0 = this.cb.openShop && landscape ? sidebarNavW(w, h, true) + Math.round(w * 0.02) : rightPad;
     return { x0, w: w - x0 - rightPad };
   }
 
@@ -238,6 +262,7 @@ export class BattlePassScene implements Scene {
     if (this.destroyed) return;
     tearDownChildren(this.container);
     this.hits = [];
+    this.navHits = [];
     this.scrollContainer = null;
     this.scrollCellDefs = [];
     this.scrollbar = null; // torn down with the container above; drop the stale ref
@@ -257,8 +282,10 @@ export class BattlePassScene implements Scene {
     // Coin balance (top-right): shared header readout — identical across every scene.
     drawHeaderCurrency(this.container, w, tbH, this.cb.getCoins());
 
-    // Shop group nav (LOBBY_IA_REDESIGN §9): [Shop|Coins|Gacha|BattlePass] sidebar rail, battle pass active. Only drawn in group context.
-    this.drawSidebar(tbH);
+    // Shop group nav (LOBBY_IA_REDESIGN §9): [Shop|Coins|Gacha|BattlePass], battle pass active. Only
+    // drawn in group context. Landscape draws it now (disjoint rail); portrait defers to after the
+    // body (see bottom of this method) so the bottom bar paints on top.
+    if (landscape) this.drawSidebar(tbH);
     const top = tbH;
     const { x0: cx0, w: cw } = this.contentBounds();
     const centerX = cx0 + cw / 2;
@@ -269,6 +296,7 @@ export class BattlePassScene implements Scene {
       msg.anchor.set(0.5, 0.5); msg.x = centerX; msg.y = h / 2;
       this.container.addChild(msg);
       if (this.bt.loadingVisible) drawLoadingOverlay(this.container, w, h, this.bt.dots, t('common.processing'));
+      if (!landscape) this.drawSidebar(tbH);
       return;
     }
 
@@ -363,7 +391,8 @@ export class BattlePassScene implements Scene {
     const freeX = pad;
     const paidX = pad + halfW + Math.round(w * 0.02);
 
-    const availH = h - bodyTopY;
+    // Portrait's group nav is a bottom bar (§18) — reserve bottomNavH off the bottom.
+    const availH = h - bodyTopY - (this.cb.openShop && !landscape ? bottomNavH(h) : 0);
     const totalContentH = headerH + BATTLEPASS_MAX_LEVEL * (cellH + cellGap);
     // Peek-adjusted viewport height: when the track overflows, the cut always lands mid-row so a
     // partial next reward row is always visible above the fold (not just the thin scroll indicator).
@@ -433,6 +462,10 @@ export class BattlePassScene implements Scene {
     this.container.addChild(maskGfx);
     scrollContainer.mask = maskGfx;
     this.container.addChild(scrollContainer);
+    // Portrait's bottom bar draws AFTER the scroll body (visually on top), then
+    // updateScrollPosition() folds its navHits into `this.hits` — must run in this order so both
+    // the initial render and the drag fast-path (which also calls updateScrollPosition()) agree.
+    if (!landscape) this.drawSidebar(tbH);
     this.updateScrollPosition();
 
     if (this.bt.loadingVisible) drawLoadingOverlay(this.container, w, h, this.bt.dots, t('common.processing'));

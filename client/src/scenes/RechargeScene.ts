@@ -10,7 +10,7 @@ import { FS, snapFont } from '../render/fontScale';
 import { buildCoinIcon } from '../render/coinIconAtlas';
 import { buildDecorCLayer } from '../render/decorCLayer';
 import { drawSceneHeader, drawHeaderCurrency, HEADER_ACCENT } from '../ui/widgets/SceneHeader';
-import { drawSidebarTabs, sidebarNavW, type HubTab } from '../ui/widgets/HubTabs';
+import { drawSidebarTabs, drawBottomNavTabs, sidebarNavW, bottomNavH, type HubTab } from '../ui/widgets/HubTabs';
 import { drawScrollIndicator } from '../ui/widgets/ScrollIndicator';
 import { ScrollTapGesture } from '../ui/scrollTapGesture';
 import { wheelScrollY } from '../ui/wheelScroll';
@@ -81,6 +81,14 @@ export class RechargeScene implements Scene {
   private scrollContainer: PIXI.Container | null = null;
   private bodyTopY = 0;
   private staticHits: Hit[] = [];
+  /**
+   * Portrait's bottom nav bar hits (§18) — kept separate from `staticHits` because drawSidebar()
+   * runs *after* the scroll body is built (so the bar visually paints on top of it), which is after
+   * `staticHits` was already captured. `updateScrollPosition()` prepends this on every rebuild
+   * (including the drag fast-path) so the bar stays tappable mid-drag. Empty in landscape, where
+   * the rail is drawn early and folds into `staticHits` as before.
+   */
+  private navHits: Hit[] = [];
   private scrollCellDefs: Array<{ x: number; cellY: number; w: number; h: number; fn: () => void }> = [];
   /** Scroll viewport rect (mask bounds), cached so the drag fast-path can redraw the indicator. */
   private scrollView: Rect = { x: 0, y: 0, w: 0, h: 0 };
@@ -152,7 +160,8 @@ export class RechargeScene implements Scene {
     // whose rect intersects the viewport.
     const vTop = this.scrollView.y;
     const vBot = this.scrollView.y + this.scrollView.h;
-    this.hits = this.staticHits.concat(
+    this.hits = this.navHits.concat(
+      this.staticHits,
       this.scrollCellDefs
         .map((d) => ({ rect: { x: d.x, y: this.bodyTopY - sy + d.cellY, w: d.w, h: d.h }, fn: d.fn }))
         .filter((hit) => hit.rect.y + hit.rect.h > vTop && hit.rect.y < vBot),
@@ -165,7 +174,11 @@ export class RechargeScene implements Scene {
     showToastMessage(msg, kind);
   }
 
-  /** Shop group nav [Shop|Coins|Gacha|BattlePass|Recharge] — same rail convention as BattlePassScene.drawSidebar. */
+  /**
+   * Shop group nav [Shop|Coins|Gacha|BattlePass|Recharge]. Landscape: same rail convention as
+   * BattlePassScene.drawSidebar. Portrait: a bottom nav bar instead (§18), drawn after the body (see
+   * render()) so it's never run under by the scroll track; hits are unshifted to the front to match.
+   */
   private drawSidebar(tbH: number): void {
     if (!this.cb.openShop) return;
     const { w, h, landscape } = this;
@@ -183,15 +196,27 @@ export class RechargeScene implements Scene {
     }
     tabs.push({ label: t('recharge.title'), active: true, icon: 'coinChest' });
     actions.push(() => {});
-    const sidebarW = sidebarNavW(w, h, landscape);
-    const { hits } = drawSidebarTabs(this.container, sidebarW, tbH, h, tabs, (i) => actions[i]?.());
+    const onSelect = (i: number): void => actions[i]?.();
+    if (!landscape) {
+      const barH = bottomNavH(h);
+      const { hits } = drawBottomNavTabs(this.container, w, h - barH, barH, tabs, onSelect);
+      // Kept in navHits (see field doc) rather than unshifted into `this.hits` directly — the
+      // scroll-content render path rebuilds `this.hits` via updateScrollPosition() right after this
+      // call, which folds navHits back in; the no-scroll early-return path never calls
+      // updateScrollPosition(), so it also unshifts directly here to take effect immediately.
+      this.navHits = hits.map((hit) => ({ rect: hit.rect, fn: hit.fn }));
+      this.hits.unshift(...hits);
+      return;
+    }
+    const sidebarW = sidebarNavW(w, h, true);
+    const { hits } = drawSidebarTabs(this.container, sidebarW, tbH, h, tabs, onSelect);
     this.hits.push(...hits);
   }
 
   private contentBounds(): { x0: number; w: number } {
     const { w, h, landscape } = this;
     const rightPad = Math.round(w * 0.05);
-    const x0 = this.cb.openShop ? sidebarNavW(w, h, landscape) + Math.round(w * 0.02) : rightPad;
+    const x0 = this.cb.openShop && landscape ? sidebarNavW(w, h, true) + Math.round(w * 0.02) : rightPad;
     return { x0, w: w - x0 - rightPad };
   }
 
@@ -199,6 +224,7 @@ export class RechargeScene implements Scene {
     if (this.destroyed) return;
     tearDownChildren(this.container);
     this.hits = [];
+    this.navHits = [];
     this.scrollContainer = null;
     this.scrollCellDefs = [];
     this.scrollbar = null; // torn down with the container above; drop the stale ref
@@ -213,7 +239,9 @@ export class RechargeScene implements Scene {
     const tbH = hdr.headerH;
     this.hits.push({ rect: hdr.backRect, fn: () => this.cb.onBack() });
     drawHeaderCurrency(this.container, w, tbH, this.cb.getCoins());
-    this.drawSidebar(tbH);
+    // Landscape draws the rail now (disjoint region); portrait defers to after the body so the
+    // bottom bar paints on top of the scroll track (see the ends of this method).
+    if (landscape) this.drawSidebar(tbH);
 
     const top = tbH;
     const { x0: cx0, w: cw } = this.contentBounds();
@@ -224,6 +252,7 @@ export class RechargeScene implements Scene {
       msg.anchor.set(0.5, 0.5); msg.x = centerX; msg.y = h / 2;
       this.container.addChild(msg);
       if (this.bt.loadingVisible) drawLoadingOverlay(this.container, w, h, this.bt.dots, t('common.processing'));
+      if (!landscape) this.drawSidebar(tbH);
       return;
     }
 
@@ -253,7 +282,8 @@ export class RechargeScene implements Scene {
     const rowStride = cellH + gap;
 
     const bodyTopY = y;
-    const availH = h - bodyTopY - Math.round(h * 0.02);
+    // Portrait's group nav is a bottom bar (§18) — reserve bottomNavH off the bottom.
+    const availH = h - bodyTopY - Math.round(h * 0.02) - (this.cb.openShop && !landscape ? bottomNavH(h) : 0);
     const totalContentH = n * rowStride;
     // Peek-adjusted viewport: when the list overflows, the cut lands mid-card so a partial next
     // card peeks above the fold (not just the thin scroll indicator).
@@ -290,6 +320,10 @@ export class RechargeScene implements Scene {
     this.container.addChild(maskGfx);
     scrollContainer.mask = maskGfx;
     this.container.addChild(scrollContainer);
+    // Portrait's bottom bar draws AFTER the scroll body (visually on top), then
+    // updateScrollPosition() folds its navHits into `this.hits` — must run in this order so both
+    // the initial render and the drag fast-path (which also calls updateScrollPosition()) agree.
+    if (!landscape) this.drawSidebar(tbH);
     this.updateScrollPosition();
 
     if (this.bt.loadingVisible) drawLoadingOverlay(this.container, w, h, this.bt.dots, t('common.processing'));

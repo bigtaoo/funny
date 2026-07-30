@@ -11,9 +11,14 @@
 //
 // This file pins: (1) sidebarNavW itself returns the same short-edge-pegged width in both
 // orientations, (2) CardScene's real [Hero Roster|Equipment] rail renders at that width in
-// both orientations (not just the pure function), and (3) EquipmentScene's peer-tab rail
-// does too — guarding against a future caller reverting to the old signature or passing the
-// wrong axis.
+// landscape, and (3) EquipmentScene's peer-tab rail does too in landscape — guarding against
+// a future caller reverting to the old signature or passing the wrong axis.
+//
+// Portrait's left rail became a bottom nav bar instead (LOBBY_IA_REDESIGN.md §18, 2026-07-30):
+// sidebarNavW itself is now only ever called with `landscape=true`, and portrait's tab cells
+// come from drawBottomNavTabs' own full-width-split formula, not this rail width at all — the
+// portrait cases below assert that bottom-bar shape (pinned to the screen bottom, full-width
+// cells) instead of the old EXPECTED_RAIL_W equality.
 //
 // Runs under the headless PIXI adapter (test/harness/pixiHeadless.ts via
 // vitest.ui.config.ts). Run: npm run test:ui
@@ -99,16 +104,20 @@ function buildCardScene(w: number, h: number): { scene: CardScene } {
   return { scene: new CardScene(createLayout(w, h), new InputManager(), cb) };
 }
 
-describe('CardScene — [Hero Roster|Equipment] rail width by orientation', () => {
-  it('renders the Equipment tab at the short-edge-pegged width in portrait', () => {
+describe('CardScene — [Hero Roster|Equipment] rail/bottom-bar by orientation', () => {
+  it('renders the Equipment tab as a full-width bottom nav bar cell in portrait (§18), not the narrow rail', () => {
     const { scene } = buildCardScene(...PORTRAIT);
+    const layout = createLayout(...PORTRAIT);
     const hits = (scene as unknown as { hitRects: Hit[] }).hitRects;
     const rect = hitRectForLabel(scene.container, hits, t('equip.title'));
-    expect(rect.w).toBe(EXPECTED_RAIL_W);
+    // Bottom bar: pinned near the screen's bottom edge, each cell much wider than the old narrow
+    // rail (full width split evenly across tabs, not a 20%-of-short-edge sidebar).
+    expect(rect.y).toBeGreaterThan(layout.designHeight * 0.85);
+    expect(rect.w).toBeGreaterThan(EXPECTED_RAIL_W);
     scene.destroy();
   });
 
-  it('renders the Equipment tab at the SAME short-edge-pegged width in landscape (not the old ~2x-wider formula)', () => {
+  it('renders the Equipment tab at the short-edge-pegged rail width in landscape (unchanged)', () => {
     const { scene } = buildCardScene(...LANDSCAPE);
     const hits = (scene as unknown as { hitRects: Hit[] }).hitRects;
     const rect = hitRectForLabel(scene.container, hits, t('equip.title'));
@@ -133,21 +142,22 @@ function buildEquipmentScene(w: number, h: number): EquipmentScene {
   return new EquipmentScene(createLayout(w, h), new InputManager(), cb);
 }
 
-describe('EquipmentScene — [<peer>|Equipment] group rail width by orientation', () => {
-  it('renders the peer tab at the short-edge-pegged width in both portrait and landscape', () => {
-    const portraitScene = buildEquipmentScene(...PORTRAIT);
+describe('EquipmentScene — [<peer>|Equipment] group rail/bottom-bar by orientation', () => {
+  it('renders the peer tab at the short-edge-pegged rail width in landscape', () => {
     const landscapeScene = buildEquipmentScene(...LANDSCAPE);
-
-    const portraitHits = (portraitScene as unknown as { hitRects: Hit[] }).hitRects;
     const landscapeHits = (landscapeScene as unknown as { hitRects: Hit[] }).hitRects;
-
-    const portraitRect = hitRectForLabel(portraitScene.container, portraitHits, t('roster.title'));
     const landscapeRect = hitRectForLabel(landscapeScene.container, landscapeHits, t('roster.title'));
-
-    expect(portraitRect.w).toBe(EXPECTED_RAIL_W);
     expect(landscapeRect.w).toBe(EXPECTED_RAIL_W);
-
-    portraitScene.destroy();
     landscapeScene.destroy();
+  });
+
+  it('renders the peer tab as part of a full-width bottom nav bar in portrait (§18), not the narrow rail', () => {
+    const portraitScene = buildEquipmentScene(...PORTRAIT);
+    const layout = createLayout(...PORTRAIT);
+    const portraitHits = (portraitScene as unknown as { hitRects: Hit[] }).hitRects;
+    const portraitRect = hitRectForLabel(portraitScene.container, portraitHits, t('roster.title'));
+    expect(portraitRect.y).toBeGreaterThan(layout.designHeight * 0.85);
+    expect(portraitRect.w).toBeGreaterThan(EXPECTED_RAIL_W);
+    portraitScene.destroy();
   });
 });

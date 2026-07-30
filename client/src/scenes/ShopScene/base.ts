@@ -24,13 +24,13 @@ import { ILayout, Rect } from '../../layout/ILayout';
 import { InputManager } from '../../inputSystem/InputManager';
 import { t, TranslationKey } from '../../i18n';
 import type { ShopItem } from '../../net/ApiClient';
-import { ui as C, txt, buildPaperBackground, sketchPanel, sketchAccentBar, seedFor, drawLoadingOverlay, tearDownChildren } from '../../render/sketchUi';
+import { ui as C, txt, buildPaperBackground, sketchPanel, sketchAccentBar, seedFor, drawLoadingOverlay, tearDownChildren, marginLineX } from '../../render/sketchUi';
 import { buildDecorCLayer } from '../../render/decorCLayer';
 import { type IconKind } from '../../render/icons';
 import { loadCoinIconAtlas, buildCoinIcon } from '../../render/coinIconAtlas';
 import { getArtTexture } from '../../render/cardArt';
 import { drawSceneHeader, drawHeaderCurrency, HEADER_ACCENT } from '../../ui/widgets/SceneHeader';
-import { drawSidebarTabs, sidebarNavW, type HubTab } from '../../ui/widgets/HubTabs';
+import { drawSidebarTabs, drawBottomNavTabs, sidebarNavW, bottomNavH, type HubTab } from '../../ui/widgets/HubTabs';
 import { BusyTracker } from '../../ui/busyTracker';
 import { ScrollTapGesture } from '../../ui/scrollTapGesture';
 import { wheelScrollY } from '../../ui/wheelScroll';
@@ -332,10 +332,10 @@ export class ShopSceneBase {
   }
 
   private drawBackground(): void {
-    // Landscape only for now: the notebook's red margin rule is repositioned to the rail's actual
-    // edge (sidebarNavW) instead of the classic 9%-of-width line, which used to cut through the
-    // middle of this scene's (wider) rail. Portrait keeps the legacy line pending a separate
-    // decision on whether portrait should even keep a left-edge rail (LOBBY_IA_REDESIGN §14).
+    // Landscape: the notebook's red margin rule is repositioned to the rail's actual edge
+    // (sidebarNavW) instead of the classic 9%-of-width line, which used to cut through the middle
+    // of this scene's (wider) rail. Portrait has no left-edge rail at all now (the group nav is a
+    // bottom bar, §18), so it keeps the legacy line (railX undefined → default).
     const railX = this.landscape ? sidebarNavW(this.w, this.h, true) : undefined;
     this.container.addChild(buildPaperBackground('shopbg', this.w, this.h, { railX }));
     const decoC = buildDecorCLayer(this.w, this.h);
@@ -356,15 +356,15 @@ export class ShopSceneBase {
   }
 
   /**
-   * Shop group nav (LOBBY_IA_REDESIGN P1.5): [Shop|Coins|Gacha|BattlePass] as a vertical rail
-   * stacked in the left rail (`sidebarNavW`), below the header — same convention
-   * as CardScene/EquipmentScene's sidebar nav. Coins tab only appears when rechargeCoins is provided
-   * (logged in, web platform); BattlePass tab only when openBattlePass is provided. Returns the body
-   * start y (just the header height — the rail occupies width, not height).
+   * Shop group nav (LOBBY_IA_REDESIGN P1.5): [Shop|Coins|Gacha|BattlePass]. Landscape draws it as a
+   * vertical rail stacked in the left rail (`sidebarNavW`), below the header — same convention as
+   * CardScene/EquipmentScene's sidebar nav. Portrait draws it as a bottom nav bar instead (§18).
+   * Coins tab only appears when rechargeCoins is provided (logged in, web platform); BattlePass tab
+   * only when openBattlePass is provided. Returns the body start y (just the header height — neither
+   * the rail nor the bottom bar occupies space at the top).
    */
   private drawGroupTabs(tbH: number): number {
     const { w, h, landscape } = this;
-    const sidebarW = sidebarNavW(w, h, landscape);
     const showCoins = !!this.cb.rechargeCoins;
 
     const { active, claimedToday } = this.monthlyCardStatus();
@@ -388,11 +388,19 @@ export class ShopSceneBase {
     const switchTab = (tab: 'shop' | 'coins') => { this.tab = tab; this.scrollY = 0; this.render(); };
     // Fixed [Shop, Coins?] leading tabs switch locally; the rest (Gacha/BattlePass?/Recharge?) dispatch via `actions`.
     const fixedCount = showCoins ? 2 : 1;
-    const { hits } = drawSidebarTabs(this.container, sidebarW, tbH, h, tabs, (i) => {
+    const onSelect = (i: number): void => {
       if (i === 0) { switchTab('shop'); return; }
       if (showCoins && i === 1) { switchTab('coins'); return; }
       actions[i - fixedCount]?.();
-    });
+    };
+    if (!landscape) {
+      const barH = bottomNavH(h);
+      const { hits } = drawBottomNavTabs(this.container, w, h - barH, barH, tabs, onSelect);
+      this.hits.push(...hits);
+      return tbH;
+    }
+    const sidebarW = sidebarNavW(w, h, true);
+    const { hits } = drawSidebarTabs(this.container, sidebarW, tbH, h, tabs, onSelect);
     this.hits.push(...hits);
     return tbH;
   }
@@ -421,7 +429,8 @@ export class ShopSceneBase {
   protected gridMetrics(): { listX: number; listW: number; gap: number; cols: number; cellW: number; cellH: number } {
     const { w, h, landscape } = this;
     const gap = Math.round(w * 0.015);
-    const listX = sidebarNavW(w, h, landscape) + gap;
+    // Portrait's group nav is a bottom bar instead of a left rail (§18) — no width reservation.
+    const listX = (landscape ? sidebarNavW(w, h, true) : marginLineX(w)) + gap;
     const listW = w - listX - Math.round(w * 0.04);
     // Both orientations pack ~3 across: wider cards keep product titles (e.g. "Monthly Card",
     // "Skin · …") on one line so the price row below can't get pushed down onto the bottom buttons.

@@ -185,7 +185,7 @@ export function RenderMixin<TBase extends SectSceneBaseCtor>(Base: TBase): TBase
     }
 
     private renderTabbedView(): void {
-      const { w, h } = this;
+      const { w } = this;
 
       // Rail itself is now drawn unconditionally by the base render() dispatcher (see base.ts).
       const left = this.railW;
@@ -208,7 +208,7 @@ export function RenderMixin<TBase extends SectSceneBaseCtor>(Base: TBase): TBase
       }
 
       const contentY = this.headerH + 48;
-      const contentH = h - contentY - 10;
+      const contentH = this.bodyBottom - contentY - 10;
 
       if (this.activeTab === 'families') {
         this.renderFamilies(contentY, contentH);

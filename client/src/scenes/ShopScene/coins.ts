@@ -7,6 +7,7 @@ import { ui as C, txt, sketchPanel, seedFor } from '../../render/sketchUi';
 import { type IconKind } from '../../render/icons';
 import { drawScrollIndicator } from '../../ui/widgets/ScrollIndicator';
 import { peekViewportH } from '../../ui/widgets/scrollPeek';
+import { bottomNavH } from '../../ui/widgets/HubTabs';
 import { type Constructor, type ShopSceneBaseCtor, type CardSpec } from './base';
 import { snapFont } from '../../render/fontScale';
 
@@ -39,9 +40,10 @@ export function CoinsMixin<TBase extends ShopSceneBaseCtor>(Base: TBase): TBase 
   return class extends Base {
     /** Coins recharge tab: USD tiers as an icon-card grid (price · treasure glyph · coins + bonus · buy), then a full-width promo-code redemption row. */
     drawCoinsGrid(body: PIXI.Container, top: number): void {
-      const { h } = this;
+      const { h, landscape } = this;
       const bodyTop = top + Math.round(h * 0.02);
-      const availH = h - bodyTop - Math.round(h * 0.02);
+      // Portrait's group nav is a bottom bar (§18) — reserve bottomNavH off the bottom.
+      const availH = h - bodyTop - Math.round(h * 0.02) - (landscape ? 0 : bottomNavH(h));
       const busy = this.bt.busy;
 
       // The first-purchase 2× bonus is a one-time, account-wide grant (server CAS on wallets.firstPurchasedAt).

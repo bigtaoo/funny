@@ -14,7 +14,7 @@ function isMaterialKind(kind: IconKind): kind is MaterialKind {
 import { FS, snapFont } from '../render/fontScale';
 import { buildDecorCLayer } from '../render/decorCLayer';
 import { drawSceneHeader } from '../ui/widgets/SceneHeader';
-import { drawSidebarTabs as drawSidebarTabsShared, sidebarNavW, type HubTab } from '../ui/widgets/HubTabs';
+import { drawSidebarTabs as drawSidebarTabsShared, drawBottomNavTabs, sidebarNavW, bottomNavH, type HubTab } from '../ui/widgets/HubTabs';
 import { BusyTracker, withTimeout, TimeoutError } from '../ui/busyTracker';
 import { showToastMessage, type ToastKind } from '../net/log';
 import type { SaveData } from '../game/meta/SaveData';
@@ -161,11 +161,13 @@ export class DailyScene implements Scene {
 
     const nowMs = Date.now();
     const contentTop = hdr.headerH + h * 0.02;
-    const availH = h - contentTop - h * 0.03;
+    // Portrait's Calendar/Tasks/Ads tabs are a bottom nav bar instead of a left rail (§18) — content
+    // no longer reserves width for them, but does reserve `bottomNavH` off the bottom of its height.
+    const availH = h - contentTop - h * 0.03 - (this.landscape ? 0 : bottomNavH(h));
 
     this.drawSidebarTabs(contentTop, save, nowMs);
 
-    const contentX = sidebarNavW(w, h, this.landscape) + Math.round(w * 0.025);
+    const contentX = this.landscape ? sidebarNavW(w, h, true) + Math.round(w * 0.025) : Math.round(w * 0.06);
     const contentW = w - contentX - Math.round(w * 0.04);
     if (this.activeTab === 'checkin') {
       this.renderCheckin(contentX, contentTop, contentW, availH, save, nowMs);
@@ -179,9 +181,10 @@ export class DailyScene implements Scene {
   }
 
   /**
-   * Calendar/Daily-tasks tabs in the left-edge sidebar rail (same HubTabs.drawSidebarTabs
-   * convention as every other hub's left tab rail). Tapping a tab swaps the single content
-   * pane on the right — only one tab's content is ever drawn at a time.
+   * Calendar/Daily-tasks tabs. Landscape draws them in the left-edge sidebar rail (same
+   * HubTabs.drawSidebarTabs convention as every other hub's left tab rail); portrait draws them
+   * as a bottom nav bar instead (§18). Tapping a tab swaps the single content pane — only one
+   * tab's content is ever drawn at a time.
    */
   private drawSidebarTabs(top: number, save: SaveData, nowMs: number): void {
     const { w, h } = this;
@@ -199,10 +202,17 @@ export class DailyScene implements Scene {
       tabs.push({ label: t('daily.ads.title'), active: this.activeTab === 'ads', badge: adsBadge });
       keys.push('ads');
     }
-    const { hits } = drawSidebarTabsShared(this.container, sidebarNavW(w, h, this.landscape), top, h, tabs, (i) => {
+    const onSelect = (i: number): void => {
       this.activeTab = keys[i]!;
       this.render();
-    });
+    };
+    if (!this.landscape) {
+      const barH = bottomNavH(h);
+      const { hits } = drawBottomNavTabs(this.container, w, h - barH, barH, tabs, onSelect);
+      for (const hit of hits) this.hits.push({ x: hit.rect.x, y: hit.rect.y, w: hit.rect.w, h: hit.rect.h, fn: hit.fn });
+      return;
+    }
+    const { hits } = drawSidebarTabsShared(this.container, sidebarNavW(w, h, true), top, h, tabs, onSelect);
     for (const hit of hits) {
       this.hits.push({ x: hit.rect.x, y: hit.rect.y, w: hit.rect.w, h: hit.rect.h, fn: hit.fn });
     }

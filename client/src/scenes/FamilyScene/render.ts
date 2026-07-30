@@ -190,7 +190,7 @@ export function RenderMixin<TBase extends FamilySceneBaseCtor>(Base: TBase): TBa
       this.renderInfoBand(infoY);
 
       const contentY = infoY + this.infoBandH;
-      const contentH = h - contentY - 6;
+      const contentH = this.bodyBottom - contentY - 6;
 
       if (this.activeTab === 'members') {
         const btnH = this.renderPendingButton(left, w - left, contentY);

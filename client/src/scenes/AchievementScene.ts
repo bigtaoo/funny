@@ -10,7 +10,7 @@ import { FS, snapFont } from '../render/fontScale';
 import { buildDecorCLayer } from '../render/decorCLayer';
 import { drawSceneHeader } from '../ui/widgets/SceneHeader';
 import { drawCareerTabs } from '../ui/widgets/CareerTabs';
-import { drawSidebarTabs, sidebarNavW, type HubTab } from '../ui/widgets/HubTabs';
+import { drawSidebarTabs, drawHubTabs, hubTabsHeight, sidebarNavW, type HubTab } from '../ui/widgets/HubTabs';
 import type { AchievementsView, Achievement } from '../net/ApiClient';
 import { tierState, achievementClaimable, type TierState } from '../game/meta/achievements';
 
@@ -171,41 +171,50 @@ export class AchievementScene implements Scene {
     const tbH = hdr.headerH;
     this.hits.push({ rect: hdr.backRect, fn: () => this.cb.onBack() });
 
-    // Career hub peer strip [Stats|Titles|Achievements] (LOBBY_IA_REDESIGN P1.5, see CareerTabs.ts),
-    // drawn above the category sub-tabs in the left margin gutter regardless of load state, so
-    // the sibling pages never vanish while achievements are loading/offline/empty.
+    // Career hub peer strip [Stats|Titles|Achievements] (LOBBY_IA_REDESIGN P1.5, see CareerTabs.ts).
+    // Landscape draws it above the category sub-tabs in the left margin gutter regardless of load
+    // state, so the sibling pages never vanish while achievements are loading/offline/empty.
+    // Portrait draws it as a bottom nav bar instead (§18); since it no longer nests the category
+    // sub-tabs beneath it there (those move to a header strip — see drawCategoryTabs), it's deferred
+    // to `drawPortraitCareerBar()` called on every render() exit path, last, so it always paints on
+    // top of whatever content this render produced.
     let sidebarBottom = tbH + Math.round(h * 0.02);
-    if (this.cb.onOpenStats && this.cb.onOpenTitles && this.cb.onOpenCodex) {
-      const { hits, bottom } = drawCareerTabs(this.container, sidebarNavW(w, h, this.landscape), sidebarBottom, h, 'achievements', {
-        onOpenStats: this.cb.onOpenStats,
-        onOpenTitles: this.cb.onOpenTitles,
-        onOpenAchievements: () => {},
-        onOpenCodex: this.cb.onOpenCodex,
-      });
+    const hasCareerNav = !!(this.cb.onOpenStats && this.cb.onOpenTitles && this.cb.onOpenCodex);
+    const careerCb = { onOpenStats: this.cb.onOpenStats!, onOpenTitles: this.cb.onOpenTitles!, onOpenAchievements: () => {}, onOpenCodex: this.cb.onOpenCodex! };
+    if (hasCareerNav && landscape) {
+      const { hits, bottom } = drawCareerTabs(this.container, w, h, true, sidebarBottom, 'achievements', careerCb);
       this.hits.push(...hits);
       sidebarBottom = bottom + Math.round(h * 0.03);
     }
+    const drawPortraitCareerBar = (): void => {
+      if (!hasCareerNav || landscape) return;
+      const { hits } = drawCareerTabs(this.container, w, h, false, 0, 'achievements', careerCb);
+      // Drawn last (visually on top), but hit-testing is first-match in push order — unshift so an
+      // accidental rect overlap with a tall category's cards still resolves to the nav bar.
+      this.hits.unshift(...hits);
+    };
 
     // Offline / loading state.
-    if (!this.cb.loadAchievements) { this.drawCentered(tbH, t('achievement.loginRequired')); return; }
-    if (this.data === null) { this.drawCentered(tbH, t('achievement.loading')); return; }
+    if (!this.cb.loadAchievements) { this.drawCentered(tbH, t('achievement.loginRequired')); drawPortraitCareerBar(); return; }
+    if (this.data === null) { this.drawCentered(tbH, t('achievement.loading')); drawPortraitCareerBar(); return; }
 
     const cats = this.categories(this.data);
-    if (cats.length === 0) { this.drawCentered(tbH, t('achievement.empty')); return; }
+    if (cats.length === 0) { this.drawCentered(tbH, t('achievement.empty')); drawPortraitCareerBar(); return; }
     if (!cats.includes(this.activeCat)) this.activeCat = cats[0]!;
 
-    const top = tbH + Math.round(h * 0.025);
-
-    // Category tabs: a second-tier sidebar nested under the Career hub peer strip (mirrors
-    // Equipment's Inventory/Craft sub-tabs, see HubTabs.drawSidebarTabs `sub` option), to the
-    // left of the notebook's red margin rule; the achievement content sits to its right.
-    this.drawCategoryTabs(cats, sidebarBottom);
+    // Category tabs: landscape nests a second-tier sidebar under the Career hub peer strip (mirrors
+    // Equipment's Inventory/Craft sub-tabs, see HubTabs.drawSidebarTabs `sub` option); portrait draws
+    // them as a `drawHubTabs` strip under the header instead, since the peer strip itself moved to
+    // the bottom nav bar and there's nothing left to nest under in the left margin.
+    const catStripTop = tbH + Math.round(h * 0.02);
+    const catStripH = hubTabsHeight(h);
+    const top = landscape ? tbH + Math.round(h * 0.025) : catStripTop + catStripH + Math.round(h * 0.02);
+    this.drawCategoryTabs(cats, landscape ? sidebarBottom : catStripTop, catStripH);
 
     // Achievement cards for the current category.
-    const contentX = sidebarNavW(w, h, this.landscape) + Math.round(w * 0.025);
-    const padRight = Math.round(w * 0.04);
-    const y0 = top;
-    let y = y0;
+    const contentX = landscape ? sidebarNavW(w, h, true) + Math.round(w * 0.025) : Math.round(w * 0.06);
+    const padRight = landscape ? Math.round(w * 0.04) : Math.round(w * 0.06);
+    let y = top;
     const gap = Math.round(h * 0.02);
     const defs = this.data.defs.filter((d) => d.category === this.activeCat && !d.hidden);
 
@@ -239,6 +248,8 @@ export class AchievementScene implements Scene {
         y += gap;
       }
     }
+
+    drawPortraitCareerBar();
   }
 
   private drawCentered(tbH: number, msg: string): void {
@@ -248,11 +259,15 @@ export class AchievementScene implements Scene {
   }
 
   /**
-   * Category tabs as a second-tier sidebar nested under the Career hub peer strip (LOBBY_IA_REDESIGN
-   * P1.5; see HubTabs.drawSidebarTabs `sub` option and Equipment's Inventory/Craft sub-tabs), left of
-   * the notebook's red margin rule — achievement content is drawn to its right, see `contentX` in render().
+   * Category tabs. Landscape draws them as a second-tier sidebar nested under the Career hub peer
+   * strip (LOBBY_IA_REDESIGN P1.5; see HubTabs.drawSidebarTabs `sub` option and Equipment's
+   * Inventory/Craft sub-tabs), left of the notebook's red margin rule — achievement content is
+   * drawn to its right, see `contentX` in render(). Portrait draws them as a `drawHubTabs` strip
+   * under the header instead (§18): the peer strip moved to the bottom nav bar, so there's no
+   * left-rail parent left to nest under, and a horizontal strip is the existing convention for
+   * "sub-view switch within one scene" everywhere else in the game.
    */
-  private drawCategoryTabs(cats: Achievement['category'][], top: number): void {
+  private drawCategoryTabs(cats: Achievement['category'][], top: number, stripH: number): void {
     const tabs: HubTab[] = cats.map((cat) => ({
       label: t(('achievement.category.' + cat) as TranslationKey),
       active: cat === this.activeCat,
@@ -262,10 +277,16 @@ export class AchievementScene implements Scene {
         (d) => d.category === cat && !d.hidden && achievementClaimable(d, this.data!.stats, this.data!.achievements),
       ),
     }));
-    const { hits } = drawSidebarTabs(this.container, sidebarNavW(this.w, this.h, this.landscape), top, this.h, tabs, (i) => {
+    const onSelect = (i: number): void => {
       this.activeCat = cats[i];
       this.render();
-    }, { sub: true });
+    };
+    if (!this.landscape) {
+      const hits = drawHubTabs(this.container, this.w, top, stripH, tabs, onSelect);
+      this.hits.push(...hits);
+      return;
+    }
+    const { hits } = drawSidebarTabs(this.container, sidebarNavW(this.w, this.h, true), top, this.h, tabs, onSelect, { sub: true });
     this.hits.push(...hits);
   }
 

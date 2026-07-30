@@ -33,7 +33,7 @@ export function MailMixin<TBase extends FriendsSceneBaseCtor>(Base: TBase): TBas
     drawMailList(): void {
       const { w, h } = this;
       this.regionTop = this.bodyTop + Math.round(h * 0.01);
-      this.regionBottom = h - Math.round(h * 0.02);
+      this.regionBottom = this.bodyBottom;
       const regionH = this.regionBottom - this.regionTop;
       const { layer } = this.scrollRegion(regionH);
 
@@ -154,7 +154,7 @@ export function MailMixin<TBase extends FriendsSceneBaseCtor>(Base: TBase): TBas
 
       const dH = Math.round(h * 0.07);
       const deleteBlocked = hasAtt && !m.claimed;
-      this.addButton(t('mail.delete'), px, h - dH - Math.round(h * 0.03), panelW, dH, C.paper, deleteBlocked ? C.mid : C.red,
+      this.addButton(t('mail.delete'), px, this.bodyBottom - dH - Math.round(h * 0.01), panelW, dH, C.paper, deleteBlocked ? C.mid : C.red,
         () => deleteBlocked ? this.toast('mail.deleteBlockedAttachment') : void this.doMailDelete(m), deleteBlocked ? C.mid : C.red);
     }
 

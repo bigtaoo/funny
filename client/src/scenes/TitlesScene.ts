@@ -9,7 +9,7 @@ import { titleIconUrl, getTitleIconTexture } from '../render/titleArt';
 import { buildDecorCLayer } from '../render/decorCLayer';
 import { drawSceneHeader } from '../ui/widgets/SceneHeader';
 import { drawCareerTabs } from '../ui/widgets/CareerTabs';
-import { sidebarNavW } from '../ui/widgets/HubTabs';
+import { sidebarNavW, bottomNavH } from '../ui/widgets/HubTabs';
 import { drawScrollIndicator } from '../ui/widgets/ScrollIndicator';
 import { peekViewportH } from '../ui/widgets/scrollPeek';
 import { wheelScrollY } from '../ui/wheelScroll';
@@ -174,10 +174,9 @@ export class TitlesScene implements Scene {
    */
   private drawSidebar(tbH: number): void {
     if (!this.cb.onOpenStats || !this.cb.onOpenAchievements || !this.cb.onOpenCodex) return;
-    const { w, h } = this;
-    const sidebarW = sidebarNavW(w, h, this.landscape);
+    const { w, h, landscape } = this;
     const sidebarTop = tbH + Math.round(h * 0.02);
-    const { hits } = drawCareerTabs(this.container, sidebarW, sidebarTop, h, 'titles', {
+    const { hits } = drawCareerTabs(this.container, w, h, landscape, sidebarTop, 'titles', {
       onOpenStats: this.cb.onOpenStats,
       onOpenTitles: () => {},
       onOpenAchievements: this.cb.onOpenAchievements,
@@ -193,14 +192,16 @@ export class TitlesScene implements Scene {
     const { w, h } = this;
     const hasSidebar = !!this.cb.onOpenStats && !!this.cb.onOpenAchievements && !!this.cb.onOpenCodex;
     const tbH = Math.round(h * 0.12);
-    const padX = hasSidebar ? sidebarNavW(w, h, this.landscape) + Math.round(w * 0.025) : Math.round(w * 0.08);
-    const padRight = hasSidebar ? Math.round(w * 0.04) : Math.round(w * 0.08);
+    const padX = this.landscape && hasSidebar ? sidebarNavW(w, h, true) + Math.round(w * 0.025) : Math.round(w * 0.08);
+    const padRight = this.landscape && hasSidebar ? Math.round(w * 0.04) : Math.round(w * 0.08);
     const gridTop = tbH + Math.round(h * 0.04);
     const gridW = w - padX - padRight;
     const owned = new Set(this.cb.titles);
     const sorted = sortTitlesByWeight(allTitleIds(this.cb.titles));
 
-    const availH = h - gridTop - Math.round(h * 0.02);
+    // Portrait's Career peer strip is a bottom nav bar (§18), not a left rail — the grid's masked
+    // viewport must stop short of it or the last row(s) would scroll in behind the bar.
+    const availH = h - gridTop - Math.round(h * 0.02) - (!this.landscape && hasSidebar ? bottomNavH(h) : 0);
     this.regionTop = gridTop;
 
     if (sorted.length === 0) {

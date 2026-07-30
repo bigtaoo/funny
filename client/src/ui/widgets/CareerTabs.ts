@@ -11,7 +11,7 @@
 import * as PIXI from 'pixi.js-legacy';
 import type { Rect } from '../../layout/ILayout';
 import { t } from '../../i18n';
-import { drawSidebarTabs, type HubTab } from './HubTabs';
+import { drawSidebarTabs, drawBottomNavTabs, sidebarNavW, bottomNavH, type HubTab } from './HubTabs';
 
 export type CareerTabKey = 'stats' | 'titles' | 'achievements' | 'codex';
 
@@ -24,28 +24,47 @@ export interface CareerNavCallbacks {
   hasClaimableAchievement?: boolean;
 }
 
+/**
+ * Landscape draws this as the left-rail peer strip at `sidebarNavW(w,h,true)`, positioned at `y`
+ * (below the header). Portrait draws it as the bottom nav bar instead (LOBBY_IA_REDESIGN.md §18);
+ * `y` is unused there since the bar is always pinned to the screen edge. `bottom` in the portrait
+ * case is the bar's own top edge (`h - bottomNavH(h)`) — nothing stacks below a bottom nav bar, but
+ * callers that used the landscape `bottom` to place a nested sub-strip still get a sane value.
+ */
 export function drawCareerTabs(
   container: PIXI.Container,
-  sidebarW: number,
-  y: number,
+  w: number,
   h: number,
+  landscape: boolean,
+  y: number,
   active: CareerTabKey,
   cb: CareerNavCallbacks,
 ): { hits: Array<{ rect: Rect; fn: () => void }>; bottom: number } {
   // Order note: Achievements sits LAST so its own category sub-tabs (pve/pvp/collection/progression,
-  // drawn by AchievementScene directly beneath this strip) read as nested under the Achievements cell.
-  // When Achievements was 3rd and Collection 4th, those sub-tabs appeared below the Collection cell and
-  // looked like they belonged to Collection instead (reported 14.07.2026).
+  // drawn by AchievementScene directly beneath this strip in landscape / in a header strip in
+  // portrait) read as nested under the Achievements cell. When Achievements was 3rd and Collection
+  // 4th, those sub-tabs appeared below the Collection cell and looked like they belonged to
+  // Collection instead (reported 14.07.2026).
   const tabs: HubTab[] = [
     { label: t('stats.title'), active: active === 'stats', icon: 'book' },
     { label: t('stats.titles'), active: active === 'titles', icon: 'medal' },
     { label: t('collection.title'), active: active === 'codex', icon: 'cards' },
     { label: t('stats.achievements'), active: active === 'achievements', icon: 'trophy', badge: !!cb.hasClaimableAchievement },
   ];
-  return drawSidebarTabs(container, sidebarW, y, h, tabs, (i) => {
+  const onSelect = (i: number) => {
     if (i === 0) cb.onOpenStats();
     else if (i === 1) cb.onOpenTitles();
     else if (i === 2) cb.onOpenCodex();
     else cb.onOpenAchievements();
-  });
+  };
+
+  if (!landscape) {
+    const barH = bottomNavH(h);
+    const barY = h - barH;
+    const { hits } = drawBottomNavTabs(container, w, barY, barH, tabs, onSelect);
+    return { hits, bottom: barY };
+  }
+
+  const sidebarW = sidebarNavW(w, h, true);
+  return drawSidebarTabs(container, sidebarW, y, h, tabs, onSelect);
 }
