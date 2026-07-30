@@ -1,10 +1,9 @@
-// NetSession prematch_lost regression (KNOWN GAP, audit-followup-fixes-0730 review, M5 — not yet fixed):
-// a queue-context prematch_lost push (matchsvc restart-safety) arriving AFTER match_found has already
-// connected the data plane should not re-trigger ranked matchmaking — the player is already in a match.
-// routeControl's self-heal (`if (context === 'queue' && this.lastRankedDeck) this.createRanked(...)`)
-// doesn't check `this.game` before re-enqueuing, so a stale/late prematch_lost delivered after the real
-// pairing succeeded would silently re-submit the player to the ranked queue over the control-plane WS
-// while they're actively playing.
+// NetSession prematch_lost regression (FIXED, matchsvc M5, audit-followup-fixes-0730 review; closed
+// 2026-07-30): a queue-context prematch_lost push (matchsvc restart-safety) arriving AFTER match_found
+// has already connected the data plane must not re-trigger ranked matchmaking — the player is already in
+// a match. routeControl's self-heal branch now checks `this.game` before re-enqueuing, so a stale/late
+// prematch_lost delivered after the real pairing succeeded is a no-op instead of silently re-submitting
+// the player to the ranked queue over the control-plane WS while they're actively playing.
 import { describe, it, expect, vi } from 'vitest';
 import { NetSession } from '../src/net/NetSession';
 import type { IPlatform } from '../src/platform/IPlatform';
@@ -42,8 +41,8 @@ function sendGateway(sockets: FakeSocket[], server: object): void {
   sockets[0]!.message(bytes);
 }
 
-describe('NetSession prematch_lost while already in a match (KNOWN GAP M5)', () => {
-  it.fails('a queue-context prematch_lost arriving after match_found does not re-trigger ranked matchmaking', async () => {
+describe('NetSession prematch_lost while already in a match (matchsvc M5)', () => {
+  it('a queue-context prematch_lost arriving after match_found does not re-trigger ranked matchmaking', async () => {
     const { platform, sockets } = fakePlatform();
     const session = new NetSession(platform, 'ws://x/gw', fakeApi, async () => ({ kind: 'device', deviceId: 'dev-1' }));
 
@@ -58,9 +57,9 @@ describe('NetSession prematch_lost while already in a match (KNOWN GAP M5)', () 
     const createRankedSpy = vi.spyOn(session, 'createRanked');
     sendGateway(sockets, { preMatchLost: { context: 'queue' } }); // a stale restart-safety push arrives late
 
-    // Should be a no-op: the player is already in a match (session.game is connected). Today it isn't —
-    // createRanked() fires again, silently re-submitting ranked matchmaking over the control-plane WS
-    // while the player is actively playing the match they were already matched into.
+    // No-op: the player is already in a match (session.game is connected), so createRanked() must not
+    // fire again — that would silently re-submit ranked matchmaking over the control-plane WS while the
+    // player is actively playing the match they were already matched into.
     expect(createRankedSpy).not.toHaveBeenCalled();
   });
 });
