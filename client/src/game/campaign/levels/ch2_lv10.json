@@ -129,21 +129,28 @@
       {
         "atTick": 1020,
         "unitType": "shieldbearer",
-        "col": 4,
-        "count": 3,
-        "spacingTicks": 32
-      },
-      {
-        "atTick": 1020,
-        "unitType": "shieldbearer",
-        "col": 7,
-        "count": 3,
-        "spacingTicks": 32
+        "col": 0,
+        "count": 1,
+        "spacingTicks": 20
       },
       {
         "atTick": 1020,
         "unitType": "shieldbearer",
         "col": 1,
+        "count": 3,
+        "spacingTicks": 18
+      },
+      {
+        "atTick": 1020,
+        "unitType": "shieldbearer",
+        "col": 4,
+        "count": 3,
+        "spacingTicks": 20
+      },
+      {
+        "atTick": 1020,
+        "unitType": "shieldbearer",
+        "col": 7,
         "count": 3,
         "spacingTicks": 20
       },
@@ -152,6 +159,13 @@
         "unitType": "shieldbearer",
         "col": 10,
         "count": 3,
+        "spacingTicks": 18
+      },
+      {
+        "atTick": 1020,
+        "unitType": "shieldbearer",
+        "col": 11,
+        "count": 1,
         "spacingTicks": 20
       },
       {
@@ -187,8 +201,8 @@
   "rewards": {
     "starThresholds": [
       1,
-      50,
-      80
+      20,
+      32
     ],
     "materials": {
       "scrap": 12,

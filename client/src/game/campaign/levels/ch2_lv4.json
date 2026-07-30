@@ -113,27 +113,41 @@
         "unitType": "shieldbearer",
         "col": 0,
         "count": 1,
-        "spacingTicks": 40
+        "spacingTicks": 20
       },
       {
         "atTick": 840,
         "unitType": "shieldbearer",
-        "col": 11,
+        "col": 1,
         "count": 1,
-        "spacingTicks": 40
+        "spacingTicks": 15
       },
       {
         "atTick": 840,
         "unitType": "shieldbearer",
         "col": 4,
         "count": 2,
-        "spacingTicks": 20
+        "spacingTicks": 15
       },
       {
         "atTick": 840,
         "unitType": "shieldbearer",
         "col": 7,
         "count": 2,
+        "spacingTicks": 15
+      },
+      {
+        "atTick": 840,
+        "unitType": "shieldbearer",
+        "col": 10,
+        "count": 1,
+        "spacingTicks": 15
+      },
+      {
+        "atTick": 840,
+        "unitType": "shieldbearer",
+        "col": 11,
+        "count": 1,
         "spacingTicks": 20
       },
       {
@@ -169,8 +183,8 @@
   "rewards": {
     "starThresholds": [
       1,
-      50,
-      80
+      46,
+      51
     ],
     "materials": {
       "scrap": 9,

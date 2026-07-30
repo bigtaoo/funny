@@ -132,14 +132,14 @@
         "unitType": "ironclad",
         "col": 3,
         "count": 2,
-        "spacingTicks": 32
+        "spacingTicks": 20
       },
       {
         "atTick": 900,
         "unitType": "ironclad",
         "col": 10,
         "count": 2,
-        "spacingTicks": 32
+        "spacingTicks": 20
       },
       {
         "atTick": 900,
@@ -153,7 +153,28 @@
         "unitType": "shieldbearer",
         "col": 0,
         "count": 2,
-        "spacingTicks": 20
+        "spacingTicks": 15
+      },
+      {
+        "atTick": 900,
+        "unitType": "shieldbearer",
+        "col": 9,
+        "count": 1,
+        "spacingTicks": 15
+      },
+      {
+        "atTick": 900,
+        "unitType": "runner",
+        "col": 2,
+        "count": 2,
+        "spacingTicks": 10
+      },
+      {
+        "atTick": 900,
+        "unitType": "runner",
+        "col": 11,
+        "count": 2,
+        "spacingTicks": 10
       },
       {
         "atTick": 1140,
@@ -188,7 +209,7 @@
   "rewards": {
     "starThresholds": [
       1,
-      50,
+      55,
       80
     ],
     "materials": {
