@@ -8,12 +8,12 @@
 // instead of the old single-column "one row per character" list that left most of the screen width empty.
 import * as PIXI from 'pixi.js-legacy';
 import { t, type TranslationKey } from '../../i18n';
-import { ui as C, txt, sketchPanel, sketchAccentBar, seedFor } from '../../render/sketchUi';
+import { ui as C, txt, sketchPanel, sketchAccentBar, seedFor, marginLineX } from '../../render/sketchUi';
 import { FS, snapFont } from '../../render/fontScale';
 import { buildIcon } from '../../render/icons';
 import { FACTION_COLOR } from '../../render/factionIcon';
 import { UNIT_ART_URLS } from '../../render/cardArt';
-import { sidebarNavW } from '../../ui/widgets/HubTabs';
+import { sidebarNavW, bottomNavH } from '../../ui/widgets/HubTabs';
 import { drawScrollIndicator } from '../../ui/widgets/ScrollIndicator';
 import { CARD_DEFS, type CardDef } from '../../game/meta/cardDefs';
 import { skinsForUnitType } from '../../game/meta/skinDefs';
@@ -40,10 +40,12 @@ const TILE_W = 108, TILE_H = 108, TILE_GAP = 10;
 export function SkinsMixin<TBase extends CardSceneBaseCtor>(Base: TBase): TBase & Constructor<SkinsHandlers> {
   return class extends Base {
     renderSkinsTab(): void {
-      const { w, h } = this;
-      const left = sidebarNavW(w, h, this.landscape) + CELL_GAP;
+      const { w, h, landscape } = this;
+      // Portrait's sidebar nav is a bottom bar instead (§18): no width reservation, but availH
+      // stops bottomNavH short of the screen (this tab's sidebar always shows, so this always applies).
+      const left = (landscape ? sidebarNavW(w, h, true) : marginLineX(w)) + CELL_GAP;
       const listY = this.headerH;
-      const availH = h - listY - 8;
+      const availH = h - listY - 8 - (landscape ? 0 : bottomNavH(h));
       const avail = w - left - CELL_GAP;
 
       const owned = this.cb.getOwnedSkins();

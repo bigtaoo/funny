@@ -25,9 +25,9 @@ export function WorldChatMixin<TBase extends FriendsSceneBaseCtor>(Base: TBase):
         return;
       }
 
-      // Input area pinned at the bottom
+      // Input area pinned at the bottom (stops clear of the portrait bottom nav bar, see bodyBottom)
       const inputH = Math.round(h * 0.1);
-      const inputY = h - inputH - Math.round(h * 0.01);
+      const inputY = this.bodyBottom - inputH;
       const px = this.cX;
       const sendBtnW = Math.round(w * 0.24);
       const inputW = this.cW - sendBtnW - Math.round(w * 0.02);

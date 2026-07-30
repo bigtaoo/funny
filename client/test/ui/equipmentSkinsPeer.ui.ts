@@ -6,8 +6,14 @@
 // shifting down below the sub-tabs. Fixed by injecting Skins via EquipmentCallbacks.trailingPeers,
 // rendered beneath the Inventory/Craft sub-tabs.
 //
-// This pins: (1) the Skins peer renders and is tappable, (2) it sits *below* the Craft sub-tab
-// (shifted down, not omitted or hoisted above the sub-tabs), and (3) tapping it fires onSelect.
+// This pins: (1) the Skins peer renders and is tappable, and (2) tapping it fires onSelect.
+//
+// Portrait's layout changed again with the bottom-nav-bar conversion (LOBBY_IA_REDESIGN.md §18,
+// 2026-07-30): the peer-level items (leading peerTab + Equipment itself + trailing peers like
+// Skins) are all peers of the same growth group, so in portrait they now combine into ONE bottom
+// nav bar (left-to-right), while the Inventory/Craft sub-tabs move to a header strip *above* them
+// instead of nesting underneath in the same left rail (there's no rail left to nest under). This
+// file's layout createLayout(390, 844) is portrait, so its ordering assertions reflect that.
 //
 // Runs under the headless PIXI adapter (vitest.ui.config.ts). Run: npm run test:ui
 import { describe, it, expect, vi } from 'vitest';
@@ -69,7 +75,7 @@ function buildEquipmentScene(onSkins: () => void): EquipmentScene {
 }
 
 describe('EquipmentScene — Skins trailing peer (growth group [Cards | Equipment | Skins])', () => {
-  it('renders the Skins peer below the Inventory/Craft sub-tabs (shifted down, not dropped)', () => {
+  it('renders Skins beside Equipment in the bottom peer bar, with Craft in the header strip above it (portrait)', () => {
     const scene = buildEquipmentScene(() => {});
 
     const skins = findLabelPos(scene.container, t('roster.tab.skins'));
@@ -80,9 +86,13 @@ describe('EquipmentScene — Skins trailing peer (growth group [Cards | Equipmen
     expect(craft, 'Craft sub-tab must be rendered').not.toBeNull();
     expect(equip, 'Equipment tab must be rendered').not.toBeNull();
 
-    // Order down the rail: Equipment (active) → Inventory/Craft sub-tabs → Skins at the bottom.
-    expect(skins!.y).toBeGreaterThan(craft!.y);
-    expect(craft!.y).toBeGreaterThan(equip!.y);
+    // Portrait: Craft (Inventory/Craft header strip) sits above the combined bottom peer bar
+    // (Cards|Equipment|Skins) — the bar is pinned to the screen bottom, the strip to the header.
+    expect(craft!.y).toBeLessThan(equip!.y);
+    // Equipment and Skins are cells of the same bottom bar row (same y), Skins to the right of
+    // Equipment (peer array order: leading peerTab, Equipment itself, then trailing peers).
+    expect(Math.abs(skins!.y - equip!.y)).toBeLessThan(2);
+    expect(skins!.x).toBeGreaterThan(equip!.x);
 
     scene.destroy();
   });

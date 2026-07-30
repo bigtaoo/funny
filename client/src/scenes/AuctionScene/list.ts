@@ -3,7 +3,7 @@
 import * as PIXI from 'pixi.js-legacy';
 import { ui as C, txt, sketchPanel, sketchButton, seedFor } from '../../render/sketchUi';
 import { FS } from '../../render/fontScale';
-import { drawSidebarTabs, sidebarNavW, type HubTab } from '../../ui/widgets/HubTabs';
+import { drawSidebarTabs, drawBottomNavTabs, sidebarNavW, bottomNavH, type HubTab } from '../../ui/widgets/HubTabs';
 import { t } from '../../i18n';
 import type { AuctionView } from '../../net/WorldApiClient';
 import type { EquipmentInstance, CardInstance } from '../../game/meta/SaveData';
@@ -37,23 +37,32 @@ export function ListMixin<TBase extends AuctionSceneBaseCtor>(Base: TBase): TBas
     }
 
     /**
-     * Left nav rail (`sidebarNavW`, matching every other hub's left tab rail) below the header:
-     * Market / My Auctions / My Bids. Returns the x where the body content (filter bar / list /
-     * create button) should start.
+     * Market / My Auctions / My Bids. Landscape: a left nav rail (`sidebarNavW`, matching every
+     * other hub's left tab rail) below the header — returns its width so body content (filter bar /
+     * list / create button) starts clear of it. Portrait: a bottom nav bar instead (§18) — returns
+     * 0 (no width reservation); the list/create-button height math reserves `bottomNavH` off the
+     * bottom instead (see renderList/renderCreateButton).
      */
     renderSidebar(): number {
       const { w, h, landscape } = this;
-      const sidebarW = sidebarNavW(w, h, landscape);
       const tabs: AucTab[] = ['all', 'mine', 'bids'];
       const labelKeys: Record<AucTab, 'auction.tabAll' | 'auction.tabMine' | 'auction.tabBids'> = {
         all: 'auction.tabAll', mine: 'auction.tabMine', bids: 'auction.tabBids',
       };
       const icons: Record<AucTab, IconKind> = { all: 'tag', mine: 'cards', bids: 'hammer' };
       const hubTabs: HubTab[] = tabs.map((tab) => ({ label: t(labelKeys[tab]), active: tab === this.activeTab, icon: icons[tab] }));
-      const { hits } = drawSidebarTabs(this.bodyLayer, sidebarW, this.headerH, h, hubTabs, (i) => {
+      const onSelect = (i: number): void => {
         const tab = tabs[i]!;
         if (this.activeTab !== tab) { this.activeTab = tab; this.scrollY = 0; this.render(); }
-      });
+      };
+      if (!landscape) {
+        const barH = bottomNavH(h);
+        const { hits } = drawBottomNavTabs(this.bodyLayer, w, h - barH, barH, hubTabs, onSelect);
+        for (const hit of hits) this.hitRects.push({ rect: hit.rect, action: hit.fn });
+        return 0;
+      }
+      const sidebarW = sidebarNavW(w, h, true);
+      const { hits } = drawSidebarTabs(this.bodyLayer, sidebarW, this.headerH, h, hubTabs, onSelect);
       for (const hit of hits) this.hitRects.push({ rect: hit.rect, action: hit.fn });
       return sidebarW;
     }
@@ -106,7 +115,9 @@ export function ListMixin<TBase extends AuctionSceneBaseCtor>(Base: TBase): TBas
       const { w, h } = this;
       const listY = this.headerH + filterH;
       const createBtnH = 100; // reserves room for the 2x "+ List Item" button below
-      const availH = h - listY - createBtnH - 10;
+      // Portrait's tab nav is a bottom bar instead of a left rail (§18) — reserve bottomNavH off the
+      // bottom, below the create button (which itself shifts up by the same amount).
+      const availH = h - listY - createBtnH - 10 - (this.landscape ? 0 : bottomNavH(h));
       const contentW = w - contentX;
       const emptyKeys: Record<AucTab, 'auction.empty' | 'auction.myEmpty' | 'auction.bidsEmpty'> = {
         all: 'auction.empty', mine: 'auction.myEmpty', bids: 'auction.bidsEmpty',
@@ -348,11 +359,13 @@ export function ListMixin<TBase extends AuctionSceneBaseCtor>(Base: TBase): TBas
     }
 
     renderCreateButton(contentX: number): void {
-      const { w, h } = this;
+      const { w, h, landscape } = this;
       const contentW = w - contentX;
       // 2x the previous 200x44 button.
       const btnW = 400; const btnH = 88;
-      const btnY = h - btnH - 12;
+      // Portrait's tab nav is a bottom bar (§18) — this button sits just above it instead of at the
+      // screen edge.
+      const btnY = h - btnH - 12 - (landscape ? 0 : bottomNavH(h));
       const btn = sketchButton(btnW, btnH, seedFor(0, 0, btnW));
       btn.x = contentX + contentW / 2 - btnW / 2; btn.y = btnY;
       this.bodyLayer.addChild(btn);

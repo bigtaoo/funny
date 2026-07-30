@@ -465,3 +465,40 @@
 
 **验证**：`server/metaserver`、`client`（`tsc --noEmit`）全绿；`server/metaserver` 全量 vitest 56 文件/697 例全绿；`client` 单元 112/794 + UI 92/807 全绿；contract codegen check 无漂移；`client` 生产 webpack 构建成功。未做真人截图走查——本次红点数值/toast/提醒逻辑完全复用旧代码路径未改变，只换了数据来源，真正的行为验证靠 e2e 断言具体字段值而非肉眼看红点是否显示，比截图更精确；且本机当时无法起完整后端栈（同 `SLG_DESIGN_LOG.md` §42 verification 一节的说明）。
 - **涉及文件**：`server/contracts/openapi/paths/liveops.yml`、`server/metaserver/src/service/liveops.ts`、`server/metaserver/test/lobby-badges.e2e.test.ts`（新增）、`client/src/net/ApiClient/{misc,types}.ts`、`client/src/net/ApiClient.ts`、`client/src/app/nav/lobby.ts`。
+
+## 20. 竖屏左侧页签栏改底部导航栏（2026-07-30，承 §14 的「待讨论」）
+
+> 状态：**已实现**。承 §14 末尾「待讨论：竖屏是否该把左侧页签栏换成底部导航」——用户当时提出竖屏下侧栏绝对宽度局促（短边就是整个屏幕宽度），但那次范围太大（涉及十几个屏幕的布局范式），先记录问题不动代码。这次拍板执行：竖屏改底部导航栏，横屏左侧栏保持不变。实现前重新核实范围：`sidebarNavW` 实际被 24 个文件引用（比 §14 提到的"十几个"略多，另含 `CardCodexScene`、`RechargeScene`、`socialTabRail.ts`、`sketchUi.ts` 等），工作量与本文档其它大节相当，独立一次会话完成。
+
+### 20.1 新增共享组件（`client/src/ui/widgets/HubTabs.ts`）
+
+- `bottomNavH(h)`：竖屏底部栏高度，直接复用 `sidebarItemHeight(h)` 的量级（同一套字号/图标缩放比例已经调好，不单独发明新常数）。
+- `drawBottomNavTabs(container, w, y, barH, tabs, onSelect, opts?)`：横向铺满 `w` 的页签行，视觉延续 notebook 素描面板风格（`sketchPanel` 每格一个面板+手绘描边），单元格内部排版（图标在上/文字在下/右上角红点）直接照抄 `drawSidebarTabs` 的做法，只是从纵向堆叠改成横向等分——刻意不做 `sub`/嵌套/`.bottom` 链式返回：竖屏每屏只有唯一一条底部栏，原来靠左侧栈叠两层 `drawSidebarTabs` 的场景（见 20.3）改成"顶层页签走底部栏、二级页签挪到 header 下横条"。
+- `drawHubTabs`（原有的 header 下横条组件）补上 `HubTab.badge` 红点绘制——之前只有 `drawSidebarTabs` 支持画红点（§7/§8 遗留的不同步），这次挪二级页签过去要用到。
+
+### 20.2 转换范式
+
+每个场景的竖屏分支做的是同一件事：
+- 内容区不再 `w - sidebarNavW(...)`（横屏），竖屏直接用满宽 `w`（或原有的 flat-margin 兜底逻辑）。
+- 竖屏可用高度改成 `h - bottomNavH(h)`（仅当该场景确实画了底部栏时才减）。
+- 原本 `drawSidebarTabs(...)` 画页签的地方，竖屏分支改调 `drawBottomNavTabs(..., y = h - bottomNavH(h), w, ...)`。
+- 装饰性红色装订线（§14 的 `railX`）本来就已经是横屏专属（`landscape ? sidebarNavW(...) : undefined`），竖屏从来没画过这条线，这次不用动。
+
+### 20.3 各类场景的处理
+
+- **单页签组场景**（`DailyScene`、`CardScene`、`ShopScene`、`EquipmentScene`/craft·assign、Family/Friends/Sect 三个社交场景）：直接套用上面的范式。Family/Friends/Sect 的 `railW` getter 改成竖屏返回 0，`socialTabRail.ts`（Friends/Family/Sect 共用的 5 页签绘制入口）内部按 `landscape` 分流到 `drawSidebarTabs`/`drawBottomNavTabs`。
+- **受业务上下文门控**（`GachaScene`/`BattlePassScene`/`RechargeScene`，页签是否出现取决于 `cb.openShop` 而非朝向）：是否减 `bottomNavH` 挂在原有 `cb.openShop` 判断上；这三个场景的页签内容不是被遮罩裁剪的（无 mask，纯 draw-cull），竖屏下把底部栏的绘制挪到 body 内容画完之后（否则底部栏可能被超长内容盖住），同时把底部栏对应的 hit rect 用 `unshift`（而非 `push`）插到 `hits` 数组最前——保证"视觉上盖在最上层"和"命中测试优先命中"两件事一致，避免万一发生的矩形重叠时点到底部栏却触发了下面盖住的内容。
+- **嵌套二级页签**（`AchievementScene` 的成就分类子页签、`EquipmentScene/inventory.ts` 的 Cards/Equipment 顶层 peer + Inventory/Craft 子页签 + `trailingPeers`）：顶层 peer 页签（含 `trailingPeers`）合并成一条底部栏；二级子页签挪到 header 下方，改用刚补完红点支持的 `drawHubTabs` 横条。`EquipmentScene` 新增 `hasGroupNav` getter 判断顶层 peer 栏是否真的会画（无 peerTab 且无 trailingPeers 时不画，也就不占竖屏高度）。
+- **`hasSidebar` 兜底 margin + 滚动区高度**（`CardCodexScene`/`TitlesScene`/`StatsScene`）：竖屏"有侧栏"分支不再减宽度、改减高度；三者各自的滚动/裁剪区域（`h - contentTop` 之类）同步减去 `bottomNavH(h)`，否则底部栏会盖住/裁切最后一行内容。
+- **`AuctionScene`**：`list.ts`/`picker.ts` 的 `renderSidebar()`/`renderPickerSidebar()` 竖屏下返回 `0`（不占宽度）；`list.ts` 的 "+ List Item" 创建按钮原来钉死在 `h - btnH - 12`（屏幕最底部），刚好是新底部栏的位置，竖屏下上移 `bottomNavH(h)`，连带 `renderList` 的可用高度一起收窄。
+
+### 20.4 已有测试的连带更新
+
+跑现有 UI 测试套件发现 4 个文件、6 个用例专门钉死了"竖屏 = 左侧栏"这个即将废弃的旧行为（`sidebarRailOrientation.ui.ts`、`equipmentHeaderAlignment.ui.ts`、`equipmentSkinsPeer.ui.ts`、`shopScene.ui.ts`）——按新的竖屏布局改写断言（底部栏的 y 应接近屏幕底部、cell 宽度应明显大于旧侧栏宽度、Equipment/Skins 应与 peerTab 同处一行等），横屏相关断言未改动。
+
+### 20.5 验证
+
+- `tsc --noEmit` 逐批次全绿；`npm run build:web` 生产构建成功（仅预置的资源体积告警，与本次无关）。
+- `npm run test:ui` 全量跑过：修好的 6 个用例转绿；其余约 50 个测试文件失败均为本 worktree 未 `npm install` 过 `server/`（`server/node_modules` 不存在）导致的 `Failed to load url jsonwebtoken` 环境问题，与本次改动无关（`git stash` 前同样会失败，只是本次任务未去装 `server/` 依赖来验证这一点，而是核实了失败原因与改动内容无关联）。
+- **未做真人截图走查**：本地 Browser 预览面板在验证阶段未显示（工具报 "pane not displayed"），已用脚本确认 dev server 正常挂载、竖屏视口渲染（375×812 canvas 存在），但无法截图核对像素级效果；用户知情后选择跳过截图、仅凭代码审查 + 类型检查 + 全量 UI 测试收尾。如后续发现竖屏视觉细节问题（尤其是 §20.3 提到的"无 mask 场景内容是否会跟底部栏抢位置"这类需要肉眼判断的边界情况），按本节记录的文件列表定位。
+- **涉及文件**（24 个原引用 `sidebarNavW` 的文件 + 4 个测试文件，逐一见 §20.1–20.4）。

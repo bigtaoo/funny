@@ -1,18 +1,20 @@
-// Shared vertical 5-tab social rail (friends/family/sect/world/mail), drawn left of the
-// notebook binding line. Used by FriendsScene and by FamilyScene/SectScene — the latter two
+// Shared 5-tab social nav (friends/family/sect/world/mail). Landscape draws it as a vertical
+// rail left of the notebook binding line; portrait draws it as a bottom nav bar instead
+// (LOBBY_IA_REDESIGN.md §18 — portrait's short edge is the whole screen width, so a left rail
+// there eats too much of it). Used by FriendsScene and by FamilyScene/SectScene — the latter two
 // used to render with no rail at all, so navigating into them (auto-jump once a family/sect
-// already exists) made the other 4 tabs appear to "vanish". Rendering the same rail in all
+// already exists) made the other 4 tabs appear to "vanish". Rendering the same nav in all
 // three keeps the social hub feeling like one persistent screen.
 //
-// Delegates cell drawing to HubTabs.drawSidebarTabs so width/height match every other left-edge
-// tab rail in the game (sidebarNavW/sidebarItemHeight) instead of the narrower notebook-margin
-// gutter this rail used to size itself off — see HubTabs.ts's own doc comment for why that gutter
-// was too narrow. Fixed per-cell height means 5 stacked cells no longer fill the whole available
-// height like before; the rail stops short and leaves blank space below, which is the accepted
-// trade-off for matching every other hub's cell size.
+// Landscape delegates cell drawing to HubTabs.drawSidebarTabs so width/height match every other
+// left-edge tab rail in the game (sidebarNavW/sidebarItemHeight) instead of the narrower
+// notebook-margin gutter this rail used to size itself off — see HubTabs.ts's own doc comment for
+// why that gutter was too narrow. Fixed per-cell height means 5 stacked cells no longer fill the
+// whole available height like before; the rail stops short and leaves blank space below, which is
+// the accepted trade-off for matching every other hub's cell size.
 import * as PIXI from 'pixi.js-legacy';
 import { t, TranslationKey } from '../i18n';
-import { drawSidebarTabs, sidebarNavW, type HubTab } from '../ui/widgets/HubTabs';
+import { drawSidebarTabs, drawBottomNavTabs, sidebarNavW, bottomNavH, type HubTab } from '../ui/widgets/HubTabs';
 
 export type SocialTab = 'friends' | 'family' | 'sect' | 'world' | 'mail';
 
@@ -45,7 +47,6 @@ export function drawSocialTabRail(
   // no hit rect at all, so it defaults off here.
   activeTappable = false,
 ): SocialTabRailHit[] {
-  const railW = sidebarNavW(w, h, landscape);
   const defs = TAB_DEFS.filter((tabDef) => !hidden.includes(tabDef.id));
   const tabs: HubTab[] = defs.map((tabDef) => ({
     label: t(tabDef.key),
@@ -53,6 +54,13 @@ export function drawSocialTabRail(
     badge: (badges[tabDef.id] ?? 0) > 0,
   }));
 
+  if (!landscape) {
+    const barH = bottomNavH(h);
+    const { hits } = drawBottomNavTabs(container, w, h - barH, barH, tabs, (i) => onSelect(defs[i]!.id), { activeTappable });
+    return hits;
+  }
+
+  const railW = sidebarNavW(w, h, landscape);
   const { hits } = drawSidebarTabs(container, railW, top, h, tabs, (i) => onSelect(defs[i]!.id), { activeTappable });
   return hits;
 }

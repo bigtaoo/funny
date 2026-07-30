@@ -104,6 +104,16 @@ export function drawHubTabs(
     }
     container.addChild(lbl);
 
+    if (tab.badge) {
+      const r = Math.round(stripH * 0.09);
+      const dot = new PIXI.Graphics();
+      dot.beginFill(C.red);
+      dot.lineStyle(Math.max(1, Math.round(r * 0.5)), 0xffffff, 0.9);
+      dot.drawCircle(x + cellW - r, y + r, r);
+      dot.endFill();
+      container.addChild(dot);
+    }
+
     if (!tab.active) {
       hits.push({ rect: { x, y, w: cellW, h: stripH }, fn: () => onSelect(i) });
     }
@@ -138,6 +148,19 @@ export function sidebarItemHeight(h: number): number {
  */
 export function sidebarNavW(w: number, h: number, landscape: boolean): number {
   return landscape ? Math.round(h * 0.2) : Math.round(w * 0.2);
+}
+
+/**
+ * Height of the portrait bottom nav bar (see {@link drawBottomNavTabs}) — the
+ * portrait counterpart to `sidebarNavW`'s left rail (LOBBY_IA_REDESIGN.md §18:
+ * portrait replaces the left rail with a bottom bar, since portrait's short
+ * edge is the whole screen width and a left rail there eats too much of it).
+ * Reuses `sidebarItemHeight`'s scale directly — that constant already tunes
+ * the icon/label sizing for one nav cell; a bottom bar is the same cell
+ * content, just laid out horizontally instead of stacked.
+ */
+export function bottomNavH(h: number): number {
+  return sidebarItemHeight(h);
 }
 
 /**
@@ -229,4 +252,83 @@ export function drawSidebarTabs(
   });
 
   return { hits, bottom: cy - gap };
+}
+
+/**
+ * Draw a horizontal row of nav cells spanning the full width at the bottom of
+ * the screen — the portrait counterpart to {@link drawSidebarTabs} (LOBBY_IA_REDESIGN.md
+ * §18). Cell content (icon over label, top-right badge dot) is the same as one
+ * `drawSidebarTabs` cell, just laid out left-to-right across `w` instead of
+ * stacked top-to-bottom down a rail; sizing/spacing mirrors {@link drawHubTabs}'s
+ * equal-width-cell math so the two horizontal strips (this one at the bottom,
+ * `drawHubTabs` for in-scene sub-tabs) read as the same visual family.
+ *
+ * Deliberately kept flat (no `sub`/nesting support, no `.bottom` chaining):
+ * a portrait screen has exactly one bottom nav bar, so scenes that used to
+ * stack two `drawSidebarTabs` groups down the left rail move their second
+ * (nested) group to a `drawHubTabs` strip under the header instead — see the
+ * per-scene conversion notes in LOBBY_IA_REDESIGN.md §18.
+ */
+export function drawBottomNavTabs(
+  container: PIXI.Container,
+  w: number,
+  y: number,
+  barH: number,
+  tabs: HubTab[],
+  onSelect: (index: number) => void,
+  opts?: { activeTappable?: boolean },
+): { hits: Array<{ rect: Rect; fn: () => void }> } {
+  const hits: Array<{ rect: Rect; fn: () => void }> = [];
+  if (tabs.length === 0) return { hits };
+
+  const pad = Math.round(w * 0.02);
+  const gap = Math.round(w * 0.015);
+  const cellW = Math.round((w - pad * 2 - gap * (tabs.length - 1)) / tabs.length);
+
+  tabs.forEach((tab, i) => {
+    const x = pad + i * (cellW + gap);
+    const box = sketchPanel(cellW, barH, {
+      fill: tab.active ? C.dark : C.paper,
+      border: tab.active ? C.accent : C.line,
+      width: tab.active ? 2.4 : 1.6,
+      seed: seedFor(x, y, cellW),
+    });
+    box.x = x; box.y = y;
+    container.addChild(box);
+
+    const fg = tab.active ? 0xffffff : C.mid;
+    const lbl = txt(tab.label, snapFont(Math.round(barH * 0.24)), fg, true);
+    lbl.anchor.set(0.5, 0.5);
+    lbl.x = x + cellW / 2;
+    const maxLblW = cellW - Math.round(cellW * 0.14);
+    if (lbl.width > maxLblW) lbl.scale.set(maxLblW / lbl.width);
+
+    if (tab.icon) {
+      const iconSize = Math.round(barH * 0.34);
+      const icon = buildIcon(tab.icon, iconSize, fg);
+      icon.x = x + cellW / 2 - iconSize / 2;
+      icon.y = y + barH * 0.2;
+      container.addChild(icon);
+      lbl.y = y + barH * 0.72;
+    } else {
+      lbl.y = y + barH / 2;
+    }
+    container.addChild(lbl);
+
+    if (tab.badge) {
+      const r = Math.round(barH * 0.1);
+      const dot = new PIXI.Graphics();
+      dot.beginFill(C.red);
+      dot.lineStyle(Math.max(1, Math.round(r * 0.5)), 0xffffff, 0.9);
+      dot.drawCircle(x + cellW - r, y + r, r);
+      dot.endFill();
+      container.addChild(dot);
+    }
+
+    if (!tab.active || opts?.activeTappable) {
+      hits.push({ rect: { x, y, w: cellW, h: barH }, fn: () => onSelect(i) });
+    }
+  });
+
+  return { hits };
 }

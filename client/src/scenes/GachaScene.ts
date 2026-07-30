@@ -11,7 +11,7 @@ import { showToastMessage } from '../net/log';
 import { buildDecorCLayer } from '../render/decorCLayer';
 import { gachaCardTexture, gachaFrameTexture, gachaBannerTexture, preloadGachaTextures } from '../render/gachaArt';
 import { drawSceneHeader, drawHeaderCurrency, HEADER_ACCENT } from '../ui/widgets/SceneHeader';
-import { drawSidebarTabs, sidebarNavW, type HubTab } from '../ui/widgets/HubTabs';
+import { drawSidebarTabs, drawBottomNavTabs, sidebarNavW, bottomNavH, type HubTab } from '../ui/widgets/HubTabs';
 import { BusyTracker, withTimeout, TimeoutError } from '../ui/busyTracker';
 import { buildIcon } from '../render/icons';
 import { buildCoinIcon } from '../render/coinIconAtlas';
@@ -300,8 +300,13 @@ export class GachaScene implements Scene {
 
     this.drawBackground();
     const tbH = this.drawHeader();
-    this.drawSidebar(tbH);
+    // Landscape draws the rail first (disjoint region from the body, order doesn't matter). Portrait's
+    // bottom bar is drawn AFTER the body so it always paints on top of a tall/unbounded body layout —
+    // drawSidebar unshifts its own hits in that branch so hit-testing still resolves to the nav bar
+    // first, matching the visual stacking, in case of an accidental rect overlap.
+    if (this.landscape) this.drawSidebar(tbH);
     this.drawBody(tbH);
+    if (!this.landscape) this.drawSidebar(tbH);
     if (this.reveal) this.drawReveal(this.reveal);
     if (this.oddsOpen && this.pool) this.drawOdds(this.pool);
     if (this.bt.loadingVisible) drawLoadingOverlay(this.container, this.w, this.h, this.bt.dots, t('common.processing'));
@@ -328,9 +333,12 @@ export class GachaScene implements Scene {
   }
 
   /**
-   * Shop group nav [Shop|Coins|Gacha|BattlePass] (LOBBY_IA_REDESIGN §9), Gacha active: a vertical
-   * rail (`sidebarNavW`, matching every other hub's left tab rail). Only drawn when in the group
-   * context (openShop injected). Consumes no vertical space — drawBody shifts its content start x instead.
+   * Shop group nav [Shop|Coins|Gacha|BattlePass] (LOBBY_IA_REDESIGN §9), Gacha active. Only drawn
+   * when in the group context (openShop injected). Landscape: a vertical rail (`sidebarNavW`,
+   * matching every other hub's left tab rail) — consumes no vertical space, drawBody shifts its
+   * content start x instead. Portrait: a bottom nav bar instead (§18), drawn after drawBody (see
+   * render()) so it's never visually run under by the body's own unbounded layout; its hits are
+   * unshifted to the front so hit-testing matches that visual stacking.
    */
   private drawSidebar(tbH: number): void {
     if (!this.cb.openShop) return;
@@ -351,17 +359,25 @@ export class GachaScene implements Scene {
       tabs.push({ label: t('recharge.title'), active: false, icon: 'coinChest', badge: this.cb.getRechargeBadge?.() ?? false });
       actions.push(() => this.cb.openRecharge?.());
     }
-    const sidebarW = sidebarNavW(w, h, landscape);
-    const { hits } = drawSidebarTabs(this.container, sidebarW, tbH, h, tabs, (i) => actions[i]?.());
+    const onSelect = (i: number): void => actions[i]?.();
+    if (!landscape) {
+      const barH = bottomNavH(h);
+      const { hits } = drawBottomNavTabs(this.container, w, h - barH, barH, tabs, onSelect);
+      this.hits.unshift(...hits);
+      return;
+    }
+    const sidebarW = sidebarNavW(w, h, true);
+    const { hits } = drawSidebarTabs(this.container, sidebarW, tbH, h, tabs, onSelect);
     this.hits.push(...hits);
   }
 
-  /** Content column bounds: shifted right of the sidebar rail when in the shop group, else full width. */
+  /** Content column bounds: shifted right of the sidebar rail when in the shop group (landscape
+   *  only — portrait's bottom bar reserves no width), else full width. */
   private contentBounds(): { x0: number; w: number } {
     const { w, h, landscape } = this;
-    if (!this.cb.openShop) return { x0: 0, w };
+    if (!this.cb.openShop || !landscape) return { x0: 0, w };
     const gap = Math.round(w * 0.02);
-    const x0 = sidebarNavW(w, h, landscape) + gap;
+    const x0 = sidebarNavW(w, h, true) + gap;
     return { x0, w: w - x0 - gap };
   }
 

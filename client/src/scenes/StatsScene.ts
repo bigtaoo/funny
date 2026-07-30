@@ -150,25 +150,33 @@ export class StatsScene implements Scene {
     const tbH = hdr.headerH;
     this.hits.push({ rect: hdr.backRect, fn: () => this.cb.onBack() });
 
-    // Left margin rail: the Career hub peer strip [Stats|Titles|Achievements] (LOBBY_IA_REDESIGN P1.5
-    // peer-tab convention, see CareerTabs.ts), stacked inside the notebook-margin gutter below
-    // the header (CardScene/EquipmentScene sidebar convention), so the stat panels start clear
-    // of the red margin rule instead of the rule cutting through them.
-    const sidebarW = sidebarNavW(w, h, this.landscape);
+    // The Career hub peer strip [Stats|Titles|Achievements] (LOBBY_IA_REDESIGN P1.5 peer-tab
+    // convention, see CareerTabs.ts): landscape stacks it in the notebook-margin gutter below the
+    // header so the stat panels start clear of the red margin rule; portrait draws it as a bottom
+    // nav bar instead (§18) — content no longer reserves any horizontal width for it there, so it
+    // falls back to a flat margin, same as CardCodexScene/TitlesScene when there's no sidebar.
+    // Drawn last (after body content) so the portrait bottom bar always paints on top even if a
+    // tall stats page would otherwise run under it.
     const sidebarTop = tbH + Math.round(h * 0.02);
-    if (this.cb.onOpenTitles && this.cb.onOpenAchievements && this.cb.onOpenCodex) {
-      const { hits } = drawCareerTabs(this.container, sidebarW, sidebarTop, h, 'stats', {
-        onOpenStats: () => {},
-        onOpenTitles: this.cb.onOpenTitles,
-        onOpenAchievements: this.cb.onOpenAchievements,
-        onOpenCodex: this.cb.onOpenCodex,
-        hasClaimableAchievement: this.cb.hasClaimableAchievement,
-      });
-      this.hits.push(...hits);
-    }
+    const drawCareer = () => {
+      if (this.cb.onOpenTitles && this.cb.onOpenAchievements && this.cb.onOpenCodex) {
+        const { hits } = drawCareerTabs(this.container, w, h, landscape, sidebarTop, 'stats', {
+          onOpenStats: () => {},
+          onOpenTitles: this.cb.onOpenTitles,
+          onOpenAchievements: this.cb.onOpenAchievements,
+          onOpenCodex: this.cb.onOpenCodex,
+          hasClaimableAchievement: this.cb.hasClaimableAchievement,
+        });
+        // Portrait draws this last (visually on top of body content) but hit-testing is first-match
+        // in push order — unshift so an accidental rect overlap still resolves to the nav bar, not
+        // whatever body content happens to sit underneath it.
+        if (landscape) this.hits.push(...hits); else this.hits.unshift(...hits);
+      }
+    };
+    if (landscape) drawCareer();
 
     const pad = Math.round(w * 0.04);
-    const contentX = sidebarW + Math.round(w * 0.025);
+    const contentX = landscape && hasSidebar ? sidebarNavW(w, h, true) + Math.round(w * 0.025) : Math.round(w * 0.06);
     const topY = tbH + Math.round(h * 0.035);
     const gap = Math.round(h * 0.022);
 
@@ -246,6 +254,7 @@ export class StatsScene implements Scene {
       y = this.drawSection(contentX, y, secW, t('stats.campaign'), C.gold, campaignRows); y += gap;
       y = this.drawSection(contentX, y, secW, t('stats.collection'), C.green, collectionRows); y += gap;
       this.drawHistorySection(contentX, y, secW);
+      drawCareer();
     }
   }
 

@@ -7,6 +7,7 @@ import { ui as C, txt } from '../../render/sketchUi';
 import { type IconKind } from '../../render/icons';
 import { drawScrollIndicator } from '../../ui/widgets/ScrollIndicator';
 import { peekViewportH } from '../../ui/widgets/scrollPeek';
+import { bottomNavH } from '../../ui/widgets/HubTabs';
 import { type Constructor, type ShopSceneBaseCtor, type CardSpec, type BtnSpec } from './base';
 import { FS } from '../../render/fontScale';
 import { skinDisplayName } from '../../game/meta/skinDefs';
@@ -49,9 +50,10 @@ export function ShopMixin<TBase extends ShopSceneBaseCtor>(Base: TBase): TBase &
   return class extends Base {
     /** Shop tab: monthly/year cards + starter packs + skins as an icon-card grid. */
     drawShopGrid(body: PIXI.Container, top: number): void {
-      const { w, h } = this;
+      const { w, h, landscape } = this;
       const bodyTop = top + Math.round(h * 0.02);
-      const availH = h - bodyTop - Math.round(h * 0.02);
+      // Portrait's group nav is a bottom bar (§18) — reserve bottomNavH off the bottom.
+      const availH = h - bodyTop - Math.round(h * 0.02) - (landscape ? 0 : bottomNavH(h));
 
       if (this.loading) {
         this.maskBody(top, availH);
