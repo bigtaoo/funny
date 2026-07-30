@@ -5,9 +5,6 @@ import {
   PVE_LEVELS,
   findPveLevel,
   chaptersClearedCount,
-  PVE_UPGRADE_COSTS,
-  findPveUpgrade,
-  pveUpgradeCost,
   shouldSpotCheck,
   PVE_VERIFY_SAMPLE_RATE,
   CHAPTER_ANCHOR_CARD,
@@ -144,53 +141,6 @@ describe('CHAPTER_ANCHOR_CARD', () => {
 
   it('the exclusive reward is granted at level 2 (distinct from the level-1 per-level drop)', () => {
     expect(CHAPTER_ANCHOR_CARD_LEVEL).toBe(2);
-  });
-});
-
-// ── upgrade costs ─────────────────────────────────────────────────────────────────
-
-describe('PVE_UPGRADE_COSTS', () => {
-  it('upgrade ids are unique', () => {
-    const ids = PVE_UPGRADE_COSTS.map((u) => u.id);
-    expect(new Set(ids).size).toBe(ids.length);
-  });
-
-  it('every upgrade uses a known material and positive baseCost/maxLevel', () => {
-    for (const u of PVE_UPGRADE_COSTS) {
-      expect(MATERIALS).toContain(u.material);
-      expect(u.baseCost).toBeGreaterThan(0);
-      expect(u.maxLevel).toBeGreaterThan(0);
-    }
-  });
-
-  it('findPveUpgrade resolves known / misses unknown', () => {
-    expect(findPveUpgrade('inf_hp')?.material).toBe('scrap');
-    expect(findPveUpgrade('nope')).toBeUndefined();
-  });
-});
-
-describe('pveUpgradeCost', () => {
-  const inf = findPveUpgrade('inf_hp')!; // baseCost 3, maxLevel 5
-
-  it('level 0→1 costs baseCost × 1', () => {
-    expect(pveUpgradeCost(inf, 0)).toEqual({ material: 'scrap', amount: 3 });
-  });
-
-  it('scales linearly with the target level', () => {
-    expect(pveUpgradeCost(inf, 1)!.amount).toBe(6);
-    expect(pveUpgradeCost(inf, 4)!.amount).toBe(15);
-  });
-
-  it('returns null at or beyond max level', () => {
-    expect(pveUpgradeCost(inf, 5)).toBeNull();
-    expect(pveUpgradeCost(inf, 99)).toBeNull();
-  });
-
-  it('total cost to max is the linear sum', () => {
-    let total = 0;
-    for (let lv = 0; lv < inf.maxLevel; lv++) total += pveUpgradeCost(inf, lv)!.amount;
-    // 3*(1+2+3+4+5) = 45
-    expect(total).toBe(45);
   });
 });
 

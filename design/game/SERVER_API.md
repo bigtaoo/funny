@@ -138,19 +138,18 @@ POST /iap/verify      { platform, receipt }    → { save: SaveData, granted: nu
 
 ### 2.7 PvE 养成（服务器权威，ADR-006 / `PVE_INTEGRITY_PLAN.md §8`）
 
-> `progress.cleared` / `progress.stars` / `materials` / `pveUpgrades` 自 ADR-006 起**服务器权威**——这四段只能经下列端点写（当时的表述是"`PUT /save` 同步段收窄为仅 `equipped`/`flags`"；`PUT /save` 本身已于 ADR-056 整个下线，见 §2.2）。奖励按 `@nw/shared/pveRewards.ts` 服务器重算，不信客户端自报数额。
+> `progress.cleared` / `progress.stars` / `materials` 自 ADR-006 起**服务器权威**——这几段只能经下列端点写（当时的表述是"`PUT /save` 同步段收窄为仅 `equipped`/`flags`"；`PUT /save` 本身已于 ADR-056 整个下线，见 §2.2）。奖励按 `@nw/shared/pveRewards.ts` 服务器重算，不信客户端自报数额。`pveUpgrades` 曾经也是这一批（第三个端点 `/pve/upgrade`），**该端点已于 2026-07-30 删除**（见下方说明）；字段本身仍在 `SaveData` 上只读留存（L0 反作弊比对用），不再有任何写入路径。
 
 ```
 POST /pve/clear    { levelId, stars, pveSnapshot?, replayRef? }
    → { save: SaveData, capped?: boolean, needsReplay?: boolean, verifyId?: string }
 POST /pve/verify   { verifyId, frames }        → { save: SaveData, status: 'verified'|'rejected'|'unverified' }
-POST /pve/upgrade  { upgradeId }               → { save: SaveData } | INSUFFICIENT_MATERIALS
 ```
 
 - **`/pve/clear`**：校验 level 存在 + **已解锁**（前置关在 `progress.cleared` 内）+ `stars≤3` → 按 `grantForClear(levelId,isFirst)` 在**每日上限**（`PVE_DAILY_CLEAR_REWARD_CAP`，按 `dayKey` 原子计数，Redis 存储，类比 `victoryDaily`，均见 §5 的 `dailyCounter.ts` 说明）内发材料；首通额外发首通奖励 + 解锁下一关 + 记星（取 max）→ 原子写 `progress/stars/materials`（rev 守卫）→ 回推权威 save。超上限：仍写 progress/stars，材料不发（`capped:true`）。
 - **抽检复算（L1，复用 S1-J 对等裁判）**：`shouldSpotCheck` 命中（首通恒查 / 开局 `pveSnapshot` 与服务器权威 `pveUpgrades` 不符「开局战力不符→必作弊」/ 按 `PVE_VERIFY_SAMPLE_RATE` 随机）→ 暂扣材料、记 `pveVerifications{status:pending}`、回 `{needsReplay:true, verifyId}`；客户端补传录像帧调 `/pve/verify` → meta 经 `gateway.judge` 派第三方无头复算 → 复算星数 ≥ 声称则发材料(`verified`)，< 声称则不发(`rejected`)，无裁判可裁则 benefit-of-doubt 照发(`unverified`)。
-- **`/pve/upgrade`**：服务器按 `PVE_UPGRADE_COSTS` 校验材料足够 → 扣材料 + `pveUpgrades[id]+1` → 回推 save。**仅在线**（离线客户端禁用入口，离线通关入本地 `pendingClears` 队列、上线 flush）。
 - 两端点均返回完整权威 SaveData（客户端 adopt 镜像，同经济回执）。
+- ~~`/pve/upgrade`~~ **已删除（2026-07-30）**：曾经"服务器按 `PVE_UPGRADE_COSTS` 校验材料足够 → 扣材料 + `pveUpgrades[id]+1` → 回推 save"，CC-1 起单位养成改走 Hero Roster（`cardInv`）后彻底死代码——客户端唯一调用点 `SaveManager.upgrade()` 早已零调用方且标 `@deprecated`。删除范围：契约片段（`openapi/paths/pve.yml`）+ 两处生成产物（`openapi.yml`/`routes.gen.ts`，重跑 `gen:api:contracts`/`gen:api:server`）+ `MetaHandlers`/`PveHandlers` 类型 + 服务端 handler（`pve.ts`）+ `@nw/shared` 里同样孤儿的 `PVE_UPGRADE_COSTS`/`findPveUpgrade`/`pveUpgradeCost` + client `ApiClient`/`SaveManager` + 两侧既有测试。详见 `SLG_DESIGN_LOG.md` §43 / comm-audit-p2-remaining。
 
 ### 2.8 装备养成（服务器权威，ADR-010 / ADR-012 / `EQUIPMENT_DESIGN.md §18`）
 
