@@ -6,6 +6,7 @@ import { ErrorCode, err, ok, signToken } from '@nw/shared';
 import { regionFromAcceptLanguage, censorChat } from '@nw/shared';
 import { validateLoginId, validatePassword, validateDisplayName } from '@nw/shared';
 import { RENAME_COST } from '@nw/shared';
+import { APPEAL_REASON_MAX } from '@nw/shared';
 import { CARD_DEFS } from '@nw/shared';
 import { getOrCreateSave } from '../save.js';
 import {
@@ -32,6 +33,7 @@ type AuthHandlers = Pick<
   MetaHandlers,
   | 'authWx' | 'authDevice' | 'authRegister' | 'authLogin' | 'authPasswordChange'
   | 'deleteAccount' | 'cancelAccountDeletion' | 'recordGdprConsent' | 'authOAuth' | 'authBind' | 'profileRename'
+  | 'submitAppeal'
 >;
 
 /** C5-b account soft-delete grace period: POST /account/cancel-deletion is only honored within this window. */
@@ -402,6 +404,49 @@ export function AuthMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase & Cons
       await setDisplayName(cols, accountId, name);
       const save = await mirrorCoins(cols, accountId, charge.coinsAfter, now());
       return ok({ save, displayName: name, freeRename: false });
+    }
+
+    /**
+     * Submit an appeal against the account's currently active mute/temp-ban/ban (CONTENT_MODERATION_DESIGN.md
+     * CM10). Only allowed while an enforcement is actually active (a healed/expired mute or a long-past temp
+     * ban has nothing left to appeal), and only one open appeal at a time per account (prevents spam re-submits
+     * while the first is still pending review).
+     */
+    async submitAppeal(req: FastifyRequest, reply: FastifyReply) {
+      const accountId = accountIdOf(req);
+      const { reason } = req.body as { reason: string };
+      const trimmed = reason.trim();
+      if (!trimmed) return reply.code(400).send(err(ErrorCode.BAD_REQUEST, 'reason required'));
+
+      const { cols, now } = this.deps;
+      const existingOpen = await cols.appeals.findOne({ accountId, status: 'open' });
+      if (existingOpen) {
+        return reply.code(409).send(err(ErrorCode.ALREADY_REQUESTED, 'an appeal is already pending for this account'));
+      }
+
+      const doc = await cols.accounts.findOne({ _id: accountId }, { projection: { flags: 1 } });
+      const nowMs = now();
+      const flags = doc?.flags;
+      const bannedUntilActive = !!flags?.bannedUntil && flags.bannedUntil > nowMs;
+      const mutedUntilActive = !!flags?.mutedUntil && flags.mutedUntil > nowMs;
+      if (!flags?.banned && !bannedUntilActive && !mutedUntilActive) {
+        return reply.code(400).send(err(ErrorCode.BAD_REQUEST, 'no active enforcement to appeal'));
+      }
+
+      await cols.appeals.insertOne({
+        _id: randomUUID(),
+        accountId,
+        reason: trimmed.slice(0, APPEAL_REASON_MAX),
+        enforcementSnapshot: {
+          ...(flags?.banned ? { banned: true } : {}),
+          ...(bannedUntilActive ? { bannedUntil: flags!.bannedUntil } : {}),
+          ...(mutedUntilActive ? { mutedUntil: flags!.mutedUntil } : {}),
+          ...(typeof flags?.reputationScore === 'number' ? { reputationScore: flags.reputationScore } : {}),
+        },
+        status: 'open',
+        createdAt: nowMs,
+      });
+      return ok({ ok: true });
     }
   };
 }

@@ -18,6 +18,7 @@ import type { components as auctionComponents } from './openapi-auction';
 import { sampleServerNow } from './serverClock';
 import { requestPlatformHeader } from './ApiClient/base';
 import { currentChatRegion } from './chatRegion';
+import { maybePromptAppeal } from './log';
 
 // ── Generated DTO type aliases (single source of truth = openapi-world.yml) ──
 
@@ -208,6 +209,7 @@ export class WorldApiClient {
     // breaking the AuctionScene error-code→toast mapping. Kept tolerant of a missing error.
     const json = await res.json() as { ok: boolean; data?: T; error?: { code?: string; message?: string } };
     if (!json.ok) {
+      maybePromptAppeal(json.error?.code ?? 'UNKNOWN');
       throw new WorldApiError(json.error?.code ?? 'UNKNOWN', json.error?.message ?? 'world api error');
     }
     return json.data as T;

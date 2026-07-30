@@ -312,6 +312,16 @@ describe.skipIf(!mongo)('socialsvc FamilyService e2e', () => {
     expect(result.body).toBe('what the ****');
   });
 
+  it('sendMessage: rejects delivery while muted (CONTENT_MODERATION_DESIGN.md CM6/CM7.1)', async () => {
+    await svc.createFamily('leader', 'Muters', 'MUTE');
+    meta.mute('leader', nowMs + 3600_000); // muted 1h into the future
+    await expectErr(svc.sendMessage('leader', 'Leader', 'hello'), 'ACCOUNT_MUTED');
+    // Once the mute has expired, the same account can post again.
+    nowMs += 3600_001;
+    const result = await svc.sendMessage('leader', 'Leader', 'hello again');
+    expect(result.body).toBe('hello again');
+  });
+
   // Regression: senderName must never trust a stale client-side cache (e.g. leftover from before
   // a rename, or the raw loginId fallback) once meta can resolve the account's real display name.
   it('sendMessage: senderName resolved from meta.displayName, not blindly trusted from the client', async () => {

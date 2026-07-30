@@ -33,11 +33,11 @@ export interface BlockDoc {
 }
 
 /**
- * UGC report (design-doc-audit-2026-07, COMPLIANCE_GLOBAL.md §7 "测试期最低线"): a player flagging another
- * player's displayName/private-chat behavior for admin review. Deliberately minimal — no in-app moderation
- * workflow yet (`status` is always 'open' at creation; reviewing/actioning is an ops-side follow-up), this
- * just ensures reports are captured and queryable instead of having no capture path at all (the state before
- * this: 拉黑/block existed, 举报/report did not).
+ * UGC report (design-doc-audit-2026-07, COMPLIANCE_GLOBAL.md §7 "测试期最低线"; resolve loop added
+ * CONTENT_MODERATION_DESIGN.md CM9/P4): a player flagging another player's displayName/chat behavior for
+ * admin review. `status` starts 'open' and is moved to 'dismissed'/'upheld' by POST /internal/reports/:id/resolve
+ * (admin-only, X-Internal-Key) — resolving only touches this doc's own status; the reputation-score penalty on
+ * 'upheld' is a separate admin→metaserver call (CM7's single enforcement path), not performed here.
  */
 export interface ReportDoc {
   _id: string;      // uuid
@@ -45,7 +45,15 @@ export interface ReportDoc {
   targetId: string;
   reason: string;   // free-text reason (capped, see REPORT_REASON_MAX); admin-only, not shown to other players, so not run through censorChat
   ts: number;
-  status: 'open';
+  status: 'open' | 'dismissed' | 'upheld';
+  /** Optional pointer back to the reported content, for admin review (CM9). Not populated by the current
+   *  reportUser() call site (player-level report only, no message/name reference yet) — reserved for a future
+   *  per-message/per-name report entry point; kept optional so today's reports remain valid without it. */
+  contentRef?:
+    | { kind: 'message'; conversationId: string; messageId: string }
+    | { kind: 'name'; snapshot: string };
+  resolvedBy?: string;
+  resolvedAt?: number;
 }
 
 export interface ConversationDoc {

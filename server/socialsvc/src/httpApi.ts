@@ -106,7 +106,7 @@ function sendErr(res: ServerResponse, code: ErrorCode, message: string): void {
   send(res, ERROR_HTTP_STATUS[code] ?? 400, err(code, message));
 }
 
-type SocialError = 'NOT_FOUND' | 'BAD_REQUEST' | 'ALREADY_FRIEND' | 'FRIEND_CAP_REACHED' | 'NOT_FRIEND' | 'BLOCKED';
+type SocialError = 'NOT_FOUND' | 'BAD_REQUEST' | 'ALREADY_FRIEND' | 'FRIEND_CAP_REACHED' | 'NOT_FRIEND' | 'BLOCKED' | 'MUTED';
 function sendSocialErr(res: ServerResponse, e: SocialError): void {
   switch (e) {
     case 'NOT_FOUND': return sendErr(res, ErrorCode.NOT_FOUND, 'not found');
@@ -114,6 +114,7 @@ function sendSocialErr(res: ServerResponse, e: SocialError): void {
     case 'FRIEND_CAP_REACHED': return sendErr(res, ErrorCode.FRIEND_CAP_REACHED, 'friend cap reached');
     case 'NOT_FRIEND': return sendErr(res, ErrorCode.NOT_FRIEND, 'not friends');
     case 'BLOCKED': return sendErr(res, ErrorCode.BLOCKED, 'blocked');
+    case 'MUTED': return sendErr(res, ErrorCode.ACCOUNT_MUTED, 'muted');
     default: return sendErr(res, ErrorCode.BAD_REQUEST, 'bad request');
   }
 }
@@ -361,12 +362,32 @@ export function startHttpApi(
           return send(res, 200, ok({}));
         }
 
-        // Open UGC reports (ops/admin review queue, design-doc-audit-2026-07 COMPLIANCE_GLOBAL.md §7).
-        // No in-app moderation UI yet — this is the minimal viable visibility bar (a DB collection with
-        // zero read access would leave reports permanently invisible to anyone).
+        // UGC reports (ops/admin review queue, design-doc-audit-2026-07 COMPLIANCE_GLOBAL.md §7;
+        // status filter + resolve added CONTENT_MODERATION_DESIGN.md CM9/P4).
         if (method === 'GET' && path === '/internal/reports') {
           const limit = numQ(q.get('limit'), 200);
-          return send(res, 200, ok({ reports: await friendSvc.listOpenReports(limit) }));
+          const statusQ = q.get('status');
+          const status = statusQ === 'dismissed' || statusQ === 'upheld' || statusQ === 'open' ? statusQ : 'open';
+          return send(res, 200, ok({ reports: await friendSvc.listReports(status, limit) }));
+        }
+
+        // Resolve a report (CM9): admin backend is the sole caller, and separately calls metaserver's
+        // penalty endpoint when resolution='upheld' (CM7's single enforcement path — this endpoint never
+        // touches reputationScore itself).
+        {
+          const m = /^\/internal\/reports\/([^/]+)\/resolve$/.exec(path);
+          if (method === 'POST' && m) {
+            const id = decodeURIComponent(m[1]!);
+            const body = await readJson(req);
+            const resolution = body.resolution;
+            if (resolution !== 'dismissed' && resolution !== 'upheld') {
+              return sendErr(res, ErrorCode.BAD_REQUEST, 'resolution must be dismissed or upheld');
+            }
+            const resolvedBy = typeof body.resolvedBy === 'string' ? body.resolvedBy : 'unknown';
+            const okResolved = await friendSvc.resolveReport(id, resolution, resolvedBy);
+            if (!okResolved) return sendErr(res, ErrorCode.NOT_FOUND, 'report not found or already resolved');
+            return send(res, 200, ok({}));
+          }
         }
 
         return sendErr(res, ErrorCode.NOT_FOUND, 'internal endpoint not found');

@@ -35,6 +35,13 @@ export class FakeMeta implements SocialMetaClient {
     return this;
   }
 
+  /** Marks an already-added account as muted until the given epoch ms (CONTENT_MODERATION_DESIGN.md CM7.1 test helper). */
+  mute(accountId: string, until: number): this {
+    const p = this.byAccount.get(accountId);
+    if (p) this.byAccount.set(accountId, { ...p, mutedUntil: until });
+    return this;
+  }
+
   async resolveByPublicId(publicId: string): Promise<{ accountId: string; profile: ProfileView } | null> {
     const accountId = this.byPublicId.get(publicId);
     if (!accountId) return null;

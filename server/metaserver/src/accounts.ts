@@ -188,14 +188,28 @@ export async function ensureDisplayName(cols: Collections, accountId: string): P
  * Public profile (display name + 9-digit numeric public id). The gateway uses this to show players
  * in a room as nickname (#id) rather than accountId. publicId is lazily generated if missing.
  */
+/**
+ * CONTENT_MODERATION_DESIGN.md CM7.1: mute status, piggybacked on the profile fetch worldsvc's
+ * sendMessage() already makes on every post — no extra cross-service round trip for the mute check.
+ * A dedicated async function (not an inline `cols.accounts.findOne(...)` expression in a Promise.all
+ * array) so a missing/misconfigured `cols.accounts` in a caller's test double rejects like the other
+ * Promise.all members instead of throwing synchronously while the array literal is still being built
+ * (which would happen before Promise.all ever runs, orphaning the other members' promises).
+ */
+async function getMutedUntil(cols: Collections, accountId: string): Promise<number | undefined> {
+  const doc = await cols.accounts.findOne({ _id: accountId }, { projection: { 'flags.mutedUntil': 1 } });
+  return doc?.flags?.mutedUntil;
+}
+
 export async function getProfile(
   cols: Collections,
   accountId: string,
-): Promise<{ displayName?: string; publicId: string; equippedTitle?: string; avatarId?: string }> {
-  const [displayName, saveDoc, publicId] = await Promise.all([
+): Promise<{ displayName?: string; publicId: string; equippedTitle?: string; avatarId?: string; mutedUntil?: number }> {
+  const [displayName, saveDoc, publicId, mutedUntil] = await Promise.all([
     ensureDisplayName(cols, accountId),
     cols.saves.findOne({ _id: accountId }, { projection: { 'save.equipped': 1 } }),
     ensurePublicId(cols, accountId),
+    getMutedUntil(cols, accountId),
   ]);
   const equipped = saveDoc?.save.equipped as Record<string, string> | undefined;
   const equippedTitle = equipped?.['title'];
@@ -205,6 +219,7 @@ export async function getProfile(
     publicId,
     ...(equippedTitle ? { equippedTitle } : {}),
     ...(avatarId ? { avatarId } : {}),
+    ...(mutedUntil ? { mutedUntil } : {}),
   };
 }
 

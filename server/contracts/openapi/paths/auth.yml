@@ -342,3 +342,38 @@
       '402': { $ref: '#/components/responses/ErrorResp' }
       '503': { $ref: '#/components/responses/ErrorResp' }
 
+
+/account/appeal:
+  post:
+    operationId: submitAppeal
+    tags: [auth]
+    summary: Submit an appeal against the account's currently active mute/temp-ban/ban (CONTENT_MODERATION_DESIGN.md CM10). Only allowed while an enforcement is active; one open appeal per account at a time.
+    security: [{ bearerAuth: [] }]
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [reason]
+            properties:
+              reason: { type: string, minLength: 1, maxLength: 500 }
+    responses:
+      '200':
+        description: Appeal submitted
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [ok, data]
+              properties:
+                ok: { type: boolean, enum: [true] }
+                data:
+                  type: object
+                  required: [ok]
+                  properties:
+                    ok: { type: boolean, enum: [true] }
+      '400': { $ref: '#/components/responses/ErrorResp' }
+      '401': { $ref: '#/components/responses/ErrorResp' }
+      '403': { $ref: '#/components/responses/ErrorResp' }
+      '409': { $ref: '#/components/responses/ErrorResp' }

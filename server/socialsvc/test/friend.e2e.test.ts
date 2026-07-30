@@ -148,7 +148,7 @@ describe.skipIf(!mongo)('socialsvc FriendService e2e', () => {
     // Friendship (a↔b) is untouched — reporting is not the same action as blocking.
     expect(await m.collections.friendEdges.countDocuments({})).toBe(2);
 
-    const open = await svc.listOpenReports();
+    const open = await svc.listReports();
     expect(open).toHaveLength(2);
     expect(open[0]).toMatchObject({ reporterId: 'a', targetId: 'b', reason: 'spamming private chat', status: 'open' });
     expect(open[1]).toMatchObject({ reporterId: 'a', targetId: 'c', reason: 'harassment', status: 'open' });
@@ -157,15 +157,38 @@ describe.skipIf(!mongo)('socialsvc FriendService e2e', () => {
   it('reportUser: rejects reporting yourself or a nonexistent player', async () => {
     expect(await svc.reportUser('a', 'P-A', 'self-report attempt')).toBe(false);
     expect(await svc.reportUser('a', 'P-NOPE', 'ghost')).toBe(false);
-    expect(await svc.listOpenReports()).toHaveLength(0);
+    expect(await svc.listReports()).toHaveLength(0);
   });
 
   it('reportUser: reason is trimmed and capped at REPORT_REASON_MAX', async () => {
     const tooLong = 'x'.repeat(600);
     await svc.reportUser('a', 'P-B', `  ${tooLong}  `);
-    const [doc] = await svc.listOpenReports();
+    const [doc] = await svc.listReports();
     expect(doc!.reason.length).toBe(REPORT_REASON_MAX);
     expect(doc!.reason.startsWith(' ')).toBe(false); // leading/trailing whitespace trimmed first
+  });
+
+  // ── Report resolve (CONTENT_MODERATION_DESIGN.md CM9/P4) ────────────────────────────
+
+  it('resolveReport: dismissed/upheld move the report out of the open queue and stamp resolvedBy/resolvedAt', async () => {
+    await svc.reportUser('a', 'P-B', 'spamming');
+    const [open] = await svc.listReports();
+    nowMs += 500;
+    expect(await svc.resolveReport(open!._id, 'upheld', 'admin-1')).toBe(true);
+
+    expect(await svc.listReports('open')).toHaveLength(0);
+    const [resolved] = await svc.listReports('upheld');
+    expect(resolved).toMatchObject({ _id: open!._id, status: 'upheld', resolvedBy: 'admin-1' });
+    expect(resolved!.resolvedAt).toBe(nowMs);
+  });
+
+  it('resolveReport: returns false for an unknown id or a report that is not open (no double-resolve)', async () => {
+    expect(await svc.resolveReport('nonexistent', 'dismissed', 'admin-1')).toBe(false);
+
+    await svc.reportUser('a', 'P-B', 'spamming');
+    const [open] = await svc.listReports();
+    expect(await svc.resolveReport(open!._id, 'dismissed', 'admin-1')).toBe(true);
+    expect(await svc.resolveReport(open!._id, 'upheld', 'admin-2')).toBe(false);
   });
 
   it('removeFriend: deletes both edges and pushes an unfriend update', async () => {
@@ -194,6 +217,15 @@ describe.skipIf(!mongo)('socialsvc FriendService e2e', () => {
     // Validation: empty and self.
     expect(await svc.sendMessage('a', 'P-B', '   ', 'global')).toMatchObject({ error: 'BAD_REQUEST' });
     expect(await svc.sendMessage('a', 'P-A', 'self', 'global')).toMatchObject({ error: 'BAD_REQUEST' });
+  });
+
+  it('sendMessage: rejects delivery while the sender is muted (CONTENT_MODERATION_DESIGN.md CM6/CM7.1)', async () => {
+    await befriend('a', 'P-B', 'b');
+    meta.mute('a', nowMs + 3600_000); // muted 1h into the future
+    await expect(svc.sendMessage('a', 'P-B', 'hey', 'global')).resolves.toMatchObject({ error: 'MUTED' });
+    // Once the mute has expired, the same sender can post again.
+    nowMs += 3600_001;
+    await expect(svc.sendMessage('a', 'P-B', 'hey again', 'global')).resolves.toMatchObject({ kind: 'ok' });
   });
 
   it('getConversations / getMessages / markConversationRead: peer view, history, unread clear', async () => {

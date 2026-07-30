@@ -3,6 +3,7 @@ import type { FastifyInstance } from 'fastify';
 import { INITIAL_ELO, createLogger, hashPassword, validatePassword } from '@nw/shared';
 import { getProfile, resolveByPublicId, searchAccounts } from '../accounts.js';
 import { profilesOf } from '../social.js';
+import { applyPenalty } from '../moderation.js';
 import type { InternalCtx } from './context.js';
 
 const log = createLogger('meta:internal');
@@ -217,6 +218,74 @@ export function registerAccountRoutes(app: FastifyInstance, ctx: InternalCtx): v
     // Also clear the save-layer pveBanned flag to prevent the account from being blocked by pveClear after unbanning.
     await cols.saves.updateOne({ _id: id }, { $unset: { 'save.antiCheat.pveBanned': '' } });
     accountCache.invalidateBanStatus(id);
+    return reply.send({ ok: true });
+  });
+
+  // ── POST /internal/accounts/:id/penalty (CONTENT_MODERATION_DESIGN.md CM7) ────
+  // The sole content-moderation enforcement-execution path: admin calls this when a report is resolved
+  // 'upheld' (delta negative); applyPenalty owns the reputationScore read-modify-write + threshold ladder.
+  app.post('/internal/accounts/:id/penalty', async (req, reply) => {
+    if (!authed(req.headers)) {
+      return reply.code(401).send({ ok: false, error: 'unauthorized' });
+    }
+    const { id } = req.params as { id: string };
+    const { delta } = (req.body ?? {}) as { delta?: number };
+    if (typeof delta !== 'number' || !Number.isFinite(delta)) {
+      return reply.code(400).send({ ok: false, error: 'delta must be a finite number' });
+    }
+    const result = await applyPenalty(cols, id, delta, now());
+    if (!result) return reply.code(404).send({ ok: false, error: 'account not found' });
+    accountCache.invalidateBanStatus(id);
+    return reply.send({ ok: true, ...result });
+  });
+
+  // ── GET /internal/appeals?status=&limit= (CONTENT_MODERATION_DESIGN.md CM10) ─────────
+  // admin backend appeal review queue. Default status=open; limit 1..200.
+  app.get('/internal/appeals', async (req, reply) => {
+    if (!authed(req.headers)) {
+      return reply.code(401).send({ ok: false, error: 'unauthorized' });
+    }
+    const q = req.query as { status?: string; limit?: string };
+    const status = q.status === 'open' || q.status === 'approved' || q.status === 'denied' ? q.status : 'open';
+    const limit = Math.min(Math.max(Number(q.limit) || 100, 1), 200);
+    const appeals = await cols.appeals.find({ status }).sort({ createdAt: 1 }).limit(limit).toArray();
+    return reply.send({ appeals });
+  });
+
+  // ── POST /internal/appeals/:id/resolve (appeals.action, admin-initiated) ─────────
+  // Approve clears the account's active mute/temp-ban/ban (CM10); deny only stamps the record.
+  // Deliberately does not touch flags.reputationScore (a separate, explicit admin adjustment if warranted).
+  app.post('/internal/appeals/:id/resolve', async (req, reply) => {
+    if (!authed(req.headers)) {
+      return reply.code(401).send({ ok: false, error: 'unauthorized' });
+    }
+    const { id } = req.params as { id: string };
+    const { resolution, resolvedBy, note } = (req.body ?? {}) as { resolution?: string; resolvedBy?: string; note?: string };
+    if (resolution !== 'approved' && resolution !== 'denied') {
+      return reply.code(400).send({ ok: false, error: 'resolution must be approved or denied' });
+    }
+    const appeal = await cols.appeals.findOne({ _id: id, status: 'open' });
+    if (!appeal) return reply.code(404).send({ ok: false, error: 'appeal not found or already resolved' });
+
+    await cols.appeals.updateOne(
+      { _id: id },
+      {
+        $set: {
+          status: resolution,
+          resolvedAt: now(),
+          ...(resolvedBy ? { resolvedBy } : {}),
+          ...(note ? { resolutionNote: note } : {}),
+        },
+      },
+    );
+
+    if (resolution === 'approved') {
+      await cols.accounts.updateOne(
+        { _id: appeal.accountId },
+        { $unset: { 'flags.mutedUntil': '', 'flags.bannedUntil': '', 'flags.banned': '' } },
+      );
+      accountCache.invalidateBanStatus(appeal.accountId);
+    }
     return reply.send({ ok: true });
   });
 

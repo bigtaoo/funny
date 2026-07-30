@@ -23,12 +23,16 @@ import { AnalyticsMixin } from './service/analytics';
 import { FlagsMixin } from './service/flags';
 import { ShopMixin } from './service/shop';
 import { ModerationMixin } from './service/moderation';
+import { ReportsMixin } from './service/reports';
+import { AppealsMixin } from './service/appeals';
 
 export { AdminError } from './service/errors';
 export type { Actor, AdminServiceDeps } from './service/base';
 export { ADMIN_ROLES };
 
-const Assembled = ModerationMixin(
+const Assembled = AppealsMixin(
+  ReportsMixin(
+  ModerationMixin(
   ShopMixin(
   FlagsMixin(
   AnalyticsMixin(
@@ -53,6 +57,8 @@ const Assembled = ModerationMixin(
         ),
       ),
     ),
+  ),
+  ),
   ),
   ),
   ),

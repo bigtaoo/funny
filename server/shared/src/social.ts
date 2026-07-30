@@ -32,6 +32,9 @@ export const MAIL_BODY_MAX = 2000;
  */
 export const REPORT_REASON_MAX = 500;
 
+/** Maximum length of a player's free-text appeal reason (CONTENT_MODERATION_DESIGN.md CM10). Admin-review-only text, not run through censorChat (same rationale as REPORT_REASON_MAX). */
+export const APPEAL_REASON_MAX = 500;
+
 // ── Deterministic id derivation (no lookup required; computable by either side) ──────────────
 /**
  * Chat conversation id: two accountIds sorted and concatenated (SOC4). Either party can derive
@@ -61,6 +64,8 @@ export interface ProfileView {
   equippedTitle?: string;
   /** Equipped avatar (composite "<category>:<key>", see avatar.ts), if any. */
   avatarId?: string;
+  /** CONTENT_MODERATION_DESIGN.md CM7.1: epoch ms until which this account is muted, if currently muted. Piggybacked on the profile fetch every sendMessage() already makes — no extra round trip for the mute check. */
+  mutedUntil?: number;
 }
 
 export interface FriendView {

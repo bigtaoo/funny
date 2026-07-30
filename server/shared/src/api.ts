@@ -86,6 +86,8 @@ export const ErrorCode = {
   SKIN_IN_USE: 'SKIN_IN_USE',                       // skin is currently equipped → may not be listed
   // —— PvE anti-cheat (S4-4) ——
   ACCOUNT_BANNED: 'ACCOUNT_BANNED',                 // manually banned by an ops admin (2026-07-18: no auto-ban path remains — every ban goes through human review)
+  // —— content moderation (CONTENT_MODERATION_DESIGN.md CM6/CM7) ——
+  ACCOUNT_MUTED: 'ACCOUNT_MUTED',                   // chat send rejected: flags.mutedUntil is in the future (reputation-based enforcement, not a permanent/temp ban)
   // —— compliance (C5) ——
   ACCOUNT_DELETED: 'ACCOUNT_DELETED',               // soft-deleted account; auth returns 410
   ACCOUNT_NOT_DELETED: 'ACCOUNT_NOT_DELETED',       // POST /account/cancel-deletion on an account with no pending deletion
@@ -191,6 +193,7 @@ export const ERROR_HTTP_STATUS: Record<string, number> = {
   [ErrorCode.NOT_SALVAGEABLE]: 409,
   [ErrorCode.INVALID_SLOT]: 400,
   [ErrorCode.ACCOUNT_BANNED]: 403,
+  [ErrorCode.ACCOUNT_MUTED]: 403,
   [ErrorCode.ACCOUNT_NOT_DELETED]: 400,
   [ErrorCode.DELETION_TOKEN_INVALID]: 400,
   [ErrorCode.INSUFFICIENT_STAMINA]: 402,

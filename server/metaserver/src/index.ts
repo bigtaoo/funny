@@ -6,6 +6,7 @@ import { buildApp, SPEC_PATH } from './app.js';
 import { HttpGatewayClient } from './gatewayClient.js';
 import { auditOnce } from './anticheatAudit.js';
 import { auditCoinAnomaliesOnce } from './coinAnomalyAudit.js';
+import { decayReputationOnce } from './reputationDecay.js';
 import { HttpCommercialClient } from './commercialClient.js';
 import { ensureArchiveDir, sweepArchive } from './replayArchive.js';
 
@@ -154,9 +155,21 @@ async function main() {
   }, 24 * 3600 * 1000);
   coinAnomalyTimer.unref();
 
+  // Reputation-decay daily sweep (CONTENT_MODERATION_DESIGN.md CM8/CM8.1): heals penalized accounts
+  // +10/30d without any player action.
+  const reputationDecayTimer = setInterval(() => {
+    void decayReputationOnce({ cols: mongo.collections, now: () => Date.now() })
+      .then((r) => {
+        if (r.scanned > 0) log.info('reputation decay tick', { ...r });
+      })
+      .catch((e) => log.error('reputation decay tick failed', { err: (e as Error).message }));
+  }, 24 * 3600 * 1000);
+  reputationDecayTimer.unref();
+
   const shutdown = async () => {
     if (auditTimer) clearInterval(auditTimer);
     clearInterval(archiveSweepTimer);
+    clearInterval(reputationDecayTimer);
     clearInterval(coinAnomalyTimer);
     await app.close();
     await mongo.close();

@@ -1,6 +1,6 @@
 # Notebook Wars — 内容治理设计（敏感词 / 举报 / 处罚 / 申诉）
 
-> 状态：设计中 · 权威：本文（用户名/家族名/宗门名/聊天治理的单一入口，取代 `SOCIAL_DESIGN.md` SOC10 与 `COMPLIANCE_GLOBAL.md` §7 的临时描述）· 更新：2026-07-29
+> 状态：P1-P5 全部完成（见 §9）· 权威：本文（用户名/家族名/宗门名/聊天治理的单一入口，取代 `SOCIAL_DESIGN.md` SOC10 与 `COMPLIANCE_GLOBAL.md` §7 的临时描述）· 更新：2026-07-30
 >
 > 拍板（2026-07-29，用户）：①"全部加"——把此前讨论的四层防御（预防/检测/后果/审核+申诉）一次性设计完整，先文档后编码；② 检测层第一期**不接第三方语义审核 API**，纯自建（正常化预处理 + 词库 + 举报 + 信誉分处罚），后续视需要再加；③ 后台审核/申诉面板这次一起做（`tools/ops`）；④ 信誉分**自动衰减**（每 30 天 +10，CM8）；⑤ 分级阈值/举报扣分单一档位均按 §4.2 默认值实现（O-CM1/O-CM2/O-CM3 已拍板）。
 >
@@ -197,8 +197,8 @@ interface AppealDoc {
 | P1 | Prevention：归一化 + 词库外部化基础设施 | `shared/chatFilter.ts`、`server/admin`（wordlist 集合+端点+能力）、消费方缓存轮询 |
 | P2 | Coverage：五个缺口接入 `censorChat` | metaserver/socialsvc/worldsvc |
 | P3 | Consequence：`AccountDoc.flags` 扩展 + `penalty` 端点 + 聊天发送禁言检查 | `shared/mongo.ts`、metaserver、消费方 `sendMessage` |
-| P4 | Review：`ReportDoc` resolve API + admin 桥接（client/能力/审计/ops 页面） | socialsvc、`server/admin`、`tools/ops` |
-| P5 | Appeal：`AppealDoc` + 端点 + admin 桥接 + ops 页面 + 客户端最简申诉入口 | metaserver、`server/admin`、`tools/ops`、client |
+| P4 ✅ | Review：`ReportDoc` resolve API + admin 桥接（client/能力/审计/ops 页面） | socialsvc、`server/admin`、`tools/ops` |
+| P5 ✅ | Appeal：`AppealDoc` + 端点 + admin 桥接 + ops 页面 + 客户端最简申诉入口 | metaserver、`server/admin`、`tools/ops`、client |
 | （不在本次范围）| Gateway 实时强制断开已封禁连接 | 见 §8，另开任务 |
 
 每阶段完成后跑 `tsc --noEmit` + 对应服务测试；P5 涉及可见客户端改动，走 dev server + 截图核对。
@@ -227,4 +227,43 @@ interface AppealDoc {
 
 - **2026-07-29，O-CM5 修复**：客户端 `X-Chat-Region` 请求头补齐 + 伴生 CORS gap 修复，详见 §8 O-CM5。
 
-> （P1-P5 主线待实现后追加：完成阶段、实际字段/端点形态、与设计的差异。）
+### 9.1 P1+P2：归一化 + 词库外部化 + 五处覆盖缺口（2026-07-29）
+
+- `shared/chatFilter.ts`：`normalizeForFilter`（全半角/零宽字符/绕过符号/leetspeak）+ `WordlistCache`（镜像 `FeatureFlagCache`/`SlgShopPriceCache` 的轮询缓存模式）+ `censorChat` 两遍匹配（原文子串 → 归一化兜底，归一化命中时整条打码）。
+- `server/admin`：新增 `moderationWordlists` 集合 + `GET /admin/internal/moderation-wordlists`（内部轮询源）+ `POST/DELETE /admin/moderation/wordlists/:region/words`（RBAC，`moderation.wordlist.manage`）。
+- 覆盖缺口按设计接入：metaserver `authRegister`（拒绝）、socialsvc `createFamily`（拒绝）/`familyService.sendMessage`（打码）、worldsvc `sectService.createSect`（拒绝）/`nationChannelService.sendMessage`（打码）。`friendService.sendMessage`（既有私聊）顺带接入 DB 覆盖词表（此前只有内置词表）。
+- 与设计的差异：无实质偏离；家族/宗门/私聊/世界频道 region 来源统一为发送者账号 `region`（家族/私聊走 `X-Chat-Region` 请求头——但 2026-07-29 实现时发现**客户端从未真正发送这个头**，见 O-CM5，已 spawn 独立任务）。
+- 回归测试：`shared/test/chatFilter.test.ts`（+16 例：归一化/两遍匹配/`WordlistCache`/`sanitizeWordlistOverrideDoc`）、`metaserver/test/account-free-rename.e2e.test.ts`（+2 例）、`socialsvc/test/family.e2e.test.ts`（+2 例）、`worldsvc/test/sect.e2e.test.ts`/`nation-channel.e2e.test.ts`（各 +1 例）、`admin/test/moderation.e2e.test.ts`（新增，8 例）。
+
+### 9.2 P3：信誉分 + 分级处罚（2026-07-29）
+
+- `shared/mongo.ts`：`AccountDoc.flags` 新增 `reputationScore`/`reputationDecayAt`/`mutedUntil`/`bannedUntil`；`accounts` 集合新增 `flags.reputationDecayAt` 部分索引（衰减扫描用）。
+- `shared/api.ts`：新增 `ErrorCode.ACCOUNT_MUTED`（403）。
+- `metaserver/src/moderation.ts`（新文件）：`actionForScore`（§4.2 阈值表纯函数）+ `applyPenalty`（唯一处罚执行路径：读-改-写 + "只加严不减轻" + 到期即续 30 天衰减时钟）。新增 `POST /internal/accounts/:id/penalty`；`accountCache.ts`/`rejectIfBanned` 扩展支持 `bannedUntil`（限时封禁，登录侧与永久封禁同一入口检查）。
+- `metaserver/src/reputationDecay.ts`（新文件）：`decayReputationOnce`（每日 `setInterval`，镜像 `coinAnomalyAudit.ts` 编排风格，`batchLimit` 有界批处理）。
+- CM7.1 落地：`ProfileView`/worldsvc 本地 `PlayerProfile` 新增 `mutedUntil`；metaserver 的 `getProfile`（`accounts.ts`，worldsvc 用）与 `profileOf`/`profilesOf`（`social.ts`，socialsvc/私聊用）都在既有查询里顺带带出 `mutedUntil`，三个 `sendMessage` 调用点在**扣费/落库之前**检查并拒绝（`ACCOUNT_MUTED` / `SocialError:'MUTED'`），零额外跨服务往返。
+- 与设计的差异：`§4.2` 中 mermaid 式描述"读当前 reputationScore→+delta→clamp"与实际 `applyPenalty` 实现一致；`mutedUntil`/`bannedUntil` 的"只加严不减轻"用 `Math.max(既有, 新计算)` 实现，而不是简单覆盖——设计文档原文未明确这一细节，属于实现时补的具体化，不算偏离。
+- 回归测试：`metaserver/test/moderation-penalty.e2e.test.ts`（新增，11 例：阈值表/升级不降级/永封不可撤/内部端点/`rejectIfBanned` 限时封禁）、`reputation-decay.e2e.test.ts`（新增，5 例）、`socialsvc/test/family.e2e.test.ts`+`friend.e2e.test.ts`（各 +1 例禁言拒绝）、`worldsvc/test/nation-channel.e2e.test.ts`（+1 例，含"禁言时不扣费"断言）。
+
+### 9.3 P4：举报处理闭环 + admin/ops 桥接（2026-07-30）
+
+- `socialsvc/src/db.ts`：`ReportDoc.status` 从恒定 `'open'` 扩展为 `'open' | 'dismissed' | 'upheld'`，新增可选 `contentRef`（`message`/`name` 两种引用）+ `resolvedBy`/`resolvedAt`。`contentRef` 目前未被任何调用点写入——现有 `reportUser()` 只是玩家级举报（无消息/名称引用入口），这是刻意的最小实现：字段先留好形状，等未来出现"举报某条消息/某个名字"的具体入口再接上，不为一个尚不存在的功能预先造轮子。
+- `socialsvc/src/friendService.ts`：`listOpenReports` 泛化为 `listReports(status='open', limit)`；新增 `resolveReport(id, resolution, resolvedBy)`——CAS 式 `updateOne({_id, status:'open'}, ...)`，对已解决的举报返回 `false` 而非静默幂等，让 admin 能准确提示"已被解决"而不是误判成功。`httpApi.ts` 新增 `POST /internal/reports/:id/resolve`；`GET /internal/reports` 加 `status` 查询参数。
+- `server/admin`：新增 `clients/reports.ts`（`HttpReportsClient`，代理 socialsvc）+ `clients/enforcement.ts`（`HttpEnforcementClient`，代理 metaserver `POST /internal/accounts/:id/penalty`，P3 已有端点，P4 首次接上调用方）+ `service/reports.ts`（`ReportsMixin`：`resolveReport` 在同一次操作里先调 socialsvc resolve、`upheld` 时再调 enforcement 施加 -20 分，两次调用是 best-effort，不做分布式事务——与 `TradeAuditTicketView` 的既有务实原则一致）。新增能力 `reports.view`/`reports.action`（`super`/`ops` 有 `.action`，`support`/`viewer` 只有 `.view`）+ 审计动作 `report.review`/`account.penalty`。
+- `server/admin` 部署配置：新增 `NW_SOCIALSVC_INTERNAL_URL`（此前 admin 对 socialsvc 完全没有客户端/环境变量，见 §1 现状盘点），已同步 `config.ts`/`index.ts`/`dev-up.ps1`/`ecosystem.config.cjs`/`docker-compose.cloud.yml`/`docker-compose.prod.yml` 六处。
+- `tools/ops`：新增 `pages/reports.ts`（模板抄 `pages/suspicions.ts`：状态筛选 + Dismiss/Uphold 行内按钮，Uphold 前二次确认弹窗）+ nav 项 `UGC Reports`。
+- 与设计的差异：无实质偏离；`contentRef` 的"暂不接入"是唯一需要说明的简化（见上）。
+- 回归测试：`socialsvc/test/friend.e2e.test.ts`（+2 例 `resolveReport`，重命名后的 `listReports` 沿用既有 3 个断言）、`admin/test/contentModerationBridge.e2e.test.ts`（新增，9 例：list/resolve 的 dismissed/upheld 分支、penalty 调用参数、404/502 错误路径、角色能力矩阵）、`admin/test/clients-barrel.test.ts`（+3 个新客户端）。
+
+### 9.4 P5：申诉流程 + 客户端最简 UI（2026-07-30）
+
+- `shared/mongo.ts`：新增 `AppealDoc`（落在 metaserver 的 `accounts` 集合旁，CM10）+ `appeals` 集合（索引：`{status,createdAt}` 审核队列、`{accountId,status}` 单开申诉判重）。`shared/social.ts` 新增 `APPEAL_REASON_MAX=500`。
+- metaserver 公开端点 `POST /account/appeal`：**走 openapi 分域片段 + codegen**（`contracts/openapi/paths/auth.yml` 新增 `submitAppeal` operationId → `npm run gen:api:contracts && npm run gen:api:server` 重新生成 `openapi.yml`/`routes.gen.ts`，ADR-023 build-time-fail 纪律），实现在 `service/auth.ts`（`AuthMixin`，与 `profileRename` 同一文件）：仅当账号存在生效处罚（`banned`/`bannedUntil` 未过期/`mutedUntil` 未过期）之一才允许提交，同一账号同时只能有一条 `open` 申诉（409）。**不经过 `rejectIfBanned`**——一个被封禁的账号必须仍能触达这个端点，否则申诉入口对最需要它的人反而不可用。
+- metaserver 内部端点（`internal/accountRoutes.ts`，与 `/internal/accounts/:id/ban` 同款手写 fastify 路由，不走 openapi codegen）：`GET /internal/appeals`（状态筛选）+ `POST /internal/appeals/:id/resolve`（approved 清 `mutedUntil`/`bannedUntil`/`banned` 三个字段并 `accountCache.invalidateBanStatus`，复用 P3 同一失效方法；**不碰 `reputationScore`**，CM10 明确拍板——分数是否恢复留给 admin 另行人工调整）。
+- `server/admin`：新增 `clients/appeals.ts`（`HttpAppealsClient`，代理 metaserver，与 anti-cheat review 队列同款"业务服务持有数据、admin 只代理"结构）+ `service/appeals.ts`（`AppealsMixin`）。新增能力 `appeals.view`/`appeals.action` + 审计动作 `appeal.review`。
+- `tools/ops`：新增 `pages/appeals.ts`（列表 + `enforcementSnapshot` 详情列 + Approve/Deny，Approve 前二次确认弹窗）+ nav 项 `Player Appeals`。
+- 客户端（`client/src/net/log.ts`/`render/AppealDialog.ts`/`app.ts`）：**未按 §5.3 原文字面实现**——原文设想的挂载点是"登录返回 ACCOUNT_BANNED / 发消息返回禁言错误时"逐个调用点弹窗，但项目里"发消息"分散在 DM/家族/世界三个不同 scene、各自手写 catch。改为在传输层单点拦截：`ApiClientBase.request`（metaserver）与 `WorldApiClient` 的请求辅助函数在识别到 `ACCOUNT_BANNED`/`ACCOUNT_MUTED` 错误码时统一调用 `maybePromptAppeal()`（`net/log.ts` 新增的 sink，与既有 `showToastMessage`/`setToastSink` 同一模式），`app.ts` 注册的 sink 把 `AppealDialog`（结构同 `ConsentDialog`/`ReconnectPromptDialog` 的自绘全屏卡片，复用同一 hidden-`<input>`文字输入技巧）直接挂到 `app.stage`（同 `GlobalToast` 的理由：不受 `SceneManager` 场景切换影响，玩家在任何场景触发禁言/封禁都不会被强制打断当前操作）。好处：任何现有或未来的调用点自动获得这个能力，不需要逐个 scene 接线；代价是没有走 `AppViews` 抽象（`GlobalToast` 本身也是同样的例外，非新先例）。
+- `client/src/net/ApiClient/auth.ts` 新增 `submitAppeal(reason)`；`createAppCore.ts` 的 `AppCore.submitAppeal`（可选字段，离线/无 baseUrl 时为 `undefined`，sink 据此静默跳过）桥接到 `app.ts` 的渲染层。
+- 三语言（zh/en/de）新增 `appeal.*` i18n key（title.banned/title.muted/body/placeholder/submit/cancel/submitted/err.empty/err.failed）。
+- 与设计的差异：除上述客户端挂载点的调整外，无实质偏离。
+- 验证：`metaserver/test/appeal.e2e.test.ts`（新增，8 例：无生效处罚拒绝/空理由拒绝/成功提交+快照/重复申诉 409/内部列表+鉴权/approve 清封禁并复测登录成功/deny 不改字段/404）；客户端 `npm run typecheck` + `vitest run`（842 个既有用例全绿，1 个无关 flaky 用例`net-client.test.ts`在完整套件下偶发超时，单独运行稳定通过）；dev server 冒烟：构建产物加载无报错（真实封禁/禁言账号触发申诉弹窗的交互走查因需起完整后端+人工封禁测试账号，超出本次收尾范围未做，记录为已知验证缺口）。

@@ -3,6 +3,7 @@
 import type {
   AdminAccountView,
   AntiCheatReviewView,
+  AppealView,
   AuditEntryView,
   AuctionAnomaly,
   AuctionListingAdminView,
@@ -25,6 +26,7 @@ import type {
   PlayerProfile,
   PlayerSummary,
   PvpCardStatRow,
+  ReportView,
   Session,
   SlgShopItemOverrideDoc,
   SlgShopItemRow,
@@ -217,6 +219,32 @@ export class Api {
   /** Human resolution of a review record: dismiss (no action) or ban (goes through the same manual ban path as Player Lookup). */
   async resolveAntiCheatReview(id: string, accountId: string, resolution: 'dismissed' | 'banned'): Promise<void> {
     await this.req('POST', `/admin/anticheat/reviews/${encodeURIComponent(id)}/resolve`, { accountId, resolution });
+  }
+
+  // —— UGC report review queue (CONTENT_MODERATION_DESIGN.md CM9/CM11) ——
+  async reports(opts?: { status?: string; limit?: number }): Promise<ReportView[]> {
+    const qs = new URLSearchParams();
+    if (opts?.status) qs.set('status', opts.status);
+    if (opts?.limit) qs.set('limit', String(opts.limit));
+    const r = await this.req<{ reports: ReportView[] }>('GET', `/admin/reports?${qs}`);
+    return r.reports;
+  }
+  /** Resolve a report: dismiss (no action) or uphold (applies the -20 reputation penalty via the metaserver enforcement path). */
+  async resolveReport(id: string, accountId: string, resolution: 'dismissed' | 'upheld'): Promise<{ reputationScore?: number; action?: string }> {
+    return this.req('POST', `/admin/reports/${encodeURIComponent(id)}/resolve`, { accountId, resolution });
+  }
+
+  // —— Player appeal review queue (CONTENT_MODERATION_DESIGN.md CM10/CM11) ——
+  async appeals(opts?: { status?: string; limit?: number }): Promise<AppealView[]> {
+    const qs = new URLSearchParams();
+    if (opts?.status) qs.set('status', opts.status);
+    if (opts?.limit) qs.set('limit', String(opts.limit));
+    const r = await this.req<{ appeals: AppealView[] }>('GET', `/admin/appeals?${qs}`);
+    return r.appeals;
+  }
+  /** Approve clears the account's active mute/temp-ban/ban (not reputationScore, CM10); deny just stamps the record. */
+  async resolveAppeal(id: string, resolution: 'approved' | 'denied', note?: string): Promise<void> {
+    await this.req('POST', `/admin/appeals/${encodeURIComponent(id)}/resolve`, { resolution, ...(note ? { note } : {}) });
   }
 
   // —— Compensation tickets ——

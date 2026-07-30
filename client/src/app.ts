@@ -51,8 +51,10 @@ import type { Replay, LevelDefinition } from './game';
 import { ScalingManager, createLayout, resettledLayout } from './layout/ScalingManager';
 import { InputManager } from './inputSystem/InputManager';
 import type { ILayout } from './layout/ILayout';
-import { installGlobalErrorHandlers, setToastSink } from './net/log';
+import { installGlobalErrorHandlers, setToastSink, setAppealSink, showToastMessage } from './net/log';
 import { GlobalToast } from './ui/GlobalToast';
+import { AppealDialog } from './render/AppealDialog';
+import { t } from './i18n';
 import { ui as C } from './render/sketchUi';
 import { setBakeRenderer } from './render/bake';
 import { installTextPaddingFloor } from './render/pixiText';
@@ -491,5 +493,30 @@ export async function startApp(
   if (wrapViews) views = wrapViews(views);
   const core = createAppCore(platform, views);
   pixiViews.onResized = () => core.onResized();
+
+  // Content-moderation appeal prompt (CONTENT_MODERATION_DESIGN.md §5.3): ApiClient/WorldApiClient call
+  // maybePromptAppeal() right before throwing on ACCOUNT_BANNED/ACCOUNT_MUTED (see net/log.ts) — a single
+  // transport-layer choke point that covers every call site without per-scene wiring. Rendered as a
+  // stage-level overlay (same reasoning as GlobalToast: unaffected by scene transitions), not a
+  // SceneManager scene, so it never destroys whatever the player was doing when the enforcement hit.
+  let appealDialog: AppealDialog | null = null;
+  setAppealSink((code) => {
+    if (!core.submitAppeal || appealDialog) return;
+    const dlg = new AppealDialog(app.screen.width, app.screen.height, code, {
+      onSubmit: async (reason) => {
+        await core.submitAppeal!(reason);
+        showToastMessage(t('appeal.submitted'), 'success');
+      },
+      onClose: () => {
+        app.stage.removeChild(dlg.container);
+        dlg.destroy();
+        appealDialog = null;
+      },
+    });
+    dlg.container.zIndex = 9_000; // above scene content, below GlobalToast (10_000)
+    app.stage.addChild(dlg.container);
+    appealDialog = dlg;
+  });
+
   core.start();
 }
