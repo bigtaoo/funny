@@ -147,6 +147,38 @@ describe('SaveManager.adoptServer stale-response guard (out-of-order gacha draw 
   });
 });
 
+describe('SaveManager.reconcile cross-account rev guard (audit-followup-fixes-0730)', () => {
+  // Regression: the stale-response guard above (`cloud.rev < local.rev` → drop) is correct WITHIN one
+  // account, but `rev` is a per-account monotonic counter, not a global one. A device that played a while
+  // on an anonymous/guest account (rev climbs with ordinary play) and then logs into a different, newer
+  // account WITHOUT an intervening logout (adoptSession → refresh → reconcile directly, no
+  // resetForLogout()/rev-reset in between) could previously have the old account's higher `rev` silently
+  // shadow the new account's own (lower) cloud pull — the client would show accountId flipped to the new
+  // account but every authoritative field still frozen at the old account's last-known values.
+  it('adoptSession into a different, newer account is not dropped by the old account\'s higher accumulated rev', async () => {
+    const store = new LocalSaveStore(new MemStorage());
+    const anon = makeNewSave('anon-device-1', 1);
+    anon.rev = 50; // accumulated over a play session before ever logging in
+    anon.wallet.coins = 9999;
+    store.saveLocal(anon);
+
+    const cloud = makeNewSave('account-2', 1);
+    cloud.rev = 2; // a different, freshly-registered account — naturally low rev
+    cloud.wallet.coins = 10;
+    const mgr = new SaveManager({ store, api: fakeApi(cloud) });
+    expect(mgr.get().accountId).toBe('anon-device-1');
+    expect(mgr.get().rev).toBe(50);
+
+    const ok = await mgr.adoptSession('account-2');
+    expect(ok).toBe(true);
+    // Must adopt the NEW account's cloud state in full — not silently keep the old account's save because
+    // its rev happened to be higher.
+    expect(mgr.get().accountId).toBe('account-2');
+    expect(mgr.get().rev).toBe(2);
+    expect(mgr.get().wallet.coins).toBe(10);
+  });
+});
+
 describe('SaveManager.adoptServerPartial (EQUIPMENT_DESIGN §3.3 phase 2, extended to cards 2026-07-28)', () => {
   const EXISTING_CARD: CardInstance = { id: 'card_a', defId: 'lichuang', level: 1, gear: {}, locked: false };
   const EXISTING_EQUIP: EquipmentInstance = { id: 'eq_a', defId: 'wp_pencil', rarity: 'common', level: 0, affixes: [] };

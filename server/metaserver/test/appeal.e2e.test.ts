@@ -202,4 +202,65 @@ describe.skipIf(!mongo)('player appeal e2e', () => {
     });
     expect(r2.statusCode).toBe(404);
   });
+
+  it('CONCURRENT resolve of the same appeal by five admins: exactly one wins, the rest see 404', async () => {
+    const { accountId, token } = await newDevice('dev-concurrent-resolve');
+    await app.inject({
+      method: 'POST', url: `/internal/accounts/${accountId}/penalty`,
+      headers: { 'x-internal-key': KEY }, payload: { delta: -60 },
+    });
+    await app.inject({
+      method: 'POST', url: '/account/appeal',
+      headers: { authorization: `Bearer ${token}` }, payload: { reason: 'please review' },
+    });
+    const [appeal] = await m.collections.appeals.find({ accountId }).toArray();
+
+    // Five admins resolve the same appeal at the same instant. Without the CAS guard (status:'open' on the
+    // write, not just the preceding read), several requests can pass the initial findOne and all return
+    // {ok:true}, leaving the final status/resolvedBy nondeterministic instead of one clean winner + clear
+    // "already resolved" losers. A 2-way race was flaky to reproduce (timing-dependent); 5-way fan-out
+    // reliably triggers it, mirroring the commercial CAS regression tests' fan-out choice.
+    const results = await Promise.all(
+      Array.from({ length: 5 }, (_, i) =>
+        app.inject({
+          method: 'POST', url: `/internal/appeals/${appeal!._id}/resolve`,
+          headers: { 'x-internal-key': KEY }, payload: { resolution: 'denied', resolvedBy: `admin-${i}` },
+        }),
+      ),
+    );
+    const codes = results.map((r) => r.statusCode).sort();
+    expect(codes).toEqual([200, 404, 404, 404, 404]);
+
+    const updated = await m.collections.appeals.findOne({ _id: appeal!._id });
+    expect(updated?.status).toBe('denied');
+    const winnerIdx = results.findIndex((r) => r.statusCode === 200);
+    expect(updated?.resolvedBy).toBe(`admin-${winnerIdx}`);
+  });
+
+  it('CONCURRENT submitAppeal from the same account: exactly one insert wins, the other gets 409', async () => {
+    const { accountId, token } = await newDevice('dev-concurrent-submit');
+    await app.inject({
+      method: 'POST', url: `/internal/accounts/${accountId}/penalty`,
+      headers: { 'x-internal-key': KEY }, payload: { delta: -60 },
+    });
+
+    // Two rapid submits (double-tap, or a client retry racing the original request) both pass the
+    // findOne-based "no open appeal yet" precheck before either insertOne lands — only the unique partial
+    // index on {accountId, status:'open'} (mongo.ts) prevents both from creating an open appeal doc.
+    const [first, second] = await Promise.all([
+      app.inject({
+        method: 'POST', url: '/account/appeal',
+        headers: { authorization: `Bearer ${token}` }, payload: { reason: 'first' },
+      }),
+      app.inject({
+        method: 'POST', url: '/account/appeal',
+        headers: { authorization: `Bearer ${token}` }, payload: { reason: 'second' },
+      }),
+    ]);
+    const codes = [first.statusCode, second.statusCode].sort();
+    expect(codes).toEqual([200, 409]);
+
+    const docs = await m.collections.appeals.find({ accountId, status: 'open' }).toArray();
+    expect(docs.length).toBe(1);
+  });
 });

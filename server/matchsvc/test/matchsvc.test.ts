@@ -61,15 +61,15 @@ describe('Matchsvc friendly', () => {
     expect(last('c', 'room_error')).toMatchObject({ code: 'ROOM_FULL' });
   });
 
-  it('both ready → host starts → both receive match_found (same roomId/seed, distinct sides, ticket signature valid)', () => {
+  it('both ready → host starts → both receive match_found (same roomId/seed, distinct sides, ticket signature valid)', async () => {
     const { svc, last } = setup();
     svc.roomCreate('a', 'Alice', '100000001');
     const rs = last('a', 'room_state');
     if (rs?.kind !== 'room_state') throw new Error();
     svc.roomJoin('b', 'Bob', '100000002', rs.code);
-    svc.roomReady('a', true);
-    svc.roomReady('b', true);
-    svc.roomStart('a'); // host = side 0
+    await svc.roomReady('a', true);
+    await svc.roomReady('b', true);
+    await svc.roomStart('a'); // host = side 0
 
     const fa = last('a', 'match_found');
     const fb = last('b', 'match_found');
@@ -85,7 +85,7 @@ describe('Matchsvc friendly', () => {
     expect(tb.accountId).toBe('b');
   });
 
-  it('empty deck → ticket carries defaultPvpDeck for both sides (never the full pool)', () => {
+  it('empty deck → ticket carries defaultPvpDeck for both sides (never the full pool)', async () => {
     // Safety net: every matchsvc match is PvP and must never let the engine fall back to the
     // full CARD_DEFINITIONS pool. A room created/joined without a validated deck (e.g. a client
     // that submits nothing) is resolved to defaultPvpDeck at startMatch (PVP_LOADOUT §6.3).
@@ -94,9 +94,9 @@ describe('Matchsvc friendly', () => {
     const rs = last('a', 'room_state');
     if (rs?.kind !== 'room_state') throw new Error();
     svc.roomJoin('b', 'Bob', '100000002', rs.code); // no deck arg → []
-    svc.roomReady('a', true);
-    svc.roomReady('b', true);
-    svc.roomStart('a');
+    await svc.roomReady('a', true);
+    await svc.roomReady('b', true);
+    await svc.roomStart('a');
 
     const fa = last('a', 'match_found');
     if (fa?.kind !== 'match_found') throw new Error('no match_found');
@@ -104,7 +104,7 @@ describe('Matchsvc friendly', () => {
     expect(ta.decks).toEqual({ top: defaultPvpDeck(), bottom: defaultPvpDeck() });
   });
 
-  it('submitted decks are passed through to the ticket per side (top = side 0, bottom = side 1)', () => {
+  it('submitted decks are passed through to the ticket per side (top = side 0, bottom = side 1)', async () => {
     const { svc, last } = setup();
     const deckA = [...defaultPvpDeck().slice(0, 9), 'runner']; // a distinct, deck-sized list for side 0
     const deckB = defaultPvpDeck();
@@ -112,9 +112,9 @@ describe('Matchsvc friendly', () => {
     const rs = last('a', 'room_state');
     if (rs?.kind !== 'room_state') throw new Error();
     svc.roomJoin('b', 'Bob', '100000002', rs.code, '', '', deckB);
-    svc.roomReady('a', true);
-    svc.roomReady('b', true);
-    svc.roomStart('a');
+    await svc.roomReady('a', true);
+    await svc.roomReady('b', true);
+    await svc.roomStart('a');
 
     const fa = last('a', 'match_found');
     if (fa?.kind !== 'match_found') throw new Error('no match_found');
@@ -123,16 +123,16 @@ describe('Matchsvc friendly', () => {
     expect(ta.decks).toEqual({ top: deckA, bottom: deckB });
   });
 
-  it('non-host start is ignored; start while not all ready is ignored', () => {
+  it('non-host start is ignored; start while not all ready is ignored', async () => {
     const { svc, last } = setup();
     svc.roomCreate('a', 'A', '100000001');
     const rs = last('a', 'room_state');
     if (rs?.kind !== 'room_state') throw new Error();
     svc.roomJoin('b', 'B', '100000002', rs.code);
-    svc.roomReady('a', true); // only one side is ready
-    svc.roomStart('a');
+    await svc.roomReady('a', true); // only one side is ready
+    await svc.roomStart('a');
     expect(last('a', 'match_found')).toBeUndefined();
-    svc.roomStart('b'); // not the host
+    await svc.roomStart('b'); // not the host
     expect(last('b', 'match_found')).toBeUndefined();
   });
 
@@ -156,9 +156,9 @@ describe('Matchsvc friendly', () => {
     const rs = pushed.find((p) => p.acc === 'a' && p.msg.kind === 'room_state');
     if (rs?.msg.kind !== 'room_state') throw new Error();
     svc.roomJoin('b', 'Bob', '100000002', rs.msg.code);
-    svc.roomReady('a', true);
-    svc.roomReady('b', true);
-    svc.roomStart('a');
+    await svc.roomReady('a', true);
+    await svc.roomReady('b', true);
+    await svc.roomStart('a');
     await Promise.resolve(); // flush the fire-and-forget setActiveMatch() microtask
 
     const fa = pushed.find((p) => p.acc === 'a' && p.msg.kind === 'match_found');
@@ -173,24 +173,24 @@ describe('Matchsvc friendly', () => {
     expect(redis.set.mock.calls.some((c) => c[0] === 'nw:activeMatch:b')).toBe(true);
   });
 
-  it('login-reconnect-prompt: no redis configured → startMatch still succeeds (feature silently disabled)', () => {
+  it('login-reconnect-prompt: no redis configured → startMatch still succeeds (feature silently disabled)', async () => {
     const { svc, last } = setup(); // setup() passes no redis opt
     svc.roomCreate('a', 'Alice', '100000001');
     const rs = last('a', 'room_state');
     if (rs?.kind !== 'room_state') throw new Error();
     svc.roomJoin('b', 'Bob', '100000002', rs.code);
-    svc.roomReady('a', true);
-    svc.roomReady('b', true);
-    svc.roomStart('a');
+    await svc.roomReady('a', true);
+    await svc.roomReady('b', true);
+    await svc.roomStart('a');
     expect(last('a', 'match_found')).toBeDefined();
   });
 });
 
 describe('Matchsvc ranked', () => {
-  it('two players enqueue → matched → both receive match_found (mode ranked)', () => {
+  it('two players enqueue → matched → both receive match_found (mode ranked)', async () => {
     const { svc, last } = setup();
-    svc.enqueue('a', 'Alice', '100000001', 1000);
-    svc.enqueue('b', 'Bob', '100000002', 1020); // within the ELO window, matched immediately
+    await svc.enqueue('a', 'Alice', '100000001', 1000);
+    await svc.enqueue('b', 'Bob', '100000002', 1020); // within the ELO window, matched immediately
     const fa = last('a', 'match_found');
     const fb = last('b', 'match_found');
     if (fa?.kind !== 'match_found' || fb?.kind !== 'match_found') throw new Error('no match_found');
@@ -201,12 +201,12 @@ describe('Matchsvc ranked', () => {
     expect(ta.seed).toBe(tb.seed);
   });
 
-  it('no game available → GAME_UNAVAILABLE', () => {
+  it('no game available → GAME_UNAVAILABLE', async () => {
     const pushed: { acc: string; msg: PushMsg }[] = [];
     const games = new GameRegistry(() => 0, null); // no fallback URL, no registered instances
     const svc = new Matchsvc((acc, msg) => pushed.push({ acc, msg }), games, KEY, { autoTick: false });
-    svc.enqueue('a', 'A', '100000001', 1000);
-    svc.enqueue('b', 'B', '100000002', 1000);
+    await svc.enqueue('a', 'A', '100000001', 1000);
+    await svc.enqueue('b', 'B', '100000002', 1000);
     expect(pushed.some((p) => p.msg.kind === 'room_error' && p.msg.code === 'GAME_UNAVAILABLE')).toBe(true);
   });
 });
@@ -228,8 +228,11 @@ describe('Matchsvc bot-fallback (feature flag match_bot_fallback)', () => {
         flags: cache,
         botFallbackMs: 30_000,
       });
-      svc.enqueue('lonely', 'L', '100000001', 1000, '', '', 'web');
-      vi.advanceTimersByTime(31_000);
+      await svc.enqueue('lonely', 'L', '100000001', 1000, '', '', 'web');
+      // Async variant (not advanceTimersByTime): the interval callback's tick() is now async
+      // (audit-followup-fixes-0730 — it awaits the Redis dequeue before pushing match_bot), so the
+      // microtask chain needs flushing between/after firing the fake timer, not just the clock advanced.
+      await vi.advanceTimersByTimeAsync(31_000);
       const bot = pushed.find((p) => p.acc === 'lonely' && p.msg.kind === 'match_bot');
       expect(bot).toBeDefined();
       if (bot?.msg.kind !== 'match_bot') throw new Error();
@@ -257,8 +260,8 @@ describe('Matchsvc bot-fallback (feature flag match_bot_fallback)', () => {
         flags: cache,
         botFallbackMs: 30_000,
       });
-      svc.enqueue('lonely', 'L', '100000001', 1000, '', '', 'web');
-      vi.advanceTimersByTime(60_000);
+      await svc.enqueue('lonely', 'L', '100000001', 1000, '', '', 'web');
+      await vi.advanceTimersByTimeAsync(60_000);
       expect(pushed.some((p) => p.msg.kind === 'match_bot')).toBe(false);
       expect(svc.stats().queue).toBe(1); // still in queue
     } finally {
@@ -278,8 +281,8 @@ describe('Matchsvc bot-fallback (feature flag match_bot_fallback)', () => {
         flags: cache,
         botFallbackMs: 30_000,
       });
-      svc.enqueue('lonely', 'L', '100000001', 1000, '', '', 'web');
-      vi.advanceTimersByTime(31_000); // first timeout: flag is off → keep waiting, entry remains in queue
+      await svc.enqueue('lonely', 'L', '100000001', 1000, '', '', 'web');
+      await vi.advanceTimersByTimeAsync(31_000); // first timeout: flag is off → keep waiting, entry remains in queue
       expect(pushed.some((p) => p.msg.kind === 'match_bot')).toBe(false);
       expect(svc.stats().queue).toBe(1);
 
@@ -287,7 +290,7 @@ describe('Matchsvc bot-fallback (feature flag match_bot_fallback)', () => {
       docs.push({ _id: 'match_bot_fallback', enabled: true, rollout: { pct: 100 } });
       await cache.refresh();
 
-      vi.advanceTimersByTime(31_000); // next re-evaluation window arrives → should fall back to bot this time
+      await vi.advanceTimersByTimeAsync(31_000); // next re-evaluation window arrives → should fall back to bot this time
       expect(pushed.some((p) => p.msg.kind === 'match_bot')).toBe(true);
       expect(svc.stats().queue).toBe(0); // dequeued
     } finally {
@@ -314,13 +317,13 @@ describe('Matchsvc duel invite ("切磋", ADR friends-duel-confirm)', () => {
     expect(pushed.some((p) => p.acc === 'a')).toBe(false);
   });
 
-  it('accept → startMatch fires exactly like the room-ready flow (same roomId/seed, distinct sides, valid ticket)', () => {
+  it('accept → startMatch fires exactly like the room-ready flow (same roomId/seed, distinct sides, valid ticket)', async () => {
     const { svc, last } = setup();
     svc.duelInvite(player('a', 'Alice', '100000001', defaultPvpDeck()), 'b');
     const inv = last('b', 'duel_invited');
     if (inv?.kind !== 'duel_invited') throw new Error();
 
-    svc.duelRespond('b', inv.inviteId, true, player('b', 'Bob', '100000002', defaultPvpDeck()));
+    await svc.duelRespond('b', inv.inviteId, true, player('b', 'Bob', '100000002', defaultPvpDeck()));
 
     const fa = last('a', 'match_found');
     const fb = last('b', 'match_found');

@@ -56,6 +56,14 @@ export interface AccountDoc {
     mutedUntil?: number;
     /** CM6: epoch ms until which auth is rejected (temp ban); checked alongside `banned` in rejectIfBanned. Auto-expires — no unban action needed. */
     bannedUntil?: number;
+    /**
+     * Optimistic-lock counter for the reputationScore/mutedUntil/bannedUntil/banned quartet above (mirrors
+     * SaveDoc.rev): applyPenalty and the daily decay sweep both do read-compute-write against this same
+     * quartet, and a plain read-then-$set race between them (or two concurrent penalties) can silently lose
+     * one side's update. Every writer guards its update on this value matching what it read and $inc's it —
+     * a stale writer's matchedCount comes back 0 and it re-reads + retries instead of overwriting.
+     */
+    moderationRev?: number;
   };
   /** C5-b soft-delete timestamp; once set, auth returns ACCOUNT_DELETED and data is asynchronously purged after 7 days. */
   deletedAt?: number;
@@ -692,9 +700,16 @@ export async function createMongo(
     await collections.antiCheatReviews.createIndex({ status: 1, ts: -1 });
     // —— PvE anti-cheat (S4-4) ——
     await collections.pveRejections.createIndex({ accountId: 1, ts: -1 });
-    // —— player appeals (CONTENT_MODERATION_DESIGN.md CM10): admin review queue (open first) + per-account lookup (open-appeal guard) ——
+    // —— player appeals (CONTENT_MODERATION_DESIGN.md CM10): admin review queue (open first) ——
     await collections.appeals.createIndex({ status: 1, createdAt: 1 });
-    await collections.appeals.createIndex({ accountId: 1, status: 1 });
+    // Unique partial index (only matches status:'open' docs): the atomic backstop behind submitAppeal's
+    // findOne-then-insert open-appeal guard — two concurrent submits from the same account can both pass
+    // the read check, but only one insertOne wins here (E11000), same pattern as equipEquipment's
+    // gearInstanceIds unique index.
+    await collections.appeals.createIndex(
+      { accountId: 1 },
+      { unique: true, partialFilterExpression: { status: 'open' } },
+    );
     // —— replay shares (S1-RP) ——
     // TTL auto-expiry (expiresAt with expireAfterSeconds:0 → Mongo deletes on schedule).
     await collections.replayShares.createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 });

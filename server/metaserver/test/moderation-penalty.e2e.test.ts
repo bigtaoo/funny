@@ -120,6 +120,24 @@ describe.skipIf(!mongo)('content-moderation penalty e2e', () => {
       const result = await applyPenalty(m.collections, 'ghost', -20, 1000);
       expect(result).toBeNull();
     });
+
+    it('CONCURRENT: six -20 penalties fired at once all land, none silently lost (audit-followup-fixes-0730)', async () => {
+      await m.collections.accounts.insertOne({ _id: 'acct-concurrent', createdAt: 0 } as never);
+      // Six concurrent confirmed-report penalties against the same fresh (100) account. Each call reads the
+      // account, computes a new score off that read, then writes — without the moderationRev CAS guard, a
+      // later writer's stale-read computation can silently clobber an earlier writer's already-applied delta,
+      // landing above the true floor instead of exactly there.
+      const results = await Promise.all(
+        Array.from({ length: 6 }, () => applyPenalty(m.collections, 'acct-concurrent', -20, 1000)),
+      );
+      expect(results.every((r) => r !== null)).toBe(true);
+
+      const doc = await m.collections.accounts.findOne({ _id: 'acct-concurrent' });
+      // 100 - 6*20 = -20, clamped to 0 — every one of the six deltas must have actually landed.
+      expect(doc?.flags?.reputationScore).toBe(0);
+      expect(doc?.flags?.banned).toBe(true); // reached the 'ban' tier (score<=20)
+      expect(doc?.flags?.moderationRev).toBe(6); // exactly six successful writes, none overwritten
+    });
   });
 
   describe('POST /internal/accounts/:id/penalty + rejectIfBanned honoring bannedUntil', () => {

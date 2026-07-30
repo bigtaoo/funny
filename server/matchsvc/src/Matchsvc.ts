@@ -176,9 +176,11 @@ export class Matchsvc {
       botFallbackMs: opts.botFallbackMs ?? 30_000,
       onTimeout: (e) => this.onQueueTimeout(e),
       // matchsvc-prematch-persist (2026-07-29): write-through the ranked queue to Redis (no-op when
-      // this.redis is null — see persist.ts's null-safe convention).
+      // this.redis is null — see persist.ts's null-safe convention). onDequeued is awaited by
+      // Matchmaking.tick()/remove() before any pairing push fires (audit-followup-fixes-0730) — must
+      // actually return the delete's promise here, not fire-and-forget it.
       onEnqueued: (e) => void saveQueueEntry(this.redis, e),
-      onDequeued: (accountId) => void deleteQueueEntry(this.redis, accountId),
+      onDequeued: (accountId) => deleteQueueEntry(this.redis, accountId),
     });
   }
 
@@ -226,7 +228,7 @@ export class Matchsvc {
       // room that was already fully disconnected at its last write, so it isn't pinned in memory forever
       // with no live timer to reap it.
       if (room.slots.length > 0 && room.slots.every((s) => !s.connected)) {
-        room.reapTimer = setTimeout(() => this.destroyRoom(room), REAP_MS);
+        room.reapTimer = setTimeout(() => void this.destroyRoom(room), REAP_MS);
         room.reapTimer.unref?.();
       }
     }
@@ -236,8 +238,12 @@ export class Matchsvc {
     for (const e of queueEntries) this.matchmaking.rehydrateEntry(e);
     // May immediately pair entries that were already a valid match at restart time (same as a normal
     // tick() would have) — do this before the queue_state push below so we don't tell someone "still
-    // searching" right before superseding it with match_found.
-    this.matchmaking.rehydrateDone();
+    // searching" right before superseding it with match_found. Must be awaited (audit-followup-fixes-0730):
+    // rehydrateDone()'s pairing pass is now async (it awaits the Redis dequeue before pushing match_found,
+    // same as a normal tick()), and the `has()` check below needs that pairing to have actually finished —
+    // otherwise an entry mid-pairing would still read as "in queue" and get a redundant queue_state push
+    // moments before match_found.
+    await this.matchmaking.rehydrateDone();
 
     // ── Friend-challenge ("切磋") duel invites ──
     const { invites: duelInvites, lostFromAccountIds: lostDuelAccountIds } = await loadAllDuelInvites(this.redis);
@@ -293,12 +299,12 @@ export class Matchsvc {
    * matches don't show room slots, but after the match starts the opponent's publicId must be
    * written into the ticket → match_start for the in-game profile popup.
    */
-  enqueue(accountId: string, name: string, publicId: string, elo: number, equippedTitle = '', avatarId = '', platform = '', deck: string[] = []): void {
+  async enqueue(accountId: string, name: string, publicId: string, elo: number, equippedTitle = '', avatarId = '', platform = '', deck: string[] = []): Promise<void> {
     if (this.accountRoom.has(accountId) || this.matchmaking.has(accountId)) {
       log.warn('enqueue ignored: already in room/queue', { accountId });
       return;
     }
-    this.matchmaking.enqueue(accountId, name, publicId, elo, equippedTitle, avatarId, platform, deck);
+    await this.matchmaking.enqueue(accountId, name, publicId, elo, equippedTitle, avatarId, platform, deck);
     log.info('enqueued for ranked', { accountId, elo, queueSize: this.matchmaking.size });
   }
 
@@ -309,7 +315,7 @@ export class Matchsvc {
    * If flags is absent or admin is unreachable, treated as off (default false), gracefully
    * degrading to "keep waiting indefinitely".
    */
-  private onQueueTimeout(entry: QueueEntry): void {
+  private async onQueueTimeout(entry: QueueEntry): Promise<void> {
     const on =
       this.flags?.isOn('match_bot_fallback', {
         accountId: entry.accountId,
@@ -319,7 +325,10 @@ export class Matchsvc {
       log.info('queue timeout: bot fallback OFF → keep waiting for human', { accountId: entry.accountId });
       return;
     }
-    this.matchmaking.remove(entry.accountId);
+    // Awaited (audit-followup-fixes-0730, same reasoning as the real-pairing path in Matchmaking.tick):
+    // a crash between this dequeue and the match_bot push below must never leave the Redis mirror still
+    // holding this entry, or rehydrate would re-admit an account that already got a bot match offer.
+    await this.matchmaking.remove(entry.accountId);
     const seed = randomInt(1, 2 ** 48);
     const opponentName = randomPlayerName((n) => randomInt(n));
     const difficulty = pickBotDifficulty(entry.elo, (n) => randomInt(0, n));
@@ -385,7 +394,7 @@ export class Matchsvc {
     this.broadcast(room);
   }
 
-  roomReady(accountId: string, ready: boolean): void {
+  async roomReady(accountId: string, ready: boolean): Promise<void> {
     const room = this.roomOf(accountId);
     if (!room || room.phase >= RoomPhase.IN_MATCH) return;
     const slot = room.slots.find((s) => s.accountId === accountId);
@@ -401,7 +410,11 @@ export class Matchsvc {
     // as the game failing to start. Auto-start (like ranked) removes that gap.
     if (allReady) {
       const [s0, s1] = room.slots;
-      this.destroyRoom(room); // lobby room's job done; match state is now owned by gameserver
+      // Awaited (audit-followup-fixes-0730): a crash between the Redis-side room deletion and the
+      // match_found push below must never leave the room's Redis mirror intact — rehydrate() re-admitting
+      // a room whose slots were already told they matched would re-broadcast room_state for a match that
+      // has already moved on to gameserver.
+      await this.destroyRoom(room); // lobby room's job done; match state is now owned by gameserver
       this.startMatch(
         'friendly',
         { accountId: s0!.accountId, name: s0!.name, publicId: s0!.publicId, equippedTitle: s0!.equippedTitle, avatarId: s0!.avatarId, deck: s0!.deck },
@@ -422,7 +435,7 @@ export class Matchsvc {
    * no-op behavior (and the non-host / not-all-ready rejection paths below), so removing the method
    * itself (not just making it unreachable in practice) broke 9 passing tests. Restored verbatim.
    */
-  roomStart(accountId: string): void {
+  async roomStart(accountId: string): Promise<void> {
     const room = this.roomOf(accountId);
     if (!room || room.phase >= RoomPhase.IN_MATCH) return;
     const host = room.slots.find((s) => s.side === 0);
@@ -430,7 +443,7 @@ export class Matchsvc {
     if (room.slots.length !== 2 || !room.slots.every((s) => s.ready)) return;
 
     const [s0, s1] = room.slots;
-    this.destroyRoom(room); // lobby room's job done; match state is now owned by gameserver
+    await this.destroyRoom(room); // lobby room's job done; match state is now owned by gameserver (see roomReady's await for why)
     this.startMatch(
       'friendly',
       { accountId: s0!.accountId, name: s0!.name, publicId: s0!.publicId, equippedTitle: s0!.equippedTitle, avatarId: s0!.avatarId, deck: s0!.deck },
@@ -440,7 +453,7 @@ export class Matchsvc {
 
   /** Leave the room / cancel queuing. */
   roomLeave(accountId: string): void {
-    this.matchmaking.remove(accountId);
+    void this.matchmaking.remove(accountId);
     const room = this.roomOf(accountId);
     if (!room) return;
     this.removeFromRoom(room, accountId);
@@ -474,20 +487,25 @@ export class Matchsvc {
    * ignored — stale UI on a slow client, nothing to correct). `profile` is the responder's own
    * resolved identity + elo-validated deck (gateway); omitted on decline, required to accept.
    */
-  duelRespond(toAccountId: string, inviteId: string, accept: boolean, profile?: DuelPlayer): void {
+  async duelRespond(toAccountId: string, inviteId: string, accept: boolean, profile?: DuelPlayer): Promise<void> {
     const invite = this.duelInvites.get(inviteId);
     if (!invite || invite.toAccountId !== toAccountId) return;
     clearTimeout(invite.timer);
     this.duelInvites.delete(inviteId);
     this.pendingDuelByAccount.delete(invite.from.accountId);
-    void deleteDuelInvite(this.redis, inviteId, invite.from.accountId);
-    if (!accept || !profile) {
-      log.info('duel declined', { inviteId, from: invite.from.accountId, toAccountId });
-      this.push(invite.from.accountId, { kind: 'duel_cancelled', inviteId, reason: 'declined' });
+    // Awaited on the accept path (audit-followup-fixes-0730 — same reasoning as roomReady/tick): a crash
+    // between this and startMatch's match_found push must never leave the invite's Redis mirror intact,
+    // or rehydrate() would re-push duel_invited for an invite that was already accepted and started.
+    // The decline path below has no following push that depends on it, so it stays fire-and-forget.
+    if (accept && profile) {
+      await deleteDuelInvite(this.redis, inviteId, invite.from.accountId);
+      log.info('duel accepted -> startMatch', { inviteId, from: invite.from.accountId, toAccountId });
+      this.startMatch('friendly', invite.from, profile);
       return;
     }
-    log.info('duel accepted -> startMatch', { inviteId, from: invite.from.accountId, toAccountId });
-    this.startMatch('friendly', invite.from, profile);
+    void deleteDuelInvite(this.redis, inviteId, invite.from.accountId);
+    log.info('duel declined', { inviteId, from: invite.from.accountId, toAccountId });
+    this.push(invite.from.accountId, { kind: 'duel_cancelled', inviteId, reason: 'declined' });
   }
 
   /** Invite timed out with no response (60s) — notify the inviter only; the never-responding
@@ -535,14 +553,14 @@ export class Matchsvc {
 
   /** Account disconnected from gateway: remove from queue; if in a lobby room mark as disconnected (retain within grace period to support control-plane reconnect). */
   onDisconnected(accountId: string): void {
-    this.matchmaking.remove(accountId);
+    void this.matchmaking.remove(accountId);
     const room = this.roomOf(accountId);
     if (!room) return;
     const slot = room.slots.find((s) => s.accountId === accountId);
     if (!slot) return;
     slot.connected = false;
     if (room.slots.every((s) => !s.connected)) {
-      room.reapTimer = setTimeout(() => this.destroyRoom(room), REAP_MS);
+      room.reapTimer = setTimeout(() => void this.destroyRoom(room), REAP_MS);
       room.reapTimer.unref?.();
     }
     void saveRoom(this.redis, room);
@@ -643,7 +661,7 @@ export class Matchsvc {
     // iteration below (both only see the *remaining* slots) — clear it explicitly either way.
     void clearRoomAccount(this.redis, accountId);
     if (room.slots.length === 0) {
-      this.destroyRoom(room);
+      void this.destroyRoom(room);
       return;
     }
     // Remaining player takes side 0 (host) and their ready flag is reset.
@@ -654,7 +672,12 @@ export class Matchsvc {
     this.broadcast(room);
   }
 
-  private destroyRoom(room: Room): void {
+  /**
+   * Returns the deleteRoom promise (not fire-and-forget): roomReady/roomStart's auto-start path awaits it
+   * before startMatch's match_found push (audit-followup-fixes-0730). Callers with no following push that
+   * depends on it (removeFromRoom, the reap timer) call this without awaiting, unchanged from before.
+   */
+  private async destroyRoom(room: Room): Promise<void> {
     if (room.reapTimer) {
       clearTimeout(room.reapTimer);
       room.reapTimer = null;
@@ -662,7 +685,7 @@ export class Matchsvc {
     for (const s of room.slots) this.accountRoom.delete(s.accountId);
     this.byCode.delete(room.code);
     this.rooms.delete(room.roomId);
-    void deleteRoom(this.redis, room);
+    await deleteRoom(this.redis, room);
   }
 
   private playersView(room: Room): PlayerView[] {

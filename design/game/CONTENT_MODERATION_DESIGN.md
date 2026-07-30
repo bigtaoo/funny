@@ -141,7 +141,7 @@ flags?: {
 `POST /internal/accounts/:id/penalty`（metaserver，`X-Internal-Key`，唯一处罚执行路径）：
 ```
 body: { delta: number, reason: string, resolvedBy: string }
-→ 读当前 reputationScore（缺省 100）→ + delta（确认举报传负数）→ clamp [0,100]
+→ 读当前 reputationScore（缺省 100）→ + delta（确认举报传负数）→ clamp [0,100]（**由 `flags.moderationRev` 乐观锁守护，audit-followup-fixes-0730 追加，见 §9.5**：读到的 rev 在写回时不匹配则重读重算重试，不是无保护的读-改-写）
 → 按上表判定动作，写 flags.{mutedUntil|bannedUntil|banned} 中对应字段（只加严不减轻）
 → AccountCache.invalidateBanStatus(accountId)（复用现有失效方法，命名可能需要泛化为 invalidateEnforcementStatus）
 → 返回 { reputationScore, action: 'none'|'warn'|'mute'|'tempban'|'ban' }
@@ -267,3 +267,11 @@ interface AppealDoc {
 - 三语言（zh/en/de）新增 `appeal.*` i18n key（title.banned/title.muted/body/placeholder/submit/cancel/submitted/err.empty/err.failed）。
 - 与设计的差异：除上述客户端挂载点的调整外，无实质偏离。
 - 验证：`metaserver/test/appeal.e2e.test.ts`（新增，8 例：无生效处罚拒绝/空理由拒绝/成功提交+快照/重复申诉 409/内部列表+鉴权/approve 清封禁并复测登录成功/deny 不改字段/404）；`client/test/appeal-prompt.test.ts`（新增，12 例，补上传输层挂载点本身的单测——`maybePromptAppeal`/`setAppealSink` 只对 `ACCOUNT_BANNED`/`ACCOUNT_MUTED` 触发且吞掉 sink 自身抛出的异常、`ApiClient`/`WorldApiClient` 在这两个错误码上正确调用 sink 而其它错误码/成功响应不触发、`createAppCore().submitAppeal` 离线时为 `undefined`、联网时代理到真实 `POST /account/appeal`）；客户端 `npm run typecheck` + `vitest run`（899 个用例全绿）；dev server 冒烟：构建产物加载无报错（真实封禁/禁言账号触发申诉弹窗的交互走查因需起完整后端+人工封禁测试账号，超出本次收尾范围未做，记录为已知验证缺口——传输层挂载点本身已有单测覆盖，缺口仅限"整条链路+真实弹窗渲染"的人工走查）。
+
+### 9.5 P3/P4 二次复核：两处 check-then-act 竞态修复（audit-followup-fixes-0730，2026-07-30）
+
+> P3/P4 是在 `SERVER_LOGIC_AUDIT_2026-07-29.md` 那轮"CAS 优先于 check-then-act"的审计纪律确立**之后**才写的新代码，但没有被那轮审计本身覆盖到。事后一次针对性复查发现两处同款竞态重演，均已修复并补齐并发回归测试（对回退代码验证过确实会失败，非空转假回归）：
+
+- **`POST /internal/appeals/:id/resolve` 的 check-then-act**：原实现是 `findOne({status:'open'})` 判断存在性后**无条件** `updateOne`，两个管理员并发解决同一条申诉时都能通过读检查，最终 status/resolvedBy 由写入顺序决定且都返回 `{ok:true}`，没有任何一方能感知"已被别人处理过"。改为 CAS：写操作本身带 `status:'open'` 过滤条件 + `matchedCount` 判定，落败方返回既有的 404"already resolved"文案，与 socialsvc `resolveReport` 同款写法看齐。`submitAppeal` 的"同账号仅一条 open 申诉"检查同理也是 check-then-act（`findOne` 判重后 `insertOne`），改为 `appeals` 集合新增 `{accountId:1}` 唯一部分索引（`partialFilterExpression:{status:'open'}`，`shared/mongo.ts`）作为原子后盾，`insertOne` 捕获 `E11000` 转译为既有的 409（同 `equipEquipment` 捕获 `gearInstanceIds` 唯一索引冲突的手法）。回归测试：`metaserver/test/appeal.e2e.test.ts` 新增 2 例（5 路并发 resolve 仅 1 赢 4 输 404；2 路并发 submitAppeal 仅 1 赢 1 落 409）——2 路并发 resolve 的竞态复现不稳定（timing-dependent），改成 5 路并发后稳定触发。
+- **`applyPenalty`/`decayReputationOnce` 的 reputationScore 读-改-写**：两者都是"读当前 flags → 在 JS 里算新值 → `$set` 写回"，互相之间（两次并发处罚、或一次处罚撞上每日衰减扫描）没有任何原子性保护，后写者会用基于旧值算出的结果覆盖先写者的结果，静默丢失一次 `-20`/`+10`。设计文档 §4.2 原文描述的算法本身就是这个非原子版本（见上方 CM7 小节的更新说明），不是编码疏忽。修复：`AccountDoc.flags` 新增乐观锁计数器 `moderationRev`（镜像 `SaveDoc.rev`），`applyPenalty`/`decayReputationOnce` 都改成"读→算→`updateOne({_id, moderationRev:读到的值})`守卫写入 + `moderationRev+1`，`matchedCount===0` 则重读重算重试"的标准 CAS 重试循环（`REV_RETRIES=3`，与 `equipment.ts`/`cards.ts` 既有的 rev 重试循环同一手法）；重试耗尽抛 `ModerationConflictError`，`POST /internal/accounts/:id/penalty` 捕获后返回 409（而不是误判成"账号不存在"）。`decayReputationOnce` 额外处理了一个衍生场景：CAS 冲突后重读若发现 `reputationDecayAt` 已不再到期（说明并发的一次新处罚已经把衰减时钟重置到 30 天后），直接放弃这次衰减而不是继续重试——这是"到期"这个前提本身可能被并发写作废的正确处理，不只是简单重试。
+

@@ -4,6 +4,7 @@
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import { createMongo, type MongoHandle } from '@nw/shared';
 import { decayReputationOnce } from '../dist/reputationDecay.js';
+import { applyPenalty } from '../dist/moderation.js';
 
 const URI = process.env.NW_MONGO_URI ?? 'mongodb://127.0.0.1:27017/?replicaSet=rs0';
 const DB = 'nw_meta_reputation_decay_test';
@@ -83,5 +84,41 @@ describe.skipIf(!mongo)('reputation-decay daily sweep e2e', () => {
     const stillDueCount = await m.collections.accounts.countDocuments({ 'flags.reputationScore': 50 });
     expect(healedCount).toBe(3);
     expect(stillDueCount).toBe(2); // left for the next tick, not dropped
+  });
+
+  it('CONCURRENT: a decay tick racing a fresh penalty on the same account never loses either write (audit-followup-fixes-0730)', async () => {
+    await m.collections.accounts.insertOne({
+      _id: 'race1', createdAt: 0, flags: { reputationScore: 70, reputationDecayAt: 1000 },
+    } as never);
+
+    // Two legitimate, unrelated writers hit the same account at once: the daily decay sweep (this account
+    // is due) and a fresh -20 penalty (a report just got upheld). Without the moderationRev CAS guard, the
+    // read-modify-write in one silently overwrites the other's result: e.g. decay's `$set reputationScore:80`
+    // landing after the penalty's read but the penalty's `$set reputationScore:50` still commits last would
+    // strand the account at 50 with reputationDecayAt wrongly left unset (or vice versa, at 80 with the
+    // penalty's mutedUntil/bannedUntil silently dropped). Every valid interleaving is a CAS retry chain, so
+    // moderationRev must equal the number of writes that actually happened (2, since decay's own
+    // "still due?" recheck only ever skips — it never corrupts).
+    const [penalty, decay] = await Promise.all([
+      applyPenalty(m.collections, 'race1', -20, 1000),
+      decayReputationOnce({ cols: m.collections, now: () => 1000 }),
+    ]);
+    expect(penalty).not.toBeNull();
+
+    const doc = await m.collections.accounts.findOne({ _id: 'race1' });
+    if (decay.healed === 1) {
+      // Decay's read won the race (saw 70, healed to 80) and committed before the penalty's read — the
+      // penalty then computed off 80: 80-20=60 ('mute' tier), and reset the decay clock (score<100).
+      expect(doc?.flags?.reputationScore).toBe(60);
+      expect(doc?.flags?.moderationRev).toBe(2);
+      expect(typeof doc?.flags?.reputationDecayAt).toBe('number');
+    } else {
+      // The penalty's write (70-20=50) landed first; by the time decay's internal re-check ran, the account
+      // was no longer due (moderationRev/reputationDecayAt had just been reset by the penalty) — decay
+      // correctly no-ops instead of clobbering the fresher penalty result.
+      expect(decay.healed).toBe(0);
+      expect(doc?.flags?.reputationScore).toBe(50);
+      expect(doc?.flags?.moderationRev).toBe(1);
+    }
   });
 });
