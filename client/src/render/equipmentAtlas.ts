@@ -14,7 +14,7 @@
  */
 import * as PIXI from 'pixi.js-legacy';
 import { iconsAtlas as atlas } from './iconsAtlas';
-import { drawEquipmentGlyph } from './equipmentGlyph';
+import { drawEquipmentGlyph, drawEmptySlotGlyph } from './equipmentGlyph';
 import type { EquipSlot, EquipRarity } from '../game/meta/SaveData';
 
 /** True once the atlas PNG has decoded and frames are parsed. */
@@ -34,13 +34,15 @@ export const loadEquipmentAtlas = atlas.load;
 
 /**
  * Single source of truth for an equipment item's picture. Returns the AI bitmap
- * sprite from the atlas when it is loaded and the defId is known (§20.2), and
- * otherwise the procedural per-slot glyph (§20.3). The returned DisplayObject is
- * centered at its own origin and fits a `size`×`size` box — callers just set
- * `.x/.y` (and optionally `.alpha`). Every icon site (bag, card detail, gacha
- * reveal + odds, auction) MUST go through here so the same item reads the same
- * everywhere; passing a bare slot/rarity glyph inline is what caused per-screen
- * drift.
+ * sprite from the atlas when it is loaded and the defId is known (§20.2), the
+ * hollow "empty slot" glyph when `defId` is undefined (no item equipped), and
+ * otherwise the filled procedural per-slot glyph (§20.3) as a best-effort stand-in
+ * for a real item whose bitmap isn't available yet (atlas still loading / unknown
+ * defId). The returned DisplayObject is centered at its own origin and fits a
+ * `size`×`size` box — callers just set `.x/.y` (and optionally `.alpha`). Every
+ * icon site (bag, card detail, gacha reveal + odds, auction) MUST go through here
+ * so the same item reads the same everywhere; passing a bare slot/rarity glyph
+ * inline is what caused per-screen drift.
  */
 export function buildEquipIcon(
   defId: string | undefined,
@@ -49,7 +51,12 @@ export function buildEquipIcon(
   size: number,
   seed = 1,
 ): PIXI.Container {
-  const tex = defId ? getEquipIconTexture(defId) : null;
+  if (!defId) {
+    const empty = new PIXI.Graphics();
+    drawEmptySlotGlyph(empty, slot, size, seed);
+    return empty;
+  }
+  const tex = getEquipIconTexture(defId);
   if (tex) {
     const sprite = new PIXI.Sprite(tex);
     sprite.anchor.set(0.5, 0.5);

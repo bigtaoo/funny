@@ -755,7 +755,10 @@ export interface operations {
     createFamily: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                /** @description Content-filter region for the family name (CONTENT_MODERATION_DESIGN.md); defaults to global */
+                "X-Chat-Region"?: "global" | "cn" | "de" | "en";
+            };
             path?: never;
             cookie?: never;
         };
@@ -1039,7 +1042,10 @@ export interface operations {
     sendFamilyMessage: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                /** @description Chat-filter region (CONTENT_MODERATION_DESIGN.md); defaults to global */
+                "X-Chat-Region"?: "global" | "cn" | "de" | "en";
+            };
             path: {
                 familyId: string;
             };

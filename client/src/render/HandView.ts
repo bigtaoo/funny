@@ -363,13 +363,20 @@ export class HandView {
     costBg.drawCircle(cardW - 16, 16, 15);
     costBg.endFill();
 
+    // A white wash barely reads against the already-light CARD_BG, so an
+    // unaffordable card looked almost identical to a usable one. A dark,
+    // higher-alpha overlay plus a desaturated art tint gives it a clearly
+    // "disabled" look instead.
     const overlay = c.getChildByName('overlay') as PIXI.Graphics;
     overlay.clear();
     if (!canAfford) {
-      overlay.beginFill(0xffffff, 0.45);
+      overlay.beginFill(0x1a1a1a, 0.55);
       overlay.drawRoundedRect(0, 0, cardW, cardH, 4);
       overlay.endFill();
     }
+
+    const art = c.getChildByName('art') as PIXI.Sprite;
+    art.tint = canAfford ? 0xffffff : 0x888888;
   }
 
   private configureArt(art: PIXI.Sprite, card: CardDefinition, cardW: number, cardH: number): void {

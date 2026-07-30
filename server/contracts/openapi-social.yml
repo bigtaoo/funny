@@ -371,6 +371,8 @@ paths:
     post:
       operationId: createFamily
       security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: X-Chat-Region, in: header, required: false, schema: { type: string, enum: [global, cn, de, en] }, description: 'Content-filter region for the family name (CONTENT_MODERATION_DESIGN.md); defaults to global' }
       requestBody:
         required: true
         content:
@@ -589,6 +591,7 @@ paths:
       security: [{ bearerAuth: [] }]
       parameters:
         - { name: familyId, in: path, required: true, schema: { type: string } }
+        - { name: X-Chat-Region, in: header, required: false, schema: { type: string, enum: [global, cn, de, en] }, description: 'Chat-filter region (CONTENT_MODERATION_DESIGN.md); defaults to global' }
       requestBody:
         required: true
         content:

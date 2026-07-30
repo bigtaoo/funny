@@ -14,6 +14,8 @@ export interface SocialsvcEnv extends ServerEnv {
   gatewayInternalUrl: string | undefined;
   /** metaserver internal HTTP base URL (P2: publicId reverse-lookup + batch profiles); absent = account queries degrade gracefully. */
   metaInternalUrl: string | undefined;
+  /** admin internal HTTP base URL (CONTENT_MODERATION_DESIGN.md §3.2: word list overlay polling); absent = built-in REGION_WORDLISTS only. */
+  adminInternalUrl: string | undefined;
 }
 
 export function loadSocialsvcEnv(): SocialsvcEnv {
@@ -26,5 +28,6 @@ export function loadSocialsvcEnv(): SocialsvcEnv {
     socialMongoDb: process.env.NW_SOCIAL_MONGO_DB ?? 'nw_social',
     gatewayInternalUrl: process.env.NW_GATEWAY_INTERNAL_URL || undefined,
     metaInternalUrl: process.env.NW_META_INTERNAL_URL || undefined,
+    adminInternalUrl: process.env.NW_ADMIN_INTERNAL_URL || undefined,
   };
 }

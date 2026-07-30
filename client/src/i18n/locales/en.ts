@@ -600,10 +600,12 @@ export const en: Record<TranslationKey, string> = {
   'equip.reforgeNoMat': 'No eligible material',
   'equip.confirmReforge': 'Consume [{material}] to reforge [{target}] sub-stats? (Main stat unchanged)',
   'affix.m_atk': 'Attack +{v}%',
+  'affix.m_siege': 'Siege +{v}%',
   'affix.m_hp': 'Health +{v}%',
   'affix.m_spd': 'Speed +{v}%',
   'affix.m_crit': 'Crit Chance +{v}%',
   'affix.s_atk': 'Attack +{v}%',
+  'affix.s_siege': 'Siege +{v}%',
   'affix.s_hp': 'Health +{v}%',
   'affix.s_armor': 'Armor +{v}',
   'affix.s_spd': 'Speed +{v}%',
@@ -1517,6 +1519,17 @@ export const en: Record<TranslationKey, string> = {
   'reconnect.accept': 'Reconnect',
   'reconnect.decline': 'Not Now',
   'reconnect.gone': 'That match is no longer available. Back to the lobby.',
+
+  // ── Content moderation appeal (CONTENT_MODERATION_DESIGN.md CM10) ──
+  'appeal.title.banned': 'Account Suspended',
+  'appeal.title.muted': 'Account Muted',
+  'appeal.body': 'If you believe this was a mistake, explain below and submit an appeal — a human will review it.',
+  'appeal.placeholder': 'Explain your appeal…',
+  'appeal.submit': 'Submit Appeal',
+  'appeal.cancel': 'Cancel',
+  'appeal.submitted': 'Appeal submitted — please wait for review',
+  'appeal.err.empty': 'Please enter a reason',
+  'appeal.err.failed': 'Submission failed, try again later',
 
   // ── Gacha odds disclosure (Apple 3.1.1, L1-3) ───────────────────────────────
   'gacha.oddsDetail.button': 'Odds',

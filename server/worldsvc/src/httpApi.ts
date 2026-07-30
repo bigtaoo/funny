@@ -14,6 +14,7 @@ import {
   SlgError,
   BUILDING_KEYS,
   createLogger,
+  regionFromAcceptLanguage,
   type MarchKind,
   type BuildingKey,
 } from '@nw/shared';
@@ -638,7 +639,8 @@ export function startHttpApi(
           const name = typeof body.name === 'string' ? body.name : null;
           const tag = typeof body.tag === 'string' ? body.tag : null;
           if (!worldId || !name || !tag) return sendErr(res, ErrorCode.BAD_REQUEST, 'worldId + name + tag required');
-          return send(res, 200, ok(await sectSvc.createSect(worldId, accountId, name, tag, clientPlatform)));
+          const sectRegion = regionFromAcceptLanguage(req.headers['accept-language']);
+          return send(res, 200, ok(await sectSvc.createSect(worldId, accountId, name, tag, clientPlatform, sectRegion)));
         }
         if (method === 'POST' && path === '/sect/join') {
           const body = await readJson(req);
@@ -708,7 +710,8 @@ export function startHttpApi(
           const msgBody = typeof body.body === 'string' ? body.body : null;
           const senderName = typeof body.senderName === 'string' ? body.senderName : accountId;
           if (!worldId || !msgBody) return sendErr(res, ErrorCode.BAD_REQUEST, 'worldId + body required');
-          return send(res, 200, ok(await nationChannelSvc.sendMessage(worldId, accountId, senderName, msgBody, clientPlatform)));
+          const nationRegion = regionFromAcceptLanguage(req.headers['accept-language']);
+          return send(res, 200, ok(await nationChannelSvc.sendMessage(worldId, accountId, senderName, msgBody, clientPlatform, nationRegion)));
         }
         if (method === 'GET' && path === '/nation/channel') {
           const worldId = q.get('worldId');

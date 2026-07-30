@@ -8,7 +8,7 @@
 //
 // Transport uses the global fetch (natively supported by Web / CrazyGames). WeChat Mini Game has no fetch (uses wx.request) —
 // its cloud sync is scheduled together with WeChat online compliance; currently SaveManager degrades to local-only (offline-first) when baseUrl / fetch is absent.
-import { netLog } from '../log';
+import { netLog, maybePromptAppeal } from '../log';
 import type { ApiResp } from './types';
 import { clientPlatformName } from '../../app/appConstants';
 import { getNativeBilling } from '../../platform/iap';
@@ -54,15 +54,16 @@ export class ApiClientBase {
   }
 
   // ── Internal ────────────────────────────────────────────────
-  protected async post<T>(path: string, body: unknown): Promise<T> {
-    return this.request<T>('POST', path, body);
+  protected async post<T>(path: string, body: unknown, extraHeaders?: Record<string, string>): Promise<T> {
+    return this.request<T>('POST', path, body, extraHeaders);
   }
 
-  protected async request<T>(method: string, path: string, body?: unknown): Promise<T> {
-    const res = await this.fetchRaw(method, path, body);
+  protected async request<T>(method: string, path: string, body?: unknown, extraHeaders?: Record<string, string>): Promise<T> {
+    const res = await this.fetchRaw(method, path, body, extraHeaders);
     const json = (await res.json()) as ApiResp<T>;
     if (!json.ok) {
       log.error(`${method} ${path} -> ${res.status} ${json.error.code}`, json.error.message);
+      maybePromptAppeal(json.error.code);
       throw new ApiError(json.error.code, json.error.message);
     }
     log.info(`${method} ${path} -> ${res.status} ok`);

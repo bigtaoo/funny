@@ -16,6 +16,7 @@ import {
   censorChat,
   REPORT_REASON_MAX,
   type ChatRegion,
+  type WordlistCache,
 } from '@nw/shared';
 
 export type SocialError =
@@ -24,13 +25,16 @@ export type SocialError =
   | 'ALREADY_FRIEND'
   | 'FRIEND_CAP_REACHED'
   | 'NOT_FRIEND'
-  | 'BLOCKED';
+  | 'BLOCKED'
+  | 'MUTED';
 
 interface Deps {
   cols: SocialCollections;
   gateway: SocialGatewayClient;
   meta: SocialMetaClient;
   now: () => number;
+  /** Content-moderation word list overlay cache (CONTENT_MODERATION_DESIGN.md §3.2); omit = built-in REGION_WORDLISTS only. */
+  wordlists?: WordlistCache;
 }
 
 async function hasBlock(cols: SocialCollections, owner: string, target: string): Promise<boolean> {
@@ -46,12 +50,14 @@ export class FriendService {
   private readonly gateway: SocialGatewayClient;
   private readonly meta: SocialMetaClient;
   private readonly now: () => number;
+  private readonly wordlists: WordlistCache | undefined;
 
   constructor(deps: Deps) {
     this.cols = deps.cols;
     this.gateway = deps.gateway;
     this.meta = deps.meta;
     this.now = deps.now;
+    this.wordlists = deps.wordlists;
   }
 
   // ── Friends ──────────────────────────────────────────────────────────────────
@@ -308,9 +314,24 @@ export class FriendService {
     return true;
   }
 
-  /** Open reports, oldest first (ops/admin review queue — internal endpoint, no in-app moderation UI yet). */
-  async listOpenReports(limit = 200): Promise<ReportDoc[]> {
-    return this.cols.reports.find({ status: 'open' }).sort({ ts: 1 }).limit(limit).toArray();
+  /** Reports queue for ops/admin review (CONTENT_MODERATION_DESIGN.md CM11), oldest first. Defaults to 'open'. */
+  async listReports(status: ReportDoc['status'] = 'open', limit = 200): Promise<ReportDoc[]> {
+    return this.cols.reports.find({ status }).sort({ ts: 1 }).limit(limit).toArray();
+  }
+
+  /**
+   * Resolve a report (CM9): only flips this doc's own `status` — the reputation-score penalty on 'upheld'
+   * is a separate admin→metaserver call (CM7's single enforcement path), deliberately not performed here so
+   * socialsvc never has to know about `AccountDoc.flags`/reputation thresholds. Returns false if the report
+   * doesn't exist or is not currently 'open' (resolving twice is rejected, not silently idempotent, so admin
+   * can surface "already resolved by X" instead of double-counting a penalty call).
+   */
+  async resolveReport(id: string, resolution: 'dismissed' | 'upheld', resolvedBy: string): Promise<boolean> {
+    const res = await this.cols.reports.updateOne(
+      { _id: id, status: 'open' },
+      { $set: { status: resolution, resolvedBy, resolvedAt: this.now() } },
+    );
+    return res.matchedCount > 0;
   }
 
   // ── Private chat ──────────────────────────────────────────────────────────────────
@@ -361,8 +382,10 @@ export class FriendService {
 
     const fromProfile = await this.meta.batchProfiles([accountId]).then((m) => m.get(accountId) ?? null);
     if (!fromProfile) return { kind: 'error', error: 'BAD_REQUEST' };
+    // CONTENT_MODERATION_DESIGN.md CM7.1: mute check piggybacked on this profile fetch (no extra round trip).
+    if (fromProfile.mutedUntil && fromProfile.mutedUntil > this.now()) return { kind: 'error', error: 'MUTED' };
 
-    const body = censorChat(trimmed, region).text;
+    const body = censorChat(trimmed, region, this.wordlists).text;
     const convId = conversationId(accountId, to);
     const messageId = randomUUID();
     const now = this.now();

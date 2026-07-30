@@ -25,6 +25,8 @@ export interface AuthApi {
   equipSkin(unitType: string, skinId: string | null): Promise<{ save: SaveData }>;
   /** Set one client-preference flag by key (onboarding/consent/tutorial-seen — no ownership semantics). */
   setFlag(key: string, value: boolean): Promise<{ save: SaveData }>;
+  /** Submit an appeal against the account's currently active mute/temp-ban/ban (CONTENT_MODERATION_DESIGN.md CM10). */
+  submitAppeal(reason: string): Promise<void>;
 }
 
 export function AuthMixin<TBase extends ApiClientBaseCtor>(Base: TBase): TBase & Constructor<AuthApi> {
@@ -132,6 +134,10 @@ export function AuthMixin<TBase extends ApiClientBaseCtor>(Base: TBase): TBase &
 
     async setFlag(key: string, value: boolean): Promise<{ save: SaveData }> {
       return this.request<{ save: SaveData }>('PUT', '/flags', { key, value });
+    }
+
+    async submitAppeal(reason: string): Promise<void> {
+      await this.post<{ ok: true }>('/account/appeal', { reason });
     }
   };
 }

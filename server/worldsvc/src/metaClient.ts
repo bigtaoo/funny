@@ -9,6 +9,8 @@ export interface PlayerProfile {
   displayName?: string;
   /** Equipped title (称号), if any. */
   equippedTitle?: string;
+  /** CONTENT_MODERATION_DESIGN.md CM7.1: epoch ms until which this account is muted, if currently muted. */
+  mutedUntil?: number;
 }
 
 /**

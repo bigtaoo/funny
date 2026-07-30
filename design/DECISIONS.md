@@ -1,6 +1,6 @@
 # 决策日志（ADR）
 
-> 状态：实现中 · 权威：本文 · 更新：2026-07-22
+> 状态：实现中 · 权威：本文 · 更新：2026-07-29
 
 记录**会造成文档间漂移**的关键拍板：改数值口径、改命名、改架构、废弃旧方案。
 每条 ADR 注明：日期、决策、影响的文档、为什么。新拍板追加在末尾，不改旧条目（要改就加一条新的 *Supersedes*）。
@@ -627,6 +627,12 @@
   - `flags.*`（含动态 `featSeen.<id>` 命名空间）新增通用 `PUT /flags`（`{key,value}`，无所有权语义，走整段 `flags` 对象替换避免 key 里天然带的字面点号被 Mongo 点号路径语法误解析成嵌套字段）。
   - `SaveManager` 新增 `equipTitle/equipAvatar/equipSkin/setFlag` 四个方法：先写本地镜像（即时 UI 反馈）→ 后台发请求 → 成功走 `reconcile()` 确认、失败触发一次 `refresh()` 自我纠正——不同于旧模型的"本地写了就算数"，这里任何被拒绝/丢失的写入最迟下一次同步就会被服务器真值覆盖回来。
   - `reconcile()` 删除 `equipped`/`flags` 的本地优先合并分支，改成跟其它字段一样整段取云端——这是让"刷新治百病"成立的关键：以后无论本地怎么写脏，下一次成功同步必定纠正。
+
+## ADR-057 内容治理体系（敏感词归一化 + 词库外部化 + 举报处理闭环 + 信誉分分级处罚 + 审核/申诉后台） — Accepted — 2026-07-29
+
+- **决策**（用户拍板，"全部加，先文档后编码"）：新增 [`game/CONTENT_MODERATION_DESIGN.md`](game/CONTENT_MODERATION_DESIGN.md) 为用户名/家族名/宗门名/聊天治理的单一权威，取代 `SOCIAL_DESIGN.md` SOC10 与 `COMPLIANCE_GLOBAL.md` §7 的临时描述。四层：①`chatFilter.ts` 前置归一化预处理 + 词库外部化（admin 可管理、DB 覆盖代码默认值、消费方轮询缓存）；②补齐五个此前完全未过滤的缺口（注册首次昵称、家族名、宗门名、家族频道聊天、世界/国家频道聊天）；③新增信誉分（`AccountDoc.flags.reputationScore`）+ 分级处罚（警告/禁言/限时封禁/永久封禁），处罚执行收敛到 metaserver 新端点 `POST /internal/accounts/:id/penalty`（唯一处罚执行路径，扩展既有唯一封号路径原则）；④`ReportDoc` 补 resolve API + admin/`tools/ops` 新增举报审核与申诉面板。
+- **明确排除**：第一期不接第三方语义审核 API（隐私/GDPR 处理者协议顾虑）；gateway/WS 层实时强制断开已封禁连接是独立于本决策的既有缺口，不在本次范围内一并修（见文档 §8 O-CM4）。
+- **影响**：新增 [`game/CONTENT_MODERATION_DESIGN.md`](game/CONTENT_MODERATION_DESIGN.md)；`SOCIAL_DESIGN.md` SOC10、`COMPLIANCE_GLOBAL.md` §7 改为指针；`OPS_DESIGN.md` §2.2 能力矩阵新增 `reports.*`/`appeals.*`/`moderation.wordlist.manage`；README §1.2 登记新文档。
   - 因为 `equipped`/`flags` 是 `SyncPatch`（`PUT /save`）唯一还在用的两个字段，两者都迁走后 `PUT /save` 变成空壳，**整个端点删除**（连同 `SyncPatch` 类型、`applySyncPatch`/`sanitizeEquipped`/`putSave`、`SaveManager` 里整套防抖/`dirty`/`pushTimer`/`flush()`/`bindLifecycle()` 机制），而不是留一个不再被调用的死端点。
 - **权衡取舍**：新方案下，若设备在"本地写入已发生、服务器请求还没成功"的极短窗口内离线/关闭页面，这次编辑不会补发（旧模型靠 `beforeunload`/`visibilitychange` 强制 flush 兜底这个窗口，现在没有对应机制，因为压根没有攒批的东西要 flush）——评估为可接受：等价的"极小概率丢一次头衔/皮肤选择，下次操作再选一次就好"，远好于"数据一旦写脏永久回不来"。GDPR 同意这类需要强保证的场景已有独立的账户级 `POST /account/gdpr-consent`（`accounts.flags.gdprConsent`）兜底，save 级 `flags.gdprConsent` 只是展示用途的镜像，未在本次改动中特别处理。
 - **实现**：`server/contracts/openapi/paths/{save,liveops}.yml` + `schemas.yml`（新增 `equipSkin`/`setFlag`、删除 `putSave`/`SyncPatch`）→ `gen:api:contracts`/`gen:api:server`/client `rest:gen` 三级重新生成；`server/metaserver/src/service/{save,liveops}.ts`、`server/metaserver/src/save.ts`（只留 `getOrCreateSave`/`isAvatarOwned`/`isSkinOwned`/`writeMigratedSave`）；`server/shared/src/types.ts` 删 `SyncPatch`；`client/src/game/meta/{SaveData,SaveManager}.ts`、`client/src/net/ApiClient/auth.ts`；调用点 `app/nav/{auth,game}.ts`、`app/createAppCore.ts`（去掉 `onSyncError`）。测试：新增 `server/metaserver/test/liveops-equip.test.ts`（无 Mongo，覆盖 `equipAvatar`/`equipSkin`/`setFlag` 的所有权校验+边界），删除已失效的 `save-patch.test.ts`，`save.e2e.test.ts` 的 `PUT /save` 用例改写为 `PUT /flags` 并发场景；client `save-manager.test.ts` 补齐 `setFlag`/`equipTitle`/`equipAvatar`/`equipSkin` 的乐观写入+自纠正回归。验证：server `vitest run` 724/724（含真实 Mongo e2e）；client `tsc --noEmit -p tsconfig.test.json` + `vitest run` 808/808 + `webpack --mode production` 全绿。

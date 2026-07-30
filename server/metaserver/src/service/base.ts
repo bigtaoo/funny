@@ -3,7 +3,7 @@
 // mixin; each business domain lives in its own sibling file as an `XMixin(Base)` and is chained
 // together into the final MetaService. Domain-local state/helpers stay in their own mixin file.
 import type { FastifyReply, FastifyRequest } from 'fastify';
-import type { Collections, JwtConfig, SaveData, FeatureFlagCache, RedisLike } from '@nw/shared';
+import type { Collections, JwtConfig, SaveData, FeatureFlagCache, RedisLike, WordlistCache } from '@nw/shared';
 import { ErrorCode, err, accrueRetentionTask, getActiveMatch } from '@nw/shared';
 // Rate limiter (RateLimiter/SlidingRateLimiter/RedisSlidingRateLimiter/createRateLimiter) moved to
 // @nw/shared 2026-07-29 (SERVER_LOGIC_AUDIT_2026-07-29 known-gap #4: gateway needed the same in-process/
@@ -28,6 +28,8 @@ export interface ServiceDeps {
   authRateLimit: number;
   /** Feature flag cache (evaluated for the public /bootstrap endpoint; FEATURE_FLAGS_DESIGN §9.3). null = no flag source, bootstrap always returns an empty map. */
   flags: FeatureFlagCache | null;
+  /** Content-moderation word list overlay cache (CONTENT_MODERATION_DESIGN.md §3.2). null = built-in REGION_WORDLISTS only, no ops-managed overlay. */
+  wordlists: WordlistCache | null;
   /** Deployment region (injected into flag evaluation context). */
   region: string | null;
   /** Loki push URL (POST /client/log forwards client logs; null = silently dropped). */
@@ -99,7 +101,7 @@ export class MetaServiceBase {
     return false;
   }
 
-  /** C4/C5-b: Check account-level ban / soft-delete flags; if flagged, reject the request and return true.
+  /** C4/C5-b/CM6: Check account-level ban / temp-ban / soft-delete flags; if flagged, reject the request and return true.
    *  Cached (2026-07-27, accountCache.ts) — a cache hit skips the Mongo round trip entirely. */
   protected async rejectIfBanned(cols: ServiceDeps['cols'], accountId: string, reply: FastifyReply): Promise<boolean> {
     const status = await this.deps.accountCache.getBanStatus(cols, accountId);
@@ -109,6 +111,11 @@ export class MetaServiceBase {
     }
     if (status.banned) {
       void reply.code(403).send(err(ErrorCode.ACCOUNT_BANNED, 'account banned'));
+      return true;
+    }
+    // CONTENT_MODERATION_DESIGN.md CM6: a temp ban auto-expires — no unban action needed once bannedUntil passes.
+    if (status.bannedUntil && status.bannedUntil > this.deps.now()) {
+      void reply.code(403).send(err(ErrorCode.ACCOUNT_BANNED, 'account temporarily banned'));
       return true;
     }
     return false;

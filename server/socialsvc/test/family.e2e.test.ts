@@ -64,6 +64,15 @@ describe.skipIf(!mongo)('socialsvc FamilyService e2e', () => {
     await expectErr(svc.createFamily('m1', 'Tag Clash', 'AAA'), 'ALREADY_IN_FAMILY');         // duplicate tag → unique index
   });
 
+  it('createFamily: rejects a name that hits the sensitive-word filter (CONTENT_MODERATION_DESIGN.md CM5)', async () => {
+    // 'shit' is in chatFilter.ts's global word list — family name is long-lived/public like a
+    // displayName, so a hit rejects creation outright rather than persisting a masked name.
+    await expectErr(svc.createFamily('leader', 'Shit Family', 'BAD1'), 'BAD_REQUEST');
+    // Rejected creation must not have left the caller "in a family" — a clean retry succeeds.
+    const fam = await svc.createFamily('leader', 'Clean Family', 'CLN1');
+    expect(fam.name).toBe('Clean Family');
+  });
+
   it('createFamily: accepts a name exactly at the width cap (6 汉字 = width 12)', async () => {
     const fam = await svc.createFamily('leader', '六个汉字上限', 'CAP6');
     expect(fam.name).toBe('六个汉字上限');
@@ -295,6 +304,22 @@ describe.skipIf(!mongo)('socialsvc FamilyService e2e', () => {
     await expectErr(svc.sendMessage('leader', 'Leader', ''), 'BAD_REQUEST');
     await expectErr(svc.sendMessage('leader', 'Leader', 'x'.repeat(FAMILY_MSG_BODY_MAX + 1)), 'BAD_REQUEST');
     void fam;
+  });
+
+  it('sendMessage: masks a sensitive word instead of rejecting delivery (CONTENT_MODERATION_DESIGN.md CM5, mask-not-reject like DM/world chat)', async () => {
+    await svc.createFamily('leader', 'Maskers', 'MASK');
+    const result = await svc.sendMessage('leader', 'Leader', 'what the fuck');
+    expect(result.body).toBe('what the ****');
+  });
+
+  it('sendMessage: rejects delivery while muted (CONTENT_MODERATION_DESIGN.md CM6/CM7.1)', async () => {
+    await svc.createFamily('leader', 'Muters', 'MUTE');
+    meta.mute('leader', nowMs + 3600_000); // muted 1h into the future
+    await expectErr(svc.sendMessage('leader', 'Leader', 'hello'), 'ACCOUNT_MUTED');
+    // Once the mute has expired, the same account can post again.
+    nowMs += 3600_001;
+    const result = await svc.sendMessage('leader', 'Leader', 'hello again');
+    expect(result.body).toBe('hello again');
   });
 
   // Regression: senderName must never trust a stale client-side cache (e.g. leftover from before

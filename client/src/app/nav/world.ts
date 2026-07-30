@@ -73,14 +73,25 @@ export function createWorldNav(ctx: AppCtx): WorldNav {
     };
 
     // Close an SLG panel and reveal the live map underneath: pop the overlay (map resumes, no rebuild)
-    // and re-bind the map's push handlers (see bindMapNet). This is what every panel's back button runs.
+    // and re-bind the map's push handlers (see bindMapNet). This is what every panel's back button runs
+    // except City's (see returnFromCityToMap below) — world chat / the world-tile defense editor / the
+    // (account-scoped, worldId-free) auction house never touch playerWorld.troops/cardState, so there's
+    // nothing on `me` for them to leave stale.
     const returnToMap = (): void => { views.hideOverlay(); bindMapNet(); };
+
+    // City-only variant: additionally re-fetches `me` (cardState/troops). City's "edit team" detour is
+    // the one path that can change a team's carried troops (the formation editor's "Fill troops" /
+    // distributeTroops) without the still-alive map ever re-reading it (ADR-044 — the map never tears
+    // down+rebuilds to pick that up on its own). Without this, a team just given troops there keeps
+    // reading its stale (often 0) troop count back on the map and silently drops out of the
+    // occupy/attack team picker ("No teams yet") — see slg-worldmap-me-stale-after-overlay-return memory.
+    const returnFromCityToMap = (): void => { views.hideOverlay(); bindMapNet(); view.refreshMe(); };
 
     // Home Desk (CityScene) as an overlay; its "edit team" detour swaps in the formation editor as a
     // sibling overlay (map still alive underneath), and backing out of that rebuilds the City overlay.
     const openCity = (): void => {
       views.showCity({
-        onBack: returnToMap,
+        onBack: returnFromCityToMap,
         onEditTeam(teamId, teamName) {
           views.showDefenseEditor({
             onBack: openCity,

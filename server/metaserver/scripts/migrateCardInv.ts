@@ -28,13 +28,14 @@
 //     — a re-run over already-migrated instances is a no-op, never a duplicate-key throw.
 //   - Dry-run mode: pass --dry-run to count + log without writing anything.
 import { MongoClient, type Document } from 'mongodb';
+import { pathToFileURL } from 'node:url';
 
 const MONGO_URI = process.env.NW_MONGO_URI ?? 'mongodb://localhost:27017';
 const MONGO_DB = process.env.NW_MONGO_DB ?? 'notebook_wars';
 const DRY_RUN = process.argv.includes('--dry-run');
 const REV_RETRIES = 3;
 
-interface CardInstanceLike {
+export interface CardInstanceLike {
   id: string;
   defId: string;
   level: number;
@@ -42,10 +43,13 @@ interface CardInstanceLike {
   locked: boolean;
 }
 
-async function migrateOneAccount(
+/** `dryRun` is an explicit param (not the module-level DRY_RUN) so tests can import and drive both
+ *  branches directly — see migrateCardInv.test.ts. */
+export async function migrateOneAccount(
   saves: import('mongodb').Collection<Document>,
   cardInstances: import('mongodb').Collection<Document>,
   accountId: string,
+  dryRun: boolean = DRY_RUN,
 ): Promise<{ ok: true; count: number } | { ok: false; error: string }> {
   for (let attempt = 0; attempt < REV_RETRIES; attempt++) {
     const doc = await saves.findOne({ _id: accountId });
@@ -54,7 +58,7 @@ async function migrateOneAccount(
     const inv = save.cardInv ?? {};
     const entries = Object.values(inv);
 
-    if (!DRY_RUN && entries.length > 0) {
+    if (!dryRun && entries.length > 0) {
       await cardInstances.bulkWrite(
         entries.map((inst) => ({
           replaceOne: {
@@ -74,7 +78,7 @@ async function migrateOneAccount(
       );
     }
 
-    if (DRY_RUN) return { ok: true, count: entries.length };
+    if (dryRun) return { ok: true, count: entries.length };
 
     const res = await saves.findOneAndUpdate(
       { _id: accountId, rev: doc.rev },
@@ -131,7 +135,13 @@ async function main(): Promise<void> {
   await client.close();
 }
 
-main().catch((e) => {
-  console.error('[migrateCardInv] failed:', e);
-  process.exit(1);
-});
+// Guard so tests can `import { migrateOneAccount } from './migrateCardInv.js'` without triggering a
+// live Mongo connect (process.argv[1] is the test runner's entry, not this file, when imported rather
+// than run directly) — mirrors samplePvpReplays.ts's isMain guard.
+const isMain = !!process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href;
+if (isMain) {
+  main().catch((e) => {
+    console.error('[migrateCardInv] failed:', e);
+    process.exit(1);
+  });
+}

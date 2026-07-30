@@ -14,6 +14,7 @@ import type {
   SlgShopItemOverrideDoc,
   TradeAuditSnapshot,
   TradeAuditTicketStatus,
+  WordlistOverrideDoc,
 } from '@nw/shared';
 
 /** Operations account (standalone account store, never reuses player accounts; §2.1). */
@@ -109,6 +110,8 @@ export interface AdminCollections {
   featureFlags: Collection<FeatureFlagDoc>;
   // SLG shop price/effect overrides (SLG_DESIGN §8/G7): _id = shop item id; only items overridden by ops are stored.
   slgShopPrices: Collection<SlgShopItemOverrideDoc>;
+  // Content-moderation word list overlays (CONTENT_MODERATION_DESIGN.md §3.2): _id = ChatRegion; additive on top of REGION_WORDLISTS.
+  moderationWordlists: Collection<WordlistOverrideDoc>;
 }
 
 export interface AdminMongo {
@@ -148,6 +151,7 @@ export async function createAdminMongo(
     metricSnapshots: db.collection<MetricSnapshotDoc>('metricSnapshots'),
     featureFlags: db.collection<FeatureFlagDoc>('featureFlags'),
     slgShopPrices: db.collection<SlgShopItemOverrideDoc>('slgShopPrices'),
+    moderationWordlists: db.collection<WordlistOverrideDoc>('moderationWordlists'),
   };
 
   async function ensureIndexes(snapshotTtlSec: number): Promise<void> {
@@ -170,6 +174,8 @@ export async function createAdminMongo(
     await collections.featureFlags.createIndex({ updatedAt: -1 });
     // SLG shop price overrides: indexed by most-recent update time (_id is the item id, naturally unique — no extra unique index needed).
     await collections.slgShopPrices.createIndex({ updatedAt: -1 });
+    // Moderation word list overlays: indexed by most-recent update time (_id is the region code, naturally unique — no extra unique index needed).
+    await collections.moderationWordlists.createIndex({ updatedAt: -1 });
   }
 
   return {

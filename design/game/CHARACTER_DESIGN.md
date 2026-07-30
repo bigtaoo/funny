@@ -180,7 +180,7 @@ Anna 三人随偶数章出场（[characters.md](../product/characters.md)：Ch2/
 
 ### 7.4 视觉风格分工（承接 `art-direction.md` §4.1）
 
-- **陶侧 3 个**（铁甲兵/跑兵/医疗兵）：走陶阵营既有的单色圆珠笔火柴人 plus 风格（空心管状四肢+圆形关节+大圆头单点眼，侧视朝右，≤2 识别特征/单位），跟 infantry/archer/shieldbearer 同源。
+- **陶侧 3 个**（铁甲兵/跑兵/医疗兵）：走陶阵营既有的单色文具火柴人 plus 风格（空心管状四肢+圆形关节+大圆头单点眼，侧视朝右，≤2 识别特征/单位），跟 infantry/archer/shieldbearer 同源。**媒材按角色分**（呼应 §3「主用三支学生常备笔」+ 最初三个锚点角色各有不同笔触的先例，不是每个角色都默认铅笔）：穷奇＝铅笔厚涂交叉排线（已定稿）；獬豸/卫安＝**黑墨水钢笔**（2026-07-29 由铅笔改定，见 §7.6 修订记录——干净利落的钢笔线稿比铅笔更硬朗清爽，也避免整批复用兵全走同一种媒材显单调）。**蓝/红钢笔墨水保留给阵营专属语义**（`art-direction.md §3.2`：我方蓝钢笔/敌方红钢笔），中立复用兵（PvE 可作敌方出现）一律不用蓝/红墨水，避免固定烤色跟脚下的阵营色斑打架。**识别特征额外上色**（2026-07-29 二次修订）：黑墨水钢笔缩到实战渲染尺寸（M 档 ~54px）后仍偏难辨认——色相对比比线条粗细更扛缩小，所以在既有"马克笔色块只做克制的功能点缀（武器/盾面等）"规则（§3.2）上，把这条用法扩展到獬豸/卫安各自≤2 识别特征本身：獬豸的独角+尾巴＝**青色马克笔**，卫安的药箱+布条＝**绿色马克笔**，身体其余部分仍是纯黑线稿。两色均避开蓝/红（阵营）、黄/橙（警告/选中）、灰（禁用）、紫（装备 epic 稀有度，`EQUIPMENT_DESIGN.md`）。
 - **Anna 侧 3 个**（鬼鸟/狂战士/裂变兵）：走 Anna 阵营既有的铅笔线+水彩淡彩写实风格（`ANNA_CHARACTERS.md` 模板），冷蓝色系；裂变兵作为怪物形态需要新想一套非人形骨架的呈现方式（不套 Max/Lena/Mara 的少年骨架模板）。
 
 ### 7.5 待办
@@ -189,6 +189,7 @@ Anna 三人随偶数章出场（[characters.md](../product/characters.md)：Ch2/
 - [x] Anna 侧三个（鬼鸟/狂战士/裂变兵）具名+背景故事+视觉方案+出图 prompt——**已定稿**（2026-07-02，详见 [`ANNA_CHARACTERS.md`](ANNA_CHARACTERS.md#anna-阵营的三只怪物aello--björn--lerna)：鬼鸟＝**Aello**、狂战士＝**Björn**、裂变兵＝**Lerna**）
 - [ ] 是否需要给这 6 个兵也定"跟 Max/Lena/Mara 的关系/羁绊"（例如裂变兵是否有"被驯服的怪物，谁收编的它"这层身份）——留待讨论（穷奇/獬豸/卫安/Aello/Björn/Lerna 六个暂时都不定）
 - [ ] 是否要落 ADR（本节拍板的阵营归属属于会造成漂移的决定）——**等用户过目两侧设计后一并记**
+- [x] **跑兵/医疗兵墨线过淡，实战几乎看不清**（2026-07-29 用户截图反馈，同日已解决）：对比 `client/src/assets/units/{medic,runner,infantry,ironclad}.tao` 的 spritesheet 发现，步兵/穷奇的骨骼部件有交叉排线打阴影，视觉重量够；跑兵（獬豸）/医疗兵（卫安）只有极细空心轮廓、几乎纯白，糊进米黄方格纸背景（`art-direction.md §3.1` `#F5F0E8`）里辨识度很差。**最终方案**（迭代到 v5/v7 才定稿，见 §7.6）：黑墨水钢笔线稿（不是铅笔排线，避免跟穷奇撞媒材）+ 识别特征实心马克笔上色（獬豸角/尾巴青色、卫安药箱/十字/布条绿色）+ 全身淡色荧光笔浅扫（把实心色块跟身体统一，不再像贴纸）。中途还顺带修了两个连带问题：獬豸 prompt 里混进的"耳朵"描述（模板残留，从没设计过耳朵）、卫安"双手举在身前"被误画成交握心虚的姿态（改成双手分开伸向病人）。GIMP 抠件 → animator 绑骨为下一步，不在本次会话范围内。
 
 ### 7.6 陶阵营三个新英雄（具名+背景+视觉，2026-07-02 定稿）
 
@@ -311,7 +312,221 @@ of Loathing / doodle art.
 ```
 负向：`clean vector, smooth lines, 3d render, photorealistic, color fill, painterly, shading gradient, thick bold outline, crouching pose, bent legs, gathered legs, legs pulled under body, overlapping limbs, crossed limbs, foreshortening, multiple objects, text watermark, gray background, notebook grid lines, drop shadow, walking gait, mid-stride, three-quarter view`
 
-> **出图状态**：✅ 已出图确认（2026-07-02），可进入 GIMP 抠件 → animator 绑骨流程。
+> **出图状态**：✅ 已出图确认（2026-07-02），可进入 GIMP 抠件 → animator 绑骨流程。**⚠️ 2026-07-29 用户截图反馈**：实机里这只兽近乎纯白、糊进纸色背景看不清——v1 prompt 从没要求排线阴影（对比穷奇 prompt 里明确写了"Dense cross-hatching pencil texture..."），只有细描边，墨线密度跟同阵营其它兵种不一致。**需要重新出图**，见下方 v2 修订版（补齐排线，其余不变）。
+
+**出图 prompt v2**（2026-07-29 修订，仅补齐排线阴影密度，姿态/构造/风格描述不变）：
+```
+Messy hand-drawn doodle scribbled in the margin of a worn school notebook,
+single dark-ink ballpoint pen line art, visibly rough and wobbly imperfect
+strokes with slight overshoot at line ends and small double-lined
+correction marks, like a bored teenager quickly sketching during class —
+NOT clean, NOT precise, NOT a smooth vector line. A small hollow
+tube-limbed beast character built from rounded pipe-like limb segments and
+circle joints, same construction language as a stick-figure soldier but
+reshaped into a tiny four-legged unicorn-like creature: a compact stocky
+body held low and close to the ground, noticeably smaller and shorter than
+a human-sized character, a round head with a single dot eye positioned
+toward the facing direction, alert and eager expression. A single short
+straight horn sits on top of its head. Its tail curls upward into a tight
+question-mark shape, alert and twitchy.
+
+Dense cross-hatching pencil shading covers the torso, haunches and all
+four legs, giving the fur a richly inked, textured look with the same
+heavy ink density as the game's other stick-figure units — NOT a thin bare
+outline, NOT a sparsely-lined empty silhouette.
+
+POSE: neutral relaxed standing stance suitable as a rigging reference
+pose, all four legs standing normally on the ground with even weight,
+front pair of legs and back pair of legs each clearly separated side by
+side, all four legs straight and simply planted (not bent into a crouch,
+not gathered together, not overlapping or crossing each other, not
+mid-stride, not a walking gait). Ears slightly forward and tail held
+alert to suggest a restless, itching-to-move temperament, but the body
+pose itself stays calm and static like a T-pose reference.
+
+Every limb segment clearly separated with no overlapping or crossing
+limbs, no foreshortening, suitable as a rigging reference pose. Side
+profile view, facing right. Isolated single character, centered, on a
+plain pure-white background, no grid lines, no other elements. Flat 2D,
+no 3D, no gradients, no glossy highlights, no thick cartoon outline, no
+color fill (line art only, to be tinted programmatically). Style of West
+of Loathing / doodle art.
+```
+负向：`clean vector, smooth lines, 3d render, photorealistic, color fill, painterly, shading gradient, thick bold outline, crouching pose, bent legs, gathered legs, legs pulled under body, overlapping limbs, crossed limbs, foreshortening, multiple objects, text watermark, gray background, notebook grid lines, drop shadow, walking gait, mid-stride, three-quarter view, thin bare outline, sparse linework, empty unshaded body, flat unshaded silhouette`
+
+> **出图状态**：v2 已出图确认可读（补齐排线后跟纸色背景对比度足够），**但用户反馈媒材跟穷奇撞了**（同样是铅笔+网格厚涂，六个复用兵不该全长一个质感，§7.4 已改为按角色分媒材）。**改用黑墨水钢笔重新出图**，见下方 v3（换媒材，姿态/构造不变，不再用铅笔排线，改钢笔本身的线宽/浓淡对比给视觉重量；避开蓝/红钢笔墨水，两色是阵营专属语义 `art-direction.md §3.2`）。
+
+**出图 prompt v3**（2026-07-29 修订，铅笔厚涂 → 黑墨水钢笔，姿态/构造/识别特征不变）：
+```
+Messy hand-drawn doodle scribbled in the margin of a worn school notebook,
+drawn with a BLACK INK FOUNTAIN PEN — NOT pencil, NOT graphite: confident
+bold wet-ink strokes with slightly varying line weight (thicker where the
+nib presses down, thinner on quick flicks), small ink blots and a couple
+of tiny smudges where the pen dragged, crisp and dark rather than grainy
+or hatchy. Visibly rough and wobbly imperfect strokes with slight
+overshoot at line ends and small double-lined correction marks, like a
+bored teenager quickly sketching during class — NOT clean, NOT precise,
+NOT a smooth vector line. A small hollow tube-limbed beast character built
+from rounded pipe-like limb segments and circle joints, same construction
+language as a stick-figure soldier but reshaped into a tiny four-legged
+unicorn-like creature: a compact stocky body held low and close to the
+ground, noticeably smaller and shorter than a human-sized character, a
+round head with a single dot eye positioned toward the facing direction,
+alert and eager expression. A single short straight horn sits on top of
+its head. Its tail curls upward into a tight question-mark shape, alert
+and twitchy.
+
+Shading is built from solid black ink fills and a few bold parallel pen
+strokes in the deepest shadow pockets (underside of the belly, inner
+joints) — NOT pencil cross-hatching, NOT a grainy graphite texture. The
+outline itself is thick and saturated enough to read clearly on its own,
+so shading stays sparse and confident rather than dense. Overall ink
+density should feel closer to a fountain-pen sketch than a pencil study —
+NOT a thin bare outline, NOT a sparsely-lined empty silhouette either.
+
+POSE: neutral relaxed standing stance suitable as a rigging reference
+pose, all four legs standing normally on the ground with even weight,
+front pair of legs and back pair of legs each clearly separated side by
+side, all four legs straight and simply planted (not bent into a crouch,
+not gathered together, not overlapping or crossing each other, not
+mid-stride, not a walking gait). Ears slightly forward and tail held
+alert to suggest a restless, itching-to-move temperament, but the body
+pose itself stays calm and static like a T-pose reference.
+
+Every limb segment clearly separated with no overlapping or crossing
+limbs, no foreshortening, suitable as a rigging reference pose. Side
+profile view, facing right. Isolated single character, centered, on a
+plain pure-white background, no grid lines, no other elements. Flat 2D,
+no 3D, no gradients, no glossy highlights, no thick cartoon outline, no
+color fill (monochrome black ink line art only, to be tinted
+programmatically — the ink itself must be neutral black, NOT blue, NOT
+red). Style of West of Loathing / doodle art.
+```
+负向：`pencil, graphite, cross-hatching, hatched shading, sketchy pencil texture, blue ink, red ink, colored ink, clean vector, smooth lines, 3d render, photorealistic, color fill, painterly, shading gradient, thick bold outline, crouching pose, bent legs, gathered legs, legs pulled under body, overlapping limbs, crossed limbs, foreshortening, multiple objects, text watermark, gray background, notebook grid lines, drop shadow, walking gait, mid-stride, three-quarter view, thin bare outline, sparse linework, empty unshaded body, flat unshaded silhouette`
+
+> **出图状态**：v3 黑墨水钢笔已出图确认（线稿本身干净利落，跟穷奇的铅笔厚涂拉开了媒材区别），**但用户反馈缩小到实战尺寸后纯黑线稿还是容易糊进纸色背景**——静态参考图放大看没问题，但战场上单位实际渲染高度只有 ~46px（S 档，`unitSize.ts`），细线在这个尺寸下抗锯齿糊掉，色相对比比线条粗细更扛缩小。**改为给识别特征上色**：獬豸的独角+问号尾巴（§7.6"识别特征≤2"那两个）改用**青色马克笔**上色，跟"马克笔色块只做克制的功能点缀"的既有规则（`art-direction.md §3.2`：武器/盾面）同源扩展到这两个识别特征上；青色避开已被占用的蓝(我方)/红(敌方)/黄(警告)/橙(选中)/灰(禁用)/紫(装备 epic 稀有度，`EQUIPMENT_DESIGN.md`)。见下方 v4（其余构造/姿态/黑墨水钢笔线稿不变，只加这两处色块）。
+
+**出图 prompt v4**（2026-07-29 修订，独角+尾巴改青色马克笔上色，其余同 v3）：
+```
+Messy hand-drawn doodle scribbled in the margin of a worn school notebook,
+drawn with a BLACK INK FOUNTAIN PEN — NOT pencil, NOT graphite: confident
+bold wet-ink strokes with slightly varying line weight (thicker where the
+nib presses down, thinner on quick flicks), small ink blots and a couple
+of tiny smudges where the pen dragged, crisp and dark rather than grainy
+or hatchy. Visibly rough and wobbly imperfect strokes with slight
+overshoot at line ends and small double-lined correction marks, like a
+bored teenager quickly sketching during class — NOT clean, NOT precise,
+NOT a smooth vector line. A small hollow tube-limbed beast character built
+from rounded pipe-like limb segments and circle joints, same construction
+language as a stick-figure soldier but reshaped into a tiny four-legged
+unicorn-like creature: a compact stocky body held low and close to the
+ground, noticeably smaller and shorter than a human-sized character, a
+round head with a single dot eye positioned toward the facing direction,
+alert and eager expression.
+
+A single short straight horn sits on top of its head, colored solid in a
+bright TEAL/CYAN marker/highlighter tone — the only colored element on
+the horn, filled flat with no gradient, like a kid went over just that one
+detail with a teal highlighter pen. Its tail curls upward into a tight
+question-mark shape, alert and twitchy, ALSO colored solid teal/cyan the
+same shade as the horn — the rest of the body stays plain black-ink line
+art, only the horn and tail carry color, everything else uncolored.
+
+Shading elsewhere is built from solid black ink fills and a few bold
+parallel pen strokes in the deepest shadow pockets (underside of the
+belly, inner joints) — NOT pencil cross-hatching, NOT a grainy graphite
+texture. The outline itself is thick and saturated enough to read clearly
+on its own, so shading stays sparse and confident rather than dense.
+
+POSE: neutral relaxed standing stance suitable as a rigging reference
+pose, all four legs standing normally on the ground with even weight,
+front pair of legs and back pair of legs each clearly separated side by
+side, all four legs straight and simply planted (not bent into a crouch,
+not gathered together, not overlapping or crossing each other, not
+mid-stride, not a walking gait). Ears slightly forward and tail held
+alert to suggest a restless, itching-to-move temperament, but the body
+pose itself stays calm and static like a T-pose reference.
+
+Every limb segment clearly separated with no overlapping or crossing
+limbs, no foreshortening, suitable as a rigging reference pose. Side
+profile view, facing right. Isolated single character, centered, on a
+plain pure-white background, no grid lines, no other elements. Flat 2D,
+no 3D, no gradients, no glossy highlights, no thick cartoon outline. Only
+the horn and tail carry flat teal/cyan marker color — every other part of
+the body is monochrome black ink line art, to be tinted programmatically
+(that untinted part must be neutral black, NOT blue, NOT red). Style of
+West of Loathing / doodle art.
+```
+负向：`pencil, graphite, cross-hatching, hatched shading, sketchy pencil texture, blue ink, red ink, purple, colored body, full color fill, gradient on color fill, clean vector, smooth lines, 3d render, photorealistic, painterly, shading gradient, thick bold outline, crouching pose, bent legs, gathered legs, legs pulled under body, overlapping limbs, crossed limbs, foreshortening, multiple objects, text watermark, gray background, notebook grid lines, drop shadow, walking gait, mid-stride, three-quarter view, thin bare outline, sparse linework, empty unshaded body, flat unshaded silhouette`
+
+> **出图状态**：v4 已出图，用户反馈两处问题：① 青色实心块边缘太干净利落，像贴纸而非画面本身一部分——**改为在全身也扫一层淡青色荧光笔浅色，实心块只留给角+尾巴**，让整只兽的色调统一，不是孤立两个色点；② 耳朵画得不好看——排查发现是 prompt 自己的锅：POSE 段落里一直混进一句"Ears slightly forward..."（沿用了通用动物姿态模板，但主体描述从没定义过耳朵这个特征），模型据此一直在画耳朵。**v5 一并修**：去掉这句、明确写"无耳朵"，并补上全身浅青色荧光笔扫色。
+
+**出图 prompt v5**（2026-07-29 修订，去掉误带的耳朵描述 + 全身加淡青色荧光笔浅扫，角/尾巴维持实心）：
+```
+Messy hand-drawn doodle scribbled in the margin of a worn school notebook,
+drawn with a BLACK INK FOUNTAIN PEN — NOT pencil, NOT graphite: confident
+bold wet-ink strokes with slightly varying line weight (thicker where the
+nib presses down, thinner on quick flicks), small ink blots and a couple
+of tiny smudges where the pen dragged, crisp and dark rather than grainy
+or hatchy. Visibly rough and wobbly imperfect strokes with slight
+overshoot at line ends and small double-lined correction marks, like a
+bored teenager quickly sketching during class — NOT clean, NOT precise,
+NOT a smooth vector line. A small hollow tube-limbed beast character built
+from rounded pipe-like limb segments and circle joints, same construction
+language as a stick-figure soldier but reshaped into a tiny four-legged
+unicorn-like creature: a compact stocky body held low and close to the
+ground, noticeably smaller and shorter than a human-sized character, a
+round bald head with NO ears, NO ear tufts, NO pointed ears anywhere on
+it — smooth and rounded like the other stick-figure units' heads — with a
+single dot eye positioned toward the facing direction, alert and eager
+expression.
+
+A single short straight horn sits on top of its head, colored solid in a
+bright TEAL/CYAN marker/highlighter tone — fully solid and opaque, no
+gradient, the strongest color note in the piece. Its tail curls upward
+into a tight question-mark shape, alert and twitchy, ALSO colored fully
+solid teal/cyan the same shade as the horn.
+
+In addition, a very light, faint, semi-transparent wash of that same
+teal/cyan highlighter color is brushed loosely over the ENTIRE body —
+torso, all four legs, head — like a highlighter pen skimmed lightly and
+unevenly across the whole already-inked drawing: low-opacity, streaky,
+uneven coverage that lets the black ink linework and shading underneath
+stay fully legible. This faint all-over wash is much lighter and lower-
+opacity than the solid horn and tail, so the horn and tail still read as
+the strongest color accent, but the whole figure now carries a consistent
+pale teal cast instead of the color being isolated to two disconnected
+spots.
+
+Shading elsewhere is built from solid black ink fills and a few bold
+parallel pen strokes in the deepest shadow pockets (underside of the
+belly, inner joints) — NOT pencil cross-hatching, NOT a grainy graphite
+texture. The outline itself is thick and saturated enough to read clearly
+on its own, so shading stays sparse and confident rather than dense.
+
+POSE: neutral relaxed standing stance suitable as a rigging reference
+pose, all four legs standing normally on the ground with even weight,
+front pair of legs and back pair of legs each clearly separated side by
+side, all four legs straight and simply planted (not bent into a crouch,
+not gathered together, not overlapping or crossing each other, not
+mid-stride, not a walking gait). Tail held alert and slightly twitchy to
+suggest a restless, itching-to-move temperament, but the body pose itself
+stays calm and static like a T-pose reference.
+
+Every limb segment clearly separated with no overlapping or crossing
+limbs, no foreshortening, suitable as a rigging reference pose. Side
+profile view, facing right. Isolated single character, centered, on a
+plain pure-white background, no grid lines, no other elements. Flat 2D,
+no 3D, no gradients (except the faint uneven highlighter wash described
+above), no glossy highlights, no thick cartoon outline. Color is limited
+to: solid teal/cyan on the horn and tail, and a faint uneven teal wash
+over the rest of the body — no other colors, no blue, no red. The
+underlying linework is monochrome black ink, to be tinted programmatically.
+Style of West of Loathing / doodle art.
+```
+负向：`ears, ear tufts, pointed ears, cat ears, animal ears, pencil, graphite, cross-hatching, hatched shading, sketchy pencil texture, blue ink, red ink, purple, flat clean vector color fill, sticker-like color patch, sharp clean color edges, gradient, clean vector, smooth lines, 3d render, photorealistic, painterly, shading gradient, thick bold outline, crouching pose, bent legs, gathered legs, legs pulled under body, overlapping limbs, crossed limbs, foreshortening, multiple objects, text watermark, gray background, notebook grid lines, drop shadow, walking gait, mid-stride, three-quarter view, thin bare outline, sparse linework, empty unshaded body, flat unshaded silhouette`
+
+> **出图状态**：✅ v5 已出图确认定稿（2026-07-29），可进入 GIMP 抠件 → animator 绑骨流程。
 
 ---
 
@@ -356,6 +571,306 @@ cartoon outline, no color fill (line art only, to be tinted
 programmatically). Style of West of Loathing / doodle art.
 ```
 负向：`color fill, painterly, shading gradient, 3d render, photorealistic, thick bold outline, clean vector, multiple objects, text watermark, gray background, notebook grid lines, drop shadow, weapon, sword, bow, child proportions`
+
+> **⚠️ 2026-07-29 用户截图反馈**：实机里几乎纯白、糊进纸色背景看不清——v1 prompt 同样没要求排线阴影，只有细描边。**需要重新出图**，见下方 v2 修订版（补齐排线，其余不变）。
+
+**出图 prompt v2**（2026-07-29 修订，仅补齐排线阴影密度，姿态/构造/风格描述不变）：
+```
+Hand-drawn doodle in a worn school notebook, single dark-ink pen line art,
+slightly wobbly imperfect strokes like a teenager sketching in the margins
+during class, quick careless sketch. A hollow tube-limbed stick figure
+character built from rounded pipe-like limb segments with circle joints at
+each connection, a large round head with a single dot eye positioned
+toward the facing direction, same construction language as a basic
+soldier stick figure but adult proportions, sturdier and more settled than
+a teenager, slightly hunched posture as if always ready to kneel down and
+tend to someone. A square medicine satchel is slung across one shoulder
+on a diagonal strap. A strip of bandage cloth is wrapped around his
+forehead. No weapon, empty hands held forward as if about to bandage
+something.
+
+Dense cross-hatching pencil shading covers the torso, sleeves and legs of
+his coat, giving the clothing a richly inked, textured look with the same
+heavy ink density as the game's other stick-figure units — NOT a thin bare
+outline, NOT a sparsely-lined empty silhouette.
+
+Side profile view, facing right. Isolated single character,
+centered, on a plain pure-white background, no grid lines, no other
+elements. Flat 2D, no 3D, no gradients, no glossy highlights, no thick
+cartoon outline, no color fill (line art only, to be tinted
+programmatically). Style of West of Loathing / doodle art.
+```
+负向：`color fill, painterly, shading gradient, 3d render, photorealistic, thick bold outline, clean vector, multiple objects, text watermark, gray background, notebook grid lines, drop shadow, weapon, sword, bow, child proportions, thin bare outline, sparse linework, empty unshaded body, flat unshaded silhouette`
+
+> **出图状态**：v2 已出图确认可读，**但用户反馈媒材跟穷奇撞了**（六个复用兵不该全是铅笔厚涂，§7.4 已改为按角色分媒材）。**改用黑墨水钢笔重新出图**，见下方 v3（换媒材，姿态/构造不变；避开蓝/红钢笔墨水，两色是阵营专属语义 `art-direction.md §3.2`）。
+
+**出图 prompt v3**（2026-07-29 修订，铅笔厚涂 → 黑墨水钢笔，姿态/构造/识别特征不变）：
+```
+Hand-drawn doodle in a worn school notebook, drawn with a BLACK INK
+FOUNTAIN PEN — NOT pencil, NOT graphite: confident bold wet-ink strokes
+with slightly varying line weight (thicker where the nib presses down,
+thinner on quick flicks), small ink blots and a couple of tiny smudges
+where the pen dragged, crisp and dark rather than grainy or hatchy.
+Slightly wobbly imperfect strokes like a teenager sketching in the
+margins during class, quick careless sketch. A hollow tube-limbed stick
+figure character built from rounded pipe-like limb segments with circle
+joints at each connection, a large round head with a single dot eye
+positioned toward the facing direction, same construction language as a
+basic soldier stick figure but adult proportions, sturdier and more
+settled than a teenager, slightly hunched posture as if always ready to
+kneel down and tend to someone. A square medicine satchel is slung across
+one shoulder on a diagonal strap. A strip of bandage cloth is wrapped
+around his forehead. No weapon, empty hands held forward as if about to
+bandage something.
+
+Shading is built from solid black ink fills and a few bold parallel pen
+strokes in the deepest shadow pockets (under the satchel, inner elbow,
+folds of the coat) — NOT pencil cross-hatching, NOT a grainy graphite
+texture. The outline itself is thick and saturated enough to read clearly
+on its own, so shading stays sparse and confident rather than dense.
+Overall ink density should feel closer to a fountain-pen sketch than a
+pencil study — NOT a thin bare outline, NOT a sparsely-lined empty
+silhouette either.
+
+Side profile view, facing right. Isolated single character,
+centered, on a plain pure-white background, no grid lines, no other
+elements. Flat 2D, no 3D, no gradients, no glossy highlights, no thick
+cartoon outline, no color fill (monochrome black ink line art only, to be
+tinted programmatically — the ink itself must be neutral black, NOT blue,
+NOT red). Style of West of Loathing / doodle art.
+```
+负向：`pencil, graphite, cross-hatching, hatched shading, sketchy pencil texture, blue ink, red ink, colored ink, color fill, painterly, shading gradient, 3d render, photorealistic, thick bold outline, clean vector, multiple objects, text watermark, gray background, notebook grid lines, drop shadow, weapon, sword, bow, child proportions, thin bare outline, sparse linework, empty unshaded body, flat unshaded silhouette`
+
+> **出图状态**：v3 黑墨水钢笔已出图确认，**但用户反馈缩小到实战尺寸（M 档 ~54px，`unitSize.ts`）后纯黑线稿还是容易糊进纸色背景**——跟獬豸同一个问题（色相对比比线条粗细更扛缩小）。**改为给识别特征上色**：卫安的药箱+十字标志、额头布条改用**绿色马克笔**上色（医疗主题色，跟"马克笔色块只做克制的功能点缀"的既有规则同源扩展，`art-direction.md §3.2`）；绿色避开蓝(我方)/红(敌方)/黄(警告)/橙(选中)/灰(禁用)/紫(装备 epic 稀有度)。见下方 v4（其余构造/姿态/黑墨水钢笔线稿不变，只加这两处色块）。
+
+**出图 prompt v4**（2026-07-29 修订，药箱+十字+布条改绿色马克笔上色，其余同 v3）：
+```
+Hand-drawn doodle in a worn school notebook, drawn with a BLACK INK
+FOUNTAIN PEN — NOT pencil, NOT graphite: confident bold wet-ink strokes
+with slightly varying line weight (thicker where the nib presses down,
+thinner on quick flicks), small ink blots and a couple of tiny smudges
+where the pen dragged, crisp and dark rather than grainy or hatchy.
+Slightly wobbly imperfect strokes like a teenager sketching in the
+margins during class, quick careless sketch. A hollow tube-limbed stick
+figure character built from rounded pipe-like limb segments with circle
+joints at each connection, a large round head with a single dot eye
+positioned toward the facing direction, same construction language as a
+basic soldier stick figure but adult proportions, sturdier and more
+settled than a teenager, slightly hunched posture as if always ready to
+kneel down and tend to someone. No weapon, empty hands held forward as if
+about to bandage something.
+
+A square medicine satchel with a simple plus-sign cross mark on its flap
+is slung across one shoulder on a diagonal strap, the whole satchel and
+its cross mark colored solid in a bright GREEN marker/highlighter tone,
+flat with no gradient. A strip of bandage cloth is wrapped around his
+forehead, ALSO colored solid green, the same shade as the satchel — the
+rest of the body stays plain black-ink line art, only the satchel and the
+forehead bandage carry color, everything else uncolored.
+
+Shading elsewhere is built from solid black ink fills and a few bold
+parallel pen strokes in the deepest shadow pockets (inner elbow, folds of
+the coat) — NOT pencil cross-hatching, NOT a grainy graphite texture. The
+outline itself is thick and saturated enough to read clearly on its own,
+so shading stays sparse and confident rather than dense.
+
+Side profile view, facing right. Isolated single character, centered, on
+a plain pure-white background, no grid lines, no other elements. Flat 2D,
+no 3D, no gradients, no glossy highlights, no thick cartoon outline. Only
+the satchel and forehead bandage carry flat green marker color — every
+other part of the body is monochrome black ink line art, to be tinted
+programmatically (that untinted part must be neutral black, NOT blue, NOT
+red). Style of West of Loathing / doodle art.
+```
+负向：`pencil, graphite, cross-hatching, hatched shading, sketchy pencil texture, blue ink, red ink, purple, colored body, full color fill, gradient on color fill, color fill, painterly, shading gradient, 3d render, photorealistic, thick bold outline, clean vector, multiple objects, text watermark, gray background, notebook grid lines, drop shadow, weapon, sword, bow, child proportions, thin bare outline, sparse linework, empty unshaded body, flat unshaded silhouette`
+
+> **出图状态**：v4 已出图，同獬豸一样反馈"色块边缘太干净像贴纸"——**改为在全身也扫一层淡绿色荧光笔浅色，实心块只留给药箱+十字+布条**，思路与獬豸 v5 一致（见上，同一原因：色相对比比线条粗细更扛缩小，但孤立的两块纯色实心块本身跟手绘线稿材质不符）。医生没有耳朵这类误带的问题，v5 只改上色部分。
+
+**出图 prompt v5**（2026-07-29 修订，全身加淡绿色荧光笔浅扫，药箱/十字/布条维持实心）：
+```
+Hand-drawn doodle in a worn school notebook, drawn with a BLACK INK
+FOUNTAIN PEN — NOT pencil, NOT graphite: confident bold wet-ink strokes
+with slightly varying line weight (thicker where the nib presses down,
+thinner on quick flicks), small ink blots and a couple of tiny smudges
+where the pen dragged, crisp and dark rather than grainy or hatchy.
+Slightly wobbly imperfect strokes like a teenager sketching in the
+margins during class, quick careless sketch. A hollow tube-limbed stick
+figure character built from rounded pipe-like limb segments with circle
+joints at each connection, a large round head with a single dot eye
+positioned toward the facing direction, same construction language as a
+basic soldier stick figure but adult proportions, sturdier and more
+settled than a teenager, slightly hunched posture as if always ready to
+kneel down and tend to someone. No weapon, empty hands held forward as if
+about to bandage something.
+
+A square medicine satchel with a simple plus-sign cross mark on its flap
+is slung across one shoulder on a diagonal strap, the whole satchel and
+its cross mark colored solid in a bright GREEN marker/highlighter tone —
+fully solid and opaque, no gradient, the strongest color note in the
+piece. A strip of bandage cloth is wrapped around his forehead, ALSO
+colored fully solid green, the same shade as the satchel.
+
+In addition, a very light, faint, semi-transparent wash of that same
+green highlighter color is brushed loosely over the ENTIRE body — torso,
+arms, legs, head — like a highlighter pen skimmed lightly and unevenly
+across the whole already-inked drawing: low-opacity, streaky, uneven
+coverage that lets the black ink linework and shading underneath stay
+fully legible. This faint all-over wash is much lighter and lower-opacity
+than the solid satchel and bandage, so those two still read as the
+strongest color accent, but the whole figure now carries a consistent
+pale green cast instead of the color being isolated to two disconnected
+spots.
+
+Shading elsewhere is built from solid black ink fills and a few bold
+parallel pen strokes in the deepest shadow pockets (inner elbow, folds of
+the coat) — NOT pencil cross-hatching, NOT a grainy graphite texture. The
+outline itself is thick and saturated enough to read clearly on its own,
+so shading stays sparse and confident rather than dense.
+
+Side profile view, facing right. Isolated single character, centered, on
+a plain pure-white background, no grid lines, no other elements. Flat 2D,
+no 3D, no gradients (except the faint uneven highlighter wash described
+above), no glossy highlights, no thick cartoon outline. Color is limited
+to: solid green on the satchel/cross/bandage, and a faint uneven green
+wash over the rest of the body — no other colors, no blue, no red. The
+underlying linework is monochrome black ink, to be tinted programmatically.
+Style of West of Loathing / doodle art.
+```
+负向：`pencil, graphite, cross-hatching, hatched shading, sketchy pencil texture, blue ink, red ink, purple, flat clean vector color fill, sticker-like color patch, sharp clean color edges, gradient, color fill, painterly, shading gradient, 3d render, photorealistic, thick bold outline, clean vector, multiple objects, text watermark, gray background, notebook grid lines, drop shadow, weapon, sword, bow, child proportions, thin bare outline, sparse linework, empty unshaded body, flat unshaded silhouette`
+
+> **出图状态**：v5 上色效果确认可用，**但用户指出一个更根本的问题**：`medic.png` 这张图不只是 animator 绑骨参考图，`cardArt.ts` 里它**直接就是玩家在手牌/图鉴看到的卡面**——跟步兵/穷奇/獬豸这些卡面比，v5 出的是弓步前倾、单脚跨步的动态姿势，而其余卡面都是双脚平稳站定的中性站姿，摆在同一个手牌栏里会显得不统一。**v6 只改姿态**：双脚改回均匀站立（不跨步），保留上身含胸低头这个性格细节，上色部分不变。
+
+**出图 prompt v6**（2026-07-29 修订，弓步跨步 → 双脚均匀站立，仅上身含胸低头，其余同 v5）：
+```
+Hand-drawn doodle in a worn school notebook, drawn with a BLACK INK
+FOUNTAIN PEN — NOT pencil, NOT graphite: confident bold wet-ink strokes
+with slightly varying line weight (thicker where the nib presses down,
+thinner on quick flicks), small ink blots and a couple of tiny smudges
+where the pen dragged, crisp and dark rather than grainy or hatchy.
+Slightly wobbly imperfect strokes like a teenager sketching in the
+margins during class, quick careless sketch. A hollow tube-limbed stick
+figure character built from rounded pipe-like limb segments with circle
+joints at each connection, a large round head with a single dot eye
+positioned toward the facing direction, same construction language as a
+basic soldier stick figure but adult proportions, sturdier and more
+settled than a teenager. No weapon, empty hands held forward at waist
+height as if about to bandage something.
+
+POSE: neutral standing pose matching the game's other card portraits (a
+calm soldier standing at ease) — both feet planted evenly on the ground
+side by side, weight balanced evenly between them, NOT a lunge, NOT a
+forward stride, NOT one foot stepping ahead of the other. The only
+dynamic touch is the upper body: shoulders rounded forward and head tipped
+down in a gentle hunch, as if always ready to kneel down and tend to
+someone — but the legs and stance stay calm and grounded, not a dramatic
+forward lean of the whole body.
+
+A square medicine satchel with a simple plus-sign cross mark on its flap
+is slung across one shoulder on a diagonal strap, the whole satchel and
+its cross mark colored solid in a bright GREEN marker/highlighter tone —
+fully solid and opaque, no gradient, the strongest color note in the
+piece. A strip of bandage cloth is wrapped around his forehead, ALSO
+colored fully solid green, the same shade as the satchel.
+
+In addition, a very light, faint, semi-transparent wash of that same
+green highlighter color is brushed loosely over the ENTIRE body — torso,
+arms, legs, head — like a highlighter pen skimmed lightly and unevenly
+across the whole already-inked drawing: low-opacity, streaky, uneven
+coverage that lets the black ink linework and shading underneath stay
+fully legible. This faint all-over wash is much lighter and lower-opacity
+than the solid satchel and bandage, so those two still read as the
+strongest color accent, but the whole figure now carries a consistent
+pale green cast instead of the color being isolated to two disconnected
+spots.
+
+Shading elsewhere is built from solid black ink fills and a few bold
+parallel pen strokes in the deepest shadow pockets (inner elbow, folds of
+the coat) — NOT pencil cross-hatching, NOT a grainy graphite texture. The
+outline itself is thick and saturated enough to read clearly on its own,
+so shading stays sparse and confident rather than dense.
+
+Side profile view, facing right. Isolated single character, centered, on
+a plain pure-white background, no grid lines, no other elements. Flat 2D,
+no 3D, no gradients (except the faint uneven highlighter wash described
+above), no glossy highlights, no thick cartoon outline. Color is limited
+to: solid green on the satchel/cross/bandage, and a faint uneven green
+wash over the rest of the body — no other colors, no blue, no red. The
+underlying linework is monochrome black ink, to be tinted programmatically.
+Style of West of Loathing / doodle art.
+```
+负向：`lunge, forward stride, one foot stepping ahead, uneven weight, dynamic action pose, mid-stride, walking gait, pencil, graphite, cross-hatching, hatched shading, sketchy pencil texture, blue ink, red ink, purple, flat clean vector color fill, sticker-like color patch, sharp clean color edges, gradient, color fill, painterly, shading gradient, 3d render, photorealistic, thick bold outline, clean vector, multiple objects, text watermark, gray background, notebook grid lines, drop shadow, weapon, sword, bow, child proportions, thin bare outline, sparse linework, empty unshaded body, flat unshaded silhouette`
+
+> **出图状态**：v6 站姿修正了，**但用户反馈传达的性格不对**——双手收在身前、头低垂，读出来是"做错事被抓的小孩"（怯懦/心虚），不是"随时准备照顾伤员"的专业医官。根因大概率是"empty hands held forward at waist height"这句被理解成了双手交握/缩在身前——那是防御性/紧张的肢体语言，跟"张开手伸向病人"的照护动作完全反着。**v7 只改手部描述**：明确写"双手分开、掌心向上/向外张开，向前下方伸，像正伸向倒地的伤员"，不是交握、不是缩在身前；姿态其余部分（双脚站定、上身含胸低头）不变。
+
+**出图 prompt v7**（2026-07-29 修订，双手交握 → 双手分开张开伸向前下方，其余同 v6）：
+```
+Hand-drawn doodle in a worn school notebook, drawn with a BLACK INK
+FOUNTAIN PEN — NOT pencil, NOT graphite: confident bold wet-ink strokes
+with slightly varying line weight (thicker where the nib presses down,
+thinner on quick flicks), small ink blots and a couple of tiny smudges
+where the pen dragged, crisp and dark rather than grainy or hatchy.
+Slightly wobbly imperfect strokes like a teenager sketching in the
+margins during class, quick careless sketch. A hollow tube-limbed stick
+figure character built from rounded pipe-like limb segments with circle
+joints at each connection, a large round head with a single dot eye
+positioned toward the facing direction, same construction language as a
+basic soldier stick figure but adult proportions, sturdier and more
+settled than a teenager. No weapon.
+
+Both arms reach forward and slightly downward, held clearly APART from
+each other and away from the torso — NOT clasped together, NOT touching
+each other, NOT tucked in against the body. Both hands are open with
+fingers/mitts spread, palms angled up and forward, like a caregiver
+actively reaching out to steady or bandage a patient lying on the ground
+in front of him — an attentive, purposeful, competent reaching gesture,
+NOT a shy or bashful or nervous pose, NOT hands clutched together at the
+waist, NOT hugging himself.
+
+POSE: neutral standing pose matching the game's other card portraits (a
+calm soldier standing at ease) — both feet planted evenly on the ground
+side by side, weight balanced evenly between them, NOT a lunge, NOT a
+forward stride, NOT one foot stepping ahead of the other. The upper body
+leans forward slightly from the hips with shoulders and head tipped
+forward and down toward where his reaching hands are pointing — an alert,
+focused, caring expression, like he's intently watching what his hands are
+doing, NOT a downcast or ashamed or withdrawn posture.
+
+A square medicine satchel with a simple plus-sign cross mark on its flap
+is slung across one shoulder on a diagonal strap, the whole satchel and
+its cross mark colored solid in a bright GREEN marker/highlighter tone —
+fully solid and opaque, no gradient, the strongest color note in the
+piece. A strip of bandage cloth is wrapped around his forehead, ALSO
+colored fully solid green, the same shade as the satchel.
+
+In addition, a very light, faint, semi-transparent wash of that same
+green highlighter color is brushed loosely over the ENTIRE body — torso,
+arms, legs, head — like a highlighter pen skimmed lightly and unevenly
+across the whole already-inked drawing: low-opacity, streaky, uneven
+coverage that lets the black ink linework and shading underneath stay
+fully legible. This faint all-over wash is much lighter and lower-opacity
+than the solid satchel and bandage, so those two still read as the
+strongest color accent, but the whole figure now carries a consistent
+pale green cast instead of the color being isolated to two disconnected
+spots.
+
+Shading elsewhere is built from solid black ink fills and a few bold
+parallel pen strokes in the deepest shadow pockets (inner elbow, folds of
+the coat) — NOT pencil cross-hatching, NOT a grainy graphite texture. The
+outline itself is thick and saturated enough to read clearly on its own,
+so shading stays sparse and confident rather than dense.
+
+Side profile view, facing right. Isolated single character, centered, on
+a plain pure-white background, no grid lines, no other elements. Flat 2D,
+no 3D, no gradients (except the faint uneven highlighter wash described
+above), no glossy highlights, no thick cartoon outline. Color is limited
+to: solid green on the satchel/cross/bandage, and a faint uneven green
+wash over the rest of the body — no other colors, no blue, no red. The
+underlying linework is monochrome black ink, to be tinted programmatically.
+Style of West of Loathing / doodle art.
+```
+负向：`clasped hands, hands together, hands touching each other, hands clutched at waist, hugging self, arms crossed, shy pose, bashful pose, nervous pose, ashamed pose, guilty pose, downcast eyes, withdrawn posture, lunge, forward stride, one foot stepping ahead, uneven weight, dynamic action pose, mid-stride, walking gait, pencil, graphite, cross-hatching, hatched shading, sketchy pencil texture, blue ink, red ink, purple, flat clean vector color fill, sticker-like color patch, sharp clean color edges, gradient, color fill, painterly, shading gradient, 3d render, photorealistic, thick bold outline, clean vector, multiple objects, text watermark, gray background, notebook grid lines, drop shadow, weapon, sword, bow, child proportions, thin bare outline, sparse linework, empty unshaded body, flat unshaded silhouette`
+
+> **出图状态**：✅ v7 已出图确认定稿（2026-07-29），可进入 GIMP 抠件 → animator 绑骨流程。
 
 ---
 

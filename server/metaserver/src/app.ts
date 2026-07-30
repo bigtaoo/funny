@@ -3,7 +3,7 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import Fastify, { type FastifyInstance } from 'fastify';
 import cors from '@fastify/cors';
-import type { Collections, JwtConfig, FeatureFlagCache, RedisLike, SaveData } from '@nw/shared';
+import type { Collections, JwtConfig, FeatureFlagCache, RedisLike, SaveData, WordlistCache } from '@nw/shared';
 import { createLogger, internalKeysFromEnv } from '@nw/shared';
 import { MetaService } from './service.js';
 import { assembleEquipmentInv } from './equipment.js';
@@ -74,6 +74,8 @@ export interface BuildAppOpts {
   authRateLimit?: number;
   /** Feature flag cache (used for public /bootstrap evaluation). null/omitted = no flag source; bootstrap always returns an empty map. */
   flags?: FeatureFlagCache | null;
+  /** Content-moderation word list overlay cache (CONTENT_MODERATION_DESIGN.md §3.2). null/omitted = built-in REGION_WORDLISTS only. */
+  wordlists?: WordlistCache | null;
   /** Deployment region (injected into the flag evaluation context). */
   region?: string | null;
   /** Loki push URL (POST /client/log is forwarded here; null = silently discarded). */
@@ -135,11 +137,23 @@ export async function buildApp(opts: BuildAppOpts): Promise<FastifyInstance> {
     // stub, not the full interface) — skip gracefully rather than throwing, same defensive style as the
     // rest of this codebase's optional-dependency checks (e.g. `commercial.available`).
     if (save && typeof save === 'object' && save.accountId) {
-      if (save.equipmentInv === undefined && opts.cols.equipmentInstances) {
-        save.equipmentInv = await assembleEquipmentInv(opts.cols, save.accountId, save);
+      // `undefined` = "forgot to populate" (fully migrated accounts store no embedded field at all,
+      // so this is the normal case) → full backfill from the split collection. `null` = "explicitly
+      // opted out" (lean response, see leanSave doc comment) → left untouched. A present-but-non-null
+      // value used to be treated as "already complete" and passed through as-is, but that's also the
+      // shape of an account still mid-migration (CC-16 incident, 2026-07-29): some instances already
+      // live only in the split collection (created after the app-code cutover), while the embedded
+      // field still holds whatever hadn't been migrated yet — passing it through as-is silently
+      // dropped every instance that already existed only in the split collection. Merge instead,
+      // with the split collection's own reconstruction (the source of truth for anything already
+      // moved) taking precedence over the possibly-stale embedded copy of the same id.
+      if (opts.cols.equipmentInstances && save.equipmentInv !== null) {
+        const fromInstances = await assembleEquipmentInv(opts.cols, save.accountId, save);
+        save.equipmentInv = save.equipmentInv === undefined ? fromInstances : { ...save.equipmentInv, ...fromInstances };
       }
-      if (save.cardInv === undefined && opts.cols.cardInstances) {
-        save.cardInv = await assembleCardInv(opts.cols, save.accountId, save);
+      if (opts.cols.cardInstances && save.cardInv !== null) {
+        const fromInstances = await assembleCardInv(opts.cols, save.accountId, save);
+        save.cardInv = save.cardInv === undefined ? fromInstances : { ...save.cardInv, ...fromInstances };
       }
     }
     return payload;
@@ -185,6 +199,7 @@ export async function buildApp(opts: BuildAppOpts): Promise<FastifyInstance> {
     gateway,
     authRateLimit: opts.authRateLimit ?? 20,
     flags: opts.flags ?? null,
+    wordlists: opts.wordlists ?? null,
     region: opts.region ?? null,
     lokiPushUrl: opts.lokiPushUrl ?? null,
     socialsvc,

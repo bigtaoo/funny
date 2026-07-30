@@ -44,6 +44,9 @@ export interface AppCore {
   start(): void;
   /** Called by the shell after a window resize (shell already re-rendered). */
   onResized(): void;
+  /** Submit an appeal against the account's active mute/temp-ban/ban (CONTENT_MODERATION_DESIGN.md §5.3).
+   *  Undefined when offline (no API base URL configured) — the shell's appeal-prompt sink no-ops in that case. */
+  submitAppeal?: (reason: string) => Promise<void>;
 }
 
 export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
@@ -248,5 +251,5 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
     if (state.inLobby) nav.goLobby({ fromResize: true });
   }
 
-  return { start, onResized };
+  return { start, onResized, submitAppeal: api ? (reason: string) => api.submitAppeal(reason) : undefined };
 }

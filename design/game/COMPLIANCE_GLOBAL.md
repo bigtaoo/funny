@@ -108,9 +108,11 @@
 
 ## 7. UGC 治理（昵称 / 私聊）
 
+> ⚠️ 2026-07-29 起，本节的敏感词/举报/处罚/审核治理细节权威已迁移至 [`CONTENT_MODERATION_DESIGN.md`](CONTENT_MODERATION_DESIGN.md)（ADR-057）。本节保留历史现状描述，新决策/实现记录请去该文档追加，不再在此展开。
+
 - 平台对**用户可输入内容**（displayName、私聊）要求有治理手段，否则社交类分级 + 审核风险上升。
-- **现状**：SOCIAL §敏感词——私聊一期做**发送端 meta 侧基础敏感词过滤**（替换/拒发）；displayName 改名也应过同一过滤（✅ 2026-07-27 design-doc-audit 已补——此前 `validateDisplayName` 只查长度,`profileRename` 从未实际调用过 `censorChat`,是文档写了意图但代码没跟上的真实缺口；现在 `auth.ts` 的 `profileRename` 在扣费前先跑 `censorChat`,命中即拒绝改名（不是聊天那种"替换发出"策略——常驻昵称命中直接拒绝更合适，回归测试见 `account-free-rename.e2e.test.ts`）。
-- **测试期最低线**：①昵称/私聊敏感词过滤;②**举报 + 拉黑**入口（✅ 2026-07-27 design-doc-audit 已补——`POST /social/friends/report`，`friendService.ts` 新增 `reportUser`/`listOpenReports`，`ReportDoc` 独立集合，客户端 `ProfilePopup` 好友资料卡新增「举报」按钮，与既有「拉黑」并列。**故意做得很轻**：仅捕获举报（`status` 恒为 `open`）供 `GET /internal/reports` 拉取人工审核，不自动拉黑/不发通知——这些是后续增强，非首发最低线要求。当前仅接入好友列表这一个入口，其它 UGC 展示面（世界频道/家族成员）复用同一套 API 加按钮即可扩展）。完整人工审核 UI/分级后置。
+- **现状（2026-07-27 时点，历史快照）**：SOCIAL §敏感词——私聊一期做**发送端 meta 侧基础敏感词过滤**（替换/拒发）；displayName 改名也应过同一过滤（✅ 2026-07-27 design-doc-audit 已补——此前 `validateDisplayName` 只查长度,`profileRename` 从未实际调用过 `censorChat`,是文档写了意图但代码没跟上的真实缺口；现在 `auth.ts` 的 `profileRename` 在扣费前先跑 `censorChat`,命中即拒绝改名（不是聊天那种"替换发出"策略——常驻昵称命中直接拒绝更合适，回归测试见 `account-free-rename.e2e.test.ts`）。
+- **测试期最低线**：①昵称/私聊敏感词过滤;②**举报 + 拉黑**入口（✅ 2026-07-27 design-doc-audit 已补——`POST /social/friends/report`，`friendService.ts` 新增 `reportUser`/`listOpenReports`，`ReportDoc` 独立集合，客户端 `ProfilePopup` 好友资料卡新增「举报」按钮，与既有「拉黑」并列。**故意做得很轻**：仅捕获举报（`status` 恒为 `open`）供 `GET /internal/reports` 拉取人工审核，不自动拉黑/不发通知——这些是后续增强，非首发最低线要求。当前仅接入好友列表这一个入口，其它 UGC 展示面（世界频道/家族成员）复用同一套 API 加按钮即可扩展）。完整人工审核 UI/分级见 `CONTENT_MODERATION_DESIGN.md`。
 
 ---
 

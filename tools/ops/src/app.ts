@@ -1,7 +1,7 @@
 // Ops admin frontend shell (OPS_DESIGN §7): login page → main shell renders navigation based on capabilities.
 import { Api, ApiError } from './api';
 import { clear, h } from './dom';
-import { pageAccounts, pageAnalytics, pageAudit, pageAuctionAudit, pageEvents, pageFlags, pageGachaPools, pageLadderSeason, pageMonitor, pagePaddleEvents, pagePlayer, pagePvpBalance, pageSLGSeason, pageSlgShop, pageSuspicions, pageTickets } from './pages';
+import { pageAccounts, pageAnalytics, pageAppeals, pageAudit, pageAuctionAudit, pageEvents, pageFlags, pageGachaPools, pageLadderSeason, pageMonitor, pagePaddleEvents, pagePlayer, pagePvpBalance, pageReports, pageSLGSeason, pageSlgShop, pageSuspicions, pageTickets } from './pages';
 import type { AdminCapability, Session } from './types';
 
 interface NavItem {
@@ -22,6 +22,8 @@ const NAV: NavItem[] = [
   { id: 'pvp-balance', label: 'PvP Balance', cap: 'analytics.view', render: pagePvpBalance },
   { id: 'player', label: 'Player Lookup', cap: 'player.lookup', render: pagePlayer },
   { id: 'suspicions', label: 'Anti-Cheat Review', cap: 'anticheat.view', render: pageSuspicions },
+  { id: 'reports', label: 'UGC Reports', cap: 'reports.view', render: pageReports },
+  { id: 'appeals', label: 'Player Appeals', cap: 'appeals.view', render: pageAppeals },
   { id: 'tickets', label: 'Comp Tickets', cap: 'comp.view', render: pageTickets },
   { id: 'audit', label: 'Audit', cap: 'audit.view.self', render: pageAudit },
   { id: 'paddle-events', label: 'Paddle Events', cap: 'paddle.events.view', render: pagePaddleEvents },

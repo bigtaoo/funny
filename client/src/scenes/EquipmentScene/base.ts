@@ -85,6 +85,7 @@ export interface EquipmentCallbacks {
 }
 
 export type EquipTab = 'inv' | 'craft';
+export type SectionKey = 'equipped' | 'bag';
 
 export const RES_H = 30;       // resource bar (coins + three materials + inventory count)
 export const LOADOUT_H = 78;   // loadout strip at the top of the inventory tab (three slots)
@@ -184,6 +185,14 @@ export class EquipmentSceneBase {
   protected assign: { instId: string; slot: EquipSlot } | null = null;
   /** Bag mode = no active card (standalone bag from the roster group); equip then prompts for a card. */
   protected get bag(): boolean { return !this.cb.activeCardInstanceId; }
+  /**
+   * Section headers (Equipped / Bag) tapped closed by the player; collapsed sections hide their item
+   * cells but keep the header visible (InventoryMixin.renderSectionHeader). Lives on the base class
+   * (not InventoryMixin) so DetailMixin.doEquip can also collapse "equipped" right after a successful
+   * equip. A field initializer here runs before the constructor's render() call below, so — unlike
+   * fields declared in a mixin subclass — no lazy-init workaround is needed.
+   */
+  protected readonly collapsedSections = new Set<SectionKey>();
   protected readonly bt = new BusyTracker();
   /** Whether to use the protect-enhance item on the next enhance (E7); state is sticky until the player toggles it. */
   protected useProtectEnhance = false;

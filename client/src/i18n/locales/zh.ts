@@ -605,10 +605,12 @@ export const zh = {
   'equip.confirmReforge': '消耗【{material}】洗练【{target}】的副词条？（主词条不变）',
   // Affixes ({v} = numeric value; primary affix is scaled up according to enhancement level for display)
   'affix.m_atk': '攻击 +{v}%',
+  'affix.m_siege': '攻城值 +{v}%',
   'affix.m_hp': '生命 +{v}%',
   'affix.m_spd': '移速 +{v}%',
   'affix.m_crit': '暴击率 +{v}%',
   'affix.s_atk': '攻击 +{v}%',
+  'affix.s_siege': '攻城值 +{v}%',
   'affix.s_hp': '生命 +{v}%',
   'affix.s_armor': '护甲 +{v}',
   'affix.s_spd': '移速 +{v}%',
@@ -1533,6 +1535,17 @@ export const zh = {
   'reconnect.accept': '返回对局',
   'reconnect.decline': '暂不',
   'reconnect.gone': '这场对局已经结束或不存在，已返回大厅',
+
+  // ── Content moderation appeal (CONTENT_MODERATION_DESIGN.md CM10) ──
+  'appeal.title.banned': '账号已被封禁',
+  'appeal.title.muted': '账号禁言中',
+  'appeal.body': '如果你认为这是误判，可以在下方说明情况并提交申诉，我们会尽快人工复核。',
+  'appeal.placeholder': '请输入申诉理由…',
+  'appeal.submit': '提交申诉',
+  'appeal.cancel': '取消',
+  'appeal.submitted': '申诉已提交，请等待人工复核',
+  'appeal.err.empty': '请输入申诉理由',
+  'appeal.err.failed': '提交失败，请稍后重试',
 
   // ── Gacha drop-rate disclosure (Apple 3.1.1, L1-3) ───────────────────────
   'gacha.oddsDetail.button': '概率详情',

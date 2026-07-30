@@ -74,7 +74,7 @@ function buildHarness(opts: {
   } as unknown as WorldMapContext;
 
   const net = new WorldMapNet(ctx);
-  return { ctx, net, showModal, showToast, showDeployDialog, startMarch, getMarches };
+  return { ctx, net, showModal, showToast, showDeployDialog, startMarch, getMarches, getMe };
 }
 
 /** A promise whose resolution is controlled from the test — lets us freeze startMarch mid-flight. */
@@ -209,5 +209,57 @@ describe('WorldMapNet — in-flight dispatch gate (no double-send before ctx.mar
     // Team is no longer pending → a retry actually reaches startMarch again.
     await net.doMarchTeam(ANCHOR.x, ANCHOR.y, 't1', 'attack');
     expect(startMarch).toHaveBeenCalledTimes(2);
+  });
+});
+
+// Regression for the FIFTH "team has troops but occupy says No teams yet" bug (account tao, 2026-07-29,
+// see slg-worldmap-me-stale-after-overlay-return memory). Root cause was one layer above showTeamPicker
+// itself — WorldMapScene's cached ctx.me was never refetched when the City overlay (where Fill-troops
+// actually runs) popped back to the still-alive map — but the actual mechanism these two tests pin is
+// the one this file already exercises: showTeamPicker reads whatever cardState currently sits on ctx.me,
+// and refreshMe() is what replaces a stale copy with a fresh one. Without refreshMe() actually updating
+// ctx.me (or without showTeamPicker re-reading it live rather than snapshotting it once), the nav-level
+// fix in app/nav/world.ts (world-map-return-refreshes-me.test.ts) would be calling the right function at
+// the right time for nothing.
+describe('WorldMapNet.refreshMe() — a team fully re-armed elsewhere becomes usable without a scene rebuild (2026-07-29)', () => {
+  it('team is hidden from the occupy picker while ctx.me is stale (0 troops), then appears once refreshMe() re-fetches the real count', async () => {
+    const { ctx, net, showModal, getMe } = buildHarness({
+      teams: [{ id: 't1', name: 'Cards', army: [{ cardInstanceId: 'c1' }] }],
+      cardState: { c1: { currentTroops: 0 } }, // as if ctx.me was fetched before Fill-troops ran in City
+    });
+
+    await net.showTeamPicker(ANCHOR.x, ANCHOR.y, 'occupy');
+    let buttons = showModal.mock.calls[0][1] as { label: string }[];
+    expect(buttons.some((b) => b.label.startsWith('Cards'))).toBe(false);
+    let head = showModal.mock.calls[0][0] as string[];
+    expect(head).toContain(t('world.team.noTeamsOccupy'));
+
+    // Server-side truth changed in the meantime (e.g. City's formation editor filled the team's troops
+    // via distributeTroops) — a fresh getMe() now reports the real count. Nothing else touches ctx.me here.
+    getMe.mockResolvedValueOnce({
+      joined: true,
+      mainBaseTile: ctx.me!.mainBaseTile,
+      cardState: { c1: { currentTroops: 1300 } },
+    } as PlayerWorldView);
+    await net.refreshMe();
+
+    showModal.mockClear();
+    await net.showTeamPicker(ANCHOR.x, ANCHOR.y, 'occupy');
+    buttons = showModal.mock.calls[0][1] as { label: string }[];
+    expect(buttons.some((b) => b.label.startsWith('Cards'))).toBe(true);
+    head = showModal.mock.calls[0][0] as string[];
+    expect(head).not.toContain(t('world.team.noTeamsOccupy'));
+  });
+
+  it('refreshMe() is a no-op once the scene is destroyed — a slow response landing after teardown must not resurrect ctx.me', async () => {
+    const { ctx, net, getMe } = buildHarness({
+      teams: [{ id: 't1', name: 'Cards', army: [{ cardInstanceId: 'c1' }] }],
+      cardState: { c1: { currentTroops: 0 } },
+    });
+    const before = ctx.me;
+    ctx.destroyed = true;
+    getMe.mockResolvedValueOnce({ joined: true, mainBaseTile: ctx.me!.mainBaseTile, cardState: { c1: { currentTroops: 1300 } } } as PlayerWorldView);
+    await net.refreshMe();
+    expect(ctx.me).toBe(before); // untouched — refreshMe bailed out on ctx.destroyed
   });
 });

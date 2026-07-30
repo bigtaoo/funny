@@ -48,6 +48,14 @@ export interface AccountDoc {
     pveWarnings?: number; // cumulative PvE suspicious attempt count (visibility only, no longer a ban trigger — see AntiCheatReviewDoc pve_reject)
     banned?: boolean;     // set only via ops manual ban (anticheat.action) after human review; auth returns ACCOUNT_BANNED
     gdprConsent?: boolean; // C5-c GDPR consent (must be true to record analytics events)
+    /** CONTENT_MODERATION_DESIGN.md CM6: content-moderation reputation, 0-100, absent = 100 (never penalized). Only written by POST /internal/accounts/:id/penalty (the sole enforcement-execution path) and the daily decay sweep. */
+    reputationScore?: number;
+    /** CM8.1: next time this account is eligible for the +10 automatic decay tick; absent once fully healed (score===100). */
+    reputationDecayAt?: number;
+    /** CM6: epoch ms until which chat sends are rejected (checked at sendMessage call sites, not at login — independent of `banned`/`bannedUntil`). */
+    mutedUntil?: number;
+    /** CM6: epoch ms until which auth is rejected (temp ban); checked alongside `banned` in rejectIfBanned. Auto-expires — no unban action needed. */
+    bannedUntil?: number;
   };
   /** C5-b soft-delete timestamp; once set, auth returns ACCOUNT_DELETED and data is asynchronously purged after 7 days. */
   deletedAt?: number;
@@ -354,6 +362,26 @@ export interface AntiCheatReviewDoc {
   resolution?: 'dismissed' | 'banned';
 }
 
+/**
+ * Player appeal against a currently-active enforcement (mute/temp-ban/ban) — CONTENT_MODERATION_DESIGN.md
+ * CM10. Lives in metaserver (account-level enforcement state is metaserver's authority), proxied by admin
+ * via `GET /internal/appeals` / resolved via `POST /internal/appeals/:id/resolve` (same "business service
+ * owns the data, admin proxies" shape as AntiCheatReviewDoc above). Approving clears the account's active
+ * mute/temp-ban/ban fields but deliberately does NOT restore reputationScore (CM10 — a separate, explicit
+ * admin adjustment if warranted).
+ */
+export interface AppealDoc {
+  _id: string; // uuid
+  accountId: string;
+  reason: string; // player free-text; admin-review-only, not run through censorChat (same rationale as ReportDoc.reason)
+  enforcementSnapshot: { banned?: boolean; bannedUntil?: number; mutedUntil?: number; reputationScore?: number };
+  status: 'open' | 'approved' | 'denied';
+  createdAt: number;
+  resolvedBy?: string;
+  resolvedAt?: number;
+  resolutionNote?: string;
+}
+
 // Friend/private-chat/block collections (FriendEdgeDoc / FriendRequestDoc / BlockDoc / ConversationDoc / ChatMessageDoc)
 // have been migrated to socialsvc's nw_social database (P2, SOCIAL_SVC_DESIGN §6 P2); metaserver no longer owns these collections.
 
@@ -527,6 +555,8 @@ export interface Collections {
   antiCheatReviews: Collection<AntiCheatReviewDoc>;
   // PvE anti-cheat (S4-4)
   pveRejections: Collection<PveRejectDoc>;
+  // player appeals against an active enforcement (CONTENT_MODERATION_DESIGN.md CM10)
+  appeals: Collection<AppealDoc>;
   // replay shares (S1-RP)
   replayShares: Collection<ReplayShareDoc>;
   // state-stream replay public shares outside the game (REPLAY_SHARE_DESIGN)
@@ -600,6 +630,7 @@ export async function createMongo(
     pveVerifications: db.collection<PveVerificationDoc>('pveVerifications'),
     antiCheatReviews: db.collection<AntiCheatReviewDoc>('antiCheatReviews'),
     pveRejections: db.collection<PveRejectDoc>('pveRejections'),
+    appeals: db.collection<AppealDoc>('appeals'),
     replayShares: db.collection<ReplayShareDoc>('replayShares'),
     stateReplayShares: db.collection<StateReplayShareDoc>('stateReplayShares'),
     mail: db.collection<MailDoc>('mail'),
@@ -632,6 +663,14 @@ export async function createMongo(
     );
     // 9-digit numeric public id globally unique (sparse, lazily back-filled for legacy accounts).
     await collections.accounts.createIndex({ publicId: 1 }, { sparse: true, unique: true });
+    // CONTENT_MODERATION_DESIGN.md CM8.1: reputation-decay daily sweep scans accounts due for a tick.
+    // Partial index (only documents where the field exists) — same pattern as worldsvc's
+    // nextBuildCompleteAt/nextTrainingCompleteAt — keeps the scan to the (small) penalized-account
+    // subset instead of a full collection scan; the field is cleared once an account fully heals to 100.
+    await collections.accounts.createIndex(
+      { 'flags.reputationDecayAt': 1 },
+      { partialFilterExpression: { 'flags.reputationDecayAt': { $exists: true } } },
+    );
     await collections.matches.createIndex({ ts: -1 });
     // storage cleanup TTL (non-disputed matches only, see MatchDoc.expireAt doc comment): 296MB/39K docs with no
     // cleanup was the sole driver of Atlas storage alerts at 3 real players + 100 bots.
@@ -653,6 +692,9 @@ export async function createMongo(
     await collections.antiCheatReviews.createIndex({ status: 1, ts: -1 });
     // —— PvE anti-cheat (S4-4) ——
     await collections.pveRejections.createIndex({ accountId: 1, ts: -1 });
+    // —— player appeals (CONTENT_MODERATION_DESIGN.md CM10): admin review queue (open first) + per-account lookup (open-appeal guard) ——
+    await collections.appeals.createIndex({ status: 1, createdAt: 1 });
+    await collections.appeals.createIndex({ accountId: 1, status: 1 });
     // —— replay shares (S1-RP) ——
     // TTL auto-expiry (expiresAt with expireAfterSeconds:0 → Mongo deletes on schedule).
     await collections.replayShares.createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 });

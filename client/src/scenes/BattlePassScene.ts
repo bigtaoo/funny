@@ -410,6 +410,7 @@ export class BattlePassScene implements Scene {
       const def = BATTLEPASS_DEFS[i]!;
       const lvl = def.level;
       const cellY = headerH + i * (cellH + cellGap);
+      if (lvl === currentLevel) this.drawCurrentLevelFrame(scrollContainer, freeX, paidX, halfW, cellY, cellH);
 
       // Free track
       const freeState = this.cellState('free', lvl, currentLevel, claimedFree, claimedPaid, hasPass, !!def.free);
@@ -452,6 +453,22 @@ export class BattlePassScene implements Scene {
     if (level > currentLevel) return 'locked';
     if (track === 'paid' && !hasPass) return 'pass_required';
     return 'claimable';
+  }
+
+  /**
+   * Encircles the current level's row (both free + paid cells) in an accent frame so it reads as
+   * "you are here" independent of claim state — a claimed current-level row previously looked
+   * identical to any other claimed row.
+   */
+  private drawCurrentLevelFrame(parent: PIXI.Container, freeX: number, paidX: number, halfW: number, cellY: number, cellH: number): void {
+    const pad = 3;
+    const x = freeX - pad;
+    const y = cellY - pad;
+    const w = (paidX + halfW - freeX) + pad * 2;
+    const h = cellH + pad * 2;
+    const frame = new PIXI.Graphics();
+    frame.lineStyle(3, C.accent, 1).drawRoundedRect(x, y, w, h, 10);
+    parent.addChild(frame);
   }
 
   private drawCell(

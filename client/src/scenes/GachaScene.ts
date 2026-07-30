@@ -783,7 +783,7 @@ export class GachaScene implements Scene {
         fontSize: FS.label, fill: C.dark, fontFamily: 'monospace',
         wordWrap: true, wordWrapWidth: pw * 0.84, align: 'center',
       });
-      pityLbl.anchor.set(0.5, 0); pityLbl.x = w / 2; pityLbl.y = gridBottom + Math.round(h * 0.02);
+      pityLbl.anchor.set(0.5, 0); pityLbl.x = w / 2; pityLbl.y = gridBottom + Math.round(h * 0.038);
       this.container.addChild(pityLbl);
     }
 

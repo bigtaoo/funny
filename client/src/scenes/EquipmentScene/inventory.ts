@@ -11,12 +11,12 @@ import { buildIcon } from '../../render/icons';
 import type { SaveData, EquipSlot, EquipRarity, EquipmentInstance } from '../../game/meta/SaveData';
 import { getEquipDef, affixKind } from '../../game/meta/equipmentDefs';
 import {
-  type Constructor, type EquipmentSceneBaseCtor, type EquipTab,
+  type Constructor, type EquipmentSceneBaseCtor, type EquipTab, type SectionKey,
   LOADOUT_H, FILTER_H, SECTION_H, CELL_GAP, CELL_GAP_X, EQUIP_CELL_H, EQUIP_CELL_W_TARGET,
   SLOTS, RARITY_COLOR,
 } from './base';
 
-export type SectionKey = 'equipped' | 'bag';
+export type { SectionKey };
 
 export type DisplayEntry =
   | { kind: 'header'; label: string; key: SectionKey }
@@ -31,27 +31,16 @@ export interface InventoryHandlers {
 export function InventoryMixin<TBase extends EquipmentSceneBaseCtor>(Base: TBase): TBase & Constructor<InventoryHandlers> {
   return class extends Base {
     /**
-     * Section headers (Equipped / Bag) tapped closed by the player; collapsed sections hide their
-     * item cells but keep the header visible. Lazily initialized via the getter below — the base
-     * class constructor calls render() before this mixin's own field initializers run, so a plain
-     * field initializer here would be undefined on first render.
-     */
-    private _collapsedSections?: Set<SectionKey>;
-    private get collapsedSections(): Set<SectionKey> {
-      return (this._collapsedSections ??= new Set<SectionKey>());
-    }
-
-    /**
      * Per-instance cell container + on-screen rect from the last renderInventory layout pass —
      * lets refreshInstanceCell() redraw a single cell in place instead of a full relayout. Only
      * populated for on-screen, non-header rows; cleared and rebuilt on every full renderInventory.
      *
-     * Declared with NO initializer (unlike a plain `= new Map()`) for the same reason as
-     * `_collapsedSections` above: the base class constructor calls render() — which assigns these
-     * via renderInventory() — before this mixin's own field initializers run; a `= new Map()` here
-     * would still execute right after `super()` and clobber that first render's population with an
-     * empty map. renderInventory() always assigns a fresh value before anything reads these, so
-     * there's no window where they're read while genuinely unset.
+     * Declared with NO initializer (unlike a plain `= new Map()`): the base class constructor calls
+     * render() — which assigns these via renderInventory() — before this mixin's own field
+     * initializers run; a `= new Map()` here would still execute right after `super()` and clobber
+     * that first render's population with an empty map. renderInventory() always assigns a fresh
+     * value before anything reads these, so there's no window where they're read while genuinely
+     * unset.
      */
     private cellContainers!: Map<string, PIXI.Container>;
     private cellRects!: Map<string, { x: number; y: number; w: number }>;
@@ -429,8 +418,9 @@ export function InventoryMixin<TBase extends EquipmentSceneBaseCtor>(Base: TBase
           }
           this.hitRects.push({ rect: { x, y: cy, w: cellW, h: cellH }, action: () => this.openDetail(inst.id) });
         } else {
-          // Empty slot: darken the glyph alpha (0.40) and add the "empty" label so the player can clearly identify available equip positions.
-          this.addGlyph(slot, 'common', x + cellW / 2, cy + cellH * 0.45, 28, seedFor(i, 13, cellW), 0.40);
+          // Empty slot: addGlyph renders the hollow "+" placeholder (no defId), paired
+          // with the "empty" label so the player can clearly identify open positions.
+          this.addGlyph(slot, 'common', x + cellW / 2, cy + cellH * 0.45, 28, seedFor(i, 13, cellW), 1);
           const empty = txt(t('equip.slotEmpty'), FS.micro, C.mid);
           empty.anchor.set(0.5, 0.5); empty.x = x + cellW / 2; empty.y = cy + cellH * 0.88;
           this.bodyLayer.addChild(empty);

@@ -16,3 +16,6 @@ export * from './clients/events';
 export * from './clients/gachaPools';
 export * from './clients/promo';
 export * from './clients/paddleEvents';
+export * from './clients/reports';
+export * from './clients/appeals';
+export * from './clients/enforcement';

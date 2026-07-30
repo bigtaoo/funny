@@ -116,4 +116,29 @@ describe.skipIf(!mongo)('one-time free rename e2e', () => {
     // With no balance, the (paid) rename is rejected — proving the free path was not taken.
     expect((await rename(token, 'Again')).statusCode).toBe(402);
   });
+
+  it('registration is rejected when the explicit displayName hits the sensitive-word filter (CONTENT_MODERATION_DESIGN.md CM5)', async () => {
+    // Until CM5, authRegister never called censorChat (nor even validateDisplayName) on a registration-time
+    // displayName — an unfiltered name went straight into registerWithPassword. This is the regression guard.
+    const r = await app.inject({
+      method: 'POST',
+      url: '/auth/register',
+      payload: { loginId: 'fr5@test.com', password: 'pw123456', displayName: 'shitlord' },
+    });
+    expect(r.statusCode).toBe(400);
+    // No account should have been created with the rejected name — a retry with a clean name must succeed
+    // as a genuinely new registration, not collide with a partially-created account.
+    const r2 = await app.inject({
+      method: 'POST',
+      url: '/auth/register',
+      payload: { loginId: 'fr5@test.com', password: 'pw123456', displayName: 'CleanName' },
+    });
+    expect(r2.statusCode).toBe(200);
+    expect(body(r2).data.displayName).toBe('CleanName');
+  });
+
+  it('registration without a displayName is unaffected by the filter (anonymous/system-assigned name path)', async () => {
+    const r = await app.inject({ method: 'POST', url: '/auth/register', payload: { loginId: 'fr6@test.com', password: 'pw123456' } });
+    expect(r.statusCode).toBe(200);
+  });
 });

@@ -139,6 +139,25 @@ export function startHttpApi(opts: HttpApiOpts, svc: AdminService): Server {
         }
         return;
       }
+      // ── Internal endpoint: raw content-moderation word list overlays (X-Internal-Key; metaserver/socialsvc/worldsvc have no DB connection to admin) ──
+      // Same shape as the internal flags/slg-shop-prices endpoints above: raw overlay docs only, consumers
+      // merge them onto REGION_WORDLISTS locally via WordlistCache (CONTENT_MODERATION_DESIGN.md §3.2).
+      if (req.method === 'GET' && (req.url ?? '').split('?')[0] === '/admin/internal/moderation-wordlists') {
+        if (!internalAuth.verify(req.headers).ok) {
+          log.warn('internal moderation-wordlists request rejected: bad X-Internal-Key', {
+            caller: req.headers['x-internal-caller'],
+          });
+          send(res, 401, { ok: false, error: 'unauthorized' });
+          return;
+        }
+        try {
+          send(res, 200, { ok: true, items: await svc.getInternalWordlists() });
+        } catch (e) {
+          log.error('internal moderation-wordlists fetch failed', { err: (e as Error).message });
+          send(res, 500, { ok: false, error: 'internal error' });
+        }
+        return;
+      }
 
       const url = new URL(req.url ?? '', `http://${req.headers.host ?? 'admin'}`);
       const path = url.pathname;
@@ -364,6 +383,71 @@ export function startHttpApi(opts: HttpApiOpts, svc: AdminService): Server {
             ...(b.effect !== undefined ? { effect: b.effect } : {}),
           });
           return send(res, 200, { ok: true, item });
+        }
+
+        // ── Content-moderation word list overlays (moderation.wordlist.manage, CONTENT_MODERATION_DESIGN §3.2) ──
+        if (method === 'GET' && path === '/admin/moderation/wordlists') {
+          requireCap(actor, 'moderation.wordlist.manage');
+          return send(res, 200, { ok: true, regions: await svc.getWordlistConfig() });
+        }
+        const wordlistAdd = /^\/admin\/moderation\/wordlists\/([^/]+)\/words$/.exec(path);
+        if (method === 'POST' && wordlistAdd) {
+          requireCap(actor, 'moderation.wordlist.manage');
+          const region = decodeURIComponent(wordlistAdd[1]!);
+          const b = await readJson(req);
+          const doc = await svc.addWord(actor, region, str(b.word));
+          return send(res, 200, { ok: true, doc });
+        }
+        const wordlistRemove = /^\/admin\/moderation\/wordlists\/([^/]+)\/words\/([^/]+)$/.exec(path);
+        if (method === 'DELETE' && wordlistRemove) {
+          requireCap(actor, 'moderation.wordlist.manage');
+          const region = decodeURIComponent(wordlistRemove[1]!);
+          const word = decodeURIComponent(wordlistRemove[2]!);
+          const doc = await svc.removeWord(actor, region, word);
+          return send(res, 200, { ok: true, doc });
+        }
+
+        // ── UGC report review queue (reports.view/.action, CONTENT_MODERATION_DESIGN.md CM9/CM11) ──
+        if (method === 'GET' && path === '/admin/reports') {
+          requireCap(actor, 'reports.view');
+          const status = url.searchParams.get('status') ?? undefined;
+          const limit = Math.min(200, Math.max(1, Number(url.searchParams.get('limit') ?? '100')));
+          const reports = await svc.listReports(actor.adminId, { ...(status ? { status } : {}), limit });
+          return send(res, 200, { ok: true, reports });
+        }
+        const reportResolveMatch = path.match(/^\/admin\/reports\/([^/]+)\/resolve$/);
+        if (method === 'POST' && reportResolveMatch) {
+          requireCap(actor, 'reports.action');
+          const id = decodeURIComponent(reportResolveMatch[1] ?? '');
+          const b = await readJson(req);
+          const resolution = str(b.resolution);
+          if (resolution !== 'dismissed' && resolution !== 'upheld') {
+            return send(res, 400, { ok: false, error: 'resolution must be dismissed or upheld' });
+          }
+          const penalty = await svc.resolveReport(actor, id, str(b.accountId), resolution);
+          return send(res, 200, { ok: true, ...penalty });
+        }
+
+        // ── Player appeal review queue (appeals.view/.action, CONTENT_MODERATION_DESIGN.md CM10/CM11) ──
+        if (method === 'GET' && path === '/admin/appeals') {
+          requireCap(actor, 'appeals.view');
+          const status = url.searchParams.get('status') ?? undefined;
+          const limit = Math.min(200, Math.max(1, Number(url.searchParams.get('limit') ?? '100')));
+          const appeals = await svc.listAppeals(actor.adminId, { ...(status ? { status } : {}), limit });
+          return send(res, 200, { ok: true, appeals });
+        }
+        const appealResolveMatch = path.match(/^\/admin\/appeals\/([^/]+)\/resolve$/);
+        if (method === 'POST' && appealResolveMatch) {
+          requireCap(actor, 'appeals.action');
+          const id = decodeURIComponent(appealResolveMatch[1] ?? '');
+          const b = await readJson(req);
+          const resolution = str(b.resolution);
+          if (resolution !== 'approved' && resolution !== 'denied') {
+            return send(res, 400, { ok: false, error: 'resolution must be approved or denied' });
+          }
+          const note = typeof b.note === 'string' ? b.note : undefined;
+          await svc.resolveAppeal(actor, id, resolution, note);
+          return send(res, 200, { ok: true });
         }
 
         // ── Account management (superadmin) ──

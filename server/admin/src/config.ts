@@ -31,6 +31,8 @@ export interface AdminEnv extends ServerEnv {
   worldInternalUrl: string | null;
   /** auctionsvc internal HTTP base URL (auction anomaly scan /internal/audit/anomalies, auction task5). null = anomaly scan degraded. */
   auctionInternalUrl: string | null;
+  /** socialsvc internal HTTP base URL (report review queue /internal/reports, CONTENT_MODERATION_DESIGN.md CM11). null = reports.* degraded. */
+  socialInternalUrl: string | null;
   /** Self-scrape sampling interval in ms (writes metricSnapshots). Default 30000; <=0 disables sampling. */
   sampleIntervalMs: number;
   /** metricSnapshots TTL in seconds (retention window). Default 14 days. */
@@ -55,6 +57,7 @@ export function loadAdminEnv(): AdminEnv {
     analyticsBaseUrl: process.env.NW_ANALYTICS_BASE_URL ?? null,
     worldInternalUrl: process.env.NW_WORLD_INTERNAL_URL ?? null,
     auctionInternalUrl: process.env.NW_AUCTION_INTERNAL_URL ?? null,
+    socialInternalUrl: process.env.NW_SOCIALSVC_INTERNAL_URL ?? null,
     sampleIntervalMs: Number(process.env.NW_ADMIN_SAMPLE_MS ?? 30000),
     snapshotTtlSec: Number(process.env.NW_ADMIN_SNAPSHOT_TTL_SEC ?? 14 * 24 * 3600),
   };

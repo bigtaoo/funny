@@ -350,8 +350,21 @@ export function DetailMixin<TBase extends EquipmentSceneBaseCtor>(Base: TBase): 
       this.bt.start();
       try {
         const res = await withTimeout(this.cb.equip(slot, instanceId, cardId));
-        if (res.ok) this.showToast(instanceId ? t('equip.equipped') : t('equip.unequipped'), C.green);
-        else this.showToast(t(res.key), C.red);
+        if (res.ok) {
+          this.showToast(instanceId ? t('equip.equipped') : t('equip.unequipped'), C.green);
+          if (instanceId) {
+            // Equipping (not unequipping) folds the Equipped strip back down first, in case the
+            // onBack below doesn't take effect immediately (e.g. mid-fade) — then leaves the
+            // Equipment scene entirely and returns to the Hero Roster (2026-07-29 UX request: the
+            // player came here to gear up one card, so jump straight back to see it applied rather
+            // than requiring a manual Back tap). Unequip stays on this screen.
+            this.collapsedSections.add('equipped');
+            this.cb.onBack();
+            return;
+          }
+        } else {
+          this.showToast(t(res.key), C.red);
+        }
       } catch (e) {
         this.showToast(t(e instanceof TimeoutError ? 'common.networkTimeout' : 'equip.err.generic'), C.red);
       } finally {

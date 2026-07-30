@@ -552,6 +552,12 @@ buildSiegeBlueprints(levels, equipped, inv)
 
 **素材仅收未强化装备（服务端补齐校验，2026-07-22 追加）**：同日客户端改动（本节上方"操作按钮..."一条同批次）把选材 UI（`reforge.ts openReforgeSelect`）和 Reforge 按钮预检（`detail.ts instanceActions hasMaterials`）都收紧成只提供 `level===0`（从未强化过）的装备当素材，避免玩家不小心把强化过的装备当燃料烧掉——但排查发现 `reforgeEquipment()`（`server/metaserver/src/equipment.ts`）本身从未校验过 `material.level`，只查了槽位/稀有度，一台改过的客户端或直接调 API 仍可传入已强化件的 `instanceId` 当 `materialId`，服务端照单全收，静默销毁该装备沉没的强化材料/词条。补一条服务端校验：素材 `level !== 0` 直接拒（新错误码 `INVALID_MATERIAL_LEVEL`，与 `INVALID_RARITY`/`NOT_REFORGE_ELIGIBLE` 同风格，未加进 `@nw/shared ErrorCode`——这两个既有错误码本就没进那张表，走 `ERROR_HTTP_STATUS[...] ?? 400` 兜底），`openapi/paths/inventory.yml` 的 `materialId` 描述同步注明"must be unenhanced (level 0)"。测试见 [equipment.e2e.test.ts](../../server/metaserver/test/equipment.e2e.test.ts)。
 
+**穿戴成功后 Equipped 分区自动折叠（2026-07-29 追加）**：真人反馈——穿戴装备后 Equipped 分区（§CC-16 前更早引入，见上方"分区标题放大+可折叠"一条）仍停留在展开状态，玩家刚穿好装备想接着看 Backpack 里的下一件时要先手动点掉 Equipped 才能腾出空间。`collapsedSections` 原来只声明在 `InventoryMixin`（`inventory.ts`）里，`DetailMixin.doEquip`（`detail.ts`）拿不到（mixin 各自独立的泛型约束只看得到 `EquipmentSceneBase` 自身成员，看不到其他 mixin 加的字段）。修复：把 `collapsedSections`（连同其类型 `SectionKey`）从 `InventoryMixin` 挪到公共基类 `EquipmentSceneBase`（`base.ts`）——这里字段初始化早于构造函数里的首次 `render()` 调用，顺带甩掉了原先 `inventory.ts` 里那个懒加载 getter 的历史包袱（迁移前的写法是为了绕开"mixin 子类字段初始化晚于首次 render"的坑，见上文"踩坑记录"，挪到基类后该坑不复存在）。`detail.ts` 的 `doEquip` 成功穿戴（`instanceId` 非空，区别于卸下）后 `collapsedSections.add('equipped')`。新增回归测试 [equipmentCollapseOnEquip.ui.ts](../../client/test/ui/equipmentCollapseOnEquip.ui.ts)：穿戴成功→折叠、卸下→不折叠、服务端拒绝→不折叠，三种场景各一例。验证：`tsc --noEmit` + 全部 equipment UI 测试（9 文件/28 项）全绿。
+
+**穿戴成功后本地 `cardInv` 未同步刷新（2026-07-29 追加，紧接 CC-16）**：CC-16 那个"卡穿不了装备"的生产事故修完之后，真人复测发现新问题——穿戴请求明明成功（toast 显示"Equipped"），但顶部 loadout 三槽位（Weapon/Armor/Trinket）仍显示 Empty，回到 CardScene 卡面上也看不到刚穿的装备，感觉像"界面自动关闭/没生效"。根因：`equipEquipment` 走的是精简响应（`LeanSaveResponse`，`cardInv` 省略，EQUIPMENT_DESIGN §3.3 phase 2）——服务端假设调用方已经知道改了什么，但 `app/nav/game.ts` 的 `equip()` 回调把 `saveManager.adoptServerPartial(save, {})` 传了个**空 patch**（注释错误地写"equipmentInv 不变所以不用管"，却漏了 `cardInv.gear` 其实变了）。`adoptServerPartial` 没收到 `cardUpsert`，本地缓存的 `cardInv[cid].gear` 就一直是穿装备前的旧值，直到下一次完整 `GET /save` 才会更新——EquipmentScene 的 loadout 条和 CardScene 都是直接读这份本地缓存，于是都停在"看起来什么都没发生"的状态。修复：`equip()` 回调改为从本地 `saveManager.get().cardInv[cid]` 取当前卡，照 `equipEquipment` 服务端同款逻辑（`instanceId===null` 删槽位，否则写入）算出新的 `gear`，作为 `cardUpsert` 传给 `adoptServerPartial`，与卸下/服务端拒绝两种分支各自验证一遍。新增回归测试 [game-nav-equip-cardInv-sync.test.ts](../../client/test/game-nav-equip-cardInv-sync.test.ts)（复原修复前代码验证过会失败）；验证：`tsc --noEmit` + 相关测试全绿。**用户另反馈"界面自动关闭"，排查未在代码里找到任何会在穿装备后主动导航离开 EquipmentScene 的路径**——推测是本条 bug 造成的"界面看起来像没反应/重置"的观感被误读为关闭，待用户在本次修复后复测确认是否还有独立的关闭问题。
+
+**穿戴成功后离开界面回花名册（2026-07-29 追加，用户主动提需求）**：上一条排查完"界面自动关闭"疑似只是前一个 bug 的观感之后，用户明确要求把这个行为**做成真功能**——穿完装备直接离开 Equipment 界面回角色卡界面，不用手动点 Back。`detail.ts` 的 `doEquip` 成功穿戴分支（`instanceId` 非空，同折叠那条判断）在原有 toast + 折叠之后追加 `this.cb.onBack()` 并 `return`（跳过后面 `finally` 里的 `render()`——不过 `render()`/`refreshChromeAndModal()` 本就在方法开头 `if (this.destroyed) return`，就算 `onBack()` 触发的 `SceneManager.goto` 是同步销毁场景，这里也不会报错）。所有入口（CardScene 单卡编辑、roster bag 模式、assign 选卡流程）的 `onBack` 最终都指向 `goCardRoster(...)`，故统一在 `doEquip` 一处收口即可，不用逐个入口特判。卸下（`instanceId===null`）与服务端拒绝两个分支都不触发，玩家仍留在原界面。回归测试见 [equipmentCollapseOnEquip.ui.ts](../../client/test/ui/equipmentCollapseOnEquip.ui.ts) 新增的第二个 `describe` 块（成功穿戴→调用一次 `cb.onBack()`，卸下/拒绝→不调用），共 6 例；`tsc --noEmit` + 全部 equipment UI 测试（9 文件/31 项）全绿。
+
 #### E2 掉落 faucet + E6 洗练 实现记录（2026-06-22，✅）
 
 **E2 关卡掉落 faucet**
@@ -891,3 +897,16 @@ buildSiegeBlueprints(levels, equipped, inv)
 资产整理：三张源图重命名为 `scrap.png`/`lead.webp`/`binding.webp`（原为 AI 工具生成的随机编码文件名），`build-atlas.js` 的 `ENTRIES` 同步更新为新文件名，重新打包 `material.png/json`（384×128，帧名不变）。
 
 验证：`node build-atlas.js` 打包成功；用 sharp 把 `scrap` 帧缩到 28×28（对齐签到格子实际图标尺寸 `ch*0.26`）人工核对，折角撕边纸的剪影清晰可辨，未再糊成色块。client `tsc --noEmit` 未跑（仅素材/构建脚本变更，无 TS 改动）。
+
+### 20.13 实现记录（2026-07-29，✅）— 空槽图标改为镂空 + 号（不再是暗淡实心 glyph）
+
+背景：用户看 Hero Roster 网格截图，把某几张卡底部的槽位图标误认成"已装备的低阶道具"，实际是空槽——`buildEquipIcon`（§20.8）里空槽走的是 `drawEquipmentGlyph(slot, rarity='common', ...)` 再由调用方把 `icon.alpha` 压到 0.3～0.4，本质上仍是一件"变暗的 common 稀有度实心装备"，与真实穿戴的 common 装备只有透明度这一个区分维度，density 高的网格里很容易看漏。
+
+拍板（用户）：槽位形状提示要保留（玩家仍需一眼看出这是武器/护甲/饰品槽），但空槽必须与"任何真实装备"在观感上分类不同，不能靠透明度这种容易被忽略的弱信号；且优先级明确——**能程序绘制满足需求就用程序绘制，只有程序绘制明显拉低品质时才考虑额外出图**（复杂度/工作量让位于游戏品质，但不是无条件加美术资源）。
+
+落地（纯客户端，零新资产，仍在 `equipmentGlyph.ts` 程序绘制范畴内）：
+- 新增 `drawEmptySlotGlyph(g, slot, size, seed)`：复用各槽位的基础形状（武器=斜置笔形、护甲=矩形书封、饰品=打孔挂牌），但**不填充**、描边统一用与稀有度无关的中性灰 `EMPTY_INK`（0xb0aaa0），中心叠加一个不透明的"+"。
+- `buildEquipIcon`（§20.8 的唯一装备图标出处）新增分支：`defId` 为 `undefined`（即真正的空槽）时直接返回 `drawEmptySlotGlyph`，不再退化成"稀有度 common 的实心 glyph + 调用方自行调透明度"；`defId` 有值但图集贴图缺失（图集未加载完/未知 id，极少见）时仍走原 §20.3 实心 glyph 兜底——语义上这仍是"一件真实装备，只是位图还没出来"，与"空槽"是两回事，不能混用同一条兜底路径。
+- 三处调用点（`CardScene/list.ts` 网格、`CardScene/detail.ts` 详情弹窗、`EquipmentScene/inventory.ts` 背包格）删掉各自「`inst ? 1 : 0.3～0.4`」的透明度分支，统一 `alpha = 1`——镂空+加号本身已经是区分信号，不需要再叠一层透明度。
+
+验证：client `tsc --noEmit` 全绿；`npm run test:ui` 中 equipment/roster 相关既有套件（`equipmentGridLayout`/`equipmentAssignGrid`/`cardRosterApplyCardState` 等）全绿，其余 50 个套件失败是本机已知的 `jsonwebtoken` workspace 链接缺口（详见 `claudedocs/worktrees.md` 陷阱记录），与本次改动无关。因后端未起无法走完整登录截图 Hero Roster，改用 `?equipDemo` 临时调试入口（`entries/web.ts` 分支 + 一次性 demo 模块，验证后已删除）直接构造 `PIXI.Application` 调用 `drawEmptySlotGlyph`/`drawEquipmentGlyph` 网格渲染，肉眼确认三个槽位的镂空+加号版本与 common/fine/rare/epic 实心版本能一眼区分。

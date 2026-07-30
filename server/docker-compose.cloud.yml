@@ -269,6 +269,7 @@ services:
       NW_MATCHSVC_INTERNAL_URL: http://matchsvc:8091
       NW_AUCTION_INTERNAL_URL: http://auctionsvc:18086
       NW_WORLD_INTERNAL_URL: http://worldsvc:18084
+      NW_SOCIALSVC_INTERNAL_URL: http://socialsvc:8085
     restart: unless-stopped
 
   analyticsvc:

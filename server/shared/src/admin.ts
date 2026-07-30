@@ -41,6 +41,11 @@ export type AdminCapability =
   | 'gacha.pools.manage' // ops-authored custom gacha pools (GACHA_DESIGN §12): create / close festival pools
   | 'promo.manage' // promo-code create / view (B-PROMO)
   | 'paddle.events.view' // Paddle webhook event log lookup (support/CS: "why didn't this payment go through", COMMERCIAL_DESIGN §10.4)
+  | 'moderation.wordlist.manage' // manage the DB overlay word lists (CONTENT_MODERATION_DESIGN.md §3.2)
+  | 'reports.view' // view the UGC report review queue (CONTENT_MODERATION_DESIGN.md CM11)
+  | 'reports.action' // dismiss / uphold a report (CONTENT_MODERATION_DESIGN.md CM9)
+  | 'appeals.view' // view the appeal review queue (CONTENT_MODERATION_DESIGN.md CM11)
+  | 'appeals.action' // approve / deny an appeal (CONTENT_MODERATION_DESIGN.md CM10)
   | 'admin.manage'; // account / role management
 
 /**
@@ -77,6 +82,11 @@ export const ROLE_CAPABILITIES: Record<AdminRole, readonly AdminCapability[]> = 
     'gacha.pools.manage',
     'promo.manage',
     'paddle.events.view',
+    'moderation.wordlist.manage',
+    'reports.view',
+    'reports.action',
+    'appeals.view',
+    'appeals.action',
     'admin.manage',
   ],
   ops: [
@@ -102,6 +112,11 @@ export const ROLE_CAPABILITIES: Record<AdminRole, readonly AdminCapability[]> = 
     'gacha.pools.manage',
     'promo.manage',
     'paddle.events.view',
+    'moderation.wordlist.manage',
+    'reports.view',
+    'reports.action',
+    'appeals.view',
+    'appeals.action',
   ],
   support: [
     'monitor.view',
@@ -110,8 +125,10 @@ export const ROLE_CAPABILITIES: Record<AdminRole, readonly AdminCapability[]> = 
     'comp.view',
     'audit.view.self',
     'paddle.events.view',
+    'reports.view',
+    'appeals.view',
   ],
-  viewer: ['monitor.view', 'analytics.view', 'comp.view', 'audit.view.self', 'slg.season.view', 'slg.audit.view', 'slg.map.view'],
+  viewer: ['monitor.view', 'analytics.view', 'comp.view', 'audit.view.self', 'slg.season.view', 'slg.audit.view', 'slg.map.view', 'reports.view', 'appeals.view'],
 };
 
 export function capabilitiesForRole(role: AdminRole): AdminCapability[] {
@@ -314,7 +331,11 @@ export type AuditAction =
   | 'event.delete'
   | 'gacha.pool.create'
   | 'gacha.pool.close'
-  | 'promo.create';
+  | 'promo.create'
+  | 'moderation.wordlist.update'
+  | 'report.review'
+  | 'account.penalty'
+  | 'appeal.review';
 
 export interface AuditEntryView {
   id: string;

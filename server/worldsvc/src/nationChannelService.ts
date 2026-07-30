@@ -2,7 +2,7 @@
 // All players within the same world can post; messages are fanned out to online gateway members via
 // Redis pub/sub. Without Redis the service degrades to O(n) HTTP push. Offline members fetch
 // history via REST (TTL 7 days).
-import { FAMILY_MSG_BODY_MAX, SlgError } from '@nw/shared';
+import { FAMILY_MSG_BODY_MAX, SlgError, censorChat, type ChatRegion, type WordlistCache } from '@nw/shared';
 import type { WorldCollections, NationMessageDoc } from './db';
 import type { HttpWorldGatewayClient } from './gatewayClient';
 import type { WorldCommercialClient } from './commercialClient';
@@ -37,6 +37,8 @@ interface Deps {
   socialsvc?: WorldSocialsvcClient;
   /** meta client for publicId resolution in chat messages; omit to leave fromPublicId empty. */
   meta?: WorldMetaClient;
+  /** Content-moderation word list overlay cache (CONTENT_MODERATION_DESIGN.md §3.2); omit = built-in REGION_WORDLISTS only. */
+  wordlists?: WordlistCache;
 }
 
 let msgSeq = 0;
@@ -61,10 +63,31 @@ export class NationChannelService {
     senderName: string,
     body: string,
     clientPlatform?: string,
+    region: ChatRegion = 'global',
   ): Promise<NationMessageView> {
     const { cols } = this.deps;
 
     if (!body || body.length > FAMILY_MSG_BODY_MAX) throw new SlgError('BAD_REQUEST');
+
+    // Resolve publicId + display name + title from meta (source of truth for renames); best-effort,
+    // falls back to the client-supplied senderName if meta is unavailable or profile not found —
+    // a stale/incorrect client-side cache must never be preferred over the account's real name.
+    // Family + sect name (world chat spans every family/sect, unlike the family/sect-scoped channels
+    // where the sender's own family/sect is already known) is independent of the profile fetch — run
+    // both in parallel instead of sequentially (comm-audit batch F item 8), and read sectId straight off
+    // getMember (no more getFamiliesByIds([mem.familyId]) round trip).
+    // Fetched BEFORE the coin charge below (moved up 2026-07-29, CONTENT_MODERATION_DESIGN.md CM7.1):
+    // profile.mutedUntil is the mute-enforcement check, and a muted post must be rejected before
+    // spending WORLD_CHAT_COST, not after.
+    const [profile, mem] = await Promise.all([
+      this.meta.available ? this.meta.getProfile(accountId).catch(() => null) : Promise.resolve(null),
+      this.socialsvc.available ? this.socialsvc.getMember(accountId).catch(() => null) : Promise.resolve(null),
+    ]);
+    if (profile?.mutedUntil && profile.mutedUntil > this.deps.now()) throw new SlgError('ACCOUNT_MUTED');
+
+    // CONTENT_MODERATION_DESIGN.md CM5: world/nation chat is ephemeral like DM/family chat —
+    // mask on hit, never reject delivery.
+    body = censorChat(body, region, this.deps.wordlists).text;
 
     const ts = this.deps.now();
 
@@ -76,18 +99,6 @@ export class NationChannelService {
     await this.deps.commercial.spend(accountId, WORLD_CHAT_COST, orderId, clientPlatform);
     const seq = ++msgSeq;
     const msgId = `nm:${worldId}:${ts}:${seq}`;
-
-    // Resolve publicId + display name + title from meta (source of truth for renames); best-effort,
-    // falls back to the client-supplied senderName if meta is unavailable or profile not found —
-    // a stale/incorrect client-side cache must never be preferred over the account's real name.
-    // Family + sect name (world chat spans every family/sect, unlike the family/sect-scoped channels
-    // where the sender's own family/sect is already known) is independent of the profile fetch — run
-    // both in parallel instead of sequentially (comm-audit batch F item 8), and read sectId straight off
-    // getMember (no more getFamiliesByIds([mem.familyId]) round trip).
-    const [profile, mem] = await Promise.all([
-      this.meta.available ? this.meta.getProfile(accountId).catch(() => null) : Promise.resolve(null),
-      this.socialsvc.available ? this.socialsvc.getMember(accountId).catch(() => null) : Promise.resolve(null),
-    ]);
     const senderPublicId = profile?.publicId ?? '';
     const resolvedSenderName = profile?.displayName ?? senderName;
     const title = profile?.equippedTitle;

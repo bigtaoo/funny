@@ -239,6 +239,17 @@ describe.skipIf(!mongo)('SectService e2e', () => {
     expect(detail.sectId).toBe(sectId(W, 'CAP6'));
   });
 
+  it('found sect: rejects a name that hits the sensitive-word filter (CONTENT_MODERATION_DESIGN.md CM5)', async () => {
+    // 'shit' is in chatFilter.ts's global word list, always active regardless of region — sect name is
+    // long-lived/public like a displayName, so a hit rejects creation outright rather than persisting
+    // a masked name.
+    await makeFamily('alice', 'Alpha', 'AW');
+    await expect(sect.createSect(W, 'alice', 'Shit Sect', 'BAD1')).rejects.toMatchObject({ code: 'BAD_REQUEST' });
+    // Rejected founding must not have left the family "in a sect" — a clean retry succeeds.
+    const detail = await sect.createSect(W, 'alice', 'Clean Sect', 'CLN1');
+    expect(detail.name).toBe('Clean Sect');
+  });
+
   it('founding has no prosperity threshold: a zero-activity family leader can still found a sect', async () => {
     // Prosperity gate was removed (family leaders may found a sect at any prosperity level).
     await insertFamily('poor', 'Poor', 'PR', 0);

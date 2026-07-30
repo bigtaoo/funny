@@ -124,6 +124,27 @@ export function showToastMessage(text: string, kind: ToastKind = 'error'): void 
 }
 
 /**
+ * Appeal prompt render outlet (CONTENT_MODERATION_DESIGN.md §5.3): same sink pattern as the toast above,
+ * registered once by app.ts (mounts an AppealDialog on app.stage). ApiClientBase.request / WorldApiClient's
+ * request helper both call maybePromptAppeal() right before throwing on an ACCOUNT_BANNED/ACCOUNT_MUTED
+ * error — a single choke point that covers every current and future call site without per-scene wiring.
+ */
+export type AppealPromptCode = 'ACCOUNT_BANNED' | 'ACCOUNT_MUTED';
+let appealSink: ((code: AppealPromptCode) => void) | null = null;
+
+/** Register the appeal-dialog render outlet (call once on application startup). */
+export function setAppealSink(fn: (code: AppealPromptCode) => void): void {
+  appealSink = fn;
+}
+
+/** No-ops for any other error code, and silently no-ops if no sink is registered (e.g. in tests). */
+export function maybePromptAppeal(code: string): void {
+  if (code !== 'ACCOUNT_BANNED' && code !== 'ACCOUNT_MUTED') return;
+  if (!appealSink) return;
+  try { appealSink(code); } catch { /* swallow, same reasoning as showToastMessage */ }
+}
+
+/**
  * Bypass outlet for uncaught exceptions (injected by net/anomaly): feeds window-level uncaught errors / Promise rejections into the full-coverage anomaly reporter.
  * Injected via setter rather than direct import to prevent log.ts from reverse-depending on anomaly (anomaly depends on log; avoids a cycle).
  */
