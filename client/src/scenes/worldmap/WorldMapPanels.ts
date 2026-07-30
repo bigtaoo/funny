@@ -227,7 +227,7 @@ export class WorldMapPanels {
         const overflowCount = myMarches.length - visibleMarches.length;
         const now = serverNow();
         const MARCH_KIND_ICON: Record<string, IconKind> = {
-          attack: 'swords', reinforce: 'armor', scout: 'scope', return: 'replay', occupy: 'flag',
+          attack: 'swords', reinforce: 'armor', return: 'replay', occupy: 'flag',
         };
         const listH = visibleMarches.length * MARCH_ROW_H + 12 + (overflowCount > 0 ? MARCH_ROW_H : 0);
         const listPanel = sketchPanel(rightW, listH, { fill: C.paper, border: C.mid, seed: seedFor(6, 2, rightW) });

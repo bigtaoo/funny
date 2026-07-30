@@ -15,7 +15,7 @@ const ALL_KINDS: Record<IconKind, true> = {
   atk: true, hp: true, armor: true, spd: true, atkspd: true,
   brush: true,
   swords: true, replay: true, share: true, home: true,
-  scope: true, flag: true, desk: true, cabinet: true, hammer: true,
+  flag: true, desk: true, cabinet: true, hammer: true,
   tag: true, capsule: true, cards: true, star: true, lock: true, medal: true, zoom: true, gift: true,
   close: true, check: true, play: true,
 };

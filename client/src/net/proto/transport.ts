@@ -384,7 +384,7 @@ export interface PreMatchLost {
  */
 export interface MarchUpdate {
   marchId: string;
-  /** attack | reinforce | occupy | sweep | scout | return */
+  /** attack | reinforce | occupy | sweep | return | move */
   kind: string;
   fromTile: string;
   toTile: string;

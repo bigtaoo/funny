@@ -741,6 +741,17 @@ if (path.startsWith('/admin/world/')) {
 - **验收**：server `tsc -b` + worldsvc 全量 e2e（33 files / 282 tests）全绿；client `tsc --noEmit` + `build:web` + 全量 UI 测试（79 files / 721 tests）全绿。
 - **遗留**：真正的「行军队伍被误派侦察」根因仍未查明（怀疑是旧版本客户端，或 `showTeamPicker` 的 `busyTeamIds` 读到过期数据导致误判空闲）——待用户提供具体复现步骤后再排查；此前 §18.8 记录的 scout 功能设计/实现细节仍作为恢复参考保留不动。
 
+#### 18.8.1a scout 彻底删除（2026-07-30）
+
+audit-followup-fixes-0730 复查时重新核实了 §18.8.1 的"根因未定位"结论：`doScout()` 现在零调用方（四处菜单按钮早已移除，且没有其它入口能到达它），服务端也没有任何除 `startMarch` 显式参数之外的路径能把某个 march 的 `kind` 设成 `'scout'`——结构上"行军队伍被误拉去侦察"这个原始 bug 机制已经不可能复现了，但当时真正的根因仍然没有查清楚。问用户是否要重新开放，用户回复"目前不需要侦察了，当时留着只是觉得要删的代码太多"——于是这次不是恢复，而是彻底删除整个功能，不再保留"方便快速恢复"的底层结构：
+
+- **shared**：`MarchKind` 去掉 `'scout'`；`VISION_SCOUT_RADIUS` 常量整个删除（连带从 `VISION_MAX_RADIUS` 的 `Math.max(...)` 里去掉）。
+- **worldsvc**：`MARCHABLE_KINDS` 去掉 `'scout'`；`combatMarch.ts` 删掉 §18.8.1 加的 `kind==='scout'` 拒绝分支（`MARCHABLE_KINDS.has(kind)` 的通用校验已经足够）+ 到达点分发分支 + `autoReturnScout()` 整个方法；`coreHelpers.ts` 的 `marchVisionRadius()` 包装函数删除（唯一调用方 `coreVision.ts` 改为直接引用 `VISION_MARCH_RADIUS`）。
+- **契约**：`openapi-world.yml` 两处 `kind` enum 去掉 `scout`；`transport.proto` 的 `MarchUpdate.kind` 注释同步；`gen:api:contracts`/`gen:api:world`/`gen:api:server`/`proto:gen`（client + botsvc/gameserver/gateway/metaserver 四份各自的生成产物）全部重跑。
+- **client**：`DeployKind` 去掉 `'scout'`；`WorldMapNet.ts` 的 `doScout()` 整个方法删除；`WorldMapPanels.ts`/`WorldMapRenderer/fog.ts` 里的 scout 图标/配色分支删除；i18n 三语言（zh/en/de）去掉 `world.actScout`/`world.scoutSent`；连带清理了专为 scout 画的 `scope`（望远镜）图标（`IconKind`/`icons.ts`/`icons/slg.ts` 的 `drawScope`），确认零消费者后整个删除。
+- **测试**：`server/worldsvc/test/scout.e2e.test.ts`（只剩"验证被拒绝"的 1 例）+ `client/test/ui/worldMapScoutDisabled.ui.ts`（验证菜单不再出现侦察按钮的 5 例）整个删除——两者都是在守护一个现在已经从类型层面就不可能发生的状态，`tsc` 本身就是更强的保证。顺带发现并修复了 `client/test/ui/modalScaleAndBackButton.ui.ts` 里 3 个断言仍用今天已修复的landscape 弹窗缩放旧公式（`(h*0.8)/mh`）算期望值的用例——这是 2026-07-30 landscape modal overscale 修复（见本文档另一节/`modal-scale-landscape-overscale-2026-07-22` memory）暴露出的遗留断言，一并更新为新公式。
+- **验收**：server 12 个 workspace `tsc -b` 全绿；worldsvc 全量 e2e 46/47 文件绿（唯一失败 `field-encounter.e2e.test.ts` 单独重跑绿，判定为并发跑测的偶发波动，与本次改动无关，文件本身零 scout 引用）；client `tsc --noEmit` 全绿 + 全量 vitest（124 files/903 tests）+ 全量 UI vitest（96 files/824 tests）全绿。
+
 ### 18.9 瞭望塔（Watchtower）实现记录（2026-06-21，§18.1 V2 最后余项）
 
 > 把 §18.1 V2「瞭望塔建筑——固定半径持久视野源」从「列 v2」兑现：在**己方领地**花资源建塔，该格升级为**最大半径**（`VISION_WATCHTOWER_RADIUS=8` > 主城 5）持久视野源。区别于 scout（一次性照路后回师）：瞭望塔是**主动布点扩视野**的永久手段——「想看哪、就在哪建塔守着」。落库随 `TileDoc`（丢地即随格子消失，无单独退还），符合 V3「vision 零落库，但塔标记本身落库、视野仍读时实时算」。

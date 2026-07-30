@@ -148,13 +148,8 @@ export function nationDefenseStrength(garrison: number, inOwnNation: boolean): n
 export const VISION_TERRITORY_RADIUS = 2;
 /** Home city vision radius (larger than territory, DRAFT). */
 export const VISION_BASE_RADIUS = 5;
-/** In-transit march vision radius (source of scouting march value, DRAFT). */
+/** In-transit march vision radius (DRAFT). */
 export const VISION_MARCH_RADIUS = 2;
-/**
- * Scout march (scout kind) vision radius (G5 V2 remaining item, DRAFT). Larger than ordinary marches — the value of scouting is
- * "seeing deeper": no combat, no occupation; send a small force to any non-obstacle tile, lighting up a larger vision area along the route and at the destination, then auto-return.
- */
-export const VISION_SCOUT_RADIUS = 4;
 /**
  * Watchtower vision radius (§18 G5 V2 remaining item, DRAFT). The largest fixed persistent vision source — farther than the home city (5);
  * building a tower on own territory upgrades that tile to a large-radius observation point, illuminating a deep area — the primary mechanism for proactively expanding vision.
@@ -165,7 +160,6 @@ export const VISION_MAX_RADIUS = Math.max(
   VISION_TERRITORY_RADIUS,
   VISION_BASE_RADIUS,
   VISION_MARCH_RADIUS,
-  VISION_SCOUT_RADIUS,
   VISION_WATCHTOWER_RADIUS,
 );
 

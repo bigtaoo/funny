@@ -297,7 +297,7 @@ PUT  /title/equip          (JWT) { titleId }  → { save: SaveData }  | 403（�
 | `friend_update` | `{ public_id, kind: ADDED|REMOVED }` | 好友关系变更（新增/解除） |
 | `chat_message` | `{ conv_id, from_public_id, from_name, body, ts }` | 私聊新消息 |
 | `mail_new` | `{ mail_id, has_attachment }` | 新邮件到达 |
-| `march_update` | `{ march_id, kind, from_tile, to_tile, arrive_at, status }` | SLG 行军状态变更（S8）；`kind: attack|reinforce|occupy|sweep|scout|return` |
+| `march_update` | `{ march_id, kind, from_tile, to_tile, arrive_at, status }` | SLG 行军状态变更（S8）；`kind: attack|reinforce|occupy|sweep|return|move`（scout 已于 2026-07-30 整体删除，非本表新漂移） |
 | `tile_update` | `{ tile_id, type, level, owner_public_id, family_id, protected_until, owner_name }` | SLG 地块状态变更 |
 | `under_attack` | `{ tile, attacker_name, attacker_public_id, arrive_at, troops_hint }` | 己方地块被进攻预警 |
 | `siege_result` | `{ siege_id, tile, outcome, loot_summary, replay_ref, march_id }` | 围攻结果（`outcome: attacker_win|defender_win|draw`） |
