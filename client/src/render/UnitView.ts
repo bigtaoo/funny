@@ -23,6 +23,12 @@ import harpyTaoUrl from '../assets/units/harpy.tao';
 import medicTaoUrl from '../assets/units/medic.tao';
 import berserkerTaoUrl from '../assets/units/berserker.tao';
 import splitterTaoUrl from '../assets/units/splitter.tao';
+import skinInfantryTaoUrl from '../assets/units/skins/skin_infantry.tao';
+import skinArcherTaoUrl from '../assets/units/skins/skin_archer.tao';
+import skinShieldBearerTaoUrl from '../assets/units/skins/skin_shieldbearer.tao';
+import skinLenaTaoUrl from '../assets/units/skins/skin_lena.tao';
+import skinMaraTaoUrl from '../assets/units/skins/skin_mara.tao';
+import skinMaxTaoUrl from '../assets/units/skins/skin_max.tao';
 import { fx, factionInk } from './theme';
 import { drawStickmanDraft } from './stickmanDraft';
 import { targetScreenHeight } from './unitSize';
@@ -55,22 +61,22 @@ export const STICKMAN_ASSETS: Partial<Record<UnitType, string>> = {
  * character — game/meta/skinDefs.ts, LOBBY_IA_REDESIGN §15) swaps ONLY that character's texture
  * bundle — never stats — so a skin carried into PvP changes nothing but the picture (hard wall,
  * §5.2). Since a skin never targets more than one UnitType, several can be equipped at once
- * (one per character) with no risk of one overriding another's entry. Empty until skin .tao
- * bundles are authored; an unknown / unmapped skin falls back to the default look in
- * STICKMAN_ASSETS.
+ * (one per character) with no risk of one overriding another's entry. An unknown / unmapped skin
+ * falls back to the default look in STICKMAN_ASSETS.
  *
  * LAUNCH SKIN CATALOGUE (owner decision 2026-07-02, GACHA_DESIGN §9.5): one skin per
  * character, 6 total, each a full .tao (procedural recolor retired post-v0.4, see
- * art-direction §9.1). Art-blocked — the .tao files don't exist yet. When authored,
- * import each and add its single-unit override here:
- *   skin_shop_c1: { [UnitType.Infantry]:     <skin_infantry.tao> },  // Tao/Lichuang  (shop, common)
- *   skin_shop_r1: { [UnitType.Archer]:       <skin_archer.tao>   },  // Tao/Suyuan    (shop, rare)
- *   skin_shop_e1: { [UnitType.ShieldBearer]: <skin_shield.tao>   },  // Tao/Chenshou  (shop, epic)
- *   skin_e1:      { [UnitType.Lena]:         <skin_lena.tao>     },  // Anna/Lena     (gacha, epic)
- *   skin_e2:      { [UnitType.Mara]:         <skin_mara.tao>     },  // Anna/Mara     (gacha, epic)
- *   skin_l1:      { [UnitType.Max]:          <skin_max.tao>      },  // Anna/Max      (gacha, legendary)
+ * art-direction §9.1). Rigged onto each character's base skeleton (animator, 2026-07-30) —
+ * see art/skins/<character>/ for the .tao.editor sources.
  */
-const SKIN_ASSETS: Record<string, Partial<Record<UnitType, string>>> = {};
+const SKIN_ASSETS: Record<string, Partial<Record<UnitType, string>>> = {
+  skin_shop_c1: { [UnitType.Infantry]:     skinInfantryTaoUrl     as unknown as string }, // Tao/Lichuang  (shop, common)
+  skin_shop_r1: { [UnitType.Archer]:       skinArcherTaoUrl       as unknown as string }, // Tao/Suyuan    (shop, rare)
+  skin_shop_e1: { [UnitType.ShieldBearer]: skinShieldBearerTaoUrl as unknown as string }, // Tao/Chenshou  (shop, epic)
+  skin_e1:      { [UnitType.Lena]:         skinLenaTaoUrl         as unknown as string }, // Anna/Lena     (gacha, epic)
+  skin_e2:      { [UnitType.Mara]:         skinMaraTaoUrl         as unknown as string }, // Anna/Mara     (gacha, epic)
+  skin_l1:      { [UnitType.Max]:          skinMaxTaoUrl          as unknown as string }, // Anna/Max      (gacha, legendary)
+};
 
 /** Effective per-type asset URLs for every currently-equipped skin (skin overrides ∪ default). */
 function resolveAssets(equippedSkins: readonly string[]): Partial<Record<UnitType, string>> {

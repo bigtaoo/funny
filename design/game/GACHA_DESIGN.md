@@ -323,6 +323,8 @@ GachaScene 顶部区域只有 4 个彩色圆点（common/rare/epic/legendary）�
 > 客户端接线映射见 `client/src/render/UnitView.ts` `SKIN_ASSETS`（每款皮肤只重塑对应那一个兵种）；`.tao` 到位后填表即生效。皮肤图标可先用低分辨率概念稿占位。
 >
 > **2026-07-16 补充**：商店 Shop tab（`ShopScene/shop.ts`）的皮肤卡片此前完全无图（纯文字+画笔矢量图标）。已加 `CardSpec.artUrl` 机制（`ShopScene/base.ts` `drawCard()`，存在则画贴图，否则退回矢量图标），`skin_shop_c1/r1/e1` 临时借用对应兵种的通用卡面 PNG（`infantry.png`/`archer.png`/`shieldbearer.png`）占位——是"兵种通用图"，不是本表要求的专属配色皮肤图。`skin_infantry.tao`/`skin_archer.tao`/`skin_shield.tao` 到位后，把 `shop.ts` 里的 `SKIN_PLACEHOLDER_ART` 换成真实皮肤贴图 URL 即可，机制不用改。`Enhance Protection Stone`(`protect_enhance`) 目前仍无任何图标/美术。
+>
+> **✅ 2026-07-30 完成**：6 款皮肤已在 `tools/animator` 里全部摆骨绑定完成（每款克隆对应角色的基础骨架 `.tao.editor`，把 `art/skins/<角色>/` 下 GIMP 切好的部件重新绑到各骨骼，保留原骨架的 idle/walk/attack/hurt/death/spawn 全套动作 clip，逐一校准 anchor/rotation/scale 后导出），产物为 `client/src/assets/units/skins/skin_{infantry,archer,shieldbearer,lena,mara,max}.tao` + 对应 `.tao.editor` 源存档在 `art/skins/<角色>/skin_<角色>.tao.editor`。已接入 `UnitView.ts SKIN_ASSETS` 与 `shop.ts SKIN_PLACEHOLDER_ART`（3 款商店皮肤缩略图改用 `art/skins/<角色>/<角色>.png` 缩放版，见 `client/src/assets/units/skins/skin_{infantry,archer,shieldbearer}.png`），`tsc --noEmit` + webpack build 通过，并在真实 `StickmanRuntime` 运行时加载渲染验证过（非仅动画编辑器内预览）。**已知限制**：`infantry`/`shieldbearer`/`lena` 3 款皮肤的 GIMP 切图比基础骨架少几片（`infantry` 双臂各只有 1 片、双腿各只有 1 片；`shieldbearer` 左臂只有 1 片；`lena` 双臂各只有 1 片），经用户拍板采用"刚性绑定"处理——单张图整体绑到上半截骨骼（如 `l_upper_arm`），下半截骨骼（如 `l_lower_arm`）不挂图，动画播放时该肢体不会有肘/膝弯曲，只做整肢刚性摆动。若后续要补上关节弯曲效果，需要先在 GIMP 里把这些部件重新按"左右各一片 + 上下各一片"切开，再回 `tools/animator` 里重新绑定这几根骨头。
 
 ### 9.6 【P2 · 可后做】常驻池静态 Banner
 
