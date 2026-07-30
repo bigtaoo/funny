@@ -168,6 +168,35 @@ describe.skipIf(!mongo)('admin content-moderation report/appeal bridge e2e', () 
     expect(fakeReports.rows[0]!.status).toBe('upheld'); // report resolve already succeeded before the penalty call failed
   });
 
+  // KNOWN GAP (audit-followup-fixes-0730 review, M2 — not yet fixed): the 502's own error message says
+  // "penalty failed — retry", but resolveReport() always does report-resolve-then-penalize as one
+  // sequence. Once the report is flipped to 'upheld', socialsvc's resolveReport is a CAS on status:'open'
+  // (see friendService.resolveReport) and will never match again — so a literal retry of resolveReport()
+  // 404s before ever reaching applyPenalty a second time. it.fails: this SHOULD succeed once a real
+  // recovery path exists (e.g. a dedicated "retry just the penalty" endpoint); today it does not.
+  it.fails('resolveReport(upheld) can be retried after a penalty-call failure without re-hitting the already-resolved report (KNOWN GAP M2)', async () => {
+    fakeEnforcement.failNext = true;
+    await expect(svc.resolveReport(root, 'r1', 'b', 'upheld')).rejects.toThrow(AdminError);
+    expect(fakeReports.rows[0]!.status).toBe('upheld');
+
+    // The operator retries exactly as the error message suggests. The penalty call would succeed this
+    // time (failNext cleared) — but the retry never reaches it, because resolveReport() re-resolves the
+    // (already-resolved) report first and 404s.
+    fakeEnforcement.failNext = false;
+    const res = await svc.resolveReport(root, 'r1', 'b', 'upheld');
+    expect(fakeEnforcement.calls).toContainEqual({ accountId: 'b', delta: -20 });
+    expect(res.action).toBeDefined();
+  });
+
+  // KNOWN GAP (audit-followup-fixes-0730 review, M4 — not yet fixed): resolveReport() takes `accountId`
+  // as a caller-supplied parameter and never cross-checks it against the report's own targetId (r1's real
+  // target is 'b', per FakeReports.rows above) — a future caller bug could resolve report A while
+  // penalizing an unrelated account. it.fails: this SHOULD reject a mismatch once resolveReport()
+  // re-derives the target from the report itself; today it silently penalizes whatever accountId it's given.
+  it.fails('resolveReport(upheld) rejects a caller-supplied accountId that does not match the report\'s own targetId (KNOWN GAP M4)', async () => {
+    await expect(svc.resolveReport(root, 'r1', 'z', 'upheld')).rejects.toThrow(AdminError);
+  });
+
   it('listAppeals proxies the appeals client and audits appeal.review', async () => {
     const rows = await svc.listAppeals(root.adminId, { status: 'open' });
     expect(rows).toHaveLength(1);

@@ -37,6 +37,7 @@
 - ~~**worldsvc `siegeEngine`** 势均力敌的攻城战同步跑满额引擎 tick，阻塞事件循环；`shouldUseCheapSiege` 已覆盖大部分悬殊战斗，剩余部分需要 worker 线程或分片计算才能根治~~。**已于同日以独立分支 `siegeengine-worker-threads` 解决**（见上方已修复表第 15 条 + `claudedocs/server.md`）。
 - **admin 四眼审批例外**：具 `admin.manage` 权限者可临时 disable 其他审批人后自批——策略决策，非 bug。
 - **`shared/dailyCounter.ts` 的 `LocalBackend.expire()`**：注释假设 Redis 只是"短暂降级"，若长期不可用会无界增长；概率低（生产 Redis 未观察到长期故障历史），留观察。
+- **M5（audit-followup-fixes-0730 复查发现，2026-07-30）**：`NetSession.ts` 收到 `prematch_lost{context:'queue'}` 时无条件 `createRanked(this.lastRankedDeck)` 自愈重新排队，没有检查 `this.game`（是否已经连上数据面、正在打真实对局）——一条延迟到达的过期推送理论上能在玩家对局进行中把它悄悄拽回排队。回归测试 `client/test/net-session-prematch-lost-in-match.test.ts` 已捕获（`it.fails`，标记为预期失败，等 `preMatchLost` 分支补上 `this.game` 判断后应转为通过）。修复方向：`context==='queue'` 分支加一句 `!this.game` 判断，`this.game` 已连接时忽略这条推送（同 `matchsvc` 侧"这条记录是否已经配对成功"的判断逻辑，客户端这边用连接状态本身做同等判断，不需要额外服务器状态）。
 
 > **第 4 条（gateway 控制消息无 per-connection 限流）已于 2026-07-29 同日追加任务补齐**：`RateLimiter`/`SlidingRateLimiter`/`RedisSlidingRateLimiter`/`createRateLimiter` 从 metaserver 搬到 `@nw/shared`；gateway `handle()` 按消息类型分两档限流（TIGHT 10/min 管 room_create/room_join/duel_invite，STANDARD 20/min 管 duel_respond/room_ready/room_leave/room_start，均以 accountId 为 key，ping/client_caps/judge_verdict 不限）；无 Redis 时退化为内存限流器，配了 `NW_GW_REDIS_URL` 则升级为跨实例精确的 Redis 版；命中限流复用 `duel_cancelled`/`room_error` 显式反馈客户端，不静默丢弃。详见 [`claudedocs/server.md`](../../claudedocs/server.md) "gateway 控制消息 per-connection 限流补齐" 一节。
 
