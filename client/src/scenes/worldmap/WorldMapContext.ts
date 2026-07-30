@@ -62,7 +62,7 @@ export interface WorldMapCallbacks {
 }
 
 /** March kinds the deploy dialog can dispatch (occupy/reinforce/attack/sweep). */
-export type DeployKind = 'occupy' | 'reinforce' | 'attack' | 'sweep' | 'scout';
+export type DeployKind = 'occupy' | 'reinforce' | 'attack' | 'sweep';
 
 /** Live-push handle returned by showWorldMap — app forwards NetSession pushes here. */
 export interface WorldMapView {

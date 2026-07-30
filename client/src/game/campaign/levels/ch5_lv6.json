@@ -108,14 +108,14 @@
         "unitType": "ironclad",
         "col": 3,
         "count": 2,
-        "spacingTicks": 30
+        "spacingTicks": 22
       },
       {
         "atTick": 780,
         "unitType": "ironclad",
         "col": 8,
         "count": 2,
-        "spacingTicks": 30
+        "spacingTicks": 22
       },
       {
         "atTick": 780,
@@ -130,6 +130,20 @@
         "col": 9,
         "count": 3,
         "spacingTicks": 6
+      },
+      {
+        "atTick": 780,
+        "unitType": "runner",
+        "col": 1,
+        "count": 1,
+        "spacingTicks": 18
+      },
+      {
+        "atTick": 780,
+        "unitType": "runner",
+        "col": 10,
+        "count": 1,
+        "spacingTicks": 18
       },
       {
         "atTick": 1020,
@@ -206,8 +220,8 @@
   "rewards": {
     "starThresholds": [
       1,
-      50,
-      80
+      20,
+      32
     ],
     "materials": {
       "scrap": 16,

@@ -204,37 +204,3 @@
       '401': { $ref: '#/components/responses/ErrorResp' }
       '402': { $ref: '#/components/responses/ErrorResp' }
 
-/pve/upgrade:
-  post:
-    operationId: pveUpgrade
-    tags: [save]
-    summary: "PvE upgrade (server-authoritative: validates materials → deducts materials → pveUpgrades+1 → pushes save); online only"
-    security: [{ bearerAuth: [] }]
-    requestBody:
-      required: true
-      content:
-        application/json:
-          schema:
-            type: object
-            required: [upgradeId]
-            properties:
-              upgradeId: { type: string }
-    responses:
-      '200':
-        description: Success
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [ok, data]
-              properties:
-                ok: { type: boolean, enum: [true] }
-                data:
-                  type: object
-                  required: [save]
-                  properties:
-                    save: { $ref: '#/components/schemas/SaveData' }
-      '400': { $ref: '#/components/responses/ErrorResp' }
-      '401': { $ref: '#/components/responses/ErrorResp' }
-      '402': { $ref: '#/components/responses/ErrorResp' }
-

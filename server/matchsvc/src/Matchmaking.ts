@@ -44,8 +44,13 @@ export interface MatchmakingOpts {
    * Note: timeout detection also applies to a single player waiting alone in the queue (the typical scenario for AI fallback).
    */
   botFallbackMs?: number;
-  /** Timeout callback (fired once per entry). Whether to actually fall back is decided by the caller based on feature flags. */
-  onTimeout?: (entry: QueueEntry) => void;
+  /**
+   * Timeout callback (fired once per entry). Whether to actually fall back is decided by the caller based
+   * on feature flags. May return a Promise — the bot-fallback scan in {@link tick} awaits it (so the
+   * caller's own dequeue-then-push, if any, resolves before the next tick's pairing pass, same ordering
+   * guarantee as onPair).
+   */
+  onTimeout?: (entry: QueueEntry) => void | Promise<void>;
   /**
    * Fired synchronously right after an entry is admitted to the queue (fresh enqueue, or a re-enqueue that
    * replaces a stale one) — matchsvc-prematch-persist (2026-07-29) write-through hook so the caller can
@@ -54,11 +59,15 @@ export interface MatchmakingOpts {
    */
   onEnqueued?: (entry: QueueEntry) => void;
   /**
-   * Fired synchronously right after an entry leaves the queue for any reason — explicit removal (cancel /
-   * bot-fallback dequeue), or a successful pairing — matchsvc-prematch-persist write-through hook so the
-   * caller can clear the Redis mirror. Not fired for an accountId that was never actually queued.
+   * Fired right after an entry leaves the queue for any reason — explicit removal (cancel / bot-fallback
+   * dequeue), or a successful pairing — matchsvc-prematch-persist write-through hook so the caller can
+   * clear the Redis mirror. May return a Promise: the pairing path in {@link tick} (and the bot-fallback
+   * path in Matchsvc.onQueueTimeout) awaits it before firing the pair/match_bot push, so a process crash
+   * after the push always finds the Redis mirror already cleared — never so soon that rehydrate could
+   * re-admit an account that was already told it matched (audit-followup-fixes-0730). Not fired for an
+   * accountId that was never actually queued.
    */
-  onDequeued?: (accountId: string) => void;
+  onDequeued?: (accountId: string) => void | Promise<void>;
 }
 
 export class Matchmaking {
@@ -100,20 +109,20 @@ export class Matchmaking {
   }
 
   /** Enqueue (re-enqueuing the same account replaces the old entry and resets the wait timer). Attempts one pairing pass after enqueuing. */
-  enqueue(accountId: string, name: string, publicId: string, elo: number, equippedTitle = '', avatarId = '', platform = '', deck: string[] = []): void {
-    this.remove(accountId);
+  async enqueue(accountId: string, name: string, publicId: string, elo: number, equippedTitle = '', avatarId = '', platform = '', deck: string[] = []): Promise<void> {
+    await this.remove(accountId);
     const entry: QueueEntry = { accountId, name, publicId, equippedTitle, avatarId, elo, enqueuedAt: this.now(), platform, deck };
     this.queue.push(entry);
     this.onEnqueued?.(entry);
     this.ensureTimer();
-    this.tick();
+    await this.tick();
   }
 
   /** Dequeue (cancel matchmaking / disconnect / already paired). Stops the scan timer when the queue becomes empty. */
-  remove(accountId: string): void {
+  async remove(accountId: string): Promise<void> {
     const had = this.queue.some((e) => e.accountId === accountId);
     this.queue = this.queue.filter((e) => e.accountId !== accountId);
-    if (had) this.onDequeued?.(accountId);
+    if (had) await this.onDequeued?.(accountId);
     if (this.queue.length === 0) this.stopTimer();
   }
 
@@ -129,10 +138,10 @@ export class Matchmaking {
   }
 
   /** See {@link rehydrateEntry}. No-op if nothing was rehydrated. */
-  rehydrateDone(): void {
+  async rehydrateDone(): Promise<void> {
     if (this.queue.length > 0) {
       this.ensureTimer();
-      this.tick();
+      await this.tick();
     }
   }
 
@@ -140,8 +149,14 @@ export class Matchmaking {
    * One pairing pass: sorted by ELO ascending, adjacent pairs are matched if the difference is ≤ the window
    * (the window of whichever of the two has waited longer is used).
    * Greedy adjacent pairing on a score-sorted queue is good enough and starvation-free.
+   *
+   * The Redis-side dequeue (onDequeued) for every paired account is awaited to completion BEFORE onPair
+   * fires (audit-followup-fixes-0730): onPair's caller (Matchsvc.startMatch) pushes match_found and can't
+   * be un-sent, so a matchsvc crash any time after this point must find the queue's Redis mirror already
+   * cleared — otherwise a restart's rehydrate() would re-admit an account that was already told it matched,
+   * pairing it again (with the same partner or a new one) or double-pushing match_found.
    */
-  tick(): void {
+  async tick(): Promise<void> {
     const t = this.now();
 
     // ── 1) ELO proximity pairing (only meaningful with queue size ≥2) ──
@@ -167,8 +182,9 @@ export class Matchmaking {
         this.queue = this.queue.filter((e) => !paired.has(e.accountId));
         if (this.queue.length === 0) this.stopTimer();
         // Bypasses remove() (the filter above is inlined for the whole paired set at once), so fire the
-        // same write-through hook remove() would have fired, before onPair's startMatch() runs.
-        for (const accountId of paired) this.onDequeued?.(accountId);
+        // same write-through hook remove() would have fired, before onPair's startMatch() runs — and wait
+        // for it to actually land (see method doc).
+        await Promise.all([...paired].map((accountId) => this.onDequeued?.(accountId)));
         for (const [a, b] of pairs) this.onPair(a, b);
       }
     }
@@ -181,7 +197,7 @@ export class Matchmaking {
     if (this.onTimeout && this.botFallbackMs > 0 && this.queue.length > 0) {
       const due = this.queue.filter((e) => t - (e.lastTimeoutAt ?? e.enqueuedAt) >= this.botFallbackMs);
       for (const e of due) e.lastTimeoutAt = t;
-      for (const e of due) this.onTimeout(e);
+      for (const e of due) await this.onTimeout(e);
     }
   }
 
@@ -197,7 +213,7 @@ export class Matchmaking {
 
   private ensureTimer(): void {
     if (!this.autoTick || this.timer) return;
-    this.timer = setInterval(() => this.tick(), this.tickMs);
+    this.timer = setInterval(() => void this.tick(), this.tickMs);
     this.timer.unref?.();
   }
 

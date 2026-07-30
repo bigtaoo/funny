@@ -1,5 +1,5 @@
-// PvE server-authoritative end-to-end (PVE_INTEGRITY_PLAN §8): /pve/clear completion settlement + /pve/upgrade upgrade.
-//   Validates unlock prerequisites, repeatable farming with material grants, daily cap capped, upgrade deducts cost / insufficient → 402 / max level → 400.
+// PvE server-authoritative end-to-end (PVE_INTEGRITY_PLAN §8): /pve/clear completion settlement.
+//   Validates unlock prerequisites, repeatable farming with material grants, daily cap capped.
 // Requires `cd server && docker compose up -d` + `tsc -b` first (imports from dist).
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import { createMongo, type JwtConfig, type MongoHandle, PVE_DAILY_CLEAR_REWARD_CAP } from '@nw/shared';
@@ -30,8 +30,6 @@ describe.skipIf(!mongo)('pve server-authoritative e2e', () => {
   const auth = () => ({ authorization: `Bearer ${token}` });
   const clear = (levelId: string, stars = 3) =>
     app.inject({ method: 'POST', url: '/pve/clear', headers: auth(), payload: { levelId, stars } });
-  const upgrade = (upgradeId: string) =>
-    app.inject({ method: 'POST', url: '/pve/upgrade', headers: auth(), payload: { upgradeId } });
   /** Directly seed cleared levels (bypasses sequential unlock prerequisites), used to test final-level chapter counting. */
   const seedCleared = (cleared: string[]) =>
     m.collections.saves.updateOne({ _id: accountId }, { $set: { 'save.progress.cleared': cleared } });
@@ -187,19 +185,6 @@ describe.skipIf(!mongo)('pve server-authoritative e2e', () => {
     ]);
     const r4 = body(await clear('ch2_lv10', 2));
     expect(r4.data.save.stats['campaign.chaptersCleared']).toBe(2);
-  });
-
-  it('upgrade: sufficient materials deducted + pveUpgrades+1; insufficient → 402; max level → 400', async () => {
-    // Accumulate materials: farm ch1_lv1 a few times for scrap (inf_hp 0→1 costs scrap×3).
-    await clear('ch1_lv1', 3); // scrap 6
-    const u1 = body(await upgrade('inf_hp'));
-    expect(u1.data.save.pveUpgrades['inf_hp']).toBe(1);
-    expect(u1.data.save.materials.scrap).toBe(3); // 6 - 3
-    // 0→1 already cost 3, 1→2 costs scrap×6 > remaining 3 → 402.
-    const u2 = await upgrade('inf_hp');
-    expect(u2.statusCode).toBe(402);
-    // Unknown upgrade → 400.
-    expect((await upgrade('nope')).statusCode).toBe(400);
   });
 });
 

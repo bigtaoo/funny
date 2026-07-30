@@ -5,6 +5,11 @@
 // to the Coins tab. This guards both behaviors so a future edit can't silently squash the sidebar
 // back into a horizontal strip or leave the promo row orphaned.
 //
+// Portrait's sidebar became a bottom nav bar instead (LOBBY_IA_REDESIGN.md §18, 2026-07-30) — the
+// default `buildShop` layout below ([800, 1280]) is portrait, so its own group-nav test reflects a
+// horizontal bottom bar (shared y, increasing x, spanning full width) rather than the vertical
+// left-gutter stack; landscape (exercised separately further down via `buildLandscape`) is unchanged.
+//
 // Runs under the headless PIXI adapter (vitest.ui.config.ts setupFiles); tabs/fields are located by
 // their rendered label text, not by hit-array index, so a reorder doesn't mask a real regression.
 
@@ -13,7 +18,6 @@ import * as PIXI from 'pixi.js-legacy';
 import { createLayout } from '../../src/layout/ScalingManager';
 import { InputManager } from '../../src/inputSystem/InputManager';
 import { initI18n, t } from '../../src/i18n';
-import { sidebarNavW } from '../../src/ui/widgets/HubTabs';
 import { skinDisplayName } from '../../src/game/meta/skinDefs';
 import { ShopScene, type ShopSceneCallbacks } from '../../src/scenes/ShopScene';
 // Same asset the shop borrows as skin_shop_c1's placeholder art (SKIN_PLACEHOLDER_ART in shop.ts).
@@ -95,8 +99,8 @@ function buildShop(cb: Partial<ShopSceneCallbacks>): ShopScene {
   });
 }
 
-describe('ShopScene — group nav is a left-gutter sidebar, not a horizontal strip', () => {
-  it('stacks [Shop|Coins|Gacha|BattlePass] vertically inside the margin-line gutter', () => {
+describe('ShopScene — group nav is a bottom bar in portrait, not a horizontal header strip', () => {
+  it('lays [Shop|Coins|Gacha|BattlePass] out left-to-right in one bottom bar (portrait)', () => {
     const scene = buildShop({ rechargeCoins: async () => ({ ok: true }), openBattlePass() {} });
     const shop = findLabelPos(scene.container, SHOP);
     const coins = findLabelPos(scene.container, COINS);
@@ -107,23 +111,17 @@ describe('ShopScene — group nav is a left-gutter sidebar, not a horizontal str
     expect(gacha).not.toBeNull();
     expect(battlepass).not.toBeNull();
 
-    // Vertical stack: each entry strictly below the previous one (label x varies per-item since
-    // it's centered next to a variable-width icon+text group, so we don't assert x equality here).
-    expect(coins!.y).toBeGreaterThan(shop!.y);
-    expect(gacha!.y).toBeGreaterThan(coins!.y);
-    expect(battlepass!.y).toBeGreaterThan(gacha!.y);
+    // One horizontal row (§18): all four cells share the bottom bar's y, ordered left-to-right by x.
+    const { h } = scene as unknown as { h: number };
+    expect(Math.abs(coins!.y - shop!.y)).toBeLessThan(2);
+    expect(Math.abs(gacha!.y - shop!.y)).toBeLessThan(2);
+    expect(Math.abs(battlepass!.y - shop!.y)).toBeLessThan(2);
+    expect(coins!.x).toBeGreaterThan(shop!.x);
+    expect(gacha!.x).toBeGreaterThan(coins!.x);
+    expect(battlepass!.x).toBeGreaterThan(gacha!.x);
 
-    // Confined to the left sidebar rail (sidebarNavW — see HubTabs.ts), not spread across the full
-    // screen width (a horizontal strip would place the last tab's label near the right edge of the
-    // screen). Layout picks a fixed design resolution by orientation (independent of the W/H passed
-    // to createLayout), so read the scene's actual design width/height/orientation back off it
-    // rather than assuming it matches W/H.
-    const { w: designW, h: designH, landscape } = scene as unknown as { w: number; h: number; landscape: boolean };
-    const gutter = sidebarNavW(designW, designH, landscape);
-    expect(shop!.x).toBeLessThan(gutter);
-    expect(coins!.x).toBeLessThan(gutter);
-    expect(gacha!.x).toBeLessThan(gutter);
-    expect(battlepass!.x).toBeLessThan(gutter);
+    // Pinned to the bottom of the screen, not stacked below the header.
+    expect(shop!.y).toBeGreaterThan(h * 0.8);
 
     scene.destroy();
   });

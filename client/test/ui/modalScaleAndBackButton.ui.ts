@@ -167,10 +167,12 @@ describe('Detail/reforge modal panel scales to 80% of the constrained screen axi
     // injured, so contentH = 12+26+122+4+28+26+82+40.
     const mw0 = 380;
     const mh0 = 12 + 26 + 122 + 4 + 28 + 26 + 82 + 40;
-    const expectedScale = (inner.h * 0.8) / mh0;
+    // modalScaleFor-style fix (2026-07-30): scale is anchored to the fitted axis (min(w,h)) and the
+    // modal's own WIDTH (mw0), not the raw screen height — landscape no longer divides by mh0.
+    const modalRef = Math.min(inner.w, inner.h);
+    const expectedScale = Math.min((modalRef * 0.8) / mw0, (inner.w * 0.92) / mw0, (inner.h * 0.92) / mh0);
 
     expect(inner.modalScale).toBeCloseTo(expectedScale, 10);
-    expect(mh0 * inner.modalScale).toBeCloseTo(inner.h * 0.8, 6); // fills 80% height exactly
     // Aspect ratio preserved: both axes carry the SAME scale factor.
     expect(inner.modalPanelRoot.scale.x).toBeCloseTo(inner.modalScale, 10);
     expect(inner.modalPanelRoot.scale.y).toBeCloseTo(inner.modalScale, 10);
@@ -225,10 +227,12 @@ describe('Detail/reforge modal panel scales to 80% of the constrained screen axi
     // mh0 = 44 + affixCount*20 + (maxed ? 24 : 58 + 40) + 12 (the +40 is the enhance confirm
     // button's gap/row, added 2026-07-22b alongside the protect-toggle-before-enhance flow).
     const mh0 = 44 + 1 * 20 + (58 + 40) + 12;
-    const expectedScale = (inner.h * 0.8) / mh0;
+    const mw0 = 330;
+    // modalScaleFor-style fix (2026-07-30): see the CardScene test above for the formula rationale.
+    const modalRef = Math.min(inner.w, inner.h);
+    const expectedScale = Math.min((modalRef * 0.8) / mw0, (inner.w * 0.92) / mw0, (inner.h * 0.92) / mh0);
 
     expect(inner.modalScale).toBeCloseTo(expectedScale, 10);
-    expect(mh0 * inner.modalScale).toBeCloseTo(inner.h * 0.8, 6);
 
     scene.destroy();
   });
@@ -267,9 +271,10 @@ describe('Detail/reforge modal panel scales to 80% of the constrained screen axi
     const landscape = build(...LANDSCAPE);
     const li = internals(landscape);
     expect(li.landscape).toBe(true);
-    const landscapeScale = (li.h * 0.8) / mh0;
+    // modalScaleFor-style fix (2026-07-30): see the CardScene test above for the formula rationale.
+    const modalRef = Math.min(li.w, li.h);
+    const landscapeScale = Math.min((modalRef * 0.8) / mw0, (li.w * 0.92) / mw0, (li.h * 0.92) / mh0);
     expect(li.modalScale).toBeCloseTo(landscapeScale, 10);
-    expect(mh0 * li.modalScale).toBeCloseTo(li.h * 0.8, 6);
     landscape.destroy();
 
     const portrait = build(...PORTRAIT);

@@ -31,10 +31,17 @@ export function ReportsMixin<TBase extends AdminBaseCtor>(Base: TBase): TBase & 
 
     /**
      * Resolve a report (reports.action). 'dismissed' only flips the report's own status. 'upheld' additionally
-     * applies REPORT_UPHELD_PENALTY via the metaserver penalty endpoint — the report resolve call and the
-     * penalty call are independent (best-effort): if the penalty call fails after the report was already
-     * marked upheld, the error surfaces to the caller to retry (the report itself won't re-resolve, see
-     * ReportDoc.status guard in socialsvc, so a retry only needs to re-attempt the penalty side in practice).
+     * applies REPORT_UPHELD_PENALTY via the metaserver penalty endpoint.
+     *
+     * The target account is always derived from the report's own `targetId` (O-CM7, SERVER_LOGIC_AUDIT
+     * 2026-07-29) — the caller-supplied `accountId` is only accepted as a confirmation and rejected on
+     * mismatch, so a caller bug can't resolve report A while penalizing an unrelated account.
+     *
+     * The report-resolve call and the penalty call are independent (best-effort, no distributed
+     * transaction). If the penalty call fails after the report was already marked upheld, resolveReport()
+     * detects on the next call that the report is already resolved to the same `resolution` (O-CM6) and
+     * retries *only* the penalty side instead of re-attempting the report-resolve CAS, which would 404
+     * forever once the report has left 'open' (see ReportDoc.status guard in socialsvc).
      */
     async resolveReport(
       actor: Actor,
@@ -43,19 +50,33 @@ export function ReportsMixin<TBase extends AdminBaseCtor>(Base: TBase): TBase & 
       resolution: 'dismissed' | 'upheld',
     ): Promise<{ reputationScore?: number; action?: string }> {
       if (!this.reports.available) throw new AdminError(503, 'unavailable', 'social backend unavailable');
-      const res = await this.reports.resolveReport(id, resolution, actor.adminId);
-      if (!res.ok) throw new AdminError(404, 'not_found', 'report not found or already resolved');
+
+      let row = (await this.reports.listReports({ status: 'open', limit: 1000 })).find((r) => r._id === id);
+      let alreadyResolved = false;
+      if (!row) {
+        row = (await this.reports.listReports({ status: resolution, limit: 1000 })).find((r) => r._id === id);
+        if (row) alreadyResolved = true;
+      }
+      if (!row) throw new AdminError(404, 'not_found', 'report not found or already resolved');
+      if (row.targetId !== accountId) {
+        throw new AdminError(400, 'target_mismatch', `accountId ${accountId} does not match report's own target`);
+      }
+
+      if (!alreadyResolved) {
+        const res = await this.reports.resolveReport(id, resolution, actor.adminId);
+        if (!res.ok) throw new AdminError(404, 'not_found', 'report not found or already resolved');
+      }
 
       let penalty: { reputationScore?: number; action?: string } = {};
       if (resolution === 'upheld') {
         if (!this.enforcement.available) throw new AdminError(503, 'unavailable', 'enforcement backend unavailable');
-        const pen = await this.enforcement.applyPenalty(accountId, REPORT_UPHELD_PENALTY);
+        const pen = await this.enforcement.applyPenalty(row.targetId, REPORT_UPHELD_PENALTY);
         if (!pen.ok) throw new AdminError(502, 'penalty_failed', 'report marked upheld but penalty call failed — retry');
         penalty = { reputationScore: pen.result?.reputationScore, action: pen.result?.action };
       }
 
       await this.audit(actor.adminId, resolution === 'upheld' ? 'account.penalty' : 'report.review', {
-        target: accountId,
+        target: row.targetId,
         summary: `report ${id} → ${resolution}` + (penalty.action ? ` (${penalty.action}, score=${penalty.reputationScore})` : ''),
       });
       return penalty;

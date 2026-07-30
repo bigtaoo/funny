@@ -16,7 +16,7 @@
 import { describe, it, expect } from 'vitest';
 import { createLayout } from '../../src/layout/ScalingManager';
 import { InputManager } from '../../src/inputSystem/InputManager';
-import { sidebarNavW } from '../../src/ui/widgets/HubTabs';
+import { sidebarNavW, bottomNavH } from '../../src/ui/widgets/HubTabs';
 import { initI18n } from '../../src/i18n';
 import { FriendsScene } from '../../src/scenes/FriendsScene';
 import type { MailView } from '../../src/net/ApiClient';
@@ -40,19 +40,31 @@ const mail: MailView = {
 
 type HitRect = { rect: { x: number; y: number; w: number; h: number }; fn: () => void };
 
-// The 5 tab cells are the full-width left-rail cells (x === 0, w === railW); everything else
-// (header back button w<railW, content-column buttons x>railW) is excluded. railW is read off
+// The [800, 1280] fixture below is portrait (w < h → scene.landscape === false), so
+// drawSocialTabRail renders the 5 tabs as the bottom nav bar (drawBottomNavTabs, LOBBY_IA_
+// REDESIGN.md §18/§20), not the old left sidebar rail — its cells are full-bar-height (y ===
+// navTop, h === barH) rather than full-width (x === 0, w === railW). Branch on scene.landscape
+// so this still works if the fixture ever changes to a landscape size. railW/barH are read off
 // the scene's own design dims — createLayout maps to a canonical 1080x1920, not the ctor args.
 function railHitsOf(scene: any): HitRect[] {
-  const railW = sidebarNavW(scene.w, scene.h, scene.landscape);
-  return (scene.hits as HitRect[]).filter((hp) => hp.rect.x === 0 && hp.rect.w === railW);
+  if (scene.landscape) {
+    const railW = sidebarNavW(scene.w, scene.h, scene.landscape);
+    return (scene.hits as HitRect[]).filter((hp) => hp.rect.x === 0 && hp.rect.w === railW);
+  }
+  const barH = bottomNavH(scene.h);
+  const navTop = scene.h - barH;
+  return (scene.hits as HitRect[]).filter((hp) => hp.rect.y === navTop && hp.rect.h === barH);
 }
 
 // Center of the Mail rail cell, read off the scene's actual hit rects rather than recomputed
-// geometry (easy to get subtly wrong). Mail is the bottom-most of the 5 rail cells.
+// geometry (easy to get subtly wrong). Mail is the last of the 5 tabs (TAB_DEFS order in
+// socialTabRail.ts): bottom-most cell in the sidebar's vertical stack (landscape), or
+// right-most cell in the bottom bar's horizontal strip (portrait — this fixture).
 function mailCellCenter(scene: any): { x: number; y: number } {
   const railHits = railHitsOf(scene);
-  const mailHit = railHits.reduce((lo, hp) => (hp.rect.y > lo.rect.y ? hp : lo), railHits[0]!);
+  const mailHit = scene.landscape
+    ? railHits.reduce((lo, hp) => (hp.rect.y > lo.rect.y ? hp : lo), railHits[0]!)
+    : railHits.reduce((lo, hp) => (hp.rect.x > lo.rect.x ? hp : lo), railHits[0]!);
   return { x: mailHit.rect.x + mailHit.rect.w / 2, y: mailHit.rect.y + mailHit.rect.h / 2 };
 }
 

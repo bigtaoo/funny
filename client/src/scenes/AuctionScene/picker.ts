@@ -5,7 +5,7 @@ import * as PIXI from 'pixi.js-legacy';
 import { AUCTION_STATIC_REF_PRICE } from '@nw/shared';
 import { ui as C, txt, sketchPanel, seedFor } from '../../render/sketchUi';
 import { FS } from '../../render/fontScale';
-import { drawSidebarTabs, sidebarNavW, type HubTab } from '../../ui/widgets/HubTabs';
+import { drawSidebarTabs, drawBottomNavTabs, sidebarNavW, bottomNavH, type HubTab } from '../../ui/widgets/HubTabs';
 import { t } from '../../i18n';
 import { buildIcon, type IconKind } from '../../render/icons';
 import { buildMaterialIcon } from '../../render/materialAtlas';
@@ -164,29 +164,38 @@ export function PickerMixin<TBase extends AuctionSceneBaseCtor>(Base: TBase): TB
     }
 
     /**
-     * Left category rail inside the notebook-margin gutter (All/Equipment/Character-cards/Materials), mirrors the market
-     * tab's renderSidebar so the picker reads consistently with the rest of the auction scene. Returns
-     * the x where the item grid should start.
+     * Category rail (All/Equipment/Character-cards/Materials), mirrors the market tab's
+     * renderSidebar so the picker reads consistently with the rest of the auction scene. Landscape:
+     * inside the notebook-margin gutter — returns its width so the item grid starts clear of it.
+     * Portrait (§18): a bottom nav bar instead — returns 0; renderItemPicker reserves `bottomNavH`
+     * off the bottom of its own availH instead.
      */
     private renderPickerSidebar(): number {
       const { w, h, landscape } = this;
-      const sidebarW = sidebarNavW(w, h, landscape);
       const y = this.headerH + 8;
       const keys: Record<AucFilter, 'auction.filterAll' | 'auction.filterEquipment' | 'auction.filterCard' | 'auction.filterMaterial'> = {
         '': 'auction.filterAll', equipment: 'auction.filterEquipment', card: 'auction.filterCard', material: 'auction.filterMaterial',
       };
       const icons: Partial<Record<AucFilter, IconKind>> = { equipment: 'armor', card: 'cards', material: 'scrap' };
       const hubTabs: HubTab[] = FILTERS.map((f) => ({ label: t(keys[f]), active: f === this.pickerFilter, icon: icons[f] }));
-      const { hits } = drawSidebarTabs(this.bodyLayer, sidebarW, y, h, hubTabs, (i) => {
+      const onSelect = (i: number): void => {
         const f = FILTERS[i]!;
         if (this.pickerFilter !== f) { this.pickerFilter = f; this.scrollY = 0; this.render(); }
-      });
+      };
+      if (!landscape) {
+        const barH = bottomNavH(h);
+        const { hits } = drawBottomNavTabs(this.bodyLayer, w, h - barH, barH, hubTabs, onSelect);
+        for (const hit of hits) this.hitRects.push({ rect: hit.rect, action: hit.fn });
+        return 0;
+      }
+      const sidebarW = sidebarNavW(w, h, true);
+      const { hits } = drawSidebarTabs(this.bodyLayer, sidebarW, y, h, hubTabs, onSelect);
       for (const hit of hits) this.hitRects.push({ rect: hit.rect, action: hit.fn });
       return sidebarW;
     }
 
     renderItemPicker(): void {
-      const { w, h } = this;
+      const { w, h, landscape } = this;
       const titleY = this.headerH + 8;
       const title = txt(t('auction.pickItem'), FS.tiny, C.dark, true);
       title.x = 12; title.y = titleY;
@@ -194,7 +203,8 @@ export function PickerMixin<TBase extends AuctionSceneBaseCtor>(Base: TBase): TB
 
       const contentX = this.renderPickerSidebar();
       const listY = this.headerH + 40;
-      const availH = h - listY - 10;
+      // Portrait's category rail is a bottom bar instead (§18) — reserve bottomNavH off the bottom.
+      const availH = h - listY - 10 - (landscape ? 0 : bottomNavH(h));
       // Default to "nothing to scroll" — overwritten below once the real grid geometry is known;
       // covers the empty-entries early-return so a stale wheel event can't scroll a hidden grid.
       this.scrollMax = 0;

@@ -123,7 +123,7 @@
         "unitType": "ironclad",
         "col": 4,
         "count": 2,
-        "spacingTicks": 34,
+        "spacingTicks": 20,
         "crossWaypoints": [
           {
             "atRow": 10,
@@ -136,14 +136,35 @@
         "unitType": "infantry",
         "col": 0,
         "count": 3,
-        "spacingTicks": 13
+        "spacingTicks": 10
       },
       {
         "atTick": 900,
         "unitType": "ironclad",
         "col": 7,
         "count": 2,
-        "spacingTicks": 36
+        "spacingTicks": 20
+      },
+      {
+        "atTick": 900,
+        "unitType": "runner",
+        "col": 1,
+        "count": 2,
+        "spacingTicks": 15
+      },
+      {
+        "atTick": 900,
+        "unitType": "ironclad",
+        "col": 3,
+        "count": 1,
+        "spacingTicks": 20
+      },
+      {
+        "atTick": 900,
+        "unitType": "shieldbearer",
+        "col": 8,
+        "count": 1,
+        "spacingTicks": 15
       },
       {
         "atTick": 1080,
@@ -177,8 +198,8 @@
   "rewards": {
     "starThresholds": [
       1,
-      50,
-      80
+      45,
+      70
     ],
     "materials": {
       "scrap": 12,

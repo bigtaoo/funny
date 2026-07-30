@@ -119,28 +119,42 @@
         "unitType": "archer",
         "col": 4,
         "count": 3,
-        "spacingTicks": 12
+        "spacingTicks": 9
       },
       {
         "atTick": 900,
         "unitType": "archer",
         "col": 7,
         "count": 3,
-        "spacingTicks": 12
+        "spacingTicks": 9
       },
       {
         "atTick": 900,
         "unitType": "ironclad",
         "col": 3,
         "count": 2,
-        "spacingTicks": 32
+        "spacingTicks": 20
       },
       {
         "atTick": 900,
         "unitType": "ironclad",
         "col": 8,
         "count": 2,
-        "spacingTicks": 32
+        "spacingTicks": 20
+      },
+      {
+        "atTick": 900,
+        "unitType": "runner",
+        "col": 1,
+        "count": 1,
+        "spacingTicks": 15
+      },
+      {
+        "atTick": 900,
+        "unitType": "runner",
+        "col": 10,
+        "count": 1,
+        "spacingTicks": 15
       },
       {
         "atTick": 1140,
@@ -213,8 +227,8 @@
   "rewards": {
     "starThresholds": [
       1,
-      50,
-      80
+      45,
+      51
     ],
     "materials": {
       "scrap": 15,

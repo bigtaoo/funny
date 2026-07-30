@@ -330,7 +330,6 @@ export const WORLD_BODY_SCHEMAS: Record<string, unknown> = {
           "reinforce",
           "attack",
           "sweep",
-          "scout",
           "move"
         ]
       },
@@ -2796,7 +2795,6 @@ export const WORLD_RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                           "reinforce",
                           "occupy",
                           "sweep",
-                          "scout",
                           "return",
                           "move"
                         ]
@@ -4281,7 +4279,6 @@ export const WORLD_RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                       "reinforce",
                       "occupy",
                       "sweep",
-                      "scout",
                       "return",
                       "move"
                     ]
@@ -4374,7 +4371,6 @@ export const WORLD_RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                         "reinforce",
                         "occupy",
                         "sweep",
-                        "scout",
                         "return",
                         "move"
                       ]
@@ -4985,7 +4981,6 @@ export const WORLD_RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                     "reinforce",
                     "occupy",
                     "sweep",
-                    "scout",
                     "return",
                     "move"
                   ]
@@ -5075,7 +5070,6 @@ export const WORLD_RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                     "reinforce",
                     "occupy",
                     "sweep",
-                    "scout",
                     "return",
                     "move"
                   ]

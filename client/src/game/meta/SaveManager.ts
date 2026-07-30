@@ -62,6 +62,15 @@ export class SaveManager {
   private pending: PendingClear[]; // offline queue of clears awaiting settlement (PVE_INTEGRITY_PLAN §8.4)
   private pendingStamina: PendingStaminaSpend[]; // offline queue of stamina spends awaiting server settlement (A4)
   /**
+   * The accountId whose data `this.save.rev` actually belongs to (audit-followup-fixes-0730). Updated ONLY
+   * inside reconcile() itself — deliberately not the same thing as `this.save.accountId`, which
+   * bootstrap()/adoptSession() both write eagerly *before* the actual cloud pull + reconcile (so a
+   * follow-up login to a different account without an intervening logout would otherwise have
+   * `this.save.accountId` already reading as the new account while `this.save.rev` still belongs to the
+   * old one — see reconcile()'s stale-response guard, which needs to tell these apart).
+   */
+  private reconciledAccountId: string;
+  /**
    * Change listeners (2026-07-29): fired after every local write (persist()) and after reconcile().
    * Lets scenes that stay mounted alongside another live scene (SceneManager overlay — e.g. CityScene
    * over WorldMapScene) react to a save change made by the other one, instead of only refreshing on
@@ -79,6 +88,7 @@ export class SaveManager {
     this.onProfile = opts.onProfile;
     this.loadReplay = opts.loadReplay;
     this.save = this.store.loadLocal();
+    this.reconciledAccountId = this.save.accountId;
     this.pending = this.store.loadPending();
     this.pendingStamina = this.store.loadPendingStamina();
   }
@@ -310,6 +320,7 @@ export class SaveManager {
     this.store.savePendingStamina(this.pendingStamina);
     this.store.clearLocal();
     this.save = this.store.loadLocal(); // fresh default save (migrate(null) → makeNewSave())
+    this.reconciledAccountId = this.save.accountId; // matches the fresh save, same as the constructor
     for (const listener of this.listeners) listener();
   }
 
@@ -348,8 +359,8 @@ export class SaveManager {
   }
 
   // ── PvE server authority (PVE_INTEGRITY_PLAN §8) ────────────────────────────
-  // progress/materials/pveUpgrades are server-authoritative; clears/upgrades go through /pve/* endpoints, adopted after push-back.
-  // Offline (no token): clears are queued for later settlement (local authoritative values unchanged); upgrades disabled.
+  // progress/materials are server-authoritative; clears go through /pve/clear, adopted after push-back.
+  // Offline (no token): clears are queued for later settlement (local authoritative values unchanged).
 
   /** Whether the server-authoritative section is reachable and writable (api + token present). Scenes use this for online gating. */
   online(): boolean {
@@ -487,20 +498,6 @@ export class SaveManager {
     }
   }
 
-  /**
-   * @deprecated S3-2 per-stat upgrade. Since CC-1 unit progression is per-card via the Hero Roster (cardInv), not this path.
-   */
-  async upgrade(upgradeId: string): Promise<boolean> {
-    if (!this.online()) return false;
-    try {
-      const res = await this.api!.pveUpgrade(upgradeId);
-      this.adoptServer(res.save);
-      return true;
-    } catch {
-      return false;
-    }
-  }
-
   /** Optimistically write a local clear: append to cleared (deduped) + take the higher stars value (clamped to 1|2|3). Local-only (progress is not uploaded). */
   private applyLocalClear(levelId: string, stars: number): void {
     const p = this.save.progress;
@@ -559,6 +556,7 @@ export class SaveManager {
     // lack client-only fields (cardInv/equipmentInv), which would otherwise crash the campaign start path.
     // migrate is idempotent for a complete save.
     const cloud = migrate(cloudRaw);
+    const local = this.save;
     // Drop a stale/out-of-order response: several call sites (bootstrap/refresh/adoptServer) fire from
     // rapid-fire user actions (e.g. mashing gacha draw) without a busy-guard, so responses can land out
     // of order — a slow earlier request's response arriving after a faster later one's. Since every
@@ -567,8 +565,23 @@ export class SaveManager {
     // that earlier snapshot, silently resurrecting instances (cards/equipment) already consumed by a
     // mutation the client has already reconciled — the resurrected id has no server-side backing, so the
     // next action on it (e.g. fuse) 404s CARD_NOT_FOUND.
-    if (cloud.rev < this.save.rev) return;
-    const local = this.save;
+    //
+    // Scoped to the SAME account only (audit-followup-fixes-0730): `rev` is a per-account monotonic
+    // counter, not a global one. A device that played a while on an anonymous WeChat/guest account (rev
+    // climbs with ordinary play — stamina spends, PvE clears, gacha draws) and then logs into/registers a
+    // *different*, newer account without an intervening logout (doAuth() → adoptSession() → refresh() →
+    // here, with no resetForLogout()/rev-reset between) can have `local.rev` (still the old account's)
+    // exceed the new account's own `cloud.rev` — comparing them would silently drop the entire login's
+    // cloud pull and leave the client showing the wrong account's save while `accountId` has already
+    // flipped. Once accountId itself changes, there is no prior state to protect: always adopt cloud.
+    //
+    // Compared against `this.reconciledAccountId`, NOT `local.accountId` — bootstrap()/adoptSession() both
+    // write `this.save.accountId` eagerly, before this method ever runs, so by the time reconcile() sees
+    // `local`, `local.accountId` may already equal `cloud.accountId` (the login target) even though
+    // `local.rev` still belongs to the *previous* account. reconciledAccountId only moves when a reconcile
+    // actually completes, so it correctly still reads as the old account here.
+    if (cloud.accountId === this.reconciledAccountId && cloud.rev < local.rev) return;
+    this.reconciledAccountId = cloud.accountId;
     this.save = {
       ...cloud, // authoritative sections (equipped/flags/progress.cleared·stars/materials/pveUpgrades/cardInv/equipmentInv/wallet/...) + rev/accountId, all from cloud
       progress: {

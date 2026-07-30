@@ -186,32 +186,6 @@ export const CHAPTER_ANCHOR_CARD_LEVEL = 2;
 /** Daily cap on "material-rewarding clears" (excess clears still record progress/stars but grant no materials, §8 decision 3). DRAFT pending playtesting. */
 export const PVE_DAILY_CLEAR_REWARD_CAP = 20;
 
-/**
- * Upgrade material costs (authoritative). **Effects** (HP/damage multipliers) remain in the client `game/balance/pveUpgrades`
- * (game logic, used for blueprint simulation); **costs** are defined here and recomputed by the server /pve/upgrade endpoint.
- * id / maxLevel / baseCost must stay in sync with the client mirror.
- */
-export interface PveUpgradeCost {
-  id: string;
-  material: PveMaterial;
-  maxLevel: number;
-  /** Cost to go from level n to n+1 = baseCost × (n+1) (linear scaling). */
-  baseCost: number;
-}
-
-export const PVE_UPGRADE_COSTS: PveUpgradeCost[] = [
-  { id: 'inf_hp', material: 'scrap', maxLevel: 5, baseCost: 3 },
-  { id: 'inf_dmg', material: 'scrap', maxLevel: 5, baseCost: 3 },
-  { id: 'shd_hp', material: 'lead', maxLevel: 5, baseCost: 2 },
-  { id: 'shd_dmg', material: 'lead', maxLevel: 5, baseCost: 2 },
-  { id: 'arc_dmg', material: 'binding', maxLevel: 5, baseCost: 1 },
-  { id: 'arc_hp', material: 'binding', maxLevel: 5, baseCost: 1 },
-];
-
-export function findPveUpgrade(id: string): PveUpgradeCost | undefined {
-  return PVE_UPGRADE_COSTS.find((u) => u.id === id);
-}
-
 // ── L1 replay spot-check re-verification trigger (PVE_INTEGRITY_PLAN §8.6 step 3) ──────
 // Sends the clear result to a headless client for re-computation (reuses S1-J); materials are only issued
 // if the recomputed star count >= the claimed count. Replays are not sent by default; only when selected
@@ -244,13 +218,4 @@ export function shouldSpotCheck(input: SpotCheckInput): boolean {
   if (input.blueprintMismatch || input.isFirstClear) return true;
   const rate = input.sampleRate ?? PVE_VERIFY_SAMPLE_RATE;
   return input.rand < rate;
-}
-
-/** Cost to go from currentLevel to currentLevel+1; returns null if already at max level. */
-export function pveUpgradeCost(
-  cost: PveUpgradeCost,
-  currentLevel: number,
-): { material: PveMaterial; amount: number } | null {
-  if (currentLevel >= cost.maxLevel) return null;
-  return { material: cost.material, amount: cost.baseCost * (currentLevel + 1) };
 }

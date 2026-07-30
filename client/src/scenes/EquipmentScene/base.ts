@@ -13,7 +13,7 @@ import { ui as C, txt, scaledTxt, buildPaperBackground, sketchPanel, sketchButto
 import { drawConfirmDialog } from '../../render/confirmDialog';
 import { showToastMessage } from '../../net/log';
 import { FS, snapFont } from '../../render/fontScale';
-import { sidebarNavW } from '../../ui/widgets/HubTabs';
+import { sidebarNavW, drawHubTabs, hubTabsHeight, type HubTab } from '../../ui/widgets/HubTabs';
 import { buildDecorCLayer } from '../../render/decorCLayer';
 import { drawSceneHeader, drawHeaderCurrency, HEADER_ACCENT } from '../../ui/widgets/SceneHeader';
 import { BusyTracker } from '../../ui/busyTracker';
@@ -185,6 +185,15 @@ export class EquipmentSceneBase {
   protected assign: { instId: string; slot: EquipSlot } | null = null;
   /** Bag mode = no active card (standalone bag from the roster group); equip then prompts for a card. */
   protected get bag(): boolean { return !this.cb.activeCardInstanceId; }
+  /**
+   * Whether the progression-group peer nav has more than just "Equipment" to show — i.e. a leading
+   * peerTab and/or trailing peers (Skins) are injected. Portrait combines all of them into one bottom
+   * nav bar (§18; see InventoryMixin.renderSidebar); this gates whether that bar (and the height it
+   * reserves) actually appears, mirroring `showGroup && peerTab` / `trailingPeers.length` in landscape.
+   */
+  protected get hasGroupNav(): boolean {
+    return (this.showGroup && !!this.cb.peerTab) || (this.cb.trailingPeers?.length ?? 0) > 0;
+  }
   /**
    * Section headers (Equipped / Bag) tapped closed by the player; collapsed sections hide their item
    * cells but keep the header visible (InventoryMixin.renderSectionHeader). Lives on the base class
@@ -366,8 +375,11 @@ export class EquipmentSceneBase {
     if (this.destroyed) return;
     this.renderHeaderCurrency();
     const { w, h, landscape } = this;
-    const leftW = sidebarNavW(w, h, landscape);
-    this.renderMaterialsBand(leftW, this.headerH, w - leftW);
+    // Portrait's materials band spans full width, below the Inventory/Craft header strip instead of
+    // right of a left rail (see renderHeaderRow) — landscape keeps the sidebarNavW-offset band.
+    const leftW = landscape ? sidebarNavW(w, h, true) : 0;
+    const bandY = landscape ? this.headerH : this.headerH + hubTabsHeight(h);
+    this.renderMaterialsBand(leftW, bandY, w - leftW);
     tearDownChildren(this.loadingLayer);
     if (this.detailId) this.openDetail(this.detailId);
     else if (this.modalOpen) this.closeModal();
@@ -430,11 +442,40 @@ export class EquipmentSceneBase {
    * Header row below the header/sidebar: the slot filter bar (Inventory tab only), capped left
    * at the red margin rule so it lines up with the bag-list / item-grid split below it. Returns
    * the y where body content (loadout / grid) should start.
+   *
+   * Portrait draws the Inventory/Craft sub-tabs here too, as a `drawHubTabs` strip (§18) — the
+   * left rail they used to nest under (InventoryMixin.renderSidebar) is a bottom bar in portrait,
+   * so there's nothing left to nest under; a header strip is the existing "sub-view switch within
+   * one scene" convention used everywhere else in the game. Content spans full width (no leftW
+   * reservation) since nothing occupies the left edge in portrait.
    */
   protected renderHeaderRow(): number {
     const { w, h, landscape } = this;
     const top = this.headerH;
-    const leftW = sidebarNavW(w, h, landscape);
+
+    if (!landscape) {
+      const stripH = hubTabsHeight(h);
+      const subTabs: HubTab[] = [
+        { label: t('equip.tabInv'), active: this.activeTab === 'inv' },
+        { label: t('equip.tabCraft'), active: this.activeTab === 'craft' },
+      ];
+      const hits = drawHubTabs(this.bodyLayer, w, top, stripH, subTabs, (i) => {
+        const key: EquipTab = i === 0 ? 'inv' : 'craft';
+        if (this.activeTab !== key) { this.activeTab = key; this.scrollY = 0; this.render(); }
+      });
+      this.hitRects.push(...hits.map((hit) => ({ rect: hit.rect, action: hit.fn })));
+
+      let bottom = top + stripH;
+      this.renderMaterialsBand(0, bottom, w);
+      bottom += MAT_BAND_H;
+      if (this.activeTab === 'inv') {
+        this.renderSlotFilter(0, bottom, w);
+        bottom += FILTER_H;
+      }
+      return bottom;
+    }
+
+    const leftW = sidebarNavW(w, h, true);
     const rightX = leftW;
     const rightW = w - leftW;
 

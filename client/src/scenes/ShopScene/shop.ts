@@ -7,25 +7,24 @@ import { ui as C, txt } from '../../render/sketchUi';
 import { type IconKind } from '../../render/icons';
 import { drawScrollIndicator } from '../../ui/widgets/ScrollIndicator';
 import { peekViewportH } from '../../ui/widgets/scrollPeek';
+import { bottomNavH } from '../../ui/widgets/HubTabs';
 import { type Constructor, type ShopSceneBaseCtor, type CardSpec, type BtnSpec } from './base';
 import { FS } from '../../render/fontScale';
 import { skinDisplayName } from '../../game/meta/skinDefs';
-import infantryArtUrl from '../../assets/units/infantry.png';
-import archerArtUrl from '../../assets/units/archer.png';
-import shieldBearerArtUrl from '../../assets/units/shieldbearer.png';
+import skinInfantryArtUrl from '../../assets/units/skins/skin_infantry.png';
+import skinArcherArtUrl from '../../assets/units/skins/skin_archer.png';
+import skinShieldBearerArtUrl from '../../assets/units/skins/skin_shieldbearer.png';
 import monthlyCardArtUrl from '../../assets/gacha/monthly_card.png';
 import yearCardArtUrl from '../../assets/shop/year_card.png';
 import protectStoneArtUrl from '../../assets/shop/protect_stone.png';
 import starterDrawArtUrl from '../../assets/shop/starter_draw.png';
 import starterGrowthArtUrl from '../../assets/shop/starter_growth.png';
 
-// Skin catalogue art is blocked on real assets (see cardArt.ts TODO for skin_infantry/skin_archer/
-// skin_shield .tao bundles). Until then, borrow the matching base unit's card PNG as a placeholder
-// so the shop grid at least shows *a* picture instead of a generic brush glyph.
+// Shop skin card thumbnails — the real skin illustrations (art/skins/<char>/), not the base unit's art.
 const SKIN_PLACEHOLDER_ART: Record<string, string> = {
-  skin_shop_c1: infantryArtUrl as string,
-  skin_shop_r1: archerArtUrl as string,
-  skin_shop_e1: shieldBearerArtUrl as string,
+  skin_shop_c1: skinInfantryArtUrl as string,
+  skin_shop_r1: skinArcherArtUrl as string,
+  skin_shop_e1: skinShieldBearerArtUrl as string,
 };
 
 // Subscription-card / starter-pack display prices (¥). Mirror of GACHA_DESIGN §5/§6; these drive the
@@ -49,9 +48,10 @@ export function ShopMixin<TBase extends ShopSceneBaseCtor>(Base: TBase): TBase &
   return class extends Base {
     /** Shop tab: monthly/year cards + starter packs + skins as an icon-card grid. */
     drawShopGrid(body: PIXI.Container, top: number): void {
-      const { w, h } = this;
+      const { w, h, landscape } = this;
       const bodyTop = top + Math.round(h * 0.02);
-      const availH = h - bodyTop - Math.round(h * 0.02);
+      // Portrait's group nav is a bottom bar (§18) — reserve bottomNavH off the bottom.
+      const availH = h - bodyTop - Math.round(h * 0.02) - (landscape ? 0 : bottomNavH(h));
 
       if (this.loading) {
         this.maskBody(top, availH);

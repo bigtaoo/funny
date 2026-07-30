@@ -147,6 +147,38 @@ describe('SaveManager.adoptServer stale-response guard (out-of-order gacha draw 
   });
 });
 
+describe('SaveManager.reconcile cross-account rev guard (audit-followup-fixes-0730)', () => {
+  // Regression: the stale-response guard above (`cloud.rev < local.rev` → drop) is correct WITHIN one
+  // account, but `rev` is a per-account monotonic counter, not a global one. A device that played a while
+  // on an anonymous/guest account (rev climbs with ordinary play) and then logs into a different, newer
+  // account WITHOUT an intervening logout (adoptSession → refresh → reconcile directly, no
+  // resetForLogout()/rev-reset in between) could previously have the old account's higher `rev` silently
+  // shadow the new account's own (lower) cloud pull — the client would show accountId flipped to the new
+  // account but every authoritative field still frozen at the old account's last-known values.
+  it('adoptSession into a different, newer account is not dropped by the old account\'s higher accumulated rev', async () => {
+    const store = new LocalSaveStore(new MemStorage());
+    const anon = makeNewSave('anon-device-1', 1);
+    anon.rev = 50; // accumulated over a play session before ever logging in
+    anon.wallet.coins = 9999;
+    store.saveLocal(anon);
+
+    const cloud = makeNewSave('account-2', 1);
+    cloud.rev = 2; // a different, freshly-registered account — naturally low rev
+    cloud.wallet.coins = 10;
+    const mgr = new SaveManager({ store, api: fakeApi(cloud) });
+    expect(mgr.get().accountId).toBe('anon-device-1');
+    expect(mgr.get().rev).toBe(50);
+
+    const ok = await mgr.adoptSession('account-2');
+    expect(ok).toBe(true);
+    // Must adopt the NEW account's cloud state in full — not silently keep the old account's save because
+    // its rev happened to be higher.
+    expect(mgr.get().accountId).toBe('account-2');
+    expect(mgr.get().rev).toBe(2);
+    expect(mgr.get().wallet.coins).toBe(10);
+  });
+});
+
 describe('SaveManager.adoptServerPartial (EQUIPMENT_DESIGN §3.3 phase 2, extended to cards 2026-07-28)', () => {
   const EXISTING_CARD: CardInstance = { id: 'card_a', defId: 'lichuang', level: 1, gear: {}, locked: false };
   const EXISTING_EQUIP: EquipmentInstance = { id: 'eq_a', defId: 'wp_pencil', rarity: 'common', level: 0, affixes: [] };
@@ -470,16 +502,15 @@ describe('SaveManager.setFlag / equipTitle / equipAvatar / equipSkin (server-aut
   });
 });
 
-// ── PvE server authority: clear / upgrade / offline queue (§8) ──────────────────────────
-describe('SaveManager.recordClear / upgrade / pending (§8)', () => {
-  /** Records pveClear/pveUpgrade calls and optionally pushes back an authoritative save. */
+// ── PvE server authority: clear / offline queue (§8) ──────────────────────────
+describe('SaveManager.recordClear / pending (§8)', () => {
+  /** Records pveClear calls and optionally pushes back an authoritative save. */
   function pveApi(opts: {
     hasToken?: boolean;
     onClear?: (levelId: string, stars: number) => SaveData | Error;
-    onUpgrade?: (id: string) => SaveData | Error;
   }) {
-    const calls: { clears: Array<{ levelId: string; stars: number }>; upgrades: string[] } = {
-      clears: [], upgrades: [],
+    const calls: { clears: Array<{ levelId: string; stars: number }> } = {
+      clears: [],
     };
     const api = {
       hasToken: () => opts.hasToken ?? true,
@@ -489,12 +520,6 @@ describe('SaveManager.recordClear / upgrade / pending (§8)', () => {
         const r = opts.onClear?.(levelId, stars) ?? makeNewSave('a', 1);
         if (r instanceof Error) throw r;
         return { save: r, granted: {}, capped: false };
-      },
-      pveUpgrade: async (id: string) => {
-        calls.upgrades.push(id);
-        const r = opts.onUpgrade?.(id) ?? makeNewSave('a', 1);
-        if (r instanceof Error) throw r;
-        return { save: r };
       },
     } as unknown as ApiClient;
     return { api, calls };
@@ -553,33 +578,6 @@ describe('SaveManager.recordClear / upgrade / pending (§8)', () => {
     const mgr = new SaveManager({ store, api });
     await mgr.recordClear('ch1_lv1', 1);
     expect(mgr.getPendingClears().map((p) => p.levelId)).toEqual(['ch1_lv1']);
-  });
-
-  it('upgrade: online → POST /pve/upgrade and adopt; offline → returns false, no endpoint called', async () => {
-    const store = new LocalSaveStore(new MemStorage());
-    store.saveLocal(makeNewSave('a', 1));
-    const cloud = makeNewSave('a', 2);
-    cloud.pveUpgrades = { inf_hp: 1 };
-    const { api, calls } = pveApi({ onUpgrade: () => cloud });
-    const mgr = new SaveManager({ store, api });
-
-    expect(await mgr.upgrade('inf_hp')).toBe(true);
-    expect(calls.upgrades).toEqual(['inf_hp']);
-    expect(mgr.get().pveUpgrades).toEqual({ inf_hp: 1 });
-
-    const offline = pveApi({ hasToken: false });
-    const mgr2 = new SaveManager({ store: new LocalSaveStore(new MemStorage()), api: offline.api });
-    expect(await mgr2.upgrade('inf_hp')).toBe(false);
-    expect(offline.calls.upgrades).toEqual([]);
-  });
-
-  it('upgrade fails (insufficient materials → ApiError) → false, local save unchanged', async () => {
-    const store = new LocalSaveStore(new MemStorage());
-    store.saveLocal(makeNewSave('a', 1));
-    const { api } = pveApi({ onUpgrade: () => new ApiError('INSUFFICIENT_FUNDS', 'no mats') });
-    const mgr = new SaveManager({ store, api });
-    expect(await mgr.upgrade('inf_hp')).toBe(false);
-    expect(mgr.get().pveUpgrades).toEqual({});
   });
 
   it('flush queue after bootstrap/refresh: settle each entry in order, clear queue on success', async () => {

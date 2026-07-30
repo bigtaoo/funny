@@ -28,7 +28,6 @@ export interface PveApi {
     endFrame: number,
     frames: { frame: number; cmds: { side: number; commands: string }[] }[],
   ): Promise<{ save: SaveData; granted: Record<string, number>; capped: boolean; verified: boolean; grantedEquipment?: EquipmentInstance }>;
-  pveUpgrade(upgradeId: string): Promise<{ save: SaveData }>;
   purchaseStamina(): Promise<{ stamina: { current: number; regenAt: number } }>;
   pveEnter(levelId: string): Promise<{ stamina: { current: number; regenAt: number } }>;
   getMatchHistory(limit?: number): Promise<MatchHistoryEntry[]>;
@@ -38,8 +37,10 @@ export interface PveApi {
 export function PveMixin<TBase extends ApiClientBaseCtor>(Base: TBase): TBase & Constructor<PveApi> {
   return class extends Base {
     // ── PvE server authority (PVE_INTEGRITY_PLAN §8, requires login token) ─────────────
-    // progress/stars/materials/pveUpgrades are server-authoritative fields; level completion and upgrades go through these two endpoints,
-    // which return the full authoritative SaveData (client adopts the mirror). Only callable when online.
+    // progress/stars/materials are server-authoritative fields; level completion goes through pveClear
+    // (below), which returns the full authoritative SaveData (client adopts the mirror). Only callable
+    // when online. (The per-stat pveUpgrade endpoint that used to live here was removed 2026-07-30 —
+    // dead since CC-1 moved unit progression to per-card Hero Roster/cardInv.)
 
     /**
      * PvE level-clear settlement: server validates the unlock → grants materials + cards within the daily cap → writes progress/stars → pushes back.
@@ -115,14 +116,6 @@ export function PveMixin<TBase extends ApiClientBaseCtor>(Base: TBase): TBase & 
         verified: boolean;
         grantedEquipment?: EquipmentInstance;
       }>('/pve/verify', { verifyId, endFrame, frames });
-    }
-
-    /**
-     * @deprecated S3-2 per-stat upgrade. Since CC-1 unit progression is per-card via the Hero Roster (cardInv), not this endpoint.
-     * PvE upgrade: server validates materials → deducts materials + increments pveUpgrades by 1 → pushes back. Insufficient materials → ApiError('INSUFFICIENT_FUNDS') (402).
-     */
-    async pveUpgrade(upgradeId: string): Promise<{ save: SaveData }> {
-      return this.post<{ save: SaveData }>('/pve/upgrade', { upgradeId });
     }
 
     // ── Stamina system (A4) ──────────────────────────────────────────────────────────

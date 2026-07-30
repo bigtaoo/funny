@@ -12,6 +12,7 @@
 import { describe, it, expect } from 'vitest';
 import { createLayout } from '../../src/layout/ScalingManager';
 import { InputManager } from '../../src/inputSystem/InputManager';
+import { bottomNavH } from '../../src/ui/widgets/HubTabs';
 import { initI18n, t } from '../../src/i18n';
 import { FriendsScene } from '../../src/scenes/FriendsScene';
 import type { MailView } from '../../src/net/ApiClient';
@@ -60,8 +61,15 @@ function build(opts: { deleteMail: (id: string) => Promise<void> }): any {
 
 function deleteHit(scene: any): { rect: { x: number; y: number; w: number; h: number }; fn: () => void } {
   const hits = scene.hits as Array<{ rect: { x: number; y: number; w: number; h: number }; fn: () => void }>;
-  // Delete button is pinned to the bottom of the detail panel, addButton()'d last.
-  return hits.reduce((a, b) => (b.rect.y > a.rect.y ? b : a));
+  // [800, 1280] below is portrait (w < h → scene.landscape === false), so drawSocialTabRail
+  // renders the 5-tab bottom nav bar (LOBBY_IA_REDESIGN.md §18/§20) pinned to the very bottom of
+  // the screen — bodyBottom (base.ts) reserves bottomNavH above it so the Delete button itself
+  // sits higher up, but a naive "greatest y" pick still lands on a bottom-nav cell instead of
+  // Delete, since the nav bar's y is closer to h. Exclude anything at/below the nav bar's top
+  // edge before picking the bottom-most (Delete, addButton()'d last) of what's left.
+  const navTop = scene.landscape ? Infinity : scene.h - bottomNavH(scene.h);
+  const contentHits = hits.filter((hp) => hp.rect.y < navTop);
+  return contentHits.reduce((a, b) => (b.rect.y > a.rect.y ? b : a));
 }
 
 const unclaimedGiftMail: MailView = {

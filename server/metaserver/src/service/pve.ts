@@ -1,7 +1,10 @@
 // PvE server authority (PVE_INTEGRITY_PLAN §8) + stamina system (A4).
-// Clear settlement, L1 replay spot-check re-simulation, stamina purchase, and unit upgrades.
-// progress/stars/materials/pveUpgrades are written ONLY here (and in ranked settlement) — putSave
-// does not accept them (trust boundary, §8.3).
+// Clear settlement, L1 replay spot-check re-simulation, and stamina purchase.
+// progress/stars/materials are written ONLY here (and in ranked settlement) — putSave does not
+// accept them (trust boundary, §8.3). `pveUpgrades` is legacy-read-only (comparison target for the
+// L0 anomaly check below): the endpoint that ever wrote it (/pve/upgrade, per-stat upgrades) was
+// removed 2026-07-30 (comm-audit-p2-remaining, dead since CC-1 moved unit progression to per-card
+// Hero Roster / cardInv) — no accounts can gain new pveUpgrades levels anymore.
 import { randomUUID } from 'node:crypto';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import type { SaveData, CardDef, EquipmentInstance } from '@nw/shared';
@@ -10,8 +13,6 @@ import {
   err,
   ok,
   findPveLevel,
-  findPveUpgrade,
-  pveUpgradeCost,
   PVE_DAILY_CLEAR_REWARD_CAP,
   PVE_REJECT_BAN_THRESHOLD,
   shouldSpotCheck,
@@ -38,7 +39,7 @@ import { nullMetaSocialsvcClient } from '../socialsvcClient.js';
 import type { MetaHandlers } from '../generated/routes.gen.js';
 import { accountIdOf, clientPlatformOf, STAMINA_CAP, STAMINA_REGEN_MS, type Constructor, type MetaBaseCtor } from './base.js';
 
-type PveHandlers = Pick<MetaHandlers, 'purchaseStamina' | 'pveEnter' | 'pveClear' | 'pveVerify' | 'pveUpgrade'>;
+type PveHandlers = Pick<MetaHandlers, 'purchaseStamina' | 'pveEnter' | 'pveClear' | 'pveVerify'>;
 
 /** pveVerifications TTL (2026-07-27 audit finding: this collection had no expiry at all). Only applies to
  * verified/unverified outcomes — a `rejected` verdict unsets it (kept forever for ops review, like a
@@ -792,36 +793,6 @@ export function PveMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase & Const
         capped: granted.capped,
         verified: true,
       });
-    }
-
-    /** PvE upgrade: server validates sufficient materials → deduct materials + increment pveUpgrades by 1 → push back (online only). */
-    async pveUpgrade(req: FastifyRequest, reply: FastifyReply) {
-      const accountId = accountIdOf(req);
-      const { upgradeId } = req.body as { upgradeId: string };
-      const def = findPveUpgrade(upgradeId);
-      if (!def) return reply.code(400).send(err(ErrorCode.BAD_REQUEST, 'unknown upgrade'));
-
-      const out = await this.mutateSave(accountId, (s) => {
-        const lvl = s.pveUpgrades[upgradeId] ?? 0;
-        const cost = pveUpgradeCost(def, lvl);
-        if (!cost) return 'MAXED';
-        if ((s.materials[cost.material] ?? 0) < cost.amount) return 'INSUFFICIENT';
-        return {
-          ...s,
-          materials: { ...s.materials, [cost.material]: (s.materials[cost.material] ?? 0) - cost.amount },
-          pveUpgrades: { ...s.pveUpgrades, [upgradeId]: lvl + 1 },
-        };
-      });
-      if ('error' in out) {
-        if (out.error === 'INSUFFICIENT') {
-          return reply.code(402).send(err(ErrorCode.INSUFFICIENT_FUNDS, 'not enough materials'));
-        }
-        if (out.error === 'MAXED') {
-          return reply.code(400).send(err(ErrorCode.BAD_REQUEST, 'upgrade maxed'));
-        }
-        return reply.code(409).send(err(ErrorCode.REV_CONFLICT, out.error));
-      }
-      return ok({ save: out.save });
     }
   };
 }

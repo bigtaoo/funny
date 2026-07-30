@@ -1,23 +1,9 @@
 /**
- * slg.ts — SLG march-kind glyphs (scope / flag) + city building glyphs
+ * slg.ts — SLG march-kind glyph (flag) + city building glyphs
  * (desk / cabinet / hammer).
  */
 import * as PIXI from 'pixi.js-legacy';
 import { SketchPen } from '../sketch';
-
-/** Scope (scout) — a slanted telescope tube with a narrow eyepiece and a wider objective rim. */
-export function drawScope(g: PIXI.Graphics, s: number, color: number): void {
-  const pen = new SketchPen(g, 0x5e21);
-  const w = Math.max(1.4, s * 0.05);
-  const near = { x: s * 0.26, y: s * 0.74 }, far = { x: s * 0.72, y: s * 0.30 };
-  pen.line(near.x, near.y, far.x, far.y, { color, width: w, jitter: 0.4, taper: 0.9, double: false }); // tube
-  const dx = far.x - near.x, dy = far.y - near.y, len = Math.hypot(dx, dy) || 1;
-  const nx = -dy / len, ny = dx / len;
-  pen.line(near.x + nx * s * 0.05, near.y + ny * s * 0.05, near.x - nx * s * 0.05, near.y - ny * s * 0.05,
-    { color, width: w * 0.85, jitter: 0.3, taper: 0.8, double: false }); // eyepiece
-  pen.line(far.x + nx * s * 0.10, far.y + ny * s * 0.10, far.x - nx * s * 0.10, far.y - ny * s * 0.10,
-    { color, width: w * 0.9, jitter: 0.3, taper: 0.8, double: false }); // objective rim
-}
 
 /** Flag (occupy) — a vertical pole with a triangular pennant near the top. */
 export function drawFlag(g: PIXI.Graphics, s: number, color: number): void {

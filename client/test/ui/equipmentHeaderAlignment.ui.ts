@@ -10,6 +10,10 @@
 //    already confined to the right of. Fixed by threading `sidebarNavW(...)` through as a `left`
 //    offset.
 //
+// Portrait's left rail became a bottom nav bar (LOBBY_IA_REDESIGN.md §18, 2026-07-30) — the group
+// nav no longer reserves any width there, so the loadout strip (and everything else in this scene)
+// starts at the screen edge in portrait; landscape keeps the sidebarNavW-offset rail unchanged.
+//
 // Runs under the headless PIXI adapter (vitest.ui.config.ts). Run: npm run test:ui
 import { describe, it, expect } from 'vitest';
 import * as PIXI from 'pixi.js-legacy';
@@ -96,7 +100,8 @@ describe('EquipmentScene — loadout strip confined to the right of the sidebar 
       const scene = buildScene(w, h);
       const layout = createLayout(w, h);
       const landscape = layout.orientation === 'landscape';
-      const railW = sidebarNavW(layout.designWidth, layout.designHeight, landscape);
+      // Portrait's group nav is a bottom bar (§18) — no width reservation there.
+      const railW = landscape ? sidebarNavW(layout.designWidth, layout.designHeight, true) : 0;
 
       for (const slotLabel of [t('equip.slot.weapon'), t('equip.slot.armor'), t('equip.slot.trinket')]) {
         const positions = findLabelPositions(scene.container, slotLabel);
@@ -113,7 +118,8 @@ describe('EquipmentScene — loadout strip confined to the right of the sidebar 
       const scene = buildScene(w, h);
       const layout = createLayout(w, h);
       const landscape = layout.orientation === 'landscape';
-      const railW = sidebarNavW(layout.designWidth, layout.designHeight, landscape);
+      // Portrait's group nav is a bottom bar (§18) — no width reservation there.
+      const railW = landscape ? sidebarNavW(layout.designWidth, layout.designHeight, true) : 0;
 
       // 'equip.loadout' and 'equip.equipped' (the section-divider label, aligned to the narrower
       // marginLineX gutter — a separate, pre-existing convention untouched by this fix) both

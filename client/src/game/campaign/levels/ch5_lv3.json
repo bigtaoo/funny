@@ -197,14 +197,42 @@
         "unitType": "ironclad",
         "col": 0,
         "count": 3,
-        "spacingTicks": 30
+        "spacingTicks": 18
       },
       {
         "atTick": 900,
         "unitType": "ironclad",
         "col": 11,
         "count": 3,
-        "spacingTicks": 30
+        "spacingTicks": 18
+      },
+      {
+        "atTick": 900,
+        "unitType": "shieldbearer",
+        "col": 1,
+        "count": 2,
+        "spacingTicks": 15
+      },
+      {
+        "atTick": 900,
+        "unitType": "shieldbearer",
+        "col": 10,
+        "count": 2,
+        "spacingTicks": 15
+      },
+      {
+        "atTick": 900,
+        "unitType": "infantry",
+        "col": 3,
+        "count": 2,
+        "spacingTicks": 12
+      },
+      {
+        "atTick": 900,
+        "unitType": "infantry",
+        "col": 8,
+        "count": 2,
+        "spacingTicks": 12
       },
       {
         "atTick": 1140,
@@ -244,8 +272,8 @@
   "rewards": {
     "starThresholds": [
       1,
-      50,
-      80
+      55,
+      65
     ],
     "materials": {
       "scrap": 15,

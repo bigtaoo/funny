@@ -4,7 +4,7 @@ import * as PIXI from 'pixi.js-legacy';
 import { t } from '../../i18n';
 import { ui as C, txt, sketchPanel, seedFor } from '../../render/sketchUi';
 import { FS } from '../../render/fontScale';
-import { sidebarNavW } from '../../ui/widgets/HubTabs';
+import { sidebarNavW, bottomNavH } from '../../ui/widgets/HubTabs';
 import { drawScrollIndicator } from '../../ui/widgets/ScrollIndicator';
 import { peekViewportH } from '../../ui/widgets/scrollPeek';
 import { withTimeout, TimeoutError } from '../../ui/busyTracker';
@@ -22,15 +22,18 @@ export interface CraftHandlers {
 export function CraftMixin<TBase extends EquipmentSceneBaseCtor>(Base: TBase): TBase & Constructor<CraftHandlers> {
   return class extends Base {
     renderCraft(bodyTop: number): void {
-      const { w, h } = this;
+      const { w, h, landscape } = this;
       const save = this.cb.getSave();
       const defs = craftableDefs();
       const listY = bodyTop + 4;
-      const availH = h - listY - 8;
+      // Portrait's peer-level bottom bar (when shown) reserves bottomNavH off the bottom — same
+      // hasGroupNav gate as InventoryMixin.renderInventory, since both tabs share that one bar.
+      const availH = h - listY - 8 - (!landscape && this.hasGroupNav ? bottomNavH(h) : 0);
       const full = Object.keys(save.equipmentInv).length >= EQUIPMENT_INV_CAP;
 
-      // Cells start right of the sidebar rail; right pad stays one CELL_GAP.
-      const left = sidebarNavW(w, h, this.landscape) + CELL_GAP;
+      // Cells start right of the sidebar rail (landscape); portrait's sidebar is a bottom bar (§18),
+      // no width reservation.
+      const left = (landscape ? sidebarNavW(w, h, true) : 0) + CELL_GAP;
       const avail = w - left - CELL_GAP;
       const cols = Math.max(1, Math.floor((avail + CELL_GAP_X) / (EQUIP_CELL_W_TARGET + CELL_GAP_X)));
       const cellW = (avail - CELL_GAP_X * (cols - 1)) / cols;

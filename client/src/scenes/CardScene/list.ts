@@ -9,7 +9,7 @@ import { buildEquipIcon } from '../../render/equipmentAtlas';
 import { FACTION_COLOR } from '../../render/factionIcon';
 import { UNIT_ART_URLS } from '../../render/cardArt';
 import { drawHeaderCurrency } from '../../ui/widgets/SceneHeader';
-import { drawSidebarTabs, sidebarNavW, type HubTab } from '../../ui/widgets/HubTabs';
+import { drawSidebarTabs, drawBottomNavTabs, sidebarNavW, bottomNavH, type HubTab } from '../../ui/widgets/HubTabs';
 import { drawScrollIndicator } from '../../ui/widgets/ScrollIndicator';
 import type { SaveData, CardInstance, EquipSlot } from '../../game/meta/SaveData';
 import type { CardSLGState } from '../../net/WorldApiClient';
@@ -86,24 +86,33 @@ export function ListMixin<TBase extends CardSceneBaseCtor>(Base: TBase): TBase &
     }
 
     /**
-     * Progression group nav [Cards|Equipment?|Skins] (LOBBY_IA_REDESIGN §15): a vertical rail stacked
-     * inside the left notebook-margin gutter (`marginLineX`), below the header. Equipment only appears
-     * when injected (openEquipmentBag, server-authoritative → online-only); Cards/Skins are always
+     * Progression group nav [Cards|Equipment?|Skins] (LOBBY_IA_REDESIGN §15). Landscape draws a
+     * vertical rail stacked inside the left notebook-margin gutter (`marginLineX`), below the
+     * header; portrait draws it as a bottom nav bar instead (§18). Equipment only appears when
+     * injected (openEquipmentBag, server-authoritative → online-only); Cards/Skins are always
      * reachable (including offline, reading the local save mirror).
      */
     renderSidebar(): void {
-      const sidebarW = sidebarNavW(this.w, this.h, this.landscape);
+      const { w, h, landscape } = this;
       const hasEquip = !!this.cb.openEquipmentBag;
       const tabs: HubTab[] = [
         { label: t('roster.title'), active: this.tab === 'list', icon: 'cards' },
         ...(hasEquip ? [{ label: t('equip.title'), active: false, icon: 'armor' as const }] : []),
         { label: t('roster.tab.skins'), active: this.tab === 'skins', icon: 'brush' },
       ];
-      const { hits } = drawSidebarTabs(this.bodyLayer, sidebarW, this.headerH, this.h, tabs, (i) => {
+      const onSelect = (i: number): void => {
         if (i === 0) { this.tab = 'list'; this.render(); return; }
         if (hasEquip && i === 1) { this.cb.openEquipmentBag?.(); return; }
         this.tab = 'skins'; this.render();
-      });
+      };
+      if (!landscape) {
+        const barH = bottomNavH(h);
+        const { hits } = drawBottomNavTabs(this.bodyLayer, w, h - barH, barH, tabs, onSelect);
+        for (const hit of hits) this.hitRects.push({ rect: hit.rect, action: hit.fn });
+        return;
+      }
+      const sidebarW = sidebarNavW(w, h, true);
+      const { hits } = drawSidebarTabs(this.bodyLayer, sidebarW, this.headerH, h, tabs, onSelect);
       for (const hit of hits) this.hitRects.push({ rect: hit.rect, action: hit.fn });
     }
 
@@ -132,7 +141,9 @@ export function ListMixin<TBase extends CardSceneBaseCtor>(Base: TBase): TBase &
       const cardState = this.cb.getCardState?.() ?? {};
       const cards = Object.values(save.cardInv ?? {});
       const listY = this.headerH;
-      const availH = h - listY - 8;
+      // Portrait's sidebar nav is a bottom bar instead (§18) — reserve bottomNavH off the height
+      // (the sidebar always shows, so this always applies in portrait) instead of width.
+      const availH = h - listY - 8 - (this.landscape ? 0 : bottomNavH(h));
 
       if (cards.length === 0) {
         const lbl = txt(t('roster.empty'), FS.heading, C.mid);
@@ -146,8 +157,9 @@ export function ListMixin<TBase extends CardSceneBaseCtor>(Base: TBase): TBase &
       }
 
       const sorted = sortCards(cards, save.equipmentInv ?? {});
-      // Start the grid right of the sidebar rail (when shown) or the red margin rule; right pad stays one ROSTER_GAP.
-      const left = (this.showSidebar ? sidebarNavW(w, h, this.landscape) : marginLineX(w)) + ROSTER_GAP;
+      // Start the grid right of the sidebar rail (landscape, when shown) or the red margin rule
+      // (portrait — the bottom nav bar reserves no width); right pad stays one ROSTER_GAP.
+      const left = (this.landscape && this.showSidebar ? sidebarNavW(w, h, true) : marginLineX(w)) + ROSTER_GAP;
       const avail = w - left - ROSTER_GAP;
       // Fixed 5-per-row roster (was auto-fit ~6): wider cards, roomier gaps. Clamp down on narrow viewports.
       const cols = Math.max(1, Math.min(ROSTER_COLS, Math.floor((avail + ROSTER_GAP) / (CARD_CELL_W_TARGET + ROSTER_GAP))));

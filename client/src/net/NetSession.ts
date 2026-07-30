@@ -326,7 +326,11 @@ export class NetSession {
     } else if (msg.preMatchLost) {
       const context = msg.preMatchLost.context as 'room' | 'queue' | 'duel';
       log.warn('prematch_lost', { context });
-      if (context === 'queue' && this.lastRankedDeck) {
+      if (context === 'queue' && this.game) {
+        // Stale/late push (matchsvc M5, audit-followup-fixes-0730 review): match_found already connected
+        // the data plane before this restart-safety notification arrived — the player is already in a
+        // match, so both re-queueing and bouncing to the room picker below would be wrong. No-op.
+      } else if (context === 'queue' && this.lastRankedDeck) {
         // Self-healing: silently re-submit ranked matchmaking with the same deck — no player-visible
         // interruption, the "searching…" spinner never has to change state.
         this.createRanked(this.lastRankedDeck);

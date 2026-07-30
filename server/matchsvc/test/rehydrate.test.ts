@@ -307,7 +307,9 @@ describe('Matchsvc.rehydrate() - duel invites', () => {
     expect(pushesTo('b')).toEqual([{ kind: 'duel_invited', inviteId: 'inv-1', fromPublicId: '100000001', fromName: 'Alice' }]);
 
     // In-memory duelInvites/pendingDuelByAccount were correctly rebuilt -- accepting must actually work.
-    svc.duelRespond('b', 'inv-1', true, { accountId: 'b', name: 'Bob', publicId: '100000002', equippedTitle: '', avatarId: '', deck: [] });
+    // Awaited: duelRespond's accept branch now awaits the Redis-side invite deletion before the
+    // match_found push (audit-followup-fixes-0730), so it's no longer synchronous end-to-end.
+    await svc.duelRespond('b', 'inv-1', true, { accountId: 'b', name: 'Bob', publicId: '100000002', equippedTitle: '', avatarId: '', deck: [] });
     expect(pushesTo('a').some((m) => m.kind === 'match_found')).toBe(true);
     expect(pushesTo('b').some((m) => m.kind === 'match_found')).toBe(true);
   });

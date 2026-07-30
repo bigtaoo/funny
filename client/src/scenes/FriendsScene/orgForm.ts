@@ -20,7 +20,7 @@ export function OrgFormMixin<TBase extends FriendsSceneBaseCtor>(Base: TBase): T
     drawFamilyTab(): void {
       const { w, h } = this;
       this.regionTop = this.bodyTop + Math.round(h * 0.01);
-      this.regionBottom = h - Math.round(h * 0.02);
+      this.regionBottom = this.bodyBottom;
 
       if (!this.cb.loadSLGStatus) {
         this.centerLabelFixed(t('social.noSlg'));
@@ -282,7 +282,7 @@ export function OrgFormMixin<TBase extends FriendsSceneBaseCtor>(Base: TBase): T
       const bH = Math.round(h * 0.08);
       const bGap = Math.round(this.w * 0.04);
       const bW = Math.round((panelW - bGap) / 2);
-      const bY = h - bH - Math.round(h * 0.03);
+      const bY = this.bodyBottom - bH - Math.round(h * 0.01);
       this.addButton(t('social.family.cancel'), px, bY, bW, bH, C.paper, C.line,
         () => { this.familyDetailView = null; this.render(); }, C.dark);
       const famId = fam.familyId;
@@ -297,7 +297,7 @@ export function OrgFormMixin<TBase extends FriendsSceneBaseCtor>(Base: TBase): T
     drawSectTab(): void {
       const { w, h } = this;
       this.regionTop = this.bodyTop + Math.round(h * 0.01);
-      this.regionBottom = h - Math.round(h * 0.02);
+      this.regionBottom = this.bodyBottom;
 
       if (!this.cb.loadSLGStatus) {
         this.centerLabelFixed(t('social.noSlg'));

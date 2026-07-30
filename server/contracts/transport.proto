@@ -250,7 +250,7 @@ message PreMatchLost { string context = 1; } // "room" | "queue" | "duel"
 // All tile fields use the tileId string (`{worldId}:{x}:{y}`); the client parses the coordinates itself.
 message MarchUpdate {
   string march_id = 1;
-  string kind      = 2;   // attack | reinforce | occupy | sweep | scout | return
+  string kind      = 2;   // attack | reinforce | occupy | sweep | return | move
   string from_tile = 3;
   string to_tile   = 4;
   uint64 arrive_at = 5;   // ms

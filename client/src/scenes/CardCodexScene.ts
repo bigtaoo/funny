@@ -10,7 +10,7 @@ import { buildIcon, type IconKind } from '../render/icons';
 import { cardArtUrl, getArtTexture, preloadL1CardArtTextures } from '../render/cardArt';
 import { drawSceneHeader } from '../ui/widgets/SceneHeader';
 import { drawCareerTabs, type CareerNavCallbacks } from '../ui/widgets/CareerTabs';
-import { sidebarNavW } from '../ui/widgets/HubTabs';
+import { sidebarNavW, bottomNavH } from '../ui/widgets/HubTabs';
 import { drawScrollIndicator } from '../ui/widgets/ScrollIndicator';
 import { wheelScrollY } from '../ui/wheelScroll';
 import { CARD_DEFINITIONS, UNIT_BLUEPRINTS, BUILDING_BLUEPRINTS } from '../game/config';
@@ -179,10 +179,9 @@ export class CardCodexScene implements Scene {
     const tbH = hdr.headerH;
     this.hits.push({ rect: hdr.backRect, fn: () => this.cb.onBack() });
 
-    const sidebarW = hasSidebar ? sidebarNavW(w, h, this.landscape) : 0;
     if (hasSidebar) {
       const sidebarTop = tbH + Math.round(h * 0.02);
-      const { hits } = drawCareerTabs(this.container, sidebarW, sidebarTop, h, 'codex', {
+      const { hits } = drawCareerTabs(this.container, w, h, this.landscape, sidebarTop, 'codex', {
         onOpenStats: this.cb.onOpenStats!,
         onOpenTitles: this.cb.onOpenTitles!,
         onOpenAchievements: this.cb.onOpenAchievements!,
@@ -192,11 +191,17 @@ export class CardCodexScene implements Scene {
       this.hits.push(...hits);
     }
 
-    const contentX = hasSidebar ? sidebarW + Math.round(w * 0.025) : Math.round(w * 0.06);
+    // Portrait's Career peer strip is a bottom nav bar (§18), not a left rail — content no longer
+    // reserves width for it (falls back to the same flat margin as "no sidebar"), and the scroll
+    // viewport/clip stops `bottomNavH` short of the screen bottom instead so scrolled cards never
+    // slide in behind the bar.
+    const contentX = this.landscape && hasSidebar ? sidebarNavW(w, h, true) + Math.round(w * 0.025) : Math.round(w * 0.06);
     const contentTop = tbH + Math.round(h * 0.02);
+    const bottomBarH = !this.landscape && hasSidebar ? bottomNavH(h) : 0;
+    const viewBottom = h - bottomBarH;
     this.regionTop = contentTop;
     const clip = new PIXI.Graphics();
-    clip.beginFill(0xffffff).drawRect(contentX, contentTop, w - contentX, h - contentTop).endFill();
+    clip.beginFill(0xffffff).drawRect(contentX, contentTop, w - contentX, viewBottom - contentTop).endFill();
     this.container.addChild(clip);
     const layer = new PIXI.Container();
     layer.mask = clip;
@@ -206,11 +211,11 @@ export class CardCodexScene implements Scene {
     const bottom = this.renderCards(contentX, contentTop, w - contentX - Math.round(w * 0.03));
 
     const bottomPad = Math.round(h * 0.03);
-    this.maxScroll = Math.max(0, bottom + bottomPad - h);
+    this.maxScroll = Math.max(0, bottom + bottomPad - viewBottom);
     this.scrollY = Math.max(0, Math.min(this.scrollY, this.maxScroll));
     layer.y = -this.scrollY;
 
-    this.scrollView = { x: contentX, y: contentTop, w: w - contentX, h: h - contentTop };
+    this.scrollView = { x: contentX, y: contentTop, w: w - contentX, h: viewBottom - contentTop };
     this.scrollbar = drawScrollIndicator(this.container, this.scrollView, this.scrollY, this.maxScroll);
   }
 

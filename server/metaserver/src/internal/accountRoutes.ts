@@ -3,7 +3,7 @@ import type { FastifyInstance } from 'fastify';
 import { INITIAL_ELO, createLogger, hashPassword, validatePassword } from '@nw/shared';
 import { getProfile, resolveByPublicId, searchAccounts } from '../accounts.js';
 import { profilesOf } from '../social.js';
-import { applyPenalty } from '../moderation.js';
+import { applyPenalty, ModerationConflictError } from '../moderation.js';
 import type { InternalCtx } from './context.js';
 
 const log = createLogger('meta:internal');
@@ -233,7 +233,15 @@ export function registerAccountRoutes(app: FastifyInstance, ctx: InternalCtx): v
     if (typeof delta !== 'number' || !Number.isFinite(delta)) {
       return reply.code(400).send({ ok: false, error: 'delta must be a finite number' });
     }
-    const result = await applyPenalty(cols, id, delta, now());
+    let result: Awaited<ReturnType<typeof applyPenalty>>;
+    try {
+      result = await applyPenalty(cols, id, delta, now());
+    } catch (e) {
+      if (e instanceof ModerationConflictError) {
+        return reply.code(409).send({ ok: false, error: 'moderation write conflict, retry' });
+      }
+      throw e;
+    }
     if (!result) return reply.code(404).send({ ok: false, error: 'account not found' });
     accountCache.invalidateBanStatus(id);
     return reply.send({ ok: true, ...result });
@@ -264,11 +272,14 @@ export function registerAccountRoutes(app: FastifyInstance, ctx: InternalCtx): v
     if (resolution !== 'approved' && resolution !== 'denied') {
       return reply.code(400).send({ ok: false, error: 'resolution must be approved or denied' });
     }
-    const appeal = await cols.appeals.findOne({ _id: id, status: 'open' });
-    if (!appeal) return reply.code(404).send({ ok: false, error: 'appeal not found or already resolved' });
+    const appeal = await cols.appeals.findOne({ _id: id }, { projection: { accountId: 1 } });
+    if (!appeal) return reply.code(404).send({ ok: false, error: 'appeal not found' });
 
-    await cols.appeals.updateOne(
-      { _id: id },
+    // CAS on status:'open' (mirrors socialsvc's resolveReport): two concurrent resolve calls for the same
+    // appeal both pass the findOne above, but only one updateOne here actually matches — the loser sees
+    // matchedCount:0 and gets a clear "already resolved" instead of silently racing the account-flags write.
+    const res = await cols.appeals.updateOne(
+      { _id: id, status: 'open' },
       {
         $set: {
           status: resolution,
@@ -278,6 +289,7 @@ export function registerAccountRoutes(app: FastifyInstance, ctx: InternalCtx): v
         },
       },
     );
+    if (res.matchedCount === 0) return reply.code(404).send({ ok: false, error: 'appeal not found or already resolved' });
 
     if (resolution === 'approved') {
       await cols.accounts.updateOne(

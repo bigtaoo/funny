@@ -141,7 +141,7 @@ flags?: {
 `POST /internal/accounts/:id/penalty`（metaserver，`X-Internal-Key`，唯一处罚执行路径）：
 ```
 body: { delta: number, reason: string, resolvedBy: string }
-→ 读当前 reputationScore（缺省 100）→ + delta（确认举报传负数）→ clamp [0,100]
+→ 读当前 reputationScore（缺省 100）→ + delta（确认举报传负数）→ clamp [0,100]（**由 `flags.moderationRev` 乐观锁守护，audit-followup-fixes-0730 追加，见 §9.5**：读到的 rev 在写回时不匹配则重读重算重试，不是无保护的读-改-写）
 → 按上表判定动作，写 flags.{mutedUntil|bannedUntil|banned} 中对应字段（只加严不减轻）
 → AccountCache.invalidateBanStatus(accountId)（复用现有失效方法，命名可能需要泛化为 invalidateEnforcementStatus）
 → 返回 { reputationScore, action: 'none'|'warn'|'mute'|'tempban'|'ban' }
@@ -219,6 +219,8 @@ interface AppealDoc {
 - ~~O-CM2~~ **已拍板（2026-07-29）**：阈值表按 §4.2 默认值实现，不调整。
 - ~~O-CM3~~ **已拍板（2026-07-29）**：不分举报严重度，统一每次 -20 分。
 - **O-CM4**（已知缺口，非本设计引入，仍未拍板）：gateway/WS 层不检查封禁状态，已连接会话在被封禁/限时封禁后不会被强制断开——建议另开任务修复，不在本次范围内。
+- ~~O-CM6~~ **已修复（2026-07-30）**：`ReportsMixin.resolveReport`（`admin/src/service/reports.ts`）曾把"报告本身 resolve"和"施加处罚"绑在同一次调用里顺序执行——报告一旦被 socialsvc 的 CAS（`status:'open'`守卫）标记为 `upheld`，字面意义上的"重试 `resolveReport()`"会在从未到达 `applyPenalty` 之前就先撞上"报告已解决"的 404。修复：`resolveReport()` 先按 `status:'open'` 查报告，查不到再按 `status:resolution` 查一次——命中后者说明是"已解决到同一 resolution 的重试"，跳过报告 resolve 这一步，直接（重新）调用 `applyPenalty`，不新增端点。回归测试 `admin/test/contentModerationBridge.e2e.test.ts` 的 `resolveReport(upheld) can be retried after a penalty-call failure...` 已转为常规 `it` 并转绿。
+- ~~O-CM7~~ **已修复（2026-07-30）**：`resolveReport()` 的 `accountId` 曾是调用方（ops UI）显式传入、从未回查报告自身 `targetId` 的参数——当前唯一调用方（`tools/ops/src/pages/reports.ts`）传的确实是 `r.targetId`，生产路径没出过问题，但服务端本身对不匹配的 `accountId` 毫无防护。修复：与 O-CM6 同一次改动里，`resolveReport()` 改为始终从查到的报告行取 `targetId` 作为处罚目标，调用方传入的 `accountId` 仅作为确认值，不匹配则拒绝（`AdminError(400, 'target_mismatch')`）。回归测试同文件的 `resolveReport(upheld) rejects a caller-supplied accountId that does not match...` 已转为常规 `it` 并转绿。
 - ~~O-CM5~~ **已修复（2026-07-29）**：客户端从未实际发送 `X-Chat-Region` 请求头，导致地区专属词表（cn/de/en）在真实请求里从未生效，只有 global 词表起作用。修复：新增 `client/src/net/chatRegion.ts`（`currentChatRegion()`，镜像服务端 `regionFromLocale` 的 zh→cn/de→de/en→en 映射，取自玩家当前 i18n locale），接入 `WorldApiClient.createFamily`/`sendFamilyMessage` 与 `ApiClient.sendChat` 三个调用点。修复过程中额外发现并修复了一个会阻断此修复本身的伴生 bug：`server/socialsvc/src/httpApi.ts` 的手写 CORS `access-control-allow-headers` 清单没有 `x-chat-region`，会导致真实浏览器在预检（preflight OPTIONS）阶段整体拦截请求（与 2026-07-28 `X-NW-Platform` CORS 停机同一类问题，见 `claudedocs/server.md`/`COMM_AUDIT_INTERNAL_2026-07-28.md`）——已一并加入该清单。worldsvc 的 `/sect/create`、`/nation/message` 走的是 `regionFromAcceptLanguage(Accept-Language)`，是浏览器原生自动发送的标准头，不受本 gap 影响，未改动。验证：`server/socialsvc/test/chatRegionHttp.e2e.test.ts`（真实 HTTP + 真实 Mongo，四个用例覆盖三个端点的“带头/不带头”对照）、`server/socialsvc/test/cors-headers.test.ts`（新增一条 X-Chat-Region 预检回归）、`client/test/net-x-chat-region.test.ts`（三个客户端调用点按 locale 发送正确 header），以及一次真实浏览器（web-e2e 入口 + `window.__nwE2E`）dev-server 走查：locale=en 时创建含 `私服` 的家族名成功（201，region 落到 en/global 词表未命中），切到 locale=zh 后同样的名字被拒（400 BAD_REQUEST，命中 cn 词表），且能看到真实的 CORS 预检 OPTIONS 往返。
 
 ---
@@ -226,6 +228,7 @@ interface AppealDoc {
 ## 9. 实现记录
 
 - **2026-07-29，O-CM5 修复**：客户端 `X-Chat-Region` 请求头补齐 + 伴生 CORS gap 修复，详见 §8 O-CM5。
+- **2026-07-30，O-CM6/O-CM7 修复**：`ReportsMixin.resolveReport` 重写为"先查报告（open 优先，退而查 resolution 状态判断是否为重试）→ 校验/派生 targetId → 按需 resolve → 按需 applyPenalty"，一次改动同时解决"处罚失败后无法安全重试"（O-CM6）与"accountId 不回查报告 targetId"（O-CM7）。详见 §8 O-CM6/O-CM7。
 
 ### 9.1 P1+P2：归一化 + 词库外部化 + 五处覆盖缺口（2026-07-29）
 
@@ -267,3 +270,11 @@ interface AppealDoc {
 - 三语言（zh/en/de）新增 `appeal.*` i18n key（title.banned/title.muted/body/placeholder/submit/cancel/submitted/err.empty/err.failed）。
 - 与设计的差异：除上述客户端挂载点的调整外，无实质偏离。
 - 验证：`metaserver/test/appeal.e2e.test.ts`（新增，8 例：无生效处罚拒绝/空理由拒绝/成功提交+快照/重复申诉 409/内部列表+鉴权/approve 清封禁并复测登录成功/deny 不改字段/404）；`client/test/appeal-prompt.test.ts`（新增，12 例，补上传输层挂载点本身的单测——`maybePromptAppeal`/`setAppealSink` 只对 `ACCOUNT_BANNED`/`ACCOUNT_MUTED` 触发且吞掉 sink 自身抛出的异常、`ApiClient`/`WorldApiClient` 在这两个错误码上正确调用 sink 而其它错误码/成功响应不触发、`createAppCore().submitAppeal` 离线时为 `undefined`、联网时代理到真实 `POST /account/appeal`）；客户端 `npm run typecheck` + `vitest run`（899 个用例全绿）；dev server 冒烟：构建产物加载无报错（真实封禁/禁言账号触发申诉弹窗的交互走查因需起完整后端+人工封禁测试账号，超出本次收尾范围未做，记录为已知验证缺口——传输层挂载点本身已有单测覆盖，缺口仅限"整条链路+真实弹窗渲染"的人工走查）。
+
+### 9.5 P3/P4 二次复核：两处 check-then-act 竞态修复（audit-followup-fixes-0730，2026-07-30）
+
+> P3/P4 是在 `SERVER_LOGIC_AUDIT_2026-07-29.md` 那轮"CAS 优先于 check-then-act"的审计纪律确立**之后**才写的新代码，但没有被那轮审计本身覆盖到。事后一次针对性复查发现两处同款竞态重演，均已修复并补齐并发回归测试（对回退代码验证过确实会失败，非空转假回归）：
+
+- **`POST /internal/appeals/:id/resolve` 的 check-then-act**：原实现是 `findOne({status:'open'})` 判断存在性后**无条件** `updateOne`，两个管理员并发解决同一条申诉时都能通过读检查，最终 status/resolvedBy 由写入顺序决定且都返回 `{ok:true}`，没有任何一方能感知"已被别人处理过"。改为 CAS：写操作本身带 `status:'open'` 过滤条件 + `matchedCount` 判定，落败方返回既有的 404"already resolved"文案，与 socialsvc `resolveReport` 同款写法看齐。`submitAppeal` 的"同账号仅一条 open 申诉"检查同理也是 check-then-act（`findOne` 判重后 `insertOne`），改为 `appeals` 集合新增 `{accountId:1}` 唯一部分索引（`partialFilterExpression:{status:'open'}`，`shared/mongo.ts`）作为原子后盾，`insertOne` 捕获 `E11000` 转译为既有的 409（同 `equipEquipment` 捕获 `gearInstanceIds` 唯一索引冲突的手法）。回归测试：`metaserver/test/appeal.e2e.test.ts` 新增 2 例（5 路并发 resolve 仅 1 赢 4 输 404；2 路并发 submitAppeal 仅 1 赢 1 落 409）——2 路并发 resolve 的竞态复现不稳定（timing-dependent），改成 5 路并发后稳定触发。
+- **`applyPenalty`/`decayReputationOnce` 的 reputationScore 读-改-写**：两者都是"读当前 flags → 在 JS 里算新值 → `$set` 写回"，互相之间（两次并发处罚、或一次处罚撞上每日衰减扫描）没有任何原子性保护，后写者会用基于旧值算出的结果覆盖先写者的结果，静默丢失一次 `-20`/`+10`。设计文档 §4.2 原文描述的算法本身就是这个非原子版本（见上方 CM7 小节的更新说明），不是编码疏忽。修复：`AccountDoc.flags` 新增乐观锁计数器 `moderationRev`（镜像 `SaveDoc.rev`），`applyPenalty`/`decayReputationOnce` 都改成"读→算→`updateOne({_id, moderationRev:读到的值})`守卫写入 + `moderationRev+1`，`matchedCount===0` 则重读重算重试"的标准 CAS 重试循环（`REV_RETRIES=3`，与 `equipment.ts`/`cards.ts` 既有的 rev 重试循环同一手法）；重试耗尽抛 `ModerationConflictError`，`POST /internal/accounts/:id/penalty` 捕获后返回 409（而不是误判成"账号不存在"）。`decayReputationOnce` 额外处理了一个衍生场景：CAS 冲突后重读若发现 `reputationDecayAt` 已不再到期（说明并发的一次新处罚已经把衰减时钟重置到 30 天后），直接放弃这次衰减而不是继续重试——这是"到期"这个前提本身可能被并发写作废的正确处理，不只是简单重试。
+

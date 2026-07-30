@@ -138,19 +138,18 @@ POST /iap/verify      { platform, receipt }    → { save: SaveData, granted: nu
 
 ### 2.7 PvE 养成（服务器权威，ADR-006 / `PVE_INTEGRITY_PLAN.md §8`）
 
-> `progress.cleared` / `progress.stars` / `materials` / `pveUpgrades` 自 ADR-006 起**服务器权威**——这四段只能经下列端点写（当时的表述是"`PUT /save` 同步段收窄为仅 `equipped`/`flags`"；`PUT /save` 本身已于 ADR-056 整个下线，见 §2.2）。奖励按 `@nw/shared/pveRewards.ts` 服务器重算，不信客户端自报数额。
+> `progress.cleared` / `progress.stars` / `materials` 自 ADR-006 起**服务器权威**——这几段只能经下列端点写（当时的表述是"`PUT /save` 同步段收窄为仅 `equipped`/`flags`"；`PUT /save` 本身已于 ADR-056 整个下线，见 §2.2）。奖励按 `@nw/shared/pveRewards.ts` 服务器重算，不信客户端自报数额。`pveUpgrades` 曾经也是这一批（第三个端点 `/pve/upgrade`），**该端点已于 2026-07-30 删除**（见下方说明）；字段本身仍在 `SaveData` 上只读留存（L0 反作弊比对用），不再有任何写入路径。
 
 ```
 POST /pve/clear    { levelId, stars, pveSnapshot?, replayRef? }
    → { save: SaveData, capped?: boolean, needsReplay?: boolean, verifyId?: string }
 POST /pve/verify   { verifyId, frames }        → { save: SaveData, status: 'verified'|'rejected'|'unverified' }
-POST /pve/upgrade  { upgradeId }               → { save: SaveData } | INSUFFICIENT_MATERIALS
 ```
 
 - **`/pve/clear`**：校验 level 存在 + **已解锁**（前置关在 `progress.cleared` 内）+ `stars≤3` → 按 `grantForClear(levelId,isFirst)` 在**每日上限**（`PVE_DAILY_CLEAR_REWARD_CAP`，按 `dayKey` 原子计数，Redis 存储，类比 `victoryDaily`，均见 §5 的 `dailyCounter.ts` 说明）内发材料；首通额外发首通奖励 + 解锁下一关 + 记星（取 max）→ 原子写 `progress/stars/materials`（rev 守卫）→ 回推权威 save。超上限：仍写 progress/stars，材料不发（`capped:true`）。
 - **抽检复算（L1，复用 S1-J 对等裁判）**：`shouldSpotCheck` 命中（首通恒查 / 开局 `pveSnapshot` 与服务器权威 `pveUpgrades` 不符「开局战力不符→必作弊」/ 按 `PVE_VERIFY_SAMPLE_RATE` 随机）→ 暂扣材料、记 `pveVerifications{status:pending}`、回 `{needsReplay:true, verifyId}`；客户端补传录像帧调 `/pve/verify` → meta 经 `gateway.judge` 派第三方无头复算 → 复算星数 ≥ 声称则发材料(`verified`)，< 声称则不发(`rejected`)，无裁判可裁则 benefit-of-doubt 照发(`unverified`)。
-- **`/pve/upgrade`**：服务器按 `PVE_UPGRADE_COSTS` 校验材料足够 → 扣材料 + `pveUpgrades[id]+1` → 回推 save。**仅在线**（离线客户端禁用入口，离线通关入本地 `pendingClears` 队列、上线 flush）。
 - 两端点均返回完整权威 SaveData（客户端 adopt 镜像，同经济回执）。
+- ~~`/pve/upgrade`~~ **已删除（2026-07-30）**：曾经"服务器按 `PVE_UPGRADE_COSTS` 校验材料足够 → 扣材料 + `pveUpgrades[id]+1` → 回推 save"，CC-1 起单位养成改走 Hero Roster（`cardInv`）后彻底死代码——客户端唯一调用点 `SaveManager.upgrade()` 早已零调用方且标 `@deprecated`。删除范围：契约片段（`openapi/paths/pve.yml`）+ 两处生成产物（`openapi.yml`/`routes.gen.ts`，重跑 `gen:api:contracts`/`gen:api:server`）+ `MetaHandlers`/`PveHandlers` 类型 + 服务端 handler（`pve.ts`）+ `@nw/shared` 里同样孤儿的 `PVE_UPGRADE_COSTS`/`findPveUpgrade`/`pveUpgradeCost` + client `ApiClient`/`SaveManager` + 两侧既有测试。详见 `SLG_DESIGN_LOG.md` §43 / comm-audit-p2-remaining。
 
 ### 2.8 装备养成（服务器权威，ADR-010 / ADR-012 / `EQUIPMENT_DESIGN.md §18`）
 
@@ -267,18 +266,48 @@ PUT  /title/equip          (JWT) { titleId }  → { save: SaveData }  | 403（�
 | `conn_resume` | `{ room_id, last_frame }` | 重连，从 `last_frame` 之后补帧 |
 | `ping` | `{}` | 心跳 |
 
+> ⚠️ 以下 4 类**只走 gateway 控制面 WS**（§8.4），从不出现在 game 数据面：
+
+| `case` | payload | 说明 |
+|---|---|---|
+| `duel_invite` | `{ to_public_id, deck[] }` | 好友挑战（"切磋"）邀请；`deck` 同 `room_create.deck`（`PVP_LOADOUT_DESIGN.md §4`），空则服务器指派默认卡组 |
+| `duel_respond` | `{ invite_id, accept, deck[] }` | 接受/拒绝挑战邀请；`deck` 仅 `accept=true` 时有意义 |
+| `client_caps` | `{ can_judge }` | 连接后上报本机是否可作对等裁判（Phase C，§8.1 对等裁判反作弊） |
+| `judge_verdict` | `{ request_id, state_hash, winner_side, ok, stars, stats_json }` | 裁判复算结果回报（Phase C）；`stars`/`stats_json` 是 PvE L1 抽检复算专用字段，PvP/围攻恒为空 |
+
 ### 3.2 服务器 → 客户端（`ServerMsg` oneof）
+
+> 下表是 `transport.proto` `ServerMsg` 的完整 24 个分支（不区分走 game 数据面还是 gateway 控制面——两条连接共用同一个 `Envelope`/`ServerMsg` 定义，NetSession 按连接来源路由到 `routeData`/`routeControl`，见 `client/src/net/NetSession.ts`）。
+
 | `case` | payload | 说明 |
 |---|---|---|
 | `room_state` | `{ code, players: PlayerSlot[], phase }` | 房间状态变更广播 |
-| `match_start` | `{ room_id, mode, seed, start_frame, local_side, opponent_name, opponent_public_id }` | 开局：模式 + 种子 + 起始帧 + 本方阵营 + 对手昵称/9 位公开 id（后两者纯展示，资料弹层用） |
+| `match_start` | `{ room_id, mode, seed, start_frame, local_side, opponent_name, opponent_public_id, opponent_title, top_deck[], bottom_deck[], opponent_avatar_id }` | 开局：模式 + 种子 + 起始帧 + 本方阵营 + 对手展示信息（昵称/9 位公开 id/称号/头像，纯展示用）+ 双方卡组（`PVP_LOADOUT_DESIGN.md §6.2`，双方都收全量卡组以保证确定性建局） |
 | `frame_batch` | `{ to_frame, frames: FrameCmds[] }` | **服务器节拍**：每 100ms 一个批次（覆盖 3 个 sim 帧，M14）；`frames` 仅列非空帧，空窗 ⇒ 只有 `to_frame` 水位 |
 | `conn_resync` | `{ seed, start_frame, log: FrameCmds[], cur_frame }` | 重连补帧：种子 + 非空帧日志 + 当前帧 |
 | `peer_dc` | `{ side, grace_ms: 60000 }` | 对手掉线，进入 60s 等待重连（M10） |
 | `match_over` | `{ winner_side, reason, mismatch?, elo?: { delta, after, rank_after } }` | 结束；`reason: base|disconnect|mismatch`；ranked 带 ELO 变化 |
-| `room_error` | `{ code, message }` | 房间错误（不存在 / 已满） |
+| `room_error` | `{ code, message }` | 房间错误（不存在 / 已满 / `PREMATCH_LOST` 等） |
 | `pong` | `{}` | 心跳回应 |
+| `match_found` | `{ game_url, ticket }` | 配对/开局成功，客户端据此连数据面 WS（M18，§8.4） |
+| `judge_request` | `{ request_id, seed, mode, end_frame, frames[], level_id?, defense_json?, top_deck[], bottom_deck[], card_instances_json?, equipment_inv_json? }` | 挑中本机作对等裁判，无头复算一局/一关（Phase C §8.1；`level_id`=PvE 抽检、`defense_json`=SLG 围攻抽检，二选一或都空=PvP） |
+| `match_bot` | `{ seed, opponent_name, elo, difficulty }` | 排位匹配超时降级为 AI 对手（feature flag `match_bot_fallback`）；无 game_url/ticket，客户端本地起一局 PvE-vs-AI |
+| `friend_presence` | `{ public_id, online }` | 好友上下线（S6） |
+| `friend_request` | `{ request_id, from_public_id, from_name, message }` | 收到好友申请 |
+| `friend_update` | `{ public_id, kind: ADDED|REMOVED }` | 好友关系变更（新增/解除） |
+| `chat_message` | `{ conv_id, from_public_id, from_name, body, ts }` | 私聊新消息 |
+| `mail_new` | `{ mail_id, has_attachment }` | 新邮件到达 |
+| `march_update` | `{ march_id, kind, from_tile, to_tile, arrive_at, status }` | SLG 行军状态变更（S8）；`kind: attack|reinforce|occupy|sweep|return|move`（scout 已于 2026-07-30 整体删除，非本表新漂移） |
+| `tile_update` | `{ tile_id, type, level, owner_public_id, family_id, protected_until, owner_name }` | SLG 地块状态变更 |
+| `under_attack` | `{ tile, attacker_name, attacker_public_id, arrive_at, troops_hint }` | 己方地块被进攻预警 |
+| `siege_result` | `{ siege_id, tile, outcome, loot_summary, replay_ref, march_id }` | 围攻结果（`outcome: attacker_win|defender_win|draw`） |
+| `family_msg` | `{ family_id, from_public_id, from_name, text, ts }` | 家族频道新消息 |
+| `sect_msg` | `{ sect_id, from_public_id, from_name, text, ts }` | 宗门频道新消息（S8-4b） |
 | `nation_msg` | `{ world_id, from_public_id, from_name, text, ts }` | 国家/世界公频新消息（B7，worldsvc 经 Redis pub/sub → gateway 扇出给同 world 在线玩家；REST 拉历史 `/nation/channel` 离线补全） |
+| `duel_invited` | `{ invite_id, from_public_id, from_name }` | 收到好友挑战（"切磋"）邀请；接受直接走 `match_found`，没有单独的"已接受"推送 |
+| `duel_cancelled` | `{ invite_id, reason }` | 挑战邀请的 unhappy path（`reason: declined\|timeout\|offline\|not_found\|lost`）；`accept` 走的是 `match_found`，从不到这里 |
+| `queue_state` | `{}` | matchsvc 重启自愈（matchsvc-prematch-persist, 2026-07-29）：确认排位队列条目在重启后仍存活，纯 rehydrate 刷新，无字段 |
+| `pre_match_lost` | `{ context: 'room'\|'queue'\|'duel' }` | matchsvc 重启自愈：该账号赛前状态（房间/排位队列/切磋邀请）没能恢复；客户端据 `context` 分别处理（room→弹房间错误，queue→静默重新排队，duel→清邀请横幅），见 `client/src/net/NetSession.ts` `routeControl` |
 
 ```proto
 // transport.proto（节选；服务器认得这一层）
@@ -505,27 +534,35 @@ POST /internal/match/report  (内部密钥)
 
 ### 8.4 gateway 控制面 WS（M20，玩家公开门面）
 
-握手：`wss://host/gw?token=<jwt>`（同 REST 的 JWT；gateway 解出 accountId 绑定连接）。常驻整局会话期。JSON 或 protobuf 均可（控制面低频，建议沿用 JSON 便于调试）。
+握手：`wss://host/gw?token=<jwt>`（同 REST 的 JWT；gateway 解出 accountId 绑定连接）。常驻整局会话期。**protobuf 二进制专用**（`Gateway.ts`：`ws.on('message', (data, isBinary) => { if (!isBinary) return; ... })` 直接丢弃非二进制帧）——早期"JSON 或 protobuf 均可"的设计在实现里已收紧为 protobuf-only，本节曾经写的"建议沿用 JSON 便于调试"已过时，未跟着改。
 
-**客户端 → gateway**（gateway 转发 matchsvc，§8.1）：
+**客户端 → gateway**（`ClientMsg` oneof 里，除 `cmd_submit`/`match_result`/`conn_resume` 三个数据面专属之外的全部分支；`room_*`/`duel_*` 转发 matchsvc §8.1，`client_caps`/`judge_verdict` 就地处理，见 Phase C）：
 | msg | payload | 说明 |
 |---|---|---|
-| `mm_enqueue` | `{}` | 开始 ranked 匹配（gateway 取 elo 后投 matchsvc） |
-| `mm_cancel` | `{}` | 取消匹配 |
-| `room_create` | `{}` | friendly 建房 |
-| `room_join` | `{ code }` | 输码加入 |
+| `room_create` | `{ mode: friendly\|ranked, deck[] }` | friendly 建房，或 ranked 入队——**没有单独的 `mm_enqueue` 消息**，ranked 排位复用同一个 `room_create{mode:RANKED}`（见 §8 顶部"实现状态"一节的订正） |
+| `room_join` | `{ code, deck[] }` | 输码加入（friendly） |
 | `room_ready` | `{ ready }` | 切换准备 |
 | `room_start` | `{}` | 房主开局 |
-| `room_leave` | `{}` | 离开房间 / 退队 |
+| `room_leave` | `{}` | 离开房间 / 退队 / **取消排位匹配**（同样没有单独的 `mm_cancel`） |
+| `duel_invite` | `{ to_public_id, deck[] }` | 好友挑战（"切磋"）邀请 |
+| `duel_respond` | `{ invite_id, accept, deck[] }` | 接受/拒绝挑战邀请 |
+| `client_caps` | `{ can_judge }` | 上报本机是否可作对等裁判 |
+| `judge_verdict` | `{ request_id, state_hash, winner_side, ok, stars, stats_json }` | 裁判复算结果回报 |
+| `ping` | `{}` | 心跳 |
 
-**gateway → 客户端**（matchsvc 事件回推）：
-| msg | payload | 说明 |
-|---|---|---|
-| `room_state` | `{ code, players:[{side,name,ready,connected}], phase }` | 房间态变更广播（好友加入/ready 等都走这条） |
-| `match_found` | `{ game_url, ticket }` | 配对/开局成功，下发连 game 的连接信息（M18）；客户端据此连数据面 WS |
-| `mm_status` | `{ state:'searching'|'idle', waited_ms? }` | 匹配队列状态 |
-| `room_error` | `{ code, message }` | `ROOM_NOT_FOUND`/`ROOM_FULL`/`RANKED_UNAVAILABLE` 等 |
-| `presence` | `{ ... }` | 在线状态/通知（预留，好友系统用） |
+**gateway → 客户端**（matchsvc 事件回推 + 社交/SLG 实时推送，`ServerMsg` oneof 里除 `frame_batch`/`conn_resync`/`peer_dc`/`match_over` 四个数据面专属之外的全部分支——完整 payload 定义见 §3.2）：
+| msg | 说明 |
+|---|---|
+| `room_state` | 房间态变更广播（好友加入/ready 等都走这条） |
+| `match_found` | 配对/开局成功，下发连 game 的连接信息（M18）；客户端据此连数据面 WS |
+| `match_bot` | 排位匹配超时降级 AI 对手（feature flag） |
+| `room_error` | `ROOM_NOT_FOUND`/`ROOM_FULL`/`RANKED_UNAVAILABLE`/`PREMATCH_LOST` 等——**没有单独的 `mm_status`**，排位"搜索中"状态由客户端本地维护（发出 `room_create{mode:RANKED}` 后即显示 spinner），服务器只在结果落定（`match_found`/`room_error`）或重启自愈（`queue_state`/`pre_match_lost`）时推送 |
+| `judge_request` | 挑中本机作对等裁判 |
+| `queue_state` / `pre_match_lost` | matchsvc 重启自愈（2026-07-29），见 §3.2 |
+| `duel_invited` / `duel_cancelled` | 切磋邀请到达 / unhappy-path 取消 |
+| `friend_presence` / `friend_request` / `friend_update` / `chat_message` / `mail_new` | 好友/私聊/邮件实时推送（S6）——**没有单独的通用 `presence` 消息**，各自有专属 case |
+| `march_update` / `tile_update` / `under_attack` / `siege_result` / `family_msg` / `sect_msg` / `nation_msg` | SLG 大世界实时推送（S8） |
+| `pong` | 心跳回应 |
 
 > `room_state`/`match_found` 的语义与 S1 现实现里 gameserver WS 的 `room_state`/`match_start` 等价，只是**搬到 gateway 控制面**；game 数据面 WS（§3）不再承载房间阶段消息。
 

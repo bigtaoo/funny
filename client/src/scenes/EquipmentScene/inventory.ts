@@ -4,7 +4,7 @@ import * as PIXI from 'pixi.js-legacy';
 import { t, type TranslationKey } from '../../i18n';
 import { ui as C, txt, sketchPanel, seedFor, marginLineX, tearDownChildren } from '../../render/sketchUi';
 import { FS } from '../../render/fontScale';
-import { drawSidebarTabs, sidebarNavW, type HubTab } from '../../ui/widgets/HubTabs';
+import { drawSidebarTabs, drawBottomNavTabs, sidebarNavW, bottomNavH, type HubTab } from '../../ui/widgets/HubTabs';
 import { drawScrollIndicator } from '../../ui/widgets/ScrollIndicator';
 import { peekViewportH } from '../../ui/widgets/scrollPeek';
 import { buildIcon } from '../../render/icons';
@@ -116,15 +116,42 @@ export function InventoryMixin<TBase extends EquipmentSceneBaseCtor>(Base: TBase
     }
 
     /**
-     * Left sidebar rail, stacked inside the notebook-margin gutter (`marginLineX`) below the
-     * header: the progression group nav [<peer>|Equipment] (LOBBY_IA_REDESIGN P1.5, only when
-     * peerTab is injected) on top, then the Inventory/Craft sub-tabs always underneath (this
-     * used to be a horizontal strip in the header row's left column — moved here so it isn't
-     * squeezed into the same narrow gutter width as a wide strip; see LOBBY_IA_REDESIGN.md §8
-     * sidebar addendum).
+     * Landscape: left sidebar rail, stacked inside the notebook-margin gutter (`marginLineX`) below
+     * the header — the progression group nav [<peer>|Equipment] (LOBBY_IA_REDESIGN P1.5, only when
+     * peerTab is injected) on top, then the Inventory/Craft sub-tabs always underneath, then any
+     * trailing peers (Skins) below that (EquipmentCallbacks.trailingPeers) so they shift down
+     * instead of disappearing (see LOBBY_IA_REDESIGN.md §8 sidebar addendum).
+     *
+     * Portrait (§18): the left rail becomes a bottom nav bar, and there's no "nested under" concept
+     * left for a single bar to express — so all the *peer-level* items (leading peerTab + Equipment
+     * itself + trailing peers) combine into ONE bottom bar (they're all peers of the same growth
+     * group, just split across landscape's before/after-subtabs stacking for a different reason).
+     * The Inventory/Craft sub-tabs move to a header strip instead — see base.ts's renderHeaderRow.
      */
     renderSidebar(): void {
-      const sidebarW = sidebarNavW(this.w, this.h, this.landscape);
+      const { w, h, landscape } = this;
+
+      if (!landscape) {
+        if (!this.hasGroupNav) return;
+        const peers: HubTab[] = [];
+        const actions: Array<() => void> = [];
+        if (this.showGroup && this.cb.peerTab) {
+          peers.push({ label: t(this.cb.peerTab.labelKey), active: false, icon: this.cb.peerTab.icon });
+          actions.push(() => this.cb.peerTab?.onSelect());
+        }
+        peers.push({ label: t('equip.title'), active: true, icon: 'armor' });
+        actions.push(() => {});
+        for (const p of this.cb.trailingPeers ?? []) {
+          peers.push({ label: t(p.labelKey), active: false, icon: p.icon });
+          actions.push(() => p.onSelect());
+        }
+        const barH = bottomNavH(h);
+        const { hits } = drawBottomNavTabs(this.bodyLayer, w, h - barH, barH, peers, (i) => actions[i]?.());
+        for (const hit of hits) this.hitRects.push({ rect: hit.rect, action: hit.fn });
+        return;
+      }
+
+      const sidebarW = sidebarNavW(w, h, true);
       let y = this.headerH;
 
       if (this.showGroup && this.cb.peerTab) {
@@ -132,11 +159,11 @@ export function InventoryMixin<TBase extends EquipmentSceneBaseCtor>(Base: TBase
           { label: t(this.cb.peerTab.labelKey), active: false, icon: this.cb.peerTab.icon },
           { label: t('equip.title'), active: true, icon: 'armor' },
         ];
-        const group = drawSidebarTabs(this.bodyLayer, sidebarW, y, this.h, groupTabs, (i) => {
+        const group = drawSidebarTabs(this.bodyLayer, sidebarW, y, h, groupTabs, (i) => {
           if (i === 0) this.cb.peerTab?.onSelect();
         });
         for (const hit of group.hits) this.hitRects.push({ rect: hit.rect, action: hit.fn });
-        y = group.bottom + Math.round(this.h * 0.03);
+        y = group.bottom + Math.round(h * 0.03);
       }
 
       const subTabs: { key: EquipTab; label: TranslationKey }[] = [
@@ -144,7 +171,7 @@ export function InventoryMixin<TBase extends EquipmentSceneBaseCtor>(Base: TBase
         { key: 'craft', label: 'equip.tabCraft' },
       ];
       const sub = drawSidebarTabs(
-        this.bodyLayer, sidebarW, y, this.h,
+        this.bodyLayer, sidebarW, y, h,
         subTabs.map((tab) => ({ label: t(tab.label), active: tab.key === this.activeTab })),
         (i) => {
           const key = subTabs[i].key;
@@ -159,22 +186,24 @@ export function InventoryMixin<TBase extends EquipmentSceneBaseCtor>(Base: TBase
       // (Skins) shifts down instead of disappearing — see EquipmentCallbacks.trailingPeers.
       const trailing = this.cb.trailingPeers ?? [];
       if (trailing.length > 0) {
-        const ty = sub.bottom + Math.round(this.h * 0.03);
+        const ty = sub.bottom + Math.round(h * 0.03);
         const peerTabs: HubTab[] = trailing.map((p) => ({ label: t(p.labelKey), active: false, icon: p.icon }));
-        const after = drawSidebarTabs(this.bodyLayer, sidebarW, ty, this.h, peerTabs, (i) => trailing[i]?.onSelect());
+        const after = drawSidebarTabs(this.bodyLayer, sidebarW, ty, h, peerTabs, (i) => trailing[i]?.onSelect());
         for (const hit of after.hits) this.hitRects.push({ rect: hit.rect, action: hit.fn });
       }
     }
 
     renderInventory(bodyTop: number): void {
-      const { w, h } = this;
+      const { w, h, landscape } = this;
       const save = this.cb.getSave();
-      // Item cells (and the loadout strip below) start right of the sidebar rail.
-      const left = sidebarNavW(w, h, this.landscape);
+      // Item cells (and the loadout strip below) start right of the sidebar rail (landscape); portrait's
+      // sidebar is a bottom bar (§18), so there's no width reservation there.
+      const left = landscape ? sidebarNavW(w, h, true) : 0;
       // Bag mode (no active card) has no single-card loadout to show; the list starts right below the header row.
       let listY = bodyTop;
       if (!this.bag) { this.renderLoadout(save, bodyTop, left); listY = bodyTop + LOADOUT_H; }
-      const availH = h - listY - 8;
+      // Portrait's peer-level bottom bar (when shown) reserves bottomNavH off the bottom.
+      const availH = h - listY - 8 - (!landscape && this.hasGroupNav ? bottomNavH(h) : 0);
 
       const instances = this.sortedInstances(save);
 

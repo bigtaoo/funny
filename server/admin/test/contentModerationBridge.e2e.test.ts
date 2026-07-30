@@ -168,6 +168,78 @@ describe.skipIf(!mongo)('admin content-moderation report/appeal bridge e2e', () 
     expect(fakeReports.rows[0]!.status).toBe('upheld'); // report resolve already succeeded before the penalty call failed
   });
 
+  // FIXED (O-CM6, audit-followup-fixes-0730 review; closed 2026-07-30): resolveReport() no longer does a
+  // blind report-resolve-then-penalize sequence. On retry it first checks whether the report is already
+  // resolved to the target `resolution` — if so it skips the (now-404ing) report-resolve CAS and retries
+  // only the enforcement call.
+  it('resolveReport(upheld) can be retried after a penalty-call failure without re-hitting the already-resolved report (O-CM6)', async () => {
+    fakeEnforcement.failNext = true;
+    await expect(svc.resolveReport(root, 'r1', 'b', 'upheld')).rejects.toThrow(AdminError);
+    expect(fakeReports.rows[0]!.status).toBe('upheld');
+
+    // The operator retries exactly as the error message suggests. The penalty call succeeds this time
+    // (failNext cleared) — resolveReport() detects the report is already 'upheld' and retries only the
+    // penalty side instead of re-resolving (and 404ing on) the report.
+    fakeEnforcement.failNext = false;
+    const res = await svc.resolveReport(root, 'r1', 'b', 'upheld');
+    expect(fakeEnforcement.calls).toContainEqual({ accountId: 'b', delta: -20 });
+    expect(res.action).toBeDefined();
+  });
+
+  // FIXED (O-CM7, audit-followup-fixes-0730 review; closed 2026-07-30): resolveReport() now derives the
+  // target from the report's own targetId (r1's real target is 'b', per FakeReports.rows above) and
+  // rejects a caller-supplied accountId that doesn't match, instead of silently penalizing whatever
+  // accountId it's given.
+  it('resolveReport(upheld) rejects a caller-supplied accountId that does not match the report\'s own targetId (O-CM7)', async () => {
+    await expect(svc.resolveReport(root, 'r1', 'z', 'upheld')).rejects.toThrow(AdminError);
+  });
+
+  // Boundary coverage added 2026-07-30 (audit-followup-fixes-0730 follow-up): the O-CM6/O-CM7 rewrite's
+  // "already resolved to this resolution → retry-only" detection and the targetId check apply generically
+  // (any resolution, not just the upheld-after-penalty-failure case the KNOWN GAP tests above targeted).
+
+  it('resolveReport(dismissed) is idempotent when called again after already being dismissed', async () => {
+    await svc.resolveReport(root, 'r1', 'b', 'dismissed');
+    // Second call: the report-resolve CAS would 404 on a literal retry, same shape as the upheld/O-CM6
+    // case — resolveReport() detects the report is already 'dismissed' and treats this as a no-op retry
+    // (there's nothing to (re-)apply for 'dismissed', so it just re-audits and returns {}).
+    const res = await svc.resolveReport(root, 'r1', 'b', 'dismissed');
+    expect(res).toEqual({});
+    expect(fakeReports.rows[0]!.status).toBe('dismissed');
+  });
+
+  it('resolveReport rejects a resolution that conflicts with an already-committed different resolution', async () => {
+    await svc.resolveReport(root, 'r1', 'b', 'upheld');
+    // The report is now 'upheld', not 'open' and not 'dismissed' — resolveReport() must not silently
+    // reinterpret this as a "retry" of a dismiss; it should 404 rather than flip an already-upheld report.
+    // (This holds under the pre-O-CM6 implementation too, coincidentally, for a different reason — its
+    // single unconditional resolveReport() CAS call already 404s on any second call. Kept as a guard
+    // against a regression in the new open→resolution two-step lookup specifically.)
+    await expect(svc.resolveReport(root, 'r1', 'b', 'dismissed')).rejects.toThrow(AdminError);
+    expect(fakeReports.rows[0]!.status).toBe('upheld');
+  });
+
+  it('resolveReport(dismissed) also rejects a caller-supplied accountId mismatch (targetId check is not upheld-only)', async () => {
+    await expect(svc.resolveReport(root, 'r1', 'z', 'dismissed')).rejects.toThrow(AdminError);
+    expect(fakeReports.rows[0]!.status).toBe('open'); // rejected before ever touching the report
+  });
+
+  it('resolveReport(upheld) retry-path still enforces the targetId check against a mismatched accountId', async () => {
+    fakeEnforcement.failNext = true;
+    await expect(svc.resolveReport(root, 'r1', 'b', 'upheld')).rejects.toThrow(AdminError);
+    expect(fakeReports.rows[0]!.status).toBe('upheld');
+
+    fakeEnforcement.failNext = false;
+    // A retry with the WRONG accountId must still be rejected even though the report is already 'upheld'
+    // and would otherwise qualify for the retry-only path — the targetId check applies before that path
+    // ever calls applyPenalty. Asserted on the specific `target_mismatch` code (not just "some AdminError")
+    // because a plain 404 would ALSO satisfy a bare toThrow(AdminError) here — the pre-O-CM6 code 404s on
+    // any second resolveReport() call regardless of accountId, which would make this assertion pass for
+    // the wrong reason if it only checked the error type.
+    await expect(svc.resolveReport(root, 'r1', 'z', 'upheld')).rejects.toMatchObject({ code: 'target_mismatch' });
+    expect(fakeEnforcement.calls).toEqual([{ accountId: 'b', delta: -20 }]); // only the first (failed) call
+  });
+
   it('listAppeals proxies the appeals client and audits appeal.review', async () => {
     const rows = await svc.listAppeals(root.adminId, { status: 'open' });
     expect(rows).toHaveLength(1);

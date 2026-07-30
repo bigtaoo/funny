@@ -283,31 +283,6 @@ export class WorldMapNet {
     }
   }
 
-  /**
-   * Scout march: send 1 scout (minimum troops, does not lock the main army) to the target tile,
-   * revealing a wider vision radius along the route and at the destination (VISION_SCOUT_RADIUS),
-   * then auto-return. No attack, no capture — dispatched directly without the troop-count dialog
-   * (scouting is meant to be lightweight).
-   */
-
-  async doScout(tx: number, ty: number): Promise<void> {
-    this.ctx.panels.closeModal();
-    const me = this.ctx.me;
-    if (!me?.mainBaseTile) { this.ctx.panels.showToast(t('world.needBase'), C.red); return; }
-    if ((me.troops ?? 0) < 1) { this.ctx.panels.showToast(t('world.err.noTroops'), C.red); return; }
-    const [fx, fy] = this.ctx.parseTileId(me.mainBaseTile);
-    try {
-      // P1-3: see doMarchTeam's comment above — adopt march + me from the response directly.
-      const { me, ...march } = await this.ctx.cb.worldApi.startMarch(this.ctx.cb.worldId, fx, fy, tx, ty, 'scout', 1);
-      this.ctx.marches = [...this.ctx.marches, { ...march, mine: true }];
-      if (me) this.ctx.me = me; // defensive: never null out the cached state if a response omits it
-      this.ctx.panels.showToast(t('world.scoutSent'));
-      this.ctx.view.renderMap(); this.ctx.panels.renderHud();
-    } catch (e) {
-      this.ctx.panels.showToast(this.errorMsg(e), C.red);
-    }
-  }
-
   /** Join the world: the system automatically places the capital (§3.4, preferring proximity to the family); the position is determined by the server. After placement, pan the camera to the new capital. */
 
   async doJoin(): Promise<void> {

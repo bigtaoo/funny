@@ -20,7 +20,7 @@ import { FS } from '../../render/fontScale';
 import { buildIcon } from '../../render/icons';
 import { buildDecorCLayer } from '../../render/decorCLayer';
 import { drawSceneHeader, HEADER_ACCENT } from '../../ui/widgets/SceneHeader';
-import { sidebarNavW } from '../../ui/widgets/HubTabs';
+import { sidebarNavW, bottomNavH } from '../../ui/widgets/HubTabs';
 import { FAMILY_CAP } from '@nw/shared';
 import type { WorldApiClient, FamilyDetailView, FamilyMemberView, FamilyMessageView, FamilyJoinRequestView } from '../../net/WorldApiClient';
 import { WorldApiError } from '../../net/WorldApiClient';
@@ -170,9 +170,18 @@ export class FamilySceneBase {
     this.unsubs.push(input.onWheel((x, y, deltaY) => this.handleWheel(x, y, deltaY)));
   }
 
-  /** Width of the social hub rail left of the notebook binding line (matches every other left-edge tab rail). */
+  /** Width of the social hub rail left of the notebook binding line (matches every other left-edge tab
+   *  rail); 0 in portrait, where the rail is drawn as a bottom nav bar instead (§18) and reserves no
+   *  horizontal space. */
   protected get railW(): number {
-    return sidebarNavW(this.w, this.h, this.landscape);
+    return this.landscape ? sidebarNavW(this.w, this.h, true) : 0;
+  }
+
+  /** Bottom edge for portrait's tabbed body content — stops `bottomNavH` short of the screen so the
+   *  bottom nav bar (always shown; drawSocialTabRail has no orientation gate) never overlaps the
+   *  roster/channel viewport. Landscape's split view has no such bar to avoid. */
+  protected get bodyBottom(): number {
+    return this.landscape ? this.h : this.h - bottomNavH(this.h);
   }
 
   /** Font size as a fraction of design height. The family scene originally hardcoded 10–15px, which
