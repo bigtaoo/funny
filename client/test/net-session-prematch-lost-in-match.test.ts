@@ -63,3 +63,67 @@ describe('NetSession prematch_lost while already in a match (matchsvc M5)', () =
     expect(createRankedSpy).not.toHaveBeenCalled();
   });
 });
+
+// Boundary coverage added 2026-07-30 (audit-followup-fixes-0730 follow-up): the M5 fix only special-cases
+// context==='queue' && this.game — every other branch of routeControl's preMatchLost handling must behave
+// exactly as before.
+describe('NetSession prematch_lost — other branches unaffected by the this.game guard (matchsvc M5)', () => {
+  it('a queue-context prematch_lost arriving BEFORE match_found still re-triggers ranked matchmaking (self-heal preserved)', async () => {
+    const { platform, sockets } = fakePlatform();
+    const session = new NetSession(platform, 'ws://x/gw', fakeApi, async () => ({ kind: 'device', deviceId: 'dev-1' }));
+
+    session.connect();
+    await tick();
+    sockets[0]!.open();
+
+    session.createRanked(['card1']); // remembers lastRankedDeck, enters the ranked queue — no match_found yet
+    const createRankedSpy = vi.spyOn(session, 'createRanked');
+    sendGateway(sockets, { preMatchLost: { context: 'queue' } });
+
+    // this.game is still null (no match_found arrived) — the pre-existing self-heal must still fire.
+    expect(createRankedSpy).toHaveBeenCalledWith(['card1']);
+  });
+
+  it('a queue-context prematch_lost with no remembered deck falls back to onRoomError (defensive fallback preserved)', async () => {
+    const { platform, sockets } = fakePlatform();
+    const session = new NetSession(platform, 'ws://x/gw', fakeApi, async () => ({ kind: 'device', deviceId: 'dev-1' }));
+    const onRoomError = vi.fn();
+    session.handlers.onRoomError = onRoomError;
+
+    session.connect();
+    await tick();
+    sockets[0]!.open();
+    // No createRanked() this session — lastRankedDeck is still null.
+    sendGateway(sockets, { preMatchLost: { context: 'queue' } });
+
+    expect(onRoomError).toHaveBeenCalledWith(expect.objectContaining({ code: 'PREMATCH_LOST' }));
+  });
+
+  it('a room-context prematch_lost still bounces back to the room picker via onRoomError', async () => {
+    const { platform, sockets } = fakePlatform();
+    const session = new NetSession(platform, 'ws://x/gw', fakeApi, async () => ({ kind: 'device', deviceId: 'dev-1' }));
+    const onRoomError = vi.fn();
+    session.handlers.onRoomError = onRoomError;
+
+    session.connect();
+    await tick();
+    sockets[0]!.open();
+    sendGateway(sockets, { preMatchLost: { context: 'room' } });
+
+    expect(onRoomError).toHaveBeenCalledWith(expect.objectContaining({ code: 'PREMATCH_LOST' }));
+  });
+
+  it('a duel-context prematch_lost still clears the pending invite banner via onDuelCancelled', async () => {
+    const { platform, sockets } = fakePlatform();
+    const session = new NetSession(platform, 'ws://x/gw', fakeApi, async () => ({ kind: 'device', deviceId: 'dev-1' }));
+    const onDuelCancelled = vi.fn();
+    session.handlers.onDuelCancelled = onDuelCancelled;
+
+    session.connect();
+    await tick();
+    sockets[0]!.open();
+    sendGateway(sockets, { preMatchLost: { context: 'duel' } });
+
+    expect(onDuelCancelled).toHaveBeenCalledWith({ inviteId: '', reason: 'lost' });
+  });
+});
