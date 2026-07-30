@@ -238,7 +238,7 @@ describe('WorldMapNet.refreshMe() — a team fully re-armed elsewhere becomes us
     // via distributeTroops) — a fresh getMe() now reports the real count. Nothing else touches ctx.me here.
     getMe.mockResolvedValueOnce({
       joined: true,
-      mainBaseTile: ctx.me.mainBaseTile,
+      mainBaseTile: ctx.me!.mainBaseTile,
       cardState: { c1: { currentTroops: 1300 } },
     } as PlayerWorldView);
     await net.refreshMe();
@@ -258,7 +258,7 @@ describe('WorldMapNet.refreshMe() — a team fully re-armed elsewhere becomes us
     });
     const before = ctx.me;
     ctx.destroyed = true;
-    getMe.mockResolvedValueOnce({ joined: true, mainBaseTile: ctx.me.mainBaseTile, cardState: { c1: { currentTroops: 1300 } } } as PlayerWorldView);
+    getMe.mockResolvedValueOnce({ joined: true, mainBaseTile: ctx.me!.mainBaseTile, cardState: { c1: { currentTroops: 1300 } } } as PlayerWorldView);
     await net.refreshMe();
     expect(ctx.me).toBe(before); // untouched — refreshMe bailed out on ctx.destroyed
   });
