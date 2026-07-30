@@ -32,7 +32,7 @@ import { ATTACK_LANES, UNIT_BLUEPRINTS } from '../src/game/config';
 import { PROGRESSABLE_UNITS } from '../src/game/balance/progression';
 import { fromFp } from '../src/game/math/fixed';
 import type { LevelDefinition } from '../src/game/campaign/LevelDefinition';
-import { computeStars, buildStarContext } from '../src/game/meta/campaignRewards';
+import { computeStars, computeStarScore, buildStarContext } from '../src/game/meta/campaignRewards';
 import { card } from './cardHelpers';
 import type { EngineCardInstance, EngineEquipInv, EngineSlotMap } from '../src/game/balance/equipment';
 
@@ -466,6 +466,8 @@ export interface SimResult {
   enemyLeaks: number;
   /** Enemy units the player destroyed (timed_defense kill-ratio diagnostic). */
   unitsKilled: number;
+  /** Raw composite star score (0-100, `computeStarScore`×100, pre-threshold); null if not cleared. Star-threshold tuning diagnostic. */
+  scoreRaw: number | null;
 }
 
 export interface SimOptions {
@@ -536,15 +538,17 @@ export function simulateLevel(levelOrId: string | LevelDefinition, opts: SimOpti
   // Composite star scoring (STAR_SCORING.md): build the same ctx the judge recomputes from.
   const endStats = engine.state.snapshotStats();
   const summary = engine.state.snapshotSummary();
-  const stars = win
-    ? computeStars(level.rewards?.starThresholds, buildStarContext(level, {
+  const starCtx = win
+    ? buildStarContext(level, {
         damageTakenByBase: endStats[0].damageTakenByBase,
         elapsedTicks: summary.elapsedTicks,
         enemyLeaks: summary.enemyLeaks,
         escortMinHpPct: summary.escortMinHpPct,
         unitsKilled: endStats[0].unitsKilled,
-      }))
-    : 0;
+      })
+    : null;
+  const stars = starCtx ? computeStars(level.rewards?.starThresholds, starCtx) : 0;
+  const scoreRaw = starCtx ? Math.round(computeStarScore(starCtx) * 100) : null;
 
   return {
     levelId,
@@ -562,6 +566,7 @@ export function simulateLevel(levelOrId: string | LevelDefinition, opts: SimOpti
     escortMinHp,
     enemyLeaks: engine.state.enemyLeaks,
     unitsKilled: endStats[0].unitsKilled,
+    scoreRaw,
   };
 }
 

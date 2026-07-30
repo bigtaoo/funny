@@ -204,7 +204,7 @@
   "rewards": {
     "starThresholds": [
       1,
-      50,
+      55,
       80
     ],
     "materials": {
