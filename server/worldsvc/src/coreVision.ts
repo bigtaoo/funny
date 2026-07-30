@@ -7,10 +7,11 @@ import {
   marchInterpPos,
   baseFootprintCells,
   VISION_MAX_RADIUS,
+  VISION_MARCH_RADIUS,
   type VisionSource,
 } from '@nw/shared';
 import { WorldCoreSpawn } from './coreSpawn';
-import { marchVisionRadius, tileVisionRadius } from './coreHelpers';
+import { tileVisionRadius } from './coreHelpers';
 import { computeTerritoryCount } from './prosperity';
 import type { TileDoc } from './db';
 
@@ -110,7 +111,7 @@ export class WorldCoreVision extends WorldCoreSpawn {
       sources.push({ x: t.x, y: t.y, radius: tileVisionRadius(t) });
     }
 
-    // In-transit marches (own + family): interpolate current position → small-radius vision (the value of scout marches).
+    // In-transit marches (own + family): interpolate current position → small-radius vision.
     const marches = await cols.marches.find({ worldId, ownerId: { $in: ids }, status: 'marching' }).toArray();
     const t = now();
     for (const m of marches) {
@@ -119,7 +120,7 @@ export class WorldCoreVision extends WorldCoreSpawn {
         this.coordX(m.toTile), this.coordY(m.toTile),
         m.departAt, m.arriveAt, t,
       );
-      sources.push({ x: pos.x, y: pos.y, radius: marchVisionRadius(m.kind) });
+      sources.push({ x: pos.x, y: pos.y, radius: VISION_MARCH_RADIUS });
     }
     return sources;
   }

@@ -741,6 +741,17 @@ if (path.startsWith('/admin/world/')) {
 - **验收**：server `tsc -b` + worldsvc 全量 e2e（33 files / 282 tests）全绿；client `tsc --noEmit` + `build:web` + 全量 UI 测试（79 files / 721 tests）全绿。
 - **遗留**：真正的「行军队伍被误派侦察」根因仍未查明（怀疑是旧版本客户端，或 `showTeamPicker` 的 `busyTeamIds` 读到过期数据导致误判空闲）——待用户提供具体复现步骤后再排查；此前 §18.8 记录的 scout 功能设计/实现细节仍作为恢复参考保留不动。
 
+#### 18.8.1a scout 彻底删除（2026-07-30）
+
+audit-followup-fixes-0730 复查时重新核实了 §18.8.1 的"根因未定位"结论：`doScout()` 现在零调用方（四处菜单按钮早已移除，且没有其它入口能到达它），服务端也没有任何除 `startMarch` 显式参数之外的路径能把某个 march 的 `kind` 设成 `'scout'`——结构上"行军队伍被误拉去侦察"这个原始 bug 机制已经不可能复现了，但当时真正的根因仍然没有查清楚。问用户是否要重新开放，用户回复"目前不需要侦察了，当时留着只是觉得要删的代码太多"——于是这次不是恢复，而是彻底删除整个功能，不再保留"方便快速恢复"的底层结构：
+
+- **shared**：`MarchKind` 去掉 `'scout'`；`VISION_SCOUT_RADIUS` 常量整个删除（连带从 `VISION_MAX_RADIUS` 的 `Math.max(...)` 里去掉）。
+- **worldsvc**：`MARCHABLE_KINDS` 去掉 `'scout'`；`combatMarch.ts` 删掉 §18.8.1 加的 `kind==='scout'` 拒绝分支（`MARCHABLE_KINDS.has(kind)` 的通用校验已经足够）+ 到达点分发分支 + `autoReturnScout()` 整个方法；`coreHelpers.ts` 的 `marchVisionRadius()` 包装函数删除（唯一调用方 `coreVision.ts` 改为直接引用 `VISION_MARCH_RADIUS`）。
+- **契约**：`openapi-world.yml` 两处 `kind` enum 去掉 `scout`；`transport.proto` 的 `MarchUpdate.kind` 注释同步；`gen:api:contracts`/`gen:api:world`/`gen:api:server`/`proto:gen`（client + botsvc/gameserver/gateway/metaserver 四份各自的生成产物）全部重跑。
+- **client**：`DeployKind` 去掉 `'scout'`；`WorldMapNet.ts` 的 `doScout()` 整个方法删除；`WorldMapPanels.ts`/`WorldMapRenderer/fog.ts` 里的 scout 图标/配色分支删除；i18n 三语言（zh/en/de）去掉 `world.actScout`/`world.scoutSent`；连带清理了专为 scout 画的 `scope`（望远镜）图标（`IconKind`/`icons.ts`/`icons/slg.ts` 的 `drawScope`），确认零消费者后整个删除。
+- **测试**：`server/worldsvc/test/scout.e2e.test.ts`（只剩"验证被拒绝"的 1 例）+ `client/test/ui/worldMapScoutDisabled.ui.ts`（验证菜单不再出现侦察按钮的 5 例）整个删除——两者都是在守护一个现在已经从类型层面就不可能发生的状态，`tsc` 本身就是更强的保证。顺带发现并修复了 `client/test/ui/modalScaleAndBackButton.ui.ts` 里 3 个断言仍用今天已修复的landscape 弹窗缩放旧公式（`(h*0.8)/mh`）算期望值的用例——这是 2026-07-30 landscape modal overscale 修复（见本文档另一节/`modal-scale-landscape-overscale-2026-07-22` memory）暴露出的遗留断言，一并更新为新公式。
+- **验收**：server 12 个 workspace `tsc -b` 全绿；worldsvc 全量 e2e 46/47 文件绿（唯一失败 `field-encounter.e2e.test.ts` 单独重跑绿，判定为并发跑测的偶发波动，与本次改动无关，文件本身零 scout 引用）；client `tsc --noEmit` 全绿 + 全量 vitest（124 files/903 tests）+ 全量 UI vitest（96 files/824 tests）全绿。
+
 ### 18.9 瞭望塔（Watchtower）实现记录（2026-06-21，§18.1 V2 最后余项）
 
 > 把 §18.1 V2「瞭望塔建筑——固定半径持久视野源」从「列 v2」兑现：在**己方领地**花资源建塔，该格升级为**最大半径**（`VISION_WATCHTOWER_RADIUS=8` > 主城 5）持久视野源。区别于 scout（一次性照路后回师）：瞭望塔是**主动布点扩视野**的永久手段——「想看哪、就在哪建塔守着」。落库随 `TileDoc`（丢地即随格子消失，无单独退还），符合 V3「vision 零落库，但塔标记本身落库、视野仍读时实时算」。
@@ -1444,8 +1455,8 @@ L1 从需 660 兵降到 300（最小占地 500 现稳赢，直击病灶）；L2/
 
 **明确推迟（4 项，需要独立会话，本轮不动）**：
 - **`world`/`auction`/`social` 三份 openapi 契约缺 4xx/5xx 错误响应声明**：核实属实（三份契约 100% 路径都只声明了 `'200'`，且均无 `ErrorResp` 组件），添加本身对代码生成零风险（生成脚本对无 `content` 的 `$ref` 响应本就静默跳过），但体量不小（约 90 个 path，需逐个补两三行），留作下一轮契约治理任务单独做，不跟这次的 P1 收尾混在一起。
-- **`/pve/upgrade` 死代码清理**：服务端路由/测试仍完整存在，但客户端唯一调用点 `SaveManager.upgrade()` 已标 `@deprecated` 且零调用方——删除牵涉契约片段、生成产物、`MetaHandlers` 类型、client `ApiClient`/`SaveManager`、既有 e2e 用例改写，跨 client+server+生成产物+测试多处，非"删几行"的量级，留作独立任务。
-- **`SERVER_API.md` §3/§8.4 与实现严重漂移**：文档还写着控制面"JSON 或 protobuf 均可"，实际早已切到纯二进制 protobuf `Envelope`；且 §3/§8.4 的推送种类表遗漏了 `friend_*`/`chat_message`/`mail_new`/`march_update`/`family_msg`/`nation_msg` 等十几个已上线的推送类型——不是小修，需要逐条核对 `Gateway.ts` 当前行为重写两张协议表，留作独立文档任务。
+- ~~`/pve/upgrade` 死代码清理~~ **已于 2026-07-30 完成**：契约片段（`openapi/paths/pve.yml`）删除该 path → 重跑 `gen:api:contracts`/`gen:api:server` 更新两处生成产物 → 服务端 `pve.ts` 删 handler + `PveHandlers`/`MetaHandlers` 类型收窄 → 顺手清掉 `@nw/shared/pveRewards.ts` 里同样孤儿的 `PVE_UPGRADE_COSTS`/`findPveUpgrade`/`pveUpgradeCost`（唯一调用方就是这个 handler）→ client `ApiClient`/`SaveManager` 删对应方法 → 两侧既有 e2e/单测改写。`SaveData.pveUpgrades` 字段本身保留（L0 反作弊比对只读用途），只是再也没有写入路径。`tsc -b`/`tsc --noEmit` 两端全绿，metaserver 相关 e2e（pve/achievements/internal-economy/pve-verify 共 60 例）+ client `save-manager.test.ts`（43 例）+ shared `pveRewards.test.ts`（24 例）全部转绿。
+- ~~`SERVER_API.md` §3/§8.4 与实现严重漂移~~ **已于 2026-07-30 完成**：逐条核对 `transport.proto`（而非 `Gateway.ts`，proto 本身就是文档头部声明的单一真源）重写 §3.1（补 4 个遗漏的 `ClientMsg` case）、§3.2（9→24 个 `ServerMsg` case 全量）、§8.4（protobuf-only 订正 + 用真实消息集替换掉从未实现过的 `mm_enqueue`/`mm_cancel`/`mm_status`/`presence`）。纯文档改动，无代码变更。
 - **`GET /save` 响应瘦身**：`EQUIPMENT_DESIGN.md`§已有明确记录——"阶段二"瘦身已在 2026-07-26 为五个装备操作端点做过，`GET /save` 当时就被**有意排除**在外（该响应本来就要带材料/金币/进度等大量必需字段，瘦身收益不如那五个纯装备接口），本轮若要重新动它等于推翻两天前才做的、有理有据的决定，需要重新论证再改，不在本轮范围内。
 
 **验证**：`server/metaserver`/`server/gateway`/`server/gameserver`/`server/botsvc`/`client` 五包 `tsc --noEmit` 全绿；对应 vitest 全量分别为 metaserver 56/697、gateway 3/27、gameserver 3/46、botsvc 9/39、client 单元 112/794，均绿（worldsvc 未受本轮 P2 改动影响，沿用 §42 的 45/345）。`grep WorldEvent` 确认五处生成产物均已清除。

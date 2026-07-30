@@ -6,14 +6,11 @@ import {
   buildingMaxHp,
   regenDurability,
   RESOURCE_TYPES,
-  VISION_SCOUT_RADIUS,
-  VISION_MARCH_RADIUS,
   VISION_WATCHTOWER_RADIUS,
   VISION_BASE_RADIUS,
   VISION_TERRITORY_RADIUS,
   type TileType,
   type ResourceType,
-  type MarchKind,
   type VisionSource,
 } from '@nw/shared';
 import type { TileDoc } from './db';
@@ -71,12 +68,7 @@ export async function deleteInBatches(
 }
 
 /** Player-facing march kinds that are permitted (return is an internal recall leg only; external initiation is prohibited). */
-export const MARCHABLE_KINDS: ReadonlySet<string> = new Set(['occupy', 'reinforce', 'attack', 'sweep', 'scout', 'move']);
-
-/** Vision radius of an in-transit march: scout marches see farther (VISION_SCOUT_RADIUS); all others use normal march radius (VISION_MARCH_RADIUS). */
-export function marchVisionRadius(kind: MarchKind): number {
-  return kind === 'scout' ? VISION_SCOUT_RADIUS : VISION_MARCH_RADIUS;
-}
+export const MARCHABLE_KINDS: ReadonlySet<string> = new Set(['occupy', 'reinforce', 'attack', 'sweep', 'move']);
 
 /** Vision radius of a static vision source (territory/capital/watchtower): watchtower > capital > normal territory (§18 G5 V2). */
 export function tileVisionRadius(t: { type: TileType; watchtower?: boolean }): number {

@@ -359,8 +359,8 @@ export class SaveManager {
   }
 
   // ── PvE server authority (PVE_INTEGRITY_PLAN §8) ────────────────────────────
-  // progress/materials/pveUpgrades are server-authoritative; clears/upgrades go through /pve/* endpoints, adopted after push-back.
-  // Offline (no token): clears are queued for later settlement (local authoritative values unchanged); upgrades disabled.
+  // progress/materials are server-authoritative; clears go through /pve/clear, adopted after push-back.
+  // Offline (no token): clears are queued for later settlement (local authoritative values unchanged).
 
   /** Whether the server-authoritative section is reachable and writable (api + token present). Scenes use this for online gating. */
   online(): boolean {
@@ -495,20 +495,6 @@ export class SaveManager {
       this.adoptServer(res.save);
     } catch {
       /* Network/re-calculation error → materials not credited this round; server-side record stays pending (does not block local flow) */
-    }
-  }
-
-  /**
-   * @deprecated S3-2 per-stat upgrade. Since CC-1 unit progression is per-card via the Hero Roster (cardInv), not this path.
-   */
-  async upgrade(upgradeId: string): Promise<boolean> {
-    if (!this.online()) return false;
-    try {
-      const res = await this.api!.pveUpgrade(upgradeId);
-      this.adoptServer(res.save);
-      return true;
-    } catch {
-      return false;
     }
   }
 

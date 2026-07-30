@@ -23,7 +23,7 @@ import {
   drawScrap, drawLead, drawBinding,
   drawAtk, drawHp, drawArmor, drawSpd, drawAtkspd, drawBrush,
 } from './icons/equipment';
-import { drawScope, drawFlag, drawDesk, drawCabinet, drawHammer } from './icons/slg';
+import { drawFlag, drawDesk, drawCabinet, drawHammer } from './icons/slg';
 import {
   drawSwords, drawReplay, drawShare, drawHome,
   drawTag, drawCapsule, drawCards, drawStar, drawLock, drawMedal, drawZoom, drawGift,
@@ -42,9 +42,9 @@ export type IconKind =
   | 'brush'
   // Results page actions: rematch (crossed swords) / replay (loop arrow) / share (out-of-box arrow) / back to lobby (house).
   | 'swords' | 'replay' | 'share' | 'home'
-  // SLG march-kind glyphs (WorldMapScene HUD): scout (telescope) / occupy (planted flag).
+  // SLG march-kind glyph (WorldMapScene HUD): occupy (planted flag).
   // attack→swords, reinforce→armor(shield), return→replay are reused from above.
-  | 'scope' | 'flag'
+  | 'flag'
   // SLG city buildings (CityScene grid): HQ desk / archive cabinet + a build-queue hammer badge.
   // Resource-producer buildings reuse the res_atlas motifs; drillYard→swords, wall→castle, academy→book.
   | 'desk' | 'cabinet' | 'hammer'
@@ -89,7 +89,6 @@ export const DRAW: Record<IconKind, (g: PIXI.Graphics, s: number, color: number)
   replay:  drawReplay,
   share:   drawShare,
   home:    drawHome,
-  scope:   drawScope,
   flag:    drawFlag,
   desk:    drawDesk,
   cabinet: drawCabinet,

@@ -69,9 +69,13 @@ export function ReforgeMixin<TBase extends EquipmentSceneBaseCtor>(Base: TBase):
       const mx = 0;
       const my = 0;
 
-      // Scale the whole panel to fill 80% of the constrained screen axis — landscape fills height,
-      // portrait fills width — while keeping its natural aspect ratio (popup-scale fix, 2026-07-14).
-      const scale = this.landscape ? (h * 0.8) / mh : (w * 0.8) / mw;
+      // Scale the whole panel to ~80% of the *fitted* axis (min(w,h) — 1080 in both orientations by
+      // design-width convention), clamped to 92% of each real screen axis (CityScene.modalScaleFor
+      // fix, 2026-07-30): the old `this.landscape ? (h*0.8)/mh : (w*0.8)/mw` used the raw landscape
+      // height directly, which overscaled short popups whenever landscape h was much smaller than mh
+      // would suggest.
+      const modalRef = Math.min(w, h);
+      const scale = Math.min((modalRef * 0.8) / mw, (w * 0.92) / mw, (h * 0.92) / mh);
       const screenW = mw * scale;
       const screenH = mh * scale;
       const screenX = (w - screenW) / 2;

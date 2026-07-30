@@ -395,23 +395,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/pve/upgrade": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** PvE upgrade (server-authoritative: validates materials → deducts materials → pveUpgrades+1 → pushes save); online only */
-        post: operations["pveUpgrade"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/shop/items": {
         parameters: {
             query?: never;
@@ -2717,41 +2700,6 @@ export interface operations {
                                 current: number;
                                 regenAt: number;
                             };
-                        };
-                    };
-                };
-            };
-            400: components["responses"]["ErrorResp"];
-            401: components["responses"]["ErrorResp"];
-            402: components["responses"]["ErrorResp"];
-        };
-    };
-    pveUpgrade: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": {
-                    upgradeId: string;
-                };
-            };
-        };
-        responses: {
-            /** @description Success */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        /** @enum {boolean} */
-                        ok: true;
-                        data: {
-                            save: components["schemas"]["SaveData"];
                         };
                     };
                 };

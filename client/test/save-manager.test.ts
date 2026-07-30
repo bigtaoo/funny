@@ -502,16 +502,15 @@ describe('SaveManager.setFlag / equipTitle / equipAvatar / equipSkin (server-aut
   });
 });
 
-// ── PvE server authority: clear / upgrade / offline queue (§8) ──────────────────────────
-describe('SaveManager.recordClear / upgrade / pending (§8)', () => {
-  /** Records pveClear/pveUpgrade calls and optionally pushes back an authoritative save. */
+// ── PvE server authority: clear / offline queue (§8) ──────────────────────────
+describe('SaveManager.recordClear / pending (§8)', () => {
+  /** Records pveClear calls and optionally pushes back an authoritative save. */
   function pveApi(opts: {
     hasToken?: boolean;
     onClear?: (levelId: string, stars: number) => SaveData | Error;
-    onUpgrade?: (id: string) => SaveData | Error;
   }) {
-    const calls: { clears: Array<{ levelId: string; stars: number }>; upgrades: string[] } = {
-      clears: [], upgrades: [],
+    const calls: { clears: Array<{ levelId: string; stars: number }> } = {
+      clears: [],
     };
     const api = {
       hasToken: () => opts.hasToken ?? true,
@@ -521,12 +520,6 @@ describe('SaveManager.recordClear / upgrade / pending (§8)', () => {
         const r = opts.onClear?.(levelId, stars) ?? makeNewSave('a', 1);
         if (r instanceof Error) throw r;
         return { save: r, granted: {}, capped: false };
-      },
-      pveUpgrade: async (id: string) => {
-        calls.upgrades.push(id);
-        const r = opts.onUpgrade?.(id) ?? makeNewSave('a', 1);
-        if (r instanceof Error) throw r;
-        return { save: r };
       },
     } as unknown as ApiClient;
     return { api, calls };
@@ -585,33 +578,6 @@ describe('SaveManager.recordClear / upgrade / pending (§8)', () => {
     const mgr = new SaveManager({ store, api });
     await mgr.recordClear('ch1_lv1', 1);
     expect(mgr.getPendingClears().map((p) => p.levelId)).toEqual(['ch1_lv1']);
-  });
-
-  it('upgrade: online → POST /pve/upgrade and adopt; offline → returns false, no endpoint called', async () => {
-    const store = new LocalSaveStore(new MemStorage());
-    store.saveLocal(makeNewSave('a', 1));
-    const cloud = makeNewSave('a', 2);
-    cloud.pveUpgrades = { inf_hp: 1 };
-    const { api, calls } = pveApi({ onUpgrade: () => cloud });
-    const mgr = new SaveManager({ store, api });
-
-    expect(await mgr.upgrade('inf_hp')).toBe(true);
-    expect(calls.upgrades).toEqual(['inf_hp']);
-    expect(mgr.get().pveUpgrades).toEqual({ inf_hp: 1 });
-
-    const offline = pveApi({ hasToken: false });
-    const mgr2 = new SaveManager({ store: new LocalSaveStore(new MemStorage()), api: offline.api });
-    expect(await mgr2.upgrade('inf_hp')).toBe(false);
-    expect(offline.calls.upgrades).toEqual([]);
-  });
-
-  it('upgrade fails (insufficient materials → ApiError) → false, local save unchanged', async () => {
-    const store = new LocalSaveStore(new MemStorage());
-    store.saveLocal(makeNewSave('a', 1));
-    const { api } = pveApi({ onUpgrade: () => new ApiError('INSUFFICIENT_FUNDS', 'no mats') });
-    const mgr = new SaveManager({ store, api });
-    expect(await mgr.upgrade('inf_hp')).toBe(false);
-    expect(mgr.get().pveUpgrades).toEqual({});
   });
 
   it('flush queue after bootstrap/refresh: settle each entry in order, clear queue on success', async () => {

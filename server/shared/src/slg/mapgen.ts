@@ -269,7 +269,9 @@ export const PROVINCE_CAPITAL_LEVEL = SLG_MAP_MAX_LEVEL;
 // (those are already guaranteed clear by the sprite's plot-diamond mask, see WorldMapRenderer/city.ts).
 // Rather than solve "is this tile still capturable" with more rendering tricks, cap those two
 // occluded bands' resource level low enough that players don't care they can't see them clearly.
-// User-picked placeholder numbers, expected to be re-tuned by hand later — do not treat 5/5 as final.
+// Finalized 2026-07-30 (user call): 5/5 stays as the generation-time default. Any specific tile that
+// still needs a different level after generation gets hand-painted directly in tools/map-editor —
+// these two constants aren't meant to be an editor-exposed dial, just the auto-gen starting point.
 /** Max resource level allowed in a city's occluded back-bands (see {@link _inCityBackBands}). */
 const RESOURCE_LEVEL_CAP_NEAR_CITY = 5;
 /** How many tiles deep the occluded back-bands extend past the city's own footprint edge. */

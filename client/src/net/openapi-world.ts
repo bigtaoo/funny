@@ -941,7 +941,7 @@ export interface components {
         MarchView: {
             marchId: string;
             /** @enum {string} */
-            kind: "attack" | "reinforce" | "occupy" | "sweep" | "scout" | "return" | "move";
+            kind: "attack" | "reinforce" | "occupy" | "sweep" | "return" | "move";
             fromTile: string;
             toTile: string;
             troops: number;
@@ -1658,7 +1658,7 @@ export interface operations {
                     toX: number;
                     toY: number;
                     /** @enum {string} */
-                    kind: "occupy" | "reinforce" | "attack" | "sweep" | "scout" | "move";
+                    kind: "occupy" | "reinforce" | "attack" | "sweep" | "move";
                     troops: number;
                     /** @description Team (G3-2c): attack-formation template to use for kind=attack/occupy/move; committed troops = sum of troops carried across the team's cards (overrides the troops field). Required for kind=move. */
                     teamId?: string;

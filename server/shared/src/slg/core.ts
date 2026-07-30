@@ -57,7 +57,7 @@ export type ObstacleKind = 'river' | 'mountain';
 // on arrival the team STANDS on the tile (stationed, idle) instead of vanishing — the "idle out in the field"
 // half of the team lifecycle (the other being "idle at home"). Distinct from reinforce (which dumps troops
 // into a tile's faceless garrison stat and frees the team) — a move keeps the whole team parked on the tile.
-export type MarchKind = 'attack' | 'reinforce' | 'occupy' | 'sweep' | 'scout' | 'return' | 'move';
+export type MarchKind = 'attack' | 'reinforce' | 'occupy' | 'sweep' | 'return' | 'move';
 export type SiegeOutcome = 'attacker_win' | 'defender_win' | 'draw';
 export type FamilyRole = 'leader' | 'elder' | 'member';
 export type WorldStatus = 'open' | 'active' | 'settling' | 'resetting' | 'closed';

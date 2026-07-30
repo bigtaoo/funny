@@ -142,10 +142,6 @@ export class MarchService {
     if (!MARCHABLE_KINDS.has(kind)) {
       throw new SlgError('NOT_IMPLEMENTED', `March kind ${kind} is not implemented (siege S8-3)`);
     }
-    // Scout temporarily disabled (2026-07-21): entry point hidden client-side; reject here too in case of a stale client or direct API call.
-    if (kind === 'scout') {
-      throw new SlgError('NOT_IMPLEMENTED', 'Scout is temporarily disabled');
-    }
     const pw = await cols.playerWorld.findOne({ _id: playerWorldId(worldId, accountId) });
     if (!pw) throw new SlgError('TILE_NOT_OWNED', 'Not yet in the world');
     if (!this.core.inBounds(fromX, fromY) || !this.core.inBounds(toX, toY)) {
@@ -749,11 +745,6 @@ export class MarchService {
       return;
     }
 
-    if (m.kind === 'scout') {
-      await this.autoReturnScout(m, t);
-      return;
-    }
-
     if (m.kind === 'move') {
       await this.applyMove(m, pw, t);
       return;
@@ -779,31 +770,6 @@ export class MarchService {
     void this.core.pushMarch(m.ownerId, this.core.marchView({ ...m, status: 'arrived' }));
     const after = await cols.tiles.findOne({ _id: m.toTile });
     if (after) void this.core.pushTile(m.ownerId, after);
-  }
-
-  /**
-   * Scout march arrives at the target: no fighting or occupation; automatically flip to a return leg (same troops take the same route back to the origin tile, providing vision along the way);
-   * on return arrival, troops are refunded to the troop pool. Return travel time = outbound travel time (symmetric approximation; avoids recomputing the path).
-   */
-  private async autoReturnScout(m: MarchDoc, t: number): Promise<void> {
-    const { cols } = this.core.deps;
-    const back: MarchDoc = {
-      _id: marchId(m.worldId, m.ownerId, t, ++this.core.marchSeq),
-      worldId: m.worldId,
-      ownerId: m.ownerId,
-      fromTile: m.toTile,
-      toTile: m.fromTile,
-      kind: 'return',
-      troops: m.troops,
-      departAt: t,
-      arriveAt: t + Math.max(0, m.arriveAt - m.departAt),
-      status: 'marching',
-      // Same two endpoints as the outbound leg (just swapped) → same box (see MarchDoc doc comment).
-      ...legBox(this.core.coordX(m.toTile), this.core.coordY(m.toTile), this.core.coordX(m.fromTile), this.core.coordY(m.fromTile)),
-      rev: 0,
-    };
-    await cols.marches.insertOne(back);
-    void this.core.pushMarch(m.ownerId, this.core.marchView(back));
   }
 
   /**
