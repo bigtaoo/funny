@@ -362,12 +362,32 @@ export function startHttpApi(
           return send(res, 200, ok({}));
         }
 
-        // Open UGC reports (ops/admin review queue, design-doc-audit-2026-07 COMPLIANCE_GLOBAL.md §7).
-        // No in-app moderation UI yet — this is the minimal viable visibility bar (a DB collection with
-        // zero read access would leave reports permanently invisible to anyone).
+        // UGC reports (ops/admin review queue, design-doc-audit-2026-07 COMPLIANCE_GLOBAL.md §7;
+        // status filter + resolve added CONTENT_MODERATION_DESIGN.md CM9/P4).
         if (method === 'GET' && path === '/internal/reports') {
           const limit = numQ(q.get('limit'), 200);
-          return send(res, 200, ok({ reports: await friendSvc.listOpenReports(limit) }));
+          const statusQ = q.get('status');
+          const status = statusQ === 'dismissed' || statusQ === 'upheld' || statusQ === 'open' ? statusQ : 'open';
+          return send(res, 200, ok({ reports: await friendSvc.listReports(status, limit) }));
+        }
+
+        // Resolve a report (CM9): admin backend is the sole caller, and separately calls metaserver's
+        // penalty endpoint when resolution='upheld' (CM7's single enforcement path — this endpoint never
+        // touches reputationScore itself).
+        {
+          const m = /^\/internal\/reports\/([^/]+)\/resolve$/.exec(path);
+          if (method === 'POST' && m) {
+            const id = decodeURIComponent(m[1]!);
+            const body = await readJson(req);
+            const resolution = body.resolution;
+            if (resolution !== 'dismissed' && resolution !== 'upheld') {
+              return sendErr(res, ErrorCode.BAD_REQUEST, 'resolution must be dismissed or upheld');
+            }
+            const resolvedBy = typeof body.resolvedBy === 'string' ? body.resolvedBy : 'unknown';
+            const okResolved = await friendSvc.resolveReport(id, resolution, resolvedBy);
+            if (!okResolved) return sendErr(res, ErrorCode.NOT_FOUND, 'report not found or already resolved');
+            return send(res, 200, ok({}));
+          }
         }
 
         return sendErr(res, ErrorCode.NOT_FOUND, 'internal endpoint not found');

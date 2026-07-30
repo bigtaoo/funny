@@ -18,3 +18,5 @@ export { pageSLGSeason } from './pages/slgSeason';
 export { pageAuctionAudit } from './pages/auctionAudit';
 export { pageGachaPools } from './pages/gachaPools';
 export { pageSlgShop } from './pages/slgShop';
+export { pageReports } from './pages/reports';
+export { pageAppeals } from './pages/appeals';

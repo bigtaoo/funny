@@ -13,7 +13,7 @@ import {
   type AuditAction,
 } from '@nw/shared';
 import type { AdminCollections, AuditDoc } from '../db';
-import type { StatsClient, PlayerClient, AntiCheatClient, MismatchClient, PvpCardStatsClient, SuspiciousPveClient, MailDispatcher, AnalyticsClient, WorldClient, AuctionClient, LadderClient, EventsClient, GachaPoolsClient, PromoClient, PaddleEventsClient } from '../clients';
+import type { StatsClient, PlayerClient, AntiCheatClient, MismatchClient, PvpCardStatsClient, SuspiciousPveClient, MailDispatcher, AnalyticsClient, WorldClient, AuctionClient, LadderClient, EventsClient, GachaPoolsClient, PromoClient, PaddleEventsClient, ReportsClient, AppealsClient, EnforcementClient } from '../clients';
 import { AdminError } from './errors';
 
 const log = createLogger('admin:service');
@@ -43,6 +43,9 @@ export interface AdminServiceDeps {
   gachaPools: GachaPoolsClient;
   promo: PromoClient;
   paddleEvents: PaddleEventsClient;
+  reports: ReportsClient;
+  appeals: AppealsClient;
+  enforcement: EnforcementClient;
   now: () => number;
 }
 
@@ -84,6 +87,9 @@ export class AdminServiceBase {
   protected readonly gachaPools: GachaPoolsClient;
   protected readonly promo: PromoClient;
   protected readonly paddleEvents: PaddleEventsClient;
+  protected readonly reports: ReportsClient;
+  protected readonly appeals: AppealsClient;
+  protected readonly enforcement: EnforcementClient;
   protected readonly now: () => number;
   /** Login failure rate-limit table (keyed by attacker-controlled username, in-memory). */
   protected readonly loginAttempts = new Map<string, LoginAttempt>();
@@ -112,6 +118,9 @@ export class AdminServiceBase {
     this.gachaPools = deps.gachaPools;
     this.promo = deps.promo;
     this.paddleEvents = deps.paddleEvents;
+    this.reports = deps.reports;
+    this.appeals = deps.appeals;
+    this.enforcement = deps.enforcement;
     this.now = deps.now;
   }
 

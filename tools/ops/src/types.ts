@@ -27,6 +27,10 @@ export type AdminCapability =
   | 'events.manage'
   | 'gacha.pools.manage'
   | 'paddle.events.view'
+  | 'reports.view'
+  | 'reports.action'
+  | 'appeals.view'
+  | 'appeals.action'
   | 'admin.manage';
 
 export interface AdminAccountView {
@@ -153,6 +157,35 @@ export interface AntiCheatReviewView {
   resolvedBy?: string;
   resolvedAt?: number;
   resolution?: 'dismissed' | 'banned';
+}
+
+/** UGC report record (CONTENT_MODERATION_DESIGN.md CM9/CM11; mirror of socialsvc's ReportDoc). */
+export interface ReportView {
+  _id: string;
+  reporterId: string;
+  targetId: string;
+  reason: string;
+  ts: number;
+  status: 'open' | 'dismissed' | 'upheld';
+  contentRef?:
+    | { kind: 'message'; conversationId: string; messageId: string }
+    | { kind: 'name'; snapshot: string };
+  resolvedBy?: string;
+  resolvedAt?: number;
+}
+
+/** Player appeal record (CONTENT_MODERATION_DESIGN.md CM10/CM11; mirror of metaserver's AppealDoc). */
+export interface AppealView {
+  _id: string;
+  accountId: string;
+  publicId?: string;
+  reason: string;
+  enforcementSnapshot: { banned?: boolean; bannedUntil?: number; mutedUntil?: number; reputationScore?: number };
+  status: 'open' | 'approved' | 'denied';
+  createdAt: number;
+  resolvedBy?: string;
+  resolvedAt?: number;
+  resolutionNote?: string;
 }
 
 export interface PlayerProfile {

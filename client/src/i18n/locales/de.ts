@@ -1518,6 +1518,17 @@ export const de: Record<TranslationKey, string> = {
   'reconnect.decline': 'Nicht jetzt',
   'reconnect.gone': 'Dieses Match ist nicht mehr verfügbar. Zurück zur Lobby.',
 
+  // ── Content moderation appeal (CONTENT_MODERATION_DESIGN.md CM10) ──
+  'appeal.title.banned': 'Konto gesperrt',
+  'appeal.title.muted': 'Konto stummgeschaltet',
+  'appeal.body': 'Falls du das für einen Fehler hältst, erkläre es unten und reiche einen Einspruch ein — ein Mensch prüft ihn.',
+  'appeal.placeholder': 'Begründung eingeben…',
+  'appeal.submit': 'Einspruch einreichen',
+  'appeal.cancel': 'Abbrechen',
+  'appeal.submitted': 'Einspruch eingereicht — bitte auf Prüfung warten',
+  'appeal.err.empty': 'Bitte gib eine Begründung ein',
+  'appeal.err.failed': 'Übermittlung fehlgeschlagen, später erneut versuchen',
+
   // ── Gacha-Wahrscheinlichkeiten (Apple 3.1.1, L1-3) ──────────────────────────
   'gacha.oddsDetail.button': 'Chancen',
   'gacha.oddsDetail.title': 'Offenlegung der Droprate',

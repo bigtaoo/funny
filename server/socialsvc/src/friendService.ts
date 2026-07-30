@@ -314,9 +314,24 @@ export class FriendService {
     return true;
   }
 
-  /** Open reports, oldest first (ops/admin review queue — internal endpoint, no in-app moderation UI yet). */
-  async listOpenReports(limit = 200): Promise<ReportDoc[]> {
-    return this.cols.reports.find({ status: 'open' }).sort({ ts: 1 }).limit(limit).toArray();
+  /** Reports queue for ops/admin review (CONTENT_MODERATION_DESIGN.md CM11), oldest first. Defaults to 'open'. */
+  async listReports(status: ReportDoc['status'] = 'open', limit = 200): Promise<ReportDoc[]> {
+    return this.cols.reports.find({ status }).sort({ ts: 1 }).limit(limit).toArray();
+  }
+
+  /**
+   * Resolve a report (CM9): only flips this doc's own `status` — the reputation-score penalty on 'upheld'
+   * is a separate admin→metaserver call (CM7's single enforcement path), deliberately not performed here so
+   * socialsvc never has to know about `AccountDoc.flags`/reputation thresholds. Returns false if the report
+   * doesn't exist or is not currently 'open' (resolving twice is rejected, not silently idempotent, so admin
+   * can surface "already resolved by X" instead of double-counting a penalty call).
+   */
+  async resolveReport(id: string, resolution: 'dismissed' | 'upheld', resolvedBy: string): Promise<boolean> {
+    const res = await this.cols.reports.updateOne(
+      { _id: id, status: 'open' },
+      { $set: { status: resolution, resolvedBy, resolvedAt: this.now() } },
+    );
+    return res.matchedCount > 0;
   }
 
   // ── Private chat ──────────────────────────────────────────────────────────────────

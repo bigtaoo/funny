@@ -362,6 +362,26 @@ export interface AntiCheatReviewDoc {
   resolution?: 'dismissed' | 'banned';
 }
 
+/**
+ * Player appeal against a currently-active enforcement (mute/temp-ban/ban) — CONTENT_MODERATION_DESIGN.md
+ * CM10. Lives in metaserver (account-level enforcement state is metaserver's authority), proxied by admin
+ * via `GET /internal/appeals` / resolved via `POST /internal/appeals/:id/resolve` (same "business service
+ * owns the data, admin proxies" shape as AntiCheatReviewDoc above). Approving clears the account's active
+ * mute/temp-ban/ban fields but deliberately does NOT restore reputationScore (CM10 — a separate, explicit
+ * admin adjustment if warranted).
+ */
+export interface AppealDoc {
+  _id: string; // uuid
+  accountId: string;
+  reason: string; // player free-text; admin-review-only, not run through censorChat (same rationale as ReportDoc.reason)
+  enforcementSnapshot: { banned?: boolean; bannedUntil?: number; mutedUntil?: number; reputationScore?: number };
+  status: 'open' | 'approved' | 'denied';
+  createdAt: number;
+  resolvedBy?: string;
+  resolvedAt?: number;
+  resolutionNote?: string;
+}
+
 // Friend/private-chat/block collections (FriendEdgeDoc / FriendRequestDoc / BlockDoc / ConversationDoc / ChatMessageDoc)
 // have been migrated to socialsvc's nw_social database (P2, SOCIAL_SVC_DESIGN §6 P2); metaserver no longer owns these collections.
 
@@ -535,6 +555,8 @@ export interface Collections {
   antiCheatReviews: Collection<AntiCheatReviewDoc>;
   // PvE anti-cheat (S4-4)
   pveRejections: Collection<PveRejectDoc>;
+  // player appeals against an active enforcement (CONTENT_MODERATION_DESIGN.md CM10)
+  appeals: Collection<AppealDoc>;
   // replay shares (S1-RP)
   replayShares: Collection<ReplayShareDoc>;
   // state-stream replay public shares outside the game (REPLAY_SHARE_DESIGN)
@@ -608,6 +630,7 @@ export async function createMongo(
     pveVerifications: db.collection<PveVerificationDoc>('pveVerifications'),
     antiCheatReviews: db.collection<AntiCheatReviewDoc>('antiCheatReviews'),
     pveRejections: db.collection<PveRejectDoc>('pveRejections'),
+    appeals: db.collection<AppealDoc>('appeals'),
     replayShares: db.collection<ReplayShareDoc>('replayShares'),
     stateReplayShares: db.collection<StateReplayShareDoc>('stateReplayShares'),
     mail: db.collection<MailDoc>('mail'),
@@ -669,6 +692,9 @@ export async function createMongo(
     await collections.antiCheatReviews.createIndex({ status: 1, ts: -1 });
     // —— PvE anti-cheat (S4-4) ——
     await collections.pveRejections.createIndex({ accountId: 1, ts: -1 });
+    // —— player appeals (CONTENT_MODERATION_DESIGN.md CM10): admin review queue (open first) + per-account lookup (open-appeal guard) ——
+    await collections.appeals.createIndex({ status: 1, createdAt: 1 });
+    await collections.appeals.createIndex({ accountId: 1, status: 1 });
     // —— replay shares (S1-RP) ——
     // TTL auto-expiry (expiresAt with expireAfterSeconds:0 → Mongo deletes on schedule).
     await collections.replayShares.createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 });

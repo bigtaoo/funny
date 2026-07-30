@@ -32,6 +32,9 @@ export const MAIL_BODY_MAX = 2000;
  */
 export const REPORT_REASON_MAX = 500;
 
+/** Maximum length of a player's free-text appeal reason (CONTENT_MODERATION_DESIGN.md CM10). Admin-review-only text, not run through censorChat (same rationale as REPORT_REASON_MAX). */
+export const APPEAL_REASON_MAX = 500;
+
 // ── Deterministic id derivation (no lookup required; computable by either side) ──────────────
 /**
  * Chat conversation id: two accountIds sorted and concatenated (SOC4). Either party can derive
