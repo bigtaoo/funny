@@ -36,19 +36,19 @@ class RecordingMatchsvc extends MatchsvcClient {
   constructor() {
     super(null, KEY);
   }
-  override async roomCreate(a: string, n: string, p: string, e = '', av = '', deck: string[] = []): Promise<boolean> { this.calls.push({ m: 'roomCreate', args: [a, n, p, e, av, deck] }); return true; }
-  override async roomJoin(a: string, n: string, p: string, c: string, e = '', av = '', deck: string[] = []): Promise<boolean> { this.calls.push({ m: 'roomJoin', args: [a, n, p, c, e, av, deck] }); return true; }
+  override async roomCreate(a: string, n: string, p: string, e = '', av = '', deck: string[] = [], skins: string[] = []): Promise<boolean> { this.calls.push({ m: 'roomCreate', args: [a, n, p, e, av, deck, skins] }); return true; }
+  override async roomJoin(a: string, n: string, p: string, c: string, e = '', av = '', deck: string[] = [], skins: string[] = []): Promise<boolean> { this.calls.push({ m: 'roomJoin', args: [a, n, p, c, e, av, deck, skins] }); return true; }
   override roomReady(a: string, r: boolean): void { this.calls.push({ m: 'roomReady', args: [a, r] }); }
   override roomStart(a: string): void { this.calls.push({ m: 'roomStart', args: [a] }); }
   override roomLeave(a: string): void { this.calls.push({ m: 'roomLeave', args: [a] }); }
-  override async enqueue(a: string, n: string, p: string, e: number): Promise<boolean> { this.calls.push({ m: 'enqueue', args: [a, n, p, e] }); return true; }
+  override async enqueue(a: string, n: string, p: string, e: number, et = '', av = '', platform = '', deck: string[] = [], skins: string[] = []): Promise<boolean> { this.calls.push({ m: 'enqueue', args: [a, n, p, e, et, av, platform, deck, skins] }); return true; }
   override connected(a: string): void { this.calls.push({ m: 'connected', args: [a] }); }
   override disconnected(a: string): void { this.calls.push({ m: 'disconnected', args: [a] }); }
-  override duelInvite(a: string, n: string, p: string, e: string, av: string, to: string, deck: string[] = []): void {
-    this.calls.push({ m: 'duelInvite', args: [a, n, p, e, av, to, deck] });
+  override duelInvite(a: string, n: string, p: string, e: string, av: string, to: string, deck: string[] = [], skins: string[] = []): void {
+    this.calls.push({ m: 'duelInvite', args: [a, n, p, e, av, to, deck, skins] });
   }
-  override duelRespond(a: string, inviteId: string, accept: boolean, n = '', p = '', e = '', av = '', deck: string[] = []): void {
-    this.calls.push({ m: 'duelRespond', args: [a, inviteId, accept, n, p, e, av, deck] });
+  override duelRespond(a: string, inviteId: string, accept: boolean, n = '', p = '', e = '', av = '', deck: string[] = [], skins: string[] = []): void {
+    this.calls.push({ m: 'duelRespond', args: [a, inviteId, accept, n, p, e, av, deck, skins] });
   }
 }
 
@@ -70,14 +70,14 @@ class FailingMatchsvc extends MatchsvcClient {
 
 /** MetaClient stub reporting a fixed ELO (available), so deck-unlock gating can be exercised. */
 class FakeMeta extends MetaClient {
-  constructor(private readonly elo: number) { super('http://meta.invalid', KEY); }
+  constructor(private readonly elo: number, private readonly skins: string[] = []) { super('http://meta.invalid', KEY); }
   override get available(): boolean { return true; }
   override async getElo(): Promise<{ elo: number }> { return { elo: this.elo }; }
   override async getProfile(): Promise<{ displayName?: string; publicId?: string; equippedTitle?: string }> {
     return { displayName: 'Player', publicId: '100000001', equippedTitle: '' };
   }
-  override async getMatchIdentity(): Promise<{ elo: number; displayName?: string; publicId?: string; equippedTitle?: string; avatarId?: string }> {
-    return { elo: this.elo, displayName: 'Player', publicId: '100000001', equippedTitle: '' };
+  override async getMatchIdentity(): Promise<{ elo: number; displayName?: string; publicId?: string; equippedTitle?: string; avatarId?: string; equippedSkins?: string[] }> {
+    return { elo: this.elo, displayName: 'Player', publicId: '100000001', equippedTitle: '', ...(this.skins.length ? { equippedSkins: this.skins } : {}) };
   }
 }
 
@@ -267,6 +267,22 @@ describe('Gateway control-plane routing', () => {
     expect(join?.args[6]).toEqual(defaultPvpDeck());
   });
 
+  it('forwards the caller\'s own equipped skins to matchsvc on every cosmetics-bearing path (S3-4 opponent-skin-relay, 2026-08-01) — same treatment as equippedTitle/avatarId', async () => {
+    const port = 19529;
+    const mm = new RecordingMatchsvc();
+    startGateway(port, mm, new FakeMeta(998, ['skin_e1', 'skin_l1']));
+    const a = await connect(port, 'acc-a');
+
+    a.send(encodeClient({ room_create: { mode: 0 } }));
+    a.send(encodeClient({ room_join: { code: 'ABC123' } }));
+    a.send(encodeClient({ room_create: { mode: 1 } })); // ranked path (enqueue)
+    await sleep(80);
+
+    expect(mm.calls.find((c) => c.m === 'roomCreate')?.args[6]).toEqual(['skin_e1', 'skin_l1']);
+    expect(mm.calls.find((c) => c.m === 'roomJoin')?.args[7]).toEqual(['skin_e1', 'skin_l1']);
+    expect(mm.calls.find((c) => c.m === 'enqueue')?.args[8]).toEqual(['skin_e1', 'skin_l1']);
+  });
+
   it('ranked enqueue when meta unavailable → push back RANKED_UNAVAILABLE, and do not enqueue', async () => {
     const port = 19523;
     const mm = new RecordingMatchsvc();
@@ -417,7 +433,7 @@ describe('Gateway control-plane routing', () => {
       await sleep(40);
 
       const respond = mm.calls.find((c) => c.m === 'duelRespond');
-      expect(respond?.args).toEqual(['acc-b', 'inv-2', false, '', '', '', '', []]);
+      expect(respond?.args).toEqual(['acc-b', 'inv-2', false, '', '', '', '', [], []]);
     });
   });
 });

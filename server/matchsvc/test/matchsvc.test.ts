@@ -123,6 +123,49 @@ describe('Matchsvc friendly', () => {
     expect(ta.decks).toEqual({ top: deckA, bottom: deckB });
   });
 
+  it('opponent cosmetics (title/avatar/skins) cross-wire self<->opponent — each ticket carries the OTHER player\'s data, never its own (S3-4 opponent-skin-bleed fix, 2026-08-01)', async () => {
+    const { svc, last } = setup();
+    svc.roomCreate('a', 'Alice', '100000001', 'title-a', 'avatar-a', [], ['skin_e1', 'skin_l1']);
+    const rs = last('a', 'room_state');
+    if (rs?.kind !== 'room_state') throw new Error();
+    svc.roomJoin('b', 'Bob', '100000002', rs.code, 'title-b', 'avatar-b', [], ['skin_shop_r1']);
+    await svc.roomReady('a', true);
+    await svc.roomReady('b', true);
+    await svc.roomStart('a');
+
+    const fa = last('a', 'match_found');
+    const fb = last('b', 'match_found');
+    if (fa?.kind !== 'match_found' || fb?.kind !== 'match_found') throw new Error('no match_found');
+    const ta = verifyTicket(fa.ticket, { key: KEY });
+    const tb = verifyTicket(fb.ticket, { key: KEY });
+
+    // Alice's ticket carries BOB's cosmetics (what Alice's client should show about her opponent).
+    expect(ta.opponentTitle).toBe('title-b');
+    expect(ta.opponentAvatarId).toBe('avatar-b');
+    expect(ta.opponentSkins).toEqual(['skin_shop_r1']);
+
+    // Bob's ticket carries ALICE's cosmetics — not a copy of his own.
+    expect(tb.opponentTitle).toBe('title-a');
+    expect(tb.opponentAvatarId).toBe('avatar-a');
+    expect(tb.opponentSkins).toEqual(['skin_e1', 'skin_l1']);
+  });
+
+  it('no skins equipped on either side → opponentSkins omitted from both tickets (matches the opponentTitle/opponentAvatarId `|| undefined` convention)', async () => {
+    const { svc, last } = setup();
+    svc.roomCreate('a', 'Alice', '100000001');
+    const rs = last('a', 'room_state');
+    if (rs?.kind !== 'room_state') throw new Error();
+    svc.roomJoin('b', 'Bob', '100000002', rs.code);
+    await svc.roomReady('a', true);
+    await svc.roomReady('b', true);
+    await svc.roomStart('a');
+
+    const fa = last('a', 'match_found');
+    if (fa?.kind !== 'match_found') throw new Error('no match_found');
+    const ta = verifyTicket(fa.ticket, { key: KEY });
+    expect(ta.opponentSkins).toBeUndefined();
+  });
+
   it('non-host start is ignored; start while not all ready is ignored', async () => {
     const { svc, last } = setup();
     svc.roomCreate('a', 'A', '100000001');
@@ -199,6 +242,19 @@ describe('Matchsvc ranked', () => {
     expect(ta.mode).toBe('ranked');
     expect(ta.roomId).toBe(tb.roomId);
     expect(ta.seed).toBe(tb.seed);
+  });
+
+  it('opponent cosmetics cross-wire self<->opponent on the ranked/enqueue path too (not just friendly rooms)', async () => {
+    const { svc, last } = setup();
+    await svc.enqueue('a', 'Alice', '100000001', 1000, 'title-a', 'avatar-a', '', [], ['skin_e2']);
+    await svc.enqueue('b', 'Bob', '100000002', 1020, 'title-b', 'avatar-b', '', [], ['skin_shop_c1', 'skin_shop_e1']);
+    const fa = last('a', 'match_found');
+    const fb = last('b', 'match_found');
+    if (fa?.kind !== 'match_found' || fb?.kind !== 'match_found') throw new Error('no match_found');
+    const ta = verifyTicket(fa.ticket, { key: KEY });
+    const tb = verifyTicket(fb.ticket, { key: KEY });
+    expect(ta.opponentSkins).toEqual(['skin_shop_c1', 'skin_shop_e1']);
+    expect(tb.opponentSkins).toEqual(['skin_e2']);
   });
 
   it('no game available → GAME_UNAVAILABLE', async () => {
@@ -335,6 +391,28 @@ describe('Matchsvc duel invite ("切磋", ADR friends-duel-confirm)', () => {
     expect(ta.mode).toBe('friendly');
     expect([ta.side, tb.side].sort()).toEqual([0, 1]);
     expect(ta.decks).toEqual({ top: defaultPvpDeck(), bottom: defaultPvpDeck() });
+  });
+
+  it('opponent cosmetics cross-wire self<->opponent on the duel path too (not just room/ranked)', async () => {
+    const { svc, last } = setup();
+    svc.duelInvite(
+      { accountId: 'a', name: 'Alice', publicId: '100000001', equippedTitle: 'title-a', avatarId: 'avatar-a', equippedSkins: ['skin_l1'], deck: [] },
+      'b',
+    );
+    const inv = last('b', 'duel_invited');
+    if (inv?.kind !== 'duel_invited') throw new Error();
+
+    await svc.duelRespond('b', inv.inviteId, true, {
+      accountId: 'b', name: 'Bob', publicId: '100000002', equippedTitle: 'title-b', avatarId: 'avatar-b', equippedSkins: ['skin_e1'], deck: [],
+    });
+
+    const fa = last('a', 'match_found');
+    const fb = last('b', 'match_found');
+    if (fa?.kind !== 'match_found' || fb?.kind !== 'match_found') throw new Error('no match_found');
+    const ta = verifyTicket(fa.ticket, { key: KEY });
+    const tb = verifyTicket(fb.ticket, { key: KEY });
+    expect(ta.opponentSkins).toEqual(['skin_e1']);
+    expect(tb.opponentSkins).toEqual(['skin_l1']);
   });
 
   it('decline → duel_cancelled{reason:declined} pushed to the inviter only, no match_found', () => {
