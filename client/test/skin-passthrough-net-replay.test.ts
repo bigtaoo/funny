@@ -16,9 +16,9 @@ import { createResultNav } from '../src/app/nav/result';
 import { createWorldNav } from '../src/app/nav/world';
 import type { AppCtx, AppState, Nav } from '../src/app/appCtx';
 import type { AppViews, NetGameView } from '../src/app/AppViews';
-import type { GameSceneOptions } from '../src/scenes/GameScene';
+import type { GameSceneOptions, GameSceneCallbacks } from '../src/scenes/GameScene';
 import type { ReplaySceneCallbacks } from '../src/scenes/ReplayScene';
-import type { MatchStartInfo, Replay, LevelDefinition } from '../src/game';
+import type { MatchStartInfo, Replay, LevelDefinition, OwnerId } from '../src/game';
 import { MatchMode } from '../src/net/proto/transport';
 import { WorldApiClient } from '../src/net/WorldApiClient';
 
@@ -61,7 +61,7 @@ describe('nav/result — goGameNet forwards equippedSkins to showGameNet', () =>
     const fakeInput = { submit: () => {}, take: () => [] };
     const ctx = baseCtx({
       views: {
-        showGameNet: (_localSide, _cb, opts: GameSceneOptions): NetGameView => {
+        showGameNet: (_localSide: OwnerId, _cb: GameSceneCallbacks, opts: GameSceneOptions): NetGameView => {
           capturedOpts = opts;
           return { applyNetState() {}, applyPeerDc() {}, applyMatchOver() {} };
         },
