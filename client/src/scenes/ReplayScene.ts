@@ -114,9 +114,11 @@ export class ReplayScene implements Scene {
     if (this.renderer) this.container.addChild(this.renderer.container);
     this.endFrame = Math.max(1, endFrame);
 
-    const w = layout.designWidth;
-    this.barW = Math.round(w * 0.5);
-    this.barX = Math.round((w - this.barW) / 2);
+    // Sized to the board's own width (not the full design width, which is padded with
+    // side margins in landscape) so the transport chrome never overhangs past the map edges.
+    const board = layout.boardRect;
+    this.barW = Math.round(board.w * 0.5);
+    this.barX = Math.round(board.x + (board.w - this.barW) / 2);
     this.barY = Math.round(layout.designHeight * 0.045);
     this.buildOverlay();
     this.container.addChild(this.overlay);
@@ -139,6 +141,12 @@ export class ReplayScene implements Scene {
       if (this.renderer.isGameOver() || this.renderer.currentTick >= this.endFrame) {
         this.ended = true;
         this.playing = false;
+        // The decisive tick's base-damage flash (GameRenderer's screen-edge vignette)
+        // fades over ~0.55s of subsequent update() calls — but playback stops right
+        // here, so a losing final frame would otherwise freeze at full red forever.
+        // Clear it instantly so the final frame is clean.
+        this.renderer.vignetteAlpha = 0;
+        this.renderer.drawVignette();
       }
     }
     this.refreshOverlay();
@@ -242,16 +250,18 @@ export class ReplayScene implements Scene {
     tag.y = this.barY - 2;
     this.overlay.addChild(tag);
 
-    // Transport row centred under the bar.
+    // Transport row centred under the bar, sized off the board width so it never
+    // overhangs past the map edges (same reasoning as the progress bar above).
     const rowY = this.barY + 18;
-    const gap = Math.round(w * 0.02);
+    const board = this.layout.boardRect;
+    const gap = Math.round(board.w * 0.02);
     const hasShare = !!this.cb.onShare;
-    const playW = Math.round(w * 0.18);
-    const speedW = Math.round(w * 0.16);
-    const exitW = Math.round(w * 0.16);
-    const shareW = hasShare ? Math.round(w * 0.16) : 0;
+    const playW = Math.round(board.w * 0.18);
+    const speedW = Math.round(board.w * 0.16);
+    const exitW = Math.round(board.w * 0.16);
+    const shareW = hasShare ? Math.round(board.w * 0.16) : 0;
     const totalW = playW + speedW + exitW + (hasShare ? shareW + gap : 0) + gap * 2;
-    let x = Math.round((w - totalW) / 2);
+    let x = Math.round(board.x + (board.w - totalW) / 2);
 
     this.playLabel = this.makeButton(x, rowY, playW, btnH, t('replay.pause'), () => {
       if (this.ended) return;
@@ -331,7 +341,10 @@ export class ReplayScene implements Scene {
     text: string,
     onTap: () => void,
   ): PIXI.Text {
-    const bg = sketchPanel(w, h, { fill: ui.dark, border: ui.btnOff, width: 2, fillAlpha: 0.9, seed: seedFor(x, y, w) });
+    // Row sits low enough to overlap the board's top band (S1-RP has no spare vertical room
+    // for its own transport controls above the game HUD) — kept translucent so the units
+    // underneath still read through instead of being fully hidden.
+    const bg = sketchPanel(w, h, { fill: ui.dark, border: ui.btnOff, width: 2, fillAlpha: 0.55, seed: seedFor(x, y, w) });
     bg.x = x;
     bg.y = y;
     bg.eventMode = 'static';
