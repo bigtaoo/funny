@@ -20,7 +20,7 @@ import type { WorldApiClient, TeamTemplate, CardSLGState } from '../../net/World
 import { BASE_UPGRADE_COSTS, CARD_DEFINITIONS } from '../../game/config';
 import { CardType, UnitType, BuildingType } from '../../game/types';
 import type { SaveData, CardInstance } from '../../game/meta/SaveData';
-import { CARD_DEFS, troopCap } from '../../game/meta/cardDefs';
+import { CARD_DEFS, troopCap, cardPower } from '../../game/meta/cardDefs';
 import { teamTroopCap, teamLeaderCard } from '../../game/meta/teamTroops';
 
 /** Max defender base upgrade level the engine schema accepts (0..BASE_UPGRADE_COSTS.length). */
@@ -288,6 +288,7 @@ export class DefenseEditorSceneBase {
    */
   protected availableCards(): { card: CardInstance; unitType: UnitType; troops: number; cap: number }[] {
     const cardInv = this.cb.getSave?.().cardInv ?? {};
+    const equipmentInv = this.cb.getSave?.().equipmentInv ?? {};
     const myTeamId = this.mode === 'attack' ? (this.cb.target as { teamId: string }).teamId : undefined;
     const now = Date.now();
     const out: { card: CardInstance; unitType: UnitType; troops: number; cap: number }[] = [];
@@ -299,6 +300,8 @@ export class DefenseEditorSceneBase {
       if (st?.teamId && st.teamId !== myTeamId) continue;
       out.push({ card, unitType: def.unitType as UnitType, troops: st?.currentTroops ?? 0, cap: troopCap(card) });
     }
+    // Roster is sorted by combat power (highest first) so strong cards are easy to find (design ask 2026-08-01).
+    out.sort((a, b) => cardPower(b.card, equipmentInv) - cardPower(a.card, equipmentInv));
     return out;
   }
 
