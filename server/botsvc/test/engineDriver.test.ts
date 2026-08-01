@@ -25,6 +25,7 @@ function matchStart(seed: number, localSide: 0 | 1): MatchStart {
     opponentPublicId: '000000001',
     opponentTitle: '',
     opponentAvatarId: '',
+    opponentSkins: [],
     topDeck: TOP_DECK,
     bottomDeck: BOTTOM_DECK,
   };

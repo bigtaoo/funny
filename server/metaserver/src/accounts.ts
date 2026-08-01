@@ -204,7 +204,7 @@ async function getMutedUntil(cols: Collections, accountId: string): Promise<numb
 export async function getProfile(
   cols: Collections,
   accountId: string,
-): Promise<{ displayName?: string; publicId: string; equippedTitle?: string; avatarId?: string; mutedUntil?: number }> {
+): Promise<{ displayName?: string; publicId: string; equippedTitle?: string; avatarId?: string; equippedSkins?: string[]; mutedUntil?: number }> {
   const [displayName, saveDoc, publicId, mutedUntil] = await Promise.all([
     ensureDisplayName(cols, accountId),
     cols.saves.findOne({ _id: accountId }, { projection: { 'save.equipped': 1 } }),
@@ -214,11 +214,17 @@ export async function getProfile(
   const equipped = saveDoc?.save.equipped as Record<string, string> | undefined;
   const equippedTitle = equipped?.['title'];
   const avatarId = equipped?.['avatar'];
+  // Character skin slots are keyed 'skin:<unitType>' (client/src/game/meta/skinDefs.ts
+  // skinEquipKey/allEquippedSkins) — one slot per character, unlike title/avatar's single slot.
+  const equippedSkins = equipped
+    ? Object.entries(equipped).filter(([k]) => k.startsWith('skin:')).map(([, v]) => v)
+    : undefined;
   return {
     displayName,
     publicId,
     ...(equippedTitle ? { equippedTitle } : {}),
     ...(avatarId ? { avatarId } : {}),
+    ...(equippedSkins && equippedSkins.length ? { equippedSkins } : {}),
     ...(mutedUntil ? { mutedUntil } : {}),
   };
 }

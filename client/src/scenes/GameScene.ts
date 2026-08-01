@@ -62,6 +62,8 @@ export interface GameSceneOptions {
   profiles?: GameProfiles;
   /** Equipped skin ids (one per character, LOBBY_IA_REDESIGN §15) — swaps unit textures only; absent = default look. */
   equippedSkins?: readonly string[];
+  /** Opponent's equipped skin ids, when known (real net PvP only — see UnitView.acquireSprite); absent/empty = default look, always the case for AI/bot opponents. */
+  opponentSkins?: readonly string[];
   /**
    * Explicit RNG seed for the local PvP-vs-AI path (match-bot fallback). Lets the
    * server-chosen seed drive a deterministic local AI match. Ignored when `level`
@@ -142,7 +144,7 @@ export class GameScene implements Scene {
       : { start: true, boss: opts.level?.objective.kind === 'boss' };
 
     void preloadL1CardArtTextures();
-    this.renderer = new GameRenderer(engine, layout, input, opts.net ?? false, false, opts.profiles ?? {}, opts.equippedSkins ?? [], opts.cardInstances ?? null, opts.equipmentInv ?? null, opts.tutorial ?? false, battleLabels);
+    this.renderer = new GameRenderer(engine, layout, input, opts.net ?? false, false, opts.profiles ?? {}, opts.equippedSkins ?? [], opts.cardInstances ?? null, opts.equipmentInv ?? null, opts.tutorial ?? false, battleLabels, null, opts.opponentSkins ?? []);
     // Campaign (PvE) levels reword the surrender button/dialog as "exit level" —
     // surrendering to a stage reads oddly. Mirror createLocalMatch's mode resolution.
     const isCampaign = !opts.net && (opts.mode ?? (opts.level ? 'campaign' : 'pvp')) === 'campaign';

@@ -93,6 +93,8 @@ export interface Slot {
   equippedTitle: string;
   /** Equipped avatar id (from meta /internal/profile; empty string = no avatar). */
   avatarId: string;
+  /** Equipped character skin ids (from meta /internal/profile; empty = no skins equipped). */
+  equippedSkins: string[];
   /** PvP deck (card ids; validated and resolved by gateway; empty = matchsvc substitutes defaultPvpDeck at startMatch). */
   deck: string[];
   side: 0 | 1;
@@ -116,6 +118,7 @@ export interface DuelPlayer {
   publicId: string;
   equippedTitle: string;
   avatarId: string;
+  equippedSkins: string[];
   deck: string[];
 }
 export interface DuelInvite {
@@ -299,12 +302,12 @@ export class Matchsvc {
    * matches don't show room slots, but after the match starts the opponent's publicId must be
    * written into the ticket → match_start for the in-game profile popup.
    */
-  async enqueue(accountId: string, name: string, publicId: string, elo: number, equippedTitle = '', avatarId = '', platform = '', deck: string[] = []): Promise<void> {
+  async enqueue(accountId: string, name: string, publicId: string, elo: number, equippedTitle = '', avatarId = '', platform = '', deck: string[] = [], equippedSkins: string[] = []): Promise<void> {
     if (this.accountRoom.has(accountId) || this.matchmaking.has(accountId)) {
       log.warn('enqueue ignored: already in room/queue', { accountId });
       return;
     }
-    await this.matchmaking.enqueue(accountId, name, publicId, elo, equippedTitle, avatarId, platform, deck);
+    await this.matchmaking.enqueue(accountId, name, publicId, elo, equippedTitle, avatarId, platform, deck, equippedSkins);
     log.info('enqueued for ranked', { accountId, elo, queueSize: this.matchmaking.size });
   }
 
@@ -341,14 +344,14 @@ export class Matchsvc {
     log.info('ranked pair matched', { a: a.accountId, b: b.accountId, eloA: a.elo, eloB: b.elo });
     this.startMatch(
       'ranked',
-      { accountId: a.accountId, name: a.name, publicId: a.publicId, equippedTitle: a.equippedTitle, avatarId: a.avatarId, deck: a.deck },
-      { accountId: b.accountId, name: b.name, publicId: b.publicId, equippedTitle: b.equippedTitle, avatarId: b.avatarId, deck: b.deck },
+      { accountId: a.accountId, name: a.name, publicId: a.publicId, equippedTitle: a.equippedTitle, avatarId: a.avatarId, equippedSkins: a.equippedSkins, deck: a.deck },
+      { accountId: b.accountId, name: b.name, publicId: b.publicId, equippedTitle: b.equippedTitle, avatarId: b.avatarId, equippedSkins: b.equippedSkins, deck: b.deck },
     );
   }
 
   // ───────────────────────── friendly rooms ─────────────────────────
 
-  roomCreate(accountId: string, name: string, publicId: string, equippedTitle = '', avatarId = '', deck: string[] = []): void {
+  roomCreate(accountId: string, name: string, publicId: string, equippedTitle = '', avatarId = '', deck: string[] = [], equippedSkins: string[] = []): void {
     if (this.accountRoom.has(accountId) || this.matchmaking.has(accountId)) {
       this.push(accountId, { kind: 'room_error', code: 'ALREADY_IN_ROOM', message: 'leave first' });
       return;
@@ -358,7 +361,7 @@ export class Matchsvc {
     const room: Room = {
       roomId,
       code,
-      slots: [{ accountId, name, publicId, equippedTitle, avatarId, deck, side: 0, ready: false, connected: true }],
+      slots: [{ accountId, name, publicId, equippedTitle, avatarId, equippedSkins, deck, side: 0, ready: false, connected: true }],
       phase: RoomPhase.WAITING,
       reapTimer: null,
     };
@@ -370,7 +373,7 @@ export class Matchsvc {
     this.broadcast(room);
   }
 
-  roomJoin(accountId: string, name: string, publicId: string, code: string, equippedTitle = '', avatarId = '', deck: string[] = []): void {
+  roomJoin(accountId: string, name: string, publicId: string, code: string, equippedTitle = '', avatarId = '', deck: string[] = [], equippedSkins: string[] = []): void {
     if (this.accountRoom.has(accountId) || this.matchmaking.has(accountId)) {
       this.push(accountId, { kind: 'room_error', code: 'ALREADY_IN_ROOM', message: 'leave first' });
       return;
@@ -387,7 +390,7 @@ export class Matchsvc {
       this.push(accountId, { kind: 'room_error', code: 'ROOM_FULL', message: 'room is full' });
       return;
     }
-    room.slots.push({ accountId, name, publicId, equippedTitle, avatarId, deck, side: 1, ready: false, connected: true });
+    room.slots.push({ accountId, name, publicId, equippedTitle, avatarId, equippedSkins, deck, side: 1, ready: false, connected: true });
     this.accountRoom.set(accountId, room.roomId);
     log.info('room joined', { accountId, code, roomId: room.roomId });
     void saveRoom(this.redis, room);
@@ -417,8 +420,8 @@ export class Matchsvc {
       await this.destroyRoom(room); // lobby room's job done; match state is now owned by gameserver
       this.startMatch(
         'friendly',
-        { accountId: s0!.accountId, name: s0!.name, publicId: s0!.publicId, equippedTitle: s0!.equippedTitle, avatarId: s0!.avatarId, deck: s0!.deck },
-        { accountId: s1!.accountId, name: s1!.name, publicId: s1!.publicId, equippedTitle: s1!.equippedTitle, avatarId: s1!.avatarId, deck: s1!.deck },
+        { accountId: s0!.accountId, name: s0!.name, publicId: s0!.publicId, equippedTitle: s0!.equippedTitle, avatarId: s0!.avatarId, equippedSkins: s0!.equippedSkins, deck: s0!.deck },
+        { accountId: s1!.accountId, name: s1!.name, publicId: s1!.publicId, equippedTitle: s1!.equippedTitle, avatarId: s1!.avatarId, equippedSkins: s1!.equippedSkins, deck: s1!.deck },
       );
     }
   }
@@ -446,8 +449,8 @@ export class Matchsvc {
     await this.destroyRoom(room); // lobby room's job done; match state is now owned by gameserver (see roomReady's await for why)
     this.startMatch(
       'friendly',
-      { accountId: s0!.accountId, name: s0!.name, publicId: s0!.publicId, equippedTitle: s0!.equippedTitle, avatarId: s0!.avatarId, deck: s0!.deck },
-      { accountId: s1!.accountId, name: s1!.name, publicId: s1!.publicId, equippedTitle: s1!.equippedTitle, avatarId: s1!.avatarId, deck: s1!.deck },
+      { accountId: s0!.accountId, name: s0!.name, publicId: s0!.publicId, equippedTitle: s0!.equippedTitle, avatarId: s0!.avatarId, equippedSkins: s0!.equippedSkins, deck: s0!.deck },
+      { accountId: s1!.accountId, name: s1!.name, publicId: s1!.publicId, equippedTitle: s1!.equippedTitle, avatarId: s1!.avatarId, equippedSkins: s1!.equippedSkins, deck: s1!.deck },
     );
   }
 
@@ -581,8 +584,8 @@ export class Matchsvc {
 
   private startMatch(
     mode: 'friendly' | 'ranked',
-    a: { accountId: string; name: string; publicId: string; equippedTitle: string; avatarId: string; deck: string[] },
-    b: { accountId: string; name: string; publicId: string; equippedTitle: string; avatarId: string; deck: string[] },
+    a: { accountId: string; name: string; publicId: string; equippedTitle: string; avatarId: string; equippedSkins: string[]; deck: string[] },
+    b: { accountId: string; name: string; publicId: string; equippedTitle: string; avatarId: string; equippedSkins: string[]; deck: string[] },
   ): void {
     const gameUrl = this.games.pick();
     if (!gameUrl) {
@@ -609,8 +612,8 @@ export class Matchsvc {
     log.info('match starting', { mode, roomId, gameUrl, a: a.accountId, b: b.accountId, seed, topDeck: decks.top.length, bottomDeck: decks.bottom.length });
 
     const sign = (
-      self: { accountId: string; name: string; publicId: string; equippedTitle: string; avatarId: string },
-      opp: { accountId: string; name: string; publicId: string; equippedTitle: string; avatarId: string },
+      self: { accountId: string; name: string; publicId: string; equippedTitle: string; avatarId: string; equippedSkins: string[] },
+      opp: { accountId: string; name: string; publicId: string; equippedTitle: string; avatarId: string; equippedSkins: string[] },
       side: 0 | 1,
     ): string => {
       const claims: TicketClaims = {
@@ -622,6 +625,7 @@ export class Matchsvc {
         opponentPublicId: opp.publicId,
         opponentTitle: opp.equippedTitle || undefined,
         opponentAvatarId: opp.avatarId || undefined,
+        opponentSkins: opp.equippedSkins.length ? opp.equippedSkins : undefined,
         gameUrl,
         accountId: self.accountId,
         decks,

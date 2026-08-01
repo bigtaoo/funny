@@ -8,7 +8,8 @@ import { t, type TranslationKey } from '../i18n';
 import { TICK_RATE } from '../game/math/fixed';
 import { SketchPen } from './sketch';
 import { palette } from './theme';
-import { CARD_ART_URLS, cardArtKey, getArtTexture } from './cardArt';
+import { CARD_ART_URLS, cardArtKey, getArtTexture, unitPortraitUrl } from './cardArt';
+import { equippedSkinIdForType } from '../game/meta/skinDefs';
 import { FS } from './fontScale';
 
 const CARD_BG              = 0xfaf6ee;
@@ -121,7 +122,12 @@ export class HandView {
     { label: 'hand.slot', bytesEach: 6 * 1024 },
   );
 
-  constructor(layout: ILayout) {
+  constructor(
+    layout: ILayout,
+    /** The local player's own equipped skins (game/meta/skinDefs.ts allEquippedSkins) — the hand is
+     *  always the local player's own cards, so unlike UnitView this never needs an opponent list. */
+    private readonly equippedSkins: readonly string[] = [],
+  ) {
     this.container = new PIXI.Container();
     this.layout    = layout;
   }
@@ -386,7 +392,13 @@ export class HandView {
       return;
     }
 
-    const url = CARD_ART_URLS[key];
+    // Skin-aware for unit cards (the only cards a skin can target) — same equipped-skin resolution
+    // the roster/formation/auction/mail card art already uses (cardArt.unitPortraitUrl), so a card in
+    // hand matches the skinned unit it will spawn as. Falls back to CARD_ART_URLS for PvE-only unit
+    // types unitPortraitUrl doesn't cover (Ironclad/Runner/…) and for buildings/spells.
+    const url = (card.cardType === CardType.Unit && card.unitType !== undefined
+      ? unitPortraitUrl(card.unitType, equippedSkinIdForType(card.unitType, this.equippedSkins))
+      : null) ?? CARD_ART_URLS[key];
     if (!url) {
       art.visible = false;
       return;

@@ -99,15 +99,15 @@ function fakeRedis() {
   return { ...ops, multi, strings, zsets };
 }
 
-const from: DuelPlayer = { accountId: 'a', name: 'Alice', publicId: '100000001', equippedTitle: '', avatarId: '', deck: [] };
+const from: DuelPlayer = { accountId: 'a', name: 'Alice', publicId: '100000001', equippedTitle: '', avatarId: '', equippedSkins: [], deck: [] };
 
 function makeRoom(overrides: Partial<Room> = {}): Room {
   return {
     roomId: 'room-1',
     code: 'ABC123',
     slots: [
-      { accountId: 'a', name: 'Alice', publicId: '100000001', equippedTitle: '', avatarId: '', deck: [], side: 0, ready: false, connected: true },
-      { accountId: 'b', name: 'Bob', publicId: '100000002', equippedTitle: '', avatarId: '', deck: [], side: 1, ready: false, connected: true },
+      { accountId: 'a', name: 'Alice', publicId: '100000001', equippedTitle: '', avatarId: '', equippedSkins: [], deck: [], side: 0, ready: false, connected: true },
+      { accountId: 'b', name: 'Bob', publicId: '100000002', equippedTitle: '', avatarId: '', equippedSkins: [], deck: [], side: 1, ready: false, connected: true },
     ],
     phase: 0,
     reapTimer: null,
@@ -116,7 +116,7 @@ function makeRoom(overrides: Partial<Room> = {}): Room {
 }
 
 const queueEntry: QueueEntry = {
-  accountId: 'q1', name: 'Q1', publicId: '100000010', equippedTitle: '', avatarId: '', elo: 1000, enqueuedAt: 1000, platform: '', deck: [],
+  accountId: 'q1', name: 'Q1', publicId: '100000010', equippedTitle: '', avatarId: '', equippedSkins: [], elo: 1000, enqueuedAt: 1000, platform: '', deck: [],
 };
 
 describe('persist.ts — rooms', () => {

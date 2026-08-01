@@ -78,14 +78,19 @@ const SKIN_ASSETS: Record<string, Partial<Record<UnitType, string>>> = {
   skin_l1:      { [UnitType.Max]:          skinMaxTaoUrl          as unknown as string }, // Anna/Max      (gacha, legendary)
 };
 
-/** Effective per-type asset URLs for every currently-equipped skin (skin overrides ∪ default). */
-function resolveAssets(equippedSkins: readonly string[]): Partial<Record<UnitType, string>> {
-  let merged: Partial<Record<UnitType, string>> = STICKMAN_ASSETS;
+/**
+ * Per-type skin-override asset URLs for a set of equipped skin ids — overrides ONLY (not merged with
+ * the default STICKMAN_ASSETS bundle); a type absent from the result has no equipped skin and falls
+ * back to the default at the call site. Kept separate from the default set so the two can be loaded
+ * into distinct side-scoped maps (see the {@link UnitView} constructor / {@link acquireSprite}).
+ */
+function resolveSkinOverrides(equippedSkins: readonly string[]): Partial<Record<UnitType, string>> {
+  let overrides: Partial<Record<UnitType, string>> = {};
   for (const id of equippedSkins) {
     const skin = SKIN_ASSETS[id];
-    if (skin) merged = { ...merged, ...skin };
+    if (skin) overrides = { ...overrides, ...skin };
   }
-  return merged;
+  return overrides;
 }
 
 /**
@@ -232,16 +237,17 @@ export class UnitView {
   /** Active StickmanRuntime instances for stickman-animated units, keyed by unit id. */
   private readonly stickmanRuntimes: Map<number, StickmanRuntime> = new Map();
 
-  /** Unit type of each active stickman unit — needed to return its pair to the matching pool. */
-  private readonly stickmanTypes: Map<number, UnitType> = new Map();
+  /** Pool bucket key of each active stickman unit — needed to return its pair to the matching pool. */
+  private readonly stickmanPoolKeys: Map<number, string> = new Map();
 
   /**
-   * Pools of idle stickman (wrapper + runtime) pairs for reuse, keyed by unit
-   * type (textures differ per type so pools can't be shared). Reusing the
+   * Pools of idle stickman (wrapper + runtime) pairs for reuse, keyed by
+   * {@link poolKey} (unit type, plus a skin-variant suffix for the handful of
+   * types with a per-side skin override — see {@link poolKey}). Reusing the
    * ~11-sprite runtimes instead of new/destroy per spawn is the main
    * swarm-performance lever.
    */
-  private readonly stickmanPools: Map<UnitType, Array<{ wrapper: PIXI.Container; runtime: StickmanRuntime }>> = new Map();
+  private readonly stickmanPools: Map<string, Array<{ wrapper: PIXI.Container; runtime: StickmanRuntime }>> = new Map();
 
   /**
    * Per-unit HP bar visibility timer (render frames remaining).
@@ -249,8 +255,23 @@ export class UnitView {
    */
   private hpTimers: Map<number, number> = new Map();
 
-  /** Loaded .tao assets keyed by unit type; entries appear as each fetch resolves. */
+  /** Default (unskinned) .tao assets keyed by unit type; entries appear as each fetch resolves. */
   private readonly assets: Map<UnitType, TaoAsset> = new Map();
+
+  /**
+   * Skin-overridden .tao assets for the LOCAL player's own equipped skins — applied only to units on
+   * {@link localSide} (see {@link acquireSprite}). A type absent here has no local skin equipped and
+   * always renders from {@link assets}.
+   */
+  private readonly localSkinAssets: Map<UnitType, TaoAsset> = new Map();
+
+  /**
+   * Skin-overridden .tao assets for the OPPONENT's equipped skins — applied only to units on the
+   * non-local side. Empty for AI/bot opponents (they never equip skins) and for any match where the
+   * server hasn't supplied opponent cosmetics (older client/replay paths) — those always render
+   * from {@link assets}, same as an opponent with nothing equipped.
+   */
+  private readonly opponentSkinAssets: Map<UnitType, TaoAsset> = new Map();
 
   /**
    * Hero Roster card instances + equipment inventory for the battle-render gear
@@ -286,9 +307,12 @@ export class UnitView {
   constructor(
     boardView: BoardView,
     localSide: Side = Side.Bottom,
+    /** The LOCAL player's own equipped skins — applied only to their own units, never the opponent's (see {@link acquireSprite}). */
     equippedSkins: readonly string[] = [],
     cardInstances: EngineCardInstance[] | null = null,
     equipmentInv: EngineEquipInv | null = null,
+    /** The OPPONENT's equipped skins, if known — real PvP opponents who have one equipped; always empty for AI/bot opponents. */
+    opponentSkins: readonly string[] = [],
   ) {
     this.boardView = boardView;
     this.localSide = localSide;
@@ -310,11 +334,19 @@ export class UnitView {
     // Start loading every stickman asset in the background. The game is playable
     // before the first unit can spawn, so by the time acquireSprite() runs for a
     // stickman-animated unit these Promises will normally be settled; until then
-    // that unit falls back to the circle placeholder. The equipped skin (S3-4)
-    // swaps the texture bundle per type; unmapped types use the default look.
-    for (const [type, url] of Object.entries(resolveAssets(equippedSkins)) as [UnitType, string][]) {
+    // that unit falls back to the circle placeholder. The default bundle always
+    // loads (an opponent of a type the local player has skinned still needs the
+    // unskinned look) — the equipped skin (S3-4) additionally loads into a
+    // side-scoped override map, applied only to that side's units (acquireSprite).
+    this.loadAssetsInto(STICKMAN_ASSETS, this.assets);
+    this.loadAssetsInto(resolveSkinOverrides(equippedSkins), this.localSkinAssets);
+    this.loadAssetsInto(resolveSkinOverrides(opponentSkins), this.opponentSkinAssets);
+  }
+
+  private loadAssetsInto(urls: Partial<Record<UnitType, string>>, into: Map<UnitType, TaoAsset>): void {
+    for (const [type, url] of Object.entries(urls) as [UnitType, string][]) {
       StickmanRuntime.loadAsset(url, targetScreenHeight(type))
-        .then(asset => { this.assets.set(type, asset); })
+        .then(asset => { into.set(type, asset); })
         .catch(err  => { console.warn(`[UnitView] ${type} .tao failed to load:`, err); });
     }
   }
@@ -553,22 +585,43 @@ export class UnitView {
     runtime.setGear(unit.side === this.localSide ? this.gearSpecsFor(unit.unitType) : []);
   }
 
+  /**
+   * Pool bucket key for a unit's stickman (wrapper + runtime) pair. Plain `unitType` for the common
+   * case (no skin override on the relevant side — the vast majority of types, always). Types with a
+   * skin equipped on this unit's own side get a distinct suffixed key so a skinned pooled instance is
+   * never handed back out for a differently-skinned (or unskinned) reuse — `StickmanRuntime` binds its
+   * textures at construction and can't swap them on reset (see {@link acquireSprite}).
+   */
+  private poolKey(unitType: UnitType, isLocal: boolean): string {
+    const skinMap = isLocal ? this.localSkinAssets : this.opponentSkinAssets;
+    return skinMap.has(unitType) ? `${unitType}:${isLocal ? 'local' : 'opp'}` : unitType;
+  }
+
+  /**
+   * A skin only ever re-skins its owner's own units (S3-4 rule, 2026-08-01 fix): the local player's
+   * equipped skins render on their own side, the opponent's (if known — real PvP only, never AI/bot)
+   * render on the opponent's side. A same-type unit on the other side always falls back to the
+   * default look, exactly like an opponent with nothing equipped.
+   */
   private acquireSprite(unit: Unit): PIXI.Container {
-    const asset = this.assets.get(unit.unitType);
-    if (asset) return this.buildStickmanContainer(unit, asset);
+    const isLocal = unit.side === this.localSide;
+    const skinned = (isLocal ? this.localSkinAssets : this.opponentSkinAssets).get(unit.unitType);
+    const asset = skinned ?? this.assets.get(unit.unitType);
+    if (asset) return this.buildStickmanContainer(unit, asset, isLocal);
     return this.buildCircleContainer(unit);
   }
 
   // ─── Stickman container (unit type with a loaded .tao asset) ───────────────
 
-  private buildStickmanContainer(unit: Unit, asset: TaoAsset): PIXI.Container {
+  private buildStickmanContainer(unit: Unit, asset: TaoAsset, isLocal: boolean): PIXI.Container {
     const side    = this.renderSide(unit);
     const mirrorX = side === Side.Top;
     const targetHeight = targetScreenHeight(unit.unitType);
-    this.stickmanTypes.set(unit.id, unit.unitType);
+    const poolKey = this.poolKey(unit.unitType, isLocal);
+    this.stickmanPoolKeys.set(unit.id, poolKey);
 
-    // Reuse a pooled (wrapper + runtime) pair of the same type when available.
-    const pooled = this.stickmanPools.get(unit.unitType)?.pop();
+    // Reuse a pooled (wrapper + runtime) pair of the same bucket when available.
+    const pooled = this.stickmanPools.get(poolKey)?.pop();
     if (pooled) {
       pooled.runtime.reset({ mirrorX, targetHeight });
       pooled.wrapper.visible = true;
@@ -678,13 +731,13 @@ export class UnitView {
     const runtime = this.stickmanRuntimes.get(unitId);
     if (runtime) {
       this.stickmanRuntimes.delete(unitId);
-      const type = this.stickmanTypes.get(unitId)!;
-      this.stickmanTypes.delete(unitId);
-      // Return the (wrapper + runtime) pair to its type's pool instead of destroying.
+      const key = this.stickmanPoolKeys.get(unitId)!;
+      this.stickmanPoolKeys.delete(unitId);
+      // Return the (wrapper + runtime) pair to its bucket's pool instead of destroying.
       sprite.removeFromParent();
       sprite.visible = false;
-      let pool = this.stickmanPools.get(type);
-      if (!pool) { pool = []; this.stickmanPools.set(type, pool); }
+      let pool = this.stickmanPools.get(key);
+      if (!pool) { pool = []; this.stickmanPools.set(key, pool); }
       pool.push({ wrapper: sprite, runtime });
     } else {
       this.pool.release(sprite);
@@ -728,10 +781,12 @@ export class UnitView {
     this.pool.drain((c) => c.destroy({ children: true }));
 
     this.stickmanRuntimes.clear();
-    this.stickmanTypes.clear();
+    this.stickmanPoolKeys.clear();
     this.sprites.clear();
     this.hpTimers.clear();
     this.assets.clear();
+    this.localSkinAssets.clear();
+    this.opponentSkinAssets.clear();
     this.gearSpecCache.clear();
 
     this.container.destroy({ children: true });
