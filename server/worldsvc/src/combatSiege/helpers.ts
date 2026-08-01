@@ -61,8 +61,12 @@ export function SiegeHelpersMixin<TBase extends SiegeServiceBaseCtor>(Base: TBas
     }
 
     /**
-     * Record a siege battle report (transient record, §14.3 sieges). When replay is non-null (decisive siege ran through the engine), persist seed + both sides'
-     * formations + tile level for client-side replay spectating (getSiegeReplay); cheap fallback / NPC sweep → replay=null (no replay available).
+     * Record a siege battle report (transient record, §14.3 sieges). When replay is non-null, persist seed + both
+     * sides' formations + tile level for client-side replay spectating (getSiegeReplay). As of 2026-08-01, every
+     * call site that builds an army passes a non-null replay — including the cheap-formula and engine-crash
+     * fallback paths (traceability decision, see combatSiege/arrival.ts applySiege) — so replay=null only happens
+     * for applySweep (never builds a formation, nothing meaningful to store) and no-combat instant occupy (empty
+     * NPC garrison).
      */
     override async recordSiege(
       m: MarchDoc,

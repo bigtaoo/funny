@@ -128,10 +128,12 @@ export class DefenseService {
    * client-side replay browser (last-100). Backed by the `{ worldId, ts:-1 }` index; sieges have no TTL, so
    * this is the player's full history capped at `limit` (≤ SIEGE_LIST_MAX). Only compact fields are returned —
    * the heavy replay inputs (seed + formations) are fetched per-row via getSiegeReplay when a row is opened.
-   * `hasReplay` tells the client which rows are actually replayable. As of 2026-08-01, a battle settled via
-   * the cheap linear formula (`shouldUseCheapSiege`) still stores replay inputs (traceability decision — see
-   * combatSiege/arrival.ts applySiege) and so is replayable; only a genuine engine-crash fallback (inputs that
-   * threw inside runSiegeBattle) or a no-combat instant occupy (empty NPC garrison) leave it false.
+   * `hasReplay` tells the client which rows are actually replayable. As of 2026-08-01, replay inputs are stored
+   * unconditionally — the cheap linear formula path (`shouldUseCheapSiege`) and a genuine engine-crash fallback
+   * both still persist them (traceability decision — see combatSiege/arrival.ts applySiege), and getSiegeReplay
+   * degrades safely if a stored crash-fallback battle can't actually be reconstructed. Only a no-combat instant
+   * occupy (empty NPC garrison — no army was ever built) or a legacy battle report predating this field leave
+   * `hasReplay` false.
    */
   async listSieges(worldId: string, accountId: string, limit = SIEGE_LIST_MAX): Promise<SiegeSummaryView[]> {
     const n = Math.max(1, Math.min(SIEGE_LIST_MAX, Math.floor(limit) || SIEGE_LIST_MAX));

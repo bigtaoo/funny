@@ -139,7 +139,10 @@ export function OccupationMixin<TBase extends SiegeServiceBaseCtor>(Base: TBase)
       const defenderConfig = { garrison: synthesizeArmy(garrison, 'defender'), defenderBaseHp: npcBaseHp(tileLevel) };
       const seed = siegeSeedFromId(m._id);
       let res: SiegeResolution;
-      let replay: SiegeReplayInputs | null = { seed, attackerArmy, defenderConfig, tileLevel };
+      // 2026-08-01 (traceability decision, see combatSiege/arrival.ts applySiege for the full rationale): replay
+      // inputs are kept even on an engine crash — getSiegeReplay degrades safely (see that comment) rather than
+      // crashing, so there is no downside to keeping the exact inputs that caused a crash for later reproduction.
+      const replay: SiegeReplayInputs = { seed, attackerArmy, defenderConfig, tileLevel };
       try {
         res = await runSiegeBattle({ attackerArmy, defenderConfig, tileLevel, seed, cardInstances, equipmentInv: cardEquipInv });
       } catch (err) {
@@ -148,7 +151,6 @@ export function OccupationMixin<TBase extends SiegeServiceBaseCtor>(Base: TBase)
           err: (err as Error).message,
         });
         res = resolveSiege(effTroops, garrison);
-        replay = null;
       }
 
       if (res.outcome === 'attacker_win') {
@@ -203,7 +205,10 @@ export function OccupationMixin<TBase extends SiegeServiceBaseCtor>(Base: TBase)
       const defenderConfig = { garrison: synthesizeArmy(garrison, 'defender'), defenderBaseHp: npcBaseHp(tileLevel) };
       const seed = siegeSeedFromId(m._id);
       let res: SiegeResolution;
-      let replay: SiegeReplayInputs | null = { seed, attackerArmy, defenderConfig, tileLevel };
+      // 2026-08-01 (traceability decision, see combatSiege/arrival.ts applySiege for the full rationale): replay
+      // inputs are kept even on an engine crash — getSiegeReplay degrades safely rather than crashing, so there
+      // is no downside to keeping the exact inputs that caused a crash for later reproduction.
+      const replay: SiegeReplayInputs = { seed, attackerArmy, defenderConfig, tileLevel };
       try {
         res = await runSiegeBattle({ attackerArmy, defenderConfig, tileLevel, seed, cardInstances, equipmentInv: cardEquipInv });
       } catch (err) {
@@ -212,7 +217,6 @@ export function OccupationMixin<TBase extends SiegeServiceBaseCtor>(Base: TBase)
           err: (err as Error).message,
         });
         res = resolveSiege(effTroops, garrison);
-        replay = null;
       }
 
       if (res.outcome === 'attacker_win') {

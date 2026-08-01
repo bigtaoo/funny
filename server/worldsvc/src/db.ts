@@ -409,12 +409,17 @@ export interface SiegeDoc {
    * G3-2c replay spectator: persists the inputs of the battle (seed + both sides' formations + tile level).
    * The client uses this to reconstruct buildSiegeBattle and headless-replay with the same seed (pure
    * presentation, not authoritative — see the outcome caveat below).
-   * As of 2026-08-01, this is persisted even when the actual settlement ran the cheap linear formula
-   * (`shouldUseCheapSiege`) rather than the engine — a from-scratch engine replay of those inputs can then
-   * show a different winner than the recorded `outcome` (traceability was judged worth that discrepancy risk
-   * over silently losing the ability to inspect lopsided/skipped battles; see combatSiege/arrival.ts applySiege).
-   * Still absent for legacy battle reports and genuine engine-crash fallbacks (the inputs that crashed
-   * runSiegeBattle are not stored — replaying them would likely crash the client's engine too).
+   * As of 2026-08-01, this is persisted unconditionally on every battle that builds an army/defenderConfig —
+   * whether the actual settlement ran the full engine, the cheap linear formula (`shouldUseCheapSiege`), or hit
+   * a genuine engine crash (the exact inputs that crashed `runSiegeBattle` are kept too, for offline
+   * reproduction). A from-scratch replay of a cheap-resolved or crash-fallback battle can therefore show a
+   * different winner than the recorded `outcome`, or fail to reconstruct at all — traceability was judged worth
+   * that risk over silently losing the ability to inspect or reproduce a battle after the fact (see
+   * combatSiege/arrival.ts applySiege). getSiegeReplay's fetch is wrapped in try/catch on both the server
+   * (httpApi.ts's top-level handler → clean 500) and the client (world.ts's goSiegeReplay → falls back to the
+   * map), so a replay that fails to reconstruct/re-run degrades safely rather than crashing either side.
+   * Still absent only for legacy battle reports predating this field and no-combat instant occupies (empty NPC
+   * garrison — no army was ever built to store).
    */
   seed?: number;
   attackerArmy?: ArmyEntry[];
