@@ -87,13 +87,13 @@ describe('GachaScene — result card names + duplicate badge', () => {
   });
 });
 
-describe('GachaScene — legendary card light sweep', () => {
-  const fxOf = (s: GachaScene): PIXI.Container[] =>
-    (s as unknown as { revealFx: PIXI.Container[] }).revealFx;
+describe('GachaScene — legendary card border trail', () => {
+  const fxOf = (s: GachaScene): Array<{ phase: number }> =>
+    (s as unknown as { revealFx: Array<{ phase: number }> }).revealFx;
   const tick = (s: GachaScene, dt: number): void =>
     (s as unknown as { update(dt: number): void }).update(dt);
 
-  it('spawns a clockwise-spinning sweep for a legendary (orange) card only', () => {
+  it('spawns a clockwise-looping border trail for a legendary (orange) card only', () => {
     const scene = buildGacha();
     reveal(scene, [
       { itemId: 'lichuang', rarity: 'rare', duplicate: false },
@@ -102,14 +102,14 @@ describe('GachaScene — legendary card light sweep', () => {
     const fx = fxOf(scene);
     expect(fx.length).toBe(1); // only the legendary card, not the rare one
 
-    const before = fx[0].rotation;
+    const before = fx[0].phase;
     tick(scene, 0.5);
-    // Positive rotation = clockwise (screen y-down); it must advance while revealing.
-    expect(fx[0].rotation).toBeGreaterThan(before);
+    // Positive phase delta = clockwise (screen y-down); it must advance while revealing.
+    expect(fx[0].phase).toBeGreaterThan(before);
     scene.destroy();
   });
 
-  it('clears the sweep when the reveal is dismissed', () => {
+  it('clears the trail when the reveal is dismissed', () => {
     const scene = buildGacha();
     reveal(scene, [{ itemId: 'skin_placeholder', rarity: 'legendary', duplicate: false }]);
     expect(fxOf(scene).length).toBe(1);
