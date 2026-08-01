@@ -916,6 +916,8 @@ export interface components {
             mainBaseTile?: string;
             familyId?: string;
             territoryCount?: number;
+            /** @description Season battle pass held (S8-8 shop; grants training/build speed + yield bonuses, cleared on season reset). Client uses this to grey out the shop's battle-pass row once already active (single-slot — repeat purchase is rejected with ALREADY_ACTIVE). */
+            hasBattlePass?: boolean;
             /** @description Training queue (S8-2, ordered by completeAt ascending). The client uses this to render the queue countdown (C4). */
             trainingQueue?: {
                 qty: number;

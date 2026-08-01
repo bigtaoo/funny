@@ -1043,6 +1043,8 @@ export const zh = {
   'world.shopCost': '{coins} 金币',
   'world.shopBalance': '余额：{coins} 金币',
   'world.shopErr': '购买失败',
+  'world.shopActive': '已生效',
+  'world.shopAlreadyActive': '本赛季已生效，无需重复购买',
   'world.shop.speedup': '训练加速 {h} 时',
   'world.shop.resPack': '资源包（各 {n}）',
   'world.shop.shield': '保护罩 {h} 时',

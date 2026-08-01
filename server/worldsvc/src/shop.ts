@@ -28,6 +28,12 @@ export class ShopService {
     if (item.dailyLimit != null && countSoFar >= item.dailyLimit) {
       throw new SlgError('SHOP_LIMIT_REACHED', `Daily purchase limit reached for ${itemId} (${item.dailyLimit}/day)`);
     }
+    // battle_pass single-slot gate (2026-08-01 fix): the flag it sets is a no-op boolean re-set on a
+    // repeat buy — with no dailyLimit and no idempotency check, a player could burn coins on it
+    // indefinitely for zero extra effect. Mirrors the commercial monthly/year card ALREADY_ACTIVE gate.
+    if (item.kind === 'battle_pass' && pw.hasBattlePass) {
+      throw new SlgError('ALREADY_ACTIVE', 'Battle pass already active this season');
+    }
 
     const orderId = `slg_shop:${worldId}:${accountId}:${itemId}:${now()}`;
     await this.core.commercial.spend(accountId, item.cost, orderId, clientPlatform);

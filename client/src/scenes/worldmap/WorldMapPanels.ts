@@ -504,16 +504,19 @@ export class WorldMapPanels {
     return layer;
   }
 
-  /** Like {@link panelButton} but adds into a scroll-list's masked layer instead of the modal layer directly. */
-
+  /**
+   * Like {@link panelButton} but adds into a scroll-list's masked layer instead of the modal layer directly.
+   * `disabled` swaps in the shared pale-grey styling (mirrors the tile-action modal's disabled buttons above) —
+   * the tap action still fires, so a disabled row can surface an explanatory toast instead of reading as dead.
+   */
   panelButtonIn(
     layer: PIXI.Container, label: string, x: number, y: number, bw: number, bh: number,
-    fill: number, action: () => void,
+    fill: number, action: () => void, disabled = false,
   ): void {
-    const bp = sketchPanel(bw, bh, { fill, border: C.accent, seed: seedFor(x, y, bw) });
+    const bp = sketchPanel(bw, bh, { fill: disabled ? C.btnDis : fill, border: disabled ? C.btnOff : C.accent, seed: seedFor(x, y, bw) });
     bp.x = x; bp.y = y;
     layer.addChild(bp);
-    const bl = txt(label, FS.micro, C.light);
+    const bl = txt(label, FS.micro, disabled ? C.mid : C.light);
     bl.anchor.set(0.5, 0.5);
     bl.x = x + bw / 2; bl.y = y + bh / 2;
     layer.addChild(bl);
@@ -646,7 +649,15 @@ export class WorldMapPanels {
           costLbl.x = px + 14; costLbl.y = ry + 18;
           listLayer.addChild(costLbl);
           const bw = 56;
-          this.panelButtonIn(listLayer, t('world.shopBuy'), px + pw - bw - 14, ry + 2, bw, 24, C.accent, () => void this.ctx.net.doBuyShopItem(it.id));
+          // battle_pass single-slot gate (2026-08-01 fix): server rejects a repeat buy with ALREADY_ACTIVE
+          // (worldsvc/src/shop.ts); grey the row out client-side too instead of letting the player burn
+          // coins on a purchase that has no additional effect.
+          const owned = it.kind === 'battle_pass' && !!this.ctx.me?.hasBattlePass;
+          this.panelButtonIn(
+            listLayer, owned ? t('world.shopActive') : t('world.shopBuy'), px + pw - bw - 14, ry + 2, bw, 24, C.accent,
+            () => owned ? this.showToast(t('world.shopAlreadyActive'), C.mid) : void this.ctx.net.doBuyShopItem(it.id),
+            owned,
+          );
         }
         ry += rowH;
       }
