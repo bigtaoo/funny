@@ -17,6 +17,7 @@ export interface PoolHandlers {
   drawTileSlot(slot: PoolSlot, tx: number, ty: number): void;
   isBaseAnchor(tx: number, ty: number): boolean;
   ownerKeyOf(t: WorldTileView): string;
+  ownerHasBoundary(owner: number, tx: number, ty: number): boolean;
 }
 
 export function PoolMixin<TBase extends WorldMapRendererBaseCtor>(Base: TBase): TBase & Constructor<PoolHandlers> {
@@ -104,6 +105,12 @@ export function PoolMixin<TBase extends WorldMapRendererBaseCtor>(Base: TBase): 
       const fill = tile ? terrainFill(tile) : proceduralTileColor(this.ctx.cb.worldId, tx, ty);
       const owner = tile ? ownerTint(tile) : null;
       const fogged = tile?.visible === false;
+      // Only draw the owner border where this tile actually touches a differently-owned (or
+      // unowned) neighbor — a solid block of same-owner territory would otherwise repeat the
+      // same diamond outline on every tile, reading as a dense grid instead of a territory wash
+      // (reported: "地图看起来有些混乱"). Unowned tiles keep border=true (unused by drawTileL1/L2
+      // since they skip the whole owner block when owner==null).
+      const ownerBorder = owner == null ? true : this.ownerHasBoundary(owner, tx, ty);
 
       if (this.ctx.zoom === 1) {
         const isAnchor = tile?.type === 'base' && this.isBaseAnchor(tx, ty);
@@ -115,10 +122,28 @@ export function PoolMixin<TBase extends WorldMapRendererBaseCtor>(Base: TBase): 
           ? (tile?.obstacleKind ?? (proc ?? proceduralTile(this.ctx.cb.worldId, tx, ty)).obstacleKind)
           : undefined;
         const texName = terrainTextureName(effType, tx, ty, obstacleKind);
-        drawTileL1(g, tile ?? null, fill, owner, fogged, tp, isAnchor, texName, proc, tx, ty, this.ctx.cb.worldId);
+        drawTileL1(g, tile ?? null, fill, owner, fogged, tp, isAnchor, texName, proc, tx, ty, this.ctx.cb.worldId, ownerBorder);
       } else {
-        drawTileL2(g, fill, owner, fogged, tp);
+        drawTileL2(g, fill, owner, fogged, tp, ownerBorder);
       }
+    }
+
+    /**
+     * Does this owned tile touch a boundary — a directly-adjacent tile with a different
+     * `ownerTint` value (including an unowned/uncached neighbor)? Same 4-neighbor `tileCache`
+     * lookup pattern as {@link isBaseAnchor}. Missing/uncached neighbors (outside vision or never
+     * fetched) count as a boundary — better to draw an extra border than silently merge two
+     * territories that might not actually be contiguous. A same-owner interior tile (all 4
+     * neighbors share this exact tint, e.g. MINE_TINT vs MINE_BASE_TINT still differ so a
+     * capital's own outline is preserved) skips the border and keeps only the wash.
+     */
+    ownerHasBoundary(owner: number, tx: number, ty: number): boolean {
+      for (const [dx, dy] of [[-1, 0], [1, 0], [0, -1], [0, 1]] as const) {
+        const n = this.ctx.tileCache.get(`${tx + dx}:${ty + dy}`);
+        if (!n) return true;
+        if (ownerTint(n) !== owner) return true;
+      }
+      return false;
     }
 
     /**
