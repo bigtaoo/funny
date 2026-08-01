@@ -78,7 +78,7 @@ const mixedMail: MailView = {
   createdAt: 1000, expireAt: 999999999999, read: true, claimed: false,
   attachments: [
     { kind: 'equipment', id: 'tk_seal', count: 1, instance: { id: 'i1', defId: 'tk_seal', rarity: 'epic', level: 9, affixes: [], locked: false } },
-    { kind: 'material', id: 'mat_lead', count: 6 },
+    { kind: 'material', id: 'lead', count: 6 },
     { kind: 'coins', count: 500 },
   ],
 } as unknown as MailView;

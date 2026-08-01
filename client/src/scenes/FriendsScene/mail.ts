@@ -12,9 +12,16 @@ import { buildMaterialIcon, type MaterialKind } from '../../render/materialAtlas
 import type { MailView, MailAttachmentView } from '../../net/ApiClient';
 import { type Constructor, type FriendsSceneBaseCtor } from './base';
 
-/** itemId → material icon glyph, same 3-id set GachaScene.MATERIAL_ICON / EquipmentScene track. */
+/**
+ * itemId → material icon glyph. Every server system that sends a `kind: 'material'` mail
+ * attachment (auctionsvc, worldsvc season rewards, battlepass, retention, events) uses the short
+ * `scrap`/`lead`/`binding` id — NOT the `mat_`-prefixed ids gacha grants directly into
+ * SaveData.materials (see GachaScene.MATERIAL_ICON, a different id namespace for a different
+ * source). Keying this table on the `mat_` ids left every real mail attachment unresolved,
+ * falling back to the generic capsule glyph.
+ */
 const MAT_ITEM_ICON: Record<string, MaterialKind> = {
-  mat_scrap: 'scrap', mat_lead: 'lead', mat_binding: 'binding',
+  scrap: 'scrap', lead: 'lead', binding: 'binding',
 };
 
 export interface MailHandlers {
