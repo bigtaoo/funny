@@ -59,8 +59,12 @@ describe('CHECKIN_REWARDS', () => {
     }
   });
 
-  it('checkin itself almost never grants coins (R1: not a new coin faucet)', () => {
+  it('checkin\'s primary reward never uses the plain "coins" kind (R1: not a new bulk coin faucet)', () => {
     expect(CHECKIN_REWARDS.some((r) => r.kind === 'coins')).toBe(false);
+  });
+
+  it('no slot grants stamina (2026-08-01: stamina caps at 120 and regens fast, so a flat grant was routinely wasted overflow, not a felt reward — replaced with materials/bonusCoins)', () => {
+    expect(CHECKIN_REWARDS.some((r) => r.kind === 'stamina')).toBe(false);
   });
 
   it('spreads materials across the whole month, not just milestones', () => {
@@ -69,12 +73,25 @@ describe('CHECKIN_REWARDS', () => {
     for (const r of materialDays) expect(r.id).toMatch(/^(scrap|lead|binding)$/);
   });
 
-  it('day 7/14/21/30 are stamina pack / card pack / material pack / equipment finale', () => {
-    expect(CHECKIN_REWARDS[6]!.kind).toBe('stamina');
-    expect(CHECKIN_REWARDS[6]!.count).toBeGreaterThan(30); // bigger than a regular day
+  it('day 7/14/21/30 are material pack / card pack / material pack / equipment finale', () => {
+    expect(CHECKIN_REWARDS[6]!.kind).toBe('material');
     expect(CHECKIN_REWARDS[13]!.kind).toBe('card');
     expect(CHECKIN_REWARDS[20]!.kind).toBe('material');
     expect(CHECKIN_REWARDS[29]!.kind).toBe('equipment');
+  });
+
+  it('milestone days each carry a small bonusCoins top-up (R1b, 2026-08-01), summing to 200/month', () => {
+    const milestoneRewards = CHECKIN_MILESTONE_DAYS.map((day) => CHECKIN_REWARDS[day - 1]!);
+    expect(milestoneRewards.map((r) => r.bonusCoins)).toEqual([30, 40, 50, 80]);
+    const total = milestoneRewards.reduce((s, r) => s + (r.bonusCoins ?? 0), 0);
+    expect(total).toBe(200);
+  });
+
+  it('non-milestone days never carry bonusCoins', () => {
+    const milestoneIdx = new Set(CHECKIN_MILESTONE_DAYS.map((d) => d - 1));
+    CHECKIN_REWARDS.forEach((r, i) => {
+      if (!milestoneIdx.has(i)) expect(r.bonusCoins).toBeUndefined();
+    });
   });
 });
 

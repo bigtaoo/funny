@@ -37,7 +37,7 @@ export interface DailyCallbacks {
   onBack(): void;
   getSave?(): SaveData | undefined;
   getRetention?(): Promise<RetentionView>;
-  onCheckin?(): Promise<{ day: number; reward: { kind: string; count: number; id?: string } }>;
+  onCheckin?(): Promise<{ day: number; reward: { kind: string; count: number; id?: string; bonusCoins?: number } }>;
   onClaimDaily?(): Promise<{ coins: number }>;
   /** Always resolves (never throws) — `ok: false` covers both "no ad available" and server rejection (cooldown/cap/error), distinguished by `key`. */
   onWatchAd?(): Promise<{ ok: true; coins: number } | { ok: false; key: TranslationKey }>;
@@ -300,6 +300,21 @@ export class DailyScene implements Scene {
         }
       }
 
+      // Milestone bonus coins (R1b, 2026-08-01): small badge in the cell's top-right corner,
+      // alongside (not replacing) the primary reward drawn above.
+      if (reward?.bonusCoins) {
+        const rc = Math.round(ch * 0.18);
+        const ic = buildIcon('coin', rc, C.gold);
+        const rt = txt(`+${reward.bonusCoins}`, snapFont(Math.round(ch * 0.18)), 0x8a7020);
+        rt.anchor.set(0, 0);
+        const groupW = rc + Math.round(ch * 0.02) + rt.width;
+        const gx = x + cw - ch * 0.05 - groupW;
+        const gy = y + ch * 0.04;
+        ic.x = gx; ic.y = gy;
+        rt.x = gx + rc + Math.round(ch * 0.02); rt.y = gy;
+        this.container.addChild(ic, rt);
+      }
+
       // Claimed cell: stamp a green checkmark (user feedback: tick the claimed date after collecting).
       if (isClaimed) {
         const tickSz = Math.round(ch * 0.5);
@@ -461,7 +476,8 @@ export class DailyScene implements Scene {
         : r.reward.kind === 'card' ? t('daily.checkin.rewardCard')
         : r.reward.kind === 'equipment' ? t('daily.checkin.rewardEquipment')
         : t('daily.checkin.rewardStamina', { n: r.reward.count });
-      this.showToast(`${t('daily.checkin.day', { n: r.day })} ${rewardDesc}`);
+      const bonusDesc = r.reward.bonusCoins ? ` + ${t('daily.checkin.bonusCoins', { n: r.reward.bonusCoins })}` : '';
+      this.showToast(`${t('daily.checkin.day', { n: r.day })} ${rewardDesc}${bonusDesc}`);
     } catch (e) {
       this.showToast(e instanceof TimeoutError ? t('common.networkTimeout') : t('daily.tasks.claimFailed'), 'error');
     } finally {

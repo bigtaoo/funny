@@ -54,7 +54,7 @@ export interface RetentionView {
   checkin: { monthKey: string; claimedDays: number[] } | null;
   daily: { dayKey: string; completedTasks: Record<string, number>; taskPoints: number; rewardClaimed: boolean } | null;
   defs: {
-    rewards: { kind: string; count: number; id?: string }[];
+    rewards: { kind: string; count: number; id?: string; bonusCoins?: number }[];
     tasks: { id: string; points: number }[];
     pointsThreshold: number;
     dailyCoinsReward: number;

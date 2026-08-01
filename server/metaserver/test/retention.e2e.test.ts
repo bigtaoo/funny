@@ -100,9 +100,9 @@ describe.skipIf(!mongo)('meta retention e2e', () => {
     // —— Core regression assertions: fields must exist and be the correct type ——
     expect(Array.isArray(r.data.defs.rewards)).toBe(true);
     expect(r.data.defs.rewards.length).toBe(30);
-    // Slot 1 = stamina 30; slot 7 (index 6) = milestone stamina pack (RETENTION_DESIGN §2.1).
-    expect(r.data.defs.rewards[0]).toMatchObject({ kind: 'stamina', count: 30 });
-    expect(r.data.defs.rewards[6]).toMatchObject({ kind: 'stamina', count: 100 });
+    // Slot 1 = material drip; slot 7 (index 6) = milestone material pack + bonus coins (RETENTION_DESIGN §2.1, R1b).
+    expect(r.data.defs.rewards[0]).toMatchObject({ kind: 'material', count: 3, id: 'scrap' });
+    expect(r.data.defs.rewards[6]).toMatchObject({ kind: 'material', count: 5, id: 'lead', bonusCoins: 30 });
     // Each slot has kind + count (when stripped, count becomes undefined → client displays +undefined).
     for (const rw of r.data.defs.rewards) {
       expect(typeof rw.kind).toBe('string');
@@ -122,7 +122,7 @@ describe.skipIf(!mongo)('meta retention e2e', () => {
     expect(r.data.claimable).toHaveProperty('daily');
   });
 
-  it('POST /retention/checkin: material milestone (day 4) lands in save.materials, not inventory.skins', async () => {
+  it('POST /retention/checkin: material reward (day 4) lands in save.materials, not inventory.skins (regular days are materials-only since 2026-08-01, R1b)', async () => {
     for (let day = 1; day <= 3; day++) {
       await app.inject({ method: 'POST', url: '/retention/checkin', headers: auth() });
       fakeNow += 25 * 3600 * 1000;
@@ -130,12 +130,15 @@ describe.skipIf(!mongo)('meta retention e2e', () => {
     const r = body(await app.inject({ method: 'POST', url: '/retention/checkin', headers: auth() }));
     expect(r.data.day).toBe(4);
     expect(r.data.reward).toMatchObject({ kind: 'material', id: 'scrap', count: 3 });
-    expect(r.data.save.materials.scrap).toBe(3);
+    // Days 1/2/4 = scrap x3 each (9 total), day 3 = lead x2 — matches CHECKIN_REWARDS[0..3].
+    expect(r.data.save.materials.scrap).toBe(9);
+    expect(r.data.save.materials.lead).toBe(2);
     expect(r.data.save.inventory.skins).not.toContain('scrap');
   });
 
   it('POST /retention/checkin: day-14 card milestone lands in save.cardInv, day-30 equipment milestone lands in save.equipmentInv (regression class — same "wrong bucket" bug fixed in gachaDraw/shopBuy)', async () => {
     let last: ReturnType<typeof body> | undefined;
+    let expectedCoins = 0;
     for (let day = 1; day <= 30; day++) {
       last = body(await app.inject({ method: 'POST', url: '/retention/checkin', headers: auth() }));
       expect(last.ok).toBe(true);
@@ -154,8 +157,18 @@ describe.skipIf(!mongo)('meta retention e2e', () => {
         expect(equips.some((e) => e.defId === last!.data.reward.id)).toBe(true);
         expect(last.data.save.inventory.skins).not.toContain(last.data.reward.id);
       }
+      // Milestone bonusCoins (R1b, 2026-08-01): delivered to save.wallet.coins independently of
+      // the primary reward's own delivery path (material/card/equipment).
+      if ([7, 14, 21, 30].includes(day)) {
+        expect(last.data.reward.bonusCoins).toBeGreaterThan(0);
+        expectedCoins += last.data.reward.bonusCoins;
+        expect(last.data.save.wallet.coins).toBe(expectedCoins);
+      } else {
+        expect(last.data.reward.bonusCoins).toBeUndefined();
+      }
       fakeNow += 25 * 3600 * 1000; // advance to the next calendar day, still inside January
     }
+    expect(expectedCoins).toBe(200);
   });
 
   it('POST /retention/checkin: same day twice → 409 ALREADY_CLAIMED', async () => {

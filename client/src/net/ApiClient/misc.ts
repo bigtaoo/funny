@@ -7,7 +7,7 @@ import type { RetentionView, EventView, LobbyBadgesView } from './types';
 export interface MiscApi {
   getLobbyBadges(): Promise<LobbyBadgesView>;
   getRetention(): Promise<RetentionView>;
-  claimCheckin(): Promise<{ save: SaveData; day: number; reward: { kind: string; count: number; id?: string } }>;
+  claimCheckin(): Promise<{ save: SaveData; day: number; reward: { kind: string; count: number; id?: string; bonusCoins?: number } }>;
   claimDailyReward(): Promise<{ save: SaveData; coins: number }>;
   getEvents(): Promise<EventView[]>;
   claimEventReward(
@@ -49,8 +49,8 @@ export function MiscMixin<TBase extends ApiClientBaseCtor>(Base: TBase): TBase &
       return this.request<RetentionView>('GET', '/retention');
     }
     /** Check in to claim the next reward in the current month's calendar (idempotent). */
-    async claimCheckin(): Promise<{ save: SaveData; day: number; reward: { kind: string; count: number; id?: string } }> {
-      return this.post<{ save: SaveData; day: number; reward: { kind: string; count: number; id?: string } }>('/retention/checkin', {});
+    async claimCheckin(): Promise<{ save: SaveData; day: number; reward: { kind: string; count: number; id?: string; bonusCoins?: number } }> {
+      return this.post<{ save: SaveData; day: number; reward: { kind: string; count: number; id?: string; bonusCoins?: number } }>('/retention/checkin', {});
     }
     /** Claim the daily full-points task coin reward (idempotent). */
     async claimDailyReward(): Promise<{ save: SaveData; coins: number }> {
