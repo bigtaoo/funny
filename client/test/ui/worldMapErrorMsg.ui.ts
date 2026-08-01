@@ -57,6 +57,13 @@ describe('WorldMapNet.errorMsg — SLG error-code mapping', () => {
     expect(mapped).not.toContain('satchel cap of');
   });
 
+  it('ALREADY_ACTIVE (battle-pass single-slot gate, 2026-08-01) maps to the shop "already active" copy', () => {
+    // Same code the commercial monthly/year-card single-slot gate throws — reused for the SLG battle
+    // pass's repeat-purchase guard (worldsvc/src/shop.ts) rather than a bespoke SLG-only code.
+    expect(net.errorMsg(new WorldApiError('ALREADY_ACTIVE', 'Battle pass already active this season')))
+      .toBe(t('world.shopAlreadyActive'));
+  });
+
   it('unmapped code falls back to the raw server message', () => {
     expect(net.errorMsg(new WorldApiError('SOME_UNMAPPED_CODE', 'raw server text')))
       .toBe('raw server text');
