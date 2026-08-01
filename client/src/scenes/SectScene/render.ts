@@ -21,7 +21,7 @@ export interface RenderHandlers {
   renderChannel(x0: number, colW: number, y0: number, maxH: number, scrollKey: 'scrollY' | 'scrollYChannel'): void;
   centerMessage(msg: string): void;
   addCenterButton(label: string, x: number, y: number, action: () => void, seed: number, enabled?: boolean): void;
-  addBarButton(label: string, x: number, y: number, color: number, action: () => void, seed: number): void;
+  addBarButton(label: string, x: number, y: number, color: number, action: () => void, seed: number, enabled?: boolean): void;
 }
 
 export function RenderMixin<TBase extends SectSceneBaseCtor>(Base: TBase): TBase & Constructor<RenderHandlers> {
@@ -156,13 +156,16 @@ export function RenderMixin<TBase extends SectSceneBaseCtor>(Base: TBase): TBase
       const okX = cx - btnW - btnGap / 2;
       const cancelX = cx + btnGap / 2;
 
-      const okBtn = sketchButton(btnW, btnH, seedFor(0, 1, btnW));
+      const createBusy = this.bt.busy;
+      const okBtn = createBusy
+        ? sketchPanel(btnW, btnH, { fill: C.btnOff, border: C.mid, seed: seedFor(0, 1, btnW) })
+        : sketchButton(btnW, btnH, seedFor(0, 1, btnW));
       okBtn.x = okX; okBtn.y = y;
       this.bodyLayer.addChild(okBtn);
-      const ok = txt(t('sect.create'), FS.body * S, C.light);
+      const ok = txt(t('sect.create'), FS.body * S, createBusy ? C.mid : C.light);
       ok.anchor.set(0.5, 0.5); ok.x = okX + btnW / 2; ok.y = y + btnH / 2;
       this.bodyLayer.addChild(ok);
-      this.hitRects.push({ rect: { x: okX, y, w: btnW, h: btnH }, action: () => void this.doCreate() });
+      if (!createBusy) this.hitRects.push({ rect: { x: okX, y, w: btnW, h: btnH }, action: () => void this.doCreate() });
 
       const cancelBtn = sketchPanel(btnW, btnH, { fill: 0xeeeeee, border: C.mid, seed: seedFor(1, 1, btnW) });
       cancelBtn.x = cancelX; cancelBtn.y = y;
@@ -378,16 +381,18 @@ export function RenderMixin<TBase extends SectSceneBaseCtor>(Base: TBase): TBase
 
           // Any family leader (except the current leader family) can launch / vote a removal.
           if (this.isFamilyLeader && !isLeaderFam) {
+            const busy = this.bt.busy;
+            const voteColor = busy ? C.mid : C.red;
             const voteW = 104, voteBtnX = right - voteW - 12;
-            const voteBtn = sketchPanel(voteW, 34, { fill: 0xf0e0e0, border: C.red, seed: seedFor(cy, 1, voteW) });
+            const voteBtn = sketchPanel(voteW, 34, { fill: 0xf0e0e0, border: voteColor, seed: seedFor(cy, 1, voteW) });
             voteBtn.x = voteBtnX; voteBtn.y = cy + (ROW_H - 34) / 2;
             list.addChild(voteBtn);
-            const vl = txt(t('sect.vote'), FS.body, C.red);
+            const vl = txt(t('sect.vote'), FS.body, voteColor);
             vl.anchor.set(0.5, 0.5); vl.x = voteBtnX + voteW / 2; vl.y = cy + ROW_H / 2;
             list.addChild(vl);
             const nomId = fam.familyId;
             const nomLabel = `[${fam.tag}] ${fam.name}`;
-            this.hitRects.push({ rect: { x: voteBtnX, y: cy + (ROW_H - 34) / 2, w: voteW, h: 34 }, action: () => this.confirmVote(nomId, nomLabel) });
+            if (!busy) this.hitRects.push({ rect: { x: voteBtnX, y: cy + (ROW_H - 34) / 2, w: voteW, h: 34 }, action: () => this.confirmVote(nomId, nomLabel) });
           }
         }
         cy += ROW_H;
@@ -404,10 +409,11 @@ export function RenderMixin<TBase extends SectSceneBaseCtor>(Base: TBase): TBase
       // Alliance controls (ally / manage allies / allies-view) live in the header in landscape
       // (see SectSceneBase.drawHeaderTitle) or the summary row in portrait (drawAllianceControlsRow).
       // The bottom bar keeps only the leave/dissolve action.
+      const busy = this.bt.busy;
       if (this.isSectLeader) {
-        this.addBarButton(t('sect.dissolve'), left + 6, y, C.red, () => this.confirmDissolve(), 0);
+        this.addBarButton(t('sect.dissolve'), left + 6, y, C.red, () => this.confirmDissolve(), 0, !busy);
       } else if (this.isFamilyLeader) {
-        this.addBarButton(t('sect.leave'), midX - bw / 2, y, C.accent, () => this.confirmLeave(), 0);
+        this.addBarButton(t('sect.leave'), midX - bw / 2, y, C.accent, () => this.confirmLeave(), 0, !busy);
       }
     }
 
@@ -422,17 +428,19 @@ export function RenderMixin<TBase extends SectSceneBaseCtor>(Base: TBase): TBase
       const by = bandY + (bandH - bh) / 2;
       const padX = 14;
       let x = rightEdge - 8; // right anchor; each button is placed to the left of the previous one
+      const busy = this.bt.busy;
 
       const addBtn = (label: string, color: number, action: () => void, seed: number): void => {
-        const lbl = txt(label, FS.tiny, color);
+        const c = busy ? C.mid : color;
+        const lbl = txt(label, FS.tiny, c);
         const bw = Math.ceil(lbl.width) + padX * 2;
         const bx = x - bw;
-        const btn = sketchPanel(bw, bh, { fill: 0xf8f8f0, border: color, seed: seedFor(seed, 3, bw) });
+        const btn = sketchPanel(bw, bh, { fill: 0xf8f8f0, border: c, seed: seedFor(seed, 3, bw) });
         btn.x = bx; btn.y = by;
         this.bodyLayer.addChild(btn);
         lbl.anchor.set(0.5, 0.5); lbl.x = bx + bw / 2; lbl.y = by + bh / 2;
         this.bodyLayer.addChild(lbl);
-        this.hitRects.push({ rect: { x: bx, y: by, w: bw, h: bh }, action });
+        if (!busy) this.hitRects.push({ rect: { x: bx, y: by, w: bw, h: bh }, action });
         x = bx - 8;
       };
 
@@ -535,15 +543,16 @@ export function RenderMixin<TBase extends SectSceneBaseCtor>(Base: TBase): TBase
       if (enabled) this.hitRects.push({ rect: { x, y, w: 240, h: 72 }, action });
     }
 
-    addBarButton(label: string, x: number, y: number, color: number, action: () => void, seed: number): void {
+    addBarButton(label: string, x: number, y: number, color: number, action: () => void, seed: number, enabled = true): void {
       const bw = 150, bh = 40;
-      const btn = sketchPanel(bw, bh, { fill: 0xf8f8f0, border: color, seed: seedFor(seed, 2, bw) });
+      const c = enabled ? color : C.mid;
+      const btn = sketchPanel(bw, bh, { fill: 0xf8f8f0, border: c, seed: seedFor(seed, 2, bw) });
       btn.x = x; btn.y = y;
       this.bodyLayer.addChild(btn);
-      const lbl = txt(label, FS.body, color);
+      const lbl = txt(label, FS.body, c);
       lbl.anchor.set(0.5, 0.5); lbl.x = x + bw / 2; lbl.y = y + bh / 2;
       this.bodyLayer.addChild(lbl);
-      this.hitRects.push({ rect: { x, y, w: bw, h: bh }, action });
+      if (enabled) this.hitRects.push({ rect: { x, y, w: bw, h: bh }, action });
     }
   };
 }

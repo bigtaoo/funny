@@ -19,6 +19,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { ActionsMixin } from '../src/scenes/FamilyScene/actions';
 import type { FamilySceneBaseCtor } from '../src/scenes/FamilyScene/base';
+import { BusyTracker } from '../src/ui/busyTracker';
 
 /** Bare-bones stand-in for FamilySceneBase — only the fields doSendMsg()/submitMessage() touch. */
 interface Msg { id: string; senderId: string; senderName: string; body: string; ts: number }
@@ -33,6 +34,7 @@ class FakeFamilySceneBase {
   channelStick = true;
   sendInput: { value: string; remove: () => void } | null = null;
   sendText = '';
+  bt = new BusyTracker();
   cb = {
     worldApi: { sendFamilyMessage: vi.fn().mockResolvedValue(undefined) },
     playerName: 'Tester',
@@ -55,6 +57,7 @@ interface TestScene {
   channelStick: boolean;
   sendInput: { value: string; remove: () => void } | null;
   sendText: string;
+  bt: BusyTracker;
   cb: FakeFamilySceneBase['cb'];
   render: FakeFamilySceneBase['render'];
   showToast: FakeFamilySceneBase['showToast'];

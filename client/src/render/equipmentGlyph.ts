@@ -71,11 +71,16 @@ const EMPTY_INK = 0xb0aaa0;
 
 /**
  * Draw an empty-slot placeholder: a hollow (unfilled) version of the slot's base
- * shape plus a centered "+", instead of the filled/rarity-tinted glyph a real item
- * gets. Still hints the slot's item type (weapon/armor/trinket) so the row doesn't
- * lose that context, but reads unambiguously as "nothing here, tap to add" rather
- * than as a dim low-rarity item — the previous approach (real glyph at low alpha)
- * was mistaken for an actually-equipped common item at a glance (roster feedback).
+ * shape, plus a small "add" badge tucked in the bottom-right corner, instead of the
+ * filled/rarity-tinted glyph a real item gets. Still hints the slot's item type
+ * (weapon/armor/trinket) so the row doesn't lose that context, but reads
+ * unambiguously as "nothing here, tap to add" rather than as a dim low-rarity item —
+ * the previous approach (real glyph at low alpha) was mistaken for an actually-
+ * equipped common item at a glance (roster feedback). The "+" used to be centered
+ * on top of the whole shape, which for the trinket slot (a rect + a punched hole)
+ * read as a little humanoid figure rather than an empty accessory slot — moving it
+ * to a corner badge keeps the per-slot silhouette legible on its own (roster
+ * feedback 2026-08-01).
  */
 export function drawEmptySlotGlyph(
   g: PIXI.Graphics,
@@ -110,11 +115,16 @@ export function drawEmptySlotGlyph(
     }
   }
 
-  // Centered "+" drawn crisp on top so the add-affordance always reads clearly,
-  // regardless of how faint the per-slot outline is.
-  const plusR = r * 0.32;
-  pen.line(-plusR, 0, plusR, 0, { color: EMPTY_INK, width: lw * 1.3, alpha: 0.95, double: false });
-  pen.line(0, -plusR, 0, plusR, { color: EMPTY_INK, width: lw * 1.3, alpha: 0.95, double: false });
+  // "Add" badge in the bottom-right corner — kept off the shape's own center so the
+  // per-slot silhouette (pen stroke / plain rect / rect+hole) stays readable on its
+  // own; a paper-colored disc behind it keeps the "+" crisp over any of the three shapes.
+  const badgeR = r * 0.3;
+  const bx = r * 0.62, by = r * 0.62;
+  g.beginFill(palette.paper, 0.95).drawCircle(bx, by, badgeR).endFill();
+  pen.circle(bx, by, badgeR, { color: EMPTY_INK, width: lw * 0.9, alpha: 0.85, double: false });
+  const plusR = badgeR * 0.55;
+  pen.line(bx - plusR, by, bx + plusR, by, { color: EMPTY_INK, width: lw * 1.1, alpha: 0.95, double: false });
+  pen.line(bx, by - plusR, bx, by + plusR, { color: EMPTY_INK, width: lw * 1.1, alpha: 0.95, double: false });
 }
 
 // ── weapon = a pen/pencil/marker drawn on the diagonal ─────────────────────────

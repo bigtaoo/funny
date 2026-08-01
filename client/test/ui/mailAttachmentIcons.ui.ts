@@ -15,12 +15,21 @@ import { initI18n } from '../../src/i18n';
 import { FriendsScene, type FriendsSceneCallbacks } from '../../src/scenes/FriendsScene';
 import type { MailView } from '../../src/net/ApiClient';
 import { cardInstanceArtUrl } from '../../src/render/cardArt';
+import { buildMaterialIcon } from '../../src/render/materialAtlas';
 
 // Every export passes through untouched except cardInstanceArtUrl, wrapped in vi.fn (keeping its
 // real implementation) so the 2026-08-01-scoping spec below can inspect call arguments.
 vi.mock('../../src/render/cardArt', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../src/render/cardArt')>();
   return { ...actual, cardInstanceArtUrl: vi.fn(actual.cardInstanceArtUrl) };
+});
+
+// Same wrap-don't-replace treatment for buildMaterialIcon: the 2026-08-01 material-icon-id-mapping
+// regression spec below needs to inspect which MaterialKind a `kind: 'material'` attachment actually
+// resolves to (the bug was a silent wrong-key lookup, not a crash — only visible in the call args).
+vi.mock('../../src/render/materialAtlas', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../src/render/materialAtlas')>();
+  return { ...actual, buildMaterialIcon: vi.fn(actual.buildMaterialIcon) };
 });
 
 const memStore = (() => {
@@ -78,7 +87,7 @@ const mixedMail: MailView = {
   createdAt: 1000, expireAt: 999999999999, read: true, claimed: false,
   attachments: [
     { kind: 'equipment', id: 'tk_seal', count: 1, instance: { id: 'i1', defId: 'tk_seal', rarity: 'epic', level: 9, affixes: [], locked: false } },
-    { kind: 'material', id: 'mat_lead', count: 6 },
+    { kind: 'material', id: 'lead', count: 6 },
     { kind: 'coins', count: 500 },
   ],
 } as unknown as MailView;
@@ -173,6 +182,48 @@ describe('FriendsScene mail detail — card attachment always uses the base port
     const cardCalls = spy.mock.calls.filter((call) => (call[0] as { defId?: string } | undefined)?.defId === 'lichuang');
     expect(cardCalls.length).toBeGreaterThan(0);
     for (const call of cardCalls) expect(call.length === 1 || call[1] === undefined).toBe(true);
+    scene.destroy();
+  });
+});
+
+// Regression coverage for the 2026-08-01 material-icon-id-mapping fix: mail.ts's MAT_ITEM_ICON
+// table used to be keyed on the mat_-prefixed ids GachaScene uses for its *own* different context
+// (raw gacha-pool item ids, resolved before the pool's item→material grant translation) instead of
+// the short scrap/lead/binding ids every server system that actually sends a `kind: 'material'`
+// mail attachment (auctionsvc, worldsvc season rewards, battlepass, retention, events) uses. Every
+// real attachment silently missed the table and fell back to the generic capsule glyph — the
+// earlier frame-count-only assertions in this file couldn't have caught that, since the fallback
+// still draws exactly one picture. These specs pin the actual MaterialKind resolution instead.
+describe('FriendsScene mail detail — material attachment resolves the correct icon glyph (2026-08-01 fix)', () => {
+  const matMail = (id: string): MailView => ({
+    mailId: `gift:mat:${id}`, from: 'system', subject: 'Auction item returned', body: 'enjoy',
+    createdAt: 1000, expireAt: 999999999999, read: true, claimed: false,
+    attachments: [{ kind: 'material', id, count: 3 }],
+  } as unknown as MailView);
+
+  it.each(['scrap', 'lead', 'binding'] as const)(
+    'attachment id "%s" (the real server convention) resolves via buildMaterialIcon, not the capsule fallback',
+    (id) => {
+      const spy = buildMaterialIcon as unknown as { mock: { calls: unknown[][] } };
+      spy.mock.calls.length = 0;
+      const scene = build();
+      scene.container.removeChildren();
+      scene.drawMailDetail(matMail(id));
+
+      expect(spy.mock.calls).toHaveLength(1);
+      expect(spy.mock.calls[0]?.[0]).toBe(id);
+      scene.destroy();
+    },
+  );
+
+  it('a gacha-pool-style "mat_scrap" id (never actually sent in mail — a different id namespace) does not resolve via buildMaterialIcon', () => {
+    const spy = buildMaterialIcon as unknown as { mock: { calls: unknown[][] } };
+    spy.mock.calls.length = 0;
+    const scene = build();
+    scene.container.removeChildren();
+    scene.drawMailDetail(matMail('mat_scrap'));
+
+    expect(spy.mock.calls).toHaveLength(0);
     scene.destroy();
   });
 });

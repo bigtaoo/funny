@@ -48,87 +48,187 @@ interface FuseGroup {
 }
 
 /** Screen-space geometry of the last-drawn ring, captured so playFusionAnim can animate the 5
- * material portraits converging on the target before the burst plays. */
+ * material portraits converging on the target before the burst plays. Carries each slot's/the
+ * target's art URL + the ring's own radii so the animation can fly the *actual* portraits inward
+ * instead of anonymous dots (2026-08-01: "everyone giving their power" reads a lot stronger when
+ * you can see whose power it is). */
 interface FuseRingGeom {
   center: { x: number; y: number };
   slots: { x: number; y: number }[];
   color: number;
+  centerR: number;
+  slotR: number;
+  slotArtUrl: (string | null)[];
+  targetArtUrl: string | null;
 }
 
 export function FeedMixin<TBase extends CardSceneBaseCtor>(Base: TBase): TBase & Constructor<FeedHandlers> {
   return class extends Base {
     private fuseRingGeom: FuseRingGeom | null = null;
 
-    /** Placeholder in-engine fusion animation: the 5 material portraits converge on the target first,
-     * then the center portrait pulses gold. Program-art stand-in — a dedicated VFX-editor asset
-     * replaces this call site once authored (feed.ts owns the whole visual, so the swap is local). */
+    /** In-engine fusion animation: the 5 material portraits swoop into the target one after another
+     * (each on a bowed path with a fading ink trail, so the motion reads as "energy flow" rather than
+     * "shape sliding"), each arrival ripples the target, then the target itself punches outward in a
+     * gold burst. Program-art stand-in — a dedicated VFX-editor asset replaces this call site once
+     * authored (feed.ts owns the whole visual, so the swap is local); this version reuses the cards'
+     * own portrait textures + plain Graphics strokes (no new art, no extra texture uploads or additive
+     * blending) to stay cheap on low-end/WeChat devices (2026-08-01). */
     async playFusionAnim(): Promise<void> {
       const ml = this.modalLayer;
       const { w, h } = this;
       const geom = this.fuseRingGeom;
       const cx = geom?.center.x ?? w / 2;
       const cy = geom?.center.y ?? h / 2;
+      const color = geom?.color ?? C.gold;
+      const centerR = geom?.centerR ?? 24;
+      const slotR = geom?.slotR ?? 15;
 
-      // Phase 1: the 5 material portraits converge on the target.
+      // Phase 1: the 5 material portraits swoop into the target, staggered so they read as distinct
+      // contributions instead of one synchronized slide; each arrival ripples the target.
       if (geom && geom.slots.length > 0) {
-        const CONVERGE_MS = 380;
-        const dots = geom.slots.map((s) => {
-          const g = new PIXI.Graphics();
-          g.beginFill(geom.color).drawCircle(0, 0, 15).endFill();
-          g.position.set(s.x, s.y);
-          ml.addChild(g);
-          return { g, from: s };
+        const STAGGER_MS = 60;
+        const FLIGHT_MS = 360;
+        const RIPPLE_MS = 240;
+        const BOW = 30; // px the path bows sideways before straightening into the target
+
+        const dots = geom.slots.map((s, i) => {
+          const artUrl = geom.slotArtUrl[i];
+          const tex = artUrl ? getArtTexture(artUrl) : null;
+          let display: PIXI.Sprite | PIXI.Graphics;
+          if (tex && tex.baseTexture.valid) {
+            const sp = new PIXI.Sprite(tex);
+            sp.anchor.set(0.5);
+            sp.scale.set(Math.min((slotR * 2) / tex.width, (slotR * 2) / tex.height));
+            display = sp;
+          } else {
+            const g = new PIXI.Graphics();
+            g.beginFill(color).drawCircle(0, 0, slotR * 0.7).endFill();
+            display = g;
+          }
+          display.position.set(s.x, s.y);
+          display.visible = false; // hidden until its stagger delay elapses
+          ml.addChild(display);
+          const trail = new PIXI.Graphics();
+          ml.addChild(trail);
+          return {
+            display, trail, from: s, delay: i * STAGGER_MS, history: [] as { x: number; y: number }[],
+            bowSign: i % 2 === 0 ? 1 : -1, baseScaleX: display.scale.x, baseScaleY: display.scale.y, done: false,
+          };
         });
+        const ripples: { start: number; g: PIXI.Graphics }[] = [];
+
         await new Promise<void>((resolve) => {
           const start = performance.now();
+          const cleanupAndResolve = (): void => {
+            for (const d of dots) { if (!d.display.destroyed) d.display.destroy(); if (!d.trail.destroyed) d.trail.destroy(); }
+            for (const r of ripples) if (!r.g.destroyed) r.g.destroy();
+            resolve();
+          };
           const tick = (): void => {
-            // If anything tore down the modal layer (scene destroy, a texture-load redraw) the dots
-            // are destroyed graphics; touching them would throw. Bail cleanly so the fuse still settles.
-            if (dots.some((d) => d.g.destroyed)) { for (const d of dots) if (!d.g.destroyed) d.g.destroy(); resolve(); return; }
-            const f = Math.min(1, (performance.now() - start) / CONVERGE_MS);
-            const e = 1 - (1 - f) * (1 - f); // ease-out
+            // If anything tore down the modal layer (scene destroy, a texture-load redraw) mid-flight,
+            // the still-live dots become destroyed graphics; touching them would throw. Bail cleanly.
+            if (ml.destroyed || dots.some((d) => !d.done && d.display.destroyed)) { cleanupAndResolve(); return; }
+            const now = performance.now();
+            let allDone = true;
             for (const d of dots) {
-              d.g.x = d.from.x + (cx - d.from.x) * e;
-              d.g.y = d.from.y + (cy - d.from.y) * e;
-              d.g.scale.set(1 - 0.6 * e);
-              d.g.alpha = 1 - 0.3 * e;
+              if (d.done) continue;
+              const localT = now - start - d.delay;
+              if (localT < 0) { allDone = false; continue; } // still waiting for its turn
+              d.display.visible = true;
+              const f = Math.min(1, localT / FLIGHT_MS);
+              const e = 1 - (1 - f) * (1 - f); // ease-out
+              const dx = cx - d.from.x, dy = cy - d.from.y;
+              const len = Math.hypot(dx, dy) || 1;
+              const bow = Math.sin(f * Math.PI) * BOW * d.bowSign; // bows out then straightens on arrival
+              const x = d.from.x + dx * e + (-dy / len) * bow;
+              const y = d.from.y + dy * e + (dx / len) * bow;
+              d.display.position.set(x, y);
+              d.display.scale.set(d.baseScaleX * (1 - 0.6 * e), d.baseScaleY * (1 - 0.6 * e));
+              d.display.alpha = 1 - 0.3 * e;
+              d.history.unshift({ x, y });
+              if (d.history.length > 6) d.history.length = 6;
+              d.trail.clear();
+              for (let i = 0; i < d.history.length - 1; i++) {
+                const a = d.history[i], b = d.history[i + 1];
+                const t = i / d.history.length;
+                d.trail.lineStyle(Math.max(1, slotR * 0.5 * (1 - t)), color, (1 - t) * 0.35);
+                d.trail.moveTo(a.x, a.y).lineTo(b.x, b.y);
+              }
+              if (f >= 1) {
+                d.done = true;
+                d.display.destroy();
+                d.trail.destroy();
+                ripples.push({ start: now, g: ml.addChild(new PIXI.Graphics()) });
+              } else {
+                allDone = false;
+              }
             }
-            if (f < 1) {
-              requestAnimationFrame(tick);
-            } else {
-              for (const d of dots) d.g.destroy();
-              resolve();
+            for (const r of ripples) {
+              const rf = Math.min(1, (now - r.start) / RIPPLE_MS);
+              if (rf < 1) allDone = false;
+              r.g.clear();
+              r.g.lineStyle(3, color, 1 - rf);
+              r.g.drawCircle(cx, cy, centerR * 0.5 + rf * centerR * 0.9);
             }
+            if (allDone) cleanupAndResolve(); else requestAnimationFrame(tick);
           };
           requestAnimationFrame(tick);
         });
       }
 
-      // Phase 2: burst at the center.
+      // Phase 2: the target absorbs it all — screen flash, expanding ring + radiating spokes, and the
+      // target portrait itself punches outward (squash/stretch) so the payoff reads as impact, not just
+      // a shape pulsing in empty space.
       const flash = new PIXI.Graphics();
       flash.beginFill(0xffe28a, 0).drawRect(0, 0, w, h).endFill();
       ml.addChild(flash);
       const burst = new PIXI.Graphics();
       ml.addChild(burst);
-      const DURATION_MS = 650;
+      let targetOverlay: PIXI.Sprite | null = null;
+      let targetBaseScale = 1;
+      if (geom?.targetArtUrl) {
+        const tex = getArtTexture(geom.targetArtUrl);
+        if (tex.baseTexture.valid) {
+          targetOverlay = new PIXI.Sprite(tex);
+          targetOverlay.anchor.set(0.5);
+          targetBaseScale = Math.min((centerR * 2) / tex.width, (centerR * 2) / tex.height);
+          targetOverlay.scale.set(targetBaseScale);
+          targetOverlay.position.set(cx, cy);
+          ml.addChild(targetOverlay);
+        }
+      }
+      const SPOKES = 8;
+      const DURATION_MS = 700;
       await new Promise<void>((resolve) => {
         const start = performance.now();
         const tick = (): void => {
-          // Same guard as phase 1: a torn-down modal layer leaves flash/burst destroyed, and
-          // burst.clear() on a destroyed Graphics throws (null _geometry). Bail cleanly instead.
-          if (flash.destroyed || burst.destroyed) { resolve(); return; }
+          // Same guard as phase 1: a torn-down modal layer leaves these destroyed, and touching a
+          // destroyed Graphics/Sprite throws. Bail cleanly instead.
+          if (flash.destroyed || burst.destroyed || (targetOverlay && targetOverlay.destroyed)) { resolve(); return; }
           const elapsed = performance.now() - start;
           const f = Math.min(1, elapsed / DURATION_MS);
           const pulse = Math.sin(f * Math.PI); // 0 → 1 → 0
           flash.alpha = pulse * 0.5;
           burst.clear();
           burst.lineStyle(4, C.gold, pulse);
-          burst.drawCircle(cx, cy, 24 + pulse * 70);
+          burst.drawCircle(cx, cy, centerR + pulse * 70);
+          burst.lineStyle(2, color, pulse * 0.8);
+          for (let i = 0; i < SPOKES; i++) {
+            const ang = (i * 2 * Math.PI) / SPOKES;
+            const r0 = centerR + pulse * 18, r1 = centerR + pulse * 100;
+            burst.moveTo(cx + Math.cos(ang) * r0, cy + Math.sin(ang) * r0);
+            burst.lineTo(cx + Math.cos(ang) * r1, cy + Math.sin(ang) * r1);
+          }
+          if (targetOverlay) {
+            const punch = Math.sin(Math.min(1, f * 1.6) * Math.PI) * 0.22 * (1 - f * 0.5);
+            targetOverlay.scale.set(targetBaseScale * (1 + punch), targetBaseScale * (1 - punch * 0.6));
+          }
           if (f < 1) {
             requestAnimationFrame(tick);
           } else {
             flash.destroy();
             burst.destroy();
+            targetOverlay?.destroy();
             resolve();
           }
         };
@@ -277,6 +377,12 @@ export function FeedMixin<TBase extends CardSceneBaseCtor>(Base: TBase): TBase &
         const rowH = rowU * S;
         const footerBlockH = footerBlockU * S;
 
+        const artUrlFor = (cardId: string | null): string | null => {
+          if (!cardId) return null;
+          const inst = save.cardInv?.[cardId];
+          return inst ? cardInstanceArtUrl(inst) : null;
+        };
+
         const drawPortrait = (
           cardId: string | null, cx: number, cy: number, r: number, faction: Faction | undefined,
         ): void => {
@@ -285,8 +391,7 @@ export function FeedMixin<TBase extends CardSceneBaseCtor>(Base: TBase): TBase &
           frame.beginFill(0xf0eee7, cardId ? 1 : 0.5).drawCircle(cx, cy, r).endFill();
           ml.addChild(frame);
           if (!cardId) return;
-          const inst = save.cardInv?.[cardId];
-          const artUrl = inst ? cardInstanceArtUrl(inst) : null;
+          const artUrl = artUrlFor(cardId);
           if (artUrl) {
             const tex = getArtTexture(artUrl);
             if (tex.baseTexture.valid) {
@@ -350,11 +455,13 @@ export function FeedMixin<TBase extends CardSceneBaseCtor>(Base: TBase): TBase &
           ml.addChild(stars);
 
           const slotPositions: { x: number; y: number }[] = [];
+          const slotArtUrl: (string | null)[] = [];
           for (let i = 0; i < FUSION_MATERIAL_COUNT; i++) {
             const ang = -Math.PI / 2 + (i * 2 * Math.PI) / FUSION_MATERIAL_COUNT;
             const sx = ringCx + Math.cos(ang) * orbit, sy = ringCy + Math.sin(ang) * orbit;
             slotPositions.push({ x: sx, y: sy });
             const slotCardId = slotIds[i];
+            slotArtUrl.push(artUrlFor(slotCardId));
             drawPortrait(slotCardId, sx, sy, slotR, def.faction);
             if (slotCardId) {
               this.modalHits.push({
@@ -363,7 +470,10 @@ export function FeedMixin<TBase extends CardSceneBaseCtor>(Base: TBase): TBase &
               });
             }
           }
-          this.fuseRingGeom = { center: { x: ringCx, y: ringCy }, slots: slotPositions, color: FACTION_COLOR[def.faction] };
+          this.fuseRingGeom = {
+            center: { x: ringCx, y: ringCy }, slots: slotPositions, color: FACTION_COLOR[def.faction],
+            centerR, slotR, slotArtUrl, targetArtUrl: artUrlFor(currentTarget.id),
+          };
         };
 
         /** Candidate list + Fuse/Cancel footer, within [colX, colX+colW), from listTopY down to (my+mh). */

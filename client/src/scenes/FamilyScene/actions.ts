@@ -5,6 +5,7 @@ import { ui as C, txt, sketchPanel, seedFor, tearDownChildren } from '../../rend
 import { FS } from '../../render/fontScale';
 import type { FamilyView, FamilyMessageView } from '../../net/WorldApiClient';
 import { type Constructor, type FamilySceneBaseCtor } from './base';
+import { withTimeout } from '../../ui/busyTracker';
 
 export interface ActionHandlers {
   doCreate(): Promise<void>;
@@ -24,14 +25,19 @@ export function ActionsMixin<TBase extends FamilySceneBaseCtor>(Base: TBase): TB
       if (!this.createName.trim() || !this.createTag.trim()) {
         this.showToast(t('family.err.badTag'), C.red); return;
       }
+      if (this.bt.busy) return;
+      this.bt.start();
+      this.render();
       try {
-        this.family = await this.cb.worldApi.createFamily(this.createName.trim(), this.createTag.trim());
+        this.family = await withTimeout(this.cb.worldApi.createFamily(this.createName.trim(), this.createTag.trim()));
         this.members = this.family.members ?? [];
         this.messages = [];
         this.mode = 'myFamily';
-        this.render();
       } catch (e) {
         this.showToast(this.errorMsg(e), C.red);
+      } finally {
+        this.bt.stop();
+        this.render();
       }
     }
 
@@ -87,12 +93,18 @@ export function ActionsMixin<TBase extends FamilySceneBaseCtor>(Base: TBase): TB
     }
 
     private async doJoin(familyId: string): Promise<void> {
+      if (this.bt.busy) return;
       this.closeModal();
+      this.bt.start();
+      this.render();
       try {
-        await this.cb.worldApi.requestJoinFamily(familyId);
+        await withTimeout(this.cb.worldApi.requestJoinFamily(familyId));
         this.showToast(t('family.joinRequested'), C.dark);
       } catch (e) {
         this.showToast(this.errorMsg(e), C.red);
+      } finally {
+        this.bt.stop();
+        this.render();
       }
     }
 
@@ -135,6 +147,7 @@ export function ActionsMixin<TBase extends FamilySceneBaseCtor>(Base: TBase): TB
         return;
       }
 
+      const busy = this.bt.busy;
       let cy = my + 80;
       for (const reqv of this.joinRequests) {
         const row = sketchPanel(mw - 32, 80, { fill: 0xfaf9f5, border: C.mid, seed: seedFor(cy, 0, mw - 32) });
@@ -147,36 +160,41 @@ export function ActionsMixin<TBase extends FamilySceneBaseCtor>(Base: TBase): TB
         // Button width follows the measured label width (not a fixed literal) — locales like
         // German ("Ablehnen"/"Annehmen") run longer than English and would clip a fixed box.
         const btnH = 52, gap = 12, btnPadX = 28;
-        const al = txt(t('family.approve'), FS.label * 2, 0x2f6b2f);
+        const approveColor = busy ? C.mid : 0x2f6b2f;
+        const rejectColor = busy ? C.mid : C.red;
+        const al = txt(t('family.approve'), FS.label * 2, approveColor);
         const approveW = al.width + btnPadX * 2;
-        const rl = txt(t('family.reject'), FS.label * 2, C.red);
+        const rl = txt(t('family.reject'), FS.label * 2, rejectColor);
         const rejectW = rl.width + btnPadX * 2;
 
         const rejectX = mx + mw - 16 - rejectW;
         const approveX = rejectX - gap - approveW;
 
-        const approveBtn = sketchPanel(approveW, btnH, { fill: 0xe0f0e0, border: 0x4a8a4a, seed: seedFor(cy, 1, approveW) });
+        const approveBtn = sketchPanel(approveW, btnH, { fill: 0xe0f0e0, border: approveColor, seed: seedFor(cy, 1, approveW) });
         approveBtn.x = approveX; approveBtn.y = cy + 14;
         ml.addChild(approveBtn);
         al.anchor.set(0.5, 0.5); al.x = approveX + approveW / 2; al.y = cy + 14 + btnH / 2;
         ml.addChild(al);
         const rid = reqv.requestId;
-        this.modalHits.push({ rect: { x: approveX, y: cy + 14, w: approveW, h: btnH }, action: () => void this.doRespondJoinRequest(rid, true) });
+        if (!busy) this.modalHits.push({ rect: { x: approveX, y: cy + 14, w: approveW, h: btnH }, action: () => void this.doRespondJoinRequest(rid, true) });
 
-        const rejectBtn = sketchPanel(rejectW, btnH, { fill: 0xf0e0e0, border: C.red, seed: seedFor(cy, 2, rejectW) });
+        const rejectBtn = sketchPanel(rejectW, btnH, { fill: 0xf0e0e0, border: rejectColor, seed: seedFor(cy, 2, rejectW) });
         rejectBtn.x = rejectX; rejectBtn.y = cy + 14;
         ml.addChild(rejectBtn);
         rl.anchor.set(0.5, 0.5); rl.x = rejectX + rejectW / 2; rl.y = cy + 14 + btnH / 2;
         ml.addChild(rl);
-        this.modalHits.push({ rect: { x: rejectX, y: cy + 14, w: rejectW, h: btnH }, action: () => void this.doRespondJoinRequest(rid, false) });
+        if (!busy) this.modalHits.push({ rect: { x: rejectX, y: cy + 14, w: rejectW, h: btnH }, action: () => void this.doRespondJoinRequest(rid, false) });
 
         cy += 88;
       }
     }
 
     private async doRespondJoinRequest(requestId: string, accept: boolean): Promise<void> {
+      if (this.bt.busy) return;
+      this.bt.start();
+      this.showJoinRequestsModal(); // redraw immediately so approve/reject grey out while in flight
       try {
-        await this.cb.worldApi.respondJoinRequest(requestId, accept);
+        await withTimeout(this.cb.worldApi.respondJoinRequest(requestId, accept));
         this.showToast(t(accept ? 'family.requestApproved' : 'family.requestRejected'), C.dark);
         if (accept && this.family) {
           // Roster changed — refetch (also refreshes joinRequests) and close, since the modal's
@@ -185,11 +203,15 @@ export function ActionsMixin<TBase extends FamilySceneBaseCtor>(Base: TBase): TB
           this.closeModal();
         } else {
           this.joinRequests = this.joinRequests.filter((r) => r.requestId !== requestId);
-          if (this.joinRequests.length > 0) this.showJoinRequestsModal();
-          else this.closeModal();
         }
       } catch (e) {
         this.showToast(this.errorMsg(e), C.red);
+      } finally {
+        this.bt.stop();
+        if (this.modalOpen) {
+          if (this.joinRequests.length > 0) this.showJoinRequestsModal();
+          else this.closeModal();
+        }
       }
     }
 
@@ -198,15 +220,20 @@ export function ActionsMixin<TBase extends FamilySceneBaseCtor>(Base: TBase): TB
     }
 
     private async doLeave(): Promise<void> {
+      if (this.bt.busy) return;
       this.closeModal();
       if (!this.family) return;
+      this.bt.start();
+      this.render();
       try {
-        await this.cb.worldApi.leaveFamily();
+        await withTimeout(this.cb.worldApi.leaveFamily());
         this.family = null; this.members = []; this.messages = [];
         this.mode = 'noFamily';
-        this.render();
       } catch (e) {
         this.showToast(this.errorMsg(e), C.red);
+      } finally {
+        this.bt.stop();
+        this.render();
       }
     }
 
@@ -215,15 +242,20 @@ export function ActionsMixin<TBase extends FamilySceneBaseCtor>(Base: TBase): TB
     }
 
     private async doDissolve(): Promise<void> {
+      if (this.bt.busy) return;
       this.closeModal();
       if (!this.family) return;
+      this.bt.start();
+      this.render();
       try {
-        await this.cb.worldApi.dissolveFamily();
+        await withTimeout(this.cb.worldApi.dissolveFamily());
         this.family = null; this.members = []; this.messages = [];
         this.mode = 'noFamily';
-        this.render();
       } catch (e) {
         this.showToast(this.errorMsg(e), C.red);
+      } finally {
+        this.bt.stop();
+        this.render();
       }
     }
 
@@ -232,36 +264,46 @@ export function ActionsMixin<TBase extends FamilySceneBaseCtor>(Base: TBase): TB
     }
 
     private async doKick(targetId: string): Promise<void> {
+      if (this.bt.busy) return;
       this.closeModal();
       if (!this.family) return;
+      this.bt.start();
+      this.render();
       try {
-        await this.cb.worldApi.kickMember(targetId);
+        await withTimeout(this.cb.worldApi.kickMember(targetId));
         this.members = this.members.filter(m => m.accountId !== targetId);
-        this.render();
       } catch (e) {
         this.showToast(this.errorMsg(e), C.red);
+      } finally {
+        this.bt.stop();
+        this.render();
       }
     }
 
     async doSetRole(targetId: string, role: 'elder' | 'member'): Promise<void> {
-      if (!this.family) return;
+      if (!this.family || this.bt.busy) return;
+      this.bt.start();
+      this.render();
       try {
-        await this.cb.worldApi.setRole(targetId, role);
+        await withTimeout(this.cb.worldApi.setRole(targetId, role));
         const m = this.members.find(mem => mem.accountId === targetId);
         if (m) m.role = role;
-        this.render();
       } catch (e) {
         this.showToast(this.errorMsg(e), C.red);
+      } finally {
+        this.bt.stop();
+        this.render();
       }
     }
 
     async submitMessage(body: string): Promise<void> {
-      if (!body || !this.family) return;
+      if (!body || !this.family || this.bt.busy) return;
       // Optimistic echo: show the sender's own message instantly instead of blocking on
       // POST + full channel refetch (two sequential round-trips ≈ 2–3s of frozen UI — the
       // "Send does nothing" complaint). The channel is stored newest-first (server sorts ts
       // desc) but rendered oldest-at-top, so prepend and scroll to the bottom so the new line
-      // is in view.
+      // is in view. bt still guards against a second send firing mid-flight (e.g. Enter mashed
+      // right after tapping Send) which used to insert duplicate optimistic lines.
       const optimistic: FamilyMessageView = {
         id: `pending-${body.length}-${this.messages.length}`,
         senderId: this.cb.myAccountId,
@@ -271,14 +313,17 @@ export function ActionsMixin<TBase extends FamilySceneBaseCtor>(Base: TBase): TB
       };
       this.messages = [optimistic, ...this.messages];
       this.channelStick = true; // sending always snaps to the newest line (renderChannel pins to bottom)
+      this.bt.start();
       if (!this.destroyed) this.render();
       try {
-        await this.cb.worldApi.sendFamilyMessage(this.family.familyId, body, this.cb.playerName);
+        await withTimeout(this.cb.worldApi.sendFamilyMessage(this.family.familyId, body, this.cb.playerName));
         await this.loadChannel(); // replaces the optimistic echo with the authoritative list
       } catch (err) {
         // Roll back the echo and surface the error.
         this.messages = this.messages.filter((m) => m !== optimistic);
         this.showToast(this.errorMsg(err), C.red);
+      } finally {
+        this.bt.stop();
       }
       if (!this.destroyed) this.render();
     }

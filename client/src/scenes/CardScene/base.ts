@@ -237,6 +237,15 @@ export class CardSceneBase {
   protected readonly unsubs: (() => void)[] = [];
   /** Portrait urls whose texture we've hooked for a one-shot re-render on load. */
   protected readonly artHooked = new Set<string>();
+  /**
+   * Ink-ring spinners currently drawn in place of not-yet-loaded portrait art (see drawArtFit /
+   * drawLoadingSpinner). Repopulated every render() pass; update() spins whichever of these are
+   * still alive (a render pass elsewhere — e.g. openDetail's own tearDownChildren — may have
+   * destroyed one before the next full render() clears the array, hence the `destroyed` filter).
+   */
+  protected activeSpinners: PIXI.Graphics[] = [];
+  /** Shared rotation angle for {@link activeSpinners}, advanced in update(). */
+  private spinnerAngle = 0;
 
   constructor(layout: ILayout, input: InputManager, cb: CardCallbacks) {
     this.w = layout.designWidth;
@@ -298,6 +307,7 @@ export class CardSceneBase {
     tearDownChildren(this.bodyLayer);
     this.hitRects = [];
     tearDownChildren(this.loadingLayer);
+    this.activeSpinners = [];
     this.hitRects.push({ rect: this.backRect, action: () => this.cb.onBack() });
 
     this.renderHeaderCurrency();
@@ -318,20 +328,38 @@ export class CardSceneBase {
    */
   protected drawArtFit(url: string, x: number, y: number, box: number, layer: PIXI.Container = this.bodyLayer, boxH?: number): void {
     const tex = getArtTexture(url);
+    const bh = boxH ?? box;
     if (!tex.baseTexture.valid) {
       if (!this.artHooked.has(url)) {
         this.artHooked.add(url);
         tex.baseTexture.once('loaded', () => this.render());
       }
+      this.drawLoadingSpinner(x + box / 2, y + bh / 2, Math.min(box, bh), layer);
       return;
     }
-    const bh = boxH ?? box;
     const scale = Math.min(box / tex.width, bh / tex.height);
     const sp = new PIXI.Sprite(tex);
     sp.anchor.set(0.5);
     sp.scale.set(scale);
     sp.position.set(x + box / 2, y + bh / 2);
     layer.addChild(sp);
+  }
+
+  /**
+   * Hand-drawn spinning ink ring, drawn centered in a not-yet-loaded portrait's box (drawArtFit) so
+   * the slot never sits blank while the texture streams in — matches the WorldMap first-paint
+   * loading cover's spinner (WorldMapRenderer/build.ts buildLoadingOverlay). Registers itself in
+   * {@link activeSpinners} so update() can spin it every frame.
+   */
+  private drawLoadingSpinner(cx: number, cy: number, boxMin: number, layer: PIXI.Container): void {
+    const radius = Math.max(9, Math.min(boxMin * 0.18, 22));
+    const spinner = new PIXI.Graphics();
+    spinner.lineStyle(3, C.mid, 0.9);
+    spinner.arc(0, 0, radius, -Math.PI * 0.15, Math.PI * 1.25);
+    spinner.position.set(cx, cy);
+    spinner.rotation = this.spinnerAngle;
+    layer.addChild(spinner);
+    this.activeSpinners.push(spinner);
   }
 
   // ── Modal helpers ─────────────────────────────────────────────────────────
@@ -449,6 +477,11 @@ export class CardSceneBase {
   }
 
   update(dt: number): void {
+    if (this.activeSpinners.length) {
+      this.spinnerAngle += dt * 4;
+      for (const g of this.activeSpinners) if (!g.destroyed) g.rotation = this.spinnerAngle;
+      this.activeSpinners = this.activeSpinners.filter((g) => !g.destroyed);
+    }
     if (this.scrollDirty) { this.scrollDirty = false; this.render(); }
     if (this.feedScrollDirty) { this.feedScrollDirty = false; this.feedRedraw?.(); }
     // Advance the busy-dot state every frame, but skip the re-render mid-fuse: rebuilding the scene
