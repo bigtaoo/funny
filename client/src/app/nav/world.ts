@@ -4,6 +4,7 @@ import * as analytics from '../../analytics';
 import { ENGINE_VERSION } from '../../game';
 import type { Replay, LevelDefinition } from '../../game';
 import { WorldApiClient } from '../../net/WorldApiClient';
+import { allEquippedSkins } from '../../game/meta/skinDefs';
 import type { WorldMapView } from '../../scenes/WorldMapScene';
 import type { AppCtx, Nav } from '../appCtx';
 import { TOKEN_KEY } from '../appConstants';
@@ -168,7 +169,7 @@ export function createWorldNav(ctx: AppCtx): WorldNav {
       endFrame,
       meta: { players: { bottom: attackerName, top: defenderName } },
     };
-    views.showReplay(replay, { onExit() { goWorldMap(worldApi, worldId); } }, level);
+    views.showReplay(replay, { onExit() { goWorldMap(worldApi, worldId); } }, level, allEquippedSkins(saveManager.get().equipped));
   }
 
   /**

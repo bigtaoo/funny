@@ -89,6 +89,8 @@ export class ReplayScene implements Scene {
      * fall back to `getLevel(meta.levelId)`.
      */
     private readonly providedLevel?: LevelDefinition,
+    /** Viewer's currently-equipped skins (game/meta/skinDefs.ts), applied to both sides same as a live match — purely cosmetic, so it never affects replay determinism. */
+    private readonly equippedSkins: readonly string[] = [],
   ) {
     this.container = new PIXI.Container();
 
@@ -198,7 +200,7 @@ export class ReplayScene implements Scene {
     const renderer = new GameRenderer(
       engine, lay, this.input,
       /* netEnabled */ false, /* spectator */ true,
-      {}, [], null, null, /* tutorial */ false, {},
+      {}, this.equippedSkins, null, null, /* tutorial */ false, {},
       this.replayNames,
     );
     renderer.init();

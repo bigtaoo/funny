@@ -14,6 +14,7 @@ import { matchBadgeTelemetry } from '../../scenes/ResultScene';
 import type { EloResult } from '../../scenes/ResultScene';
 import type { ProfileData } from '../../render/ProfilePopup';
 import { WorldApiClient } from '../../net/WorldApiClient';
+import { allEquippedSkins } from '../../game/meta/skinDefs';
 import type { NetGameView } from '../AppViews';
 import type { AppCtx, Nav } from '../appCtx';
 import { log, PLAYER_PUBLIC_ID_KEY } from '../appConstants';
@@ -29,7 +30,7 @@ export function createResultNav(ctx: AppCtx): ResultNav {
     views.showReplay(replay, {
       onExit() { onExit(); },
       ...(api ? { onShare: () => void doShareReplay({ mode: replay.mode, winner: replay.meta?.winner }) } : {}),
-    });
+    }, undefined, allEquippedSkins(saveManager.get().equipped));
   }
 
   /**
@@ -215,7 +216,7 @@ export function createResultNav(ctx: AppCtx): ResultNav {
         analytics.track('game_end', { mode: isRanked ? 'pvp_ranked' : 'pvp_friendly', result: 'abandon', duration_sec: Math.round((Date.now() - netGameStartTs) / 1000) });
         session.close(); nav.goLobby({ fade: true }); // exiting a match — one of the transitions that cross-fade
       },
-    }, { engine, net: true, profiles });
+    }, { engine, net: true, profiles, equippedSkins: allEquippedSkins(saveManager.get().equipped) });
 
     session.handlers = {
       onMatchStart: (i) => goGameNet(i),
