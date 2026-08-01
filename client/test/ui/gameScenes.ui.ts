@@ -146,6 +146,98 @@ describe('ReplayScene — playback', () => {
   });
 });
 
+// ── Transport chrome geometry + loss vignette (§26 fix) ──────────────────────
+// Regression coverage for a user-reported bug on a wide landscape screen: the
+// progress bar + Pause/2×/Share/Exit row were sized off layout.designWidth (which
+// is padded with side margins in landscape), overhanging past the board's own
+// edges; the buttons were fully opaque even though they unavoidably cover the
+// board's top row; and a losing final frame left GameRenderer's screen-edge red
+// vignette pinned at full alpha forever because ReplayScene stops driving
+// renderer.update() the instant playback ends.
+describe('ReplayScene — transport chrome geometry (§26)', () => {
+  // Wide enough that designWidth (padded for a wide safe area) meaningfully
+  // exceeds the board's own width — this is exactly the shape of screen the bug
+  // reproduced on. At a plain 16:9 viewport designWidth ends up equal to the
+  // board-centering width, so the old (unclamped) formula and the new one land on
+  // the same numbers — this viewport is required to tell them apart.
+  const WIDE_LANDSCAPE: [number, number] = [2400, 900];
+
+  it('progress bar + button row stay within the board rect, not the full (padded) design width', () => {
+    const replay = recordReplay(30);
+    const layout = createLayout(...WIDE_LANDSCAPE);
+    const board = layout.boardRect;
+    // Sanity-check this viewport actually exercises the padded case the bug needs.
+    expect(layout.designWidth).toBeGreaterThan(board.w + 200);
+
+    const scene = new ReplayScene(layout, new InputManager(), replay, { onExit() {} }) as any;
+    scene.update(1 / 30);
+
+    expect(scene.barX).toBeGreaterThanOrEqual(board.x);
+    expect(scene.barX + scene.barW).toBeLessThanOrEqual(board.x + board.w);
+
+    // Button backgrounds are PIXI.Graphics at the transport row's height (btnH);
+    // filter by that instead of a fixed child index — track/hotspots/status panel
+    // are all distinct heights and would otherwise collide with a hardcoded index.
+    const btnH = Math.round(layout.designHeight * 0.05);
+    const overlay = scene.overlay as PIXI.Container;
+    const buttons = overlay.children.filter(
+      // sketchPanel's hand-drawn stroke jitter perturbs the exact bounding box by a
+      // few px, so match within a tolerance rather than the nominal height exactly.
+      (c): c is PIXI.Graphics => c instanceof PIXI.Graphics && Math.abs(c.height - btnH) < 5,
+    );
+    expect(buttons.length).toBeGreaterThanOrEqual(3); // play + speed + exit (+ share when enabled)
+    const rowMinX = Math.min(...buttons.map((c) => c.x));
+    const rowMaxX = Math.max(...buttons.map((c) => c.x + c.width));
+    expect(rowMinX).toBeGreaterThanOrEqual(board.x);
+    expect(rowMaxX).toBeLessThanOrEqual(board.x + board.w);
+
+    scene.destroy();
+  });
+
+  it('button panels are translucent (board row behind them should still read through)', () => {
+    const replay = recordReplay(30);
+    const layout = createLayout(...LANDSCAPE);
+    const scene = new ReplayScene(layout, new InputManager(), replay, { onExit() {} }) as any;
+    scene.update(1 / 30);
+
+    const btnH = Math.round(layout.designHeight * 0.05);
+    const overlay = scene.overlay as PIXI.Container;
+    const button = overlay.children.find(
+      // sketchPanel's hand-drawn stroke jitter perturbs the exact bounding box by a
+      // few px, so match within a tolerance rather than the nominal height exactly.
+      (c): c is PIXI.Graphics => c instanceof PIXI.Graphics && Math.abs(c.height - btnH) < 5,
+    )!;
+    expect(button).toBeTruthy();
+    const fillAlpha = button.geometry.graphicsData[0]!.fillStyle.alpha;
+    // Not fully opaque (the whole point of the fix) and not so faint it's unreadable.
+    expect(fillAlpha).toBeLessThan(0.9);
+    expect(fillAlpha).toBeGreaterThan(0.3);
+
+    scene.destroy();
+  });
+
+  it('clears the screen-edge loss vignette the instant playback ends, instead of leaving it pinned', () => {
+    const replay = recordReplay(30);
+    const scene = new ReplayScene(createLayout(...PORTRAIT), new InputManager(), replay, {
+      onExit() {},
+    }) as any;
+
+    // Run up to (but not past) the last tick, then simulate "a decisive hit just
+    // landed on the viewed side's base" — exactly what base_hp_changed does to
+    // GameRenderer.vignetteAlpha right before a losing game_over fires.
+    for (let i = 0; i < scene.endFrame - 1 && !scene.ended; i++) scene.update(1 / 30);
+    expect(scene.ended).toBe(false);
+    scene.renderer.vignetteAlpha = 1;
+
+    scene.update(1 / 30); // the final tick: pushes currentTick to endFrame, ends playback
+
+    expect(scene.ended).toBe(true);
+    expect(scene.renderer.vignetteAlpha).toBe(0);
+
+    scene.destroy();
+  });
+});
+
 // ── Siege replay player names (§16.3) ────────────────────────────────────────
 // Siege replays feed the attacker/defender display names through meta.players
 // (owner-indexed: bottom = attacker = owner0, top = defender = owner1). The generic
