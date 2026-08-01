@@ -13,6 +13,8 @@ export interface QueueEntry {
   equippedTitle: string;
   /** Equipped avatar ID (from meta /internal/profile; empty string = no avatar). */
   avatarId: string;
+  /** Equipped character skin IDs (from meta /internal/profile; empty = no skins equipped). */
+  equippedSkins: string[];
   elo: number;
   enqueuedAt: number;
   /** Platform (used for feature flag targeted evaluation; defaults to empty string). */
@@ -109,9 +111,9 @@ export class Matchmaking {
   }
 
   /** Enqueue (re-enqueuing the same account replaces the old entry and resets the wait timer). Attempts one pairing pass after enqueuing. */
-  async enqueue(accountId: string, name: string, publicId: string, elo: number, equippedTitle = '', avatarId = '', platform = '', deck: string[] = []): Promise<void> {
+  async enqueue(accountId: string, name: string, publicId: string, elo: number, equippedTitle = '', avatarId = '', platform = '', deck: string[] = [], equippedSkins: string[] = []): Promise<void> {
     await this.remove(accountId);
-    const entry: QueueEntry = { accountId, name, publicId, equippedTitle, avatarId, elo, enqueuedAt: this.now(), platform, deck };
+    const entry: QueueEntry = { accountId, name, publicId, equippedTitle, avatarId, equippedSkins, elo, enqueuedAt: this.now(), platform, deck };
     this.queue.push(entry);
     this.onEnqueued?.(entry);
     this.ensureTimer();

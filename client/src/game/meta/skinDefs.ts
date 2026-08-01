@@ -45,3 +45,13 @@ export function allEquippedSkins(equipped: Record<string, string>): string[] {
     .filter(([k]) => k.startsWith('skin:'))
     .map(([, v]) => v);
 }
+
+/**
+ * The equipped skin id targeting `unitType`, out of a flattened battle-render skin list (as produced
+ * by {@link allEquippedSkins}) — the in-match hand tray (HandView) only ever has this flattened list,
+ * not the original `SaveData.equipped` map. At most one entry can target a given type (a skin never
+ * overlaps another skin's UnitType, see SKIN_TARGET_UNIT's doc comment above).
+ */
+export function equippedSkinIdForType(unitType: UnitType, equippedSkins: readonly string[]): string | null {
+  return equippedSkins.find((id) => SKIN_TARGET_UNIT[id] === unitType) ?? null;
+}

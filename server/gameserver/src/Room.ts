@@ -90,6 +90,7 @@ interface Slot {
   publicId: string; // opponent 9-digit public id (for UI display only)
   opponentTitle: string; // opponent's equipped title id (empty string = no title; S10)
   opponentAvatarId: string; // opponent's equipped avatar id (empty string = no avatar)
+  opponentSkins: string[]; // opponent's equipped character skin ids (empty = no skins equipped, incl. bots)
   /** Both players' decks from the ticket (PVP_LOADOUT §6.2). All slots carry the same decks object; either slot's value is authoritative. */
   decks?: { top: string[]; bottom: string[] };
   conn: Connection | null;
@@ -150,10 +151,10 @@ export class Room {
   }
 
   /** Join the specified side per ticket; match starts when both sides are present. Duplicate side is ignored. */
-  addPlayer(conn: Connection, name: string, publicId: string, opponentTitle = '', decks?: { top: string[]; bottom: string[] }, opponentAvatarId = ''): void {
+  addPlayer(conn: Connection, name: string, publicId: string, opponentTitle = '', decks?: { top: string[]; bottom: string[] }, opponentAvatarId = '', opponentSkins: string[] = []): void {
     if (this.phase >= RoomPhase.IN_MATCH) return; // match already started; new connections go through resume
     if (this.hasSide(conn.side)) return;
-    this.slots.push({ side: conn.side, accountId: conn.accountId, name, publicId, opponentTitle, opponentAvatarId, decks, conn });
+    this.slots.push({ side: conn.side, accountId: conn.accountId, name, publicId, opponentTitle, opponentAvatarId, opponentSkins, decks, conn });
     this.roster.push({ side: conn.side, accountId: conn.accountId });
     if (this.slots.length === 2) {
       this.launch();
@@ -207,6 +208,7 @@ export class Room {
         opponentPublicId: s.publicId,
         ...(s.opponentTitle ? { opponentTitle: s.opponentTitle } : {}),
         ...(s.opponentAvatarId ? { opponentAvatarId: s.opponentAvatarId } : {}),
+        ...(s.opponentSkins.length ? { opponentSkins: s.opponentSkins } : {}),
         ...(decks ? { topDeck: decks.top, bottomDeck: decks.bottom } : {}),
       });
     }

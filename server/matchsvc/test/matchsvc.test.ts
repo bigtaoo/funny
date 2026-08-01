@@ -301,7 +301,7 @@ describe('Matchsvc bot-fallback (feature flag match_bot_fallback)', () => {
 
 describe('Matchsvc duel invite ("切磋", ADR friends-duel-confirm)', () => {
   const player = (accountId: string, name: string, publicId: string, deck: string[] = []) => ({
-    accountId, name, publicId, equippedTitle: '', avatarId: '', deck,
+    accountId, name, publicId, equippedTitle: '', avatarId: '', equippedSkins: [], deck,
   });
 
   it('invite → duel_invited pushed to the target only (inviter gets nothing yet)', () => {

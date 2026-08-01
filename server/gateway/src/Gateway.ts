@@ -601,8 +601,9 @@ export class Gateway {
     const publicId = identity.publicId ?? '';
     const equippedTitle = identity.equippedTitle ?? '';
     const avatarId = identity.avatarId ?? '';
+    const equippedSkins = identity.equippedSkins ?? [];
     log.info('-> matchsvc enqueue', { accountId, elo, deckSize: deck.length });
-    const ok = await this.matchsvc.enqueue(accountId, name, publicId, elo, equippedTitle, avatarId, '', deck);
+    const ok = await this.matchsvc.enqueue(accountId, name, publicId, elo, equippedTitle, avatarId, '', deck, equippedSkins);
     // Retries are already exhausted inside matchsvc.enqueue (see matchsvcClient's postInternal
     // retries=2) — a false here means the command never landed at all, so the client's
     // "searching" UI would otherwise wait forever with no signal (P0-7, comm-audit finding B8).
@@ -625,7 +626,8 @@ export class Gateway {
     const publicId = identity.publicId ?? '';
     const equippedTitle = identity.equippedTitle ?? '';
     const avatarId = identity.avatarId ?? '';
-    const ok = await this.matchsvc.roomCreate(accountId, name, publicId, equippedTitle, avatarId, deck);
+    const equippedSkins = identity.equippedSkins ?? [];
+    const ok = await this.matchsvc.roomCreate(accountId, name, publicId, equippedTitle, avatarId, deck, equippedSkins);
     // No retry inside roomCreate (not idempotent) — a single failed attempt still deserves an
     // explicit error instead of leaving the "connecting" UI stuck with no signal (P0-7).
     if (!ok && this.conns.has(accountId)) {
@@ -643,7 +645,8 @@ export class Gateway {
     const publicId = identity.publicId ?? '';
     const equippedTitle = identity.equippedTitle ?? '';
     const avatarId = identity.avatarId ?? '';
-    const ok = await this.matchsvc.roomJoin(accountId, name, publicId, code, equippedTitle, avatarId, deck);
+    const equippedSkins = identity.equippedSkins ?? [];
+    const ok = await this.matchsvc.roomJoin(accountId, name, publicId, code, equippedTitle, avatarId, deck, equippedSkins);
     if (!ok && this.conns.has(accountId)) {
       log.warn('room join failed: notifying client', { accountId });
       this.push(accountId, { kind: 'room_error', code: 'MATCHMAKING_UNAVAILABLE', message: 'matchmaking unreachable' });
@@ -676,7 +679,8 @@ export class Gateway {
     const publicId = identity.publicId ?? '';
     const equippedTitle = identity.equippedTitle ?? '';
     const avatarId = identity.avatarId ?? '';
-    this.matchsvc.duelInvite(accountId, name, publicId, equippedTitle, avatarId, resolved.accountId, deck);
+    const equippedSkins = identity.equippedSkins ?? [];
+    this.matchsvc.duelInvite(accountId, name, publicId, equippedTitle, avatarId, resolved.accountId, deck, equippedSkins);
   }
 
   /** Accept/decline a friend-challenge invite. Only accept needs the responder's own profile + deck
@@ -693,7 +697,8 @@ export class Gateway {
     const publicId = identity.publicId ?? '';
     const equippedTitle = identity.equippedTitle ?? '';
     const avatarId = identity.avatarId ?? '';
-    this.matchsvc.duelRespond(accountId, inviteId, true, name, publicId, equippedTitle, avatarId, deck);
+    const equippedSkins = identity.equippedSkins ?? [];
+    this.matchsvc.duelRespond(accountId, inviteId, true, name, publicId, equippedTitle, avatarId, deck, equippedSkins);
   }
 
   /**

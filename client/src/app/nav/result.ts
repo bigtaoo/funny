@@ -216,7 +216,7 @@ export function createResultNav(ctx: AppCtx): ResultNav {
         analytics.track('game_end', { mode: isRanked ? 'pvp_ranked' : 'pvp_friendly', result: 'abandon', duration_sec: Math.round((Date.now() - netGameStartTs) / 1000) });
         session.close(); nav.goLobby({ fade: true }); // exiting a match — one of the transitions that cross-fade
       },
-    }, { engine, net: true, profiles, equippedSkins: allEquippedSkins(saveManager.get().equipped) });
+    }, { engine, net: true, profiles, equippedSkins: allEquippedSkins(saveManager.get().equipped), opponentSkins: info.opponentSkins });
 
     session.handlers = {
       onMatchStart: (i) => goGameNet(i),

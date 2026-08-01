@@ -57,8 +57,8 @@ describe('MatchsvcClient', () => {
       `${BASE}/mm/conn/disconnected`,
     ]);
     expect(calls.every((x) => x.key === KEY)).toBe(true);
-    expect(calls[1]!.body).toEqual({ accountId: 'b', name: 'Bob', publicId: '100000002', code: 'ABC123', equippedTitle: '', avatarId: '', deck: [] });
-    expect(calls[5]!.body).toEqual({ accountId: 'a', name: 'Alice', publicId: '100000001', elo: 1234, equippedTitle: '', avatarId: '', platform: '', deck: [] });
+    expect(calls[1]!.body).toEqual({ accountId: 'b', name: 'Bob', publicId: '100000002', code: 'ABC123', equippedTitle: '', avatarId: '', deck: [], equippedSkins: [] });
+    expect(calls[5]!.body).toEqual({ accountId: 'a', name: 'Alice', publicId: '100000001', elo: 1234, equippedTitle: '', avatarId: '', platform: '', deck: [], equippedSkins: [] });
   });
 
   it('no baseUrl → available=false and no requests sent', () => {
@@ -82,15 +82,15 @@ describe('MatchsvcClient', () => {
     expect(calls.every((x) => x.key === KEY)).toBe(true);
     expect(calls[0]!.body).toEqual({
       accountId: 'a', name: 'Alice', publicId: '100000001',
-      equippedTitle: 'title-1', avatarId: 'avatar-1', toAccountId: 'b', deck: ['card_1'],
+      equippedTitle: 'title-1', avatarId: 'avatar-1', toAccountId: 'b', deck: ['card_1'], equippedSkins: [],
     });
     expect(calls[1]!.body).toEqual({
       accountId: 'b', inviteId: 'invite-1', accept: false,
-      name: '', publicId: '', equippedTitle: '', avatarId: '', deck: [],
+      name: '', publicId: '', equippedTitle: '', avatarId: '', deck: [], equippedSkins: [],
     });
     expect(calls[2]!.body).toEqual({
       accountId: 'b', inviteId: 'invite-2', accept: true,
-      name: 'Bob', publicId: '100000002', equippedTitle: 'title-2', avatarId: 'avatar-2', deck: ['card_2'],
+      name: 'Bob', publicId: '100000002', equippedTitle: 'title-2', avatarId: 'avatar-2', deck: ['card_2'], equippedSkins: [],
     });
   });
 });

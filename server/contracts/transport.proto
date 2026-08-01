@@ -118,6 +118,7 @@ message MatchStart {
   repeated string top_deck           = 9;   // side-0 player's deck (PVP_LOADOUT §6.2); both sides receive both decks for deterministic engine construction
   repeated string bottom_deck        = 10;  // side-1 player's deck
   string          opponent_avatar_id = 11;  // opponent's equipped avatar id (UI use, display only; empty string = no avatar)
+  repeated string opponent_skins     = 12;  // opponent's equipped character skin ids (UI use, display only; empty = no skins equipped, incl. bots)
 }
 
 message ConnResync {
