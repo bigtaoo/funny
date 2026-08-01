@@ -14,7 +14,7 @@ import {
 } from '@nw/shared';
 import type { CardInstance } from '@nw/shared';
 import { createWorldMongo, type WorldMongo } from '../src/db';
-import type { TeamTemplate, CardSLGState } from '../src/db';
+import type { TeamTemplate, CardSLGState, TileDoc } from '../src/db';
 import { WorldService } from '../src/service';
 import type { WorldRedis } from '../src/redis';
 import type { WorldMetaClient } from '../src/metaClient';
@@ -201,5 +201,50 @@ describe.skipIf(!mongo)('worldsvc garrison coverage e2e (ADR-051 P3a)', () => {
     expect(st!.mode).toBe('idle');
     expect(redis.occSize(W)).toBe(1);   // occ registered (scenario-1 own-cell defence)
     expect(redis.coverSize(W)).toBe(0); // idle covers nothing
+  });
+
+  it('a garrison move whose destination is blocked mid-flight parks back at the origin STILL as a garrison — coverage follows it there, not the abandoned destination (regression, 2026-08-01 fix)', async () => {
+    await svc.joinWorld(W, 'a', 5, 5);
+    await setupTeam('t1', 'card-1');
+    const target = findCoord((t) => t.type === 'resource' || t.type === 'neutral', 12, 12);
+    const targetTid = tileId(W, target.x, target.y);
+    const targetFootprint = baseFootprintCells(target.x, target.y).filter((c) => c.x >= 0 && c.y >= 0 && c.x < SLG_MAP_W && c.y < SLG_MAP_H);
+
+    const mv = await svc.startMarch(W, 'a', 5, 5, target.x, target.y, 'move', 1, 't1', 'garrison');
+
+    // Someone else claims the destination tile while the team is in transit.
+    const rivalTile: TileDoc = {
+      _id: targetTid, worldId: W, x: target.x, y: target.y, type: 'territory', level: 1, ownerId: 'rival', garrison: 0, rev: 0,
+    };
+    await m.collections.tiles.updateOne({ _id: targetTid }, { $set: rivalTile }, { upsert: true });
+
+    nowMs = mv.arriveAt;
+    expect(await svc.processDueArrivals()).toBe(1);
+
+    // Parks back at ORIGIN (a's own base cell) still in 'garrison' mode — nothing was ever written for the
+    // (blocked) destination.
+    const originTid = tileId(W, 5, 5);
+    expect(await m.collections.stationed.findOne({ _id: targetTid })).toBeNull();
+    const st = await m.collections.stationed.findOne({ _id: originTid });
+    expect(st?.teamId).toBe('t1');
+    expect(st?.mode).toBe('garrison');
+
+    // Coverage is registered over the ORIGIN's 3×3 footprint, not the destination's.
+    const originFootprint = baseFootprintCells(5, 5).filter((c) => c.x >= 0 && c.y >= 0 && c.x < SLG_MAP_W && c.y < SLG_MAP_H);
+    expect(redis.coverSize(W)).toBe(originFootprint.length);
+    for (const c of originFootprint) {
+      const cov = redis.coverAt(W, tileId(W, c.x, c.y));
+      expect(cov).not.toBeNull();
+      expect(cov![originTid]?.kind).toBe('garrison');
+    }
+    for (const c of targetFootprint) {
+      const cov = redis.coverAt(W, tileId(W, c.x, c.y));
+      if (cov) expect(cov[targetTid]).toBeUndefined();
+    }
+
+    // Still recallable afterwards — not a dead-end state.
+    await svc.recallStationed(W, 'a', 't1');
+    expect(redis.coverSize(W)).toBe(0);
+    expect(await m.collections.stationed.findOne({ _id: originTid })).toBeNull();
   });
 });
