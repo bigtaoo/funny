@@ -342,8 +342,23 @@ export function ListMixin<TBase extends CardSceneBaseCtor>(Base: TBase): TBase &
         const inst = instId ? save.equipmentInv?.[instId] : undefined;
         const icon = buildEquipIcon(inst?.defId, slot, inst?.rarity ?? 'common', gearIconSize, seedFor(x, y, i + 1));
         icon.name = `gearIcon:${slot}`; // test hook: see gearIconSize2x.ui.ts
-        icon.position.set(x + cellW - pad - gearIconSize / 2 - (2 - i) * gearStep, gearCenterY);
+        const iconCx = x + cellW - pad - gearIconSize / 2 - (2 - i) * gearStep;
+        icon.position.set(iconCx, gearCenterY);
         this.bodyLayer.addChild(icon);
+
+        // Each gear icon jumps straight to that slot in EquipmentScene (matches the
+        // detail modal's per-slot taps, renderDetailGearSlots in detail.ts) instead of
+        // only opening via the whole-cell tap — the icons looked like buttons but
+        // weren't actually clickable, which was part of why their intent read as
+        // unclear (roster feedback 2026-08-01). Pushed before the whole-cell hitRect
+        // below so it wins the first-match hit test.
+        if (this.cb.openEquipment && !this.bt.busy) {
+          this.hitRects.push({
+            rect: { x: iconCx - gearIconSize / 2, y: gearCenterY - gearIconSize / 2, w: gearIconSize, h: gearIconSize },
+            action: () => this.cb.openEquipment!(card.id, slot),
+            owner: card.id,
+          });
+        }
       });
 
       this.hitRects.push({
