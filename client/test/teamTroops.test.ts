@@ -7,7 +7,7 @@
 
 import { describe, it, expect } from 'vitest';
 import {
-  carriedTroops, teamTroopCap, teamLeaderCard, TEAM_CAP, teamSlotId, teamSlotName,
+  carriedTroops, teamTroopCap, teamLeaderCard, TEAM_CAP, teamSlotId, teamSlotName, teamDisplayName,
 } from '../src/game/meta/teamTroops';
 import type { TeamTemplate, CardSLGState } from '../src/net/WorldApiClient';
 import type { CardInstance } from '../src/game/meta/SaveData';
@@ -110,5 +110,24 @@ describe('TEAM_CAP / teamSlotId / teamSlotName', () => {
   it('teamSlotName interpolates the 1-indexed slot number into the localized template', () => {
     expect(teamSlotName(0)).toBe('队伍 1');
     expect(teamSlotName(4)).toBe('队伍 5');
+  });
+});
+
+// Added 2026-08-01 (§46) alongside the WorldMapNet.showTeamPicker fix: persistTeam() always saves
+// name: '' (v1 has no custom-naming UI — see DefenseEditorScene/data.ts), so every reader of
+// TeamTemplate.name must go through this fallback instead of the raw field.
+describe('teamDisplayName', () => {
+  it('prefers a non-empty name over the slot fallback', () => {
+    expect(teamDisplayName({ id: 't1', name: 'Alpha' })).toBe('Alpha');
+  });
+
+  it('falls back to the live-localized slot name when name is empty, using the slot encoded in the id', () => {
+    expect(teamDisplayName({ id: 't1', name: '' })).toBe('队伍 1');
+    expect(teamDisplayName({ id: 't3', name: '' })).toBe('队伍 3');
+    expect(teamDisplayName({ id: 't5', name: '' })).toBe('队伍 5');
+  });
+
+  it('falls back to the raw id if it is not in the expected t{n} slot-id shape', () => {
+    expect(teamDisplayName({ id: 'legacy-team-id', name: '' })).toBe('legacy-team-id');
   });
 });
