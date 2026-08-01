@@ -46,9 +46,12 @@ function marchTokenAssetFor(unitType: UnitType): { url: string; type: UnitType }
  */
 export const STICKMAN_TOKEN_BUDGET = 80;
 
+/** March/occupy/stationed tokens render at this fraction of a tile's pixel size (2026-08-01: halved so units read less crowded on the map). */
+const MAP_TOKEN_SCALE = 0.55;
+
 /** Build the lightweight LOD-downgrade token — a static portrait disc, no per-frame skeleton cost. */
 function buildDotToken(tp: number, unitType: UnitType): PIXI.Container {
-  return buildAvatar(Math.max(16, tp * 0.9), '', 7, makeAvatarId('hero', unitType));
+  return buildAvatar(Math.max(16, tp * MAP_TOKEN_SCALE), '', 7, makeAvatarId('hero', unitType));
 }
 
 /** Tear down either token-entry variant (also used by lifecycle.ts::destroy()). */
@@ -382,7 +385,7 @@ export function FogMixin<TBase extends WorldMapRendererBaseCtor>(Base: TBase): T
               entry = stickmanEntry;
               this.ctx.marchTokenRuntimes.set(march.marchId, entry);
               const { url, type } = marchTokenAssetFor(unitType);
-              const target = tp * 1.1;
+              const target = tp * MAP_TOKEN_SCALE;
               StickmanRuntime.loadAsset(url, targetScreenHeight(type)).then((asset) => {
                 const current = this.ctx.marchTokenRuntimes.get(march.marchId);
                 if (!current || current !== stickmanEntry) return; // march ended or asset swapped meanwhile
@@ -470,7 +473,7 @@ export function FogMixin<TBase extends WorldMapRendererBaseCtor>(Base: TBase): T
               StickmanRuntime.loadAsset(url, targetScreenHeight(type)).then((asset) => {
                 const current = this.ctx.occupyTokenRuntimes.get(key);
                 if (!current || current !== stickmanEntry) return; // hold ended meanwhile
-                const runtime = new StickmanRuntime(asset, { targetHeight: tp * 1.1, showShadow: false });
+                const runtime = new StickmanRuntime(asset, { targetHeight: tp * MAP_TOKEN_SCALE, showShadow: false });
                 this.ctx.marchTokenLayer.addChild(runtime.container);
                 stickmanEntry.runtime = runtime;
               }).catch(err => { console.warn('[WorldMap] occupy token .tao failed to load:', err); });
@@ -538,7 +541,7 @@ export function FogMixin<TBase extends WorldMapRendererBaseCtor>(Base: TBase): T
               StickmanRuntime.loadAsset(url, targetScreenHeight(type)).then((asset) => {
                 const current = this.ctx.stationedTokenRuntimes.get(key);
                 if (!current || current !== stickmanEntry) return; // team moved/recalled meanwhile
-                const runtime = new StickmanRuntime(asset, { targetHeight: tp * 1.1, showShadow: false });
+                const runtime = new StickmanRuntime(asset, { targetHeight: tp * MAP_TOKEN_SCALE, showShadow: false });
                 this.ctx.marchTokenLayer.addChild(runtime.container);
                 stickmanEntry.runtime = runtime;
               }).catch(err => { console.warn('[WorldMap] stationed token .tao failed to load:', err); });
