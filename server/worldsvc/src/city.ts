@@ -508,12 +508,19 @@ export class CityService {
 
     const now = this.core.deps.now();
     const cardState = pw.cardState ?? {};
-    // Injured card check: a card with injuredUntil > now cannot be assigned to a team.
+    // Injured card check: a card with injuredUntil > now cannot be (re)assigned to a team it wasn't
+    // already on. Compare against the *previous* teamId rather than blanket-checking every card in
+    // the full payload — the client always resends every team's army on save, so editing team B
+    // while team A (already fighting, unrelated) happens to hold an injured card must not fail: that
+    // card's assignment to A isn't changing. Only a genuinely new assignment (unteamed or moving to a
+    // different team) is blocked, matching CHARACTER_CARDS_DESIGN §7.2/§8.
+    const nextTeamOf = new Map<string, string>();
+    for (const team of cleanedTeams) for (const e of team.army) if (e.cardInstanceId) nextTeamOf.set(e.cardInstanceId, team.id);
     for (const id of cardIds) {
       const cs = cardState[id];
-      if (cs?.injuredUntil && cs.injuredUntil > now) {
-        throw new SlgError('CARD_INJURED', `Card ${id} is injured and cannot be assigned until ${cs.injuredUntil}`);
-      }
+      if (!cs?.injuredUntil || cs.injuredUntil <= now) continue;
+      if (cs.teamId && cs.teamId === nextTeamOf.get(id)) continue; // unchanged assignment, already legitimate
+      throw new SlgError('CARD_INJURED', `Card ${id} is injured and cannot be assigned until ${cs.injuredUntil}`);
     }
 
     const patch = this.buildCardRemovalPatch(cardState, cleanedTeams);

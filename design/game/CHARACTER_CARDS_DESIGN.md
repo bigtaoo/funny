@@ -325,6 +325,7 @@ interface ArmyEntry { cardInstanceId: string; col: number; row: number }
 - 同种卡（同 `defId`）可在同一队伍中重复（无限制）
 - 受伤卡（`injuredUntil > now`）不可加入任何队伍；从队伍中移出后同样不可重新加入其他队伍，直到伤愈
   - `setTeams` 拒绝时抛 `CARD_INJURED`（2026-07-25 新增错误码，此前复用 `BAD_REQUEST` 导致客户端 `errorMsg()` 兜底把诊断用的原始英文报错——卡实例 id + 毫秒时间戳——原样弹给玩家，参见 `DefenseEditorScene.errorMsg`/`injuredCardMsg` 事故记录）。`DefenseEditorScene` 现在专门识别该错误码：解析出卡 id，查名译名 + 可读倒计时（`msCountdown`），并把这张卡从本次编辑中的编队里移除（该格子的占用本来就已失效，留着只会在下次 Save/Fill 时重复报同一个错）
+  - **校验范围仅限"本次新分配"（2026-08-01 修正）**：客户端 `setTeams` 每次都携带**全部队伍**的完整数组（含未改动的队伍）；早期实现对 payload 里出现的每张卡一律做受伤校验，导致编辑一支全新/无关队伍时，只要另一支早已出战、受伤的队伍恰好也在这次 payload 里（它必然在），保存就会连带失败——玩家的解读是"我在配置新队伍，为何被无关卡的受伤状态卡住"。修复：仅当卡的队伍归属**较上次持久化状态发生变化**（对比 `cardState[id].teamId` 与本次分配的 teamId）才校验受伤，未变的既有分配（哪怕受伤）放行，真正的"分配到新/其他队伍"仍照常拦截。见 `city.ts` `setTeams`（`nextTeamOf` 比对）+ 回归测试 `card-slg.e2e.test.ts`「does not re-block a card already (unchanged) on an injured team while editing an unrelated team」。
 
 ### 8.3 引擎蓝图生成
 

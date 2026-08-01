@@ -265,6 +265,24 @@ describe.skipIf(!mongo)('CC-3 card-based SLG e2e', () => {
     ])).rejects.toThrow('injured');
   });
 
+  it('setTeams does not re-block a card already (unchanged) on an injured team while editing an unrelated team', async () => {
+    const pwId = playerWorldId(W, 'a');
+    await svc.joinWorld(W, 'a', 5, 5);
+    // card-hurt is already on t1 and injured (e.g. it just fought) — legitimate existing state.
+    const injuredUntil = nowMs + CARD_INJURY_DURATION_MS;
+    await svc.setTeams(W, 'a', [{ id: 't1', name: 'Front', army: [cardEntry('card-hurt')] }]);
+    await m.collections.playerWorld.updateOne(
+      { _id: pwId },
+      { $set: { 'cardState.card-hurt': { currentTroops: 50, teamId: 't1', injuredUntil } as CardSLGState } },
+    );
+    // Saving an unrelated new team (t2) resends the full teams array, including t1 unchanged —
+    // this must succeed even though t1 still carries the injured card.
+    await expect(svc.setTeams(W, 'a', [
+      { id: 't1', name: 'Front', army: [cardEntry('card-hurt')] },
+      { id: 't2', name: 'Fresh', army: [cardEntry('card-other', 2, 1)] },
+    ])).resolves.not.toThrow();
+  });
+
   it('recoverCard spends coins and clears injuredUntil', async () => {
     const pwId = playerWorldId(W, 'a');
     await svc.joinWorld(W, 'a', 5, 5);
