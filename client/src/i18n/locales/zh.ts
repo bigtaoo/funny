@@ -1450,6 +1450,7 @@ export const zh = {
   'daily.checkin.rewardMaterial': '+{n} 材料',
   'daily.checkin.rewardCard': '获得 1 张角色卡',
   'daily.checkin.rewardEquipment': '获得 1 件装备',
+  'daily.checkin.bonusCoins': '+{n} 金币',
   'daily.tasks.title': '每日任务',
   'daily.tasks.pveLabel': '通关任意 PvE 关卡',
   'daily.tasks.pvpLabel': '参与任意 PvP 对局',

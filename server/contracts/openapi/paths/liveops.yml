@@ -115,6 +115,7 @@
                               kind:  { type: string, enum: [coins, stamina, material, card, equipment] }
                               count: { type: integer }
                               id:    { type: string, description: Material id (scrap/lead/binding), set only when kind=material }
+                              bonusCoins: { type: integer, description: "Small coin top-up delivered alongside the primary reward, milestone slots only (R1b)" }
                         tasks:
                           type: array
                           items:
@@ -172,6 +173,7 @@
                         kind: { type: string, enum: [coins, stamina, material, card, equipment] }
                         count: { type: integer }
                         id:    { type: string, description: Material id (material) or the drawn defId (card/equipment) }
+                        bonusCoins: { type: integer, description: "Small coin top-up delivered alongside the primary reward, milestone slots only (R1b)" }
       '401': { $ref: '#/components/responses/ErrorResp' }
       '409': { $ref: '#/components/responses/ErrorResp' }
 
