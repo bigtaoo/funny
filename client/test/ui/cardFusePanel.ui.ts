@@ -20,16 +20,19 @@ import { CardScene, type CardCallbacks } from '../../src/scenes/CardScene';
 import type { CardInstance } from '../../src/game/meta/SaveData';
 import { FUSION_MATERIAL_COUNT } from '../../src/game/meta/cardDefs';
 import * as log from '../../src/net/log';
+import { SaveManager } from '../../src/game/meta/SaveManager';
+import { LocalSaveStore } from '../../src/game/meta/SaveStore';
 
-const memStore = (() => {
+/** Fresh in-memory IStorage — a new instance per call so SaveManagers in different tests never share state. */
+function freshStorage(): { getItem: (k: string) => string | null; setItem: (k: string, v: string) => void; removeItem: (k: string) => void } {
   const m = new Map<string, string>();
   return {
     getItem: (k: string): string | null => (m.has(k) ? m.get(k)! : null),
     setItem: (k: string, v: string): void => { m.set(k, v); },
     removeItem: (k: string): void => { m.delete(k); },
   };
-})();
-initI18n('en', memStore, ['zh', 'en', 'de']);
+}
+initI18n('en', freshStorage(), ['zh', 'en', 'de']);
 
 const W = 1920;
 const H = 1080;
@@ -90,6 +93,11 @@ function modalHitsOf(scene: CardScene): Hit[] {
  * modalLayer sidesteps that collision entirely. */
 function modalLayerOf(scene: CardScene): PIXI.Container {
   return (scene as unknown as { modalLayer: PIXI.Container }).modalLayer;
+}
+
+/** Coin balance + capacity readout (renderHeaderCurrency) lives here — separate from bodyLayer/modalLayer. */
+function headerOverlayLayerOf(scene: CardScene): PIXI.Container {
+  return (scene as unknown as { headerOverlayLayer: PIXI.Container }).headerOverlayLayer;
 }
 
 function feedScrollPxOf(scene: CardScene): number {
@@ -773,6 +781,91 @@ describe('CardScene fuse panel — animation is not torn down by the busy re-ren
     expect(priv(scene).bt.busy).toBe(false);
     // The busy re-render is no longer suppressed, and normal update() ticks still work.
     expect(() => priv(scene).update(0.1)).not.toThrow();
+  });
+
+  // These two guard the fuseInProgress check itself doesn't overreach: the whole point of wiring
+  // onSaveChanged in the first place (pre-dating the fuse feature) is that ANY save mutation from
+  // anywhere — not just fuseCards — refreshes the roster (e.g. coins spent/gained by another
+  // concurrently-mounted scene, mirroring saveManagerAutoRerender.ui.ts's Gacha/BattlePass coverage
+  // for the same SaveManager.subscribe wiring). A too-broad guard (e.g. one that never re-enables)
+  // would silently break that outside of fuse.
+  it('onSaveChanged still triggers a normal re-render when nothing is mid-fuse', () => {
+    const mgr = new SaveManager({ store: new LocalSaveStore(freshStorage()) });
+    mgr.update((s) => { s.wallet.coins = 100; });
+
+    const scene = buildScene({
+      onBack() {},
+      getSave: () => mgr.get(),
+      onSaveChanged: (fn) => mgr.subscribe(fn),
+      fuseCards: async () => ({ ok: true }),
+      setCardLock: async () => ({ ok: true }),
+      getOwnedSkins: () => [],
+      getEquippedSkin: () => null,
+      equipSkin() {},
+    });
+
+    expect(findLabelPos(headerOverlayLayerOf(scene), (100).toLocaleString())).not.toBeNull();
+    expect(priv(scene).fuseInProgress).toBe(false);
+
+    // Nobody calls scene.render() themselves — this must be the onSaveChanged listener alone.
+    mgr.update((s) => { s.wallet.coins = 250; });
+    expect(findLabelPos(headerOverlayLayerOf(scene), (250).toLocaleString())).not.toBeNull();
+
+    scene.destroy();
+  });
+
+  it('after a fuse settles, a later onSaveChanged fire renders again — the guard is not permanently stuck', async () => {
+    const mgr = new SaveManager({ store: new LocalSaveStore(freshStorage()) });
+    mgr.update((s) => {
+      s.wallet.coins = 100;
+      const target = makeCard('target', 'lena', { level: 3 }); // level 3 ⇒ closes on settle, no auto-continue
+      s.cardInv[target.id] = target;
+      for (let i = 0; i < FUSION_MATERIAL_COUNT; i++) {
+        s.cardInv[`mat${i}`] = makeCard(`mat${i}`, 'max', { level: 3 });
+      }
+    });
+    const target = mgr.get().cardInv.target;
+
+    const scene = buildScene({
+      onBack() {},
+      getSave: () => mgr.get(),
+      onSaveChanged: (fn) => mgr.subscribe(fn),
+      // Mirrors the real production shape (app/nav/game.ts): fuseCards resolves by mutating the save
+      // and letting adoptServer/mgr.update fire onSaveChanged SYNCHRONOUSLY, mid-doFuse.
+      fuseCards: async (targetId, ids) => {
+        mgr.update((s) => {
+          for (const id of ids) delete s.cardInv[id];
+          s.cardInv[targetId].level += 1;
+          s.wallet.coins = 500; // also changes on a real fuse (server deducts/awards) — arbitrary here
+        });
+        return { ok: true };
+      },
+      setCardLock: async () => ({ ok: true }),
+      getOwnedSkins: () => [],
+      getEquippedSkin: () => null,
+      equipSkin() {},
+    });
+    priv(scene).openFuseSelect(target);
+    priv(scene).detailId = target.id;
+    priv(scene).playFusionAnim = async () => {}; // no rAF driving in this test
+
+    const rowLabel = MAX_NAME;
+    for (let i = 0; i < FUSION_MATERIAL_COUNT; i++) {
+      hitUnder(modalHitsOf(scene), findLabelPos(modalLayerOf(scene), rowLabel)!)!.action();
+    }
+    hitUnder(modalHitsOf(scene), findLabelPos(modalLayerOf(scene), `${t('roster.fuseBtn')} (${FUSION_MATERIAL_COUNT}/${FUSION_MATERIAL_COUNT})`)!)!.action();
+    await flushAsync();
+
+    expect(priv(scene).fuseInProgress).toBe(false); // fuse settled, guard released
+    expect(modalOpenOf(scene)).toBe(false);          // level-3 target closed the panel on settle
+    expect(findLabelPos(headerOverlayLayerOf(scene), (500).toLocaleString())).not.toBeNull(); // picked up the fuse's own coin change on settle
+
+    // A later, unrelated save mutation (nobody calls render() manually) must still refresh the header —
+    // the guard released after the fuse, it didn't get stuck suppressing forever.
+    mgr.update((s) => { s.wallet.coins = 999; });
+    expect(findLabelPos(headerOverlayLayerOf(scene), (999).toLocaleString())).not.toBeNull();
+
+    scene.destroy();
   });
 });
 
