@@ -88,7 +88,7 @@ export type EquipTab = 'inv' | 'craft';
 export type SectionKey = 'equipped' | 'bag';
 
 export const RES_H = 30;       // resource bar (coins + three materials + inventory count)
-export const LOADOUT_H = 78;   // loadout strip at the top of the inventory tab (three slots)
+export const LOADOUT_H = 90;   // loadout strip at the top of the inventory tab (three slots) — tall enough for icon+name+enhance-stars to stack without the stars clipping the slot cell's bottom border (2026-08-01)
 export const ROW_H = 56;
 export const FILTER_H = 48;   // slot filter bar (All / Weapon / Armor / Trinket)
 export const MAT_BAND_H = 52; // materials band (scrap / lead / binding) below the header

@@ -436,13 +436,17 @@ export function InventoryMixin<TBase extends EquipmentSceneBaseCtor>(Base: TBase
         this.bodyLayer.addChild(slotLbl);
 
         if (inst) {
-          this.addGlyph(slot, inst.rarity, x + cellW / 2, cy + cellH * 0.4, 30, seedFor(i, 13, cellW), 1, inst.defId);
+          this.addGlyph(slot, inst.rarity, x + cellW / 2, cy + cellH * 0.34, 30, seedFor(i, 13, cellW), 1, inst.defId);
           const nm = txt(this.itemName(inst.defId), FS.micro, C.dark);
-          nm.anchor.set(0.5, 0.5); nm.x = x + cellW / 2; nm.y = cy + cellH * 0.72;
+          nm.anchor.set(0.5, 0.5); nm.x = x + cellW / 2; nm.y = cy + cellH * 0.66;
           this.bodyLayer.addChild(nm);
           if (inst.level > 0) {
-            const stars = this.buildLevelStars(inst.level, cellW - 8, 10, 2);
-            stars.x = x + cellW / 2 - stars.width / 2; stars.y = cy + cellH * 0.86;
+            const starSize = 10;
+            const stars = this.buildLevelStars(inst.level, cellW - 8, starSize, 2);
+            // Bottom-anchored (not a cellH fraction) so the row always clears the slot cell's
+            // bottom border regardless of cellH — a fraction-based y previously let the stars
+            // overrun the border by a few px (2026-08-01).
+            stars.x = x + cellW / 2 - stars.width / 2; stars.y = cy + cellH - starSize - 4;
             this.bodyLayer.addChild(stars);
           }
           this.hitRects.push({ rect: { x, y: cy, w: cellW, h: cellH }, action: () => this.openDetail(inst.id) });
