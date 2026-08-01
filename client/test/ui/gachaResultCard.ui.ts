@@ -110,14 +110,31 @@ describe('GachaScene — result card names + duplicate badge', () => {
 describe('GachaScene — skin result card resolves its dedicated portrait, not the brush placeholder', () => {
   const spy = unitPortraitUrl as unknown as { mock: { calls: unknown[][] } };
 
-  it('resolves skin_e2 through unitPortraitUrl(Mara, skin_e2)', () => {
+  it.each([
+    ['skin_e1', UnitType.Lena],
+    ['skin_e2', UnitType.Mara],
+    ['skin_l1', UnitType.Max],
+  ])('resolves %s through unitPortraitUrl(%s, itemId)', (itemId, unitType) => {
     spy.mock.calls.length = 0;
     const scene = buildGacha();
-    reveal(scene, [{ itemId: 'skin_e2', rarity: 'epic', duplicate: false }]);
+    reveal(scene, [{ itemId, rarity: 'epic', duplicate: false }]);
 
-    const skinCalls = spy.mock.calls.filter((call) => call[1] === 'skin_e2');
+    const skinCalls = spy.mock.calls.filter((call) => call[1] === itemId);
     expect(skinCalls.length).toBeGreaterThan(0);
-    for (const call of skinCalls) expect(call[0]).toBe(UnitType.Mara);
+    for (const call of skinCalls) expect(call[0]).toBe(unitType);
+    scene.destroy();
+  });
+
+  // skin_placeholder isn't in SKIN_TARGET_UNIT (skinDefs.ts) — drawEntryPicture must not call
+  // unitPortraitUrl for it at all (no unitType to resolve), and must still render the card without
+  // throwing, falling back to the brush glyph instead.
+  it('does not call unitPortraitUrl for a skin id with no SKIN_TARGET_UNIT mapping, and still renders', () => {
+    spy.mock.calls.length = 0;
+    const scene = buildGacha();
+    expect(() => reveal(scene, [{ itemId: 'skin_placeholder', rarity: 'legendary', duplicate: false }])).not.toThrow();
+
+    const skinCalls = spy.mock.calls.filter((call) => call[1] === 'skin_placeholder');
+    expect(skinCalls.length).toBe(0);
     scene.destroy();
   });
 });
