@@ -1494,3 +1494,13 @@ L1 从需 660 兵降到 300（最小占地 500 现稳赢，直击病灶）；L2/
 **验证（追加两轮）**：`server/worldsvc` `tsc --noEmit` 全绿；更新 4 处受影响的既有 e2e 断言（`siege.e2e.test.ts` ×2、`stronghold.e2e.test.ts`、`passage.e2e.test.ts`——原先断言 cheap 路径"不存 seed/attackerArmy"，现改为断言"存"）；受影响的 6 个测试文件（`siege`/`stronghold`/`passage`/`base-siege`/`field-encounter`/`siege-cheap-fallback`）44 例、`server/worldsvc` 全量 47 文件/373 例两轮均全绿。
 
 **新增专项测试（同日）**：崩溃分支此前没有任何自动化覆盖——真实触发 `runSiegeBattle` 抛异常需要伪造引擎内部状态，现有 e2e 套件没有这类 harness，之前只是读代码+类型检查确认。补了 `test/siege-crash-replay.e2e.test.ts`：文件级 `vi.mock('../src/siegeEngine', ...)` 只把 `runSiegeBattle` 换成永远 `throw` 的假实现，其余导出原样透传（`importOriginal()` 保留 `shouldUseCheapSiege`/`synthesizeArmy` 等真实逻辑）——`vi.mock` 按文件生效，不影响其它测试文件里跑真实引擎的用例。3 个用例：①领地攻城胜（引擎崩溃→线性公式仍判出 `attacker_win`，`sieges` 落库有 `seed`/`attackerArmy`/`defenderConfig`/`tileLevel`，`listSieges` 端到端返回 `hasReplay:true`，`getSiegeReplay` 真的能拉到可重建的 `level`）；②占领进军 PvE（`occupation.ts` 本来就没有 `shouldUseCheapSiege` 短路，触发 cheap resolve 的唯一途径就是这次 mock 的引擎崩溃——验证占领流程本身仍正常进入占领倒计时）；③领地攻城败（崩溃分支下的败仗战报同样可追溯）。三例均全绿，且跑过全量 `server/worldsvc` 48 文件/376 例确认 `vi.mock` 没有泄漏影响其它文件（真实引擎胜负测试都还是走真实引擎，非本文件的 mock）。
+
+## 46. §44 遗漏了世界地图选队弹窗——`占领/移动/驻扎`选队时队伍名整体消失（2026-08-01）
+
+> 用户截图反馈"选择占领队伍"弹窗里 5 个队伍按钮只有一个显示名字（`Team 5`），其余 4 个都只剩 `· Troops NNNN`，名字整段空白。
+
+**根因**：§44 把 `persistTeam()`（[`DefenseEditorScene/data.ts:140`](../../client/src/scenes/DefenseEditorScene/data.ts)）改成永远持久化 `name: ''`，并让 `CityScene/render.ts` 的两处读取点补上 `team?.name || teamSlotName(i)` 兜底，但漏改了另一个直接读 `TeamTemplate.name` 的地方——世界地图行军选队弹窗 [`WorldMapNet.showTeamPicker`](../../client/src/scenes/worldmap/WorldMapNet.ts)（`占领`/`移动`/`驻扎`/`攻击` 共用同一个弹窗）之前直接拼 `` `${tm.name} · ...` ``，从不兜底。§44 落地当天起，任何重新在编队编辑器里保存过的队伍槽 `name` 都变成 `''`，这个弹窗里就直接显示空白；用户截图里唯一显示名字的"Team 5"是尚未在 §44 之后重新保存过、还留着旧的字面 `"Team 5"` 字符串的槽位——同一存档里几个槽有名几个槽空白，是 §44 遗留问题的延续，不是新 bug。
+
+**修复**：把"`name` 为空时按 `t{n}` id 换算实时槽位名"这段逻辑从 `CityScene/render.ts` 提炼成 [`teamTroops.ts`](../../client/src/game/meta/teamTroops.ts) 的共享 helper `teamDisplayName(team)`（`team.name || teamSlotName(parseInt(id 中的 n) - 1)`），`WorldMapNet.showTeamPicker` 改用它而不是裸 `tm.name`。`CityScene/render.ts` 的两处 `team?.name || teamSlotName(i)` 逻辑等价（`i` 本来就是正确的槽位序号），未改动，避免无谓改动已工作的代码。
+
+**验证**：`client` `tsc --noEmit` 全绿；新增回归 `worldMapOccupyTeamPicker.ui.ts`「`name:''` 的队伍（id `t3`）在占领选队弹窗里回退显示实时槽位名 `Team 3`」；`--config vitest.ui.config.ts` 全量 102 文件/862 例全绿。

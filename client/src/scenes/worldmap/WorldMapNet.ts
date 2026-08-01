@@ -5,7 +5,7 @@ import { buildIcon } from '../../render/icons';
 import { WorldApiError } from '../../net/WorldApiClient';
 import { serverNow } from '../../net/serverClock';
 import type { TeamTemplate } from '../../net/WorldApiClient';
-import { carriedTroops } from '../../game/meta/teamTroops';
+import { carriedTroops, teamDisplayName } from '../../game/meta/teamTroops';
 import { proceduralTile, ARROW_TOWER_COST, BLOCKER_COST } from '@nw/shared';
 import { loadResAtlas, getResTexture, isResAtlasReady } from '../../render/resAtlasLoader';
 import { loadCityAtlas, getCityTexture, isCityAtlasReady } from '../../render/cityAtlasLoader';
@@ -207,7 +207,7 @@ export class WorldMapNet {
     for (const tm of usable) {
       const committed = committedOf(tm);
       buttons.push({
-        label: `${tm.name} · ${t('world.team.committed').replace('{n}', String(committed))}`,
+        label: `${teamDisplayName(tm)} · ${t('world.team.committed').replace('{n}', String(committed))}`,
         action: () => void this.doMarchTeam(tx, ty, tm.id, kind, stationMode),
       });
     }

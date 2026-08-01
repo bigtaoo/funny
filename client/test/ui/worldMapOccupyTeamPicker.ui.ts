@@ -109,6 +109,19 @@ describe('WorldMapNet.showTeamPicker — occupy uses the team picker (§4.2)', (
     expect(teamLabel).toContain(t('world.team.committed').replace('{n}', '2160'));
   });
 
+  // Regression (2026-08-01): persistTeam() always saves name: '' (v1 has no custom-naming UI — see
+  // DefenseEditorScene/data.ts), so the picker must fall back to the live slot name derived from the
+  // team's `t{n}` id instead of rendering a blank name (label collapsing to just "· Troops NNNN").
+  it('a team with an empty (unnamed) slot falls back to its live "Team {n}" slot name', async () => {
+    const { net, showModal } = buildHarness({
+      teams: [{ id: 't3', name: '', army: [{ cardInstanceId: 'c1' }] }],
+      cardState: { c1: { currentTroops: 500 } },
+    });
+    await net.showTeamPicker(ANCHOR.x, ANCHOR.y, 'occupy');
+    const labels = (showModal.mock.calls[0][1] as { label: string }[]).map((b) => b.label);
+    expect(labels.some((l) => l.startsWith(t('world.team.slot').replace('{n}', '3')))).toBe(true);
+  });
+
   it('picking a team for occupy dispatches startMarch with kind="occupy" + teamId', async () => {
     const { net, showModal, startMarch } = buildHarness();
     await net.showTeamPicker(ANCHOR.x, ANCHOR.y, 'occupy');
