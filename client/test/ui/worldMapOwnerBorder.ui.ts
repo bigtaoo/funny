@@ -99,7 +99,7 @@ describe('drawTileL1 / drawTileL2 ownerBorder gating (2026-08-01 declutter pass)
   function spyLineStyle(g: PIXI.Graphics): { width: number; color: number; alpha: number }[] {
     const calls: { width: number; color: number; alpha: number }[] = [];
     vi.spyOn(g, 'lineStyle').mockImplementation(function (
-      this: PIXI.Graphics, width?: number, color?: number, alpha?: number,
+      this: PIXI.Graphics, width?, color?: any, alpha?: any,
     ) {
       calls.push({ width: Number(width ?? 0), color: Number(color ?? 0), alpha: Number(alpha ?? 1) });
       return this;
@@ -108,7 +108,7 @@ describe('drawTileL1 / drawTileL2 ownerBorder gating (2026-08-01 declutter pass)
   }
   function spyBeginFill(g: PIXI.Graphics): { color: number; alpha: number }[] {
     const calls: { color: number; alpha: number }[] = [];
-    vi.spyOn(g, 'beginFill').mockImplementation(function (this: PIXI.Graphics, color?: number, alpha?: number) {
+    vi.spyOn(g, 'beginFill').mockImplementation(function (this: PIXI.Graphics, color?, alpha?: number) {
       calls.push({ color: Number(color ?? 0), alpha: Number(alpha ?? 1) });
       return this;
     });

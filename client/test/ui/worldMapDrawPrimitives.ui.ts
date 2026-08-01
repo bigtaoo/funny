@@ -61,7 +61,7 @@ describe('drawFadedLine (2026-08-01 declutter pass)', () => {
   function spyLineStyle(g: PIXI.Graphics): { width: number; alpha: number }[] {
     const calls: { width: number; alpha: number }[] = [];
     vi.spyOn(g, 'lineStyle').mockImplementation(function (
-      this: PIXI.Graphics, width?: number, _color?: number, alpha?: number,
+      this: PIXI.Graphics, width?, _color?: any, alpha?: any,
     ) {
       calls.push({ width: Number(width ?? 0), alpha: Number(alpha ?? 1) });
       return this;
