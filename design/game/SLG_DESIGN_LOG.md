@@ -1544,3 +1544,9 @@ L1 从需 660 兵降到 300（最小占地 500 现稳赢，直击病灶）；L2/
 **已知不在本轮范围**：`combatMarch.ts` `applyMove` 的 `blocked` 分支（目的地被抢占/驻扎/contested）目前既不退回也不驻留——只是把行军删掉、什么都不写，队伍凭空消失，无处可查。这是独立于本轮"回城模型"之外的另一个缺口（`move` 是重新部署已就位的队伍，不是从家出发，语义上不完全等同于本轮改的"回城"），已 `spawn_task` 记录留待单独会话处理，未在本轮改动。
 
 **验证**：`tsc --noEmit`（`@nw/shared`/`@nw/worldsvc`/`client` 三包）全绿。`server/worldsvc` 全量 vitest 48 文件/376 例全绿（含更新 3 处受行为改动直接影响的既有断言——`siege.e2e.test.ts` 的 sweep-win 用例改为断言"幸存者以返程行军形式在途，非瞬间入账"；`teams.e2e.test.ts` 的 idle-team-gate 与 autoReturn 用例改为断言"结算后队伍仍 busy，直到返程行军抵达才可接新单"；均为预期的行为变化，非回归）。`server/shared` 全量 35 文件/666 例全绿（2 例因本机无 Redis 跳过，与本次改动无关）。`client` 全量 126 文件/918 例全绿。
+
+**追加专项测试（同日，用户要求"加测试"）**：上面这轮验证只跑了既有套件+按需更新了受影响的断言，没有为新行为单独立新用例——补了两个新文件：
+- `test/field-encounter-card-zero.e2e.test.ts`：专测根因修复本身。`resolveSiege` 的线性公式在防守方赢时恒为 0 幸存者（`atk<def` 意味着差值天然为负截断到 0），无法用来构造"赢了但磨零"场景；真引擎又难以靠兵力配比精确调出"attackerSurvivors 恰好 0 的惨胜"，遂 `vi.mock('../src/siegeEngine', ...)` 强制 `runSiegeBattle` 返回确定的 `{outcome:'attacker_win', attackerSurvivors:0}`（其余导出走 `importOriginal()` 保持真实，`computeCardStateUpdates`/`CARD_BASE_SURVIVAL` 等逻辑照跑）——2 例：①每张卡 2 兵、`CARD_BASE_SURVIVAL=0.2` 精算出 `round(2*0.2)=0` 全员归零，断言行军在遭遇战当场被删、目的地从未记录战报、也没有生成返程行军（全灭恒无幸存者可送）；②对照组每张卡 10 兵（`round(10*0.2)=2`，未归零），断言这次全灭检测不误伤，行军照常继续前进。
+- `test/march-return-travel-time.e2e.test.ts`：专测本轮新行为本身（此前只是间接被既有测试的断言覆盖到，没有专门断言过新行为的具体形状）——同样 `vi.mock` 强制 `defender_win` + 固定非零幸存者（cheap 线性公式的 defender_win 分支恒为 0 幸存者，同样没法用来测"输了但有幸存者送回家"）。7 例：①目标行军途中被他人抢占（race）、带队伍的占领行军 → 落地为 `StationedDoc`，不退回、无返程行军；②同场景不带队伍 → 退回旧行为的瞬间退款，无 `StationedDoc`（对照组，确认 teamless 分支未被误改）；③PvE 战败 → 不是瞬间入账，而是生成一条 `kind:'return'` 返程行军，`toTile` 指向玩家主基地而非战场，兵力只在返程行军自己抵达时才真正入账；④`instantReturnMarch` 按服务端算出的 `ceil(剩余秒数/60)` 金币扣费，成功后立即结算（无需再等一次 `processDueArrivals`）；⑤扣费失败（`commercial.spend` 拒绝）时返程行军原封不动，没有半途扣了钱却没到账的情况；⑥⑦`instantReturnMarch` 对不存在的行军 id、以及对一条仍在途的非 `return` 类行军，均正确拒绝（`MARCH_NOT_FOUND`），不产生任何扣费。
+
+两个新文件 9 例 + 原有全量 50 文件/385 例，全部一轮跑绿；`tsc --noEmit` 复核仍绿。
