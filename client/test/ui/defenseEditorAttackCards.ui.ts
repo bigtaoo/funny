@@ -41,6 +41,7 @@ function buildHarness(opts: {
   cardCount?: number;
   cardState?: Record<string, CardSLGState>;
   teams?: TeamTemplate[];
+  teamName?: string;
 } = {}) {
   const save = buildSave(opts.cardCount ?? 3);
   const setTeams = vi.fn().mockResolvedValue(undefined);
@@ -53,7 +54,7 @@ function buildHarness(opts: {
     getSave: () => save,
     worldApi,
     worldId: WORLD_ID,
-    target: { mode: 'attack', teamId: 't1', teamName: 'Team 1' },
+    target: { mode: 'attack', teamId: 't1', teamName: opts.teamName ?? 'Team 1' },
   };
   const scene = new DefenseEditorScene(createLayout(800, 1280), new InputManager(), cb);
   return { scene, cb, save, setTeams, getTeams, getMe };
@@ -89,6 +90,28 @@ describe('DefenseEditorScene attack mode — card-based formation (2026-07-17 mi
     expect(saved.army[0]).toMatchObject({ cardInstanceId: 'c0' });
     expect(saved.army[0]).not.toHaveProperty('initialHp');
     expect(saved.army[0]).not.toHaveProperty('unitType');
+  });
+
+  it('save does not freeze the editor-header teamName into TeamTemplate.name (2026-08-01 locale-freeze fix)', async () => {
+    // cb.target.teamName is only ever a locale snapshot of teamSlotName(i) taken when the editor
+    // opened (CityScene/render.ts) — persisting it verbatim is what caused slots saved under
+    // different UI languages to permanently disagree ("Team 1" vs "队伍 3" in the same save).
+    const { scene, setTeams } = buildHarness({
+      cardCount: 1,
+      cardState: { c0: { currentTroops: 200 } },
+      teamName: '队伍 1',
+    });
+    await flush();
+
+    const available = (scene as unknown as { availableCards(): { card: { id: string }; unitType: string }[] }).availableCards();
+    (scene as unknown as { tool: unknown }).tool = { kind: 'card', cardInstanceId: available[0]!.card.id, unitType: available[0]!.unitType };
+    const [sx, sy] = cellCenter(scene, 0, 0);
+    (scene as unknown as { onGridTap(x: number, y: number): void }).onGridTap(sx, sy);
+
+    await (scene as unknown as { doSave(): Promise<void> }).doSave();
+    const [, teams] = setTeams.mock.calls[0] as [string, TeamTemplate[]];
+    const saved = teams.find((tm) => tm.id === 't1')!;
+    expect(saved.name).toBe('');
   });
 
   it('loading an existing card team populates the grid from cardState.currentTroops', async () => {

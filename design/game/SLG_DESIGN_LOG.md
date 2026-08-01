@@ -1471,4 +1471,4 @@ L1 从需 660 兵降到 300（最小占地 500 现稳赢，直击病灶）；L2/
 
 **遗留**：已经写坏的旧存档（字面存了 `Team N`/`队伍 N`）不会自动愈合，要等玩家下次打开该槽的编队编辑器并保存才会清空为 `''` 转回实时渲染；未做批量数据迁移（本轮判定收益不足以覆盖风险，属于"自愈式"轻量修复）。
 
-**验证**：`client` `tsc --noEmit` 全绿；`teamTroops.test.ts`（14 例）、`test:ui` 下 `defenseEditorAttackCards.ui.ts`（11）/`defenseEditorFillTroops.ui.ts`（10）/`cityScene.ui.ts`（31）共 52 例全绿，均无需改动既有断言（此前没有测试断言 `persistTeam` 写回的 `name` 值）。
+**验证**：`client` `tsc --noEmit` 全绿；新增 2 例回归——`defenseEditorAttackCards.ui.ts`「save 不把 teamName 冻结进 `TeamTemplate.name`」（存入自定义 `teamName='队伍 1'` 断言存档 `name` 仍为 `''`）+ `cityScene.ui.ts`「`name:''` 的队伍回退到实时槽位名而非空白」；连同既有 `teamTroops.test.ts`（14）/`defenseEditorAttackCards.ui.ts`（12）/`defenseEditorFillTroops.ui.ts`（10）/`cityScene.ui.ts`（32）共 68 例全绿。

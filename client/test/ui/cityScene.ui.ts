@@ -472,6 +472,19 @@ describe('CityScene bottom team row (D-CITY-10; pinned single row 2026-07-23)', 
     scene.destroy();
   });
 
+  it('a team saved with an empty name (2026-08-01 locale-freeze fix) falls back to the live slot name, not a blank label', async () => {
+    const opened: Array<{ teamId: string; teamName: string }> = [];
+    const { scene, inner } = await buildLoaded(
+      { teams: [{ id: teamSlotId(0), name: '', army: [{ cardInstanceId: 'c1' }] }], me: { cardState: { c1: { currentTroops: 400 } } } },
+      (teamId, teamName) => { opened.push({ teamId, teamName }); },
+    );
+    const teams = teamHits(inner).sort((a, b) => a.x - b.x);
+    const firstSlot = teams[0]!;
+    tap(inner, firstSlot.x + firstSlot.w / 2, firstSlot.y + firstSlot.h / 2);
+    expect(opened).toEqual([{ teamId: teamSlotId(0), teamName: teamSlotName(0) }]);
+    scene.destroy();
+  });
+
   it('tapping an empty team slot still opens the editor, with the default slot id and name', async () => {
     const opened: Array<{ teamId: string; teamName: string }> = [];
     const { scene, inner } = await buildLoaded(
