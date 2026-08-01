@@ -7,7 +7,7 @@
 // GachaScene's private `reveal` state directly and re-render rather than driving a
 // real draw() round-trip, since drawResultCard only depends on that field.
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import * as PIXI from 'pixi.js-legacy';
 import { createLayout } from '../../src/layout/ScalingManager';
 import { InputManager } from '../../src/inputSystem/InputManager';
@@ -87,13 +87,13 @@ describe('GachaScene — result card names + duplicate badge', () => {
   });
 });
 
-describe('GachaScene — legendary card light sweep', () => {
-  const fxOf = (s: GachaScene): PIXI.Container[] =>
-    (s as unknown as { revealFx: PIXI.Container[] }).revealFx;
+describe('GachaScene — legendary card border trail', () => {
+  const fxOf = (s: GachaScene): Array<{ phase: number }> =>
+    (s as unknown as { revealFx: Array<{ phase: number }> }).revealFx;
   const tick = (s: GachaScene, dt: number): void =>
     (s as unknown as { update(dt: number): void }).update(dt);
 
-  it('spawns a clockwise-spinning sweep for a legendary (orange) card only', () => {
+  it('spawns a clockwise-looping border trail for a legendary (orange) card only', () => {
     const scene = buildGacha();
     reveal(scene, [
       { itemId: 'lichuang', rarity: 'rare', duplicate: false },
@@ -102,20 +102,49 @@ describe('GachaScene — legendary card light sweep', () => {
     const fx = fxOf(scene);
     expect(fx.length).toBe(1); // only the legendary card, not the rare one
 
-    const before = fx[0].rotation;
+    const before = fx[0].phase;
     tick(scene, 0.5);
-    // Positive rotation = clockwise (screen y-down); it must advance while revealing.
-    expect(fx[0].rotation).toBeGreaterThan(before);
+    // Positive phase delta = clockwise (screen y-down); it must advance while revealing.
+    expect(fx[0].phase).toBeGreaterThan(before);
     scene.destroy();
   });
 
-  it('clears the sweep when the reveal is dismissed', () => {
+  it('clears the trail when the reveal is dismissed', () => {
     const scene = buildGacha();
     reveal(scene, [{ itemId: 'skin_placeholder', rarity: 'legendary', duplicate: false }]);
     expect(fxOf(scene).length).toBe(1);
     (scene as unknown as { dismissReveal(): void }).dismissReveal();
     expect(fxOf(scene).length).toBe(0);
     tick(scene, 0.5); // no-op, must not throw with an empty fx list
+    scene.destroy();
+  });
+});
+
+// Regression coverage for the 2026-08-01 fix: a pulled hero card's reveal picture used to always
+// show the base UNIT_ART_URLS portrait, ignoring whatever skin the player already has equipped for
+// that character (cardArt.ts unitPortraitUrl/cardInstanceArtUrl — same fix as the Hero Roster Skins
+// tab). getEquippedSkins is a new optional callback; this checks the reveal wiring calls through to
+// it for hero-card pulls (and is silent for non-card pulls, e.g. materials).
+describe('GachaScene — reveal picture consults the equipped-skin callback', () => {
+  it('calls getEquippedSkins when revealing a hero card pull', () => {
+    const getEquippedSkins = vi.fn(() => ({} as Record<string, string>));
+    const scene = buildGacha({ getEquippedSkins });
+    reveal(scene, [{ itemId: 'lichuang', rarity: 'rare', duplicate: false }]);
+    expect(getEquippedSkins).toHaveBeenCalled();
+    scene.destroy();
+  });
+
+  it('does not call getEquippedSkins for a non-card (material) pull', () => {
+    const getEquippedSkins = vi.fn(() => ({} as Record<string, string>));
+    const scene = buildGacha({ getEquippedSkins });
+    reveal(scene, [{ itemId: 'mat_scrap', rarity: 'common', duplicate: true }]);
+    expect(getEquippedSkins).not.toHaveBeenCalled();
+    scene.destroy();
+  });
+
+  it('does not throw when getEquippedSkins is absent (optional callback)', () => {
+    const scene = buildGacha();
+    expect(() => reveal(scene, [{ itemId: 'lichuang', rarity: 'rare', duplicate: false }])).not.toThrow();
     scene.destroy();
   });
 });

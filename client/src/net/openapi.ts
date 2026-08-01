@@ -3751,6 +3751,8 @@ export interface operations {
                                     count: number;
                                     /** @description Material id (scrap/lead/binding) */
                                     id?: string;
+                                    /** @description Small coin top-up delivered alongside the primary reward, milestone slots only (R1b) */
+                                    bonusCoins?: number;
                                 }[];
                                 tasks: {
                                     id: string;
@@ -3811,6 +3813,8 @@ export interface operations {
                                 count: number;
                                 /** @description Material id (material) or the drawn defId (card/equipment) */
                                 id?: string;
+                                /** @description Small coin top-up delivered alongside the primary reward, milestone slots only (R1b) */
+                                bonusCoins?: number;
                             };
                         };
                     };

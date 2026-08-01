@@ -253,8 +253,16 @@ export function LiveOpsMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase & C
           }
         }
       }
+      // Milestone bonus coins (R1b, 2026-08-01): delivered independently of the primary reward's
+      // path above, same commercial.grant + mirrorCoins flow as the legacy 'coins' kind.
+      if (claimedReward?.bonusCoins && this.deps.commercial.available) {
+        const { commercial, cols } = this.deps;
+        const orderId = `checkin:bonus:${accountId}:${makeMonthKey(tsMs)}:${claimedDay}`;
+        const g = await commercial.grant({ accountId, amount: claimedReward.bonusCoins, reason: 'checkin_bonus', orderId });
+        if (g.ok) save = await mirrorCoins(cols, accountId, g.coinsAfter, tsMs);
+      }
       const finalReward = claimedReward && deliveredId
-        ? { kind: claimedReward.kind, count: claimedReward.count, id: deliveredId }
+        ? { kind: claimedReward.kind, count: claimedReward.count, id: deliveredId, bonusCoins: claimedReward.bonusCoins }
         : claimedReward;
       return ok({ save, day: claimedDay, reward: finalReward });
     }

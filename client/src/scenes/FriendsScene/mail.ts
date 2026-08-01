@@ -7,8 +7,7 @@ import { buildIcon } from '../../render/icons';
 import { makeText } from '../../render/pixiText';
 import { getEquipDef } from '../../game/meta/equipmentDefs';
 import { buildEquipIcon } from '../../render/equipmentAtlas';
-import { CARD_DEFS } from '../../game/meta/cardDefs';
-import { UNIT_ART_URLS, getArtTexture } from '../../render/cardArt';
+import { cardInstanceArtUrl, getArtTexture } from '../../render/cardArt';
 import { buildMaterialIcon, type MaterialKind } from '../../render/materialAtlas';
 import type { MailView, MailAttachmentView } from '../../net/ApiClient';
 import { type Constructor, type FriendsSceneBaseCtor } from './base';
@@ -181,8 +180,7 @@ export function MailMixin<TBase extends FriendsSceneBaseCtor>(Base: TBase): TBas
           return;
         }
       } else if (a.kind === 'card' && a.instance) {
-        const cardDef = CARD_DEFS[a.instance.defId];
-        const artUrl = cardDef ? UNIT_ART_URLS[cardDef.unitType] : undefined;
+        const artUrl = cardInstanceArtUrl(a.instance, this.cb.getEquippedSkins?.()) ?? undefined;
         if (artUrl) {
           const tex = getArtTexture(artUrl);
           if (tex.baseTexture.valid) {

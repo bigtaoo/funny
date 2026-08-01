@@ -17250,6 +17250,10 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                         "type": "string",
                         "description": "Material id (scrap/lead/binding)",
                         "set only when kind=material": null
+                      },
+                      "bonusCoins": {
+                        "type": "integer",
+                        "description": "Small coin top-up delivered alongside the primary reward, milestone slots only (R1b)"
                       }
                     }
                   }
@@ -17929,6 +17933,10 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                 "id": {
                   "type": "string",
                   "description": "Material id (material) or the drawn defId (card/equipment)"
+                },
+                "bonusCoins": {
+                  "type": "integer",
+                  "description": "Small coin top-up delivered alongside the primary reward, milestone slots only (R1b)"
                 }
               }
             }

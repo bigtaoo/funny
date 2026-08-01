@@ -127,13 +127,17 @@ export function DataMixin<TBase extends DefenseEditorSceneBaseCtor>(Base: TBase)
      */
     async persistTeam(): Promise<void> {
       if (this.cb.target.mode !== 'attack') return;
-      const { teamId, teamName } = this.cb.target;
+      const { teamId } = this.cb.target;
       const army = this.buildArmy();
       const next = this.teams.filter((tm) => tm.id !== teamId);
       const leaderCardId = this.leaderCardId && army.some((e) => e.cardInstanceId === this.leaderCardId)
         ? this.leaderCardId
         : undefined;
-      next.push({ id: teamId, name: teamName, army, autoReturn: this.autoReturn, leaderCardId });
+      // Slot names have no custom-naming UI yet (v1) — persist '' rather than the locale-snapshotted
+      // teamName the editor was opened with, so CityScene's `team?.name || teamSlotName(i)` fallback
+      // always renders live in the player's *current* language instead of freezing whatever language
+      // was active the first time this slot was saved (was producing mixed "Team 1"/"队伍 3" rows).
+      next.push({ id: teamId, name: '', army, autoReturn: this.autoReturn, leaderCardId });
       await this.cb.worldApi.setTeams(this.cb.worldId, next);
       this.teams = next;
     }

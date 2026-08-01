@@ -20,12 +20,13 @@ import { buildEquipIcon } from '../render/equipmentAtlas';
 import { buildMaterialIcon } from '../render/materialAtlas';
 import { CARD_DEFS } from '../game/meta/cardDefs';
 import { SKIN_TARGET_UNIT, skinDisplayName } from '../game/meta/skinDefs';
-import { UNIT_ART_URLS, getArtTexture } from '../render/cardArt';
+import { cardInstanceArtUrl, getArtTexture } from '../render/cardArt';
 import { drawScrollIndicator } from '../ui/widgets/ScrollIndicator';
 import { peekViewportH } from '../ui/widgets/scrollPeek';
 import { FS, snapFont } from '../render/fontScale';
 import { wheelScrollY } from '../ui/wheelScroll';
 import { serverNow } from '../net/serverClock';
+import { getCachedTexture } from '../ui/widgets/uiCache';
 
 /** itemId prefix → material icon glyph (mat_scrap/mat_lead/mat_binding). */
 const MATERIAL_ICON: Record<string, 'scrap' | 'lead' | 'binding'> = {
@@ -69,6 +70,8 @@ export interface GachaSceneCallbacks {
   getPity(poolId: string): number;
   /** Fate Points balance (server-authoritative mirror; GACHA_DESIGN §7). */
   getFatePoints(): number;
+  /** `SaveData.equipped` (skin: prefixed slots), so a pulled/legend-odds hero card shows whichever skin is already equipped for that character — same picture everywhere (cardArt.ts). Absent = plain base portraits. */
+  getEquippedSkins?(): Record<string, string>;
   loadPools(): Promise<GachaPool[]>;
   draw(poolId: string, count: 1 | 10): Promise<GachaDrawResult>;
   /** Redeem the given featured legendary for FATE_POINT_REDEEM_COST fate points (§7). */
@@ -94,6 +97,105 @@ export interface GachaSceneCallbacks {
 
 interface Hit { rect: Rect; fn: () => void; }
 
+/**
+ * Legendary-card border trail: N pooled dot sprites walking a rounded-rect
+ * perimeter. `phase` is the comet head's position as a fraction of the total
+ * perimeter length (0..1, wraps); each dot in `dots` trails behind the head by
+ * an even fraction of TRAIL_SPAN, recomputed analytically every frame in
+ * update() — see {@link pointOnPerim}. No Graphics redraw, no mask: the dots
+ * are mathematically constrained to the border so they never bleed off-card.
+ */
+interface LegendaryTrail { dots: PIXI.Sprite[]; perim: RectPerim; phase: number; }
+
+/** One straight edge or one rounded corner of a rect perimeter, each carrying its own arc length. */
+type PerimSeg =
+  | { kind: 'line'; x0: number; y0: number; x1: number; y1: number; len: number }
+  | { kind: 'arc'; cx: number; cy: number; r: number; a0: number; a1: number; len: number };
+
+interface RectPerim { segs: PerimSeg[]; total: number; }
+
+/** Walk a rounded rect (x,y,w,h, corner radius r) clockwise from the top edge as 8 segments (4 lines + 4 corner arcs). */
+function buildRectPerim(x: number, y: number, w: number, h: number, r: number): RectPerim {
+  const rr = Math.max(0, Math.min(r, w / 2, h / 2));
+  const arcLen = (rr * Math.PI) / 2;
+  const segs: PerimSeg[] = [
+    { kind: 'line', x0: x + rr, y0: y, x1: x + w - rr, y1: y, len: w - 2 * rr },
+    { kind: 'arc', cx: x + w - rr, cy: y + rr, r: rr, a0: -Math.PI / 2, a1: 0, len: arcLen },
+    { kind: 'line', x0: x + w, y0: y + rr, x1: x + w, y1: y + h - rr, len: h - 2 * rr },
+    { kind: 'arc', cx: x + w - rr, cy: y + h - rr, r: rr, a0: 0, a1: Math.PI / 2, len: arcLen },
+    { kind: 'line', x0: x + w - rr, y0: y + h, x1: x + rr, y1: y + h, len: w - 2 * rr },
+    { kind: 'arc', cx: x + rr, cy: y + h - rr, r: rr, a0: Math.PI / 2, a1: Math.PI, len: arcLen },
+    { kind: 'line', x0: x, y0: y + h - rr, x1: x, y1: y + rr, len: h - 2 * rr },
+    { kind: 'arc', cx: x + rr, cy: y + rr, r: rr, a0: Math.PI, a1: Math.PI * 1.5, len: arcLen },
+  ];
+  return { segs, total: segs.reduce((s, seg) => s + seg.len, 0) };
+}
+
+/** Position on `perim` at arc-length fraction `u` (wraps mod 1, negative-safe). */
+function pointOnPerim(perim: RectPerim, u: number): { x: number; y: number } {
+  let d = (((u % 1) + 1) % 1) * perim.total;
+  for (const seg of perim.segs) {
+    if (d <= seg.len) {
+      const f = seg.len > 0 ? d / seg.len : 0;
+      return seg.kind === 'line'
+        ? { x: seg.x0 + (seg.x1 - seg.x0) * f, y: seg.y0 + (seg.y1 - seg.y0) * f }
+        : { x: seg.cx + Math.cos(seg.a0 + (seg.a1 - seg.a0) * f) * seg.r, y: seg.cy + Math.sin(seg.a0 + (seg.a1 - seg.a0) * f) * seg.r };
+    }
+    d -= seg.len;
+  }
+  const last = perim.segs[perim.segs.length - 1];
+  return last.kind === 'line' ? { x: last.x1, y: last.y1 } : { x: last.cx + Math.cos(last.a1) * last.r, y: last.cy + Math.sin(last.a1) * last.r };
+}
+
+/** Soft white radial-gradient dot (baked once, see uiCache); tinted per trail position/time and scaled by tail falloff. */
+function drawTrailDotGraphic(): PIXI.Graphics {
+  const g = new PIXI.Graphics();
+  const R = 32;
+  const rings = 10;
+  for (let i = rings; i >= 1; i--) {
+    const f = i / rings;
+    g.beginFill(0xffffff, (1 - f) * (1 - f));
+    g.drawCircle(R, R, R * f);
+    g.endFill();
+  }
+  return g;
+}
+
+// ── Legendary border-trail tuning ───────────────────────────────────────────
+/** Loops of the card's border per second for the trail's comet head. Positive = clockwise (screen y-down). */
+const TRAIL_SPEED = 0.28;
+/** Fading dots making up the comet's tail — more = smoother trail. */
+const TRAIL_DOTS = 28;
+/** Tail length as a fraction of the full perimeter, head to faded tail-end. */
+const TRAIL_SPAN = 0.42;
+/** Full rainbow cycles painted around one lap of the border — a "holographic foil" shimmer, not a flat gold tint. */
+const TRAIL_HUE_CYCLES = 2;
+/** Slow independent drift (laps/s) of the hue pattern itself, so the shimmer keeps creeping instead of freezing to the border. */
+const TRAIL_HUE_DRIFT = 0.05;
+
+/** HSL (h,s,l ∈ [0,1]) → 0xRRGGBB, used for the trail's periodic foil-shimmer hue cycle. */
+function hslToHex(h: number, s: number, l: number): number {
+  const hue2rgb = (p: number, q: number, t: number): number => {
+    let tt = ((t % 1) + 1) % 1;
+    if (tt < 1 / 6) return p + (q - p) * 6 * tt;
+    if (tt < 1 / 2) return q;
+    if (tt < 2 / 3) return p + (q - p) * (2 / 3 - tt) * 6;
+    return p;
+  };
+  const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
+  const p = 2 * l - q;
+  const r = Math.round(hue2rgb(p, q, h + 1 / 3) * 255);
+  const g = Math.round(hue2rgb(p, q, h) * 255);
+  const b = Math.round(hue2rgb(p, q, h - 1 / 3) * 255);
+  return (r << 16) | (g << 8) | b;
+}
+
+/** Hue (0..1) for the dot currently at perimeter fraction `u`, given the head's current lap `phase`. */
+function trailHue(u: number, phase: number): number {
+  const uw = ((u % 1) + 1) % 1;
+  return ((uw * TRAIL_HUE_CYCLES + phase * TRAIL_HUE_DRIFT) % 1 + 1) % 1;
+}
+
 export class GachaScene implements Scene {
   readonly container: PIXI.Container;
 
@@ -115,14 +217,13 @@ export class GachaScene implements Scene {
   private readonly artHooked = new Set<string>();
   /** Reveal overlay: non-null while showing the latest draw's results. */
   private reveal: GachaResultEntry[] | null = null;
-  /** Angular speed (rad/s) of the legendary card's circling light sweep. Positive = clockwise (screen y-down). */
-  private static readonly SWEEP_SPEED = 1.0;
   /**
-   * Rotating light-sweep graphics for legendary (orange) reveal cards — spun clockwise in update(dt).
-   * Rebuilt each render() (children are torn down by tearDownChildren), so this holds only live objects
-   * and never pins the Ticker (see client-memory-leak.md: fx must not outlive the container).
+   * Legendary (orange) reveal cards get a comet-like dot trail looping clockwise around the card's
+   * rounded-rect border, advanced in update(dt). Rebuilt each render() (children are torn down by
+   * tearDownChildren), so this holds only live objects and never pins the Ticker (see
+   * client-memory-leak.md: fx must not outlive the container).
    */
-  private revealFx: PIXI.Container[] = [];
+  private revealFx: LegendaryTrail[] = [];
   /** Roster/inventory-full overflow from the draw currently shown in `reveal`; toasted once the player dismisses the reveal. */
   private revealOverflow: GachaOverflow | null = null;
   /** Odds-detail overlay open (L1-3, Apple 3.1.1): lists per-item probability + pity rule. */
@@ -158,10 +259,19 @@ export class GachaScene implements Scene {
   }
 
   update(dt: number): void {
-    // Spin the legendary cards' light sweep in place — no re-render, so the streak flows smoothly.
+    // Advance the legendary cards' border trail — no re-render, so the streak flows smoothly.
     if (this.revealFx.length) {
-      const d = dt * GachaScene.SWEEP_SPEED;
-      for (const fx of this.revealFx) fx.rotation += d;
+      for (const fx of this.revealFx) {
+        fx.phase = (fx.phase + dt * TRAIL_SPEED) % 1;
+        const n = fx.dots.length;
+        for (let i = 0; i < n; i++) {
+          const u = fx.phase - (i / n) * TRAIL_SPAN;
+          const p = pointOnPerim(fx.perim, u);
+          const dot = fx.dots[i];
+          dot.position.set(p.x, p.y);
+          dot.tint = hslToHex(trailHue(u, fx.phase), 0.62, 0.78);
+        }
+      }
     }
     if (this.oddsScrollDirty) { this.oddsScrollDirty = false; this.render(); }
     if (this.bt.tick(dt)) this.render();
@@ -653,51 +763,42 @@ export class GachaScene implements Scene {
     frameSpr.width = w; frameSpr.height = h;
     this.container.addChild(frameSpr);
 
-    // Legendary (orange) cards get a clockwise-circling light sweep over the frame,
-    // spun each frame in update(). Purple/blue/grey tiers stay static.
-    if (r.rarity === 'legendary') this.addLegendarySweep(x, y, w, h);
+    // Legendary (orange) cards get a clockwise-looping border trail, advanced each frame in
+    // update(). Purple/blue/grey tiers stay static.
+    if (r.rarity === 'legendary') this.addLegendaryTrail(x, y, w, h);
   }
 
   /**
-   * Add a rotating light streak to a legendary reveal card, clipped to the card rect and blended
-   * additively over the frame so the gold catches the moving light. Built from fading annulus wedges
-   * (a bright leading edge with a trailing gradient tail) — pure Graphics, no canvas/texture, so it
-   * works under WebGL and the headless UI harness alike. The spinning object is pushed to `revealFx`;
-   * update() advances its rotation clockwise. Cleaned up with the container on the next render()/destroy().
+   * Add a comet-like dot trail looping clockwise around a legendary reveal card's rounded-rect
+   * border, additively blended with a holographic-foil hue cycle (TRAIL_HUE_CYCLES) so the streak
+   * reads as shimmering foil rather than a flat gold tint. Built once per card as TRAIL_DOTS pooled
+   * sprites of a single baked radial-gradient texture (see uiCache); update() repositions and
+   * re-tints them each frame by walking the border's perimeter analytically (pointOnPerim) — cheap
+   * per-dot transform + colour math, no Graphics redraw. No mask needed either: the dots are
+   * mathematically constrained to the border so they never bleed off-card. Pushed onto `revealFx`;
+   * cleaned up with the container on the next render()/destroy().
    */
-  private addLegendarySweep(x: number, y: number, w: number, h: number): void {
-    const cx = x + w / 2, cy = y + h / 2;
-    const R = Math.sqrt(w * w + h * h) / 2; // reach the far corners so the sweep covers the whole card
-    const Rin = R * 0.30;                    // hollow centre — keep the light near the frame, not a hot blob
-    const steps = 72;
-    const spin = new PIXI.Graphics();
-    for (let i = 0; i < steps; i++) {
-      const frac = i / steps;                // 0 at the leading edge, growing along the trailing tail
-      const fall = Math.max(0, 1 - frac / 0.28);
-      const alpha = fall * fall * 0.5;       // squared falloff → soft comet-like tail
-      if (alpha < 0.01) continue;
-      const a0 = (i / steps) * Math.PI * 2;
-      const a1 = ((i + 1) / steps) * Math.PI * 2;
-      const c0 = Math.cos(a0), s0 = Math.sin(a0), c1 = Math.cos(a1), s1 = Math.sin(a1);
-      spin.beginFill(0xfff2cc, alpha);
-      spin.moveTo(c0 * Rin, s0 * Rin);
-      spin.lineTo(c0 * R, s0 * R);
-      spin.lineTo(c1 * R, s1 * R);
-      spin.lineTo(c1 * Rin, s1 * Rin);
-      spin.closePath();
-      spin.endFill();
+  private addLegendaryTrail(x: number, y: number, w: number, h: number): void {
+    const perim = buildRectPerim(x, y, w, h, Math.min(w, h) * 0.06);
+    const tex = getCachedTexture('gacha:legendary-trail-dot', drawTrailDotGraphic, 64, 64) ?? PIXI.Texture.WHITE;
+    const n = TRAIL_DOTS;
+    const dots: PIXI.Sprite[] = [];
+    for (let i = 0; i < n; i++) {
+      const spr = new PIXI.Sprite(tex);
+      spr.anchor.set(0.5);
+      const u = -(i / n) * TRAIL_SPAN; // initial position at phase 0, matches update()'s formula
+      const fall = Math.max(0, 1 - (i / n) / TRAIL_SPAN);
+      const eased = fall * fall; // squared falloff → soft comet-like tail
+      spr.alpha = eased;
+      spr.scale.set(0.35 + 0.65 * eased);
+      spr.tint = hslToHex(trailHue(u, 0), 0.62, 0.78);
+      spr.blendMode = PIXI.BLEND_MODES.ADD;
+      const p = pointOnPerim(perim, u);
+      spr.position.set(p.x, p.y);
+      this.container.addChild(spr);
+      dots.push(spr);
     }
-    spin.blendMode = PIXI.BLEND_MODES.ADD;
-    spin.x = cx; spin.y = cy;
-
-    // Clip to the card so the streak never bleeds onto neighbouring cards / the dim backdrop.
-    const mask = new PIXI.Graphics();
-    mask.beginFill(0xffffff).drawRoundedRect(x, y, w, h, Math.round(Math.min(w, h) * 0.06)).endFill();
-    spin.mask = mask;
-
-    this.container.addChild(mask);
-    this.container.addChild(spin);
-    this.revealFx.push(spin);
+    this.revealFx.push({ dots, perim, phase: 0 });
   }
 
   /**
@@ -837,7 +938,7 @@ export class GachaScene implements Scene {
     }
 
     const cardDef = CARD_DEFS[itemId];
-    const artUrl = cardDef ? UNIT_ART_URLS[cardDef.unitType] : undefined;
+    const artUrl = cardDef ? cardInstanceArtUrl({ defId: itemId }, this.cb.getEquippedSkins?.()) ?? undefined : undefined;
     if (artUrl) {
       const tex = getArtTexture(artUrl);
       if (tex.baseTexture.valid) {

@@ -5,7 +5,7 @@ import { t } from '../../i18n';
 import { ui as C, txt, sketchPanel, seedFor } from '../../render/sketchUi';
 import { FS } from '../../render/fontScale';
 import { drawScrollIndicator } from '../../ui/widgets/ScrollIndicator';
-import { UNIT_ART_URLS, getArtTexture } from '../../render/cardArt';
+import { cardInstanceArtUrl, unitPortraitUrl, equippedSkinIdFor, getArtTexture } from '../../render/cardArt';
 import { ATTACK_LANES, BASE_COLS } from '../../game/config';
 import { UnitType, BuildingType } from '../../game/types';
 import type { CardInstance } from '../../game/meta/SaveData';
@@ -113,7 +113,7 @@ export function RenderMixin<TBase extends DefenseEditorSceneBaseCtor>(Base: TBas
       const rightX = PAD + leftW + gap;
       const rightW = w - PAD - rightX;
 
-      const toolbarH = 30;
+      const toolbarH = 60;
       this.renderAttackToolbar(PAD, top, leftW, toolbarH);
       this.renderGrid(top + toolbarH + 6, bottom, PAD, leftW);
 
@@ -208,13 +208,23 @@ export function RenderMixin<TBase extends DefenseEditorSceneBaseCtor>(Base: TBas
       const cellW = (w - gap * (cols - 1)) / cols;
       const rows = Math.ceil(cards.length / cols);
       const totalH = rows * (cellH + gap) + gap;
-      // No PIXI mask backs this grid (draw-cull only, below) — a row is either drawn in full or
-      // skipped entirely, never cropped, so peekViewportH's mid-row shrink would just exclude a
-      // row that fits fine and leave a dead gap (2026-07-23 correction, UI_DESIGN.md §25). Use the
-      // naive availH directly.
+      // Naive availH (not peekViewportH's shrunk value): rows are drawn in full or skipped
+      // entirely, never cropped, so a shrunk viewport would just exclude a row that fits fine and
+      // leave a dead gap (2026-07-23 correction, UI_DESIGN.md §25).
       this.scrollMax = Math.max(0, totalH - availH);
       this.scrollY = Math.max(0, Math.min(this.scrollY, this.scrollMax));
 
+      // Cards render into a masked sub-layer so an overscrolled row never bleeds up past listY and
+      // paints over the toolbar/title above it (the cull below only skips rows fully outside
+      // [listY, listY+availH], so a row straddling that edge would otherwise render in full).
+      const rosterLayer = new PIXI.Container();
+      this.bodyLayer.addChild(rosterLayer);
+      const clip = new PIXI.Graphics();
+      clip.beginFill(0xffffff).drawRect(x, listY, w, availH).endFill();
+      this.bodyLayer.addChild(clip);
+      rosterLayer.mask = clip;
+      const outerLayer = this.bodyLayer;
+      this.bodyLayer = rosterLayer;
       cards.forEach((c, i) => {
         const col = i % cols;
         const row = Math.floor(i / cols);
@@ -222,6 +232,7 @@ export function RenderMixin<TBase extends DefenseEditorSceneBaseCtor>(Base: TBas
         const cy = listY + gap + row * (cellH + gap) - this.scrollY;
         if (cy + cellH >= listY && cy <= listY + availH) this.renderRosterCell(c, cx, cy, cellW, cellH);
       });
+      this.bodyLayer = outerLayer;
 
       drawScrollIndicator(this.bodyLayer, { x, y: listY, w, h: availH }, this.scrollY, this.scrollMax);
     }
@@ -245,7 +256,7 @@ export function RenderMixin<TBase extends DefenseEditorSceneBaseCtor>(Base: TBas
       const frame = sketchPanel(imgW, imgH, { fill: 0xf0eee7, border: C.mid, seed: seedFor(x, y, imgW) });
       frame.x = x + pad; frame.y = y + pad;
       this.bodyLayer.addChild(frame);
-      const artUrl = UNIT_ART_URLS[c.unitType];
+      const artUrl = cardInstanceArtUrl(c.card, this.cb.getSave?.()?.equipped);
       if (artUrl) this.drawArtFit(artUrl, x + pad + 1, y + pad + 1, imgW - 2, imgH - 2);
 
       const ax = x + pad + imgW + 8;
@@ -384,7 +395,7 @@ export function RenderMixin<TBase extends DefenseEditorSceneBaseCtor>(Base: TBas
       const cx = px + cw / 2, cy = py + ch / 2;
       const size = Math.min(cw, ch) * 0.72;
       const bx = cx - size / 2, by = cy - size / 2;
-      const artUrl = UNIT_ART_URLS[type];
+      const artUrl = unitPortraitUrl(type, equippedSkinIdFor(type, this.cb.getSave?.()?.equipped));
       if (artUrl) {
         const frame = sketchPanel(size, size, {
           // The leader wears a gold frame so its portrait reads as "this is the team" even before the ★.

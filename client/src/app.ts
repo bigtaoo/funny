@@ -239,9 +239,9 @@ class PixiAppViews implements AppViews {
     this.manager.goto(this.timedBuild('EventScene', () => new EventScene(this.layout, this.input, cb)));
   }
 
-  showReplay(replay: Replay, cb: ReplaySceneCallbacks, level?: LevelDefinition): void {
+  showReplay(replay: Replay, cb: ReplaySceneCallbacks, level?: LevelDefinition, equippedSkins?: readonly string[]): void {
     this.leaveLobby();
-    this.manager.goto(this.timedBuild('ReplayScene', () => new ReplayScene(this.layout, this.input, replay, cb, level)));
+    this.manager.goto(this.timedBuild('ReplayScene', () => new ReplayScene(this.layout, this.input, replay, cb, level, equippedSkins)));
   }
 
   showStatePlayer(replay: StateReplay, cb: StatePlayerSceneCallbacks, encoded?: EncodedStateReplay): void {

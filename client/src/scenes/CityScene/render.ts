@@ -137,7 +137,7 @@ export function RenderMixin<TBase extends CitySceneBaseCtor>(Base: TBase): TBase
       // card — see teamLeaderCard(). Occupies the card's right edge; the text column shrinks to clear it.
       const save = this.cb.getSave?.();
       const leader = filled ? teamLeaderCard(team, save?.cardInv, save?.equipmentInv) : undefined;
-      const artUrl = leader ? cardInstanceArtUrl(leader) : null;
+      const artUrl = leader ? cardInstanceArtUrl(leader, save?.equipped) : null;
       let textW = cardW - pad * 2;
       if (artUrl) {
         const artSize = Math.min(cardH - pad * 2, 76);

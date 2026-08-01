@@ -12,7 +12,7 @@ import { ui as C, txt, sketchPanel, sketchAccentBar, seedFor, marginLineX } from
 import { FS, snapFont } from '../../render/fontScale';
 import { buildIcon } from '../../render/icons';
 import { FACTION_COLOR } from '../../render/factionIcon';
-import { UNIT_ART_URLS } from '../../render/cardArt';
+import { unitPortraitUrl } from '../../render/cardArt';
 import { sidebarNavW, bottomNavH } from '../../ui/widgets/HubTabs';
 import { drawScrollIndicator } from '../../ui/widgets/ScrollIndicator';
 import { CARD_DEFS, type CardDef } from '../../game/meta/cardDefs';
@@ -120,7 +120,7 @@ export function SkinsMixin<TBase extends CardSceneBaseCtor>(Base: TBase): TBase 
       const frame = sketchPanel(portraitW, portraitH, { fill: 0xf0eee7, border: C.mid, seed: seedFor(x, y, portraitW) });
       frame.x = x + CARD_PAD; frame.y = y + CARD_PAD;
       this.bodyLayer.addChild(frame);
-      const artUrl = UNIT_ART_URLS[def.unitType as UnitType];
+      const artUrl = unitPortraitUrl(unitType, equipped);
       if (artUrl) this.drawArtFit(artUrl, x + CARD_PAD + 2, y + CARD_PAD + 2, portraitW - 4, this.bodyLayer, portraitH - 4);
 
       // ── Right: name header (faction dot + name) + wrapped skin tile grid ──

@@ -93,6 +93,12 @@ export const ROW_H = 56;
 export const FILTER_H = 48;   // slot filter bar (All / Weapon / Armor / Trinket)
 export const MAT_BAND_H = 52; // materials band (scrap / lead / binding) below the header
 export const SECTION_H = 36;  // section divider (Equipped / Bag) — clickable to collapse, text is 2x the previous size
+// Top padding above the first section header, tighter than the inter-row CELL_GAP (2026-08-01):
+// using CELL_GAP there read as an oversized gap under the loadout strip, since LOADOUT_H already
+// carries its own bottom breathing room.
+export const LIST_TOP_PAD = 12;
+// Gap between the slot filter bar and the loadout strip beneath it (2026-08-01) — see renderHeaderRow.
+export const TAB_LOADOUT_GAP = 14;
 
 // Inventory grid: icon-card cells (name top / glyph left / rarity+level right)
 // packed into columns sized to the wide (1920) landscape canvas.
@@ -200,8 +206,12 @@ export class EquipmentSceneBase {
    * (not InventoryMixin) so DetailMixin.doEquip can also collapse "equipped" right after a successful
    * equip. A field initializer here runs before the constructor's render() call below, so — unlike
    * fields declared in a mixin subclass — no lazy-init workaround is needed.
+   *
+   * Starts with "equipped" folded: the player usually cares about the Bag list, not re-checking
+   * gear they already know is equipped (2026-08-01 UX fix) — tapping the header expands it same as
+   * before.
    */
-  protected readonly collapsedSections = new Set<SectionKey>();
+  protected readonly collapsedSections = new Set<SectionKey>(['equipped']);
   protected readonly bt = new BusyTracker();
   /** Whether to use the protect-enhance item on the next enhance (E7); state is sticky until the player toggles it. */
   protected useProtectEnhance = false;
@@ -470,7 +480,8 @@ export class EquipmentSceneBase {
       bottom += MAT_BAND_H;
       if (this.activeTab === 'inv') {
         this.renderSlotFilter(0, bottom, w);
-        bottom += FILTER_H;
+        // Breathing room before the loadout strip below — see the landscape branch's TAB_LOADOUT_GAP note.
+        bottom += FILTER_H + TAB_LOADOUT_GAP;
       }
       return bottom;
     }
@@ -485,7 +496,10 @@ export class EquipmentSceneBase {
     rightBottom += MAT_BAND_H;
     if (this.activeTab === 'inv') {
       this.renderSlotFilter(rightX, rightBottom, rightW);
-      rightBottom += FILTER_H;
+      // The slot filter bar and the loadout strip below it used to butt up against each other with
+      // zero gap, reading as one fused block — the loadout's equipped-item star row visually looked
+      // like it belonged to the tab bar itself rather than to a separate section (2026-08-01 fix).
+      rightBottom += FILTER_H + TAB_LOADOUT_GAP;
     }
 
     return rightBottom;

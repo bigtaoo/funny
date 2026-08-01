@@ -255,9 +255,11 @@ describe.skipIf(!mongo)('worldsvc siege e2e', () => {
     expect(tile).toMatchObject({ type: 'territory', mine: true });
     const siege = await m.collections.sieges.findOne({ worldId: W, attackerId: 'a' });
     expect(siege?.outcome).toBe('attacker_win');
-    // No replay fields persisted → confirms the cheap linear path ran, not the congested real engine.
-    expect(siege?.seed).toBeUndefined();
-    expect(siege?.attackerArmy).toBeUndefined();
+    // 2026-08-01 traceability decision: the cheap linear path still persists replay inputs (so a lopsided/
+    // skipped battle stays inspectable afterward) — only a genuine engine crash drops them. Deterministic
+    // attacker_win regardless of run-to-run engine congestion is still the actual bug-guard here.
+    expect(siege?.seed).toEqual(expect.any(Number));
+    expect(siege?.attackerArmy?.length).toBeGreaterThan(0);
   });
 
   it('overwhelming synthesized defender garrison (20,000, beyond board capacity) vs a modest attacker still resolves defender_win via the cheap fallback (future-proofs a raised garrison constant)', async () => {
@@ -278,7 +280,8 @@ describe.skipIf(!mongo)('worldsvc siege e2e', () => {
     expect(tile.mine).toBe(true); // still b's — attacker did not win
     const siege = await m.collections.sieges.findOne({ worldId: W, attackerId: 'a' });
     expect(siege?.outcome).toBe('defender_win');
-    expect(siege?.seed).toBeUndefined();
+    // 2026-08-01 traceability decision: replay inputs are now kept even on the cheap linear path.
+    expect(siege?.seed).toEqual(expect.any(Number));
   });
 
   // NOTE (ADR-026): "attack main base" is no longer an instant single-battle capture. A base now has HP + wave defenders

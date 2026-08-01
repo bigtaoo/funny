@@ -1,4 +1,4 @@
-// City building sprites: player-base cities (DB tiles, fog-gated, level-within-tier dots) and
+// City building sprites: player-base cities (DB tiles, fog-gated, name/level label) and
 // deterministic procedural NPC cities (seed-derived, map-wide), pooled and culled per viewport.
 import * as PIXI from 'pixi.js-legacy';
 import { BASE_FOOTPRINT, citySpriteTiles, cityGroundFwdPx, cityPlotMaskPoints } from '@nw/shared';
@@ -6,6 +6,8 @@ import { getCityTextureForLevel, getCityContentTopFracForLevel, isCityAtlasReady
 import { getPlayerBaseTextureForLevel, getPlayerBaseContentTopFracForLevel } from '../../../render/playerBaseAtlasLoader';
 import { tileToScreen, visibleTileBounds, ISO_RATIO } from '../../../render/isoGrid';
 import { HUD_H, BASE_SPRITE_TILES } from '../constants';
+import { t } from '../../../i18n';
+import { makeText } from '../../../render/pixiText';
 import { type Constructor, type WorldMapRendererBaseCtor } from './base';
 
 export interface CityHandlers {
@@ -20,11 +22,13 @@ export function CityMixin<TBase extends WorldMapRendererBaseCtor>(Base: TBase): 
      * tile — the image hovers above the tile pool layer so it never gets covered
      * by adjacent tiles.
      *
-     * Programmatic level-within-tier distinction: filled / hollow dots below the
-     * city image indicate how far into the current tier the city has upgraded.
-     *   Tier 1 (lv 1-2):  ● ○  /  ● ●
-     *   Tier 2 (lv 3-5):  ● ○ ○  /  ● ● ○  /  ● ● ●
-     *   (etc.)
+     * Name/level label (2026-08-01, replaces the old filled/hollow "level-within-tier"
+     * dot cluster — that overloaded one small glyph with both ownership color AND level
+     * progress, which players found unreadable): a plain text tag floating above the
+     * building reading "{ownerName} Lv.{n}" — one rule for every base, own included
+     * (ctx.cb.playerName for mine, tile.ownerName for everyone else's). Ownership itself is
+     * already conveyed by the tile's own color wash (ownerTint) — the label doesn't need
+     * to repeat it, so its ink color is just a secondary echo of the same mapping.
      */
     refreshCityLayer(): void {
       if (!isCityAtlasReady()) {
@@ -57,7 +61,6 @@ export function CityMixin<TBase extends WorldMapRendererBaseCtor>(Base: TBase): 
           seen.add(cacheKey);
 
           const lv = tile.level ?? 1;
-          const tier = lv <= 2 ? 1 : lv <= 5 ? 2 : lv <= 8 ? 3 : 4;
           // The requester's own base renders from the separate "stationery fortress" playerbase_atlas,
           // keyed by desk building level rather than the tile's terrain-generated `level` (see
           // TileDoc.deskLevel). Other players' bases and NPC map cities keep the shared city_atlas below.
@@ -79,14 +82,18 @@ export function CityMixin<TBase extends WorldMapRendererBaseCtor>(Base: TBase): 
             const plotMask = new PIXI.Graphics();
             plotMask.name = 'plotMask';
             sprite.mask = plotMask;
-            const dotGfx = new PIXI.Graphics();
-            dotGfx.name = 'dots';
+            const label = makeText('', {
+              fontFamily: 'monospace', fontWeight: 'bold', align: 'center',
+              stroke: 0xfff8f0, strokeThickness: 3,
+            });
+            label.name = 'label';
+            label.anchor.set(0.5, 1);
             const hpGfx = new PIXI.Graphics();  // damaged-base HP bar, hovers above the building
             hpGfx.name = 'hpbar';
             cityC = new PIXI.Container();
             cityC.addChild(sprite);
             cityC.addChild(plotMask);
-            cityC.addChild(dotGfx);
+            cityC.addChild(label);
             cityC.addChild(hpGfx);
             this.ctx.cityLayer.addChild(cityC);
             this.ctx.citySprites.set(cacheKey, cityC);
@@ -124,28 +131,17 @@ export function CityMixin<TBase extends WorldMapRendererBaseCtor>(Base: TBase): 
           plotMask.drawPolygon(cityPlotMaskPoints(BASE_FOOTPRINT, tp, ISO_RATIO, baseSpriteTiles * tp));
           plotMask.endFill();
 
-          // Redraw level-within-tier dots
-          const dots = cityC.getChildByName('dots') as PIXI.Graphics;
-          dots.clear();
-          const inkColor = tile.mine ? 0xcc2222 : (tile.ally ? 0x2e8b40 : (tile.occupied ? 0x2266cc : 0x888888));
-          const tierStarts = [0, 0, 2, 5, 8] as const;
-          const tierSizes  = [0, 2, 3, 3, 2] as const;
-          const maxInTier = tierSizes[tier];
-          const lvInTier  = lv - tierStarts[tier]; // 1-indexed
-          if (maxInTier > 1) {
-            const dotR  = Math.max(2.5, tp * 0.09);
-            const gap   = dotR * 2.7;
-            const totalW = maxInTier * gap - gap + 2 * dotR;
-            const bx    = -totalW / 2 + dotR;
-            const by    = dotR + Math.max(2, tp * 0.05);   // just below the sprite's bottom edge (bottom-anchored → edge at local y=0)
-            dots.lineStyle(1, inkColor, 0.85);
-            for (let d = 0; d < maxInTier; d++) {
-              const cx = bx + d * gap;
-              dots.beginFill(d < lvInTier ? inkColor : 0xfff8f0, d < lvInTier ? 0.9 : 0.85);
-              dots.drawCircle(cx, by, dotR);
-              dots.endFill();
-            }
-          }
+          // Redraw the name/level label. Same reserved vertical slot as the HP bar below
+          // (whether or not the bar is actually showing this frame) so the label doesn't
+          // jump up/down as a siege starts or ends.
+          const label = cityC.getChildByName('label') as PIXI.Text;
+          const levelStr = t('city.lvlLabel').replace('{lvl}', String(lv));
+          const ownerStr = tile.mine ? this.ctx.cb.playerName : (tile.ownerName ?? '');
+          label.text = ownerStr ? `${ownerStr} ${levelStr}` : levelStr;
+          label.style.fontSize = Math.round(Math.max(9, Math.min(20, tp * 0.16)));
+          label.style.fill = tile.mine ? 0xcc2222 : (tile.ally ? 0x2e8b40 : (tile.occupied ? 0x2266cc : 0x888888));
+          const reservedBarH = Math.max(3, tp * 0.07) + Math.max(2, tp * 0.04);
+          label.position.set(0, -sprite.height * (1 - contentTopFrac) - reservedBarH - 2);
 
           // ADR-026 §1: damaged-base HP bar. The tile-level bar (tileGraphics.drawHpBar) is drawn on
           // the anchor tile in the pool layer but gets fully covered by this 3×3 city sprite, so a base

@@ -890,16 +890,27 @@ export class WorldMapPanels {
       for (const s of rows) {
         if (ry + rowH >= ly && ry <= bodyBottom) {
           const [, sx, sy] = s.tile.split(':');
+          const tx = Number(sx), ty = Number(sy);
           const roleTxt = s.role === 'attacker' ? t('world.replay.atk') : t('world.replay.def');
           const outTxt = s.outcome === 'attacker_win' ? t('world.replay.win')
             : s.outcome === 'defender_win' ? t('world.replay.loss') : t('world.replay.draw');
           // Win/loss is relative to the requester's role: attacker_win is a win for the attacker but a loss for the defender.
           const won = (s.role === 'attacker') === (s.outcome === 'attacker_win');
           const lvlTxt = s.tileLevel ? `Lv.${s.tileLevel}` : '';
-          const label = `(${sx},${sy}) ${lvlTxt}  ${roleTxt}·${outTxt}  ${this.agoText(now - s.ts)}`;
-          const rowLbl = txt(label, FS.tiny, won ? C.dark : C.red);
-          rowLbl.x = px + 14; rowLbl.y = ry + 6;
-          listLayer.addChild(rowLbl);
+          // Coordinate is its own clickable label (jumps the camera to that tile), same pattern as the
+          // territory list's territoryJump button / marches list (WorldMapInput.ts) — separate from the
+          // rest of the row so its accent color reads as a link without recoloring the win/loss text.
+          const coordLbl = txt(`(${sx},${sy})`, FS.tiny, C.accent, true);
+          coordLbl.x = px + 14; coordLbl.y = ry + 6;
+          listLayer.addChild(coordLbl);
+          this.ctx.modalBtnRects.push({
+            rect: { x: coordLbl.x, y: ry, w: coordLbl.width, h: rowH },
+            action: () => { this.ctx.view.centerAt(tx, ty); this.ctx.view.renderMap(); this.closeModal(); },
+          });
+          const restTxt = ` ${lvlTxt}  ${roleTxt}·${outTxt}  ${this.agoText(now - s.ts)}`;
+          const restLbl = txt(restTxt, FS.tiny, won ? C.dark : C.red);
+          restLbl.x = coordLbl.x + coordLbl.width; restLbl.y = ry + 6;
+          listLayer.addChild(restLbl);
           const btnW = 72;
           if (s.hasReplay) {
             this.panelButtonIn(listLayer, t('world.replaySiege'), px + pw - btnW - 14, ry + 2, btnW, 28,

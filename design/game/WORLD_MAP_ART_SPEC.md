@@ -86,6 +86,16 @@
 > 旧规划里 `building_base_mine/enemy/ally.png` 三张**作废**——主城改由 `city_atlas`（4 级 × 程序上色）承担，
 > 不再按阵营出三份。原 64×64 尺寸列亦作废（打包按长边 256、渲染期按 tile 尺寸缩放）。
 
+> **主城名字/等级标签 — 改版（2026-08-01，不出图，程序绘制）**：原先悬浮在建筑下方的实心/空心
+> 「档位内等级」圆点阵（`● ○` 数点数换算等级）被反馈「表现形式让人迷惑」——一颗小圆点同时编码了
+> 归属色（红/绿/蓝/灰）和档位进度两件事，缩放到小尺寸后更难分辨。改为悬浮在建筑**正上方**的纯文字
+> 标签，统一一条规则（自己的据点也不例外）：`{ownerName} Lv.{n}`——自己的据点用
+> `WorldMapCallbacks.playerName`，别人的据点用 `WorldTileView.ownerName`（服务端 `ownerName` 只对非本人
+> 地块下发，见 `worldsvc/src/worldTypes.ts`）；`ownerName` 缺失（meta 未就绪）时退化为只显示 `Lv.{n}`。
+> 归属不再靠标签重复表达——地块本身的水洗颜色（`ownerTint`）已经说明白了，标签着色只是同一套配色的
+> 弱回声，不是新的信息编码。实现见 `WorldMapRenderer/city.ts::refreshCityLayer`；回归测试
+> `client/test/ui/worldMapCityLabel.ui.ts`。
+
 ---
 
 ## 五、覆盖层标记（Overlay Markers，叠加在 overlayGfx 层）
@@ -168,6 +178,13 @@
 > 直到该地从 `ctx.occupations` 消失（保持结束/被放弃）才 `destroy()`。同时修了 `lifecycle.ts::update()`
 > 的每帧重绘门槛——此前只在 `ctx.marches`/`marchTokenRuntimes` 非空时才调 `renderOverlay()`，`occupations`
 > 单独存在时永远不会触发，新令牌根本不会被驱动。回归测试见 `client/test/ui/occupyTokenAnimation.ui.ts`。
+>
+> **令牌整体缩小一半 — ✅ 已接入（2026-08-01）**：march/occupy/stationed 三套令牌此前按
+> `targetHeight = tp * 1.1` 渲染，反馈地图上人物偏大、显得拥挤。`fog.ts` 新增共享常量
+> `MAP_TOKEN_SCALE = 0.55`（=旧值的一半），三处 `new StickmanRuntime(...)` 的 `targetHeight` 与
+> 预算耗尽后的静态头像圆点直径（`buildDotToken`）统一改用 `tp * MAP_TOKEN_SCALE`。只影响世界地图
+> 令牌，不影响战斗场景内的单位尺寸（战斗走 `render/unitSize.ts` 独立的 `TARGET_SCREEN_PX`，未改动）。
+> 回归测试：`client/test/ui/marchTokenScale.ui.ts`。
 
 ---
 

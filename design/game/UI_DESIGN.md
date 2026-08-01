@@ -867,3 +867,39 @@ BattlePassScene 当初是把「滚动定位」和「内容重建」两条路径�
 **修正（2026-07-23）：无 mask 场景不该吃 peekViewportH 的收缩值。** 用户截图反馈 Hero Roster 网格底部整行卡片消失、继续往下拖才突然整行冒出来。根因：§25 原文「纯剔除无 mask 的场景只替换视口高度这一个变量即可」这条假设本身是错的——`peekViewportH` 的收缩是为**有 mask** 的场景设计的：mask 把行真正裁出一道漂亮的半行 peek。纯剔除（无 mask，行只有「整行画」或「整行不画」两态，见 `CardScene/list.ts` `renderCardCell` 调用点的 if 剔除）场景里，收缩后的视口只是把剔除边界往上提，凭空排掉一整行本来能完整画出、也不会露出屏幕外的内容——留下一段死区空白，玩家拖到收缩边界之后那一行才会"啪"一下整行冒出来，而不是渐进 peek。已修 `CardScene/list.ts`（花名册网格）与 `skins.ts`（衣柜 masonry）：两处剔除/滚动钳制/`drawScrollIndicator` 均改回吃原始 `availH`，不再调用 `peekViewportH`（无 mask 时反正「行首落在可视区内」就会整行画出到可视区外一截，本身已经是免费的 peek，不需要再算）。**同类无 mask 场景尚未复查**：`AuctionScene/list.ts`、`AuctionScene/picker.ts`、`DefenseEditorScene.ts` 三处仍在用 `peekViewportH` 且未见 `.mask =`，大概率有同样的「列表底部整行消失」问题，待排查。`tsc --noEmit` 全绿。
 
 **复查结果（2026-07-23 续）**：三处逐一 grep 确认（含跨文件搜索、排除 helper 里间接挂 mask 的可能）均无 `.mask =`，三者都是同款「整行画或整行不画」纯剔除网格，同一个 bug。已按 `CardScene/list.ts` 的修法处理：`AuctionScene/list.ts`（市场列表网格）、`AuctionScene/picker.ts`（物品选择器网格）、`DefenseEditorScene.ts`（攻击模式右侧卡牌名册网格）三处的剔除条件/滚动钳制/`drawScrollIndicator` 尺寸均改回吃原始 `availH`，不再调用 `peekViewportH`（对应 import 一并移除）。至此 §25 原始 12 个场景/文件组中标记为「纯剔除无 mask」的条目全部复核完毕，无遗留。`tsc --noEmit` 全绿；`test/ui/auctionBackButtonHitWidth.ui.ts`（4）、`test/ui/auctionPickerDedupe.ui.ts`（10）、`test/ui/auctionScene.ui.ts`（57）、`test/ui/defenseEditorAttackCards.ui.ts`（6）、`test/ui/defenseEditorFillTroops.ui.ts`（11）共 88 个用例全通过。真实登录会话下的截图核对因需要特定账号状态（拍卖行挂单/队伍卡牌）未做，但改动模式与已截图验证过的 CardScene 完全一致。
+
+**修正（2026-08-01）：DefenseEditorScene 卡牌名册「无 mask」本身是新 bug 的根因，补回真裁切（不涉及 peekViewportH）。** 用户截图反馈：攻击模式右侧卡牌名册往上滚动到接近顶部时，卡牌整行画到了上方的工具栏/标题区域上（而不是 2026-07-23 那次修的「底部整行消失」）。根因是同一处「纯剔除无 mask」——`renderCardRosterPanel` 的剔除条件 `cy + cellH >= listY && cy <= listY + availH` 只判断「是否与可视区有重叠」，一行只要有一点点重叠就整行画出，滚动到边界附近时这行会大半截画在 `listY` 上方，压住工具栏。2026-07-23 那次修复解决的是「peekViewportH 收缩视口后凭空排掉本可完整显示的整行」，两者是无 mask 场景的两种不同后果，不是同一个洞：前者缺的是视口高度算对，后者缺的是渲染真的按视口边界裁切。修复：卡牌改画进一个新增的 `rosterLayer` 子容器，挂 `PIXI.Graphics` 遮罩裁到 `[listY, listY+availH]`（与 EquipmentScene/inventory.ts 的 `gridLayer.mask` 同款），**滚动钳制/剔除条件仍吃原始 `availH`、不引入 `peekViewportH`**——这不是走回 2026-07-22 之前"有 mask 就该配 peekViewportH 收缩"的老路，纯粹是给已有的裁剪加一层真实遮罩。同批顺带把攻击工具栏（提示文字 + 领队/自动回城/擦除按钮所在条）高度从 30 加倍到 60（用户反馈这条太挤）。新增 `test/ui/defenseEditorAttackCards.ui.ts` 的「roster panel scroll clipping」用例断言遮罩确实挂上。`tsc --noEmit` 全绿；DefenseEditorScene 现有 25 条 UI 冒烟测试全过。
+
+**同批（2026-08-01）：`setTeams` 受伤校验误伤无关队伍。** 用户反馈「配置一支全新队伍时弹出了某张卡受伤的提示，这张卡跟这支队伍毫无关系」。根因在服务端 `worldsvc/src/city.ts` 的 `setTeams`：客户端每次保存都携带**全部队伍**（含未改动的），旧校验对 payload 里出现的每一张卡一律检查 `injuredUntil`——只要玩家账号下*任意*一支队伍（哪怕本次完全没碰）挂着一张已受伤的卡（合法状态：受伤卡本就该继续留在原队伍，只锁出战，见 §8.2），保存请求就会连带失败。修复：只在卡的队伍归属**相较上次持久化状态发生变化**时才校验受伤（`nextTeamOf` 对比 `cardState[id].teamId`），未变的既有分配放行；真正把受伤卡分给新/其他队伍仍照常拦截 `CARD_INJURED`。详见 §8.2 正文更新 + 回归测试 `card-slg.e2e.test.ts`「does not re-block a card already (unchanged) on an injured team while editing an unrelated team」+ 客户端防御性测试（`defenseEditorAttackCards.ui.ts` 的 CARD_INJURED 两个用例）。
+
+## 26. 回放 transport 覆盖层收窄 + 半透明 + 结局红光清空（2026-08-01）
+
+**问题（用户截图反馈，横屏）**：`ReplayScene` 的顶部 transport 覆盖层（进度条 + Pause/2×/Share/Exit 四按钮）三个毛病——① 按钮行宽度按 `layout.designWidth`（横屏下含左右留白，可能远大于棋盘）算，超宽屏幕上整排按钮会溢出到棋盘左右边界之外；② 按钮行 y 坐标比棋盘顶边（`boardRect.y`）还低，天然会压住棋盘最上面一整行的单位；③ 若观看视角所在的一方在录像结尾落败，`GameRenderer` 的战损红色暗角特效（`base_hp_changed` 事件在本方基地掉血时把 `vignetteAlpha` 打到 1.0，靠后续帧里 `update()` 每帧衰减淡出）会永久卡在满值——因为 `ReplayScene.update()` 一旦 `ended=true` 就不再调用 `renderer.update()`，衰减动画没有下一帧可跑，回放结束画面就定格在一片红。
+
+**修复**（`client/src/scenes/ReplayScene.ts`）：
+1. **收窄到棋盘宽度**：进度条 `barW`/`barX` 与四按钮行的 `gap`/`playW`/`speedW`/`exitW`/`shareW`/居中 `x` 全部改吃 `layout.boardRect.w`/`.x`（此前是 `layout.designWidth`），横屏宽屏下不再溢出棋盘左右边界。
+2. **按钮加透明**：`makeButton()` 的面板 `fillAlpha` 从 0.9 降到 0.55——评估过「整行下移到不压棋盘」需要多出约 60px 高度而顶部 HUD 条（`HUD_TOP_H`）已经没有余量，代价比「半透明压一行」更大，因此按用户提示的方向选择半透明：被压住的那一行单位仍隐约可见，不是被死死盖住。
+3. **结局红光清空**：`ReplayScene.update()` 里 `ended` 刚置真时，顺带 `renderer.vignetteAlpha = 0; renderer.drawVignette();` 强制清空一次，不再等吃不到的后续帧衰减。
+
+**验证**：`tsc --noEmit`（client）全绿；`vitest --config vitest.ui.config.ts test/ui/gameScenes.ui.ts`（14 用例，含 ReplayScene 播放/结束/视角切换）全通过。真实浏览器验证：Browser 面板截图工具在本次会话里持续报「pane 未显示、无法合成帧」（与 §23 验证记录中同一限制），改用临时 `?replaydemo` 单体入口（`app/matchEngine.createLocalMatch` 跑一局主动方 AFK 输给 AI 的本地对局，直接灌进 `ReplayScene`，验证后已删除，未合入）+ 场景图内省核对：① 在 2400×900（designWidth 放大到 2880）宽屏下量得新 `barX/barW`＝1125/630（右边界 1755）、按钮行跨度 1100–1783，均落在 `boardRect`（810–2070）以内；按旧公式反推同条件下 `barX/barW`＝720/1440（右边界 2160），两侧都会溢出棋盘边界，坐实了修复前的溢出。② 临时注释掉红光清空那两行重跑同一局，`ended=true` 时 `vignetteAlpha` 定格在 0.94（复现卡红 bug）；恢复两行后同一局跑到底 `vignetteAlpha`＝0（确认修复生效）。
+
+## 27. Hero Roster「Skins」页签立绘不跟随已装备皮肤（2026-08-01）
+
+**问题（用户截图反馈）**：Hero Roster → Skins 页签，每张角色卡左侧的大立绘图，无论 tile 行里哪个皮肤被标为「Equipped」，图都不变——一直显示该角色的默认立绘。
+
+**根因**：立绘图从 `UNIT_ART_URLS[unitType]`（`client/src/render/cardArt.ts`）取，这张表只按 `unitType` 建索引，完全没有皮肤维度；`renderSkinCard()`（`client/src/scenes/CardScene/skins.ts:123`）在同一作用域里其实已经算出了 `equipped`（上一行 `getEquippedSkin(unitType)`，且已经传给 `renderSkinTile` 用来判定哪个 tile 显示「Equipped」），只是从未拿它来选立绘图。不是重绘没触发（`equipSkin()` 后紧跟着 `this.render()`，页签确实同步重画），是「画什么」这一步压根没看已装备状态。卡片详情弹层的立绘（`client/src/scenes/CardScene/detail.ts:122`）是同一份代码模式，同样的漏洞。
+
+**修复**：
+1. `cardArt.ts` 新增 `SKIN_PORTRAIT_ART`（皮肤 id → 专属立绘，目前 3 个有美术的皮肤 `skin_shop_c1/r1/e1` 复用 Shop 页签早已导入的 `skin_infantry/archer/shieldbearer.png`）+ `unitPortraitUrl(unitType, equippedSkinId)`：已装备皮肤有专属立绘就用它，否则（含 `skin_e1/e2/l1`——Lena/Mara/Max 这三个皮肤目前只有战斗用的 `.tao` 骨骼包，没有静态立绘美术）落回原 `UNIT_ART_URLS[unitType]`。
+2. `skins.ts` / `detail.ts` 的立绘取值都改走 `unitPortraitUrl(unitType, equipped)`，不再直接查 `UNIT_ART_URLS`。
+
+**后续扩展（同日，用户确认"全部修复"）**：同一个 `UNIT_ART_URLS[unitType]` 直查模式（无视已装备皮肤）还散落在另外 10 处——凡是展示「玩家自己拥有的卡牌实例」画像的界面，理论上都该跟随该角色当前装备的皮肤（皮肤装备是按 `UnitType` 全局生效的一个槽位，不挂在具体卡实例上，见 `skinDefs.ts`），逐一排查后按"数据是否已在作用域内"分两类处理：
+
+1. **零新增回调**（`save`/`this.cb.getSave?.()` 本来就在作用域里，直接换查法）：`CardScene/list.ts`（Hero Roster 主页签网格）、`CardScene/feed.ts`（合成環 + 候选素材列表，两处）、`CityScene/render.ts`（出征队伍卡槽队长）、`EquipmentScene/assign.ts`（装备穿戴选卡界面）、`DefenseEditorScene/render.ts`（防守编辑器兵营列表 + 网格已放置单位）、`DefenseEditorScene/input.ts`（拖拽幽灵图）、`AuctionScene/list.ts`（拍卖行列表）、`AuctionScene/picker.ts`（拍卖选品器）。
+2. **需要新增可选回调**（原本拿不到 `SaveData.equipped`）：`GachaScene.ts`（抽卡揭示 + 赔率表复用同一个 `drawEntryPicture`）新增 `getEquippedSkins?(): Record<string, string>`，`FriendsScene`（`mail.ts` 邮件卡牌附件预览）在 `FriendsSceneCallbacks` 同名新增。两处均为可选字段（`?`），不破坏现有 headless 测试里构造的回调对象；真实实现在 `app/nav/shop.ts`（`goGacha`）/ `app/nav/social.ts`（`goFriends`）里补一行 `() => saveManager.get().equipped`。
+
+`cardArt.ts` 同步收敛：`cardInstanceArtUrl(card, equipped?)` 现在内部就是 `unitPortraitUrl(unitType, equippedSkinIdFor(unitType, equipped))`，新增的 `equippedSkinIdFor(unitType, equipped?)` 做 `SaveData.equipped["skin:"+unitType]` 的查表，是本次新增的两个导出，两个「只有 unitType、没有具体卡实例」的调用点（`DefenseEditorScene` 的已放置单位格 / 拖拽幽灵图）直接调 `unitPortraitUrl` + `equippedSkinIdFor`。
+
+未纳入本次范围：`avatar.ts` 的头像选择器（`hero:<unit>`/`skin:<id>` 两种头像类型）——这是玩家显式选择头像的独立功能，`skin:<id>` 类型本来就允许单独选一张皮肤当头像，跟着"当前装备的皮肤"走反而会跟这个独立选项打架，故意不动。
+
+**验证**：`npm run typecheck` 全绿；扩充 `client/test/cardArt.test.ts`（新增 `equippedSkinIdFor`/`cardInstanceArtUrl` 用例，共 9 个）；扩充 `client/test/ui/gachaResultCard.ui.ts`/`client/test/ui/mailAttachmentIcons.ui.ts`，验证新增的可选回调确实被调用到（headless PIXI 下所有二进制资产桩成同一张 1×1 PNG data URI，没法按最终贴图 URL 区分"选中了哪张图"，所以这两个新测试断言的是"回调有没有被调用"而非图片本身，逻辑正确性由 `cardInstanceArtUrl` 的纯函数单测兜底）；`npm test`（915 用例）+ `npm run test:ui`（854 用例）全通过。真实浏览器验证：Browser 面板截图工具本次同样报「pane 未显示、无法合成帧」（§23/§26/§27 首段同一限制），且本地 `game` 开发服无后端（`/bootstrap` 网络失败），走不到登录后的这些界面，故未能截图肉眼确认；已通过上述单测 + 既有 UI 冒烟覆盖根因逻辑。

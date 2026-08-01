@@ -1460,3 +1460,37 @@ L1 从需 660 兵降到 300（最小占地 500 现稳赢，直击病灶）；L2/
 - **`GET /save` 响应瘦身**：`EQUIPMENT_DESIGN.md`§已有明确记录——"阶段二"瘦身已在 2026-07-26 为五个装备操作端点做过，`GET /save` 当时就被**有意排除**在外（该响应本来就要带材料/金币/进度等大量必需字段，瘦身收益不如那五个纯装备接口），本轮若要重新动它等于推翻两天前才做的、有理有据的决定，需要重新论证再改，不在本轮范围内。
 
 **验证**：`server/metaserver`/`server/gateway`/`server/gameserver`/`server/botsvc`/`client` 五包 `tsc --noEmit` 全绿；对应 vitest 全量分别为 metaserver 56/697、gateway 3/27、gameserver 3/46、botsvc 9/39、client 单元 112/794，均绿（worldsvc 未受本轮 P2 改动影响，沿用 §42 的 45/345）。`grep WorldEvent` 确认五处生成产物均已清除。
+
+## 44. 队伍槽默认名被冻结成保存当时的语言——`Team N`/`队伍 N` 混排（2026-08-01）
+
+> 用户截图反馈 Home City 的 5 个队伍槽里，Team 1/2/4/5 显示英文、队伍 3 显示中文，同一存档混排两种语言。
+
+**根因**：`teamSlotName(i)`（[`teamTroops.ts`](../../client/src/game/meta/teamTroops.ts)，§227 提到的"v1 不做自定义命名"槽位默认名）本是纯展示层的实时兜底——`CityScene/render.ts` 一直用 `team?.name || teamSlotName(i)`，理应随语言切换即时变化。但 `DefenseEditorScene/data.ts` 的 `persistTeam()`（编队编辑器"保存"路径）此前把打开编辑器那一刻算出的 `teamName`（即当时语言下的 `teamSlotName(i)` 快照）当成字面字符串写进 `TeamTemplate.name` 并持久化。这个字面字符串此后再也不会重新翻译——玩家在中文界面下保存过某个槽，该槽就永久定格成"队伍 N"，即使后来把语言切回英文；不同槽第一次保存时界面语言不同，就会出现同一存档里几个槽中文、几个槽英文的混排。
+
+**修复**：`persistTeam()` 不再把 `teamName` 写入 `name` 字段，固定写 `''`（[`data.ts:136`](../../client/src/scenes/DefenseEditorScene/data.ts)）。`TeamTemplate.name` 契约上仍是必填 `string`（`openapi-world.yml` `TeamTemplate.required` 含 `name`），空串是合法值；`render.ts` 的 `team?.name || teamSlotName(i)` 把空串当"无自定义名"处理，因此永远走 live 翻译。`teamName`（`cb.target.teamName`）继续保留，仅用于编辑器头部标题（`base.ts:229` `world.team.editTitle`），不再被写回存档。产品决策（AskUserQuestion 拍板）：暂不做自定义命名 UI——队伍槽本身只是编队容器，领队头像（§`leaderCardId`，见上文"设为领队"条目）已经解决辨识度问题，自定义命名的收益不足以覆盖输入框+敏感词过滤的成本；固定格式+ 永远随语言实时渲染即可。
+
+**遗留**：已经写坏的旧存档（字面存了 `Team N`/`队伍 N`）不会自动愈合，要等玩家下次打开该槽的编队编辑器并保存才会清空为 `''` 转回实时渲染；未做批量数据迁移（本轮判定收益不足以覆盖风险，属于"自愈式"轻量修复）。
+
+**验证**：`client` `tsc --noEmit` 全绿；新增 2 例回归——`defenseEditorAttackCards.ui.ts`「save 不把 teamName 冻结进 `TeamTemplate.name`」（存入自定义 `teamName='队伍 1'` 断言存档 `name` 仍为 `''`）+ `cityScene.ui.ts`「`name:''` 的队伍回退到实时槽位名而非空白」；连同既有 `teamTroops.test.ts`（14）/`defenseEditorAttackCards.ui.ts`（12）/`defenseEditorFillTroops.ui.ts`（10）/`cityScene.ui.ts`（32）共 68 例全绿。
+
+## 45. 战报列表坐标可点跳转（2026-08-01）
+
+> 用户截图反馈「Battle replays (last 100)」列表两个问题：①部分占领/攻城失败的行没有录像按钮；②行首坐标 `(x,y)` 不可点，无法快速跳到该地块。
+
+**① 为什么有的战斗没有录像**：`hasReplay`（[`combatDefense.ts:147`](../../server/worldsvc/src/combatDefense.ts)）只在 `recordSiege` 落库时 `seed`+`attackerArmy` 都存在才为真。这两个字段何时缺失有两种设计内因果，均非 bug：
+  - **引擎真的崩溃**（`try { runSiegeBattle(...) } catch`，六处调用点各自 `console.error('[worldsvc] ... siege engine failed — fallback to cheap resolve', ...)` 后把 `replay` 置 `null`）——查了 VPS `server-worldsvc-1` 近 48h 日志（覆盖截图里"0m/10m 前"的时间窗）无一条匹配，排除。
+  - **`shouldUseCheapSiege`（[`siegeEngine.ts:107`](../../server/worldsvc/src/siegeEngine.ts)）主动短路**：领地/据点/渡口三类攻城（`arrival.ts` 的 `applySiege`/`applyStrongholdSiege`/`applyCrossingSiege`）在进引擎前先判断「攻守比过于悬殊（≥`SIEGE_CHEAP_RATIO`=10 倍）」或「合成兵拼版超出 `synthesizeArmy` 的板面摆放上限（`SIEGE_SYNTH_ARMY_MAX_TROOPS`，与实际强弱无关，纯粹是拼版占用车道数溢出）」，命中则直接走线性公式 `resolveSiege`，`replay` 恒为 `null`——这条路径**不打日志**，是刻意的静默设计（省一次~18600 tick 的引擎运算，见 `siegeWorkerPool.ts` 顶部性能注释）。占领类 `applyOccupy`/`applyOccupationExpulsion`（[`occupation.ts`](../../server/worldsvc/src/combatSiege/occupation.ts)）**不走这条短路**，只有引擎异常时才会没录像。由于崩溃已被日志排除，截图里的无录像行大概率是攻城/据点/渡口类走了 `shouldUseCheapSiege`；具体是哪一类需要该玩家的实际行军数据才能坐实（`sieges` 落库时未存 army 明细，事后无法反推），暂未做代码改动——按设计运作，非缺陷。
+
+**② 坐标可点跳转**：[`WorldMapPanels.renderReplayPanel`](../../client/src/scenes/worldmap/WorldMapPanels.ts) 原来整行 `(sx,sy) Lv.N 角色·结果 时间` 是一个不可交互的 `txt()`。拆成两段：坐标 `(sx,sy)` 单独一个 `C.accent` 加粗文本 + 注册进 `ctx.modalBtnRects` 的命中矩形（同 Territory Overview 列表 `territoryJump` / 行军列表已有的 `centerAt(tx,ty)+renderMap()+closeModal()` 跳转模式），其余文字保持原有胜负配色（`C.dark`/`C.red`），紧跟在坐标文本右侧。
+
+**验证**：`client` `tsc --noEmit` 全绿；新增 `worldMapReplayPanel.ui.ts`（2 例：点击第一行/第二行坐标分别精确带各自的 `(x,y)` 调用 `centerAt` 并关闭弹窗）；`test/ui/worldMap*` 全量 15 文件/112 例全绿；`client` 生产 `webpack --mode production` 构建成功（仅预存的资源体积告警，与本次改动无关）。
+
+**追加（用户拍板，同日）**：用户反馈"为了省一点算力却导致无法排查问题本身就得不偿失，希望这类问题永远可以追溯"——把 ①里 `shouldUseCheapSiege` 短路分支的 `replay = null` 全部改为**保留**已经算好的 `{ seed, attackerArmy, defenderConfig, tileLevel }`，四处调用点全改（`arrival.ts` 的 `applySiege`/`applyStrongholdSiege`/`applyCrossingSiege` + `encounter.ts` 的字段遭遇战）；`recordSiege` 落库时这些字段本来就已经在 if/else 分支之前算好，只是原来在 cheap 分支里被覆盖成 `null`，改动本身零性能成本。
+
+**再追加（用户进一步拍板，同日）**：用户接着要求"崩溃也全部存，这样才便于查找和复现问题"——原计划里唯一保留 `replay = null` 的引擎真崩溃分支（`catch`）也改成不再置空，六处 `catch` 全改（上面四处 + `occupation.ts` 的 `applyOccupy`/`applyOccupationExpulsion`，后两者没有 `shouldUseCheapSiege` 短路，唯一的 `replay=null` 来源就是这个 `catch`）。改动前担心"崩溃输入拿去重放，客户端大概率原样崩溃"，核实后发现风险比想的小：`getSiegeReplay` 的调用链两端都有兜底——服务端 `httpApi.ts` 顶层 `try/catch`（767 行）把任何未捕获异常转成干净的 `500 INTERNAL`，不会打垮 worldsvc 进程；客户端 `world.ts` 的 `goSiegeReplay`（141 行）同样整段包 `try/catch`，拉取/重建失败直接 `goWorldMap` 退回地图，不会崩客户端场景。也就是说存下崩溃现场的输入去复现问题，最坏情况只是"点开录像悄悄退回地图"，换来的是这批输入可以离线喂给引擎单测复现服务端崩溃——对调试价值明显更高，遂采纳。
+
+副作用（已知且接受）：`db.ts` `SiegeDoc.seed`、`combatDefense.ts` `listSieges` 的 `hasReplay`、`combatSiege/helpers.ts` `recordSiege` 三处注释均已更新——现在只有两种情况仍是 `replay=null`：①`applySweep`（无 owner 中立地块清剿，从不构造 army 编队，纯兵力数字过线性公式，没有可存的东西）；②`occupation.ts` 里 `npcGarrison<=0` 的纯"无战斗即时占领"分支（同样没有 army 可存）。除此之外的战报（cheap 路径、真实引擎崩溃 fallback）现在都会存 replay 输入；重放出来的胜负/表现可能跟当时落地结算的 `outcome` 不一致，甚至可能重建失败——都已判定为可接受的既有风险类别（`db.ts:409` 早就写明客户端重放"pure presentation, not authoritative"），不是新引入的 bug。另确认 `applyBaseSiege`（主基地按波次结算，[`arrival.ts`](../../server/worldsvc/src/combatSiege/arrival.ts) 229 行起）本来就无条件存最后一波 replay，跟这轮"全存"策略天然一致，未改动。
+
+**验证（追加两轮）**：`server/worldsvc` `tsc --noEmit` 全绿；更新 4 处受影响的既有 e2e 断言（`siege.e2e.test.ts` ×2、`stronghold.e2e.test.ts`、`passage.e2e.test.ts`——原先断言 cheap 路径"不存 seed/attackerArmy"，现改为断言"存"）；受影响的 6 个测试文件（`siege`/`stronghold`/`passage`/`base-siege`/`field-encounter`/`siege-cheap-fallback`）44 例、`server/worldsvc` 全量 47 文件/373 例两轮均全绿。
+
+**新增专项测试（同日）**：崩溃分支此前没有任何自动化覆盖——真实触发 `runSiegeBattle` 抛异常需要伪造引擎内部状态，现有 e2e 套件没有这类 harness，之前只是读代码+类型检查确认。补了 `test/siege-crash-replay.e2e.test.ts`：文件级 `vi.mock('../src/siegeEngine', ...)` 只把 `runSiegeBattle` 换成永远 `throw` 的假实现，其余导出原样透传（`importOriginal()` 保留 `shouldUseCheapSiege`/`synthesizeArmy` 等真实逻辑）——`vi.mock` 按文件生效，不影响其它测试文件里跑真实引擎的用例。3 个用例：①领地攻城胜（引擎崩溃→线性公式仍判出 `attacker_win`，`sieges` 落库有 `seed`/`attackerArmy`/`defenderConfig`/`tileLevel`，`listSieges` 端到端返回 `hasReplay:true`，`getSiegeReplay` 真的能拉到可重建的 `level`）；②占领进军 PvE（`occupation.ts` 本来就没有 `shouldUseCheapSiege` 短路，触发 cheap resolve 的唯一途径就是这次 mock 的引擎崩溃——验证占领流程本身仍正常进入占领倒计时）；③领地攻城败（崩溃分支下的败仗战报同样可追溯）。三例均全绿，且跑过全量 `server/worldsvc` 48 文件/376 例确认 `vi.mock` 没有泄漏影响其它文件（真实引擎胜负测试都还是走真实引擎，非本文件的 mock）。

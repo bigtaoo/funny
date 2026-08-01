@@ -12,7 +12,7 @@ import type { SaveData, EquipSlot, EquipRarity, EquipmentInstance } from '../../
 import { getEquipDef, affixKind } from '../../game/meta/equipmentDefs';
 import {
   type Constructor, type EquipmentSceneBaseCtor, type EquipTab, type SectionKey,
-  LOADOUT_H, FILTER_H, SECTION_H, CELL_GAP, CELL_GAP_X, EQUIP_CELL_H, EQUIP_CELL_W_TARGET,
+  LOADOUT_H, FILTER_H, SECTION_H, CELL_GAP, CELL_GAP_X, EQUIP_CELL_H, EQUIP_CELL_W_TARGET, LIST_TOP_PAD,
   SLOTS, RARITY_COLOR,
 } from './base';
 
@@ -240,7 +240,7 @@ export function InventoryMixin<TBase extends EquipmentSceneBaseCtor>(Base: TBase
         | { kind: 'header'; label: string; key: SectionKey; off: number }
         | { kind: 'item'; inst: EquipmentInstance; isEquipped: boolean; count: number; x: number; off: number };
       const placed: Placed[] = [];
-      let off = CELL_GAP;
+      let off = LIST_TOP_PAD;
       let col = 0;
       let collapsed = false;
       for (const entry of entries) {

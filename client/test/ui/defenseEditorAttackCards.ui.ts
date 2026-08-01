@@ -10,12 +10,15 @@
 // ArmyEntry shape sent to setTeams.
 
 import { describe, it, expect, vi } from 'vitest';
+import * as PIXI from 'pixi.js-legacy';
 import { createLayout } from '../../src/layout/ScalingManager';
 import { InputManager } from '../../src/inputSystem/InputManager';
 import { initI18n, t } from '../../src/i18n';
 import { DefenseEditorScene, type DefenseEditorCallbacks } from '../../src/scenes/DefenseEditorScene';
+import { msCountdown } from '../../src/scenes/DefenseEditorScene/base';
 import { makeNewSave, type SaveData } from '../../src/game/meta/SaveData';
-import type { WorldApiClient, TeamTemplate, CardSLGState, PlayerWorldView } from '../../src/net/WorldApiClient';
+import { WorldApiError, type WorldApiClient, type TeamTemplate, type CardSLGState, type PlayerWorldView } from '../../src/net/WorldApiClient';
+import * as log from '../../src/net/log';
 
 const memStore = (() => {
   const m = new Map<string, string>();
@@ -41,6 +44,7 @@ function buildHarness(opts: {
   cardCount?: number;
   cardState?: Record<string, CardSLGState>;
   teams?: TeamTemplate[];
+  teamName?: string;
 } = {}) {
   const save = buildSave(opts.cardCount ?? 3);
   const setTeams = vi.fn().mockResolvedValue(undefined);
@@ -53,7 +57,7 @@ function buildHarness(opts: {
     getSave: () => save,
     worldApi,
     worldId: WORLD_ID,
-    target: { mode: 'attack', teamId: 't1', teamName: 'Team 1' },
+    target: { mode: 'attack', teamId: 't1', teamName: opts.teamName ?? 'Team 1' },
   };
   const scene = new DefenseEditorScene(createLayout(800, 1280), new InputManager(), cb);
   return { scene, cb, save, setTeams, getTeams, getMe };
@@ -89,6 +93,28 @@ describe('DefenseEditorScene attack mode — card-based formation (2026-07-17 mi
     expect(saved.army[0]).toMatchObject({ cardInstanceId: 'c0' });
     expect(saved.army[0]).not.toHaveProperty('initialHp');
     expect(saved.army[0]).not.toHaveProperty('unitType');
+  });
+
+  it('save does not freeze the editor-header teamName into TeamTemplate.name (2026-08-01 locale-freeze fix)', async () => {
+    // cb.target.teamName is only ever a locale snapshot of teamSlotName(i) taken when the editor
+    // opened (CityScene/render.ts) — persisting it verbatim is what caused slots saved under
+    // different UI languages to permanently disagree ("Team 1" vs "队伍 3" in the same save).
+    const { scene, setTeams } = buildHarness({
+      cardCount: 1,
+      cardState: { c0: { currentTroops: 200 } },
+      teamName: '队伍 1',
+    });
+    await flush();
+
+    const available = (scene as unknown as { availableCards(): { card: { id: string }; unitType: string }[] }).availableCards();
+    (scene as unknown as { tool: unknown }).tool = { kind: 'card', cardInstanceId: available[0]!.card.id, unitType: available[0]!.unitType };
+    const [sx, sy] = cellCenter(scene, 0, 0);
+    (scene as unknown as { onGridTap(x: number, y: number): void }).onGridTap(sx, sy);
+
+    await (scene as unknown as { doSave(): Promise<void> }).doSave();
+    const [, teams] = setTeams.mock.calls[0] as [string, TeamTemplate[]];
+    const saved = teams.find((tm) => tm.id === 't1')!;
+    expect(saved.name).toBe('');
   });
 
   it('loading an existing card team populates the grid from cardState.currentTroops', async () => {
@@ -234,5 +260,76 @@ describe('DefenseEditorScene attack mode — team leader', () => {
     save.cardInv!['c1']!.level = 5; // c1 outranks c0 → it becomes the fallback leader
     await flush();
     expect((scene as unknown as { effectiveLeaderId(): string | undefined }).effectiveLeaderId()).toBe('c1');
+  });
+});
+
+// The server's setTeams used to injury-check every card across the *full* teams payload (every save
+// resends all teams), so saving a brand-new/unrelated team could fail with CARD_INJURED for a card
+// that only ever lived on a different, already-fighting team (2026-08-01 fix, worldsvc/city.ts). These
+// pin the client's side of that story: a genuinely-injured card on THIS team is named and dropped, and
+// — defensively, in case the error ever names a card outside this team's grid — this team's own
+// placements are left untouched rather than silently mis-cleared.
+describe('DefenseEditorScene attack mode — CARD_INJURED save error (2026-08-01 cross-team fix)', () => {
+  it('a genuinely-injured card placed on this team is named with a countdown and dropped from the formation', async () => {
+    const { scene, setTeams } = buildHarness({
+      cardCount: 1,
+      cardState: { c0: { currentTroops: 100 } },
+      teams: [{ id: 't1', name: 'Team 1', army: [{ cardInstanceId: 'c0', col: 0, row: 8 }] }],
+    });
+    await flush();
+    const untilMs = Date.now() + 4 * 60_000;
+    setTeams.mockRejectedValueOnce(
+      new WorldApiError('CARD_INJURED', `Card c0 is injured and cannot be assigned until ${untilMs}`),
+    );
+    const spy = vi.spyOn(log, 'showToastMessage');
+
+    await (scene as unknown as { doSave(): Promise<void> }).doSave();
+
+    const garrison = (scene as unknown as { garrison: Map<string, unknown> }).garrison;
+    expect(garrison.has('0:8')).toBe(false); // this team's own card, genuinely injured — removed
+
+    const expected = t('world.team.cardInjuredRemoved')
+      .replace('{name}', t('card.lichuang.name'))
+      .replace('{time}', msCountdown(untilMs, Date.now()));
+    expect(spy).toHaveBeenCalledWith(expected, 'error');
+  });
+
+  it('a CARD_INJURED error naming a card NOT on this team leaves this formation untouched', async () => {
+    const { scene, setTeams } = buildHarness({
+      cardCount: 2,
+      cardState: { c0: { currentTroops: 100 }, c1: { currentTroops: 50, teamId: 't2' } },
+      teams: [{ id: 't1', name: 'Team 1', army: [{ cardInstanceId: 'c0', col: 0, row: 8 }] }],
+    });
+    await flush();
+    const untilMs = Date.now() + 60_000;
+    // c1 is not part of this team's grid at all (it's on unrelated team t2) — simulates the exact
+    // shape of error the pre-fix server could return while editing team t1.
+    setTeams.mockRejectedValueOnce(
+      new WorldApiError('CARD_INJURED', `Card c1 is injured and cannot be assigned until ${untilMs}`),
+    );
+    const spy = vi.spyOn(log, 'showToastMessage');
+
+    await (scene as unknown as { doSave(): Promise<void> }).doSave();
+
+    const garrison = (scene as unknown as { garrison: Map<string, unknown> }).garrison;
+    expect(garrison.has('0:8')).toBe(true); // this team's own placement is untouched
+    expect(garrison.size).toBe(1);
+    expect(spy).toHaveBeenCalledTimes(1); // still surfaces something rather than failing silently
+  });
+});
+
+// The card roster (right half, attack mode) used to draw straight into bodyLayer with cull-only
+// scrolling — a row straddling the top of the list would render in full and paint over the toolbar/
+// title above it. Fixed by drawing the roster into a masked sub-layer (2026-08-01, same pattern as
+// EquipmentScene/inventory.ts's gridLayer).
+describe('DefenseEditorScene attack mode — roster panel scroll clipping (2026-08-01)', () => {
+  it('renders the card roster behind a mask so an overscrolled row cannot bleed above the list', async () => {
+    const { scene } = buildHarness({ cardCount: 30, cardState: {} });
+    await flush();
+    const s = scene as unknown as { scrollY: number; render(): void; bodyLayer: PIXI.Container };
+    s.scrollY = 40; // partway into the overflowing list — the exact scroll offset the old bug hit
+    s.render();
+    const masked = s.bodyLayer.children.some((c) => (c as PIXI.Container).mask != null);
+    expect(masked).toBe(true);
   });
 });

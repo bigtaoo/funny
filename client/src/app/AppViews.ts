@@ -205,7 +205,7 @@ export interface AppViews {
   showDaily(cb: DailyCallbacks): void;
   /** Limited-time events (B6, ADR-014). */
   showEvents(cb: EventCallbacks): void;
-  showReplay(replay: Replay, cb: ReplaySceneCallbacks, level?: LevelDefinition): void;
+  showReplay(replay: Replay, cb: ReplaySceneCallbacks, level?: LevelDefinition, equippedSkins?: readonly string[]): void;
   showResult(props: ResultViewProps): void;
   /**
    * Dumb state-stream player (REPLAY_SHARE_DESIGN §4.2): no engine, directly accessible without login.

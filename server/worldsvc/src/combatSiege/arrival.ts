@@ -201,17 +201,25 @@ export function SiegeArrivalMixin<TBase extends SiegeServiceBaseCtor>(Base: TBas
       // (a synthesized army beyond board capacity clogs lanes and can spuriously time out to a defender win
       // regardless of true strength); bad formation / engine error also falls back — a siege must never stall a march.
       let res: SiegeResolution;
-      let replay: SiegeReplayInputs | null = { seed, attackerArmy, defenderConfig, tileLevel };
+      // 2026-08-01 (traceability decision): replay inputs are kept unconditionally, even when only the cheap
+      // linear formula ran or the engine itself crashed — the user judged "save one engine run / hide a crash"
+      // not worth losing the ability to inspect or reproduce a battle after the fact. getSiegeReplay's fetch is
+      // wrapped in try/catch on both the server (httpApi.ts's top-level handler → clean 500) and the client
+      // (world.ts's goSiegeReplay → falls back to the map) — a replay that itself fails to reconstruct/re-run
+      // degrades safely, it does not crash worldsvc or the client. The client's "replay" is a from-scratch
+      // re-simulation from seed+army (db.ts SiegeDoc.seed doc comment — already documented as presentation-only,
+      // not authoritative), so replaying a cheap-resolved battle can show a different winner than the
+      // recorded/settled `res.outcome` — an accepted tradeoff (same drift category already accepted for
+      // mid-season engineVersion drift, see the warning a few lines up).
+      const replay: SiegeReplayInputs = { seed, attackerArmy, defenderConfig, tileLevel };
       if (shouldUseCheapSiege({ attackerTroops: effTroops, defenderTroops: effGarrison, attackerSynthesized, defenderSynthesized })) {
         res = resolveSiege(effTroops, effGarrison);
-        replay = null;
       } else {
         try {
           res = await runSiegeBattle({ attackerArmy, defenderConfig, tileLevel, seed, cardInstances, equipmentInv: cardEquipInv, siegeAcademy });
         } catch (err) {
           console.error('[worldsvc] siege engine failed — fallback to cheap resolve', { tile: m.toTile, err: (err as Error).message });
           res = resolveSiege(effTroops, effGarrison);
-          replay = null; // cheap fallback result is inconsistent with engine replay → do not store replay inputs (replay button degrades to hidden).
         }
       }
       // Replay inputs: persisted to SiegeDoc; the client uses seed + both sides' formations to replay the battle locally for spectating (§16.3).
@@ -429,10 +437,13 @@ export function SiegeArrivalMixin<TBase extends SiegeServiceBaseCtor>(Base: TBas
       // garrison (`defenderConfig`) is always synthesized via synthesizeArmy.
       const attackerSynthesized = !hasCardArmy && rawArmy.length === 0;
       let res: SiegeResolution;
-      let replay: SiegeReplayInputs | null = { seed, attackerArmy, defenderConfig, tileLevel };
+      // 2026-08-01 (traceability decision, see applySiege's territory branch above for the full rationale): replay
+      // inputs are kept unconditionally, including on an engine crash — getSiegeReplay degrades safely on both
+      // ends (see that comment) rather than crashing, so there is no downside to keeping the exact inputs that
+      // caused a crash for later reproduction.
+      const replay: SiegeReplayInputs = { seed, attackerArmy, defenderConfig, tileLevel };
       if (shouldUseCheapSiege({ attackerTroops: effTroops, defenderTroops: garrison, attackerSynthesized, defenderSynthesized: true })) {
         res = resolveSiege(effTroops, garrison);
-        replay = null;
       } else {
         try {
           res = await runSiegeBattle({
@@ -445,7 +456,6 @@ export function SiegeArrivalMixin<TBase extends SiegeServiceBaseCtor>(Base: TBas
             err: (err as Error).message,
           });
           res = resolveSiege(effTroops, garrison);
-          replay = null;
         }
       }
       if (hasCardArmy) {
@@ -561,10 +571,13 @@ export function SiegeArrivalMixin<TBase extends SiegeServiceBaseCtor>(Base: TBas
       // garrison (`defenderConfig`) is always synthesized via synthesizeArmy.
       const attackerSynthesized = !hasCardArmy && rawArmy.length === 0;
       let res: SiegeResolution;
-      let replay: SiegeReplayInputs | null = { seed, attackerArmy, defenderConfig, tileLevel };
+      // 2026-08-01 (traceability decision, see applySiege's territory branch above for the full rationale): replay
+      // inputs are kept unconditionally, including on an engine crash — getSiegeReplay degrades safely on both
+      // ends (see that comment) rather than crashing, so there is no downside to keeping the exact inputs that
+      // caused a crash for later reproduction.
+      const replay: SiegeReplayInputs = { seed, attackerArmy, defenderConfig, tileLevel };
       if (shouldUseCheapSiege({ attackerTroops: effTroops, defenderTroops: garrison, attackerSynthesized, defenderSynthesized: true })) {
         res = resolveSiege(effTroops, garrison);
-        replay = null;
       } else {
         try {
           res = await runSiegeBattle({
@@ -577,7 +590,6 @@ export function SiegeArrivalMixin<TBase extends SiegeServiceBaseCtor>(Base: TBas
             err: (err as Error).message,
           });
           res = resolveSiege(effTroops, garrison);
-          replay = null;
         }
       }
       if (hasCardArmy) {

@@ -370,6 +370,7 @@ export function createShopNav(ctx: AppCtx): ShopNav {
       onSaveChanged: (listener: () => void) => saveManager.subscribe(listener),
       getPity: (poolId) => saveManager.get().gacha.pity[poolId] ?? 0,
       getFatePoints: () => saveManager.get().monetization?.fatePoints ?? 0,
+      getEquippedSkins: () => saveManager.get().equipped,
       loadPools: () => client.getGachaPools(),
       async draw(poolId, count) {
         try {

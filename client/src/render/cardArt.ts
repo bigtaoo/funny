@@ -9,6 +9,7 @@
 import * as PIXI from 'pixi.js-legacy';
 import { CardDefinition, CardType, UnitType, BuildingType, SpellType } from '../game/types';
 import { CARD_DEFS } from '../game/meta/cardDefs';
+import { skinEquipKey } from '../game/meta/skinDefs';
 import { preloadTextureList, ART_TEX_OPTIONS } from '../assets/preloadTextures';
 import infantryArtUrl from '../assets/units/infantry.png';
 import archerArtUrl from '../assets/units/archer.png';
@@ -28,6 +29,9 @@ import spellHasteArtUrl from '../assets/spells/spell_haste.png';
 import spellMeteorArtUrl from '../assets/spells/spell_meteor.png';
 import spellRockslideArtUrl from '../assets/spells/spell_rockslide.png';
 import spellBridgeCollapseArtUrl from '../assets/spells/spell_bridge_collapse.png';
+import skinInfantryArtUrl from '../assets/units/skins/skin_infantry.png';
+import skinArcherArtUrl from '../assets/units/skins/skin_archer.png';
+import skinShieldBearerArtUrl from '../assets/units/skins/skin_shieldbearer.png';
 
 /** Card illustration by `<type>_<subtype>` key (see {@link cardArtKey}). */
 export const CARD_ART_URLS: Record<string, string> = {
@@ -84,13 +88,41 @@ export const UNIT_ART_URLS: Record<string, string> = {
 };
 
 /**
- * Portrait for an owned character-card instance (CC-3): defId → CARD_DEFS.unitType → UNIT_ART_URLS.
- * Every scene that shows a card's picture (formation editor, city team row, world-map team picker)
+ * Portrait override by skin id, for skins with dedicated illustration art (skinDefs.ts SKIN_TARGET_UNIT).
+ * Skins with no entry here (skin_e1/skin_e2/skin_l1 — only battle rig art exists) fall back to the
+ * base unit's UNIT_ART_URLS portrait via {@link unitPortraitUrl}.
+ */
+export const SKIN_PORTRAIT_ART: Record<string, string> = {
+  skin_shop_c1: skinInfantryArtUrl as string,
+  skin_shop_r1: skinArcherArtUrl as string,
+  skin_shop_e1: skinShieldBearerArtUrl as string,
+};
+
+/** Portrait for a unit type given its currently equipped skin (or null/none) — the skin-aware UNIT_ART_URLS lookup. */
+export function unitPortraitUrl(unitType: UnitType, equippedSkinId?: string | null): string | null {
+  if (equippedSkinId) {
+    const skinArt = SKIN_PORTRAIT_ART[equippedSkinId];
+    if (skinArt) return skinArt;
+  }
+  return UNIT_ART_URLS[unitType] ?? null;
+}
+
+/** Currently-equipped skin id for a unit type, out of a `SaveData.equipped` map (or none/no map). */
+export function equippedSkinIdFor(unitType: UnitType, equipped?: Record<string, string>): string | null {
+  return equipped?.[skinEquipKey(unitType)] ?? null;
+}
+
+/**
+ * Portrait for an owned character-card instance (CC-3): defId → CARD_DEFS.unitType → unitPortraitUrl,
+ * skin-aware when a `SaveData.equipped` map is passed. Every scene that shows a card's picture
+ * (formation editor, city team row, world-map team picker, roster, auction, mail, gacha reveal…)
  * goes through here so they can never drift onto different art for the same card.
  */
-export function cardInstanceArtUrl(card: { defId: string } | undefined | null): string | null {
+export function cardInstanceArtUrl(card: { defId: string } | undefined | null, equipped?: Record<string, string>): string | null {
   const def = card ? CARD_DEFS[card.defId] : undefined;
-  return def ? UNIT_ART_URLS[def.unitType] ?? null : null;
+  if (!def) return null;
+  const unitType = def.unitType as UnitType;
+  return unitPortraitUrl(unitType, equippedSkinIdFor(unitType, equipped));
 }
 
 /** Texture cache keyed by url — shared with the `PIXI.Texture.from` global cache. */

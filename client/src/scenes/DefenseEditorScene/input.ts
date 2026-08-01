@@ -3,7 +3,7 @@
 import * as PIXI from 'pixi.js-legacy';
 import { t } from '../../i18n';
 import { ui as C, sketchPanel, seedFor } from '../../render/sketchUi';
-import { UNIT_ART_URLS, getArtTexture } from '../../render/cardArt';
+import { unitPortraitUrl, equippedSkinIdFor, getArtTexture } from '../../render/cardArt';
 import { ATTACK_LANES, UNIT_BLUEPRINTS } from '../../game/config';
 import { CARD_TEAM_MAX_SIZE } from '@nw/shared';
 import { type Constructor, type DefenseEditorSceneBaseCtor, MAX_GARRISON } from './base';
@@ -152,7 +152,9 @@ export function InputMixin<TBase extends DefenseEditorSceneBaseCtor>(Base: TBase
       const frame = sketchPanel(size, size, { fill: 0xf0eee7, border: C.gold, width: 2.4, seed: seedFor(0, 0, size) });
       frame.x = -size / 2; frame.y = -size / 2;
       ghost.addChild(frame);
-      const url = this.dragUnitType ? UNIT_ART_URLS[this.dragUnitType] : undefined;
+      const url = this.dragUnitType
+        ? unitPortraitUrl(this.dragUnitType, equippedSkinIdFor(this.dragUnitType, this.cb.getSave?.()?.equipped)) ?? undefined
+        : undefined;
       if (url) {
         const tex = getArtTexture(url);
         if (tex.baseTexture.valid) {

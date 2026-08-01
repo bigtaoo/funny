@@ -124,7 +124,7 @@
 - 翻牌前：全屏**金光粒子爆发**（程序粒子，SketchPen 风格的笔触射线）
 - 翻牌时：卡牌慢翻（~ 0.8s tween），伴随金光围绕卡边
 - 翻牌后：卡牌有轻微光晕呼吸效果
-- **顺时针转圈流光（✅ 已实现 2026-07-22）**：结果面板里 legendary（橙/金）卡叠加一道**顺时针绕圈的流光**——`GachaScene.addLegendarySweep()` 用渐隐环形楔子（暖白 `0xfff2cc`，平方衰减出彗尾）拼出一条亮边+拖尾的光带，`ADD` 混合叠在金框之上，裁剪到卡面矩形；`revealFx` 持有该 `Graphics`，`update(dt)` 每帧 `rotation += dt * SWEEP_SPEED`（1.0 rad/s，PIXI 正旋转=屏幕顺时针）。**纯 Graphics 无纹理**（WebGL/headless 通吃），随 `tearDownChildren`/`destroy` 回收、**不挂 `Ticker.shared`**（见 client-memory-leak 契约）。仅 legendary 生效，epic/rare/common 静态。回归测试 `client/test/ui/gachaResultCard.ui.ts`。
+- **顺时针绕边框拖尾流光（✅ 已实现 2026-07-22，2026-08-01 改为沿卡框走边+全息渐变色）**：结果面板里 legendary（橙/金）卡叠加一道沿**卡框四边**顺时针循环的彗星状拖尾光点，替代了最初绕卡牌中心转圈的扇形扫光方案（用户反馈绕中心转圈观感不如贴边流光）。`GachaScene.addLegendaryTrail()`：`buildRectPerim()` 把圆角矩形边框拆成 4 直边 + 4 圆角弧、按弧长参数化；`TRAIL_DOTS`（28 个）复用同一张 `uiCache` 烘焙的柔光点纹理的 `PIXI.Sprite`，`update(dt)` 每帧只用 `pointOnPerim()` 重算每个点的位置——**纯 transform，无 Graphics 逐帧重绘，也不需要 mask**（点天然贴在边框上，不会溢出卡面），比旧的绕心扇形扫光开销更低。色彩：`hslToHex`/`trailHue` 按点在边框上的位置做**周期性色相渐变**（`TRAIL_HUE_CYCLES=2`：绕一圈两个色相周期）+ 慢速独立漂移（`TRAIL_HUE_DRIFT=0.05`），头部暖金、尾部过渡到粉紫，读作"全息镀金箔"而非纯金色；`TRAIL_SPAN=0.42`（拖尾覆盖约42%周长）。回归测试 `client/test/ui/gachaResultCard.ui.ts`（改为断言 `revealFx[].phase` 递增，而非旧版的 `.rotation`）。**注**：本次改动因 Browser 面板截图工具在会话里持续报"pane 未显示"，未能在真实抽卡界面截图，改用独立 canvas mockup（同一套周长/色相函数）跑动画截图验证运动与配色，另有 `tsc --noEmit` + 单测通过。
 - 以上特效全部程序实现（VFX Editor），**不需要单独美术图**；仅需卡背景纹理（§9.1）
 
 ### 4.4 十连模式
