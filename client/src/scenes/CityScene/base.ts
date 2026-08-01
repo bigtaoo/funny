@@ -396,9 +396,9 @@ export class CitySceneBase {
       this.setMe(await this.cb.worldApi.trainTroops(this.cb.worldId, qty));
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : '';
-      if (msg.includes('ink')) this.showToast(t('city.err.noInk'), C.red as number);
-      else if (msg.includes('cap')) this.showToast(t('city.err.troopCap'), C.red as number);
+      if (msg.includes('cap')) this.showToast(t('city.err.troopCap'), C.red as number);
       else if (msg.includes('queue')) this.showToast(t('city.err.trainQueueFull'), C.red as number);
+      else if (msg.includes('Insufficient')) this.showToast(t('city.err.noResources'), C.red as number);
       else this.showToast(t('city.err.generic'), C.red as number);
     } finally {
       this.bt.stop();

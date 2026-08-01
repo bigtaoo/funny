@@ -1606,7 +1606,6 @@ export const zh = {
   'city.err.queueFull': '建造队列已满',
   'city.err.trainQueueFull': '训练队列已满',
   'city.err.troopCap': '兵力已达上限',
-  'city.err.noInk': '墨水不足',
   'city.err.deskGate': '书桌等级不足',
   'city.err.generic': '操作失败',
   'city.res.yield': '产率',

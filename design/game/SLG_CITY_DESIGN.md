@@ -214,6 +214,7 @@ buildQueue?: { key: BuildingKey; toLevel: number; startAt: number; completeAt: n
 - 新增 i18n：`city.trainEntry`/`city.trainMax`/`city.err.trainQueueFull`（zh/en/de 三语）；复用既有 `city.trainPanel`（此前定义了但从未被引用的历史遗留 key，本次仍未使用其文案，留作弹窗标题的候选，未强行塞入布局）。
 - 覆盖测试：`client/test/ui/cityTrainTroops.ui.ts`（headless PIXI，驱动真实 `handleDown`/`handleUp` 命中测试，覆盖 +10 训练成功 / 队列已满不下单 / 加速按钮调用）。
 - **已知限制**：`CitySceneCallbacks.onTrainTroops`/`onSpeedupTraining` 两个从未被赋值的可选回调字段已删除——`CityScene` 现在直接调 `this.cb.worldApi.trainTroops/speedupTraining`，与 `doUpgrade`/`doSpeedup` 走同一模式，不再经过父级回调层。
+- **练兵消耗扩展为五资源（2026-08-01）**：练兵不再只吃 `ink`——每兵额外消耗 `paper`/`graphite`/`metal` 各 5、`sticker` 1（`ink` 每兵 10 不变），新增常量 `TROOP_TRAIN_PAPER_COST`/`TROOP_TRAIN_GRAPHITE_COST`/`TROOP_TRAIN_METAL_COST`/`TROOP_TRAIN_STICKER_COST`（`server/shared/src/slg/core.ts`）+ 汇总函数 `troopTrainCost(qty)`（`server/shared/src/slg/city.ts`）。服务端 `trainTroops`（`server/worldsvc/src/city.ts`）与建筑升级同款「按 `RESOURCE_TYPES` 逐项校验再扣减」写法，任一资源不足即整单拒绝（`INSUFFICIENT_RESOURCES`）。客户端 `Max` 档位与三个预设按钮的可点亮判定同步改为五资源联合校验（不再只看 `ink`），点击禁用态按钮时的 toast 也从「墨水不足」专属文案改回通用 `city.err.noResources`（此前 `capLeft<=0` 判定错位导致误报「兵力已达上限」的 bug 顺带修复，见 2026-08-01 会话）。旧 i18n key `city.err.noInk` 已删除（zh/en/de）。`server/tools/econ-sim` 的 `armyPacing()`/`cityRun.ts` 同步把 `inkToFill` 换成完整五资源 `cost` 打印，避免数值验证工具静默漏算新增的四项 sink。
 
 ### 8.4 资源条：真产量 + 客户端实时结算（2026-07-23）
 

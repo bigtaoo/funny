@@ -1590,7 +1590,6 @@ export const de: Record<TranslationKey, string> = {
   'city.err.queueFull': 'Bauwarteschlange voll',
   'city.err.trainQueueFull': 'Ausbildungswarteschlange voll',
   'city.err.troopCap': 'Truppenlimit erreicht',
-  'city.err.noInk': 'Nicht genug Tinte',
   'city.err.deskGate': 'Schreibtischstufe zu niedrig',
   'city.err.generic': 'Aktion fehlgeschlagen',
   'city.res.yield': 'Ertrag',

@@ -1590,7 +1590,6 @@ export const en: Record<TranslationKey, string> = {
   'city.err.queueFull': 'Build queue is full',
   'city.err.trainQueueFull': 'Training queue is full',
   'city.err.troopCap': 'Troop cap reached',
-  'city.err.noInk': 'Not enough ink',
   'city.err.deskGate': 'Desk level too low',
   'city.err.generic': 'Action failed',
   'city.res.yield': 'Yield',

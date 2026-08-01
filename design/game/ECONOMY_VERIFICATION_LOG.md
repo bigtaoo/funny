@@ -110,6 +110,8 @@
 | `RESOURCE_CAP` / `RESOURCE_YIELD_BASE` | 200,000 / 100 | 单资源仓储上限 / 每格每级每小时基底产 |
 | `TROOP_TRAIN_INK_COST` / `_TIME_SEC` | 10 / 5 | 每兵 ink 成本 / 训练秒 |
 
+> **⚠️ 常量已改 ④（2026-08-01）**：练兵不再只吃 `ink`——新增 `TROOP_TRAIN_PAPER_COST`=5 / `TROOP_TRAIN_GRAPHITE_COST`=5 / `TROOP_TRAIN_METAL_COST`=5 / `TROOP_TRAIN_STICKER_COST`=1（每兵；`ink` 每兵 10 不变），汇总见 `troopTrainCost(qty)`（`server/shared/src/slg/city.ts`）。上面 §13-SLG-CITY.1/.2 的 `armyPacing`/`inkToFill` 相关数字（含「ink 0，建筑不再吃」的表述）**未重新跑 econ-sim B 轨核验**——练兵现在也从 paper/graphite/metal/sticker 里吃量，会叠加到已经是承重肝点的 paper/graphite 建材 sink 上，**days-to-max 结论待重新核验，不可直接沿用本节旧数字**。详见 [`SLG_CITY_DESIGN.md`](SLG_CITY_DESIGN.md) §8.3。
+
 ### 13-SLG-CITY.2 演算（econ-sim B 轨，2026-06-30）
 
 工具：`server/tools/econ-sim/src/city.ts` + `cityRun.ts`（纯 TS，import `@nw/shared` 建筑常量/纯函数，**与代码永不脱节**）。跑法 `npx tsx src/cityRun.ts`。**硬结论靠代码导出的总量/比值/成长量；income 档是显式假设**（领地格数设计未 pin，同 A 轨人口口径）。

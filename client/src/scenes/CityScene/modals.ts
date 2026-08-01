@@ -12,7 +12,7 @@ import {
   CABINET_CAP_STEP,
   DRILL_TROOPCAP_STEP,
   DRILL_TRAIN_SPEED_STEP,
-  TROOP_TRAIN_INK_COST,
+  troopTrainCost,
   TROOP_TRAIN_BATCH_MAX,
   TROOP_SPEEDUP_SECS_PER_COIN,
   baseDurabilityMax,
@@ -249,7 +249,7 @@ export function ModalsMixin<TBase extends CitySceneBaseCtor>(Base: TBase): TBase
       const queueMax = trainQueueMaxFor(bld);
       const queueFull = trainQueue.length >= queueMax;
       const capLeft = Math.max(0, tc - ts - queuedQty);
-      const ink = Math.floor(resources?.ink ?? 0);
+      const costPerTroop = troopTrainCost(1);
       const now = serverNow();
       for (const e of trainQueue) {
         const sec = Math.max(0, Math.ceil((e.completeAt - now) / 1000));
@@ -260,7 +260,12 @@ export function ModalsMixin<TBase extends CitySceneBaseCtor>(Base: TBase): TBase
         iy += 16;
       }
 
-      const maxQty = Math.max(0, Math.min(TROOP_TRAIN_BATCH_MAX, capLeft, Math.floor(ink / TROOP_TRAIN_INK_COST)));
+      // Max affordable qty is bounded by every resource troop training spends (ink/paper/graphite/metal/sticker), not ink alone.
+      const affordableByRes = RESOURCE_TYPES.map((rt) => {
+        const per = costPerTroop[rt] ?? 0;
+        return per > 0 ? Math.floor((resources?.[rt] ?? 0) / per) : Infinity;
+      });
+      const maxQty = Math.max(0, Math.min(TROOP_TRAIN_BATCH_MAX, capLeft, ...affordableByRes));
       const presets: Array<{ label: string; qty: number }> = [
         { label: '+100', qty: 100 },
         { label: '+500', qty: 500 },
@@ -270,7 +275,9 @@ export function ModalsMixin<TBase extends CitySceneBaseCtor>(Base: TBase): TBase
       const btnW = (mw - 20 - btnGap * 2) / 3;
       let bx = 10;
       for (const p of presets) {
-        const ok = !queueFull && p.qty > 0 && p.qty <= capLeft && p.qty * TROOP_TRAIN_INK_COST <= ink;
+        const cost = troopTrainCost(p.qty);
+        const canAffordCost = RESOURCE_TYPES.every((rt) => (resources?.[rt] ?? 0) >= (cost[rt] ?? 0));
+        const ok = !queueFull && p.qty > 0 && p.qty <= capLeft && canAffordCost;
         const rectLocal = { x: bx, y: iy, w: btnW, h: 30 };
         const g = sketchPanel(rectLocal.w, rectLocal.h, {
           fill: ok ? C.paper : C.btnDis, border: C.line, width: 1, seed: seedFor(rectLocal.x, rectLocal.y, rectLocal.w),
@@ -287,7 +294,7 @@ export function ModalsMixin<TBase extends CitySceneBaseCtor>(Base: TBase): TBase
           x: screenRect.x, y: screenRect.y, w: screenRect.w, h: screenRect.h,
           fn: () => {
             if (ok) { void this.doTrain(p.qty); return; }
-            this.showToast(queueFull ? t('city.err.trainQueueFull') : (p.qty <= 0 || p.qty > capLeft ? t('city.err.troopCap') : t('city.err.noInk')), C.red);
+            this.showToast(queueFull ? t('city.err.trainQueueFull') : (capLeft <= 0 || p.qty > capLeft ? t('city.err.troopCap') : t('city.err.noResources')), C.red);
           },
         });
         bx += btnW + btnGap;

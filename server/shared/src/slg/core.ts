@@ -418,6 +418,14 @@ export const GW_PUSH_REDIS_CHANNEL = 'nw:gw:push';
 // ── Training queue (S8-2, §4 troop cycle) ──────────────────────────────
 /** Ink cost per troop trained (sustain resource; DRAFT, tune after launch). */
 export const TROOP_TRAIN_INK_COST = 10;
+/** Paper cost per troop trained (wood, 2026-08-01 tune — building-material tax alongside ink). */
+export const TROOP_TRAIN_PAPER_COST = 5;
+/** Graphite cost per troop trained (stone, 2026-08-01 tune). */
+export const TROOP_TRAIN_GRAPHITE_COST = 5;
+/** Metal cost per troop trained (iron ore, 2026-08-01 tune). */
+export const TROOP_TRAIN_METAL_COST = 5;
+/** Sticker cost per troop trained (copper coin, 2026-08-01 tune — small token cost, sticker faucet is the scarcest). */
+export const TROOP_TRAIN_STICKER_COST = 1;
 /** Training time per troop (seconds, DRAFT). */
 export const TROOP_TRAIN_TIME_SEC = 5;
 /** Maximum troops per training batch (single-batch queue size cap). */

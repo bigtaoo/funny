@@ -5,7 +5,7 @@ import {
   SlgError,
   TROOP_TRAIN_BATCH_MAX,
   trainQueueMaxFor,
-  TROOP_TRAIN_INK_COST,
+  troopTrainCost,
   drillTrainMult,
   TROOP_TRAIN_TIME_SEC,
   TROOP_SPEEDUP_SECS_PER_COIN,
@@ -52,8 +52,8 @@ export class CityService {
   // ── S8-2: training queue ────────────────────────────────────────
 
   /**
-   * Enqueue a training batch. Consumes ink; scheduled at TROOP_TRAIN_TIME_SEC × qty.
-   * Validation: joined world + qty is valid + queue slots not full + troops after training would not exceed troopCap + enough ink.
+   * Enqueue a training batch. Consumes ink/paper/graphite/metal/sticker (troopTrainCost); scheduled at TROOP_TRAIN_TIME_SEC × qty.
+   * Validation: joined world + qty is valid + queue slots not full + troops after training would not exceed troopCap + enough resources.
    */
   async trainTroops(worldId: string, accountId: string, qty: number): Promise<PlayerWorldView> {
     const { cols, now } = this.core.deps;
@@ -70,9 +70,12 @@ export class CityService {
 
     const t = now();
     const resources = this.core.settle(pw, t);
-    const inkCost = qty * TROOP_TRAIN_INK_COST;
-    if ((resources.ink ?? 0) < inkCost) throw new SlgError('INSUFFICIENT_RESOURCES', 'Insufficient ink');
-    resources.ink = (resources.ink ?? 0) - inkCost;
+    const cost = troopTrainCost(qty);
+    for (const rt of RESOURCE_TYPES) {
+      if ((resources[rt] ?? 0) < (cost[rt] ?? 0)) throw new SlgError('INSUFFICIENT_RESOURCES', `Insufficient ${rt}`);
+    }
+    for (const rt of RESOURCE_TYPES) resources[rt] = (resources[rt] ?? 0) - (cost[rt] ?? 0);
+    const inkCost = cost.ink ?? 0;
 
     // Training starts immediately after the previous batch finishes (chained queue); if no batch is in progress, start immediately.
     const lastComplete = queue.length > 0 ? queue[queue.length - 1]!.completeAt : t;

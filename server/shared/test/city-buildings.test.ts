@@ -8,6 +8,12 @@ import {
   TROOP_CAP_BASE,
   RESOURCE_CAP,
   TROOP_TRAIN_QUEUE_MAX,
+  TROOP_TRAIN_INK_COST,
+  TROOP_TRAIN_PAPER_COST,
+  TROOP_TRAIN_GRAPHITE_COST,
+  TROOP_TRAIN_METAL_COST,
+  TROOP_TRAIN_STICKER_COST,
+  troopTrainCost,
   DESK_MAX_LEVEL,
   BUILD_YIELD_STEP,
   STICKER_SELF_BASE,
@@ -120,6 +126,32 @@ describe('desk gate (D-CITY-6) + cost / time curves', () => {
     expect((c1.sticker ?? 0)).toBeGreaterThan(0);  // sticker sink
     expect(buildTimeSec('desk', 2)).toBeGreaterThan(buildTimeSec('inkPot', 2)); // desk is slower
     expect(buildTimeSec('inkPot', 2)).toBe(buildTimeSec('inkPot', 1) * 2);
+  });
+});
+
+describe('troopTrainCost (2026-08-01: training spends all five resources, not ink alone)', () => {
+  it('scales linearly with qty across ink/paper/graphite/metal/sticker', () => {
+    const c1 = troopTrainCost(1);
+    expect(c1).toEqual({
+      ink: TROOP_TRAIN_INK_COST,
+      paper: TROOP_TRAIN_PAPER_COST,
+      graphite: TROOP_TRAIN_GRAPHITE_COST,
+      metal: TROOP_TRAIN_METAL_COST,
+      sticker: TROOP_TRAIN_STICKER_COST,
+    });
+    const c100 = troopTrainCost(100);
+    expect(c100).toEqual({
+      ink: 100 * TROOP_TRAIN_INK_COST,
+      paper: 100 * TROOP_TRAIN_PAPER_COST,
+      graphite: 100 * TROOP_TRAIN_GRAPHITE_COST,
+      metal: 100 * TROOP_TRAIN_METAL_COST,
+      sticker: 100 * TROOP_TRAIN_STICKER_COST,
+    });
+  });
+  it('floors fractional qty and clamps negative qty to 0 (never a negative or partial-unit cost)', () => {
+    expect(troopTrainCost(2.9)).toEqual(troopTrainCost(2));
+    expect(troopTrainCost(-5)).toEqual({ ink: 0, paper: 0, graphite: 0, metal: 0, sticker: 0 });
+    expect(troopTrainCost(0)).toEqual({ ink: 0, paper: 0, graphite: 0, metal: 0, sticker: 0 });
   });
 });
 

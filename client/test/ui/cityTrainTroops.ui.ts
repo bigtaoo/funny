@@ -96,7 +96,9 @@ function stubWorldApiWithTrain(fx: TrainFixture): { api: WorldApiClient; me: Pla
     joined: true,
     troops: fx.troops ?? 0,
     troopCap: fx.troopCap ?? 2000,
-    resources: fx.resources ?? { ink: 100000 },
+    // Troop training now spends ink/paper/graphite/metal/sticker (2026-08-01 tune); default every resource
+    // to abundant so fixtures overriding just `{ ink: N }` still isolate ink as the sole binding constraint.
+    resources: { ink: 100000, paper: 100000, graphite: 100000, metal: 100000, sticker: 100000, ...fx.resources },
     buildings: fx.buildings ?? {},
     buildQueue: [],
     trainingQueue: fx.trainingQueue ?? [],
@@ -159,6 +161,31 @@ describe('CityScene home-desk Train Troops tile + modal (2026-07-21)', () => {
     scene.destroy();
   });
 
+  it('tapping Max is bounded by paper too (2026-08-01: training also spends paper/graphite/metal/sticker)', async () => {
+    // paper 30 / TROOP_TRAIN_PAPER_COST(5) → 6 affordable — the binding constraint here, not ink (left abundant).
+    const { scene, inner, trainTroops } = await openTrainModal({ troops: 0, resources: { paper: 30 } });
+    const modalHits = trainModalHits(inner);
+    const presetMax = modalHits[2]!;
+    tap(inner, presetMax.x + presetMax.w / 2, presetMax.y + presetMax.h / 2);
+    await new Promise((r) => setTimeout(r, 0));
+    expect(trainTroops).toHaveBeenCalledWith('world:1:0', 6);
+    scene.destroy();
+  });
+
+  it('does not call trainTroops and shows a toast when paper (not ink) is the resource that is short', async () => {
+    const spy = vi.spyOn(log, 'showToastMessage');
+    // paper 10 < 100 * TROOP_TRAIN_PAPER_COST(5) — can't afford +100 even though ink/graphite/metal/sticker are abundant.
+    const { scene, inner, trainTroops } = await openTrainModal({ troops: 0, troopCap: 2000, resources: { paper: 10 } });
+    const modalHits = trainModalHits(inner);
+    const preset100 = modalHits[0]!;
+    tap(inner, preset100.x + preset100.w / 2, preset100.y + preset100.h / 2);
+    await new Promise((r) => setTimeout(r, 0));
+    expect(trainTroops).not.toHaveBeenCalled();
+    expect(spy).toHaveBeenCalledWith(t('city.err.noResources'), 'error');
+    scene.destroy();
+    spy.mockRestore();
+  });
+
   it('does not call trainTroops and shows a toast when the training queue is already full', async () => {
     const now = Date.now();
     const spy = vi.spyOn(log, 'showToastMessage');
@@ -194,7 +221,7 @@ describe('CityScene home-desk Train Troops tile + modal (2026-07-21)', () => {
     spy.mockRestore();
   });
 
-  it('does not call trainTroops and shows a toast when there is not enough ink', async () => {
+  it('does not call trainTroops and shows a toast when there is not enough of a resource', async () => {
     const spy = vi.spyOn(log, 'showToastMessage');
     // ink 5 < TROOP_TRAIN_INK_COST(10) — can't even afford +100, but there's still troopCap headroom.
     const { scene, inner, trainTroops } = await openTrainModal({ troops: 0, troopCap: 2000, resources: { ink: 5 } });
@@ -203,7 +230,7 @@ describe('CityScene home-desk Train Troops tile + modal (2026-07-21)', () => {
     tap(inner, preset100.x + preset100.w / 2, preset100.y + preset100.h / 2);
     await new Promise((r) => setTimeout(r, 0));
     expect(trainTroops).not.toHaveBeenCalled();
-    expect(spy).toHaveBeenCalledWith(t('city.err.noInk'), 'error');
+    expect(spy).toHaveBeenCalledWith(t('city.err.noResources'), 'error');
     scene.destroy();
     spy.mockRestore();
   });
@@ -240,17 +267,18 @@ describe('CityScene home-desk Train Troops tile + modal (2026-07-21)', () => {
     scene.destroy();
   });
 
-  it('shows the no-ink toast when the server rejects trainTroops with an ink-related error', async () => {
+  it('shows the no-resources toast when the server rejects trainTroops with an insufficient-resources error', async () => {
     const spy = vi.spyOn(log, 'showToastMessage');
     const { scene, inner } = await openTrainModal({
-      troops: 0, troopCap: 2000, resources: { ink: 100000 },
-      trainTroopsImpl: () => Promise.reject(new Error('not enough ink')),
+      troops: 0, troopCap: 2000,
+      // Matches the server's actual SlgError message shape (city.ts trainTroops: `Insufficient ${rt}`).
+      trainTroopsImpl: () => Promise.reject(new Error('Insufficient ink')),
     });
     const modalHits = trainModalHits(inner);
     const preset100 = modalHits[0]!;
     tap(inner, preset100.x + preset100.w / 2, preset100.y + preset100.h / 2);
     await new Promise((r) => setTimeout(r, 0));
-    expect(spy).toHaveBeenCalledWith(t('city.err.noInk'), 'error');
+    expect(spy).toHaveBeenCalledWith(t('city.err.noResources'), 'error');
     scene.destroy();
     spy.mockRestore();
   });
