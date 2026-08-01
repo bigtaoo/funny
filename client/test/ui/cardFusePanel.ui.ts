@@ -627,6 +627,51 @@ describe('CardScene fuse panel — animation is not torn down by the busy re-ren
     openDetailSpy.mockRestore();
   });
 
+  // Regression: onSaveChanged (wired to SaveManager.subscribe, which "fires synchronously and with no
+  // payload" — see SaveManager.ts) used to call this.render() unconditionally. fuseCards's real
+  // implementation resolves via saveManager.adoptServer(save), which fires that listener SYNCHRONOUSLY,
+  // before the awaited fuseCards() promise settles and therefore before playFusionAnim ever runs.
+  // render() rebuilds the modal (detailId stays set through the whole fuse ⇒ openDetail() ⇒
+  // tearDownChildren(modalLayer)), replacing the fuse ring with an ordinary card-detail panel — so by
+  // the time playFusionAnim draws its animation onto modalLayer, the ring is gone and the fuse panel
+  // reads as "closed" with the animation floating over whatever render() drew instead. Root-cause fix:
+  // the onSaveChanged callback now respects fuseInProgress, same as the busy re-render in update().
+  it('a save-changed listener firing synchronously mid-fuse (adoptServer\'s real behavior) does not tear down the ring', async () => {
+    const target = makeCard('target', 'lena', { level: 3 }); // level 3 ⇒ no auto-continue, simpler to assert
+    const cardInv: Record<string, CardInstance> = { target };
+    for (let i = 0; i < FUSION_MATERIAL_COUNT; i++) cardInv[`mat${i}`] = makeCard(`mat${i}`, 'max', { level: 3 });
+
+    let savedListener: (() => void) | null = null;
+    const scene = buildScene(baseCb(cardInv, {
+      onSaveChanged: (listener) => { savedListener = listener; return () => {}; },
+      fuseCards: async () => {
+        // Mirrors SaveManager.adoptServer: fires the save-changed listener synchronously, before this
+        // promise resolves and before doFuse ever reaches playFusionAnim.
+        savedListener?.();
+        return { ok: true };
+      },
+    }));
+    priv(scene).openFuseSelect(target);
+    priv(scene).detailId = target.id; // the fuse is always reached from the detail modal in production
+    // Hold the animation open so we can inspect the modal right after fuseCards resolves.
+    let releaseAnim: () => void = () => {};
+    priv(scene).playFusionAnim = () => new Promise<void>((r) => { releaseAnim = r; });
+
+    const rowLabel = MAX_NAME;
+    for (let i = 0; i < FUSION_MATERIAL_COUNT; i++) {
+      hitUnder(modalHitsOf(scene), findLabelPos(modalLayerOf(scene), rowLabel)!)!.action();
+    }
+    hitUnder(modalHitsOf(scene), findLabelPos(modalLayerOf(scene), `${t('roster.fuseBtn')} (${FUSION_MATERIAL_COUNT}/${FUSION_MATERIAL_COUNT})`)!)!.action();
+    await flushAsync(); // doFuse → fuseCards fires the listener and resolves → parks on playFusionAnim
+
+    // Still standing: the OLD bug replaced this with an ordinary detail panel (no fuseTitle) here.
+    expect(findLabelPos(modalLayerOf(scene), t('roster.fuseTitle'))).not.toBeNull();
+    expect(modalOpenOf(scene)).toBe(true);
+
+    releaseAnim();
+    await flushAsync();
+  });
+
   it('a modal teardown mid-animation does not throw and still settles the fuse (null _geometry guard)', async () => {
     const rafQueue: FrameRequestCallback[] = [];
     // eslint-disable-next-line @typescript-eslint/no-explicit-any

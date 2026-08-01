@@ -248,7 +248,10 @@ export class CardSceneBase {
       const next = wheelScrollY(this.scrollRegionTop, this.scrollRegionBottom, y, deltaY, this.scrollY, this.maxScroll);
       if (next !== null) { this.scrollY = next; this.scrollDirty = true; }
     }));
-    if (cb.onSaveChanged) this.unsubs.push(cb.onSaveChanged(() => this.render()));
+    // Guarded like update()'s dirty-render below (see fuseInProgress): fuseCards() resolves the save
+    // change synchronously via adoptServer, firing this listener mid-fuse, before playFusionAnim runs —
+    // an unguarded render() here would tear down the fusion ring/animation out from under itself.
+    if (cb.onSaveChanged) this.unsubs.push(cb.onSaveChanged(() => { if (!this.fuseInProgress) this.render(); }));
   }
 
   private build(): void {
