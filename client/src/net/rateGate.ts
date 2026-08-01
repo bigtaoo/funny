@@ -7,7 +7,7 @@
 const CAPACITY = 5;
 const REFILL_MS = 200; // 1 token every 200ms → steady-state 5 req/sec
 
-class RateGate {
+export class RateGate {
   private tokens = CAPACITY;
   private readonly queue: Array<() => void> = [];
 
@@ -18,11 +18,22 @@ class RateGate {
     }, REFILL_MS);
   }
 
-  acquire(): Promise<void> {
+  /**
+   * Synchronous fast path: grabs a token immediately if the budget isn't exhausted, with no
+   * microtask hop. NetClient.sendClient relies on this to keep sending under budget exactly as
+   * synchronous as it was before the rate gate existed (a caller reading its fake socket's `sent`
+   * array right after a send call must not observe it as still-pending).
+   */
+  tryAcquire(): boolean {
     if (this.tokens > 0 && this.queue.length === 0) {
       this.tokens--;
-      return Promise.resolve();
+      return true;
     }
+    return false;
+  }
+
+  acquire(): Promise<void> {
+    if (this.tryAcquire()) return Promise.resolve();
     return new Promise((resolve) => this.queue.push(resolve));
   }
 

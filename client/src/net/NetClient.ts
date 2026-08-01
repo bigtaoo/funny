@@ -248,11 +248,14 @@ export class NetClient {
   /**
    * kind: 'ping'/'submitCmd' pass { rateLimited: false } (latency-sensitive; see their doc comments
    * above) — every other business message shares the global outbound rate gate (client-wide request
-   * throttle) with the REST transports. Gated sends are queued FIFO by rateGate and may land after
-   * the socket has since closed/reconnected; doSend re-checks `state === 'open'` at actual send time.
+   * throttle) with the REST transports. Uses `tryAcquire()`'s synchronous fast path so a send under
+   * budget (the overwhelmingly common case) still lands in the same tick as the call, exactly as
+   * before the rate gate existed; only once the budget is actually exhausted does a send wait its
+   * turn via `acquire()`, queued FIFO — it may then land after the socket has since closed/
+   * reconnected, so doSend re-checks `state === 'open'` at actual send time.
    */
   private sendClient(client: ClientMsg, opts?: { rateLimited?: boolean }): void {
-    if (opts?.rateLimited === false) {
+    if (opts?.rateLimited === false || globalRequestGate.tryAcquire()) {
       this.doSend(client);
     } else {
       void globalRequestGate.acquire().then(() => this.doSend(client));

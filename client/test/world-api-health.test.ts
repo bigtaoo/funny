@@ -169,3 +169,30 @@ describe('WorldApiClient.checkHealth()', () => {
     expect(aborted).toBe(false);
   });
 });
+
+// ── Rate-gate wiring (ADR-058) ────────────────────────────────────────────────
+// req() (backing getMe/joinWorld/etc, NOT checkHealth — that one bypasses req() entirely with its
+// own inline fetch) must await the global rate gate before issuing its fetch.
+describe('WorldApiClient.req() — rate gate wiring', () => {
+  it('acquires a slot from the global gate before issuing the fetch', async () => {
+    setWorldBase('http://localhost:18084');
+    vi.resetModules();
+    const acquire = vi.fn().mockResolvedValue(undefined);
+    vi.doMock('../src/net/rateGate', () => ({ globalRequestGate: { acquire, tryAcquire: vi.fn(() => true) } }));
+
+    const order: string[] = [];
+    stubFetch(async () => {
+      order.push('fetch');
+      return { ok: true, status: 200, json: async () => ({ ok: true, data: { worldId: 'w1' } }) } as unknown as Response;
+    });
+    acquire.mockImplementation(async () => { order.push('acquire'); });
+
+    const { WorldApiClient: MockedWorldApiClient } = await import('../src/net/WorldApiClient');
+    const client = new MockedWorldApiClient(noopStorage);
+    await client.getMe('world:1:0');
+
+    expect(acquire).toHaveBeenCalledTimes(1);
+    expect(order).toEqual(['acquire', 'fetch']);
+    vi.doUnmock('../src/net/rateGate');
+  });
+});
