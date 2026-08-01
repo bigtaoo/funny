@@ -363,12 +363,19 @@ export class WorldMapInput {
       return;
     }
 
-    // March row hit detection (recall button or click-to-center)
+    // March row hit detection (recall / instant-return button, or click-to-center)
     for (const entry of this.ctx.marchRowRects) {
       if (entry.recallRect) {
         const r = entry.recallRect;
         if (x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h) {
           void this.ctx.net.doRecall(entry.marchId, entry.worldId);
+          return;
+        }
+      }
+      if (entry.instantReturnRect) {
+        const r = entry.instantReturnRect;
+        if (x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h) {
+          void this.ctx.net.doInstantReturn(entry.marchId, entry.worldId);
           return;
         }
       }

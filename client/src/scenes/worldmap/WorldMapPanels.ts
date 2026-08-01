@@ -6,7 +6,7 @@ import { buildIcon } from '../../render/icons';
 import { FS, snapFont } from '../../render/fontScale';
 import { WorldApiError } from '../../net/WorldApiClient';
 import { serverNow } from '../../net/serverClock';
-import { proceduralTile } from '@nw/shared';
+import { proceduralTile, MARCH_RETURN_SPEEDUP_SECS_PER_COIN } from '@nw/shared';
 import { loadResAtlas, getResTexture, isResAtlasReady } from '../../render/resAtlasLoader';
 import { loadCityAtlas, getCityTexture, isCityAtlasReady } from '../../render/cityAtlasLoader';
 import { loadTerrainAtlas, getTerrainTexture, isTerrainAtlasReady } from '../../render/terrainAtlasLoader';
@@ -259,14 +259,28 @@ export class WorldMapPanels {
               destX: tx, destY: ty,
               rowRect: { x: rx, y: rowY, w: rightW - RECALL_W - 16, h: MARCH_ROW_H },
               recallRect: { x: recallBtn.x, y: recallBtn.y, w: RECALL_W, h: 36 },
+              instantReturnRect: null,
             });
           } else {
+            // 2026-08-01 (SLG_DESIGN_LOG §46): "pay coins, instantly complete" button — server computes the
+            // authoritative cost from remaining travel time; this is only a display estimate (same client-side
+            // serverNow() clock CityScene's speedup buttons already use).
+            const INSTANT_RETURN_W = 190;
+            const coins = Math.max(1, Math.ceil(remaining / MARCH_RETURN_SPEEDUP_SECS_PER_COIN));
+            const instantBtn = sketchPanel(INSTANT_RETURN_W, 36, { fill: C.accent, border: C.mid, seed: seedFor(i, 98, INSTANT_RETURN_W) });
+            instantBtn.x = rx + rightW - INSTANT_RETURN_W - 8; instantBtn.y = rowY;
+            hud.addChild(instantBtn);
+            const instantLbl = txt(t('world.instantReturn', { coins }), FS.body, C.light);
+            instantLbl.anchor.set(0.5, 0.5);
+            instantLbl.x = instantBtn.x + INSTANT_RETURN_W / 2; instantLbl.y = instantBtn.y + 18;
+            hud.addChild(instantLbl);
             this.ctx.marchRowRects.push({
               marchId: m.marchId,
               worldId: m.toTile.split(':')[2] ?? '',
               destX: tx, destY: ty,
-              rowRect: { x: rx, y: rowY, w: rightW - 16, h: MARCH_ROW_H },
+              rowRect: { x: rx, y: rowY, w: rightW - INSTANT_RETURN_W - 16, h: MARCH_ROW_H },
               recallRect: null,
+              instantReturnRect: { x: instantBtn.x, y: instantBtn.y, w: INSTANT_RETURN_W, h: 36 },
             });
           }
         }

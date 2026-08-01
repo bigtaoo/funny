@@ -6,7 +6,6 @@ import {
   tileId,
   marchId,
   playerWorldId,
-  findMarchPath,
   marchDurationFromPath,
   marchStepArriveAt,
   marchMoraleFromPath,
@@ -14,16 +13,15 @@ import {
   MARCH_MIN_TROOPS,
   isInVision,
   marchInterpPos,
-  baseFootprintCells,
   satchelCarryCapFor,
   SlgError,
-  type PathCell,
+  MARCH_RETURN_SPEEDUP_SECS_PER_COIN,
   type MarchKind,
 } from '@nw/shared';
 import type { MarchDoc, ArmyEntry, StationedDoc, PlayerWorldDoc } from './db';
 import { WorldCore, MARCHABLE_KINDS } from './core';
-import type { MarchView, StationedView } from './worldTypes';
-import { refundTroops } from './combatShared';
+import type { MarchView, StationedView, PlayerWorldView } from './worldTypes';
+import { refundTroops, computeMarchPath, parkMarchInPlace, startReturnMarch } from './combatShared';
 import { legBox, sourcesBoundingBox } from './coreHelpers';
 import type { SiegeService } from './combatSiege';
 import { resolveLeaderUnitType } from './leaderUnit';
@@ -33,90 +31,6 @@ export class MarchService {
     private readonly core: WorldCore,
     private readonly siege: SiegeService,
   ) {}
-
-  /**
-   * A* pathfinding for marches: pre-fetch all occupied crossing (bridge/plankway) tiles, assemble passableGateKeys, then call findMarchPath.
-   * Crossing passage rules (S8-4): crossings occupied by the requester and crossings occupied by members of the same family are passable
-   * (allied sect passage is S8-4+ with the alliance system pending; currently only within the same family).
-   * No path found → throw PATH_BLOCKED (HTTP 400).
-   */
-  private async computeMarchPath(
-    worldId: string,
-    fromX: number,
-    fromY: number,
-    toX: number,
-    toY: number,
-    requesterId: string,
-  ): Promise<PathCell[]> {
-    // Retrieve the requester's current family (if any); crossings occupied by fellow family members are also passable.
-    const requesterPw = await this.core.deps.cols.playerWorld.findOne({ _id: playerWorldId(worldId, requesterId) });
-    const allyFamilyId = requesterPw?.familyId;
-
-    // Crossings (bridge/plankway) are sparse; fetch all occupied ones at once and filter, to avoid async calls inside A*.
-    const gateTiles = await this.core.deps.cols.tiles
-      .find({ worldId, type: { $in: ['bridge', 'plankway'] } })
-      .project<{ _id: string; x: number; y: number; ownerId: string | undefined; familyId: string | undefined }>({
-        _id: 1, x: 1, y: 1, ownerId: 1, familyId: 1,
-      })
-      .toArray();
-    const passableGateKeys = new Set<string>(
-      gateTiles
-        .filter((g) =>
-          g.ownerId === requesterId ||
-          (allyFamilyId && g.familyId === allyFamilyId),
-        )
-        .map((g) => `${g.x}:${g.y}`),
-    );
-    // ADR-025: other players' 3×3 capitals are solid buildings that block pathing (path-blocking); the marcher
-    // routes around them but can still march ONTO an enemy base tile to besiege it (findMarchPath exempts
-    // the destination). The marcher's own base cells are excluded so owners march in/out freely.
-    // When the destination IS an enemy base cell (a siege), also exclude THAT base's whole footprint so
-    // every one of its 9 cells — including the center, which is otherwise walled in by its own ring — is
-    // reachable ("attack any cell = attack the base"). Only that one base opens up; all others still block.
-    const destTile = await this.core.deps.cols.tiles.findOne({ _id: tileId(worldId, toX, toY) });
-    const siegeBaseOwner = destTile?.type === 'base' ? destTile.ownerId : undefined;
-    const excludeOwners = siegeBaseOwner ? [requesterId, siegeBaseOwner] : [requesterId];
-    const blockedBaseTiles = await this.core.deps.cols.tiles
-      .find({ worldId, type: 'base', ownerId: { $nin: excludeOwners } })
-      .project<{ x: number; y: number }>({ x: 1, y: 1 })
-      .toArray();
-    const blockedBaseKeys = new Set<string>(blockedBaseTiles.map((b) => `${b.x}:${b.y}`));
-    // Always keep the requester's own capital footprint passable, derived from mainBaseTile rather than
-    // per-cell ownerId: a legacy base whose ring cells lost their ownerId would otherwise be treated as an
-    // enemy building (missing ownerId matches the $nin above) and wall the owner's army inside its own city.
-    if (requesterPw?.mainBaseTile) {
-      const bx = this.core.coordX(requesterPw.mainBaseTile), by = this.core.coordY(requesterPw.mainBaseTile);
-      if (Number.isFinite(bx) && Number.isFinite(by)) {
-        for (const c of baseFootprintCells(bx, by)) blockedBaseKeys.delete(`${c.x}:${c.y}`);
-      }
-    }
-    // ADR-051 (P5b): enemy player-built blockers are hard path obstacles too — the marcher must route around them
-    // (or, since findMarchPath exempts the destination, march ONTO one to attack/destroy it). Own & same-family
-    // blockers are passable (对建造者+家族放行). Reuses the same blockedBaseKeys set as enemy bases (identical
-    // "path-blocking, destination-exempt" semantics).
-    const blockerTiles = await this.core.deps.cols.tiles
-      .find({ worldId, 'structure.kind': 'blocker' })
-      .project<{ x: number; y: number; structure?: { ownerId?: string; familyId?: string } }>({ x: 1, y: 1, 'structure.ownerId': 1, 'structure.familyId': 1 })
-      .toArray();
-    for (const b of blockerTiles) {
-      const so = b.structure;
-      const friendly = so?.ownerId === requesterId || (!!allyFamilyId && so?.familyId === allyFamilyId);
-      if (!friendly) blockedBaseKeys.add(`${b.x}:${b.y}`);
-    }
-    const path = findMarchPath(
-      worldId,
-      this.core.deps.mapW,
-      this.core.deps.mapH,
-      fromX,
-      fromY,
-      toX,
-      toY,
-      passableGateKeys,
-      blockedBaseKeys,
-    );
-    if (!path) throw new SlgError('PATH_BLOCKED', 'No viable path found');
-    return path;
-  }
 
   // ── S8-2: march / recall / arrival processing ──────────────────────────
 
@@ -340,7 +254,7 @@ export class MarchService {
     // "out in the field"), so there is no pool balance to check or deduct — same exemption as a card army.
     if (!hasCardArmy && !idleRedispatch && pw.troops < troops) throw new SlgError('NO_TROOPS', 'Insufficient troops');
 
-    const path = await this.computeMarchPath(worldId, fromX, fromY, toX, toY, accountId);
+    const path = await computeMarchPath(this.core, worldId, fromX, fromY, toX, toY, accountId);
     const departAt = t;
     const arriveAt = departAt + marchDurationFromPath(path) * 1000;
     // Morale (行军疲劳 — see SLG_DESIGN.md §4.4; distinct from the card "士气加成" bonus): 1 point lost per tile moved, computed once from the full path since marches don't tick
@@ -495,6 +409,35 @@ export class MarchService {
     const view = this.core.marchView(claimed);
     void this.core.pushMarch(accountId, view);
     return view;
+  }
+
+  /**
+   * 2026-08-01 (SLG_DESIGN_LOG §46): pay coins to instantly complete an in-transit 'return' march — the paid
+   * counterpart to the new default "returns take travel time" model. Cost is always the server-computed full
+   * remaining-time price (user decision: no partial buy-down like speedupTraining/speedupBuild's client-chosen
+   * coin amount — this is a single "finish now" action). Settles the return leg's arrival immediately on
+   * success, mirroring applyArrival's kind==='return' branch (refund + push).
+   */
+  async instantReturnMarch(worldId: string, accountId: string, mid: string, clientPlatform?: string): Promise<PlayerWorldView> {
+    const { cols, now } = this.core.deps;
+    const m = await cols.marches.findOne({ _id: mid, worldId, ownerId: accountId, kind: 'return', status: 'marching' });
+    if (!m) throw new SlgError('MARCH_NOT_FOUND', 'No in-transit return march found');
+    const t = now();
+    const remainingSec = Math.max(0, (m.arriveAt - t) / 1000);
+    const coins = Math.max(1, Math.ceil(remainingSec / MARCH_RETURN_SPEEDUP_SECS_PER_COIN));
+    const orderId = `slg_march_instant_return:${worldId}:${mid}:${t}`;
+    await this.core.commercial.spend(accountId, coins, orderId, clientPlatform);
+
+    // Atomic claim: only an in-transit return leg still in 'marching' state settles here. A lost race (the leg
+    // arrived naturally between the read above and this claim) means the coins bought nothing extra — same
+    // accepted "money path" edge case as speedupTraining/speedupBuild (city.ts), not specially compensated.
+    const claimed = await cols.marches.findOneAndDelete({ _id: mid, worldId, ownerId: accountId, status: 'marching', kind: 'return' });
+    if (claimed) {
+      const pw = await cols.playerWorld.findOne({ _id: playerWorldId(worldId, accountId) });
+      if (pw) await refundTroops(this.core, pw, claimed.troops, t);
+      void this.core.pushMarch(accountId, this.core.marchView({ ...claimed, status: 'recalled' }));
+    }
+    return this.core.getMe(worldId, accountId);
   }
 
   /** List of all in-transit marches in the player's current world (the scheduler deletes them on arrival, so all results are marches that have not yet arrived). */
@@ -669,11 +612,21 @@ export class MarchService {
           }
         }
         if (enc && enc.fought && !enc.marcherContinues) {
-          // Marcher destroyed en route: delete the march (its survivors were already folded back by the
-          // encounter). `left` is already vacated and we never wrote our occ on `tid`, so nothing to clear.
+          // Marcher destroyed en route: delete the march first (its cardState/pool ledger was already folded
+          // back by the encounter). `left` is already vacated and we never wrote our occ on `tid`, so nothing
+          // to clear. Only AFTER the delete do we spawn a travel-time return leg (2026-08-01, SLG_DESIGN_LOG
+          // §46) when returnTroops is set — both docs share teamId, and creating the new leg before removing
+          // the old one would collide with the {worldId,ownerId,teamId} uniqueness guard.
           const claimed = await cols.marches.findOneAndDelete({ _id: m._id, status: 'marching' });
           if (claimed) {
             void this.core.pushMarch(m.ownerId, this.core.marchView({ ...claimed, status: 'recalled' }));
+            if (enc.returnTroops !== undefined) {
+              await startReturnMarch(this.core, {
+                worldId: claimed.worldId, ownerId: claimed.ownerId, fromTile: tid,
+                x: this.core.coordX(tid), y: this.core.coordY(tid),
+                troops: enc.returnTroops, army: claimed.army, teamId: claimed.teamId, leaderUnitType: claimed.leaderUnitType,
+              }, t);
+            }
           }
           return true; // fully handled (removed) — do not reschedule
         }
@@ -687,6 +640,26 @@ export class MarchService {
             { _id: m._id, status: 'marching', kind: { $ne: 'return' } },
             { $set: { troops: m.troops, ...(enc.marcherArmy !== undefined ? { army: enc.marcherArmy } : {}) }, $inc: { rev: 1 } },
           );
+          // 2026-08-01 (SLG_DESIGN_LOG §46 root cause): "won" only means this SINGLE encounter's own troop-count
+          // comparison went the marcher's way — for a card army, m.troops is a stale snapshot (real strength
+          // lives in pw.cardState.currentTroops, per CC-3) and was never re-derived here. Repeated attrition
+          // across several encounters this batch can grind every card in the army down to 0 real troops while
+          // this per-encounter check keeps reporting a "win"; the march would otherwise carry an empty shell all
+          // the way to its destination and lose a real siege battle it had no way to win (see the (33,293)
+          // Atk·Loss investigation). Re-check the army's actual current strength right after each encounter and,
+          // if every card is now at 0, treat it exactly like `!enc.marcherContinues` above (full wipe, no
+          // survivors to send home — matches the existing convention that a full wipe never has a return leg).
+          const cardArmy = (m.army ?? []).filter((e) => !!e.cardInstanceId);
+          const cardArmyWiped =
+            cardArmy.length > 0 &&
+            cardArmy.every((e) => (pw.cardState?.[e.cardInstanceId!]?.currentTroops ?? 0) <= 0);
+          if (cardArmyWiped) {
+            const claimed = await cols.marches.findOneAndDelete({ _id: m._id, status: 'marching' });
+            if (claimed) {
+              void this.core.pushMarch(m.ownerId, this.core.marchView({ ...claimed, status: 'recalled' }));
+            }
+            return true; // fully handled (removed) — do not reschedule
+          }
         }
       }
 
@@ -761,9 +734,15 @@ export class MarchService {
     // reinforce
     const target = await cols.tiles.findOne({ _id: m.toTile });
     if (!target || target.ownerId !== m.ownerId) {
-      // Reinforcement target is no longer own territory (captured / abandoned) → refund troops.
-      await refundTroops(this.core, pw, m.troops, t);
-      void this.core.pushMarch(m.ownerId, this.core.marchView({ ...m, status: 'recalled' }));
+      // Reinforcement target is no longer own territory (captured / abandoned) → target invalidated on arrival,
+      // same disposition as the siege/occupy miss branches (2026-08-01, SLG_DESIGN_LOG §46): park in place for
+      // a team-dispatched march, else keep the old instant refund.
+      if (m.teamId) {
+        await parkMarchInPlace(this.core, m, m.troops, t);
+      } else {
+        await refundTroops(this.core, pw, m.troops, t);
+        void this.core.pushMarch(m.ownerId, this.core.marchView({ ...m, status: 'recalled' }));
+      }
       return;
     }
     await cols.tiles.updateOne({ _id: m.toTile }, { $inc: { garrison: m.troops, rev: 1 } });
@@ -862,7 +841,7 @@ export class MarchService {
     const by = this.core.coordY(pw.mainBaseTile);
     const hasCardArmy = (claimed.army ?? []).some((e) => !!e.cardInstanceId);
     const t = now();
-    const path = await this.computeMarchPath(worldId, claimed.x, claimed.y, bx, by, accountId);
+    const path = await computeMarchPath(this.core, worldId, claimed.x, claimed.y, bx, by, accountId);
     const arriveAt = t + marchDurationFromPath(path) * 1000;
     const back: MarchDoc = {
       _id: marchId(worldId, accountId, t, ++this.core.marchSeq),

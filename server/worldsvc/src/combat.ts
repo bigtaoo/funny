@@ -7,7 +7,7 @@
 // CombatService re-exposes the exact same public API so WorldService (service.ts) composes it unchanged.
 // Depends on WorldCore for shared state, vision, spawn, push/schedule infra, settle/yield, and nations. No behavior change.
 import type { MarchKind } from '@nw/shared';
-import type { MarchView, OccupationView, StationedView } from './worldTypes';
+import type { MarchView, OccupationView, StationedView, PlayerWorldView } from './worldTypes';
 import { WorldCore } from './core';
 import { SiegeService } from './combatSiege';
 import { MarchService } from './combatMarch';
@@ -34,6 +34,9 @@ export class CombatService {
   }
   recallMarch(worldId: string, accountId: string, mid: string): Promise<MarchView> {
     return this.march.recallMarch(worldId, accountId, mid);
+  }
+  instantReturnMarch(worldId: string, accountId: string, mid: string, clientPlatform?: string): Promise<PlayerWorldView> {
+    return this.march.instantReturnMarch(worldId, accountId, mid, clientPlatform);
   }
   getMarches(worldId: string, accountId: string): Promise<MarchView[]> {
     return this.march.getMarches(worldId, accountId);

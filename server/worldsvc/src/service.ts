@@ -46,6 +46,9 @@ export class WorldService extends WorldCore {
   recallMarch(worldId: string, accountId: string, mid: string): Promise<MarchView> {
     return this.combat.recallMarch(worldId, accountId, mid);
   }
+  instantReturnMarch(worldId: string, accountId: string, mid: string, clientPlatform?: string): Promise<PlayerWorldView> {
+    return this.combat.instantReturnMarch(worldId, accountId, mid, clientPlatform);
+  }
   cancelOccupation(worldId: string, accountId: string, teamId: string): Promise<void> {
     return this.combat.cancelOccupation(worldId, accountId, teamId);
   }

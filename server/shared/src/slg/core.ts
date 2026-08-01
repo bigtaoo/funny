@@ -426,3 +426,9 @@ export const TROOP_TRAIN_BATCH_MAX = 5000;
 export const TROOP_TRAIN_QUEUE_MAX = 2;
 /** Speed-up rate: seconds of training time per coin spent (DRAFT, 60 s/coin). */
 export const TROOP_SPEEDUP_SECS_PER_COIN = 60;
+/**
+ * Instant-return rate for a 'return' march (2026-08-01, SLG_DESIGN_LOG §46): seconds of remaining travel time
+ * per coin spent. Same DRAFT rate as TROOP_SPEEDUP_SECS_PER_COIN, kept as its own constant so the two economies
+ * can be tuned independently.
+ */
+export const MARCH_RETURN_SPEEDUP_SECS_PER_COIN = 60;
