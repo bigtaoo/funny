@@ -6,7 +6,7 @@
 //
 // Runs under the headless PIXI adapter (vitest.ui.config.ts setupFiles).
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import * as PIXI from 'pixi.js-legacy';
 import { createLayout } from '../../src/layout/ScalingManager';
 import { InputManager } from '../../src/inputSystem/InputManager';
@@ -14,6 +14,16 @@ import { initI18n } from '../../src/i18n';
 import { CardScene, type CardCallbacks } from '../../src/scenes/CardScene';
 import { makeNewSave } from '../../src/game/meta/SaveData';
 import type { CardInstance } from '../../src/game/meta/SaveData';
+import { cardInstanceArtUrl } from '../../src/render/cardArt';
+import { skinEquipKey } from '../../src/game/meta/skinDefs';
+import { UnitType } from '../../src/game/types';
+
+// Every export passes through untouched except cardInstanceArtUrl, wrapped in vi.fn (keeping its
+// real implementation) so the 2026-08-01-scoping spec below can inspect call arguments.
+vi.mock('../../src/render/cardArt', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../src/render/cardArt')>();
+  return { ...actual, cardInstanceArtUrl: vi.fn(actual.cardInstanceArtUrl) };
+});
 
 const memStore = (() => {
   const m = new Map<string, string>();
@@ -103,6 +113,36 @@ describe('CardScene — level shown as stars, sorted highest-level-first', () =>
     const rows = starRows(scene.container);
     // First-painted star row = highest level card = 8 stars.
     expect(rows[0].children.length).toBe(8);
+    scene.destroy();
+  });
+});
+
+// Regression coverage for the 2026-08-01 scoping decision (UI_DESIGN.md §27 addendum): the Hero
+// Roster main grid must always show a card's base portrait, never whichever skin the account has
+// equipped for its unit type — this grid answers "which cards do I own," not "what does my army
+// look like." Asserted on call arguments (not the rendered texture — headless PIXI stubs every
+// binary asset to the same 1×1 PNG data URI).
+describe('CardScene — main roster grid always uses the base portrait, never an equipped skin', () => {
+  it('passes only the card, never getSave().equipped, even when the account has a skin equipped', () => {
+    const save = makeNewSave();
+    save.cardInv = { a: makeCard('a', 'lichuang', 3) };
+    save.equipped = { [skinEquipKey(UnitType.Infantry)]: 'skin_shop_c1' };
+    const cb: CardCallbacks = {
+      onBack() {},
+      getSave: () => save,
+      fuseCards: async () => ({ ok: true }),
+      setCardLock: async () => ({ ok: true }),
+      getOwnedSkins: () => [],
+      getEquippedSkin: () => null,
+      equipSkin: () => {},
+    };
+    const spy = cardInstanceArtUrl as unknown as { mock: { calls: unknown[][] } };
+    spy.mock.calls.length = 0;
+    const scene = new CardScene(createLayout(1920, 1080), new InputManager(), cb);
+
+    const cardCalls = spy.mock.calls.filter((call) => (call[0] as { defId?: string } | undefined)?.defId === 'lichuang');
+    expect(cardCalls.length).toBeGreaterThan(0);
+    for (const call of cardCalls) expect(call.length === 1 || call[1] === undefined).toBe(true);
     scene.destroy();
   });
 });

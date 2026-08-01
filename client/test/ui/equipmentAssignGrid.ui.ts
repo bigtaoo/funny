@@ -4,13 +4,23 @@
 // portrait-tall card, with a per-card hit action that equips onto that card.
 //
 // Runs under the headless PIXI adapter (vitest.ui.config.ts). Run: npm run test:ui
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { createLayout } from '../../src/layout/ScalingManager';
 import { InputManager } from '../../src/inputSystem/InputManager';
 import { initI18n } from '../../src/i18n';
 import { EquipmentScene, type EquipmentCallbacks } from '../../src/scenes/EquipmentScene';
 import { makeNewSave } from '../../src/game/meta/SaveData';
 import type { SaveData } from '../../src/game/meta/SaveData';
+import { cardInstanceArtUrl } from '../../src/render/cardArt';
+import { skinEquipKey } from '../../src/game/meta/skinDefs';
+import { UnitType } from '../../src/game/types';
+
+// Every export passes through untouched except cardInstanceArtUrl, wrapped in vi.fn (keeping its
+// real implementation) so the 2026-08-01-scoping spec below can inspect call arguments.
+vi.mock('../../src/render/cardArt', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../src/render/cardArt')>();
+  return { ...actual, cardInstanceArtUrl: vi.fn(actual.cardInstanceArtUrl) };
+});
 
 const memStore = (() => {
   const m = new Map<string, string>();
@@ -119,5 +129,36 @@ describe('EquipmentScene — assign picker renders as an icon-card grid', () => 
     expect(equippedTo).not.toBeNull();
     scene.destroy();
     scene2.destroy();
+  });
+});
+
+// Regression coverage for the 2026-08-01 scoping decision (UI_DESIGN.md §27 addendum): the
+// equip-to-card picker must always show a candidate card's base portrait, never whichever skin is
+// equipped for its unit type — this view answers "which of my cards is this," not "what does my
+// army look like." Asserted on call arguments (not the rendered texture — headless PIXI stubs every
+// binary asset to the same 1×1 PNG data URI).
+describe('EquipmentScene — assign picker always uses the base portrait, never an equipped skin', () => {
+  it('passes only the card, never an equipped-skin map, even when the account has a skin equipped', () => {
+    const save = buildSave();
+    save.equipped = { [skinEquipKey(UnitType.Infantry)]: 'skin_shop_c1' };
+    const cb: EquipmentCallbacks = {
+      onBack() {},
+      getSave: () => save,
+      craft: async () => ({ ok: true }),
+      enhance: async () => ({ ok: true, success: true, level: 1 }),
+      salvage: async () => ({ ok: true }),
+      equip: async () => ({ ok: true }),
+      reforge: async () => ({ ok: true }),
+      activeCardInstanceId: '',
+    };
+    const scene = new EquipmentScene(createLayout(...LANDSCAPE), new InputManager(), cb);
+    const spy = cardInstanceArtUrl as unknown as { mock: { calls: unknown[][] } };
+    spy.mock.calls.length = 0;
+    (scene as unknown as SceneInternals).beginAssign('inst_wp', 'weapon');
+
+    const cardCalls = spy.mock.calls.filter((call) => (call[0] as { defId?: string } | undefined)?.defId === 'lichuang');
+    expect(cardCalls.length).toBeGreaterThan(0);
+    for (const call of cardCalls) expect(call.length === 1 || call[1] === undefined).toBe(true);
+    scene.destroy();
   });
 });

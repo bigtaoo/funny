@@ -7,13 +7,21 @@
 // Runs under the headless PIXI adapter (test/harness/pixiHeadless.ts via vitest.ui.config.ts).
 // Run: npm run test:ui
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import * as PIXI from 'pixi.js-legacy';
 import { createLayout } from '../../src/layout/ScalingManager';
 import { InputManager } from '../../src/inputSystem/InputManager';
 import { initI18n } from '../../src/i18n';
 import { FriendsScene, type FriendsSceneCallbacks } from '../../src/scenes/FriendsScene';
 import type { MailView } from '../../src/net/ApiClient';
+import { cardInstanceArtUrl } from '../../src/render/cardArt';
+
+// Every export passes through untouched except cardInstanceArtUrl, wrapped in vi.fn (keeping its
+// real implementation) so the 2026-08-01-scoping spec below can inspect call arguments.
+vi.mock('../../src/render/cardArt', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../src/render/cardArt')>();
+  return { ...actual, cardInstanceArtUrl: vi.fn(actual.cardInstanceArtUrl) };
+});
 
 const memStore = (() => {
   const m = new Map<string, string>();
@@ -136,6 +144,35 @@ describe('FriendsScene mail detail — one picture per attachment, arranged hori
     scene.drawMailDetail(plainMail);
 
     expect(frames(scene)).toHaveLength(0);
+    scene.destroy();
+  });
+});
+
+// Regression coverage for the 2026-08-01 scoping decision (UI_DESIGN.md §27 addendum): a card
+// attachment's thumbnail must always be the base portrait, never whichever skin the account has
+// equipped for that unit type — a gift/auction-refund mail preview isn't the place to reflect the
+// recipient's own equipped cosmetics. The earlier `getEquippedSkins` callback was removed from
+// FriendsSceneCallbacks entirely, so this locks in that drawMailDetail keeps resolving through
+// `cardInstanceArtUrl(instance)` with no second (equipped) argument.
+describe('FriendsScene mail detail — card attachment always uses the base portrait, never an equipped skin', () => {
+  const cardMail: MailView = {
+    mailId: 'gift:card', from: 'system', subject: 'A gift card', body: 'enjoy',
+    createdAt: 1000, expireAt: 999999999999, read: true, claimed: false,
+    attachments: [
+      { kind: 'card', id: 'lichuang', count: 1, instance: { id: 'i1', defId: 'lichuang', rarity: 'common', level: 1, affixes: [], locked: false } },
+    ],
+  } as unknown as MailView;
+
+  it('passes only the card instance, never an equipped-skin map, when drawing the thumbnail', () => {
+    const spy = cardInstanceArtUrl as unknown as { mock: { calls: unknown[][] } };
+    spy.mock.calls.length = 0;
+    const scene = build();
+    scene.container.removeChildren();
+    scene.drawMailDetail(cardMail);
+
+    const cardCalls = spy.mock.calls.filter((call) => (call[0] as { defId?: string } | undefined)?.defId === 'lichuang');
+    expect(cardCalls.length).toBeGreaterThan(0);
+    for (const call of cardCalls) expect(call.length === 1 || call[1] === undefined).toBe(true);
     scene.destroy();
   });
 });

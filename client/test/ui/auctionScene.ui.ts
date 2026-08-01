@@ -17,6 +17,16 @@ import { WorldApiError, type AuctionView, type WorldApiClient } from '../../src/
 import { makeNewSave } from '../../src/game/meta/SaveData';
 import type { SaveData, EquipmentInstance, CardInstance } from '../../src/game/meta/SaveData';
 import { setToastSink } from '../../src/net/log';
+import { cardInstanceArtUrl } from '../../src/render/cardArt';
+import { skinEquipKey } from '../../src/game/meta/skinDefs';
+import { UnitType } from '../../src/game/types';
+
+// Every export passes through untouched except cardInstanceArtUrl, wrapped in vi.fn (keeping its
+// real implementation) so the 2026-08-01-scoping spec below can inspect call arguments.
+vi.mock('../../src/render/cardArt', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../src/render/cardArt')>();
+  return { ...actual, cardInstanceArtUrl: vi.fn(actual.cardInstanceArtUrl) };
+});
 
 const memStore = (() => {
   const m = new Map<string, string>();
@@ -988,6 +998,57 @@ describe('AuctionScene — buy race', () => {
 
     expect(toastMsgs).toContain(t('auction.err.bidTooLow'));
     expect(worldApi.listAuctions).toHaveBeenCalledTimes(1);
+    scene.destroy();
+  });
+});
+
+// Regression coverage for the 2026-08-01 scoping decision (UI_DESIGN.md §27 addendum): a card
+// picture — whether a market listing's thumbnail (list.ts) or the "what do I want to sell" picker
+// grid (picker.ts) — must always show the base portrait, never whichever skin the viewer's own
+// account has equipped for that unit type. A listing/pick entry answers "what item is this," not
+// "what does my army look like," and it can even be someone else's listing. Asserted on call
+// arguments (not the rendered texture — headless PIXI stubs every binary asset to the same 1×1 PNG
+// data URI).
+describe('AuctionScene — card pictures always use the base portrait, never an equipped skin', () => {
+  const cardSpy = (): { mock: { calls: unknown[][] } } => cardInstanceArtUrl as unknown as { mock: { calls: unknown[][] } };
+  const lichuangCalls = (calls: unknown[][]): unknown[][] =>
+    calls.filter((call) => (call[0] as { defId?: string } | undefined)?.defId === 'lichuang');
+
+  it('market listing (list.ts): passes only the card instance, not getSave().equipped', () => {
+    const save: SaveData = { ...makeNewSave('acc_1'), equipped: { [skinEquipKey(UnitType.Infantry)]: 'skin_shop_c1' } };
+    const scene = buildScene({ getSave: () => save });
+    scene.loading = false;
+    scene.allAuctions = [
+      makeAuction({
+        itemType: 'card',
+        item: { instance: { id: 'c1', defId: 'lichuang', level: 1, gear: {}, locked: false } as CardInstance },
+      }),
+    ];
+    const spy = cardSpy();
+    spy.mock.calls.length = 0;
+    scene.render();
+
+    const calls = lichuangCalls(spy.mock.calls);
+    expect(calls.length).toBeGreaterThan(0);
+    for (const call of calls) expect(call.length === 1 || call[1] === undefined).toBe(true);
+    scene.destroy();
+  });
+
+  it('sell picker (picker.ts): passes only the defId, not getSave().equipped', () => {
+    const save: SaveData = {
+      ...makeNewSave('acc_1'),
+      equipped: { [skinEquipKey(UnitType.Infantry)]: 'skin_shop_c1' },
+      cardInv: { c1: { id: 'c1', defId: 'lichuang', level: 1, gear: {}, locked: false } as CardInstance },
+    };
+    const scene = buildScene({ getSave: () => save });
+    scene.itemPickerOpen = true;
+    const spy = cardSpy();
+    spy.mock.calls.length = 0;
+    scene.render();
+
+    const calls = lichuangCalls(spy.mock.calls);
+    expect(calls.length).toBeGreaterThan(0);
+    for (const call of calls) expect(call.length === 1 || call[1] === undefined).toBe(true);
     scene.destroy();
   });
 });
