@@ -1,4 +1,4 @@
-# Notebook Wars — SLG 大世界实现记录（SLG_DESIGN_LOG）
+﻿# Notebook Wars — SLG 大世界实现记录（SLG_DESIGN_LOG）
 
 > 本文承接 [`SLG_DESIGN.md`](SLG_DESIGN.md) §0–14 锁定的核心设计，登记 §15 起按时间顺序追加的收尾清单/功能落地/实现记录/bug 修复；章节号延续主文档编号（§15 起），**不重新编号**，外部引用把文件名从 `SLG_DESIGN.md` 换成本文件即可定位到同一节。核心设计决策、契约、架构仍以 `SLG_DESIGN.md` 为准。
 
@@ -1541,7 +1541,7 @@ L1 从需 660 兵降到 300（最小占地 500 现稳赢，直击病灶）；L2/
 
 **客户端**：`WorldMapPanels.ts` 的行军列表原本 `kind==='return'` 的行只显示文字、无按钮——新增"花{coins}金币立即回城"按钮（`world.instantReturn` i18n key，三语言），`WorldMapContext.ts` `marchRowRects` 加 `instantReturnRect` 字段，`WorldMapInput.ts` 点击接入 `WorldMapNet.doInstantReturn`（新增，照抄 `doRecall` 的写法，成功后刷新 `ctx.me`+marches+toast `world.instantReturnDone`）。march 行走动画（`WorldMapRenderer/fog.ts`）本来就通用（不区分 kind，`'return'` 已有专属绿箭头），`parkMarchInPlace` 产生的 `StationedDoc` 复用既有驻留渲染——两处均无需新代码。
 
-**已知不在本轮范围**：`combatMarch.ts` `applyMove` 的 `blocked` 分支（目的地被抢占/驻扎/contested）目前既不退回也不驻留——只是把行军删掉、什么都不写，队伍凭空消失，无处可查。这是独立于本轮"回城模型"之外的另一个缺口（`move` 是重新部署已就位的队伍，不是从家出发，语义上不完全等同于本轮改的"回城"），已 `spawn_task` 记录留待单独会话处理，未在本轮改动。
+**已知不在本轮范围**：`combatMarch.ts` `applyMove` 的 `blocked` 分支（目的地被抢占/驻扎/contested）目前既不退回也不驻留——只是把行军删掉、什么都不写，队伍凭空消失，无处可查。这是独立于本轮"回城模型"之外的另一个缺口（`move` 是重新部署已就位的队伍，不是从家出发，语义上不完全等同于本轮改的"回城"），已 `spawn_task` 记录留待单独会话处理，未在本轮改动（后续已在 §48 修复：目的地被抢占时改为原地驻留在出发点，无法驻留才回退瞬间退款）。
 
 **验证**：`tsc --noEmit`（`@nw/shared`/`@nw/worldsvc`/`client` 三包）全绿。`server/worldsvc` 全量 vitest 48 文件/376 例全绿（含更新 3 处受行为改动直接影响的既有断言——`siege.e2e.test.ts` 的 sweep-win 用例改为断言"幸存者以返程行军形式在途，非瞬间入账"；`teams.e2e.test.ts` 的 idle-team-gate 与 autoReturn 用例改为断言"结算后队伍仍 busy，直到返程行军抵达才可接新单"；均为预期的行为变化，非回归）。`server/shared` 全量 35 文件/666 例全绿（2 例因本机无 Redis 跳过，与本次改动无关）。`client` 全量 126 文件/918 例全绿。
 
@@ -1550,3 +1550,14 @@ L1 从需 660 兵降到 300（最小占地 500 现稳赢，直击病灶）；L2/
 - `test/march-return-travel-time.e2e.test.ts`：专测本轮新行为本身（此前只是间接被既有测试的断言覆盖到，没有专门断言过新行为的具体形状）——同样 `vi.mock` 强制 `defender_win` + 固定非零幸存者（cheap 线性公式的 defender_win 分支恒为 0 幸存者，同样没法用来测"输了但有幸存者送回家"）。7 例：①目标行军途中被他人抢占（race）、带队伍的占领行军 → 落地为 `StationedDoc`，不退回、无返程行军；②同场景不带队伍 → 退回旧行为的瞬间退款，无 `StationedDoc`（对照组，确认 teamless 分支未被误改）；③PvE 战败 → 不是瞬间入账，而是生成一条 `kind:'return'` 返程行军，`toTile` 指向玩家主基地而非战场，兵力只在返程行军自己抵达时才真正入账；④`instantReturnMarch` 按服务端算出的 `ceil(剩余秒数/60)` 金币扣费，成功后立即结算（无需再等一次 `processDueArrivals`）；⑤扣费失败（`commercial.spend` 拒绝）时返程行军原封不动，没有半途扣了钱却没到账的情况；⑥⑦`instantReturnMarch` 对不存在的行军 id、以及对一条仍在途的非 `return` 类行军，均正确拒绝（`MARCH_NOT_FOUND`），不产生任何扣费。
 
 两个新文件 9 例 + 原有全量 50 文件/385 例，全部一轮跑绿；`tsc --noEmit` 复核仍绿。
+## 48. `move` 行军到达时目的地被抢占——队伍连人带兵直接消失，无驻扎、无退款（2026-08-01，代码审计发现）
+
+> 审计 `combatMarch.ts` `MarchService.applyMove` 时发现：目的地在派出到抵达之间被别人占领/驻扎/进入争夺态（`blocked` 分支命中）时，代码只 `pushMarch(..., {status:'recalled'})` 就 `return`——不写 `StationedDoc`，不 `refundTroops`，而调用方 `advanceMarch`/`processDueArrivals` 在调用 `applyMove` 之前早已把 `MarchDoc` `findOneAndDelete` 掉了。结果是这支队伍连人带兵凭空消失：地图上没有行军、没有驻扎，兵力池也没有拿回一分——纯粹的资产丢失 bug，而不是"仅退款没实现"这种小疏漏。
+
+**根因**：`move`（2026-07-23 新增，§38）语义上和 `attack`/`occupy`/`reinforce` 不同——它从不进入战斗结算，成功只是把队伍原样"放"在目的地（`StationedDoc`），没有"战损幸存兵力"这个概念可退。`applyMove` 最初只处理了"到达时目的地仍然合法"这一条路径，`blocked` 分支被当成跟 `reinforce`/`occupy` 的战败/目标失效一样的"退款+recalled"来写，但漏写了退款调用；而且退款语义本身也不贴切——`move` 的兵力/编队并没有战损，直接摔回抽象兵力池，跟"这支队伍应该出现在地图某处"的既有设计（ADR-051 P3a 停留/驻扎、idle-team 重新派遣）不一致。
+
+**排查澄清**：`move` 在正常（非卡牌、非 P3c 就地重派）派出时确实会从兵力池扣兵（`startMarch` 里 `troops = team.army.reduce(...)` 之后走跟 `attack`/`occupy` 相同的 `$inc: {troops: -troops}` 原子扣减，见 `combatMarch.ts:411-424`），所以"是否曾扣兵池"不是本 bug 成立与否的前提——即使某些分支（卡牌编队 / idle 重派）不扣兵池，"目的地被抢占后队伍应该落在某处"这条不变量对所有分支都成立，只是没有兵力池要还的场景不需要额外退款。
+
+**修复**（[`combatMarch.ts`](../../server/worldsvc/src/combatMarch.ts)）：`applyMove` 到达时优先尝试把队伍停驻在**目的地**（原有逻辑，抽成 `tryParkTeam` 私有方法，返回 `boolean` 表示是否成功写入）；目的地被抢占则退而求其次，用同一套 `tryParkTeam` 尝试停驻在**出发地**（`m.fromTile`）——等效于"这次移动没发生，队伍原地不动"，符合 `move` 本身"无战斗，纯粹是位置变更"的语义，且完全复用既有的 StationedDoc/occupancy/cover 写入与合法性校验（世界中心/已被占用/别家地块/争夺中）。只有当出发地也在此期间失效（例如队伍在外时出发地被第三方攻占）才真的无处可去，此时才回落到 `refundTroops`（卡牌编队照旧跳过，强度活在 `cardState` 里）。`!m.teamId` 分支保留（`startMarch` 保证 `move` 必有队伍，理论不可达，只为类型安全兜底）。
+
+**验证**：`server/worldsvc` `npm install`（本 worktree 未预装 `node_modules`）+ `npm run build --workspace @nw/shared` / `@nw/engine`（首次无 `dist/`）后 `tsc --noEmit` 全绿。新增回归 `teams.e2e.test.ts`「move: destination becomes blocked between dispatch and arrival — the team parks back at its origin instead of vanishing」：派出后用 `setupDefender` 抢占目的地模拟竞态，断言到达后队伍以原兵力数出现在**出发地**的 `getStationed` 里、目的地地块归属未被误改，且停驻后仍可正常 `recallStationed`；先 `git stash` 掉修复代码单独跑这个新用例，确认它在修复前必现失败（`expected [] to have length 1 but got 0`，即队伍彻底消失）；`git stash pop` 恢复后转绿，坐实这确实是本次要修的 bug 而非误报。全量 `server/worldsvc` 跑了 48 文件/377 例，唯一 1 例失败（`siege-crash-replay.e2e.test.ts` 的崩溃回放用例）单独重跑该文件（无论是否带本次改动）均通过——只在全量并发跑所有文件时才偶发失败，跟本次改动的文件（`combatMarch.ts`/`teams.e2e.test.ts`）没有引用关系，判定为已有的全量并发/共享库竞态导致的既有 flaky，非本次改动引入。
