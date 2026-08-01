@@ -7,7 +7,7 @@
 // Runs under the headless PIXI adapter (test/harness/pixiHeadless.ts via vitest.ui.config.ts).
 // Run: npm run test:ui
 
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import * as PIXI from 'pixi.js-legacy';
 import { createLayout } from '../../src/layout/ScalingManager';
 import { InputManager } from '../../src/inputSystem/InputManager';
@@ -136,40 +136,6 @@ describe('FriendsScene mail detail — one picture per attachment, arranged hori
     scene.drawMailDetail(plainMail);
 
     expect(frames(scene)).toHaveLength(0);
-    scene.destroy();
-  });
-});
-
-// Regression coverage for the 2026-08-01 fix: a card attachment's thumbnail used to always show
-// the base UNIT_ART_URLS portrait, ignoring whatever skin the player already has equipped for that
-// character (cardArt.ts unitPortraitUrl/cardInstanceArtUrl — the same fix applied to the Hero Roster
-// Skins tab). getEquippedSkins is a new optional callback; this checks the wiring calls through to it
-// (a bug here would silently leave every mail card thumbnail on the default portrait again).
-describe('FriendsScene mail detail — card attachment consults the equipped-skin callback', () => {
-  const cardMail: MailView = {
-    mailId: 'gift:card', from: 'system', subject: 'A gift card', body: 'enjoy',
-    createdAt: 1000, expireAt: 999999999999, read: true, claimed: false,
-    attachments: [
-      { kind: 'card', id: 'lichuang', count: 1, instance: { id: 'i1', defId: 'lichuang', rarity: 'common', level: 1, affixes: [], locked: false } },
-    ],
-  } as unknown as MailView;
-
-  it('calls getEquippedSkins while drawing a card attachment\'s thumbnail', () => {
-    const getEquippedSkins = vi.fn(() => ({} as Record<string, string>));
-    const scene = build({ getEquippedSkins });
-    scene.container.removeChildren();
-    scene.drawMailDetail(cardMail);
-
-    expect(getEquippedSkins).toHaveBeenCalled();
-    expect(frames(scene)).toHaveLength(1); // still draws its one picture frame
-    scene.destroy();
-  });
-
-  it('does not throw when getEquippedSkins is absent (optional callback)', () => {
-    const scene = build();
-    scene.container.removeChildren();
-    expect(() => scene.drawMailDetail(cardMail)).not.toThrow();
-    expect(frames(scene)).toHaveLength(1);
     scene.destroy();
   });
 });

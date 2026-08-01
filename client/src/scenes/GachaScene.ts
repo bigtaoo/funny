@@ -70,8 +70,6 @@ export interface GachaSceneCallbacks {
   getPity(poolId: string): number;
   /** Fate Points balance (server-authoritative mirror; GACHA_DESIGN §7). */
   getFatePoints(): number;
-  /** `SaveData.equipped` (skin: prefixed slots), so a pulled/legend-odds hero card shows whichever skin is already equipped for that character — same picture everywhere (cardArt.ts). Absent = plain base portraits. */
-  getEquippedSkins?(): Record<string, string>;
   loadPools(): Promise<GachaPool[]>;
   draw(poolId: string, count: 1 | 10): Promise<GachaDrawResult>;
   /** Redeem the given featured legendary for FATE_POINT_REDEEM_COST fate points (§7). */
@@ -942,7 +940,7 @@ export class GachaScene implements Scene {
     }
 
     const cardDef = CARD_DEFS[itemId];
-    const artUrl = cardDef ? cardInstanceArtUrl({ defId: itemId }, this.cb.getEquippedSkins?.()) ?? undefined : undefined;
+    const artUrl = cardDef ? cardInstanceArtUrl({ defId: itemId }) ?? undefined : undefined;
     if (artUrl) {
       const tex = getArtTexture(artUrl);
       if (tex.baseTexture.valid) {

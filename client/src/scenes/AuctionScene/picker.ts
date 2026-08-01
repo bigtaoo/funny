@@ -258,7 +258,7 @@ export function PickerMixin<TBase extends AuctionSceneBaseCtor>(Base: TBase): TB
           return;
         }
       } else if (entry.cls === 'card' && entry.defId) {
-        const artUrl = cardInstanceArtUrl({ defId: entry.defId }, this.cb.getSave?.()?.equipped) ?? undefined;
+        const artUrl = cardInstanceArtUrl({ defId: entry.defId }) ?? undefined;
         if (artUrl) {
           const tex = getArtTexture(artUrl);
           if (tex.baseTexture.valid) {
