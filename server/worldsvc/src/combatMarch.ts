@@ -775,55 +775,94 @@ export class MarchService {
   /**
    * Move arrival (2026-07-23): no combat — the team simply STANDS on the target tile. Re-validate the tile is
    * still a legal stand (own tile, or an empty neutral not since owned / mid-hold / already parked); on success
-   * write a StationedDoc so the team stays "out" here until recalled, and push. On a lost race just drop the
-   * order — a card army keeps its cardState troops regardless, and a team-based move never deducted the pool,
-   * so there is nothing to refund.
+   * write a StationedDoc so the team stays "out" here until recalled, and push.
+   * 2026-08-01 fix (SLG_DESIGN_LOG §46): the destination becoming blocked between dispatch and arrival used to
+   * just push a 'recalled' status with no other effect — no StationedDoc, no refund — silently deleting the
+   * team's troops (advanceMarch/processDueArrivals already removed the MarchDoc before calling this). 'move'
+   * is always team-based (startMarch throws BAD_REQUEST without a team) and, unlike attack/occupy, never
+   * resolves into combat — there is no "survivors" concept to refund, only a team that has nowhere to land.
+   * Park it back at its own departure tile instead (same StationedDoc/occupancy/cover writes as a successful
+   * arrival, just retargeted) so the team is never worse off than if it had stayed put. Only if the origin has
+   * ALSO become unavailable in the meantime (e.g. captured while the team was in transit) do we fall back to
+   * refunding the pool — mirroring the miss-handling in combatSiege/arrival.ts and occupation.ts.
    */
   private async applyMove(m: MarchDoc, pw: PlayerWorldDoc, t: number): Promise<void> {
+    if (!m.teamId) {
+      // Unreachable in practice (startMarch guarantees a team for every 'move'); kept only because
+      // MarchDoc.teamId is typed optional. A card army's strength lives in cardState regardless of this refund.
+      const hasCardArmy = (m.army ?? []).some((e) => !!e.cardInstanceId);
+      if (!hasCardArmy) await refundTroops(this.core, pw, m.troops, t);
+      void this.core.pushMarch(m.ownerId, this.core.marchView({ ...m, status: 'recalled' }));
+      return;
+    }
+    const toX = this.core.coordX(m.toTile);
+    const toY = this.core.coordY(m.toTile);
+    if (await this.tryParkTeam(m, m.teamId, pw, m.toTile, toX, toY, t, 'arrived')) return;
+
+    const fromX = this.core.coordX(m.fromTile);
+    const fromY = this.core.coordY(m.fromTile);
+    if (await this.tryParkTeam(m, m.teamId, pw, m.fromTile, fromX, fromY, t, 'recalled')) return;
+
+    const hasCardArmy = (m.army ?? []).some((e) => !!e.cardInstanceId);
+    if (!hasCardArmy) await refundTroops(this.core, pw, m.troops, t);
+    void this.core.pushMarch(m.ownerId, this.core.marchView({ ...m, status: 'recalled' }));
+  }
+
+  /**
+   * Try to park m's team as a StationedDoc on `tile` (x,y): same legality check applyMove always used for its
+   * destination (not the world center, not already stationed-on by anyone, not another owner's tile, not mid
+   * occupation-hold) — reused here for both the intended destination and, on a miss, the fallback origin tile.
+   * Returns false (no writes at all) if `tile` is currently blocked.
+   */
+  private async tryParkTeam(
+    m: MarchDoc,
+    teamId: string,
+    pw: PlayerWorldDoc,
+    tile: string,
+    x: number,
+    y: number,
+    t: number,
+    pushStatus: 'arrived' | 'recalled',
+  ): Promise<boolean> {
     const { cols } = this.core.deps;
-    const x = this.core.coordX(m.toTile);
-    const y = this.core.coordY(m.toTile);
     const proc = proceduralTile(m.worldId, x, y);
     const [occ, stationedHere] = await Promise.all([
-      cols.tiles.findOne({ _id: m.toTile }),
-      cols.stationed.findOne({ _id: m.toTile }),
+      cols.tiles.findOne({ _id: tile }),
+      cols.stationed.findOne({ _id: tile }),
     ]);
     const blocked =
       proc.type === 'center' ||
       !!stationedHere ||
       (occ?.ownerId != null && occ.ownerId !== m.ownerId) ||
       (!occ?.ownerId && !!occ?.contestedBy && (occ.contestedUntil ?? 0) > t);
-    if (blocked || !m.teamId) {
-      void this.core.pushMarch(m.ownerId, this.core.marchView({ ...m, status: 'recalled' }));
-      return;
-    }
+    if (blocked) return false;
     // ADR-051 (P3a): the dispatch intent decides 停留 idle vs 驻扎 garrison on arrival.
     const mode: 'idle' | 'garrison' = m.stationMode === 'garrison' ? 'garrison' : 'idle';
     const doc: StationedDoc = {
-      _id: m.toTile,
+      _id: tile,
       worldId: m.worldId,
       ownerId: m.ownerId,
       ...(pw.familyId ? { familyId: pw.familyId } : {}),
-      tile: m.toTile,
+      tile,
       x,
       y,
-      teamId: m.teamId,
+      teamId,
       army: m.army ?? [],
       troops: m.troops,
       sinceAt: t,
       mode,
       ...(m.leaderUnitType ? { leaderUnitType: m.leaderUnitType } : {}),
     };
-    await cols.stationed.updateOne({ _id: m.toTile }, { $set: doc }, { upsert: true });
+    await cols.stationed.updateOne({ _id: tile }, { $set: doc }, { upsert: true });
     // ADR-051 (P2): register the parked team in the occupancy index (leaveAt=∞) so an enemy march entering this
     // tile detects it as an occupant (scenario 1). Cleared on recall (recallStationed) or capture (abandonTile).
-    await this.core.setOccupancy(m.worldId, m.toTile, {
+    await this.core.setOccupancy(m.worldId, tile, {
       kind: 'stationed',
-      id: m.toTile,
+      id: tile,
       ownerId: m.ownerId,
       ...(pw.familyId ? { familyId: pw.familyId } : {}),
-      teamId: m.teamId,
-      tile: m.toTile,
+      teamId,
+      tile,
       leaveAt: Number.MAX_SAFE_INTEGER,
     });
     // ADR-051 (P3a): a garrison also covers its 3×3 footprint in the reverse index so P3b can intercept enemies
@@ -831,15 +870,16 @@ export class MarchService {
     if (mode === 'garrison') {
       await this.core.addCover(m.worldId, x, y, {
         kind: 'garrison',
-        sourceTile: m.toTile,
+        sourceTile: tile,
         ownerId: m.ownerId,
         ...(pw.familyId ? { familyId: pw.familyId } : {}),
-        teamId: m.teamId,
+        teamId,
       });
     }
-    void this.core.pushMarch(m.ownerId, this.core.marchView({ ...m, status: 'arrived' }));
-    const after = await cols.tiles.findOne({ _id: m.toTile });
+    void this.core.pushMarch(m.ownerId, this.core.marchView({ ...m, status: pushStatus }));
+    const after = await cols.tiles.findOne({ _id: tile });
     if (after) void this.core.pushTile(m.ownerId, after);
+    return true;
   }
 
   /**

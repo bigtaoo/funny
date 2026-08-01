@@ -606,6 +606,39 @@ describe.skipIf(!mongo)('worldsvc teams + siege replay e2e', () => {
     await expect(svc.startMarch(W, 'a', 10, 10, target.x, target.y, 'move', 1, 't1')).resolves.toBeTruthy();
   });
 
+  it('move: destination becomes blocked between dispatch and arrival — the team parks back at its origin instead of vanishing (regression, 2026-08-01 fix)', async () => {
+    await svc.joinWorld(W, 'a', 10, 10);
+    const entries = await armyWithTroops('a', 6, 200);
+    await svc.setTeams(W, 'a', [{ id: 't1', name: 'Watch', army: entries }]);
+    const target = findCoord(14, 14, (t) => (t.type === 'resource' || t.type === 'neutral'));
+    const mv = await svc.startMarch(W, 'a', 10, 10, target.x, target.y, 'move', 1, 't1');
+
+    // Someone else claims the destination while the team is in transit.
+    await setupDefender('d', target.x, target.y, 50);
+
+    nowMs = mv.arriveAt;
+    expect(await svc.processDueArrivals()).toBe(1);
+
+    // The team must not simply vanish: no march, no stationed presence anywhere would mean its troops were
+    // silently deleted. It should land back on the tile it departed from instead.
+    const stationed = await svc.getStationed(W, 'a');
+    expect(stationed).toHaveLength(1);
+    expect(stationed[0]!.teamId).toBe('t1');
+    expect(stationed[0]!.x).toBe(10);
+    expect(stationed[0]!.y).toBe(10);
+    expect(stationed[0]!.troops).toBe(mv.troops);
+
+    // The destination tile was untouched by the failed move (still 'd's, not silently granted to 'a').
+    const destTile = await svc.getTile(W, 'a', target.x, target.y);
+    expect(destTile.mine).toBeFalsy();
+
+    // The parked team can still be recalled normally afterwards (not a dead-end state).
+    const back = await svc.recallStationed(W, 'a', 't1');
+    expect(await svc.getStationed(W, 'a')).toHaveLength(0);
+    nowMs = (back as { arriveAt: number }).arriveAt;
+    expect(await svc.processDueArrivals()).toBe(1);
+  });
+
   it('occupy with autoReturn=true: the captured tile lands owned but the team does NOT stay stationed (freed for a new order)', async () => {
     await svc.joinWorld(W, 'a', 10, 10);
     const target = findCoord(30, 30, (t) => t.type === 'resource' && t.level <= 2);
