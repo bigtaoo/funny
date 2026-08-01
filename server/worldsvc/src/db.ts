@@ -406,10 +406,15 @@ export interface SiegeDoc {
    * safety net, 2026-07-27 audit finding (this collection previously had no expiry at all). */
   expireAt: Date;
   /**
-   * G3-2c replay spectator: persists the inputs of the authoritative battle (seed + both sides' formations + tile level).
-   * The client uses this to reconstruct buildSiegeBattle and headless-replay with the same seed → exactly reproduces
-   * the battle worldsvc ran (pure presentation, not authoritative).
-   * May be absent for legacy battle reports / cheap-settle fallback paths (replay degrades to unavailable).
+   * G3-2c replay spectator: persists the inputs of the battle (seed + both sides' formations + tile level).
+   * The client uses this to reconstruct buildSiegeBattle and headless-replay with the same seed (pure
+   * presentation, not authoritative — see the outcome caveat below).
+   * As of 2026-08-01, this is persisted even when the actual settlement ran the cheap linear formula
+   * (`shouldUseCheapSiege`) rather than the engine — a from-scratch engine replay of those inputs can then
+   * show a different winner than the recorded `outcome` (traceability was judged worth that discrepancy risk
+   * over silently losing the ability to inspect lopsided/skipped battles; see combatSiege/arrival.ts applySiege).
+   * Still absent for legacy battle reports and genuine engine-crash fallbacks (the inputs that crashed
+   * runSiegeBattle are not stored — replaying them would likely crash the client's engine too).
    */
   seed?: number;
   attackerArmy?: ArmyEntry[];

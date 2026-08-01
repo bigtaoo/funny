@@ -248,8 +248,10 @@ describe.skipIf(!mongo)('worldsvc stronghold e2e (G8)', () => {
 
     const siege = await m.collections.sieges.findOne({ worldId: W, attackerId: 'a' });
     expect(siege?.outcome).toBe('attacker_win');
-    // No replay fields persisted → confirms the cheap linear path ran, not the congested real engine.
-    expect(siege?.seed).toBeUndefined();
-    expect(siege?.attackerArmy).toBeUndefined();
+    // 2026-08-01 traceability decision: the cheap linear path still persists replay inputs (so a lopsided/
+    // skipped battle stays inspectable afterward) — only a genuine engine crash drops them. Deterministic
+    // attacker_win regardless of run-to-run engine congestion is still the actual bug-guard here.
+    expect(siege?.seed).toEqual(expect.any(Number));
+    expect(siege?.attackerArmy?.length).toBeGreaterThan(0);
   });
 });

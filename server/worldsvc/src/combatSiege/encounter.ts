@@ -226,14 +226,16 @@ export function EncounterMixin<TBase extends SiegeServiceBaseCtor>(Base: TBase):
       let replay: SiegeReplayInputs | null = { seed, attackerArmy, defenderConfig, tileLevel };
       if (shouldUseCheapSiege({ attackerTroops: attackerHp, defenderTroops: defenderHp, attackerSynthesized, defenderSynthesized })) {
         res = resolveSiege(attackerHp, defenderHp);
-        replay = null;
+        // 2026-08-01 (traceability decision, see combatSiege/arrival.ts applySiege for the full rationale): keep
+        // replay inputs for a cheap-resolved battle — the client's replay re-simulates from seed+army and may
+        // show a different winner than this cheap formula's outcome, an accepted tradeoff for diagnosability.
       } else {
         try {
           res = await runSiegeBattle({ attackerArmy, defenderConfig, tileLevel, seed, cardInstances: aCardInstances, equipmentInv: aCardEquipInv });
         } catch (err) {
           console.error('[worldsvc] field encounter engine failed — fallback to cheap resolve', { tile: tid, err: (err as Error).message });
           res = resolveSiege(attackerHp, defenderHp);
-          replay = null;
+          replay = null; // the engine crashed on these exact inputs — replaying would likely crash the client too.
         }
       }
 
