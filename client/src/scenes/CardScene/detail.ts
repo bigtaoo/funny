@@ -4,7 +4,7 @@ import * as PIXI from 'pixi.js-legacy';
 import { t, type TranslationKey } from '../../i18n';
 import { ui as C, sketchPanel, seedFor, tearDownChildren } from '../../render/sketchUi';
 import { FS } from '../../render/fontScale';
-import { UNIT_ART_URLS } from '../../render/cardArt';
+import { unitPortraitUrl } from '../../render/cardArt';
 import { buildIcon } from '../../render/icons';
 import { buildEquipIcon } from '../../render/equipmentAtlas';
 import { buildFactionIcon, FACTION_COLOR } from '../../render/factionIcon';
@@ -119,7 +119,9 @@ export function DetailMixin<TBase extends CardSceneBaseCtor>(Base: TBase): TBase
       const frame = sketchPanel(portraitBox, portraitBox, { fill: 0xf0eee7, border: factionColor, seed: seedFor(portraitX, portraitY, portraitBox) });
       frame.x = portraitX; frame.y = portraitY;
       panelRoot.addChild(frame);
-      const artUrl = def ? UNIT_ART_URLS[def.unitType] : undefined;
+      const artUrl = def
+        ? unitPortraitUrl(def.unitType as UnitType, this.cb.getEquippedSkin(def.unitType as UnitType)) ?? undefined
+        : undefined;
       const loreText = t(`card.${card.defId}.lore` as TranslationKey);
       const faceLayer = new PIXI.Container();
       faceLayer.position.set(portraitX + portraitBox / 2, portraitY + portraitBox / 2);

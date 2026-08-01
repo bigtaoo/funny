@@ -878,3 +878,17 @@ BattlePassScene 当初是把「滚动定位」和「内容重建」两条路径�
 3. **结局红光清空**：`ReplayScene.update()` 里 `ended` 刚置真时，顺带 `renderer.vignetteAlpha = 0; renderer.drawVignette();` 强制清空一次，不再等吃不到的后续帧衰减。
 
 **验证**：`tsc --noEmit`（client）全绿；`vitest --config vitest.ui.config.ts test/ui/gameScenes.ui.ts`（14 用例，含 ReplayScene 播放/结束/视角切换）全通过。真实浏览器验证：Browser 面板截图工具在本次会话里持续报「pane 未显示、无法合成帧」（与 §23 验证记录中同一限制），改用临时 `?replaydemo` 单体入口（`app/matchEngine.createLocalMatch` 跑一局主动方 AFK 输给 AI 的本地对局，直接灌进 `ReplayScene`，验证后已删除，未合入）+ 场景图内省核对：① 在 2400×900（designWidth 放大到 2880）宽屏下量得新 `barX/barW`＝1125/630（右边界 1755）、按钮行跨度 1100–1783，均落在 `boardRect`（810–2070）以内；按旧公式反推同条件下 `barX/barW`＝720/1440（右边界 2160），两侧都会溢出棋盘边界，坐实了修复前的溢出。② 临时注释掉红光清空那两行重跑同一局，`ended=true` 时 `vignetteAlpha` 定格在 0.94（复现卡红 bug）；恢复两行后同一局跑到底 `vignetteAlpha`＝0（确认修复生效）。
+
+## 27. Hero Roster「Skins」页签立绘不跟随已装备皮肤（2026-08-01）
+
+**问题（用户截图反馈）**：Hero Roster → Skins 页签，每张角色卡左侧的大立绘图，无论 tile 行里哪个皮肤被标为「Equipped」，图都不变——一直显示该角色的默认立绘。
+
+**根因**：立绘图从 `UNIT_ART_URLS[unitType]`（`client/src/render/cardArt.ts`）取，这张表只按 `unitType` 建索引，完全没有皮肤维度；`renderSkinCard()`（`client/src/scenes/CardScene/skins.ts:123`）在同一作用域里其实已经算出了 `equipped`（上一行 `getEquippedSkin(unitType)`，且已经传给 `renderSkinTile` 用来判定哪个 tile 显示「Equipped」），只是从未拿它来选立绘图。不是重绘没触发（`equipSkin()` 后紧跟着 `this.render()`，页签确实同步重画），是「画什么」这一步压根没看已装备状态。卡片详情弹层的立绘（`client/src/scenes/CardScene/detail.ts:122`）是同一份代码模式，同样的漏洞。
+
+**修复**：
+1. `cardArt.ts` 新增 `SKIN_PORTRAIT_ART`（皮肤 id → 专属立绘，目前 3 个有美术的皮肤 `skin_shop_c1/r1/e1` 复用 Shop 页签早已导入的 `skin_infantry/archer/shieldbearer.png`）+ `unitPortraitUrl(unitType, equippedSkinId)`：已装备皮肤有专属立绘就用它，否则（含 `skin_e1/e2/l1`——Lena/Mara/Max 这三个皮肤目前只有战斗用的 `.tao` 骨骼包，没有静态立绘美术）落回原 `UNIT_ART_URLS[unitType]`。
+2. `skins.ts` / `detail.ts` 的立绘取值都改走 `unitPortraitUrl(unitType, equipped)`，不再直接查 `UNIT_ART_URLS`。
+
+**范围外**：Hero Roster 主页签的卡格立绘（`list.ts:239-240`）是同一局限（也只按 unitType 取图），但不在本次截图反馈范围内，未改动。
+
+**验证**：`npm run typecheck` 全绿；新增 `client/test/cardArt.test.ts`（`unitPortraitUrl` 的 3 组用例：无皮肤回落 / 有专属立绘的皮肤命中 / 只有骨骼包没立绘的皮肤回落）；`npm test`（906 用例）+ `npm run test:ui`（836 用例，含既有的 `cardSceneSkins.ui.ts`/`cardDetailFlipAndSkin.ui.ts`）全通过。真实浏览器验证：Browser 面板截图工具本次同样报「pane 未显示、无法合成帧」（§23/§26 同一限制），且本地 `game` 开发服无后端（`/bootstrap` 网络失败），走不到登录后的 Hero Roster 界面，故未能截图肉眼确认；已通过上述单测 + 既有 UI 冒烟覆盖根因逻辑。

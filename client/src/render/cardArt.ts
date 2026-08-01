@@ -28,6 +28,9 @@ import spellHasteArtUrl from '../assets/spells/spell_haste.png';
 import spellMeteorArtUrl from '../assets/spells/spell_meteor.png';
 import spellRockslideArtUrl from '../assets/spells/spell_rockslide.png';
 import spellBridgeCollapseArtUrl from '../assets/spells/spell_bridge_collapse.png';
+import skinInfantryArtUrl from '../assets/units/skins/skin_infantry.png';
+import skinArcherArtUrl from '../assets/units/skins/skin_archer.png';
+import skinShieldBearerArtUrl from '../assets/units/skins/skin_shieldbearer.png';
 
 /** Card illustration by `<type>_<subtype>` key (see {@link cardArtKey}). */
 export const CARD_ART_URLS: Record<string, string> = {
@@ -91,6 +94,26 @@ export const UNIT_ART_URLS: Record<string, string> = {
 export function cardInstanceArtUrl(card: { defId: string } | undefined | null): string | null {
   const def = card ? CARD_DEFS[card.defId] : undefined;
   return def ? UNIT_ART_URLS[def.unitType] ?? null : null;
+}
+
+/**
+ * Portrait override by skin id, for skins with dedicated illustration art (skinDefs.ts SKIN_TARGET_UNIT).
+ * Skins with no entry here (skin_e1/skin_e2/skin_l1 — only battle rig art exists) fall back to the
+ * base unit's UNIT_ART_URLS portrait via {@link unitPortraitUrl}.
+ */
+export const SKIN_PORTRAIT_ART: Record<string, string> = {
+  skin_shop_c1: skinInfantryArtUrl as string,
+  skin_shop_r1: skinArcherArtUrl as string,
+  skin_shop_e1: skinShieldBearerArtUrl as string,
+};
+
+/** Portrait for a unit type given its currently equipped skin (or null/none) — the skin-aware UNIT_ART_URLS lookup. */
+export function unitPortraitUrl(unitType: UnitType, equippedSkinId?: string | null): string | null {
+  if (equippedSkinId) {
+    const skinArt = SKIN_PORTRAIT_ART[equippedSkinId];
+    if (skinArt) return skinArt;
+  }
+  return UNIT_ART_URLS[unitType] ?? null;
 }
 
 /** Texture cache keyed by url — shared with the `PIXI.Texture.from` global cache. */
