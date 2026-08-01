@@ -12,8 +12,8 @@ export interface SlgShopItem {
   /**
    * Max purchases per UTC calendar day (SLG_DESIGN §7.2, 2026-07-15 fix — previously unlimited, letting a
    * paying player compress the B-track city/army pacing (ECONOMY_NUMBERS §13-SLG-CITY) to zero with no cap
-   * on spend). Undefined = unlimited (battle_pass is once-per-season already; protection's value is
-   * self-limiting via stacked duration, so neither needs a count cap).
+   * on spend). Undefined = unlimited (battle_pass is gated separately by hasBattlePass — ALREADY_ACTIVE,
+   * 2026-08-01 fix — instead of a count cap; protection's value is self-limiting via stacked duration).
    */
   dailyLimit?: number;
 }
@@ -30,7 +30,7 @@ export const SLG_SHOP_ITEMS: readonly SlgShopItem[] = [
   // protection shields (no count cap: value is self-limiting via stacked duration)
   { id: 'slg_shield_8h',  cost: 500,  kind: 'protection', effect: { duration_sec: 28800 }, description: 'Capital protection shield 8 hours' },
   { id: 'slg_shield_24h', cost: 1200, kind: 'protection', effect: { duration_sec: 86400 }, description: 'Capital protection shield 24 hours' },
-  // season battle pass (no count cap: already once-per-season in practice)
+  // season battle pass (no count cap: single-active-pass gate is hasBattlePass, enforced in worldsvc's buySlgShopItem)
   { id: 'slg_battle_pass', cost: 9800, kind: 'battle_pass', effect: { pass_season: 1 }, description: 'Season battle pass (valid for current season)' },
 ] as const;
 

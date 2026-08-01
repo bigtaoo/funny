@@ -640,6 +640,8 @@ export class WorldMapNet {
         TERRITORY_NOT_CONNECTED: t('world.err.notConnected'),
         TEAM_BUSY:     t('world.team.busy'),
         SATCHEL_CAP_EXCEEDED: t('world.err.satchelCap'),
+        // battle_pass single-slot gate (2026-08-01 fix) — same copy as the pre-emptively greyed-out shop row.
+        ALREADY_ACTIVE: t('world.shopAlreadyActive'),
       };
       return map[e.code] ?? e.message;
     }

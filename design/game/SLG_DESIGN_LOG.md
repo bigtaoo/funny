@@ -1569,3 +1569,16 @@ L1 从需 660 兵降到 300（最小占地 500 现稳赢，直击病灶）；L2/
 - `field-redispatch.e2e.test.ts` 「re-dispatch move whose new destination becomes blocked mid-flight parks the team back at its ORIGINAL station cell」——专测 idle 重派（ADR-051 P3c）路径：一支已经"停留"在字段格 A 的队伍被重新派往 B（不经过recall），B 中途被抢占，落回**A**（不是玩家基地），且全程（原始停留、重派、失败落回）兵池分毫未动——idle 重派从设计上就不摸兵池，这是它跟"从基地新出发"分支唯一的、值得单独断言的差异点。
 
 四例 + 原有 1 例，`teams.e2e.test.ts`/`field-garrison.e2e.test.ts`/`field-redispatch.e2e.test.ts` 三个文件单独跑通；`tsc --noEmit` 复核仍绿；`server/worldsvc` 全量重跑 50 文件/390 例全绿（先前那例 `siege-crash-replay.e2e.test.ts` flaky 这次也没有复现）。
+
+## 49. 战令（Battle Pass）重复购买无限扣币、UI 无「已生效」提示（2026-08-01，用户截图报告）
+
+用户截图报告：SLG 商城「Battle pass 9800 coins」无购买次数限制，点了很多次 Buy。追查确认这是真实缺口——`buySlgShopItem`（[`shop.ts`](../../server/worldsvc/src/shop.ts)）对 `kind:'battle_pass'` 只是把 `hasBattlePass` 字段重新设成 `true`，已经是 `true` 再设一次没有任何叠加效果；`SLG_SHOP_ITEMS`（[`shop.ts`](../../server/shared/src/slg/shop.ts)）里这一档商品也没配 `dailyLimit`（其余训练加速/资源包都有每日限购），代码注释原先写的假设是"战令本来就该一季只买一次"，但没有任何强制限制去兑现这条假设——纯粹的钱包漏洞，跟 §46/§48 那类"审计发现的资产/体验缺口"同构。
+
+**战令当前效果**（确认无误，用户问"买了有什么效果"）：`trainTroops`/`speedupTraining`/`speedupBuild` 训练+建造均 ×0.8 时长、加速货币折扣 15%（[`city.ts`](../../server/worldsvc/src/city.ts)）；`recomputeYield` 资源产出 +10%（`BP_YIELD_MULT`，[`coreYield.ts`](../../server/worldsvc/src/coreYield.ts)）；赛季结算时持有战令的玩家额外收一封材料奖励邮件，与持有期间买了几次无关（[`season.ts`](../../server/worldsvc/src/season.ts)）——这几条增益本身在 S8-8（见 §15.1 G4/C6）已经落地生效，本次缺口只是"重复购买"这一层没有防护。
+
+**修复**（单档商品的"单槽位"防重复购买，复刻月卡/年卡既有的 `ALREADY_ACTIVE` 单槽位门禁模式，见 `commercial/src/service/base.ts`）：
+- 服务端 [`shop.ts`](../../server/worldsvc/src/shop.ts)：`buySlgShopItem` 在扣币前新增守卫——`item.kind==='battle_pass' && pw.hasBattlePass` 时直接 `throw new SlgError('ALREADY_ACTIVE', ...)`，币不会被扣（守卫先于 `commercial.spend` 调用）。
+- 契约 [`openapi-world.yml`](../../server/contracts/openapi-world.yml)：`PlayerWorldView` 补 `hasBattlePass?: boolean` 字段（此前这个服务端早就在写、但从未在任何契约里暴露给客户端——`getMe` 也补了这一行，[`coreMap.ts`](../../server/worldsvc/src/coreMap.ts)），`npm run rest:gen` 重生成 `client/src/net/openapi-world.ts`。
+- 客户端 [`WorldMapPanels.ts`](../../client/src/scenes/worldmap/WorldMapPanels.ts)：商城战令行读 `ctx.me?.hasBattlePass`，已生效时按钮走既有的"禁用态"配色（`panelButtonIn` 新增 `disabled` 参数，复刻本文件顶部 tile-action 弹窗禁用按钮"点了也弹 toast 解释原因、而不是读起来像个死点击"的既有约定），文案从「购买」换成「已生效」，点击弹 toast 而不是发起购买请求。服务端如果仍因竞态（客户端 `me` 未刷新）拒绝，`WorldMapNet.errorMsg` 也把 `ALREADY_ACTIVE` 映射到同一句 toast 文案，三语 i18n key `world.shopActive`/`world.shopAlreadyActive` 补全 zh/en/de。
+
+**验证**：`tsc --noEmit`（server `worldsvc`/`shared`，client `tsconfig.test.json`）全绿；`npm run build:web` 生产构建通过。`server/worldsvc` 新增 e2e「battle pass: repeat purchase while already active → ALREADY_ACTIVE, coins never deducted twice」，`shop.e2e.test.ts` 全 7 例过、`worldsvc` 全量 50 文件/391 例过。`client` 新增 UI 用例覆盖「未持有时点击行仍正常触发购买」「已持有时点击行不再调用 `doBuyShopItem`、改为弹 toast」，`worldMapInfoScroll.ui.ts` 全 20 例过，`worldMap*` 全套 17 文件/124 例过。未启动完整后端栈（metaserver/worldsvc/gateway 等 11 服务）做真实登录后截图验证——UI 交互路径已通过驱动真实 `WorldMapPanels`/`WorldMapInput` 类的无头 PIXI 测试覆盖，视为等效验证。

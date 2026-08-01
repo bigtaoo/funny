@@ -1029,6 +1029,8 @@ export const en: Record<TranslationKey, string> = {
   'world.shopCost': '{coins} coins',
   'world.shopBalance': 'Balance: {coins} coins',
   'world.shopErr': 'Purchase failed',
+  'world.shopActive': 'Active',
+  'world.shopAlreadyActive': 'Already active this season — no need to buy again',
   'world.shop.speedup': 'Train speedup {h}h',
   'world.shop.resPack': 'Resource pack ({n} each)',
   'world.shop.shield': 'Shield {h}h',

@@ -51,12 +51,16 @@ function makeShopItems(n: number): SlgShopItemView[] {
   }));
 }
 
+function makeBattlePassItem(): SlgShopItemView {
+  return { id: 'slg_battle_pass', cost: 9800, kind: 'battle_pass', effect: { pass_season: 1 }, description: '' };
+}
+
 /** Builds a fake ctx + real WorldMapPanels/WorldMapInput wired against it. Only the fields
  *  renderTerritoryPanel / renderWorldTabBody / beginScrollList / panelButton(In) / closeModal /
  *  handleDown/Move/Up/Wheel actually touch are populated — enough to drive the scroll code paths
  *  headlessly. territoryTab is pinned to 'world' so renderTerritoryPanel dispatches to the folded-in
  *  world-info body. */
-function buildHarness(opts: { infoTab?: 'nations' | 'season' | 'shop'; nations?: NationView[]; shopItems?: SlgShopItemView[] } = {}) {
+function buildHarness(opts: { infoTab?: 'nations' | 'season' | 'shop'; nations?: NationView[]; shopItems?: SlgShopItemView[]; hasBattlePass?: boolean } = {}) {
   const ctx = {
     w: W, h: H,
     modalLayer: new PIXI.Container(),
@@ -71,7 +75,7 @@ function buildHarness(opts: { infoTab?: 'nations' | 'season' | 'shop'; nations?:
     infoScrollDragStartY: 0,
     infoScrollDragStartScroll: 0,
     // Territory Overview panel, world tab (hosts the nations/season/shop sub-tabs under test).
-    me: { joined: true },
+    me: { joined: true, ...(opts.hasBattlePass ? { hasBattlePass: true } : {}) },
     territoryPanelOpen: true,
     territoryTab: 'world',
     territories: [],
@@ -300,5 +304,46 @@ describe('WorldMapPanels — closing the modal clears stale scroll state', () =>
     shopTabAction!();
     expect(ctx.infoTab).toBe('shop');
     expect(ctx.infoScrollY).toBe(0);
+  });
+});
+
+// battle_pass single-slot gate (2026-08-01 fix): the server now rejects a repeat purchase with
+// ALREADY_ACTIVE (worldsvc/src/shop.ts) since re-setting hasBattlePass had no additional effect —
+// the shop row must grey out and stop firing doBuyShopItem once ctx.me.hasBattlePass is already true.
+describe('WorldMapPanels — shop tab battle-pass row once already owned', () => {
+  function battlePassRowCenter(ctx: WorldMapContext) {
+    const sr = ctx.infoScrollRect!;
+    const inSr = (r: { x: number; y: number; w: number; h: number }): boolean => {
+      const cx = r.x + r.w / 2, cy = r.y + r.h / 2;
+      return cx >= sr.x && cx <= sr.x + sr.w && cy >= sr.y && cy <= sr.y + sr.h;
+    };
+    // Only one shop item (the battle pass) is loaded, so the sole in-list button rect is its row.
+    const btn = ctx.modalBtnRects.find((b) => inSr(b.rect))!;
+    expect(btn, 'no battle-pass row button rect inside the scroll region').toBeTruthy();
+    return { x: btn.rect.x + btn.rect.w / 2, y: btn.rect.y + btn.rect.h / 2 };
+  }
+
+  it('not yet owned: tapping the row fires doBuyShopItem as normal', () => {
+    const { ctx, panels, input } = buildHarness({ infoTab: 'shop', shopItems: [makeBattlePassItem()] });
+    const doBuyShopItem = vi.fn();
+    (ctx as unknown as { net: { doBuyShopItem: () => void } }).net = { doBuyShopItem };
+    panels.renderTerritoryPanel();
+    const { x, y } = battlePassRowCenter(ctx);
+    input.handleDown(x, y);
+    input.handleUp(x, y);
+    expect(doBuyShopItem).toHaveBeenCalledTimes(1);
+  });
+
+  it('already owned (ctx.me.hasBattlePass): tapping the row shows a toast instead of buying again', () => {
+    const { ctx, panels, input } = buildHarness({ infoTab: 'shop', shopItems: [makeBattlePassItem()], hasBattlePass: true });
+    const doBuyShopItem = vi.fn();
+    (ctx as unknown as { net: { doBuyShopItem: () => void } }).net = { doBuyShopItem };
+    const showToast = vi.spyOn(panels, 'showToast').mockImplementation(() => {});
+    panels.renderTerritoryPanel();
+    const { x, y } = battlePassRowCenter(ctx);
+    input.handleDown(x, y);
+    input.handleUp(x, y);
+    expect(doBuyShopItem).not.toHaveBeenCalled();
+    expect(showToast).toHaveBeenCalledTimes(1);
   });
 });

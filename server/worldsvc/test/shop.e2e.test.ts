@@ -128,4 +128,19 @@ describe.skipIf(!mongo)('worldsvc SLG shop e2e', () => {
     for (let i = 0; i < 20; i++) await svc.buySlgShopItem(W, 'a', 'slg_shield_8h');
     expect(spent.length).toBe(20);
   });
+
+  // battle_pass single-slot gate (2026-08-01 fix): unlike protection, buying it twice was previously a
+  // silent no-op re-set of the same boolean flag — free to attempt, but the coins were still spent.
+  it('battle pass: repeat purchase while already active → ALREADY_ACTIVE, coins never deducted twice', async () => {
+    const svc = new WorldService({ cols: m.collections, redis: null, commercial: fakeCommercial, mapW: SLG_MAP_W, mapH: SLG_MAP_H, now });
+    await svc.joinWorld(W, 'a', 10, 10);
+    const item = SLG_SHOP_ITEMS.find((i) => i.id === 'slg_battle_pass')!;
+
+    await svc.buySlgShopItem(W, 'a', 'slg_battle_pass');
+    expect(spent).toEqual([{ accountId: 'a', amount: item.cost }]);
+    expect((await svc.getMe(W, 'a')).hasBattlePass).toBe(true);
+
+    await expect(svc.buySlgShopItem(W, 'a', 'slg_battle_pass')).rejects.toThrow('Battle pass already active');
+    expect(spent.length).toBe(1); // the rejected repeat attempt never reached commercial.spend
+  });
 });
