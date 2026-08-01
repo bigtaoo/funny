@@ -1663,6 +1663,10 @@ export const WORLD_RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                     "territoryCount": {
                       "type": "integer"
                     },
+                    "hasBattlePass": {
+                      "type": "boolean",
+                      "description": "Season battle pass held (S8-8 shop; grants training/build speed + yield bonuses, cleared on season reset). Client uses this to grey out the shop's battle-pass row once already active (single-slot — repeat purchase is rejected with ALREADY_ACTIVE)."
+                    },
                     "trainingQueue": {
                       "type": "array",
                       "description": "Training queue (S8-2, ordered by completeAt ascending). The client uses this to render the queue countdown (C4).",
@@ -1915,6 +1919,10 @@ export const WORLD_RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                 "territoryCount": {
                   "type": "integer"
                 },
+                "hasBattlePass": {
+                  "type": "boolean",
+                  "description": "Season battle pass held (S8-8 shop; grants training/build speed + yield bonuses, cleared on season reset). Client uses this to grey out the shop's battle-pass row once already active (single-slot — repeat purchase is rejected with ALREADY_ACTIVE)."
+                },
                 "trainingQueue": {
                   "type": "array",
                   "description": "Training queue (S8-2, ordered by completeAt ascending). The client uses this to render the queue countdown (C4).",
@@ -2104,6 +2112,10 @@ export const WORLD_RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                 },
                 "territoryCount": {
                   "type": "integer"
+                },
+                "hasBattlePass": {
+                  "type": "boolean",
+                  "description": "Season battle pass held (S8-8 shop; grants training/build speed + yield bonuses, cleared on season reset). Client uses this to grey out the shop's battle-pass row once already active (single-slot — repeat purchase is rejected with ALREADY_ACTIVE)."
                 },
                 "trainingQueue": {
                   "type": "array",
@@ -2401,6 +2413,10 @@ export const WORLD_RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                         },
                         "territoryCount": {
                           "type": "integer"
+                        },
+                        "hasBattlePass": {
+                          "type": "boolean",
+                          "description": "Season battle pass held (S8-8 shop; grants training/build speed + yield bonuses, cleared on season reset). Client uses this to grey out the shop's battle-pass row once already active (single-slot — repeat purchase is rejected with ALREADY_ACTIVE)."
                         },
                         "trainingQueue": {
                           "type": "array",
@@ -3083,6 +3099,10 @@ export const WORLD_RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                 "territoryCount": {
                   "type": "integer"
                 },
+                "hasBattlePass": {
+                  "type": "boolean",
+                  "description": "Season battle pass held (S8-8 shop; grants training/build speed + yield bonuses, cleared on season reset). Client uses this to grey out the shop's battle-pass row once already active (single-slot — repeat purchase is rejected with ALREADY_ACTIVE)."
+                },
                 "trainingQueue": {
                   "type": "array",
                   "description": "Training queue (S8-2, ordered by completeAt ascending). The client uses this to render the queue countdown (C4).",
@@ -3272,6 +3292,10 @@ export const WORLD_RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                 },
                 "territoryCount": {
                   "type": "integer"
+                },
+                "hasBattlePass": {
+                  "type": "boolean",
+                  "description": "Season battle pass held (S8-8 shop; grants training/build speed + yield bonuses, cleared on season reset). Client uses this to grey out the shop's battle-pass row once already active (single-slot — repeat purchase is rejected with ALREADY_ACTIVE)."
                 },
                 "trainingQueue": {
                   "type": "array",
@@ -3611,6 +3635,10 @@ export const WORLD_RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                         },
                         "territoryCount": {
                           "type": "integer"
+                        },
+                        "hasBattlePass": {
+                          "type": "boolean",
+                          "description": "Season battle pass held (S8-8 shop; grants training/build speed + yield bonuses, cleared on season reset). Client uses this to grey out the shop's battle-pass row once already active (single-slot — repeat purchase is rejected with ALREADY_ACTIVE)."
                         },
                         "trainingQueue": {
                           "type": "array",
@@ -3954,6 +3982,10 @@ export const WORLD_RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                         },
                         "territoryCount": {
                           "type": "integer"
+                        },
+                        "hasBattlePass": {
+                          "type": "boolean",
+                          "description": "Season battle pass held (S8-8 shop; grants training/build speed + yield bonuses, cleared on season reset). Client uses this to grey out the shop's battle-pass row once already active (single-slot — repeat purchase is rejected with ALREADY_ACTIVE)."
                         },
                         "trainingQueue": {
                           "type": "array",
@@ -4479,6 +4511,10 @@ export const WORLD_RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                         "territoryCount": {
                           "type": "integer"
                         },
+                        "hasBattlePass": {
+                          "type": "boolean",
+                          "description": "Season battle pass held (S8-8 shop; grants training/build speed + yield bonuses, cleared on season reset). Client uses this to grey out the shop's battle-pass row once already active (single-slot — repeat purchase is rejected with ALREADY_ACTIVE)."
+                        },
                         "trainingQueue": {
                           "type": "array",
                           "description": "Training queue (S8-2, ordered by completeAt ascending). The client uses this to render the queue countdown (C4).",
@@ -4688,6 +4724,10 @@ export const WORLD_RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                 },
                 "territoryCount": {
                   "type": "integer"
+                },
+                "hasBattlePass": {
+                  "type": "boolean",
+                  "description": "Season battle pass held (S8-8 shop; grants training/build speed + yield bonuses, cleared on season reset). Client uses this to grey out the shop's battle-pass row once already active (single-slot — repeat purchase is rejected with ALREADY_ACTIVE)."
                 },
                 "trainingQueue": {
                   "type": "array",
@@ -5422,6 +5462,10 @@ export const WORLD_RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                 "territoryCount": {
                   "type": "integer"
                 },
+                "hasBattlePass": {
+                  "type": "boolean",
+                  "description": "Season battle pass held (S8-8 shop; grants training/build speed + yield bonuses, cleared on season reset). Client uses this to grey out the shop's battle-pass row once already active (single-slot — repeat purchase is rejected with ALREADY_ACTIVE)."
+                },
                 "trainingQueue": {
                   "type": "array",
                   "description": "Training queue (S8-2, ordered by completeAt ascending). The client uses this to render the queue countdown (C4).",
@@ -5611,6 +5655,10 @@ export const WORLD_RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                 },
                 "territoryCount": {
                   "type": "integer"
+                },
+                "hasBattlePass": {
+                  "type": "boolean",
+                  "description": "Season battle pass held (S8-8 shop; grants training/build speed + yield bonuses, cleared on season reset). Client uses this to grey out the shop's battle-pass row once already active (single-slot — repeat purchase is rejected with ALREADY_ACTIVE)."
                 },
                 "trainingQueue": {
                   "type": "array",
@@ -5802,6 +5850,10 @@ export const WORLD_RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                 "territoryCount": {
                   "type": "integer"
                 },
+                "hasBattlePass": {
+                  "type": "boolean",
+                  "description": "Season battle pass held (S8-8 shop; grants training/build speed + yield bonuses, cleared on season reset). Client uses this to grey out the shop's battle-pass row once already active (single-slot — repeat purchase is rejected with ALREADY_ACTIVE)."
+                },
                 "trainingQueue": {
                   "type": "array",
                   "description": "Training queue (S8-2, ordered by completeAt ascending). The client uses this to render the queue countdown (C4).",
@@ -5991,6 +6043,10 @@ export const WORLD_RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                 },
                 "territoryCount": {
                   "type": "integer"
+                },
+                "hasBattlePass": {
+                  "type": "boolean",
+                  "description": "Season battle pass held (S8-8 shop; grants training/build speed + yield bonuses, cleared on season reset). Client uses this to grey out the shop's battle-pass row once already active (single-slot — repeat purchase is rejected with ALREADY_ACTIVE)."
                 },
                 "trainingQueue": {
                   "type": "array",
@@ -6678,6 +6734,10 @@ export const WORLD_RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                 },
                 "territoryCount": {
                   "type": "integer"
+                },
+                "hasBattlePass": {
+                  "type": "boolean",
+                  "description": "Season battle pass held (S8-8 shop; grants training/build speed + yield bonuses, cleared on season reset). Client uses this to grey out the shop's battle-pass row once already active (single-slot — repeat purchase is rejected with ALREADY_ACTIVE)."
                 },
                 "trainingQueue": {
                   "type": "array",
