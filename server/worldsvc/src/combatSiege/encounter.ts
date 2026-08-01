@@ -40,7 +40,6 @@ import type { GarrisonEntry, EngineCardInstance, EngineEquipInv } from '@nw/engi
 import type { MarchDoc, PlayerWorldDoc, StationedDoc, ArmyEntry } from '../db';
 import type { SiegeReplayInputs } from '../worldTypes';
 import type { OccEntry, CoverEntry } from '../corePush';
-import { refundTroops } from '../combatShared';
 import type { SiegeServiceBaseCtor, Constructor } from './base';
 import type { WorldCore } from '../core';
 
@@ -58,6 +57,15 @@ export interface FieldEncounterResult {
   marcherTroops: number;
   /** New army snapshot to persist when it continues (scaled flat/team army). Undefined → leave MarchDoc.army as-is. */
   marcherArmy?: ArmyEntry[];
+  /**
+   * 2026-08-01 (SLG_DESIGN_LOG §46): only set when marcherContinues=false (a defeat). The flat troop count a
+   * travel-time return leg should carry home (0 for a card army, whose strength already lives in cardState) —
+   * undefined means no return leg at all (a full flat-army wipe, matching the pre-existing convention that
+   * there's nothing to send home). advanceMarch must spawn the return leg AFTER it deletes the original
+   * MarchDoc (not here) — both docs share the same teamId, and a unique {worldId,ownerId,teamId} index would
+   * reject the new leg while the old one (same team, still 'marching') hasn't been removed yet.
+   */
+  returnTroops?: number;
 }
 
 /** ADR-051 (P5): result of one arrow-tower chip on a march entering a covered cell. */
@@ -245,11 +253,13 @@ export function EncounterMixin<TBase extends SiegeServiceBaseCtor>(Base: TBase):
       const dRatio = defenderHp > 0 ? dSurvivors / defenderHp : 0;
 
       // ── Marcher (attacker) ledger. Card survivors → cardState (both outcomes). Flat: carry forward on win
-      //    (troops stay in transit), refund to pool on defeat (exactly like a repelled siege). ──
+      //    (troops stay in transit); on defeat, retreat home over a travel-time return leg (2026-08-01,
+      //    SLG_DESIGN_LOG §46) instead of an instant pool credit — but the return leg itself is spawned by
+      //    advanceMarch AFTER it deletes this MarchDoc (see FieldEncounterResult.returnTroops), not here: both
+      //    docs share the same teamId, and inserting the new leg while the old one (same team) still exists
+      //    trips the {worldId,ownerId,teamId} uniqueness guard.
       if (aHasCard) {
         await this.writeFieldCardState(pw, rawA, aSurvivors, t);
-      } else if (!marcherWon && aSurvivors > 0) {
-        await refundTroops(core, pw, aSurvivors, t);
       }
 
       // ── Defender ledger. Card survivors → cardState (both outcomes). ──
@@ -305,8 +315,14 @@ export function EncounterMixin<TBase extends SiegeServiceBaseCtor>(Base: TBase):
           marcherArmy: aHasCard ? m.army : (rawA.length > 0 ? (scaleArmyByRatio(rawA as GarrisonEntry[], aRatio) as ArmyEntry[]) : undefined),
         };
       }
-      // Marcher defeated: advanceMarch deletes the MarchDoc; survivors already handled above.
-      return { fought: true, marcherContinues: false, marcherTroops: 0 };
+      // Marcher defeated: advanceMarch deletes the MarchDoc, then — if returnTroops is set (a card army always
+      // qualifies at 0; a flat army only if it has real survivors) — spawns the travel-time return leg.
+      return {
+        fought: true,
+        marcherContinues: false,
+        marcherTroops: 0,
+        ...(aHasCard || aSurvivors > 0 ? { returnTroops: aHasCard ? 0 : aSurvivors } : {}),
+      };
     }
   };
 }

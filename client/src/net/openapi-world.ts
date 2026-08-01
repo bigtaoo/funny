@@ -286,6 +286,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/world/march/{marchId}/instant-return": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description 2026-08-01 (SLG_DESIGN_LOG §46): pay coins to instantly complete an in-transit 'return' march. Cost is always computed server-side from the march's remaining travel time — the request body carries no coin amount (unlike /world/troops/speedup, this is a single "finish now" action, not a partial buy-down). */
+        post: operations["instantReturnMarch"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/world/occupations": {
         parameters: {
             query?: never;
@@ -1710,6 +1727,36 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["OkResponse"];
+                };
+            };
+        };
+    };
+    instantReturnMarch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                marchId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    worldId: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Return march completed instantly */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OkResponse"] & {
+                        data?: components["schemas"]["PlayerWorldView"];
+                    };
                 };
             };
         };

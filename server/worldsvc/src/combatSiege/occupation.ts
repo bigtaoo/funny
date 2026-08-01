@@ -23,7 +23,7 @@ import { runSiegeBattle, synthesizeArmy, scaleArmyByRatio, resolveCardArmy, toEn
 import type { GarrisonEntry, EngineCardInstance, EngineEquipInv } from '@nw/engine';
 import type { TileDoc, PlayerWorldDoc, MarchDoc, OccupationDoc, StationedDoc } from '../db';
 import type { SiegeReplayInputs, OccupationView } from '../worldTypes';
-import { refundTroops } from '../combatShared';
+import { refundTroops, startReturnMarch, parkMarchInPlace } from '../combatShared';
 import type { SiegeServiceBaseCtor, Constructor } from './base';
 import type { WorldCore } from '../core';
 
@@ -80,8 +80,15 @@ export function OccupationMixin<TBase extends SiegeServiceBaseCtor>(Base: TBase)
       // here before any capture branch — treat like a miss (refund), same as the ownership recheck below.
       // occupy never targets a capital, so a single cell (no footprint resolution needed).
       if (!(await this.core.isConnectedToSectTerritory(m.worldId, m.ownerId, [{ x, y }]))) {
-        if (!hasCardArmy) await refundTroops(this.core, pw, m.troops, t);
-        void this.core.pushMarch(m.ownerId, this.core.marchView({ ...m, status: 'recalled' }));
+        // 2026-08-01 (SLG_DESIGN_LOG §46): target invalidated on arrival → park in place (team-dispatched
+        // marches) rather than teleport home instantly; a teamless march has no team-slot identity to park
+        // under, so it keeps the old instant refund.
+        if (m.teamId) {
+          await parkMarchInPlace(this.core, m, m.troops, t);
+        } else {
+          if (!hasCardArmy) await refundTroops(this.core, pw, m.troops, t);
+          void this.core.pushMarch(m.ownerId, this.core.marchView({ ...m, status: 'recalled' }));
+        }
         return;
       }
 
@@ -90,8 +97,12 @@ export function OccupationMixin<TBase extends SiegeServiceBaseCtor>(Base: TBase)
         (occ?.ownerId != null && occ.ownerId !== m.ownerId) ||
         (occ?.ownerId === m.ownerId && occ.type !== 'base');
       if (blocked) {
-        if (!hasCardArmy) await refundTroops(this.core, pw, m.troops, t);
-        void this.core.pushMarch(m.ownerId, this.core.marchView({ ...m, status: 'recalled' }));
+        if (m.teamId) {
+          await parkMarchInPlace(this.core, m, m.troops, t);
+        } else {
+          if (!hasCardArmy) await refundTroops(this.core, pw, m.troops, t);
+          void this.core.pushMarch(m.ownerId, this.core.marchView({ ...m, status: 'recalled' }));
+        }
         return;
       }
 
@@ -103,6 +114,10 @@ export function OccupationMixin<TBase extends SiegeServiceBaseCtor>(Base: TBase)
       // Our own pending hold already occupies this tile (race: a second occupy march from the same player) —
       // reinforcing an in-progress hold is out of scope for v1; treat as a miss and refund.
       if (occ?.contestedBy && occ.contestedBy === m.ownerId) {
+        // Not converted to parkMarchInPlace (2026-08-01, SLG_DESIGN_LOG §46): this tile already has our OWN
+        // occupation-hold settling on it — StationedDoc is one-per-tile (keyed by tileId), and settleOccupation's
+        // own post-capture stationing upsert (or the hold's ownership write) would silently clobber a second
+        // team parked here by this march. Keep the pre-existing instant-refund behavior for this specific race.
         if (!hasCardArmy) await refundTroops(this.core, pw, m.troops, t);
         void this.core.pushMarch(m.ownerId, this.core.marchView({ ...m, status: 'recalled' }));
         return;
@@ -160,10 +175,18 @@ export function OccupationMixin<TBase extends SiegeServiceBaseCtor>(Base: TBase)
         if (hasCardArmy) await writeOccupyCardState(this.core, m, pw, res.attackerSurvivors, t);
         await this.startOccupationHold(m, pw, proc, x, y, res.attackerSurvivors, t, replay);
       } else {
+        // Battle lost: a card army's survivors already landed on cardState above (§6.1 — the card keeps its
+        // own troops regardless of outcome); the team itself still needs to walk home rather than being freed
+        // instantly, same as a flat army's survivor count (2026-08-01, SLG_DESIGN_LOG §46).
         if (hasCardArmy) {
           await writeOccupyCardState(this.core, m, pw, res.attackerSurvivors, t);
-        } else if (res.attackerSurvivors > 0) {
-          await refundTroops(this.core, pw, res.attackerSurvivors, t);
+        }
+        if (hasCardArmy || res.attackerSurvivors > 0) {
+          await startReturnMarch(this.core, {
+            worldId: m.worldId, ownerId: m.ownerId, fromTile: m.toTile, x, y,
+            troops: hasCardArmy ? 0 : res.attackerSurvivors,
+            army: m.army, teamId: m.teamId, leaderUnitType: m.leaderUnitType,
+          }, t);
         }
         void this.core.bumpFamilyActivity(m.worldId, pw.familyId, 1);
         const siege = await this.recordSiege(m, undefined, res.outcome, t, replay);
@@ -228,10 +251,17 @@ export function OccupationMixin<TBase extends SiegeServiceBaseCtor>(Base: TBase)
         const proc = proceduralTile(m.worldId, tile.x, tile.y);
         await this.startOccupationHold(m, pw, proc, tile.x, tile.y, res.attackerSurvivors, t, replay);
       } else {
+        // Same disposition as applyOccupy's loss branch: cardState is already updated above; the team (or a
+        // flat army's survivors) walks home over a travel-time return leg (2026-08-01, SLG_DESIGN_LOG §46).
         if (hasCardArmy) {
           await writeOccupyCardState(this.core, m, pw, res.attackerSurvivors, t);
-        } else if (res.attackerSurvivors > 0) {
-          await refundTroops(this.core, pw, res.attackerSurvivors, t);
+        }
+        if (hasCardArmy || res.attackerSurvivors > 0) {
+          await startReturnMarch(this.core, {
+            worldId: m.worldId, ownerId: m.ownerId, fromTile: m.toTile, x: tile.x, y: tile.y,
+            troops: hasCardArmy ? 0 : res.attackerSurvivors,
+            army: m.army, teamId: m.teamId, leaderUnitType: m.leaderUnitType,
+          }, t);
         }
         void this.core.bumpFamilyActivity(m.worldId, pw.familyId, 1);
         const siege = await this.recordSiege(m, tile.contestedBy, res.outcome, t, replay);
@@ -430,6 +460,16 @@ export function OccupationMixin<TBase extends SiegeServiceBaseCtor>(Base: TBase)
             tile: d.tile,
             leaveAt: Number.MAX_SAFE_INTEGER,
           });
+        } else {
+          // autoReturn (2026-08-01, SLG_DESIGN_LOG §46): the team walks home over a travel-time return leg
+          // instead of being freed instantly. troops:0 always — `d.garrison` already became the captured tile's
+          // own permanent defense above (tileDoc.garrison), so sending it home too would double-count it; the
+          // team's own strength (if any) already lives in cardState (§6.1), unaffected by this leg.
+          await startReturnMarch(this.core, {
+            worldId: d.worldId, ownerId: d.ownerId, fromTile: d.tile, x: d.x, y: d.y,
+            troops: 0,
+            army: team?.army, teamId: d.teamId, leaderUnitType: d.leaderUnitType,
+          }, t);
         }
       }
       void this.core.applyNationChange(d.worldId, d.x, d.y, d.ownerId, d.familyId);

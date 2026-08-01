@@ -197,6 +197,8 @@ export class WorldMapContext {
     marchId: string; worldId: string; destX: number; destY: number;
     rowRect: { x: number; y: number; w: number; h: number };
     recallRect: { x: number; y: number; w: number; h: number } | null;
+    /** 2026-08-01 (SLG_DESIGN_LOG §46): "pay coins, instantly complete" button — only present on kind==='return' rows. */
+    instantReturnRect: { x: number; y: number; w: number; h: number } | null;
   }[] = [];
 
   // ── Modal ──────────────────────────────────────────────────────────────────

@@ -311,6 +311,18 @@ export class WorldMapNet {
     }
   }
 
+  /** Pay coins to instantly complete an in-transit 'return' march (2026-08-01, SLG_DESIGN_LOG §46). */
+  async doInstantReturn(marchId: string, worldId: string): Promise<void> {
+    try {
+      this.ctx.me = await this.ctx.cb.worldApi.instantReturnMarch(marchId, worldId);
+      this.ctx.marches = await this.ctx.cb.worldApi.getMarches(this.ctx.cb.worldId);
+      this.ctx.panels.showToast(t('world.instantReturnDone'));
+      this.ctx.panels.renderHud();
+    } catch (e) {
+      this.ctx.panels.showToast(this.errorMsg(e), C.red);
+    }
+  }
+
   /** Recall a team stationed on a tile back home (2026-07-23): dispatches a return leg, then refreshes the map. */
   async doRecallStationed(teamId: string): Promise<void> {
     this.ctx.panels.closeModal();

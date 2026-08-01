@@ -461,8 +461,18 @@ describe.skipIf(!mongo)('worldsvc teams + siege replay e2e', () => {
     // (this is the reported bug: the UI let a busy team's order get silently overridden by a new one).
     await expect(svc.startMarch(W, 'a', 5, 5, tgt2.x, tgt2.y, 'attack', 1, 't1')).rejects.toThrow(/marching, occupying, or stationed/i);
 
-    // once the attack lands (instant — no hold for an owned-territory siege), the team is free again.
+    // Once the attack lands, the team is not immediately free: this siege loses (a 50-garrison territory
+    // resolves via the real engine, not a raw troop-count comparison, so the card team's win is not
+    // guaranteed just because it outnumbers the garrison on paper), and as of 2026-08-01 (SLG_DESIGN_LOG §46)
+    // a losing card team retreats home over a travel-time return leg rather than being freed instantly.
     nowMs = mv.arriveAt;
+    expect(await svc.processDueArrivals()).toBe(1);
+    await expect(svc.startMarch(W, 'a', 5, 5, tgt2.x, tgt2.y, 'attack', 1, 't1')).rejects.toThrow(/marching, occupying, or stationed/i);
+
+    // …only once that return leg actually arrives home is the team free for a new order.
+    const backLeg = (await svc.getMarches(W, 'a')).find((mm) => mm.kind === 'return');
+    expect(backLeg).toBeDefined();
+    nowMs = backLeg!.arriveAt;
     expect(await svc.processDueArrivals()).toBe(1);
     await expect(svc.startMarch(W, 'a', 5, 5, tgt2.x, tgt2.y, 'attack', 1, 't1')).resolves.toBeTruthy();
   });
@@ -625,11 +635,19 @@ describe.skipIf(!mongo)('worldsvc teams + siege replay e2e', () => {
     // Ownership landed…
     const owned = await svc.getTile(W, 'a', target.x, target.y);
     expect(owned.mine).toBe(true);
-    // …but autoReturn=true means the team did NOT stay stationed — the slot is free again.
+    // …but autoReturn=true means the team did NOT stay stationed on the captured tile.
     expect(await svc.getStationed(W, 'a')).toHaveLength(0);
+    // As of 2026-08-01 (SLG_DESIGN_LOG §46), autoReturn now walks the team home over a travel-time return leg
+    // instead of freeing it instantly — the slot is busy until that leg actually arrives.
     const target2 = findCoord(20, 40);
     await setupDefender('d', target2.x, target2.y, 50);
     await connect(svc, 'a', target2);
+    await expect(svc.startMarch(W, 'a', 10, 10, target2.x, target2.y, 'attack', 1, 't1')).rejects.toThrow(/marching, occupying, or stationed/i);
+
+    const backLeg = (await svc.getMarches(W, 'a')).find((mm) => mm.kind === 'return');
+    expect(backLeg).toBeDefined();
+    nowMs = backLeg!.arriveAt;
+    expect(await svc.processDueArrivals()).toBe(1);
     await expect(svc.startMarch(W, 'a', 10, 10, target2.x, target2.y, 'attack', 1, 't1')).resolves.toBeTruthy();
   });
 });

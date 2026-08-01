@@ -873,6 +873,8 @@ export const zh = {
   'world.marchTo': '→ ({x},{y})',
   'world.marchArr': '到达',
   'world.recall': '撤军',
+  'world.instantReturn': '花{coins}金币立即回城',
+  'world.instantReturnDone': '部队已立即回城',
   'world.enemyTile': '他人领地',
   'world.unknownOwner': '未知玩家',
   'world.family': '家族',

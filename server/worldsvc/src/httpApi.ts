@@ -469,6 +469,16 @@ export function startHttpApi(
             return send(res, 200, ok(await svc.recallMarch(worldId, accountId, decodeURIComponent(m[1]!))));
           }
         }
+        {
+          // 2026-08-01 (SLG_DESIGN_LOG §46): pay coins to instantly complete an in-transit 'return' march.
+          const m = /^\/world\/march\/([^/]+)\/instant-return$/.exec(path);
+          if (method === 'POST' && m) {
+            const body = await readJson(req);
+            const worldId = typeof body.worldId === 'string' ? body.worldId : null;
+            if (!worldId) return sendErr(res, ErrorCode.BAD_REQUEST, 'worldId required');
+            return send(res, 200, ok(await svc.instantReturnMarch(worldId, accountId, decodeURIComponent(m[1]!), clientPlatform)));
+          }
+        }
 
         // ── Team management "取消指令" (2026-07-15): force an occupation-hold team back to idle ──
         {

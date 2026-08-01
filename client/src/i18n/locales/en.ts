@@ -859,6 +859,8 @@ export const en: Record<TranslationKey, string> = {
   'world.marchTo': '→ ({x},{y})',
   'world.marchArr': 'Arriving',
   'world.recall': 'Recall',
+  'world.instantReturn': 'Instant return ({coins} coins)',
+  'world.instantReturnDone': 'Troops have returned instantly',
   'world.enemyTile': 'Enemy Territory',
   'world.unknownOwner': 'Unknown Player',
   'world.family': 'Family',

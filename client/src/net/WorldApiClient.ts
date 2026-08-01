@@ -365,6 +365,11 @@ export class WorldApiClient {
     return this.req('POST', `/world/march/${encodeURIComponent(marchId)}/recall`, { worldId });
   }
 
+  /** Pay coins to instantly complete an in-transit 'return' march (2026-08-01, SLG_DESIGN_LOG §46). Cost is server-computed from remaining travel time — no coin amount is sent. */
+  async instantReturnMarch(marchId: string, worldId: string): Promise<PlayerWorldView> {
+    return this.req('POST', `/world/march/${encodeURIComponent(marchId)}/instant-return`, { worldId });
+  }
+
   /** Force a team stuck in an occupation-hold back to idle immediately (garrison forfeited, no refund). */
   async cancelOccupation(teamId: string, worldId: string): Promise<{ ok: true }> {
     return this.req('POST', `/world/team/${encodeURIComponent(teamId)}/cancel-occupation`, { worldId });
