@@ -163,7 +163,9 @@ function drawTrailDotGraphic(): PIXI.Graphics {
 
 // ── Legendary border-trail tuning ───────────────────────────────────────────
 /** Loops of the card's border per second for the trail's comet head. Positive = clockwise (screen y-down). */
-const TRAIL_SPEED = 0.28;
+const TRAIL_SPEED = 0.42;
+/** Inward offset (px) from the card's edge the trail loops on, so it doesn't ride the frame's outer lip. */
+const TRAIL_INSET = 16;
 /** Fading dots making up the comet's tail — more = smoother trail. */
 const TRAIL_DOTS = 28;
 /** Tail length as a fraction of the full perimeter, head to faded tail-end. */
@@ -779,7 +781,9 @@ export class GachaScene implements Scene {
    * cleaned up with the container on the next render()/destroy().
    */
   private addLegendaryTrail(x: number, y: number, w: number, h: number): void {
-    const perim = buildRectPerim(x, y, w, h, Math.min(w, h) * 0.06);
+    const iw = w - TRAIL_INSET * 2;
+    const ih = h - TRAIL_INSET * 2;
+    const perim = buildRectPerim(x + TRAIL_INSET, y + TRAIL_INSET, iw, ih, Math.min(iw, ih) * 0.06);
     const tex = getCachedTexture('gacha:legendary-trail-dot', drawTrailDotGraphic, 64, 64) ?? PIXI.Texture.WHITE;
     const n = TRAIL_DOTS;
     const dots: PIXI.Sprite[] = [];
