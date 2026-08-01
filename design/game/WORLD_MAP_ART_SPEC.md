@@ -185,6 +185,28 @@
 > 预算耗尽后的静态头像圆点直径（`buildDotToken`）统一改用 `tp * MAP_TOKEN_SCALE`。只影响世界地图
 > 令牌，不影响战斗场景内的单位尺寸（战斗走 `render/unitSize.ts` 独立的 `TARGET_SCREEN_PX`，未改动）。
 > 回归测试：`client/test/ui/marchTokenScale.ui.ts`。
+>
+> **地图视觉降噪：归属描边去重 + 叠加层笔触分层 — ✅ 已接入（2026-08-01）**：反馈"地图看起来有些
+> 混乱"（边境攻城场景截图：连续领地描边、占领前线、驻扎光环、行军线全部叠加同一片地块）。根因是
+> `drawTileL1`/`drawTileL2` 里每个 owned 地块都独立画一次归属描边，连续同归属领地因此重复画出边框，
+> 拼接后读成一片网格线——不是设计意图，是结构性重绘问题。修复：
+> - **归属描边只在边界画**：`WorldMapRenderer/pool.ts::ownerHasBoundary()`（复用 `isBaseAnchor` 同款
+>   4-邻居 `tileCache` 查表写法）判定一个 owned 地块的 4 个直连邻居是否存在不同 `ownerTint` 值（含
+>   邻居缺失/未缓存，保守当作"有边界"，宁可多画不漏画）；只有存在边界才画描边，4 邻居全同只留水洗。
+>   `drawTileL1`/`drawTileL2` 新增 `ownerBorder` 参数（默认 `true`，兼容旧调用）网住原有描边绘制。
+> - **三层叠加换笔触区分**（新增 `tileGraphics.ts::drawDashedPolygon`/`drawFadedLine` 两个纯绘制原语，
+>   与 `drawStar` 同类）：占领前线（`renderOccupyFrontier`）改长虚线引导（填充 0.14→0.10）；驻扎防区
+>   光环（`renderGarrisonZones`）3×3 footprint 的中心格跳过描边（否则读成十字网格）、环格改短虚线警示
+>   （描边 0.55→0.38）；行军线（`renderOverlay`）从等宽实线换成起点淡/终点浓的渐变线（
+>   `drawFadedLine`，固定分段数不随路线长度增长），箭簇不变。最终：**领地边界=实线、占领前线=长虚线、
+>   驻扎光环=短虚线、行军线=渐变实线**，不再只靠颜色区分。
+> - 二期可选（未纳入本次）：驻扎光环 3×3 内部共享边仍会被两侧各画一次，彻底去重需要整体画一个 3 倍大
+>   菱形并用 `isoGrid.ts::clipConvexToRect` 裁到地图边界（`overlayGfx` 画在云雾遮罩之上，未裁剪的大
+>   菱形会在地图边缘穿出遮罩）——收益/工作量比不划算，留作后续。
+> 验证：`tsc --noEmit` + 生产构建通过；`client/test/ui/` 全量 21 个文件 143 个测试通过（含真实驱动
+> `invalidatePool()` 全路径的 `worldMapCityLabel.ui.ts` 等）；vitest UI 层是 startup smoke，非像素级
+> 视觉回归（见 `vitest.ui.config.ts` 顶部注释），像素级效果未做浏览器截图核对（本会话 Browser 预览面板
+> 无法合成帧）。
 
 ---
 

@@ -5,7 +5,7 @@ import { occupyFrontierCells } from '../occupyFrontier';
 import { HUD_H } from '../constants';
 import { ENEMY_BASE_TINT, MINE_BASE_TINT, CLOUD_COLOR, tileColor, proceduralTileColor } from '../tileStyle';
 import { baseFootprintCells } from '@nw/shared';
-import { drawStar } from '../tileGraphics';
+import { drawStar, drawDashedPolygon, drawFadedLine } from '../tileGraphics';
 import { StickmanRuntime } from '../../../render/stickman/StickmanRuntime';
 import { UnitType } from '../../../game/types';
 import { targetScreenHeight } from '../../../render/unitSize';
@@ -197,8 +197,11 @@ export function FogMixin<TBase extends WorldMapRendererBaseCtor>(Base: TBase): T
       if (cells.length === 0) return;
 
       const diamond = diamondPath(tp);
-      g.lineStyle(Math.max(2, tp * 0.08), 0x37d67a, 0.9);
-      g.beginFill(0x37d67a, 0.14);
+      // Fill pass: soft tint only, no solid stroke — the border below is dashed instead, so
+      // this reads as a "guidance" outline distinct from territory's solid border and the
+      // garrison zone's shorter dashes (2026-08-01 declutter pass, see tileGraphics.ts).
+      g.lineStyle(0);
+      g.beginFill(0x37d67a, 0.10);
       for (const { x, y } of cells) {
         const s = tileToScreen(x, y, tp);
         const cx = panX + s.x, cy = panY + s.y;
@@ -207,6 +210,14 @@ export function FogMixin<TBase extends WorldMapRendererBaseCtor>(Base: TBase): T
         g.drawPolygon(pts);
       }
       g.endFill();
+      g.lineStyle(Math.max(2, tp * 0.08), 0x37d67a, 0.9);
+      for (const { x, y } of cells) {
+        const s = tileToScreen(x, y, tp);
+        const cx = panX + s.x, cy = panY + s.y;
+        const pts: number[] = new Array(diamond.length);
+        for (let k = 0; k < diamond.length; k += 2) { pts[k] = diamond[k]! + cx; pts[k + 1] = diamond[k + 1]! + cy; }
+        drawDashedPolygon(g, pts, tp * 0.16, tp * 0.09);
+      }
       g.lineStyle(0);
     }
 
@@ -232,7 +243,9 @@ export function FogMixin<TBase extends WorldMapRendererBaseCtor>(Base: TBase): T
         const zones = stationed.filter((s) => s.mode === 'garrison' && (s.mine !== false) === mine);
         if (!zones.length) continue;
         const col = mine ? MINE_BASE_TINT : ENEMY_BASE_TINT;
-        g.lineStyle(Math.max(1.5, tp * 0.05), col, 0.55);
+        // Fill pass over all 9 footprint cells (incl. center) with no stroke set — the ring's
+        // shared inner edges only ever get filled, never a doubled-up border from both sides.
+        g.lineStyle(0);
         g.beginFill(col, 0.12);
         for (const s of zones) {
           for (const { x, y } of baseFootprintCells(s.x, s.y)) {
@@ -245,6 +258,22 @@ export function FogMixin<TBase extends WorldMapRendererBaseCtor>(Base: TBase): T
           }
         }
         g.endFill();
+        // Short-dash border pass, ring cells only (skip the center — baseFootprintCells(s.x,s.y)
+        // always includes (s.x,s.y) itself; outlining it would read as a cross through the
+        // halo's middle, same idea as tileGraphics.ts's ownerBorder declutter). Short dash/gap
+        // distinguishes this "defended zone" warning from the frontier's longer guidance dashes.
+        g.lineStyle(Math.max(1.5, tp * 0.05), col, 0.38);
+        for (const s of zones) {
+          for (const { x, y } of baseFootprintCells(s.x, s.y)) {
+            if (x === s.x && y === s.y) continue;
+            if (x < 0 || y < 0 || x >= mapW || y >= mapH) continue;
+            const scr = tileToScreen(x, y, tp);
+            const cx = panX + scr.x, cy = panY + scr.y;
+            const pts: number[] = new Array(diamond.length);
+            for (let k = 0; k < diamond.length; k += 2) { pts[k] = diamond[k]! + cx; pts[k + 1] = diamond[k + 1]! + cy; }
+            drawDashedPolygon(g, pts, tp * 0.06, tp * 0.05);
+          }
+        }
       }
       g.lineStyle(0);
     }
@@ -311,11 +340,14 @@ export function FogMixin<TBase extends WorldMapRendererBaseCtor>(Base: TBase): T
             : march.kind === 'attack'   ? 0xcc3333
             : march.kind === 'reinforce'? 0x44aacc
             : 0x00b8f0; // occupy/sweep/move: azure — more blue-leaning than the earlier teal, distinct from reinforce's muted blue-gray
-          // Full-length route trace — bold and opaque enough to read at a glance (was 1.5-2.5px @ 0.22-0.3 alpha, nearly invisible).
-          g.lineStyle(enemy ? 8 : 5, col, enemy ? 0.85 : 0.8);
-          g.moveTo(fpx, fpy);
-          g.lineTo(px, py);
-          g.lineStyle(0);
+          // Faded route trace (2026-08-01 declutter pass): starts thin/dim at the origin and
+          // ramps to full strength (was a flat 1.5-2.5px @ 0.22-0.3 alpha full-length trace,
+          // then bumped to a flat bold 5-8px — both read as an equal-weight bar end to end) so
+          // several marches converging on one tile don't bundle into a solid mass; the last
+          // ~28% holds at full strength so the arrowhead below never looks like it's fading in.
+          const endW = enemy ? 8 : 5;
+          const endA = enemy ? 0.85 : 0.8;
+          drawFadedLine(g, fpx, fpy, px, py, col, endW * 0.4, endA * 0.35, endW, endA, 0.28, 9);
 
           const ang = Math.atan2(py - fpy, px - fpx);
 
