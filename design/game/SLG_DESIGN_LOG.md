@@ -1460,3 +1460,15 @@ L1 从需 660 兵降到 300（最小占地 500 现稳赢，直击病灶）；L2/
 - **`GET /save` 响应瘦身**：`EQUIPMENT_DESIGN.md`§已有明确记录——"阶段二"瘦身已在 2026-07-26 为五个装备操作端点做过，`GET /save` 当时就被**有意排除**在外（该响应本来就要带材料/金币/进度等大量必需字段，瘦身收益不如那五个纯装备接口），本轮若要重新动它等于推翻两天前才做的、有理有据的决定，需要重新论证再改，不在本轮范围内。
 
 **验证**：`server/metaserver`/`server/gateway`/`server/gameserver`/`server/botsvc`/`client` 五包 `tsc --noEmit` 全绿；对应 vitest 全量分别为 metaserver 56/697、gateway 3/27、gameserver 3/46、botsvc 9/39、client 单元 112/794，均绿（worldsvc 未受本轮 P2 改动影响，沿用 §42 的 45/345）。`grep WorldEvent` 确认五处生成产物均已清除。
+
+## 44. 队伍槽默认名被冻结成保存当时的语言——`Team N`/`队伍 N` 混排（2026-08-01）
+
+> 用户截图反馈 Home City 的 5 个队伍槽里，Team 1/2/4/5 显示英文、队伍 3 显示中文，同一存档混排两种语言。
+
+**根因**：`teamSlotName(i)`（[`teamTroops.ts`](../../client/src/game/meta/teamTroops.ts)，§227 提到的"v1 不做自定义命名"槽位默认名）本是纯展示层的实时兜底——`CityScene/render.ts` 一直用 `team?.name || teamSlotName(i)`，理应随语言切换即时变化。但 `DefenseEditorScene/data.ts` 的 `persistTeam()`（编队编辑器"保存"路径）此前把打开编辑器那一刻算出的 `teamName`（即当时语言下的 `teamSlotName(i)` 快照）当成字面字符串写进 `TeamTemplate.name` 并持久化。这个字面字符串此后再也不会重新翻译——玩家在中文界面下保存过某个槽，该槽就永久定格成"队伍 N"，即使后来把语言切回英文；不同槽第一次保存时界面语言不同，就会出现同一存档里几个槽中文、几个槽英文的混排。
+
+**修复**：`persistTeam()` 不再把 `teamName` 写入 `name` 字段，固定写 `''`（[`data.ts:136`](../../client/src/scenes/DefenseEditorScene/data.ts)）。`TeamTemplate.name` 契约上仍是必填 `string`（`openapi-world.yml` `TeamTemplate.required` 含 `name`），空串是合法值；`render.ts` 的 `team?.name || teamSlotName(i)` 把空串当"无自定义名"处理，因此永远走 live 翻译。`teamName`（`cb.target.teamName`）继续保留，仅用于编辑器头部标题（`base.ts:229` `world.team.editTitle`），不再被写回存档。产品决策（AskUserQuestion 拍板）：暂不做自定义命名 UI——队伍槽本身只是编队容器，领队头像（§`leaderCardId`，见上文"设为领队"条目）已经解决辨识度问题，自定义命名的收益不足以覆盖输入框+敏感词过滤的成本；固定格式+ 永远随语言实时渲染即可。
+
+**遗留**：已经写坏的旧存档（字面存了 `Team N`/`队伍 N`）不会自动愈合，要等玩家下次打开该槽的编队编辑器并保存才会清空为 `''` 转回实时渲染；未做批量数据迁移（本轮判定收益不足以覆盖风险，属于"自愈式"轻量修复）。
+
+**验证**：`client` `tsc --noEmit` 全绿；`teamTroops.test.ts`（14 例）、`test:ui` 下 `defenseEditorAttackCards.ui.ts`（11）/`defenseEditorFillTroops.ui.ts`（10）/`cityScene.ui.ts`（31）共 52 例全绿，均无需改动既有断言（此前没有测试断言 `persistTeam` 写回的 `name` 值）。
