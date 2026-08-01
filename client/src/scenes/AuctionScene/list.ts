@@ -269,28 +269,35 @@ export function ListMixin<TBase extends AuctionSceneBaseCtor>(Base: TBase): TBas
           ownLbl.anchor.set(1, 0.5); ownLbl.x = btnX + btnW; ownLbl.y = btnY + btnH / 2;
           this.bodyLayer.addChild(ownLbl);
         } else {
-          const btn = sketchButton(btnW, btnH, seedFor(y, 0, btnW));
+          const busy = this.bt.busy;
+          const btn = busy
+            ? sketchPanel(btnW, btnH, { fill: C.btnOff, border: C.mid, seed: seedFor(y, 0, btnW) })
+            : sketchButton(btnW, btnH, seedFor(y, 0, btnW));
           btn.x = btnX; btn.y = btnY;
           this.bodyLayer.addChild(btn);
-          const bl = txt(isAuction ? t('auction.bid') : t('auction.buy'), FS.small, C.light);
+          const bl = txt(isAuction ? t('auction.bid') : t('auction.buy'), FS.small, busy ? C.mid : C.light);
           bl.anchor.set(0.5, 0.5); bl.x = btnX + btnW / 2; bl.y = btnY + btnH / 2;
           this.bodyLayer.addChild(bl);
-          this.hitRects.push({
-            rect: { x: btnX, y: btnY, w: btnW, h: btnH },
-            action: isAuction ? () => this.openBidForm(auc) : () => this.confirmBuy(aucId, auc.price),
-          });
+          if (!busy) {
+            this.hitRects.push({
+              rect: { x: btnX, y: btnY, w: btnW, h: btnH },
+              action: isAuction ? () => this.openBidForm(auc) : () => this.confirmBuy(aucId, auc.price),
+            });
+          }
         }
       } else if (this.activeTab === 'mine') {
         if (auc.status === 'open') {
           // Live listing → cancel action.
-          const cancelBtn = sketchPanel(btnW, btnH, { fill: 0xf0e0e0, border: C.red, seed: seedFor(y, 1, btnW) });
+          const busy = this.bt.busy;
+          const cancelColor = busy ? C.mid : C.red;
+          const cancelBtn = sketchPanel(btnW, btnH, { fill: 0xf0e0e0, border: cancelColor, seed: seedFor(y, 1, btnW) });
           cancelBtn.x = btnX; cancelBtn.y = btnY;
           this.bodyLayer.addChild(cancelBtn);
-          const cl = txt(t('auction.cancel'), FS.small, C.red);
+          const cl = txt(t('auction.cancel'), FS.small, cancelColor);
           cl.anchor.set(0.5, 0.5); cl.x = btnX + btnW / 2; cl.y = btnY + btnH / 2;
           this.bodyLayer.addChild(cl);
           const aucId = auc.auctionId;
-          this.hitRects.push({ rect: { x: btnX, y: btnY, w: btnW, h: btnH }, action: () => this.confirmCancel(aucId) });
+          if (!busy) this.hitRects.push({ rect: { x: btnX, y: btnY, w: btnW, h: btnH }, action: () => this.confirmCancel(aucId) });
         } else {
           // Closed history cell → status badge (sold = accent, expired/cancelled = muted), no action.
           const statusKey = auc.status === 'sold'

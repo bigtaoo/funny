@@ -12,6 +12,10 @@ import { netLog, maybePromptAppeal } from '../log';
 import type { ApiResp } from './types';
 import { clientPlatformName } from '../../app/appConstants';
 import { getNativeBilling } from '../../platform/iap';
+import { globalRequestGate } from '../rateGate';
+
+/** Milliseconds before an unresponsive metaserver request is aborted (mirrors WorldApiClient.req). */
+const FETCH_TIMEOUT_MS = 10_000;
 
 const log = netLog('api');
 
@@ -80,16 +84,23 @@ export class ApiClientBase {
     if (body !== undefined) headers['content-type'] = 'application/json';
     if (this.token) headers['authorization'] = `Bearer ${this.token}`;
     log.debug(`${method} ${path}`);
+    await globalRequestGate.acquire();
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), FETCH_TIMEOUT_MS);
     try {
       return await fetch(`${this.baseUrl}${path}`, {
         method,
         headers,
+        signal: ctrl.signal,
         body: body === undefined ? undefined : JSON.stringify(body),
       });
     } catch (e) {
-      // Network-layer failure (server not running / CORS / DNS): fetch rejection is very generic in the console, so we log the URL explicitly here.
+      // Network-layer failure (server not running / CORS / DNS / timeout abort): fetch rejection is
+      // very generic in the console, so we log the URL explicitly here.
       log.error(`${method} ${path} network failure`, { url: `${this.baseUrl}${path}`, err: String(e) });
       throw e;
+    } finally {
+      clearTimeout(timer);
     }
   }
 }

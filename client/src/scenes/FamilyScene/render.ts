@@ -129,13 +129,16 @@ export function RenderMixin<TBase extends FamilySceneBaseCtor>(Base: TBase): TBa
 
       const okW = Math.round(w * 0.13);
       const btnH = Math.round(h * 0.05);
-      const okBtn = sketchButton(okW, btnH, seedFor(0, 0, okW));
+      const createBusy = this.bt.busy;
+      const okBtn = createBusy
+        ? sketchPanel(okW, btnH, { fill: C.btnOff, border: C.mid, seed: seedFor(0, 0, okW) })
+        : sketchButton(okW, btnH, seedFor(0, 0, okW));
       okBtn.x = w / 2 - okW - 10; okBtn.y = btnY;
       this.bodyLayer.addChild(okBtn);
-      const ok = txt(t('family.create'), FS.heading, C.light);
+      const ok = txt(t('family.create'), FS.heading, createBusy ? C.mid : C.light);
       ok.anchor.set(0.5, 0.5); ok.x = okBtn.x + okW / 2; ok.y = btnY + btnH / 2;
       this.bodyLayer.addChild(ok);
-      this.hitRects.push({ rect: { x: okBtn.x, y: btnY, w: okW, h: btnH }, action: () => void this.doCreate() });
+      if (!createBusy) this.hitRects.push({ rect: { x: okBtn.x, y: btnY, w: okW, h: btnH }, action: () => void this.doCreate() });
 
       const cancelBtn = sketchPanel(okW, btnH, { fill: 0xeeeeee, border: C.mid, seed: seedFor(1, 0, okW) });
       cancelBtn.x = w / 2 + 10; cancelBtn.y = btnY;
@@ -339,6 +342,7 @@ export function RenderMixin<TBase extends FamilySceneBaseCtor>(Base: TBase): TBa
       // so "Promote to Elder" / "Demote to Member" no longer clip the way a fixed box would.
       const padX = Math.round(this.h * 0.014);
       const btnGap = Math.round(this.h * 0.01);
+      const busy = this.bt.busy;
 
       let cy = y0 - this[scrollKey];
       for (const mem of this.members) {
@@ -369,36 +373,41 @@ export function RenderMixin<TBase extends FamilySceneBaseCtor>(Base: TBase): TBa
           // Members holding an office (elder) can't be kicked directly — the button is greyed
           // out and clicking it just explains that the office must be resigned first, rather
           // than silently doing nothing or letting an elder be kicked with an armed officer role.
+          // busy (a mutation in flight) greys it the same way, regardless of office.
           const hasOffice = mem.role === 'elder';
-          const kl = txt(t('family.kick'), FS.bodyLg, hasOffice ? MUTED : C.red);
+          const kickColor = busy ? MUTED : hasOffice ? MUTED : C.red;
+          const kl = txt(t('family.kick'), FS.bodyLg, kickColor);
           const kickW = Math.round(kl.width + padX * 2);
           const kx = right - kickW - 8;
-          const kickBtn = sketchPanel(kickW, btnH, { fill: hasOffice ? 0xeceae2 : 0xf0e0e0, border: hasOffice ? C.mid : C.red, seed: seedFor(cy, 0, kickW) });
+          const kickBtn = sketchPanel(kickW, btnH, { fill: hasOffice || busy ? 0xeceae2 : 0xf0e0e0, border: busy ? C.mid : hasOffice ? C.mid : C.red, seed: seedFor(cy, 0, kickW) });
           kickBtn.x = kx; kickBtn.y = btnY;
           this.bodyLayer.addChild(kickBtn);
           kl.anchor.set(0.5, 0.5); kl.x = kx + kickW / 2; kl.y = btnY + btnH / 2;
           this.bodyLayer.addChild(kl);
-          this.hitRects.push({
-            rect: { x: kx, y: btnY, w: kickW, h: btnH },
-            action: () => hasOffice
-              ? this.showToast(t('family.kick.needDemoteFirst'), C.dark)
-              : this.confirmKick(accId, mem.displayName ?? mem.publicId ?? ''),
-          });
+          if (!busy) {
+            this.hitRects.push({
+              rect: { x: kx, y: btnY, w: kickW, h: btnH },
+              action: () => hasOffice
+                ? this.showToast(t('family.kick.needDemoteFirst'), C.dark)
+                : this.confirmKick(accId, mem.displayName ?? mem.publicId ?? ''),
+            });
+          }
           nameRight = kx - btnGap;
 
           // Role toggle: members → elder, elders → member. (Leader role only changes via transfer/dissolve.)
           if (mem.role !== 'leader') {
             const toElder = mem.role === 'member';
-            const rl = txt(t(toElder ? 'family.setElder' : 'family.setMember'), FS.bodyLg, 0xa9750f);
+            const roleColor = busy ? C.mid : 0xa9750f;
+            const rl = txt(t(toElder ? 'family.setElder' : 'family.setMember'), FS.bodyLg, roleColor);
             const roleW = Math.round(rl.width + padX * 2);
             const bx = kx - btnGap - roleW;
-            const roleBtn = sketchPanel(roleW, btnH, { fill: 0xeef0e0, border: 0xd4a030, seed: seedFor(cy, 2, roleW) });
+            const roleBtn = sketchPanel(roleW, btnH, { fill: 0xeef0e0, border: busy ? C.mid : 0xd4a030, seed: seedFor(cy, 2, roleW) });
             roleBtn.x = bx; roleBtn.y = btnY;
             this.bodyLayer.addChild(roleBtn);
             rl.anchor.set(0.5, 0.5); rl.x = bx + roleW / 2; rl.y = btnY + btnH / 2;
             this.bodyLayer.addChild(rl);
             const nextRole: 'elder' | 'member' = toElder ? 'elder' : 'member';
-            this.hitRects.push({ rect: { x: bx, y: btnY, w: roleW, h: btnH }, action: () => void this.doSetRole(accId, nextRole) });
+            if (!busy) this.hitRects.push({ rect: { x: bx, y: btnY, w: roleW, h: btnH }, action: () => void this.doSetRole(accId, nextRole) });
             nameRight = bx - btnGap;
           }
         } else if (isMe) {
@@ -408,15 +417,16 @@ export function RenderMixin<TBase extends FamilySceneBaseCtor>(Base: TBase): TBa
           const alone = this.members.length === 1;
           if (!isLeader || alone) {
             const dissolve = isLeader && alone;
-            const al = txt(t(dissolve ? 'family.dissolve' : 'family.leave'), FS.bodyLg, dissolve ? C.red : C.accent);
+            const leaveColor = busy ? C.mid : dissolve ? C.red : C.accent;
+            const al = txt(t(dissolve ? 'family.dissolve' : 'family.leave'), FS.bodyLg, leaveColor);
             const aw = Math.round(al.width + padX * 2);
             const ax = right - aw - 8;
-            const aBtn = sketchPanel(aw, btnH, { fill: 0xf8f8f0, border: dissolve ? C.red : C.accent, seed: seedFor(cy, 3, aw) });
+            const aBtn = sketchPanel(aw, btnH, { fill: 0xf8f8f0, border: leaveColor, seed: seedFor(cy, 3, aw) });
             aBtn.x = ax; aBtn.y = btnY;
             this.bodyLayer.addChild(aBtn);
             al.anchor.set(0.5, 0.5); al.x = ax + aw / 2; al.y = btnY + btnH / 2;
             this.bodyLayer.addChild(al);
-            this.hitRects.push({ rect: { x: ax, y: btnY, w: aw, h: btnH }, action: () => dissolve ? this.confirmDissolve() : this.confirmLeave() });
+            if (!busy) this.hitRects.push({ rect: { x: ax, y: btnY, w: aw, h: btnH }, action: () => dissolve ? this.confirmDissolve() : this.confirmLeave() });
             nameRight = ax - btnGap;
           }
         }
@@ -520,13 +530,16 @@ export function RenderMixin<TBase extends FamilySceneBaseCtor>(Base: TBase): TBa
       this.bodyLayer.addChild(fl);
       this.hitRects.push({ rect: { x: x0 + 6, y: inputY, w: fieldW, h: inputH }, action: () => this.openSendInput() });
 
-      const sendBtn = sketchButton(sendW, inputH, seedFor(1, 0, sendW));
+      const sendBusy = this.bt.busy;
+      const sendBtn = sendBusy
+        ? sketchPanel(sendW, inputH, { fill: C.btnOff, border: C.mid, seed: seedFor(1, 0, sendW) })
+        : sketchButton(sendW, inputH, seedFor(1, 0, sendW));
       sendBtn.x = right - sendW; sendBtn.y = inputY;
       this.bodyLayer.addChild(sendBtn);
-      const sl = txt(t('family.send'), FS.heading, C.light);
+      const sl = txt(t('family.send'), FS.heading, sendBusy ? C.mid : C.light);
       sl.anchor.set(0.5, 0.5); sl.x = right - sendW / 2; sl.y = inputY + inputH / 2;
       this.bodyLayer.addChild(sl);
-      this.hitRects.push({ rect: { x: right - sendW, y: inputY, w: sendW, h: inputH }, action: () => void this.doSendMsg() });
+      if (!sendBusy) this.hitRects.push({ rect: { x: right - sendW, y: inputY, w: sendW, h: inputH }, action: () => void this.doSendMsg() });
     }
   };
 }

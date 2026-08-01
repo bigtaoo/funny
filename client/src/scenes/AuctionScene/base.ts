@@ -23,6 +23,7 @@ import type { SaveData, EquipmentInstance, CardInstance } from '../../game/meta/
 import { caretDisplay } from '../../render/inputDisplay';
 import { ScrollTapGesture } from '../../ui/scrollTapGesture';
 import { wheelScrollY } from '../../ui/wheelScroll';
+import { BusyTracker, TimeoutError } from '../../ui/busyTracker';
 
 // ── AuctionScene (S8-5) — SLG auction scene ─────────────────────────────────
 //
@@ -193,6 +194,10 @@ export class AuctionSceneBase {
 
   protected destroyed = false;
   protected readonly unsubs: (() => void)[] = [];
+
+  /** Guards doBuy/doCancel: blocks a repeat click while one is in flight and drives the
+   *  busy-button greying in list.ts. */
+  protected readonly bt = new BusyTracker();
 
   constructor(layout: ILayout, input: InputManager, cb: AuctionSceneCallbacks) {
     this.w = layout.designWidth;
@@ -525,6 +530,7 @@ export class AuctionSceneBase {
   }
 
   protected errorMsg(e: unknown): string {
+    if (e instanceof TimeoutError) return t('common.networkTimeout');
     if (e instanceof WorldApiError) {
       const map: Record<string, string> = {
         AUCTION_CLOSED:          t('auction.err.closed'),
@@ -592,6 +598,7 @@ export class AuctionSceneBase {
   }
 
   update(dt: number): void {
+    if (this.bt.tick(dt)) this.render();
     if (this.scrollDirty) { this.scrollDirty = false; this.render(); }
     if (this.buyerActive || this.numEditKey) {
       this.caretTimer += dt;

@@ -27,6 +27,7 @@ import { WorldApiError } from '../../net/WorldApiClient';
 import { drawSocialTabRail, type SocialTab } from '../../render/socialTabRail';
 import { ScrollTapGesture } from '../../ui/scrollTapGesture';
 import { wheelScrollY } from '../../ui/wheelScroll';
+import { BusyTracker, TimeoutError } from '../../ui/busyTracker';
 
 export interface FamilySceneCallbacks {
   onBack(): void;
@@ -149,6 +150,11 @@ export class FamilySceneBase {
 
   protected destroyed = false;
   protected readonly unsubs: (() => void)[] = [];
+
+  /** Guards every mutating action below (create/join/leave/dissolve/kick/setRole/join-request
+   *  response/send message): blocks a repeat click while one is in flight and drives the busy-button
+   *  greying in render.ts. */
+  protected readonly bt = new BusyTracker();
 
   constructor(layout: ILayout, input: InputManager, cb: FamilySceneCallbacks) {
     this.w = layout.designWidth;
@@ -364,6 +370,7 @@ export class FamilySceneBase {
   }
 
   protected errorMsg(e: unknown): string {
+    if (e instanceof TimeoutError) return t('common.networkTimeout');
     if (e instanceof WorldApiError) {
       const map: Record<string, string> = {
         ALREADY_IN_FAMILY: t('family.err.alreadyIn'),
@@ -454,6 +461,7 @@ export class FamilySceneBase {
   }
 
   update(dt: number): void {
+    if (this.bt.tick(dt)) this.render();
     if (this.scrollDirty) { this.scrollDirty = false; this.render(); }
     // Blink the caret while either the create-form fields or the channel send box are focused.
     if (this.createField || this.sendInput) {
