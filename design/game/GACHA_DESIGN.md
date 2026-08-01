@@ -234,7 +234,7 @@ GachaScene 顶部区域只有 4 个彩色圆点（common/rare/epic/legendary）�
 - 下方网格逐条列出池内每个物品：图标 + 真实译名 + **该物品自己配置的概率**（已落地，见下）
 - 限定池/已拥有标签视需要保留
 
-> **图标已落地（2026-07-05，程序复用，非新美术）**：材料→`icons.ts` 专属图标；装备（`wp_`/`ar_`/`tk_`）→`equipmentGlyph.ts` 按 slot+rarity 程序绘制；角色卡→复用 `cardArt.ts` 立绘 PNG；皮肤→collection 页同款画笔图标。详见 §9.5。
+> **图标已落地（2026-07-05，程序复用，非新美术）**：材料→`icons.ts` 专属图标；装备（`wp_`/`ar_`/`tk_`）→`equipmentGlyph.ts` 按 slot+rarity 程序绘制；角色卡→复用 `cardArt.ts` 立绘 PNG；皮肤→**若在 `cardArt.ts SKIN_PORTRAIT_ART` 登记了专属立绘则用专属立绘**（2026-08-01 起 `skin_e1`/`skin_e2`/`skin_l1` 三款抽卡皮肤已补齐，详见 §9.5），否则退回角色基础立绘，仍无立绘可绑的才用 collection 页同款画笔图标。详见 §9.5。
 >
 > **名称 + 滚动已落地（2026-07-15）**：① itemId 改真实翻译名；② 超屏改固定卡片比例 + mask + 拖动滚动（复用 `ScrollIndicator`），不再挤压。
 
@@ -296,6 +296,8 @@ GachaScene 顶部区域只有 4 个彩色圆点（common/rare/epic/legendary）�
 池内物品列表需要每个物品的方形图标（60×60 展示，源图不小于 120×120）。
 
 > **2026-07-05 更新**：概率弹层已用程序复用方案顶上（见 §8.2 说明），不再阻塞。下表仍是未来给每款皮肤/物品配专属美术时的可选升级方向，非当前必须项。
+>
+> **2026-08-01 更新**：`skin_e1`(Lena)/`skin_e2`(Mara)/`skin_l1`(Max) 三款抽卡皮肤的专属立绘已补齐并接入 `cardArt.ts SKIN_PORTRAIT_ART` + `GachaScene.drawEntryPicture`（此前扭蛋结果卡/概率详情网格里这三款皮肤一直显示占位画笔图标，因为 `drawEntryPicture` 从未查过 `SKIN_PORTRAIT_ART`）。素材来源 `art/skins/{lena,mara,max}/*.png`。商店三款（`skin_shop_*`）此前已有专属立绘。
 
 **皮肤分四档（拍板 2026-07-03）**：皮肤在抽卡 `skin` 类别内按独立梯度权重出货（`economy.ts SKIN_TIER_WEIGHTS`）：
 

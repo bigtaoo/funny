@@ -32,6 +32,9 @@ import spellBridgeCollapseArtUrl from '../assets/spells/spell_bridge_collapse.pn
 import skinInfantryArtUrl from '../assets/units/skins/skin_infantry.png';
 import skinArcherArtUrl from '../assets/units/skins/skin_archer.png';
 import skinShieldBearerArtUrl from '../assets/units/skins/skin_shieldbearer.png';
+import skinLenaArtUrl from '../assets/units/skins/skin_lena.png';
+import skinMaraArtUrl from '../assets/units/skins/skin_mara.png';
+import skinMaxArtUrl from '../assets/units/skins/skin_max.png';
 
 /** Card illustration by `<type>_<subtype>` key (see {@link cardArtKey}). */
 export const CARD_ART_URLS: Record<string, string> = {
@@ -89,13 +92,15 @@ export const UNIT_ART_URLS: Record<string, string> = {
 
 /**
  * Portrait override by skin id, for skins with dedicated illustration art (skinDefs.ts SKIN_TARGET_UNIT).
- * Skins with no entry here (skin_e1/skin_e2/skin_l1 — only battle rig art exists) fall back to the
- * base unit's UNIT_ART_URLS portrait via {@link unitPortraitUrl}.
+ * Skins with no entry here fall back to the base unit's UNIT_ART_URLS portrait via {@link unitPortraitUrl}.
  */
 export const SKIN_PORTRAIT_ART: Record<string, string> = {
   skin_shop_c1: skinInfantryArtUrl as string,
   skin_shop_r1: skinArcherArtUrl as string,
   skin_shop_e1: skinShieldBearerArtUrl as string,
+  skin_e1: skinLenaArtUrl as string,
+  skin_e2: skinMaraArtUrl as string,
+  skin_l1: skinMaxArtUrl as string,
 };
 
 /** Portrait for a unit type given its currently equipped skin (or null/none) — the skin-aware UNIT_ART_URLS lookup. */
