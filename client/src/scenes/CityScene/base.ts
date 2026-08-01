@@ -116,6 +116,21 @@ export const CARD_GAP = 12;
 export const CARD_W_TARGET = 222;
 export const CARD_H = 192;
 export const GRID_PAD = 8;
+// Ultra-wide viewports would otherwise fit 8 columns for the current 12-tile grid (11 buildings +
+// the synthetic train tile), leaving a half-empty last row. Capping columns widens the cards
+// instead of adding more of them, so 12 tiles always lay out as clean full rows (currently 2×6).
+export const MAX_GRID_COLS = 6;
+
+// Category accent for the building grid's level-progress stripe (2026-08-01 card redesign): ties
+// producer cards to the resource-bar color language above them, and gives the remaining buildings
+// a category tint so the grid reads as groups rather than one undifferentiated row of look-alikes.
+const MILITARY_COLOR = 0xb85c38;
+export function bldAccentColor(key: BuildingKey): number {
+  const res = BLD_RES[key];
+  if (res) return RES_COLORS[res];
+  if (key === 'drillYard' || key === 'wall') return MILITARY_COLOR;
+  return C.accent as number;
+}
 
 // The building grid holds every building (incl. academy). D-CITY-12 briefly pulled academy
 // out into a standalone tech-tree panel on a separate military page; once that military page
@@ -381,9 +396,9 @@ export class CitySceneBase {
       this.setMe(await this.cb.worldApi.trainTroops(this.cb.worldId, qty));
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : '';
-      if (msg.includes('ink')) this.showToast(t('city.err.noInk'), C.red as number);
-      else if (msg.includes('cap')) this.showToast(t('city.err.troopCap'), C.red as number);
+      if (msg.includes('cap')) this.showToast(t('city.err.troopCap'), C.red as number);
       else if (msg.includes('queue')) this.showToast(t('city.err.trainQueueFull'), C.red as number);
+      else if (msg.includes('Insufficient')) this.showToast(t('city.err.noResources'), C.red as number);
       else this.showToast(t('city.err.generic'), C.red as number);
     } finally {
       this.bt.stop();

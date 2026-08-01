@@ -128,4 +128,54 @@ describe.skipIf(!mongo)('worldsvc SLG shop e2e', () => {
     for (let i = 0; i < 20; i++) await svc.buySlgShopItem(W, 'a', 'slg_shield_8h');
     expect(spent.length).toBe(20);
   });
+
+  // battle_pass single-slot gate (2026-08-01 fix): unlike protection, buying it twice was previously a
+  // silent no-op re-set of the same boolean flag — free to attempt, but the coins were still spent.
+  it('battle pass: repeat purchase while already active → ALREADY_ACTIVE, coins never deducted twice', async () => {
+    const svc = new WorldService({ cols: m.collections, redis: null, commercial: fakeCommercial, mapW: SLG_MAP_W, mapH: SLG_MAP_H, now });
+    await svc.joinWorld(W, 'a', 10, 10);
+    const item = SLG_SHOP_ITEMS.find((i) => i.id === 'slg_battle_pass')!;
+
+    await svc.buySlgShopItem(W, 'a', 'slg_battle_pass');
+    expect(spent).toEqual([{ accountId: 'a', amount: item.cost }]);
+    expect((await svc.getMe(W, 'a')).hasBattlePass).toBe(true);
+
+    await expect(svc.buySlgShopItem(W, 'a', 'slg_battle_pass')).rejects.toThrow('Battle pass already active');
+    expect(spent.length).toBe(1); // the rejected repeat attempt never reached commercial.spend
+  });
+
+  // The ALREADY_ACTIVE guard is scoped to kind:'battle_pass' only — it must not accidentally block
+  // unrelated items just because the same player happens to hold a battle pass.
+  it('battle pass: holding one does not block purchasing other shop items', async () => {
+    const svc = new WorldService({ cols: m.collections, redis: null, commercial: fakeCommercial, mapW: SLG_MAP_W, mapH: SLG_MAP_H, now });
+    await svc.joinWorld(W, 'a', 10, 10);
+    await svc.buySlgShopItem(W, 'a', 'slg_battle_pass');
+    await expect(svc.buySlgShopItem(W, 'a', 'slg_res_s')).resolves.toBeTruthy();
+    await expect(svc.buySlgShopItem(W, 'a', 'slg_shield_8h')).resolves.toBeTruthy();
+    expect(spent.length).toBe(3);
+  });
+
+  // Also scoped per-account: another player must be able to buy their own first battle pass while the
+  // first player's is active — the guard reads that account's own playerWorld doc, not a global flag.
+  it('battle pass: one account holding it does not block a different account\'s first purchase', async () => {
+    const svc = new WorldService({ cols: m.collections, redis: null, commercial: fakeCommercial, mapW: SLG_MAP_W, mapH: SLG_MAP_H, now });
+    await svc.joinWorld(W, 'a', 10, 10);
+    await svc.joinWorld(W, 'b', 20, 20);
+    await svc.buySlgShopItem(W, 'a', 'slg_battle_pass');
+    await expect(svc.buySlgShopItem(W, 'b', 'slg_battle_pass')).resolves.toBeTruthy();
+    expect((await svc.getMe(W, 'b')).hasBattlePass).toBe(true);
+  });
+
+  // Once hasBattlePass is cleared (e.g. by resetSeason's playerWorld wipe — see season.ts /
+  // season-ops.e2e.test.ts for that path), the gate must not stay stuck — a fresh purchase must
+  // succeed again rather than permanently locking the player out.
+  it('battle pass: purchasable again once hasBattlePass is cleared', async () => {
+    const svc = new WorldService({ cols: m.collections, redis: null, commercial: fakeCommercial, mapW: SLG_MAP_W, mapH: SLG_MAP_H, now });
+    await svc.joinWorld(W, 'a', 10, 10);
+    await svc.buySlgShopItem(W, 'a', 'slg_battle_pass');
+
+    await m.collections.playerWorld.updateOne({ _id: playerWorldId(W, 'a') }, { $set: { hasBattlePass: false } });
+    await expect(svc.buySlgShopItem(W, 'a', 'slg_battle_pass')).resolves.toBeTruthy();
+    expect(spent.length).toBe(2);
+  });
 });

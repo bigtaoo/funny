@@ -282,7 +282,7 @@ PUT  /title/equip          (JWT) { titleId }  → { save: SaveData }  | 403（�
 | `case` | payload | 说明 |
 |---|---|---|
 | `room_state` | `{ code, players: PlayerSlot[], phase }` | 房间状态变更广播 |
-| `match_start` | `{ room_id, mode, seed, start_frame, local_side, opponent_name, opponent_public_id, opponent_title, top_deck[], bottom_deck[], opponent_avatar_id }` | 开局：模式 + 种子 + 起始帧 + 本方阵营 + 对手展示信息（昵称/9 位公开 id/称号/头像，纯展示用）+ 双方卡组（`PVP_LOADOUT_DESIGN.md §6.2`，双方都收全量卡组以保证确定性建局） |
+| `match_start` | `{ room_id, mode, seed, start_frame, local_side, opponent_name, opponent_public_id, opponent_title, top_deck[], bottom_deck[], opponent_avatar_id, opponent_skins[] }` | 开局：模式 + 种子 + 起始帧 + 本方阵营 + 对手展示信息（昵称/9 位公开 id/称号/头像/已装备角色皮肤 id 列表，纯展示用）+ 双方卡组（`PVP_LOADOUT_DESIGN.md §6.2`，双方都收全量卡组以保证确定性建局）。`opponent_skins`（2026-08-01 新增，S3-4 皮肤污染对手修复的一部分）沿用 `opponent_title`/`opponent_avatar_id` 同一条链路——matchsvc 签发 ticket 时 self↔opponent 互换写入；机器人对手（PvP-vs-AI/match_bot_fallback）不连库、永远不带这个字段，客户端 `UnitView` 因而天然只对真人对手回显皮肤 |
 | `frame_batch` | `{ to_frame, frames: FrameCmds[] }` | **服务器节拍**：每 100ms 一个批次（覆盖 3 个 sim 帧，M14）；`frames` 仅列非空帧，空窗 ⇒ 只有 `to_frame` 水位 |
 | `conn_resync` | `{ seed, start_frame, log: FrameCmds[], cur_frame }` | 重连补帧：种子 + 非空帧日志 + 当前帧 |
 | `peer_dc` | `{ side, grace_ms: 60000 }` | 对手掉线，进入 60s 等待重连（M10） |

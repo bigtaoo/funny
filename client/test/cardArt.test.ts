@@ -23,10 +23,11 @@ describe('unitPortraitUrl', () => {
     expect(unitPortraitUrl(UnitType.ShieldBearer, 'skin_shop_e1')).toBe(SKIN_PORTRAIT_ART.skin_shop_e1);
   });
 
-  it('falls back to the base unit portrait for skins with no dedicated portrait art (rig-only)', () => {
-    // skin_e1/skin_e2/skin_l1 (Lena/Mara/Max) only have battle-rig (.tao) art today, no static portrait.
-    expect(unitPortraitUrl(UnitType.Lena, 'skin_e1')).toBe(UNIT_ART_URLS.lena);
-    expect(unitPortraitUrl(UnitType.Max, 'skin_l1')).toBe(UNIT_ART_URLS.max);
+  it('falls back to the base unit portrait for a skin id with no dedicated portrait art', () => {
+    // All current shop/gacha skins (skin_shop_c1/r1/e1, skin_e1/e2/l1) now have dedicated
+    // portraits registered in SKIN_PORTRAIT_ART — use a made-up id to exercise the miss path.
+    expect(unitPortraitUrl(UnitType.Lena, 'skin_does_not_exist')).toBe(UNIT_ART_URLS.lena);
+    expect(unitPortraitUrl(UnitType.Max, 'skin_does_not_exist')).toBe(UNIT_ART_URLS.max);
   });
 });
 

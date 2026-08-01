@@ -7,7 +7,7 @@
 // live in their own sibling file as `XMixin(Base)` and are chained into the final CardScene.
 //
 // CardScene — Hero Roster UI (CHARACTER_CARDS_DESIGN §10).
-//   List: card inventory sorted by power desc → level desc; capacity counter (n/500).
+//   List: card inventory grouped deployed-first, power desc within each group; capacity counter (n/500).
 //   Detail modal: stats + skill + troop cap + gear 3 slots + fusion-readiness bar + lock toggle + fuse + list-auction.
 //   Fuse flow: select target → fusion panel (center card + 5 material slots, same faction+level) → fuseCards().
 // Server-authoritative (L2): all mutations go through server endpoints; SaveData is the read-only mirror.
@@ -104,18 +104,29 @@ export interface Rect { x: number; y: number; w: number; h: number; }
 const DEF_ORDER = Object.keys(CARD_DEFS);
 
 /**
- * Sort cards: highest level first (level is the headline stat — surfaced as a star row in the grid),
- * so the strongest heroes always float to the top of the roster. Within one level, cards stay grouped
- * by hero (CARD_DEFS declaration order) so duplicate instances of the same hero sit together instead
- * of scattering; within a hero group, power desc, then id for stability.
+ * Sort cards for the roster grid: cards deployed to an SLG team come first, the rest after (2026-08-01
+ * — deployed cards used to scatter across the level-grouped grid instead of reading as "my current
+ * squad" at a glance). Within each group, highest combat power first (the stat that matters when
+ * picking who to send out); ties fall back to level desc, then hero (CARD_DEFS declaration order,
+ * keeps duplicate instances of one hero together), then id for stability.
+ *
+ * `cardState` is the SLG per-card state (teamId) — omit it, or pass one where a card has no entry, to
+ * treat that card as not deployed (e.g. outside SLG, or before the async SLG fetch resolves).
  */
-export function sortCards(cards: CardInstance[], equipInv: SaveData['equipmentInv']): CardInstance[] {
+export function sortCards(
+  cards: CardInstance[],
+  equipInv: SaveData['equipmentInv'],
+  cardState?: Record<string, CardSLGState>,
+): CardInstance[] {
   return [...cards].sort((a, b) => {
+    const ad = !!cardState?.[a.id]?.teamId;
+    const bd = !!cardState?.[b.id]?.teamId;
+    if (ad !== bd) return ad ? -1 : 1;
+    const pd = cardPower(b, equipInv) - cardPower(a, equipInv);
+    if (pd !== 0) return pd;
     if (b.level !== a.level) return b.level - a.level;
     const gd = DEF_ORDER.indexOf(a.defId) - DEF_ORDER.indexOf(b.defId);
     if (gd !== 0) return gd;
-    const pd = cardPower(b, equipInv) - cardPower(a, equipInv);
-    if (pd !== 0) return pd;
     return a.id < b.id ? -1 : 1;
   });
 }
@@ -470,8 +481,11 @@ export interface CardSceneBase {
    * Re-render only the SLG-derived bits (border color / troop count / deployed tag, + the detail
    * modal if open) of already-visible roster cells, after cb.getCardState()/getTeamName() data
    * changes — e.g. a worldsvc fetch that resolved after the roster's own load window gave up
-   * (game.ts goCardRoster). No full render(): a card cell's position/size never depends on SLG
-   * state, so nothing else needs touching.
+   * (game.ts goCardRoster). No full render(): deliberately does NOT re-sort/reposition cells even
+   * though sortCards' deployed-first grouping does read this same state — a card that *becomes*
+   * deployed via this late patch stays wherever it was already drawn until the next full render(),
+   * trading perfect ordering for not yanking the grid (and the user's scroll position) out from
+   * under them right as they're looking at it.
    */
   applyCardState(): void;
   openDetail(cardId: string): void;

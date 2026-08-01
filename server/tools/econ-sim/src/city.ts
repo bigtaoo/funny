@@ -38,7 +38,7 @@ import {
   NATION_BONUS_PRODUCTION,
   SEASON_LENGTH_DAYS,
   TROOP_CAP_BASE,
-  TROOP_TRAIN_INK_COST,
+  troopTrainCost,
   TROOP_TRAIN_TIME_SEC,
   SLG_SHOP_ITEMS,
   type BuildingKey,
@@ -217,7 +217,7 @@ export function daysToMaxWithWhaleSpend(p: IncomeProfile, totals: CityTotals): P
   return out;
 }
 
-/** Army-training pacing: time + ink to fill the drillYard-max troop cap, and coin-to-skip. */
+/** Army-training pacing: time + full resource cost (ink/paper/graphite/metal/sticker) to fill the drillYard-max troop cap, and coin-to-skip. */
 export function armyPacing() {
   const maxed: Partial<Record<BuildingKey, number>> = { drillYard: DESK_MAX_LEVEL };
   const cap = troopCapFor(maxed);
@@ -226,7 +226,7 @@ export function armyPacing() {
   const totalSec = cap * secPerTroop;
   return {
     troopCap: cap,
-    inkToFill: cap * TROOP_TRAIN_INK_COST,
+    cost: troopTrainCost(cap),
     secPerTroop,
     totalTrainSec: totalSec,
     totalTrainHours: totalSec / 3600,

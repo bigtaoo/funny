@@ -85,6 +85,7 @@ export function registerAccountRoutes(app: FastifyInstance, ctx: InternalCtx): v
       ...(profile.displayName ? { displayName: profile.displayName } : {}),
       ...(profile.equippedTitle ? { equippedTitle: profile.equippedTitle } : {}),
       ...(profile.avatarId ? { avatarId: profile.avatarId } : {}),
+      ...(profile.equippedSkins?.length ? { equippedSkins: profile.equippedSkins } : {}),
       ...(pvp
         ? { rank: pvp.rank, elo: pvp.elo, wins: pvp.wins, losses: pvp.losses }
         : {}),

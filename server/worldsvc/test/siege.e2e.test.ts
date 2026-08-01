@@ -310,7 +310,10 @@ describe.skipIf(!mongo)('worldsvc siege e2e', () => {
     // ADR-053: cost per tile is MARCH_MORALE_MAX / MARCH_MORALE_FLOOR_TILES (ratio of map half-diagonal), not flat 1/tile.
     const morale = Math.max(0, MARCH_MORALE_MAX - dist * (MARCH_MORALE_MAX / MARCH_MORALE_FLOOR_TILES));
     const effTroops = Math.round(troops * moraleCombatMultiplier(morale));
-    expect(me.troops).toBe(TROOP_CAP_BASE - troops + (effTroops - npc));
+    // 2026-08-01 (SLG_DESIGN_LOG §46): loot lands immediately, but surviving troops now walk home over a
+    // travel-time return leg instead of an instant pool credit — troops stay at the post-departure level until
+    // that leg arrives.
+    expect(me.troops).toBe(TROOP_CAP_BASE - troops);
     // Loot = SWEEP_LOOT_PER_LEVEL × level (resType≠ink, no yield contamination).
     const rt = proc.resType as ResourceType;
     expect(me.resources?.[rt]).toBe(SWEEP_LOOT_PER_LEVEL * Math.max(1, proc.level));
@@ -319,6 +322,14 @@ describe.skipIf(!mongo)('worldsvc siege e2e', () => {
     const siege = await m.collections.sieges.findOne({ worldId: W, attackerId: 'a' });
     expect(siege).toMatchObject({ outcome: 'attacker_win' });
     expect(siege?.defenderId).toBeUndefined();
+
+    // The survivors are in transit on a fresh 'return' leg; advancing to its arrival credits them to the pool.
+    const marches = await svc.getMarches(W, 'a');
+    const backLeg = marches.find((mm) => mm.kind === 'return');
+    expect(backLeg).toBeDefined();
+    nowMs = backLeg!.arriveAt;
+    expect(await svc.processDueArrivals()).toBe(1);
+    expect((await svc.getMe(W, 'a')).troops).toBe(TROOP_CAP_BASE - troops + (effTroops - npc));
   });
 
   it('sweep NPC loss: troop attrition, no loot, no tile occupation', async () => {

@@ -20,7 +20,7 @@ import { buildEquipIcon } from '../render/equipmentAtlas';
 import { buildMaterialIcon } from '../render/materialAtlas';
 import { CARD_DEFS } from '../game/meta/cardDefs';
 import { SKIN_TARGET_UNIT, skinDisplayName } from '../game/meta/skinDefs';
-import { cardInstanceArtUrl, getArtTexture } from '../render/cardArt';
+import { cardInstanceArtUrl, getArtTexture, unitPortraitUrl } from '../render/cardArt';
 import { drawScrollIndicator } from '../ui/widgets/ScrollIndicator';
 import { peekViewportH } from '../ui/widgets/scrollPeek';
 import { FS, snapFont } from '../render/fontScale';
@@ -70,8 +70,6 @@ export interface GachaSceneCallbacks {
   getPity(poolId: string): number;
   /** Fate Points balance (server-authoritative mirror; GACHA_DESIGN §7). */
   getFatePoints(): number;
-  /** `SaveData.equipped` (skin: prefixed slots), so a pulled/legend-odds hero card shows whichever skin is already equipped for that character — same picture everywhere (cardArt.ts). Absent = plain base portraits. */
-  getEquippedSkins?(): Record<string, string>;
   loadPools(): Promise<GachaPool[]>;
   draw(poolId: string, count: 1 | 10): Promise<GachaDrawResult>;
   /** Redeem the given featured legendary for FATE_POINT_REDEEM_COST fate points (§7). */
@@ -163,7 +161,9 @@ function drawTrailDotGraphic(): PIXI.Graphics {
 
 // ── Legendary border-trail tuning ───────────────────────────────────────────
 /** Loops of the card's border per second for the trail's comet head. Positive = clockwise (screen y-down). */
-const TRAIL_SPEED = 0.28;
+const TRAIL_SPEED = 0.42;
+/** Inward offset (px) from the card's edge the trail loops on, so it doesn't ride the frame's outer lip. */
+const TRAIL_INSET = 16;
 /** Fading dots making up the comet's tail — more = smoother trail. */
 const TRAIL_DOTS = 28;
 /** Tail length as a fraction of the full perimeter, head to faded tail-end. */
@@ -709,7 +709,7 @@ export class GachaScene implements Scene {
     this.container.addChild(cardSpr);
 
     // Item picture — same per-item representation used in the odds-detail grid
-    // (material icon / equipment glyph / real unit art / skin brush / rarity
+    // (material icon / equipment glyph / real unit art / skin portrait / rarity
     // star fallback), so a glance shows *what* was drawn, not just its id string.
     // Pulled down from the card top (portrait art was clipping heads against the
     // frame decoration otherwise) and sized to leave a small name plate at the
@@ -779,7 +779,9 @@ export class GachaScene implements Scene {
    * cleaned up with the container on the next render()/destroy().
    */
   private addLegendaryTrail(x: number, y: number, w: number, h: number): void {
-    const perim = buildRectPerim(x, y, w, h, Math.min(w, h) * 0.06);
+    const iw = w - TRAIL_INSET * 2;
+    const ih = h - TRAIL_INSET * 2;
+    const perim = buildRectPerim(x + TRAIL_INSET, y + TRAIL_INSET, iw, ih, Math.min(iw, ih) * 0.06);
     const tex = getCachedTexture('gacha:legendary-trail-dot', drawTrailDotGraphic, 64, 64) ?? PIXI.Texture.WHITE;
     const n = TRAIL_DOTS;
     const dots: PIXI.Sprite[] = [];
@@ -911,11 +913,12 @@ export class GachaScene implements Scene {
 
   /**
    * Per-item picture for one odds-grid cell, centered at (cx, cy) in a `size`×`size`
-   * box. No dedicated per-item art exists (art-direction §9.2: near-zero art cost),
-   * so this reuses whatever representation the item already has elsewhere in the
+   * box. Reuses whatever representation the item already has elsewhere in the
    * client: hero cards → the real unit PNG (cardArt.ts), equipment → the procedural
    * per-slot glyph (equipmentGlyph.ts), materials → their dedicated icon, skins →
-   * the wardrobe brush glyph. Falls back to a rarity star for anything unrecognised.
+   * their dedicated portrait art (cardArt.ts SKIN_PORTRAIT_ART) or the base unit's
+   * portrait when a skin has no dedicated art yet. Falls back to a rarity star for
+   * anything unrecognised.
    */
   private drawEntryPicture(
     itemId: string, rarity: Rarity, cx: number, cy: number, size: number, seed: number,
@@ -938,7 +941,7 @@ export class GachaScene implements Scene {
     }
 
     const cardDef = CARD_DEFS[itemId];
-    const artUrl = cardDef ? cardInstanceArtUrl({ defId: itemId }, this.cb.getEquippedSkins?.()) ?? undefined : undefined;
+    const artUrl = cardDef ? cardInstanceArtUrl({ defId: itemId }) ?? undefined : undefined;
     if (artUrl) {
       const tex = getArtTexture(artUrl);
       if (tex.baseTexture.valid) {
@@ -956,6 +959,23 @@ export class GachaScene implements Scene {
     }
 
     if (itemId.startsWith('skin_')) {
+      const unitType = SKIN_TARGET_UNIT[itemId];
+      const skinArtUrl = unitType ? unitPortraitUrl(unitType, itemId) ?? undefined : undefined;
+      if (skinArtUrl) {
+        const tex = getArtTexture(skinArtUrl);
+        if (tex.baseTexture.valid) {
+          const scale = Math.min(size / tex.width, size / tex.height);
+          const sp = new PIXI.Sprite(tex);
+          sp.anchor.set(0.5);
+          sp.scale.set(scale);
+          sp.position.set(cx, cy);
+          parent.addChild(sp);
+        } else if (!this.artHooked.has(skinArtUrl)) {
+          this.artHooked.add(skinArtUrl);
+          tex.baseTexture.once('loaded', () => this.render());
+        }
+        return;
+      }
       const icon = buildIcon('brush', size, RARITY_COLOR[rarity]);
       icon.x = cx - size / 2; icon.y = cy - size / 2;
       parent.addChild(icon);

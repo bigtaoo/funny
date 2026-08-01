@@ -14,6 +14,14 @@ import { InputManager } from '../../src/inputSystem/InputManager';
 import { initI18n } from '../../src/i18n';
 import { FriendsScene, type FriendsSceneCallbacks } from '../../src/scenes/FriendsScene';
 import type { MailView } from '../../src/net/ApiClient';
+import { cardInstanceArtUrl } from '../../src/render/cardArt';
+
+// Every export passes through untouched except cardInstanceArtUrl, wrapped in vi.fn (keeping its
+// real implementation) so the 2026-08-01-scoping spec below can inspect call arguments.
+vi.mock('../../src/render/cardArt', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../src/render/cardArt')>();
+  return { ...actual, cardInstanceArtUrl: vi.fn(actual.cardInstanceArtUrl) };
+});
 
 const memStore = (() => {
   const m = new Map<string, string>();
@@ -140,12 +148,13 @@ describe('FriendsScene mail detail — one picture per attachment, arranged hori
   });
 });
 
-// Regression coverage for the 2026-08-01 fix: a card attachment's thumbnail used to always show
-// the base UNIT_ART_URLS portrait, ignoring whatever skin the player already has equipped for that
-// character (cardArt.ts unitPortraitUrl/cardInstanceArtUrl — the same fix applied to the Hero Roster
-// Skins tab). getEquippedSkins is a new optional callback; this checks the wiring calls through to it
-// (a bug here would silently leave every mail card thumbnail on the default portrait again).
-describe('FriendsScene mail detail — card attachment consults the equipped-skin callback', () => {
+// Regression coverage for the 2026-08-01 scoping decision (UI_DESIGN.md §27 addendum): a card
+// attachment's thumbnail must always be the base portrait, never whichever skin the account has
+// equipped for that unit type — a gift/auction-refund mail preview isn't the place to reflect the
+// recipient's own equipped cosmetics. The earlier `getEquippedSkins` callback was removed from
+// FriendsSceneCallbacks entirely, so this locks in that drawMailDetail keeps resolving through
+// `cardInstanceArtUrl(instance)` with no second (equipped) argument.
+describe('FriendsScene mail detail — card attachment always uses the base portrait, never an equipped skin', () => {
   const cardMail: MailView = {
     mailId: 'gift:card', from: 'system', subject: 'A gift card', body: 'enjoy',
     createdAt: 1000, expireAt: 999999999999, read: true, claimed: false,
@@ -154,22 +163,16 @@ describe('FriendsScene mail detail — card attachment consults the equipped-ski
     ],
   } as unknown as MailView;
 
-  it('calls getEquippedSkins while drawing a card attachment\'s thumbnail', () => {
-    const getEquippedSkins = vi.fn(() => ({} as Record<string, string>));
-    const scene = build({ getEquippedSkins });
+  it('passes only the card instance, never an equipped-skin map, when drawing the thumbnail', () => {
+    const spy = cardInstanceArtUrl as unknown as { mock: { calls: unknown[][] } };
+    spy.mock.calls.length = 0;
+    const scene = build();
     scene.container.removeChildren();
     scene.drawMailDetail(cardMail);
 
-    expect(getEquippedSkins).toHaveBeenCalled();
-    expect(frames(scene)).toHaveLength(1); // still draws its one picture frame
-    scene.destroy();
-  });
-
-  it('does not throw when getEquippedSkins is absent (optional callback)', () => {
-    const scene = build();
-    scene.container.removeChildren();
-    expect(() => scene.drawMailDetail(cardMail)).not.toThrow();
-    expect(frames(scene)).toHaveLength(1);
+    const cardCalls = spy.mock.calls.filter((call) => (call[0] as { defId?: string } | undefined)?.defId === 'lichuang');
+    expect(cardCalls.length).toBeGreaterThan(0);
+    for (const call of cardCalls) expect(call.length === 1 || call[1] === undefined).toBe(true);
     scene.destroy();
   });
 });

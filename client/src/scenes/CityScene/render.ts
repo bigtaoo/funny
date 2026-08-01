@@ -15,6 +15,7 @@ import type { BuildingKey } from '../../net/WorldApiClient';
 import {
   RESOURCE_TYPES,
   BUILD_SPEEDUP_SECS_PER_COIN,
+  DESK_MAX_LEVEL,
   buildingLevel,
   baseDurabilityMax,
   resourceCapFor,
@@ -22,7 +23,8 @@ import {
 } from '@nw/shared';
 import {
   type Constructor, type CitySceneBaseCtor,
-  RES_COLORS, GRID_BUILDING_KEYS, CARD_GAP, CARD_W_TARGET, CARD_H, GRID_PAD, TEAM_ROW_CARD_H, TEAM_ROW_LABEL_H,
+  RES_COLORS, GRID_BUILDING_KEYS, CARD_GAP, CARD_W_TARGET, CARD_H, GRID_PAD, MAX_GRID_COLS,
+  TEAM_ROW_CARD_H, TEAM_ROW_LABEL_H, bldAccentColor,
 } from './base';
 
 export interface RenderHandlers {
@@ -324,7 +326,7 @@ export function RenderMixin<TBase extends CitySceneBaseCtor>(Base: TBase): TBase
       }
 
       const availW = w - GRID_PAD * 2;
-      const cols = Math.max(1, Math.floor((availW + CARD_GAP) / (CARD_W_TARGET + CARD_GAP)));
+      const cols = Math.min(MAX_GRID_COLS, Math.max(1, Math.floor((availW + CARD_GAP) / (CARD_W_TARGET + CARD_GAP))));
       const cellW = Math.floor((availW - (cols - 1) * CARD_GAP) / cols);
       const rows = Math.ceil(tiles.length / cols);
       const contentH = rows * CARD_H + (rows - 1) * CARD_GAP;
@@ -358,6 +360,12 @@ export function RenderMixin<TBase extends CitySceneBaseCtor>(Base: TBase): TBase
         const active = tile.kind === 'bld'
           ? (this.me?.buildQueue ?? []).some(q => q.key === tile.key)
           : (this.me?.trainingQueue?.length ?? 0) > 0;
+        // Not-yet-built (Lv.0) buildings read identically to a maxed-out one at a glance — dim them
+        // and swap the queue-hammer badge for a "+" build prompt so the grid tells the two apart
+        // without reading every "Lv.N" line. A queued build (active) already answers "yes, working on
+        // it", so it takes priority over the dimmed/unbuilt treatment.
+        const unbuilt = tile.kind === 'bld' && buildingLevel(bld, tile.key) === 0;
+        const dim = unbuilt && !active;
 
         const bg = sketchPanel(cellW, CARD_H, {
           fill: C.paper,
@@ -369,15 +377,39 @@ export function RenderMixin<TBase extends CitySceneBaseCtor>(Base: TBase): TBase
         bg.y = cy;
         gridLayer.addChild(bg);
 
+        // Category-accent level stripe (2026-08-01): ties producer cards to the resource bar's own
+        // color language above them and gives the rest a category tint, so the grid reads as groups
+        // instead of one undifferentiated row of look-alike cards. Filled portion = progress toward
+        // the card's current ceiling — desk's own DESK_MAX_LEVEL, everyone else gated by desk's level
+        // (city.ts buildGateReason) — for the train tile, carried troops against the trained-troop cap.
+        const accent = bldAccentColor(tile.kind === 'bld' ? tile.key : 'drillYard');
+        const ratio = tile.kind === 'bld'
+          ? Math.max(0, Math.min(1, buildingLevel(bld, tile.key) / (tile.key === 'desk' ? DESK_MAX_LEVEL : Math.max(1, buildingLevel(bld, 'desk')))))
+          : (troopCapFor(bld) > 0 ? Math.max(0, Math.min(1, (this.me?.troops ?? 0) / troopCapFor(bld))) : 0);
+        const barX = cx + 9;
+        const barW = cellW - 18;
+        const barTrack = new PIXI.Graphics();
+        barTrack.beginFill(accent, 0.18);
+        barTrack.drawRoundedRect(barX, cy + 118, barW, 6, 3);
+        barTrack.endFill();
+        gridLayer.addChild(barTrack);
+        const barFill = new PIXI.Graphics();
+        barFill.beginFill(accent, 0.85);
+        barFill.drawRoundedRect(barX, cy + 118, Math.max(3, barW * ratio), 6, 3);
+        barFill.endFill();
+        gridLayer.addChild(barFill);
+
         const icon = tile.kind === 'bld' ? this.bldIcon(tile.key, 60, C.dark) : buildIcon('armor', 60, C.dark);
         icon.x = cx + (cellW - 60) / 2;
         icon.y = cy + 18;
+        icon.alpha = dim ? 0.4 : 1;
         gridLayer.addChild(icon);
 
         const name = tile.kind === 'bld' ? t(`city.bld.${tile.key}` as 'city.bld.desk') : t('city.bld.trainTroops');
         const nameLbl = txt(name, FS.body, C.dark, true, cellW - 18);
         nameLbl.x = cx + 9;
         nameLbl.y = cy + 90;
+        nameLbl.alpha = dim ? 0.55 : 1;
         gridLayer.addChild(nameLbl);
 
         // Buildings show a level; the train tile shows the current troop pool / cap instead.
@@ -387,6 +419,7 @@ export function RenderMixin<TBase extends CitySceneBaseCtor>(Base: TBase): TBase
         const subLbl = txt(subtitle, FS.body, C.mid, false, cellW - 18);
         subLbl.x = cx + 9;
         subLbl.y = cy + CARD_H - 33;
+        subLbl.alpha = dim ? 0.55 : 1;
         gridLayer.addChild(subLbl);
 
         if (active) {
@@ -394,6 +427,20 @@ export function RenderMixin<TBase extends CitySceneBaseCtor>(Base: TBase): TBase
           qDot.x = cx + cellW - 36;
           qDot.y = cy + 12;
           gridLayer.addChild(qDot);
+        } else if (unbuilt) {
+          const badgeR = 13;
+          const bx = cx + cellW - 12 - badgeR;
+          const by = cy + 12 + badgeR;
+          const badge = new PIXI.Graphics();
+          badge.lineStyle(1.5, C.mid, 0.9);
+          badge.beginFill(C.paper, 1);
+          badge.drawCircle(bx, by, badgeR);
+          badge.endFill();
+          gridLayer.addChild(badge);
+          const plus = txt('+', FS.bodyLg, C.mid, true);
+          plus.x = bx - plus.width / 2;
+          plus.y = by - plus.height / 2 - 1;
+          gridLayer.addChild(plus);
         }
 
         // Hit rect in absolute screen space (gridLayer's local `cy` + its own viewY/scroll offset) —

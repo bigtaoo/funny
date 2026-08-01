@@ -4,7 +4,7 @@
 // No behavior change.
 import { playerWorldId, buildingMaxHp, baseDurabilityMax, regenDurability, buildingLevel } from '@nw/shared';
 import type { SiegeDamageDoc } from '../db';
-import { refundTroops } from '../combatShared';
+import { startReturnMarch } from '../combatShared';
 import type { SiegeServiceBaseCtor, Constructor } from './base';
 
 export interface SiegeDamageHandlers {
@@ -54,7 +54,13 @@ export function SiegeDamageMixin<TBase extends SiegeServiceBaseCtor>(Base: TBase
       // Target must still be the same owner and unprotected; otherwise the siege is stale → void damage, return besiegers.
       const stale = !tile || !defenderId || tile.ownerId !== defenderId || (tile.protectedUntil != null && tile.protectedUntil > t);
       if (stale) {
-        if (attacker && d.attackerSurvivors > 0) await refundTroops(this.core, attacker, d.attackerSurvivors, t);
+        if (attacker && d.attackerSurvivors > 0) {
+          await startReturnMarch(this.core, {
+            worldId: d.worldId, ownerId: d.attackerId, fromTile: d.tile,
+            x: this.core.coordX(d.tile), y: this.core.coordY(d.tile),
+            troops: d.attackerSurvivors,
+          }, t);
+        }
         return;
       }
 
@@ -70,7 +76,13 @@ export function SiegeDamageMixin<TBase extends SiegeServiceBaseCtor>(Base: TBase
           ? { durability: newHp, durabilityMax: maxHp, durabilityRegenAt: t }
           : { hp: newHp };
         await cols.tiles.updateOne({ _id: d.tile }, { $set: survivorSet, $inc: { rev: 1 } });
-        if (attacker && d.attackerSurvivors > 0) await refundTroops(this.core, attacker, d.attackerSurvivors, t);
+        if (attacker && d.attackerSurvivors > 0) {
+          await startReturnMarch(this.core, {
+            worldId: d.worldId, ownerId: d.attackerId, fromTile: d.tile,
+            x: this.core.coordX(d.tile), y: this.core.coordY(d.tile),
+            troops: d.attackerSurvivors,
+          }, t);
+        }
         const after = await cols.tiles.findOne({ _id: d.tile });
         if (after) { void this.core.pushTile(d.attackerId, after); void this.core.pushTile(defenderId, after); }
         return;
@@ -83,7 +95,13 @@ export function SiegeDamageMixin<TBase extends SiegeServiceBaseCtor>(Base: TBase
       if (d.isBase) {
         // Main base captured: it cannot be permanently held → besiegers return; sect-leader penalty; passive relocation
         // (all territory lost + shield + a fresh full-durability base at a random tile) + system mail (D-CITY-8).
-        if (attacker && d.attackerSurvivors > 0) await refundTroops(this.core, attacker, d.attackerSurvivors, t);
+        if (attacker && d.attackerSurvivors > 0) {
+          await startReturnMarch(this.core, {
+            worldId: d.worldId, ownerId: d.attackerId, fromTile: d.tile,
+            x: this.core.coordX(d.tile), y: this.core.coordY(d.tile),
+            troops: d.attackerSurvivors,
+          }, t);
+        }
         await this.applySectLeaderPenalty(d.worldId, defenderId, t);
         await this.passiveRelocate(d.worldId, defenderId, t);
       } else {

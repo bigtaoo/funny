@@ -116,11 +116,11 @@ export class MatchsvcClient {
   // roomCreate / roomJoin are NOT idempotent on the matchsvc side (a re-landed dup
   // would create a second room / push ALREADY_IN_ROOM), so they stay retries=0 — the
   // player can simply click again. They still get the body-drain + timeout fix.
-  roomCreate(accountId: string, name: string, publicId: string, equippedTitle = '', avatarId = '', deck: string[] = []): Promise<boolean> {
-    return this.post('/mm/room/create', { accountId, name, publicId, equippedTitle, avatarId, deck });
+  roomCreate(accountId: string, name: string, publicId: string, equippedTitle = '', avatarId = '', deck: string[] = [], equippedSkins: string[] = []): Promise<boolean> {
+    return this.post('/mm/room/create', { accountId, name, publicId, equippedTitle, avatarId, deck, equippedSkins });
   }
-  roomJoin(accountId: string, name: string, publicId: string, code: string, equippedTitle = '', avatarId = '', deck: string[] = []): Promise<boolean> {
-    return this.post('/mm/room/join', { accountId, name, publicId, code, equippedTitle, avatarId, deck });
+  roomJoin(accountId: string, name: string, publicId: string, code: string, equippedTitle = '', avatarId = '', deck: string[] = [], equippedSkins: string[] = []): Promise<boolean> {
+    return this.post('/mm/room/join', { accountId, name, publicId, code, equippedTitle, avatarId, deck, equippedSkins });
   }
   roomReady(accountId: string, ready: boolean): void {
     void this.post('/mm/room/ready', { accountId, ready });
@@ -135,8 +135,8 @@ export class MatchsvcClient {
   }
   // enqueue is idempotent (matchsvc dedups by accountId) and non-self-healing (a lost
   // enqueue strands the player on "searching") → retry. This is the 0/20 fix.
-  enqueue(accountId: string, name: string, publicId: string, elo: number, equippedTitle = '', avatarId = '', platform = '', deck: string[] = []): Promise<boolean> {
-    return this.post('/mm/queue/enqueue', { accountId, name, publicId, elo, equippedTitle, avatarId, platform, deck }, 2);
+  enqueue(accountId: string, name: string, publicId: string, elo: number, equippedTitle = '', avatarId = '', platform = '', deck: string[] = [], equippedSkins: string[] = []): Promise<boolean> {
+    return this.post('/mm/queue/enqueue', { accountId, name, publicId, elo, equippedTitle, avatarId, platform, deck, equippedSkins }, 2);
   }
   connected(accountId: string): void {
     this.post('/mm/conn/connected', { accountId });
@@ -148,14 +148,14 @@ export class MatchsvcClient {
   // pending invite / re-decide an already-resolved one), so stays retries=0 like room create/join.
   duelInvite(
     accountId: string, name: string, publicId: string, equippedTitle: string, avatarId: string,
-    toAccountId: string, deck: string[] = [],
+    toAccountId: string, deck: string[] = [], equippedSkins: string[] = [],
   ): void {
-    this.post('/mm/duel/invite', { accountId, name, publicId, equippedTitle, avatarId, toAccountId, deck });
+    this.post('/mm/duel/invite', { accountId, name, publicId, equippedTitle, avatarId, toAccountId, deck, equippedSkins });
   }
   duelRespond(
     accountId: string, inviteId: string, accept: boolean,
-    name = '', publicId = '', equippedTitle = '', avatarId = '', deck: string[] = [],
+    name = '', publicId = '', equippedTitle = '', avatarId = '', deck: string[] = [], equippedSkins: string[] = [],
   ): void {
-    this.post('/mm/duel/respond', { accountId, inviteId, accept, name, publicId, equippedTitle, avatarId, deck });
+    this.post('/mm/duel/respond', { accountId, inviteId, accept, name, publicId, equippedTitle, avatarId, deck, equippedSkins });
   }
 }

@@ -808,7 +808,14 @@ buildSiegeBlueprints(levels, equipped, inv)
 - `update(dt)`：`flipT % STAR_SWEEP_INTERVAL` 得到本轮周期内的位置 `cyclePos`；每颗星星 `localT = cyclePos - phase` 落在 `[0, STAR_SWEEP_DURATION)` 内时才播放 `scale.x = cos((localT/STAR_SWEEP_DURATION)·2π)`（从 1 平滑扫到 1，无跳变），否则 `scale.x = 1`（静止）。`buildLevelStars()` 登记进 `flipStars` 的逻辑不变，仅 `phase` 单位从弧度改为秒。
 - 用 Node 脚本离线模拟该公式（7 颗星、60fps 步进 13 秒）验证：每个周期内约 1.18s 处于扫光窗口、其余时间恒为 1，扫光起止都平滑落在 1，周期性正确；`tsc --noEmit` 通过。未能在本机走完整后端+登录截图核对（需 11 个服务全起来才能到装备格子界面），纯数学公式改动，走查+离线模拟确认。
 
-### 20.3 实现记录（2026-06-24，✅）— UI 装备图标程序化
+### 20.6e 实现记录（2026-08-01，✅）— Loadout 星星挤到边框线上
+
+玩家反馈截图：Loadout 三槽预览（`renderLoadout`）里已强化装备的星星行紧贴/压住了槽位卡片自己的边框线，看起来很奇怪。根因是星星纵坐标按格高百分比算（`cy + cellH * 0.86`），没算进星星图标自身约 10px 的高度——在旧 `LOADOUT_H`（78）算出的 `cellH`（50）下，星星行底边比格子边框还低几 px，直接压线。
+
+- `LOADOUT_H`：78 → 90，给图标+名称+星星三行多留一点纵向空间。
+- `renderLoadout()`：图标/名称锚点相应上移（0.4→0.34、0.72→0.66）；星星改为**贴底锚定**（`cy + cellH - starSize - 4`，固定留 4px 净空），不再是 cellH 的百分比——今后哪怕再调 `LOADOUT_H`/星星尺寸也不会重犯。
+- 回归测试：`client/test/ui/equipmentLoadoutStarClipping.ui.ts`（横屏+竖屏各一例）——定位 loadout 星星行容器，断言其底边不超出槽位格子的下边界；改回旧公式复测确认会失败（越界约 1.8px），验证测试本身有效。
+- `tsc --noEmit` 通过；未能在本机走通登录到装备格子界面截图核对（预览面板本次未能显示画面），走查+新增单测确认。
 
 落地 = 新建 `client/src/render/equipmentGlyph.ts`（`drawEquipmentGlyph(g, slot, rarity, size, seed)` + `MEDIA` 媒材色表，用 `SketchPen` 画 3 类基形：weapon=笔杆+笔尖 / armor=封皮+书脊 / trinket=小配件，稀有度色驱动填充与点缀）+ 接入 `EquipmentScene`（loadout 三槽、背包实例行、锻造行把原"纯文字"替换为程序图标）。零位图资产，`tsc --noEmit` + webpack 构建验证。
 

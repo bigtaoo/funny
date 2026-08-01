@@ -23,7 +23,7 @@ export function drawTileL1(
   g: PIXI.Graphics, tile: WorldTileView | null,
   fill: number, owner: number | null, fogged: boolean, tp: number, isAnchor: boolean,
   texName: TerrainTextureName, proc: ProceduralTile | null = null,
-  tx = 0, ty = 0, worldId = '',
+  tx = 0, ty = 0, worldId = '', ownerBorder = true,
 ): void {
   const hh = (tp * ISO_RATIO) / 2;
   // Resource type of this tile (from live tile state, else the uncached procedural value) — drives
@@ -115,16 +115,21 @@ export function drawTileL1(
   // Ownership overlay (option-3): a light wash + colored border, not a full opaque fill —
   // territory reads clearly while the terrain/motif underneath stays legible. Motif sprites
   // are Graphics children and always render above this wash, so they are never covered.
+  // The border only draws where `ownerBorder` says this tile actually touches a boundary
+  // (see pool.ts::ownerHasBoundary) — a solid interior of same-owner tiles skips it, so
+  // contiguous territory reads as one wash instead of a repeating grid of diamond outlines.
   if (owner != null && !fogged) {
     const isBase = tile?.type === 'base';
     g.lineStyle(0);
     g.beginFill(owner, isBase ? 0.26 : 0.16);
     g.drawPolygon(diamondPath(tp - 1));
     g.endFill();
-    g.lineStyle(isBase ? 2.4 : 1.6, owner, 0.9);
-    g.beginFill(0, 0);
-    g.drawPolygon(diamondPath(tp - 1, { inset: 2.2 / tp }));
-    g.endFill();
+    if (ownerBorder) {
+      g.lineStyle(isBase ? 2.4 : 1.6, owner, 0.9);
+      g.beginFill(0, 0);
+      g.drawPolygon(diamondPath(tp - 1, { inset: 2.2 / tp }));
+      g.endFill();
+    }
   }
 
   if (fogged) {
@@ -565,21 +570,25 @@ export function drawResMotifFallback(g: PIXI.Graphics, resType: string, tp: numb
 
 /** L2 medium tile: calm terrain fill + ownership wash/border (no motifs at this zoom) + fog. */
 
-export function drawTileL2(g: PIXI.Graphics, fill: number, owner: number | null, fogged: boolean, tp: number): void {
+export function drawTileL2(g: PIXI.Graphics, fill: number, owner: number | null, fogged: boolean, tp: number, ownerBorder = true): void {
   g.lineStyle(0);
   g.beginFill(fill, 0.85);
   g.drawPolygon(diamondPath(tp - 1));
   g.endFill();
   if (owner != null && !fogged) {
     // No motif carries the signal at medium zoom, so ownership uses a stronger wash + border
-    // to keep the territory map readable while terrain stays visible underneath.
+    // to keep the territory map readable while terrain stays visible underneath. Border gated
+    // by ownerBorder same as drawTileL1 — L2 tiles are smaller, so the interior-grid problem is
+    // if anything worse here.
     g.beginFill(owner, 0.42);
     g.drawPolygon(diamondPath(tp - 1));
     g.endFill();
-    g.lineStyle(1.4, owner, 0.85);
-    g.beginFill(0, 0);
-    g.drawPolygon(diamondPath(tp - 1, { inset: 1.6 / tp }));
-    g.endFill();
+    if (ownerBorder) {
+      g.lineStyle(1.4, owner, 0.85);
+      g.beginFill(0, 0);
+      g.drawPolygon(diamondPath(tp - 1, { inset: 1.6 / tp }));
+      g.endFill();
+    }
   }
   if (fogged) {
     g.lineStyle(0);
@@ -609,4 +618,71 @@ export function drawStar(g: PIXI.Graphics, cx: number, cy: number, r: number, co
   if (filled) g.beginFill(color, 0.95);
   g.drawPolygon(pts);
   if (filled) g.endFill();
+}
+
+/**
+ * Dashed stroke along a closed polygon's perimeter (caller sets `g.lineStyle` beforehand —
+ * this only decides which sub-segments are visible, not color/width). `pts` is a flat
+ * [x0,y0,x1,y1,...] point list, implicitly closed back to the first point. The dash phase
+ * runs continuously across the whole perimeter instead of resetting at each vertex, so
+ * corners don't bunch up a partial dash/gap — used to give overlay layers (occupy frontier,
+ * garrison zones) a distinct stroke language from solid territory borders (2026-08-01,
+ * "地图看起来有些混乱" declutter pass).
+ */
+export function drawDashedPolygon(g: PIXI.Graphics, pts: number[], dashLen: number, gapLen: number): void {
+  const n = pts.length / 2;
+  const cycle = dashLen + gapLen;
+  if (n < 2 || cycle <= 0) return;
+  let phase = 0; // position within [0, cycle) — carried across edges, never reset per-edge
+  for (let i = 0; i < n; i++) {
+    const x0 = pts[i * 2]!, y0 = pts[i * 2 + 1]!;
+    const j = (i + 1) % n;
+    const x1 = pts[j * 2]!, y1 = pts[j * 2 + 1]!;
+    const dx = x1 - x0, dy = y1 - y0;
+    const edgeLen = Math.hypot(dx, dy);
+    if (edgeLen === 0) continue;
+    const ux = dx / edgeLen, uy = dy / edgeLen;
+    let t = 0;
+    while (t < edgeLen) {
+      const inDash = phase < dashLen;
+      const segCap = inDash ? dashLen - phase : cycle - phase;
+      const segLen = Math.min(segCap, edgeLen - t);
+      if (inDash) {
+        g.moveTo(x0 + ux * t, y0 + uy * t);
+        g.lineTo(x0 + ux * (t + segLen), y0 + uy * (t + segLen));
+      }
+      t += segLen;
+      phase = (phase + segLen) % cycle;
+    }
+  }
+}
+
+/**
+ * A straight line whose width/alpha ramp from `startWidth/startAlpha` at (x0,y0) to
+ * `endWidth/endAlpha` at (x1,y1), holding the end value for the final `holdFrac` of the
+ * route so a destination marker (e.g. a march's arrowhead) never looks like it's still
+ * fading in. Drawn as a fixed `segments` count of solid sub-segments (a stepped
+ * approximation of a true gradient, same idea as this file's per-tile jitter techniques) —
+ * fixed count keeps the draw-call cost bounded regardless of route length, so a long march
+ * doesn't cost more than a short one. Used to de-emphasize march-route "tails" so multiple
+ * routes converging on one tile don't read as a solid bundle (2026-08-01 declutter pass).
+ */
+export function drawFadedLine(
+  g: PIXI.Graphics, x0: number, y0: number, x1: number, y1: number,
+  color: number, startWidth: number, startAlpha: number,
+  endWidth: number, endAlpha: number, holdFrac = 0.25, segments = 8,
+): void {
+  const dx = x1 - x0, dy = y1 - y0;
+  const denom = Math.max(0.0001, 1 - holdFrac);
+  for (let i = 0; i < segments; i++) {
+    const t0 = i / segments;
+    const t1 = (i + 1) / segments;
+    const e1 = Math.min(1, t1 / denom); // eased toward 1 early so the tail holds at full strength
+    const w = startWidth + (endWidth - startWidth) * e1;
+    const a = startAlpha + (endAlpha - startAlpha) * e1;
+    g.lineStyle(w, color, a);
+    g.moveTo(x0 + dx * t0, y0 + dy * t0);
+    g.lineTo(x0 + dx * t1, y0 + dy * t1);
+  }
+  g.lineStyle(0);
 }

@@ -25,6 +25,8 @@ export interface TicketClaims {
   opponentTitle?: string;
   /** Opponent's currently equipped avatar ID (UI display only; defaults to empty string). */
   opponentAvatarId?: string;
+  /** Opponent's currently equipped character skin IDs (UI display only; defaults to empty — includes bots, which never equip skins). */
+  opponentSkins?: string[];
   /** Public WebSocket address of the assigned gameserver (written into match_found.game_url). */
   gameUrl: string;
   /**

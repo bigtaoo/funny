@@ -181,7 +181,7 @@ describe('Matchsvc write-through to Redis (matchsvc-prematch-persist)', () => {
   it('duelInvite/duelRespond(decline) mirror to and then clear Redis', async () => {
     const redis = fakeRedis();
     const { svc, pushesTo } = makeSvc(redis);
-    svc.duelInvite({ accountId: 'a', name: 'Alice', publicId: '100000001', equippedTitle: '', avatarId: '', deck: [] }, 'b');
+    svc.duelInvite({ accountId: 'a', name: 'Alice', publicId: '100000001', equippedTitle: '', avatarId: '', equippedSkins: [], deck: [] }, 'b');
     await flush();
     const inviteId = (pushesTo('b')[0] as { inviteId: string }).inviteId;
     expect(redis.strings.has(`nw:duel:${inviteId}`)).toBe(true);
@@ -211,8 +211,8 @@ describe('Matchsvc.rehydrate() - rooms', () => {
       phase: 0,
       reapTimer: null,
       slots: [
-        { accountId: 'a', name: 'Alice', publicId: '100000001', equippedTitle: '', avatarId: '', deck: [], side: 0, ready: false, connected: true },
-        { accountId: 'b', name: 'Bob', publicId: '100000002', equippedTitle: '', avatarId: '', deck: [], side: 1, ready: false, connected: true },
+        { accountId: 'a', name: 'Alice', publicId: '100000001', equippedTitle: '', avatarId: '', equippedSkins: [], deck: [], side: 0, ready: false, connected: true },
+        { accountId: 'b', name: 'Bob', publicId: '100000002', equippedTitle: '', avatarId: '', equippedSkins: [], deck: [], side: 1, ready: false, connected: true },
       ],
     };
   }
@@ -251,7 +251,7 @@ describe('Matchsvc.rehydrate() - rooms', () => {
 
 describe('Matchsvc.rehydrate() - ranked queue', () => {
   const entry = (accountId: string, elo: number, enqueuedAt: number): QueueEntry => ({
-    accountId, name: accountId, publicId: '1', equippedTitle: '', avatarId: '', elo, enqueuedAt, platform: '', deck: [],
+    accountId, name: accountId, publicId: '1', equippedTitle: '', avatarId: '', equippedSkins: [], elo, enqueuedAt, platform: '', deck: [],
   });
 
   it('a single rehydrated entry stays queued and gets a queue_state refresh push', async () => {
@@ -294,7 +294,7 @@ describe('Matchsvc.rehydrate() - ranked queue', () => {
 });
 
 describe('Matchsvc.rehydrate() - duel invites', () => {
-  const from: DuelPlayer = { accountId: 'a', name: 'Alice', publicId: '100000001', equippedTitle: '', avatarId: '', deck: [] };
+  const from: DuelPlayer = { accountId: 'a', name: 'Alice', publicId: '100000001', equippedTitle: '', avatarId: '', equippedSkins: [], deck: [] };
 
   it('a still-live invite is re-armed and re-pushed as duel_invited to the invitee, and remains respondable', async () => {
     const redis = fakeRedis();
@@ -309,7 +309,7 @@ describe('Matchsvc.rehydrate() - duel invites', () => {
     // In-memory duelInvites/pendingDuelByAccount were correctly rebuilt -- accepting must actually work.
     // Awaited: duelRespond's accept branch now awaits the Redis-side invite deletion before the
     // match_found push (audit-followup-fixes-0730), so it's no longer synchronous end-to-end.
-    await svc.duelRespond('b', 'inv-1', true, { accountId: 'b', name: 'Bob', publicId: '100000002', equippedTitle: '', avatarId: '', deck: [] });
+    await svc.duelRespond('b', 'inv-1', true, { accountId: 'b', name: 'Bob', publicId: '100000002', equippedTitle: '', avatarId: '', equippedSkins: [], deck: [] });
     expect(pushesTo('a').some((m) => m.kind === 'match_found')).toBe(true);
     expect(pushesTo('b').some((m) => m.kind === 'match_found')).toBe(true);
   });

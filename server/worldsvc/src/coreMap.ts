@@ -189,6 +189,7 @@ export class WorldCoreMap extends WorldCoreVision {
       resources,
       yieldRate: doc.yieldRate,
       territoryCount: await this.deps.cols.tiles.countDocuments({ worldId, ownerId: accountId }),
+      ...(doc.hasBattlePass ? { hasBattlePass: true } : {}),
       ...(doc.mainBaseTile ? { mainBaseTile: doc.mainBaseTile } : {}),
       ...(baseAnchor ? siegeHpView(baseAnchor, this.deps.now()) : {}),
       ...(doc.familyId ? { familyId: doc.familyId } : {}),

@@ -22,6 +22,16 @@ import { FUSION_MATERIAL_COUNT } from '../../src/game/meta/cardDefs';
 import * as log from '../../src/net/log';
 import { SaveManager } from '../../src/game/meta/SaveManager';
 import { LocalSaveStore } from '../../src/game/meta/SaveStore';
+import { cardInstanceArtUrl } from '../../src/render/cardArt';
+import { skinEquipKey } from '../../src/game/meta/skinDefs';
+import { UnitType } from '../../src/game/types';
+
+// Every export passes through untouched except cardInstanceArtUrl, wrapped in vi.fn (keeping its
+// real implementation) so the 2026-08-01-scoping spec below can inspect call arguments.
+vi.mock('../../src/render/cardArt', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../src/render/cardArt')>();
+  return { ...actual, cardInstanceArtUrl: vi.fn(actual.cardInstanceArtUrl) };
+});
 
 /** Fresh in-memory IStorage — a new instance per call so SaveManagers in different tests never share state. */
 function freshStorage(): { getItem: (k: string) => string | null; setItem: (k: string, v: string) => void; removeItem: (k: string) => void } {
@@ -901,5 +911,37 @@ describe('CardScene fuse panel — fills 80% of the primary viewport axis (2026-
     openFuse(scene, target);
 
     expect(panelRect(scene).w).toBeCloseTo(1080 * 0.8, 0);
+  });
+});
+
+// Regression coverage for the 2026-08-01 scoping decision (UI_DESIGN.md §27 addendum): both the
+// ring's target portrait and each candidate-list row's thumbnail must always show the base
+// portrait, never whichever skin the account has equipped for that unit type — this panel answers
+// "which of my cards can fuse," not "what does my army look like." Asserted on call arguments (not
+// the rendered texture — headless PIXI stubs every binary asset to the same 1×1 PNG data URI).
+describe('CardScene fuse panel — target + candidate pictures always use the base portrait', () => {
+  it('passes only the card/defId, never getSave().equipped, even when the account has a skin equipped', () => {
+    const target = makeCard('target', 'lichuang');
+    const cardInv: Record<string, CardInstance> = { target };
+    for (let i = 0; i < 3; i++) cardInv[`mat${i}`] = makeCard(`mat${i}`, 'chenshou');
+    const cb = baseCb(cardInv, {
+      getSave: () => ({
+        cardInv,
+        equipmentInv: {},
+        wallet: { coins: 0 },
+        equipped: { [skinEquipKey(UnitType.Infantry)]: 'skin_shop_c1', [skinEquipKey(UnitType.ShieldBearer)]: 'skin_shop_e1' },
+      } as unknown as ReturnType<CardCallbacks['getSave']>),
+    });
+    const spy = cardInstanceArtUrl as unknown as { mock: { calls: unknown[][] } };
+    spy.mock.calls.length = 0;
+    const scene = buildScene(cb);
+    openFuse(scene, target);
+
+    const relevantCalls = spy.mock.calls.filter((call) => {
+      const arg = call[0] as { defId?: string } | undefined;
+      return arg?.defId === 'lichuang' || arg?.defId === 'chenshou';
+    });
+    expect(relevantCalls.length).toBeGreaterThan(0);
+    for (const call of relevantCalls) expect(call.length === 1 || call[1] === undefined).toBe(true);
   });
 });

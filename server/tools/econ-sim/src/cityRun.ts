@@ -79,7 +79,7 @@ console.log('  has. That remains an open gap (ECONOMY_NUMBERS §13-SLG.6), not f
 console.log('── 5. Army training pacing (drillYard-max troop cap) ──');
 const a = armyPacing();
 console.log(`  troopCap @ drillYard L${DESK_MAX_LEVEL} = ${fmt(a.troopCap)} (base ${fmt(TROOP_CAP_BASE)})`);
-console.log(`  fill it: ${fmt(a.inkToFill)} ink, ${f1(a.totalTrainHours)} h continuous, or skip for ${fmt(a.coinsToSkip)} coins`);
+console.log(`  fill it: ${RES.map((r) => `${fmt((a.cost as any)[r] ?? 0)} ${r}`).join(', ')}, ${f1(a.totalTrainHours)} h continuous, or skip for ${fmt(a.coinsToSkip)} coins`);
 console.log(`  season window = ${a.seasonDays} days\n`);
 
 bar('VERDICT');

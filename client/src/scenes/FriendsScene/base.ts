@@ -85,8 +85,6 @@ export interface FriendsSceneCallbacks {
   markMailRead(mailId: string): Promise<void>;
   claimMail(mailId: string): Promise<boolean>;
   deleteMail(mailId: string): Promise<void>;
-  /** `SaveData.equipped` (skin: prefixed slots), so a mail attachment's card thumbnail shows whichever skin is already equipped for that character (cardArt.ts single-source-of-truth rule). Absent = plain base portrait. */
-  getEquippedSkins?(): Record<string, string>;
   // SLG social tabs (optional)
   loadSLGStatus?(): Promise<SLGSocialStatus | null>;
   createFamily?(name: string, tag: string): Promise<void>;

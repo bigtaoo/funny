@@ -89,7 +89,16 @@ export class ReplayScene implements Scene {
      * fall back to `getLevel(meta.levelId)`.
      */
     private readonly providedLevel?: LevelDefinition,
-    /** Viewer's currently-equipped skins (game/meta/skinDefs.ts), applied to both sides same as a live match — purely cosmetic, so it never affects replay determinism. */
+    /**
+     * Viewer's currently-equipped skins (game/meta/skinDefs.ts) — purely cosmetic, never affects
+     * replay determinism. Fixed 2026-08-01 (S3-4 opponent-skin-bleed fix): a replay has no record of
+     * what the OTHER side actually had equipped, so — same as a live match against a bot — this only
+     * ever renders on one side, never both. Since a replay has no durable "which side was really me"
+     * (only per-match owner→name labels, see replayPlayers in nav/result.ts), this simply follows the
+     * current viewpoint: buildRenderer's `lay.localSide` tracks whichever side is presently viewed at
+     * the screen bottom, so the skin shows on whatever the viewer has flipped to look at as "their"
+     * side, not a side fixed at recording time.
+     */
     private readonly equippedSkins: readonly string[] = [],
   ) {
     this.container = new PIXI.Container();

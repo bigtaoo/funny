@@ -72,11 +72,16 @@ describe('nav/result — goGameNet forwards equippedSkins to showGameNet', () =>
     const info: MatchStartInfo = {
       roomId: 'room1', mode: MatchMode.FRIENDLY, seed: 1, startFrame: 0,
       localSide: 0, opponentName: 'foe', opponentPublicId: '', opponentTitle: '', opponentAvatarId: '',
+      opponentSkins: ['skin_shop_e1'],
     };
     createResultNav(ctx).goGameNet(info);
 
     if (!capturedOpts) throw new Error('views.showGameNet was not called');
     expect((capturedOpts as GameSceneOptions).equippedSkins).toEqual(EXPECTED_SKINS);
+    // Opponent skin bleed fix (2026-08-01): the opponent's OWN equipped skins (from the ticket, real
+    // PvP only — never populated for AI/bot) forward separately, so UnitView can side-scope each list
+    // to its actual owner instead of applying the viewer's skins to both sides (S3-4 follow-up).
+    expect((capturedOpts as GameSceneOptions).opponentSkins).toEqual(['skin_shop_e1']);
   });
 });
 

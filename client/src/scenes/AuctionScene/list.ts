@@ -327,7 +327,7 @@ export function ListMixin<TBase extends AuctionSceneBaseCtor>(Base: TBase): TBas
         }
       } else if (auc.itemType === 'card') {
         const inst = auc.item?.['instance'] as CardInstance | undefined;
-        const artUrl = inst ? cardInstanceArtUrl(inst, this.cb.getSave?.()?.equipped) ?? undefined : undefined;
+        const artUrl = inst ? cardInstanceArtUrl(inst) ?? undefined : undefined;
         if (artUrl) {
           const tex = getArtTexture(artUrl);
           if (tex.baseTexture.valid) {

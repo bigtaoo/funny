@@ -286,7 +286,7 @@ export function FeedMixin<TBase extends CardSceneBaseCtor>(Base: TBase): TBase &
           ml.addChild(frame);
           if (!cardId) return;
           const inst = save.cardInv?.[cardId];
-          const artUrl = inst ? cardInstanceArtUrl(inst, save.equipped) : null;
+          const artUrl = inst ? cardInstanceArtUrl(inst) : null;
           if (artUrl) {
             const tex = getArtTexture(artUrl);
             if (tex.baseTexture.valid) {
@@ -424,7 +424,7 @@ export function FeedMixin<TBase extends CardSceneBaseCtor>(Base: TBase): TBase &
               const frame = sketchPanel(thumbBox, thumbBox, { fill: 0xf0eee7, border: FACTION_COLOR[gDef.faction], seed: seedFor(i, 24, thumbBox) });
               frame.x = thumbX; frame.y = thumbY;
               listC.addChild(frame);
-              const artUrl = cardInstanceArtUrl({ defId: g.defId }, save.equipped);
+              const artUrl = cardInstanceArtUrl({ defId: g.defId });
               if (artUrl) {
                 const tex = getArtTexture(artUrl);
                 if (tex.baseTexture.valid) {

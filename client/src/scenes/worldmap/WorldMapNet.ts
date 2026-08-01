@@ -5,7 +5,7 @@ import { buildIcon } from '../../render/icons';
 import { WorldApiError } from '../../net/WorldApiClient';
 import { serverNow } from '../../net/serverClock';
 import type { TeamTemplate } from '../../net/WorldApiClient';
-import { carriedTroops } from '../../game/meta/teamTroops';
+import { carriedTroops, teamDisplayName } from '../../game/meta/teamTroops';
 import { proceduralTile, ARROW_TOWER_COST, BLOCKER_COST } from '@nw/shared';
 import { loadResAtlas, getResTexture, isResAtlasReady } from '../../render/resAtlasLoader';
 import { loadCityAtlas, getCityTexture, isCityAtlasReady } from '../../render/cityAtlasLoader';
@@ -207,7 +207,7 @@ export class WorldMapNet {
     for (const tm of usable) {
       const committed = committedOf(tm);
       buttons.push({
-        label: `${tm.name} · ${t('world.team.committed').replace('{n}', String(committed))}`,
+        label: `${teamDisplayName(tm)} · ${t('world.team.committed').replace('{n}', String(committed))}`,
         action: () => void this.doMarchTeam(tx, ty, tm.id, kind, stationMode),
       });
     }
@@ -305,6 +305,18 @@ export class WorldMapNet {
     try {
       await this.ctx.cb.worldApi.recallMarch(marchId, worldId);
       this.ctx.marches = await this.ctx.cb.worldApi.getMarches(this.ctx.cb.worldId);
+      this.ctx.panels.renderHud();
+    } catch (e) {
+      this.ctx.panels.showToast(this.errorMsg(e), C.red);
+    }
+  }
+
+  /** Pay coins to instantly complete an in-transit 'return' march (2026-08-01, SLG_DESIGN_LOG §46). */
+  async doInstantReturn(marchId: string, worldId: string): Promise<void> {
+    try {
+      this.ctx.me = await this.ctx.cb.worldApi.instantReturnMarch(marchId, worldId);
+      this.ctx.marches = await this.ctx.cb.worldApi.getMarches(this.ctx.cb.worldId);
+      this.ctx.panels.showToast(t('world.instantReturnDone'));
       this.ctx.panels.renderHud();
     } catch (e) {
       this.ctx.panels.showToast(this.errorMsg(e), C.red);
@@ -628,6 +640,8 @@ export class WorldMapNet {
         TERRITORY_NOT_CONNECTED: t('world.err.notConnected'),
         TEAM_BUSY:     t('world.team.busy'),
         SATCHEL_CAP_EXCEEDED: t('world.err.satchelCap'),
+        // battle_pass single-slot gate (2026-08-01 fix) — same copy as the pre-emptively greyed-out shop row.
+        ALREADY_ACTIVE: t('world.shopAlreadyActive'),
       };
       return map[e.code] ?? e.message;
     }

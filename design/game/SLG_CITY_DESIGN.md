@@ -214,6 +214,7 @@ buildQueue?: { key: BuildingKey; toLevel: number; startAt: number; completeAt: n
 - 新增 i18n：`city.trainEntry`/`city.trainMax`/`city.err.trainQueueFull`（zh/en/de 三语）；复用既有 `city.trainPanel`（此前定义了但从未被引用的历史遗留 key，本次仍未使用其文案，留作弹窗标题的候选，未强行塞入布局）。
 - 覆盖测试：`client/test/ui/cityTrainTroops.ui.ts`（headless PIXI，驱动真实 `handleDown`/`handleUp` 命中测试，覆盖 +10 训练成功 / 队列已满不下单 / 加速按钮调用）。
 - **已知限制**：`CitySceneCallbacks.onTrainTroops`/`onSpeedupTraining` 两个从未被赋值的可选回调字段已删除——`CityScene` 现在直接调 `this.cb.worldApi.trainTroops/speedupTraining`，与 `doUpgrade`/`doSpeedup` 走同一模式，不再经过父级回调层。
+- **练兵消耗扩展为五资源（2026-08-01）**：练兵不再只吃 `ink`——每兵额外消耗 `paper`/`graphite`/`metal` 各 5、`sticker` 1（`ink` 每兵 10 不变），新增常量 `TROOP_TRAIN_PAPER_COST`/`TROOP_TRAIN_GRAPHITE_COST`/`TROOP_TRAIN_METAL_COST`/`TROOP_TRAIN_STICKER_COST`（`server/shared/src/slg/core.ts`）+ 汇总函数 `troopTrainCost(qty)`（`server/shared/src/slg/city.ts`）。服务端 `trainTroops`（`server/worldsvc/src/city.ts`）与建筑升级同款「按 `RESOURCE_TYPES` 逐项校验再扣减」写法，任一资源不足即整单拒绝（`INSUFFICIENT_RESOURCES`）。客户端 `Max` 档位与三个预设按钮的可点亮判定同步改为五资源联合校验（不再只看 `ink`），点击禁用态按钮时的 toast 也从「墨水不足」专属文案改回通用 `city.err.noResources`（此前 `capLeft<=0` 判定错位导致误报「兵力已达上限」的 bug 顺带修复，见 2026-08-01 会话）。旧 i18n key `city.err.noInk` 已删除（zh/en/de）。`server/tools/econ-sim` 的 `armyPacing()`/`cityRun.ts` 同步把 `inkToFill` 换成完整五资源 `cost` 打印，避免数值验证工具静默漏算新增的四项 sink。
 
 ### 8.4 资源条：真产量 + 客户端实时结算（2026-07-23）
 
@@ -234,6 +235,15 @@ D-CITY-11 的内政/军事双页拆分（左侧竖排 tab 切换）本次**撤�
 - 遗留死 key：`city.page.military`/`city.tab.*`/`city.military.techTree`/`city.military.durability` 已无引用，暂留三语文件未删（无害）；`city.military.teams`/`teamIdle` 仍在用。
 - 覆盖测试：`client/test/ui/cityScene.ui.ts` 按单页布局重写（28 例）——网格 12 格全在屏内不重叠、`contentX = marginLineX`、弹窗命中门控、`academy` 现为网格卡、耐久读数在标题栏、五队贴底单行不重叠且不压网格、`onEditTeam` 命中数。
 - 验证：`tsc --noEmit -p tsconfig.test.json` 全绿、`webpack build:web` 构建成功、`test:ui` 全绿（含 `scenes`/`scrollDragThrottle`/`sidebarRailOrientation`）；深层 SLG 场景需整套后端 + 入世流程，本环境浏览器面板未显示，未能截图视觉核对。
+
+### 8.6 建筑网格布局 + 卡片视觉重做（2026-08-01）
+
+背景：用户对着实机截图指出两个问题——超宽屏下 12 格（11 栋建筑 + 练兵合成格）按 `CARD_W_TARGET=222` 动态分列会分到 8 列，第二行只剩 4 格，右侧一大片空白靠背景涂鸦硬撑；以及所有卡片不分「建好没建、等级高低」长得完全一样，只有文字不同，扫一眼分不清主次。
+
+- **列数封顶**：`CityScene/base.ts` 新增 `MAX_GRID_COLS = 6`，`renderBuildingGrid` 的动态列数 `Math.min(MAX_GRID_COLS, ...)` 封顶——12 格在 ≤6 列下总能排成整行（当前 6×2），超宽屏多出的宽度分给卡片本身（变宽），不再多开一列。列数上限与当前 12 格「巧合整除」，建筑数量以后变了需要重新核对是否还整除，不是写死的强保证。
+- **未建成 vs 已建成的视觉区分**：`buildingLevel(bld,key)===0` 且非当前建造队列项时判定"未建成"（`unbuilt && !active`，`active` 优先——已入队的 0→1 建造不算"被忽视"）：图标/建筑名/等级文字统一降到半透明（`alpha 0.4/0.55`），右上角徽标从「已入队」的锤子换成一个空心「+」圆圈提示可建造；desk 因 `buildingLevel` 兜底恒 ≥1 天然不会进入这条分支。
+- **等级进度条 + 分类强调色**：每张卡片顶部新增一条细进度条，取代"只有一行 Lv.N 文字"——填充比例 = 当前等级 / 当前可升到的上限（`desk` 用 `DESK_MAX_LEVEL`；其余建筑的实际上限是 desk 等级本身，`buildGateReason` 早已如此门控，进度条只是把这层关系可视化），练兵格用「已训兵力 / 兵力上限」代替。颜色按类别区分：五个资源产出建筑复用资源条已有的 `RES_COLORS`（呼应上方资源条同色语言）；`drillYard`/`wall`/练兵格用新增的军事色 `MILITARY_COLOR`（0xb85c38）；其余核心/仓储类建筑用既有 `C.accent`（`bldAccentColor()`，`base.ts`）。三处改动共同让网格从"一排复制粘贴的卡片"变成"能一眼扫出建好没建、投入程度、建筑分类"的信息面板，不新增任何命中区/交互，纯展示层。
+- 验证：`tsc --noEmit` + `webpack build:web` 全绿；`npm test`（918 例）+ `test:ui` 全绿（既有 `cityScene.ui.ts` 的 12 格不重叠/命中数断言在本次 viewport 下列数未触发 6 列封顶，未受影响）。视觉核对：`entries/web.ts` 加了一段临时调试分支（`?debugCity`，直接 new 一个 `CityScene` 塞入最小 `PIXI.Application`，绕开登录/后端），配一份贴近截图数值的假 `WorldApiClient`，在 Browser 面板截图确认网格 6×2 整行、未建成卡片变暗+"+"角标、进度条按分类变色后，**该调试分支已完整回退**，不随本次改动合并。
 
 ---
 

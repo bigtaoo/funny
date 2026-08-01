@@ -12,6 +12,10 @@ import {
   SLG_MAP_W,
   SLG_MAP_H,
   TROOP_TRAIN_INK_COST,
+  TROOP_TRAIN_PAPER_COST,
+  TROOP_TRAIN_GRAPHITE_COST,
+  TROOP_TRAIN_METAL_COST,
+  TROOP_TRAIN_STICKER_COST,
   TROOP_TRAIN_TIME_SEC,
   baseFootprintCells,
   baseFootprintInBounds,
@@ -112,6 +116,40 @@ describe.skipIf(!mongo)('worldsvc training-queue nextTrainingCompleteAt mirror e
     expect(after.trainingQueue).toHaveLength(1);
     const doc = await rawDoc('a');
     expect(doc!.nextTrainingCompleteAt).toBe(doc!.trainingQueue![0]!.completeAt);
+  });
+
+  // 2026-08-01: training was widened from an ink-only sink to ink+paper+graphite+metal+sticker (troopTrainCost).
+  it('trainTroops deducts all five resources (ink/paper/graphite/metal/sticker), not ink alone', async () => {
+    const { x, y } = findCoord(70, 10);
+    await svc.joinWorld(W, 'a', x, y);
+    await fund('a');
+    await drainTroops('a');
+
+    // getMe's resources are lazily-settled + capped at RESOURCE_CAP (coreMap.ts); fund() stores a raw 1,000,000
+    // that's well above the cap, so the settled baseline must come from getMe too — comparing against the raw
+    // doc would also count the cap-clamp as part of the "deduction" and inflate every delta.
+    const before = (await svc.getMe(W, 'a')).resources!;
+    const after = (await svc.trainTroops(W, 'a', 100)).resources!;
+    expect(before.ink! - after.ink!).toBe(100 * TROOP_TRAIN_INK_COST);
+    expect(before.paper! - after.paper!).toBe(100 * TROOP_TRAIN_PAPER_COST);
+    expect(before.graphite! - after.graphite!).toBe(100 * TROOP_TRAIN_GRAPHITE_COST);
+    expect(before.metal! - after.metal!).toBe(100 * TROOP_TRAIN_METAL_COST);
+    expect(before.sticker! - after.sticker!).toBe(100 * TROOP_TRAIN_STICKER_COST);
+  });
+
+  it('rejects training when a non-ink resource (paper) is short, even with abundant ink/graphite/metal/sticker', async () => {
+    const { x, y } = findCoord(75, 10);
+    await svc.joinWorld(W, 'a', x, y);
+    await fund('a');
+    await drainTroops('a');
+    // 100 troops need 100 * TROOP_TRAIN_PAPER_COST paper — leave far less than that, everything else stays abundant.
+    await m.collections.playerWorld.updateOne({ _id: playerWorldId(W, 'a') }, { $set: { 'resources.paper': 10 } });
+
+    await expect(svc.trainTroops(W, 'a', 100)).rejects.toThrow(/Insufficient paper/i);
+    // rejected up-front: no partial debit of the other four resources.
+    const doc = await rawDoc('a');
+    expect(doc!.trainingQueue ?? []).toHaveLength(0);
+    expect(doc!.resources!.ink).toBe(1_000_000);
   });
 
   it('a second trainTroops call (queue already non-empty) leaves nextTrainingCompleteAt at the existing head', async () => {

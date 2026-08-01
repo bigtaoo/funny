@@ -23,7 +23,7 @@ import {
   type CardInstance,
 } from '@nw/shared';
 import { createWorldMongo, type WorldMongo } from '../src/db';
-import type { TileDoc, PlayerWorldDoc, TeamTemplate } from '../src/db';
+import type { TileDoc, PlayerWorldDoc, TeamTemplate, StationedDoc } from '../src/db';
 import { WorldService } from '../src/service';
 import type { WorldGatewayClient, SlgPushMsg } from '../src/gatewayClient';
 import type { WorldMetaClient } from '../src/metaClient';
@@ -461,8 +461,18 @@ describe.skipIf(!mongo)('worldsvc teams + siege replay e2e', () => {
     // (this is the reported bug: the UI let a busy team's order get silently overridden by a new one).
     await expect(svc.startMarch(W, 'a', 5, 5, tgt2.x, tgt2.y, 'attack', 1, 't1')).rejects.toThrow(/marching, occupying, or stationed/i);
 
-    // once the attack lands (instant — no hold for an owned-territory siege), the team is free again.
+    // Once the attack lands, the team is not immediately free: this siege loses (a 50-garrison territory
+    // resolves via the real engine, not a raw troop-count comparison, so the card team's win is not
+    // guaranteed just because it outnumbers the garrison on paper), and as of 2026-08-01 (SLG_DESIGN_LOG §46)
+    // a losing card team retreats home over a travel-time return leg rather than being freed instantly.
     nowMs = mv.arriveAt;
+    expect(await svc.processDueArrivals()).toBe(1);
+    await expect(svc.startMarch(W, 'a', 5, 5, tgt2.x, tgt2.y, 'attack', 1, 't1')).rejects.toThrow(/marching, occupying, or stationed/i);
+
+    // …only once that return leg actually arrives home is the team free for a new order.
+    const backLeg = (await svc.getMarches(W, 'a')).find((mm) => mm.kind === 'return');
+    expect(backLeg).toBeDefined();
+    nowMs = backLeg!.arriveAt;
     expect(await svc.processDueArrivals()).toBe(1);
     await expect(svc.startMarch(W, 'a', 5, 5, tgt2.x, tgt2.y, 'attack', 1, 't1')).resolves.toBeTruthy();
   });
@@ -606,6 +616,111 @@ describe.skipIf(!mongo)('worldsvc teams + siege replay e2e', () => {
     await expect(svc.startMarch(W, 'a', 10, 10, target.x, target.y, 'move', 1, 't1')).resolves.toBeTruthy();
   });
 
+  it('move: destination becomes blocked between dispatch and arrival — the team parks back at its origin instead of vanishing (regression, 2026-08-01 fix)', async () => {
+    await svc.joinWorld(W, 'a', 10, 10);
+    const entries = await armyWithTroops('a', 6, 200);
+    await svc.setTeams(W, 'a', [{ id: 't1', name: 'Watch', army: entries }]);
+    const target = findCoord(14, 14, (t) => (t.type === 'resource' || t.type === 'neutral'));
+    const mv = await svc.startMarch(W, 'a', 10, 10, target.x, target.y, 'move', 1, 't1');
+
+    // Someone else claims the destination while the team is in transit.
+    await setupDefender('d', target.x, target.y, 50);
+
+    nowMs = mv.arriveAt;
+    expect(await svc.processDueArrivals()).toBe(1);
+
+    // The team must not simply vanish: no march, no stationed presence anywhere would mean its troops were
+    // silently deleted. It should land back on the tile it departed from instead.
+    const stationed = await svc.getStationed(W, 'a');
+    expect(stationed).toHaveLength(1);
+    expect(stationed[0]!.teamId).toBe('t1');
+    expect(stationed[0]!.x).toBe(10);
+    expect(stationed[0]!.y).toBe(10);
+    expect(stationed[0]!.troops).toBe(mv.troops);
+
+    // The destination tile was untouched by the failed move (still 'd's, not silently granted to 'a').
+    const destTile = await svc.getTile(W, 'a', target.x, target.y);
+    expect(destTile.mine).toBeFalsy();
+
+    // The parked team can still be recalled normally afterwards (not a dead-end state).
+    const back = await svc.recallStationed(W, 'a', 't1');
+    expect(await svc.getStationed(W, 'a')).toHaveLength(0);
+    nowMs = (back as { arriveAt: number }).arriveAt;
+    expect(await svc.processDueArrivals()).toBe(1);
+  });
+
+  it('move: destination is blocked by ANOTHER team already stationed there (not tile ownership) — same park-at-origin fallback applies', async () => {
+    await svc.joinWorld(W, 'a', 10, 10);
+    const entries = await armyWithTroops('a', 6, 200);
+    await svc.setTeams(W, 'a', [{ id: 't1', name: 'Watch', army: entries }]);
+    const target = findCoord(14, 14, (t) => (t.type === 'resource' || t.type === 'neutral'));
+    const mv = await svc.startMarch(W, 'a', 10, 10, target.x, target.y, 'move', 1, 't1');
+
+    // Someone else's team beats 'a' to the destination and parks there first — the tile itself stays unowned,
+    // so this exercises the `stationedHere` half of the blocked check, distinct from the ownerId-mismatch half
+    // already covered by the sibling test above.
+    const rivalStation: StationedDoc = {
+      _id: tileId(W, target.x, target.y),
+      worldId: W,
+      ownerId: 'rival',
+      tile: tileId(W, target.x, target.y),
+      x: target.x,
+      y: target.y,
+      teamId: 'r1',
+      army: [],
+      troops: 999,
+      sinceAt: nowMs,
+      mode: 'idle',
+    };
+    await m.collections.stationed.insertOne(rivalStation);
+
+    nowMs = mv.arriveAt;
+    expect(await svc.processDueArrivals()).toBe(1);
+
+    // 'a's team parks back at its own origin instead of vanishing; the rival's park at the destination is untouched.
+    // getStationed also surfaces the rival's team (enemy-in-vision, mine:false) — filter down to 'a's own.
+    const stationed = (await svc.getStationed(W, 'a')).filter((s) => s.mine);
+    expect(stationed).toHaveLength(1);
+    expect(stationed[0]!.teamId).toBe('t1');
+    expect(stationed[0]!.x).toBe(10);
+    expect(stationed[0]!.y).toBe(10);
+    expect(stationed[0]!.troops).toBe(mv.troops);
+    const rivalAfter = await m.collections.stationed.findOne({ _id: tileId(W, target.x, target.y) });
+    expect(rivalAfter?.teamId).toBe('r1');
+    expect(rivalAfter?.troops).toBe(999);
+  });
+
+  it('move: BOTH destination and origin become unavailable while the team is in transit — falls back to refunding the troop pool (last-resort disposition)', async () => {
+    await svc.joinWorld(W, 'a', 10, 10);
+    // A flat (non-card) team, written directly to bypass setTeams' card-only sanitation (CC-3) — 'move' with a
+    // legacy/flat army still deducts real troop-pool troops at dispatch (see combatMarch.ts startMarch), and
+    // this is the one disposition (both ends gone) where that pool credit is actually observable.
+    const pwId = playerWorldId(W, 'a');
+    await m.collections.playerWorld.updateOne(
+      { _id: pwId },
+      { $set: { teams: [{ id: 't1', name: 'Flat', army: [{ unitType: 'infantry', col: 0, row: 1, initialHp: 600 }] }] } },
+    );
+    const poolBefore = (await svc.getMe(W, 'a')).troops;
+    const target = findCoord(14, 14, (t) => (t.type === 'resource' || t.type === 'neutral'));
+    const mv = await svc.startMarch(W, 'a', 10, 10, target.x, target.y, 'move', 1, 't1');
+    expect(mv.troops).toBe(600);
+    expect((await svc.getMe(W, 'a')).troops).toBe(poolBefore - 600); // deducted at dispatch, as documented
+
+    // Destination claimed by someone else...
+    await setupDefender('d', target.x, target.y, 50);
+    // ...AND the origin (a's own base cell) is claimed too, e.g. captured by a third party while the team was
+    // away — nowhere left for the team to park.
+    await m.collections.tiles.updateOne({ _id: tileId(W, 10, 10) }, { $set: { ownerId: 'intruder' } });
+
+    nowMs = mv.arriveAt;
+    expect(await svc.processDueArrivals()).toBe(1);
+
+    // No stationed presence anywhere (neither end could hold it) — the only sane disposition left is refunding
+    // the pool, same as the miss-handling in combatSiege/arrival.ts and occupation.ts.
+    expect(await svc.getStationed(W, 'a')).toHaveLength(0);
+    expect((await svc.getMe(W, 'a')).troops).toBe(poolBefore);
+  });
+
   it('occupy with autoReturn=true: the captured tile lands owned but the team does NOT stay stationed (freed for a new order)', async () => {
     await svc.joinWorld(W, 'a', 10, 10);
     const target = findCoord(30, 30, (t) => t.type === 'resource' && t.level <= 2);
@@ -625,11 +740,19 @@ describe.skipIf(!mongo)('worldsvc teams + siege replay e2e', () => {
     // Ownership landed…
     const owned = await svc.getTile(W, 'a', target.x, target.y);
     expect(owned.mine).toBe(true);
-    // …but autoReturn=true means the team did NOT stay stationed — the slot is free again.
+    // …but autoReturn=true means the team did NOT stay stationed on the captured tile.
     expect(await svc.getStationed(W, 'a')).toHaveLength(0);
+    // As of 2026-08-01 (SLG_DESIGN_LOG §46), autoReturn now walks the team home over a travel-time return leg
+    // instead of freeing it instantly — the slot is busy until that leg actually arrives.
     const target2 = findCoord(20, 40);
     await setupDefender('d', target2.x, target2.y, 50);
     await connect(svc, 'a', target2);
+    await expect(svc.startMarch(W, 'a', 10, 10, target2.x, target2.y, 'attack', 1, 't1')).rejects.toThrow(/marching, occupying, or stationed/i);
+
+    const backLeg = (await svc.getMarches(W, 'a')).find((mm) => mm.kind === 'return');
+    expect(backLeg).toBeDefined();
+    nowMs = backLeg!.arriveAt;
+    expect(await svc.processDueArrivals()).toBe(1);
     await expect(svc.startMarch(W, 'a', 10, 10, target2.x, target2.y, 'attack', 1, 't1')).resolves.toBeTruthy();
   });
 });

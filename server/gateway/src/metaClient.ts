@@ -54,9 +54,9 @@ export class MetaClient {
    * paths' getElo()+getProfile() double hop into meta's existing /internal/player endpoint.
    * meta not configured / error → INITIAL_ELO + empty profile (same degrade as the two calls it replaces).
    */
-  async getMatchIdentity(accountId: string): Promise<{ elo: number; displayName?: string; publicId?: string; equippedTitle?: string; avatarId?: string }> {
+  async getMatchIdentity(accountId: string): Promise<{ elo: number; displayName?: string; publicId?: string; equippedTitle?: string; avatarId?: string; equippedSkins?: string[] }> {
     if (!this.baseUrl) return { elo: INITIAL_ELO };
-    const r = await this.get<{ elo?: number; displayName?: string; publicId?: string; equippedTitle?: string; avatarId?: string }>(
+    const r = await this.get<{ elo?: number; displayName?: string; publicId?: string; equippedTitle?: string; avatarId?: string; equippedSkins?: string[] }>(
       `/internal/player?accountId=${encodeURIComponent(accountId)}`,
       '/internal/player',
     );
@@ -67,6 +67,7 @@ export class MetaClient {
       ...(r.body.publicId ? { publicId: r.body.publicId } : {}),
       ...(r.body.equippedTitle ? { equippedTitle: r.body.equippedTitle } : {}),
       ...(r.body.avatarId ? { avatarId: r.body.avatarId } : {}),
+      ...(r.body.equippedSkins?.length ? { equippedSkins: r.body.equippedSkins } : {}),
     };
   }
 

@@ -206,6 +206,9 @@ components:
           type: string
         territoryCount:
           type: integer
+        hasBattlePass:
+          type: boolean
+          description: "Season battle pass held (S8-8 shop; grants training/build speed + yield bonuses, cleared on season reset). Client uses this to grey out the shop's battle-pass row once already active (single-slot — repeat purchase is rejected with ALREADY_ACTIVE)."
         trainingQueue:
           type: array
           description: Training queue (S8-2, ordered by completeAt ascending). The client uses this to render the queue countdown (C4).
@@ -1199,6 +1202,37 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/OkResponse' }
+
+  /world/march/{marchId}/instant-return:
+    post:
+      operationId: instantReturnMarch
+      description: >-
+        2026-08-01 (SLG_DESIGN_LOG §46): pay coins to instantly complete an in-transit 'return' march. Cost is
+        always computed server-side from the march's remaining travel time — the request body carries no coin
+        amount (unlike /world/troops/speedup, this is a single "finish now" action, not a partial buy-down).
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: marchId, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [worldId]
+              properties:
+                worldId: { type: string }
+      responses:
+        '200':
+          description: Return march completed instantly
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/OkResponse'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/PlayerWorldView' }
 
   /world/occupations:
     get:

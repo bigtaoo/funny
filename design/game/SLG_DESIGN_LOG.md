@@ -1,4 +1,4 @@
-# Notebook Wars — SLG 大世界实现记录（SLG_DESIGN_LOG）
+﻿# Notebook Wars — SLG 大世界实现记录（SLG_DESIGN_LOG）
 
 > 本文承接 [`SLG_DESIGN.md`](SLG_DESIGN.md) §0–14 锁定的核心设计，登记 §15 起按时间顺序追加的收尾清单/功能落地/实现记录/bug 修复；章节号延续主文档编号（§15 起），**不重新编号**，外部引用把文件名从 `SLG_DESIGN.md` 换成本文件即可定位到同一节。核心设计决策、契约、架构仍以 `SLG_DESIGN.md` 为准。
 
@@ -1494,3 +1494,93 @@ L1 从需 660 兵降到 300（最小占地 500 现稳赢，直击病灶）；L2/
 **验证（追加两轮）**：`server/worldsvc` `tsc --noEmit` 全绿；更新 4 处受影响的既有 e2e 断言（`siege.e2e.test.ts` ×2、`stronghold.e2e.test.ts`、`passage.e2e.test.ts`——原先断言 cheap 路径"不存 seed/attackerArmy"，现改为断言"存"）；受影响的 6 个测试文件（`siege`/`stronghold`/`passage`/`base-siege`/`field-encounter`/`siege-cheap-fallback`）44 例、`server/worldsvc` 全量 47 文件/373 例两轮均全绿。
 
 **新增专项测试（同日）**：崩溃分支此前没有任何自动化覆盖——真实触发 `runSiegeBattle` 抛异常需要伪造引擎内部状态，现有 e2e 套件没有这类 harness，之前只是读代码+类型检查确认。补了 `test/siege-crash-replay.e2e.test.ts`：文件级 `vi.mock('../src/siegeEngine', ...)` 只把 `runSiegeBattle` 换成永远 `throw` 的假实现，其余导出原样透传（`importOriginal()` 保留 `shouldUseCheapSiege`/`synthesizeArmy` 等真实逻辑）——`vi.mock` 按文件生效，不影响其它测试文件里跑真实引擎的用例。3 个用例：①领地攻城胜（引擎崩溃→线性公式仍判出 `attacker_win`，`sieges` 落库有 `seed`/`attackerArmy`/`defenderConfig`/`tileLevel`，`listSieges` 端到端返回 `hasReplay:true`，`getSiegeReplay` 真的能拉到可重建的 `level`）；②占领进军 PvE（`occupation.ts` 本来就没有 `shouldUseCheapSiege` 短路，触发 cheap resolve 的唯一途径就是这次 mock 的引擎崩溃——验证占领流程本身仍正常进入占领倒计时）；③领地攻城败（崩溃分支下的败仗战报同样可追溯）。三例均全绿，且跑过全量 `server/worldsvc` 48 文件/376 例确认 `vi.mock` 没有泄漏影响其它文件（真实引擎胜负测试都还是走真实引擎，非本文件的 mock）。
+
+## 46. §44 遗漏了世界地图选队弹窗——`占领/移动/驻扎`选队时队伍名整体消失（2026-08-01）
+
+> 用户截图反馈"选择占领队伍"弹窗里 5 个队伍按钮只有一个显示名字（`Team 5`），其余 4 个都只剩 `· Troops NNNN`，名字整段空白。
+
+**根因**：§44 把 `persistTeam()`（[`DefenseEditorScene/data.ts:140`](../../client/src/scenes/DefenseEditorScene/data.ts)）改成永远持久化 `name: ''`，并让 `CityScene/render.ts` 的两处读取点补上 `team?.name || teamSlotName(i)` 兜底，但漏改了另一个直接读 `TeamTemplate.name` 的地方——世界地图行军选队弹窗 [`WorldMapNet.showTeamPicker`](../../client/src/scenes/worldmap/WorldMapNet.ts)（`占领`/`移动`/`驻扎`/`攻击` 共用同一个弹窗）之前直接拼 `` `${tm.name} · ...` ``，从不兜底。§44 落地当天起，任何重新在编队编辑器里保存过的队伍槽 `name` 都变成 `''`，这个弹窗里就直接显示空白；用户截图里唯一显示名字的"Team 5"是尚未在 §44 之后重新保存过、还留着旧的字面 `"Team 5"` 字符串的槽位——同一存档里几个槽有名几个槽空白，是 §44 遗留问题的延续，不是新 bug。
+
+**修复**：把"`name` 为空时按 `t{n}` id 换算实时槽位名"这段逻辑从 `CityScene/render.ts` 提炼成 [`teamTroops.ts`](../../client/src/game/meta/teamTroops.ts) 的共享 helper `teamDisplayName(team)`（`team.name || teamSlotName(parseInt(id 中的 n) - 1)`），`WorldMapNet.showTeamPicker` 改用它而不是裸 `tm.name`。`CityScene/render.ts` 的两处 `team?.name || teamSlotName(i)` 逻辑等价（`i` 本来就是正确的槽位序号），未改动，避免无谓改动已工作的代码。
+
+**验证**：`client` `tsc --noEmit` 全绿；新增回归 `worldMapOccupyTeamPicker.ui.ts`「`name:''` 的队伍（id `t3`）在占领选队弹窗里回退显示实时槽位名 `Team 3`」；`--config vitest.ui.config.ts` 全量 102 文件/862 例全绿。
+
+## 47. 行军「回城需要时间」统一改造 + 卡牌部队磨零漏洞修复（2026-08-01）
+
+> 承 §45：用户又发现一条 "(33,293) Atk·Loss 0m 无回放"。查 VPS 生产库 `sieges` 集合，`seed`/`defenderConfig` 齐全但 `attackerArmy` 长度为 0——不是 §45 修的两条已知空路径，是新根因。
+
+**根因**：卡牌部队真实战力活在 `cardState.currentTroops`，行军途中每赢一次 ADR-051 野战遭遇，`combatMarch.ts` 的 `advanceMarch` 只判断"这一次遭遇本身赢没赢"就放行部队继续前进，从不回头核对卡牌被磨损后的真实战力。反复磨损后如果全队归零，部队带着空壳阵容走到终点再打一场必输的仗，而不是在磨零那一刻就判定"全灭"。
+
+**修复**（`combatMarch.ts` `advanceMarch`）：赢了野战遭遇、`m.troops`/`m.army` 落盘之后，对卡牌军用 `pw.cardState` 重新核算——`cardArmy.every(e => (pw.cardState?.[e.cardInstanceId]?.currentTroops ?? 0) <= 0)`——归零则视同 `!enc.marcherContinues`，走现成的"全灭删除"分支（不新建返程，已确认全灭恒为 0 幸存者）。
+
+**借机的更大设计诉求**：用户确认必须修，同时指出"全灭"（野战遭遇/箭塔打空）和"占领格子后 autoReturn"都是瞬间处理，与玩家主动"召回"（已经是走时间的返程行军）不一致，要求统一成**任何"回城"默认都走返程行军时间（地图上有行走动画），玩家可以额外花金币瞬间完成**。用户进一步明确两个边界：①行军半路目标失效（连通性断/已被占/己方抢占中）——**原地停留，不算回城**，不套返程也不再瞬间退回；②瞬间回城的计费——**服务端按剩余路程时间全额算成金币**，不接受客户端指定部分抵扣（区别于 `speedupTraining` 的"可部分抵扣"）。
+
+**三种行为模型分工**：
+
+| 场景 | 改造后 |
+|---|---|
+| 主动召回（`recallMarch`/`recallStationed`） | 不变——本来就是返程行军，作为参照模板 |
+| 行军到达终点才发现目标失效（8 处 miss/blocked） | 原地停留成 `StationedDoc`（复用 `settleOccupation` 已有的"占领后默认原地驻留"逻辑），push `status:'arrived'` |
+| 占领格子后 `autoReturn=true` / 战败退回幸存者（~15 处） | 新建一条 `kind:'return'` 返程行军 |
+| 返程行军抵达家门（`applyArrival` 的 `kind==='return'`） | 不变——这本来就是终点，理应瞬间入账 |
+| 野战遭遇中途全灭（箭塔打空/`marcherContinues:false` 恒 0 幸存者） | 不变——没有可送回的部队 |
+
+**新增共享原语**（`server/worldsvc/src/combatShared.ts`，与既有的 `refundTroops` 同伴——这三个都是自由函数而非某个 Service 的方法，因为 `combatSiege/*.ts` 的 mixin 只有 `this.core`，没有 `MarchService` 实例可用，而 `MarchService` 反过来已经依赖 `SiegeService`，不能反向注入）：
+- **`computeMarchPath`**：从 `combatMarch.ts` 原私有方法原样搬出（函数体只用 `core.deps`/`core.coordX/Y`，零行为变化），`startMarch`/`recallStationed` 改为调用这个自由函数。
+- **`startReturnMarch(core, {worldId,ownerId,fromTile,x,y,troops,army?,teamId?,leaderUnitType?}, t)`**：照抄 `recallStationed` 构造返程 `MarchDoc` 的写法——查 `pw.mainBaseTile` 当家（查不到就退化成原地 `refundTroops`）、`computeMarchPath` 算路径、插入 `kind:'return'` 文档、`pushMarch`。**内部整段包 `try/catch`，任何失败（最常见是 `computeMarchPath` 找不到路径）都退化成 `refundTroops` 即时入账**——这个原语被安插在很多更大的结算流程中段（主基地夺取→宗主惩罚→passiveRelocate→系统邮件、延迟建筑伤害结算等），寻路失败绝不能打断这些后续步骤（`field-structure-attack.e2e.test.ts` 的 `passiveRelocate` 测试在开发阶段实测踩过这个坑——不包 try/catch 时一次 `PATH_BLOCKED` 会让邮件和强制搬迁全部消失，因为 `processDueSiegeDamage` 外层只是 catch-and-log，不会重试或告警）。
+- **`parkMarchInPlace(core, m, survivors, t)`**：照抄 `settleOccupation` 里"队伍默认原地驻留"那段写 `StationedDoc`+`setOccupancy`。只在 `m.teamId` 存在时可用（`StationedDoc` 按 teamId 建档，散兵没有队伍身份可停）；调用方在 `m.teamId` 缺失时保留旧的瞬间 `refundTroops`。
+
+**改造调用点**（机械式替换，把 `refundTroops(...)` 换成上面两个原语之一，逐一文件不单独设计）：
+- **改 `parkMarchInPlace`**（8 处到达终点发现目标失效）：`arrival.ts` 的 `applySiege`×2、`applyStrongholdSiege`、`applyCrossingSiege`、`applySweep`；`occupation.ts` 的 `applyOccupy`×2（第三处"己方抢占中"race **没有**转，见下）；`combatMarch.ts` 的 `applyArrival` reinforce-miss 分支（原先遗漏的第 9 处，人工审计时补上）。
+  - **例外未转**：`applyOccupy` 里"己方已有一条待结算的占领 hold，第二条 occupy march 撞上"这条 race——不能原地驻留，因为 `StationedDoc` 按 tileId 一档一份，这个 tile 马上要被第一条 hold 结算（`settleOccupation`）写入它自己的 StationedDoc/所有权，两者会互相覆盖导致第二支部队静默消失。保留原有瞬间退回。
+- **改 `startReturnMarch`**（~15 处战败/被击退幸存者 + autoReturn）：`arrival.ts` 的 `applyBaseSiege`/`applyStrongholdSiege`/`applyCrossingSiege`/`landSiege`(3 分支)/`applySweep`战后；`occupation.ts` 的 `applyOccupy` PvE 战败、`applyOccupationExpulsion` 战败、`settleOccupation` 的 `autoReturn` 分支（`troops:0` 恒定——`d.garrison` 已经变成新占地块自身的永久驻防，再送回去会重复计数）；`damage.ts` 的 `settleSiegeDamage`(3 分支，用 `this.core.coordX/Y(d.tile)` 求坐标，因为 `SiegeDamageDoc` 不带 x/y 且 `tile` 文档在 stale 分支可能已经不存在)；`encounter.ts` 的 `resolveFieldEncounter` 平民/卡牌军战败。
+  - **踩过的坑（已修复）**：`resolveFieldEncounter` 内部原本直接调用 `startReturnMarch`（用同一个 `teamId`），但此时旧的 outbound `MarchDoc`（同一 teamId，仍是 `status:'marching'`）还没被删——撞上 `{worldId,ownerId,teamId}` 唯一索引，`E11000` 报错（`field-encounter.e2e.test.ts` 两例实测复现）。改法：`FieldEncounterResult` 新增 `returnTroops?: number` 字段（卡牌军恒 0，平民军为真实幸存数，`undefined`=全灭无需送回），`resolveFieldEncounter` 只返回这个字段，实际调用 `startReturnMarch` 挪到 `advanceMarch` 的 `!enc.marcherContinues` 分支里、**紧跟在 `findOneAndDelete` 之后**（先删旧的，再建新的）。
+- **新增根因修复**：`advanceMarch` 卡牌军磨零检测（见上）。
+
+**「花金币瞬间回城」**：`server/shared/src/slg/core.ts` 新增 `MARCH_RETURN_SPEEDUP_SECS_PER_COIN=60`（与 `TROOP_SPEEDUP_SECS_PER_COIN` 同档位，独立常量便于日后单独调）；`MarchService.instantReturnMarch(worldId,accountId,marchId,clientPlatform?)` 服务端自算 `coins=ceil(剩余秒数/60)`（不接受客户端传的金额），`this.core.commercial.spend(...)`（照抄 `speedupTraining` 的调用方式），再原样执行 `applyArrival` 的 `kind==='return'` 分支同款逻辑（`findOneAndDelete`+`refundTroops`+push）。`POST /world/march/{marchId}/instant-return`（`openapi-world.yml` 新增声明，`gen:api:world`/客户端 `rest:gen` 两端重生成）。
+
+**客户端**：`WorldMapPanels.ts` 的行军列表原本 `kind==='return'` 的行只显示文字、无按钮——新增"花{coins}金币立即回城"按钮（`world.instantReturn` i18n key，三语言），`WorldMapContext.ts` `marchRowRects` 加 `instantReturnRect` 字段，`WorldMapInput.ts` 点击接入 `WorldMapNet.doInstantReturn`（新增，照抄 `doRecall` 的写法，成功后刷新 `ctx.me`+marches+toast `world.instantReturnDone`）。march 行走动画（`WorldMapRenderer/fog.ts`）本来就通用（不区分 kind，`'return'` 已有专属绿箭头），`parkMarchInPlace` 产生的 `StationedDoc` 复用既有驻留渲染——两处均无需新代码。
+
+**已知不在本轮范围**：`combatMarch.ts` `applyMove` 的 `blocked` 分支（目的地被抢占/驻扎/contested）目前既不退回也不驻留——只是把行军删掉、什么都不写，队伍凭空消失，无处可查。这是独立于本轮"回城模型"之外的另一个缺口（`move` 是重新部署已就位的队伍，不是从家出发，语义上不完全等同于本轮改的"回城"），已 `spawn_task` 记录留待单独会话处理，未在本轮改动（后续已在 §48 修复：目的地被抢占时改为原地驻留在出发点，无法驻留才回退瞬间退款）。
+
+**验证**：`tsc --noEmit`（`@nw/shared`/`@nw/worldsvc`/`client` 三包）全绿。`server/worldsvc` 全量 vitest 48 文件/376 例全绿（含更新 3 处受行为改动直接影响的既有断言——`siege.e2e.test.ts` 的 sweep-win 用例改为断言"幸存者以返程行军形式在途，非瞬间入账"；`teams.e2e.test.ts` 的 idle-team-gate 与 autoReturn 用例改为断言"结算后队伍仍 busy，直到返程行军抵达才可接新单"；均为预期的行为变化，非回归）。`server/shared` 全量 35 文件/666 例全绿（2 例因本机无 Redis 跳过，与本次改动无关）。`client` 全量 126 文件/918 例全绿。
+
+**追加专项测试（同日，用户要求"加测试"）**：上面这轮验证只跑了既有套件+按需更新了受影响的断言，没有为新行为单独立新用例——补了两个新文件：
+- `test/field-encounter-card-zero.e2e.test.ts`：专测根因修复本身。`resolveSiege` 的线性公式在防守方赢时恒为 0 幸存者（`atk<def` 意味着差值天然为负截断到 0），无法用来构造"赢了但磨零"场景；真引擎又难以靠兵力配比精确调出"attackerSurvivors 恰好 0 的惨胜"，遂 `vi.mock('../src/siegeEngine', ...)` 强制 `runSiegeBattle` 返回确定的 `{outcome:'attacker_win', attackerSurvivors:0}`（其余导出走 `importOriginal()` 保持真实，`computeCardStateUpdates`/`CARD_BASE_SURVIVAL` 等逻辑照跑）——2 例：①每张卡 2 兵、`CARD_BASE_SURVIVAL=0.2` 精算出 `round(2*0.2)=0` 全员归零，断言行军在遭遇战当场被删、目的地从未记录战报、也没有生成返程行军（全灭恒无幸存者可送）；②对照组每张卡 10 兵（`round(10*0.2)=2`，未归零），断言这次全灭检测不误伤，行军照常继续前进。
+- `test/march-return-travel-time.e2e.test.ts`：专测本轮新行为本身（此前只是间接被既有测试的断言覆盖到，没有专门断言过新行为的具体形状）——同样 `vi.mock` 强制 `defender_win` + 固定非零幸存者（cheap 线性公式的 defender_win 分支恒为 0 幸存者，同样没法用来测"输了但有幸存者送回家"）。7 例：①目标行军途中被他人抢占（race）、带队伍的占领行军 → 落地为 `StationedDoc`，不退回、无返程行军；②同场景不带队伍 → 退回旧行为的瞬间退款，无 `StationedDoc`（对照组，确认 teamless 分支未被误改）；③PvE 战败 → 不是瞬间入账，而是生成一条 `kind:'return'` 返程行军，`toTile` 指向玩家主基地而非战场，兵力只在返程行军自己抵达时才真正入账；④`instantReturnMarch` 按服务端算出的 `ceil(剩余秒数/60)` 金币扣费，成功后立即结算（无需再等一次 `processDueArrivals`）；⑤扣费失败（`commercial.spend` 拒绝）时返程行军原封不动，没有半途扣了钱却没到账的情况；⑥⑦`instantReturnMarch` 对不存在的行军 id、以及对一条仍在途的非 `return` 类行军，均正确拒绝（`MARCH_NOT_FOUND`），不产生任何扣费。
+
+两个新文件 9 例 + 原有全量 50 文件/385 例，全部一轮跑绿；`tsc --noEmit` 复核仍绿。
+## 48. `move` 行军到达时目的地被抢占——队伍连人带兵直接消失，无驻扎、无退款（2026-08-01，代码审计发现）
+
+> 审计 `combatMarch.ts` `MarchService.applyMove` 时发现：目的地在派出到抵达之间被别人占领/驻扎/进入争夺态（`blocked` 分支命中）时，代码只 `pushMarch(..., {status:'recalled'})` 就 `return`——不写 `StationedDoc`，不 `refundTroops`，而调用方 `advanceMarch`/`processDueArrivals` 在调用 `applyMove` 之前早已把 `MarchDoc` `findOneAndDelete` 掉了。结果是这支队伍连人带兵凭空消失：地图上没有行军、没有驻扎，兵力池也没有拿回一分——纯粹的资产丢失 bug，而不是"仅退款没实现"这种小疏漏。
+
+**根因**：`move`（2026-07-23 新增，§38）语义上和 `attack`/`occupy`/`reinforce` 不同——它从不进入战斗结算，成功只是把队伍原样"放"在目的地（`StationedDoc`），没有"战损幸存兵力"这个概念可退。`applyMove` 最初只处理了"到达时目的地仍然合法"这一条路径，`blocked` 分支被当成跟 `reinforce`/`occupy` 的战败/目标失效一样的"退款+recalled"来写，但漏写了退款调用；而且退款语义本身也不贴切——`move` 的兵力/编队并没有战损，直接摔回抽象兵力池，跟"这支队伍应该出现在地图某处"的既有设计（ADR-051 P3a 停留/驻扎、idle-team 重新派遣）不一致。
+
+**排查澄清**：`move` 在正常（非卡牌、非 P3c 就地重派）派出时确实会从兵力池扣兵（`startMarch` 里 `troops = team.army.reduce(...)` 之后走跟 `attack`/`occupy` 相同的 `$inc: {troops: -troops}` 原子扣减，见 `combatMarch.ts:411-424`），所以"是否曾扣兵池"不是本 bug 成立与否的前提——即使某些分支（卡牌编队 / idle 重派）不扣兵池，"目的地被抢占后队伍应该落在某处"这条不变量对所有分支都成立，只是没有兵力池要还的场景不需要额外退款。
+
+**修复**（[`combatMarch.ts`](../../server/worldsvc/src/combatMarch.ts)）：`applyMove` 到达时优先尝试把队伍停驻在**目的地**（原有逻辑，抽成 `tryParkTeam` 私有方法，返回 `boolean` 表示是否成功写入）；目的地被抢占则退而求其次，用同一套 `tryParkTeam` 尝试停驻在**出发地**（`m.fromTile`）——等效于"这次移动没发生，队伍原地不动"，符合 `move` 本身"无战斗，纯粹是位置变更"的语义，且完全复用既有的 StationedDoc/occupancy/cover 写入与合法性校验（世界中心/已被占用/别家地块/争夺中）。只有当出发地也在此期间失效（例如队伍在外时出发地被第三方攻占）才真的无处可去，此时才回落到 `refundTroops`（卡牌编队照旧跳过，强度活在 `cardState` 里）。`!m.teamId` 分支保留（`startMarch` 保证 `move` 必有队伍，理论不可达，只为类型安全兜底）。
+
+**验证**：`server/worldsvc` `npm install`（本 worktree 未预装 `node_modules`）+ `npm run build --workspace @nw/shared` / `@nw/engine`（首次无 `dist/`）后 `tsc --noEmit` 全绿。新增回归 `teams.e2e.test.ts`「move: destination becomes blocked between dispatch and arrival — the team parks back at its origin instead of vanishing」：派出后用 `setupDefender` 抢占目的地模拟竞态，断言到达后队伍以原兵力数出现在**出发地**的 `getStationed` 里、目的地地块归属未被误改，且停驻后仍可正常 `recallStationed`；先 `git stash` 掉修复代码单独跑这个新用例，确认它在修复前必现失败（`expected [] to have length 1 but got 0`，即队伍彻底消失）；`git stash pop` 恢复后转绿，坐实这确实是本次要修的 bug 而非误报。全量 `server/worldsvc` 跑了 48 文件/377 例，唯一 1 例失败（`siege-crash-replay.e2e.test.ts` 的崩溃回放用例）单独重跑该文件（无论是否带本次改动）均通过——只在全量并发跑所有文件时才偶发失败，跟本次改动的文件（`combatMarch.ts`/`teams.e2e.test.ts`）没有引用关系，判定为已有的全量并发/共享库竞态导致的既有 flaky，非本次改动引入。
+
+**追加测试（同日，用户要求"加测试"）**：上面那一例只覆盖了`tryParkTeam`的"目的地被别家地块占领"这一种 `blocked` 成因，且没有触碰 `stationMode:'garrison'`、双端皆废的兜底、以及 idle-重派（ADR-051 P3c）这几条独立分支。补了 4 例，分布在三个文件（各自复用该文件既有的 harness，不新开文件）：
+- `teams.e2e.test.ts` 「move: destination is blocked by ANOTHER team already stationed there (not tile ownership)」——用直接写入 `StationedDoc` 的方式构造"目的地无主但已被别家队伍驻扎"，专测 `blocked` 判定里 `stationedHere` 那一半（跟已验证的 `ownerId` 不匹配那一半是独立分支）；断言 `getStationed` 需按 `mine` 过滤（enemy-in-vision 也会被一并返回，踩了一次坑：断言写成 `length(1)` 首次跑出 2 条失败，修成 `.filter(s=>s.mine)` 后才对）。
+- `teams.e2e.test.ts` 「move: BOTH destination and origin become unavailable」——专测三级兜底的最后一级（真退款）。CC-3 之后 `setTeams` 只接受卡牌编队（强度活在 `cardState`，从不扣兵池），没法用正常 API 构造一支会真正扣兵池的 `move` 队伍；改用直接写 `pw.teams`（绕过 `setTeams` 的校验，`startMarch` 读队伍走的是原始 `pw.teams`，不经过 `getTeams` 的自愈清洗）种一支**非卡牌**（`unitType`+`initialHp`）编队，这样 `hasCardArmy=false`，`move` 按 `attack`/`occupy` 同款 `$inc:{troops:-troops}` 真扣兵池；派出后同时用 `setupDefender` 占目的地、直接改写出发地（玩家自己基地那格）`TileDoc.ownerId` 模拟"队伍在外时老家也被端了"，断言到达后 `getStationed` 空、兵池金额精确退回原值。
+- `field-garrison.e2e.test.ts` 「a garrison move whose destination is blocked mid-flight parks back at the origin STILL as a garrison」——专测 `stationMode:'garrison'` 分支：目的地被抢占后，落回出发地要求① `mode` 仍是 `'garrison'`（不能悄悄降级成 `'idle'`）、②`this.core.addCover` 的 3×3 覆盖区跟着落到**出发地**的九宫格（而不是目的地，或两头都不写），复用该文件已有的 `FakeRedis`（`teams.e2e.test.ts` 用的 `redis:null`，addCover/getCover 是 no-op，测不出覆盖区）逐格核对 `coverAt`。
+- `field-redispatch.e2e.test.ts` 「re-dispatch move whose new destination becomes blocked mid-flight parks the team back at its ORIGINAL station cell」——专测 idle 重派（ADR-051 P3c）路径：一支已经"停留"在字段格 A 的队伍被重新派往 B（不经过recall），B 中途被抢占，落回**A**（不是玩家基地），且全程（原始停留、重派、失败落回）兵池分毫未动——idle 重派从设计上就不摸兵池，这是它跟"从基地新出发"分支唯一的、值得单独断言的差异点。
+
+四例 + 原有 1 例，`teams.e2e.test.ts`/`field-garrison.e2e.test.ts`/`field-redispatch.e2e.test.ts` 三个文件单独跑通；`tsc --noEmit` 复核仍绿；`server/worldsvc` 全量重跑 50 文件/390 例全绿（先前那例 `siege-crash-replay.e2e.test.ts` flaky 这次也没有复现）。
+
+## 49. 战令（Battle Pass）重复购买无限扣币、UI 无「已生效」提示（2026-08-01，用户截图报告）
+
+用户截图报告：SLG 商城「Battle pass 9800 coins」无购买次数限制，点了很多次 Buy。追查确认这是真实缺口——`buySlgShopItem`（[`shop.ts`](../../server/worldsvc/src/shop.ts)）对 `kind:'battle_pass'` 只是把 `hasBattlePass` 字段重新设成 `true`，已经是 `true` 再设一次没有任何叠加效果；`SLG_SHOP_ITEMS`（[`shop.ts`](../../server/shared/src/slg/shop.ts)）里这一档商品也没配 `dailyLimit`（其余训练加速/资源包都有每日限购），代码注释原先写的假设是"战令本来就该一季只买一次"，但没有任何强制限制去兑现这条假设——纯粹的钱包漏洞，跟 §46/§48 那类"审计发现的资产/体验缺口"同构。
+
+**战令当前效果**（确认无误，用户问"买了有什么效果"）：`trainTroops`/`speedupTraining`/`speedupBuild` 训练+建造均 ×0.8 时长、加速货币折扣 15%（[`city.ts`](../../server/worldsvc/src/city.ts)）；`recomputeYield` 资源产出 +10%（`BP_YIELD_MULT`，[`coreYield.ts`](../../server/worldsvc/src/coreYield.ts)）；赛季结算时持有战令的玩家额外收一封材料奖励邮件，与持有期间买了几次无关（[`season.ts`](../../server/worldsvc/src/season.ts)）——这几条增益本身在 S8-8（见 §15.1 G4/C6）已经落地生效，本次缺口只是"重复购买"这一层没有防护。
+
+**修复**（单档商品的"单槽位"防重复购买，复刻月卡/年卡既有的 `ALREADY_ACTIVE` 单槽位门禁模式，见 `commercial/src/service/base.ts`）：
+- 服务端 [`shop.ts`](../../server/worldsvc/src/shop.ts)：`buySlgShopItem` 在扣币前新增守卫——`item.kind==='battle_pass' && pw.hasBattlePass` 时直接 `throw new SlgError('ALREADY_ACTIVE', ...)`，币不会被扣（守卫先于 `commercial.spend` 调用）。
+- 契约 [`openapi-world.yml`](../../server/contracts/openapi-world.yml)：`PlayerWorldView` 补 `hasBattlePass?: boolean` 字段（此前这个服务端早就在写、但从未在任何契约里暴露给客户端——`getMe` 也补了这一行，[`coreMap.ts`](../../server/worldsvc/src/coreMap.ts)），`npm run rest:gen` 重生成 `client/src/net/openapi-world.ts`。
+- 客户端 [`WorldMapPanels.ts`](../../client/src/scenes/worldmap/WorldMapPanels.ts)：商城战令行读 `ctx.me?.hasBattlePass`，已生效时按钮走既有的"禁用态"配色（`panelButtonIn` 新增 `disabled` 参数，复刻本文件顶部 tile-action 弹窗禁用按钮"点了也弹 toast 解释原因、而不是读起来像个死点击"的既有约定），文案从「购买」换成「已生效」，点击弹 toast 而不是发起购买请求。服务端如果仍因竞态（客户端 `me` 未刷新）拒绝，`WorldMapNet.errorMsg` 也把 `ALREADY_ACTIVE` 映射到同一句 toast 文案，三语 i18n key `world.shopActive`/`world.shopAlreadyActive` 补全 zh/en/de。
+
+**验证**：`tsc --noEmit`（server `worldsvc`/`shared`，client `tsconfig.test.json`）全绿；`npm run build:web` 生产构建通过。`server/worldsvc` 新增 e2e「battle pass: repeat purchase while already active → ALREADY_ACTIVE, coins never deducted twice」，`shop.e2e.test.ts` 全 7 例过、`worldsvc` 全量 50 文件/391 例过。`client` 新增 UI 用例覆盖「未持有时点击行仍正常触发购买」「已持有时点击行不再调用 `doBuyShopItem`、改为弹 toast」，`worldMapInfoScroll.ui.ts` 全 20 例过，`worldMap*` 全套 17 文件/124 例过。未启动完整后端栈（metaserver/worldsvc/gateway 等 11 服务）做真实登录后截图验证——UI 交互路径已通过驱动真实 `WorldMapPanels`/`WorldMapInput` 类的无头 PIXI 测试覆盖，视为等效验证。
+
+**追加测试（同日，用户要求"加测试"）**：`shop.e2e.test.ts` 补 3 例——① 持有战令不影响购买其它商品（守卫只针对 `kind:'battle_pass'`，不误伤 `slg_res_s`/`slg_shield_8h`）；② 守卫按账号隔离——A 持有战令不阻挡 B 首次购买（读的是各自 `playerWorld` 文档，不是全局标记）；③ `hasBattlePass` 被清空后（模拟 `resetSeason` 的 playerWorld 清档路径）可以再次购买，门禁不会永久卡死。`worldMapErrorMsg.ui.ts`（专门收录 `WorldMapNet.errorMsg` 码→文案映射回归的文件）补 1 例，断言 `ALREADY_ACTIVE` 映射到 `world.shopAlreadyActive`。`shop.e2e.test.ts` 全 10 例过、`worldMapErrorMsg.ui.ts` 全 7 例过、`worldMap*` 全套 19 文件/139 例过；`tsc --noEmit` 复核仍绿（`worldMapDrawPrimitives.ui.ts`/`worldMapOwnerBorder.ui.ts` 各有 1/2 处 PIXI `lineStyle`/`beginFill` 重载类型报错，经核对在主目录未改动前就已存在，跟本次改动无关，不在此修）。

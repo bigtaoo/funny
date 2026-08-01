@@ -903,3 +903,24 @@ BattlePassScene 当初是把「滚动定位」和「内容重建」两条路径�
 未纳入本次范围：`avatar.ts` 的头像选择器（`hero:<unit>`/`skin:<id>` 两种头像类型）——这是玩家显式选择头像的独立功能，`skin:<id>` 类型本来就允许单独选一张皮肤当头像，跟着"当前装备的皮肤"走反而会跟这个独立选项打架，故意不动。
 
 **验证**：`npm run typecheck` 全绿；扩充 `client/test/cardArt.test.ts`（新增 `equippedSkinIdFor`/`cardInstanceArtUrl` 用例，共 9 个）；扩充 `client/test/ui/gachaResultCard.ui.ts`/`client/test/ui/mailAttachmentIcons.ui.ts`，验证新增的可选回调确实被调用到（headless PIXI 下所有二进制资产桩成同一张 1×1 PNG data URI，没法按最终贴图 URL 区分"选中了哪张图"，所以这两个新测试断言的是"回调有没有被调用"而非图片本身，逻辑正确性由 `cardInstanceArtUrl` 的纯函数单测兜底）；`npm test`（915 用例）+ `npm run test:ui`（854 用例）全通过。真实浏览器验证：Browser 面板截图工具本次同样报「pane 未显示、无法合成帧」（§23/§26/§27 首段同一限制），且本地 `game` 开发服无后端（`/bootstrap` 网络失败），走不到登录后的这些界面，故未能截图肉眼确认；已通过上述单测 + 既有 UI 冒烟覆盖根因逻辑。
+
+**收窄（同日，用户看到抽卡揭示图后逐一拍板）**：上面「另外 10 处」一刀切改成跟随已装备皮肤，用户复核后发现抽卡揭示卡显示皮肤图会让人误以为「抽到了皮肤」（实际抽到的只是普通角色卡）——按场景语义逐个重新拍板，而不是全跟或全不跟：
+
+| 场景 | 定稿 | 理由 |
+|---|---|---|
+| `GachaScene.ts`（抽卡揭示 + 赔率表） | **原始图片** | 这里回答的是「刚抽到了什么」，用户拍板：角色卡抽到就该显示角色卡原图，混入已装备皮肤会让人误判抽奖结果 |
+| `AuctionScene/list.ts`（拍卖行列表） | **原始图片** | 同上，回答的是「这一条拍卖是什么物品」，不该受本账号的装备状态影响 |
+| `AuctionScene/picker.ts`（拍卖选品器） | **原始图片** | 同上 |
+| `CardScene/list.ts`（Hero Roster 主页签网格） | **原始图片** | 用户拍板 |
+| `CardScene/feed.ts`（合成环 + 候选素材列表） | **原始图片** | 用户拍板 |
+| `EquipmentScene/assign.ts`（装备穿戴选卡界面） | **原始图片** | 用户拍板 |
+| `FriendsScene/mail.ts`（邮件卡牌附件预览） | **原始图片** | 用户拍板 |
+| `CityScene/render.ts`（出征队伍卡槽队长） | 跟随已装备皮肤（不变） | 用户拍板保留——这里展示的是「我的队伍长什么样」，理应反映当前装备 |
+| `DefenseEditorScene/render.ts` + `input.ts`（兵营列表/网格已放置单位/拖拽幽灵图） | 跟随已装备皮肤（不变） | 同上，防守布局展示的是玩家自己的部队外观 |
+| `CardScene/skins.ts` + `detail.ts`（Skins 页签 + 卡片详情） | 跟随已装备皮肤（不变） | §27 最初的修复目标，本来就该显示装备效果 |
+
+**改动**：`GachaScene.ts`/`AuctionScene/list.ts`/`AuctionScene/picker.ts`/`CardScene/list.ts`/`CardScene/feed.ts`（两处）/`EquipmentScene/assign.ts`/`FriendsScene/mail.ts` 的 `cardInstanceArtUrl(...)` 调用去掉 `equipped` 实参，回落到 `unitPortraitUrl` 内部 `equippedSkinId` 为空的默认分支（即 `UNIT_ART_URLS[unitType]`）。`GachaScene.ts`/`FriendsScene` 新增的可选回调 `getEquippedSkins?()` 因此不再有调用点，整体删除（含 `GachaSceneCallbacks`/`FriendsSceneCallbacks` 的字段声明 + `app/nav/shop.ts`/`app/nav/social.ts` 的实现行）；对应两个「回调被调用」的 UI 回归测试一并删除。`CityScene`/`DefenseEditorScene`/`CardScene/skins.ts`/`detail.ts` 未改动，仍走 §27 原逻辑。
+
+**验证**：`npx tsc --noEmit`（client）全绿；`npm test`（923 用例）+ `npm run test:ui`（860 用例）全通过。
+
+**补测**（同日）：上面「改动」只删了旧的「回调被调用」测试，没有为新的「原始图片」7 处调用点补回归覆盖——为防止日后有人无意中把 `equipped` 参数传回去、悄悄复发本节最初要修的误读问题，逐场景新增用例：`GachaScene.ts`（`gachaResultCard.ui.ts`）、`AuctionScene/list.ts` + `picker.ts`（`auctionScene.ui.ts`）、`CardScene/list.ts`（`cardSceneLevelStars.ui.ts`）、`CardScene/feed.ts` 两处调用点（`cardFusePanel.ui.ts`）、`EquipmentScene/assign.ts`（`equipmentAssignGrid.ui.ts`）、`FriendsScene/mail.ts`（`mailAttachmentIcons.ui.ts`）。手法：`vi.mock('.../cardArt', importOriginal)` 只把 `cardInstanceArtUrl` 包一层 `vi.fn`（保留真实实现），断言调用参数长度 ≤1（即未传 `equipped`）——而非比对渲染出的贴图，因为 headless PIXI 下所有二进制资产桩成同一张 1×1 PNG data URI，贴图身份判别不出「画的是哪张图」。

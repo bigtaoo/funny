@@ -14,6 +14,21 @@ import { InputManager } from '../../src/inputSystem/InputManager';
 import { initI18n, t } from '../../src/i18n';
 import { GachaScene, type GachaSceneCallbacks } from '../../src/scenes/GachaScene';
 import type { GachaResultEntry } from '../../src/net/ApiClient';
+import { unitPortraitUrl, cardInstanceArtUrl } from '../../src/render/cardArt';
+import { UnitType } from '../../src/game/types';
+
+// Every export except cardInstanceArtUrl/unitPortraitUrl passes through untouched; wrapping just
+// those two in vi.fn (keeping their real implementation) lets specs below inspect call arguments
+// without disturbing the rendered art (headless PIXI stubs every binary asset to one identical PNG
+// data URI, so asserting "which picture got drawn" by texture identity isn't possible).
+vi.mock('../../src/render/cardArt', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../src/render/cardArt')>();
+  return {
+    ...actual,
+    cardInstanceArtUrl: vi.fn(actual.cardInstanceArtUrl),
+    unitPortraitUrl: vi.fn(actual.unitPortraitUrl),
+  };
+});
 
 const memStore = (() => {
   const m = new Map<string, string>();
@@ -87,6 +102,43 @@ describe('GachaScene — result card names + duplicate badge', () => {
   });
 });
 
+// Regression coverage for the 2026-08-01 fix: skin_e1/skin_e2/skin_l1 (Lena/Mara/Max's gacha
+// skins) had dedicated portrait art registered in cardArt.ts SKIN_PORTRAIT_ART, but
+// GachaScene.drawEntryPicture never looked it up — every skin pull unconditionally drew the
+// generic wardrobe brush glyph instead, so the result card never showed the actual skin art.
+// Asserted on call arguments, not the rendered texture (see file-level note above).
+describe('GachaScene — skin result card resolves its dedicated portrait, not the brush placeholder', () => {
+  const spy = unitPortraitUrl as unknown as { mock: { calls: unknown[][] } };
+
+  it.each([
+    ['skin_e1', UnitType.Lena],
+    ['skin_e2', UnitType.Mara],
+    ['skin_l1', UnitType.Max],
+  ])('resolves %s through unitPortraitUrl(%s, itemId)', (itemId, unitType) => {
+    spy.mock.calls.length = 0;
+    const scene = buildGacha();
+    reveal(scene, [{ itemId, rarity: 'epic', duplicate: false }]);
+
+    const skinCalls = spy.mock.calls.filter((call) => call[1] === itemId);
+    expect(skinCalls.length).toBeGreaterThan(0);
+    for (const call of skinCalls) expect(call[0]).toBe(unitType);
+    scene.destroy();
+  });
+
+  // skin_placeholder isn't in SKIN_TARGET_UNIT (skinDefs.ts) — drawEntryPicture must not call
+  // unitPortraitUrl for it at all (no unitType to resolve), and must still render the card without
+  // throwing, falling back to the brush glyph instead.
+  it('does not call unitPortraitUrl for a skin id with no SKIN_TARGET_UNIT mapping, and still renders', () => {
+    spy.mock.calls.length = 0;
+    const scene = buildGacha();
+    expect(() => reveal(scene, [{ itemId: 'skin_placeholder', rarity: 'legendary', duplicate: false }])).not.toThrow();
+
+    const skinCalls = spy.mock.calls.filter((call) => call[1] === 'skin_placeholder');
+    expect(skinCalls.length).toBe(0);
+    scene.destroy();
+  });
+});
+
 describe('GachaScene — legendary card border trail', () => {
   const fxOf = (s: GachaScene): Array<{ phase: number }> =>
     (s as unknown as { revealFx: Array<{ phase: number }> }).revealFx;
@@ -120,31 +172,25 @@ describe('GachaScene — legendary card border trail', () => {
   });
 });
 
-// Regression coverage for the 2026-08-01 fix: a pulled hero card's reveal picture used to always
-// show the base UNIT_ART_URLS portrait, ignoring whatever skin the player already has equipped for
-// that character (cardArt.ts unitPortraitUrl/cardInstanceArtUrl — same fix as the Hero Roster Skins
-// tab). getEquippedSkins is a new optional callback; this checks the reveal wiring calls through to
-// it for hero-card pulls (and is silent for non-card pulls, e.g. materials).
-describe('GachaScene — reveal picture consults the equipped-skin callback', () => {
-  it('calls getEquippedSkins when revealing a hero card pull', () => {
-    const getEquippedSkins = vi.fn(() => ({} as Record<string, string>));
-    const scene = buildGacha({ getEquippedSkins });
-    reveal(scene, [{ itemId: 'lichuang', rarity: 'rare', duplicate: false }]);
-    expect(getEquippedSkins).toHaveBeenCalled();
-    scene.destroy();
-  });
+// Regression coverage for the 2026-08-01 scoping decision (UI_DESIGN.md §27 addendum): a hero-card
+// pull's reveal picture must always be the base portrait, never whichever skin the account has
+// equipped for that unit type — showing the equipped skin here misread "I pulled a plain card" as
+// "I pulled a skin". GachaScene has no equipped-skin data source at all any more (the earlier
+// `getEquippedSkins` callback was removed), so this locks in that the reveal keeps resolving through
+// `cardInstanceArtUrl(card)` with no second (equipped) argument — reintroducing that argument would
+// silently bring back the misread. Asserted on call arguments, not the rendered texture, because
+// headless PIXI stubs every binary asset to the same 1×1 PNG data URI (see file-level note above).
+describe('GachaScene — hero card reveal always calls cardInstanceArtUrl with no equipped-skin arg', () => {
+  const spy = cardInstanceArtUrl as unknown as { mock: { calls: unknown[][] } };
 
-  it('does not call getEquippedSkins for a non-card (material) pull', () => {
-    const getEquippedSkins = vi.fn(() => ({} as Record<string, string>));
-    const scene = buildGacha({ getEquippedSkins });
-    reveal(scene, [{ itemId: 'mat_scrap', rarity: 'common', duplicate: true }]);
-    expect(getEquippedSkins).not.toHaveBeenCalled();
-    scene.destroy();
-  });
-
-  it('does not throw when getEquippedSkins is absent (optional callback)', () => {
+  it('passes only the card, never an equipped-skin map, for a hero card pull', () => {
+    spy.mock.calls.length = 0;
     const scene = buildGacha();
-    expect(() => reveal(scene, [{ itemId: 'lichuang', rarity: 'rare', duplicate: false }])).not.toThrow();
+    reveal(scene, [{ itemId: 'lichuang', rarity: 'rare', duplicate: false }]);
+
+    const cardCalls = spy.mock.calls.filter((call) => (call[0] as { defId?: string } | undefined)?.defId === 'lichuang');
+    expect(cardCalls.length).toBeGreaterThan(0);
+    for (const call of cardCalls) expect(call.length === 1 || call[1] === undefined).toBe(true);
     scene.destroy();
   });
 });

@@ -180,7 +180,7 @@ export function MailMixin<TBase extends FriendsSceneBaseCtor>(Base: TBase): TBas
           return;
         }
       } else if (a.kind === 'card' && a.instance) {
-        const artUrl = cardInstanceArtUrl(a.instance, this.cb.getEquippedSkins?.()) ?? undefined;
+        const artUrl = cardInstanceArtUrl(a.instance) ?? undefined;
         if (artUrl) {
           const tex = getArtTexture(artUrl);
           if (tex.baseTexture.valid) {

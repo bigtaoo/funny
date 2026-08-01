@@ -2,7 +2,7 @@
 // skins used to live on a single global SaveData.equipped[EQUIP_SLOT] slot; now each character has its
 // own slot, so several skins can be equipped simultaneously.
 import { describe, it, expect } from 'vitest';
-import { SKIN_TARGET_UNIT, skinsForUnitType, skinEquipKey, allEquippedSkins } from '../src/game/meta/skinDefs';
+import { SKIN_TARGET_UNIT, skinsForUnitType, skinEquipKey, allEquippedSkins, equippedSkinIdForType } from '../src/game/meta/skinDefs';
 import { UnitType } from '../src/game/types';
 
 describe('SKIN_TARGET_UNIT', () => {
@@ -40,5 +40,18 @@ describe('allEquippedSkins', () => {
 
   it('returns an empty array when nothing is equipped', () => {
     expect(allEquippedSkins({})).toEqual([]);
+  });
+});
+
+describe('equippedSkinIdForType', () => {
+  it('finds the one equipped skin targeting a given unit type, out of the flattened battle list', () => {
+    const skins = ['skin_e1', 'skin_l1'];
+    expect(equippedSkinIdForType(UnitType.Lena, skins)).toBe('skin_e1');
+    expect(equippedSkinIdForType(UnitType.Max, skins)).toBe('skin_l1');
+  });
+
+  it('returns null for a type with nothing equipped', () => {
+    expect(equippedSkinIdForType(UnitType.Mara, ['skin_e1', 'skin_l1'])).toBeNull();
+    expect(equippedSkinIdForType(UnitType.Infantry, [])).toBeNull();
   });
 });

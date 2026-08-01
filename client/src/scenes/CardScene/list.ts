@@ -156,7 +156,7 @@ export function ListMixin<TBase extends CardSceneBaseCtor>(Base: TBase): TBase &
         return;
       }
 
-      const sorted = sortCards(cards, save.equipmentInv ?? {});
+      const sorted = sortCards(cards, save.equipmentInv ?? {}, cardState);
       // Start the grid right of the sidebar rail (landscape, when shown) or the red margin rule
       // (portrait — the bottom nav bar reserves no width); right pad stays one ROSTER_GAP.
       const left = (this.landscape && this.showSidebar ? sidebarNavW(w, h, true) : marginLineX(w)) + ROSTER_GAP;
@@ -236,7 +236,7 @@ export function ListMixin<TBase extends CardSceneBaseCtor>(Base: TBase): TBase &
       const frame = sketchPanel(imgW, imgH, { fill: 0xf0eee7, border: C.mid, seed: seedFor(x, y, imgW) });
       frame.x = imgX; frame.y = imgY;
       this.bodyLayer.addChild(frame);
-      const artUrl = cardInstanceArtUrl(card, save.equipped) ?? undefined;
+      const artUrl = cardInstanceArtUrl(card) ?? undefined;
       if (artUrl) this.drawArtFit(artUrl, imgX + 2, imgY + 2, imgW - 4, this.bodyLayer, imgH - 4);
 
       // ── Right: info column (name at top, stats stacked below) ──

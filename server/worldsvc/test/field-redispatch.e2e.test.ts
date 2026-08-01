@@ -18,7 +18,7 @@ import {
 } from '@nw/shared';
 import type { CardInstance } from '@nw/shared';
 import { createWorldMongo, type WorldMongo } from '../src/db';
-import type { TeamTemplate, CardSLGState } from '../src/db';
+import type { TeamTemplate, CardSLGState, TileDoc } from '../src/db';
 import { WorldService } from '../src/service';
 import type { WorldRedis } from '../src/redis';
 import type { WorldMetaClient } from '../src/metaClient';
@@ -185,6 +185,45 @@ describe.skipIf(!mongo)('worldsvc idle re-dispatch + in-place occupation e2e (AD
     expect(list[0]!.x).toBe(b.x);
     // Card army → the pool is never touched by either the original station or the re-dispatch.
     expect((await svc.getMe(W, 'a')).troops).toBe(troopsBefore);
+  });
+
+  it('re-dispatch move whose new destination becomes blocked mid-flight parks the team back at its ORIGINAL station cell — never vanishes, no pool refund (regression, 2026-08-01 fix)', async () => {
+    await svc.joinWorld(W, 'a', 5, 5);
+    await setupStrongTeam('t1');
+    const a = findCoord((t) => t.type === 'resource' || t.type === 'neutral', 10, 10);
+    const b = findCoord((t) => t.type === 'resource' || t.type === 'neutral', 16, 16, new Set([`${a.x}:${a.y}`]));
+    const aTid = tileId(W, a.x, a.y), bTid = tileId(W, b.x, b.y);
+
+    await stationIdleAt(a);
+    const troopsBefore = (await svc.getMe(W, 'a')).troops;
+
+    // Re-command the idle team from A towards B (no recall) — same re-dispatch path as the sibling test above.
+    const mv = await svc.startMarch(W, 'a', a.x, a.y, b.x, b.y, 'move', 1, 't1');
+    expect(mv.kind).toBe('move');
+
+    // Someone else claims cell B while the re-dispatched team is in transit.
+    const rivalTile: TileDoc = { _id: bTid, worldId: W, x: b.x, y: b.y, type: 'territory', level: 1, ownerId: 'rival', garrison: 0, rev: 0 };
+    await m.collections.tiles.updateOne({ _id: bTid }, { $set: rivalTile }, { upsert: true });
+
+    nowMs = mv.arriveAt;
+    expect(await svc.processDueArrivals()).toBe(1);
+
+    // Parks back at A (the field cell it stood on before the re-dispatch), never at B, never gone.
+    expect(await m.collections.stationed.findOne({ _id: bTid })).toBeNull();
+    const stA = await m.collections.stationed.findOne({ _id: aTid });
+    expect(stA?.teamId).toBe('t1');
+    expect(stA?.mode).toBe('idle');
+    expect(redis.occSize(W)).toBe(1);
+    expect(redis.occHas(W, aTid)).toBe(true);
+
+    // Card army + idle re-dispatch → the pool was never touched at any point (dispatch, block, or park-back).
+    expect((await svc.getMe(W, 'a')).troops).toBe(troopsBefore);
+
+    // Still recallable normally afterwards — not a dead-end state.
+    const back = await svc.recallStationed(W, 'a', 't1');
+    expect(await svc.getStationed(W, 'a')).toHaveLength(0);
+    nowMs = (back as { arriveAt: number }).arriveAt;
+    expect(await svc.processDueArrivals()).toBe(1);
   });
 
   it('in-place occupation (§4.3): an idle team occupies the neutral cell it stands on — a 0-distance occupy that settles to owned territory with the team still stationed', async () => {

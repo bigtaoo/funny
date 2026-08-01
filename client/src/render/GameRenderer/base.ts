@@ -100,6 +100,8 @@ export class GameRendererBase {
   protected unitView!:     UnitView;
   /** Equipped skin ids (one per character, LOBBY_IA_REDESIGN §15), passed to UnitView for the texture swap. */
   protected readonly equippedSkins: readonly string[] = [];
+  /** Opponent's equipped skin ids, when known (real PvP only — see UnitView.acquireSprite); always empty for AI/bot opponents. */
+  protected readonly opponentSkins: readonly string[] = [];
   /** Hero Roster card instances (PvE/siege only) for the battle-render gear overlay (§20.4); null = none. */
   protected readonly cardInstances: EngineCardInstance[] | null = null;
   /** Equipment inventory for resolving worn gear slot ids in the overlay (§20.4); null = none. */
@@ -148,6 +150,7 @@ export class GameRendererBase {
     tutorial = false,
     battleLabels: BattleLabelContext = {},
     replayNames: readonly [string, string] | null = null,
+    opponentSkins: readonly string[] = [],
   ) {
     this.engine     = engine;
     this.layout     = layout;
@@ -155,6 +158,7 @@ export class GameRendererBase {
     this.spectator   = spectator;
     this.replayNames = replayNames;
     this.equippedSkins = equippedSkins;
+    this.opponentSkins = opponentSkins;
     this.cardInstances = cardInstances;
     this.equipmentInv  = equipmentInv;
     this.battleLabelCtx = battleLabels;
@@ -361,9 +365,9 @@ export class GameRendererBase {
     this.boardView.markNoBuildCells(this.engine.state.board.getNoBuildCells());
     this.boardView.markInactiveLanes(this.engine.state.board.getActiveLanes());
     this.boardView.markBlockedCells(this.engine.state.board.getBlockedCells());
-    this.unitView     = new UnitView(this.boardView, this.layout.localSide, this.equippedSkins, this.cardInstances, this.equipmentInv);
+    this.unitView     = new UnitView(this.boardView, this.layout.localSide, this.equippedSkins, this.cardInstances, this.equipmentInv, this.opponentSkins);
     this.buildingView = new BuildingView(this.boardView);
-    this.handView     = new HandView(this.layout);
+    this.handView     = new HandView(this.layout, this.equippedSkins);
     this.hudView      = new HUDView(this.layout, this.campaignMode, /* hideSurrender */ this.spectator);
     this.netStatus    = new NetStatusView(this.layout);
     this.vfxSystem    = new VFXSystem();

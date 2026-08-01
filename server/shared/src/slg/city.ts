@@ -5,7 +5,11 @@
 // Pure data + pure functions (computable on either end, unit-testable). All numbers DRAFT — tune in the balance pass
 // (SLG_ECONOMY_CHECK), register figures in ECONOMY_NUMBERS §13-SLG-CITY.
 
-import { RESOURCE_CAP, RESOURCE_TYPES, TROOP_CAP_BASE, TROOP_TRAIN_QUEUE_MAX, type ResourceType } from './core';
+import {
+  RESOURCE_CAP, RESOURCE_TYPES, TROOP_CAP_BASE, TROOP_TRAIN_QUEUE_MAX,
+  TROOP_TRAIN_INK_COST, TROOP_TRAIN_PAPER_COST, TROOP_TRAIN_GRAPHITE_COST, TROOP_TRAIN_METAL_COST, TROOP_TRAIN_STICKER_COST,
+  type ResourceType,
+} from './core';
 
 export type BuildingKey =
   | 'desk'         // hub: single total-level gate for every other building + base durability / build-queue slots
@@ -126,6 +130,18 @@ export function drillTrainMult(buildings: Partial<Record<BuildingKey, number>> |
 /** Training queue slot count including drillYard bonus. */
 export function trainQueueMaxFor(buildings: Partial<Record<BuildingKey, number>> | undefined): number {
   return TROOP_TRAIN_QUEUE_MAX + Math.floor(buildingLevel(buildings, 'drillYard') / DRILL_QUEUE_PER_LEVELS);
+}
+/** Resource cost to train `qty` troops (S8-2 training queue, 2026-08-01 tune): ink is the dominant sustain
+ *  cost, paper/graphite/metal are a flat per-troop building-material tax, sticker a small token cost. */
+export function troopTrainCost(qty: number): Partial<Record<ResourceType, number>> {
+  const n = Math.max(0, Math.floor(qty));
+  return {
+    ink: n * TROOP_TRAIN_INK_COST,
+    paper: n * TROOP_TRAIN_PAPER_COST,
+    graphite: n * TROOP_TRAIN_GRAPHITE_COST,
+    metal: n * TROOP_TRAIN_METAL_COST,
+    sticker: n * TROOP_TRAIN_STICKER_COST,
+  };
 }
 /** Resource cost to upgrade a building to `toLevel` (only positive entries returned). */
 export function buildCost(key: BuildingKey, toLevel: number): Partial<Record<ResourceType, number>> {

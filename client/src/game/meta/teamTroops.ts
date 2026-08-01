@@ -27,6 +27,18 @@ export function teamSlotName(i: number): string {
   return t('world.team.slot').replace('{n}', String(i + 1));
 }
 
+/**
+ * Display name for a team. `TeamTemplate.name` is persisted as '' for every team saved through the
+ * formation editor (v1 has no custom-naming UI — see DefenseEditorScene/data.ts persistTeam), so callers
+ * must fall back to the live-localized slot name derived from the team's `t{n}` id instead of showing a
+ * blank. A non-empty `name` only survives on teams saved before that fallback landed.
+ */
+export function teamDisplayName(team: Pick<TeamTemplate, 'id' | 'name'>): string {
+  if (team.name) return team.name;
+  const m = /^t(\d+)$/.exec(team.id);
+  return m ? teamSlotName(Number(m[1]) - 1) : team.id;
+}
+
 /** Troops the team actually carries into battle — sum of each card's cardState.currentTroops ledger. */
 export function carriedTroops(
   army: Army | undefined,
