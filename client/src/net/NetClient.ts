@@ -9,6 +9,7 @@
 import type { IGameSocket, IPlatform, SocketHandlers } from '../platform/IPlatform';
 import { Envelope, type ClientMsg, type MatchMode, type ServerMsg } from './proto/transport';
 import { netLog, type NetLogger } from './log';
+import { globalRequestGate } from './rateGate';
 
 export type NetState = 'idle' | 'connecting' | 'open' | 'reconnecting' | 'closed';
 
@@ -135,9 +136,11 @@ export class NetClient {
   duelRespond(inviteId: string, accept: boolean, deck: string[] = []): void {
     this.sendClient({ duelRespond: { inviteId, accept, deck } });
   }
-  /** Submit a play command (PlayerCommands bytes already encoded with game.proto, opaque). */
+  /** Submit a play command (PlayerCommands bytes already encoded with game.proto, opaque).
+   *  Exempt from the global rate gate: latency-sensitive in-match commands (play card / upgrade
+   *  base / refresh hand), not lobby churn — throttling these would stall active gameplay. */
   submitCmd(commands: Uint8Array): void {
-    this.sendClient({ cmdSubmit: { commands } });
+    this.sendClient({ cmdSubmit: { commands } }, { rateLimited: false });
   }
   reportResult(stateHash: string, winnerSide: number, stats?: Record<string, number>): void {
     // S9-6: attach this side's per-match achievement count JSON (only meaningful in ranked; meta accumulates after L1 validation; ignored in friendly).
@@ -163,8 +166,9 @@ export class NetClient {
   ): void {
     this.sendClient({ judgeVerdict: { requestId, stateHash, winnerSide, ok, stars, statsJson } });
   }
+  /** Exempt from the global rate gate: a missed/delayed heartbeat risks a false disconnect verdict server-side. */
   ping(): void {
-    this.sendClient({ ping: {} });
+    this.sendClient({ ping: {} }, { rateLimited: false });
   }
 
   // ───────────────────────── Internal ─────────────────────────
@@ -241,7 +245,21 @@ export class NetClient {
     this.reconnectTimer = setTimeout(() => void this.openSocket(), delay);
   }
 
-  private sendClient(client: ClientMsg): void {
+  /**
+   * kind: 'ping'/'submitCmd' pass { rateLimited: false } (latency-sensitive; see their doc comments
+   * above) — every other business message shares the global outbound rate gate (client-wide request
+   * throttle) with the REST transports. Gated sends are queued FIFO by rateGate and may land after
+   * the socket has since closed/reconnected; doSend re-checks `state === 'open'` at actual send time.
+   */
+  private sendClient(client: ClientMsg, opts?: { rateLimited?: boolean }): void {
+    if (opts?.rateLimited === false) {
+      this.doSend(client);
+    } else {
+      void globalRequestGate.acquire().then(() => this.doSend(client));
+    }
+  }
+
+  private doSend(client: ClientMsg): void {
     const kind = Object.keys(client)[0] ?? 'unknown';
     if (!this.socket || this.state !== 'open') {
       // Dropping ping while not connected is expected; dropping other commands warrants a warning (e.g. createRanked sent before socket opens would be silently lost).

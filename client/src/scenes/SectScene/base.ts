@@ -34,6 +34,7 @@ import { drawSocialTabRail, type SocialTab } from '../../render/socialTabRail';
 import { ScrollTapGesture } from '../../ui/scrollTapGesture';
 import { FS } from '../../render/fontScale';
 import { wheelScrollY } from '../../ui/wheelScroll';
+import { BusyTracker, TimeoutError } from '../../ui/busyTracker';
 
 export interface SectSceneCallbacks {
   onBack(): void;
@@ -156,6 +157,10 @@ export class SectSceneBase {
 
   protected destroyed = false;
   protected readonly unsubs: (() => void)[] = [];
+
+  /** Guards every mutating action below (create/join/leave/dissolve/vote/ally/unally): blocks a
+   *  repeat click while one is in flight and drives the busy-button greying in render.ts. */
+  protected readonly bt = new BusyTracker();
 
   constructor(layout: ILayout, input: InputManager, cb: SectSceneCallbacks) {
     this.w = layout.designWidth;
@@ -304,14 +309,18 @@ export class SectSceneBase {
     const padX = 14;
     let x = rightEdge;
 
+    // Busy (a mutating action in flight) greys these out too — mainly to avoid the race of opening
+    // a new ally/manage-ally modal while a previous ally/unally request is still pending.
+    const busy = this.bt.busy;
     const addBtn = (label: string, color: number, action: () => void, seed: number): void => {
-      const lbl = add(txt(label, FS.tiny, color));
+      const c = busy ? C.mid : color;
+      const lbl = add(txt(label, FS.tiny, c));
       const bw = Math.ceil(lbl.width) + padX * 2;
       const bx = x - bw;
-      const btn = add(sketchPanel(bw, bh, { fill: 0xf8f8f0, border: color, seed: seedFor(seed, 3, bw) }));
+      const btn = add(sketchPanel(bw, bh, { fill: 0xf8f8f0, border: c, seed: seedFor(seed, 3, bw) }));
       btn.x = bx; btn.y = by;
       lbl.anchor.set(0.5, 0.5); lbl.x = bx + bw / 2; lbl.y = by + bh / 2;
-      this.hitRects.push({ rect: { x: bx, y: by, w: bw, h: bh }, action });
+      if (!busy) this.hitRects.push({ rect: { x: bx, y: by, w: bw, h: bh }, action });
       x = bx - 8;
     };
 
@@ -370,6 +379,7 @@ export class SectSceneBase {
   }
 
   protected errorMsg(e: unknown): string {
+    if (e instanceof TimeoutError) return t('common.networkTimeout');
     if (e instanceof WorldApiError) {
       const map: Record<string, string> = {
         ALREADY_IN_SECT:    t('sect.err.alreadyIn'),
@@ -463,6 +473,7 @@ export class SectSceneBase {
   }
 
   update(dt: number): void {
+    if (this.bt.tick(dt)) this.render();
     if (this.scrollDirty) { this.scrollDirty = false; this.render(); }
     if (this.createField || this.channelActive) {
       this.caretTimer += dt;

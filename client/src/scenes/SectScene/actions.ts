@@ -4,6 +4,7 @@ import { t } from '../../i18n';
 import { ui as C } from '../../render/sketchUi';
 import type { SectView } from '../../net/WorldApiClient';
 import { type Constructor, type SectSceneBaseCtor } from './base';
+import { withTimeout } from '../../ui/busyTracker';
 
 export interface ActionsHandlers {
   doCreate(): Promise<void>;
@@ -31,8 +32,11 @@ export function ActionsMixin<TBase extends SectSceneBaseCtor>(Base: TBase): TBas
       if (!this.createName.trim() || !this.createTag.trim()) {
         this.showToast(t('sect.err.badReq'), C.red); return;
       }
+      if (this.bt.busy) return;
+      this.bt.start();
+      this.render();
       try {
-        this.sect = await this.cb.worldApi.createSect(this.cb.worldId, this.createName.trim(), this.createTag.trim());
+        this.sect = await withTimeout(this.cb.worldApi.createSect(this.cb.worldId, this.createName.trim(), this.createTag.trim()));
         this.messages = [];
         this.mode = 'mySect';
         this.activeTab = 'families';
@@ -42,6 +46,9 @@ export function ActionsMixin<TBase extends SectSceneBaseCtor>(Base: TBase): TBas
         await this.cb.refreshWallet();
       } catch (e) {
         this.showToast(this.errorMsg(e), C.red);
+      } finally {
+        this.bt.stop();
+        this.render();
       }
     }
 
@@ -55,13 +62,18 @@ export function ActionsMixin<TBase extends SectSceneBaseCtor>(Base: TBase): TBas
     }
 
     async doJoin(sectId: string): Promise<void> {
+      if (this.bt.busy) return;
       this.closeModal();
+      this.bt.start();
+      this.render();
       try {
-        await this.cb.worldApi.joinSect(this.cb.worldId, sectId);
+        await withTimeout(this.cb.worldApi.joinSect(this.cb.worldId, sectId));
         await this.loadMySect(sectId);
-        this.render();
       } catch (e) {
         this.showToast(this.errorMsg(e), C.red);
+      } finally {
+        this.bt.stop();
+        this.render();
       }
     }
 
@@ -70,14 +82,19 @@ export function ActionsMixin<TBase extends SectSceneBaseCtor>(Base: TBase): TBas
     }
 
     async doLeave(): Promise<void> {
+      if (this.bt.busy) return;
       this.closeModal();
+      this.bt.start();
+      this.render();
       try {
-        await this.cb.worldApi.leaveSect(this.cb.worldId);
+        await withTimeout(this.cb.worldApi.leaveSect(this.cb.worldId));
         this.sect = null; this.messages = [];
         this.mode = 'noSect';
-        this.render();
       } catch (e) {
         this.showToast(this.errorMsg(e), C.red);
+      } finally {
+        this.bt.stop();
+        this.render();
       }
     }
 
@@ -86,14 +103,19 @@ export function ActionsMixin<TBase extends SectSceneBaseCtor>(Base: TBase): TBas
     }
 
     async doDissolve(): Promise<void> {
+      if (this.bt.busy) return;
       this.closeModal();
+      this.bt.start();
+      this.render();
       try {
-        await this.cb.worldApi.dissolveSect(this.cb.worldId);
+        await withTimeout(this.cb.worldApi.dissolveSect(this.cb.worldId));
         this.sect = null; this.messages = [];
         this.mode = 'noSect';
-        this.render();
       } catch (e) {
         this.showToast(this.errorMsg(e), C.red);
+      } finally {
+        this.bt.stop();
+        this.render();
       }
     }
 
@@ -102,17 +124,22 @@ export function ActionsMixin<TBase extends SectSceneBaseCtor>(Base: TBase): TBas
     }
 
     async doVote(nomineeFamilyId: string): Promise<void> {
+      if (this.bt.busy) return;
       this.closeModal();
+      this.bt.start();
+      this.render();
       try {
-        const res = await this.cb.worldApi.voteRemoveSectLeader(this.cb.worldId, nomineeFamilyId);
+        const res = await withTimeout(this.cb.worldApi.voteRemoveSectLeader(this.cb.worldId, nomineeFamilyId));
         this.showToast(
           res.passed ? t('sect.votePassed') : t('sect.voteCounted', { cur: res.voteCount, need: res.needed }),
           res.passed ? C.accent : C.dark,
         );
         if (this.sect) await this.loadMySect(this.sect.sectId);
-        this.render();
       } catch (e) {
         this.showToast(this.errorMsg(e), C.red);
+      } finally {
+        this.bt.stop();
+        this.render();
       }
     }
 
@@ -154,13 +181,18 @@ export function ActionsMixin<TBase extends SectSceneBaseCtor>(Base: TBase): TBas
     }
 
     async doAlly(targetSectId: string): Promise<void> {
+      if (this.bt.busy) return;
       this.closeModal();
+      this.bt.start();
+      this.render();
       try {
-        await this.cb.worldApi.allySect(this.cb.worldId, targetSectId);
+        await withTimeout(this.cb.worldApi.allySect(this.cb.worldId, targetSectId));
         if (this.sect) await this.loadMySect(this.sect.sectId);
-        this.render();
       } catch (e) {
         this.showToast(this.errorMsg(e), C.red);
+      } finally {
+        this.bt.stop();
+        this.render();
       }
     }
 
@@ -187,13 +219,18 @@ export function ActionsMixin<TBase extends SectSceneBaseCtor>(Base: TBase): TBas
     }
 
     async doUnally(targetSectId: string): Promise<void> {
+      if (this.bt.busy) return;
       this.closeModal();
+      this.bt.start();
+      this.render();
       try {
-        await this.cb.worldApi.unallySect(this.cb.worldId, targetSectId);
+        await withTimeout(this.cb.worldApi.unallySect(this.cb.worldId, targetSectId));
         if (this.sect) await this.loadMySect(this.sect.sectId);
-        this.render();
       } catch (e) {
         this.showToast(this.errorMsg(e), C.red);
+      } finally {
+        this.bt.stop();
+        this.render();
       }
     }
 

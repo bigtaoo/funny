@@ -19,6 +19,7 @@ import { sampleServerNow } from './serverClock';
 import { requestPlatformHeader } from './ApiClient/base';
 import { currentChatRegion } from './chatRegion';
 import { maybePromptAppeal } from './log';
+import { globalRequestGate } from './rateGate';
 
 // ── Generated DTO type aliases (single source of truth = openapi-world.yml) ──
 
@@ -186,6 +187,7 @@ export class WorldApiClient {
     const headers: Record<string, string> = { 'Content-Type': 'application/json', 'X-NW-Platform': requestPlatformHeader(), ...extraHeaders };
     if (token) headers['Authorization'] = `Bearer ${token}`;
 
+    await globalRequestGate.acquire();
     const ctrl = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), timeoutMs);
     let res: Response;

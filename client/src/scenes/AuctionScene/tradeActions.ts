@@ -3,6 +3,7 @@ import { ui as C } from '../../render/sketchUi';
 import { t } from '../../i18n';
 import { WorldApiError } from '../../net/WorldApiClient';
 import { type Constructor, type AuctionSceneBaseCtor } from './base';
+import { withTimeout } from '../../ui/busyTracker';
 
 export interface TradeActionsHandlers {
   confirmBuy(auctionId: string, price: number): void;
@@ -19,9 +20,12 @@ export function TradeActionsMixin<TBase extends AuctionSceneBaseCtor>(Base: TBas
     }
 
     async doBuy(auctionId: string): Promise<void> {
+      if (this.bt.busy) return;
       this.closeModal();
+      this.bt.start();
+      this.render();
       try {
-        await this.cb.worldApi.buyAuction(auctionId);
+        await withTimeout(this.cb.worldApi.buyAuction(auctionId));
         this.showToast(t('auction.bought'));
         await Promise.all([this.loadData(), this.cb.reloadSave?.()]);
       } catch (e) {
@@ -33,6 +37,9 @@ export function TradeActionsMixin<TBase extends AuctionSceneBaseCtor>(Base: TBas
         } else {
           this.showToast(this.errorMsg(e), C.red);
         }
+      } finally {
+        this.bt.stop();
+        this.render();
       }
     }
 
@@ -41,13 +48,19 @@ export function TradeActionsMixin<TBase extends AuctionSceneBaseCtor>(Base: TBas
     }
 
     async doCancel(auctionId: string): Promise<void> {
+      if (this.bt.busy) return;
       this.closeModal();
+      this.bt.start();
+      this.render();
       try {
-        await this.cb.worldApi.cancelAuction(auctionId);
+        await withTimeout(this.cb.worldApi.cancelAuction(auctionId));
         this.showToast(t('auction.cancelled'));
         await this.loadData();
       } catch (e) {
         this.showToast(this.errorMsg(e), C.red);
+      } finally {
+        this.bt.stop();
+        this.render();
       }
     }
   };
