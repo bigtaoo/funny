@@ -151,6 +151,18 @@ describe('DefenseEditorScene attack mode — card-based formation (2026-07-17 mi
     expect(available.map((c) => c.card.id)).toEqual(['c0']);
   });
 
+  it('the palette is sorted by combat power, strongest first (2026-08-01)', async () => {
+    const { scene, save } = buildHarness({ cardCount: 3, cardState: {} });
+    // buildSave gives every card the same defId at level 1 — bump levels out of insertion order
+    // so a passing test can't be explained by "it just kept cardInv's order".
+    save.cardInv!['c0']!.level = 1;
+    save.cardInv!['c1']!.level = 9;
+    save.cardInv!['c2']!.level = 4;
+    await flush();
+    const available = (scene as unknown as { availableCards(): { card: { id: string } }[] }).availableCards();
+    expect(available.map((c) => c.card.id)).toEqual(['c1', 'c2', 'c0']);
+  });
+
   it('placing a card that is already on the grid moves it (old cell clears)', async () => {
     const { scene } = buildHarness({
       cardCount: 1,
