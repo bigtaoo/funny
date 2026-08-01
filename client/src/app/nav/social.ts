@@ -50,6 +50,7 @@ export function createSocialNav(ctx: AppCtx): Pick<Nav, 'goFriends' | 'goMail' |
       onOpenRoom() { nav.goRoom(); },
       myPublicId: platform.storage.getItem(PLAYER_PUBLIC_ID_KEY) ?? '',
       getProfileExtra: (publicId) => worldApi.getProfileExtra(publicId),
+      getEquippedSkins: () => saveManager.get().equipped,
       ...(opts?.defaultTab ? { defaultTab: opts.defaultTab } : {}),
       loadFriends: () => client.getFriends(),
       loadRequests: () => client.getFriendRequests(),

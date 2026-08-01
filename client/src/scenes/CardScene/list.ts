@@ -7,7 +7,7 @@ import { FS } from '../../render/fontScale';
 import { buildIcon } from '../../render/icons';
 import { buildEquipIcon } from '../../render/equipmentAtlas';
 import { FACTION_COLOR } from '../../render/factionIcon';
-import { UNIT_ART_URLS } from '../../render/cardArt';
+import { cardInstanceArtUrl } from '../../render/cardArt';
 import { drawHeaderCurrency } from '../../ui/widgets/SceneHeader';
 import { drawSidebarTabs, drawBottomNavTabs, sidebarNavW, bottomNavH, type HubTab } from '../../ui/widgets/HubTabs';
 import { drawScrollIndicator } from '../../ui/widgets/ScrollIndicator';
@@ -236,7 +236,7 @@ export function ListMixin<TBase extends CardSceneBaseCtor>(Base: TBase): TBase &
       const frame = sketchPanel(imgW, imgH, { fill: 0xf0eee7, border: C.mid, seed: seedFor(x, y, imgW) });
       frame.x = imgX; frame.y = imgY;
       this.bodyLayer.addChild(frame);
-      const artUrl = def ? UNIT_ART_URLS[def.unitType] : undefined;
+      const artUrl = cardInstanceArtUrl(card, save.equipped) ?? undefined;
       if (artUrl) this.drawArtFit(artUrl, imgX + 2, imgY + 2, imgW - 4, this.bodyLayer, imgH - 4);
 
       // ── Right: info column (name at top, stats stacked below) ──

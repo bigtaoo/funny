@@ -20,7 +20,7 @@ import { buildEquipIcon } from '../render/equipmentAtlas';
 import { buildMaterialIcon } from '../render/materialAtlas';
 import { CARD_DEFS } from '../game/meta/cardDefs';
 import { SKIN_TARGET_UNIT, skinDisplayName } from '../game/meta/skinDefs';
-import { UNIT_ART_URLS, getArtTexture } from '../render/cardArt';
+import { cardInstanceArtUrl, getArtTexture } from '../render/cardArt';
 import { drawScrollIndicator } from '../ui/widgets/ScrollIndicator';
 import { peekViewportH } from '../ui/widgets/scrollPeek';
 import { FS, snapFont } from '../render/fontScale';
@@ -70,6 +70,8 @@ export interface GachaSceneCallbacks {
   getPity(poolId: string): number;
   /** Fate Points balance (server-authoritative mirror; GACHA_DESIGN §7). */
   getFatePoints(): number;
+  /** `SaveData.equipped` (skin: prefixed slots), so a pulled/legend-odds hero card shows whichever skin is already equipped for that character — same picture everywhere (cardArt.ts). Absent = plain base portraits. */
+  getEquippedSkins?(): Record<string, string>;
   loadPools(): Promise<GachaPool[]>;
   draw(poolId: string, count: 1 | 10): Promise<GachaDrawResult>;
   /** Redeem the given featured legendary for FATE_POINT_REDEEM_COST fate points (§7). */
@@ -936,7 +938,7 @@ export class GachaScene implements Scene {
     }
 
     const cardDef = CARD_DEFS[itemId];
-    const artUrl = cardDef ? UNIT_ART_URLS[cardDef.unitType] : undefined;
+    const artUrl = cardDef ? cardInstanceArtUrl({ defId: itemId }, this.cb.getEquippedSkins?.()) ?? undefined : undefined;
     if (artUrl) {
       const tex = getArtTexture(artUrl);
       if (tex.baseTexture.valid) {

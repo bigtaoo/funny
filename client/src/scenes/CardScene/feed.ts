@@ -27,7 +27,7 @@ import { t, type TranslationKey } from '../../i18n';
 import { ui as C, txt, sketchPanel, seedFor, tearDownChildren } from '../../render/sketchUi';
 import { snapFont } from '../../render/fontScale';
 import { FACTION_COLOR } from '../../render/factionIcon';
-import { UNIT_ART_URLS, getArtTexture } from '../../render/cardArt';
+import { cardInstanceArtUrl, getArtTexture } from '../../render/cardArt';
 import { drawScrollIndicator } from '../../ui/widgets/ScrollIndicator';
 import { buildIcon } from '../../render/icons';
 import { peekViewportH } from '../../ui/widgets/scrollPeek';
@@ -286,8 +286,7 @@ export function FeedMixin<TBase extends CardSceneBaseCtor>(Base: TBase): TBase &
           ml.addChild(frame);
           if (!cardId) return;
           const inst = save.cardInv?.[cardId];
-          const cDef = inst && CARD_DEFS[inst.defId];
-          const artUrl = cDef && UNIT_ART_URLS[cDef.unitType];
+          const artUrl = inst ? cardInstanceArtUrl(inst, save.equipped) : null;
           if (artUrl) {
             const tex = getArtTexture(artUrl);
             if (tex.baseTexture.valid) {
@@ -425,7 +424,7 @@ export function FeedMixin<TBase extends CardSceneBaseCtor>(Base: TBase): TBase &
               const frame = sketchPanel(thumbBox, thumbBox, { fill: 0xf0eee7, border: FACTION_COLOR[gDef.faction], seed: seedFor(i, 24, thumbBox) });
               frame.x = thumbX; frame.y = thumbY;
               listC.addChild(frame);
-              const artUrl = UNIT_ART_URLS[gDef.unitType];
+              const artUrl = cardInstanceArtUrl({ defId: g.defId }, save.equipped);
               if (artUrl) {
                 const tex = getArtTexture(artUrl);
                 if (tex.baseTexture.valid) {

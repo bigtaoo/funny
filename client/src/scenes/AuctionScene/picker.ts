@@ -13,8 +13,7 @@ import { drawScrollIndicator } from '../../ui/widgets/ScrollIndicator';
 import type { EquipmentInstance, CardInstance, EquipRarity } from '../../game/meta/SaveData';
 import { getEquipDef } from '../../game/meta/equipmentDefs';
 import { buildEquipIcon } from '../../render/equipmentAtlas';
-import { CARD_DEFS } from '../../game/meta/cardDefs';
-import { UNIT_ART_URLS, getArtTexture } from '../../render/cardArt';
+import { cardInstanceArtUrl, getArtTexture } from '../../render/cardArt';
 import { FILTERS, type AucFilter, MATERIALS, type Constructor, type AuctionSceneBaseCtor } from './base';
 
 // Icon-card grid metrics (mirrors EquipmentScene/inventory.ts's responsive column layout), enlarged 1.5x
@@ -259,8 +258,7 @@ export function PickerMixin<TBase extends AuctionSceneBaseCtor>(Base: TBase): TB
           return;
         }
       } else if (entry.cls === 'card' && entry.defId) {
-        const cardDef = CARD_DEFS[entry.defId];
-        const artUrl = cardDef ? UNIT_ART_URLS[cardDef.unitType] : undefined;
+        const artUrl = cardInstanceArtUrl({ defId: entry.defId }, this.cb.getSave?.()?.equipped) ?? undefined;
         if (artUrl) {
           const tex = getArtTexture(artUrl);
           if (tex.baseTexture.valid) {

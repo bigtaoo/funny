@@ -7,7 +7,7 @@ import { ui as C, txt, sketchPanel, seedFor } from '../../render/sketchUi';
 import { FS } from '../../render/fontScale';
 import { buildIcon } from '../../render/icons';
 import { FACTION_COLOR } from '../../render/factionIcon';
-import { UNIT_ART_URLS, getArtTexture } from '../../render/cardArt';
+import { cardInstanceArtUrl, getArtTexture } from '../../render/cardArt';
 import { sidebarNavW, bottomNavH } from '../../ui/widgets/HubTabs';
 import { drawScrollIndicator } from '../../ui/widgets/ScrollIndicator';
 import { peekViewportH } from '../../ui/widgets/scrollPeek';
@@ -150,7 +150,7 @@ export function AssignMixin<TBase extends EquipmentSceneBaseCtor>(Base: TBase): 
       const frame = sketchPanel(imgW, imgH, { fill: 0xf0eee7, border: C.mid, seed: seedFor(x, y, imgW) });
       frame.x = imgX; frame.y = imgY;
       this.bodyLayer.addChild(frame);
-      const artUrl = def ? UNIT_ART_URLS[def.unitType] : undefined;
+      const artUrl = cardInstanceArtUrl(card, save.equipped) ?? undefined;
       if (artUrl) this.drawCardArt(artUrl, imgX + 2, imgY + 2, imgW - 4, imgH - 4);
 
       // ── Right: info column ──

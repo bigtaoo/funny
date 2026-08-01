@@ -893,6 +893,13 @@ BattlePassScene 当初是把「滚动定位」和「内容重建」两条路径�
 1. `cardArt.ts` 新增 `SKIN_PORTRAIT_ART`（皮肤 id → 专属立绘，目前 3 个有美术的皮肤 `skin_shop_c1/r1/e1` 复用 Shop 页签早已导入的 `skin_infantry/archer/shieldbearer.png`）+ `unitPortraitUrl(unitType, equippedSkinId)`：已装备皮肤有专属立绘就用它，否则（含 `skin_e1/e2/l1`——Lena/Mara/Max 这三个皮肤目前只有战斗用的 `.tao` 骨骼包，没有静态立绘美术）落回原 `UNIT_ART_URLS[unitType]`。
 2. `skins.ts` / `detail.ts` 的立绘取值都改走 `unitPortraitUrl(unitType, equipped)`，不再直接查 `UNIT_ART_URLS`。
 
-**范围外**：Hero Roster 主页签的卡格立绘（`list.ts:239-240`）是同一局限（也只按 unitType 取图），但不在本次截图反馈范围内，未改动。
+**后续扩展（同日，用户确认"全部修复"）**：同一个 `UNIT_ART_URLS[unitType]` 直查模式（无视已装备皮肤）还散落在另外 10 处——凡是展示「玩家自己拥有的卡牌实例」画像的界面，理论上都该跟随该角色当前装备的皮肤（皮肤装备是按 `UnitType` 全局生效的一个槽位，不挂在具体卡实例上，见 `skinDefs.ts`），逐一排查后按"数据是否已在作用域内"分两类处理：
 
-**验证**：`npm run typecheck` 全绿；新增 `client/test/cardArt.test.ts`（`unitPortraitUrl` 的 3 组用例：无皮肤回落 / 有专属立绘的皮肤命中 / 只有骨骼包没立绘的皮肤回落）；`npm test`（906 用例）+ `npm run test:ui`（836 用例，含既有的 `cardSceneSkins.ui.ts`/`cardDetailFlipAndSkin.ui.ts`）全通过。真实浏览器验证：Browser 面板截图工具本次同样报「pane 未显示、无法合成帧」（§23/§26 同一限制），且本地 `game` 开发服无后端（`/bootstrap` 网络失败），走不到登录后的 Hero Roster 界面，故未能截图肉眼确认；已通过上述单测 + 既有 UI 冒烟覆盖根因逻辑。
+1. **零新增回调**（`save`/`this.cb.getSave?.()` 本来就在作用域里，直接换查法）：`CardScene/list.ts`（Hero Roster 主页签网格）、`CardScene/feed.ts`（合成環 + 候选素材列表，两处）、`CityScene/render.ts`（出征队伍卡槽队长）、`EquipmentScene/assign.ts`（装备穿戴选卡界面）、`DefenseEditorScene/render.ts`（防守编辑器兵营列表 + 网格已放置单位）、`DefenseEditorScene/input.ts`（拖拽幽灵图）、`AuctionScene/list.ts`（拍卖行列表）、`AuctionScene/picker.ts`（拍卖选品器）。
+2. **需要新增可选回调**（原本拿不到 `SaveData.equipped`）：`GachaScene.ts`（抽卡揭示 + 赔率表复用同一个 `drawEntryPicture`）新增 `getEquippedSkins?(): Record<string, string>`，`FriendsScene`（`mail.ts` 邮件卡牌附件预览）在 `FriendsSceneCallbacks` 同名新增。两处均为可选字段（`?`），不破坏现有 headless 测试里构造的回调对象；真实实现在 `app/nav/shop.ts`（`goGacha`）/ `app/nav/social.ts`（`goFriends`）里补一行 `() => saveManager.get().equipped`。
+
+`cardArt.ts` 同步收敛：`cardInstanceArtUrl(card, equipped?)` 现在内部就是 `unitPortraitUrl(unitType, equippedSkinIdFor(unitType, equipped))`，新增的 `equippedSkinIdFor(unitType, equipped?)` 做 `SaveData.equipped["skin:"+unitType]` 的查表，是本次新增的两个导出，两个「只有 unitType、没有具体卡实例」的调用点（`DefenseEditorScene` 的已放置单位格 / 拖拽幽灵图）直接调 `unitPortraitUrl` + `equippedSkinIdFor`。
+
+未纳入本次范围：`avatar.ts` 的头像选择器（`hero:<unit>`/`skin:<id>` 两种头像类型）——这是玩家显式选择头像的独立功能，`skin:<id>` 类型本来就允许单独选一张皮肤当头像，跟着"当前装备的皮肤"走反而会跟这个独立选项打架，故意不动。
+
+**验证**：`npm run typecheck` 全绿；扩充 `client/test/cardArt.test.ts`（新增 `equippedSkinIdFor`/`cardInstanceArtUrl` 用例，共 9 个）；扩充 `client/test/ui/gachaResultCard.ui.ts`/`client/test/ui/mailAttachmentIcons.ui.ts`，验证新增的可选回调确实被调用到（headless PIXI 下所有二进制资产桩成同一张 1×1 PNG data URI，没法按最终贴图 URL 区分"选中了哪张图"，所以这两个新测试断言的是"回调有没有被调用"而非图片本身，逻辑正确性由 `cardInstanceArtUrl` 的纯函数单测兜底）；`npm test`（915 用例）+ `npm run test:ui`（854 用例）全通过。真实浏览器验证：Browser 面板截图工具本次同样报「pane 未显示、无法合成帧」（§23/§26/§27 首段同一限制），且本地 `game` 开发服无后端（`/bootstrap` 网络失败），走不到登录后的这些界面，故未能截图肉眼确认；已通过上述单测 + 既有 UI 冒烟覆盖根因逻辑。

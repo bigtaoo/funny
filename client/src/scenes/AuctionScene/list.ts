@@ -12,9 +12,8 @@ import { buildMaterialIcon, type MaterialKind } from '../../render/materialAtlas
 import { drawScrollIndicator } from '../../ui/widgets/ScrollIndicator';
 import { getEquipDef } from '../../game/meta/equipmentDefs';
 import { buildEquipIcon } from '../../render/equipmentAtlas';
-import { CARD_DEFS } from '../../game/meta/cardDefs';
 import { serverNow } from '../../net/serverClock';
-import { UNIT_ART_URLS, getArtTexture } from '../../render/cardArt';
+import { cardInstanceArtUrl, getArtTexture } from '../../render/cardArt';
 import { FILTER_H, AUC_CELL_GAP, AUC_CELL_H, AUC_CELL_W_TARGET, FILTERS, type AucFilter, type AucTab } from './base';
 import { type Constructor, type AuctionSceneBaseCtor } from './base';
 
@@ -328,8 +327,7 @@ export function ListMixin<TBase extends AuctionSceneBaseCtor>(Base: TBase): TBas
         }
       } else if (auc.itemType === 'card') {
         const inst = auc.item?.['instance'] as CardInstance | undefined;
-        const cardDef = inst ? CARD_DEFS[inst.defId] : undefined;
-        const artUrl = cardDef ? UNIT_ART_URLS[cardDef.unitType] : undefined;
+        const artUrl = inst ? cardInstanceArtUrl(inst, this.cb.getSave?.()?.equipped) ?? undefined : undefined;
         if (artUrl) {
           const tex = getArtTexture(artUrl);
           if (tex.baseTexture.valid) {
