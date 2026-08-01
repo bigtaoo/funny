@@ -1472,3 +1472,15 @@ L1 从需 660 兵降到 300（最小占地 500 现稳赢，直击病灶）；L2/
 **遗留**：已经写坏的旧存档（字面存了 `Team N`/`队伍 N`）不会自动愈合，要等玩家下次打开该槽的编队编辑器并保存才会清空为 `''` 转回实时渲染；未做批量数据迁移（本轮判定收益不足以覆盖风险，属于"自愈式"轻量修复）。
 
 **验证**：`client` `tsc --noEmit` 全绿；新增 2 例回归——`defenseEditorAttackCards.ui.ts`「save 不把 teamName 冻结进 `TeamTemplate.name`」（存入自定义 `teamName='队伍 1'` 断言存档 `name` 仍为 `''`）+ `cityScene.ui.ts`「`name:''` 的队伍回退到实时槽位名而非空白」；连同既有 `teamTroops.test.ts`（14）/`defenseEditorAttackCards.ui.ts`（12）/`defenseEditorFillTroops.ui.ts`（10）/`cityScene.ui.ts`（32）共 68 例全绿。
+
+## 45. 战报列表坐标可点跳转（2026-08-01）
+
+> 用户截图反馈「Battle replays (last 100)」列表两个问题：①部分占领/攻城失败的行没有录像按钮；②行首坐标 `(x,y)` 不可点，无法快速跳到该地块。
+
+**① 为什么有的战斗没有录像**：`hasReplay`（[`combatDefense.ts:147`](../../server/worldsvc/src/combatDefense.ts)）只在 `recordSiege` 落库时 `seed`+`attackerArmy` 都存在才为真。这两个字段何时缺失有两种设计内因果，均非 bug：
+  - **引擎真的崩溃**（`try { runSiegeBattle(...) } catch`，六处调用点各自 `console.error('[worldsvc] ... siege engine failed — fallback to cheap resolve', ...)` 后把 `replay` 置 `null`）——查了 VPS `server-worldsvc-1` 近 48h 日志（覆盖截图里"0m/10m 前"的时间窗）无一条匹配，排除。
+  - **`shouldUseCheapSiege`（[`siegeEngine.ts:107`](../../server/worldsvc/src/siegeEngine.ts)）主动短路**：领地/据点/渡口三类攻城（`arrival.ts` 的 `applySiege`/`applyStrongholdSiege`/`applyCrossingSiege`）在进引擎前先判断「攻守比过于悬殊（≥`SIEGE_CHEAP_RATIO`=10 倍）」或「合成兵拼版超出 `synthesizeArmy` 的板面摆放上限（`SIEGE_SYNTH_ARMY_MAX_TROOPS`，与实际强弱无关，纯粹是拼版占用车道数溢出）」，命中则直接走线性公式 `resolveSiege`，`replay` 恒为 `null`——这条路径**不打日志**，是刻意的静默设计（省一次~18600 tick 的引擎运算，见 `siegeWorkerPool.ts` 顶部性能注释）。占领类 `applyOccupy`/`applyOccupationExpulsion`（[`occupation.ts`](../../server/worldsvc/src/combatSiege/occupation.ts)）**不走这条短路**，只有引擎异常时才会没录像。由于崩溃已被日志排除，截图里的无录像行大概率是攻城/据点/渡口类走了 `shouldUseCheapSiege`；具体是哪一类需要该玩家的实际行军数据才能坐实（`sieges` 落库时未存 army 明细，事后无法反推），暂未做代码改动——按设计运作，非缺陷。
+
+**② 坐标可点跳转**：[`WorldMapPanels.renderReplayPanel`](../../client/src/scenes/worldmap/WorldMapPanels.ts) 原来整行 `(sx,sy) Lv.N 角色·结果 时间` 是一个不可交互的 `txt()`。拆成两段：坐标 `(sx,sy)` 单独一个 `C.accent` 加粗文本 + 注册进 `ctx.modalBtnRects` 的命中矩形（同 Territory Overview 列表 `territoryJump` / 行军列表已有的 `centerAt(tx,ty)+renderMap()+closeModal()` 跳转模式），其余文字保持原有胜负配色（`C.dark`/`C.red`），紧跟在坐标文本右侧。
+
+**验证**：`client` `tsc --noEmit` 全绿；新增 `worldMapReplayPanel.ui.ts`（2 例：点击第一行/第二行坐标分别精确带各自的 `(x,y)` 调用 `centerAt` 并关闭弹窗）；`test/ui/worldMap*` 全量 15 文件/112 例全绿；`client` 生产 `webpack --mode production` 构建成功（仅预存的资源体积告警，与本次改动无关）。
