@@ -156,7 +156,7 @@ export function ListMixin<TBase extends CardSceneBaseCtor>(Base: TBase): TBase &
         return;
       }
 
-      const sorted = sortCards(cards, save.equipmentInv ?? {});
+      const sorted = sortCards(cards, save.equipmentInv ?? {}, cardState);
       // Start the grid right of the sidebar rail (landscape, when shown) or the red margin rule
       // (portrait — the bottom nav bar reserves no width); right pad stays one ROSTER_GAP.
       const left = (this.landscape && this.showSidebar ? sidebarNavW(w, h, true) : marginLineX(w)) + ROSTER_GAP;
