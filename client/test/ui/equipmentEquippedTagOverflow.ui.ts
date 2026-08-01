@@ -97,6 +97,10 @@ describe('EquipmentScene — equipped-tag text stays within its cell', () => {
   for (const [label, [w, h]] of [['portrait', PORTRAIT], ['landscape', LANDSCAPE]] as const) {
     it(`"[Equipped · <slot>]" never extends past its cell's right edge — ${label}`, () => {
       const scene = buildScene(w, h);
+      // The Equipped section starts collapsed by default (2026-08-01) — expand it so its item
+      // cells (under test here) actually render; unrelated to the tag-overflow fix this pins.
+      (scene as unknown as { collapsedSections: Set<string>; render(): void }).collapsedSections.delete('equipped');
+      (scene as unknown as { render(): void }).render();
       const cells = findCellPanels(scene.container);
       const tags = findEquippedTags(scene.container);
       expect(cells.length).toBeGreaterThanOrEqual(3); // weapon + armor + trinket cells
