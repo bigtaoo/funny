@@ -10,6 +10,7 @@ import { OwnerId, Side, UnitType } from '../types';
 export interface CampaignHandlers {
   spawnEnemyUnit(unitType: UnitType, col: number, isBoss?: boolean, crossWaypoints?: { atRow: number; toCol: number }[]): void;
   hasLivingEnemyUnits(): boolean;
+  hasLivingAttackerUnits(): boolean;
 }
 
 export function CampaignMixin<TBase extends GameEngineBaseCtor>(Base: TBase): TBase & Constructor<CampaignHandlers> {
@@ -59,6 +60,14 @@ export function CampaignMixin<TBase extends GameEngineBaseCtor>(Base: TBase): TB
     hasLivingEnemyUnits(): boolean {
       for (const unit of this.state.board.units.values()) {
         if (unit.side === Side.Top && !unit.isDead) return true;
+      }
+      return false;
+    }
+
+    /** Whether any living Bottom-side (attacker, siege) unit is still on the board. */
+    hasLivingAttackerUnits(): boolean {
+      for (const unit of this.state.board.units.values()) {
+        if (unit.side === Side.Bottom && !unit.isDead) return true;
       }
       return false;
     }

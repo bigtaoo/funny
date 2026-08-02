@@ -1,6 +1,7 @@
 // Win/loss/draw evaluation, called once per tick from LoopMixin's step(). Applied after
 // CommandsMixin (see ../GameEngine.ts); the `survive` campaign objective calls
-// CampaignMixin's hasLivingEnemyUnits().
+// CampaignMixin's hasLivingEnemyUnits(), and `destroy_base` (SLG siege) calls
+// hasLivingAttackerUnits().
 import type { Constructor, GameEngineBaseCtor } from './base';
 import type { CampaignHandlers } from './campaign';
 import { COUNTDOWN_THRESHOLD_TICKS, FORCE_DRAW_THRESHOLD_TICKS } from '../config';
@@ -69,6 +70,17 @@ export function WinConditionMixin<TBase extends GameEngineBaseCtor & Constructor
           this.state.winner = Side.Bottom;
           this.state.pushEvent({ type: 'game_stats', stats: this.state.snapshotStats(), summary: this.state.snapshotSummary() });
           this.state.pushEvent({ type: 'game_over', winner: 0 });
+          return;
+        }
+
+        // `destroy_base` early exit (SLG siege): the attacker can never destroy the base once its whole
+        // army is wiped — end immediately as a defender win instead of burning ticks to battleTimeoutTicks/
+        // durationTicks. Mirrors `survive`'s hasLivingEnemyUnits() early exit below, mirrored for the attacker side.
+        if (objective.kind === 'destroy_base' && !this.hasLivingAttackerUnits()) {
+          this.state.phase  = GamePhase.GameOver;
+          this.state.winner = Side.Top;
+          this.state.pushEvent({ type: 'game_stats', stats: this.state.snapshotStats(), summary: this.state.snapshotSummary() });
+          this.state.pushEvent({ type: 'game_over', winner: 1 });
           return;
         }
 
