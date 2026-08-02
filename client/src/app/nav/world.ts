@@ -125,6 +125,7 @@ export function createWorldNav(ctx: AppCtx): WorldNav {
       playerName: playerName(),
       accountId: saveManager.get().accountId,
       getCoins: () => saveManager.get().wallet.coins,
+      getSave: () => saveManager.get(),
       storage: platform.storage,
     });
     bindMapNet();

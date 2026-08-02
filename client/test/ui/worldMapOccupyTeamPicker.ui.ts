@@ -36,6 +36,8 @@ const ANCHOR = { x: 20, y: 20 };
 function buildHarness(opts: {
   teams?: { id: string; name: string; army: { initialHp?: number; cardInstanceId?: string }[] }[];
   cardState?: Record<string, { currentTroops: number }>;
+  stationed?: { x: number; y: number; teamId: string; mine?: boolean; mode?: string }[];
+  getSave?: () => { cardInv: Record<string, unknown>; equipmentInv: Record<string, unknown> };
 } = {}) {
   const showModal = vi.fn();
   const showToast = vi.fn();
@@ -57,7 +59,7 @@ function buildHarness(opts: {
     destroyed: false,
     marches: [],
     occupations: [],
-    stationed: [],
+    stationed: opts.stationed ?? [],
     myAttackTiles: new Set<string>(),
     myOccupyTiles: new Set<string>(),
     me: { joined: true, mainBaseTile: `${WORLD_ID}:${ANCHOR.x}:${ANCHOR.y}`, cardState: opts.cardState ?? { c1: { currentTroops: 60 }, c2: { currentTroops: 60 } } } as PlayerWorldView,
@@ -69,6 +71,7 @@ function buildHarness(opts: {
     cb: {
       worldId: WORLD_ID,
       worldApi: { getTeams, startMarch, getMarches, getMe },
+      getSave: opts.getSave,
     },
     panels: { showModal, showToast, closeModal, showDeployDialog, renderHud },
   } as unknown as WorldMapContext;
@@ -162,6 +165,159 @@ describe('WorldMapNet.showTeamPicker — occupy uses the team picker (§4.2)', (
     expect(buttons.some((b) => b.label.startsWith('Wiped'))).toBe(false);
     const head = showModal.mock.calls[0][0] as string[];
     expect(head).toContain(t('world.team.noTeamsOccupy'));
+  });
+});
+
+// Picker ordering (2026-08-02, user request): nearer teams first, then more-troops, then higher combat
+// power — a player scanning the list top-to-bottom should see the cheapest/strongest-available option
+// first instead of whatever order getTeams happened to return in. Idle-only is already covered by the
+// busy-team-gate tests above; these pin the NEW ordering layered on top of that existing filter.
+describe('WorldMapNet.showTeamPicker — sort order (nearest, then troops, then power)', () => {
+  it('orders by distance to the target tile — an idle field team closer to (tx,ty) beats a farther one, regardless of troop count', async () => {
+    const { net, showModal } = buildHarness({
+      teams: [
+        { id: 't1', name: 'Far', army: [{ cardInstanceId: 'c1' }] },
+        { id: 't2', name: 'Near', army: [{ cardInstanceId: 'c2' }] },
+      ],
+      cardState: { c1: { currentTroops: 999 }, c2: { currentTroops: 1 } },
+      // Target tile is ANCHOR (20,20). Near sits right next to it; Far sits much further away.
+      stationed: [
+        { x: 5, y: 5, teamId: 't1', mine: true, mode: 'idle' },
+        { x: 21, y: 20, teamId: 't2', mine: true, mode: 'idle' },
+      ],
+    });
+    await net.showTeamPicker(ANCHOR.x, ANCHOR.y, 'occupy');
+    const labels = (showModal.mock.calls[0][1] as { label: string }[]).map((b) => b.label);
+    const order = labels.filter((l) => l !== '✕').map((l) => l.split(' ·')[0]);
+    expect(order).toEqual(['Near', 'Far']);
+  });
+
+  it('ties on distance break on carried troops — the heavier team lists first', async () => {
+    const { net, showModal } = buildHarness({
+      teams: [
+        { id: 't1', name: 'Light', army: [{ cardInstanceId: 'c1' }] },
+        { id: 't2', name: 'Heavy', army: [{ cardInstanceId: 'c2' }] },
+      ],
+      // Neither is stationed in the field, so both resolve to the same position (mainBaseTile) — a true distance tie.
+      cardState: { c1: { currentTroops: 100 }, c2: { currentTroops: 500 } },
+    });
+    await net.showTeamPicker(ANCHOR.x, ANCHOR.y, 'occupy');
+    const labels = (showModal.mock.calls[0][1] as { label: string }[]).map((b) => b.label);
+    const order = labels.filter((l) => l !== '✕').map((l) => l.split(' ·')[0]);
+    expect(order).toEqual(['Heavy', 'Light']);
+  });
+
+  it('ties on distance AND troops break on combat power (cardPower via getSave) — the higher-level card lists first', async () => {
+    const { net, showModal } = buildHarness({
+      teams: [
+        { id: 't1', name: 'Weak', army: [{ cardInstanceId: 'c1' }] },
+        { id: 't2', name: 'Strong', army: [{ cardInstanceId: 'c2' }] },
+      ],
+      cardState: { c1: { currentTroops: 200 }, c2: { currentTroops: 200 } }, // troop-tied too
+      getSave: () => ({
+        cardInv: {
+          c1: { id: 'c1', defId: 'lichuang', level: 1, gear: {}, locked: false },
+          c2: { id: 'c2', defId: 'lichuang', level: 9, gear: {}, locked: false }, // higher level → higher cardPower
+        },
+        equipmentInv: {},
+      }),
+    });
+    await net.showTeamPicker(ANCHOR.x, ANCHOR.y, 'occupy');
+    const labels = (showModal.mock.calls[0][1] as { label: string }[]).map((b) => b.label);
+    const order = labels.filter((l) => l !== '✕').map((l) => l.split(' ·')[0]);
+    expect(order).toEqual(['Strong', 'Weak']);
+  });
+
+  it('a garrison-stationed (busy) team is excluded from the sort entirely — still filtered before ranking', async () => {
+    const { net, showModal } = buildHarness({
+      teams: [
+        { id: 't1', name: 'Garrisoned', army: [{ cardInstanceId: 'c1' }] },
+        { id: 't2', name: 'Free', army: [{ cardInstanceId: 'c2' }] },
+      ],
+      cardState: { c1: { currentTroops: 9999 }, c2: { currentTroops: 1 } },
+      stationed: [{ x: 21, y: 20, teamId: 't1', mine: true, mode: 'garrison' }],
+    });
+    await net.showTeamPicker(ANCHOR.x, ANCHOR.y, 'occupy');
+    const labels = (showModal.mock.calls[0][1] as { label: string }[]).map((b) => b.label);
+    expect(labels.some((l) => l.startsWith('Garrisoned'))).toBe(false);
+    expect(labels.some((l) => l.startsWith('Free'))).toBe(true);
+  });
+
+  // ADR-051 (P4) has ctx.stationed carry ENEMY entries too (vision rendering) — and enemy slot ids are the
+  // same 't1'..'t5' naming as everyone else's, so an enemy's own 't1' can share the string with MY 't1'.
+  // positionOf must filter on `mine !== false`, or a same-tile enemy decoy could hijack the distance for
+  // one of my teams. Here the decoy sits right next to the target (would read as "closest" if the guard
+  // were dropped); my team's real position (no own stationed entry) is the main base, which the harness
+  // places well away from the target — so an unguarded lookup would wrongly rank it ahead of a genuinely
+  // closer team.
+  it('an enemy stationed entry sharing the same team-slot id does not hijack my team\'s distance', async () => {
+    const { net, showModal } = buildHarness({
+      teams: [
+        { id: 't1', name: 'Mine', army: [{ cardInstanceId: 'c1' }] },
+        { id: 't2', name: 'ActuallyCloser', army: [{ cardInstanceId: 'c2' }] },
+      ],
+      cardState: { c1: { currentTroops: 100 }, c2: { currentTroops: 100 } },
+      stationed: [
+        { x: 501, y: 500, teamId: 't1', mine: false, mode: 'idle' }, // enemy's own t1, right beside the target — must be ignored for MY t1
+        { x: 450, y: 450, teamId: 't2', mine: true, mode: 'idle' }, // my genuinely closer team (dist 50 vs Mine's true dist 480 from its base)
+      ],
+    });
+    // Target far from ANCHOR (my base, (20,20)): "Mine" has no own stationed entry so it falls back to base
+    // — a true distance of 480. If the mine!==false guard were dropped, it would instead pick up the enemy
+    // decoy sitting right next to (500,500) and wrongly read as distance ~1, beating "ActuallyCloser".
+    await net.showTeamPicker(500, 500, 'occupy');
+    const labels = (showModal.mock.calls[0][1] as { label: string }[]).map((b) => b.label);
+    const order = labels.filter((l) => l !== '✕').map((l) => l.split(' ·')[0]);
+    expect(order).toEqual(['ActuallyCloser', 'Mine']);
+  });
+
+  it('a card missing from the roster (sold/removed, dangling cardInstanceId) contributes 0 power instead of throwing', async () => {
+    const { net, showModal } = buildHarness({
+      teams: [{ id: 't1', name: 'Solo', army: [{ cardInstanceId: 'gone' }] }],
+      cardState: { gone: { currentTroops: 50 } }, // still has a live troop ledger entry...
+      getSave: () => ({ cardInv: {}, equipmentInv: {} }), // ...but the roster itself no longer has the card
+    });
+    await expect(net.showTeamPicker(ANCHOR.x, ANCHOR.y, 'occupy')).resolves.not.toThrow();
+    const labels = (showModal.mock.calls[0][1] as { label: string }[]).map((b) => b.label);
+    expect(labels.some((l) => l.startsWith('Solo'))).toBe(true);
+  });
+
+  // End-to-end shape check mirroring the reported scenario (screenshot: 4 teams, mixed distance/troops).
+  // Team A: far (stationed away from target). Team B & C: tied at the same near distance as each other,
+  // split by troops. Team D: same near distance as B/C AND same troops as the winner of that pair — only
+  // combat power breaks it, and it beats B/C on both distance and troops so it must lead the whole list.
+  it('full ranking with 4 teams — distance first, then troops, then power, all in one list', async () => {
+    const { net, showModal } = buildHarness({
+      teams: [
+        { id: 't1', name: 'A_Far', army: [{ cardInstanceId: 'ca' }] },
+        { id: 't2', name: 'B_NearLight', army: [{ cardInstanceId: 'cb' }] },
+        { id: 't3', name: 'C_NearHeavy', army: [{ cardInstanceId: 'cc' }] },
+        { id: 't4', name: 'D_NearHeaviestStrong', army: [{ cardInstanceId: 'cd' }] },
+      ],
+      cardState: {
+        ca: { currentTroops: 10000 }, // most troops, but it's the farthest — must still lose to every near team
+        cb: { currentTroops: 100 },
+        cc: { currentTroops: 200 },
+        cd: { currentTroops: 200 }, // ties C on troops too — power is the only thing left to break it
+      },
+      stationed: [
+        { x: 100, y: 100, teamId: 't1', mine: true, mode: 'idle' },
+        { x: 21, y: 20, teamId: 't2', mine: true, mode: 'idle' },
+        { x: 21, y: 20, teamId: 't3', mine: true, mode: 'idle' },
+        { x: 21, y: 20, teamId: 't4', mine: true, mode: 'idle' },
+      ],
+      getSave: () => ({
+        cardInv: {
+          cd: { id: 'cd', defId: 'lichuang', level: 9, gear: {}, locked: false },
+          cc: { id: 'cc', defId: 'lichuang', level: 1, gear: {}, locked: false },
+        },
+        equipmentInv: {},
+      }),
+    });
+    await net.showTeamPicker(ANCHOR.x, ANCHOR.y, 'occupy');
+    const labels = (showModal.mock.calls[0][1] as { label: string }[]).map((b) => b.label);
+    const order = labels.filter((l) => l !== '✕').map((l) => l.split(' ·')[0]);
+    expect(order).toEqual(['D_NearHeaviestStrong', 'C_NearHeavy', 'B_NearLight', 'A_Far']);
   });
 });
 

@@ -14,6 +14,7 @@ import type { WorldMapNet } from './WorldMapNet';
 import type { WorldMapInput } from './WorldMapInput';
 import type { StickmanRuntime } from '../../render/stickman/StickmanRuntime';
 import type { IStorage } from '../../platform/IPlatform';
+import type { SaveData } from '../../game/meta/SaveData';
 
 /**
  * A live march/occupy/stationed token (fog.ts syncMarchTokens/syncOccupyTokens/syncStationedTokens).
@@ -56,6 +57,8 @@ export interface WorldMapCallbacks {
   accountId: string;
   /** live coin balance getter (SaveData.wallet mirror) — shown in the SLG shop. */
   getCoins?: () => number;
+  /** Full save snapshot (cardInv/equipmentInv) — the team picker uses it to rank teams by combat power (§ team-picker sort). */
+  getSave?: () => SaveData;
   /** Platform storage (IPlatform.storage) — world-chat read-marker persistence must go through this,
    * not the global `localStorage`, so it also works under the WeChat mini-game runtime (no DOM storage). */
   storage: IStorage;

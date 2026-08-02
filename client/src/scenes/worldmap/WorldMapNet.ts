@@ -6,6 +6,7 @@ import { WorldApiError } from '../../net/WorldApiClient';
 import { serverNow } from '../../net/serverClock';
 import type { TeamTemplate } from '../../net/WorldApiClient';
 import { carriedTroops, teamDisplayName } from '../../game/meta/teamTroops';
+import { cardPower } from '../../game/meta/cardDefs';
 import { proceduralTile, ARROW_TOWER_COST, BLOCKER_COST } from '@nw/shared';
 import { loadResAtlas, getResTexture, isResAtlasReady } from '../../render/resAtlasLoader';
 import { loadCityAtlas, getCityTexture, isCityAtlasReady } from '../../render/cityAtlasLoader';
@@ -200,9 +201,39 @@ export class WorldMapNet {
     // CityScene.committedTroops / TeamsScene so the picker shows the same number as those screens.
     const cardState = me.cardState ?? {};
     const committedOf = (tm: TeamTemplate): number => carriedTroops(tm.army, cardState);
+    // Combat-power tiebreak: sum of each placed card's cardPower (Hero Roster level + gear), same proxy
+    // formula CityScene/DefenseEditorScene use to rank cards. getSave is optional (test harnesses may omit
+    // it) — teams without it just tie at power 0, falling back to the troops tiebreak above them.
+    const save = this.ctx.cb.getSave?.();
+    const cardInv = save?.cardInv ?? {};
+    const equipmentInv = save?.equipmentInv ?? {};
+    const powerOf = (tm: TeamTemplate): number => {
+      let total = 0;
+      for (const entry of tm.army) {
+        const card = entry.cardInstanceId ? cardInv[entry.cardInstanceId] : undefined;
+        if (card) total += cardPower(card, equipmentInv);
+      }
+      return total;
+    };
+    // A team's current position for the distance sort: an idle field team (停留, ADR-051 P3c) sits at its
+    // stationed tile; every other usable team (never dispatched, or 停留 back home) is still at the main
+    // base. Distance is Chebyshev (max of the two axis deltas) to match march-time convention (§ march
+    // duration is computed off diagonal-capable path length, not straight-line/Euclidean distance).
+    const positionOf = (tm: TeamTemplate): [number, number] => {
+      const field = this.ctx.stationed.find((s) => s.mine !== false && s.teamId === tm.id);
+      if (field) return [field.x, field.y];
+      return me.mainBaseTile ? this.ctx.parseTileId(me.mainBaseTile) : [tx, ty];
+    };
+    const distanceOf = (tm: TeamTemplate): number => {
+      const [px, py] = positionOf(tm);
+      return Math.max(Math.abs(px - tx), Math.abs(py - ty));
+    };
     // Only offer teams that can actually go into battle right now: non-empty army, not already
     // out on a march/hold, and carrying troops > 0 (a wiped-out or legacy team can't fight).
-    const usable = teams.filter((tm) => tm.army.length > 0 && !busyTeamIds.has(tm.id) && committedOf(tm) > 0);
+    // Sort: nearer first; ties broken by carried troops (more first), then combat power (higher first).
+    const usable = teams
+      .filter((tm) => tm.army.length > 0 && !busyTeamIds.has(tm.id) && committedOf(tm) > 0)
+      .sort((a, b) => distanceOf(a) - distanceOf(b) || committedOf(b) - committedOf(a) || powerOf(b) - powerOf(a));
     const buttons: { label: string; action: () => void }[] = [];
     for (const tm of usable) {
       const committed = committedOf(tm);
