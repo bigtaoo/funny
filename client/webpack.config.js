@@ -31,6 +31,9 @@ module.exports = (env, argv) => {
   // Social base: web/CrazyGames default to '' (same-origin, reverse-proxied). Native has no
   // same-origin backend, so it must be baked absolute like the others.
   const socialBase = process.env.NW_SOCIAL_BASE || (isMobile ? MOBILE_ORIGIN : '');
+  // Auction base: same reasoning as social — web/CrazyGames derive port 18086 client-side (net/config.ts
+  // getAuctionBaseUrl), native has no same-origin backend so it must be baked absolute like the others.
+  const auctionBase = process.env.NW_AUCTION_BASE || (isMobile ? MOBILE_ORIGIN : '');
   // WeChat mini-game Plan A asset CDN base URL (ASSET_PACKAGING §4). WeChat builds only:
   // asset/resource publicPath is set to this value so imports are baked into absolute URLs
   // `<CDN>/cdn/<hash>.png`; asset files are output to wechatgame/cdn/ (excluded from the
@@ -163,6 +166,7 @@ module.exports = (env, argv) => {
         'globalThis.__NW_BUILD_VERSION__': JSON.stringify(process.env.NW_BUILD_VERSION || '0.0.0'),
         'globalThis.__NW_WORLD_BASE__': JSON.stringify(worldBase),
         'globalThis.__NW_SOCIAL_BASE__': JSON.stringify(socialBase),
+        'globalThis.__NW_AUCTION_BASE__': JSON.stringify(auctionBase),
       }),
     ],
     devServer: {
