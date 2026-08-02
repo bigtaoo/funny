@@ -113,6 +113,7 @@ cd client && NW_API_BASE=https://api.gamestao.com/api \
   NW_GATEWAY_WS=wss://api.gamestao.com/gw \
   NW_WORLD_BASE=https://api.gamestao.com \
   NW_SOCIAL_BASE=https://api.gamestao.com \
+  NW_AUCTION_BASE=https://api.gamestao.com \
   NW_BUILD_VERSION=$(git rev-parse --short HEAD) npm run build:web
 # 2. 部署（从仓库根，-c 指定 client 的配置）
 cd .. && npx wrangler deploy -c wrangler/client.jsonc
@@ -131,8 +132,9 @@ cd .. && npx wrangler deploy -c wrangler/client.jsonc
 | `NW_GATEWAY_WS` | 控制面 WS | `wss://api.gamestao.com/gw` | `nw_gateway_ws` |
 | `NW_WORLD_BASE` | SLG 世界 REST 基址 | `https://api.gamestao.com` | —（无覆盖） |
 | `NW_SOCIAL_BASE` | 社交 REST 基址（家族/宗门/世界频道，`WorldApiClient` 直连） | `https://api.gamestao.com` | —（无覆盖） |
+| `NW_AUCTION_BASE` | 拍卖行 REST 基址（`WorldApiClient` 直连独立的 auctionsvc） | `https://api.gamestao.com` | —（无覆盖） |
 
-> ⚠ **`NW_SOCIAL_BASE` 生产必填**：留空时 `getSocialBaseUrl()` 会从 `NW_WORLD_BASE` 派生并强改端口 `:8085`（dev 直连端口，公网未开放），导致家族/宗门/世界社交请求全部 `网络连接失败`。friends/mail 走 `NW_API_BASE`→metaserver 代理，不受影响。
+> ⚠ **`NW_SOCIAL_BASE`/`NW_AUCTION_BASE` 生产必填**：留空时 `getSocialBaseUrl()`/`getAuctionBaseUrl()` 会从 `NW_WORLD_BASE` 派生并强改端口（`:8085`/`:18086`，均为 dev 直连端口，公网未开放），分别导致家族/宗门/世界社交请求、拍卖行全部请求 `网络连接失败`（浏览器侧表现为 `ERR_CONNECTION_REFUSED`）。`NW_AUCTION_BASE` 曾漏配（2026-08-02 线上报告拍卖行发布物品报 `Failed to fetch` 才发现，CI workflow 已同步补上）。friends/mail 走 `NW_API_BASE`→metaserver 代理，不受影响。
 
 - **数据面 WS（`/ws`）不烘焙**：由 metaserver 鉴权回包的 `match_found.game_url` 下发；缺省时 `client/src/net/config.ts` 从 API base 自动推导（`/api`→`/ws`）。`NW_GAME_PUBLIC_WS_URL`（后端 .env）就是这个下发地址的来源。
 - 构建命令：`cd client && NW_API_BASE=... NW_GATEWAY_WS=... NW_WORLD_BASE=... npm run build:web` → 产物 `client/dist`。

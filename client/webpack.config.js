@@ -34,6 +34,27 @@ module.exports = (env, argv) => {
   // Auction base: same reasoning as social — web/CrazyGames derive port 18086 client-side (net/config.ts
   // getAuctionBaseUrl), native has no same-origin backend so it must be baked absolute like the others.
   const auctionBase = process.env.NW_AUCTION_BASE || (isMobile ? MOBILE_ORIGIN : '');
+
+  // Guard against the 2026-08-02 production incident: net/config.ts's getSocialBaseUrl()/getAuctionBaseUrl()
+  // fall back to deriving a dev-only port (8085/18086) from NW_WORLD_BASE whenever their own env var is
+  // unset — correct for local dev (worldBase defaults to localhost there too), but once a non-mobile
+  // build bakes NW_WORLD_BASE to a real domain (production web: Caddy does *path* routing on one origin,
+  // not per-service ports), that derived port is an internal Docker-only address, unreachable from
+  // outside. NW_SOCIAL_BASE got this fix once already; NW_AUCTION_BASE was never added when auctionsvc
+  // split out, silently breaking the whole auction house. Fail the build instead of shipping a broken
+  // fallback — add new entries here whenever a getXBaseUrl() following this pattern joins net/config.ts.
+  const DERIVED_PORT_BACKEND_ENVS = ['NW_SOCIAL_BASE', 'NW_AUCTION_BASE'];
+  if (isProd && !isMobile && worldBase) {
+    for (const key of DERIVED_PORT_BACKEND_ENVS) {
+      if (!process.env[key]) {
+        throw new Error(
+          `${key} must be set explicitly for this build (NW_WORLD_BASE=${worldBase} is baked to a real ` +
+          `domain, not empty/localhost) — left unset, net/config.ts derives an internal Docker-only port ` +
+          `from NW_WORLD_BASE that is unreachable from outside. See design/product/deploy-cloudflare.md.`
+        );
+      }
+    }
+  }
   // WeChat mini-game Plan A asset CDN base URL (ASSET_PACKAGING §4). WeChat builds only:
   // asset/resource publicPath is set to this value so imports are baked into absolute URLs
   // `<CDN>/cdn/<hash>.png`; asset files are output to wechatgame/cdn/ (excluded from the
