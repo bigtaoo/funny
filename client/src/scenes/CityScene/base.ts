@@ -30,7 +30,8 @@ import { FS, snapFont } from '../../render/fontScale';
 import type {
   WorldApiClient, PlayerWorldView, BuildingKey, TeamTemplate, MarchView, OccupationView,
 } from '../../net/WorldApiClient';
-import { carriedTroops } from '../../game/meta/teamTroops';
+import { carriedTroops, teamSlotId, TEAM_CAP } from '../../game/meta/teamTroops';
+import { troopCap, cardPower } from '../../game/meta/cardDefs';
 import {
   BUILDING_KEYS,
   BUILD_SPEEDUP_SECS_PER_COIN,
@@ -47,7 +48,7 @@ import { loadResAtlas, getResTexture } from '../../render/resAtlasLoader';
 import { loadCityBldAtlas, getCityBldTexture } from '../../render/cityBldAtlasLoader';
 import { getArtTexture } from '../../render/cardArt';
 import { serverNow } from '../../net/serverClock';
-import type { SaveData } from '../../game/meta/SaveData';
+import type { SaveData, CardInstance } from '../../game/meta/SaveData';
 
 // ── Public interface ─────────────────────────────────────────────────────────
 
@@ -413,6 +414,72 @@ export class CitySceneBase {
     try {
       this.setMe(await this.cb.worldApi.speedupTraining(this.cb.worldId, coins));
       this.showToast(t('city.speedupDone'), C.green as number);
+    } catch {
+      this.showToast(t('city.err.generic'), C.red as number);
+    } finally {
+      this.bt.stop();
+    }
+    this.render();
+  }
+
+  /**
+   * "填满所有队伍" — distribute the home troop pool across all 5 teams in slot order (t1..t5),
+   * highest combat-power card first within each team (mirrors DefenseEditorScene's §6.5 一键补满).
+   * A team only takes what's left in the pool once earlier teams are topped up, so an exhausted
+   * pool partially fills whichever team is next in line and leaves the rest untouched.
+   */
+  protected async doFillAllTeams(): Promise<void> {
+    if (this.bt.busy) return;
+    const save = this.cb.getSave?.();
+    const cardInv = save?.cardInv ?? {};
+    const equipmentInv = save?.equipmentInv ?? {};
+    const cardState = this.me?.cardState ?? {};
+    let pool = this.me?.troops ?? 0;
+    const allocations: Record<string, number> = {};
+    const filledTeamIds = new Set<string>();
+
+    for (let i = 0; i < TEAM_CAP && pool > 0; i++) {
+      const team = this.teams.find(tm => tm.id === teamSlotId(i));
+      if (!team) continue;
+      const placed = team.army
+        .filter(e => !!e.cardInstanceId)
+        .map(e => ({ id: e.cardInstanceId!, card: cardInv[e.cardInstanceId!] }))
+        .filter((x): x is { id: string; card: CardInstance } => !!x.card);
+      if (placed.length === 0) continue;
+      placed.sort((a, b) => cardPower(b.card, equipmentInv) - cardPower(a.card, equipmentInv));
+      for (const { id, card } of placed) {
+        if (pool <= 0) break;
+        const current = cardState[id]?.currentTroops ?? 0;
+        const gap = Math.max(0, troopCap(card) - current);
+        if (gap <= 0) continue;
+        const amount = Math.min(gap, pool);
+        allocations[id] = amount;
+        pool -= amount;
+        filledTeamIds.add(team.id);
+      }
+    }
+
+    if (Object.keys(allocations).length === 0) {
+      this.showToast(t('city.military.fillAllTeamsNone'), C.red as number);
+      return;
+    }
+
+    this.bt.start();
+    this.render();
+    try {
+      await this.cb.worldApi.distributeTroops(this.cb.worldId, allocations);
+      let total = 0;
+      const nextCardState = { ...cardState };
+      for (const [id, amount] of Object.entries(allocations)) {
+        total += amount;
+        const cs = nextCardState[id];
+        nextCardState[id] = { ...cs, currentTroops: (cs?.currentTroops ?? 0) + amount };
+      }
+      if (this.me) this.me = { ...this.me, troops: (this.me.troops ?? 0) - total, cardState: nextCardState };
+      this.showToast(
+        t('city.military.fillAllTeamsDone').replace('{n}', String(total)).replace('{teams}', String(filledTeamIds.size)),
+        C.green as number,
+      );
     } catch {
       this.showToast(t('city.err.generic'), C.red as number);
     } finally {

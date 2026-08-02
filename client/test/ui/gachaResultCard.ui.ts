@@ -140,31 +140,53 @@ describe('GachaScene — skin result card resolves its dedicated portrait, not t
 });
 
 describe('GachaScene — legendary card border trail', () => {
-  const fxOf = (s: GachaScene): Array<{ phase: number }> =>
-    (s as unknown as { revealFx: Array<{ phase: number }> }).revealFx;
+  const fxOf = (s: GachaScene): Array<{ phase: number; dots: PIXI.Sprite[] }> =>
+    (s as unknown as { revealFx: Array<{ phase: number; dots: PIXI.Sprite[] }> }).revealFx;
   const tick = (s: GachaScene, dt: number): void =>
     (s as unknown as { update(dt: number): void }).update(dt);
+  /** (b - a) mod 1, normalised to [0, 1) — perimeter-fraction gap between two comet heads. */
+  const phaseGap = (a: number, b: number): number => (((b - a) % 1) + 1) % 1;
 
-  it('spawns a clockwise-looping border trail for a legendary (orange) card only', () => {
+  it('spawns two clockwise-looping border trails for a legendary (orange) card only, not for a rare one', () => {
     const scene = buildGacha();
     reveal(scene, [
       { itemId: 'lichuang', rarity: 'rare', duplicate: false },
       { itemId: 'skin_placeholder', rarity: 'legendary', duplicate: false },
     ]);
     const fx = fxOf(scene);
-    expect(fx.length).toBe(1); // only the legendary card, not the rare one
+    expect(fx.length).toBe(2); // one legendary card -> a diagonally-paired trail, not one per card and none for the rare card
 
-    const before = fx[0].phase;
+    const before = fx.map((f) => f.phase);
     tick(scene, 0.5);
-    // Positive phase delta = clockwise (screen y-down); it must advance while revealing.
-    expect(fx[0].phase).toBeGreaterThan(before);
+    // Positive phase delta = clockwise (screen y-down); both trails must advance while revealing.
+    fx.forEach((f, i) => expect(f.phase).toBeGreaterThan(before[i]));
     scene.destroy();
   });
 
-  it('clears the trail when the reveal is dismissed', () => {
+  // Regression coverage for the 2026-08-02 request: a single trail read as "one light chasing
+  // itself"; the ask was two trails starting from diagonally opposite corners (e.g. bottom-left +
+  // top-right) so they run the border together. The pair is built a half-lap (TRAIL_PAIR_OFFSET =
+  // 0.5) apart, which for the reveal grid's portrait card ratio (cellH = cellW*1.3) lands the two
+  // heads on opposite corners (see manual perimeter-math check during implementation). The two must
+  // stay exactly half a lap apart forever, not just at spawn, or they'd visibly drift into each other.
+  it('pairs the legendary trail a half-lap apart, and keeps that gap while both advance', () => {
     const scene = buildGacha();
     reveal(scene, [{ itemId: 'skin_placeholder', rarity: 'legendary', duplicate: false }]);
-    expect(fxOf(scene).length).toBe(1);
+    const [a, b] = fxOf(scene);
+    expect(phaseGap(a.phase, b.phase)).toBeCloseTo(0.5, 5);
+    // The two comet heads (dots[0], see buildTrailDots) must not sit on top of each other.
+    expect(a.dots[0].position.x).not.toBeCloseTo(b.dots[0].position.x, 1);
+
+    tick(scene, 0.5);
+    tick(scene, 0.3);
+    expect(phaseGap(a.phase, b.phase)).toBeCloseTo(0.5, 5);
+    scene.destroy();
+  });
+
+  it('clears both trails when the reveal is dismissed', () => {
+    const scene = buildGacha();
+    reveal(scene, [{ itemId: 'skin_placeholder', rarity: 'legendary', duplicate: false }]);
+    expect(fxOf(scene).length).toBe(2);
     (scene as unknown as { dismissReveal(): void }).dismissReveal();
     expect(fxOf(scene).length).toBe(0);
     tick(scene, 0.5); // no-op, must not throw with an empty fx list

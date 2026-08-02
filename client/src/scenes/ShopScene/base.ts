@@ -28,7 +28,7 @@ import { ui as C, txt, buildPaperBackground, sketchPanel, sketchAccentBar, seedF
 import { buildDecorCLayer } from '../../render/decorCLayer';
 import { type IconKind } from '../../render/icons';
 import { loadCoinIconAtlas, buildCoinIcon } from '../../render/coinIconAtlas';
-import { getArtTexture } from '../../render/cardArt';
+import { getArtTexture, containScale } from '../../render/cardArt';
 import { drawSceneHeader, drawHeaderCurrency, HEADER_ACCENT } from '../../ui/widgets/SceneHeader';
 import { drawSidebarTabs, drawBottomNavTabs, sidebarNavW, bottomNavH, type HubTab } from '../../ui/widgets/HubTabs';
 import { BusyTracker } from '../../ui/busyTracker';
@@ -495,8 +495,10 @@ export class ShopSceneBase {
       const tex = getArtTexture(spec.artUrl);
       if (tex.baseTexture.valid) {
         const art = new PIXI.Sprite(tex);
-        art.width = imgSize; art.height = imgSize;
-        art.x = imgX; art.y = imgY;
+        const scale = containScale(tex.width, tex.height, imgSize, imgSize);
+        art.anchor.set(0.5);
+        art.scale.set(scale);
+        art.position.set(imgX + imgSize / 2, imgY + imgSize / 2);
         body.addChild(art);
       } else if (!this.artHooked.has(spec.artUrl)) {
         this.artHooked.add(spec.artUrl);

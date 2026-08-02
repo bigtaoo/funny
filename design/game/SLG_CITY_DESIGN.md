@@ -245,6 +245,16 @@ D-CITY-11 的内政/军事双页拆分（左侧竖排 tab 切换）本次**撤�
 - **等级进度条 + 分类强调色**：每张卡片顶部新增一条细进度条，取代"只有一行 Lv.N 文字"——填充比例 = 当前等级 / 当前可升到的上限（`desk` 用 `DESK_MAX_LEVEL`；其余建筑的实际上限是 desk 等级本身，`buildGateReason` 早已如此门控，进度条只是把这层关系可视化），练兵格用「已训兵力 / 兵力上限」代替。颜色按类别区分：五个资源产出建筑复用资源条已有的 `RES_COLORS`（呼应上方资源条同色语言）；`drillYard`/`wall`/练兵格用新增的军事色 `MILITARY_COLOR`（0xb85c38）；其余核心/仓储类建筑用既有 `C.accent`（`bldAccentColor()`，`base.ts`）。三处改动共同让网格从"一排复制粘贴的卡片"变成"能一眼扫出建好没建、投入程度、建筑分类"的信息面板，不新增任何命中区/交互，纯展示层。
 - 验证：`tsc --noEmit` + `webpack build:web` 全绿；`npm test`（918 例）+ `test:ui` 全绿（既有 `cityScene.ui.ts` 的 12 格不重叠/命中数断言在本次 viewport 下列数未触发 6 列封顶，未受影响）。视觉核对：`entries/web.ts` 加了一段临时调试分支（`?debugCity`，直接 new 一个 `CityScene` 塞入最小 `PIXI.Application`，绕开登录/后端），配一份贴近截图数值的假 `WorldApiClient`，在 Browser 面板截图确认网格 6×2 整行、未建成卡片变暗+"+"角标、进度条按分类变色后，**该调试分支已完整回退**，不随本次改动合并。
 
+### 8.7 队伍栏「填满所有队伍」批量分兵按钮（2026-08-02）
+
+用户对着实机截图标出队伍栏右上角的空白位置，要求加一个「填满所有队伍」按钮：一键把基地兵力池按 `t1..t5` 槽位顺序分给各队，够填满的队就填满，池子不够时把剩余兵力全部塞给当前排到的这支队伍（不搞"按比例雨露均沾"）。
+
+- **UI**：`renderTeamsRow`（`CityScene/render.ts`）在队名标签行右端新增一个按钮（`fillBtnW=200`，高度精确等于 `TEAM_ROW_LABEL_H`，与其下方紧贴的队伍卡片行齐平不重叠），文案 `city.military.fillAllTeams`。按钮**始终注册命中区**（不像 build-queue 的 Speed Up 按钮那样按条件渲染），点击调用新增的 `doFillAllTeams()`。
+- **分配规则**：与 `DefenseEditorScene` 的单队「补满兵力」（§6.5，`CHARACTER_CARDS_DESIGN.md`）同一条底层规则——队伍内按 `cardPower` 降序补至 `troopCap`——只是外层多套了一层"按 `t1..t5` 顺序遍历所有队伍"。因为 `CityScene` 里的队伍都已经是服务端已保存的正式编队，不需要 `persistTeam()` 这一步，直接调 `distributeTroops(worldId, allocations)`（一次请求批量提交所有队伍的分配，不是每队各发一次）。
+- **本地状态更新**：成功后不重新拉取 `me`，而是把 `allocations` 直接叠加进本地 `this.me.cardState`/`this.me.troops`（与 `DefenseEditorScene.doFillTroops` 的做法一致），失败则整体不改，可重试。
+- 覆盖测试：`client/test/ui/cityFillAllTeams.ui.ts`（15 例）——按槽位顺序分配、单队内多卡按战力降序补满再溢出到下一队、池耗尽后不动后续队伍、跳过已满员的队伍、空池/请求失败时的提示与状态回滚、卡引用缺失（`cardInv` 无此 id）/ 旧版无卡军队条目安全跳过不崩溃、行军中或受伤锁定的队伍照样能补兵（补兵不受队伍状态门控）、`bt.busy` 期间二次点击是 no-op、按钮命中矩形与 5 张队伍卡的命中矩形几何回归（底边贴合队伍行顶边、绝不重叠）。`cityScene.ui.ts`/`cityTrainTroops.ui.ts` 里所有依赖命中区下标/数量的既有断言相应加 1（新按钮始终占一个命中位）。
+- 验证：`tsc --noEmit -p tsconfig.test.json` 全绿、`webpack build:web` 构建成功、`test:ui` 全绿（112 文件 / 942 例）。按钮几何位置靠手算 + 命中矩形回归验证（`fillBtnH` 精确等于 `TEAM_ROW_LABEL_H`，底边与队伍卡片行顶边重合但不重叠，见 `cityFillAllTeams.ui.ts`）；本次也临时起了一版 §8.6 同款 `?debugCity` 调试分支想在 Browser 面板截图复核，但受限于本环境截图链路一直取不到画面（canvas 已渲染、`toDataURL` 可导出但 Browser 面板截图工具报"未显示无法合成帧"），**未完成真正的像素级视觉核对**就已按指示叫停——调试分支已完整回退，不随本次改动合并。
+
 ---
 
 ## 9. 契约 / 端点（→ SERVER_API + openapi-world）

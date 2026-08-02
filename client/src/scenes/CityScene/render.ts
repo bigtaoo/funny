@@ -106,6 +106,17 @@ export function RenderMixin<TBase extends CitySceneBaseCtor>(Base: TBase): TBase
       sectionLbl.y = bandTop;
       this.container.addChild(sectionLbl);
 
+      // "填满所有队伍" (2026-08-02): one tap drains the home troop pool into all 5 teams in slot
+      // order instead of opening each team's formation editor to hit 分兵 individually. Sits flush
+      // inside the section-label row (same height as sectionLbl's row), never spilling into the
+      // card row below it.
+      const fillBtnW = 200;
+      const fillBtnH = TEAM_ROW_LABEL_H;
+      this.addBtn(
+        cx0 + w - GRID_PAD - fillBtnW, bandTop, fillBtnW, fillBtnH,
+        t('city.military.fillAllTeams'), 0xffffff, C.accent, () => void this.doFillAllTeams(),
+      );
+
       const rowY = bandTop + TEAM_ROW_LABEL_H;
       const availW = w - GRID_PAD * 2;
       const cellW = Math.floor((availW - (TEAM_CAP - 1) * CARD_GAP) / TEAM_CAP);

@@ -424,6 +424,56 @@ describe('CardScene fuse panel — auto-retarget when the tapped card has too fe
     expect(ringStarCount(modalLayerOf(scene))).toBe(1);
     spy.mockRestore();
   });
+
+  // 2026-08-02: same-faction is ranked above raw level so auto-retarget never jumps the player to an
+  // unrelated faction just because some other card happens to be higher level (feedback: "fusing a
+  // shield trooper shouldn't suddenly switch to Mara"). Target sits at level 3 (a level nothing else
+  // in this inventory holds) purely so its own material count stays at 0 and the swap fires at all —
+  // the assertion itself is about which alternative wins, not about triggering the swap.
+  it('prefers a same-faction card over a higher-level cross-faction one', () => {
+    const target = makeCard('target', 'lena', { level: 3 }); // faction anna, no materials at all
+    const sameFactionLow = makeCard('sameFactionLow', 'max', { level: 1 });  // faction anna, level 1
+    const crossFactionHigh = makeCard('crossFactionHigh', 'chenshou', { level: 2 }); // faction tao, level 2
+    const cardInv: Record<string, CardInstance> = { target, sameFactionLow, crossFactionHigh };
+    for (let i = 0; i < FUSION_MATERIAL_COUNT; i++) cardInv[`annaMat${i}`] = makeCard(`annaMat${i}`, 'mara', { level: 1 });
+    for (let i = 0; i < FUSION_MATERIAL_COUNT; i++) cardInv[`taoMat${i}`] = makeCard(`taoMat${i}`, 'suyuan', { level: 2 });
+
+    const spy = vi.spyOn(log, 'showToastMessage');
+    const scene = buildScene(baseCb(cardInv));
+    (scene as unknown as { openFuseSelect: (c: CardInstance) => void }).openFuseSelect(target);
+
+    expect(spy).toHaveBeenCalledTimes(1);
+    // Ring centers on sameFactionLow (Lv.1, faction anna), not crossFactionHigh despite its higher level.
+    expect(ringStarCount(modalLayerOf(scene))).toBe(1);
+    spy.mockRestore();
+  });
+
+  // 2026-08-02: a deployed card is now eligible to be auto-selected as the fusion TARGET (only
+  // materials must be free) and is preferred over a same-tier bench copy, so auto-continue helps
+  // strengthen the player's active SLG roster first. Target sits at level 5 (again unused elsewhere)
+  // so its own material count stays at 0 and the swap fires. deployedCard is deliberately given a
+  // LOWER level than benchCard — if deployed status were ignored and this fell through to the plain
+  // "highest level wins" tiebreak, benchCard (the higher level) would win instead, so this isolates
+  // the deployed-tier check from the level tiebreak rather than letting them coincide.
+  it('prefers a deployed card over a higher-level bench card of the same faction', () => {
+    const target = makeCard('target', 'lena', { level: 5 }); // faction anna, no materials at all
+    const benchCard = makeCard('benchCard', 'max', { level: 2 });       // faction anna, not deployed, HIGHER level
+    const deployedCard = makeCard('deployedCard', 'mara', { level: 1 }); // faction anna, deployed, LOWER level
+    const cardInv: Record<string, CardInstance> = { target, benchCard, deployedCard };
+    for (let i = 0; i < FUSION_MATERIAL_COUNT; i++) cardInv[`benchMat${i}`] = makeCard(`benchMat${i}`, 'max', { level: 2 });
+    for (let i = 0; i < FUSION_MATERIAL_COUNT; i++) cardInv[`deployedMat${i}`] = makeCard(`deployedMat${i}`, 'mara', { level: 1 });
+
+    const spy = vi.spyOn(log, 'showToastMessage');
+    const scene = buildScene(baseCb(cardInv, {
+      getCardState: () => ({ deployedCard: { teamId: 'team-1' } }),
+    } as unknown as Partial<CardCallbacks>));
+    (scene as unknown as { openFuseSelect: (c: CardInstance) => void }).openFuseSelect(target);
+
+    expect(spy).toHaveBeenCalledTimes(1);
+    // Ring centers on deployedCard (Lv.1), not benchCard (Lv.2) — deployed outranks the higher level.
+    expect(ringStarCount(modalLayerOf(scene))).toBe(1);
+    spy.mockRestore();
+  });
 });
 
 describe('CardScene fuse panel — auto-continue after a successful fuse', () => {
@@ -596,6 +646,37 @@ describe('CardScene fuse panel — auto-continue after a successful fuse', () =>
     expect(modalOpenOf(scene)).toBe(true); // stayed open, continuing
     // Continued onto lena2 (still anna-faction 'max' materials), not otherLine (tao-faction 'chenshou').
     expect(findLabelPos(modalLayerOf(scene), rowLabel)).not.toBeNull();
+    expect(findLabelPos(modalLayerOf(scene), t('card.chenshou.name' as never))).toBeNull();
+  });
+
+  // 2026-08-02: the Priority-2 fallback (`findAutoTarget(2, defId) ?? findAutoTarget(1, defId)` in
+  // onFuseSettled) goes through the same ranked findAutoTarget as the initial-open auto-retarget
+  // tested above — this exercises that call site specifically (post-fuse, not panel-open) so a future
+  // change to onFuseSettled alone can't silently regress the faction tiebreak.
+  it('post-fuse fallback prefers a same-faction card over an unrelated one, even at a lower level', async () => {
+    const target = makeCard('target', 'lena', { level: 1 });                 // faction anna
+    const otherLine = makeCard('otherLine', 'lichuang', { level: 1 });       // faction tao — unrelated line
+    const sameFactionAlt = makeCard('sameFactionAlt', 'max', { level: 1 });  // faction anna — expected pick
+    const cardInv: Record<string, CardInstance> = { target, otherLine, sameFactionAlt };
+    for (let i = 0; i < FUSION_MATERIAL_COUNT; i++) cardInv[`matA${i}`] = makeCard(`matA${i}`, 'max', { level: 1 });  // anna — target's initial materials (consumed by the fuse)
+    for (let i = 0; i < FUSION_MATERIAL_COUNT; i++) cardInv[`matB${i}`] = makeCard(`matB${i}`, 'chenshou', { level: 1 }); // tao — otherLine's materials
+    for (let i = 0; i < FUSION_MATERIAL_COUNT; i++) cardInv[`matC${i}`] = makeCard(`matC${i}`, 'mara', { level: 1 });     // anna — sameFactionAlt's own materials
+
+    const calls: { targetId: string; ids: string[] }[] = [];
+    const scene = buildScene(baseCb(cardInv, { fuseCards: mutatingFuseCards(cardInv, calls) }));
+    openFuse(scene, target);
+
+    for (let i = 0; i < FUSION_MATERIAL_COUNT; i++) {
+      hitUnder(modalHitsOf(scene), findLabelPos(modalLayerOf(scene), MAX_NAME)!)!.action();
+    }
+    hitUnder(modalHitsOf(scene), findLabelPos(modalLayerOf(scene), `${t('roster.fuseBtn')} (${FUSION_MATERIAL_COUNT}/${FUSION_MATERIAL_COUNT})`)!)!.action();
+    await flushAsync();
+
+    expect(calls).toHaveLength(1);
+    expect(target.level).toBe(2); // leveled up, then couldn't continue (no Lv.2 materials anywhere)
+    expect(modalOpenOf(scene)).toBe(true); // fell back instead of closing
+    // Ring now centers on sameFactionAlt: its own material group ('mara') shows, otherLine's ('chenshou') doesn't.
+    expect(findLabelPos(modalLayerOf(scene), t('card.mara.name' as never))).not.toBeNull();
     expect(findLabelPos(modalLayerOf(scene), t('card.chenshou.name' as never))).toBeNull();
   });
 });
@@ -876,6 +957,96 @@ describe('CardScene fuse panel — animation is not torn down by the busy re-ren
     expect(findLabelPos(headerOverlayLayerOf(scene), (999).toLocaleString())).not.toBeNull();
 
     scene.destroy();
+  });
+});
+
+// Regression coverage for the 2026-08-02 "strengthened ending" (see feed.ts playFusionAnim phase 2):
+// the shockwave (flash/burst ring/spokes) is a symmetric sin pulse that hits 0 alpha, by design, on
+// its own last frame — great mid-animation, but it used to leave the payoff cutting straight to
+// nothing. A gold "seal" halo (fixed geometry, alpha-only per frame — no clear+redraw, since its
+// radius never changes) now blooms in alongside the shockwave and holds/fades for a beat after it,
+// so there's a frame players actually land on. Both tests drive the REAL playFusionAnim via a
+// controllable rAF queue + mocked performance.now() (same technique as the "end-to-end" describe
+// above), skipping the converge phase (fuseRingGeom = null) to isolate phase 2.
+describe('CardScene fuse panel — post-burst halo (2026-08-02 strengthened ending)', () => {
+  /** Drives `n` animation frames, each 60ms of mocked clock apart (mirrors the "end-to-end" test's
+   * cadence) — enough granularity to land cleanly on either side of the 700ms burst boundary. */
+  function driveFrames(rafQueue: FrameRequestCallback[], clock: { v: number }, n: number): void {
+    for (let i = 0; i < n && rafQueue.length > 0; i++) {
+      const cb = rafQueue.shift()!;
+      clock.v += 60;
+      cb(clock.v);
+    }
+  }
+
+  function setup(): { scene: CardScene; rafQueue: FrameRequestCallback[]; clock: { v: number }; restore: () => void } {
+    const rafQueue: FrameRequestCallback[] = [];
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const g = globalThis as any;
+    const origRaf = g.requestAnimationFrame;
+    g.requestAnimationFrame = (cb: FrameRequestCallback): number => { rafQueue.push(cb); return rafQueue.length; };
+    const clock = { v: 1000 };
+    const nowSpy = vi.spyOn(performance, 'now').mockImplementation(() => clock.v);
+
+    const target = makeCard('target', 'lena', { level: 3 });
+    const cardInv: Record<string, CardInstance> = { target };
+    for (let i = 0; i < FUSION_MATERIAL_COUNT; i++) cardInv[`mat${i}`] = makeCard(`mat${i}`, 'max', { level: 3 });
+    const scene = buildScene(baseCb(cardInv));
+    priv(scene).openFuseSelect(target);
+    priv(scene).fuseRingGeom = null; // skip the converge phase → straight to the burst/halo phase
+
+    return {
+      scene, rafQueue, clock,
+      restore: () => { g.requestAnimationFrame = origRaf; nowSpy.mockRestore(); },
+    };
+  }
+
+  it('keeps something on screen after the burst\'s own ~700ms is over, then fully cleans up', async () => {
+    const { scene, rafQueue, clock, restore } = setup();
+    try {
+      const staticChildCount = priv(scene).modalLayer.children.length;
+      const p = priv(scene).playFusionAnim() as Promise<void>;
+      expect(rafQueue.length).toBe(1); // first frame registered synchronously
+
+      driveFrames(rafQueue, clock, 13); // 13 * 60ms = 780ms elapsed — past the 700ms burst, well before the ~1180ms total
+      // The shockwave (flash + burst ring/spokes) has torn itself down by now, but the halo is still
+      // standing: one extra transient child beyond whatever the static ring/list panel already had.
+      expect(priv(scene).modalLayer.children.length).toBeGreaterThan(staticChildCount);
+      let resolved = false;
+      p.then(() => { resolved = true; });
+      await Promise.resolve();
+      expect(resolved).toBe(false); // the hold/fade beat isn't done yet
+
+      driveFrames(rafQueue, clock, 20); // drain the remaining hold + fade-out
+      expect(rafQueue.length).toBe(0);
+      await p;
+
+      expect(priv(scene).modalLayer.children.length).toBe(staticChildCount); // no leaked graphics
+    } finally {
+      restore();
+    }
+  });
+
+  it('perf: the halo is drawn once and only its alpha changes — no per-frame clear+redraw during the hold/fade beat', async () => {
+    const { scene, rafQueue, clock, restore } = setup();
+    const clearSpy = vi.spyOn(PIXI.Graphics.prototype, 'clear');
+    try {
+      const p = priv(scene).playFusionAnim() as Promise<void>;
+
+      driveFrames(rafQueue, clock, 13); // past the 700ms burst
+      const clearCallsAtBurstEnd = clearSpy.mock.calls.length;
+      expect(clearCallsAtBurstEnd).toBeGreaterThan(0); // the burst ring/spokes genuinely redrew every frame
+
+      driveFrames(rafQueue, clock, 20); // the halo-only hold + fade-out beat
+      await p;
+
+      // No additional Graphics#clear calls once the burst is gone — the extra ~480ms of hold/fade is
+      // a single alpha write per frame, not a geometry rebuild.
+      expect(clearSpy.mock.calls.length).toBe(clearCallsAtBurstEnd);
+    } finally {
+      clearSpy.mockRestore();
+      restore();
+    }
   });
 });
 
