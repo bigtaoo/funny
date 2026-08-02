@@ -19,6 +19,31 @@ import { WorldService } from '../src/service';
 import type { WorldRedis } from '../src/redis';
 import type { WorldMetaClient } from '../src/metaClient';
 import type { WorldGatewayClient, SlgPushMsg } from '../src/gatewayClient';
+import type { WorldSocialsvcClient, SocialsvcChannel, FamilySummary } from '../src/socialsvcClient';
+
+/** Minimal in-process fake of socialsvc's family/sect store — only `getFamiliesBySect` is actually read by
+ *  `friendlyAccountIds` (the rest of the interface is unused here but must be implemented to satisfy the type). */
+class FakeSocialsvc implements WorldSocialsvcClient {
+  available = true;
+  private families = new Map<string, FamilySummary>();
+  addFamily(familyId: string, leaderId: string, sectId?: string): void {
+    this.families.set(familyId, { familyId, name: familyId, tag: familyId.toUpperCase(), leaderId, memberCount: 1, prosperity: 0, ...(sectId ? { sectId } : {}) });
+  }
+  async getFamilyId(): Promise<string | null> { return null; }
+  async getMember(): Promise<null> { return null; }
+  async getFamiliesByIds(familyIds: string[]): Promise<FamilySummary[]> {
+    return familyIds.map((id) => this.families.get(id)).filter((f): f is FamilySummary => !!f);
+  }
+  async getFamiliesBySect(sectId: string): Promise<FamilySummary[]> {
+    return [...this.families.values()].filter((f) => f.sectId === sectId);
+  }
+  async setSect(): Promise<void> {}
+  async bumpActivity(): Promise<void> {}
+  async refreshProsperity(): Promise<number> { return 0; }
+  async bumpActivityAndProsperity(): Promise<number> { return 0; }
+  async resetSlgState(): Promise<void> {}
+  async push(_channel: SocialsvcChannel): Promise<void> {}
+}
 
 const CARD_INV_ANY: Record<string, CardInstance> = new Proxy({} as Record<string, CardInstance>, {
   get: (_t, prop: string) => ({ id: prop, defId: 'lichuang', level: 1, xp: 0, gear: {}, locked: false }),
@@ -95,6 +120,7 @@ describe.skipIf(!mongo)('worldsvc garrison coverage e2e (ADR-051 P3a)', () => {
   const now = () => nowMs;
   let svc: WorldService;
   let redis: FakeRedis;
+  let socialsvc: FakeSocialsvc;
   let pushes: { accountId: string; msg: SlgPushMsg }[];
   const fakeGateway: WorldGatewayClient = { available: true, async push(a, msg) { pushes.push({ accountId: a, msg }); } };
 
@@ -104,7 +130,8 @@ describe.skipIf(!mongo)('worldsvc garrison coverage e2e (ADR-051 P3a)', () => {
     nowMs = 1_000_000;
     pushes = [];
     redis = new FakeRedis();
-    svc = new WorldService({ cols: m.collections, redis, gateway: fakeGateway, meta: fakeMeta, mapW: SLG_MAP_W, mapH: SLG_MAP_H, now });
+    socialsvc = new FakeSocialsvc();
+    svc = new WorldService({ cols: m.collections, redis, gateway: fakeGateway, meta: fakeMeta, socialsvc, mapW: SLG_MAP_W, mapH: SLG_MAP_H, now });
   });
 
   afterAll(async () => {
@@ -324,5 +351,69 @@ describe.skipIf(!mongo)('worldsvc garrison coverage e2e (ADR-051 P3a)', () => {
 
     await expect(svc.startMarch(W, 'a', 5, 5, target.x, target.y, 'move', 1, 't1', 'garrison'))
       .rejects.toThrow(/use attack/i);
+  });
+
+  it("a garrison move succeeds onto an ALLIED-SECT member's territory (no shared family, only sect alliance) — the broader half of friendlyAccountIds, not just same-family", async () => {
+    // a ∈ famA ∈ sectA; ally ∈ famB ∈ sectB; sectA and sectB are allied (mutual allySectIds) — mirrors
+    // alliance-mark.e2e's setup, but exercises the move/garrison path instead of map-tile marking.
+    const sectA = `s:${W}:AAA`;
+    const sectB = `s:${W}:BBB`;
+    socialsvc.addFamily('famA', 'a', sectA);
+    socialsvc.addFamily('famB', 'ally', sectB);
+    await m.collections.sects.insertMany([
+      { _id: sectA, worldId: W, name: 'A', tag: 'AAA', leaderFamilyId: 'famA', leaderId: 'a', memberFamilyCount: 1, allySectIds: [sectB], prosperity: 0, rev: 1 },
+      { _id: sectB, worldId: W, name: 'B', tag: 'BBB', leaderFamilyId: 'famB', leaderId: 'ally', memberFamilyCount: 1, allySectIds: [sectA], prosperity: 0, rev: 1 },
+    ]);
+    await svc.joinWorld(W, 'a', 5, 5);
+    await svc.joinWorld(W, 'ally', 60, 60);
+    await m.collections.playerWorld.updateOne({ _id: playerWorldId(W, 'a') }, { $set: { familyId: 'famA', sectId: sectA } });
+    await m.collections.playerWorld.updateOne({ _id: playerWorldId(W, 'ally') }, { $set: { familyId: 'famB', sectId: sectB } });
+    await setupTeam('t1', 'card-1');
+
+    const target = findCoord((t) => t.type === 'resource' || t.type === 'neutral', 12, 12);
+    const tid = tileId(W, target.x, target.y);
+    await m.collections.tiles.updateOne(
+      { _id: tid },
+      { $set: { _id: tid, worldId: W, x: target.x, y: target.y, type: 'territory', level: 1, ownerId: 'ally', garrison: 0, rev: 0 } as TileDoc },
+      { upsert: true },
+    );
+
+    const mv = await svc.startMarch(W, 'a', 5, 5, target.x, target.y, 'move', 1, 't1', 'garrison');
+    nowMs = mv.arriveAt;
+    expect(await svc.processDueArrivals()).toBe(1);
+    const st = await m.collections.stationed.findOne({ _id: tid });
+    expect(st?.mode).toBe('garrison');
+    expect(st?.ownerId).toBe('a');
+  });
+
+  it('a garrison move mid-flight to a friendly tile is re-blocked at arrival if the destination is captured by a genuine rival in transit (tryParkTeam re-check, not just the departure-time check)', async () => {
+    await svc.joinWorld(W, 'a', 5, 5);
+    await svc.joinWorld(W, 'b', 60, 60);
+    await svc.joinWorld(W, 'rival', 70, 70);
+    await m.collections.playerWorld.updateOne({ _id: playerWorldId(W, 'a') }, { $set: { familyId: 'fam1' } });
+    await m.collections.playerWorld.updateOne({ _id: playerWorldId(W, 'b') }, { $set: { familyId: 'fam1' } });
+    await setupTeam('t1', 'card-1');
+
+    const target = findCoord((t) => t.type === 'resource' || t.type === 'neutral', 12, 12);
+    const targetTid = tileId(W, target.x, target.y);
+    await m.collections.tiles.updateOne(
+      { _id: targetTid },
+      { $set: { _id: targetTid, worldId: W, x: target.x, y: target.y, type: 'territory', level: 1, ownerId: 'b', garrison: 0, rev: 0 } as TileDoc },
+      { upsert: true },
+    );
+
+    // Dispatch validates at departure (b is friendly) — then a genuine rival captures the tile mid-flight.
+    const mv = await svc.startMarch(W, 'a', 5, 5, target.x, target.y, 'move', 1, 't1', 'garrison');
+    await m.collections.tiles.updateOne({ _id: targetTid }, { $set: { ownerId: 'rival' } });
+
+    nowMs = mv.arriveAt;
+    expect(await svc.processDueArrivals()).toBe(1);
+
+    // tryParkTeam re-checks friendliness at arrival — must NOT land on the now-hostile tile; falls back to origin.
+    expect(await m.collections.stationed.findOne({ _id: targetTid })).toBeNull();
+    const originTid = tileId(W, 5, 5);
+    const st = await m.collections.stationed.findOne({ _id: originTid });
+    expect(st?.teamId).toBe('t1');
+    expect(st?.mode).toBe('garrison');
   });
 });
