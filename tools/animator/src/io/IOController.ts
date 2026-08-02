@@ -361,9 +361,8 @@ export class IOController {
   // ── Export ────────────────────────────────────────────────────────────────
 
   /** Build the `.tao` runtime bundle (animation.json + optional spritesheet) as a
-   *  Blob, WITHOUT triggering a download. Shared by `exportTao()` (download) and the
-   *  online workspace (upload) — the CI sync bridge cannot rebuild the spritesheet, so
-   *  the browser-built `.tao` must be persisted alongside the `.tao.editor`. */
+   *  Blob, WITHOUT triggering a download. Used by `exportTao()` before writing it
+   *  to disk. */
   async buildTaoBlob(): Promise<Blob> {
     // Size tier (export panel) + the rig's natural FK height drive the bake-down to an
     // absolute target resolution rather than the artist's canvas size (§4.5.3 B).

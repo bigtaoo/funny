@@ -2,15 +2,12 @@ name: animator-deploy
 
 # Auto-publish the skeletal animation editor animator (Worker animator, static assets) to Cloudflare.
 # Trigger: push to main touching animator-related files, or manual Run from the Actions page.
-# Flow: npm ci → npm run build (webpack production, baking Supabase URL/anon key into the bundle) → wrangler deploy.
-# Deployment details / workspace sync: design/tools/animator/WORKSPACE_SYNC.md §7, §8.1 (Workers static assets build, wrangler/animator.jsonc assets-only).
+# Flow: npm ci → npm run build (webpack production) → wrangler deploy.
+# Deployment details: design/tools/animator/DESIGN.md (Workers static assets build, wrangler/animator.jsonc assets-only), if present.
 #
 # Reuses the ops/client repo secrets (same CF account; "Edit Cloudflare Workers" token covers all account Workers):
 #   CLOUDFLARE_API_TOKEN   — Requires at least Workers Scripts:Edit (account-level; also works for animator, no new token needed)
 #   CLOUDFLARE_ACCOUNT_ID  — Account ID (same value as ops/client)
-# Build-time injections (same names as Cloudflare Build variables; if unset, empty string — workspace UI silently disabled, offline editing unaffected):
-#   NW_SUPABASE_URL        — Supabase project URL
-#   NW_SUPABASE_ANON_KEY   — Supabase anon key
 # Enable switch: repo variable ANIMATOR_DEPLOY_ENABLED = true (job skipped if not set, to avoid red builds before setup is complete).
 
 on:
@@ -45,12 +42,9 @@ jobs:
         working-directory: tools/animator
         run: npm ci
 
-      # Outputs tools/animator/dist; DefinePlugin bakes the Supabase connection into the bundle at build time (consistent with local/CF builds).
+      # Outputs tools/animator/dist.
       - name: animator build
         working-directory: tools/animator
-        env:
-          NW_SUPABASE_URL: ${{ secrets.NW_SUPABASE_URL }}
-          NW_SUPABASE_ANON_KEY: ${{ secrets.NW_SUPABASE_ANON_KEY }}
         run: npm run build
 
       # Run from repo root with -c wrangler/animator.jsonc (assets point to ../tools/animator/dist, SPA fallback, no Worker script).
