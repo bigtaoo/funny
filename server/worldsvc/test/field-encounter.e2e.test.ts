@@ -185,6 +185,11 @@ describe.skipIf(!mongo)('worldsvc field-encounter e2e (ADR-051 P2b)', () => {
     expect(siege).not.toBeNull();
     expect(siege!.outcome).toBe('attacker_win');
     expect(siege!.defenderId).toBe('b');
+    // marchKind='move' (not 'attack'/'occupy') is what the client's applySiegeResult would need to give A's
+    // own win here a correct (non-"defender") toast — see the known follow-up flagged in SLG_DESIGN_LOG.md §51
+    // (field-encounter classification is not yet wired client-side; this pins the server-side data it needs).
+    expect(siege!.attackerId).toBe('a');
+    expect(siege!.marchKind).toBe('move');
   });
 
   it('scenario 1 — a march that loses to an enemy stationed team is destroyed; the defender holds', async () => {
@@ -212,6 +217,8 @@ describe.skipIf(!mongo)('worldsvc field-encounter e2e (ADR-051 P2b)', () => {
 
     const siege = await m.collections.sieges.findOne({ marchId, tile: tidT });
     expect(siege!.outcome).toBe('defender_win');
+    expect(siege!.attackerId).toBe('a');
+    expect(siege!.marchKind).toBe('move');
   });
 
   it('scenario 2 — a march wins against another enemy march sharing the cell and takes it over', async () => {

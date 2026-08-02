@@ -204,10 +204,17 @@ describe.skipIf(!mongo)('worldsvc siege e2e', () => {
 
     // sieges record + siege_result pushed to both parties.
     const siege = await m.collections.sieges.findOne({ worldId: W, attackerId: 'a' });
-    expect(siege).toMatchObject({ outcome: 'attacker_win', defenderId: 'b', tile: tileId(W, tgt.x, tgt.y) });
+    expect(siege).toMatchObject({ outcome: 'attacker_win', defenderId: 'b', tile: tileId(W, tgt.x, tgt.y), marchKind: 'attack' });
     const sr = pushes.filter((p) => p.msg.kind === 'siege_result');
     expect(sr.map((p) => p.accountId).sort()).toEqual(['a', 'b']);
     expect((sr[0]!.msg as { outcome: string }).outcome).toBe('attacker_win');
+    // 2026-08-02: attackerId/marchKind are what the client now uses to classify "mine vs.
+    // defender" (WorldMapNet.applySiegeResult) instead of guessing from client-side state —
+    // BOTH pushes (to the attacker AND the defender) must carry the same attackerId/marchKind
+    // so each side's client can independently tell who actually dispatched this march.
+    for (const p of sr) {
+      expect(p.msg).toMatchObject({ attackerId: 'a', marchKind: 'attack' });
+    }
     void mv;
   });
 
@@ -320,7 +327,7 @@ describe.skipIf(!mongo)('worldsvc siege e2e', () => {
     // No tile occupation: tile remains neutral.
     expect((await svc.getTile(W, 'a', tgt.x, tgt.y)).mine).toBeUndefined();
     const siege = await m.collections.sieges.findOne({ worldId: W, attackerId: 'a' });
-    expect(siege).toMatchObject({ outcome: 'attacker_win' });
+    expect(siege).toMatchObject({ outcome: 'attacker_win', marchKind: 'sweep' });
     expect(siege?.defenderId).toBeUndefined();
 
     // The survivors are in transit on a fresh 'return' leg; advancing to its arrival credits them to the pool.

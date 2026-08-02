@@ -90,6 +90,17 @@ describe('WorldMapNet.applySiegeResult — role is server-authoritative (attacke
     expect(h.showToast).not.toHaveBeenCalledWith(t('world.defendLost'), expect.anything());
   });
 
+  it('surviving a WorldMapScene rebuild (leaving/re-entering the SLG mid-march, or a page reload): a fresh WorldMapContext with zero dispatch history still classifies its own occupy win correctly — this is the exact scenario the 2026-07-22 myAttackTiles/myOccupyTiles fix could not survive, since those Sets lived on the scene instance and were gone by the time a long-traveling march\'s result arrived', () => {
+    // Simulate the OLD harness (the one that would have "dispatched" the march) going away entirely —
+    // a brand-new WorldMapContext/WorldMapNet pair, as WorldMapScene's app.ts showWorldMap() constructs on
+    // every fresh entry into the SLG, with no shared state whatsoever from whatever dispatched the march.
+    const rebuilt = buildHarness();
+    rebuilt.net.applySiegeResult(siege('attacker_win', ME, 'occupy'));
+    expect(rebuilt.showToast).toHaveBeenCalledWith(t('world.occupyWin'), expect.anything());
+    expect(rebuilt.showToast).not.toHaveBeenCalledWith(t('world.defendLost'), expect.anything());
+    expect(rebuilt.showModal).not.toHaveBeenCalled();
+  });
+
   it('a won attack (mine) still opens the siege modal with replay, not a toast', () => {
     h.net.applySiegeResult(siege('attacker_win', ME, 'attack'));
     expect(h.showModal).toHaveBeenCalledTimes(1);
