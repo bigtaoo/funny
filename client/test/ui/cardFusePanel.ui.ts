@@ -424,6 +424,56 @@ describe('CardScene fuse panel — auto-retarget when the tapped card has too fe
     expect(ringStarCount(modalLayerOf(scene))).toBe(1);
     spy.mockRestore();
   });
+
+  // 2026-08-02: same-faction is ranked above raw level so auto-retarget never jumps the player to an
+  // unrelated faction just because some other card happens to be higher level (feedback: "fusing a
+  // shield trooper shouldn't suddenly switch to Mara"). Target sits at level 3 (a level nothing else
+  // in this inventory holds) purely so its own material count stays at 0 and the swap fires at all —
+  // the assertion itself is about which alternative wins, not about triggering the swap.
+  it('prefers a same-faction card over a higher-level cross-faction one', () => {
+    const target = makeCard('target', 'lena', { level: 3 }); // faction anna, no materials at all
+    const sameFactionLow = makeCard('sameFactionLow', 'max', { level: 1 });  // faction anna, level 1
+    const crossFactionHigh = makeCard('crossFactionHigh', 'chenshou', { level: 2 }); // faction tao, level 2
+    const cardInv: Record<string, CardInstance> = { target, sameFactionLow, crossFactionHigh };
+    for (let i = 0; i < FUSION_MATERIAL_COUNT; i++) cardInv[`annaMat${i}`] = makeCard(`annaMat${i}`, 'mara', { level: 1 });
+    for (let i = 0; i < FUSION_MATERIAL_COUNT; i++) cardInv[`taoMat${i}`] = makeCard(`taoMat${i}`, 'suyuan', { level: 2 });
+
+    const spy = vi.spyOn(log, 'showToastMessage');
+    const scene = buildScene(baseCb(cardInv));
+    (scene as unknown as { openFuseSelect: (c: CardInstance) => void }).openFuseSelect(target);
+
+    expect(spy).toHaveBeenCalledTimes(1);
+    // Ring centers on sameFactionLow (Lv.1, faction anna), not crossFactionHigh despite its higher level.
+    expect(ringStarCount(modalLayerOf(scene))).toBe(1);
+    spy.mockRestore();
+  });
+
+  // 2026-08-02: a deployed card is now eligible to be auto-selected as the fusion TARGET (only
+  // materials must be free) and is preferred over a same-tier bench copy, so auto-continue helps
+  // strengthen the player's active SLG roster first. Target sits at level 5 (again unused elsewhere)
+  // so its own material count stays at 0 and the swap fires. deployedCard is deliberately given a
+  // LOWER level than benchCard — if deployed status were ignored and this fell through to the plain
+  // "highest level wins" tiebreak, benchCard (the higher level) would win instead, so this isolates
+  // the deployed-tier check from the level tiebreak rather than letting them coincide.
+  it('prefers a deployed card over a higher-level bench card of the same faction', () => {
+    const target = makeCard('target', 'lena', { level: 5 }); // faction anna, no materials at all
+    const benchCard = makeCard('benchCard', 'max', { level: 2 });       // faction anna, not deployed, HIGHER level
+    const deployedCard = makeCard('deployedCard', 'mara', { level: 1 }); // faction anna, deployed, LOWER level
+    const cardInv: Record<string, CardInstance> = { target, benchCard, deployedCard };
+    for (let i = 0; i < FUSION_MATERIAL_COUNT; i++) cardInv[`benchMat${i}`] = makeCard(`benchMat${i}`, 'max', { level: 2 });
+    for (let i = 0; i < FUSION_MATERIAL_COUNT; i++) cardInv[`deployedMat${i}`] = makeCard(`deployedMat${i}`, 'mara', { level: 1 });
+
+    const spy = vi.spyOn(log, 'showToastMessage');
+    const scene = buildScene(baseCb(cardInv, {
+      getCardState: () => ({ deployedCard: { teamId: 'team-1' } }),
+    } as unknown as Partial<CardCallbacks>));
+    (scene as unknown as { openFuseSelect: (c: CardInstance) => void }).openFuseSelect(target);
+
+    expect(spy).toHaveBeenCalledTimes(1);
+    // Ring centers on deployedCard (Lv.1), not benchCard (Lv.2) — deployed outranks the higher level.
+    expect(ringStarCount(modalLayerOf(scene))).toBe(1);
+    spy.mockRestore();
+  });
 });
 
 describe('CardScene fuse panel — auto-continue after a successful fuse', () => {
@@ -596,6 +646,37 @@ describe('CardScene fuse panel — auto-continue after a successful fuse', () =>
     expect(modalOpenOf(scene)).toBe(true); // stayed open, continuing
     // Continued onto lena2 (still anna-faction 'max' materials), not otherLine (tao-faction 'chenshou').
     expect(findLabelPos(modalLayerOf(scene), rowLabel)).not.toBeNull();
+    expect(findLabelPos(modalLayerOf(scene), t('card.chenshou.name' as never))).toBeNull();
+  });
+
+  // 2026-08-02: the Priority-2 fallback (`findAutoTarget(2, defId) ?? findAutoTarget(1, defId)` in
+  // onFuseSettled) goes through the same ranked findAutoTarget as the initial-open auto-retarget
+  // tested above — this exercises that call site specifically (post-fuse, not panel-open) so a future
+  // change to onFuseSettled alone can't silently regress the faction tiebreak.
+  it('post-fuse fallback prefers a same-faction card over an unrelated one, even at a lower level', async () => {
+    const target = makeCard('target', 'lena', { level: 1 });                 // faction anna
+    const otherLine = makeCard('otherLine', 'lichuang', { level: 1 });       // faction tao — unrelated line
+    const sameFactionAlt = makeCard('sameFactionAlt', 'max', { level: 1 });  // faction anna — expected pick
+    const cardInv: Record<string, CardInstance> = { target, otherLine, sameFactionAlt };
+    for (let i = 0; i < FUSION_MATERIAL_COUNT; i++) cardInv[`matA${i}`] = makeCard(`matA${i}`, 'max', { level: 1 });  // anna — target's initial materials (consumed by the fuse)
+    for (let i = 0; i < FUSION_MATERIAL_COUNT; i++) cardInv[`matB${i}`] = makeCard(`matB${i}`, 'chenshou', { level: 1 }); // tao — otherLine's materials
+    for (let i = 0; i < FUSION_MATERIAL_COUNT; i++) cardInv[`matC${i}`] = makeCard(`matC${i}`, 'mara', { level: 1 });     // anna — sameFactionAlt's own materials
+
+    const calls: { targetId: string; ids: string[] }[] = [];
+    const scene = buildScene(baseCb(cardInv, { fuseCards: mutatingFuseCards(cardInv, calls) }));
+    openFuse(scene, target);
+
+    for (let i = 0; i < FUSION_MATERIAL_COUNT; i++) {
+      hitUnder(modalHitsOf(scene), findLabelPos(modalLayerOf(scene), MAX_NAME)!)!.action();
+    }
+    hitUnder(modalHitsOf(scene), findLabelPos(modalLayerOf(scene), `${t('roster.fuseBtn')} (${FUSION_MATERIAL_COUNT}/${FUSION_MATERIAL_COUNT})`)!)!.action();
+    await flushAsync();
+
+    expect(calls).toHaveLength(1);
+    expect(target.level).toBe(2); // leveled up, then couldn't continue (no Lv.2 materials anywhere)
+    expect(modalOpenOf(scene)).toBe(true); // fell back instead of closing
+    // Ring now centers on sameFactionAlt: its own material group ('mara') shows, otherLine's ('chenshou') doesn't.
+    expect(findLabelPos(modalLayerOf(scene), t('card.mara.name' as never))).not.toBeNull();
     expect(findLabelPos(modalLayerOf(scene), t('card.chenshou.name' as never))).toBeNull();
   });
 });

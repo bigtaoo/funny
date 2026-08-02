@@ -12,16 +12,19 @@
 // (candidate list + Fuse/Cancel), side by side, so the whole panel uses the wide aspect instead of
 // stacking everything down the middle.
 //
-// Auto-retarget + auto-continue (2026-07-20, revised 2026-07-22, toast trimmed 2026-07-25): if the
-// tapped target doesn't have 5 eligible materials on hand, the panel silently swaps in the best fusable
-// card instead (highest level first) and toasts the player. After a successful fuse of a level-1/2
-// target, the panel prefers to KEEP the just-upgraded card (it retains its id, now one level higher) as
-// the target and continue on it while it's still fusable; only when it can't be fused further does it
-// drop back to a lower-level card that still has materials — silently, no toast (the ring already shows
-// the swap by changing which portrait sits at the center; the "auto-continue" fast-forward hits this
-// branch on nearly every fuse, so a toast here fired far too often — see roster.fuseAutoRetarget below,
-// which stays toasted since it only fires once per panel-open). Level-3+ targets fuse once and close,
-// requiring the player to reopen the dialog for the next round.
+// Auto-retarget + auto-continue (2026-07-20, revised 2026-07-22, toast trimmed 2026-07-25, ranking
+// extended 2026-08-02): if the tapped target doesn't have 5 eligible materials on hand, the panel
+// silently swaps in the best fusable card instead and toasts the player. After a successful fuse of a
+// level-1/2 target, the panel prefers to KEEP the just-upgraded card (it retains its id, now one level
+// higher) as the target and continue on it while it's still fusable; only when it can't be fused
+// further does it drop back to another card that still has materials — silently, no toast (the ring
+// already shows the swap by changing which portrait sits at the center; the "auto-continue" fast-forward
+// hits this branch on nearly every fuse, so a toast here fired far too often — see roster.fuseAutoRetarget
+// below, which stays toasted since it only fires once per panel-open). "Best fusable card" is ranked by
+// findAutoTarget: same character line first, then same faction, then currently-deployed-to-a-team (the
+// target may be deployed even though deployed cards can never be materials), then highest level — see
+// its doc comment below for the full rationale. Level-3+ targets fuse once and close, requiring the
+// player to reopen the dialog for the next round.
 import * as PIXI from 'pixi.js-legacy';
 import { t, type TranslationKey } from '../../i18n';
 import { ui as C, txt, sketchPanel, seedFor, tearDownChildren } from '../../render/sketchUi';
@@ -274,23 +277,40 @@ export function FeedMixin<TBase extends CardSceneBaseCtor>(Base: TBase): TBase &
       const cardState = this.cb.getCardState?.() ?? {};
       const candidateOf = (id: string): boolean => !cardState[id]?.teamId; // deployed cards cannot be fused
 
-      /** Best owned card to fuse right now: unlocked, undeployed, below max level, with >= FUSION_MATERIAL_COUNT
-       * eligible same-faction same-level materials already on hand. Prefers a card matching `preferDefId`
-       * (the card the player was already fusing) so auto-retarget/auto-continue don't jump to an unrelated
-       * card line when another copy of the same one is still fusable; otherwise prefers the highest level. */
+      /** Best owned card to fuse right now: unlocked, below max level, with >= FUSION_MATERIAL_COUNT
+       * eligible same-faction same-level materials already on hand. The target itself MAY be deployed
+       * (only materials must be free — `candidateOf` below gates the material count, not the target).
+       * Ranked lexicographically, most-significant first (2026-08-02): (1) same `defId` as `preferDefId`
+       * (the card the player was already fusing), so auto-retarget/auto-continue keep working the same
+       * character line when another copy is still fusable; (2) same faction as that card, so falling
+       * back never jumps to an unrelated faction just because it happens to rank higher on some other
+       * axis (e.g. mid-fusing a Tao-faction card should never auto-switch to an Anna-faction one); (3)
+       * currently deployed to an SLG team, so auto-continue prioritizes strengthening the active roster
+       * over bench copies; (4) highest level. */
       const findAutoTarget = (requireLevel?: number, preferDefId?: string): CardInstance | null => {
         const inv = this.cb.getSave().cardInv ?? {};
+        const preferFaction = preferDefId ? CARD_DEFS[preferDefId]?.faction : undefined;
+        const rankOf = (c: CardInstance): [number, number, number, number] => [
+          preferDefId && c.defId === preferDefId ? 1 : 0,
+          preferFaction && CARD_DEFS[c.defId]?.faction === preferFaction ? 1 : 0,
+          candidateOf(c.id) ? 0 : 1,
+          c.level,
+        ];
+        const isBetter = (a: readonly number[], b: readonly number[]): boolean => {
+          for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return a[i] > b[i];
+          return false;
+        };
         let best: CardInstance | null = null;
-        let preferred: CardInstance | null = null;
+        let bestRank: [number, number, number, number] | null = null;
         for (const c of Object.values(inv)) {
-          if (c.locked || !candidateOf(c.id) || c.level >= MAX_CARD_LEVEL || !CARD_DEFS[c.defId]) continue;
+          if (c.locked || c.level >= MAX_CARD_LEVEL || !CARD_DEFS[c.defId]) continue;
           if (requireLevel !== undefined && c.level !== requireLevel) continue;
           const cnt = fusionMaterialCandidates(c, inv).filter((m) => candidateOf(m.id)).length;
           if (cnt < FUSION_MATERIAL_COUNT) continue;
-          if (!best || c.level > best.level) best = c;
-          if (preferDefId && c.defId === preferDefId && (!preferred || c.level > preferred.level)) preferred = c;
+          const rank = rankOf(c);
+          if (!best || isBetter(rank, bestRank!)) { best = c; bestRank = rank; }
         }
-        return preferred ?? best;
+        return best;
       };
 
       let currentTarget = initialTarget;
@@ -365,10 +385,11 @@ export function FeedMixin<TBase extends CardSceneBaseCtor>(Base: TBase): TBase &
             drawFusePanel();
             return;
           }
-          // Priority 2: the upgraded card can't continue — drop back to a lower-level card that still
-          // has materials (prefer another copy of the same character). No toast: this branch fires on
-          // nearly every fuse once auto-continue exhausts a low-level card, and the ring already shows
-          // the swap by changing which portrait sits at the center (2026-07-25, was too frequent/long).
+          // Priority 2: the upgraded card can't continue — drop back to another card that still has
+          // materials, ranked by findAutoTarget (same character, then same faction, then deployed,
+          // then level — see its doc comment). No toast: this branch fires on nearly every fuse once
+          // auto-continue exhausts a low-level card, and the ring already shows the swap by changing
+          // which portrait sits at the center (2026-07-25, was too frequent/long).
           const fallback = findAutoTarget(2, currentTarget.defId) ?? findAutoTarget(1, currentTarget.defId);
           if (fallback) {
             currentTarget = fallback;
