@@ -1,6 +1,6 @@
 # 动画编辑器（tools/animator）
 
-设计文档：`design/tools/animator/REQUIREMENTS.md`（§2 §3 §8）、`ARCHITECTURE.md`（§1 §2 §5 §3）、`WORKSPACE_SYNC.md`（在线工作区 + 云盘→仓库同步桥，已上线 `animator.tao-wang-go.workers.dev`：Supabase 工作区 + 云端自动同步 + GitHub Action 同步桥）
+设计文档：`design/tools/animator/REQUIREMENTS.md`（§2 §3 §8）、`ARCHITECTURE.md`（§1 §2 §5 §3）。`WORKSPACE_SYNC.md` 描述的 Supabase 云工作区 + `anim-sync` 每日同步 CI 已于 2026-08-02 移除（方向已被 desktop-shell 取代，见 ADR-055），该文档仅存历史参考
 
 ```bash
 cd tools/animator && npm run start   # 端口 9091
