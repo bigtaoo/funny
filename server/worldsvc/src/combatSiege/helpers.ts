@@ -80,6 +80,7 @@ export function SiegeHelpersMixin<TBase extends SiegeServiceBaseCtor>(Base: TBas
         worldId: m.worldId,
         marchId: m._id,
         attackerId: m.ownerId,
+        marchKind: m.kind,
         ...(defenderId ? { defenderId } : {}),
         tile: m.toTile,
         outcome,

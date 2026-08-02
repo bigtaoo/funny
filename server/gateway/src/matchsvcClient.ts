@@ -68,6 +68,9 @@ export type PushMsg =
       outcome: string;
       lootSummary: string;
       replayRef: string;
+      // 2026-08-02: server-authoritative role classification — see transport.proto SiegeResult.
+      attackerId: string;
+      marchKind: string;
     }
   // Family channel message (S8-4, worldsvc delivers via /gw/push targeted push; ≤30 members, O(n) is acceptable).
   | { kind: 'family_msg'; familyId: string; fromPublicId: string; fromName: string; body: string; ts: number }

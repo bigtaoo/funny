@@ -833,6 +833,8 @@ function toServerMsg(msg: PushMsg): ServerMsg {
         outcome: msg.outcome,
         lootSummary: msg.lootSummary,
         replayRef: msg.replayRef,
+        attackerId: msg.attackerId,
+        marchKind: msg.marchKind,
       };
     case 'family_msg':
       return {
