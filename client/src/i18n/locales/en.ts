@@ -962,7 +962,6 @@ export const en: Record<TranslationKey, string> = {
   'world.team.empty': '(empty)',
   'world.team.committed': 'Troops {n}',
   'world.team.editTitle': 'Edit {name}',
-  'world.team.frontRow': 'Deploy',
   'world.team.hint': 'Pick a card, tap a cell to place it; each card can only be deployed once, erase to remove',
   'world.team.pickTitle': 'Choose attack team',
   'world.team.noTeams': 'No teams yet — set up a formation first',

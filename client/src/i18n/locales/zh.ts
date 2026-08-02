@@ -976,7 +976,6 @@ export const zh = {
   'world.team.empty': '（空）',
   'world.team.committed': '兵力 {n}',
   'world.team.editTitle': '编辑 {name}',
-  'world.team.frontRow': '出兵',
   'world.team.hint': '选卡牌点格布阵，一张卡只能上阵一次，擦除可移除',
   'world.team.pickTitle': '选择进攻队伍',
   'world.team.noTeams': '尚无队伍，先去编辑布阵',

@@ -19,6 +19,7 @@ import { msCountdown } from '../../src/scenes/DefenseEditorScene/base';
 import { makeNewSave, type SaveData } from '../../src/game/meta/SaveData';
 import { WorldApiError, type WorldApiClient, type TeamTemplate, type CardSLGState, type PlayerWorldView } from '../../src/net/WorldApiClient';
 import * as log from '../../src/net/log';
+import { BASE_COLS } from '../../src/game/config';
 
 const memStore = (() => {
   const m = new Map<string, string>();
@@ -343,5 +344,41 @@ describe('DefenseEditorScene attack mode — roster panel scroll clipping (2026-
     s.render();
     const masked = s.bodyLayer.children.some((c) => (c as PIXI.Container).mask != null);
     expect(masked).toBe(true);
+  });
+});
+
+// The base-column band (cols BASE_COLS, never a placeable lane) used to carry only a background tint
+// plus a "出兵"/Deploy text label pointing at the home-edge row — players never noticed the label
+// (2026-08-02 user report). Replaced with the same castle art PvP battles use (BoardView's
+// game_base.png), drawn once at the home-edge row so "near = home, far = front" reads at a glance;
+// the text label is gone entirely (defense mode keeps its own "buildRow" label — unaffected).
+describe('DefenseEditorScene attack mode — base icon replaces the frontRow label (2026-08-02)', () => {
+  it('draws the base icon spanning the base columns at the home-edge row, and drops the old text label', async () => {
+    const { scene } = buildHarness({ cardCount: 0, cardState: {} });
+    await flush();
+    const s = scene as unknown as {
+      drawArtFit(url: string, x: number, y: number, boxW: number, boxH: number): void;
+      render(): void;
+      gridX: number; gridY: number; cellW: number; cellH: number;
+      gRows: readonly number[];
+      bodyLayer: PIXI.Container;
+    };
+    const spy = vi.spyOn(s, 'drawArtFit');
+    s.render();
+
+    // The base icon is the only drawArtFit call sized to 2 grid columns wide (unit/roster art is
+    // always drawn into a single square-ish cell) — find it by that shape rather than by url, since
+    // the test harness's binary-asset stub collapses every png import to one identical data: URI.
+    const rows = s.gRows.length; // attack mode: no building row, so this is the full row count
+    const baseCall = spy.mock.calls.find(([, , , boxW]) => Math.abs(boxW - s.cellW * 2) < 0.01);
+    expect(baseCall).toBeTruthy();
+    const [, px, py, boxW, boxH] = baseCall!;
+    expect(px).toBeCloseTo(s.gridX + BASE_COLS[0] * s.cellW);
+    expect(py).toBeCloseTo(s.gridY + (rows - 1) * s.cellH);
+    expect(boxW).toBeCloseTo(s.cellW * 2);
+    expect(boxH).toBeCloseTo(s.cellH);
+
+    const hasOldLabel = s.bodyLayer.children.some((c) => (c as PIXI.Text).text === 'Deploy');
+    expect(hasOldLabel).toBe(false);
   });
 });
