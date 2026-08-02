@@ -1622,3 +1622,13 @@ cols.tiles.find({ worldId, type: 'base', ownerId: { $nin: excludeOwners } })
 **修复**：给 `computeMarchPath` 的 3 条障碍物查询（gate/敌方主城/blocker）都加上按行军起止点算出的坐标包围盒过滤（`legBox()` + 60 格 padding，复用已有的 `{worldId,x,y}` 索引），把"扫全图"收窄成"只看行军路线附近"。Padding 选取 60（远大于 3×3 主城/普通障碍物聚簇的尺寸）而非精确到 A* 实际探索边界——短途行军（占领要求目标与自己领地相邻、士气机制也软性限制了远途行军的实际收益，见 §22/§27）绝大多数场景下包围盒会大幅收窄；只有起止点本身相距很远的行军，包围盒才会接近全图，此时退化为跟修复前一样的开销，不引入正确性风险（不会漏查真正卡在路线附近的障碍物）。
 
 **验证**：`server/worldsvc` `tsc --noEmit` 全绿。定向重跑占领/围攻/寻路相关测试（`occupy-march`/`passage`/`field-tower`/`field-blocker`/`base-siege`/`stronghold`/`field-encounter*`/`field-redispatch`/`field-occupancy`/`field-structure-attack`/`base-integrity`/`march-return-travel-time`/`teams`/`enter-world`，共 12 文件/88 例，含「blocker 绕路」「crossing 通行」「长途占领士气衰减」等直接触碰寻路的用例）全过；随后跑了 `server/worldsvc` 全量 50 文件/399 例，同样全绿。生产库上直接验证：本地起了一个带 `rs0` 的 standalone mongod 复现原查询耗时（12.4s），但此次改动未部署到生产（未触碰线上代码），仅在本地代码 + 测试环境验证；建议下次常规发布时带上。
+
+## 53. §51 遗留的 `move` 遭遇战分类跟进——胜负 toast 补齐（2026-08-02）
+
+**背景**：§51 把 `SiegeResult` 分类改成服务端权威的 `attackerId`/`marchKind`，但明确留了一句"`move`（战场遭遇战）行军目前仍会落进防守方分支"——`field-encounter.e2e.test.ts` 当时就已经预先钉住了 `siege.attackerId`/`siege.marchKind==='move'` 这两个服务端数据契约（连带注释直接写"field-encounter classification is not yet wired client-side"），专等这次跟进。
+
+**现象**：野战遭遇（ADR-051 §2.2，[`encounter.ts`](../../server/worldsvc/src/combatSiege/encounter.ts) 的 `resolveFieldEncounter`——一支 `move` 行军中途撞上敌方停留队伍/另一支行军/驻扎守军，就地开打）没有专属分支，`amInitiator && marchKind==='move'` 落进 `applySiegeResult` 的 `else`（防守方/旁观者）兜底：打赢一场遭遇战显示"领地失守"，打输了反而显示"守土成功"——两边都反了，而且遭遇战本身不涉及任何 tile 归属变化（那是 occupy 的事）。
+
+**修复**：`WorldMapNet.applySiegeResult`（[`WorldMapNet.ts`](../../client/src/scenes/worldmap/WorldMapNet.ts)）在 `attack`/`occupy` 两个分支之后新增 `amInitiator && marchKind==='move'` 分支——胜负与 `outcome` 直接对应的轻量 toast（不弹复盘弹窗，遭遇战跟 occupy 一样是高频事件）。新增三语 i18n key `world.encounterWin`/`world.encounterLoss`（zh/en/de），英文措辞刻意避开"Territory secured"这类字眼——遭遇战不改变任何地块归属，纯粹是一场遭遇战的胜负。服务端字段（`attackerId`/`marchKind`）§51 已经全部就绪并测过，本次是纯客户端改动，不涉及 proto/`SiegeDoc`/推送链路。
+
+**验证**：`server`（12 workspace）+ `client` 的 `tsc --noEmit` 全绿；`worldMapSiegeResultToast.ui.ts` 补 3 例（遭遇战赢/输的正确 toast + 他人遭遇战不受影响的回归），全 10 例过；`client` UI 全量 112 文件/961 例、非 UI 全量 129 文件/944 例两套全绿；`server/worldsvc` 定向重跑 `field-encounter*`/`siege`/`occupy-march`/`stronghold` 共 5 文件/28 例全绿（复用 §51 已经钉住的 `attackerId`/`marchKind` 断言，无需新增服务端用例）。

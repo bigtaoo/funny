@@ -932,6 +932,8 @@ export const en: Record<TranslationKey, string> = {
   'world.defendLost': 'Territory lost',
   'world.occupyWin': 'Territory secured — holding',
   'world.occupyLoss': 'Occupation failed',
+  'world.encounterWin': 'Skirmish won',
+  'world.encounterLoss': 'Skirmish lost',
   'world.replaySiege': 'Replay & verify',
   'world.siegePlaying': 'Replaying siege…',
   'world.siegeVerified': 'Replay verified',

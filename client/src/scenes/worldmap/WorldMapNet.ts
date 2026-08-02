@@ -645,11 +645,14 @@ export class WorldMapNet {
       // modal): occupy is high-frequency expansion, unlike a deliberate PvP siege.
       const line = s.outcome === 'attacker_win' ? t('world.occupyWin') : t('world.occupyLoss');
       this.ctx.panels.showToast(line, s.outcome === 'attacker_win' ? C.dark : C.red);
+    } else if (amInitiator && s.marchKind === 'move') {
+      // §51's residual gap, closed (SLG_DESIGN_LOG §53): a field encounter (ADR-051 §2.2,
+      // server/worldsvc/src/combatSiege/encounter.ts) — our marching team bumped an enemy stationed team /
+      // another march / a garrison mid-transit and fought on the spot. No territory changes hands (that's
+      // occupy's job), just a skirmish outcome for the marcher — its own branch, correct win/loss valence.
+      const line = s.outcome === 'attacker_win' ? t('world.encounterWin') : t('world.encounterLoss');
+      this.ctx.panels.showToast(line, s.outcome === 'attacker_win' ? C.dark : C.red);
     } else {
-      // Note: a field encounter (MarchKind 'move', ADR P2/P3) resolving mid-transit still falls
-      // through to the defender-branch wording below even when amInitiator is true — same as before
-      // this fix. That's a separate, pre-existing miswiring (the marcher's own win/loss reads
-      // backwards), left alone here to keep this change scoped to the reported occupy bug.
       // We were the defender (or a bystander) — toast only.
       const line = s.outcome === 'attacker_win' ? t('world.defendLost') : t('world.defendHeld');
       this.ctx.panels.showToast(line, s.outcome === 'attacker_win' ? C.red : C.dark);
