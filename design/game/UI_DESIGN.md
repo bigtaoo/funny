@@ -904,6 +904,21 @@ BattlePassScene 当初是把「滚动定位」和「内容重建」两条路径�
 
 **验证**：`npm run typecheck` 全绿；扩充 `client/test/cardArt.test.ts`（新增 `equippedSkinIdFor`/`cardInstanceArtUrl` 用例，共 9 个）；扩充 `client/test/ui/gachaResultCard.ui.ts`/`client/test/ui/mailAttachmentIcons.ui.ts`，验证新增的可选回调确实被调用到（headless PIXI 下所有二进制资产桩成同一张 1×1 PNG data URI，没法按最终贴图 URL 区分"选中了哪张图"，所以这两个新测试断言的是"回调有没有被调用"而非图片本身，逻辑正确性由 `cardInstanceArtUrl` 的纯函数单测兜底）；`npm test`（915 用例）+ `npm run test:ui`（854 用例）全通过。真实浏览器验证：Browser 面板截图工具本次同样报「pane 未显示、无法合成帧」（§23/§26/§27 首段同一限制），且本地 `game` 开发服无后端（`/bootstrap` 网络失败），走不到登录后的这些界面，故未能截图肉眼确认；已通过上述单测 + 既有 UI 冒烟覆盖根因逻辑。
 
+## 28. Home City 建筑格子/次要文字对比度修复（2026-08-02）
+
+**问题（用户截图反馈）**：主城界面（[HOME_CITY 截图]）看起来"字、按钮都和背景融合在一起"——建筑格子（Desk/Ink Pot/…）看不出边界，等级/产量等说明文字发虚。
+
+**根因（WCAG 对比度公式核实）**：
+1. `CityScene/render.ts` 的资源条面板、Build Queue 面板、建筑格子背板三处 `sketchPanel(...)` 都把 `border` 设成 `C.line`（即 `palette.ruleLine`，专为"仿真笔记本印刷横线"设计的极浅蓝，本意就是要淡到几乎看不见）。当同一色号被挪去当**功能性卡片边框**用，边框对 `C.paper` 卡片底色的对比度只有 ~1.5:1，格子自然没有可辨的轮廓。同款误用还存在于 `AchievementScene`/`DailyScene`/`EventScene`/`StatsScene`/`ResultScene`/`LevelPrepScene`/`FriendsScene worldChat.ts` 等至少 7 个文件（本次未动，见下）。
+2. 共享次要文字色 `ui.mid`（0x888888，"Lv.N"/"/200k"/"Heroes N" 这类说明文字在用）对 `C.paper` 卡片底色对比度只有 ~3.6:1，低于 WCAG AA 正文 4.5:1 的门槛——`design/game/UI_DESIGN.md` §14（FamilyScene，2026-07-14）早就在个别场景遇到过同一根因，当时是给 FamilyScene 单独换了本地 `MUTED=0x5a574f` 绕过，没有回头修共享 token。
+
+**修复**：
+- `client/src/render/sketchUi.ts`：`ui.mid` 从 `0x888888` 深化到 `0x686868`（对 `ui.paper` 对比度提到 ~5.7:1），这是共享 token，全游戏用到它的次要文字同步变清晰。
+- `client/src/scenes/CityScene/render.ts`：资源条面板、Build Queue 面板、建筑格子背板（非排队态）的 `border` 从 `C.line` 改成 `C.mid`，格子边界现在清晰可辨；排队中/激活态边框仍是 `C.gold`，不受影响。
+- **范围内未动**：其余 7 个文件同样把 `C.line` 当功能性边框用，本次只修用户报的主城界面；`ruleLine` 本身作为装饰性细横线的原意保留不变，未改该 token 的值。
+
+**验证**：`npm run typecheck` 全绿；新增 `client/test/uiContrast.test.ts`（5 个用例，纯 WCAG 对比度公式，锁定 `ui.mid` 对 `ui.paper`/`palette.paper` 均 ≥4.5:1、当边框用 ≥3:1，并反向断言 `palette.ruleLine` 对比度确实偏低——记录它为何不该被当功能性边框复用）；`npm test`（130 文件/949 用例）+ `test/ui/cityScene.ui.ts`/`cityFillAllTeams.ui.ts`/`cityTrainTroops.ui.ts`（58 用例）全通过。真实浏览器验证：Browser 面板截图工具本次同样报「pane 未显示、无法合成帧」（同 §23/§26/§27 的限制），未能截图肉眼确认；已通过上述对比度单测锁定根因数值。
+
 **收窄（同日，用户看到抽卡揭示图后逐一拍板）**：上面「另外 10 处」一刀切改成跟随已装备皮肤，用户复核后发现抽卡揭示卡显示皮肤图会让人误以为「抽到了皮肤」（实际抽到的只是普通角色卡）——按场景语义逐个重新拍板，而不是全跟或全不跟：
 
 | 场景 | 定稿 | 理由 |

@@ -226,7 +226,7 @@ export function RenderMixin<TBase extends CitySceneBaseCtor>(Base: TBase): TBase
       const bld = this.me?.buildings;
 
       const panH = 108;
-      const pg = sketchPanel(w - 16, panH, { fill: C.paper, border: C.line, width: 1, seed: seedFor(w, panH, 3) });
+      const pg = sketchPanel(w - 16, panH, { fill: C.paper, border: C.mid, width: 1, seed: seedFor(w, panH, 3) });
       pg.x = cx0 + 8;
       pg.y = startY;
       this.container.addChild(pg);
@@ -281,7 +281,7 @@ export function RenderMixin<TBase extends CitySceneBaseCtor>(Base: TBase): TBase
       const now = serverNow();
 
       const panH = queue.length > 0 ? 72 : 51;
-      const pg = sketchPanel(w - 16, panH, { fill: C.paper, border: C.line, width: 1, seed: seedFor(w, panH, 5) });
+      const pg = sketchPanel(w - 16, panH, { fill: C.paper, border: C.mid, width: 1, seed: seedFor(w, panH, 5) });
       pg.x = cx0 + 8;
       pg.y = startY;
       this.container.addChild(pg);
@@ -380,7 +380,7 @@ export function RenderMixin<TBase extends CitySceneBaseCtor>(Base: TBase): TBase
 
         const bg = sketchPanel(cellW, CARD_H, {
           fill: C.paper,
-          border: active ? C.gold : C.line,
+          border: active ? C.gold : C.mid,
           width: active ? 2 : 1,
           seed: seedFor(cx, cy, i),
         });
