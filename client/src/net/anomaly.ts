@@ -181,6 +181,9 @@ let anrContextProvider: (() => Record<string, unknown>) | null = null;
 /** Stamp the currently-mounted scene name (called by SceneManager on each swap). Attached to anr reports. */
 export function setActiveScene(name: string): void { activeScene = name; }
 
+/** Read the currently-mounted scene name (e.g. for tagging mem/cpu reports outside the anr path). */
+export function getActiveScene(): string { return activeScene; }
+
 /** Register a getter for extra ANR context (GPU/texture counters). Called once by MemoryMonitor. */
 export function setAnrContextProvider(fn: (() => Record<string, unknown>) | null): void { anrContextProvider = fn; }
 

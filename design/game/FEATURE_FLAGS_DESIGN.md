@@ -481,3 +481,9 @@ client_log_debug: { default: false, desc: '客户端日志上报-debug', side: '
 **为什么只查 `longTaskMs` 一个字段就够**:Long Tasks API 捕获主线程上**任何**来源、≥50ms 的任务,包括我们自己的 `scene.update()`/构造函数/`renderer.render()`——所以只要 `longFrameMs`/`longConstructMs`/`longRenderMs` 里有一个会触发,对应的时间窗口也必然会被记成一次 long task。反过来,`longTaskMs` 缺席时,这三个字段也必然同时缺席,单独查它是这四个信号里最强、最简洁的充分条件。
 
 `net/anomaly.ts` 新增 `longTaskObserverActive` 标志(在 `installLongTaskObserver()` 里,`observe()` 调用成功后置位,和"是否支持"绑在一起,不依赖是否观测到过任何具体的 task)。`anomaly-chain.test.ts` 新增 2 条回归测试(用 fake `PerformanceObserver` 模拟"激活但零 task" vs "激活且有重叠 task"两种场景),14/14 green,`tsc --noEmit` clean。范围**只限于 `anr`**——`mem`/`cpu`/`jserror`/`crash` 没有等价的"已确认不可修"证据链,继续照常上报。
+
+### 2026-08-02 · `mem` 上报补 `scene` 归因字段(§9.7 mem)
+
+**动机**：Loki 排查 publicId `233784986` 一批日志时,`601c1b5` 构建下 `nodes` 从常见的 350-390 短暂飙到 1487-1507(约 30 分钟后自愈回落),但当时的 `mem` 上报没有场景信息,无法确认是哪个界面撑起了这些节点——只能靠猜。`anr` 早在 2026-07-17 就已经带 `scene`(`setActiveScene`/`activeScene`),`mem` 一直没接上。
+
+**实现**:`net/anomaly.ts` 新增 `getActiveScene()` 导出(读 `anr` 路径已有的 `activeScene` 变量,不改变其写入方式);`cache/MemoryMonitor.ts` 的 `dump()` 在 `reportAnomaly('mem', ...)` 的 detail 里补一个顶层 `scene` 字段(与 `anr` detail 里的 `scene` 同名同形状)。`tsc --noEmit` clean,`anomaly-chain.test.ts` 15/15 green(未改动既有断言,新增字段不影响已有用例)。同一会话顺带确认:那批 `type=crash` 日志并非真实崩溃,只是 `flushBeacon()` 在标签页切后台时顺带发出的面包屑(Loki 全量 30 条里没有任何一条带 `aliveMs`/`lastError` 的真实崩溃摘要行)。

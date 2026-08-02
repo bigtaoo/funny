@@ -1,6 +1,6 @@
 import * as PIXI from 'pixi.js-legacy';
 import { netLog } from '../net/log';
-import { reportAnomaly, setAnrContextProvider } from '../net/anomaly';
+import { reportAnomaly, setAnrContextProvider, getActiveScene } from '../net/anomaly';
 import { snapshotPools } from './poolRegistry';
 
 // Runtime memory monitor: reads JS heap usage every few seconds, emits a console.warn when the threshold
@@ -271,6 +271,10 @@ export class MemoryMonitor {
     // Also forward to the "full anomaly reporting" channel (parallel to the directed-sampling ring buffer):
     // any client on the network that exceeds the memory threshold reports directly to Loki.
     // reportAnomaly has a 60 s cooldown for the mem type internally, so the 5 s sampling cadence will not flood the logs.
-    reportAnomaly('mem', reason, { heap: heapInfo, poolTotal, gpu, texTop: tex });
+    // `scene` reuses SceneManager's activeScene stamp (already fed to anr reports) so a nodes/heap spike can be
+    // attributed to a screen without a follow-up repro — see the 2026-08-02 Loki triage that couldn't tell which
+    // scene held 1487 nodes vs. the usual ~350-390.
+    const scene = getActiveScene();
+    reportAnomaly('mem', reason, { ...(scene ? { scene } : {}), heap: heapInfo, poolTotal, gpu, texTop: tex });
   }
 }
