@@ -21,7 +21,7 @@ import {
 } from '../../render/sketchUi';
 import { buildDecorCLayer } from '../../render/decorCLayer';
 import { FS } from '../../render/fontScale';
-import { getArtTexture } from '../../render/cardArt';
+import { getArtTexture, containScale } from '../../render/cardArt';
 import { drawSceneHeader, HEADER_ACCENT } from '../../ui/widgets/SceneHeader';
 import { sidebarNavW } from '../../ui/widgets/HubTabs';
 import { BusyTracker } from '../../ui/busyTracker';
@@ -337,7 +337,7 @@ export class CardSceneBase {
       this.drawLoadingSpinner(x + box / 2, y + bh / 2, Math.min(box, bh), layer);
       return;
     }
-    const scale = Math.min(box / tex.width, bh / tex.height);
+    const scale = containScale(tex.width, tex.height, box, bh);
     const sp = new PIXI.Sprite(tex);
     sp.anchor.set(0.5);
     sp.scale.set(scale);

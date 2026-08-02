@@ -130,6 +130,17 @@ export function cardInstanceArtUrl(card: { defId: string } | undefined | null, e
   return unitPortraitUrl(unitType, equippedSkinIdFor(unitType, equipped));
 }
 
+/**
+ * Uniform "contain" scale factor to fit a `texW × texH` texture inside a `boxW × boxH`
+ * box without stretching — the tighter axis wins, the other axis letterboxes. Shared by
+ * every scene that centers art in a (possibly non-square) card/portrait slot
+ * (ShopScene.drawCard, CardScene.drawArtFit) so they can never drift onto a per-axis
+ * width/height assignment that silently distorts non-square art.
+ */
+export function containScale(texW: number, texH: number, boxW: number, boxH: number): number {
+  return Math.min(boxW / texW, boxH / texH);
+}
+
 /** Texture cache keyed by url — shared with the `PIXI.Texture.from` global cache. */
 export function getArtTexture(url: string): PIXI.Texture {
   // Match the mipmap opt-in preloadTexture() bakes in, so art created lazily here (not
