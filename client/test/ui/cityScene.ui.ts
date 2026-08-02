@@ -17,7 +17,7 @@
 // Runs under the headless PIXI adapter (test/harness/pixiHeadless.ts via
 // vitest.ui.config.ts). Run: npm run test:ui
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import * as PIXI from 'pixi.js-legacy';
 import { createLayout } from '../../src/layout/ScalingManager';
 import { InputManager } from '../../src/inputSystem/InputManager';
@@ -547,21 +547,19 @@ describe('CityScene bottom team row (D-CITY-10; pinned single row 2026-07-23)', 
 // shard is most of a second. Now each slice paints on its own, and the row shows a loading
 // placeholder until /world/teams specifically has landed.
 describe('CityScene team-row loading state (2026-08-02)', () => {
-  /** Every endpoint independently controllable, so a test can land one slice and hold the others. */
-  function deferredApi(): {
-    api: WorldApiClient;
-    resolveTeams: (teams: unknown[]) => void;
-    resolveOrders: () => void;
-    resolveMe: () => void;
-  } {
+  /** Every endpoint independently controllable (resolve OR reject), so a test can land one slice
+   *  and hold the others — which is the whole point of the barrier removal. */
+  function deferredApi() {
     let resolveTeams!: (teams: unknown[]) => void;
+    let rejectTeams!: (e: Error) => void;
     let resolveMarches!: (v: unknown[]) => void;
     let resolveOccupations!: (v: unknown[]) => void;
-    let resolveMe!: (v: PlayerWorldView) => void;
-    const teams = new Promise<unknown[]>((r) => { resolveTeams = r; });
+    let rejectOccupations!: (e: Error) => void;
+    let resolveMeRaw!: (v: PlayerWorldView) => void;
+    const teams = new Promise<unknown[]>((r, j) => { resolveTeams = r; rejectTeams = j; });
     const marches = new Promise<unknown[]>((r) => { resolveMarches = r; });
-    const occupations = new Promise<unknown[]>((r) => { resolveOccupations = r; });
-    const me = new Promise<PlayerWorldView>((r) => { resolveMe = r; });
+    const occupations = new Promise<unknown[]>((r, j) => { resolveOccupations = r; rejectOccupations = j; });
+    const me = new Promise<PlayerWorldView>((r) => { resolveMeRaw = r; });
     return {
       api: {
         getMe: () => me,
@@ -572,12 +570,20 @@ describe('CityScene team-row loading state (2026-08-02)', () => {
         speedupBuild: () => new Promise<PlayerWorldView>(() => {}),
       } as unknown as WorldApiClient,
       resolveTeams,
+      rejectTeams,
+      resolveMarches,
+      resolveOccupations,
+      rejectOccupations,
       resolveOrders: () => { resolveMarches([]); resolveOccupations([]); },
-      resolveMe: () => resolveMe({
-        resources: {}, buildings: {}, buildQueue: [], cardState: { c1: { currentTroops: 400 } }, teamState: {},
+      resolveMe: (over: Partial<PlayerWorldView> = {}) => resolveMeRaw({
+        resources: {}, buildings: {}, buildQueue: [],
+        cardState: { c1: { currentTroops: 400 } }, teamState: {},
+        ...over,
       } as unknown as PlayerWorldView),
     };
   }
+
+  const ALPHA = { id: 't1', name: 'Alpha', army: [{ cardInstanceId: 'c1' }] };
 
   function build(api: WorldApiClient): { scene: CityScene; texts: () => string[] } {
     const cb: CitySceneCallbacks = { onBack: () => {}, worldApi: api, worldId: 'world:1:0', onEditTeam: () => {} };
@@ -586,13 +592,14 @@ describe('CityScene team-row loading state (2026-08-02)', () => {
   }
 
   const flush = (): Promise<void> => new Promise((r) => { setTimeout(r, 0); });
+  const isLoadingLabel = (s: string): boolean => s.startsWith(t('city.military.teamLoading'));
 
   it('shows a loading placeholder instead of "(empty)" while /world/teams is still in flight', async () => {
     const { api, resolveTeams, resolveOrders } = deferredApi();
     const { scene, texts } = build(api);
     resolveOrders();          // orders land first — teams is what the row is waiting on
     await flush();
-    expect(texts().some((s) => s.startsWith(t('city.military.teamLoading')))).toBe(true);
+    expect(texts().some(isLoadingLabel)).toBe(true);
     expect(texts()).not.toContain(t('world.team.empty'));
     // Nothing to tap into yet — the slot's real name isn't known, so no team hit is registered.
     expect(teamHits(internals(scene)).length).toBe(0);
@@ -600,14 +607,35 @@ describe('CityScene team-row loading state (2026-08-02)', () => {
     resolveTeams([]);
     await flush();
     expect(texts()).toContain(t('world.team.empty'));
-    expect(texts().some((s) => s.startsWith(t('city.military.teamLoading')))).toBe(false);
+    expect(texts().some(isLoadingLabel)).toBe(false);
+    scene.destroy();
+  });
+
+  it('still shows all five slot labels while loading, so the row keeps its shape', async () => {
+    const { api } = deferredApi();
+    const { scene, texts } = build(api);
+    for (let i = 0; i < TEAM_CAP; i++) expect(texts()).toContain(teamSlotName(i));
+    scene.destroy();
+  });
+
+  it('the loading row occupies the same band as the loaded one — the building grid does not reflow', async () => {
+    const { api, resolveTeams, resolveOrders } = deferredApi();
+    const { scene } = build(api);
+    const inner = internals(scene);
+    const before = gridHits(inner).map((g) => `${g.x},${g.y},${g.w},${g.h}`);
+    resolveTeams([ALPHA]);
+    resolveOrders();
+    await flush();
+    // Placeholders are drawn at the real cards' footprint, so bandTop — and therefore the grid's
+    // bottom limit above it — is identical before and after the data lands.
+    expect(gridHits(inner).map((g) => `${g.x},${g.y},${g.w},${g.h}`)).toEqual(before);
     scene.destroy();
   });
 
   it('paints the team row as soon as getTeams lands, without waiting on getMe (no Promise.all barrier)', async () => {
     const { api, resolveTeams, resolveOrders } = deferredApi();
     const { scene, texts } = build(api);
-    resolveTeams([{ id: 't1', name: 'Alpha', army: [{ cardInstanceId: 'c1' }] }]);
+    resolveTeams([ALPHA]);
     resolveOrders();
     await flush();
     // getMe is still pending, yet the team's own data is already on screen.
@@ -616,20 +644,141 @@ describe('CityScene team-row loading state (2026-08-02)', () => {
     scene.destroy();
   });
 
+  it('paints getMe\'s own slice while the team row is still loading (the barrier cut both ways)', async () => {
+    const { api, resolveMe } = deferredApi();
+    const { scene, texts } = build(api);
+    resolveMe({ buildings: { desk: 3 } } as Partial<PlayerWorldView>);
+    await flush();
+    // Building grid already reflects the real desk level…
+    expect(texts()).toContain('Lv.3');
+    // …while the team row, whose own fetch hasn't landed, is still on its placeholders.
+    expect(texts().some(isLoadingLabel)).toBe(true);
+    scene.destroy();
+  });
+
   it('holds a filled team\'s status on the loading label until marches AND occupations have both landed', async () => {
     const { api, resolveTeams, resolveOrders, resolveMe } = deferredApi();
     const { scene, texts } = build(api);
-    resolveTeams([{ id: 't1', name: 'Alpha', army: [{ cardInstanceId: 'c1' }] }]);
+    resolveTeams([ALPHA]);
     resolveMe();
     await flush();
     // A team already marching must not flash "idle" first — orders aren't known yet.
     expect(texts()).toContain('Alpha');
     expect(texts()).not.toContain(t('city.military.teamIdle'));
-    expect(texts().some((s) => s.startsWith(t('city.military.teamLoading')))).toBe(true);
+    expect(texts().some(isLoadingLabel)).toBe(true);
 
     resolveOrders();
     await flush();
     expect(texts()).toContain(t('city.military.teamIdle'));
+    scene.destroy();
+  });
+
+  it('one of the two order endpoints landing is not enough to settle the status', async () => {
+    const { api, resolveTeams, resolveMarches } = deferredApi();
+    const { scene, texts } = build(api);
+    resolveTeams([ALPHA]);
+    resolveMarches([]);       // occupations still pending
+    await flush();
+    expect(texts().some(isLoadingLabel)).toBe(true);
+    expect(texts()).not.toContain(t('city.military.teamIdle'));
+    scene.destroy();
+  });
+
+  it('a march already known once orders land wins over both the loading and the idle label', async () => {
+    const { api, resolveTeams, resolveMarches, resolveOccupations, resolveMe } = deferredApi();
+    const { scene, texts } = build(api);
+    resolveTeams([ALPHA]);
+    resolveMe();
+    resolveMarches([{ marchId: 'm1', mine: true, teamId: 't1', arriveAt: Date.now() + 30_000 }]);
+    resolveOccupations([]);
+    await flush();
+    expect(texts()).toContain(t('world.team.marching'));
+    expect(texts().some(isLoadingLabel)).toBe(false);
+    expect(texts()).not.toContain(t('city.military.teamIdle'));
+    scene.destroy();
+  });
+
+  it('an injured team shows its cooldown rather than the loading label, even with orders still pending', async () => {
+    // Injury comes off `me.teamState`, not the order endpoints — so it can be known first, and the
+    // loading branch must sit below it in the status priority chain.
+    const { api, resolveTeams, resolveMe } = deferredApi();
+    const { scene, texts } = build(api);
+    resolveTeams([ALPHA]);
+    resolveMe({ teamState: { t1: { injuredUntil: Date.now() + 60_000 } } } as Partial<PlayerWorldView>);
+    await flush();
+    expect(texts().some((s) => s.startsWith(t('roster.injured').split('{')[0]!))).toBe(true);
+    expect(texts().some(isLoadingLabel)).toBe(false);
+    scene.destroy();
+  });
+
+  // ── Failure paths: the loading state must END on rejection, not spin forever ────────────────
+  // These ride on `.finally()`, which is easy to regress into `.then()` while refactoring.
+
+  it('getTeams rejecting still ends the loading state (falls through to the real empty row)', async () => {
+    const { api, rejectTeams, resolveOrders } = deferredApi();
+    const { scene, texts } = build(api);
+    resolveOrders();
+    rejectTeams(new Error('offline'));
+    await flush();
+    expect(texts().some(isLoadingLabel)).toBe(false);
+    expect(texts()).toContain(t('world.team.empty'));
+    scene.destroy();
+  });
+
+  it('an order endpoint rejecting still settles the status (treated as no active order)', async () => {
+    const { api, resolveTeams, resolveMarches, rejectOccupations, resolveMe } = deferredApi();
+    const { scene, texts } = build(api);
+    resolveTeams([ALPHA]);
+    resolveMe();
+    resolveMarches([]);
+    rejectOccupations(new Error('offline'));
+    await flush();
+    expect(texts().some(isLoadingLabel)).toBe(false);
+    expect(texts()).toContain(t('city.military.teamIdle'));
+    scene.destroy();
+  });
+
+  it('a fetch resolving after destroy() does not paint into the torn-down container', async () => {
+    const { api, resolveTeams, resolveOrders, resolveMe } = deferredApi();
+    const { scene } = build(api);
+    const renderSpy = vi.spyOn(internals(scene) as unknown as { render(): void }, 'render');
+    scene.destroy();
+    resolveTeams([ALPHA]);
+    resolveOrders();
+    resolveMe();
+    await flush();
+    expect(renderSpy).not.toHaveBeenCalled();
+  });
+
+  // ── The dot animation itself (base.ts tickLoadDots, driven by update()) ────────────────────
+
+  it('animates the trailing dots while loading and stops once everything has landed', async () => {
+    const { api, resolveTeams, resolveOrders } = deferredApi();
+    const { scene, texts } = build(api);
+    const label = (): string => texts().find(isLoadingLabel)!;
+    const first = label();
+    scene.update(0.5);                     // > the 0.4s dot period
+    const second = label();
+    expect(second).not.toBe(first);
+    expect(second.replace(/\.+$/, '')).toBe(t('city.military.teamLoading'));
+
+    resolveTeams([]);
+    resolveOrders();
+    await flush();
+    // Loaded: no label left to animate, and update() no longer has a reason to re-render for it.
+    const renderSpy = vi.spyOn(internals(scene) as unknown as { render(): void }, 'render');
+    scene.update(0.5);
+    expect(renderSpy).not.toHaveBeenCalled();
+    scene.destroy();
+  });
+
+  it('cycles through exactly three dot phases', async () => {
+    const { api } = deferredApi();
+    const { scene, texts } = build(api);
+    const label = (): string => texts().find(isLoadingLabel)!;
+    const seen = new Set<string>([label()]);
+    for (let i = 0; i < 3; i++) { scene.update(0.5); seen.add(label()); }
+    expect(seen.size).toBe(3);
     scene.destroy();
   });
 });
