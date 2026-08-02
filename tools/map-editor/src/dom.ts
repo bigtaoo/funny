@@ -1,0 +1,40 @@
+// Every element the editor's chrome is wired to, looked up once. Split out of index.ts so the
+// entry point reads as behaviour rather than 37 lines of getElementById.
+
+export const seedInput = document.getElementById('world-seed') as HTMLInputElement;
+export const regenBtn = document.getElementById('btn-regen') as HTMLButtonElement;
+export const centerBtn = document.getElementById('btn-center') as HTMLButtonElement;
+export const zoomInput = document.getElementById('zoom') as HTMLInputElement;
+export const statusEl = document.getElementById('status')!;
+export const tileInfoEl = document.getElementById('tile-info')!;
+export const legendEl = document.getElementById('legend')!;
+export const widthInput = document.getElementById('brush-width') as HTMLInputElement;
+export const clearTerrainBtn = document.getElementById('btn-clear-paths') as HTMLButtonElement;
+export const resetCitiesBtn = document.getElementById('btn-reset-cities') as HTMLButtonElement;
+export const terrainTitleEl = document.getElementById('paths-title')!;
+export const jsonEl = document.getElementById('json') as HTMLTextAreaElement;
+export const exportBtn = document.getElementById('btn-export') as HTMLButtonElement;
+export const importBtn = document.getElementById('btn-import') as HTMLButtonElement;
+export const cityLegendEl = document.getElementById('city-legend')!;
+export const cityInfoEl = document.getElementById('city-info')!;
+export const cityJsonEl = document.getElementById('city-json') as HTMLTextAreaElement;
+export const cityExportBtn = document.getElementById('btn-city-export') as HTMLButtonElement;
+export const cityImportBtn = document.getElementById('btn-city-import') as HTMLButtonElement;
+export const toolButtons = Array.from(document.querySelectorAll<HTMLButtonElement>('.toolbar .tool'));
+export const publishLoginEl = document.getElementById('publish-login')!;
+export const publishPanelEl = document.getElementById('publish-panel')!;
+export const publishWhoamiEl = document.getElementById('publish-whoami')!;
+export const adminBaseInput = document.getElementById('admin-base') as HTMLInputElement;
+export const adminUserInput = document.getElementById('admin-user') as HTMLInputElement;
+export const adminPassInput = document.getElementById('admin-pass') as HTMLInputElement;
+export const adminLoginBtn = document.getElementById('btn-admin-login') as HTMLButtonElement;
+export const adminLogoutBtn = document.getElementById('btn-admin-logout') as HTMLButtonElement;
+export const templateIdInput = document.getElementById('template-id') as HTMLInputElement;
+export const templateGenerateBtn = document.getElementById('btn-template-generate') as HTMLButtonElement;
+export const publishBtn = document.getElementById('btn-publish') as HTMLButtonElement;
+export const templateListEl = document.getElementById('template-list')!;
+export const templatesTitleEl = document.getElementById('templates-title')!;
+export const templateRefreshBtn = document.getElementById('btn-template-refresh') as HTMLButtonElement;
+export const templateActivateBtn = document.getElementById('btn-template-activate') as HTMLButtonElement;
+export const templateDeleteBtn = document.getElementById('btn-template-delete') as HTMLButtonElement;
+export const langBtn = document.getElementById('btn-lang') as HTMLButtonElement;
