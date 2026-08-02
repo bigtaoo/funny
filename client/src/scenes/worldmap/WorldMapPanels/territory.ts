@@ -4,8 +4,10 @@ import * as PIXI from 'pixi.js-legacy';
 import { t } from '../../../i18n';
 import { ui as C, txt, sketchPanel, seedFor, tearDownChildren } from '../../../render/sketchUi';
 import { buildIcon } from '../../../render/icons';
+import type { IconKind } from '../../../render/icons';
 import { FS, snapFont } from '../../../render/fontScale';
 import { serverNow } from '../../../net/serverClock';
+import { getResTexture } from '../../../render/atlas/resAtlasLoader';
 import { HUD_H, MARGIN } from '../constants';
 import type { Constructor, WorldMapPanelsBaseCtor } from './base';
 
@@ -124,23 +126,76 @@ export function TerritoryMixin<TBase extends WorldMapPanelsBaseCtor>(Base: TBase
         const res = me.resources ?? {};
         const yieldRate = me.yieldRate ?? {};
         const RES_LABEL: Record<string, string> = { ink: t('world.ink'), paper: t('world.paper'), graphite: t('world.graphite'), metal: t('world.metal'), sticker: t('world.sticker') };
-        // Overview text enlarged ~2x per request: resource/season rows at FS.label,
-        // the emphasized troops/territory lines at FS.heading; line spacing doubled to match.
+
+        // Resource table: icon | label | amount (right-aligned) | yield (right-aligned), with
+        // a hairline under each row — reads as a table instead of five loose stacked lines.
+        const tableX = px + 14;
+        const tableRight = px + pw - 14;
+        const iconSize = 26;
+        const amountColX = px + pw * 0.62;
+        const rowH = 40;
+        const hairlines = new PIXI.Graphics();
+        hairlines.lineStyle(1, C.light, 1);
         for (const rt of ['ink', 'paper', 'graphite', 'metal', 'sticker']) {
           const amt = Math.floor(res[rt] ?? 0);
           const yr = Math.round(yieldRate[rt] ?? 0);
-          addText(`${RES_LABEL[rt]}  ${amt}  (+${yr}/${t('world.resYield')})`, px + 14, ly, FS.label, C.dark);
-          ly += 40;
+          const tex = getResTexture(rt);
+          if (tex) {
+            const sp = new PIXI.Sprite(tex);
+            sp.width = sp.height = iconSize;
+            sp.x = tableX; sp.y = ly + 1;
+            ml.addChild(sp);
+          }
+          addText(RES_LABEL[rt], tableX + iconSize + 8, ly, FS.label, C.dark);
+          const amountLbl = txt(String(amt), FS.label, C.dark);
+          amountLbl.anchor.set(1, 0); amountLbl.x = amountColX; amountLbl.y = ly;
+          ml.addChild(amountLbl);
+          const yieldLbl = txt(`+${yr}/${t('world.resYield')}`, FS.tiny, C.mid);
+          yieldLbl.anchor.set(1, 0); yieldLbl.x = tableRight; yieldLbl.y = ly + 5;
+          ml.addChild(yieldLbl);
+          hairlines.moveTo(tableX, ly + rowH - 8).lineTo(tableRight, ly + rowH - 8);
+          ly += rowH;
         }
+        ml.addChild(hairlines);
         ly += 16;
-        addText(`${t('world.troops')} ${Math.floor(me.troops ?? 0)}/${Math.floor(me.troopCap ?? 0)}`, px + 14, ly, FS.heading, C.red);
-        ly += 44;
-        addText(`${t('world.territory')} ${me.territoryCount ?? 0}`, px + 14, ly, FS.heading, C.red);
-        ly += 52;
+
+        // Troops / territory as a pair of stat cards (icon + label + value) instead of two
+        // bare red text lines — gives the two "headline" numbers visual weight of their own
+        // rather than just being bigger text in the same stack.
+        const cardGap = MARGIN;
+        const cardW = (pw - 28 - cardGap) / 2;
+        const cardH = 60;
+        const troops = Math.floor(me.troops ?? 0);
+        const troopCap = Math.floor(me.troopCap ?? 0);
+        const STAT_CARDS: { icon: IconKind; label: string; value: string }[] = [
+          { icon: 'swords', label: t('world.troops'), value: `${troops}/${troopCap}` },
+          { icon: 'castle', label: t('world.territory'), value: String(me.territoryCount ?? 0) },
+        ];
+        let cardX = px + 14;
+        for (const card of STAT_CARDS) {
+          const cardPanel = sketchPanel(cardW, cardH, { fill: C.paper, border: C.red, seed: seedFor(12, Math.round(cardX), cardW) });
+          cardPanel.x = cardX; cardPanel.y = ly;
+          ml.addChild(cardPanel);
+          const cIcon = buildIcon(card.icon, 26, C.red);
+          cIcon.x = cardX + 12; cIcon.y = ly + (cardH - 26) / 2;
+          ml.addChild(cIcon);
+          const cLbl = txt(card.label, FS.tiny, C.mid);
+          cLbl.x = cardX + 46; cLbl.y = ly + 8;
+          ml.addChild(cLbl);
+          const cVal = txt(card.value, FS.heading, C.red, true);
+          cVal.x = cardX + 46; cVal.y = ly + 24;
+          ml.addChild(cVal);
+          cardX += cardW + cardGap;
+        }
+        ly += cardH + 20;
+
+        // Season summary — a single muted footer line, kept visually detached from the
+        // resource table/stat cards above by extra spacing so it doesn't compete with them.
         const s = this.ctx.season;
         if (s) {
-          addText(t('world.seasonNo').replace('{n}', String(s.season)), px + 14, ly, FS.label, C.mid); ly += 36;
-          addText(t('world.seasonPop').replace('{pop}', String(s.population)).replace('{cap}', String(s.capacity)), px + 14, ly, FS.label, C.mid); ly += 36;
+          const seasonLine = `${t('world.seasonNo').replace('{n}', String(s.season))}   ${t('world.seasonPop').replace('{pop}', String(s.population)).replace('{cap}', String(s.capacity))}`;
+          addText(seasonLine, px + 14, ly, FS.tiny, C.mid);
+          ly += 24;
         }
       } else if (this.ctx.territoryTab === 'world') {
         this.renderWorldTabBody(px, pw, ly, bodyBottom);

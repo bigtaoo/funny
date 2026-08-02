@@ -1710,3 +1710,19 @@ cols.tiles.find({ worldId, type: 'base', ownerId: { $nin: excludeOwners } })
 
 **测试改动**：`field-garrison.e2e.test.ts` 三个既有用例（garrison 到中立地的 3×3 覆盖注册/召回、中途目的地被抢占后回退原地）改为先把目标格预置为 `ownerId:'a'`（己方地），验证的覆盖/occ 机制本身与地块归属无关；新增 3 例：garrison 派中立地必拒（`/own or allied territory/`，同一目标改 `停留 idle` 仍成功）、garrison 派同家族盟友的地必成功（覆盖注册在目标格、地块 `ownerId` 保持盟友不变，驻扎队伍仍是 `mine`）、garrison 派非盟友对手的地仍必拒（`/use attack/`，等同任意敌方地）。`field-redispatch.e2e.test.ts` 的"驻扎锁死需先召回"用例同样预置目标格为己方地。客户端新增 [`worldMapGarrisonAllyRules.ui.ts`](../../client/test/ui/worldMapGarrisonAllyRules.ui.ts)（6 例：中立地只给 Move 不给 Garrison、敌方地只给 Attack、家族盟友地/结盟宗门盟友地都只给 Garrison 不给 Attack、点 Garrison 派发 `move+garrison`、已驻扎盟友地显示 Recall）；`worldMapOccupyConnectivity.ui.ts`/`worldMapRelocateGate.ui.ts` 的"灰显"断言改「按钮整体不存在」，删掉两处"点击灰按钮弹 toast"的用例（按钮已经不存在，点不到）；`worldMapBaseClick.ui.ts` 的"落单 mine 格子仍走通用菜单"用例补齐周围 8 格同为 mine（否则新的 `footprintAllMine` 门槛会让 Relocate 按钮从预期的标签列表里消失）。
 - **验证**：worldsvc `tsc --noEmit` 全绿，`npx vitest run`（50 文件/403 例，含以上改动）全绿；client `tsc --noEmit` 全绿，`npx vitest run --config vitest.ui.config.ts`（114 文件/988 例）+ `test/i18n.test.ts`（三语 key 齐全）全绿。可视化验证：中立地弹窗截图确认「移动并驻扎」按钮已消失、仅剩「移动到此（停留）」（本机单账号 dev world 可直接复现）；盟友领地分支需要第二个同家族/同宗门账号才能在真实地图上点出来，本轮未做实机截图，逻辑由上述 e2e / UI 单测覆盖。
+
+---
+
+## 59. Territory Overview 面板从纯文字堆叠改成资源表格 + 统计卡片（2026-08-02，用户看截图提出）
+
+**背景**：用户截图圈出 Territory Overview 面板的 Overview 分页，指出五种资源、Troops/Territory、Season/Pop 全部是同样字号左对齐堆叠的文字行，"看起来就是一堆信息堆在一起"，要求整理成表格或更清晰的呈现形式。
+
+**实现**（[`WorldMapPanels/territory.ts`](../../client/src/scenes/worldmap/WorldMapPanels/territory.ts) 的 `renderTerritoryPanel()` overview 分支）：
+- **资源表格化**：Ink/Paper/Graphite/Metal/Sticker 五行改成图标（复用 HUD 顶部产量条同一套 `getResTexture`）+ 名称左对齐、数量右对齐（列位 `pw*0.62`）、产量右对齐三栏，行下加一条 `C.light` 细分隔线（`PIXI.Graphics.lineStyle`），读起来是表格而不是五条独立文字。
+- **Troops / Territory 改成统计卡**：两张等宽 `sketchPanel`（红边框），左侧图标（`swords`/`castle`）+ 小号灰字标签 + 大号红字数值，替换原来两行加大字号的纯红字——给这两个"标题级"数字单独的视觉容器，不再只是字号更大的同一堆栈。
+- **Season/Pop 收成一行**：合并成单行灰色小字放最下面，跟上面的表格/卡片留出额外间距，作为次要信息收尾，不再单独占两行跟 Troops/Territory 抢视觉权重。
+- 以上改动都是纯渲染重排——没有新增按钮/交互，`modalBtnRects` 数量（3 个 tab + Close）不变。
+
+**测试改动**：[`worldMapTerritoryPanel.ui.ts`](../../client/test/ui/worldMapTerritoryPanel.ui.ts) 的 Overview 分组新增 6 例：资源表格每行的 label/amount/yield 文本断言、Troops/Territory 两张卡各自的 label/value 文本断言、确认表格+卡片不引入额外按钮（仍是 4 个）、Season 数据存在时的合并行文案、Season 数据缺失时该行完全不渲染。
+
+**验证**：`client` `tsc --noEmit` 全绿；`npx vitest run --config vitest.ui.config.ts test/ui/worldMapTerritoryPanel.ui.ts`（20 例）全绿。可视化验证：本机 Browser pane 对这个 WebGL 应用一贯的"pane 未显示，无法合成帧"限制（`client-run-and-visual-verify` 备忘录）这次同样命中，改走该备忘录记录的标准替代方案——临时在 `app.ts` 挂 `globalThis.__NW_DEBUG = {app, PIXI, WorldMapPanels}`，一次 `javascript_exec` 里手搭最小 `WorldMapContext`（数值照抄用户截图）直接调 `renderTerritoryPanel()`、`renderer.render()` 两次、`toDataURL()`、POST 到本地 collector 落盘截图，确认排版符合预期后把临时钩子从 `app.ts` 完整移除（`git diff` 确认该文件恢复干净）。资源图标格在这条离线渲染路径下是空的（未走正常图集预加载），属于验证路径本身的限制，不是代码问题——真实游戏流程里图标会正常显示。

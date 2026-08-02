@@ -117,12 +117,68 @@ describe('WorldMapPanels.openTerritoryPanel', () => {
   });
 });
 
+/** All PIXI.Text strings drawn directly into the modal layer — enough to assert the Overview
+ *  tab's resource table / stat cards / season line content without parsing layout. Mirrors the
+ *  identical helper in worldMapInfoScroll.ui.ts. */
+function modalTexts(ctx: WorldMapContext): string[] {
+  return (ctx.modalLayer.children as PIXI.DisplayObject[])
+    .filter((c): c is PIXI.Text => c instanceof PIXI.Text)
+    .map((t) => t.text);
+}
+
 describe('WorldMapPanels.renderTerritoryPanel — Overview tab', () => {
   it('renders without a scrollable list (pure stat display)', () => {
     const { ctx, panels } = buildHarness({ territoryTab: 'overview' });
     panels.renderTerritoryPanel();
     expect(ctx.modalDimRect).not.toBeNull();
     expect(ctx.infoScrollRect).toBeNull();
+  });
+
+  it('renders each resource as a label + right-aligned amount + right-aligned yield', () => {
+    const { ctx, panels } = buildHarness({ territoryTab: 'overview' });
+    panels.renderTerritoryPanel();
+    const texts = modalTexts(ctx);
+    // Labels from buildHarness's default resources: ink:100/+12, paper:200/+7, graphite:300/+3,
+    // metal:400/+20, sticker:500/+1.
+    for (const label of ['Ink', 'Paper', 'Graphite', 'Metal', 'Sticker']) {
+      expect(texts).toContain(label);
+    }
+    expect(texts).toContain('100');
+    expect(texts).toContain('+12/Yield');
+    expect(texts).toContain('500');
+    expect(texts).toContain('+1/Yield');
+  });
+
+  it('renders troops and territory as separate stat-card label/value text pairs', () => {
+    const { ctx, panels } = buildHarness({ territoryTab: 'overview' });
+    panels.renderTerritoryPanel();
+    const texts = modalTexts(ctx);
+    expect(texts).toContain('Troops');
+    expect(texts).toContain('320/800');
+    expect(texts).toContain('Territory');
+    expect(texts).toContain('12');
+  });
+
+  it('the resource table and stat cards add no extra buttons (still just the 3 tabs + close)', () => {
+    const { ctx, panels } = buildHarness({ territoryTab: 'overview' });
+    panels.renderTerritoryPanel();
+    expect(ctx.modalBtnRects).toHaveLength(4);
+  });
+
+  it('renders the season summary as a single combined line when season data is present', () => {
+    const { ctx, panels } = buildHarness({ territoryTab: 'overview' });
+    ctx.season = { season: 3, population: 42, capacity: 100 } as WorldMapContext['season'];
+    panels.renderTerritoryPanel();
+    const texts = modalTexts(ctx);
+    expect(texts.some((s) => s.includes('Season 3') && s.includes('Pop 42/100'))).toBe(true);
+  });
+
+  it('omits the season line entirely when there is no season data', () => {
+    const { ctx, panels } = buildHarness({ territoryTab: 'overview' });
+    ctx.season = null;
+    panels.renderTerritoryPanel();
+    const texts = modalTexts(ctx);
+    expect(texts.some((s) => s.startsWith('Season'))).toBe(false);
   });
 
   it('switching to the Territory tab (list) triggers a fresh fetch', () => {
