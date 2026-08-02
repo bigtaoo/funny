@@ -85,7 +85,8 @@ export function enhanceCost(fromLevel: number): EnhanceCost {
   const lv = Math.max(0, Math.min(fromLevel, EQUIP_MAX_LEVEL - 1));
   const materials: Record<string, number> = { scrap: 4 + 2 * lv };
   if (lv >= 3) materials.lead = lv - 2;
-  if (lv >= 6) materials.binding = lv - 5;
+  // binding required from +4 (was +6) — keep in sync with server/shared/src/equipment.ts.
+  if (lv >= 4) materials.binding = lv - 3;
   return { materials, coins: 40 * (lv + 1) };
 }
 
