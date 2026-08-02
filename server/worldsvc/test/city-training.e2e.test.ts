@@ -125,7 +125,7 @@ describe.skipIf(!mongo)('worldsvc training-queue nextTrainingCompleteAt mirror e
     await fund('a');
     await drainTroops('a');
 
-    // getMe's resources are lazily-settled + capped at RESOURCE_CAP (coreMap.ts); fund() stores a raw 1,000,000
+    // getMe's resources are lazily-settled + capped at RESOURCE_CAP (core/map.ts); fund() stores a raw 1,000,000
     // that's well above the cap, so the settled baseline must come from getMe too — comparing against the raw
     // doc would also count the cap-clamp as part of the "deduction" and inflate every delta.
     const before = (await svc.getMe(W, 'a')).resources!;

@@ -4,7 +4,7 @@ import type { ChapterDecor, ChapterMap, ChapterNode, NormPoint } from './Chapter
 /**
  * Runtime validator for chapter maps loaded from JSON.
  *
- * Like {@link import('../levelSchema').parseLevelDefinition}, this is the sole
+ * Like {@link import('@nw/engine/campaign/levelSchema').parseLevelDefinition}, this is the sole
  * guard narrowing raw `unknown` (a bundled `maps/chN.json`) to a typed
  * {@link ChapterMap}. It fails fast with a field-path error on structural
  * problems and — critically — on any `levelId` that does not resolve in

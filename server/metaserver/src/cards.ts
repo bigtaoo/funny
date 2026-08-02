@@ -113,6 +113,28 @@ export async function assembleCardInv(
 }
 
 /**
+ * Narrow variant of `assembleCardInv`: resolves only the given instance ids, still scoped to
+ * `accountId` (a foreign or sold id simply doesn't come back, which is exactly the "do you still own
+ * this?" answer callers want). Added 2026-08-02 for worldsvc's `getTeams` self-heal, which sits on
+ * the CityScene critical path and only ever needs to validate the ≤ 5×12 ids its formations
+ * reference — pulling a 500-card roster for that was the dominant cost of GET /world/teams.
+ *
+ * Deliberately skips assembleCardInv's opportunistic `cardInvCount` self-heal: a filtered `find` has
+ * no view of the true roster size, so writing `docs.length` here would actively corrupt the mirror.
+ */
+export async function assembleCardInvSubset(
+  cols: Collections,
+  accountId: string,
+  ids: readonly string[],
+): Promise<Record<string, CardInstance>> {
+  if (ids.length === 0) return {};
+  const docs = await cols.cardInstances.find({ accountId, _id: { $in: [...ids] } }).toArray();
+  const inv: Record<string, CardInstance> = {};
+  for (const doc of docs) inv[doc._id] = fromCardDoc(doc);
+  return inv;
+}
+
+/**
  * Write a full card instance snapshot into `cardInstances` (auction escrow-out: sale delivery to buyer /
  * cancellation·expiry·season-end return to seller, and mail-attachment claim).
  * Idempotent by instance.id: if this exact instance already exists for this account, a prior call already

@@ -28,8 +28,8 @@
  * Single-player / PvE keep using {@link LocalInputSource} unchanged.
  */
 
-import type { OwnerId, PlayerCommand } from '../types';
-import type { InputSource } from './InputSource';
+import type { OwnerId, PlayerCommand } from '@nw/engine/types';
+import type { InputSource } from '@nw/engine/net/InputSource';
 import { PlayerCommands, type PlayerCommand as ProtoPlayerCommand } from '../../net/proto/game';
 import type {
   ConnResync,

@@ -27,8 +27,8 @@
 ## S1 引擎核心（已完成）
 
 新增（纯 TS，无 PIXI，纳入确定性约束）：
-- `src/game/campaign/LevelDefinition.ts`：`LevelDefinition` / `WaveScript` / `WaveEntry` / `ObjectiveSpec` 等数据类型；前向兼容字段（`board.cellMask` / `startCoins` / `hazards` / `rewards` / `story`）已定义，**S1 仅消费 `seed` / `objective` / `waves`**，其余字段在 S5/S6/元系统阶段接入。
-- `src/game/campaign/WaveDirector.ts`：构造时把 `WaveEntry`（含 `count`/`spacingTicks`）展开成「逐 tick 出兵事件」并排序；`tick(tick)` 返回到期的 `{unitType,col}[]`；`exhausted` 表示全部波次已放完。**只读 tick + 静态脚本**，注入 `Prng` 备用（死亡分裂 / 随机车道等后续特性）。
+- `@nw/engine/campaign/LevelDefinition.ts`：`LevelDefinition` / `WaveScript` / `WaveEntry` / `ObjectiveSpec` 等数据类型；前向兼容字段（`board.cellMask` / `startCoins` / `hazards` / `rewards` / `story`）已定义，**S1 仅消费 `seed` / `objective` / `waves`**，其余字段在 S5/S6/元系统阶段接入。
+- `@nw/engine/campaign/WaveDirector.ts`：构造时把 `WaveEntry`（含 `count`/`spacingTicks`）展开成「逐 tick 出兵事件」并排序；`tick(tick)` 返回到期的 `{unitType,col}[]`；`exhausted` 表示全部波次已放完。**只读 tick + 静态脚本**，注入 `Prng` 备用（死亡分裂 / 随机车道等后续特性）。
 - `src/game/campaign/levels.ts`：`CAMPAIGN_LEVELS` 注册表 + `getLevel(id)`。
 
 引擎改动：

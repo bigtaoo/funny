@@ -3,7 +3,7 @@
 // own slot, so several skins can be equipped simultaneously.
 import { describe, it, expect } from 'vitest';
 import { SKIN_TARGET_UNIT, skinsForUnitType, skinEquipKey, allEquippedSkins, equippedSkinIdForType } from '../src/game/meta/skinDefs';
-import { UnitType } from '../src/game/types';
+import { UnitType } from '@nw/engine/types';
 
 describe('SKIN_TARGET_UNIT', () => {
   it('maps every catalogue skin to exactly one unit type', () => {

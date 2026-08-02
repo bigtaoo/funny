@@ -31,7 +31,7 @@ import { wheelScrollY } from '../../ui/wheelScroll';
 import type { SaveData, CardInstance, EquipSlot } from '../../game/meta/SaveData';
 import type { CardSLGState } from '../../net/WorldApiClient';
 import { CARD_DEFS, cardPower } from '../../game/meta/cardDefs';
-import type { UnitType } from '../../game/types';
+import type { UnitType } from '@nw/engine/types';
 
 export type CardActionResult = { ok: true } | { ok: false; key: TranslationKey };
 

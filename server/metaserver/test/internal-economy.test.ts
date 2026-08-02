@@ -294,4 +294,34 @@ describe('GET /internal/save-fields', () => {
     expect(body.cardInv).toBeUndefined();
     expect(body.equipmentInv).toEqual({});
   });
+
+  // cardIds narrowing (2026-08-02): worldsvc's getTeams self-heal only needs to know whether the ids
+  // its formations reference still resolve — reassembling the player's whole roster for that was the
+  // dominant cost of GET /world/teams, which sits on the CityScene critical path.
+  it('cardIds=… → cardInv is narrowed to just those instance ids', async () => {
+    const { app } = build(
+      [saveRow('a', {} as Partial<SaveData>)],
+      [cardRow('c1', 'a'), cardRow('c2', 'a'), cardRow('c3', 'a')],
+    );
+    const res = await app.inject({ method: 'GET', url: '/internal/save-fields?accountId=a&fields=cardInv&cardIds=c1,c3', headers: authHeaders });
+    expect(Object.keys(JSON.parse(res.payload).cardInv).sort()).toEqual(['c1', 'c3']);
+  });
+
+  it('cardIds stays account-scoped — another account\'s instance id does not leak', async () => {
+    const { app } = build(
+      [saveRow('a', {} as Partial<SaveData>)],
+      [cardRow('c1', 'a'), cardRow('other', 'b')],
+    );
+    const res = await app.inject({ method: 'GET', url: '/internal/save-fields?accountId=a&fields=cardInv&cardIds=c1,other', headers: authHeaders });
+    expect(Object.keys(JSON.parse(res.payload).cardInv)).toEqual(['c1']);
+  });
+
+  it('no cardIds → still the full roster (existing siege-engine callers are unaffected)', async () => {
+    const { app } = build(
+      [saveRow('a', {} as Partial<SaveData>)],
+      [cardRow('c1', 'a'), cardRow('c2', 'a')],
+    );
+    const res = await app.inject({ method: 'GET', url: '/internal/save-fields?accountId=a&fields=cardInv', headers: authHeaders });
+    expect(Object.keys(JSON.parse(res.payload).cardInv).sort()).toEqual(['c1', 'c2']);
+  });
 });

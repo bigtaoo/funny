@@ -1,11 +1,11 @@
 import * as PIXI from 'pixi.js-legacy';
 import { makeText } from './pixiText';
-import { Player } from '../game/Player';
-import { CardDefinition, CardType } from '../game/types';
+import { Player } from '@nw/engine/Player';
+import { CardDefinition, CardType } from '@nw/engine/types';
 import { ILayout } from '../layout/ILayout';
 import { ObjectPool } from '../cache/ObjectPool';
 import { t, type TranslationKey } from '../i18n';
-import { TICK_RATE } from '../game/math/fixed';
+import { TICK_RATE } from '@nw/engine/math/fixed';
 import { SketchPen } from './sketch';
 import { palette } from './theme';
 import { CARD_ART_URLS, cardArtKey, getArtTexture, unitPortraitUrl } from './cardArt';

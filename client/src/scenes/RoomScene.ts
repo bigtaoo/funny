@@ -5,7 +5,7 @@ import { InputManager } from '../inputSystem/InputManager';
 import { t, TranslationKey } from '../i18n';
 import type { NetState } from '../net/NetClient';
 import type { PeerDc, RoomError, RoomState, PlayerSlot } from '../net/proto/transport';
-import { ProfilePopup, type ProfileExtra } from '../render/ProfilePopup';
+import { ProfilePopup, type ProfileExtra } from '../ui/dialogs/ProfilePopup';
 import { ui as C, txt, buildPaperBackground, sketchPanel, sketchAccentBar, seedFor, tearDownChildren } from '../render/sketchUi';
 import { showToastMessage, type ToastKind } from '../net/log';
 import { buildDecorCLayer } from '../render/decorCLayer';

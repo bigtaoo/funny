@@ -12,8 +12,8 @@ import { createLayout } from '../../src/layout/ScalingManager';
 import { InputManager } from '../../src/inputSystem/InputManager';
 import { initI18n, t } from '../../src/i18n';
 import { CardCodexScene, type CardCodexCallbacks } from '../../src/scenes/CardCodexScene';
-import { CARD_DEFINITIONS, UNIT_BLUEPRINTS } from '../../src/game/config';
-import { CardType, UnitType } from '../../src/game/types';
+import { CARD_DEFINITIONS, UNIT_BLUEPRINTS } from '@nw/engine/config';
+import { CardType, UnitType } from '@nw/engine/types';
 
 const memStore = (() => {
   const m = new Map<string, string>();

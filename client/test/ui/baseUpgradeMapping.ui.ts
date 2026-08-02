@@ -19,7 +19,7 @@ import * as PIXI from 'pixi.js-legacy';
 
 const TEX1 = PIXI.Texture.WHITE;
 const TEX2 = PIXI.Texture.EMPTY;
-vi.mock('../../src/render/baseUpgradeAtlasLoader', () => ({
+vi.mock('../../src/render/atlas/baseUpgradeAtlasLoader', () => ({
   loadBaseUpgradeAtlas: () => Promise.resolve(),
   isBaseUpgradeAtlasReady: () => true,
   getBaseUpgradeTexture: (tier: 1 | 2) => (tier === 1 ? TEX1 : TEX2),

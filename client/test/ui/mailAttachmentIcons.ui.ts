@@ -15,7 +15,7 @@ import { initI18n } from '../../src/i18n';
 import { FriendsScene, type FriendsSceneCallbacks } from '../../src/scenes/FriendsScene';
 import type { MailView } from '../../src/net/ApiClient';
 import { cardInstanceArtUrl } from '../../src/render/cardArt';
-import { buildMaterialIcon } from '../../src/render/materialAtlas';
+import { buildMaterialIcon } from '../../src/render/atlas/materialAtlas';
 
 // Every export passes through untouched except cardInstanceArtUrl, wrapped in vi.fn (keeping its
 // real implementation) so the 2026-08-01-scoping spec below can inspect call arguments.
@@ -27,8 +27,8 @@ vi.mock('../../src/render/cardArt', async (importOriginal) => {
 // Same wrap-don't-replace treatment for buildMaterialIcon: the 2026-08-01 material-icon-id-mapping
 // regression spec below needs to inspect which MaterialKind a `kind: 'material'` attachment actually
 // resolves to (the bug was a silent wrong-key lookup, not a crash — only visible in the call args).
-vi.mock('../../src/render/materialAtlas', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../../src/render/materialAtlas')>();
+vi.mock('../../src/render/atlas/materialAtlas', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../src/render/atlas/materialAtlas')>();
   return { ...actual, buildMaterialIcon: vi.fn(actual.buildMaterialIcon) };
 });
 

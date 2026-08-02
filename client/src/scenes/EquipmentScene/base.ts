@@ -10,7 +10,7 @@ import type { InputManager } from '../../inputSystem/InputManager';
 import type { Scene } from '../SceneManager';
 import { t, type TranslationKey } from '../../i18n';
 import { ui as C, txt, scaledTxt, buildPaperBackground, sketchPanel, sketchButton, seedFor, drawLoadingOverlay, tearDownChildren } from '../../render/sketchUi';
-import { drawConfirmDialog } from '../../render/confirmDialog';
+import { drawConfirmDialog } from '../../ui/dialogs/confirmDialog';
 import { showToastMessage } from '../../net/log';
 import { FS, snapFont } from '../../render/fontScale';
 import { sidebarNavW, drawHubTabs, hubTabsHeight, type HubTab } from '../../ui/widgets/HubTabs';
@@ -22,10 +22,10 @@ import { wheelScrollY } from '../../ui/wheelScroll';
 import type { SaveData, EquipSlot, EquipRarity, EquipmentInstance } from '../../game/meta/SaveData';
 import { affixKind, EQUIPMENT_INV_CAP, EQUIP_MAX_LEVEL, type EnhanceCost } from '../../game/meta/equipmentDefs';
 import { ENHANCE_COEFF_PER_LEVEL } from '@nw/engine/balance/equipment';
-import { buildEquipIcon } from '../../render/equipmentAtlas';
+import { buildEquipIcon } from '../../render/atlas/equipmentAtlas';
 import { buildIcon, type IconKind } from '../../render/icons';
-import { buildMaterialIcon, type MaterialKind } from '../../render/materialAtlas';
-import { buildCoinIcon } from '../../render/coinIconAtlas';
+import { buildMaterialIcon, type MaterialKind } from '../../render/atlas/materialAtlas';
+import { buildCoinIcon } from '../../render/atlas/coinIconAtlas';
 
 /**
  * Maxed-star sweep timing (2026-07-26 UX pass): a continuous per-frame flip read as flickery/noisy

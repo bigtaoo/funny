@@ -9,7 +9,7 @@ import { showToastMessage } from '../net/log';
 import { buildDecorCLayer } from '../render/decorCLayer';
 import { drawSceneHeader, sceneHeaderHeight } from '../ui/widgets/SceneHeader';
 import { drawScrollIndicator } from '../ui/widgets/ScrollIndicator';
-import { caretDisplay } from '../render/inputDisplay';
+import { caretDisplay } from '../ui/inputDisplay';
 import { FS, snapFont } from '../render/fontScale';
 import type { ChatMessageView } from '../net/ApiClient';
 import type { ChatMessagePush } from '../net/proto/transport';

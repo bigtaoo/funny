@@ -3,7 +3,7 @@ import type { FastifyInstance } from 'fastify';
 import type { Collections, SaveData, EquipmentInstance, CardInstance, InternalGrantOrderDoc } from '@nw/shared';
 import { createLogger, ERROR_HTTP_STATUS } from '@nw/shared';
 import { escrowEquipment, grantEquipment, assembleEquipmentInv } from '../equipment.js';
-import { escrowCard, grantCard, assembleCardInv } from '../cards.js';
+import { escrowCard, grantCard, assembleCardInv, assembleCardInvSubset } from '../cards.js';
 import { escrowSkin, grantSkin } from '../skin.js';
 import type { InternalCtx } from './context.js';
 
@@ -285,14 +285,19 @@ export function registerEconomyRoutes(app: FastifyInstance, ctx: InternalCtx): v
   //   for authoritative blueprint computation. `fields` (comm-audit batch F item 6) narrows the projection to
   //   only what the caller needs — omit for both (default). `pveUpgrades` was dropped from the wire (2026-07-28):
   //   the siege engine never read it (siegeEngine.ts runSiegeBattle deprecated/unused param).
+  //   `cardIds=a,b,c` (2026-08-02) narrows the cardInv projection further, to just those instance ids: a
+  //   caller that only needs to check whether specific cards are still owned (worldsvc's getTeams
+  //   self-heal, on the CityScene critical path) shouldn't pay to reassemble a 500-card roster.
+  //   Ignored unless cardInv is actually requested; omit it to get the full roster as before.
   //   If the account does not exist, treats it as a new account (returns empty defaults); does not return 404 to avoid freezing a march.
   app.get('/internal/save-fields', async (req, reply) => {
     if (!authed(req.headers)) return reply.code(401).send({ ok: false, error: 'unauthorized' });
-    const { accountId, fields: fieldsParam } = req.query as Record<string, string>;
+    const { accountId, fields: fieldsParam, cardIds: cardIdsParam } = req.query as Record<string, string>;
     if (!accountId) return reply.code(400).send({ ok: false, error: 'accountId required' });
     const want = fieldsParam ? new Set(fieldsParam.split(',')) : null; // null = both (default)
     const wantCard = !want || want.has('cardInv');
     const wantEquip = !want || want.has('equipmentInv');
+    const cardIds = cardIdsParam ? cardIdsParam.split(',').filter(Boolean) : null; // null = full roster
     const doc = await cols.saves.findOne({ _id: accountId });
     const s = doc?.save;
     // Equipment/card instances live in their own collections (2026-07-26/2026-07-27 splits, see
@@ -300,7 +305,7 @@ export function registerEconomyRoutes(app: FastifyInstance, ctx: InternalCtx): v
     // expects the full maps, unchanged). Null-safe for an unknown account (no doc → still returns {}
     // rather than erroring, same as before).
     const [cardInv, equipmentInv] = await Promise.all([
-      wantCard ? (s ? assembleCardInv(cols, accountId, s) : {}) : undefined,
+      wantCard ? (s ? (cardIds ? assembleCardInvSubset(cols, accountId, cardIds) : assembleCardInv(cols, accountId, s)) : {}) : undefined,
       wantEquip ? (s ? assembleEquipmentInv(cols, accountId, s) : {}) : undefined,
     ]);
     return reply.send({

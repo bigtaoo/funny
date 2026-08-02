@@ -1,0 +1,69 @@
+/**
+ * equipmentAtlas.ts — equipment icon bitmap atlas (EQUIPMENT_DESIGN §20.2).
+ *
+ * 12 AI-generated stationery icons (512×384, 4×3 grid, 128×128 each) loaded
+ * as a PixiJS Spritesheet.  Frame names match defIds (§17.2): wp_pencil …
+ * tk_seal.  When the atlas is ready, `getEquipIconTexture(defId)` returns the
+ * frame; callers fall back to the procedural `drawEquipmentGlyph` if the atlas
+ * is not loaded yet or the defId is unknown.
+ *
+ * Load once at app boot via `loadEquipmentAtlas` (added to bootManifest L0
+ * because EquipmentScene can open from the campaign map lobby).  Cosmetic like
+ * the decor atlases — a failed load is non-fatal; the scene degrades to the
+ * procedural icon.
+ */
+import * as PIXI from 'pixi.js-legacy';
+import { iconsAtlas as atlas } from './iconsAtlas';
+import { drawEquipmentGlyph, drawEmptySlotGlyph } from '../equipmentGlyph';
+import type { EquipSlot, EquipRarity } from '../../game/meta/SaveData';
+
+/** True once the atlas PNG has decoded and frames are parsed. */
+export const isEquipAtlasReady = atlas.isReady;
+
+/**
+ * Texture for a defId (e.g. `wp_pencil`), or null if not loaded / unknown.
+ * Callers fall back to the procedural glyph on null.
+ */
+export const getEquipIconTexture = atlas.getTexture;
+
+/**
+ * Decode + parse the atlas.  Idempotent.  Rejects on decode error (callers
+ * should log + degrade gracefully — the scene still works without icons).
+ */
+export const loadEquipmentAtlas = atlas.load;
+
+/**
+ * Single source of truth for an equipment item's picture. Returns the AI bitmap
+ * sprite from the atlas when it is loaded and the defId is known (§20.2), the
+ * hollow "empty slot" glyph when `defId` is undefined (no item equipped), and
+ * otherwise the filled procedural per-slot glyph (§20.3) as a best-effort stand-in
+ * for a real item whose bitmap isn't available yet (atlas still loading / unknown
+ * defId). The returned DisplayObject is centered at its own origin and fits a
+ * `size`×`size` box — callers just set `.x/.y` (and optionally `.alpha`). Every
+ * icon site (bag, card detail, gacha reveal + odds, auction) MUST go through here
+ * so the same item reads the same everywhere; passing a bare slot/rarity glyph
+ * inline is what caused per-screen drift.
+ */
+export function buildEquipIcon(
+  defId: string | undefined,
+  slot: EquipSlot,
+  rarity: EquipRarity,
+  size: number,
+  seed = 1,
+): PIXI.Container {
+  if (!defId) {
+    const empty = new PIXI.Graphics();
+    drawEmptySlotGlyph(empty, slot, size, seed);
+    return empty;
+  }
+  const tex = getEquipIconTexture(defId);
+  if (tex) {
+    const sprite = new PIXI.Sprite(tex);
+    sprite.anchor.set(0.5, 0.5);
+    sprite.scale.set(size / 128);
+    return sprite;
+  }
+  const gfx = new PIXI.Graphics();
+  drawEquipmentGlyph(gfx, slot, rarity, size, seed);
+  return gfx;
+}

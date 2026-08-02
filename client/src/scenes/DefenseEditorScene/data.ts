@@ -4,8 +4,8 @@ import { t, type TranslationKey } from '../../i18n';
 import { ui as C } from '../../render/sketchUi';
 import type { WorldApiClient, ArmyEntry } from '../../net/WorldApiClient';
 import { WorldApiError } from '../../net/WorldApiClient';
-import { ATTACK_LANES, UNIT_BLUEPRINTS } from '../../game/config';
-import { UnitType, BuildingType } from '../../game/types';
+import { ATTACK_LANES, UNIT_BLUEPRINTS } from '@nw/engine/config';
+import { UnitType, BuildingType } from '@nw/engine/types';
 import type { CardInstance } from '../../game/meta/SaveData';
 import { CARD_DEFS, troopCap, cardPower } from '../../game/meta/cardDefs';
 import {

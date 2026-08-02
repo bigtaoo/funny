@@ -227,8 +227,10 @@
 
 ```bash
 cd tools/map-editor
-npm install     # 首次进入需要装依赖（worktree 各自独立）
-npm run start   # webpack dev server，端口 9095
+npm install       # 首次进入需要装依赖（worktree 各自独立）
+npm run start     # webpack dev server，端口 9095
+npm test          # vitest，纯层单测（state/ + isoGrid + tileStyle + i18n），见 §8 pass 2
+npm run typecheck # tsc --noEmit -p tsconfig.test.json（src + test 同一个 program）
 ```
 
 当前功能：PixiJS 等距视口渲染，贴图跟游戏客户端一致（切 world seed 输入框 + Regenerate 按钮，Pan 工具/中键拖动平移，滚轮/Zoom 滑块缩放，Center View 按钮回中）、hover 显示 tile 坐标/类型（阻挡格附带 river/mountain）/等级/资源、图例；河流/山脉格子笔刷（River/Mountain/Eraser 工具切换，点击或拖动直接把笔刷覆盖的格子改成当前地形/清回程序化地形——跟图片编辑器笔刷一样即点即变，无需先选起止点，笔刷大小可调，光标跟随一个笔刷大小的圆形描边，Clear All 清空、Export/Import JSON 支持导入旧版矢量路径 JSON 自动迁移；**河流画成河、山脉画成山**——不再是位置哈希随机选贴图，与游戏内一致）；城池（City 工具，拖动移动坐标、点击查看详情、Reset Cities、独立 Export/Import JSON）——**按等级渲染真实城池精灵**（`city_atlas`，每级取图、footprint 3/5/7/9 随等级变大），与游戏 `WorldMapRenderer` 城池层同款；地形格子/城池栅格化回地块+发布到服务端模板（Publish to Server 面板，含登录/模板生成/模板列表/Activate/Delete）均已实现。**资源**用 `res_atlas` 手绘图案显示。（发布进运行中世界的接线是另一条任务，见 §0"已知限制"。）
@@ -259,3 +261,50 @@ npm run start   # webpack dev server，端口 9095
   - **未动**：资源类型集合（ink/paper/graphite/metal 四地块 + sticker 铜矿位）、`resourceDensity=1.0`（每格皆资源/河流/山脉，无纯空地）、`resTypeFor` 的铜矿等级门（`copperMinLevel`/`copperShare`）——这些都符合现有设计，本次只改"resType 怎么在空间上分布"这一件事。
   - **验证**：`server/shared` 新增 `test/mapgen-biome.test.ts`（5 例：单省份内混合多种资源 / 偏向比例落在 `0.25+bias±0.03` 内 / 确定性 / `leaningResourceForProvince` 确定性且跨省有差异）+ 既有 `city-buildings.test.ts` 描述文案同步更新；`server/shared` `tsc -b` + 574 例全绿（含新增 `mapgen-biome.test.ts` 5 例）；`server/worldsvc` `tsc --noEmit` + 218 例全绿（`siege.e2e.test.ts` 1 例因假设"连接用的驻地格恒不产 ink"而写死了战利品前基线，随 resType 变成逐格随机后不再成立，改为"攻城结算前一刻"现场取样再求差值，不依赖任何固定 resType 假设）；`client`/`tools/map-editor` `tsc --noEmit` + `tools/map-editor` `webpack --mode production` 均过。渲染逻辑改动未截图验证（按 CLAUDE.md 约定 + 该 WebGL canvas 页面截图工具已知超时限制）。
   - **待办（本轮不做）**：`design/game/SLG_DESIGN.md`/`SLG_CITY_DESIGN.md`/`DECISIONS.md` 里"biomeAt 四分"相关历史记录只做了指针级订正（新增"分布机制已改"的批注），没有逐条重写——那些条目记录的是"graphite 成为第 4 种地块资源"这个决策本身（ADR-022），本次改的是分布的空间机制，不是资源种类，两者独立，不需要重写历史决策记录。
+
+- **`src/index.ts` 减重（2026-08-02，仓库级文件组织整理的一部分）**：`index.ts` 已长到 920 行。跟本仓库其它超大文件不同，它不是一个类，而是**顶层脚本 + 模块级可变状态**（`tool`/`tp`/`panX`/`panY`/`painting`/`selectedCityId` 等 12 个 `let`），所以 `CityScene`/`combatSiege` 那套「薄装配壳 + mixin 链」在这里根本不适用。本轮只外移了**完全不碰这些可变状态**的三块：
+  - `src/constants.ts` —— 地形/城池调色板、图例顺序（`TERRAIN_LEGEND`/`TERRAIN_LEGEND_CSS`/`CITY_COLORS(_CSS)`）、视口与缩放常量（`VIEW_W/H`/`VIEW_PAD_FACTOR`/`ZOOM_MIN/MAX`/`DEFAULT_TP`/`BASE_SPRITE_TILES`）。纯声明，无 DOM 无 PIXI，`render/` 下的模块也能直接读而不产生循环依赖。
+  - `src/stage.ts` —— `PIXI.Application` 本体、屏幕固定的横格纸背景、以及 `worldLayer`/`baseLayer`/`citySpriteLayer`/`overlayLayer` 这套层栈，模块加载时建一次、全局共享。
+  - `src/dom.ts` —— 界面接线用到的 37 个 `getElementById`。
+  `index.ts` 920 → 811 行，开头从「37 行 DOM 查询」变成实际接线逻辑。
+  - **刻意没有继续拆**：剩下约 800 行共享那 12 个模块级 `let`（光标缩放 `tp` 一个就有 28 处读写），再拆就必须把它们改造成一个共享 state store 并重写每一处读写。而 `tools/map-editor` **没有 test 目录也没有 test 脚本**，这种改造只能靠手点验证兜底——那是一个独立的架构决策，不是一次文件搬家，故本轮不做。（**已于同日 pass 2 完成，见下条。**）
+  - **验证**：`tsc --noEmit`（与改动前的基线一致，均无输出）+ `webpack --mode production` 均过；localhost:9195 实开编辑器核对——WebGL2 画布 900×620、1681 格渲染完成、64 座城池、9 个地形图例 + 3 个城池图例（均由外移后的调色板驱动）、工具从 Pan 切到 River 后「已绘制地形」标题正常重渲，即外移的常量与 DOM 引用两侧接线都还正确。
+
+- **`src/index.ts` 减重 pass 2：先补测试，再把模块级 `let` 改造成共享 store（2026-08-02）**：接上条留下的架构决策。顺序刻意是「**先测试后重构**」——上一轮之所以停手，正是因为没有测试兜底；所以本轮先给 `tools/map-editor` 建起测试层，拿到 78 例绿色基线，再动那 12 个 `let`。
+
+  **① 测试基建（`tools/map-editor` 此前无任何测试，是 `tools/` 下第一个有测试的工具）**
+  - `vitest.config.ts` —— `include: test/**/*.test.ts`、`environment: node`、`@nw/shared/slg` alias 指向 `server/shared/src/slg/index.ts`（与 `webpack.config.js` / `tsconfig.json` 三处对齐；**不能**用 `@nw/shared` 主 barrel，它带 mongo/jwt 等 Node-only 依赖）。vitest 版本取 `^2.1.9`，与 `client/` 和 11 个 server 服务一致。
+  - `tsconfig.test.json` —— `extends` 主 tsconfig 并把 `test/**` 并入同一个 program。主 `tsconfig.json` 的 `include` 只有 `src/**`，不补这个文件的话 test 层**永远不会被类型检查**（vitest 走 esbuild，只擦类型不查类型），正是 `claudedocs/client-testing.md` 记的那个漂移陷阱。
+  - `package.json` 新增 `test` / `test:watch` / `typecheck`（后者跑 `tsc --noEmit -p tsconfig.test.json`）。
+  - **测试范围**：只测**纯层**——`state/`（camera / session / terrainGrid / cities）、`render/isoGrid.ts`、`render/tileStyle.ts`、`i18n.ts`。碰 PIXI 的 `stage.ts` / `render/*` 绘制和碰 DOM 的 `dom.ts` / `ui/*` / `input/*` 一律不测：它们在 import 期就 `new PIXI.Application()` / `getElementById`，而编辑器没有 `client/test/harness/pixiHeadless.ts` 那样的 headless 桩。
+
+  **② 重构前的基线（78 例）**：`terrainGrid.test.ts`（21，笔刷落盘为圆盘而非包围盒 / 长拖不留缝 / JSON 往返 / **旧版矢量路径 JSON 迁移** / 越界裁剪 / 非法输入拒绝）、`cities.test.ts`（10）、`isoGrid.test.ts`（18，等距投影往返、`visibleTileBounds` 真覆盖视口、`clipConvexToRect`）、`tileStyle.test.ts`（17，**河画成河山画成山**——2026-07-06 那次排查烧掉一整天的映射、障碍 alpha 区间、`biomeGroundTint` 按省份硬切）、`i18n.test.ts`（12，en/zh 双语键位齐全 + 占位符全部替换 + 中文量词单复数同形）。
+
+  **③ 状态 store 改造**
+  - `src/state/camera.ts` —— `Camera` 类：`tp`/`panX`/`panY` + `clampPan`/`panBy`/`centerOnMap`/`setZoom`/`screenOf`/`layerOf`/`tileAt`/`visibleRange`。**无 PIXI 无 DOM**：原来 `clampPan()` 里那句 `worldLayer.position.set(...)` 改成 `onChange` 钩子，由 `input/viewport.ts` 在开机时装上。`setZoom` 返回 `boolean`（缩放没真变就不重建视口）。
+  - `src/state/session.ts` —— `EditorSession` 类：`tool`/`painting`/`lastPaintPos`/`selectedCityId`/`draggingCityId`/`panning`/`panLast`/`tileInfoShown`，外加 `setTool`（离开 City 工具时清选中，返回是否清过）、`beginStroke`/`endStroke`、`beginPan`/`panDelta`/`endPan`，以及纯函数 `isBrushTool()` / `cursorForTool()`（后者原先在 index.ts 里**重复了三处**）。
+  - `src/state/cities.ts` —— 新增 `CityStore.findNearest()`（原 `findNearestCity`）和 `clampCityPos()`，两者都是纯的、可直接测。
+  - `src/editor.ts` —— 全局单例（`camera`/`session`/`terrainStore`/`cityStore`）+ `worldId()`/`brushDiameter()`/`hitRadiusTiles()`。与 `stage.ts`/`dom.ts` 同一种「模块级单例」写法。
+
+  **④ 剩余 800 行按职责分层**（`render/` 画什么、`ui/` 往面板写什么、`input/` 事件改什么状态；各 `input/ui` 模块导出 `wireXxx()` 由 `index.ts` 显式调用，不靠 import 副作用）
+  | 新文件 | 内容 |
+  |---|---|
+  | `render/baseMap.ts` | `effectiveTile` / `renderBaseMap` + `diffCache` / `tileGraphicsCache` |
+  | `render/citySprites.ts` | `refreshCitySprites` |
+  | `render/overlay.ts` | 笔刷光标 + City 模式的城池框 |
+  | `render/refresh.ts` | `renderTerrain()` / `renderAll()` / `scheduleRender()`（rAF 合帧） |
+  | `ui/status.ts` | `setStatus` / `refreshStatus` / `tileCountLabel` / `cityCountLabel` |
+  | `ui/panels.ts` | 图例、tile 悬停读数、已刷地形标题、选中城池详情 |
+  | `ui/publish.ts` | §24 发布面板整块（登录 / 模板列表 / 生成 / 发布） |
+  | `ui/i18nApply.ts` | `applyStaticI18n` / `applyDynamicI18n` / 语言按钮 |
+  | `input/viewport.ts` | 缩放滑块 / 滚轮合帧 / Center View，并装上 `camera.onChange` |
+  | `input/canvas.ts` | 画布鼠标：笔刷、城池拖拽、平移 |
+  | `input/toolbar.ts` | 工具切换 / Regenerate / Clear / Reset / 两组 Export-Import |
+
+  `index.ts` **811 → 52 行**，只剩开机顺序。全 `src/` 最大文件现在是 `i18n.ts`（270 行，纯字典）。剩下的模块级 `let` 只有各模块自用的私有缓存（图集 loader、`diffCache`、rAF 标志、模板列表、`lastStatusRender`），**没有跨模块共享的可变状态**。
+
+  **⑤ 重构后新增测试（共 125 例）**：`camera.test.ts`（22）+ `session.test.ts`（13）+ `cities.test.ts` 追加 12 例。重点是那些只能靠手拖验证的性质——**滚轮缩放时锚点下的地块必须原地不动**、拖到边界后再拖是幂等的、`visibleRange` 真的覆盖视口且不越界、`clampCityPos` 按 footprint 一半内缩（9×9 世界中心不会被地图边缘裁掉）、`findNearest` 量的是 footprint **边缘**距离而非中心。
+
+  **⑥ 期间发现并修掉的一处真实行为差异**：给 `cursorForTool()` 写测试时发现——原 index.ts 里中键在**任意工具**下都能起平移且光标变 `grabbing`，而我第一版 `cursorForTool(tool, dragging)` 只在 `tool === 'pan'` 时才返回 `grabbing`。改为 `dragging` 优先于工具自身光标，并加了断言。这正是「补测试」这一步的价值：纯搬家不会暴露它。
+
+  **⑦ 验证**：`npm test` 125 例全绿、`npm run typecheck`（`tsc --noEmit -p tsconfig.test.json`，另跑一遍 `--noUnusedLocals --noUnusedParameters` 无残留死 import）、`webpack --mode production` 均过；localhost:9195 实开编辑器，用合成鼠标事件跑完整交互（该 WebGL 页面的截图工具仍是已知超时，改为读 DOM + PIXI 场景图核对）：开机 1681 格 / 64 城 / 9+3 图例与改动前基线一致；Mountain 笔刷单击落 9 格（直径 3 圆盘）、拖拽增至 15 格、hover 读数为 `obstacle (mountain)`、Export JSON 内容正确；City 工具选中世界中心并拖到 (758, 749)、切走工具后选中被清空、Reset Cities 复位回 (750, 750)、城池 JSON 往返 64 座；缩放滑块 81→40 后渲染 6889 格；平移拖拽期间光标 `grabbing`、松开回 `grab`；Center View 正常；旧版矢量路径 JSON 导入栅格化成 105 格、非法地形类型被拒并给出提示且不破坏现有网格；中英切换后状态栏连量词一起重排（「已刷 15 个格子，64 座城池」）。控制台无报错。

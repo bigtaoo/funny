@@ -1,6 +1,6 @@
 /**
- * Regression coverage (client-resource-mgmt audit 2026-07-29): render/spriteAtlas.ts's
- * createAtlasLoader, render/coinIconAtlas.ts, and render/stickman/StickmanRuntime.loadAsset all
+ * Regression coverage (client-resource-mgmt audit 2026-07-29): render/atlas/spriteAtlas.ts's
+ * createAtlasLoader, render/atlas/coinIconAtlas.ts, and render/stickman/StickmanRuntime.loadAsset all
  * shared the same bug — a failed load() cached the *rejected* promise forever, so a single
  * transient network blip (very plausible on WeChat / mobile) permanently negative-cached the
  * atlas/rig for the rest of the session: every subsequent call replayed the same old rejection
@@ -48,7 +48,7 @@ describe('spriteAtlas.createAtlasLoader: retries after a failed load (does not n
     // instance than the one setAssetIO() was just called on, and it silently falls back to the real
     // WebAssetIO (which always resolves) instead of our mock.
     const { setAssetIO } = await import('../../src/assets/assetIO');
-    const { createAtlasLoader } = await import('../../src/render/spriteAtlas');
+    const { createAtlasLoader } = await import('../../src/render/atlas/spriteAtlas');
     const io = flakyThenOkIO();
     setAssetIO(io);
 
@@ -63,7 +63,7 @@ describe('spriteAtlas.createAtlasLoader: retries after a failed load (does not n
 
   it('a load() call already in flight (not yet failed) is still shared, not duplicated', async () => {
     const { setAssetIO } = await import('../../src/assets/assetIO');
-    const { createAtlasLoader } = await import('../../src/render/spriteAtlas');
+    const { createAtlasLoader } = await import('../../src/render/atlas/spriteAtlas');
     const io = flakyThenOkIO();
     setAssetIO(io);
     const loader = createAtlasLoader('atlas.png', {} as never, 'test-atlas');
@@ -81,7 +81,7 @@ describe('coinIconAtlas: retries after a failed load (does not negative-cache)',
     const { setAssetIO } = await import('../../src/assets/assetIO');
     const io = flakyThenOkIO();
     setAssetIO(io);
-    const mod = await import('../../src/render/coinIconAtlas');
+    const mod = await import('../../src/render/atlas/coinIconAtlas');
 
     await expect(mod.loadCoinIconAtlas()).rejects.toThrow('network blip');
     expect(mod.isCoinIconAtlasReady()).toBe(false);

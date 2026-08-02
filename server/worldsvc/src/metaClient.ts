@@ -39,8 +39,14 @@ export interface WorldMetaClient {
   getProfile(accountId: string): Promise<PlayerProfile | null>;
   /** Batch profile lookup (comm-audit batch F item 7): same accountId→PlayerProfile shape as getProfile, one round trip for many ids via meta's /internal/account/batch-profiles. Returns only the ids meta actually found. */
   batchProfiles(accountIds: string[]): Promise<Map<string, PlayerProfile>>;
-  /** Get the attacker/defender's progression snapshot (authoritative siege engine calculation, E8). `fields` narrows which projections are fetched (omit = both). Returns null on failure → engine degrades without equipment calculation (march is not blocked). */
-  getSaveFields(accountId: string, fields?: SaveField[]): Promise<SaveFields | null>;
+  /**
+   * Get the attacker/defender's progression snapshot (authoritative siege engine calculation, E8).
+   * `fields` narrows which projections are fetched (omit = both). `cardIds` narrows `cardInv` further
+   * to just those instance ids (2026-08-02) — for callers that only need to check whether specific
+   * cards are still owned, so meta doesn't reassemble the player's whole roster; omit for the full map.
+   * Returns null on failure → engine degrades without equipment calculation (march is not blocked).
+   */
+  getSaveFields(accountId: string, fields?: SaveField[], cardIds?: readonly string[]): Promise<SaveFields | null>;
   /** Grant a title (S10, SLG season settlement → write to meta). Best-effort; failures are logged but do not block settlement. */
   grantTitle(accountId: string, titleId: string): Promise<void>;
 }
@@ -93,11 +99,14 @@ export class HttpWorldMetaClient implements WorldMetaClient {
     return out;
   }
 
-  async getSaveFields(accountId: string, fields?: SaveField[]): Promise<SaveFields | null> {
+  async getSaveFields(accountId: string, fields?: SaveField[], cardIds?: readonly string[]): Promise<SaveFields | null> {
     if (!this.baseUrl) return null;
     const q = fields && fields.length > 0 ? `&fields=${fields.join(',')}` : '';
+    // An empty `cardIds` array would mean "no ids at all", which meta can't distinguish from "omitted";
+    // callers with nothing to look up skip the call entirely, so only a non-empty list is ever sent.
+    const idsQ = cardIds && cardIds.length > 0 ? `&cardIds=${cardIds.map(encodeURIComponent).join(',')}` : '';
     const res = await fetchInternalJson<SaveFields>(
-      `${this.baseUrl}/internal/save-fields?accountId=${encodeURIComponent(accountId)}${q}`,
+      `${this.baseUrl}/internal/save-fields?accountId=${encodeURIComponent(accountId)}${q}${idsQ}`,
       { caller: 'worldsvc', key: this.internalKey, timeoutMs: 5000, label: '/internal/save-fields' },
     );
     return res.ok ? res.body : null;

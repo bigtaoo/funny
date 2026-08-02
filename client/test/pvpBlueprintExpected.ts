@@ -8,8 +8,8 @@
 // Hard-wall tests therefore compare buildPvpBlueprints() against THIS expectation,
 // not raw UNIT_BLUEPRINTS. The override values are hardcoded here (not re-derived from
 // buildPvpBlueprints) so the comparison stays an independent guard rather than a tautology.
-import { UNIT_BLUEPRINTS } from '../src/game/config';
-import { UnitType } from '../src/game/types';
+import { UNIT_BLUEPRINTS } from '@nw/engine/config';
+import { UnitType } from '@nw/engine/types';
 
 /** UNIT_BLUEPRINTS plus the documented static PvP overrides (PVP_LOADOUT_DESIGN §5). */
 export function pvpExpectedBlueprints(): typeof UNIT_BLUEPRINTS {

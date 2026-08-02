@@ -2,12 +2,12 @@
 // WorldMapScene; each takes a target Graphics + params, holds no scene state.
 import * as PIXI from 'pixi.js-legacy';
 import { ISO_RATIO, diamondPath, diamondVertices } from '../../render/isoGrid';
-import { getResLevelTexture, getResTexture, isResAtlasReady } from '../../render/resAtlasLoader';
-import { getTerrainTexture, isTerrainAtlasReady } from '../../render/terrainAtlasLoader';
-import { getBuildingTexture, isBuildingAtlasReady } from '../../render/buildingAtlasLoader';
-import { isCityAtlasReady } from '../../render/cityAtlasLoader';
+import { getResLevelTexture, getResTexture, isResAtlasReady } from '../../render/atlas/resAtlasLoader';
+import { getTerrainTexture, isTerrainAtlasReady } from '../../render/atlas/terrainAtlasLoader';
+import { getBuildingTexture, isBuildingAtlasReady } from '../../render/atlas/buildingAtlasLoader';
+import { isCityAtlasReady } from '../../render/atlas/cityAtlasLoader';
 import { FOG_COLOR, ALLY_SECT_BORDER, TERRAIN_TEX_ALPHA, TERRAIN_TEX_ALPHA_DEFAULT, TERRAIN_TEX_TINT, TERRAIN_TEX_TINT_DEFAULT, biomeGroundTint, obstacleTextureName } from './tileStyle';
-import type { TerrainTextureName } from '../../render/terrainAtlasLoader';
+import type { TerrainTextureName } from '../../render/atlas/terrainAtlasLoader';
 import type { WorldTileView } from '../../net/WorldApiClient';
 import { worldSeed, obstacleShoreAt, type ProceduralTile } from '@nw/shared';
 

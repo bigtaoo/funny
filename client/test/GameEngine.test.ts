@@ -1,8 +1,8 @@
 import { describe, it, expect } from 'vitest';
-import { createGameEngine } from '../src/game/GameEngine';
-import { CARD_DEFINITIONS, UNIT_BLUEPRINTS } from '../src/game/config';
-import { toFp, TICK_RATE } from '../src/game/math/fixed';
-import { Side, UnitType, type GameConfig, type PlayerCommand } from '../src/game/types';
+import { createGameEngine } from '@nw/engine/GameEngine';
+import { CARD_DEFINITIONS, UNIT_BLUEPRINTS } from '@nw/engine/config';
+import { toFp, TICK_RATE } from '@nw/engine/math/fixed';
+import { Side, UnitType, type GameConfig, type PlayerCommand } from '@nw/engine/types';
 
 const infantryCard = CARD_DEFINITIONS.find((c) => c.id === 'infantry_1')!;
 

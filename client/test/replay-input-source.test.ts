@@ -7,15 +7,15 @@
 //      via ReplayInputSource — assert the final state fingerprint is identical
 //      (the recording reproduces the run byte-for-byte from seed + input stream).
 import { describe, it, expect } from 'vitest';
-import { createGameEngine } from '../src/game/GameEngine';
+import { createGameEngine } from '@nw/engine/GameEngine';
 import {
   RecordingInputSource,
   ReplayInputSource,
   ReplayVersionError,
-} from '../src/game/net/ReplayInputSource';
-import { LocalInputSource, type InputSource } from '../src/game/net/InputSource';
-import { ENGINE_VERSION } from '../src/game/types';
-import type { GameConfig, IGameEngine, Replay } from '../src/game/types';
+} from '@nw/engine/net/ReplayInputSource';
+import { LocalInputSource, type InputSource } from '@nw/engine/net/InputSource';
+import { ENGINE_VERSION } from '@nw/engine/types';
+import type { GameConfig, IGameEngine, Replay } from '@nw/engine/types';
 import { CAMPAIGN_LEVELS, CAMPAIGN_LEVEL_ORDER } from '../src/game/campaign/levels';
 
 const TICK_DT = 1 / 30;

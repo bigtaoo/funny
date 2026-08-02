@@ -298,7 +298,7 @@ export interface MarchDoc {
    * position": getMarches' vision math (`marchInterpPos`) has always been a straight-line interpolation
    * between fromTile and toTile — never the bent A* `path` used for encounter-checking — so the true
    * position at any instant is guaranteed to lie inside this box for the box's entire lifetime; no per-tick
-   * write-amplification is needed to keep it fresh. Computed once at creation (`legBox`, coreHelpers.ts) by
+   * write-amplification is needed to keep it fresh. Computed once at creation (`legBox`, core/helpers.ts) by
    * every code path that inserts a MarchDoc (startMarch, autoReturnScout, recallStationed) and re-affirmed
    * (not recomputed — swapping the two endpoints yields the same box) by recallMarch's outbound→return flip
    * so a legacy doc missing these fields self-heals the moment it is recalled. Absent on pre-2026-07-29 docs
@@ -398,7 +398,7 @@ export interface SiegeDoc {
   attackerId: string;
   /** MarchKind of the attacking/occupying march (2026-08-02) — lets pushSiege tell the client whether
    * this was its own occupy-land-grab vs. an attack vs. a field encounter, without the client having
-   * to remember what it dispatched (see corePush.pushSiege). */
+   * to remember what it dispatched (see core/push.pushSiege). */
   marchKind: MarchKind;
   defenderId?: string;
   tile: string;

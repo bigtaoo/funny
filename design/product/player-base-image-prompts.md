@@ -21,6 +21,23 @@
 3. **用排线密度表现等级递进**：Lv1/2 松（学生涂鸦）→ Lv5 中 → Lv10 密（近铜版蚀刻）。**必须单调递增**，中间级别不得比更高级还密/还简。风格锚点：已定稿的 Lv1、Lv2、Lv5、Lv10 四张。
 4. **满级专属视觉信号**：大面积**实心深蓝填充**只留给 Lv10；中间级（3~9）保持淡黄绿为主、蓝仅描线。**金色点缀**仅 Lv9（最高铅笔尖一处）/ Lv10（钢笔金尖 + 最高几处塔尖）作为唯一破例，其余严格双色。
 
+## 构图硬规（2026-08-02，第二轮返工的核心）
+
+第一批图（下面"旧版 prompt"）在地图上**盖住了基地后方一大片格子**。根因不是画风，是构图：
+
+- 世界地图是 2:1 等轴测（`ISO_RATIO = 0.5`），3×3 地块在屏幕上只有 `3 × 0.5 = 1.5` 个 tile **高**，却有 3 个 tile **宽**；
+- `city_atlas` 的图自带一块**等轴测地台**（那块菱形就等于地块），建筑坐在地台上、整体矮宽 —— 所以 NPC 城池贴合地块；
+- 这批"文具堡垒"**没有地台**，物体铺满正方形画幅，且 prompt 把等级递进写成了"越来越高"（l8 `tall tower`、l9 `towering`、l10 `soaring spire`）。打包脚本等比塞进正方形 cell，渲染时 cell 被画成 `BASE_SPRITE_TILES = 3.2` tile 的**正方形** → 建筑高 ≈ 2.5 tile，比地块高出整整 1 个 tile，往后压掉约 2 排格子。
+
+**因此新一批必须满足（美术侧硬规，与画风同等重要）：**
+
+1. **必须画等轴测地台**：一块 2:1 的菱形地面（书桌台面/垫板/纸面），横向占满画幅宽度，作为"这就是我的 3×3 地块"的视觉锚点。建筑坐在地台上，不得悬空。
+2. **宽 > 高**：整幅画面内容的外接框**宽高比约 10:7**（宽是高的约 1.4 倍）。这是打包脚本 `CONTENT_W_FRAC / CONTENT_H_FRAC` 的比值，画到这个比例的图，宽高两个预算同时打满，既填满地块又不超高；画得更高只会被脚本整体缩小，反而显得基地变小。
+3. **建筑不许比地台还高**：建筑（含旗杆、塔尖）的垂直高度**约等于地台菱形自身的高度**，绝不超过它的 1.2 倍。要"铺开的院落"，不要"竖起的塔"。
+4. **等级递进换维度**：从"越来越高"改成**占地越来越满、圈层越来越多、构件越来越密、排线越来越细**。高度只允许极小幅增长（Lv10 也就比 Lv1 高一点点）。
+
+打包脚本 `pack_playerbase_atlas.js` 的 `HEIGHT_BUDGET_K` 会强制裁到这个预算（超高就整体缩小），`client/test/ui/cityAtlasContentTop.ui.ts` 有对应回归断言 —— 但脚本只能保证"不超高"，**保证不了"够宽"**，够不够宽全靠上面第 2 条画到位。
+
 ## 通用 Style（每条 prompt 末尾附加，与 city_atlas 同规格以兼容同一套打包脚本）
 
 ```
@@ -28,13 +45,147 @@ Hand-drawn doodle illustration, fountain pen blue ink outlines, slightly
 scratchy student sketch strokes with cross-hatching, watercolor marker fill in
 a single pale yellow-green wash only, strictly two-tone (blue ink + pale
 yellow-green, no other colors), gentle isometric perspective (25 degree tilt),
-centered composition, isolated on a solid pure-white background, no grid lines,
-no ground shadow, 512x512px, notebook doodle aesthetic, no text, no labels.
+the whole scene sitting on a wide isometric diamond ground plate that spans the
+full width of the image, the structure spreading out ACROSS that plate rather
+than rising above it, wide low sprawling silhouette clearly wider than it is
+tall (bounding box roughly 10 wide to 7 high), nothing rising higher than the
+ground plate's own diamond height, centered composition, isolated on a solid
+pure-white background, no grid lines, no ground shadow, 512x512px, notebook
+doodle aesthetic, no text, no labels.
 ```
 
 > Lv9/Lv10 把上面 style 里的 `strictly two-tone (...no other colors)` 换成 `otherwise strictly two-tone (blue ink + pale yellow-green) apart from the small gold accents`，以放行金色点缀。
 
-## Prompt（10 张，双色调最终版）
+## Prompt（10 张，2026-08-02 矮宽构图版）
+
+每条都以"地台上的什么"开头，等级递进体现在**占地/圈层/密度**。
+
+### `playerbase_l1` — Lv1「铅笔盒营地」
+
+```
+A wide flat desk-pad ground plate with a tiny humble camp spread across it: a
+single open pencil case lying on its side as a low wall, two short pencils laid
+almost flat as a gate, a small eraser block as a lookout, a folded paper flag
+on a stubby pole. Mostly empty plate — only a handful of objects, all low to
+the ground, nothing standing tall.
+[+ style]
+```
+
+### `playerbase_l2` — Lv2「文具围栏」
+
+```
+A wide desk-pad ground plate with a low camp covering about a third of it: an
+open pencil case wall extended by a row of pencils laid down as a short
+palisade, a ruler laid flat as a bridge/gate, a squat ink bottle at one corner,
+a small flat tent inside. Everything hugs the plate; the tallest object barely
+clears the fence line.
+[+ style]
+```
+
+### `playerbase_l3` — Lv3「书本壁垒」
+
+```
+A wide desk-pad ground plate about half covered by a low stronghold of flat
+stacked notebooks forming a wide square wall, book spines making crenellations
+along the top, a stapler set into the wall as a gate, a single short pencil
+stub at one corner. Wide and squat — the wall is only two or three books high.
+Denser cross-hatching on the book covers than the earlier levels.
+[+ style]
+```
+
+### `playerbase_l4` — Lv4「文具重镇」
+
+```
+A wide desk-pad ground plate mostly covered by a sprawling settlement: a broad
+perimeter of stacked-notebook walls reinforced with binder clips, a lying-down
+tape dispenser as a squat round bastion, a protractor as a low arched gate, two
+flat tents and a small courtyard inside. Busier and more detailed than Lv3, but
+no taller — it grows OUTWARD across the plate.
+[+ style]
+```
+
+### `playerbase_l5` — Lv5「桌面要塞」
+
+```
+A wide desk-pad ground plate fully covered by a broad fortified compound:
+textbooks laid flat and stacked only a few high forming a wide central keep
+with a large footprint, rulers along the walls as long ramparts, closed
+scissors laid crossed at the corners, a drafting compass folded low over the
+gate. Imposing through WIDTH and mass, not height.
+[+ style]
+```
+
+### `playerbase_l6` — Lv6「文具石堡」
+
+```
+A wide desk-pad ground plate filled edge to edge by a stone-like fortress of
+thick hardcover books laid flat: a broad low binder as the central keep,
+correction-tape rolls lying on their sides as squat round corner towers, a
+ruler-and-compass drawbridge across the front. Heavy cross-hatching for stony
+texture. Wide, heavy, low.
+[+ style]
+```
+
+### `playerbase_l7` — Lv7「加固书城」
+
+```
+A wide desk-pad ground plate filled by a reinforced book-fortress: a double
+concentric ring of flat-stacked books as outer and inner walls with a walkway
+between them, three squat correction-tape-roll towers spaced around the outer
+ring, a large hardcover book lying open as the central keep with a small
+bookmark pennant. Dense and detailed, clearly well-defended — depth comes from
+the extra ring, not from extra height.
+[+ style]
+```
+
+### `playerbase_l8` — Lv8「巨型文具堡」
+
+```
+A wide desk-pad ground plate completely filled by a massive sprawling
+stronghold: a broad platform of encyclopedias and binders stacked only a few
+deep, flanked by two glue sticks lying on their sides as squat bastions, a
+stapler-and-hole-puncher gatehouse across the whole front edge, and a moat
+drawn as a wavy blue ink-outline puddle running around the plate's rim.
+Impressive through sheer footprint and density. Still low.
+[+ style]
+```
+
+### `playerbase_l9` — Lv9「书院巨城」
+
+```
+A wide desk-pad ground plate overflowing with an elaborate citadel complex:
+several broad book-stack blocks connected by ruler-walls into wings and
+courtyards, four short pencil stubs standing at the corners as stumpy spires of
+barely varying height, a wide central binder-keep flying a paper pennant, dense
+parallel ruler-lines everywhere suggesting grandeur. A single small gold-ink
+accent on one pencil tip as the only exception to the two-tone palette.
+Grandeur through sprawl and line density — nothing towers.
+[+ style with gold-accent exception]
+```
+
+### `playerbase_l10` — Lv10「文具帝都」
+
+```
+A wide desk-pad ground plate packed edge to edge with the grandest capital
+complex: concentric rings of book-walls enclosing dense courtyards of binders
+and rulers, six or more short pen and pencil stubs standing around the rings as
+stumpy spires of near-equal height, a broad central fountain-pen laid at a
+shallow angle with its golden nib pointing forward, a monumental
+stapler-gatehouse spanning the front edge, and dense ruler-line cross-hatching
+throughout. The most magnificent of the set through density, layering and
+footprint — NOT through height; it must be no taller than Lv9. The stubby
+spires may be filled solid deep blue as the pinnacle signal. Small gold-ink
+accents on the pen nib and a few spire tips are the only exception to the
+two-tone palette.
+[+ style with gold-accent exception]
+```
+
+<details>
+<summary>旧版 prompt（2026-07-17，高瘦构图，已被上面取代）</summary>
+
+原版把等级递进写成"越来越高"（`tall central keep` / `soaring central fountain-pen spire` 等），配合无地台的满幅构图，正是 2026-08-02 "基地盖住后面格子" 的根因。原文见 git 历史（本文件 2026-08-02 那次提交的父版本），不再使用。
+
+</details>
 
 ### `playerbase_l1` — Lv1「铅笔盒营地」
 
@@ -139,15 +290,41 @@ tips of the tallest spires are the only exception to the two-tone palette.
 [+ style with gold-accent exception]
 ```
 
-## 接入现状（2026-07-17）
+## 接入现状（2026-08-02 更新）
 
-> **注意**：代码管线（loader / 渲染分支 / deskLevel 数据线 / 打包脚本）已按下方所述上线，但**美术图正按上面敲定的双色调方向重新生成**——首版打包用的是最初草稿风格的图。Lv1/Lv2/Lv5/Lv10 四张双色调定稿图已过审，其余中间级待补齐后重跑 `pack_playerbase_atlas.js` 覆盖。
+> **注意**：代码管线（loader / 渲染分支 / deskLevel 数据线 / 打包脚本）已按下方所述上线。当前图集里仍是 2026-07-17 那批**高瘦、无地台**的图，只是被打包脚本按高度预算缩小了（见下）——**按上面"矮宽构图版" prompt 重出的 10 张还没到位**，到位后重跑打包即可，代码不用动。
+
+### 2026-08-02：高度预算（缩小是权宜之计，重出图才是正解）
+
+`pack_playerbase_atlas.js` 原先只有一个正方形 `CONTENT_SCALE = 0.8`，宽高同缩，改不了导致问题的**长宽比**。现拆成两个独立预算：
+
+- `CONTENT_W_FRAC = 0.8` —— 宽度照旧（约 2.5/3 个 tile 宽，从没溢出过）
+- `CONTENT_H_FRAC = BASE_FOOTPRINT × ISO_RATIO × HEIGHT_BUDGET_K / BASE_SPRITE_TILES` —— 由地块**真实屏幕高**（1.5 tile）推出，`HEIGHT_BUDGET_K = 1.2` 是留给旗杆塔尖的余量
+
+`fit: 'inside'` 取两者中先触底的那个。对现有这批近正方形的图，触底的永远是高度：绘制高度从 2.5 tile 降到 1.8 tile（`contentTop` 全部变成 0.44），不再压住后排格子。
+
+**代价**（明确记在这里，别当成最终效果）：等比缩小同时把宽度也压到约 1.75 tile，在 3 tile 宽的地块上略显小、比旁边的 NPC 城池"瘦"。刻意不做非等比拉伸——那会把手绘等轴测透视压变形。彻底解决要靠上面构图硬规重出的图。
+
+`HEIGHT_BUDGET_K` 是唯一的调节旋钮；`client/test/ui/cityAtlasContentTop.ui.ts` 里有上下界断言（既不许超预算，也不许缩没了），改这个常量记得同步。
+
+### 打包链路的坑：`mergeAssetAtlases.js` 已经跑不起来了
+
+2026-07-27 的资源重组（`072131d8`）把各分主题 atlas 合并成 `world_atlas` 后，**把源 atlas 从仓库里删了**——于是 `art/scripts/mergeAssetAtlases.js` 的输入不复存在，重跑必然报 `Input file is missing`。重跑 `pack_playerbase_atlas.js` 只会更新 `assets/slg/playerbase_atlas.{png,json}`，而客户端读的是 `world_atlas`，改了等于没改。
+
+补法：`art/scripts/patchMergedAtlas.js`，把某个子图集的帧**原位重新盖印**进已合并页（帧尺寸不变 → 坐标不变，只换像素和 `contentTop` 之类的自定义字段；尺寸变了会直接报错要求整页重打）。
+
+```bash
+node art/ui/slg-playerbase/pack_playerbase_atlas.js
+node art/scripts/patchMergedAtlas.js client/src/assets/slg/playerbase_atlas.json client/src/assets/slg/world_atlas.json
+```
+
+第一步产出的 `playerbase_atlas.{png,json}` 只是中间产物，不入库（和其余 13 个源 atlas 一样，2026-07-27 起仓库里只留合并页）——盖印完可以删掉，需要时重跑第一步即可。
 
 10 张图已由用户按 prompt 生成、放入 `art/ui/slg-playerbase/`（`playerbase_l1.png` … `playerbase_l10.png`，混合 png/webp），并跑 `node art/ui/slg-playerbase/pack_playerbase_atlas.js` 打包成 `client/src/assets/slg/playerbase_atlas.{png,json}`，覆盖了此前的空占位图。
 
 **打包脚本一处偏差（相对 `pack_city_atlas.js`）**：这批源图的背景是纯白、无方格纸网格，而建筑主体的浅黄绿色水彩填充与白色背景的色距（约44）小于 `pack_city_atlas.js` 原有的 `TSEED=72` 绝对阈值，会导致区域生长去背算法从边缘一路吃穿建筑内部填充（`playerbase_l7` 曾被吃成碎片）。`pack_playerbase_atlas.js` 因此把 `TSEED` 改成 `0`（只保留 `TSTEP=33` 的渐变跟随去背），10 帧全部干净切割，无需网格桥接。
 
 代码管线（无需再改）：
-- `client/src/render/playerBaseAtlasLoader.ts` 提供 `loadPlayerBaseAtlas()`/`getPlayerBaseTextureForLevel(level)`；`WorldMapRenderer/lifecycle.ts` 随其余图集一起加载
+- `client/src/render/atlas/playerBaseAtlasLoader.ts` 提供 `loadPlayerBaseAtlas()`/`getPlayerBaseTextureForLevel(level)`；`WorldMapRenderer/lifecycle.ts` 随其余图集一起加载
 - `WorldMapRenderer/city.ts` 按 `tile.mine` 分支选图（自己的基地用这套，其他玩家的基地和 NPC 城池节点继续用 `city_atlas`）
-- 服务端 `worldsvc/src/city.ts` 的 `applyDueBuilds` 在 desk 完工时把新等级写入 `TileDoc.deskLevel`（新字段），`coreMap.ts tileDocView` 透出到 `WorldTileView.deskLevel`（`server/contracts/openapi-world.yml` 已加对应 schema 字段，client/worldsvc 的生成类型已同步重新生成）
+- 服务端 `worldsvc/src/city.ts` 的 `applyDueBuilds` 在 desk 完工时把新等级写入 `TileDoc.deskLevel`（新字段），`core/map.ts tileDocView` 透出到 `WorldTileView.deskLevel`（`server/contracts/openapi-world.yml` 已加对应 schema 字段，client/worldsvc 的生成类型已同步重新生成）

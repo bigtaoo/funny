@@ -8,7 +8,7 @@ import { SketchPen } from '../render/sketch';
 import { palette } from '../render/theme';
 import { sketchPanel, drawLoadingOverlay, tearDownChildren, ui as C } from '../render/sketchUi';
 import { drawSceneHeader } from '../ui/widgets/SceneHeader';
-import { caretDisplay } from '../render/inputDisplay';
+import { caretDisplay } from '../ui/inputDisplay';
 import { BusyTracker, withTimeout, TimeoutError } from '../ui/busyTracker';
 import { showToastMessage } from '../net/log';
 import { buildAvatar, AVATAR_COUNT, makeAvatarId, parseAvatarId, type AvatarCategory } from '../render/avatar';

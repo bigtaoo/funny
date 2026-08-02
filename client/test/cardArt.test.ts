@@ -8,7 +8,7 @@
 import { describe, it, expect } from 'vitest';
 import { UNIT_ART_URLS, SKIN_PORTRAIT_ART, unitPortraitUrl, equippedSkinIdFor, cardInstanceArtUrl, containScale } from '../src/render/cardArt';
 import { skinEquipKey } from '../src/game/meta/skinDefs';
-import { UnitType } from '../src/game/types';
+import { UnitType } from '@nw/engine/types';
 
 describe('unitPortraitUrl', () => {
   it('falls back to the base unit portrait when no skin is equipped', () => {

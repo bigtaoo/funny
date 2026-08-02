@@ -1,4 +1,4 @@
-import { BOARD_COLS, BOARD_ROWS, BASE_COLS } from '../game/config';
+import { BOARD_COLS, BOARD_ROWS, BASE_COLS } from '@nw/engine/config';
 import { Side } from '../game';
 import { ILayout, Orientation, Rect } from './ILayout';
 

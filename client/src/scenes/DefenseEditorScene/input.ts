@@ -4,7 +4,7 @@ import * as PIXI from 'pixi.js-legacy';
 import { t } from '../../i18n';
 import { ui as C, sketchPanel, seedFor } from '../../render/sketchUi';
 import { unitPortraitUrl, equippedSkinIdFor, getArtTexture } from '../../render/cardArt';
-import { ATTACK_LANES, UNIT_BLUEPRINTS } from '../../game/config';
+import { ATTACK_LANES, UNIT_BLUEPRINTS } from '@nw/engine/config';
 import { CARD_TEAM_MAX_SIZE } from '@nw/shared';
 import { type Constructor, type DefenseEditorSceneBaseCtor, MAX_GARRISON } from './base';
 

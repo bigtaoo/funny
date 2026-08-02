@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import { UNIT_BLUEPRINTS } from '../src/game/config';
-import { UnitType } from '../src/game/types';
-import type { PlayerConfig } from '../src/game/types';
+import { UNIT_BLUEPRINTS } from '@nw/engine/config';
+import { UnitType } from '@nw/engine/types';
+import type { PlayerConfig } from '@nw/engine/types';
 import {
   PVE_UPGRADE_DEFS,
   buildPvpBlueprints,
@@ -9,9 +9,9 @@ import {
   applyPveUpgrades,
   upgradeCost,
   getUpgradeDef,
-} from '../src/game/balance/pveUpgrades';
-import { UNIT_MAX_LEVEL } from '../src/game/balance/progression';
-import { createGameEngine } from '../src/game/GameEngine';
+} from '@nw/engine/balance/pveUpgrades';
+import { UNIT_MAX_LEVEL } from '@nw/engine/balance/progression';
+import { createGameEngine } from '@nw/engine/GameEngine';
 import { CAMPAIGN_LEVELS, CAMPAIGN_LEVEL_ORDER } from '../src/game/campaign/levels';
 import { pvpExpectedBlueprints as pvpExpected } from './pvpBlueprintExpected';
 import { cardsAtLevel } from './cardHelpers';

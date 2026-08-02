@@ -7,14 +7,14 @@
 // replacing the old global/byUnit GearLoadout. `equipAll` puts one item on every player card
 // (the analog of the old "global" loadout); `buildCampaignBlueprints(cards, inv)` injects it.
 import { describe, it, expect } from 'vitest';
-import { UNIT_BLUEPRINTS } from '../src/game/config';
-import { UnitType } from '../src/game/types';
+import { UNIT_BLUEPRINTS } from '@nw/engine/config';
+import { UnitType } from '@nw/engine/types';
 import {
   buildPvpBlueprints,
   buildCampaignBlueprints,
   buildSiegeBlueprints,
-} from '../src/game/balance/pveUpgrades';
-import { PROGRESSABLE_UNITS } from '../src/game/balance/progression';
+} from '@nw/engine/balance/pveUpgrades';
+import { PROGRESSABLE_UNITS } from '@nw/engine/balance/progression';
 import { pvpExpectedBlueprints } from './pvpBlueprintExpected';
 import {
   applyEquipment,
@@ -24,7 +24,7 @@ import {
   type EngineCardInstance,
   type EngineEquipInv,
   type EngineAffix,
-} from '../src/game/balance/equipment';
+} from '@nw/engine/balance/equipment';
 import { card } from './cardHelpers';
 
 /** Equip one item (id 'i1') in the weapon slot of every player card — the CC-1 analog of the old "global" loadout. */

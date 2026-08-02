@@ -3,7 +3,7 @@ import { ORG_NAME_WIDTH_MAX, truncateOrgName } from '@nw/shared';
 import { t } from '../../i18n';
 import { ui as C, txt, sketchPanel, seedFor } from '../../render/sketchUi';
 import { FS, snapFont } from '../../render/fontScale';
-import { caretDisplay } from '../../render/inputDisplay';
+import { caretDisplay } from '../../ui/inputDisplay';
 import type { FamilyDetailView } from '../../net/WorldApiClient';
 import { type Constructor, type FriendsSceneBaseCtor } from './base';
 

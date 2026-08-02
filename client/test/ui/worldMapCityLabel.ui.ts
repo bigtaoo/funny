@@ -21,7 +21,7 @@ import type { WorldTileView } from '../../src/net/WorldApiClient';
 
 // See worldMapZoom3CityAnchor.ui.ts: the real loadCityAtlas() would hang on the headless stub
 // Image's never-firing onload. Stub the atlas as ready with a throwaway texture.
-vi.mock('../../src/render/cityAtlasLoader', () => ({
+vi.mock('../../src/render/atlas/cityAtlasLoader', () => ({
   isCityAtlasReady: () => true,
   getCityTextureForLevel: () => PIXI.Texture.WHITE,
   getCityContentTopFracForLevel: () => 0,

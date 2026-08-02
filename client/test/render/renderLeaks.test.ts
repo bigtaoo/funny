@@ -181,8 +181,8 @@ class MockImage {
 
 // ── Imports (after all vi.mock declarations) ───────────────────────────────────
 import * as PIXI from 'pixi.js-legacy';
-import { loadDecorAtlas }  from '../../src/render/decorAtlas';
-import { loadDecorCAtlas } from '../../src/render/decorCAtlas';
+import { loadDecorAtlas }  from '../../src/render/atlas/decorAtlas';
+import { loadDecorCAtlas } from '../../src/render/atlas/decorCAtlas';
 import { loadLabelDecor }  from '../../src/render/labelDecor';
 import { StickmanRuntime } from '../../src/render/stickman/StickmanRuntime';
 

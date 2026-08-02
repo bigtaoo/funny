@@ -27,6 +27,7 @@ import {
   baseDurabilityMax,
   regenDurability,
   type BuildingKey,
+  type CardInstance,
 } from '@nw/shared';
 import { validateAttackerArmy, sanitizeCardArmy } from './siegeEngine';
 import { WorldCore } from './core';
@@ -400,6 +401,11 @@ export class CityService {
    * only runs once; freed cards are released via the same teamId/currentTroops-clear + refund path as an
    * explicit `setTeams` removal. Skipped (returns raw data) if meta is unreachable — never destroy team
    * data just because the cardInv lookup degraded.
+   *
+   * Latency (2026-08-02): this is on the CityScene critical path, and the self-heal only needs to know
+   * whether the ids the formations already reference still resolve — so it asks meta for exactly those
+   * (`cardIds`) instead of the player's entire roster, and skips the cross-service hop altogether when
+   * no team references a card at all.
    */
   async getTeams(worldId: string, accountId: string): Promise<TeamTemplate[]> {
     const pwId = playerWorldId(worldId, accountId);
@@ -407,11 +413,18 @@ export class CityService {
     if (!pw) throw new SlgError('TILE_NOT_OWNED', 'Not yet in the world');
     const teams = pw.teams ?? [];
     if (teams.length === 0) return teams;
-    const save = await this.core.meta.getSaveFields(accountId, ['cardInv']).catch(() => null);
-    if (!save) return teams; // meta unreachable; degrade without touching stored data
+
+    const referencedIds = [...new Set(
+      teams.flatMap((team) => team.army.map((e) => e.cardInstanceId).filter((id): id is string => !!id)),
+    )];
+    let cardInv: Record<string, CardInstance> = {};
+    if (referencedIds.length > 0) {
+      const save = await this.core.meta.getSaveFields(accountId, ['cardInv'], referencedIds).catch(() => null);
+      if (!save) return teams; // meta unreachable; degrade without touching stored data
+      cardInv = save.cardInv ?? {};
+    }
 
     let changed = false;
-    const cardInv = save.cardInv ?? {};
     const cleaned = teams.map((team) => {
       const { army } = sanitizeCardArmy(team.army, cardInv);
       if (army.length !== team.army.length) changed = true;

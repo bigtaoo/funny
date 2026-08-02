@@ -119,10 +119,10 @@ interface AssetIO {
 | `client/src/assets/assetIO.ts` | `AssetIO` 接口 + `WebAssetIO` 默认实现 + 模块级单例（`setAssetIO`/`assetIO`） |
 | `client/src/assets/WechatAssetIO.ts` | 微信 `downloadFile` + `USER_DATA_PATH` 本地缓存（无 fetch）；含包内相对路径回退 |
 | `client/src/assets/bootManifest.ts` | **L0 启动清单单一来源** + `preloadBoot(onProgress)` |
-| `client/src/render/LoadingOverlay.ts` | PIXI 手绘加载界面（进度条） |
+| `client/src/ui/LoadingOverlay.ts` | PIXI 手绘加载界面（进度条） |
 | `client/src/app.ts` | `startApp` 内嵌 L0 闸门（构造 overlay → `await preloadBoot` → 销毁 → 进首屏） |
 | `client/src/render/stickman/StickmanRuntime.ts` | `_parse` 经 `assetIO().loadBinary` 取字节 |
-| `client/src/render/spriteAtlas.ts` | **`createAtlasLoader` 工厂**——每个 PixiJS Spritesheet atlas 的解码/缓存/idempotent-load 单一实现，所有 atlas loader 模块都是它的薄封装 |
+| `client/src/render/atlas/spriteAtlas.ts` | **`createAtlasLoader` 工厂**——每个 PixiJS Spritesheet atlas 的解码/缓存/idempotent-load 单一实现，所有 atlas loader 模块都是它的薄封装 |
 | `client/src/render/{decorMergedAtlas,iconsAtlas,worldAtlas}.ts` | 三组合并 atlas 的共享加载实例（见 §8），纹理源经 `assetIO().textureSource` |
 | `client/webpack.config.js` | `TARGET=wechat` 分支：单 IIFE→`wechatgame/pixigame.js`、asset `publicPath=NW_ASSET_CDN`+发 `cdn/`；`TARGET=mobile` 分支：`NormalModuleReplacementPlugin` 做 `.hires` 兄弟文件重定向（见 §9） |
 | `client/src/entries/wechat.ts` | 无条件 `setAssetIO(new WechatAssetIO())`（微信无 fetch） |
@@ -154,9 +154,13 @@ interface AssetIO {
 
 frame 名称互不冲突（合并前用脚本核对过），故直接共享一份 Spritesheet：`decorAtlas.ts`/`decorCAtlas.ts`/`labelDecor.ts` 三个模块的导出函数名/签名完全不变，内部改成读同一个 `decorMergedAtlas` 实例（`decorFrameNames`/`decorCFrameNames` 按 `decor_`/`decoc_` 前缀从共享 sheet 里过滤，避免枚举出对方组的帧）；`equipmentAtlas.ts` 等 4 个模块、以及 6 个 SLG loader 模块同理改读 `iconsAtlas`/`worldAtlas` 共享实例，因为查找都是显式 key（无跨组枚举需求）不需要过滤。
 
-12 个 atlas loader 模块（含合并前后）本身也有大量重复的"解码 BaseTexture + parse Spritesheet + idempotent 缓存"样板，收进 `client/src/render/spriteAtlas.ts` 的 `createAtlasLoader(url, data, label, texOptions?)` 工厂，各模块只剩薄封装。
+12 个 atlas loader 模块（含合并前后）本身也有大量重复的"解码 BaseTexture + parse Spritesheet + idempotent 缓存"样板，收进 `client/src/render/atlas/spriteAtlas.ts` 的 `createAtlasLoader(url, data, label, texOptions?)` 工厂，各模块只剩薄封装。
 
 **合并脚本**：`art/scripts/mergeAtlasPages.js`（通用 shelf-packing + frame 坐标平移，共享库）+ `art/scripts/mergeAssetAtlases.js`（本次三组任务的具体清单）。每个源 atlas 整页 blit 进新画布（不重新裁切单个精灵），故 `rotated`/`spriteSourceSize` 等字段原样保留；再次运行需要 `NODE_PATH="$(pwd)/client/node_modules" node art/scripts/mergeAssetAtlases.js`。
+
+> ⚠ **合并后源 atlas 被删了，`mergeAssetAtlases.js` 实际已跑不起来**（2026-08-02 发现）：本次重组只保留了合并页，14 组源 `*_atlas.{png,json}` 全部从仓库移除，再跑必然 `Input file is missing`。所以重跑某个 `art/ui/*/pack_*_atlas.js` 之后，产物进不了客户端真正读的合并页。
+>
+> 补法 `art/scripts/patchMergedAtlas.js <源 atlas.json> <合并页.json>`：把源 atlas 的帧**原位重新盖印**回合并页。前提是帧尺寸没变（各 `pack_*` 脚本的 `CELL` 是常量，通常成立）→ 合并页的 frame 坐标一个都不动，只换像素 + `contentTop` 之类的自定义字段；尺寸变了直接报错，提示需要整页重打（那就得先从 git 历史恢复源 atlas）。合并页是 blend 合成，盖印前会先把目标矩形清零，否则旧图会从新帧的透明处透出来。
 
 ---
 

@@ -5,7 +5,7 @@
  * Consumed by VFXSystem (runtime) and the vfx-editor (preview).
  */
 import * as PIXI from 'pixi.js-legacy';
-import { Prng } from '../../game/math/prng';
+import { Prng } from '@nw/engine/math/prng';
 import { LayerDef } from './types';
 import { PRIMITIVES } from './primitives';
 

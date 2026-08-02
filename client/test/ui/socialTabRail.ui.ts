@@ -4,7 +4,7 @@
 // once the player already belongs to one (see familyHubNavRace.ui.ts) — but those two full
 // scenes never rendered FriendsScene's left-margin 5-tab rail (friends/family/sect/world/
 // mail), so switching into them made the other 4 tabs visually vanish. Fixed by having all
-// three scenes share render/socialTabRail.ts's drawSocialTabRail() and wiring a new
+// three scenes share ui/widgets/socialTabRail.ts's drawSocialTabRail() and wiring a new
 // FamilySceneCallbacks/SectSceneCallbacks.onNavTab(tab) for rail clicks.
 //
 // This file pins: (1) the rail renders in FamilyScene/SectScene's "already joined" mode,
@@ -25,7 +25,7 @@ import { FamilyScene } from '../../src/scenes/FamilyScene';
 import { SectScene } from '../../src/scenes/SectScene';
 import { FriendsScene } from '../../src/scenes/FriendsScene';
 import type { WorldApiClient, FamilyDetailView, SectDetailView } from '../../src/net/WorldApiClient';
-import { drawSocialTabRail, type SocialTab } from '../../src/render/socialTabRail';
+import { drawSocialTabRail, type SocialTab } from '../../src/ui/widgets/socialTabRail';
 
 const memStore = (() => {
   const m = new Map<string, string>();

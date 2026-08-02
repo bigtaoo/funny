@@ -30,7 +30,7 @@ import type {
   WorldApiClient, SectView, SectDetailView, SectMessageView,
 } from '../../net/WorldApiClient';
 import { WorldApiError } from '../../net/WorldApiClient';
-import { drawSocialTabRail, type SocialTab } from '../../render/socialTabRail';
+import { drawSocialTabRail, type SocialTab } from '../../ui/widgets/socialTabRail';
 import { ScrollTapGesture } from '../../ui/scrollTapGesture';
 import { FS } from '../../render/fontScale';
 import { wheelScrollY } from '../../ui/wheelScroll';

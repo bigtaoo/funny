@@ -2,7 +2,7 @@
 import * as PIXI from 'pixi.js-legacy';
 import { t } from '../../i18n';
 import { ui as C, txt, sketchPanel, sketchButton, seedFor, tearDownChildren } from '../../render/sketchUi';
-import { drawConfirmDialog } from '../../render/confirmDialog';
+import { drawConfirmDialog } from '../../ui/dialogs/confirmDialog';
 import type { SectView } from '../../net/WorldApiClient';
 import { type Constructor, type SectSceneBaseCtor } from './base';
 import { FS } from '../../render/fontScale';

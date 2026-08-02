@@ -5,7 +5,7 @@ import { InputManager } from '../inputSystem/InputManager';
 import { t } from '../i18n';
 import { ui as C, txt, buildPaperBackground, sketchPanel, seedFor, drawLoadingOverlay, tearDownChildren } from '../render/sketchUi';
 import { buildIcon, type IconKind } from '../render/icons';
-import { buildMaterialIcon, type MaterialKind } from '../render/materialAtlas';
+import { buildMaterialIcon, type MaterialKind } from '../render/atlas/materialAtlas';
 import { buildDecorCLayer } from '../render/decorCLayer';
 import { BusyTracker, withTimeout, TimeoutError } from '../ui/busyTracker';
 import { showToastMessage, type ToastKind } from '../net/log';

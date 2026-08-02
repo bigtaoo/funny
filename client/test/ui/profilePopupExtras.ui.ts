@@ -1,4 +1,4 @@
-// Regression for two ProfilePopup (render/ProfilePopup.ts) bugs found in the same session:
+// Regression for two ProfilePopup (ui/dialogs/ProfilePopup.ts) bugs found in the same session:
 //
 // 1. Layout: the family/sect line's `yBottom` was never advanced after being drawn, so whatever
 //    came after it (the action row / Close button) was positioned as if that line didn't exist —
@@ -11,7 +11,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import * as PIXI from 'pixi.js-legacy';
 import { initI18n, setLocale, t } from '../../src/i18n';
-import { ProfilePopup, type ProfileExtra } from '../../src/render/ProfilePopup';
+import { ProfilePopup, type ProfileExtra } from '../../src/ui/dialogs/ProfilePopup';
 
 const memStore = (() => {
   const m = new Map<string, string>();

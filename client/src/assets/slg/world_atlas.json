@@ -349,7 +349,7 @@
         "w": 256,
         "h": 256
       },
-      "contentTop": 0.19921875
+      "contentTop": 0.4375
     },
     "playerbase_l2": {
       "frame": {
@@ -370,7 +370,7 @@
         "w": 256,
         "h": 256
       },
-      "contentTop": 0.34765625
+      "contentTop": 0.4375
     },
     "playerbase_l3": {
       "frame": {
@@ -391,7 +391,7 @@
         "w": 256,
         "h": 256
       },
-      "contentTop": 0.265625
+      "contentTop": 0.4375
     },
     "playerbase_l4": {
       "frame": {
@@ -412,7 +412,7 @@
         "w": 256,
         "h": 256
       },
-      "contentTop": 0.24609375
+      "contentTop": 0.4375
     },
     "playerbase_l5": {
       "frame": {
@@ -433,7 +433,7 @@
         "w": 256,
         "h": 256
       },
-      "contentTop": 0.19921875
+      "contentTop": 0.4375
     },
     "playerbase_l6": {
       "frame": {
@@ -454,7 +454,7 @@
         "w": 256,
         "h": 256
       },
-      "contentTop": 0.19921875
+      "contentTop": 0.4375
     },
     "playerbase_l7": {
       "frame": {
@@ -475,7 +475,7 @@
         "w": 256,
         "h": 256
       },
-      "contentTop": 0.19921875
+      "contentTop": 0.4375
     },
     "playerbase_l8": {
       "frame": {
@@ -496,7 +496,7 @@
         "w": 256,
         "h": 256
       },
-      "contentTop": 0.19921875
+      "contentTop": 0.4375
     },
     "playerbase_l9": {
       "frame": {
@@ -517,7 +517,7 @@
         "w": 256,
         "h": 256
       },
-      "contentTop": 0.21484375
+      "contentTop": 0.4375
     },
     "playerbase_l10": {
       "frame": {
@@ -538,7 +538,7 @@
         "w": 256,
         "h": 256
       },
-      "contentTop": 0.20703125
+      "contentTop": 0.4375
     },
     "res_graphite": {
       "frame": {

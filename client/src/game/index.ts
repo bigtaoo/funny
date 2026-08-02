@@ -10,24 +10,24 @@
  */
 
 // ── Factory + engine interface ────────────────────────────────────────────────
-export { createGameEngine } from './GameEngine';
-export type { IGameEngine } from './types';
+export { createGameEngine } from '@nw/engine/GameEngine';
+export type { IGameEngine } from '@nw/engine/types';
 
 // ── Headless driver (shared with server: worldsvc siege / gateway self-judge) ─
-export { runHeadless } from './runHeadless';
-export type { HeadlessOutcome } from './runHeadless';
+export { runHeadless } from '@nw/engine/runHeadless';
+export type { HeadlessOutcome } from '@nw/engine/runHeadless';
 
 // ── Unified input pipeline (M13) ──────────────────────────────────────────────
-export { LocalInputSource } from './net/InputSource';
-export type { InputSource } from './net/InputSource';
+export { LocalInputSource } from '@nw/engine/net/InputSource';
+export type { InputSource } from '@nw/engine/net/InputSource';
 export { NetInputSource } from './net/NetInputSource';
 export type { CmdSink, MatchStartInfo, NetInputSourceOptions } from './net/NetInputSource';
 export {
   ReplayInputSource,
   RecordingInputSource,
   ReplayVersionError,
-} from './net/ReplayInputSource';
-export type { ReplaySnapshotOptions } from './net/ReplayInputSource';
+} from '@nw/engine/net/ReplayInputSource';
+export type { ReplaySnapshotOptions } from '@nw/engine/net/ReplayInputSource';
 
 // ── Public types (needed by the render layer) ─────────────────────────────────
 export type {
@@ -44,9 +44,9 @@ export type {
   ReplayMeta,
   GameMode,
   AIDifficulty,
-} from './types';
+} from '@nw/engine/types';
 
-export { ENGINE_VERSION } from './types';
+export { ENGINE_VERSION } from '@nw/engine/types';
 
 // ── Achievement stat mapping (S9-6) — engine counts → statKey deltas ──────────
 export { achievementStatDelta } from '@nw/engine';
@@ -61,17 +61,17 @@ export {
   UnitState,
   sideToOwner,
   ownerToSide,
-} from './types';
+} from '@nw/engine/types';
 
 // ── Fixed-point utilities (render layer needs fromFp to convert for display) ──
-export { FP_SCALE, TICK_RATE, fromFp } from './math/fixed';
-export type { Fp } from './math/fixed';
+export { FP_SCALE, TICK_RATE, fromFp } from '@nw/engine/math/fixed';
+export type { Fp } from '@nw/engine/math/fixed';
 
 // ── GameState — exposed as a type so the render layer can annotate parameters ──
-export type { GameState } from './GameState';
+export type { GameState } from '@nw/engine/GameState';
 
 // ── Campaign (PvE) ────────────────────────────────────────────────────────────
-export type { LevelDefinition } from './campaign/LevelDefinition';
+export type { LevelDefinition } from '@nw/engine/campaign/LevelDefinition';
 export { CAMPAIGN_LEVELS, CAMPAIGN_LEVEL_ORDER, getLevel } from './campaign/levels';
 export type { ChapterMap, ChapterNode, ChapterDecor, NormPoint } from './campaign/maps';
 export { CHAPTER_MAPS, CHAPTER_ORDER, getChapterMap, parseChapterMap, ChapterMapParseError } from './campaign/maps';

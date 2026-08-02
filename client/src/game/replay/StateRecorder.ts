@@ -16,10 +16,10 @@
  * {@link adopt} takes ownership of the raw encoded stream directly — no re-capture needed; it is forwarded as-is.
  */
 
-import { BOARD_COLS, BOARD_ROWS, ATTACK_LANES } from '../config';
-import { TICK_RATE } from '../math/fixed';
-import { sideToOwner } from '../types';
-import type { GameState } from '../GameState';
+import { BOARD_COLS, BOARD_ROWS, ATTACK_LANES } from '@nw/engine/config';
+import { TICK_RATE } from '@nw/engine/math/fixed';
+import { sideToOwner } from '@nw/engine/types';
+import type { GameState } from '@nw/engine/GameState';
 import {
   STATE_SCHEMA_VERSION,
   encodeStateReplay,

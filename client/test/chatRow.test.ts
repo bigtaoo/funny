@@ -1,8 +1,8 @@
 // chatNameLabel: the [title][sect][family]name prefix shared by World/Family/Sect chat rows
-// (client/src/render/chatRow.ts). Bracket segments must be omitted entirely when the
+// (client/src/ui/widgets/chatRow.ts). Bracket segments must be omitted entirely when the
 // corresponding field is absent — most chats only ever populate a subset (see UI_DESIGN.md §21).
 import { describe, it, expect } from 'vitest';
-import { chatNameLabel } from '../src/render/chatRow';
+import { chatNameLabel } from '../src/ui/widgets/chatRow';
 
 describe('chatNameLabel', () => {
   it('bare name when no title/sect/family present', () => {

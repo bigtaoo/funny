@@ -366,7 +366,7 @@ client/src/assets/decor/   # 最终透明 PNG / 图集
 - 风格须与 `sketch.ts` 程序笔触同频，不要卡通描边
 
 > **实现状态**：A 组装饰层渲染**已落地**（2026-06-25，战斗场景内）。落地做法：
-> - **图集加载**：`client/src/render/decorAtlas.ts` 用 `PIXI.Spritesheet` 加载 `client/src/assets/decor/battle/decor_atlas.png/.json`（帧名不带扩展名，如 `decor_sun`）。App 启动时 `loadDecorAtlas()` 后台预解码（fire-and-forget，纯装饰，失败不阻塞启动）；图集很小，进战斗前一般已就绪，未就绪则该局无装饰（可接受）。线条为原墨色，**不 `tint`**。
+> - **图集加载**：`client/src/render/atlas/decorAtlas.ts` 用 `PIXI.Spritesheet` 加载 `client/src/assets/decor/battle/decor_atlas.png/.json`（帧名不带扩展名，如 `decor_sun`）。App 启动时 `loadDecorAtlas()` 后台预解码（fire-and-forget，纯装饰，失败不阻塞启动）；图集很小，进战斗前一般已就绪，未就绪则该局无装饰（可接受）。线条为原墨色，**不 `tint`**。
 > - **锚点系统**：`client/src/render/decorLayer.ts`。沿棋盘**左右两侧**外缘纸条（`boardRect` 之外、其纵向区间内的两条边带）取锚点——边带由 `boardRect` 推导，天然落在顶部 HUD 之下、底部 HUD/手牌之上，故**绝不与战斗格/基地/HUD 重叠**。每槽按确定性 PRNG 随机挑帧 + 轻微旋转/缩放/位置抖动；`SKIP_PROB` 留空使其稀疏克制；faint alpha（0.4~0.62）不抢前景。竖屏边带仅 36px → 小号涂鸦；横屏边带宽裕 → 至多 64px。
 > - **静态烘焙**：每条边带的涂鸦烘成一张静态纹理（`bake()`，key=`decor:{orientation}:{side}:{w}x{h}:{cell}`），运行期零开销。`BoardView` 在 `drawBoard()` 之后 `drawDecorations()` 加入，位于棋盘静态层之上、所有动态/游戏层之下；`interactiveChildren=false` 不吃指针。绝不烘焙文字/数字（§5 铁律）。
 > - **确定性 vs「换局再变」**：布局按 `orientation+side` 固定种子，**跨局稳定**（与烘焙棋盘网格一致）。未做逐局重掷——那会产生无界的边带纹理缓存，对边角氛围不值当。
@@ -377,7 +377,7 @@ client/src/assets/decor/   # 最终透明 PNG / 图集
 >   - **WIN!**：`label_win` 挂在胜利浮层（`HUDView.showGameOver`，仅本方获胜时），不走边带。
 >   - **→ here 箭头**（`label_arrow_here`）：已加载、保留给教学指向，暂未自动放置。
 > - **C 组（UI 大背景）已出图 + 已接入大厅**（图集 `decor_c_atlas.*`）：
->   - **加载/散布**：`client/src/render/decorCAtlas.ts` 加载图集；`client/src/render/decorCLayer.ts` `buildDecorCLayer(w,h)` 在纸面背景上按确定性 PRNG 散布、整层 `bake()` 烘焙、`interactiveChildren=false`。大厅 `LobbyScene.build()` 调用接入。
+>   - **加载/散布**：`client/src/render/atlas/decorCAtlas.ts` 加载图集；`client/src/render/decorCLayer.ts` `buildDecorCLayer(w,h)` 在纸面背景上按确定性 PRNG 散布、整层 `bake()` 烘焙、`interactiveChildren=false`。大厅 `LobbyScene.build()` 调用接入。
 >   - **调参（2026-06-27）**：原 alpha `0.06–0.15` 几乎不可见 → 提到 `0.10–0.22`；散布改「边角密、中心疏」（`EDGE_SKIP=0.28 / CENTER_SKIP=0.80`），因为均匀网格会把涂鸦铺到中央内容带、被 hero/pillar 面板盖住浪费，反而显得"装饰太少"。现集中在四周边框区（笔记本涂鸦本就在边角）。
 > - **大厅核心卡片大号手绘母题（2026-06-27）**：不上位图照片（§6.1 分工：UI=程序绘制），改用 SketchPen 线稿母题作卡面主视觉。`client/src/render/icons.ts` 新增 `castle`（城垛+塔楼+拱门+小旗，大世界 pillar）、`pencils`（交叉铅笔，呼应文具三笔，盖在「开始匹配」hero 右侧）；战役 pillar 复用放大的 `book`。pillar 母题 `h*0.6`、alpha 0.6 填充卡面上半，标题随后绘制盖其上仍清晰。同时「开始匹配」hero 加高（`0.135h→0.165h`）、内容栈上偏居中收掉 header 下留白。
 > - **养成页内容图标按资产分工归位（2026-06-27）**：养成（CollectionScene）卡牌/单位/皮肤三 Tab 原为纯文字。按 §〇 资产分工——**角色/兵种=AI 图位图，UI=程序绘制**——落地：**卡牌图鉴 + 单位卡用真实位图立绘**（不是手绘符号），因其直接代表游戏内的卡牌/兵种，若另画一套手绘符号会和战斗里玩家看到的对不上、造成困惑。立绘 url 映射从 `HandView` 抽到 `render/cardArt.ts` 作单一真源（战斗手牌与养成页 import 同一份）；单位卡用 `UNIT_ART_URLS`（六兵种 png 全有）。**皮肤衣柜保留手绘图标**（`icons.ts` 新增 `brush` 笔刷 + 复用 `pencils`），因皮肤是服务器 id、无角色立绘可绑。期间一度尝试给卡牌/单位画手绘小人母题（`unit_melee/shield/archer` 等），按本条结论作废删除。详见 `design/game/UI_DESIGN.md` §4.5。

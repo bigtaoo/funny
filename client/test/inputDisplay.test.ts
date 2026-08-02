@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { caretDisplay } from '../src/render/inputDisplay';
+import { caretDisplay } from '../src/ui/inputDisplay';
 
 const PH = 'tap to type';
 

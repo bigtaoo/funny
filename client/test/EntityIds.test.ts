@@ -1,8 +1,8 @@
 import { describe, it, expect } from 'vitest';
-import { GameState } from '../src/game/GameState';
-import { Unit } from '../src/game/Unit';
-import { Building } from '../src/game/Building';
-import { Side, UnitType, BuildingType } from '../src/game/types';
+import { GameState } from '@nw/engine/GameState';
+import { Unit } from '@nw/engine/Unit';
+import { Building } from '@nw/engine/Building';
+import { Side, UnitType, BuildingType } from '@nw/engine/types';
 
 // Buildings take ids [0, 1000) and units take [1000, ∞). The two namespaces must
 // never overlap, and each GameState owns its own counters (allocBuildingId /

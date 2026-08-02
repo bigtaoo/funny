@@ -14,7 +14,7 @@ import { bake } from '../../render/bake';
 import { IconKind } from '../../render/icons';
 import { BoilingSprite } from '../../render/boil';
 import { StickmanRuntime } from '../../render/stickman/StickmanRuntime';
-import { loadCoinIconAtlas } from '../../render/coinIconAtlas';
+import { loadCoinIconAtlas } from '../../render/atlas/coinIconAtlas';
 import { makeText } from '../../render/pixiText';
 
 export { fmtCoins } from './format';

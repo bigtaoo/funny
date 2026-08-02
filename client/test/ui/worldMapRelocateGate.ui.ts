@@ -2,10 +2,10 @@
 // WorldMapInput.onTileClick's owned-tile branch.
 //
 // Rule: the capital may be relocated only onto a 3×3 block the player ALREADY fully owns, initiated by
-// clicking the centre cell. On any owned (non-base) tile the "Relocate here" button is offered; it is
-// enabled only when the clicked cell plus all 8 neighbours are cached as `mine`, otherwise it is greyed out
-// and tapping it surfaces the "occupy the surrounding tiles first" toast (world.err.relocateNeedSurround).
-// Mirrors the Occupy-connectivity gate pattern in worldMapOccupyConnectivity.ui.ts.
+// clicking the centre cell. On any owned (non-base) tile the "Relocate here" button is offered only when
+// the clicked cell plus all 8 neighbours are cached as `mine`; otherwise it is omitted entirely (2026-08-02:
+// unsupported options are hidden outright, not shown greyed out). Mirrors the Occupy-connectivity gate
+// pattern in worldMapOccupyConnectivity.ui.ts.
 //
 // Runs under the headless PIXI adapter (vitest.ui.config.ts setupFiles).
 
@@ -77,55 +77,43 @@ function block(cx: number, cy: number): Array<[number, number]> {
   return out;
 }
 
-/** Click an owned tile and return its Relocate button from the shown menu. */
+/** Click an owned tile and return its Relocate button from the shown menu (undefined when hidden). */
 function relocateBtnAt(ctx: WorldMapContext, input: WorldMapInput, showModal: ReturnType<typeof vi.fn>, x: number, y: number) {
   input.onTileClick(x, y);
   expect(showModal).toHaveBeenCalledTimes(1);
   const buttons = showModal.mock.calls[0][1] as Btn[];
-  const relocate = buttons.find((b) => b.label === t('world.actRelocate'));
-  expect(relocate).toBeTruthy();
-  return relocate!;
+  return buttons.find((b) => b.label === t('world.actRelocate'));
 }
 
 describe('WorldMapInput relocate gate (§3.4, 2026-07-14)', () => {
-  it('enables Relocate when the clicked owned tile and all 8 neighbours are mine', () => {
+  it('offers Relocate when the clicked owned tile and all 8 neighbours are mine', () => {
     const h = buildHarness();
     ownCells(h.ctx, block(FAR.x, FAR.y));
     const relocate = relocateBtnAt(h.ctx, h.input, h.showModal, FAR.x, FAR.y);
-    expect(relocate.disabled).toBeFalsy();
+    expect(relocate).toBeTruthy();
   });
 
-  it('tapping the enabled Relocate opens the confirm modal (net.confirmRelocate)', () => {
+  it('tapping the offered Relocate opens the confirm modal (net.confirmRelocate)', () => {
     const h = buildHarness();
     ownCells(h.ctx, block(FAR.x, FAR.y));
     const relocate = relocateBtnAt(h.ctx, h.input, h.showModal, FAR.x, FAR.y);
-    relocate.action();
+    relocate!.action();
     expect(h.confirmRelocate).toHaveBeenCalledWith(FAR.x, FAR.y);
     expect(h.showToast).not.toHaveBeenCalled();
   });
 
-  it('greys out Relocate when the surrounding ring is not fully owned (only the centre is mine)', () => {
+  it('omits Relocate when the surrounding ring is not fully owned (only the centre is mine)', () => {
     const h = buildHarness();
     ownCells(h.ctx, [[FAR.x, FAR.y]]); // centre only
     const relocate = relocateBtnAt(h.ctx, h.input, h.showModal, FAR.x, FAR.y);
-    expect(relocate.disabled).toBe(true);
+    expect(relocate).toBeUndefined();
   });
 
-  it('greys out Relocate when even one neighbour is missing from the owned ring', () => {
+  it('omits Relocate when even one neighbour is missing from the owned ring', () => {
     const h = buildHarness();
     const cells = block(FAR.x, FAR.y).filter(([x, y]) => !(x === FAR.x + 1 && y === FAR.y + 1)); // drop one corner
     ownCells(h.ctx, cells);
     const relocate = relocateBtnAt(h.ctx, h.input, h.showModal, FAR.x, FAR.y);
-    expect(relocate.disabled).toBe(true);
-  });
-
-  it('tapping the disabled Relocate surfaces the "occupy surrounding tiles first" toast, not the confirm modal', () => {
-    const h = buildHarness();
-    ownCells(h.ctx, [[FAR.x, FAR.y]]);
-    const relocate = relocateBtnAt(h.ctx, h.input, h.showModal, FAR.x, FAR.y);
-    relocate.action();
-    expect(h.showToast).toHaveBeenCalledTimes(1);
-    expect(h.showToast.mock.calls[0][0]).toBe(t('world.err.relocateNeedSurround'));
-    expect(h.confirmRelocate).not.toHaveBeenCalled();
+    expect(relocate).toBeUndefined();
   });
 });

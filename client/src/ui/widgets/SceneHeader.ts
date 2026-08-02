@@ -33,7 +33,7 @@ import { t } from '../../i18n';
 import { ui as C, txt, sketchPanel, seedFor } from '../../render/sketchUi';
 import { getCachedDisplay } from './uiCache';
 import { buildIcon, type IconKind } from '../../render/icons';
-import { buildCoinIcon } from '../../render/coinIconAtlas';
+import { buildCoinIcon } from '../../render/atlas/coinIconAtlas';
 import { FS, snapFont } from '../../render/fontScale';
 
 /**

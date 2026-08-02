@@ -22,7 +22,7 @@
 - 弹层含隐私政策/用户协议链接占位（真实文本由 Track 3 提供，先用 i18n key 占位）。
 - 匿名/离线用户也要能看到并接受（埋点门控对已登录用户生效）。
 
-**主要文件**：`client/src/app/createAppCore.ts`（启动门控 `resolveEntry` 附近插入同意检查）、新增 `client/src/render/ConsentDialog.ts`（参照 `ProfilePopup.ts` 自绘弹窗风格）、`client/src/net/ApiClient.ts`（加 `recordGdprConsent(consent)` 调 `POST /account/gdpr-consent`）、i18n `consent.*`（zh/en/de 全翻）。
+**主要文件**：`client/src/app/createAppCore.ts`（启动门控 `resolveEntry` 附近插入同意检查）、新增 `client/src/ui/dialogs/ConsentDialog.ts`（参照 `ProfilePopup.ts` 自绘弹窗风格）、`client/src/net/ApiClient.ts`（加 `recordGdprConsent(consent)` 调 `POST /account/gdpr-consent`）、i18n `consent.*`（zh/en/de 全翻）。
 
 **验收**：未同意账号不进大厅且 analyticsvc 收不到其埋点；同意后写 `flags.gdprConsent` 跨设备同步（经 SaveManager push）；二次启动不再弹。
 
@@ -95,7 +95,7 @@
 **契约同步**：客户端 `src/net/openapi.ts` 此前落后于 `contracts/openapi.yml`（缺 `getEvents`/`claimEventReward` 操作与 `GachaPool.entries[].probability` 字段）。先跑 `npm run rest:gen` 把 codegen 镜像同步到已提交契约，再实现（无破坏性 tsc 回归）。
 
 **L1-1 GDPR 同意**
-- 新增 `render/ConsentDialog.ts`：自绘全屏阻断式同意页（ProfilePopup 风格，自带 PIXI interactive 接受按钮；隐私政策/用户协议为占位文案行，待 Track 3）。挂 `AppViews.showConsent` → PixiAppViews `manager.goto` / HeadlessAppViews 记 `screen='consent'`。
+- 新增 `ui/dialogs/ConsentDialog.ts`：自绘全屏阻断式同意页（ProfilePopup 风格，自带 PIXI interactive 接受按钮；隐私政策/用户协议为占位文案行，待 Track 3）。挂 `AppViews.showConsent` → PixiAppViews `manager.goto` / HeadlessAppViews 记 `screen='consent'`。
 - 埋点门控：`analytics/index.ts` 加 `setConsent(granted)`，`track()` 在未同意时整体 no-op；`createAppCore` 构造期按持久化 `flags.gdprConsent` 先 `setConsent` 再 `init`（回头用户的 session_start 正常发，未同意用户接受时补发）。
 - 门控点：`createAppCore.gateConsent(next)` 包住 `start()`/intro `onFinish` → 未同意先弹同意页，接受后写本地 flag（经 SaveManager push 跨设备）+ 有 token 时即调 `recordGdprConsent`。
 - `ApiClient.recordGdprConsent(consent)` → `POST /account/gdpr-consent`。

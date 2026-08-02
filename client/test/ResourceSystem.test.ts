@@ -1,11 +1,11 @@
 import { describe, it, expect } from 'vitest';
-import { GameState } from '../src/game/GameState';
-import { ResourceSystem } from '../src/game/systems/ResourceSystem';
+import { GameState } from '@nw/engine/GameState';
+import { ResourceSystem } from '@nw/engine/systems/ResourceSystem';
 import {
   INK_CAP,
   INK_REGEN_BASE,
   ACCEL_THRESHOLD_1_TICKS,
-} from '../src/game/config';
+} from '@nw/engine/config';
 
 /** Run the resource system `ticks` times against a fresh-ish state. */
 function pump(state: GameState, sys: ResourceSystem, ticks: number): void {

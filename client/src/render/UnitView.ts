@@ -1,7 +1,7 @@
 import * as PIXI from 'pixi.js-legacy';
-import { Board } from '../game/Board';
-import { Unit } from '../game/Unit';
-import { Side, UnitState, UnitType } from '../game/types';
+import { Board } from '@nw/engine/Board';
+import { Unit } from '@nw/engine/Unit';
+import { Side, UnitState, UnitType } from '@nw/engine/types';
 import { BoardView } from './BoardView';
 import { ObjectPool } from '../cache/ObjectPool';
 import { registerPool } from '../cache/poolRegistry';

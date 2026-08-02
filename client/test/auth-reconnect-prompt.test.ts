@@ -10,7 +10,7 @@ import { createAuthNav, mapAuthError } from '../src/app/nav/auth';
 import { ApiError } from '../src/net/ApiClient/base';
 import type { AppCtx, AppState, Nav } from '../src/app/appCtx';
 import type { ActiveMatchInfo } from '../src/net/ApiClient';
-import type { ReconnectPromptCallbacks } from '../src/render/ReconnectPromptDialog';
+import type { ReconnectPromptCallbacks } from '../src/ui/dialogs/ReconnectPromptDialog';
 
 const settle = (): Promise<void> => new Promise((r) => setTimeout(r, 0));
 

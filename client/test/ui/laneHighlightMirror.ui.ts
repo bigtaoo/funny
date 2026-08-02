@@ -27,7 +27,7 @@ import {
   BOARD_COLS,
   BOTTOM_SPAWN_ROW,
   TOP_SPAWN_ROW,
-} from '../../src/game/config';
+} from '@nw/engine/config';
 
 interface Rect { x: number; y: number; w: number; h: number; }
 

@@ -11,8 +11,8 @@ import {
   scaleFp,
   negFp,
   fromFp,
-} from '../src/game/math/fixed';
-import { Prng } from '../src/game/math/prng';
+} from '@nw/engine/math/fixed';
+import { Prng } from '@nw/engine/math/prng';
 
 describe('fixed-point arithmetic', () => {
   it('FP_SCALE / TICK_RATE constants are as documented', () => {

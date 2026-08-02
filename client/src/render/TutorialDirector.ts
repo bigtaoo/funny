@@ -4,7 +4,7 @@ import { tearDownChildren } from './sketchUi';
 import { CardType, SpellType, GameState } from '../game';
 import { ILayout, Rect } from '../layout/ILayout';
 import { t, type TranslationKey } from '../i18n';
-import { drawHudButton, hudButtonText } from './hudButton';
+import { drawHudButton, hudButtonText } from '../ui/widgets/hudButton';
 import { snapFont } from './fontScale';
 
 /**

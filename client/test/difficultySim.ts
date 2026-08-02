@@ -24,17 +24,17 @@
 //   “can the optimal solution clear it”.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { createGameEngine } from '../src/game/GameEngine';
+import { createGameEngine } from '@nw/engine/GameEngine';
 import { CAMPAIGN_LEVELS } from '../src/game/campaign/levels';
-import type { GameConfig } from '../src/game/types';
-import { Side, UnitType, CardType, GamePhase } from '../src/game/types';
-import { ATTACK_LANES, UNIT_BLUEPRINTS } from '../src/game/config';
-import { PROGRESSABLE_UNITS } from '../src/game/balance/progression';
-import { fromFp } from '../src/game/math/fixed';
-import type { LevelDefinition } from '../src/game/campaign/LevelDefinition';
+import type { GameConfig } from '@nw/engine/types';
+import { Side, UnitType, CardType, GamePhase } from '@nw/engine/types';
+import { ATTACK_LANES, UNIT_BLUEPRINTS } from '@nw/engine/config';
+import { PROGRESSABLE_UNITS } from '@nw/engine/balance/progression';
+import { fromFp } from '@nw/engine/math/fixed';
+import type { LevelDefinition } from '@nw/engine/campaign/LevelDefinition';
 import { computeStars, computeStarScore, buildStarContext } from '../src/game/meta/campaignRewards';
 import { card } from './cardHelpers';
-import type { EngineCardInstance, EngineEquipInv, EngineSlotMap } from '../src/game/balance/equipment';
+import type { EngineCardInstance, EngineEquipInv, EngineSlotMap } from '@nw/engine/balance/equipment';
 
 const TICK_DT = 1 / 30;
 const TICK_RATE = 30;

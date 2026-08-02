@@ -21,7 +21,7 @@ import { buildIcon } from '../render/icons';
 import { FS } from '../render/fontScale';
 import { ScrollTapGesture } from '../ui/scrollTapGesture';
 import { wheelScrollY } from '../ui/wheelScroll';
-import { CARD_DEFINITIONS } from '../game/config';
+import { CARD_DEFINITIONS } from '@nw/engine/config';
 import {
   PVP_DECK_SIZE,
   PVP_BASE_CARDS,

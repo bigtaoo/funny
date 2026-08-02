@@ -1,0 +1,11 @@
+// tsc program covering src + test together. The main tsconfig.json only includes `src/**`, so
+// without this the test layer would never be type-checked (vitest runs through esbuild, which
+// erases types without checking them) — the same drift trap client/tsconfig.test.json exists to
+// close, see claudedocs/client-testing.md.
+//
+// `globals: false` in vitest.config.ts, so tests import describe/it/expect explicitly and no
+// ambient `types` entry is needed here.
+{
+  "extends": "./tsconfig.json",
+  "include": ["src/**/*", "test/**/*"]
+}

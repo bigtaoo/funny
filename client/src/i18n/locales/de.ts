@@ -862,6 +862,7 @@ export const de: Record<TranslationKey, string> = {
   'world.instantReturn': 'Sofort zurück ({coins} Münzen)',
   'world.instantReturnDone': 'Truppen sind sofort zurückgekehrt',
   'world.enemyTile': 'Feindliches Gebiet',
+  'world.allyTile': 'Verbündetes Gebiet',
   'world.unknownOwner': 'Unbekannter Spieler',
   'world.family': 'Familie',
   'world.auction': 'Auktion',
@@ -1561,6 +1562,8 @@ export const de: Record<TranslationKey, string> = {
   'city.military.durability': 'Stadtwiderstand',
   'city.military.teams': 'Teams',
   'city.military.teamIdle': 'Garnisoniert',
+  // No trailing ellipsis — the team row appends 1–3 animated dots itself (CityScene render.ts).
+  'city.military.teamLoading': 'Lädt',
   'city.military.fillAllTeams': 'Alle Teams auffüllen',
   'city.military.fillAllTeamsDone': '{n} Truppen auf {teams} Teams verteilt',
   'city.military.fillAllTeamsNone': 'Truppenpool ist leer, oder alle Teams sind bereits voll',
