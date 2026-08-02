@@ -46,7 +46,7 @@
 
 > 这些组件统一放 `client/src/ui/widgets/`。**已落地（2026-06-25）**：`uiCache.ts`（§2.1 缓存底座）+ `SceneHeader.ts`（§3.1 统一返回/标题栏）。其余组件（Button/Panel/CurrencyBar/…）随后续场景按需沉淀到此目录。
 
-> **按钮背景统一（2026-07-15）**：全屏菜单场景（登录/大厅/设置/…）早已共享 `render/sketchUi.ts` 的 `sketchPanel()` + `ui` 调色板（§7.5：手绘描边按钮，非透明/纯白/纯黑各自为政）；本次审计发现真正的缺口在**战斗内 HUD**（`HUDView`/`ProfilePopup`/`TutorialDirector`），此前各自写死十六进制色值（`0x2c2c2a`/`0xf0ece0`/`0x3a6ea5`/`0x999999`…）。新增 `render/hudButton.ts` 导出 `drawHudButton(g, w, h, variant)` + `hudButtonText(variant)`，5 个语义变体：`primary`（主操作，暂停恢复/关闭/升级/教程跳过）、`accent`（同权重次操作，靠色相区分，刷新手牌/教程下一步）、`secondary`（低权重操作，退出大厅/设置齿轮）、`danger`（拉黑/移除等破坏性操作）、`disabled`。颜色源自 `theme.ts` 的 `palette`，换肤只改一处。同时把两处历史遗留的场景本地 `const C = {...}`（`SettingsScene.ts`/`IntroScene.ts`，与 `sketchUi.ui` 完全重复的调色板）改为直接 `import { ui } from '../render/sketchUi'`，消除并行调色板。
+> **按钮背景统一（2026-07-15）**：全屏菜单场景（登录/大厅/设置/…）早已共享 `render/sketchUi.ts` 的 `sketchPanel()` + `ui` 调色板（§7.5：手绘描边按钮，非透明/纯白/纯黑各自为政）；本次审计发现真正的缺口在**战斗内 HUD**（`HUDView`/`ProfilePopup`/`TutorialDirector`），此前各自写死十六进制色值（`0x2c2c2a`/`0xf0ece0`/`0x3a6ea5`/`0x999999`…）。新增 `ui/widgets/hudButton.ts` 导出 `drawHudButton(g, w, h, variant)` + `hudButtonText(variant)`，5 个语义变体：`primary`（主操作，暂停恢复/关闭/升级/教程跳过）、`accent`（同权重次操作，靠色相区分，刷新手牌/教程下一步）、`secondary`（低权重操作，退出大厅/设置齿轮）、`danger`（拉黑/移除等破坏性操作）、`disabled`。颜色源自 `theme.ts` 的 `palette`，换肤只改一处。同时把两处历史遗留的场景本地 `const C = {...}`（`SettingsScene.ts`/`IntroScene.ts`，与 `sketchUi.ui` 完全重复的调色板）改为直接 `import { ui } from '../render/sketchUi'`，消除并行调色板。
 
 > **ScrollIndicator（2026-07-14）**：`ui/widgets/ScrollIndicator.ts` 导出 `drawScrollIndicator(parent, view, scrollY, scrollMax, opts?)`——在视口 `view`（= 内容 mask 矩形）右缘画墨黑细圆角轨道 + 位置滑块（长≈视口/内容比、位置≈滚动进度），`scrollMax<=0` 或视口退化时返回 `null` 不画。**只是指示器、不吃指针**，各场景仍自管拖拽/滚轮。约定：在 `render()` 内容+mask 加完后调一行，画进**不随滚动位移**的容器（容器位移型场景用 `this.container`；无 mask 剔除重绘型用 `bodyLayer` 并以 `listY/listH` 局部量作视口）；有拖拽快速路径（BattlePass/CardCodex）的场景在快速路径里也重画一次。已接入全部可滚动页面：BattlePass、CardCodex、Leaderboard、DeckBuilder、Chat、Shop（商城/充值）、Friends（好友/世界/邮件）、Equipment（背包/装配/合成）、Card 花名册、Sect（名册/频道）、Family（名册/频道）、Auction（列表/物品选择）、WorldMap 世界信息面板。纯几何 `scrollThumbGeometry()` 拆出单测。
 >
@@ -215,7 +215,7 @@ Collection  Stats     Lobby    Shop/Gacha    Room
 - **卡片竖向布局改「按剩余空间反推」，杜绝 icon/文字压中按钮（2026-07-06）**：`drawCard` 曾用写死的 `ch` 比例摆放 icon 和加成文字行（`y+ch*0.30` 起、每行 `ch*0.14`），跟底部 Buy 按钮的位置无关；充值档位卡同时要塞标题+金额+icon+2 行加成文字（`+N` 与"首充双倍"——后者按 `ECONOMY_BALANCE.md` 规定所有档位常驻，非 bug），内容总高超过卡片高度，icon 和第二行文字会压进/被 Buy 按钮挡住。改法：先算按钮占的 `btnH/btnY`，再用 `midTop`（标题/右侧列结束处）到 `midBottom`（按钮上沿留白）之间的实际空隙反推 icon 尺寸与每行行高（`Math.min(理想值, 可用空间)`），几何上保证不会溢出到按钮；同时把 `gridMetrics()` 里 `cellH` 从 `h*0.22` 调到 `h*0.27` 给内容多留余量。
 - **横屏商品卡由 4 列改 3 列，杜绝标题换行把价格顶到按钮上（2026-07-17）**：图标卡改版成「大方图在上、标题/价格/按钮竖向堆叠」后，`gridMetrics()` 横屏目标宽度取 `w*0.16` → 一行约 4 张，卡片太窄；"Monthly Card"、"Skin · skin_shop_c1" 等标题被折成 2–3 行，把下面的价格行（`¥30`/金币 `300`）往下顶。而价格行（`coinAmount`/`yuanPrice` 两个分支）**没有像状态行 `lines` 那样做 `bandBottom` 钳制**，标题一高价格就压到底部按钮（"Claimed today"/"Owned"）上。改法：横屏目标宽度 `0.16 → 0.24`（`ShopScene/base.ts` `gridMetrics()`），一行 3 张、与竖屏一致；卡片变宽后标题回单行，价格行不再被顶下去。数值几何核对（横屏 1920 无头渲染）：确为 3 列，`¥30` 底边远在按钮上沿之上（留白约 230px）；`tsc --noEmit` + shop UI 套件 29 例全绿。
 - **皮肤卡标题用真名，不再显示原始 id（2026-07-17）**：`buildShopCards()` 皮肤分支的标题原为 ``${t('shop.skinLabel')} · ${item.id}``，直接把目录 id（`skin_shop_c1` 等）当标题显示。`ShopItem`（openapi）只带 `id/cost/kind/grants`，不带名字，所以名字得在客户端从皮肤所属角色卡反推。新增共享 `skinDisplayName(skinId)`（`game/meta/skinDefs.ts`）：经 `SKIN_TARGET_UNIT` → 该 unitType 对应的角色卡 → `card.<id>.name`，产出 `{角色名}·{皮肤}`（如「李川·皮肤」），无映射时回退原 id。这套解析原本内联在 `GachaScene.displayName()` 里，本次抽成 skinDefs 的单一来源，Gacha 改调同一函数（去重）。皮肤**真美术仍是占位**（借用基础兵种 PNG，`.tao` 皮肤资源未产出，且 lichuang/suyuan/chenshou 角色本身也复用基础兵种图），属资源阻塞，不在本次范围。
-- **光标约定是硬性契约，不是 ShopScene 专属实现**：任何「隐藏 `<input>` + canvas 画字段」的输入框都必须调用共享的 `caretDisplay()`（`render/inputDisplay.ts`）产出显示文本，禁止再手写 `text || ' '` / `text || placeholder`。2026-06-23 那次修复只顺手改了 ShopScene/SettingsScene/ChatScene 三处，遗漏了 FamilyScene/SectScene/FriendsScene（好友页内嵌的家族/宗门/世界频道输入框）/AuctionScene（指定买家字段，另外还漏了逐键刷新），2026-07-04 补齐。`test/ui/caretRegression.ui.ts` 对每个受影响输入框做了聚焦-闪烁回归断言；新增任何同类输入框必须在该文件补一组用例，而不是仅凭肉眼过一遍。
+- **光标约定是硬性契约，不是 ShopScene 专属实现**：任何「隐藏 `<input>` + canvas 画字段」的输入框都必须调用共享的 `caretDisplay()`（`ui/inputDisplay.ts`）产出显示文本，禁止再手写 `text || ' '` / `text || placeholder`。2026-06-23 那次修复只顺手改了 ShopScene/SettingsScene/ChatScene 三处，遗漏了 FamilyScene/SectScene/FriendsScene（好友页内嵌的家族/宗门/世界频道输入框）/AuctionScene（指定买家字段，另外还漏了逐键刷新），2026-07-04 补齐。`test/ui/caretRegression.ui.ts` 对每个受影响输入框做了聚焦-闪烁回归断言；新增任何同类输入框必须在该文件补一组用例，而不是仅凭肉眼过一遍。
 - **2026-07-06 续修：`caretDisplay()` 接了但点开仍无光标**——FriendsScene 的点击处理器都是「先设激活标志（`worldChatActive`/`familyActiveInput`/`sectActiveInput`）再调 `openHiddenInput()`」，而 `openHiddenInput()` 第一行调的 `clearHiddenInput()` 会把这三个标志全部复位，等于把刚设好的标志立刻擦掉 → 光标判据与 `update()` 闪烁循环双双关闭，点开后既不闪也不显示 `|`。2026-07-04 的回归测试是手动 `scene.worldChatActive = true` 后直接 `render()`，绕过了「点击 → openHiddenInput」这条真实路径，所以测试全绿而 bug 依旧。**修复**：`openHiddenInput()` 只拆上一个 DOM 元素（`this.hiddenInput?.remove()`），不再整体调 `clearHiddenInput()`；`clearHiddenInput()` 仍用于真正的销毁路径（切 Tab / 取消 / destroy）。回归测试新增「走 hit 点击路径」的用例（需最小 `document` stub），杜绝再次只测手动状态。
 
 ### 4.4 GachaScene（盲盒，S2）
@@ -583,7 +583,7 @@ LeaderboardScene 前三名用 🥇🥈🥉 emoji。新增 **1 个** `icons.ts` �
 
 ### 预设头像美术（8 种，Phase A）
 
-`art/ui/head/` 下 8 张 AI 手绘线稿（白线透明底），经 `pack_avatar_atlas.cjs` 打包进 `client/src/assets/avatars/avatars.png`+`.json`；`client/src/render/avatarAtlas.ts`（镜像 `materialAtlas.ts`/`equipmentAtlas.ts` 的加载范式）在 bootManifest L0 阶段加载，`buildAvatarIcon(key, size, color)` 提供纹理，未加载完成前降级到旧的 `buildIcon()` 程序化图标。`AVATAR_DEFS`（icon key + 底色）本身不变：
+`art/ui/head/` 下 8 张 AI 手绘线稿（白线透明底），经 `pack_avatar_atlas.cjs` 打包进 `client/src/assets/avatars/avatars.png`+`.json`；`client/src/render/atlas/avatarAtlas.ts`（镜像 `materialAtlas.ts`/`equipmentAtlas.ts` 的加载范式）在 bootManifest L0 阶段加载，`buildAvatarIcon(key, size, color)` 提供纹理，未加载完成前降级到旧的 `buildIcon()` 程序化图标。`AVATAR_DEFS`（icon key + 底色）本身不变：
 
 | ID | 图标 | 底色 | 别名 |
 |----|------|------|------|
@@ -787,13 +787,13 @@ BattlePassScene 当初是把「滚动定位」和「内容重建」两条路径�
 **背景**：World/Family/Sect 三个聊天频道各自把"发送者名字"和"消息内容"画成两行（`sender.y`/`body.y` 各占一行），且发送者名字没有视觉区分，纯文字混在气泡里。用户要求改为单行 `[称号][宗门][家族]名字: 内容`（方括号内字段缺省则不显示），名字部分加背景色块与内容区分，内容不再单独换行。
 
 **方案**：
-- 新增共享渲染 helper `client/src/render/chatRow.ts`：`chatNameLabel(sender)` 拼出 `[title][sectName][familyName]senderName` 前缀（各段缺省即跳过）；`drawChatLine(layer, x, y, sender, body, nameSize, bodySize)` 在同一行画出「名字（背景色块）+ `: ` + 内容（无背景）」，`y` 为整行垂直中心，不再分两行。
+- 新增共享渲染 helper `client/src/ui/widgets/chatRow.ts`：`chatNameLabel(sender)` 拼出 `[title][sectName][familyName]senderName` 前缀（各段缺省即跳过）；`drawChatLine(layer, x, y, sender, body, nameSize, bodySize)` 在同一行画出「名字（背景色块）+ `: ` + 内容（无背景）」，`y` 为整行垂直中心，不再分两行。
 - 三处调用点改用该 helper：`FriendsScene/worldChat.ts`（世界频道，行高 `h*0.095`→`h*0.06`，单行够用）、`FamilyScene/render.ts` 的 `renderChannel()`、`SectScene/render.ts` 的 `renderChannel()`。
 - **数据链路补齐**（此前三个消息视图只有 `senderName`/`body`，没有称号/宗门/家族字段，UI 单纯拼接会永远只显示裸名字）：
   - `client/src/net/WorldApiClient.ts` 的 `WorldChatMessage`/`FamilyMessageView` 手写接口、`server/contracts/openapi-world.yml` 的 `SectMessageView` schema（连带重新生成 `openapi-world.ts`/`openapi.ts`），均新增可选 `title?`/`sectName?`/`familyName?`。
   - **称号**：`equippedTitle` 本已存在于存档 `equipped.title`（PvP 对手/排行榜早有读取先例），但两条 profile 通路此前都没往外吐——`server/metaserver/src/{accounts.ts, social.ts}` 的 `getProfile`/`profileOf` 补读 `save.equipped.title` 并入返回值（`@nw/shared` 的 `ProfileView` 新增 `equippedTitle?`）；`worldsvc` 的 `PlayerProfile` 类型跟着补字段。
   - **宗门/家族名**：`SectService.sendMessage`（频道本身就是某个宗门内，`mem.name` 即家族名、`cols.sects.findOne` 即宗门自己的 `name`，零额外跨服务调用）与 `FamilyService.sendMessage`（`familyDoc.name` 即家族名；宗门名因需要跨 socialsvc→worldsvc 查询，暂不补，方括号缺省即不显示）在发消息时一并解析、连同 `title` 一起写入 `NationMessageDoc`/`SectMessageDoc`/`FamilyMessageDoc`（新增对应可选字段）与返回视图；`NationChannelService.sendMessage`（世界频道横跨所有宗门/家族）额外调 `socialsvc.getMember`+`getFamiliesByIds`+本地 `cols.sects.findOne` 解析任意发送者的宗门/家族名。
-- **落地文件**：`client/src/render/chatRow.ts`（新增）、`client/src/scenes/{FriendsScene/worldChat.ts, FamilyScene/render.ts, SectScene/render.ts}`、`client/src/net/WorldApiClient.ts`、`server/contracts/openapi-world.yml`（连带重新生成的 `client/src/net/{openapi,openapi-world}.ts`）、`server/worldsvc/src/{db.ts, metaClient.ts, nationChannelService.ts, sectService.ts}`、`server/socialsvc/src/{db.ts, familyService.ts, gatewayClient.ts}`、`server/metaserver/src/{accounts.ts, social.ts}`、`server/shared/src/social.ts`。
+- **落地文件**：`client/src/ui/widgets/chatRow.ts`（新增）、`client/src/scenes/{FriendsScene/worldChat.ts, FamilyScene/render.ts, SectScene/render.ts}`、`client/src/net/WorldApiClient.ts`、`server/contracts/openapi-world.yml`（连带重新生成的 `client/src/net/{openapi,openapi-world}.ts`）、`server/worldsvc/src/{db.ts, metaClient.ts, nationChannelService.ts, sectService.ts}`、`server/socialsvc/src/{db.ts, familyService.ts, gatewayClient.ts}`、`server/metaserver/src/{accounts.ts, social.ts}`、`server/shared/src/social.ts`。
 
 **验证**：`client`/全部 `server` workspace `tsc --noEmit` 全绿。
 
@@ -840,7 +840,7 @@ BattlePassScene 当初是把「滚动定位」和「内容重建」两条路径�
 
 **问题**：`EquipmentScene`、`FamilyScene`、`SectScene` 各自维护一份手写复制的 `showConfirm`（例：装备分解「Salvage all 50 Paper Clip?」弹窗），三份面板尺寸不一（300×130 / 280×110 / 300×120），Cancel 按钮一处是文字一处是 ✕ 图标，OK/Cancel 文案一处走 i18n（`equip.ok/cancel`）一处硬编码英文 `'OK'`——典型的复制粘贴漂移，不是共享组件。
 
-**修复**：新增 `render/confirmDialog.ts` 导出纯函数 `drawConfirmDialog(modalLayer, w, h, msg, onOk, onCancel)`，只画「遮罩 + 面板 + 换行消息 + OK/Cancel 两个按钮」并返回其命中矩形；三个场景的 `showConfirm` 精简为调用该函数 + 各自的 `modalOpen`/`closeModal` 收尾（Equipment 的取消会重渲染回详情弹窗，Family/Sect 只需关闭，逻辑差异保留在调用侧，不进共享函数）。顺带把 Cancel 统一成文字按钮（Family/Sect 原来的 ✕ 图标去掉），OK/Cancel 文案改用新增的 `common.ok`/`common.cancel`（zh/en/de 三语，放在既有的 `common.back`/`common.close` 旁）。
+**修复**：新增 `ui/dialogs/confirmDialog.ts` 导出纯函数 `drawConfirmDialog(modalLayer, w, h, msg, onOk, onCancel)`，只画「遮罩 + 面板 + 换行消息 + OK/Cancel 两个按钮」并返回其命中矩形；三个场景的 `showConfirm` 精简为调用该函数 + 各自的 `modalOpen`/`closeModal` 收尾（Equipment 的取消会重渲染回详情弹窗，Family/Sect 只需关闭，逻辑差异保留在调用侧，不进共享函数）。顺带把 Cancel 统一成文字按钮（Family/Sect 原来的 ✕ 图标去掉），OK/Cancel 文案改用新增的 `common.ok`/`common.cancel`（zh/en/de 三语，放在既有的 `common.back`/`common.close` 旁）。
 
 **放大 1.5x**：面板 300×130→450×195，按钮 84×28→126×42，按钮间距/底部留白/消息顶部留白同比例放大（8→12 / 16→24），字号从 `FS.tiny`（13）提到 `FS.bodyLg`（20，`snapFont(13*1.5)` 落点）。
 

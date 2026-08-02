@@ -389,7 +389,7 @@
 - **影响**：
   - 新增/改写 [`design/tools/map-editor/DESIGN.md`](tools/map-editor/DESIGN.md)（§2-§4 地形骨架定稿，§6 编辑器需求，§7 原型迭代记录）。
   - [`SLG_DESIGN.md`](game/SLG_DESIGN.md) §2.4（国家系统）、§3.2（地图尺寸与地形布局）已改写，指向本 ADR；[`SLG_DESIGN_LOG.md`](game/SLG_DESIGN_LOG.md) §24 记录代码重写完成状态。
-  - **ADR-033 判定作废**：其已落地的代码已按本 ADR 整体重写完成（2026-07-05）——`server/shared/src/slg.ts` 新增 `provinceIdxAt()`（角度扇区+半径环归属，替代 `nearestCapitalIdx()` Voronoi）、`provinceCapitalPositions()`（州府位置按扇区+种子派生，替代固定表 `CAPITAL_FRACTIONS`）、环形地形带/墨河弦/支脉/城池节点（州府+世界中心 9×9+关隘城池+每出生州 9 座分级城池）、按环等级分布表；`NATION_KIND_BY_IDX` 的 `hegemony` 改名 `core`。城池落地为现有 `familyKeep`/`center` 类型而非独立 collection（驻军/耐久数值本条未拍板，故不新增 schema）。`server/worldsvc` 消费方（`coreKernel`/`coreNation`/`coreYield`/`combatSiege`）与受影响 e2e（`nation-bonus`/`season-ops`/`fog`/`service`/`httpApi`/`pathfinding`）已同步修完；`server/shared`/`server/worldsvc`/`server/tools/econ-sim` typecheck+test 全绿。
+  - **ADR-033 判定作废**：其已落地的代码已按本 ADR 整体重写完成（2026-07-05）——`server/shared/src/slg.ts` 新增 `provinceIdxAt()`（角度扇区+半径环归属，替代 `nearestCapitalIdx()` Voronoi）、`provinceCapitalPositions()`（州府位置按扇区+种子派生，替代固定表 `CAPITAL_FRACTIONS`）、环形地形带/墨河弦/支脉/城池节点（州府+世界中心 9×9+关隘城池+每出生州 9 座分级城池）、按环等级分布表；`NATION_KIND_BY_IDX` 的 `hegemony` 改名 `core`。城池落地为现有 `familyKeep`/`center` 类型而非独立 collection（驻军/耐久数值本条未拍板，故不新增 schema）。`server/worldsvc` 消费方（`core/kernel`/`core/nation`/`core/yield`/`combatSiege`）与受影响 e2e（`nation-bonus`/`season-ops`/`fog`/`service`/`httpApi`/`pathfinding`）已同步修完；`server/shared`/`server/worldsvc`/`server/tools/econ-sim` typecheck+test 全绿。
   - `tools/map-editor` 工具仍未搭骨架，讨论期验证骨架用的 HTML/JS 原型未提交仓库——留后续任务。
   - 城池驻军/耐久数值、资源州/核心州是否也要分级城池梯度、国民加成如何随分层结构调整，均留待后续 ADR。
 - **教训**：两条并行会话在同一天独立展开"国家版图重构"这个大改动，导致 ADR 编号撞车、代码方向冲突——已落地代码被判定作废意味着那批 e2e 测试修复工作也随之作废。后续如有多会话并行处理同一模块的结构性改动，应在开工前先检查是否有其他会话正在动同一处（如 `git log` 看最近的 daily 分支提交），或至少在长任务过程中定期 `git fetch`/查 worktree 列表交叉核对。
@@ -429,7 +429,7 @@
   6. **旧端点 `TerritoryService.occupyTile()`（S8-1 瞬占，`territory.ts`）**：保留，但降级为内部/测试专用（客户端已改走 `startMarch(kind:'occupy')`，产品流程不再调用它）；不做移除/404，契约文档补充说明。
 - **影响**：
   - `@nw/shared`（`slg/core.ts` 新增 `OCCUPY_HOLD_SEC`）。
-  - `worldsvc`：`db.ts` 新增 `OccupationDoc` 集合 + `TileDoc.contestedBy/contestedUntil/contestedGarrison/contestedFamilyId`；`corePush.ts` 新增 `scheduleOccupation`/`unscheduleOccupation`；`combatSiege/occupation.ts`（新文件，`applyOccupy`/`applyOccupationExpulsion`/`processDueOccupations`，接入 `combatSiege.ts` 装配链）；`combatMarch.ts` 的 `occupy` 到达分支改为委托 `this.siege.applyOccupy`；`combatSiege/arrival.ts` 的 `applySiege` 放宽"目标无主但处于占领倒计时中"分支；`combat.ts`/`service.ts`/`scheduler.ts` 新增 `processDueOccupations` 透传。
+  - `worldsvc`：`db.ts` 新增 `OccupationDoc` 集合 + `TileDoc.contestedBy/contestedUntil/contestedGarrison/contestedFamilyId`；`core/push.ts` 新增 `scheduleOccupation`/`unscheduleOccupation`；`combatSiege/occupation.ts`（新文件，`applyOccupy`/`applyOccupationExpulsion`/`processDueOccupations`，接入 `combatSiege.ts` 装配链）；`combatMarch.ts` 的 `occupy` 到达分支改为委托 `this.siege.applyOccupy`；`combatSiege/arrival.ts` 的 `applySiege` 放宽"目标无主但处于占领倒计时中"分支；`combat.ts`/`service.ts`/`scheduler.ts` 新增 `processDueOccupations` 透传。
   - 契约（`openapi-world.yml`）：`WorldTileView` 新增 `contestedUntil`/`contestedByMe`。
 
 ## ADR-039 SLG 连地占领硬性规则（宗门级判定，含首府/桥栈道）— Accepted — 2026-07-14
@@ -440,12 +440,12 @@
   1. **判定范围 = 宗门级（不是家族级）**：宗门内所有成员家族的领地并集共同构成连地前沿，任一成员家族挨着目标格即可，不要求发起人自己家族恰好相邻。未加入家族 → 只认自己的领地；已加入家族但宗门未成立 → 判定范围=家族全体领地并集。
   2. **盟友宗门领地不计入判定**——结盟（§8.2，`sect.allySectIds`）只是互不攻伐 + 桥栈道通行，不合并版图，否则"结盟"会变相等价于"合并宗门"。
   3. **服务端两处强制**：`startMarch`（`combatMarch.ts`）的 `occupy`/`attack` 分支在发起时校验；到达时 `applySiege`（`combatSiege/arrival.ts`）与 `applyOccupy`（`combatSiege/occupation.ts`）再校验一次（行军途中宗门领地可能因丢地而断连），断连按"扑空"处理——退还部队 + 推送 `recalled`，与既有的"目标已非敌方所有"重校验同一套模式。不满足 → 新错误码 `TERRITORY_NOT_CONNECTED`（400）。
-  4. **判定函数**：`WorldCoreVision.isConnectedToSectTerritory(worldId, accountId, x, y)`（`coreVision.ts`）——4 方向邻接查询 `TileDoc.ownerId ∈ 宗门成员家族的 accountId 并集`；私有辅助 `ownSectFamilyIds` 与既有 `friendlyAccountIds` 同构但**不含盟友宗门**（这是两者唯一的差异点，友军攻击豁免要盟友、连地判定不要）。
+  4. **判定函数**：`WorldCoreVision.isConnectedToSectTerritory(worldId, accountId, x, y)`（`core/vision.ts`）——4 方向邻接查询 `TileDoc.ownerId ∈ 宗门成员家族的 accountId 并集`；私有辅助 `ownSectFamilyIds` 与既有 `friendlyAccountIds` 同构但**不含盟友宗门**（这是两者唯一的差异点，友军攻击豁免要盟友、连地判定不要）。
   5. **主城落地即初始领地（不依赖 ring 格 ownerId）** — 修订 2026-07-14：连地判定与行军寻路都额外把**每个宗门成员的主城 3×3 footprint**（由 `playerWorld.mainBaseTile` 推出）当作己方领地，而不是纯靠 8 个 ring `TileDoc` 是否带 `ownerId`。原因：早期版本 `baseTileDocs` 未给 ring 格写 `ownerId` 的**历史存档基地**（ring 格 `type:'base'` 但无 `ownerId`）会出现"连自己基地旁边的空地都占不了"——`isConnectedToSectTerritory` 数不到相邻己方格（只有 anchor 带 ownerId，而 anchor 的邻居正是自己的 ring 格，占领目标在 footprint 外一格，其邻居 ring 格无 ownerId → 判定失败）；且 `combatMarch.ts` 的寻路 `blockedBaseKeys` 会把无主 `type:'base'` 格当成敌方建筑（missing ownerId 命中 `$nin`）把守军堵死在城里。改为从 `mainBaseTile` 推 footprint 后，健康基地行为不变（ring 本来就带 ownerId，新旧路径一致），历史存档基地则**原地自愈**（无需触发 ADR-025 的 purge+随机重新落地那条破坏性路径）。
 - **已知取舍（接受）**：先手/占据资源密集区的宗门会滚雪球更快，弱势宗门可能被堵死在外圈无法扩张——但一个大区真正对抗的宗门通常只有两三个，规则逼着弱势方要么被兼并要么结盟，符合"明确前线"的设计目的，不视为需要修正的缺陷。
 - **影响**：
   - `@nw/shared`（`api.ts` 新增 `ErrorCode.TERRITORY_NOT_CONNECTED` + `ERROR_HTTP_STATUS` 映射）。
-  - `worldsvc`：`coreVision.ts` 新增 `ownSectFamilyIds`/`isConnectedToSectTerritory`；`combatMarch.ts` 的 `startMarch` occupy/attack 分支新增校验；`combatSiege/arrival.ts` 的 `applySiege`、`combatSiege/occupation.ts` 的 `applyOccupy` 到达时新增重校验。2026-07-14 修订：`isConnectedToSectTerritory` 与 `computeMarchPath` 均改为从 `mainBaseTile` 推主城 footprint 作为己方领地（见核心规则 5），修历史存档基地无法从主城旁扩张的问题。
+  - `worldsvc`：`core/vision.ts` 新增 `ownSectFamilyIds`/`isConnectedToSectTerritory`；`combatMarch.ts` 的 `startMarch` occupy/attack 分支新增校验；`combatSiege/arrival.ts` 的 `applySiege`、`combatSiege/occupation.ts` 的 `applyOccupy` 到达时新增重校验。2026-07-14 修订：`isConnectedToSectTerritory` 与 `computeMarchPath` 均改为从 `mainBaseTile` 推主城 footprint 作为己方领地（见核心规则 5），修历史存档基地无法从主城旁扩张的问题。
   - 文档：[`game/SLG_DESIGN.md`](game/SLG_DESIGN.md) §3.1（表格标注）+ §4.1（新增，规则细节）。
   - 测试：既有大量 e2e（`march`/`siege`/`occupy-march`/`alliance-attack`/`passage`/`base-siege` 等）的攻击目标此前多为"跨图直接打远处敌方基地"，在硬性连地规则下会被拒绝——受影响用例需改用既有的内部/测试专用 `TerritoryService.occupyTile()`（瞬占，见 ADR-037 段）预先铺垫"发起方宗门已占领相邻格"的前置状态，而不是重写测试所验证的核心断言。新增 `territory-connectivity.e2e.test.ts` 覆盖判定本身。
 
@@ -566,7 +566,7 @@
 
 - **问题**：用户体验反馈——最远缩放档（L3）下整张 500×500 地图约只有三屏大小，10 个州（6 外围+3 资源+1 霸业，ADR-034 环形布局）+ 险地/州府/城池等 PvE 关卡内容"展示不开"，视觉上过于局促。用户拍板对齐主流 SLG 的常见量级 **1500×1500**（此前 ADR-032 曾定 500×500，并记载"1500×1500 于 2026-06-18 拍板但从未落地"；本 ADR 是**真正落地** 1500，非恢复旧口径）。
 - **决策**：`SLG_MAP_W/H` 500 → **1500**（`server/shared/src/slg/core.ts`）。这是本次唯一的"内容"改动——全部下游几何均为比率制（州环半径 `PROVINCE_*_RADIUS_RATIO`、州府位置 `provinceCapitalPositions` 用 `halfDiag`、`_normRadius`、险地/资源密度走逐格 Bernoulli），随尺寸等比缩放，**密度不变、画布变大**；险地数（p≈0.003）从 ~750 增至 ~6750，州府/城池节点仍固定 10/54 个（角度环形）。
-- **为什么安全（无性能回归）**：地块**稀疏落库**（只存被占/改动格），`proceduralTile` 按视口即时算；视野/渲染均为**视口 bbox 限定的 Mongo 查询 + clamp 循环**，无 O(mapW·mapH) 全图遍历（`coreVision.computeVisionSources`、客户端 `occupyFrontier`/`fog` 均如此）。A\* 行军寻路 `findMarchPath` 有 `MAX_NODES=500_000` 安全帽（1500² 下=全图 22%，合法长途行军绰绰有余；触顶 → 返回 `null` → `combatMarch` 干净抛 `PATH_BLOCKED`，不挂起）。U14 的 A\* 性能关注点在更大图上略升但仍受帽约束，登记为监控项。
+- **为什么安全（无性能回归）**：地块**稀疏落库**（只存被占/改动格），`proceduralTile` 按视口即时算；视野/渲染均为**视口 bbox 限定的 Mongo 查询 + clamp 循环**，无 O(mapW·mapH) 全图遍历（`core/vision.computeVisionSources`、客户端 `occupyFrontier`/`fog` 均如此）。A\* 行军寻路 `findMarchPath` 有 `MAX_NODES=500_000` 安全帽（1500² 下=全图 22%，合法长途行军绰绰有余；触顶 → 返回 `null` → `combatMarch` 干净抛 `PATH_BLOCKED`，不挂起）。U14 的 A\* 性能关注点在更大图上略升但仍受帽约束，登记为监控项。
 - **运维生效路径（关键）**：`mapW/mapH` 在 `openSeason` 时经 `$setOnInsert` **写死进 world 文档**，`getSeason` 返回存库值。故常量改动**不会自动改变现有世界**——旧世界的 `w.mapW` 仍冻结在 500，而生成/出生点/边界用常量 1500，会不一致。本 ADR 顺带让 `resetSeason` 的 `$set` **re-stamp `mapW/mapH`**（与它早已 re-pin 的 `engineVersion` 同理：reset 清空全部 tiles/nations 并按 `deps` 重建州府，回收世界必须采用当前尺寸）→ 现有大区经正常"结算→重置"即可采用新尺寸；全新 worldId 天然拿到 1500；dev 直接 `-Fresh` 起新库。
 - **影响**：`server/shared/src/slg/core.ts`（常量）、`worldsvc/src/season.ts`（reset re-stamp）；客户端零改动（`WorldMapScene` 全程用 `getSeason` 返回值、渲染视口化，`DEFAULT_MAP_SIZE` 早已是 1500 且仅为加载前占位）。worldsvc 285 e2e（新尺寸下真实生成地图）+ season-ops 新增 1 例（reset re-stamp）全绿；shared/worldsvc `tsc --noEmit` 全绿。
 - **未处理/留待**：① 更大图放大了"孤立据点四周空白"观感（SLG_DESIGN_LOG §1008 既知），如需改善要从中立地装饰密度/初始镶机位入手；② 横断行军实时时长约 ×3，属 SLG 类型常态，用户已认可；③ "一屏俯瞰全图的最远战略档（L4）"本轮**不做**（用户拍板暂缓），但地图越大越需要，登记为后续候选。
@@ -587,7 +587,7 @@
   3. **建筑层**（玩家建造）：`TileDoc` 新增通用 `structure` 叠加位（泛化 `watchtower`）；**箭塔**=敌军踏入9格射程即掉血、不拦停、可攻毁；**必拆除阻挡**=接入寻路的硬阻挡（参照敌方主城 `blockedBaseKeys`），对建造者+家族放行。
 - **待审点拍板（提议默认全采纳）**：O1 路过敌方领地 garrison **不**触发 pass-through 战斗（拦截靠驻扎/箭塔，否则领地不可穿行）；O2 建筑只能建**己方/家族领地**格；O3 箭塔数值/驻扎维护/步进疲劳进 `config.ts` 标 DRAFT；O4 逐格步进事件量登记监控 + 粗粒度降级预案；O5 相邻格对穿不触发遭遇，接受为常态。
 - **分阶段**：P1 实时行军基础（路径持久化+步进+`occ`，行为对齐现状）→ P2 遭遇引擎（场景1/2+`runSiegeBattle`）→ P3 停留/驻扎拆分+`cover`+驻扎拦截+就地占领 → P4 客户端实时野战视图 → P5 建筑层。每阶段独立可验证、独立合入当日分支。
-- **影响**（预估，详见设计文档 §6）：`worldsvc`（`db.ts`/`combatMarch.ts`/新 `combatSiege/encounter.ts`/`corePush.ts`/`territory.ts`/建筑 API/`httpApi.ts`）、`@nw/shared`（`walkable` 接入建筑、`config.ts` 数值）、`openapi-world.yml`；客户端 `WorldMap*` + `WorldMapRenderer` + 三语 i18n。
+- **影响**（预估，详见设计文档 §6）：`worldsvc`（`db.ts`/`combatMarch.ts`/新 `combatSiege/encounter.ts`/`core/push.ts`/`territory.ts`/建筑 API/`httpApi.ts`）、`@nw/shared`（`walkable` 接入建筑、`config.ts` 数值）、`openapi-world.yml`；客户端 `WorldMap*` + `WorldMapRenderer` + 三语 i18n。
 
 ## ADR-052 F2P 月度金币产出基线从 "~300" 重定为 "~2,900–8,700"（补跑总产出核算） — Accepted — 2026-07-27
 
