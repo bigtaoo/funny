@@ -163,12 +163,6 @@ export class WorldMapContext {
   vignetteAlpha = 0;
   loadingTimeout: ReturnType<typeof setTimeout> | null = null;
   selectedTile: { x: number; y: number } | null = null;
-  myAttackTiles: Set<string> = new Set();
-  // Tiles this player launched an `occupy` march against. Since ADR-037 occupy arrival fights the target's
-  // NPC garrison and pushes a SiegeResult back to the occupier just like an attack does — but occupy is not an
-  // "I attacked an enemy" event, so it must be classified separately from myAttackTiles when a SiegeResult
-  // arrives (applySiegeResult), or a routine land-grab win is misread as a defensive loss ("Territory lost").
-  myOccupyTiles: Set<string> = new Set();
   toastTimer = 0;
   /** Accumulates update() dt; drives the once-per-second HUD countdown refresh (P1-1) — march/siege
    *  remaining-time text previously only advanced on the ~5s poll tick or an incoming push, so it sat

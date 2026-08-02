@@ -270,8 +270,6 @@ export class WorldMapNet {
       // list-assembly stamps it, since only it knows who's asking) — a march THIS call just dispatched
       // is unconditionally the caller's own, so it's safe to stamp true here directly.
       const { me, ...march } = await this.ctx.cb.worldApi.startMarch(this.ctx.cb.worldId, fx, fy, tx, ty, kind, 1, teamId, stationMode);
-      if (kind === 'attack') this.ctx.myAttackTiles.add(march.toTile);
-      else if (kind === 'occupy') this.ctx.myOccupyTiles.add(march.toTile);
       this.ctx.marches = [...this.ctx.marches, { ...march, mine: true }];
       if (me) this.ctx.me = me; // defensive: never null out the cached state if a response omits it
       this.ctx.panels.showToast(t('world.dispatched'));
@@ -303,8 +301,6 @@ export class WorldMapNet {
     try {
       // P1-3: see doMarchTeam's comment above — adopt march + me from the response directly.
       const { me, ...march } = await this.ctx.cb.worldApi.startMarch(this.ctx.cb.worldId, fx, fy, tx, ty, kind, troops);
-      if (kind === 'attack') this.ctx.myAttackTiles.add(march.toTile);
-      else if (kind === 'occupy') this.ctx.myOccupyTiles.add(march.toTile);
       this.ctx.marches = [...this.ctx.marches, { ...march, mine: true }];
       if (me) this.ctx.me = me; // defensive: never null out the cached state if a response omits it
       this.ctx.panels.showToast(t('world.dispatched'));
@@ -622,7 +618,15 @@ export class WorldMapNet {
     void this.refreshMe();
     void this.refreshMarches();
 
-    if (this.ctx.myAttackTiles.has(s.tile)) {
+    // Role classification is server-authoritative (2026-08-02 bug fix, transport.proto SiegeResult):
+    // previously this guessed "did I dispatch this march" from a per-scene, in-memory Set
+    // (myAttackTiles/myOccupyTiles) populated only at dispatch time — reset on every WorldMapScene
+    // rebuild (leaving and re-entering the SLG, or a page reload) while the march was still in
+    // flight, misreading the player's own occupy win as a defensive loss ("Territory lost"). `s`
+    // now always carries who dispatched the offensive march and what kind it was, so the client
+    // never needs to remember its own past action.
+    const amInitiator = s.attackerId === this.ctx.cb.accountId;
+    if (amInitiator && s.marchKind === 'attack') {
       // We attacked — show the outcome + offer replay & verify (anti-cheat, C2).
       const loot = s.lootSummary ?? '';
       const line = s.outcome === 'attacker_win' ? t('world.siegeWin').replace('{loot}', loot)
@@ -635,14 +639,17 @@ export class WorldMapNet {
           { label: '✕', action: () => this.ctx.panels.closeModal() },
         ],
       );
-    } else if (this.ctx.myOccupyTiles.has(s.tile)) {
+    } else if (amInitiator && s.marchKind === 'occupy') {
       // We launched an occupy (PvE land-grab, ADR-037). It reports back as a SiegeResult but is our own action —
       // a win begins the occupation hold, a non-win means the NPC garrison held. Lightweight toast (no replay
       // modal): occupy is high-frequency expansion, unlike a deliberate PvP siege.
-      this.ctx.myOccupyTiles.delete(s.tile);
       const line = s.outcome === 'attacker_win' ? t('world.occupyWin') : t('world.occupyLoss');
       this.ctx.panels.showToast(line, s.outcome === 'attacker_win' ? C.dark : C.red);
     } else {
+      // Note: a field encounter (MarchKind 'move', ADR P2/P3) resolving mid-transit still falls
+      // through to the defender-branch wording below even when amInitiator is true — same as before
+      // this fix. That's a separate, pre-existing miswiring (the marcher's own win/loss reads
+      // backwards), left alone here to keep this change scoped to the reported occupy bug.
       // We were the defender (or a bystander) — toast only.
       const line = s.outcome === 'attacker_win' ? t('world.defendLost') : t('world.defendHeld');
       this.ctx.panels.showToast(line, s.outcome === 'attacker_win' ? C.red : C.dark);
