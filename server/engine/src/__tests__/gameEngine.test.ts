@@ -200,6 +200,26 @@ test('destroy_base ends immediately once the attacker army is wiped, without wai
   );
 });
 
+test('destroy_base does NOT early-exit on a card/ink-driven level with no attackerArmy, even with zero Bottom units on board', () => {
+  const level: LevelDefinition = {
+    id: 'test_destroy_base_no_attacker_army',
+    chapter: 0,
+    seed: 14,
+    objective: { kind: 'destroy_base' },
+    waves: { entries: [] },
+    battleTimeoutTicks: 18000,
+    // No attackerArmy: this is an ordinary player-driven siege/campaign level. The Bottom player deploys
+    // units by playing cards from hand — never doing so (no commands fed below) leaves zero Bottom-side
+    // units on the board for the whole run, which must NOT be mistaken for "the attacker's army was wiped".
+  };
+  const config: GameConfig = { seed: 14, mode: 'siege', players: [{ id: 0 }, { id: 1 }], level };
+  const engine = createGameEngine(config);
+
+  for (let tick = 0; tick < 50; tick++) engine.step(tick, []);
+
+  assert.equal(engine.state.phase, GamePhase.Playing, 'no attackerArmy configured → the wipeout early exit must not fire just because no card has been played yet');
+});
+
 test('levelSchema validates defenderBaseHp: accepts a positive int, rejects <1 and >100000', () => {
   // battleTimeoutTicks marks this a siege battle → empty waves are allowed (isSiegeBattle in levelSchema).
   const base = { id: 'l', chapter: 0, seed: 1, objective: { kind: 'destroy_base' }, waves: { entries: [] }, battleTimeoutTicks: 100 };
