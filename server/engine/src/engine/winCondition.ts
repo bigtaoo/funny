@@ -73,10 +73,15 @@ export function WinConditionMixin<TBase extends GameEngineBaseCtor & Constructor
           return;
         }
 
-        // `destroy_base` early exit (SLG siege): the attacker can never destroy the base once its whole
-        // army is wiped — end immediately as a defender win instead of burning ticks to battleTimeoutTicks/
-        // durationTicks. Mirrors `survive`'s hasLivingEnemyUnits() early exit below, mirrored for the attacker side.
-        if (objective.kind === 'destroy_base' && !this.hasLivingAttackerUnits()) {
+        // `destroy_base` early exit (SLG siege with a scripted `attackerArmy`): that army is a fixed,
+        // one-shot force placed at setup with no hand/ink economy behind it, so once it's fully wiped the
+        // attacker can never destroy the base — end immediately as a defender win instead of burning ticks
+        // to battleTimeoutTicks/durationTicks. Gated on `attackerArmy` being defined: ordinary destroy_base
+        // levels (PvE campaign, player-driven siege) have the Bottom player deploying units from hand over
+        // time, so a momentary zero-units-on-board tick is normal, not a wipeout — hasLivingAttackerUnits()
+        // must not be treated as authoritative there. Mirrors `survive`'s hasLivingEnemyUnits() early exit below.
+        if (objective.kind === 'destroy_base' && this.level!.attackerArmy && this.level!.attackerArmy.length > 0 &&
+            !this.hasLivingAttackerUnits()) {
           this.state.phase  = GamePhase.GameOver;
           this.state.winner = Side.Top;
           this.state.pushEvent({ type: 'game_stats', stats: this.state.snapshotStats(), summary: this.state.snapshotSummary() });

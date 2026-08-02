@@ -1638,3 +1638,13 @@ cols.tiles.find({ worldId, type: 'base', ownerId: { $nin: excludeOwners } })
 **追加测试（同日，用户要求"加测试"）**：① 补 2 例——「输的遭遇战同样不弹复盘弹窗」（跟赢的分支对称，之前只在赢分支断言过 `showModal` 未调用）；「自己发起的行军但 `marchKind` 是识别不到的种类（如 `sweep`）」不会被误判成遭遇战——钉死这个分支专门 keyed on `marchKind==='move'`，不是"任何自己发起、非 attack/occupy 的动作"的宽松判断（跟已有的"别人发起的 move"用例互补，一个测"kind 对但不是我方"，一个测"是我方但 kind 不对"）。② 证伪测试不是形同虚设：把 `applySiegeResult` 里 `s.marchKind === 'move'` 临时改成一个不可能匹配的字符串，复跑本文件——**2/12 例转红**（恰好是"自己赢/输一场遭遇战"这两例，读回旧的"领地失守"/"守土成功"反向文案；"别人发起的 move"与"自己发起但 kind 不对"两例保持绿，因为它们本就该走兜底分支，没被这次改动影响，符合预期），换回真实实现后复跑 **12/12 转绿**。`worldMapSiegeResultToast.ui.ts` 全 12 例过，`client` UI 全量 112 文件/963 例仍全绿。
 
 **顺带发现（超出本次范围，已 spawn_task 转出）**：全量非 UI `vitest run` 有 7 例失败（`campaign-knobs`/`garrison`/`siege-battle.test.ts`），主检出（`02.08.2026` 分支当前 tip）同样复现，与本次改动无关——疑似近期 `destroy_base` 提前结束修复（`ad01a623`/`5de02ba9`）在这几个既有场景里判定过宽，已转出独立任务跟进，不在本次范围内处理。
+
+## 54. §53 遗留的 `destroy_base` 提前结束误判——收窄到仅 `attackerArmy` 剧本场景（2026-08-02）
+
+**背景**：§53 末尾记录的 7 例失败（`campaign-knobs.test.ts`×4、`garrison.test.ts`×2、`siege-battle.test.ts`×1）跟进排查。
+
+**根因**：`ad01a623`（§50）加的早退检查——`objective.kind==='destroy_base' && !hasLivingAttackerUnits()` 立即判防守方胜——隐含前提是"进攻方军队在引擎构造时一次性同步入场，没有逐 tick 补兵的活指令输入"（§50 原文），只对 `level.attackerArmy` 剧本化铺兵场景成立。但 `destroy_base` 目标同时也用于普通 PvE 战役/玩家出牌驱动的围攻（`campaign-knobs`/`garrison`/`siege-battle` 三个测试文件覆盖的就是这类场景）——这类场景里 Bottom 方是靠手牌/灵墨经济逐 tick 出卡，`attackerArmy` 从未设置，`board.units` 里查不到 Side.Bottom 单位只是"这一刻还没打出牌"的正常瞬时状态，不是"全灭"。`hasLivingAttackerUnits()` 对这两类场景一视同仁地查 board 上的 Bottom 单位，导致普通出牌流程在第 0/1 tick（尚未打出第一张牌）就被误判成"进攻方已全灭"，立即 `GameOver`。
+
+**修复**：`winCondition.ts` 的早退条件追加 `this.level!.attackerArmy && this.level!.attackerArmy.length > 0` 前置守卫——只有关卡确实配置了剧本化 `attackerArmy` 时才允许 `hasLivingAttackerUnits()` 生效判负；普通出牌驱动的 `destroy_base` 关卡（无 `attackerArmy`）不再受这条早退影响，跟修复前一样只由 `battleTimeoutTicks`/`durationTicks`/破基地三条既有分支收尾。`hasLivingAttackerUnits()`/`hasLivingEnemyUnits()` 本身不改。
+
+**验证**：`server/engine` `npm test`（`tsc -b` + `node --test`）77 例全过，含 §50 新增的 `attackerArmy` 剧本化早退用例（确认加了守卫之后该用例仍然早退，未被误伤）；`client` 非 UI 全量 129 文件/944 例、UI 全量 112 文件/963 例两套全绿，此前失败的 `campaign-knobs.test.ts`/`garrison.test.ts`/`siege-battle.test.ts` 三文件单独重跑（64 例）全绿。
