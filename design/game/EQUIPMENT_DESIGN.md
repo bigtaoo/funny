@@ -429,6 +429,16 @@ buildSiegeBlueprints(levels, equipped, inv)
 
 **回归测试**：`client/test/ui/equipmentEnhanceIncrementalRedraw.ui.ts`——成功强化只重绘目标格子（用容器引用/子对象引用相等断言"另一个格子完全没被碰过"）、失败强化完全不碰网格、busy 状态下格子图标框尺寸与空闲时一致。
 
+### 11.4 实现记录（2026-08-02，✅）— 强化关窗后背包其它格子强化按钮仍灰
+
+**症状**：强化一件堆叠中的装备（如 24 个「荧光笔」），成功后关闭详情弹窗，背包列表里**其它**格子（不是刚强化那一件）的强化/装备按钮仍是灰色不可点，要下拉滚动一下（触发一次全量 `render()`）才恢复正常。
+
+**根因**：11.3 的修复假设"busy 期间网格完全不重绘，只有 `doEnhance` 自己结束时才可能重绘"，但实际接线（`src/app/nav/game.ts` 的 `enhance()`）里，`await client.enhanceEquipment(...)` 拿到服务器结果后，先同步调用 `saveManager.adoptServerPartial(...)`——而 `SaveManager.persist()` 是**同步**通知所有订阅者的（见 `SaveManager.subscribe` 注释"Fires synchronously"）。`EquipmentSceneBase` 构造函数里订阅了 `cb.onSaveChanged(() => this.render())`，于是这次同步通知会在 `doEnhance` 自己的 `await` 还没返回、`this.bt.busy` 还是 `true` 的时候，抢先触发一次**全量** `render()`。这次全量重绘用的是已经更新过的存档（等级已变，堆叠已拆分），但因为 `busy` 还是 `true`，**全场格子**的按钮都画成了 disabled 灰色。等 `doEnhance` 自己的 `finally` 跑到时，`bt.stop()` 已经把 busy 清掉，但后续的"单格增量重绘/整页 render 二选一"判断只会去修**被强化的那一格**（`refreshInstanceCell(instanceId)` 只认领一个 id，且这次它的签名比对是拿"已经因为 mid-flight render 而更新过"的 `lastEntrySig` 去对比，天然一致，判定为"未重排"从而走了单格刷新的便宜路径）——网格里其余格子从此就停留在那次 mid-flight 全量重绘留下的灰色状态，直到下一次真正的全量 `render()`（如滚动）。
+
+**修复**：`EquipmentSceneBase` 新增 `renderGeneration` 计数器，每次 `render()` 自增；`doEnhance` 在 `await` 前记下 `genBeforeAwait`，`finally` 里比对 `this.renderGeneration !== genBeforeAwait` 来判断"await 期间是否发生过 mid-flight 全量重绘"——发生过的话直接强制走整页 `render()`（无视等级变化/单格增量是否成功的原有判断），把 mid-flight 重绘留下的全场灰按钮一并修正；没发生过（如现有单测的 mock `enhance` 不做同步通知）则维持 11.3 的单格增量路径不变。
+
+**回归测试**：新增用例覆盖"`enhance()` 回调内同步调用 `onSaveChanged` 监听器"这一更贴近真实接线的场景（模拟 `saveManager.adoptServerPartial` 的同步通知时机），断言强化并关闭弹窗后，未被触碰的同网格其它格子的按钮 hitRects 与强制 `render()` 后一致（即已经是启用状态，不需要额外滚动才能修复）。
+
 ---
 
 ## 12. 经济联动
@@ -602,6 +612,8 @@ buildSiegeBlueprints(levels, equipped, inv)
 **共享修复**：`server/shared/src/mongo.ts` `EquipmentIdemDoc.op` 联合类型补 `'reforge'`（E6 遗留 tsc 报错，E7 顺手修）。
 
 **商城卡片文案补漏（2026-07-16）**：`ShopScene`（`client/src/scenes/ShopScene/shop.ts` `buildShopCards`）此前把 `SHOP_ITEMS` 里所有条目都当皮肤画（`brush` 图标 + `"皮肤 · {id}"` 标题 + 皮肤 owned 判定），`protect_enhance`（`kind='item'`）因此显示成裸 id、无说明文案，且错误复用了皮肤的"已拥有"判定（消耗品应可反复购买）。改为按 `item.kind` 分支：`kind==='item'` 走 `armor` 图标 + 专属 i18n 名称/说明（`shop.item.protect_enhance.{name,desc}`）+ 恒可购买（无 owned 态）；`kind==='skin'` 保持原逻辑不变。新增回归测试 [shopScene.ui.ts](../../client/test/ui/shopScene.ui.ts)。
+
+**binding 起征点提前，鼓励用保护石（2026-08-02）**：用户走查装备强化弹窗后指出，`protect_enhance` 保住的材料几乎不亏，怀疑材料消耗定得太低；核算后（ECONOMY_NUMBERS §5.4）发现保护石在 +7 以下确实"用亏"，明确要求调高材料消耗以鼓励更早使用保护石。`enhanceCost()`（`server/shared/src/equipment.ts` + 客户端镜像 `client/src/game/meta/equipmentDefs.ts`）的 `binding` 起征点从 **+6** 提前到 **+4**（`lv >= 4 ? lv - 3 : 0`）；scrap/lead/金币公式不变。效果：保护石盈亏平衡点从 +7 提前到 +5（核算见 ECONOMY_NUMBERS §5.4 更新表）。同步更新 `server/shared/test/equipment.test.ts` 里断言起征点的单测（`+6`→`+4`）。**`@nw/shared` 是预编译包**（`main: dist/index.js`）——改完 `server/shared/src/equipment.ts` 后必须 `cd server/shared && npm run build`，否则依赖它的 `server/tools/econ-sim` 等包仍读到旧 `dist`，算出来的数字不会变（本次改动时踩了一次，记录在案）。
 
 #### E8 SLG 接入 实现记录（2026-06-22，✅）
 

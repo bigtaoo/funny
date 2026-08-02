@@ -10,7 +10,7 @@
 // AuctionView is the exception: auctionsvc is a standalone service with its own contract
 // (server/contracts/openapi-auction.yml → src/net/openapi-auction.ts, AUCTION_DESIGN §9).
 
-import { getWorldBaseUrl, getSocialBaseUrl } from './config';
+import { getWorldBaseUrl, getSocialBaseUrl, getAuctionBaseUrl } from './config';
 import type { IStorage } from '../platform/IPlatform';
 import type { components, operations } from './openapi-world';
 import type { components as socialComponents } from './openapi-social';
@@ -553,11 +553,11 @@ export class WorldApiClient {
     if (opts?.itemType) params.set('itemType', opts.itemType);
     if (opts?.limit) params.set('limit', String(opts.limit));
     const qs = params.toString() ? `?${params}` : '';
-    return this.req('GET', `/auction/list${qs}`);
+    return this.req('GET', `/auction/list${qs}`, undefined, 10_000, getAuctionBaseUrl());
   }
 
   async getMyListings(): Promise<AuctionView[]> {
-    return this.req('GET', '/auction/mine');
+    return this.req('GET', '/auction/mine', undefined, 10_000, getAuctionBaseUrl());
   }
 
   /**
@@ -566,7 +566,7 @@ export class WorldApiClient {
    * category is unguarded / cold-start (any price allowed). floor/ceil match the server's PRICE_OUT_OF_RANGE check.
    */
   async getAuctionRefBand(category: string): Promise<{ ref: number; floor: number; ceil: number } | null> {
-    return this.req('GET', `/auction/refprice?category=${encodeURIComponent(category)}`);
+    return this.req('GET', `/auction/refprice?category=${encodeURIComponent(category)}`, undefined, 10_000, getAuctionBaseUrl());
   }
 
   /**
@@ -593,20 +593,20 @@ export class WorldApiClient {
       ...(opts?.startPrice != null ? { startPrice: opts.startPrice } : {}),
       ...(opts?.buyoutPrice != null ? { buyoutPrice: opts.buyoutPrice } : {}),
       ...(opts?.designatedBuyerId ? { designatedBuyerId: opts.designatedBuyerId } : {}),
-    });
+    }, 10_000, getAuctionBaseUrl());
   }
 
   async buyAuction(auctionId: string): Promise<{ ok: true }> {
-    return this.req('POST', `/auction/${encodeURIComponent(auctionId)}/buy`, {});
+    return this.req('POST', `/auction/${encodeURIComponent(auctionId)}/buy`, {}, 10_000, getAuctionBaseUrl());
   }
 
   /** Place a bid (saleMode='auction'). amount = bid unit price; reaching or exceeding buyoutPrice closes the auction immediately. */
   async placeBid(auctionId: string, amount: number): Promise<AuctionView> {
-    return this.req('POST', `/auction/${encodeURIComponent(auctionId)}/bid`, { amount });
+    return this.req('POST', `/auction/${encodeURIComponent(auctionId)}/bid`, { amount }, 10_000, getAuctionBaseUrl());
   }
 
   async cancelAuction(auctionId: string): Promise<{ ok: true }> {
-    return this.req('POST', `/auction/${encodeURIComponent(auctionId)}/cancel`, {});
+    return this.req('POST', `/auction/${encodeURIComponent(auctionId)}/cancel`, {}, 10_000, getAuctionBaseUrl());
   }
 
   // ── Sect (S8-4b) ────────────────────────────────────────────────────────

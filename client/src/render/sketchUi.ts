@@ -36,7 +36,10 @@ export const ui = {
   margin: palette.inkRed,
   /** Ink-dark — headers, primary text, button fills. */
   dark:   0x2c2c2a,
-  mid:    0x888888,
+  /** Darkened from 0x888888 (2026-08-02): the old value read ~3.6:1 against card paper —
+   * under WCAG AA body-text contrast, which is why secondary labels (levels, captions,
+   * counts) looked washed out. This lands ~5.7:1. */
+  mid:    0x686868,
   light:  0xdddddd,
   /** Disabled button stroke / muted accents. */
   btnOff: 0xbbbbbb,

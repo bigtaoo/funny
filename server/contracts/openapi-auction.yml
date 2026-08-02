@@ -91,6 +91,25 @@ components:
           type: boolean
           enum: [true]
 
+    Error:
+      type: object
+      required: [code, message]
+      properties:
+        code: { type: string }
+        message: { type: string }
+
+  responses:
+    ErrorResp:
+      description: Error envelope
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [ok, error]
+            properties:
+              ok: { type: boolean, enum: [false] }
+              error: { $ref: '#/components/schemas/Error' }
+
 paths:
 
   # ── Auction ────────────────────────────────────────────────────────────────
@@ -115,6 +134,8 @@ paths:
                       data:
                         type: array
                         items: { $ref: '#/components/schemas/AuctionView' }
+        '401': { $ref: '#/components/responses/ErrorResp' }
+        '500': { $ref: '#/components/responses/ErrorResp' }
 
   /auction/mine:
     get:
@@ -133,6 +154,8 @@ paths:
                       data:
                         type: array
                         items: { $ref: '#/components/schemas/AuctionView' }
+        '401': { $ref: '#/components/responses/ErrorResp' }
+        '500': { $ref: '#/components/responses/ErrorResp' }
 
   /auction/refprice:
     get:
@@ -158,6 +181,8 @@ paths:
                           ref:   { type: number, description: Reference unit price (dynamic median or static fallback) }
                           floor: { type: number, description: ref × AUCTION_PRICE_FLOOR_RATIO }
                           ceil:  { type: number, description: ref × AUCTION_PRICE_CEIL_RATIO }
+        '401': { $ref: '#/components/responses/ErrorResp' }
+        '500': { $ref: '#/components/responses/ErrorResp' }
 
   /auction/create:
     post:
@@ -206,6 +231,11 @@ paths:
                   - type: object
                     properties:
                       data: { $ref: '#/components/schemas/AuctionView' }
+        '400': { $ref: '#/components/responses/ErrorResp' }
+        '401': { $ref: '#/components/responses/ErrorResp' }
+        '404': { $ref: '#/components/responses/ErrorResp' }
+        '409': { $ref: '#/components/responses/ErrorResp' }
+        '500': { $ref: '#/components/responses/ErrorResp' }
 
   /auction/{auctionId}/buy:
     post:
@@ -219,6 +249,12 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/OkResponse' }
+        '400': { $ref: '#/components/responses/ErrorResp' }
+        '401': { $ref: '#/components/responses/ErrorResp' }
+        '403': { $ref: '#/components/responses/ErrorResp' }
+        '404': { $ref: '#/components/responses/ErrorResp' }
+        '409': { $ref: '#/components/responses/ErrorResp' }
+        '500': { $ref: '#/components/responses/ErrorResp' }
 
   /auction/{auctionId}/bid:
     post:
@@ -247,6 +283,12 @@ paths:
                   - type: object
                     properties:
                       data: { $ref: '#/components/schemas/AuctionView' }
+        '400': { $ref: '#/components/responses/ErrorResp' }
+        '401': { $ref: '#/components/responses/ErrorResp' }
+        '403': { $ref: '#/components/responses/ErrorResp' }
+        '404': { $ref: '#/components/responses/ErrorResp' }
+        '409': { $ref: '#/components/responses/ErrorResp' }
+        '500': { $ref: '#/components/responses/ErrorResp' }
 
   /auction/{auctionId}/cancel:
     post:
@@ -260,3 +302,9 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/OkResponse' }
+        '400': { $ref: '#/components/responses/ErrorResp' }
+        '401': { $ref: '#/components/responses/ErrorResp' }
+        '403': { $ref: '#/components/responses/ErrorResp' }
+        '404': { $ref: '#/components/responses/ErrorResp' }
+        '409': { $ref: '#/components/responses/ErrorResp' }
+        '500': { $ref: '#/components/responses/ErrorResp' }

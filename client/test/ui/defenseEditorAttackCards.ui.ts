@@ -19,6 +19,7 @@ import { msCountdown } from '../../src/scenes/DefenseEditorScene/base';
 import { makeNewSave, type SaveData } from '../../src/game/meta/SaveData';
 import { WorldApiError, type WorldApiClient, type TeamTemplate, type CardSLGState, type PlayerWorldView } from '../../src/net/WorldApiClient';
 import * as log from '../../src/net/log';
+import { BASE_COLS } from '../../src/game/config';
 
 const memStore = (() => {
   const m = new Map<string, string>();
@@ -343,5 +344,84 @@ describe('DefenseEditorScene attack mode — roster panel scroll clipping (2026-
     s.render();
     const masked = s.bodyLayer.children.some((c) => (c as PIXI.Container).mask != null);
     expect(masked).toBe(true);
+  });
+});
+
+// The base-column band (cols BASE_COLS, never a placeable lane) used to carry only a background tint
+// plus a "出兵"/Deploy text label pointing at the home-edge row — players never noticed the label
+// (2026-08-02 user report). Replaced with the same castle art PvP battles use (BoardView's
+// game_base.png), drawn once at the home-edge row so "near = home, far = front" reads at a glance;
+// the text label is gone entirely (defense mode keeps its own "buildRow" label — unaffected).
+describe('DefenseEditorScene attack mode — base icon replaces the frontRow label (2026-08-02)', () => {
+  it('draws the base icon spanning the base columns at the home-edge row, and drops the old text label', async () => {
+    const { scene } = buildHarness({ cardCount: 0, cardState: {} });
+    await flush();
+    const s = scene as unknown as {
+      drawArtFit(url: string, x: number, y: number, boxW: number, boxH: number): void;
+      render(): void;
+      gridX: number; gridY: number; cellW: number; cellH: number;
+      gRows: readonly number[];
+      bodyLayer: PIXI.Container;
+    };
+    const spy = vi.spyOn(s, 'drawArtFit');
+    s.render();
+
+    // The base icon is the only drawArtFit call sized to 2 grid columns wide (unit/roster art is
+    // always drawn into a single square-ish cell) — find it by that shape rather than by url, since
+    // the test harness's binary-asset stub collapses every png import to one identical data: URI.
+    const rows = s.gRows.length; // attack mode: no building row, so this is the full row count
+    const baseCall = spy.mock.calls.find(([, , , boxW]) => Math.abs(boxW - s.cellW * 2) < 0.01);
+    expect(baseCall).toBeTruthy();
+    const [, px, py, boxW, boxH] = baseCall!;
+    expect(px).toBeCloseTo(s.gridX + BASE_COLS[0] * s.cellW);
+    expect(py).toBeCloseTo(s.gridY + (rows - 1) * s.cellH);
+    expect(boxW).toBeCloseTo(s.cellW * 2);
+    expect(boxH).toBeCloseTo(s.cellH);
+
+    const hasOldLabel = s.bodyLayer.children.some((c) => (c as PIXI.Text).text === 'Deploy');
+    expect(hasOldLabel).toBe(false);
+  });
+});
+
+// Regression guard for the same change: the row-label block now only fires for defense mode
+// (`if (this.hasBuildingRow)` instead of an unconditional ternary), and the base icon is gated on
+// `!this.hasBuildingRow` — both need to hold for defense mode specifically, not just "attack mode
+// looks right in isolation."
+describe('DefenseEditorScene defense mode — buildRow label + base icon untouched by the attack-mode change (2026-08-02)', () => {
+  function buildDefenseHarness() {
+    const save = buildSave(0);
+    const getDefense = vi.fn().mockResolvedValue(null);
+    const setDefense = vi.fn().mockResolvedValue(undefined);
+    const worldApi = { getDefense, setDefense } as unknown as WorldApiClient;
+    const cb: DefenseEditorCallbacks = {
+      onBack: vi.fn(),
+      getSave: () => save,
+      worldApi,
+      worldId: WORLD_ID,
+      target: { mode: 'defense', tileKey: 'world:1:0:5:5' },
+    };
+    const scene = new DefenseEditorScene(createLayout(800, 1280), new InputManager(), cb);
+    return { scene };
+  }
+
+  it('still renders the "Build" row label at the building row, and never draws the base icon', async () => {
+    const { scene } = buildDefenseHarness();
+    await flush();
+    const s = scene as unknown as {
+      drawArtFit(url: string, x: number, y: number, boxW: number, boxH: number): void;
+      render(): void;
+      cellW: number;
+      bodyLayer: PIXI.Container;
+    };
+    const spy = vi.spyOn(s, 'drawArtFit');
+    s.render();
+
+    const hasBuildLabel = s.bodyLayer.children.some((c) => (c as PIXI.Text).text === t('world.defense.buildRow'));
+    expect(hasBuildLabel).toBe(true);
+
+    // Same "2 grid columns wide" shape check the attack-mode test uses to spot the base icon —
+    // it must never appear here, since hasBuildingRow guards it off in defense mode.
+    const baseCall = spy.mock.calls.find(([, , , boxW]) => Math.abs(boxW - s.cellW * 2) < 0.01);
+    expect(baseCall).toBeUndefined();
   });
 });

@@ -7,6 +7,7 @@ import { FS } from '../../render/fontScale';
 import { drawScrollIndicator } from '../../ui/widgets/ScrollIndicator';
 import { cardInstanceArtUrl, unitPortraitUrl, equippedSkinIdFor, getArtTexture } from '../../render/cardArt';
 import { ATTACK_LANES, BASE_COLS } from '../../game/config';
+import baseTexUrl from '../../assets/buildings/game_base.png';
 import { UnitType, BuildingType } from '../../game/types';
 import type { CardInstance } from '../../game/meta/SaveData';
 import {
@@ -361,17 +362,25 @@ export function RenderMixin<TBase extends DefenseEditorSceneBaseCtor>(Base: TBas
                 const cap = this.mode === 'attack' && u.cardInstanceId ? this.capForCard(u.cardInstanceId) : undefined;
                 this.drawUnit(g, px, py, cellW, cellH, u.unitType, u.hp, cap, !!u.cardInstanceId && u.cardInstanceId === leaderId);
               }
+            } else if (!this.hasBuildingRow && dr === rows - 1 && isBaseCol && col === baseLo) {
+              // Attack mode only: the home base sits just past this row (row 0 is off-grid), so the
+              // same castle art PvP battles use is drawn into the base-column band at the near edge —
+              // reads as "this is your base" without a text label (2026-08-02: the old "出兵" label
+              // went unnoticed, replaced with this icon instead of kept alongside it).
+              this.drawArtFit(baseTexUrl as string, px, py, cellW * 2, cellH);
             }
           }
         }
       }
 
-      // Row label (left): defense → building row; attack → spawn row at the home row (bottom).
-      const lbl = txt(this.hasBuildingRow ? t('world.defense.buildRow') : t('world.team.frontRow'), FS.micro, C.mid);
-      lbl.anchor.set(1, 0.5);
-      lbl.x = gridX - 3;
-      lbl.y = this.hasBuildingRow ? gridY + cellH / 2 : gridY + (rows - 0.5) * cellH;
-      this.bodyLayer.addChild(lbl);
+      // Row label (left): defense mode only — attack mode drops the label for the base icon above.
+      if (this.hasBuildingRow) {
+        const lbl = txt(t('world.defense.buildRow'), FS.micro, C.mid);
+        lbl.anchor.set(1, 0.5);
+        lbl.x = gridX - 3;
+        lbl.y = gridY + cellH / 2;
+        this.bodyLayer.addChild(lbl);
+      }
     }
 
     drawBuilding(g: PIXI.Graphics, px: number, py: number, cw: number, ch: number, type: BuildingType): void {

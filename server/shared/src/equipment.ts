@@ -119,7 +119,9 @@ export function enhanceCost(fromLevel: number): EnhanceCost {
   const lv = Math.max(0, Math.min(fromLevel, EQUIP_MAX_LEVEL - 1));
   const materials: Record<string, number> = { scrap: 4 + 2 * lv };
   if (lv >= 3) materials.lead = lv - 2; // lead required from +3
-  if (lv >= 6) materials.binding = lv - 5; // binding required from +6
+  // binding required from +4 (was +6, moved up 2026-08-02): raises the mid-game material stake so
+  // protect_enhance's flat 500-coin price pays off from +5 instead of +7 — see ECONOMY_NUMBERS.md §5.4.
+  if (lv >= 4) materials.binding = lv - 3;
   return { materials, coins: 40 * (lv + 1) };
 }
 

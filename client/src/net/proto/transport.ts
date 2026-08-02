@@ -427,6 +427,16 @@ export interface SiegeResult {
   replayRef: string;
   /** attacking march's id (occupy attack-animation correlation) */
   marchId: string;
+  /**
+   * 2026-08-02 bug fix: the recipient's role used to be guessed client-side from a per-scene,
+   * in-memory "did I just dispatch this march" Set — reset on every WorldMapScene rebuild (leaving
+   * and re-entering the SLG, or a page reload) while the march was still in flight, misreading the
+   * player's own win as a defensive loss ("Territory lost"). These two fields make classification
+   * server-authoritative instead: always populated, so the client never needs to remember its own action.
+   */
+  attackerId: string;
+  /** MarchKind of that march (attack | occupy | move | ...), SiegeDoc.marchKind */
+  marchKind: string;
 }
 
 export interface FamilyMsg {
@@ -3551,7 +3561,16 @@ export const UnderAttack: MessageFns<UnderAttack> = {
 };
 
 function createBaseSiegeResult(): SiegeResult {
-  return { siegeId: "", tile: "", outcome: "", lootSummary: "", replayRef: "", marchId: "" };
+  return {
+    siegeId: "",
+    tile: "",
+    outcome: "",
+    lootSummary: "",
+    replayRef: "",
+    marchId: "",
+    attackerId: "",
+    marchKind: "",
+  };
 }
 
 export const SiegeResult: MessageFns<SiegeResult> = {
@@ -3573,6 +3592,12 @@ export const SiegeResult: MessageFns<SiegeResult> = {
     }
     if (message.marchId !== "") {
       writer.uint32(50).string(message.marchId);
+    }
+    if (message.attackerId !== "") {
+      writer.uint32(58).string(message.attackerId);
+    }
+    if (message.marchKind !== "") {
+      writer.uint32(66).string(message.marchKind);
     }
     return writer;
   },
@@ -3632,6 +3657,22 @@ export const SiegeResult: MessageFns<SiegeResult> = {
           message.marchId = reader.string();
           continue;
         }
+        case 7: {
+          if (tag !== 58) {
+            break;
+          }
+
+          message.attackerId = reader.string();
+          continue;
+        }
+        case 8: {
+          if (tag !== 66) {
+            break;
+          }
+
+          message.marchKind = reader.string();
+          continue;
+        }
       }
       if ((tag & 7) === 4 || tag === 0) {
         break;
@@ -3652,6 +3693,8 @@ export const SiegeResult: MessageFns<SiegeResult> = {
     message.lootSummary = object.lootSummary ?? "";
     message.replayRef = object.replayRef ?? "";
     message.marchId = object.marchId ?? "";
+    message.attackerId = object.attackerId ?? "";
+    message.marchKind = object.marchKind ?? "";
     return message;
   },
 };

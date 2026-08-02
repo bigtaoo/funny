@@ -126,9 +126,9 @@ describe('enhanceCost', () => {
     expect(enhanceCost(3).materials.lead).toBe(1);
   });
 
-  it('binding is only required from +6', () => {
-    expect(enhanceCost(5).materials.binding).toBeUndefined();
-    expect(enhanceCost(6).materials.binding).toBe(1);
+  it('binding is only required from +4', () => {
+    expect(enhanceCost(3).materials.binding).toBeUndefined();
+    expect(enhanceCost(4).materials.binding).toBe(1);
   });
 
   it('clamps out-of-range levels into the valid band', () => {

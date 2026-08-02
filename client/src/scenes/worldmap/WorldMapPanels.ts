@@ -56,7 +56,25 @@ export class WorldMapPanels {
     layer.addChild(aIcon); layer.addChild(aTxt);
     this.ctx.aucBtnRect = { x: aucBtn.x, y: aucBtn.y, w: aucW, h: aucH };
 
-    // Per-resource production readout — centered between the back button and the auction
+    // Shop button — immediately left of the auction button, same sizing/style so the pair
+    // reads as one entry-point group (2026-08-02: shop pulled out of the Territory Overview
+    // panel into its own item-card catalog — see openShopPanel/renderShopPanel).
+    const sIconSize = aIconSize;
+    const sIcon = buildIcon('coinSack', sIconSize, C.light);
+    const sTxt = txt(t('world.tabShop'), snapFont(Math.round(aucH * 0.34)), C.light);
+    sTxt.anchor.set(0, 0.5);
+    const sGrpW = sIconSize + 4 + sTxt.width;
+    const shopW = Math.ceil(sGrpW) + 24;
+    const shopBtn = sketchButton(shopW, aucH, seedFor(1, 1, shopW));
+    shopBtn.x = aucBtn.x - shopW - 8; shopBtn.y = aucBtn.y;
+    layer.addChild(shopBtn);
+    const sGx = shopBtn.x + (shopW - sGrpW) / 2;
+    sIcon.x = sGx; sIcon.y = shopBtn.y + (aucH - sIconSize) / 2;
+    sTxt.x = sGx + sIconSize + 4; sTxt.y = shopBtn.y + aucH / 2;
+    layer.addChild(sIcon); layer.addChild(sTxt);
+    this.ctx.shopBtnRect = { x: shopBtn.x, y: shopBtn.y, w: shopW, h: aucH };
+
+    // Per-resource production readout — centered between the back button and the shop
     // button, replacing the old "World" title text.
     const yieldRate = this.ctx.me?.yieldRate ?? {};
     const iconSize = Math.round(headerH * 0.34);
@@ -81,7 +99,7 @@ export class WorldMapPanels {
     }
     cx -= gap;
     const leftBound = this.ctx.backRect.x + this.ctx.backRect.w + 8;
-    const rightBound = aucBtn.x - 8;
+    const rightBound = shopBtn.x - 8;
     cluster.x = leftBound + Math.max(0, (rightBound - leftBound - cx) / 2);
     cluster.y = headerH / 2;
 
@@ -415,6 +433,7 @@ export class WorldMapPanels {
     this.ctx.selectedTile = null;
     this.ctx.territoryPanelOpen = false;
     this.ctx.replayPanelOpen = false;
+    this.ctx.shopPanelOpen = false;
     this.ctx.view.renderMap();
   }
 
@@ -422,13 +441,15 @@ export class WorldMapPanels {
     const tl = this.ctx.toastLayer;
     tearDownChildren(tl);
     const { w, h } = this.ctx;
-    // Unified toast box: dark panel + colored border, centered at h*2/3 — matches CityScene.showToast
+    // Unified toast box: dark panel + colored border, centered at h*0.8 — matches CityScene.showToast
     // and the global fallback GlobalToast so world-map notices read the same as the rest of the game.
+    // (Moved down from h*2/3 on 2026-08-02: that line sat under modal confirm buttons — e.g. the
+    // Equipment enhance dialog's own confirm button — and covered them while the toast was visible.)
     const tw = Math.min(w - 40, 720);
     const th = 84;
     const box = sketchPanel(tw, th, { fill: C.dark, fillAlpha: 0.88, border: color, width: 1, seed: 7 });
     box.x = (w - tw) / 2;
-    box.y = Math.round(h * 2 / 3 - th / 2);
+    box.y = Math.round(h * 0.8 - th / 2);
     tl.addChild(box);
     const lbl = txt(msg, FS.headline, 0xffffff, false, tw - 48);
     lbl.anchor.set(0.5, 0.5);
@@ -523,21 +544,26 @@ export class WorldMapPanels {
     this.ctx.modalBtnRects.push({ rect: { x, y, w: bw, h: bh }, action });
   }
 
-  /** Lazy-load the world-info data (nations/shop catalog) the first time the 'world' tab of
-   * the Territory Overview panel is opened — mirrors the old standalone world-info button. */
+  /** Lazy-load the world-info data (nations) the first time the 'world' tab of the Territory
+   * Overview panel is opened — mirrors the old standalone world-info button. */
 
   loadWorldTabData(): void {
+    void this.ctx.cb.worldApi.getNations(this.ctx.cb.worldId)
+      .then((n) => { this.ctx.nations = n; })
+      .catch(() => {});
+  }
+
+  /** Lazy-load the shop catalog the first time the standalone Shop panel is opened. */
+
+  private loadShopItems(): void {
     if (this.ctx.shopItems.length === 0) {
       void this.ctx.cb.worldApi.getShopItems()
         .then((items) => {
           this.ctx.shopItems = items;
-          if (this.ctx.territoryPanelOpen && this.ctx.territoryTab === 'world') this.renderTerritoryPanel();
+          if (this.ctx.shopPanelOpen) this.renderShopPanel();
         })
         .catch(() => { /* offline */ });
     }
-    void this.ctx.cb.worldApi.getNations(this.ctx.cb.worldId)
-      .then((n) => { this.ctx.nations = n; })
-      .catch(() => {});
   }
 
   /** Localize an SLG shop item by kind + effect (server description is zh-only). */
@@ -553,10 +579,133 @@ export class WorldMapPanels {
     }
   }
 
-  /** Nations / season / shop sub-tabs — the 'world' tab body of the Territory Overview panel
-   * (folded in from the old standalone world-info button/modal). Draws into the panel region
-   * already set up by renderTerritoryPanel (px/pw for the panel, ly the current cursor y, and
-   * bodyBottom the panel's content-area bottom). */
+  // ── Shop panel (standalone item-card catalog, 2026-08-02) ───────────────────────
+  // Pulled out of the Territory Overview panel's World tab into its own modal, opened from the
+  // header bar's Shop button (left of Auction — see renderHeaderHud). Items render as bordered
+  // cards (icon frame + name/cost + Buy band) instead of the old plain text rows, mirroring the
+  // EquipmentScene inventory cell style (EquipmentScene/inventory.ts renderInstanceCell).
+
+  private static readonly SHOP_KIND_ICON: Record<string, IconKind> = {
+    troop_speedup: 'spd',
+    resource_pack: 'coinChest',
+    protection: 'armor',
+    battle_pass: 'trophy',
+  };
+
+  /** Open the shop panel: render immediately (from whatever catalog is already cached), then
+   * lazy-fetch a fresh catalog the first time (mirrors openTerritoryPanel/openReplayPanel). */
+  openShopPanel(): void {
+    if (!this.ctx.me?.joined) { this.showToast(t('world.needBase'), C.red); return; }
+    this.ctx.shopPanelOpen = true;
+    this.ctx.infoScrollY = 0;
+    this.renderShopPanel();
+    this.loadShopItems();
+  }
+
+  /** A single shop item as a bordered card: icon frame on the left, name + cost on the right,
+   * a full-width Buy/Active band along the bottom. */
+  private renderShopItemCard(layer: PIXI.Container, it: SlgShopItemView, x: number, y: number, cellW: number, cellH: number): void {
+    const pad = 8;
+    const cell = sketchPanel(cellW, cellH, { fill: 0xfaf9f5, border: C.accent, seed: seedFor(x, y, cellW) });
+    cell.x = x; cell.y = y;
+    layer.addChild(cell);
+
+    const btnBandH = 26;
+    const imgBox = cellH - pad * 2 - btnBandH - 8;
+    const imgX = x + pad, imgY = y + pad;
+    const frame = sketchPanel(imgBox, imgBox, { fill: 0xf0eee7, border: C.accent, seed: seedFor(x, y, imgBox) });
+    frame.x = imgX; frame.y = imgY;
+    layer.addChild(frame);
+    const iconSize = imgBox - 12;
+    const icon = buildIcon(WorldMapPanels.SHOP_KIND_ICON[it.kind] ?? 'tag', iconSize, C.accent);
+    icon.x = imgX + (imgBox - iconSize) / 2; icon.y = imgY + (imgBox - iconSize) / 2;
+    layer.addChild(icon);
+
+    const ax = imgX + imgBox + 10;
+    const colW = x + cellW - pad - ax;
+    const name = txt(this.shopLabel(it), FS.tiny, C.dark, true, colW);
+    name.x = ax; name.y = imgY;
+    layer.addChild(name);
+    const costLbl = txt(t('world.shopCost').replace('{coins}', String(it.cost)), FS.micro, C.mid);
+    costLbl.x = ax; costLbl.y = imgY + imgBox - 16;
+    layer.addChild(costLbl);
+
+    // battle_pass single-slot gate (2026-08-01 fix): server rejects a repeat buy with ALREADY_ACTIVE
+    // (worldsvc/src/shop.ts); grey the band out client-side too instead of letting the player burn
+    // coins on a purchase that has no additional effect.
+    const owned = it.kind === 'battle_pass' && !!this.ctx.me?.hasBattlePass;
+    this.panelButtonIn(
+      layer, owned ? t('world.shopActive') : t('world.shopBuy'), x + pad, y + cellH - pad - btnBandH, cellW - pad * 2, btnBandH, C.accent,
+      () => owned ? this.showToast(t('world.shopAlreadyActive'), C.mid) : void this.ctx.net.doBuyShopItem(it.id),
+      owned,
+    );
+  }
+
+  /** Render the standalone shop modal: balance line + a 2-column card grid, scrollable. */
+  renderShopPanel(): void {
+    if (!this.ctx.me?.joined) { this.closeModal(); return; }
+    const ml = this.ctx.modalLayer;
+    tearDownChildren(ml);
+    this.ctx.modalBtnRects = [];
+
+    const { w, h } = this.ctx;
+    const pw = Math.min(560, w - 20);
+    const ph = Math.min(h * 0.8, h - HUD_H - 16);
+    const px = (w - pw) / 2;
+    const py = (h - HUD_H - ph) / 2;
+
+    const dim = new PIXI.Graphics();
+    dim.beginFill(0x000000, 0.35).drawRect(0, 0, w, h).endFill();
+    ml.addChild(dim);
+    this.ctx.modalDimRect = { x: 0, y: 0, w, h };
+
+    const panel = sketchPanel(pw, ph, { fill: C.paper, border: C.dark, seed: seedFor(13, 13, pw) });
+    panel.x = px; panel.y = py;
+    ml.addChild(panel);
+
+    const title = txt(t('world.shopTitle'), FS.tiny, C.accent);
+    title.anchor.set(0.5, 0); title.x = px + pw / 2; title.y = py + 10;
+    ml.addChild(title);
+
+    let ly = py + 40;
+    if (this.ctx.cb.getCoins) {
+      const balance = txt(t('world.shopBalance').replace('{coins}', String(this.ctx.cb.getCoins())), FS.tiny, C.accent);
+      balance.anchor.set(0.5, 0); balance.x = px + pw / 2; balance.y = ly;
+      ml.addChild(balance);
+      ly += 26;
+    }
+
+    const bodyBottom = py + ph - 42;
+    this.ctx.infoScrollRect = null;
+
+    const items = this.ctx.shopItems;
+    if (items.length > 0) {
+      const cols = 2, gap = 12;
+      const gridX = px + 14, gridW = pw - 28;
+      const cellW = (gridW - gap) / cols;
+      const cellH = 116;
+      const rows = Math.ceil(items.length / cols);
+      const listLayer = this.beginScrollList(gridX, ly, gridW, bodyBottom - ly, rows * (cellH + gap) - gap, () => this.renderShopPanel());
+      const ry0 = ly - this.ctx.infoScrollY;
+      items.forEach((it, i) => {
+        const col = i % cols, row = Math.floor(i / cols);
+        const cx = gridX + col * (cellW + gap);
+        const cardY = ry0 + row * (cellH + gap);
+        if (cardY + cellH >= ly && cardY <= bodyBottom) this.renderShopItemCard(listLayer, it, cx, cardY, cellW, cellH);
+      });
+    }
+
+    this.panelButton(t('world.close'), px + pw / 2 - 50, py + ph - 34, 100, 28, C.dark, () => this.closeModal());
+  }
+
+  /** Nations + season, merged into one scrollable body — the 'world' tab of the Territory
+   * Overview panel (folded in from the old standalone world-info button/modal). Shop used to be
+   * a third sub-tab here but was pulled out into its own standalone panel (2026-08-02, entry
+   * button in the header bar next to Auction — see openShopPanel/renderShopPanel), and the
+   * nations/season sub-tab split was dropped in the same pass since only two sections were left:
+   * season is a short static summary up top, nations is the scrollable list below it. Draws into
+   * the panel region already set up by renderTerritoryPanel (px/pw for the panel, ly the current
+   * cursor y, and bodyBottom the panel's content-area bottom). */
 
   private renderWorldTabBody(px: number, pw: number, ly: number, bodyBottom: number): void {
     const ml = this.ctx.modalLayer;
@@ -567,97 +716,55 @@ export class WorldMapPanels {
       ml.addChild(lbl);
     };
 
-    // Sub-tabs
-    const tabs: { id: 'nations' | 'season' | 'shop'; label: string }[] = [
-      { id: 'nations', label: t('world.tabNations') },
-      { id: 'season',  label: t('world.tabSeason') },
-      { id: 'shop',    label: t('world.tabShop') },
-    ];
-    const tabW = (pw - 28 - MARGIN * 2) / 3;
-    let tx = px + 14;
-    for (const tab of tabs) {
-      const active = this.ctx.infoTab === tab.id;
-      this.panelButton(tab.label, tx, ly, tabW, 26, active ? C.red : C.dark, () => {
-        this.ctx.infoTab = tab.id; this.ctx.infoScrollY = 0; this.renderTerritoryPanel();
-      });
-      tx += tabW + MARGIN;
-    }
-
-    let cy = ly + 34;
+    let cy = ly;
     this.ctx.infoScrollRect = null;
 
-    if (this.ctx.infoTab === 'nations') {
-      if (this.ctx.nations.length === 0) {
-        addText(t('world.nationsEmpty'), px + 14, cy, 11, C.mid);
-      } else {
-        const rowH = 24;
-        const listLayer = this.beginScrollList(px, cy, pw, bodyBottom - cy, this.ctx.nations.length * rowH, () => this.renderTerritoryPanel());
-        let ry = cy - this.ctx.infoScrollY;
-        for (const n of this.ctx.nations) {
-          if (ry + rowH >= cy && ry <= bodyBottom) {
-            const name = n.nationName || t('world.nationCol').replace('{idx}', String(n.capitalIdx));
-            const mine = !!n.ownerId && n.ownerId === this.ctx.cb.accountId;
-            const nStar = buildIcon('star', 12, C.gold);
-            nStar.x = px + 14; nStar.y = ry - 1;
-            listLayer.addChild(nStar);
-            const nameLbl = txt(`${name}  (${n.x},${n.y})`, FS.micro, C.dark);
-            nameLbl.x = px + 30; nameLbl.y = ry;
-            listLayer.addChild(nameLbl);
-            if (mine) {
-              // Owner may rename their capital (server re-checks ownerId).
-              const bw = 54;
-              this.panelButtonIn(listLayer, t('world.nationRename'), px + pw - bw - 14, ry - 4, bw, 22, C.accent, () => this.openRenameInput(n.capitalIdx, name));
-            } else {
-              const status = n.ownerId ? t('world.nationOwned') : t('world.nationFree');
-              const statusLbl = txt(status, FS.micro, n.ownerId ? C.red : C.mid);
-              statusLbl.anchor.set(1, 0); statusLbl.x = px + pw - 14; statusLbl.y = ry;
-              listLayer.addChild(statusLbl);
-            }
-          }
-          ry += rowH;
-        }
-      }
-    } else if (this.ctx.infoTab === 'season') {
-      const s = this.ctx.season;
-      if (!s) {
-        addText('—', px + 14, cy, 11, C.mid);
-      } else {
-        addText(t('world.seasonNo').replace('{n}', String(s.season)), px + 14, cy, 13, C.red); cy += 22;
-        const statusKey = `world.season.${s.status}`;
-        addText(t(statusKey as Parameters<typeof t>[0]), px + 14, cy, 11); cy += 18;
-        addText(t('world.seasonPop').replace('{pop}', String(s.population)).replace('{cap}', String(s.capacity)), px + 14, cy, 11); cy += 18;
-        if (s.resetAt) {
-          const days = Math.max(0, Math.ceil((s.resetAt - serverNow()) / 86400000));
-          addText(t('world.seasonReset').replace('{d}', String(days)), px + 14, cy, 11); cy += 18;
-        }
-      }
+    // Season summary — short and static, so it stays pinned above the scrollable nations list
+    // instead of eating into the scroll region.
+    addText(t('world.tabSeason'), px + 14, cy, FS.tiny, C.accent); cy += 22;
+    const s = this.ctx.season;
+    if (!s) {
+      addText('—', px + 14, cy, 11, C.mid); cy += 18;
     } else {
-      // Shop — show current coin balance (SaveData mirror) above the catalog.
-      if (this.ctx.cb.getCoins) {
-        addText(t('world.shopBalance').replace('{coins}', String(this.ctx.cb.getCoins())), px + 14, cy, 11, C.accent);
-        cy += 22;
+      addText(t('world.seasonNo').replace('{n}', String(s.season)), px + 14, cy, 13, C.red); cy += 22;
+      const statusKey = `world.season.${s.status}`;
+      addText(t(statusKey as Parameters<typeof t>[0]), px + 14, cy, 11); cy += 18;
+      addText(t('world.seasonPop').replace('{pop}', String(s.population)).replace('{cap}', String(s.capacity)), px + 14, cy, 11); cy += 18;
+      if (s.resetAt) {
+        const days = Math.max(0, Math.ceil((s.resetAt - serverNow()) / 86400000));
+        addText(t('world.seasonReset').replace('{d}', String(days)), px + 14, cy, 11); cy += 18;
       }
-      const rowH = 32;
-      const listLayer = this.beginScrollList(px, cy, pw, bodyBottom - cy, this.ctx.shopItems.length * rowH, () => this.renderTerritoryPanel());
+    }
+    cy += 14;
+
+    addText(t('world.tabNations'), px + 14, cy, FS.tiny, C.accent); cy += 22;
+
+    if (this.ctx.nations.length === 0) {
+      addText(t('world.nationsEmpty'), px + 14, cy, 11, C.mid);
+    } else {
+      const rowH = 24;
+      const listLayer = this.beginScrollList(px, cy, pw, bodyBottom - cy, this.ctx.nations.length * rowH, () => this.renderTerritoryPanel());
       let ry = cy - this.ctx.infoScrollY;
-      for (const it of this.ctx.shopItems) {
+      for (const n of this.ctx.nations) {
         if (ry + rowH >= cy && ry <= bodyBottom) {
-          const nameLbl = txt(this.shopLabel(it), FS.micro, C.dark);
-          nameLbl.x = px + 14; nameLbl.y = ry + 4;
+          const name = n.nationName || t('world.nationCol').replace('{idx}', String(n.capitalIdx));
+          const mine = !!n.ownerId && n.ownerId === this.ctx.cb.accountId;
+          const nStar = buildIcon('star', 12, C.gold);
+          nStar.x = px + 14; nStar.y = ry - 1;
+          listLayer.addChild(nStar);
+          const nameLbl = txt(`${name}  (${n.x},${n.y})`, FS.micro, C.dark);
+          nameLbl.x = px + 30; nameLbl.y = ry;
           listLayer.addChild(nameLbl);
-          const costLbl = txt(t('world.shopCost').replace('{coins}', String(it.cost)), FS.micro, C.mid);
-          costLbl.x = px + 14; costLbl.y = ry + 18;
-          listLayer.addChild(costLbl);
-          const bw = 56;
-          // battle_pass single-slot gate (2026-08-01 fix): server rejects a repeat buy with ALREADY_ACTIVE
-          // (worldsvc/src/shop.ts); grey the row out client-side too instead of letting the player burn
-          // coins on a purchase that has no additional effect.
-          const owned = it.kind === 'battle_pass' && !!this.ctx.me?.hasBattlePass;
-          this.panelButtonIn(
-            listLayer, owned ? t('world.shopActive') : t('world.shopBuy'), px + pw - bw - 14, ry + 2, bw, 24, C.accent,
-            () => owned ? this.showToast(t('world.shopAlreadyActive'), C.mid) : void this.ctx.net.doBuyShopItem(it.id),
-            owned,
-          );
+          if (mine) {
+            // Owner may rename their capital (server re-checks ownerId).
+            const bw = 54;
+            this.panelButtonIn(listLayer, t('world.nationRename'), px + pw - bw - 14, ry - 4, bw, 22, C.accent, () => this.openRenameInput(n.capitalIdx, name));
+          } else {
+            const status = n.ownerId ? t('world.nationOwned') : t('world.nationFree');
+            const statusLbl = txt(status, FS.micro, n.ownerId ? C.red : C.mid);
+            statusLbl.anchor.set(1, 0); statusLbl.x = px + pw - 14; statusLbl.y = ry;
+            listLayer.addChild(statusLbl);
+          }
         }
         ry += rowH;
       }

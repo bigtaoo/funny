@@ -198,6 +198,8 @@ export class WorldCorePush extends WorldCoreYield {
       outcome: s.outcome,
       lootSummary: lootSummaryStr,
       replayRef: s.replayRef ?? '',
+      attackerId: s.attackerId,
+      marchKind: s.marchKind,
     });
   }
 }

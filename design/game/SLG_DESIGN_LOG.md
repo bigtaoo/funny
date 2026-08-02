@@ -1584,3 +1584,95 @@ L1 从需 660 兵降到 300（最小占地 500 现稳赢，直击病灶）；L2/
 **验证**：`tsc --noEmit`（server `worldsvc`/`shared`，client `tsconfig.test.json`）全绿；`npm run build:web` 生产构建通过。`server/worldsvc` 新增 e2e「battle pass: repeat purchase while already active → ALREADY_ACTIVE, coins never deducted twice」，`shop.e2e.test.ts` 全 7 例过、`worldsvc` 全量 50 文件/391 例过。`client` 新增 UI 用例覆盖「未持有时点击行仍正常触发购买」「已持有时点击行不再调用 `doBuyShopItem`、改为弹 toast」，`worldMapInfoScroll.ui.ts` 全 20 例过，`worldMap*` 全套 17 文件/124 例过。未启动完整后端栈（metaserver/worldsvc/gateway 等 11 服务）做真实登录后截图验证——UI 交互路径已通过驱动真实 `WorldMapPanels`/`WorldMapInput` 类的无头 PIXI 测试覆盖，视为等效验证。
 
 **追加测试（同日，用户要求"加测试"）**：`shop.e2e.test.ts` 补 3 例——① 持有战令不影响购买其它商品（守卫只针对 `kind:'battle_pass'`，不误伤 `slg_res_s`/`slg_shield_8h`）；② 守卫按账号隔离——A 持有战令不阻挡 B 首次购买（读的是各自 `playerWorld` 文档，不是全局标记）；③ `hasBattlePass` 被清空后（模拟 `resetSeason` 的 playerWorld 清档路径）可以再次购买，门禁不会永久卡死。`worldMapErrorMsg.ui.ts`（专门收录 `WorldMapNet.errorMsg` 码→文案映射回归的文件）补 1 例，断言 `ALREADY_ACTIVE` 映射到 `world.shopAlreadyActive`。`shop.e2e.test.ts` 全 10 例过、`worldMapErrorMsg.ui.ts` 全 7 例过、`worldMap*` 全套 19 文件/139 例过；`tsc --noEmit` 复核仍绿（`worldMapDrawPrimitives.ui.ts`/`worldMapOwnerBorder.ui.ts` 各有 1/2 处 PIXI `lineStyle`/`beginFill` 重载类型报错，经核对在主目录未改动前就已存在，跟本次改动无关，不在此修）。
+
+## 50. 围攻战斗：进攻方全灭后提前结束，不再耗到超时（2026-08-02，用户提出）
+
+用户提出：SLG 攻城验证时，如果场上进攻方已经没有存活单位了，战斗应该直接结束判负，不需要等 `SIEGE_BATTLE_TIMEOUT_TICKS`（10 分钟/18000 tick，§16.5）跑完。核对 `checkWinCondition`（`server/engine/src/engine/winCondition.ts`）发现 `destroy_base` 目标此前只有两条硬性超时兜底——`battleTimeoutTicks` 与目标自带的 `durationTicks`——进攻方（Bottom）全灭后既打不掉基地也没有任何提前判负分支，只能干等到超时才由防守方（Top）胜出；`survive` 目标已有对称机制（`hasLivingEnemyUnits()`，`campaign.ts`），但那是查 Top 侧、服务 PvE 波次防守场景，跟围攻的攻防方向相反，没有覆盖到 `destroy_base`。
+
+**修复**：`campaign.ts` 新增 `hasLivingAttackerUnits()`（对称于既有 `hasLivingEnemyUnits()`，查 Side.Bottom 是否还有存活单位）；`winCondition.ts` 在 `destroy_base` 分支的超时判定之前插入早退检查——`!hasLivingAttackerUnits()` 时立即 `GameOver`，`winner=Side.Top`（防守方胜，判负事件与超时分支完全一致，只是不用等满 tick）。攻方军队在引擎构造时（`base.ts` 读 `level.attackerArmy`）就已一次性同步入场，无逐 tick 补兵的活指令输入，因此该检查不会误杀"部队还没上场"的中间态。围攻仅用于 worldsvc 无实时输入的 headless 结算（`siegeEngine.ts`）与 econ-sim 模拟工具，不涉及客户端实时对战，不影响其它模式。
+
+**验证**：`server/engine` `tsc --noEmit` 绿 + 全量 `npm test`（76 例，含围攻相关用例）全过，其中含一例攻方军队为空（`attackerArmy` 未设置）走 `destroy_base` 的既有用例，验证提前判负不影响该用例原有断言；`server/worldsvc` `tsc --noEmit` 绿，`siege-cheap-fallback.test.ts`（10 例）+ `siegeWorkerPool.test.ts`（11 例）全过。
+
+**追加测试（同日，用户要求"加测试"）**：`gameEngine.test.ts` 新增「destroy_base ends immediately once the attacker army is wiped, without waiting for battleTimeoutTicks」——`attackerArmy` 放一个 `initialHp:1` 的濒死步兵，紧挨着（隔 1 行、同列）一个满血 `garrison` 步兵，`battleTimeoutTicks` 照抄真实值 18000，`runHeadless(maxTicks:100)`；断言 `winner===Side.Top`、`topPlayer.isDead===false`（排除"打穿基地获胜"这条已有分支）、`elapsedTicks<100`（远早于 18000 的超时线）。先 `git show <fix前一提交>` 把 `winCondition.ts`/`campaign.ts` 换回本次改动前的版本单独跑这一例，确认必现失败（不会在 100 tick 内结束，而是要跑到超时才会 GameOver）；换回修复后的版本复跑，转绿——坐实测试确实在验证本次新加的早退分支，而非误报。`server/engine` 全量 `npm test` 77 例全过，`tsc --noEmit` 复核仍绿。
+
+## 51. §33 修复留了个尾巴——占领结算仍会误报「领地失守」，改成服务端下发身份而非客户端瞎猜（2026-08-02，用户截图报告）
+
+**背景（用户报告）**：SLG 里刚战斗完、进入占领阶段时，会闪一次「领地失守」（`world.defendLost`）提示——玩家自己刚打赢的占领被读成了被人抢地。
+
+**根因**：§33 的修复（`myOccupyTiles`）是纯客户端方案——`WorldMapNet.doMarch`/`doMarchTeam` 派出占领军时把目标格记进 `WorldMapContext` 上一个**仅存在于内存里**的 `Set`，`applySiegeResult` 收到推送时查这个 `Set` 判断"这是不是我自己干的"。问题是 `WorldMapScene`（连带它的 `WorldMapContext`）只在**每次进入 SLG 时**重新创建一次（`app.ts showWorldMap`）——City/拍卖行/社交面板都是叠加在它上面的 overlay，不会重建它，但只要玩家**退出 SLG 再回来**（或刷新页面），一次全新的 `WorldMapContext` 就带着一个空 `Set` 出现。占领行军往往要走几十秒到几分钟，只要这段时间内场景被重建过，占领打赢的 `siege_result` 推送一到，`myOccupyTiles` 里早就没有这块地了，直接落进 `else` 分支的「防守方」文案——和 §33 描述的现象一模一样，只是触发路径从"从没记过"变成了"记过又被清空"。
+
+**修复（服务端下发身份，彻底去掉客户端猜测）**：`SiegeResult`（`transport.proto`）新增两个字段——`attacker_id`（派出这次进攻/占领行军的账号，直接来自 `SiegeDoc.attackerId`）与 `march_kind`（那次行军的 `MarchKind`，新增到 `SiegeDoc`，`recordSiege` 写入 `m.kind`）。`corePush.pushSiege` 把两个字段一并推给客户端；`WorldMapNet.applySiegeResult` 改用 `s.attackerId === ctx.cb.accountId` 判断"这是不是我的行动"，`s.marchKind` 判断"攻城"（复盘弹窗）还是"占领"（轻量 toast）——不再依赖任何客户端记忆，`myAttackTiles`/`myOccupyTiles` 两个 Set 连同它们的写入点一并删除。字段全程走 `buf generate`（`server/contracts/transport.proto` → gateway/metaserver/gameserver/botsvc/client 五处 `npm run proto:gen`），gateway 内部还有一份手写的 `ServerMsg`/`PushMsg` 镜像类型（`matchsvcClient.ts`/`proto.ts`/`Gateway.ts`）需要同步补字段。`move`（战场遭遇战）行军目前仍会落进"防守方"分支——这是一个独立于本次报告的既有问题（遭遇战里获胜方的提示也读反了），本次刻意不顺手扩大范围，留了行内注释标注。
+
+**验证**：`server/worldsvc`、`server/gateway`、`client` 三处 `tsc --noEmit` 全绿；`server/worldsvc` 攻城/占领/遭遇战相关 e2e（`siege`/`occupy-march`/`stronghold`/`field-encounter*`，共 28 例）全过，确认新字段不破坏既有推送断言；`worldMapSiegeResultToast.ui.ts` 按新字段重写（6 例：占领胜/败分类、**同一结果重复投递仍分类正确**——直接命中本次修复的场景、attack/防守两条原路径回归），`worldMapOccupyTeamPicker.ui.ts` 去掉不再需要的 `myAttackTiles`/`myOccupyTiles` mock 字段复跑仍全过（19 例）。preview 无法稳定复现（需要完整 worldsvc + 连地相邻 + NPC 战斗 + 场景重建时序），改动靠单测覆盖。
+
+**追加测试（同日，用户要求"加测试"）**：① 客户端新增「surviving a WorldMapScene rebuild」一例——用两个完全独立、互不共享状态的 `WorldMapContext`/`WorldMapNet` 实例模拟"派兵时的场景已经不在了"，直接对应根因描述的触发路径；先把 `applySiegeResult` 里的 `amInitiator` 临时改死为 `false`（模拟"服务端字段被忽略，退回瞎猜"的回归）复跑这批用例，**5/7 例转红**（含这个新场景 + 原本 4 例），换回真实实现后复跑 **7/7 转绿**——坐实新用例确实在验证本次分类逻辑，不是形同虚设。② 服务端三个 e2e 文件（`siege`/`occupy-march`/`field-encounter`）在既有场景里追加 `attackerId`/`marchKind` 断言而非新增用例：`occupy-march.e2e.test.ts` 三处占领胜/败推送改用 `pushes.find(...)` 精确断言 `{attackerId:'a', marchKind:'occupy'}`（占领场景是本次报告的重灾区）；expulsion 用例额外验证 b 用 `attack` 行军抢地成功时自己收到的推送是 `marchKind:'attack'`（不是 `'occupy'`）——锁定"攻城行军打赢占领中的地"这条跨路径交互不受影响；`siege.e2e.test.ts` 攻城/扫荡用例补 `marchKind:'attack'`/`'sweep'` 断言；`field-encounter.e2e.test.ts` 两个 `scenario 1`（胜/负）补 `attackerId:'a'`、`marchKind:'move'` 断言——为 §51 遗留的 `move` 遭遇战分类跟进任务预先钉住服务端数据契约。`server/worldsvc` 全量 `tsc --noEmit` 复核仍绿，三个 e2e 文件共 20 例全过。
+
+## 52. 行军请求稳定超时（`AbortError`）——`computeMarchPath` 的敌方主城扫描在老世界上退化成近乎全表扫描（2026-08-02，用户报告）
+
+**背景（用户报告）**：SLG 里每次占领领地都弹 `TypeError: world api POST /world/march failed: AbortError: signal is aborted without reason`。追问确认：报错之后地块**其实占领成功了**（`Marches`/领地都有记录）——服务端调用没有失败，只是客户端等不到响应先弃权了。
+
+**排查**：worldsvc/socialsvc/caddy/cloudflared 全部健康、CPU/内存正常、日志无报错，直接 curl 生产接口也是毫秒级——初步怀疑是用户本地网络抖动。但用户反馈"每次占领都必现"，于是拿到账号信息（`publicId 233784986`，世界 `s1-0`）在生产库上直接复现：`computeMarchPath`（[`combatShared.ts`](../../server/worldsvc/src/combatShared.ts)）里为 A* 寻路收集"敌方主城会挡路"用的查询——
+
+```js
+cols.tiles.find({ worldId, type: 'base', ownerId: { $nin: excludeOwners } })
+```
+
+——实测耗时 **12.4 秒**。根因：`s1-0` 是个老世界，注册过的玩家主城（`type:'base'`，每个 3×3=9 格，且从不删除）已经攒到约 2584 个，`tiles` 集合总共 23325 条记录里 **23257 条**（99.7%）都是 `type:'base'`。2026-07-29 那次审计（[`db.ts`](../../server/worldsvc/src/db.ts) §索引注释）给这条查询配了 `{worldId,type}` 索引，但当时的假设——"`type:'base'` 命中的数量远小于整个集合"——在世界玩得越久、注册主城越多之后逐渐失效，最终这条"应该很窄"的查询变成了近乎全表扫描。同函数里另外两条查询（crossing 通道、玩家建的 blocker）结构相同，存在同样的潜在风险。这条查询单独就超过了客户端 [`WorldApiClient.ts`](../../client/src/net/WorldApiClient.ts) 的 10 秒超时——不是代码在这天变了，是这个世界的主城数量自然增长跨过了当年那个假设成立的临界点，跟"服务器今天没更新"完全对得上。
+
+**修复**：给 `computeMarchPath` 的 3 条障碍物查询（gate/敌方主城/blocker）都加上按行军起止点算出的坐标包围盒过滤（`legBox()` + 60 格 padding，复用已有的 `{worldId,x,y}` 索引），把"扫全图"收窄成"只看行军路线附近"。Padding 选取 60（远大于 3×3 主城/普通障碍物聚簇的尺寸）而非精确到 A* 实际探索边界——短途行军（占领要求目标与自己领地相邻、士气机制也软性限制了远途行军的实际收益，见 §22/§27）绝大多数场景下包围盒会大幅收窄；只有起止点本身相距很远的行军，包围盒才会接近全图，此时退化为跟修复前一样的开销，不引入正确性风险（不会漏查真正卡在路线附近的障碍物）。
+
+**验证**：`server/worldsvc` `tsc --noEmit` 全绿。定向重跑占领/围攻/寻路相关测试（`occupy-march`/`passage`/`field-tower`/`field-blocker`/`base-siege`/`stronghold`/`field-encounter*`/`field-redispatch`/`field-occupancy`/`field-structure-attack`/`base-integrity`/`march-return-travel-time`/`teams`/`enter-world`，共 12 文件/88 例，含「blocker 绕路」「crossing 通行」「长途占领士气衰减」等直接触碰寻路的用例）全过；随后跑了 `server/worldsvc` 全量 50 文件/399 例，同样全绿。生产库上直接验证：本地起了一个带 `rs0` 的 standalone mongod 复现原查询耗时（12.4s），但此次改动未部署到生产（未触碰线上代码），仅在本地代码 + 测试环境验证；建议下次常规发布时带上。
+
+**追加测试（同日，用户要求"加测试"）**：`territory-connectivity.e2e.test.ts` 新增一例，直接命中本次修复本身而非仅靠既有用例侧面兜底——种下 50 条远离本次行军路线（地图另一角）的模拟"历史累积主城"`type:'base'` 噪声数据，临时给 `m.collections.tiles.find` 打一层 spy 拦截调用参数，断言敌方主城扫描那次调用的 filter 里带有 `x`/`y` 坐标区间（`$gte`/`$lte`），且区间紧贴行军起止点、离噪声所在的地图角落很远；再用捕获到的 filter 原样重新查一遍，断言噪声数据一条都不会被查出来。为确认这条断言不是形同虚设：先用 `git show HEAD~1:combatShared.ts` 把该文件换回修复前版本单独跑这一例，**必现失败**（`expected undefined to be defined`——旧查询压根没有 x/y 键）；`git checkout HEAD --` 换回修复后版本复跑转绿。`territory-connectivity.e2e.test.ts` 全 12 例过，`server/worldsvc` 全量重跑 50 文件/400 例全绿。
+
+## 53. §51 遗留的 `move` 遭遇战分类跟进——胜负 toast 补齐（2026-08-02）
+
+**背景**：§51 把 `SiegeResult` 分类改成服务端权威的 `attackerId`/`marchKind`，但明确留了一句"`move`（战场遭遇战）行军目前仍会落进防守方分支"——`field-encounter.e2e.test.ts` 当时就已经预先钉住了 `siege.attackerId`/`siege.marchKind==='move'` 这两个服务端数据契约（连带注释直接写"field-encounter classification is not yet wired client-side"），专等这次跟进。
+
+**现象**：野战遭遇（ADR-051 §2.2，[`encounter.ts`](../../server/worldsvc/src/combatSiege/encounter.ts) 的 `resolveFieldEncounter`——一支 `move` 行军中途撞上敌方停留队伍/另一支行军/驻扎守军，就地开打）没有专属分支，`amInitiator && marchKind==='move'` 落进 `applySiegeResult` 的 `else`（防守方/旁观者）兜底：打赢一场遭遇战显示"领地失守"，打输了反而显示"守土成功"——两边都反了，而且遭遇战本身不涉及任何 tile 归属变化（那是 occupy 的事）。
+
+**修复**：`WorldMapNet.applySiegeResult`（[`WorldMapNet.ts`](../../client/src/scenes/worldmap/WorldMapNet.ts)）在 `attack`/`occupy` 两个分支之后新增 `amInitiator && marchKind==='move'` 分支——胜负与 `outcome` 直接对应的轻量 toast（不弹复盘弹窗，遭遇战跟 occupy 一样是高频事件）。新增三语 i18n key `world.encounterWin`/`world.encounterLoss`（zh/en/de），英文措辞刻意避开"Territory secured"这类字眼——遭遇战不改变任何地块归属，纯粹是一场遭遇战的胜负。服务端字段（`attackerId`/`marchKind`）§51 已经全部就绪并测过，本次是纯客户端改动，不涉及 proto/`SiegeDoc`/推送链路。
+
+**验证**：`server`（12 workspace）+ `client` 的 `tsc --noEmit` 全绿；`worldMapSiegeResultToast.ui.ts` 补 3 例（遭遇战赢/输的正确 toast + 他人遭遇战不受影响的回归），全 10 例过；`client` UI 全量 112 文件/961 例、非 UI 全量 129 文件/944 例两套全绿；`server/worldsvc` 定向重跑 `field-encounter*`/`siege`/`occupy-march`/`stronghold` 共 5 文件/28 例全绿（复用 §51 已经钉住的 `attackerId`/`marchKind` 断言，无需新增服务端用例）。
+
+**追加测试（同日，用户要求"加测试"）**：① 补 2 例——「输的遭遇战同样不弹复盘弹窗」（跟赢的分支对称，之前只在赢分支断言过 `showModal` 未调用）；「自己发起的行军但 `marchKind` 是识别不到的种类（如 `sweep`）」不会被误判成遭遇战——钉死这个分支专门 keyed on `marchKind==='move'`，不是"任何自己发起、非 attack/occupy 的动作"的宽松判断（跟已有的"别人发起的 move"用例互补，一个测"kind 对但不是我方"，一个测"是我方但 kind 不对"）。② 证伪测试不是形同虚设：把 `applySiegeResult` 里 `s.marchKind === 'move'` 临时改成一个不可能匹配的字符串，复跑本文件——**2/12 例转红**（恰好是"自己赢/输一场遭遇战"这两例，读回旧的"领地失守"/"守土成功"反向文案；"别人发起的 move"与"自己发起但 kind 不对"两例保持绿，因为它们本就该走兜底分支，没被这次改动影响，符合预期），换回真实实现后复跑 **12/12 转绿**。`worldMapSiegeResultToast.ui.ts` 全 12 例过，`client` UI 全量 112 文件/963 例仍全绿。
+
+**顺带发现（超出本次范围，已 spawn_task 转出）**：全量非 UI `vitest run` 有 7 例失败（`campaign-knobs`/`garrison`/`siege-battle.test.ts`），主检出（`02.08.2026` 分支当前 tip）同样复现，与本次改动无关——疑似近期 `destroy_base` 提前结束修复（`ad01a623`/`5de02ba9`）在这几个既有场景里判定过宽，已转出独立任务跟进，不在本次范围内处理。
+
+## 54. §53 遗留的 `destroy_base` 提前结束误判——收窄到仅 `attackerArmy` 剧本场景（2026-08-02）
+
+**背景**：§53 末尾记录的 7 例失败（`campaign-knobs.test.ts`×4、`garrison.test.ts`×2、`siege-battle.test.ts`×1）跟进排查。
+
+**根因**：`ad01a623`（§50）加的早退检查——`objective.kind==='destroy_base' && !hasLivingAttackerUnits()` 立即判防守方胜——隐含前提是"进攻方军队在引擎构造时一次性同步入场，没有逐 tick 补兵的活指令输入"（§50 原文），只对 `level.attackerArmy` 剧本化铺兵场景成立。但 `destroy_base` 目标同时也用于普通 PvE 战役/玩家出牌驱动的围攻（`campaign-knobs`/`garrison`/`siege-battle` 三个测试文件覆盖的就是这类场景）——这类场景里 Bottom 方是靠手牌/灵墨经济逐 tick 出卡，`attackerArmy` 从未设置，`board.units` 里查不到 Side.Bottom 单位只是"这一刻还没打出牌"的正常瞬时状态，不是"全灭"。`hasLivingAttackerUnits()` 对这两类场景一视同仁地查 board 上的 Bottom 单位，导致普通出牌流程在第 0/1 tick（尚未打出第一张牌）就被误判成"进攻方已全灭"，立即 `GameOver`。
+
+**修复**：`winCondition.ts` 的早退条件追加 `this.level!.attackerArmy && this.level!.attackerArmy.length > 0` 前置守卫——只有关卡确实配置了剧本化 `attackerArmy` 时才允许 `hasLivingAttackerUnits()` 生效判负；普通出牌驱动的 `destroy_base` 关卡（无 `attackerArmy`）不再受这条早退影响，跟修复前一样只由 `battleTimeoutTicks`/`durationTicks`/破基地三条既有分支收尾。`hasLivingAttackerUnits()`/`hasLivingEnemyUnits()` 本身不改。
+
+**验证**：`server/engine` `npm test`（`tsc -b` + `node --test`）77 例全过，含 §50 新增的 `attackerArmy` 剧本化早退用例（确认加了守卫之后该用例仍然早退，未被误伤）；`client` 非 UI 全量 129 文件/944 例、UI 全量 112 文件/963 例两套全绿，此前失败的 `campaign-knobs.test.ts`/`garrison.test.ts`/`siege-battle.test.ts` 三文件单独重跑（64 例）全绿。
+
+**追加测试（同日，用户要求"加测试"）**：`gameEngine.test.ts` 新增「destroy_base does NOT early-exit on a card/ink-driven level with no attackerArmy, even with zero Bottom units on board」——专门钉死本次守卫本身：`destroy_base` 关卡不设 `attackerArmy`，全程不喂任何 `play_card` 指令（因此 board 上永远查不到 Side.Bottom 单位），跑 50 tick 后断言 `phase` 仍是 `Playing`。证伪测试不是形同虚设：临时把守卫条件改回 §50 原始版本（`objective.kind==='destroy_base' && !hasLivingAttackerUnits()`，去掉 `attackerArmy` 前置判断）单独跑这一例——**必现失败**（`AssertionError`：断言信息原样命中"no attackerArmy configured → the wipeout early exit must not fire"，证明确实是本次守卫在拦这个误判）；换回修复后的版本复跑，转绿，且与 §50 已有的「`attackerArmy` 剧本化早退」用例互补（一个测"该早退时早退"，一个测"不该早退时不早退"）。`server/engine` 全量 `npm test` 78 例全过，`client` 非 UI 129 文件/944 例、UI 112 文件/963 例两套复跑仍全绿。
+
+## 55. 编辑队伍网格：基地列加基地图标，去掉没人注意到的「出兵」文字（2026-08-02，用户看截图提出）
+
+**背景**：用户看着"编辑队伍"（`DefenseEditorScene` 攻击模式，玩家给出征队伍布阵的界面）截图提出——网格里基地所在的两列（`BASE_COLS=[5,6]`，只有底色区分）方向感弱，建议在地图上把自己基地画出来，让玩家更直观理解哪些格子在前面、哪些在后面。追问范围后用户明确：只改这一个界面（不涉及防守布阵编辑器、也不涉及大地图 worldmap 主图）；图标直接复用 PvP 对战里的基地图标（`BoardView.ts` 用的 `game_base.png`），不用新画；顺带把那句"出兵"文字去掉——用户说自己从来没注意到过这行字。
+
+**实现**：`DefenseEditorScene/render.ts` 的 `renderGrid()`——攻击模式（`!hasBuildingRow`）专属分支：base 列（`isBaseCol`）在最靠近出征边缘的那一行（`dr === rows-1`，往下一格就是玩家自己的主城，只是不在这 8 行显示范围内）画一次 `game_base.png`（沿用 `drawArtFit` 的按比例居中缩放，跟画英雄/建筑同一套逻辑），宽度铺满两个基地列（`cellW*2`）。原本"defense → 建造行 / attack → 出兵"那句左侧文字标签，attack 分支直接整体去掉（defense 模式的"建造行"标签不受影响，照常保留）；`i18n` 里的 `world.team.frontRow` 键（zh/en/de 三份）一并删除，因为已经没有代码引用。
+
+**验证**：`client` `tsc --noEmit`（含 `test/**`）全绿。可视化验证走了标准的"启动整个客户端"路径，但主检出当前有其它会话的未提交 WIP（`WorldMapPanels.ts`/`WorldMapInput.ts` 缺了 `infoTab`/`openShopPanel`），导致 webpack 编译直接失败，且这次会话里 Browser pane 一直 "not displayed, so the page is not compositing frames"（`client-run-and-visual-verify` 备忘录里记过的已知环境限制，不是本次改动引入的）——两条路都走不通，遂改用备忘录推荐的 headless `test:ui` 场景构造验证：`test/ui/defenseEditorAttackCards.ui.ts` 新增一例，直接构造 `DefenseEditorScene`（攻击模式，无需登录/后端），`spy` 住 `drawArtFit`，断言基地图标那次调用的坐标/尺寸精确落在"基地列×最后一行"，且 `bodyLayer` 里不再有文字节点显示旧的 `'Deploy'` 标签。全量 `npm run test:ui`（112 文件/961 例）跑过，除本次新增这例外只有 1 例失败（`worldMapInfoScroll.ui.ts`，指向前述 WorldMapPanels 的 WIP 缺口，`document is not defined`，与本次改动无关，未去动那份 WIP）。
+
+**追加测试（同日，用户要求"加测试"）**：补了一条防守模式的回归用例——`DefenseEditorScene defense mode — buildRow label + base icon untouched by the attack-mode change`：新搭一个 `mode:'defense'` harness（`getDefense` mock 返回 `null`，`applyConfig` 走"离线/未设置"分支，够用来验证纯渲染），断言"建造行"文字标签仍然渲染、且从没触发过基地图标那次 `drawArtFit` 调用（同样按"调用宽度 ≈ 2 格"的形状去找，跟 attack 模式那条测试用同一种识别方式）——这条锁的是本次改动把行标签渲染从无条件三元改成 `if(this.hasBuildingRow)`、基地图标又额外挂了 `!this.hasBuildingRow` 守卫，两处改动对防守模式互不误伤。证伪测试确认不是形同虚设：把 `git show <本次改动前>:render.ts` 换回改动前的版本单独跑这两条新用例——attack 模式那条**必现失败**（`expected undefined to be truthy`，因为改动前代码压根没有基地图标这条分支）；defense 模式回归那条按预期保持通过（防守模式渲染逻辑改动前后本来就没变，这条测的是"以后别改坏"，不是"这次改动修了什么"）。换回改动后的版本复跑，两条都转绿。`npx vitest run --config vitest.ui.config.ts test/ui/defenseEditorAttackCards.ui.ts` 18 例全过，`npm run typecheck` 复核仍绿。
+
+## 56. Shop 面板独立化 + 物品卡样式 + World 下 Nation/Season 合并（2026-08-02，用户看截图提出）
+
+**背景**：用户看着 Territory Overview 面板截图提出三点：①Shop 单独拎出来做一个独立界面，入口按钮放到拍卖行（Auction）左边；②Shop 里的商品用"物品卡"样式展示（参考装备卡 `EquipmentScene/inventory.ts` 的 `renderInstanceCell`：图标框在左、名称/成本在右、操作按钮占满卡片底部一条），而不是当时的纯文字行；③World 标签下的 Nation 和 Season 两个子 tab 合并，一起展示，不再来回切换。
+
+**实现**（均在 [`WorldMapPanels.ts`](../../client/src/scenes/worldmap/WorldMapPanels.ts)/[`WorldMapContext.ts`](../../client/src/scenes/worldmap/WorldMapContext.ts)/[`WorldMapInput.ts`](../../client/src/scenes/worldmap/WorldMapInput.ts)）：
+- **入口按钮**：`renderHeaderHud()` 里在 Auction 按钮左侧新增一个同高度/同风格的 Shop 按钮（图标 `coinSack`），资源产量 cluster 的 `rightBound` 从 `aucBtn.x-8` 改成 `shopBtn.x-8` 让出位置；新增 `ctx.shopBtnRect`，`WorldMapInput.handleDown` 里点击它调用新的 `panels.openShopPanel()`。
+- **独立 Shop 面板**：新增 `openShopPanel()`/`renderShopPanel()`（结构照抄 `renderReplayPanel` 的独立弹窗模式：dim 背景 + `sketchPanel` + 标题 + Close，走同一套 `modalDimRect`/`modalBtnRects` 通用点击路由）+ 新的 `renderShopItemCard()`：每个商品一张卡（`sketchPanel` 边框 + 左侧图标框 `buildIcon` 按 `kind` 选图标：`troop_speedup→spd`/`resource_pack→coinChest`/`protection→armor`/`battle_pass→trophy` + 右侧名称/成本 + 底部整宽 Buy/Active 按钮带），2 列网格、`beginScrollList` 支持滚动。原来 World 标签下的 Shop 子 tab 连同它的纯文字行渲染整段删除；`ctx.shopItems`/`shopLabel()`/battle-pass 已购买灰化逻辑原样保留，只是搬进了新面板。
+- **Nation+Season 合并**：`renderWorldTabBody()` 去掉三个子 tab 按钮（原来是 `nations`/`season`/`shop` 横排三个 `panelButton`），改成固定顺序：Season 摘要（静态文案，不参与滚动）在上，Nations 列表（可滚动，行渲染逻辑不变：★ + 名称 + 坐标 + 我的国家显示 Rename、别人的显示 Held/Free）在下，一次性全部展示。`ctx.infoTab` 字段整个删除（不再需要子 tab 状态）。
+- `world.shopTitle`（en/zh/de 三份，独立面板标题，复用 `world.tabShop` 的文案）新增；`world.tabNations`/`world.tabSeason`/`world.tabShop` 三个既有 key 复用为按钮/小节标题，未新增冗余文案。
+
+**测试改动**：`worldMapInfoScroll.ui.ts` 整体重写——去掉 `infoTab`/shop 相关的全部用例，nations 的滚动/拖拽/滚轮覆盖保留但去掉了 `infoTab` 选项，"in-list 按钮 tap-vs-drag" 那组回归（防止在滚动列表里按钮被 pointer-down 直接触发而不是等 pointer-up）改用 Nation 的 Rename 按钮验证（`openRenameInput` 走 `document.createElement`，测试环境没有全局 `document`，改成 `vi.spyOn` 到 `panels.openRenameInput` 而不是断言真实 DOM 副作用）；另加一组季节摘要内容断言（`modalTexts()` 直读 `modalLayer` 的直属 `PIXI.Text` 子节点）——季号/状态/人口文案、有/无 `resetAt` 时的倒计时文案、无数据时的占位横线、以及"国家列表为空但季节摘要仍显示"的组合态。新增 `worldMapShopPanel.ui.ts`（15 例）覆盖独立面板：`openShopPanel` 的 joined 门槛/首次拉取缓存、卡片 Buy 按钮点击触发 `doBuyShopItem`、长列表滚动、Close 按钮、battle-pass 已购买灰化、原来挂在 shop 子 tab 上的 tap-vs-drag 回归，以及卡片内容本身（`allModalTexts()` 递归进滚动列表的遮罩子容器读文本）——每张卡的本地化名称+成本文案、面板顶部的实时余额文案。`worldMapHeaderProduction.ui.ts` 补两条断言：Shop 按钮紧贴在 Auction 左边、资源 cluster 右边界让给 Shop 按钮而不是 Auction 按钮。`worldMapTerritoryPanel.ui.ts` 新增一组"header Shop 按钮"路由回归（命中 `shopBtnRect` 调 `openShopPanel`、命中区域外不调、Shop 按钮不会吞掉紧邻的 Auction 按钮点击），`worldMapHeaderInset.ui.ts` 的手搭 ctx 补上 `shopBtnRect`（否则 `WorldMapInput.handleDown` 新增的 Shop 按钮命中判断会读到 `undefined.w` 直接抛错）。
+
+**验证**：`client` `tsc --noEmit` 全绿；`npx vitest run --config vitest.ui.config.ts`（113 文件/984 例）全绿。可视化验证：本机 Browser pane 对这个 WebGL 应用一贯需要走 `client-run-and-visual-verify` 备忘录里"TEMP `globalThis.__NW_DEBUG` 钩子 + 手搭 ctx + `renderer.render()` 两次 + `toDataURL()` + POST 到本地 collector"的标准路径（`showModal()` 那条记录）——本轮成功复现：起 `game`（9090）dev server，在 `app.ts` 里临时挂 `{app, PIXI, WorldMapPanels}`，一次 `javascript_exec` 里手搭最小 `WorldMapContext` 分别调 `openShopPanel()`（6 个商品，2×3 卡片网格，Shop/Auction 按钮并排）和 `renderTerritoryPanel()`（`territoryTab:'world'`，Season 摘要 + 3 条 Nation 混合 mine/held/free 状态）两张截图，确认排版符合预期后把临时钩子从 `app.ts` 里完整移除（`git diff` 确认该文件恢复干净）。
+
+**协作备注**：本次改动期间 `git status` 显示同一份主检出里还有另一个会话在并行改 `DefenseEditorScene`/`sketchUi.ts`/`CityScene` 等文件（见上一条 §55 记录），以及本文件本身也带着他们尚未提交的 §55 条目——两边改动的文件集合没有重叠，属于预期内的共享检出场景（`claudedocs/worktrees.md`），提交时务必只 `git add` 本次任务改动的具体文件路径。

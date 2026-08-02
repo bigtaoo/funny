@@ -8,13 +8,15 @@
 // After: those per-scene banners are gone. Every scene routes its toast through the single global
 // outlet `showToastMessage(text, kind)` (net/log), which app.ts wires to GlobalToast.show() with a
 // two-colour mapping (success → green, error → red). GlobalToast is now the ONLY renderer, floating
-// above all scenes and centred on the bottom-third line. So the meaningful regressions to pin are:
-//   1. GlobalToast still renders its bar centred at h*2/3 (the unified position).
+// above all scenes and centred on the bottom-fifth line. So the meaningful regressions to pin are:
+//   1. GlobalToast still renders its bar centred at h*0.8 (the unified position).
 //   2. Each scene's showToast(msg, color) delegates to the sink with the right kind — a red colour
 //      maps to 'error', anything else (green / neutral dark) to 'success'.
 //
 // WorldMapPanels is deliberately EXCLUDED from the unification (see [[toast-size-position-unification-2026-07-16]])
-// and still draws its own bordered panel at h*2/3 — its geometry test is kept below unchanged.
+// and still draws its own bordered panel, kept at the same h*0.8 line by hand — its geometry test is
+// kept below, updated for the 2026-08-02 h*2/3 → h*0.8 move (see GlobalToast.show / WorldMapPanels.showToast:
+// h*2/3 sat under modal confirm buttons, e.g. the Equipment enhance dialog's own confirm button).
 //
 // Runs under the headless PIXI adapter (test/harness/pixiHeadless.ts via vitest.ui.config.ts).
 // Run: npm run test:ui
@@ -48,7 +50,7 @@ initI18n('en', memStore, ['zh', 'en', 'de']);
 
 const [W, H] = [1280, 800];
 const DESIGN_H = createLayout(W, H).designHeight;
-const BOTTOM_THIRD_Y = Math.round(DESIGN_H * 2 / 3);
+const TOAST_LINE_Y = Math.round(DESIGN_H * 0.8);
 const MSG = 'Enhance failed (materials spent)';
 
 /** First PIXI.Text node in the tree whose text matches `text`. */
@@ -138,8 +140,8 @@ describe('scene showToast() routes to the global toast sink (success/error kind)
 
 // ── GlobalToast: the single renderer, centred on the bottom-third line (h*2/3) ───────────────────
 
-describe('GlobalToast renders its bar centred on the bottom-third line (h*2/3)', () => {
-  it('label + panel are centred at h*2/3', () => {
+describe('GlobalToast renders its bar centred on the h*0.8 line', () => {
+  it('label + panel are centred at h*0.8', () => {
     const fakeApp = {
       screen: { width: W, height: H },
       stage: new PIXI.Container(),
@@ -151,15 +153,15 @@ describe('GlobalToast renders its bar centred on the bottom-third line (h*2/3)',
     expect(lbl).not.toBeNull();
     // GlobalToast takes raw app.screen H (not designHeight); h*0.052 is its own font convention.
     expect(lbl!.style.fontSize).toBe(Math.round(H * 0.052));
-    expect(Math.abs(lbl!.y - Math.round(H * 2 / 3))).toBeLessThanOrEqual(1);
+    expect(Math.abs(lbl!.y - Math.round(H * 0.8))).toBeLessThanOrEqual(1);
     expect(findPanelBehindText(toast.layer, MSG)).not.toBeNull();
   });
 });
 
-// ── WorldMapPanels: deliberately excluded, still draws its own bordered panel at h*2/3 ────────────
+// ── WorldMapPanels: deliberately excluded, still draws its own bordered panel at h*0.8 ────────────
 
-describe('WorldMapPanels.showToast() (excluded from unification) still draws its own panel at h*2/3', () => {
-  it('bordered dark panel with a center-anchored label centred on h*2/3', () => {
+describe('WorldMapPanels.showToast() (excluded from unification) still draws its own panel at h*0.8', () => {
+  it('bordered dark panel with a center-anchored label centred on h*0.8', () => {
     const toastLayer = new PIXI.Container();
     const ctx = { toastLayer, w: W, h: DESIGN_H, toastTimer: 0 } as unknown as WorldMapContext;
     const panels = new WorldMapPanels(ctx);
@@ -167,7 +169,7 @@ describe('WorldMapPanels.showToast() (excluded from unification) still draws its
     const lbl = findText(toastLayer, MSG);
     expect(lbl).not.toBeNull();
     expect(lbl!.style.fontSize).toBe(FS.headline);
-    expect(Math.abs(lbl!.y - BOTTOM_THIRD_Y)).toBeLessThanOrEqual(1);
+    expect(Math.abs(lbl!.y - TOAST_LINE_Y)).toBeLessThanOrEqual(1);
     expect(findPanelBehindText(toastLayer, MSG)).not.toBeNull();
   });
 });

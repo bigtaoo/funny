@@ -27,11 +27,6 @@ class VersionManifestPlugin {
 module.exports = (env, argv) => {
   const isDev = argv.mode === 'development';
 
-  // Online workspace (Supabase) connection — injected at build time. Empty when
-  // unset → the workspace UI disables itself; the editor still works offline.
-  const supabaseUrl     = process.env.NW_SUPABASE_URL || '';
-  const supabaseAnonKey = process.env.NW_SUPABASE_ANON_KEY || '';
-
   return {
     entry: './src/index.ts',
     output: {
@@ -55,10 +50,6 @@ module.exports = (env, argv) => {
       new HtmlWebpackPlugin({
         template: './public/index.html',
         inject: 'body',
-      }),
-      new webpack.DefinePlugin({
-        __NW_SUPABASE_URL__:      JSON.stringify(supabaseUrl),
-        __NW_SUPABASE_ANON_KEY__: JSON.stringify(supabaseAnonKey),
       }),
       new VersionManifestPlugin(),
     ],

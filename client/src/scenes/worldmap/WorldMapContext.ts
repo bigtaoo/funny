@@ -104,7 +104,6 @@ export class WorldMapContext {
   nations: NationView[] = [];
   season: SeasonView | null = null;
   shopItems: SlgShopItemView[] = [];
-  infoTab: 'nations' | 'season' | 'shop' = 'nations';
   /** Territory Overview panel (SLG_DESIGN_LOG.md §26): opened by tapping the header resource cluster. */
   territoryPanelOpen = false;
   territoryTab: 'overview' | 'list' | 'world' = 'overview';
@@ -163,12 +162,6 @@ export class WorldMapContext {
   vignetteAlpha = 0;
   loadingTimeout: ReturnType<typeof setTimeout> | null = null;
   selectedTile: { x: number; y: number } | null = null;
-  myAttackTiles: Set<string> = new Set();
-  // Tiles this player launched an `occupy` march against. Since ADR-037 occupy arrival fights the target's
-  // NPC garrison and pushes a SiegeResult back to the occupier just like an attack does — but occupy is not an
-  // "I attacked an enemy" event, so it must be classified separately from myAttackTiles when a SiegeResult
-  // arrives (applySiegeResult), or a routine land-grab win is misread as a defensive loss ("Territory lost").
-  myOccupyTiles: Set<string> = new Set();
   toastTimer = 0;
   /** Accumulates update() dt; drives the once-per-second HUD countdown refresh (P1-1) — march/siege
    *  remaining-time text previously only advanced on the ~5s poll tick or an incoming push, so it sat
@@ -181,6 +174,8 @@ export class WorldMapContext {
   marchesExpanded = false;
   backRect: { x: number; y: number; w: number; h: number } = { x: 0, y: 0, w: 0, h: 0 };
   aucBtnRect: { x: number; y: number; w: number; h: number } = { x: 0, y: 0, w: 0, h: 0 };
+  /** Header-bar "Shop" entry (left of the auction button) — opens the standalone shop panel. */
+  shopBtnRect: { x: number; y: number; w: number; h: number } = { x: 0, y: 0, w: 0, h: 0 };
   zoomBtnRect: { x: number; y: number; w: number; h: number } = { x: 0, y: 0, w: 0, h: 0 };
   marchBadgeRect: { x: number; y: number; w: number; h: number } = { x: 0, y: 0, w: 0, h: 0 };
   /** Top-right "battle replays" badge (below the marches badge) — tapping it opens the last-100 replay browser. */
@@ -189,6 +184,8 @@ export class WorldMapContext {
   replayPanelOpen = false;
   /** Cached recent siege reports (fetched when the replay browser opens). */
   sieges: SiegeSummaryView[] = [];
+  /** Whether the standalone Shop panel (item-card catalog) is open — opened from the header shopBtnRect. */
+  shopPanelOpen = false;
   chatBarRect: { x: number; y: number; w: number; h: number } = { x: 0, y: 0, w: 0, h: 0 };
   /** Header-bar resource production cluster (renderHeaderHud) — tapping it opens the Territory Overview panel. */
   resClusterRect: { x: number; y: number; w: number; h: number } = { x: 0, y: 0, w: 0, h: 0 };

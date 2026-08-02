@@ -285,6 +285,68 @@ describe.skipIf(!mongo)('worldsvc territory connectivity e2e (ADR-039)', () => {
       .resolves.toMatchObject({ kind: 'sweep', status: 'marching' });
   });
 
+  it('computeMarchPath scopes its enemy-base scan to a bounding box around the march (2026-08-02, s1-0 production incident)', async () => {
+    // Regression for a real production incident: an old, populated world (s1-0) had accumulated ~2584
+    // registered capitals — each a permanent 9-cell type:'base' TileDoc, never deleted — until type:'base'
+    // matched 23257 of 23325 tiles (99.7% of the whole collection). computeMarchPath's "which enemy bases
+    // block pathing" query (combatShared.ts) had no coordinate bound, so on that world it degenerated into
+    // a near-full-collection scan measured at 12.4s live against prod — blowing past the client's request
+    // timeout on every single march (AbortError), even though the march itself succeeded server-side. Fixed
+    // by adding a padded bounding box (legBox + PATHFIND_QUERY_PAD) around the march's endpoints to all 3
+    // obstacle scans, reusing the existing {worldId,x,y} index. This test seeds a batch of unrelated,
+    // far-away enemy capitals (simulating the accumulated-capitals scenario) and asserts the base-scan query
+    // actually carries an x/y range — it fails on the pre-fix code, which queries only
+    // {worldId,type:'base',ownerId} with no coordinate bound at all.
+    const base = findBaseCoord(10, 10);
+    await svc.joinWorld(W, 'solo', base.x, base.y);
+    const target = outsideFootprint(base);
+
+    const FAR_COUNT = 50;
+    const farDocs = [];
+    for (let i = 0; i < FAR_COUNT; i++) {
+      const fx = SLG_MAP_W - 1 - (i % 5);
+      const fy = SLG_MAP_H - 1 - Math.floor(i / 5);
+      farDocs.push({
+        _id: tileId(W, fx, fy), worldId: W, x: fx, y: fy,
+        type: 'base', ownerId: `noise-${i}`, level: 1, garrison: 100, rev: 0,
+      });
+    }
+    await m.collections.tiles.insertMany(farDocs as never[]);
+
+    const tilesAny = m.collections.tiles as unknown as { find: (filter: unknown, opts?: unknown) => ReturnType<typeof m.collections.tiles.find> };
+    const origFind = tilesAny.find.bind(tilesAny);
+    const baseScanFilters: Record<string, unknown>[] = [];
+    tilesAny.find = (filter: unknown, opts?: unknown) => {
+      const f = filter as Record<string, unknown>;
+      if (f?.type === 'base') baseScanFilters.push(f);
+      return origFind(filter, opts);
+    };
+    try {
+      await expect(svc.startMarch(W, 'solo', base.x, base.y, target.x, target.y, 'occupy', OCCUPY_MIN_TROOPS))
+        .resolves.toMatchObject({ kind: 'occupy', status: 'marching' });
+    } finally {
+      tilesAny.find = origFind;
+    }
+
+    expect(baseScanFilters.length).toBeGreaterThan(0);
+    const filter = baseScanFilters[0]!;
+    // The fix's whole point: the query must carry an x/y bounding-box filter — this is what fails pre-fix
+    // (the old query had no x/y keys at all, so `filter.x`/`filter.y` would be undefined here).
+    expect(filter.x).toBeDefined();
+    expect(filter.y).toBeDefined();
+    const xr = filter.x as { $gte: number; $lte: number };
+    const yr = filter.y as { $gte: number; $lte: number };
+    // Tight around the march's own endpoints (near the map's (10,10) corner), nowhere near the far corner
+    // where the seeded noise sits.
+    expect(xr.$lte).toBeLessThan(SLG_MAP_W - 10);
+    expect(yr.$lte).toBeLessThan(SLG_MAP_H - 10);
+
+    // Directly prove the noise is excluded from what the scan actually fetches: re-running the captured
+    // filter against the real collection must return none of the seeded far capitals.
+    const matched = await m.collections.tiles.find(filter as never).toArray();
+    expect(matched.some((d) => (d as { ownerId?: string }).ownerId?.startsWith('noise-'))).toBe(false);
+  });
+
   it('sect-wide judgment: a sibling family\'s territory (not the requester\'s own) satisfies connectivity', async () => {
     const sectA = `s:${W}:AAA`;
     const famA = `f:${W}:A`, famA2 = `f:${W}:A2`;

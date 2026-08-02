@@ -161,7 +161,7 @@ function drawTrailDotGraphic(): PIXI.Graphics {
 
 // ── Legendary border-trail tuning ───────────────────────────────────────────
 /** Loops of the card's border per second for the trail's comet head. Positive = clockwise (screen y-down). */
-const TRAIL_SPEED = 0.42;
+const TRAIL_SPEED = 0.28;
 /** Inward offset (px) from the card's edge the trail loops on, so it doesn't ride the frame's outer lip. */
 const TRAIL_INSET = 16;
 /** Fading dots making up the comet's tail — more = smoother trail. */
@@ -171,7 +171,7 @@ const TRAIL_SPAN = 0.42;
 /** Full rainbow cycles painted around one lap of the border — a "holographic foil" shimmer, not a flat gold tint. */
 const TRAIL_HUE_CYCLES = 2;
 /** Slow independent drift (laps/s) of the hue pattern itself, so the shimmer keeps creeping instead of freezing to the border. */
-const TRAIL_HUE_DRIFT = 0.05;
+const TRAIL_HUE_DRIFT = 0.0333;
 /** Perimeter-fraction head start of the second trail relative to the first (0.5 = half a lap, i.e. diagonally opposite corners). */
 const TRAIL_PAIR_OFFSET = 0.5;
 

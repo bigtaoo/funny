@@ -171,7 +171,11 @@ describe.skipIf(!mongo)('worldsvc occupy-march e2e (ADR-037 §5.4)', () => {
     expect(held.contestedByMe).toBe(true);
     expect(held.contestedUntil).toBeGreaterThan(nowMs);
     // A siege_result battle report was recorded/pushed even though ownership hasn't landed yet.
-    expect(pushes.some((p) => p.accountId === 'a' && p.msg.kind === 'siege_result' && p.msg.outcome === 'attacker_win')).toBe(true);
+    // 2026-08-02: attackerId/marchKind are what the client now uses to classify this as its OWN
+    // occupy win (not a defensive loss, see SLG_DESIGN_LOG.md §51/WorldMapNet.applySiegeResult) —
+    // pin them here so a regression on the push payload is caught by this exact scenario.
+    const occupySr = pushes.find((p) => p.accountId === 'a' && p.msg.kind === 'siege_result');
+    expect(occupySr?.msg).toMatchObject({ outcome: 'attacker_win', attackerId: 'a', marchKind: 'occupy' });
     // The pending doc exists, keyed by tileId.
     const occDoc = await m.collections.occupations.findOne({ _id: tileId(W, target.x, target.y) });
     expect(occDoc).toMatchObject({ ownerId: 'a', dueAt: held.contestedUntil });
@@ -208,7 +212,8 @@ describe.skipIf(!mongo)('worldsvc occupy-march e2e (ADR-037 §5.4)', () => {
     // The minimum force now wins (would have lost against a flat-100 base).
     const held = await svc.getTile(W, 'a', target.x, target.y);
     expect(held.contestedByMe).toBe(true);
-    expect(pushes.some((p) => p.accountId === 'a' && p.msg.kind === 'siege_result' && p.msg.outcome === 'attacker_win')).toBe(true);
+    const minForceSr = pushes.find((p) => p.accountId === 'a' && p.msg.kind === 'siege_result');
+    expect(minForceSr?.msg).toMatchObject({ outcome: 'attacker_win', attackerId: 'a', marchKind: 'occupy' });
 
     // The persisted siege replay carries the scaled defender base HP (= npcBaseHp(1) = 40) → the engine battle and
     // any client-side replay use the level-scaled base, not the flat BASE_HP default.
@@ -240,7 +245,8 @@ describe.skipIf(!mongo)('worldsvc occupy-march e2e (ADR-037 §5.4)', () => {
     // is at most what it was before departure minus committed troops, and never more.
     const me = await svc.getMe(W, 'a');
     expect(me.troops!).toBeLessThanOrEqual(troopsBefore);
-    expect(pushes.some((p) => p.accountId === 'a' && p.msg.kind === 'siege_result' && p.msg.outcome === 'defender_win')).toBe(true);
+    const lossSr = pushes.find((p) => p.accountId === 'a' && p.msg.kind === 'siege_result');
+    expect(lossSr?.msg).toMatchObject({ outcome: 'defender_win', attackerId: 'a', marchKind: 'occupy' });
   });
 
   it('expulsion mid-hold: an interrupting attack march beats the pending occupier\'s held garrison, cancels their hold, and starts its own', async () => {
@@ -284,6 +290,12 @@ describe.skipIf(!mongo)('worldsvc occupy-march e2e (ADR-037 §5.4)', () => {
     const occDocB = await m.collections.occupations.findOne({ _id: tileId(W, target.x, target.y) });
     expect(occDocB?.ownerId).toBe('b');
     expect(occDocB!.garrison).toBeGreaterThan(0);
+    // b's expulsion march was kind='attack' (not 'occupy') even though the win starts a hold rather than an
+    // instant capture — the pushed marchKind reflects b's OWN march, so b's client still gets the deliberate
+    // attack-siege modal (with replay) here, not the lightweight occupy toast. Locks in this cross-path
+    // interaction between the attack and occupy-expulsion flows (both funnel through startOccupationHold).
+    const expulsionSr = pushes.find((p) => p.accountId === 'b' && p.msg.kind === 'siege_result');
+    expect(expulsionSr?.msg).toMatchObject({ outcome: 'attacker_win', attackerId: 'b', marchKind: 'attack' });
 
     // a no longer sees itself as the holder.
     const fromA = await svc.getTile(W, 'a', target.x, target.y);
