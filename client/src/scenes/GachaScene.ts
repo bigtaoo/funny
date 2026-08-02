@@ -904,8 +904,10 @@ export class GachaScene implements Scene {
     drawScrollIndicator(this.container, { x: gridX, y: gridTop, w: gridW, h: gridH }, this.oddsScrollY, this.oddsScrollMax);
 
     // Total + pity rule + close hint.
+    // Sits in the gap between the grid's bottom edge and the pity line — hugging gridBottom put it on top
+    // of the partial card row that peeks above the fold.
     const totalLbl = txt(t('gacha.oddsDetail.total', { pct: (total * 100).toFixed(2) }), FS.label, C.mid, true);
-    totalLbl.anchor.set(0.5, 1); totalLbl.x = w / 2; totalLbl.y = gridBottom + Math.round(h * 0.005) + 5;
+    totalLbl.anchor.set(0.5, 1); totalLbl.x = w / 2; totalLbl.y = gridBottom + Math.round(h * 0.030);
     this.container.addChild(totalLbl);
 
     const pity = pool.pityThreshold ?? 0;
