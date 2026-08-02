@@ -422,13 +422,15 @@ export class WorldMapPanels {
     const tl = this.ctx.toastLayer;
     tearDownChildren(tl);
     const { w, h } = this.ctx;
-    // Unified toast box: dark panel + colored border, centered at h*2/3 — matches CityScene.showToast
+    // Unified toast box: dark panel + colored border, centered at h*0.8 — matches CityScene.showToast
     // and the global fallback GlobalToast so world-map notices read the same as the rest of the game.
+    // (Moved down from h*2/3 on 2026-08-02: that line sat under modal confirm buttons — e.g. the
+    // Equipment enhance dialog's own confirm button — and covered them while the toast was visible.)
     const tw = Math.min(w - 40, 720);
     const th = 84;
     const box = sketchPanel(tw, th, { fill: C.dark, fillAlpha: 0.88, border: color, width: 1, seed: 7 });
     box.x = (w - tw) / 2;
-    box.y = Math.round(h * 2 / 3 - th / 2);
+    box.y = Math.round(h * 0.8 - th / 2);
     tl.addChild(box);
     const lbl = txt(msg, FS.headline, 0xffffff, false, tw - 48);
     lbl.anchor.set(0.5, 0.5);

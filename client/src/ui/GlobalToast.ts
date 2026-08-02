@@ -39,7 +39,10 @@ export class GlobalToast {
     const bw = lbl.width + padX * 2;
     const bh = lbl.height + padY * 2;
     const bx = (w - bw) / 2;
-    const by = Math.round(h * 2 / 3 - bh / 2);
+    // Centered at h*0.8 (moved down from h*2/3 on 2026-08-02): the old line sat under modal confirm
+    // buttons — e.g. the Equipment enhance dialog's own confirm button — and covered them while the
+    // toast was visible. Keep in sync with WorldMapPanels.showToast's matching position.
+    const by = Math.round(h * 0.8 - bh / 2);
     const bg = sketchPanel(bw, bh, {
       fill: color, fillAlpha: 0.95, border: color, width: 2, seed: seedFor(bw, bh, 2),
     });
