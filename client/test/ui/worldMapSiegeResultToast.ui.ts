@@ -149,4 +149,15 @@ describe('WorldMapNet.applySiegeResult — field encounters (marchKind=move) get
     expect(h.showToast).toHaveBeenCalledWith(t('world.defendLost'), expect.anything());
     expect(h.showToast).not.toHaveBeenCalledWith(t('world.encounterWin'), expect.anything());
   });
+
+  it('a losing field encounter never opens the siege modal either (toast only, same as a win)', () => {
+    h.net.applySiegeResult(siege('defender_win', ME, 'move'));
+    expect(h.showModal).not.toHaveBeenCalled();
+  });
+
+  it('our OWN march with an unrecognized kind (e.g. sweep) is NOT treated as a field encounter — the branch keys on marchKind===\'move\' specifically, not just "any action we initiated that isn\'t attack/occupy"', () => {
+    h.net.applySiegeResult(siege('attacker_win', ME, 'sweep'));
+    expect(h.showToast).not.toHaveBeenCalledWith(t('world.encounterWin'), expect.anything());
+    expect(h.showToast).toHaveBeenCalledWith(t('world.defendLost'), expect.anything());
+  });
 });
