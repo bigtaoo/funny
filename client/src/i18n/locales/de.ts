@@ -1012,6 +1012,7 @@ export const de: Record<TranslationKey, string> = {
   'world.tabNations': 'Nationen',
   'world.tabSeason': 'Saison',
   'world.tabShop': 'Shop',
+  'world.shopTitle': 'Shop',
   'world.nationCol': 'Hauptstadt #{idx}',
   'world.nationOwned': 'Besetzt',
   'world.nationFree': 'Frei',

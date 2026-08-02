@@ -333,6 +333,13 @@ export class WorldMapInput {
       return;
     }
 
+    // Shop button (header bar, immediately left of the auction button)
+    const sb = this.ctx.shopBtnRect;
+    if (x >= sb.x && x <= sb.x + sb.w && y >= sb.y && y <= sb.y + sb.h) {
+      this.ctx.panels.openShopPanel();
+      return;
+    }
+
     // Auction button (left column)
     const a = this.ctx.aucBtnRect;
     if (x >= a.x && x <= a.x + a.w && y >= a.y && y <= a.y + a.h) {

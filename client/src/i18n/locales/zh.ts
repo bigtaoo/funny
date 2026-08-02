@@ -1026,6 +1026,7 @@ export const zh = {
   'world.tabNations': '国家',
   'world.tabSeason': '赛季',
   'world.tabShop': '商城',
+  'world.shopTitle': '商城',
   'world.nationCol': '首府 #{idx}',
   'world.nationOwned': '有主',
   'world.nationFree': '无主',

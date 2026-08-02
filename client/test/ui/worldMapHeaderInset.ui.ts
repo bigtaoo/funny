@@ -55,6 +55,7 @@ function buildInputHarness(topInset = TOP_INSET) {
     zoomBtnRect: zeroRect(),
     backRect: zeroRect(),
     aucBtnRect: zeroRect(),
+    shopBtnRect: zeroRect(),
     marchBadgeRect: zeroRect(),
     replayBadgeRect: zeroRect(),
     chatBarRect: zeroRect(),

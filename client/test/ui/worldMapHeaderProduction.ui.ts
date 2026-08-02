@@ -105,12 +105,20 @@ describe('WorldMapPanels.renderHud — header bar shows production, not the "Wor
     expect(productionLabels(ctx).filter((s) => s === '+0')).toHaveLength(5);
   });
 
-  it('the production readout is horizontally centered between the back button and the auction button, not overlapping either', () => {
+  it('the production readout is horizontally centered between the back button and the shop button, not overlapping either', () => {
     const { ctx, panels } = buildHudHarness(TOP_INSET, { ink: 5, paper: 5, graphite: 5, metal: 5, sticker: 5 });
     panels.renderHud();
     const cluster = findCluster(ctx);
     expect(cluster.x).toBeGreaterThanOrEqual(ctx.backRect.x + ctx.backRect.w);
-    expect(cluster.x + cluster.width).toBeLessThanOrEqual(ctx.aucBtnRect.x);
+    expect(cluster.x + cluster.width).toBeLessThanOrEqual(ctx.shopBtnRect.x);
+  });
+
+  it('the shop button sits immediately left of the auction button, both inside the header band', () => {
+    const { ctx, panels } = buildHudHarness(TOP_INSET);
+    panels.renderHud();
+    expect(ctx.shopBtnRect.x + ctx.shopBtnRect.w).toBeLessThanOrEqual(ctx.aucBtnRect.x);
+    expect(ctx.shopBtnRect.y).toBeGreaterThanOrEqual(0);
+    expect(ctx.shopBtnRect.y + ctx.shopBtnRect.h).toBeLessThanOrEqual(TOP_INSET);
   });
 
   it('re-rendering (as the ~5s march poll does) tears down and rebuilds the header layer without leaking children', () => {

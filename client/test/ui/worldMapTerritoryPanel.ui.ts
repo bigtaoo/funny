@@ -87,6 +87,7 @@ function buildHarness(opts: {
     zoomBtnRect: { x: 0, y: 0, w: 0, h: 0 },
     backRect: { x: 0, y: 0, w: 0, h: 0 },
     aucBtnRect: { x: 0, y: 0, w: 0, h: 0 },
+    shopBtnRect: { x: 0, y: 0, w: 0, h: 0 },
     marchBadgeRect: { x: 0, y: 0, w: 0, h: 0 },
     replayBadgeRect: { x: 0, y: 0, w: 0, h: 0 },
     chatBarRect: { x: 0, y: 0, w: 0, h: 0 },
@@ -224,5 +225,39 @@ describe('WorldMapInput — header resource cluster opens the Territory Overview
     const spy = vi.spyOn(ctx.panels, 'openTerritoryPanel');
     input.handleDown(5, 5);
     expect(spy).not.toHaveBeenCalled();
+  });
+});
+
+// The Shop entry button (WorldMapPanels.renderHeaderHud, immediately left of Auction) routes
+// through the same handleDown chain as the resource cluster/Auction/marches badges above — this
+// only exercises the hit-test wiring; renderShopPanel/openShopPanel's own behavior (item cards,
+// scroll, Buy) is covered in worldMapShopPanel.ui.ts, so the routed call is mocked out here.
+describe('WorldMapInput — header shop button opens the Shop panel', () => {
+  it('a tap inside shopBtnRect calls openShopPanel', () => {
+    const { ctx, input } = buildHarness();
+    ctx.shopBtnRect = { x: 400, y: 10, w: 100, h: 40 };
+    const spy = vi.spyOn(ctx.panels, 'openShopPanel').mockImplementation(() => {});
+    input.handleDown(450, 20);
+    expect(spy).toHaveBeenCalledTimes(1);
+  });
+
+  it('a tap outside shopBtnRect does not open the shop panel', () => {
+    const { ctx, input } = buildHarness();
+    ctx.shopBtnRect = { x: 400, y: 10, w: 100, h: 40 };
+    const spy = vi.spyOn(ctx.panels, 'openShopPanel').mockImplementation(() => {});
+    input.handleDown(5, 5);
+    expect(spy).not.toHaveBeenCalled();
+  });
+
+  it('a tap on the neighboring auction button (shop\'s rect does not swallow it) still opens auction, not shop', () => {
+    const { ctx, input } = buildHarness();
+    ctx.shopBtnRect = { x: 400, y: 10, w: 100, h: 40 };
+    ctx.aucBtnRect = { x: 510, y: 10, w: 100, h: 40 };
+    const onOpenAuction = vi.fn();
+    (ctx as unknown as { cb: { onOpenAuction: () => void } }).cb.onOpenAuction = onOpenAuction;
+    const openShopPanel = vi.spyOn(ctx.panels, 'openShopPanel').mockImplementation(() => {});
+    input.handleDown(560, 20);
+    expect(onOpenAuction).toHaveBeenCalledTimes(1);
+    expect(openShopPanel).not.toHaveBeenCalled();
   });
 });
