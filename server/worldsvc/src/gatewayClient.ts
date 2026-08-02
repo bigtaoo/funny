@@ -45,6 +45,10 @@ export type SlgPushMsg =
       outcome: string; // attacker_win | defender_win | draw
       lootSummary: string; // human-readable summary (e.g. "ink+250"), displayed directly in UI
       replayRef: string; // replay reference (filled after S8-3b judge replay; currently empty)
+      // 2026-08-02: always populated so the recipient's role (mine vs. defender/bystander) is
+      // server-authoritative — see transport.proto SiegeResult for the full rationale.
+      attackerId: string; // account that dispatched the offensive/occupy march
+      marchKind: string; // MarchKind of that march (attack | occupy | move | ...)
     }
   | {
       kind: 'family_msg'; // S8-4: new message in the family channel (pushed only to online members)

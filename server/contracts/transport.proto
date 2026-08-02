@@ -280,6 +280,13 @@ message SiegeResult {
   string loot_summary = 4;
   string replay_ref   = 5;
   string march_id     = 6;   // attacking march's id (occupy attack-animation correlation)
+  // 2026-08-02 bug fix: the recipient's role used to be guessed client-side from a per-scene,
+  // in-memory "did I just dispatch this march" Set — reset on every WorldMapScene rebuild (leaving
+  // and re-entering the SLG, or a page reload) while the march was still in flight, misreading the
+  // player's own win as a defensive loss ("Territory lost"). These two fields make classification
+  // server-authoritative instead: always populated, so the client never needs to remember its own action.
+  string attacker_id  = 7;   // account that dispatched the offensive/occupy march (SiegeDoc.attackerId)
+  string march_kind   = 8;   // MarchKind of that march (attack | occupy | move | ...), SiegeDoc.marchKind
 }
 message FamilyMsg {
   string family_id      = 1;

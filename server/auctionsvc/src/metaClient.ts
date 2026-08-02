@@ -8,7 +8,7 @@ import { fetchInternalJson, SlgError, type EquipmentInstance, type CardInstance,
 
 export interface AuctionMetaClient {
   readonly available: boolean;
-  /** Deduct material (inverse of the cancel-and-refund operation for listing on auction). Throws an Error containing INSUFFICIENT_RESOURCES if insufficient. */
+  /** Deduct material (inverse of the cancel-and-refund operation for listing on auction). Insufficient balance → throws SlgError(INSUFFICIENT_MATERIALS). */
   deductMaterial(accountId: string, material: string, qty: number, orderId: string): Promise<void>;
   /** Escrow equipment for auction: removes from seller's inventory and returns an instance snapshot (stored in the listing doc). Equipped / locked / not found → throws SlgError. */
   escrowEquipment(accountId: string, instanceId: string, orderId: string): Promise<EquipmentInstance>;
@@ -45,7 +45,17 @@ export class HttpAuctionMetaClient implements AuctionMetaClient {
       { ...this.opts('/internal/materials/deduct'), body: { accountId, material, qty, orderId } },
     );
     if (!res.ok) {
-      throw new Error(res.body?.error ?? res.error ?? `deductMaterial failed: ${res.status}`);
+      // meta's /internal/materials/deduct signals business errors via real HTTP status — no `code`
+      // field like escrow*/skin* below, unlike the others — so map by status: 402 insufficient / 404
+      // save not found / 409 rev-conflict-exhausted / 400 bad request. Surface as SlgError so
+      // httpApi.ts's `instanceof SlgError` catch maps it correctly instead of a generic 500
+      // (comm-audit finding, [[business-errors-surface-as-500-2026-08-02]]).
+      const msg = res.body?.error ?? res.error ?? `deductMaterial failed: ${res.status}`;
+      if (res.status === 402) throw new SlgError('INSUFFICIENT_MATERIALS', msg);
+      if (res.status === 404) throw new SlgError('NOT_FOUND', msg);
+      if (res.status === 409) throw new SlgError('REV_CONFLICT', msg);
+      if (res.status === 400) throw new SlgError('BAD_REQUEST', msg);
+      throw new Error(msg);
     }
   }
 

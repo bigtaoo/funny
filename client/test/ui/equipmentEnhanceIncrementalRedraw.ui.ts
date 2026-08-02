@@ -38,11 +38,23 @@ initI18n('en', memStore, ['zh', 'en', 'de']);
 interface Rect { x: number; y: number; w: number; h: number; }
 interface SceneInternals {
   modalHits: { rect: Rect; action: () => void }[];
+  hitRects: { rect: Rect; action: () => void; owner?: string }[];
   cellContainers: Map<string, PIXI.Container>;
   bt: { busy: boolean; start(): void; stop(): void };
   modalScale: number;
+  detailId: string | null;
   render(): void;
   openDetail(id: string): void;
+}
+
+/**
+ * Grid-cell action buttons (Enhance/Equip/Reforge/Salvage) are pushed at `btnBandH = 46` tall
+ * (renderInstanceCell); the whole-card "open detail" tap is pushed separately at the full
+ * `EQUIP_CELL_H` (266). Filtering to the 46-tall rects isolates the actual action buttons — the
+ * card-body tap is *never* gated by `disabled`, so counting it would hide a stuck-disabled bug.
+ */
+function actionHitsFor(internals: SceneInternals, owner: string): { rect: Rect; action: () => void; owner?: string }[] {
+  return internals.hitRects.filter((h) => h.owner === owner && Math.abs(h.rect.h - 46) < 0.5);
 }
 
 /** modalHits store screen-space rects (post toModalScreen(), scaled by modalScale) — the confirm
@@ -169,6 +181,126 @@ describe('EquipmentScene — enhance incremental redraw (2026-07-28)', () => {
 
     expect(frameBusy).not.toBeNull();
     expect(frameBusy!.w).toBe(frameIdle!.w);
+
+    scene.destroy();
+  });
+});
+
+// Regression coverage for the 2026-08-02 follow-up fix (see EQUIPMENT_DESIGN.md §11.4).
+//
+// The real enhance() wiring (src/app/nav/game.ts) applies the server response via
+// saveManager.adoptServerPartial *before* returning from the async call — and SaveManager notifies
+// its onSaveChanged subscribers synchronously. EquipmentScene subscribes to that with `() =>
+// this.render()`, so a FULL grid render can fire mid-await, while doEnhance's own `bt.busy` is still
+// true — greying every cell's buttons, not just the one being enhanced. The single-cell incremental
+// path above only ever fixes the touched cell, so every other cell was left stuck grey until the next
+// unrelated full render() (e.g. a scroll).
+describe('EquipmentScene — enhance mid-flight save-push does not leave sibling cells stuck grey (2026-08-02)', () => {
+  /** Builds a scene whose `enhance()` callback mirrors the real wiring: it mutates the save and fires
+   *  onSaveChanged listeners *synchronously*, before returning — same ordering as
+   *  saveManager.adoptServerPartial inside src/app/nav/game.ts's enhance(). */
+  function buildRealisticScene(save: SaveData): { scene: EquipmentScene; internals: SceneInternals } {
+    const listeners = new Set<() => void>();
+    const cb: EquipmentCallbacks = {
+      onBack() {},
+      getSave: () => save,
+      onSaveChanged: (listener) => { listeners.add(listener); return () => listeners.delete(listener); },
+      craft: async () => ({ ok: true }),
+      async enhance(id: string) {
+        await Promise.resolve(); // the network round trip
+        save.equipmentInv[id].level += 1;
+        for (const l of listeners) l(); // saveManager.adoptServerPartial's synchronous notify
+        return { ok: true as const, success: true, level: save.equipmentInv[id].level };
+      },
+      salvage: async () => ({ ok: true }),
+      equip: async () => ({ ok: true }),
+      reforge: async () => ({ ok: true }),
+      activeCardInstanceId: '',
+    };
+    const scene = new EquipmentScene(createLayout(1280, 800), new InputManager(), cb);
+    return { scene, internals: scene as unknown as SceneInternals };
+  }
+
+  it('a sibling cell touched only by the mid-flight busy=true render has its action buttons back as soon as the enhance settles', async () => {
+    const save = buildSave();
+    const { scene, internals } = buildRealisticScene(save);
+
+    internals.openDetail('inst_A');
+    const confirm = findConfirmHit(internals);
+    expect(confirm).toBeDefined();
+    confirm!.action();
+    await flush();
+
+    // inst_B was never enhanced — only ever touched by the mid-flight busy=true render. Its action
+    // buttons (Enhance/Equip — the 46-tall band, not the always-present card-body tap) must already be
+    // registered by the time doEnhance settles, matching what a forced full render() gives — no extra
+    // scroll/render should be required to un-grey it.
+    const settled = actionHitsFor(internals, 'inst_B');
+    internals.render();
+    const forced = actionHitsFor(internals, 'inst_B');
+    expect(forced.length).toBeGreaterThan(0); // sanity: the sibling does have action buttons at all
+    expect(settled.length).toBe(forced.length);
+
+    scene.destroy();
+  });
+
+  it('closing the detail modal after a settled enhance (no extra render) leaves sibling action buttons enabled', async () => {
+    const save = buildSave();
+    const { scene, internals } = buildRealisticScene(save);
+
+    internals.openDetail('inst_A');
+    const confirm = findConfirmHit(internals);
+    expect(confirm).toBeDefined();
+    confirm!.action();
+    await flush();
+
+    // Close the modal exactly the way a tap-outside does: DetailMixin's closeDetail() just clears
+    // detailId and tears down the modal layer — it never touches the grid/hitRects. If the grid was
+    // already correct at settle time, closing the modal changes nothing about it.
+    const outerHit = internals.modalHits[internals.modalHits.length - 1];
+    outerHit.action();
+    expect(internals.detailId).toBeNull();
+
+    const afterClose = actionHitsFor(internals, 'inst_B');
+    internals.render();
+    const forced = actionHitsFor(internals, 'inst_B');
+    expect(forced.length).toBeGreaterThan(0);
+    expect(afterClose.length).toBe(forced.length);
+
+    scene.destroy();
+  });
+
+  it('matches the reported repro: enhancing one piece out of a 24-item stack leaves the rest of the (now split-off) stack clickable without scrolling', async () => {
+    const save = makeNewSave('acc_test');
+    save.wallet.coins = 100000;
+    save.materials = { scrap: 100, lead: 100, binding: 100 };
+    save.equipmentInv = {};
+    for (let i = 0; i < 24; i++) {
+      const id = `inst_${i}`;
+      save.equipmentInv[id] = { id, defId: 'wp_pencil', rarity: 'epic', level: 0, affixes: [], locked: false };
+    }
+    const { scene, internals } = buildRealisticScene(save);
+
+    // Enhance whichever instance the grid picked as the stack's representative — enhancing it splits
+    // it off (level > 0) from the remaining 23-item stack, which gets a new representative id.
+    const repId = [...internals.cellContainers.keys()][0];
+    internals.openDetail(repId);
+    const confirm = findConfirmHit(internals);
+    expect(confirm).toBeDefined();
+    confirm!.action();
+    await flush();
+
+    const outerHit = internals.modalHits[internals.modalHits.length - 1];
+    outerHit.action(); // close, like the user tapping outside the modal
+
+    const otherOwners = [...new Set(internals.hitRects.map((h) => h.owner).filter((o): o is string => !!o && o !== repId))];
+    expect(otherOwners.length).toBeGreaterThan(0); // the remaining stack must still be represented by some row
+
+    const settled = otherOwners.flatMap((o) => actionHitsFor(internals, o));
+    internals.render();
+    const forced = otherOwners.flatMap((o) => actionHitsFor(internals, o));
+    expect(forced.length).toBeGreaterThan(0);
+    expect(settled.length).toBe(forced.length);
 
     scene.destroy();
   });

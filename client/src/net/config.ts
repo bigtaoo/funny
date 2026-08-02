@@ -88,3 +88,20 @@ export function getSocialBaseUrl(): string {
     return u.origin;
   } catch { return ''; }
 }
+
+// auctionsvc REST base URL resolution (AUCTION_DESIGN §9 — standalone service, decoupled from worldId).
+// Priority: build-time injected __NW_AUCTION_BASE__ > '' (same-origin, Caddy forwards /auction/* to
+// auctionsvc — see server/Caddyfile `handle /auction*`). Empty string in production when unconfigured;
+// dev derives port 18086 from the same host as worldBase (same pattern as getSocialBaseUrl's 8085).
+export function getAuctionBaseUrl(): string {
+  const injected = (globalThis as { __NW_AUCTION_BASE__?: string }).__NW_AUCTION_BASE__ ?? '';
+  if (injected) return injected.replace(/\/+$/, '');
+  const world = getWorldBaseUrl();
+  if (!world) return ''; // production same-origin
+  try {
+    const u = new URL(world);
+    u.port = '18086';
+    u.pathname = '';
+    return u.origin;
+  } catch { return ''; }
+}

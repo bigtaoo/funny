@@ -172,6 +172,34 @@ test('base_hp_changed carries the scaled defender maxBaseHp when an attacker rea
   assert.equal(hpEvent!.hp, 40 - UNIT_BLUEPRINTS[UnitType.Infantry].siegeValue, 'first infantry hit deals its siege value off the scaled ceiling');
 });
 
+test('destroy_base ends immediately once the attacker army is wiped, without waiting for battleTimeoutTicks', () => {
+  const col = ATTACK_LANES[0]!;
+  const level: LevelDefinition = {
+    id: 'test_destroy_base_attacker_wiped',
+    chapter: 0,
+    seed: 13,
+    objective: { kind: 'destroy_base' },
+    waves: { entries: [] },
+    battleTimeoutTicks: 18000, // the real siege timeout (10 min @ 30Hz) — the early exit must land far short of this
+    // One lone, nearly-dead attacker infantry (initialHp: 1, dies to any hit — armor tests elsewhere confirm
+    // minimum 1 damage/hit) placed one row from a full-HP defender garrison infantry in the same lane, so combat
+    // engages (range 1) within the first couple of ticks and the attacker is wiped before it can dent the base.
+    attackerArmy: [{ unitType: UnitType.Infantry, col, row: 15, initialHp: 1 }],
+    garrison: [{ unitType: UnitType.Infantry, col, row: 16 }],
+  };
+  const config: GameConfig = { seed: 13, mode: 'siege', players: [{ id: 0 }, { id: 1 }], level };
+  const outcome = runHeadless(config, new LocalInputSource(), 100);
+
+  assert.ok(outcome.ok, 'match reaches GameOver well within maxTicks');
+  assert.equal(outcome.engine.state.phase, GamePhase.GameOver);
+  assert.equal(outcome.engine.state.winner, Side.Top, 'attacker fully wiped → defender wins');
+  assert.equal(outcome.engine.state.topPlayer.isDead, false, 'defender base was never touched — this is the new wipeout early exit, not a base-destroyed win');
+  assert.ok(
+    outcome.engine.state.elapsedTicks < 100,
+    `ended at tick ${outcome.engine.state.elapsedTicks}, long before battleTimeoutTicks=18000`,
+  );
+});
+
 test('levelSchema validates defenderBaseHp: accepts a positive int, rejects <1 and >100000', () => {
   // battleTimeoutTicks marks this a siege battle → empty waves are allowed (isSiegeBattle in levelSchema).
   const base = { id: 'l', chapter: 0, seed: 1, objective: { kind: 'destroy_base' }, waves: { entries: [] }, battleTimeoutTicks: 100 };

@@ -266,6 +266,14 @@ export function DetailMixin<TBase extends EquipmentSceneBaseCtor>(Base: TBase): 
       // busy`) — the grid itself doesn't change yet, so skip the full render() here (2026-07-28 fix,
       // see doEnhance's finally below for the matching skip on the result side).
       this.refreshChromeAndModal();
+      // cb.enhance()'s real implementation (src/app/nav/game.ts) applies the server response via
+      // saveManager.adoptServerPartial *before* returning — which notifies onSaveChanged listeners
+      // synchronously, i.e. this scene's own subscription fires a full render() while still awaiting
+      // below, with `bt.busy` still true. That render greys out every cell's actions (not just this
+      // one), and the cheap paths below only ever fix the touched cell — so any such mid-flight
+      // render needs a full render() here too, to un-grey the rest of the grid. Track it via the
+      // generation counter rather than re-checking bt.busy (always true here regardless).
+      const genBeforeAwait = this.renderGeneration;
       const save = this.cb.getSave();
       const protectCount = save.inventory?.items?.[PROTECT_ENHANCE_ITEM_ID] ?? 0;
       const useProtect = this.useProtectEnhance && protectCount > 0;
@@ -290,8 +298,12 @@ export function DetailMixin<TBase extends EquipmentSceneBaseCtor>(Base: TBase): 
         // level-desc sort reorders it within its rarity group) — refreshInstanceCell() checks for
         // that itself and returns false if so, in which case a full render() is the only safe option.
         // No level change (a failed/errored attempt) never reshuffles anything, so the grid doesn't
-        // need touching at all — just the coin/materials spent and the modal's own state.
-        const gridOk = levelAfter === levelBefore || this.refreshInstanceCell(instanceId);
+        // need touching at all — just the coin/materials spent and the modal's own state. But if a
+        // mid-flight render already happened (see genBeforeAwait above), the whole grid is already
+        // showing that render's busy=true button state, so the cheap paths can't be trusted either —
+        // force a full render() to un-grey every cell, not just this one.
+        const midFlightRender = this.renderGeneration !== genBeforeAwait;
+        const gridOk = !midFlightRender && (levelAfter === levelBefore || this.refreshInstanceCell(instanceId));
         if (gridOk) this.refreshChromeAndModal();
         else this.render();
       }

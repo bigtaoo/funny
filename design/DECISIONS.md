@@ -617,7 +617,7 @@
 
 - **决策**：编辑器工具（animator，未来纳入 vfx-editor/level-editor/map-editor）的协作/分发方向改为**一个 Electron 桌面壳**——本地文件读写 + 未来的 git 提交/PR 全部走本地，不再往 `WORKSPACE_SYNC.md` 的 Supabase 云工作区 + GitHub Action 同步桥方向投入。
 - **背景**：`WORKSPACE_SYNC.md`（P1/P2 代码已完成并合并 main）本意是解决"协作者免本地部署"，但用户明确不喜欢"云盘中转"模式，偏好本地文件 + git 记录历史；同时计划未来引入**外包美术**（非技术人员），既要求零 git 知识门槛，又要求跨平台（Win/macOS）渲染表现一致（排除 Tauri，其各平台用系统原生 WebView，渲染引擎不统一）。Electron 自带固定 Chromium，全平台一致，且 Node 主进程可用 `isomorphic-git` 隐藏 git 复杂度，两个约束一并满足。
-- **影响**：新增 [`tools/desktop-shell/DESIGN.md`](tools/desktop-shell/DESIGN.md) 为桌面壳权威文档；`animator/WORKSPACE_SYNC.md` 标记为方向已被取代，但**已合并的 Supabase/`anim-sync.yml` 代码暂不下线**，待桌面壳落地后再评估是否移除。桌面壳当前只预留 `GitSyncController` 接口（全部方法 `not_implemented`）+ 壳/内容双层自动更新设计，尚未开始实现；真正接入外包前才做 git 提交的真实实现。
+- **影响**：新增 [`tools/desktop-shell/DESIGN.md`](tools/desktop-shell/DESIGN.md) 为桌面壳权威文档；`animator/WORKSPACE_SYNC.md` 标记为方向已被取代。**2026-08-02 更新**：已合并的 Supabase 云工作区代码（`WorkspaceStore`/`WorkspacePanel`/`workspaceConfig`、`@supabase/supabase-js` 依赖、`btn-workspace` 按钮、webpack `NW_SUPABASE_*` 注入）及每日同步 CI（`.github/workflows/anim-sync.yml`、`tools/animator/scripts/anim-sync.mjs`、`art/units/manifest.json`）已从编辑器和仓库中移除；`animator-deploy.yml` 同步去掉了不再需要的 Supabase 构建期注入。`IOController.buildTaoBlob()` 保留（`exportTao()` 仍在用）。桌面壳当前只预留 `GitSyncController` 接口（全部方法 `not_implemented`）+ 壳/内容双层自动更新设计，尚未开始实现；真正接入外包前才做 git 提交的真实实现。
 
 ## ADR-056 `equipped`/`flags` 改全服务器权威，`PUT /save` 整个下线 — Accepted — 2026-07-28
 

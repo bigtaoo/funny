@@ -5,6 +5,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createServer, type Server, type IncomingMessage } from 'node:http';
 import type { AddressInfo } from 'node:net';
+import { SlgError, ErrorCode } from '@nw/shared';
 import { HttpAuctionCommercialClient } from '../src/commercialClient';
 
 const KEY = 'k-internal';
@@ -47,5 +48,33 @@ describe('HttpAuctionCommercialClient.spend', () => {
     nextSpendBody = { ok: false, error: 'INSUFFICIENT_FUNDS' };
     const c = new HttpAuctionCommercialClient(base, KEY);
     await expect(c.spend('buyer1', 1200, 'auction_buy:x')).rejects.toThrow('INSUFFICIENT_FUNDS');
+  });
+
+  // Regression test for [[business-errors-surface-as-500-2026-08-02]]: spend() used to wrap every
+  // failure in a plain Error, so httpApi.ts's `instanceof SlgError` catch never matched and a buyer
+  // with insufficient coins saw a generic 500 "internal server error" instead of the real
+  // INSUFFICIENT_FUNDS code (402). Assert the thrown error is a properly-coded SlgError now.
+  it('HTTP 200 with ok:false (INSUFFICIENT_FUNDS) → throws a SlgError with the real code, not a generic 500', async () => {
+    nextSpendBody = { ok: false, error: 'INSUFFICIENT_FUNDS' };
+    const c = new HttpAuctionCommercialClient(base, KEY);
+    try {
+      await c.spend('buyer1', 1200, 'auction_buy:x');
+      expect.unreachable('spend() should have thrown');
+    } catch (e) {
+      expect(e).toBeInstanceOf(SlgError);
+      expect((e as InstanceType<typeof SlgError>).code).toBe(ErrorCode.INSUFFICIENT_FUNDS);
+    }
+  });
+
+  it('an unrecognized error string still falls back to a plain Error (generic 500 stays generic for genuinely unexpected failures)', async () => {
+    nextSpendBody = { ok: false, error: 'something weird commercial never actually returns' };
+    const c = new HttpAuctionCommercialClient(base, KEY);
+    try {
+      await c.spend('buyer1', 1200, 'auction_buy:z');
+      expect.unreachable('spend() should have thrown');
+    } catch (e) {
+      expect(e).not.toBeInstanceOf(SlgError);
+      expect((e as Error).message).toBe('something weird commercial never actually returns');
+    }
   });
 });

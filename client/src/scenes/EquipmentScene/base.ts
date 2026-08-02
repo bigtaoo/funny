@@ -343,8 +343,16 @@ export class EquipmentSceneBase {
 
   // ── Render ────────────────────────────────────────────────────────────────
 
+  /**
+   * Bumped on every full render() — lets doEnhance detect a full grid redraw that happened *during*
+   * its own in-flight await (see the field's use site) rather than relying on `this.bt.busy` alone,
+   * which only tells it busy was true at some point, not whether the grid actually got rebuilt.
+   */
+  protected renderGeneration = 0;
+
   protected render(): void {
     if (this.destroyed) return;
+    this.renderGeneration++;
     tearDownChildren(this.bodyLayer);
     this.hitRects = [];
     tearDownChildren(this.loadingLayer);

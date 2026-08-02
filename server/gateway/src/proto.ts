@@ -115,6 +115,9 @@ export type ServerMsg =
       outcome: string;
       lootSummary: string;
       replayRef: string;
+      // 2026-08-02: server-authoritative role classification — see transport.proto SiegeResult.
+      attackerId: string;
+      marchKind: string;
     }
   | { case: 'family_msg'; familyId: string; fromPublicId: string; fromName: string; body: string; ts: number }
   | { case: 'sect_msg'; sectId: string; fromPublicId: string; fromName: string; body: string; ts: number }
@@ -237,7 +240,7 @@ export function encodeServer(msg: ServerMsg): Uint8Array {
       server = { underAttack: { tile: msg.tile, attackerName: msg.attackerName, attackerPublicId: msg.attackerPublicId, arriveAt: msg.arriveAt, troopsHint: msg.troopsHint } };
       break;
     case 'siege_result':
-      server = { siegeResult: { siegeId: msg.siegeId, marchId: msg.marchId, tile: msg.tile, outcome: msg.outcome, lootSummary: msg.lootSummary, replayRef: msg.replayRef } };
+      server = { siegeResult: { siegeId: msg.siegeId, marchId: msg.marchId, tile: msg.tile, outcome: msg.outcome, lootSummary: msg.lootSummary, replayRef: msg.replayRef, attackerId: msg.attackerId, marchKind: msg.marchKind } };
       break;
     case 'family_msg':
       server = { familyMsg: { familyId: msg.familyId, fromPublicId: msg.fromPublicId, fromName: msg.fromName, text: msg.body, ts: msg.ts } };

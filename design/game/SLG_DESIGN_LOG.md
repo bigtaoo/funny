@@ -1584,3 +1584,41 @@ L1 从需 660 兵降到 300（最小占地 500 现稳赢，直击病灶）；L2/
 **验证**：`tsc --noEmit`（server `worldsvc`/`shared`，client `tsconfig.test.json`）全绿；`npm run build:web` 生产构建通过。`server/worldsvc` 新增 e2e「battle pass: repeat purchase while already active → ALREADY_ACTIVE, coins never deducted twice」，`shop.e2e.test.ts` 全 7 例过、`worldsvc` 全量 50 文件/391 例过。`client` 新增 UI 用例覆盖「未持有时点击行仍正常触发购买」「已持有时点击行不再调用 `doBuyShopItem`、改为弹 toast」，`worldMapInfoScroll.ui.ts` 全 20 例过，`worldMap*` 全套 17 文件/124 例过。未启动完整后端栈（metaserver/worldsvc/gateway 等 11 服务）做真实登录后截图验证——UI 交互路径已通过驱动真实 `WorldMapPanels`/`WorldMapInput` 类的无头 PIXI 测试覆盖，视为等效验证。
 
 **追加测试（同日，用户要求"加测试"）**：`shop.e2e.test.ts` 补 3 例——① 持有战令不影响购买其它商品（守卫只针对 `kind:'battle_pass'`，不误伤 `slg_res_s`/`slg_shield_8h`）；② 守卫按账号隔离——A 持有战令不阻挡 B 首次购买（读的是各自 `playerWorld` 文档，不是全局标记）；③ `hasBattlePass` 被清空后（模拟 `resetSeason` 的 playerWorld 清档路径）可以再次购买，门禁不会永久卡死。`worldMapErrorMsg.ui.ts`（专门收录 `WorldMapNet.errorMsg` 码→文案映射回归的文件）补 1 例，断言 `ALREADY_ACTIVE` 映射到 `world.shopAlreadyActive`。`shop.e2e.test.ts` 全 10 例过、`worldMapErrorMsg.ui.ts` 全 7 例过、`worldMap*` 全套 19 文件/139 例过；`tsc --noEmit` 复核仍绿（`worldMapDrawPrimitives.ui.ts`/`worldMapOwnerBorder.ui.ts` 各有 1/2 处 PIXI `lineStyle`/`beginFill` 重载类型报错，经核对在主目录未改动前就已存在，跟本次改动无关，不在此修）。
+
+## 50. 围攻战斗：进攻方全灭后提前结束，不再耗到超时（2026-08-02，用户提出）
+
+用户提出：SLG 攻城验证时，如果场上进攻方已经没有存活单位了，战斗应该直接结束判负，不需要等 `SIEGE_BATTLE_TIMEOUT_TICKS`（10 分钟/18000 tick，§16.5）跑完。核对 `checkWinCondition`（`server/engine/src/engine/winCondition.ts`）发现 `destroy_base` 目标此前只有两条硬性超时兜底——`battleTimeoutTicks` 与目标自带的 `durationTicks`——进攻方（Bottom）全灭后既打不掉基地也没有任何提前判负分支，只能干等到超时才由防守方（Top）胜出；`survive` 目标已有对称机制（`hasLivingEnemyUnits()`，`campaign.ts`），但那是查 Top 侧、服务 PvE 波次防守场景，跟围攻的攻防方向相反，没有覆盖到 `destroy_base`。
+
+**修复**：`campaign.ts` 新增 `hasLivingAttackerUnits()`（对称于既有 `hasLivingEnemyUnits()`，查 Side.Bottom 是否还有存活单位）；`winCondition.ts` 在 `destroy_base` 分支的超时判定之前插入早退检查——`!hasLivingAttackerUnits()` 时立即 `GameOver`，`winner=Side.Top`（防守方胜，判负事件与超时分支完全一致，只是不用等满 tick）。攻方军队在引擎构造时（`base.ts` 读 `level.attackerArmy`）就已一次性同步入场，无逐 tick 补兵的活指令输入，因此该检查不会误杀"部队还没上场"的中间态。围攻仅用于 worldsvc 无实时输入的 headless 结算（`siegeEngine.ts`）与 econ-sim 模拟工具，不涉及客户端实时对战，不影响其它模式。
+
+**验证**：`server/engine` `tsc --noEmit` 绿 + 全量 `npm test`（76 例，含围攻相关用例）全过，其中含一例攻方军队为空（`attackerArmy` 未设置）走 `destroy_base` 的既有用例，验证提前判负不影响该用例原有断言；`server/worldsvc` `tsc --noEmit` 绿，`siege-cheap-fallback.test.ts`（10 例）+ `siegeWorkerPool.test.ts`（11 例）全过。
+
+**追加测试（同日，用户要求"加测试"）**：`gameEngine.test.ts` 新增「destroy_base ends immediately once the attacker army is wiped, without waiting for battleTimeoutTicks」——`attackerArmy` 放一个 `initialHp:1` 的濒死步兵，紧挨着（隔 1 行、同列）一个满血 `garrison` 步兵，`battleTimeoutTicks` 照抄真实值 18000，`runHeadless(maxTicks:100)`；断言 `winner===Side.Top`、`topPlayer.isDead===false`（排除"打穿基地获胜"这条已有分支）、`elapsedTicks<100`（远早于 18000 的超时线）。先 `git show <fix前一提交>` 把 `winCondition.ts`/`campaign.ts` 换回本次改动前的版本单独跑这一例，确认必现失败（不会在 100 tick 内结束，而是要跑到超时才会 GameOver）；换回修复后的版本复跑，转绿——坐实测试确实在验证本次新加的早退分支，而非误报。`server/engine` 全量 `npm test` 77 例全过，`tsc --noEmit` 复核仍绿。
+
+## 51. §33 修复留了个尾巴——占领结算仍会误报「领地失守」，改成服务端下发身份而非客户端瞎猜（2026-08-02，用户截图报告）
+
+**背景（用户报告）**：SLG 里刚战斗完、进入占领阶段时，会闪一次「领地失守」（`world.defendLost`）提示——玩家自己刚打赢的占领被读成了被人抢地。
+
+**根因**：§33 的修复（`myOccupyTiles`）是纯客户端方案——`WorldMapNet.doMarch`/`doMarchTeam` 派出占领军时把目标格记进 `WorldMapContext` 上一个**仅存在于内存里**的 `Set`，`applySiegeResult` 收到推送时查这个 `Set` 判断"这是不是我自己干的"。问题是 `WorldMapScene`（连带它的 `WorldMapContext`）只在**每次进入 SLG 时**重新创建一次（`app.ts showWorldMap`）——City/拍卖行/社交面板都是叠加在它上面的 overlay，不会重建它，但只要玩家**退出 SLG 再回来**（或刷新页面），一次全新的 `WorldMapContext` 就带着一个空 `Set` 出现。占领行军往往要走几十秒到几分钟，只要这段时间内场景被重建过，占领打赢的 `siege_result` 推送一到，`myOccupyTiles` 里早就没有这块地了，直接落进 `else` 分支的「防守方」文案——和 §33 描述的现象一模一样，只是触发路径从"从没记过"变成了"记过又被清空"。
+
+**修复（服务端下发身份，彻底去掉客户端猜测）**：`SiegeResult`（`transport.proto`）新增两个字段——`attacker_id`（派出这次进攻/占领行军的账号，直接来自 `SiegeDoc.attackerId`）与 `march_kind`（那次行军的 `MarchKind`，新增到 `SiegeDoc`，`recordSiege` 写入 `m.kind`）。`corePush.pushSiege` 把两个字段一并推给客户端；`WorldMapNet.applySiegeResult` 改用 `s.attackerId === ctx.cb.accountId` 判断"这是不是我的行动"，`s.marchKind` 判断"攻城"（复盘弹窗）还是"占领"（轻量 toast）——不再依赖任何客户端记忆，`myAttackTiles`/`myOccupyTiles` 两个 Set 连同它们的写入点一并删除。字段全程走 `buf generate`（`server/contracts/transport.proto` → gateway/metaserver/gameserver/botsvc/client 五处 `npm run proto:gen`），gateway 内部还有一份手写的 `ServerMsg`/`PushMsg` 镜像类型（`matchsvcClient.ts`/`proto.ts`/`Gateway.ts`）需要同步补字段。`move`（战场遭遇战）行军目前仍会落进"防守方"分支——这是一个独立于本次报告的既有问题（遭遇战里获胜方的提示也读反了），本次刻意不顺手扩大范围，留了行内注释标注。
+
+**验证**：`server/worldsvc`、`server/gateway`、`client` 三处 `tsc --noEmit` 全绿；`server/worldsvc` 攻城/占领/遭遇战相关 e2e（`siege`/`occupy-march`/`stronghold`/`field-encounter*`，共 28 例）全过，确认新字段不破坏既有推送断言；`worldMapSiegeResultToast.ui.ts` 按新字段重写（6 例：占领胜/败分类、**同一结果重复投递仍分类正确**——直接命中本次修复的场景、attack/防守两条原路径回归），`worldMapOccupyTeamPicker.ui.ts` 去掉不再需要的 `myAttackTiles`/`myOccupyTiles` mock 字段复跑仍全过（19 例）。preview 无法稳定复现（需要完整 worldsvc + 连地相邻 + NPC 战斗 + 场景重建时序），改动靠单测覆盖。
+
+**追加测试（同日，用户要求"加测试"）**：① 客户端新增「surviving a WorldMapScene rebuild」一例——用两个完全独立、互不共享状态的 `WorldMapContext`/`WorldMapNet` 实例模拟"派兵时的场景已经不在了"，直接对应根因描述的触发路径；先把 `applySiegeResult` 里的 `amInitiator` 临时改死为 `false`（模拟"服务端字段被忽略，退回瞎猜"的回归）复跑这批用例，**5/7 例转红**（含这个新场景 + 原本 4 例），换回真实实现后复跑 **7/7 转绿**——坐实新用例确实在验证本次分类逻辑，不是形同虚设。② 服务端三个 e2e 文件（`siege`/`occupy-march`/`field-encounter`）在既有场景里追加 `attackerId`/`marchKind` 断言而非新增用例：`occupy-march.e2e.test.ts` 三处占领胜/败推送改用 `pushes.find(...)` 精确断言 `{attackerId:'a', marchKind:'occupy'}`（占领场景是本次报告的重灾区）；expulsion 用例额外验证 b 用 `attack` 行军抢地成功时自己收到的推送是 `marchKind:'attack'`（不是 `'occupy'`）——锁定"攻城行军打赢占领中的地"这条跨路径交互不受影响；`siege.e2e.test.ts` 攻城/扫荡用例补 `marchKind:'attack'`/`'sweep'` 断言；`field-encounter.e2e.test.ts` 两个 `scenario 1`（胜/负）补 `attackerId:'a'`、`marchKind:'move'` 断言——为 §51 遗留的 `move` 遭遇战分类跟进任务预先钉住服务端数据契约。`server/worldsvc` 全量 `tsc --noEmit` 复核仍绿，三个 e2e 文件共 20 例全过。
+
+## 52. 行军请求稳定超时（`AbortError`）——`computeMarchPath` 的敌方主城扫描在老世界上退化成近乎全表扫描（2026-08-02，用户报告）
+
+**背景（用户报告）**：SLG 里每次占领领地都弹 `TypeError: world api POST /world/march failed: AbortError: signal is aborted without reason`。追问确认：报错之后地块**其实占领成功了**（`Marches`/领地都有记录）——服务端调用没有失败，只是客户端等不到响应先弃权了。
+
+**排查**：worldsvc/socialsvc/caddy/cloudflared 全部健康、CPU/内存正常、日志无报错，直接 curl 生产接口也是毫秒级——初步怀疑是用户本地网络抖动。但用户反馈"每次占领都必现"，于是拿到账号信息（`publicId 233784986`，世界 `s1-0`）在生产库上直接复现：`computeMarchPath`（[`combatShared.ts`](../../server/worldsvc/src/combatShared.ts)）里为 A* 寻路收集"敌方主城会挡路"用的查询——
+
+```js
+cols.tiles.find({ worldId, type: 'base', ownerId: { $nin: excludeOwners } })
+```
+
+——实测耗时 **12.4 秒**。根因：`s1-0` 是个老世界，注册过的玩家主城（`type:'base'`，每个 3×3=9 格，且从不删除）已经攒到约 2584 个，`tiles` 集合总共 23325 条记录里 **23257 条**（99.7%）都是 `type:'base'`。2026-07-29 那次审计（[`db.ts`](../../server/worldsvc/src/db.ts) §索引注释）给这条查询配了 `{worldId,type}` 索引，但当时的假设——"`type:'base'` 命中的数量远小于整个集合"——在世界玩得越久、注册主城越多之后逐渐失效，最终这条"应该很窄"的查询变成了近乎全表扫描。同函数里另外两条查询（crossing 通道、玩家建的 blocker）结构相同，存在同样的潜在风险。这条查询单独就超过了客户端 [`WorldApiClient.ts`](../../client/src/net/WorldApiClient.ts) 的 10 秒超时——不是代码在这天变了，是这个世界的主城数量自然增长跨过了当年那个假设成立的临界点，跟"服务器今天没更新"完全对得上。
+
+**修复**：给 `computeMarchPath` 的 3 条障碍物查询（gate/敌方主城/blocker）都加上按行军起止点算出的坐标包围盒过滤（`legBox()` + 60 格 padding，复用已有的 `{worldId,x,y}` 索引），把"扫全图"收窄成"只看行军路线附近"。Padding 选取 60（远大于 3×3 主城/普通障碍物聚簇的尺寸）而非精确到 A* 实际探索边界——短途行军（占领要求目标与自己领地相邻、士气机制也软性限制了远途行军的实际收益，见 §22/§27）绝大多数场景下包围盒会大幅收窄；只有起止点本身相距很远的行军，包围盒才会接近全图，此时退化为跟修复前一样的开销，不引入正确性风险（不会漏查真正卡在路线附近的障碍物）。
+
+**验证**：`server/worldsvc` `tsc --noEmit` 全绿。定向重跑占领/围攻/寻路相关测试（`occupy-march`/`passage`/`field-tower`/`field-blocker`/`base-siege`/`stronghold`/`field-encounter*`/`field-redispatch`/`field-occupancy`/`field-structure-attack`/`base-integrity`/`march-return-travel-time`/`teams`/`enter-world`，共 12 文件/88 例，含「blocker 绕路」「crossing 通行」「长途占领士气衰减」等直接触碰寻路的用例）全过；随后跑了 `server/worldsvc` 全量 50 文件/399 例，同样全绿。生产库上直接验证：本地起了一个带 `rs0` 的 standalone mongod 复现原查询耗时（12.4s），但此次改动未部署到生产（未触碰线上代码），仅在本地代码 + 测试环境验证；建议下次常规发布时带上。

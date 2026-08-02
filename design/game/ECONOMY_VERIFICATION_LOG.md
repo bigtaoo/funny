@@ -110,7 +110,7 @@
 | `RESOURCE_CAP` / `RESOURCE_YIELD_BASE` | 200,000 / 100 | 单资源仓储上限 / 每格每级每小时基底产 |
 | `TROOP_TRAIN_INK_COST` / `_TIME_SEC` | 10 / 5 | 每兵 ink 成本 / 训练秒 |
 
-> **⚠️ 常量已改 ④（2026-08-01）**：练兵不再只吃 `ink`——新增 `TROOP_TRAIN_PAPER_COST`=5 / `TROOP_TRAIN_GRAPHITE_COST`=5 / `TROOP_TRAIN_METAL_COST`=5 / `TROOP_TRAIN_STICKER_COST`=1（每兵；`ink` 每兵 10 不变），汇总见 `troopTrainCost(qty)`（`server/shared/src/slg/city.ts`）。上面 §13-SLG-CITY.1/.2 的 `armyPacing`/`inkToFill` 相关数字（含「ink 0，建筑不再吃」的表述）**未重新跑 econ-sim B 轨核验**——练兵现在也从 paper/graphite/metal/sticker 里吃量，会叠加到已经是承重肝点的 paper/graphite 建材 sink 上，**days-to-max 结论待重新核验，不可直接沿用本节旧数字**。详见 [`SLG_CITY_DESIGN.md`](SLG_CITY_DESIGN.md) §8.3。
+> **常量已改 ④（2026-08-01 改动，2026-08-02 已重新核验 ✅）**：练兵不再只吃 `ink`——新增 `TROOP_TRAIN_PAPER_COST`=5 / `TROOP_TRAIN_GRAPHITE_COST`=5 / `TROOP_TRAIN_METAL_COST`=5 / `TROOP_TRAIN_STICKER_COST`=1（每兵；`ink` 每兵 10 不变），汇总见 `troopTrainCost(qty)`（`server/shared/src/slg/city.ts`）。`cityRun.ts` 新增 §6「combined days-to-max」——把满城建筑总成本（§1）与填满一次 drillYard-max troopCap 的练兵成本（§5）叠加到同一份 income 上重算 days-to-max：**casual 档 paper 28.1→29.8 天、graphite 16.1→19.5 天、metal 5.1→8.5 天、sticker 12.4→13.4 天，ink 首次出现门控（0→6.8 天，此前建筑零消耗 ink 恒为 0）**；active/hardcore 档同步小幅上移，全部**仍落在 60 天赛季窗口内**（casual 最慢的 combined paper 29.8 天，不到半季）。**结论不变**：五资源化练兵没有打破节奏窗口，只是让 paper/graphite 这两个承重肝点更紧一点（+1.7d / +3.4d），量级合理。详见 [`SLG_CITY_DESIGN.md`](SLG_CITY_DESIGN.md) §8.3、`server/tools/econ-sim/src/cityRun.ts` §6。
 
 ### 13-SLG-CITY.2 演算（econ-sim B 轨，2026-06-30）
 
@@ -140,11 +140,12 @@
 
 > 三档满城关键资源均落在 **60 天赛季窗口内**：casual 半季、active ~1–1.5 周、hardcore 数日。casual 的**慢点是 paper(~30d) 与 sticker(~20d)**——sticker 因无地块、靠 stickerShop 自产又被 sink 吃，是低活跃玩家的节奏瓶颈（设计意图内的 faucet/sink 张力）。
 
-**⑤ 练兵节奏**：drillYard L20 满 troopCap 12,000 → 填满需 **120,000 ink、连续 8.3 h，或 500 coins 跳过**。落在赛季窗口内、与 ink 几乎不 gate 的产出匹配。
+**⑤ 练兵节奏**（2026-08-02 用当前代码值重跑，取代下方旧 L20/12,000 基线）：drillYard L10 满 troopCap **20,000** → 填满需 **200,000 ink + 100,000 paper + 100,000 graphite + 100,000 metal + 20,000 sticker**、连续 **13.9 h**，或 **834 coins** 跳过。五资源化后不再是"只 gate ink"——与建筑总成本叠加的组合核验见上方 ⚠️④。
 
 ### 13-SLG-CITY.3 结论与注记
 
-1. **B 轨建筑节奏 ✅ PASS**：建筑成本是**资源门控**（paper 7.7× cap，必须长线攒）而非时间门控——满城 = 数周持续季内肝，落在 60 天「重肝」窗口内（casual 半季 / active 周级 / hardcore 数日），成长乘子全部有界合理。coin 加速建造是温和时间杠杆（全跳 5,016c），更深变现归资源包。**符合「重肝变现发动机」设计，无数量级错误。**
+1. **B 轨建筑节奏 ✅ PASS**：建筑成本是**资源门控**（paper 8.3× cap，必须长线攒）而非时间门控——满城 = 数周持续季内肝，落在 60 天「重肝」窗口内（casual 半季 / active 周级 / hardcore 数日），成长乘子全部有界合理。coin 加速建造是温和时间杠杆（全跳 5,616c），更深变现归资源包。**符合「重肝变现发动机」设计，无数量级错误。**
+1b. **练兵五资源化后的叠加核验 ✅ PASS（2026-08-02）**：建筑+练兵合算（`cityRun.ts` §6）后 casual 档最慢资源从 paper 28.1 天升到 **29.8 天**，仍不到半季；ink 从"零门控"变为轻度门控（casual 6.8 天）。量级变化温和，**不改变 60 天窗口结论**，详见上方 ⚠️④。
 2. **注记 a（informational）·drillYard 提速 L13 触底**：`DRILL_TRAIN_SPEED_STEP=0.04` × L13 = −52% 已撞 `_FLOOR=0.5`，**L13–20 七级不再提速**（只加 troopCap/队列）。非 bug，但高级 drillYard 的「提速」价值悬崖——后续若想让满级提速更顺，降 floor 或减小 step；当前可接受（高级靠 cap/队列出价值）。
 3. **注记 b（informational）·sticker 自我门控**：sticker 唯一 faucet = stickerShop 自产、且被 desk/cabinet/drillYard 当 sink 吃，低活跃档是第二慢资源（~20d）。设计意图内的 faucet/sink 张力，盯上线实测。
 4. **B 轨另一半「裸经济不破」✅ 已核（2026-06-30）**：`NATION_BONUS_PRODUCTION=0.10` 本国全占 vs 跨国扩张产出差最大 10%（≤ 判据阈值 20%），属国民加成、非城建数值，结论见 [§13-SLG-NATION](ECONOMY_VERIFICATION_LOG.md)；SLG_ECONOMY_CHECK §9 B 轨已全打 ✅。

@@ -396,6 +396,10 @@ export interface SiegeDoc {
    * token (e.g. to play an attack animation before tearing the token down). */
   marchId: string;
   attackerId: string;
+  /** MarchKind of the attacking/occupying march (2026-08-02) — lets pushSiege tell the client whether
+   * this was its own occupy-land-grab vs. an attack vs. a field encounter, without the client having
+   * to remember what it dispatched (see corePush.pushSiege). */
+  marchKind: MarchKind;
   defenderId?: string;
   tile: string;
   outcome: SiegeOutcome;

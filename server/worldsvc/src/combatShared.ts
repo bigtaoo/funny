@@ -45,10 +45,29 @@ export async function refundTroops(
 }
 
 /**
+ * computeMarchPath's 3 obstacle-scan queries (gates/enemy-bases/blockers) only ever need tiles that could
+ * plausibly sit on or near an A*-found route between the two endpoints — a detour wide enough to need
+ * anything further out would mean routing around an obstacle cluster far larger than any real terrain
+ * feature or base footprint, which doesn't happen on these maps. Margin comfortably covers that (a base
+ * footprint is 3×3; procedural obstacle clusters are small), while still shrinking `legBox` down from
+ * "the whole map" for the vast majority of marches (occupy/reinforce/move legs are short by construction —
+ * ADR-039 requires the target adjacent to owned territory; ADR-053's morale-budget soft-caps long ones too).
+ */
+const PATHFIND_QUERY_PAD = 60;
+
+/**
  * A* pathfinding for marches, extracted verbatim (2026-08-01) from MarchService's former private
  * `computeMarchPath` (combatMarch.ts) — the body never touched MarchService's own state, only `core.deps`/
  * `core.coordX`/`core.coordY`, so it moves here unchanged to be reusable from combatSiege/*.ts too. See
  * MarchService.computeMarchPath (combatMarch.ts) for the thin wrapper kept for its existing call sites.
+ *
+ * 2026-08-02: the enemy-base scan (`type:'base'`) was found taking 12+ seconds on an older, populated world
+ * (s1-0) — every capital ever founded is a permanent 9-cell `type:'base'` footprint that's never deleted, so
+ * on a world with thousands of registered players, `type:'base'` now matches almost the entire `tiles`
+ * collection; the 2026-07-29 index (db.ts) assumed that scan would stay small and no longer does at this
+ * scale. All 3 obstacle queries are now scoped to a padded bounding box around the march's endpoints
+ * (PATHFIND_QUERY_PAD above), using the existing `{worldId,x,y}` index, cutting them back down to "near the
+ * route" instead of "the whole world".
  */
 export async function computeMarchPath(
   core: WorldCore,
@@ -62,8 +81,12 @@ export async function computeMarchPath(
   const requesterPw = await core.deps.cols.playerWorld.findOne({ _id: playerWorldId(worldId, requesterId) });
   const allyFamilyId = requesterPw?.familyId;
 
+  const box = legBox(fromX, fromY, toX, toY);
+  const xRange = { $gte: box.minX - PATHFIND_QUERY_PAD, $lte: box.maxX + PATHFIND_QUERY_PAD };
+  const yRange = { $gte: box.minY - PATHFIND_QUERY_PAD, $lte: box.maxY + PATHFIND_QUERY_PAD };
+
   const gateTiles = await core.deps.cols.tiles
-    .find({ worldId, type: { $in: ['bridge', 'plankway'] } })
+    .find({ worldId, type: { $in: ['bridge', 'plankway'] }, x: xRange, y: yRange })
     .project<{ _id: string; x: number; y: number; ownerId: string | undefined; familyId: string | undefined }>({
       _id: 1, x: 1, y: 1, ownerId: 1, familyId: 1,
     })
@@ -80,7 +103,7 @@ export async function computeMarchPath(
   const siegeBaseOwner = destTile?.type === 'base' ? destTile.ownerId : undefined;
   const excludeOwners = siegeBaseOwner ? [requesterId, siegeBaseOwner] : [requesterId];
   const blockedBaseTiles = await core.deps.cols.tiles
-    .find({ worldId, type: 'base', ownerId: { $nin: excludeOwners } })
+    .find({ worldId, type: 'base', ownerId: { $nin: excludeOwners }, x: xRange, y: yRange })
     .project<{ x: number; y: number }>({ x: 1, y: 1 })
     .toArray();
   const blockedBaseKeys = new Set<string>(blockedBaseTiles.map((b) => `${b.x}:${b.y}`));
@@ -91,7 +114,7 @@ export async function computeMarchPath(
     }
   }
   const blockerTiles = await core.deps.cols.tiles
-    .find({ worldId, 'structure.kind': 'blocker' })
+    .find({ worldId, 'structure.kind': 'blocker', x: xRange, y: yRange })
     .project<{ x: number; y: number; structure?: { ownerId?: string; familyId?: string } }>({ x: 1, y: 1, 'structure.ownerId': 1, 'structure.familyId': 1 })
     .toArray();
   for (const b of blockerTiles) {
