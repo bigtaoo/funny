@@ -5,12 +5,13 @@
 // target 4-neighbours land the player's sect already holds (the player's own 3×3 capital footprint counts
 // as guaranteed initial territory). The client used to always offer an enabled Occupy button, so a player
 // tapping a tile that only *looks* adjacent to their base (isometric projection makes a 2-rows-away tile
-// sit visually next to the city) got a click-then-reject error. The fix greys out Occupy up front.
+// sit visually next to the city) got a click-then-reject error. The fix omits the Occupy button entirely
+// when disconnected (2026-08-02: unsupported options are hidden outright, not shown greyed out).
 //
 // Scope guard: the pre-filter is applied only for SOLO players (no familyId). The server counts own family
 // ∪ sibling families in the same sect, but the client only tags its own family's tiles (mine/ally); a
 // sibling family's territory has no client flag, so for anyone in a family we cannot prove non-connection
-// and must NOT pre-disable (server still validates). These tests pin both behaviours.
+// and must NOT pre-hide it (server still validates). These tests pin both behaviours.
 //
 // Runs under the headless PIXI adapter (vitest.ui.config.ts setupFiles). Minimal hand-rolled
 // WorldMapContext, mirroring worldMapBaseClick.ui.ts's harness pattern.
@@ -73,46 +74,37 @@ function buildHarness(opts: { me?: PlayerWorldView } = {}) {
   return { ctx, input, showModal, showToast, showDeployDialog, showTeamPicker };
 }
 
-/** Click a neutral tile and return its Occupy button from the shown menu. */
+/** Click a neutral tile and return its Occupy button from the shown menu (undefined when hidden). */
 function occupyBtnFor(x: number, y: number, opts: { me?: PlayerWorldView } = {}) {
   const h = buildHarness(opts);
   h.input.onTileClick(x, y);
   expect(h.showModal).toHaveBeenCalledTimes(1);
   const buttons = h.showModal.mock.calls[0][1] as Btn[];
   const occupy = buttons.find((b) => b.label === t('world.actOccupy'));
-  expect(occupy).toBeTruthy();
-  return { ...h, occupy: occupy! };
+  return { ...h, occupy };
 }
 
 describe('WorldMapInput occupy connectivity pre-filter (ADR-039)', () => {
-  it('greys out Occupy on a tile not bordering own territory (the reported bug: 2 rows below the base)', () => {
+  it('omits Occupy on a tile not bordering own territory (the reported bug: 2 rows below the base)', () => {
     const { occupy } = occupyBtnFor(ANCHOR.x, ANCHOR.y + 3); // (20,23): nearest footprint cell y21 → 2 gap, not adjacent
-    expect(occupy.disabled).toBe(true);
+    expect(occupy).toBeUndefined();
   });
 
-  it('greys out Occupy on a diagonal-only-adjacent tile (4-neighbour rule, not 8)', () => {
+  it('omits Occupy on a diagonal-only-adjacent tile (4-neighbour rule, not 8)', () => {
     const { occupy } = occupyBtnFor(ANCHOR.x + 2, ANCHOR.y + 2); // (22,22): touches footprint only at the (21,21) corner
-    expect(occupy.disabled).toBe(true);
-  });
-
-  it('tapping the disabled Occupy surfaces the "not connected" toast instead of opening the team picker', () => {
-    const { occupy, showToast, showTeamPicker } = occupyBtnFor(ANCHOR.x, ANCHOR.y + 3);
-    occupy.action();
-    expect(showToast).toHaveBeenCalledTimes(1);
-    expect(showToast.mock.calls[0][0]).toBe(t('world.err.notConnected'));
-    expect(showTeamPicker).not.toHaveBeenCalled();
+    expect(occupy).toBeUndefined();
   });
 
   it('enables Occupy on a tile 4-adjacent to the capital footprint (initial territory, before any expansion)', () => {
     for (const [x, y] of [[ANCHOR.x, ANCHOR.y + 2], [ANCHOR.x - 2, ANCHOR.y], [ANCHOR.x + 2, ANCHOR.y], [ANCHOR.x, ANCHOR.y - 2]]) {
       const { occupy } = occupyBtnFor(x, y);
-      expect(occupy.disabled).toBeFalsy();
+      expect(occupy).toBeTruthy();
     }
   });
 
   it('tapping an enabled Occupy opens the team picker', () => {
     const { occupy, showTeamPicker, showToast } = occupyBtnFor(ANCHOR.x, ANCHOR.y + 2);
-    occupy.action();
+    occupy!.action();
     expect(showTeamPicker).toHaveBeenCalledWith(ANCHOR.x, ANCHOR.y + 2, 'occupy');
     expect(showToast).not.toHaveBeenCalled();
   });
@@ -122,13 +114,13 @@ describe('WorldMapInput occupy connectivity pre-filter (ADR-039)', () => {
     h.ctx.tileCache.set(`${ANCHOR.x + 10}:${ANCHOR.y + 10}`, { occupied: true, mine: true } as WorldTileView);
     h.input.onTileClick(ANCHOR.x + 11, ANCHOR.y + 10); // 4-adjacent to the owned tile
     const buttons = h.showModal.mock.calls[0][1] as Btn[];
-    const occupy = buttons.find((b) => b.label === t('world.actOccupy'))!;
-    expect(occupy.disabled).toBeFalsy();
+    const occupy = buttons.find((b) => b.label === t('world.actOccupy'));
+    expect(occupy).toBeTruthy();
   });
 
-  it('never pre-disables Occupy for a player in a family (sibling-sect territory is invisible client-side → defer to server)', () => {
+  it('never pre-hides Occupy for a player in a family (sibling-sect territory is invisible client-side → defer to server)', () => {
     const { occupy } = occupyBtnFor(ANCHOR.x, ANCHOR.y + 3, { me: makeMe({ familyId: 'fam-1' }) });
-    expect(occupy.disabled).toBeFalsy();
+    expect(occupy).toBeTruthy();
   });
 
   it('shows the tile\'s resource type + level and a recommended-troops line so the player can size the march', () => {

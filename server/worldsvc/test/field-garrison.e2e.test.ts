@@ -128,6 +128,14 @@ describe.skipIf(!mongo)('worldsvc garrison coverage e2e (ADR-051 P3a)', () => {
     const footprint = baseFootprintCells(target.x, target.y).filter((c) => c.x >= 0 && c.y >= 0 && c.x < SLG_MAP_W && c.y < SLG_MAP_H);
     expect(footprint.length).toBe(9); // interior tile → full 3×3
 
+    // 驻守 rule (2026-08-02): garrison only ever lands on own/allied territory, never neutral — pre-own the
+    // target so this dispatch validates (the coverage/occ mechanics under test are orthogonal to ownership).
+    await m.collections.tiles.updateOne(
+      { _id: tid },
+      { $set: { _id: tid, worldId: W, x: target.x, y: target.y, type: 'territory', level: 1, ownerId: 'a', garrison: 0, rev: 0 } as TileDoc },
+      { upsert: true },
+    );
+
     const mv = await svc.startMarch(W, 'a', 5, 5, target.x, target.y, 'move', 1, 't1', 'garrison');
     nowMs = mv.arriveAt;
     expect(await svc.processDueArrivals()).toBe(1);
@@ -210,6 +218,14 @@ describe.skipIf(!mongo)('worldsvc garrison coverage e2e (ADR-051 P3a)', () => {
     const targetTid = tileId(W, target.x, target.y);
     const targetFootprint = baseFootprintCells(target.x, target.y).filter((c) => c.x >= 0 && c.y >= 0 && c.x < SLG_MAP_W && c.y < SLG_MAP_H);
 
+    // 驻守 rule (2026-08-02): garrison only ever lands on own/allied territory — pre-own the target so the
+    // dispatch validates; a rival then captures it mid-flight below (the actual scenario under test).
+    await m.collections.tiles.updateOne(
+      { _id: targetTid },
+      { $set: { _id: targetTid, worldId: W, x: target.x, y: target.y, type: 'territory', level: 1, ownerId: 'a', garrison: 0, rev: 0 } as TileDoc },
+      { upsert: true },
+    );
+
     const mv = await svc.startMarch(W, 'a', 5, 5, target.x, target.y, 'move', 1, 't1', 'garrison');
 
     // Someone else claims the destination tile while the team is in transit.
@@ -246,5 +262,67 @@ describe.skipIf(!mongo)('worldsvc garrison coverage e2e (ADR-051 P3a)', () => {
     await svc.recallStationed(W, 'a', 't1');
     expect(redis.coverSize(W)).toBe(0);
     expect(await m.collections.stationed.findOne({ _id: originTid })).toBeNull();
+  });
+
+  it('a garrison move rejects a neutral target — 停留 idle still succeeds on the very same tile (驻守 rule, 2026-08-02)', async () => {
+    await svc.joinWorld(W, 'a', 5, 5);
+    await setupTeam('t1', 'card-1');
+    const target = findCoord((t) => t.type === 'resource' || t.type === 'neutral', 12, 12);
+
+    await expect(svc.startMarch(W, 'a', 5, 5, target.x, target.y, 'move', 1, 't1', 'garrison'))
+      .rejects.toThrow(/own or allied territory/i);
+
+    // The same team, same target, idle intent instead — unaffected by the garrison-only restriction.
+    const mv = await svc.startMarch(W, 'a', 5, 5, target.x, target.y, 'move', 1, 't1');
+    nowMs = mv.arriveAt;
+    expect(await svc.processDueArrivals()).toBe(1);
+    const st = await m.collections.stationed.findOne({ _id: tileId(W, target.x, target.y) });
+    expect(st!.mode).toBe('idle');
+  });
+
+  it("a garrison move succeeds onto a family-ally's owned territory — coverage registers there, tile ownership is untouched (驻守 rule, 2026-08-02)", async () => {
+    await svc.joinWorld(W, 'a', 5, 5);
+    await svc.joinWorld(W, 'b', 60, 60);
+    await m.collections.playerWorld.updateOne({ _id: playerWorldId(W, 'a') }, { $set: { familyId: 'fam1' } });
+    await m.collections.playerWorld.updateOne({ _id: playerWorldId(W, 'b') }, { $set: { familyId: 'fam1' } });
+    await setupTeam('t1', 'card-1');
+
+    const target = findCoord((t) => t.type === 'resource' || t.type === 'neutral', 12, 12);
+    const tid = tileId(W, target.x, target.y);
+    await m.collections.tiles.updateOne(
+      { _id: tid },
+      { $set: { _id: tid, worldId: W, x: target.x, y: target.y, type: 'territory', level: 1, ownerId: 'b', garrison: 0, rev: 0 } as TileDoc },
+      { upsert: true },
+    );
+
+    const mv = await svc.startMarch(W, 'a', 5, 5, target.x, target.y, 'move', 1, 't1', 'garrison');
+    nowMs = mv.arriveAt;
+    expect(await svc.processDueArrivals()).toBe(1);
+
+    const st = await m.collections.stationed.findOne({ _id: tid });
+    expect(st?.mode).toBe('garrison');
+    expect(st?.ownerId).toBe('a'); // the stationed TEAM is still mine, only the underlying tile belongs to my ally
+    expect(redis.coverSize(W)).toBeGreaterThan(0);
+
+    // The ally's territory ownership is untouched — garrisoning it doesn't transfer or contest it.
+    const tile = await m.collections.tiles.findOne({ _id: tid });
+    expect(tile?.ownerId).toBe('b');
+  });
+
+  it('a garrison move onto a non-ally player\'s territory is rejected — same as any other foreign tile', async () => {
+    await svc.joinWorld(W, 'a', 5, 5);
+    await svc.joinWorld(W, 'rival', 60, 60); // no shared family/sect → not friendly
+    await setupTeam('t1', 'card-1');
+
+    const target = findCoord((t) => t.type === 'resource' || t.type === 'neutral', 12, 12);
+    const tid = tileId(W, target.x, target.y);
+    await m.collections.tiles.updateOne(
+      { _id: tid },
+      { $set: { _id: tid, worldId: W, x: target.x, y: target.y, type: 'territory', level: 1, ownerId: 'rival', garrison: 0, rev: 0 } as TileDoc },
+      { upsert: true },
+    );
+
+    await expect(svc.startMarch(W, 'a', 5, 5, target.x, target.y, 'move', 1, 't1', 'garrison'))
+      .rejects.toThrow(/use attack/i);
   });
 });

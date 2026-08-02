@@ -270,6 +270,14 @@ describe.skipIf(!mongo)('worldsvc idle re-dispatch + in-place occupation e2e (AD
     const a = findCoord((t) => t.type === 'resource' || t.type === 'neutral', 10, 10);
     const b = findCoord((t) => t.type === 'resource' || t.type === 'neutral', 16, 16, new Set([`${a.x}:${a.y}`]));
 
+    // 驻守 rule (2026-08-02): garrison only ever lands on own/allied territory — pre-own `a` so the dispatch
+    // validates (the re-dispatch lock under test is orthogonal to tile ownership).
+    await m.collections.tiles.updateOne(
+      { _id: tileId(W, a.x, a.y) },
+      { $set: { _id: tileId(W, a.x, a.y), worldId: W, x: a.x, y: a.y, type: 'territory', level: 1, ownerId: 'a', garrison: 0, rev: 0 } as TileDoc },
+      { upsert: true },
+    );
+
     // Station as 驻扎 garrison (explicit intent).
     const mv = await svc.startMarch(W, 'a', 5, 5, a.x, a.y, 'move', 1, 't1', 'garrison');
     nowMs = mv.arriveAt;

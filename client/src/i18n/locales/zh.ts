@@ -876,6 +876,7 @@ export const zh = {
   'world.instantReturn': '花{coins}金币立即回城',
   'world.instantReturnDone': '部队已立即回城',
   'world.enemyTile': '他人领地',
+  'world.allyTile': '盟友领地',
   'world.unknownOwner': '未知玩家',
   'world.family': '家族',
   'world.auction': '拍卖',

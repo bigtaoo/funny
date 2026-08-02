@@ -862,6 +862,7 @@ export const de: Record<TranslationKey, string> = {
   'world.instantReturn': 'Sofort zurück ({coins} Münzen)',
   'world.instantReturnDone': 'Truppen sind sofort zurückgekehrt',
   'world.enemyTile': 'Feindliches Gebiet',
+  'world.allyTile': 'Verbündetes Gebiet',
   'world.unknownOwner': 'Unbekannter Spieler',
   'world.family': 'Familie',
   'world.auction': 'Auktion',
