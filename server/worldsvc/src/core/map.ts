@@ -3,10 +3,10 @@
 // single-tile reads, the settled player-state read (getMe), and the tile→view mappers.
 // No behavior change — methods copied verbatim from the original core.ts.
 import { proceduralTile, tileId, playerWorldId, isInVision, sliceRuns, tileAtX, type ProceduralTile } from '@nw/shared';
-import { WorldCoreVision } from './coreVision';
-import { siegeHpView } from './coreHelpers';
-import type { TileDoc } from './db';
-import type { PlayerProfile } from './metaClient';
+import { WorldCoreVision } from './vision';
+import { siegeHpView } from './helpers';
+import type { TileDoc } from '../db';
+import type { PlayerProfile } from '../metaClient';
 import {
   MAP_VIEW_MAX_RADIUS,
   type WorldTileView,
@@ -14,7 +14,7 @@ import {
   type WorldTileSparseView,
   type WorldMapSparseView,
   type PlayerWorldView,
-} from './worldTypes';
+} from '../worldTypes';
 
 export class WorldCoreMap extends WorldCoreVision {
   async getMap(

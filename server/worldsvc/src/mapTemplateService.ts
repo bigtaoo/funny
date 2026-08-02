@@ -8,7 +8,7 @@
 // Mongo doc per row (height docs, e.g. 1500 at SLG_MAP_W×SLG_MAP_H) instead of one per cell (width×height,
 // e.g. 2.25M) for both `mapTemplateRows` (the template) and `mapBaselineRows` (every world cloned from an
 // active template). The external contract (MapTemplateTile: one flat {x,y,type,level,...} per cell) is
-// unchanged — encoding/decoding happens entirely inside this service and coreMap.ts.
+// unchanged — encoding/decoding happens entirely inside this service and core/map.ts.
 import {
   proceduralTile,
   encodeRow,

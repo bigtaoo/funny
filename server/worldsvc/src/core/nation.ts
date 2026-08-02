@@ -2,8 +2,8 @@
 // Capital doc init, nation founding/conquest on capital capture, naming, and province lookup
 // (angle-sector ring model, ADR-034 — replaces the old Voronoi-nearest-capital lookup).
 import { capitalIdxAt, provinceIdxAt, SlgError } from '@nw/shared';
-import { WorldCorePush } from './corePush';
-import type { NationDoc } from './db';
+import { WorldCorePush } from './push';
+import type { NationDoc } from '../db';
 
 export class WorldCoreNation extends WorldCorePush {
   // ── S8-6.5: nation system ──────────────────────────────────────

@@ -22,7 +22,7 @@ import type { MarchDoc, ArmyEntry, StationedDoc, PlayerWorldDoc } from './db';
 import { WorldCore, MARCHABLE_KINDS } from './core';
 import type { MarchView, StationedView, PlayerWorldView } from './worldTypes';
 import { refundTroops, computeMarchPath, parkMarchInPlace, startReturnMarch } from './combatShared';
-import { legBox, sourcesBoundingBox } from './coreHelpers';
+import { legBox, sourcesBoundingBox } from './core/helpers';
 import type { SiegeService } from './combatSiege';
 import { resolveLeaderUnitType } from './leaderUnit';
 
@@ -485,7 +485,7 @@ export class MarchService {
   /**
    * Arrival processing: scan all in-transit marches with arriveAt ≤ now, atomically claim them (findOneAndDelete), then apply effects by kind.
    * The Mongo `arriveAt` index scan is the sole mechanism (2026-07-27: the Redis ZSET wake-up hint this docstring
-   * used to describe was write-only — nothing ever read it back — and was removed as dead I/O; see corePush.ts history).
+   * used to describe was write-only — nothing ever read it back — and was removed as dead I/O; see core/push.ts history).
    * Returns the number of marches processed. worldsvc single-consumer (U12; single-process is acceptable for early stage).
    */
   async processDueArrivals(nowMs?: number): Promise<number> {

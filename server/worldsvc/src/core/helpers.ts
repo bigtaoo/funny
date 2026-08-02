@@ -1,7 +1,7 @@
 // worldsvc core — free functions & constants shared by the WorldCore layers.
 // Peeled out of core.ts (WorldCore god-class split, 2026-07-03). No behavior change.
 // core.ts re-exports emptyResources / deleteInBatches / lootSummary / MARCHABLE_KINDS
-// so existing `import { ... } from './core'` call sites keep working unchanged.
+// so existing `import { ... } from '../core'` call sites keep working unchanged.
 import {
   buildingMaxHp,
   regenDurability,
@@ -13,7 +13,7 @@ import {
   type ResourceType,
   type VisionSource,
 } from '@nw/shared';
-import type { TileDoc } from './db';
+import type { TileDoc } from '../db';
 
 /** Maximum Chebyshev radius for ring-by-ring empty-tile search around family members' capitals when auto-spawning near the family (§3.4). */
 export const SPAWN_NEAR_FAMILY_RADIUS = 6;
@@ -95,7 +95,7 @@ export function legBox(x1: number, y1: number, x2: number, y2: number): { minX: 
 
 /**
  * Query-optimization (2026-07-29): the viewer's territory/vision bounding box, derived from an already-computed
- * `VisionSource[]` (own + family territory/capitals/marches — see coreVision.ts::computeVisionSources), used to
+ * `VisionSource[]` (own + family territory/capitals/marches — see core/vision.ts::computeVisionSources), used to
  * push a coarse range filter into the enemy-march/enemy-stationed Mongo queries before the exact per-position
  * `isInVision` check runs in JS. Null when the viewer has no vision sources at all (e.g. not yet joined /
  * no territory) — callers should skip the enemy query entirely in that case, since nothing could possibly be visible.

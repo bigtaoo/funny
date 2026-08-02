@@ -21,7 +21,7 @@ import {
 } from '@nw/shared';
 import type { PlayerWorldDoc, MarchDoc, StationedDoc, ArmyEntry } from './db';
 import type { WorldCore } from './core';
-import { legBox } from './coreHelpers';
+import { legBox } from './core/helpers';
 
 /** Refund troops to the pool (capped at troopCap) + settle resources; optionally merge loot into resources (capped at RESOURCE_CAP). */
 export async function refundTroops(

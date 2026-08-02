@@ -2,10 +2,10 @@
 // Best-effort Redis ZSETs for precise march/siege-damage wake-ups (Mongo scan stays
 // authoritative) plus the gateway push helpers. No behavior change.
 import { baseFootprintCells, tileId } from '@nw/shared';
-import { WorldCoreYield } from './coreYield';
-import type { MarchView } from './worldTypes';
-import type { SiegeDoc, TileDoc } from './db';
-import type { PlayerProfile } from './metaClient';
+import { WorldCoreYield } from './yield';
+import type { MarchView } from '../worldTypes';
+import type { SiegeDoc, TileDoc } from '../db';
+import type { PlayerProfile } from '../metaClient';
 
 /**
  * ADR-051: one entry in the field-unit occupancy index (`world:{worldId}:occ`, field=tileId). Describes the unit

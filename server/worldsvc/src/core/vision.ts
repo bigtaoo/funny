@@ -10,10 +10,10 @@ import {
   VISION_MARCH_RADIUS,
   type VisionSource,
 } from '@nw/shared';
-import { WorldCoreSpawn } from './coreSpawn';
-import { tileVisionRadius } from './coreHelpers';
-import { computeTerritoryCount } from './prosperity';
-import type { TileDoc } from './db';
+import { WorldCoreSpawn } from './spawn';
+import { tileVisionRadius } from './helpers';
+import { computeTerritoryCount } from '../prosperity';
+import type { TileDoc } from '../db';
 
 export class WorldCoreVision extends WorldCoreSpawn {
   /** Set of accountIds for the player plus all same-family members (family-level vision sharing / ally determination, §8.2; includes self). Sourced from PlayerWorldDoc.familyId (SS7 mirror, scoped to this world) rather than a local family mirror (dead since P4, see db.ts note above SectDoc). */

@@ -15,9 +15,9 @@ import {
   type ResourceType,
   type TileType,
 } from '@nw/shared';
-import { WorldCoreKernel } from './coreKernel';
-import { emptyResources } from './coreHelpers';
-import type { PlayerWorldDoc } from './db';
+import { WorldCoreKernel } from './kernel';
+import { emptyResources } from './helpers';
+import type { PlayerWorldDoc } from '../db';
 
 export class WorldCoreYield extends WorldCoreKernel {
   /** Lazy resource settlement: resources += yieldRate × dt (hours), capped at the cabinet-adjusted storage cap (SLG_CITY_DESIGN). */

@@ -4,13 +4,13 @@
 // that every higher layer (yield / push / nation / spawn / vision / map) builds on.
 // No behavior change — methods copied verbatim from the original core.ts.
 import { provinceCapitalPositions, worldSeed, type SlgShopPriceCache } from '@nw/shared';
-import type { MarchDoc } from './db';
-import { nullWorldGatewayClient, type WorldGatewayClient } from './gatewayClient';
-import { nullWorldMetaClient, type WorldMetaClient } from './metaClient';
-import { nullWorldCommercialClient, type WorldCommercialClient } from './commercialClient';
-import { nullWorldMailClient, type WorldMailClient } from './mailClient';
-import { nullWorldSocialsvcClient, type WorldSocialsvcClient } from './socialsvcClient';
-import type { MarchView, WorldServiceDeps } from './worldTypes';
+import type { MarchDoc } from '../db';
+import { nullWorldGatewayClient, type WorldGatewayClient } from '../gatewayClient';
+import { nullWorldMetaClient, type WorldMetaClient } from '../metaClient';
+import { nullWorldCommercialClient, type WorldCommercialClient } from '../commercialClient';
+import { nullWorldMailClient, type WorldMailClient } from '../mailClient';
+import { nullWorldSocialsvcClient, type WorldSocialsvcClient } from '../socialsvcClient';
+import type { MarchView, WorldServiceDeps } from '../worldTypes';
 
 export class WorldCoreKernel {
   readonly gateway: WorldGatewayClient;

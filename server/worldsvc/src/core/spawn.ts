@@ -12,9 +12,9 @@ import {
   GARRISON_PER_TILE,
   type ResourceType,
 } from '@nw/shared';
-import { WorldCoreNation } from './coreNation';
-import { SPAWN_NEAR_FAMILY_RADIUS, SPAWN_OUTER_MIN_DR } from './coreHelpers';
-import type { TileDoc } from './db';
+import { WorldCoreNation } from './nation';
+import { SPAWN_NEAR_FAMILY_RADIUS, SPAWN_OUTER_MIN_DR } from './helpers';
+import type { TileDoc } from '../db';
 
 export class WorldCoreSpawn extends WorldCoreNation {
   async pickRandomEmptyTile(
