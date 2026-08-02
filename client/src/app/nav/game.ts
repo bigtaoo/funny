@@ -12,6 +12,7 @@ import { allEquippedSkins, skinEquipKey } from '../../game/meta/skinDefs';
 import { genUuid } from '../../platform/uuid';
 import type { EquipSlot } from '../../game/meta/SaveData';
 import { toEngineCardInstances, CARD_DEFS } from '../../game/meta/cardDefs';
+import { teamDisplayName } from '../../game/meta/teamTroops';
 import { WorldApiClient, type CardSLGState } from '../../net/WorldApiClient';
 import type { CardRosterView } from '../../scenes/CardScene';
 import type { IconKind } from '../../render/icons';
@@ -238,7 +239,7 @@ export function createGameNav(ctx: AppCtx): GameNav {
         Promise.all([worldApi.getMe(worldId), worldApi.getTeams(worldId)])
           .then(([me, teams]) => {
             liveCardState = me.cardState;
-            liveTeamNames = Object.fromEntries(teams.map((tt) => [tt.id, tt.name]));
+            liveTeamNames = Object.fromEntries(teams.map((tt) => [tt.id, teamDisplayName(tt)]));
             if (!opened) { clearTimeout(giveUp); openNow(); }
             else view?.applyCardState();
           })
