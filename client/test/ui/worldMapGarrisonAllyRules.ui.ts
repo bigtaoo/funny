@@ -11,7 +11,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { initI18n, t } from '../../src/i18n';
 import { WorldMapInput } from '../../src/scenes/worldmap/WorldMapInput';
 import type { WorldMapContext } from '../../src/scenes/worldmap/WorldMapContext';
-import type { WorldTileView, PlayerWorldView } from '../../src/net/WorldApiClient';
+import type { WorldTileView, PlayerWorldView, StationedView } from '../../src/net/WorldApiClient';
 
 const memStore = (() => {
   const m = new Map<string, string>();
@@ -45,7 +45,7 @@ function buildHarness() {
     tileCache: new Map<string, WorldTileView>(),
     me: makeMe(),
     selectedTile: null,
-    stationed: [] as { x: number; y: number; teamId: string; mine?: boolean; mode?: 'idle' | 'garrison' }[],
+    stationed: [] as StationedView[],
     parseTileId(tileId: string): [number, number] {
       const parts = tileId.split(':');
       return [Number(parts[parts.length - 2]), Number(parts[parts.length - 1])];
@@ -110,7 +110,16 @@ describe('WorldMapInput garrison targeting rule (own + ally only, 2026-08-02)', 
   it('an ally tile where I already have a team garrisoned offers Recall instead of Garrison', () => {
     const h = buildHarness();
     h.ctx.tileCache.set(`${FAR.x}:${FAR.y}`, { occupied: true, ally: true } as WorldTileView);
-    h.ctx.stationed.push({ x: FAR.x, y: FAR.y, teamId: 't3', mine: true, mode: 'garrison' });
+    h.ctx.stationed.push({
+      tile: `${WORLD_ID}:${FAR.x}:${FAR.y}`,
+      x: FAR.x,
+      y: FAR.y,
+      teamId: 't3',
+      troops: 100,
+      sinceAt: 0,
+      mine: true,
+      mode: 'garrison',
+    } as StationedView);
     h.input.onTileClick(FAR.x, FAR.y);
     const labels = (h.showModal.mock.calls[0][1] as Btn[]).map((b) => b.label);
     expect(labels).toEqual([t('world.actRecallStation'), '✕']);
