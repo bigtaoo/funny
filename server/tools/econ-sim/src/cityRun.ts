@@ -82,5 +82,26 @@ console.log(`  troopCap @ drillYard L${DESK_MAX_LEVEL} = ${fmt(a.troopCap)} (bas
 console.log(`  fill it: ${RES.map((r) => `${fmt((a.cost as any)[r] ?? 0)} ${r}`).join(', ')}, ${f1(a.totalTrainHours)} h continuous, or skip for ${fmt(a.coinsToSkip)} coins`);
 console.log(`  season window = ${a.seasonDays} days\n`);
 
+console.log('── 6. Combined days-to-max: max-city buildings + one full troopCap fill, same income pool (2026-08-02 re-check, ⚠️④) ──');
+console.log('  training now spends paper/graphite/metal/sticker too (not just ink) — it draws on the same faucets as building,');
+console.log('  so a player going for both needs the SUM of both sinks, not just the building total from §1.');
+const combined: Partial<Record<(typeof RES)[number], number>> = {};
+for (const r of RES) combined[r] = ((totals.cost as any)[r] ?? 0) + ((a.cost as any)[r] ?? 0);
+console.log('resource'.padEnd(11) + 'building'.padStart(12) + 'training'.padStart(12) + 'combined'.padStart(12));
+for (const r of RES) {
+  console.log(r.padEnd(11) + fmt((totals.cost as any)[r] ?? 0).padStart(12) + fmt((a.cost as any)[r] ?? 0).padStart(12) + fmt(combined[r] ?? 0).padStart(12));
+}
+console.log('income'.padEnd(11) + RES.map((r) => r.padStart(10)).join('') + '   (combined days-to-max)');
+for (const p of INCOME_PROFILES) {
+  const inc = hourlyIncome(p);
+  const d: Record<string, number> = {};
+  for (const r of RES) {
+    const perDay = ((inc as any)[r] ?? 0) * 24;
+    d[r] = perDay > 0 ? (combined[r] ?? 0) / perDay : Infinity;
+  }
+  console.log(p.label.padEnd(11) + RES.map((r) => f1(d[r] ?? Infinity).padStart(10)).join(''));
+}
+console.log('  (was, building-only §4): casual paper 28.1 / graphite 16.1 — compare to combined above.\n');
+
 bar('VERDICT');
 console.log('See ECONOMY_VERIFICATION_LOG.md §13-SLG-CITY for the registered conclusion.');
