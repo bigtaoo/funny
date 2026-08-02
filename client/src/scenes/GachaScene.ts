@@ -172,6 +172,8 @@ const TRAIL_SPAN = 0.42;
 const TRAIL_HUE_CYCLES = 2;
 /** Slow independent drift (laps/s) of the hue pattern itself, so the shimmer keeps creeping instead of freezing to the border. */
 const TRAIL_HUE_DRIFT = 0.05;
+/** Perimeter-fraction head start of the second trail relative to the first (0.5 = half a lap, i.e. diagonally opposite corners). */
+const TRAIL_PAIR_OFFSET = 0.5;
 
 /** HSL (h,s,l ∈ [0,1]) → 0xRRGGBB, used for the trail's periodic foil-shimmer hue cycle. */
 function hslToHex(h: number, s: number, l: number): number {
@@ -769,38 +771,48 @@ export class GachaScene implements Scene {
   }
 
   /**
-   * Add a comet-like dot trail looping clockwise around a legendary reveal card's rounded-rect
+   * Add two comet-like dot trails looping clockwise around a legendary reveal card's rounded-rect
    * border, additively blended with a holographic-foil hue cycle (TRAIL_HUE_CYCLES) so the streak
-   * reads as shimmering foil rather than a flat gold tint. Built once per card as TRAIL_DOTS pooled
-   * sprites of a single baked radial-gradient texture (see uiCache); update() repositions and
-   * re-tints them each frame by walking the border's perimeter analytically (pointOnPerim) — cheap
-   * per-dot transform + colour math, no Graphics redraw. No mask needed either: the dots are
-   * mathematically constrained to the border so they never bleed off-card. Pushed onto `revealFx`;
-   * cleaned up with the container on the next render()/destroy().
+   * reads as shimmering foil rather than a flat gold tint. The second trail starts a half-lap ahead
+   * (TRAIL_PAIR_OFFSET = 0.5) — for the reveal grid's portrait card ratio that half-lap lands almost
+   * exactly on the opposite corner (u=0 ≈ top-left, u=0.5 ≈ bottom-right), so the pair reads as two
+   * comets chasing each other from diagonally opposite corners rather than one trail with a twin
+   * riding right behind it. Built once per card as TRAIL_DOTS pooled sprites of a single baked
+   * radial-gradient texture (see uiCache) per trail; update() repositions and re-tints them each frame
+   * by walking the border's perimeter analytically (pointOnPerim) — cheap per-dot transform + colour
+   * math, no Graphics redraw. No mask needed either: the dots are mathematically constrained to the
+   * border so they never bleed off-card. Both trails are pushed onto `revealFx`; cleaned up with the
+   * container on the next render()/destroy().
    */
   private addLegendaryTrail(x: number, y: number, w: number, h: number): void {
     const iw = w - TRAIL_INSET * 2;
     const ih = h - TRAIL_INSET * 2;
     const perim = buildRectPerim(x + TRAIL_INSET, y + TRAIL_INSET, iw, ih, Math.min(iw, ih) * 0.06);
     const tex = getCachedTexture('gacha:legendary-trail-dot', drawTrailDotGraphic, 64, 64) ?? PIXI.Texture.WHITE;
+    this.revealFx.push(this.buildTrailDots(perim, tex, 0));
+    this.revealFx.push(this.buildTrailDots(perim, tex, TRAIL_PAIR_OFFSET));
+  }
+
+  /** Build one comet trail's pooled dot sprites, head starting at perimeter fraction `startPhase`. */
+  private buildTrailDots(perim: RectPerim, tex: PIXI.Texture, startPhase: number): LegendaryTrail {
     const n = TRAIL_DOTS;
     const dots: PIXI.Sprite[] = [];
     for (let i = 0; i < n; i++) {
       const spr = new PIXI.Sprite(tex);
       spr.anchor.set(0.5);
-      const u = -(i / n) * TRAIL_SPAN; // initial position at phase 0, matches update()'s formula
+      const u = startPhase - (i / n) * TRAIL_SPAN; // initial position at phase startPhase, matches update()'s formula
       const fall = Math.max(0, 1 - (i / n) / TRAIL_SPAN);
       const eased = fall * fall; // squared falloff → soft comet-like tail
       spr.alpha = eased;
       spr.scale.set(0.35 + 0.65 * eased);
-      spr.tint = hslToHex(trailHue(u, 0), 0.62, 0.78);
+      spr.tint = hslToHex(trailHue(u, startPhase), 0.62, 0.78);
       spr.blendMode = PIXI.BLEND_MODES.ADD;
       const p = pointOnPerim(perim, u);
       spr.position.set(p.x, p.y);
       this.container.addChild(spr);
       dots.push(spr);
     }
-    this.revealFx.push({ dots, perim, phase: 0 });
+    return { dots, perim, phase: startPhase };
   }
 
   /**
