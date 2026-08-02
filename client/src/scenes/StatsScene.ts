@@ -10,7 +10,7 @@ import { buildDecorCLayer } from '../render/decorCLayer';
 import { drawSceneHeader } from '../ui/widgets/SceneHeader';
 import { drawCareerTabs } from '../ui/widgets/CareerTabs';
 import { sidebarNavW } from '../ui/widgets/HubTabs';
-import { MATERIAL_ORDER } from '../game/balance/pveUpgrades';
+import { MATERIAL_ORDER } from '@nw/engine/balance/pveUpgrades';
 import type { MatchHistoryEntry } from '../net/ApiClient';
 
 // ── StatsScene — match record / stats page (lobby "stats" nav) ───────────────────

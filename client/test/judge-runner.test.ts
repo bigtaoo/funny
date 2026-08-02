@@ -5,7 +5,7 @@
 // on which the judge can determine which side is honest. Also tested: incomplete
 // frame stream → ok:false (bounded, no crash).
 import { describe, it, expect } from 'vitest';
-import { createGameEngine } from '../src/game/GameEngine';
+import { createGameEngine } from '@nw/engine/GameEngine';
 import { GamePhase, Side, type InputSource, type OwnerId, type PlayerCommand } from '../src/game';
 import { matchStateHash, runJudge } from '../src/net/judgeRunner';
 import { PlayerCommands } from '../src/net/proto/game';

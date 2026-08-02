@@ -9,11 +9,11 @@
  * lobby + first battle is L1 (lazy, fetched on scene entry) and must NOT be added
  * here — every entry slows the first-load gate.
  */
-import { UnitType } from '../game/types';
+import { UnitType } from '@nw/engine/types';
 import { StickmanRuntime } from '../render/stickman/StickmanRuntime';
 import { targetScreenHeight } from '../render/unitSize';
-import { decorMergedAtlas } from '../render/decorMergedAtlas';
-import { iconsAtlas } from '../render/iconsAtlas';
+import { decorMergedAtlas } from '../render/atlas/decorMergedAtlas';
+import { iconsAtlas } from '../render/atlas/iconsAtlas';
 import { preloadTexture } from './preloadTextures';
 
 // Starter-trio skeletal bundles + card illustrations — the only units the first

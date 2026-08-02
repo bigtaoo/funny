@@ -259,3 +259,11 @@ npm run start   # webpack dev server，端口 9095
   - **未动**：资源类型集合（ink/paper/graphite/metal 四地块 + sticker 铜矿位）、`resourceDensity=1.0`（每格皆资源/河流/山脉，无纯空地）、`resTypeFor` 的铜矿等级门（`copperMinLevel`/`copperShare`）——这些都符合现有设计，本次只改"resType 怎么在空间上分布"这一件事。
   - **验证**：`server/shared` 新增 `test/mapgen-biome.test.ts`（5 例：单省份内混合多种资源 / 偏向比例落在 `0.25+bias±0.03` 内 / 确定性 / `leaningResourceForProvince` 确定性且跨省有差异）+ 既有 `city-buildings.test.ts` 描述文案同步更新；`server/shared` `tsc -b` + 574 例全绿（含新增 `mapgen-biome.test.ts` 5 例）；`server/worldsvc` `tsc --noEmit` + 218 例全绿（`siege.e2e.test.ts` 1 例因假设"连接用的驻地格恒不产 ink"而写死了战利品前基线，随 resType 变成逐格随机后不再成立，改为"攻城结算前一刻"现场取样再求差值，不依赖任何固定 resType 假设）；`client`/`tools/map-editor` `tsc --noEmit` + `tools/map-editor` `webpack --mode production` 均过。渲染逻辑改动未截图验证（按 CLAUDE.md 约定 + 该 WebGL canvas 页面截图工具已知超时限制）。
   - **待办（本轮不做）**：`design/game/SLG_DESIGN.md`/`SLG_CITY_DESIGN.md`/`DECISIONS.md` 里"biomeAt 四分"相关历史记录只做了指针级订正（新增"分布机制已改"的批注），没有逐条重写——那些条目记录的是"graphite 成为第 4 种地块资源"这个决策本身（ADR-022），本次改的是分布的空间机制，不是资源种类，两者独立，不需要重写历史决策记录。
+
+- **`src/index.ts` 减重（2026-08-02，仓库级文件组织整理的一部分）**：`index.ts` 已长到 920 行。跟本仓库其它超大文件不同，它不是一个类，而是**顶层脚本 + 模块级可变状态**（`tool`/`tp`/`panX`/`panY`/`painting`/`selectedCityId` 等 12 个 `let`），所以 `CityScene`/`combatSiege` 那套「薄装配壳 + mixin 链」在这里根本不适用。本轮只外移了**完全不碰这些可变状态**的三块：
+  - `src/constants.ts` —— 地形/城池调色板、图例顺序（`TERRAIN_LEGEND`/`TERRAIN_LEGEND_CSS`/`CITY_COLORS(_CSS)`）、视口与缩放常量（`VIEW_W/H`/`VIEW_PAD_FACTOR`/`ZOOM_MIN/MAX`/`DEFAULT_TP`/`BASE_SPRITE_TILES`）。纯声明，无 DOM 无 PIXI，`render/` 下的模块也能直接读而不产生循环依赖。
+  - `src/stage.ts` —— `PIXI.Application` 本体、屏幕固定的横格纸背景、以及 `worldLayer`/`baseLayer`/`citySpriteLayer`/`overlayLayer` 这套层栈，模块加载时建一次、全局共享。
+  - `src/dom.ts` —— 界面接线用到的 37 个 `getElementById`。
+  `index.ts` 920 → 811 行，开头从「37 行 DOM 查询」变成实际接线逻辑。
+  - **刻意没有继续拆**：剩下约 800 行共享那 12 个模块级 `let`（光标缩放 `tp` 一个就有 28 处读写），再拆就必须把它们改造成一个共享 state store 并重写每一处读写。而 `tools/map-editor` **没有 test 目录也没有 test 脚本**，这种改造只能靠手点验证兜底——那是一个独立的架构决策，不是一次文件搬家，故本轮不做。
+  - **验证**：`tsc --noEmit`（与改动前的基线一致，均无输出）+ `webpack --mode production` 均过；localhost:9195 实开编辑器核对——WebGL2 画布 900×620、1681 格渲染完成、64 座城池、9 个地形图例 + 3 个城池图例（均由外移后的调色板驱动）、工具从 Pan 切到 River 后「已绘制地形」标题正常重渲，即外移的常量与 DOM 引用两侧接线都还正确。

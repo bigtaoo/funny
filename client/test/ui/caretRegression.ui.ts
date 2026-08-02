@@ -296,7 +296,7 @@ describe('FriendsScene — family/sect/world tab carets', () => {
     scene.render();
     // The input hit is the wide field pinned to the bottom of the content column; the send
     // button sits to its right. [W, H] = [800, 1280] is portrait, so the 5-tab social rail
-    // (render/socialTabRail.ts) renders as a bottom nav bar spanning the full width
+    // (ui/widgets/socialTabRail.ts) renders as a bottom nav bar spanning the full width
     // (LOBBY_IA_REDESIGN.md §18/§20) rather than the old left sidebar — excluding just x === 0
     // no longer keeps it out of "leftmost bottom hit", since its cells span x>0 too. Exclude
     // anything at/below the nav bar's own top edge (bodyBottom already reserves bottomNavH

@@ -8,10 +8,10 @@
 //     per-tick state-hash parity (no divergence), jitter absorption, pause on
 //     server stop, and no rollback.
 import { describe, it, expect } from 'vitest';
-import { createGameEngine } from '../src/game/GameEngine';
+import { createGameEngine } from '@nw/engine/GameEngine';
 import { NetInputSource, type CmdSink } from '../src/game/net/NetInputSource';
-import { RecordingInputSource } from '../src/game/net/ReplayInputSource';
-import type { GameConfig, IGameEngine } from '../src/game/types';
+import { RecordingInputSource } from '@nw/engine/net/ReplayInputSource';
+import type { GameConfig, IGameEngine } from '@nw/engine/types';
 import { PlayerCommands } from '../src/net/proto/game';
 import type { FrameCmds, ServerMsg, SideCmd } from '../src/net/proto/transport';
 

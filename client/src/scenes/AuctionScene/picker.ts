@@ -8,11 +8,11 @@ import { FS } from '../../render/fontScale';
 import { drawSidebarTabs, drawBottomNavTabs, sidebarNavW, bottomNavH, type HubTab } from '../../ui/widgets/HubTabs';
 import { t } from '../../i18n';
 import { buildIcon, type IconKind } from '../../render/icons';
-import { buildMaterialIcon } from '../../render/materialAtlas';
+import { buildMaterialIcon } from '../../render/atlas/materialAtlas';
 import { drawScrollIndicator } from '../../ui/widgets/ScrollIndicator';
 import type { EquipmentInstance, CardInstance, EquipRarity } from '../../game/meta/SaveData';
 import { getEquipDef } from '../../game/meta/equipmentDefs';
-import { buildEquipIcon } from '../../render/equipmentAtlas';
+import { buildEquipIcon } from '../../render/atlas/equipmentAtlas';
 import { cardInstanceArtUrl, getArtTexture } from '../../render/cardArt';
 import { FILTERS, type AucFilter, MATERIALS, type Constructor, type AuctionSceneBaseCtor } from './base';
 

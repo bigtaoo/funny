@@ -9,8 +9,8 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { createGameEngine } from '../src/game/GameEngine';
-import type { GameConfig, GameEvent } from '../src/game/types';
+import { createGameEngine } from '@nw/engine/GameEngine';
+import type { GameConfig, GameEvent } from '@nw/engine/types';
 
 const TICK_DT = 1 / 30;
 

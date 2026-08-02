@@ -4,12 +4,12 @@
  * Required by design doc §4.8.5.
  */
 import { describe, it, expect, beforeEach } from 'vitest';
-import { GameState } from '../src/game/GameState';
-import { Unit, resetUnitIds } from '../src/game/Unit';
-import { MovementSystem } from '../src/game/systems/MovementSystem';
-import { HazardSystem } from '../src/game/systems/HazardSystem';
-import { toFp, fromFp, mulFp, TICK_DT_FP } from '../src/game/math/fixed';
-import { Side, UnitState, UnitType } from '../src/game/types';
+import { GameState } from '@nw/engine/GameState';
+import { Unit, resetUnitIds } from '@nw/engine/Unit';
+import { MovementSystem } from '@nw/engine/systems/MovementSystem';
+import { HazardSystem } from '@nw/engine/systems/HazardSystem';
+import { toFp, fromFp, mulFp, TICK_DT_FP } from '@nw/engine/math/fixed';
+import { Side, UnitState, UnitType } from '@nw/engine/types';
 
 beforeEach(() => {
   resetUnitIds();

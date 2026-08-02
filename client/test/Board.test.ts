@@ -1,9 +1,9 @@
 import { describe, it, expect } from 'vitest';
-import { Board } from '../src/game/Board';
-import { Unit } from '../src/game/Unit';
-import { GameState } from '../src/game/GameState';
-import { toFp } from '../src/game/math/fixed';
-import { Side, UnitType } from '../src/game/types';
+import { Board } from '@nw/engine/Board';
+import { Unit } from '@nw/engine/Unit';
+import { GameState } from '@nw/engine/GameState';
+import { toFp } from '@nw/engine/math/fixed';
+import { Side, UnitType } from '@nw/engine/types';
 
 // Regression coverage for the columnUnits bookkeeping fix: when a unit changes
 // column (e.g. a leader entering Crossing and moving sideways), it must be moved

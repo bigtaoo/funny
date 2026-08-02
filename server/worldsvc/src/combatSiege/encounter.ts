@@ -39,7 +39,7 @@ import {
 import type { GarrisonEntry, EngineCardInstance, EngineEquipInv } from '@nw/engine';
 import type { MarchDoc, PlayerWorldDoc, StationedDoc, ArmyEntry } from '../db';
 import type { SiegeReplayInputs } from '../worldTypes';
-import type { OccEntry, CoverEntry } from '../corePush';
+import type { OccEntry, CoverEntry } from '../core/push';
 import type { SiegeServiceBaseCtor, Constructor } from './base';
 import type { WorldCore } from '../core';
 

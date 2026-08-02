@@ -13,7 +13,7 @@ import { makeNewSave } from '../../src/game/meta/SaveData';
 import type { CardInstance } from '../../src/game/meta/SaveData';
 import { CARD_DEFS } from '../../src/game/meta/cardDefs';
 import { getArtTexture, unitPortraitUrl } from '../../src/render/cardArt';
-import type { UnitType } from '../../src/game/types';
+import type { UnitType } from '@nw/engine/types';
 
 const memStore = (() => {
   const m = new Map<string, string>();

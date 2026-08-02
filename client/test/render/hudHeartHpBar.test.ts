@@ -145,10 +145,10 @@ vi.mock('../../src/assets/decor/decor_merged_atlas.png',  () => ({ default: 'dec
 vi.mock('../../src/assets/decor/decor_merged_atlas.json', () => ({ default: { frames: {}, meta: { size: { w: 1024, h: 675 } } } }));
 
 import { HUDView } from '../../src/render/HUDView';
-import { BASE_HP } from '../../src/game/config';
+import { BASE_HP } from '@nw/engine/config';
 import { factionInk } from '../../src/render/theme';
 import type { ILayout, Rect } from '../../src/layout/ILayout';
-import type { GameState } from '../../src/game/GameState';
+import type { GameState } from '@nw/engine/GameState';
 
 function fakeLayout(): ILayout {
   const rect = (x: number, y: number, w: number, h: number): Rect => ({ x, y, w, h });

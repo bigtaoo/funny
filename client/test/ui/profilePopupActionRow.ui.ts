@@ -1,4 +1,4 @@
-// Regression for the friend "Player profile" popup (render/ProfilePopup.ts): the action row
+// Regression for the friend "Player profile" popup (ui/dialogs/ProfilePopup.ts): the action row
 // (Message / Block) used to be bottom-anchored — computed backward from the Close button — while
 // the name/id/rank text flowed downward from the top. On a short card the two collided, so the
 // Message/Block buttons rendered on top of the name and id lines (2026-07-22 bug report).
@@ -10,7 +10,7 @@
 import { describe, it, expect } from 'vitest';
 import * as PIXI from 'pixi.js-legacy';
 import { initI18n, setLocale, t } from '../../src/i18n';
-import { ProfilePopup } from '../../src/render/ProfilePopup';
+import { ProfilePopup } from '../../src/ui/dialogs/ProfilePopup';
 
 const memStore = (() => {
   const m = new Map<string, string>();

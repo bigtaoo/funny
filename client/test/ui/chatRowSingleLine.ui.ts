@@ -1,6 +1,6 @@
 // Regression coverage for the 2026-07-17 chat display rework (design/game/UI_DESIGN.md §21):
 // World/Family/Sect chat rows used to draw the sender name and message body on two separate
-// lines. They now share `render/chatRow.ts`'s `drawChatLine()`, which draws a single line —
+// lines. They now share `ui/widgets/chatRow.ts`'s `drawChatLine()`, which draws a single line —
 // "[title][sectName][familyName]senderName: body" — with a background tag behind the name only
 // (content has no background). This file drives the three real scenes headlessly and asserts
 // the resulting PIXI text nodes land on one line with the expected bracket prefix.

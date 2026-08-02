@@ -1,10 +1,10 @@
 // Scene lifecycle: per-frame update (loading spinner, toast timer, L3 flush),
 // atlas bootstrap behind the loading cover, and teardown of pooled Graphics / city sprites.
-import { loadResAtlas } from '../../../render/resAtlasLoader';
-import { loadCityAtlas } from '../../../render/cityAtlasLoader';
-import { loadPlayerBaseAtlas } from '../../../render/playerBaseAtlasLoader';
-import { loadTerrainAtlas } from '../../../render/terrainAtlasLoader';
-import { loadBuildingAtlas } from '../../../render/buildingAtlasLoader';
+import { loadResAtlas } from '../../../render/atlas/resAtlasLoader';
+import { loadCityAtlas } from '../../../render/atlas/cityAtlasLoader';
+import { loadPlayerBaseAtlas } from '../../../render/atlas/playerBaseAtlasLoader';
+import { loadTerrainAtlas } from '../../../render/atlas/terrainAtlasLoader';
+import { loadBuildingAtlas } from '../../../render/atlas/buildingAtlasLoader';
 import { tearDownChildren } from '../../../render/sketchUi';
 import { type Constructor, type WorldMapRendererBaseCtor } from './base';
 import { destroyTokenEntry } from './fog';

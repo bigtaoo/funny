@@ -1,8 +1,8 @@
 // ReplayStore (S1-RP) — local ring of recent recorded matches.
 import { describe, it, expect } from 'vitest';
 import { ReplayStore, MAX_REPLAYS, REPLAY_STORAGE_KEY } from '../src/game/meta/ReplayStore';
-import { ENGINE_VERSION } from '../src/game/types';
-import type { Replay } from '../src/game/types';
+import { ENGINE_VERSION } from '@nw/engine/types';
+import type { Replay } from '@nw/engine/types';
 import type { IStorage } from '../src/platform/IPlatform';
 
 function memStorage(): IStorage & { map: Map<string, string> } {

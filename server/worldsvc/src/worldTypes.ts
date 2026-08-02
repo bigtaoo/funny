@@ -94,7 +94,7 @@ export interface WorldTileView {
    * G5 vision. Since the 2026-07-24 fog-model change this is always `true` on getMap/getTile reads: the static
    * structure layer (location / ownership / base identity / level / occupation) is public map-wide, so fog no
    * longer withholds whole tiles. Fog now gates only the INTEL fields (garrison / hp / maxHp / watchtower),
-   * which are simply omitted for out-of-vision tiles (see coreMap.gateIntel), and marching troops (getMarches).
+   * which are simply omitted for out-of-vision tiles (see core/map.gateIntel), and marching troops (getMarches).
    * The field is retained so existing clients keep rendering the map un-dimmed (they darken only on `=== false`).
    */
   visible?: boolean;

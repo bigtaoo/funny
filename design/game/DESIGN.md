@@ -183,7 +183,7 @@ hudView.container        ← HUD（最顶层）
 |---|---|
 | `Barracks`（兵营） | `game_infantry_barracks.png` |
 | `ArrowTower`（箭塔） | `game_archer_barracks.png` |
-| 基地（双方） | `game_base.png`（0 级，L0 预载），敌方按朝向镜像（横屏左右翻、竖屏上下翻）。1/2 级升级贴图打包在 `assets/base_upgrade_atlas.{png,json}`（`base_lv1`=城池 → upgradeLevel 1，`base_lv2`=宫殿 → upgradeLevel 2/最高级），懒加载见 `render/baseUpgradeAtlasLoader.ts`，源图+打包脚本在 `art/ui/game/pack_base_atlas.js` |
+| 基地（双方） | `game_base.png`（0 级，L0 预载），敌方按朝向镜像（横屏左右翻、竖屏上下翻）。1/2 级升级贴图打包在 `assets/base_upgrade_atlas.{png,json}`（`base_lv1`=城池 → upgradeLevel 1，`base_lv2`=宫殿 → upgradeLevel 2/最高级），懒加载见 `render/atlas/baseUpgradeAtlasLoader.ts`，源图+打包脚本在 `art/ui/game/pack_base_atlas.js` |
 
 ### 箭塔攻击范围
 
@@ -499,7 +499,7 @@ npm run test:watch
 
 ### 文件位置
 
-`src/game/systems/AISystem.ts`。AI 操控 **Top 方**（owner 1，基地在 row 17）。敌方单位 = Side.Bottom，朝 row 17 推进——单位 row 越高（越接近 AI 基地）威胁越大。
+`@nw/engine/systems/AISystem.ts`。AI 操控 **Top 方**（owner 1，基地在 row 17）。敌方单位 = Side.Bottom，朝 row 17 推进——单位 row 越高（越接近 AI 基地）威胁越大。
 
 ### 输入 / 输出契约
 

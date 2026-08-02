@@ -881,7 +881,7 @@ buildSiegeBlueprints(levels, equipped, inv)
 
 背景：§20.2 引入了 AI 位图图集（`client/src/assets/equipment/equipment.{png,json}`，12 帧按 defId 命名，boot 时经 `bootManifest.ts` 的 `equip:atlas` 加载），`getEquipIconTexture(defId)` 解析。但各界面**各自决定用图集还是 §20.3 手绘 glyph**：只有 `EquipmentScene`/`CardScene` 走「图集优先→glyph 兜底」，而**抽卡（结果卡+概率表）、拍卖行（列表+挂单选择器）直接调 `drawEquipmentGlyph`**，从不查图集。`drawEquipmentGlyph` 只认 slot+rarity、无视 defId，导致同一件装备在装备包显示专属位图、在抽卡/拍卖显示同槽位同稀有度的通用草图——**同物不同图**。
 
-落地（纯客户端，零新资产）：`render/equipmentAtlas.ts` 新增唯一解析器 `buildEquipIcon(defId, slot, rarity, size, seed): PIXI.Container`——图集就绪且 defId 已知返回 `Sprite`（anchor 0.5、scale `size/128`），否则返回 §20.3 procedural glyph；原点居中，调用方只设 `x/y/alpha`。全部 5 处图标绘制统一走它：`GachaScene.drawEntryPicture`、`AuctionScene` list/picker、`EquipmentScene.addGlyph`、`CardScene` detail（后两者删去各自重复的图集处理代码）。
+落地（纯客户端，零新资产）：`render/atlas/equipmentAtlas.ts` 新增唯一解析器 `buildEquipIcon(defId, slot, rarity, size, seed): PIXI.Container`——图集就绪且 defId 已知返回 `Sprite`（anchor 0.5、scale `size/128`），否则返回 §20.3 procedural glyph；原点居中，调用方只设 `x/y/alpha`。全部 5 处图标绘制统一走它：`GachaScene.drawEntryPicture`、`AuctionScene` list/picker、`EquipmentScene.addGlyph`、`CardScene` detail（后两者删去各自重复的图集处理代码）。
 
 铁律：今后任何装备图标绘制点**必须调 `buildEquipIcon`**，禁止直接 `drawEquipmentGlyph`。`EquipDef.media` 字段对渲染是死字段（无解析器读它）。验证：client `tsc --noEmit` + webpack 构建全绿（因后端未起未做游戏内截图；渲染路径与既有可用的装备包一致）。
 
@@ -897,7 +897,7 @@ buildSiegeBlueprints(levels, equipped, inv)
 
 资产：3 张 AI 手绘位图（notebook 风、透明底、墨线描边）——scrap=撕纸+铅笔屑、lead=三根石墨条捆麻绳、binding=紫色螺旋线圈。源图放 `art/ui/material/`，`build-atlas.js`（仿 `art/ui/equipment/build-atlas.js`，`sharp` 先 `.trim()` 去透明边再 `contain` 到 128²）打成 `client/src/assets/material/material.{png,json}`（384×128，3×1，frame 名 = `scrap`/`lead`/`binding`，即 EquipmentScene 短 id、也是 `GachaScene.MATERIAL_ICON` 的目标 kind）。
 
-接线（纯客户端）：新增 `client/src/render/materialAtlas.ts`——`loadMaterialAtlas()`（boot `material:atlas` 步，非致命）+ `getMaterialIconTexture(kind)` + `buildMaterialIcon(kind,size,color)`（图集就绪返回 `Sprite`，否则回退 §20.5 的 `buildIcon` glyph，与 `buildEquipIcon` 同款「位图优先→glyph 兜底」契约，原点为左上角 `size×size`）。三处调用改走它：`GachaScene.drawEntryPicture`（材料分支）、`EquipmentScene/base.ts` 的 `renderMaterialsBand`（顶部余额条）与成本 chip 闭包（coin 仍走 `buildIcon`）。
+接线（纯客户端）：新增 `client/src/render/atlas/materialAtlas.ts`——`loadMaterialAtlas()`（boot `material:atlas` 步，非致命）+ `getMaterialIconTexture(kind)` + `buildMaterialIcon(kind,size,color)`（图集就绪返回 `Sprite`，否则回退 §20.5 的 `buildIcon` glyph，与 `buildEquipIcon` 同款「位图优先→glyph 兜底」契约，原点为左上角 `size×size`）。三处调用改走它：`GachaScene.drawEntryPicture`（材料分支）、`EquipmentScene/base.ts` 的 `renderMaterialsBand`（顶部余额条）与成本 chip 闭包（coin 仍走 `buildIcon`）。
 
 验证：client `tsc --noEmit` + 生产 webpack 构建全绿；dev server（9090）运行态经 webpack chunk 反射拿到 PIXI `TextureCache`，确认 `scrap/lead/binding` 三帧 `valid` 且 128²、源图 384×128、逐帧非空（scrap 68 色/luma 9–255 证明是真插画非纯色块）。因材料图标深藏抽卡/装备页需登录+后端，用运行态贴图内省替代逐屏截图。
 

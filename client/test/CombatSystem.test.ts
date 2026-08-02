@@ -1,11 +1,11 @@
 import { describe, it, expect } from 'vitest';
-import { GameState } from '../src/game/GameState';
-import { Unit } from '../src/game/Unit';
-import { Building } from '../src/game/Building';
-import { CombatSystem } from '../src/game/systems/CombatSystem';
-import { SpellSystem } from '../src/game/systems/SpellSystem';
-import { ATTACK_MULT_THRESHOLD_TICKS, UNIT_BLUEPRINTS, BUILDING_BLUEPRINTS } from '../src/game/config';
-import { Side, UnitType, BuildingType, UnitState, SpellType } from '../src/game/types';
+import { GameState } from '@nw/engine/GameState';
+import { Unit } from '@nw/engine/Unit';
+import { Building } from '@nw/engine/Building';
+import { CombatSystem } from '@nw/engine/systems/CombatSystem';
+import { SpellSystem } from '@nw/engine/systems/SpellSystem';
+import { ATTACK_MULT_THRESHOLD_TICKS, UNIT_BLUEPRINTS, BUILDING_BLUEPRINTS } from '@nw/engine/config';
+import { Side, UnitType, BuildingType, UnitState, SpellType } from '@nw/engine/types';
 import { achievementStatDelta } from '../src/game';
 
 /**

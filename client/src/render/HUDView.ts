@@ -1,12 +1,12 @@
 import * as PIXI from 'pixi.js-legacy';
 import { makeText } from './pixiText';
-import { BASE_HP, BASE_UPGRADE_COSTS, HAND_REFRESH_COST } from '../game/config';
-import { GameState } from '../game/GameState';
-import { OwnerId } from '../game/types';
+import { BASE_HP, BASE_UPGRADE_COSTS, HAND_REFRESH_COST } from '@nw/engine/config';
+import { GameState } from '@nw/engine/GameState';
+import { OwnerId } from '@nw/engine/types';
 import { ILayout, Rect } from '../layout/ILayout';
 import { t } from '../i18n';
 import { getLabelTexture } from './labelDecor';
-import { drawHudButton, hudButtonText, HudButtonVariant } from './hudButton';
+import { drawHudButton, hudButtonText, HudButtonVariant } from '../ui/widgets/hudButton';
 import { FS, snapFont } from './fontScale';
 import { factionInk, fx } from './theme';
 import { drawInk } from './icons/currency';

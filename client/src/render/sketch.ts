@@ -16,7 +16,7 @@
  * with it live.
  */
 import * as PIXI from 'pixi.js-legacy';
-import { Prng } from '../game/math/prng';
+import { Prng } from '@nw/engine/math/prng';
 import { pen as PEN, hatchDefaults, palette } from './theme';
 
 export interface StrokeOpts {

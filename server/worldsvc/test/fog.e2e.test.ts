@@ -2,7 +2,7 @@
 //   Fog model 2b (2026-07-24): the STATIC structure layer (location / ownership / base identity / level / occupation)
 //   is public map-wide — a player can always see WHERE others are. Fog now gates only the INTEL fields
 //   (garrison / hp / maxHp / watchtower) and marching troops (getMarches). Out-of-vision tiles keep visible:true
-//   but have their intel fields stripped (coreMap.gateIntel).
+//   but have their intel fields stripped (core/map.gateIntel).
 //   Vision sources = own territories/home base + same-family member territories (shared) + marches in transit. getMap / getTile use the same gate.
 // Requires `cd server && docker compose up -d`.
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';

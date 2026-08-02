@@ -11,7 +11,7 @@
  * layer (the functional/HUD text always lives above it).
  */
 import * as PIXI from 'pixi.js-legacy';
-import { Prng } from '../game/math/prng';
+import { Prng } from '@nw/engine/math/prng';
 import { palette } from './theme';
 import { bake } from './bake';
 

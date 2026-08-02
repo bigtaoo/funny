@@ -3,7 +3,7 @@
 // space (no PIXI interactive/hitArea). Chained onto GameRendererBase (./base.ts) — see ../GameRenderer.ts.
 import * as PIXI from 'pixi.js-legacy';
 import { makeText } from '../pixiText';
-import { ATTACK_LANES, BOARD_COLS } from '../../game/config';
+import { ATTACK_LANES, BOARD_COLS } from '@nw/engine/config';
 import { CardType, SpellType } from '../../game';
 import { Rect } from '../../layout/ILayout';
 import { t, type TranslationKey } from '../../i18n';

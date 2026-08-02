@@ -16,7 +16,7 @@ import { createGameNav } from '../src/app/nav/game';
 import type { AppCtx, AppState, Nav } from '../src/app/appCtx';
 import type { AppViews } from '../src/app/AppViews';
 import type { GameSceneCallbacks, GameSceneOptions } from '../src/scenes/GameScene';
-import type { PlayerStats } from '../src/game/types';
+import type { PlayerStats } from '@nw/engine/types';
 
 const zeroStats = (owner: 0 | 1): PlayerStats => ({
   owner,

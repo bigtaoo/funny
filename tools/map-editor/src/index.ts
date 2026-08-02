@@ -20,120 +20,10 @@ import { loadBuildingAtlas } from './render/buildingAtlasLoader';
 import { loadCityAtlas, getCityTextureForLevel, isCityAtlasReady } from './render/cityAtlasLoader';
 import { getLocale, t, toggleLocale } from './i18n';
 
-const TERRAIN_COLORS: Record<TerrainKind, number> = {
-  river: 0x4fa8e0, mountain: 0xa0785a,
-  neutral: 0x9ccf7a, // carve: open a band back to passable land
-  bridge: 0x5c9fd6, // river crossing (bridge)
-  plankway: 0xc08a52, // mountain crossing (plankway)
-};
-const CITY_COLORS: Record<MapEditorCityNode['kind'], number> = {
-  worldCenter: 0xff5c8a,
-  capital: 0xffd166,
-  garrison: 0x4ce0c0,
-};
-const CITY_COLORS_CSS: Record<MapEditorCityNode['kind'], string> = {
-  worldCenter: '#ff5c8a',
-  capital: '#ffd166',
-  garrison: '#4ce0c0',
-};
-const TERRAIN_LEGEND: TileType[] = ['neutral', 'resource', 'territory', 'familyKeep', 'center', 'obstacle', 'bridge', 'plankway', 'stronghold'];
-const TERRAIN_LEGEND_CSS: Record<TileType, string> = {
-  neutral: '#f5f0e8', resource: '#f0ece0', territory: '#f5f0e8', familyKeep: '#e8d29a',
-  center: '#f0dfa0', base: '#f5f0e8', obstacle: '#c4bdb0', bridge: '#b9c6d2', plankway: '#b2967a', stronghold: '#9a7a6a',
-};
+import { TERRAIN_COLORS, CITY_COLORS, CITY_COLORS_CSS, TERRAIN_LEGEND, TERRAIN_LEGEND_CSS, VIEW_W, VIEW_H, VIEW_PAD_FACTOR, ZOOM_MIN, ZOOM_MAX, DEFAULT_TP, BASE_SPRITE_TILES } from './constants';
+import { app, worldLayer, baseLayer, citySpriteLayer, overlayLayer } from './stage';
+import { seedInput, regenBtn, centerBtn, zoomInput, statusEl, tileInfoEl, legendEl, widthInput, clearTerrainBtn, resetCitiesBtn, terrainTitleEl, jsonEl, exportBtn, importBtn, cityLegendEl, cityInfoEl, cityJsonEl, cityExportBtn, cityImportBtn, toolButtons, publishLoginEl, publishPanelEl, publishWhoamiEl, adminBaseInput, adminUserInput, adminPassInput, adminLoginBtn, adminLogoutBtn, templateIdInput, templateGenerateBtn, publishBtn, templateListEl, templatesTitleEl, templateRefreshBtn, templateActivateBtn, templateDeleteBtn, langBtn } from './dom';
 
-// ── Viewport (camera into the up-to-500×500 world; see DESIGN.md §6.3) ────────────
-const VIEW_W = 900;
-const VIEW_H = 620;
-/** Rendered tiles extend this far past the visible edge so short pans don't reveal blank space (§ live-drag tradeoff below). */
-const VIEW_PAD_FACTOR = 1.5;
-const ZOOM_MIN = 10;
-const ZOOM_MAX = 130; // raised 84→130: DEFAULT_TP (900/11≈81) sits near the old cap, so leave real zoom-in headroom
-/** Default on-screen tile px = the game client's L1 (detail) density: it sizes tiles as
- * floor(viewportWidth / 11) (client/src/scenes/worldmap/zoom.ts). Matching that divisor here
- * makes the editor open with the SAME on-screen tile count the player sees at full zoom-in.
- * (Divisor 16→13→11: the map read as an over-dense carpet at higher divisors.) */
-const DEFAULT_TP = Math.floor(VIEW_W / 11);
-/** On-screen width of a base's city sprite in tile-widths — mirrors the game client's BASE_SPRITE_TILES
- * (client/src/scenes/worldmap/constants.ts) so a 3×3 base's art lines up identically; larger cities scale
- * proportionally by footprint (see refreshCitySprites). */
-const BASE_SPRITE_TILES = 3.2;
-
-const pixiRoot = document.getElementById('pixi-root')!;
-// Aged-paper page background (0xf5f0e8) — the SAME PIXI.Application backgroundColor the game client uses
-// (client/src/render/theme.ts palette.paper). This is load-bearing for art parity, NOT cosmetic: the
-// terrain atlas is grey pencil on pale paper and impassable tiles (mountain/river) draw at 0.5 alpha so
-// they "recede into the paper" (tileStyle.ts TERRAIN_TEX_ALPHA). Over the old dark 0x11111b canvas that
-// half-transparency let the dark background bleed through, collapsing the hand-drawn rock/wave art into a
-// flat dark blob — which read as "the mountain/river assets aren't showing". A cream page makes them
-// render identically to the game (DESIGN.md §6.3 art-parity).
-const app = new PIXI.Application({ width: VIEW_W, height: VIEW_H, backgroundColor: 0xf5f0e8, antialias: true });
-pixiRoot.appendChild(app.view as HTMLCanvasElement);
-
-// Screen-fixed ruled-paper backdrop, mirroring the game client's buildPaperBackground('worldmap', …,
-// { marginLine: false }) (client/src/scenes/worldmap/WorldMapRenderer/build.ts): faint blue notebook rule
-// lines (palette.ruleLine 0xb9cfe4) every ~h/28 px, no red left margin line on the SLG overworld. Added to
-// the stage BEFORE worldLayer so it stays fixed while the map pans over it, exactly like the game.
-const paperBg = new PIXI.Graphics();
-{
-  const lineGap = Math.round(VIEW_H / 28);
-  paperBg.lineStyle(1.1, 0xb9cfe4, 1);
-  for (let y = lineGap; y < VIEW_H; y += lineGap) {
-    paperBg.moveTo(0, y);
-    paperBg.lineTo(VIEW_W, y);
-  }
-}
-app.stage.addChild(paperBg);
-
-const worldLayer = new PIXI.Container();
-app.stage.addChild(worldLayer);
-const baseLayer = new PIXI.Container();
-baseLayer.sortableChildren = true;
-// City building sprites (per-level city_atlas art), between the ground tiles and the vector overlay chrome.
-// A child of worldLayer so pans translate it for free; only rebuilt when zoom/seed/city positions change
-// (NOT on every terrain-brush tick — cities don't move while painting), see refreshCitySprites().
-const citySpriteLayer = new PIXI.Container();
-citySpriteLayer.sortableChildren = true;
-const overlayLayer = new PIXI.Container();
-worldLayer.addChild(baseLayer, citySpriteLayer, overlayLayer);
-
-const seedInput = document.getElementById('world-seed') as HTMLInputElement;
-const regenBtn = document.getElementById('btn-regen') as HTMLButtonElement;
-const centerBtn = document.getElementById('btn-center') as HTMLButtonElement;
-const zoomInput = document.getElementById('zoom') as HTMLInputElement;
-const statusEl = document.getElementById('status')!;
-const tileInfoEl = document.getElementById('tile-info')!;
-const legendEl = document.getElementById('legend')!;
-const widthInput = document.getElementById('brush-width') as HTMLInputElement;
-const clearTerrainBtn = document.getElementById('btn-clear-paths') as HTMLButtonElement;
-const resetCitiesBtn = document.getElementById('btn-reset-cities') as HTMLButtonElement;
-const terrainTitleEl = document.getElementById('paths-title')!;
-const jsonEl = document.getElementById('json') as HTMLTextAreaElement;
-const exportBtn = document.getElementById('btn-export') as HTMLButtonElement;
-const importBtn = document.getElementById('btn-import') as HTMLButtonElement;
-const cityLegendEl = document.getElementById('city-legend')!;
-const cityInfoEl = document.getElementById('city-info')!;
-const cityJsonEl = document.getElementById('city-json') as HTMLTextAreaElement;
-const cityExportBtn = document.getElementById('btn-city-export') as HTMLButtonElement;
-const cityImportBtn = document.getElementById('btn-city-import') as HTMLButtonElement;
-const toolButtons = Array.from(document.querySelectorAll<HTMLButtonElement>('.toolbar .tool'));
-const publishLoginEl = document.getElementById('publish-login')!;
-const publishPanelEl = document.getElementById('publish-panel')!;
-const publishWhoamiEl = document.getElementById('publish-whoami')!;
-const adminBaseInput = document.getElementById('admin-base') as HTMLInputElement;
-const adminUserInput = document.getElementById('admin-user') as HTMLInputElement;
-const adminPassInput = document.getElementById('admin-pass') as HTMLInputElement;
-const adminLoginBtn = document.getElementById('btn-admin-login') as HTMLButtonElement;
-const adminLogoutBtn = document.getElementById('btn-admin-logout') as HTMLButtonElement;
-const templateIdInput = document.getElementById('template-id') as HTMLInputElement;
-const templateGenerateBtn = document.getElementById('btn-template-generate') as HTMLButtonElement;
-const publishBtn = document.getElementById('btn-publish') as HTMLButtonElement;
-const templateListEl = document.getElementById('template-list')!;
-const templatesTitleEl = document.getElementById('templates-title')!;
-const templateRefreshBtn = document.getElementById('btn-template-refresh') as HTMLButtonElement;
-const templateActivateBtn = document.getElementById('btn-template-activate') as HTMLButtonElement;
-const templateDeleteBtn = document.getElementById('btn-template-delete') as HTMLButtonElement;
-const langBtn = document.getElementById('btn-lang') as HTMLButtonElement;
 
 // ── Editor state ─────────────────────────────────────────────────────────
 type Tool = TerrainKind | 'eraser' | 'city' | 'pan';
@@ -918,3 +808,4 @@ Promise.allSettled([loadTerrainAtlas(), loadResAtlas(), loadBuildingAtlas(), loa
   redrawAll();
 });
 renderTerrainTitle();
+

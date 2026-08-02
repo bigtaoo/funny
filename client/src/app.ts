@@ -44,8 +44,8 @@ import { DeckBuilderScene, type DeckBuilderCallbacks } from './scenes/DeckBuilde
 import { CityScene, type CitySceneCallbacks } from './scenes/CityScene';
 import { DailyScene, type DailyCallbacks } from './scenes/DailyScene';
 import { EventScene, type EventCallbacks } from './scenes/EventScene';
-import { ConsentDialog, type ConsentCallbacks } from './render/ConsentDialog';
-import { ReconnectPromptDialog, type ReconnectPromptCallbacks } from './render/ReconnectPromptDialog';
+import { ConsentDialog, type ConsentCallbacks } from './ui/dialogs/ConsentDialog';
+import { ReconnectPromptDialog, type ReconnectPromptCallbacks } from './ui/dialogs/ReconnectPromptDialog';
 import { OwnerId, ownerToSide, Side } from './game';
 import type { Replay, LevelDefinition } from './game';
 import { ScalingManager, createLayout, resettledLayout } from './layout/ScalingManager';
@@ -53,13 +53,13 @@ import { InputManager } from './inputSystem/InputManager';
 import type { ILayout } from './layout/ILayout';
 import { installGlobalErrorHandlers, setToastSink, setAppealSink, showToastMessage } from './net/log';
 import { GlobalToast } from './ui/GlobalToast';
-import { AppealDialog } from './render/AppealDialog';
+import { AppealDialog } from './ui/dialogs/AppealDialog';
 import { t } from './i18n';
 import { ui as C } from './render/sketchUi';
 import { setBakeRenderer } from './render/bake';
 import { installTextPaddingFloor } from './render/pixiText';
 import { preloadBoot } from './assets/bootManifest';
-import { LoadingOverlay } from './render/LoadingOverlay';
+import { LoadingOverlay } from './ui/LoadingOverlay';
 import { createAppCore } from './app/createAppCore';
 import type { AppViews, LobbyView, RoomView, FriendsView, ChatView, NetGameView, ResultViewProps, FadeOpts, MountOpts } from './app/AppViews';
 

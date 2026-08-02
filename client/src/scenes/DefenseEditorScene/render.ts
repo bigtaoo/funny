@@ -6,9 +6,9 @@ import { ui as C, txt, sketchPanel, seedFor } from '../../render/sketchUi';
 import { FS } from '../../render/fontScale';
 import { drawScrollIndicator } from '../../ui/widgets/ScrollIndicator';
 import { cardInstanceArtUrl, unitPortraitUrl, equippedSkinIdFor, getArtTexture } from '../../render/cardArt';
-import { ATTACK_LANES, BASE_COLS } from '../../game/config';
+import { ATTACK_LANES, BASE_COLS } from '@nw/engine/config';
 import baseTexUrl from '../../assets/buildings/game_base.png';
-import { UnitType, BuildingType } from '../../game/types';
+import { UnitType, BuildingType } from '@nw/engine/types';
 import type { CardInstance } from '../../game/meta/SaveData';
 import {
   type Constructor, type DefenseEditorSceneBaseCtor, type Tool,

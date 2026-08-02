@@ -15,7 +15,7 @@ import { initI18n, t } from '../../src/i18n';
 import { GachaScene, type GachaSceneCallbacks } from '../../src/scenes/GachaScene';
 import type { GachaResultEntry } from '../../src/net/ApiClient';
 import { unitPortraitUrl, cardInstanceArtUrl } from '../../src/render/cardArt';
-import { UnitType } from '../../src/game/types';
+import { UnitType } from '@nw/engine/types';
 
 // Every export except cardInstanceArtUrl/unitPortraitUrl passes through untouched; wrapping just
 // those two in vi.fn (keeping their real implementation) lets specs below inspect call arguments

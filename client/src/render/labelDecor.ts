@@ -16,7 +16,7 @@
  * art/ui/decos-b/pack_labels.cjs per "player=blue, enemy=red"), so they are used as-is and must
  * NOT be tinted (same rule as §6.2 note for the A group).
  */
-import { decorMergedAtlas as atlas } from './decorMergedAtlas';
+import { decorMergedAtlas as atlas } from './atlas/decorMergedAtlas';
 
 /** Stable label names — one per B-group asset. */
 export type LabelName = 'label_boss' | 'label_start' | 'label_win' | 'label_arrow_here';

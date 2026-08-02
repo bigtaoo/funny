@@ -17,7 +17,7 @@ import { Skeleton } from './stickman/skeleton';
 import type { ResolvedBoneTransform } from './stickman/types';
 import { SketchPen } from './sketch';
 import { palette, factionInk } from './theme';
-import { Side } from '../game/types';
+import { Side } from '@nw/engine/types';
 
 const EMPTY_XF: ResolvedBoneTransform = {
   rotation: 0, scaleX: 1, scaleY: 1, translateX: 0, translateY: 0, alpha: 1,

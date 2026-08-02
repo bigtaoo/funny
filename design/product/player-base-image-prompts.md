@@ -148,6 +148,6 @@ tips of the tallest spires are the only exception to the two-tone palette.
 **打包脚本一处偏差（相对 `pack_city_atlas.js`）**：这批源图的背景是纯白、无方格纸网格，而建筑主体的浅黄绿色水彩填充与白色背景的色距（约44）小于 `pack_city_atlas.js` 原有的 `TSEED=72` 绝对阈值，会导致区域生长去背算法从边缘一路吃穿建筑内部填充（`playerbase_l7` 曾被吃成碎片）。`pack_playerbase_atlas.js` 因此把 `TSEED` 改成 `0`（只保留 `TSTEP=33` 的渐变跟随去背），10 帧全部干净切割，无需网格桥接。
 
 代码管线（无需再改）：
-- `client/src/render/playerBaseAtlasLoader.ts` 提供 `loadPlayerBaseAtlas()`/`getPlayerBaseTextureForLevel(level)`；`WorldMapRenderer/lifecycle.ts` 随其余图集一起加载
+- `client/src/render/atlas/playerBaseAtlasLoader.ts` 提供 `loadPlayerBaseAtlas()`/`getPlayerBaseTextureForLevel(level)`；`WorldMapRenderer/lifecycle.ts` 随其余图集一起加载
 - `WorldMapRenderer/city.ts` 按 `tile.mine` 分支选图（自己的基地用这套，其他玩家的基地和 NPC 城池节点继续用 `city_atlas`）
-- 服务端 `worldsvc/src/city.ts` 的 `applyDueBuilds` 在 desk 完工时把新等级写入 `TileDoc.deskLevel`（新字段），`coreMap.ts tileDocView` 透出到 `WorldTileView.deskLevel`（`server/contracts/openapi-world.yml` 已加对应 schema 字段，client/worldsvc 的生成类型已同步重新生成）
+- 服务端 `worldsvc/src/city.ts` 的 `applyDueBuilds` 在 desk 完工时把新等级写入 `TileDoc.deskLevel`（新字段），`core/map.ts tileDocView` 透出到 `WorldTileView.deskLevel`（`server/contracts/openapi-world.yml` 已加对应 schema 字段，client/worldsvc 的生成类型已同步重新生成）

@@ -7,7 +7,7 @@ import { ENEMY_BASE_TINT, MINE_BASE_TINT, CLOUD_COLOR, tileColor, proceduralTile
 import { baseFootprintCells } from '@nw/shared';
 import { drawStar, drawDashedPolygon, drawFadedLine } from '../tileGraphics';
 import { StickmanRuntime } from '../../../render/stickman/StickmanRuntime';
-import { UnitType } from '../../../game/types';
+import { UnitType } from '@nw/engine/types';
 import { targetScreenHeight } from '../../../render/unitSize';
 import { STICKMAN_ASSETS } from '../../../render/UnitView';
 import { buildAvatar, makeAvatarId } from '../../../render/avatar';

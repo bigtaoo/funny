@@ -93,7 +93,7 @@ function neighborOf(target: { x: number; y: number }): { x: number; y: number } 
  * First cell strictly OUTSIDE a 3×3 base footprint anchored at `base` that is still 4-directionally adjacent
  * to the footprint's ring (offset ±2 along an axis — offset ±1 would land ON the ring itself, which is the
  * base's own territory and can't be occupied as a "connector", and which the connectivity check's footprint
- * resolution deliberately excludes from its own neighbor set — see coreVision.ts targetFootprintCells).
+ * resolution deliberately excludes from its own neighbor set — see core/vision.ts targetFootprintCells).
  */
 function outsideFootprint(base: { x: number; y: number }): { x: number; y: number } {
   for (const [dx, dy] of [[-2, 0], [2, 0], [0, -2], [0, 2]] as const) {

@@ -12,7 +12,7 @@
 import type { WorldTileView } from '../../net/WorldApiClient';
 import { proceduralTile, biomeMixAt } from '@nw/shared';
 import type { ObstacleKind } from '@nw/shared';
-import type { TerrainTextureName } from '../../render/terrainAtlasLoader';
+import type { TerrainTextureName } from '../../render/atlas/terrainAtlasLoader';
 
 // Terrain base colors (unoccupied) — desaturated, paper-cohesive; specials stay distinct but muted.
 export const TERRAIN_COLORS: Record<string, number> = {

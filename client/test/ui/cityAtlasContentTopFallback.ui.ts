@@ -23,13 +23,13 @@ vi.mock('../../src/assets/slg/world_atlas.json', () => ({
 
 describe('content-top getters fall back to 0 on a pre-fix atlas (no contentTop field)', () => {
   it('getCityContentTopFracForLevel returns 0, not undefined/NaN', async () => {
-    const { getCityContentTopFracForLevel } = await import('../../src/render/cityAtlasLoader');
+    const { getCityContentTopFracForLevel } = await import('../../src/render/atlas/cityAtlasLoader');
     expect(getCityContentTopFracForLevel(1)).toBe(0);
     expect(getCityContentTopFracForLevel(10)).toBe(0); // tier-4 fallback frame, also fieldless
   });
 
   it('getPlayerBaseContentTopFracForLevel returns 0, not undefined/NaN', async () => {
-    const { getPlayerBaseContentTopFracForLevel } = await import('../../src/render/playerBaseAtlasLoader');
+    const { getPlayerBaseContentTopFracForLevel } = await import('../../src/render/atlas/playerBaseAtlasLoader');
     expect(getPlayerBaseContentTopFracForLevel(1)).toBe(0);
   });
 });

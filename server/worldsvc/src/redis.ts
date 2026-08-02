@@ -6,7 +6,7 @@
 // 2026-07-27: this interface used to also declare zadd/zrangebyscore/zrem (march/siegeDamage/occupation
 // wake-up ZSETs) and get/set — all dead: the ZSETs were written on every march step but zrangebyscore was
 // never called anywhere in src/ (the Mongo due-time scan was always the sole consumer), and get/set had no
-// callers at all. Removed along with their write sites (corePush.ts, combatMarch.ts, combatSiege/*) rather
+// callers at all. Removed along with their write sites (core/push.ts, combatMarch.ts, combatSiege/*) rather
 // than left as unread I/O — see claudedocs/server.md for the audit that found this.
 //
 // Implementation note: dynamic import with a variable specifier so tsc can compile even when

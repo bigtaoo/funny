@@ -3,13 +3,13 @@
  */
 
 import { describe, it, expect, beforeEach } from 'vitest';
-import { createGameEngine } from '../src/game/GameEngine';
-import { BOARD_ROWS, TOP_SPAWN_ROW, BRIDGE_COLLAPSE_DURATION_TICKS, CARD_DEFINITIONS } from '../src/game/config';
-import { resetUnitIds } from '../src/game/Unit';
-import { resetBuildingIds } from '../src/game/Building';
-import { Side, UnitType, UnitState } from '../src/game/types';
-import type { GameConfig } from '../src/game/types';
-import type { LevelDefinition } from '../src/game/campaign/LevelDefinition';
+import { createGameEngine } from '@nw/engine/GameEngine';
+import { BOARD_ROWS, TOP_SPAWN_ROW, BRIDGE_COLLAPSE_DURATION_TICKS, CARD_DEFINITIONS } from '@nw/engine/config';
+import { resetUnitIds } from '@nw/engine/Unit';
+import { resetBuildingIds } from '@nw/engine/Building';
+import { Side, UnitType, UnitState } from '@nw/engine/types';
+import type { GameConfig } from '@nw/engine/types';
+import type { LevelDefinition } from '@nw/engine/campaign/LevelDefinition';
 
 const TICK_DT = 1 / 30;
 

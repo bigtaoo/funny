@@ -5,7 +5,7 @@
 // base into the final GameRenderer.
 import * as PIXI from 'pixi.js-legacy';
 import { makeText } from '../pixiText';
-import { BOTTOM_BUILDING_ROW, BOTTOM_SPAWN_ROW, TOP_BUILDING_ROW, TOP_SPAWN_ROW } from '../../game/config';
+import { BOTTOM_BUILDING_ROW, BOTTOM_SPAWN_ROW, TOP_BUILDING_ROW, TOP_SPAWN_ROW } from '@nw/engine/config';
 
 /** HP fraction at/under which a base is "critical" (~last HP cell) — triggers the board ring. */
 const BASE_CRITICAL_RATIO = 0.15;
@@ -30,7 +30,7 @@ import type { BattleLabelContext } from '../battleLabels';
 import { BuildingView } from '../BuildingView';
 import { HandView } from '../HandView';
 import { HUDView } from '../HUDView';
-import { drawHudButton } from '../hudButton';
+import { drawHudButton } from '../../ui/widgets/hudButton';
 import { NetStatusView } from '../NetStatusView';
 import { UnitView } from '../UnitView';
 import type { EngineCardInstance, EngineEquipInv } from '@nw/engine';
@@ -38,7 +38,7 @@ import { TutorialDrawPolicy } from '@nw/engine';
 import { TutorialDirector, type TutorialHost } from '../TutorialDirector';
 import { VFXSystem } from '../VFXSystem';
 import { buildWearOverlay } from '../wearOverlay';
-import { ProfilePopup, type ProfileData, type ProfileExtra } from '../ProfilePopup';
+import { ProfilePopup, type ProfileData, type ProfileExtra } from '../../ui/dialogs/ProfilePopup';
 import { stateRecorder } from '../../game/replay/StateRecorder';
 import { registerPool } from '../../cache/poolRegistry';
 import { snapFont } from '../fontScale';

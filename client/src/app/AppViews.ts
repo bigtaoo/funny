@@ -20,7 +20,7 @@ import type {
   FriendPresence, FriendRequestPush, FriendUpdate, ChatMessagePush, MailNew,
   DuelInvited, DuelCancelled,
 } from '../net/proto/transport';
-import type { ProfileData } from '../render/ProfilePopup';
+import type { ProfileData } from '../ui/dialogs/ProfilePopup';
 
 import type { IntroSceneCallbacks } from '../scenes/IntroScene';
 import type { LobbySceneCallbacks } from '../scenes/LobbyScene';
@@ -54,8 +54,8 @@ import type { DefenseEditorCallbacks } from '../scenes/DefenseEditorScene';
 import type { TitlesSceneCallbacks } from '../scenes/TitlesScene';
 import type { DailyCallbacks } from '../scenes/DailyScene';
 import type { EventCallbacks } from '../scenes/EventScene';
-import type { ConsentCallbacks } from '../render/ConsentDialog';
-import type { ReconnectPromptCallbacks } from '../render/ReconnectPromptDialog';
+import type { ConsentCallbacks } from '../ui/dialogs/ConsentDialog';
+import type { ReconnectPromptCallbacks } from '../ui/dialogs/ReconnectPromptDialog';
 import type { DeckBuilderCallbacks } from '../scenes/DeckBuilderScene';
 import type { CitySceneCallbacks } from '../scenes/CityScene';
 

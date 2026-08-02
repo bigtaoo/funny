@@ -1,5 +1,5 @@
 import * as PIXI from 'pixi.js-legacy';
-import { ATTACK_LANES, BOARD_COLS, BOARD_ROWS } from '../game/config';
+import { ATTACK_LANES, BOARD_COLS, BOARD_ROWS } from '@nw/engine/config';
 import { Side, sideToOwner } from '../game';
 import { ILayout, Rect } from '../layout/ILayout';
 import { ObjectPool } from '../cache/ObjectPool';
@@ -9,7 +9,7 @@ import { palette, fx, factionInk } from './theme';
 import { bake } from './bake';
 import { buildDecorLayer } from './decorLayer';
 import { buildBattleLabels, type BattleLabelContext } from './battleLabels';
-import { loadBaseUpgradeAtlas, getBaseUpgradeTexture } from './baseUpgradeAtlasLoader';
+import { loadBaseUpgradeAtlas, getBaseUpgradeTexture } from './atlas/baseUpgradeAtlasLoader';
 
 /** State/highlight colors sourced from theme.fx (art-direction §3.3). */
 const HIGHLIGHT_LANE     = fx.laneValid;     // valid attack lane

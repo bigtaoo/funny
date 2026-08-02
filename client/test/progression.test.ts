@@ -1,9 +1,9 @@
 import { describe, it, expect } from 'vitest';
-import { UNIT_BLUEPRINTS } from '../src/game/config';
-import { UnitType } from '../src/game/types';
-import { Unit } from '../src/game/Unit';
-import { Side } from '../src/game/types';
-import { buildPvpBlueprints, buildCampaignBlueprints } from '../src/game/balance/pveUpgrades';
+import { UNIT_BLUEPRINTS } from '@nw/engine/config';
+import { UnitType } from '@nw/engine/types';
+import { Unit } from '@nw/engine/Unit';
+import { Side } from '@nw/engine/types';
+import { buildPvpBlueprints, buildCampaignBlueprints } from '@nw/engine/balance/pveUpgrades';
 import { pvpExpectedBlueprints } from './pvpBlueprintExpected';
 import {
   UNIT_MAX_LEVEL,
@@ -11,7 +11,7 @@ import {
   TRAIT_BREAKPOINTS,
   applyUnitLevels,
   clampUnitLevel,
-} from '../src/game/balance/progression';
+} from '@nw/engine/balance/progression';
 import { card, cardsAtLevel } from './cardHelpers';
 
 describe('unit progression — hard wall preserved', () => {

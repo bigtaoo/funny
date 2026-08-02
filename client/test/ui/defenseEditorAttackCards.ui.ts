@@ -19,7 +19,7 @@ import { msCountdown } from '../../src/scenes/DefenseEditorScene/base';
 import { makeNewSave, type SaveData } from '../../src/game/meta/SaveData';
 import { WorldApiError, type WorldApiClient, type TeamTemplate, type CardSLGState, type PlayerWorldView } from '../../src/net/WorldApiClient';
 import * as log from '../../src/net/log';
-import { BASE_COLS } from '../../src/game/config';
+import { BASE_COLS } from '@nw/engine/config';
 
 const memStore = (() => {
   const m = new Map<string, string>();

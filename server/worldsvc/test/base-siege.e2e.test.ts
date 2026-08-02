@@ -168,7 +168,7 @@ describe.skipIf(!mongo)('ADR-026 base siege e2e', () => {
    * the arrived MarchDoc directly to isolate the siege mechanic), but the arrival re-check still applies —
    * and it checks the WHOLE conceptual 3×3 footprint anchored at (toX,toY), not just the exact cell, so the
    * connector must sit two cells out (offset ±1 would land inside the footprint itself, which the connectivity
-   * check deliberately excludes from its own neighbor set — see coreVision.ts targetFootprintCells).
+   * check deliberately excludes from its own neighbor set — see core/vision.ts targetFootprintCells).
    * Uses the instant/test-only occupyTile (kept for exactly this purpose, see ADR-037) — costs GARRISON_PER_TILE
    * troops from 'a's pool, irrelevant to these tests' card-army siege-value assertions.
    */

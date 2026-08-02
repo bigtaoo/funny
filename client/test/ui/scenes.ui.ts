@@ -37,7 +37,7 @@ import { AuctionScene } from '../../src/scenes/AuctionScene';
 import { CityScene } from '../../src/scenes/CityScene';
 import { EquipmentScene } from '../../src/scenes/EquipmentScene';
 import type { EquipmentCallbacks, EquipResult } from '../../src/scenes/EquipmentScene';
-import type { PlayerStats } from '../../src/game/types';
+import type { PlayerStats } from '@nw/engine/types';
 import type { WorldApiClient } from '../../src/net/WorldApiClient';
 import { makeNewSave, type SaveData, type EquipSlot } from '../../src/game/meta/SaveData';
 

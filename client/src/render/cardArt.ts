@@ -7,7 +7,7 @@
  * the marker-red highlight baked in (art-direction §3.3) — never tint it.
  */
 import * as PIXI from 'pixi.js-legacy';
-import { CardDefinition, CardType, UnitType, BuildingType, SpellType } from '../game/types';
+import { CardDefinition, CardType, UnitType, BuildingType, SpellType } from '@nw/engine/types';
 import { CARD_DEFS } from '../game/meta/cardDefs';
 import { skinEquipKey } from '../game/meta/skinDefs';
 import { preloadTextureList, ART_TEX_OPTIONS } from '../assets/preloadTextures';

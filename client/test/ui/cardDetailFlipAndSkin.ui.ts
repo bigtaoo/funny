@@ -22,7 +22,7 @@ import { createLayout } from '../../src/layout/ScalingManager';
 import { InputManager } from '../../src/inputSystem/InputManager';
 import { initI18n, t } from '../../src/i18n';
 import { CardScene, type CardCallbacks } from '../../src/scenes/CardScene';
-import type { UnitType } from '../../src/game/types';
+import type { UnitType } from '@nw/engine/types';
 
 const memStore = (() => {
   const m = new Map<string, string>();
