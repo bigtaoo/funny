@@ -120,3 +120,33 @@ describe('WorldMapNet.applySiegeResult — role is server-authoritative (attacke
     expect(h.showToast).toHaveBeenCalledWith(t('world.defendHeld'), expect.anything());
   });
 });
+
+// SLG_DESIGN_LOG §53: field encounters (marchKind='move', ADR-051 §2.2, server/worldsvc/src/combatSiege/
+// encounter.ts — our marching team bumps an enemy stationed team / another march / a garrison mid-transit)
+// were §51's deliberately-left residual gap — with only 'attack'/'occupy' branches, a 'move' result always
+// fell through to the defender/bystander wording even when we were the one who initiated it: a marcher who
+// WON read "Territory lost", one who LOST read "Defense held" — backwards both ways, and no territory
+// actually changes hands in a field encounter (that's occupy's job).
+describe('WorldMapNet.applySiegeResult — field encounters (marchKind=move) get their own valence-correct toast', () => {
+  let h: ReturnType<typeof buildHarness>;
+  beforeEach(() => { h = buildHarness(); });
+
+  it('winning a field encounter shows "skirmish won" — NOT "Territory lost", and no siege modal', () => {
+    h.net.applySiegeResult(siege('attacker_win', ME, 'move'));
+    expect(h.showToast).toHaveBeenCalledWith(t('world.encounterWin'), expect.anything());
+    expect(h.showToast).not.toHaveBeenCalledWith(t('world.defendLost'), expect.anything());
+    expect(h.showModal).not.toHaveBeenCalled();
+  });
+
+  it('losing a field encounter shows "skirmish lost" — NOT "Defense held"', () => {
+    h.net.applySiegeResult(siege('defender_win', ME, 'move'));
+    expect(h.showToast).toHaveBeenCalledWith(t('world.encounterLoss'), expect.anything());
+    expect(h.showToast).not.toHaveBeenCalledWith(t('world.defendHeld'), expect.anything());
+  });
+
+  it('someone else\'s field encounter (not ours) still classifies us as defender/bystander, unaffected', () => {
+    h.net.applySiegeResult(siege('attacker_win', OTHER, 'move'));
+    expect(h.showToast).toHaveBeenCalledWith(t('world.defendLost'), expect.anything());
+    expect(h.showToast).not.toHaveBeenCalledWith(t('world.encounterWin'), expect.anything());
+  });
+});

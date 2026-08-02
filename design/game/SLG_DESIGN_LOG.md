@@ -1624,3 +1624,13 @@ cols.tiles.find({ worldId, type: 'base', ownerId: { $nin: excludeOwners } })
 **验证**：`server/worldsvc` `tsc --noEmit` 全绿。定向重跑占领/围攻/寻路相关测试（`occupy-march`/`passage`/`field-tower`/`field-blocker`/`base-siege`/`stronghold`/`field-encounter*`/`field-redispatch`/`field-occupancy`/`field-structure-attack`/`base-integrity`/`march-return-travel-time`/`teams`/`enter-world`，共 12 文件/88 例，含「blocker 绕路」「crossing 通行」「长途占领士气衰减」等直接触碰寻路的用例）全过；随后跑了 `server/worldsvc` 全量 50 文件/399 例，同样全绿。生产库上直接验证：本地起了一个带 `rs0` 的 standalone mongod 复现原查询耗时（12.4s），但此次改动未部署到生产（未触碰线上代码），仅在本地代码 + 测试环境验证；建议下次常规发布时带上。
 
 **追加测试（同日，用户要求"加测试"）**：`territory-connectivity.e2e.test.ts` 新增一例，直接命中本次修复本身而非仅靠既有用例侧面兜底——种下 50 条远离本次行军路线（地图另一角）的模拟"历史累积主城"`type:'base'` 噪声数据，临时给 `m.collections.tiles.find` 打一层 spy 拦截调用参数，断言敌方主城扫描那次调用的 filter 里带有 `x`/`y` 坐标区间（`$gte`/`$lte`），且区间紧贴行军起止点、离噪声所在的地图角落很远；再用捕获到的 filter 原样重新查一遍，断言噪声数据一条都不会被查出来。为确认这条断言不是形同虚设：先用 `git show HEAD~1:combatShared.ts` 把该文件换回修复前版本单独跑这一例，**必现失败**（`expected undefined to be defined`——旧查询压根没有 x/y 键）；`git checkout HEAD --` 换回修复后版本复跑转绿。`territory-connectivity.e2e.test.ts` 全 12 例过，`server/worldsvc` 全量重跑 50 文件/400 例全绿。
+
+## 53. §51 遗留的 `move` 遭遇战分类跟进——胜负 toast 补齐（2026-08-02）
+
+**背景**：§51 把 `SiegeResult` 分类改成服务端权威的 `attackerId`/`marchKind`，但明确留了一句"`move`（战场遭遇战）行军目前仍会落进防守方分支"——`field-encounter.e2e.test.ts` 当时就已经预先钉住了 `siege.attackerId`/`siege.marchKind==='move'` 这两个服务端数据契约（连带注释直接写"field-encounter classification is not yet wired client-side"），专等这次跟进。
+
+**现象**：野战遭遇（ADR-051 §2.2，[`encounter.ts`](../../server/worldsvc/src/combatSiege/encounter.ts) 的 `resolveFieldEncounter`——一支 `move` 行军中途撞上敌方停留队伍/另一支行军/驻扎守军，就地开打）没有专属分支，`amInitiator && marchKind==='move'` 落进 `applySiegeResult` 的 `else`（防守方/旁观者）兜底：打赢一场遭遇战显示"领地失守"，打输了反而显示"守土成功"——两边都反了，而且遭遇战本身不涉及任何 tile 归属变化（那是 occupy 的事）。
+
+**修复**：`WorldMapNet.applySiegeResult`（[`WorldMapNet.ts`](../../client/src/scenes/worldmap/WorldMapNet.ts)）在 `attack`/`occupy` 两个分支之后新增 `amInitiator && marchKind==='move'` 分支——胜负与 `outcome` 直接对应的轻量 toast（不弹复盘弹窗，遭遇战跟 occupy 一样是高频事件）。新增三语 i18n key `world.encounterWin`/`world.encounterLoss`（zh/en/de），英文措辞刻意避开"Territory secured"这类字眼——遭遇战不改变任何地块归属，纯粹是一场遭遇战的胜负。服务端字段（`attackerId`/`marchKind`）§51 已经全部就绪并测过，本次是纯客户端改动，不涉及 proto/`SiegeDoc`/推送链路。
+
+**验证**：`server`（12 workspace）+ `client` 的 `tsc --noEmit` 全绿；`worldMapSiegeResultToast.ui.ts` 补 3 例（遭遇战赢/输的正确 toast + 他人遭遇战不受影响的回归），全 10 例过；`client` UI 全量 112 文件/961 例、非 UI 全量 129 文件/944 例两套全绿；`server/worldsvc` 定向重跑 `field-encounter*`/`siege`/`occupy-march`/`stronghold` 共 5 文件/28 例全绿（复用 §51 已经钉住的 `attackerId`/`marchKind` 断言，无需新增服务端用例）。
