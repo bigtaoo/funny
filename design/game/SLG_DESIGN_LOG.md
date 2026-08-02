@@ -1606,3 +1606,19 @@ L1 从需 660 兵降到 300（最小占地 500 现稳赢，直击病灶）；L2/
 **验证**：`server/worldsvc`、`server/gateway`、`client` 三处 `tsc --noEmit` 全绿；`server/worldsvc` 攻城/占领/遭遇战相关 e2e（`siege`/`occupy-march`/`stronghold`/`field-encounter*`，共 28 例）全过，确认新字段不破坏既有推送断言；`worldMapSiegeResultToast.ui.ts` 按新字段重写（6 例：占领胜/败分类、**同一结果重复投递仍分类正确**——直接命中本次修复的场景、attack/防守两条原路径回归），`worldMapOccupyTeamPicker.ui.ts` 去掉不再需要的 `myAttackTiles`/`myOccupyTiles` mock 字段复跑仍全过（19 例）。preview 无法稳定复现（需要完整 worldsvc + 连地相邻 + NPC 战斗 + 场景重建时序），改动靠单测覆盖。
 
 **追加测试（同日，用户要求"加测试"）**：① 客户端新增「surviving a WorldMapScene rebuild」一例——用两个完全独立、互不共享状态的 `WorldMapContext`/`WorldMapNet` 实例模拟"派兵时的场景已经不在了"，直接对应根因描述的触发路径；先把 `applySiegeResult` 里的 `amInitiator` 临时改死为 `false`（模拟"服务端字段被忽略，退回瞎猜"的回归）复跑这批用例，**5/7 例转红**（含这个新场景 + 原本 4 例），换回真实实现后复跑 **7/7 转绿**——坐实新用例确实在验证本次分类逻辑，不是形同虚设。② 服务端三个 e2e 文件（`siege`/`occupy-march`/`field-encounter`）在既有场景里追加 `attackerId`/`marchKind` 断言而非新增用例：`occupy-march.e2e.test.ts` 三处占领胜/败推送改用 `pushes.find(...)` 精确断言 `{attackerId:'a', marchKind:'occupy'}`（占领场景是本次报告的重灾区）；expulsion 用例额外验证 b 用 `attack` 行军抢地成功时自己收到的推送是 `marchKind:'attack'`（不是 `'occupy'`）——锁定"攻城行军打赢占领中的地"这条跨路径交互不受影响；`siege.e2e.test.ts` 攻城/扫荡用例补 `marchKind:'attack'`/`'sweep'` 断言；`field-encounter.e2e.test.ts` 两个 `scenario 1`（胜/负）补 `attackerId:'a'`、`marchKind:'move'` 断言——为 §51 遗留的 `move` 遭遇战分类跟进任务预先钉住服务端数据契约。`server/worldsvc` 全量 `tsc --noEmit` 复核仍绿，三个 e2e 文件共 20 例全过。
+
+## 52. 行军请求稳定超时（`AbortError`）——`computeMarchPath` 的敌方主城扫描在老世界上退化成近乎全表扫描（2026-08-02，用户报告）
+
+**背景（用户报告）**：SLG 里每次占领领地都弹 `TypeError: world api POST /world/march failed: AbortError: signal is aborted without reason`。追问确认：报错之后地块**其实占领成功了**（`Marches`/领地都有记录）——服务端调用没有失败，只是客户端等不到响应先弃权了。
+
+**排查**：worldsvc/socialsvc/caddy/cloudflared 全部健康、CPU/内存正常、日志无报错，直接 curl 生产接口也是毫秒级——初步怀疑是用户本地网络抖动。但用户反馈"每次占领都必现"，于是拿到账号信息（`publicId 233784986`，世界 `s1-0`）在生产库上直接复现：`computeMarchPath`（[`combatShared.ts`](../../server/worldsvc/src/combatShared.ts)）里为 A* 寻路收集"敌方主城会挡路"用的查询——
+
+```js
+cols.tiles.find({ worldId, type: 'base', ownerId: { $nin: excludeOwners } })
+```
+
+——实测耗时 **12.4 秒**。根因：`s1-0` 是个老世界，注册过的玩家主城（`type:'base'`，每个 3×3=9 格，且从不删除）已经攒到约 2584 个，`tiles` 集合总共 23325 条记录里 **23257 条**（99.7%）都是 `type:'base'`。2026-07-29 那次审计（[`db.ts`](../../server/worldsvc/src/db.ts) §索引注释）给这条查询配了 `{worldId,type}` 索引，但当时的假设——"`type:'base'` 命中的数量远小于整个集合"——在世界玩得越久、注册主城越多之后逐渐失效，最终这条"应该很窄"的查询变成了近乎全表扫描。同函数里另外两条查询（crossing 通道、玩家建的 blocker）结构相同，存在同样的潜在风险。这条查询单独就超过了客户端 [`WorldApiClient.ts`](../../client/src/net/WorldApiClient.ts) 的 10 秒超时——不是代码在这天变了，是这个世界的主城数量自然增长跨过了当年那个假设成立的临界点，跟"服务器今天没更新"完全对得上。
+
+**修复**：给 `computeMarchPath` 的 3 条障碍物查询（gate/敌方主城/blocker）都加上按行军起止点算出的坐标包围盒过滤（`legBox()` + 60 格 padding，复用已有的 `{worldId,x,y}` 索引），把"扫全图"收窄成"只看行军路线附近"。Padding 选取 60（远大于 3×3 主城/普通障碍物聚簇的尺寸）而非精确到 A* 实际探索边界——短途行军（占领要求目标与自己领地相邻、士气机制也软性限制了远途行军的实际收益，见 §22/§27）绝大多数场景下包围盒会大幅收窄；只有起止点本身相距很远的行军，包围盒才会接近全图，此时退化为跟修复前一样的开销，不引入正确性风险（不会漏查真正卡在路线附近的障碍物）。
+
+**验证**：`server/worldsvc` `tsc --noEmit` 全绿。定向重跑占领/围攻/寻路相关测试（`occupy-march`/`passage`/`field-tower`/`field-blocker`/`base-siege`/`stronghold`/`field-encounter*`/`field-redispatch`/`field-occupancy`/`field-structure-attack`/`base-integrity`/`march-return-travel-time`/`teams`/`enter-world`，共 12 文件/88 例，含「blocker 绕路」「crossing 通行」「长途占领士气衰减」等直接触碰寻路的用例）全过；随后跑了 `server/worldsvc` 全量 50 文件/399 例，同样全绿。生产库上直接验证：本地起了一个带 `rs0` 的 standalone mongod 复现原查询耗时（12.4s），但此次改动未部署到生产（未触碰线上代码），仅在本地代码 + 测试环境验证；建议下次常规发布时带上。
