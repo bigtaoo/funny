@@ -382,3 +382,46 @@ describe('DefenseEditorScene attack mode — base icon replaces the frontRow lab
     expect(hasOldLabel).toBe(false);
   });
 });
+
+// Regression guard for the same change: the row-label block now only fires for defense mode
+// (`if (this.hasBuildingRow)` instead of an unconditional ternary), and the base icon is gated on
+// `!this.hasBuildingRow` — both need to hold for defense mode specifically, not just "attack mode
+// looks right in isolation."
+describe('DefenseEditorScene defense mode — buildRow label + base icon untouched by the attack-mode change (2026-08-02)', () => {
+  function buildDefenseHarness() {
+    const save = buildSave(0);
+    const getDefense = vi.fn().mockResolvedValue(null);
+    const setDefense = vi.fn().mockResolvedValue(undefined);
+    const worldApi = { getDefense, setDefense } as unknown as WorldApiClient;
+    const cb: DefenseEditorCallbacks = {
+      onBack: vi.fn(),
+      getSave: () => save,
+      worldApi,
+      worldId: WORLD_ID,
+      target: { mode: 'defense', tileKey: 'world:1:0:5:5' },
+    };
+    const scene = new DefenseEditorScene(createLayout(800, 1280), new InputManager(), cb);
+    return { scene };
+  }
+
+  it('still renders the "Build" row label at the building row, and never draws the base icon', async () => {
+    const { scene } = buildDefenseHarness();
+    await flush();
+    const s = scene as unknown as {
+      drawArtFit(url: string, x: number, y: number, boxW: number, boxH: number): void;
+      render(): void;
+      cellW: number;
+      bodyLayer: PIXI.Container;
+    };
+    const spy = vi.spyOn(s, 'drawArtFit');
+    s.render();
+
+    const hasBuildLabel = s.bodyLayer.children.some((c) => (c as PIXI.Text).text === t('world.defense.buildRow'));
+    expect(hasBuildLabel).toBe(true);
+
+    // Same "2 grid columns wide" shape check the attack-mode test uses to spot the base icon —
+    // it must never appear here, since hasBuildingRow guards it off in defense mode.
+    const baseCall = spy.mock.calls.find(([, , , boxW]) => Math.abs(boxW - s.cellW * 2) < 0.01);
+    expect(baseCall).toBeUndefined();
+  });
+});
