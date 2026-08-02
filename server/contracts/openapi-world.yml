@@ -21,6 +21,13 @@ components:
 
   schemas:
 
+    Error:
+      type: object
+      required: [code, message]
+      properties:
+        code: { type: string }
+        message: { type: string }
+
     # ── World ──────────────────────────────────────────────────────────────────
 
     WorldTileView:
@@ -649,6 +656,18 @@ components:
         id:
           type: string
 
+  responses:
+    ErrorResp:
+      description: Error envelope
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [ok, error]
+            properties:
+              ok: { type: boolean, enum: [false] }
+              error: { $ref: '#/components/schemas/Error' }
+
 paths:
 
   # ── World ──────────────────────────────────────────────────────────────────
@@ -695,6 +714,9 @@ paths:
                   - type: object
                     properties:
                       data: { $ref: '#/components/schemas/WorldMapView' }
+        '400': { $ref: '#/components/responses/ErrorResp' }
+        '401': { $ref: '#/components/responses/ErrorResp' }
+        '500': { $ref: '#/components/responses/ErrorResp' }
 
   /world/map/sparse:
     get:
@@ -721,6 +743,9 @@ paths:
                   - type: object
                     properties:
                       data: { $ref: '#/components/schemas/WorldMapSparseView' }
+        '400': { $ref: '#/components/responses/ErrorResp' }
+        '401': { $ref: '#/components/responses/ErrorResp' }
+        '500': { $ref: '#/components/responses/ErrorResp' }
 
   /world/tile/{tileId}:
     get:
@@ -739,6 +764,9 @@ paths:
                   - type: object
                     properties:
                       data: { $ref: '#/components/schemas/WorldTileView' }
+        '400': { $ref: '#/components/responses/ErrorResp' }
+        '401': { $ref: '#/components/responses/ErrorResp' }
+        '500': { $ref: '#/components/responses/ErrorResp' }
 
   /world/me:
     get:
@@ -765,6 +793,9 @@ paths:
                               # client/src/net/serverClock.ts. Only this endpoint carries it (the
                               # highest-frequency SLG round-trip), not every PlayerWorldView consumer.
                               serverNow: { type: integer }
+        '400': { $ref: '#/components/responses/ErrorResp' }
+        '401': { $ref: '#/components/responses/ErrorResp' }
+        '500': { $ref: '#/components/responses/ErrorResp' }
 
   /world/season/transfer/targets:
     get:
@@ -789,6 +820,9 @@ paths:
                       data:
                         type: array
                         items: { $ref: '#/components/schemas/ShardTransferTargetView' }
+        '400': { $ref: '#/components/responses/ErrorResp' }
+        '401': { $ref: '#/components/responses/ErrorResp' }
+        '500': { $ref: '#/components/responses/ErrorResp' }
 
   /world/season/transfer:
     post:
@@ -822,6 +856,11 @@ paths:
                   - type: object
                     properties:
                       data: { $ref: '#/components/schemas/PlayerWorldView' }
+        '400': { $ref: '#/components/responses/ErrorResp' }
+        '401': { $ref: '#/components/responses/ErrorResp' }
+        '403': { $ref: '#/components/responses/ErrorResp' }
+        '409': { $ref: '#/components/responses/ErrorResp' }
+        '500': { $ref: '#/components/responses/ErrorResp' }
 
   /world/join:
     post:
@@ -848,6 +887,10 @@ paths:
                   - type: object
                     properties:
                       data: { $ref: '#/components/schemas/PlayerWorldView' }
+        '400': { $ref: '#/components/responses/ErrorResp' }
+        '401': { $ref: '#/components/responses/ErrorResp' }
+        '409': { $ref: '#/components/responses/ErrorResp' }
+        '500': { $ref: '#/components/responses/ErrorResp' }
 
   /world/enter:
     post:
@@ -930,6 +973,9 @@ paths:
                                 familyName:     { type: string }
                                 body:           { type: string }
                                 ts:             { type: integer }
+        '400': { $ref: '#/components/responses/ErrorResp' }
+        '401': { $ref: '#/components/responses/ErrorResp' }
+        '500': { $ref: '#/components/responses/ErrorResp' }
 
   /world/occupy:
     post:
@@ -956,6 +1002,11 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/OkResponse' }
+        '400': { $ref: '#/components/responses/ErrorResp' }
+        '401': { $ref: '#/components/responses/ErrorResp' }
+        '403': { $ref: '#/components/responses/ErrorResp' }
+        '409': { $ref: '#/components/responses/ErrorResp' }
+        '500': { $ref: '#/components/responses/ErrorResp' }
 
   /world/abandon:
     post:
@@ -986,6 +1037,10 @@ paths:
                   - type: object
                     properties:
                       data: { $ref: '#/components/schemas/PlayerWorldView' }
+        '400': { $ref: '#/components/responses/ErrorResp' }
+        '401': { $ref: '#/components/responses/ErrorResp' }
+        '403': { $ref: '#/components/responses/ErrorResp' }
+        '500': { $ref: '#/components/responses/ErrorResp' }
 
   /world/relocate:
     post:
@@ -1014,6 +1069,10 @@ paths:
                   - type: object
                     properties:
                       data: { $ref: '#/components/schemas/PlayerWorldView' }
+        '400': { $ref: '#/components/responses/ErrorResp' }
+        '401': { $ref: '#/components/responses/ErrorResp' }
+        '403': { $ref: '#/components/responses/ErrorResp' }
+        '500': { $ref: '#/components/responses/ErrorResp' }
 
   /world/watchtower:
     post:
@@ -1050,6 +1109,12 @@ paths:
                           - type: object
                             properties:
                               me: { $ref: '#/components/schemas/PlayerWorldView' }
+        '400': { $ref: '#/components/responses/ErrorResp' }
+        '401': { $ref: '#/components/responses/ErrorResp' }
+        '402': { $ref: '#/components/responses/ErrorResp' }
+        '403': { $ref: '#/components/responses/ErrorResp' }
+        '409': { $ref: '#/components/responses/ErrorResp' }
+        '500': { $ref: '#/components/responses/ErrorResp' }
 
   /world/structure:
     post:
@@ -1086,6 +1151,12 @@ paths:
                           - type: object
                             properties:
                               me: { $ref: '#/components/schemas/PlayerWorldView' }
+        '400': { $ref: '#/components/responses/ErrorResp' }
+        '401': { $ref: '#/components/responses/ErrorResp' }
+        '402': { $ref: '#/components/responses/ErrorResp' }
+        '403': { $ref: '#/components/responses/ErrorResp' }
+        '409': { $ref: '#/components/responses/ErrorResp' }
+        '500': { $ref: '#/components/responses/ErrorResp' }
 
   /world/structure/demolish:
     post:
@@ -1114,6 +1185,10 @@ paths:
                   - type: object
                     properties:
                       data: { $ref: '#/components/schemas/WorldTileView' }
+        '400': { $ref: '#/components/responses/ErrorResp' }
+        '401': { $ref: '#/components/responses/ErrorResp' }
+        '403': { $ref: '#/components/responses/ErrorResp' }
+        '500': { $ref: '#/components/responses/ErrorResp' }
 
   /world/march:
     get:
@@ -1134,6 +1209,9 @@ paths:
                       data:
                         type: array
                         items: { $ref: '#/components/schemas/MarchView' }
+        '400': { $ref: '#/components/responses/ErrorResp' }
+        '401': { $ref: '#/components/responses/ErrorResp' }
+        '500': { $ref: '#/components/responses/ErrorResp' }
     post:
       operationId: startMarch
       security: [{ bearerAuth: [] }]
@@ -1180,6 +1258,12 @@ paths:
                           - type: object
                             properties:
                               me: { $ref: '#/components/schemas/PlayerWorldView' }
+        '400': { $ref: '#/components/responses/ErrorResp' }
+        '401': { $ref: '#/components/responses/ErrorResp' }
+        '403': { $ref: '#/components/responses/ErrorResp' }
+        '409': { $ref: '#/components/responses/ErrorResp' }
+        '501': { $ref: '#/components/responses/ErrorResp' }
+        '500': { $ref: '#/components/responses/ErrorResp' }
 
   /world/march/{marchId}/recall:
     post:
@@ -1202,6 +1286,10 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/OkResponse' }
+        '400': { $ref: '#/components/responses/ErrorResp' }
+        '401': { $ref: '#/components/responses/ErrorResp' }
+        '404': { $ref: '#/components/responses/ErrorResp' }
+        '500': { $ref: '#/components/responses/ErrorResp' }
 
   /world/march/{marchId}/instant-return:
     post:
@@ -1233,6 +1321,10 @@ paths:
                   - type: object
                     properties:
                       data: { $ref: '#/components/schemas/PlayerWorldView' }
+        '400': { $ref: '#/components/responses/ErrorResp' }
+        '401': { $ref: '#/components/responses/ErrorResp' }
+        '404': { $ref: '#/components/responses/ErrorResp' }
+        '500': { $ref: '#/components/responses/ErrorResp' }
 
   /world/occupations:
     get:
@@ -1253,6 +1345,9 @@ paths:
                       data:
                         type: array
                         items: { $ref: '#/components/schemas/OccupationView' }
+        '400': { $ref: '#/components/responses/ErrorResp' }
+        '401': { $ref: '#/components/responses/ErrorResp' }
+        '500': { $ref: '#/components/responses/ErrorResp' }
 
   /world/stationed:
     get:
@@ -1273,6 +1368,9 @@ paths:
                       data:
                         type: array
                         items: { $ref: '#/components/schemas/StationedView' }
+        '400': { $ref: '#/components/responses/ErrorResp' }
+        '401': { $ref: '#/components/responses/ErrorResp' }
+        '500': { $ref: '#/components/responses/ErrorResp' }
 
   /world/territories:
     get:
@@ -1296,6 +1394,10 @@ paths:
                       data:
                         type: array
                         items: { $ref: '#/components/schemas/WorldTileView' }
+        '400': { $ref: '#/components/responses/ErrorResp' }
+        '401': { $ref: '#/components/responses/ErrorResp' }
+        '403': { $ref: '#/components/responses/ErrorResp' }
+        '500': { $ref: '#/components/responses/ErrorResp' }
 
   /world/team/{teamId}/cancel-occupation:
     post:
@@ -1318,6 +1420,10 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/OkResponse' }
+        '400': { $ref: '#/components/responses/ErrorResp' }
+        '401': { $ref: '#/components/responses/ErrorResp' }
+        '404': { $ref: '#/components/responses/ErrorResp' }
+        '500': { $ref: '#/components/responses/ErrorResp' }
 
   /world/team/{teamId}/recall-stationed:
     post:
@@ -1345,6 +1451,10 @@ paths:
                   - type: object
                     properties:
                       data: { $ref: '#/components/schemas/MarchView' }
+        '400': { $ref: '#/components/responses/ErrorResp' }
+        '401': { $ref: '#/components/responses/ErrorResp' }
+        '404': { $ref: '#/components/responses/ErrorResp' }
+        '500': { $ref: '#/components/responses/ErrorResp' }
 
   /world/sweep:
     post:
@@ -1375,6 +1485,11 @@ paths:
                   - type: object
                     properties:
                       data: { $ref: '#/components/schemas/MarchView' }
+        '400': { $ref: '#/components/responses/ErrorResp' }
+        '401': { $ref: '#/components/responses/ErrorResp' }
+        '403': { $ref: '#/components/responses/ErrorResp' }
+        '409': { $ref: '#/components/responses/ErrorResp' }
+        '500': { $ref: '#/components/responses/ErrorResp' }
 
   /world/troops/distribute:
     post:
@@ -1401,6 +1516,11 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/OkResponse' }
+        '400': { $ref: '#/components/responses/ErrorResp' }
+        '401': { $ref: '#/components/responses/ErrorResp' }
+        '403': { $ref: '#/components/responses/ErrorResp' }
+        '409': { $ref: '#/components/responses/ErrorResp' }
+        '500': { $ref: '#/components/responses/ErrorResp' }
 
   /world/troops/recover:
     post:
@@ -1423,6 +1543,10 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/OkResponse' }
+        '400': { $ref: '#/components/responses/ErrorResp' }
+        '401': { $ref: '#/components/responses/ErrorResp' }
+        '403': { $ref: '#/components/responses/ErrorResp' }
+        '500': { $ref: '#/components/responses/ErrorResp' }
 
   /world/troops/train:
     post:
@@ -1449,6 +1573,12 @@ paths:
                   - type: object
                     properties:
                       data: { $ref: '#/components/schemas/PlayerWorldView' }
+        '400': { $ref: '#/components/responses/ErrorResp' }
+        '401': { $ref: '#/components/responses/ErrorResp' }
+        '402': { $ref: '#/components/responses/ErrorResp' }
+        '403': { $ref: '#/components/responses/ErrorResp' }
+        '409': { $ref: '#/components/responses/ErrorResp' }
+        '500': { $ref: '#/components/responses/ErrorResp' }
 
   /world/troops/speedup:
     post:
@@ -1475,6 +1605,10 @@ paths:
                   - type: object
                     properties:
                       data: { $ref: '#/components/schemas/PlayerWorldView' }
+        '400': { $ref: '#/components/responses/ErrorResp' }
+        '401': { $ref: '#/components/responses/ErrorResp' }
+        '403': { $ref: '#/components/responses/ErrorResp' }
+        '500': { $ref: '#/components/responses/ErrorResp' }
 
   /world/build/upgrade:
     post:
@@ -1502,6 +1636,12 @@ paths:
                   - type: object
                     properties:
                       data: { $ref: '#/components/schemas/PlayerWorldView' }
+        '400': { $ref: '#/components/responses/ErrorResp' }
+        '401': { $ref: '#/components/responses/ErrorResp' }
+        '402': { $ref: '#/components/responses/ErrorResp' }
+        '403': { $ref: '#/components/responses/ErrorResp' }
+        '409': { $ref: '#/components/responses/ErrorResp' }
+        '500': { $ref: '#/components/responses/ErrorResp' }
 
   /world/build/speedup:
     post:
@@ -1529,6 +1669,10 @@ paths:
                   - type: object
                     properties:
                       data: { $ref: '#/components/schemas/PlayerWorldView' }
+        '400': { $ref: '#/components/responses/ErrorResp' }
+        '401': { $ref: '#/components/responses/ErrorResp' }
+        '403': { $ref: '#/components/responses/ErrorResp' }
+        '500': { $ref: '#/components/responses/ErrorResp' }
 
   /world/defense:
     get:
@@ -1552,6 +1696,10 @@ paths:
                   - type: object
                     properties:
                       data: { $ref: '#/components/schemas/DefenseConfig' }
+        '400': { $ref: '#/components/responses/ErrorResp' }
+        '401': { $ref: '#/components/responses/ErrorResp' }
+        '403': { $ref: '#/components/responses/ErrorResp' }
+        '500': { $ref: '#/components/responses/ErrorResp' }
     put:
       operationId: setDefense
       security: [{ bearerAuth: [] }]
@@ -1574,6 +1722,10 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/OkResponse' }
+        '400': { $ref: '#/components/responses/ErrorResp' }
+        '401': { $ref: '#/components/responses/ErrorResp' }
+        '403': { $ref: '#/components/responses/ErrorResp' }
+        '500': { $ref: '#/components/responses/ErrorResp' }
 
   /world/teams:
     get:
@@ -1594,6 +1746,10 @@ paths:
                       data:
                         type: array
                         items: { $ref: '#/components/schemas/TeamTemplate' }
+        '400': { $ref: '#/components/responses/ErrorResp' }
+        '401': { $ref: '#/components/responses/ErrorResp' }
+        '403': { $ref: '#/components/responses/ErrorResp' }
+        '500': { $ref: '#/components/responses/ErrorResp' }
     put:
       operationId: setTeams
       security: [{ bearerAuth: [] }]
@@ -1615,6 +1771,11 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/OkResponse' }
+        '400': { $ref: '#/components/responses/ErrorResp' }
+        '401': { $ref: '#/components/responses/ErrorResp' }
+        '403': { $ref: '#/components/responses/ErrorResp' }
+        '409': { $ref: '#/components/responses/ErrorResp' }
+        '500': { $ref: '#/components/responses/ErrorResp' }
 
   /world/siege/{siegeId}/replay:
     get:
@@ -1634,6 +1795,11 @@ paths:
                   - type: object
                     properties:
                       data: { $ref: '#/components/schemas/SiegeReplayView' }
+        '400': { $ref: '#/components/responses/ErrorResp' }
+        '401': { $ref: '#/components/responses/ErrorResp' }
+        '403': { $ref: '#/components/responses/ErrorResp' }
+        '404': { $ref: '#/components/responses/ErrorResp' }
+        '500': { $ref: '#/components/responses/ErrorResp' }
 
   /world/sieges:
     get:
@@ -1655,6 +1821,9 @@ paths:
                       data:
                         type: array
                         items: { $ref: '#/components/schemas/SiegeSummaryView' }
+        '400': { $ref: '#/components/responses/ErrorResp' }
+        '401': { $ref: '#/components/responses/ErrorResp' }
+        '500': { $ref: '#/components/responses/ErrorResp' }
 
   /world/nations:
     get:
@@ -1675,6 +1844,9 @@ paths:
                       data:
                         type: array
                         items: { $ref: '#/components/schemas/NationView' }
+        '400': { $ref: '#/components/responses/ErrorResp' }
+        '401': { $ref: '#/components/responses/ErrorResp' }
+        '500': { $ref: '#/components/responses/ErrorResp' }
 
   /world/nations/{capitalIdx}/name:
     post:
@@ -1698,6 +1870,10 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/OkResponse' }
+        '400': { $ref: '#/components/responses/ErrorResp' }
+        '401': { $ref: '#/components/responses/ErrorResp' }
+        '403': { $ref: '#/components/responses/ErrorResp' }
+        '500': { $ref: '#/components/responses/ErrorResp' }
 
   /world/season:
     get:
@@ -1716,6 +1892,10 @@ paths:
                   - type: object
                     properties:
                       data: { $ref: '#/components/schemas/SeasonView' }
+        '400': { $ref: '#/components/responses/ErrorResp' }
+        '401': { $ref: '#/components/responses/ErrorResp' }
+        '404': { $ref: '#/components/responses/ErrorResp' }
+        '500': { $ref: '#/components/responses/ErrorResp' }
 
   /world/shop/items:
     get:
@@ -1734,6 +1914,8 @@ paths:
                       data:
                         type: array
                         items: { $ref: '#/components/schemas/SlgShopItemView' }
+        '401': { $ref: '#/components/responses/ErrorResp' }
+        '500': { $ref: '#/components/responses/ErrorResp' }
 
   /world/shop/buy:
     post:
@@ -1762,6 +1944,12 @@ paths:
                   - type: object
                     properties:
                       data: { $ref: '#/components/schemas/PlayerWorldView' }
+        '400': { $ref: '#/components/responses/ErrorResp' }
+        '401': { $ref: '#/components/responses/ErrorResp' }
+        '403': { $ref: '#/components/responses/ErrorResp' }
+        '404': { $ref: '#/components/responses/ErrorResp' }
+        '409': { $ref: '#/components/responses/ErrorResp' }
+        '500': { $ref: '#/components/responses/ErrorResp' }
 
   # ── Sect (S8-4b) ──────────────────────────────────────────────────────────────
 
@@ -1784,6 +1972,9 @@ paths:
                       data:
                         type: array
                         items: { $ref: '#/components/schemas/SectView' }
+        '400': { $ref: '#/components/responses/ErrorResp' }
+        '401': { $ref: '#/components/responses/ErrorResp' }
+        '500': { $ref: '#/components/responses/ErrorResp' }
 
   /sect/{sectId}:
     get:
@@ -1802,6 +1993,8 @@ paths:
                   - type: object
                     properties:
                       data: { $ref: '#/components/schemas/SectDetailView' }
+        '401': { $ref: '#/components/responses/ErrorResp' }
+        '500': { $ref: '#/components/responses/ErrorResp' }
 
   /sect/create:
     post:
@@ -1829,6 +2022,11 @@ paths:
                   - type: object
                     properties:
                       data: { $ref: '#/components/schemas/SectDetailView' }
+        '400': { $ref: '#/components/responses/ErrorResp' }
+        '401': { $ref: '#/components/responses/ErrorResp' }
+        '403': { $ref: '#/components/responses/ErrorResp' }
+        '409': { $ref: '#/components/responses/ErrorResp' }
+        '500': { $ref: '#/components/responses/ErrorResp' }
 
   /sect/join:
     post:
@@ -1850,6 +2048,12 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/OkResponse' }
+        '400': { $ref: '#/components/responses/ErrorResp' }
+        '401': { $ref: '#/components/responses/ErrorResp' }
+        '403': { $ref: '#/components/responses/ErrorResp' }
+        '404': { $ref: '#/components/responses/ErrorResp' }
+        '409': { $ref: '#/components/responses/ErrorResp' }
+        '500': { $ref: '#/components/responses/ErrorResp' }
 
   /sect/leave:
     post:
@@ -1870,6 +2074,10 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/OkResponse' }
+        '400': { $ref: '#/components/responses/ErrorResp' }
+        '401': { $ref: '#/components/responses/ErrorResp' }
+        '403': { $ref: '#/components/responses/ErrorResp' }
+        '500': { $ref: '#/components/responses/ErrorResp' }
 
   /sect/dissolve:
     post:
@@ -1890,6 +2098,11 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/OkResponse' }
+        '400': { $ref: '#/components/responses/ErrorResp' }
+        '401': { $ref: '#/components/responses/ErrorResp' }
+        '403': { $ref: '#/components/responses/ErrorResp' }
+        '404': { $ref: '#/components/responses/ErrorResp' }
+        '500': { $ref: '#/components/responses/ErrorResp' }
 
   /sect/ally:
     post:
@@ -1911,6 +2124,12 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/OkResponse' }
+        '400': { $ref: '#/components/responses/ErrorResp' }
+        '401': { $ref: '#/components/responses/ErrorResp' }
+        '403': { $ref: '#/components/responses/ErrorResp' }
+        '404': { $ref: '#/components/responses/ErrorResp' }
+        '409': { $ref: '#/components/responses/ErrorResp' }
+        '500': { $ref: '#/components/responses/ErrorResp' }
 
   /sect/unally:
     post:
@@ -1932,6 +2151,11 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/OkResponse' }
+        '400': { $ref: '#/components/responses/ErrorResp' }
+        '401': { $ref: '#/components/responses/ErrorResp' }
+        '403': { $ref: '#/components/responses/ErrorResp' }
+        '404': { $ref: '#/components/responses/ErrorResp' }
+        '500': { $ref: '#/components/responses/ErrorResp' }
 
   /sect/vote-remove-leader:
     post:
@@ -1958,6 +2182,11 @@ paths:
                   - type: object
                     properties:
                       data: { $ref: '#/components/schemas/SectVoteResult' }
+        '400': { $ref: '#/components/responses/ErrorResp' }
+        '401': { $ref: '#/components/responses/ErrorResp' }
+        '403': { $ref: '#/components/responses/ErrorResp' }
+        '404': { $ref: '#/components/responses/ErrorResp' }
+        '500': { $ref: '#/components/responses/ErrorResp' }
 
   /sect/message:
     post:
@@ -1985,6 +2214,10 @@ paths:
                   - type: object
                     properties:
                       data: { $ref: '#/components/schemas/SectMessageView' }
+        '400': { $ref: '#/components/responses/ErrorResp' }
+        '401': { $ref: '#/components/responses/ErrorResp' }
+        '403': { $ref: '#/components/responses/ErrorResp' }
+        '500': { $ref: '#/components/responses/ErrorResp' }
 
   /sect/channel:
     get:
@@ -2007,3 +2240,7 @@ paths:
                       data:
                         type: array
                         items: { $ref: '#/components/schemas/SectMessageView' }
+        '400': { $ref: '#/components/responses/ErrorResp' }
+        '401': { $ref: '#/components/responses/ErrorResp' }
+        '403': { $ref: '#/components/responses/ErrorResp' }
+        '500': { $ref: '#/components/responses/ErrorResp' }

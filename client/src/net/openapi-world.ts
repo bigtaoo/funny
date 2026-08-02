@@ -823,6 +823,10 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        Error: {
+            code: string;
+            message: string;
+        };
         WorldTileView: {
             x: number;
             y: number;
@@ -1171,7 +1175,21 @@ export interface components {
             id: string;
         };
     };
-    responses: never;
+    responses: {
+        /** @description Error envelope */
+        ErrorResp: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": {
+                    /** @enum {boolean} */
+                    ok: false;
+                    error: components["schemas"]["Error"];
+                };
+            };
+        };
+    };
     parameters: never;
     requestBodies: never;
     headers: never;
@@ -1229,6 +1247,9 @@ export interface operations {
                     };
                 };
             };
+            400: components["responses"]["ErrorResp"];
+            401: components["responses"]["ErrorResp"];
+            500: components["responses"]["ErrorResp"];
         };
     };
     getWorldMapSparse: {
@@ -1258,6 +1279,9 @@ export interface operations {
                     };
                 };
             };
+            400: components["responses"]["ErrorResp"];
+            401: components["responses"]["ErrorResp"];
+            500: components["responses"]["ErrorResp"];
         };
     };
     getWorldTile: {
@@ -1282,6 +1306,9 @@ export interface operations {
                     };
                 };
             };
+            400: components["responses"]["ErrorResp"];
+            401: components["responses"]["ErrorResp"];
+            500: components["responses"]["ErrorResp"];
         };
     };
     getWorldMe: {
@@ -1308,6 +1335,9 @@ export interface operations {
                     };
                 };
             };
+            400: components["responses"]["ErrorResp"];
+            401: components["responses"]["ErrorResp"];
+            500: components["responses"]["ErrorResp"];
         };
     };
     listTransferTargets: {
@@ -1333,6 +1363,9 @@ export interface operations {
                     };
                 };
             };
+            400: components["responses"]["ErrorResp"];
+            401: components["responses"]["ErrorResp"];
+            500: components["responses"]["ErrorResp"];
         };
     };
     transferShard: {
@@ -1362,6 +1395,11 @@ export interface operations {
                     };
                 };
             };
+            400: components["responses"]["ErrorResp"];
+            401: components["responses"]["ErrorResp"];
+            403: components["responses"]["ErrorResp"];
+            409: components["responses"]["ErrorResp"];
+            500: components["responses"]["ErrorResp"];
         };
     };
     joinWorld: {
@@ -1390,6 +1428,10 @@ export interface operations {
                     };
                 };
             };
+            400: components["responses"]["ErrorResp"];
+            401: components["responses"]["ErrorResp"];
+            409: components["responses"]["ErrorResp"];
+            500: components["responses"]["ErrorResp"];
         };
     };
     enterWorld: {
@@ -1451,6 +1493,9 @@ export interface operations {
                     };
                 };
             };
+            400: components["responses"]["ErrorResp"];
+            401: components["responses"]["ErrorResp"];
+            500: components["responses"]["ErrorResp"];
         };
     };
     occupyTile: {
@@ -1479,6 +1524,11 @@ export interface operations {
                     "application/json": components["schemas"]["OkResponse"];
                 };
             };
+            400: components["responses"]["ErrorResp"];
+            401: components["responses"]["ErrorResp"];
+            403: components["responses"]["ErrorResp"];
+            409: components["responses"]["ErrorResp"];
+            500: components["responses"]["ErrorResp"];
         };
     };
     abandonTile: {
@@ -1509,6 +1559,10 @@ export interface operations {
                     };
                 };
             };
+            400: components["responses"]["ErrorResp"];
+            401: components["responses"]["ErrorResp"];
+            403: components["responses"]["ErrorResp"];
+            500: components["responses"]["ErrorResp"];
         };
     };
     relocateBase: {
@@ -1539,6 +1593,10 @@ export interface operations {
                     };
                 };
             };
+            400: components["responses"]["ErrorResp"];
+            401: components["responses"]["ErrorResp"];
+            403: components["responses"]["ErrorResp"];
+            500: components["responses"]["ErrorResp"];
         };
     };
     buildWatchtower: {
@@ -1571,6 +1629,12 @@ export interface operations {
                     };
                 };
             };
+            400: components["responses"]["ErrorResp"];
+            401: components["responses"]["ErrorResp"];
+            402: components["responses"]["ErrorResp"];
+            403: components["responses"]["ErrorResp"];
+            409: components["responses"]["ErrorResp"];
+            500: components["responses"]["ErrorResp"];
         };
     };
     buildStructure: {
@@ -1605,6 +1669,12 @@ export interface operations {
                     };
                 };
             };
+            400: components["responses"]["ErrorResp"];
+            401: components["responses"]["ErrorResp"];
+            402: components["responses"]["ErrorResp"];
+            403: components["responses"]["ErrorResp"];
+            409: components["responses"]["ErrorResp"];
+            500: components["responses"]["ErrorResp"];
         };
     };
     demolishStructure: {
@@ -1635,6 +1705,10 @@ export interface operations {
                     };
                 };
             };
+            400: components["responses"]["ErrorResp"];
+            401: components["responses"]["ErrorResp"];
+            403: components["responses"]["ErrorResp"];
+            500: components["responses"]["ErrorResp"];
         };
     };
     getMarches: {
@@ -1659,6 +1733,9 @@ export interface operations {
                     };
                 };
             };
+            400: components["responses"]["ErrorResp"];
+            401: components["responses"]["ErrorResp"];
+            500: components["responses"]["ErrorResp"];
         };
     };
     startMarch: {
@@ -1703,6 +1780,12 @@ export interface operations {
                     };
                 };
             };
+            400: components["responses"]["ErrorResp"];
+            401: components["responses"]["ErrorResp"];
+            403: components["responses"]["ErrorResp"];
+            409: components["responses"]["ErrorResp"];
+            500: components["responses"]["ErrorResp"];
+            501: components["responses"]["ErrorResp"];
         };
     };
     recallMarch: {
@@ -1731,6 +1814,10 @@ export interface operations {
                     "application/json": components["schemas"]["OkResponse"];
                 };
             };
+            400: components["responses"]["ErrorResp"];
+            401: components["responses"]["ErrorResp"];
+            404: components["responses"]["ErrorResp"];
+            500: components["responses"]["ErrorResp"];
         };
     };
     instantReturnMarch: {
@@ -1761,6 +1848,10 @@ export interface operations {
                     };
                 };
             };
+            400: components["responses"]["ErrorResp"];
+            401: components["responses"]["ErrorResp"];
+            404: components["responses"]["ErrorResp"];
+            500: components["responses"]["ErrorResp"];
         };
     };
     getOccupations: {
@@ -1785,6 +1876,9 @@ export interface operations {
                     };
                 };
             };
+            400: components["responses"]["ErrorResp"];
+            401: components["responses"]["ErrorResp"];
+            500: components["responses"]["ErrorResp"];
         };
     };
     getStationed: {
@@ -1809,6 +1903,9 @@ export interface operations {
                     };
                 };
             };
+            400: components["responses"]["ErrorResp"];
+            401: components["responses"]["ErrorResp"];
+            500: components["responses"]["ErrorResp"];
         };
     };
     listTerritories: {
@@ -1833,6 +1930,10 @@ export interface operations {
                     };
                 };
             };
+            400: components["responses"]["ErrorResp"];
+            401: components["responses"]["ErrorResp"];
+            403: components["responses"]["ErrorResp"];
+            500: components["responses"]["ErrorResp"];
         };
     };
     cancelOccupation: {
@@ -1861,6 +1962,10 @@ export interface operations {
                     "application/json": components["schemas"]["OkResponse"];
                 };
             };
+            400: components["responses"]["ErrorResp"];
+            401: components["responses"]["ErrorResp"];
+            404: components["responses"]["ErrorResp"];
+            500: components["responses"]["ErrorResp"];
         };
     };
     recallStationed: {
@@ -1891,6 +1996,10 @@ export interface operations {
                     };
                 };
             };
+            400: components["responses"]["ErrorResp"];
+            401: components["responses"]["ErrorResp"];
+            404: components["responses"]["ErrorResp"];
+            500: components["responses"]["ErrorResp"];
         };
     };
     sweepTile: {
@@ -1924,6 +2033,11 @@ export interface operations {
                     };
                 };
             };
+            400: components["responses"]["ErrorResp"];
+            401: components["responses"]["ErrorResp"];
+            403: components["responses"]["ErrorResp"];
+            409: components["responses"]["ErrorResp"];
+            500: components["responses"]["ErrorResp"];
         };
     };
     distributeTroops: {
@@ -1954,6 +2068,11 @@ export interface operations {
                     "application/json": components["schemas"]["OkResponse"];
                 };
             };
+            400: components["responses"]["ErrorResp"];
+            401: components["responses"]["ErrorResp"];
+            403: components["responses"]["ErrorResp"];
+            409: components["responses"]["ErrorResp"];
+            500: components["responses"]["ErrorResp"];
         };
     };
     recoverCard: {
@@ -1981,6 +2100,10 @@ export interface operations {
                     "application/json": components["schemas"]["OkResponse"];
                 };
             };
+            400: components["responses"]["ErrorResp"];
+            401: components["responses"]["ErrorResp"];
+            403: components["responses"]["ErrorResp"];
+            500: components["responses"]["ErrorResp"];
         };
     };
     trainTroops: {
@@ -2010,6 +2133,12 @@ export interface operations {
                     };
                 };
             };
+            400: components["responses"]["ErrorResp"];
+            401: components["responses"]["ErrorResp"];
+            402: components["responses"]["ErrorResp"];
+            403: components["responses"]["ErrorResp"];
+            409: components["responses"]["ErrorResp"];
+            500: components["responses"]["ErrorResp"];
         };
     };
     speedupTraining: {
@@ -2039,6 +2168,10 @@ export interface operations {
                     };
                 };
             };
+            400: components["responses"]["ErrorResp"];
+            401: components["responses"]["ErrorResp"];
+            403: components["responses"]["ErrorResp"];
+            500: components["responses"]["ErrorResp"];
         };
     };
     upgradeBuilding: {
@@ -2068,6 +2201,12 @@ export interface operations {
                     };
                 };
             };
+            400: components["responses"]["ErrorResp"];
+            401: components["responses"]["ErrorResp"];
+            402: components["responses"]["ErrorResp"];
+            403: components["responses"]["ErrorResp"];
+            409: components["responses"]["ErrorResp"];
+            500: components["responses"]["ErrorResp"];
         };
     };
     speedupBuild: {
@@ -2097,6 +2236,10 @@ export interface operations {
                     };
                 };
             };
+            400: components["responses"]["ErrorResp"];
+            401: components["responses"]["ErrorResp"];
+            403: components["responses"]["ErrorResp"];
+            500: components["responses"]["ErrorResp"];
         };
     };
     getDefense: {
@@ -2123,6 +2266,10 @@ export interface operations {
                     };
                 };
             };
+            400: components["responses"]["ErrorResp"];
+            401: components["responses"]["ErrorResp"];
+            403: components["responses"]["ErrorResp"];
+            500: components["responses"]["ErrorResp"];
         };
     };
     setDefense: {
@@ -2152,6 +2299,10 @@ export interface operations {
                     "application/json": components["schemas"]["OkResponse"];
                 };
             };
+            400: components["responses"]["ErrorResp"];
+            401: components["responses"]["ErrorResp"];
+            403: components["responses"]["ErrorResp"];
+            500: components["responses"]["ErrorResp"];
         };
     };
     getTeams: {
@@ -2176,6 +2327,10 @@ export interface operations {
                     };
                 };
             };
+            400: components["responses"]["ErrorResp"];
+            401: components["responses"]["ErrorResp"];
+            403: components["responses"]["ErrorResp"];
+            500: components["responses"]["ErrorResp"];
         };
     };
     setTeams: {
@@ -2203,6 +2358,11 @@ export interface operations {
                     "application/json": components["schemas"]["OkResponse"];
                 };
             };
+            400: components["responses"]["ErrorResp"];
+            401: components["responses"]["ErrorResp"];
+            403: components["responses"]["ErrorResp"];
+            409: components["responses"]["ErrorResp"];
+            500: components["responses"]["ErrorResp"];
         };
     };
     getSiegeReplay: {
@@ -2229,6 +2389,11 @@ export interface operations {
                     };
                 };
             };
+            400: components["responses"]["ErrorResp"];
+            401: components["responses"]["ErrorResp"];
+            403: components["responses"]["ErrorResp"];
+            404: components["responses"]["ErrorResp"];
+            500: components["responses"]["ErrorResp"];
         };
     };
     listSieges: {
@@ -2255,6 +2420,9 @@ export interface operations {
                     };
                 };
             };
+            400: components["responses"]["ErrorResp"];
+            401: components["responses"]["ErrorResp"];
+            500: components["responses"]["ErrorResp"];
         };
     };
     getNations: {
@@ -2279,6 +2447,9 @@ export interface operations {
                     };
                 };
             };
+            400: components["responses"]["ErrorResp"];
+            401: components["responses"]["ErrorResp"];
+            500: components["responses"]["ErrorResp"];
         };
     };
     setNationName: {
@@ -2308,6 +2479,10 @@ export interface operations {
                     "application/json": components["schemas"]["OkResponse"];
                 };
             };
+            400: components["responses"]["ErrorResp"];
+            401: components["responses"]["ErrorResp"];
+            403: components["responses"]["ErrorResp"];
+            500: components["responses"]["ErrorResp"];
         };
     };
     getSeason: {
@@ -2332,6 +2507,10 @@ export interface operations {
                     };
                 };
             };
+            400: components["responses"]["ErrorResp"];
+            401: components["responses"]["ErrorResp"];
+            404: components["responses"]["ErrorResp"];
+            500: components["responses"]["ErrorResp"];
         };
     };
     getSlgShopItems: {
@@ -2354,6 +2533,8 @@ export interface operations {
                     };
                 };
             };
+            401: components["responses"]["ErrorResp"];
+            500: components["responses"]["ErrorResp"];
         };
     };
     buySlgShopItem: {
@@ -2383,6 +2564,12 @@ export interface operations {
                     };
                 };
             };
+            400: components["responses"]["ErrorResp"];
+            401: components["responses"]["ErrorResp"];
+            403: components["responses"]["ErrorResp"];
+            404: components["responses"]["ErrorResp"];
+            409: components["responses"]["ErrorResp"];
+            500: components["responses"]["ErrorResp"];
         };
     };
     listSects: {
@@ -2407,6 +2594,9 @@ export interface operations {
                     };
                 };
             };
+            400: components["responses"]["ErrorResp"];
+            401: components["responses"]["ErrorResp"];
+            500: components["responses"]["ErrorResp"];
         };
     };
     getSect: {
@@ -2431,6 +2621,8 @@ export interface operations {
                     };
                 };
             };
+            401: components["responses"]["ErrorResp"];
+            500: components["responses"]["ErrorResp"];
         };
     };
     createSect: {
@@ -2461,6 +2653,11 @@ export interface operations {
                     };
                 };
             };
+            400: components["responses"]["ErrorResp"];
+            401: components["responses"]["ErrorResp"];
+            403: components["responses"]["ErrorResp"];
+            409: components["responses"]["ErrorResp"];
+            500: components["responses"]["ErrorResp"];
         };
     };
     joinSect: {
@@ -2488,6 +2685,12 @@ export interface operations {
                     "application/json": components["schemas"]["OkResponse"];
                 };
             };
+            400: components["responses"]["ErrorResp"];
+            401: components["responses"]["ErrorResp"];
+            403: components["responses"]["ErrorResp"];
+            404: components["responses"]["ErrorResp"];
+            409: components["responses"]["ErrorResp"];
+            500: components["responses"]["ErrorResp"];
         };
     };
     leaveSect: {
@@ -2514,6 +2717,10 @@ export interface operations {
                     "application/json": components["schemas"]["OkResponse"];
                 };
             };
+            400: components["responses"]["ErrorResp"];
+            401: components["responses"]["ErrorResp"];
+            403: components["responses"]["ErrorResp"];
+            500: components["responses"]["ErrorResp"];
         };
     };
     dissolveSect: {
@@ -2540,6 +2747,11 @@ export interface operations {
                     "application/json": components["schemas"]["OkResponse"];
                 };
             };
+            400: components["responses"]["ErrorResp"];
+            401: components["responses"]["ErrorResp"];
+            403: components["responses"]["ErrorResp"];
+            404: components["responses"]["ErrorResp"];
+            500: components["responses"]["ErrorResp"];
         };
     };
     allySect: {
@@ -2567,6 +2779,12 @@ export interface operations {
                     "application/json": components["schemas"]["OkResponse"];
                 };
             };
+            400: components["responses"]["ErrorResp"];
+            401: components["responses"]["ErrorResp"];
+            403: components["responses"]["ErrorResp"];
+            404: components["responses"]["ErrorResp"];
+            409: components["responses"]["ErrorResp"];
+            500: components["responses"]["ErrorResp"];
         };
     };
     unallySect: {
@@ -2594,6 +2812,11 @@ export interface operations {
                     "application/json": components["schemas"]["OkResponse"];
                 };
             };
+            400: components["responses"]["ErrorResp"];
+            401: components["responses"]["ErrorResp"];
+            403: components["responses"]["ErrorResp"];
+            404: components["responses"]["ErrorResp"];
+            500: components["responses"]["ErrorResp"];
         };
     };
     voteRemoveSectLeader: {
@@ -2623,6 +2846,11 @@ export interface operations {
                     };
                 };
             };
+            400: components["responses"]["ErrorResp"];
+            401: components["responses"]["ErrorResp"];
+            403: components["responses"]["ErrorResp"];
+            404: components["responses"]["ErrorResp"];
+            500: components["responses"]["ErrorResp"];
         };
     };
     sendSectMessage: {
@@ -2653,6 +2881,10 @@ export interface operations {
                     };
                 };
             };
+            400: components["responses"]["ErrorResp"];
+            401: components["responses"]["ErrorResp"];
+            403: components["responses"]["ErrorResp"];
+            500: components["responses"]["ErrorResp"];
         };
     };
     getSectChannel: {
@@ -2679,6 +2911,10 @@ export interface operations {
                     };
                 };
             };
+            400: components["responses"]["ErrorResp"];
+            401: components["responses"]["ErrorResp"];
+            403: components["responses"]["ErrorResp"];
+            500: components["responses"]["ErrorResp"];
         };
     };
 }

@@ -163,8 +163,26 @@ export interface components {
             /** @enum {boolean} */
             ok: true;
         };
+        Error: {
+            code: string;
+            message: string;
+        };
     };
-    responses: never;
+    responses: {
+        /** @description Error envelope */
+        ErrorResp: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": {
+                    /** @enum {boolean} */
+                    ok: false;
+                    error: components["schemas"]["Error"];
+                };
+            };
+        };
+    };
     parameters: never;
     requestBodies: never;
     headers: never;
@@ -195,6 +213,8 @@ export interface operations {
                     };
                 };
             };
+            401: components["responses"]["ErrorResp"];
+            500: components["responses"]["ErrorResp"];
         };
     };
     getMyAuctions: {
@@ -217,6 +237,8 @@ export interface operations {
                     };
                 };
             };
+            401: components["responses"]["ErrorResp"];
+            500: components["responses"]["ErrorResp"];
         };
     };
     getAuctionRefBand: {
@@ -249,6 +271,8 @@ export interface operations {
                     };
                 };
             };
+            401: components["responses"]["ErrorResp"];
+            500: components["responses"]["ErrorResp"];
         };
     };
     createAuction: {
@@ -298,6 +322,11 @@ export interface operations {
                     };
                 };
             };
+            400: components["responses"]["ErrorResp"];
+            401: components["responses"]["ErrorResp"];
+            404: components["responses"]["ErrorResp"];
+            409: components["responses"]["ErrorResp"];
+            500: components["responses"]["ErrorResp"];
         };
     };
     buyAuction: {
@@ -320,6 +349,12 @@ export interface operations {
                     "application/json": components["schemas"]["OkResponse"];
                 };
             };
+            400: components["responses"]["ErrorResp"];
+            401: components["responses"]["ErrorResp"];
+            403: components["responses"]["ErrorResp"];
+            404: components["responses"]["ErrorResp"];
+            409: components["responses"]["ErrorResp"];
+            500: components["responses"]["ErrorResp"];
         };
     };
     placeBid: {
@@ -351,6 +386,12 @@ export interface operations {
                     };
                 };
             };
+            400: components["responses"]["ErrorResp"];
+            401: components["responses"]["ErrorResp"];
+            403: components["responses"]["ErrorResp"];
+            404: components["responses"]["ErrorResp"];
+            409: components["responses"]["ErrorResp"];
+            500: components["responses"]["ErrorResp"];
         };
     };
     cancelAuction: {
@@ -373,6 +414,12 @@ export interface operations {
                     "application/json": components["schemas"]["OkResponse"];
                 };
             };
+            400: components["responses"]["ErrorResp"];
+            401: components["responses"]["ErrorResp"];
+            403: components["responses"]["ErrorResp"];
+            404: components["responses"]["ErrorResp"];
+            409: components["responses"]["ErrorResp"];
+            500: components["responses"]["ErrorResp"];
         };
     };
 }
