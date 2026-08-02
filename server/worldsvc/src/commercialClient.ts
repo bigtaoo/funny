@@ -2,12 +2,27 @@
 // commercial internal HTTP (/internal/spend · /internal/grant) mirrors meta shape, X-Internal-Key auth.
 // NW_COMMERCIAL_INTERNAL_URL not configured → available=false → coin transactions unavailable (graceful degradation notice to player).
 
-import { fetchInternalJson } from '@nw/shared';
+import { fetchInternalJson, SlgError, ErrorCode } from '@nw/shared';
+
+/**
+ * commercial's /internal/spend answers HTTP 200 with `{ok:false, error}` for business failures, where
+ * `error` IS the real ErrorCode string (see commercial/src/service/shop.ts `spend()`: returns
+ * `{ok:false, error:'INSUFFICIENT_FUNDS'}` / `{ok:false, error:'BAD_REQUEST'}`). Surface known codes as
+ * SlgError so httpApi.ts's `instanceof SlgError` catch maps them to the right HTTP status/code instead
+ * of falling through to a generic 500 (comm-audit finding, [[business-errors-surface-as-500-2026-08-02]]
+ * — a player with insufficient coins used to see "internal server error" instead of "not enough coins").
+ * Unrecognized values fall back to a plain Error, preserving the existing generic-500 behavior for
+ * genuinely unexpected failures.
+ */
+function toSpendError(code: string | undefined, fallbackMsg: string): Error {
+  if (code && code in ErrorCode) return new SlgError(code as keyof typeof ErrorCode, code);
+  return new Error(code ?? fallbackMsg);
+}
 
 export interface WorldCommercialClient {
   readonly available: boolean;
   /**
-   * Deduct coins from an account. Insufficient funds → throws an Error containing INSUFFICIENT_FUNDS.
+   * Deduct coins from an account. Insufficient funds → throws a SlgError(INSUFFICIENT_FUNDS).
    * `clientPlatform` (ADR-020, X-NW-Platform) picks which recharged bucket (apple/google/web) to spend
    * from; absent → commercial defaults to 'web' (comm-audit-internal-2026-07-28 P0-7: this used to be
    * unconditional — iOS/Android SLG purchases silently drew from the web bucket).
@@ -41,8 +56,8 @@ export class HttpWorldCommercialClient implements WorldCommercialClient {
     if (res.body === null) throw new Error(res.error ?? `spend failed: ${res.status}`);
     // commercial's /internal/spend always answers HTTP 200; business failures (e.g. INSUFFICIENT_FUNDS)
     // are carried in the JSON body as {ok:false, error}, not the HTTP status — res.ok alone can't detect them.
-    if (!res.ok) throw new Error(res.body.error ?? `spend failed: ${res.status}`);
-    if (!res.body.ok) throw new Error(res.body.error ?? 'spend failed');
+    if (!res.ok) throw toSpendError(res.body.error, `spend failed: ${res.status}`);
+    if (!res.body.ok) throw toSpendError(res.body.error, 'spend failed');
   }
 
   async grant(accountId: string, amount: number, orderId: string): Promise<void> {

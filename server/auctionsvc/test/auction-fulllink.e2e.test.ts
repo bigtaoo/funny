@@ -134,14 +134,17 @@ describe.skipIf(!mongo)('Auction full-link E2E (real WorldApiClient → real auc
     if (!server.listening) await new Promise<void>((r) => server.once('listening', () => r()));
     const port = (server.address() as import('net').AddressInfo).port;
     base = `http://127.0.0.1:${port}`;
-    // getWorldBaseUrl() reads this global; the client's /auction/* calls resolve here.
-    (globalThis as { __NW_WORLD_BASE__?: string }).__NW_WORLD_BASE__ = base;
+    // getAuctionBaseUrl() reads this global; the client's /auction/* calls resolve here. (Used to be
+    // __NW_WORLD_BASE__ — auction calls really did go to worldsvc's base until the
+    // getAuctionBaseUrl()/__NW_AUCTION_BASE__ dev-routing fix, 2026-08-02, see
+    // [[net-throttle-live-verify-pending-2026-08-01]].)
+    (globalThis as { __NW_AUCTION_BASE__?: string }).__NW_AUCTION_BASE__ = base;
   });
 
   afterAll(async () => {
     await new Promise<void>((r) => server.close(() => r()));
     await mongo?.close();
-    delete (globalThis as { __NW_WORLD_BASE__?: string }).__NW_WORLD_BASE__;
+    delete (globalThis as { __NW_AUCTION_BASE__?: string }).__NW_AUCTION_BASE__;
   });
 
   beforeEach(async () => {
