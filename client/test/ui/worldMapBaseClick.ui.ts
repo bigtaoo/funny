@@ -120,7 +120,13 @@ describe('WorldMapInput.onTileClick — main city hit area (ADR-025 3×3 footpri
 
   it('clicking a tile outside the base footprint (but still mine) falls through to the generic mine-tile menu', () => {
     const { ctx, input, showModal } = buildHarness();
-    ctx.tileCache.set(`${ANCHOR.x + 5}:${ANCHOR.y + 5}`, { mine: true } as WorldTileView);
+    // Relocate is only offered once the clicked cell's own 3×3 ring is fully mine (§3.4) — mark the whole
+    // ring here so MINE_TILE_MENU_LABELS' actRelocate entry actually shows up.
+    for (let dy = -1; dy <= 1; dy++) {
+      for (let dx = -1; dx <= 1; dx++) {
+        ctx.tileCache.set(`${ANCHOR.x + 5 + dx}:${ANCHOR.y + 5 + dy}`, { mine: true } as WorldTileView);
+      }
+    }
     input.onTileClick(ANCHOR.x + 5, ANCHOR.y + 5);
     expect(showModal).toHaveBeenCalledTimes(1);
     const buttons = showModal.mock.calls[0][1] as { label: string; action: () => void }[];

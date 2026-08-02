@@ -1694,3 +1694,19 @@ cols.tiles.find({ worldId, type: 'base', ownerId: { $nin: excludeOwners } })
 **测试**：`cityAtlasContentTop.ui.ts` 新增两条断言，从 `contentTop` 反推绘制高度（美术底对齐，故绘制高度 = `(1 - contentTop) × BASE_SPRITE_TILES` tile）——既不许超过 `BASE_FOOTPRINT × ISO_RATIO × 1.2` 的预算（防止将来重打包又回到正方形缩放），也不许小于地块自身高度（防止缩没了）。
 
 **验证**：`client` `tsc --noEmit` 全绿；`cityAtlasContentTop` / `cityAtlasContentTopFallback` / `worldMapBaseHpBar` 三个 UI 测试文件 17 例全绿。可视化：本机 Browser pane 这次连 `computer{action:"screenshot"}` 都直接报"pane is not displayed, so the page is not compositing frames"（见 `worldmap-standalone-debug-render` 备忘录记的同一限制），改用离线几何核对——用 `city.ts` 原样的摆放公式（底部中心锚点落在地块前顶点、`cityGroundFwdPx` 前移量、`BASE_SPRITE_TILES` 正方形）把真实图集帧合成到等轴测网格上，逐个比对 `HEIGHT_BUDGET_K` 取 1.2/1.35/1.5/1.67 的效果并与 `city_lv1` 营地并排作参照，据此定下 1.2。**像素级的真机核对没有做**，需要用户在自己开着的客户端里刷新确认。
+
+---
+
+## 58. 驻扎（驻守）目标收紧为「己方 + 盟友」，中立/敌方一律不可驻扎；不支持的菜单选项直接隐藏而非置灰（2026-08-02，用户截图报告）
+
+**背景**：用户截图一块中立资源地（Ink Lv.1）的占领弹窗，红圈圈出「移动并驻扎」按钮，指出：①驻守（驻扎，§38/ADR-051 P3a 的「busy 且主动防守 3×3」态）只应该能驻守自己和盟友的领地，敌人的和中立的地都不该能驻守；②弹窗里不支持的选项（截图里灰掉的「占领」）应该直接不显示，而不是置灰。逐代码核对后发现现状比截图更宽：`combatMarch/command.ts` 的 `move` 校验对 `停留 idle` 和 `驻扎 garrison` 两种意图一视同仁（§38 落地时的既有测试 `field-garrison.e2e`/`field-redispatch.e2e` 明确把 garrison 派到中立地并断言成功），而**盟友领地**在 `WorldMapInput.onTileClick` 里完全没有专属分支——落入 `tile?.occupied` 的通用"敌方"分支，只提供一个必定被服务端 `ALLY_TILE` 拒绝的"进攻"按钮。判定这不是照抄既有设计的误报，而是用户在收紧一条已实现但从未明确拍板过边界的规则，遂据此改服务端校验 + 补client 盟友分支，而非仅做客户端隐藏。
+
+**规则（新拍板）**：`停留 idle`（无防御声明）保持原样——只能停自己的地或空地（中立），从不落到别人（含盟友）的地上。`驻扎 garrison`（主动防守 3×3、算 busy）收紧为**只能落在自己的地，或一个"友方"账号（家族 / 本宗门 / 结盟宗门——即 `WorldCoreVision.friendlyAccountIds` 用来拦截"进攻友方"的同一个集合）的地上**——不再接受中立地，也从未接受非友方的地。
+
+**实现**：
+- **服务端**（[`combatMarch/command.ts`](../../server/worldsvc/src/combatMarch/command.ts) 的 `move` 分支 + [`combatMarch/arrival.ts`](../../server/worldsvc/src/combatMarch/arrival.ts) 的 `tryParkTeam`，两处各自独立校验：前者是派发时的快速失败，后者是到达时因途中地块归属变化而必须的二次核验，同一条规则改两遍）：`toTile.ownerId !== accountId` 时，只有 `stationMode==='garrison'` 且 `friendlyAccountIds(worldId, accountId).has(ownerId)` 才放行（否则维持原有 `TILE_OCCUPIED`「用进攻」报错）；`!toTile.ownerId`（中立）分支新增 `if (isGarrison) throw TILE_OCCUPIED` 前置检查，`停留 idle` 不受影响。
+- **客户端**（[`WorldMapInput.ts`](../../client/src/scenes/worldmap/WorldMapInput.ts)）：`onTileClick` 在 `tile?.mine` 分支之后、`tile?.occupied`（敌方）分支之前插入新的 `tile?.ally || tile?.allySect` 分支——盟友领地（家族同盟或结盟宗门成员）显示业主名 + 结构/耐久信息，按钮只给「移动并驻扎」（已驻扎则显示「召回驻军」），不给进攻，不给"停留"（idle 在盟友地上没有意义，规则也没要求）；中立地分支的 `else` 只保留「移动到此（停留）」，去掉「移动并驻扎」。同一批顺手把三处"不支持就置灰"（占领连通性 `occupyConnected`、就地占领、迁城 `canRelocate`）改成不满足条件时**整个按钮不 push**，而不是 `disabled:true` 灰显——用户在同一张截图里提的第二点，`WorldMapPanels/base.ts` 的 `disabled` 灰显渲染代码本身没删（其它场景仍可能用），只是这三处调用点不再传它。
+- **i18n**：新增 `world.allyTile`（"盟友领地"/"Ally Territory"/"Verbündetes Gebiet"，zh/en/de 三份），复用既有 `world.actGarrison`/`world.actRecallStation`。
+
+**测试改动**：`field-garrison.e2e.test.ts` 三个既有用例（garrison 到中立地的 3×3 覆盖注册/召回、中途目的地被抢占后回退原地）改为先把目标格预置为 `ownerId:'a'`（己方地），验证的覆盖/occ 机制本身与地块归属无关；新增 3 例：garrison 派中立地必拒（`/own or allied territory/`，同一目标改 `停留 idle` 仍成功）、garrison 派同家族盟友的地必成功（覆盖注册在目标格、地块 `ownerId` 保持盟友不变，驻扎队伍仍是 `mine`）、garrison 派非盟友对手的地仍必拒（`/use attack/`，等同任意敌方地）。`field-redispatch.e2e.test.ts` 的"驻扎锁死需先召回"用例同样预置目标格为己方地。客户端新增 [`worldMapGarrisonAllyRules.ui.ts`](../../client/test/ui/worldMapGarrisonAllyRules.ui.ts)（6 例：中立地只给 Move 不给 Garrison、敌方地只给 Attack、家族盟友地/结盟宗门盟友地都只给 Garrison 不给 Attack、点 Garrison 派发 `move+garrison`、已驻扎盟友地显示 Recall）；`worldMapOccupyConnectivity.ui.ts`/`worldMapRelocateGate.ui.ts` 的"灰显"断言改「按钮整体不存在」，删掉两处"点击灰按钮弹 toast"的用例（按钮已经不存在，点不到）；`worldMapBaseClick.ui.ts` 的"落单 mine 格子仍走通用菜单"用例补齐周围 8 格同为 mine（否则新的 `footprintAllMine` 门槛会让 Relocate 按钮从预期的标签列表里消失）。
+- **验证**：worldsvc `tsc --noEmit` 全绿，`npx vitest run`（50 文件/403 例，含以上改动）全绿；client `tsc --noEmit` 全绿，`npx vitest run --config vitest.ui.config.ts`（114 文件/988 例）+ `test/i18n.test.ts`（三语 key 齐全）全绿。可视化验证：中立地弹窗截图确认「移动并驻扎」按钮已消失、仅剩「移动到此（停留）」（本机单账号 dev world 可直接复现）；盟友领地分支需要第二个同家族/同宗门账号才能在真实地图上点出来，本轮未做实机截图，逻辑由上述 e2e / UI 单测覆盖。

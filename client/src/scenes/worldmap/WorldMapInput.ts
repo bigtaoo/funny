@@ -107,7 +107,7 @@ export class WorldMapInput {
       // Only MY stationed team here can be recalled — ctx.stationed now also carries enemy teams (P4), whose
       // teamId is blanked; matching one would send an un-actionable recall.
       const stationedHere = this.ctx.stationed.find((s) => s.mine !== false && s.x === tx && s.y === ty);
-      const myButtons: { label: string; action: () => void; disabled?: boolean }[] = [
+      const myButtons: { label: string; action: () => void }[] = [
         { label: t('world.actReinforce'), action: () => this.ctx.panels.showDeployDialog(tx, ty, 'reinforce') },
         // Move (2026-07-23): park a home team on this tile. ADR-051 (P4) two intents — 移动到此(停留 idle, free to
         // re-command) vs 移动并驻扎 (garrison, defends its 3×3 footprint + intercepts passers, stays busy). Recall
@@ -135,18 +135,10 @@ export class WorldMapInput {
         myButtons.push({ label: t('world.actBlocker'), action: () => this.ctx.net.confirmBuildStructure(tx, ty, 'blocker') });
       }
       // Relocate here (§3.4): the capital may only move onto a 3×3 block the player already fully owns —
-      // this clicked cell as centre plus all 8 neighbours. Offered on every owned tile so the intent is
-      // discoverable; when the surrounding ring isn't all mine the button is disabled and taps explain why
-      // ("occupy the surrounding tiles first"), mirroring the Occupy-connectivity gate below.
-      if (me.mainBaseTile) {
-        const canRelocate = this.footprintAllMine(tx, ty);
-        myButtons.push({
-          label: t('world.actRelocate'),
-          disabled: !canRelocate,
-          action: canRelocate
-            ? () => this.ctx.net.confirmRelocate(tx, ty)
-            : () => this.ctx.panels.showToast(t('world.err.relocateNeedSurround'), C.red),
-        });
+      // this clicked cell as centre plus all 8 neighbours. Only offered once that ring is fully mine
+      // (unsupported options are omitted outright rather than shown disabled, 2026-08-02).
+      if (me.mainBaseTile && this.footprintAllMine(tx, ty)) {
+        myButtons.push({ label: t('world.actRelocate'), action: () => this.ctx.net.confirmRelocate(tx, ty) });
       }
       myButtons.push({ label: t('world.actAbandon'), action: () => this.ctx.net.doAbandon(tx, ty) });
       myButtons.push({ label: '✕', action: () => this.ctx.panels.closeModal() });
@@ -155,6 +147,30 @@ export class WorldMapInput {
       if (tile.structure) head.push(t(tile.structure.kind === 'arrowTower' ? 'world.hasArrowTower' : 'world.hasBlocker'));
       head.push(`(${tx}, ${ty})`);
       this.ctx.panels.showModal(head, myButtons);
+      return;
+    }
+
+    if (tile?.ally || tile?.allySect) {
+      // Ally territory (family §8.2, or an allied-sect member): friendly land — cannot be attacked (server
+      // rejects with ALLY_TILE) or occupied. Per the 驻守 rule (2026-08-02) a team MAY still be sent to
+      // Garrison (驻扎) here to help defend it — same friendlyAccountIds set the server uses to block siege.
+      // 停留 idle has no defensive claim and stays own/neutral-tile-only, so it isn't offered here. Unsupported
+      // options are omitted outright rather than shown disabled.
+      const ownerLine = tile.ownerName
+        ? `${tile.ownerName}${tile.ownerPublicId ? ' #' + tile.ownerPublicId : ''}`
+        : (tile.ownerPublicId ? '#' + tile.ownerPublicId : t('world.unknownOwner'));
+      const allyButtons: { label: string; action: () => void }[] = [];
+      const stationedAlly = this.ctx.stationed.find((s) => s.mine !== false && s.x === tx && s.y === ty);
+      if (stationedAlly) {
+        allyButtons.push({ label: t('world.actRecallStation'), action: () => void this.ctx.net.doRecallStationed(stationedAlly.teamId) });
+      } else {
+        allyButtons.push({ label: t('world.actGarrison'), action: () => void this.ctx.net.showTeamPicker(tx, ty, 'move', 'garrison') });
+      }
+      allyButtons.push({ label: '✕', action: () => this.ctx.panels.closeModal() });
+      const allyHead = [t('world.allyTile'), ownerLine, `(${tx}, ${ty})`];
+      if (tile.structure) allyHead.push(t(tile.structure.kind === 'arrowTower' ? 'world.hasArrowTower' : 'world.hasBlocker'));
+      if (tile.maxHp && tile.hp != null) allyHead.push(t('world.buildingHp').replace('{hp}', String(tile.hp)).replace('{max}', String(tile.maxHp)));
+      this.ctx.panels.showModal(allyHead, allyButtons);
       return;
     }
 
@@ -219,45 +235,34 @@ export class WorldMapInput {
     // tile's system garrison via the deterministic engine, then holds it for a countdown before ownership lands)
     // — same troop-count dialog as sweep/reinforce, not an instant grab.
     const garrison = tile?.garrison ?? 0;
-    // ADR-039 连地: grey out Occupy when the target doesn't border the player's territory (occupy would be
-    // rejected server-side with TERRITORY_NOT_CONNECTED). Tapping the disabled button explains why. Sweep is
-    // not gated — it has no connectivity requirement server-side.
+    // ADR-039 连地: Occupy (and 就地占领 below) requires the target to border the player's territory (occupy
+    // would otherwise be rejected server-side with TERRITORY_NOT_CONNECTED) — omitted outright when it doesn't,
+    // rather than shown disabled (2026-08-02). Sweep is not gated — it has no connectivity requirement server-side.
     const occupyConnected = this.occupyConnected(tx, ty);
-    const buttons: { label: string; action: () => void; disabled?: boolean }[] = [
-      {
-        label: t('world.actOccupy'),
-        disabled: !occupyConnected,
-        // §4.2: occupy now offers the team picker (troops belong to the card team, retained across battles),
-        // with a flat "散兵占领" fallback inside the picker. Old flat-only dialog is reachable via that button.
-        action: occupyConnected
-          ? () => void this.ctx.net.showTeamPicker(tx, ty, 'occupy')
-          : () => this.ctx.panels.showToast(t('world.err.notConnected'), C.red),
-      },
-    ];
+    const buttons: { label: string; action: () => void }[] = [];
+    if (occupyConnected) {
+      // §4.2: occupy now offers the team picker (troops belong to the card team, retained across battles),
+      // with a flat "散兵占领" fallback inside the picker. Old flat-only dialog is reachable via that button.
+      buttons.push({ label: t('world.actOccupy'), action: () => void this.ctx.net.showTeamPicker(tx, ty, 'occupy') });
+    }
     if (garrison > 0) {
       buttons.push({ label: t('world.actSweep'), action: () => this.ctx.panels.showDeployDialog(tx, ty, 'sweep') });
     }
     // Move (2026-07-23): station a team on this empty neutral tile (no combat, no claim — it just stands there).
-    // ADR-051 (P4): two intents — 移动到此(停留 idle) vs 移动并驻扎 (garrison). If a 停留 idle team of MINE already
-    // stands here it can 就地占领 this very tile (P4 §4.3) without marching, or be recalled. Enemy stationed teams
-    // (mine===false, blanked teamId) never match here — they're not actionable from my menu.
+    // 驻守 rule (2026-08-02): 驻扎 garrison only ever defends own or allied territory (see the ally branch above)
+    // — neutral land offers 停留 idle only. If a 停留 idle team of MINE already stands here it can 就地占领 this
+    // very tile (P4 §4.3) without marching, or be recalled. Enemy stationed teams (mine===false, blanked teamId)
+    // never match here — they're not actionable from my menu.
     const stationedNeutral = this.ctx.stationed.find((s) => s.mine !== false && s.x === tx && s.y === ty);
     if (stationedNeutral) {
       // 就地占领 only for a 停留 idle team (a 驻扎 garrison team is locked/busy). Gated by the same ADR-039
       // connectivity pre-check as the march-occupy button above (server re-validates on dispatch).
-      if (stationedNeutral.mode !== 'garrison') {
-        buttons.push({
-          label: t('world.actOccupyInPlace'),
-          disabled: !occupyConnected,
-          action: occupyConnected
-            ? () => void this.ctx.net.doInPlaceOccupy(tx, ty, stationedNeutral.teamId)
-            : () => this.ctx.panels.showToast(t('world.err.notConnected'), C.red),
-        });
+      if (occupyConnected && stationedNeutral.mode !== 'garrison') {
+        buttons.push({ label: t('world.actOccupyInPlace'), action: () => void this.ctx.net.doInPlaceOccupy(tx, ty, stationedNeutral.teamId) });
       }
       buttons.push({ label: t('world.actRecallStation'), action: () => void this.ctx.net.doRecallStationed(stationedNeutral.teamId) });
     } else {
       buttons.push({ label: t('world.actMove'), action: () => void this.ctx.net.showTeamPicker(tx, ty, 'move', 'idle') });
-      buttons.push({ label: t('world.actGarrison'), action: () => void this.ctx.net.showTeamPicker(tx, ty, 'move', 'garrison') });
     }
     // (Relocate moved to the owned-tile branch: §3.4 now requires the target 3×3 to be already fully owned,
     // so relocation is initiated by clicking your own centre tile, not a neutral one.)

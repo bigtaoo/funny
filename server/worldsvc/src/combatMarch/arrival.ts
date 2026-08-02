@@ -339,10 +339,19 @@ export function ArrivalMixin<TBase extends MarchServiceBaseCtor>(Base: TBase): T
         cols.tiles.findOne({ _id: tile }),
         cols.stationed.findOne({ _id: tile }),
       ]);
+      // 驻守 rule (2026-08-02): mirrors the startMarch-time check in combatMarch/command.ts — 驻扎 garrison may
+      // additionally land on a FRIENDLY account's territory (family / sect / allied sect), but a neutral
+      // (ownerless) tile is idle-only; re-checked here since tile ownership may have changed in transit.
+      const isGarrison = m.stationMode === 'garrison';
+      const foreignOwner = occ?.ownerId != null && occ.ownerId !== m.ownerId;
+      const isFriendlyGarrisonTarget = isGarrison && foreignOwner
+        ? (await this.core.friendlyAccountIds(m.worldId, m.ownerId)).has(occ!.ownerId!)
+        : false;
       const blocked =
         proc.type === 'center' ||
         !!stationedHere ||
-        (occ?.ownerId != null && occ.ownerId !== m.ownerId) ||
+        (foreignOwner && !isFriendlyGarrisonTarget) ||
+        (!occ?.ownerId && isGarrison) ||
         (!occ?.ownerId && !!occ?.contestedBy && (occ.contestedUntil ?? 0) > t);
       if (blocked) return false;
       // ADR-051 (P3a): the dispatch intent decides 停留 idle vs 驻扎 garrison on arrival.

@@ -204,16 +204,26 @@ export function CommandMixin<TBase extends MarchServiceBaseCtor>(Base: TBase): T
         if (!hasCardArmy && troops < OCCUPY_MIN_TROOPS) throw new SlgError('NO_TROOPS', `Siege requires at least ${OCCUPY_MIN_TROOPS} troops`);
       } else if (kind === 'move') {
         // Move (2026-07-23): reposition a team to a tile with NO combat — it walks over and STANDS there (stationed).
-        // Two legal targets (user decision): (a) the player's OWN tile (territory/base), or (b) an EMPTY neutral tile
-        // (no owner, not mid-hold, not a PvE-only choke — center/stronghold/bridge/plankway are captured via attack,
-        // never merely stood on). A tile that already holds a stationed team (anyone's) is rejected: one park per tile.
+        // Legal targets depend on intent (驻守 rule, 2026-08-02, user decision): 停留 idle only ever parks on (a)
+        // the player's OWN tile, or (b) an EMPTY neutral tile (no owner) — idle has no defensive claim, so any
+        // foreign-owned land (ally or not) is off-limits. 驻扎 garrison additionally may target (c) a FRIENDLY
+        // account's territory (family / sect / allied sect — the same friendlyAccountIds set the attack branch
+        // above uses to block siege) since it actively helps defend that land, but — unlike idle — never a neutral
+        // tile (there is nothing there to defend). Either way: not the world center, not a PvE-only choke
+        // (stronghold/bridge/plankway — captured via attack, never merely stood on), and not a tile that already
+        // holds a stationed team (anyone's) — one park per tile.
         if (proc.type === 'center') throw new SlgError('TILE_OCCUPIED', 'Cannot move onto the world center');
         const stationedHere = await cols.stationed.findOne({ _id: toTid });
         if (stationedHere) throw new SlgError('TILE_OCCUPIED', 'A team is already stationed on this tile');
+        const isGarrison = stationMode === 'garrison';
         if (toTile?.ownerId) {
-          if (toTile.ownerId !== accountId) throw new SlgError('TILE_OCCUPIED', 'Cannot move onto another player\'s tile (use attack)');
-          // own tile → fine
+          if (toTile.ownerId !== accountId) {
+            const isFriendly = isGarrison && (await this.core.friendlyAccountIds(worldId, accountId)).has(toTile.ownerId);
+            if (!isFriendly) throw new SlgError('TILE_OCCUPIED', 'Cannot move onto another player\'s tile (use attack)');
+          }
+          // own tile, or a friendly (ally) tile under garrison intent → fine
         } else {
+          if (isGarrison) throw new SlgError('TILE_OCCUPIED', 'Garrison requires own or allied territory');
           // Unowned target: only plain neutral/resource land may be stood on; PvE-garrisoned specials are attack-only.
           if (proc.type === 'stronghold' || proc.type === 'bridge' || proc.type === 'plankway') {
             throw new SlgError('TILE_OCCUPIED', 'This tile must be captured via attack, not moved onto');
