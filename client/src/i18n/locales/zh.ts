@@ -1577,6 +1577,8 @@ export const zh = {
   'city.military.durability': '城池耐久',
   'city.military.teams': '队伍',
   'city.military.teamIdle': '驻军在家',
+  // No trailing ellipsis — the team row appends 1–3 animated dots itself (CityScene render.ts).
+  'city.military.teamLoading': '加载中',
   'city.military.fillAllTeams': '填满所有队伍',
   'city.military.fillAllTeamsDone': '已为 {teams} 支队伍分配 {n} 兵力',
   'city.military.fillAllTeamsNone': '兵力池已空，或所有队伍已满员',

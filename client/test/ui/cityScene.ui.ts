@@ -113,10 +113,16 @@ function collectTexts(root: PIXI.Container): string[] {
 
 /** getMe() never resolves — enough for the grid/modal to sit in its default
  *  (all-buildings-level-0) state without a real network, which is all these
- *  structural/interaction tests need. */
+ *  structural/interaction tests need. The team-row endpoints do resolve (empty), so the row settles
+ *  into its real "no teams yet" state rather than its loading placeholders: CityScene.load() fires
+ *  the four fetches independently now (2026-08-02, no Promise.all barrier), so a missing stub method
+ *  throws for real instead of being swallowed by the old shared try/catch. */
 function stubWorldApi(): WorldApiClient {
   return {
     getMe: () => new Promise<PlayerWorldView>(() => {}),
+    getTeams: () => Promise.resolve([]),
+    getMarches: () => Promise.resolve([]),
+    getOccupations: () => Promise.resolve([]),
     upgradeBuilding: () => new Promise<PlayerWorldView>(() => {}),
     speedupBuild: () => new Promise<PlayerWorldView>(() => {}),
   } as unknown as WorldApiClient;
@@ -533,6 +539,99 @@ describe('CityScene bottom team row (D-CITY-10; pinned single row 2026-07-23)', 
       scene.destroy();
     });
   }
+});
+
+// 2026-08-02: the team row used to render five real "(empty)" cards for the whole duration of the
+// load, and the load itself was one Promise.all barrier — so the row claimed "you own no teams"
+// until the SLOWEST of getMe/getTeams/getMarches/getOccupations answered, which against a remote
+// shard is most of a second. Now each slice paints on its own, and the row shows a loading
+// placeholder until /world/teams specifically has landed.
+describe('CityScene team-row loading state (2026-08-02)', () => {
+  /** Every endpoint independently controllable, so a test can land one slice and hold the others. */
+  function deferredApi(): {
+    api: WorldApiClient;
+    resolveTeams: (teams: unknown[]) => void;
+    resolveOrders: () => void;
+    resolveMe: () => void;
+  } {
+    let resolveTeams!: (teams: unknown[]) => void;
+    let resolveMarches!: (v: unknown[]) => void;
+    let resolveOccupations!: (v: unknown[]) => void;
+    let resolveMe!: (v: PlayerWorldView) => void;
+    const teams = new Promise<unknown[]>((r) => { resolveTeams = r; });
+    const marches = new Promise<unknown[]>((r) => { resolveMarches = r; });
+    const occupations = new Promise<unknown[]>((r) => { resolveOccupations = r; });
+    const me = new Promise<PlayerWorldView>((r) => { resolveMe = r; });
+    return {
+      api: {
+        getMe: () => me,
+        getTeams: () => teams,
+        getMarches: () => marches,
+        getOccupations: () => occupations,
+        upgradeBuilding: () => new Promise<PlayerWorldView>(() => {}),
+        speedupBuild: () => new Promise<PlayerWorldView>(() => {}),
+      } as unknown as WorldApiClient,
+      resolveTeams,
+      resolveOrders: () => { resolveMarches([]); resolveOccupations([]); },
+      resolveMe: () => resolveMe({
+        resources: {}, buildings: {}, buildQueue: [], cardState: { c1: { currentTroops: 400 } }, teamState: {},
+      } as unknown as PlayerWorldView),
+    };
+  }
+
+  function build(api: WorldApiClient): { scene: CityScene; texts: () => string[] } {
+    const cb: CitySceneCallbacks = { onBack: () => {}, worldApi: api, worldId: 'world:1:0', onEditTeam: () => {} };
+    const scene = new CityScene(createLayout(...PORTRAIT), new InputManager(), cb);
+    return { scene, texts: () => collectTexts(scene.container) };
+  }
+
+  const flush = (): Promise<void> => new Promise((r) => { setTimeout(r, 0); });
+
+  it('shows a loading placeholder instead of "(empty)" while /world/teams is still in flight', async () => {
+    const { api, resolveTeams, resolveOrders } = deferredApi();
+    const { scene, texts } = build(api);
+    resolveOrders();          // orders land first — teams is what the row is waiting on
+    await flush();
+    expect(texts().some((s) => s.startsWith(t('city.military.teamLoading')))).toBe(true);
+    expect(texts()).not.toContain(t('world.team.empty'));
+    // Nothing to tap into yet — the slot's real name isn't known, so no team hit is registered.
+    expect(teamHits(internals(scene)).length).toBe(0);
+
+    resolveTeams([]);
+    await flush();
+    expect(texts()).toContain(t('world.team.empty'));
+    expect(texts().some((s) => s.startsWith(t('city.military.teamLoading')))).toBe(false);
+    scene.destroy();
+  });
+
+  it('paints the team row as soon as getTeams lands, without waiting on getMe (no Promise.all barrier)', async () => {
+    const { api, resolveTeams, resolveOrders } = deferredApi();
+    const { scene, texts } = build(api);
+    resolveTeams([{ id: 't1', name: 'Alpha', army: [{ cardInstanceId: 'c1' }] }]);
+    resolveOrders();
+    await flush();
+    // getMe is still pending, yet the team's own data is already on screen.
+    expect(texts()).toContain('Alpha');
+    expect(texts()).toContain(t('city.military.teamIdle'));
+    scene.destroy();
+  });
+
+  it('holds a filled team\'s status on the loading label until marches AND occupations have both landed', async () => {
+    const { api, resolveTeams, resolveOrders, resolveMe } = deferredApi();
+    const { scene, texts } = build(api);
+    resolveTeams([{ id: 't1', name: 'Alpha', army: [{ cardInstanceId: 'c1' }] }]);
+    resolveMe();
+    await flush();
+    // A team already marching must not flash "idle" first — orders aren't known yet.
+    expect(texts()).toContain('Alpha');
+    expect(texts()).not.toContain(t('city.military.teamIdle'));
+    expect(texts().some((s) => s.startsWith(t('city.military.teamLoading')))).toBe(true);
+
+    resolveOrders();
+    await flush();
+    expect(texts()).toContain(t('city.military.teamIdle'));
+    scene.destroy();
+  });
 });
 
 describe('CityScene build-queue countdown label (2026-07-15 formatDuration fix)', () => {

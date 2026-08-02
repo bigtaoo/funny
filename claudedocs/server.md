@@ -164,6 +164,8 @@ cp .env.example .env        # 填 NW_JWT_SECRET / NW_DOMAIN
 
 验证：metaserver 54 文件/678 测试、worldsvc 44/341、auctionsvc 5/71 全绿（后两者只读拼好的 map，零源码改动）。
 
+**2026-08-02 后续 — `/internal/save-fields` 新增可选 `cardIds=a,b,c`**：拼回整册 `cardInv` 的代价落在了 `GET /world/teams` 的读路径上（`worldsvc` `getTeams` 的 self-heal 每次都拉全部 500 张，只为验证编队引用的那几十个 id 还在不在，而这条路径是主城界面的关键路径）。新增 `assembleCardInvSubset`（`cards.ts`，`_id:{$in}` + 仍按 `accountId` 作用域）供带 `cardIds` 的调用；**故意不做** `assembleCardInv` 那条 `cardInvCount` 漂移自愈——过滤过的 `find` 看不到真实册数。不传 `cardIds` 时行为完全不变（攻城引擎等既有调用方零影响）；`getTeams` 一张卡都没引用时连跨服务跳转都跳过。见 [`design/game/SLG_CITY_DESIGN.md`](../design/game/SLG_CITY_DESIGN.md) §8.8。
+
 ## mapBaselines 行程编码重设计（2026-07-27，中期项第 2 项）
 
 真正的病根不是 `cloneActiveTemplateInto`（每次开服/重置的克隆），而是 `generateTemplate`（模板首包生成）——1500×1500 地图逐格调用 `proceduralTile()` 后原样物化成 225 万份 `mapTemplateTiles` 文档，克隆只是把这份稠密数据原样搬到 `mapBaselines` 再来一遍。地形有大量连续同值横向条带（河/山连续带，资源/中立地块间稀疏散落特殊格），改行程编码（RLE）：`server/shared/src/slg/mapRle.ts` 新增 `encodeRow`/`decodeRow`/`tileAtX`/`sliceRuns`/`applyEditsToRow` 纯函数；存储从「每格一文档」改成「每**行**一文档、行内一组压缩区间」——集合改名 `mapTemplateTiles`→`mapTemplateRows`、`mapBaselines`→`mapBaselineRows`（新旧 `_id` 格式不同，用改名而非原地换 shape 避免新代码的范围查询意外命中旧稠密文档解 `.runs` 崩溃）。外部契约（`MapTemplateTile` 单格形状、`getTiles`/`saveTilesDiff` API、`tileCount` 统计口径）完全不变，压缩/解压全封装在 `mapTemplateService.ts`/`core/map.ts` 内部。

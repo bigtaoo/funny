@@ -31,6 +31,7 @@ export interface RenderHandlers {
   renderHeaderDurability(headerH: number): void;
   renderTeamsRow(): number;
   renderTeamCard(i: number, x: number, y: number, cardW: number, cardH: number, now: number): void;
+  renderTeamCardLoading(i: number, x: number, y: number, cardW: number, cardH: number): void;
   renderResourceBar(startY: number): number;
   renderBuildQueue(startY: number): number;
   renderBuildingGrid(startY: number, bottomY: number): void;
@@ -123,9 +124,39 @@ export function RenderMixin<TBase extends CitySceneBaseCtor>(Base: TBase): TBase
       const now = Date.now();
       for (let i = 0; i < TEAM_CAP; i++) {
         const cx = cx0 + GRID_PAD + i * (cellW + CARD_GAP);
-        this.renderTeamCard(i, cx, rowY, cellW, cardH, now);
+        if (this.teamsLoaded) this.renderTeamCard(i, cx, rowY, cellW, cardH, now);
+        else this.renderTeamCardLoading(i, cx, rowY, cellW, cardH);
       }
       return bandTop;
+    }
+
+    /**
+     * Placeholder drawn in a team slot while GET /world/teams is still in flight (2026-08-02).
+     * Before this the row rendered five *real* cards tagged "(empty)" during the fetch, which reads
+     * as "you own no teams" rather than "not loaded yet". Same footprint and frame weight as the
+     * real card so the row doesn't reflow when the data lands; no hit rect, since we don't yet know
+     * the team's name to hand the formation editor. Dots are advanced by base.ts's tickLoadDots().
+     */
+    renderTeamCardLoading(i: number, x: number, y: number, cardW: number, cardH: number): void {
+      const pad = 10;
+      const panel = sketchPanel(cardW, cardH, {
+        fill: C.paper, border: C.mid, width: 1.2, seed: seedFor(x, y, cardW),
+      });
+      panel.x = x;
+      panel.y = y;
+      panel.alpha = 0.5;
+      this.container.addChild(panel);
+
+      const name = txt(teamSlotName(i), FS.body, C.mid, true, cardW - pad * 2);
+      name.x = x + pad;
+      name.y = y + pad;
+      name.alpha = 0.55;
+      this.container.addChild(name);
+
+      const lbl = txt(`${t('city.military.teamLoading')}${'.'.repeat(this.loadDots + 1)}`, FS.small, C.mid, true, cardW - pad * 2);
+      lbl.x = x + pad;
+      lbl.y = y + pad + 26;
+      this.container.addChild(lbl);
     }
 
     renderTeamCard(i: number, x: number, y: number, cardW: number, cardH: number, now: number): void {
@@ -184,6 +215,11 @@ export function RenderMixin<TBase extends CitySceneBaseCtor>(Base: TBase): TBase
           ? t('world.team.marching')
           : t('world.team.occupying').replace('{time}', timeStr);
         statusColor = C.gold as number;
+      } else if (filled && !this.ordersLoaded) {
+        // marches/occupations not back yet — this team may well be marching, so keep animating
+        // rather than asserting "闲置" and then correcting ourselves a moment later.
+        statusLbl = `${t('city.military.teamLoading')}${'.'.repeat(this.loadDots + 1)}`;
+        statusColor = C.mid as number;
       } else if (filled) {
         statusLbl = t('city.military.teamIdle');
         statusColor = C.accent as number;

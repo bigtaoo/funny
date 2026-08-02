@@ -181,6 +181,17 @@ export class CitySceneBase {
   protected teams: TeamTemplate[] = [];
   protected marches: MarchView[] = [];
   protected occupations: OccupationView[] = [];
+  /** True once GET /world/teams has settled (either way). Until then the team row draws loading
+   *  placeholders instead of five real cards reading "(empty)" — that label claims "you own no
+   *  teams", which is a lie during a fetch that takes most of a second against a remote shard. */
+  protected teamsLoaded = false;
+  /** True once BOTH GET /world/march and GET /world/occupations have settled. teamOrder() needs both,
+   *  so a filled team's status line stays in its loading state until then rather than flashing
+   *  "闲置" at a team that turns out to be marching. */
+  protected ordersLoaded = false;
+  /** 0–2 dot-animation phase for the team-row loading placeholders; advanced by tickLoadDots(). */
+  protected loadDots = 0;
+  private loadDotTimer = 0;
   /** Left edge of the body content, set each render() to marginLineX() — the red notebook
    *  binding line. Content starts just right of it (no sidebar rail on this single-page scene). */
   protected contentX = 0;
@@ -221,18 +232,30 @@ export class CitySceneBase {
     }));
     if (cb.onSaveChanged) this.unsubs.push(cb.onSaveChanged(() => { if (!this.destroyed) this.render(); }));
     this.render();
-    void this.load();
+    this.load();
   }
 
   update(dt: number): void {
     if (this.scrollDirty) { this.scrollDirty = false; this.render(); }
     if (this.bt.tick(dt)) this.render();
+    if (this.tickLoadDots(dt)) this.render();
     this.simTimer += dt;
     if (this.simTimer >= 1) {
       this.simTimer = 0;
       this.tickResourceTotals();
       this.checkQueueCompletion();
     }
+  }
+
+  /** Advances the team-row loading placeholders' trailing dots while their fetches are in flight.
+   *  Returns true when a re-render is needed (same contract as BusyTracker.tick). */
+  private tickLoadDots(dt: number): boolean {
+    if (this.teamsLoaded && this.ordersLoaded) return false;
+    this.loadDotTimer += dt;
+    if (this.loadDotTimer < 0.4) return false;
+    this.loadDotTimer = 0;
+    this.loadDots = (this.loadDots + 1) % 3;
+    return true;
   }
 
   /**
@@ -297,25 +320,48 @@ export class CitySceneBase {
 
   // ── Data loading ──────────────────────────────────────────────────────────
 
-  private async load(): Promise<void> {
+  /**
+   * Fetch the four independent data slices this scene needs. Deliberately NOT a `Promise.all`
+   * barrier (2026-08-02): awaiting all four before the first paint made every slice as slow as the
+   * slowest one — the team row in particular sat on placeholder content until getMe/getMarches/
+   * getOccupations had also answered, long after /world/teams itself had landed. Each slice now
+   * paints the moment its own request resolves.
+   *
+   * Issue order matters: rateGate.ts hands out its 5-token bucket strictly FIFO, so when the bucket
+   * is drained (world-map entry, a burst of taps) requests are served in the order they were made.
+   * getTeams goes first because the team row is what the player is waiting on here.
+   */
+  private load(): void {
     // Resource / producer-building glyphs reuse the res_atlas motifs; re-render once decoded.
     void loadResAtlas().then(() => this.render()).catch(() => { /* color/emoji fallback */ });
     void loadCityBldAtlas().then(() => this.render()).catch(() => { /* icons.ts/emoji fallback */ });
-    try {
-      const [me, teams, marches, occupations] = await Promise.all([
-        this.cb.worldApi.getMe(this.cb.worldId),
-        this.cb.worldApi.getTeams(this.cb.worldId),
-        this.cb.worldApi.getMarches(this.cb.worldId),
-        this.cb.worldApi.getOccupations(this.cb.worldId),
-      ]);
-      this.setMe(me);
-      this.teams = teams;
-      this.marches = marches;
-      this.occupations = occupations;
-    } catch {
-      /* use null/empty — shows loading state */
-    }
-    this.render();
+
+    const paint = (): void => { if (!this.destroyed) this.render(); };
+
+    void this.cb.worldApi.getTeams(this.cb.worldId)
+      .then((teams) => { this.teams = teams; })
+      .catch(() => { /* offline — the row falls through to its real empty state */ })
+      .finally(() => { this.teamsLoaded = true; paint(); });
+
+    void this.cb.worldApi.getMe(this.cb.worldId)
+      .then((me) => { this.setMe(me); paint(); })
+      .catch(() => { /* offline — resource bar / building grid keep their pre-load zeros */ });
+
+    // marches + occupations both feed teamOrder(), so `ordersLoaded` only flips once both have
+    // settled — see the field's doc comment for why the status line waits on that.
+    let ordersPending = 2;
+    const orderSettled = (): void => {
+      if (--ordersPending === 0) this.ordersLoaded = true;
+      paint();
+    };
+    void this.cb.worldApi.getMarches(this.cb.worldId)
+      .then((marches) => { this.marches = marches; })
+      .catch(() => { /* offline — treated as no active march */ })
+      .finally(orderSettled);
+    void this.cb.worldApi.getOccupations(this.cb.worldId)
+      .then((occupations) => { this.occupations = occupations; })
+      .catch(() => { /* offline — treated as no active hold */ })
+      .finally(orderSettled);
   }
 
   // ── Icon resolution ─────────────────────────────────────────────────────────
@@ -662,6 +708,7 @@ export interface CitySceneBase {
   renderHeaderDurability(headerH: number): void;
   renderTeamsRow(): number;
   renderTeamCard(i: number, x: number, y: number, cardW: number, cardH: number, now: number): void;
+  renderTeamCardLoading(i: number, x: number, y: number, cardW: number, cardH: number): void;
   renderResourceBar(startY: number): number;
   renderBuildQueue(startY: number): number;
   renderBuildingGrid(startY: number, bottomY: number): void;

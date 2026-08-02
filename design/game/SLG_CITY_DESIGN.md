@@ -255,6 +255,17 @@ D-CITY-11 的内政/军事双页拆分（左侧竖排 tab 切换）本次**撤�
 - 覆盖测试：`client/test/ui/cityFillAllTeams.ui.ts`（15 例）——按槽位顺序分配、单队内多卡按战力降序补满再溢出到下一队、池耗尽后不动后续队伍、跳过已满员的队伍、空池/请求失败时的提示与状态回滚、卡引用缺失（`cardInv` 无此 id）/ 旧版无卡军队条目安全跳过不崩溃、行军中或受伤锁定的队伍照样能补兵（补兵不受队伍状态门控）、`bt.busy` 期间二次点击是 no-op、按钮命中矩形与 5 张队伍卡的命中矩形几何回归（底边贴合队伍行顶边、绝不重叠）。`cityScene.ui.ts`/`cityTrainTroops.ui.ts` 里所有依赖命中区下标/数量的既有断言相应加 1（新按钮始终占一个命中位）。
 - 验证：`tsc --noEmit -p tsconfig.test.json` 全绿、`webpack build:web` 构建成功、`test:ui` 全绿（112 文件 / 942 例）。按钮几何位置靠手算 + 命中矩形回归验证（`fillBtnH` 精确等于 `TEAM_ROW_LABEL_H`，底边与队伍卡片行顶边重合但不重叠，见 `cityFillAllTeams.ui.ts`）；本次也临时起了一版 §8.6 同款 `?debugCity` 调试分支想在 Browser 面板截图复核，但受限于本环境截图链路一直取不到画面（canvas 已渲染、`toDataURL` 可导出但 Browser 面板截图工具报"未显示无法合成帧"），**未完成真正的像素级视觉核对**就已按指示叫停——调试分支已完整回退，不随本次改动合并。
 
+### 8.8 队伍栏加载：拆掉 `Promise.all` 栅栏 + 加载占位（2026-08-02）
+
+用户反馈进主城后「队伍信息加载非常慢」，且加载期间五个槽位直接写着「（空）」——那是"你没有队伍"的意思，不是"还没拉到"，读起来像 bug。两处都改：
+
+- **拆栅栏（客户端）**：`CitySceneBase.load()` 原本 `await Promise.all([getMe, getTeams, getMarches, getOccupations])` 后只 render 一次，等于**每一块数据都慢成四者中最慢的那一块**——`/world/teams` 早就回来了，队伍栏还得等 `getMe`/`getMarches`/`getOccupations`。改成四个请求各自 `.then` 各自 `render()`，谁先到谁先画。发起顺序也调了：`getTeams` 排第一，因为 `net/rateGate.ts` 的 5 令牌桶是严格 FIFO，桶被抽干时（刚入世、连点）按发起顺序放行，队伍栏是玩家在这个界面等的东西。
+- **加载占位（客户端）**：新增 `teamsLoaded` / `ordersLoaded` 两个标志位 + `tickLoadDots()`（0.4s 一跳的三点动画，与 `BusyTracker.tick` 同契约，由 `update()` 驱动）。`teamsLoaded` 为假时队伍槽画 `renderTeamCardLoading()`——同尺寸同边框、半透明、槽位名 + `city.military.teamLoading` + 动画点，**不注册命中区**（队伍真名还不知道，没法交给编队编辑器）。`ordersLoaded` 单独存在是因为状态标签要同时依赖 `marches` + `occupations`：只有两者都回来才敢写「驻军在家」，否则一支正在行军的队伍会先闪一下「驻军在家」再自我纠正。
+- **文案**：新增 `city.military.teamLoading`（加载中 / Loading / Lädt）。**不复用** `world.loading`——那句 zh 是「加载地图中…」（地图专用），且既有 loading 文案都自带省略号，与本处追加的 1–3 个动画点叠在一起会变成「加载中…..」。新 key 刻意不带省略号。
+- **服务端摘掉读路径上的整册卡牌重组**：`worldsvc` `getTeams` 的 self-heal 每次都向 metaserver 要**整个 cardInv**（`assembleCardInv` 从 `cardInstances` 拉该账号全部实例，最多 500 张，还顺带自愈 `cardInvCount`），只为验证 ≤5×12 个已被编队引用的 id 还在不在。现在：`/internal/save-fields` 新增可选 `cardIds=a,b,c`（`assembleCardInvSubset`，`_id:{$in}` + 仍按 `accountId` 作用域，故意不做 `cardInvCount` 自愈——过滤过的 `find` 看不到真实册数，写进去反而污染镜像），`getTeams` 只报自己引用的 id；一张卡都没引用时**整个跨服务跳转都跳过**。不传 `cardIds` 时行为与从前完全一致，攻城引擎等既有调用方不受影响。
+- 覆盖测试：`client/test/ui/cityScene.ui.ts` 新增 3 例（加载中显示占位而非「（空）」且无命中区、`getTeams` 落地即出队伍不等 `getMe`、`marches`/`occupations` 未双双落地前状态停在加载态不误报「驻军在家」）；`server/metaserver/test/internal-economy.test.ts` 新增 3 例（`cardIds` 收窄、仍按账号作用域不泄漏他人实例、不传 `cardIds` 仍返回整册）。既有 stub 里凡是没挂 `getTeams`/`getMarches`/`getOccupations` 的都补齐了——旧代码里这些缺失被 `Promise.all` 外面那圈 `try/catch` 吞掉，拆栅栏后会真的抛。
+- 验证：`tsc --noEmit -p tsconfig.test.json` + 三个服务 `tsc --noEmit` 全绿；`webpack --mode production --env TARGET=web` 构建成功；`test:ui` 113 文件 / 989 例全绿、`npm test` 130 文件 / 949 例全绿、metaserver 477 例 + worldsvc 61 例（均为非 e2e，本机 Docker 未起，`*.e2e.test.ts` 未跑）。视觉核对：沿用 §8.6 的临时 `?cityloading` 调试分支（直接 new `CityScene` + 假 `WorldApiClient`，绕开登录/后端），这次改用 Playwright 直连 dev server 截图落盘绕开 Browser 面板"未显示无法合成帧"的老问题，确认了加载态（五张半透明卡「加载中..」）与落地态（Alpha/Bravo/Charlie 带头像 + 兵力，4/5 槽「（空）」）两张图——**调试分支已完整回退**，不随本次改动合并。
+
 ---
 
 ## 9. 契约 / 端点（→ SERVER_API + openapi-world）

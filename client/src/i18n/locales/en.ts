@@ -1561,6 +1561,8 @@ export const en: Record<TranslationKey, string> = {
   'city.military.durability': 'Base Durability',
   'city.military.teams': 'Teams',
   'city.military.teamIdle': 'Garrisoned',
+  // No trailing ellipsis — the team row appends 1–3 animated dots itself (CityScene render.ts).
+  'city.military.teamLoading': 'Loading',
   'city.military.fillAllTeams': 'Fill All Teams',
   'city.military.fillAllTeamsDone': 'Assigned {n} troops across {teams} teams',
   'city.military.fillAllTeamsNone': 'Troop pool is empty, or all teams are already full',

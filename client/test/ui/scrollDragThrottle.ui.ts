@@ -54,7 +54,7 @@ const [W, H] = [800, 1280];
 function stubWorldApi(): WorldApiClient {
   const never = () => new Promise<never>(() => {});
   return {
-    getMe: never, getMap: never, getMapSparse: never, getTile: never, getMarches: never, getOccupations: never,
+    getMe: never, getMap: never, getMapSparse: never, getTile: never, getMarches: never, getOccupations: never, getTeams: never,
     joinWorld: never, occupyTile: never, abandonTile: never,
     startMarch: never, recallMarch: never,
     listFamilies: never, getFamily: never, createFamily: never,
@@ -156,6 +156,12 @@ describe('scroll-drag render throttle (2026-07-15 perf fix)', () => {
       onBack() {},
       worldApi: {
         getMe: () => new Promise(() => {}),
+        // Resolved, not never-resolving: CityScene.load() fires its four fetches independently
+        // (2026-08-02), and an unsettled getTeams keeps the team row's dot animation alive — which
+        // would add renders of its own to the count this test is asserting on.
+        getTeams: () => Promise.resolve([]),
+        getMarches: () => Promise.resolve([]),
+        getOccupations: () => Promise.resolve([]),
         upgradeBuilding: () => new Promise(() => {}),
         speedupBuild: () => new Promise(() => {}),
       } as unknown as WorldApiClient,
