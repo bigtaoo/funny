@@ -3,7 +3,7 @@
 // for which skins exist and what they cost; this map is the client-side "which card can wear it" mirror).
 // Because a skin never overlaps another skin's UnitType, equipping is naturally per-card: the old
 // single global `equipped[EQUIP_SLOT]` slot is replaced by one slot per UnitType.
-import { UnitType } from '../types';
+import { UnitType } from '@nw/engine/types';
 import { t, TranslationKey } from '../../i18n';
 import { CARD_DEFS } from './cardDefs';
 

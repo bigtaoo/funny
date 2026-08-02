@@ -1,7 +1,7 @@
 import { describe, it } from 'vitest';
 import { simulateLevel, type SimResult } from './difficultySim';
 import { CAMPAIGN_LEVELS } from '../src/game/campaign/levels';
-import type { LevelDefinition } from '../src/game/campaign/LevelDefinition';
+import type { LevelDefinition } from '@nw/engine/campaign/LevelDefinition';
 
 /**
  * Tuning experiment: A/B tests using the simulator to find "what changes make the first level fair for a zero-progression beginner".

@@ -26,12 +26,12 @@
 // stats a real PvP match would.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { createGameEngine } from '../src/game/GameEngine';
-import { Side, GamePhase, UnitType, CardType, BuildingType } from '../src/game/types';
-import type { GameConfig, IGameEngine } from '../src/game/types';
-import type { LevelDefinition } from '../src/game/campaign/LevelDefinition';
-import { UNIT_BLUEPRINTS, CARD_DEFINITIONS } from '../src/game/config';
-import { buildPvpBlueprints } from '../src/game/balance/pveUpgrades';
+import { createGameEngine } from '@nw/engine/GameEngine';
+import { Side, GamePhase, UnitType, CardType, BuildingType } from '@nw/engine/types';
+import type { GameConfig, IGameEngine } from '@nw/engine/types';
+import type { LevelDefinition } from '@nw/engine/campaign/LevelDefinition';
+import { UNIT_BLUEPRINTS, CARD_DEFINITIONS } from '@nw/engine/config';
+import { buildPvpBlueprints } from '@nw/engine/balance/pveUpgrades';
 
 const TICK_DT = 1 / 30;
 const TICK_RATE = 30;

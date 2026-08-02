@@ -7,11 +7,11 @@
 // verbatim (the judge deterministically re-runs from seed+level+authoritative blueprints+
 // player frames, so cheaters cannot alter the outcome).
 import { describe, it, expect } from 'vitest';
-import { createGameEngine } from '../src/game/GameEngine';
-import { RecordingInputSource } from '../src/game/net/ReplayInputSource';
-import { LocalInputSource } from '../src/game/net/InputSource';
-import { Side, GamePhase } from '../src/game/types';
-import type { GameConfig, IGameEngine, OwnerId } from '../src/game/types';
+import { createGameEngine } from '@nw/engine/GameEngine';
+import { RecordingInputSource } from '@nw/engine/net/ReplayInputSource';
+import { LocalInputSource } from '@nw/engine/net/InputSource';
+import { Side, GamePhase } from '@nw/engine/types';
+import type { GameConfig, IGameEngine, OwnerId } from '@nw/engine/types';
 import { CAMPAIGN_LEVELS, CAMPAIGN_LEVEL_ORDER } from '../src/game/campaign/levels';
 import { computeStars, buildStarContext } from '../src/game/meta/campaignRewards';
 import { toEngineCardInstances } from '../src/game/meta/cardDefs';

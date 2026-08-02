@@ -10,8 +10,8 @@
 import type { AuthCredential } from '../../platform/IPlatform';
 import { ApiError, type ApiClient, type ActiveMatchInfo } from '../../net/ApiClient';
 import { replayToUploadFrames } from '../../net/replayUpload';
-import type { Replay } from '../types';
-import type { UnitType } from '../types';
+import type { Replay } from '@nw/engine/types';
+import type { UnitType } from '@nw/engine/types';
 import {
   type CardInstance,
   type EquipmentInstance,

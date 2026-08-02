@@ -6,12 +6,12 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { createGameEngine } from '../src/game/GameEngine';
-import { TOP_BUILDING_ROW, BOTTOM_BUILDING_ROW } from '../src/game/config';
-import { BuildingType, UnitType, Side, GamePhase } from '../src/game/types';
-import type { GameConfig } from '../src/game/types';
-import type { LevelDefinition } from '../src/game/campaign/LevelDefinition';
-import { parseLevelDefinition } from '../src/game/campaign/levelSchema';
+import { createGameEngine } from '@nw/engine/GameEngine';
+import { TOP_BUILDING_ROW, BOTTOM_BUILDING_ROW } from '@nw/engine/config';
+import { BuildingType, UnitType, Side, GamePhase } from '@nw/engine/types';
+import type { GameConfig } from '@nw/engine/types';
+import type { LevelDefinition } from '@nw/engine/campaign/LevelDefinition';
+import { parseLevelDefinition } from '@nw/engine/campaign/levelSchema';
 
 const TICK_DT = 1 / 30;
 

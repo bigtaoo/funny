@@ -1,4 +1,4 @@
-import { UnitType } from '../game/types';
+import { UnitType } from '@nw/engine/types';
 
 /**
  * Unit height standard — the single source of truth in code for "how tall is a

@@ -13,8 +13,8 @@ import { drawCareerTabs, type CareerNavCallbacks } from '../ui/widgets/CareerTab
 import { sidebarNavW, bottomNavH } from '../ui/widgets/HubTabs';
 import { drawScrollIndicator } from '../ui/widgets/ScrollIndicator';
 import { wheelScrollY } from '../ui/wheelScroll';
-import { CARD_DEFINITIONS, UNIT_BLUEPRINTS, BUILDING_BLUEPRINTS } from '../game/config';
-import { CardType, type CardDefinition } from '../game/types';
+import { CARD_DEFINITIONS, UNIT_BLUEPRINTS, BUILDING_BLUEPRINTS } from '@nw/engine/config';
+import { CardType, type CardDefinition } from '@nw/engine/types';
 
 // ── CardCodexScene — read-only full card compendium ─────────────────────────────
 //

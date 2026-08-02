@@ -13,10 +13,10 @@
 //      document the lingering behavior.
 
 import { describe, it, expect } from 'vitest';
-import { createGameEngine } from '../src/game/GameEngine';
-import type { GameConfig } from '../src/game/types';
-import { GamePhase, UnitType } from '../src/game/types';
-import type { LevelDefinition } from '../src/game/campaign/LevelDefinition';
+import { createGameEngine } from '@nw/engine/GameEngine';
+import type { GameConfig } from '@nw/engine/types';
+import { GamePhase, UnitType } from '@nw/engine/types';
+import type { LevelDefinition } from '@nw/engine/campaign/LevelDefinition';
 
 // A level guaranteed to lose quickly: maxLeaks=1 + 3 Runners charging to the base → game decided fast (Top wins).
 const losingLevel: LevelDefinition = {

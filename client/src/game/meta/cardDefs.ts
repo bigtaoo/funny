@@ -11,7 +11,7 @@ import type { CardInstance } from './SaveData';
 import type { EquipmentInstance } from './SaveData';
 import type { EngineCardInstance, UnitType } from '@nw/engine';
 import { CARD_INV_CAP, CARD_INV_OVERFLOW_BUFFER, MAX_CARD_LEVEL, FUSION_MATERIAL_COUNT } from '@nw/shared/cards';
-import { UNIT_BLUEPRINTS } from '../config';
+import { UNIT_BLUEPRINTS } from '@nw/engine/config';
 
 export { CARD_INV_CAP, CARD_INV_OVERFLOW_BUFFER, MAX_CARD_LEVEL, FUSION_MATERIAL_COUNT };
 

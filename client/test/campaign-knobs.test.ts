@@ -7,11 +7,11 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { createGameEngine } from '../src/game/GameEngine';
-import { CARD_DEFINITIONS, ATTACK_LANES } from '../src/game/config';
-import type { GameConfig } from '../src/game/types';
-import { Side, UnitType, GamePhase } from '../src/game/types';
-import type { LevelDefinition } from '../src/game/campaign/LevelDefinition';
+import { createGameEngine } from '@nw/engine/GameEngine';
+import { CARD_DEFINITIONS, ATTACK_LANES } from '@nw/engine/config';
+import type { GameConfig } from '@nw/engine/types';
+import { Side, UnitType, GamePhase } from '@nw/engine/types';
+import type { LevelDefinition } from '@nw/engine/campaign/LevelDefinition';
 
 const TICK_DT = 1 / 30;
 

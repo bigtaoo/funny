@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import { parseLevelDefinition, LevelParseError } from '../src/game/campaign/levelSchema';
+import { parseLevelDefinition, LevelParseError } from '@nw/engine/campaign/levelSchema';
 import { CAMPAIGN_LEVELS, CAMPAIGN_LEVEL_ORDER } from '../src/game/campaign/levels';
-import { UnitType } from '../src/game/types';
+import { UnitType } from '@nw/engine/types';
 
 /**
  * Level JSON validation guard.

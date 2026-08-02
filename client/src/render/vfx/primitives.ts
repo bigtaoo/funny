@@ -14,7 +14,7 @@
  * 4 effects are byte-for-byte unchanged).
  */
 import * as PIXI from 'pixi.js-legacy';
-import { Prng } from '../../game/math/prng';
+import { Prng } from '@nw/engine/math/prng';
 import { LayerDef, ParamTrack } from './types';
 import { sampleParam } from './sampleParam';
 

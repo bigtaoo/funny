@@ -1,11 +1,11 @@
 import { describe, it, expect } from 'vitest';
-import { GameState } from '../src/game/GameState';
-import { Unit } from '../src/game/Unit';
-import { Building } from '../src/game/Building';
-import { MovementSystem } from '../src/game/systems/MovementSystem';
-import { toFp, mulFp, TICK_DT_FP } from '../src/game/math/fixed';
-import { BASE_HP, BASE_COLS, TOP_BUILDING_ROW } from '../src/game/config';
-import { Side, UnitType, UnitState, BuildingType } from '../src/game/types';
+import { GameState } from '@nw/engine/GameState';
+import { Unit } from '@nw/engine/Unit';
+import { Building } from '@nw/engine/Building';
+import { MovementSystem } from '@nw/engine/systems/MovementSystem';
+import { toFp, mulFp, TICK_DT_FP } from '@nw/engine/math/fixed';
+import { BASE_HP, BASE_COLS, TOP_BUILDING_ROW } from '@nw/engine/config';
+import { Side, UnitType, UnitState, BuildingType } from '@nw/engine/types';
 
 function tickN(state: GameState, sys: MovementSystem, n: number): void {
   for (let i = 0; i < n; i++) sys.tick(state);

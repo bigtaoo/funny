@@ -12,7 +12,7 @@ import { InputManager } from '../../src/inputSystem/InputManager';
 import { initI18n, t } from '../../src/i18n';
 import { CardScene, type CardCallbacks } from '../../src/scenes/CardScene';
 import { makeNewSave } from '../../src/game/meta/SaveData';
-import { UnitType } from '../../src/game/types';
+import { UnitType } from '@nw/engine/types';
 
 const memStore = (() => {
   const m = new Map<string, string>();

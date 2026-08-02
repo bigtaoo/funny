@@ -1,7 +1,7 @@
 import * as PIXI from 'pixi.js-legacy';
 import { makeText } from '../render/pixiText';
 import { Scene } from './SceneManager';
-import { OwnerId, PlayerStats } from '../game/types';
+import { OwnerId, PlayerStats } from '@nw/engine/types';
 import { t, TranslationKey } from '../i18n';
 import { ProfilePopup, type ProfileData, type ProfileExtra } from '../render/ProfilePopup';
 import { ui, buildPaperBackground, sketchPanel, seedFor, tearDownChildren } from '../render/sketchUi';
@@ -11,7 +11,7 @@ import { getTitleKeys, formatLadderTitle } from '../game/meta/titles';
 import { buildDecorCLayer } from '../render/decorCLayer';
 import { getDecorTexture, isDecorReady, decorFrameNames } from '../render/decorAtlas';
 import { bake } from '../render/bake';
-import { Prng } from '../game/math/prng';
+import { Prng } from '@nw/engine/math/prng';
 import { drawSceneHeader, type SceneHeaderResult } from '../ui/widgets/SceneHeader';
 import { FS, snapFont } from '../render/fontScale';
 

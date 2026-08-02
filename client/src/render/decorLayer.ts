@@ -19,7 +19,7 @@
  */
 import * as PIXI from 'pixi.js-legacy';
 import { ILayout, Rect } from '../layout/ILayout';
-import { Prng } from '../game/math/prng';
+import { Prng } from '@nw/engine/math/prng';
 import { bake } from './bake';
 import { decorFrameNames, getDecorTexture, isDecorReady } from './decorAtlas';
 

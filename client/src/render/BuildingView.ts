@@ -1,7 +1,7 @@
 import * as PIXI from 'pixi.js-legacy';
-import { Board } from '../game/Board';
-import { Building } from '../game/Building';
-import { BuildingType } from '../game/types';
+import { Board } from '@nw/engine/Board';
+import { Building } from '@nw/engine/Building';
+import { BuildingType } from '@nw/engine/types';
 import { BoardView } from './BoardView';
 import { ObjectPool } from '../cache/ObjectPool';
 import barracksTexUrl from '../assets/buildings/game_infantry_barracks.png';

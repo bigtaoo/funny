@@ -1,8 +1,8 @@
 import { describe, it } from 'vitest';
-import { createGameEngine } from '../src/game/GameEngine';
+import { createGameEngine } from '@nw/engine/GameEngine';
 import { CAMPAIGN_LEVELS } from '../src/game/campaign/levels';
-import type { GameConfig } from '../src/game/types';
-import { Side, GamePhase } from '../src/game/types';
+import type { GameConfig } from '@nw/engine/types';
+import { Side, GamePhase } from '@nw/engine/types';
 import { BaselinePlayer, DEFAULT_AI, progressionCards } from './difficultySim';
 
 const TICK_DT = 1 / 30;

@@ -13,7 +13,7 @@ import type { AppViews } from '../src/app/AppViews';
 import type { ApiClient } from '../src/net/ApiClient';
 import type { CardCallbacks } from '../src/scenes/CardScene';
 import type { EquipmentCallbacks } from '../src/scenes/EquipmentScene';
-import { UnitType } from '../src/game/types';
+import { UnitType } from '@nw/engine/types';
 
 function buildCtx(opts: { online: boolean }): {
   ctx: AppCtx;

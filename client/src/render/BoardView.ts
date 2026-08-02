@@ -1,5 +1,5 @@
 import * as PIXI from 'pixi.js-legacy';
-import { ATTACK_LANES, BOARD_COLS, BOARD_ROWS } from '../game/config';
+import { ATTACK_LANES, BOARD_COLS, BOARD_ROWS } from '@nw/engine/config';
 import { Side, sideToOwner } from '../game';
 import { ILayout, Rect } from '../layout/ILayout';
 import { ObjectPool } from '../cache/ObjectPool';

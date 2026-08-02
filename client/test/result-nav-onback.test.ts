@@ -12,7 +12,7 @@ import { describe, it, expect } from 'vitest';
 import { createResultNav } from '../src/app/nav/result';
 import type { AppCtx, AppState, Nav } from '../src/app/appCtx';
 import type { AppViews, ResultViewProps } from '../src/app/AppViews';
-import type { PlayerStats } from '../src/game/types';
+import type { PlayerStats } from '@nw/engine/types';
 
 const zeroStats = (owner: 0 | 1): PlayerStats => ({
   owner,

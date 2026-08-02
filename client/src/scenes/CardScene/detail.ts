@@ -12,7 +12,7 @@ import { RARITY_COLOR } from '../EquipmentScene/base';
 import type { SaveData, CardInstance, EquipSlot } from '../../game/meta/SaveData';
 import { CARD_DEFS, MAX_CARD_LEVEL, FUSION_MATERIAL_COUNT, fusionMaterialCandidates, troopCap, cardPower, cardHp, cardSiegeValue } from '../../game/meta/cardDefs';
 import { skinsForUnitType } from '../../game/meta/skinDefs';
-import type { UnitType } from '../../game/types';
+import type { UnitType } from '@nw/engine/types';
 import {
   type Constructor, type CardSceneBaseCtor,
   MODAL_DIM, injuryCountdown,

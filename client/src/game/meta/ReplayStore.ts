@@ -13,7 +13,7 @@
  */
 
 import type { IStorage } from '../../platform/IPlatform';
-import type { Replay } from '../types';
+import type { Replay } from '@nw/engine/types';
 
 export const REPLAY_STORAGE_KEY = 'nw_replays_v1';
 

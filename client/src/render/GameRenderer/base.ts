@@ -5,7 +5,7 @@
 // base into the final GameRenderer.
 import * as PIXI from 'pixi.js-legacy';
 import { makeText } from '../pixiText';
-import { BOTTOM_BUILDING_ROW, BOTTOM_SPAWN_ROW, TOP_BUILDING_ROW, TOP_SPAWN_ROW } from '../../game/config';
+import { BOTTOM_BUILDING_ROW, BOTTOM_SPAWN_ROW, TOP_BUILDING_ROW, TOP_SPAWN_ROW } from '@nw/engine/config';
 
 /** HP fraction at/under which a base is "critical" (~last HP cell) — triggers the board ring. */
 const BASE_CRITICAL_RATIO = 0.15;

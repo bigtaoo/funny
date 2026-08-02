@@ -1,10 +1,10 @@
 import { describe, it, expect } from 'vitest';
-import { AISystem } from '../src/game/systems/AISystem';
-import { GameState } from '../src/game/GameState';
-import { Prng } from '../src/game/math/prng';
-import { Unit } from '../src/game/Unit';
-import { CARD_DEFINITIONS } from '../src/game/config';
-import { FP_SCALE } from '../src/game/math/fixed';
+import { AISystem } from '@nw/engine/systems/AISystem';
+import { GameState } from '@nw/engine/GameState';
+import { Prng } from '@nw/engine/math/prng';
+import { Unit } from '@nw/engine/Unit';
+import { CARD_DEFINITIONS } from '@nw/engine/config';
+import { FP_SCALE } from '@nw/engine/math/fixed';
 import {
   BuildingType,
   CardType,
@@ -12,7 +12,7 @@ import {
   Side,
   SpellType,
   UnitType,
-} from '../src/game/types';
+} from '@nw/engine/types';
 
 /**
  * Behavioural guard for the enhanced AI (IMPROVEMENT_PLAN item 2, extended to the

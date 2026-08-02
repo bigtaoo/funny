@@ -24,7 +24,7 @@ import { SaveManager } from '../../src/game/meta/SaveManager';
 import { LocalSaveStore } from '../../src/game/meta/SaveStore';
 import { cardInstanceArtUrl } from '../../src/render/cardArt';
 import { skinEquipKey } from '../../src/game/meta/skinDefs';
-import { UnitType } from '../../src/game/types';
+import { UnitType } from '@nw/engine/types';
 
 // Every export passes through untouched except cardInstanceArtUrl, wrapped in vi.fn (keeping its
 // real implementation) so the 2026-08-01-scoping spec below can inspect call arguments.

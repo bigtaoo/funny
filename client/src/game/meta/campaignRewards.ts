@@ -14,7 +14,7 @@
 // stars from this file and reports them; the judge (judgeRunner.ts) recomputes with the same
 // function + the same ctx built from engine end state, so an honest clear reproduces the value.
 
-import { BASE_HP } from '../config';
+import { BASE_HP } from '@nw/engine/config';
 import type { LevelDefinition, ObjectiveSpec } from '@nw/engine';
 
 /** Clear time ≤ lastSpawnTick × this → speedScore 1.0 (fastest realistic clear). */

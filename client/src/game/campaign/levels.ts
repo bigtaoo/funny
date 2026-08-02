@@ -1,5 +1,5 @@
-import type { LevelDefinition } from './LevelDefinition';
-import { parseLevelDefinition } from './levelSchema';
+import type { LevelDefinition } from '@nw/engine/campaign/LevelDefinition';
+import { parseLevelDefinition } from '@nw/engine/campaign/levelSchema';
 
 import ch0Tutorial from './levels/ch0_tutorial.json';
 import ch1Lv1  from './levels/ch1_lv1.json';

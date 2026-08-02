@@ -17,7 +17,7 @@ import { sidebarNavW, bottomNavH } from '../../ui/widgets/HubTabs';
 import { drawScrollIndicator } from '../../ui/widgets/ScrollIndicator';
 import { CARD_DEFS, type CardDef } from '../../game/meta/cardDefs';
 import { skinsForUnitType } from '../../game/meta/skinDefs';
-import type { UnitType } from '../../game/types';
+import type { UnitType } from '@nw/engine/types';
 import { type Constructor, type CardSceneBaseCtor, CELL_GAP } from './base';
 
 export interface SkinsHandlers {

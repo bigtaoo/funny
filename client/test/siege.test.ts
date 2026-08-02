@@ -10,19 +10,19 @@
 //   ③ Judge re-verification closed loop: record a siege run → encode upload frames →
 //      JudgeRequest(defenseJson) → runJudge re-computes the same winner.
 import { describe, it, expect } from 'vitest';
-import { createGameEngine } from '../src/game/GameEngine';
-import { RecordingInputSource } from '../src/game/net/ReplayInputSource';
-import { LocalInputSource } from '../src/game/net/InputSource';
-import { Side, GamePhase, UnitType } from '../src/game/types';
-import type { GameConfig, IGameEngine, OwnerId } from '../src/game/types';
-import type { LevelDefinition } from '../src/game/campaign/LevelDefinition';
-import { UNIT_BLUEPRINTS } from '../src/game/config';
+import { createGameEngine } from '@nw/engine/GameEngine';
+import { RecordingInputSource } from '@nw/engine/net/ReplayInputSource';
+import { LocalInputSource } from '@nw/engine/net/InputSource';
+import { Side, GamePhase, UnitType } from '@nw/engine/types';
+import type { GameConfig, IGameEngine, OwnerId } from '@nw/engine/types';
+import type { LevelDefinition } from '@nw/engine/campaign/LevelDefinition';
+import { UNIT_BLUEPRINTS } from '@nw/engine/config';
 import { pvpExpectedBlueprints } from './pvpBlueprintExpected';
 import {
   buildPvpBlueprints,
   buildSiegeBlueprints,
-} from '../src/game/balance/pveUpgrades';
-import { UNIT_MAX_LEVEL } from '../src/game/balance/progression';
+} from '@nw/engine/balance/pveUpgrades';
+import { UNIT_MAX_LEVEL } from '@nw/engine/balance/progression';
 import { cardsAtLevel } from './cardHelpers';
 import { runJudge } from '../src/net/judgeRunner';
 import { replayToUploadFrames } from '../src/net/replayUpload';

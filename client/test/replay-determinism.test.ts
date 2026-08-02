@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { createGameEngine } from '../src/game/GameEngine';
-import type { GameConfig } from '../src/game/types';
+import { createGameEngine } from '@nw/engine/GameEngine';
+import type { GameConfig } from '@nw/engine/types';
 
 /**
  * Determinism / golden-replay guard.

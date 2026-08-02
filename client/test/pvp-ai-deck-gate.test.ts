@@ -13,7 +13,7 @@
 import { describe, it, expect } from 'vitest';
 import { createLocalMatch } from '../src/app/matchEngine';
 import { PVP_BASE_CARDS, PVP_UNLOCK_TIERS } from '../src/game/meta/pvpLoadout';
-import { TICK_RATE } from '../src/game/math/fixed';
+import { TICK_RATE } from '@nw/engine/math/fixed';
 
 const LOCKED_CARDS = PVP_UNLOCK_TIERS.flatMap((t) => t.cards); // runner, ironclad, berserker, splitter, harpy, medic
 const BASE = [...PVP_BASE_CARDS];

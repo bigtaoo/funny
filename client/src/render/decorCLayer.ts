@@ -12,7 +12,7 @@
  * - interactiveChildren = false — does not consume pointer events
  */
 import * as PIXI from 'pixi.js-legacy';
-import { Prng } from '../game/math/prng';
+import { Prng } from '@nw/engine/math/prng';
 import { bake } from './bake';
 import { decorCFrameNames, getDecorCTexture, isDecorCReady } from './decorCAtlas';
 

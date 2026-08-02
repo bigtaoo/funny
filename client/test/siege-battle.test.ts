@@ -10,12 +10,12 @@
 //               ③ timeout defender win (cannot destroy base + battleTimeoutTicks → owner1 wins);
 //               ④ hard guardrail: after creating siege engine, PvP blueprints still equal constants byte-for-byte; initialHp does not leak back.
 import { describe, it, expect } from 'vitest';
-import { createGameEngine } from '../src/game/GameEngine';
-import { Side, GamePhase, UnitType } from '../src/game/types';
-import type { GameConfig, IGameEngine, OwnerId } from '../src/game/types';
-import type { LevelDefinition } from '../src/game/campaign/LevelDefinition';
-import { UNIT_BLUEPRINTS } from '../src/game/config';
-import { buildPvpBlueprints } from '../src/game/balance/pveUpgrades';
+import { createGameEngine } from '@nw/engine/GameEngine';
+import { Side, GamePhase, UnitType } from '@nw/engine/types';
+import type { GameConfig, IGameEngine, OwnerId } from '@nw/engine/types';
+import type { LevelDefinition } from '@nw/engine/campaign/LevelDefinition';
+import { UNIT_BLUEPRINTS } from '@nw/engine/config';
+import { buildPvpBlueprints } from '@nw/engine/balance/pveUpgrades';
 import { pvpExpectedBlueprints } from './pvpBlueprintExpected';
 
 const TICK_DT = 1 / 30;
