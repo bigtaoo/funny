@@ -120,9 +120,11 @@ function stubWorldApiWithTrain(fx: TrainFixture): { api: WorldApiClient; me: Pla
   return { api, me, trainTroops, speedupTraining };
 }
 
-/** Builds the scene, waits for load(), opens the Train Troops modal by tapping its grid tile. The tile
- *  is spliced into the Domestic grid right after drillYard: DOMESTIC_BUILDING_KEYS =
- *  desk/inkPot/paperTray/graphiteMill/metalForge/stickerShop/cabinet/drillYard(7) → train tile at index 8. */
+/** Builds the scene, waits for load(), opens the Train Troops modal by tapping its grid tile. Hit 0 is
+ *  the always-present "Fill All Teams" button (registered by renderTeamsRow, which runs before the
+ *  building grid); the tile itself is spliced into the Domestic grid right after drillYard:
+ *  DOMESTIC_BUILDING_KEYS = desk/inkPot/paperTray/graphiteMill/metalForge/stickerShop/cabinet/drillYard(7)
+ *  → train tile at index 8, shifted to 9 by the fill-all-teams hit ahead of it. */
 async function openTrainModal(fx: TrainFixture): Promise<{ scene: CityScene; inner: CitySceneInternals; me: PlayerWorldView; trainTroops: ReturnType<typeof vi.fn>; speedupTraining: ReturnType<typeof vi.fn> }> {
   const input = new InputManager();
   const { api, me, trainTroops, speedupTraining } = stubWorldApiWithTrain(fx);
@@ -130,7 +132,7 @@ async function openTrainModal(fx: TrainFixture): Promise<{ scene: CityScene; inn
   const scene = new CityScene(createLayout(...PORTRAIT), input, cb);
   await new Promise((r) => setTimeout(r, 0));
   const inner = internals(scene);
-  const trainCard = contentHits(inner)[8]!;
+  const trainCard = contentHits(inner)[9]!;
   tap(inner, trainCard.x + trainCard.w / 2, trainCard.y + trainCard.h / 2);
   expect(inner.selectedTrain).toBe(true);
   return { scene, inner, me, trainTroops, speedupTraining };

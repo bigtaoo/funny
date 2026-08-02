@@ -81,14 +81,21 @@ function tap(inner: CitySceneInternals, x: number, y: number): void {
 // its hits split cleanly from the building-grid hits by y: grid tiles end well above the team row.
 const TEAM_BAND_Y_THRESHOLD = 140;
 
+/** The "Fill All Teams" button (2026-08-02) always registers a hit, flush inside the team band's
+ *  own section-label row — which sits above TEAM_BAND_Y_THRESHOLD, so it must be filtered out of
+ *  both gridHits and teamHits explicitly rather than falling out of the naive y split. */
+function isFillAllTeamsHit(h: Hit): boolean {
+  return h.fn.toString().includes('doFillAllTeams');
+}
+
 function contentHits(inner: CitySceneInternals): Hit[] {
   return inner.hits.slice(1).filter((h) => h.x >= inner.contentX);
 }
 function gridHits(inner: CitySceneInternals): Hit[] {
-  return contentHits(inner).filter((h) => h.y <= inner.h - TEAM_BAND_Y_THRESHOLD);
+  return contentHits(inner).filter((h) => !isFillAllTeamsHit(h) && h.y <= inner.h - TEAM_BAND_Y_THRESHOLD);
 }
 function teamHits(inner: CitySceneInternals): Hit[] {
-  return contentHits(inner).filter((h) => h.y > inner.h - TEAM_BAND_Y_THRESHOLD);
+  return contentHits(inner).filter((h) => !isFillAllTeamsHit(h) && h.y > inner.h - TEAM_BAND_Y_THRESHOLD);
 }
 
 /** All PIXI.Text content currently in the display tree, recursing sub-containers. */
@@ -286,8 +293,9 @@ describe('CityScene header base-durability (D-CITY-8; moved into the header 2026
     const texts = collectTexts(scene.container);
     // fmtNum floors to the nearest 'k' — 3200/8000 renders as "3k / 8k".
     expect(texts).toContain('3k / 8k');
-    // The durability readout registers no hit (display-only) — only Back + the 12 grid tiles.
-    expect(inner.hits.length).toBe(1 + GRID_TILE_COUNT);
+    // The durability readout registers no hit (display-only) — only Back + the 12 grid tiles +
+    // the always-present "Fill All Teams" button.
+    expect(inner.hits.length).toBe(1 + GRID_TILE_COUNT + 1);
     scene.destroy();
   });
 
@@ -359,8 +367,8 @@ describe('CityScene bottom team row (D-CITY-10; pinned single row 2026-07-23)', 
       me: { cardState: { c1: { currentTroops: 400 } }, teamState: { t2: { injuredUntil: Date.now() + 60_000 } } },
     });
     expect(teamHits(inner).length).toBe(0);
-    // Only Back + the 12 grid tiles register hits.
-    expect(inner.hits.length).toBe(1 + GRID_TILE_COUNT);
+    // Only Back + the 12 grid tiles + the always-present "Fill All Teams" button register hits.
+    expect(inner.hits.length).toBe(1 + GRID_TILE_COUNT + 1);
     scene.destroy();
   });
 
@@ -453,8 +461,8 @@ describe('CityScene bottom team row (D-CITY-10; pinned single row 2026-07-23)', 
   it('registers one hit per team slot when onEditTeam is wired', async () => {
     const { scene, inner } = await buildLoaded({ teams: [] }, () => {});
     expect(teamHits(inner).length).toBe(TEAM_CAP);
-    // Back + the 12 grid tiles + one hit per team slot.
-    expect(inner.hits.length).toBe(1 + GRID_TILE_COUNT + TEAM_CAP);
+    // Back + the 12 grid tiles + the "Fill All Teams" button + one hit per team slot.
+    expect(inner.hits.length).toBe(1 + GRID_TILE_COUNT + 1 + TEAM_CAP);
     scene.destroy();
   });
 
