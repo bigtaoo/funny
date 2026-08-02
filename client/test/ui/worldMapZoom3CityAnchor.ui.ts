@@ -36,7 +36,7 @@ import type { WorldTileView } from '../../src/net/WorldApiClient';
 // PIXI adapter's stub Image never fires (see test/harness/pixiHeadless.ts) — it would hang
 // forever. City-sprite positioning doesn't depend on real pixel content, so stub the atlas
 // as already-loaded with a throwaway 1×1 texture, same spirit as the binary-asset stub.
-vi.mock('../../src/render/cityAtlasLoader', () => ({
+vi.mock('../../src/render/atlas/cityAtlasLoader', () => ({
   isCityAtlasReady: () => true,
   getCityTextureForLevel: () => PIXI.Texture.WHITE,
   getCityContentTopFracForLevel: () => 0,

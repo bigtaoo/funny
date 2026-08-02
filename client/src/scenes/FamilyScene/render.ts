@@ -7,8 +7,8 @@ import { drawScrollIndicator } from '../../ui/widgets/ScrollIndicator';
 import { peekViewportH } from '../../ui/widgets/scrollPeek';
 import { buildIcon } from '../../render/icons';
 import { buildAvatar } from '../../render/avatar';
-import { caretDisplay } from '../../render/inputDisplay';
-import { drawChatLine } from '../../render/chatRow';
+import { caretDisplay } from '../../ui/inputDisplay';
+import { drawChatLine } from '../../ui/widgets/chatRow';
 import { FAMILY_CAP } from '@nw/shared';
 import { type Constructor, type FamilySceneBaseCtor, type FamilyTab } from './base';
 

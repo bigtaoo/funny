@@ -9,7 +9,7 @@
  */
 import * as PIXI from 'pixi.js-legacy';
 import { iconsAtlas as atlas } from './iconsAtlas';
-import { buildIcon, type IconKind } from './icons';
+import { buildIcon, type IconKind } from '../icons';
 
 /** True once the atlas PNG has decoded and frames are parsed. */
 export const isAvatarAtlasReady = atlas.isReady;

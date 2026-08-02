@@ -13,10 +13,10 @@
  * load is non-fatal; the scene degrades to the procedural icon.
  */
 import * as PIXI from 'pixi.js-legacy';
-import { assetIO } from '../assets/assetIO';
-import { buildIcon, type IconKind } from './icons';
-import atlasUrl from '../assets/shop/coins.png';
-import atlasData from '../assets/shop/coins.json';
+import { assetIO } from '../../assets/assetIO';
+import { buildIcon, type IconKind } from '../icons';
+import atlasUrl from '../../assets/shop/coins.png';
+import atlasData from '../../assets/shop/coins.json';
 
 /** IconKinds with AI bitmap art in the atlas — matches the 5 ShopScene coin tiers. */
 const AI_COIN_ICON_KINDS = new Set<IconKind>(['coin', 'coins', 'coinStack', 'coinSack', 'coinChest']);

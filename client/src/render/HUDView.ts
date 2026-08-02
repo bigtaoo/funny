@@ -6,7 +6,7 @@ import { OwnerId } from '@nw/engine/types';
 import { ILayout, Rect } from '../layout/ILayout';
 import { t } from '../i18n';
 import { getLabelTexture } from './labelDecor';
-import { drawHudButton, hudButtonText, HudButtonVariant } from './hudButton';
+import { drawHudButton, hudButtonText, HudButtonVariant } from '../ui/widgets/hudButton';
 import { FS, snapFont } from './fontScale';
 import { factionInk, fx } from './theme';
 import { drawInk } from './icons/currency';

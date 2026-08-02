@@ -22,7 +22,7 @@
  * tao/anna colour is defined, so no call site can drift.
  */
 import * as PIXI from 'pixi.js-legacy';
-import { iconsAtlas as atlas } from './iconsAtlas';
+import { iconsAtlas as atlas } from './atlas/iconsAtlas';
 import { getCachedDisplay } from '../ui/widgets/uiCache';
 import { SketchPen } from './sketch';
 import type { Faction } from '../game/meta/cardDefs';

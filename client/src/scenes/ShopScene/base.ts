@@ -27,7 +27,7 @@ import type { ShopItem } from '../../net/ApiClient';
 import { ui as C, txt, buildPaperBackground, sketchPanel, sketchAccentBar, seedFor, drawLoadingOverlay, tearDownChildren, marginLineX } from '../../render/sketchUi';
 import { buildDecorCLayer } from '../../render/decorCLayer';
 import { type IconKind } from '../../render/icons';
-import { loadCoinIconAtlas, buildCoinIcon } from '../../render/coinIconAtlas';
+import { loadCoinIconAtlas, buildCoinIcon } from '../../render/atlas/coinIconAtlas';
 import { getArtTexture, containScale } from '../../render/cardArt';
 import { drawSceneHeader, drawHeaderCurrency, HEADER_ACCENT } from '../../ui/widgets/SceneHeader';
 import { drawSidebarTabs, drawBottomNavTabs, sidebarNavW, bottomNavH, type HubTab } from '../../ui/widgets/HubTabs';

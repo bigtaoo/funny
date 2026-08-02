@@ -6,7 +6,7 @@ import { FS } from '../../render/fontScale';
 import { withTimeout, TimeoutError } from '../../ui/busyTracker';
 import type { EquipmentInstance, EquipRarity } from '../../game/meta/SaveData';
 import { getEquipDef, REFORGE_MATERIAL_RARITY } from '../../game/meta/equipmentDefs';
-import { buildEquipIcon } from '../../render/equipmentAtlas';
+import { buildEquipIcon } from '../../render/atlas/equipmentAtlas';
 import { type Constructor, type EquipmentSceneBaseCtor, RARITY_COLOR } from './base';
 
 /** One icon card in the reforge material grid: a defId stack of interchangeable (unenhanced) fuel. */

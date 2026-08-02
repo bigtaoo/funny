@@ -6,7 +6,7 @@ import { ui as C, sketchPanel, seedFor, tearDownChildren } from '../../render/sk
 import { FS } from '../../render/fontScale';
 import { unitPortraitUrl } from '../../render/cardArt';
 import { buildIcon } from '../../render/icons';
-import { buildEquipIcon } from '../../render/equipmentAtlas';
+import { buildEquipIcon } from '../../render/atlas/equipmentAtlas';
 import { buildFactionIcon, FACTION_COLOR } from '../../render/factionIcon';
 import { RARITY_COLOR } from '../EquipmentScene/base';
 import type { SaveData, CardInstance, EquipSlot } from '../../game/meta/SaveData';

@@ -9,11 +9,11 @@
  * mirrored into a PIXI text label). Deliberately minimal — no caret blink, no multi-line textarea.
  */
 import * as PIXI from 'pixi.js-legacy';
-import { makeText } from './pixiText';
-import type { Scene } from '../scenes/SceneManager';
-import { ui as C, txt, buildPaperBackground, sketchPanel, seedFor } from './sketchUi';
-import { snapFont } from './fontScale';
-import { t } from '../i18n';
+import { makeText } from '../../render/pixiText';
+import type { Scene } from '../../scenes/SceneManager';
+import { ui as C, txt, buildPaperBackground, sketchPanel, seedFor } from '../../render/sketchUi';
+import { snapFont } from '../../render/fontScale';
+import { t } from '../../i18n/index';
 
 // Mirrors server/shared/src/social.ts APPEAL_REASON_MAX (500) — not imported: '@nw/shared' resolves to a
 // curated browser-safe subset (see client/webpack.config.js) that does not re-export server/shared/src/social.ts,

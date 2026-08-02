@@ -12,7 +12,7 @@ import { t } from '../../i18n';
 import { showToastMessage } from '../../net/log';
 import { matchBadgeTelemetry } from '../../scenes/ResultScene';
 import type { EloResult } from '../../scenes/ResultScene';
-import type { ProfileData } from '../../render/ProfilePopup';
+import type { ProfileData } from '../../ui/dialogs/ProfilePopup';
 import { WorldApiClient } from '../../net/WorldApiClient';
 import { allEquippedSkins } from '../../game/meta/skinDefs';
 import type { NetGameView } from '../AppViews';

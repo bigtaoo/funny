@@ -7,7 +7,7 @@ import { t, TranslationKey } from '../../i18n';
 import { SketchPen } from '../../render/sketch';
 import { palette } from '../../render/theme';
 import { buildIcon, IconKind } from '../../render/icons';
-import { buildCoinIcon } from '../../render/coinIconAtlas';
+import { buildCoinIcon } from '../../render/atlas/coinIconAtlas';
 import { buildWearOverlay } from '../../render/wearOverlay';
 import { buildDecorCLayer } from '../../render/decorCLayer';
 import { BoilingSprite } from '../../render/boil';

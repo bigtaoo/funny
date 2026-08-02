@@ -11,7 +11,7 @@
  */
 import type * as PIXI from 'pixi.js-legacy';
 import { worldAtlas as atlas } from './worldAtlas';
-import atlasData from '../assets/slg/world_atlas.json';
+import atlasData from '../../assets/slg/world_atlas.json';
 
 /** True once the atlas PNG has decoded and frames are parsed. */
 export const isPlayerBaseAtlasReady = atlas.isReady;

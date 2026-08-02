@@ -6,8 +6,8 @@ import { ui as C, txt, sketchPanel, sketchButton, seedFor, tearDownChildren } fr
 import { snapFont } from '../../render/fontScale';
 import { t } from '../../i18n';
 import { buildIcon } from '../../render/icons';
-import { buildMaterialIcon, type MaterialKind } from '../../render/materialAtlas';
-import { caretDisplay } from '../../render/inputDisplay';
+import { buildMaterialIcon, type MaterialKind } from '../../render/atlas/materialAtlas';
+import { caretDisplay } from '../../ui/inputDisplay';
 import { AUCTION_DURATION_SEC, type Constructor, type AuctionSceneBaseCtor } from './base';
 
 export interface CreateFormHandlers {

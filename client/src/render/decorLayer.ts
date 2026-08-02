@@ -21,7 +21,7 @@ import * as PIXI from 'pixi.js-legacy';
 import { ILayout, Rect } from '../layout/ILayout';
 import { Prng } from '@nw/engine/math/prng';
 import { bake } from './bake';
-import { decorFrameNames, getDecorTexture, isDecorReady } from './decorAtlas';
+import { decorFrameNames, getDecorTexture, isDecorReady } from './atlas/decorAtlas';
 
 // ── Tuning (restrained — marginalia, not wallpaper) ──────────────────────────
 const MIN_BAND_W   = 24;    // narrower strips aren't worth decorating

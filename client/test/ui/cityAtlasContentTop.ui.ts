@@ -13,8 +13,8 @@
 
 import { describe, it, expect } from 'vitest';
 import { cityTier } from '@nw/shared';
-import { getCityContentTopFracForLevel } from '../../src/render/cityAtlasLoader';
-import { getPlayerBaseContentTopFracForLevel } from '../../src/render/playerBaseAtlasLoader';
+import { getCityContentTopFracForLevel } from '../../src/render/atlas/cityAtlasLoader';
+import { getPlayerBaseContentTopFracForLevel } from '../../src/render/atlas/playerBaseAtlasLoader';
 import worldAtlasData from '../../src/assets/slg/world_atlas.json';
 
 type FrameMap = Record<string, { contentTop?: number }>;

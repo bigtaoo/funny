@@ -12,7 +12,7 @@
  * (theme.ts) so a re-skin is one edit.
  */
 import * as PIXI from 'pixi.js-legacy';
-import { palette } from './theme';
+import { palette } from '../../render/theme';
 
 export type HudButtonVariant = 'primary' | 'accent' | 'secondary' | 'danger' | 'disabled' | 'gold';
 

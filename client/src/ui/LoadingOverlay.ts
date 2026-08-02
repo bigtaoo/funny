@@ -7,8 +7,8 @@
  * Destroyed once the L0 tier is ready, immediately before the first scene shows.
  */
 import * as PIXI from 'pixi.js-legacy';
-import { makeText } from './pixiText';
-import { FS } from './fontScale';
+import { makeText } from '../render/pixiText';
+import { FS } from '../render/fontScale';
 
 const INK = 0x3a3a3a;        // pencil/pen ink
 const HIGHLIGHT = 0x4a7fb5;  // faction-blue highlighter wash (our side, §3.2)

@@ -12,9 +12,9 @@
  * texture until the atlas resolves.
  */
 import * as PIXI from 'pixi.js-legacy';
-import { assetIO } from '../assets/assetIO';
-import atlasUrl from '../assets/buildings/base_upgrade_atlas.png';
-import atlasData from '../assets/buildings/base_upgrade_atlas.json';
+import { assetIO } from '../../assets/assetIO';
+import atlasUrl from '../../assets/buildings/base_upgrade_atlas.png';
+import atlasData from '../../assets/buildings/base_upgrade_atlas.json';
 
 let sheet: PIXI.Spritesheet | null = null;
 let loading: Promise<void> | null = null;

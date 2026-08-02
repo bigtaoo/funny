@@ -17,13 +17,13 @@ import { WorldMapContext, type WorldMapCallbacks } from '../../src/scenes/worldm
 import { WorldMapRenderer } from '../../src/scenes/worldmap/WorldMapRenderer';
 import { WorldMapPanels } from '../../src/scenes/worldmap/WorldMapPanels';
 import { WorldMapInput } from '../../src/scenes/worldmap/WorldMapInput';
-import { getCityContentTopFracForLevel } from '../../src/render/cityAtlasLoader';
+import { getCityContentTopFracForLevel } from '../../src/render/atlas/cityAtlasLoader';
 import type { ILayout } from '../../src/layout/ILayout';
 import type { WorldTileView } from '../../src/net/WorldApiClient';
 
 // See worldMapZoom3CityAnchor.ui.ts: the real loadCityAtlas() would hang on the headless stub
 // Image's never-firing onload. Stub the atlas as ready with a throwaway texture.
-vi.mock('../../src/render/cityAtlasLoader', () => ({
+vi.mock('../../src/render/atlas/cityAtlasLoader', () => ({
   isCityAtlasReady: () => true,
   getCityTextureForLevel: () => PIXI.Texture.WHITE,
   getCityContentTopFracForLevel: vi.fn(() => 0),

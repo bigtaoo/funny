@@ -12,8 +12,8 @@
  */
 import * as PIXI from 'pixi.js-legacy';
 import { createAtlasLoader } from './spriteAtlas';
-import atlasUrl from '../assets/decor/decor_merged_atlas.png';
-import atlasData from '../assets/decor/decor_merged_atlas.json';
+import atlasUrl from '../../assets/decor/decor_merged_atlas.png';
+import atlasData from '../../assets/decor/decor_merged_atlas.json';
 
 export const decorMergedAtlas = createAtlasLoader(atlasUrl as string, atlasData as PIXI.ISpritesheetData, 'decor-merged');
 

@@ -14,7 +14,7 @@
 import * as PIXI from 'pixi.js-legacy';
 import { Prng } from '@nw/engine/math/prng';
 import { bake } from './bake';
-import { decorCFrameNames, getDecorCTexture, isDecorCReady } from './decorCAtlas';
+import { decorCFrameNames, getDecorCTexture, isDecorCReady } from './atlas/decorCAtlas';
 
 // ── Tuning ────────────────────────────────────────────────────────────────────
 const SIZE_PX       = 96;    // target rendered size (px); C-group source frames are 128px, scaled slightly down

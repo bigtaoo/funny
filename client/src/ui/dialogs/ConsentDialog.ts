@@ -11,11 +11,11 @@
  * tab (`/privacy.html`, `/terms.html`), matching the marketing site's footer.
  */
 import * as PIXI from 'pixi.js-legacy';
-import { makeText } from './pixiText';
-import type { Scene } from '../scenes/SceneManager';
-import { ui as C, txt, buildPaperBackground, sketchPanel, seedFor } from './sketchUi';
-import { snapFont } from './fontScale';
-import { t } from '../i18n';
+import { makeText } from '../../render/pixiText';
+import type { Scene } from '../../scenes/SceneManager';
+import { ui as C, txt, buildPaperBackground, sketchPanel, seedFor } from '../../render/sketchUi';
+import { snapFont } from '../../render/fontScale';
+import { t } from '../../i18n/index';
 
 export interface ConsentCallbacks {
   /** Player accepted — the core records consent (local flag + server) and proceeds. */

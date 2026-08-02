@@ -9,9 +9,9 @@
  * closeModal bookkeeping and just wires the returned hit rects in.
  */
 import * as PIXI from 'pixi.js-legacy';
-import { ui as C, txt, sketchPanel, sketchButton, seedFor, tearDownChildren } from './sketchUi';
-import { FS } from './fontScale';
-import { t } from '../i18n';
+import { ui as C, txt, sketchPanel, sketchButton, seedFor, tearDownChildren } from '../../render/sketchUi';
+import { FS } from '../../render/fontScale';
+import { t } from '../../i18n/index';
 
 export interface Rect { x: number; y: number; w: number; h: number; }
 export interface ModalHit { rect: Rect; action: () => void; }

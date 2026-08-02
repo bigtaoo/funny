@@ -14,8 +14,8 @@
  */
 import * as PIXI from 'pixi.js-legacy';
 import { iconsAtlas as atlas } from './iconsAtlas';
-import { drawEquipmentGlyph, drawEmptySlotGlyph } from './equipmentGlyph';
-import type { EquipSlot, EquipRarity } from '../game/meta/SaveData';
+import { drawEquipmentGlyph, drawEmptySlotGlyph } from '../equipmentGlyph';
+import type { EquipSlot, EquipRarity } from '../../game/meta/SaveData';
 
 /** True once the atlas PNG has decoded and frames are parsed. */
 export const isEquipAtlasReady = atlas.isReady;

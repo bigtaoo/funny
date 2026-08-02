@@ -9,7 +9,7 @@ import { palette, fx, factionInk } from './theme';
 import { bake } from './bake';
 import { buildDecorLayer } from './decorLayer';
 import { buildBattleLabels, type BattleLabelContext } from './battleLabels';
-import { loadBaseUpgradeAtlas, getBaseUpgradeTexture } from './baseUpgradeAtlasLoader';
+import { loadBaseUpgradeAtlas, getBaseUpgradeTexture } from './atlas/baseUpgradeAtlasLoader';
 
 /** State/highlight colors sourced from theme.fx (art-direction §3.3). */
 const HIGHLIGHT_LANE     = fx.laneValid;     // valid attack lane

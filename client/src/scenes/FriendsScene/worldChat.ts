@@ -3,8 +3,8 @@ import * as PIXI from 'pixi.js-legacy';
 import { t } from '../../i18n';
 import { ui as C, txt, sketchPanel, seedFor } from '../../render/sketchUi';
 import { snapFont } from '../../render/fontScale';
-import { caretDisplay } from '../../render/inputDisplay';
-import { drawChatLine } from '../../render/chatRow';
+import { caretDisplay } from '../../ui/inputDisplay';
+import { drawChatLine } from '../../ui/widgets/chatRow';
 import type { WorldChatMessage } from '../../net/WorldApiClient';
 import { type Constructor, type FriendsSceneBaseCtor } from './base';
 

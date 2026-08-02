@@ -5,7 +5,7 @@ import { t, type TranslationKey } from '../../i18n';
 import { ui as C, txt, sketchPanel, seedFor, marginLineX, tearDownChildren } from '../../render/sketchUi';
 import { FS } from '../../render/fontScale';
 import { buildIcon } from '../../render/icons';
-import { buildEquipIcon } from '../../render/equipmentAtlas';
+import { buildEquipIcon } from '../../render/atlas/equipmentAtlas';
 import { FACTION_COLOR } from '../../render/factionIcon';
 import { cardInstanceArtUrl } from '../../render/cardArt';
 import { drawHeaderCurrency } from '../../ui/widgets/SceneHeader';

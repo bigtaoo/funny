@@ -6,8 +6,8 @@ import { t } from '../../i18n';
 import { ui as C, txt, sketchPanel, sketchButton, sketchAccentBar, seedFor } from '../../render/sketchUi';
 import { drawScrollIndicator } from '../../ui/widgets/ScrollIndicator';
 import { peekViewportH } from '../../ui/widgets/scrollPeek';
-import { caretDisplay } from '../../render/inputDisplay';
-import { drawChatLine } from '../../render/chatRow';
+import { caretDisplay } from '../../ui/inputDisplay';
+import { drawChatLine } from '../../ui/widgets/chatRow';
 import { type Constructor, type SectSceneBaseCtor, type SectTab, ROW_H } from './base';
 import { FS } from '../../render/fontScale';
 

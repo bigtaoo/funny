@@ -13,8 +13,8 @@
 // whole available height like before; the rail stops short and leaves blank space below, which is
 // the accepted trade-off for matching every other hub's cell size.
 import * as PIXI from 'pixi.js-legacy';
-import { t, TranslationKey } from '../i18n';
-import { drawSidebarTabs, drawBottomNavTabs, sidebarNavW, bottomNavH, type HubTab } from '../ui/widgets/HubTabs';
+import { t, TranslationKey } from '../../i18n/index';
+import { drawSidebarTabs, drawBottomNavTabs, sidebarNavW, bottomNavH, type HubTab } from './HubTabs';
 
 export type SocialTab = 'friends' | 'family' | 'sect' | 'world' | 'mail';
 

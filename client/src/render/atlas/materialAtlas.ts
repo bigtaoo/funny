@@ -13,7 +13,7 @@
  */
 import * as PIXI from 'pixi.js-legacy';
 import { iconsAtlas as atlas } from './iconsAtlas';
-import { buildIcon, type IconKind } from './icons';
+import { buildIcon, type IconKind } from '../icons';
 
 /** The material kinds backed by an atlas frame. */
 export type MaterialKind = 'scrap' | 'lead' | 'binding';

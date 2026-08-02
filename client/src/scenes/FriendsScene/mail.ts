@@ -6,9 +6,9 @@ import { FS, snapFont } from '../../render/fontScale';
 import { buildIcon } from '../../render/icons';
 import { makeText } from '../../render/pixiText';
 import { getEquipDef } from '../../game/meta/equipmentDefs';
-import { buildEquipIcon } from '../../render/equipmentAtlas';
+import { buildEquipIcon } from '../../render/atlas/equipmentAtlas';
 import { cardInstanceArtUrl, getArtTexture } from '../../render/cardArt';
-import { buildMaterialIcon, type MaterialKind } from '../../render/materialAtlas';
+import { buildMaterialIcon, type MaterialKind } from '../../render/atlas/materialAtlas';
 import type { MailView, MailAttachmentView } from '../../net/ApiClient';
 import { type Constructor, type FriendsSceneBaseCtor } from './base';
 

@@ -12,8 +12,8 @@
  */
 import * as PIXI from 'pixi.js-legacy';
 import { createAtlasLoader } from './spriteAtlas';
-import atlasUrl from '../assets/slg/world_atlas.png';
-import atlasData from '../assets/slg/world_atlas.json';
+import atlasUrl from '../../assets/slg/world_atlas.png';
+import atlasData from '../../assets/slg/world_atlas.json';
 
 // Several of the merged frame sets (res/city-building icons) are drawn far
 // smaller than their packed cell — mipmap + LINEAR keeps the shrink crisp

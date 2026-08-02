@@ -17,14 +17,14 @@
  * decision still uses the uuid accountId, never publicId.
  */
 import * as PIXI from 'pixi.js-legacy';
-import { makeText } from './pixiText';
-import { buildAvatar } from './avatar';
-import { palette } from './theme';
-import { t, type TranslationKey } from '../i18n';
-import { getTitleKeys, formatLadderTitle } from '../game/meta/titles';
-import { tearDownChildren } from './sketchUi';
-import { snapFont } from './fontScale';
-import { drawHudButton, hudButtonText } from './hudButton';
+import { makeText } from '../../render/pixiText';
+import { buildAvatar } from '../../render/avatar';
+import { palette } from '../../render/theme';
+import { t, type TranslationKey } from '../../i18n/index';
+import { getTitleKeys, formatLadderTitle } from '../../game/meta/titles';
+import { tearDownChildren } from '../../render/sketchUi';
+import { snapFont } from '../../render/fontScale';
+import { drawHudButton, hudButtonText } from '../widgets/hudButton';
 
 export interface ProfileData {
   /** Display name (nickname). */

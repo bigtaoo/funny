@@ -12,7 +12,7 @@
  */
 import * as PIXI from 'pixi.js-legacy';
 import { createAtlasLoader } from './spriteAtlas';
-import atlasUrl from '../assets/icons/icons_atlas.png';
-import atlasData from '../assets/icons/icons_atlas.json';
+import atlasUrl from '../../assets/icons/icons_atlas.png';
+import atlasData from '../../assets/icons/icons_atlas.json';
 
 export const iconsAtlas = createAtlasLoader(atlasUrl as string, atlasData as PIXI.ISpritesheetData, 'icons');

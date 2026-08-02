@@ -11,7 +11,7 @@ import type { NetSession } from '../net/NetSession';
 import type { WorldApiClient } from '../net/WorldApiClient';
 import type { Replay, OwnerId, PlayerStats, MatchStartInfo, AIDifficulty } from '../game';
 import type { EloResult } from '../scenes/ResultScene';
-import type { ProfileData } from '../render/ProfilePopup';
+import type { ProfileData } from '../ui/dialogs/ProfilePopup';
 
 /** Mutable session-lifetime state, shared by reference across all nav modules. */
 export interface AppState {

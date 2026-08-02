@@ -8,9 +8,9 @@
  * corresponding field is absent (most chats only ever populate a subset).
  */
 import * as PIXI from 'pixi.js-legacy';
-import { ui as C, txt } from './sketchUi';
-import { t, type TranslationKey } from '../i18n';
-import { getTitleKeys, formatLadderTitle } from '../game/meta/titles';
+import { ui as C, txt } from '../../render/sketchUi';
+import { t, type TranslationKey } from '../../i18n/index';
+import { getTitleKeys, formatLadderTitle } from '../../game/meta/titles';
 
 /** Resolve a raw titleId (e.g. `event.newbie`) to its short display label (e.g. 新手). */
 function titleShortLabel(titleId: string): string {

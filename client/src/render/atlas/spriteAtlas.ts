@@ -8,7 +8,7 @@
  * around one instance so call sites keep their existing function names/signatures.
  */
 import * as PIXI from 'pixi.js-legacy';
-import { assetIO } from '../assets/assetIO';
+import { assetIO } from '../../assets/assetIO';
 
 export interface AtlasLoader {
   /** True once the atlas PNG has decoded and frames are parsed. */

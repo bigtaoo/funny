@@ -6,7 +6,7 @@ import { InputManager } from '../inputSystem/InputManager';
 import { t, TranslationKey } from '../i18n';
 import { ui as C, txt, buildPaperBackground, sketchPanel, seedFor, drawLoadingOverlay, tearDownChildren } from '../render/sketchUi';
 import { buildIcon, type IconKind } from '../render/icons';
-import { buildMaterialIcon, type MaterialKind } from '../render/materialAtlas';
+import { buildMaterialIcon, type MaterialKind } from '../render/atlas/materialAtlas';
 
 function isMaterialKind(kind: IconKind): kind is MaterialKind {
   return kind === 'scrap' || kind === 'lead' || kind === 'binding';

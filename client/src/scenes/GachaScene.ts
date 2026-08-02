@@ -14,10 +14,10 @@ import { drawSceneHeader, drawHeaderCurrency, HEADER_ACCENT } from '../ui/widget
 import { drawSidebarTabs, drawBottomNavTabs, sidebarNavW, bottomNavH, type HubTab } from '../ui/widgets/HubTabs';
 import { BusyTracker, withTimeout, TimeoutError } from '../ui/busyTracker';
 import { buildIcon } from '../render/icons';
-import { buildCoinIcon } from '../render/coinIconAtlas';
+import { buildCoinIcon } from '../render/atlas/coinIconAtlas';
 import { getEquipDef } from '../game/meta/equipmentDefs';
-import { buildEquipIcon } from '../render/equipmentAtlas';
-import { buildMaterialIcon } from '../render/materialAtlas';
+import { buildEquipIcon } from '../render/atlas/equipmentAtlas';
+import { buildMaterialIcon } from '../render/atlas/materialAtlas';
 import { CARD_DEFS } from '../game/meta/cardDefs';
 import { SKIN_TARGET_UNIT, skinDisplayName } from '../game/meta/skinDefs';
 import { cardInstanceArtUrl, getArtTexture, unitPortraitUrl } from '../render/cardArt';

@@ -2,8 +2,8 @@
 // deterministic procedural NPC cities (seed-derived, map-wide), pooled and culled per viewport.
 import * as PIXI from 'pixi.js-legacy';
 import { BASE_FOOTPRINT, citySpriteTiles, cityGroundFwdPx, cityPlotMaskPoints } from '@nw/shared';
-import { getCityTextureForLevel, getCityContentTopFracForLevel, isCityAtlasReady } from '../../../render/cityAtlasLoader';
-import { getPlayerBaseTextureForLevel, getPlayerBaseContentTopFracForLevel } from '../../../render/playerBaseAtlasLoader';
+import { getCityTextureForLevel, getCityContentTopFracForLevel, isCityAtlasReady } from '../../../render/atlas/cityAtlasLoader';
+import { getPlayerBaseTextureForLevel, getPlayerBaseContentTopFracForLevel } from '../../../render/atlas/playerBaseAtlasLoader';
 import { tileToScreen, visibleTileBounds, ISO_RATIO } from '../../../render/isoGrid';
 import { HUD_H, BASE_SPRITE_TILES } from '../constants';
 import { t } from '../../../i18n';

@@ -51,8 +51,8 @@ import type { RechargeCallbacks } from '../../src/scenes/RechargeScene';
 import type { WorldMapView } from '../../src/scenes/WorldMapScene';
 import type { DailyCallbacks } from '../../src/scenes/DailyScene';
 import type { EventCallbacks } from '../../src/scenes/EventScene';
-import type { ConsentCallbacks } from '../../src/render/ConsentDialog';
-import type { ReconnectPromptCallbacks } from '../../src/render/ReconnectPromptDialog';
+import type { ConsentCallbacks } from '../../src/ui/dialogs/ConsentDialog';
+import type { ReconnectPromptCallbacks } from '../../src/ui/dialogs/ReconnectPromptDialog';
 import type { TitlesSceneCallbacks } from '../../src/scenes/TitlesScene';
 import type { CitySceneCallbacks } from '../../src/scenes/CityScene';
 

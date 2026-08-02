@@ -9,7 +9,7 @@ import { ui as C, txt, buildPaperBackground, sketchPanel, sketchAccentBar, seedF
 import { buildDecorCLayer } from '../render/decorCLayer';
 import { drawSceneHeader } from '../ui/widgets/SceneHeader';
 import { buildIcon, type IconKind } from '../render/icons';
-import { buildMaterialIcon, type MaterialKind } from '../render/materialAtlas';
+import { buildMaterialIcon, type MaterialKind } from '../render/atlas/materialAtlas';
 import { FS, snapFont } from '../render/fontScale';
 
 // ── LevelPrepScene — objective / brief / stamina + Start ────────────────────
