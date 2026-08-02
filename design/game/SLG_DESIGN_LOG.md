@@ -1676,3 +1676,21 @@ cols.tiles.find({ worldId, type: 'base', ownerId: { $nin: excludeOwners } })
 **验证**：`client` `tsc --noEmit` 全绿；`npx vitest run --config vitest.ui.config.ts`（113 文件/984 例）全绿。可视化验证：本机 Browser pane 对这个 WebGL 应用一贯需要走 `client-run-and-visual-verify` 备忘录里"TEMP `globalThis.__NW_DEBUG` 钩子 + 手搭 ctx + `renderer.render()` 两次 + `toDataURL()` + POST 到本地 collector"的标准路径（`showModal()` 那条记录）——本轮成功复现：起 `game`（9090）dev server，在 `app.ts` 里临时挂 `{app, PIXI, WorldMapPanels}`，一次 `javascript_exec` 里手搭最小 `WorldMapContext` 分别调 `openShopPanel()`（6 个商品，2×3 卡片网格，Shop/Auction 按钮并排）和 `renderTerritoryPanel()`（`territoryTab:'world'`，Season 摘要 + 3 条 Nation 混合 mine/held/free 状态）两张截图，确认排版符合预期后把临时钩子从 `app.ts` 里完整移除（`git diff` 确认该文件恢复干净）。
 
 **协作备注**：本次改动期间 `git status` 显示同一份主检出里还有另一个会话在并行改 `DefenseEditorScene`/`sketchUi.ts`/`CityScene` 等文件（见上一条 §55 记录），以及本文件本身也带着他们尚未提交的 §55 条目——两边改动的文件集合没有重叠，属于预期内的共享检出场景（`claudedocs/worktrees.md`），提交时务必只 `git add` 本次任务改动的具体文件路径。
+
+---
+
+## 57. 玩家自己的基地贴图盖住后方一大片格子——打包脚本拆出独立的高度预算（2026-08-02，用户看截图提出）
+
+**背景**：用户截图圈出世界地图上自己的基地和旁边一个 NPC 营地对比——NPC 营地严丝合缝落在自己的 3×3 地块里，自己的基地却明显"高出一截"，把后方约两排格子压在下面，同时也看不出它到底占哪几格。用户问"图片是不是要重新生成，并且做一些限制"。
+
+**根因**：不是画风问题，是构图和一条隐含的长宽比假设。世界地图是 2:1 等轴测（`ISO_RATIO = 0.5`），3×3 地块屏幕上**宽 3 tile、高只有 1.5 tile**；而 [`WorldMapRenderer/city.ts`](../../client/src/scenes/worldmap/WorldMapRenderer/city.ts) 把图集 cell 画成 `BASE_SPRITE_TILES = 3.2` tile 的**正方形**（`sprite.width = sprite.height = baseSpriteTiles * tp`）。`city_atlas` 的美术自带一块等于地块的等轴测地台、建筑矮宽，`contentTop` 大（lv1 营地 0.50）→ 实绘高度约 1.6 tile ≈ 地块高度，正好贴合；`playerbase_atlas` 这套"文具堡垒"没有地台、物体铺满方形画幅（prompt 还把等级递进写成"越来越高"），`contentTop` 只有约 0.20 → 实绘高度约 2.5 tile，比地块高出整整 1 tile。`cityPlotMaskPoints` 只裁**横向**溢出（上方是 `tallPx` 故意放行，免得切掉塔尖），所以纵向没有任何约束。原来 `pack_playerbase_atlas.js` 里那个正方形 `CONTENT_SCALE = 0.8` 宽高同缩，改不了导致问题的长宽比，只能整体变小。
+
+**实现**（[`art/ui/slg-playerbase/pack_playerbase_atlas.js`](../../art/ui/slg-playerbase/pack_playerbase_atlas.js)）：`CONTENT_SCALE` 拆成两个独立预算，`fit: 'inside'` 取先触底的那个——`CONTENT_W_FRAC = 0.8`（宽度照旧，从没溢出过）+ `CONTENT_H_FRAC = BASE_FOOTPRINT × ISO_RATIO × HEIGHT_BUDGET_K / BASE_SPRITE_TILES`，由地块真实屏幕高推出，`HEIGHT_BUDGET_K = 1.2` 是留给旗杆塔尖的余量。对现有这批近正方形的图触底的永远是高度：10 帧的 `contentTop` 全部从 0.20~0.35 变成 0.44，绘制高度 2.5 → 1.8 tile。刻意保持等比、不做非等比拉伸（那会把手绘等轴测透视压变形），代价是宽度跟着缩到约 1.75 tile，在 3 tile 宽的地块上略显瘦——明确记录为权宜之计，彻底解决要靠按新构图硬规重出的美术。
+
+**打包链路的坑**（顺带修掉）：2026-07-27 的资源重组（`072131d8`）把源 atlas 合并进 `world_atlas` 后**把源文件从仓库删了**，`art/scripts/mergeAssetAtlases.js` 因此已经跑不起来（`Input file is missing`），重跑 `pack_playerbase_atlas.js` 的产物根本进不了客户端真正读的合并页。新增 [`art/scripts/patchMergedAtlas.js`](../../art/scripts/patchMergedAtlas.js)：把某个子图集的帧**原位重新盖印**回合并页（帧尺寸不变 → 坐标一个不动，只换像素 + `contentTop` 等自定义字段；尺寸变了直接报错要求整页重打）。合并页是 blend 合成，盖印前必须先把目标矩形清零，否则旧图会从新帧的透明区透出来。
+
+**美术侧**：[`design/product/player-base-image-prompts.md`](../product/player-base-image-prompts.md) 新增"构图硬规"一节并按它重写了 10 条 prompt——必须画等轴测地台、内容外接框宽高比约 10:7、建筑高度不超过地台菱形高度的 1.2 倍、等级递进从"越来越高"改成"占地/圈层/密度越来越满"。旧版 prompt 移除（git 历史里可查）。
+
+**测试**：`cityAtlasContentTop.ui.ts` 新增两条断言，从 `contentTop` 反推绘制高度（美术底对齐，故绘制高度 = `(1 - contentTop) × BASE_SPRITE_TILES` tile）——既不许超过 `BASE_FOOTPRINT × ISO_RATIO × 1.2` 的预算（防止将来重打包又回到正方形缩放），也不许小于地块自身高度（防止缩没了）。
+
+**验证**：`client` `tsc --noEmit` 全绿；`cityAtlasContentTop` / `cityAtlasContentTopFallback` / `worldMapBaseHpBar` 三个 UI 测试文件 17 例全绿。可视化：本机 Browser pane 这次连 `computer{action:"screenshot"}` 都直接报"pane is not displayed, so the page is not compositing frames"（见 `worldmap-standalone-debug-render` 备忘录记的同一限制），改用离线几何核对——用 `city.ts` 原样的摆放公式（底部中心锚点落在地块前顶点、`cityGroundFwdPx` 前移量、`BASE_SPRITE_TILES` 正方形）把真实图集帧合成到等轴测网格上，逐个比对 `HEIGHT_BUDGET_K` 取 1.2/1.35/1.5/1.67 的效果并与 `city_lv1` 营地并排作参照，据此定下 1.2。**像素级的真机核对没有做**，需要用户在自己开着的客户端里刷新确认。

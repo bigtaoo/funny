@@ -158,6 +158,10 @@ frame 名称互不冲突（合并前用脚本核对过），故直接共享一�
 
 **合并脚本**：`art/scripts/mergeAtlasPages.js`（通用 shelf-packing + frame 坐标平移，共享库）+ `art/scripts/mergeAssetAtlases.js`（本次三组任务的具体清单）。每个源 atlas 整页 blit 进新画布（不重新裁切单个精灵），故 `rotated`/`spriteSourceSize` 等字段原样保留；再次运行需要 `NODE_PATH="$(pwd)/client/node_modules" node art/scripts/mergeAssetAtlases.js`。
 
+> ⚠ **合并后源 atlas 被删了，`mergeAssetAtlases.js` 实际已跑不起来**（2026-08-02 发现）：本次重组只保留了合并页，14 组源 `*_atlas.{png,json}` 全部从仓库移除，再跑必然 `Input file is missing`。所以重跑某个 `art/ui/*/pack_*_atlas.js` 之后，产物进不了客户端真正读的合并页。
+>
+> 补法 `art/scripts/patchMergedAtlas.js <源 atlas.json> <合并页.json>`：把源 atlas 的帧**原位重新盖印**回合并页。前提是帧尺寸没变（各 `pack_*` 脚本的 `CELL` 是常量，通常成立）→ 合并页的 frame 坐标一个都不动，只换像素 + `contentTop` 之类的自定义字段；尺寸变了直接报错，提示需要整页重打（那就得先从 git 历史恢复源 atlas）。合并页是 blend 合成，盖印前会先把目标矩形清零，否则旧图会从新帧的透明处透出来。
+
 ---
 
 ## 9. Web/App 资源分级：`.hires` 同目录变体（2026-07-29，客户端资源管理审计）

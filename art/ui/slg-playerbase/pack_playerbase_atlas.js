@@ -31,16 +31,34 @@ const OUT_DIR = path.resolve(__dirname, '../../../client/src/assets/slg');
 const CELL = 256;
 const COLS = 5;
 const PAD_FRAC = 0.02;
-// Fraction of the cell the (bottom-aligned, centered) building content is scaled to occupy. UNLIKE
-// the city atlas — whose source art bakes in a big isometric ground plate that visually equals the
-// 3×3 plot, leaving the actual building small within it — this "stationery fortress" art has NO
-// ground plate: the object (dustpan, book-fort, …) fills its own source frame edge-to-edge. Fitting
-// that straight into the full CELL made the on-map sprite (BASE_SPRITE_TILES=3.2 tiles) read as ~3.2
-// tiles of solid building sitting on a 3-tile plot — i.e. visibly oversized/overhanging. Scaling the
-// content below 1.0 reproduces the city art's breathing room: side margin (building narrower than the
-// plot diamond) + headroom above (flags/spires clear the top). Foot stays flush to the cell bottom so
-// the renderer's bottom-center anchor still plants it on the plot. Tune visually against the running map.
-const CONTENT_SCALE = 0.8;
+
+// ── Content fit: SEPARATE width and height budgets (2026-08-02) ────────────────────────────────
+// UNLIKE the city atlas — whose source art bakes in a big isometric ground plate that visually equals
+// the 3×3 plot, leaving the actual building small and WIDE within it — this "stationery fortress" art
+// has NO ground plate: the object (pencil-case camp, book-fort, …) fills its own square source frame
+// edge-to-edge and is drawn TALL (the prompts grade level progression by height). A single square
+// CONTENT_SCALE therefore fit it to ~0.78 of the cell in BOTH axes, and since the renderer draws the
+// cell as a BASE_SPRITE_TILES-wide square, that came out ~2.5 tiles tall — while the 3×3 plot is only
+// BASE_FOOTPRINT*ISO_RATIO = 1.5 tiles tall on screen (2:1 isometric). The building overhung its own
+// plot by a full tile of height, covering ~2 rows of tiles behind it (2026-08-02 report). The old
+// CONTENT_SCALE=0.8 shrank both axes together and so could never fix the ASPECT that caused it.
+// Now the two axes are budgeted independently and `fit: 'inside'` honours whichever binds:
+//   width  — unchanged in practice (~0.8 cell ≈ 2.5 of the plot's 3 tiles wide; never overhung)
+//   height — derived from the plot's real screen height, times a small allowance for spires/flags
+// Kept deliberately proportional (no non-uniform squash) so the hand-drawn isometric perspective isn't
+// distorted; the cost is that tall-and-narrow frames (l1, l7) also lose width and read a bit small on
+// the plot. That is a stopgap: the real fix is re-drawn art with a ground plate and a wide-not-tall
+// silhouette — see design/product/player-base-image-prompts.md § "构图硬规".
+// Mirrors of client-side constants (worldmap/constants.ts, render/isoGrid.ts, @nw/shared core.ts) —
+// this script is standalone Node with no TS import path, so keep them in sync by hand.
+const BASE_SPRITE_TILES = 3.2;
+const BASE_FOOTPRINT = 3;
+const ISO_RATIO = 0.5;
+/** How far above the plot's own screen height the building may legitimately rise (spires, flagpoles). */
+const HEIGHT_BUDGET_K = 1.2;
+const CONTENT_W_FRAC = 0.8;
+const CONTENT_H_FRAC = (BASE_FOOTPRINT * ISO_RATIO * HEIGHT_BUDGET_K) / BASE_SPRITE_TILES;
+
 const TSTEP = 33;
 const TSEED = 0;
 const PRECUT_ALPHA_FRAC = 0.02;
@@ -140,10 +158,11 @@ async function makeCell(srcPath) {
   const cw = Math.min(width, box.maxX + pad + 1) - left;
   const ch = Math.min(height, box.maxY + 1) - top;
 
-  const inner = Math.round(CELL * CONTENT_SCALE);
+  const innerW = Math.round(CELL * CONTENT_W_FRAC);
+  const innerH = Math.round(CELL * CONTENT_H_FRAC);
   const fitted = await sharp(Buffer.from(data), { raw: { width, height, channels: 4 } })
     .extract({ left, top, width: cw, height: ch })
-    .resize(inner, inner, { fit: 'inside', background: { r: 0, g: 0, b: 0, alpha: 0 } })
+    .resize(innerW, innerH, { fit: 'inside', background: { r: 0, g: 0, b: 0, alpha: 0 } })
     .png()
     .toBuffer();
   const fm = await sharp(fitted).metadata();

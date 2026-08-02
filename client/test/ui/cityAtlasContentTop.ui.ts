@@ -12,9 +12,11 @@
 // comments), so this needs neither loadCityAtlas() nor loadPlayerBaseAtlas().
 
 import { describe, it, expect } from 'vitest';
-import { cityTier } from '@nw/shared';
+import { cityTier, BASE_FOOTPRINT } from '@nw/shared';
 import { getCityContentTopFracForLevel } from '../../src/render/atlas/cityAtlasLoader';
 import { getPlayerBaseContentTopFracForLevel } from '../../src/render/atlas/playerBaseAtlasLoader';
+import { ISO_RATIO } from '../../src/render/isoGrid';
+import { BASE_SPRITE_TILES } from '../../src/scenes/worldmap/constants';
 import worldAtlasData from '../../src/assets/slg/world_atlas.json';
 
 type FrameMap = Record<string, { contentTop?: number }>;
@@ -78,5 +80,30 @@ describe('playerBaseAtlasLoader.getPlayerBaseContentTopFracForLevel (real atlas 
   it('clamps out-of-range levels into [1,10]', () => {
     expect(getPlayerBaseContentTopFracForLevel(0)).toBe(getPlayerBaseContentTopFracForLevel(1));
     expect(getPlayerBaseContentTopFracForLevel(23)).toBe(getPlayerBaseContentTopFracForLevel(10));
+  });
+
+  it('no frame is taller than the 3×3 plot\'s own screen height plus a spire allowance (2026-08-02)', () => {
+    // The art is bottom-aligned in its cell, so contentTop doubles as a height readout: the drawn
+    // building is (1 - contentTop) of the cell, and the renderer draws that cell as a
+    // BASE_SPRITE_TILES-wide SQUARE (WorldMapRenderer/city.ts) — so the on-map height in tiles is
+    // (1 - contentTop) * BASE_SPRITE_TILES. The 3×3 plot is only BASE_FOOTPRINT * ISO_RATIO = 1.5
+    // tiles tall on screen (2:1 isometric), and this art has no ground plate, so a square fit made
+    // every base ~2.5 tiles tall — overhanging its own plot by a full tile and covering ~2 rows of
+    // tiles behind it. pack_playerbase_atlas.js now budgets height separately (HEIGHT_BUDGET_K);
+    // this locks that in, so a repack that goes back to a square scale fails here instead of
+    // silently shipping oversized bases again.
+    const HEIGHT_BUDGET_K = 1.2;
+    const maxTiles = BASE_FOOTPRINT * ISO_RATIO * HEIGHT_BUDGET_K;
+    for (let lv = 1; lv <= 10; lv++) {
+      const drawnTiles = (1 - getPlayerBaseContentTopFracForLevel(lv)) * BASE_SPRITE_TILES;
+      expect(drawnTiles, `playerbase_l${lv} drawn height in tiles`).toBeLessThanOrEqual(maxTiles + 0.02);
+    }
+  });
+
+  it('but still fills most of that budget — a repack that shrank the art to nothing is also a bug', () => {
+    for (let lv = 1; lv <= 10; lv++) {
+      const drawnTiles = (1 - getPlayerBaseContentTopFracForLevel(lv)) * BASE_SPRITE_TILES;
+      expect(drawnTiles, `playerbase_l${lv} drawn height in tiles`).toBeGreaterThan(BASE_FOOTPRINT * ISO_RATIO);
+    }
   });
 });
