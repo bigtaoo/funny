@@ -879,6 +879,96 @@ describe('CardScene fuse panel — animation is not torn down by the busy re-ren
   });
 });
 
+// Regression coverage for the 2026-08-02 "strengthened ending" (see feed.ts playFusionAnim phase 2):
+// the shockwave (flash/burst ring/spokes) is a symmetric sin pulse that hits 0 alpha, by design, on
+// its own last frame — great mid-animation, but it used to leave the payoff cutting straight to
+// nothing. A gold "seal" halo (fixed geometry, alpha-only per frame — no clear+redraw, since its
+// radius never changes) now blooms in alongside the shockwave and holds/fades for a beat after it,
+// so there's a frame players actually land on. Both tests drive the REAL playFusionAnim via a
+// controllable rAF queue + mocked performance.now() (same technique as the "end-to-end" describe
+// above), skipping the converge phase (fuseRingGeom = null) to isolate phase 2.
+describe('CardScene fuse panel — post-burst halo (2026-08-02 strengthened ending)', () => {
+  /** Drives `n` animation frames, each 60ms of mocked clock apart (mirrors the "end-to-end" test's
+   * cadence) — enough granularity to land cleanly on either side of the 700ms burst boundary. */
+  function driveFrames(rafQueue: FrameRequestCallback[], clock: { v: number }, n: number): void {
+    for (let i = 0; i < n && rafQueue.length > 0; i++) {
+      const cb = rafQueue.shift()!;
+      clock.v += 60;
+      cb(clock.v);
+    }
+  }
+
+  function setup(): { scene: CardScene; rafQueue: FrameRequestCallback[]; clock: { v: number }; restore: () => void } {
+    const rafQueue: FrameRequestCallback[] = [];
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const g = globalThis as any;
+    const origRaf = g.requestAnimationFrame;
+    g.requestAnimationFrame = (cb: FrameRequestCallback): number => { rafQueue.push(cb); return rafQueue.length; };
+    const clock = { v: 1000 };
+    const nowSpy = vi.spyOn(performance, 'now').mockImplementation(() => clock.v);
+
+    const target = makeCard('target', 'lena', { level: 3 });
+    const cardInv: Record<string, CardInstance> = { target };
+    for (let i = 0; i < FUSION_MATERIAL_COUNT; i++) cardInv[`mat${i}`] = makeCard(`mat${i}`, 'max', { level: 3 });
+    const scene = buildScene(baseCb(cardInv));
+    priv(scene).openFuseSelect(target);
+    priv(scene).fuseRingGeom = null; // skip the converge phase → straight to the burst/halo phase
+
+    return {
+      scene, rafQueue, clock,
+      restore: () => { g.requestAnimationFrame = origRaf; nowSpy.mockRestore(); },
+    };
+  }
+
+  it('keeps something on screen after the burst\'s own ~700ms is over, then fully cleans up', async () => {
+    const { scene, rafQueue, clock, restore } = setup();
+    try {
+      const staticChildCount = priv(scene).modalLayer.children.length;
+      const p = priv(scene).playFusionAnim() as Promise<void>;
+      expect(rafQueue.length).toBe(1); // first frame registered synchronously
+
+      driveFrames(rafQueue, clock, 13); // 13 * 60ms = 780ms elapsed — past the 700ms burst, well before the ~1180ms total
+      // The shockwave (flash + burst ring/spokes) has torn itself down by now, but the halo is still
+      // standing: one extra transient child beyond whatever the static ring/list panel already had.
+      expect(priv(scene).modalLayer.children.length).toBeGreaterThan(staticChildCount);
+      let resolved = false;
+      p.then(() => { resolved = true; });
+      await Promise.resolve();
+      expect(resolved).toBe(false); // the hold/fade beat isn't done yet
+
+      driveFrames(rafQueue, clock, 20); // drain the remaining hold + fade-out
+      expect(rafQueue.length).toBe(0);
+      await p;
+
+      expect(priv(scene).modalLayer.children.length).toBe(staticChildCount); // no leaked graphics
+    } finally {
+      restore();
+    }
+  });
+
+  it('perf: the halo is drawn once and only its alpha changes — no per-frame clear+redraw during the hold/fade beat', async () => {
+    const { scene, rafQueue, clock, restore } = setup();
+    const clearSpy = vi.spyOn(PIXI.Graphics.prototype, 'clear');
+    try {
+      const p = priv(scene).playFusionAnim() as Promise<void>;
+
+      driveFrames(rafQueue, clock, 13); // past the 700ms burst
+      const clearCallsAtBurstEnd = clearSpy.mock.calls.length;
+      expect(clearCallsAtBurstEnd).toBeGreaterThan(0); // the burst ring/spokes genuinely redrew every frame
+
+      driveFrames(rafQueue, clock, 20); // the halo-only hold + fade-out beat
+      await p;
+
+      // No additional Graphics#clear calls once the burst is gone — the extra ~480ms of hold/fade is
+      // a single alpha write per frame, not a geometry rebuild.
+      expect(clearSpy.mock.calls.length).toBe(clearCallsAtBurstEnd);
+    } finally {
+      clearSpy.mockRestore();
+      restore();
+    }
+  });
+});
+
 describe('CardScene fuse panel — fills 80% of the primary viewport axis (2026-07-20)', () => {
   // The panel scales its whole layout (dynamic S) so it fills 80% of the primary axis: height in
   // landscape, width in portrait — the secondary axis stays content-driven. m(x,y,w,h) isn't

@@ -178,12 +178,23 @@ export function FeedMixin<TBase extends CardSceneBaseCtor>(Base: TBase): TBase &
 
       // Phase 2: the target absorbs it all — screen flash, expanding ring + radiating spokes, and the
       // target portrait itself punches outward (squash/stretch) so the payoff reads as impact, not just
-      // a shape pulsing in empty space.
+      // a shape pulsing in empty space. That shockwave is a symmetric sin pulse (0 → 1 → 0), so its own
+      // last frame is exactly invisible — fine for a shockwave, but it left the animation with nothing
+      // to land on. A separate gold "seal" halo fixes that: fixed geometry (drawn ONCE below, radius
+      // never changes) that blooms in alongside the shockwave, holds at full strength for a beat once
+      // the shockwave has faded, then eases out — every frame after the first is a single `alpha`
+      // write, no clear+redraw, so the extra hold time is essentially free (2026-08-02).
       const flash = new PIXI.Graphics();
       flash.beginFill(0xffe28a, 0).drawRect(0, 0, w, h).endFill();
       ml.addChild(flash);
       const burst = new PIXI.Graphics();
       ml.addChild(burst);
+      const haloR = centerR + 12;
+      const halo = new PIXI.Graphics();
+      halo.lineStyle(3, C.gold, 1).drawCircle(cx, cy, haloR);
+      halo.beginFill(C.gold, 0.14).drawCircle(cx, cy, haloR).endFill();
+      halo.alpha = 0;
+      ml.addChild(halo);
       let targetOverlay: PIXI.Sprite | null = null;
       let targetBaseScale = 1;
       if (geom?.targetArtUrl) {
@@ -198,38 +209,61 @@ export function FeedMixin<TBase extends CardSceneBaseCtor>(Base: TBase): TBase &
         }
       }
       const SPOKES = 8;
-      const DURATION_MS = 700;
+      const BURST_MS = 700;
+      const HALO_PEAK_ALPHA = 0.8;
+      const HALO_FADE_IN_MS = BURST_MS * 0.6; // blooms in while the shockwave is still visible
+      const HALO_HOLD_MS = 220; // ...then holds solid for a beat once the shockwave's gone — the "landing" frame
+      const HALO_FADE_OUT_MS = 260;
+      const TOTAL_MS = BURST_MS + HALO_HOLD_MS + HALO_FADE_OUT_MS;
+      let burstLive = true;
       await new Promise<void>((resolve) => {
         const start = performance.now();
         const tick = (): void => {
-          // Same guard as phase 1: a torn-down modal layer leaves these destroyed, and touching a
-          // destroyed Graphics/Sprite throws. Bail cleanly instead.
-          if (flash.destroyed || burst.destroyed || (targetOverlay && targetOverlay.destroyed)) { resolve(); return; }
+          // flash/burst are destroyed intentionally below once the shockwave finishes, well before
+          // halo — so only halo (+ modal-layer teardown) indicates an external abort worth bailing on.
+          if (ml.destroyed || halo.destroyed || (targetOverlay && targetOverlay.destroyed)) { resolve(); return; }
           const elapsed = performance.now() - start;
-          const f = Math.min(1, elapsed / DURATION_MS);
-          const pulse = Math.sin(f * Math.PI); // 0 → 1 → 0
-          flash.alpha = pulse * 0.5;
-          burst.clear();
-          burst.lineStyle(4, C.gold, pulse);
-          burst.drawCircle(cx, cy, centerR + pulse * 70);
-          burst.lineStyle(2, color, pulse * 0.8);
-          for (let i = 0; i < SPOKES; i++) {
-            const ang = (i * 2 * Math.PI) / SPOKES;
-            const r0 = centerR + pulse * 18, r1 = centerR + pulse * 100;
-            burst.moveTo(cx + Math.cos(ang) * r0, cy + Math.sin(ang) * r0);
-            burst.lineTo(cx + Math.cos(ang) * r1, cy + Math.sin(ang) * r1);
+
+          if (burstLive) {
+            const f = Math.min(1, elapsed / BURST_MS);
+            const pulse = Math.sin(f * Math.PI); // 0 → 1 → 0
+            flash.alpha = pulse * 0.5;
+            burst.clear();
+            burst.lineStyle(4, C.gold, pulse);
+            burst.drawCircle(cx, cy, centerR + pulse * 70);
+            burst.lineStyle(2, color, pulse * 0.8);
+            for (let i = 0; i < SPOKES; i++) {
+              const ang = (i * 2 * Math.PI) / SPOKES;
+              const r0 = centerR + pulse * 18, r1 = centerR + pulse * 100;
+              burst.moveTo(cx + Math.cos(ang) * r0, cy + Math.sin(ang) * r0);
+              burst.lineTo(cx + Math.cos(ang) * r1, cy + Math.sin(ang) * r1);
+            }
+            if (targetOverlay) {
+              const punch = Math.sin(Math.min(1, f * 1.6) * Math.PI) * 0.22 * (1 - f * 0.5);
+              targetOverlay.scale.set(targetBaseScale * (1 + punch), targetBaseScale * (1 - punch * 0.6));
+            }
+            if (f >= 1) { burstLive = false; flash.destroy(); burst.destroy(); }
           }
-          if (targetOverlay) {
-            const punch = Math.sin(Math.min(1, f * 1.6) * Math.PI) * 0.22 * (1 - f * 0.5);
-            targetOverlay.scale.set(targetBaseScale * (1 + punch), targetBaseScale * (1 - punch * 0.6));
-          }
-          if (f < 1) {
-            requestAnimationFrame(tick);
+
+          // Halo geometry was drawn once above; every frame here is just an alpha write.
+          if (elapsed < HALO_FADE_IN_MS) {
+            const e = elapsed / HALO_FADE_IN_MS;
+            halo.alpha = HALO_PEAK_ALPHA * e * e; // ease-in
+          } else if (elapsed < BURST_MS + HALO_HOLD_MS) {
+            halo.alpha = HALO_PEAK_ALPHA;
           } else {
-            flash.destroy();
-            burst.destroy();
+            const fadeF = Math.min(1, (elapsed - BURST_MS - HALO_HOLD_MS) / HALO_FADE_OUT_MS);
+            halo.alpha = HALO_PEAK_ALPHA * (1 - fadeF);
+          }
+
+          if (elapsed >= TOTAL_MS) {
+            if (!flash.destroyed) flash.destroy();
+            if (!burst.destroyed) burst.destroy();
+            halo.destroy();
             targetOverlay?.destroy();
             resolve();
+          } else {
+            requestAnimationFrame(tick);
           }
         };
         requestAnimationFrame(tick);
