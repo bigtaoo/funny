@@ -252,7 +252,7 @@ D-CITY-11 的内政/军事双页拆分（左侧竖排 tab 切换）本次**撤�
 - **UI**：`renderTeamsRow`（`CityScene/render.ts`）在队名标签行右端新增一个按钮（`fillBtnW=200`，高度精确等于 `TEAM_ROW_LABEL_H`，与其下方紧贴的队伍卡片行齐平不重叠），文案 `city.military.fillAllTeams`。按钮**始终注册命中区**（不像 build-queue 的 Speed Up 按钮那样按条件渲染），点击调用新增的 `doFillAllTeams()`。
 - **分配规则**：与 `DefenseEditorScene` 的单队「补满兵力」（§6.5，`CHARACTER_CARDS_DESIGN.md`）同一条底层规则——队伍内按 `cardPower` 降序补至 `troopCap`——只是外层多套了一层"按 `t1..t5` 顺序遍历所有队伍"。因为 `CityScene` 里的队伍都已经是服务端已保存的正式编队，不需要 `persistTeam()` 这一步，直接调 `distributeTroops(worldId, allocations)`（一次请求批量提交所有队伍的分配，不是每队各发一次）。
 - **本地状态更新**：成功后不重新拉取 `me`，而是把 `allocations` 直接叠加进本地 `this.me.cardState`/`this.me.troops`（与 `DefenseEditorScene.doFillTroops` 的做法一致），失败则整体不改，可重试。
-- 覆盖测试：`client/test/ui/cityFillAllTeams.ui.ts`（按槽位顺序分配、池耗尽后不动后续队伍、跳过已满员的队伍、空池/请求失败时的提示与状态回滚）；`cityScene.ui.ts`/`cityTrainTroops.ui.ts` 里所有依赖命中区下标/数量的既有断言相应加 1（新按钮始终占一个命中位）。
+- 覆盖测试：`client/test/ui/cityFillAllTeams.ui.ts`（15 例）——按槽位顺序分配、单队内多卡按战力降序补满再溢出到下一队、池耗尽后不动后续队伍、跳过已满员的队伍、空池/请求失败时的提示与状态回滚、卡引用缺失（`cardInv` 无此 id）/ 旧版无卡军队条目安全跳过不崩溃、行军中或受伤锁定的队伍照样能补兵（补兵不受队伍状态门控）、`bt.busy` 期间二次点击是 no-op、按钮命中矩形与 5 张队伍卡的命中矩形几何回归（底边贴合队伍行顶边、绝不重叠）。`cityScene.ui.ts`/`cityTrainTroops.ui.ts` 里所有依赖命中区下标/数量的既有断言相应加 1（新按钮始终占一个命中位）。
 - 验证：`tsc --noEmit -p tsconfig.test.json` 全绿、`webpack build:web` 构建成功、`test:ui` 全绿（112 文件 / 942 例）。按钮几何位置靠手算 + 命中矩形回归验证（`fillBtnH` 精确等于 `TEAM_ROW_LABEL_H`，底边与队伍卡片行顶边重合但不重叠，见 `cityFillAllTeams.ui.ts`）；本次也临时起了一版 §8.6 同款 `?debugCity` 调试分支想在 Browser 面板截图复核，但受限于本环境截图链路一直取不到画面（canvas 已渲染、`toDataURL` 可导出但 Browser 面板截图工具报"未显示无法合成帧"），**未完成真正的像素级视觉核对**就已按指示叫停——调试分支已完整回退，不随本次改动合并。
 
 ---
