@@ -67,7 +67,11 @@ export class WorldCoreSpawn extends WorldCoreNation {
       const mates = await cols.playerWorld.find({ worldId, familyId }).project<{ accountId: string }>({ accountId: 1 }).toArray();
       const mateIds = mates.map((m) => m.accountId).filter((id): id is string => !!id && id !== accountId);
       if (mateIds.length > 0) {
-        const bases = await cols.tiles.find({ worldId, type: 'base', ownerId: { $in: mateIds } }).toArray();
+        // 2026-08-03 (worldsvc code review): `type:'base'` alone also matches the 8 non-anchor ring
+        // cells every capital's 3x3 footprint writes (baseTileDocs above, `baseRing: true`) — without
+        // excluding them, this queries and iterates 9 "capitals" per family member instead of 1, each
+        // spiralFindEmpty search centered on a ring cell rather than the true anchor.
+        const bases = await cols.tiles.find({ worldId, type: 'base', ownerId: { $in: mateIds }, baseRing: { $ne: true } }).toArray();
         for (const b of this.shuffled(bases)) {
           const spot = await this.spiralFindEmpty(worldId, b.x, b.y, SPAWN_NEAR_FAMILY_RADIUS);
           if (spot) return spot;

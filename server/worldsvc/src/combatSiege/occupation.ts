@@ -19,7 +19,7 @@ import {
   type SiegeResolution,
   type ProceduralTile,
 } from '@nw/shared';
-import { runSiegeBattle, synthesizeArmy, scaleArmyByRatio, resolveCardArmy, toEngineCardInstances, computeCardStateUpdates } from '../siegeEngine';
+import { runSiegeBattle, synthesizeArmy, scaleArmyByRatio, resolveCardArmy, toEngineCardInstances, computeCardStateUpdates, shouldUseCheapSiege } from '../siegeEngine';
 import type { GarrisonEntry, EngineCardInstance, EngineEquipInv } from '@nw/engine';
 import type { TileDoc, PlayerWorldDoc, MarchDoc, OccupationDoc, StationedDoc } from '../db';
 import type { SiegeReplayInputs, OccupationView } from '../worldTypes';
@@ -158,14 +158,23 @@ export function OccupationMixin<TBase extends SiegeServiceBaseCtor>(Base: TBase)
       // inputs are kept even on an engine crash — getSiegeReplay degrades safely (see that comment) rather than
       // crashing, so there is no downside to keeping the exact inputs that caused a crash for later reproduction.
       const replay: SiegeReplayInputs = { seed, attackerArmy, defenderConfig, tileLevel };
-      try {
-        res = await runSiegeBattle({ attackerArmy, defenderConfig, tileLevel, seed, cardInstances, equipmentInv: cardEquipInv });
-      } catch (err) {
-        console.error('[worldsvc] occupy siege engine failed — fallback to cheap resolve', {
-          tile: m.toTile,
-          err: (err as Error).message,
-        });
+      // Overwhelming ratio or synthesized-army board overflow → skip the engine outright, same as every other
+      // siege entry point (applySiege/applyStrongholdSiege/applyCrossingSiege) — without this gate, a very large
+      // flat-troop (non-team) occupy march can synthesize an army beyond board capacity, congest the engine, and
+      // spuriously time out to a defender win regardless of true strength (2026-08-03 worldsvc code review).
+      const attackerSynthesized = !hasCardArmy && rawArmy.length === 0;
+      if (shouldUseCheapSiege({ attackerTroops: effTroops, defenderTroops: garrison, attackerSynthesized, defenderSynthesized: true })) {
         res = resolveSiege(effTroops, garrison);
+      } else {
+        try {
+          res = await runSiegeBattle({ attackerArmy, defenderConfig, tileLevel, seed, cardInstances, equipmentInv: cardEquipInv });
+        } catch (err) {
+          console.error('[worldsvc] occupy siege engine failed — fallback to cheap resolve', {
+            tile: m.toTile,
+            err: (err as Error).message,
+          });
+          res = resolveSiege(effTroops, garrison);
+        }
       }
 
       if (res.outcome === 'attacker_win') {
@@ -232,14 +241,21 @@ export function OccupationMixin<TBase extends SiegeServiceBaseCtor>(Base: TBase)
       // inputs are kept even on an engine crash — getSiegeReplay degrades safely rather than crashing, so there
       // is no downside to keeping the exact inputs that caused a crash for later reproduction.
       const replay: SiegeReplayInputs = { seed, attackerArmy, defenderConfig, tileLevel };
-      try {
-        res = await runSiegeBattle({ attackerArmy, defenderConfig, tileLevel, seed, cardInstances, equipmentInv: cardEquipInv });
-      } catch (err) {
-        console.error('[worldsvc] occupation expulsion siege engine failed — fallback to cheap resolve', {
-          tile: m.toTile,
-          err: (err as Error).message,
-        });
+      // Same gate as applyOccupy above (2026-08-03 worldsvc code review) — an expulsion attempt with a very
+      // large flat-troop army must not reach the engine uncapped either.
+      const attackerSynthesized = !hasCardArmy && rawArmy.length === 0;
+      if (shouldUseCheapSiege({ attackerTroops: effTroops, defenderTroops: garrison, attackerSynthesized, defenderSynthesized: true })) {
         res = resolveSiege(effTroops, garrison);
+      } else {
+        try {
+          res = await runSiegeBattle({ attackerArmy, defenderConfig, tileLevel, seed, cardInstances, equipmentInv: cardEquipInv });
+        } catch (err) {
+          console.error('[worldsvc] occupation expulsion siege engine failed — fallback to cheap resolve', {
+            tile: m.toTile,
+            err: (err as Error).message,
+          });
+          res = resolveSiege(effTroops, garrison);
+        }
       }
 
       if (res.outcome === 'attacker_win') {

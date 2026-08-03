@@ -186,6 +186,31 @@ commercial 此前完全没有 Redis 依赖，本次新增：`config.ts` 补 `NW_
 
 验证：另外手写脚本连本机真实 Redis（`redis://127.0.0.1:6379`）跑了一遍 `bumpCappedCounter`/`bumpGuardedTimestamp`/`readCounterField`，确认 Lua 脚本 + HINCRBY 回滚在真 ioredis 上行为正确（cap 顶住第 4 次、TTL 落地 172800s）——测试套件本身全程 `redis=null`，不会覆盖这条路径。metaserver 54 文件/678 测试、commercial 11 文件/136 测试、matchsvc `deploy-config.test.ts` 全绿；`tsc -b shared engine metaserver gateway matchsvc gameserver commercial worldsvc auctionsvc admin analyticsvc botsvc socialsvc` 全绿。
 
+## worldsvc 代码审查 + 修复（2026-08-03）
+
+对 `server/worldsvc/` 全量代码审查（4 个探索代理并行覆盖 core/状态管理、combat/攻城、经济与社交、对外 API/客户端），修出 17 处问题，按严重度记要点（完整审查结论见本次会话记录，这里只记落地改动）：
+
+- **进程崩溃（Critical）**：`httpApi.ts` 的 `GET /world/active-season`（零鉴权、客户端高频轮询）此前不在任何 `try/catch` 内；`svc.getActiveSeasonNo()` 一旦抛错，Node 15+ 未捕获 rejection 默认终止进程——相当于一次数据库瞬时抖动就能带崩全服。同样漏洞在 `/admin/world/list`/`/patrol` 及 `/admin/world/allocate` 前的 `readJson` 调用。全部补 try/catch。
+- **经济 dupe（High）**：`city.ts` `getTeams`/`setTeams` 共用的 `buildCardRemovalPatch` 退款写入无 rev 守卫，并发调用可重复领取卡牌解绑的 80% 退款——补 `{_id, rev: pw.rev}` 乐观锁守卫。
+- **免费产兵（High）**：卡牌编队的 march troops 字段实际是"卡数"而非真实兵力（真实强度只存在 `cardState.currentTroops`），但 `combatMarch/arrival.ts` 的 `return` 到达分支和 `instantReturnMarch` 的 `refundTroops` 调用此前没做 `hasCardArmy` 判断（对比本模块其余 5 处退款点都判断了）——补齐判断。
+- **调度器并发丢失更新（High）**：`combatShared.ts::refundTroops` / `combatSiege/helpers.ts::transferLoot` 原本是「快照读 + 整体 `$set`」，同一玩家同一 tick 内多个调度任务（行军到达/攻城结算/占领结算）并发写会互相覆盖——两处均改为 rev 守卫 + 有界重试（读改写失败自动重读重算，5 次退避后放弃并记日志，不抛错影响调用链）。
+- **`speedupTraining`/`speedupBuild` 漏乐观锁（High）**：收尾写库只带 `{_id}`，同文件 `trainTroops`/`upgradeBuilding` 都带 rev 守卫。因为币已经在守卫写之前扣了，冲突时不能直接抛 `REV_CONFLICT`（会把钱扣了却不给效果）——改成有界重试重读重算，而非直接失败。
+- **DoS（High）**：`httpApi.ts::readJson` 的 1MB 上限只 `reject` promise，不 `req.destroy()`，后续数据块照样被拼进内存——补上超限即销毁连接。
+- **占领类攻城漏引擎过载门槛（Medium）**：`combatSiege/occupation.ts` 的 `applyOccupy`/`applyOccupationExpulsion` 此前直接调 `runSiegeBattle`，未过 `shouldUseCheapSiege`（其余所有攻城入口都过滤超量兵力，避免引擎因棋盘拥堵误判防守方胜）——补齐同款门槛。
+- **世界/宗门频道 msgSeq 跨实例撞车（Medium）**：`nationChannelService.ts`/`sectService.ts` 用进程内内存计数器拼 `_id`，多实例横扩下可能撞 key；世界频道撞车时已扣的 50 金币无退款路径——`_id` 补随机后缀（`randomBytes`）+ 插入失败自动退款。
+- **商店每日限购 TOCTOU（Medium）**：`shop.ts::buySlgShopItem` 扣费与写库之间隔着一次外部 await 且无守卫，并发请求可叠穿限购——改为花费后重读校验（限购/battle_pass 均重查）+ rev 守卫写 + 冲突自动退款重试。
+- **国家改朝换代 familyId 残留（Medium）**：`core/nation.ts::applyNationChange` 胜者无家族时只是不写 `familyId`，没有 `$unset`，导致挂着上一任家族的 stale 归属——补 `$unset`。
+- **国名无内容审核（Medium）**：`setNationName` 是全库唯一跳过 `censorChat` 审核的持久公开玩家自定义名（对比宗门/家族名都过滤），且用 UTF-16 `.length` 而非 CJK 宽度计算——补 `censorChat` 拒绝 + 改用 `orgNameWidth`/`ORG_NAME_WIDTH_{MIN,MAX}`（跟宗门名同一套边界）。为此 `WorldServiceDeps`/`WorldCoreKernel` 新增 `wordlists` 依赖注入（`index.ts` 已有 `wordlists` 实例，此前只接到 sectSvc/nationChannelSvc，没接到 `WorldService`），`setNationName` 新增 `region` 参数，`httpApi.ts` 用 `regionFromAcceptLanguage` 解析。
+- **Redis 覆盖索引读改写竞态（Medium）**：`core/push.ts::addCover`/`removeCover` 是 hget→改→hset，两个据点几乎同时注册重叠 3×3 覆盖时会丢失一个的条目（持久数据丢失，不是瞬时误判）——新增 `WorldRedis.hmergeJsonField`（可选接口，真实客户端用一段 Lua 脚本在 Redis 端原子完成合并/删除，`redis.ts` 里用 `client.eval` 实现），调用点优先用它、缺失时（如测试假实现）退回旧的非原子路径（测试环境无真并发，安全）。
+- **罢免投票丢失更新（Low/Medium）**：`sectService.ts::voteRemoveLeader` 并发投票会互相覆盖对方的票——补 rev 守卫 + 有界重试。
+- **出生点查询效率（Low）**：`core/spawn.ts::pickSpawnTile` 的 `type:'base'` 查询同时匹配主城锚点和 8 个外圈占位格，导致每个家族成员多算 9 倍——补 `baseRing:{$ne:true}`。
+- **Redis 健康信号误报（Low）**：`redis.ts::connectRedis` 构造后立即返回，不等连接结果，Redis 真挂了启动日志仍显示 `redis=on`——改为有界等待（5s）`ready`/`error` 信号，超时则登出错误日志并返回 null（代价：极端「连接慢但很快能成功」场景会被误判为不可用直到重启，判断为可接受，因为本服务所有 Redis 降级路径本就设计为可无限期运行）。
+- **管理接口数字字段未校验（Low）**：`/admin/world/allocate`/`/admin/world/open` 的 `capacity`/`season`/`shard` 缺 `Number.isFinite` 校验，脏 payload 会把 `NaN` 落库——补校验。
+- **降级期 senderName 可伪造（Low）**：`/sect/message`/`/nation/message` 在 meta 不可用降级期直接信任客户端 `senderName`——补 `sanitizeSenderNameFallback`（去控制字符、trim、按 `MAX_DISPLAY_NAME_LEN` 截断）。
+- **同批次行军占用索引泄漏（Low/Medium）**：`combatMarch/arrival.ts::advanceMarch` 用 `processDueArrivals` 批量扫描时的旧快照推进——若同批次内某行军的遭遇战删除了另一个也到期的行军，后者仍会用过期快照继续写入占用索引，形成永不清理的幽灵占用条目——`advanceMarch` 入口改为重新读取最新文档，doc 已不存在或已被召回改道 `return` 腿时直接判定"本批次已处理，跳过"。
+
+验证：`tsc --noEmit` 全绿；`npm test -w @nw/worldsvc` 52 文件/419 测试全绿（含新建测试用的 mongodb-memory-server，无需改动任何既有用例）。纯 bug 修复，无对外行为/契约变化（`setNationName` 新增的 `region` 参数为可选，默认 `'global'`，不破坏现有调用方）。
+
 ## rejectIfBanned/publicId 查询加缓存层（2026-07-27，中期项第 4 项）
 
 `rejectIfBanned`（每次 auth + 每次 `/pve/enter`/`/pve/clear` 都查一次 `accounts.flags`/`deletedAt`）和 `resolveByPublicId`（socialsvc 好友/邮件按 publicId 操作时的反查，`/internal/account/by-public-id`）都是已建索引的单文档查询，本身不贵——贵的是跨公网到 Atlas M0 的那一次网络往返，缓存命中直接省掉整趟往返，而不是优化查询计划。新增 `metaserver/src/accountCache.ts` 的 `AccountCache` 类，两个方法各自一张 `TtlMap`：`getBanStatus`（60s TTL，安全网性质——`/ban`/`/unban`/`deleteAccount` 三处写入点已显式调用 `invalidateBanStatus` 立即失效，60s 只是兜底未来某个忘记失效的新写入点）、`getAccountIdByPublicId`（1h TTL，`publicId` 一旦分配永不改变，长 TTL 纯粹是内存卫生，不是过期正确性的考量；未命中永不缓存，避免拼写错误把"查无此人"焊死）。
