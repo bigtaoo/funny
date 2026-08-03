@@ -115,6 +115,36 @@ describe('parseEffectDef', () => {
       { id: 'a', duration: 1, layers: [{ type: 'ring', boil: 3 }] }, 's',
     )).toThrow();
   });
+
+  const emitterLayer = {
+    type: 'emitter',
+    count: 20,
+    emitter: { lifetime: { from: 0.2, to: 0.4 }, velocity: { min: 40, max: 90, angleSpread: 0.5 } },
+  };
+
+  it('accepts a valid emitter layer and defaults its optional fields', () => {
+    const def = parseEffectDef({ id: 'a', duration: 1, layers: [emitterLayer] }, 's');
+    expect(def.layers[0].emitter).toEqual({
+      lifetime: { from: 0.2, to: 0.4 },
+      velocity: { min: 40, max: 90, angleSpread: 0.5 },
+      gravity: 0, startAlpha: 1, endAlpha: 0, startScale: 1, endScale: 0.3, spawnSpread: 0,
+    });
+  });
+
+  it('throws when an emitter layer is missing its emitter spec', () => {
+    expect(() => parseEffectDef(
+      { id: 'a', duration: 1, layers: [{ type: 'emitter', count: 5 }] }, 's',
+    )).toThrow();
+  });
+
+  it('throws when emitter.lifetime or emitter.velocity is malformed', () => {
+    expect(() => parseEffectDef(
+      { id: 'a', duration: 1, layers: [{ type: 'emitter', emitter: { velocity: { min: 1, max: 2, angleSpread: 0 } } }] }, 's',
+    )).toThrow();
+    expect(() => parseEffectDef(
+      { id: 'a', duration: 1, layers: [{ type: 'emitter', emitter: { lifetime: { from: 0, to: 1 }, velocity: { min: 1, max: 2 } } }] }, 's',
+    )).toThrow();
+  });
 });
 
 describe('effect registry (P1 baseline + P3 spell/Trait assets)', () => {

@@ -8,7 +8,7 @@
  *
  * The data model itself is the game-side single source of truth (@vfx/types).
  */
-import { EffectDef, LayerDef, ParamTrack, PrimitiveType } from '@vfx/types';
+import { EffectDef, EmitterSpec, LayerDef, ParamTrack, PrimitiveType } from '@vfx/types';
 import { COUNT_PRIMITIVES } from './paramHints';
 
 type Listener = () => void;
@@ -131,6 +131,7 @@ export class EffectModel {
     const layer: LayerDef = { type };
     if (COUNT_PRIMITIVES.has(type)) layer.count = 6;
     if (type === 'polyline') layer.points = [[0, 0], [0, -20]];
+    if (type === 'emitter') layer.emitter = defaultEmitterSpec();
     layer.params = defaultParamsFor(type);
     this.def.layers.push(layer);
     this.selectedLayer = this.def.layers.length - 1;
@@ -179,6 +180,7 @@ export class EffectModel {
       l.type = type;
       if (COUNT_PRIMITIVES.has(type) && l.count === undefined) l.count = 6;
       if (type === 'polyline' && !l.points) l.points = [[0, 0], [0, -20]];
+      if (type === 'emitter' && !l.emitter) l.emitter = defaultEmitterSpec();
     });
   }
   setLayerCount(n: number): void { this.mutateSelected((l) => { l.count = Math.max(1, Math.round(n)); }); }
@@ -236,7 +238,7 @@ function estimateVertices(l: LayerDef, count: number): number {
     case 'burst':    return count * 2;
     case 'dots':     return count * 8;
     case 'polyline': return l.points?.length ?? 0;
-    case 'emitter':  return 0;
+    case 'emitter':  return count * 8;
     default:         return 0;
   }
 }
@@ -250,7 +252,21 @@ function defaultParamsFor(type: PrimitiveType): Record<string, ParamTrack> {
     case 'burst':    return { nearR: { from: 0, to: 8 }, farR: { from: 8, to: 30 }, alpha: { from: 1, to: 0 }, lineWidth: 2 };
     case 'dots':     return { spreadR: { from: 0, to: 20 }, dotSize: { from: 4, to: 0 }, alpha: { from: 1, to: 0 } };
     case 'polyline': return { alpha: { from: 1, to: 0 }, lineWidth: 2, scale: 1, rotation: 0 };
-    case 'emitter':  return {};
+    case 'emitter':  return { alpha: 1, rotation: 0, size: 4 };
     default:         return {};
   }
+}
+
+/** A visible-by-default burst: 12 dots, quarter-second life, moderate outward speed. */
+function defaultEmitterSpec(): EmitterSpec {
+  return {
+    lifetime: { from: 0.2, to: 0.5 },
+    velocity: { min: 40, max: 100, angleSpread: Math.PI },
+    gravity: 0,
+    startAlpha: 1,
+    endAlpha: 0,
+    startScale: 1,
+    endScale: 0.3,
+    spawnSpread: 0,
+  };
 }

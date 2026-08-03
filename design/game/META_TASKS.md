@@ -332,7 +332,7 @@
 - [x] **皮肤 .tao 资产（上线目录 6 款）** ✅（2026-07-30）：换肤管线（S3-4）+ 6 款全部绑骨接入 `SKIN_ASSETS`——陶三商店直卖（`skin_shop_c1/r1/e1` → Infantry/Archer/ShieldBearer）+ Anna 三抽卡（`skin_e1`→Lena / `skin_e2`→Mara epic，`skin_l1`→Max legendary）。目录见 `GACHA_DESIGN §9.5`，接线见 `UnitView.ts:72-79 SKIN_ASSETS`；6 份 `.tao` + `.tao.editor` 源工程在 `art/skins/{infantry,archer,shieldbearer,lena,mara,max}/`。commit `614d4432`「rig and wire all 6 launch skins into SKIN_ASSETS/shop art」。占位 SKU（`skin_c1~c4`/`skin_r1~r3`）已从 `economy.ts` 删除。
 - [x] **worldsvc publicId 解析** ✅（2026-06-30）：`getMap`/`getTile`/`pushTile`/`under_attack` 已有 meta.getProfile 反查；本次修复 `sect_msg`/`nation_msg` push payload 的 `fromPublicId` 仍用 accountId 的缺口——`SectService` 和 `NationChannelService` 各加 `meta?: WorldMetaClient` dep，`sendMessage` best-effort 解析 publicId，无 meta 时 fallback 空字符串；index.ts 接线；新增测试 `nation-channel.e2e.test.ts` + sect 追加用例。
 - [x] **实时赛季号下行** ✅（2026-07-01）：`createAppCore.ts` 已动态调用 `worldApi.getActiveSeason()`，`CURRENT_SEASON` 硬编码已去掉，赛季号由 metaserver 下行。
-- [ ] **VFX `emitter` 图元**：`client/src/render/vfx/{types,primitives}.ts` 设计内保留、未实现（当前 warn + skip）。低优先。
+- [x] **VFX `emitter` 图元** ✅（2026-08-03）：`client/src/render/vfx/{types,primitives}.ts` 实现为纯矢量粒子群（无位图资产），见 `design/tools/vfx-editor/DESIGN.md` §13；vfx-editor 已接入。
 - [ ] **真实 IAP 客户端 SDK**：服务端 `commercial/iap.ts` 验单（Apple/Google/微信/Stripe）已就绪且生产 fail-closed；客户端尚无真实下单 SDK 接入（魔术码删除后暂无任何充值入口，等本项或 B-PROMO）。
 
 > 说明：worldsvc `/family` 迁移残骸 + `openapi-world.yml` `/family` 契约漂移由另一会话（worktree）单独清理，不在此清单。

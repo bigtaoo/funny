@@ -10,7 +10,7 @@
  * Design doc: design/tools/vfx-editor/DESIGN.md §validation/fault-tolerance
  */
 import {
-  EffectDef, LayerDef, ParamTrack, Keyframe, Ease, PrimitiveType,
+  EffectDef, LayerDef, ParamTrack, Keyframe, Ease, PrimitiveType, EmitterSpec,
 } from './types';
 
 const KNOWN_PRIMITIVES: ReadonlySet<string> = new Set<PrimitiveType>([
@@ -56,6 +56,36 @@ function normTrack(raw: unknown, where: string): ParamTrack {
   fail(where, `param must be number | {from,to} | Keyframe[], got ${typeof raw}`);
 }
 
+function normEmitter(raw: unknown, where: string): EmitterSpec {
+  if (!isPlainObject(raw)) fail(where, 'emitter layer requires an `emitter` spec object');
+  const lifetime = raw.lifetime;
+  if (!isPlainObject(lifetime) || typeof lifetime.from !== 'number' || typeof lifetime.to !== 'number') {
+    fail(where, 'emitter.lifetime needs numeric {from,to}');
+  }
+  const velocity = raw.velocity;
+  if (
+    !isPlainObject(velocity) || typeof velocity.min !== 'number'
+    || typeof velocity.max !== 'number' || typeof velocity.angleSpread !== 'number'
+  ) {
+    fail(where, 'emitter.velocity needs numeric {min,max,angleSpread}');
+  }
+  const num = (key: string, fallback: number): number => (
+    typeof (raw as Record<string, unknown>)[key] === 'number' ? (raw as Record<string, number>)[key] : fallback
+  );
+  return {
+    lifetime: { from: lifetime.from as number, to: lifetime.to as number },
+    velocity: {
+      min: velocity.min as number, max: velocity.max as number, angleSpread: velocity.angleSpread as number,
+    },
+    gravity: num('gravity', 0),
+    startAlpha: num('startAlpha', 1),
+    endAlpha: num('endAlpha', 0),
+    startScale: num('startScale', 1),
+    endScale: num('endScale', 0.3),
+    spawnSpread: num('spawnSpread', 0),
+  };
+}
+
 function normLayer(raw: unknown, idx: number, effId: string): LayerDef | null {
   const where = `${effId}.layers[${idx}]`;
   if (!isPlainObject(raw)) fail(where, 'layer must be an object');
@@ -98,6 +128,9 @@ function normLayer(raw: unknown, idx: number, effId: string): LayerDef | null {
       params[key] = normTrack(raw.params[key], `${where}.params.${key}`);
     }
     layer.params = params;
+  }
+  if (type === 'emitter') {
+    layer.emitter = normEmitter(raw.emitter, `${where}.emitter`);
   }
   return layer;
 }

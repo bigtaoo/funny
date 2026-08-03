@@ -43,7 +43,30 @@ export type PrimitiveType =
   | 'dots'
   | 'burst'
   | 'polyline'
-  | 'emitter'; // reserved, not implemented this phase (§9)
+  | 'emitter'; // vector particle swarm — no bitmap texture, see EmitterSpec (§13)
+
+/**
+ * Per-particle spawn/flight rules for an `emitter` layer. Every particle is a
+ * plain filled dot (no texture): a seeded angle/speed/lifetime pick determines
+ * an analytic ballistic position at any t, so playback needs no per-frame
+ * state and stays replay-deterministic (same contract as `boil`/`dots`).
+ */
+export interface EmitterSpec {
+  /** Per-particle lifetime range, as a fraction of the effect's duration. */
+  lifetime: { from: number; to: number };
+  /** Launch speed range (design px / duration-unit) and half-angle spread around `rotation`. */
+  velocity: { min: number; max: number; angleSpread: number };
+  /** Downward accel (design px / duration-unit²). Default 0. */
+  gravity?: number;
+  /** Alpha at birth/death of each particle. Default 1 / 0. */
+  startAlpha?: number;
+  endAlpha?: number;
+  /** Size multiplier at birth/death of each particle, applied to `size`. Default 1 / 0.3. */
+  startScale?: number;
+  endScale?: number;
+  /** 0 = all particles born at t=0 (burst, default). 1 = births spread evenly across [0,1). */
+  spawnSpread?: number;
+}
 
 /**
  * A single drawable layer. `params` holds every numeric knob (constants are
@@ -51,7 +74,7 @@ export type PrimitiveType =
  */
 export interface LayerDef {
   type: PrimitiveType;
-  /** Repeat count for radial primitives (spokes/burst/dots). Default 1. */
+  /** Repeat count for radial primitives (spokes/burst/dots/emitter). Default 1. */
   count?: number;
   /** Optional seed for this layer's jitter/boil; derived from effect id + index if absent. */
   seed?: number;
@@ -63,6 +86,8 @@ export interface LayerDef {
   params?: Record<string, ParamTrack>;
   /** polyline geometry, in design pixels, before scale/rotation/translate. */
   points?: Array<[number, number]>;
+  /** Required when type === 'emitter'; ignored otherwise. */
+  emitter?: EmitterSpec;
 }
 
 export interface EffectDef {

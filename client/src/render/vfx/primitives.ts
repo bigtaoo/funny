@@ -187,12 +187,44 @@ const polyline: DrawPrimitive = (gfx, layer, t, color, prng) => {
   }
 };
 
-let warnedEmitter = false;
-
-const emitter: DrawPrimitive = () => {
-  if (!warnedEmitter) {
-    console.warn('VFX: "emitter" primitive is reserved (§9) and not implemented; layer skipped.');
-    warnedEmitter = true;
+/**
+ * Vector particle swarm (§13): each particle is a plain filled dot whose
+ * angle/speed/lifetime is picked once (seeded) and flown analytically —
+ * position = f(t), not accumulated frame-to-frame, so re-seeding per frame
+ * (interpret.ts) reproduces the exact same swarm every time (replay-safe).
+ */
+const emitter: DrawPrimitive = (gfx, layer, t, color, prng) => {
+  const spec = layer.emitter;
+  if (!spec) return;
+  const count = Math.max(1, layer.count ?? 1);
+  const layerAlpha = p(layer, 'alpha', t, 1);
+  if (layerAlpha <= 0) return;
+  const baseAngle = p(layer, 'rotation', t, 0);
+  const baseSize = p(layer, 'size', t, 3);
+  const { min: vMin, max: vMax, angleSpread } = spec.velocity;
+  const gravity = spec.gravity ?? 0;
+  const startAlpha = spec.startAlpha ?? 1;
+  const endAlpha = spec.endAlpha ?? 0;
+  const startScale = spec.startScale ?? 1;
+  const endScale = spec.endScale ?? 0.3;
+  const spawnSpread = spec.spawnSpread ?? 0;
+  gfx.lineStyle(0);
+  for (let i = 0; i < count; i++) {
+    const spawnT = spawnSpread > 0 ? frand(prng) * spawnSpread : 0;
+    const angle = baseAngle + (frand(prng) * 2 - 1) * angleSpread;
+    const speed = vMin + frand(prng) * (vMax - vMin);
+    const lifetime = spec.lifetime.from + frand(prng) * (spec.lifetime.to - spec.lifetime.from);
+    const age = t - spawnT;
+    if (age < 0 || lifetime <= 0 || age > lifetime) continue;
+    const ageFrac = age / lifetime;
+    const alpha = startAlpha + (endAlpha - startAlpha) * ageFrac;
+    const scale = startScale + (endScale - startScale) * ageFrac;
+    if (alpha <= 0 || scale <= 0) continue;
+    const x = Math.cos(angle) * speed * age;
+    const y = Math.sin(angle) * speed * age + 0.5 * gravity * age * age;
+    gfx.beginFill(color, alpha * layerAlpha);
+    gfx.drawCircle(x, y, baseSize * scale);
+    gfx.endFill();
   }
 };
 
