@@ -1758,3 +1758,17 @@ cols.tiles.find({ worldId, type: 'base', ownerId: { $nin: excludeOwners } })
 **实现**：从 `openapi-social.yml` 删除 `/social/player/{accountId}/rank` 路径 + 未再被引用的 `PlayerRankView` schema（确认 `ProfileExtraView` 是独立 schema，不 `$ref` 它，删除安全）；`server/socialsvc/src/metaClient.ts` 删除 `SocialMetaClient.getPlayerRank` 接口方法 + `HttpSocialMetaClient`/`nullSocialMetaClient` 两处实现（保留 `getPlayerRankByPublicId`，这条仍是 `getProfileExtra` 的唯一数据来源）；`server/socialsvc/test/harness.ts` 的 `FakeSocialMetaClient` 同步删除假实现。`metaserver` 的 `/internal/player?accountId=|publicId=` 端点本身不动——`grep 'internal/player'` 确认 `gateway/src/metaClient.ts`（自己的 ELO 查询用途）和 `admin/src/clients/player.ts` 仍在用 accountId 变体，只是 socialsvc 自己的封装方法是孤儿，不影响这条端点对其它服务的价值。
 
 **验证**：`gen:api:social`（34 operations / 17 schemas，比 §60 的 35/18 各少 1）+ `gen:api:social:check` 通过；`server` 全量 `npm run typecheck`（11 workspace 全绿，含 gateway/admin 未受影响）；`client` `npm run rest:gen` + `npx tsc --noEmit` 全绿；`socialsvc` `npx vitest run`（7 文件 / 89 例，用例数不变——`getPlayerRank` 本来就没有专属测试，删的是从未被测过的死代码）全绿。未做可视化验证——纯契约/死代码清理，不涉及任何渲染路径。
+
+---
+
+## 62. §60 ErrorResp 追踪的状态码补测试（2026-08-03，用户要求"全部改动加测试"）
+
+**背景**：§60 给 35 个 operation 标的状态码是靠**读代码逐条追踪**出来的，不是跑出来的——用户要求给本次会话的改动统一补测试，借这个机会把追踪结果和真实运行结果对一遍账。
+
+**盘点**：对照现有 `server/socialsvc/test/*.test.ts`（`family.e2e`/`friend.e2e`/`mail.e2e` 是 service 层直调，`familyHttp`/`mailHttp`/`chatRegionHttp` 是真实 `startHttpApi` + 真实 Mongo 的 wire-level 测试），逐个 operation 核对后发现 **15 条错误路径此前在任何层级都没有测试覆盖**：`searchFamilyByTag` 400、`respondFamilyJoinRequest` 404、`leaveFamily` 400/403、`kickFamilyMember` 400/403/404、`setFamilyMemberRole` 400/403/404、`disbandFamily` 403、`setFamilyAnnouncement` 400/403、`getFamilyChannel` 403、`searchFriend` 400/404、`blockFriend` 400/404、`reportFriend` 400/404（§60 新加进契约的那个端点，此前压根没测过）、`getChatMessages` 404、`sendChatMessage` 429、`markConversationRead` 400、`readMail` 404。其余 20 个 operation 的错误码已经被 `family.e2e`/`friend.e2e`/`mail.e2e`/`familyHttp.e2e` 等既有测试直接或间接覆盖，不重复补。
+
+**实现**：新增 `server/socialsvc/test/socialErrorsHttp.e2e.test.ts`（照抄 `familyHttp.e2e.test.ts` 的 real-server-real-Mongo 写法），31 个用例逐一对上面 15 条路径发真实 HTTP 请求，断言 wire-level 状态码 + `error.code`。其中 `sendChatMessage` 429 那条实测验证了 `allowChat()` 的滑动窗口限速——`CHAT_SEND_RATE_PER_MIN=30` 用的是真实 `Date.now()`，不是可注入的假时钟，所以测试直接连发 31 条消息（都落在同一个 60s 窗口内）而不需要伪造时间。`reportFriend` 补了三种场景（缺参/目标不存在/举报自己）+ 一次成功举报并断言 Mongo 里落地的 `reports` 文档字段。
+
+**结果**：31 个新用例**首次运行全部一次通过**——说明 §60 逐行追踪 `httpApi.ts`/`familyService.ts`/`friendService.ts`/`mailService.ts` 得出的状态码全部准确，没有因为静态追踪漏看分支而记错。`getPlayerRank`（§61 已删）没有补回归测试——它从来没工作过，删除不存在"防止行为倒退"的需求，跳过。
+
+**验证**：`socialsvc` `npx tsc --noEmit` 全绿；`npx vitest run`（8 文件 / 120 例，89 旧 + 31 新）全绿。未做可视化验证——纯 server 测试改动。
