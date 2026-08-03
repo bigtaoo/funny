@@ -115,3 +115,16 @@ Loki `type=mem` 埋点显示：`baseTexTop` 里按 URL 的资源纹理桶（`a.g
 
 ### 8.5 剩余项
 其余 ~24 个全屏场景（Gacha/Shop/Login/Result/Leaderboard/Equipment/Card…）的 `destroy()` 是同款裸写法，每次导航漏一屏 Text，靠 60s textureGC 勉强跟上、非 SLG 泄漏源，未在本次一并清扫——若要根除全局该类泄漏，同样 `tearDownChildren(this.container)` 接入即可。
+
+### 8.6 复查修复（2026-08-03，全客户端场景切换专项审计）
+
+> 状态：已修复。见 [`claudedocs/client-modules.md`](client-modules.md) 同日条目 + 记忆 `client-scene-lifecycle-audit-2026-08-03`。
+
+对 §7「渲染层销毁契约」和本节契约做了一次全量复核（33 个场景 + `GameRenderer` 全部子视图 + 全部 `Ticker.shared` 注册点 + 全部输入订阅点），发现并修复三处真实缺口：
+
+1. **`GameRenderer/events.ts` 护送兵特效 tick 未注册**——`escort_died`/`escort_arrived` 的淡出/闪烁 tick 直接 `PIXI.Ticker.shared.add(tick)`，未纳入任何 `Set` 追踪，`GameRendererBase.destroy()` 也从未注销，是本文档契约第1条「注销所有挂在 `Ticker.shared` 上的回调」的字面遗漏（此前只有 `BoardView`/`BuildingView`/`UnitView` 三个子视图接了 `fxTicks`/`effectTicks`，`GameRenderer` 自己的护送兵特效被漏掉）。此前未爆是因为退出条件是纯 `elapsed`/`frames` 计数、无异常路径——修复：新增 `escortEffectTicks: Set<() => void>`，`addEscortEffectTick`/`removeEscortEffectTick` 包一层注册，`destroy()` 的 `escortSprites` 清理步骤里先遍历注销再销毁精灵。
+2. **`GameRendererBase.destroy()` 顺序 + 无隔离**——四个子视图（`boardView`/`unitView`/`buildingView`/`handView`，各自已合规）的 `destroy()` 排在 `unsubs`/`drag`/`profilePopup`/`vfxSystem` 等步骤**之后**，且整个方法没有分步 try/catch：只要前面任一步抛错，四个子视图的 tick 注销代码就执行不到，原样复现 §2 事故的机制。修复：子视图 destroy 提到最前，且每一步都包一层 `safeDestroyStep(name, fn)`（try/catch + `netLog` 记录，不中断后续步骤）——这是本次审计里离“真的再炸一次”最近的一处结构性隐患。
+3. **`CampaignMapScene` 翻页内反复裸销毁**——`showPage()`/`advanceFlip()` 每次 TOC↔章节翻页都对切出的整页 `.destroy({children:true})`，和 §8.2 的 overlay 反复开关是同一种放大机制（同一场景实例内高频重复，而非"每次导航一次"），只是载体从 overlay 换成翻页；`destroy()` 本身也是裸销毁。三处均改用 `tearDownChildren(root)` 再 `.destroy({children:true})`。
+4. **`TitlesScene.destroy()` 漏调用 `container.destroy()`**——只调了 `tearDownChildren`（Text 纹理已释放），容器对象本身未销毁，补了一行，非泄漏、小疵。
+
+审计同时确认：全代码库 90 处 `input.onDown/onMove/onUp/onWheel` 订阅、33 个场景的 `destroy()` 存在性均合规，无新增遗漏（唯一发现的口子已如上修复）；`DefenseEditorScene` 缺失 `SaveManager.onSaveChanged` 订阅是数据共享类问题，见 [`client-modules.md`](client-modules.md) §34 同日更新，不是本节内存契约范畴。

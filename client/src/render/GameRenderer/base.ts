@@ -43,6 +43,9 @@ import { stateRecorder } from '../../game/replay/StateRecorder';
 import { registerPool } from '../../cache/poolRegistry';
 import { snapFont } from '../fontScale';
 import { factionInk } from '../theme';
+import { netLog } from '../../net/log';
+
+const log = netLog('GameRenderer');
 
 /** Optional player identities for the in-battle profile popup (netplay, S1). */
 export interface GameProfiles {
@@ -322,37 +325,63 @@ export class GameRendererBase {
   }
 
   destroy(): void {
-    this.tutorial?.destroy();
-    this.tutorial = null;
-    this.unregisterProjectileStat();
-    this.unsubs.forEach(u => u());
-    this.drag?.ghost.destroy();
-    this.drag            = null;
-    this.tapSelect       = null;
-    this.pendingCardDown = null;
-    this.profilePopup?.destroy();
-    this.vfxSystem.destroy();
+    // Tear down the sub-views FIRST. Each unregisters its in-flight ticker callbacks
+    // and drains its detached object pools, then destroys its own container. Without
+    // this the entire match's display tree + textures leaked on every match exit (no
+    // view had a destroy(), and the container was never freed) — the cause of multi-GB
+    // client growth over a long session. This must run before the other steps below:
+    // every step is independently contained (see safeDestroyStep) so a throw in one
+    // (e.g. unsubs) can no longer skip the ticker cleanup that caused that leak.
+    this.safeDestroyStep('boardView', () => this.boardView.destroy());
+    this.safeDestroyStep('unitView', () => this.unitView.destroy());
+    this.safeDestroyStep('buildingView', () => this.buildingView.destroy());
+    this.safeDestroyStep('handView', () => this.handView.destroy());
 
-    // Tear down the sub-views. Each unregisters its in-flight ticker callbacks
-    // and drains its detached object pools, then destroys its own container.
-    // Without this the entire match's display tree + textures leaked on every
-    // match exit (no view had a destroy(), and the container was never freed) —
-    // the cause of multi-GB client growth over a long session.
-    this.boardView.destroy();
-    this.unitView.destroy();
-    this.buildingView.destroy();
-    this.handView.destroy();
+    this.safeDestroyStep('tutorial', () => {
+      this.tutorial?.destroy();
+      this.tutorial = null;
+    });
+    this.safeDestroyStep('projectileStat', () => this.unregisterProjectileStat());
+    this.safeDestroyStep('unsubs', () => this.unsubs.forEach(u => u()));
+    this.safeDestroyStep('drag', () => {
+      this.drag?.ghost.destroy();
+      this.drag            = null;
+      this.tapSelect       = null;
+      this.pendingCardDown = null;
+    });
+    this.safeDestroyStep('profilePopup', () => this.profilePopup?.destroy());
+    this.safeDestroyStep('vfxSystem', () => this.vfxSystem.destroy());
 
-    for (const sprite of this.escortSprites.values()) sprite.destroy();
-    this.escortSprites.clear();
-    for (const sprite of this.projectileSprites.values()) sprite.destroy();
-    this.projectileSprites.clear();
-    for (const sprite of this.projectilePool) sprite.destroy();
-    this.projectilePool.length = 0;
+    this.safeDestroyStep('escortSprites', () => {
+      // Unregister in-flight escort fade/blink ticks first — otherwise a still-running
+      // one keeps its closure (and everything it captures) alive via Ticker.shared,
+      // the same GC-root leak documented in claudedocs/client-memory-leak.md §2.1.
+      for (const tick of this.escortEffectTicks) PIXI.Ticker.shared.remove(tick);
+      this.escortEffectTicks.clear();
+      for (const sprite of this.escortSprites.values()) sprite.destroy();
+      this.escortSprites.clear();
+    });
+    this.safeDestroyStep('projectileSprites', () => {
+      for (const sprite of this.projectileSprites.values()) sprite.destroy();
+      this.projectileSprites.clear();
+    });
+    this.safeDestroyStep('projectilePool', () => {
+      for (const sprite of this.projectilePool) sprite.destroy();
+      this.projectilePool.length = 0;
+    });
 
     // Mop up whatever is left under the root (HUD, net status, vignette, escort/
     // projectile layers). Children destroyed above have removed themselves.
-    this.container.destroy({ children: true });
+    this.safeDestroyStep('container', () => this.container.destroy({ children: true }));
+  }
+
+  /** Run one destroy() sub-step in isolation — a throw here must not skip the rest. */
+  private safeDestroyStep(step: string, fn: () => void): void {
+    try {
+      fn();
+    } catch (e) {
+      log.error(`destroy step "${step}" threw (contained)`, e instanceof Error ? (e.stack ?? e.message) : String(e));
+    }
   }
 
   // ── Scene graph ────────────────────────────────────────────────────────────
@@ -507,6 +536,7 @@ export interface GameRendererBase {
   // EventMixin
   escortLayer: PIXI.Container;
   escortSprites: Map<string, PIXI.Container>;
+  escortEffectTicks: Set<() => void>;
   projectileLayer: PIXI.Container;
   projectileSprites: Map<number, PIXI.Container>;
   projectilePool: PIXI.Container[];
