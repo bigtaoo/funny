@@ -214,6 +214,20 @@ describe.skipIf(!mongo)('meta economy orchestration e2e', () => {
     expect(pools.data.pools.some((p: { id: string }) => p.id === 'units')).toBe(false);
   });
 
+  it('item list: material bundles carry their qty (ECONOMY_NUMBERS §6.5); non-material items omit it entirely', async () => {
+    const items = body(await app.inject({ method: 'GET', url: '/shop/items', headers: auth() }));
+    type Item = { id: string; kind: string; qty?: number };
+    const scrap = (items.data.items as Item[]).find((i) => i.id === 'mat_buy_scrap');
+    expect(scrap?.kind).toBe('material');
+    expect(scrap?.qty).toBe(10);
+    const lead = (items.data.items as Item[]).find((i) => i.id === 'mat_buy_lead');
+    expect(lead?.qty).toBe(3);
+    // Skin/consumable entries never had a qty concept — the field must be entirely absent, not `qty: undefined`
+    // serialized some other way, on the wire.
+    const stone = (items.data.items as Item[]).find((i) => i.id === 'protect_enhance');
+    expect(stone).not.toHaveProperty('qty');
+  });
+
   it('top-up → mirrored balance pushed back', async () => {
     const r = body(await app.inject({ method: 'POST', url: '/iap/verify', headers: auth(), payload: { platform: 'web', receipt: 'tier:t499' } }));
     expect(r.data.granted).toBe(550);
@@ -325,6 +339,22 @@ describe.skipIf(!mongo)('meta economy orchestration e2e', () => {
     expect(comm.bal(accountId)).toBe(900); // unchanged — cap is checked before charging
     const save = body(await app.inject({ method: 'GET', url: '/save', headers: auth() }));
     expect(save.data.save.materials.scrap).toBe(50); // still capped at the 5th purchase's result
+  });
+
+  it('shop direct purchase: mat_buy_lead daily cap (6 purchases/day = 18 lead) rejects the 7th with 400 — each material item is capped independently', async () => {
+    comm.coins.set(accountId, 2000);
+    for (let i = 0; i < 6; i++) {
+      const r = body(await app.inject({ method: 'POST', url: '/shop/buy', headers: auth(), payload: { itemId: 'mat_buy_lead' } }));
+      expect(r.data.save.materials.lead).toBe((i + 1) * 3);
+    }
+    expect(comm.bal(accountId)).toBe(2000 - 6 * 105);
+    const capped = await app.inject({ method: 'POST', url: '/shop/buy', headers: auth(), payload: { itemId: 'mat_buy_lead' } });
+    expect(capped.statusCode).toBe(400);
+    expect(comm.bal(accountId)).toBe(2000 - 6 * 105); // unchanged — cap is checked before charging
+    // Buying scrap right after hitting lead's cap still succeeds — the two material items track
+    // separate daily counters (bumpCappedCounter is keyed per itemId), not a shared "any material" cap.
+    const scrap = body(await app.inject({ method: 'POST', url: '/shop/buy', headers: auth(), payload: { itemId: 'mat_buy_scrap' } }));
+    expect(scrap.data.save.materials.scrap).toBe(10);
   });
 
   it('gacha: deduct coins → deliver new skin + mark duplicate + mirror pity', async () => {

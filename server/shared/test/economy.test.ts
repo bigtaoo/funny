@@ -6,7 +6,9 @@ import {
   RARITY_WEIGHTS,
   GACHA_POOLS,
   SHOP_ITEMS,
+  MATERIAL_SHOP_DAILY_CAP,
   DUPE_REFUND_COINS,
+  GACHA_MATERIAL_GRANTS,
   IAP_TIERS,
   IAP_TIERS_LIST,
   DEV_STUB_DEFAULT_TIER,
@@ -187,6 +189,61 @@ describe('lookups', () => {
   it('findShopItem resolves a known item and misses unknowns', () => {
     expect(findShopItem(SHOP_ITEMS[0]!.id)?.id).toBe(SHOP_ITEMS[0]!.id);
     expect(findShopItem('nope')).toBeUndefined();
+  });
+});
+
+// ── SHOP_ITEMS / MATERIAL_SHOP_DAILY_CAP (ECONOMY_NUMBERS §6.5 gold→material exchange) ────────────
+
+// Mirrors valuation.ts's MATERIAL_GACHA_TIER (server/tools/econ-sim), duplicated here (not imported —
+// econ-sim isn't a @nw/shared dependency) purely so the markup test below has the rarity tier to
+// recompute the same coin-eq valuation from DUPE_REFUND_COINS/GACHA_MATERIAL_GRANTS.
+const MATERIAL_GACHA_TIER_FOR_TEST: Record<'scrap' | 'lead', Rarity> = {
+  scrap: 'common',
+  lead: 'rare',
+};
+
+describe('SHOP_ITEMS', () => {
+  it('every item has a unique id', () => {
+    const ids = SHOP_ITEMS.map((i) => i.id);
+    expect(new Set(ids).size).toBe(ids.length);
+  });
+
+  it('every item has a positive coin cost', () => {
+    for (const item of SHOP_ITEMS) expect(item.cost).toBeGreaterThan(0);
+  });
+
+  describe('kind="material" bundles (gold→material exchange)', () => {
+    const materials = SHOP_ITEMS.filter((i) => i.kind === 'material');
+
+    it('mat_buy_scrap / mat_buy_lead exist with the expected price and bundle size', () => {
+      const scrap = findShopItem('mat_buy_scrap');
+      expect(scrap).toMatchObject({ cost: 20, kind: 'material', grants: 'scrap', qty: 10 });
+      const lead = findShopItem('mat_buy_lead');
+      expect(lead).toMatchObject({ cost: 105, kind: 'material', grants: 'lead', qty: 3 });
+    });
+
+    it('every material bundle grants a qty > 1 (otherwise it should just be a plain SHOP_ITEMS purchase)', () => {
+      for (const item of materials) expect(item.qty ?? 1).toBeGreaterThan(1);
+    });
+
+    it('binding is never directly purchasable (stays farm/gacha-only, mirrors legendary-skins-gacha-only ADR-003)', () => {
+      expect(materials.some((i) => i.grants === 'binding')).toBe(false);
+    });
+
+    it('unit price (cost / qty) is priced above the econ-sim coin-eq valuation — a deliberate markup, not a cheaper substitute for farming', () => {
+      for (const item of materials) {
+        const tier = MATERIAL_GACHA_TIER_FOR_TEST[item.grants as 'scrap' | 'lead'];
+        const grantQty = GACHA_MATERIAL_GRANTS[`mat_${item.grants}`]?.[item.grants] ?? 1;
+        const coinEqValue = DUPE_REFUND_COINS[tier] / grantQty;
+        const shopUnitPrice = item.cost / (item.qty ?? 1);
+        expect(shopUnitPrice).toBeGreaterThan(coinEqValue);
+      }
+    });
+
+    it('every material item has a matching MATERIAL_SHOP_DAILY_CAP entry, and vice versa (no orphans either direction)', () => {
+      const materialIds = new Set(materials.map((i) => i.id));
+      expect(new Set(Object.keys(MATERIAL_SHOP_DAILY_CAP))).toEqual(materialIds);
+    });
   });
 });
 
