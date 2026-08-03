@@ -41,7 +41,7 @@ function buildHarness(marches: MarchView[]): { ctx: WorldMapContext; panels: Wor
     marches,
     marchesExpanded: true,
     parseTileId: (id: string) => { const p = id.split(':'); return [Number(p[1]), Number(p[2])]; },
-    cb: { accountId: 'me', getCoins: () => 0 },
+    cb: { accountId: 'me', getCoins: () => 0, worldId: 'w1' },
   } as unknown as WorldMapContext;
 
   const panels = new WorldMapPanels(ctx);
@@ -91,5 +91,39 @@ describe('WorldMapPanels march list — instant-return button (SLG_DESIGN_LOG §
     expect(ctx.marchRowRects[1]!.marchId).toBe('m4');
     expect(ctx.marchRowRects[1]!.recallRect).toBeNull();
     expect(ctx.marchRowRects[1]!.instantReturnRect).not.toBeNull();
+  });
+});
+
+// Regression coverage (2026-08-03 fix): each march row's `worldId` used to be parsed from the wrong
+// toTile segment (`m.toTile.split(':')[2]`, the tile's Y-coordinate, not the world id — `toTile` is
+// `{worldId}:{x}:{y}` everywhere else in this codebase). That worldId feeds straight into
+// WorldMapInput → WorldMapNet.doRecall/doInstantReturn → worldApi.recallMarch/instantReturnMarch's
+// request body, which the server matches against `{_id, worldId, ownerId}` — a y-coordinate string
+// essentially never matches the real worldId, so the lookup missed and every Recall/Instant-Return
+// tap failed with MARCH_NOT_FOUND. Fixed by reading `ctx.cb.worldId` (the authoritative current world
+// id already available in scope) instead of re-parsing it out of the destination tile.
+describe('WorldMapPanels march list — row worldId (2026-08-03 fix)', () => {
+  it('an attack-row worldId is the current world id, not the destination tile\'s y-coordinate', () => {
+    // toTile's y-coordinate ('5') deliberately differs from the world id ('w1') so a regression to
+    // the old parsing bug would be caught, not accidentally masked by a coincidental match.
+    const marches: MarchView[] = [
+      { marchId: 'm1', kind: 'attack', fromTile: 'w1:5:5', toTile: 'w1:10:5', troops: 50, departAt: NOW, arriveAt: NOW + 60_000, status: 'marching', mine: true },
+    ];
+    const { ctx, panels } = buildHarness(marches);
+    panels.renderHud();
+
+    expect(ctx.marchRowRects[0]!.worldId).toBe('w1');
+    expect(ctx.marchRowRects[0]!.worldId).not.toBe('5'); // the old (buggy) toTile-segment-2 value
+  });
+
+  it('a return-row (instant-return) worldId is also the current world id, not the tile\'s y-coordinate', () => {
+    const marches: MarchView[] = [
+      { marchId: 'm2', kind: 'return', fromTile: 'w1:10:5', toTile: 'w1:5:5', troops: 30, departAt: NOW, arriveAt: NOW + 300_000, status: 'marching', mine: true },
+    ];
+    const { ctx, panels } = buildHarness(marches);
+    panels.renderHud();
+
+    expect(ctx.marchRowRects[0]!.worldId).toBe('w1');
+    expect(ctx.marchRowRects[0]!.worldId).not.toBe('5');
   });
 });

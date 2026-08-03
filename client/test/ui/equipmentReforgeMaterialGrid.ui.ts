@@ -102,6 +102,33 @@ describe('EquipmentScene — reforge material picker is an icon-card grid, never
     scene.destroy();
   });
 
+  it('regression (2026-08-03): a locked never-enhanced/unequipped candidate is excluded from the fuel picker', () => {
+    // A player locks an item specifically to protect it from being destroyed — reforge fuel is
+    // consumed/destroyed exactly like a salvage input, so a locked item must never be offered.
+    const save = makeNewSave('acc_test3');
+    save.equipmentInv = {
+      target: { id: 'target', defId: 'wp_highlighter', rarity: 'epic', level: 0, affixes: [] },
+      locked_fuel: { id: 'locked_fuel', defId: 'wp_marker', rarity: 'rare', level: 0, affixes: [], locked: true },
+    };
+    const cb: EquipmentCallbacks = {
+      onBack() {},
+      getSave: () => save,
+      craft: async () => ({ ok: true }),
+      enhance: async () => ({ ok: true, success: true, level: 1 }),
+      salvage: async () => ({ ok: true }),
+      equip: async () => ({ ok: true }),
+      reforge: async () => ({ ok: true }),
+      activeCardInstanceId: '',
+    };
+    const scene = new EquipmentScene(createLayout(...LANDSCAPE), new InputManager(), cb);
+    const internals = scene as unknown as SceneInternals;
+    internals.openReforgeSelect(save.equipmentInv.target);
+
+    const cardHits = internals.modalHits.slice(0, -3);
+    expect(cardHits.length).toBe(0); // locked_fuel is the only otherwise-eligible candidate — must not appear
+    scene.destroy();
+  });
+
   it('excludes candidates entirely when only enhanced/equipped rare weapons exist (no never-enhanced fuel)', () => {
     const save = makeNewSave('acc_test2');
     save.equipmentInv = {

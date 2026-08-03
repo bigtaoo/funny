@@ -1174,6 +1174,40 @@ describe('EquipmentScene — mixin-split wiring', () => {
     scene.destroy();
   });
 
+  it('regression (2026-08-03): reforge is omitted (not just greyed out) when coins are insufficient, and reappears once affordable', async () => {
+    const { cb, save } = buildEquipCallbacks('card1');
+    const scene = new EquipmentScene(createLayout(...LANDSCAPE), new InputManager(), cb);
+    // eqBagFine is 'fine' rarity → REFORGE_COIN_COST.fine === 80 (equipmentDefs.ts).
+    save.wallet.coins = 79;
+    let actions = (scene as any).instanceActions(save, save.equipmentInv.eqBagFine) as Array<{ key: string }>;
+    expect(actions.map((a) => a.key)).not.toContain('reforge');
+
+    save.wallet.coins = 80;
+    actions = (scene as any).instanceActions(save, save.equipmentInv.eqBagFine) as Array<{ key: string }>;
+    expect(actions.map((a) => a.key)).toContain('reforge');
+    scene.destroy();
+  });
+
+  it('regression (2026-08-03): the reforge confirm dialog states the coin cost', async () => {
+    const { cb, save } = buildEquipCallbacks('card1');
+    const scene = new EquipmentScene(createLayout(...LANDSCAPE), new InputManager(), cb);
+    const actions = (scene as any).instanceActions(save, save.equipmentInv.eqBagFine) as Array<{ key: string; fn: () => void }>;
+    actions.find((a) => a.key === 'reforge')!.fn(); // → openReforgeSelect(eqBagFine)
+    const modalHits = (scene as any).modalHits as Array<{ action: () => void }>;
+    modalHits[0].action(); // material row (eqBagCommon) → confirmReforge → showConfirm
+    const modalLayer = (scene as any).modalLayer as PIXI.Container;
+    let sawCost = false;
+    const walk = (c: PIXI.Container): void => {
+      for (const ch of c.children) {
+        if (ch instanceof PIXI.Text && ch.text.includes('80')) sawCost = true;
+        if (ch instanceof PIXI.Container) walk(ch);
+      }
+    };
+    walk(modalLayer);
+    expect(sawCost).toBe(true); // REFORGE_COIN_COST.fine === 80, must appear in the confirm text
+    scene.destroy();
+  });
+
   it('salvage flow: instanceActions(Salvage) → base.showConfirm → Detail(doSalvage) → cb.salvage', async () => {
     const { cb, calls } = buildEquipCallbacks('card1');
     const scene = new EquipmentScene(createLayout(...LANDSCAPE), new InputManager(), cb);

@@ -184,4 +184,23 @@ describe('CardScene detail modal — change-skin picker', () => {
     expect((scene as unknown as { skinPickerOpen: boolean }).skinPickerOpen).toBe(false);
     expect(hasText(scene.container, skinLabel)).toBe(false);
   });
+
+  it('regression (2026-08-03): the portrait-flip hit is not registered while the skin picker is open, so its rows are never shadowed by it', () => {
+    // The picker popover's dim backdrop geometrically overlaps the same 96×96 portrait rect (its
+    // first row(s) sit right on top of it) — before the fix, the portrait-flip hit stayed registered
+    // underneath, so a tap on the picker's first row(s) could hit the flip instead of selecting a skin.
+    const scene = buildScene(baseCb({ getOwnedSkins: () => ['skin_e1'] }));
+    openDetail(scene, 'Lena');
+
+    // Confirm the flip hit exists BEFORE the picker opens (sanity: the 96×96 hit really is the flip).
+    expect(bySize((scene as unknown as { modalHits: Hit[] }).modalHits, 96, modalScaleOf(scene))).toBeDefined();
+
+    const badgeHit = bySize((scene as unknown as { modalHits: Hit[] }).modalHits, 22, modalScaleOf(scene));
+    badgeHit!.action(); // opens the skin picker
+    expect((scene as unknown as { skinPickerOpen: boolean }).skinPickerOpen).toBe(true);
+
+    // The flip hit must be gone entirely while the picker is showing.
+    expect(bySize((scene as unknown as { modalHits: Hit[] }).modalHits, 96, modalScaleOf(scene))).toBeUndefined();
+    expect((scene as unknown as { detailFlipped: boolean }).detailFlipped).toBe(false);
+  });
 });

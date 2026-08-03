@@ -424,14 +424,16 @@ export class NetSession {
         onServerMsg: (m) => this.routeData(m),
         onStateChange: (s) => {
           if (s === 'open') everOpened = true;
-          else if (s === 'closed') {
+          else if (s === 'closed' || s === 'disconnected') {
+            // 'closed' = intentional disconnect() (e.g. session.close()); 'disconnected' = a fatal
+            // server-side rejection (e.g. 4409 eviction mid-match, see NetState's doc comment) —
+            // either way the connection is genuinely gone.
             if (!everOpened) onFailed?.();
-            // Terminal close (graceful or fatal-after-open, e.g. a 4409 eviction mid-match):
-            // drop the dangling reference so a later reportResult()/resume() surfaces as
-            // "not connected" (NetClient.doSend's own warning) instead of silently no-op'ing
-            // forever against a dead socket, and so a resent match_found for this same ticket
-            // isn't ignored by the `this.game && this.ticket===ticket` guard above (2026-08-03
-            // fix). Identity-guarded in case a newer connectGame() already replaced this.game.
+            // Terminal close: drop the dangling reference so a later reportResult()/resume()
+            // surfaces as "not connected" (NetClient.doSend's own warning) instead of silently
+            // no-op'ing forever against a dead socket, and so a resent match_found for this same
+            // ticket isn't ignored by the `this.game && this.ticket===ticket` guard above
+            // (2026-08-03 fix). Identity-guarded in case a newer connectGame() already replaced this.game.
             if (this.game === client) this.game = null;
           }
           this.handlers.onNetState?.(s);

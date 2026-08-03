@@ -10,7 +10,7 @@
 // setBakeRenderer(), so bake.ts returns null and every layer draws live on the CPU
 // — no RenderTexture / WebGL is touched. STARTUP smoke, not a visual check.
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import * as PIXI from 'pixi.js-legacy';
 import type { Scene } from '../../src/scenes/SceneManager';
 import { createLayout } from '../../src/layout/ScalingManager';
@@ -200,6 +200,64 @@ for (const [label, [w, h]] of [
   });
 }
 
+// ── GameScene: net-callback destroyed-guard (2026-08-03 fix) ────────────────────────────────────
+//
+// applyNetState/applyPeerDc/applyMatchOver are invoked directly from long-lived NetSession event
+// closures (see app.ts's showGameNet / nav/result.ts), not from SceneManager's per-frame tick — so
+// they stay reachable after this scene (and its renderer) has been destroyed, e.g. a late
+// match_over/peer_dc arriving while the player is already sitting on ResultScene (session.handlers
+// isn't always reassigned promptly — see nav/result.ts). Before the fix, any of these calls after
+// destroy() would touch the already-destroyed GameRenderer's container/NetStatusView.
+describe('GameScene — net callbacks are inert after destroy() (2026-08-03 fix)', () => {
+  function buildNetGameScene(): GameScene {
+    return new GameScene(
+      createLayout(...LANDSCAPE),
+      new InputManager(),
+      { onGameEnd() {}, onExitToLobby() {}, onNetMatchOver() {} },
+      { seed: SEED, net: true },
+    );
+  }
+
+  it('applyNetState after destroy() does not throw', () => {
+    const scene = buildNetGameScene();
+    scene.destroy();
+    expect(() => scene.applyNetState('reconnecting')).not.toThrow();
+    expect(() => scene.applyNetState('disconnected')).not.toThrow();
+  });
+
+  it('applyPeerDc after destroy() does not throw', () => {
+    const scene = buildNetGameScene();
+    scene.destroy();
+    expect(() => scene.applyPeerDc({ side: 0, graceMs: 5000 })).not.toThrow();
+  });
+
+  it('applyMatchOver after destroy() does not throw and does not fire onNetMatchOver', () => {
+    let fired = false;
+    const scene = new GameScene(
+      createLayout(...LANDSCAPE),
+      new InputManager(),
+      { onGameEnd() {}, onExitToLobby() {}, onNetMatchOver: () => { fired = true; } },
+      { seed: SEED, net: true },
+    );
+    scene.destroy();
+    expect(() => scene.applyMatchOver({ winnerSide: 0, reason: 'disconnect', mismatch: false })).not.toThrow();
+    expect(fired).toBe(false); // the destroyed-guard bails before ever reaching cb.onNetMatchOver
+  });
+
+  it('sanity: applyMatchOver still fires onNetMatchOver normally BEFORE destroy (guards don\'t overreach)', () => {
+    let fired = false;
+    const scene = new GameScene(
+      createLayout(...LANDSCAPE),
+      new InputManager(),
+      { onGameEnd() {}, onExitToLobby() {}, onNetMatchOver: () => { fired = true; } },
+      { seed: SEED, net: true },
+    );
+    scene.applyMatchOver({ winnerSide: 0, reason: 'disconnect', mismatch: false });
+    expect(fired).toBe(true);
+    scene.destroy();
+  });
+});
+
 // ── ReplayScene: spectator playback advances and ends ────────────────────────
 describe('ReplayScene — playback', () => {
   it('advances currentTick while playing and stops at endFrame', () => {
@@ -221,6 +279,44 @@ describe('ReplayScene — playback', () => {
     const overlay = (scene as any).overlay as PIXI.Container;
     expect(overlay).toBeInstanceOf(PIXI.Container);
     expect(overlay.children.length).toBeGreaterThan(0);
+    scene.destroy();
+  });
+});
+
+// ── ReplayScene: distinct load-error messages + real exception logged (2026-08-03 fix) ───────────
+//
+// Before: `errorMsg = e instanceof ReplayVersionError ? t('replay.versionError') : t('replay.versionError')`
+// — both branches produced the identical string, so a genuinely corrupted replay or an invalid
+// stale levelId was misreported to the player as "version incompatible" (factually wrong), and the
+// real exception was never logged anywhere (no way to tell an expected version skip from a real bug
+// from the console/telemetry).
+describe('ReplayScene — construction-failure error messages (2026-08-03 fix)', () => {
+  it('a genuine engine-version mismatch reports replay.versionError', () => {
+    const replay = recordReplay(10);
+    (replay as unknown as { engineVersion: number }).engineVersion = replay.engineVersion + 999;
+    const scene = new ReplayScene(createLayout(...PORTRAIT), new InputManager(), replay, { onExit() {} });
+    const s = scene as unknown as { errorMsg: string; renderer: unknown; ended: boolean };
+    expect(s.renderer).toBeNull();
+    expect(s.ended).toBe(true);
+    expect(s.errorMsg).toBe('Replay version incompatible — cannot play back');
+    scene.destroy();
+  });
+
+  it('regression: a non-version load failure (corrupted replay data) reports a distinct, generic message — not "version incompatible"', () => {
+    const replay = recordCampaignReplay('ch1_lv1', 10);
+    // Corrupt the recording itself so the constructor throws a plain TypeError, unrelated to
+    // engine version — same shape as truncated/corrupted replay JSON coming back from storage.
+    (replay as unknown as { frames: unknown }).frames = null;
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const scene = new ReplayScene(createLayout(...PORTRAIT), new InputManager(), replay, { onExit() {} });
+    const s = scene as unknown as { errorMsg: string; renderer: unknown; ended: boolean };
+    expect(s.renderer).toBeNull();
+    expect(s.ended).toBe(true);
+    expect(s.errorMsg).not.toBe('Replay version incompatible — cannot play back');
+    expect(s.errorMsg).toBe('Something went wrong — please try again');
+    // The real exception must actually be logged somewhere, not silently swallowed.
+    expect(errSpy).toHaveBeenCalled();
+    errSpy.mockRestore();
     scene.destroy();
   });
 });
