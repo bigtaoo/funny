@@ -1,7 +1,6 @@
 // Social: friends / chat / mail (S6-1/2/3). From P2 onwards these are proxied to socialsvc when
 // NW_SOCIALSVC_INTERNAL_URL is configured. claimMail is the exception: socialsvc atomically marks the
 // claim, then meta performs the actual attachment delivery (coins/equipment/cards/skins/materials).
-import { randomUUID } from 'node:crypto';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { ErrorCode, err, ok, createLogger } from '@nw/shared';
 
@@ -126,7 +125,12 @@ export function SocialMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase & Co
       if (!this.deps.socialsvc?.available) {
         return reply.code(503).send(err(ErrorCode.NOT_IMPLEMENTED, 'socialsvc not configured'));
       }
-      const orderId = randomUUID();
+      // Deterministic orderId (2026-08-03 fix, was randomUUID() per call): commercial.grant and
+      // deliverMailGrant both dedupe by orderId, so a fresh random id every attempt meant a retry after
+      // a partial-failure rollback (see the catch block below) would claim the mail again but grant the
+      // coin attachment a second time — commercial's own idempotency never recognized it as a repeat.
+      // Keying on mailId+accountId makes every retry of the same claim collapse onto the same order.
+      const orderId = `mail.claim.${id}.${accountId}`;
       const claimedResult = await this.deps.socialsvc.claimMail(id, accountId, orderId);
       if ('error' in claimedResult) {
         if (claimedResult.error === 'NOT_FOUND') return reply.code(404).send(err(ErrorCode.NOT_FOUND, 'mail not found'));

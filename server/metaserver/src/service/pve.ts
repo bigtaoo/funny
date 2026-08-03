@@ -692,7 +692,7 @@ export function PveMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase & Const
         : verdict.ok
           ? 'verified'
           : 'unverified';
-      await cols.pveVerifications.updateOne(
+      const settleRes = await cols.pveVerifications.updateOne(
         { _id: verifyId, status: 'pending' },
         {
           $set: {
@@ -703,11 +703,20 @@ export function PveMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase & Const
             // clear later instead of only having the judge's verdict; kept out of the common verified/unverified path.
             ...(rejected ? { frames: frames ?? [], endFrame: Math.floor(endFrame) || 0 } : {}),
           },
-          // A rejected doc is kept forever for ops review (mirrors MatchDoc.expireAt's disputed-match carve-out);
+          // A rejected doc is kept forever for ops review (mirrors MatchDoc.expireAt's disputed-match carve-out):
           // verified/unverified keep the expireAt set at insert.
           ...(rejected ? { $unset: { expireAt: '' as const } } : {}),
         },
       );
+      if (settleRes.matchedCount === 0) {
+        // Lost the race: a concurrent submission for this same verifyId already flipped status out of
+        // 'pending' between our initial read (line 667) and this write (the gateway.judge() call above
+        // can take up to ~20s, plenty of time for a duplicate/retried request to land first). Take the
+        // same idempotent path as the up-front check — do not deliver rewards a second time.
+        const s = await getOrCreateSave(cols, accountId, now());
+        const settled = await cols.pveVerifications.findOne({ _id: verifyId });
+        return ok({ save: s, granted: {}, capped: false, verified: settled?.status !== 'rejected' });
+      }
 
       if (rejected) {
         // No automatic ban (design decision, 2026-07-18): a rejection only means the re-simulation

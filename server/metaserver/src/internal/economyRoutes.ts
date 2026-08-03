@@ -57,21 +57,38 @@ export function registerEconomyRoutes(app: FastifyInstance, ctx: InternalCtx): v
   // Bypasses openapi glue, authenticated via X-Internal-Key.
   // POST /internal/materials/deduct  { accountId, material, qty, orderId }
   //   → deduct the specified material; insufficient balance → 402; optimistic-lock conflict retried 3 times, then 409.
+  //   orderId (optional, back-compat) dedups via internalGrantOrders — mirrors /internal/materials/grant
+  //   below (2026-08-03 fix: orderId was documented but previously unused here, so a caller retry after a
+  //   timeout could deduct the same material twice for one logical transaction).
   app.post('/internal/materials/deduct', async (req, reply) => {
     if (!authed(req.headers)) return reply.code(401).send({ ok: false, error: 'unauthorized' });
-    const { accountId, material, qty } = req.body as {
+    const { accountId, material, qty, orderId } = req.body as {
       accountId?: string;
       material?: string;
       qty?: number;
+      orderId?: string;
     };
     if (!accountId || !material || typeof qty !== 'number' || qty <= 0) {
       return reply.code(400).send({ ok: false, error: 'accountId + material + qty (>0) required' });
     }
+    if (orderId) {
+      const r = await reserveGrantOrder(cols, orderId, accountId, 'material_deduct', now());
+      if (r === 'duplicate') {
+        log.info('materials deduct deduped', { accountId, material, qty, orderId });
+        return reply.send({ ok: true, deduped: true });
+      }
+    }
     for (let attempt = 0; attempt < 3; attempt++) {
       const doc = await cols.saves.findOne({ _id: accountId });
-      if (!doc) return reply.code(404).send({ ok: false, error: 'save not found' });
+      if (!doc) {
+        if (orderId) await releaseGrantOrder(cols, orderId);
+        return reply.code(404).send({ ok: false, error: 'save not found' });
+      }
       const cur = doc.save.materials?.[material] ?? 0;
-      if (cur < qty) return reply.code(402).send({ ok: false, error: 'insufficient materials' });
+      if (cur < qty) {
+        if (orderId) await releaseGrantOrder(cols, orderId);
+        return reply.code(402).send({ ok: false, error: 'insufficient materials' });
+      }
       const next: SaveData = {
         ...doc.save,
         rev: doc.save.rev + 1,
@@ -84,6 +101,7 @@ export function registerEconomyRoutes(app: FastifyInstance, ctx: InternalCtx): v
       );
       if (res) return reply.send({ ok: true, remaining: cur - qty });
     }
+    if (orderId) await releaseGrantOrder(cols, orderId);
     return reply.code(409).send({ ok: false, error: 'rev conflict, retry' });
   });
 

@@ -97,7 +97,14 @@ export async function buildApp(opts: BuildAppOpts): Promise<FastifyInstance> {
   // so `${dispatchKey}:${to}` routinely exceeds 100 chars. Past that length find-my-way doesn't match the route at
   // all (raw 404 "Route not found" from Fastify, never reaching claimMail) — surfaced to players as "claim failed"
   // with no attachment ever really invalid. 200 gives ~2x headroom over the longest realistic mailId.
-  const app = Fastify({ logger: opts.logger ?? false, bodyLimit: 4 * 1024 * 1024, routerOptions: { maxParamLength: 200 } });
+  // trustProxy: 1 (2026-08-03 fix) — metaserver always sits behind exactly one reverse proxy (nginx in
+  // dev/local-compose, Caddy in prod; both append the real client address as the last X-Forwarded-For
+  // entry, see client/nginx.conf's `proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for`).
+  // Without this, req.ip resolves to the proxy's own socket address for every request, collapsing
+  // service/telemetry.ts's per-IP anomaly-flood rate limiter into one counter shared by the whole player
+  // base. `1` (not `true`) trusts exactly one hop — the immediate proxy — rather than blindly trusting an
+  // attacker-supplied X-Forwarded-For chain of arbitrary length.
+  const app = Fastify({ logger: opts.logger ?? false, bodyLimit: 4 * 1024 * 1024, routerOptions: { maxParamLength: 200 }, trustProxy: 1 });
   await app.register(cors, { origin: true });
 
   // Human-readable request/response log (for debugging, replacing pino JSON). One line per request on completion: method path status elapsed.

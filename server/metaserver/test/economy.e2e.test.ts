@@ -165,7 +165,10 @@ class FakeCommercial implements CommercialClient {
     return { ok: true as const, coinsAfter: this.bal(a.accountId) };
   }
   granted = new Set<string>();
+  /** Makes the next grant() call throw (simulates a transient commercial failure), then behaves normally. */
+  failNextGrant = false;
   async grant(a: { accountId: string; amount: number; reason: string; orderId: string }) {
+    if (this.failNextGrant) { this.failNextGrant = false; throw new Error('injected grant failure'); }
     if (this.granted.has(a.orderId)) return { ok: true as const, coinsAfter: this.bal(a.accountId) };
     this.coins.set(a.accountId, this.bal(a.accountId) + a.amount);
     this.granted.add(a.orderId);
@@ -255,6 +258,32 @@ describe.skipIf(!mongo)('meta economy orchestration e2e', () => {
     // Re-claiming the same tier is rejected (already claimed).
     const again = body(await app.inject({ method: 'POST', url: '/recharge/claim', headers: auth(), payload: { tierId: 1 } }));
     expect(again.ok).toBe(false);
+  });
+
+  it('regression (2026-08-03 fix): recharge milestone coins are reconciled on a later ALREADY_CLAIMED retry after the first grant failed', async () => {
+    // Root cause: the milestone tier is marked claimed (irreversibly — a repeat claim bounces off
+    // ALREADY_CLAIMED) BEFORE the coin grant runs. If that grant throws or returns ok:false, the coins
+    // used to be silently lost forever (no error surfaced, no way to retry — the milestone was already
+    // consumed). Since the grant's orderId is deterministic per account+tier, an ALREADY_CLAIMED response
+    // can still recompute the tier's coin reward and retry the grant.
+    await app.inject({ method: 'POST', url: '/iap/verify', headers: auth(), payload: { platform: 'web', receipt: 'tier:t999' } });
+    const before = comm.bal(accountId);
+
+    comm.failNextGrant = true;
+    const claim = body(await app.inject({ method: 'POST', url: '/recharge/claim', headers: auth(), payload: { tierId: 1 } }));
+    expect(claim.ok).toBe(true); // milestone claim itself still "succeeds" from the client's perspective
+    expect(claim.data.rewards).toEqual([{ kind: 'coins', count: 60 }]);
+    expect(comm.bal(accountId)).toBe(before); // but the grant failed — coins not actually delivered yet
+
+    // A later retry of the same (now-already-claimed) tier reconciles the missed coin grant instead of
+    // silently losing it forever.
+    const retry = body(await app.inject({ method: 'POST', url: '/recharge/claim', headers: auth(), payload: { tierId: 1 } }));
+    expect(retry.ok).toBe(false); // still reports ALREADY_CLAIMED — milestone state itself is unchanged
+    expect(comm.bal(accountId)).toBe(before + 60); // but the coins have now landed via reconciliation
+
+    // A further retry does not re-grant a third time (deterministic orderId, commercial-side dedup).
+    await app.inject({ method: 'POST', url: '/recharge/claim', headers: auth(), payload: { tierId: 1 } });
+    expect(comm.bal(accountId)).toBe(before + 60);
   });
 
   it('rename: deduct 500 coins → write display name → mirror balance; GET /save returns new name', async () => {
@@ -387,6 +416,30 @@ describe.skipIf(!mongo)('meta economy orchestration e2e', () => {
     const r2 = body(await app.inject({ method: 'GET', url: '/save', headers: auth() }));
     expect(r2.data.save.inventory.skins.filter((s: string) => s === 'skin_l1')).toHaveLength(1);
     expect(await comm.undeliveredOrders(accountId)).toHaveLength(0);
+  });
+
+  it('regression (2026-08-03 fix): repeated GET /save while an order stays "charged" does not re-grant materials (unlike skins, materials are $inc\'d, not naturally idempotent)', async () => {
+    // Root cause: reconcileUndelivered re-delivers any order commercial still reports as "charged".
+    // gachaDraw marks delivery via a fire-and-forget (unawaited) orderDelivered call, so a GET /save
+    // racing that call (or, as here, an orderDelivered that keeps failing) would re-run deliverGrant and
+    // re-$inc the same materials every time — skins were accidentally safe via $addToSet, materials were
+    // not. Fixed by gating deliverGrant/deliverMailGrant's whole write on
+    // `'save.deliveredOrders': { $ne: orderId }`.
+    comm.coins.set(accountId, 1000);
+    comm.nextResults = [{ itemId: 'mat_scrap', rarity: 'common' }]; // routes to save.materials.scrap += 10
+    comm.failDelivered = true; // orderDelivered keeps failing — order never leaves 'charged' status
+    const draw = body(await app.inject({ method: 'POST', url: '/gacha/draw', headers: auth(), payload: { poolId: 'standard', count: 1 } }));
+    expect(draw.data.save.materials.scrap).toBe(10); // delivered once, synchronously, by gachaDraw itself
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(await comm.undeliveredOrders(accountId)).toHaveLength(1); // still "charged" from commercial's POV
+
+    // Multiple GET /save calls each trigger reconcileUndelivered against the still-"charged" order.
+    const r1 = body(await app.inject({ method: 'GET', url: '/save', headers: auth() }));
+    const r2 = body(await app.inject({ method: 'GET', url: '/save', headers: auth() }));
+    const r3 = body(await app.inject({ method: 'GET', url: '/save', headers: auth() }));
+    expect(r1.data.save.materials.scrap).toBe(10);
+    expect(r2.data.save.materials.scrap).toBe(10);
+    expect(r3.data.save.materials.scrap).toBe(10); // not 20, not 40 — the dedup guard holds every time
   });
 
   it('gacha: standard-pool character card result lands in cardInv, not inventory.skins (regression — gachaDraw used to skip the loot-box category routing entirely)', async () => {

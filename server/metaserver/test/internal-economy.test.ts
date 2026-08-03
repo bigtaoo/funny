@@ -29,7 +29,8 @@ function build(seedSaves: SaveDocRow[] = [], seedCards: CardInstanceRow[] = []) 
   const equipmentInstances = new FakeCollection<{ _id: string; accountId: string }>();
   const cardInstances = new FakeCollection<CardInstanceRow>().seed(...seedCards);
   const internalGrantOrders = new FakeCollection<GrantOrderRow>();
-  const cols = { saves, equipmentInstances, cardInstances, internalGrantOrders } as unknown as Collections;
+  const cardIdem = new FakeCollection<{ _id: string; accountId: string; op: string; result: unknown; expireAt: Date }>();
+  const cols = { saves, equipmentInstances, cardInstances, internalGrantOrders, cardIdem } as unknown as Collections;
   const ctx: InternalCtx = {
     cols,
     now: () => 1000,
@@ -40,7 +41,7 @@ function build(seedSaves: SaveDocRow[] = [], seedCards: CardInstanceRow[] = []) 
   };
   const app = Fastify();
   registerEconomyRoutes(app, ctx);
-  return { app, saves, cardInstances, internalGrantOrders };
+  return { app, saves, cardInstances, internalGrantOrders, cardIdem };
 }
 
 function card(id: string, extra: Partial<CardInstance> = {}): CardInstance {
@@ -93,6 +94,37 @@ describe('POST /internal/materials/deduct', () => {
     expect(res.statusCode).toBe(200);
     expect(JSON.parse(res.payload)).toEqual({ ok: true, remaining: 6 });
     expect((saves.docs.get('a')!.save.materials as Record<string, number>).wood).toBe(6);
+  });
+
+  // 2026-08-03 fix: orderId was documented but previously unused here (unlike /internal/materials/grant),
+  // so a caller retry after a timeout could deduct the same material twice for one logical transaction.
+  it('regression (2026-08-03 fix): same orderId retried after success → deduped, no double-deduct', async () => {
+    const { app, saves } = build([saveRow('a', { materials: { wood: 10 } } as Partial<SaveData>)]);
+    const payload = { accountId: 'a', material: 'wood', qty: 4, orderId: 'dup-deduct-1' };
+    const r1 = await app.inject({ method: 'POST', url: '/internal/materials/deduct', headers: authHeaders, payload });
+    expect(r1.statusCode).toBe(200);
+    const r2 = await app.inject({ method: 'POST', url: '/internal/materials/deduct', headers: authHeaders, payload });
+    expect(r2.statusCode).toBe(200);
+    expect(JSON.parse(r2.payload)).toEqual({ ok: true, deduped: true });
+    expect((saves.docs.get('a')!.save.materials as Record<string, number>).wood).toBe(6); // not 2
+  });
+
+  it('regression (2026-08-03 fix): different orderId → deducts twice', async () => {
+    const { app, saves } = build([saveRow('a', { materials: { wood: 10 } } as Partial<SaveData>)]);
+    await app.inject({ method: 'POST', url: '/internal/materials/deduct', headers: authHeaders, payload: { accountId: 'a', material: 'wood', qty: 4, orderId: 'd-a' } });
+    await app.inject({ method: 'POST', url: '/internal/materials/deduct', headers: authHeaders, payload: { accountId: 'a', material: 'wood', qty: 4, orderId: 'd-b' } });
+    expect((saves.docs.get('a')!.save.materials as Record<string, number>).wood).toBe(2);
+  });
+
+  it('regression (2026-08-03 fix): orderId reservation is released after insufficient balance, so a later retry can go through', async () => {
+    const { app, saves } = build([saveRow('a', { materials: { wood: 3 } } as Partial<SaveData>)]);
+    const payload = { accountId: 'a', material: 'wood', qty: 5, orderId: 'd-fail' };
+    const r1 = await app.inject({ method: 'POST', url: '/internal/materials/deduct', headers: authHeaders, payload });
+    expect(r1.statusCode).toBe(402);
+    // Top up, then retry with the same orderId — must not be treated as already-deduped.
+    (saves.docs.get('a')!.save.materials as Record<string, number>).wood = 10;
+    const r2 = await app.inject({ method: 'POST', url: '/internal/materials/deduct', headers: authHeaders, payload });
+    expect(r2.statusCode).toBe(200);
   });
 });
 
@@ -208,6 +240,26 @@ describe('POST /internal/cards/escrow', () => {
     expect(body.ok).toBe(true);
     expect(body.instance).toMatchObject({ id: 'c1', defId: 'lichuang' });
     expect(cardInstances.docs.has('c1')).toBe(false);
+  });
+
+  it('regression (2026-08-03 fix): a retry with the same orderId after success replays the snapshot instead of 404 CARD_NOT_FOUND', async () => {
+    // Root cause: escrowCard had no idempotency ledger — the card was deleted before any record of the
+    // orderId was kept, so a caller retry after a lost response (the instance already gone) hit
+    // CARD_NOT_FOUND and never completed the auction listing, permanently losing the card.
+    const { app, cardIdem } = build([saveRow('a')], [cardRow('c1', 'a')]);
+    const first = await app.inject({
+      method: 'POST', url: '/internal/cards/escrow', headers: authHeaders,
+      payload: { accountId: 'a', instanceId: 'c1', orderId: 'o1' },
+    });
+    expect(first.statusCode).toBe(200);
+    expect(cardIdem.docs.has('o1')).toBe(true); // ledger entry recorded after success
+
+    const retry = await app.inject({
+      method: 'POST', url: '/internal/cards/escrow', headers: authHeaders,
+      payload: { accountId: 'a', instanceId: 'c1', orderId: 'o1' },
+    });
+    expect(retry.statusCode).toBe(200); // not 404 — replays the recorded snapshot
+    expect(JSON.parse(retry.payload).instance).toEqual(JSON.parse(first.payload).instance);
   });
 });
 
