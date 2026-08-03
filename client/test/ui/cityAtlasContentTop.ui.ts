@@ -100,10 +100,17 @@ describe('playerBaseAtlasLoader.getPlayerBaseContentTopFracForLevel (real atlas 
     }
   });
 
-  it('but still fills most of that budget — a repack that shrank the art to nothing is also a bug', () => {
+  it('but is not shrunk to nothing either — a repack that lost the art is also a bug', () => {
+    // Only a loose floor, deliberately: the packer budgets width and height independently and
+    // `fit:'inside'` honours whichever binds first, so a frame WIDER than the ~10:7 target aspect
+    // (a sparse low camp like l1) is width-bound and legitimately ends up shorter than the plot's
+    // own 1.5-tile screen height. Asserting "at least as tall as the plot" would therefore fail on
+    // exactly the wide-and-low art the composition rules ask for
+    // (design/product/player-base-image-prompts.md § 构图硬规). Half the plot height is well below
+    // anything a real frame produces and still catches an empty/failed cut.
     for (let lv = 1; lv <= 10; lv++) {
       const drawnTiles = (1 - getPlayerBaseContentTopFracForLevel(lv)) * BASE_SPRITE_TILES;
-      expect(drawnTiles, `playerbase_l${lv} drawn height in tiles`).toBeGreaterThan(BASE_FOOTPRINT * ISO_RATIO);
+      expect(drawnTiles, `playerbase_l${lv} drawn height in tiles`).toBeGreaterThan(BASE_FOOTPRINT * ISO_RATIO * 0.5);
     }
   });
 });
