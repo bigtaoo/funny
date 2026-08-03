@@ -300,6 +300,33 @@ describe.skipIf(!mongo)('meta economy orchestration e2e', () => {
     expect(r2.data.save.inventory.items?.protect_enhance).toBe(2);
   });
 
+  it('shop direct purchase: kind="material" (mat_buy_scrap) delivers a qty>1 bundle into save.materials, not inventory.items/skins (ECONOMY_NUMBERS §6.5 gold→material exchange)', async () => {
+    comm.coins.set(accountId, 1000);
+    const r = body(await app.inject({ method: 'POST', url: '/shop/buy', headers: auth(), payload: { itemId: 'mat_buy_scrap' } }));
+    expect(r.data.granted).toBe('scrap'); // `granted` mirrors ShopItemDef.grants (the material id), not the shop itemId
+    expect(r.data.save.materials.scrap).toBe(10);
+    expect(r.data.save.wallet.coins).toBe(980); // 1000-20
+    expect(r.data.save.inventory.items?.mat_buy_scrap).toBeUndefined();
+    expect(r.data.save.inventory.skins).not.toContain('mat_buy_scrap');
+    // A second purchase accumulates (materials are $inc'd, not a set).
+    const r2 = body(await app.inject({ method: 'POST', url: '/shop/buy', headers: auth(), payload: { itemId: 'mat_buy_scrap' } }));
+    expect(r2.data.save.materials.scrap).toBe(20);
+  });
+
+  it('shop direct purchase: mat_buy_scrap daily cap (5 purchases/day = 50 scrap) rejects the 6th with 400, without charging coins', async () => {
+    comm.coins.set(accountId, 1000);
+    for (let i = 0; i < 5; i++) {
+      const r = body(await app.inject({ method: 'POST', url: '/shop/buy', headers: auth(), payload: { itemId: 'mat_buy_scrap' } }));
+      expect(r.data.save.materials.scrap).toBe((i + 1) * 10);
+    }
+    expect(comm.bal(accountId)).toBe(900); // 1000 - 5×20
+    const capped = await app.inject({ method: 'POST', url: '/shop/buy', headers: auth(), payload: { itemId: 'mat_buy_scrap' } });
+    expect(capped.statusCode).toBe(400);
+    expect(comm.bal(accountId)).toBe(900); // unchanged — cap is checked before charging
+    const save = body(await app.inject({ method: 'GET', url: '/save', headers: auth() }));
+    expect(save.data.save.materials.scrap).toBe(50); // still capped at the 5th purchase's result
+  });
+
   it('gacha: deduct coins → deliver new skin + mark duplicate + mirror pity', async () => {
     comm.coins.set(accountId, 1000);
     comm.nextResults = [{ itemId: 'skin_l1', rarity: 'legendary' }];

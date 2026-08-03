@@ -1686,6 +1686,7 @@ export interface components {
             cost: number;
             kind: string;
             grants?: string;
+            qty?: number;
         };
         GachaPool: {
             id: string;

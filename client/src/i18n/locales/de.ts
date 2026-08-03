@@ -387,6 +387,8 @@ export const de: Record<TranslationKey, string> = {
   'shop.itemLabel': 'Gegenstand',
   'shop.item.protect_enhance.name': 'Verstärkungs-Schutzstein',
   'shop.item.protect_enhance.desc': 'Verhindert Materialverlust beim nächsten fehlgeschlagenen Verstärken (Münzen werden weiterhin abgezogen)',
+  'shop.item.material.title': '{name} ×{qty}',
+  'shop.item.material.desc': 'Begrenzte Käufe pro Tag',
   'shop.loading': 'Lädt…',
   'shop.processing': 'Verarbeitung',
   'shop.empty': 'Keine Artikel',

@@ -4730,6 +4730,9 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                   },
                   "grants": {
                     "type": "string"
+                  },
+                  "qty": {
+                    "type": "integer"
                   }
                 }
               }

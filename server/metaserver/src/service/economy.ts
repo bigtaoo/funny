@@ -18,12 +18,14 @@ import {
   ADS_REWARD_COINS,
   ADS_DAILY_CAP,
   ADS_MIN_INTERVAL_MS,
+  MATERIAL_SHOP_DAILY_CAP,
   PRODUCT_STARTER_GROWTH,
   GROWTH_PACK_WINDOW_DAYS,
   accrueRetentionTask,
   createLogger,
   claimRechargeReward,
   makeFreshRechargeMilestone,
+  bumpCappedCounter,
   type GachaPoolDef,
   type RechargeReward,
 } from '@nw/shared';
@@ -84,6 +86,7 @@ export function EconomyMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase & C
         cost: i.cost,
         kind: i.kind,
         grants: i.grants,
+        ...(i.qty !== undefined ? { qty: i.qty } : {}),
       }));
       return ok({ items });
     }
@@ -150,7 +153,19 @@ export function EconomyMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase & C
       const def = findShopItem(itemId);
       if (!def) return reply.code(400).send(err(ErrorCode.BAD_REQUEST, 'unknown item'));
 
-      const { cols, commercial, now } = this.deps;
+      const { cols, commercial, now, redis } = this.deps;
+
+      // Material shop bundles (gold→material exchange, ECONOMY_NUMBERS §6.5) carry a daily purchase cap —
+      // checked (and claimed) before charging coins, so a capped-out attempt never touches the wallet.
+      if (def.kind === 'material') {
+        const cap = MATERIAL_SHOP_DAILY_CAP[itemId];
+        if (cap !== undefined) {
+          const dayKey = adsDayKey(now());
+          const allowed = await bumpCappedCounter(redis, 'shopMatDaily', accountId, dayKey, itemId, cap);
+          if (!allowed) return reply.code(400).send(err(ErrorCode.BAD_REQUEST, 'daily material purchase cap reached'));
+        }
+      }
+
       const orderId = randomUUID();
       const charge = await commercial.shopCharge({ accountId, itemId, cost: def.cost, orderId, clientPlatform: clientPlatformOf(req) });
       if (!charge.ok) {
@@ -159,10 +174,16 @@ export function EconomyMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase & C
         }
         return reply.code(400).send(err(ErrorCode.BAD_REQUEST, charge.error));
       }
-      // Delivery: route by the item's declared kind (skin vs. inventory.items) + mark delivered + mirror wallet.
+      // Delivery: route by the item's declared kind (skin vs. inventory.items vs. materials) + mark
+      // delivered + mirror wallet. `itemId` here MUST be the shop catalog id (not `def.grants`) —
+      // deliverOrder re-resolves `findShopItem(itemId)` internally to decide the routing; passing
+      // `def.grants` was a latent bug that stayed invisible as long as every SHOP_ITEMS entry had
+      // grants === id (true for skins/protect_enhance, false for the mat_buy_* material bundles,
+      // which is what surfaced it — a lookup for e.g. 'scrap' finds no shop item and silently falls
+      // through to the skin-grant path instead of the material path).
       const { save } = await deliverOrder(
         cols, commercial, this.deps.socialsvc ?? nullMetaSocialsvcClient, accountId,
-        { _id: orderId, kind: 'shop', result: { itemId: def.grants } },
+        { _id: orderId, kind: 'shop', result: { itemId } },
         charge.coinsAfter, null, now(),
       );
       return ok({ save, granted: def.grants });

@@ -392,6 +392,8 @@ export const zh = {
   'shop.itemLabel': '道具',
   'shop.item.protect_enhance.name': '强化保护石',
   'shop.item.protect_enhance.desc': '下次强化失败时不损耗材料（金币仍照扣）',
+  'shop.item.material.title': '{name} ×{qty}',
+  'shop.item.material.desc': '每日限购次数有限',
   'shop.loading': '加载中…',
   'shop.processing': '处理中',
   'shop.empty': '暂无商品',
