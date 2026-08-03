@@ -145,14 +145,6 @@ components:
         ts:
           type: integer
 
-    PlayerRankView:
-      type: object
-      properties:
-        rank:
-          type: string
-        elo:
-          type: number
-
     ProfileExtraView:
       type: object
       properties:
@@ -686,32 +678,6 @@ paths:
         '500': { $ref: '#/components/responses/ErrorResp' }
 
   # ── Player / profile (cross-cutting profile popup support) ─────────────────────
-
-  /social/player/{accountId}/rank:
-    get:
-      operationId: getPlayerRank
-      summary: >-
-        NOTE (2026-08-03 ErrorResp pass): httpApi.ts has no route matching this path — every call
-        falls through to the generic "endpoint not found" 404. The 200 body below documents the
-        declared-but-unimplemented contract; getProfileExtra below is the endpoint clients actually
-        use for this data. Flagged for the user to decide: implement the route, or drop this path.
-      security: [{ bearerAuth: [] }]
-      parameters:
-        - { name: accountId, in: path, required: true, schema: { type: string } }
-      responses:
-        '200':
-          description: Ladder rank + ELO for an arbitrary player (both fields absent if unranked)
-          content:
-            application/json:
-              schema:
-                allOf:
-                  - $ref: '#/components/schemas/OkResponse'
-                  - type: object
-                    properties:
-                      data: { $ref: '#/components/schemas/PlayerRankView' }
-        '401': { $ref: '#/components/responses/ErrorResp' }
-        '404': { $ref: '#/components/responses/ErrorResp' }
-        '500': { $ref: '#/components/responses/ErrorResp' }
 
   /social/profile/{publicId}/extra:
     get:

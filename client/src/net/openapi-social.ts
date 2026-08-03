@@ -228,23 +228,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/social/player/{accountId}/rank": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** NOTE (2026-08-03 ErrorResp pass): httpApi.ts has no route matching this path — every call falls through to the generic "endpoint not found" 404. The 200 body below documents the declared-but-unimplemented contract; getProfileExtra below is the endpoint clients actually use for this data. Flagged for the user to decide: implement the route, or drop this path. */
-        get: operations["getPlayerRank"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/social/profile/{publicId}/extra": {
         parameters: {
             query?: never;
@@ -610,10 +593,6 @@ export interface components {
             familyName?: string;
             body: string;
             ts: number;
-        };
-        PlayerRankView: {
-            rank?: string;
-            elo?: number;
         };
         ProfileExtraView: {
             rank?: string;
@@ -1158,33 +1137,6 @@ export interface operations {
             400: components["responses"]["ErrorResp"];
             401: components["responses"]["ErrorResp"];
             403: components["responses"]["ErrorResp"];
-            500: components["responses"]["ErrorResp"];
-        };
-    };
-    getPlayerRank: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                accountId: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Ladder rank + ELO for an arbitrary player (both fields absent if unranked) */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["OkResponse"] & {
-                        data?: components["schemas"]["PlayerRankView"];
-                    };
-                };
-            };
-            401: components["responses"]["ErrorResp"];
-            404: components["responses"]["ErrorResp"];
             500: components["responses"]["ErrorResp"];
         };
     };
