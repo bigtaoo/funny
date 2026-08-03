@@ -24,10 +24,12 @@ import {
   accrueRetentionTask,
   createLogger,
   claimRechargeReward,
+  findRechargeTier,
   makeFreshRechargeMilestone,
   bumpCappedCounter,
   type GachaPoolDef,
   type RechargeReward,
+  type SaveData,
 } from '@nw/shared';
 import { getOrCreateSave } from '../save.js';
 import { accrueEventTask } from '../events.js';
@@ -402,6 +404,14 @@ export function EconomyMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase & C
      * progress source is commercial instead). Atomic validate + record claim (optimistic lock prevents
      * double-tap); material rewards are written to save.materials in the same transaction, coins are
      * delivered via commercial.grant afterward (mirrors claimBattlePass).
+     *
+     * Coin-grant reconciliation (2026-08-03 fix): the tier is marked claimed (irreversibly — a repeat
+     * claim used to just bounce off ALREADY_CLAIMED) *before* the coin grant below runs; if that grant
+     * throws or returns ok:false, the coins used to be silently lost with no way to retry (the mutateSave
+     * had already committed). Since RECHARGE_TIERS is a static reward table and the grant's orderId is
+     * deterministic (`recharge.claim.${accountId}.${tierId}`, safe to repeat via commercial's own
+     * idempotency), an ALREADY_CLAIMED response can still recompute the tier's coin reward and retry the
+     * grant here — a no-op if it already succeeded, an actual delivery if it didn't.
      */
     async claimRechargeMilestone(req: FastifyRequest, reply: FastifyReply) {
       if (!this.ensureCommercial(reply)) return;
@@ -434,24 +444,44 @@ export function EconomyMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase & C
           case 'NOT_REACHED':
             return reply.code(400).send(err(ErrorCode.BAD_REQUEST, 'threshold not reached'));
           case 'ALREADY_CLAIMED':
+            // Best-effort: retry the coin grant for this tier in case a prior claim committed the
+            // milestone but never actually delivered the coins (see docstring above). Deterministic
+            // orderId makes this safe to repeat even if it already succeeded.
+            await this.reconcileRechargeCoins(accountId, tierId, clientPlatform);
             return reply.code(409).send(err(ErrorCode.ALREADY_CLAIMED, 'already claimed'));
           default:
             return reply.code(409).send(err(ErrorCode.REV_CONFLICT, out.error));
         }
       }
       const rewards = claimedRewards!;
-      let finalSave = out.save;
-      const coinsReward = rewards.find((r) => r.kind === 'coins');
+      const finalSave = await this.reconcileRechargeCoins(accountId, tierId, clientPlatform, out.save);
+      return ok({ save: finalSave, rewards });
+    }
+
+    /**
+     * Grants the coin portion of a recharge tier's reward (idempotent: deterministic orderId, safe to
+     * call whether or not a previous attempt already delivered it). Returns the current save on failure
+     * (grant not (re)delivered — caller may be retried again later by a subsequent claim attempt).
+     */
+    private async reconcileRechargeCoins(
+      accountId: string,
+      tierId: number,
+      clientPlatform: string | undefined,
+      currentSave?: SaveData,
+    ): Promise<SaveData> {
+      const { cols, commercial, now } = this.deps;
+      const def = findRechargeTier(tierId);
+      const coinsReward = def?.rewards.find((r) => r.kind === 'coins');
       if (coinsReward && coinsReward.count > 0 && commercial.available) {
         try {
           const orderId = `recharge.claim.${accountId}.${tierId}`;
           const g = await commercial.grant({ accountId, amount: coinsReward.count, reason: 'recharge_milestone_claim', orderId, clientPlatform });
-          if (g.ok) finalSave = await mirrorCoins(cols, accountId, g.coinsAfter, now());
+          if (g.ok) return mirrorCoins(cols, accountId, g.coinsAfter, now());
         } catch (e) {
-          req.log.warn({ err: e }, 'recharge milestone claim coin grant failed (coins may be delayed)');
+          log.warn('recharge milestone coin grant failed (coins may be delayed)', { accountId, tierId, err: (e as Error).message });
         }
       }
-      return ok({ save: finalSave, rewards });
+      return currentSave ?? (await getOrCreateSave(cols, accountId, now()));
     }
 
     /**

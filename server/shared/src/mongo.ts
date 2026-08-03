@@ -424,13 +424,16 @@ export interface MailDoc {
 
 /**
  * Card operation idempotency ledger (CC-2, CHARACTER_CARDS_DESIGN §3): prevents double-consumption of material cards
- * when the client retries a /cards/fuse request. _id = idempotencyKey. TTL auto-expiry (7 days).
+ * when the client retries a /cards/fuse request; also used by escrowCard (2026-08-03 fix, mirrors
+ * equipment.ts's escrowEquipment) so a retried escrow request after a lost response replays the first
+ * result instead of hitting CARD_NOT_FOUND on an already-deleted instance. _id = idempotencyKey / orderId.
+ * TTL auto-expiry (7 days).
  */
 export interface CardIdemDoc {
-  _id: string; // idempotencyKey
+  _id: string; // idempotencyKey / orderId
   accountId: string;
-  op: 'fuse';
-  result: unknown; // { targetId: string }
+  op: 'fuse' | 'escrow';
+  result: unknown; // { targetId: string } for fuse; CardInstance for escrow
   expireAt: Date;
 }
 
@@ -452,6 +455,17 @@ export interface EquipmentIdemDoc {
    *   skin_escrow → { skinId } (auction task2, AUCTION_DESIGN §2.1/§9)
    */
   result: unknown;
+  /**
+   * For craft/enhance/reforge (2026-08-03 fix): true once the cost-side rev-guarded save write has
+   * actually landed. The claim doc is inserted (with `result` pre-computed) *before* that write so the
+   * roll/id stays deterministic across retries — but that means a concurrent duplicate request hitting
+   * the insert's E11000 can no longer tell "the original already paid and succeeded" apart from "the
+   * original is still mid-flight (or gave up) and never paid." Only replay-grant the instance when this
+   * is true; otherwise the concurrent duplicate must not synthesize a free item and should ask the
+   * caller to retry instead. escrow/salvage/skin_escrow write their idem doc only after success, so they
+   * don't need this field (absent = irrelevant for those ops).
+   */
+  committed?: boolean;
   expireAt: Date; // BSON Date, TTL anchor
 }
 
@@ -508,11 +522,14 @@ export interface CardInstanceDoc {
  * can safely retry after a timeout without double-granting. `_id` = orderId (caller-supplied, globally
  * unique per business operation). Inserted BEFORE the grant executes; deleted again if the grant fails,
  * so a failed attempt never blocks a retry. TTL 7 days — long enough to cover any realistic retry window.
+ * `material_deduct` (2026-08-03 fix) covers /internal/materials/deduct, which used to accept an orderId
+ * in its documented contract but never actually used it — a caller retry after a timeout could deduct
+ * the same material twice for one logical transaction.
  */
 export interface InternalGrantOrderDoc {
   _id: string; // orderId
   accountId: string;
-  kind: 'material' | 'equipment' | 'card' | 'skin';
+  kind: 'material' | 'equipment' | 'card' | 'skin' | 'material_deduct';
   ts: number;
   expireAt: Date; // TTL anchor (7 days, expireAfterSeconds: 0)
 }

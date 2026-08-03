@@ -69,6 +69,18 @@ export async function hashPassword(password: string): Promise<string> {
   return `scrypt$${N}$${R}$${P}$${salt.toString('base64')}$${derived.toString('base64')}`;
 }
 
+/**
+ * Fixed dummy hash (2026-08-03 fix, ACCOUNT_DESIGN §6 timing side-channel): callers that find no
+ * matching loginId should still `await verifyPassword(password, DUMMY_PASSWORD_HASH)` before returning
+ * "invalid" — without this, a not-found loginId returns near-instantly while a found-but-wrong-password
+ * loginId pays the full scrypt cost, letting an attacker enumerate registered loginIds purely from
+ * response-time differences even though both cases return an identical error body. Salt/digest are
+ * random and never compared against (verifyPassword always derives-and-compares against them, so the
+ * scrypt cost is paid regardless of what the caller's password is), and are fixed for the process
+ * lifetime purely so this constant doesn't recompute per call.
+ */
+export const DUMMY_PASSWORD_HASH = `scrypt$${N}$${R}$${P}$${randomBytes(SALT_LEN).toString('base64')}$${randomBytes(KEYLEN).toString('base64')}`;
+
 export async function verifyPassword(password: string, stored: string): Promise<boolean> {
   const parts = stored.split('$');
   if (parts.length !== 6 || parts[0] !== 'scrypt') return false;

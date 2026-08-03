@@ -193,22 +193,31 @@ export async function craftEquipment(
     return { error: 'equipment inventory full', code: 'INVENTORY_FULL' };
   }
 
-  // Idempotency gate: claim the idemKey first (unique _id). Claim failure = already crafted → replay first result.
+  // Idempotency gate: claim the idemKey first (unique _id). Claim failure = a request with this same key
+  // is already in flight or already finished → replay first result IF it actually paid (see `committed`).
   try {
     await cols.equipmentIdem.insertOne({
       _id: idempotencyKey,
       accountId,
       op: 'craft',
       result: instance,
+      committed: false,
       expireAt: idemExpireAt(now()),
     });
   } catch (e) {
     if ((e as { code?: number }).code === 11000) {
-      // Verify-and-heal: a prior attempt may have committed the material deduction without the instance
-      // upsert ever landing (crash between the two writes below) — re-assert the instance exists rather
-      // than trusting the claim alone.
       const prev = await cols.equipmentIdem.findOne({ _id: idempotencyKey });
-      const replayInstance = (prev?.result as EquipmentInstance) ?? instance;
+      if (!prev?.committed) {
+        // The original request for this key hasn't committed its cost yet (still racing, or exhausted
+        // retries and gave up without ever charging materials) — granting the instance now would be a
+        // free item. Ask the caller to retry rather than trusting the claim alone (2026-08-03 fix: this
+        // used to unconditionally re-assert the instance here, letting a concurrent duplicate request
+        // grant a free craft if the original then failed).
+        return { error: 'craft already in progress, retry', code: 'REV_CONFLICT' };
+      }
+      // Verify-and-heal: cost was already paid by the original request; re-assert the instance exists
+      // in case that request crashed between the save write and the instance upsert.
+      const replayInstance = (prev.result as EquipmentInstance) ?? instance;
       await cols.equipmentInstances.updateOne(
         { _id: replayInstance.id },
         { $set: toInstanceDoc(replayInstance, accountId) },
@@ -255,6 +264,10 @@ export async function craftEquipment(
       { $set: { save: next, rev: next.rev } },
     );
     if (res) {
+      // Mark the claim committed before granting: a concurrent duplicate request's E11000 catch above
+      // now knows the cost was actually paid and can safely replay-grant even if it reads this before
+      // the instance upsert below lands.
+      await cols.equipmentIdem.updateOne({ _id: idempotencyKey }, { $set: { committed: true } });
       await cols.equipmentInstances.updateOne(
         { _id: instance.id },
         { $set: toInstanceDoc(instance, accountId) },
@@ -417,8 +430,11 @@ export async function enhanceEquipment(
   // Replay: verify-and-heal (re-assert the instance reflects the replayed result — a prior attempt may
   // have deducted materials/consumed the protect item but crashed before the equipmentInstances write)
   // + idempotently settle coins (covers the "save updated but coin deduction interrupted" window).
+  // Gated on `committed` (2026-08-03 fix): a claim doc can exist before its cost has landed (see the
+  // insertOne below), so a concurrent duplicate arriving here first must not synthesize a free
+  // enhancement — only replay once the original request's cost write actually succeeded.
   const replay = await cols.equipmentIdem.findOne({ _id: idempotencyKey });
-  if (replay?.op === 'enhance') {
+  if (replay?.op === 'enhance' && replay.committed) {
     const r = replay.result as { success: boolean; instance: EquipmentInstance; coins: number; skipMaterials?: boolean };
     await cols.equipmentInstances.updateOne(
       { _id: r.instance.id },
@@ -427,6 +443,9 @@ export async function enhanceEquipment(
     );
     const save = await settleEquipCoins(cols, commercial, now, accountId, idempotencyKey, r.coins, 'equip_enhance', clientPlatform);
     return { success: r.success, instance: r.instance, save: leanSave(save) };
+  }
+  if (replay?.op === 'enhance' && !replay.committed) {
+    return { error: 'enhance already in progress, retry', code: 'REV_CONFLICT' };
   }
 
   // Coins go through commercial authority; if not configured, enhancement is unavailable (same 503 as shop/gacha).
@@ -465,12 +484,16 @@ export async function enhanceEquipment(
       accountId,
       op: 'enhance',
       result: { success, instance: instanceAfter, coins: cost.coins, skipMaterials },
+      committed: false,
       expireAt: idemExpireAt(now()),
     });
   } catch (e) {
     if ((e as { code?: number }).code === 11000) {
       const prev = await cols.equipmentIdem.findOne({ _id: idempotencyKey });
-      const r = prev?.result as { success: boolean; instance: EquipmentInstance; coins: number; skipMaterials?: boolean };
+      if (!prev?.committed) {
+        return { error: 'enhance already in progress, retry', code: 'REV_CONFLICT' };
+      }
+      const r = prev.result as { success: boolean; instance: EquipmentInstance; coins: number; skipMaterials?: boolean };
       await cols.equipmentInstances.updateOne(
         { _id: r.instance.id },
         { $set: toInstanceDoc(r.instance, accountId) },
@@ -529,9 +552,12 @@ export async function enhanceEquipment(
       { $set: { save: next, rev: next.rev } },
     );
     if (res) {
-      // Cost committed → apply the level/affix change (filtered on fromLevel, mirroring the check above;
-      // in the extreme case this doesn't match — a concurrent write to this exact instanceId within the
-      // few-ms window since the check just above — the replay path's verify-and-heal re-applies it later).
+      // Cost committed → mark the claim so a concurrent duplicate's replay/catch path above can now
+      // safely grant, then apply the level/affix change (filtered on fromLevel, mirroring the check
+      // above; in the extreme case this doesn't match — a concurrent write to this exact instanceId
+      // within the few-ms window since the check just above — the replay path's verify-and-heal
+      // re-applies it later).
+      await cols.equipmentIdem.updateOne({ _id: idempotencyKey }, { $set: { committed: true } });
       await cols.equipmentInstances.updateOne(
         { _id: instanceId, level: fromLevel },
         { $set: toInstanceDoc(instanceAfter, accountId) },
@@ -587,8 +613,10 @@ export async function salvageEquipment(
   const replay = await cols.equipmentIdem.findOne({ _id: idempotencyKey });
   if (replay?.op === 'salvage') {
     const r = replay.result as { refunded: Record<string, number>; instanceIds: string[] };
-    // Verify-and-heal: re-assert the whole batch is actually gone.
-    if (r.instanceIds?.length) await cols.equipmentInstances.deleteMany({ _id: { $in: r.instanceIds } });
+    // Verify-and-heal: re-assert the whole batch is actually gone. Scoped to accountId (2026-08-03 fix)
+    // in case one of these ids was traded away via auction escrow and re-granted to a different account
+    // in the narrow window since the original validation — this delete must never remove someone else's item.
+    if (r.instanceIds?.length) await cols.equipmentInstances.deleteMany({ _id: { $in: r.instanceIds }, accountId });
     return { refunded: r.refunded, save: leanSave(await getOrCreateSave(cols, accountId, now())) };
   }
 
@@ -629,7 +657,10 @@ export async function salvageEquipment(
 
   // Destructive batch op: delete all instances once, up front (idempotent — a re-run over an
   // already-emptied batch is a no-op), then just retry the saves-side refund/count decrement.
-  await cols.equipmentInstances.deleteMany({ _id: { $in: ids } });
+  // Scoped to accountId (2026-08-03 fix): ownership was validated above via instDocs, but without this
+  // guard the delete itself would match purely on _id, closing a narrow cross-account TOCTOU window
+  // (an id traded away via auction escrow + re-granted to a buyer between validation and this delete).
+  await cols.equipmentInstances.deleteMany({ _id: { $in: ids }, accountId });
 
   for (let attempt = 0; attempt < REV_RETRIES; attempt++) {
     const doc = await cols.saves.findOne({ _id: accountId });
@@ -689,7 +720,9 @@ export async function reforgeEquipment(
       { $set: toInstanceDoc(r.instance, accountId) },
       { upsert: true },
     );
-    await cols.equipmentInstances.deleteOne({ _id: materialId });
+    // Scoped to accountId (2026-08-03 fix): closes the same cross-account TOCTOU window as salvage's
+    // batch delete above — this must never remove a material instance that has since been traded away.
+    await cols.equipmentInstances.deleteOne({ _id: materialId, accountId });
     const save = await settleEquipCoins(cols, commercial, now, accountId, idempotencyKey, r.coins ?? 0, 'equip_reforge', clientPlatform);
     return { instance: r.instance, save: leanSave(save) };
   }
@@ -757,7 +790,9 @@ export async function reforgeEquipment(
         { $set: toInstanceDoc(r.instance, accountId) },
         { upsert: true },
       );
-      await cols.equipmentInstances.deleteOne({ _id: materialId });
+      // Scoped to accountId (2026-08-03 fix): closes the same cross-account TOCTOU window as salvage's
+    // batch delete above — this must never remove a material instance that has since been traded away.
+    await cols.equipmentInstances.deleteOne({ _id: materialId, accountId });
       const save = await settleEquipCoins(cols, commercial, now, accountId, idempotencyKey, r.coins ?? 0, 'equip_reforge', clientPlatform);
       return { instance: r.instance, save: leanSave(save) };
     }
@@ -773,7 +808,9 @@ export async function reforgeEquipment(
     { _id: targetId, accountId },
     { $set: toInstanceDoc(reforged, accountId) },
   );
-  await cols.equipmentInstances.deleteOne({ _id: materialId });
+  // Scoped to accountId (2026-08-03 fix): closes the same cross-account TOCTOU window as salvage's
+  // batch delete above — this must never remove a material instance that has since been traded away.
+  await cols.equipmentInstances.deleteOne({ _id: materialId, accountId });
 
   // Saves-side: count decrement (material instance removed), rev-guarded.
   for (let attempt = 0; attempt < REV_RETRIES; attempt++) {
@@ -798,9 +835,20 @@ export async function reforgeEquipment(
       const saveFinal = await settleEquipCoins(cols, commercial, now, accountId, idempotencyKey, coins, 'equip_reforge', clientPlatform);
       return { instance: reforged, save: leanSave(saveFinal) };
     }
+    // rev conflict on the equipmentInvCount decrement (contention from an unrelated concurrent save
+    // write) → re-read and retry. Unlike craft/enhance, this is NOT a "nothing happened yet" retry: the
+    // target upgrade + material deletion above already landed unconditionally and are irreversible.
   }
-  await cols.equipmentIdem.deleteOne({ _id: idempotencyKey });
-  return { error: 'rev conflict, retry', code: 'REV_CONFLICT' };
+  // 2026-08-03 fix: retries exhausted for the equipmentInvCount decrement, but the reforge itself (target
+  // upgrade + material consumption) already committed above, unconditionally, before this loop — deleting
+  // the idem claim here used to orphan that state: a client retry would then re-enter this function fresh,
+  // fail to find the already-deleted material (EQUIP_NOT_FOUND), and the coin fee would never be charged,
+  // even though the player's item was already reforged and their fuel already destroyed. Instead, settle
+  // coins (idempotent) and report success; equipmentInvCount is an informational mirror that self-heals via
+  // assembleEquipmentInv (see its docstring) — drifting by 1 here is far cheaper than reporting failure for
+  // an operation that already committed, or permanently wedging a retry against a missing material.
+  const saveFinal = await settleEquipCoins(cols, commercial, now, accountId, idempotencyKey, coins, 'equip_reforge', clientPlatform);
+  return { instance: reforged, save: leanSave(saveFinal) };
 }
 
 // ── E4 Equip (EQUIPMENT_DESIGN §3.4 / CC-2) ──────────────────────────────────────

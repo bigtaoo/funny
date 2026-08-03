@@ -3,6 +3,7 @@
 import { randomUUID, randomInt } from 'node:crypto';
 import type { Collections, ChatRegion } from '@nw/shared';
 import {
+  DUMMY_PASSWORD_HASH,
   hashPassword,
   isAnonymousAccount,
   normalizeLoginId,
@@ -47,14 +48,23 @@ export async function resolveByDevice(
 
   const accountId = randomUUID();
   // deviceId unique index: on concurrent first-creation only one insert wins; the other re-reads.
-  await cols.accounts.updateOne(
-    { deviceId },
-    {
-      $setOnInsert: { _id: accountId, deviceId, createdAt: now },
-      ...(region !== 'global' ? { $set: { region } } : {}),
-    },
-    { upsert: true },
-  );
+  // 2026-08-03 fix: a racing upsert against a not-yet-existing unique key can throw E11000 even with
+  // upsert:true (both sides see "no match" before either insert lands) — this is documented MongoDB
+  // upsert-race behavior, not a bug in this query. Catch it and fall through to the re-read below,
+  // same as the loser was always intended to do, instead of surfacing an unhandled 500 to a client
+  // that's just retrying a dropped request.
+  try {
+    await cols.accounts.updateOne(
+      { deviceId },
+      {
+        $setOnInsert: { _id: accountId, deviceId, createdAt: now },
+        ...(region !== 'global' ? { $set: { region } } : {}),
+      },
+      { upsert: true },
+    );
+  } catch (e) {
+    if ((e as { code?: number }).code !== 11000) throw e;
+  }
   const doc = await cols.accounts.findOne({ deviceId });
   const isNew = doc?._id === accountId;
   // device-only account = anonymous; if this device already has bound credentials, use the actual value.
@@ -79,14 +89,20 @@ export async function resolveByOpenid(
   }
 
   const accountId = randomUUID();
-  await cols.accounts.updateOne(
-    { openid },
-    {
-      $setOnInsert: { _id: accountId, openid, createdAt: now },
-      ...(region !== 'global' ? { $set: { region } } : {}),
-    },
-    { upsert: true },
-  );
+  // 2026-08-03 fix: see resolveByDevice's comment — a racing upsert can throw E11000 even with
+  // upsert:true; catch it and fall through to the re-read below instead of an unhandled 500.
+  try {
+    await cols.accounts.updateOne(
+      { openid },
+      {
+        $setOnInsert: { _id: accountId, openid, createdAt: now },
+        ...(region !== 'global' ? { $set: { region } } : {}),
+      },
+      { upsert: true },
+    );
+  } catch (e) {
+    if ((e as { code?: number }).code !== 11000) throw e;
+  }
   const doc = await cols.accounts.findOne({ openid });
   return {
     accountId: doc ? doc._id : accountId,
@@ -116,20 +132,29 @@ export async function registerWithPassword(
   const hash = await hashPassword(password);
   const accountId = randomUUID();
   // Unique index 'password.loginId' guard: if the upsert hits an existing doc, nothing is inserted → taken.
-  const res = await cols.accounts.updateOne(
-    { 'password.loginId': norm },
-    {
-      $setOnInsert: {
-        _id: accountId,
-        createdAt: now,
-        password: { loginId: norm, hash },
-        // Explicit name at registration counts as a deliberate choice → no free rename later.
-        ...(displayName ? { displayName, nameChosen: true } : {}),
-        ...(region !== 'global' ? { region } : {}),
+  // 2026-08-03 fix: a racing upsert can also throw E11000 outright (see resolveByDevice's comment) rather
+  // than cleanly no-op via $setOnInsert — that outcome means someone else's registration for this loginId
+  // won the race, which is exactly what "taken" already means here.
+  let res;
+  try {
+    res = await cols.accounts.updateOne(
+      { 'password.loginId': norm },
+      {
+        $setOnInsert: {
+          _id: accountId,
+          createdAt: now,
+          password: { loginId: norm, hash },
+          // Explicit name at registration counts as a deliberate choice → no free rename later.
+          ...(displayName ? { displayName, nameChosen: true } : {}),
+          ...(region !== 'global' ? { region } : {}),
+        },
       },
-    },
-    { upsert: true },
-  );
+      { upsert: true },
+    );
+  } catch (e) {
+    if ((e as { code?: number }).code !== 11000) throw e;
+    return { kind: 'taken' };
+  }
   if (!res.upsertedId) return { kind: 'taken' };
   return { kind: 'ok', account: { accountId, isNew: true, isAnonymous: false, displayName } };
 }
@@ -143,7 +168,13 @@ export async function loginWithPassword(
 ): Promise<ResolvedAccount | null> {
   const norm = normalizeLoginId(loginId);
   const doc = await cols.accounts.findOne({ 'password.loginId': norm });
-  if (!doc?.password) return null;
+  if (!doc?.password) {
+    // 2026-08-03 fix: pay the same scrypt cost as a real verify even though there's nothing to check
+    // against, so a not-found loginId can't be distinguished from a found-but-wrong-password one by
+    // response time (both return the same INVALID_CREDENTIALS error either way — see DUMMY_PASSWORD_HASH).
+    await verifyPassword(password, DUMMY_PASSWORD_HASH);
+    return null;
+  }
   const ok = await verifyPassword(password, doc.password.hash);
   if (!ok) return null;
   await touchRegion(cols, doc._id, region);
@@ -360,18 +391,24 @@ export async function resolveByOAuth(
     return { accountId: existing._id, isNew: false, isAnonymous: false, displayName: existing.displayName };
   }
   const accountId = randomUUID();
-  await cols.accounts.updateOne(
-    { 'oauth.provider': provider, 'oauth.sub': sub },
-    {
-      $setOnInsert: {
-        _id: accountId,
-        createdAt: now,
-        oauth: [{ provider, sub }],
-        ...(region !== 'global' ? { region } : {}),
+  // 2026-08-03 fix: see resolveByDevice's comment — a racing upsert can throw E11000 even with
+  // upsert:true; catch it and fall through to the re-read below instead of an unhandled 500.
+  try {
+    await cols.accounts.updateOne(
+      { 'oauth.provider': provider, 'oauth.sub': sub },
+      {
+        $setOnInsert: {
+          _id: accountId,
+          createdAt: now,
+          oauth: [{ provider, sub }],
+          ...(region !== 'global' ? { region } : {}),
+        },
       },
-    },
-    { upsert: true },
-  );
+      { upsert: true },
+    );
+  } catch (e) {
+    if ((e as { code?: number }).code !== 11000) throw e;
+  }
   const doc = await cols.accounts.findOne({ 'oauth.provider': provider, 'oauth.sub': sub });
   return {
     accountId: doc ? doc._id : accountId,
@@ -399,10 +436,18 @@ export async function bindOAuth(
   const existing = await cols.accounts.findOne({ 'oauth.provider': provider, 'oauth.sub': sub });
   if (existing && existing._id !== accountId) return { kind: 'already_bound' };
   if (existing) return { kind: 'ok' }; // already on this account; idempotent
-  await cols.accounts.updateOne(
-    { _id: accountId },
-    { $addToSet: { oauth: { provider, sub } } },
-  );
+  try {
+    await cols.accounts.updateOne(
+      { _id: accountId },
+      { $addToSet: { oauth: { provider, sub } } },
+    );
+  } catch (e) {
+    // 2026-08-03 fix: the compound (provider,sub) unique index means a concurrent bind of this same
+    // credential to a *different* account (racing this check-then-write) surfaces as E11000 here rather
+    // than being caught by the `existing` check above, which ran before either write landed.
+    if ((e as { code?: number }).code === 11000) return { kind: 'already_bound' };
+    throw e;
+  }
   return { kind: 'ok' };
 }
 
@@ -424,10 +469,18 @@ export async function bindPassword(
   const taken = await cols.accounts.findOne({ 'password.loginId': norm });
   if (taken && taken._id !== accountId) return { kind: 'login_id_taken' };
   const hash = await hashPassword(password);
-  await cols.accounts.updateOne(
-    { _id: accountId, password: { $exists: false } },
-    { $set: { 'password.loginId': norm, 'password.hash': hash } },
-  );
+  try {
+    await cols.accounts.updateOne(
+      { _id: accountId, password: { $exists: false } },
+      { $set: { 'password.loginId': norm, 'password.hash': hash } },
+    );
+  } catch (e) {
+    // 2026-08-03 fix: the loginId unique index means a concurrent bind of this same loginId to a
+    // *different* account (racing this check-then-write) surfaces as E11000 here rather than being
+    // caught by the `taken` check above, which ran before either write landed.
+    if ((e as { code?: number }).code === 11000) return { kind: 'login_id_taken' };
+    throw e;
+  }
   return { kind: 'ok' };
 }
 
