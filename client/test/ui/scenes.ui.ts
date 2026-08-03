@@ -26,6 +26,7 @@ import { LevelPrepScene } from '../../src/scenes/LevelPrepScene';
 import { marginLineX } from '../../src/render/sketchUi';
 import { CardCodexScene } from '../../src/scenes/CardCodexScene';
 import { StatsScene } from '../../src/scenes/StatsScene';
+import { TitlesScene } from '../../src/scenes/TitlesScene';
 import { RoomScene, CODE_ALPHABET } from '../../src/scenes/RoomScene';
 import { FriendsScene } from '../../src/scenes/FriendsScene';
 import { ChatScene } from '../../src/scenes/ChatScene';
@@ -426,6 +427,20 @@ const SCENES: Array<{ name: string; build: (w: number, h: number) => Scene }> = 
   {
     name: 'EquipmentScene (bag mode)',
     build: (w, h) => new EquipmentScene(createLayout(w, h), new InputManager(), buildEquipCallbacks('').cb),
+  },
+  {
+    // Regression coverage for the 2026-08-03 fix (destroy() called tearDownChildren but never
+    // container.destroy({children:true})) — this generic exercise() below asserts
+    // container.destroyed===true for every registered scene, exactly the invariant that bug
+    // violated. TitlesScene had never been added to this registry, so the bug shipped unnoticed.
+    name: 'TitlesScene',
+    build: (w, h) =>
+      new TitlesScene(createLayout(w, h), new InputManager(), {
+        onBack() {},
+        titles: [],
+        equippedTitle: '',
+        onEquip() {},
+      }),
   },
 ];
 

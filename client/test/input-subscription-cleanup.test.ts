@@ -30,11 +30,24 @@ function listSourceFiles(dir: string): string[] {
   return out;
 }
 
-const SUBSCRIBE_RE = /\.(onDown|onMove|onUp)\(/;
-const WRAPPED_RE = /unsubs\.push\(\s*[\w.]*\.(onDown|onMove|onUp)\(/;
+// 2026-08-03: onWheel was added to the codebase (PC mouse-wheel scroll, see wheelScroll.ts)
+// well after this test was written, and never got added here — every onWheel subscription was
+// completely unscanned by this file. Currently all of them happen to be wrapped correctly, but
+// that was luck, not enforcement; a future onWheel call that forgets unsubs.push would sail
+// through this test. Folded in alongside onDown/onMove/onUp so it can't silently drift again.
+const SUBSCRIBE_RE = /\.(onDown|onMove|onUp|onWheel)\(/;
+const WRAPPED_RE = /unsubs\.push\(\s*[\w.]*\.(onDown|onMove|onUp|onWheel)\(/;
+
+// 2026-08-03: a file could satisfy WRAPPED_RE (the subscribe call is pushed into `unsubs`) and
+// still leak if its destroy() never actually iterates that array — the audit that added this
+// check found no live instance of that, but the original test had no way to catch one either.
+// Matches both conventions used across the codebase: `unsubs.forEach(u => u())` and
+// `for (const u of ...unsubs) u()` (the latter sometimes via a nested path like `this.ctx.unsubs`
+// or `ctx.unsubs`, see WorldMapScene.ts).
+const DRAIN_RE = /unsubs\.forEach\(|for\s*\(\s*const\s+\w+\s+of\s+[\w.]*unsubs\s*\)/;
 
 describe('InputManager subscription cleanup convention', () => {
-  it('every onDown/onMove/onUp subscription in client/src is wrapped in unsubs.push(...)', () => {
+  it('every onDown/onMove/onUp/onWheel subscription in client/src is wrapped in unsubs.push(...)', () => {
     const offenders: string[] = [];
 
     for (const file of listSourceFiles(SRC_ROOT)) {
@@ -44,6 +57,22 @@ describe('InputManager subscription cleanup convention', () => {
         if (WRAPPED_RE.test(line)) return;
         offenders.push(`${path.relative(SRC_ROOT, file)}:${i + 1}: ${line.trim()}`);
       });
+    }
+
+    expect(offenders).toEqual([]);
+  });
+
+  it('every file with a wrapped subscription also drains unsubs somewhere (destroy() etc.)', () => {
+    const offenders: string[] = [];
+
+    for (const file of listSourceFiles(SRC_ROOT)) {
+      const text = fs.readFileSync(file, 'utf8');
+      const hasWrappedSubscribe = text
+        .split('\n')
+        .some((line) => SUBSCRIBE_RE.test(line) && WRAPPED_RE.test(line));
+      if (!hasWrappedSubscribe) continue;
+      if (DRAIN_RE.test(text)) continue;
+      offenders.push(path.relative(SRC_ROOT, file));
     }
 
     expect(offenders).toEqual([]);
