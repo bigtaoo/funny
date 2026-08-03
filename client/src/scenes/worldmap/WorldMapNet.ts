@@ -590,11 +590,12 @@ export class WorldMapNet {
     const [tx, ty] = this.ctx.parseTileId(u.tile);
     const sec = Math.max(0, Math.ceil((u.arriveAt - serverNow()) / 1000));
     const name = u.attackerName || ('#' + (u.attackerPublicId || '?'));
+    // Routed through t()'s own param substitution rather than chained String.replace(str, str)
+    // calls (2026-08-03 fix): `name` is an attacker-controlled display name, and replace's second
+    // argument is a *pattern* string — a name containing literal `$&`/`` $` ``/`$'` would have been
+    // interpreted as a special replacement token instead of inserted verbatim.
     this.ctx.panels.showToast(
-      `${t('world.underAttack')} ${t('world.underAttackMsg')
-        .replace('{name}', name)
-        .replace('{tile}', `(${tx},${ty})`)
-        .replace('{sec}', String(sec))}`,
+      `${t('world.underAttack')} ${t('world.underAttackMsg', { name, tile: `(${tx},${ty})`, sec })}`,
       C.red,
     );
   }

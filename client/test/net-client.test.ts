@@ -203,7 +203,9 @@ describe('NetClient connect / reconnect', () => {
     await tick();
     sockets[0]!.open();
     sockets[0]!.closeRemote(4409);
-    expect(client.getState()).toBe('closed');
+    // 'disconnected' (2026-08-03 rename), not 'closed' — this is a permanent server-side rejection,
+    // distinct from an intentional/graceful disconnect() call; see NetState's doc comment.
+    expect(client.getState()).toBe('disconnected');
     await sleep(20);
     expect(sockets).toHaveLength(1); // no reconnect attempt spawned
   });
@@ -240,7 +242,8 @@ describe('NetClient connect / reconnect', () => {
     await tick();
     sockets[0]!.open();
     sockets[0]!.closeRemote(4401);
-    expect(client.getState()).toBe('closed');
+    // 'disconnected' (2026-08-03 rename) — see the 4409 test above.
+    expect(client.getState()).toBe('disconnected');
     await sleep(20);
     expect(sockets).toHaveLength(1); // no reconnect attempt spawned
   });

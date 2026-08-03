@@ -107,12 +107,22 @@ export class CrazyGamesPlatform implements IPlatform {
     try { this.sdk?.game.gameplayStop(); } catch { /* ignore */ }
   }
 
+  /** Every match end awaits this before showing the result screen — an SDK that never calls either
+   * callback (ad-blocked with no fill, transient SDK bug) must not freeze the result screen forever. */
+  private static readonly MIDGAME_AD_TIMEOUT_MS = 8000;
+
   showMidgameAd(): Promise<void> {
     return new Promise((resolve) => {
       if (!this.sdk) { resolve(); return; }
+      let settled = false;
+      const done = (): void => { if (!settled) { settled = true; resolve(); } };
+      const timer = setTimeout(done, CrazyGamesPlatform.MIDGAME_AD_TIMEOUT_MS);
       try {
-        this.sdk.ad.requestAd('midgame', { adFinished: resolve, adError: () => resolve() });
-      } catch { resolve(); }
+        this.sdk.ad.requestAd('midgame', {
+          adFinished: () => { clearTimeout(timer); done(); },
+          adError: () => { clearTimeout(timer); done(); },
+        });
+      } catch { clearTimeout(timer); done(); }
     });
   }
 

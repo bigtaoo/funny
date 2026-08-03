@@ -165,7 +165,7 @@ export function EventMixin<TBase extends GameRendererBaseCtor>(Base: TBase): TBa
           this.hudView.showGameOver(event.winner, this.localOwner);
           const s = this.pendingStats;
           const summary = this.pendingSummary ?? this.engine.state.snapshotSummary();
-          if (s) setTimeout(() => { this.onGameEnd?.(event.winner, s, summary); }, 2000);
+          if (s) this.scheduleGameEnd(() => { this.onGameEnd?.(event.winner, s, summary); }, 2000);
           break;
         }
         case 'game_draw': {
@@ -178,7 +178,7 @@ export function EventMixin<TBase extends GameRendererBaseCtor>(Base: TBase): TBa
           this.hudView.showGameOver(null, this.localOwner);
           const s = this.pendingStats;
           const summary = this.pendingSummary ?? this.engine.state.snapshotSummary();
-          if (s) setTimeout(() => { this.onGameEnd?.(null, s, summary); }, 2000);
+          if (s) this.scheduleGameEnd(() => { this.onGameEnd?.(null, s, summary); }, 2000);
           break;
         }
         case 'escort_spawned': {

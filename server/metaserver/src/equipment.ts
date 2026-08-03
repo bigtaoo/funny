@@ -712,6 +712,10 @@ export async function reforgeEquipment(
   if (!materialDoc) return { error: 'material equipment not found', code: 'EQUIP_NOT_FOUND' };
   const material = fromInstanceDoc(materialDoc);
   if (await isEquipped(cols, accountId, materialId)) return { error: 'material is equipped', code: 'EQUIP_IN_USE' };
+  // 2026-08-03 fix: the target's lock is checked above, but the fuel material's was never checked here —
+  // a locked item is destroyed by reforge exactly like a salvage input, so a client that skips the (also
+  // now-fixed) picker filter, or a direct API call, could otherwise destroy a player-locked item.
+  if (material.locked) return { error: 'material is locked', code: 'EQUIP_LOCKED' };
 
   const targetDef = EQUIPMENT_DEFS[target.defId];
   const matDef = EQUIPMENT_DEFS[material.defId];

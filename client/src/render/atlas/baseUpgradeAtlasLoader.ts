@@ -37,16 +37,25 @@ export async function loadBaseUpgradeAtlas(): Promise<void> {
   if (sheet) return;
   if (loading) return loading;
   loading = (async () => {
-    const baseTex = new PIXI.BaseTexture(await assetIO().textureSource(atlasUrl as string));
-    await new Promise<void>((resolve, reject) => {
-      if (baseTex.valid) { resolve(); return; }
-      baseTex.once('loaded', () => resolve());
-      baseTex.once('error', (err: unknown) =>
-        reject(new Error(`base upgrade atlas load error: ${String(err)}`)));
-    });
-    const ss = new PIXI.Spritesheet(baseTex, atlasData as PIXI.ISpritesheetData);
-    await ss.parse();
-    sheet = ss;
+    try {
+      const baseTex = new PIXI.BaseTexture(await assetIO().textureSource(atlasUrl as string));
+      await new Promise<void>((resolve, reject) => {
+        if (baseTex.valid) { resolve(); return; }
+        baseTex.once('loaded', () => resolve());
+        baseTex.once('error', (err: unknown) =>
+          reject(new Error(`base upgrade atlas load error: ${String(err)}`)));
+      });
+      const ss = new PIXI.Spritesheet(baseTex, atlasData as PIXI.ISpritesheetData);
+      await ss.parse();
+      sheet = ss;
+    } catch (e) {
+      // See spriteAtlas.ts's createAtlasLoader for the rationale (2026-08-03 fix — this loader was
+      // missed by that audit): without this reset, a transient failure (network blip) permanently
+      // negative-caches the atlas for the rest of the session — every base that reaches upgrade
+      // tier 1/2 would render stuck at the tier-0 texture forever, even after the network recovers.
+      loading = null;
+      throw e;
+    }
   })();
   return loading;
 }

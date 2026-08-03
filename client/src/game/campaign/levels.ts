@@ -222,7 +222,14 @@ export const CAMPAIGN_LEVEL_ORDER: string[] = [
   CH5_LV6.id,  CH5_LV7.id,  CH5_LV8.id,  CH5_LV9.id,  CH5_LV10.id,
   CH6_LV1.id,  CH6_LV2.id,  CH6_LV3.id,  CH6_LV4.id,  CH6_LV5.id,
   CH6_LV6.id,  CH6_LV7.id,  CH6_LV8.id,  CH6_LV9.id,  CH6_LV10.id,
-  CH_STRESS.id,
+  // CH_STRESS (like CH0_TUTORIAL above) is intentionally excluded: chapter:0, id doesn't match the
+  // ch#_lv# convention, and no chapter map node references it — it's a perf/load stress fixture, not
+  // a real playable level. It stayed registered here since this array was first written (2026-08-03
+  // fix): currentChapter() (progress.ts) scans this list for the first *uncleared* id, so once a
+  // player 100%-clears the real campaign the scan used to land on this uncleareable entry and fall
+  // back to chapter 1 forever instead of staying on the player's actual last chapter. Still registered
+  // in CAMPAIGN_LEVELS above (and CAMPAIGN_LEVEL_ORDER's own consumers — CampaignMapScene, test setup —
+  // only need CAMPAIGN_LEVELS to load it directly), just not part of the playable progression order.
 ];
 
 /** Look up a level by id, or null if unknown. */

@@ -57,6 +57,13 @@ export class ChatScene implements Scene {
   private convId: string | null = null;
   /** Ascending by ts (oldest first) for natural top→bottom rendering. */
   private messages: ChatMessageView[] = [];
+  /**
+   * Local (optimistic) messageIds whose send actually failed (2026-08-03 fix) — previously a failed
+   * `cb.send()` only showed a toast (easily missed/dismissed) and left the optimistically-appended
+   * bubble in `messages` unchanged, indistinguishable from a genuinely delivered message. Checked by
+   * buildBubble() to dim the bubble + show a small "not delivered" caption instead.
+   */
+  private readonly failedMessageIds = new Set<string>();
   private loading = true;
   /** True while there may be older pages to fetch. */
   private hasMore = false;
@@ -184,7 +191,8 @@ export class ChatScene implements Scene {
     if (this.hiddenInput) this.hiddenInput.value = '';
     // Optimistic append (echoed as mine).
     const ts = Date.now();
-    this.messages.push({ messageId: `local-${ts}`, convId: this.convId ?? '', fromPublicId: this.cb.myPublicId, body, kind: 'text', ts });
+    const localId = `local-${ts}`;
+    this.messages.push({ messageId: localId, convId: this.convId ?? '', fromPublicId: this.cb.myPublicId, body, kind: 'text', ts });
     this.stickBottom = true;
     this.render();
     try {
@@ -193,6 +201,9 @@ export class ChatScene implements Scene {
       if (!this.convId) this.convId = await this.cb.resolveConvId(this.cb.peerPublicId);
     } catch (e) {
       this.toast(sendErrKey(e));
+      // Mark the optimistic bubble as failed rather than leaving it looking delivered (2026-08-03 fix).
+      this.failedMessageIds.add(localId);
+      if (!this.dead) this.render();
     }
   }
 
@@ -341,6 +352,7 @@ export class ChatScene implements Scene {
   private buildBubble(m: ChatMessageView): { node: PIXI.Container; height: number } {
     const { w } = this;
     const mine = m.fromPublicId === this.cb.myPublicId;
+    const failed = this.failedMessageIds.has(m.messageId);
     const maxW = Math.round(w * 0.68);
     const padX = Math.round(w * 0.03);
     const padY = Math.round(this.h * 0.012);
@@ -363,7 +375,20 @@ export class ChatScene implements Scene {
     node.addChild(bg);
     body.x = padX; body.y = padY;
     node.addChild(body);
-    return { node, height: bh };
+    let height = bh;
+    if (failed) {
+      // Dim the bubble + caption it "Not delivered" instead of leaving a failed send looking exactly
+      // like a normally delivered message (2026-08-03 fix — see failedMessageIds' doc comment).
+      bg.alpha = 0.55;
+      body.alpha = 0.55;
+      const capGap = Math.round(this.h * 0.004);
+      const failLbl = txt(t('chat.sendFailed'), snapFont(Math.round(this.h * 0.018)), 0xaa2222, true);
+      failLbl.anchor.set(1, 0);
+      failLbl.x = bw; failLbl.y = bh + capGap;
+      node.addChild(failLbl);
+      height = bh + capGap + Math.ceil(failLbl.height);
+    }
+    return { node, height };
   }
 
   private drawComposer(): void {

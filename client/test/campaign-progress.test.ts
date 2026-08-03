@@ -70,6 +70,12 @@ describe('Current playable level / landing chapter (tao cleared through the seco
     expect(currentChapter(new Set(CAMPAIGN_LEVEL_ORDER.slice(0, 10)))).toBe(2);
   });
 
+  it('regression (2026-08-03): 100%-clearing the real campaign lands on the last chapter, not back on chapter 1', () => {
+    // Before the fix, CAMPAIGN_LEVEL_ORDER's trailing 'ch_stress' entry (never cleared, unparseable
+    // levelId) made this scan fall through to CHAPTER_ORDER[0] once every real level was cleared.
+    expect(currentChapter(new Set(CAMPAIGN_LEVEL_ORDER))).toBe(6);
+  });
+
   it('after clearing a full chapter there is no current playable level in that chapter (returns null)', () => {
     const allCh1 = new Set(CAMPAIGN_LEVEL_ORDER.slice(0, 10));
     expect(currentLevelIdInChapter(1, allCh1)).toBeNull();

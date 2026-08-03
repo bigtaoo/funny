@@ -92,6 +92,24 @@ describe('coinIconAtlas: retries after a failed load (does not negative-cache)',
   });
 });
 
+describe('baseUpgradeAtlasLoader: retries after a failed load (does not negative-cache)', () => {
+  // 2026-08-03 fix — this loader had the exact same bug as spriteAtlas/coinIconAtlas above but was
+  // missed by the 2026-07-29 audit that fixed those two (see claudedocs/client-modules.md).
+  it('a failed loadBaseUpgradeAtlas() followed by a retry succeeds', async () => {
+    const { setAssetIO } = await import('../../src/assets/assetIO');
+    const io = flakyThenOkIO();
+    setAssetIO(io);
+    const mod = await import('../../src/render/atlas/baseUpgradeAtlasLoader');
+
+    await expect(mod.loadBaseUpgradeAtlas()).rejects.toThrow('network blip');
+    expect(mod.isBaseUpgradeAtlasReady()).toBe(false);
+
+    await mod.loadBaseUpgradeAtlas(); // retry
+    expect(mod.isBaseUpgradeAtlasReady()).toBe(true);
+    expect((io.textureSource as ReturnType<typeof vi.fn>)).toHaveBeenCalledTimes(2);
+  });
+});
+
 describe('StickmanRuntime.loadAsset: retries after a failed parse (does not negative-cache)', () => {
   it('a failed loadAsset(url) followed by a retry for the SAME url succeeds', async () => {
     const parseTaoAsset = vi.fn()

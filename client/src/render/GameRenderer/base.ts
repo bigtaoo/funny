@@ -77,6 +77,14 @@ export class GameRendererBase {
   // frame → without this lock, onGameEnd would fire repeatedly (→ duplicate recordClear /
   // duplicate level_complete analytics, see the double-fire bug). Settlement fires exactly once.
   protected gameEnded = false;
+  /**
+   * Handle of the deferred onGameEnd settlement (game_over/game_draw/tutorial victory all schedule
+   * it a couple seconds after the banner shows, via scheduleGameEnd() below). Tracked so destroy()
+   * can cancel it — otherwise it still fires after the scene (and this renderer) has been torn down,
+   * re-running match settlement (reportResult/recordClear/analytics) against whatever the player has
+   * navigated to since.
+   */
+  private gameEndTimer: ReturnType<typeof setTimeout> | null = null;
 
   protected readonly engine: IGameEngine;
   protected readonly layout: ILayout;
@@ -203,6 +211,8 @@ export class GameRendererBase {
 
   setReconnecting(v: boolean): void { this.netStatus.setReconnecting(v); }
   setPeerDisconnected(v: boolean): void { this.netStatus.setPeerDc(v); }
+  /** The connection was permanently rejected (NetState 'disconnected') — see NetStatusView.setDisconnected. */
+  setDisconnected(v: boolean): void { this.netStatus.setDisconnected(v); }
   clearNetStatus(): void { this.netStatus.clear(); }
 
   /** True once the local sim has reached a decisive end (base wiped / draw). */
@@ -253,7 +263,16 @@ export class GameRendererBase {
     this.hudView.showGameOver(winner, this.localOwner);
     const stats = this.engine.state.snapshotStats();
     const summary = this.engine.state.snapshotSummary();
-    setTimeout(() => { this.onGameEnd?.(winner, stats, summary); }, 1500);
+    this.scheduleGameEnd(() => this.onGameEnd?.(winner, stats, summary), 1500);
+  }
+
+  /**
+   * Schedule the deferred onGameEnd settlement callback, tracking the timer handle so destroy()
+   * can cancel it (see gameEndTimer's doc comment). Callers (here + events.ts's game_over/game_draw)
+   * are expected to have already set `gameEnded = true` and shown the banner.
+   */
+  protected scheduleGameEnd(fn: () => void, delayMs: number): void {
+    this.gameEndTimer = setTimeout(() => { this.gameEndTimer = null; fn(); }, delayMs);
   }
 
   update(dt: number): void {
@@ -332,6 +351,10 @@ export class GameRendererBase {
     // client growth over a long session. This must run before the other steps below:
     // every step is independently contained (see safeDestroyStep) so a throw in one
     // (e.g. unsubs) can no longer skip the ticker cleanup that caused that leak.
+    this.safeDestroyStep('gameEndTimer', () => {
+      if (this.gameEndTimer !== null) { clearTimeout(this.gameEndTimer); this.gameEndTimer = null; }
+      this.onGameEnd = null;
+    });
     this.safeDestroyStep('boardView', () => this.boardView.destroy());
     this.safeDestroyStep('unitView', () => this.unitView.destroy());
     this.safeDestroyStep('buildingView', () => this.buildingView.destroy());

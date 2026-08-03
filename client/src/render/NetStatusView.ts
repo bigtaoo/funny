@@ -17,9 +17,9 @@ import { FS } from './fontScale';
  * one instance, feeds it state each frame (waiting) and on events (reconnect /
  * peer_dc), and adds its container at the very top of the scene graph.
  *
- * Display priority (most severe wins): peerDc > reconnecting > waiting.
+ * Display priority (most severe wins): disconnected > peerDc > reconnecting > waiting.
  */
-type StatusKind = 'none' | 'waiting' | 'reconnecting' | 'peerDc';
+type StatusKind = 'none' | 'waiting' | 'reconnecting' | 'peerDc' | 'disconnected';
 
 const DOT_PERIOD = 0.45; // seconds per animated dot step
 
@@ -33,6 +33,7 @@ export class NetStatusView {
   private waiting       = false;
   private reconnecting  = false;
   private peerDc        = false;
+  private disconnected  = false;
 
   private shownKind: StatusKind = 'none';
   private animTime    = 0;
@@ -74,9 +75,20 @@ export class NetStatusView {
     this.refresh();
   }
 
+  /**
+   * The connection was permanently rejected (NetState 'disconnected') — reconnect attempts have
+   * already given up server-side (e.g. evicted by another device). Distinct from reconnecting/
+   * peerDc, which both still expect to recover on their own.
+   */
+  setDisconnected(v: boolean): void {
+    if (this.disconnected === v) return;
+    this.disconnected = v;
+    this.refresh();
+  }
+
   /** Clear everything (match ended). */
   clear(): void {
-    this.waiting = this.reconnecting = this.peerDc = false;
+    this.waiting = this.reconnecting = this.peerDc = this.disconnected = false;
     this.refresh();
   }
 
@@ -84,6 +96,9 @@ export class NetStatusView {
 
   update(dt: number): void {
     if (this.shownKind === 'none') return;
+    // 'disconnected' is a final state (server gave up, not retrying) — the animated "..." implies
+    // an in-progress wait, which reconnect.gone's copy doesn't grammatically expect. Static text.
+    if (this.shownKind === 'disconnected') return;
     this.animTime += dt;
     const dots = 1 + (Math.floor(this.animTime / DOT_PERIOD) % 3); // 1..3
     this.label.text = this.baseText(this.shownKind) + '.'.repeat(dots);
@@ -93,6 +108,7 @@ export class NetStatusView {
   // ── Internals ────────────────────────────────────────────────────────────────
 
   private currentKind(): StatusKind {
+    if (this.disconnected) return 'disconnected';
     if (this.peerDc)       return 'peerDc';
     if (this.reconnecting) return 'reconnecting';
     if (this.waiting)      return 'waiting';
@@ -108,13 +124,14 @@ export class NetStatusView {
       return;
     }
     this.animTime = 0;
-    this.label.text = this.baseText(kind) + '.';
+    this.label.text = kind === 'disconnected' ? this.baseText(kind) : this.baseText(kind) + '.';
     this.container.visible = true;
     this.layoutPill();
   }
 
   private baseText(kind: StatusKind): string {
     switch (kind) {
+      case 'disconnected': return t('reconnect.gone');
       case 'peerDc':       return t('net.peerDc');
       case 'reconnecting': return t('net.reconnecting');
       case 'waiting':      return t('net.waiting');
@@ -131,7 +148,7 @@ export class NetStatusView {
     // A little below the top HUD strip so it doesn't collide with the timer.
     const cy = this.layout.hudTopRect.h + h / 2 + 24;
 
-    const color = this.shownKind === 'peerDc' ? 0xaa2222 : 0x2c2c2a;
+    const color = this.shownKind === 'peerDc' || this.shownKind === 'disconnected' ? 0xaa2222 : 0x2c2c2a;
     this.pill.clear();
     this.pill.beginFill(color, 0.85);
     this.pill.lineStyle(2, 0xffffff, 0.25);

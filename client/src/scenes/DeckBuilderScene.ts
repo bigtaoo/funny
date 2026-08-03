@@ -140,10 +140,16 @@ export class DeckBuilderScene implements Scene {
     if (next !== null) { this.scrollY = next; this.scrollDirty = true; }
   }
 
-  private toggleCard(id: string): void {
+  private toggleCard(id: string, unlocked: boolean): void {
     if (this.selected.has(id)) {
       this.selected.delete(id);
     } else {
+      // A card can only be newly selected while unlocked — but deselecting (branch above) is always
+      // allowed, including for a card that was selected earlier and has since become ELO-relocked
+      // (2026-08-03 fix: previously such a card's hit rect wasn't registered at all, so a dropped-ELO
+      // player could never remove it from `selected` and confirm() would fail forever with "not
+      // unlocked", never letting them save any new deck).
+      if (!unlocked) return;
       this.selected.add(id);
     }
     this.errorMsg = '';
@@ -288,8 +294,12 @@ export class DeckBuilderScene implements Scene {
       const cy = row * (cardH + gapY);
       const absY = listY - this.scrollY + cy;
       if (absY + cardH < listY || absY > listY + this.listH) return;
-      if (!unlocked.has(id)) return; // locked cards not tappable
-      this.hits.push({ rect: { x: cx, y: absY, w: cardW, h: cardH }, fn: () => this.toggleCard(id) });
+      const isUnlocked = unlocked.has(id);
+      // Locked cards are tappable only if already selected (to allow deselecting a card that became
+      // ELO-relocked after being saved — see toggleCard's doc comment); a never-selected locked card
+      // stays inert.
+      if (!isUnlocked && !this.selected.has(id)) return;
+      this.hits.push({ rect: { x: cx, y: absY, w: cardW, h: cardH }, fn: () => this.toggleCard(id, isUnlocked) });
     });
 
     drawScrollIndicator(this.container, { x: pad, y: listY, w: w - pad * 2, h: this.listH }, this.scrollY, this.scrollMax);

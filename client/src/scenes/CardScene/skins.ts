@@ -16,7 +16,7 @@ import { unitPortraitUrl } from '../../render/cardArt';
 import { sidebarNavW, bottomNavH } from '../../ui/widgets/HubTabs';
 import { drawScrollIndicator } from '../../ui/widgets/ScrollIndicator';
 import { CARD_DEFS, type CardDef } from '../../game/meta/cardDefs';
-import { skinsForUnitType } from '../../game/meta/skinDefs';
+import { skinsForUnitType, skinDisplayName } from '../../game/meta/skinDefs';
 import type { UnitType } from '@nw/engine/types';
 import { type Constructor, type CardSceneBaseCtor, CELL_GAP } from './base';
 
@@ -96,7 +96,7 @@ export function SkinsMixin<TBase extends CardSceneBaseCtor>(Base: TBase): TBase 
       const skins = skinsForUnitType(unitType, owned);
       const tiles: Array<{ id: string | null; label: string }> = [
         { id: null, label: t('collection.default') },
-        ...skins.map((id) => ({ id, label: id })),
+        ...skins.map((id) => ({ id, label: skinDisplayName(id) })),
       ];
 
       const portraitW = Math.round(PORTRAIT_MAX_H * PORTRAIT_RATIO);

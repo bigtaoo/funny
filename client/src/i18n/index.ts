@@ -90,11 +90,15 @@ export function onLocaleChange(fn: (locale: Locale) => void): () => void {
  * never crashes rendering.
  */
 export function t(key: TranslationKey, params?: Record<string, string | number>): string {
-  let s = DICTS[current][key] ?? DICTS.zh[key] ?? key;
-  if (params) {
-    for (const [k, v] of Object.entries(params)) {
-      s = s.split(`{${k}}`).join(String(v));
-    }
-  }
-  return s;
+  const s = DICTS[current][key] ?? DICTS.zh[key] ?? key;
+  if (!params) return s;
+  // Single-pass substitution (2026-08-03 fix): the previous sequential split/join-per-param let an
+  // earlier param's *value* re-trigger a later param's placeholder if it happened to contain the
+  // literal text `{otherParam}` — real risk wherever a param is player-controlled (display names
+  // allow '{'/'}'). String.replace's callback form scans `s` once and never rescans substituted
+  // text, so a value can no longer be mistaken for a template placeholder.
+  return s.replace(/\{(\w+)\}/g, (whole, name: string) => {
+    const v = params[name];
+    return v !== undefined ? String(v) : whole;
+  });
 }

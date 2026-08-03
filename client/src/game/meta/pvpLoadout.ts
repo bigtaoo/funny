@@ -1,5 +1,6 @@
 // Client-side PvP loadout constants (P3, PVP_LOADOUT_DESIGN §3–4).
 // Mirrors server/shared/src/pvpDeck.ts; kept separate so the client tree doesn't depend on @nw/shared.
+import { t } from '../../i18n';
 
 export const PVP_DECK_SIZE = 10;
 
@@ -33,15 +34,15 @@ export function defaultPvpDeck(): string[] {
 }
 
 export function validatePvpDeckClient(deck: string[], elo: number): string | null {
-  if (deck.length !== PVP_DECK_SIZE) return `Select exactly ${PVP_DECK_SIZE} cards (${deck.length} selected)`;
+  if (deck.length !== PVP_DECK_SIZE) return t('pvp.err.deckSize', { size: PVP_DECK_SIZE, count: deck.length });
   const unlocked = new Set(getPvpUnlockedCards(elo));
   const seen = new Set<string>();
   for (const card of deck) {
-    if (!unlocked.has(card)) return `Card "${card}" is not unlocked`;
-    if (seen.has(card)) return `Duplicate card "${card}"`;
+    if (!unlocked.has(card)) return t('pvp.err.cardLocked', { card });
+    if (seen.has(card)) return t('pvp.err.duplicateCard', { card });
     seen.add(card);
   }
-  if (!deck.some((c) => PVP_BUILDING_CARDS.includes(c))) return 'Deck must include at least 1 building';
-  if (!deck.some((c) => PVP_SPELL_CARDS.includes(c))) return 'Deck must include at least 1 spell';
+  if (!deck.some((c) => PVP_BUILDING_CARDS.includes(c))) return t('pvp.err.needBuilding');
+  if (!deck.some((c) => PVP_SPELL_CARDS.includes(c))) return t('pvp.err.needSpell');
   return null;
 }

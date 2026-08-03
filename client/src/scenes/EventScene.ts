@@ -292,9 +292,9 @@ export class EventScene implements Scene {
       bg.x = PAD; bg.y = cy;
       this.container.addChild(bg);
 
-      const rewardLabel = reward.kind === 'coins'
-        ? t('event.rewards.coins', { n: reward.count ?? 0 })
-        : reward.id ?? reward.kind;
+      const rewardLabel = reward.kind === 'coins' ? t('event.rewards.coins', { n: reward.count ?? 0 })
+        : reward.kind === 'skin' ? t('event.rewards.skin', { id: reward.id ?? '' })
+        : t('event.rewards.material', { id: reward.id ?? reward.kind, n: reward.count ?? 1 });
       // Type glyph prefix (coins → coin, craft material → its icon, skin → brush) when mappable.
       const rk: IconKind | null = reward.kind === 'coins' ? 'coin'
         : reward.kind === 'skin' ? 'brush'

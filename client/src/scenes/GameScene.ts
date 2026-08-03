@@ -109,6 +109,14 @@ export class GameScene implements Scene {
   readonly container;
   private readonly renderer: GameRenderer;
   private readonly cb: GameSceneCallbacks;
+  /**
+   * Guards applyNetState/applyPeerDc/applyMatchOver (2026-08-03 fix): these are invoked directly
+   * from long-lived NetSession event closures (see app.ts's showGameNet / nav/result.ts), not from
+   * SceneManager's per-frame tick — so they stay reachable after this scene (and its renderer) has
+   * been destroyed, e.g. a late match_over/peer_dc arriving while the player is already sitting on
+   * ResultScene. Without this guard they'd touch the already-destroyed GameRenderer's container.
+   */
+  private destroyed = false;
 
   constructor(layout: ILayout, input: InputManager, cb: GameSceneCallbacks, opts: GameSceneOptions = {}) {
     this.cb = cb;
@@ -159,17 +167,20 @@ export class GameScene implements Scene {
   }
 
   update(dt: number): void { this.renderer.update(dt); }
-  destroy():         void { this.renderer.destroy(); }
+  destroy():         void { this.destroyed = true; this.renderer.destroy(); }
 
   // ── Network status (driven by app.ts from NetSession events, S1-9) ───────────
 
-  /** Our socket state — show the reconnecting toast only while actually retrying. */
+  /** Our socket state — show the reconnecting/disconnected banner only while relevant. */
   applyNetState(s: NetState): void {
+    if (this.destroyed) return;
     this.renderer.setReconnecting(s === 'reconnecting');
+    this.renderer.setDisconnected(s === 'disconnected');
   }
 
   /** Opponent dropped — show the peer-disconnect banner (cleared when frames resume). */
   applyPeerDc(_p: PeerDc): void {
+    if (this.destroyed) return;
     this.renderer.setPeerDisconnected(true);
   }
 
@@ -179,6 +190,7 @@ export class GameScene implements Scene {
    * the engine is stalled with no local verdict — end the match here.
    */
   applyMatchOver(m: MatchOver): void {
+    if (this.destroyed) return;
     if (this.renderer.isGameOver()) return;
     this.renderer.clearNetStatus();
     const winner: OwnerId | null = m.reason === 'mismatch' ? null : (m.winnerSide as OwnerId);

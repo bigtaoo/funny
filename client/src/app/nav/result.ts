@@ -168,6 +168,13 @@ export function createResultNav(ctx: AppCtx): ResultNav {
       if (netResultShown) return;
       netResultShown = true;
       if (eloWaitTimer) { clearTimeout(eloWaitTimer); eloWaitTimer = null; }
+      // GameScene is about to be torn down for ResultScene (goResult below) — for a friendly
+      // (non-ranked) match neither onPlayAgain nor onReturnToLobby is set, so session.close()
+      // never runs and these handlers (closures over this now-finishing `view`) would otherwise
+      // sit bound until some later scene overwrites them wholesale. Clear them now so a late/
+      // duplicate net event in that window is simply dropped rather than reaching `view` (2026-08-03,
+      // paired with GameScene's own destroyed-guard on applyNetState/applyPeerDc/applyMatchOver).
+      session.handlers = {};
       if (isRanked) void saveManager.refresh();
       // Ranked: "play again" re-enters the ranked queue (fresh session), and a
       // secondary "back to lobby" gives an explicit exit. Friendly/AI keep the

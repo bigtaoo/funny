@@ -22,6 +22,7 @@ import { createLayout } from '../../src/layout/ScalingManager';
 import { InputManager } from '../../src/inputSystem/InputManager';
 import { initI18n, t } from '../../src/i18n';
 import { CardScene, type CardCallbacks } from '../../src/scenes/CardScene';
+import { skinDisplayName } from '../../src/game/meta/skinDefs';
 import type { UnitType } from '@nw/engine/types';
 
 const memStore = (() => {
@@ -169,17 +170,18 @@ describe('CardScene detail modal — change-skin picker', () => {
     badgeHit!.action(); // toggles skinPickerOpen + re-renders the modal
 
     expect((scene as unknown as { skinPickerOpen: boolean }).skinPickerOpen).toBe(true);
-    expect(hasText(scene.container, 'skin_e1')).toBe(true);
+    const skinLabel = skinDisplayName('skin_e1');
+    expect(hasText(scene.container, skinLabel)).toBe(true);
 
-    const rowPos = findLabelPos(scene.container, 'skin_e1');
+    const rowPos = findLabelPos(scene.container, skinLabel);
     expect(rowPos).not.toBeNull();
     const rowHit = (scene as unknown as { modalHits: Hit[] }).modalHits.find(({ rect: r }) =>
       rowPos!.x >= r.x && rowPos!.x <= r.x + r.w && rowPos!.y >= r.y && rowPos!.y <= r.y + r.h);
-    expect(rowHit, 'no hit rect under the "skin_e1" picker row').toBeDefined();
+    expect(rowHit, `no hit rect under the "${skinLabel}" picker row`).toBeDefined();
     rowHit!.action();
 
     expect(equipCalls).toEqual([{ unitType: 'lena', skinId: 'skin_e1' }]);
     expect((scene as unknown as { skinPickerOpen: boolean }).skinPickerOpen).toBe(false);
-    expect(hasText(scene.container, 'skin_e1')).toBe(false);
+    expect(hasText(scene.container, skinLabel)).toBe(false);
   });
 });

@@ -159,7 +159,10 @@ export function RevealMixin<TBase extends GachaSceneBaseCtor>(Base: TBase): TBas
         const spr = new PIXI.Sprite(tex);
         spr.anchor.set(0.5);
         const u = startPhase - (i / n) * TRAIL_SPAN; // initial position at phase startPhase, matches update()'s formula
-        const fall = Math.max(0, 1 - (i / n) / TRAIL_SPAN);
+        // Falloff over the dot index alone — `u`'s position already applied TRAIL_SPAN above; dividing
+        // by it again here clamped fall to 0 around i/n > TRAIL_SPAN (~0.42), killing the back half of
+        // every trail's dots at alpha=0 forever (update() only ever rewrites position/tint, not alpha).
+        const fall = Math.max(0, 1 - i / n);
         const eased = fall * fall; // squared falloff → soft comet-like tail
         spr.alpha = eased;
         spr.scale.set(0.35 + 0.65 * eased);

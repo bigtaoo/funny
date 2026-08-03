@@ -24,6 +24,8 @@ import { skinEquipKey } from './skinDefs';
 import { replayIdFor } from './ReplayStore';
 import type { PendingClear, PendingStaminaSpend, SaveStore } from './SaveStore';
 import { serverNow } from '../../net/serverClock';
+import { showToastMessage } from '../../net/log';
+import { t } from '../../i18n';
 
 // Stamina constants (A4) — mirrors server/metaserver/src/service/base.ts STAMINA_CAP/STAMINA_REGEN_MS,
 // needed here so entering a level can deduct correctly even fully offline (no server round-trip available).
@@ -80,6 +82,12 @@ export class SaveManager {
    * from their own destroy(), or the closure (and whatever it captures) leaks for the rest of the session.
    */
   private readonly listeners = new Set<() => void>();
+  /**
+   * Level ids already toasted for "locally cleared but server doesn't have it yet" (see reconcile()'s
+   * doc comment) — prevents re-toasting the same gap on every subsequent unrelated reconcile() call
+   * while the offline clear is still in flight/pending. Cleared once the gap closes (cloud catches up).
+   */
+  private readonly notifiedSyncGaps = new Set<string>();
 
   constructor(opts: SaveManagerOpts) {
     this.store = opts.store;
@@ -582,6 +590,20 @@ export class SaveManager {
     // actually completes, so it correctly still reads as the old account here.
     if (cloud.accountId === this.reconciledAccountId && cloud.rev < local.rev) return;
     this.reconciledAccountId = cloud.accountId;
+    // Player-visible sync notice: a level the local mirror already shows as cleared but the cloud
+    // snapshot doesn't (yet) have — server truth is about to overwrite it below, per this method's
+    // "cloud always wins" contract. Tell the player rather than silently discarding it; only toast
+    // once per id while the gap persists (avoids spamming on every unrelated reconcile() call), and
+    // forget it once the cloud catches up so a future recurrence can notify again.
+    const droppedIds = local.progress.cleared.filter((id) => !cloud.progress.cleared.includes(id));
+    if (droppedIds.length > 0) {
+      if (droppedIds.some((id) => !this.notifiedSyncGaps.has(id))) {
+        showToastMessage(t('common.syncFailed'), 'error');
+      }
+      for (const id of droppedIds) this.notifiedSyncGaps.add(id);
+    } else {
+      this.notifiedSyncGaps.clear();
+    }
     this.save = {
       ...cloud, // authoritative sections (equipped/flags/progress.cleared·stars/materials/pveUpgrades/cardInv/equipmentInv/wallet/...) + rev/accountId, all from cloud
       progress: {

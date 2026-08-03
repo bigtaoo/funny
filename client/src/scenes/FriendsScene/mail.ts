@@ -100,7 +100,17 @@ export function MailMixin<TBase extends FriendsSceneBaseCtor>(Base: TBase): TBas
     private openMail(m: MailView): void {
       this.openMailItem = m;
       this.scrollY = 0;
-      if (!m.read) void this.cb.markMailRead(m.mailId).then(() => { m.read = true; });
+      if (!m.read) {
+        void this.cb.markMailRead(m.mailId).then(() => {
+          m.read = true;
+          // Decrement the cached badge count immediately (2026-08-03 fix) — previously only the
+          // individual mail's own `read` flag was updated, so the Mail-tab/lobby badge stayed at its
+          // stale pre-read count until some other trigger forced a full refresh() (e.g. a tab switch),
+          // making the unread dot appear stuck even after the player had read everything.
+          this.mailUnread = Math.max(0, this.mailUnread - 1);
+          this.render();
+        });
+      }
       this.render();
     }
 

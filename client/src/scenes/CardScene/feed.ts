@@ -364,12 +364,18 @@ export function FeedMixin<TBase extends CardSceneBaseCtor>(Base: TBase): TBase &
       tearDownChildren(ml);
       this.modalHits = [];
       this.modalOpen = true;
+      this.fuseRingOpen = true;
       this.feedScrollPx = 0;
       const artHooked = new Set<string>();
 
       /** After a fuse settles: continue with another same-level target when the auto-continue rule
        * applies and one is available, otherwise close like before (doFuse's old default behavior). */
       const onFuseSettled = (success: boolean): void => {
+        // The fuse request can resolve after the scene was torn down (player backed out of the
+        // roster while it was in flight) — bail before touching modalLayer/detailId on an already-
+        // destroyed scene (2026-08-03 fix; mirrors the `if (this.destroyed) return` guard every
+        // other deferred completion in this codebase uses).
+        if (this.destroyed) return;
         if (success && autoContinue) {
           const inv = this.cb.getSave().cardInv ?? {};
           // Priority 1: keep upgrading the SAME card the player just fused. It kept its id and is now
@@ -633,8 +639,14 @@ export function FeedMixin<TBase extends CardSceneBaseCtor>(Base: TBase): TBase &
 
           const n = filledCount();
           const confirmOn = n === FUSION_MATERIAL_COUNT && !this.bt.busy;
+          // Cancel must not abort an in-flight fuse request (2026-08-03 fix): the request itself
+          // isn't cancellable, so letting the player close/re-open other cards while it's still
+          // pending left onFuseSettled's stale closure (currentTarget/slotIds/autoContinue) free to
+          // clobber whatever the player navigated to by the time it resolved. Same busy-gate as the
+          // Confirm button above.
+          const cancelOn = !this.bt.busy;
           const confirmLbl = txt(`${t('roster.fuseBtn')} (${n}/${FUSION_MATERIAL_COUNT})`, snapFont(10 * S), confirmOn ? C.light : C.mid);
-          const cancelLbl = txt(t('equip.cancel'), snapFont(10 * S), C.dark);
+          const cancelLbl = txt(t('equip.cancel'), snapFont(10 * S), cancelOn ? C.dark : C.mid);
           const confirmBtnW = Math.max(90 * S, confirmLbl.width + btnPadX * 2);
           const cancelBtnW = Math.max(70 * S, cancelLbl.width + btnPadX * 2);
 
@@ -662,7 +674,9 @@ export function FeedMixin<TBase extends CardSceneBaseCtor>(Base: TBase): TBase &
           ml.addChild(cancelBtn);
           cancelLbl.anchor.set(0.5, 0.5); cancelLbl.x = cancelX + cancelBtnW / 2; cancelLbl.y = btnY + btnH / 2;
           ml.addChild(cancelLbl);
-          this.modalHits.push({ rect: { x: cancelX, y: btnY, w: cancelBtnW, h: btnH }, action: () => { this.closeModal(); this.render(); } });
+          if (cancelOn) {
+            this.modalHits.push({ rect: { x: cancelX, y: btnY, w: cancelBtnW, h: btnH }, action: () => { this.closeModal(); this.render(); } });
+          }
         };
 
         let mw: number, mh: number, mx: number, my: number;
@@ -716,9 +730,11 @@ export function FeedMixin<TBase extends CardSceneBaseCtor>(Base: TBase): TBase &
           drawListAndFooter(mx, mw, my + headerRingH, my + mh);
         }
 
-        // Dismiss on backdrop
+        // Dismiss on backdrop — suppressed while a fuse is in flight, same reasoning as Cancel above.
         this.modalHits.push({ rect: { x: mx, y: my, w: mw, h: mh }, action: () => {} });
-        this.modalHits.push({ rect: { x: 0, y: 0, w, h }, action: () => { this.closeModal(); this.render(); } });
+        if (!this.bt.busy) {
+          this.modalHits.push({ rect: { x: 0, y: 0, w, h }, action: () => { this.closeModal(); this.render(); } });
+        }
       };
 
       this.feedRedraw = drawFusePanel;

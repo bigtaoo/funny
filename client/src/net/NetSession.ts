@@ -40,8 +40,10 @@ import {
 } from './proto/transport';
 import { NetInputSource, type MatchStartInfo } from '../game';
 import { runJudge } from './judgeRunner';
-import { netLog } from './log';
+import { netLog, showToastMessage } from './log';
 import type { ApiClient } from './ApiClient';
+import { TOKEN_KEY } from '../app/appConstants';
+import { t } from '../i18n';
 
 const log = netLog('session');
 
@@ -108,6 +110,10 @@ export class NetSession {
    */
   globalHandlers: Pick<NetSessionHandlers, 'onDuelInvited'> = {};
 
+  /** Set by the gateway connection's onAuthRejected (close code 4401) — see freshToken()'s doc comment. */
+  private gatewayAuthRejected = false;
+  /** freshToken() shows the session-expired toast at most once per NetSession lifetime (avoids spamming it on every retried reconnect against the same unrecoverable token). */
+  private sessionExpiredNotified = false;
   private roomId = '';
   private localSide = -1;
   /** Stored match ticket — reused verbatim on game-plane reconnect. */
@@ -151,6 +157,7 @@ export class NetSession {
         },
         // gateway reconnect: server re-sends room_state for our accountId (no
         // client action needed — GATEWAY_DESIGN §7 default).
+        onAuthRejected: () => { this.gatewayAuthRejected = true; },
       },
     });
   }
@@ -249,10 +256,37 @@ export class NetSession {
    * would re-auth via the device credential and the player would show up as an
    * anonymous device account (wrong nickname / id). Only when there's no token
    * (truly anonymous) do we mint one from the device/wx credential.
+   *
+   * Cached-but-expired tokens (2026-08-03 fix): a JWT can outlive its TTL while still
+   * sitting in `this.api`'s cache — the code above alone would then return that same
+   * dead string forever, so the gateway keeps retrying the identical rejected handshake
+   * (4401) with no way to ever recover. `gatewayAuthRejected` (set by the gateway
+   * connection's onAuthRejected hook) tells us the cached token was actually rejected:
+   *   · No password-login session on this device (no TOKEN_KEY persisted) → safe to mint
+   *     a fresh token via `api.auth(credential)`, since that credential IS this account's
+   *     real identity (anonymous device/wx). This is the common case (most players never
+   *     set a password) and fully self-heals.
+   *   · A real password-login session's token was rejected → we must NOT call
+   *     `api.auth(credential)` here: that authenticates the *anonymous device* identity,
+   *     which would silently swap the player into a different account mid-session. There
+   *     is no token-refresh endpoint for this case, so the honest fix is to tell the
+   *     player once (rather than spin 'reconnecting' forever with no feedback) so they
+   *     can manually log back in.
    */
   private async freshToken(): Promise<string> {
     const existing = this.api.getToken();
-    if (existing) return existing;
+    if (existing && !this.gatewayAuthRejected) return existing;
+    // Only touch platform.storage on the rare "a cached token exists AND the gateway just rejected
+    // it" path — keeps the common fast path (existing token, no rejection yet) exactly as before,
+    // and tolerates a platform/test-double that doesn't populate `storage` (optional-chained).
+    if (existing && this.gatewayAuthRejected && !!this.platform.storage?.getItem(TOKEN_KEY)) {
+      if (!this.sessionExpiredNotified) {
+        this.sessionExpiredNotified = true;
+        showToastMessage(t('common.err.unauthorized'), 'error');
+      }
+      return existing;
+    }
+    this.gatewayAuthRejected = false;
     const res = await this.api.auth(await this.getCredential());
     return res.token;
   }
@@ -376,7 +410,8 @@ export class NetSession {
     log.info('connecting data plane (game)', { gameUrl });
     this.ticket = ticket;
     let everOpened = false;
-    this.game = new NetClient(this.platform, {
+    let client!: NetClient;
+    client = new NetClient(this.platform, {
       url: gameUrl,
       tag: 'game',
       queryParam: 'ticket',
@@ -389,7 +424,16 @@ export class NetSession {
         onServerMsg: (m) => this.routeData(m),
         onStateChange: (s) => {
           if (s === 'open') everOpened = true;
-          else if (s === 'closed' && !everOpened) onFailed?.();
+          else if (s === 'closed') {
+            if (!everOpened) onFailed?.();
+            // Terminal close (graceful or fatal-after-open, e.g. a 4409 eviction mid-match):
+            // drop the dangling reference so a later reportResult()/resume() surfaces as
+            // "not connected" (NetClient.doSend's own warning) instead of silently no-op'ing
+            // forever against a dead socket, and so a resent match_found for this same ticket
+            // isn't ignored by the `this.game && this.ticket===ticket` guard above (2026-08-03
+            // fix). Identity-guarded in case a newer connectGame() already replaced this.game.
+            if (this.game === client) this.game = null;
+          }
           this.handlers.onNetState?.(s);
         },
         // Mid-match game-plane reconnect → ask the server to replay frames past
@@ -399,6 +443,7 @@ export class NetSession {
         },
       },
     });
-    this.game.connect();
+    this.game = client;
+    client.connect();
   }
 }

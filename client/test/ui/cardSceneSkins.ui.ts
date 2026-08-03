@@ -12,6 +12,7 @@ import { InputManager } from '../../src/inputSystem/InputManager';
 import { initI18n, t } from '../../src/i18n';
 import { CardScene, type CardCallbacks } from '../../src/scenes/CardScene';
 import { makeNewSave } from '../../src/game/meta/SaveData';
+import { skinDisplayName } from '../../src/game/meta/skinDefs';
 import { UnitType } from '@nw/engine/types';
 
 const memStore = (() => {
@@ -67,7 +68,7 @@ describe('CardScene — Skins tab (folded in from the retired CollectionScene)',
     const scene = new CardScene(createLayout(1920, 1080), new InputManager(), cb);
 
     tap(scene, t('roster.tab.skins'));
-    tap(scene, 'skin_e1');
+    tap(scene, skinDisplayName('skin_e1'));
 
     expect(equipCalls).toEqual([{ unitType: UnitType.Lena, skinId: 'skin_e1' }]);
   });
@@ -101,12 +102,12 @@ describe('CardScene — Skins tab card grid layout', () => {
     // width" follow-up, CARD_W_TARGET=440) fits 3 cards per row instead of 2 — masonry ties resolve to
     // the lowest column index first, so with all-equal card heights this fills col0/col1/col2 row-major:
     // row 0 = lichuang/chenshou/suyuan, row 1 = max/lena/mara.
-    const lichuang = findLabelPos(scene.container, 'skin_shop_c1')!;
-    const chenshou = findLabelPos(scene.container, 'skin_shop_e1')!;
-    const suyuan = findLabelPos(scene.container, 'skin_shop_r1')!;
-    const max = findLabelPos(scene.container, 'skin_l1')!;
-    const lena = findLabelPos(scene.container, 'skin_e1')!;
-    const mara = findLabelPos(scene.container, 'skin_e2')!;
+    const lichuang = findLabelPos(scene.container, skinDisplayName('skin_shop_c1'))!;
+    const chenshou = findLabelPos(scene.container, skinDisplayName('skin_shop_e1'))!;
+    const suyuan = findLabelPos(scene.container, skinDisplayName('skin_shop_r1'))!;
+    const max = findLabelPos(scene.container, skinDisplayName('skin_l1'))!;
+    const lena = findLabelPos(scene.container, skinDisplayName('skin_e1'))!;
+    const mara = findLabelPos(scene.container, skinDisplayName('skin_e2'))!;
     for (const p of [lichuang, chenshou, suyuan, max, lena, mara]) expect(p).not.toBeNull();
 
     // Column 0: lichuang/max; column 1: chenshou/lena; column 2: suyuan/mara — three distinct x's.
@@ -136,7 +137,7 @@ describe('CardScene — Skins tab card grid layout', () => {
     expect(s.scrollY).toBe(0);
 
     // chenshou's tile (column 1, row 0) stays on-screen both before and after the drag below.
-    const before = findLabelPos(scene.container, 'skin_shop_e1')!;
+    const before = findLabelPos(scene.container, skinDisplayName('skin_shop_e1'))!;
     expect(before).not.toBeNull();
 
     // (150, 150) sits in the column-0 card's portrait area, clear of every tile's hit rect (tiles
@@ -146,7 +147,7 @@ describe('CardScene — Skins tab card grid layout', () => {
     (scene as unknown as { update(dt: number): void }).update(1 / 60);
     expect(s.scrollY).toBeGreaterThan(0);
 
-    const after = findLabelPos(scene.container, 'skin_shop_e1')!;
+    const after = findLabelPos(scene.container, skinDisplayName('skin_shop_e1'))!;
     expect(after.y).toBeLessThan(before.y); // content shifted up as scrollY increased
 
     // Dragging far past the bottom must clamp, not scroll indefinitely.

@@ -510,4 +510,16 @@ describe.skipIf(!mongo)('equipment backend e2e', () => {
     expect(inv['rt1']).toBeTruthy();
     expect(inv['rm1']).toMatchObject({ level: 1 });
   });
+
+  it('reforge rejects a locked material → 409 EQUIP_LOCKED (2026-08-03 fix: only the target\'s lock was checked before; a locked item — locked specifically to protect it — could be destroyed as fuel)', async () => {
+    await seedInstance('rt2', 'wp_pen', 0, { rarity: 'fine' }); // target: fine, needs a common material
+    await seedInstance('rm2', 'wp_pencil', 0, { rarity: 'common', locked: true }); // material: right slot+rarity+level, but locked
+    const res = await reforge('rt2', 'rm2', 'rk-matlock');
+    expect(res.statusCode).toBe(409);
+    expect(body(res).error.code).toBe('EQUIP_LOCKED');
+    // no partial mutation: both items still present, material still locked and not consumed
+    const inv = await readInv();
+    expect(inv['rt2']).toBeTruthy();
+    expect(inv['rm2']).toMatchObject({ locked: true });
+  });
 });

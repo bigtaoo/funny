@@ -140,3 +140,11 @@ Loki `type=mem` 埋点显示：`baseTexTop` 里按 URL 的资源纹理桶（`a.g
 **范围外三个战斗类场景后续也补了自动化测试（2026-08-03，同日第四轮）**：`StatePlayerScene`/`ReplayScene`/`GameScene` 当时只人工读码确认安全，没有实测——`test/ui/gameScenes.ui.ts`（`scenes.ui.ts` 文件头声明的"更重的 render smoke"，已存在，覆盖 `GameScene`/`ReplayScene` 的构造+步进+销毁，但同样只断言"没抛错"，没检查 `container.destroyed` 或 Text 纹理）现已比照 §8.7 的方法补齐：`exercise()` 同步加上 `container.destroyed===true` + Text baseTexture 全部 `.destroyed` 的断言；`StatePlayerScene`（此前完全没有专属测试文件，构造签名是 `(layout, replay: StateReplay, cb)`，不吃 `InputManager`）用 `stateRecorder`+`decodeStateReplay` 的最小 fake-state 手法（同 `test/stateRecorder.test.ts` 的 `mkState` 写法）新增一条真实构造用例，一并纳入这套检查。用 `ReplayScene` 故意去掉 `children:true` 复测过，两个方向（portrait/landscape）都正确报红——校验有效。`GameScene.container` 即 `this.renderer.container`（`GameRenderer`），走的是 §8.6 point 1/2 已修复的路径，这条测试等于把那次修复也纳入了持续回归防护范围。
 
 审计同时确认：全代码库 90 处 `input.onDown/onMove/onUp/onWheel` 订阅、33 个场景的 `destroy()` 存在性均合规，无新增遗漏（唯一发现的口子已如上修复）；`DefenseEditorScene` 缺失 `SaveManager.onSaveChanged` 订阅是数据共享类问题，见 [`client-modules.md`](client-modules.md) §34 同日更新，不是本节内存契约范畴。
+
+### 8.8 结算延时器泄漏（2026-08-03，全 client 代码审查同批次，非 Text 纹理类，与 §5 契约同源）
+
+`GameRenderer` 局末结算（`game_over`/`game_draw`/教程胜利）用 `setTimeout` 延迟 1.5~2s 才调 `onGameEnd`（给玩家看结算横幅的缓冲），但这个计时器句柄此前完全没被记录，`destroy()` 也从不取消它——本质上和 §5 契约第 1 条「注销所有全局 ticker/计时器回调」是同一类问题，只是载体是 `setTimeout` 不是 `Ticker.shared`。后果：玩家若在这个延迟窗口内点投降退出（投降按钮此前也没按 `gameEnded` 门控，可在结算横幅显示后继续点），`onExitToLobby` 立即执行、场景被 `destroy()`，但延迟的 `onGameEnd` 仍会在之后触发，对着已经离开的场景重复回调（联机对局重复 `reportResult`/`analytics.track('game_end')`，PvE 重复 `saveManager.recordClear`）。
+
+**修复**：`GameRendererBase` 新增 `private gameEndTimer` 字段 + `protected scheduleGameEnd(fn, delayMs)` helper（`base.ts`/`events.ts`统一改用它代替裸 `setTimeout`），`destroy()` 里 `clearTimeout(this.gameEndTimer)` + `this.onGameEnd = null`；`input.ts` 的 `handleDown` 顶部补 `if (this.gameEnded) return`，结算横幅出现后不再响应任何输入（含投降）。
+
+**回归**：目前靠 `tsc --noEmit` + 现有 `test/ui/gameScenes.ui.ts`/`sceneManager.ui.ts` 冒烟通过（没有专门断言"延迟计时器被取消"的新测试——如需要更强保证，可仿 §7 的 `sceneManager.ui.ts` 假 ticker 手法，用假 `setTimeout`/`vi.useFakeTimers()` 断言 `destroy()` 后计时器不再触发 `onGameEnd`）。

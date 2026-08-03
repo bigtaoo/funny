@@ -600,7 +600,7 @@ export const en: Record<TranslationKey, string> = {
   'equip.reforged': 'Reforged! Sub-stats updated.',
   'equip.reforgeSelectTitle': 'Select material ({rarity})',
   'equip.reforgeNoMat': 'No eligible material',
-  'equip.confirmReforge': 'Consume [{material}] to reforge [{target}] sub-stats? (Main stat unchanged)',
+  'equip.confirmReforge': 'Consume [{material}] + {coins} coins to reforge [{target}] sub-stats? (Main stat unchanged)',
   'affix.m_atk': 'Attack +{v}%',
   'affix.m_siege': 'Siege +{v}%',
   'affix.m_hp': 'Health +{v}%',
@@ -798,6 +798,7 @@ export const en: Record<TranslationKey, string> = {
   'chat.placeholder': 'Type a message…',
   'chat.send': 'Send',
   'chat.error': 'Failed to send, retry',
+  'chat.sendFailed': 'Not delivered',
   'chat.notFriend': 'Friends only',
   'chat.blocked': 'This player is blocked',
   'chat.rateLimited': 'Sending too fast, wait',
@@ -1394,6 +1395,11 @@ export const en: Record<TranslationKey, string> = {
   // ── PvP Deck Builder (P3, PVP_LOADOUT §8) ────────────────────────────────────
   'pvp.deckBuilder': 'Build Deck',
   'pvp.confirmDeck': 'Confirm Deck',
+  'pvp.err.deckSize': 'Select exactly {size} cards ({count} selected)',
+  'pvp.err.cardLocked': 'Card "{card}" is not unlocked',
+  'pvp.err.duplicateCard': 'Duplicate card "{card}"',
+  'pvp.err.needBuilding': 'Deck must include at least 1 building',
+  'pvp.err.needSpell': 'Deck must include at least 1 spell',
 
   // ── Battle Pass (SE-9) ───────────────────────────────────────────────────────
   'battlepass.title': 'Battle Pass',
@@ -1510,6 +1516,8 @@ export const en: Record<TranslationKey, string> = {
   'event.tasks.ad.watch': 'Watch an ad',
   'event.rewards.title': 'Point Shop',
   'event.rewards.coins': '+{n} coins',
+  'event.rewards.skin': 'Skin {id}',
+  'event.rewards.material': 'Material {id} ×{n}',
   'event.rewards.claim': 'Redeem',
   'event.rewards.claimToast': 'Redeemed! Points left: {n}',
   'event.rewards.claimFailed': 'Redeem failed, please retry',
