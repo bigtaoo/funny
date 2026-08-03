@@ -211,6 +211,8 @@ commercial 此前完全没有 Redis 依赖，本次新增：`config.ts` 补 `NW_
 
 验证：`tsc --noEmit` 全绿；`npm test -w @nw/worldsvc` 52 文件/419 测试全绿（含新建测试用的 mongodb-memory-server，无需改动任何既有用例）。纯 bug 修复，无对外行为/契约变化（`setNationName` 新增的 `region` 参数为可选，默认 `'global'`，不破坏现有调用方）。
 
+**补测（同日）**：为上述 17 处修复逐一补齐回归测试，23 例新增（52→53 文件，419→442 测试）：新建 `test/review-fixes-2026-08-03.e2e.test.ts`（16 例，覆盖除 httpApi 级三处外的全部 14 项——card-removal 退款并发去重、speedupTraining 并发重试、combatMarch 卡牌军返程免兵、advanceMarch 陈旧快照护栏、refundTroops/transferLoot 并发不丢单、shop 每日限购 TOCTOU、nation familyId $unset + 改名审核、push.ts cover 索引原子合并、sect 罢免投票并发计票、spawn.ts 出生点查询过滤）+ `test/httpApi.e2e.test.ts` 补 3 例（active-season 崩溃防护、readJson 上限断连、senderName 降级期净化）+ `test/season-ops.e2e.test.ts` admin 分支补 4 例（allocate/open 数字字段校验）。**每一例都用「暂时切回修复前的 commit（`4aaed19b`）跑一遍确认真的会挂红，再切回修复后确认转绿」的方式验证过**，不是只跑通了事——过程中揪出并重写了两个"自证通过"的假阳性用例（push.ts 原用例的同步 fake 无法重现真实网络延迟竞态，改为断言调用路径改用 `hmergeJsonField` 而非 `hset`；spawn.ts 原用例直接手写了跟修复后代码一致的查询条件而不是真的检验 `pickSpawnTile`，改为 `vi.spyOn` 捕获其实际发出的查询)，以及一个因误解 troopCap 初始值（新账号一开局兵力即满编，非 0）导致的错误断言。
+
 ## rejectIfBanned/publicId 查询加缓存层（2026-07-27，中期项第 4 项）
 
 `rejectIfBanned`（每次 auth + 每次 `/pve/enter`/`/pve/clear` 都查一次 `accounts.flags`/`deletedAt`）和 `resolveByPublicId`（socialsvc 好友/邮件按 publicId 操作时的反查，`/internal/account/by-public-id`）都是已建索引的单文档查询，本身不贵——贵的是跨公网到 Atlas M0 的那一次网络往返，缓存命中直接省掉整趟往返，而不是优化查询计划。新增 `metaserver/src/accountCache.ts` 的 `AccountCache` 类，两个方法各自一张 `TtlMap`：`getBanStatus`（60s TTL，安全网性质——`/ban`/`/unban`/`deleteAccount` 三处写入点已显式调用 `invalidateBanStatus` 立即失效，60s 只是兜底未来某个忘记失效的新写入点）、`getAccountIdByPublicId`（1h TTL，`publicId` 一旦分配永不改变，长 TTL 纯粹是内存卫生，不是过期正确性的考量；未命中永不缓存，避免拼写错误把"查无此人"焊死）。
