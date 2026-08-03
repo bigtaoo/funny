@@ -19,8 +19,12 @@ import { initI18n } from '../../src/i18n';
 
 import { GameScene } from '../../src/scenes/GameScene';
 import { ReplayScene } from '../../src/scenes/ReplayScene';
+import { StatePlayerScene } from '../../src/scenes/StatePlayerScene';
 import { createLocalMatch } from '../../src/app/matchEngine';
-import { getLevel, type Replay } from '../../src/game';
+import { getLevel, type Replay, Side, UnitType, UnitState, BuildingType } from '../../src/game';
+import { stateRecorder } from '../../src/game/replay/StateRecorder';
+import { decodeStateReplay, type StateReplay } from '../../src/game/replay/StateReplay';
+import type { GameState } from '../../src/game';
 
 // In-memory storage so initI18n (which persists the locale) has somewhere to write.
 const memStore = (() => {
@@ -38,13 +42,38 @@ const LANDSCAPE: [number, number] = [1280, 800];
 
 const SEED = 0x1234abcd;
 
-/** Build → step a handful of frames → destroy. Asserts the tree is real and nothing throws. */
+/** Every PIXI.Text baseTexture reachable from `root` (recursing sub-containers) — collect
+ * BEFORE the teardown under test, since a Text's own `.texture` reference goes away on destroy.
+ * Same helper as scenes.ui.ts / campaignMapTextTeardown.ui.ts. */
+function collectTextBaseTextures(root: PIXI.Container): PIXI.BaseTexture[] {
+  const out: PIXI.BaseTexture[] = [];
+  const walk = (c: PIXI.Container): void => {
+    for (const ch of c.children) {
+      if (ch instanceof PIXI.Text) out.push(ch.texture.baseTexture);
+      else if (ch instanceof PIXI.Container) walk(ch);
+    }
+  };
+  walk(root);
+  return out;
+}
+
+/**
+ * Build → step a handful of frames → destroy. Asserts the tree is real, nothing throws, the
+ * container is actually torn down, and every Text canvas texture is actually freed (not just
+ * detached) — same invariants scenes.ui.ts's exercise() checks for the menu/overlay scenes,
+ * extended here to the full-GameRenderer gameplay scenes (2026-08-03; see
+ * claudedocs/client-memory-leak.md §8.7 for why this outcome-based check matters more than a
+ * bare container.destroyed check).
+ */
 function exercise(scene: Scene): void {
   expect(scene.container).toBeInstanceOf(PIXI.Container);
   // A few frames: tick 0 emits the engine's initial-state events (units/buildings
   // spawn), so the first updates are where construction-time render wiring blows up.
   for (let i = 0; i < 8; i++) scene.update(1 / 30);
+  const textBaseTextures = collectTextBaseTextures(scene.container);
   scene.destroy();
+  expect(scene.container.destroyed).toBe(true);
+  expect(textBaseTextures.every((b) => b.destroyed)).toBe(true);
 }
 
 /** A real recorded match: drive a local PvP-vs-AI engine, then snapshot its stream. */
@@ -60,6 +89,49 @@ function recordCampaignReplay(levelId: string, frames: number): Replay {
   const { engine, buildReplay } = createLocalMatch({ level });
   for (let i = 0; i < frames; i++) engine.tick(1 / 30);
   return buildReplay(null);
+}
+
+// ── StatePlayerScene fixture ──────────────────────────────────────────────────
+// StatePlayerScene plays the OTHER replay format (StateReplay, REPLAY_SHARE_DESIGN §2.1) — a
+// dumb entity-state stream, no engine involved. Same minimal fake-GameState harness as
+// test/stateRecorder.test.ts (mkState): capture a couple of frames on the shared recorder
+// singleton, encode, decode back into a StateReplay.
+interface FakeUnit {
+  id: number; unitType: UnitType; side: Side;
+  colExact: number; rowExact: number; hp: number; maxHp: number; state: UnitState;
+}
+interface FakeBuilding {
+  id: number; buildingType: BuildingType; side: Side;
+  col: number; row: number; hp: number; maxHp: number;
+}
+
+function mkState(tick: number, units: FakeUnit[] = [], buildings: FakeBuilding[] = []): GameState {
+  return {
+    elapsedTicks: tick,
+    bottomPlayer: { baseHp: 100 },
+    topPlayer: { baseHp: 100 },
+    board: {
+      units: new Map(units.map((u) => [u.id, u])),
+      buildings: new Map(buildings.map((b) => [b.id, b])),
+    },
+  } as unknown as GameState;
+}
+
+/** A minimal-but-real StateReplay: one unit + one building across a couple of ticks. */
+function recordStateReplay(): StateReplay {
+  stateRecorder.reset();
+  const unit: FakeUnit = {
+    id: 1, unitType: UnitType.Infantry, side: Side.Bottom,
+    colExact: 3, rowExact: 1, hp: 100, maxHp: 100, state: UnitState.Moving,
+  };
+  const building: FakeBuilding = {
+    id: 2, buildingType: BuildingType.Barracks, side: Side.Bottom,
+    col: 1, row: 8, hp: 200, maxHp: 200,
+  };
+  stateRecorder.capture(mkState(0, [unit], [building]));
+  stateRecorder.capture(mkState(1, [{ ...unit, rowExact: 1.5 }], [building]));
+  const enc = stateRecorder.build({ mode: 'pvp' })!;
+  return decodeStateReplay(enc);
 }
 
 for (const [label, [w, h]] of [
@@ -116,6 +188,13 @@ for (const [label, [w, h]] of [
       const replay = recordCampaignReplay('ch1_lv1', 60);
       exercise(
         new ReplayScene(createLayout(w, h), new InputManager(), replay, { onExit() {} }),
+      );
+    });
+
+    it('StatePlayerScene (dumb entity-state replay) builds, plays and destroys', () => {
+      const replay = recordStateReplay();
+      exercise(
+        new StatePlayerScene(createLayout(w, h), replay, { onPlayDemo() {}, onBackToLogin() {} }),
       );
     });
   });
