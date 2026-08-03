@@ -1,7 +1,7 @@
 // worldsvc shared view/response types + service dependency contract.
 // Extracted verbatim from service.ts (god-class split, 2026-07-03). No behavior change:
 // these are the REST response shapes returned by WorldService and the DI surface it is constructed with.
-import type { BuildingKey, TileType, ResourceType, ObstacleKind, MarchKind, SlgShopPriceCache, SiegeOutcome } from '@nw/shared';
+import type { BuildingKey, TileType, ResourceType, ObstacleKind, MarchKind, SlgShopPriceCache, SiegeOutcome, WordlistCache } from '@nw/shared';
 import type { GarrisonEntry } from '@nw/engine';
 import type { WorldCollections, MarchDoc, CardSLGState } from './db';
 import type { WorldRedis } from './redis';
@@ -242,4 +242,6 @@ export interface WorldServiceDeps {
   socialsvc?: WorldSocialsvcClient;
   /** SLG shop price/effect override cache (polls admin, no DB connection; default = always uses SLG_SHOP_ITEMS code defaults). */
   shopPrices?: SlgShopPriceCache;
+  /** Content-moderation word list overlay cache (CONTENT_MODERATION_DESIGN.md §3.2); default = built-in REGION_WORDLISTS only. */
+  wordlists?: WordlistCache;
 }

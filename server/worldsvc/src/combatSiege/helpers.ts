@@ -100,34 +100,77 @@ export function SiegeHelpersMixin<TBase extends SiegeServiceBaseCtor>(Base: TBas
       return doc;
     }
 
-    /** Transfer SIEGE_LOOT_RATE proportion of resources from the defeated player to the attacker (both sides settle + cap). Returns the actual amount looted. */
+    /**
+     * Transfer SIEGE_LOOT_RATE proportion of resources from the defeated player to the attacker (both
+     * sides settle + cap). Returns the actual amount looted.
+     *
+     * 2026-08-03 (worldsvc code review): both sides used to be a stale-read-then-blind-`$set`, so a
+     * defender being looted by two sieges in the same tick (or a defender who is also the attacker of
+     * an unrelated concurrent battle) could have one write's delta silently overwritten by the other's.
+     * Each side is now rev-guarded with a bounded refetch+retry — the defender's loot amount is
+     * recomputed from whichever doc revision actually wins the write, so a retry never grants loot that
+     * wasn't actually debited.
+     */
     override async transferLoot(
       defender: PlayerWorldDoc,
       attacker: PlayerWorldDoc,
       t: number,
     ): Promise<Record<ResourceType, number>> {
-      const defRes = this.core.settle(defender, t);
-      const loot = emptyResources();
+      const MAX_ATTEMPTS = 5;
       // P2 cabinet: protects a fraction of the defender's resources from being looted.
       const protection = cabinetLootProtect(defender.buildings);
       const effectiveLootRate = SIEGE_LOOT_RATE * (1 - protection);
-      for (const rt of RESOURCE_TYPES) loot[rt] = Math.floor((defRes[rt] ?? 0) * effectiveLootRate);
-      const defAfter = emptyResources();
-      for (const rt of RESOURCE_TYPES) defAfter[rt] = Math.max(0, (defRes[rt] ?? 0) - loot[rt]);
-      await this.core.deps.cols.playerWorld.updateOne(
-        { _id: defender._id },
-        { $set: { resources: defAfter, lastTickAt: t }, $inc: { rev: 1 } },
-      );
-      // Attacker receives the loot (merged after settling own production, capped).
-      const atkRes = this.core.settle(attacker, t);
-      for (const rt of RESOURCE_TYPES) atkRes[rt] = Math.min(RESOURCE_CAP, (atkRes[rt] ?? 0) + loot[rt]);
-      await this.core.deps.cols.playerWorld.updateOne(
-        { _id: attacker._id },
-        { $set: { resources: atkRes, lastTickAt: t }, $inc: { rev: 1 } },
-      );
-      // Sync the in-memory attacker copy so subsequent code within the same settlement sees consistent state without re-settling (attacker is not read again after this point).
-      attacker.resources = atkRes;
-      attacker.lastTickAt = t;
+
+      let loot = emptyResources();
+      let defDoc = defender;
+      let defenderCommitted = false;
+      for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+        const defRes = this.core.settle(defDoc, t);
+        loot = emptyResources();
+        for (const rt of RESOURCE_TYPES) loot[rt] = Math.floor((defRes[rt] ?? 0) * effectiveLootRate);
+        const defAfter = emptyResources();
+        for (const rt of RESOURCE_TYPES) defAfter[rt] = Math.max(0, (defRes[rt] ?? 0) - loot[rt]);
+        const result = await this.core.deps.cols.playerWorld.updateOne(
+          { _id: defDoc._id, rev: defDoc.rev },
+          { $set: { resources: defAfter, lastTickAt: t }, $inc: { rev: 1 } },
+        );
+        if (result.matchedCount > 0) { defenderCommitted = true; break; }
+        if (attempt === MAX_ATTEMPTS - 1) break;
+        const fresh = await this.core.deps.cols.playerWorld.findOne({ _id: defDoc._id });
+        if (!fresh) break;
+        defDoc = fresh;
+      }
+      if (!defenderCommitted) {
+        // Never grant loot that was never actually debited from the defender.
+        console.error('[worldsvc] transferLoot: giving up on defender debit after rev-conflict retries', { defenderId: defDoc._id });
+        return emptyResources();
+      }
+
+      // Attacker receives the loot (merged after settling own production, capped) — guarded/retried
+      // independently since the attacker doc can race a *different* concurrent settlement.
+      let atkDoc = attacker;
+      for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+        const atkRes = this.core.settle(atkDoc, t);
+        for (const rt of RESOURCE_TYPES) atkRes[rt] = Math.min(RESOURCE_CAP, (atkRes[rt] ?? 0) + loot[rt]);
+        const result = await this.core.deps.cols.playerWorld.updateOne(
+          { _id: atkDoc._id, rev: atkDoc.rev },
+          { $set: { resources: atkRes, lastTickAt: t }, $inc: { rev: 1 } },
+        );
+        if (result.matchedCount > 0) {
+          // Sync the in-memory attacker copy so subsequent code within the same settlement sees
+          // consistent state without re-settling (attacker is not read again after this point).
+          attacker.resources = atkRes;
+          attacker.lastTickAt = t;
+          break;
+        }
+        if (attempt === MAX_ATTEMPTS - 1) {
+          console.error('[worldsvc] transferLoot: giving up on attacker credit after rev-conflict retries', { attackerId: atkDoc._id });
+          break;
+        }
+        const fresh = await this.core.deps.cols.playerWorld.findOne({ _id: atkDoc._id });
+        if (!fresh) break;
+        atkDoc = fresh;
+      }
       return loot;
     }
 

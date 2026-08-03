@@ -1,7 +1,7 @@
 // worldsvc core — nation primitives (S8-6.5). Peeled out of the WorldCore god-class (2026-07-03).
 // Capital doc init, nation founding/conquest on capital capture, naming, and province lookup
 // (angle-sector ring model, ADR-034 — replaces the old Voronoi-nearest-capital lookup).
-import { capitalIdxAt, provinceIdxAt, SlgError } from '@nw/shared';
+import { capitalIdxAt, provinceIdxAt, SlgError, censorChat, orgNameWidth, ORG_NAME_WIDTH_MIN, ORG_NAME_WIDTH_MAX, type ChatRegion } from '@nw/shared';
 import { WorldCorePush } from './push';
 import type { NationDoc } from '../db';
 
@@ -51,15 +51,33 @@ export class WorldCoreNation extends WorldCorePush {
           foundedAt: this.deps.now(),
           rev: 1, // overwrite, not incremented (simplified; can be changed to $inc later)
         },
-        $unset: { nationName: '' }, // clear the old nation name before the new occupier renames it
+        // Clear the old nation name before the new occupier renames it. familyId must go here too
+        // (2026-08-03 worldsvc code review) — a family-less winner previously left the PREVIOUS
+        // owning family's familyId in place (only $set writes a new one, with no matching $unset),
+        // so a solo conqueror could inherit stale nation-bonus/leaderboard attribution to a family
+        // that no longer controls the nation.
+        $unset: { nationName: '', ...(winnerFamilyId ? {} : { familyId: '' }) },
       },
     );
     return true;
   }
 
   /** Set the nation name (only the capital occupier may name it). */
-  async setNationName(worldId: string, accountId: string, capitalIdx: number, name: string): Promise<void> {
-    if (!name || name.length < 1 || name.length > 10) throw new SlgError('BAD_REQUEST', 'Nation name must be 1–10 characters');
+  async setNationName(worldId: string, accountId: string, capitalIdx: number, name: string, region: ChatRegion = 'global'): Promise<void> {
+    // Width-based bound (matches sect/family display-name treatment, orgNameWidth: full-width/CJK
+    // characters count double) rather than raw UTF-16 .length — a 10-character all-CJK name used to
+    // pass the old length check while rendering roughly twice as wide as intended.
+    const nameWidth = name ? orgNameWidth(name) : 0;
+    if (nameWidth < ORG_NAME_WIDTH_MIN || nameWidth > ORG_NAME_WIDTH_MAX) {
+      throw new SlgError('BAD_REQUEST', `Nation name must be ${ORG_NAME_WIDTH_MIN}–${ORG_NAME_WIDTH_MAX} display units (full-width chars count as 2)`);
+    }
+    // CONTENT_MODERATION_DESIGN.md CM5: a nation name is long-lived/public like a sect/family name, not
+    // ephemeral chat — a hit rejects the rename outright rather than persisting a masked name. This was
+    // previously the one persistent public player-chosen string in the codebase with no moderation check
+    // at all (2026-08-03 worldsvc code review).
+    if (censorChat(name, region, this.wordlists).hit) {
+      throw new SlgError('BAD_REQUEST', 'Name contains disallowed words');
+    }
     const nationId = `nation:${worldId}:${capitalIdx}`;
     const nation = await this.deps.cols.nations.findOne({ _id: nationId });
     if (!nation?.ownerId) throw new SlgError('TILE_NOT_OWNED', 'This capital has no nation yet');

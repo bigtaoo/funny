@@ -14,6 +14,7 @@
 //   - Channel: sect members send/receive messages (persisted with TTL 7 days); real-time push (sect_broadcast)
 //     at scale uses Redis pub/sub; this slice uses REST polling for now
 //     (gatewayClient O(n) direct push is not suitable for ≤900 members, see SLG_DESIGN §9.3).
+import { randomBytes } from 'node:crypto';
 import {
   sectId as makeSectId,
   SECT_FAMILY_CAP,
@@ -324,42 +325,54 @@ export class SectService {
     const { cols } = this.deps;
     const fam = await this.requireFamilyLeader(requesterId);
     if (!fam.sectId) throw new SlgError('NOT_IN_SECT');
-    const sect = await cols.sects.findOne({ _id: fam.sectId });
-    if (!sect) throw new SlgError('NOT_FOUND');
 
     // Nominee's family is not the requester's — this lookup is genuinely a different family (not
-    // eliminable by getMember, comm-audit batch F item 8's remaining exception).
+    // eliminable by getMember, comm-audit batch F item 8's remaining exception). Resolved once outside
+    // the retry loop below since it doesn't depend on the sect doc's current revision.
     const [nominee] = await this.socialsvc.getFamiliesByIds([nomineeFamilyId]);
-    if (!nominee || nominee.sectId !== sect._id) throw new SlgError('NOT_FOUND', 'Nominated family is not in this sect');
 
-    // Accumulate or reset votes (keyed by nominee).
-    let voters: string[];
-    if (sect.removalVote && sect.removalVote.nomineeFamilyId === nomineeFamilyId) {
-      voters = sect.removalVote.voterFamilyIds.includes(fam.familyId)
-        ? sect.removalVote.voterFamilyIds
-        : [...sect.removalVote.voterFamilyIds, fam.familyId];
-    } else {
-      voters = [fam.familyId]; // nominee changed → reset
-    }
+    // 2026-08-03 (worldsvc code review): two family leaders voting concurrently both used to read the
+    // same `sect.removalVote.voterFamilyIds`, each append their own family to a locally-computed copy,
+    // and whichever `updateOne` landed last would silently overwrite the other's vote (lost update) —
+    // rev-guarded now, with a bounded refetch+retry so a losing writer's vote isn't just dropped.
+    const MAX_ATTEMPTS = 5;
+    for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+      const sect = await cols.sects.findOne({ _id: fam.sectId });
+      if (!sect) throw new SlgError('NOT_FOUND');
+      if (!nominee || nominee.sectId !== sect._id) throw new SlgError('NOT_FOUND', 'Nominated family is not in this sect');
 
-    const needed = Math.ceil(sect.memberFamilyCount * SECT_REMOVAL_VOTE_RATIO);
-    if (voters.length >= needed) {
-      // Leadership transition: transfer leader family and leader account to the nominee family.
-      await cols.sects.updateOne(
-        { _id: sect._id },
-        {
-          $set: { leaderFamilyId: nominee.familyId, leaderId: nominee.leaderId },
-          $unset: { removalVote: '' },
-          $inc: { rev: 1 },
-        },
-      );
-      return { passed: true, voteCount: voters.length, needed };
+      // Accumulate or reset votes (keyed by nominee).
+      let voters: string[];
+      if (sect.removalVote && sect.removalVote.nomineeFamilyId === nomineeFamilyId) {
+        voters = sect.removalVote.voterFamilyIds.includes(fam.familyId)
+          ? sect.removalVote.voterFamilyIds
+          : [...sect.removalVote.voterFamilyIds, fam.familyId];
+      } else {
+        voters = [fam.familyId]; // nominee changed → reset
+      }
+
+      const needed = Math.ceil(sect.memberFamilyCount * SECT_REMOVAL_VOTE_RATIO);
+      if (voters.length >= needed) {
+        // Leadership transition: transfer leader family and leader account to the nominee family.
+        const result = await cols.sects.updateOne(
+          { _id: sect._id, rev: sect.rev },
+          {
+            $set: { leaderFamilyId: nominee.familyId, leaderId: nominee.leaderId },
+            $unset: { removalVote: '' },
+            $inc: { rev: 1 },
+          },
+        );
+        if (result.matchedCount > 0) return { passed: true, voteCount: voters.length, needed };
+      } else {
+        const result = await cols.sects.updateOne(
+          { _id: sect._id, rev: sect.rev },
+          { $set: { removalVote: { nomineeFamilyId, voterFamilyIds: voters } }, $inc: { rev: 1 } },
+        );
+        if (result.matchedCount > 0) return { passed: false, voteCount: voters.length, needed };
+      }
+      if (attempt === MAX_ATTEMPTS - 1) throw new SlgError('REV_CONFLICT', 'Concurrent vote, please retry');
     }
-    await cols.sects.updateOne(
-      { _id: sect._id },
-      { $set: { removalVote: { nomineeFamilyId, voterFamilyIds: voters } } },
-    );
-    return { passed: false, voteCount: voters.length, needed };
+    throw new SlgError('REV_CONFLICT', 'Concurrent vote, please retry');
   }
 
   /**
@@ -384,7 +397,11 @@ export class SectService {
     const sectId = mem.sectId;
     const ts = this.deps.now();
     const seq = ++msgSeq;
-    const msgId = `sm:${sectId}:${ts}:${seq}`;
+    // 2026-08-03 (worldsvc code review): same fix as nationChannelService.ts — `msgSeq` is only
+    // unique within a single process, and worldsvc fans out across multiple instances (Redis pub/sub
+    // for cross-instance push), so a random suffix is added to make an _id collision across instances
+    // astronomically unlikely without needing cross-instance coordination.
+    const msgId = `sm:${sectId}:${ts}:${seq}:${randomBytes(4).toString('hex')}`;
 
     // Resolve display name + title from meta (source of truth for renames); best-effort, falls back
     // to the client-supplied senderName if meta is unavailable or profile not found — a stale/incorrect

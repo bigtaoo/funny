@@ -96,6 +96,7 @@ async function main(): Promise<void> {
     mail,
     socialsvc,
     shopPrices,
+    wordlists,
     mapW: SLG_MAP_W,
     mapH: SLG_MAP_H,
     now: () => Date.now(),

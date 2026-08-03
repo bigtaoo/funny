@@ -26,7 +26,39 @@ export interface WorldRedis {
   // the same worldId (see WorldCorePush.clearSpatialIndexes). Optional so existing test fakes that only
   // exercise the per-field hset/hget/hdel occupancy/coverage paths don't all need a stub implementation.
   del?(key: string): Promise<unknown>;
+  /**
+   * Atomically merge one entry into (or remove one entry from) a JSON-object stored at a single hash
+   * field, running server-side so the whole read-modify-write is one atomic Redis operation
+   * (2026-08-03 worldsvc code review): `core/push.ts`'s addCover/removeCover used to do a plain
+   * hget-then-hset, so two sources registering overlapping 3x3 footprints concurrently could lose one
+   * source's entry (last writer wins on the whole field). `entryJson` null removes `entryKey` from the
+   * map instead of setting it. Optional — falls back to the pre-existing non-atomic path when absent
+   * (e.g. in-memory test fakes, which have no real concurrency to race against).
+   */
+  hmergeJsonField?(key: string, field: string, entryKey: string, entryJson: string | null): Promise<unknown>;
 }
+
+/** Bounded wait for the initial connection outcome (see doc comment on connectRedis below). */
+const INITIAL_CONNECT_TIMEOUT_MS = 5000;
+
+const MERGE_JSON_FIELD_SCRIPT = `
+local cur = redis.call('HGET', KEYS[1], ARGV[1])
+local map = {}
+if cur then map = cjson.decode(cur) end
+if ARGV[3] == '' then
+  map[ARGV[2]] = nil
+else
+  map[ARGV[2]] = cjson.decode(ARGV[3])
+end
+local isEmpty = true
+for _ in pairs(map) do isEmpty = false break end
+if isEmpty then
+  redis.call('HDEL', KEYS[1], ARGV[1])
+else
+  redis.call('HSET', KEYS[1], ARGV[1], cjson.encode(map))
+end
+return 1
+`;
 
 export async function connectRedis(url: string | undefined): Promise<WorldRedis | null> {
   if (!url) return null;
@@ -37,7 +69,50 @@ export async function connectRedis(url: string | undefined): Promise<WorldRedis 
     const Redis = mod.default ?? mod;
     const client = new Redis(url, { lazyConnect: false, maxRetriesPerRequest: 3 });
     client.on('error', (e: Error) => console.error('[world-redis] error:', e.message));
-    return client as WorldRedis;
+
+    // 2026-08-03 (worldsvc code review): this used to resolve immediately after construction without
+    // waiting for the connection to actually succeed — during a real Redis outage at boot, index.ts
+    // still logged `redis=on` and every occ/cover/pub-sub call then silently failed from that point on,
+    // a false-positive health signal that misleads on-call debugging. Wait (bounded) for the first
+    // ready/error signal before deciding what to return. Trade-off: a Redis that is merely slow to
+    // become ready (recovers a few seconds after this timeout) now leaves worldsvc degraded for the
+        // rest of the process's life instead of self-healing once ioredis's connection completes — judged
+    // acceptable since every degraded-Redis code path in this service is already designed to run
+    // indefinitely without it (occ/cover/channel fan-out all silently no-op or fall back).
+    const ready = await new Promise<boolean>((resolve) => {
+      const onReady = () => { cleanup(); resolve(true); };
+      const onError = () => { cleanup(); resolve(false); };
+      const timer = setTimeout(() => { cleanup(); resolve(false); }, INITIAL_CONNECT_TIMEOUT_MS);
+      const cleanup = () => {
+        clearTimeout(timer);
+        client.off('ready', onReady);
+        client.off('error', onError);
+      };
+      client.once('ready', onReady);
+      client.once('error', onError);
+    });
+    if (!ready) {
+      console.error(
+        `[world-redis] Not ready within ${INITIAL_CONNECT_TIMEOUT_MS}ms (url=${url}). ` +
+          `worldsvc degraded (march scheduling falls back to Mongo, channels disabled).`,
+      );
+      client.disconnect();
+      return null;
+    }
+
+    const wrapped: WorldRedis = {
+      publish: (channel, message) => client.publish(channel, message),
+      hset: (key, field, value) => client.hset(key, field, value),
+      hget: (key, field) => client.hget(key, field),
+      hdel: (key, ...fields) => client.hdel(key, ...fields),
+      quit: () => client.quit(),
+      del: (key) => client.del(key),
+      // See WorldRedis.hmergeJsonField doc comment — closes the addCover/removeCover read-modify-write
+      // race by running the merge server-side in a single atomic Lua script.
+      hmergeJsonField: (key, field, entryKey, entryJson) =>
+        client.eval(MERGE_JSON_FIELD_SCRIPT, 1, key, field, entryKey, entryJson ?? ''),
+    };
+    return wrapped;
   } catch (e) {
     console.error(
       `[world-redis] Failed to connect to Redis (url=${url}): ${(e as Error).message}. ` +

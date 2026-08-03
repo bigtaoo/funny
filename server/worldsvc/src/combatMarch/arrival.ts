@@ -64,6 +64,21 @@ export function ArrivalMixin<TBase extends MarchServiceBaseCtor>(Base: TBase): T
      */
     private async advanceMarch(m: MarchDoc, t: number): Promise<boolean> {
       const { cols } = this.core.deps;
+      // 2026-08-03 (worldsvc code review): `m` is a snapshot from the batch scan in processDueArrivals.
+      // If an earlier march's encounter this same tick destroyed this march (as someone else's occ
+      // resident, via resolveFieldEncounter) or a concurrent recall/instant-return claimed it, `m` here
+      // is stale — advancing it anyway would still run the per-step occupancy writes below and register
+      // a brand-new occ entry for a MarchDoc that no longer exists, permanently leaking it (nothing will
+      // ever clear an occ id whose owning doc is gone). Re-verify against the latest doc before doing
+      // any work, and use it in place of the stale snapshot for everything that follows.
+      const live = await cols.marches.findOne({ _id: m._id, status: 'marching' });
+      if (!live) return true; // already removed this batch by a concurrent encounter/recall — nothing to do
+      if (!live.path || live.stepIndex == null || live.nextStepAt == null) {
+        // No longer a stepping march (e.g. a concurrent recall $unset the cursor and flipped it to a
+        // 'return' leg) — let it be picked up as a legacy/return arrival once its arriveAt is due.
+        return true;
+      }
+      m = live;
       const path = m.path!;
       const last = path.length - 1;
       let idx = m.stepIndex!;
@@ -233,7 +248,12 @@ export function ArrivalMixin<TBase extends MarchServiceBaseCtor>(Base: TBase): T
       if (!pw) return; // player state missing (should not happen); troops are lost with it; exit safely.
 
       if (m.kind === 'return') {
-        await refundTroops(this.core, pw, m.troops, t);
+        // A card-army team's real strength lives entirely in cardState.currentTroops and never touched
+        // playerWorld.troops on departure (§CC-3) — m.troops degenerates to "card count" for such a
+        // march, so crediting it to the pool on return would be a free-troops dupe. Every other refund
+        // site in this file (applyMove, the reinforce-miss branch below) checks hasCardArmy first.
+        const hasCardArmy = (m.army ?? []).some((e) => !!e.cardInstanceId);
+        if (!hasCardArmy) await refundTroops(this.core, pw, m.troops, t);
         void this.core.pushMarch(m.ownerId, this.core.marchView({ ...m, status: 'recalled' }));
         return;
       }
