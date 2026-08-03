@@ -1744,3 +1744,17 @@ cols.tiles.find({ worldId, type: 'base', ownerId: { $nin: excludeOwners } })
 2. **`/social/player/{accountId}/rank`（`getPlayerRank`）声明了但从未实现**——契约里一直有这条路径，`routes.gen.ts` 也照常生成了类型，但 `httpApi.ts` 里根本没有匹配这条 path 的分支，实际调用会落到兜底的 `endpoint not found`（404），永远不会走到契约里描述的 200 成功响应。客户端也从未调用过它（`getProfileExtra` 是实际在用的等价接口）。这不是本次任务能单方面拍板修的东西（是该补实现，还是该把这条路径从契约里删掉，是产品/契约治理层面的决定），只在 yml 里加了行内 `summary` 注释记录现状，留给用户决定。
 
 **验证**：`server/socialsvc && npm run gen:api:social`（regen `routes.gen.ts`）+ `gen:api:social:check`（drift check，35 operations / 18 schemas，通过）；`server` 全量 `npm run typecheck`（11 个 workspace 全绿，其中 `@nw/shared`/`@nw/engine` 在这个新 worktree 里之前没 build 过，顺手 build 了一次，跟本次改动无关）；`client && npm run rest:gen` + `npx tsc --noEmit` 全绿；`socialsvc` `npx vitest run`（7 文件 / 89 例）全绿。未做可视化验证——纯契约/类型层改动，不影响任何渲染路径。
+
+---
+
+## 61. §60 遗留的 `getPlayerRank` 死路由——拍板删除，而非补实现（2026-08-03，用户要求拍板）
+
+**背景**：§60 记录时把 `/social/player/{accountId}/rank`（`getPlayerRank`）标成"留给用户决定"；用户随后明确要求"拍板一下"，把决定权交回来。
+
+**调查**：追了 `getPlayerRank` 这条链路的完整历史，而不是只看当前状态——`SOCIAL_DESIGN.md`"资料卡统一改造（2026-07-23）"那段记录着：ProfilePopup 曾经在好友列表/家族成员/世界频道三处各自手动拼 rank/elo/family/sect 字段，其中家族场景是"手动异步 `getPlayerRank`"；2026-07-23 那次改造把三处全部收敛进统一的 `GET /social/profile/:publicId/extra`（`getProfileExtra`），三处手动调用（含家族场景的 `getPlayerRank`）当时就都删掉了。`server/socialsvc/src/metaClient.ts` 里的 `getPlayerRank(accountId)`（供 socialsvc 内部调用 meta `/internal/player?accountId=` 的封装方法）在这轮统一改造之后就已经没有任何调用点——`grep '\.getPlayerRank('` 全仓库零命中，是个从 2026-07-23 起就孤立的方法；契约里的 `/social/player/{accountId}/rank` 路由则是更早遗留、从未真正对接到 `httpApi.ts` 的路由声明。也就是说 `getPlayerRank` 提供的能力（按 accountId 查 rank/elo）不是"还没做"，而是"做过、后来被 `getProfileExtra` 整体取代、旧路径没人回来清理"。
+
+**拍板：删除，不补实现**。理由：①功能已被 `getProfileExtra` 完整覆盖（后者是 rank/elo 的超集 schema，外加 familyName/sectName）；②补实现等于把一条已经被验证多余的旧接口复活，纯增加维护面、零消费方；③其内部依赖的 `metaClient.getPlayerRank(accountId)` 本身已是孤儿代码，实现它还得先把这段孤儿代码找回意义——不划算。
+
+**实现**：从 `openapi-social.yml` 删除 `/social/player/{accountId}/rank` 路径 + 未再被引用的 `PlayerRankView` schema（确认 `ProfileExtraView` 是独立 schema，不 `$ref` 它，删除安全）；`server/socialsvc/src/metaClient.ts` 删除 `SocialMetaClient.getPlayerRank` 接口方法 + `HttpSocialMetaClient`/`nullSocialMetaClient` 两处实现（保留 `getPlayerRankByPublicId`，这条仍是 `getProfileExtra` 的唯一数据来源）；`server/socialsvc/test/harness.ts` 的 `FakeSocialMetaClient` 同步删除假实现。`metaserver` 的 `/internal/player?accountId=|publicId=` 端点本身不动——`grep 'internal/player'` 确认 `gateway/src/metaClient.ts`（自己的 ELO 查询用途）和 `admin/src/clients/player.ts` 仍在用 accountId 变体，只是 socialsvc 自己的封装方法是孤儿，不影响这条端点对其它服务的价值。
+
+**验证**：`gen:api:social`（34 operations / 17 schemas，比 §60 的 35/18 各少 1）+ `gen:api:social:check` 通过；`server` 全量 `npm run typecheck`（11 workspace 全绿，含 gateway/admin 未受影响）；`client` `npm run rest:gen` + `npx tsc --noEmit` 全绿；`socialsvc` `npx vitest run`（7 文件 / 89 例，用例数不变——`getPlayerRank` 本来就没有专属测试，删的是从未被测过的死代码）全绿。未做可视化验证——纯契约/死代码清理，不涉及任何渲染路径。
