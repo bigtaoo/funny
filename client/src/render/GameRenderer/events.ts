@@ -40,6 +40,8 @@ export function EventMixin<TBase extends GameRendererBaseCtor>(Base: TBase): TBa
     projectileSprites: Map<number, PIXI.Container> = new Map();
     /** Idle projectile containers ready for reuse. */
     projectilePool: PIXI.Container[] = [];
+    /** In-flight escort fade/blink ticks registered on PIXI.Ticker.shared — drained in destroy(). */
+    escortEffectTicks: Set<() => void> = new Set();
 
     vignetteGfx!:   PIXI.Graphics;
     vignetteAlpha  = 0;
@@ -208,12 +210,12 @@ export function EventMixin<TBase extends GameRendererBaseCtor>(Base: TBase): TBa
             elapsed += PIXI.Ticker.shared.deltaMS / 1000;
             sprite.alpha = Math.max(0, 1 - elapsed / 0.5);
             if (elapsed >= 0.5) {
-              PIXI.Ticker.shared.remove(tick);
+              this.removeEscortEffectTick(tick);
               sprite.parent?.removeChild(sprite);
               sprite.destroy();
             }
           };
-          PIXI.Ticker.shared.add(tick);
+          this.addEscortEffectTick(tick);
           break;
         }
         case 'escort_arrived': {
@@ -224,15 +226,27 @@ export function EventMixin<TBase extends GameRendererBaseCtor>(Base: TBase): TBa
           const tick = (): void => {
             sprite.alpha = frames % 3 === 0 ? 0.2 : 1;
             if (--frames <= 0) {
-              PIXI.Ticker.shared.remove(tick);
+              this.removeEscortEffectTick(tick);
               sprite.parent?.removeChild(sprite);
               sprite.destroy();
             }
           };
-          PIXI.Ticker.shared.add(tick);
+          this.addEscortEffectTick(tick);
           break;
         }
       }
+    }
+
+    /** Register an escort fade/blink tick on the shared ticker, tracked for destroy()-time cleanup. */
+    private addEscortEffectTick(tick: () => void): void {
+      this.escortEffectTicks.add(tick);
+      PIXI.Ticker.shared.add(tick);
+    }
+
+    /** Unregister an escort fade/blink tick (called on natural completion, and from destroy()). */
+    private removeEscortEffectTick(tick: () => void): void {
+      PIXI.Ticker.shared.remove(tick);
+      this.escortEffectTicks.delete(tick);
     }
 
     /**

@@ -96,6 +96,7 @@ export class TitlesScene implements Scene {
     this.destroyed = true;
     this.unsubs.forEach((u) => u());
     tearDownChildren(this.container);
+    this.container.destroy({ children: true });
   }
 
   private handleDown(x: number, y: number): void {
