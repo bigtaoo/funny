@@ -380,6 +380,20 @@ describe('ShopScene — material bundles (kind="material", ECONOMY_NUMBERS §6.5
     expect(before(lead!, skin!)).toBe(true);
     scene.destroy();
   });
+
+  it('tapping Buy calls cb.buy with the shop catalog id ("mat_buy_scrap"), not the granted material id ("scrap") — regression guard for the itemId/grants mixup fixed server-side in shopBuy', async () => {
+    const buyIds: string[] = [];
+    const scene = buildShop({
+      loadItems: async () => [{ id: 'mat_buy_scrap', cost: 20, kind: 'material', grants: 'scrap', qty: 10 }],
+      buy: async (itemId: string) => { buyIds.push(itemId); return { ok: true }; },
+    });
+    await flush();
+    tapLabel(scene, t('shop.buy'));
+    await flush();
+    await flush();
+    expect(buyIds).toEqual(['mat_buy_scrap']);
+    scene.destroy();
+  });
 });
 
 // Regression coverage for the 2026-07-17 fix: the Coins tab stamped a "首充双倍" (first-purchase 2×)
