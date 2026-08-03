@@ -593,6 +593,8 @@ components:
           type: string
         grants:
           type: string
+        qty:
+          type: integer
     GachaPool:
       type: object
       required:

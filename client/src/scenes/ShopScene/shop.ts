@@ -163,8 +163,9 @@ export function ShopMixin<TBase extends ShopSceneBaseCtor>(Base: TBase): TBase &
         }
       }
 
-      // Consumable items (e.g. enhance protection) come first, then skins (cosmetic → brush glyph;
-      // real skin art pending). Consumables sort ahead of skins regardless of their order in this.items.
+      // Consumable items (e.g. enhance protection) come first, then material bundles (gold→material
+      // exchange, ECONOMY_NUMBERS §6.5), then skins (cosmetic → brush glyph; real skin art pending).
+      // Each kind sorts ahead of the next regardless of their order in this.items.
       if (this.items && this.items.length > 0) {
         const owned = new Set(this.cb.getOwnedSkins());
         for (const item of this.items) {
@@ -182,7 +183,22 @@ export function ShopMixin<TBase extends ShopSceneBaseCtor>(Base: TBase): TBase &
           });
         }
         for (const item of this.items) {
-          if (item.kind === 'item') continue;
+          if (item.kind !== 'material') continue;
+          // Material bundles aren't "owned" either (stackable, re-buyable up to the server's daily cap —
+          // a 400 here just means "try again tomorrow", surfaced via the normal onBuy error toast).
+          const canBuy = !busy && this.cb.getCoins() >= item.cost;
+          const materialName = t(`material.${item.grants}` as TranslationKey);
+          const matTitle = t('shop.item.material.title', { name: materialName, qty: item.qty ?? 1 });
+          specs.push({
+            icon: (item.grants as IconKind) ?? 'scrap', iconColor: C.accent,
+            title: matTitle,
+            lines: [{ text: t('shop.item.material.desc'), color: C.mid }],
+            coinAmount: item.cost,
+            buttons: [{ label: t('shop.buy'), enabled: canBuy, primary: true, fn: () => void this.onBuy(item.id, matTitle) }],
+          });
+        }
+        for (const item of this.items) {
+          if (item.kind === 'item' || item.kind === 'material') continue;
           const isOwned = owned.has(item.grants ?? item.id);
           const canBuy = !isOwned && !busy && this.cb.getCoins() >= item.cost;
           const skinTitle = skinDisplayName(item.id);

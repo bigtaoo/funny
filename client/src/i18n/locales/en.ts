@@ -387,6 +387,8 @@ export const en: Record<TranslationKey, string> = {
   'shop.itemLabel': 'Item',
   'shop.item.protect_enhance.name': 'Enhance Protection Stone',
   'shop.item.protect_enhance.desc': "Prevents material loss on your next failed enhancement (coins still consumed)",
+  'shop.item.material.title': '{name} ×{qty}',
+  'shop.item.material.desc': 'Limited daily purchases',
   'shop.loading': 'Loading…',
   'shop.processing': 'Processing',
   'shop.empty': 'No items',

@@ -443,6 +443,12 @@ export async function deliverOrder(
       await commercial.orderDelivered({ orderId: order._id });
       return { save };
     }
+    if (shopDef?.kind === 'material') {
+      const materialInc: Record<string, number> = { [shopDef.grants]: shopDef.qty ?? 1 };
+      const save = await deliverMailGrant(cols, accountId, order._id, [], {}, coinsAfter, now, materialInc);
+      await commercial.orderDelivered({ orderId: order._id });
+      return { save };
+    }
     const newSkins = owned.includes(itemId) ? [] : [itemId];
     const save = await deliverGrant(cols, accountId, order._id, newSkins, coinsAfter, pityPatch, now);
     await commercial.orderDelivered({ orderId: order._id });
