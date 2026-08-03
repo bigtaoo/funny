@@ -249,4 +249,26 @@ describe('MetaService.clientAnomaly (full reporting: not restricted by targeting
     expect(over.data.accepted).toBe(0);
     expect(fetchMock).toHaveBeenCalledTimes(30); // 31st call was not forwarded
   });
+
+  it('regression (2026-08-03 fix): oversized publicId/platform are length-capped before being embedded in the Loki line', async () => {
+    // Root cause: msg/type/buildVersion were all length-capped, but publicId/platform were not — and this
+    // endpoint is deliberately exempt from the allowPublicIds allowlist gate (anomalies must be reportable
+    // before login), so an oversized publicId here would get embedded verbatim into every line pushed to
+    // Loki, multiplying the payload by however many events are in the batch (up to 200).
+    const svc = makeService(null, 'http://loki/push');
+    const hugePublicId = 'p'.repeat(500);
+    const hugePlatform = 'x'.repeat(200);
+    const out = (await svc.clientAnomaly(
+      req({ body: { publicId: hugePublicId, platform: hugePlatform, events: [{ type: 'mem', msg: 'over', ts: 1 }] } }),
+      reply(),
+    )) as { data: { accepted: number } };
+    expect(out.data.accepted).toBe(1);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const payload = fetchMock.mock.calls[0][1] as { body: string };
+    const line = JSON.parse(payload.body).streams[0].values[0][1] as string;
+    const publicIdMatch = /publicId=(\S+)/.exec(line);
+    const platformMatch = /platform=(\S+)/.exec(line);
+    expect(publicIdMatch?.[1]?.length).toBe(64);
+    expect(platformMatch?.[1]?.length).toBe(32);
+  });
 });
