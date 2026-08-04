@@ -1216,7 +1216,11 @@ describe('CardScene fuse panel — fuseRingOpen blocks external re-render from s
     const openDetailSpy = vi.spyOn(priv(scene), 'openDetail');
     // An unrelated save mutation elsewhere (e.g. an overlay scene) fires the listener — this must NOT
     // reopen the plain detail popup over the still-in-progress ring.
-    savedListener?.();
+    // (Indirected through a closure: reading `savedListener` in the same scope as its `let` declaration
+    // makes TS's control-flow analysis miss the reassignment — it happens inside the onSaveChanged
+    // callback above — and narrow the read back to the initializer's `null`, i.e. `never` when called.)
+    const fireSavedListener = (): void => savedListener?.();
+    fireSavedListener();
 
     expect(openDetailSpy).not.toHaveBeenCalled();
     expect(findLabelPos(modalLayerOf(scene), t('roster.fuseTitle'))).not.toBeNull(); // ring still standing
