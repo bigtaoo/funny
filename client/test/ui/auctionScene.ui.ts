@@ -18,7 +18,7 @@ import { makeNewSave } from '../../src/game/meta/SaveData';
 import type { SaveData, EquipmentInstance, CardInstance } from '../../src/game/meta/SaveData';
 import { setToastSink } from '../../src/net/log';
 import { cardInstanceArtUrl } from '../../src/render/cardArt';
-import { skinEquipKey } from '../../src/game/meta/skinDefs';
+import { skinEquipKey, skinDisplayName } from '../../src/game/meta/skinDefs';
 import { UnitType } from '@nw/engine/types';
 
 // Every export passes through untouched except cardInstanceArtUrl, wrapped in vi.fn (keeping its
@@ -159,6 +159,9 @@ describe('AuctionScene — errorMsg()', () => {
     expect(scene.errorMsg(new WorldApiError('AUCTION_CLOSED', 'x'))).toBe(t('auction.err.closed'));
     expect(scene.errorMsg(new WorldApiError('NOT_DESIGNATED_BUYER', 'x'))).toBe(t('auction.err.notDesignatedBuyer'));
     expect(scene.errorMsg(new WorldApiError('BID_TOO_LOW', 'x'))).toBe(t('auction.err.bidTooLow'));
+    // Skin listing guards (ITEM_IDENTITY_DESIGN.md, 2026-08-04): mirrors metaserver's escrowSkin errors.
+    expect(scene.errorMsg(new WorldApiError('SKIN_IN_USE', 'x'))).toBe(t('auction.err.skinInUse'));
+    expect(scene.errorMsg(new WorldApiError('SKIN_NOT_FOUND', 'x'))).toBe(t('auction.err.closed'));
     scene.destroy();
   });
 
@@ -179,6 +182,41 @@ describe('AuctionScene — errorMsg()', () => {
     const scene = buildScene();
     expect(scene.errorMsg(new Error('boom'))).toBe('Error: boom');
     expect(scene.errorMsg('plain string')).toBe('plain string');
+    scene.destroy();
+  });
+});
+
+// ── itemKind() / auctionLabel() — item-class → glyph and market-cell title resolution ──────────
+// (2026-08-04, ITEM_IDENTITY_DESIGN.md: added the 'skin' branch when the picker was wired up; also
+// covers the pre-existing material/equipment/card branches, which had no direct coverage before.)
+
+describe('AuctionScene — itemKind()', () => {
+  it('resolves each item class to its glyph, materials to their own icon, and an unrecognized type to the material fallback', () => {
+    const scene = buildScene();
+    expect(scene.itemKind('equipment')).toBe('armor');
+    expect(scene.itemKind('card')).toBe('cards');
+    expect(scene.itemKind('skin')).toBe('brush');
+    expect(scene.itemKind('material', 'lead')).toBe('lead');
+    expect(scene.itemKind(undefined)).toBe('scrap'); // material defaults to scrap with no material given
+    scene.destroy();
+  });
+});
+
+describe('AuctionScene — auctionLabel()', () => {
+  it('titles a skin listing with its display name, falling back to the generic filter label with no skinId', () => {
+    const scene = buildScene();
+    expect(scene.auctionLabel(makeAuction({ itemType: 'skin', item: { skinId: 'skin_e2' } })))
+      .toBe(skinDisplayName('skin_e2'));
+    expect(scene.auctionLabel(makeAuction({ itemType: 'skin', item: {} }))).toBe(t('auction.filterSkin'));
+    scene.destroy();
+  });
+
+  it('titles material/equipment/card listings consistently with their own class', () => {
+    const scene = buildScene();
+    expect(scene.auctionLabel(makeAuction({ itemType: 'material', item: { material: 'lead' }, qty: 3 })))
+      .toBe(`${t('auction.lead')} ×3`);
+    expect(scene.auctionLabel(makeAuction({ itemType: 'equipment', item: {} }))).toBe(t('auction.filterEquipment'));
+    expect(scene.auctionLabel(makeAuction({ itemType: 'card', item: {} }))).toBe(t('auction.filterCard'));
     scene.destroy();
   });
 });

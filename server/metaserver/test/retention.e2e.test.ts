@@ -3,7 +3,7 @@
 // after fastify-openapi-glue serialization — regression test for the 2026-06-24 check-in calendar `+undefined` bug (RETENTION_DESIGN §10.1).
 // Requires `cd server && docker compose up -d` + prior `tsc -b` (imports from dist).
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
-import { createMongo, type JwtConfig, type MongoHandle } from '@nw/shared';
+import { createMongo, makeMonthKey, type JwtConfig, type MongoHandle } from '@nw/shared';
 import type { FastifyInstance } from 'fastify';
 import { buildApp } from '../dist/app.js';
 import type { CommercialClient, UndeliveredOrder } from '../dist/commercialClient.js';
@@ -140,22 +140,34 @@ describe.skipIf(!mongo)('meta retention e2e', () => {
     let last: ReturnType<typeof body> | undefined;
     let expectedCoins = 0;
     for (let day = 1; day <= 30; day++) {
+      // day-14's card milestone can draw a defId the account already has (e.g. one of the 3 onboarding
+      // starters) — snapshot pre-existing card ids so the provenance check below targets the newly
+      // granted instance specifically, not an unrelated pre-existing card that happens to share a defId.
+      const prevCardIds = day === 14 ? new Set(Object.keys(last?.data.save.cardInv ?? {})) : undefined;
       last = body(await app.inject({ method: 'POST', url: '/retention/checkin', headers: auth() }));
       expect(last.ok).toBe(true);
       expect(last.data.day).toBe(day);
       if (day === 14) {
         expect(last.data.reward.kind).toBe('card');
         expect(typeof last.data.reward.id).toBe('string');
-        const cards: Array<{ defId: string }> = Object.values(last.data.save.cardInv ?? {});
-        expect(cards.some((c) => c.defId === last!.data.reward.id)).toBe(true);
+        const cards: Array<{ id: string; defId: string; sourceType?: string; obtainedAt?: number }> = Object.values(last.data.save.cardInv ?? {});
+        const granted = cards.find((c) => c.defId === last!.data.reward.id && !prevCardIds!.has(c.id));
+        expect(granted).toBeDefined();
         expect(last.data.save.inventory.skins).not.toContain(last.data.reward.id);
+        // Provenance (ITEM_IDENTITY_DESIGN.md, 2026-08-04): checkin card grants are tagged
+        // `checkin:<monthKey>` with the grant timestamp — fixedNow keeps the whole run inside January.
+        expect(granted!.sourceType).toBe(`checkin:${makeMonthKey(fakeNow)}`);
+        expect(granted!.obtainedAt).toBe(fakeNow);
       }
       if (day === 30) {
         expect(last.data.reward.kind).toBe('equipment');
         expect(typeof last.data.reward.id).toBe('string');
-        const equips: Array<{ defId: string }> = Object.values(last.data.save.equipmentInv ?? {});
-        expect(equips.some((e) => e.defId === last!.data.reward.id)).toBe(true);
+        const equips: Array<{ defId: string; sourceType?: string; obtainedAt?: number }> = Object.values(last.data.save.equipmentInv ?? {});
+        const granted = equips.find((e) => e.defId === last!.data.reward.id);
+        expect(granted).toBeDefined();
         expect(last.data.save.inventory.skins).not.toContain(last.data.reward.id);
+        expect(granted!.sourceType).toBe(`checkin:${makeMonthKey(fakeNow)}`);
+        expect(granted!.obtainedAt).toBe(fakeNow);
       }
       // Milestone bonusCoins (R1b, 2026-08-01): delivered to save.wallet.coins independently of
       // the primary reward's own delivery path (material/card/equipment).
