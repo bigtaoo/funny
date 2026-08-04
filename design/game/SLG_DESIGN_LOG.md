@@ -1772,3 +1772,13 @@ cols.tiles.find({ worldId, type: 'base', ownerId: { $nin: excludeOwners } })
 **结果**：31 个新用例**首次运行全部一次通过**——说明 §60 逐行追踪 `httpApi.ts`/`familyService.ts`/`friendService.ts`/`mailService.ts` 得出的状态码全部准确，没有因为静态追踪漏看分支而记错。`getPlayerRank`（§61 已删）没有补回归测试——它从来没工作过，删除不存在"防止行为倒退"的需求，跳过。
 
 **验证**：`socialsvc` `npx tsc --noEmit` 全绿；`npx vitest run`（8 文件 / 120 例，89 旧 + 31 新）全绿。未做可视化验证——纯 server 测试改动。
+
+## 63. §56 Shop 面板图标细节不足——`troop_speedup` 拆出专属沙漏图标 + `armor` 补铆钉细节（2026-08-04，用户看截图提出）
+
+**背景**：用户看 §56 做的 Shop 面板截图反馈"所有物品看起来一样，但是功能上却差别很大"。复核 `SHOP_KIND_ICON`（[`worldmap/WorldMapPanels/shop.ts`](../../client/src/scenes/worldmap/WorldMapPanels/shop.ts)）四个图标：`coinChest`/`trophy` 本身笔画较多（箱体+锁扣+溢出金币；奖杯+双耳+底座），但 `troop_speedup→spd`（仅两道 `>>` 折线）和 `protection→armor`（素框+一道中线）明显单薄，且 `spd` 是复用 `EquipmentScene` 的「移速」词条图标——训练加速与移动速度本是两个不相干的概念，共用箭头符号纯属望文生义的巧合。
+
+**实现**：
+- `render/icons/slg.ts` 新增 `drawHourglass` + `IconKind.hourglass`：沙漏木框（顶/底横杠）+ 顶部/底部沙堆填充 + 颈部两粒下落沙砾 + 右侧三道渐隐"加速刻度"短线，专门表达"时间被压缩"，不再借用移速箭头。`worldmap/WorldMapPanels/shop.ts` 的 `troop_speedup` 改指向 `'hourglass'`；`EquipmentScene` 的移速词条继续用原 `'spd'`，两者不再共用一套语义。
+- `render/icons/equipment.ts` 的 `drawArmor` 补细节：肩部十字横带 + 左上内嵌棱线（emboss）+ 两颗顶角铆钉圆点，外轮廓/尺寸不变——`armor` 复用面很广（装备槛位 tab、驻防行军图标、City HQ 建筑图标等），只加细节不改剪影，全部复用点视觉一致收益、零语义风险。
+
+**验证**：`client` `npx tsc --noEmit` 全绿。可视化验证：`app.ts` 临时挂 `globalThis.__NW_DEBUG={app,PIXI,buildIcon}`（完成后已还原，diff 归零），起 `game-verify2`（9290）dev server，浏览器里直接 `buildIcon()` 四个图标渲染到一张 160px 网格、`toDataURL()` POST 到本机 collector 落盘核对——沙漏（时间+加速刻度）、宝箱（资源）、铆钉盾（防御）、奖杯（通行证）四者剪影与细节量级都明显区分开。

@@ -1,6 +1,6 @@
 /**
  * slg.ts — SLG march-kind glyph (flag) + city building glyphs
- * (desk / cabinet / hammer).
+ * (desk / cabinet / hammer) + the header-shop timer glyph (hourglass).
  */
 import * as PIXI from 'pixi.js-legacy';
 import { SketchPen } from '../sketch';
@@ -69,4 +69,45 @@ export function drawHammer(g: PIXI.Graphics, s: number, color: number): void {
   const px = (-dy / len) * s * 0.16, py = (dx / len) * s * 0.16;
   pen.line(neck.x + px, neck.y + py, neck.x - px, neck.y - py,
     { color, width: w * 1.5, jitter: 0.3, taper: 0.9, double: false });
+}
+
+/**
+ * Hourglass (shop: troop training speedup) — a wood-capped sand-timer with
+ * settled + remaining sand, grains falling through the neck, and trailing
+ * speed ticks off the right edge so it reads as "time, accelerated" rather
+ * than the bare motion chevrons used for the unit move-speed stat.
+ */
+export function drawHourglass(g: PIXI.Graphics, s: number, color: number): void {
+  const pen = new SketchPen(g, 0x9a2c);
+  const w = Math.max(1.4, s * 0.05);
+  const o = { color, width: w, jitter: 0.4, taper: 0.9, double: false };
+  const cx = s * 0.42, lx = s * 0.22, rx = s * 0.62, top = s * 0.20, bot = s * 0.80, midY = s * 0.50, neck = s * 0.03;
+
+  // Glass body — top bulb tapering to the neck, mirrored below.
+  pen.stroke([
+    { x: lx, y: top }, { x: rx, y: top }, { x: cx + neck, y: midY },
+    { x: rx, y: bot }, { x: lx, y: bot }, { x: cx - neck, y: midY }, { x: lx, y: top },
+  ], o);
+  // Wood end-caps, slightly overhanging the glass.
+  pen.line(lx - s * 0.05, top, rx + s * 0.05, top, { ...o, width: w * 1.1 });
+  pen.line(lx - s * 0.05, bot, rx + s * 0.05, bot, { ...o, width: w * 1.1 });
+
+  // Settled sand pile at the bottom (filled).
+  g.beginFill(color, 0.85); g.lineStyle(0);
+  g.drawPolygon([lx + s * 0.05, bot - s * 0.02, rx - s * 0.05, bot - s * 0.02, cx, midY + s * 0.14]);
+  g.endFill();
+  // Remaining sand at the top (filled, fainter).
+  g.beginFill(color, 0.5); g.lineStyle(0);
+  g.drawPolygon([lx + s * 0.07, top + s * 0.03, rx - s * 0.07, top + s * 0.03, cx, midY - s * 0.10]);
+  g.endFill();
+
+  // Grains falling through the neck.
+  for (let i = 0; i < 2; i++) {
+    pen.circle(cx, midY - s * 0.02 + i * s * 0.09, Math.max(1, s * 0.018), { ...o, width: w * 0.6 });
+  }
+
+  // Speed ticks trailing off the right side — the "accelerated" cue.
+  for (const oy of [s * 0.36, s * 0.50, s * 0.64]) {
+    pen.line(rx + s * 0.12, oy, rx + s * 0.24, oy, { ...o, width: w * 0.65, taper: 0.4, alpha: 0.75 });
+  }
 }

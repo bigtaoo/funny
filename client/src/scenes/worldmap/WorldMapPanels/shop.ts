@@ -14,7 +14,7 @@ import type { Constructor, WorldMapPanelsBaseCtor } from './base';
 // expression is anonymous, so there is no class name to reach a static through — module scope
 // is the direct equivalent and is what the other panel mixins already use for their constants.
 const SHOP_KIND_ICON: Record<string, IconKind> = {
-  troop_speedup: 'spd',
+  troop_speedup: 'hourglass',
   resource_pack: 'coinChest',
   protection: 'armor',
   battle_pass: 'trophy',

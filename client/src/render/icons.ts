@@ -23,7 +23,7 @@ import {
   drawScrap, drawLead, drawBinding,
   drawAtk, drawHp, drawArmor, drawSpd, drawAtkspd, drawBrush,
 } from './icons/equipment';
-import { drawFlag, drawDesk, drawCabinet, drawHammer } from './icons/slg';
+import { drawFlag, drawDesk, drawCabinet, drawHammer, drawHourglass } from './icons/slg';
 import {
   drawSwords, drawReplay, drawShare, drawHome,
   drawTag, drawCapsule, drawCards, drawStar, drawLock, drawMedal, drawZoom, drawGift,
@@ -48,6 +48,8 @@ export type IconKind =
   // SLG city buildings (CityScene grid): HQ desk / archive cabinet + a build-queue hammer badge.
   // Resource-producer buildings reuse the res_atlas motifs; drillYard→swords, wall→castle, academy→book.
   | 'desk' | 'cabinet' | 'hammer'
+  // SLG header-shop timer (troop training speedup): distinct from the 'spd' move-speed stat glyph.
+  | 'hourglass'
   // Hub tab strip glyphs (HubTabs): shop price-tag / gacha capsule / roster card stack.
   // Other hub tabs reuse existing glyphs — coins→coin, battlepass→trophy, equipment→armor, collection→book.
   | 'tag' | 'capsule' | 'cards'
@@ -93,6 +95,7 @@ export const DRAW: Record<IconKind, (g: PIXI.Graphics, s: number, color: number)
   desk:    drawDesk,
   cabinet: drawCabinet,
   hammer:  drawHammer,
+  hourglass: drawHourglass,
   tag:     drawTag,
   capsule: drawCapsule,
   cards:   drawCards,
