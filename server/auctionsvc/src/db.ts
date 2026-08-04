@@ -11,7 +11,7 @@ export interface AuctionDoc {
   itemType: string;
   item: Record<string, unknown>;
   qty: number;
-  price: number; // fixed-price: unit transaction price; auction: meaningless after bidding starts (use startPrice/topBid), retained for backward-compatible browse sorting
+  price: number; // fixed-price: unit transaction price; auction: kept in sync with topBid.amount by placeBid (falls back to startPrice pre-bid) so browse sort reflects the current effective price
   currency: string;
   designatedBuyerId?: string;
   expireAt: number; // ms (expiry settled by scanner: refund seller escrow / finalize auction bid; not TTL auto-delete, see ensureIndexes note)

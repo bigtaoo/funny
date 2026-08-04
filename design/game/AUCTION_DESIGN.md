@@ -534,6 +534,16 @@ designatedBuyerId?, expireAt(ms), status, buyerId?, rev
 - **测试**：`server/auctionsvc/test/auction.e2e.test.ts`「cancel: a bid landing between read and write must not silently succeed and orphan the bidder's escrow」——拦截 `mongo.collections.auctions.findOne` 在返回读取时快照的同时于底层并发写入一笔出价（模拟竞态窗口），断言修复前会静默"成交"取消并留下悬空 `topBid`，修复后必须 `AUCTION_CLOSED` 且挂单保持 `open`、出价不受影响。
 - **验收**：`auctionsvc` `tsc --noEmit` 全绿；`vitest run` 71/71（54 in `auction.e2e.test.ts`）。纯服务端逻辑改动，无可见渲染变化，未做浏览器截图验证。
 
+### 修复：全量 code review 发现的 3 处问题（2026-08-04）
+
+用户要求对 `server/auctionsvc` 做一次全量 code review，发现并修复以下 3 处：
+
+- **`readJson` 大小上限形同虚设**：`httpApi.ts` 的 1MB 请求体上限只 `reject()` 了 promise，从没停止底层 socket——超限后 `'data'` 事件继续触发、`body` 字符串继续无界增长，任何已登录玩家往 `/auction/create`/`/auction/:id/bid` 甩一个持续流式的超大请求体就能把 `auctionsvc` 进程内存吃爆。`worldsvc/src/httpApi.ts`（本文件注释自称"migrated from"的源文件）早已带上这个修复（`rejected` 标志位 + `req.destroy()`），auctionsvc 迁移时漏带。现已原样补齐同款修复。
+- **`AUCTION_MAX_LISTINGS`（同时 open 挂单 ≤20）不是原子校验**：`createAuction` 里四条 itemType 分支（material/equipment/card/skin）的开局上限检查都是「先 `countDocuments` 读一次、再在函数末尾 `insertOne`」，中间没有任何原子性——同一账号并发发出多个 `createAuction` 请求时，都能读到同一个未过上限的旧计数，全部通过检查并插入，导致 open 挂单数超过 20。这正是 07-26 那条 `cancelAuction` 竞态修复过的同一类 TOCTOU 问题，只是当时没有覆盖到挂单上限本身。改动：在 `insertOne` 之后追加一次权威 recount（`countDocuments({sellerId,status:'open'})`），一旦发现超过上限就删除刚插入的文档并把已托管的材料/装备/卡牌/皮肤原样退回卖家（新增 `returnEscrowedOnCapReject` 直接退回，不走邮件——同一挂单创建流程内的失败回滚，不是"已成交/已过期"的终态转移）、抛 `AUCTION_LIMIT_REACHED`。为此给 `AuctionMetaClient` 补上 `grantMaterial`（对称于已有的 `deductMaterial`，照抄 `worldsvc/src/metaClient.ts` 已有的同名方法）。极端并发下这个 recount 可能让不止一个请求被误判超限（每个都看到"加上自己之后超了"），但绝不会让任何账号真正突破 20 上限，误判的请求重试即可成功。
+- **拍卖模式（`saleMode='auction'`）浏览排序用的是过期的起拍价**：`listAuctions` 的 `.sort({price:1})` 排的是数据库里存的原始 `price` 字段，但该字段在创建后只等于 `startPrice`，`placeBid` 的出价原子写从未更新它（只写 `topBid`/`expireAt`/`rev`）——玩家客户端实际显示的「当前价」是 `docToView` 算出来的 `topBid.amount`（`AUCTION_DESIGN.md` §竞拍客户端集成里也写了客户端读的是这个字段）。一旦某条竞拍单被加价推高，市场列表「按价格排序」就会用它冻结在创建时刻的起拍价参与排序，跟玩家眼睛看到的当前价完全对不上。改动：`placeBid` 的原子 `$set` 里新增 `price: amount`，让存储字段跟出价实时同步；`db.ts` 里 `AuctionDoc.price` 字段注释同步更新。
+- **测试**：`server/auctionsvc/test/auction.e2e.test.ts` 新增两例——「listing cap: a concurrent insert landing between the pre-check read and this insert is still caught by the post-insert recheck」（拦截 `countDocuments` 首次调用时在其读取结果返回前于底层插入一条竞争文档，模拟并发竞态，断言修复前会让计数突破 20，修复后必须 `AUCTION_LIMIT_REACHED` 且材料退回、真实 open 计数不超过上限）；「B bid keeps the stored price field in sync with topBid so browse sort reflects the current bid」（两条起拍价分别 6/9 的竞拍单，把便宜的一条加价到 19 后断言存储的 `price` 字段与排序结果都反映 19 而非 6）。
+- **验收**：`auctionsvc` `tsc --noEmit` 全绿；`vitest run` 87/87（58 in `auction.e2e.test.ts`，新增 2 例）。纯服务端逻辑改动，无可见渲染变化，未做浏览器截图验证。
+
 ---
 
 *本文为拍卖行机制权威，DRAFT/⚠️ 处随实现与拍板细化；数值以 `server/shared/src/slg.ts` 为准。*
