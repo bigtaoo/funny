@@ -564,7 +564,8 @@ export interface components {
             announcement?: string;
         };
         FamilyMemberView: {
-            accountId: string;
+            /** @description Omitted when the requester is not a member of this family (GET /social/family/:id is a public route reachable for any family id; internal accountIds are only exposed within the family itself). */
+            accountId?: string;
             role: components["schemas"]["FamilyRole"];
             joinedAt: number;
             /** @description Resolved via metaserver batchProfiles; absent if the lookup is unavailable or the profile is gone */

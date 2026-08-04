@@ -44,7 +44,7 @@ async function main(): Promise<void> {
     gateway.routeKick,
   );
   if (subscriber) {
-    gateway.setKickPublisher((accountId, originInstanceId) => void subscriber.publishKick(accountId, originInstanceId));
+    gateway.setKickPublisher((accountId, originInstanceId, connSeq) => void subscriber.publishKick(accountId, originInstanceId, connSeq));
     gateway.setPresenceStore(subscriber);
   }
 

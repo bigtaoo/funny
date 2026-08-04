@@ -19,7 +19,7 @@ import {
   type SiegeResolution,
   type ProceduralTile,
 } from '@nw/shared';
-import { runSiegeBattle, synthesizeArmy, scaleArmyByRatio, resolveCardArmy, toEngineCardInstances, computeCardStateUpdates, shouldUseCheapSiege } from '../siegeEngine';
+import { runSiegeBattle, synthesizeArmy, scaleArmyByRatio, sumArmyHp, resolveCardArmy, toEngineCardInstances, computeCardStateUpdates, shouldUseCheapSiege } from '../siegeEngine';
 import type { GarrisonEntry, EngineCardInstance, EngineEquipInv } from '@nw/engine';
 import type { TileDoc, PlayerWorldDoc, MarchDoc, OccupationDoc, StationedDoc } from '../db';
 import type { SiegeReplayInputs, OccupationView } from '../worldTypes';
@@ -136,13 +136,19 @@ export function OccupationMixin<TBase extends SiegeServiceBaseCtor>(Base: TBase)
       const attackerSave = hasCardArmy ? await this.core.meta.getSaveFields(m.ownerId).catch(() => null) : null;
       // Morale (行军疲劳, not the card 士气加成): scale attacker strength by the march's remaining morale (see combatSiege/arrival.ts applySiege for detail).
       const moraleMult = moraleCombatMultiplier(m.morale ?? MARCH_MORALE_MAX);
-      const effTroops = Math.round(m.troops * moraleMult);
-      const attackerArmy: GarrisonEntry[] = scaleArmyByRatio(
-        hasCardArmy
-          ? resolveCardArmy(rawArmy, pw.cardState ?? {}, attackerSave?.cardInv ?? {})
-          : (rawArmy.length > 0 ? (rawArmy as GarrisonEntry[]) : synthesizeArmy(m.troops, 'attacker')),
-        moraleMult,
-      );
+      const rawAttackerArmy: GarrisonEntry[] = hasCardArmy
+        ? resolveCardArmy(rawArmy, pw.cardState ?? {}, attackerSave?.cardInv ?? {})
+        : (rawArmy.length > 0 ? (rawArmy as GarrisonEntry[]) : synthesizeArmy(m.troops, 'attacker'));
+      const attackerArmy: GarrisonEntry[] = scaleArmyByRatio(rawAttackerArmy, moraleMult);
+      // Real attacker strength for the cheap-siege path: for a card army, m.troops degenerates to roughly the
+      // card-slot count (CC-3 — real strength lives in cardState.currentTroops, already folded into
+      // rawAttackerArmy above via resolveCardArmy), so using m.troops here would floor every card to the base
+      // survival rate regardless of true strength. A single Math.round(...*moraleMult) on the UNSCALED army's
+      // HP sum (rather than summing the already per-unit-floored attackerArmy) avoids quantization loss
+      // compounding across many small HP_PER_UNIT-sized chunks — for a flat/synthesized army
+      // sumArmyHp(rawAttackerArmy) equals m.troops exactly (1 troop = 1 HP unit), so this is byte-for-byte the
+      // same as the old m.troops-based formula for every non-card march, and only changes behavior for card armies.
+      const attackerHp = Math.round(sumArmyHp(rawAttackerArmy) * moraleMult);
       let cardInstances: EngineCardInstance[] | undefined;
       let cardEquipInv: EngineEquipInv | undefined;
       if (hasCardArmy && attackerSave) {
@@ -163,8 +169,8 @@ export function OccupationMixin<TBase extends SiegeServiceBaseCtor>(Base: TBase)
       // flat-troop (non-team) occupy march can synthesize an army beyond board capacity, congest the engine, and
       // spuriously time out to a defender win regardless of true strength (2026-08-03 worldsvc code review).
       const attackerSynthesized = !hasCardArmy && rawArmy.length === 0;
-      if (shouldUseCheapSiege({ attackerTroops: effTroops, defenderTroops: garrison, attackerSynthesized, defenderSynthesized: true })) {
-        res = resolveSiege(effTroops, garrison);
+      if (shouldUseCheapSiege({ attackerTroops: attackerHp, defenderTroops: garrison, attackerSynthesized, defenderSynthesized: true })) {
+        res = resolveSiege(attackerHp, garrison);
       } else {
         try {
           res = await runSiegeBattle({ attackerArmy, defenderConfig, tileLevel, seed, cardInstances, equipmentInv: cardEquipInv });
@@ -173,7 +179,7 @@ export function OccupationMixin<TBase extends SiegeServiceBaseCtor>(Base: TBase)
             tile: m.toTile,
             err: (err as Error).message,
           });
-          res = resolveSiege(effTroops, garrison);
+          res = resolveSiege(attackerHp, garrison);
         }
       }
 
@@ -219,13 +225,14 @@ export function OccupationMixin<TBase extends SiegeServiceBaseCtor>(Base: TBase)
       const attackerSave = hasCardArmy ? await this.core.meta.getSaveFields(m.ownerId).catch(() => null) : null;
       // Morale (行军疲劳, not the card 士气加成): scale attacker strength by the march's remaining morale (see combatSiege/arrival.ts applySiege for detail).
       const moraleMult = moraleCombatMultiplier(m.morale ?? MARCH_MORALE_MAX);
-      const effTroops = Math.round(m.troops * moraleMult);
-      const attackerArmy: GarrisonEntry[] = scaleArmyByRatio(
-        hasCardArmy
-          ? resolveCardArmy(rawArmy, pw.cardState ?? {}, attackerSave?.cardInv ?? {})
-          : (rawArmy.length > 0 ? (rawArmy as GarrisonEntry[]) : synthesizeArmy(m.troops, 'attacker')),
-        moraleMult,
-      );
+      const rawAttackerArmy: GarrisonEntry[] = hasCardArmy
+        ? resolveCardArmy(rawArmy, pw.cardState ?? {}, attackerSave?.cardInv ?? {})
+        : (rawArmy.length > 0 ? (rawArmy as GarrisonEntry[]) : synthesizeArmy(m.troops, 'attacker'));
+      const attackerArmy: GarrisonEntry[] = scaleArmyByRatio(rawAttackerArmy, moraleMult);
+      // Real attacker strength for the cheap-siege path — see applyOccupy above for why this must be
+      // Math.round(sumArmyHp(rawAttackerArmy) * moraleMult) rather than m.troops (card-slot count for a card
+      // army) or summing the already-scaled attackerArmy (per-unit floor quantization loss at scale).
+      const attackerHp = Math.round(sumArmyHp(rawAttackerArmy) * moraleMult);
       let cardInstances: EngineCardInstance[] | undefined;
       let cardEquipInv: EngineEquipInv | undefined;
       if (hasCardArmy && attackerSave) {
@@ -244,8 +251,8 @@ export function OccupationMixin<TBase extends SiegeServiceBaseCtor>(Base: TBase)
       // Same gate as applyOccupy above (2026-08-03 worldsvc code review) — an expulsion attempt with a very
       // large flat-troop army must not reach the engine uncapped either.
       const attackerSynthesized = !hasCardArmy && rawArmy.length === 0;
-      if (shouldUseCheapSiege({ attackerTroops: effTroops, defenderTroops: garrison, attackerSynthesized, defenderSynthesized: true })) {
-        res = resolveSiege(effTroops, garrison);
+      if (shouldUseCheapSiege({ attackerTroops: attackerHp, defenderTroops: garrison, attackerSynthesized, defenderSynthesized: true })) {
+        res = resolveSiege(attackerHp, garrison);
       } else {
         try {
           res = await runSiegeBattle({ attackerArmy, defenderConfig, tileLevel, seed, cardInstances, equipmentInv: cardEquipInv });
@@ -254,7 +261,7 @@ export function OccupationMixin<TBase extends SiegeServiceBaseCtor>(Base: TBase)
             tile: m.toTile,
             err: (err as Error).message,
           });
-          res = resolveSiege(effTroops, garrison);
+          res = resolveSiege(attackerHp, garrison);
         }
       }
 

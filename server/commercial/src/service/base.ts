@@ -360,6 +360,60 @@ export class CommercialServiceBase {
   }
 
   /**
+   * Atomic variant of applySubscription that also enforces "no currently-active subscription" as part of
+   * the SAME update, instead of a separate read-then-check gate beforehand. A prior version of
+   * finishSubscriptionCardBuy read wallet.subscription.expiry, checked it against `now`, and only THEN
+   * called applySubscription unconditionally — two concurrent purchase requests with distinct orderIds
+   * (e.g. a double-tap or a client retry) could both pass that read-then-check gate before either
+   * committed, so both proceeded to applySubscription and both extended the subscription + credited
+   * immediateCoins, doubling a single real purchase. Folding the guard into the update's query filter
+   * makes MongoDB evaluate "not already active" and "extend + credit" atomically: only one of two
+   * concurrent callers can match the filter (the loser observes the winner's already-extended expiry and
+   * fails the filter), so this returns null exactly when — and only when — the caller should report
+   * ALREADY_ACTIVE instead of applying a partial/double credit.
+   */
+  protected async applySubscriptionIfInactive(
+    accountId: string,
+    days: number,
+    immediateCoins: number,
+    now: number,
+    ref: { orderId?: string; reason?: string; channel?: RechargeChannel; clientPlatform?: string },
+  ): Promise<{ coinsAfter: number; expiry: number; wallet: WalletDoc | null } | null> {
+    const ms = days * 86400000;
+    const coinsField = ref.channel ? `recharged.${ref.channel}` : 'coins';
+    const res = await this.cols.wallets.findOneAndUpdate(
+      {
+        _id: accountId,
+        $or: [{ 'subscription.expiry': { $exists: false } }, { 'subscription.expiry': { $lte: now } }],
+      },
+      [
+        {
+          $set: {
+            'subscription.expiry': { $add: [now, ms] },
+            [coinsField]: { $add: [{ $ifNull: [`$${coinsField}`, 0] }, immediateCoins] },
+            rev: { $add: ['$rev', 1] },
+            updatedAt: now,
+          },
+        },
+      ],
+      { returnDocument: 'after' },
+    );
+    if (!res) return null;
+    const coinsAfter = effectiveCoins(res, displayChannelOf(ref.channel, ref.clientPlatform));
+    if (immediateCoins > 0) {
+      await this.cols.ledger.insertOne({
+        accountId,
+        delta: immediateCoins,
+        balanceAfter: coinsAfter,
+        reason: ref.reason ?? 'monthly_card',
+        ...(ref.orderId ? { orderId: ref.orderId } : {}),
+        ts: now,
+      });
+    }
+    return { coinsAfter, expiry: res.subscription?.expiry ?? now + ms, wallet: res };
+  }
+
+  /**
    * Atomic CAS guard for resuming a stale 'charged' order (subscriptionCardBuy/starterBuy growth-pack resume
    * branches, both past isStaleClaim): only the caller whose findOneAndUpdate matches (healClaimedAt still
    * absent) may proceed to finishSubscriptionCardBuy/finishStarterGrowth. Without this, two concurrent
@@ -397,6 +451,8 @@ export class CommercialServiceBase {
   }): Promise<Result<{ coinsAfter: number; subscriptionExpiry: number; wallet: WalletView }>> {
     const existing = await this.cols.orders.findOne({ _id: args.orderId });
     if (existing) {
+      // Ownership check (2026-08-04 fix) — see shop.ts's shopCharge for the full rationale.
+      if (existing.accountId !== args.accountId) return { ok: false, error: 'BAD_REQUEST' };
       // status:'charged' means a prior attempt claimed the slot but hasn't flipped it to 'delivered' yet
       // (see the insert below — it now reserves as 'charged', not 'delivered', so this is observable).
       // Only resume once the claim is stale (base.ts isStaleClaim) — a concurrent duplicate of the SAME
@@ -442,6 +498,7 @@ export class CommercialServiceBase {
     } catch (e) {
       if ((e as { code?: number }).code === 11000) {
         const r = await this.cols.orders.findOne({ _id: args.orderId });
+        if (r && r.accountId !== args.accountId) return { ok: false, error: 'BAD_REQUEST' };
         if (r?.status === 'charged') {
           if (this.isStaleClaim(r.ts) && (await this.claimOrderResume(args.orderId))) {
             return this.finishSubscriptionCardBuy(args);
@@ -482,20 +539,22 @@ export class CommercialServiceBase {
     clientPlatform?: string;
   }): Promise<Result<{ coinsAfter: number; subscriptionExpiry: number; wallet: WalletView }>> {
     const now = this.now();
-    // Single-slot gate: refuse a distinct purchase while a card is still active (buy → use up → rebuy). Roll back the
+    await this.ensureWallet(args.accountId);
+    // Single-slot gate: refuse a distinct purchase while a card is still active (buy → use up → rebuy),
+    // enforced atomically together with the extend-and-credit itself (see applySubscriptionIfInactive) so
+    // two concurrent purchases can't both pass a separate check before either commits. Roll back the
     // claimed slot so the account isn't left with a phantom grant order and a later (post-expiry) retry works.
-    const wallet = await this.ensureWallet(args.accountId);
-    if ((wallet.subscription?.expiry ?? 0) > now) {
-      await this.cols.orders.deleteOne({ _id: args.orderId });
-      return { ok: false, error: 'ALREADY_ACTIVE' };
-    }
-    const applied = await this.applySubscription(
+    const applied = await this.applySubscriptionIfInactive(
       args.accountId,
       args.days,
       args.immediateCoins,
       now,
       { orderId: args.orderId, channel: args.channel, clientPlatform: args.clientPlatform },
     );
+    if (!applied) {
+      await this.cols.orders.deleteOne({ _id: args.orderId });
+      return { ok: false, error: 'ALREADY_ACTIVE' };
+    }
     await this.cols.orders.updateOne(
       { _id: args.orderId },
       { $set: { status: 'delivered', coinsAfter: applied.coinsAfter, deliveredAt: now } },

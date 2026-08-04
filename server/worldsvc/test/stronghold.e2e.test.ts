@@ -201,6 +201,63 @@ describe.skipIf(!mongo)('worldsvc stronghold e2e (G8)', () => {
     expect(pushes.some((p) => p.msg.kind === 'tile_update' && p.accountId === 'a')).toBe(true);
   });
 
+  it('regression: capture reward survives a concurrent resource-changing settlement instead of clobbering or losing it', async () => {
+    // Root cause: the one-time capture-reward write used to be a blind $set with no rev filter at all —
+    // computed from the `pw` snapshot read at function entry, written after several intervening awaits
+    // (including, for a card army, an unconditional cardState rev-bump earlier in the same function). A
+    // concurrent settlement for this account (touching a DIFFERENT resource field) landing in that window
+    // would have its delta silently overwritten by this call's stale-computed `$set`. The fix re-reads
+    // fresh and retries under a rev guard, so both deltas must survive. Simulate the race deterministically
+    // via a wrapped `tiles.updateOne` (which runs right before the reward's retry loop starts) instead of
+    // relying on true concurrency.
+    await svc.joinWorld(W, 'a', base.x, base.y);
+    await setTroops('a', 15_000);
+    const before = (await svc.getMe(W, 'a')).resources!;
+    const proc = proceduralTile(W, sh.x, sh.y);
+    const rt = proc.resType ?? 'ink';
+    const concurrentField = rt === 'graphite' ? 'metal' : 'graphite';
+
+    const realTiles = m.collections.tiles;
+    let injected = 0;
+    const wrappedTiles = {
+      findOne: realTiles.findOne.bind(realTiles),
+      find: realTiles.find.bind(realTiles),
+      countDocuments: realTiles.countDocuments.bind(realTiles),
+      updateOne: async (filter: Parameters<typeof realTiles.updateOne>[0], update: Parameters<typeof realTiles.updateOne>[1], opts?: Parameters<typeof realTiles.updateOne>[2]) => {
+        const res = await realTiles.updateOne(filter, update, opts);
+        // Simulate a concurrent settlement (e.g. another of this account's own return-march refunds)
+        // crediting a DIFFERENT resource field right as the reward's retry loop is about to start — a
+        // blind $set of the stale-computed `resources` object would silently erase this delta.
+        injected++;
+        await m.collections.playerWorld.updateOne(
+          { _id: playerWorldId(W, 'a') },
+          { $inc: { rev: 1, [`resources.${concurrentField}`]: 500 } },
+        );
+        return res;
+      },
+    } as typeof realTiles;
+    const svcRaced = new WorldService({
+      cols: { ...m.collections, tiles: wrappedTiles },
+      redis: null,
+      gateway: fakeGateway,
+      meta: fakeMeta,
+      mapW: SLG_MAP_W,
+      mapH: SLG_MAP_H,
+      now,
+    });
+
+    const mv = await svcRaced.startMarch(W, 'a', base.x, base.y, sh.x, sh.y, 'attack', 15_000);
+    nowMs = mv.arriveAt;
+    expect(await svcRaced.processDueArrivals()).toBe(1);
+
+    // Both deltas must have landed: the concurrent settlement's credit to `concurrentField` (not clobbered
+    // by the reward write) and the stronghold reward itself (not lost to a rev conflict).
+    const me = await svcRaced.getMe(W, 'a');
+    expect((me.resources?.[rt] ?? 0) - (before[rt] ?? 0)).toBeGreaterThanOrEqual(STRONGHOLD_LOOT_PER_LEVEL * sh.level);
+    expect((me.resources?.[concurrentField] ?? 0) - (before[concurrentField] ?? 0)).toBeGreaterThanOrEqual(500);
+    expect(injected).toBe(1); // confirms the race was actually exercised, not skipped
+  });
+
   it('attack loses (insufficient troops): not captured + surviving troops retreat home + sieges defender_win + no reward', async () => {
     await svc.joinWorld(W, 'a', base.x, base.y);
     await setTroops('a', 600); // far fewer than the stronghold garrison → guaranteed loss

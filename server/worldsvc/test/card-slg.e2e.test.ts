@@ -10,6 +10,9 @@ import {
   TROOP_CAP_BASE,
   CARD_INJURY_DURATION_MS,
   CARD_RECOVER_COIN_COST,
+  strongholdGarrison,
+  baseFootprintCells,
+  baseFootprintInBounds,
 } from '@nw/shared';
 import type { CardInstance } from '@nw/shared';
 import { createWorldMongo, type WorldMongo } from '../src/db';
@@ -75,6 +78,40 @@ function findCoord(sx: number, sy: number): { x: number; y: number } {
   throw new Error('no matching tile found');
 }
 
+/** Scan the map for the first stronghold tile (procedural, deterministic) — needed to exercise the
+ *  defender-overflow branch of shouldUseCheapSiege (stronghold garrisons always exceed SIEGE_SYNTH_ARMY_MAX_TROOPS). */
+function findStronghold(): { x: number; y: number; level: number } {
+  for (let y = 0; y < SLG_MAP_H; y++) {
+    for (let x = 0; x < SLG_MAP_W; x++) {
+      const t = proceduralTile(W, x, y);
+      if (t.type === 'stronghold') return { x, y, level: t.level };
+    }
+  }
+  throw new Error('no stronghold tile in world');
+}
+
+/** Nearest placeable capital anchor near (sx,sy) whose whole 3×3 footprint is clear (mirrors joinWorld's footprintFree). */
+function findNearbyBase(sx: number, sy: number): { x: number; y: number } {
+  for (let r = 1; r < 60; r++) {
+    for (let dx = -r; dx <= r; dx++) {
+      for (let dy = -r; dy <= r; dy++) {
+        const x = sx + dx;
+        const y = sy + dy;
+        if (!baseFootprintInBounds(x, y, SLG_MAP_W, SLG_MAP_H)) continue;
+        const blocked = baseFootprintCells(x, y).some((c) => {
+          const t = proceduralTile(W, c.x, c.y);
+          return t.type === 'center' || t.type === 'obstacle' || t.type === 'bridge' || t.type === 'plankway' || t.type === 'stronghold';
+        });
+        if (!blocked) return { x, y };
+      }
+    }
+  }
+  throw new Error('no base tile near stronghold');
+}
+
+const sh = findStronghold();
+const strongholdBase = findNearbyBase(sh.x, sh.y);
+
 describe.skipIf(!mongo)('CC-3 card-based SLG e2e', () => {
   const m = mongo!;
   let nowMs = 1_000_000;
@@ -82,6 +119,7 @@ describe.skipIf(!mongo)('CC-3 card-based SLG e2e', () => {
   let svc: WorldService;
   let pushes: { accountId: string; msg: SlgPushMsg }[];
   let spentCoins: number;
+  let spentOrderIds: string[];
 
   const fakeGateway: WorldGatewayClient = {
     available: true,
@@ -93,7 +131,7 @@ describe.skipIf(!mongo)('CC-3 card-based SLG e2e', () => {
 
   const fakeCommercial: WorldCommercialClient = {
     available: true,
-    async spend(_accountId, amount) { spentCoins += amount; },
+    async spend(_accountId, amount, orderId) { spentCoins += amount; spentOrderIds.push(orderId); },
     async grant() { /* no-op */ },
   };
 
@@ -103,6 +141,7 @@ describe.skipIf(!mongo)('CC-3 card-based SLG e2e', () => {
     nowMs = 1_000_000;
     pushes = [];
     spentCoins = 0;
+    spentOrderIds = [];
     svc = new WorldService({
       cols: m.collections,
       redis: null,
@@ -297,6 +336,33 @@ describe.skipIf(!mongo)('CC-3 card-based SLG e2e', () => {
     expect(pw?.cardState?.['card-r']?.injuredUntil).toBeNull();
   });
 
+  it('recoverCard uses a distinct orderId per call, so a second recovery of the same card is not free', async () => {
+    // Regression test: recoverCard used to build its commercial.spend orderId as a bare `recover:${cardInstanceId}`
+    // with no per-call uniqueness (unlike every other coin-spend site in this file, which all append a
+    // timestamp) — commercial's real spend() treats a repeated orderId as an idempotent no-op success without
+    // re-debiting, so every recovery after the first would have been free forever for that card instance.
+    const pwId = playerWorldId(W, 'a');
+    await svc.joinWorld(W, 'a', 5, 5);
+    const injuredUntil1 = nowMs + CARD_INJURY_DURATION_MS;
+    await m.collections.playerWorld.updateOne(
+      { _id: pwId },
+      { $set: { 'cardState.card-r2': { currentTroops: 50, injuredUntil: injuredUntil1 } as CardSLGState } },
+    );
+    await svc.recoverCard(W, 'a', 'card-r2');
+    // Injure the same card again (at a later point in time, as a real re-injury/recovery cycle would be),
+    // then recover it a second time.
+    nowMs += 5000;
+    const injuredUntil2 = nowMs + CARD_INJURY_DURATION_MS + 1000;
+    await m.collections.playerWorld.updateOne(
+      { _id: pwId },
+      { $set: { 'cardState.card-r2.injuredUntil': injuredUntil2 } },
+    );
+    await svc.recoverCard(W, 'a', 'card-r2');
+    expect(spentOrderIds).toHaveLength(2);
+    expect(spentOrderIds[0]).not.toBe(spentOrderIds[1]);
+    expect(spentCoins).toBe(CARD_RECOVER_COIN_COST * 2); // both recoveries actually charged
+  });
+
   it('recoverCard rejects if card is not injured', async () => {
     const pwId = playerWorldId(W, 'a');
     await svc.joinWorld(W, 'a', 5, 5);
@@ -384,5 +450,44 @@ describe.skipIf(!mongo)('CC-3 card-based SLG e2e', () => {
       // Losing a card-army siege must not add anything to the pool either.
       expect((await svc.getMe(W, 'a')).troops).toBe(troopsBefore);
     });
+  });
+
+  it('regression: a card team with real troops safely beating a stronghold garrison captures it via the forced cheap-siege path', async () => {
+    // Stronghold/crossing garrisons always exceed SIEGE_SYNTH_ARMY_MAX_TROOPS, so shouldUseCheapSiege's
+    // defender-overflow branch forces resolveSiege(attackerTroops, garrison) regardless of attacker strength
+    // (see applyStrongholdSiege). Before the fix, attackerTroops for a card march was m.troops — which
+    // degenerates to roughly the card-slot count (CC-3: real strength lives in cardState.currentTroops) — so
+    // a card team's real strength never mattered here: it would always lose this forced-cheap fight and the
+    // stronghold would stay uncaptured, no matter how many real troops were deployed.
+    await svc.joinWorld(W, 'a', strongholdBase.x, strongholdBase.y);
+    const garrison = strongholdGarrison(sh.level);
+    // resolveSiege's cheap formula is a flat HP-difference (survivors = attackerTroops - garrison, not a
+    // ratio), so the survivor FRACTION only clears the CARD_BASE_SURVIVAL(0.2) floor once attackerTroops
+    // exceeds garrison by at least 25% (a modest 15-20% margin still floors) — deploy 1.7× the garrison to
+    // land a clearly-above-floor result.
+    const troops = Math.round(garrison * 1.7);
+    await m.collections.playerWorld.updateOne(
+      { _id: playerWorldId(W, 'a') },
+      {
+        $set: {
+          'cardState.card-sh-1': { currentTroops: troops, teamId: 't1' } as CardSLGState,
+          // Maxed satchel (D-CITY-9) so the per-march carry cap (base 10,000 + 1,000/level) comfortably
+          // covers a stronghold-level troop count — this test is about siege resolution, not the satchel gate.
+          'buildings.satchel': 15,
+        },
+      },
+    );
+    await svc.setTeams(W, 'a', [{ id: 't1', name: 'Siegebreaker', army: [cardEntry('card-sh-1')] }]);
+
+    const mv = await svc.startMarch(W, 'a', strongholdBase.x, strongholdBase.y, sh.x, sh.y, 'attack', 1, 't1');
+    nowMs = mv.arriveAt;
+    expect(await svc.processDueArrivals()).toBe(1);
+
+    const tile = await svc.getTile(W, 'a', sh.x, sh.y);
+    expect(tile).toMatchObject({ type: 'territory', mine: true });
+    const pw = await m.collections.playerWorld.findOne({ _id: playerWorldId(W, 'a') });
+    // A comfortable (not narrow) win should leave meaningfully more than the CARD_BASE_SURVIVAL(0.2) floor —
+    // the old bug guaranteed exactly a floored, catastrophic loss here regardless of this margin.
+    expect(pw?.cardState?.['card-sh-1']?.currentTroops ?? 0).toBeGreaterThan(troops * 0.3);
   });
 });

@@ -487,8 +487,13 @@ export class AuctionService {
       const material = item['material'] as string | undefined;
       if (!material) throw new SlgError('BAD_REQUEST');
       if (AUCTION_BANNED_MATERIALS.has(material)) throw new SlgError('MATERIAL_NOT_TRADEABLE');
-      // G Price guardrail (validate unit price against category reference price)
+      // G Price guardrail (validate unit price against category reference price). For auction-mode
+      // listings, buyoutPrice must ALSO be within the guardrail band at listing time — placeBid's
+      // guardrail check applies unconditionally to every bid amount including a buyout, so a buyout price
+      // above the ceiling would otherwise be accepted here but then be permanently un-triggerable at bid
+      // time (PRICE_OUT_OF_RANGE), silently making the seller's configured buyout unusable.
       await this.checkPriceGuard(categoryOf({ itemType, item }), unitPrice);
+      if (buyoutPrice != null) await this.checkPriceGuard(categoryOf({ itemType, item }), buyoutPrice);
       // Concurrent listing count cap
       const openCount = await cols.auctions.countDocuments({ sellerId, status: 'open' });
       if (openCount >= AUCTION_MAX_LISTINGS) throw new SlgError('AUCTION_LIMIT_REACHED');
@@ -507,7 +512,9 @@ export class AuctionService {
       storedItem = { instance };
       try {
         // G Price guardrail (equipment by defId/rarity/level category) + C daily cap — return escrowed instance on failure.
+        // See the material branch above for why buyoutPrice needs the same guardrail check as unitPrice.
         await this.checkPriceGuard(`equip:${instance.defId}:${instance.level}`, unitPrice);
+        if (buyoutPrice != null) await this.checkPriceGuard(`equip:${instance.defId}:${instance.level}`, buyoutPrice);
         await this.bumpDaily(sellerId, 'lists', AUCTION_DAILY_LIST_CAP);
       } catch (e) {
         await meta.grantEquipment(sellerId, instance, `${orderId}:return`);

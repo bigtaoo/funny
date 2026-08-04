@@ -328,6 +328,15 @@
 
 - **契约改动**：`WorldTileView` 新增 `contestedUntil`（占领落地时刻，ms）+ `contestedByMe`（占领倒计时中且待定占领人是当前请求者本人，供客户端区分"我在占"还是"别人在占"）。`MarchView`/推送管线不新增字段——战斗胜负复用既有 `siege_result` 推送（`pushSiege`），占领中/占领完成的格子状态复用既有 `tile_update` 推送（`pushTile`）+ 下次 `getMap`/`getTile` 轮询即可看到 `contestedUntil` 倒计时，客户端不需要新的推送类型。
 
+### 5.5 全量 code review 发现的 5 处 worldsvc 问题（2026-08-04）
+
+- **`POST /world/occupy`（S8-1 瞬间占领）仍暴露在公网 HTTP 面**：本节前面（5.4 末尾"旧版 `TerritoryService.occupyTile()`"一条）已经拍板它"内部/测试专用，不再对外暴露真实产品流程"，但 `httpApi.ts` 的路由分支从未真正摘掉这条公网端点——玩家 JWT 仍能直接命中它，绕开 5.4 整套"打一场 PvE 战斗、胜后再挂占领倒计时"的行军流程瞬间落地。已从公网路由表移除（`svc.occupyTile()` 只保留给 e2e 测试直接调用铺垫场景）。
+- **`recoverCard`（受伤卡牌花钱秒愈）免费重复刷**：扣费走 `commercial.spend(accountId, cost, orderId, ...)`，`orderId` 幂等去重；原先 `orderId` 只是 `recover:${cardInstanceId}`——同一张卡的每一次恢复都撞同一个 key，`spend` 把重复 orderId 当幂等重放直接返回成功、不再扣费，导致第一次之后同一张卡永远免费恢复。改为 `recover:${worldId}:${accountId}:${cardInstanceId}:${nowMs}`（时间戳保证每次调用唯一）。
+- **卡牌行军战力被打成通用兵力数字（本轮最大的一处，也是最初驱动这次 review 的问题）**：围攻结算（`combatSiege/arrival.ts`）里"是否走廉价结算路径"和廉价结算本身用的攻方强度都是 `Math.round(m.troops * moraleMult)`——`m.troops` 对卡牌布阵行军只是队伍携带的卡槽数量级，真实战力活在 `cardState.currentTroops`（已经通过 `resolveCardArmy` 折算进 `attackerArmy` 里）。等于不管卡牌真实等级/装备多强，都被按最低档"合成兵力"打折。改法：先算未按疲劳缩放的 `rawAttackerArmy`（`resolveCardArmy` 或 `synthesizeArmy` 兜底），取其真实 HP 总和 `sumArmyHp(rawAttackerArmy)` 再乘 `moraleMult` 得到 `attackerHp`，用它代替 `m.troops` 参与 `shouldUseCheapSiege`/`resolveSiege`；对非卡牌（flat）行军，`sumArmyHp(rawAttackerArmy)` 与旧的 `m.troops` 恰好相等，行为逐字节不变，只有卡牌行军才受影响。触及 `arrival.ts` 3 处调用点 + `occupation.ts` 2 处调用点。
+- **`relocateBase`（主动迁城）缺 rev 守卫**：整段迁城（校验九格己方全占 → 扣 500 金币 → 删旧主城/建新主城 tile → 结算资源写回 `playerWorld`）此前全程没有并发保护，末尾 `updateOne` 是无条件的盲 `$set`——同一账号并发发起两次迁城，或迁城过程中恰好撞上另一次结算（建筑升级/训练 tick），后写入者会把先写入者刚落的 `resources`/`rev` 原样覆盖。改法比照本文件其他站点（`refundTroops`/`transferLoot`）已有的模式：函数一开始先用 `updateOne({_id, rev: pw.rev}, {$inc:{rev:1}})` 原子认领这一代 rev（抢不到直接 `REV_CONFLICT`，不扣费不动格子），末尾资源结算的写回也带上刚认领的 `rev` 做 CAS，失败同样 `REV_CONFLICT`。
+- **`startMarch` 出征扣兵 + 围攻/驱逐夺城奖励结算都是盲 `$set`**：`combatMarch/command.ts` 的 `startMarch`（卡牌布阵/idle-redispatch 分支）原先无条件 `$set` 写回 `resources`；改为 `rev`-guarded CAS，失败时（区分"确实兵力不足"vs"纯粹 rev 冲突"各自返回 `NO_TROOPS`/`REV_CONFLICT`）回滚刚插入的行军文档。`combatSiege/arrival.ts` 里"夺取要塞（stronghold）一次性资源奖励"的结算原是读一次快照就无条件写回，改为最多重试 5 次的「每次都重新读取最新 `playerWorld` 再算奖励再 CAS 写回」循环——这段是从调度器（`processDueArrivals`）跑的，不是活的 HTTP 请求，重试耗尽只记错误日志、不抛出（夺城本身已经无条件落地，不能因为这个一次性奖励失败就把夺城结果打回）。
+- **回归测试**：`server/worldsvc/test/httpApi.e2e.test.ts`（`/world/occupy` 404）、`server/worldsvc/test/service.e2e.test.ts`（`recoverCard` 第二次收费）、`server/worldsvc/test/card-slg.e2e.test.ts`（卡牌围攻按真实 HP 而非 `m.troops` 结算）、`server/worldsvc/test/stronghold.e2e.test.ts`（并发夺城奖励结算）、`server/worldsvc/test/teams.e2e.test.ts`（`relocateBase` 并发 rev 冲突）。
+
 ---
 
 ## 6. 养成统一与天梯红线（SLG7）

@@ -150,10 +150,11 @@
 ### D. 反 RMT 异常审计 ✅ 已实现（2026-07-02 复核，admin G7 已接）
 
 - **落地形态**：**pull 式离线扫描**（非实时事件推送）——最终采用「worldsvc 聚合 + admin 拉取 + ops 展示」，比原「成交即埋点」方案更省埋点面、无热路径开销。
-  - **worldsvc**：`auctionService.ts` `scanAnomalies(worldId, windowSec)`（只读，不改状态），底层 `detectAuctionAnomalies`（`@nw/shared`）在 `AUDIT_WINDOW_SEC` 窗口内聚合可疑 seller→buyer 对。
+  - **worldsvc**：`auctionService.ts` `scanAnomalies(worldId, windowSec)`（只读，不改状态），底层 `detectAuctionAnomalies`（`@nw/shared`）在 `AUDIT_WINDOW_SEC` 窗口内聚合可疑 seller↔buyer 对。
   - **admin**：`clients.ts` `listAuctionAnomalies()` 拉 worldsvc 结果 → `service.ts` `slgScanAnomalies()`（capability `slg.audit.view`）→ `httpApi.ts` 暴露给 ops 后台；worldsvc 不可达时优雅返回空。测试 `server/admin/test/season-audit.e2e.test.ts`。
   - **ops 后台**：审计页展示异常队列，人工复核（对敲/定向异价/大额单向）。
-- **命中规则**：同一对 seller↔buyer 短期高频成交（对敲洗钱）；定向挂单 + 远离参考价（RMT 交付通道）；单账号短期大额单向流出/流入。
+  - **⚠️ 历史 bug（2026-08-04 修复）：换向对敲能绕过聚合，从未真正命中规则**——`detectAuctionAnomalies` 原先按**有向** `${sellerId}→${buyerId}` 分桶聚合成交记录，"同一对 seller↔buyer 短期高频成交"这条规则的实现却隐含假设了双向都该算同一对。两个串通账号只要**交替互换买卖方向**（A 卖给 B、下一单 B 卖给 A、再下一单 A 卖给 B……）就能让每个方向各自的成交次数都低于 `minTrades` 阈值，天然规避检测——这恰恰是"对敲洗钱"最基础的规避手法，而这条规则从一开始就没能真正拦住它。修复：聚合键从有向 `${sellerId}→${buyerId}` 改为**排序后的无向对** `[sellerId,buyerId].sort()` 拼接（`${lo}:${hi}`），双向成交无论谁扮演卖家都落进同一个桶。回归见 `server/shared/test/auction.test.ts`——交替换向的成交序列必须被正确聚合触发 `repeated`/`high_value`，此前（有向分桶）会被错误拆成两个各自不达标的独立桶。
+- **命中规则**：同一对 seller↔buyer 短期高频成交（对敲洗钱，无向聚合）；定向挂单 + 远离参考价（RMT 交付通道）；单账号短期大额单向流出/流入。
 - **失败补发工单**（§2.3）：扣款成功但发放失败的 `sold` 单凭 orderId 进工单队列（复用 S7 补偿基建）。
 
 ### E. 绑定材料禁挂 ✅ 机制已实现（2026-06-21，清单暂空）
@@ -174,6 +175,8 @@
 ### G. 价格护栏 / 反通胀 ✅ 拍板：动态滑窗 · ✅ 已实现（2026-06-21，2026-07-06 起改按大区全局维护）
 
 > 实现：每品类（`material:{mat}`）滑窗存近 `AUCTION_PRICE_WINDOW_N=20` 笔成交单价于 `auctionPrices` 集合（`$push $slice`）；`refPrice` = 样本 ≥ `AUCTION_PRICE_WINDOW_MIN_SAMPLES=5` 时取**中位数**（抗极端值），否则回退 `AUCTION_STATIC_REF_PRICE`（scrap=10/lead=30/binding=80，DRAFT），都无则放行（冷启动不误杀）。挂单/出价单价须落 `[refPrice×0.5, refPrice×2.0]`（`AUCTION_PRICE_FLOOR_RATIO/CEIL_RATIO`），越界抛 `PRICE_OUT_OF_RANGE`。滑窗**按大区全局维护**（同一大区所有玩家共享同一份 `refPrice`，不再按 worldId/shard 拆分；旧实现按 worldId 隔离 + 随 `clearWorldOnReset` 清空的做法随 F 一并作废）。
+
+> **历史 bug（2026-08-04 修复）：竞拍单的 `buyoutPrice`（一口价买断）挂单时从未过护栏**——`createAuction` 只校验了 `unitPrice`/`startPrice` 落在 `[floor,ceil]` 区间，`buyoutPrice` 完全未经 `checkPriceGuard`。但 `placeBid` 对**每一笔出价金额**（含买断价）都无条件跑同一套护栏校验——一旦卖家设的 `buyoutPrice` 超出挂单时刻的护栏上限，这个买断价就永久触发不了（任何人出价到该价位都会撞 `PRICE_OUT_OF_RANGE`），卖家的一口价功能对自己静默失效，直到有人正常竞拍抬价追上（若能追上的话）。修复：`createAuction` 的 material/equipment 两个分支都在校验 `unitPrice` 之后，对非空 `buyoutPrice` 追加同一品类的 `checkPriceGuard` 调用，与挂单价用同一套区间/同一时刻的护栏值。回归见 `server/auctionsvc/test/auction.e2e.test.ts`。
 
 - **现状**：`price > 0` 之外无任何区间限制，可挂任意天价/地板价 → 洗钱（高价定向）/倾销温床。
 - **拍板（2026-06-21）：用动态滑窗护栏**（随市场自适应，而非运营手调静态值）。

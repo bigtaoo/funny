@@ -81,10 +81,13 @@ components:
 
     FamilyMemberView:
       type: object
-      required: [accountId, role, joinedAt]
+      required: [role, joinedAt]
       properties:
         accountId:
           type: string
+          description: >-
+            Omitted when the requester is not a member of this family (GET /social/family/:id is a public
+            route reachable for any family id; internal accountIds are only exposed within the family itself).
         role:
           $ref: '#/components/schemas/FamilyRole'
         joinedAt:

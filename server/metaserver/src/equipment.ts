@@ -277,7 +277,14 @@ export async function craftEquipment(
     }
     // rev conflict (concurrent PUT /save / pve write) → re-read and retry
   }
-  // Retries exhausted: retain the idem claim (result instance is recorded; next replay will verify-and-heal).
+  // Retries exhausted: nothing was ever charged (the cost-and-grant write above never landed), so unlike
+  // the escrow/salvage/fuse destructive-delete-up-front functions, there is nothing irreversible to protect
+  // here — release the claim so a client retry with the SAME idempotencyKey can restart cleanly. Retaining
+  // a `committed: false` claim here used to permanently wedge that key: every future retry would hit the
+  // E11000 branch above, see `committed` still false, and return "craft already in progress, retry" forever
+  // (materials were never charged, so `committed` could never become true), with no code path telling the
+  // client to mint a fresh key.
+  await cols.equipmentIdem.deleteOne({ _id: idempotencyKey });
   return { error: 'rev conflict, retry', code: 'REV_CONFLICT' };
 }
 
@@ -316,6 +323,17 @@ export async function escrowEquipment(
   // (benign, self-heals on the next GET /save), never a duplicated/still-visible item.
   await cols.equipmentInstances.deleteOne({ _id: instanceId });
 
+  // Record ledger entry (snapshot used for trade transfer / return; $setOnInsert prevents concurrent
+  // overwrites) immediately — the delete above already happened unconditionally, so this claim must exist
+  // BEFORE the save-count-decrement retry loop below, not only after it succeeds. Otherwise, exhausting all
+  // rev-conflict retries would report REV_CONFLICT while the item is already gone with no escrow record
+  // anywhere (mirrors the reforgeEquipment fix — see its doc comment for the full rationale).
+  await cols.equipmentIdem.updateOne(
+    { _id: orderId },
+    { $setOnInsert: { accountId, op: 'escrow', result: inst, expireAt: idemExpireAt(now()) } },
+    { upsert: true },
+  );
+
   for (let attempt = 0; attempt < REV_RETRIES; attempt++) {
     const doc = await cols.saves.findOne({ _id: accountId });
     if (!doc) return { error: 'save not found', code: 'NOT_FOUND' };
@@ -330,17 +348,12 @@ export async function escrowEquipment(
       { _id: accountId, rev: doc.rev },
       { $set: { save: next, rev: next.rev } },
     );
-    if (res) {
-      // Record ledger entry (snapshot used for trade transfer / return; $setOnInsert prevents concurrent overwrites).
-      await cols.equipmentIdem.updateOne(
-        { _id: orderId },
-        { $setOnInsert: { accountId, op: 'escrow', result: inst, expireAt: idemExpireAt(now()) } },
-        { upsert: true },
-      );
-      return { instance: inst };
-    }
+    if (res) return { instance: inst };
   }
-  return { error: 'rev conflict, retry', code: 'REV_CONFLICT' };
+  // equipmentInvCount is an informational mirror that self-heals (see assembleEquipmentInv) — the escrow
+  // itself (delete + idem record) already committed above regardless of this decrement's outcome, so report
+  // success rather than REV_CONFLICT for an operation that already happened (mirrors reforgeEquipment).
+  return { instance: inst };
 }
 
 /**
@@ -610,6 +623,34 @@ export async function salvageEquipment(
   }
   if (!idempotencyKey) return { error: 'idempotencyKey required', code: 'BAD_REQUEST' };
 
+  // Applies the materials refund + equipmentInvCount decrement for an already-claimed salvage batch
+  // (rev-guarded retry loop over `saves`). Shared by the first-attempt path and the not-yet-committed
+  // replay/duplicate-claim paths below — a batch whose destructive delete already happened but whose
+  // save-side credit never landed (retries exhausted) must be able to complete the credit on a LATER call
+  // with the same idempotencyKey, not just report cached success without ever crediting the materials.
+  async function settleSalvageCredit(refund: Record<string, number>, count: number): Promise<SaveData | null> {
+    for (let attempt = 0; attempt < REV_RETRIES; attempt++) {
+      const doc = await cols.saves.findOne({ _id: accountId });
+      if (!doc) return null;
+      const save = doc.save;
+      const nextMaterials = { ...save.materials };
+      for (const [mat, qty] of Object.entries(refund)) nextMaterials[mat] = (nextMaterials[mat] ?? 0) + qty;
+      const next: SaveData = {
+        ...save,
+        rev: save.rev + 1,
+        updatedAt: now(),
+        materials: nextMaterials,
+        equipmentInvCount: Math.max(0, save.equipmentInvCount - count),
+      };
+      const res = await cols.saves.findOneAndUpdate(
+        { _id: accountId, rev: doc.rev },
+        { $set: { save: next, rev: next.rev } },
+      );
+      if (res) return next;
+    }
+    return null;
+  }
+
   const replay = await cols.equipmentIdem.findOne({ _id: idempotencyKey });
   if (replay?.op === 'salvage') {
     const r = replay.result as { refunded: Record<string, number>; instanceIds: string[] };
@@ -617,6 +658,15 @@ export async function salvageEquipment(
     // in case one of these ids was traded away via auction escrow and re-granted to a different account
     // in the narrow window since the original validation — this delete must never remove someone else's item.
     if (r.instanceIds?.length) await cols.equipmentInstances.deleteMany({ _id: { $in: r.instanceIds }, accountId });
+    if (!replay.committed) {
+      // The destructive delete already happened on the original attempt, but the save-side materials
+      // credit never landed (rev-conflict retries exhausted) — finish the credit now instead of reporting
+      // cached success for a refund that was never actually applied.
+      const settled = await settleSalvageCredit(r.refunded, r.instanceIds?.length ?? 0);
+      if (!settled) return { error: 'rev conflict, retry', code: 'REV_CONFLICT' };
+      await cols.equipmentIdem.updateOne({ _id: idempotencyKey }, { $set: { committed: true } });
+      return { refunded: r.refunded, save: leanSave(settled) };
+    }
     return { refunded: r.refunded, save: leanSave(await getOrCreateSave(cols, accountId, now())) };
   }
 
@@ -643,6 +693,7 @@ export async function salvageEquipment(
       accountId,
       op: 'salvage',
       result: { refunded, instanceIds: ids },
+      committed: false,
       expireAt: idemExpireAt(now()),
     });
   } catch (e) {
@@ -650,6 +701,12 @@ export async function salvageEquipment(
       const prev = await cols.equipmentIdem.findOne({ _id: idempotencyKey });
       const r = prev?.result as { refunded: Record<string, number>; instanceIds: string[] };
       if (r.instanceIds?.length) await cols.equipmentInstances.deleteMany({ _id: { $in: r.instanceIds } });
+      if (!prev?.committed) {
+        const settled = await settleSalvageCredit(r.refunded, r.instanceIds?.length ?? 0);
+        if (!settled) return { error: 'rev conflict, retry', code: 'REV_CONFLICT' };
+        await cols.equipmentIdem.updateOne({ _id: idempotencyKey }, { $set: { committed: true } });
+        return { refunded: r.refunded, save: leanSave(settled) };
+      }
       return { refunded: r.refunded, save: leanSave(await getOrCreateSave(cols, accountId, now())) };
     }
     throw e;
@@ -662,29 +719,15 @@ export async function salvageEquipment(
   // (an id traded away via auction escrow + re-granted to a buyer between validation and this delete).
   await cols.equipmentInstances.deleteMany({ _id: { $in: ids }, accountId });
 
-  for (let attempt = 0; attempt < REV_RETRIES; attempt++) {
-    const doc = await cols.saves.findOne({ _id: accountId });
-    if (!doc) {
-      await cols.equipmentIdem.deleteOne({ _id: idempotencyKey });
-      return { error: 'save not found', code: 'NOT_FOUND' };
-    }
-    const save = doc.save;
-    const nextMaterials = { ...save.materials };
-    for (const [mat, qty] of Object.entries(refunded)) nextMaterials[mat] = (nextMaterials[mat] ?? 0) + qty;
-    const next: SaveData = {
-      ...save,
-      rev: save.rev + 1,
-      updatedAt: now(),
-      materials: nextMaterials,
-      equipmentInvCount: Math.max(0, save.equipmentInvCount - ids.length),
-    };
-    const res = await cols.saves.findOneAndUpdate(
-      { _id: accountId, rev: doc.rev },
-      { $set: { save: next, rev: next.rev } },
-    );
-    if (res) return { refunded, save: leanSave(next) };
+  const settled = await settleSalvageCredit(refunded, ids.length);
+  if (settled) {
+    await cols.equipmentIdem.updateOne({ _id: idempotencyKey }, { $set: { committed: true } });
+    return { refunded, save: leanSave(settled) };
   }
-  await cols.equipmentIdem.deleteOne({ _id: idempotencyKey });
+  // Retries exhausted: the destructive delete above already committed, unconditionally. Do NOT delete the
+  // idem claim here (that would orphan the refund with no record of what was owed, per the class of bug
+  // fixed in reforgeEquipment) — leave it `committed: false` so a client retry with the same
+  // idempotencyKey re-enters the replay branch above and finishes the materials credit instead of losing it.
   return { error: 'rev conflict, retry', code: 'REV_CONFLICT' };
 }
 

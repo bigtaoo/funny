@@ -224,6 +224,15 @@ export async function createSocialMongo(uri: string, dbName: string): Promise<So
     // familyJoinRequests
     await familyJoinRequests.createIndex({ familyId: 1, status: 1 });
     await familyJoinRequests.createIndex({ accountId: 1, status: 1 });
+    // Atomic backstop for requestJoin's "no existing pending request" check (2026-08-04 fix): that check is
+    // a plain findOne before insertOne, not atomic — two near-simultaneous requestJoin calls for the same
+    // account both pass it and both insert. This partial unique index makes the second insert fail with
+    // E11000 instead, so at most one pending request per account can ever exist (mirrors the family-cap
+    // guard pattern already used elsewhere — see joinFamily's memberCount CAS).
+    await familyJoinRequests.createIndex(
+      { accountId: 1 },
+      { unique: true, partialFilterExpression: { status: 'pending' } },
+    );
 
     // friendEdges
     await friendEdges.createIndex({ owner: 1 });

@@ -62,7 +62,12 @@ export interface AuctionTradeRecord {
   ts: number;
 }
 
-/** A detected anomalous pair (aggregated in the seller→buyer direction). */
+/**
+ * A detected anomalous pair, aggregated by the UNORDERED account pair (2026-08-04 fix — see
+ * detectAuctionAnomalies' doc comment). `sellerId`/`buyerId` are only a stable display label (whichever
+ * direction this pair's first trade in the scanned window happened to be); a pair that alternates who buys
+ * and sells is still one anomaly with combined totals, not two independent half-strength ones.
+ */
 export interface AuctionAnomaly {
   sellerId: string;
   buyerId: string;
@@ -120,12 +125,21 @@ export interface AuctionListingAdminView {
 }
 
 /**
- * Anomalous trade detection (pure function, D/G7): aggregates completed trade records by directed seller→buyer pair; reports an anomaly if any signal is triggered.
+ * Anomalous trade detection (pure function, D/G7): aggregates completed trade records by the UNORDERED
+ * account pair (2026-08-04 fix — was previously keyed by the DIRECTED seller→buyer pair, e.g. `"A B"`
+ * distinct from `"B A"`); reports an anomaly if any signal is triggered.
  * - repeated: pair trade count ≥ minTrades (repeated wash-trading / self-buy loop).
  * - designated: designated-bid trades ≥ minDesignated (seller repeatedly naming the same buyer = directed funneling).
- * - high_value: cumulative coins ≥ minCoins (large unidirectional transfer).
+ * - high_value: cumulative coins ≥ minCoins (large transfer, either direction).
  * severity=high when both "directed funneling" and "large transfer" are triggered simultaneously (strongest RMT indicator); otherwise medium.
  * Results are sorted by cumulative coins descending so operators can prioritize large-value cases first.
+ *
+ * Directional keying used to let a colluding pair evade detection entirely by alternating who buys and
+ * sells: e.g. 4 trades A→B + 4 trades B→A (8 total, real collusive volume) would split into two buckets of
+ * 4 trades / half the coins each — both individually falling under AUDIT_PAIR_MIN_TRADES/MIN_COINS even
+ * though the same 8 trades in one direction would clearly trigger both signals. Aggregating by the
+ * unordered pair closes that gap; `sellerId`/`buyerId` on the result are just a display label (see
+ * AuctionAnomaly's doc comment), not a claim about which side predominantly sold.
  */
 export function detectAuctionAnomalies(
   trades: readonly AuctionTradeRecord[],
@@ -147,7 +161,10 @@ export function detectAuctionAnomalies(
   const byPair = new Map<string, Agg>();
   for (const r of trades) {
     if (!r.sellerId || !r.buyerId || r.sellerId === r.buyerId) continue; // self-trade is impossible; defensive guard
-    const key = `${r.sellerId} ${r.buyerId}`;
+    // Unordered pair key: sort so "A sells to B" and "B sells to A" land in the SAME bucket (see the
+    // function doc comment for why — this is the actual fix for the alternating-direction evasion).
+    const [lo, hi] = [r.sellerId, r.buyerId].sort();
+    const key = `${lo}:${hi}`;
     let a = byPair.get(key);
     if (!a) {
       a = { sellerId: r.sellerId, buyerId: r.buyerId, trades: 0, designatedTrades: 0, totalCoins: 0, firstTs: r.ts, lastTs: r.ts };

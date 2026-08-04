@@ -232,6 +232,69 @@ describe.skipIf(!mongo)('commercial service — idempotency / concurrency / boun
     expect((await ledgerOf('spc')).filter((l) => l.reason === 'rename').length).toBe(1);
   });
 
+  // Ownership check (2026-08-04 fix): orderId is a raw client/meta-supplied string with no structural
+  // binding to the caller. Without the accountId guard, a colliding orderId from a different account would
+  // replay THAT account's balance/status back to the caller — shopCharge/spend/grant all share this
+  // insert-first idempotency pattern (see shop.ts), so one representative check per handler + branch suffices.
+  it('shopCharge: a different account replaying the same orderId is rejected, not shown the owner’s balance', async () => {
+    await fund('sco-owner', 1000);
+    const owner = await svc.shopCharge({ accountId: 'sco-owner', itemId: 'skin_shop_c1', cost: 300, orderId: 'shop-cross' });
+    expect(owner.ok && owner.coinsAfter).toBe(700);
+    const thief = await svc.shopCharge({ accountId: 'sco-thief', itemId: 'skin_shop_c1', cost: 300, orderId: 'shop-cross' });
+    expect(thief).toEqual({ ok: false, error: 'BAD_REQUEST' });
+    expect((await svc.getWallet('sco-thief')).coins).toBe(0);
+  });
+
+  it('shopCharge: concurrent calls with the same orderId from two accounts → one owner, the other rejected (E11000 branch)', async () => {
+    await Promise.all([fund('scc-a', 1000), fund('scc-b', 1000)]);
+    const [a, b] = await Promise.all([
+      svc.shopCharge({ accountId: 'scc-a', itemId: 'skin_shop_c1', cost: 300, orderId: 'shop-cross-race' }),
+      svc.shopCharge({ accountId: 'scc-b', itemId: 'skin_shop_c1', cost: 300, orderId: 'shop-cross-race' }),
+    ]);
+    const oks = [a, b].filter((r) => r.ok);
+    const errs = [a, b].filter((r) => !r.ok);
+    expect(oks.length).toBe(1);
+    expect(errs.length).toBe(1);
+    expect(errs[0]).toEqual({ ok: false, error: 'BAD_REQUEST' });
+    // Only the winner's wallet was debited; the loser keeps its full balance.
+    const total = (await svc.getWallet('scc-a')).coins + (await svc.getWallet('scc-b')).coins;
+    expect(total).toBe(1700); // 2000 funded - 300 debited exactly once
+  });
+
+  it('spend: a different account replaying the same orderId is rejected', async () => {
+    await fund('spo-owner', 1000);
+    const owner = await svc.spend({ accountId: 'spo-owner', amount: 300, reason: 'rename', orderId: 'spend-cross' });
+    expect(owner.ok && owner.coinsAfter).toBe(700);
+    const thief = await svc.spend({ accountId: 'spo-thief', amount: 300, reason: 'rename', orderId: 'spend-cross' });
+    expect(thief).toEqual({ ok: false, error: 'BAD_REQUEST' });
+    expect((await svc.getWallet('spo-thief')).coins).toBe(0);
+  });
+
+  it('grant: a different account replaying the same orderId is rejected, not granted the owner’s coins', async () => {
+    const owner = await svc.grant({ accountId: 'gro-owner', amount: 200, reason: 'mail', orderId: 'grant-cross' });
+    expect(owner.ok && owner.coinsAfter).toBe(200);
+    const thief = await svc.grant({ accountId: 'gro-thief', amount: 200, reason: 'mail', orderId: 'grant-cross' });
+    expect(thief).toEqual({ ok: false, error: 'BAD_REQUEST' });
+    expect((await svc.getWallet('gro-thief')).coins).toBe(0);
+  });
+
+  it('monthlyCardBuy: a different account replaying the same orderId is rejected, not shown the owner’s subscription', async () => {
+    const owner = await svc.monthlyCardBuy({ accountId: 'mco-owner', orderId: 'mcb-cross' });
+    expect(owner.ok).toBe(true);
+    const thief = await svc.monthlyCardBuy({ accountId: 'mco-thief', orderId: 'mcb-cross' });
+    expect(thief).toEqual({ ok: false, error: 'BAD_REQUEST' });
+    expect((await svc.getWallet('mco-thief')).coins).toBe(0);
+    expect((await svc.getWallet('mco-thief')).subscriptionExpiry).toBe(0);
+  });
+
+  it('starterBuy: a different account replaying the same orderId is rejected, not granted the owner’s pack', async () => {
+    const owner = await svc.starterBuy({ accountId: 'sto-owner', productId: 'starter_draw', orderId: 'starter-cross' });
+    expect(owner.ok).toBe(true);
+    const thief = await svc.starterBuy({ accountId: 'sto-thief', productId: 'starter_draw', orderId: 'starter-cross' });
+    expect(thief).toEqual({ ok: false, error: 'BAD_REQUEST' });
+    expect((await svc.getWallet('sto-thief')).starterUsed).toEqual([]);
+  });
+
   it('gachaDraw: concurrent duplicate orderId debits exactly once and never throws', async () => {
     await fund('gcx', 1000);
     const calls = Array.from({ length: 6 }, () =>

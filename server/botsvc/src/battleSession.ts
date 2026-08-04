@@ -16,6 +16,11 @@ export interface PlayRankedMatchOptions {
   maxMatchMs?: number;
   /** Fired once matchmaking succeeds and the gameserver connection is being established (for caller status/state tracking). */
   onMatched?: () => void;
+  /** Aborted when the caller wants to bail out of this match early (2026-08-04 fix: BotSession.logout()
+   *  used to just clear local state while the match kept running to completion in the background,
+   *  wasting a live gateway/gameserver connection against an account the fleet no longer tracks as
+   *  online). Rejects and tears down whatever connection exists — queued-in-matchmaking or mid-match. */
+  abortSignal?: AbortSignal;
 }
 
 export interface RankedMatchOutcome {
@@ -32,6 +37,9 @@ const MAX_FRAMES_PER_ADVANCE = 6;
 export async function playRankedMatch(opts: PlayRankedMatchOptions): Promise<RankedMatchOutcome> {
   const gateway = new GatewayClient();
   const { gameUrl, ticket } = await gateway.enqueueRanked(opts.gatewayWsUrl, opts.jwt, opts.deck);
+  // Logout raced the queue: don't bother connecting to gameserver for a match the caller already
+  // abandoned (the executor-scoped abort listener below can't cover this window — it hasn't started yet).
+  if (opts.abortSignal?.aborted) throw new Error('match aborted: bot logged out');
   opts.onMatched?.();
 
   const game = new GameServerClient();
@@ -49,9 +57,14 @@ export async function playRankedMatch(opts: PlayRankedMatchOptions): Promise<Ran
       if (settled) return;
       settled = true;
       clearTimeout(timer);
+      opts.abortSignal?.removeEventListener('abort', onAbort);
       game.close();
       fn();
     };
+    const onAbort = (): void => {
+      finish(() => reject(new Error('match aborted: bot logged out')));
+    };
+    opts.abortSignal?.addEventListener('abort', onAbort);
 
     // Steps the engine in bounded chunks, submitting decided commands, and reschedules itself via
     // setImmediate while frames remain — yielding the event loop between chunks so a behind bot's

@@ -703,6 +703,19 @@ describe.skipIf(!mongo)('AuctionService e2e', () => {
     expect(mailAtt('bob', 'auction_settle:')).toMatchObject({ kind: 'material', id: 'scrap' });
   });
 
+  it('B buyoutPrice above the guardrail ceiling is rejected at listing time, not silently made unusable', async () => {
+    // Regression test: createAuction used to validate only startPrice against the price guardrail, never
+    // buyoutPrice — but placeBid's guardrail check (checkPriceGuard) applies unconditionally to every bid
+    // including a buyout, contradicting its own "buyout bypasses the increment floor" comment. A seller
+    // could previously list with a buyoutPrice above ref×CEIL (scrap ref=10, ceil ratio 2.0 → ceil=20) and
+    // the listing would succeed, but the buyout would then be PERMANENTLY unusable: any bid at exactly
+    // buyoutPrice would throw PRICE_OUT_OF_RANGE instead of settling. Now the ceiling is enforced up front.
+    await expect(svc.createAuction({
+      sellerId: 'alice', itemType: 'material', saleMode: 'auction',
+      item: { material: 'scrap' }, qty: 1, startPrice: 10, buyoutPrice: 25, durationSec: DUR,
+    })).rejects.toMatchObject({ code: 'PRICE_OUT_OF_RANGE' });
+  });
+
   it('B buyout bypasses the min-increment floor even when a prior bid pushed it above buyoutPrice', async () => {
     // Use a card item: itemType 'card' has no price-guard category (categoryOf → null), so this
     // isolates the increment-vs-buyout interaction from the unrelated PRICE_OUT_OF_RANGE guard.

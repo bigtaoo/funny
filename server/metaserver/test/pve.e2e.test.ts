@@ -64,6 +64,66 @@ describe.skipIf(!mongo)('pve server-authoritative e2e', () => {
   const lvlCount = (save: { cardInv: Record<string, { defId: string; level: number }> }, defId: string, level: number) =>
     Object.values(save.cardInv).filter((c) => c.defId === defId && c.level === level).length;
 
+  it('regression: a failed card-grant on /pve/clear leaves nothing committed, so a client retry does not double-grant materials/stats', async () => {
+    // Root cause: settleNormalClear's consolidated write (progress/materials/equipment-slot/accrueStats/
+    // retention) used to commit BEFORE the separate grantCards call — so if grantCards failed (its own
+    // independent rev-guarded retry loop exhausted under save-document contention), the client saw a bare
+    // 409 even though the consolidated write had already landed. A client retry of the same /pve/clear
+    // request would then re-run the whole consolidated write from scratch and double-apply every additive
+    // field in it (materials via applyMaterialAndEquipmentGrant, achievement stats via accrueStats) on top
+    // of the already-committed delta, neither being idempotent across repeated calls. The fix reorders
+    // grantCards to run FIRST, so its failure leaves nothing committed at all. Force ONLY grantCards's own
+    // save write to lose its rev race (identified by it being the one that actually changes cardInvCount —
+    // the consolidated pve write never touches that field) so the OTHER write is free to succeed or fail
+    // on its own merits, whichever order the code under test actually runs them in.
+    const realSaves = m.collections.saves;
+    const wrappedSaves = {
+      findOne: realSaves.findOne.bind(realSaves),
+      findOneAndUpdate: async (
+        filter: Parameters<typeof realSaves.findOneAndUpdate>[0],
+        update: Parameters<typeof realSaves.findOneAndUpdate>[1],
+        opts?: Parameters<typeof realSaves.findOneAndUpdate>[2],
+      ) => {
+        const current = await realSaves.findOne(filter as Record<string, unknown>);
+        const incomingCardInvCount = (update as { $set?: { save?: { cardInvCount?: number } } }).$set?.save?.cardInvCount;
+        const isCardGrantWrite = !!current && incomingCardInvCount !== undefined && incomingCardInvCount !== current.save.cardInvCount;
+        if (isCardGrantWrite) return null; // force grantCards's own rev-guarded loop to exhaust
+        return realSaves.findOneAndUpdate(filter, update, opts);
+      },
+    } as typeof realSaves;
+    const failingApp = await buildApp({ cols: { ...m.collections, saves: wrappedSaves }, jwt, internalKey: 'k' });
+    try {
+      const failed = await failingApp.inject({
+        method: 'POST', url: '/pve/clear', headers: auth(),
+        payload: { levelId: 'ch1_lv1', stars: 3, stats: { 'kill.archer': 3 } },
+      });
+      expect(failed.statusCode).toBe(409);
+    } finally {
+      await failingApp.close();
+    }
+
+    // Nothing committed: not cleared, no materials, no stats, no card.
+    const afterFailure = body(await app.inject({ method: 'GET', url: '/save', headers: auth() }));
+    expect(afterFailure.data.save.progress.cleared).not.toContain('ch1_lv1');
+    expect(afterFailure.data.save.materials.scrap ?? 0).toBe(0);
+    expect(afterFailure.data.save.stats?.['kill.archer'] ?? 0).toBe(0);
+    expect(defCount(afterFailure.data.save, 'lichuang')).toBe(1); // just the starter, no drop granted
+
+    // Retry with the real (unwrapped) app, resending the SAME request (including stats): succeeds and
+    // applies everything exactly once.
+    const retried = body(await app.inject({
+      method: 'POST', url: '/pve/clear', headers: auth(),
+      payload: { levelId: 'ch1_lv1', stars: 3, stats: { 'kill.archer': 3 } },
+    }));
+    expect(retried.data.granted).toEqual({ scrap: 6, lead: 2 });
+    expect(retried.data.save.progress.cleared).toContain('ch1_lv1');
+    expect(retried.data.save.materials.scrap).toBe(6);
+    expect(defCount(retried.data.save, 'lichuang')).toBe(2); // starter + exactly one drop, not two
+    // The whole point of this regression test: accrueStats is additive and non-idempotent, so a double-run
+    // of the consolidated write (the bug this fix closes) would have shown up as 6, not 3.
+    expect(retried.data.save.stats?.['kill.archer'] ?? 0).toBe(3);
+  });
+
   it('level drops unit card (CC-2): first chapter level grants an infantry Hero-Roster card + grantedCards', async () => {
     const before = body(await app.inject({ method: 'GET', url: '/save', headers: auth() }));
     expect(defCount(before.data.save, 'lichuang')).toBe(1); // onboarding starter (infantry = lichuang)

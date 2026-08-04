@@ -60,7 +60,8 @@ export interface FamilyDetailView extends FamilyView {
 }
 
 export interface FamilyMemberView {
-  accountId: string;
+  /** Omitted when the caller is not a member of this family — see getFamily's `callerId` param. */
+  accountId?: string;
   role: FamilyRole;
   joinedAt: number;
   /** Resolved via SocialMetaClient.batchProfiles; omitted if metaserver lookup is unavailable or the profile is gone. */
@@ -138,7 +139,7 @@ export class FamilyService {
   }
 
   /** Attach resolved publicId/displayName to each member (best-effort; missing profiles are left unresolved). */
-  private async withProfiles(members: FamilyMemberView[]): Promise<FamilyMemberView[]> {
+  private async withProfiles(members: (FamilyMemberView & { accountId: string })[]): Promise<FamilyMemberView[]> {
     const profiles = await this.meta.batchProfiles(members.map((m) => m.accountId));
     return members.map((m) => {
       const p = profiles.get(m.accountId);
@@ -154,16 +155,26 @@ export class FamilyService {
   }
 
   /** Get family details by familyId (including member list). */
-  async getFamily(familyId: string): Promise<FamilyDetailView | null> {
+  /**
+   * @param callerId When provided and the caller is NOT a member of this family, raw `accountId`s are
+   * stripped from the returned member list (2026-08-04 fix): `GET /social/family/:id` is a public route
+   * reachable for ANY family id (discoverable via browse/search), and every other externally-facing view
+   * in this service deliberately exposes only `publicId`/`displayName` — internal `accountId`s are meant to
+   * be known only within the family itself (used there for role-gated kick/setRole). Omit `callerId` for
+   * trusted internal callers (e.g. `/internal/push`'s family broadcast) that need the real accountIds
+   * regardless of membership.
+   */
+  async getFamily(familyId: string, callerId?: string): Promise<FamilyDetailView | null> {
     const doc = await this.deps.cols.families.findOne({ _id: familyId });
     if (!doc) return null;
     const memberDocs = await this.deps.cols.familyMembers.find({ familyId }).toArray();
+    const isMember = callerId === undefined || memberDocs.some((m) => m.accountId === callerId);
     const members = await this.withProfiles(memberDocs.map((m) => ({
       accountId: m.accountId,
       role: m.role,
       joinedAt: m.joinedAt,
     })));
-    return { ...docToView(doc), members };
+    return { ...docToView(doc), members: isMember ? members : members.map(({ accountId, ...rest }) => rest as FamilyMemberView) };
   }
 
   /** Search for a family by TAG (exact match, case-insensitive). */
@@ -278,7 +289,21 @@ export class FamilyService {
       role: 'member',
       joinedAt: now,
     };
-    await cols.familyMembers.insertOne(memberDoc);
+    try {
+      await cols.familyMembers.insertOne(memberDoc);
+    } catch (e) {
+      if ((e as { code?: number }).code === 11000) {
+        // Lost a race against a concurrent joinFamily for the SAME account (e.g. two of their pending join
+        // requests, for different families, both accepted around the same time) — familyMembers._id is the
+        // accountId itself, so only one insert can ever win globally. Roll back the memberCount bump this
+        // attempt already committed above, so the losing family's count never drifts above its real roster
+        // (2026-08-04 fix; mirrors createFamily's existing E11000 handling, plus the compensating rollback
+        // createFamily doesn't need since it can't reach this point after a partial commit).
+        await cols.families.updateOne({ _id: familyId }, { $inc: { memberCount: -1 } });
+        throw new SlgError('ALREADY_IN_FAMILY');
+      }
+      throw e;
+    }
   }
 
   /**
@@ -301,7 +326,17 @@ export class FamilyService {
 
     const requestId = randomUUID();
     const doc: FamilyJoinRequestDoc = { _id: requestId, familyId, accountId, status: 'pending', createdAt: now };
-    await cols.familyJoinRequests.insertOne(doc);
+    try {
+      await cols.familyJoinRequests.insertOne(doc);
+    } catch (e) {
+      // The findOne check above is not atomic — a concurrent requestJoin for the same account can slip
+      // through between the check and this insert. The partial unique index on {accountId} (db.ts,
+      // status:'pending') is the atomic backstop: the loser hits E11000 here instead of creating a second
+      // pending request (2026-08-04 fix, closing the root cause behind a downstream memberCount-drift race
+      // when both requests are later accepted).
+      if ((e as { code?: number }).code === 11000) throw new SlgError('ALREADY_REQUESTED');
+      throw e;
+    }
     return { requestId };
   }
 

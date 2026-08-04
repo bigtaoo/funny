@@ -374,6 +374,23 @@ buildSiegeBlueprints(levels, equipped, inv)
 - **强化的随机数服务器生成**（防客户端"重试到成功"）：`/equipment/enhance` 在服务器掷骰、扣料、落库、回执。
 - SLG 围攻复算（`runSiegeJudge`）已带**攻方权威养成快照**；装备纳入该快照，客户端篡改本地穿戴改不了"这套装备能否破城"。
 - 拍卖成交、跨账号流转走 worldsvc + 反 RMT 审计（SLG_DESIGN §9）。
+- **`craft`/`escrow`/`salvage` 三处"先做破坏性删除、后台账重试耗尽"的资损/卡死 gap（2026-08-04 修复）**：
+  `escrowEquipment`（拍卖挂拍托管）原先是"先无条件删库存实例，再进 rev 循环写 `equipmentIdem` 幂等记录 + 扣
+  `equipmentInvCount`"——若这个循环耗尽重试直接返回 `REV_CONFLICT`，装备已经真的被删了，却哪里都没留下"这次
+  托管发生过"的记录，客户端按约定重试会发现物品凭空消失、拍卖单也建不起来。`salvageEquipment`（分解装备换
+  材料）是同一形状：材料/背包计数的写回重试耗尽时，装备也已经被删了，材料却从没退。`craftEquipment`（反方向：
+  合成从没扣过材料，天然可安全重放）原先在重试耗尽时保留一条 `committed:false` 的幂等占位记录，本意是"下次
+  重放能校验并补发"，实际效果是这个 orderId 永久卡死——每次重放都会命中这条占位记录、判定"仍在合成中"，但
+  材料从未真正扣过，`committed` 永远变不成 `true`，玩家用同一个 idempotencyKey 重试永远失败。修法：①
+  `escrowEquipment`/`escrowCard`（见 `CHARACTER_CARDS_DESIGN.md`）把幂等记录的 `$setOnInsert` 挪到删除之后、
+  资源计数重试循环之前——重试耗尽时直接返回"成功"（`equipmentInvCount`/`cardInvCount` 只是自愈的展示镜像，
+  真正的托管记录已经落地）；② `salvageEquipment` 把材料/计数的写回拆成独立的 `settleSalvageCredit` 帮助函数，
+  幂等记录新增 `committed` 布尔位——首次耗尽重试时保留 `committed:false` 记录（不删除装备的删除已经生效），
+  重放分支检测到 `committed:false` 时**先补完材料credit**、成功后才翻 `committed:true`，不再是"记录了但从没
+  兑现"；③ `craftEquipment` 重试耗尽时改为**删除**幂等占位记录（因为 craft 从未真正扣费，删除是安全的），让
+  下一次重放用同一个 key 能从头干净重试，而不是永久卡在假的"进行中"状态。回归见
+  `server/metaserver/test/equipment.e2e.test.ts` 新增用例（craft 耗尽重试后可用同 key 重放成功；
+  escrow/salvage 在写回耗尽后重放能补齐材料/幂等记录而非丢失）。
 
 ---
 

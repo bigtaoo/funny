@@ -308,10 +308,6 @@ export class WorldApiClient {
     return this.req('POST', '/world/season/join', { season });
   }
 
-  async occupyTile(worldId: string, x: number, y: number): Promise<{ ok: true }> {
-    return this.req('POST', '/world/occupy', { worldId, x, y });
-  }
-
   /** Abandon an owned tile. Returns the updated player world state (P1-3: was mis-declared as bare
    *  {ok:true} — the server always returned the full PlayerWorldView, so the caller can adopt it
    *  directly instead of following up with a separate GET /world/me). */
