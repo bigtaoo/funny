@@ -261,6 +261,43 @@ describe('POST /internal/cards/escrow', () => {
     expect(retry.statusCode).toBe(200); // not 404 — replays the recorded snapshot
     expect(JSON.parse(retry.payload).instance).toEqual(JSON.parse(first.payload).instance);
   });
+
+  it('regression: escrowCard exhausting rev retries still reports the escrow as done, not REV_CONFLICT with the card gone', async () => {
+    // Root cause: escrowCard deleted the card unconditionally up front, then only recorded the escrow
+    // ledger entry INSIDE the successful branch of the save-count-decrement retry loop — so exhausting all
+    // retries used to return REV_CONFLICT while the card was already deleted with no escrow record
+    // anywhere, permanently destroying it with zero compensation. Force every findOneAndUpdate on `saves`
+    // to "lose" (simulating contention from an unrelated concurrent save write) to reproduce deterministically.
+    const cardInstances = new FakeCollection<CardInstanceRow>().seed(cardRow('c1', 'a'));
+    const cardIdem = new FakeCollection<{ _id: string; accountId: string; op: string; result: unknown; committed?: boolean; expireAt: Date }>();
+    const realSaves = new FakeCollection<SaveDocRow>().seed(saveRow('a'));
+    const saves = {
+      findOne: realSaves.findOne.bind(realSaves),
+      findOneAndUpdate: async () => null,
+    } as unknown as typeof realSaves;
+    const cols = { saves, equipmentInstances: new FakeCollection(), cardInstances, cardIdem } as unknown as Collections;
+    const ctx: InternalCtx = {
+      cols, now: () => 1000, gateway: fakeGateway(), commercial: fakeCommercial(),
+      socialsvc: new ThrowingSocialsvc(), authed: (headers) => headers['x-internal-key'] === KEY,
+    };
+    const app = Fastify();
+    registerEconomyRoutes(app, ctx);
+
+    const res = await app.inject({
+      method: 'POST', url: '/internal/cards/escrow', headers: authHeaders,
+      payload: { accountId: 'a', instanceId: 'c1', orderId: 'o-exhaust' },
+    });
+    expect(res.statusCode).toBe(200); // not REV_CONFLICT
+    expect(cardInstances.docs.has('c1')).toBe(false); // still correctly removed
+    expect(cardIdem.docs.has('o-exhaust')).toBe(true); // ledger recorded so a real replay works
+
+    const retry = await app.inject({
+      method: 'POST', url: '/internal/cards/escrow', headers: authHeaders,
+      payload: { accountId: 'a', instanceId: 'c1', orderId: 'o-exhaust' },
+    });
+    expect(retry.statusCode).toBe(200);
+    expect(JSON.parse(retry.payload).instance).toEqual(JSON.parse(res.payload).instance);
+  });
 });
 
 describe('POST /internal/cards/grant', () => {

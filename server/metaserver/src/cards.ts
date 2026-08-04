@@ -361,6 +361,16 @@ export async function escrowCard(
   // accountId too, closing a narrow cross-account TOCTOU window versus the validating read above.
   await cols.cardInstances.deleteOne({ _id: instanceId, accountId });
 
+  // Record ledger entry immediately — the delete above already happened unconditionally, so this claim
+  // must exist BEFORE the save-count-decrement retry loop below, not only after it succeeds. Otherwise,
+  // exhausting all rev-conflict retries would report REV_CONFLICT while the card is already gone with no
+  // escrow record anywhere (mirrors equipment.ts's reforgeEquipment fix — see its doc comment).
+  await cols.cardIdem.updateOne(
+    { _id: orderId },
+    { $setOnInsert: { accountId, op: 'escrow', result: card, expireAt: idemExpireAt(now()) } },
+    { upsert: true },
+  );
+
   for (let attempt = 0; attempt < REV_RETRIES; attempt++) {
     const doc = await cols.saves.findOne({ _id: accountId });
     if (!doc) return { error: 'save not found', code: 'NOT_FOUND' };
@@ -374,18 +384,12 @@ export async function escrowCard(
       { _id: accountId, rev: doc.rev },
       { $set: { save: next, rev: next.rev } },
     );
-    if (res) {
-      // Record ledger entry after the save write lands ($setOnInsert prevents a concurrent duplicate
-      // write from clobbering the first result).
-      await cols.cardIdem.updateOne(
-        { _id: orderId },
-        { $setOnInsert: { accountId, op: 'escrow', result: card, expireAt: idemExpireAt(now()) } },
-        { upsert: true },
-      );
-      return { instance: card };
-    }
+    if (res) return { instance: card };
   }
-  return { error: 'rev conflict, retry', code: 'REV_CONFLICT' };
+  // cardInvCount is an informational mirror that self-heals (see assembleCardInv) — the escrow itself
+  // (delete + idem record) already committed above regardless of this decrement's outcome, so report
+  // success rather than REV_CONFLICT for an operation that already happened.
+  return { instance: card };
 }
 
 /**
@@ -549,6 +553,14 @@ export async function fuseCards(
     );
     if (res) return { card: updatedTarget, save: next };
   }
-  await cols.cardIdem.deleteOne({ _id: idempotencyKey });
-  return { error: 'rev conflict, retry', code: 'REV_CONFLICT' };
+  // Retries exhausted for the cardInvCount decrement, but the fusion itself (target upgrade + 5 materials
+  // consumed) already committed above, unconditionally, before this loop — deleting the idem claim here
+  // used to orphan that state: a client retry would re-enter this function fresh, fail to find the
+  // already-deleted materials (CARD_NOT_FOUND), and report failure for a fusion that had already succeeded
+  // (mirrors equipment.ts reforgeEquipment's fix). Instead, report success directly: cardInvCount is an
+  // informational mirror that self-heals (see assembleCardInv), and the idem claim stays in place so a
+  // retry with the same key hits the replay branch above, which already re-reads the real (fused) target
+  // card state rather than trusting a cached value.
+  const healedSave = await getOrCreateSave(cols, accountId, now());
+  return { card: updatedTarget, save: healedSave };
 }

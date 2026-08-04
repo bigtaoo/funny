@@ -331,6 +331,29 @@ describe.skipIf(!mongo)('commercial service e2e', () => {
     expect(none).toMatchObject({ ok: true, claimed: 0 });
   });
 
+  it('monthly card: two concurrent buys with distinct orderIds (double-tap) credit only once, not twice', async () => {
+    // Regression test for a TOCTOU race in finishSubscriptionCardBuy: the single-slot ALREADY_ACTIVE gate
+    // used to be a separate read (ensureWallet) followed by an unconditional applySubscription call, so two
+    // concurrent purchases with different orderIds (e.g. a double-tapped "buy" button) could both read
+    // "not yet active" before either committed and both extend + credit — doubling a single real purchase.
+    // The fix (applySubscriptionIfInactive) folds the guard into the same atomic update, so exactly one of
+    // two concurrent buys must win and the other must observe ALREADY_ACTIVE.
+    const [r1, r2] = await Promise.all([
+      svc.monthlyCardBuy({ accountId: 'mc-race', orderId: 'mcb-race-1' }),
+      svc.monthlyCardBuy({ accountId: 'mc-race', orderId: 'mcb-race-2' }),
+    ]);
+    const results = [r1, r2];
+    const winners = results.filter((r) => r.ok);
+    const losers = results.filter((r) => !r.ok);
+    expect(winners).toHaveLength(1);
+    expect(losers).toHaveLength(1);
+    expect(losers[0]).toEqual({ ok: false, error: 'ALREADY_ACTIVE' });
+    expect(winners[0].ok && winners[0].coinsAfter).toBe(600); // not 1200 — credited once
+    const wallet = await svc.getWallet('mc-race');
+    expect(wallet.coins).toBe(600);
+    expect(wallet.subscriptionExpiry).toBeLessThan(now() + 31 * 86400000); // ~30 days, not doubled to ~60
+  });
+
   it('year card: 365-day subscription + 600 immediate; single-slot gate blocks a second card; daily claim works', async () => {
     const DAY = 86400000;
     const buy = await svc.yearCardBuy({ accountId: 'yc', orderId: 'ycb' });

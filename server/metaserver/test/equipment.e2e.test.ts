@@ -20,7 +20,7 @@ import {
 import type { FastifyInstance } from 'fastify';
 import type { CommercialClient } from '../dist/commercialClient.js';
 import { buildApp } from '../dist/app.js';
-import { reforgeEquipment } from '../dist/equipment.js';
+import { reforgeEquipment, escrowEquipment, salvageEquipment, craftEquipment } from '../dist/equipment.js';
 import { seedEquipment, seedEquipmentBatch, readEquipmentInv } from './helpers/equipment.js';
 import { readCardInv, seedCard } from './helpers/cards.js';
 
@@ -188,6 +188,34 @@ describe.skipIf(!mongo)('equipment backend e2e', () => {
     expect((await readSave()).materials.scrap).toBe(20);
   });
 
+  it('regression: craftEquipment exhausting rev retries releases the idem claim instead of wedging the key forever', async () => {
+    // Root cause: on exhaustion, craftEquipment used to keep the idem claim (committed:false forever, since
+    // materials were never actually charged) and just return REV_CONFLICT — every future retry with the SAME
+    // idempotencyKey then hit the E11000 duplicate-claim branch, saw committed:false, and returned
+    // "craft already in progress, retry" permanently, with no path to ever complete the craft. Force every
+    // findOneAndUpdate on `saves` to "lose" to simulate exhausted contention deterministically.
+    await seedMaterials({ scrap: 20 });
+    const realSaves = m.collections.saves;
+    const wrappedSaves = {
+      findOne: realSaves.findOne.bind(realSaves),
+      findOneAndUpdate: async () => null,
+    } as typeof realSaves;
+    const wrappedCols = { ...m.collections, saves: wrappedSaves };
+
+    const first = await craftEquipment(wrappedCols, () => Date.now(), accountId, 'wp_pencil', 'stuck-key');
+    expect('error' in first).toBe(true);
+    expect((first as { code: string }).code).toBe('REV_CONFLICT');
+    // Nothing was charged or granted on the failed attempt.
+    expect(Object.keys(await readInv())).toHaveLength(0);
+    expect((await readSave()).materials.scrap).toBe(20);
+    // The idem claim must be gone — a retry with the SAME key against the real (unwrapped) collections
+    // must be able to succeed cleanly, not report "craft already in progress" forever.
+    expect(await m.collections.equipmentIdem.findOne({ _id: 'stuck-key' })).toBeNull();
+    const retry = body(await craft('wp_pencil', 'stuck-key'));
+    expect(retry.data.instance.defId).toBe('wp_pencil');
+    expect((await readSave()).materials.scrap).toBe(15);
+  });
+
   it('craft full inventory → 409 INVENTORY_FULL', async () => {
     await seedMaterials({ scrap: 20 });
     // Directly seed 300 placeholder instances to fill the inventory
@@ -244,6 +272,32 @@ describe.skipIf(!mongo)('equipment backend e2e', () => {
     const res = await escrow('locked1', 'order-locked');
     expect(res.statusCode).toBe(409);
     expect(body(res).code).toBe('EQUIP_LOCKED');
+  });
+
+  it('regression: escrowEquipment exhausting rev retries still reports the escrow as done, not REV_CONFLICT with the item gone', async () => {
+    // Root cause: escrowEquipment deleted the instance unconditionally up front, then only recorded the
+    // escrow ledger entry INSIDE the successful branch of the save-count-decrement retry loop — so
+    // exhausting all retries used to return REV_CONFLICT while the item was already deleted with no
+    // escrow record anywhere, permanently destroying it with zero compensation and no way to recover via
+    // a replay (the ledger entry was never written). Force every findOneAndUpdate on `saves` to "lose".
+    await seedMaterials({ scrap: 20 });
+    const inst = body(await craft('wp_pencil', 'ik-e-exhaust')).data.instance as EquipmentInstance;
+    const realSaves = m.collections.saves;
+    const wrappedSaves = {
+      findOne: realSaves.findOne.bind(realSaves),
+      findOneAndUpdate: async () => null,
+    } as typeof realSaves;
+    const wrappedCols = { ...m.collections, saves: wrappedSaves };
+
+    const result = await escrowEquipment(wrappedCols, () => Date.now(), accountId, inst.id, 'order-exhaust');
+    expect('error' in result).toBe(false);
+    expect((result as { instance: EquipmentInstance }).instance.id).toBe(inst.id);
+    expect((await readInv())[inst.id]).toBeUndefined(); // still correctly removed from the seller's inventory
+    // The escrow ledger entry must exist so a replay of the same orderId (e.g. worldsvc retrying the HTTP
+    // call after a timeout) returns the same snapshot instead of EQUIP_NOT_FOUND.
+    const replay = body(await escrow(inst.id, 'order-exhaust'));
+    expect(replay.ok).toBe(true);
+    expect(replay.instance.id).toBe(inst.id);
   });
 
   it('escrow equipped instance → 409 EQUIP_IN_USE', async () => {
@@ -395,6 +449,40 @@ describe.skipIf(!mongo)('equipment backend e2e', () => {
     const inv = await readInv();
     expect(inv['s8']).toBeTruthy(); // whole batch not executed
     expect(inv['s9']).toBeTruthy();
+  });
+
+  it('regression: salvageEquipment exhausting rev retries preserves the refund for a later retry instead of losing it', async () => {
+    // Root cause: salvageEquipment deleted the instances unconditionally up front (idem claim inserted
+    // first, so it does carry {refunded, instanceIds}), but on exhaustion it used to DELETE that idem claim
+    // and return REV_CONFLICT — orphaning the refund with items already gone and no record of what was
+    // owed; a client retry with the same key would then find EQUIP_NOT_FOUND for a salvage that had already
+    // destroyed the items. The fix keeps the claim (committed:false) so a retry finishes the credit instead.
+    await seedInstance('s10', 'wp_pencil', 0);
+    await seedMaterials({ scrap: 10 });
+    const refund = salvageRefund('wp_pencil');
+    const realSaves = m.collections.saves;
+    const wrappedSaves = {
+      findOne: realSaves.findOne.bind(realSaves),
+      findOneAndUpdate: async () => null,
+    } as typeof realSaves;
+    const wrappedCols = { ...m.collections, saves: wrappedSaves };
+
+    const first = await salvageEquipment(wrappedCols, () => Date.now(), accountId, ['s10'], 'sk-exhaust');
+    expect('error' in first).toBe(true);
+    expect((first as { code: string }).code).toBe('REV_CONFLICT');
+    expect((await readInv())['s10']).toBeUndefined(); // already destroyed, as designed
+    expect((await readSave()).materials.scrap).toBe(10); // not yet credited
+
+    // Retry with the SAME key against the real (unwrapped) collections must finish the credit, not report
+    // cached success without ever applying it, and not double-credit either.
+    const retry = body(await salvage(['s10'], 'sk-exhaust'));
+    expect(retry.data.refunded).toEqual(refund);
+    expect((await readSave()).materials.scrap).toBe(10 + refund.scrap);
+
+    // A further replay must not credit a second time.
+    const replayAgain = body(await salvage(['s10'], 'sk-exhaust'));
+    expect(replayAgain.data.refunded).toEqual(refund);
+    expect((await readSave()).materials.scrap).toBe(10 + refund.scrap);
   });
 
   it('salvage locked → 409 EQUIP_LOCKED; equipped → 409 EQUIP_IN_USE', async () => {

@@ -451,7 +451,10 @@ describe.skipIf(!mongo)('worldsvc teams + siege replay e2e', () => {
     await setupDefender('c', tgt2.x, tgt2.y, 50);
     await connect(svc, 'a', tgt1);
     await connect(svc, 'a', tgt2);
-    const entries = await armyWithTroops('a', 10, 60);
+    // 10 cards × 6 troops = 60 total real troops (cardState.currentTroops) — outnumbers the 50 garrison on
+    // paper but nowhere near the SIEGE_CHEAP_RATIO(10×) overwhelming-force threshold, so this still exercises
+    // the real engine rather than the guaranteed-win cheap path (see the note below the second startMarch call).
+    const entries = await armyWithTroops('a', 10, 6);
     await svc.setTeams(W, 'a', [{ id: 't1', name: 'Vanguard', army: entries }]);
 
     const mv = await svc.startMarch(W, 'a', 5, 5, tgt1.x, tgt1.y, 'attack', 1, 't1');
@@ -506,6 +509,62 @@ describe.skipIf(!mongo)('worldsvc teams + siege replay e2e', () => {
     // And the DB agrees: exactly one active march carries this teamId, never two.
     const mine = await svc.getMarches(W, 'a');
     expect(mine.filter((m) => m.teamId === 't1')).toHaveLength(1);
+  });
+
+  it('regression: startMarch (card army) rejects with REV_CONFLICT instead of silently overwriting a concurrent settlement\'s resources', async () => {
+    // Root cause: startMarch computes `resources` from the `pw` snapshot read at the top of the function,
+    // then — after several intervening awaits (computeMarchPath's Mongo scans, the marches.insertOne) —
+    // used to blind-$set that stale value with no rev filter at all for a card-army/idle-redispatch march
+    // (the flat-army branch at least filtered on `troops`, but not `rev` either). A concurrent settlement
+    // for the same account landing in that window (e.g. another of its own return-march refunds) would
+    // have its already-applied resources delta silently discarded. Simulate that exact window
+    // deterministically by bumping rev via a wrapped `marches.insertOne` (which runs right before the
+    // final resources write) instead of relying on true concurrency.
+    await svc.joinWorld(W, 'a', 5, 5);
+    const tgt = findCoord(10, 5);
+    await setupDefender('b', tgt.x, tgt.y, 50);
+    await connect(svc, 'a', tgt);
+    const entries = await armyWithTroops('a', 5, 60);
+    await svc.setTeams(W, 'a', [{ id: 't-race', name: 'Vanguard', army: entries }]);
+
+    const pwBefore = await m.collections.playerWorld.findOne({ _id: playerWorldId(W, 'a') });
+    const realMarches = m.collections.marches;
+    let injected = false;
+    const wrappedMarches = {
+      findOne: realMarches.findOne.bind(realMarches),
+      find: realMarches.find.bind(realMarches),
+      findOneAndDelete: realMarches.findOneAndDelete.bind(realMarches),
+      deleteOne: realMarches.deleteOne.bind(realMarches),
+      updateOne: realMarches.updateOne.bind(realMarches),
+      insertOne: async (doc: Parameters<typeof realMarches.insertOne>[0]) => {
+        if (!injected) {
+          injected = true;
+          // Simulate a concurrent settlement for this same account landing in the window between
+          // startMarch's initial pw read and its final resources write.
+          await m.collections.playerWorld.updateOne({ _id: pwBefore!._id }, { $inc: { rev: 1 } });
+        }
+        return realMarches.insertOne(doc);
+      },
+    } as typeof realMarches;
+    const svcRaced = new WorldService({
+      cols: { ...m.collections, marches: wrappedMarches },
+      redis: null,
+      gateway: fakeGateway,
+      mapW: SLG_MAP_W,
+      mapH: SLG_MAP_H,
+      now,
+      meta: fakeMeta,
+    });
+
+    await expect(svcRaced.startMarch(W, 'a', 5, 5, tgt.x, tgt.y, 'attack', 1, 't-race')).rejects.toMatchObject({ code: 'REV_CONFLICT' });
+
+    // The march must have been rolled back (not left as a phantom in-flight march)...
+    const marches = await m.collections.marches.find({ worldId: W, ownerId: 'a', teamId: 't-race' }).toArray();
+    expect(marches).toHaveLength(0);
+    // ...and rev must be exactly +1 from the injected bump alone — the rejected write must not have landed
+    // on top of it (which would silently reset `resources` back to the stale pre-injection snapshot).
+    const pwAfter = await m.collections.playerWorld.findOne({ _id: pwBefore!._id });
+    expect(pwAfter!.rev).toBe(pwBefore!.rev + 1);
   });
 
   it('idle-team gate: a team stays "out" through the occupation-hold countdown, not just in transit', async () => {

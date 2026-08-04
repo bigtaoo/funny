@@ -61,6 +61,11 @@ export class RoomManager {
       if (room.hasSide(conn.side)) {
         room.takeover(conn);
       } else {
+        // Defense-in-depth (2026-08-04 fix, re-wires Room.hasAccount which existed but was never
+        // called): the SAME account seating BOTH sides of a room would be a self-match — matchsvc's
+        // pairing logic and gateway's duel-invite (self-target rejected) should never produce this,
+        // but a ticket bug/replay must not be trusted to seat one account against itself server-side.
+        if (room.hasAccount(conn.accountId)) return false;
         room.addPlayer(conn, name, publicId, opponentTitle, decks, opponentAvatarId, opponentSkins);
       }
       return true;

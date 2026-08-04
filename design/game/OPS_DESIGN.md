@@ -216,7 +216,7 @@ GET  /admin/comp/tickets?status=                     → { tickets: [...] }     
 POST /admin/comp/tickets/{id}/approve                → { ok }                          // comp.approve.*（≠发起人）
 POST /admin/comp/tickets/{id}/reject  { note }       → { ok }
 POST /admin/comp/tickets/{id}/cancel                 → { ok }
-POST /admin/comp/preview       { scope, target }     → { recipientCount }              // dry-run
+POST /admin/comp/preview       { scope, target }     → { recipientCount }              // comp.initiate.*（2026-08-04 修复：此前 dry-run 完全没有能力校验，任意已登录 admin 不论角色都能探测全服补偿覆盖人数；现在与 /admin/comp/tickets 发起同一 scope 要求相同能力）
 
 # SLG 赛季运维（G7/§17.7；slg.season.view / slg.season.manage）
 GET  /admin/slg/worlds                               → { worlds: [...] }               // slg.season.view

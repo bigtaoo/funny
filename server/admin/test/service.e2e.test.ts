@@ -300,13 +300,27 @@ describe.skipIf(!mongo)('admin service e2e', () => {
 
   it('dry-run preview returns recipient count', async () => {
     const ops = await actorOf(svc, 'opsy');
-    expect(await svc.preview({ scope: 'global', target: { filter: { kind: 'all' } } })).toMatchObject({
+    expect(await svc.preview(ops, { scope: 'global', target: { filter: { kind: 'all' } } })).toMatchObject({
       recipientCount: 100,
     });
-    expect(await svc.preview({ scope: 'single', target: { publicId: '123456789' } })).toMatchObject({
+    expect(await svc.preview(ops, { scope: 'single', target: { publicId: '123456789' } })).toMatchObject({
       recipientCount: 1,
     });
-    void ops;
+  });
+
+  // Regression for the 2026-08-04 fix: preview() (and its httpApi.ts route) never called requireCap at
+  // all — ANY authenticated admin, regardless of role, could probe how many players a global compensation
+  // broadcast would reach. preview is now gated by the SAME capability initiateTicket requires for that
+  // scope (support has comp.initiate.single but not comp.initiate.global — see ROLE_CAPABILITIES).
+  it('preview is gated by the same capability initiateTicket requires for that scope', async () => {
+    const cs = await actorOf(svc, 'csr'); // role: support
+    await expect(svc.preview(cs, { scope: 'global', target: { filter: { kind: 'all' } } })).rejects.toMatchObject({
+      status: 403,
+    });
+    // support DOES hold comp.initiate.single — single-scope preview must still work for it.
+    await expect(
+      svc.preview(cs, { scope: 'single', target: { publicId: '123456789' } }),
+    ).resolves.toMatchObject({ recipientCount: 1 });
   });
 
   it('execution failure → failed → retry succeeds; dispatchKey unchanged (idempotent)', async () => {

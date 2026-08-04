@@ -311,16 +311,23 @@ export class Room {
    * A new ticket connection claims a side that's already occupied — either the previous connection
    * is stale (new-device login evicting the old one) or this is the same device racing its own
    * reconnect. Evicts the stale socket immediately so it can't linger duplicating frames or block
-   * the account from being taken over. Deliberately leaves `slot.conn`/grace-timer/metronome alone:
-   * the client's follow-up conn_resume still drives resume() for that, since it carries lastFrame
-   * needed to backfill the missed frame log correctly — rebinding here first could let a metronome
-   * tick reach the new connection before its resync, if the stale socket hadn't disconnected yet.
+   * the account from being taken over. During an active match, deliberately leaves `slot.conn`/
+   * grace-timer/metronome alone: the client's follow-up conn_resume still drives resume() for that,
+   * since it carries lastFrame needed to backfill the missed frame log correctly — rebinding here
+   * first could let a metronome tick reach the new connection before its resync, if the stale socket
+   * hadn't disconnected yet.
+   * Pre-match (WAITING), there is no frame log to catch up on and the client never sends conn_resume
+   * before match_start (lastFrame has no meaning yet) — so rebind immediately here (2026-08-04 fix).
+   * Without this, `slot.conn` still pointed at the stale connection; once its close event eventually
+   * fired, onDisconnect() saw an "abandoned" WAITING-phase slot and destroyed the room out from under
+   * the very connection that had just replaced it, orphaning the reconnecting player with no room.
    */
   takeover(conn: Connection): void {
     const slot = this.slotOfSide(conn.side);
     if (!slot) return;
     const stale = slot.conn;
     if (stale && stale !== conn) stale.close(4409, 'replaced');
+    if (this.phase !== RoomPhase.IN_MATCH) slot.conn = conn;
   }
 
   /** Reconnect: rebind connection + send conn_resync to catch up frames + resume metronome. */

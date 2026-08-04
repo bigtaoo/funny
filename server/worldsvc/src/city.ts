@@ -624,8 +624,13 @@ export class CityService {
     const nowMs = now();
     if (!cs?.injuredUntil || cs.injuredUntil <= nowMs) throw new SlgError('BAD_REQUEST', `Card ${cardInstanceId} is not injured`);
 
-    // Deduct coins via commercial client (spend throws INSUFFICIENT_FUNDS if not enough).
-    await this.core.commercial.spend(accountId, CARD_RECOVER_COIN_COST, `recover:${cardInstanceId}`, clientPlatform);
+    // Deduct coins via commercial client (spend throws INSUFFICIENT_FUNDS if not enough). The orderId must
+    // be unique per call (like every other coin-spend site in this file) — commercial.spend treats a
+    // repeated orderId as an idempotent no-op success without re-debiting, so a bare `recover:${id}` would
+    // make every recovery after the first one free forever for that card instance.
+    await this.core.commercial.spend(
+      accountId, CARD_RECOVER_COIN_COST, `recover:${worldId}:${accountId}:${cardInstanceId}:${nowMs}`, clientPlatform,
+    );
 
     await cols.playerWorld.updateOne(
       { _id: pwId },

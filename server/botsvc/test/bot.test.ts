@@ -189,3 +189,55 @@ describe('BotSession.tickBattle', () => {
     expect(session.state).toBe('lobby_idle');
   });
 });
+
+describe('BotSession.login / logout', () => {
+  // Regression for the 2026-08-04 fix: a failed deviceLogin used to leave state stuck at 'logging_in'
+  // forever — the scheduler's spawnUpTo only re-selects sessions with state==='offline' to retry, and a
+  // stuck 'logging_in' session also passed spawnUpTo's `state !== 'offline'` check straight into the
+  // online set despite having no token, permanently occupying a fleet slot that never does anything.
+  it('login() failure resets state to offline (and rethrows) instead of sticking at logging_in', async () => {
+    const meta: any = { deviceLogin: vi.fn().mockRejectedValue(new Error('meta unreachable')) };
+    const session = new BotSession(identity, meta, fakeSocial(), fakeCommercial(), {}, battleOpts);
+
+    await expect(session.login()).rejects.toThrow('meta unreachable');
+    expect(session.state).toBe('offline');
+
+    // A subsequent login (as spawnUpTo would retry, since state is back to 'offline') can still succeed.
+    meta.deviceLogin.mockResolvedValueOnce({ token: 't2', accountId: 'a2', isNew: false });
+    await session.login();
+    expect(session.state).toBe('lobby_idle');
+  });
+
+  // Regression for the 2026-08-04 fix: logout() used to just clear local state while an in-flight battle
+  // (runBattle -> playRankedMatch) kept running to completion in the background, holding a live gateway/
+  // gameserver WS connection open for an account the fleet no longer tracked as online — defeating
+  // load-shedding (despawnDownTo) entirely.
+  it('logout() aborts an in-flight battle instead of letting it run to completion', async () => {
+    let capturedSignal: AbortSignal | undefined;
+    (battleSession.playRankedMatch as any).mockImplementation(
+      (opts: any) =>
+        new Promise((_resolve, reject) => {
+          capturedSignal = opts.abortSignal;
+          opts.abortSignal?.addEventListener('abort', () => reject(new Error('match aborted: bot logged out')));
+          opts.onMatched?.();
+        }),
+    );
+
+    const session = new BotSession(identity, fakeMeta(), fakeSocial(), fakeCommercial(), {}, {
+      gatewayWsUrl: 'ws://unused/gw',
+      chancePerTick: 1,
+    });
+    await session.login();
+    session.tickBattle();
+    expect(session.state).toBe('in_battle');
+    expect(capturedSignal).toBeDefined();
+    expect(capturedSignal!.aborted).toBe(false);
+
+    session.logout();
+
+    expect(capturedSignal!.aborted).toBe(true);
+    expect(session.state).toBe('offline');
+    await new Promise((r) => setTimeout(r, 0));
+    expect(session.state).toBe('offline'); // the aborted battle's .finally() must not resurrect lobby_idle
+  });
+});

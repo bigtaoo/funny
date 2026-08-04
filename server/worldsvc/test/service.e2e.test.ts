@@ -215,6 +215,64 @@ describe.skipIf(!mongo)('worldsvc WorldService e2e', () => {
     expect(spends).toHaveLength(1);
   });
 
+  it('regression: two CONCURRENT relocateBase calls for the same account → exactly one wins, footprint not corrupted', async () => {
+    // Root cause: relocateBase used to have no atomicity guard at all between its coin spend / tile-swap
+    // and its final playerWorld write (a blind $set with no rev filter, unlike every other spend site in
+    // this file). Two concurrent calls could both pass validation, both charge coins, and interleave their
+    // base-tile deleteMany/insert into a mixed-location footprint, with the final write silently
+    // overwriting whatever the other one's write had computed. The fix claims the playerWorld rev
+    // atomically before touching any tile, so only one concurrent call can ever proceed past that point.
+    const spends: Array<{ accountId: string; amount: number }> = [];
+    const commercial = {
+      available: true,
+      async spend(accountId: string, amount: number) { spends.push({ accountId, amount }); },
+      async grant() { /* unused */ },
+    };
+    const svc2 = new WorldService({
+      cols: m.collections, redis: null, commercial,
+      mapW: SLG_MAP_W, mapH: SLG_MAP_H, now,
+    });
+    await svc2.joinWorld(W, 'a', 5, 5);
+
+    const dst1 = findBlock(60, 60);
+    const dst2 = findBlock(90, 90);
+    for (const dst of [dst1, dst2]) {
+      for (let dx = -1; dx <= 1; dx++) {
+        for (let dy = -1; dy <= 1; dy++) {
+          const x = dst.x + dx;
+          const y = dst.y + dy;
+          await m.collections.tiles.updateOne(
+            { _id: tileId(W, x, y) },
+            { $set: { _id: tileId(W, x, y), worldId: W, x, y, type: 'territory', level: proceduralTile(W, x, y).level, ownerId: 'a', garrison: GARRISON_PER_TILE, rev: 0 } },
+            { upsert: true },
+          );
+        }
+      }
+    }
+
+    const results = await Promise.allSettled([
+      svc2.relocateBase(W, 'a', dst1.x, dst1.y),
+      svc2.relocateBase(W, 'a', dst2.x, dst2.y),
+    ]);
+    const fulfilled = results.filter((r) => r.status === 'fulfilled');
+    const rejected = results.filter((r): r is PromiseRejectedResult => r.status === 'rejected');
+    expect(fulfilled).toHaveLength(1);
+    expect(rejected).toHaveLength(1);
+    expect(rejected[0].reason).toMatchObject({ code: 'REV_CONFLICT' });
+    expect(spends).toHaveLength(1); // the loser never reached the coin-spend step
+
+    // The account's base footprint must be a single coherent 3×3 at whichever destination won, not a
+    // mixture of both.
+    const pw = await m.collections.playerWorld.findOne({ _id: playerWorldId(W, 'a') });
+    const winnerDst = pw!.mainBaseTile === tileId(W, dst1.x, dst1.y) ? dst1 : dst2;
+    const baseTiles = await m.collections.tiles.find({ worldId: W, ownerId: 'a', type: 'base' }).toArray();
+    expect(baseTiles).toHaveLength(9);
+    for (const t of baseTiles) {
+      expect(Math.abs(t.x - winnerDst.x)).toBeLessThanOrEqual(1);
+      expect(Math.abs(t.y - winnerDst.y)).toBeLessThanOrEqual(1);
+    }
+  });
+
   it('relocation validation: not joined / out of bounds / target not fully owned', async () => {
     const commercial = { available: true, async spend() {}, async grant() {} };
     const svc2 = new WorldService({

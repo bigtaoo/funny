@@ -288,6 +288,14 @@ export class TerritoryService {
       throw new SlgError('TILE_NOT_OWNED', 'Relocation target must be a 3×3 block you already fully own — occupy the surrounding tiles first');
     }
 
+    // Atomically claim this rev generation BEFORE spending coins or touching any tile: two concurrent
+    // relocateBase calls for the same account both read the same `pw.rev` above, but only one CAS here can
+    // win — the loser fails fast (no charge, no tile mutation) instead of both proceeding to interleave
+    // their base-tile deleteMany/insert into a corrupted mixed-location footprint.
+    const claim = await cols.playerWorld.updateOne({ _id: pw._id, rev: pw.rev }, { $inc: { rev: 1 } });
+    if (claim.matchedCount === 0) throw new SlgError('REV_CONFLICT', 'Concurrent update, please retry');
+    const claimedRev = pw.rev + 1;
+
     // Deduct coins first (failure throws INSUFFICIENT_FUNDS; map state is not modified).
     const orderId = `slg_relocate:${worldId}:${accountId}:${now()}`;
     await this.core.commercial.spend(accountId, RELOCATE_COST, orderId, clientPlatform);
@@ -317,10 +325,15 @@ export class TerritoryService {
 
     const resources = this.core.settle(pw, t);
     const yieldRate = await this.core.recomputeYield(worldId, accountId);
-    await cols.playerWorld.updateOne(
-      { _id: pw._id },
+    // Rev-guarded on the just-claimed generation (not a blind $set, unlike every other spend/mutation site
+    // in this file already fixed): if some other concurrent mutation (buildWatchtower/buildStructure/a
+    // training tick) landed during the tile-swap work above and bumped rev again, this must fail loudly
+    // rather than silently overwrite that mutation's already-applied resources delta.
+    const settled = await cols.playerWorld.updateOne(
+      { _id: pw._id, rev: claimedRev },
       { $set: { resources, yieldRate, mainBaseTile: newTid, lastTickAt: t }, $inc: { rev: 1 } },
     );
+    if (settled.matchedCount === 0) throw new SlgError('REV_CONFLICT', 'Concurrent update, please retry');
 
     // Push changes for both the old and new tiles (old address reverts to neutral, new address becomes the capital).
     const after = await cols.tiles.findOne({ _id: newTid });

@@ -53,6 +53,9 @@ export class BotSession {
   private slgTick = 0;
   private buildRotation = 0;
   private battling = false;
+  /** Set while a battle is in flight (runBattle) — logout() aborts it instead of leaving the match
+   *  running to completion against an account the fleet no longer tracks as online (2026-08-04 fix). */
+  private battleAbort: AbortController | undefined;
 
   constructor(
     readonly identity: BotIdentity,
@@ -65,10 +68,19 @@ export class BotSession {
 
   async login(): Promise<void> {
     this.state = 'logging_in';
-    const login = await this.meta.deviceLogin(this.identity.deviceId);
-    this.token = login.token;
-    this.accountId = login.accountId;
-    this.gatewayUrl = login.gatewayUrl;
+    try {
+      const login = await this.meta.deviceLogin(this.identity.deviceId);
+      this.token = login.token;
+      this.accountId = login.accountId;
+      this.gatewayUrl = login.gatewayUrl;
+    } catch (e) {
+      // 2026-08-04 fix: a failed deviceLogin used to leave state stuck at 'logging_in' forever — the
+      // scheduler's spawnUpTo only re-selects sessions with state==='offline', so this session could
+      // never be retried, and it still passed spawnUpTo's `state !== 'offline'` check into `online`
+      // despite having no token, occupying a fleet slot that never does anything.
+      this.state = 'offline';
+      throw e;
+    }
     if (!this.paymentBootstrapped) {
       // A purchase failing must not keep the bot offline — the account is logged in and can still
       // play. This also lets the fleet run against a backend whose internal commercial port isn't
@@ -84,6 +96,10 @@ export class BotSession {
   }
 
   logout(): void {
+    // Cancel any in-flight battle (2026-08-04 fix): without this, a match kept running to completion
+    // in the background after logout(), holding a live gateway/gameserver WS connection open for an
+    // account the fleet no longer tracks as online — defeating load-shedding (despawnDownTo) entirely.
+    this.battleAbort?.abort();
     this.token = undefined;
     this.accountId = undefined;
     this.gatewayUrl = undefined;
@@ -114,15 +130,21 @@ export class BotSession {
 
   private async runBattle(): Promise<void> {
     const wsUrl = this.gatewayUrl || this.battle.gatewayWsUrl;
-    await playRankedMatch({
-      gatewayWsUrl: wsUrl,
-      jwt: this.token!,
-      deck: BOT_DECK,
-      difficulty: BOT_AI_DIFFICULTY,
-      onMatched: () => {
-        if (this.state === 'matchmaking') this.state = 'in_battle';
-      },
-    });
+    this.battleAbort = new AbortController();
+    try {
+      await playRankedMatch({
+        gatewayWsUrl: wsUrl,
+        jwt: this.token!,
+        deck: BOT_DECK,
+        difficulty: BOT_AI_DIFFICULTY,
+        abortSignal: this.battleAbort.signal,
+        onMatched: () => {
+          if (this.state === 'matchmaking') this.state = 'in_battle';
+        },
+      });
+    } finally {
+      this.battleAbort = undefined;
+    }
   }
 
   /** Idempotent: safe to call again on every login (commercial dedupes on orderId; a real card is never re-bought). */

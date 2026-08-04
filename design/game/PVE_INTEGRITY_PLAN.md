@@ -260,6 +260,18 @@ bump（字段不变）。客户端 `extractSyncPatch` 去掉这三段；服务�
   （best-effort，镜像 `pveClear` 里 B6 的调用方式）。`rejected` 路径提前 return，不受影响（依然不计入，
   符合"作弊嫌疑不给任务奖励"的预期）。
 
+- ✅（2026-08-04 修复）**首通掉卡 `grantCards` 若在"合并读改写"之后调用且失败，客户端重试会把材料/成就打点重复计一次**：
+  `settleNormalClear`/`deliverVerifiedClearReward` 都是"先跑一次合并的 `mutateSave`（材料+装备槽+`accrueStats`
+  成就打点+留存打点全部揉进同一次 rev 循环写），再调独立的 `grantCards`（自己的 rev 循环）发放本关首通掉落的
+  角色卡"这个顺序。`grantCards` 有自己独立的失败面（存档文档竞争下可能重试耗尽），而它是**在**合并写之后才跑
+  的——一旦它失败，函数直接 `return { error, code }`，但合并写的效果早已提交。客户端看到错误响应后按既有约定重试
+  整个请求，重试会**从头**再跑一遍"合并读改写"（`applyMaterialAndEquipmentGrant`/`accrueStats` 都不是"同一批
+  clear/reward 输入重复调用天然幂等"的函数），把材料、装备槽产出和成就统计**在已经提交的那份基础上又叠加一次**。
+  修复：两条路径都把 `grantCards` 调用挪到合并写**之前**——`grantCards` 自己失败时，材料/成就/留存这些全都还没
+  发生，客户端重试是从真正干净的状态重新进入，不会双发。**回归测试**：`server/metaserver/test/cards.e2e.test.ts`
+  /`pve.e2e.test.ts`/`internal-economy.test.ts` 断言两条路径下 `grantCards` 失败时合并写从未执行（材料/成就计数
+  保持不变），以及正常路径下发卡结果仍正确附带在返回的 `save` 里。
+
 - **⚠️ 新发现的相关 gap（2026-07-26 排查副产品，未修）：L0"开局战力不符"异常检测自 CC-1 起永久失效**：
   `pve.ts:412-416` 的 `blueprintMismatch` 判据比较客户端上报的 `unitLevels`/`pveUpgrades`（`/pve/clear` 请求体，
   §0"开局战力不符→必作弊"的判据来源）与服务器权威值；但客户端 `SaveManager.recordClear` 目前**永远**只传

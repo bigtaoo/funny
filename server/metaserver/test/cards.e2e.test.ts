@@ -15,6 +15,7 @@ import {
 import type { FastifyInstance } from 'fastify';
 import type { CommercialClient } from '../dist/commercialClient.js';
 import { buildApp } from '../dist/app.js';
+import { fuseCards } from '../dist/cards.js';
 import { seedEquipment } from './helpers/equipment.js';
 import { seedCard as seedCardDoc, readCardInv } from './helpers/cards.js';
 
@@ -217,6 +218,34 @@ describe.skipIf(!mongo)('cards backend e2e', () => {
       expect(r2.data.card.level).toBe(r1.data.card.level);
       const card = await cardById(targetId);
       expect(card).toBeDefined();
+    });
+
+    it('regression: fuseCards exhausting rev retries on cardInvCount still reports success instead of a stale REV_CONFLICT', async () => {
+      // Root cause: the target level-up + 5 materials consumed commit unconditionally BEFORE the
+      // cardInvCount rev-guarded retry loop even starts (same shape as reforgeEquipment) — so if that loop
+      // exhausts (contention from an unrelated concurrent save write), the old code deleted the idem claim
+      // and returned REV_CONFLICT despite the fuse having already actually happened: a client retry with the
+      // same key would then re-enter fresh, fail to find the already-deleted materials (CARD_NOT_FOUND), and
+      // report failure for a fusion that had already succeeded. Force every findOneAndUpdate on `saves` to
+      // "lose" to simulate that contention deterministically.
+      const before = (await cardById(targetId))!;
+      const realSaves = m.collections.saves;
+      const wrappedSaves = {
+        findOne: realSaves.findOne.bind(realSaves),
+        findOneAndUpdate: async () => null,
+      } as typeof realSaves;
+      const wrappedCols = { ...m.collections, saves: wrappedSaves };
+
+      const result = await fuseCards(wrappedCols, () => Date.now(), accountId, targetId, materialIds, 'ik-fuse-exhaust');
+      expect('error' in result).toBe(false);
+      expect((result as { card: { level: number } }).card.level).toBe(before.level + 1);
+      // Materials are gone (fusion genuinely happened) — this must not be reported as a failure.
+      for (const id of materialIds) expect(await cardById(id)).toBeUndefined();
+      // A retry with the same key against the real (unwrapped) collections must replay the actual fused
+      // state, not CARD_NOT_FOUND.
+      const retry = body(await fuse(targetId, materialIds, 'ik-fuse-exhaust'));
+      expect(retry.ok).toBe(true);
+      expect(retry.data.card.level).toBe(before.level + 1);
     });
 
     it('fuse: target already at MAX_CARD_LEVEL → 400 BAD_REQUEST', async () => {

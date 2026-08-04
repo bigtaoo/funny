@@ -368,7 +368,9 @@ export function RenderMixin<TBase extends FamilySceneBaseCtor>(Base: TBase): TBa
         let nameRight = right - 12; // where the name column must stop
 
         if (showActions) {
-          const accId = mem.accountId;
+          // accountId is always present here: this scene only ever renders the caller's OWN family
+          // (getMyFamily / getFamily(ownFamilyId)), where the server always includes it.
+          const accId = mem.accountId!;
 
           // Members holding an office (elder) can't be kicked directly — the button is greyed
           // out and clicking it just explains that the office must be resigned first, rather

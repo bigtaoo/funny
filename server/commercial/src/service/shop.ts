@@ -41,6 +41,13 @@ export function ShopMixin<TBase extends CommercialBaseCtor>(Base: TBase): TBase 
     }): Promise<Result<{ orderId: string; coinsAfter: number; status: OrderDoc['status'] }>> {
       const existing = await this.cols.orders.findOne({ _id: args.orderId });
       if (existing) {
+        // Ownership check (2026-08-04 fix, mirrors recharge.ts's existing accountId guard): orderId is a
+        // raw client/meta-supplied string with no structural binding to the caller — every current caller
+        // happens to mint a fresh UUID per request, so this hasn't manifested as a live cross-account leak,
+        // but nothing in this shared cache-replay pattern enforced it. Without this, a future caller that
+        // doesn't mint a fresh id could read back a DIFFERENT account's balance under a colliding orderId,
+        // exactly the class of bug already fixed once for recharge.ts's receiptId path.
+        if (existing.accountId !== args.accountId) return { ok: false, error: 'BAD_REQUEST' };
         return { ok: true, orderId: existing._id, coinsAfter: existing.coinsAfter, status: existing.status };
       }
       // cost is passed from the trusted meta server; we still cross-check against the catalog price to guard against meta-side mismatches (e.g. legendary items that are not for sale would have no price).
@@ -64,6 +71,7 @@ export function ShopMixin<TBase extends CommercialBaseCtor>(Base: TBase): TBase 
       } catch (e) {
         if ((e as { code?: number }).code === 11000) {
           const o = await this.cols.orders.findOne({ _id: args.orderId });
+          if (o && o.accountId !== args.accountId) return { ok: false, error: 'BAD_REQUEST' };
           return { ok: true, orderId: args.orderId, coinsAfter: o?.coinsAfter ?? 0, status: o?.status ?? 'charged' };
         }
         throw e;
@@ -101,7 +109,11 @@ export function ShopMixin<TBase extends CommercialBaseCtor>(Base: TBase): TBase 
       clientPlatform?: string;
     }): Promise<Result<{ coinsAfter: number }>> {
       const existing = await this.cols.orders.findOne({ _id: args.orderId });
-      if (existing) return { ok: true, coinsAfter: existing.coinsAfter };
+      // Ownership check (2026-08-04 fix) — see shopCharge's identical guard above for the full rationale.
+      if (existing) {
+        if (existing.accountId !== args.accountId) return { ok: false, error: 'BAD_REQUEST' };
+        return { ok: true, coinsAfter: existing.coinsAfter };
+      }
 
       const amount = Number.isFinite(args.amount) ? Math.max(0, Math.floor(args.amount)) : 0;
       if (amount === 0) return { ok: false, error: 'BAD_REQUEST' };
@@ -123,6 +135,7 @@ export function ShopMixin<TBase extends CommercialBaseCtor>(Base: TBase): TBase 
       } catch (e) {
         if ((e as { code?: number }).code === 11000) {
           const o = await this.cols.orders.findOne({ _id: args.orderId });
+          if (o && o.accountId !== args.accountId) return { ok: false, error: 'BAD_REQUEST' };
           return { ok: true, coinsAfter: o?.coinsAfter ?? 0 };
         }
         throw e;
@@ -161,7 +174,11 @@ export function ShopMixin<TBase extends CommercialBaseCtor>(Base: TBase): TBase 
       clientPlatform?: string;
     }): Promise<Result<{ coinsAfter: number }>> {
       const existing = await this.cols.orders.findOne({ _id: args.orderId });
-      if (existing) return { ok: true, coinsAfter: existing.coinsAfter };
+      // Ownership check (2026-08-04 fix) — see shopCharge's identical guard above for the full rationale.
+      if (existing) {
+        if (existing.accountId !== args.accountId) return { ok: false, error: 'BAD_REQUEST' };
+        return { ok: true, coinsAfter: existing.coinsAfter };
+      }
 
       // Guard finiteness before flooring/clamping: Math.floor(Infinity)===Infinity, which would sail
       // through the `amount > 0` check below and reach credit()'s unconditional wallet $inc.
@@ -182,6 +199,7 @@ export function ShopMixin<TBase extends CommercialBaseCtor>(Base: TBase): TBase 
       } catch (e) {
         if ((e as { code?: number }).code === 11000) {
           const o = await this.cols.orders.findOne({ _id: args.orderId });
+          if (o && o.accountId !== args.accountId) return { ok: false, error: 'BAD_REQUEST' };
           return { ok: true, coinsAfter: o?.coinsAfter ?? 0 };
         }
         throw e;

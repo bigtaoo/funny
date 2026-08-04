@@ -209,8 +209,10 @@ describe('Gateway control-plane routing', () => {
     const ws1 = await connect(port, 'acc-remote');
     const closed = new Promise<number>((res) => ws1.on('close', (code: number) => res(code)));
 
-    // Simulates a Redis-delivered kick broadcast originating from a different gateway instance.
-    gateway!.routeKick('acc-remote', 'some-other-instance-id');
+    // Simulates a Redis-delivered kick broadcast originating from a different gateway instance, strictly
+    // newer than any connSeq this instance could have generated (Number.MAX_SAFE_INTEGER — the local
+    // connection must always look "older" than this and get evicted, matching a genuine stale takeover).
+    gateway!.routeKick('acc-remote', 'some-other-instance-id', Number.MAX_SAFE_INTEGER);
     expect(await closed).toBe(4409);
   });
 
@@ -224,7 +226,7 @@ describe('Gateway control-plane routing', () => {
     ws1.on('close', () => { closed = true; });
 
     expect(ownInstanceId).not.toBe('');
-    gateway!.routeKick('acc-self', ownInstanceId); // echo of our own broadcast — must be a no-op
+    gateway!.routeKick('acc-self', ownInstanceId, Number.MAX_SAFE_INTEGER); // echo of our own broadcast — must be a no-op
     await sleep(40);
     expect(closed).toBe(false);
   });
@@ -232,7 +234,28 @@ describe('Gateway control-plane routing', () => {
   it('routeKick is a no-op when this instance holds no connection for the account', () => {
     const port = 19528;
     startGateway(port, new RecordingMatchsvc());
-    expect(() => gateway!.routeKick('nobody-here', 'other-instance')).not.toThrow();
+    expect(() => gateway!.routeKick('nobody-here', 'other-instance', Number.MAX_SAFE_INTEGER)).not.toThrow();
+  });
+
+  // Regression for the 2026-08-04 fix: two connections for the same account landing on DIFFERENT gateway
+  // instances near-simultaneously (e.g. a client-side reconnect racing itself across a load balancer) each
+  // used to publish an unconditional kick. Before the fix, whichever instance's kick arrived LAST would
+  // always win — even if its connection was actually the OLDER (losing) one — because routeKick evicted
+  // any locally-held connection regardless of ordering. The connSeq comparison must let the instance
+  // holding the objectively NEWER connection ignore a kick that only carries an older sequence number.
+  it('routeKick does NOT evict a local connection that is newer than the kick’s connSeq (simultaneous cross-instance reconnect race)', async () => {
+    const port = 19529;
+    startGateway(port, new RecordingMatchsvc());
+    const ws1 = await connect(port, 'acc-race');
+    let closed = false;
+    ws1.on('close', () => { closed = true; });
+
+    // Simulate a sibling instance's kick for a connection that connected BEFORE ours (connSeq 1 — our real
+    // local connection's connSeq is a real Date.now()-based value, always >> 1).
+    gateway!.routeKick('acc-race', 'sibling-instance', 1);
+    await sleep(40);
+    expect(closed).toBe(false); // our newer connection must survive
+    expect(gateway!.stats().online).toBe(1);
   });
 
   it('friendly room_create with a locked card → gateway strips it (falls back to defaultPvpDeck)', async () => {

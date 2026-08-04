@@ -69,6 +69,9 @@ interface GwConn {
   alive: boolean;
   /** Whether this client is capable of performing headless re-computation judging (reported via client_caps). */
   canJudge: boolean;
+  /** Monotonic per-connection sequence (see Gateway.nextConnSeq) — lets routeKick order two connections
+   *  for the same account that landed on DIFFERENT instances, instead of evicting unconditionally. */
+  connSeq: number;
 }
 
 /** meta → gateway judge request (internal HTTP /gw/judge). */
@@ -122,7 +125,10 @@ export class Gateway {
   private readonly instanceId = randomUUID();
   /** Set once Redis connects (index.ts); null in single-instance/no-Redis deployments, where the
    *  local eviction in onConnection() already fully covers same-account takeover. */
-  private kickPublisher: ((accountId: string, originInstanceId: string) => void) | null = null;
+  private kickPublisher: ((accountId: string, originInstanceId: string, connSeq: number) => void) | null = null;
+  /** Tiebreak counter for nextConnSeq (guarantees strictly-increasing values for connections landing on
+   *  THIS instance within the same millisecond; cross-instance ordering still relies on wall-clock). */
+  private connSeqCounter = 0;
   /** Set once Redis connects (index.ts, same subscriber as kickPublisher above); null = presenceOf only
    *  ever sees this instance's own connections (correct for today's single-instance deployment). */
   private presenceStore: GatewaySubscriber | null = null;
@@ -200,8 +206,19 @@ export class Gateway {
   };
 
   /** Wired by index.ts once Redis connects — lets onConnection() notify sibling instances of a same-account takeover. */
-  setKickPublisher(fn: (accountId: string, originInstanceId: string) => void): void {
+  setKickPublisher(fn: (accountId: string, originInstanceId: string, connSeq: number) => void): void {
     this.kickPublisher = fn;
+  }
+
+  /** Monotonic per-connection sequence (2026-08-04 fix, cross-instance reconnect race): combines wall-clock
+   *  time with an in-process tiebreak counter. Two connections for the same account landing on DIFFERENT
+   *  instances near-simultaneously (e.g. a client-side reconnect racing itself across a load balancer) each
+   *  used to publish an unconditional kick — so the instance holding the connection that actually won the
+   *  race would still receive the LOSER's kick broadcast microseconds later and close its own, brand-new
+   *  socket. routeKick now compares connSeq and only evicts when the incoming kick is strictly newer.
+   */
+  private nextConnSeq(): number {
+    return Date.now() * 1000 + (this.connSeqCounter = (this.connSeqCounter + 1) % 1000);
   }
 
   /** Wired by index.ts once Redis connects — lets presenceOf() see accounts connected to a sibling instance.
@@ -224,10 +241,14 @@ export class Gateway {
    * like the local same-instance path (4409 'replaced'); the ws 'close' handler does the rest
    * (conns cleanup, matchsvc.disconnected, presence broadcast).
    */
-  readonly routeKick = (accountId: string, originInstanceId: string): void => {
+  readonly routeKick = (accountId: string, originInstanceId: string, remoteConnSeq: number): void => {
     if (originInstanceId === this.instanceId) return;
     const conn = this.conns.get(accountId);
     if (!conn) return;
+    // If our local connection is actually NEWER than the one that triggered this kick, it already won a
+    // simultaneous-reconnect race against the other instance — evicting it here would kill the winner
+    // instead of the loser (see nextConnSeq's doc).
+    if (conn.connSeq > remoteConnSeq) return;
     log.info('evicting stale connection (cross-instance takeover)', { accountId });
     try {
       conn.ws.close(4409, 'replaced');
@@ -351,13 +372,13 @@ export class Gateway {
         /* ignore */
       }
     }
-    const conn: GwConn = { accountId, ws, alive: true, canJudge: false };
+    const conn: GwConn = { accountId, ws, alive: true, canJudge: false, connSeq: this.nextConnSeq() };
     this.conns.set(accountId, conn);
     log.info('WS connected', { accountId, online: this.conns.size });
     // Tell sibling gateway instances too (2026-07-18): the account→socket map above is per-process,
     // so a stale connection on a DIFFERENT instance wouldn't be caught by the `prev` check. No-op
     // (kickPublisher unset) in single-instance/no-Redis deployments — this instance's own eviction above already sufficed.
-    this.kickPublisher?.(accountId, this.instanceId);
+    this.kickPublisher?.(accountId, this.instanceId, conn.connSeq);
     this.matchsvc.connected(accountId);
     // Friend online-status broadcast (SOC9): notify online friends that I came online + push me a snapshot of online friends.
     void this.broadcastPresence(accountId, true);

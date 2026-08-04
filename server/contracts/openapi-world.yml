@@ -977,37 +977,6 @@ paths:
         '401': { $ref: '#/components/responses/ErrorResp' }
         '500': { $ref: '#/components/responses/ErrorResp' }
 
-  /world/occupy:
-    post:
-      operationId: occupyTile
-      description: >-
-        ⚠ Internal/test-only since ADR-037 (§5.4): instant, no-combat occupation. The product client does not call
-        this — occupying a tile is now `POST /world/march` with `kind:'occupy'`, which fights the target's system
-        garrison and settles through a delayed occupation hold. Kept only for e2e test setup convenience.
-      security: [{ bearerAuth: [] }]
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [worldId, x, y]
-              properties:
-                worldId: { type: string }
-                x: { type: integer }
-                y: { type: integer }
-      responses:
-        '200':
-          description: Occupied
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/OkResponse' }
-        '400': { $ref: '#/components/responses/ErrorResp' }
-        '401': { $ref: '#/components/responses/ErrorResp' }
-        '403': { $ref: '#/components/responses/ErrorResp' }
-        '409': { $ref: '#/components/responses/ErrorResp' }
-        '500': { $ref: '#/components/responses/ErrorResp' }
-
   /world/abandon:
     post:
       operationId: abandonTile

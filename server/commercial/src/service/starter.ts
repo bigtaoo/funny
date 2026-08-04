@@ -48,6 +48,8 @@ export function StarterMixin<TBase extends CommercialBaseCtor>(Base: TBase): TBa
       const displayChannel = spendChannelOf(args.clientPlatform);
       const existing = await this.cols.orders.findOne({ _id: args.orderId });
       if (existing) {
+        // Ownership check (2026-08-04 fix) — see shop.ts's shopCharge for the full rationale.
+        if (existing.accountId !== args.accountId) return { ok: false, error: 'BAD_REQUEST' };
         // status:'charged' on the growth-pack path means a prior attempt claimed the slot but hasn't
         // flipped it to 'delivered' yet (see the insert below, same fix as subscriptionCardBuy in
         // base.ts). starter_draw orders are always inserted 'charged' by design (meta delivers the pack

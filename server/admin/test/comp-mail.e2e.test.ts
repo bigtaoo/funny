@@ -254,7 +254,7 @@ describe.skipIf(!metaMongo || !adminMongo || !socialMongo)('OPS comp ticket ↔ 
     const root = await actorOf('root');
 
     // dry-run preview via the real meta /internal/mail/system/preview.
-    const preview = await svc.preview({ scope: 'global', target: { filter: { kind: 'all' } } });
+    const preview = await svc.preview(ops, { scope: 'global', target: { filter: { kind: 'all' } } });
     expect(preview.available).toBe(true);
     expect(preview.recipientCount).toBe(2);
 

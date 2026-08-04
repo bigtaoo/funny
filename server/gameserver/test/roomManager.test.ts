@@ -114,6 +114,47 @@ describe('RoomManager (ticket relay)', () => {
     expect(c0New.closedWith).toBeNull();
   });
 
+  // Regression for the 2026-08-04 fix: a WAITING-phase (pre-match) reconnect via a fresh ticket handshake
+  // used to leave `slot.conn` pointing at the stale connection (takeover() only closed it, deliberately
+  // NOT rebinding, since that dance is meant for the IN_MATCH+conn_resume path). Once the stale socket's
+  // own close event was processed afterward, onDisconnect() saw an "abandoned" slot and destroyed the
+  // whole room — orphaning the reconnecting player, who now holds an open socket with no room routing
+  // to it, and never receives match_start once the second player joins.
+  it('WAITING-phase reconnect (fresh ticket races the stale connection\'s close) does not destroy the room out from under the new connection', () => {
+    const mgr = newManager();
+    const c0 = makeConn('R', 0, 'a');
+    mgr.join(asConn(c0), 'a', '', SEED, MatchMode.FRIENDLY); // WAITING, only side 0 present
+
+    // Fresh ticket handshake for the SAME side races ahead of the stale connection's close event
+    // (e.g. a quick client-side reconnect after a network blip) — join() takes the takeover branch.
+    const c0New = makeConn('R', 0, 'a');
+    expect(mgr.join(asConn(c0New), 'a', '', SEED, MatchMode.FRIENDLY)).toBe(true);
+    expect(c0.closedWith).toEqual({ code: 4409, reason: 'replaced' });
+
+    // The stale connection's close event now arrives, as it would once the socket actually tears down.
+    mgr.onClose(asConn(c0));
+
+    // The room must still be alive, still waiting on the NEW connection — not destroyed.
+    const c1 = makeConn('R', 1, 'b');
+    expect(mgr.join(asConn(c1), 'b', '', SEED, MatchMode.FRIENDLY)).toBe(true);
+    expect(has(c0New, 'match_start')).toBe(true);
+    expect(has(c1, 'match_start')).toBe(true);
+  });
+
+  // Regression for the 2026-08-04 defense-in-depth fix: Room.hasAccount existed but was never called
+  // anywhere, so nothing prevented the SAME account from being seated on BOTH sides of one room (a
+  // self-match) if a ticket bug/replay ever produced that pairing — matchsvc/gateway are expected to
+  // prevent self-pairing upstream, but the data plane shouldn't have to trust that blindly.
+  it('the same account cannot occupy both sides of a room (self-match rejected)', () => {
+    const mgr = newManager();
+    const c0 = makeConn('R', 0, 'a');
+    expect(mgr.join(asConn(c0), 'a', '', SEED, MatchMode.FRIENDLY)).toBe(true);
+
+    const c1SameAccount = makeConn('R', 1, 'a'); // same accountId, the OTHER side
+    expect(mgr.join(asConn(c1SameAccount), 'a', '', SEED, MatchMode.FRIENDLY)).toBe(false);
+    expect(has(c0, 'match_start')).toBe(false); // still waiting — the bogus second seat never landed
+  });
+
   it('activeAccountIds() reports every accountId rostered across live rooms, deduped, across WAITING and IN_MATCH phases', () => {
     const mgr = newManager();
     const c0 = makeConn('R1', 0, 'a');
