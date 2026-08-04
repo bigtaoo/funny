@@ -17,6 +17,7 @@ import { WorldMapPanels } from '../../src/scenes/worldmap/WorldMapPanels';
 import { WorldMapInput } from '../../src/scenes/worldmap/WorldMapInput';
 import type { WorldMapContext } from '../../src/scenes/worldmap/WorldMapContext';
 import type { SlgShopItemView } from '../../src/net/WorldApiClient';
+import type { IconKind } from '../../src/render/icons';
 
 const memStore = (() => {
   const m = new Map<string, string>();
@@ -90,6 +91,16 @@ function buildHarness(opts: { shopItems?: SlgShopItemView[]; hasBattlePass?: boo
   (ctx as unknown as { panels: WorldMapPanels }).panels = panels;
   const input = new WorldMapInput(ctx);
   return { ctx, panels, input, doBuyShopItem, getShopItems };
+}
+
+/** `shopIcon`/`shopBadgeLabel` are private on the ShopMixin class expression — TS privacy is
+ *  erased at runtime, so the plain cast used throughout this file (see `worldMapReplayPanel.ui.ts`
+ *  and the other private-method tests linked from claudedocs/client-testing.md) reaches them directly. */
+function shopIconApi(panels: WorldMapPanels) {
+  return panels as unknown as {
+    shopIcon(it: SlgShopItemView): IconKind;
+    shopBadgeLabel(it: SlgShopItemView): string | null;
+  };
 }
 
 describe('WorldMapPanels.openShopPanel', () => {
@@ -244,5 +255,87 @@ describe('WorldMapPanels — shop battle-pass card once already owned', () => {
     input.handleUp(cx, cy);
     expect(doBuyShopItem).not.toHaveBeenCalled();
     expect(showToast).toHaveBeenCalledTimes(1);
+  });
+});
+
+// SLG_DESIGN_LOG.md §63: troop_speedup (1h/8h/24h) and protection (8h/24h) used to all render the
+// same icon glyph per kind — shopIcon() ranks same-kind items by duration_sec and indexes into an
+// escalating tier ladder (hourglassSm/Md/Lg, armor/armorHeavy) instead.
+describe('WorldMapPanels.shopIcon — escalating tier ladder', () => {
+  it('ranks troop_speedup tiers by duration regardless of catalog order', () => {
+    // Deliberately out of duration order — the catalog's array order must not matter.
+    const items: SlgShopItemView[] = [
+      { id: 'sp24', cost: 3600, kind: 'troop_speedup', effect: { duration_sec: 86400 }, description: '' },
+      { id: 'sp1', cost: 200, kind: 'troop_speedup', effect: { duration_sec: 3600 }, description: '' },
+      { id: 'sp8', cost: 1400, kind: 'troop_speedup', effect: { duration_sec: 28800 }, description: '' },
+    ];
+    const { panels } = buildHarness({ shopItems: items });
+    const api = shopIconApi(panels);
+    expect(api.shopIcon(items[1]!)).toBe('hourglassSm'); // 1h
+    expect(api.shopIcon(items[2]!)).toBe('hourglassMd'); // 8h
+    expect(api.shopIcon(items[0]!)).toBe('hourglassLg'); // 24h
+  });
+
+  it('ranks protection tiers by duration the same way', () => {
+    const items: SlgShopItemView[] = [
+      { id: 'pr24', cost: 1200, kind: 'protection', effect: { duration_sec: 86400 }, description: '' },
+      { id: 'pr8', cost: 500, kind: 'protection', effect: { duration_sec: 28800 }, description: '' },
+    ];
+    const { panels } = buildHarness({ shopItems: items });
+    const api = shopIconApi(panels);
+    expect(api.shopIcon(items[1]!)).toBe('armor');      // 8h — base tier, still the widely-reused default
+    expect(api.shopIcon(items[0]!)).toBe('armorHeavy'); // 24h — reinforced tier
+  });
+
+  it('clamps to the top tier when there are more same-kind items than tiers', () => {
+    const items: SlgShopItemView[] = [1, 2, 3, 4].map((h) => ({
+      id: `sp${h}`, cost: h * 100, kind: 'troop_speedup', effect: { duration_sec: h * 3600 }, description: '',
+    }));
+    const { panels } = buildHarness({ shopItems: items });
+    const api = shopIconApi(panels);
+    // Only 3 hourglass tiers exist; the 4th-longest duration must not index past the array end.
+    expect(api.shopIcon(items[3]!)).toBe('hourglassLg');
+  });
+
+  it('a single-item catalog still resolves to the shortest tier, not an out-of-range index', () => {
+    const item: SlgShopItemView = { id: 'sp1', cost: 200, kind: 'troop_speedup', effect: { duration_sec: 3600 }, description: '' };
+    const { panels } = buildHarness({ shopItems: [item] });
+    expect(shopIconApi(panels).shopIcon(item)).toBe('hourglassSm');
+  });
+
+  it('resource_pack and battle_pass ignore tier ranking entirely (flat icon per kind)', () => {
+    const items: SlgShopItemView[] = [
+      { id: 'rp1', cost: 300, kind: 'resource_pack', effect: { each: 20000 }, description: '' },
+      { id: 'rp2', cost: 1000, kind: 'resource_pack', effect: { each: 80000 }, description: '' },
+      makeBattlePassItem(),
+    ];
+    const { panels } = buildHarness({ shopItems: items });
+    const api = shopIconApi(panels);
+    expect(api.shopIcon(items[0]!)).toBe('coinChest');
+    expect(api.shopIcon(items[1]!)).toBe('coinChest');
+    expect(api.shopIcon(items[2]!)).toBe('trophy');
+  });
+
+  it('an unknown kind falls back to the generic tag icon', () => {
+    const item = { id: 'x', cost: 1, kind: 'mystery_kind', effect: {}, description: '' } as unknown as SlgShopItemView;
+    const { panels } = buildHarness({ shopItems: [item] });
+    expect(shopIconApi(panels).shopIcon(item)).toBe('tag');
+  });
+});
+
+describe('WorldMapPanels.shopBadgeLabel — corner duration tag', () => {
+  it('formats troop_speedup/protection duration as whole hours', () => {
+    const { panels } = buildHarness();
+    const api = shopIconApi(panels);
+    expect(api.shopBadgeLabel({ id: 'a', cost: 1, kind: 'troop_speedup', effect: { duration_sec: 3600 }, description: '' })).toBe('1H');
+    expect(api.shopBadgeLabel({ id: 'b', cost: 1, kind: 'troop_speedup', effect: { duration_sec: 28800 }, description: '' })).toBe('8H');
+    expect(api.shopBadgeLabel({ id: 'c', cost: 1, kind: 'protection', effect: { duration_sec: 86400 }, description: '' })).toBe('24H');
+  });
+
+  it('kinds with no duration tier get no badge', () => {
+    const { panels } = buildHarness();
+    const api = shopIconApi(panels);
+    expect(api.shopBadgeLabel({ id: 'rp', cost: 1, kind: 'resource_pack', effect: { each: 100 }, description: '' })).toBeNull();
+    expect(api.shopBadgeLabel(makeBattlePassItem())).toBeNull();
   });
 });
