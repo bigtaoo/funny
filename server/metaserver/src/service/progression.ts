@@ -1,7 +1,6 @@
 // S11 season ladder leaderboard + battle pass.
 // getLeaderboard serves the Top-100 from a 60s process cache (per-caller `me` standing recomputed live);
 // buy/claim battle pass are optimistic-locked writes with commercial coin delivery.
-import { randomUUID } from 'node:crypto';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import {
   ErrorCode,
@@ -134,7 +133,13 @@ export function ProgressionMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase
         return reply.code(400).send(err(ErrorCode.BAD_REQUEST, 'battle pass already purchased'));
       }
 
-      const orderId = randomUUID();
+      // Deterministic orderId, one per account per season (2026-08-03 fix, was randomUUID() per call):
+      // a client double-tap / retry raced two concurrent requests here, both reading hasPass=false from
+      // the same stale snapshot and both spending coins with distinct random orderIds — only one could
+      // win the mutateSave below (the loser got ALREADY_PURCHASED), but its coins were never refunded.
+      // commercial.spend dedupes by orderId (same pattern as claimRechargeMilestone/mail claim), so a
+      // concurrent duplicate now replays the first charge's result instead of debiting twice.
+      const orderId = `battlepass.buy.${accountId}.${currentSeason.seasonNo}`;
       const charge = await commercial.spend({ accountId, amount: BATTLEPASS_BUY_COST, reason: 'battlepass', orderId, clientPlatform: clientPlatformOf(req) });
       if (!charge.ok) {
         if (charge.error === 'INSUFFICIENT_FUNDS') {

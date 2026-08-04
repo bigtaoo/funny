@@ -382,5 +382,53 @@ describe.skipIf(!mongo)('worldsvc season ops e2e', () => {
       expect(r.status).toBe(200);
       server.close();
     });
+
+    // Regression (2026-08-03 worldsvc code review, finding #15): capacity/season/shard were passed
+    // through `Number(...)` with no Number.isFinite check — a non-numeric payload silently persisted
+    // NaN into the world record instead of failing with BAD_REQUEST.
+    describe('regression: non-numeric season/capacity/shard fields are rejected, not silently NaN-ed', () => {
+      it('POST /admin/world/allocate: non-numeric capacity → 400', async () => {
+        const r = await fetch(`${base}/admin/world/allocate`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', 'x-internal-key': KEY },
+          body: JSON.stringify({ season: 99, capacity: 'not-a-number' }),
+        });
+        expect(r.status).toBe(400);
+        server.close();
+      });
+
+      it('POST /admin/world/open: non-numeric season/shard/capacity → 400, world record untouched', async () => {
+        const openWorldId = 's-numeric-validation-test';
+        const r = await fetch(`${base}/admin/world/open`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', 'x-internal-key': KEY },
+          body: JSON.stringify({ worldId: openWorldId, season: 'abc', shard: 1, capacity: 10_000 }),
+        });
+        expect(r.status).toBe(400);
+        // No half-open world record was left behind by the rejected call.
+        expect(await m.collections.worlds.findOne({ _id: openWorldId })).toBeNull();
+        server.close();
+      });
+
+      it('POST /admin/world/open: non-numeric shard → 400', async () => {
+        const r = await fetch(`${base}/admin/world/open`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', 'x-internal-key': KEY },
+          body: JSON.stringify({ worldId: 's-numeric-validation-test-2', season: 1, shard: 'abc', capacity: 10_000 }),
+        });
+        expect(r.status).toBe(400);
+        server.close();
+      });
+
+      it('POST /admin/world/open: non-numeric capacity → 400', async () => {
+        const r = await fetch(`${base}/admin/world/open`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', 'x-internal-key': KEY },
+          body: JSON.stringify({ worldId: 's-numeric-validation-test-3', season: 1, shard: 1, capacity: 'lots' }),
+        });
+        expect(r.status).toBe(400);
+        server.close();
+      });
+    });
   });
 });

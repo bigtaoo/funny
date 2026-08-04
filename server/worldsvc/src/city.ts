@@ -126,48 +126,58 @@ export class CityService {
     const orderId = `slg_speedup:${worldId}:${accountId}:${now()}`;
     await this.core.commercial.spend(accountId, coins, orderId, clientPlatform);
 
-    // Re-fetch latest doc from Mongo (may have changed during the spend call; ensures idempotency)
-    const fresh = await cols.playerWorld.findOne({ _id: pw._id });
-    if (!fresh) return this.core.getMe(worldId, accountId);
+    // Coins are already spent at this point, so the finalize write below must eventually land — it's
+    // rev-guarded (same reasoning as trainTroops/upgradeBuilding: resources/troops here are computed
+    // from a point-in-time read, and an unguarded $set could silently revert a concurrent write) but,
+    // unlike those, a conflict here can't just be thrown back at the caller as "please retry" since
+    // the spend already happened — so retry the read+compute+write against a fresh doc a bounded
+    // number of times instead of stranding the spend on the first stale write.
+    const MAX_ATTEMPTS = 5;
+    for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+      const fresh = await cols.playerWorld.findOne({ _id: pw._id });
+      if (!fresh) return this.core.getMe(worldId, accountId);
 
-    const t = now();
-    const resources = this.core.settle(fresh, t);
-    const newQueue = (fresh.trainingQueue ?? []).slice();
-    let remaining = speedSec * 1000;
-    let troopsReady = 0;
+      const t = now();
+      const resources = this.core.settle(fresh, t);
+      const newQueue = (fresh.trainingQueue ?? []).slice();
+      let remaining = speedSec * 1000;
+      let troopsReady = 0;
 
-    for (let i = 0; i < newQueue.length && remaining > 0; ) {
-      const e = newQueue[i]!;
-      const left = e.completeAt - t;
-      if (remaining >= left) {
-        remaining -= left;
-        troopsReady += e.qty;
-        newQueue.splice(i, 1);
-      } else {
-        newQueue[i] = { ...e, completeAt: e.completeAt - remaining };
-        remaining = 0;
-        i++;
+      for (let i = 0; i < newQueue.length && remaining > 0; ) {
+        const e = newQueue[i]!;
+        const left = e.completeAt - t;
+        if (remaining >= left) {
+          remaining -= left;
+          troopsReady += e.qty;
+          newQueue.splice(i, 1);
+        } else {
+          newQueue[i] = { ...e, completeAt: e.completeAt - remaining };
+          remaining = 0;
+          i++;
+        }
       }
-    }
 
-    // Update startAt for remaining batches (cascade after compressing completeAt)
-    for (let i = 1; i < newQueue.length; i++) {
-      const prev = newQueue[i - 1]!;
-      const cur = newQueue[i]!;
-      const dur = cur.completeAt - cur.startAt;
-      newQueue[i] = { ...cur, startAt: prev.completeAt, completeAt: prev.completeAt + dur };
-    }
+      // Update startAt for remaining batches (cascade after compressing completeAt)
+      for (let i = 1; i < newQueue.length; i++) {
+        const prev = newQueue[i - 1]!;
+        const cur = newQueue[i]!;
+        const dur = cur.completeAt - cur.startAt;
+        newQueue[i] = { ...cur, startAt: prev.completeAt, completeAt: prev.completeAt + dur };
+      }
 
-    const newTroops = Math.min(fresh.troopCap, fresh.troops + troopsReady);
-    const tq = trainingQueueOps(newQueue);
-    await cols.playerWorld.updateOne(
-      { _id: fresh._id },
-      {
-        $set: { resources, troops: newTroops, trainingQueue: newQueue, lastTickAt: t, ...tq.set },
-        $inc: { rev: 1 },
-        ...(Object.keys(tq.unset).length ? { $unset: tq.unset } : {}),
-      },
-    );
+      const newTroops = Math.min(fresh.troopCap, fresh.troops + troopsReady);
+      const tq = trainingQueueOps(newQueue);
+      const result = await cols.playerWorld.updateOne(
+        { _id: fresh._id, rev: fresh.rev },
+        {
+          $set: { resources, troops: newTroops, trainingQueue: newQueue, lastTickAt: t, ...tq.set },
+          $inc: { rev: 1 },
+          ...(Object.keys(tq.unset).length ? { $unset: tq.unset } : {}),
+        },
+      );
+      if (result.matchedCount > 0) break;
+      if (attempt === MAX_ATTEMPTS - 1) throw new SlgError('REV_CONFLICT', 'Concurrent update, please retry');
+    }
     return this.core.getMe(worldId, accountId);
   }
 
@@ -276,43 +286,52 @@ export class CityService {
     const orderId = `slg_build_speedup:${worldId}:${accountId}:${now()}`;
     await this.core.commercial.spend(accountId, coins, orderId, clientPlatform);
 
-    const fresh = await cols.playerWorld.findOne({ _id: pw._id });
-    if (!fresh) return this.core.getMe(worldId, accountId);
+    // Same reasoning as speedupTraining: coins are already spent, so rev-guard the finalize write and
+    // retry against a fresh read a bounded number of times rather than stranding the spend.
+    const MAX_ATTEMPTS = 5;
+    let finalDocId = pw._id;
+    for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+      const fresh = await cols.playerWorld.findOne({ _id: pw._id });
+      if (!fresh) return this.core.getMe(worldId, accountId);
+      finalDocId = fresh._id;
 
-    const t = now();
-    const resources = this.core.settle(fresh, t);
-    const newQueue = (fresh.buildQueue ?? []).slice();
-    let remaining = speedSec * 1000;
-    for (let i = 0; i < newQueue.length && remaining > 0; ) {
-      const e = newQueue[i]!;
-      const left = e.completeAt - t;
-      if (remaining >= left) {
-        remaining -= left;
-        newQueue[i] = { ...e, completeAt: t }; // mark as due-now; applyDueBuilds will finalize it
-        i++;
-      } else {
-        newQueue[i] = { ...e, completeAt: e.completeAt - remaining };
-        remaining = 0;
-        i++;
+      const t = now();
+      const resources = this.core.settle(fresh, t);
+      const newQueue = (fresh.buildQueue ?? []).slice();
+      let remaining = speedSec * 1000;
+      for (let i = 0; i < newQueue.length && remaining > 0; ) {
+        const e = newQueue[i]!;
+        const left = e.completeAt - t;
+        if (remaining >= left) {
+          remaining -= left;
+          newQueue[i] = { ...e, completeAt: t }; // mark as due-now; applyDueBuilds will finalize it
+          i++;
+        } else {
+          newQueue[i] = { ...e, completeAt: e.completeAt - remaining };
+          remaining = 0;
+          i++;
+        }
       }
+      // Cascade startAt/completeAt for remaining batches after compression.
+      for (let i = 1; i < newQueue.length; i++) {
+        const prev = newQueue[i - 1]!;
+        const cur = newQueue[i]!;
+        const dur = cur.completeAt - cur.startAt;
+        newQueue[i] = { ...cur, startAt: prev.completeAt, completeAt: prev.completeAt + dur };
+      }
+      const bq = buildQueueOps(newQueue);
+      const result = await cols.playerWorld.updateOne(
+        { _id: fresh._id, rev: fresh.rev },
+        {
+          $set: { resources, buildQueue: newQueue, lastTickAt: t, ...bq.set },
+          $inc: { rev: 1 },
+          ...(Object.keys(bq.unset).length ? { $unset: bq.unset } : {}),
+        },
+      );
+      if (result.matchedCount > 0) break;
+      if (attempt === MAX_ATTEMPTS - 1) throw new SlgError('REV_CONFLICT', 'Concurrent update, please retry');
     }
-    // Cascade startAt/completeAt for remaining batches after compression.
-    for (let i = 1; i < newQueue.length; i++) {
-      const prev = newQueue[i - 1]!;
-      const cur = newQueue[i]!;
-      const dur = cur.completeAt - cur.startAt;
-      newQueue[i] = { ...cur, startAt: prev.completeAt, completeAt: prev.completeAt + dur };
-    }
-    const bq = buildQueueOps(newQueue);
-    await cols.playerWorld.updateOne(
-      { _id: fresh._id },
-      {
-        $set: { resources, buildQueue: newQueue, lastTickAt: t, ...bq.set },
-        $inc: { rev: 1 },
-        ...(Object.keys(bq.unset).length ? { $unset: bq.unset } : {}),
-      },
-    );
-    await this.applyDueBuilds(fresh._id, worldId, accountId);
+    await this.applyDueBuilds(finalDocId, worldId, accountId);
     return this.core.getMe(worldId, accountId);
   }
 
@@ -435,8 +454,12 @@ export class CityService {
     if (!changed) return teams;
 
     const patch = this.buildCardRemovalPatch(pw.cardState ?? {}, cleaned);
+    // rev-guard: the refund in patch.resourceInc was computed from this exact read (`pw.cardState`).
+    // Without it, two concurrent self-heals (or a self-heal racing an explicit setTeams) both compute
+    // the same removed-card refund from the same pre-removal snapshot and both $inc it — a repeatable
+    // resource dupe. On conflict, skip persisting this round; the next read will self-heal again.
     await this.core.deps.cols.playerWorld.updateOne(
-      { _id: pwId },
+      { _id: pwId, rev: pw.rev },
       { $set: { teams: cleaned, ...patch.cardStateSet }, $inc: { rev: 1, ...patch.resourceInc } },
     );
     return cleaned;
@@ -540,8 +563,12 @@ export class CityService {
     }
 
     const patch = this.buildCardRemovalPatch(cardState, cleanedTeams);
+    // rev-guard: same reasoning as getTeams's self-heal write — patch.resourceInc is a refund computed
+    // from this exact `cardState` read, so a concurrent write (another setTeams call, or a racing
+    // getTeams self-heal) must not be allowed to land its own refund on top of a stale snapshot.
     const update: Record<string, unknown> = { $set: { teams: cleanedTeams, ...patch.cardStateSet }, $inc: { rev: 1, ...patch.resourceInc } };
-    await this.core.deps.cols.playerWorld.updateOne({ _id: pwId }, update);
+    const result = await this.core.deps.cols.playerWorld.updateOne({ _id: pwId, rev: pw.rev }, update);
+    if (result.matchedCount === 0) throw new SlgError('REV_CONFLICT', 'Concurrent update, please retry');
   }
 
   /**

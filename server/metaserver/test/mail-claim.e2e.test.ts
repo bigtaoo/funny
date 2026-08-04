@@ -262,4 +262,59 @@ describe.skipIf(!meta || !social)('mail claim: real cross-service wire (metaserv
       await failingApp.close();
     }
   });
+
+  it('regression (2026-08-03 fix): coins succeed but a later attachment step fails → retry does not double-grant the coins', async () => {
+    // Root cause: claimMail minted a fresh random orderId per HTTP call. If the coin grant succeeded but a
+    // later step (equipment/card delivery) then threw, the catch block rolled back the *claim* via
+    // unclaimMail so the client could retry — but the retry minted a NEW orderId, so commercial's own
+    // orderId-keyed dedup never recognized the coin grant as a repeat, double-crediting the coin
+    // attachment. Force the equipment-grant step to fail exactly once (simulating a transient write
+    // error) after the coin grant has already landed, then retry and confirm coins land exactly once.
+    const mailSvc = new MailService({
+      cols: s.collections,
+      gateway: { available: false, push: async () => {}, pushMany: async () => {}, presence: async () => ({}), invalidateFriends: async () => {} },
+      meta: { available: false, resolveByPublicId: async () => null, batchProfiles: async () => new Map() },
+      now: () => Date.now(),
+    });
+    const dispatchKey = `comp.mixedfail.${accountId}`;
+    await mailSvc.insertSystemMail(dispatchKey, accountId, {
+      subject: 'comp.mail.subject',
+      body: 'comp.mail.body',
+      attachments: [
+        { kind: 'coins', count: 400 },
+        { kind: 'equipment', instance: { id: 'eq_comp_mixedfail', defId: 'wp_pencil', rarity: 'common', level: 0, affixes: [] } },
+      ],
+      expireDays: 30,
+    });
+    const mailId = `${dispatchKey}:${accountId}`;
+
+    let updateOneCalls = 0;
+    const realEquipmentInstances = m.collections.equipmentInstances;
+    const wrappedEquipmentInstances = {
+      findOne: realEquipmentInstances.findOne.bind(realEquipmentInstances),
+      find: realEquipmentInstances.find.bind(realEquipmentInstances),
+      updateOne: (...args: Parameters<typeof realEquipmentInstances.updateOne>) => {
+        updateOneCalls++;
+        if (updateOneCalls === 1) throw new Error('injected equipment grant failure');
+        return realEquipmentInstances.updateOne(...args);
+      },
+    } as typeof realEquipmentInstances;
+    const wrappedCols = { ...m.collections, equipmentInstances: wrappedEquipmentInstances };
+
+    const commercial = makeFakeCommercial();
+    const flakyApp = await buildApp({
+      cols: wrappedCols, jwt, internalKey: IK, commercial,
+      socialsvc: new HttpMetaSocialsvcClient(`http://127.0.0.1:${socialPort}`, IK),
+    });
+    try {
+      const r1 = await flakyApp.inject({ method: 'POST', url: `/mail/${encodeURIComponent(mailId)}/claim`, headers: auth(), payload: {} });
+      expect(r1.statusCode).toBe(503); // equipment grant failed after coins already landed; claim rolled back
+
+      const r2 = await flakyApp.inject({ method: 'POST', url: `/mail/${encodeURIComponent(mailId)}/claim`, headers: auth(), payload: {} });
+      expect(r2.statusCode).toBe(200);
+      expect(body(r2).data.save.wallet.coins).toBe(400); // not 800 — the coin grant was deduped by orderId
+    } finally {
+      await flakyApp.close();
+    }
+  });
 });

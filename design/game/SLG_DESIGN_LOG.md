@@ -1728,3 +1728,47 @@ cols.tiles.find({ worldId, type: 'base', ownerId: { $nin: excludeOwners } })
 **测试改动**：[`worldMapTerritoryPanel.ui.ts`](../../client/test/ui/worldMapTerritoryPanel.ui.ts) 的 Overview 分组新增 6 例：资源表格每行的 label/amount/yield 文本断言、Troops/Territory 两张卡各自的 label/value 文本断言、确认表格+卡片不引入额外按钮（仍是 4 个）、Season 数据存在时的合并行文案、Season 数据缺失时该行完全不渲染。
 
 **验证**：`client` `tsc --noEmit` 全绿；`npx vitest run --config vitest.ui.config.ts test/ui/worldMapTerritoryPanel.ui.ts`（20 例）全绿。可视化验证：本机 Browser pane 对这个 WebGL 应用一贯的"pane 未显示，无法合成帧"限制（`client-run-and-visual-verify` 备忘录）这次同样命中，改走该备忘录记录的标准替代方案——临时在 `app.ts` 挂 `globalThis.__NW_DEBUG = {app, PIXI, WorldMapPanels}`，一次 `javascript_exec` 里手搭最小 `WorldMapContext`（数值照抄用户截图）直接调 `renderTerritoryPanel()`、`renderer.render()` 两次、`toDataURL()`、POST 到本地 collector 落盘截图，确认排版符合预期后把临时钩子从 `app.ts` 完整移除（`git diff` 确认该文件恢复干净）。资源图标格在这条离线渲染路径下是空的（未走正常图集预加载），属于验证路径本身的限制，不是代码问题——真实游戏流程里图标会正常显示。
+
+**2026-08-03 续**：用户按 §57 的构图硬规重出了 10 张图（`art/ui/slg-playerbase/`，AI 出图 UUID 命名 + 一张备用）。全部带等轴测地台、矮宽、按密度递进，外接框宽高比 1.19~1.89（旧图约 1.0，脚本目标 1.43）——10 张里 7 张宽于目标，改由**宽度**预算触底，高度自动落在预算内，`HEIGHT_BUDGET_K` 只对 Lv.8/Lv.10 轻微生效。等级 ↔ 源图的对应关系（按能对上哪条 prompt 的特征物判定）和已知小瑕疵列在 [`player-base-image-prompts.md`](../product/player-base-image-prompts.md) 的"接入现状"表里。源图 `playerbase_l1..l10` 统一改成 `.png`（原 l6~l9 的 `.webp` 删除，避免打包脚本的 `.png` 优先解析留下同名死文件）。测试改动：§57 加的下界断言（"绘制高度不低于地块自身高度"）在新图上必然失败——它默认了每帧都由高度预算触底，而够宽的稀疏营地（Lv.1，宽高比 1.89）是宽度触底、本来就该比地块矮；下界放宽到地块高度的一半，注释说明为什么不能收紧。验证：`tsc --noEmit` 全绿，UI 测试 114 文件 / 1009 例全绿，10 个等级逐个真机截图核对（`?worldmap&desk=N` 临时调试分支 + Playwright，截完已清理）。
+
+---
+
+## 60. `openapi-social.yml` 补 Error schema + ErrorResp（comm-audit-p2-remaining §43 遗留的第 4 项，2026-08-03，AI 主动推进）
+
+**背景**：comm-audit-2026-07-27 fix arc 的 P2 尾巴里，`world`/`auction` 两份契约已经在 2026-08-02 补上了 `Error` schema + `ErrorResp` 响应（逐 operationId 核对真实 handler 抛出的 `ErrorCode`），`social` 当时明确排除在外。本次按同一套方法补齐 `server/contracts/openapi-social.yml`。
+
+**实现**：`components.schemas.Error`（`{code, message}`）+ `components.responses.ErrorResp`（envelope，`ok:false` + `error`），与 world/auction 完全一致的写法。逐个 operationId 追踪 `server/socialsvc/src/httpApi.ts`（705 行，唯一的请求分发入口，所有 `/social/*` 路由共享同一个 try/catch，未捕获的 `SlgError` 由 catch 块统一转成对应状态码）+ `familyService.ts`（`SlgError` 直接 throw）+ `friendService.ts`/`mailService.ts`（返回 `{kind:'error', error}`/布尔值，由 `httpApi.ts` 里的 `sendSocialErr`/内联判断转换）三个 service 文件，给 35 个 operation 各自标注准确的状态码（不是无脑给所有路径贴同一组 400/401/500）——例如 `getMyFamily`/`getFamily`/`browseFamilies` 这类纯查询、内部从不 throw 的接口只有 401/500 兜底；`createFamily` 有 400（tag 格式/宽度/敏感词）+ 409（重复入会）；`sendChatMessage` 除 400/403/404 外还有 429（`allowChat` 速率限制）。
+
+**副发现**（追踪过程中顺手发现的两处契约缺口，随手一并修掉）：
+1. **`/social/friends/report` 完全没进契约**——`httpApi.ts` 里举报接口本身在 2026-07-27 那轮就已实现（design-doc-audit-2026-07 记过），但没人把它加进 `openapi-social.yml`，contract-first 的口径一直是假的。本次一并补上 `operationId: reportFriend`（`POST /social/friends/report`，400/401/404/500）。
+2. **`/social/player/{accountId}/rank`（`getPlayerRank`）声明了但从未实现**——契约里一直有这条路径，`routes.gen.ts` 也照常生成了类型，但 `httpApi.ts` 里根本没有匹配这条 path 的分支，实际调用会落到兜底的 `endpoint not found`（404），永远不会走到契约里描述的 200 成功响应。客户端也从未调用过它（`getProfileExtra` 是实际在用的等价接口）。这不是本次任务能单方面拍板修的东西（是该补实现，还是该把这条路径从契约里删掉，是产品/契约治理层面的决定），只在 yml 里加了行内 `summary` 注释记录现状，留给用户决定。
+
+**验证**：`server/socialsvc && npm run gen:api:social`（regen `routes.gen.ts`）+ `gen:api:social:check`（drift check，35 operations / 18 schemas，通过）；`server` 全量 `npm run typecheck`（11 个 workspace 全绿，其中 `@nw/shared`/`@nw/engine` 在这个新 worktree 里之前没 build 过，顺手 build 了一次，跟本次改动无关）；`client && npm run rest:gen` + `npx tsc --noEmit` 全绿；`socialsvc` `npx vitest run`（7 文件 / 89 例）全绿。未做可视化验证——纯契约/类型层改动，不影响任何渲染路径。
+
+---
+
+## 61. §60 遗留的 `getPlayerRank` 死路由——拍板删除，而非补实现（2026-08-03，用户要求拍板）
+
+**背景**：§60 记录时把 `/social/player/{accountId}/rank`（`getPlayerRank`）标成"留给用户决定"；用户随后明确要求"拍板一下"，把决定权交回来。
+
+**调查**：追了 `getPlayerRank` 这条链路的完整历史，而不是只看当前状态——`SOCIAL_DESIGN.md`"资料卡统一改造（2026-07-23）"那段记录着：ProfilePopup 曾经在好友列表/家族成员/世界频道三处各自手动拼 rank/elo/family/sect 字段，其中家族场景是"手动异步 `getPlayerRank`"；2026-07-23 那次改造把三处全部收敛进统一的 `GET /social/profile/:publicId/extra`（`getProfileExtra`），三处手动调用（含家族场景的 `getPlayerRank`）当时就都删掉了。`server/socialsvc/src/metaClient.ts` 里的 `getPlayerRank(accountId)`（供 socialsvc 内部调用 meta `/internal/player?accountId=` 的封装方法）在这轮统一改造之后就已经没有任何调用点——`grep '\.getPlayerRank('` 全仓库零命中，是个从 2026-07-23 起就孤立的方法；契约里的 `/social/player/{accountId}/rank` 路由则是更早遗留、从未真正对接到 `httpApi.ts` 的路由声明。也就是说 `getPlayerRank` 提供的能力（按 accountId 查 rank/elo）不是"还没做"，而是"做过、后来被 `getProfileExtra` 整体取代、旧路径没人回来清理"。
+
+**拍板：删除，不补实现**。理由：①功能已被 `getProfileExtra` 完整覆盖（后者是 rank/elo 的超集 schema，外加 familyName/sectName）；②补实现等于把一条已经被验证多余的旧接口复活，纯增加维护面、零消费方；③其内部依赖的 `metaClient.getPlayerRank(accountId)` 本身已是孤儿代码，实现它还得先把这段孤儿代码找回意义——不划算。
+
+**实现**：从 `openapi-social.yml` 删除 `/social/player/{accountId}/rank` 路径 + 未再被引用的 `PlayerRankView` schema（确认 `ProfileExtraView` 是独立 schema，不 `$ref` 它，删除安全）；`server/socialsvc/src/metaClient.ts` 删除 `SocialMetaClient.getPlayerRank` 接口方法 + `HttpSocialMetaClient`/`nullSocialMetaClient` 两处实现（保留 `getPlayerRankByPublicId`，这条仍是 `getProfileExtra` 的唯一数据来源）；`server/socialsvc/test/harness.ts` 的 `FakeSocialMetaClient` 同步删除假实现。`metaserver` 的 `/internal/player?accountId=|publicId=` 端点本身不动——`grep 'internal/player'` 确认 `gateway/src/metaClient.ts`（自己的 ELO 查询用途）和 `admin/src/clients/player.ts` 仍在用 accountId 变体，只是 socialsvc 自己的封装方法是孤儿，不影响这条端点对其它服务的价值。
+
+**验证**：`gen:api:social`（34 operations / 17 schemas，比 §60 的 35/18 各少 1）+ `gen:api:social:check` 通过；`server` 全量 `npm run typecheck`（11 workspace 全绿，含 gateway/admin 未受影响）；`client` `npm run rest:gen` + `npx tsc --noEmit` 全绿；`socialsvc` `npx vitest run`（7 文件 / 89 例，用例数不变——`getPlayerRank` 本来就没有专属测试，删的是从未被测过的死代码）全绿。未做可视化验证——纯契约/死代码清理，不涉及任何渲染路径。
+
+---
+
+## 62. §60 ErrorResp 追踪的状态码补测试（2026-08-03，用户要求"全部改动加测试"）
+
+**背景**：§60 给 35 个 operation 标的状态码是靠**读代码逐条追踪**出来的，不是跑出来的——用户要求给本次会话的改动统一补测试，借这个机会把追踪结果和真实运行结果对一遍账。
+
+**盘点**：对照现有 `server/socialsvc/test/*.test.ts`（`family.e2e`/`friend.e2e`/`mail.e2e` 是 service 层直调，`familyHttp`/`mailHttp`/`chatRegionHttp` 是真实 `startHttpApi` + 真实 Mongo 的 wire-level 测试），逐个 operation 核对后发现 **15 条错误路径此前在任何层级都没有测试覆盖**：`searchFamilyByTag` 400、`respondFamilyJoinRequest` 404、`leaveFamily` 400/403、`kickFamilyMember` 400/403/404、`setFamilyMemberRole` 400/403/404、`disbandFamily` 403、`setFamilyAnnouncement` 400/403、`getFamilyChannel` 403、`searchFriend` 400/404、`blockFriend` 400/404、`reportFriend` 400/404（§60 新加进契约的那个端点，此前压根没测过）、`getChatMessages` 404、`sendChatMessage` 429、`markConversationRead` 400、`readMail` 404。其余 20 个 operation 的错误码已经被 `family.e2e`/`friend.e2e`/`mail.e2e`/`familyHttp.e2e` 等既有测试直接或间接覆盖，不重复补。
+
+**实现**：新增 `server/socialsvc/test/socialErrorsHttp.e2e.test.ts`（照抄 `familyHttp.e2e.test.ts` 的 real-server-real-Mongo 写法），31 个用例逐一对上面 15 条路径发真实 HTTP 请求，断言 wire-level 状态码 + `error.code`。其中 `sendChatMessage` 429 那条实测验证了 `allowChat()` 的滑动窗口限速——`CHAT_SEND_RATE_PER_MIN=30` 用的是真实 `Date.now()`，不是可注入的假时钟，所以测试直接连发 31 条消息（都落在同一个 60s 窗口内）而不需要伪造时间。`reportFriend` 补了三种场景（缺参/目标不存在/举报自己）+ 一次成功举报并断言 Mongo 里落地的 `reports` 文档字段。
+
+**结果**：31 个新用例**首次运行全部一次通过**——说明 §60 逐行追踪 `httpApi.ts`/`familyService.ts`/`friendService.ts`/`mailService.ts` 得出的状态码全部准确，没有因为静态追踪漏看分支而记错。`getPlayerRank`（§61 已删）没有补回归测试——它从来没工作过，删除不存在"防止行为倒退"的需求，跳过。
+
+**验证**：`socialsvc` `npx tsc --noEmit` 全绿；`npx vitest run`（8 文件 / 120 例，89 旧 + 31 新）全绿。未做可视化验证——纯 server 测试改动。

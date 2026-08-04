@@ -27,6 +27,13 @@ components:
 
     # ── Envelope ─────────────────────────────────────────────────────────────────
 
+    Error:
+      type: object
+      required: [code, message]
+      properties:
+        code: { type: string }
+        message: { type: string }
+
     OkResponse:
       type: object
       required: [ok]
@@ -137,14 +144,6 @@ components:
           type: string
         ts:
           type: integer
-
-    PlayerRankView:
-      type: object
-      properties:
-        rank:
-          type: string
-        elo:
-          type: number
 
     ProfileExtraView:
       type: object
@@ -302,6 +301,18 @@ components:
         claimed:
           type: boolean
 
+  responses:
+    ErrorResp:
+      description: Error envelope
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [ok, error]
+            properties:
+              ok: { type: boolean, enum: [false] }
+              error: { $ref: '#/components/schemas/Error' }
+
 paths:
 
   # ── Family ─────────────────────────────────────────────────────────────────────
@@ -324,6 +335,8 @@ paths:
                         nullable: true
                         allOf:
                           - $ref: '#/components/schemas/FamilyDetailView'
+        '401': { $ref: '#/components/responses/ErrorResp' }
+        '500': { $ref: '#/components/responses/ErrorResp' }
 
   /social/family/search:
     get:
@@ -345,6 +358,9 @@ paths:
                         nullable: true
                         allOf:
                           - $ref: '#/components/schemas/FamilyView'
+        '400': { $ref: '#/components/responses/ErrorResp' }
+        '401': { $ref: '#/components/responses/ErrorResp' }
+        '500': { $ref: '#/components/responses/ErrorResp' }
 
   /social/family/browse:
     get:
@@ -366,6 +382,8 @@ paths:
                       data:
                         type: array
                         items: { $ref: '#/components/schemas/FamilyView' }
+        '401': { $ref: '#/components/responses/ErrorResp' }
+        '500': { $ref: '#/components/responses/ErrorResp' }
 
   /social/family:
     post:
@@ -394,6 +412,10 @@ paths:
                   - type: object
                     properties:
                       data: { $ref: '#/components/schemas/FamilyDetailView' }
+        '400': { $ref: '#/components/responses/ErrorResp' }
+        '401': { $ref: '#/components/responses/ErrorResp' }
+        '409': { $ref: '#/components/responses/ErrorResp' }
+        '500': { $ref: '#/components/responses/ErrorResp' }
 
   /social/family/requests:
     get:
@@ -416,6 +438,9 @@ paths:
                           requests:
                             type: array
                             items: { $ref: '#/components/schemas/FamilyJoinRequestView' }
+        '401': { $ref: '#/components/responses/ErrorResp' }
+        '403': { $ref: '#/components/responses/ErrorResp' }
+        '500': { $ref: '#/components/responses/ErrorResp' }
 
   /social/family/requests/{requestId}/respond:
     post:
@@ -438,6 +463,10 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/OkResponse' }
+        '401': { $ref: '#/components/responses/ErrorResp' }
+        '403': { $ref: '#/components/responses/ErrorResp' }
+        '404': { $ref: '#/components/responses/ErrorResp' }
+        '500': { $ref: '#/components/responses/ErrorResp' }
 
   /social/family/{familyId}:
     get:
@@ -459,6 +488,8 @@ paths:
                         nullable: true
                         allOf:
                           - $ref: '#/components/schemas/FamilyDetailView'
+        '401': { $ref: '#/components/responses/ErrorResp' }
+        '500': { $ref: '#/components/responses/ErrorResp' }
 
   /social/family/{familyId}/join:
     post:
@@ -481,6 +512,10 @@ paths:
                         required: [requestId]
                         properties:
                           requestId: { type: string }
+        '401': { $ref: '#/components/responses/ErrorResp' }
+        '404': { $ref: '#/components/responses/ErrorResp' }
+        '409': { $ref: '#/components/responses/ErrorResp' }
+        '500': { $ref: '#/components/responses/ErrorResp' }
 
   /social/family/leave:
     post:
@@ -492,6 +527,10 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/OkResponse' }
+        '400': { $ref: '#/components/responses/ErrorResp' }
+        '401': { $ref: '#/components/responses/ErrorResp' }
+        '403': { $ref: '#/components/responses/ErrorResp' }
+        '500': { $ref: '#/components/responses/ErrorResp' }
 
   /social/family/kick:
     post:
@@ -512,6 +551,11 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/OkResponse' }
+        '400': { $ref: '#/components/responses/ErrorResp' }
+        '401': { $ref: '#/components/responses/ErrorResp' }
+        '403': { $ref: '#/components/responses/ErrorResp' }
+        '404': { $ref: '#/components/responses/ErrorResp' }
+        '500': { $ref: '#/components/responses/ErrorResp' }
 
   /social/family/role:
     post:
@@ -533,6 +577,11 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/OkResponse' }
+        '400': { $ref: '#/components/responses/ErrorResp' }
+        '401': { $ref: '#/components/responses/ErrorResp' }
+        '403': { $ref: '#/components/responses/ErrorResp' }
+        '404': { $ref: '#/components/responses/ErrorResp' }
+        '500': { $ref: '#/components/responses/ErrorResp' }
 
   /social/family/disband:
     post:
@@ -544,6 +593,9 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/OkResponse' }
+        '401': { $ref: '#/components/responses/ErrorResp' }
+        '403': { $ref: '#/components/responses/ErrorResp' }
+        '500': { $ref: '#/components/responses/ErrorResp' }
 
   /social/family/announcement:
     post:
@@ -564,6 +616,10 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/OkResponse' }
+        '400': { $ref: '#/components/responses/ErrorResp' }
+        '401': { $ref: '#/components/responses/ErrorResp' }
+        '403': { $ref: '#/components/responses/ErrorResp' }
+        '500': { $ref: '#/components/responses/ErrorResp' }
 
   /social/family/{familyId}/messages:
     get:
@@ -586,6 +642,9 @@ paths:
                       data:
                         type: array
                         items: { $ref: '#/components/schemas/FamilyMessageView' }
+        '401': { $ref: '#/components/responses/ErrorResp' }
+        '403': { $ref: '#/components/responses/ErrorResp' }
+        '500': { $ref: '#/components/responses/ErrorResp' }
     post:
       operationId: sendFamilyMessage
       security: [{ bearerAuth: [] }]
@@ -613,26 +672,12 @@ paths:
                   - type: object
                     properties:
                       data: { $ref: '#/components/schemas/FamilyMessageView' }
+        '400': { $ref: '#/components/responses/ErrorResp' }
+        '401': { $ref: '#/components/responses/ErrorResp' }
+        '403': { $ref: '#/components/responses/ErrorResp' }
+        '500': { $ref: '#/components/responses/ErrorResp' }
 
   # ── Player / profile (cross-cutting profile popup support) ─────────────────────
-
-  /social/player/{accountId}/rank:
-    get:
-      operationId: getPlayerRank
-      security: [{ bearerAuth: [] }]
-      parameters:
-        - { name: accountId, in: path, required: true, schema: { type: string } }
-      responses:
-        '200':
-          description: Ladder rank + ELO for an arbitrary player (both fields absent if unranked)
-          content:
-            application/json:
-              schema:
-                allOf:
-                  - $ref: '#/components/schemas/OkResponse'
-                  - type: object
-                    properties:
-                      data: { $ref: '#/components/schemas/PlayerRankView' }
 
   /social/profile/{publicId}/extra:
     get:
@@ -651,6 +696,8 @@ paths:
                   - type: object
                     properties:
                       data: { $ref: '#/components/schemas/ProfileExtraView' }
+        '401': { $ref: '#/components/responses/ErrorResp' }
+        '500': { $ref: '#/components/responses/ErrorResp' }
 
   # ── Friends ──────────────────────────────────────────────────────────────────
 
@@ -675,6 +722,8 @@ paths:
                           friends:
                             type: array
                             items: { $ref: '#/components/schemas/FriendView' }
+        '401': { $ref: '#/components/responses/ErrorResp' }
+        '500': { $ref: '#/components/responses/ErrorResp' }
 
   /social/friends/requests:
     get:
@@ -700,6 +749,8 @@ paths:
                           outgoing:
                             type: array
                             items: { $ref: '#/components/schemas/FriendRequestView' }
+        '401': { $ref: '#/components/responses/ErrorResp' }
+        '500': { $ref: '#/components/responses/ErrorResp' }
 
   /social/badges:
     get:
@@ -716,6 +767,8 @@ paths:
                   - type: object
                     properties:
                       data: { $ref: '#/components/schemas/SocialBadges' }
+        '401': { $ref: '#/components/responses/ErrorResp' }
+        '500': { $ref: '#/components/responses/ErrorResp' }
 
   /social/friends/search:
     post:
@@ -745,6 +798,10 @@ paths:
                         required: [profile]
                         properties:
                           profile: { $ref: '#/components/schemas/ProfileView' }
+        '400': { $ref: '#/components/responses/ErrorResp' }
+        '401': { $ref: '#/components/responses/ErrorResp' }
+        '404': { $ref: '#/components/responses/ErrorResp' }
+        '500': { $ref: '#/components/responses/ErrorResp' }
 
   /social/friends/request:
     post:
@@ -775,6 +832,12 @@ paths:
                         required: [requestId]
                         properties:
                           requestId: { type: string }
+        '400': { $ref: '#/components/responses/ErrorResp' }
+        '401': { $ref: '#/components/responses/ErrorResp' }
+        '403': { $ref: '#/components/responses/ErrorResp' }
+        '404': { $ref: '#/components/responses/ErrorResp' }
+        '409': { $ref: '#/components/responses/ErrorResp' }
+        '500': { $ref: '#/components/responses/ErrorResp' }
 
   /social/friends/respond:
     post:
@@ -801,6 +864,11 @@ paths:
                   - type: object
                     properties:
                       data: { $ref: '#/components/schemas/OkResponse' }
+        '400': { $ref: '#/components/responses/ErrorResp' }
+        '401': { $ref: '#/components/responses/ErrorResp' }
+        '404': { $ref: '#/components/responses/ErrorResp' }
+        '409': { $ref: '#/components/responses/ErrorResp' }
+        '500': { $ref: '#/components/responses/ErrorResp' }
 
   /social/friends/{publicId}:
     delete:
@@ -819,6 +887,8 @@ paths:
                   - type: object
                     properties:
                       data: { $ref: '#/components/schemas/OkResponse' }
+        '401': { $ref: '#/components/responses/ErrorResp' }
+        '500': { $ref: '#/components/responses/ErrorResp' }
 
   /social/friends/block:
     post:
@@ -844,6 +914,10 @@ paths:
                   - type: object
                     properties:
                       data: { $ref: '#/components/schemas/OkResponse' }
+        '400': { $ref: '#/components/responses/ErrorResp' }
+        '401': { $ref: '#/components/responses/ErrorResp' }
+        '404': { $ref: '#/components/responses/ErrorResp' }
+        '500': { $ref: '#/components/responses/ErrorResp' }
 
   /social/friends/block/{publicId}:
     delete:
@@ -862,6 +936,41 @@ paths:
                   - type: object
                     properties:
                       data: { $ref: '#/components/schemas/OkResponse' }
+        '401': { $ref: '#/components/responses/ErrorResp' }
+        '500': { $ref: '#/components/responses/ErrorResp' }
+
+  # NOTE (2026-08-03 ErrorResp pass): /social/friends/report exists in httpApi.ts (COMPLIANCE_GLOBAL.md
+  # §7 UGC report) but was never added to this contract — added here alongside the ErrorResp pass since
+  # the gap was discovered while tracing every handler for accurate error codes.
+  /social/friends/report:
+    post:
+      operationId: reportFriend
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [publicId]
+              properties:
+                publicId: { type: string }
+                reason: { type: string, description: 'Free-text reason, truncated server-side to REPORT_REASON_MAX' }
+      responses:
+        '200':
+          description: 'Report filed for ops/admin review (COMPLIANCE_GLOBAL.md §7); 404 if publicId is unresolvable or refers to the caller themself'
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/OkResponse'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/OkResponse' }
+        '400': { $ref: '#/components/responses/ErrorResp' }
+        '401': { $ref: '#/components/responses/ErrorResp' }
+        '404': { $ref: '#/components/responses/ErrorResp' }
+        '500': { $ref: '#/components/responses/ErrorResp' }
 
   # ── Direct messages ────────────────────────────────────────────────────────────
 
@@ -886,6 +995,8 @@ paths:
                           conversations:
                             type: array
                             items: { $ref: '#/components/schemas/ConversationView' }
+        '401': { $ref: '#/components/responses/ErrorResp' }
+        '500': { $ref: '#/components/responses/ErrorResp' }
 
   /social/chat/{convId}/messages:
     get:
@@ -912,6 +1023,9 @@ paths:
                           messages:
                             type: array
                             items: { $ref: '#/components/schemas/ChatMessageView' }
+        '401': { $ref: '#/components/responses/ErrorResp' }
+        '404': { $ref: '#/components/responses/ErrorResp' }
+        '500': { $ref: '#/components/responses/ErrorResp' }
 
   /social/chat/send:
     post:
@@ -945,6 +1059,12 @@ paths:
                         properties:
                           messageId: { type: string }
                           ts: { type: integer }
+        '400': { $ref: '#/components/responses/ErrorResp' }
+        '401': { $ref: '#/components/responses/ErrorResp' }
+        '403': { $ref: '#/components/responses/ErrorResp' }
+        '404': { $ref: '#/components/responses/ErrorResp' }
+        '429': { $ref: '#/components/responses/ErrorResp' }
+        '500': { $ref: '#/components/responses/ErrorResp' }
 
   /social/chat/read:
     post:
@@ -970,6 +1090,9 @@ paths:
                   - type: object
                     properties:
                       data: { $ref: '#/components/schemas/OkResponse' }
+        '400': { $ref: '#/components/responses/ErrorResp' }
+        '401': { $ref: '#/components/responses/ErrorResp' }
+        '500': { $ref: '#/components/responses/ErrorResp' }
 
   # ── Mail ─────────────────────────────────────────────────────────────────────
 
@@ -995,6 +1118,8 @@ paths:
                             type: array
                             items: { $ref: '#/components/schemas/MailView' }
                           unread: { type: integer }
+        '401': { $ref: '#/components/responses/ErrorResp' }
+        '500': { $ref: '#/components/responses/ErrorResp' }
 
   /social/mail/{mailId}/read:
     post:
@@ -1013,6 +1138,9 @@ paths:
                   - type: object
                     properties:
                       data: { $ref: '#/components/schemas/OkResponse' }
+        '401': { $ref: '#/components/responses/ErrorResp' }
+        '404': { $ref: '#/components/responses/ErrorResp' }
+        '500': { $ref: '#/components/responses/ErrorResp' }
 
   /social/mail/{mailId}:
     delete:
@@ -1031,6 +1159,9 @@ paths:
                   - type: object
                     properties:
                       data: { $ref: '#/components/schemas/OkResponse' }
+        '401': { $ref: '#/components/responses/ErrorResp' }
+        '409': { $ref: '#/components/responses/ErrorResp' }
+        '500': { $ref: '#/components/responses/ErrorResp' }
 
   /social/mail/send:
     post:
@@ -1062,3 +1193,8 @@ paths:
                         required: [mailId]
                         properties:
                           mailId: { type: string }
+        '400': { $ref: '#/components/responses/ErrorResp' }
+        '401': { $ref: '#/components/responses/ErrorResp' }
+        '403': { $ref: '#/components/responses/ErrorResp' }
+        '404': { $ref: '#/components/responses/ErrorResp' }
+        '500': { $ref: '#/components/responses/ErrorResp' }

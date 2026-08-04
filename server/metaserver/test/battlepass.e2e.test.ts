@@ -28,6 +28,8 @@ class FakeCommercial implements CommercialClient {
   readonly available = true;
   coins = new Map<string, number>();
   granted = new Set<string>();
+  spent = new Map<string, number>(); // orderId -> coinsAfter at the time of the (real, first) spend
+  spendCallCount = 0;
   bal(id: string) {
     return this.coins.get(id) ?? 0;
   }
@@ -35,9 +37,15 @@ class FakeCommercial implements CommercialClient {
     return { coins: this.bal(id), pity: {} };
   }
   async spend(a: { accountId: string; amount: number; reason: string; orderId: string }) {
+    this.spendCallCount++;
+    // orderId dedup (mirrors real commercial's spend, server/commercial/src/service/shop.ts): a repeat
+    // orderId replays the first result instead of debiting again.
+    if (this.spent.has(a.orderId)) return { ok: true as const, coinsAfter: this.spent.get(a.orderId)! };
     if (this.bal(a.accountId) < a.amount) return { ok: false as const, error: 'INSUFFICIENT_FUNDS' };
     this.coins.set(a.accountId, this.bal(a.accountId) - a.amount);
-    return { ok: true as const, coinsAfter: this.bal(a.accountId) };
+    const coinsAfter = this.bal(a.accountId);
+    this.spent.set(a.orderId, coinsAfter);
+    return { ok: true as const, coinsAfter };
   }
   async grant(a: { accountId: string; amount: number; reason: string; orderId: string }) {
     if (this.granted.has(a.orderId)) return { ok: true as const, coinsAfter: this.bal(a.accountId) };
@@ -141,6 +149,22 @@ describe.skipIf(!mongo)('meta battle pass e2e', () => {
     await app.inject({ method: 'POST', url: '/battlepass/buy', headers: auth() });
     const r = await app.inject({ method: 'POST', url: '/battlepass/buy', headers: auth() });
     expect(r.statusCode).toBe(400);
+  });
+
+  it('regression (2026-08-03 fix): concurrent double-tap buy only charges coins once', async () => {
+    // Root cause: buyBattlePass checked hasPass against a stale pre-charge snapshot, then charged coins
+    // with a fresh random orderId every call — two concurrent requests both saw hasPass=false and both
+    // charged, even though only one could ever flip hasPass to true (the loser got ALREADY_PURCHASED
+    // with no refund for the coins it had already spent). The fix uses a deterministic per-account
+    // per-season orderId so commercial.spend's own dedup collapses concurrent duplicate charges.
+    comm.coins.set(accountId, 1000);
+    const [r1, r2] = await Promise.all([
+      app.inject({ method: 'POST', url: '/battlepass/buy', headers: auth() }),
+      app.inject({ method: 'POST', url: '/battlepass/buy', headers: auth() }),
+    ]);
+    const statuses = [r1.statusCode, r2.statusCode].sort();
+    expect(statuses).toEqual([200, 400]); // exactly one wins, one sees ALREADY_PURCHASED
+    expect(comm.bal(accountId)).toBe(400); // 1000 - 600, charged exactly once despite 2 concurrent requests
   });
 
   it('claim a level not yet reached → 400', async () => {

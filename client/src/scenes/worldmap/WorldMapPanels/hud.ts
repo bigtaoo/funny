@@ -265,7 +265,7 @@ export function HudMixin<TBase extends WorldMapPanelsBaseCtor>(Base: TBase): TBa
               hud.addChild(recallLbl);
               this.ctx.marchRowRects.push({
                 marchId: m.marchId,
-                worldId: m.toTile.split(':')[2] ?? '',
+                worldId: this.ctx.cb.worldId,
                 destX: tx, destY: ty,
                 rowRect: { x: rx, y: rowY, w: rightW - RECALL_W - 16, h: MARCH_ROW_H },
                 recallRect: { x: recallBtn.x, y: recallBtn.y, w: RECALL_W, h: 36 },
@@ -286,7 +286,7 @@ export function HudMixin<TBase extends WorldMapPanelsBaseCtor>(Base: TBase): TBa
               hud.addChild(instantLbl);
               this.ctx.marchRowRects.push({
                 marchId: m.marchId,
-                worldId: m.toTile.split(':')[2] ?? '',
+                worldId: this.ctx.cb.worldId,
                 destX: tx, destY: ty,
                 rowRect: { x: rx, y: rowY, w: rightW - INSTANT_RETURN_W - 16, h: MARCH_ROW_H },
                 recallRect: null,

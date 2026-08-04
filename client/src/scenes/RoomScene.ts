@@ -157,6 +157,16 @@ export class RoomScene implements Scene {
       // Keep inRoom layout but surface a reconnecting banner via peerDc-style line.
       this.peerDcActive = true;
       this.render();
+    } else if (s === 'disconnected') {
+      // Permanent rejection (control-plane WS gave up retrying) — unlike 'reconnecting', this
+      // will never resolve on its own. Drop back to idle instead of leaving the player parked
+      // on a room/queue view that can no longer receive any server messages (2026-08-03 fix,
+      // mirrors GameScene's new setDisconnected handling for the in-match connection).
+      this.toast('reconnect.gone');
+      this.view = 'idle';
+      this.mySide = -1;
+      this.peerDcActive = false;
+      this.render();
     }
   }
 

@@ -335,6 +335,67 @@ describe('ShopScene — consumable items (kind="item") render their own name/des
   });
 });
 
+describe('ShopScene — material bundles (kind="material", ECONOMY_NUMBERS §6.5 gold→material exchange)', () => {
+  const flush = () => new Promise((r) => setTimeout(r, 0));
+
+  it('renders "{material name} ×{qty}" using the shared material.* translation, not the raw item id', async () => {
+    const scene = buildShop({
+      loadItems: async () => [{ id: 'mat_buy_scrap', cost: 20, kind: 'material', grants: 'scrap', qty: 10 }],
+    });
+    await flush();
+    expect(findLabelPos(scene.container, t('shop.item.material.title', { name: t('material.scrap'), qty: 10 }))).not.toBeNull();
+    expect(findLabelPos(scene.container, t('shop.item.material.desc'))).not.toBeNull();
+    scene.destroy();
+  });
+
+  it('stays buyable every time (no "Owned" state) — stackable, not a skin', async () => {
+    const scene = buildShop({
+      getOwnedSkins: () => ['scrap'], // even if this id somehow appeared in owned skins
+      loadItems: async () => [{ id: 'mat_buy_scrap', cost: 20, kind: 'material', grants: 'scrap', qty: 10 }],
+    });
+    await flush();
+    expect(findLabelPos(scene.container, t('shop.owned'))).toBeNull();
+    expect(findLabelPos(scene.container, t('shop.buy'))).not.toBeNull();
+    scene.destroy();
+  });
+
+  it('sorts materials ahead of skins but behind consumable items even when skins/items come first in loadItems', async () => {
+    const scene = buildShop({
+      loadItems: async () => [
+        { id: 'skin_shop_c1', cost: 800, kind: 'skin', grants: 'skin_shop_c1' },
+        { id: 'mat_buy_lead', cost: 105, kind: 'material', grants: 'lead', qty: 3 },
+        { id: 'protect_enhance', cost: 500, kind: 'item', grants: 'protect_enhance' },
+      ],
+    });
+    await flush();
+    const stone = findLabelPos(scene.container, t('shop.item.protect_enhance.name'));
+    const lead = findLabelPos(scene.container, t('shop.item.material.title', { name: t('material.lead'), qty: 3 }));
+    const skin = findLabelPos(scene.container, skinDisplayName('skin_shop_c1'));
+    expect(stone).not.toBeNull();
+    expect(lead).not.toBeNull();
+    expect(skin).not.toBeNull();
+    const before = (a: { x: number; y: number }, b: { x: number; y: number }) =>
+      a.y < b.y - 1 || (Math.abs(a.y - b.y) <= 1 && a.x < b.x);
+    expect(before(stone!, lead!)).toBe(true);
+    expect(before(lead!, skin!)).toBe(true);
+    scene.destroy();
+  });
+
+  it('tapping Buy calls cb.buy with the shop catalog id ("mat_buy_scrap"), not the granted material id ("scrap") — regression guard for the itemId/grants mixup fixed server-side in shopBuy', async () => {
+    const buyIds: string[] = [];
+    const scene = buildShop({
+      loadItems: async () => [{ id: 'mat_buy_scrap', cost: 20, kind: 'material', grants: 'scrap', qty: 10 }],
+      buy: async (itemId: string) => { buyIds.push(itemId); return { ok: true }; },
+    });
+    await flush();
+    tapLabel(scene, t('shop.buy'));
+    await flush();
+    await flush();
+    expect(buyIds).toEqual(['mat_buy_scrap']);
+    scene.destroy();
+  });
+});
+
 // Regression coverage for the 2026-07-17 fix: the Coins tab stamped a "首充双倍" (first-purchase 2×)
 // badge on EVERY recharge tier unconditionally, even for players who had already consumed their one-time
 // first-purchase bonus (server CAS on wallets.firstPurchasedAt) — so returning payers were shown a bonus

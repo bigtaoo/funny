@@ -140,48 +140,44 @@ export async function accrueEventTask(
       { upsert: true },
     );
 
-    // Atomically advance progress for each matching task
+    // Atomically advance progress for each matching task. Every write below is a single
+    // conditional Mongo operation whose filter re-checks the value it's about to change, so
+    // concurrent triggers (e.g. two fast pve/pvp/ad callbacks racing) can't lose an increment
+    // or double-grant points — Mongo serializes per-document writes, and a losing racer's filter
+    // simply stops matching once the winner's write has landed.
     for (const task of matchingTasks) {
-      // Read current progress (document already initialized)
-      const doc = await cols.eventParticipants.findOne({ _id: pid });
-      if (!doc) continue;
+      // First trigger for this task: push a fresh progress entry, but only if one doesn't already
+      // exist (query is evaluated atomically against the current document at write time).
+      const pushRes = await cols.eventParticipants.updateOne(
+        { _id: pid, 'taskProgress.taskId': { $ne: task.taskId } },
+        {
+          $push: { taskProgress: { taskId: task.taskId, progress: 1, pointsGranted: false } },
+          $set: { updatedAt: now },
+        },
+      );
 
-      const existing = doc.taskProgress.find((p) => p.taskId === task.taskId);
-      const currentProgress = existing?.progress ?? 0;
-      if (currentProgress >= task.target) continue; // task already complete, no further accumulation
-
-      const newProgress = currentProgress + 1;
-      const reachTarget = newProgress >= task.target;
-      const alreadyGranted = existing?.pointsGranted ?? false;
-      const grantPoints = reachTarget && !alreadyGranted;
-
-      if (existing) {
-        // Update the existing task record
-        await cols.eventParticipants.updateOne(
-          { _id: pid, 'taskProgress.taskId': task.taskId },
-          {
-            $set: {
-              'taskProgress.$.progress': newProgress,
-              ...(grantPoints ? { 'taskProgress.$.pointsGranted': true } : {}),
-              updatedAt: now,
-            },
-            ...(grantPoints ? { $inc: { points: task.points } } : {}),
-          },
-        );
+      let newProgress: number;
+      if (pushRes.modifiedCount === 1) {
+        newProgress = 1;
       } else {
-        // Add a new task progress entry
+        // An entry already existed (this call, or a racing one, got there first) — advance it by
+        // exactly one, guarded so it can never step past target.
+        const incRes = await cols.eventParticipants.findOneAndUpdate(
+          { _id: pid, taskProgress: { $elemMatch: { taskId: task.taskId, progress: { $lt: task.target } } } },
+          { $inc: { 'taskProgress.$.progress': 1 }, $set: { updatedAt: now } },
+          { returnDocument: 'after' },
+        );
+        if (!incRes) continue; // task already complete, no further accumulation
+        newProgress = incRes.taskProgress.find((p) => p.taskId === task.taskId)?.progress ?? task.target;
+      }
+
+      if (newProgress >= task.target) {
+        // Grant points exactly once: the filter only matches while pointsGranted is still false.
         await cols.eventParticipants.updateOne(
-          { _id: pid },
+          { _id: pid, taskProgress: { $elemMatch: { taskId: task.taskId, pointsGranted: { $ne: true } } } },
           {
-            $push: {
-              taskProgress: {
-                taskId: task.taskId,
-                progress: newProgress,
-                pointsGranted: grantPoints,
-              },
-            },
-            $set: { updatedAt: now },
-            ...(grantPoints ? { $inc: { points: task.points } } : {}),
+            $set: { 'taskProgress.$.pointsGranted': true, updatedAt: now },
+            $inc: { points: task.points },
           },
         );
       }

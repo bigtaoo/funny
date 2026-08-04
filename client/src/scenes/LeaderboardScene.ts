@@ -360,7 +360,7 @@ export class LeaderboardScene implements Scene {
       parent.addChild(titleLbl);
     }
 
-    const pvpRankLbl = txt(e.pvpRank, snapFont(Math.round(rowH * 0.38)), C.mid);
+    const pvpRankLbl = txt(t(('rank.' + e.pvpRank) as import('../i18n').TranslationKey), snapFont(Math.round(rowH * 0.38)), C.mid);
     pvpRankLbl.anchor.set(0.5, 0.5); pvpRankLbl.x = x + Math.round(w * 0.68); pvpRankLbl.y = y + rowH / 2;
     parent.addChild(pvpRankLbl);
 

@@ -106,3 +106,16 @@ export function trailHue(u: number, phase: number): number {
   const uw = ((u % 1) + 1) % 1;
   return ((uw * TRAIL_HUE_CYCLES + phase * TRAIL_HUE_DRIFT) % 1 + 1) % 1;
 }
+
+/**
+ * Tail-falloff (0..1) for dot index `i` of `n` total, squared for a soft comet-like fade — extracted
+ * as a pure function (2026-08-03) so the position formula (`u`, which already scales by TRAIL_SPAN)
+ * and this alpha formula stay independently testable. Previously the alpha formula ALSO divided by
+ * TRAIL_SPAN (double-applying it on top of `u`'s own scaling), clamping to 0 once `i/n > TRAIL_SPAN`
+ * (~0.42) — killing roughly the back half of every trail's dots at construction, permanently (nothing
+ * ever revisits `sprite.alpha` after this).
+ */
+export function trailDotFalloff(i: number, n: number): number {
+  const fall = Math.max(0, 1 - i / n);
+  return fall * fall;
+}

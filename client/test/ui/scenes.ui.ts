@@ -26,6 +26,7 @@ import { LevelPrepScene } from '../../src/scenes/LevelPrepScene';
 import { marginLineX } from '../../src/render/sketchUi';
 import { CardCodexScene } from '../../src/scenes/CardCodexScene';
 import { StatsScene } from '../../src/scenes/StatsScene';
+import { TitlesScene } from '../../src/scenes/TitlesScene';
 import { RoomScene, CODE_ALPHABET } from '../../src/scenes/RoomScene';
 import { FriendsScene } from '../../src/scenes/FriendsScene';
 import { ChatScene } from '../../src/scenes/ChatScene';
@@ -37,7 +38,16 @@ import { AuctionScene } from '../../src/scenes/AuctionScene';
 import { CityScene } from '../../src/scenes/CityScene';
 import { EquipmentScene } from '../../src/scenes/EquipmentScene';
 import type { EquipmentCallbacks, EquipResult } from '../../src/scenes/EquipmentScene';
-import type { PlayerStats } from '@nw/engine/types';
+import { BattlePassScene } from '../../src/scenes/BattlePassScene';
+import { DeckBuilderScene } from '../../src/scenes/DeckBuilderScene';
+import { LeaderboardScene } from '../../src/scenes/LeaderboardScene';
+import { AchievementScene } from '../../src/scenes/AchievementScene';
+import { DailyScene } from '../../src/scenes/DailyScene';
+import { EventScene } from '../../src/scenes/EventScene';
+import { RechargeScene } from '../../src/scenes/RechargeScene';
+import { DefenseEditorScene } from '../../src/scenes/DefenseEditorScene';
+import { CardScene } from '../../src/scenes/CardScene';
+import type { PlayerStats, UnitType } from '@nw/engine/types';
 import type { WorldApiClient } from '../../src/net/WorldApiClient';
 import { makeNewSave, type SaveData, type EquipSlot } from '../../src/game/meta/SaveData';
 
@@ -89,6 +99,17 @@ function stubWorldApi(): WorldApiClient {
   } as unknown as WorldApiClient;
 }
 
+/** stubWorldApi() plus the defense-editor-specific endpoints it doesn't cover. */
+function stubDefenseWorldApi(): WorldApiClient {
+  const never = () => new Promise<never>(() => {});
+  return {
+    ...stubWorldApi(),
+    getDefense: never, setDefense: never,
+    getTeams: never, getMe: never, setTeams: never,
+    distributeTroops: never,
+  } as unknown as WorldApiClient;
+}
+
 /**
  * Equipment fixture (EQUIPMENT_DESIGN §11): one card ('card1', lichuang) wearing a fine weapon
  * (eqEquippedFine), plus unequipped bag items — a common weapon (eqBagCommon, doubles as the
@@ -136,6 +157,20 @@ function buildEquipCallbacks(activeCardInstanceId: string) {
   return { cb, calls, save };
 }
 
+/** Every PIXI.Text baseTexture reachable from `root` (recursing sub-containers) — collect
+ * BEFORE the teardown under test, since a Text's own `.texture` reference goes away on destroy. */
+function collectTextBaseTextures(root: PIXI.Container): PIXI.BaseTexture[] {
+  const out: PIXI.BaseTexture[] = [];
+  const walk = (c: PIXI.Container): void => {
+    for (const ch of c.children) {
+      if (ch instanceof PIXI.Text) out.push(ch.texture.baseTexture);
+      else if (ch instanceof PIXI.Container) walk(ch);
+    }
+  };
+  walk(root);
+  return out;
+}
+
 /**
  * Build → update twice → destroy. Asserts the container is real, nothing throws, and —
  * crucially — that destroy() actually tears the display tree down.
@@ -145,13 +180,20 @@ function buildEquipCallbacks(activeCardInstanceId: string) {
  * its `PIXI.Ticker.shared` closure still running, which accumulated across navigations and
  * eventually stalled the app. A destroyed container has removed + destroyed all children,
  * so `.destroyed === true` is the invariant every scene must uphold.
+ *
+ * 2026-08-03: also asserts every PIXI.Text's canvas baseTexture is actually freed, not just
+ * structurally detached — see claudedocs/client-memory-leak.md §8.5/§8.6/§8.7. This is what
+ * lets a scene simply being registered here (as opposed to a scene-specific hand test) stand
+ * in as its Text-teardown regression coverage.
  */
 function exercise(scene: Scene): void {
   expect(scene.container).toBeInstanceOf(PIXI.Container);
   scene.update(1 / 30);
   scene.update(1 / 30);
+  const textBaseTextures = collectTextBaseTextures(scene.container);
   scene.destroy();
   expect(scene.container.destroyed).toBe(true);
+  expect(textBaseTextures.every((b) => b.destroyed)).toBe(true);
 }
 
 // Each entry builds one scene for a given (w, h). Kept as factories so we can run the
@@ -426,6 +468,102 @@ const SCENES: Array<{ name: string; build: (w: number, h: number) => Scene }> = 
   {
     name: 'EquipmentScene (bag mode)',
     build: (w, h) => new EquipmentScene(createLayout(w, h), new InputManager(), buildEquipCallbacks('').cb),
+  },
+  {
+    // Regression coverage for the 2026-08-03 fix (destroy() called tearDownChildren but never
+    // container.destroy({children:true})) — this generic exercise() below asserts
+    // container.destroyed===true for every registered scene, exactly the invariant that bug
+    // violated. TitlesScene had never been added to this registry, so the bug shipped unnoticed.
+    name: 'TitlesScene',
+    build: (w, h) =>
+      new TitlesScene(createLayout(w, h), new InputManager(), {
+        onBack() {},
+        titles: [],
+        equippedTitle: '',
+        onEquip() {},
+      }),
+  },
+  // 2026-08-03: the following 9 scenes were the ones client-memory-leak.md §8.5 listed as
+  // "~24 remaining bare-destroy scenes, unverified leak risk". Registering them here re-verifies
+  // that claim directly via exercise()'s Text-baseTexture check, rather than trusting the
+  // pattern-matched "no tearDownChildren" heuristic that turned out to be a false positive for
+  // CampaignMapScene (§8.6 point 3) — see §8.7 for the outcome.
+  {
+    name: 'BattlePassScene',
+    build: (w, h) =>
+      new BattlePassScene(createLayout(w, h), new InputManager(), {
+        onBack() {},
+        getCoins: () => 1000,
+      }),
+  },
+  {
+    name: 'DeckBuilderScene',
+    build: (w, h) =>
+      new DeckBuilderScene(createLayout(w, h), new InputManager(), {
+        onSave() {},
+        onBack() {},
+        getCurrentDeck: () => undefined,
+        getCurrentElo: () => 1000,
+      }),
+  },
+  {
+    name: 'LeaderboardScene',
+    build: (w, h) =>
+      new LeaderboardScene(createLayout(w, h), new InputManager(), {
+        onBack() {},
+      }),
+  },
+  {
+    name: 'AchievementScene',
+    build: (w, h) =>
+      new AchievementScene(createLayout(w, h), new InputManager(), {
+        onBack() {},
+      }),
+  },
+  {
+    name: 'DailyScene',
+    build: (w, h) =>
+      new DailyScene(createLayout(w, h), new InputManager(), {
+        onBack() {},
+      }),
+  },
+  {
+    name: 'EventScene',
+    build: (w, h) =>
+      new EventScene(createLayout(w, h), new InputManager(), {
+        onBack() {},
+      }),
+  },
+  {
+    name: 'RechargeScene',
+    build: (w, h) =>
+      new RechargeScene(createLayout(w, h), new InputManager(), {
+        onBack() {},
+        getCoins: () => 1000,
+      }),
+  },
+  {
+    name: 'DefenseEditorScene (defense mode)',
+    build: (w, h) =>
+      new DefenseEditorScene(createLayout(w, h), new InputManager(), {
+        onBack() {},
+        worldApi: stubDefenseWorldApi(),
+        worldId: 'world:1:0',
+        target: { mode: 'defense', tileKey: 'world:1:0:5:5' },
+      }),
+  },
+  {
+    name: 'CardScene',
+    build: (w, h) =>
+      new CardScene(createLayout(w, h), new InputManager(), {
+        onBack() {},
+        getSave: () => makeNewSave('acc_test'),
+        fuseCards: async () => ({ ok: true }),
+        setCardLock: async () => ({ ok: true }),
+        getOwnedSkins: () => [],
+        getEquippedSkin: (_unitType: UnitType) => null,
+        equipSkin: (_unitType: UnitType, _skinId: string | null) => {},
+      }),
   },
 ];
 
@@ -1033,6 +1171,40 @@ describe('EquipmentScene — mixin-split wiring', () => {
     modalHits[0].action(); // OK → doReforge
     await Promise.resolve();
     expect(calls.reforge).toEqual([['eqBagFine', 'eqBagCommon']]);
+    scene.destroy();
+  });
+
+  it('regression (2026-08-03): reforge is omitted (not just greyed out) when coins are insufficient, and reappears once affordable', async () => {
+    const { cb, save } = buildEquipCallbacks('card1');
+    const scene = new EquipmentScene(createLayout(...LANDSCAPE), new InputManager(), cb);
+    // eqBagFine is 'fine' rarity → REFORGE_COIN_COST.fine === 80 (equipmentDefs.ts).
+    save.wallet.coins = 79;
+    let actions = (scene as any).instanceActions(save, save.equipmentInv.eqBagFine) as Array<{ key: string }>;
+    expect(actions.map((a) => a.key)).not.toContain('reforge');
+
+    save.wallet.coins = 80;
+    actions = (scene as any).instanceActions(save, save.equipmentInv.eqBagFine) as Array<{ key: string }>;
+    expect(actions.map((a) => a.key)).toContain('reforge');
+    scene.destroy();
+  });
+
+  it('regression (2026-08-03): the reforge confirm dialog states the coin cost', async () => {
+    const { cb, save } = buildEquipCallbacks('card1');
+    const scene = new EquipmentScene(createLayout(...LANDSCAPE), new InputManager(), cb);
+    const actions = (scene as any).instanceActions(save, save.equipmentInv.eqBagFine) as Array<{ key: string; fn: () => void }>;
+    actions.find((a) => a.key === 'reforge')!.fn(); // → openReforgeSelect(eqBagFine)
+    const modalHits = (scene as any).modalHits as Array<{ action: () => void }>;
+    modalHits[0].action(); // material row (eqBagCommon) → confirmReforge → showConfirm
+    const modalLayer = (scene as any).modalLayer as PIXI.Container;
+    let sawCost = false;
+    const walk = (c: PIXI.Container): void => {
+      for (const ch of c.children) {
+        if (ch instanceof PIXI.Text && ch.text.includes('80')) sawCost = true;
+        if (ch instanceof PIXI.Container) walk(ch);
+      }
+    };
+    walk(modalLayer);
+    expect(sawCost).toBe(true); // REFORGE_COIN_COST.fine === 80, must appear in the confirm text
     scene.destroy();
   });
 

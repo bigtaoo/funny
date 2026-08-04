@@ -148,6 +148,8 @@ export class WebPlatform implements IPlatform {
   private paddleToken: string | null = null;
   /** Active checkout event sink — Paddle.Initialize's single callback routes here. */
   private paddleEvent: ((ev: PaddleCheckoutEvent) => void) | null = null;
+  /** The in-flight openPaddleCheckout() call's resolve, if any — see its doc comment. */
+  private paddlePendingResolve: ((r: { completed: boolean }) => void) | null = null;
 
   /** Native bridge (Capacitor WKWebView/WebView) wins; plain browser → Paddle. */
   iapKind(): IapKind | null {
@@ -162,11 +164,23 @@ export class WebPlatform implements IPlatform {
 
   async openPaddleCheckout(transactionId: string, clientToken: string): Promise<{ completed: boolean }> {
     const P = await this.loadPaddle(clientToken);
+    // A prior call's checkout.closed may never arrive if this is invoked again before it does (e.g. a
+    // fast double-tap on a recharge tier before Paddle's overlay actually mounts, since loadPaddle
+    // awaits a one-time script load on the very first call) — the shared `paddleEvent` sink below is
+    // about to be overwritten, which would otherwise strand that earlier call's resolve forever
+    // (2026-08-03 fix). Settle it now as "not completed" rather than leave it hanging.
+    this.paddlePendingResolve?.({ completed: false });
+    this.paddlePendingResolve = null;
     return new Promise<{ completed: boolean }>((resolve) => {
+      this.paddlePendingResolve = resolve;
       let completed = false;
       this.paddleEvent = (ev) => {
         if (ev.name === 'checkout.completed') completed = true;
-        else if (ev.name === 'checkout.closed') { this.paddleEvent = null; resolve({ completed }); }
+        else if (ev.name === 'checkout.closed') {
+          this.paddleEvent = null;
+          this.paddlePendingResolve = null;
+          resolve({ completed });
+        }
       };
       P.Checkout.open({ transactionId, settings: { displayMode: 'overlay' } });
     });

@@ -11,7 +11,7 @@ import { buildFactionIcon, FACTION_COLOR } from '../../render/factionIcon';
 import { RARITY_COLOR } from '../EquipmentScene/base';
 import type { SaveData, CardInstance, EquipSlot } from '../../game/meta/SaveData';
 import { CARD_DEFS, MAX_CARD_LEVEL, FUSION_MATERIAL_COUNT, fusionMaterialCandidates, troopCap, cardPower, cardHp, cardSiegeValue } from '../../game/meta/cardDefs';
-import { skinsForUnitType } from '../../game/meta/skinDefs';
+import { skinsForUnitType, skinDisplayName } from '../../game/meta/skinDefs';
 import type { UnitType } from '@nw/engine/types';
 import {
   type Constructor, type CardSceneBaseCtor,
@@ -127,10 +127,16 @@ export function DetailMixin<TBase extends CardSceneBaseCtor>(Base: TBase): TBase
       faceLayer.position.set(portraitX + portraitBox / 2, portraitY + portraitBox / 2);
       panelRoot.addChild(faceLayer);
       this.drawDetailFace(faceLayer, portraitBox, artUrl, loreText, this.detailFlipped);
-      this.modalHits.push({
-        rect: this.toModalScreen({ x: portraitX, y: portraitY, w: portraitBox, h: portraitBox }),
-        action: () => this.flipDetailPortrait(faceLayer, portraitBox, artUrl, loreText),
-      });
+      // Skipped while the skin picker popover is open (2026-08-03 fix): the popover's own dim
+      // backdrop geometrically overlaps this same portrait rect (registered later, further down),
+      // and hit-testing resolves first-match-wins in registration order — without this guard, a tap
+      // on the popover's first row(s) hit this still-registered flip instead of selecting the skin.
+      if (!this.skinPickerOpen) {
+        this.modalHits.push({
+          rect: this.toModalScreen({ x: portraitX, y: portraitY, w: portraitBox, h: portraitBox }),
+          action: () => this.flipDetailPortrait(faceLayer, portraitBox, artUrl, loreText),
+        });
+      }
 
       // Change-skin badge (bottom-right corner of the frame) — only for characters with ≥1 owned skin.
       const unitType = def?.unitType as UnitType | undefined;
@@ -305,7 +311,7 @@ export function DetailMixin<TBase extends CardSceneBaseCtor>(Base: TBase): TBase
         const rowH = 26, rowGap = 4;
         const options: Array<{ id: string | null; label: string }> = [
           { id: null, label: t('collection.default') },
-          ...ownedForChar.map((id) => ({ id, label: id })),
+          ...ownedForChar.map((id) => ({ id, label: skinDisplayName(id) })),
         ];
         const pH = options.length * (rowH + rowGap) + 8;
         // Covers the real screen (not just the scaled panel), so the picker reads as fully modal.

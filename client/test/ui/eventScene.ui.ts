@@ -55,6 +55,50 @@ type Internals = {
   update(dt: number): void;
 };
 
+function hasText(container: PIXI.Container, text: string): boolean {
+  let found = false;
+  const walk = (node: PIXI.Container): void => {
+    if (found) return;
+    if (node instanceof PIXI.Text && node.text === text) { found = true; return; }
+    for (const c of node.children) walk(c as PIXI.Container);
+  };
+  walk(container);
+  return found;
+}
+
+// Regression coverage (2026-08-03 fix): the Points Shop only translated 'coins' rewards — any
+// material/skin reward fell back to the bare internal id or kind string with no i18n lookup at all
+// (e.g. 'scrap', 'skin_e1'), unlike mail.ts's equivalent attMaterial/attSkin handling.
+describe('EventScene — reward labels are localized, not raw ids', () => {
+  it('a material reward shows the translated "Material {id} ×{n}" label, not the bare id', async () => {
+    const scene = buildEvent({
+      getEvents: async () => [{
+        eventId: 'ev1', title: 'Test Event', windowStart: 0, windowEnd: 1, myPoints: 1000,
+        tasks: [],
+        rewards: [{ rewardId: 'r1', cost: 100, kind: 'material', id: 'scrap', count: 5, claimedCount: 0 }],
+      }],
+    });
+    await flush();
+    expect(hasText(scene.container, 'Material scrap ×5')).toBe(true);
+    expect(hasText(scene.container, 'scrap')).toBe(false); // the old bare-id fallback
+    scene.destroy();
+  });
+
+  it('a skin reward shows the translated "Skin {id}" label, not the bare kind/id', async () => {
+    const scene = buildEvent({
+      getEvents: async () => [{
+        eventId: 'ev1', title: 'Test Event', windowStart: 0, windowEnd: 1, myPoints: 1000,
+        tasks: [],
+        rewards: [{ rewardId: 'r2', cost: 200, kind: 'skin', id: 'skin_e1', claimedCount: 0 }],
+      }],
+    });
+    await flush();
+    expect(hasText(scene.container, 'Skin skin_e1')).toBe(true);
+    expect(hasText(scene.container, 'skin')).toBe(false); // the old bare-kind fallback
+    scene.destroy();
+  });
+});
+
 describe('EventScene — claim loading overlay always clears', () => {
   it('clears the overlay when a reward claim fails (timeout / server error)', async () => {
     const scene = buildEvent({

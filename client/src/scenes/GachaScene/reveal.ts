@@ -8,7 +8,7 @@ import { gachaCardTexture, gachaFrameTexture } from '../../render/gachaArt';
 import { FS, snapFont } from '../../render/fontScale';
 import { getCachedTexture } from '../../ui/widgets/uiCache';
 import { RARITY_COLOR } from './base';
-import { LegendaryTrail, RectPerim, buildRectPerim, pointOnPerim, drawTrailDotGraphic, TRAIL_INSET, TRAIL_DOTS, TRAIL_SPAN, TRAIL_HUE_CYCLES, TRAIL_PAIR_OFFSET, hslToHex, trailHue } from './trail';
+import { LegendaryTrail, RectPerim, buildRectPerim, pointOnPerim, drawTrailDotGraphic, TRAIL_INSET, TRAIL_DOTS, TRAIL_SPAN, TRAIL_HUE_CYCLES, TRAIL_PAIR_OFFSET, hslToHex, trailHue, trailDotFalloff } from './trail';
 import type { Constructor, GachaSceneBaseCtor } from './base';
 
 export interface RevealHandlers {
@@ -159,8 +159,7 @@ export function RevealMixin<TBase extends GachaSceneBaseCtor>(Base: TBase): TBas
         const spr = new PIXI.Sprite(tex);
         spr.anchor.set(0.5);
         const u = startPhase - (i / n) * TRAIL_SPAN; // initial position at phase startPhase, matches update()'s formula
-        const fall = Math.max(0, 1 - (i / n) / TRAIL_SPAN);
-        const eased = fall * fall; // squared falloff → soft comet-like tail
+        const eased = trailDotFalloff(i, n); // squared falloff → soft comet-like tail (see its doc comment)
         spr.alpha = eased;
         spr.scale.set(0.35 + 0.65 * eased);
         spr.tint = hslToHex(trailHue(u, startPhase), 0.62, 0.78);

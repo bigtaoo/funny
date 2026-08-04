@@ -14,6 +14,7 @@ import {
   type LevelDefinition,
 } from '../game';
 import { t } from '../i18n';
+import { netLog } from '../net/log';
 import { ui, sketchPanel, seedFor } from '../render/sketchUi';
 import { FS, snapFont } from '../render/fontScale';
 
@@ -41,6 +42,7 @@ export interface ReplaySceneCallbacks {
 }
 
 const SPEEDS = [1, 2, 4] as const;
+const log = netLog('replay');
 
 export class ReplayScene implements Scene {
   readonly container: PIXI.Container;
@@ -117,8 +119,12 @@ export class ReplayScene implements Scene {
       this.renderer = this.buildRenderer(Side.Bottom, 0);
     } catch (e) {
       this.renderer = null;
-      this.errorMsg =
-        e instanceof ReplayVersionError ? t('replay.versionError') : t('replay.versionError');
+      // Previously both branches showed the same "version incompatible" text and the real exception
+      // was never logged (2026-08-03 fix) — so a genuinely corrupted/truncated replay or an invalid
+      // stale levelId (both real client-side bugs, not version skew) were misreported identically to
+      // an expected version bump, with zero console/telemetry trail to tell them apart.
+      this.errorMsg = e instanceof ReplayVersionError ? t('replay.versionError') : t('common.actionFailed');
+      log.error('replay load failed', e instanceof Error ? (e.stack ?? e.message) : String(e));
       this.playing = false;
       this.ended = true;
     }

@@ -95,6 +95,13 @@ export function InputMixin<TBase extends GameRendererBaseCtor>(Base: TBase): TBa
       // close tap; swallow the manual hit-test so nothing behind it fires.
       if (this.profilePopup?.isOpen) return;
 
+      // Match already decided (game_over/game_draw/tutorial graduation): settlement
+      // (onGameEnd) is scheduled but deferred a couple seconds (see events.ts/base.ts).
+      // Nothing — surrender included — should still be actionable in that window; the
+      // player must not be able to fire onExitToLobby while a deferred onGameEnd is
+      // still pending (double-settlement / stray navigation after the match ended).
+      if (this.gameEnded) return;
+
       // Surrender confirmation overlay intercepts all input
       if (this.hudView.isPaused) {
         const cancel  = this.hudView.getSurrenderCancelRect();

@@ -38,6 +38,8 @@ export interface DefenseEditorCallbacks {
   target: DefenseEditorTarget;
   /** Current authoritative save (for cardInv roster). Attack mode only. */
   getSave?(): SaveData;
+  /** Subscribe to SaveManager writes; re-renders this scene when a concurrently-mounted peer scene (e.g. the world map's other overlays) changes the wallet/cardInv while this editor is open. Push the returned unsub onto `unsubs`. */
+  onSaveChanged?(listener: () => void): () => void;
 }
 
 // ── Collected pool (U8) ───────────────────────────────────────────────────────
@@ -216,6 +218,7 @@ export class DefenseEditorSceneBase {
       const next = wheelScrollY(this.rosterY, this.rosterY + this.rosterH, y, deltaY, this.scrollY, this.scrollMax);
       if (next !== null) { this.scrollY = next; this.scrollDirty = true; }
     }));
+    if (cb.onSaveChanged) this.unsubs.push(cb.onSaveChanged(() => { if (!this.destroyed) this.render(); }));
 
     this.render();
     void this.loadData();

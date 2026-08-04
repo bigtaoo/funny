@@ -82,7 +82,9 @@ export function ListMixin<TBase extends CardSceneBaseCtor>(Base: TBase): TBase &
     applyCardState(): void {
       if (this.tab !== 'list') return;
       for (const cardId of this.cellContainers.keys()) this.refreshCardCell(cardId);
-      if (this.detailId) this.openDetail(this.detailId);
+      // Same fuseRingOpen guard as render()'s modal dispatch (2026-08-03 fix) — a late SLG fetch
+      // resolving while the fusion ring is open must not reopen the plain detail popup over it.
+      if (this.detailId && !this.fuseRingOpen) this.openDetail(this.detailId);
     }
 
     /**

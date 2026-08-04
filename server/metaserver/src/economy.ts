@@ -1,8 +1,11 @@
 // Economy orchestration helpers (S5-5). meta delivers items based on commercial receipts
 // (inventory is meta-authoritative) + writes the wallet mirror + reconciles undelivered orders.
 // Key invariants:
-//  • Delivery is idempotent — save.deliveredOrders records orderId; $addToSet deduplicates naturally;
-//    skins are a set, so re-delivery never grants duplicates.
+//  • Delivery is idempotent — deliverGrant/deliverMailGrant gate their whole write on
+//    `'save.deliveredOrders': { $ne: orderId }`, so a re-run of the same orderId (concurrent
+//    reconcileUndelivered racing an in-flight delivery, or a caller retry) is a no-op, not just for
+//    the $addToSet'd skins but also the $inc'd materials/items (fixed 2026-08-03; deliveredOrders was
+//    previously write-only and this guard did not exist, allowing double-delivery under concurrency).
 //  • Wallet mirror — wallet.coins / gacha.pity are authoritative in commercial; meta only writes
 //    the mirror section after a receipt, for offline display.
 //  • Duplicate conversion (refund coins / shards) is deferred to S5 (§4.3 refund amount TBD +
@@ -26,13 +29,17 @@ import type { CommercialClient, GachaResultEntry, WalletView } from './commercia
 const EQUIP_OVERFLOW_MAIL_EXPIRE_DAYS = 30;
 
 /**
- * save.deliveredOrders is a write-only history trail (nothing in server or client ever reads it back
- * for a decision — real idempotency is the orderId-keyed lookup in commercial's `orders` collection /
- * metaserver's `equipmentIdem`). Left as an unbounded $addToSet it grows forever with every gacha draw
- * / shop purchase, and a long-lived heavy account's save document balloons (900+ entries observed in
- * prod, 2026-07-26 lag triage) — every read/write of that account's save then has to transfer/parse the
- * whole array, adding ~1s to every action that touches the save (achievements/retention/shop/gacha/pve).
- * Capped via $push+$slice (keeps only the most recent N; drops the Set-dedup property, which nothing relied on).
+ * save.deliveredOrders is now also consulted for a dedup decision (2026-08-03 fix): deliverGrant/
+ * deliverMailGrant gate their write on `{ $ne: orderId }` so a re-run of an already-delivered orderId
+ * can't double-grant materials/items (previously only the $addToSet'd skins were naturally idempotent).
+ * Left as an unbounded $addToSet it grows forever with every gacha draw / shop purchase, and a
+ * long-lived heavy account's save document balloons (900+ entries observed in prod, 2026-07-26 lag
+ * triage) — every read/write of that account's save then has to transfer/parse the whole array, adding
+ * ~1s to every action that touches the save (achievements/retention/shop/gacha/pve). Capped via
+ * $push+$slice to the most recent N: this means an orderId older than the last N deliveries for this
+ * account falls out of the dedup window and could theoretically re-deliver — an accepted tradeoff
+ * (real idempotency for the actually-concurrent case this fixes; the cap only matters for a
+ * reconciliation retry arriving absurdly late, long after hundreds of newer orders).
  */
 const DELIVERED_ORDERS_CAP = 200;
 
@@ -123,8 +130,12 @@ export async function deliverGrant(
   // Lifetime skin/material/equipment-owned ledgers (avatar unlock): additive-only, same rationale as
   // deliverMailGrant above — these gacha-delivered items must stay unlocked even after being
   // salvaged/consumed/sold, unlike inventory.skins/materials/equipmentInstances themselves.
+  // `'save.deliveredOrders': { $ne: orderId }` makes the $inc'd materials/items genuinely idempotent
+  // (not just the $addToSet'd skins) — without this guard, a GET /save racing an in-flight delivery
+  // (e.g. gachaDraw's fire-and-forget commercial.orderDelivered) could re-run this same call via
+  // reconcileUndelivered and double-grant materials.
   const res = await cols.saves.findOneAndUpdate(
-    { _id: accountId },
+    { _id: accountId, 'save.deliveredOrders': { $ne: orderId } },
     {
       $addToSet: {
         'save.inventory.skins': { $each: newSkins },
@@ -173,8 +184,10 @@ export async function deliverMailGrant(
   // Lifetime skin/material-owned ledgers (avatar unlock): additive-only, alongside the existing
   // inventory.skins $addToSet — everOwned.skin survives auction escrow removing a skin from
   // inventory.skins, and everOwned.material survives the material later being spent to 0.
+  // `'save.deliveredOrders': { $ne: orderId }` guard: see deliverGrant's comment — makes the $inc'd
+  // items/materials idempotent too, not just the $addToSet'd skins.
   const res = await cols.saves.findOneAndUpdate(
-    { _id: accountId },
+    { _id: accountId, 'save.deliveredOrders': { $ne: orderId } },
     {
       $addToSet: {
         'save.inventory.skins': { $each: newSkins },
@@ -440,6 +453,12 @@ export async function deliverOrder(
     if (shopDef?.kind === 'item') {
       const itemInc: Record<string, number> = { [itemId]: 1 };
       const save = await deliverMailGrant(cols, accountId, order._id, [], itemInc, coinsAfter, now);
+      await commercial.orderDelivered({ orderId: order._id });
+      return { save };
+    }
+    if (shopDef?.kind === 'material') {
+      const materialInc: Record<string, number> = { [shopDef.grants]: shopDef.qty ?? 1 };
+      const save = await deliverMailGrant(cols, accountId, order._id, [], {}, coinsAfter, now, materialInc);
       await commercial.orderDelivered({ orderId: order._id });
       return { save };
     }

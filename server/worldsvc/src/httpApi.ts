@@ -15,6 +15,7 @@ import {
   BUILDING_KEYS,
   createLogger,
   regionFromAcceptLanguage,
+  MAX_DISPLAY_NAME_LEN,
   type MarchKind,
   type BuildingKey,
 } from '@nw/shared';
@@ -30,18 +31,29 @@ import type { MapTemplateService } from './mapTemplateService';
 function readJson(req: IncomingMessage): Promise<Record<string, unknown>> {
   return new Promise((resolve, reject) => {
     let body = '';
+    let rejected = false;
     req.on('data', (c) => {
+      if (rejected) return;
       body += c;
-      if (body.length > 1 << 20) reject(new Error('payload too large'));
+      if (body.length > 1 << 20) {
+        rejected = true;
+        // Stop accumulating and drop the connection — otherwise the "cap" is cosmetic and a
+        // caller can force unbounded memory growth by just continuing to send data.
+        req.destroy();
+        reject(new Error('payload too large'));
+      }
     });
     req.on('end', () => {
+      if (rejected) return;
       try {
         resolve(body ? (JSON.parse(body) as Record<string, unknown>) : {});
       } catch (e) {
         reject(e as Error);
       }
     });
-    req.on('error', reject);
+    req.on('error', (e) => {
+      if (!rejected) reject(e);
+    });
   });
 }
 
@@ -68,6 +80,15 @@ const numQ = (v: string | null, d: number): number => {
   return Number.isFinite(n) ? n : d;
 };
 
+// Client-supplied `senderName` is only ever used as a fallback when the meta profile lookup is
+// degraded/unreachable (the normal path resolves the server-authoritative displayName instead) —
+// but a degraded window is still reachable in production, so it must be sanitized before it's
+// broadcast into a chat channel: strip control chars, collapse whitespace, cap length.
+function sanitizeSenderNameFallback(raw: string, accountId: string): string {
+  const cleaned = raw.replace(/[\p{Cc}\p{Cf}]/gu, '').trim().slice(0, MAX_DISPLAY_NAME_LEN);
+  return cleaned || accountId;
+}
+
 export function startHttpApi(
   opts: { host: string; port: number; jwtSecret: string; internalKey: string },
   svc: WorldService,
@@ -90,8 +111,17 @@ export function startHttpApi(
       }
 
       // Public: active season number (§20.8). No auth required; lets the client resolve CURRENT_SEASON dynamically.
+      // try/catch required here specifically because this route is reachable with zero credentials —
+      // an uncaught rejection (e.g. a transient Mongo error) would otherwise crash the whole process
+      // (unhandled rejections terminate the process on Node >=15).
       if (method === 'GET' && req.url?.split('?')[0] === '/world/active-season') {
-        return send(res, 200, ok({ season: await svc.getActiveSeasonNo() }));
+        try {
+          return send(res, 200, ok({ season: await svc.getActiveSeasonNo() }));
+        } catch (e) {
+          if (e instanceof SlgError) return sendErr(res, e.code, e.message);
+          log.error('unhandled error (active-season)', { err: e instanceof Error ? e : String(e) });
+          return send(res, 500, err(ErrorCode.INTERNAL, 'internal server error'));
+        }
       }
 
       // —— Internal ops branch (C4/§17.7): /admin/world/* uses X-Internal-Key, checked before JWT. ——
@@ -157,20 +187,39 @@ export function startHttpApi(
 
           // List summary of all regions (G7/§17.7 admin console).
           if (method === 'GET' && aurl.pathname === '/admin/world/list') {
-            return send(res, 200, ok(await svc.listWorlds()));
+            try {
+              return send(res, 200, ok(await svc.listWorlds()));
+            } catch (e) {
+              if (e instanceof SlgError) return sendErr(res, e.code, e.message);
+              log.error('unhandled error (world list)', { err: e instanceof Error ? e : String(e) });
+              return send(res, 500, err(ErrorCode.INTERNAL, 'internal server error'));
+            }
           }
           // Cross-region isolation patrol (G6/§20): cross-region march / dual-account detection / orphan tile scan.
           if (method === 'GET' && aurl.pathname === '/admin/world/patrol') {
-            return send(res, 200, ok(await svc.patrolShardIsolation()));
+            try {
+              return send(res, 200, ok(await svc.patrolShardIsolation()));
+            } catch (e) {
+              if (e instanceof SlgError) return sendErr(res, e.code, e.message);
+              log.error('unhandled error (patrol)', { err: e instanceof Error ? e : String(e) });
+              return send(res, 500, err(ErrorCode.INTERNAL, 'internal server error'));
+            }
           }
           if (method !== 'POST') return sendErr(res, ErrorCode.NOT_FOUND, 'not found');
-          const body = await readJson(req);
+          let body: Record<string, unknown>;
+          try {
+            body = await readJson(req);
+          } catch (e) {
+            log.error('unhandled error (readJson)', { err: e instanceof Error ? e : String(e) });
+            return sendErr(res, ErrorCode.BAD_REQUEST, 'invalid request body');
+          }
           // New-season region allocation (G6/§20): open N regions using snake-draft balancing based on last season's sect strength, no worldId required (checked before the worldId gate).
           if (aurl.pathname === '/admin/world/allocate') {
             try {
               const seasonNum = Number(body.season);
               if (!Number.isFinite(seasonNum)) return sendErr(res, ErrorCode.BAD_REQUEST, 'season required');
               const cap = body.capacity != null ? Number(body.capacity) : undefined;
+              if (cap != null && !Number.isFinite(cap)) return sendErr(res, ErrorCode.BAD_REQUEST, 'capacity must be a number');
               return send(res, 200, ok(await svc.allocateNextSeason(seasonNum, cap)));
             } catch (e) {
               if (e instanceof SlgError) return sendErr(res, e.code, e.message);
@@ -182,7 +231,13 @@ export function startHttpApi(
           if (!worldId) return sendErr(res, ErrorCode.BAD_REQUEST, 'worldId required');
           try {
             if (aurl.pathname === '/admin/world/open') {
-              await svc.openSeason(worldId, Number(body.season ?? 1), Number(body.shard ?? 1), Number(body.capacity ?? 10000));
+              const seasonN = Number(body.season ?? 1);
+              const shardN = Number(body.shard ?? 1);
+              const capacityN = Number(body.capacity ?? 10000);
+              if (!Number.isFinite(seasonN) || !Number.isFinite(shardN) || !Number.isFinite(capacityN)) {
+                return sendErr(res, ErrorCode.BAD_REQUEST, 'season/shard/capacity must be numbers');
+              }
+              await svc.openSeason(worldId, seasonN, shardN, capacityN);
               // §24: clone the active map template's tiles as this world's terrain baseline (copy, not a live reference).
               // No-op if no template is marked active — behavior is unchanged (proceduralTile-only) until ops sets one.
               await mapTemplateSvc.cloneActiveTemplateInto(worldId);
@@ -701,7 +756,7 @@ export function startHttpApi(
           const body = await readJson(req);
           const worldId = typeof body.worldId === 'string' ? body.worldId : null;
           const msgBody = typeof body.body === 'string' ? body.body : null;
-          const senderName = typeof body.senderName === 'string' ? body.senderName : accountId;
+          const senderName = sanitizeSenderNameFallback(typeof body.senderName === 'string' ? body.senderName : '', accountId);
           if (!worldId || !msgBody) return sendErr(res, ErrorCode.BAD_REQUEST, 'worldId + body required');
           return send(res, 200, ok(await sectSvc.sendMessage(worldId, accountId, senderName, msgBody)));
         }
@@ -718,7 +773,7 @@ export function startHttpApi(
           const body = await readJson(req);
           const worldId = typeof body.worldId === 'string' ? body.worldId : null;
           const msgBody = typeof body.body === 'string' ? body.body : null;
-          const senderName = typeof body.senderName === 'string' ? body.senderName : accountId;
+          const senderName = sanitizeSenderNameFallback(typeof body.senderName === 'string' ? body.senderName : '', accountId);
           if (!worldId || !msgBody) return sendErr(res, ErrorCode.BAD_REQUEST, 'worldId + body required');
           const nationRegion = regionFromAcceptLanguage(req.headers['accept-language']);
           return send(res, 200, ok(await nationChannelSvc.sendMessage(worldId, accountId, senderName, msgBody, clientPlatform, nationRegion)));
@@ -744,7 +799,8 @@ export function startHttpApi(
             const worldId = typeof body.worldId === 'string' ? body.worldId : null;
             const name = typeof body.name === 'string' ? body.name : null;
             if (!worldId || !name) return sendErr(res, ErrorCode.BAD_REQUEST, 'worldId + name required');
-            await svc.setNationName(worldId, accountId, Number(m[1]), name);
+            const nationRegion = regionFromAcceptLanguage(req.headers['accept-language']);
+            await svc.setNationName(worldId, accountId, Number(m[1]), name, nationRegion);
             return send(res, 200, ok({}));
           }
         }

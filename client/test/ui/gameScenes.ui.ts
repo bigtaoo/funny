@@ -10,7 +10,7 @@
 // setBakeRenderer(), so bake.ts returns null and every layer draws live on the CPU
 // — no RenderTexture / WebGL is touched. STARTUP smoke, not a visual check.
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import * as PIXI from 'pixi.js-legacy';
 import type { Scene } from '../../src/scenes/SceneManager';
 import { createLayout } from '../../src/layout/ScalingManager';
@@ -19,8 +19,12 @@ import { initI18n } from '../../src/i18n';
 
 import { GameScene } from '../../src/scenes/GameScene';
 import { ReplayScene } from '../../src/scenes/ReplayScene';
+import { StatePlayerScene } from '../../src/scenes/StatePlayerScene';
 import { createLocalMatch } from '../../src/app/matchEngine';
-import { getLevel, type Replay } from '../../src/game';
+import { getLevel, type Replay, Side, UnitType, UnitState, BuildingType } from '../../src/game';
+import { stateRecorder } from '../../src/game/replay/StateRecorder';
+import { decodeStateReplay, type StateReplay } from '../../src/game/replay/StateReplay';
+import type { GameState } from '../../src/game';
 
 // In-memory storage so initI18n (which persists the locale) has somewhere to write.
 const memStore = (() => {
@@ -38,13 +42,38 @@ const LANDSCAPE: [number, number] = [1280, 800];
 
 const SEED = 0x1234abcd;
 
-/** Build → step a handful of frames → destroy. Asserts the tree is real and nothing throws. */
+/** Every PIXI.Text baseTexture reachable from `root` (recursing sub-containers) — collect
+ * BEFORE the teardown under test, since a Text's own `.texture` reference goes away on destroy.
+ * Same helper as scenes.ui.ts / campaignMapTextTeardown.ui.ts. */
+function collectTextBaseTextures(root: PIXI.Container): PIXI.BaseTexture[] {
+  const out: PIXI.BaseTexture[] = [];
+  const walk = (c: PIXI.Container): void => {
+    for (const ch of c.children) {
+      if (ch instanceof PIXI.Text) out.push(ch.texture.baseTexture);
+      else if (ch instanceof PIXI.Container) walk(ch);
+    }
+  };
+  walk(root);
+  return out;
+}
+
+/**
+ * Build → step a handful of frames → destroy. Asserts the tree is real, nothing throws, the
+ * container is actually torn down, and every Text canvas texture is actually freed (not just
+ * detached) — same invariants scenes.ui.ts's exercise() checks for the menu/overlay scenes,
+ * extended here to the full-GameRenderer gameplay scenes (2026-08-03; see
+ * claudedocs/client-memory-leak.md §8.7 for why this outcome-based check matters more than a
+ * bare container.destroyed check).
+ */
 function exercise(scene: Scene): void {
   expect(scene.container).toBeInstanceOf(PIXI.Container);
   // A few frames: tick 0 emits the engine's initial-state events (units/buildings
   // spawn), so the first updates are where construction-time render wiring blows up.
   for (let i = 0; i < 8; i++) scene.update(1 / 30);
+  const textBaseTextures = collectTextBaseTextures(scene.container);
   scene.destroy();
+  expect(scene.container.destroyed).toBe(true);
+  expect(textBaseTextures.every((b) => b.destroyed)).toBe(true);
 }
 
 /** A real recorded match: drive a local PvP-vs-AI engine, then snapshot its stream. */
@@ -60,6 +89,49 @@ function recordCampaignReplay(levelId: string, frames: number): Replay {
   const { engine, buildReplay } = createLocalMatch({ level });
   for (let i = 0; i < frames; i++) engine.tick(1 / 30);
   return buildReplay(null);
+}
+
+// ── StatePlayerScene fixture ──────────────────────────────────────────────────
+// StatePlayerScene plays the OTHER replay format (StateReplay, REPLAY_SHARE_DESIGN §2.1) — a
+// dumb entity-state stream, no engine involved. Same minimal fake-GameState harness as
+// test/stateRecorder.test.ts (mkState): capture a couple of frames on the shared recorder
+// singleton, encode, decode back into a StateReplay.
+interface FakeUnit {
+  id: number; unitType: UnitType; side: Side;
+  colExact: number; rowExact: number; hp: number; maxHp: number; state: UnitState;
+}
+interface FakeBuilding {
+  id: number; buildingType: BuildingType; side: Side;
+  col: number; row: number; hp: number; maxHp: number;
+}
+
+function mkState(tick: number, units: FakeUnit[] = [], buildings: FakeBuilding[] = []): GameState {
+  return {
+    elapsedTicks: tick,
+    bottomPlayer: { baseHp: 100 },
+    topPlayer: { baseHp: 100 },
+    board: {
+      units: new Map(units.map((u) => [u.id, u])),
+      buildings: new Map(buildings.map((b) => [b.id, b])),
+    },
+  } as unknown as GameState;
+}
+
+/** A minimal-but-real StateReplay: one unit + one building across a couple of ticks. */
+function recordStateReplay(): StateReplay {
+  stateRecorder.reset();
+  const unit: FakeUnit = {
+    id: 1, unitType: UnitType.Infantry, side: Side.Bottom,
+    colExact: 3, rowExact: 1, hp: 100, maxHp: 100, state: UnitState.Moving,
+  };
+  const building: FakeBuilding = {
+    id: 2, buildingType: BuildingType.Barracks, side: Side.Bottom,
+    col: 1, row: 8, hp: 200, maxHp: 200,
+  };
+  stateRecorder.capture(mkState(0, [unit], [building]));
+  stateRecorder.capture(mkState(1, [{ ...unit, rowExact: 1.5 }], [building]));
+  const enc = stateRecorder.build({ mode: 'pvp' })!;
+  return decodeStateReplay(enc);
 }
 
 for (const [label, [w, h]] of [
@@ -118,8 +190,73 @@ for (const [label, [w, h]] of [
         new ReplayScene(createLayout(w, h), new InputManager(), replay, { onExit() {} }),
       );
     });
+
+    it('StatePlayerScene (dumb entity-state replay) builds, plays and destroys', () => {
+      const replay = recordStateReplay();
+      exercise(
+        new StatePlayerScene(createLayout(w, h), replay, { onPlayDemo() {}, onBackToLogin() {} }),
+      );
+    });
   });
 }
+
+// ── GameScene: net-callback destroyed-guard (2026-08-03 fix) ────────────────────────────────────
+//
+// applyNetState/applyPeerDc/applyMatchOver are invoked directly from long-lived NetSession event
+// closures (see app.ts's showGameNet / nav/result.ts), not from SceneManager's per-frame tick — so
+// they stay reachable after this scene (and its renderer) has been destroyed, e.g. a late
+// match_over/peer_dc arriving while the player is already sitting on ResultScene (session.handlers
+// isn't always reassigned promptly — see nav/result.ts). Before the fix, any of these calls after
+// destroy() would touch the already-destroyed GameRenderer's container/NetStatusView.
+describe('GameScene — net callbacks are inert after destroy() (2026-08-03 fix)', () => {
+  function buildNetGameScene(): GameScene {
+    return new GameScene(
+      createLayout(...LANDSCAPE),
+      new InputManager(),
+      { onGameEnd() {}, onExitToLobby() {}, onNetMatchOver() {} },
+      { seed: SEED, net: true },
+    );
+  }
+
+  it('applyNetState after destroy() does not throw', () => {
+    const scene = buildNetGameScene();
+    scene.destroy();
+    expect(() => scene.applyNetState('reconnecting')).not.toThrow();
+    expect(() => scene.applyNetState('disconnected')).not.toThrow();
+  });
+
+  it('applyPeerDc after destroy() does not throw', () => {
+    const scene = buildNetGameScene();
+    scene.destroy();
+    expect(() => scene.applyPeerDc({ side: 0, graceMs: 5000 })).not.toThrow();
+  });
+
+  it('applyMatchOver after destroy() does not throw and does not fire onNetMatchOver', () => {
+    let fired = false;
+    const scene = new GameScene(
+      createLayout(...LANDSCAPE),
+      new InputManager(),
+      { onGameEnd() {}, onExitToLobby() {}, onNetMatchOver: () => { fired = true; } },
+      { seed: SEED, net: true },
+    );
+    scene.destroy();
+    expect(() => scene.applyMatchOver({ winnerSide: 0, reason: 'disconnect', mismatch: false })).not.toThrow();
+    expect(fired).toBe(false); // the destroyed-guard bails before ever reaching cb.onNetMatchOver
+  });
+
+  it('sanity: applyMatchOver still fires onNetMatchOver normally BEFORE destroy (guards don\'t overreach)', () => {
+    let fired = false;
+    const scene = new GameScene(
+      createLayout(...LANDSCAPE),
+      new InputManager(),
+      { onGameEnd() {}, onExitToLobby() {}, onNetMatchOver: () => { fired = true; } },
+      { seed: SEED, net: true },
+    );
+    scene.applyMatchOver({ winnerSide: 0, reason: 'disconnect', mismatch: false });
+    expect(fired).toBe(true);
+    scene.destroy();
+  });
+});
 
 // ── ReplayScene: spectator playback advances and ends ────────────────────────
 describe('ReplayScene — playback', () => {
@@ -142,6 +279,44 @@ describe('ReplayScene — playback', () => {
     const overlay = (scene as any).overlay as PIXI.Container;
     expect(overlay).toBeInstanceOf(PIXI.Container);
     expect(overlay.children.length).toBeGreaterThan(0);
+    scene.destroy();
+  });
+});
+
+// ── ReplayScene: distinct load-error messages + real exception logged (2026-08-03 fix) ───────────
+//
+// Before: `errorMsg = e instanceof ReplayVersionError ? t('replay.versionError') : t('replay.versionError')`
+// — both branches produced the identical string, so a genuinely corrupted replay or an invalid
+// stale levelId was misreported to the player as "version incompatible" (factually wrong), and the
+// real exception was never logged anywhere (no way to tell an expected version skip from a real bug
+// from the console/telemetry).
+describe('ReplayScene — construction-failure error messages (2026-08-03 fix)', () => {
+  it('a genuine engine-version mismatch reports replay.versionError', () => {
+    const replay = recordReplay(10);
+    (replay as unknown as { engineVersion: number }).engineVersion = replay.engineVersion + 999;
+    const scene = new ReplayScene(createLayout(...PORTRAIT), new InputManager(), replay, { onExit() {} });
+    const s = scene as unknown as { errorMsg: string; renderer: unknown; ended: boolean };
+    expect(s.renderer).toBeNull();
+    expect(s.ended).toBe(true);
+    expect(s.errorMsg).toBe('Replay version incompatible — cannot play back');
+    scene.destroy();
+  });
+
+  it('regression: a non-version load failure (corrupted replay data) reports a distinct, generic message — not "version incompatible"', () => {
+    const replay = recordCampaignReplay('ch1_lv1', 10);
+    // Corrupt the recording itself so the constructor throws a plain TypeError, unrelated to
+    // engine version — same shape as truncated/corrupted replay JSON coming back from storage.
+    (replay as unknown as { frames: unknown }).frames = null;
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const scene = new ReplayScene(createLayout(...PORTRAIT), new InputManager(), replay, { onExit() {} });
+    const s = scene as unknown as { errorMsg: string; renderer: unknown; ended: boolean };
+    expect(s.renderer).toBeNull();
+    expect(s.ended).toBe(true);
+    expect(s.errorMsg).not.toBe('Replay version incompatible — cannot play back');
+    expect(s.errorMsg).toBe('Something went wrong — please try again');
+    // The real exception must actually be logged somewhere, not silently swallowed.
+    expect(errSpy).toHaveBeenCalled();
+    errSpy.mockRestore();
     scene.destroy();
   });
 });

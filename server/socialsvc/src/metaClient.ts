@@ -10,12 +10,10 @@ export interface SocialMetaClient {
   resolveByPublicId(publicId: string): Promise<{ accountId: string; profile: ProfileView } | null>;
   /** Batch accountId → profile map (missing accountIds are silently skipped). */
   batchProfiles(accountIds: string[]): Promise<Map<string, ProfileView>>;
-  /** Ladder rank + ELO for one accountId (unified profile popup, S8-4 family/friends rank display). Null on lookup failure. */
-  getPlayerRank(accountId: string): Promise<{ rank?: string; elo?: number } | null>;
   /**
    * publicId → accountId + rank/elo in a single round trip (comm-audit batch F item 2): meta's
-   * /internal/player already accepts publicId directly, so the profile-popup "extra" lookup no longer
-   * needs its own resolveByPublicId hop before calling getPlayerRank. Not found → null.
+   * /internal/player already accepts publicId directly, so the profile-popup "extra" lookup needs
+   * no separate resolveByPublicId hop. Not found → null.
    */
   getPlayerRankByPublicId(publicId: string): Promise<{ accountId: string; rank?: string; elo?: number } | null>;
 }
@@ -60,17 +58,6 @@ export class HttpSocialMetaClient implements SocialMetaClient {
     return out;
   }
 
-  async getPlayerRank(accountId: string): Promise<{ rank?: string; elo?: number } | null> {
-    // Degrades to null on any failure, as before.
-    const r = await fetchInternalJson<{ rank?: string; elo?: number }>(
-      `${this.baseUrl}/internal/player?accountId=${encodeURIComponent(accountId)}`,
-      { caller: 'socialsvc', key: this.internalKey, timeoutMs: 5000, label: 'meta /internal/player' },
-    );
-    if (!r.ok || !r.body) return null;
-    const data = r.body;
-    return { ...(data.rank ? { rank: data.rank } : {}), ...(data.elo !== undefined ? { elo: data.elo } : {}) };
-  }
-
   async getPlayerRankByPublicId(publicId: string): Promise<{ accountId: string; rank?: string; elo?: number } | null> {
     const r = await fetchInternalJson<{ accountId?: string; rank?: string; elo?: number }>(
       `${this.baseUrl}/internal/player?publicId=${encodeURIComponent(publicId)}`,
@@ -91,6 +78,5 @@ export const nullSocialMetaClient: SocialMetaClient = {
   available: false,
   async resolveByPublicId() { return null; },
   async batchProfiles() { return new Map(); },
-  async getPlayerRank() { return null; },
   async getPlayerRankByPublicId() { return null; },
 };

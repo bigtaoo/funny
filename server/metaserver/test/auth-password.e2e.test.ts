@@ -1,10 +1,20 @@
 // Password account end-to-end tests (SA-1 acceptance): register → login → change password → loginId taken / invalid credentials.
 // Requires a real single-node Mongo replica set: `cd server && docker compose up -d`. Entire suite is skipped if Mongo is unreachable.
 // Imports from build output dist; requires `tsc -b` before running.
-import { afterAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createMongo, type JwtConfig, type MongoHandle } from '@nw/shared';
+import * as shared from '@nw/shared';
 import type { FastifyInstance } from 'fastify';
 import { buildApp } from '../dist/app.js';
+
+// `@nw/shared`'s dist build is genuine ESM (non-configurable named exports), so vi.spyOn on the
+// namespace object throws "Cannot redefine property" — wrap verifyPassword in a vi.fn via a module
+// factory instead (accounts.ts's own `import { verifyPassword } from '@nw/shared'` resolves through
+// this mock since it's applied at the module-resolution layer, before accounts.ts's import runs).
+vi.mock('@nw/shared', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@nw/shared')>();
+  return { ...actual, verifyPassword: vi.fn(actual.verifyPassword) };
+});
 
 const URI = process.env.NW_MONGO_URI ?? 'mongodb://127.0.0.1:27017/?replicaSet=rs0';
 const DB = 'nw_meta_auth_test';
@@ -96,6 +106,28 @@ describe.skipIf(!mongo)('metaserver auth password e2e', () => {
     const missing = await login('nobody', 'secret123');
     expect(missing.statusCode).toBe(401);
     expect(body(missing).error.code).toBe('INVALID_CREDENTIALS');
+  });
+
+  it('regression (2026-08-03 fix): a not-found loginId still pays the scrypt verify cost, closing the timing side-channel', async () => {
+    // Root cause: loginWithPassword used to return immediately when the loginId didn't exist, but
+    // awaited a full scrypt comparison when it existed with a wrong password — a measurable timing
+    // difference that let an attacker distinguish "no such account" from "wrong password" even though
+    // both return an identical INVALID_CREDENTIALS body. Fixed by always calling verifyPassword against
+    // a fixed DUMMY_PASSWORD_HASH on the not-found path, so both branches pay the same scrypt cost.
+    await register('henry', 'secret123');
+    const spy = shared.verifyPassword as unknown as ReturnType<typeof vi.fn>;
+    spy.mockClear();
+
+    const missing = await login('no-such-loginid-at-all', 'whatever123');
+    expect(missing.statusCode).toBe(401);
+    expect(spy).toHaveBeenCalledTimes(1);
+    expect(spy.mock.calls[0]?.[1]).toBe(shared.DUMMY_PASSWORD_HASH);
+
+    spy.mockClear();
+    const wrongPassword = await login('henry', 'not-the-real-password');
+    expect(wrongPassword.statusCode).toBe(401);
+    expect(spy).toHaveBeenCalledTimes(1);
+    expect(spy.mock.calls[0]?.[1]).not.toBe(shared.DUMMY_PASSWORD_HASH); // compared against the real stored hash
   });
 
   it('change password: after old password verified, new password can be used to login', async () => {

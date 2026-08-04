@@ -2,6 +2,7 @@
 // All players within the same world can post; messages are fanned out to online gateway members via
 // Redis pub/sub. Without Redis the service degrades to O(n) HTTP push. Offline members fetch
 // history via REST (TTL 7 days).
+import { randomBytes } from 'node:crypto';
 import { FAMILY_MSG_BODY_MAX, SlgError, censorChat, type ChatRegion, type WordlistCache } from '@nw/shared';
 import type { WorldCollections, NationMessageDoc } from './db';
 import type { HttpWorldGatewayClient } from './gatewayClient';
@@ -98,7 +99,12 @@ export class NationChannelService {
     const orderId = `world_chat:${worldId}:${accountId}:${ts}`;
     await this.deps.commercial.spend(accountId, WORLD_CHAT_COST, orderId, clientPlatform);
     const seq = ++msgSeq;
-    const msgId = `nm:${worldId}:${ts}:${seq}`;
+    // 2026-08-03 (worldsvc code review): worldsvc fans out across multiple instances (Redis pub/sub for
+    // cross-instance push, per this file's header comment) but `msgSeq` is a per-process in-memory
+    // counter — two instances could produce the same (worldId, ts, seq) within the same millisecond,
+    // colliding on this _id. A random suffix makes that astronomically unlikely without needing any
+    // cross-instance coordination.
+    const msgId = `nm:${worldId}:${ts}:${seq}:${randomBytes(4).toString('hex')}`;
     const senderPublicId = profile?.publicId ?? '';
     const resolvedSenderName = profile?.displayName ?? senderName;
     const title = profile?.equippedTitle;
@@ -118,7 +124,14 @@ export class NationChannelService {
       body,
       ts: new Date(ts),
     };
-    await cols.nationMessages.insertOne(msgDoc);
+    try {
+      await cols.nationMessages.insertOne(msgDoc);
+    } catch (e) {
+      // Coins were already charged above — if the message never actually persists (duplicate key or
+      // any other write failure), refund rather than silently charging for a post that never appears.
+      await this.deps.commercial.grant(accountId, WORLD_CHAT_COST, `${orderId}:refund`);
+      throw e;
+    }
 
     // Push: prefer delegating to socialsvc (push hub, §5); fall back to direct gateway push O(n) when socialsvc is unavailable.
     const payload = { worldId, fromPublicId: senderPublicId, fromName: resolvedSenderName, title, sectName, familyName, body, ts };

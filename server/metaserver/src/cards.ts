@@ -323,8 +323,10 @@ export async function setCardLock(
 /**
  * worldsvc auction escrow: removes one card instance from the seller's inventory and returns a snapshot
  * (worldsvc stores it in the listing doc). Card must not have any gear equipped (§11 rule: unequip before
- * listing). Mirrors equipment.ts escrowEquipment (no idempotency ledger here, matching this endpoint's
- * pre-split behavior: orderId is accepted but not used to dedupe a retry).
+ * listing). Mirrors equipment.ts escrowEquipment, including its idempotency ledger (2026-08-03 fix: this
+ * endpoint previously accepted orderId but never used it to dedupe — a retry after a lost HTTP response
+ * would find the instance already deleted and return CARD_NOT_FOUND, permanently losing the card with no
+ * listing ever created).
  */
 export async function escrowCard(
   cols: Collections,
@@ -335,20 +337,29 @@ export async function escrowCard(
 ): Promise<{ instance: CardInstance } | CardError> {
   if (!instanceId || !orderId) return { error: 'instanceId + orderId required', code: 'BAD_REQUEST' };
 
+  const existing = await cols.cardIdem.findOne({ _id: orderId });
+  if (existing?.op === 'escrow') return { instance: existing.result as CardInstance };
+
   const [saveDoc, cardDoc] = await Promise.all([
     cols.saves.findOne({ _id: accountId }),
     cols.cardInstances.findOne({ _id: instanceId, accountId }),
   ]);
   if (!saveDoc) return { error: 'save not found', code: 'NOT_FOUND' };
-  if (!cardDoc) return { error: 'card not found', code: 'CARD_NOT_FOUND' };
+  if (!cardDoc) {
+    // Concurrently escrowed (idem already written) → replay; otherwise the card genuinely does not exist.
+    const replay = await cols.cardIdem.findOne({ _id: orderId });
+    if (replay?.op === 'escrow') return { instance: replay.result as CardInstance };
+    return { error: 'card not found', code: 'CARD_NOT_FOUND' };
+  }
   const card = fromCardDoc(cardDoc);
   if (Object.values(card.gear).some((v) => !!v)) {
     return { error: 'card has equipped gear; unequip before listing', code: 'CARD_HAS_GEAR' };
   }
 
   // Destructive op up front (idempotent delete — safe even if the saves-side rev-guard below has to loop
-  // on a concurrent write to this account's save), mirrors equipment.ts escrowEquipment.
-  await cols.cardInstances.deleteOne({ _id: instanceId });
+  // on a concurrent write to this account's save), mirrors equipment.ts escrowEquipment. Scoped to
+  // accountId too, closing a narrow cross-account TOCTOU window versus the validating read above.
+  await cols.cardInstances.deleteOne({ _id: instanceId, accountId });
 
   for (let attempt = 0; attempt < REV_RETRIES; attempt++) {
     const doc = await cols.saves.findOne({ _id: accountId });
@@ -363,7 +374,16 @@ export async function escrowCard(
       { _id: accountId, rev: doc.rev },
       { $set: { save: next, rev: next.rev } },
     );
-    if (res) return { instance: card };
+    if (res) {
+      // Record ledger entry after the save write lands ($setOnInsert prevents a concurrent duplicate
+      // write from clobbering the first result).
+      await cols.cardIdem.updateOne(
+        { _id: orderId },
+        { $setOnInsert: { accountId, op: 'escrow', result: card, expireAt: idemExpireAt(now()) } },
+        { upsert: true },
+      );
+      return { instance: card };
+    }
   }
   return { error: 'rev conflict, retry', code: 'REV_CONFLICT' };
 }
@@ -504,7 +524,11 @@ export async function fuseCards(
     await cols.cardIdem.deleteOne({ _id: idempotencyKey });
     return { error: 'target card changed concurrently, retry', code: 'REV_CONFLICT' };
   }
-  await cols.cardInstances.deleteMany({ _id: { $in: ids } });
+  // Scoped to accountId (2026-08-03 fix): ownership was validated earlier via the accountId-scoped
+  // cardInstances.find above, but without this guard the delete itself would match purely on _id —
+  // closing a narrow cross-account TOCTOU window (an id traded away via auction escrow + re-granted to
+  // a buyer since that validation).
+  await cols.cardInstances.deleteMany({ _id: { $in: ids }, accountId });
 
   // Saves-side: count decrement (5 material instances removed), rev-guarded.
   for (let attempt = 0; attempt < REV_RETRIES; attempt++) {

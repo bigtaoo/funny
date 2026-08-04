@@ -57,12 +57,6 @@ export class FakeMeta implements SocialMetaClient {
     return out;
   }
 
-  async getPlayerRank(accountId: string): Promise<{ rank?: string; elo?: number } | null> {
-    const p = this.byAccount.get(accountId);
-    if (!p) return null;
-    return { ...(p.rank ? { rank: p.rank } : {}) };
-  }
-
   async getPlayerRankByPublicId(publicId: string): Promise<{ accountId: string; rank?: string; elo?: number } | null> {
     const accountId = this.byPublicId.get(publicId);
     if (!accountId) return null;

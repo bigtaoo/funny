@@ -20,6 +20,7 @@ import {
 import type { FastifyInstance } from 'fastify';
 import type { CommercialClient } from '../dist/commercialClient.js';
 import { buildApp } from '../dist/app.js';
+import { reforgeEquipment } from '../dist/equipment.js';
 import { seedEquipment, seedEquipmentBatch, readEquipmentInv } from './helpers/equipment.js';
 import { readCardInv, seedCard } from './helpers/cards.js';
 
@@ -159,6 +160,32 @@ describe.skipIf(!mongo)('equipment backend e2e', () => {
     const save = await readSave();
     expect(save.materials.scrap).toBe(15); // deducted only once
     expect(Object.keys(await readInv())).toHaveLength(1); // only one item produced
+  });
+
+  it('regression (2026-08-03 fix): a duplicate craft request behind an uncommitted claim is rejected, not granted for free', async () => {
+    // Root cause: the idempotency claim for craft/enhance/reforge is inserted BEFORE the cost-side
+    // rev-guarded save write lands (so the roll stays deterministic across retries). A concurrent
+    // duplicate request hitting the insert's E11000 used to unconditionally re-assert the instance —
+    // if the *original* request then failed to ever commit the cost (crash, exhausted rev retries), the
+    // duplicate had already granted a free item. Simulate that in-flight state directly: seed a claim
+    // doc with committed:false (as if a request just claimed the key but hasn't paid yet), then fire a
+    // second request with the same key.
+    await seedMaterials({ scrap: 20 });
+    const idempotencyKey = 'racing-key';
+    await m.collections.equipmentIdem.insertOne({
+      _id: idempotencyKey,
+      accountId,
+      op: 'craft',
+      result: { id: `eq_${idempotencyKey}`, defId: 'wp_pencil', rarity: 'common', level: 0, affixes: [] },
+      committed: false,
+      expireAt: new Date(Date.now() + 3600_000),
+    });
+    const res = await craft('wp_pencil', idempotencyKey);
+    expect(res.statusCode).toBe(409);
+    expect(body(res).error.code).toBe('REV_CONFLICT');
+    // Nothing was granted and nothing was charged.
+    expect(Object.keys(await readInv())).toHaveLength(0);
+    expect((await readSave()).materials.scrap).toBe(20);
   });
 
   it('craft full inventory → 409 INVENTORY_FULL', async () => {
@@ -499,6 +526,54 @@ describe.skipIf(!mongo)('equipment backend e2e', () => {
   });
 
   // ── E6 Reforge ───────────────────────────────────────────────────────────────────
+  it('reforge success: target re-rolled affixes, material consumed, coins deducted', async () => {
+    await seedInstance('rt0', 'wp_pen', 0, { rarity: 'fine' });
+    await seedInstance('rm0', 'wp_pencil', 0, { rarity: 'common' });
+    const before = comm.bal(accountId);
+    const res = await reforge('rt0', 'rm0', 'rk-happy');
+    expect(res.statusCode).toBe(200);
+    const r = body(res);
+    expect(r.data.instance.id).toBe('rt0');
+    const inv = await readInv();
+    expect(inv['rt0']).toBeTruthy();
+    expect(inv['rm0']).toBeUndefined(); // fuel consumed
+    expect(comm.bal(accountId)).toBeLessThan(before); // coin fee charged
+  });
+
+  it('regression (2026-08-03 fix): equipmentInvCount rev-loop exhaustion still completes the reforge (coins settled) instead of erroring after the fuel material is already destroyed', async () => {
+    // Root cause: the target upgrade + material deletion happen unconditionally right after the idem
+    // claim, BEFORE the equipmentInvCount rev-guarded loop even starts — so if that loop exhausts its
+    // retries (contention from an unrelated concurrent save write), the old code deleted the idem claim
+    // and returned REV_CONFLICT despite having already destroyed the player's fuel item and upgraded
+    // their target, and without ever charging the coin fee. Force every findOneAndUpdate on `saves` to
+    // "lose" to simulate that contention deterministically.
+    await seedInstance('rt3', 'wp_pen', 0, { rarity: 'fine' });
+    await seedInstance('rm3', 'wp_pencil', 0, { rarity: 'common' });
+    const before = comm.bal(accountId);
+
+    const realSaves = m.collections.saves;
+    let findOneAndUpdateCalls = 0;
+    const wrappedSaves = {
+      findOne: realSaves.findOne.bind(realSaves),
+      findOneAndUpdate: async () => { findOneAndUpdateCalls++; return null; },
+    } as typeof realSaves;
+    const wrappedCols = { ...m.collections, saves: wrappedSaves };
+
+    const result = await reforgeEquipment(wrappedCols, comm, () => Date.now(), accountId, 'rt3', 'rm3', 'rk-exhaust', undefined);
+    expect('error' in result).toBe(false);
+    // 3 REV_RETRIES attempts on the equipmentInvCount decrement + 1 more from the fallback settleEquipCoins
+    // → mirrorCoins write (also routed through the same stubbed findOneAndUpdate) — all REV_RETRIES
+    // attempts genuinely exhausted, not silently skipped.
+    expect(findOneAndUpdateCalls).toBe(4);
+
+    // Fuel is gone, target still present (upgraded), and the coin fee was still collected via the
+    // fallback settlement — the reforge completed instead of erroring on an already-irreversible mutation.
+    const inv = await readInv();
+    expect(inv['rt3']).toBeTruthy();
+    expect(inv['rm3']).toBeUndefined();
+    expect(comm.bal(accountId)).toBeLessThan(before);
+  });
+
   it('reforge rejects an already-enhanced material → 400 INVALID_MATERIAL_LEVEL (client restricts the picker to +0, but a direct API call must be rejected too so sunk enhance materials/rolls cannot be destroyed)', async () => {
     await seedInstance('rt1', 'wp_pen', 0, { rarity: 'fine' }); // target: fine, needs a common material
     await seedInstance('rm1', 'wp_pencil', 1, { rarity: 'common' }); // material: right slot+rarity, but already +1
@@ -509,5 +584,17 @@ describe.skipIf(!mongo)('equipment backend e2e', () => {
     const inv = await readInv();
     expect(inv['rt1']).toBeTruthy();
     expect(inv['rm1']).toMatchObject({ level: 1 });
+  });
+
+  it('reforge rejects a locked material → 409 EQUIP_LOCKED (2026-08-03 fix: only the target\'s lock was checked before; a locked item — locked specifically to protect it — could be destroyed as fuel)', async () => {
+    await seedInstance('rt2', 'wp_pen', 0, { rarity: 'fine' }); // target: fine, needs a common material
+    await seedInstance('rm2', 'wp_pencil', 0, { rarity: 'common', locked: true }); // material: right slot+rarity+level, but locked
+    const res = await reforge('rt2', 'rm2', 'rk-matlock');
+    expect(res.statusCode).toBe(409);
+    expect(body(res).error.code).toBe('EQUIP_LOCKED');
+    // no partial mutation: both items still present, material still locked and not consumed
+    const inv = await readInv();
+    expect(inv['rt2']).toBeTruthy();
+    expect(inv['rm2']).toMatchObject({ locked: true });
   });
 });

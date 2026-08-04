@@ -8,7 +8,7 @@
  */
 import { PrimitiveType } from '@vfx/types';
 import { EffectModel } from '../model/EffectModel';
-import { ALL_PRIMITIVES, COUNT_PRIMITIVES, POINTS_PRIMITIVES } from '../model/paramHints';
+import { ALL_PRIMITIVES, COUNT_PRIMITIVES, EMITTER_PRIMITIVES, POINTS_PRIMITIVES } from '../model/paramHints';
 
 export class LayerPanel {
   constructor(
@@ -127,6 +127,17 @@ export class LayerPanel {
       const hint = document.createElement('div');
       hint.className = 'empty';
       hint.textContent = `points: ${layer.points?.length ?? 0} pts — edit coordinates in the JSON pane below`;
+      box.appendChild(hint);
+    }
+
+    // emitter spec hint (lifetime/velocity/gravity edits go through the JSON pane)
+    if (EMITTER_PRIMITIVES.has(layer.type)) {
+      const hint = document.createElement('div');
+      hint.className = 'empty';
+      const e = layer.emitter;
+      hint.textContent = e
+        ? `emitter: lifetime ${e.lifetime.from}–${e.lifetime.to}, speed ${e.velocity.min}–${e.velocity.max}, spread ±${e.velocity.angleSpread.toFixed(2)}rad — edit in the JSON pane below`
+        : 'emitter: no spec yet — edit in the JSON pane below';
       box.appendChild(hint);
     }
 

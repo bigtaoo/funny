@@ -23,7 +23,17 @@ import type { PlayerWorldDoc, MarchDoc, StationedDoc, ArmyEntry } from './db';
 import type { WorldCore } from './core';
 import { legBox } from './core/helpers';
 
-/** Refund troops to the pool (capped at troopCap) + settle resources; optionally merge loot into resources (capped at RESOURCE_CAP). */
+/**
+ * Refund troops to the pool (capped at troopCap) + settle resources; optionally merge loot into resources
+ * (capped at RESOURCE_CAP).
+ *
+ * 2026-08-03 (worldsvc code review): the scheduler runs processDueArrivals/processDueSiegeDamage/
+ * processDueOccupations concurrently every tick, and this is the single shared helper all of them call
+ * to touch a player's `resources`/`troops` — a return-march refund and a same-tick siege loot capture for
+ * the same account each used to read a `pw` snapshot and blind-`$set` from it, so whichever wrote second
+ * silently clobbered the first's delta (lost update). Guarded on `rev` now, with a bounded refetch+retry
+ * loop so the fix is transparent to the many call sites that just pass in whatever `pw` they already had.
+ */
 export async function refundTroops(
   core: WorldCore,
   pw: PlayerWorldDoc,
@@ -31,17 +41,33 @@ export async function refundTroops(
   t: number,
   loot?: Record<ResourceType, number>,
 ): Promise<void> {
-  const resources = core.settle(pw, t);
-  if (loot) {
-    for (const rt of RESOURCE_TYPES) {
-      resources[rt] = Math.min(RESOURCE_CAP, (resources[rt] ?? 0) + (loot[rt] ?? 0));
+  const MAX_ATTEMPTS = 5;
+  let doc = pw;
+  for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+    const resources = core.settle(doc, t);
+    if (loot) {
+      for (const rt of RESOURCE_TYPES) {
+        resources[rt] = Math.min(RESOURCE_CAP, (resources[rt] ?? 0) + (loot[rt] ?? 0));
+      }
     }
+    const next = Math.min(doc.troopCap, doc.troops + troops);
+    const result = await core.deps.cols.playerWorld.updateOne(
+      { _id: doc._id, rev: doc.rev },
+      { $set: { resources, troops: next, lastTickAt: t }, $inc: { rev: 1 } },
+    );
+    if (result.matchedCount > 0) return;
+    if (attempt === MAX_ATTEMPTS - 1) {
+      // Best-effort: refundTroops is called deep inside scheduler/settlement flows with no HTTP caller
+      // to propagate a failure to — throwing here would just risk an unhandled rejection somewhere up
+      // the chain. Losing a refund under sustained same-tick contention is a much smaller failure than
+      // that, and this path should be vanishingly rare in practice.
+      console.error('[worldsvc] refundTroops: giving up after rev-conflict retries', { docId: doc._id, troops });
+      return;
+    }
+    const fresh = await core.deps.cols.playerWorld.findOne({ _id: doc._id });
+    if (!fresh) return;
+    doc = fresh;
   }
-  const next = Math.min(pw.troopCap, pw.troops + troops);
-  await core.deps.cols.playerWorld.updateOne(
-    { _id: pw._id },
-    { $set: { resources, troops: next, lastTickAt: t }, $inc: { rev: 1 } },
-  );
 }
 
 /**

@@ -146,6 +146,33 @@ describe.skipIf(!mongo)('pve L1 verify e2e', () => {
     expect(again.data.save.materials.scrap).toBe(6); // granted exactly once
   });
 
+  it('regression (2026-08-03 fix): two truly concurrent /pve/verify submissions for the same verifyId grant materials exactly once', async () => {
+    // Root cause: pveVerify's idempotency guard read doc.status BEFORE the (potentially slow) gateway.judge()
+    // call, then wrote the settled status without checking whether its own write actually matched. Two
+    // concurrent requests could both pass the initial pending-check, both run the judge, and both then
+    // deliver rewards — this test widens that race window with a slow fake judge and fires both requests
+    // via Promise.all so they genuinely overlap.
+    const c = b(await clear('ch1_lv1', 3));
+    let resolveJudge!: () => void;
+    const gate = new Promise<void>((resolve) => { resolveJudge = resolve; });
+    gateway.judge = async (req) => {
+      gateway.last = req;
+      await gate; // both concurrent calls block here until released together
+      return { ok: true, stars: 3 };
+    };
+    const call1 = verify(c.data.verifyId);
+    const call2 = verify(c.data.verifyId);
+    // Give both requests a tick to reach (and pass) the pending-status read before releasing the judge.
+    await new Promise((r) => setTimeout(r, 20));
+    resolveJudge();
+    const [r1, r2] = (await Promise.all([call1, call2])).map(b);
+    // Exactly one of the two should have delivered materials; the other must take the idempotent path.
+    const grantedCount = [r1, r2].filter((r) => r.data.granted?.scrap > 0).length;
+    expect(grantedCount).toBe(1);
+    const finalSave = b(await app.inject({ method: 'GET', url: '/save', headers: auth() })).data.save;
+    expect(finalSave.materials.scrap).toBe(6); // granted exactly once, not twice
+  });
+
   it('unknown / unauthorized verifyId → 404', async () => {
     expect((await verify('no-such-id')).statusCode).toBe(404);
   });

@@ -117,5 +117,22 @@ export const REFORGE_MATERIAL_RARITY: Partial<Record<EquipRarity, EquipRarity>> 
   epic: 'rare',
 };
 
+/**
+ * Per-reforge coin fee by target rarity — mirrors server/shared/src/equipment.ts REFORGE_COIN_COST
+ * (ADR-030). Charged on every reforge attempt on top of the fuel item; unlike enhance/craft, the
+ * reforge UI previously had no client-side notion of this cost at all (2026-08-03 fix — reforge
+ * used to be the only spend action in EquipmentScene that didn't preview/gate on affordability).
+ */
+export const REFORGE_COIN_COST: Partial<Record<EquipRarity, number>> = {
+  fine: 80,
+  rare: 200,
+  epic: 500,
+};
+
+/** Coin cost to reforge an item of the given rarity (0 if not reforge-eligible). */
+export function reforgeCoinCost(rarity: EquipRarity): number {
+  return REFORGE_COIN_COST[rarity] ?? 0;
+}
+
 /** Protection item id (E7). Stored in save.inventory.items[PROTECT_ENHANCE_ITEM_ID]; value is quantity held. */
 export const PROTECT_ENHANCE_ITEM_ID = 'protect_enhance';

@@ -102,7 +102,7 @@
 | `dots` | 散点群 | `count, spreadR, dotSize, alpha, jitter` | 碎屑、debris、落石碎块 |
 | `burst` | 放射线爆发 | `count, nearR, farR, rotation, alpha, lineWidth` | death_unit 放射线 |
 | `polyline` | 自由折线（点序列 + 缩放/旋转/位移轨道） | `points, scale, rotation, translateX/Y, alpha, lineWidth` | Meteor 拖影、地裂、Haste 速度线、闪电、HEAL 上浮十字 |
-| `emitter` | **（保留，本期不实现）** 位图粒子发射器 | 见 §13 | 将来史诗大招 |
+| `emitter` | 矢量粒子群（**纯程序，非位图**，2026-08-03 实现） | `count, emitter{lifetime,velocity,gravity,startAlpha/endAlpha,startScale/endScale,spawnSpread}, rotation, size, alpha` | 史诗大招、碎屑喷射 |
 
 > **已删除 `text` 图元（决议 V8）**：漫画拟声词（"BAM!"/"HEAL"）涉及 i18n key/字面量两难、字体资产、PIXI.Text 子节点等额外复杂度，本期不做。需要"HEAL/上浮符号"用 `polyline`（十字/箭头矢量）替代，与墨线风更统一。将来若做，再在本表登记重新引入。
 >
@@ -295,18 +295,26 @@ client/src/
 
 ---
 
-## 13. 扩展位：位图粒子（方案 B，本期不实现）
+## 13. `emitter`：矢量粒子群（2026-08-03 实现，方案 A2）
 
-数据模型已为粒子留好 `type: "emitter"` 图层类型。将来若出现"史诗大招 + 美术方向确认接受位图"的需求，只需：
+原计划的"位图粒子"（方案 B：贴图发射器）需要美术方向拍板 + 新资产管线，本期不做。改为**纯矢量模拟**：每个粒子只是 `gfx.drawCircle` 画的一个小圆点，零新增美术资产，与现有墨线风格一致，且与"方案 A：不做位图粒子"的既定决议不冲突——只是把 emitter 这个保留位从"以后可能要位图"改为"现在就用矢量实现"。
 
-1. 在 `primitives.ts`/`interpret.ts` 增 `emitter` 分支（发射、速度/重力积分、生命周期、批渲染）。
-2. 引入 `art/vfx/*` 粒子贴图资产管线。
-3. 编辑器加发射器参数面板 + 资产导入 + 实时模拟预览。
-4. **种子化粒子随机**以维持确定性（§6 红线）。
+**确定性**：不做逐帧状态累积。每个粒子的出生时刻/角度/速度/寿命由 `interpret.ts` 每帧用同一 seed 重建的 `Prng`（与 `boil`/`dots` 同一套机制）按固定顺序抽取，因此对同一个 `t` 永远解出同一个粒子群——重播/回放确定性成立（§6 红线）。粒子位置是 `t` 的解析函数（弹道公式），不是"上一帧位置 + 本帧速度"的累加。
 
-emitter 参数草案（占位，未冻结）：`texture, rate, lifetime{from,to}, velocity{min,max,angleSpread}, gravity, startAlpha/endAlpha, startScale/endScale`。
+**`LayerDef.emitter: EmitterSpec`**（`types.ts`）：
+- `lifetime: {from, to}` —— 每个粒子寿命，效果总时长的比例，个体在此区间内随机取值
+- `velocity: {min, max, angleSpread}` —— 出生速度大小范围 + 绕 `rotation` 的角度散布半宽
+- `gravity`（默认 0）—— 竖直方向加速度
+- `startAlpha/endAlpha`（默认 1/0）、`startScale/endScale`（默认 1/0.3）—— 粒子自身生命周期内的线性衰减
+- `spawnSpread`（默认 0）—— 0 = 全部粒子在 t=0 同时出生（爆裂/burst，史诗大招典型用法）；1 = 出生时刻均匀撒满整个 `[0,1)`（持续喷射）
 
-> 在此之前，emitter 在解释器中是 no-op + 警告，编辑器不暴露该图元类型。
+层级参数（走 `params`，可动画）：`rotation`（发射基准方向）、`size`（粒子基础半径）、`alpha`（整层透明度倍数）。`count`（沿用既有 layer-level 字段）= 粒子总数。
+
+**校验**（`parseEffectDef.ts`）：`type: 'emitter'` 的图层缺少或形状不对的 `emitter` 字段视为硬错误（throw），因为无法给出合理默认弹道。
+
+**编辑器**：`emitter` 已加入 `ALL_PRIMITIVES`/`COUNT_PRIMITIVES`；新建图层自动种一份"12 点、0.2–0.5s 寿命、40–100 速度、360° 散布"的可见默认值；结构字段（lifetime/velocity/gravity/…）走 JSON pane 直接编辑（与 `polyline` 的 `points` 同一约定，不为每个 emitter 子字段单开控件）。
+
+若未来仍要"史诗大招 + 美术方向确认接受位图"，方案 B（贴图粒子）依旧可以作为独立扩展叠加：新增一个 `texture` 可选字段，`primitives.ts` 按有无 `texture` 分流到 Sprite 而非 `drawCircle`，不影响本节的矢量实现。
 
 ---
 
@@ -346,7 +354,7 @@ _2026-06-24（补全施工细节）：_
 
 - `vfx/types.ts` —— `EffectDef`/`LayerDef`/`ParamTrack`（含三形态：常量/二点 ramp/多关键帧）/`Ease`/`BoilSpec`。
 - `vfx/sampleParam.ts` —— `sampleParam(track,t)` + `applyEase`（linear/easeIn/easeOut/easeInOut），无依赖、可与编辑器共享。
-- `vfx/primitives.ts` —— 图元绘制：`ring/arc/spokes/burst/dots/polyline` 已实现；`text` 占位（需 PIXI.Text，留 P2/P3）；`emitter` no-op + 一次性警告（§13 保留位）；`text` 当时为占位，P1.1 已删。`spokes` 支持 `emphasisEvery`/`emphasisLineWidth`，`dots` 支持 `angleOffset`/`jitter`（种子随机）。
+- `vfx/primitives.ts` —— 图元绘制：`ring/arc/spokes/burst/dots/polyline/emitter` 均已实现（`emitter` 矢量粒子群，2026-08-03，见 §13）；`text` 当时为占位，P1.1 已删。`spokes` 支持 `emphasisEvery`/`emphasisLineWidth`，`dots` 支持 `angleOffset`/`jitter`（种子随机）。
 - `vfx/interpret.ts` —— `interpret(layers,t,gfx,color,baseSeed)` 单一来源；每层按 `seed`（或 effect id 哈希派生）建 `Prng`，逐帧同种子重建→无闪烁且回放确定。
 - `vfx/registry.ts` —— 每特效一 JSON（`effects/*.json`）合并为注册表。
 - `VFXSystem.ts` —— 接 registry + interpret；新增 `loop` 分支（`t` 往复、不自动回收）、`play()` 返句柄 + `stop(handle)`、`follow` 取值器（每帧同步位置，返 null 自动停）；对象池/层级/`destroy` 不变。

@@ -165,7 +165,10 @@ class FakeCommercial implements CommercialClient {
     return { ok: true as const, coinsAfter: this.bal(a.accountId) };
   }
   granted = new Set<string>();
+  /** Makes the next grant() call throw (simulates a transient commercial failure), then behaves normally. */
+  failNextGrant = false;
   async grant(a: { accountId: string; amount: number; reason: string; orderId: string }) {
+    if (this.failNextGrant) { this.failNextGrant = false; throw new Error('injected grant failure'); }
     if (this.granted.has(a.orderId)) return { ok: true as const, coinsAfter: this.bal(a.accountId) };
     this.coins.set(a.accountId, this.bal(a.accountId) + a.amount);
     this.granted.add(a.orderId);
@@ -214,6 +217,20 @@ describe.skipIf(!mongo)('meta economy orchestration e2e', () => {
     expect(pools.data.pools.some((p: { id: string }) => p.id === 'units')).toBe(false);
   });
 
+  it('item list: material bundles carry their qty (ECONOMY_NUMBERS §6.5); non-material items omit it entirely', async () => {
+    const items = body(await app.inject({ method: 'GET', url: '/shop/items', headers: auth() }));
+    type Item = { id: string; kind: string; qty?: number };
+    const scrap = (items.data.items as Item[]).find((i) => i.id === 'mat_buy_scrap');
+    expect(scrap?.kind).toBe('material');
+    expect(scrap?.qty).toBe(10);
+    const lead = (items.data.items as Item[]).find((i) => i.id === 'mat_buy_lead');
+    expect(lead?.qty).toBe(3);
+    // Skin/consumable entries never had a qty concept — the field must be entirely absent, not `qty: undefined`
+    // serialized some other way, on the wire.
+    const stone = (items.data.items as Item[]).find((i) => i.id === 'protect_enhance');
+    expect(stone).not.toHaveProperty('qty');
+  });
+
   it('top-up → mirrored balance pushed back', async () => {
     const r = body(await app.inject({ method: 'POST', url: '/iap/verify', headers: auth(), payload: { platform: 'web', receipt: 'tier:t499' } }));
     expect(r.data.granted).toBe(550);
@@ -241,6 +258,32 @@ describe.skipIf(!mongo)('meta economy orchestration e2e', () => {
     // Re-claiming the same tier is rejected (already claimed).
     const again = body(await app.inject({ method: 'POST', url: '/recharge/claim', headers: auth(), payload: { tierId: 1 } }));
     expect(again.ok).toBe(false);
+  });
+
+  it('regression (2026-08-03 fix): recharge milestone coins are reconciled on a later ALREADY_CLAIMED retry after the first grant failed', async () => {
+    // Root cause: the milestone tier is marked claimed (irreversibly — a repeat claim bounces off
+    // ALREADY_CLAIMED) BEFORE the coin grant runs. If that grant throws or returns ok:false, the coins
+    // used to be silently lost forever (no error surfaced, no way to retry — the milestone was already
+    // consumed). Since the grant's orderId is deterministic per account+tier, an ALREADY_CLAIMED response
+    // can still recompute the tier's coin reward and retry the grant.
+    await app.inject({ method: 'POST', url: '/iap/verify', headers: auth(), payload: { platform: 'web', receipt: 'tier:t999' } });
+    const before = comm.bal(accountId);
+
+    comm.failNextGrant = true;
+    const claim = body(await app.inject({ method: 'POST', url: '/recharge/claim', headers: auth(), payload: { tierId: 1 } }));
+    expect(claim.ok).toBe(true); // milestone claim itself still "succeeds" from the client's perspective
+    expect(claim.data.rewards).toEqual([{ kind: 'coins', count: 60 }]);
+    expect(comm.bal(accountId)).toBe(before); // but the grant failed — coins not actually delivered yet
+
+    // A later retry of the same (now-already-claimed) tier reconciles the missed coin grant instead of
+    // silently losing it forever.
+    const retry = body(await app.inject({ method: 'POST', url: '/recharge/claim', headers: auth(), payload: { tierId: 1 } }));
+    expect(retry.ok).toBe(false); // still reports ALREADY_CLAIMED — milestone state itself is unchanged
+    expect(comm.bal(accountId)).toBe(before + 60); // but the coins have now landed via reconciliation
+
+    // A further retry does not re-grant a third time (deterministic orderId, commercial-side dedup).
+    await app.inject({ method: 'POST', url: '/recharge/claim', headers: auth(), payload: { tierId: 1 } });
+    expect(comm.bal(accountId)).toBe(before + 60);
   });
 
   it('rename: deduct 500 coins → write display name → mirror balance; GET /save returns new name', async () => {
@@ -300,6 +343,49 @@ describe.skipIf(!mongo)('meta economy orchestration e2e', () => {
     expect(r2.data.save.inventory.items?.protect_enhance).toBe(2);
   });
 
+  it('shop direct purchase: kind="material" (mat_buy_scrap) delivers a qty>1 bundle into save.materials, not inventory.items/skins (ECONOMY_NUMBERS §6.5 gold→material exchange)', async () => {
+    comm.coins.set(accountId, 1000);
+    const r = body(await app.inject({ method: 'POST', url: '/shop/buy', headers: auth(), payload: { itemId: 'mat_buy_scrap' } }));
+    expect(r.data.granted).toBe('scrap'); // `granted` mirrors ShopItemDef.grants (the material id), not the shop itemId
+    expect(r.data.save.materials.scrap).toBe(10);
+    expect(r.data.save.wallet.coins).toBe(980); // 1000-20
+    expect(r.data.save.inventory.items?.mat_buy_scrap).toBeUndefined();
+    expect(r.data.save.inventory.skins).not.toContain('mat_buy_scrap');
+    // A second purchase accumulates (materials are $inc'd, not a set).
+    const r2 = body(await app.inject({ method: 'POST', url: '/shop/buy', headers: auth(), payload: { itemId: 'mat_buy_scrap' } }));
+    expect(r2.data.save.materials.scrap).toBe(20);
+  });
+
+  it('shop direct purchase: mat_buy_scrap daily cap (5 purchases/day = 50 scrap) rejects the 6th with 400, without charging coins', async () => {
+    comm.coins.set(accountId, 1000);
+    for (let i = 0; i < 5; i++) {
+      const r = body(await app.inject({ method: 'POST', url: '/shop/buy', headers: auth(), payload: { itemId: 'mat_buy_scrap' } }));
+      expect(r.data.save.materials.scrap).toBe((i + 1) * 10);
+    }
+    expect(comm.bal(accountId)).toBe(900); // 1000 - 5×20
+    const capped = await app.inject({ method: 'POST', url: '/shop/buy', headers: auth(), payload: { itemId: 'mat_buy_scrap' } });
+    expect(capped.statusCode).toBe(400);
+    expect(comm.bal(accountId)).toBe(900); // unchanged — cap is checked before charging
+    const save = body(await app.inject({ method: 'GET', url: '/save', headers: auth() }));
+    expect(save.data.save.materials.scrap).toBe(50); // still capped at the 5th purchase's result
+  });
+
+  it('shop direct purchase: mat_buy_lead daily cap (6 purchases/day = 18 lead) rejects the 7th with 400 — each material item is capped independently', async () => {
+    comm.coins.set(accountId, 2000);
+    for (let i = 0; i < 6; i++) {
+      const r = body(await app.inject({ method: 'POST', url: '/shop/buy', headers: auth(), payload: { itemId: 'mat_buy_lead' } }));
+      expect(r.data.save.materials.lead).toBe((i + 1) * 3);
+    }
+    expect(comm.bal(accountId)).toBe(2000 - 6 * 105);
+    const capped = await app.inject({ method: 'POST', url: '/shop/buy', headers: auth(), payload: { itemId: 'mat_buy_lead' } });
+    expect(capped.statusCode).toBe(400);
+    expect(comm.bal(accountId)).toBe(2000 - 6 * 105); // unchanged — cap is checked before charging
+    // Buying scrap right after hitting lead's cap still succeeds — the two material items track
+    // separate daily counters (bumpCappedCounter is keyed per itemId), not a shared "any material" cap.
+    const scrap = body(await app.inject({ method: 'POST', url: '/shop/buy', headers: auth(), payload: { itemId: 'mat_buy_scrap' } }));
+    expect(scrap.data.save.materials.scrap).toBe(10);
+  });
+
   it('gacha: deduct coins → deliver new skin + mark duplicate + mirror pity', async () => {
     comm.coins.set(accountId, 1000);
     comm.nextResults = [{ itemId: 'skin_l1', rarity: 'legendary' }];
@@ -330,6 +416,30 @@ describe.skipIf(!mongo)('meta economy orchestration e2e', () => {
     const r2 = body(await app.inject({ method: 'GET', url: '/save', headers: auth() }));
     expect(r2.data.save.inventory.skins.filter((s: string) => s === 'skin_l1')).toHaveLength(1);
     expect(await comm.undeliveredOrders(accountId)).toHaveLength(0);
+  });
+
+  it('regression (2026-08-03 fix): repeated GET /save while an order stays "charged" does not re-grant materials (unlike skins, materials are $inc\'d, not naturally idempotent)', async () => {
+    // Root cause: reconcileUndelivered re-delivers any order commercial still reports as "charged".
+    // gachaDraw marks delivery via a fire-and-forget (unawaited) orderDelivered call, so a GET /save
+    // racing that call (or, as here, an orderDelivered that keeps failing) would re-run deliverGrant and
+    // re-$inc the same materials every time — skins were accidentally safe via $addToSet, materials were
+    // not. Fixed by gating deliverGrant/deliverMailGrant's whole write on
+    // `'save.deliveredOrders': { $ne: orderId }`.
+    comm.coins.set(accountId, 1000);
+    comm.nextResults = [{ itemId: 'mat_scrap', rarity: 'common' }]; // routes to save.materials.scrap += 10
+    comm.failDelivered = true; // orderDelivered keeps failing — order never leaves 'charged' status
+    const draw = body(await app.inject({ method: 'POST', url: '/gacha/draw', headers: auth(), payload: { poolId: 'standard', count: 1 } }));
+    expect(draw.data.save.materials.scrap).toBe(10); // delivered once, synchronously, by gachaDraw itself
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(await comm.undeliveredOrders(accountId)).toHaveLength(1); // still "charged" from commercial's POV
+
+    // Multiple GET /save calls each trigger reconcileUndelivered against the still-"charged" order.
+    const r1 = body(await app.inject({ method: 'GET', url: '/save', headers: auth() }));
+    const r2 = body(await app.inject({ method: 'GET', url: '/save', headers: auth() }));
+    const r3 = body(await app.inject({ method: 'GET', url: '/save', headers: auth() }));
+    expect(r1.data.save.materials.scrap).toBe(10);
+    expect(r2.data.save.materials.scrap).toBe(10);
+    expect(r3.data.save.materials.scrap).toBe(10); // not 20, not 40 — the dedup guard holds every time
   });
 
   it('gacha: standard-pool character card result lands in cardInv, not inventory.skins (regression — gachaDraw used to skip the loot-box category routing entirely)', async () => {

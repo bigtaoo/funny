@@ -6,7 +6,7 @@ import { t } from '../i18n';
 import { CHAPTER_ORDER, getChapterMap } from '../game';
 import type { ChapterMap, ChapterNode } from '../game';
 import { parseLevelId, isLevelUnlocked, currentChapter, currentLevelIdInChapter } from '../game/campaign/progress';
-import { ui as C, txt, buildPaperBackground, sketchPanel, sketchButton, seedFor } from '../render/sketchUi';
+import { ui as C, txt, buildPaperBackground, sketchPanel, sketchButton, seedFor, tearDownChildren } from '../render/sketchUi';
 import { FS, snapFont } from '../render/fontScale';
 import { buildIcon } from '../render/icons';
 import { buildDecorCLayer } from '../render/decorCLayer';
@@ -133,16 +133,26 @@ export class CampaignMapScene implements Scene {
 
   destroy(): void {
     this.unsubs.forEach((u) => u());
-    // Free the page tree (background + decor + current page, incl. any boiling-line
-    // Ticker.shared closures inside them) — previously only input was unsubscribed,
-    // leaking every child's shared-ticker tick across navigations.
+    // Free the Text baseTextures across the whole tree before dropping the container — a bare
+    // container.destroy({children:true}) destroys the Text objects but orphans their textures
+    // (texture defaults to false for descendants). Also frees any boiling-line Ticker.shared
+    // closures inside them — previously only input was unsubscribed, leaking every child's
+    // shared-ticker tick across navigations.
+    tearDownChildren(this.container);
     this.container.destroy({ children: true });
   }
 
   // ── Page lifecycle ────────────────────────────────────────────────────────────
 
   private showPage(p: Page): void {
-    if (this.page) { this.container.removeChild(this.page.root); this.page.root.destroy({ children: true }); }
+    if (this.page) {
+      this.container.removeChild(this.page.root);
+      // Same Text-texture concern as destroy() above, but repeated every TOC↔chapter
+      // navigation within this single scene instance (not just once on scene exit) —
+      // left as a bare destroy this leaked one screenful of Text per flip.
+      tearDownChildren(this.page.root);
+      this.page.root.destroy({ children: true });
+    }
     this.page = p;
     this.hits = p.hits;
     this.container.addChild(p.root);
@@ -179,6 +189,8 @@ export class CampaignMapScene implements Scene {
     f.in.alpha = e;
     if (f.t >= 1) {
       this.container.removeChild(f.out);
+      // Same repeated-per-flip Text-texture concern as showPage() above.
+      tearDownChildren(f.out);
       f.out.destroy({ children: true });
       f.in.x = 0; f.in.alpha = 1;
       this.flip = null;

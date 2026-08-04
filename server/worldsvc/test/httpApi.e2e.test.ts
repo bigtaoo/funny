@@ -75,6 +75,7 @@ describe.skipIf(!mongo)('worldsvc httpApi e2e', () => {
   let base: string;
   const token = signToken('acct-1', { secret: SECRET });
   let t = 1_000_000;
+  let svcRef: WorldService;
 
   beforeAll(async () => {
     await m.db.dropDatabase();
@@ -104,6 +105,7 @@ describe.skipIf(!mongo)('worldsvc httpApi e2e', () => {
     );
     await new Promise<void>((res) => server.on('listening', res));
     base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+    svcRef = svc;
   });
 
   afterAll(async () => {
@@ -351,6 +353,70 @@ describe.skipIf(!mongo)('worldsvc httpApi e2e', () => {
     it('GET /nation/channel missing worldId → 400', async () => {
       const r = await fetch(`${base}/nation/channel`, { headers: freshAuth });
       expect(r.status).toBe(400);
+    });
+  });
+
+  // Regression (2026-08-03 worldsvc code review, finding #1): GET /world/active-season is reachable with
+  // zero credentials and had no try/catch — an uncaught rejection there would be an unhandled promise
+  // rejection, which terminates the whole Node process on Node >=15 (not just this one request).
+  describe('regression: GET /world/active-season never crashes the process on a service error', () => {
+    it('a thrown error from the service is caught and answered with 500, not an unhandled rejection', async () => {
+      const original = svcRef.getActiveSeasonNo;
+      svcRef.getActiveSeasonNo = async () => { throw new Error('simulated transient failure'); };
+      try {
+        const r = await fetch(`${base}/world/active-season`);
+        expect(r.status).toBe(500);
+        const bodyJson = await r.json();
+        expect(bodyJson.ok).toBe(false);
+      } finally {
+        svcRef.getActiveSeasonNo = original;
+      }
+      // The server process must still be alive and serving requests afterward — this is the actual point
+      // of the fix (an unhandled rejection here would have brought down the whole process, not just
+      // failed this one request).
+      const health = await fetch(`${base}/health`);
+      expect(health.status).toBe(200);
+    });
+  });
+
+  // Regression (2026-08-03 worldsvc code review, finding #6): readJson's 1MB cap only rejected the
+  // promise but kept consuming incoming chunks — a caller could force unbounded memory growth by just
+  // continuing to send data past the nominal cap. Fixed by req.destroy()-ing the connection on overflow.
+  describe('regression: readJson enforces its 1MB payload cap by tearing down the connection', () => {
+    it('an oversized POST body does not get processed, and the connection is torn down rather than accepted', async () => {
+      const oversized = JSON.stringify({ worldId: W, junk: 'x'.repeat(2 * 1024 * 1024) }); // > 1MB
+      // req.destroy() tears down the shared socket, so the client observes a network-level failure
+      // (connection reset), not a clean HTTP response — that's the actual enforcement, not just a 4xx.
+      await expect(fetch(`${base}/world/join`, {
+        method: 'POST',
+        headers: { ...auth, 'content-type': 'application/json' },
+        body: oversized,
+      })).rejects.toThrow();
+
+      // The server itself must stay healthy and keep serving other requests afterward.
+      const health = await fetch(`${base}/health`);
+      expect(health.status).toBe(200);
+    });
+  });
+
+  // Regression (2026-08-03 worldsvc code review, finding #16): /sect/message and /nation/message trusted
+  // the client-supplied senderName verbatim whenever meta is unreachable (this suite's svc has no meta
+  // configured, so every call here is in that degraded window) — a malicious client could put arbitrary
+  // control characters / an overlong string into a name broadcast to a whole chat channel.
+  describe('regression: senderName fallback is sanitized in degraded (meta-unavailable) mode', () => {
+    it('POST /nation/message strips control characters and caps the client-supplied senderName length', async () => {
+      const maliciousName = `Evil\x00\x1bName${'X'.repeat(100)}`;
+      const r = await fetch(`${base}/nation/message`, {
+        method: 'POST',
+        headers: { ...auth, 'content-type': 'application/json' },
+        body: JSON.stringify({ worldId: W, body: 'sanitize-check', senderName: maliciousName }),
+      });
+      expect(r.status).toBe(200);
+      const body = await r.json();
+      const sanitized = body.data.senderName as string;
+      expect(sanitized).not.toContain('\x00');
+      expect(sanitized).not.toContain('\x1b');
+      expect(sanitized.length).toBeLessThanOrEqual(24); // MAX_DISPLAY_NAME_LEN
     });
   });
 });

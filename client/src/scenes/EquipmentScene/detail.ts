@@ -11,7 +11,7 @@ import { withTimeout, TimeoutError } from '../../ui/busyTracker';
 import type { SaveData, EquipSlot, EquipmentInstance } from '../../game/meta/SaveData';
 import {
   getEquipDef, enhanceSuccessRate, enhanceCost, salvageRefund, affixKind,
-  EQUIP_MAX_LEVEL, REFORGE_MATERIAL_RARITY, PROTECT_ENHANCE_ITEM_ID, isSalvageable,
+  EQUIP_MAX_LEVEL, REFORGE_MATERIAL_RARITY, PROTECT_ENHANCE_ITEM_ID, isSalvageable, reforgeCoinCost,
 } from '../../game/meta/equipmentDefs';
 import { buildIcon, type IconKind } from '../../render/icons';
 import { type Constructor, type EquipmentSceneBaseCtor, type CellAction, RARITY_COLOR } from './base';
@@ -238,10 +238,15 @@ export function DetailMixin<TBase extends EquipmentSceneBaseCtor>(Base: TBase): 
       const hasMaterials = requiredMatRarity
         ? Object.values(save.equipmentInv ?? {}).some(
             (m) => m.id !== inst.id && getEquipDef(m.defId)?.slot === slot && m.rarity === requiredMatRarity
-              && m.level === 0 && !this.equippedIds(save).has(m.id),
+              && m.level === 0 && !m.locked && !this.equippedIds(save).has(m.id),
           )
         : false;
-      if (!!requiredMatRarity && hasMaterials && !equipped && !inst.locked) {
+      // Affordability gated like enhance above (2026-08-03 fix) — reforge previously had no
+      // client-side notion of its real coin cost at all, so an unaffordable attempt was only
+      // ever discovered via a generic server error after the player had already picked a
+      // material and confirmed.
+      const canAffordReforge = save.wallet.coins >= reforgeCoinCost(inst.rarity);
+      if (!!requiredMatRarity && hasMaterials && canAffordReforge && !equipped && !inst.locked) {
         actions.push({ key: 'reforge', label: t('equip.reforge'), icon: 'replay', fill: 0x3355aa, stroke: 0x6688dd, disabled: busy, fn: () => this.openReforgeSelect(inst) });
       }
       if (salvageable) {

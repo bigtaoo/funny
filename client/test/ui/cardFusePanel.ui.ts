@@ -1090,6 +1090,159 @@ describe('CardScene fuse panel — fills 80% of the primary viewport axis (2026-
 // portrait, never whichever skin the account has equipped for that unit type — this panel answers
 // "which of my cards can fuse," not "what does my army look like." Asserted on call arguments (not
 // the rendered texture — headless PIXI stubs every binary asset to the same 1×1 PNG data URI).
+// Regression coverage (2026-08-03 fix): Cancel and the full-screen backdrop-dismiss must not abort
+// an in-flight fuse request. Neither is cancellable server-side, so letting the player close the
+// panel while a fuse is pending left onFuseSettled's stale closure (currentTarget/slotIds/
+// autoContinue) free to fire later and silently clobber whatever the player had since navigated to.
+// Both hits are now gated on `!this.bt.busy`, mirroring Confirm's own existing gate.
+describe('CardScene fuse panel — Cancel/backdrop do not abort an in-flight fuse (2026-08-03 fix)', () => {
+  function fillRing(scene: CardScene, rowLabel: string): void {
+    for (let i = 0; i < FUSION_MATERIAL_COUNT; i++) {
+      hitUnder(modalHitsOf(scene), findLabelPos(modalLayerOf(scene), rowLabel)!)!.action();
+    }
+  }
+
+  it('Cancel cannot close the panel while a fuse is in flight, but settling still resolves normally', async () => {
+    const target = makeCard('target', 'lena', { level: 3 }); // no auto-continue, simplest settle path
+    const cardInv: Record<string, CardInstance> = { target };
+    for (let i = 0; i < FUSION_MATERIAL_COUNT; i++) cardInv[`mat${i}`] = makeCard(`mat${i}`, 'max', { level: 3 });
+
+    let releaseFuse: (v: { ok: true }) => void = () => {};
+    const scene = buildScene(baseCb(cardInv, {
+      fuseCards: () => new Promise((r) => { releaseFuse = r; }),
+    }));
+    openFuse(scene, target);
+    fillRing(scene, MAX_NAME);
+
+    const cancelPos = findLabelPos(modalLayerOf(scene), t('equip.cancel'));
+    expect(cancelPos, 'Cancel label must still render (just not be tappable) while busy').not.toBeNull();
+    expect(hitUnder(modalHitsOf(scene), cancelPos!)).toBeDefined(); // tappable before Confirm is pressed
+
+    hitUnder(modalHitsOf(scene), findLabelPos(modalLayerOf(scene), `${t('roster.fuseBtn')} (${FUSION_MATERIAL_COUNT}/${FUSION_MATERIAL_COUNT})`)!)!.action();
+    // doFuse's synchronous prelude (bt.start() + feedRedraw()) has already run by the time .action()
+    // returns — fuseCards itself is still pending (we control its resolution above).
+    expect(priv(scene).bt.busy).toBe(true);
+    const cancelPosBusy = findLabelPos(modalLayerOf(scene), t('equip.cancel'));
+    expect(cancelPosBusy, 'Cancel label still present, dimmed').not.toBeNull();
+    // Whatever hit (if any) now covers that pixel — the panel's own inert backdrop no-op legitimately
+    // sits there too — tapping it must NOT close the panel while busy (the real regression: it used
+    // to be Cancel's own live hit, closing the modal and abandoning the in-flight request).
+    hitUnder(modalHitsOf(scene), cancelPosBusy!)?.action();
+    expect(modalOpenOf(scene)).toBe(true);
+
+    releaseFuse({ ok: true });
+    priv(scene).playFusionAnim = async () => {};
+    await flushAsync();
+    expect(priv(scene).bt.busy).toBe(false);
+  });
+
+  it('tapping the backdrop corner while busy does not close the panel (no stale onFuseSettled clobber later)', async () => {
+    const target = makeCard('target', 'lena', { level: 3 });
+    const cardInv: Record<string, CardInstance> = { target };
+    for (let i = 0; i < FUSION_MATERIAL_COUNT; i++) cardInv[`mat${i}`] = makeCard(`mat${i}`, 'max', { level: 3 });
+
+    let releaseFuse: (v: { ok: true }) => void = () => {};
+    const scene = buildScene(baseCb(cardInv, {
+      fuseCards: () => new Promise((r) => { releaseFuse = r; }),
+    }));
+    openFuse(scene, target);
+    fillRing(scene, MAX_NAME);
+    hitUnder(modalHitsOf(scene), findLabelPos(modalLayerOf(scene), `${t('roster.fuseBtn')} (${FUSION_MATERIAL_COUNT}/${FUSION_MATERIAL_COUNT})`)!)!.action();
+
+    expect(priv(scene).bt.busy).toBe(true);
+    // Simulate the player tapping a screen corner (would hit the full-backdrop dismiss if it were
+    // still registered) — must be a no-op: the ring stays open, nothing closes.
+    const cornerHit = hitUnder(modalHitsOf(scene), { x: 1, y: 1 });
+    cornerHit?.action();
+    expect(modalOpenOf(scene)).toBe(true); // still open — the request is still in flight
+
+    releaseFuse({ ok: true });
+    priv(scene).playFusionAnim = async () => {};
+    await flushAsync();
+  });
+});
+
+// Regression coverage (2026-08-03 fix): onFuseSettled used to touch modalLayer/detailId/render()
+// unconditionally, even after the scene itself was destroyed (player backed out of the roster while
+// a fuse was still in flight) — an async completion racing a destroyed scene.
+describe('CardScene fuse panel — onFuseSettled destroyed-guard (2026-08-03 fix)', () => {
+  it('a fuse that resolves after scene.destroy() does not throw or touch the torn-down modal', async () => {
+    const target = makeCard('target', 'lena', { level: 3 });
+    const cardInv: Record<string, CardInstance> = { target };
+    for (let i = 0; i < FUSION_MATERIAL_COUNT; i++) cardInv[`mat${i}`] = makeCard(`mat${i}`, 'max', { level: 3 });
+
+    let releaseFuse: (v: { ok: true }) => void = () => {};
+    const scene = buildScene(baseCb(cardInv, {
+      fuseCards: () => new Promise((r) => { releaseFuse = r; }),
+    }));
+    openFuse(scene, target);
+    for (let i = 0; i < FUSION_MATERIAL_COUNT; i++) {
+      hitUnder(modalHitsOf(scene), findLabelPos(modalLayerOf(scene), MAX_NAME)!)!.action();
+    }
+    hitUnder(modalHitsOf(scene), findLabelPos(modalLayerOf(scene), `${t('roster.fuseBtn')} (${FUSION_MATERIAL_COUNT}/${FUSION_MATERIAL_COUNT})`)!)!.action();
+    expect(priv(scene).bt.busy).toBe(true);
+
+    // Player backs out of the roster while the request is still in flight.
+    scene.destroy();
+    expect(priv(scene).destroyed).toBe(true);
+
+    // The (now-stale) request finally resolves — must not throw.
+    expect(() => releaseFuse({ ok: true })).not.toThrow();
+    await expect(flushAsync()).resolves.toBeUndefined();
+  });
+});
+
+// Regression coverage (2026-08-03 fix, fuseRingOpen): openFuseSelect never clears `detailId`, so
+// before this fix, ANY external render() trigger while the ring is open — even before Confirm is
+// ever tapped (fuseInProgress was false the whole pre-confirm window) — silently reopened the plain
+// detail popup over the still-open ring via render()'s `if (tab==='list' && detailId) openDetail(...)`
+// dispatch. `fuseRingOpen` is a strict superset of `fuseInProgress` covering that pre-confirm gap too.
+describe('CardScene fuse panel — fuseRingOpen blocks external re-render from swapping out the ring (2026-08-03 fix)', () => {
+  it('an onSaveChanged fire while the ring is still open PRE-CONFIRM does not reopen the plain detail popup', () => {
+    const target = makeCard('target', 'lena', { level: 3 });
+    const cardInv: Record<string, CardInstance> = { target };
+    for (let i = 0; i < FUSION_MATERIAL_COUNT; i++) cardInv[`mat${i}`] = makeCard(`mat${i}`, 'max', { level: 3 });
+
+    let savedListener: (() => void) | null = null;
+    const scene = buildScene(baseCb(cardInv, {
+      onSaveChanged: (listener) => { savedListener = listener; return () => {}; },
+    }));
+    priv(scene).openFuseSelect(target);
+    priv(scene).detailId = target.id; // the fuse is always reached from an already-open detail modal
+
+    expect(priv(scene).fuseInProgress).toBe(false); // pre-confirm: no network call in flight yet
+    expect(priv(scene).fuseRingOpen).toBe(true);     // but the ring itself is still up
+
+    const openDetailSpy = vi.spyOn(priv(scene), 'openDetail');
+    // An unrelated save mutation elsewhere (e.g. an overlay scene) fires the listener — this must NOT
+    // reopen the plain detail popup over the still-in-progress ring.
+    // (Indirected through a closure: reading `savedListener` in the same scope as its `let` declaration
+    // makes TS's control-flow analysis miss the reassignment — it happens inside the onSaveChanged
+    // callback above — and narrow the read back to the initializer's `null`, i.e. `never` when called.)
+    const fireSavedListener = (): void => savedListener?.();
+    fireSavedListener();
+
+    expect(openDetailSpy).not.toHaveBeenCalled();
+    expect(findLabelPos(modalLayerOf(scene), t('roster.fuseTitle'))).not.toBeNull(); // ring still standing
+    openDetailSpy.mockRestore();
+  });
+
+  it('fuseRingOpen is cleared once the ring actually closes (Cancel), so a later onSaveChanged behaves normally again', () => {
+    const target = makeCard('target', 'lena', { level: 3 });
+    const cardInv: Record<string, CardInstance> = { target };
+    for (let i = 0; i < FUSION_MATERIAL_COUNT; i++) cardInv[`mat${i}`] = makeCard(`mat${i}`, 'max', { level: 3 });
+
+    const scene = buildScene(baseCb(cardInv));
+    priv(scene).openFuseSelect(target);
+    expect(priv(scene).fuseRingOpen).toBe(true);
+
+    hitUnder(modalHitsOf(scene), findLabelPos(modalLayerOf(scene), t('equip.cancel')) ?? { x: -1, y: -1 })?.action();
+    // (Cancel's label key in CardScene reuses 'equip.cancel', same shared string as EquipmentScene.)
+    expect(priv(scene).fuseRingOpen).toBe(false);
+    expect(modalOpenOf(scene)).toBe(false);
+  });
+});
+
 describe('CardScene fuse panel — target + candidate pictures always use the base portrait', () => {
   it('passes only the card/defId, never getSave().equipped, even when the account has a skin equipped', () => {
     const target = makeCard('target', 'lichuang');

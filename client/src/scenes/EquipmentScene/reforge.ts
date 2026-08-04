@@ -5,7 +5,7 @@ import { ui as C, sketchPanel, seedFor, tearDownChildren } from '../../render/sk
 import { FS } from '../../render/fontScale';
 import { withTimeout, TimeoutError } from '../../ui/busyTracker';
 import type { EquipmentInstance, EquipRarity } from '../../game/meta/SaveData';
-import { getEquipDef, REFORGE_MATERIAL_RARITY } from '../../game/meta/equipmentDefs';
+import { getEquipDef, REFORGE_MATERIAL_RARITY, reforgeCoinCost } from '../../game/meta/equipmentDefs';
 import { buildEquipIcon } from '../../render/atlas/equipmentAtlas';
 import { type Constructor, type EquipmentSceneBaseCtor, RARITY_COLOR } from './base';
 
@@ -32,10 +32,12 @@ export function ReforgeMixin<TBase extends EquipmentSceneBaseCtor>(Base: TBase):
 
       // Fuel is restricted to never-enhanced (level 0) equipment — an enhanced item's affix rolls
       // and sunk materials would otherwise be silently consumed as reforge fuel.
+      // Locked items are excluded (2026-08-03 fix) — a player locks an item specifically to protect
+      // it from being destroyed, and reforge fuel is consumed/destroyed just like a salvage input.
       const equippedSet = this.equippedIds(save);
       const candidates = Object.values(save.equipmentInv ?? {}).filter(
         (m) => m.id !== target.id && getEquipDef(m.defId)?.slot === slot && m.rarity === requiredRarity
-          && m.level === 0 && !equippedSet.has(m.id),
+          && m.level === 0 && !m.locked && !equippedSet.has(m.id),
       );
 
       // Unenhanced items sharing a defId are interchangeable as fuel — one icon card per defId
@@ -165,7 +167,11 @@ export function ReforgeMixin<TBase extends EquipmentSceneBaseCtor>(Base: TBase):
       const save = this.cb.getSave();
       const mat = save.equipmentInv?.[materialId];
       if (!mat) return;
-      const msg = t('equip.confirmReforge')
+      // Coin cost surfaced in the confirm dialog itself (2026-08-03 fix) — previously the only
+      // hint of this cost was a generic error toast after the fact if the player couldn't afford
+      // it; the reforge action is also now omitted entirely from the grid when unaffordable (see
+      // EquipmentScene/detail.ts's canAffordReforge), so reaching this dialog implies it's affordable.
+      const msg = t('equip.confirmReforge', { coins: reforgeCoinCost(target.rarity) })
         .replace('{target}', this.itemName(target.defId))
         .replace('{material}', this.itemLabel(mat.defId, mat.level));
       this.showConfirm(msg, () => void this.doReforge(target.id, materialId));

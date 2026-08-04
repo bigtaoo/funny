@@ -11,7 +11,15 @@ import { Envelope, type ClientMsg, type MatchMode, type ServerMsg } from './prot
 import { netLog, type NetLogger } from './log';
 import { globalRequestGate } from './rateGate';
 
-export type NetState = 'idle' | 'connecting' | 'open' | 'reconnecting' | 'closed';
+/**
+ * 'closed': an intentional/graceful disconnect (disconnect() was called) — nothing to show the
+ * player, the connection is simply not wanted right now.
+ * 'disconnected': the server permanently rejected the connection (a fatal close code — see
+ * fatalCloseCodes) and NetClient has given up retrying. Unlike 'closed' this is unexpected from
+ * the player's perspective (e.g. evicted by another device mid-match) and callers should surface
+ * it, not silently treat it the same as ordinary 'reconnecting' jitter.
+ */
+export type NetState = 'idle' | 'connecting' | 'open' | 'reconnecting' | 'closed' | 'disconnected';
 
 export interface NetClientHandlers {
   /** Called when a server message is received (already decoded from oneof). */
@@ -20,6 +28,13 @@ export interface NetClientHandlers {
   onStateChange?(state: NetState): void;
   /** Called when reconnection succeeds (socket re-opened, not the initial connection). Upper layer should send conn_resume. */
   onReconnect?(): void;
+  /**
+   * The server rejected the handshake token specifically (close code 4401), whether or not that code
+   * is fatal for this connection (see extraFatalCloseCodes). Lets tokenProvider implementations that
+   * cache a token (NetSession.freshToken) know a cached value is actually stale, instead of only
+   * finding out indirectly by the state staying 'reconnecting' forever.
+   */
+  onAuthRejected?(): void;
 }
 
 export interface NetClientOptions {
@@ -216,12 +231,13 @@ export class NetClient {
         if (gen !== this.gen || this.intentional) return;
         this.stopPing();
         this.socket = null;
+        if (code === 4401) this.opt.handlers.onAuthRejected?.();
         // Permanent rejections (4409 always; see fatalCloseCodes doc for the opt-in ones) —
         // retrying would just replay the same rejection forever, so give up instead of burning
         // backoff cycles against something that will never succeed.
         if (this.fatalCloseCodes.has(code)) {
           this.log.warn('socket closed: permanent rejection, not reconnecting', { code });
-          this.setState('closed');
+          this.setState('disconnected');
           return;
         }
         this.log.warn('socket closed', { code });

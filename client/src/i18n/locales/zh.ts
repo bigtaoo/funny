@@ -392,6 +392,8 @@ export const zh = {
   'shop.itemLabel': '道具',
   'shop.item.protect_enhance.name': '强化保护石',
   'shop.item.protect_enhance.desc': '下次强化失败时不损耗材料（金币仍照扣）',
+  'shop.item.material.title': '{name} ×{qty}',
+  'shop.item.material.desc': '每日限购次数有限',
   'shop.loading': '加载中…',
   'shop.processing': '处理中',
   'shop.empty': '暂无商品',
@@ -602,7 +604,7 @@ export const zh = {
   'equip.reforged': '洗练完成，词条已更新',
   'equip.reforgeSelectTitle': '选择素材（{rarity}）',
   'equip.reforgeNoMat': '无可用素材',
-  'equip.confirmReforge': '消耗【{material}】洗练【{target}】的副词条？（主词条不变）',
+  'equip.confirmReforge': '消耗【{material}】+ {coins} 金币，洗练【{target}】的副词条？（主词条不变）',
   // Affixes ({v} = numeric value; primary affix is scaled up according to enhancement level for display)
   'affix.m_atk': '攻击 +{v}%',
   'affix.m_siege': '攻城值 +{v}%',
@@ -809,6 +811,7 @@ export const zh = {
   'chat.placeholder': '输入消息…',
   'chat.send': '发送',
   'chat.error': '发送失败，请重试',
+  'chat.sendFailed': '未送达',
   'chat.notFriend': '仅好友之间可私聊',
   'chat.blocked': '对方已被屏蔽',
   'chat.rateLimited': '发送太频繁，请稍后',
@@ -1406,6 +1409,11 @@ export const zh = {
   // ── PvP Deck Builder (P3, PVP_LOADOUT §8) ────────────────────────────────────
   'pvp.deckBuilder': '构筑卡组',
   'pvp.confirmDeck': '确认卡组',
+  'pvp.err.deckSize': '请选满 {size} 张卡（当前已选 {count} 张）',
+  'pvp.err.cardLocked': '卡牌「{card}」尚未解锁',
+  'pvp.err.duplicateCard': '卡牌「{card}」重复',
+  'pvp.err.needBuilding': '卡组至少需要 1 张建筑卡',
+  'pvp.err.needSpell': '卡组至少需要 1 张法术卡',
 
   // ── Battle pass (SE-9) ────────────────────────────────────────────────────────
   'battlepass.title': '战令',
@@ -1524,6 +1532,8 @@ export const zh = {
   'event.tasks.ad.watch': '观看广告',
   'event.rewards.title': '积分商店',
   'event.rewards.coins': '+{n} 金币',
+  'event.rewards.skin': '皮肤 {id}',
+  'event.rewards.material': '材料 {id} ×{n}',
   'event.rewards.claim': '兑换',
   'event.rewards.claimToast': '兑换成功，剩余积分：{n}',
   'event.rewards.claimFailed': '兑换失败，请重试',

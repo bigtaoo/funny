@@ -97,6 +97,7 @@ export function createWorldNav(ctx: AppCtx): WorldNav {
           views.showDefenseEditor({
             onBack: openCity,
             getSave: () => saveManager.get(),
+            onSaveChanged: (listener: () => void) => saveManager.subscribe(listener),
             worldApi,
             worldId,
             target: { mode: 'attack', teamId, teamName },

@@ -103,6 +103,12 @@ export function migrate(raw: unknown): SaveData {
 
   // Defensive backfill + pin current version (tolerates future rollbacks / incomplete saves).
   const filled = fillDefaults<SaveData>(d, makeNewSave());
-  filled.version = SAVE_VERSION;
+  // Never downgrade the version tag (2026-08-03 fix): if `v` is already ahead of SAVE_VERSION (a save
+  // written by a newer client/server build, read by a stale client bundle mid-rollout), the while loop
+  // above never ran — nothing here has validated this save actually fits the older SAVE_VERSION shape.
+  // Force-writing the lower SAVE_VERSION onto it would mislabel it and could make a future migration
+  // step silently skip it once this client updates. Ordinary saves (v ends up === SAVE_VERSION after
+  // the loop, or 0 for a brand-new one) are unaffected — Math.max is a no-op for them.
+  filled.version = Math.max(v, SAVE_VERSION);
   return filled;
 }

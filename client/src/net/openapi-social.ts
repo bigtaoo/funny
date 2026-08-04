@@ -228,22 +228,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/social/player/{accountId}/rank": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: operations["getPlayerRank"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/social/profile/{publicId}/extra": {
         parameters: {
             query?: never;
@@ -404,6 +388,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/social/friends/report": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["reportFriend"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/social/chat/conversations": {
         parameters: {
             query?: never;
@@ -536,6 +536,10 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        Error: {
+            code: string;
+            message: string;
+        };
         OkResponse: {
             /** @enum {boolean} */
             ok: true;
@@ -589,10 +593,6 @@ export interface components {
             familyName?: string;
             body: string;
             ts: number;
-        };
-        PlayerRankView: {
-            rank?: string;
-            elo?: number;
         };
         ProfileExtraView: {
             rank?: string;
@@ -671,7 +671,21 @@ export interface components {
             claimed: boolean;
         };
     };
-    responses: never;
+    responses: {
+        /** @description Error envelope */
+        ErrorResp: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": {
+                    /** @enum {boolean} */
+                    ok: false;
+                    error: components["schemas"]["Error"];
+                };
+            };
+        };
+    };
     parameters: never;
     requestBodies: never;
     headers: never;
@@ -699,6 +713,8 @@ export interface operations {
                     };
                 };
             };
+            401: components["responses"]["ErrorResp"];
+            500: components["responses"]["ErrorResp"];
         };
     };
     searchFamilyByTag: {
@@ -723,6 +739,9 @@ export interface operations {
                     };
                 };
             };
+            400: components["responses"]["ErrorResp"];
+            401: components["responses"]["ErrorResp"];
+            500: components["responses"]["ErrorResp"];
         };
     };
     browseFamilies: {
@@ -750,6 +769,8 @@ export interface operations {
                     };
                 };
             };
+            401: components["responses"]["ErrorResp"];
+            500: components["responses"]["ErrorResp"];
         };
     };
     createFamily: {
@@ -783,6 +804,10 @@ export interface operations {
                     };
                 };
             };
+            400: components["responses"]["ErrorResp"];
+            401: components["responses"]["ErrorResp"];
+            409: components["responses"]["ErrorResp"];
+            500: components["responses"]["ErrorResp"];
         };
     };
     listFamilyJoinRequests: {
@@ -807,6 +832,9 @@ export interface operations {
                     };
                 };
             };
+            401: components["responses"]["ErrorResp"];
+            403: components["responses"]["ErrorResp"];
+            500: components["responses"]["ErrorResp"];
         };
     };
     respondFamilyJoinRequest: {
@@ -836,6 +864,10 @@ export interface operations {
                     "application/json": components["schemas"]["OkResponse"];
                 };
             };
+            401: components["responses"]["ErrorResp"];
+            403: components["responses"]["ErrorResp"];
+            404: components["responses"]["ErrorResp"];
+            500: components["responses"]["ErrorResp"];
         };
     };
     getFamily: {
@@ -860,6 +892,8 @@ export interface operations {
                     };
                 };
             };
+            401: components["responses"]["ErrorResp"];
+            500: components["responses"]["ErrorResp"];
         };
     };
     requestJoinFamily: {
@@ -886,6 +920,10 @@ export interface operations {
                     };
                 };
             };
+            401: components["responses"]["ErrorResp"];
+            404: components["responses"]["ErrorResp"];
+            409: components["responses"]["ErrorResp"];
+            500: components["responses"]["ErrorResp"];
         };
     };
     leaveFamily: {
@@ -906,6 +944,10 @@ export interface operations {
                     "application/json": components["schemas"]["OkResponse"];
                 };
             };
+            400: components["responses"]["ErrorResp"];
+            401: components["responses"]["ErrorResp"];
+            403: components["responses"]["ErrorResp"];
+            500: components["responses"]["ErrorResp"];
         };
     };
     kickFamilyMember: {
@@ -933,6 +975,11 @@ export interface operations {
                     "application/json": components["schemas"]["OkResponse"];
                 };
             };
+            400: components["responses"]["ErrorResp"];
+            401: components["responses"]["ErrorResp"];
+            403: components["responses"]["ErrorResp"];
+            404: components["responses"]["ErrorResp"];
+            500: components["responses"]["ErrorResp"];
         };
     };
     setFamilyMemberRole: {
@@ -961,6 +1008,11 @@ export interface operations {
                     "application/json": components["schemas"]["OkResponse"];
                 };
             };
+            400: components["responses"]["ErrorResp"];
+            401: components["responses"]["ErrorResp"];
+            403: components["responses"]["ErrorResp"];
+            404: components["responses"]["ErrorResp"];
+            500: components["responses"]["ErrorResp"];
         };
     };
     disbandFamily: {
@@ -981,6 +1033,9 @@ export interface operations {
                     "application/json": components["schemas"]["OkResponse"];
                 };
             };
+            401: components["responses"]["ErrorResp"];
+            403: components["responses"]["ErrorResp"];
+            500: components["responses"]["ErrorResp"];
         };
     };
     setFamilyAnnouncement: {
@@ -1008,6 +1063,10 @@ export interface operations {
                     "application/json": components["schemas"]["OkResponse"];
                 };
             };
+            400: components["responses"]["ErrorResp"];
+            401: components["responses"]["ErrorResp"];
+            403: components["responses"]["ErrorResp"];
+            500: components["responses"]["ErrorResp"];
         };
     };
     getFamilyChannel: {
@@ -1037,6 +1096,9 @@ export interface operations {
                     };
                 };
             };
+            401: components["responses"]["ErrorResp"];
+            403: components["responses"]["ErrorResp"];
+            500: components["responses"]["ErrorResp"];
         };
     };
     sendFamilyMessage: {
@@ -1072,30 +1134,10 @@ export interface operations {
                     };
                 };
             };
-        };
-    };
-    getPlayerRank: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                accountId: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Ladder rank + ELO for an arbitrary player (both fields absent if unranked) */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["OkResponse"] & {
-                        data?: components["schemas"]["PlayerRankView"];
-                    };
-                };
-            };
+            400: components["responses"]["ErrorResp"];
+            401: components["responses"]["ErrorResp"];
+            403: components["responses"]["ErrorResp"];
+            500: components["responses"]["ErrorResp"];
         };
     };
     getProfileExtra: {
@@ -1120,6 +1162,8 @@ export interface operations {
                     };
                 };
             };
+            401: components["responses"]["ErrorResp"];
+            500: components["responses"]["ErrorResp"];
         };
     };
     getFriends: {
@@ -1144,6 +1188,8 @@ export interface operations {
                     };
                 };
             };
+            401: components["responses"]["ErrorResp"];
+            500: components["responses"]["ErrorResp"];
         };
     };
     getFriendRequests: {
@@ -1169,6 +1215,8 @@ export interface operations {
                     };
                 };
             };
+            401: components["responses"]["ErrorResp"];
+            500: components["responses"]["ErrorResp"];
         };
     };
     getSocialBadges: {
@@ -1191,6 +1239,8 @@ export interface operations {
                     };
                 };
             };
+            401: components["responses"]["ErrorResp"];
+            500: components["responses"]["ErrorResp"];
         };
     };
     searchFriend: {
@@ -1221,6 +1271,10 @@ export interface operations {
                     };
                 };
             };
+            400: components["responses"]["ErrorResp"];
+            401: components["responses"]["ErrorResp"];
+            404: components["responses"]["ErrorResp"];
+            500: components["responses"]["ErrorResp"];
         };
     };
     requestFriend: {
@@ -1252,6 +1306,12 @@ export interface operations {
                     };
                 };
             };
+            400: components["responses"]["ErrorResp"];
+            401: components["responses"]["ErrorResp"];
+            403: components["responses"]["ErrorResp"];
+            404: components["responses"]["ErrorResp"];
+            409: components["responses"]["ErrorResp"];
+            500: components["responses"]["ErrorResp"];
         };
     };
     respondFriend: {
@@ -1281,6 +1341,11 @@ export interface operations {
                     };
                 };
             };
+            400: components["responses"]["ErrorResp"];
+            401: components["responses"]["ErrorResp"];
+            404: components["responses"]["ErrorResp"];
+            409: components["responses"]["ErrorResp"];
+            500: components["responses"]["ErrorResp"];
         };
     };
     removeFriend: {
@@ -1305,6 +1370,8 @@ export interface operations {
                     };
                 };
             };
+            401: components["responses"]["ErrorResp"];
+            500: components["responses"]["ErrorResp"];
         };
     };
     blockFriend: {
@@ -1333,6 +1400,10 @@ export interface operations {
                     };
                 };
             };
+            400: components["responses"]["ErrorResp"];
+            401: components["responses"]["ErrorResp"];
+            404: components["responses"]["ErrorResp"];
+            500: components["responses"]["ErrorResp"];
         };
     };
     unblockFriend: {
@@ -1357,6 +1428,42 @@ export interface operations {
                     };
                 };
             };
+            401: components["responses"]["ErrorResp"];
+            500: components["responses"]["ErrorResp"];
+        };
+    };
+    reportFriend: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    publicId: string;
+                    /** @description Free-text reason, truncated server-side to REPORT_REASON_MAX */
+                    reason?: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Report filed for ops/admin review (COMPLIANCE_GLOBAL.md §7); 404 if publicId is unresolvable or refers to the caller themself */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OkResponse"] & {
+                        data?: components["schemas"]["OkResponse"];
+                    };
+                };
+            };
+            400: components["responses"]["ErrorResp"];
+            401: components["responses"]["ErrorResp"];
+            404: components["responses"]["ErrorResp"];
+            500: components["responses"]["ErrorResp"];
         };
     };
     getConversations: {
@@ -1381,6 +1488,8 @@ export interface operations {
                     };
                 };
             };
+            401: components["responses"]["ErrorResp"];
+            500: components["responses"]["ErrorResp"];
         };
     };
     getChatMessages: {
@@ -1412,6 +1521,9 @@ export interface operations {
                     };
                 };
             };
+            401: components["responses"]["ErrorResp"];
+            404: components["responses"]["ErrorResp"];
+            500: components["responses"]["ErrorResp"];
         };
     };
     sendChatMessage: {
@@ -1447,6 +1559,12 @@ export interface operations {
                     };
                 };
             };
+            400: components["responses"]["ErrorResp"];
+            401: components["responses"]["ErrorResp"];
+            403: components["responses"]["ErrorResp"];
+            404: components["responses"]["ErrorResp"];
+            429: components["responses"]["ErrorResp"];
+            500: components["responses"]["ErrorResp"];
         };
     };
     markConversationRead: {
@@ -1475,6 +1593,9 @@ export interface operations {
                     };
                 };
             };
+            400: components["responses"]["ErrorResp"];
+            401: components["responses"]["ErrorResp"];
+            500: components["responses"]["ErrorResp"];
         };
     };
     getMail: {
@@ -1500,6 +1621,8 @@ export interface operations {
                     };
                 };
             };
+            401: components["responses"]["ErrorResp"];
+            500: components["responses"]["ErrorResp"];
         };
     };
     readMail: {
@@ -1524,6 +1647,9 @@ export interface operations {
                     };
                 };
             };
+            401: components["responses"]["ErrorResp"];
+            404: components["responses"]["ErrorResp"];
+            500: components["responses"]["ErrorResp"];
         };
     };
     deleteMail: {
@@ -1548,6 +1674,9 @@ export interface operations {
                     };
                 };
             };
+            401: components["responses"]["ErrorResp"];
+            409: components["responses"]["ErrorResp"];
+            500: components["responses"]["ErrorResp"];
         };
     };
     sendMail: {
@@ -1580,6 +1709,11 @@ export interface operations {
                     };
                 };
             };
+            400: components["responses"]["ErrorResp"];
+            401: components["responses"]["ErrorResp"];
+            403: components["responses"]["ErrorResp"];
+            404: components["responses"]["ErrorResp"];
+            500: components["responses"]["ErrorResp"];
         };
     };
 }

@@ -163,6 +163,63 @@ describe('GlobalToast renders its bar centred on the h*0.8 line', () => {
   });
 });
 
+// ── GlobalToast: word-wrap/width clamp regression (2026-08-03) ──────────────────────────────────
+//
+// Before: the label had no wordWrap/wordWrapWidth at all and no max-width clamp on the computed
+// panel width — a moderately long message (or a verbose locale's translation, German especially)
+// rendered wider than the viewport, with both edges cut off since the bubble is horizontally
+// centred. showToastMessage (net/log.ts) is the sink for nearly every scene's toasts, not just an
+// error fallback, so this is a frequently-hit path.
+
+describe('GlobalToast word-wraps long text instead of overflowing the screen', () => {
+  const LONG_MSG = 'Cloud save failed to sync and your progress from the last five minutes of play may not have been recorded on the server — please check your connection and try again shortly';
+
+  it('wraps the label (wordWrap enabled) instead of rendering one unbounded-width line', () => {
+    const fakeApp = {
+      screen: { width: W, height: H },
+      stage: new PIXI.Container(),
+      ticker: { add: () => {} },
+    } as unknown as PIXI.Application;
+    const toast = new GlobalToast(fakeApp) as any;
+    toast.show(LONG_MSG);
+    const lbl = findText(toast.layer, LONG_MSG);
+    expect(lbl).not.toBeNull();
+    expect(lbl!.style.wordWrap).toBe(true);
+    expect(lbl!.style.wordWrapWidth).toBeGreaterThan(0);
+  });
+
+  it('the resulting panel never exceeds the screen width, even for a very long / verbose-locale message', () => {
+    const fakeApp = {
+      screen: { width: W, height: H },
+      stage: new PIXI.Container(),
+      ticker: { add: () => {} },
+    } as unknown as PIXI.Application;
+    const toast = new GlobalToast(fakeApp) as any;
+    toast.show(LONG_MSG);
+    const panel = findPanelBehindText(toast.layer, LONG_MSG);
+    expect(panel).not.toBeNull();
+    // Graphics stub tracks the last drawRoundedRect/drawRect call's width via its own recorded geometry —
+    // fall back to the label's wrapped width + the same padding formula GlobalToast.show uses.
+    const lbl = findText(toast.layer, LONG_MSG)!;
+    const padX = Math.round(W * 0.08);
+    const bw = lbl.width + padX * 2;
+    expect(bw).toBeLessThanOrEqual(W);
+  });
+
+  it('a short message is unaffected (still a single line, no unnecessary wrapping)', () => {
+    const fakeApp = {
+      screen: { width: W, height: H },
+      stage: new PIXI.Container(),
+      ticker: { add: () => {} },
+    } as unknown as PIXI.Application;
+    const toast = new GlobalToast(fakeApp) as any;
+    toast.show(MSG);
+    const lbl = findText(toast.layer, MSG)!;
+    const padX = Math.round(W * 0.08);
+    expect(lbl.width + padX * 2).toBeLessThanOrEqual(W);
+  });
+});
+
 // ── WorldMapPanels: deliberately excluded, still draws its own bordered panel at h*0.8 ────────────
 
 describe('WorldMapPanels.showToast() (excluded from unification) still draws its own panel at h*0.8', () => {

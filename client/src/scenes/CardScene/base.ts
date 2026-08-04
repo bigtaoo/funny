@@ -234,6 +234,15 @@ export class CardSceneBase {
    * and `bt.busy` stuck on forever. The fuse ring is already drawn (feedRedraw) and stays put.
    */
   protected fuseInProgress = false;
+  /**
+   * True for the whole span the fusion ring is shown (openFuseSelect → actually closed/settled),
+   * a strict superset of fuseInProgress (which only covers the network-call span). Pre-confirm —
+   * while the player is still picking materials — `openFuseSelect` never clears `detailId`, so an
+   * unguarded `render()`/`applyCardState()` (e.g. from `cb.onSaveChanged` firing for an unrelated
+   * save change) would reopen the plain detail popup over the still-open ring (2026-08-03 fix) —
+   * `render()`'s modal dispatch and `applyCardState()` both check this before touching detailId.
+   */
+  protected fuseRingOpen = false;
   protected readonly unsubs: (() => void)[] = [];
   /** Portrait urls whose texture we've hooked for a one-shot re-render on load. */
   protected readonly artHooked = new Set<string>();
@@ -268,10 +277,12 @@ export class CardSceneBase {
       const next = wheelScrollY(this.scrollRegionTop, this.scrollRegionBottom, y, deltaY, this.scrollY, this.maxScroll);
       if (next !== null) { this.scrollY = next; this.scrollDirty = true; }
     }));
-    // Guarded like update()'s dirty-render below (see fuseInProgress): fuseCards() resolves the save
-    // change synchronously via adoptServer, firing this listener mid-fuse, before playFusionAnim runs —
-    // an unguarded render() here would tear down the fusion ring/animation out from under itself.
-    if (cb.onSaveChanged) this.unsubs.push(cb.onSaveChanged(() => { if (!this.fuseInProgress) this.render(); }));
+    // Guarded on fuseRingOpen (broader than just fuseInProgress, see its doc comment): fuseCards()
+    // resolves the save change synchronously via adoptServer, firing this listener mid-fuse before
+    // playFusionAnim runs — an unguarded render() here would tear down the fusion ring/animation out
+    // from under itself; and even pre-confirm (ring open, no request in flight yet) an unrelated save
+    // change must not silently reopen the plain detail popup over the ring.
+    if (cb.onSaveChanged) this.unsubs.push(cb.onSaveChanged(() => { if (!this.fuseRingOpen) this.render(); }));
   }
 
   private build(): void {
@@ -315,8 +326,14 @@ export class CardSceneBase {
     if (this.tab === 'skins') this.renderSkinsTab();
     else this.renderList();
 
-    if (this.tab === 'list' && this.detailId) this.openDetail(this.detailId);
-    else if (this.modalOpen) this.closeModal();
+    if (this.fuseRingOpen) {
+      // The fusion ring owns its own redraw (feedRedraw) and must not be reopened-over or closed by
+      // a generic render() pass — see fuseRingOpen's doc comment.
+    } else if (this.tab === 'list' && this.detailId) {
+      this.openDetail(this.detailId);
+    } else if (this.modalOpen) {
+      this.closeModal();
+    }
 
     if (this.bt.loadingVisible) drawLoadingOverlay(this.loadingLayer, this.w, this.h, this.bt.dots, t('common.processing'));
   }
@@ -379,6 +396,7 @@ export class CardSceneBase {
     this.modalSliders = [];
     this.activeModalSlider = null;
     this.modalOpen = false;
+    this.fuseRingOpen = false;
     this.modalScale = 1;
     this.modalOriginX = 0;
     this.modalOriginY = 0;

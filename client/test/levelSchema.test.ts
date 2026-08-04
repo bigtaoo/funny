@@ -36,7 +36,8 @@ describe('parseLevelDefinition', () => {
       'ch5_lv6', 'ch5_lv7', 'ch5_lv8', 'ch5_lv9', 'ch5_lv10',
       'ch6_lv1', 'ch6_lv2', 'ch6_lv3', 'ch6_lv4', 'ch6_lv5',
       'ch6_lv6', 'ch6_lv7', 'ch6_lv8', 'ch6_lv9', 'ch6_lv10',
-      'ch_stress',
+      // 'ch_stress' intentionally excluded (2026-08-03 fix) — see CAMPAIGN_LEVEL_ORDER's doc comment
+      // in levels.ts; it's a perf fixture, not a real level, and pollutes currentChapter()'s scan.
     ]);
     for (const id of CAMPAIGN_LEVEL_ORDER) {
       expect(CAMPAIGN_LEVELS[id]!.id).toBe(id);

@@ -55,3 +55,30 @@ describe('migrate v3 → v4 (Hero Roster: retired fields are actually deleted, n
     expect(save.cardInv).toEqual({ c1: { id: 'c1', defId: 'hero1' } });
   });
 });
+
+// 2026-08-03 fix: migrate() used to unconditionally force `filled.version = SAVE_VERSION` even when
+// the incoming save was already AHEAD of this client's SAVE_VERSION (a newer client/server build's
+// save read by a stale client bundle mid-rollout) — the `while (v < SAVE_VERSION)` loop never runs
+// for that case, so nothing validates the save actually fits the older shape, yet its version tag
+// got silently downgraded, which could make a future migration step for the real (higher) version
+// skip it once this client updates.
+describe('migrate never downgrades a version tag ahead of SAVE_VERSION', () => {
+  it('preserves a save version newer than this client\'s SAVE_VERSION instead of forcing it down', () => {
+    const raw = { version: SAVE_VERSION + 1, wallet: { coins: 42 } };
+    const save = migrate(raw);
+    expect(save.version).toBe(SAVE_VERSION + 1);
+    // Still backfilled/usable, just not mislabeled.
+    expect(save.wallet.coins).toBe(42);
+  });
+
+  it('a save exactly at SAVE_VERSION is still pinned to SAVE_VERSION (no regression to the common case)', () => {
+    const raw = { version: SAVE_VERSION };
+    const save = migrate(raw);
+    expect(save.version).toBe(SAVE_VERSION);
+  });
+
+  it('a brand-new save (null) is still pinned to SAVE_VERSION', () => {
+    const save = migrate(null);
+    expect(save.version).toBe(SAVE_VERSION);
+  });
+});

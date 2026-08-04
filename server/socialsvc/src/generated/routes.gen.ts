@@ -26,7 +26,6 @@ export type SocialOperationId =
   | "setFamilyAnnouncement"
   | "getFamilyChannel"
   | "sendFamilyMessage"
-  | "getPlayerRank"
   | "getProfileExtra"
   | "getFriends"
   | "getFriendRequests"
@@ -37,6 +36,7 @@ export type SocialOperationId =
   | "removeFriend"
   | "blockFriend"
   | "unblockFriend"
+  | "reportFriend"
   | "getConversations"
   | "getChatMessages"
   | "sendChatMessage"
@@ -63,7 +63,6 @@ export const SOCIAL_ROUTES = [
   { method: 'POST' as const, path: "/social/family/announcement", operationId: "setFamilyAnnouncement", security: ["bearerAuth"] },
   { method: 'GET' as const, path: "/social/family/{familyId}/messages", operationId: "getFamilyChannel", security: ["bearerAuth"] },
   { method: 'POST' as const, path: "/social/family/{familyId}/messages", operationId: "sendFamilyMessage", security: ["bearerAuth"] },
-  { method: 'GET' as const, path: "/social/player/{accountId}/rank", operationId: "getPlayerRank", security: ["bearerAuth"] },
   { method: 'GET' as const, path: "/social/profile/{publicId}/extra", operationId: "getProfileExtra", security: ["bearerAuth"] },
   { method: 'GET' as const, path: "/social/friends", operationId: "getFriends", security: ["bearerAuth"] },
   { method: 'GET' as const, path: "/social/friends/requests", operationId: "getFriendRequests", security: ["bearerAuth"] },
@@ -74,6 +73,7 @@ export const SOCIAL_ROUTES = [
   { method: 'DELETE' as const, path: "/social/friends/{publicId}", operationId: "removeFriend", security: ["bearerAuth"] },
   { method: 'POST' as const, path: "/social/friends/block", operationId: "blockFriend", security: ["bearerAuth"] },
   { method: 'DELETE' as const, path: "/social/friends/block/{publicId}", operationId: "unblockFriend", security: ["bearerAuth"] },
+  { method: 'POST' as const, path: "/social/friends/report", operationId: "reportFriend", security: ["bearerAuth"] },
   { method: 'GET' as const, path: "/social/chat/conversations", operationId: "getConversations", security: ["bearerAuth"] },
   { method: 'GET' as const, path: "/social/chat/{convId}/messages", operationId: "getChatMessages", security: ["bearerAuth"] },
   { method: 'POST' as const, path: "/social/chat/send", operationId: "sendChatMessage", security: ["bearerAuth"] },
@@ -222,6 +222,21 @@ export const SOCIAL_BODY_SCHEMAS: Record<string, unknown> = {
     "properties": {
       "publicId": {
         "type": "string"
+      }
+    }
+  },
+  "reportFriend": {
+    "type": "object",
+    "required": [
+      "publicId"
+    ],
+    "properties": {
+      "publicId": {
+        "type": "string"
+      },
+      "reason": {
+        "type": "string",
+        "description": "Free-text reason, truncated server-side to REPORT_REASON_MAX"
       }
     }
   },
@@ -374,17 +389,6 @@ export const SOCIAL_PARAMS_SCHEMAS: Record<string, unknown> = {
     },
     "required": [
       "familyId"
-    ]
-  },
-  "getPlayerRank": {
-    "type": "object",
-    "properties": {
-      "accountId": {
-        "type": "string"
-      }
-    },
-    "required": [
-      "accountId"
     ]
   },
   "getProfileExtra": {
@@ -1316,42 +1320,6 @@ export const SOCIAL_RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = 
       ]
     }
   },
-  "getPlayerRank": {
-    "200": {
-      "allOf": [
-        {
-          "type": "object",
-          "required": [
-            "ok"
-          ],
-          "properties": {
-            "ok": {
-              "type": "boolean",
-              "enum": [
-                true
-              ]
-            }
-          }
-        },
-        {
-          "type": "object",
-          "properties": {
-            "data": {
-              "type": "object",
-              "properties": {
-                "rank": {
-                  "type": "string"
-                },
-                "elo": {
-                  "type": "number"
-                }
-              }
-            }
-          }
-        }
-      ]
-    }
-  },
   "getProfileExtra": {
     "200": {
       "allOf": [
@@ -1818,6 +1786,45 @@ export const SOCIAL_RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = 
     }
   },
   "unblockFriend": {
+    "200": {
+      "allOf": [
+        {
+          "type": "object",
+          "required": [
+            "ok"
+          ],
+          "properties": {
+            "ok": {
+              "type": "boolean",
+              "enum": [
+                true
+              ]
+            }
+          }
+        },
+        {
+          "type": "object",
+          "properties": {
+            "data": {
+              "type": "object",
+              "required": [
+                "ok"
+              ],
+              "properties": {
+                "ok": {
+                  "type": "boolean",
+                  "enum": [
+                    true
+                  ]
+                }
+              }
+            }
+          }
+        }
+      ]
+    }
+  },
+  "reportFriend": {
     "200": {
       "allOf": [
         {

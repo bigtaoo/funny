@@ -9,10 +9,22 @@
 // Runs under the headless PIXI adapter (vitest.ui.config.ts setupFiles).
 
 import { describe, it, expect, vi } from 'vitest';
+import * as PIXI from 'pixi.js-legacy';
 import { createLayout } from '../../src/layout/ScalingManager';
 import { InputManager } from '../../src/inputSystem/InputManager';
-import { initI18n } from '../../src/i18n';
+import { initI18n, t } from '../../src/i18n';
 import { LeaderboardScene, type LeaderboardEntry } from '../../src/scenes/LeaderboardScene';
+
+function hasText(container: PIXI.Container, text: string): boolean {
+  let found = false;
+  const walk = (node: PIXI.Container): void => {
+    if (found) return;
+    if (node instanceof PIXI.Text && node.text === text) { found = true; return; }
+    for (const c of node.children) walk(c as PIXI.Container);
+  };
+  walk(container);
+  return found;
+}
 
 const memStore = (() => {
   const m = new Map<string, string>();
@@ -45,6 +57,19 @@ async function buildLeaderboard(input: InputManager, count = 100): Promise<Leade
   await Promise.resolve();
   return scene;
 }
+
+// Regression coverage (2026-08-03 fix): drawRow used to print the raw pvpRank enum value
+// (e.g. 'gold') directly, unlike every other rank display in the codebase (StatsScene/LobbyScene/
+// FriendsScene all wrap it in t('rank.'+tier)) — every row on the global leaderboard showed the
+// untranslated English slug regardless of the player's selected language.
+describe('LeaderboardScene — rank tier is localized, not the raw enum value', () => {
+  it('renders the translated rank label, not the bare "gold" string', async () => {
+    const scene = await buildLeaderboard(new InputManager(), 5);
+    expect(hasText(scene.container, t('rank.gold' as never))).toBe(true);
+    expect(hasText(scene.container, 'gold')).toBe(false);
+    scene.destroy();
+  });
+});
 
 describe('LeaderboardScene — drag-scroll perf fast path', () => {
   it('has scrollable content with a 100-row leaderboard (scrollMax > 0)', async () => {

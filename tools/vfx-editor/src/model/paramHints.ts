@@ -16,17 +16,22 @@ export const PARAM_HINTS: Record<PrimitiveType, string[]> = {
   burst:    ['nearR', 'farR', 'alpha', 'rotation', 'lineWidth', 'boilAmp'],
   dots:     ['spreadR', 'dotSize', 'alpha', 'angleOffset', 'jitter', 'boilAmp'],
   polyline: ['alpha', 'lineWidth', 'scale', 'rotation', 'translateX', 'translateY', 'boilAmp'],
-  emitter:  [],
+  emitter:  ['alpha', 'rotation', 'size'],
 };
 
 /** Primitives that use the layer-level `count` field. */
 export const COUNT_PRIMITIVES: ReadonlySet<PrimitiveType> = new Set<PrimitiveType>([
-  'spokes', 'burst', 'dots',
+  'spokes', 'burst', 'dots', 'emitter',
 ]);
 
 /** Primitives that use the layer-level `points` field. */
 export const POINTS_PRIMITIVES: ReadonlySet<PrimitiveType> = new Set<PrimitiveType>([
   'polyline',
+]);
+
+/** Primitives that use the layer-level `emitter` spec field. */
+export const EMITTER_PRIMITIVES: ReadonlySet<PrimitiveType> = new Set<PrimitiveType>([
+  'emitter',
 ]);
 
 export const ALL_PRIMITIVES: PrimitiveType[] = [
@@ -40,6 +45,7 @@ export function defaultParamValue(name: string): number {
     case 'lineWidth':         return 2;
     case 'scale':             return 1;
     case 'dotSize':           return 2;
+    case 'size':              return 4;
     case 'sweep':             return Math.PI;
     case 'emphasisLineWidth': return 4;
     case 'boilAmp':           return 1.5;

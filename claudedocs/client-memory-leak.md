@@ -113,5 +113,38 @@ Loki `type=mem` 埋点显示：`baseTexTop` 里按 URL 的资源纹理桶（`a.g
 ### 8.4 与 §5.4 的差别（重要）
 §5.4 对战斗视图说「**切勿**传 `{texture:true, baseTexture:true}`」——那是因为战斗 sprite 的纹理是**跨局共享**的 spritesheet/`Texture.from(url)`，销毁会导致下一局白图/双重释放。**Text 纹理恰恰相反：每个 Text 独占一张 canvas 纹理，从不共享，因此 `texture:true` 对 Text 恒安全且必须。** `tearDownChildren` 正是编码了这个区分——只对 `instanceof PIXI.Text` 的节点传 `texture:true`，其余一律 `texture:false`。新增 UI 场景销毁一屏 Text 时，用 `tearDownChildren(this.container)` 再 `this.container.destroy({children:true})`，不要裸销毁容器。
 
-### 8.5 剩余项
+### 8.5 剩余项（结论已被 §8.7 推翻，本节保留作历史记录）
 其余 ~24 个全屏场景（Gacha/Shop/Login/Result/Leaderboard/Equipment/Card…）的 `destroy()` 是同款裸写法，每次导航漏一屏 Text，靠 60s textureGC 勉强跟上、非 SLG 泄漏源，未在本次一并清扫——若要根除全局该类泄漏，同样 `tearDownChildren(this.container)` 接入即可。
+
+### 8.6 复查修复（2026-08-03，全客户端场景切换专项审计）
+
+> 状态：已修复。见 [`claudedocs/client-modules.md`](client-modules.md) 同日条目 + 记忆 `client-scene-lifecycle-audit-2026-08-03`。
+
+对 §7「渲染层销毁契约」和本节契约做了一次全量复核（33 个场景 + `GameRenderer` 全部子视图 + 全部 `Ticker.shared` 注册点 + 全部输入订阅点），发现并修复三处真实缺口：
+
+1. **`GameRenderer/events.ts` 护送兵特效 tick 未注册**——`escort_died`/`escort_arrived` 的淡出/闪烁 tick 直接 `PIXI.Ticker.shared.add(tick)`，未纳入任何 `Set` 追踪，`GameRendererBase.destroy()` 也从未注销，是本文档契约第1条「注销所有挂在 `Ticker.shared` 上的回调」的字面遗漏（此前只有 `BoardView`/`BuildingView`/`UnitView` 三个子视图接了 `fxTicks`/`effectTicks`，`GameRenderer` 自己的护送兵特效被漏掉）。此前未爆是因为退出条件是纯 `elapsed`/`frames` 计数、无异常路径——修复：新增 `escortEffectTicks: Set<() => void>`，`addEscortEffectTick`/`removeEscortEffectTick` 包一层注册，`destroy()` 的 `escortSprites` 清理步骤里先遍历注销再销毁精灵。
+2. **`GameRendererBase.destroy()` 顺序 + 无隔离**——四个子视图（`boardView`/`unitView`/`buildingView`/`handView`，各自已合规）的 `destroy()` 排在 `unsubs`/`drag`/`profilePopup`/`vfxSystem` 等步骤**之后**，且整个方法没有分步 try/catch：只要前面任一步抛错，四个子视图的 tick 注销代码就执行不到，原样复现 §2 事故的机制。修复：子视图 destroy 提到最前，且每一步都包一层 `safeDestroyStep(name, fn)`（try/catch + `netLog` 记录，不中断后续步骤）——这是本次审计里离“真的再炸一次”最近的一处结构性隐患。
+3. **`CampaignMapScene` 翻页内反复裸销毁——审计时判定为真实泄漏，写测试验证时发现是误判，改口记在这里**：初审时看到 `showPage()`/`advanceFlip()` 的 `.destroy({children:true})` 没有先过 `tearDownChildren`，比照 §8.2 的模式（overlay 反复开关漏 Text 纹理）判定为同类泄漏并已打了 `tearDownChildren(root)` 补丁。但补充回归测试（`test/ui/campaignMapTextTeardown.ui.ts`）时用真实 `PIXI.Text.prototype.destroy` 结果（而非调用参数）做前后对比，发现**这三处原本的 `.destroy({children:true})` 已经能正确释放嵌套 Text 的纹理**——根源是这个 PIXI 版本里 `Text.destroy(options)` 内部会用 `Object.assign({}, defaultDestroyOptions, options)` 合并自己的默认值（`texture:true, baseTexture:true`），只要顶层调用带了 `children:true`（本例始终如此），无论中间层是否显式传 `texture:true`，递归到 Text 节点时都会补上 —— 也就是说本节 §8.2/§8.4 描述的"`{children:true}` 传给子节点时 texture 默认 false"这条规则，只对**非 Text**节点（Sprite/Graphics）成立，对 Text 节点本身不成立（Text 自己会補上默认值，不管上层传了什么）。真正会漏的只有两种写法：完全不传 `children:true`（如 `f.out.destroy()`）、或裸 `removeChildren()`/`removeChildren().forEach(c=>c.destroy())`（只删顶层，不递归到子容器内部更深的 Text）——用这两种写法重新跑同一份测试，纹理确实没释放，测试也确实能抓到。结论：`tearDownChildren` 补丁本身无害、且与全仓库约定一致，**但没有改变 CampaignMapScene 的实际泄漏行为**（此前也没有泄漏）；测试因此改为验证真实结果（纹理是否真被释放），而不是验证调用参数形状，这样才能在"没有实质差异"的情况下仍然扎实地防住真正危险的写法（漏 `children:true` / 裸 `removeChildren`）。**这也提示 §8.5 里"其余 ~24 个场景仍是同款裸写法、有泄漏风险"的判断可能同样过于悲观**——如果那些场景的裸写法也是 `.destroy({children:true})`（而非真的漏 `children:true` 或裸 `removeChildren`），按同样的道理它们的 Text 纹理可能也已经被正确释放，需要重新用这个方法逐一验证才能下结论，本次未对那 24 个场景重新验证（见 [[open]] 里的记录）。
+4. **`TitlesScene.destroy()` 漏调用 `container.destroy()`**——只调了 `tearDownChildren`（Text 纹理已释放），容器对象本身未销毁，补了一行，非泄漏、小疵。
+
+### 8.7 §8.5「~24 个剩余场景」逐一重新验证（2026-08-03，同日第三轮）
+
+> 结论：**§8.5 的悲观判断不成立**——这 24 个场景全部安全，没有一个真的漏 Text 纹理。§8.5 整节判断已作废（保留原文供对照历史，不再具有指导意义）。
+
+按 §8.6 point 3 的方法（捕获销毁前的 `PIXI.BaseTexture` 引用，销毁后直接检查 `.destroyed`，而不是看调用参数形状）逐一核实了 §8.5 点名的场景：`LoginScene`/`ChatScene`/`SettingsScene`/`ShopScene`/`FriendsScene`/`LobbyScene`/`GachaScene`/`EquipmentScene`/`IntroScene`/`CardCodexScene`/`StatsScene`/`RoomScene`/`LevelPrepScene`/`ResultScene`，以及此前从未进过 `test/ui/scenes.ui.ts` 通用注册表、因而从未被这套契约测试覆盖过的 9 个场景——`BattlePassScene`/`DeckBuilderScene`/`LeaderboardScene`/`AchievementScene`/`DailyScene`/`EventScene`/`RechargeScene`/`DefenseEditorScene`（defense 模式）/`CardScene`。
+
+**结果**：全部 23 个场景的 `destroy()` 都是 `this.container.destroy({ children: true })`（或等价的 `for (const u of this.unsubs) u()` 之类订阅清理 + 同一行销毁），没有一个是真正危险的写法（完全不传 `children:true`，或裸 `removeChildren()`/`removeChildren().forEach(c=>c.destroy())` 只删顶层不递归）。按 §8.6 point 3 证实的 PIXI 行为——`PIXI.Text.destroy(options)` 内部合并自己的 `defaultDestroyOptions`（`texture:true, baseTexture:true`），只要 `children:true` 从顶层传下来就会递归触发——这些场景的嵌套 Text 纹理**已经**在 `.destroy({children:true})` 那一刻被正确释放，不需要 `tearDownChildren`，也从未真的泄漏过。
+
+**落地方式**：没有另写 23 个一次性断言，而是把这个校验直接焼进 `test/ui/scenes.ui.ts` 的共享 `exercise()`——原先只断言 `container.destroyed===true`，现在额外收集销毁前所有 `PIXI.Text` 的 `baseTexture` 引用，销毁后断言全部 `.destroyed===true`。这样**已注册的全部场景**（含未来新增的）都自动获得这条 Text 纹理回归防护，不必逐场景手写。9 个此前从未注册过的场景（`BattlePassScene` 等）借这次机会一并补进注册表——它们此前完全没有 `destroy()` 回归测试（不只是 Text 纹理这一项，连 §7 的"容器真的销毁了"都没测过），这本身也是和 `TitlesScene` 同类的"漏注册"缺口。用 `RechargeScene` 故意改成 `this.container.destroy()`（不传 `children:true`）复测过，新断言确实会失败——校验有效，不是形同虚设。
+
+**范围外三个战斗类场景后续也补了自动化测试（2026-08-03，同日第四轮）**：`StatePlayerScene`/`ReplayScene`/`GameScene` 当时只人工读码确认安全，没有实测——`test/ui/gameScenes.ui.ts`（`scenes.ui.ts` 文件头声明的"更重的 render smoke"，已存在，覆盖 `GameScene`/`ReplayScene` 的构造+步进+销毁，但同样只断言"没抛错"，没检查 `container.destroyed` 或 Text 纹理）现已比照 §8.7 的方法补齐：`exercise()` 同步加上 `container.destroyed===true` + Text baseTexture 全部 `.destroyed` 的断言；`StatePlayerScene`（此前完全没有专属测试文件，构造签名是 `(layout, replay: StateReplay, cb)`，不吃 `InputManager`）用 `stateRecorder`+`decodeStateReplay` 的最小 fake-state 手法（同 `test/stateRecorder.test.ts` 的 `mkState` 写法）新增一条真实构造用例，一并纳入这套检查。用 `ReplayScene` 故意去掉 `children:true` 复测过，两个方向（portrait/landscape）都正确报红——校验有效。`GameScene.container` 即 `this.renderer.container`（`GameRenderer`），走的是 §8.6 point 1/2 已修复的路径，这条测试等于把那次修复也纳入了持续回归防护范围。
+
+审计同时确认：全代码库 90 处 `input.onDown/onMove/onUp/onWheel` 订阅、33 个场景的 `destroy()` 存在性均合规，无新增遗漏（唯一发现的口子已如上修复）；`DefenseEditorScene` 缺失 `SaveManager.onSaveChanged` 订阅是数据共享类问题，见 [`client-modules.md`](client-modules.md) §34 同日更新，不是本节内存契约范畴。
+
+### 8.8 结算延时器泄漏（2026-08-03，全 client 代码审查同批次，非 Text 纹理类，与 §5 契约同源）
+
+`GameRenderer` 局末结算（`game_over`/`game_draw`/教程胜利）用 `setTimeout` 延迟 1.5~2s 才调 `onGameEnd`（给玩家看结算横幅的缓冲），但这个计时器句柄此前完全没被记录，`destroy()` 也从不取消它——本质上和 §5 契约第 1 条「注销所有全局 ticker/计时器回调」是同一类问题，只是载体是 `setTimeout` 不是 `Ticker.shared`。后果：玩家若在这个延迟窗口内点投降退出（投降按钮此前也没按 `gameEnded` 门控，可在结算横幅显示后继续点），`onExitToLobby` 立即执行、场景被 `destroy()`，但延迟的 `onGameEnd` 仍会在之后触发，对着已经离开的场景重复回调（联机对局重复 `reportResult`/`analytics.track('game_end')`，PvE 重复 `saveManager.recordClear`）。
+
+**修复**：`GameRendererBase` 新增 `private gameEndTimer` 字段 + `protected scheduleGameEnd(fn, delayMs)` helper（`base.ts`/`events.ts`统一改用它代替裸 `setTimeout`），`destroy()` 里 `clearTimeout(this.gameEndTimer)` + `this.onGameEnd = null`；`input.ts` 的 `handleDown` 顶部补 `if (this.gameEnded) return`，结算横幅出现后不再响应任何输入（含投降）。
+
+**回归**：目前靠 `tsc --noEmit` + 现有 `test/ui/gameScenes.ui.ts`/`sceneManager.ui.ts` 冒烟通过（没有专门断言"延迟计时器被取消"的新测试——如需要更强保证，可仿 §7 的 `sceneManager.ui.ts` 假 ticker 手法，用假 `setTimeout`/`vi.useFakeTimers()` 断言 `destroy()` 后计时器不再触发 `onGameEnd`）。

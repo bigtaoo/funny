@@ -74,7 +74,11 @@ export function CoinsMixin<TBase extends ShopSceneBaseCtor>(Base: TBase): TBase 
 
       // Promo-code redemption (B-PROMO) lives on the Coins tab, full-width below the tier grid.
       const promoH = this.cb.redeemPromo ? Math.round(h * 0.09) : 0;
-      const totalH = gridH + (promoH ? promoH + gap : 0);
+      // `gridH` already has one trailing `gap` baked in past the last card row (rows * (cellH+gap)) —
+      // that's exactly the gap the promo row is positioned below (`py = bodyTop + gridH - scrollY`).
+      // Adding another `+ gap` here double-counted it (2026-08-03 fix), leaving a permanent gap-sized
+      // dead-scroll strip below the promo row that could never be scrolled away.
+      const totalH = gridH + promoH;
       // Clamp the viewport so it always cuts mid-row when there's more below — never flush with a
       // row boundary, so a partial next card is visibly peeking above the fold.
       const viewH = peekViewportH(availH, cellH + gap, totalH);

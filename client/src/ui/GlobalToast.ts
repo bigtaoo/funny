@@ -33,9 +33,15 @@ export class GlobalToast {
     const { width: w, height: h } = this.app.screen;
     // Real screen-pixel space (see class note), so keep the size responsive to the
     // actual canvas height but snap it onto the shared scale.
-    const lbl = txt(text, snapFont(Math.round(h * 0.052)), 0xffffff, true);
     const padX = Math.round(w * 0.08);
     const padY = Math.round(h * 0.024);
+    // Word-wrap clamp (2026-08-03 fix): unlike confirmDialog's message label (which clamps to `mw`),
+    // this toast previously had no width limit at all — a moderately long message, or a verbose
+    // locale's translation (German especially), rendered wider than the viewport with both edges cut
+    // off. showToastMessage (net/log.ts) routes nearly every scene's success/error toast through this
+    // sink, not just an error fallback, so this is a real, frequently-hit path, not an edge case.
+    const maxLabelW = Math.max(40, w - padX * 2 - Math.round(w * 0.04));
+    const lbl = txt(text, snapFont(Math.round(h * 0.052)), 0xffffff, true, maxLabelW);
     const bw = lbl.width + padX * 2;
     const bh = lbl.height + padY * 2;
     const bx = (w - bw) / 2;

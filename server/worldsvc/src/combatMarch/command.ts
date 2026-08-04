@@ -427,8 +427,16 @@ export function CommandMixin<TBase extends MarchServiceBaseCtor>(Base: TBase): T
       // accepted "money path" edge case as speedupTraining/speedupBuild (city.ts), not specially compensated.
       const claimed = await cols.marches.findOneAndDelete({ _id: mid, worldId, ownerId: accountId, status: 'marching', kind: 'return' });
       if (claimed) {
-        const pw = await cols.playerWorld.findOne({ _id: playerWorldId(worldId, accountId) });
-        if (pw) await refundTroops(this.core, pw, claimed.troops, t);
+        // A card-army team's committed strength lives entirely in cardState.currentTroops and never
+        // touched playerWorld.troops on departure (see hasCardArmy in startMarch) — claimed.troops here
+        // degenerates to "card count" for such a march (§CC-3), so crediting it to the pool would be a
+        // free-troops dupe. Every other refund site in this module (applySiege/applyOccupy/encounter/
+        // applyMove) checks this first; this one previously didn't.
+        const claimedHasCardArmy = !!claimed.army?.some((e) => !!e.cardInstanceId);
+        if (!claimedHasCardArmy) {
+          const pw = await cols.playerWorld.findOne({ _id: playerWorldId(worldId, accountId) });
+          if (pw) await refundTroops(this.core, pw, claimed.troops, t);
+        }
         void this.core.pushMarch(accountId, this.core.marchView({ ...claimed, status: 'recalled' }));
       }
       return this.core.getMe(worldId, accountId);

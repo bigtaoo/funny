@@ -98,31 +98,48 @@ export class WorldCorePush extends WorldCoreYield {
     const cur = await this.deps.redis!.hget(this.coverKey(worldId), tile);
     return cur ? (JSON.parse(cur) as Record<string, CoverEntry>) : {};
   }
-  /** Register one coverage source over its 3×3 footprint centered at (cx,cy). Best-effort; no-op without Redis. */
+  /**
+   * Register one coverage source over its 3×3 footprint centered at (cx,cy). Best-effort; no-op without Redis.
+   *
+   * 2026-08-03 (worldsvc code review): each cell used to be a plain hget-then-hset — two sources whose
+   * footprints overlap the same cell, added concurrently, could both read the map before either write
+   * landed, so the second write silently dropped the first's entry (durable data loss on a "should be
+   * complete" index, not just a transient miss). Uses the atomic Redis-side merge when the client
+   * supports it (see WorldRedis.hmergeJsonField); falls back to the old non-atomic path only for test
+   * fakes that don't implement it, where there's no real concurrency to race against anyway.
+   */
   async addCover(worldId: string, cx: number, cy: number, entry: CoverEntry): Promise<void> {
     if (!this.deps.redis) return;
     try {
       for (const c of baseFootprintCells(cx, cy)) {
         const tid = tileId(worldId, c.x, c.y);
-        const map = await this.readCoverMap(worldId, tid);
-        map[entry.sourceTile] = entry;
-        await this.deps.redis.hset(this.coverKey(worldId), tid, JSON.stringify(map));
+        if (this.deps.redis.hmergeJsonField) {
+          await this.deps.redis.hmergeJsonField(this.coverKey(worldId), tid, entry.sourceTile, JSON.stringify(entry));
+        } else {
+          const map = await this.readCoverMap(worldId, tid);
+          map[entry.sourceTile] = entry;
+          await this.deps.redis.hset(this.coverKey(worldId), tid, JSON.stringify(map));
+        }
       }
     } catch {
       /* best-effort */
     }
   }
-  /** Remove a coverage source (by its own tile) from its 3×3 footprint centered at (cx,cy). */
+  /** Remove a coverage source (by its own tile) from its 3×3 footprint centered at (cx,cy). Same atomic-merge reasoning as addCover above. */
   async removeCover(worldId: string, cx: number, cy: number, sourceTile: string): Promise<void> {
     if (!this.deps.redis) return;
     try {
       for (const c of baseFootprintCells(cx, cy)) {
         const tid = tileId(worldId, c.x, c.y);
-        const map = await this.readCoverMap(worldId, tid);
-        if (map[sourceTile] === undefined) continue;
-        delete map[sourceTile];
-        if (Object.keys(map).length === 0) await this.deps.redis.hdel(this.coverKey(worldId), tid);
-        else await this.deps.redis.hset(this.coverKey(worldId), tid, JSON.stringify(map));
+        if (this.deps.redis.hmergeJsonField) {
+          await this.deps.redis.hmergeJsonField(this.coverKey(worldId), tid, sourceTile, null);
+        } else {
+          const map = await this.readCoverMap(worldId, tid);
+          if (map[sourceTile] === undefined) continue;
+          delete map[sourceTile];
+          if (Object.keys(map).length === 0) await this.deps.redis.hdel(this.coverKey(worldId), tid);
+          else await this.deps.redis.hset(this.coverKey(worldId), tid, JSON.stringify(map));
+        }
       }
     } catch {
       /* best-effort */

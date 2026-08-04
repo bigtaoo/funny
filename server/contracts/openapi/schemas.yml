@@ -372,6 +372,7 @@ schemas:
       cost: { type: integer }
       kind: { type: string }
       grants: { type: string }
+      qty: { type: integer }
 
   GachaPool:
     type: object

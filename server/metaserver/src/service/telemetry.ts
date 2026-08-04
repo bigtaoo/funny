@@ -128,8 +128,12 @@ export function TelemetryMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase &
       if (!(await this.anomalyRate.allow(req.ip ?? 'unknown', this.deps.now()))) return ok({ accepted: 0 });
 
       // publicId is optional (anomalies can occur before login); defaults to 'anon' and is still reported to enable statistics on anonymous anomalies.
-      const publicId = typeof body.publicId === 'string' && body.publicId ? body.publicId : 'anon';
-      const platform = typeof body.platform === 'string' ? body.platform : undefined;
+      // Length-capped (2026-08-03 fix, matching msg/type/buildVersion below): this endpoint is
+      // deliberately exempt from isClientLogTargeted's allowPublicIds gate (anomalies must be reportable
+      // before login/allowlisting), so without a cap here a client could submit an oversized publicId
+      // that buildAnomalyLine then embeds verbatim into every one of up to 200 Loki lines per request.
+      const publicId = typeof body.publicId === 'string' && body.publicId ? body.publicId.slice(0, 64) : 'anon';
+      const platform = typeof body.platform === 'string' ? body.platform.slice(0, 32) : undefined;
       const buildVersion = typeof body.buildVersion === 'string' && body.buildVersion ? body.buildVersion.slice(0, 32) : undefined;
       const events: ClientAnomalyEvent[] = (body.events as unknown[]).slice(0, 200).flatMap((raw) => {
         if (!raw || typeof raw !== 'object') return [];
