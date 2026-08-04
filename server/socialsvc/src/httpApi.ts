@@ -186,10 +186,11 @@ export function startHttpApi(
           } else if (channel.kind === 'account' && channel.accountId) {
             await gateway.push(channel.accountId, msg);
           } else if (channel.kind === 'family' && channel.familyId) {
-            // Push to all online family members (O(n), ≤30 members)
+            // Push to all online family members (O(n), ≤30 members). No callerId passed (trusted internal
+            // route) → getFamily returns the full member view with accountId always present.
             const detail = await familySvc.getFamily(channel.familyId);
             if (detail) {
-              await gateway.pushMany(detail.members.map((m) => m.accountId), msg);
+              await gateway.pushMany(detail.members.map((m) => m.accountId!), msg);
             }
           }
           // sect/world channel with no targets: P3 will switch to Redis pub/sub routing (currently only persisted to DB, no real-time push).
@@ -451,7 +452,9 @@ export function startHttpApi(
         {
           const m = /^\/social\/family\/([^/]+)$/.exec(path);
           if (method === 'GET' && m) {
-            return send(res, 200, ok(await familySvc.getFamily(decodeURIComponent(m[1]!))));
+            // Pass the caller's own accountId (2026-08-04 fix): a non-member querying an arbitrary family
+            // id gets accountId stripped from the member list (see getFamily's doc comment).
+            return send(res, 200, ok(await familySvc.getFamily(decodeURIComponent(m[1]!), accountId)));
           }
         }
 

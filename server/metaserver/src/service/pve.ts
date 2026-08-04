@@ -394,6 +394,21 @@ export function PveMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase & Const
         if (clean && Object.keys(clean).length > 0) cleanStats = clean;
       }
 
+      // Card instance grant at level 1 FIRST (2026-08-04 fix — was previously called AFTER the consolidated
+      // write below). grantCards has its own independent rev-guarded retry loop and can fail on its own
+      // under save-document contention; running it first means that failure leaves progress/materials/
+      // equipment-slot/accrueStats/retention completely untouched, so a client retry of this whole request
+      // re-enters cleanly with nothing committed yet. The old order let this call fail AFTER the consolidated
+      // write had already landed — a client retry then re-ran the whole consolidated transform from scratch
+      // and double-applied every additive field in it (materials via applyMaterialAndEquipmentGrant, and
+      // achievement stats via accrueStats) on top of the already-committed delta, since neither is itself
+      // idempotent across repeated calls with the same clear/reward inputs. Level 1 matches every other card
+      // source (starters / auction / gacha, §12); players raise cards via feeding, not the drop tier.
+      if (defsToGrant.length > 0) {
+        const cardResult = await grantCards(cols, now, accountId, defsToGrant);
+        if ('error' in cardResult) return cardResult;
+      }
+
       // ── One consolidated read-modify-write ──
       let newlyClearedChapter: string | undefined;
       let dropGranted = false;
@@ -421,19 +436,9 @@ export function PveMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase & Const
         );
       }
 
-      // Card instance grant at level 1 (separate rev loop via the shared grantCards primitive; compensation
-      // coins dropped — [DRAFT: wire commercial]). Level 1 matches every other card source (starters /
-      // auction / gacha, §12); players raise cards via feeding, not the drop tier.
-      let latestSave = out.save;
-      if (defsToGrant.length > 0) {
-        const cardResult = await grantCards(cols, now, accountId, defsToGrant);
-        if ('error' in cardResult) return cardResult;
-        latestSave = cardResult.save;
-      }
-
       const grantedEquipment = dropGranted ? pendingDrop : undefined;
       return {
-        save: latestSave,
+        save: out.save,
         granted: grant,
         grantedCards: cardGrant,
         grantedEquipment,
@@ -482,6 +487,16 @@ export function PveMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase & Const
         }
       }
 
+      // Card instance grant FIRST (2026-08-04 fix, mirrors settleNormalClear's identical fix — see its
+      // comment for the full rationale): grantCards can independently fail under save-document contention;
+      // running it before the consolidated write below means that failure leaves materials/equipment-slot/
+      // accrueStats/retention completely untouched, so a retry (this path is additionally guarded by
+      // pveVerify's verifyId+status CAS, but defense-in-depth costs nothing here) can't double-apply them.
+      if (defsToGrant.length > 0) {
+        const cardResult = await grantCards(cols, now, accountId, defsToGrant);
+        if ('error' in cardResult) return cardResult;
+      }
+
       let dropGranted = false;
       const out = await this.mutateSave(accountId, (s) => {
         const grantResult = applyMaterialAndEquipmentGrant(s, grant, pendingDrop);
@@ -508,15 +523,8 @@ export function PveMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase & Const
         );
       }
 
-      let latestSave = out.save;
-      if (defsToGrant.length > 0) {
-        const cardResult = await grantCards(cols, now, accountId, defsToGrant);
-        if ('error' in cardResult) return cardResult;
-        latestSave = cardResult.save;
-      }
-
       const grantedEquipment = dropGranted ? pendingDrop : undefined;
-      return { save: latestSave, granted: grant, grantedCards: cardGrant, grantedEquipment, capped };
+      return { save: out.save, granted: grant, grantedCards: cardGrant, grantedEquipment, capped };
     }
 
     /**

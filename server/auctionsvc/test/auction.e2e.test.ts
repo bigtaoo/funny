@@ -223,6 +223,48 @@ describe.skipIf(!mongo)('AuctionService e2e', () => {
     })).rejects.toMatchObject({ code: 'AUCTION_LIMIT_REACHED' });
   });
 
+  it('listing cap: a concurrent insert landing between the pre-check read and this insert is still caught by the post-insert recheck (escrow returned, no orphan doc)', async () => {
+    // One slot below cap — the pre-check (openCount >= AUCTION_MAX_LISTINGS) will pass for the request below.
+    for (let i = 0; i < AUCTION_MAX_LISTINGS - 1; i++) {
+      await svc.createAuction({
+        sellerId: 'alice', itemType: 'material',
+        item: { material: 'scrap' }, qty: 1, price: 10, durationSec: DUR,
+      });
+    }
+    // Simulate a second concurrent createAuction call's insert landing in the gap between this call's
+    // pre-check read and its own insertOne — the exact TOCTOU window the per-itemType `openCount >=
+    // AUCTION_MAX_LISTINGS` check (on its own) cannot close, since it reads before it (or any concurrent
+    // caller) has inserted.
+    const originalCountDocuments = mongo!.collections.auctions.countDocuments.bind(mongo!.collections.auctions);
+    let intercepted = false;
+    mongo!.collections.auctions.countDocuments = (async (filter: never) => {
+      const count = await originalCountDocuments(filter);
+      if (!intercepted) {
+        intercepted = true;
+        await mongo!.collections.auctions.insertOne({
+          _id: 'phantom-race-listing', sellerId: 'alice', itemType: 'material',
+          item: { material: 'scrap' }, qty: 1, price: 10, currency: 'coins',
+          expireAt: nowMs + DUR * 1000, status: 'open', rev: 1,
+        });
+      }
+      return count; // stale pre-race count, exactly what the pre-check's own read would have seen
+    }) as typeof originalCountDocuments;
+    try {
+      await expect(svc.createAuction({
+        sellerId: 'alice', itemType: 'material',
+        item: { material: 'scrap' }, qty: 1, price: 10, durationSec: DUR,
+      })).rejects.toMatchObject({ code: 'AUCTION_LIMIT_REACHED' });
+    } finally {
+      mongo!.collections.auctions.countDocuments = originalCountDocuments;
+    }
+    // The material deducted for the rejected listing must have been returned, not left in escrow limbo.
+    expect(materialGrants.some((g) => g.account === 'alice' && g.material === 'scrap' && g.qty === 1)).toBe(true);
+    // True open count settles back at the cap (19 pre-seeded + 1 phantom concurrent insert) — the
+    // rejected request's own doc was rolled back, never left as an orphan above the cap.
+    const openCount = await mongo!.collections.auctions.countDocuments({ sellerId: 'alice', status: 'open' });
+    expect(openCount).toBe(AUCTION_MAX_LISTINGS);
+  });
+
   it('buy: deduct coins + mail materials to buyer + pay seller (10% tax)', async () => {
     // lead static reference price ref=30 → guardrail band [15,60], use unit price 30.
     const view = await svc.createAuction({
@@ -631,6 +673,25 @@ describe.skipIf(!mongo)('AuctionService e2e', () => {
     expect(mailFor('bob', 'auction_bid:')?.content.subject).toBe('auction.mail.refund.subject');
   });
 
+  it('B bid keeps the stored price field in sync with topBid so browse sort reflects the current bid, not the stale startPrice', async () => {
+    // Two auction-mode listings: one starts cheap and gets bid up past the other's untouched start price.
+    const cheap = await svc.createAuction({
+      sellerId: 'alice', itemType: 'material', saleMode: 'auction',
+      item: { material: 'scrap' }, qty: 1, startPrice: 6, durationSec: DUR,
+    });
+    const pricier = await svc.createAuction({
+      sellerId: 'alice', itemType: 'material', saleMode: 'auction',
+      item: { material: 'scrap' }, qty: 1, startPrice: 9, durationSec: DUR,
+    });
+    await svc.placeBid('bob', cheap.auctionId, 19); // now the effective price (19) is above pricier's untouched 9
+    const stored = await mongo!.collections.auctions.findOne({ _id: cheap.auctionId });
+    expect(stored?.price).toBe(19); // raw field kept in sync with topBid.amount, not left at startPrice=6
+    const list = await svc.listAuctions('material', 50);
+    const ids = list.map((v) => v.auctionId);
+    // Ascending price sort must now put the untouched 9-coin listing before the 19-coin (bid-up) one.
+    expect(ids.indexOf(pricier.auctionId)).toBeLessThan(ids.indexOf(cheap.auctionId));
+  });
+
   it('B buyout → auction closes immediately', async () => {
     const v = await svc.createAuction({
       sellerId: 'alice', itemType: 'material', saleMode: 'auction',
@@ -640,6 +701,19 @@ describe.skipIf(!mongo)('AuctionService e2e', () => {
     expect(bought.status).toBe('sold');
     expect(bought.buyerId).toBe('bob');
     expect(mailAtt('bob', 'auction_settle:')).toMatchObject({ kind: 'material', id: 'scrap' });
+  });
+
+  it('B buyoutPrice above the guardrail ceiling is rejected at listing time, not silently made unusable', async () => {
+    // Regression test: createAuction used to validate only startPrice against the price guardrail, never
+    // buyoutPrice — but placeBid's guardrail check (checkPriceGuard) applies unconditionally to every bid
+    // including a buyout, contradicting its own "buyout bypasses the increment floor" comment. A seller
+    // could previously list with a buyoutPrice above ref×CEIL (scrap ref=10, ceil ratio 2.0 → ceil=20) and
+    // the listing would succeed, but the buyout would then be PERMANENTLY unusable: any bid at exactly
+    // buyoutPrice would throw PRICE_OUT_OF_RANGE instead of settling. Now the ceiling is enforced up front.
+    await expect(svc.createAuction({
+      sellerId: 'alice', itemType: 'material', saleMode: 'auction',
+      item: { material: 'scrap' }, qty: 1, startPrice: 10, buyoutPrice: 25, durationSec: DUR,
+    })).rejects.toMatchObject({ code: 'PRICE_OUT_OF_RANGE' });
   });
 
   it('B buyout bypasses the min-increment floor even when a prior bid pushed it above buyoutPrice', async () => {

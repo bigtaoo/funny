@@ -17,21 +17,32 @@ import type { AuctionService } from './auctionService';
 
 const log = createLogger('auctionsvc');
 
-function readJson(req: IncomingMessage): Promise<Record<string, unknown>> {
+export function readJson(req: IncomingMessage): Promise<Record<string, unknown>> {
   return new Promise((resolve, reject) => {
     let body = '';
+    let rejected = false;
     req.on('data', (c) => {
+      if (rejected) return;
       body += c;
-      if (body.length > 1 << 20) reject(new Error('payload too large'));
+      if (body.length > 1 << 20) {
+        rejected = true;
+        // Stop accumulating and drop the connection — otherwise the "cap" is cosmetic and a
+        // caller can force unbounded memory growth by just continuing to send data.
+        req.destroy();
+        reject(new Error('payload too large'));
+      }
     });
     req.on('end', () => {
+      if (rejected) return;
       try {
         resolve(body ? (JSON.parse(body) as Record<string, unknown>) : {});
       } catch (e) {
         reject(e as Error);
       }
     });
-    req.on('error', reject);
+    req.on('error', (e) => {
+      if (!rejected) reject(e);
+    });
   });
 }
 

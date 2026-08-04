@@ -434,10 +434,14 @@ export function startHttpApi(
           }));
         }
 
-        // ── Occupy / abandon / relocate / watchtower (S8-1, implemented, requires coordinates) ──
+        // ── Abandon / relocate / watchtower (S8-1, implemented, requires coordinates) ──
+        // NOTE: `occupyTile` (instant, no-combat) is intentionally NOT exposed here — it's
+        // internal/test-only (ADR-037 §5.4) and must only be reachable via svc.occupyTile()
+        // from e2e test setup, never over the public player-JWT HTTP surface. The real
+        // client-facing occupy flow is POST /world/march with kind:'occupy'.
         if (
           method === 'POST' &&
-          (path === '/world/occupy' || path === '/world/abandon' ||
+          (path === '/world/abandon' ||
             path === '/world/relocate' || path === '/world/watchtower')
         ) {
           const body = await readJson(req);
@@ -447,9 +451,6 @@ export function startHttpApi(
           if (!worldId) return sendErr(res, ErrorCode.BAD_REQUEST, 'worldId required');
           if (!Number.isFinite(x) || !Number.isFinite(y)) {
             return sendErr(res, ErrorCode.BAD_REQUEST, 'x/y required');
-          }
-          if (path === '/world/occupy') {
-            return send(res, 200, ok(await svc.occupyTile(worldId, accountId, x, y)));
           }
           if (path === '/world/relocate') {
             return send(res, 200, ok(await svc.relocateBase(worldId, accountId, x, y, clientPlatform)));

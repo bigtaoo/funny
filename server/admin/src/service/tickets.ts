@@ -32,7 +32,7 @@ export interface TicketsHandlers {
   approveTicket(actor: Actor, id: string): Promise<CompTicketView>;
   rejectTicket(actor: Actor, id: string, note: string): Promise<CompTicketView>;
   cancelTicket(actor: Actor, id: string): Promise<CompTicketView>;
-  preview(input: { scope: string; target: CompTarget }): Promise<{ recipientCount: number; available: boolean }>;
+  preview(actor: Actor, input: { scope: string; target: CompTarget }): Promise<{ recipientCount: number; available: boolean }>;
   retryTicket(actor: Actor, id: string): Promise<CompTicketView>;
 }
 
@@ -189,10 +189,15 @@ export function TicketsMixin<TBase extends AdminBaseCtor>(Base: TBase): TBase & 
     }
 
     /** Dry-run preview of how many players a global compensation would reach (OPS_DESIGN §3.3 safety valve). */
-    async preview(input: { scope: string; target: CompTarget }): Promise<{ recipientCount: number; available: boolean }> {
+    async preview(actor: Actor, input: { scope: string; target: CompTarget }): Promise<{ recipientCount: number; available: boolean }> {
       if (input.scope !== 'single' && input.scope !== 'global') {
         throw new AdminError(400, 'bad_request', 'scope must be single|global');
       }
+      // Defense-in-depth (2026-08-04 fix): preview is a dry-run of initiateTicket for the same scope and
+      // must be gated by the same capability — without this, ANY authenticated admin, regardless of role,
+      // could probe how many players a global compensation broadcast would reach with no capability check
+      // at all (the httpApi.ts route never called requireCap either).
+      this.requireCap(actor, requiredInitiateCapability(input.scope));
       const target = validateTarget(input.scope, input.target);
       if (input.scope === 'single') return { recipientCount: 1, available: true };
       const r = await this.mail.preview({ scope: 'global', target });

@@ -22,6 +22,7 @@
 - WS 握手 `?token=<jwt>`（复用 meta 的 JWT，解出 accountId 绑定连接）。
 - 维护 `account → socket` 映射（同账号新连顶替旧连，沿用现有顶替逻辑）。被顶替的旧连以关闭码 **`4409 'replaced'`** 断开；**客户端收到 4409 不得重连**（`NetClient` 已处理），否则两个会话互相顶替会陷入无限重连 ping-pong 战（常见于同账号开了两个标签页）。
   - **跨实例顶号（2026-07-18）**：`account → socket` 映射是**单进程内存态**，gateway 横扩到多实例后，旧连接可能落在另一个实例上，本地的 `prev` 检查看不到它。修法：每个实例有一个启动时生成的 `instanceId`（`randomUUID()`）；`onConnection()` 除了本地顶替，还会通过 Redis 广播 `{kick:{accountId, originInstanceId}}` 到 `GW_PUSH_REDIS_CHANNEL`（复用 S8-4b 已有的 pub/sub 通道，不新增基建）；**所有**实例（含自己）都订阅同一通道，收到后各自检查本地 `conns` map——`originInstanceId` 等于自己的直接忽略（避免踢掉刚接受的新连接），否则若本地持有该账号的连接，同样以 `4409 'replaced'` 关闭。无 Redis 配置（`NW_GW_REDIS_URL` 为空）时该广播是无操作（只退化为单实例内的本地顶替，行为与之前一致）。实现：`Gateway.ts` 的 `instanceId`/`kickPublisher`/`routeKick()`，`redis.ts` 的 `publishKick()`。
+    - **同时重连的自杀竞态（2026-08-04 修复）**：两个连接几乎同时落在**不同**实例上时（例如客户端重连逻辑在 LB 后面短时间打开了两条 socket），双方都会各自本地建连、各自广播 kick——上面的旧逻辑收到对方广播后无条件驱逐本地连接，导致真正"赢得竞态"的那条连接反而被自己触发的 kick 杀死。修法：每条连接携带一个 `connSeq`（`Date.now()` 拼接进程内递增计数器，见 `Gateway.nextConnSeq()`），随 kick 一起广播；`routeKick()` 收到后只在**对方 connSeq 严格更新**时才驱逐本地连接——本地连接若更新（即本地已经赢了竞态），直接忽略这次 kick。`connSeq` 也随 kick envelope 走 Redis（`redis.ts` 的 `BroadcastEnvelope.kick.connSeq`）。
 - 把客户端控制面消息转发 matchsvc；把 matchsvc 回调事件（`/gw/push`）推回对应 socket。
 - 入队前向 meta 取 ELO（`GET /internal/elo`，M17），带进 `/mm/enqueue`——让 matchsvc 保持 DB-free。
 - 在线状态 / （将来）好友 / 通知 / 聊天的承载连接。

@@ -153,23 +153,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/world/occupy": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** @description ⚠ Internal/test-only since ADR-037 (§5.4): instant, no-combat occupation. The product client does not call this — occupying a tile is now `POST /world/march` with `kind:'occupy'`, which fights the target's system garrison and settles through a delayed occupation hold. Kept only for e2e test setup convenience. */
-        post: operations["occupyTile"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/world/abandon": {
         parameters: {
             query?: never;
@@ -1495,39 +1478,6 @@ export interface operations {
             };
             400: components["responses"]["ErrorResp"];
             401: components["responses"]["ErrorResp"];
-            500: components["responses"]["ErrorResp"];
-        };
-    };
-    occupyTile: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": {
-                    worldId: string;
-                    x: number;
-                    y: number;
-                };
-            };
-        };
-        responses: {
-            /** @description Occupied */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["OkResponse"];
-                };
-            };
-            400: components["responses"]["ErrorResp"];
-            401: components["responses"]["ErrorResp"];
-            403: components["responses"]["ErrorResp"];
-            409: components["responses"]["ErrorResp"];
             500: components["responses"]["ErrorResp"];
         };
     };

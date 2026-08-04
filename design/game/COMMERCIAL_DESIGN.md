@@ -240,6 +240,7 @@ POST /internal/ads/credit
 - **历史 bug（2026-07-26 修）：`orderDelivered`（发货回调，含 gacha 重复保底退款）曾未检查幂等 `updateOne` 的匹配结果**——`{_id, status:'charged'}` 守卫的状态翻转写入之后无条件执行退款 `credit()`。并发重复的发货回调（如 meta 超时重试同一订单的 delivered 回调）都能读到 `status:'charged'`、都执行退款，导致**保底金币重复入账**。已改为检查 `matchedCount`，只有真正翻转状态的那次调用才退款。
 - **历史 bug（2026-07-26 修）：`paddleRefund`（Paddle 退款事件扣减 `totalRechargeCents`）曾是 check-then-act**——读 `doc.refundedAt` 判断后分两次非原子写（钱包扣减 + `recharges.updateOne` 标记 `refundedAt`）。Paddle 保证 webhook 至少投递一次，并发重复的退款事件都能通过预检查、都执行扣减，`totalRechargeCents`（首充/进度门槛统计）被多扣。已改为先原子 `updateOne({_id, refundedAt:{$exists:false}})` 抢占标记位，只有抢到的那次才继续扣减钱包。
 - **三处修复均补了 `server/commercial/test/service-idempotency.e2e.test.ts` 里的并发回归测试**（`Promise.all` 打并发请求，断言业务效果只发生一次），对照当前唯一遵守本节写对的 `gachaDraw` 主抽奖路径 / `shopCharge` / `spend` 作为参照实现。
+- **历史 bug（2026-08-04 修）：先占槽这套幂等模式只查过"这个 orderId 有没有订单"，从未查过"这个订单是不是本账号的"**——`orderId` 是调用方（meta）透传的裸字符串，跟调用者没有任何结构性绑定；本节其余不变量假设它对每次真实请求都是新铸的 UUID，实践中目前也确实如此，但没有任何代码强制这一点。一旦某个未来调用点没铸新 id 就复用了旧值，撞上另一个账号先前用过的同一个 orderId，`existing`/E11000 短路分支会把**那个账号**的余额/发放结果原样读出返回给当前调用者——本质与 07-29 修过的 `recharge.ts` receiptId 跨账号回放是同一类漏洞，只是这次出现在幂等槽这套通用模式本身。已给所有走"先占槽"模式的入账/扣款/订阅路径补上 `existing.accountId !== callerAccountId → BAD_REQUEST` 校验（`existing` 分支和 E11000 分支各一次）：`shopCharge`/`spend`/`grant`（`shop.ts`）、`subscriptionCardBuy`（`base.ts`，两处：初次 `existing` 分支 + E11000 分支）、`starterBuy`（`starter.ts`）。回归见 `service-idempotency.e2e.test.ts` 六条新增用例（`shopCharge`/`spend`/`grant`/`monthlyCardBuy`/`starterBuy` 各一条 owner-vs-thief 顺序场景 + `shopCharge` 一条并发场景）。
 
 ### 6.6 金币异常离线审计（反 RMT，2026-07-26）
 
@@ -435,6 +436,16 @@ ShopScene → buyMonthlyCard()/buyYearCard() → createAppCore.doBuySubscription
 - **同实例竞态**：`subscriptionCardBuy` 的单卡门控在 webhook 时仍会兜底（极端情况——两个标签页同时下单——checkout
   时的预检查没拦住），此时钱已经真扣了但卡拒发，走 `recordPaddleEvent` 留痕供客服/退款排查（同 §10.5 的落地方式），
   不静默丢弃。
+  - **双开门控本身曾是 TOCTOU、可双重延期+双发即赠币（2026-08-04 修复）**：上面这条"兜底"描述的前提原本不成立——
+    `finishSubscriptionCardBuy` 原先是"先读一次 `wallet.subscription.expiry` 判断是否已生效，再无条件调
+    `applySubscription`"，两次分开的读+写。两个并发请求（不同 `orderId`，如双击/客户端重试，或本条描述的两个
+    webhook 交付）能都读到"未生效"、都通过检查，然后都跑 `applySubscription`——不是"钱扣了卡拒发"，而是**卡被
+    延了两次、`immediateCoins` 也发了两次**，同一笔真实购买被双倍兑现。修法：新增 `applySubscriptionIfInactive`，
+    把"未生效"判断折进 `findOneAndUpdate` 的查询过滤器里，跟延期+发币合并成一次原子操作——两个并发调用只有一个
+    能匹配过滤器（输家看到的是赢家已经生效的 `subscription.expiry`，天然不匹配），未命中即返回 `null`，调用方据此
+    返回 `ALREADY_ACTIVE`（回退刚占的订单槽），不再有任何一条路径能双重延期/双发币。`monthlyCardBuy`/`yearCardBuy`
+    共用同一份 `finishSubscriptionCardBuy`，两者都受益。回归见 `commercial/test/service.e2e.test.ts`「monthly
+    card: two concurrent buys with distinct orderIds (double-tap) credit only once, not twice」。
 
 ### 10.8 月卡/年卡/新手包关闭原生+隐藏渠道的"直接授权"缺口（2026-07-27 审计）
 

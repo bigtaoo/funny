@@ -55,6 +55,7 @@ describe.skipIf(!mongo)('socialsvc X-Chat-Region header e2e (O-CM5)', () => {
     await m.collections.conversations.deleteMany({});
     await m.collections.friendEdges.deleteMany({});
     await m.collections.friendRequests.deleteMany({});
+    await m.collections.friendCounts.deleteMany({});
 
     const meta = new FakeMeta().add('leader', 'P-LEA', 'Leader').add('alice', 'P-ALI', 'Alice').add('bob', 'P-BOB', 'Bob');
     const gateway = new FakeGateway();

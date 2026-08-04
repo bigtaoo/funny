@@ -1,7 +1,7 @@
 ﻿// worldsvc public REST end-to-end (S8-0/S8-1): real node:http server + global fetch calls (curl equivalent).
 //   • /health requires no authentication; missing token → 401;
 //   • GET /world/map, /world/me, /world/tile/{id} (procedural + player state);
-//   • POST /world/join, /world/occupy (real database writes);
+//   • POST /world/join (real database writes; /world/occupy is intentionally NOT a public route — see below);
 //   • unimplemented write endpoints → 501; unknown routes → 404.
 // Service requires real Mongo (dedicated database); entire suite skipped if Mongo is unreachable.
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -170,15 +170,20 @@ describe.skipIf(!mongo)('worldsvc httpApi e2e', () => {
     expect((await tile.json()).data).toMatchObject({ type: 'base', mine: true });
   });
 
-  it('POST /world/occupy → territory mine', async () => {
+  it('occupyTile (internal/test-only, ADR-037 — not a public HTTP route) → territory mine', async () => {
+    // occupyTile is deliberately NOT reachable over the public HTTP surface (see httpApi.ts) — it's an
+    // instant, no-combat capture kept only for e2e test setup convenience, called directly on the service
+    // like every other e2e test in this repo. The real client-facing occupy flow is POST /world/march
+    // with kind:'occupy' (covered by the next test below).
     const res = findResource();
+    const view = await svcRef.occupyTile(W, 'acct-1', res.x, res.y);
+    expect(view).toMatchObject({ type: 'territory', mine: true });
     const r = await fetch(`${base}/world/occupy`, {
       method: 'POST',
       headers: { ...auth, 'content-type': 'application/json' },
       body: JSON.stringify({ worldId: W, x: res.x, y: res.y }),
     });
-    expect(r.status).toBe(200);
-    expect((await r.json()).data).toMatchObject({ type: 'territory', mine: true });
+    expect(r.status).toBe(404); // confirms the route is genuinely gone from the public HTTP surface
   });
 
   it('POST /world/join missing worldId → 400', async () => {
@@ -194,19 +199,18 @@ describe.skipIf(!mongo)('worldsvc httpApi e2e', () => {
     // acct-1 has already auto-settled (baseX,baseY); sending an occupy march to a neighbouring free tile.
     const free = findFreeNear(baseX, baseY, baseX, baseY);
     // ADR-039 territory connectivity: findFreeNear's search order can land on a tile only diagonally touching
-    // the base footprint (not 4-directionally adjacent) — border it first via /world/occupy (test-only instant
-    // occupy, ADR-037) so the march clears the new gate. Try all 4 neighbors; skip obstacle/center/inside-footprint.
+    // the base footprint (not 4-directionally adjacent) — border it first via occupyTile (internal/test-only
+    // instant occupy, ADR-037, called directly on the service — see the test above) so the march clears the
+    // new gate. Try all 4 neighbors; skip obstacle/center/inside-footprint.
     for (const [dx, dy] of [[-1, 0], [1, 0], [0, -1], [0, 1]] as const) {
       const nx = free.x + dx, ny = free.y + dy;
       if (Math.abs(nx - baseX) <= 1 && Math.abs(ny - baseY) <= 1) continue; // inside the 3×3 base footprint
       const t = proceduralTile(W, nx, ny).type;
       if (t !== 'resource' && t !== 'neutral') continue;
-      const cr = await fetch(`${base}/world/occupy`, {
-        method: 'POST',
-        headers: { ...auth, 'content-type': 'application/json' },
-        body: JSON.stringify({ worldId: W, x: nx, y: ny }),
-      });
-      if (cr.status === 200) break;
+      try {
+        await svcRef.occupyTile(W, 'acct-1', nx, ny);
+        break;
+      } catch { /* try next neighbor */ }
     }
     const r = await fetch(`${base}/world/march`, {
       method: 'POST',

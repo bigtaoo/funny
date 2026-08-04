@@ -86,6 +86,32 @@ describe.skipIf(!mongo)('socialsvc FamilyService e2e', () => {
     expect(detail!.members.find((x) => x.accountId === 'm1')?.role).toBe('member');
   });
 
+  it('regression: getFamily strips accountId for a non-member caller, keeps it for a member/internal caller', async () => {
+    // Root cause: getFamily took no caller/membership parameter and returned the full member list
+    // (including raw accountId, not just publicId) for ANY family id — GET /social/family/:id is a public
+    // route reachable for any family id (discoverable via browse/search), so a non-member could look up
+    // any family's roster and get every member's real internal accountId, unlike every other
+    // externally-facing view in this service (which deliberately exposes only publicId/displayName).
+    const fam = await svc.createFamily('leader', 'Private Club', 'PRIV');
+    await svc.joinFamily('m1', fam.familyId);
+
+    // Non-member caller ('outsider') → accountId stripped from every member.
+    const asOutsider = await svc.getFamily(fam.familyId, 'outsider');
+    expect(asOutsider!.members).toHaveLength(2);
+    for (const mem of asOutsider!.members) {
+      expect(mem.accountId).toBeUndefined();
+      expect(mem.role).toBeDefined(); // other fields still present
+    }
+
+    // Member caller ('m1') → full view, accountId present.
+    const asMember = await svc.getFamily(fam.familyId, 'm1');
+    expect(asMember!.members.map((mm) => mm.accountId).sort()).toEqual(['leader', 'm1']);
+
+    // No callerId (trusted internal caller, e.g. /internal/push) → full view, unchanged behavior.
+    const asInternal = await svc.getFamily(fam.familyId);
+    expect(asInternal!.members.map((mm) => mm.accountId).sort()).toEqual(['leader', 'm1']);
+  });
+
   it('joinFamily: rejects unknown family and double-membership', async () => {
     await expectErr(svc.joinFamily('m1', 'fam:NOPE'), 'NOT_FOUND');
     const fam = await svc.createFamily('leader', 'Full House', 'FULL');
@@ -128,6 +154,64 @@ describe.skipIf(!mongo)('socialsvc FamilyService e2e', () => {
     meta.add('leader2', 'P-LEAD2');
     for (let i = 1; i < FAMILY_CAP; i++) await svc.joinFamily(`filler${i}`, full.familyId);
     await expectErr(svc.requestJoin('overflow', full.familyId), 'FAMILY_FULL');
+  });
+
+  it('regression: joinFamily loses a race against itself (same account, two families) without leaving memberCount drift', async () => {
+    // Root cause: familyMembers._id is the accountId itself (one doc per account, globally), but
+    // joinFamily's "already in a family" check was a plain findOne before insertOne — not atomic with the
+    // memberCount $inc. Two concurrent joinFamily calls for the SAME account (e.g. two of their pending
+    // join requests, to different families, both accepted around the same time) could both pass the
+    // check, both bump memberCount on their respective families, and then only one insertOne could ever
+    // win (accountId is the doc's _id) — the loser used to surface as an uncaught E11000 (500), leaving
+    // its family's memberCount permanently incremented above the real roster size.
+    const famA = await svc.createFamily('leader', 'Race A', 'RACA');
+    const famB = await svc.createFamily('leader2', 'Race B', 'RACB');
+    meta.add('leader2', 'P-LEAD2');
+
+    const results = await Promise.allSettled([
+      svc.joinFamily('m1', famA.familyId),
+      svc.joinFamily('m1', famB.familyId),
+    ]);
+    const fulfilled = results.filter((r) => r.status === 'fulfilled');
+    const rejected = results.filter((r): r is PromiseRejectedResult => r.status === 'rejected');
+    expect(fulfilled).toHaveLength(1);
+    expect(rejected).toHaveLength(1);
+    expect(rejected[0].reason).toMatchObject({ code: 'ALREADY_IN_FAMILY' });
+
+    // Whichever family lost must have its memberCount rolled back to just the leader (1), not left at 2
+    // with no corresponding member.
+    const [detailA, detailB] = await Promise.all([svc.getFamily(famA.familyId), svc.getFamily(famB.familyId)]);
+    const winnerIsA = detailA!.members.some((mm) => mm.accountId === 'm1');
+    const winner = winnerIsA ? detailA! : detailB!;
+    const loser = winnerIsA ? detailB! : detailA!;
+    expect(winner.memberCount).toBe(2);
+    expect(loser.memberCount).toBe(1);
+    expect(loser.members.some((mm) => mm.accountId === 'm1')).toBe(false);
+  });
+
+  it('regression: requestJoin rejects a concurrent second pending request for the same account (unique index backstop)', async () => {
+    // Root cause: the "no existing pending request" check is a plain findOne before insertOne — not
+    // atomic — so two near-simultaneous requestJoin calls for the same account (to the same or different
+    // families) could both pass it and both create a pending request. If both were later accepted, this
+    // fed directly into the joinFamily race above. The partial unique index on {accountId} (status:'pending')
+    // is the atomic backstop.
+    await m.ensureIndexes();
+    const famA = await svc.createFamily('leader', 'ReqRace A', 'RQRA');
+    const famB = await svc.createFamily('leader2', 'ReqRace B', 'RQRB');
+    meta.add('leader2', 'P-LEAD2');
+
+    const results = await Promise.allSettled([
+      svc.requestJoin('m1', famA.familyId),
+      svc.requestJoin('m1', famB.familyId),
+    ]);
+    const fulfilled = results.filter((r) => r.status === 'fulfilled');
+    const rejected = results.filter((r): r is PromiseRejectedResult => r.status === 'rejected');
+    expect(fulfilled).toHaveLength(1);
+    expect(rejected).toHaveLength(1);
+    expect(rejected[0].reason).toMatchObject({ code: 'ALREADY_REQUESTED' });
+
+    const pending = await m.collections.familyJoinRequests.find({ accountId: 'm1', status: 'pending' }).toArray();
+    expect(pending).toHaveLength(1);
   });
 
   it('listJoinRequests: leader/elder only, resolves applicant profile', async () => {

@@ -121,6 +121,9 @@ matchsvc 配对/分配后给每玩家签一张，经 gateway 推给客户端。g
 
 **验收**：gameserver bundle 无 Mongo client；断网 Mongo 仍能跑完整局中继（上报排队等 meta 恢复）。
 
+- **对局前（WAITING）重连误销毁房间（2026-08-04 修复）**：`Room.takeover()` 原本无论房间处于哪个阶段，都只关闭旧 socket、故意不重绑 `slot.conn`——这个"故意"是为 **IN_MATCH** 阶段设计的（等客户端后续的 `conn_resume` 带着 `lastFrame` 来补帧，重绑早了可能让节拍器先跑到新连接上）。但 **WAITING**（尚未开局，对手还没连上）阶段根本没有 `conn_resume` 这回事——client 不会在开局前发它。于是旧 socket 的 close 事件一旦晚到，`onDisconnect()` 看到的还是"空槽"，直接 `removeSlot`→`destroy()`，把刚顶替上来、原本活着的新连接一并做没了，房间从 `RoomManager.rooms` 消失，重连方拿到一条永远等不到 `match_start` 的孤儿 socket。修法：`takeover()` 现在按阶段分支——`phase !== IN_MATCH` 时立即把 `slot.conn` 重绑到新连接（不必等谁来 resume）。回归见 `roomManager.test.ts`「WAITING-phase reconnect ... does not destroy the room」。
+- **同账号占两个座位（自我对局）防御性拦截（2026-08-04 修复）**：`Room.hasAccount()` 定义了但从未被调用——理论上 matchsvc 配对 / gateway 好友切磋邀请（自邀直接拒 `not_found`）都不会撮合自己打自己，但 ticket 握手这一层此前完全没有兜底。`RoomManager.join()` 现在在"新座位"分支（非同侧重连/顶号）额外检查 `room.hasAccount(conn.accountId)`——同一账号已经占了本房间任一侧时直接拒绝（`join()` 返回 `false`，调用方关闭连接），不再放行。回归见 `roomManager.test.ts`「the same account cannot occupy both sides of a room」。
+
 ---
 
 ## 5. game→meta 局末上报（M19，S1-M3）

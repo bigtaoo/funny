@@ -316,18 +316,36 @@ export function CommandMixin<TBase extends MarchServiceBaseCtor>(Base: TBase): T
       // The `pw.troops < troops` check above is only a fast-fail on a possibly-stale read; the real guard is
       // this atomic `troops: {$gte: troops}` filter — without it, two concurrent dispatches can both pass the
       // early check and both $inc, driving troops negative (over-deploying more troops than the account has).
+      // `resources` was computed above from the `pw` snapshot read at the top of this function, and several
+      // awaits have run since (computeMarchPath's Mongo scans, the idle-redispatch claim). Both branches below
+      // guard the write on `rev: pw.rev` (2026-08-04 fix, closing the same stale-read-then-blind-`$set` lost-update
+      // class that combatShared.ts's refundTroops and combatSiege/helpers.ts's transferLoot were already guarded
+      // against): without it, a concurrent settlement for this same account (e.g. this march's own eventual
+      // return-leg refund, or another siege/occupation landing at the same tick) that bumped rev in between would
+      // have its already-applied resources delta silently overwritten by this call's stale-computed value.
       if (hasCardArmy || idleRedispatch) {
-        await cols.playerWorld.updateOne({ _id: pw._id }, { $set: { resources, lastTickAt: t }, $inc: { rev: 1 } });
+        const settled = await cols.playerWorld.updateOne(
+          { _id: pw._id, rev: pw.rev },
+          { $set: { resources, lastTickAt: t }, $inc: { rev: 1 } },
+        );
+        if (settled.matchedCount === 0) {
+          await cols.marches.deleteOne({ _id: mid });
+          throw new SlgError('REV_CONFLICT', 'Concurrent update, please retry');
+        }
       } else {
         const deducted = await cols.playerWorld.updateOne(
-          { _id: pw._id, troops: { $gte: troops } },
+          { _id: pw._id, troops: { $gte: troops }, rev: pw.rev },
           { $set: { resources, lastTickAt: t }, $inc: { troops: -troops, rev: 1 } },
         );
         if (deducted.matchedCount === 0) {
           // Lost the race the fast-fail check above couldn't catch: roll back the march just inserted so the
-          // account isn't left with a phantom in-flight march that drained no pool troops.
+          // account isn't left with a phantom in-flight march that drained no pool troops. Disambiguate the
+          // two possible causes (the combined filter can't tell them apart) with one fresh read: genuinely
+          // insufficient troops vs. a stale rev (some other concurrent mutation landed in between).
           await cols.marches.deleteOne({ _id: mid });
-          throw new SlgError('NO_TROOPS', 'Insufficient troops');
+          const fresh = await cols.playerWorld.findOne({ _id: pw._id });
+          if (fresh && fresh.troops < troops) throw new SlgError('NO_TROOPS', 'Insufficient troops');
+          throw new SlgError('REV_CONFLICT', 'Concurrent update, please retry');
         }
       }
       const view = this.core.marchView(doc);

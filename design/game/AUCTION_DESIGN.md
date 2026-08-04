@@ -150,10 +150,11 @@
 ### D. 反 RMT 异常审计 ✅ 已实现（2026-07-02 复核，admin G7 已接）
 
 - **落地形态**：**pull 式离线扫描**（非实时事件推送）——最终采用「worldsvc 聚合 + admin 拉取 + ops 展示」，比原「成交即埋点」方案更省埋点面、无热路径开销。
-  - **worldsvc**：`auctionService.ts` `scanAnomalies(worldId, windowSec)`（只读，不改状态），底层 `detectAuctionAnomalies`（`@nw/shared`）在 `AUDIT_WINDOW_SEC` 窗口内聚合可疑 seller→buyer 对。
+  - **worldsvc**：`auctionService.ts` `scanAnomalies(worldId, windowSec)`（只读，不改状态），底层 `detectAuctionAnomalies`（`@nw/shared`）在 `AUDIT_WINDOW_SEC` 窗口内聚合可疑 seller↔buyer 对。
   - **admin**：`clients.ts` `listAuctionAnomalies()` 拉 worldsvc 结果 → `service.ts` `slgScanAnomalies()`（capability `slg.audit.view`）→ `httpApi.ts` 暴露给 ops 后台；worldsvc 不可达时优雅返回空。测试 `server/admin/test/season-audit.e2e.test.ts`。
   - **ops 后台**：审计页展示异常队列，人工复核（对敲/定向异价/大额单向）。
-- **命中规则**：同一对 seller↔buyer 短期高频成交（对敲洗钱）；定向挂单 + 远离参考价（RMT 交付通道）；单账号短期大额单向流出/流入。
+  - **⚠️ 历史 bug（2026-08-04 修复）：换向对敲能绕过聚合，从未真正命中规则**——`detectAuctionAnomalies` 原先按**有向** `${sellerId}→${buyerId}` 分桶聚合成交记录，"同一对 seller↔buyer 短期高频成交"这条规则的实现却隐含假设了双向都该算同一对。两个串通账号只要**交替互换买卖方向**（A 卖给 B、下一单 B 卖给 A、再下一单 A 卖给 B……）就能让每个方向各自的成交次数都低于 `minTrades` 阈值，天然规避检测——这恰恰是"对敲洗钱"最基础的规避手法，而这条规则从一开始就没能真正拦住它。修复：聚合键从有向 `${sellerId}→${buyerId}` 改为**排序后的无向对** `[sellerId,buyerId].sort()` 拼接（`${lo}:${hi}`），双向成交无论谁扮演卖家都落进同一个桶。回归见 `server/shared/test/auction.test.ts`——交替换向的成交序列必须被正确聚合触发 `repeated`/`high_value`，此前（有向分桶）会被错误拆成两个各自不达标的独立桶。
+- **命中规则**：同一对 seller↔buyer 短期高频成交（对敲洗钱，无向聚合）；定向挂单 + 远离参考价（RMT 交付通道）；单账号短期大额单向流出/流入。
 - **失败补发工单**（§2.3）：扣款成功但发放失败的 `sold` 单凭 orderId 进工单队列（复用 S7 补偿基建）。
 
 ### E. 绑定材料禁挂 ✅ 机制已实现（2026-06-21，清单暂空）
@@ -174,6 +175,8 @@
 ### G. 价格护栏 / 反通胀 ✅ 拍板：动态滑窗 · ✅ 已实现（2026-06-21，2026-07-06 起改按大区全局维护）
 
 > 实现：每品类（`material:{mat}`）滑窗存近 `AUCTION_PRICE_WINDOW_N=20` 笔成交单价于 `auctionPrices` 集合（`$push $slice`）；`refPrice` = 样本 ≥ `AUCTION_PRICE_WINDOW_MIN_SAMPLES=5` 时取**中位数**（抗极端值），否则回退 `AUCTION_STATIC_REF_PRICE`（scrap=10/lead=30/binding=80，DRAFT），都无则放行（冷启动不误杀）。挂单/出价单价须落 `[refPrice×0.5, refPrice×2.0]`（`AUCTION_PRICE_FLOOR_RATIO/CEIL_RATIO`），越界抛 `PRICE_OUT_OF_RANGE`。滑窗**按大区全局维护**（同一大区所有玩家共享同一份 `refPrice`，不再按 worldId/shard 拆分；旧实现按 worldId 隔离 + 随 `clearWorldOnReset` 清空的做法随 F 一并作废）。
+
+> **历史 bug（2026-08-04 修复）：竞拍单的 `buyoutPrice`（一口价买断）挂单时从未过护栏**——`createAuction` 只校验了 `unitPrice`/`startPrice` 落在 `[floor,ceil]` 区间，`buyoutPrice` 完全未经 `checkPriceGuard`。但 `placeBid` 对**每一笔出价金额**（含买断价）都无条件跑同一套护栏校验——一旦卖家设的 `buyoutPrice` 超出挂单时刻的护栏上限，这个买断价就永久触发不了（任何人出价到该价位都会撞 `PRICE_OUT_OF_RANGE`），卖家的一口价功能对自己静默失效，直到有人正常竞拍抬价追上（若能追上的话）。修复：`createAuction` 的 material/equipment 两个分支都在校验 `unitPrice` 之后，对非空 `buyoutPrice` 追加同一品类的 `checkPriceGuard` 调用，与挂单价用同一套区间/同一时刻的护栏值。回归见 `server/auctionsvc/test/auction.e2e.test.ts`。
 
 - **现状**：`price > 0` 之外无任何区间限制，可挂任意天价/地板价 → 洗钱（高价定向）/倾销温床。
 - **拍板（2026-06-21）：用动态滑窗护栏**（随市场自适应，而非运营手调静态值）。
@@ -533,6 +536,16 @@ designatedBuyerId?, expireAt(ms), status, buyerId?, rev
 - **改动**：把 `cancelAuction` 写入时的过滤条件从 `{_id, status:'open'}` 加上 `rev: doc.rev`（乐观锁守卫，和 `placeBid`/`settleAuctionWin` 已经在用的模式一致）。任何并发写入（出价 / 购买 / 另一次取消）都会先把 `rev` 推进，卖家的取消写入因 `rev` 不匹配而失败、抛 `AUCTION_CLOSED`，卖家需重新读取（此时会读到带 `topBid` 的最新文档，命中读取时的护栏正确拒绝）。无论出价写入和取消写入谁先谁后，两者现在互斥，不再有中间态让竞拍者的托管金币悬空。
 - **测试**：`server/auctionsvc/test/auction.e2e.test.ts`「cancel: a bid landing between read and write must not silently succeed and orphan the bidder's escrow」——拦截 `mongo.collections.auctions.findOne` 在返回读取时快照的同时于底层并发写入一笔出价（模拟竞态窗口），断言修复前会静默"成交"取消并留下悬空 `topBid`，修复后必须 `AUCTION_CLOSED` 且挂单保持 `open`、出价不受影响。
 - **验收**：`auctionsvc` `tsc --noEmit` 全绿；`vitest run` 71/71（54 in `auction.e2e.test.ts`）。纯服务端逻辑改动，无可见渲染变化，未做浏览器截图验证。
+
+### 修复：全量 code review 发现的 3 处问题（2026-08-04）
+
+用户要求对 `server/auctionsvc` 做一次全量 code review，发现并修复以下 3 处：
+
+- **`readJson` 大小上限形同虚设**：`httpApi.ts` 的 1MB 请求体上限只 `reject()` 了 promise，从没停止底层 socket——超限后 `'data'` 事件继续触发、`body` 字符串继续无界增长，任何已登录玩家往 `/auction/create`/`/auction/:id/bid` 甩一个持续流式的超大请求体就能把 `auctionsvc` 进程内存吃爆。`worldsvc/src/httpApi.ts`（本文件注释自称"migrated from"的源文件）早已带上这个修复（`rejected` 标志位 + `req.destroy()`），auctionsvc 迁移时漏带。现已原样补齐同款修复。
+- **`AUCTION_MAX_LISTINGS`（同时 open 挂单 ≤20）不是原子校验**：`createAuction` 里四条 itemType 分支（material/equipment/card/skin）的开局上限检查都是「先 `countDocuments` 读一次、再在函数末尾 `insertOne`」，中间没有任何原子性——同一账号并发发出多个 `createAuction` 请求时，都能读到同一个未过上限的旧计数，全部通过检查并插入，导致 open 挂单数超过 20。这正是 07-26 那条 `cancelAuction` 竞态修复过的同一类 TOCTOU 问题，只是当时没有覆盖到挂单上限本身。改动：在 `insertOne` 之后追加一次权威 recount（`countDocuments({sellerId,status:'open'})`），一旦发现超过上限就删除刚插入的文档并把已托管的材料/装备/卡牌/皮肤原样退回卖家（新增 `returnEscrowedOnCapReject` 直接退回，不走邮件——同一挂单创建流程内的失败回滚，不是"已成交/已过期"的终态转移）、抛 `AUCTION_LIMIT_REACHED`。为此给 `AuctionMetaClient` 补上 `grantMaterial`（对称于已有的 `deductMaterial`，照抄 `worldsvc/src/metaClient.ts` 已有的同名方法）。极端并发下这个 recount 可能让不止一个请求被误判超限（每个都看到"加上自己之后超了"），但绝不会让任何账号真正突破 20 上限，误判的请求重试即可成功。
+- **拍卖模式（`saleMode='auction'`）浏览排序用的是过期的起拍价**：`listAuctions` 的 `.sort({price:1})` 排的是数据库里存的原始 `price` 字段，但该字段在创建后只等于 `startPrice`，`placeBid` 的出价原子写从未更新它（只写 `topBid`/`expireAt`/`rev`）——玩家客户端实际显示的「当前价」是 `docToView` 算出来的 `topBid.amount`（`AUCTION_DESIGN.md` §竞拍客户端集成里也写了客户端读的是这个字段）。一旦某条竞拍单被加价推高，市场列表「按价格排序」就会用它冻结在创建时刻的起拍价参与排序，跟玩家眼睛看到的当前价完全对不上。改动：`placeBid` 的原子 `$set` 里新增 `price: amount`，让存储字段跟出价实时同步；`db.ts` 里 `AuctionDoc.price` 字段注释同步更新。
+- **测试**：`server/auctionsvc/test/auction.e2e.test.ts` 新增两例——「listing cap: a concurrent insert landing between the pre-check read and this insert is still caught by the post-insert recheck」（拦截 `countDocuments` 首次调用时在其读取结果返回前于底层插入一条竞争文档，模拟并发竞态，断言修复前会让计数突破 20，修复后必须 `AUCTION_LIMIT_REACHED` 且材料退回、真实 open 计数不超过上限）；「B bid keeps the stored price field in sync with topBid so browse sort reflects the current bid」（两条起拍价分别 6/9 的竞拍单，把便宜的一条加价到 19 后断言存储的 `price` 字段与排序结果都反映 19 而非 6）。另补 `readJson` 导出为可测函数 + 新文件 `server/auctionsvc/test/readjson-size-guard.test.ts`（fake `EventEmitter` 模拟 `IncomingMessage`，断言超过 1MB 后 `destroy()` 恰好调一次、后续 `data`/`end` 不再重复触发或吞掉拒绝、正常小 body 不受影响）——临时改回旧版逐 patch 验证过会失败（`destroy` 断言 0 次调用），确认不是假阳性。
+- **验收**：`auctionsvc` `tsc --noEmit` 全绿；`vitest run` 90/90（58 in `auction.e2e.test.ts` + 3 in `readjson-size-guard.test.ts`，新增 5 例）。纯服务端逻辑改动，无可见渲染变化，未做浏览器截图验证。
 
 ---
 

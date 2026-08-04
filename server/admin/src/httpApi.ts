@@ -318,7 +318,7 @@ export function startHttpApi(opts: HttpApiOpts, svc: AdminService): Server {
           const b = await readJson(req);
           return send(res, 200, {
             ok: true,
-            ...(await svc.preview({ scope: str(b.scope), target: b.target as CompTarget })),
+            ...(await svc.preview(actor, { scope: str(b.scope), target: b.target as CompTarget })),
           });
         }
         const ticketAction = /^\/admin\/comp\/tickets\/([^/]+)\/(approve|reject|cancel|retry)$/.exec(path);

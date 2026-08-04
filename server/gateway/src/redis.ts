@@ -25,7 +25,7 @@ const log = createLogger('gateway:redis');
 /** Fan-out envelope received from Redis: either a push (message + recipient list) or a kick (evict stale connection). */
 type BroadcastEnvelope =
   | { recipients: string[]; msg: PushMsg; roomId?: string }
-  | { kick: { accountId: string; originInstanceId: string } };
+  | { kick: { accountId: string; originInstanceId: string; connSeq: number } };
 
 /** TTL for a presence key: must be refreshed at least once per HEARTBEAT_MS (Gateway.ts, 30s) sweep to
  *  survive; if an instance crashes without closing its sockets cleanly, its accounts' presence self-heals
@@ -44,8 +44,11 @@ export interface GatewaySubscriber {
    * via originInstanceId) to close its own connection for accountId, if it holds one. Best-effort;
    * swallows publish failures (evicting a same-account session on another instance is not worth
    * failing the new login over — worst case a stale connection lingers until its own heartbeat times out).
+   * connSeq (2026-08-04 fix): the originating connection's monotonic sequence (Gateway.nextConnSeq) — lets
+   * a receiving instance tell a genuinely stale connection from one that actually won a simultaneous-
+   * reconnect race, instead of evicting unconditionally (see Gateway.routeKick).
    */
-  publishKick(accountId: string, originInstanceId: string): Promise<void>;
+  publishKick(accountId: string, originInstanceId: string, connSeq: number): Promise<void>;
   /** Call on connect: marks accountId online, visible to every gateway instance's presenceOf. */
   markOnline(accountId: string): Promise<void>;
   /** Call on disconnect: immediate cleanup (TTL would also catch it, but no reason to wait). */
@@ -72,7 +75,7 @@ export interface GatewaySubscriber {
 export async function connectGatewaySubscriber(
   url: string | undefined,
   onBroadcast: (recipients: string[], msg: PushMsg, roomId?: string) => void,
-  onKick: (accountId: string, originInstanceId: string) => void,
+  onKick: (accountId: string, originInstanceId: string, connSeq: number) => void,
 ): Promise<GatewaySubscriber | null> {
   if (!url) return null;
   try {
@@ -89,7 +92,7 @@ export async function connectGatewaySubscriber(
     subClient.on('message', (_channel: string, payload: string) => {
       try {
         const env = JSON.parse(payload) as BroadcastEnvelope;
-        if ('kick' in env && env.kick) onKick(env.kick.accountId, env.kick.originInstanceId);
+        if ('kick' in env && env.kick) onKick(env.kick.accountId, env.kick.originInstanceId, env.kick.connSeq);
         else if ('recipients' in env && Array.isArray(env.recipients) && env.msg) onBroadcast(env.recipients, env.msg, env.roomId);
       } catch (e) {
         log.warn('bad broadcast payload', { err: (e as Error).message });
@@ -113,9 +116,9 @@ export async function connectGatewaySubscriber(
         await Promise.allSettled([subClient.quit(), pubClient.quit(), rateLimitClient.quit()]);
       },
       rateLimitClient,
-      publishKick: async (accountId, originInstanceId) => {
+      publishKick: async (accountId, originInstanceId, connSeq) => {
         try {
-          await pubClient.publish(GW_PUSH_REDIS_CHANNEL, JSON.stringify({ kick: { accountId, originInstanceId } }));
+          await pubClient.publish(GW_PUSH_REDIS_CHANNEL, JSON.stringify({ kick: { accountId, originInstanceId, connSeq } }));
         } catch (e) {
           log.warn('kick publish failed', { accountId, err: (e as Error).message });
         }

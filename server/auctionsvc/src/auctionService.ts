@@ -487,8 +487,13 @@ export class AuctionService {
       const material = item['material'] as string | undefined;
       if (!material) throw new SlgError('BAD_REQUEST');
       if (AUCTION_BANNED_MATERIALS.has(material)) throw new SlgError('MATERIAL_NOT_TRADEABLE');
-      // G Price guardrail (validate unit price against category reference price)
+      // G Price guardrail (validate unit price against category reference price). For auction-mode
+      // listings, buyoutPrice must ALSO be within the guardrail band at listing time — placeBid's
+      // guardrail check applies unconditionally to every bid amount including a buyout, so a buyout price
+      // above the ceiling would otherwise be accepted here but then be permanently un-triggerable at bid
+      // time (PRICE_OUT_OF_RANGE), silently making the seller's configured buyout unusable.
       await this.checkPriceGuard(categoryOf({ itemType, item }), unitPrice);
+      if (buyoutPrice != null) await this.checkPriceGuard(categoryOf({ itemType, item }), buyoutPrice);
       // Concurrent listing count cap
       const openCount = await cols.auctions.countDocuments({ sellerId, status: 'open' });
       if (openCount >= AUCTION_MAX_LISTINGS) throw new SlgError('AUCTION_LIMIT_REACHED');
@@ -507,7 +512,9 @@ export class AuctionService {
       storedItem = { instance };
       try {
         // G Price guardrail (equipment by defId/rarity/level category) + C daily cap — return escrowed instance on failure.
+        // See the material branch above for why buyoutPrice needs the same guardrail check as unitPrice.
         await this.checkPriceGuard(`equip:${instance.defId}:${instance.level}`, unitPrice);
+        if (buyoutPrice != null) await this.checkPriceGuard(`equip:${instance.defId}:${instance.level}`, buyoutPrice);
         await this.bumpDaily(sellerId, 'lists', AUCTION_DAILY_LIST_CAP);
       } catch (e) {
         await meta.grantEquipment(sellerId, instance, `${orderId}:return`);
@@ -566,7 +573,50 @@ export class AuctionService {
       rev: 1,
     };
     await cols.auctions.insertOne(doc);
+
+    // Authoritative cap enforcement: the per-itemType `openCount >= AUCTION_MAX_LISTINGS` checks above
+    // are only a fast-fail optimization against a stale read — they run before this insert, so concurrent
+    // createAuction calls from the same seller can all pass them before any of them has inserted. This
+    // recount reflects the true persisted state right after the insert, so no race window can leave a
+    // seller above the cap. Its only imperfection: under a genuine simultaneous race, more than one
+    // concurrent request may be told to retry even though a slot was available for one of them — safety
+    // holds (the cap is never exceeded), and a retry immediately succeeds once the field self-corrects.
+    const finalOpenCount = await cols.auctions.countDocuments({ sellerId, status: 'open' });
+    if (finalOpenCount > AUCTION_MAX_LISTINGS) {
+      await cols.auctions.deleteOne({ _id: aid });
+      await this.returnEscrowedOnCapReject(sellerId, itemType, storedItem, effectiveQty, `${orderId}:capreturn`);
+      throw new SlgError('AUCTION_LIMIT_REACHED');
+    }
+
     return docToView(doc);
+  }
+
+  /**
+   * Directly returns an escrowed item to the seller (immediate re-grant, not mail — mirrors the
+   * escrow-failure rollback already used inline above for equipment/card/skin) after the post-insert
+   * AUCTION_MAX_LISTINGS recheck rejects a listing whose escrow already succeeded.
+   */
+  private async returnEscrowedOnCapReject(
+    sellerId: string,
+    itemType: 'material' | 'equipment' | 'card' | 'skin',
+    storedItem: Record<string, unknown>,
+    qty: number,
+    orderId: string,
+  ): Promise<void> {
+    const { meta } = this.deps;
+    if (itemType === 'material') {
+      const material = storedItem['material'] as string;
+      await meta.grantMaterial(sellerId, material, qty, orderId);
+    } else if (itemType === 'equipment') {
+      const inst = equipInstanceOf(storedItem);
+      if (inst) await meta.grantEquipment(sellerId, inst, orderId);
+    } else if (itemType === 'card') {
+      const inst = cardInstanceOf(storedItem);
+      if (inst) await meta.grantCard(sellerId, inst, orderId);
+    } else if (itemType === 'skin') {
+      const skinId = storedItem['skinId'] as string | undefined;
+      if (skinId) await meta.grantSkin(sellerId, skinId, orderId);
+    }
   }
 
   /**
@@ -679,7 +729,11 @@ export class AuctionService {
     const updated = await cols.auctions.findOneAndUpdate(
       { _id: auctionId, status: 'open', rev: doc.rev },
       {
-        $set: { topBid: { bidderId, amount, ts }, expireAt: newExpireAt, rev: doc.rev + 1 },
+        // `price` is kept in sync with the current top bid (not just `topBid.amount`) so that
+        // listAuctions' DB-level `.sort({price:1})` reflects the same effective price docToView
+        // displays — otherwise an auction-mode listing's browse position stays pinned to its
+        // stale startPrice forever while the price shown to players climbs with every bid.
+        $set: { topBid: { bidderId, amount, ts }, price: amount, expireAt: newExpireAt, rev: doc.rev + 1 },
       },
       { returnDocument: 'after' },
     );
