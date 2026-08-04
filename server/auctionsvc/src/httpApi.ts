@@ -17,7 +17,7 @@ import type { AuctionService } from './auctionService';
 
 const log = createLogger('auctionsvc');
 
-function readJson(req: IncomingMessage): Promise<Record<string, unknown>> {
+export function readJson(req: IncomingMessage): Promise<Record<string, unknown>> {
   return new Promise((resolve, reject) => {
     let body = '';
     let rejected = false;
