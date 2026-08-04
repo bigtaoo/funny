@@ -41,8 +41,14 @@ export function ActionsMixin<TBase extends ShopSceneBaseCtor>(Base: TBase): TBas
       this.render();
       try {
         const res = await withTimeout(this.cb.buy(itemId));
-        if (res.ok) showToastMessage(t('shop.boughtNamed', { name: itemName }), 'success');
-        else showToastMessage(t(res.key), 'error');
+        if (res.ok) {
+          showToastMessage(t('shop.boughtNamed', { name: itemName }), 'success');
+          // Refresh the catalog so a material bundle's live dailyLimit/purchasedToday (ShopScene.ts
+          // buildShopCards) reflects this purchase immediately, instead of only on the next scene open.
+          await this.loadItems();
+        } else {
+          showToastMessage(t(res.key), 'error');
+        }
       } catch (e) {
         showToastMessage(t(e instanceof TimeoutError ? 'common.networkTimeout' : 'shop.error'), 'error');
       } finally {

@@ -373,6 +373,8 @@ schemas:
       kind: { type: string }
       grants: { type: string }
       qty: { type: integer }
+      dailyLimit: { type: integer, description: 'Daily purchase cap (counts purchases, not units); omitted when the item has no cap.' }
+      purchasedToday: { type: integer, description: 'Purchases made today by the requesting account, present iff dailyLimit is present.' }
 
   GachaPool:
     type: object

@@ -1687,6 +1687,10 @@ export interface components {
             kind: string;
             grants?: string;
             qty?: number;
+            /** @description Daily purchase cap (counts purchases, not units); omitted when the item has no cap. */
+            dailyLimit?: number;
+            /** @description Purchases made today by the requesting account, present iff dailyLimit is present. */
+            purchasedToday?: number;
         };
         GachaPool: {
             id: string;

@@ -386,6 +386,26 @@ describe.skipIf(!mongo)('meta economy orchestration e2e', () => {
     expect(scrap.data.save.materials.scrap).toBe(10);
   });
 
+  it('item list: material bundles carry the account\'s live daily-cap progress (dailyLimit/purchasedToday); non-capped items omit both', async () => {
+    comm.coins.set(accountId, 1000);
+    type Item = { id: string; dailyLimit?: number; purchasedToday?: number };
+    const before = body(await app.inject({ method: 'GET', url: '/shop/items', headers: auth() }));
+    const scrapBefore = (before.data.items as Item[]).find((i) => i.id === 'mat_buy_scrap');
+    expect(scrapBefore).toMatchObject({ dailyLimit: 5, purchasedToday: 0 });
+    const stoneBefore = (before.data.items as Item[]).find((i) => i.id === 'protect_enhance');
+    expect(stoneBefore).not.toHaveProperty('dailyLimit');
+    expect(stoneBefore).not.toHaveProperty('purchasedToday');
+
+    await app.inject({ method: 'POST', url: '/shop/buy', headers: auth(), payload: { itemId: 'mat_buy_scrap' } });
+    await app.inject({ method: 'POST', url: '/shop/buy', headers: auth(), payload: { itemId: 'mat_buy_scrap' } });
+    const after = body(await app.inject({ method: 'GET', url: '/shop/items', headers: auth() }));
+    const scrapAfter = (after.data.items as Item[]).find((i) => i.id === 'mat_buy_scrap');
+    expect(scrapAfter).toMatchObject({ dailyLimit: 5, purchasedToday: 2 });
+    // mat_buy_lead's counter is independent of mat_buy_scrap's.
+    const leadAfter = (after.data.items as Item[]).find((i) => i.id === 'mat_buy_lead');
+    expect(leadAfter).toMatchObject({ dailyLimit: 6, purchasedToday: 0 });
+  });
+
   it('gacha: deduct coins → deliver new skin + mark duplicate + mirror pity', async () => {
     comm.coins.set(accountId, 1000);
     comm.nextResults = [{ itemId: 'skin_l1', rarity: 'legendary' }];
