@@ -88,6 +88,7 @@ interface BlockDoc {
 ```
 
 - **好友数上限** `FRIEND_CAP`（建议 100，放 `shared/social.ts` 单一来源），达上限申请/同意返回 `FRIEND_CAP_REACHED`。
+  - **软溢出竞态修复（2026-08-04）**：`respondFriend` 原先的 cap 校验是「读一次 `friendEdges` 的 `countDocuments`，再单独一次好友边 insert」，两步之间没有任何原子性——同一账号如果有两条不同的待处理入群请求（分别来自不同好友）几乎同时被接受，两次调用都可能在对方写入落地前读到同一个未过上限的旧计数，双双通过检查、双双插入，导致真实好友数突破上限。**修复**：新增专属维护型计数器集合 `friendCounts`（`_id`=accountId, `count`），镜像家族系统的 `FamilyDoc.memberCount` 思路——`tryClaimFriendSlot()` 把「判断未满 + 计数 +1」折进同一次 `updateOne({_id, count:{$lt:FRIEND_CAP}}, {$inc:{count:1}})` 原子操作，两个并发调用中只有一个能真正匹配过滤器成功递增。计数器**首次接触时懒惰启动**（`ensureFriendCounter`，从真实 `friendEdges` 现算一次 `countDocuments` 作为种子值），不需要迁移脚本——早于本次修复就已存在真实好友边的老账号，第一次被这条代码路径命中时会自动补上准确的历史计数，做法与 `equipmentInvCount`/`cardInvCount` 的「读时自愈」同一思路。`respondFriend` 的接受分支现按序原子认领双方槽位（先认领接受者自己的，再认领对方的）；若对方槽位认领失败，回滚接受者自己刚认领的槽位（`releaseFriendSlot`），不留下"计数已加但友谊从未成立"的孤儿递增。`removeFriend` 对称释放双方槽位（仅当边确实存在时才释放，避免对已经不是好友的重复调用误减到负数）。**顺带修的相邻 bug**：接受请求时，"请求状态翻转为 accepted"这个原子认领（用于防止同一请求被并发重复处理）原先发生在 cap 校验**之前**——即使没有并发竞态，单纯"账号已在 100 好友上限时接受一条请求"这种确定性场景下，请求也会被永久标记为 accepted 却从未真正成为好友，请求本身悄悄消失。修复后 cap 校验失败时把请求状态**还原为 pending**，接受者可以在腾出名额后重新处理。回归测试见 `server/socialsvc/test/friend.e2e.test.ts`（并发双接受不突破上限、对方满员时己方槽位正确回滚、请求还原为 pending 不丢失、`removeFriend` 正确释放槽位且幂等不减到负数）。
 - 加好友凭 `publicId`（9 位数字公开 id，已存在）搜索 → 发申请。**不暴露 accountId**（仅服务器内部）。
 
 ### 3.2 私聊（SOC4）
