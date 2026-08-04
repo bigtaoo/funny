@@ -181,6 +181,12 @@ export interface LobbySceneCallbacks {
    * player taps an "achievement unlocked" toast (ACHIEVEMENT_DESIGN §7, S9-5b).
    */
   onOpenAchievements?(): void;
+  /**
+   * Open the in-game feedback panel (UI_DESIGN.md §4.1.1). Right-side strip entry, replacing the
+   * low-usage achievement shortcut there (2026-08-04) — the achievement wall is still reachable via
+   * the Career hub tabs and the unlock toast (onOpenAchievements above), so nothing is lost.
+   */
+  onOpenFeedback?(): void;
   /** Open the daily check-in + task screen (B5, RETENTION_DESIGN). */
   onOpenDaily?(): void;
   /** Open the limited-time events screen (B6, ADR-014). Entry only appears when an event window is live. */
@@ -300,7 +306,7 @@ export class LobbySceneBase {
   /** Hit rect for the mail strip item (P2). */
   protected mailStripRect: Rect = { x: 0, y: 0, w: 0, h: 0 };
   /** Hit rect for the achievements strip item (P2). */
-  protected achieveStripRect: Rect = { x: 0, y: 0, w: 0, h: 0 };
+  protected feedbackStripRect: Rect = { x: 0, y: 0, w: 0, h: 0 };
   protected auctionStripRect: Rect = { x: 0, y: 0, w: 0, h: 0 };
   /** Cheap-refresh layer for the red dots on the right-side strip (daily/mail/achievement). */
   protected sideStripBadgeLayer: PIXI.Container | null = null;

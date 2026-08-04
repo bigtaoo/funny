@@ -89,7 +89,7 @@ export const en: Record<TranslationKey, string> = {
   'lobby.nav.shop': 'Store',
   'lobby.nav.social': 'Social',
   'lobby.strip.events': 'Events',
-  'lobby.strip.achieve': 'Ach.',
+  'lobby.strip.feedback': 'Feedback',
   'lobby.strip.mail': 'Mail',
   'lobby.strip.auction': 'Auc.',
 
@@ -819,6 +819,8 @@ export const en: Record<TranslationKey, string> = {
   'mail.alreadyClaimed': 'Already claimed',
   'mail.delete': 'Delete',
   'mail.deleteBlockedAttachment': 'Claim the attachment before deleting this mail',
+  'mail.welcome.author.subject': 'A note from the author',
+  'mail.welcome.author.body': "Hi, I'm Tao, the person who made this game. Thank you for playing this far, and for taking the time to explore the story. Here's a little something for you — if you ever have thoughts, feedback, or just want to say hi, I'd love to hear from you: tao@gamestao.com. Have fun!",
   // SLG World (S8)
   'world.title': 'World',
   'world.troops': 'Troops',
@@ -1549,6 +1551,16 @@ export const en: Record<TranslationKey, string> = {
   'appeal.submitted': 'Appeal submitted — please wait for review',
   'appeal.err.empty': 'Please enter a reason',
   'appeal.err.failed': 'Submission failed, try again later',
+
+  // ── Player feedback entry (UI_DESIGN.md §4.1.1) ──
+  'feedback.title': 'Feedback',
+  'feedback.body': "Got something to say? We're listening. Suggestions, bug reports, or just how it feels to play — all welcome.",
+  'feedback.placeholder': 'Type your feedback…',
+  'feedback.submit': 'Send',
+  'feedback.close': 'Close',
+  'feedback.sent': 'Got it, thanks!',
+  'feedback.err.empty': 'Please enter some text',
+  'feedback.err.failed': 'Submission failed, try again later',
 
   // ── Gacha odds disclosure (Apple 3.1.1, L1-3) ───────────────────────────────
   'gacha.oddsDetail.button': 'Odds',

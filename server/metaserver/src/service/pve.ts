@@ -49,6 +49,10 @@ const PVE_VERIFICATION_RETENTION_MS = 30 * 24 * 3600 * 1000;
 /** Default stamina cost per level (A4, flat rate 2026-07-06): overridable per-level via PveLevelConfig.staminaCost. */
 const DEFAULT_STAMINA_COST = 10;
 
+/** Author welcome mail dispatchKey (ONBOARDING_DESIGN §5.1): fixed key, `${dispatchKey}:${accountId}` is the
+ *  idempotency pair (mail.ts insertSystemMail) so a client retry of pveClear never sends it twice. */
+const WELCOME_MAIL_DISPATCH_KEY = 'welcome.author';
+
 /** Normalize the upgrade map (remove zero-value entries + sort keys) for stable cross-source comparison (L0 blueprint anomaly detection). */
 function normUpgrades(u: Record<string, number>): Record<string, number> {
   const out: Record<string, number> = {};
@@ -561,6 +565,25 @@ export function PveMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase & Const
       // Prerequisite unlock check: the prerequisite level must already be cleared (newly offline-unlocked levels are rejected, §8 decision 4).
       if (level.requires && !cur.progress.cleared.includes(level.requires)) {
         return reply.code(400).send(err(ErrorCode.BAD_REQUEST, 'level locked'));
+      }
+
+      // Author welcome mail (ONBOARDING_DESIGN §5.1): fires once, on this account's very first-ever level
+      // clear (ch0_tutorial doesn't touch progress.cleared, so for a normal FTUE path this is ch1_lv1).
+      // Independent of reward legitimacy/spot-check below — it's a fixed one-time thank-you, not a farmable
+      // reward. Best-effort: a failed send must not block clear settlement; dispatchKey makes retries a no-op.
+      if (cur.progress.cleared.length === 0) {
+        const mailResult = await insertSystemMail(this.deps.socialsvc ?? nullMetaSocialsvcClient, WELCOME_MAIL_DISPATCH_KEY, accountId, {
+          subject: 'mail.welcome.author.subject',
+          body: 'mail.welcome.author.body',
+          attachments: [{ kind: 'coins', count: 1000 }],
+          expireDays: 30,
+        }).catch((e) => {
+          req.log.warn({ err: e }, 'welcome-author mail failed');
+          return null;
+        });
+        if (mailResult?.inserted) {
+          void gateway.push(accountId, { kind: 'mail_new', mailId: mailResult.mailId, hasAttachment: mailResult.hasAttachment });
+        }
       }
 
       // Stamina is deducted at /pve/enter (A4, 2026-07-06), not here — clear settlement no longer touches it.

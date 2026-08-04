@@ -200,6 +200,15 @@
 - 首胜后**引出每日签到 / 每日任务入口**（机制权威归 [`RETENTION_DESIGN.md`](RETENTION_DESIGN.md)），让玩家看到"明天有东西拿"。
 - D0 结束温和提示「去打第一章 / 明日签到」，不强推。
 
+### 5.1 作者欢迎邮件（打破第四面墙，一次性）
+
+- **触发**：玩家生涯**首次真正通关一关**（`progress.cleared` 从空到非空，即 `pveClear` 结算前 `cur.progress.cleared.length === 0`）。教学关 `ch0_tutorial` 不计入 `progress`（§2），所以对正常 FTUE 路径而言，这封信会在**教学关之后、通关 `ch1_lv1` 时**首次触发，不是教学关本身。
+- **内容与身份**：以真实作者「陶」的第一人称写一封短信——感谢玩家体验《Notebook Wars》、探索这个故事，欢迎任何反馈与交流，附联系邮箱 `tao@gamestao.com`。这封信是**打破第四面墙**的手法（呼应世界观：叙事里「陶」本身也是这个游戏的作者，见 [`../product/world.md`](../product/world.md) 尾声），不与战役剧情文案（[`CAMPAIGN_STORY.md`](CAMPAIGN_STORY.md)）混同——邮件文案权威在本节，不进 CAMPAIGN_STORY。
+- **机制**：复用现有系统邮件通道（[`SOCIAL_SVC_DESIGN.md`](SOCIAL_SVC_DESIGN.md) §3.3），走 metaserver 内部 `insertSystemMail` 直调（同进程，不经 HTTP），dispatchKey 固定 `welcome.author`（`${dispatchKey}:${accountId}` 幂等，客户端重试/多端不会重复发信）。**最佳努力（best-effort）**：发信失败只记日志，不阻塞关卡结算响应，也不影响材料/卡牌/成就等正常发奖。
+- **附件**：金币 ×1000（一次性 faucet，数字见 [`ECONOMY_BALANCE.md`](ECONOMY_BALANCE.md) §2.4 同级别一次性奖励口径），`expireDays: 30`（超时未领与其它系统邮件一致过期）。
+- **与反馈入口解耦**：这封信与「游戏内反馈入口」（[`UI_DESIGN.md`](UI_DESIGN.md) 大厅入口一节）是两件独立的事——反馈入口常驻可用，不依赖玩家是否读过/领取过这封信。
+- **i18n key**：`mail.welcome.author.subject` / `mail.welcome.author.body`，全语种（zh/en/de）。
+
 ---
 
 ## 6. 合规挂钩（开机第一步，**不属于新手引导**）
@@ -251,6 +260,7 @@
 | **首次功能引导机制（`flags.featSeen.*`）** | ✅ 机制已建。`SaveManager.featSeen/markFeatSeen` + 大厅 `showFeatureGuide` + `withGuide`（match/shop/social/cards/daily/world）+ `guide.*` 全语种 + `feature_guide_shown/closed` 埋点（design-doc-audit-2026-07 补齐，见 §7）。**各子页内「?」按钮未逐页接**（见 §10），因此 `feature_guide_replay` 事件暂无调用点 |
 | 首胜奖励 + 签到入口引出 | 🟡 毕业=首胜走既有结算链；签到由大厅红点承载，未新增金币龙头（§5） |
 | 年龄门 + EU/UK 同意弹窗 | ❌ 待建（合规，归 COMPLIANCE，开机层） |
+| **作者欢迎邮件**（首次真正通关+1000金币，§5.1） | ✅ 已建（`server/metaserver/src/service/pve.ts` `pveClear`，e2e `test/pve.e2e.test.ts`） |
 | FTUE 漏斗埋点 | ✅ 已接（design-doc-audit-2026-07 核实：本行与 §9 待办条目此前是过期记录——A9-9 早已落地逐 beat 埋点 `tutorial_step`，`step_key` 覆盖 `tutorial_start→orientation_1..7→beat_unit→beat_building→beat_spell→freeplay→tutorial_complete`，`TutorialDirector.ts`→`GameRenderer`→`game.ts#goTutorial()`→`analytics.track()`；100% 采样，`GET /internal/query?type=tutorial_funnel` 可查逐步转化率，字段权威见 `ANALYTICS_DESIGN.md` §9.9/§9.6。仅剩 §7 提到的「登录方式/首次功能引导 弹出关闭再看/次日回访」几个漏斗节点是否全部接齐未逐项复核，非本次审计范围） |
 
 ---

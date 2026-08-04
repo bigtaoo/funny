@@ -137,6 +137,26 @@ export function setAppealSink(fn: (code: AppealPromptCode) => void): void {
   appealSink = fn;
 }
 
+/**
+ * Feedback dialog render outlet (UI_DESIGN.md §4.1.1): same sink pattern as the toast/appeal outlets above,
+ * registered once by app.ts (mounts a FeedbackDialog on app.stage). Unlike the appeal sink, this one is
+ * triggered by a direct player tap on the lobby's feedback strip entry (nav/lobby.ts's onOpenFeedback), not
+ * a network error — the sink indirection still earns its keep here because nav/lobby.ts has no PIXI
+ * dependency and shouldn't gain one just to open a dialog.
+ */
+let feedbackSink: (() => void) | null = null;
+
+/** Register the feedback-dialog render outlet (call once on application startup). */
+export function setFeedbackSink(fn: () => void): void {
+  feedbackSink = fn;
+}
+
+/** Silently no-ops if no sink is registered (e.g. in tests, or offline mode where app.ts skips registration). */
+export function requestFeedbackDialog(): void {
+  if (!feedbackSink) return;
+  try { feedbackSink(); } catch { /* swallow, same reasoning as showToastMessage */ }
+}
+
 /** No-ops for any other error code, and silently no-ops if no sink is registered (e.g. in tests). */
 export function maybePromptAppeal(code: string): void {
   if (code !== 'ACCOUNT_BANNED' && code !== 'ACCOUNT_MUTED') return;

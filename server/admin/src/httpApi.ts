@@ -450,6 +450,14 @@ export function startHttpApi(opts: HttpApiOpts, svc: AdminService): Server {
           return send(res, 200, { ok: true });
         }
 
+        // ── Player feedback (feedback.view, read-only — UI_DESIGN.md §4.1.1 / SERVER_API.md §2.13) ──
+        if (method === 'GET' && path === '/admin/feedback') {
+          requireCap(actor, 'feedback.view');
+          const limit = Math.min(200, Math.max(1, Number(url.searchParams.get('limit') ?? '100')));
+          const feedback = await svc.listFeedback(actor.adminId, { limit });
+          return send(res, 200, { ok: true, feedback });
+        }
+
         // ── Account management (superadmin) ──
         if (method === 'GET' && path === '/admin/accounts') {
           requireCap(actor, 'admin.manage');

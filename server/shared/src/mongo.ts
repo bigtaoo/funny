@@ -393,6 +393,19 @@ export interface AppealDoc {
 // Friend/private-chat/block collections (FriendEdgeDoc / FriendRequestDoc / BlockDoc / ConversationDoc / ChatMessageDoc)
 // have been migrated to socialsvc's nw_social database (P2, SOCIAL_SVC_DESIGN §6 P2); metaserver no longer owns these collections.
 
+/**
+ * Player free-text feedback (UI_DESIGN.md §4.1.1 lobby entry / SERVER_API.md §2.13). Ops-review-only via
+ * `GET /internal/feedback` (feedback.view) — no status machine, no verdict: unlike AppealDoc/ReportDoc this
+ * is not something ops "resolves", just reads. Not run through censorChat for the same reason as AppealDoc.reason.
+ */
+export interface FeedbackDoc {
+  _id: string; // uuid
+  accountId: string;
+  text: string;
+  clientPlatform?: string;
+  createdAt: number;
+}
+
 export interface MailAttachmentDoc {
   // 'material' → SaveData.materials unified progression pool (SLG8); 'item' → inventory.items general-purpose bucket.
   // 'equipment'/'card' → auction escrow-out return/delivery: carries the full instance snapshot (affixes/level/gear are
@@ -586,6 +599,8 @@ export interface Collections {
   pveRejections: Collection<PveRejectDoc>;
   // player appeals against an active enforcement (CONTENT_MODERATION_DESIGN.md CM10)
   appeals: Collection<AppealDoc>;
+  // player free-text feedback (UI_DESIGN.md §4.1.1 / SERVER_API.md §2.13)
+  feedback: Collection<FeedbackDoc>;
   // replay shares (S1-RP)
   replayShares: Collection<ReplayShareDoc>;
   // state-stream replay public shares outside the game (REPLAY_SHARE_DESIGN)
@@ -660,6 +675,7 @@ export async function createMongo(
     antiCheatReviews: db.collection<AntiCheatReviewDoc>('antiCheatReviews'),
     pveRejections: db.collection<PveRejectDoc>('pveRejections'),
     appeals: db.collection<AppealDoc>('appeals'),
+    feedback: db.collection<FeedbackDoc>('feedback'),
     replayShares: db.collection<ReplayShareDoc>('replayShares'),
     stateReplayShares: db.collection<StateReplayShareDoc>('stateReplayShares'),
     mail: db.collection<MailDoc>('mail'),
@@ -731,6 +747,8 @@ export async function createMongo(
       { accountId: 1 },
       { unique: true, partialFilterExpression: { status: 'open' } },
     );
+    // —— player feedback (UI_DESIGN.md §4.1.1): admin listing is newest-first, no per-account queue ——
+    await collections.feedback.createIndex({ createdAt: -1 });
     // —— replay shares (S1-RP) ——
     // TTL auto-expiry (expiresAt with expireAfterSeconds:0 → Mongo deletes on schedule).
     await collections.replayShares.createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 });

@@ -6,6 +6,7 @@ import { createMongo, type JwtConfig, type MongoHandle, PVE_DAILY_CLEAR_REWARD_C
 import type { FastifyInstance } from 'fastify';
 import { buildApp } from '../dist/app.js';
 import type { GatewayClient, JudgeRes } from '../dist/gatewayClient.js';
+import { FakeSocialsvc, fakeGateway } from './helpers/fakeClients.js';
 
 const URI = process.env.NW_MONGO_URI ?? 'mongodb://127.0.0.1:27017/?replicaSet=rs0';
 const DB = 'nw_meta_pve_test';
@@ -53,6 +54,28 @@ describe.skipIf(!mongo)('pve server-authoritative e2e', () => {
     expect(r.data.save.progress.cleared).toContain('ch1_lv1');
     expect(r.data.save.progress.stars['ch1_lv1']).toBe(3);
     expect(r.data.save.materials.scrap).toBe(6);
+  });
+
+  it('author welcome mail (ONBOARDING_DESIGN §5.1): first-ever level clear sends an idempotent system mail with 1000 coins + mail_new push; a second clear does not resend it', async () => {
+    const socialsvc = new FakeSocialsvc();
+    const gw = fakeGateway({ available: true }) as GatewayClient & { pushed: { accountId: string; payload: unknown }[] };
+    const welcomeApp = await buildApp({ cols: m.collections, jwt, internalKey: 'k', socialsvc, gateway: gw });
+    const r = body(await welcomeApp.inject({ method: 'POST', url: '/auth/device', payload: { deviceId: `welcome-dev-${Math.random()}` } }));
+    const welcomeToken = r.data.token as string;
+    const welcomeAccountId = r.data.accountId as string;
+    const welcomeAuth = { authorization: `Bearer ${welcomeToken}` };
+    await welcomeApp.inject({ method: 'GET', url: '/save', headers: welcomeAuth }); // initialize save
+
+    await welcomeApp.inject({ method: 'POST', url: '/pve/clear', headers: welcomeAuth, payload: { levelId: 'ch1_lv1', stars: 3 } });
+    const mailId = `welcome.author:${welcomeAccountId}`;
+    expect(socialsvc.mail.has(mailId)).toBe(true);
+    expect(socialsvc.mail.get(mailId)?.attachments).toEqual([{ kind: 'coins', count: 1000 }]);
+    expect(gw.pushed.some((p) => p.accountId === welcomeAccountId && (p.payload as { kind?: string }).kind === 'mail_new')).toBe(true);
+
+    await welcomeApp.inject({ method: 'POST', url: '/pve/clear', headers: welcomeAuth, payload: { levelId: 'ch1_lv2', stars: 3 } });
+    expect(socialsvc.mail.size).toBe(1); // not resent on the second-ever clear
+
+    await welcomeApp.close();
   });
 
   // CC-2 Hero Roster model: a PvE level drop is granted as a CardInstance in `cardInv` (unitType → CARD_DEFS entry),

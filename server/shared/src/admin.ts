@@ -46,6 +46,7 @@ export type AdminCapability =
   | 'reports.action' // dismiss / uphold a report (CONTENT_MODERATION_DESIGN.md CM9)
   | 'appeals.view' // view the appeal review queue (CONTENT_MODERATION_DESIGN.md CM11)
   | 'appeals.action' // approve / deny an appeal (CONTENT_MODERATION_DESIGN.md CM10)
+  | 'feedback.view' // view player feedback submissions, read-only (SERVER_API.md §2.13)
   | 'admin.manage'; // account / role management
 
 /**
@@ -87,6 +88,7 @@ export const ROLE_CAPABILITIES: Record<AdminRole, readonly AdminCapability[]> = 
     'reports.action',
     'appeals.view',
     'appeals.action',
+    'feedback.view',
     'admin.manage',
   ],
   ops: [
@@ -117,6 +119,7 @@ export const ROLE_CAPABILITIES: Record<AdminRole, readonly AdminCapability[]> = 
     'reports.action',
     'appeals.view',
     'appeals.action',
+    'feedback.view',
   ],
   support: [
     'monitor.view',
@@ -127,8 +130,9 @@ export const ROLE_CAPABILITIES: Record<AdminRole, readonly AdminCapability[]> = 
     'paddle.events.view',
     'reports.view',
     'appeals.view',
+    'feedback.view',
   ],
-  viewer: ['monitor.view', 'analytics.view', 'comp.view', 'audit.view.self', 'slg.season.view', 'slg.audit.view', 'slg.map.view', 'reports.view', 'appeals.view'],
+  viewer: ['monitor.view', 'analytics.view', 'comp.view', 'audit.view.self', 'slg.season.view', 'slg.audit.view', 'slg.map.view', 'reports.view', 'appeals.view', 'feedback.view'],
 };
 
 export function capabilitiesForRole(role: AdminRole): AdminCapability[] {
@@ -335,7 +339,8 @@ export type AuditAction =
   | 'moderation.wordlist.update'
   | 'report.review'
   | 'account.penalty'
-  | 'appeal.review';
+  | 'appeal.review'
+  | 'feedback.review';
 
 export interface AuditEntryView {
   id: string;

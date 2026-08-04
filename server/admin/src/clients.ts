@@ -19,3 +19,4 @@ export * from './clients/paddleEvents';
 export * from './clients/reports';
 export * from './clients/appeals';
 export * from './clients/enforcement';
+export * from './clients/feedback';

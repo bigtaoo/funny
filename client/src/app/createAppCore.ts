@@ -47,6 +47,9 @@ export interface AppCore {
   /** Submit an appeal against the account's active mute/temp-ban/ban (CONTENT_MODERATION_DESIGN.md §5.3).
    *  Undefined when offline (no API base URL configured) — the shell's appeal-prompt sink no-ops in that case. */
   submitAppeal?: (reason: string) => Promise<void>;
+  /** Submit free-text player feedback (UI_DESIGN.md §4.1.1 lobby entry, SERVER_API.md §2.13).
+   *  Undefined when offline, same as submitAppeal above. */
+  submitFeedback?: (text: string) => Promise<void>;
 }
 
 export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
@@ -251,5 +254,10 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
     if (state.inLobby) nav.goLobby({ fromResize: true });
   }
 
-  return { start, onResized, submitAppeal: api ? (reason: string) => api.submitAppeal(reason) : undefined };
+  return {
+    start,
+    onResized,
+    submitAppeal: api ? (reason: string) => api.submitAppeal(reason) : undefined,
+    submitFeedback: api ? (text: string) => api.submitFeedback(text) : undefined,
+  };
 }

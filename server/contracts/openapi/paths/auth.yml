@@ -377,3 +377,37 @@
       '401': { $ref: '#/components/responses/ErrorResp' }
       '403': { $ref: '#/components/responses/ErrorResp' }
       '409': { $ref: '#/components/responses/ErrorResp' }
+
+/feedback:
+  post:
+    operationId: submitFeedback
+    tags: [auth]
+    summary: Submit free-text player feedback (UI_DESIGN.md §4.1.1 lobby entry, SERVER_API.md §2.13). Ops-review-only, no status machine; rate-limited per account.
+    security: [{ bearerAuth: [] }]
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [text]
+            properties:
+              text: { type: string, minLength: 1, maxLength: 1000 }
+    responses:
+      '200':
+        description: Feedback submitted
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [ok, data]
+              properties:
+                ok: { type: boolean, enum: [true] }
+                data:
+                  type: object
+                  required: [ok]
+                  properties:
+                    ok: { type: boolean, enum: [true] }
+      '400': { $ref: '#/components/responses/ErrorResp' }
+      '401': { $ref: '#/components/responses/ErrorResp' }
+      '429': { $ref: '#/components/responses/ErrorResp' }

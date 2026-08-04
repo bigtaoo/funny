@@ -93,7 +93,7 @@ export const zh = {
   'lobby.nav.shop': '商城',
   'lobby.nav.social': '社交',
   'lobby.strip.events': '活动',
-  'lobby.strip.achieve': '成就',
+  'lobby.strip.feedback': '反馈',
   'lobby.strip.mail': '邮件',
   'lobby.strip.auction': '拍卖',
 
@@ -833,6 +833,8 @@ export const zh = {
   'mail.alreadyClaimed': '已经领取过了',
   'mail.delete': '删除邮件',
   'mail.deleteBlockedAttachment': '请先领取附件再删除邮件',
+  'mail.welcome.author.subject': '来自作者的一封信',
+  'mail.welcome.author.body': '你好，我是这个游戏的作者陶。谢谢你玩到这里，也谢谢你愿意花时间探索这个故事。这里有一点小心意——不管你有什么想法、建议，或者只是想聊聊，都欢迎写信给我：tao@gamestao.com。祝你游戏愉快！',
   // ── SLG overworld (S8) ────────────────────────────────────────────────────
   'world.title': '大世界',
   'world.troops': '兵力',
@@ -1565,6 +1567,16 @@ export const zh = {
   'appeal.submitted': '申诉已提交，请等待人工复核',
   'appeal.err.empty': '请输入申诉理由',
   'appeal.err.failed': '提交失败，请稍后重试',
+
+  // ── Player feedback entry (UI_DESIGN.md §4.1.1) ──
+  'feedback.title': '反馈',
+  'feedback.body': '有什么想说的？我们看得到。欢迎提建议、报bug，或者随便聊聊你的体验。',
+  'feedback.placeholder': '请输入你的反馈…',
+  'feedback.submit': '提交',
+  'feedback.close': '关闭',
+  'feedback.sent': '已收到，谢谢！',
+  'feedback.err.empty': '请输入内容',
+  'feedback.err.failed': '提交失败，请稍后重试',
 
   // ── Gacha drop-rate disclosure (Apple 3.1.1, L1-3) ───────────────────────
   'gacha.oddsDetail.button': '概率详情',

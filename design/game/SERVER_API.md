@@ -240,6 +240,17 @@ PUT  /title/equip          (JWT) { titleId }  → { save: SaveData }  | 403（�
 - 授予路径在 meta 内部单点 `grantTitle`（ranked 赛季结算 / SLG 赛季结算 / 成就 claim / admin 授予），非玩家可调。自动佩戴最高 `weight` 称号（`TITLE_DEFS`）。
 - **头像/皮肤同一模式**：`PUT /avatar/equip`（`equipped.avatar`）、`PUT /skin/equip`（`equipped["skin:<unitType>"]`，新增）机制与 `PUT /title/equip` 一致，各自校验对应的所有权记录（`titles[]`/`everOwned.*`/`inventory.skins`）；`PUT /flags`（`{key,value}`）覆盖剩余无所有权语义的 `flags.*` 布尔标记（`tutorial_done`/`gdprConsent`/`featSeen.<id>` 等）。四者是 `SaveData` 上仅剩两段"客户端可写字段"（`equipped`/`flags`）现在的完整写入面——`PUT /save` 已下线，见 §2.2。
 
+### 2.13 玩家反馈（游戏内反馈入口，`UI_DESIGN.md §4.1.1`）
+
+```
+POST /feedback   (JWT) { text }  → { ok: true }  | 400（空文本）| 429（超出限流）
+```
+
+- 不是补偿/审批工单流的一部分——单纯的玩家心声收集，无状态机、无"处理中/已处理"概念，ops 只读（`GET /internal/feedback`，见 §8）。
+- `text`：1..`FEEDBACK_TEXT_MAX`（1000）字符，服务端 `trim()` 后校验非空；不经 `censorChat` 敏感词处理（同 `AppealDoc.reason` 的先例——面向 ops 的心声原文，不面向其他玩家展示）。
+- **限流**：`createRateLimiter`（`@nw/shared`），按 accountId 维度，`FEEDBACK_RATE_LIMIT`＝5 次 / 24h（超出返回 429，不静默丢弃——玩家提交是主动行为，需要明确反馈，不同于 telemetry 类"静默丢弃超限请求"的处理）。
+- 落 metaserver 新集合 `feedback`（`{_id, accountId, text, clientPlatform?, createdAt}`），随 JWT 身份写入，不需要玩家提供联系方式。
+
 ---
 
 ## 3. WebSocket 协议（房间 + 锁步）

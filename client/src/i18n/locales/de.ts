@@ -89,7 +89,7 @@ export const de: Record<TranslationKey, string> = {
   'lobby.nav.shop': 'Laden',
   'lobby.nav.social': 'Sozial',
   'lobby.strip.events': 'Events',
-  'lobby.strip.achieve': 'Erfolg',
+  'lobby.strip.feedback': 'Feedback',
   'lobby.strip.mail': 'Post',
   'lobby.strip.auction': 'Auk.',
 
@@ -819,6 +819,8 @@ export const de: Record<TranslationKey, string> = {
   'mail.alreadyClaimed': 'Bereits abgeholt',
   'mail.delete': 'Löschen',
   'mail.deleteBlockedAttachment': 'Anhang zuerst abholen, bevor diese Mail gelöscht wird',
+  'mail.welcome.author.subject': 'Ein Brief vom Autor',
+  'mail.welcome.author.body': 'Hallo, ich bin Tao, der Entwickler dieses Spiels. Danke, dass du bis hierhin gespielt und dir die Zeit genommen hast, die Geschichte zu entdecken. Hier ist eine kleine Aufmerksamkeit für dich — wenn du Gedanken oder Feedback hast, oder einfach nur Hallo sagen willst, schreib mir gerne: tao@gamestao.com. Viel Spaß weiterhin!',
   // SLG-Welt (S8)
   'world.title': 'Welt',
   'world.troops': 'Truppen',
@@ -1549,6 +1551,16 @@ export const de: Record<TranslationKey, string> = {
   'appeal.submitted': 'Einspruch eingereicht — bitte auf Prüfung warten',
   'appeal.err.empty': 'Bitte gib eine Begründung ein',
   'appeal.err.failed': 'Übermittlung fehlgeschlagen, später erneut versuchen',
+
+  // ── Player feedback entry (UI_DESIGN.md §4.1.1) ──
+  'feedback.title': 'Feedback',
+  'feedback.body': 'Hast du etwas zu sagen? Wir hören zu. Vorschläge, Fehlermeldungen oder einfach deine Eindrücke — alles willkommen.',
+  'feedback.placeholder': 'Dein Feedback eingeben…',
+  'feedback.submit': 'Senden',
+  'feedback.close': 'Schließen',
+  'feedback.sent': 'Angekommen, danke!',
+  'feedback.err.empty': 'Bitte etwas eingeben',
+  'feedback.err.failed': 'Übermittlung fehlgeschlagen, später erneut versuchen',
 
   // ── Gacha-Wahrscheinlichkeiten (Apple 3.1.1, L1-3) ──────────────────────────
   'gacha.oddsDetail.button': 'Chancen',
