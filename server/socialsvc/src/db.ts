@@ -25,6 +25,22 @@ export interface FriendRequestDoc {
   resolvedAt?: number;
 }
 
+/**
+ * Maintained per-account friend counter (2026-08-04 fix, FRIEND_CAP soft-overrun race — mirrors
+ * FamilyDoc.memberCount, the family system's equivalent maintained counter). Before this, FRIEND_CAP
+ * enforcement in respondFriend was a plain `countDocuments(friendEdges)` read followed by a separate
+ * edge-insert write, with no atomicity between them — two concurrent accepts for the SAME account
+ * (different incoming requests) could both read a count under the cap and both proceed, overrunning it.
+ * `count` is lazily bootstrapped from a real `countDocuments` scan the first time any account is touched
+ * (see FriendService.ensureFriendCounter), so no migration script is needed for accounts that already
+ * have real friendEdges predating this doc's existence — self-heals on first use, same idea as
+ * `equipmentInvCount`/`cardInvCount`'s join-on-read self-heal.
+ */
+export interface FriendCountDoc {
+  _id: string;   // accountId
+  count: number;
+}
+
 export interface BlockDoc {
   _id: string;   // blockId(owner, target)
   owner: string;
@@ -167,6 +183,7 @@ export interface SocialCollections {
   // P2
   friendEdges: Collection<FriendEdgeDoc>;
   friendRequests: Collection<FriendRequestDoc>;
+  friendCounts: Collection<FriendCountDoc>;
   blockList: Collection<BlockDoc>;
   conversations: Collection<ConversationDoc>;
   chatMessages: Collection<ChatMessageDoc>;
@@ -191,6 +208,7 @@ export async function createSocialMongo(uri: string, dbName: string): Promise<So
   const familyJoinRequests = db.collection<FamilyJoinRequestDoc>('familyJoinRequests');
   const friendEdges = db.collection<FriendEdgeDoc>('friendEdges');
   const friendRequests = db.collection<FriendRequestDoc>('friendRequests');
+  const friendCounts = db.collection<FriendCountDoc>('friendCounts');
   const blockList = db.collection<BlockDoc>('blockList');
   const conversations = db.collection<ConversationDoc>('conversations');
   const chatMessages = db.collection<ChatMessageDoc>('chatMessages');
@@ -199,7 +217,7 @@ export async function createSocialMongo(uri: string, dbName: string): Promise<So
 
   const collections: SocialCollections = {
     families, familyMembers, familyMessages, familyJoinRequests,
-    friendEdges, friendRequests, blockList, conversations, chatMessages, mails, reports,
+    friendEdges, friendRequests, friendCounts, blockList, conversations, chatMessages, mails, reports,
   };
 
   async function ensureIndexes(): Promise<void> {
@@ -240,6 +258,8 @@ export async function createSocialMongo(uri: string, dbName: string): Promise<So
     // friendRequests
     await friendRequests.createIndex({ from: 1, status: 1 });
     await friendRequests.createIndex({ to: 1, status: 1 });
+
+    // friendCounts: _id (accountId) is already indexed as the primary key — no extra index needed.
 
     // blockList
     await blockList.createIndex({ owner: 1 });

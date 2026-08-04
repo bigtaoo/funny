@@ -62,6 +62,56 @@ export class FriendService {
 
   // ── Friends ──────────────────────────────────────────────────────────────────
 
+  /**
+   * Lazily bootstrap a friend counter row seeded with the REAL current count (2026-08-04 fix, FRIEND_CAP
+   * soft-overrun race — see FriendCountDoc's doc comment in db.ts). No migration script needed: an account
+   * with real friendEdges predating this counter's existence gets an accurate seed the first time this
+   * runs for it. Concurrent bootstraps for the same account race harmlessly — only the first insert wins,
+   * the rest hit E11000 and no-op (whichever won already reflects an accurate-enough count from ~the same
+   * instant; this is a one-time seeding race, not a recurring cap-bypass — see the fix's design doc note).
+   */
+  private async ensureFriendCounter(accountId: string): Promise<void> {
+    try {
+      const count = await this.cols.friendEdges.countDocuments({ owner: accountId });
+      await this.cols.friendCounts.insertOne({ _id: accountId, count });
+    } catch (e) {
+      if ((e as { code?: number }).code !== 11000) throw e;
+    }
+  }
+
+  /** Current friend count for the soft "you're already at your cap" pre-check in requestFriend (not the
+   *  authoritative gate — see tryClaimFriendSlot for that). */
+  private async getFriendCount(accountId: string): Promise<number> {
+    await this.ensureFriendCounter(accountId);
+    const doc = await this.cols.friendCounts.findOne({ _id: accountId });
+    return doc?.count ?? 0;
+  }
+
+  /**
+   * Atomically claim one friend slot for accountId (2026-08-04 fix): the previous FRIEND_CAP gate in
+   * respondFriend was a plain `countDocuments(friendEdges)` read followed by a SEPARATE edge-insert write,
+   * with nothing atomic between them — two concurrent respondFriend calls accepting DIFFERENT incoming
+   * requests for the SAME account could both read a count under FRIEND_CAP before either write landed,
+   * overrunning the cap. Folding the check into the update's query filter means only a caller that
+   * observes `count < FRIEND_CAP` at the moment of the atomic increment can ever succeed — mirrors the
+   * family system's memberCount CAS (familyService.ts's joinFamily).
+   */
+  private async tryClaimFriendSlot(accountId: string): Promise<boolean> {
+    await this.ensureFriendCounter(accountId);
+    const res = await this.cols.friendCounts.updateOne(
+      { _id: accountId, count: { $lt: FRIEND_CAP } },
+      { $inc: { count: 1 } },
+    );
+    return res.matchedCount > 0;
+  }
+
+  /** Release a previously-claimed slot (removeFriend, or rolling back a claim whose PEER slot claim then
+   *  failed). No-op if the counter row doesn't exist yet or is already at 0 — a future ensureFriendCounter
+   *  bootstrap recomputes the correct count from scratch regardless, so there's nothing to under-flow. */
+  private async releaseFriendSlot(accountId: string): Promise<void> {
+    await this.cols.friendCounts.updateOne({ _id: accountId, count: { $gt: 0 } }, { $inc: { count: -1 } });
+  }
+
   /** Fetch only the accountId list (for presence fan-out; no profile data needed). */
   async getFriendAccountIds(accountId: string): Promise<string[]> {
     const edges = await this.cols.friendEdges.find({ owner: accountId }, { projection: { friend: 1 } }).toArray();
@@ -161,7 +211,7 @@ export class FriendService {
     if ((await hasBlock(this.cols, to, accountId)) || (await hasBlock(this.cols, accountId, to))) {
       return { kind: 'error', error: 'BLOCKED' };
     }
-    const myFriendCount = await this.cols.friendEdges.countDocuments({ owner: accountId });
+    const myFriendCount = await this.getFriendCount(accountId);
     if (myFriendCount >= FRIEND_CAP) return { kind: 'error', error: 'FRIEND_CAP_REACHED' };
 
     const fromProfile = await this.meta.batchProfiles([accountId]).then((m) => m.get(accountId) ?? null);
@@ -209,11 +259,23 @@ export class FriendService {
     if (!claimed) return { kind: 'error', error: 'NOT_FOUND' };
 
     if (accept) {
-      const [cntMe, cntOther] = await Promise.all([
-        this.cols.friendEdges.countDocuments({ owner: accountId }),
-        this.cols.friendEdges.countDocuments({ owner: other }),
-      ]);
-      if (cntMe >= FRIEND_CAP || cntOther >= FRIEND_CAP) {
+      // Atomic per-account slot claims (2026-08-04 fix — see tryClaimFriendSlot's doc comment for the
+      // race this closes). Claimed in sequence, not Promise.all: if accountId's own claim fails there's
+      // nothing to roll back; if it succeeds but `other`'s claim then fails, accountId's claim must be
+      // released so it isn't left permanently occupying a slot for a friendship that never happened.
+      const meOk = await this.tryClaimFriendSlot(accountId);
+      if (!meOk) {
+        // Restore the request to pending instead of leaving it stuck 'accepted' with no friendship ever
+        // created (2026-08-04 fix, adjacent bug: the status flip above is an exclusivity claim on
+        // PROCESSING this request, not a statement that acceptance actually succeeded) — the accepter can
+        // retry once a slot frees up (e.g. after removing another friend).
+        await this.cols.friendRequests.updateOne({ _id: requestId }, { $set: { status: 'pending' }, $unset: { resolvedAt: '' } });
+        return { kind: 'error', error: 'FRIEND_CAP_REACHED' };
+      }
+      const otherOk = await this.tryClaimFriendSlot(other);
+      if (!otherOk) {
+        await this.releaseFriendSlot(accountId);
+        await this.cols.friendRequests.updateOne({ _id: requestId }, { $set: { status: 'pending' }, $unset: { resolvedAt: '' } });
         return { kind: 'error', error: 'FRIEND_CAP_REACHED' };
       }
       await Promise.all([
@@ -246,9 +308,16 @@ export class FriendService {
     const target = await this.meta.resolveByPublicId(publicId);
     if (!target) return false;
     const other = target.accountId;
-    await Promise.all([
+    const [d1, d2] = await Promise.all([
       this.cols.friendEdges.deleteOne({ _id: friendEdgeId(accountId, other) }),
       this.cols.friendEdges.deleteOne({ _id: friendEdgeId(other, accountId) }),
+    ]);
+    // Release the freed slots (2026-08-04 fix, pairs with tryClaimFriendSlot) — gated on the edge having
+    // actually existed, so a redundant/no-op removeFriend call (already-removed friend) doesn't decrement
+    // a counter for a slot nothing was occupying.
+    await Promise.all([
+      d1.deletedCount > 0 ? this.releaseFriendSlot(accountId) : Promise.resolve(),
+      d2.deletedCount > 0 ? this.releaseFriendSlot(other) : Promise.resolve(),
     ]);
     void this.gateway.invalidateFriends(accountId);
     void this.gateway.invalidateFriends(other);

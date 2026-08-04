@@ -49,6 +49,7 @@ describe.skipIf(!mongo)('socialsvc ErrorResp wire-level coverage (2026-08-03 pas
     await m.collections.familyJoinRequests.deleteMany({});
     await m.collections.friendEdges.deleteMany({});
     await m.collections.friendRequests.deleteMany({});
+    await m.collections.friendCounts.deleteMany({});
     await m.collections.blockList.deleteMany({});
     await m.collections.reports.deleteMany({});
     await m.collections.conversations.deleteMany({});

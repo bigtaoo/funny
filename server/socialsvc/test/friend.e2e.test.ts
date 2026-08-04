@@ -24,6 +24,7 @@ describe.skipIf(!mongo)('socialsvc FriendService e2e', () => {
     await Promise.all([
       m.collections.friendEdges.deleteMany({}),
       m.collections.friendRequests.deleteMany({}),
+      m.collections.friendCounts.deleteMany({}),
       m.collections.blockList.deleteMany({}),
       m.collections.conversations.deleteMany({}),
       m.collections.chatMessages.deleteMany({}),
@@ -113,6 +114,78 @@ describe.skipIf(!mongo)('socialsvc FriendService e2e', () => {
     }));
     await m.collections.friendEdges.insertMany(edges);
     expect(await svc.requestFriend('a', 'P-B', undefined)).toMatchObject({ error: 'FRIEND_CAP_REACHED' });
+  });
+
+  // Regression for the 2026-08-04 fix: the old FRIEND_CAP gate in respondFriend was a plain
+  // countDocuments(friendEdges) read followed by a SEPARATE edge-insert write, with nothing atomic
+  // between them. Two concurrent accepts of DIFFERENT incoming requests for the SAME (one-slot-from-cap)
+  // account could both read a count under FRIEND_CAP before either write landed, overrunning the cap.
+  it('friend cap: CONCURRENT accepts of two different incoming requests cannot both push the same account past FRIEND_CAP', async () => {
+    // Seed 'a' to exactly FRIEND_CAP-1 (one slot remaining).
+    const edges = Array.from({ length: FRIEND_CAP - 1 }, (_, i) => ({
+      _id: friendEdgeId('a', `x${i}`), owner: 'a', friend: `x${i}`, since: nowMs,
+    }));
+    await m.collections.friendEdges.insertMany(edges);
+    meta.add('p1', 'P-P1', 'P1').add('p2', 'P-P2', 'P2');
+    const r1 = await svc.requestFriend('p1', 'P-A', undefined);
+    const r2 = await svc.requestFriend('p2', 'P-A', undefined);
+    if (r1.kind !== 'ok' || r2.kind !== 'ok') throw new Error('setup failed');
+
+    const [res1, res2] = await Promise.all([
+      svc.respondFriend('a', r1.requestId, true),
+      svc.respondFriend('a', r2.requestId, true),
+    ]);
+    const oks = [res1, res2].filter((r) => r.kind === 'ok');
+    const errs = [res1, res2].filter((r) => r.kind === 'error');
+    expect(oks).toHaveLength(1);
+    expect(errs).toHaveLength(1);
+    expect(errs[0]).toMatchObject({ error: 'FRIEND_CAP_REACHED' });
+
+    // Authoritative check: 'a' must land at EXACTLY FRIEND_CAP real edges, never FRIEND_CAP+1.
+    expect(await m.collections.friendEdges.countDocuments({ owner: 'a' })).toBe(FRIEND_CAP);
+    expect((await m.collections.friendCounts.findOne({ _id: 'a' }))!.count).toBe(FRIEND_CAP);
+
+    // The loser's request must be restored to 'pending' (not stuck 'accepted' with no friendship ever
+    // created — an adjacent bug fixed alongside the race itself), so the requester can retry later.
+    const loserReqId = res1.kind === 'error' ? r1.requestId : r2.requestId;
+    const winnerReqId = res1.kind === 'error' ? r2.requestId : r1.requestId;
+    expect((await m.collections.friendRequests.findOne({ _id: loserReqId }))!.status).toBe('pending');
+    expect((await m.collections.friendRequests.findOne({ _id: winnerReqId }))!.status).toBe('accepted');
+  });
+
+  it('friend cap: when the PEER is at cap, the accepter\'s own slot claim is rolled back (no orphan increment)', async () => {
+    // 'b' (the requester) is already at FRIEND_CAP; 'a' (the accepter) has room.
+    const edges = Array.from({ length: FRIEND_CAP }, (_, i) => ({
+      _id: friendEdgeId('b', `y${i}`), owner: 'b', friend: `y${i}`, since: nowMs,
+    }));
+    await m.collections.friendEdges.insertMany(edges);
+    // Seed a pending request from b to a directly — simulates a request sent back when b still had room
+    // (the normal requestFriend flow would itself now refuse to create a NEW one from an already-full b).
+    await m.collections.friendRequests.insertOne({ _id: 'req-peer-full', from: 'b', to: 'a', status: 'pending', createdAt: nowMs });
+
+    const res = await svc.respondFriend('a', 'req-peer-full', true);
+    expect(res).toMatchObject({ error: 'FRIEND_CAP_REACHED' });
+    expect((await m.collections.friendCounts.findOne({ _id: 'a' }))?.count ?? 0).toBe(0); // rolled back, not left at 1
+    expect(await m.collections.friendEdges.countDocuments({ owner: 'a' })).toBe(0);
+    expect((await m.collections.friendRequests.findOne({ _id: 'req-peer-full' }))!.status).toBe('pending'); // not lost
+  });
+
+  it('removeFriend releases both accounts\' claimed slots so a subsequent accept can succeed again; a redundant call does not decrement below 0', async () => {
+    await befriend('a', 'P-B', 'b');
+    expect((await m.collections.friendCounts.findOne({ _id: 'a' }))!.count).toBe(1);
+    expect((await m.collections.friendCounts.findOne({ _id: 'b' }))!.count).toBe(1);
+
+    expect(await svc.removeFriend('a', 'P-B')).toBe(true);
+    expect((await m.collections.friendCounts.findOne({ _id: 'a' }))!.count).toBe(0);
+    expect((await m.collections.friendCounts.findOne({ _id: 'b' }))!.count).toBe(0);
+
+    // Redundant removeFriend (already removed, target still resolves) must not decrement past 0.
+    expect(await svc.removeFriend('a', 'P-B')).toBe(true);
+    expect((await m.collections.friendCounts.findOne({ _id: 'a' }))!.count).toBe(0);
+
+    // The freed slot is real: 'a' can befriend someone new right after.
+    await befriend('a', 'P-C', 'c');
+    expect((await m.collections.friendCounts.findOne({ _id: 'a' }))!.count).toBe(1);
   });
 
   // ── Blocking ──────────────────────────────────────────────────────────────
