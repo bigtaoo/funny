@@ -28,6 +28,11 @@ export interface EquipmentInstance {
   level: number; // 0..9
   affixes: Affix[];
   locked?: boolean;
+  /** Provenance tag ('craft'/'gacha:<orderId>'/'checkin:<monthKey>'/'pve_drop:<levelId>'). Optional —
+   *  absent on pre-2026-08-04 instances; no consumer reads this yet (design/game/ITEM_IDENTITY_DESIGN.md). */
+  sourceType?: string;
+  /** Epoch ms when this instance was created. Optional, same caveat as sourceType. */
+  obtainedAt?: number;
 }
 
 /** Slot → instance id mapping for one card's loadout. */
@@ -48,6 +53,11 @@ export interface CardInstance {
   gear: GearSlotMap;
   /** Locked cards cannot be used as feed material (CC4). */
   locked: boolean;
+  /** Provenance tag ('starter'/'checkin'/'pve_anchor:<levelId>'/'pve_drop:<levelId>'/'gacha:<orderId>'). Optional —
+   *  absent on pre-2026-08-04 instances; no consumer reads this yet (design/game/ITEM_IDENTITY_DESIGN.md). */
+  sourceType?: string;
+  /** Epoch ms when this instance was created. Optional, same caveat as sourceType. */
+  obtainedAt?: number;
 }
 
 export interface SaveData {

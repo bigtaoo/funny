@@ -340,7 +340,7 @@ export async function deliverLootBox(
       for (const [mat, qty] of Object.entries(matGrant)) materialInc[mat] = (materialInc[mat] ?? 0) + qty;
     } else if (EQUIPMENT_DEFS[r.itemId]) {
       const instanceId = `eq_gacha_${orderId}_${i}`;
-      const instance = makeGachaEquipInstance(r.itemId, instanceId) as EquipmentInstance;
+      const instance = makeGachaEquipInstance(r.itemId, instanceId, `gacha:${orderId}`, now) as EquipmentInstance;
       if (invCount + Object.keys(equipInstances).length < EQUIPMENT_INV_CAP) {
         equipInstances[instanceId] = instance;
       } else if (equipMailOverflowCount < EQUIP_INV_FULL_MAIL_COUNT) {
@@ -389,7 +389,7 @@ export async function deliverLootBox(
   let cardCompensatedCoins = 0;
   let cardGrants: CardInstance[] = [];
   if (cardDefs.length > 0) {
-    const cardResult = await grantHeroCards(cols, () => now, accountId, cardDefs, 1, {
+    const cardResult = await grantHeroCards(cols, () => now, accountId, cardDefs, `gacha:${orderId}`, 1, {
       socialsvc,
       dispatchKey: `${orderId}:card_mail`,
     });

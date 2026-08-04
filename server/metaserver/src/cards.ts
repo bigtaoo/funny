@@ -79,6 +79,8 @@ export function toCardDoc(instance: CardInstance, accountId: string): CardInstan
     level: instance.level,
     gear: instance.gear,
     locked: instance.locked,
+    ...(instance.sourceType !== undefined ? { sourceType: instance.sourceType } : {}),
+    ...(instance.obtainedAt !== undefined ? { obtainedAt: instance.obtainedAt } : {}),
   };
 }
 
@@ -89,6 +91,8 @@ function fromCardDoc(doc: CardInstanceDoc): CardInstance {
     level: doc.level,
     gear: doc.gear,
     locked: doc.locked,
+    ...(doc.sourceType !== undefined ? { sourceType: doc.sourceType } : {}),
+    ...(doc.obtainedAt !== undefined ? { obtainedAt: doc.obtainedAt } : {}),
   };
 }
 
@@ -194,6 +198,7 @@ export async function grantCards(
   now: () => number,
   accountId: string,
   defs: CardDef[],
+  sourceType: string,
   level = 1,
   mailCtx?: CardMailCtx,
 ): Promise<{ instances: CardInstance[]; mailedCount: number; compensatedCoins: number; save: SaveData } | CardError> {
@@ -204,12 +209,15 @@ export async function grantCards(
 
   // Pre-generate IDs outside the rev loop (same IDs on retry → the eventual instance upsert is idempotent).
   const cardLevel = Math.max(1, Math.min(Math.floor(level), MAX_CARD_LEVEL));
+  const obtainedAt = now();
   const pendingInstances = defs.map<CardInstance>((def) => ({
     id: `card_${randomUUID().replace(/-/g, '').slice(0, 12)}`,
     defId: def.id,
     level: cardLevel,
     gear: {},
     locked: false,
+    sourceType,
+    obtainedAt,
   }));
 
   for (let attempt = 0; attempt < REV_RETRIES; attempt++) {

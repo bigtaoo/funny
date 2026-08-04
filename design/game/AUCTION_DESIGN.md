@@ -13,7 +13,7 @@
 - **拍卖行 = 和角色卡/装备/材料/皮肤四类养成物品绑定的大区内全服市场**：与 SLG 的 worldId/赛季生命周期无关（2026-07-06 拍板定稿，详见 §9），单一机制覆盖「公开市场」与「点对点定向交易」（挂单时指定受拍人）。
 - **可交易品 = 材料 + 装备（A ✅）+ 角色卡（CC-5 ✅）+ 皮肤（meta 托管能力 ✅ 已实现，`itemType='skin'` 拍卖流程已在 auctionsvc 接入，见 §9 任务4）**（PvE/SLG 统一养成材料 `scrap/lead/binding` + 锻造装备实例/角色卡实例/皮肤，整件托管转移）；**SLG 赛季资源（粮/铁/木）本就不在拍卖标的范围内**（那是大世界内政资源，随赛季重置，从未支持挂拍）。
 - **计价货币 = 金币（coins，跨季留存的 premium 货币）**；系统抽 **10% 手续费**；**禁止以赛季资源/局内 ink 计价**（防与天梯/付费体系串味）。
-- **承重墙**：拍卖行不碰战斗/地图，是纯经济子系统——挂存与发放走 **meta 材料库 + 装备库 + 角色卡库（+ 皮肤库，待建）**（幂等 orderId），扣款/收款走 **commercial 金币钱包**，状态机权威在独立服务 `auctionsvc`（见 §9）。
+- **承重墙**：拍卖行不碰战斗/地图，是纯经济子系统——挂存与发放走 **meta 材料库 + 装备库 + 角色卡库 + 皮肤库**（幂等 orderId），扣款/收款走 **commercial 金币钱包**，状态机权威在独立服务 `auctionsvc`（见 §9）。
 - **反 RMT 是持续对抗**（R3）：10% 高税 + 并发挂单上限 + 每日限额（C ✅）+ 绑定材料禁挂（E ✅，清单暂空）+ 价格护栏动态滑窗（G ✅）+ 异常模式 admin 审计（D ✅ admin G7 已接，pull 式扫描）。
 - **当前状态**（2026-07-06 复核）：**A/B/C/D/E/G 六轨道全实跑** + 一口价主干（`auctionsvc` `auctionService.ts` + e2e；装备库存后端 meta `equipment.ts`；异常审计 admin `service.ts`）；**客户端双入口已接**（大厅右侧功能条 + SLG 世界地图工具栏，均通向 `AuctionScene`，见 §6）；**F（原"季末冻结/结算"）已废弃**，拍卖单只按自身 72h 到期正常流转，不受任何赛季事件影响；**去耦合拆分（§9）任务1-7 全部完成**：独立服务 `auctionsvc` 已上线并接管全部流量，worldsvc 侧旧拍卖代码已删，client 拍卖方法已去 `worldId` 依赖、大厅入口不再经过 `resolveWorldShard`。
 
@@ -452,14 +452,30 @@ designatedBuyerId?, expireAt(ms), status, buyerId?, rev
 - [x] **依赖**：任务7（当时有意搁置，见其"未动"条目）。背景：socialsvc 契约任务（`SOCIAL_SVC_DESIGN.md` §9）收尾时顺带巡查其它服务的 client codegen 接线情况，发现 `AuctionView` 一直是任务7遗留的半成品——`client/scripts/gen-openapi.mjs` 从未加过 `openapi-auction.yml` 的流水线，`WorldApiClient.ts` 的 `AuctionView` 仍从 `openapi-world.ts`（`server/contracts/openapi-world.yml` 手工复制的过期副本）导入。
 - **发现的真 drift（先于接线本身）**：diff 两份契约发现 `openapi-world.yml` 的 `AuctionView` 是 2026-07-06 拆分前的旧快照——多余的 `worldId`（早已从 `auctionsvc` 去耦合，见 §9 拍板）、`itemType` 枚举缺 `skin`；而**当前**的 `server/contracts/openapi-auction.yml` 反而漏了 `topBid` 字段——`auctionService.ts`/`docToView()` 一直有条件返回 `topBid`，且 client `AuctionScene/list.ts`/`bid.ts` 早就在读 `auc.topBid`（显示"当前最高出价" vs "起拍价"），只是因为 client 类型来源一直没切过去，这个契约 bug 从未在 `tsc` 里现形。
 - **改动**：① `server/contracts/openapi-auction.yml`：`AuctionView` 补回 `topBid?: {bidderId, amount, ts}`（与 `openapi-world.yml` 旧副本、`auctionService.ts` 内部接口对齐）；② `client/scripts/gen-openapi.mjs` 新增第三条流水线 `openapi-auction.yml → src/net/openapi-auction.ts`；③ `WorldApiClient.ts`：`AuctionView` 改从 `auctionComponents['schemas']['AuctionView']`（新文件）导入，去掉对 `openapi-world.ts` 里那份的依赖，文件头注释同步说明 `AuctionView` 是唯一例外（源自 auctionsvc 自己的契约）；④ `server/contracts/openapi-world.yml` 删除整段死代码——`AuctionView` schema + `/auction/{list,mine,create,{auctionId}/buy,{auctionId}/bid,{auctionId}/cancel}` 六个 path（worldsvc 早已不服务 `/auction/*`，Caddy 直接转发到 `auctionsvc:18086`，`worldsvc/src/httpApi.ts` 注释也明确写"已迁移"——纯遗留，无运行时影响）；⑤ 连带重新生成两个服务的 `routes.gen.ts`（`auctionsvc` 因 schema 加字段、`worldsvc` 因删 path+schema 都变"stale"）。
-- **范围之外（有意不做）**：`createAuction`/`AuctionScene` 的 `itemType` 仍不支持 `'skin'`——皮肤交易目前只有服务端能力（`auctionsvc`），UI 从未接入 picker，任务9 已记录过同样的结论；本次只是切换类型来源，不新增功能。`sellerName`/`totalPrice`/`currency` 等字段在两份契约里 required 标注的细微差异（均非新引入）未动，不影响生成的 TS 类型（本来就是 optional）。
+- **范围之外（已于任务11补上）**：`createAuction`/`AuctionScene` 的 `itemType` 当时仍不支持 `'skin'`——皮肤交易只有服务端能力（`auctionsvc`），UI 从未接入 picker，任务9 已记录过同样的结论；本任务只是切换类型来源，不新增功能。`sellerName`/`totalPrice`/`currency` 等字段在两份契约里 required 标注的细微差异（均非新引入）未动，不影响生成的 TS 类型（本来就是 optional）。
 - **验收**：client `tsc --noEmit`（`tsconfig.json` + `tsconfig.test.json`）绿；`npm run build:web` 绿（仅预期内的 asset-size 警告）；client `vitest run`（110 文件 781 例）全绿；`auctionsvc`/`worldsvc` 各自 `npm run gen:api:*:check` 绿、`typecheck` 绿、`test`（分别 5 文件 71 例 / 44 文件 338 例）全绿。
 - **踩坑记**：worktree 内 `client/node_modules` 无 `@nw/*` 依赖，直接 junction 到主仓即可省掉一次安装；`server/node_modules` 含 `@nw/shared`/`@nw/engine` 等 workspace 包，按 [[worktrees]] 的陷阱说明老实 `npm install` + 分别 `npm run build`（两个包的 `dist/` 不存在会导致下游 `tsc` 报 `Cannot find module '@nw/shared'`，和本次改动无关，纯粹是新 worktree 的构建顺序问题）。
 
-### 出售物品选择页：左侧类目栏 + 图标卡放大 1.5x（2026-07-09）
+### 拍卖任务11：client 拍卖 Picker 接入皮肤（`itemType='skin'`）✅（2026-08-04）
+
+- [x] **依赖**：任务2（皮肤托管能力）+ 任务10（client 已切到 `openapi-auction.yml`，`itemType` 枚举早已含 `skin`）。**触发原因**：用户反馈"抽到的多余皮肤没出现在拍卖列表里"，排查后发现根因不是过滤条件写错，而是任务7/任务10两次都把"皮肤 UI"记成"范围之外"——服务端 `escrowSkin`/`grantSkin`（`server/metaserver/src/skin.ts`）、`auctionService.ts` 的 `itemType==='skin'` 分支、`openapi-auction.yml` 的 `itemType` 枚举全部早已就绪，纯粹是 client picker 从未读取 `save.inventory.skins`。
+- **改动范围**（全部 client-only，服务端/契约零改动）：
+  - `client/src/scenes/AuctionScene/base.ts`：`ItemClass`/`FILTERS` 加 `'skin'`；新增 `createSkinId` 状态字段；`itemKind()` 加 `skin→'brush'`（复用 GachaScene 已用的 IconKind，不新增枚举值）；`auctionLabel()` 加皮肤分支（`skinDisplayName(item.skinId)`）；`errorMsg()` 补 `SKIN_IN_USE`/`SKIN_NOT_FOUND` 错误码映射。
+  - `client/src/scenes/AuctionScene/picker.ts`：新增 `listableSkins()`（读 `save.inventory.skins`，用 `allEquippedSkins(save.equipped)` 过滤已装备的，镜像服务端 `isSkinEquipped` 判定）；`buildPickEntries()`/`renderPickIcon()`/`renderPickerSidebar()` 各加皮肤分支——图标复用 `GachaScene/odds.ts` 已有的皮肤立绘取图写法（`unitPortraitUrl(SKIN_TARGET_UNIT[skinId], skinId)` + `getArtTexture` 异步纹理，无立绘则 fallback `'brush'` 图标）。
+  - `client/src/scenes/AuctionScene/createForm.ts`：`doCreate()` 加 `itemType='skin', item={skinId}, qty=1` 分支。
+  - `client/src/scenes/AuctionScene/list.ts`：分类栏 + `renderItemPicture()` 同步加皮肤分支（市场挂单列表也要能正确显示皮肤图标/标题，不只是 picker）。
+  - `client/src/net/WorldApiClient.ts`：`createAuction()` 的 `itemType` 参数字面量类型加 `| 'skin'`（`AuctionView` 类型本身早已含 skin，仅这一处手写封装层缺失）。
+  - i18n 三语言文件补 `auction.filterSkin`/`auction.err.skinInUse`。
+- **未改动**：皮肤本身没有实例id（`inventory.skins: string[]` 去重集合，"拥有一份"="拥有全部"），拍卖只按 `skinId` 字符串托管/归还，与装备/角色卡的 instanceId 模型不同，这是既有设计（`skin.ts` 头部注释），不在本任务范围内调整（相关的"是否要给皮肤也上实例id"的讨论见 [[item-identity-audit]] / `ITEM_IDENTITY_DESIGN.md`）。
+- **已知限制（未修复，属于更深的经济系统缺口，不在本任务范围）**：gacha 抽到"重复"皮肤（账号已拥有过）目前是纯 no-op（`markDuplicates`，`economy.ts`），不会产生任何新库存或补偿——即使补上本任务的 picker UI，一个**真正重复**的皮肤仍然不会出现在拍卖列表里，只有"未装备但从未拍卖过的唯一一份"才会。设计文档里"重复转化待S5"的待办（本节 §9 任务2 引用）尚未排期。
+- **验收**：`server/metaserver`（67 文件 802 例）、`server/auctionsvc`（9 文件 91 例）全绿；client `tsc --noEmit` 绿；`npm run build:web` 绿（仅预期内 asset-size 警告）；client `vitest run` + `vitest run --config vitest.ui.config.ts`（合计 259 文件 2073 例）全绿，新增 5 条 `auctionPickerDedupe.ui.ts` 皮肤专项用例（未装备过滤、entry 生成、pick 后 `doCreate` 请求体、分类 tab 渲染）。
+- **未验证**：本次会话 Browser 预览面板未能渲染帧（环境限制），且触达真实 AuctionScene 需要登录态 + 跑起来的 metaserver/auctionsvc 后端，故**没有做浏览器截图验证**，只有 headless PIXI 单测覆盖（真实 PIXI 场景树、无渲染器）+ 生产构建通过。下次有可用预览环境时应补一次真实截图核对。
+
+### 出售物品选择页：左侧类目栏 + 图标卡放大 1.5x（2026-07-09，2026-08-04 追加放大）
 
 - **改动**（`client/src/scenes/AuctionScene/picker.ts`）：`PickEntry` 加 `cls` 字段（material/equipment/card），选择页装订线左侧新增全部/装备/角色卡/材料四个类目 tab（复用 `HubTabs.drawSidebarTabs`，与市场列表页 `renderSidebar` 同一视觉语言），点击按 `cls` 过滤右侧网格；网格改用 `marginLineX(w)` 让出左栏。图标卡尺寸/字号整体 ×1.5（`CARD_GAP` 10→15、`CARD_W_TARGET` 130→195、`CARD_H` 104→156，图标 26→39、名称字号 12→18、`Select ›` 提示 10→15）。
 - **状态**：新增 `AuctionSceneBase.pickerFilter`（`AucFilter`，复用市场页的类型），`openItemPicker()` 时重置为 `''`。
+- **2026-08-04 追加**：用户反馈图标偏小、名称贴图标太近——`renderPickCard()` 图标尺寸 39→56、名称 y 偏移 78→88（`CARD_H` 156 不变，"Select ›" 提示位置 `y+148` 不变，与新名称位置净空 22px+，不重叠）。
 - **验收**：`tsc --noEmit` 绿；`webpack --mode production` 绿。
 
 ### 修复：拍卖退回邮件标题/正文显示为原始 i18n key（2026-07-12）

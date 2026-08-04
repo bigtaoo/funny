@@ -261,7 +261,9 @@ export const PROTECT_ENHANCE_ITEM_ID = 'protect_enhance';
 export function makeGachaEquipInstance(
   defId: string,
   instanceId: string,
-): { id: string; defId: string; rarity: EquipRarity; level: number; affixes: { id: string; value: number }[] } {
+  sourceType: string,
+  obtainedAt: number,
+): { id: string; defId: string; rarity: EquipRarity; level: number; affixes: { id: string; value: number }[]; sourceType: string; obtainedAt: number } {
   const def = EQUIPMENT_DEFS[defId];
   if (!def) throw new Error(`unknown defId: ${defId}`);
   return {
@@ -270,6 +272,8 @@ export function makeGachaEquipInstance(
     rarity: def.rarity,
     level: 0,
     affixes: rollCraftedAffixes(defId, instanceId),
+    sourceType,
+    obtainedAt,
   };
 }
 
@@ -324,7 +328,9 @@ export function equipEnhanceExpectedCost(level: number, materialUnitValue: Recor
 export function makeDropInstance(
   rarity: EquipRarity,
   instanceId: string,
-): { id: string; defId: string; rarity: EquipRarity; level: number; affixes: { id: string; value: number }[] } {
+  sourceType: string,
+  obtainedAt: number,
+): { id: string; defId: string; rarity: EquipRarity; level: number; affixes: { id: string; value: number }[]; sourceType: string; obtainedAt: number } {
   const rng = seededRng(hashSeed(`drop:${instanceId}`));
   const slotIdx = Math.floor(rng() * EQUIP_SLOTS.length);
   const slot = EQUIP_SLOTS[slotIdx]!;
@@ -336,6 +342,8 @@ export function makeDropInstance(
     rarity,
     level: 0,
     affixes: rollCraftedAffixes(def.defId, instanceId),
+    sourceType,
+    obtainedAt,
   };
 }
 

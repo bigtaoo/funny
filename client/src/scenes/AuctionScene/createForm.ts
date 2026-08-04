@@ -218,8 +218,8 @@ export function CreateFormMixin<TBase extends AuctionSceneBaseCtor>(Base: TBase)
       const auctionMode = this.createSaleMode === 'auction';
       const cls = this.createClass;
 
-      // Resolve the item payload + qty per class; equipment/card require a picked instance (qty forced to 1 server-side).
-      let itemType: 'material' | 'equipment' | 'card';
+      // Resolve the item payload + qty per class; equipment/card/skin require a picked instance/id (qty forced to 1 server-side).
+      let itemType: 'material' | 'equipment' | 'card' | 'skin';
       let item: Record<string, unknown>;
       let qty: number;
       if (cls === 'equipment') {
@@ -228,6 +228,9 @@ export function CreateFormMixin<TBase extends AuctionSceneBaseCtor>(Base: TBase)
       } else if (cls === 'card') {
         if (!this.createCardId) { this.showToast(t('auction.selectItem'), C.red); return; }
         itemType = 'card'; item = { instanceId: this.createCardId }; qty = 1;
+      } else if (cls === 'skin') {
+        if (!this.createSkinId) { this.showToast(t('auction.selectItem'), C.red); return; }
+        itemType = 'skin'; item = { skinId: this.createSkinId }; qty = 1;
       } else {
         itemType = 'material'; item = { material: this.createMaterial }; qty = this.createQty;
       }
@@ -248,7 +251,7 @@ export function CreateFormMixin<TBase extends AuctionSceneBaseCtor>(Base: TBase)
         this.createBuyer = '';
         // Escrow removed the instance from inventory server-side → re-pull the authoritative save so the
         // picker no longer offers it. Materials are server-authoritative too but not shown in a local picker.
-        if (cls !== 'material') { this.createEquipId = null; this.createCardId = null; await this.cb.reloadSave?.(); }
+        if (cls !== 'material') { this.createEquipId = null; this.createCardId = null; this.createSkinId = null; await this.cb.reloadSave?.(); }
         this.showToast(t('auction.created'));
         await this.loadData();
       } catch (e) {

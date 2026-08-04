@@ -2236,6 +2236,14 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                       "locked": {
                         "type": "boolean",
                         "description": "Locked cards cannot be used as fusion material"
+                      },
+                      "sourceType": {
+                        "type": "string",
+                        "description": "Provenance tag (e.g. 'starter', 'checkin', 'pve_anchor:<levelId>', 'pve_drop:<levelId>', 'gacha:<orderId>'). Optional — absent on pre-2026-08-04 instances. No consumer reads this yet; reserved for future support/anti-cheat tooling (ITEM_IDENTITY_DESIGN.md)."
+                      },
+                      "obtainedAt": {
+                        "type": "integer",
+                        "description": "Epoch ms when this instance was created. Optional, same caveat as sourceType."
                       }
                     }
                   },
@@ -2374,6 +2382,14 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                       },
                       "locked": {
                         "type": "boolean"
+                      },
+                      "sourceType": {
+                        "type": "string",
+                        "description": "Provenance tag (e.g. 'craft', 'gacha:<orderId>', 'checkin:<monthKey>', 'pve_drop:<levelId>'). Optional — absent on pre-2026-08-04 instances. No consumer reads this yet; reserved for future support/anti-cheat tooling (ITEM_IDENTITY_DESIGN.md)."
+                      },
+                      "obtainedAt": {
+                        "type": "integer",
+                        "description": "Epoch ms when this instance was created. Optional, same caveat as sourceType."
                       }
                     }
                   }
@@ -2845,6 +2861,14 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                       "locked": {
                         "type": "boolean",
                         "description": "Locked cards cannot be used as fusion material"
+                      },
+                      "sourceType": {
+                        "type": "string",
+                        "description": "Provenance tag (e.g. 'starter', 'checkin', 'pve_anchor:<levelId>', 'pve_drop:<levelId>', 'gacha:<orderId>'). Optional — absent on pre-2026-08-04 instances. No consumer reads this yet; reserved for future support/anti-cheat tooling (ITEM_IDENTITY_DESIGN.md)."
+                      },
+                      "obtainedAt": {
+                        "type": "integer",
+                        "description": "Epoch ms when this instance was created. Optional, same caveat as sourceType."
                       }
                     }
                   },
@@ -2983,6 +3007,14 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                       },
                       "locked": {
                         "type": "boolean"
+                      },
+                      "sourceType": {
+                        "type": "string",
+                        "description": "Provenance tag (e.g. 'craft', 'gacha:<orderId>', 'checkin:<monthKey>', 'pve_drop:<levelId>'). Optional — absent on pre-2026-08-04 instances. No consumer reads this yet; reserved for future support/anti-cheat tooling (ITEM_IDENTITY_DESIGN.md)."
+                      },
+                      "obtainedAt": {
+                        "type": "integer",
+                        "description": "Epoch ms when this instance was created. Optional, same caveat as sourceType."
                       }
                     }
                   }
@@ -3716,6 +3748,14 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                       "locked": {
                         "type": "boolean",
                         "description": "Locked cards cannot be used as fusion material"
+                      },
+                      "sourceType": {
+                        "type": "string",
+                        "description": "Provenance tag (e.g. 'starter', 'checkin', 'pve_anchor:<levelId>', 'pve_drop:<levelId>', 'gacha:<orderId>'). Optional — absent on pre-2026-08-04 instances. No consumer reads this yet; reserved for future support/anti-cheat tooling (ITEM_IDENTITY_DESIGN.md)."
+                      },
+                      "obtainedAt": {
+                        "type": "integer",
+                        "description": "Epoch ms when this instance was created. Optional, same caveat as sourceType."
                       }
                     }
                   },
@@ -3854,6 +3894,14 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                       },
                       "locked": {
                         "type": "boolean"
+                      },
+                      "sourceType": {
+                        "type": "string",
+                        "description": "Provenance tag (e.g. 'craft', 'gacha:<orderId>', 'checkin:<monthKey>', 'pve_drop:<levelId>'). Optional — absent on pre-2026-08-04 instances. No consumer reads this yet; reserved for future support/anti-cheat tooling (ITEM_IDENTITY_DESIGN.md)."
+                      },
+                      "obtainedAt": {
+                        "type": "integer",
+                        "description": "Epoch ms when this instance was created. Optional, same caveat as sourceType."
                       }
                     }
                   }
@@ -3980,6 +4028,14 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                 },
                 "locked": {
                   "type": "boolean"
+                },
+                "sourceType": {
+                  "type": "string",
+                  "description": "Provenance tag (e.g. 'craft', 'gacha:<orderId>', 'checkin:<monthKey>', 'pve_drop:<levelId>'). Optional — absent on pre-2026-08-04 instances. No consumer reads this yet; reserved for future support/anti-cheat tooling (ITEM_IDENTITY_DESIGN.md)."
+                },
+                "obtainedAt": {
+                  "type": "integer",
+                  "description": "Epoch ms when this instance was created. Optional, same caveat as sourceType."
                 }
               }
             },
@@ -4370,6 +4426,14 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                       "locked": {
                         "type": "boolean",
                         "description": "Locked cards cannot be used as fusion material"
+                      },
+                      "sourceType": {
+                        "type": "string",
+                        "description": "Provenance tag (e.g. 'starter', 'checkin', 'pve_anchor:<levelId>', 'pve_drop:<levelId>', 'gacha:<orderId>'). Optional — absent on pre-2026-08-04 instances. No consumer reads this yet; reserved for future support/anti-cheat tooling (ITEM_IDENTITY_DESIGN.md)."
+                      },
+                      "obtainedAt": {
+                        "type": "integer",
+                        "description": "Epoch ms when this instance was created. Optional, same caveat as sourceType."
                       }
                     }
                   },
@@ -4508,6 +4572,14 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                       },
                       "locked": {
                         "type": "boolean"
+                      },
+                      "sourceType": {
+                        "type": "string",
+                        "description": "Provenance tag (e.g. 'craft', 'gacha:<orderId>', 'checkin:<monthKey>', 'pve_drop:<levelId>'). Optional — absent on pre-2026-08-04 instances. No consumer reads this yet; reserved for future support/anti-cheat tooling (ITEM_IDENTITY_DESIGN.md)."
+                      },
+                      "obtainedAt": {
+                        "type": "integer",
+                        "description": "Epoch ms when this instance was created. Optional, same caveat as sourceType."
                       }
                     }
                   }
@@ -4634,6 +4706,14 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                 },
                 "locked": {
                   "type": "boolean"
+                },
+                "sourceType": {
+                  "type": "string",
+                  "description": "Provenance tag (e.g. 'craft', 'gacha:<orderId>', 'checkin:<monthKey>', 'pve_drop:<levelId>'). Optional — absent on pre-2026-08-04 instances. No consumer reads this yet; reserved for future support/anti-cheat tooling (ITEM_IDENTITY_DESIGN.md)."
+                },
+                "obtainedAt": {
+                  "type": "integer",
+                  "description": "Epoch ms when this instance was created. Optional, same caveat as sourceType."
                 }
               }
             },
@@ -5110,6 +5190,14 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                       "locked": {
                         "type": "boolean",
                         "description": "Locked cards cannot be used as fusion material"
+                      },
+                      "sourceType": {
+                        "type": "string",
+                        "description": "Provenance tag (e.g. 'starter', 'checkin', 'pve_anchor:<levelId>', 'pve_drop:<levelId>', 'gacha:<orderId>'). Optional — absent on pre-2026-08-04 instances. No consumer reads this yet; reserved for future support/anti-cheat tooling (ITEM_IDENTITY_DESIGN.md)."
+                      },
+                      "obtainedAt": {
+                        "type": "integer",
+                        "description": "Epoch ms when this instance was created. Optional, same caveat as sourceType."
                       }
                     }
                   },
@@ -5248,6 +5336,14 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                       },
                       "locked": {
                         "type": "boolean"
+                      },
+                      "sourceType": {
+                        "type": "string",
+                        "description": "Provenance tag (e.g. 'craft', 'gacha:<orderId>', 'checkin:<monthKey>', 'pve_drop:<levelId>'). Optional — absent on pre-2026-08-04 instances. No consumer reads this yet; reserved for future support/anti-cheat tooling (ITEM_IDENTITY_DESIGN.md)."
+                      },
+                      "obtainedAt": {
+                        "type": "integer",
+                        "description": "Epoch ms when this instance was created. Optional, same caveat as sourceType."
                       }
                     }
                   }
@@ -5798,6 +5894,14 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                           "locked": {
                             "type": "boolean",
                             "description": "Locked cards cannot be used as fusion material"
+                          },
+                          "sourceType": {
+                            "type": "string",
+                            "description": "Provenance tag (e.g. 'starter', 'checkin', 'pve_anchor:<levelId>', 'pve_drop:<levelId>', 'gacha:<orderId>'). Optional — absent on pre-2026-08-04 instances. No consumer reads this yet; reserved for future support/anti-cheat tooling (ITEM_IDENTITY_DESIGN.md)."
+                          },
+                          "obtainedAt": {
+                            "type": "integer",
+                            "description": "Epoch ms when this instance was created. Optional, same caveat as sourceType."
                           }
                         }
                       },
@@ -5936,6 +6040,14 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                           },
                           "locked": {
                             "type": "boolean"
+                          },
+                          "sourceType": {
+                            "type": "string",
+                            "description": "Provenance tag (e.g. 'craft', 'gacha:<orderId>', 'checkin:<monthKey>', 'pve_drop:<levelId>'). Optional — absent on pre-2026-08-04 instances. No consumer reads this yet; reserved for future support/anti-cheat tooling (ITEM_IDENTITY_DESIGN.md)."
+                          },
+                          "obtainedAt": {
+                            "type": "integer",
+                            "description": "Epoch ms when this instance was created. Optional, same caveat as sourceType."
                           }
                         }
                       }
@@ -6107,6 +6219,14 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                   "locked": {
                     "type": "boolean",
                     "description": "Locked cards cannot be used as fusion material"
+                  },
+                  "sourceType": {
+                    "type": "string",
+                    "description": "Provenance tag (e.g. 'starter', 'checkin', 'pve_anchor:<levelId>', 'pve_drop:<levelId>', 'gacha:<orderId>'). Optional — absent on pre-2026-08-04 instances. No consumer reads this yet; reserved for future support/anti-cheat tooling (ITEM_IDENTITY_DESIGN.md)."
+                  },
+                  "obtainedAt": {
+                    "type": "integer",
+                    "description": "Epoch ms when this instance was created. Optional, same caveat as sourceType."
                   }
                 }
               },
@@ -6164,6 +6284,14 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                   },
                   "locked": {
                     "type": "boolean"
+                  },
+                  "sourceType": {
+                    "type": "string",
+                    "description": "Provenance tag (e.g. 'craft', 'gacha:<orderId>', 'checkin:<monthKey>', 'pve_drop:<levelId>'). Optional — absent on pre-2026-08-04 instances. No consumer reads this yet; reserved for future support/anti-cheat tooling (ITEM_IDENTITY_DESIGN.md)."
+                  },
+                  "obtainedAt": {
+                    "type": "integer",
+                    "description": "Epoch ms when this instance was created. Optional, same caveat as sourceType."
                   }
                 }
               },
@@ -6542,6 +6670,14 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                       "locked": {
                         "type": "boolean",
                         "description": "Locked cards cannot be used as fusion material"
+                      },
+                      "sourceType": {
+                        "type": "string",
+                        "description": "Provenance tag (e.g. 'starter', 'checkin', 'pve_anchor:<levelId>', 'pve_drop:<levelId>', 'gacha:<orderId>'). Optional — absent on pre-2026-08-04 instances. No consumer reads this yet; reserved for future support/anti-cheat tooling (ITEM_IDENTITY_DESIGN.md)."
+                      },
+                      "obtainedAt": {
+                        "type": "integer",
+                        "description": "Epoch ms when this instance was created. Optional, same caveat as sourceType."
                       }
                     }
                   },
@@ -6680,6 +6816,14 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                       },
                       "locked": {
                         "type": "boolean"
+                      },
+                      "sourceType": {
+                        "type": "string",
+                        "description": "Provenance tag (e.g. 'craft', 'gacha:<orderId>', 'checkin:<monthKey>', 'pve_drop:<levelId>'). Optional — absent on pre-2026-08-04 instances. No consumer reads this yet; reserved for future support/anti-cheat tooling (ITEM_IDENTITY_DESIGN.md)."
+                      },
+                      "obtainedAt": {
+                        "type": "integer",
+                        "description": "Epoch ms when this instance was created. Optional, same caveat as sourceType."
                       }
                     }
                   }
@@ -7117,6 +7261,14 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                       "locked": {
                         "type": "boolean",
                         "description": "Locked cards cannot be used as fusion material"
+                      },
+                      "sourceType": {
+                        "type": "string",
+                        "description": "Provenance tag (e.g. 'starter', 'checkin', 'pve_anchor:<levelId>', 'pve_drop:<levelId>', 'gacha:<orderId>'). Optional — absent on pre-2026-08-04 instances. No consumer reads this yet; reserved for future support/anti-cheat tooling (ITEM_IDENTITY_DESIGN.md)."
+                      },
+                      "obtainedAt": {
+                        "type": "integer",
+                        "description": "Epoch ms when this instance was created. Optional, same caveat as sourceType."
                       }
                     }
                   },
@@ -7255,6 +7407,14 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                       },
                       "locked": {
                         "type": "boolean"
+                      },
+                      "sourceType": {
+                        "type": "string",
+                        "description": "Provenance tag (e.g. 'craft', 'gacha:<orderId>', 'checkin:<monthKey>', 'pve_drop:<levelId>'). Optional — absent on pre-2026-08-04 instances. No consumer reads this yet; reserved for future support/anti-cheat tooling (ITEM_IDENTITY_DESIGN.md)."
+                      },
+                      "obtainedAt": {
+                        "type": "integer",
+                        "description": "Epoch ms when this instance was created. Optional, same caveat as sourceType."
                       }
                     }
                   }
@@ -7689,6 +7849,14 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                       "locked": {
                         "type": "boolean",
                         "description": "Locked cards cannot be used as fusion material"
+                      },
+                      "sourceType": {
+                        "type": "string",
+                        "description": "Provenance tag (e.g. 'starter', 'checkin', 'pve_anchor:<levelId>', 'pve_drop:<levelId>', 'gacha:<orderId>'). Optional — absent on pre-2026-08-04 instances. No consumer reads this yet; reserved for future support/anti-cheat tooling (ITEM_IDENTITY_DESIGN.md)."
+                      },
+                      "obtainedAt": {
+                        "type": "integer",
+                        "description": "Epoch ms when this instance was created. Optional, same caveat as sourceType."
                       }
                     }
                   },
@@ -7827,6 +7995,14 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                       },
                       "locked": {
                         "type": "boolean"
+                      },
+                      "sourceType": {
+                        "type": "string",
+                        "description": "Provenance tag (e.g. 'craft', 'gacha:<orderId>', 'checkin:<monthKey>', 'pve_drop:<levelId>'). Optional — absent on pre-2026-08-04 instances. No consumer reads this yet; reserved for future support/anti-cheat tooling (ITEM_IDENTITY_DESIGN.md)."
+                      },
+                      "obtainedAt": {
+                        "type": "integer",
+                        "description": "Epoch ms when this instance was created. Optional, same caveat as sourceType."
                       }
                     }
                   }
@@ -8262,6 +8438,14 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                       "locked": {
                         "type": "boolean",
                         "description": "Locked cards cannot be used as fusion material"
+                      },
+                      "sourceType": {
+                        "type": "string",
+                        "description": "Provenance tag (e.g. 'starter', 'checkin', 'pve_anchor:<levelId>', 'pve_drop:<levelId>', 'gacha:<orderId>'). Optional — absent on pre-2026-08-04 instances. No consumer reads this yet; reserved for future support/anti-cheat tooling (ITEM_IDENTITY_DESIGN.md)."
+                      },
+                      "obtainedAt": {
+                        "type": "integer",
+                        "description": "Epoch ms when this instance was created. Optional, same caveat as sourceType."
                       }
                     }
                   },
@@ -8400,6 +8584,14 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                       },
                       "locked": {
                         "type": "boolean"
+                      },
+                      "sourceType": {
+                        "type": "string",
+                        "description": "Provenance tag (e.g. 'craft', 'gacha:<orderId>', 'checkin:<monthKey>', 'pve_drop:<levelId>'). Optional — absent on pre-2026-08-04 instances. No consumer reads this yet; reserved for future support/anti-cheat tooling (ITEM_IDENTITY_DESIGN.md)."
+                      },
+                      "obtainedAt": {
+                        "type": "integer",
+                        "description": "Epoch ms when this instance was created. Optional, same caveat as sourceType."
                       }
                     }
                   }
@@ -8839,6 +9031,14 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                       "locked": {
                         "type": "boolean",
                         "description": "Locked cards cannot be used as fusion material"
+                      },
+                      "sourceType": {
+                        "type": "string",
+                        "description": "Provenance tag (e.g. 'starter', 'checkin', 'pve_anchor:<levelId>', 'pve_drop:<levelId>', 'gacha:<orderId>'). Optional — absent on pre-2026-08-04 instances. No consumer reads this yet; reserved for future support/anti-cheat tooling (ITEM_IDENTITY_DESIGN.md)."
+                      },
+                      "obtainedAt": {
+                        "type": "integer",
+                        "description": "Epoch ms when this instance was created. Optional, same caveat as sourceType."
                       }
                     }
                   },
@@ -8977,6 +9177,14 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                       },
                       "locked": {
                         "type": "boolean"
+                      },
+                      "sourceType": {
+                        "type": "string",
+                        "description": "Provenance tag (e.g. 'craft', 'gacha:<orderId>', 'checkin:<monthKey>', 'pve_drop:<levelId>'). Optional — absent on pre-2026-08-04 instances. No consumer reads this yet; reserved for future support/anti-cheat tooling (ITEM_IDENTITY_DESIGN.md)."
+                      },
+                      "obtainedAt": {
+                        "type": "integer",
+                        "description": "Epoch ms when this instance was created. Optional, same caveat as sourceType."
                       }
                     }
                   }
@@ -9438,6 +9646,14 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                       "locked": {
                         "type": "boolean",
                         "description": "Locked cards cannot be used as fusion material"
+                      },
+                      "sourceType": {
+                        "type": "string",
+                        "description": "Provenance tag (e.g. 'starter', 'checkin', 'pve_anchor:<levelId>', 'pve_drop:<levelId>', 'gacha:<orderId>'). Optional — absent on pre-2026-08-04 instances. No consumer reads this yet; reserved for future support/anti-cheat tooling (ITEM_IDENTITY_DESIGN.md)."
+                      },
+                      "obtainedAt": {
+                        "type": "integer",
+                        "description": "Epoch ms when this instance was created. Optional, same caveat as sourceType."
                       }
                     }
                   },
@@ -9576,6 +9792,14 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                       },
                       "locked": {
                         "type": "boolean"
+                      },
+                      "sourceType": {
+                        "type": "string",
+                        "description": "Provenance tag (e.g. 'craft', 'gacha:<orderId>', 'checkin:<monthKey>', 'pve_drop:<levelId>'). Optional — absent on pre-2026-08-04 instances. No consumer reads this yet; reserved for future support/anti-cheat tooling (ITEM_IDENTITY_DESIGN.md)."
+                      },
+                      "obtainedAt": {
+                        "type": "integer",
+                        "description": "Epoch ms when this instance was created. Optional, same caveat as sourceType."
                       }
                     }
                   }
@@ -10054,6 +10278,14 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                       "locked": {
                         "type": "boolean",
                         "description": "Locked cards cannot be used as fusion material"
+                      },
+                      "sourceType": {
+                        "type": "string",
+                        "description": "Provenance tag (e.g. 'starter', 'checkin', 'pve_anchor:<levelId>', 'pve_drop:<levelId>', 'gacha:<orderId>'). Optional — absent on pre-2026-08-04 instances. No consumer reads this yet; reserved for future support/anti-cheat tooling (ITEM_IDENTITY_DESIGN.md)."
+                      },
+                      "obtainedAt": {
+                        "type": "integer",
+                        "description": "Epoch ms when this instance was created. Optional, same caveat as sourceType."
                       }
                     }
                   },
@@ -10192,6 +10424,14 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                       },
                       "locked": {
                         "type": "boolean"
+                      },
+                      "sourceType": {
+                        "type": "string",
+                        "description": "Provenance tag (e.g. 'craft', 'gacha:<orderId>', 'checkin:<monthKey>', 'pve_drop:<levelId>'). Optional — absent on pre-2026-08-04 instances. No consumer reads this yet; reserved for future support/anti-cheat tooling (ITEM_IDENTITY_DESIGN.md)."
+                      },
+                      "obtainedAt": {
+                        "type": "integer",
+                        "description": "Epoch ms when this instance was created. Optional, same caveat as sourceType."
                       }
                     }
                   }
@@ -10630,6 +10870,14 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                       "locked": {
                         "type": "boolean",
                         "description": "Locked cards cannot be used as fusion material"
+                      },
+                      "sourceType": {
+                        "type": "string",
+                        "description": "Provenance tag (e.g. 'starter', 'checkin', 'pve_anchor:<levelId>', 'pve_drop:<levelId>', 'gacha:<orderId>'). Optional — absent on pre-2026-08-04 instances. No consumer reads this yet; reserved for future support/anti-cheat tooling (ITEM_IDENTITY_DESIGN.md)."
+                      },
+                      "obtainedAt": {
+                        "type": "integer",
+                        "description": "Epoch ms when this instance was created. Optional, same caveat as sourceType."
                       }
                     }
                   },
@@ -10768,6 +11016,14 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                       },
                       "locked": {
                         "type": "boolean"
+                      },
+                      "sourceType": {
+                        "type": "string",
+                        "description": "Provenance tag (e.g. 'craft', 'gacha:<orderId>', 'checkin:<monthKey>', 'pve_drop:<levelId>'). Optional — absent on pre-2026-08-04 instances. No consumer reads this yet; reserved for future support/anti-cheat tooling (ITEM_IDENTITY_DESIGN.md)."
+                      },
+                      "obtainedAt": {
+                        "type": "integer",
+                        "description": "Epoch ms when this instance was created. Optional, same caveat as sourceType."
                       }
                     }
                   }
@@ -11213,6 +11469,14 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                       "locked": {
                         "type": "boolean",
                         "description": "Locked cards cannot be used as fusion material"
+                      },
+                      "sourceType": {
+                        "type": "string",
+                        "description": "Provenance tag (e.g. 'starter', 'checkin', 'pve_anchor:<levelId>', 'pve_drop:<levelId>', 'gacha:<orderId>'). Optional — absent on pre-2026-08-04 instances. No consumer reads this yet; reserved for future support/anti-cheat tooling (ITEM_IDENTITY_DESIGN.md)."
+                      },
+                      "obtainedAt": {
+                        "type": "integer",
+                        "description": "Epoch ms when this instance was created. Optional, same caveat as sourceType."
                       }
                     }
                   },
@@ -11351,6 +11615,14 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                       },
                       "locked": {
                         "type": "boolean"
+                      },
+                      "sourceType": {
+                        "type": "string",
+                        "description": "Provenance tag (e.g. 'craft', 'gacha:<orderId>', 'checkin:<monthKey>', 'pve_drop:<levelId>'). Optional — absent on pre-2026-08-04 instances. No consumer reads this yet; reserved for future support/anti-cheat tooling (ITEM_IDENTITY_DESIGN.md)."
+                      },
+                      "obtainedAt": {
+                        "type": "integer",
+                        "description": "Epoch ms when this instance was created. Optional, same caveat as sourceType."
                       }
                     }
                   }
@@ -11786,6 +12058,14 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                       "locked": {
                         "type": "boolean",
                         "description": "Locked cards cannot be used as fusion material"
+                      },
+                      "sourceType": {
+                        "type": "string",
+                        "description": "Provenance tag (e.g. 'starter', 'checkin', 'pve_anchor:<levelId>', 'pve_drop:<levelId>', 'gacha:<orderId>'). Optional — absent on pre-2026-08-04 instances. No consumer reads this yet; reserved for future support/anti-cheat tooling (ITEM_IDENTITY_DESIGN.md)."
+                      },
+                      "obtainedAt": {
+                        "type": "integer",
+                        "description": "Epoch ms when this instance was created. Optional, same caveat as sourceType."
                       }
                     }
                   },
@@ -11924,6 +12204,14 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                       },
                       "locked": {
                         "type": "boolean"
+                      },
+                      "sourceType": {
+                        "type": "string",
+                        "description": "Provenance tag (e.g. 'craft', 'gacha:<orderId>', 'checkin:<monthKey>', 'pve_drop:<levelId>'). Optional — absent on pre-2026-08-04 instances. No consumer reads this yet; reserved for future support/anti-cheat tooling (ITEM_IDENTITY_DESIGN.md)."
+                      },
+                      "obtainedAt": {
+                        "type": "integer",
+                        "description": "Epoch ms when this instance was created. Optional, same caveat as sourceType."
                       }
                     }
                   }
@@ -12036,6 +12324,14 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                 },
                 "locked": {
                   "type": "boolean"
+                },
+                "sourceType": {
+                  "type": "string",
+                  "description": "Provenance tag (e.g. 'craft', 'gacha:<orderId>', 'checkin:<monthKey>', 'pve_drop:<levelId>'). Optional — absent on pre-2026-08-04 instances. No consumer reads this yet; reserved for future support/anti-cheat tooling (ITEM_IDENTITY_DESIGN.md)."
+                },
+                "obtainedAt": {
+                  "type": "integer",
+                  "description": "Epoch ms when this instance was created. Optional, same caveat as sourceType."
                 }
               }
             }
@@ -12120,6 +12416,14 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                 },
                 "locked": {
                   "type": "boolean"
+                },
+                "sourceType": {
+                  "type": "string",
+                  "description": "Provenance tag (e.g. 'craft', 'gacha:<orderId>', 'checkin:<monthKey>', 'pve_drop:<levelId>'). Optional — absent on pre-2026-08-04 instances. No consumer reads this yet; reserved for future support/anti-cheat tooling (ITEM_IDENTITY_DESIGN.md)."
+                },
+                "obtainedAt": {
+                  "type": "integer",
+                  "description": "Epoch ms when this instance was created. Optional, same caveat as sourceType."
                 }
               }
             },
@@ -12470,6 +12774,14 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                       "locked": {
                         "type": "boolean",
                         "description": "Locked cards cannot be used as fusion material"
+                      },
+                      "sourceType": {
+                        "type": "string",
+                        "description": "Provenance tag (e.g. 'starter', 'checkin', 'pve_anchor:<levelId>', 'pve_drop:<levelId>', 'gacha:<orderId>'). Optional — absent on pre-2026-08-04 instances. No consumer reads this yet; reserved for future support/anti-cheat tooling (ITEM_IDENTITY_DESIGN.md)."
+                      },
+                      "obtainedAt": {
+                        "type": "integer",
+                        "description": "Epoch ms when this instance was created. Optional, same caveat as sourceType."
                       }
                     }
                   },
@@ -12608,6 +12920,14 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                       },
                       "locked": {
                         "type": "boolean"
+                      },
+                      "sourceType": {
+                        "type": "string",
+                        "description": "Provenance tag (e.g. 'craft', 'gacha:<orderId>', 'checkin:<monthKey>', 'pve_drop:<levelId>'). Optional — absent on pre-2026-08-04 instances. No consumer reads this yet; reserved for future support/anti-cheat tooling (ITEM_IDENTITY_DESIGN.md)."
+                      },
+                      "obtainedAt": {
+                        "type": "integer",
+                        "description": "Epoch ms when this instance was created. Optional, same caveat as sourceType."
                       }
                     }
                   }
@@ -13050,6 +13370,14 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                       "locked": {
                         "type": "boolean",
                         "description": "Locked cards cannot be used as fusion material"
+                      },
+                      "sourceType": {
+                        "type": "string",
+                        "description": "Provenance tag (e.g. 'starter', 'checkin', 'pve_anchor:<levelId>', 'pve_drop:<levelId>', 'gacha:<orderId>'). Optional — absent on pre-2026-08-04 instances. No consumer reads this yet; reserved for future support/anti-cheat tooling (ITEM_IDENTITY_DESIGN.md)."
+                      },
+                      "obtainedAt": {
+                        "type": "integer",
+                        "description": "Epoch ms when this instance was created. Optional, same caveat as sourceType."
                       }
                     }
                   },
@@ -13188,6 +13516,14 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                       },
                       "locked": {
                         "type": "boolean"
+                      },
+                      "sourceType": {
+                        "type": "string",
+                        "description": "Provenance tag (e.g. 'craft', 'gacha:<orderId>', 'checkin:<monthKey>', 'pve_drop:<levelId>'). Optional — absent on pre-2026-08-04 instances. No consumer reads this yet; reserved for future support/anti-cheat tooling (ITEM_IDENTITY_DESIGN.md)."
+                      },
+                      "obtainedAt": {
+                        "type": "integer",
+                        "description": "Epoch ms when this instance was created. Optional, same caveat as sourceType."
                       }
                     }
                   }
@@ -13622,6 +13958,14 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                       "locked": {
                         "type": "boolean",
                         "description": "Locked cards cannot be used as fusion material"
+                      },
+                      "sourceType": {
+                        "type": "string",
+                        "description": "Provenance tag (e.g. 'starter', 'checkin', 'pve_anchor:<levelId>', 'pve_drop:<levelId>', 'gacha:<orderId>'). Optional — absent on pre-2026-08-04 instances. No consumer reads this yet; reserved for future support/anti-cheat tooling (ITEM_IDENTITY_DESIGN.md)."
+                      },
+                      "obtainedAt": {
+                        "type": "integer",
+                        "description": "Epoch ms when this instance was created. Optional, same caveat as sourceType."
                       }
                     }
                   },
@@ -13760,6 +14104,14 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                       },
                       "locked": {
                         "type": "boolean"
+                      },
+                      "sourceType": {
+                        "type": "string",
+                        "description": "Provenance tag (e.g. 'craft', 'gacha:<orderId>', 'checkin:<monthKey>', 'pve_drop:<levelId>'). Optional — absent on pre-2026-08-04 instances. No consumer reads this yet; reserved for future support/anti-cheat tooling (ITEM_IDENTITY_DESIGN.md)."
+                      },
+                      "obtainedAt": {
+                        "type": "integer",
+                        "description": "Epoch ms when this instance was created. Optional, same caveat as sourceType."
                       }
                     }
                   }
@@ -13898,6 +14250,14 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                 },
                 "locked": {
                   "type": "boolean"
+                },
+                "sourceType": {
+                  "type": "string",
+                  "description": "Provenance tag (e.g. 'craft', 'gacha:<orderId>', 'checkin:<monthKey>', 'pve_drop:<levelId>'). Optional — absent on pre-2026-08-04 instances. No consumer reads this yet; reserved for future support/anti-cheat tooling (ITEM_IDENTITY_DESIGN.md)."
+                },
+                "obtainedAt": {
+                  "type": "integer",
+                  "description": "Epoch ms when this instance was created. Optional, same caveat as sourceType."
                 }
               }
             },
@@ -14248,6 +14608,14 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                       "locked": {
                         "type": "boolean",
                         "description": "Locked cards cannot be used as fusion material"
+                      },
+                      "sourceType": {
+                        "type": "string",
+                        "description": "Provenance tag (e.g. 'starter', 'checkin', 'pve_anchor:<levelId>', 'pve_drop:<levelId>', 'gacha:<orderId>'). Optional — absent on pre-2026-08-04 instances. No consumer reads this yet; reserved for future support/anti-cheat tooling (ITEM_IDENTITY_DESIGN.md)."
+                      },
+                      "obtainedAt": {
+                        "type": "integer",
+                        "description": "Epoch ms when this instance was created. Optional, same caveat as sourceType."
                       }
                     }
                   },
@@ -14386,6 +14754,14 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                       },
                       "locked": {
                         "type": "boolean"
+                      },
+                      "sourceType": {
+                        "type": "string",
+                        "description": "Provenance tag (e.g. 'craft', 'gacha:<orderId>', 'checkin:<monthKey>', 'pve_drop:<levelId>'). Optional — absent on pre-2026-08-04 instances. No consumer reads this yet; reserved for future support/anti-cheat tooling (ITEM_IDENTITY_DESIGN.md)."
+                      },
+                      "obtainedAt": {
+                        "type": "integer",
+                        "description": "Epoch ms when this instance was created. Optional, same caveat as sourceType."
                       }
                     }
                   }
@@ -14507,6 +14883,14 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                 "locked": {
                   "type": "boolean",
                   "description": "Locked cards cannot be used as fusion material"
+                },
+                "sourceType": {
+                  "type": "string",
+                  "description": "Provenance tag (e.g. 'starter', 'checkin', 'pve_anchor:<levelId>', 'pve_drop:<levelId>', 'gacha:<orderId>'). Optional — absent on pre-2026-08-04 instances. No consumer reads this yet; reserved for future support/anti-cheat tooling (ITEM_IDENTITY_DESIGN.md)."
+                },
+                "obtainedAt": {
+                  "type": "integer",
+                  "description": "Epoch ms when this instance was created. Optional, same caveat as sourceType."
                 }
               }
             },
@@ -14857,6 +15241,14 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                       "locked": {
                         "type": "boolean",
                         "description": "Locked cards cannot be used as fusion material"
+                      },
+                      "sourceType": {
+                        "type": "string",
+                        "description": "Provenance tag (e.g. 'starter', 'checkin', 'pve_anchor:<levelId>', 'pve_drop:<levelId>', 'gacha:<orderId>'). Optional — absent on pre-2026-08-04 instances. No consumer reads this yet; reserved for future support/anti-cheat tooling (ITEM_IDENTITY_DESIGN.md)."
+                      },
+                      "obtainedAt": {
+                        "type": "integer",
+                        "description": "Epoch ms when this instance was created. Optional, same caveat as sourceType."
                       }
                     }
                   },
@@ -14995,6 +15387,14 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                       },
                       "locked": {
                         "type": "boolean"
+                      },
+                      "sourceType": {
+                        "type": "string",
+                        "description": "Provenance tag (e.g. 'craft', 'gacha:<orderId>', 'checkin:<monthKey>', 'pve_drop:<levelId>'). Optional — absent on pre-2026-08-04 instances. No consumer reads this yet; reserved for future support/anti-cheat tooling (ITEM_IDENTITY_DESIGN.md)."
+                      },
+                      "obtainedAt": {
+                        "type": "integer",
+                        "description": "Epoch ms when this instance was created. Optional, same caveat as sourceType."
                       }
                     }
                   }
@@ -15429,6 +15829,14 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                       "locked": {
                         "type": "boolean",
                         "description": "Locked cards cannot be used as fusion material"
+                      },
+                      "sourceType": {
+                        "type": "string",
+                        "description": "Provenance tag (e.g. 'starter', 'checkin', 'pve_anchor:<levelId>', 'pve_drop:<levelId>', 'gacha:<orderId>'). Optional — absent on pre-2026-08-04 instances. No consumer reads this yet; reserved for future support/anti-cheat tooling (ITEM_IDENTITY_DESIGN.md)."
+                      },
+                      "obtainedAt": {
+                        "type": "integer",
+                        "description": "Epoch ms when this instance was created. Optional, same caveat as sourceType."
                       }
                     }
                   },
@@ -15567,6 +15975,14 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                       },
                       "locked": {
                         "type": "boolean"
+                      },
+                      "sourceType": {
+                        "type": "string",
+                        "description": "Provenance tag (e.g. 'craft', 'gacha:<orderId>', 'checkin:<monthKey>', 'pve_drop:<levelId>'). Optional — absent on pre-2026-08-04 instances. No consumer reads this yet; reserved for future support/anti-cheat tooling (ITEM_IDENTITY_DESIGN.md)."
+                      },
+                      "obtainedAt": {
+                        "type": "integer",
+                        "description": "Epoch ms when this instance was created. Optional, same caveat as sourceType."
                       }
                     }
                   }
@@ -16001,6 +16417,14 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                       "locked": {
                         "type": "boolean",
                         "description": "Locked cards cannot be used as fusion material"
+                      },
+                      "sourceType": {
+                        "type": "string",
+                        "description": "Provenance tag (e.g. 'starter', 'checkin', 'pve_anchor:<levelId>', 'pve_drop:<levelId>', 'gacha:<orderId>'). Optional — absent on pre-2026-08-04 instances. No consumer reads this yet; reserved for future support/anti-cheat tooling (ITEM_IDENTITY_DESIGN.md)."
+                      },
+                      "obtainedAt": {
+                        "type": "integer",
+                        "description": "Epoch ms when this instance was created. Optional, same caveat as sourceType."
                       }
                     }
                   },
@@ -16139,6 +16563,14 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                       },
                       "locked": {
                         "type": "boolean"
+                      },
+                      "sourceType": {
+                        "type": "string",
+                        "description": "Provenance tag (e.g. 'craft', 'gacha:<orderId>', 'checkin:<monthKey>', 'pve_drop:<levelId>'). Optional — absent on pre-2026-08-04 instances. No consumer reads this yet; reserved for future support/anti-cheat tooling (ITEM_IDENTITY_DESIGN.md)."
+                      },
+                      "obtainedAt": {
+                        "type": "integer",
+                        "description": "Epoch ms when this instance was created. Optional, same caveat as sourceType."
                       }
                     }
                   }
@@ -16949,6 +17381,14 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                       "locked": {
                         "type": "boolean",
                         "description": "Locked cards cannot be used as fusion material"
+                      },
+                      "sourceType": {
+                        "type": "string",
+                        "description": "Provenance tag (e.g. 'starter', 'checkin', 'pve_anchor:<levelId>', 'pve_drop:<levelId>', 'gacha:<orderId>'). Optional — absent on pre-2026-08-04 instances. No consumer reads this yet; reserved for future support/anti-cheat tooling (ITEM_IDENTITY_DESIGN.md)."
+                      },
+                      "obtainedAt": {
+                        "type": "integer",
+                        "description": "Epoch ms when this instance was created. Optional, same caveat as sourceType."
                       }
                     }
                   },
@@ -17087,6 +17527,14 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                       },
                       "locked": {
                         "type": "boolean"
+                      },
+                      "sourceType": {
+                        "type": "string",
+                        "description": "Provenance tag (e.g. 'craft', 'gacha:<orderId>', 'checkin:<monthKey>', 'pve_drop:<levelId>'). Optional — absent on pre-2026-08-04 instances. No consumer reads this yet; reserved for future support/anti-cheat tooling (ITEM_IDENTITY_DESIGN.md)."
+                      },
+                      "obtainedAt": {
+                        "type": "integer",
+                        "description": "Epoch ms when this instance was created. Optional, same caveat as sourceType."
                       }
                     }
                   }
@@ -17709,6 +18157,14 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                       "locked": {
                         "type": "boolean",
                         "description": "Locked cards cannot be used as fusion material"
+                      },
+                      "sourceType": {
+                        "type": "string",
+                        "description": "Provenance tag (e.g. 'starter', 'checkin', 'pve_anchor:<levelId>', 'pve_drop:<levelId>', 'gacha:<orderId>'). Optional — absent on pre-2026-08-04 instances. No consumer reads this yet; reserved for future support/anti-cheat tooling (ITEM_IDENTITY_DESIGN.md)."
+                      },
+                      "obtainedAt": {
+                        "type": "integer",
+                        "description": "Epoch ms when this instance was created. Optional, same caveat as sourceType."
                       }
                     }
                   },
@@ -17847,6 +18303,14 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                       },
                       "locked": {
                         "type": "boolean"
+                      },
+                      "sourceType": {
+                        "type": "string",
+                        "description": "Provenance tag (e.g. 'craft', 'gacha:<orderId>', 'checkin:<monthKey>', 'pve_drop:<levelId>'). Optional — absent on pre-2026-08-04 instances. No consumer reads this yet; reserved for future support/anti-cheat tooling (ITEM_IDENTITY_DESIGN.md)."
+                      },
+                      "obtainedAt": {
+                        "type": "integer",
+                        "description": "Epoch ms when this instance was created. Optional, same caveat as sourceType."
                       }
                     }
                   }
@@ -18316,6 +18780,14 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                       "locked": {
                         "type": "boolean",
                         "description": "Locked cards cannot be used as fusion material"
+                      },
+                      "sourceType": {
+                        "type": "string",
+                        "description": "Provenance tag (e.g. 'starter', 'checkin', 'pve_anchor:<levelId>', 'pve_drop:<levelId>', 'gacha:<orderId>'). Optional — absent on pre-2026-08-04 instances. No consumer reads this yet; reserved for future support/anti-cheat tooling (ITEM_IDENTITY_DESIGN.md)."
+                      },
+                      "obtainedAt": {
+                        "type": "integer",
+                        "description": "Epoch ms when this instance was created. Optional, same caveat as sourceType."
                       }
                     }
                   },
@@ -18454,6 +18926,14 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                       },
                       "locked": {
                         "type": "boolean"
+                      },
+                      "sourceType": {
+                        "type": "string",
+                        "description": "Provenance tag (e.g. 'craft', 'gacha:<orderId>', 'checkin:<monthKey>', 'pve_drop:<levelId>'). Optional — absent on pre-2026-08-04 instances. No consumer reads this yet; reserved for future support/anti-cheat tooling (ITEM_IDENTITY_DESIGN.md)."
+                      },
+                      "obtainedAt": {
+                        "type": "integer",
+                        "description": "Epoch ms when this instance was created. Optional, same caveat as sourceType."
                       }
                     }
                   }
@@ -19127,6 +19607,14 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                       "locked": {
                         "type": "boolean",
                         "description": "Locked cards cannot be used as fusion material"
+                      },
+                      "sourceType": {
+                        "type": "string",
+                        "description": "Provenance tag (e.g. 'starter', 'checkin', 'pve_anchor:<levelId>', 'pve_drop:<levelId>', 'gacha:<orderId>'). Optional — absent on pre-2026-08-04 instances. No consumer reads this yet; reserved for future support/anti-cheat tooling (ITEM_IDENTITY_DESIGN.md)."
+                      },
+                      "obtainedAt": {
+                        "type": "integer",
+                        "description": "Epoch ms when this instance was created. Optional, same caveat as sourceType."
                       }
                     }
                   },
@@ -19265,6 +19753,14 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                       },
                       "locked": {
                         "type": "boolean"
+                      },
+                      "sourceType": {
+                        "type": "string",
+                        "description": "Provenance tag (e.g. 'craft', 'gacha:<orderId>', 'checkin:<monthKey>', 'pve_drop:<levelId>'). Optional — absent on pre-2026-08-04 instances. No consumer reads this yet; reserved for future support/anti-cheat tooling (ITEM_IDENTITY_DESIGN.md)."
+                      },
+                      "obtainedAt": {
+                        "type": "integer",
+                        "description": "Epoch ms when this instance was created. Optional, same caveat as sourceType."
                       }
                     }
                   }
@@ -19699,6 +20195,14 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                       "locked": {
                         "type": "boolean",
                         "description": "Locked cards cannot be used as fusion material"
+                      },
+                      "sourceType": {
+                        "type": "string",
+                        "description": "Provenance tag (e.g. 'starter', 'checkin', 'pve_anchor:<levelId>', 'pve_drop:<levelId>', 'gacha:<orderId>'). Optional — absent on pre-2026-08-04 instances. No consumer reads this yet; reserved for future support/anti-cheat tooling (ITEM_IDENTITY_DESIGN.md)."
+                      },
+                      "obtainedAt": {
+                        "type": "integer",
+                        "description": "Epoch ms when this instance was created. Optional, same caveat as sourceType."
                       }
                     }
                   },
@@ -19837,6 +20341,14 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                       },
                       "locked": {
                         "type": "boolean"
+                      },
+                      "sourceType": {
+                        "type": "string",
+                        "description": "Provenance tag (e.g. 'craft', 'gacha:<orderId>', 'checkin:<monthKey>', 'pve_drop:<levelId>'). Optional — absent on pre-2026-08-04 instances. No consumer reads this yet; reserved for future support/anti-cheat tooling (ITEM_IDENTITY_DESIGN.md)."
+                      },
+                      "obtainedAt": {
+                        "type": "integer",
+                        "description": "Epoch ms when this instance was created. Optional, same caveat as sourceType."
                       }
                     }
                   }
@@ -20271,6 +20783,14 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                       "locked": {
                         "type": "boolean",
                         "description": "Locked cards cannot be used as fusion material"
+                      },
+                      "sourceType": {
+                        "type": "string",
+                        "description": "Provenance tag (e.g. 'starter', 'checkin', 'pve_anchor:<levelId>', 'pve_drop:<levelId>', 'gacha:<orderId>'). Optional — absent on pre-2026-08-04 instances. No consumer reads this yet; reserved for future support/anti-cheat tooling (ITEM_IDENTITY_DESIGN.md)."
+                      },
+                      "obtainedAt": {
+                        "type": "integer",
+                        "description": "Epoch ms when this instance was created. Optional, same caveat as sourceType."
                       }
                     }
                   },
@@ -20409,6 +20929,14 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                       },
                       "locked": {
                         "type": "boolean"
+                      },
+                      "sourceType": {
+                        "type": "string",
+                        "description": "Provenance tag (e.g. 'craft', 'gacha:<orderId>', 'checkin:<monthKey>', 'pve_drop:<levelId>'). Optional — absent on pre-2026-08-04 instances. No consumer reads this yet; reserved for future support/anti-cheat tooling (ITEM_IDENTITY_DESIGN.md)."
+                      },
+                      "obtainedAt": {
+                        "type": "integer",
+                        "description": "Epoch ms when this instance was created. Optional, same caveat as sourceType."
                       }
                     }
                   }
@@ -20843,6 +21371,14 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                       "locked": {
                         "type": "boolean",
                         "description": "Locked cards cannot be used as fusion material"
+                      },
+                      "sourceType": {
+                        "type": "string",
+                        "description": "Provenance tag (e.g. 'starter', 'checkin', 'pve_anchor:<levelId>', 'pve_drop:<levelId>', 'gacha:<orderId>'). Optional — absent on pre-2026-08-04 instances. No consumer reads this yet; reserved for future support/anti-cheat tooling (ITEM_IDENTITY_DESIGN.md)."
+                      },
+                      "obtainedAt": {
+                        "type": "integer",
+                        "description": "Epoch ms when this instance was created. Optional, same caveat as sourceType."
                       }
                     }
                   },
@@ -20981,6 +21517,14 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                       },
                       "locked": {
                         "type": "boolean"
+                      },
+                      "sourceType": {
+                        "type": "string",
+                        "description": "Provenance tag (e.g. 'craft', 'gacha:<orderId>', 'checkin:<monthKey>', 'pve_drop:<levelId>'). Optional — absent on pre-2026-08-04 instances. No consumer reads this yet; reserved for future support/anti-cheat tooling (ITEM_IDENTITY_DESIGN.md)."
+                      },
+                      "obtainedAt": {
+                        "type": "integer",
+                        "description": "Epoch ms when this instance was created. Optional, same caveat as sourceType."
                       }
                     }
                   }
@@ -21948,6 +22492,14 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                                 },
                                 "locked": {
                                   "type": "boolean"
+                                },
+                                "sourceType": {
+                                  "type": "string",
+                                  "description": "Provenance tag (e.g. 'craft', 'gacha:<orderId>', 'checkin:<monthKey>', 'pve_drop:<levelId>'). Optional — absent on pre-2026-08-04 instances. No consumer reads this yet; reserved for future support/anti-cheat tooling (ITEM_IDENTITY_DESIGN.md)."
+                                },
+                                "obtainedAt": {
+                                  "type": "integer",
+                                  "description": "Epoch ms when this instance was created. Optional, same caveat as sourceType."
                                 }
                               }
                             },
@@ -21984,6 +22536,14 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                                 "locked": {
                                   "type": "boolean",
                                   "description": "Locked cards cannot be used as fusion material"
+                                },
+                                "sourceType": {
+                                  "type": "string",
+                                  "description": "Provenance tag (e.g. 'starter', 'checkin', 'pve_anchor:<levelId>', 'pve_drop:<levelId>', 'gacha:<orderId>'). Optional — absent on pre-2026-08-04 instances. No consumer reads this yet; reserved for future support/anti-cheat tooling (ITEM_IDENTITY_DESIGN.md)."
+                                },
+                                "obtainedAt": {
+                                  "type": "integer",
+                                  "description": "Epoch ms when this instance was created. Optional, same caveat as sourceType."
                                 }
                               }
                             }
@@ -22410,6 +22970,14 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                       "locked": {
                         "type": "boolean",
                         "description": "Locked cards cannot be used as fusion material"
+                      },
+                      "sourceType": {
+                        "type": "string",
+                        "description": "Provenance tag (e.g. 'starter', 'checkin', 'pve_anchor:<levelId>', 'pve_drop:<levelId>', 'gacha:<orderId>'). Optional — absent on pre-2026-08-04 instances. No consumer reads this yet; reserved for future support/anti-cheat tooling (ITEM_IDENTITY_DESIGN.md)."
+                      },
+                      "obtainedAt": {
+                        "type": "integer",
+                        "description": "Epoch ms when this instance was created. Optional, same caveat as sourceType."
                       }
                     }
                   },
@@ -22548,6 +23116,14 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                       },
                       "locked": {
                         "type": "boolean"
+                      },
+                      "sourceType": {
+                        "type": "string",
+                        "description": "Provenance tag (e.g. 'craft', 'gacha:<orderId>', 'checkin:<monthKey>', 'pve_drop:<levelId>'). Optional — absent on pre-2026-08-04 instances. No consumer reads this yet; reserved for future support/anti-cheat tooling (ITEM_IDENTITY_DESIGN.md)."
+                      },
+                      "obtainedAt": {
+                        "type": "integer",
+                        "description": "Epoch ms when this instance was created. Optional, same caveat as sourceType."
                       }
                     }
                   }

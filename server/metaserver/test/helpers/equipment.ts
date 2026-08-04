@@ -21,6 +21,8 @@ export async function seedEquipment(
         level: inst.level,
         affixes: inst.affixes,
         ...(inst.locked !== undefined ? { locked: inst.locked } : {}),
+        ...(inst.sourceType !== undefined ? { sourceType: inst.sourceType } : {}),
+        ...(inst.obtainedAt !== undefined ? { obtainedAt: inst.obtainedAt } : {}),
       },
     },
     { upsert: true },
@@ -59,6 +61,8 @@ export async function readEquipmentInv(
       level: d.level,
       affixes: d.affixes,
       ...(d.locked !== undefined ? { locked: d.locked } : {}),
+      ...(d.sourceType !== undefined ? { sourceType: d.sourceType } : {}),
+      ...(d.obtainedAt !== undefined ? { obtainedAt: d.obtainedAt } : {}),
     };
   }
   return inv;

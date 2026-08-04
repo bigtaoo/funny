@@ -67,6 +67,8 @@ interface EquipmentInstance {
   level: number;       // 强化等级 0..9
   affixes: Affix[];    // 词条（洗练可改）
   locked?: boolean;    // 防误用为强化燃料
+  sourceType?: string; // 溯源标签（2026-08-04，ITEM_IDENTITY_DESIGN.md）：'craft'/'gacha:<orderId>'/'checkin:<monthKey>'/'pve_drop:<levelId>'；可选，老实例为 undefined，无消费方，纯预留
+  obtainedAt?: number; // 获得时间（epoch ms），同上，可选
 }
 
 // 穿戴：从「全局 loadout」起步，结构预留「按兵种独立装备」

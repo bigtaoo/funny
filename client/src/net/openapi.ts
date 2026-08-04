@@ -1617,6 +1617,10 @@ export interface components {
                 value: number;
             }[];
             locked?: boolean;
+            /** @description Provenance tag (e.g. 'craft', 'gacha:<orderId>', 'checkin:<monthKey>', 'pve_drop:<levelId>'). Optional — absent on pre-2026-08-04 instances. No consumer reads this yet; reserved for future support/anti-cheat tooling (ITEM_IDENTITY_DESIGN.md). */
+            sourceType?: string;
+            /** @description Epoch ms when this instance was created. Optional, same caveat as sourceType. */
+            obtainedAt?: number;
         };
         CardInstance: {
             /** @description Unique instance id (e.g. 'card_a1b2c3') */
@@ -1630,6 +1634,10 @@ export interface components {
             };
             /** @description Locked cards cannot be used as fusion material */
             locked: boolean;
+            /** @description Provenance tag (e.g. 'starter', 'checkin', 'pve_anchor:<levelId>', 'pve_drop:<levelId>', 'gacha:<orderId>'). Optional — absent on pre-2026-08-04 instances. No consumer reads this yet; reserved for future support/anti-cheat tooling (ITEM_IDENTITY_DESIGN.md). */
+            sourceType?: string;
+            /** @description Epoch ms when this instance was created. Optional, same caveat as sourceType. */
+            obtainedAt?: number;
         };
         AuthResult: {
             token: string;

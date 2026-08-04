@@ -69,7 +69,7 @@ export function AuthMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase & Cons
         CARD_DEFS['lichuang']!,
         CARD_DEFS['chenshou']!,
         CARD_DEFS['suyuan']!,
-      ]);
+      ], 'starter');
     }
 
     async authWx(req: FastifyRequest, reply: FastifyReply) {
