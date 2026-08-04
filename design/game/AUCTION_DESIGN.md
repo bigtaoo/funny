@@ -468,7 +468,7 @@ designatedBuyerId?, expireAt(ms), status, buyerId?, rev
   - i18n 三语言文件补 `auction.filterSkin`/`auction.err.skinInUse`。
 - **未改动**：皮肤本身没有实例id（`inventory.skins: string[]` 去重集合，"拥有一份"="拥有全部"），拍卖只按 `skinId` 字符串托管/归还，与装备/角色卡的 instanceId 模型不同，这是既有设计（`skin.ts` 头部注释），不在本任务范围内调整（相关的"是否要给皮肤也上实例id"的讨论见 [[item-identity-audit]] / `ITEM_IDENTITY_DESIGN.md`）。
 - **已知限制（未修复，属于更深的经济系统缺口，不在本任务范围）**：gacha 抽到"重复"皮肤（账号已拥有过）目前是纯 no-op（`markDuplicates`，`economy.ts`），不会产生任何新库存或补偿——即使补上本任务的 picker UI，一个**真正重复**的皮肤仍然不会出现在拍卖列表里，只有"未装备但从未拍卖过的唯一一份"才会。设计文档里"重复转化待S5"的待办（本节 §9 任务2 引用）尚未排期。
-- **验收**：`server/metaserver`（67 文件 802 例）、`server/auctionsvc`（9 文件 91 例）全绿；client `tsc --noEmit` 绿；`npm run build:web` 绿（仅预期内 asset-size 警告）；client `vitest run` + `vitest run --config vitest.ui.config.ts`（合计 259 文件 2073 例）全绿，新增 5 条 `auctionPickerDedupe.ui.ts` 皮肤专项用例（未装备过滤、entry 生成、pick 后 `doCreate` 请求体、分类 tab 渲染）。
+- **验收**：`server/metaserver`（67 文件 804 例）、`server/shared`（35 文件 678 例）、`server/auctionsvc`（9 文件 91 例）全绿；client `tsc --noEmit` 绿；`npm run build:web` 绿（仅预期内 asset-size 警告）；client `vitest run` + `vitest run --config vitest.ui.config.ts`（合计 259 文件 2077 例）全绿。测试覆盖分两批：首批 5 条 `auctionPickerDedupe.ui.ts` 皮肤专项用例（未装备过滤、entry 生成、pick 后 `doCreate` 请求体、分类 tab 渲染）；用户要求"全部加测试"后追加：`auctionScene.ui.ts` 补齐此前完全无覆盖的 `itemKind()`/`auctionLabel()`（含 skin 分支）+ `SKIN_IN_USE`/`SKIN_NOT_FOUND` 错误映射，`equipment.test.ts`（shared）补 `makeGachaEquipInstance`/`makeDropInstance` 的溯源字段透传单测（详见 `ITEM_IDENTITY_DESIGN.md` §2 的溯源字段验收清单）。
 - **未验证**：本次会话 Browser 预览面板未能渲染帧（环境限制），且触达真实 AuctionScene 需要登录态 + 跑起来的 metaserver/auctionsvc 后端，故**没有做浏览器截图验证**，只有 headless PIXI 单测覆盖（真实 PIXI 场景树、无渲染器）+ 生产构建通过。下次有可用预览环境时应补一次真实截图核对。
 
 ### 出售物品选择页：左侧类目栏 + 图标卡放大 1.5x（2026-07-09，2026-08-04 追加放大）

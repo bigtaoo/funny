@@ -28,6 +28,7 @@
 - **改动位置**：`server/shared/src/types.ts`（`EquipmentInstance`/`CardInstance`）、`server/shared/src/mongo.ts`（对应 Doc 类型）、`server/contracts/openapi/schemas.yml`（+ 级联 codegen）、`client/src/game/meta/SaveData.ts`（镜像）、`server/metaserver/src/{equipment.ts,cards.ts}` 的 `toInstanceDoc`/`fromInstanceDoc`/`toCardDoc`/`fromCardDoc`。
 - **埋点位置**：装备 4 处创建点（`equipment.ts craftEquipment`／`economy.ts` gacha 产出／`service/liveops.ts` 月度签到终极档／`service/pve.ts` 掉落）；角色卡 `grantCards` 加 `sourceType` 必填参数，5 个调用方（`service/auth.ts` 新手赠卡／`service/liveops.ts` 签到卡包／`service/pve.ts` 章节首通锁定卡+掉落／`economy.ts` gacha 别名 `grantHeroCards`）各自传入字面值。
 - 详见 [EQUIPMENT_DESIGN.md](EQUIPMENT_DESIGN.md) / [CHARACTER_CARDS_DESIGN.md](CHARACTER_CARDS_DESIGN.md) 的对应小节。
+- **测试覆盖**（一个 stamping 点一条断言，2026-08-04）：`equipment.e2e.test.ts`（craft→`'craft'`）、`economy.e2e.test.ts`（gacha 装备/角色卡→`gacha:<orderId>`）、`retention.e2e.test.ts`（签到装备/角色卡里程碑→`checkin:<monthKey>`）、`pve.e2e.test.ts`（关卡掉落→`pve_drop:<levelId>`；章节首通锚点卡→`pve_anchor:<chapterId>`，ch1/ch2 各一条）、`pve-verify.e2e.test.ts`（spot-check verify 路径的掉落卡）、`save.e2e.test.ts`（新手赠卡→`'starter'`）；`server/shared/test/equipment.test.ts` 额外单测 `makeGachaEquipInstance`/`makeDropInstance` 两个工厂函数本身——纯透传调用方传入的 `sourceType`/`obtainedAt`，不做任何派生。
 
 ## 3. 后续待办：材料/皮肤/称号实例化（未排期，独立立项）
 
