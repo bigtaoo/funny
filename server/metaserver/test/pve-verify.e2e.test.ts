@@ -91,6 +91,12 @@ describe.skipIf(!mongo)('pve L1 verify e2e', () => {
     expect(gateway.last?.levelId).toBe('ch1_lv1');
     expect(JSON.parse(gateway.last?.cardInstancesJson ?? '{}')).toEqual(starterCardInv);
     expect(gateway.last?.equipmentInvJson).toBe('{}');
+    // Provenance (ITEM_IDENTITY_DESIGN.md, 2026-08-04): the level's card drop (granted here on verify, not
+    // on the initial spot-checked /pve/clear) is tagged sourceType='pve_drop:<levelId>'.
+    const starterIds = new Set(Object.keys(starterCardInv));
+    const dropped = (Object.values(v.data.save.cardInv) as Array<{ id: string; sourceType?: string }>)
+      .find((c) => !starterIds.has(c.id));
+    expect(dropped?.sourceType).toBe('pve_drop:ch1_lv1');
   });
 
   it('regression (2026-07-26 fix, PVE_INTEGRITY §9): the judge receives the account\'s real cardInv/equipmentInv, not an empty blueprint', async () => {

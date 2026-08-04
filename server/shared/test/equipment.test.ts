@@ -255,7 +255,7 @@ describe('rollCraftedAffixes', () => {
 
 describe('makeGachaEquipInstance', () => {
   it('builds a +0 instance with the def rarity and rolled affixes', () => {
-    const inst = makeGachaEquipInstance('wp_highlighter', 'inst-1');
+    const inst = makeGachaEquipInstance('wp_highlighter', 'inst-1', 'gacha:order-1', 1700000000000);
     expect(inst.id).toBe('inst-1');
     expect(inst.defId).toBe('wp_highlighter');
     expect(inst.rarity).toBe('epic');
@@ -264,27 +264,45 @@ describe('makeGachaEquipInstance', () => {
   });
 
   it('throws on unknown defId', () => {
-    expect(() => makeGachaEquipInstance('nope', 'x')).toThrow();
+    expect(() => makeGachaEquipInstance('nope', 'x', 'gacha:order-1', 1700000000000)).toThrow();
+  });
+
+  // ITEM_IDENTITY_DESIGN.md (2026-08-04): provenance is a pass-through, not derived — the factory just
+  // stamps whatever the caller supplies onto the returned instance.
+  it('stamps the caller-supplied sourceType/obtainedAt verbatim', () => {
+    const inst = makeGachaEquipInstance('wp_highlighter', 'inst-2', 'gacha:order-42', 1700000012345);
+    expect(inst.sourceType).toBe('gacha:order-42');
+    expect(inst.obtainedAt).toBe(1700000012345);
   });
 });
 
 describe('makeDropInstance', () => {
   it('produces an item whose def matches the requested rarity', () => {
     for (const rarity of RARITIES) {
-      const inst = makeDropInstance(rarity, `drop-${rarity}`);
+      const inst = makeDropInstance(rarity, `drop-${rarity}`, 'pve_drop:ch1_lv5', 1700000000000);
       expect(inst.rarity).toBe(rarity);
       expect(EQUIPMENT_DEFS[inst.defId]!.rarity).toBe(rarity);
     }
   });
 
   it('is deterministic for the same instance id', () => {
-    expect(makeDropInstance('rare', 'seed-drop')).toEqual(makeDropInstance('rare', 'seed-drop'));
+    expect(makeDropInstance('rare', 'seed-drop', 'pve_drop:ch1_lv5', 1700000000000))
+      .toEqual(makeDropInstance('rare', 'seed-drop', 'pve_drop:ch1_lv5', 1700000000000));
   });
 
   it('picks slots across the full set given varied seeds', () => {
     const slots = new Set<string>();
-    for (let i = 0; i < 60; i++) slots.add(EQUIPMENT_DEFS[makeDropInstance('common', `d${i}`).defId]!.slot);
+    for (let i = 0; i < 60; i++) {
+      slots.add(EQUIPMENT_DEFS[makeDropInstance('common', `d${i}`, 'pve_drop:ch1_lv5', 1700000000000).defId]!.slot);
+    }
     expect(slots.size).toBeGreaterThan(1); // not stuck on a single slot
+  });
+
+  // ITEM_IDENTITY_DESIGN.md (2026-08-04): provenance is a pass-through, not derived.
+  it('stamps the caller-supplied sourceType/obtainedAt verbatim', () => {
+    const inst = makeDropInstance('common', 'drop-provenance', 'pve_drop:ch2_lv10', 1700000099999);
+    expect(inst.sourceType).toBe('pve_drop:ch2_lv10');
+    expect(inst.obtainedAt).toBe(1700000099999);
   });
 });
 

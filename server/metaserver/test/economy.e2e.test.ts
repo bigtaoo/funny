@@ -469,8 +469,12 @@ describe.skipIf(!mongo)('meta economy orchestration e2e', () => {
     expect(r.data.results[0]).toMatchObject({ itemId: 'suyuan', rarity: 'epic' });
     // Lean response (2026-07-28): save.cardInv is always null here — the actual delta is cardGrants.
     expect(r.data.save.cardInv).toBeNull();
-    expect(r.data.cardGrants.some((c: { defId: string }) => c.defId === 'suyuan')).toBe(true);
+    const granted = r.data.cardGrants.find((c: { defId: string }) => c.defId === 'suyuan');
+    expect(granted).toBeDefined();
     expect(r.data.save.inventory.skins).not.toContain('suyuan');
+    // Provenance (ITEM_IDENTITY_DESIGN.md, 2026-08-04): gacha card grants are tagged 'gacha:<orderId>'.
+    expect(granted.sourceType).toMatch(/^gacha:/);
+    expect(typeof granted.obtainedAt).toBe('number');
   });
 
   it('gacha: equipment result lands in equipmentInv via equipmentGrants (lean response, 2026-07-28) — save.equipmentInv stays null', async () => {
@@ -481,9 +485,16 @@ describe.skipIf(!mongo)('meta economy orchestration e2e', () => {
     expect(r.data.save.equipmentInv).toBeNull();
     expect(r.data.equipmentGrants).toHaveLength(1);
     expect(r.data.equipmentGrants[0]).toMatchObject({ defId: 'wp_marker', rarity: 'rare' });
+    // Provenance (ITEM_IDENTITY_DESIGN.md, 2026-08-04): gacha equipment grants are tagged 'gacha:<orderId>'.
+    expect(r.data.equipmentGrants[0].sourceType).toMatch(/^gacha:/);
+    expect(typeof r.data.equipmentGrants[0].obtainedAt).toBe('number');
     // GET /save still does the full join (unaffected by gachaDraw's lean response) — the instance really landed.
     const after = body(await app.inject({ method: 'GET', url: '/save', headers: auth() }));
-    expect(after.data.save.equipmentInv[r.data.equipmentGrants[0].id]).toMatchObject({ defId: 'wp_marker' });
+    expect(after.data.save.equipmentInv[r.data.equipmentGrants[0].id]).toMatchObject({
+      defId: 'wp_marker',
+      sourceType: r.data.equipmentGrants[0].sourceType,
+      obtainedAt: r.data.equipmentGrants[0].obtainedAt,
+    });
   });
 
   it('gacha: card NEW badge checks cardInv, not inventory.skins (regression — markDuplicates only checked inventory.skins, so an already-owned card kept showing NEW on every later draw since cards never land in inventory.skins)', async () => {
