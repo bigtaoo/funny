@@ -2,7 +2,7 @@
 // (2026-08-02: pulled out of the Territory Overview panel into a panel of its own).
 import * as PIXI from 'pixi.js-legacy';
 import { t } from '../../../i18n';
-import { ui as C, txt, sketchPanel, seedFor, tearDownChildren } from '../../../render/sketchUi';
+import { ui as C, txt, txtOutlined, sketchPanel, seedFor, tearDownChildren } from '../../../render/sketchUi';
 import { buildIcon } from '../../../render/icons';
 import { FS } from '../../../render/fontScale';
 import { HUD_H } from '../constants';
@@ -37,6 +37,18 @@ export function ShopMixin<TBase extends WorldMapPanelsBaseCtor>(Base: TBase): TB
           })
           .catch(() => { /* offline */ });
       }
+    }
+
+    /**
+     * Short corner-badge text for tiers that share one icon glyph across kind (troop_speedup /
+     * protection both key off `duration_sec`, so a 1h/8h/24h speedup or an 8h/24h shield look
+     * identical at a glance without this) — `null` for kinds with no duration tier (resource_pack
+     * reads its quantity straight off the name text; battle_pass has only one tier).
+     */
+    private shopBadgeLabel(it: SlgShopItemView): string | null {
+      if (it.kind !== 'troop_speedup' && it.kind !== 'protection') return null;
+      const eff = it.effect as Record<string, number>;
+      return `${Math.round((eff.duration_sec ?? 0) / 3600)}H`;
     }
 
     shopLabel(it: SlgShopItemView): string {
@@ -78,6 +90,16 @@ export function ShopMixin<TBase extends WorldMapPanelsBaseCtor>(Base: TBase): TB
       const icon = buildIcon(SHOP_KIND_ICON[it.kind] ?? 'tag', iconSize, C.accent);
       icon.x = imgX + (imgBox - iconSize) / 2; icon.y = imgY + (imgBox - iconSize) / 2;
       layer.addChild(icon);
+
+      // Duration badge — a corner tag over the frame so same-kind tiers (1h/8h/24h speedup,
+      // 8h/24h shield) read apart by icon alone, not just by the name text beside it.
+      const badgeLabel = this.shopBadgeLabel(it);
+      if (badgeLabel) {
+        const badge = txtOutlined(badgeLabel, FS.micro, C.accent, 0xfaf9f5, 3, true);
+        badge.anchor.set(1, 0);
+        badge.x = imgX + imgBox + 2; badge.y = imgY - 4;
+        layer.addChild(badge);
+      }
 
       const ax = imgX + imgBox + 10;
       const colW = x + cellW - pad - ax;
