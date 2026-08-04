@@ -21,9 +21,9 @@ import { drawCoin, drawCoins, drawCoinStack, drawCoinSack, drawCoinChest } from 
 import { drawBook, drawGlobe, drawTrophy, drawCastle, drawPencils } from './icons/motifs';
 import {
   drawScrap, drawLead, drawBinding,
-  drawAtk, drawHp, drawArmor, drawSpd, drawAtkspd, drawBrush,
+  drawAtk, drawHp, drawArmor, drawArmorHeavy, drawSpd, drawAtkspd, drawBrush,
 } from './icons/equipment';
-import { drawFlag, drawDesk, drawCabinet, drawHammer, drawHourglass } from './icons/slg';
+import { drawFlag, drawDesk, drawCabinet, drawHammer, drawHourglassSm, drawHourglassMd, drawHourglassLg } from './icons/slg';
 import {
   drawSwords, drawReplay, drawShare, drawHome,
   drawTag, drawCapsule, drawCards, drawStar, drawLock, drawMedal, drawZoom, drawGift,
@@ -38,6 +38,9 @@ export type IconKind =
   | 'scrap' | 'lead' | 'binding'
   // Equipment page stat icons: attack / HP / armor / move-speed / attack-speed.
   | 'atk' | 'hp' | 'armor' | 'spd' | 'atkspd'
+  // SLG header-shop protection tiers (8h/24h): 'armor' is the base/shorter tier, this is the
+  // reinforced/longer one — same shield, extra band + rivets, no new silhouette.
+  | 'armorHeavy'
   // Collection page skin tag: cosmetic brush (cards/units use real PNG art, see cardArt.ts).
   | 'brush'
   // Results page actions: rematch (crossed swords) / replay (loop arrow) / share (out-of-box arrow) / back to lobby (house).
@@ -48,8 +51,9 @@ export type IconKind =
   // SLG city buildings (CityScene grid): HQ desk / archive cabinet + a build-queue hammer badge.
   // Resource-producer buildings reuse the res_atlas motifs; drillYard→swords, wall→castle, academy→book.
   | 'desk' | 'cabinet' | 'hammer'
-  // SLG header-shop timer (troop training speedup): distinct from the 'spd' move-speed stat glyph.
-  | 'hourglass'
+  // SLG header-shop training-speedup tiers (1h/8h/24h): distinct from the 'spd' move-speed stat
+  // glyph, and escalating sand/tick count per tier — see hourglassCore in icons/slg.ts.
+  | 'hourglassSm' | 'hourglassMd' | 'hourglassLg'
   // Hub tab strip glyphs (HubTabs): shop price-tag / gacha capsule / roster card stack.
   // Other hub tabs reuse existing glyphs — coins→coin, battlepass→trophy, equipment→armor, collection→book.
   | 'tag' | 'capsule' | 'cards'
@@ -84,6 +88,7 @@ export const DRAW: Record<IconKind, (g: PIXI.Graphics, s: number, color: number)
   atk:     drawAtk,
   hp:      drawHp,
   armor:   drawArmor,
+  armorHeavy: drawArmorHeavy,
   spd:     drawSpd,
   atkspd:  drawAtkspd,
   brush:   drawBrush,
@@ -95,7 +100,9 @@ export const DRAW: Record<IconKind, (g: PIXI.Graphics, s: number, color: number)
   desk:    drawDesk,
   cabinet: drawCabinet,
   hammer:  drawHammer,
-  hourglass: drawHourglass,
+  hourglassSm: drawHourglassSm,
+  hourglassMd: drawHourglassMd,
+  hourglassLg: drawHourglassLg,
   tag:     drawTag,
   capsule: drawCapsule,
   cards:   drawCards,

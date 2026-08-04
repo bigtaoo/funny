@@ -110,6 +110,23 @@ export function drawArmor(g: PIXI.Graphics, s: number, color: number): void {
   pen.circle(cx + hw * 0.62, top + s * 0.06, Math.max(1, s * 0.02), { color, width: w * 0.6, jitter: 0.2, taper: 0.9, double: false });
 }
 
+/**
+ * Armor, reinforced — `drawArmor` plus a second lower band and a pair of side rivets, for the
+ * longer shop protection tier: a heavier-plated read, not just the same shield + a text label.
+ */
+export function drawArmorHeavy(g: PIXI.Graphics, s: number, color: number): void {
+  drawArmor(g, s, color);
+  const pen = new SketchPen(g, 0x6a13);
+  const w = Math.max(1.4, s * 0.05);
+  const cx = s / 2, hw = s * 0.22;
+  // Second band lower down the plate.
+  pen.line(cx - hw * 0.55, s * 0.46, cx + hw * 0.55, s * 0.46,
+    { color, width: w * 0.7, jitter: 0.4, taper: 0.85, double: false, alpha: 0.8 });
+  // Side rivets flanking the centre rib, below the top pair.
+  pen.circle(cx - hw * 0.85, s * 0.40, Math.max(1, s * 0.02), { color, width: w * 0.6, jitter: 0.2, taper: 0.9, double: false });
+  pen.circle(cx + hw * 0.85, s * 0.40, Math.max(1, s * 0.02), { color, width: w * 0.6, jitter: 0.2, taper: 0.9, double: false });
+}
+
 /** Speed — twin forward chevrons (motion lines). */
 export function drawSpd(g: PIXI.Graphics, s: number, color: number): void {
   const pen = new SketchPen(g, 0x65bd);
