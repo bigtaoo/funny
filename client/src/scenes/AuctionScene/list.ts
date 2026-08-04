@@ -13,7 +13,8 @@ import { drawScrollIndicator } from '../../ui/widgets/ScrollIndicator';
 import { getEquipDef } from '../../game/meta/equipmentDefs';
 import { buildEquipIcon } from '../../render/atlas/equipmentAtlas';
 import { serverNow } from '../../net/serverClock';
-import { cardInstanceArtUrl, getArtTexture } from '../../render/cardArt';
+import { cardInstanceArtUrl, getArtTexture, unitPortraitUrl } from '../../render/cardArt';
+import { SKIN_TARGET_UNIT } from '../../game/meta/skinDefs';
 import { FILTER_H, AUC_CELL_GAP, AUC_CELL_H, AUC_CELL_W_TARGET, FILTERS, type AucFilter, type AucTab } from './base';
 import { type Constructor, type AuctionSceneBaseCtor } from './base';
 
@@ -71,8 +72,8 @@ export function ListMixin<TBase extends AuctionSceneBaseCtor>(Base: TBase): TBas
       const y = this.headerH;
       const contentW = w - contentX;
       const chipW = contentW / FILTERS.length;
-      const keys: Record<AucFilter, 'auction.filterAll' | 'auction.filterMaterial' | 'auction.filterEquipment' | 'auction.filterCard'> = {
-        '': 'auction.filterAll', material: 'auction.filterMaterial', equipment: 'auction.filterEquipment', card: 'auction.filterCard',
+      const keys: Record<AucFilter, 'auction.filterAll' | 'auction.filterMaterial' | 'auction.filterEquipment' | 'auction.filterCard' | 'auction.filterSkin'> = {
+        '': 'auction.filterAll', material: 'auction.filterMaterial', equipment: 'auction.filterEquipment', card: 'auction.filterCard', skin: 'auction.filterSkin',
       };
       // 1.5x the original chip metrics (padding/icon/font) — approved 15.07.2026 category-bar
       // enlargement pass. Chip width itself is unchanged (still contentW / FILTERS.length), so the
@@ -335,6 +336,26 @@ export function ListMixin<TBase extends AuctionSceneBaseCtor>(Base: TBase): TBas
       } else if (auc.itemType === 'card') {
         const inst = auc.item?.['instance'] as CardInstance | undefined;
         const artUrl = inst ? cardInstanceArtUrl(inst) ?? undefined : undefined;
+        if (artUrl) {
+          const tex = getArtTexture(artUrl);
+          if (tex.baseTexture.valid) {
+            const scale = Math.min(size / tex.width, size / tex.height);
+            const sp = new PIXI.Sprite(tex);
+            sp.anchor.set(0.5);
+            sp.scale.set(scale);
+            sp.position.set(cx, cy);
+            this.bodyLayer.addChild(sp);
+            return;
+          }
+          if (!this.artHooked.has(artUrl)) {
+            this.artHooked.add(artUrl);
+            tex.baseTexture.once('loaded', () => this.render());
+          }
+        }
+      } else if (auc.itemType === 'skin') {
+        const skinId = auc.item?.['skinId'] as string | undefined;
+        const unitType = skinId ? SKIN_TARGET_UNIT[skinId] : undefined;
+        const artUrl = unitType && skinId ? unitPortraitUrl(unitType, skinId) ?? undefined : undefined;
         if (artUrl) {
           const tex = getArtTexture(artUrl);
           if (tex.baseTexture.valid) {

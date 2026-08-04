@@ -293,7 +293,7 @@ export function PveMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase & Const
       const def = CARD_DEFS[cardId];
       if (!def) return undefined;
       const { cols, now, commercial } = this.deps;
-      const result = await grantCards(cols, now, accountId, [def], CHAPTER_ANCHOR_CARD_LEVEL);
+      const result = await grantCards(cols, now, accountId, [def], `pve_anchor:${chapterId}`, CHAPTER_ANCHOR_CARD_LEVEL);
       if ('error' in result) return undefined;
       if (result.compensatedCoins > 0 && commercial.available) {
         await commercial
@@ -349,7 +349,7 @@ export function PveMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase & Const
       const dropCfg = findPveLevel(levelId)?.equipmentDrop;
       const pendingDrop: EquipmentInstance | undefined =
         dropCfg && Math.random() < dropCfg.rate
-          ? (makeDropInstance(dropCfg.rarity, `drop_${randomUUID()}`) as EquipmentInstance)
+          ? (makeDropInstance(dropCfg.rarity, `drop_${randomUUID()}`, `pve_drop:${levelId}`, now()) as EquipmentInstance)
           : undefined;
 
       return { capped, grant, cardGrant, defsToGrant, pendingDrop };
@@ -405,7 +405,7 @@ export function PveMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase & Const
       // idempotent across repeated calls with the same clear/reward inputs. Level 1 matches every other card
       // source (starters / auction / gacha, §12); players raise cards via feeding, not the drop tier.
       if (defsToGrant.length > 0) {
-        const cardResult = await grantCards(cols, now, accountId, defsToGrant);
+        const cardResult = await grantCards(cols, now, accountId, defsToGrant, `pve_drop:${levelId}`);
         if ('error' in cardResult) return cardResult;
       }
 
@@ -493,7 +493,7 @@ export function PveMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase & Const
       // accrueStats/retention completely untouched, so a retry (this path is additionally guarded by
       // pveVerify's verifyId+status CAS, but defense-in-depth costs nothing here) can't double-apply them.
       if (defsToGrant.length > 0) {
-        const cardResult = await grantCards(cols, now, accountId, defsToGrant);
+        const cardResult = await grantCards(cols, now, accountId, defsToGrant, `pve_drop:${levelId}`);
         if ('error' in cardResult) return cardResult;
       }
 

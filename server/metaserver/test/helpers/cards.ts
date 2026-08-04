@@ -20,6 +20,8 @@ export async function seedCard(
         level: inst.level,
         gear: inst.gear,
         locked: inst.locked,
+        ...(inst.sourceType !== undefined ? { sourceType: inst.sourceType } : {}),
+        ...(inst.obtainedAt !== undefined ? { obtainedAt: inst.obtainedAt } : {}),
       },
     },
     { upsert: true },
@@ -51,7 +53,11 @@ export async function readCardInv(
   const docs = await m.collections.cardInstances.find({ accountId }).toArray();
   const inv: Record<string, CardInstance> = {};
   for (const d of docs) {
-    inv[d._id] = { id: d._id, defId: d.defId, level: d.level, gear: d.gear, locked: d.locked };
+    inv[d._id] = {
+      id: d._id, defId: d.defId, level: d.level, gear: d.gear, locked: d.locked,
+      ...(d.sourceType !== undefined ? { sourceType: d.sourceType } : {}),
+      ...(d.obtainedAt !== undefined ? { obtainedAt: d.obtainedAt } : {}),
+    };
   }
   return inv;
 }

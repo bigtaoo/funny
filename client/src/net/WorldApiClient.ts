@@ -570,7 +570,7 @@ export class WorldApiClient {
    * + optional buyoutPrice (buy-now floor unit price).
    */
   async createAuction(
-    itemType: 'material' | 'equipment' | 'card',
+    itemType: 'material' | 'equipment' | 'card' | 'skin',
     item: Record<string, unknown>,
     qty: number,
     durationSec: number,

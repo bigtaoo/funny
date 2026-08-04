@@ -487,6 +487,8 @@ export interface EquipmentInstanceDoc {
   level: number;
   affixes: Affix[];
   locked?: boolean;
+  sourceType?: string;
+  obtainedAt?: number;
 }
 
 /**
@@ -514,6 +516,8 @@ export interface CardInstanceDoc {
    * docs written before this field existed — no eager migration needed (same convention as march bbox).
    */
   gearInstanceIds?: string[];
+  sourceType?: string;
+  obtainedAt?: number;
 }
 
 /**

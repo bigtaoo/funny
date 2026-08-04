@@ -218,7 +218,7 @@ export function LiveOpsMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase & C
           const def = picked ? CARD_DEFS[picked.itemId] : undefined;
           if (def) {
             const { cols, commercial, now } = this.deps;
-            const g = await grantCards(cols, now, accountId, [def]);
+            const g = await grantCards(cols, now, accountId, [def], `checkin:${makeMonthKey(tsMs)}`);
             if (!('error' in g)) {
               save = g.save;
               deliveredId = def.id;
@@ -244,6 +244,8 @@ export function LiveOpsMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase & C
               rarity: def.rarity,
               level: 0,
               affixes: rollCraftedAffixes(def.defId, instanceId),
+              sourceType: `checkin:${makeMonthKey(tsMs)}`,
+              obtainedAt: tsMs,
             };
             const g = await grantEquipment(cols, now, accountId, instance);
             if (!('error' in g)) {

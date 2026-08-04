@@ -64,6 +64,8 @@ interface CardInstance {
   level: number        // 1–9（MAX_CARD_LEVEL）
   gear: GearSlotMap    // { weapon?, armor?, trinket? } → equipInstanceId
   locked: boolean      // 锁定后不可作为融合材料
+  sourceType?: string  // 溯源标签（2026-08-04，ITEM_IDENTITY_DESIGN.md）：'starter'/'checkin'/'pve_anchor:<levelId>'/'pve_drop:<levelId>'/'gacha:<orderId>'；可选，老实例为 undefined，无消费方，纯预留
+  obtainedAt?: number  // 获得时间（epoch ms），同上，可选
   // ⚠️ currentTroops / injuredUntil 不在此处——SLG 运行态存 worldsvc（见 §8.4）
   // ⚠️ 无 xp 字段（2026-07-19 融合重设计移除）——升级是离散的"5 张同级卡→+1 级"，不再有级内连续进度
 }

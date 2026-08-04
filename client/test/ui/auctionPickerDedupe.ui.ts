@@ -14,6 +14,7 @@ import { AuctionScene } from '../../src/scenes/AuctionScene';
 import { makeNewSave } from '../../src/game/meta/SaveData';
 import type { SaveData, EquipmentInstance, CardInstance } from '../../src/game/meta/SaveData';
 import type { WorldApiClient, AuctionView } from '../../src/net/WorldApiClient';
+import { skinDisplayName } from '../../src/game/meta/skinDefs';
 
 const memStore = (() => {
   const m = new Map<string, string>();
@@ -59,8 +60,12 @@ function card(id: string, opts: Partial<CardInstance> = {}): CardInstance {
 function saveWith(equipmentInv: Record<string, EquipmentInstance>, cardInv: Record<string, CardInstance>): SaveData {
   return { ...makeNewSave('acc_1'), equipmentInv, cardInv };
 }
+function saveWithSkins(skins: string[], equipped: Record<string, string> = {}): SaveData {
+  const save = makeNewSave('acc_1');
+  return { ...save, inventory: { ...save.inventory, skins }, equipped };
+}
 
-type PickEntry = { cls: 'material' | 'equipment' | 'card'; label: string; value: number; locked: boolean; defId?: string; material?: string; onPick: () => void };
+type PickEntry = { cls: 'material' | 'equipment' | 'card' | 'skin'; label: string; value: number; locked: boolean; defId?: string; skinId?: string; material?: string; onPick: () => void };
 
 describe('AuctionScene picker — equipment/card dedupe (buildPickEntries)', () => {
   it('collapses N identical equipment instances (same defId+level) into one entry labeled "×N"', () => {
@@ -182,6 +187,59 @@ describe('AuctionScene picker — real per-item icon wiring (defId carried throu
       return touched;
     });
     expect(pickHits).toHaveLength(1);
+    scene.destroy();
+  });
+});
+
+describe('AuctionScene picker — skins (2026-08-04, AUCTION_DESIGN.md §9 task7 follow-up)', () => {
+  it('listableSkins excludes a skin currently equipped on its target unit', () => {
+    // skin_e2 → UnitType.Mara (skinDefs.ts SKIN_TARGET_UNIT); equipped under the per-unit 'skin:<UnitType>' slot.
+    const save = saveWithSkins(['skin_e1', 'skin_e2'], { 'skin:mara': 'skin_e2' });
+    const scene = buildScene({ getSave: () => save });
+    expect(scene.listableSkins()).toEqual(['skin_e1']);
+    scene.destroy();
+  });
+
+  it('an owned, unequipped skin appears in buildPickEntries with cls="skin" and its display name', () => {
+    const save = saveWithSkins(['skin_e2']);
+    const scene = buildScene({ getSave: () => save });
+    const entries: PickEntry[] = scene.buildPickEntries();
+    const skinEntries = entries.filter((e) => e.cls === 'skin');
+    expect(skinEntries).toHaveLength(1);
+    expect(skinEntries[0].skinId).toBe('skin_e2');
+    expect(skinEntries[0].label).toBe(skinDisplayName('skin_e2'));
+    scene.destroy();
+  });
+
+  it('a skin with no owned copies (or fully equipped) contributes no entry', () => {
+    const save = saveWithSkins(['skin_e2'], { 'skin:mara': 'skin_e2' });
+    const scene = buildScene({ getSave: () => save });
+    const entries: PickEntry[] = scene.buildPickEntries();
+    expect(entries.filter((e) => e.cls === 'skin')).toHaveLength(0);
+    scene.destroy();
+  });
+
+  it('picking a skin entry sets createClass/createSkinId and doCreate submits itemType="skin" with {skinId}', async () => {
+    const save = saveWithSkins(['skin_e2']);
+    const createAuction = vi.fn(async () => ({}));
+    const scene = buildScene({ getSave: () => save, worldApi: { ...stubWorldApi(), createAuction } });
+    const entries: PickEntry[] = scene.buildPickEntries();
+    entries.find((e) => e.cls === 'skin')!.onPick();
+    expect(scene.createClass).toBe('skin');
+    expect(scene.createSkinId).toBe('skin_e2');
+    expect(scene.selectedItemLabel()).toBe(skinDisplayName('skin_e2'));
+
+    await scene.doCreate();
+    expect(createAuction).toHaveBeenCalledWith('skin', { skinId: 'skin_e2' }, 1, expect.any(Number), expect.any(Object));
+    scene.destroy();
+  });
+
+  it('the skin category tab is included in FILTERS and renders without throwing', () => {
+    const save = saveWithSkins(['skin_e2']);
+    const scene = buildScene({ getSave: () => save });
+    scene.openItemPicker();
+    scene.pickerFilter = 'skin';
+    expect(() => scene.render()).not.toThrow();
     scene.destroy();
   });
 });
