@@ -10,7 +10,7 @@ import { createAdminMongo } from './db';
 import { AdminService } from './service';
 import { startHttpApi } from './httpApi';
 import { seedSuperAdmin } from './seed';
-import { HttpAnalyticsClient, HttpAntiCheatClient, HttpAuctionClient, HttpEventsClient, HttpGachaPoolsClient, HttpLadderClient, HttpMailDispatcher, HttpMismatchClient, HttpPaddleEventsClient, HttpPlayerClient, HttpPromoClient, HttpPvpCardStatsClient, HttpStatsClient, HttpSuspiciousPveClient, HttpWorldClient, HttpReportsClient, HttpAppealsClient, HttpEnforcementClient } from './clients';
+import { HttpAnalyticsClient, HttpAntiCheatClient, HttpAuctionClient, HttpEventsClient, HttpGachaPoolsClient, HttpLadderClient, HttpMailDispatcher, HttpMismatchClient, HttpPaddleEventsClient, HttpPlayerClient, HttpPromoClient, HttpPvpCardStatsClient, HttpStatsClient, HttpSuspiciousPveClient, HttpWorldClient, HttpReportsClient, HttpAppealsClient, HttpEnforcementClient, HttpFeedbackClient } from './clients';
 
 const log = createLogger('admin');
 
@@ -39,8 +39,9 @@ async function main(): Promise<void> {
   const reports = new HttpReportsClient(env.socialInternalUrl, env.internalKey);
   const appeals = new HttpAppealsClient(env.metaBaseUrl, env.internalKey);
   const enforcement = new HttpEnforcementClient(env.metaBaseUrl, env.internalKey);
+  const feedback = new HttpFeedbackClient(env.metaBaseUrl, env.internalKey);
 
-  const svc = new AdminService({ cols: mongo.collections, stats, players, antiCheat, mismatches, pvpCardStats, suspiciousPve, mail, analytics, world, auction, ladder, events, gachaPools, promo, paddleEvents, reports, appeals, enforcement, now: () => Date.now() });
+  const svc = new AdminService({ cols: mongo.collections, stats, players, antiCheat, mismatches, pvpCardStats, suspiciousPve, mail, analytics, world, auction, ladder, events, gachaPools, promo, paddleEvents, reports, appeals, enforcement, feedback, now: () => Date.now() });
 
   const jwt: JwtConfig = { secret: env.adminJwtSecret, expiresIn: env.adminJwtTtl };
   const server = startHttpApi(

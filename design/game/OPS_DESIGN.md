@@ -82,6 +82,7 @@ interface AdminAccountDoc {
 | `reports.action` 裁定举报（dismiss/uphold，联动信誉分处罚） | ✓ | ✓ | – | – |
 | `appeals.view` 查申诉队列 | ✓ | ✓ | ✓ | ✓ |
 | `appeals.action` 裁定申诉（approve/deny，撤销 mute/ban） | ✓ | ✓ | – | – |
+| `feedback.view` 查玩家反馈（只读，无裁定；`SERVER_API.md §2.13`） | ✓ | ✓ | ✓ | ✓ |
 | `moderation.wordlist.manage` 管理敏感词库外部覆盖表 | ✓ | ✓ | – | – |
 | `audit.view.all` 看全部审计 | ✓ | – | – | – |
 | `audit.view.self` 看自己操作（登录即有） | ✓ | ✓ | ✓ | ✓ |
@@ -179,6 +180,7 @@ admin 执行器（approved 后，可自动或手动触发）
 | `POST /internal/anticheat/reviews/{id}/resolve` | meta | 人工裁定一条审核记录（`anticheat.action`）：只改 `status`/`resolution`/`resolvedBy`，本身不封号——`resolution:'banned'` 时 admin 侧另调 `/internal/accounts/{id}/ban`，全库只有一条封号执行路径（2026-07-18，取代 PvE reject 三振自动封号） | ✅ |
 | `POST /internal/mail/system/send` | **meta**（SOCIAL_DESIGN S6-3） | 执行补偿 = 创建系统邮件（单人/批量，幂等键） | ✅ 已联调 |
 | `POST /internal/mail/system/preview` | meta | 全服补偿 dry-run 估算命中人数 | ✅ 已联调 |
+| `GET /internal/feedback?limit=` | meta（`SERVER_API.md §2.13`） | 玩家反馈列表（只读，`feedback.view`），按 `createdAt` 倒序 | ✅ |
 
 > 邮件相关端点由 `SOCIAL_DESIGN` 的 S6-3 落地；admin 侧先按契约形状对接，**2026-06-16 跨进程实跑联调通过**（`server/admin/test/comp-mail.e2e.test.ts`：真实 `HttpMailDispatcher`/`HttpPlayerClient` 经 `fetch` 打真实 `app.listen` 的 meta 进程，跑通 单人补偿全链/`dispatchKey` 幂等/全服 fan-out+preview/player.lookup/错 key→401→工单 failed/收件人不存在→failed）。
 
@@ -236,6 +238,9 @@ GET  /admin/config/slg-shop                          → { items: [{ id, default
 PUT  /admin/config/slg-shop/{id}  { cost?, effect? } → { item }                        // 只传要改的字段；写 auditLog（slg.shop.price.update）
 # 内部端点（X-Internal-Key，非 admin JWT）：worldsvc 不连 admin 库，轮询此端点拉原始覆盖记录，本地与 SLG_SHOP_ITEMS 合并
 GET  /admin/internal/slg-shop-prices                 → { items: [...] }                // 原样返回，worldsvc 30s 轮询 + 本地 resolveSlgShopItem 合并
+
+# 玩家反馈（feedback.view，只读，无裁定/无状态机）
+GET  /admin/feedback?limit=                          → { feedback: [...] }             // 代理 meta GET /internal/feedback
 
 # 审计
 GET  /admin/audit?actor=&from=&to=                   → { entries: [...] }              // all=超管 / self=本人

@@ -27,6 +27,8 @@ export interface AuthApi {
   setFlag(key: string, value: boolean): Promise<{ save: SaveData }>;
   /** Submit an appeal against the account's currently active mute/temp-ban/ban (CONTENT_MODERATION_DESIGN.md CM10). */
   submitAppeal(reason: string): Promise<void>;
+  /** Submit free-text player feedback (UI_DESIGN.md §4.1.1 lobby entry, SERVER_API.md §2.13). */
+  submitFeedback(text: string): Promise<void>;
 }
 
 export function AuthMixin<TBase extends ApiClientBaseCtor>(Base: TBase): TBase & Constructor<AuthApi> {
@@ -138,6 +140,10 @@ export function AuthMixin<TBase extends ApiClientBaseCtor>(Base: TBase): TBase &
 
     async submitAppeal(reason: string): Promise<void> {
       await this.post<{ ok: true }>('/account/appeal', { reason });
+    }
+
+    async submitFeedback(text: string): Promise<void> {
+      await this.post<{ ok: true }>('/feedback', { text });
     }
   };
 }

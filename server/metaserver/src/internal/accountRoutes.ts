@@ -248,6 +248,18 @@ export function registerAccountRoutes(app: FastifyInstance, ctx: InternalCtx): v
     return reply.send({ ok: true, ...result });
   });
 
+  // ── GET /internal/feedback?limit= (UI_DESIGN.md §4.1.1 / SERVER_API.md §2.13) ─────────
+  // admin backend read-only listing, newest first — no status/resolve, unlike appeals below.
+  app.get('/internal/feedback', async (req, reply) => {
+    if (!authed(req.headers)) {
+      return reply.code(401).send({ ok: false, error: 'unauthorized' });
+    }
+    const q = req.query as { limit?: string };
+    const limit = Math.min(Math.max(Number(q.limit) || 100, 1), 200);
+    const feedback = await cols.feedback.find({}).sort({ createdAt: -1 }).limit(limit).toArray();
+    return reply.send({ feedback });
+  });
+
   // ── GET /internal/appeals?status=&limit= (CONTENT_MODERATION_DESIGN.md CM10) ─────────
   // admin backend appeal review queue. Default status=open; limit 1..200.
   app.get('/internal/appeals', async (req, reply) => {

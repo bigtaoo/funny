@@ -96,9 +96,9 @@ export function BuildMixin<TBase extends LobbySceneBaseCtor>(Base: TBase): TBase
         else if (this.cb.onOpenSocial) this.cb.onOpenSocial();
         return;
       }
-      const ach = this.achieveStripRect;
-      if (ach.w > 0 && x >= ach.x && x <= ach.x + ach.w && y >= ach.y && y <= ach.y + ach.h) {
-        if (this.cb.onOpenAchievements) this.cb.onOpenAchievements();
+      const fb = this.feedbackStripRect;
+      if (fb.w > 0 && x >= fb.x && x <= fb.x + fb.w && y >= fb.y && y <= fb.y + fb.h) {
+        if (this.cb.onOpenFeedback) this.cb.onOpenFeedback();
         return;
       }
       const auc = this.auctionStripRect;
@@ -491,28 +491,28 @@ export function BuildMixin<TBase extends LobbySceneBaseCtor>(Base: TBase): TBase
         this.worldPillarRect = { x: 0, y: 0, w: 0, h: 0 };
       }
 
-      // 3. Right-side vertical strip — Daily / Mail / Events / Achievements (P2).
+      // 3. Right-side vertical strip — Daily / Mail / Events / Feedback / Auction (P2).
       // Replaces the old horizontal engagement chip row. Items are compact sketch
       // panels stacked vertically alongside the hero + pillars area, each with a
       // short 2-char label and a red dot when actionable.
       this.dailyBtnRect   = { x: 0, y: 0, w: 0, h: 0 };
       this.eventsBtnRect  = { x: 0, y: 0, w: 0, h: 0 };
       this.mailStripRect  = { x: 0, y: 0, w: 0, h: 0 };
-      this.achieveStripRect = { x: 0, y: 0, w: 0, h: 0 };
+      this.feedbackStripRect = { x: 0, y: 0, w: 0, h: 0 };
       this.auctionStripRect = { x: 0, y: 0, w: 0, h: 0 };
       if (hasSideStrip) {
-        const hasEvents  = !!this.cb.onOpenEvents && this.eventsAvailable;
-        const hasMail    = !!(this.cb.onOpenMail ?? this.cb.onOpenSocial);
-        const hasAchieve = !!this.cb.onOpenAchievements;
-        const hasAuction = !!this.cb.onOpenAuction;
+        const hasEvents   = !!this.cb.onOpenEvents && this.eventsAvailable;
+        const hasMail     = !!(this.cb.onOpenMail ?? this.cb.onOpenSocial);
+        const hasFeedback = !!this.cb.onOpenFeedback;
+        const hasAuction  = !!this.cb.onOpenAuction;
 
-        type StripEntry = { label: string; border: number; seed: number; tag: 'daily' | 'mail' | 'events' | 'achieve' | 'auction' };
+        type StripEntry = { label: string; border: number; seed: number; tag: 'daily' | 'mail' | 'events' | 'feedback' | 'auction' };
         const entries: StripEntry[] = [];
-        entries.push({ label: t('daily.title'),        border: C.gold,  seed: 71, tag: 'daily'   });
-        if (hasMail)    entries.push({ label: t('lobby.strip.mail'),   border: C.gold,  seed: 72, tag: 'mail'    });
-        if (hasEvents)  entries.push({ label: t('lobby.strip.events'), border: C.red,   seed: 73, tag: 'events'  });
-        if (hasAchieve) entries.push({ label: t('lobby.strip.achieve'),border: C.accent,seed: 74, tag: 'achieve' });
-        if (hasAuction) entries.push({ label: t('lobby.strip.auction'),border: C.green, seed: 75, tag: 'auction' });
+        entries.push({ label: t('daily.title'),         border: C.gold,  seed: 71, tag: 'daily'    });
+        if (hasMail)     entries.push({ label: t('lobby.strip.mail'),    border: C.gold,  seed: 72, tag: 'mail'     });
+        if (hasEvents)   entries.push({ label: t('lobby.strip.events'),  border: C.red,   seed: 73, tag: 'events'   });
+        if (hasFeedback) entries.push({ label: t('lobby.strip.feedback'),border: C.accent,seed: 74, tag: 'feedback' });
+        if (hasAuction)  entries.push({ label: t('lobby.strip.auction'), border: C.green, seed: 75, tag: 'auction'  });
 
         const itemGap  = Math.round(h * 0.014);
         const totalH   = entries.length * sideItemSz + (entries.length - 1) * itemGap;
@@ -536,11 +536,11 @@ export function BuildMixin<TBase extends LobbySceneBaseCtor>(Base: TBase): TBase
 
           const rect: Rect = { x: sideX, y: iy, w: sideItemSz, h: sideItemSz };
           switch (entry.tag) {
-            case 'daily':   this.dailyBtnRect   = rect; break;
-            case 'mail':    this.mailStripRect   = rect; break;
-            case 'events':  this.eventsBtnRect   = rect; break;
-            case 'achieve': this.achieveStripRect = rect; break;
-            case 'auction': this.auctionStripRect = rect; break;
+            case 'daily':    this.dailyBtnRect      = rect; break;
+            case 'mail':     this.mailStripRect      = rect; break;
+            case 'events':   this.eventsBtnRect      = rect; break;
+            case 'feedback': this.feedbackStripRect  = rect; break;
+            case 'auction':  this.auctionStripRect    = rect; break;
           }
         });
 
