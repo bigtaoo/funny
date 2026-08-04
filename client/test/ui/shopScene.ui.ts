@@ -340,11 +340,21 @@ describe('ShopScene — material bundles (kind="material", ECONOMY_NUMBERS §6.5
 
   it('renders "{material name} ×{qty}" using the shared material.* translation, not the raw item id', async () => {
     const scene = buildShop({
-      loadItems: async () => [{ id: 'mat_buy_scrap', cost: 20, kind: 'material', grants: 'scrap', qty: 10 }],
+      loadItems: async () => [{ id: 'mat_buy_scrap', cost: 20, kind: 'material', grants: 'scrap', qty: 10, dailyLimit: 5, purchasedToday: 2 }],
     });
     await flush();
     expect(findLabelPos(scene.container, t('shop.item.material.title', { name: t('material.scrap'), qty: 10 }))).not.toBeNull();
-    expect(findLabelPos(scene.container, t('shop.item.material.desc'))).not.toBeNull();
+    expect(findLabelPos(scene.container, t('shop.item.material.limit', { used: 2, limit: 5 }))).not.toBeNull();
+    scene.destroy();
+  });
+
+  it('greys out Buy and shows the cap-reached label once purchasedToday hits dailyLimit', async () => {
+    const scene = buildShop({
+      loadItems: async () => [{ id: 'mat_buy_scrap', cost: 20, kind: 'material', grants: 'scrap', qty: 10, dailyLimit: 5, purchasedToday: 5 }],
+    });
+    await flush();
+    expect(findLabelPos(scene.container, t('shop.item.material.capReached'))).not.toBeNull();
+    expect(findLabelPos(scene.container, t('shop.buy'))).toBeNull();
     scene.destroy();
   });
 

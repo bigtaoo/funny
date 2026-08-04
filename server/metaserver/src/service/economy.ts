@@ -27,6 +27,7 @@ import {
   findRechargeTier,
   makeFreshRechargeMilestone,
   bumpCappedCounter,
+  readCounterField,
   type GachaPoolDef,
   type RechargeReward,
   type SaveData,
@@ -81,14 +82,29 @@ interface PoolView {
 
 export function EconomyMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase & Constructor<EconomyHandlers> {
   return class extends Base {
-    /** Shop item list (catalog single source of truth: @nw/shared). */
-    async getShopItems() {
-      const items = SHOP_ITEMS.map((i) => ({
-        id: i.id,
-        cost: i.cost,
-        kind: i.kind,
-        grants: i.grants,
-        ...(i.qty !== undefined ? { qty: i.qty } : {}),
+    /**
+     * Shop item list (catalog single source of truth: @nw/shared). Material bundles carry the
+     * account's live daily-cap progress (dailyLimit/purchasedToday) so the client can show
+     * "used/cap" and grey out the Buy button once reached, instead of only finding out from a
+     * failed purchase (shopBuy checks the same MATERIAL_SHOP_DAILY_CAP + readCounterField pairing).
+     */
+    async getShopItems(req: FastifyRequest) {
+      const accountId = accountIdOf(req);
+      const { now, redis } = this.deps;
+      const dayKey = adsDayKey(now());
+      const items = await Promise.all(SHOP_ITEMS.map(async (i) => {
+        const dailyLimit = MATERIAL_SHOP_DAILY_CAP[i.id];
+        const purchasedToday = dailyLimit !== undefined
+          ? await readCounterField(redis, 'shopMatDaily', accountId, dayKey, i.id)
+          : undefined;
+        return {
+          id: i.id,
+          cost: i.cost,
+          kind: i.kind,
+          grants: i.grants,
+          ...(i.qty !== undefined ? { qty: i.qty } : {}),
+          ...(dailyLimit !== undefined ? { dailyLimit, purchasedToday } : {}),
+        };
       }));
       return ok({ items });
     }

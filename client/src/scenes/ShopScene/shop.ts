@@ -5,6 +5,7 @@ import * as PIXI from 'pixi.js-legacy';
 import { t, TranslationKey } from '../../i18n';
 import { ui as C, txt } from '../../render/sketchUi';
 import { type IconKind } from '../../render/icons';
+import { type MaterialKind } from '../../render/atlas/materialAtlas';
 import { drawScrollIndicator } from '../../ui/widgets/ScrollIndicator';
 import { peekViewportH } from '../../ui/widgets/scrollPeek';
 import { bottomNavH } from '../../ui/widgets/HubTabs';
@@ -186,15 +187,26 @@ export function ShopMixin<TBase extends ShopSceneBaseCtor>(Base: TBase): TBase &
           if (item.kind !== 'material') continue;
           // Material bundles aren't "owned" either (stackable, re-buyable up to the server's daily cap —
           // a 400 here just means "try again tomorrow", surfaced via the normal onBuy error toast).
-          const canBuy = !busy && this.cb.getCoins() >= item.cost;
+          // dailyLimit/purchasedToday (present iff the item is capped, see metaserver getShopItems) drive
+          // the "used/cap" status line + grey the Buy button out client-side once reached, instead of only
+          // finding out from a failed purchase.
+          const capped = item.dailyLimit !== undefined && (item.purchasedToday ?? 0) >= item.dailyLimit;
+          const canBuy = !busy && !capped && this.cb.getCoins() >= item.cost;
           const materialName = t(`material.${item.grants}` as TranslationKey);
           const matTitle = t('shop.item.material.title', { name: materialName, qty: item.qty ?? 1 });
+          const statusLine = item.dailyLimit !== undefined
+            ? t('shop.item.material.limit', { used: item.purchasedToday ?? 0, limit: item.dailyLimit })
+            : undefined;
           specs.push({
             icon: (item.grants as IconKind) ?? 'scrap', iconColor: C.accent,
+            materialKind: item.grants as MaterialKind,
             title: matTitle,
-            lines: [{ text: t('shop.item.material.desc'), color: C.mid }],
+            lines: statusLine ? [{ text: statusLine, color: capped ? C.red : C.mid }] : [],
             coinAmount: item.cost,
-            buttons: [{ label: t('shop.buy'), enabled: canBuy, primary: true, fn: () => void this.onBuy(item.id, matTitle) }],
+            buttons: [{
+              label: capped ? t('shop.item.material.capReached') : t('shop.buy'),
+              enabled: canBuy, primary: true, fn: () => void this.onBuy(item.id, matTitle),
+            }],
           });
         }
         for (const item of this.items) {

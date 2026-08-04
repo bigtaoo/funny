@@ -28,6 +28,7 @@ import { ui as C, txt, buildPaperBackground, sketchPanel, sketchAccentBar, seedF
 import { buildDecorCLayer } from '../../render/decorCLayer';
 import { type IconKind } from '../../render/icons';
 import { loadCoinIconAtlas, buildCoinIcon } from '../../render/atlas/coinIconAtlas';
+import { buildMaterialIcon, type MaterialKind } from '../../render/atlas/materialAtlas';
 import { getArtTexture, containScale } from '../../render/cardArt';
 import { drawSceneHeader, drawHeaderCurrency, HEADER_ACCENT } from '../../ui/widgets/SceneHeader';
 import { drawSidebarTabs, drawBottomNavTabs, sidebarNavW, bottomNavH, type HubTab } from '../../ui/widgets/HubTabs';
@@ -110,6 +111,14 @@ export interface CardSpec {
    * art borrows the base unit's card PNG — see ShopMixin.buildShopCards skin section).
    */
   artUrl?: string;
+  /**
+   * Crafting-material bitmap (scrap/lead/binding), drawn instead of `icon` when set — takes
+   * precedence over `icon` but not `artUrl`. Materials must go through buildMaterialIcon (not the
+   * generic buildCoinIcon→buildIcon procedural-glyph fallback) so they match the AI bitmap art
+   * already used everywhere else materials appear (equipment page, gacha reveal/odds, daily/event/
+   * battle-pass reward rows) — see materialAtlas.ts's doc comment.
+   */
+  materialKind?: MaterialKind;
   title: string;
   /** Prominent gold coin amount (coin glyph + number), shown under the title (skins / coin tiers). */
   coinAmount?: number;
@@ -505,7 +514,9 @@ export class ShopSceneBase {
         tex.baseTexture.once('loaded', () => this.render());
       }
     } else {
-      const icon = buildCoinIcon(spec.icon, imgSize, spec.iconColor);
+      const icon = spec.materialKind
+        ? buildMaterialIcon(spec.materialKind, imgSize, spec.iconColor)
+        : buildCoinIcon(spec.icon, imgSize, spec.iconColor);
       icon.x = imgX; icon.y = imgY;
       body.addChild(icon);
     }

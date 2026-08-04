@@ -948,3 +948,14 @@ buildSiegeBlueprints(levels, equipped, inv)
 - 三处调用点（`CardScene/list.ts` 网格、`CardScene/detail.ts` 详情弹窗、`EquipmentScene/inventory.ts` 背包格）删掉各自「`inst ? 1 : 0.3～0.4`」的透明度分支，统一 `alpha = 1`——镂空+加号本身已经是区分信号，不需要再叠一层透明度。
 
 验证：client `tsc --noEmit` 全绿；`npm run test:ui` 中 equipment/roster 相关既有套件（`equipmentGridLayout`/`equipmentAssignGrid`/`cardRosterApplyCardState` 等）全绿，其余 50 个套件失败是本机已知的 `jsonwebtoken` workspace 链接缺口（详见 `claudedocs/worktrees.md` 陷阱记录），与本次改动无关。因后端未起无法走完整登录截图 Hero Roster，改用 `?equipDemo` 临时调试入口（`entries/web.ts` 分支 + 一次性 demo 模块，验证后已删除）直接构造 `PIXI.Application` 调用 `drawEmptySlotGlyph`/`drawEquipmentGlyph` 网格渲染，肉眼确认三个槽位的镂空+加号版本与 common/fine/rare/epic 实心版本能一眼区分。
+
+### 20.14 实现记录（2026-08-04，✅）— 商店材料档补齐位图图标 + 每日限购进度显示（ECONOMY_NUMBERS §6.5 UI 缺口）
+
+背景：用户截图商店「Scraps ×10 / Lead ×3」两档，指出两处问题：①图标不对；②写着"每日限购次数有限"却不显示已购/上限次数。排查确认①与 §20.11 同一 bug 家族——`buildMaterialIcon` 铁律当时覆盖了 GachaScene/EquipmentScene/LevelPrepScene/DailyScene/EventScene/BattlePassScene 六处，唯独 §6.5（2026-08-03 才新增）的 `ShopScene` 材料直购档从建立起就没接入，材料图标走的是 `buildCoinIcon`→`buildIcon` 程序 glyph 回退路径（scrap 撕纸剪影在截图里读成"书签"、lead 削尖石墨条读成"羽毛笔"），并非本次改动引入的新回归，是功能补齐时漏掉的一个调用点。②是纯粹的信息缺口——`MATERIAL_SHOP_DAILY_CAP` 早已存在（ECONOMY_NUMBERS §6.5），但服务端从未把当日已购次数吐给客户端，商店只能写死一句静态提示。
+
+落地：
+- **图标**：`ShopScene/base.ts` `CardSpec` 新增 `materialKind?: MaterialKind` 字段，`drawCard` 材料分支优先按它走 `buildMaterialIcon`（早于 `artUrl` 缺失时的 `buildCoinIcon` 兜底）；`ShopScene/shop.ts` 材料循环设置 `materialKind: item.grants`。
+- **限购进度**：`ShopItem` schema（`contracts/openapi/schemas.yml`）新增 `dailyLimit`/`purchasedToday`（非限购商品整体省略，与既有 `qty` 字段同一约定），`server/metaserver/src/service/economy.ts` `getShopItems` 用 `readCounterField`（只读快照，不占用 `bumpCappedCounter` 的写路径）现算当日已购次数。客户端状态行改渲染"今日已购 {used}/{limit}"（`shop.item.material.limit`，替换掉原静态 `shop.item.material.desc`），到量后 Buy 按钮置灰、文案变"今日已达上限"（`shop.item.material.capReached`）；`onBuy` 购买成功后重新拉取 `/shop/items` 让计数实时刷新，不必等下次进商店。
+- 详见 ECONOMY_NUMBERS.md §6.5 "2026-08-04 修复" 条目（数值/字段设计记在那边，本节只记图标/UI 实现）。
+
+验证：server `@nw/shared`/`@nw/metaserver` 构建 + `tsc --noEmit` 全绿；`economy.e2e.test.ts` 新增一条覆盖 dailyLimit/purchasedToday 随购买递增 + 非限购商品不带这两个字段，40/40 全绿（真实 Mongo）。client `tsc --noEmit` + `webpack build:web` 全绿；`shopScene.ui.ts` 更新/新增两条覆盖限购进度行渲染 + 封顶态按钮置灰，35/35 全绿；`shopGroupTabs`/`shopCoinsScrollBound`/`coinHeaderDisplay`/`shopNav-*` 相关既有套件全绿。因后端（mongo/redis/metaserver/commercial）本次会话未起，且浏览器面板当前无法截图（compositing 环境限制），材料位图本身的最终视觉效果沿用 §20.10/20.11 已验证过的 `buildMaterialIcon`（本次只是让 ShopScene 调用同一条已验证路径），未重复登录截图确认。
