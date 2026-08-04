@@ -13,7 +13,7 @@
 // Runs under the headless PIXI adapter (vitest.ui.config.ts setupFiles); tabs/fields are located by
 // their rendered label text, not by hit-array index, so a reorder doesn't mask a real regression.
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import * as PIXI from 'pixi.js-legacy';
 import { createLayout } from '../../src/layout/ScalingManager';
 import { InputManager } from '../../src/inputSystem/InputManager';
@@ -24,6 +24,17 @@ import { ShopScene, type ShopSceneCallbacks } from '../../src/scenes/ShopScene';
 // Under vitest.ui.config.ts every .png import stubs to a 1×1 data-URI string, so this resolves to
 // the exact URL the scene feeds to getArtTexture() — i.e. the same cached PIXI texture object.
 import infantryArtUrl from '../../src/assets/units/infantry.png';
+import { buildMaterialIcon } from '../../src/render/atlas/materialAtlas';
+
+// Wrap-don't-replace treatment (same convention as mailAttachmentIcons.ui.ts's 2026-08-01 spec):
+// the 2026-08-04 fix routes ShopScene's material cards through buildMaterialIcon (the AI-bitmap
+// path every other material-icon site already used) instead of the generic buildCoinIcon→buildIcon
+// procedural-glyph fallback — this spy lets the regression test below inspect which MaterialKind
+// each card actually resolves to, without touching real rendering.
+vi.mock('../../src/render/atlas/materialAtlas', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../src/render/atlas/materialAtlas')>();
+  return { ...actual, buildMaterialIcon: vi.fn(actual.buildMaterialIcon) };
+});
 
 const memStore = (() => {
   const m = new Map<string, string>();
@@ -348,6 +359,29 @@ describe('ShopScene — material bundles (kind="material", ECONOMY_NUMBERS §6.5
     scene.destroy();
   });
 
+  it('renders scrap/lead cards via buildMaterialIcon (the AI-bitmap path), not the generic procedural-glyph fallback — 2026-08-04 regression guard', async () => {
+    const spy = buildMaterialIcon as unknown as { mock: { calls: unknown[][] } };
+    spy.mock.calls.length = 0;
+    const scene = buildShop({
+      loadItems: async () => [
+        { id: 'mat_buy_scrap', cost: 20, kind: 'material', grants: 'scrap', qty: 10 },
+        { id: 'mat_buy_lead', cost: 105, kind: 'material', grants: 'lead', qty: 3 },
+        { id: 'protect_enhance', cost: 500, kind: 'item', grants: 'protect_enhance' },
+        { id: 'skin_shop_c1', cost: 800, kind: 'skin', grants: 'skin_shop_c1' },
+      ],
+    });
+    await flush();
+    const kinds = spy.mock.calls.map((args) => args[0]);
+    // Each material card resolves via buildMaterialIcon exactly once, with its own grants id as
+    // the kind — not skipped, not both cards collapsing onto the same kind.
+    expect(kinds).toContain('scrap');
+    expect(kinds).toContain('lead');
+    // Non-material cards (protect_enhance/skin) never touch buildMaterialIcon — they keep going
+    // through the generic icon/artUrl path.
+    expect(kinds.filter((k) => k !== 'scrap' && k !== 'lead')).toHaveLength(0);
+    scene.destroy();
+  });
+
   it('greys out Buy and shows the cap-reached label once purchasedToday hits dailyLimit', async () => {
     const scene = buildShop({
       loadItems: async () => [{ id: 'mat_buy_scrap', cost: 20, kind: 'material', grants: 'scrap', qty: 10, dailyLimit: 5, purchasedToday: 5 }],
@@ -402,6 +436,53 @@ describe('ShopScene — material bundles (kind="material", ECONOMY_NUMBERS §6.5
     await flush();
     await flush();
     expect(buyIds).toEqual(['mat_buy_scrap']);
+    scene.destroy();
+  });
+
+  it('a successful buy immediately re-fetches items so the "purchased/limit" line updates without reopening the shop — 2026-08-04 live-refresh fix', async () => {
+    let purchasedToday = 0;
+    let loadCalls = 0;
+    const scene = buildShop({
+      loadItems: async () => {
+        loadCalls++;
+        return [{ id: 'mat_buy_scrap', cost: 20, kind: 'material', grants: 'scrap', qty: 10, dailyLimit: 5, purchasedToday }];
+      },
+      buy: async () => {
+        purchasedToday++; // mirrors the server's real MATERIAL_SHOP_DAILY_CAP counter increment
+        return { ok: true };
+      },
+    });
+    await flush();
+    expect(loadCalls).toBe(1); // the initial constructor-driven load
+    expect(findLabelPos(scene.container, t('shop.item.material.limit', { used: 0, limit: 5 }))).not.toBeNull();
+
+    tapLabel(scene, t('shop.buy'));
+    await flush();
+    await flush();
+
+    expect(loadCalls).toBe(2); // onBuy re-fetched after the successful purchase, not just re-rendered stale data
+    expect(findLabelPos(scene.container, t('shop.item.material.limit', { used: 1, limit: 5 }))).not.toBeNull();
+    scene.destroy();
+  });
+
+  it('a FAILED buy does not spuriously bump the purchased count — the re-fetch only fires on ok:true', async () => {
+    let loadCalls = 0;
+    const scene = buildShop({
+      loadItems: async () => {
+        loadCalls++;
+        return [{ id: 'mat_buy_scrap', cost: 20, kind: 'material', grants: 'scrap', qty: 10, dailyLimit: 5, purchasedToday: 0 }];
+      },
+      buy: async () => ({ ok: false, key: 'shop.error' }),
+    });
+    await flush();
+    expect(loadCalls).toBe(1);
+
+    tapLabel(scene, t('shop.buy'));
+    await flush();
+    await flush();
+
+    expect(loadCalls).toBe(1); // no extra re-fetch when the purchase itself failed
+    expect(findLabelPos(scene.container, t('shop.item.material.limit', { used: 0, limit: 5 }))).not.toBeNull();
     scene.destroy();
   });
 });
