@@ -1241,8 +1241,10 @@ export const zh = {
   'auction.err.worldClosed': '赛季结算中，暂停挂拍',
   'auction.err.equipLocked': '装备已锁定，无法挂拍',
   'auction.err.equipInUse': '装备穿戴中，无法挂拍',
+  'auction.err.skinInUse': '皮肤穿戴中，无法挂拍',
   'auction.err.cardHasGear': '角色卡仍装备着道具，请先卸下',
   'auction.filterCard': '角色卡',
+  'auction.filterSkin': '皮肤',
   'auction.exclusive': '专属',
   'auction.tapChoose': '点击选择物品',
   'auction.pickItem': '选择要出售的物品',
@@ -1268,7 +1270,7 @@ export const zh = {
   'campaign.ch1.lv9.name': '名单',
   'campaign.ch1.lv9.brief': '教官站在场边，手背在身后，笔尖在名单上停了很久才落下——纸面被风掀起一角，又落下。',
   'campaign.ch1.lv10.name': '包子铺还没开',
-  'campaign.ch1.lv10.brief': '教官在名单上圈了三个名字，没说话。走出演武场，李川说去吃包子。陈守说时候不对，铺子还没开。李川说那就等。苏远走在后面没插嘴，脑子里还是第二轮那支箭——那次他没晚，因为他已经知道李川会冲了。不是谁告诉他的，是他自己知道了。巷口的炉子刚生起火，还得等一阵。李川往门口一站，像是已经赢过很多次。苏远快走两步，站到了他们旁边。',',
+  'campaign.ch1.lv10.brief': '教官在名单上圈了三个名字，没说话。走出演武场，李川说去吃包子。陈守说时候不对，铺子还没开。李川说那就等。苏远走在后面没插嘴，脑子里还是第二轮那支箭——那次他没晚，因为他已经知道李川会冲了。不是谁告诉他的，是他自己知道了。巷口的炉子刚生起火，还得等一阵。李川往门口一站，像是已经赢过很多次。苏远快走两步，站到了他们旁边。',
 
   // Ch2 · Hartmann · internal clan trial (Anna's notebook)
   'campaign.ch2.lv1.name': '三强',
