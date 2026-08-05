@@ -65,7 +65,7 @@ A single quiet illustrated scene for a children's storybook, hand-drawn directly
 呼应：苏远「我们忘了一件事——我们是什么样的」。
 
 ```
-A single quiet illustrated scene for a children's storybook, hand-drawn directly onto a worn notebook page with visible faint paper grain, loose wobbly pencil under-sketch construction lines left visible, light restrained watercolor wash applied in flat patches with rough uneven brush edges, no smooth digital shading, no gradients, no glossy highlights, no glow effects, kept clearly a modest hand-drawn illustration, not professional concept art, not photorealistic, not 3D render, not anime style. Wide horizontal composition. In the lower half of the frame, at a plain study desk in an ordinary bedroom with a half-visible school desk lamp and a stack of textbooks softly rendered in the background, a tired East Asian boy around sixteen years old in plain contemporary clothes sits slumped slightly forward, his own small deep blue notebook closed and pushed to the edge of the desk as if set aside, his expression distant rather than upset. Beside him, a German girl the same age in a casual jacket leans over from a chair pulled close, holding her own notebook open toward him with both hands, a single page turned so he can see it, her expression warm and a little insistent rather than pitying. Warm desk-lamp light pools over both notebooks, fading into the cooler dim of the rest of the room; keep the palette to about four muted tones only — warm desk-lamp light around hex D9A85C, dim cool room shadow around hex 4A5560, worn cream paper tone around hex F5F0E8, and a deep muted blue for the boy's notebook cover around hex 2E4055, with the girl's open notebook page rendered in the same worn cream tone with faint pencil sketch marks visible on it. The upper third of the composition stays plain and softly rendered — the upper wall and a bare shelf with minimal detail and no strong linework — leaving open empty space there for text to be overlaid later. No text, no logos, no watermark anywhere in the image itself.
+A single quiet illustrated scene for a children's storybook, hand-drawn directly onto a worn notebook page with visible faint paper grain, loose wobbly pencil under-sketch construction lines left visible, light restrained watercolor wash applied in flat patches with rough uneven brush edges, no smooth digital shading, no gradients, no glossy highlights, no glow effects, kept clearly a modest hand-drawn illustration, not professional concept art, not photorealistic, not 3D render, not anime style. Wide horizontal composition. In the lower half of the frame, at a plain study desk in an ordinary bedroom with a half-visible school desk lamp and a stack of textbooks softly rendered in the background, a tired East Asian boy around eighteen years old in plain contemporary clothes sits slumped slightly forward, his own small deep blue notebook closed and pushed to the edge of the desk as if set aside, his expression distant rather than upset. Beside him, a German girl the same age in a casual jacket leans over from a chair pulled close, holding her own notebook open toward him with both hands, a single page turned so he can see it, her expression warm and a little insistent rather than pitying. Warm desk-lamp light pools over both notebooks, fading into the cooler dim of the rest of the room; keep the palette to about four muted tones only — warm desk-lamp light around hex D9A85C, dim cool room shadow around hex 4A5560, worn cream paper tone around hex F5F0E8, and a deep muted blue for the boy's notebook cover around hex 2E4055, with the girl's open notebook page rendered in the same worn cream tone with faint pencil sketch marks visible on it. The upper third of the composition stays plain and softly rendered — the upper wall and a bare shelf with minimal detail and no strong linework — leaving open empty space there for text to be overlaid later. No text, no logos, no watermark anywhere in the image itself.
 ```
 
 ## 终章（Ch6 后）· 尾声
@@ -85,9 +85,27 @@ A single quiet illustrated scene for a children's storybook, hand-drawn directly
 - [x] Ch1 · 相识（校辩论赛）—— prompt 定稿，生成图已确认
 - [x] Ch2 · 思想碰撞 —— prompt 定稿，生成图已确认
 - [x] Ch3 · 发现同好 —— prompt 定稿，生成图已确认
-- [ ] Ch4 · Anna 第一次敞开
-- [ ] Ch3 · 发现同好
-- [ ] Ch4 · Anna 第一次敞开
-- [ ] Ch5 · 陶动摇
-- [ ] 终章 · 尾声
-- [ ] 未接代码（是否复用 `IntroScene` 的插画淡入机制、还是新建独立过场场景/UI，待与 `world.md` 章末真实层的实际呈现形式一并确定）
+- [x] Ch4 · Anna 第一次敞开 —— prompt 定稿，生成图已确认
+- [x] Ch5 · 陶动摇 —— prompt 定稿，生成图已确认
+- [x] 终章 · 尾声 —— prompt 定稿，生成图已确认
+
+六张图已处理落地（2026-08-05）：resize 长边封顶 1600px（原尺寸已小于此值的不放大）、16 色调色板 + dither 压缩（同 `intro_notebook.png` 的压缩配方），存至：
+
+- `client/src/assets/story/interlude_ch1_debate.png`（349KB）
+- `client/src/assets/story/interlude_ch2_argument.png`（421KB）
+- `client/src/assets/story/interlude_ch3_notebooks.png`（279KB）
+- `client/src/assets/story/interlude_ch4_confide.png`（263KB）
+- `client/src/assets/story/interlude_ch5_falter.png`（275KB）
+- `client/src/assets/story/interlude_epilogue_desk.png`（276KB）
+
+文案定稿（2026-08-05）：六段真实层正文见 `world.md`「章末真实层：陶与 Anna」（Ch1～Ch5 各 4 行 + 尾声改稿 8 行，与开场 `story.line.1`~`.7` 首尾呼应）。落地方式拍板：新建可复用插画过场组件（抽取 `IntroScene` 的插画淡入 + 逐行文字 + 点按推进机制），而非在 `ResultScene` 里加插画。
+
+代码接线已完成（2026-08-05），详见 `CAMPAIGN_STORY.md`「章末真实层插画落地」：
+
+- [x] 接 i18n：zh/en/de 全补齐，`campaign.realLayer.ch1`~`.ch5`（`client/src/i18n/locales/{zh,en,de}.ts`），`campaign.epilogue` 改稿为终章文案
+- [x] 新建 `IllustratedInterludeScene`（`client/src/scenes/IllustratedInterludeScene.ts`）——抽取 `IntroScene` 的淡入 + 逐行文字 + 点按推进/自动前进/跳过机制，插画满屏常驻（非 0.6 透明度背景），文字逐条替换显示在插画预留的上三分之一空白带
+- [x] `LevelDefinition.story` 加 `realLayerKey?: TranslationKey`（`server/engine/src/campaign/LevelDefinition.ts` + `levelSchema.ts` 解析），移除原先只给 ch6 用的 `epilogueKey`
+- [x] `chN_lv10.json`（N=1~6）全部加 `story.realLayerKey`；`ch6_lv10.json` 的值沿用既有 `campaign.epilogue`
+- [x] 挂到结算流程（`client/src/app/nav/game.ts`）：胜利且该关有 `realLayerKey` 时，`ResultScene` 结算面板之后、返回地图之前插入这一屏；六张插画的资源映射见 `client/src/scenes/realLayerInterludeArt.ts`
+- [x] `tsc --noEmit`（client + server/engine）+ 全量 `vitest run`（995 测试）通过
+- 已知限制：本机没有可用后端（metaserver 等），E2E dev server（`game-e2e`，见 `.claude/launch.json`）里 `/bootstrap` 请求失败导致画布卡在 0×0，没能截图肉眼核对；已通过控制台直调 `views.showRealLayerInterlude(...)`（走 `window.__nwE2E`）确认调用链不报错、静态图片路径可达。真正的视觉核对留到有可用后端环境时补做

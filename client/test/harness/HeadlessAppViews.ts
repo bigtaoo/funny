@@ -21,6 +21,8 @@ import { createGameEngine, getLevel, ReplayInputSource } from '../../src/game';
 import type { IGameEngine, MatchSummary, OwnerId, PlayerStats, Replay } from '../../src/game';
 
 import type { IntroSceneCallbacks } from '../../src/scenes/IntroScene';
+import type { IllustratedInterludeCallbacks } from '../../src/scenes/IllustratedInterludeScene';
+import type { TranslationKey } from '../../src/i18n';
 import type { LobbySceneCallbacks } from '../../src/scenes/LobbyScene';
 import type { SettingsSceneCallbacks } from '../../src/scenes/SettingsScene';
 import type { LoginSceneCallbacks } from '../../src/scenes/LoginScene';
@@ -61,7 +63,8 @@ export type ScreenName =
   | 'campaignMap' | 'levelPrep' | 'cardCodex' | 'cardRoster' | 'equipment' | 'stats' | 'achievements'
   | 'leaderboard' | 'battlePass' | 'replay' | 'result' | 'room' | 'friends'
   | 'chat' | 'gameNet' | 'game' | 'worldMap' | 'family' | 'sect' | 'auction' | 'defenseEditor' | 'teams' | 'deckBuilder'
-  | 'consent' | 'reconnectPrompt' | 'daily' | 'events' | 'statePlayer' | 'titles' | 'city' | 'recharge';
+  | 'consent' | 'reconnectPrompt' | 'daily' | 'events' | 'statePlayer' | 'titles' | 'city' | 'recharge'
+  | 'realLayerInterlude';
 
 interface ActiveMatch {
   engine: IGameEngine;
@@ -81,6 +84,7 @@ export class HeadlessAppViews implements AppViews {
   screen: ScreenName = 'none';
 
   intro?: IntroSceneCallbacks;
+  realLayerInterlude?: { illustrationUrl: string; textKey: TranslationKey; cb: IllustratedInterludeCallbacks };
   lobby?: LobbySceneCallbacks;
   settings?: SettingsSceneCallbacks;
   login?: LoginSceneCallbacks;
@@ -122,6 +126,10 @@ export class HeadlessAppViews implements AppViews {
   private replayMatch: { engine: IGameEngine; endFrame: number } | null = null;
 
   showIntro(cb: IntroSceneCallbacks): void { this.screen = 'intro'; this.intro = cb; }
+  showRealLayerInterlude(illustrationUrl: string, textKey: TranslationKey, cb: IllustratedInterludeCallbacks): void {
+    this.screen = 'realLayerInterlude';
+    this.realLayerInterlude = { illustrationUrl, textKey, cb };
+  }
   showConsent(cb: ConsentCallbacks): void { this.screen = 'consent'; this.consent = cb; }
   showReconnectPrompt(cb: ReconnectPromptCallbacks): void { this.screen = 'reconnectPrompt'; this.reconnectPrompt = cb; }
   showLobby(cb: LobbySceneCallbacks): LobbyView {

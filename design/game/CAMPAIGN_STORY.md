@@ -309,11 +309,23 @@ Mara 想：方家是忘不了彼此，Hartmann 是记得住自己。但记得住
 
 ## 尾声
 
-多年以后，陶收拾行李准备离开。Anna 把她的本子递过来，没有解释为什么。陶接了，也没有问。
+多年后，陶的工作做得很好——好到没人再问他"这样有意思吗"，包括他自己。
 
-再后来，陶把两本笔记本从书架深处翻出来——他的，还有 Anna 那本，边角都卷了。他坐在电脑前，把两本摞在一起，从自己的第一页开始翻。父亲当年送的深蓝色封面还在，边上的毛边比记忆里更明显。
+城市换了几个，朋友也多了几个，但他还是那种，习惯自己待着的人。
 
-翻到最后一页，陶合上本子，开了一个新文件。这一次，他不是在方格纸上画小人了。
+收拾行李那天，Anna 把她的本子递过来，没有解释为什么。陶接了，也没有问。
+
+那本子他放在书架深处，很久没再翻开——直到某天，他把自己的也找了出来。
+
+两本笔记本摞在一起，边角都卷了。他坐在电脑前，从自己的第一页翻起。
+
+父亲当年送的深蓝色封面还在，边上的毛边，比记忆里更明显；后面那些角色，都有了名字，有了去处，有了当年非打不可的仗。
+
+翻到最后一页，陶合上本子，开了一个新文件——不是方格纸，是代码。那个世界，他原样搬了进去。
+
+最要紧的还是那句话：不是谁更聪明，是有没有人，懂你的下一步——这一次，轮到你了。
+
+（v2，2026-08-05：尾声改稿，正文见 `world.md`「尾声」，此处保持镜像同步。）
 
 ---
 
@@ -368,6 +380,16 @@ campaign.ch2.lv1.name   = "三强"
 - [x] 结局：`LevelDefinition.story` 加 `epilogueKey?`（`server/engine/src/campaign/LevelDefinition.ts` + `levelSchema.ts` 解析），只有 `ch6_lv10.json` 使用，值为新增的 `campaign.epilogue`（zh/en/de，真实层「尾声」文案）
 - [x] outro 通路从单屏扩成多屏：`ResultScene.buildOutroOverlay` 改接收 `string[]`，逐屏 tap-through，最后一屏 tap 才展示结算面板；`Nav.goResult` / `AppViews.ResultViewProps` 的 `outroText` 相应改名 `outroTexts: string[]`。Ch1–Ch5（数组长度 1）行为不变，仅 Ch6 Lv10 通关追加 `campaign.epilogue` 作为第二屏
 - 不引入的东西：Anna 是陶真实朋友这件事，仍只在结局（`campaign.epilogue`）揭晓，中途六章 intro/brief/outro 不提前剧透——维持 `world.md` 原有的悬念结构
+
+### 章末真实层插画落地（2026-08-05）
+
+上一节的「尾声」只有 Ch6 有落点（纯文字，`ResultScene` 第二屏），Ch1～Ch5 的真实层节点（`world.md`「章末真实层：陶与 Anna」表格）一直只是文字设定。本次给六个节点各配一张插画（prompt 见 `../product/chapter-interlude-art-prompts.md`），并把展示机制从「纯文字追加」换成「插画 + 逐行文字」：
+
+- 六段真实层正文定稿（Ch1～Ch5 各 4 行，尾声改稿为 8 行、与开场 `story.line.1`~`.7` 首尾呼应），i18n `campaign.realLayer.ch1`~`.ch5`（zh/en/de），`campaign.epilogue` 同步改稿
+- 新建 `IllustratedInterludeScene`（`client/src/scenes/IllustratedInterludeScene.ts`），抽取 `IntroScene` 的淡入/自动前进/点按跳过机制，但插画满屏常驻（不是 0.6 透明度背景），文字逐条替换显示在插画预留的上三分之一空白带，而不是像 `IntroScene` 那样多行同时堆叠
+- `LevelDefinition.story` 的 `epilogueKey?`（只服务 ch6）撤掉，换成通用的 `realLayerKey?: TranslationKey`，`ch1_lv10.json`~`ch6_lv10.json` 全部赋值（ch6 沿用 `campaign.epilogue`）
+- 展示时机：胜利结算之后、返回 `CampaignMapScene` 之前（`client/src/app/nav/game.ts` 的 `proceedToMap`），而不是像旧 `epilogueKey` 那样卡在结算面板揭晓之前——六章行为统一，不再是 ch6 特例
+- 六张插画的资源映射：`client/src/scenes/realLayerInterludeArt.ts`
 
 ### 待同步到代码（2026-08-04 文案修订）
 

@@ -187,7 +187,8 @@
   "nameKey": "campaign.ch3.lv10.name",
   "briefKey": "campaign.ch3.lv10.brief",
   "story": {
-    "outroKey": "campaign.ch3.outro"
+    "outroKey": "campaign.ch3.outro",
+    "realLayerKey": "campaign.realLayer.ch3"
   },
   "startInk": 8,
   "inkRegenMult": 1.1,

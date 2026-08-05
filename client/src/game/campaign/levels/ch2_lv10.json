@@ -213,7 +213,8 @@
   "nameKey": "campaign.ch2.lv10.name",
   "briefKey": "campaign.ch2.lv10.brief",
   "story": {
-    "outroKey": "campaign.ch2.outro"
+    "outroKey": "campaign.ch2.outro",
+    "realLayerKey": "campaign.realLayer.ch2"
   },
   "startInk": 33
 }

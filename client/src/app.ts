@@ -11,6 +11,7 @@ import { PerfMonitor } from './cache/PerfMonitor';
 import { initCrashSentinel, installAnomalyWatchers, setAnomalyStorage, recordConstructSample, recordRenderSample } from './net/anomaly';
 import { SceneManager, type Scene } from './scenes/SceneManager';
 import { IntroScene } from './scenes/IntroScene';
+import { IllustratedInterludeScene } from './scenes/IllustratedInterludeScene';
 import { LobbyScene, type LobbySceneCallbacks } from './scenes/LobbyScene';
 import { GameScene, type GameSceneCallbacks, type GameSceneOptions } from './scenes/GameScene';
 import { RoomScene, type RoomSceneCallbacks } from './scenes/RoomScene';
@@ -123,6 +124,18 @@ class PixiAppViews implements AppViews {
   showIntro(cb: Parameters<AppViews['showIntro']>[0]): void {
     this.leaveLobby();
     this.manager.goto(this.timedBuild('IntroScene', () => new IntroScene(this.layout, this.input, cb)));
+  }
+
+  showRealLayerInterlude(
+    illustrationUrl: string,
+    textKey: Parameters<AppViews['showRealLayerInterlude']>[1],
+    cb: Parameters<AppViews['showRealLayerInterlude']>[2],
+  ): void {
+    this.leaveLobby();
+    this.manager.goto(this.timedBuild(
+      'IllustratedInterludeScene',
+      () => new IllustratedInterludeScene(this.layout, this.input, illustrationUrl, textKey, cb),
+    ));
   }
 
   showConsent(cb: ConsentCallbacks): void {

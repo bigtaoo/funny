@@ -20,6 +20,12 @@
       "port": 9290
     },
     {
+      "name": "game-e2e",
+      "runtimeExecutable": "cmd",
+      "runtimeArgs": ["/c", "npm", "--prefix", "D:\\funny\\client", "run", "start:e2e"],
+      "port": 9096
+    },
+    {
       "name": "animator",
       "runtimeExecutable": "cmd",
       "runtimeArgs": ["/c", "npm", "run", "start", "--prefix", "D:\\funny\\tools\\animator"],

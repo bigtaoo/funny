@@ -109,11 +109,14 @@ export interface LevelDefinition {
     introKey?: TranslationKey;
     outroKey?: TranslationKey;
     /**
-     * Optional second tap-through screen shown after `outroKey`, before the result panel.
-     * Reserved for the campaign's real-world frame-story close (ch6_lv10 only); every other
-     * level omits it and gets the single-screen outro it always had.
+     * Chapter-end "real layer" interlude (world.md「章末真实层」: Tao/Anna's real-world beats
+     * running alongside the six-chapter campaign) — only set on each chapter's last level
+     * (`chN_lv10.json`), one key per chapter (`campaign.realLayer.ch1`…`.ch5`, and
+     * `campaign.epilogue` for ch6). Its value is '\n'-separated beats, shown by
+     * IllustratedInterludeScene alongside that chapter's interlude art before returning to the
+     * campaign map, after the result panel.
      */
-    epilogueKey?: TranslationKey;
+    realLayerKey?: TranslationKey;
   };
   /** Optional display-name key for this level, shown in CampaignMapScene. Falls back to chapter/position label. */
   nameKey?: TranslationKey;

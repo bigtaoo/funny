@@ -246,7 +246,8 @@
   "nameKey": "campaign.ch4.lv10.name",
   "briefKey": "campaign.ch4.lv10.brief",
   "story": {
-    "outroKey": "campaign.ch4.outro"
+    "outroKey": "campaign.ch4.outro",
+    "realLayerKey": "campaign.realLayer.ch4"
   },
   "startInk": 0,
   "inkRegenMult": 0.75,

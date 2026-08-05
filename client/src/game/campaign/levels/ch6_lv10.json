@@ -364,7 +364,7 @@
   "briefKey": "campaign.ch6.lv10.brief",
   "story": {
     "outroKey": "campaign.ch6.outro",
-    "epilogueKey": "campaign.epilogue"
+    "realLayerKey": "campaign.epilogue"
   },
   "startInk": 46,
   "enemyScale": {
