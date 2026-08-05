@@ -79,6 +79,33 @@ describe.skipIf(!mongo)('commercial service e2e', () => {
     expect(r3).toMatchObject({ ok: true, coinsGranted: 2300, coinsAfter: 2300 });
   });
 
+  // ── verifyNonCoinReceipt (monthly/year-card, starter-pack receipt gate) ────────────────────────────
+  it('verifyNonCoinReceipt happy path: a valid receipt for the expected product resolves successfully', async () => {
+    const r = await svc.verifyNonCoinReceipt({
+      accountId: 'nc-a', platform: 'web', receipt: 'product:monthly_card', receiptId: 'ncr1', expectedProduct: 'monthly_card',
+    });
+    expect(r).toEqual({ ok: true, product: 'monthly_card' });
+  });
+
+  it('verifyNonCoinReceipt cross-account guard: a receipt already consumed by account A is rejected when replayed by account B', async () => {
+    const r1 = await svc.verifyNonCoinReceipt({
+      accountId: 'nc-b1', platform: 'web', receipt: 'product:year_card', receiptId: 'ncrShared', expectedProduct: 'year_card',
+    });
+    expect(r1).toEqual({ ok: true, product: 'year_card' });
+    // A different account replays the same receiptId: must be rejected, must never resolve for account B.
+    const r2 = await svc.verifyNonCoinReceipt({
+      accountId: 'nc-b2', platform: 'web', receipt: 'product:year_card', receiptId: 'ncrShared', expectedProduct: 'year_card',
+    });
+    expect(r2).toEqual({ ok: false, error: 'INVALID_RECEIPT' });
+  });
+
+  it('verifyNonCoinReceipt cross-product guard: a receipt valid for product X presented with expectedProduct=Y is rejected', async () => {
+    const r = await svc.verifyNonCoinReceipt({
+      accountId: 'nc-c', platform: 'web', receipt: 'product:starter_draw', receiptId: 'ncrX', expectedProduct: 'starter_growth',
+    });
+    expect(r).toEqual({ ok: false, error: 'INVALID_RECEIPT' });
+  });
+
   it('insufficient balance rejects deduction', async () => {
     const r = await svc.shopCharge({ accountId: 'b', itemId: 'skin_shop_c1', cost: 300, orderId: 'o1' });
     expect(r).toEqual({ ok: false, error: 'INSUFFICIENT_FUNDS' });
