@@ -2,6 +2,7 @@
 // thread). No Mongo needed: these exercise the pool in isolation, not the worldsvc business logic around it
 // (that's covered by the existing siege/base-siege/stronghold/passage/field-encounter e2e suites, which all
 // still pass unchanged now that `runSiegeBattle` is async — see siegeEngine.ts).
+import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { SiegeWorkerPool, defaultSiegeWorkerPoolSize } from '../src/siegeWorkerPool';
@@ -37,6 +38,7 @@ describe('defaultSiegeWorkerPoolSize', () => {
   it('is at least 1 and at most cpus-1', () => {
     const n = defaultSiegeWorkerPoolSize();
     expect(n).toBeGreaterThanOrEqual(1);
+    expect(n).toBeLessThanOrEqual(Math.max(1, os.cpus().length - 1));
   });
 });
 
