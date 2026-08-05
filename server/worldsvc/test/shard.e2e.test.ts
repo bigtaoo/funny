@@ -1,5 +1,6 @@
-// G6 multi-shard runtime scheduling e2e (§20): real dedicated Mongo DB + pure-function unit tests.
-//   • Pure functions (always-run): worldShardId / shardCountForPopulation.
+// G6 multi-shard runtime scheduling e2e (§20): real dedicated Mongo DB integration tests.
+//   • (worldShardId / shardCountForPopulation pure-function boundary tests live in
+//     server/shared/test/prosperity.test.ts, not duplicated here.)
 //   • allocateNextSeason: first season with no previous season → 1 shard; subsequent seasons open N shards
 //     using snake-draft balancing based on previous-season sect strength + populate familyShard
 //     (families in the same sect land in the same shard; stray families fill the shard with the fewest families).
@@ -13,7 +14,7 @@ import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import type { Server } from 'http';
 import type { AddressInfo } from 'net';
 import {
-  signToken, worldShardId, shardCountForPopulation,
+  signToken,
   playerWorldId, SLG_MAP_W, SLG_MAP_H, WORLD_CAPACITY,
 } from '@nw/shared';
 import { ENGINE_VERSION } from '@nw/engine';
@@ -50,23 +51,6 @@ function pwDoc(wid: string, acct: string, familyId?: string): PlayerWorldDoc {
     lastTickAt: 1, ...(familyId ? { familyId } : {}), rev: 0,
   };
 }
-
-// ── Pure-function unit tests (no Mongo dependency) ────────────────────────────────
-describe('G6 shard pure functions (§20.3)', () => {
-  it('worldShardId format = s{season}-{shard}', () => {
-    expect(worldShardId(2, 0)).toBe('s2-0');
-    expect(worldShardId(11, 3)).toBe('s11-3');
-  });
-  it('shardCountForPopulation rounds up, minimum 1', () => {
-    expect(shardCountForPopulation(0, 10000)).toBe(1);   // first season with no players → 1 shard
-    expect(shardCountForPopulation(1, 10000)).toBe(1);
-    expect(shardCountForPopulation(10000, 10000)).toBe(1);
-    expect(shardCountForPopulation(10001, 10000)).toBe(2);
-    expect(shardCountForPopulation(25000, 10000)).toBe(3);
-    expect(shardCountForPopulation(4, 2)).toBe(2);
-    expect(shardCountForPopulation(-5, 10000)).toBe(1);  // negative input falls back to 1
-  });
-});
 
 describe.skipIf(!mongo)('worldsvc G6 multi-shard runtime e2e', () => {
   const m = mongo!;

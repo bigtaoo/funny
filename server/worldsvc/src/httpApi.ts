@@ -759,7 +759,8 @@ export function startHttpApi(
           const msgBody = typeof body.body === 'string' ? body.body : null;
           const senderName = sanitizeSenderNameFallback(typeof body.senderName === 'string' ? body.senderName : '', accountId);
           if (!worldId || !msgBody) return sendErr(res, ErrorCode.BAD_REQUEST, 'worldId + body required');
-          return send(res, 200, ok(await sectSvc.sendMessage(worldId, accountId, senderName, msgBody)));
+          const sectRegion = regionFromAcceptLanguage(req.headers['accept-language']);
+          return send(res, 200, ok(await sectSvc.sendMessage(worldId, accountId, senderName, msgBody, sectRegion)));
         }
         if (method === 'GET' && path === '/sect/channel') {
           const worldId = q.get('worldId');
