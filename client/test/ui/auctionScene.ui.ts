@@ -1009,6 +1009,25 @@ describe('AuctionScene — buy race', () => {
     scene.destroy();
   });
 
+  // doBid's success path had never been driven by any test before this — every existing bid test
+  // only covered the two catch branches below (2026-08-05 client-test-audit: "onDraw/onBuy are the
+  // best-covered... but the success path of sibling actions can still go unchecked").
+  it('success: places the bid, toasts, and refetches the listing', async () => {
+    const worldApi = stubWorldApi({
+      placeBid: vi.fn(async () => makeAuction({ topBid: { bidderId: 'acc_me', amount: 150, ts: Date.now() }, price: 150 })),
+    });
+    const scene = buildScene({ worldApi });
+    await flush();
+    toastMsgs.length = 0;
+
+    await scene.doBid('auc_1', 150);
+
+    expect(worldApi.placeBid).toHaveBeenCalledWith('auc_1', 150);
+    expect(toastMsgs).toContain(t('auction.bidPlaced'));
+    expect(worldApi.listAuctions).toHaveBeenCalledTimes(2); // constructor's initial load + doBid's refresh
+    scene.destroy();
+  });
+
   it('a bid on an auction that ended in the gap surfaces the error and refreshes the list', async () => {
     const worldApi = stubWorldApi({
       placeBid: vi.fn(async () => { throw new WorldApiError('AUCTION_CLOSED', 'closed'); }),
