@@ -50,7 +50,19 @@ async function bootToLogin(page: Page): Promise<void> {
   await screenIs(page, 'login');
 }
 
-/** Mirrors full-link.e2e.ts's registerAndEnterLobby, driven via window.__nwE2E instead of headless views. */
+/**
+ * Mirrors full-link.e2e.ts's registerAndEnterLobby, driven via window.__nwE2E instead of headless
+ * views — with one addition full-link.e2e.ts doesn't need: a genuinely fresh account (no
+ * `tutorial_done` flag surviving ADR-056's reconcile() rewrite — see the 2026-07-29
+ * `HeadlessAppViews.showGame` fix, commit e5093451) gets redirected by `goLobby()` into the FTUE
+ * tutorial level instead of the lobby (ONBOARDING_DESIGN §2 step ⑤) — `showGame()` fires with
+ * `screen: 'game'`, and `screen` never becomes `'lobby'` on its own. `full-link.e2e.ts` never
+ * needed to handle this because that fix lives IN the headless harness itself
+ * (`HeadlessAppViews.showGame` auto-calls `onExitToLobby()` for a tutorial level); this is a real
+ * app driving a real renderer, so there's no harness layer to intercept it — the test has to
+ * explicitly dismiss the tutorial the way a player would, exactly like
+ * GameSceneCallbacks.onExitToLobby (see `app/nav/game.ts`'s `goTutorial()`).
+ */
 async function registerAndEnterLobby(page: Page, loginId: string, displayName: string): Promise<void> {
   await bootToLogin(page);
   const outcome = await page.evaluate(
@@ -58,6 +70,16 @@ async function registerAndEnterLobby(page: Page, loginId: string, displayName: s
     [loginId, displayName],
   );
   expect(outcome.ok, `register failed: ${JSON.stringify(outcome)}`).toBe(true);
+
+  await page.waitForFunction(
+    () => window.__nwE2E?.state?.screen === 'lobby' || window.__nwE2E?.state?.screen === 'game',
+    null,
+    { timeout: 20_000 },
+  );
+  if (await page.evaluate(() => window.__nwE2E!.state.screen === 'game')) {
+    // Fresh account landed in the FTUE tutorial level — skip it, same as a player tapping "skip".
+    await page.evaluate(() => window.__nwE2E!.state.gameCb.onExitToLobby());
+  }
   await screenIs(page, 'lobby');
 }
 
