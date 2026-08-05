@@ -165,4 +165,58 @@ describe.skipIf(!mongo)('socialsvc MailService e2e', () => {
     expect(await svc.claimMailAtomic('a', 'missing:a', 'o')).toMatchObject({ error: 'NOT_FOUND' });
     expect(await svc.claimMailAtomic('a', 'plain:a', 'o')).toMatchObject({ error: 'NO_ATTACHMENT' });
   });
+
+  // ── Atomic claim rollback (comm-audit-internal-2026-07-28 P0-4) ──────────────
+  //
+  // metaserver calls unclaimMailAtomic when the post-claim attachment delivery (commercial.grant /
+  // equipment / cards) fails AFTER claimMailAtomic already marked the mail claimed — without this the
+  // attachment would be lost forever (mail stuck claimed-but-never-delivered, never claimable again).
+
+  it('unclaimMailAtomic: rolls back a failed-delivery claim so the mail becomes re-claimable, without granting twice', async () => {
+    await svc.insertSystemMail('reward', 'a', {
+      subject: 'Loot', body: 'grab it', expireDays: 7,
+      attachments: [{ kind: 'coins', count: 500 } satisfies MailAttachmentDoc],
+    });
+    const claimed = await svc.claimMailAtomic('a', 'reward:a', 'order-1');
+    expect('doc' in claimed).toBe(true);
+
+    await svc.unclaimMailAtomic('a', 'reward:a', 'order-1');
+    const doc = await m.collections.mails.findOne({ _id: 'reward:a' });
+    expect(doc!.claimedAt).toBeUndefined();
+    expect(doc!.claimOrderId).toBeUndefined();
+    // The view surfaces it as unclaimed again too.
+    expect((await svc.getMail('a')).mail.find((x) => x.mailId === 'reward:a')!.claimed).toBe(false);
+
+    // Re-claimable: a fresh order can now win the claim (attachment is granted exactly once downstream,
+    // by metaserver, keyed off this second successful claim — not re-granted by the rollback itself).
+    const reclaimed = await svc.claimMailAtomic('a', 'reward:a', 'order-2');
+    expect('doc' in reclaimed).toBe(true);
+    if ('doc' in reclaimed) {
+      expect(reclaimed.doc.claimOrderId).toBe('order-2');
+    }
+  });
+
+  it('unclaimMailAtomic: orderId guard — cannot undo a DIFFERENT (e.g. later-winning) order\'s successful claim', async () => {
+    await svc.insertSystemMail('reward2', 'a', {
+      subject: 'Loot', body: 'grab it', expireDays: 7,
+      attachments: [{ kind: 'coins', count: 500 } satisfies MailAttachmentDoc],
+    });
+    await svc.claimMailAtomic('a', 'reward2:a', 'order-real');
+
+    // A stale/duplicate retry for a DIFFERENT orderId tries to unclaim — must be a no-op, since it
+    // never made this claim (guards against a delayed retry undoing someone else's real claim).
+    await svc.unclaimMailAtomic('a', 'reward2:a', 'order-stale');
+    const doc = await m.collections.mails.findOne({ _id: 'reward2:a' });
+    expect(doc!.claimedAt).toBe(nowMs);
+    expect(doc!.claimOrderId).toBe('order-real'); // untouched
+  });
+
+  it('unclaimMailAtomic: idempotent no-op on an already-unclaimed or nonexistent mail', async () => {
+    await svc.insertSystemMail('plain2', 'a', { subject: 'no loot', body: 'b', expireDays: 7 });
+    // Never claimed — unclaiming is a harmless no-op.
+    expect(await svc.unclaimMailAtomic('a', 'plain2:a', 'order-x')).toEqual({ ok: true });
+    expect(await m.collections.mails.countDocuments({ _id: 'plain2:a' })).toBe(1);
+    // Nonexistent mail id — also a harmless no-op, not an error.
+    expect(await svc.unclaimMailAtomic('a', 'does-not-exist', 'order-x')).toEqual({ ok: true });
+  });
 });

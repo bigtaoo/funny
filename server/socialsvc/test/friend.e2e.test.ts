@@ -78,6 +78,7 @@ describe.skipIf(!mongo)('socialsvc FriendService e2e', () => {
     expect(await m.collections.friendEdges.findOne({ _id: friendEdgeId('a', 'b') })).toBeTruthy();
     expect(await m.collections.friendEdges.findOne({ _id: friendEdgeId('b', 'a') })).toBeTruthy();
     expect(new Set(gateway.invalidated)).toEqual(new Set(['a', 'b']));
+    expect(gateway.ofKind('friend_update').length).toBeGreaterThan(0);
     expect(gateway.ofKind('friend_update').every((u) => u.added)).toBe(true);
     // The request row is now accepted, not pending.
     expect((await m.collections.friendRequests.findOne({ _id: r.requestId }))!.status).toBe('accepted');
