@@ -208,6 +208,7 @@
 - **附件**：金币 ×1000（一次性 faucet，数字见 [`ECONOMY_BALANCE.md`](ECONOMY_BALANCE.md) §2.4 同级别一次性奖励口径），`expireDays: 30`（超时未领与其它系统邮件一致过期）。
 - **与反馈入口解耦**：这封信与「游戏内反馈入口」（[`UI_DESIGN.md`](UI_DESIGN.md) 大厅入口一节）是两件独立的事——反馈入口常驻可用，不依赖玩家是否读过/领取过这封信。
 - **i18n key**：`mail.welcome.author.subject` / `mail.welcome.author.body`，全语种（zh/en/de）。
+- **测试覆盖**（用户要求"全部加测试"后追加，2026-08-05）：`test/pve.e2e.test.ts` 原有首触发+幂等去重+`mail_new` 推送一例；新增一例覆盖 best-effort 路径本身——`socialsvc.insertSystemMail` 抛异常（`ThrowingSocialsvc`）时结算仍正常返回材料奖励+写入 `progress.cleared`，不被邮件失败连坐（断言时特意让 `gateway.available=false`，避免撞上 L1 spot-check 对"生涯首次通关"必定触发复核的既有规则，见 `PVE_INTEGRITY_PLAN.md`/`pveRewards.ts shouldSpotCheck`）。
 
 ---
 

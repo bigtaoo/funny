@@ -6,7 +6,7 @@ import { createMongo, type JwtConfig, type MongoHandle, PVE_DAILY_CLEAR_REWARD_C
 import type { FastifyInstance } from 'fastify';
 import { buildApp } from '../dist/app.js';
 import type { GatewayClient, JudgeRes } from '../dist/gatewayClient.js';
-import { FakeSocialsvc, fakeGateway } from './helpers/fakeClients.js';
+import { FakeSocialsvc, ThrowingSocialsvc, fakeGateway } from './helpers/fakeClients.js';
 
 const URI = process.env.NW_MONGO_URI ?? 'mongodb://127.0.0.1:27017/?replicaSet=rs0';
 const DB = 'nw_meta_pve_test';
@@ -76,6 +76,31 @@ describe.skipIf(!mongo)('pve server-authoritative e2e', () => {
     expect(socialsvc.mail.size).toBe(1); // not resent on the second-ever clear
 
     await welcomeApp.close();
+  });
+
+  it('author welcome mail is best-effort: a failed send does not block clear settlement (reward/progress still applied)', async () => {
+    // gateway left unavailable (fakeGateway()'s default) — same as the plain `app` built in beforeEach —
+    // so this clear takes the deterministic normal-settlement path, not the L1 judge spot-check path
+    // (`hasReward && gateway.available`, service/pve.ts): isFirstClear alone forces a spot-check
+    // (shouldSpotCheck, pveRewards.ts) whenever a judge IS available, which would defer materials to
+    // /pve/verify and make this test about spot-check gating instead of the welcome-mail best-effort path.
+    const gw = fakeGateway() as GatewayClient & { pushed: { accountId: string; payload: unknown }[] };
+    // ThrowingSocialsvc.insertSystemMail rejects on every call (helpers/fakeClients.js) — pve.ts's
+    // `.catch((e) => { req.log.warn(...); return null; })` around the mail send must swallow this.
+    const failApp = await buildApp({ cols: m.collections, jwt, internalKey: 'k', socialsvc: new ThrowingSocialsvc(), gateway: gw });
+    const r = body(await failApp.inject({ method: 'POST', url: '/auth/device', payload: { deviceId: `welcome-fail-dev-${Math.random()}` } }));
+    const failToken = r.data.token as string;
+    const failAuth = { authorization: `Bearer ${failToken}` };
+    await failApp.inject({ method: 'GET', url: '/save', headers: failAuth }); // initialize save
+
+    const clearRes = body(await failApp.inject({ method: 'POST', url: '/pve/clear', headers: failAuth, payload: { levelId: 'ch1_lv1', stars: 3 } }));
+    expect(clearRes.data.capped).toBe(false);
+    expect(clearRes.data.granted).toEqual({ scrap: 6, lead: 2 });
+    expect(clearRes.data.save.progress.cleared).toContain('ch1_lv1');
+    // No mail_new push — the (failed) send never reached the `if (mailResult?.inserted)` branch.
+    expect(gw.pushed.some((p) => (p.payload as { kind?: string }).kind === 'mail_new')).toBe(false);
+
+    await failApp.close();
   });
 
   // CC-2 Hero Roster model: a PvE level drop is granted as a CardInstance in `cardInv` (unitType → CARD_DEFS entry),

@@ -38,6 +38,35 @@ describe.skipIf(!mongo)('player feedback e2e', () => {
     return JSON.parse(r.payload).data as { accountId: string; token: string };
   }
 
+  it('rejects an unauthenticated submission (no bearer token)', async () => {
+    const r = await app.inject({ method: 'POST', url: '/feedback', payload: { text: 'no token here' } });
+    expect(r.statusCode).toBe(401);
+    expect(await m.collections.feedback.countDocuments({})).toBe(0);
+  });
+
+  it('stamps clientPlatform from the X-NW-Platform header (commercial spend-channel convention, service/base.ts)', async () => {
+    const { accountId, token } = await newDevice('dev-feedback-platform');
+    const r = await app.inject({
+      method: 'POST', url: '/feedback',
+      headers: { authorization: `Bearer ${token}`, 'x-nw-platform': 'wechat' },
+      payload: { text: 'played on wechat' },
+    });
+    expect(r.statusCode).toBe(200);
+    const doc = await m.collections.feedback.findOne({ accountId });
+    expect(doc?.clientPlatform).toBe('wechat');
+  });
+
+  it('leaves clientPlatform unset when the header is absent (BSON stores the omitted optional field as null)', async () => {
+    const { accountId, token } = await newDevice('dev-feedback-no-platform');
+    await app.inject({
+      method: 'POST', url: '/feedback',
+      headers: { authorization: `Bearer ${token}` },
+      payload: { text: 'no platform header' },
+    });
+    const doc = await m.collections.feedback.findOne({ accountId });
+    expect(doc?.clientPlatform).toBeFalsy();
+  });
+
   it('accepts free-text feedback and persists it against the account', async () => {
     const { accountId, token } = await newDevice('dev-feedback-1');
     const r = await app.inject({
