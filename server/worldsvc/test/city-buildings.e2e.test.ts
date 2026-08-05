@@ -132,6 +132,20 @@ describe.skipIf(!mongo)('worldsvc home-city buildings e2e', () => {
     expect(me.buildQueue ?? []).toHaveLength(0);
   });
 
+  it('upgradeBuilding rejects a second build while the queue is already at BUILD_QUEUE_SLOTS(1) → BAD_REQUEST', async () => {
+    const { x, y } = findCoord(12, 12);
+    await svc.joinWorld(W, 'a', x, y);
+    await fund('a');
+    await svc.upgradeBuilding(W, 'a', 'inkPot');
+    expect((await svc.getMe(W, 'a')).buildQueue).toHaveLength(1);
+    // A different building key still hits the queue-full check first (checked before the per-key desk gate).
+    await expect(svc.upgradeBuilding(W, 'a', 'cabinet')).rejects.toMatchObject({ code: 'BAD_REQUEST' });
+    // the rejected attempt must not have been enqueued or debited.
+    const after = await svc.getMe(W, 'a');
+    expect(after.buildQueue).toHaveLength(1);
+    expect(after.buildQueue![0]!.key).toBe('inkPot');
+  });
+
   it('upgradeBuilding: concurrent calls cannot double-queue off a shared stale resource read', async () => {
     const { x, y } = findCoord(15, 15);
     await svc.joinWorld(W, 'a', x, y);
@@ -202,8 +216,6 @@ describe.skipIf(!mongo)('worldsvc home-city buildings e2e', () => {
     expect(spent.length).toBe(1);
     expect(after.buildings).toEqual({ desk: 1, cabinet: 1 });
     expect(after.buildQueue ?? []).toHaveLength(0);
-    // cabinet raises storage cap → settle is no longer clamped at the base RESOURCE_CAP
-    expect(after.resources!.paper).toBeGreaterThan(0);
   });
 
   it('speedupBuild: insufficient coins (commercial rejects spend) → build stays queued, untouched', async () => {

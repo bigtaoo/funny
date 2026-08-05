@@ -174,6 +174,34 @@ class FakeCommercial implements CommercialClient {
     this.granted.add(a.orderId);
     return { ok: true as const, coinsAfter: this.bal(a.accountId) };
   }
+  // ── fate points / year card / promo codes (minimal fakes for /fate/redeem, /year-card/buy, /promo/redeem) ──
+  fatePoints = new Map<string, number>();
+  async listActiveLimitedPools() {
+    return [];
+  }
+  async redeemFate(a: { accountId: string; itemId: string; orderId: string }) {
+    const pts = this.fatePoints.get(a.accountId) ?? 0;
+    if (pts < 30) return { ok: false as const, error: 'FATE_INSUFFICIENT' };
+    const after = pts - 30;
+    this.fatePoints.set(a.accountId, after);
+    return { ok: true as const, orderId: a.orderId, itemId: a.itemId, coinsAfter: this.bal(a.accountId), fatePointsAfter: after };
+  }
+  async yearCardBuy(a: { accountId: string; orderId: string }) {
+    const sub = this.subscriptions.get(a.accountId);
+    if (sub && sub.expiry > Date.now()) return { ok: false as const, error: 'ALREADY_ACTIVE' };
+    const expiry = Date.now() + 365 * 24 * 60 * 60 * 1000;
+    this.subscriptions.set(a.accountId, { ...sub, expiry });
+    return { ok: true as const, coinsAfter: this.bal(a.accountId), subscriptionExpiry: expiry };
+  }
+  promoCodes = new Map<string, { coins: number; usedBy: Set<string> }>();
+  async promoRedeem(a: { accountId: string; code: string }) {
+    const entry = this.promoCodes.get(a.code);
+    if (!entry) return { ok: false as const, error: 'PROMO_NOT_FOUND' };
+    if (entry.usedBy.has(a.accountId)) return { ok: false as const, error: 'PROMO_ALREADY_USED' };
+    entry.usedBy.add(a.accountId);
+    this.coins.set(a.accountId, this.bal(a.accountId) + entry.coins);
+    return { ok: true as const, coinsAfter: this.bal(a.accountId), coinsGranted: entry.coins };
+  }
 }
 
 describe.skipIf(!mongo)('meta economy orchestration e2e', () => {
@@ -617,6 +645,65 @@ describe.skipIf(!mongo)('meta economy orchestration e2e', () => {
       payload: { productId: 'starter_growth', platform: 'dev', receipt: 'product:starter_growth' },
     });
     expect(r.statusCode).toBe(409);
+  });
+
+  it('fate redeem: happy path deducts 30 fate points and delivers the chosen skin', async () => {
+    comm.fatePoints.set(accountId, 30);
+    const r = body(await app.inject({
+      method: 'POST', url: '/fate/redeem', headers: auth(), payload: { itemId: 'skin_l1' },
+    }));
+    expect(r.ok).toBe(true);
+    expect(r.data.granted).toBe('skin_l1');
+    expect(r.data.save.monetization.fatePoints).toBe(0);
+    expect(r.data.save.inventory.skins).toContain('skin_l1');
+  });
+
+  it('fate redeem: insufficient fate points → 402 FATE_INSUFFICIENT', async () => {
+    comm.fatePoints.set(accountId, 10);
+    const r = await app.inject({
+      method: 'POST', url: '/fate/redeem', headers: auth(), payload: { itemId: 'skin_l1' },
+    });
+    expect(r.statusCode).toBe(402);
+    expect(body(r).error.code).toBe('FATE_INSUFFICIENT');
+  });
+
+  it('year card buy: happy path verifies the receipt and mirrors the new subscription expiry', async () => {
+    const r = body(await app.inject({
+      method: 'POST', url: '/year-card/buy', headers: auth(),
+      payload: { platform: 'dev', receipt: 'product:year_card' },
+    }));
+    expect(r.ok).toBe(true);
+    expect(r.data.save.monetization.subscriptionExpiry).toBeGreaterThan(fakeNow);
+  });
+
+  it('year card buy: bad receipt → 400 INVALID_RECEIPT, no subscription granted', async () => {
+    const r = await app.inject({
+      method: 'POST', url: '/year-card/buy', headers: auth(),
+      payload: { platform: 'dev', receipt: 'not-a-real-receipt' },
+    });
+    expect(r.statusCode).toBe(400);
+    expect(body(r).error.code).toBe('INVALID_RECEIPT');
+  });
+
+  it('promo redeem: happy path grants coins and mirrors the new balance', async () => {
+    comm.promoCodes.set('WELCOME10', { coins: 100, usedBy: new Set() });
+    const before = comm.bal(accountId);
+    const r = body(await app.inject({
+      method: 'POST', url: '/promo/redeem', headers: auth(), payload: { code: 'WELCOME10' },
+    }));
+    expect(r.ok).toBe(true);
+    expect(r.data.coinsGranted).toBe(100);
+    expect(r.data.save.wallet.coins).toBe(before + 100);
+  });
+
+  it('promo redeem: unknown code → 404 PROMO_NOT_FOUND', async () => {
+    const r = await app.inject({
+      method: 'POST', url: '/promo/redeem', headers: auth(), payload: { code: 'NO-SUCH-CODE' },
+    });
+    expect(r.statusCode).toBe(404);
+    // redeemPromoCode always sends ErrorCode.BAD_REQUEST as the code — only the HTTP status and message vary by error.
+    expect(body(r).error.code).toBe('BAD_REQUEST');
+    expect(body(r).error.message).toBe('PROMO_NOT_FOUND');
   });
 
   it('commercial not configured → economy endpoints 503', async () => {

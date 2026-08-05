@@ -408,18 +408,6 @@ describe.skipIf(!mongo)('cards backend e2e', () => {
       expect(res.statusCode).toBe(404);
       expect(body(res).error.code).toBe('NOT_FOUND'); // equipEquipment emits generic NOT_FOUND for a missing card (no CARD_NOT_FOUND code exists)
     });
-
-    it('equip two cards with the same equipment → second write moves it (isEquipped check)', async () => {
-      await seedEquipInstance('eq4', 'wp_pencil');
-      const [cardA, cardB] = await cardIds();
-      await equip('weapon', 'eq4', cardA!);
-      // eq4 is already equipped on cardA; now equip on cardB
-      const r = body(await equip('weapon', 'eq4', cardB!));
-      // isEquipped detects it's already on cardA; behavior: equip replaces the destination slot
-      // The result depends on implementation: either 409 or we move it. Current impl writes to destination slot.
-      // We just verify the response is not a server error.
-      expect([200, 400, 409]).toContain(r.ok !== undefined ? 200 : (r.statusCode ?? 400));
-    });
   });
 
   // Targeted coverage for the CC-16 production incident (CHARACTER_CARDS_DESIGN.md): the migration

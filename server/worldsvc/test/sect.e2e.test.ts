@@ -357,6 +357,16 @@ describe.skipIf(!mongo)('SectService e2e', () => {
     void s;
   });
 
+  it('sendMessage: masks a sensitive word instead of rejecting delivery (CONTENT_MODERATION_DESIGN.md CM5, mask-not-reject like DM/family/world chat)', async () => {
+    await makeFamily('alice', 'A', 'AA');
+    const s = await sect.createSect(W, 'alice', 'Sky', 'SKY');
+    const result = await sect.sendMessage(W, 'alice', 'Alice', 'what the fuck');
+    expect(result.body).toBe('what the ****');
+    const msgs = await sect.getChannel(W, 'alice');
+    expect(msgs[0].body).toBe('what the ****');
+    void s;
+  });
+
   it('channel real-time fan-out: broadcast pushed to other sect members, sender not in recipient list', async () => {
     // alice (leader family) + bob + carol, three families in the same sect; bob and carol each have one member.
     await makeFamily('alice', 'A', 'AA');

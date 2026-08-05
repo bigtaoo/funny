@@ -188,10 +188,6 @@ describe('salvageRefund', () => {
 });
 
 describe('isSalvageable (ADR-050: epic never salvages, regardless of level)', () => {
-  it('epic is never salvageable, even at +0', () => {
-    expect(isSalvageable('epic', 0)).toBe(false);
-  });
-
   it('epic stays unsalvageable at every level, including max (+9) — not just falling through the level check', () => {
     for (let lv = 0; lv <= EQUIP_MAX_LEVEL; lv++) expect(isSalvageable('epic', lv)).toBe(false);
   });
@@ -260,7 +256,12 @@ describe('makeGachaEquipInstance', () => {
     expect(inst.defId).toBe('wp_highlighter');
     expect(inst.rarity).toBe('epic');
     expect(inst.level).toBe(0);
-    expect(inst.affixes.length).toBeGreaterThan(0);
+    // Deterministic for defId='wp_highlighter' + seed='inst-1' (1 main + CRAFT_SUB_AFFIX_COUNT.epic=2 subs).
+    expect(inst.affixes).toEqual([
+      { id: 'm_atk', value: 8 },
+      { id: 's_critmult', value: 23 },
+      { id: 's_siege', value: 6 },
+    ]);
   });
 
   it('throws on unknown defId', () => {

@@ -111,8 +111,9 @@ interface ModerationWordlistDoc {
 | 宗门名创建 | `worldsvc/src/sectService.ts` `createSect()` | 命中拒绝 |
 | 家族频道聊天 | `socialsvc/src/familyService.ts` `sendMessage()` | 命中打码，照常发出 |
 | 世界/国家频道聊天 | `worldsvc/src/nationChannelService.ts` `sendMessage()` | 命中打码，照常发出 |
+| 宗门频道聊天 | `worldsvc/src/sectService.ts` `sendMessage()` | 命中打码，照常发出（2026-08-05 补，见 O-CM9——CM5 当时枚举的"五个缺口"漏了这一个） |
 
-region 来源：家族/宗门名创建用创建者账号的 `AccountDoc.region`；家族/世界聊天用发送者账号的 `region`（与私聊现有取值方式一致）。
+region 来源：家族/宗门名创建用创建者账号的 `AccountDoc.region`；家族/世界/宗门聊天用发送者账号的 `region`（家族/世界走 `X-Chat-Region`/`Accept-Language`，与私聊现有取值方式一致）。
 
 ### 4.2 信誉分 + 分级处罚
 
@@ -221,6 +222,7 @@ interface AppealDoc {
 - **O-CM4**（已知缺口，非本设计引入，仍未拍板）：gateway/WS 层不检查封禁状态，已连接会话在被封禁/限时封禁后不会被强制断开——建议另开任务修复，不在本次范围内。
 - ~~O-CM6~~ **已修复（2026-07-30）**：`ReportsMixin.resolveReport`（`admin/src/service/reports.ts`）曾把"报告本身 resolve"和"施加处罚"绑在同一次调用里顺序执行——报告一旦被 socialsvc 的 CAS（`status:'open'`守卫）标记为 `upheld`，字面意义上的"重试 `resolveReport()`"会在从未到达 `applyPenalty` 之前就先撞上"报告已解决"的 404。修复：`resolveReport()` 先按 `status:'open'` 查报告，查不到再按 `status:resolution` 查一次——命中后者说明是"已解决到同一 resolution 的重试"，跳过报告 resolve 这一步，直接（重新）调用 `applyPenalty`，不新增端点。回归测试 `admin/test/contentModerationBridge.e2e.test.ts` 的 `resolveReport(upheld) can be retried after a penalty-call failure...` 已转为常规 `it` 并转绿。
 - ~~O-CM7~~ **已修复（2026-07-30）**：`resolveReport()` 的 `accountId` 曾是调用方（ops UI）显式传入、从未回查报告自身 `targetId` 的参数——当前唯一调用方（`tools/ops/src/pages/reports.ts`）传的确实是 `r.targetId`，生产路径没出过问题，但服务端本身对不匹配的 `accountId` 毫无防护。修复：与 O-CM6 同一次改动里，`resolveReport()` 改为始终从查到的报告行取 `targetId` 作为处罚目标，调用方传入的 `accountId` 仅作为确认值，不匹配则拒绝（`AdminError(400, 'target_mismatch')`）。回归测试同文件的 `resolveReport(upheld) rejects a caller-supplied accountId that does not match...` 已转为常规 `it` 并转绿。
+- ~~O-CM9~~ **已修复（2026-08-05，server 端测试全量覆盖审计发现）**：`worldsvc/src/sectService.ts` 的 `sendMessage()` 从未调用 `censorChat`，`/sect/message` 路由也没算 `ChatRegion`——宗门频道聊天是全服唯一跳过敏感词过滤的持久聊天频道；§4.1 当时枚举"现在完全没接的五个点"时漏掉了这一个（家族/世界频道聊天都在列，宗门频道聊天不在）。修复：按 CM5 既有策略（聊天类内容命中打码、照常发出）+ 既有实现套路（同款 `regionFromAcceptLanguage(Accept-Language)`，worldsvc 侧不受 O-CM5 的 `X-Chat-Region` gap 影响）补齐，`httpApi.ts` 解析 region 传入 `sendMessage()`。回归测试：`worldsvc/test/sect.e2e.test.ts` 新增"masks a sensitive word instead of rejecting delivery"用例，镜像 `nation-channel.e2e.test.ts` 的既有同类用例。详见 `claudedocs/server.md`"server 端测试全量覆盖审计（2026-08-05）"节。
 - ~~O-CM5~~ **已修复（2026-07-29）**：客户端从未实际发送 `X-Chat-Region` 请求头，导致地区专属词表（cn/de/en）在真实请求里从未生效，只有 global 词表起作用。修复：新增 `client/src/net/chatRegion.ts`（`currentChatRegion()`，镜像服务端 `regionFromLocale` 的 zh→cn/de→de/en→en 映射，取自玩家当前 i18n locale），接入 `WorldApiClient.createFamily`/`sendFamilyMessage` 与 `ApiClient.sendChat` 三个调用点。修复过程中额外发现并修复了一个会阻断此修复本身的伴生 bug：`server/socialsvc/src/httpApi.ts` 的手写 CORS `access-control-allow-headers` 清单没有 `x-chat-region`，会导致真实浏览器在预检（preflight OPTIONS）阶段整体拦截请求（与 2026-07-28 `X-NW-Platform` CORS 停机同一类问题，见 `claudedocs/server.md`/`COMM_AUDIT_INTERNAL_2026-07-28.md`）——已一并加入该清单。worldsvc 的 `/sect/create`、`/nation/message` 走的是 `regionFromAcceptLanguage(Accept-Language)`，是浏览器原生自动发送的标准头，不受本 gap 影响，未改动。验证：`server/socialsvc/test/chatRegionHttp.e2e.test.ts`（真实 HTTP + 真实 Mongo，四个用例覆盖三个端点的“带头/不带头”对照）、`server/socialsvc/test/cors-headers.test.ts`（新增一条 X-Chat-Region 预检回归）、`client/test/net-x-chat-region.test.ts`（三个客户端调用点按 locale 发送正确 header），以及一次真实浏览器（web-e2e 入口 + `window.__nwE2E`）dev-server 走查：locale=en 时创建含 `私服` 的家族名成功（201，region 落到 en/global 词表未命中），切到 locale=zh 后同样的名字被拒（400 BAD_REQUEST，命中 cn 词表），且能看到真实的 CORS 预检 OPTIONS 往返。
 
 ---

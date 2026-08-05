@@ -77,6 +77,18 @@ describe('sectStrengthScore / allocateSectsToShards', () => {
     const out = allocateSectsToShards(sects, 1);
     expect([...out.values()]).toEqual([0, 0]);
   });
+
+  it('snake balance: total strength spread across shards ≤ strongest single sect', () => {
+    // Build a group with a wide strength spread and verify that snake allocation keeps shard totals close.
+    const sects: SectStrength[] = Array.from({ length: 12 }, (_, i) => mk(`s${i}`, i + 1, 0, 0));
+    const shardCount = 4;
+    const out = allocateSectsToShards(sects, shardCount);
+    const sums = new Array(shardCount).fill(0);
+    for (const s of sects) sums[out.get(s.sectId)!] += sectStrengthScore(s);
+    const maxSingle = Math.max(...sects.map(sectStrengthScore));
+    const spread = Math.max(...sums) - Math.min(...sums);
+    expect(spread).toBeLessThanOrEqual(maxSingle);
+  });
 });
 
 describe('worldShardId / shardCountForPopulation', () => {
@@ -88,5 +100,6 @@ describe('worldShardId / shardCountForPopulation', () => {
     expect(shardCountForPopulation(0, 1000)).toBe(1);
     expect(shardCountForPopulation(1000, 1000)).toBe(1);
     expect(shardCountForPopulation(1001, 1000)).toBe(2);
+    expect(shardCountForPopulation(-5, 1000)).toBe(1); // negative input clamped to 1
   });
 });

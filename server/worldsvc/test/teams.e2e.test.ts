@@ -369,8 +369,8 @@ describe.skipIf(!mongo)('worldsvc teams + siege replay e2e', () => {
 
     // 12 infantry (CARD_TEAM_MAX_SIZE cap), each carrying 160 troops via cardState (not initialHp — card
     // entries carry none, so `march.troops` below degenerates to a card count; see combatMarch.ts's CC-3 note);
-    // 12×160 = 1920 stays under the default (no-satchel) 2000 carry cap. An overwhelming force over the
-    // 100 garrison → capture.
+    // 12×160 = 1920 stays under the default (no-satchel) SATCHEL_CARRY_BASE (= TROOP_CAP_BASE = 10000) carry
+    // cap. An overwhelming force over the 100 garrison → capture.
     const entries = await armyWithTroops('a', 12, 160);
     await svc.setTeams(W, 'a', [{ id: 't1', name: 'Assault', army: entries }]);
     const mv = await svc.startMarch(W, 'a', 5, 5, tgt.x, tgt.y, 'attack', 1, 't1');

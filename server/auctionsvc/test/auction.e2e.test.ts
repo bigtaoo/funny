@@ -4,7 +4,7 @@
 // plus skin trading (§9 task4 new itemType), character-card trading (CC-5), the C daily-purchase cap,
 // and B auction anti-snipe extension / below-buyout no-settle edge cases.
 // Requires `cd server && docker compose up -d` (or falls back to mongodb-memory-server via globalSetup).
-import { afterAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   AUCTION_DURATIONS_SEC,
   AUCTION_MAX_LISTINGS,
@@ -14,6 +14,7 @@ import {
   AUCTION_ANTI_SNIPE_WINDOW_SEC,
   AUCTION_STATIC_REF_PRICE,
   AUCTION_PRICE_WINDOW_MIN_SAMPLES,
+  AUCTION_BANNED_MATERIALS,
   EQUIP_AUCTION_REF_PRICE_BY_RARITY,
   equipEnhanceExpectedCost,
   SlgError,
@@ -545,6 +546,37 @@ describe.skipIf(!mongo)('AuctionService e2e', () => {
     })).rejects.toMatchObject({ code: 'PRICE_OUT_OF_RANGE' });
   });
 
+  // ── G Price guardrail boundary values (scrap ref=10 → band [floor=5, ceil=20], inclusive) ────────────
+  it('G exactly-at-floor price (5) succeeds', async () => {
+    const view = await svc.createAuction({
+      sellerId: 'alice', itemType: 'material',
+      item: { material: 'scrap' }, qty: 1, price: 5, durationSec: DUR,
+    });
+    expect(view.status).toBe('open');
+  });
+
+  it('G exactly-at-ceiling price (20) succeeds', async () => {
+    const view = await svc.createAuction({
+      sellerId: 'alice', itemType: 'material',
+      item: { material: 'scrap' }, qty: 1, price: 20, durationSec: DUR,
+    });
+    expect(view.status).toBe('open');
+  });
+
+  it('G one unit below the floor (4) → PRICE_OUT_OF_RANGE', async () => {
+    await expect(svc.createAuction({
+      sellerId: 'alice', itemType: 'material',
+      item: { material: 'scrap' }, qty: 1, price: 4, durationSec: DUR,
+    })).rejects.toMatchObject({ code: 'PRICE_OUT_OF_RANGE' });
+  });
+
+  it('G one unit above the ceiling (21) → PRICE_OUT_OF_RANGE', async () => {
+    await expect(svc.createAuction({
+      sellerId: 'alice', itemType: 'material',
+      item: { material: 'scrap' }, qty: 1, price: 21, durationSec: DUR,
+    })).rejects.toMatchObject({ code: 'PRICE_OUT_OF_RANGE' });
+  });
+
   // ── G getRefBand — the band the create-listing UI displays; must match checkPriceGuard's bounds ──────
   it('G getRefBand returns the static band for a guarded material (scrap ref=10 → [5,20])', async () => {
     const band = await svc.getRefBand('material:scrap');
@@ -995,6 +1027,18 @@ describe.skipIf(!mongo)('AuctionService e2e', () => {
     expect(bid.expireAt).toBeGreaterThan(nearExpiry);
   });
 
+  it('B anti-snipe: a bid OUTSIDE the window before expiry leaves expireAt UNCHANGED', async () => {
+    const v = await svc.createAuction({
+      sellerId: 'alice', itemType: 'material', saleMode: 'auction',
+      item: { material: 'scrap' }, qty: 1, startPrice: 10, durationSec: DUR,
+    });
+    // Push expiry well outside the anti-snipe window (window + 100s away).
+    const farExpiry = nowMs + (AUCTION_ANTI_SNIPE_WINDOW_SEC + 100) * 1000;
+    await mongo!.collections.auctions.updateOne({ _id: v.auctionId }, { $set: { expireAt: farExpiry } });
+    const bid = await svc.placeBid('bob', v.auctionId, 12);
+    expect(bid.expireAt).toBe(farExpiry); // untouched — bid landed outside the extension window
+  });
+
   it('B bid at/above start but below buyout does NOT settle → stays open', async () => {
     const v = await svc.createAuction({
       sellerId: 'alice', itemType: 'material', saleMode: 'auction',
@@ -1006,5 +1050,22 @@ describe.skipIf(!mongo)('AuctionService e2e', () => {
     expect(bid.buyerId).toBeUndefined();
     // no settlement mail yet
     expect(mailAtt('bob', 'auction_settle:')).toBeUndefined();
+  });
+
+  // ── E AUCTION_BANNED_MATERIALS — bound/season-exclusive materials the ban list marks non-tradeable.
+  //    The set is empty in production (populated by ops over time); mutate it directly for this test and
+  //    restore it in afterEach so the mutation never leaks into other tests. ────────────────────────────
+  describe('E AUCTION_BANNED_MATERIALS', () => {
+    afterEach(() => {
+      (AUCTION_BANNED_MATERIALS as Set<string>).clear();
+    });
+
+    it('listing a banned material → MATERIAL_NOT_TRADEABLE', async () => {
+      (AUCTION_BANNED_MATERIALS as Set<string>).add('scrap');
+      await expect(svc.createAuction({
+        sellerId: 'alice', itemType: 'material',
+        item: { material: 'scrap' }, qty: 1, price: 10, durationSec: DUR,
+      })).rejects.toMatchObject({ code: 'MATERIAL_NOT_TRADEABLE' });
+    });
   });
 });

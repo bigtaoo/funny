@@ -95,7 +95,7 @@ describe('access log: level escalation + redacted body on error/warn (2026-07-28
       method: 'POST', url: '/auth/register',
       payload: { password: 'super-secret-plaintext' },
     });
-    expect(res.statusCode).toBeGreaterThanOrEqual(400);
+    expect(res.statusCode).toBe(400);
     const all = [...warnSpy.mock.calls, ...errorSpy.mock.calls].map((c) => String(c[0])).join('\n');
     expect(all).not.toContain('super-secret-plaintext');
     expect(all).toContain('[redacted]');

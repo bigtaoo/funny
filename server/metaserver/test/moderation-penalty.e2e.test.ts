@@ -5,7 +5,7 @@ import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import { createMongo, type JwtConfig, type MongoHandle } from '@nw/shared';
 import type { FastifyInstance } from 'fastify';
 import { buildApp } from '../dist/app.js';
-import { applyPenalty, actionForScore } from '../dist/moderation.js';
+import { applyPenalty, actionForScore, TEMP_BAN_DURATION_MS } from '../dist/moderation.js';
 
 const URI = process.env.NW_MONGO_URI ?? 'mongodb://127.0.0.1:27017/?replicaSet=rs0';
 const DB = 'nw_meta_moderation_penalty_test';
@@ -159,7 +159,11 @@ describe.skipIf(!mongo)('content-moderation penalty e2e', () => {
       expect(r.statusCode).toBe(200);
       const body = JSON.parse(r.payload);
       expect(body).toMatchObject({ ok: true, reputationScore: 40, action: 'tempban' });
-      expect(typeof body.bannedUntil).toBe('number');
+      // bannedUntil should be ~now + TEMP_BAN_DURATION_MS (allow ±5s tolerance for clock skew between
+      // the test's Date.now() and the server's internal `now` clock).
+      const expectedBannedUntil = Date.now() + TEMP_BAN_DURATION_MS;
+      expect(body.bannedUntil).toBeGreaterThan(expectedBannedUntil - 5000);
+      expect(body.bannedUntil).toBeLessThan(expectedBannedUntil + 5000);
     });
 
     it('rejects without a valid internal key', async () => {
