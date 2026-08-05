@@ -922,6 +922,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/retention/weekly/claim": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Claim one weekly active chest tier (ECONOMY_NUMBERS §12.3; each of the three tiers is independently claimable once its point threshold is reached within the current ISO week; 400 if not reached, 409 if already claimed) */
+        post: operations["claimWeeklyChest"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/events": {
         parameters: {
             query?: never;
@@ -3810,6 +3827,14 @@ export interface operations {
                                     [key: string]: number;
                                 };
                             } | null;
+                            /** @description Weekly active chest progress (ECONOMY_NUMBERS §12.3, ISO week key) */
+                            weekly?: {
+                                /** @description ISO-8601 week key, e.g. 2026-W32 */
+                                weekKey?: string;
+                                points?: number;
+                                /** @description WEEKLY_CHEST_TIERS thresholds already claimed this week */
+                                claimedTiers?: number[];
+                            } | null;
                             defs: {
                                 rewards: {
                                     /** @enum {string} */
@@ -3826,10 +3851,23 @@ export interface operations {
                                 }[];
                                 pointsThreshold: number;
                                 dailyCoinsReward: number;
+                                /** @description WEEKLY_CHEST_TIERS threshold/reward table (ECONOMY_NUMBERS §12.3) */
+                                weeklyChestTiers: {
+                                    threshold: number;
+                                    reward: {
+                                        /** @enum {string} */
+                                        kind: "material" | "equipment" | "skin";
+                                        count: number;
+                                        /** @description Material id (scrap/lead/binding) */
+                                        id?: string;
+                                    };
+                                }[];
                             };
                             claimable: {
                                 checkin: boolean;
                                 daily: boolean;
+                                /** @description WEEKLY_CHEST_TIERS thresholds reached but not yet claimed */
+                                weeklyTiers: number[];
                             };
                             /** @description Rewarded-ad status for the DailyScene "Ads" tab (RETENTION_DESIGN §6.2/ECONOMY_NUMBERS §6.2) */
                             ads?: {
@@ -3919,6 +3957,51 @@ export interface operations {
             400: components["responses"]["ErrorResp"];
             401: components["responses"]["ErrorResp"];
             402: components["responses"]["ErrorResp"];
+            409: components["responses"]["ErrorResp"];
+        };
+    };
+    claimWeeklyChest: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description One of WEEKLY_CHEST_TIERS' thresholds (currently 9/15/21) */
+                    threshold: number;
+                };
+            };
+        };
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {boolean} */
+                        ok: true;
+                        data: {
+                            save: components["schemas"]["SaveData"];
+                            /** @description Tier threshold claimed this time */
+                            threshold: number;
+                            reward: {
+                                /** @enum {string} */
+                                kind: "material" | "equipment" | "skin";
+                                count: number;
+                                /** @description Material id (material) or the drawn/granted defId (equipment/skin) */
+                                id?: string;
+                            };
+                        };
+                    };
+                };
+            };
+            400: components["responses"]["ErrorResp"];
+            401: components["responses"]["ErrorResp"];
             409: components["responses"]["ErrorResp"];
         };
     };

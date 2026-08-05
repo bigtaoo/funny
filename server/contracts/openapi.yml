@@ -3712,6 +3712,21 @@ paths:
                             type: object
                             additionalProperties:
                               type: integer
+                      weekly:
+                        type: object
+                        nullable: true
+                        description: Weekly active chest progress (ECONOMY_NUMBERS §12.3, ISO week key)
+                        properties:
+                          weekKey:
+                            type: string
+                            description: ISO-8601 week key, e.g. 2026-W32
+                          points:
+                            type: integer
+                          claimedTiers:
+                            type: array
+                            items:
+                              type: integer
+                            description: WEEKLY_CHEST_TIERS thresholds already claimed this week
                       defs:
                         type: object
                         required:
@@ -3719,6 +3734,7 @@ paths:
                           - tasks
                           - pointsThreshold
                           - dailyCoinsReward
+                          - weeklyChestTiers
                         properties:
                           rewards:
                             type: array
@@ -3761,16 +3777,51 @@ paths:
                             type: integer
                           dailyCoinsReward:
                             type: integer
+                          weeklyChestTiers:
+                            type: array
+                            description: WEEKLY_CHEST_TIERS threshold/reward table (ECONOMY_NUMBERS §12.3)
+                            items:
+                              type: object
+                              required:
+                                - threshold
+                                - reward
+                              properties:
+                                threshold:
+                                  type: integer
+                                reward:
+                                  type: object
+                                  required:
+                                    - kind
+                                    - count
+                                  properties:
+                                    kind:
+                                      type: string
+                                      enum:
+                                        - material
+                                        - equipment
+                                        - skin
+                                    count:
+                                      type: integer
+                                    id:
+                                      type: string
+                                      description: Material id (scrap/lead/binding)
+                                      set only when kind=material: null
                       claimable:
                         type: object
                         required:
                           - checkin
                           - daily
+                          - weeklyTiers
                         properties:
                           checkin:
                             type: boolean
                           daily:
                             type: boolean
+                          weeklyTiers:
+                            type: array
+                            items:
+                              type: integer
+                            description: WEEKLY_CHEST_TIERS thresholds reached but not yet claimed
                       ads:
                         type: object
                         description: Rewarded-ad status for the DailyScene "Ads" tab (RETENTION_DESIGN §6.2/ECONOMY_NUMBERS §6.2)
@@ -3898,6 +3949,76 @@ paths:
         '401':
           $ref: '#/components/responses/ErrorResp'
         '402':
+          $ref: '#/components/responses/ErrorResp'
+        '409':
+          $ref: '#/components/responses/ErrorResp'
+  /retention/weekly/claim:
+    post:
+      operationId: claimWeeklyChest
+      tags:
+        - save
+      summary: Claim one weekly active chest tier (ECONOMY_NUMBERS §12.3; each of the three tiers is independently claimable once its point threshold is reached within the current ISO week; 400 if not reached, 409 if already claimed)
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - threshold
+              properties:
+                threshold:
+                  type: integer
+                  description: One of WEEKLY_CHEST_TIERS' thresholds (currently 9/15/21)
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - ok
+                  - data
+                properties:
+                  ok:
+                    type: boolean
+                    enum:
+                      - true
+                  data:
+                    type: object
+                    required:
+                      - save
+                      - threshold
+                      - reward
+                    properties:
+                      save:
+                        $ref: '#/components/schemas/SaveData'
+                      threshold:
+                        type: integer
+                        description: Tier threshold claimed this time
+                      reward:
+                        type: object
+                        required:
+                          - kind
+                          - count
+                        properties:
+                          kind:
+                            type: string
+                            enum:
+                              - material
+                              - equipment
+                              - skin
+                          count:
+                            type: integer
+                          id:
+                            type: string
+                            description: Material id (material) or the drawn/granted defId (equipment/skin)
+        '400':
+          $ref: '#/components/responses/ErrorResp'
+        '401':
           $ref: '#/components/responses/ErrorResp'
         '409':
           $ref: '#/components/responses/ErrorResp'

@@ -3,7 +3,7 @@
 // after fastify-openapi-glue serialization — regression test for the 2026-06-24 check-in calendar `+undefined` bug (RETENTION_DESIGN §10.1).
 // Requires `cd server && docker compose up -d` + prior `tsc -b` (imports from dist).
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
-import { createMongo, makeMonthKey, type JwtConfig, type MongoHandle } from '@nw/shared';
+import { createMongo, makeMonthKey, makeWeekKey, type JwtConfig, type MongoHandle } from '@nw/shared';
 import type { FastifyInstance } from 'fastify';
 import { buildApp } from '../dist/app.js';
 import type { CommercialClient, UndeliveredOrder } from '../dist/commercialClient.js';
@@ -187,5 +187,118 @@ describe.skipIf(!mongo)('meta retention e2e', () => {
     await app.inject({ method: 'POST', url: '/retention/checkin', headers: auth() });
     const r = await app.inject({ method: 'POST', url: '/retention/checkin', headers: auth() });
     expect(r.statusCode).toBe(409);
+  });
+
+  // ── weekly active chest (§12.3) ──────────────────────────────────────────────────────────
+
+  describe('weekly active chest', () => {
+    /** Completes all DAILY_TASKS once (via /save/pve-clear-like settlement points not exposed
+     * here — retention.ts's accrueRetentionTask is only reachable from inside metaserver, so
+     * these tests drive it the same way the real settlement points do: directly write a save
+     * with weekly points pre-set, using the internal /save PUT is unavailable for server-owned
+     * fields — instead reuse the checkin endpoint's underlying mutateSave indirectly is not
+     * possible either, so we seed retention.weekly directly through the collection.
+     */
+    async function seedWeeklyPoints(points: number, claimedTiers: number[] = []): Promise<void> {
+      const doc = await m.collections.saves.findOne({});
+      const accountId = doc!._id;
+      // Must use the *real* week key for fakeNow — resetStaleRetention (called at the top of every
+      // retention handler) wipes retention.weekly as stale the moment weekKey doesn't match makeWeekKey(now()).
+      await m.collections.saves.updateOne(
+        { _id: accountId },
+        { $set: { 'save.retention.weekly': { weekKey: makeWeekKey(fakeNow), points, claimedTiers }, rev: doc!.rev + 1 } },
+      );
+    }
+
+    it('GET /retention: weekly defs/claimable fields are present and not stripped by serialization', async () => {
+      const r = body(await app.inject({ method: 'GET', url: '/retention', headers: auth() }));
+      expect(r.ok).toBe(true);
+      expect(Array.isArray(r.data.defs.weeklyChestTiers)).toBe(true);
+      expect(r.data.defs.weeklyChestTiers.length).toBe(3);
+      for (const tier of r.data.defs.weeklyChestTiers) {
+        expect(typeof tier.threshold).toBe('number');
+        expect(typeof tier.reward.kind).toBe('string');
+        expect(typeof tier.reward.count).toBe('number');
+      }
+      expect(r.data.weekly).toBeNull(); // nothing accrued yet
+      expect(r.data.claimable.weeklyTiers).toEqual([]);
+    });
+
+    it('POST /retention/weekly/claim: rejects before the threshold is reached', async () => {
+      const r = await app.inject({
+        method: 'POST', url: '/retention/weekly/claim', headers: auth(), payload: { threshold: 9 },
+      });
+      expect(r.statusCode).toBe(400);
+    });
+
+    it('POST /retention/weekly/claim: rejects an unknown threshold', async () => {
+      await seedWeeklyPoints(21);
+      const r = await app.inject({
+        method: 'POST', url: '/retention/weekly/claim', headers: auth(), payload: { threshold: 999 },
+      });
+      expect(r.statusCode).toBe(400);
+    });
+
+    it('tier 1 (material): reward lands in save.materials, mirrors the checkin material-slot delivery', async () => {
+      await seedWeeklyPoints(9);
+      const r = body(await app.inject({
+        method: 'POST', url: '/retention/weekly/claim', headers: auth(), payload: { threshold: 9 },
+      }));
+      expect(r.ok).toBe(true);
+      expect(r.data.threshold).toBe(9);
+      expect(r.data.reward).toMatchObject({ kind: 'material', id: 'lead', count: 20 });
+      expect(r.data.save.materials.lead).toBeGreaterThanOrEqual(20);
+    });
+
+    it('tier 2 (equipment): reward lands in save.equipmentInv as an entry-tier (equip_t1) item', async () => {
+      await seedWeeklyPoints(15);
+      const r = body(await app.inject({
+        method: 'POST', url: '/retention/weekly/claim', headers: auth(), payload: { threshold: 15 },
+      }));
+      expect(r.ok).toBe(true);
+      expect(r.data.reward.kind).toBe('equipment');
+      expect(typeof r.data.reward.id).toBe('string');
+      const equips: Array<{ defId: string; sourceType?: string }> = Object.values(r.data.save.equipmentInv ?? {});
+      const granted = equips.find((e) => e.defId === r.data.reward.id);
+      expect(granted).toBeDefined();
+      expect(granted!.sourceType).toBe(`weekly_chest:${makeWeekKey(fakeNow)}`);
+    });
+
+    it('tier 3 (skin): reward lands in save.inventory.skins, drawn from the shop-tier pool only', async () => {
+      await seedWeeklyPoints(21);
+      const r = body(await app.inject({
+        method: 'POST', url: '/retention/weekly/claim', headers: auth(), payload: { threshold: 21 },
+      }));
+      expect(r.ok).toBe(true);
+      expect(r.data.reward.kind).toBe('skin');
+      expect(['skin_shop_c1', 'skin_shop_r1']).toContain(r.data.reward.id);
+      expect(r.data.save.inventory.skins).toContain(r.data.reward.id);
+    });
+
+    it('all three tiers are independently claimable within the same week', async () => {
+      await seedWeeklyPoints(21);
+      for (const threshold of [9, 15, 21]) {
+        const r = body(await app.inject({
+          method: 'POST', url: '/retention/weekly/claim', headers: auth(), payload: { threshold },
+        }));
+        expect(r.ok).toBe(true);
+        expect(r.data.threshold).toBe(threshold);
+      }
+    });
+
+    it('rejects a repeat claim of the same tier → 409 ALREADY_CLAIMED', async () => {
+      await seedWeeklyPoints(9);
+      await app.inject({ method: 'POST', url: '/retention/weekly/claim', headers: auth(), payload: { threshold: 9 } });
+      const r = await app.inject({ method: 'POST', url: '/retention/weekly/claim', headers: auth(), payload: { threshold: 9 } });
+      expect(r.statusCode).toBe(409);
+    });
+
+    it('GET /retention reflects claimed tiers as no longer claimable', async () => {
+      await seedWeeklyPoints(15);
+      await app.inject({ method: 'POST', url: '/retention/weekly/claim', headers: auth(), payload: { threshold: 9 } });
+      const r = body(await app.inject({ method: 'GET', url: '/retention', headers: auth() }));
+      expect(r.data.weekly.claimedTiers).toEqual([9]);
+      expect(r.data.claimable.weeklyTiers).toEqual([15]);
+    });
   });
 });

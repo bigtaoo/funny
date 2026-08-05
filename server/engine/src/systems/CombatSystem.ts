@@ -270,6 +270,7 @@ export class CombatSystem {
       lifestealPct:  attacker.lifestealPct,
       slowOnHit:     attacker.slowOnHit,
       burstOnSingle: attacker.burstOnSingle,
+      burstOnSingleMult: attacker.burstOnSingleMult,
       markEnemies:   attacker.markEnemies,
     };
 
@@ -296,6 +297,7 @@ export class CombatSystem {
       lifestealPct:  0,
       slowOnHit:     null,
       burstOnSingle: false,
+      burstOnSingleMult: 2,
       markEnemies:   false,
     };
 
@@ -321,13 +323,14 @@ export class CombatSystem {
   ): void {
     let rawDamage = payload.rawDamage;
 
-    // burstOnSingle (Max): 2× damage when only one live enemy remains on target side.
+    // burstOnSingle (Max): ×burstOnSingleMult damage (default 2, T9 progression bumps to 2.5)
+    // when only one live enemy remains on target side.
     if (payload.burstOnSingle && target instanceof Unit) {
       let liveCount = 0;
       for (const u of state.board.units.values()) {
         if (!u.isDead && u.side === target.side) { liveCount++; if (liveCount > 1) break; }
       }
-      if (liveCount === 1) rawDamage = rawDamage * 2;
+      if (liveCount === 1) rawDamage = rawDamage * payload.burstOnSingleMult;
     }
 
     // markEnemies (Mara): +25 % bonus damage on a marked target.
@@ -400,6 +403,24 @@ export class CombatSystem {
     if (payload.slowOnHit && target instanceof Unit) {
       target.slowRemainingTicks = payload.slowOnHit.durationTicks;
       target.speed_fp = fp(Math.max(1, Math.round(target.baseSpeed_fp * payload.slowOnHit.mult)));
+    }
+
+    // Reflect (Lena T9 progression trait): a defensive trait read off the *target*, not the
+    // attacker — unlike lifesteal/burstOnSingle/markEnemies above, which are all offensive
+    // traits carried in the payload. Reflects a % of actual damage taken back onto whoever
+    // fired (Unit or Building — arrow towers can be reflected onto too), through the normal
+    // takeDamage()/armor pipeline so reflected damage is not itself armor-piercing.
+    if (target instanceof Unit && target.reflectPct > 0 && actualDamage > 0 && !target.isDead) {
+      const reflectDamage = Math.floor(actualDamage * target.reflectPct / 100);
+      if (reflectDamage > 0) {
+        const attackerUnit = state.board.units.get(payload.attackerId);
+        if (attackerUnit && !attackerUnit.isDead) {
+          attackerUnit.takeDamage(reflectDamage);
+        } else {
+          const attackerBuilding = state.board.buildings.get(payload.attackerId);
+          if (attackerBuilding && !attackerBuilding.isDead) attackerBuilding.takeDamage(reflectDamage);
+        }
+      }
     }
 
     // Splash: deal rawDamage to enemies within splashRadius Chebyshev of the primary target.
