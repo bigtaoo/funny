@@ -321,3 +321,19 @@ POST /retention/weekly/claim            (JWT) { tier:1|2|3 } → { save, granted
 - **R1 修订为 R1b**（见 §1）：这是对"签到本体几乎不发金币"的**明确松口**，不是悄悄违反——200/月的量级远小于既有金币龙头（日常任务 150/月、战令 960/月、排位赛最高 5,400/赛季），判断为可忽略，未跑 econ-sim；若后续要继续加大此额度，必须回来跑一次。
 - 客户端：`DailyScene.ts` 在里程碑格右上角加一个小号「金币图标 + 数额」角标，与主奖励图标并存；签到 toast 在主奖励描述后追加 `+ N 金币`（新 i18n key `daily.checkin.bonusCoins`，zh/en/de）。
 - 契约：`openapi/paths/liveops.yml` 的 `defs.rewards[]` 与 `/retention/checkin` 的 `reward` 都加可选 `bonusCoins: integer`；`gen:api:contracts` / `gen:api:server` / 客户端 `rest:gen` 均已重新生成。
+
+### 10.6 修复：大厅红点漏周常宝箱 + 签到/周常/每日的发放失败弹性（2026-08-05）
+
+**背景**：T9 traits + 周常宝箱功能（§2.3，见 a15eca1d/52801680）落地测试收尾时发现两处遗留缺口：大厅"每日"入口红点没跟上周常宝箱，以及装备/皮肤发放失败缺服务端弹性测试；本条一次性补齐。
+
+**缺口一：大厅红点漏周常宝箱**。`hasRetentionClaimable`（`server/shared/src/retention.ts`，客户端镜像 `client/src/game/meta/retention.ts`）本身已经在 §2.3 落地时正确纳入了 `weeklyClaimableTiers`，但从未真正接进大厅链路——`getLobbyBadges`（`server/metaserver/src/service/liveops.ts`）手写了 `retentionClaimable: {checkin, daily}`，漏了 weekly；客户端 `lobby.ts` 也只 OR 了这两个。结果：玩家已领完当天签到/每日任务、但周常宝箱有格子可领时，大厅"每日"图标上的红点完全不亮。
+
+**修复**：`getLobbyBadges` 补 `weekly: weeklyClaimableTiers(retention, tsMs).length > 0`；`openapi/paths/liveops.yml`（`GET /lobby/badges` 200 响应 `retentionClaimable`）补 `weekly: boolean` 必填字段，`bundle-openapi.mjs` + `gen-openapi-server.mjs` + 客户端 `rest:gen` 重新生成；`client/src/app/nav/lobby.ts` 的 `applyRetentionBadge` 调用改为三者 OR。回归测试：`server/metaserver/test/lobby-badges.e2e.test.ts` 新增一条「已达标未领的周常 tier 应让 `retentionClaimable.weekly` 变 true」的用例。
+
+**缺口二：签到/周常/每日的发放失败弹性**。`claimCheckin`/`claimWeeklyChest`/`claimDailyReward` 的实现形状都是「先把领取状态原子落库（`mutateSave` 的 rev-guard，天然给并发重复请求排出唯一赢家），再调用装备/卡牌/皮肤/金币的发放」——这个先后顺序本身是对的（不能倒过来，否则并发双击会双发），但发放这一步失败时代码此前是静默吞掉错误：领取状态永久标记为"已领"，实际道具/金币却从未到账，且客户端重试会一直撞在"已领取"上，永远拿不到东西。三处路径共性同一个 bug，一次修完：
+
+- **装备/卡牌类**（签到第 14 格卡包、第 30 格装备压轴；周常宝箱 tier2 装备、tier3 皮肤）：新增 `deliverRetentionReward` 辅助方法，复用 `equipment.ts` 里 craft/enhance/salvage 已有的 `cols.equipmentIdem` 幂等台账 + `committed` 标志套路（`EquipmentIdemDoc.op` 新增 `checkin_reward`/`weekly_chest` 两个取值）：具体抽中的道具（哪个 defId、哪个 instance/skinId）在真正调用发放前先落台账（`committed:false`），发放调用用的是这条已落台账的记录，而不是每次都重新随机——发放失败后，下一次请求撞到"已领取"时不再直接 409，而是查表恢复：台账里有记录就照着同一件道具重试发放（`committed:true` 则直接回放已发结果），保证补发的是**同一件**道具，不会丢也不会因为重随而重复发第二件。卡牌类新增了 `cards.ts#grantCard`（单实例、按 id 幂等）路径供签到复用（原 `grantCards` 每次都随机生成新 id，跨请求重试不天然幂等，不适合这里；`grantCard` 镜像 `equipment.ts#grantEquipment` 的写法）。
+- **纯金币类**（签到里程碑 bonusCoins、每日任务金币）：`commercial.grant` 本身已经用确定性 `orderId` 做幂等（`commercial/src/service/shop.ts`），不需要额外台账——修复只是把"撞到已领取就直接 409"改成"撞到已领取就用同一个 orderId 重试一次发放"，失败了就还是 409/502，成功了就正常返回，重试安全（`orderId` 相同 → 重复调用只回放，不重复入账）。
+- **边界**：`claimCheckinDay`（`server/shared/src/retention.ts`）的纯函数里 `nextSlot > CHECKIN_TOTAL_DAYS`（月满）判断先于 `lastClaimedDayKey === 当前日`（今日已领）判断，导致"当月最后一格（第30格）当天重试"报的是 `MONTH_FULL` 而不是 `ALREADY_CLAIMED_TODAY`——两者本质是同一种可恢复场景，`claimCheckin` 的恢复分支据此把两个错误码合并处理，用 `lastClaimedDayKey` 而不是错误码本身来判断"是不是今天这次领取"。
+
+**回归测试**（`server/metaserver/test/retention.e2e.test.ts`，新增 `describe('retention delivery resilience (2026-08-05 fix)')`）：镜像 `pve.e2e.test.ts` 的手法——包一层 `saves.findOneAndUpdate`，让发放调用自己内部的 rev-guard 写入必输，验证（a）领取状态照样落库、（b）失败响应是 502 不是静默 200、（c）解除拦截后重试补发**同一件**道具/发放**同一笔**金币，且再重试一次也不会变成两件/两笔。覆盖周常装备 tier、周常皮肤 tier、签到第 30 格装备+bonusCoins、每日任务金币四条路径。

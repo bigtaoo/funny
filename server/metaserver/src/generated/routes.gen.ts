@@ -22490,7 +22490,8 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
               "type": "object",
               "required": [
                 "checkin",
-                "daily"
+                "daily",
+                "weekly"
               ],
               "properties": {
                 "checkin": {
@@ -22498,6 +22499,10 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                 },
                 "daily": {
                   "type": "boolean"
+                },
+                "weekly": {
+                  "type": "boolean",
+                  "description": "Any weekly active chest tier (WEEKLY_CHEST_TIERS) reached but not yet claimed this ISO week"
                 }
               }
             },

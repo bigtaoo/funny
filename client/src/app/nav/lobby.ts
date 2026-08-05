@@ -83,7 +83,10 @@ export function createLobbyNav(ctx: AppCtx): Pick<Nav, 'goLobby'> {
       }
       state.achievementReached = reached;
 
-      view.applyRetentionBadge(b.retentionClaimable.checkin || b.retentionClaimable.daily);
+      // 2026-08-05 fix: `weekly` (active chest tiers) used to be omitted here entirely, so a player
+      // who'd only earned a weekly-chest tier (checkin/daily already claimed today) never saw the
+      // lobby's "每日" red dot light up at all — see getLobbyBadges (server/metaserver) for the matching fix.
+      view.applyRetentionBadge(b.retentionClaimable.checkin || b.retentionClaimable.daily || b.retentionClaimable.weekly);
       const reasons: DailyReminderReason[] = [];
       if (computeShopCardClaimable()) reasons.push('monthlyCard');
       if (b.retentionClaimable.daily) reasons.push('dailyTask');

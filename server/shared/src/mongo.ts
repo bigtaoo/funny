@@ -458,25 +458,27 @@ export interface CardIdemDoc {
 export interface EquipmentIdemDoc {
   _id: string; // idempotencyKey / orderId
   accountId: string;
-  op: 'craft' | 'escrow' | 'enhance' | 'salvage' | 'reforge' | 'skin_escrow';
+  op: 'craft' | 'escrow' | 'enhance' | 'salvage' | 'reforge' | 'skin_escrow' | 'checkin_reward' | 'weekly_chest';
   /**
    * Snapshot of the first execution result, replayed verbatim on retry:
-   *   craft       → produced instance (EquipmentInstance)
-   *   escrow      → snapshot of the escrowed instance
-   *   enhance     → { success, instance } (dice roll result + enhanced instance, E3)
-   *   salvage     → { refunded } (total materials returned, E3)
-   *   skin_escrow → { skinId } (auction task2, AUCTION_DESIGN §2.1/§9)
+   *   craft          → produced instance (EquipmentInstance)
+   *   escrow         → snapshot of the escrowed instance
+   *   enhance        → { success, instance } (dice roll result + enhanced instance, E3)
+   *   salvage        → { refunded } (total materials returned, E3)
+   *   skin_escrow    → { skinId } (auction task2, AUCTION_DESIGN §2.1/§9)
+   *   checkin_reward / weekly_chest → the picked concrete item (RetentionItemPick, liveops.ts) for a
+   *     checkin card/equipment milestone or a weekly-chest equipment/skin tier
    */
   result: unknown;
   /**
-   * For craft/enhance/reforge (2026-08-03 fix): true once the cost-side rev-guarded save write has
-   * actually landed. The claim doc is inserted (with `result` pre-computed) *before* that write so the
-   * roll/id stays deterministic across retries — but that means a concurrent duplicate request hitting
-   * the insert's E11000 can no longer tell "the original already paid and succeeded" apart from "the
-   * original is still mid-flight (or gave up) and never paid." Only replay-grant the instance when this
-   * is true; otherwise the concurrent duplicate must not synthesize a free item and should ask the
-   * caller to retry instead. escrow/salvage/skin_escrow write their idem doc only after success, so they
-   * don't need this field (absent = irrelevant for those ops).
+   * For craft/enhance/reforge (2026-08-03 fix) and checkin_reward/weekly_chest (2026-08-05 fix): true
+   * once the item has actually been granted. The claim doc is inserted (with `result` pre-computed)
+   * *before* that grant so the roll/id stays deterministic across retries — but that means a concurrent
+   * duplicate request hitting the insert's E11000 can no longer tell "the original already paid and
+   * succeeded" apart from "the original is still mid-flight (or gave up) and never paid." Only
+   * replay-grant the instance when this is true; otherwise the concurrent duplicate must not synthesize
+   * a free item and should ask the caller to retry instead. escrow/salvage/skin_escrow write their idem
+   * doc only after success, so they don't need this field (absent = irrelevant for those ops).
    */
   committed?: boolean;
   expireAt: Date; // BSON Date, TTL anchor
