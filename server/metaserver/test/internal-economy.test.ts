@@ -323,7 +323,7 @@ describe('POST /internal/cards/grant', () => {
   });
 
   it('happy path: writes the instance snapshot into cardInstances (idempotent overwrite by id)', async () => {
-    const { app, cardInstances } = build([saveRow('a')]);
+    const { app, cardInstances, saves } = build([saveRow('a')]);
     const res = await app.inject({
       method: 'POST', url: '/internal/cards/grant', headers: authHeaders,
       payload: { accountId: 'a', instance: card('c1', { level: 3 }), orderId: 'o1' },
@@ -331,6 +331,18 @@ describe('POST /internal/cards/grant', () => {
     expect(res.statusCode).toBe(200);
     expect(JSON.parse(res.payload)).toEqual({ ok: true });
     expect(cardInstances.docs.get('c1')).toMatchObject({ _id: 'c1', level: 3 });
+    const countAfterFirst = saves.docs.get('a')!.save.cardInvCount;
+
+    // Replay the exact same grant (same instance id/orderId) — grantCard's dedup guard (cards.ts's
+    // `already` findOne before the count-increment loop) must skip the cardInvCount++ on this second
+    // call. Without this second POST, that guard is never actually exercised.
+    const res2 = await app.inject({
+      method: 'POST', url: '/internal/cards/grant', headers: authHeaders,
+      payload: { accountId: 'a', instance: card('c1', { level: 3 }), orderId: 'o1' },
+    });
+    expect(res2.statusCode).toBe(200);
+    expect(JSON.parse(res2.payload)).toEqual({ ok: true });
+    expect(saves.docs.get('a')!.save.cardInvCount).toBe(countAfterFirst);
   });
 });
 

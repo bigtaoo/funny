@@ -63,11 +63,13 @@ describe.skipIf(!mongo)('state replay share e2e', () => {
     expect(get1.statusCode).toBe(200);
     expect(body(get1).data.blob).toEqual(sampleBlob);
 
-    // Fetch once more → viewCount increments (async $inc; allow a round-trip for it to persist).
+    // Fetch once more → viewCount increments (fire-and-forget $inc, not awaited by the handler; give it
+    // a moment to land, same idiom as analyticsvc's fire-and-forget-write tests).
     await app.inject({ method: 'GET', url: `/r/${shareCode}` });
+    await new Promise((r) => setTimeout(r, 200));
     const doc = await m.collections.stateReplayShares.findOne({ _id: shareCode });
     expect(doc!.createdBy).toBeTruthy();
-    expect(doc!.viewCount).toBeGreaterThanOrEqual(1);
+    expect(doc!.viewCount).toBe(2);
   });
 
   it('unauthenticated share upload → 401', async () => {
