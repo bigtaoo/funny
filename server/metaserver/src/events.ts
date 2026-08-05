@@ -43,7 +43,7 @@ export interface EventView {
 
 // ── Internal helpers ────────────────────────────────────────────────────────────────
 
-function participantId(eventId: string, accountId: string): string {
+export function participantId(eventId: string, accountId: string): string {
   return `${eventId}:${accountId}`;
 }
 

@@ -8,7 +8,7 @@ import type { Collections } from '@nw/shared';
 export type PenaltyAction = 'none' | 'warn' | 'mute' | 'tempban' | 'ban';
 
 const MUTE_DURATION_MS = 24 * 3600 * 1000;
-const TEMP_BAN_DURATION_MS = 7 * 24 * 3600 * 1000;
+export const TEMP_BAN_DURATION_MS = 7 * 24 * 3600 * 1000;
 const REPUTATION_DECAY_INTERVAL_MS = 30 * 24 * 3600 * 1000;
 
 /** §4.2 threshold table (user-confirmed 2026-07-29): the action for a given post-delta reputationScore. */
