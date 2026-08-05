@@ -179,11 +179,17 @@ describe.skipIf(!mongo)('AuctionService.scanAnomalies e2e', () => {
     expect(anomalies[0]).toMatchObject({ sellerId: 'A', buyerId: 'B', trades: AUDIT_PAIR_MIN_TRADES });
   }, 30_000);
 
-  it('direction matters: A→B and B→A are different pairs, counted independently', async () => {
-    for (let i = 0; i < AUDIT_PAIR_MIN_TRADES; i++) await seedSold({ seller: 'A', buyer: 'B', unitPrice: 10 });
-    await seedSold({ seller: 'B', buyer: 'A', unitPrice: 10 }); // reverse direction: only 1 trade, does not trigger
+  it('unordered pair merge: alternating A→B and B→A trades combine into one anomaly (2026-08-04 fix)', async () => {
+    // Each direction alone (3 trades) is below AUDIT_PAIR_MIN_TRADES (5) and would not trigger on its own —
+    // this only detects because the unordered-pair aggregation merges both directions into a single bucket.
+    const half = Math.ceil(AUDIT_PAIR_MIN_TRADES / 2); // 3 when minTrades=5; half < minTrades, half*2 >= minTrades
+    for (let i = 0; i < half; i++) await seedSold({ seller: 'A', buyer: 'B', unitPrice: 10 });
+    for (let i = 0; i < half; i++) await seedSold({ seller: 'B', buyer: 'A', unitPrice: 10 });
     const anomalies = await svc.scanAnomalies();
     expect(anomalies).toHaveLength(1);
-    expect(anomalies[0]!.sellerId).toBe('A');
+    // sellerId/buyerId on the result are just a display label (whichever direction landed first in the
+    // aggregation) — not asserted here, since it depends on Mongo's tie-break order for same-soldAt docs.
+    expect(anomalies[0]!.trades).toBe(half * 2);
+    expect(anomalies[0]!.reasons).toContain('repeated');
   });
 });

@@ -183,7 +183,7 @@ describe.skipIf(!mongo)('admin content-moderation report/appeal bridge e2e', () 
     fakeEnforcement.failNext = false;
     const res = await svc.resolveReport(root, 'r1', 'b', 'upheld');
     expect(fakeEnforcement.calls).toContainEqual({ accountId: 'b', delta: -20 });
-    expect(res.action).toBeDefined();
+    expect(res).toEqual({ reputationScore: 80, action: 'warn' });
   });
 
   // FIXED (O-CM7, audit-followup-fixes-0730 review; closed 2026-07-30): resolveReport() now derives the
