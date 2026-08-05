@@ -69,6 +69,13 @@ describe('SE-5 leaderboard 60s process cache', () => {
     };
     expect(r1.data.seasonNo).toBe(7);
     expect(r1.data.entries).toHaveLength(2);
+    // buildLeaderboardTop100 must map displayName/publicId/elo/equippedTitle through from the joined
+    // accounts row + save.pvp/save.equipped, not just the row count.
+    expect(r1.data.entries[0]).toEqual({
+      rank: 1, displayName: 'Alice', publicId: 'AAAA', elo: 1500, pvpRank: 'gold', equippedTitle: 't.master',
+    });
+    // a2 has no `equipped` field seeded → equippedTitle must be omitted, not present-but-undefined.
+    expect(r1.data.entries[1]).toEqual({ rank: 2, displayName: 'Bob', publicId: 'BBBB', elo: 1400, pvpRank: 'silver' });
     expect(r1.data.me).toEqual({ rank: 4, elo: 1450, pvpRank: 'gold' });
     expect(counters.topFind).toBe(1);
     expect(counters.countDocs).toBe(1);

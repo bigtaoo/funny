@@ -492,6 +492,31 @@ describe.skipIf(!mongo)('socialsvc FamilyService e2e', () => {
     expect(await svc.refreshProsperity('fam:GHOST', 100)).toBe(0);
   });
 
+  // Regression coverage for the comm-audit batch F item 9 merge (bumpActivity + refreshProsperity
+  // collapsed into one round trip): the combined call must land BOTH the activity $inc and the
+  // recomputed prosperity/territoryCount in a single write, matching what two separate calls would do.
+  it('bumpActivityAndProsperity: merged activity bump + prosperity refresh land together in one call', async () => {
+    const fam = await svc.createFamily('leader', 'Merged', 'MRG');
+    await svc.joinFamily('m1', fam.familyId); // memberCount = 2
+
+    const prosperity = await svc.bumpActivityAndProsperity(fam.familyId, 4, 7 /*territory*/);
+    expect(prosperity).toBe(familyProsperity(7, 2, 4));
+
+    const view = await svc.getFamily(fam.familyId);
+    expect(view!.prosperity).toBe(prosperity);
+    expect(view!.territoryCount).toBe(7);
+    expect((await svc.getMember('leader'))).toMatchObject({ familyId: fam.familyId }); // sanity: family still intact
+
+    // A second call accumulates the activity delta (not a plain overwrite) and re-derives prosperity from it.
+    const prosperity2 = await svc.bumpActivityAndProsperity(fam.familyId, 3, 9 /*new territory*/);
+    expect(prosperity2).toBe(familyProsperity(9, 2, 7 /*4+3*/));
+    const view2 = await svc.getFamily(fam.familyId);
+    expect(view2!.territoryCount).toBe(9);
+
+    // Missing family → 0, no write (same contract as refreshProsperity).
+    expect(await svc.bumpActivityAndProsperity('fam:GHOST', 5, 100)).toBe(0);
+  });
+
   it('setSect / getFamiliesBySect / getFamiliesByIds / resetSlgState: sect mirror + season reset', async () => {
     const a = await svc.createFamily('leader', 'Alpha', 'ALFA');
     const b = await svc.createFamily('m1', 'Bravo', 'BRVO');

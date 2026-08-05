@@ -335,6 +335,7 @@ describe.skipIf(!mongo)('analyticsvc e2e', () => {
       ok: boolean;
       data: { funnel: { platform: string }[] };
     };
+    expect(body.data.funnel.length).toBeGreaterThan(0);
     expect(body.data.funnel.every((r) => r.platform === 'web')).toBe(true);
   });
 

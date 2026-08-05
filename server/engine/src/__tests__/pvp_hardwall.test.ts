@@ -42,6 +42,10 @@ test('buildPvpBlueprints: all PvP unit blueprints exactly equal UNIT_BLUEPRINTS 
     assert.equal(got.armor        ?? 0, 0, `${ut} PvP armor must be 0`);
     assert.equal(got.critPct      ?? 0, 0, `${ut} PvP critPct must be 0`);
     assert.equal(got.lifestealPct ?? 0, 0, `${ut} PvP lifestealPct must be 0`);
+    // Per-unit T9 progression traits (2026-08-05, ECONOMY_NUMBERS §4.4) — same hard wall applies.
+    assert.equal(got.armorEnrageThreshold ?? 0, 0, `${ut} PvP armorEnrageThreshold must be 0`);
+    assert.equal(got.armorEnrageBonus     ?? 0, 0, `${ut} PvP armorEnrageBonus must be 0`);
+    assert.equal(got.reflectPct           ?? 0, 0, `${ut} PvP reflectPct must be 0`);
   }
 });
 
@@ -88,9 +92,20 @@ test('buildPvpBlueprints: zero-parameter signature (compile-time card contaminat
 test('buildCampaignBlueprints at level 9: traits are applied (contrast: PvE path works)', () => {
   const campaign = buildCampaignBlueprints(makeCards(PVP_UNITS, UNIT_MAX_LEVEL));
   for (const ut of PVP_UNITS) {
+    // T3/T6 stay universal across all progressable units regardless of T9 differentiation.
     assert.ok((campaign[ut].critPct      ?? 0) > 0, `${ut} should have critPct>0 in PvE at L9`);
     assert.ok((campaign[ut].lifestealPct ?? 0) > 0, `${ut} should have lifestealPct>0 in PvE at L9`);
-    assert.equal(campaign[ut].spawnCount, UNIT_BLUEPRINTS[ut].spawnCount + 1, `${ut} should have +1 spawnCount at L9`);
     assert.equal(campaign[ut].armor ?? 0, 8, `${ut} should have armor=8 at L9`);
   }
+  // T9 is per-unit (2026-08-05, ECONOMY_NUMBERS §4.4): Infantry has no PER_UNIT_T9_TRAITS entry
+  // and keeps the generic +1 spawn fallback; ShieldBearer/Archer each get their own T9 payoff instead.
+  assert.equal(campaign[UnitType.Infantry].spawnCount, UNIT_BLUEPRINTS[UnitType.Infantry].spawnCount + 1,
+    'Infantry (undifferentiated) should keep the generic +1 spawnCount at L9');
+  assert.equal(campaign[UnitType.ShieldBearer].spawnCount, UNIT_BLUEPRINTS[UnitType.ShieldBearer].spawnCount,
+    'ShieldBearer should NOT get +1 spawnCount at L9 (replaced by armor-enrage)');
+  assert.equal(campaign[UnitType.ShieldBearer].armorEnrageThreshold, 0.4, 'ShieldBearer should have armorEnrageThreshold=0.4 at L9');
+  assert.equal(campaign[UnitType.ShieldBearer].armorEnrageBonus, 6, 'ShieldBearer should have armorEnrageBonus=6 at L9');
+  assert.equal(campaign[UnitType.Archer].spawnCount, UNIT_BLUEPRINTS[UnitType.Archer].spawnCount,
+    'Archer should NOT get +1 spawnCount at L9 (replaced by range bonus)');
+  assert.equal(campaign[UnitType.Archer].range, UNIT_BLUEPRINTS[UnitType.Archer].range + 1, 'Archer should have range+1 at L9');
 });

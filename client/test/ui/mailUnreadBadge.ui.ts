@@ -101,7 +101,7 @@ describe('FriendsScene — mail unread badge decrements immediately on read (202
 
   it('mailUnread never goes negative even if opened twice in quick succession', async () => {
     const m1 = unreadMail('m1');
-    const { scene } = build([m1]);
+    const { scene, markCalls } = build([m1]);
     await flush();
     expect(scene.mailUnread).toBe(1);
 
@@ -109,7 +109,12 @@ describe('FriendsScene — mail unread badge decrements immediately on read (202
     scene.openMail(m1); // second open: m1.read is still false locally until the first markMailRead resolves
     await flush();
 
-    expect(scene.mailUnread).toBeGreaterThanOrEqual(0);
+    // Both opens race past the `!m.read` guard before either resolves, so markMailRead is
+    // genuinely called twice here (this is the scenario the clamp below exists to survive —
+    // asserting the exact call count keeps this test from passing regardless of whether the
+    // clamp actually fired).
+    expect(markCalls).toEqual(['m1', 'm1']);
+    expect(scene.mailUnread).toBe(0); // clamped, not -1
     scene.destroy();
   });
 });

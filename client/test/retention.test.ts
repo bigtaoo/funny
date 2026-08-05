@@ -3,7 +3,17 @@
 // Tasks) and the lobby entry-point dot — the DailyScene sidebar tabs previously never showed a
 // dot at all (fixed 2026-07-12); this locks down the values they now read.
 import { describe, it, expect } from 'vitest';
-import { nextCheckinDay, dailyRewardClaimable, hasRetentionClaimable, makeDayKey, makeMonthKey } from '../src/game/meta/retention';
+import {
+  nextCheckinDay,
+  dailyRewardClaimable,
+  hasRetentionClaimable,
+  makeDayKey,
+  makeMonthKey,
+  makeWeekKey,
+  weeklyPoints,
+  weeklyClaimableTiers,
+  WEEKLY_CHEST_THRESHOLDS,
+} from '../src/game/meta/retention';
 import { makeNewSave } from '../src/game/meta/SaveData';
 import type { SaveData } from '../src/game/meta/SaveData';
 
@@ -91,5 +101,73 @@ describe('hasRetentionClaimable (lobby entry-point dot)', () => {
       daily: { dayKey, completedTasks: { 'pve.clear': 1, 'pvp.match': 1, 'gacha.draw': 1 }, taskPoints: 3, rewardClaimed: true },
     });
     expect(hasRetentionClaimable(save, T)).toBe(false);
+  });
+
+  it('claimable when only a weekly chest tier is available (checkin/daily already done today)', () => {
+    const save = withRetention({
+      checkin: { monthKey, claimedDays: [1], lastClaimedDayKey: dayKey },
+      daily: { dayKey, completedTasks: { 'pve.clear': 1, 'pvp.match': 1, 'gacha.draw': 1 }, taskPoints: 3, rewardClaimed: true },
+      weekly: { weekKey: makeWeekKey(T), points: 9, claimedTiers: [] },
+    });
+    expect(hasRetentionClaimable(save, T)).toBe(true);
+  });
+
+  it('not claimable when all three (checkin/daily/weekly) are exhausted', () => {
+    const save = withRetention({
+      checkin: { monthKey, claimedDays: [1], lastClaimedDayKey: dayKey },
+      daily: { dayKey, completedTasks: { 'pve.clear': 1, 'pvp.match': 1, 'gacha.draw': 1 }, taskPoints: 3, rewardClaimed: true },
+      weekly: { weekKey: makeWeekKey(T), points: 21, claimedTiers: [9, 15, 21] },
+    });
+    expect(hasRetentionClaimable(save, T)).toBe(false);
+  });
+});
+
+describe('makeWeekKey (client mirror matches server/shared/src/retention.ts)', () => {
+  it('groups Mon..Sun into the same ISO week', () => {
+    const mon = Date.parse('2026-06-22T10:00:00Z');
+    const sun = Date.parse('2026-06-28T23:00:00Z');
+    expect(makeWeekKey(mon)).toBe(makeWeekKey(sun));
+  });
+
+  it('the following Monday is a different ISO week', () => {
+    const mon = Date.parse('2026-06-22T10:00:00Z');
+    const nextMon = Date.parse('2026-06-29T01:00:00Z');
+    expect(makeWeekKey(nextMon)).not.toBe(makeWeekKey(mon));
+  });
+});
+
+describe('weeklyPoints / weeklyClaimableTiers (Weekly Chest tab)', () => {
+  it('0 points when nothing recorded', () => {
+    expect(weeklyPoints(withRetention(undefined), T)).toBe(0);
+  });
+
+  it('0 points when the recorded weekKey is stale', () => {
+    const save = withRetention({ weekly: { weekKey: '2020-W01', points: 21, claimedTiers: [] } });
+    expect(weeklyPoints(save, T)).toBe(0);
+  });
+
+  it('reflects the current week\'s points', () => {
+    const save = withRetention({ weekly: { weekKey: makeWeekKey(T), points: 12, claimedTiers: [] } });
+    expect(weeklyPoints(save, T)).toBe(12);
+  });
+
+  it('lists thresholds reached but not yet claimed, in ascending order', () => {
+    const save = withRetention({ weekly: { weekKey: makeWeekKey(T), points: 15, claimedTiers: [] } });
+    expect(weeklyClaimableTiers(save, T)).toEqual([9, 15]);
+  });
+
+  it('excludes already-claimed thresholds', () => {
+    const save = withRetention({ weekly: { weekKey: makeWeekKey(T), points: 15, claimedTiers: [9] } });
+    expect(weeklyClaimableTiers(save, T)).toEqual([15]);
+  });
+
+  it('all three claimable at the top of the range', () => {
+    const save = withRetention({ weekly: { weekKey: makeWeekKey(T), points: 21, claimedTiers: [] } });
+    expect(weeklyClaimableTiers(save, T)).toEqual([...WEEKLY_CHEST_THRESHOLDS]);
+  });
+
+  it('none claimable below the first threshold', () => {
+    const save = withRetention({ weekly: { weekKey: makeWeekKey(T), points: 5, claimedTiers: [] } });
+    expect(weeklyClaimableTiers(save, T)).toEqual([]);
   });
 });

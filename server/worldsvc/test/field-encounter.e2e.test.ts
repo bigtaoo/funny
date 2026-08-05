@@ -150,6 +150,30 @@ describe.skipIf(!mongo)('worldsvc field-encounter e2e (ADR-051 P2b)', () => {
     return tid;
   }
 
+  /**
+   * Start A's flat (non-card) 'sweep' march to a far empty tile — a plain troops-count army with no team, the
+   * legacy `!aHasCard` path in resolveFieldEncounter/applyTowerDamage (synthesizeArmy at combat time, pool
+   * troops deducted on departure). 'sweep' is used (not 'move', which always requires a team per startMarch)
+   * and targets the same unowned resource/neutral tiles the card-army tests use.
+   */
+  async function startAFlatMarch(dest: { x: number; y: number }, troops: number): Promise<{ marchId: string; departAt: number; path: { x: number; y: number }[] }> {
+    const mv = await svc.startMarch(W, 'a', 5, 5, dest.x, dest.y, 'sweep', troops);
+    const doc = await m.collections.marches.findOne({ _id: mv.marchId });
+    return { marchId: mv.marchId, departAt: mv.departAt, path: doc!.path! };
+  }
+
+  /** Place an enemy (B) flat (non-card) stationed force on tile T + its occupancy entry — the `!dHasCard` path. */
+  async function stationEnemyFlatAt(T: { x: number; y: number }, troops: number): Promise<string> {
+    const tid = tileId(W, T.x, T.y);
+    const st: StationedDoc = {
+      _id: tid, worldId: W, ownerId: 'b', tile: tid, x: T.x, y: T.y,
+      teamId: 'bt-flat', army: [], troops, sinceAt: now(),
+    };
+    await m.collections.stationed.insertOne(st);
+    redis.setOcc(W, tid, { kind: 'stationed', id: tid, ownerId: 'b', teamId: 'bt-flat', tile: tid, leaveAt: Number.MAX_SAFE_INTEGER });
+    return tid;
+  }
+
   it('scenario 1 — a march wins against an enemy stationed team, destroys it, and keeps marching', async () => {
     await svc.joinWorld(W, 'a', 5, 5);
     await svc.joinWorld(W, 'b', 40, 40);
@@ -221,6 +245,73 @@ describe.skipIf(!mongo)('worldsvc field-encounter e2e (ADR-051 P2b)', () => {
     expect(siege!.marchKind).toBe('move');
   });
 
+  it('scenario 1 (flat/non-card army) — a march wins against a flat enemy stationed force, destroys it, and keeps marching with scaled survivors', async () => {
+    await svc.joinWorld(W, 'a', 5, 5);
+    await svc.joinWorld(W, 'b', 40, 40);
+    // No setTeams/cardState for 'a' — a plain flat-troops march (the `!aHasCard` branch).
+
+    const dest = findCoord((t) => t.type === 'resource' || t.type === 'neutral', 5, 22);
+    const { marchId, departAt, path } = await startAFlatMarch(dest, 9_000); // overwhelming attacker (>10x defender)
+    expect(path.length).toBeGreaterThan(3);
+
+    const T = path[2]!;
+    const tidT = await stationEnemyFlatAt(T, 30); // weak flat defender
+
+    nowMs = departAt + 2 * MARCH_SPEED_SEC_PER_TILE * 1000;
+    expect(await svc.processDueArrivals()).toBe(0); // mid-route: A did not settle at its destination
+
+    // Enemy flat stationed force destroyed; its occ is gone and A now holds the cell.
+    expect(await m.collections.stationed.findOne({ _id: tidT })).toBeNull();
+    expect(redis.occSize(W)).toBe(1);
+    const occ = redis.occAt(W, tidT);
+    expect(occ!.kind).toBe('march');
+    expect(occ!.id).toBe(marchId);
+
+    // A's march survives with scaled-down (but still overwhelming) flat troops and keeps stepping.
+    const aDoc = await m.collections.marches.findOne({ _id: marchId });
+    expect(aDoc).not.toBeNull();
+    expect(aDoc!.status).toBe('marching');
+    expect(aDoc!.stepIndex).toBe(2);
+    expect(aDoc!.troops).toBeGreaterThan(0);
+    expect(aDoc!.troops).toBeLessThanOrEqual(9_000);
+
+    const siege = await m.collections.sieges.findOne({ marchId, tile: tidT });
+    expect(siege!.outcome).toBe('attacker_win');
+    expect(siege!.defenderId).toBe('b');
+  });
+
+  it('scenario 1 (flat/non-card army) — a march that loses to a flat enemy stationed force is destroyed; the defender holds with reduced troops', async () => {
+    await svc.joinWorld(W, 'a', 5, 5);
+    await svc.joinWorld(W, 'b', 40, 40);
+
+    const dest = findCoord((t) => t.type === 'resource' || t.type === 'neutral', 5, 22);
+    const { marchId, departAt, path } = await startAFlatMarch(dest, 30); // weak flat attacker
+    expect(path.length).toBeGreaterThan(3);
+
+    const T = path[2]!;
+    const tidT = await stationEnemyFlatAt(T, 3_000); // decisively stronger flat defender (engine battle, defender_win)
+
+    nowMs = departAt + 2 * MARCH_SPEED_SEC_PER_TILE * 1000;
+    await svc.processDueArrivals(); // A steps into T, loses, is removed
+
+    // A's march is gone (destroyed en route); the defender's flat stationed force survives with reduced (but
+    // still positive, given the lopsided troop ratio) troops — the `!dHasCard` / defStationed branch of the
+    // "defender holds with reduced survivors" else-clause in resolveFieldEncounter.
+    expect(await m.collections.marches.findOne({ _id: marchId })).toBeNull();
+    const defAfter = await m.collections.stationed.findOne({ _id: tidT });
+    expect(defAfter).not.toBeNull();
+    expect(defAfter!.troops).toBeGreaterThan(0);
+    expect(defAfter!.troops).toBeLessThanOrEqual(3_000);
+    expect(redis.occSize(W)).toBe(1);
+    const occ = redis.occAt(W, tidT);
+    expect(occ!.kind).toBe('stationed');
+    expect(occ!.id).toBe(tidT);
+
+    const siege = await m.collections.sieges.findOne({ marchId, tile: tidT });
+    expect(siege!.outcome).toBe('defender_win');
+    expect(siege!.attackerId).toBe('a');
+  });
+
   it('scenario 2 — a march wins against another enemy march sharing the cell and takes it over', async () => {
     await svc.joinWorld(W, 'a', 5, 5);
     await svc.joinWorld(W, 'b', 40, 40);
@@ -259,6 +350,52 @@ describe.skipIf(!mongo)('worldsvc field-encounter e2e (ADR-051 P2b)', () => {
 
     const siege = await m.collections.sieges.findOne({ marchId, tile: tidT });
     expect(siege!.outcome).toBe('attacker_win');
+  });
+
+  it('scenario 2 (flat/non-card army) — a march that loses to a resident flat enemy march is destroyed; the resident march holds with reduced troops', async () => {
+    await svc.joinWorld(W, 'a', 5, 5);
+    await svc.joinWorld(W, 'b', 40, 40);
+
+    const dest = findCoord((t) => t.type === 'resource' || t.type === 'neutral', 5, 22);
+    const { marchId, departAt, path } = await startAFlatMarch(dest, 30); // weak flat attacker
+    expect(path.length).toBeGreaterThan(3);
+
+    const T = path[2]!;
+    const tidT = tileId(W, T.x, T.y);
+    // Resident enemy MARCH (flat, no card — `!dHasCard`) still occupying T, decisively stronger than A. Same
+    // no-self-processing setup as the card-based scenario-2 tests (far-future arriveAt, stationary).
+    const bMid = 'bmarch-scn2-flat';
+    const bMarch: MarchDoc = {
+      _id: bMid, worldId: W, ownerId: 'b', fromTile: tileId(W, 40, 40), toTile: tileId(W, dest.x, dest.y),
+      kind: 'move', troops: 3_000, morale: MARCH_MORALE_MAX,
+      departAt: now() - 1000, arriveAt: now() + 10_000_000, status: 'marching', rev: 0,
+    };
+    await m.collections.marches.insertOne(bMarch);
+    redis.setOcc(W, tidT, { kind: 'march', id: bMid, ownerId: 'b', tile: tidT, leaveAt: now() + 10_000_000 });
+
+    nowMs = departAt + 2 * MARCH_SPEED_SEC_PER_TILE * 1000;
+    await svc.processDueArrivals(); // A steps into T, loses, is removed
+
+    // A's march is gone (destroyed en route); the resident march SURVIVES with reduced (but still positive)
+    // troops — the `!dHasCard` / defMarch branch (cols.marches.updateOne with newDefTroops/newDefArmy) of the
+    // "defender holds with reduced survivors" else-clause in resolveFieldEncounter (combatSiege/encounter.ts).
+    expect(await m.collections.marches.findOne({ _id: marchId })).toBeNull();
+    const bAfter = await m.collections.marches.findOne({ _id: bMid });
+    expect(bAfter).not.toBeNull();
+    expect(bAfter!.status).toBe('marching');
+    expect(bAfter!.troops).toBeGreaterThan(0);
+    expect(bAfter!.troops).toBeLessThanOrEqual(3_000);
+    // The updateOne's $inc: { rev: 1 } only runs on this (!dHasCard) branch — a bumped rev proves the branch
+    // actually executed (troops staying numerically at 3_000, e.g. from a rounding fluke, would not).
+    expect(bAfter!.rev).toBe(1);
+    expect(redis.occSize(W)).toBe(1);
+    const occ = redis.occAt(W, tidT);
+    expect(occ!.kind).toBe('march');
+    expect(occ!.id).toBe(bMid);
+
+    const siege = await m.collections.sieges.findOne({ marchId, tile: tidT });
+    expect(siege!.outcome).toBe('defender_win');
+    expect(siege!.attackerId).toBe('a');
   });
 
   it('friendly (same-family) unit on the cell does NOT trigger an encounter', async () => {

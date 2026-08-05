@@ -103,7 +103,7 @@ describe('POST /internal/mail/system/send', () => {
     expect(body).toEqual({ ok: true, recipientCount: 1 });
     expect(socialsvc.mail.size).toBe(1);
     expect(gateway.pushed).toHaveLength(1);
-    expect(gateway.pushed[0]).toMatchObject({ accountId: 'a', payload: { kind: 'mail_new' } });
+    expect(gateway.pushed[0]).toMatchObject({ accountId: 'a', payload: { kind: 'mail_new', hasAttachment: true } });
   });
 
   it('single target not found → ok:false, recipientCount 0, no push', async () => {

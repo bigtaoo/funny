@@ -329,6 +329,15 @@ export interface UnitBlueprint {
   taunt?: boolean;              // enemy findTarget prefers this unit
   undying?: boolean;            // survive first lethal hit at 1 HP (PvE)
   berserkerThreshold?: number;  // HP fraction 0–1; attack speed ×1.5 when HP < threshold
+  /**
+   * HP fraction 0–1; when current HP falls below this, `armorEnrageBonus` is added to effective
+   * armor (ShieldBearer T9 progression trait, ECONOMY_NUMBERS §4.4). Same "HP-threshold → dynamic
+   * getter" shape as `berserkerThreshold`, applied to armor instead of attack speed.
+   */
+  armorEnrageThreshold?: number;
+  armorEnrageBonus?: number;    // flat armor added while below armorEnrageThreshold
+  /** 0–100; % of actual damage dealt reflected back onto the attacker on hit (Lena T9 progression trait, same 0–100 convention as lifestealPct). Defensive trait: read from the *target's* blueprint, not carried in ProjectilePayload. */
+  reflectPct?: number;
 
   // ── Offensive traits (PvE) ────────────────────────────────────────────────
   onDeathSpawn?: { type: UnitType; count: number };
@@ -352,6 +361,8 @@ export interface UnitBlueprint {
   // ── Anna-side unit traits (A6) ────────────────────────────────────────────
   /** 2× damage when only one live enemy remains on target side (Max). */
   burstOnSingle?: boolean;
+  /** Multiplier applied by burstOnSingle (default 2 when burstOnSingle is set but this is absent). Max T9 progression trait bumps this to 2.5. */
+  burstOnSingleMult?: number;
   /** Marks the target on hit; marked units take +25 % damage from all sources for 3 s (Mara). */
   markEnemies?: boolean;
 }

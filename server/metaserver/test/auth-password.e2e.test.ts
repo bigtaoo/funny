@@ -192,4 +192,28 @@ describe.skipIf(!mongo)('metaserver auth password e2e', () => {
     const restoredLogin = await login('gina', 'secret123');
     expect(restoredLogin.statusCode).toBe(200);
   });
+
+  it('C5-b: deletedAt AND flags.banned both set on the same account → rejectIfBanned reports deleted (410), not banned (403)', async () => {
+    const { accountId, token } = body(await register('iris', 'secret123')).data;
+    const auth = { authorization: `Bearer ${token}` };
+
+    // Soft-delete first (deleteAccount doesn't itself check rejectIfBanned), then also ban the same
+    // account via the internal admin endpoint — real production code paths for setting each flag,
+    // landing both on one account doc.
+    const delRes = await app.inject({ method: 'DELETE', url: '/account', headers: auth });
+    expect(delRes.statusCode).toBe(200);
+
+    const banRes = await app.inject({
+      method: 'POST',
+      url: `/internal/accounts/${accountId}/ban`,
+      headers: { 'x-internal-key': 'test-internal-key' },
+    });
+    expect(banRes.statusCode).toBe(200);
+
+    // rejectIfBanned (service/base.ts) checks status.deletedAt before status.banned — with both flags
+    // set, the response must be 410 ACCOUNT_DELETED, never 403 ACCOUNT_BANNED.
+    const deletedAndBannedLogin = await login('iris', 'secret123');
+    expect(deletedAndBannedLogin.statusCode).toBe(410);
+    expect(body(deletedAndBannedLogin).error.code).toBe('ACCOUNT_DELETED');
+  });
 });

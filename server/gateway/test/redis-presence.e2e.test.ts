@@ -139,6 +139,7 @@ describe.skipIf(!probe)('Gateway.presenceOf cross-instance (two real Gateway ins
     const accountId = `local-only-${Math.random()}`;
     sockets.push(await connectWs(port, accountId));
     expect(await gwA.presenceOf([accountId])).toEqual({ [accountId]: true });
-    expect(await gwA.presenceOf([`ghost-${Math.random()}`])).toMatchObject({});
+    const ghostId = `ghost-${Math.random()}`;
+    expect(await gwA.presenceOf([ghostId])).toEqual({ [ghostId]: false });
   });
 });

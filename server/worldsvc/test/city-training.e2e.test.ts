@@ -152,6 +152,29 @@ describe.skipIf(!mongo)('worldsvc training-queue nextTrainingCompleteAt mirror e
     expect(doc!.resources!.ink).toBe(1_000_000);
   });
 
+  it('trainTroops rejects once troops+inTraining+qty would exceed troopCap → TROOP_CAP_REACHED', async () => {
+    const { x, y } = findCoord(45, 45);
+    await svc.joinWorld(W, 'a', x, y);
+    await fund('a');
+    // A fresh capital starts with troops already at troopCap (territory.ts joinWorld) — deliberately
+    // do NOT drain here, so any qty > 0 pushes troops+inTraining+qty over the cap.
+    await expect(svc.trainTroops(W, 'a', 1)).rejects.toMatchObject({ code: 'TROOP_CAP_REACHED' });
+    // rejected up-front: nothing was enqueued or debited.
+    expect((await rawDoc('a'))!.trainingQueue ?? []).toHaveLength(0);
+  });
+
+  it('trainTroops rejects once the queue is at its slot cap (TROOP_TRAIN_QUEUE_MAX, no drillYard) → BAD_REQUEST', async () => {
+    const { x, y } = findCoord(50, 50);
+    await svc.joinWorld(W, 'a', x, y);
+    await fund('a');
+    await drainTroops('a');
+    await svc.trainTroops(W, 'a', 100);
+    await svc.trainTroops(W, 'a', 100); // fills the queue to TROOP_TRAIN_QUEUE_MAX (2, no drillYard built)
+    await expect(svc.trainTroops(W, 'a', 100)).rejects.toMatchObject({ code: 'BAD_REQUEST' });
+    // the rejected 3rd attempt must not have been pushed onto the queue.
+    expect((await rawDoc('a'))!.trainingQueue).toHaveLength(2);
+  });
+
   it('a second trainTroops call (queue already non-empty) leaves nextTrainingCompleteAt at the existing head', async () => {
     const { x, y } = findCoord(15, 15);
     await svc.joinWorld(W, 'a', x, y);
@@ -222,7 +245,7 @@ describe.skipIf(!mongo)('worldsvc training-queue nextTrainingCompleteAt mirror e
     const doc = await rawDoc('a');
     expect(doc!.trainingQueue ?? []).toHaveLength(0);
     expect(doc!.nextTrainingCompleteAt).toBeUndefined();
-    expect(doc!.troops).toBeGreaterThanOrEqual(100);
+    expect(doc!.troops).toBe(100);
   });
 
   it('the shop troop_speedup path draining the queue also clears nextTrainingCompleteAt', async () => {

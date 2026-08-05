@@ -24,6 +24,9 @@ import {
   dailyRewardClaimable,
   makeDayKey,
   makeMonthKey,
+  weeklyPoints,
+  weeklyClaimableTiers,
+  WEEKLY_CHEST_THRESHOLDS,
 } from '../game/meta/retention';
 
 // ── DailyScene — daily check-in + daily tasks (B5, RETENTION_DESIGN) ────────────
@@ -39,13 +42,14 @@ export interface DailyCallbacks {
   getRetention?(): Promise<RetentionView>;
   onCheckin?(): Promise<{ day: number; reward: { kind: string; count: number; id?: string; bonusCoins?: number } }>;
   onClaimDaily?(): Promise<{ coins: number }>;
+  onClaimWeekly?(threshold: number): Promise<{ reward: { kind: string; count: number; id?: string } }>;
   /** Always resolves (never throws) — `ok: false` covers both "no ad available" and server rejection (cooldown/cap/error), distinguished by `key`. */
   onWatchAd?(): Promise<{ ok: true; coins: number } | { ok: false; key: TranslationKey }>;
 }
 
 interface Hit { x: number; y: number; w: number; h: number; fn: () => void }
 
-type DailyTab = 'checkin' | 'tasks' | 'ads';
+type DailyTab = 'checkin' | 'tasks' | 'weekly' | 'ads';
 
 /** Formats a remaining-ms duration as "mm:ss" for the ads-tab cooldown button label. */
 function formatCooldown(ms: number): string {
@@ -61,6 +65,7 @@ function rewardIcon(kind: string, id?: string): IconKind | null {
   if (kind === 'material') return id === 'lead' ? 'lead' : id === 'binding' ? 'binding' : 'scrap';
   if (kind === 'card') return 'cards';
   if (kind === 'equipment') return 'armor';
+  if (kind === 'skin') return 'brush'; // mirrors BattlePassScene's skin reward glyph
   return null; // stamina: plain "+N" text, no glyph
 }
 
@@ -173,6 +178,8 @@ export class DailyScene implements Scene {
       this.renderCheckin(contentX, contentTop, contentW, availH, save, nowMs);
     } else if (this.activeTab === 'tasks') {
       this.renderDailyTasks(contentX, contentTop, contentW, availH, save, nowMs);
+    } else if (this.activeTab === 'weekly') {
+      this.renderWeekly(contentX, contentTop, contentW, availH, save, nowMs);
     } else {
       this.renderAds(contentX, contentTop, contentW, availH, nowMs);
     }
@@ -190,12 +197,14 @@ export class DailyScene implements Scene {
     const { w, h } = this;
     const checkinBadge = nextCheckinDay(save, nowMs) !== null;
     const tasksBadge = dailyRewardClaimable(save, nowMs);
+    const weeklyBadge = weeklyClaimableTiers(save, nowMs).length > 0;
     const adsBadge = !!this.retention && this.retention.ads.watchedToday < this.retention.ads.cap && this.retention.ads.nextAvailableAt <= nowMs;
     const tabs: HubTab[] = [
       { label: t('daily.checkin.title'), active: this.activeTab === 'checkin', badge: checkinBadge },
       { label: t('daily.tasks.title'), active: this.activeTab === 'tasks', badge: tasksBadge },
+      { label: t('daily.weekly.title'), active: this.activeTab === 'weekly', badge: weeklyBadge },
     ];
-    const keys: DailyTab[] = ['checkin', 'tasks'];
+    const keys: DailyTab[] = ['checkin', 'tasks', 'weekly'];
     // Hidden entirely (not just disabled) on platforms without a real ad integration — no
     // mock/placeholder ad is ever shown to a real player (see IPlatform.hasRewardedAd).
     if (this.cb.onWatchAd) {
@@ -409,6 +418,85 @@ export class DailyScene implements Scene {
     }
   }
 
+  /**
+   * Weekly active chest tab (§12.3): three threshold tiers, each an independently claimable card —
+   * same card+progress+button layout as renderDailyTasks, just one card per WEEKLY_CHEST_THRESHOLDS
+   * entry instead of one per DailyTaskId. Reward defs (kind/count/id) come from the server
+   * (`this.retention.defs.weeklyChestTiers`); claimed/points state comes from `save` (works even
+   * before the first getRetention() round-trip resolves, same as the other tabs).
+   */
+  private renderWeekly(areaX: number, top: number, areaW: number, areaH: number, save: SaveData, nowMs: number): void {
+    const { h } = this;
+    const sec = txt(t('daily.weekly.title'), FS.title, C.dark, true);
+    sec.x = areaX + areaW * 0.05; sec.y = top;
+    this.container.addChild(sec);
+
+    const points = weeklyPoints(save, nowMs);
+    const claimableTiers = new Set(weeklyClaimableTiers(save, nowMs));
+    const weekKey = save.retention?.weekly?.weekKey;
+    const claimedTiers = new Set(weekKey ? save.retention?.weekly?.claimedTiers ?? [] : []);
+    const tierDefs = this.retention?.defs?.weeklyChestTiers ?? [];
+
+    const cardH = areaH * 0.22;
+    const cardY0 = top + sec.height + h * 0.015;
+    const PAD = areaX + areaW * 0.05;
+    const cardW = areaW * 0.9;
+
+    WEEKLY_CHEST_THRESHOLDS.forEach((threshold, i) => {
+      const def = tierDefs.find((td) => td.threshold === threshold);
+      const isClaimed = claimedTiers.has(threshold);
+      const isClaimable = claimableTiers.has(threshold);
+      const fillColor = isClaimed ? 0xe0ecd8 : isClaimable ? 0xfaf0c8 : 0xf5f0e8;
+      const cy = cardY0 + i * (cardH + h * 0.008);
+      const bg = sketchPanel(cardW, cardH, { fill: fillColor, border: isClaimable ? 0x8a7020 : C.line, width: isClaimable ? 1.8 : 1.2, seed: seedFor(PAD, cy, i) });
+      bg.x = PAD; bg.y = cy;
+      this.container.addChild(bg);
+
+      const label = txt(t('daily.weekly.pointsProgress', { n: Math.min(points, threshold), threshold }), snapFont(Math.round(cardH * 0.28)), 0x333333);
+      label.x = PAD + cardW * 0.05;
+      label.y = cy + cardH * 0.14;
+      this.container.addChild(label);
+
+      if (def) {
+        const icon = rewardIcon(def.reward.kind, def.reward.id);
+        const singleItem = def.reward.kind === 'equipment' || def.reward.kind === 'skin';
+        const iconY = cy + cardH * 0.58;
+        if (icon) {
+          const rc = Math.round(cardH * 0.3);
+          const ic = isMaterialKind(icon)
+            ? buildMaterialIcon(icon, rc, 0x336644)
+            : buildIcon(icon, rc, 0x336644);
+          ic.x = PAD + cardW * 0.05; ic.y = iconY;
+          this.container.addChild(ic);
+          if (!singleItem) {
+            const rt = txt(`+${def.reward.count}`, snapFont(Math.round(cardH * 0.26)), 0x336644);
+            rt.x = PAD + cardW * 0.05 + rc + cardW * 0.02; rt.y = iconY + rc * 0.5 - rt.height / 2;
+            this.container.addChild(rt);
+          }
+        }
+      }
+
+      const btnW = cardW * 0.32;
+      const btnH = cardH * 0.55;
+      const btnX = PAD + cardW - btnW - cardW * 0.03;
+      const btnY = cy + (cardH - btnH) / 2;
+      const btnFill = isClaimed ? 0xaaaaaa : isClaimable ? 0x336644 : 0xaaaaaa;
+      const btnBg = sketchPanel(btnW, btnH, { fill: btnFill, border: 0x666666, width: 1.5, seed: seedFor(btnX, btnY, 0) });
+      btnBg.x = btnX; btnBg.y = btnY;
+      const btnLabel = txt(
+        isClaimed ? t('daily.tasks.rewardClaimed') : t('daily.weekly.claim'),
+        snapFont(Math.round(btnH * 0.36)), 0xffffff,
+      );
+      btnLabel.anchor.set(0.5, 0.5);
+      btnLabel.x = btnX + btnW / 2; btnLabel.y = btnY + btnH / 2;
+      this.container.addChild(btnBg, btnLabel);
+
+      if (isClaimable && this.cb.onClaimWeekly) {
+        this.hits.push({ x: btnX, y: btnY, w: btnW, h: btnH, fn: () => void this.doClaimWeekly(threshold) });
+      }
+    });
+  }
+
   /** "Watch an ad for coins" tab (ECONOMY_NUMBERS §6.2): watched/cap counter + reward button, or a live cooldown countdown once the per-ad interval gate is active. */
   private renderAds(areaX: number, top: number, areaW: number, areaH: number, nowMs: number): void {
     const { h } = this;
@@ -492,6 +580,24 @@ export class DailyScene implements Scene {
     try {
       const r = await withTimeout(this.cb.onClaimDaily());
       this.showToast(t('daily.tasks.claimToast', { n: r.coins }));
+    } catch (e) {
+      this.showToast(e instanceof TimeoutError ? t('common.networkTimeout') : t('daily.tasks.claimFailed'), 'error');
+    } finally {
+      this.bt.stop();
+      void this.load();
+    }
+  }
+
+  private async doClaimWeekly(threshold: number): Promise<void> {
+    if (this.bt.busy || !this.cb.onClaimWeekly) return;
+    this.bt.start();
+    try {
+      const r = await withTimeout(this.cb.onClaimWeekly(threshold));
+      const rewardDesc =
+        r.reward.kind === 'material' ? t('daily.checkin.rewardMaterial', { n: r.reward.count })
+        : r.reward.kind === 'equipment' ? t('daily.checkin.rewardEquipment')
+        : t('daily.weekly.rewardSkin');
+      this.showToast(rewardDesc);
     } catch (e) {
       this.showToast(e instanceof TimeoutError ? t('common.networkTimeout') : t('daily.tasks.claimFailed'), 'error');
     } finally {

@@ -125,6 +125,14 @@ class FakeCommercial implements CommercialClient {
   async recordPaddleEvent(a: { transactionId: string; eventType: string; status?: string; accountId?: string; rawEvent: string }) {
     this.events.push({ transactionId: a.transactionId, eventType: a.eventType, status: a.status, accountId: a.accountId });
   }
+
+  /** Refund adjustment (ADR-045): records which transactionId was decremented, matching the real
+   *  service's transactionId → totalRechargeCents lookup closely enough to prove the webhook reaches it. */
+  refunds: string[] = [];
+  async paddleRefund(a: { transactionId: string }) {
+    this.refunds.push(a.transactionId);
+    return { ok: true as const, decrementedCents: 999 };
+  }
 }
 
 describe.skipIf(!mongo)('paddle routes e2e (checkout + webhook)', () => {
@@ -366,6 +374,24 @@ describe.skipIf(!mongo)('paddle routes e2e (checkout + webhook)', () => {
       expect(comm.subscriptions.get(accountId)).toBeUndefined();
       expect(comm.events).toHaveLength(1);
       expect(comm.events[0]!.eventType).toBe('transaction.payment_failed');
+    });
+
+    it('adjustment.created refund (approved) → calls commercial.paddleRefund with the refunded transactionId (ADR-045)', async () => {
+      const r = await postWebhook({
+        event_type: 'adjustment.created',
+        data: { action: 'refund', status: 'approved', transaction_id: 'tx-refunded-1' },
+      });
+      expect(r.statusCode).toBe(200);
+      expect(comm.refunds).toEqual(['tx-refunded-1']);
+    });
+
+    it('adjustment.updated refund not yet approved (e.g. pending_approval) → does not call paddleRefund', async () => {
+      const r = await postWebhook({
+        event_type: 'adjustment.updated',
+        data: { action: 'refund', status: 'pending_approval', transaction_id: 'tx-pending-1' },
+      });
+      expect(r.statusCode).toBe(200);
+      expect(comm.refunds).toEqual([]);
     });
 
     it('transaction.completed for starter_draw price → grants the pack + delivers the gacha result into the save (GACHA_DESIGN §6)', async () => {

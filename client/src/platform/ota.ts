@@ -29,7 +29,7 @@ const RUNNING_VERSION = String(
 );
 
 /** Dotted-numeric compare: true iff `a` is strictly newer than `b` (non-numeric parts treated as 0). */
-function isNewer(a: string, b: string): boolean {
+export function isNewer(a: string, b: string): boolean {
   const pa = a.split('.').map((n) => parseInt(n, 10) || 0);
   const pb = b.split('.').map((n) => parseInt(n, 10) || 0);
   for (let i = 0; i < Math.max(pa.length, pb.length); i++) {

@@ -16,6 +16,23 @@ export function makeMonthKey(tsMs: number): string {
   return new Date(tsMs).toISOString().slice(0, 7);
 }
 
+/**
+ * "2026-W32"  ISO-8601 week key (Monday-start weeks; week 1 = the week containing the year's
+ * first Thursday, standard ISO 8601 definition). First consumer: weekly active chest (§12.3,
+ * "周活跃点 = 每日任务点 weekKey 累计") — no other system in the codebase used a week-scoped key
+ * before this, only dayKey/monthKey (retention.ts, this file's original scope).
+ */
+export function makeWeekKey(tsMs: number): string {
+  const d = new Date(tsMs);
+  const date = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
+  const dayNum = date.getUTCDay() || 7; // Mon=1 .. Sun=7
+  date.setUTCDate(date.getUTCDate() + 4 - dayNum); // Thursday of this ISO week decides the ISO year
+  const isoYear = date.getUTCFullYear();
+  const yearStart = new Date(Date.UTC(isoYear, 0, 1));
+  const weekNo = Math.ceil(((date.getTime() - yearStart.getTime()) / 86400000 + 1) / 7);
+  return `${isoYear}-W${String(weekNo).padStart(2, '0')}`;
+}
+
 // ── Check-in calendar definition (ECONOMY_NUMBERS §12.1) ────────────────────────────────────
 
 // 'coins' kept only for backward-compat parsing of old save snapshots — the *primary* slot kind
@@ -108,6 +125,66 @@ export const DAILY_POINTS_THRESHOLD: number = 3;
 /** Full-point coin reward (daily cap: 5 coins × 30 = 150/month, §12.2 R1). */
 export const DAILY_COINS_REWARD: number = 5;
 
+// ── Weekly active chest (ECONOMY_NUMBERS §12.3, P1) ─────────────────────────────────────────
+//
+// Points accumulate from the same daily-task completions that feed DailyData.taskPoints (see
+// accrueRetentionTask below) — a "周活跃点 = 每日任务点 weekKey 累计" tally, week-scoped instead
+// of day-scoped and not reset by the daily coin claim. Three placeholder threshold tiers
+// (30/60/100), each independently claimable once reached, all within the same ISO week.
+//
+// 2026-08-05 implementation notes (two deviations from the original design-doc wording):
+//
+// 1. Threshold values. The doc's placeholder thresholds were 30/60/100, inherited unchanged from
+//    an earlier draft that assumed a richer weekly-point economy. Under the *actual* shipped daily
+//    task economy (DAILY_TASKS: 3 tasks × 1 point, capped at DAILY_POINTS_THRESHOLD=3/day), a
+//    7-day week accrues at most 21 points — 30 is unreachable, the feature would ship dead on
+//    arrival. Rebased to 9/15/21 (3/5/7 days of a full task day within the week), keeping the
+//    doc's "three escalating tiers, top tier ≈ a perfect week" intent but actually reachable.
+//
+// 2. Tier-3 reward kind. The doc's tier-3 example was "限定皮肤碎片 / 高价值材料" — a skin
+//    *fragment* currency. No fragment/shard concept exists anywhere in the codebase (skins are
+//    only ever granted whole, server/metaserver/src/skin.ts), and building one from scratch was
+//    out of scope for this pass. Substituted a whole non-limited shop skin instead (still
+//    delivers "top tier reward is a skin", just not a limited one) — kind: 'skin' below resolves
+//    via pickWeeklyChestSkin() at claim time, mirroring how CheckinReward's 'card'/'equipment'
+//    kinds defer the concrete pick to the caller. Each tier is a single reward (not the doc's
+//    tier2/tier3 "+ 材料" combo) to keep v1 simple; revisit both of these if real activity data
+//    says the tiers feel off.
+
+export type WeeklyChestRewardKind = 'material' | 'equipment' | 'skin';
+
+export interface WeeklyChestReward {
+  kind: WeeklyChestRewardKind;
+  count: number;
+  /** Material id (scrap/lead/binding), only set when kind === 'material'. */
+  id?: string;
+}
+
+export interface WeeklyChestTierDef {
+  threshold: number;
+  reward: WeeklyChestReward;
+}
+
+export const WEEKLY_CHEST_TIERS: WeeklyChestTierDef[] = [
+  { threshold: 9,  reward: { kind: 'material',  count: 20, id: 'lead' } },     // 中级材料包（3 天满勤）
+  { threshold: 15, reward: { kind: 'equipment', count: 1 } },                  // 低级装备，entry-tier equip_t1（5 天满勤）
+  { threshold: 21, reward: { kind: 'skin',      count: 1 } },                  // 限定皮肤 → 简化为一件商城皮肤，见上方实现说明（7 天满勤/满周）
+];
+
+/**
+ * Tier-3 skin pool: deliberately restricted to the plain shop-tier skins, NOT the rarer Anna
+ * gacha skins (skin_e1/e2/l1, epic/legendary) that share the same GACHA_CATALOG 'skin' category —
+ * pulling from the full category via pickRandomCatalogItem('skin') would make a repeatable free
+ * weekly reward hand out a legendary skin, far too generous for this tier.
+ */
+export const WEEKLY_CHEST_SKIN_POOL = ['skin_shop_c1', 'skin_shop_r1'] as const;
+
+/** Uniform random pick from WEEKLY_CHEST_SKIN_POOL. `rng` is injectable for deterministic tests (mirrors pickRandomCatalogItem). */
+export function pickWeeklyChestSkin(rng: (max: number) => number = (max) => Math.floor(Math.random() * max)): string {
+  const idx = Math.min(WEEKLY_CHEST_SKIN_POOL.length - 1, Math.max(0, rng(WEEKLY_CHEST_SKIN_POOL.length)));
+  return WEEKLY_CHEST_SKIN_POOL[idx] ?? WEEKLY_CHEST_SKIN_POOL[0];
+}
+
 // ── Save data types (SaveData.retention sub-block) ──────────────────────────────────
 
 export interface CheckinData {
@@ -124,9 +201,16 @@ export interface DailyData {
   rewardClaimed: boolean;  // whether the daily full-point coin reward has been claimed
 }
 
+export interface WeeklyData {
+  weekKey: string;         // "2026-W32"
+  points: number;          // accumulated weekly points (see accrueRetentionTask)
+  claimedTiers: number[];  // WEEKLY_CHEST_TIERS thresholds claimed this ISO week
+}
+
 export interface RetentionSave {
   checkin?: CheckinData;
   daily?: DailyData;
+  weekly?: WeeklyData;
 }
 
 // ── Lazy boundary reset (called on every server read/write) ────────────────────────────────────
@@ -138,10 +222,12 @@ export interface RetentionSave {
 export function resetStaleRetention(retention: RetentionSave | undefined, tsMs: number): RetentionSave {
   const monthKey = makeMonthKey(tsMs);
   const dayKey = makeDayKey(tsMs);
+  const weekKey = makeWeekKey(tsMs);
   const r: RetentionSave = retention ?? {};
   let changed = false;
   let checkin = r.checkin;
   let daily = r.daily;
+  let weekly = r.weekly;
   if (checkin && checkin.monthKey !== monthKey) {
     checkin = undefined;
     changed = true;
@@ -150,10 +236,15 @@ export function resetStaleRetention(retention: RetentionSave | undefined, tsMs: 
     daily = undefined;
     changed = true;
   }
+  if (weekly && weekly.weekKey !== weekKey) {
+    weekly = undefined;
+    changed = true;
+  }
   if (!changed) return r;
   const out: RetentionSave = {};
   if (checkin) out.checkin = checkin;
   if (daily) out.daily = daily;
+  if (weekly) out.weekly = weekly;
   return out;
 }
 
@@ -202,11 +293,29 @@ export function dailyRewardClaimable(r: RetentionSave | undefined, tsMs: number)
   return r.daily.taskPoints >= DAILY_POINTS_THRESHOLD && !r.daily.rewardClaimed;
 }
 
+/** Weekly points accrued so far this ISO week (0 if none recorded / stale). */
+export function weeklyPoints(r: RetentionSave | undefined, tsMs: number): number {
+  const weekKey = makeWeekKey(tsMs);
+  if (!r?.weekly || r.weekly.weekKey !== weekKey) return 0;
+  return r.weekly.points;
+}
+
+/** Chest tier thresholds reached this ISO week but not yet claimed (0-3 entries). */
+export function weeklyClaimableTiers(r: RetentionSave | undefined, tsMs: number): number[] {
+  const points = weeklyPoints(r, tsMs);
+  const weekKey = makeWeekKey(tsMs);
+  const claimed = r?.weekly?.weekKey === weekKey ? r.weekly.claimedTiers : [];
+  return WEEKLY_CHEST_TIERS
+    .filter((t) => points >= t.threshold && !claimed.includes(t.threshold))
+    .map((t) => t.threshold);
+}
+
 /** Any retention reward claimable → show lobby red dot. */
 export function hasRetentionClaimable(save: SaveData, tsMs: number): boolean {
   const r = save.retention;
   if (nextCheckinDay(r, tsMs) !== null) return true;
   if (dailyRewardClaimable(r, tsMs)) return true;
+  if (weeklyClaimableTiers(r, tsMs).length > 0) return true;
   return false;
 }
 
@@ -232,7 +341,17 @@ export function accrueRetentionTask(
   const completedTasks = { ...prev.completedTasks, [taskId]: def.points };
   const taskPoints = Math.min(DAILY_POINTS_THRESHOLD, prev.taskPoints + def.points);
   const next: DailyData = { ...prev, completedTasks, taskPoints };
-  return { ...(r ?? {}), daily: next };
+
+  // Weekly active chest (§12.3): "周活跃点 = 每日任务点 weekKey 累计" — same task completion,
+  // same idempotency guard above, just tallied into a week-scoped bucket instead of (in addition
+  // to) the day-scoped one, uncapped by DAILY_POINTS_THRESHOLD (that cap only gates the *daily*
+  // coin reward) and capped instead at the top chest tier so it can't run away past 100.
+  const weekKey = makeWeekKey(tsMs);
+  const prevWeekly: WeeklyData = r?.weekly?.weekKey === weekKey ? r.weekly : { weekKey, points: 0, claimedTiers: [] };
+  const topTier = WEEKLY_CHEST_TIERS[WEEKLY_CHEST_TIERS.length - 1]?.threshold ?? Infinity;
+  const weekly: WeeklyData = { ...prevWeekly, points: Math.min(topTier, prevWeekly.points + def.points) };
+
+  return { ...(r ?? {}), daily: next, weekly };
 }
 
 // ── Claim pure functions (§4.3, caller is responsible for DB writes) ────────────────────────────────────
@@ -282,4 +401,35 @@ export function claimDailyReward(
   if (r.daily.taskPoints < DAILY_POINTS_THRESHOLD) return { ok: false, error: 'NOT_REACHED' };
   if (r.daily.rewardClaimed) return { ok: false, error: 'ALREADY_CLAIMED' };
   return { ok: true, coins: DAILY_COINS_REWARD };
+}
+
+export type WeeklyChestClaimError = 'NOT_REACHED' | 'ALREADY_CLAIMED' | 'BAD_REQUEST';
+
+export interface WeeklyChestClaimOk {
+  ok: true;
+  threshold: number;
+  reward: WeeklyChestReward;
+  newWeekly: WeeklyData;
+}
+
+/**
+ * Claims one weekly chest tier (mirrors claimBpReward's "array .includes() judges repeat" shape
+ * — closer fit than claimCheckinDay's single-slot-per-day gate, since all three tiers can be
+ * claimed independently within the same week once each is reached). Caller is responsible for
+ * writing to DB and delivering `reward` (see liveops.ts claimWeeklyChest for the per-kind
+ * delivery, mirroring claimCheckin's material/equipment/card branches).
+ */
+export function claimWeeklyTier(
+  r: RetentionSave | undefined,
+  threshold: number,
+  tsMs: number,
+): WeeklyChestClaimOk | { ok: false; error: WeeklyChestClaimError } {
+  const tierDef = WEEKLY_CHEST_TIERS.find((t) => t.threshold === threshold);
+  if (!tierDef) return { ok: false, error: 'BAD_REQUEST' };
+  const weekKey = makeWeekKey(tsMs);
+  const weekly: WeeklyData = r?.weekly?.weekKey === weekKey ? r.weekly : { weekKey, points: 0, claimedTiers: [] };
+  if (weekly.points < threshold) return { ok: false, error: 'NOT_REACHED' };
+  if (weekly.claimedTiers.includes(threshold)) return { ok: false, error: 'ALREADY_CLAIMED' };
+  const newWeekly: WeeklyData = { ...weekly, claimedTiers: [...weekly.claimedTiers, threshold] };
+  return { ok: true, threshold, reward: tierDef.reward, newWeekly };
 }

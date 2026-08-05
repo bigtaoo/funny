@@ -53,13 +53,16 @@ export type EventView =
 export interface RetentionView {
   checkin: { monthKey: string; claimedDays: number[] } | null;
   daily: { dayKey: string; completedTasks: Record<string, number>; taskPoints: number; rewardClaimed: boolean } | null;
+  /** Weekly active chest progress (§12.3, ISO week key). */
+  weekly: { weekKey: string; points: number; claimedTiers: number[] } | null;
   defs: {
     rewards: { kind: string; count: number; id?: string; bonusCoins?: number }[];
     tasks: { id: string; points: number }[];
     pointsThreshold: number;
     dailyCoinsReward: number;
+    weeklyChestTiers: { threshold: number; reward: { kind: string; count: number; id?: string } }[];
   };
-  claimable: { checkin: boolean; daily: boolean };
+  claimable: { checkin: boolean; daily: boolean; weeklyTiers: number[] };
   ads: { watchedToday: number; cap: number; rewardCoins: number; cooldownMs: number; nextAvailableAt: number };
 }
 
