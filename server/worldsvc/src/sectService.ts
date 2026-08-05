@@ -387,12 +387,17 @@ export class SectService {
     accountId: string,
     senderName: string,
     body: string,
+    region: ChatRegion = 'global',
   ): Promise<SectMessageView> {
     const { cols } = this.deps;
     const mem = await this.socialsvc.getMember(accountId);
     if (!mem) throw new SlgError('NOT_IN_SECT');
     if (!mem.sectId) throw new SlgError('NOT_IN_SECT');
     if (!body || body.length > FAMILY_MSG_BODY_MAX) throw new SlgError('BAD_REQUEST');
+
+    // CONTENT_MODERATION_DESIGN.md CM5: sect chat is ephemeral like DM/family/world chat —
+    // mask on hit, never reject delivery (mirrors nationChannelService.ts's sendMessage).
+    body = censorChat(body, region, this.deps.wordlists).text;
 
     const sectId = mem.sectId;
     const ts = this.deps.now();

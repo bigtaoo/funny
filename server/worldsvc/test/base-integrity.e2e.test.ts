@@ -4,8 +4,9 @@
 //   capital that predates the 3×3 change):
 //     ① fresh join → exactly 9 base cells owned by the player, territoryCount 9;
 //     ② join is idempotent for an intact base (no re-placement, same anchor);
-//     ③ getMe on a corrupt base (footprint not a full same-owner 3×3) → reports joined:false
-//        (read-only; no deletion in the read path);
+//     ③ getMe on a corrupt base (footprint not a full same-owner 3×3) → stays read-only, still
+//        reports joined:true (the playerWorld doc is intact; joined:false only happens when that
+//        doc is entirely absent, see core/map.ts) — no heal/deletion on the read path;
 //     ④ joinWorld on a corrupt/legacy base → purges ALL the player's stale world data and re-places
 //        a proper 3×3, so the player re-enters as a brand-new user.
 // Requires `cd server && docker compose up -d`.

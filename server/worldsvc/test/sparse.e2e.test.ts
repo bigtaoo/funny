@@ -219,15 +219,17 @@ describe.skipIf(!mongo)('worldsvc getMapSparse e2e', () => {
     await svc.joinWorld(W, 'player-a', pos.x, pos.y);
 
     const view = await svc.getMapSparse(W, 'player-a', pos.x, pos.y, 5, 'thin');
-    // most tiles in the 5x5 area are unoccupied; tiles contains only player-a's base (1 tile)
-    expect(view.tiles.length).toBeLessThan(11 * 11); // far fewer than the full grid count
-    for (const t of view.tiles) {
-      // every returned tile must be an occupied tile (mine or no flags but has an owner)
-      const isOwned = t.mine === true || (!t.mine && !t.ally && !t.allySect);
-      expect(isOwned).toBe(true);
+    // The only occupied cells in the whole 11x11 viewport are the base's ADR-025 3x3 footprint
+    // (anchor + 8 ring cells around pos) — an exact match, so a leaked unowned tile would fail this.
+    const expectedCoords = new Set<string>();
+    for (let dy = -1; dy <= 1; dy++) {
+      for (let dx = -1; dx <= 1; dx++) expectedCoords.add(`${pos.x + dx}:${pos.y + dy}`);
     }
-    // the base tile itself must appear in the result
-    expect(view.tiles.some((t) => t.x === pos.x && t.y === pos.y)).toBe(true);
+    expect(view.tiles.length).toBe(9);
+    for (const t of view.tiles) {
+      expect(expectedCoords.has(`${t.x}:${t.y}`)).toBe(true);
+      expect(t.mine).toBe(true);
+    }
   });
 
   it('lod field echoed back correctly', async () => {
