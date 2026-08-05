@@ -341,7 +341,7 @@ describe('POST /internal/cards/grant', () => {
       payload: { accountId: 'a', instance: card('c1', { level: 3 }), orderId: 'o1' },
     });
     expect(res2.statusCode).toBe(200);
-    expect(JSON.parse(res2.payload)).toEqual({ ok: true });
+    expect(JSON.parse(res2.payload)).toEqual({ ok: true, deduped: true });
     expect(saves.docs.get('a')!.save.cardInvCount).toBe(countAfterFirst);
   });
 });
