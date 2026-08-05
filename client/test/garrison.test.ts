@@ -203,21 +203,36 @@ describe('defenderBuildings — pre-placed defender buildings', () => {
   });
 
   it('arrow tower defender building attacks attacker units that enter its range', () => {
-    // Place an ArrowTower; spawn an attacker infantry on the same col.
-    // After enough ticks the infantry should take damage.
+    // Place an ArrowTower; spawn an attacker unit on the same col by playing a card from the
+    // attacker's (Bottom) hand. After enough ticks the tower should have damaged it.
     const level = baseLevel({
       defenderBuildings: [{ buildingType: BuildingType.ArrowTower, col: 0 }],
       waves: { entries: [] },
+      startInk: 20, // enough to afford any starting-hand unit card immediately (default is 0)
     });
     const cfg: GameConfig = { ...makeSiegeConfig(level), level };
     const engine = createGameEngine(cfg);
+    engine.tick(TICK_DT); // settle initial hand draw
 
-    // Manually spawn a Bottom (attacker) infantry on col 0 via a forged command.
-    // Run many ticks so the attacker infantry walks into tower range.
+    const slots = engine.state.bottomPlayer.hand.slots;
+    const slot = slots.findIndex(s => s?.card?.unitType !== undefined);
+    expect(slot).toBeGreaterThanOrEqual(0); // sanity: the hand actually has a playable unit card
+    engine.playCard(slot, 0);
+    engine.tick(TICK_DT); // play_card is only processed on the next tick's command pass
+
+    const attacker = Array.from(engine.state.board.units.values()).find(u => u.side === Side.Bottom);
+    expect(attacker).toBeDefined();
+    const startHp = attacker!.hp;
+    const attackerId = attacker!.id;
+
     for (let i = 0; i < 300; i++) engine.tick(TICK_DT);
 
-    // The tower is there and functional (doesn't crash). No further assertion needed
-    // since the attacker has no units unless we give them cards.
+    // The tower must actually have dealt damage: the attacker either died or lost HP relative
+    // to its spawn value (a bare "engine didn't crash" check has no assertion power here).
+    const after = engine.state.board.units.get(attackerId);
+    const damaged = !after || after.isDead || after.hp < startHp;
+    expect(damaged).toBe(true);
+
     const topBuildings = Array.from(engine.state.board.buildings.values())
       .filter(b => b.side === Side.Top && !b.isDead);
     expect(topBuildings.length).toBeGreaterThan(0);
