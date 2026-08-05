@@ -158,7 +158,7 @@
 | Max | 先锋终结者 | 现有 `burstOnSingle` 倍率 ×2→×2.5 | 数值增强既有技能（新增 `burstOnSingleMult` 参数化原硬编码 `×2`） |
 | Infantry | 标尺/全能 | 不变，保持通用 +1 出兵 | 它是 cp/ink=1.0 的平衡基准单位，故意不特化 |
 
-实现：`server/engine/src/balance/progression.ts` `PER_UNIT_T9_TRAITS`（可辨识联合 `UnitT9Trait`），`applyUnitLevels` 在 T9 判定处优先查这张表，查不到（目前只有 Infantry）才落回通用 `bonusSpawn`。PvP 硬墙不受影响（`buildPvpBlueprints` 从不调用 `applyUnitLevels`，新字段在 PvP 蓝图里恒为 0/undefined，测试覆盖）。测试：`server/engine/src/__tests__/unit_t9_traits.test.ts`（新增，反伤/护甲随血量/burstOnSingleMult 三个组合数值验证）+ `pvp_hardwall.test.ts` 更新（Archer/ShieldBearer 的 T9 断言改成各自专属效果，不再是统一 `+1 spawnCount`）。
+实现：`server/engine/src/balance/progression.ts` `PER_UNIT_T9_TRAITS`（可辨识联合 `UnitT9Trait`），`applyUnitLevels` 在 T9 判定处优先查这张表，查不到（目前只有 Infantry）才落回通用 `bonusSpawn`。PvP 硬墙不受影响（`buildPvpBlueprints` 从不调用 `applyUnitLevels`，新字段在 PvP 蓝图里恒为 0/undefined，测试覆盖）。测试：`server/engine/src/__tests__/unit_t9_traits.test.ts`（14 例，五个单位逐一在真实 CombatSystem tick 里跑一遍——不只是查 blueprint 字段，Archer 射程+1 真的能打到多 1 格外的目标、Mara 减速真的让目标变慢、Lena 反伤连**建筑攻击者**（箭塔）也覆盖到、护甲随血量提升的数值明确标注"故意不受装备护甲上限约束"）+ `pvp_hardwall.test.ts` 更新（Archer/ShieldBearer 的 T9 断言改成各自专属效果，不再是统一 `+1 spawnCount`）。
 
 > 差异化做的时候，三档**解锁节点（T3/T6/T9）不变**，只替换每档的具体效果；通用三档作为未差异化单位的兜底。仍仅 PvE 注入。
 
@@ -451,7 +451,7 @@ F2P 金币龙头：广告（主力）+ 战斗 / 活动 / 称号 / 任务。
 - **两处相对原提案的修正（实现时发现原占位数值/内容有硬伤）**：
   1. **阈值从 30/60/100 改成 9/15/21**——每日任务点上限是 3（3 个任务各 1 分），一周顶多攒 21 分，原来的 30 分永远碰不到，功能会生下来就是死的。改成"3/5/7 天满勤"三档，保留"递进三档、顶档=近乎满周"的设计意图，但真的够得着。
   2. **三档"限定皮肤碎片"改成一件普通商城皮肤**——全仓库没有"碎片"这个货币概念（皮肤只支持整件发放，`server/metaserver/src/skin.ts`），从零建一套碎片累计+兑换子系统超出这次的范围；改成直接发一件 `skin_shop_*`（非限定，不含 gacha 稀有皮肤 `skin_e1/e2/l1`，避免免费周常白送 legendary）。若后续觉得不够有分量，再考虑做真正的碎片系统。
-- 实现：`server/shared/src/retention.ts`（`makeWeekKey` 新增 ISO 周算法、`WeeklyData`/`WEEKLY_CHEST_TIERS`/`claimWeeklyTier`/`pickWeeklyChestSkin`）→ `server/metaserver/src/service/liveops.ts`（`getRetention` 附带 weekly 字段、新增 `claimWeeklyChest`）→ `POST /retention/weekly/claim`（`server/contracts/openapi/paths/liveops.yml`）→ 客户端 `DailyScene` 新增第四个 tab（复用 `renderDailyTasks` 的卡片+进度条+领取按钮样式，未新建场景）。测试：`server/shared/test/retention.test.ts`（+18 例，含 ISO 周边界）、`server/metaserver/test/retention.e2e.test.ts`（+13 例，真实 Mongo）、`client/test/retention.test.ts`（+11 例）、`client/test/ui/dailySceneWeeklyTab.ui.ts`（新增，4 例）。
+- 实现：`server/shared/src/retention.ts`（`makeWeekKey` 新增 ISO 周算法、`WeeklyData`/`WEEKLY_CHEST_TIERS`/`claimWeeklyTier`/`pickWeeklyChestSkin`）→ `server/metaserver/src/service/liveops.ts`（`getRetention` 附带 weekly 字段、新增 `claimWeeklyChest`）→ `POST /retention/weekly/claim`（`server/contracts/openapi/paths/liveops.yml`）→ 客户端 `DailyScene` 新增第四个 tab（复用 `renderDailyTasks` 的卡片+进度条+领取按钮样式，未新建场景）。测试：`server/shared/test/retention.test.ts`（+18 例，含 ISO 周边界）、`server/metaserver/test/retention.e2e.test.ts`（+13 例，真实 Mongo）、`client/test/retention.test.ts`（+11 例）、`client/test/ui/dailySceneWeeklyTab.ui.ts`（新增，8 例，含三种奖励类型各自的领取 toast 文案 + 领取失败的 error toast/busy 复位）。
 
 ### 12.4 可调参数（并入总表口径）
 

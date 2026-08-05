@@ -11,6 +11,7 @@ import { makeNewSave } from '../../src/game/meta/SaveData';
 import type { SaveData } from '../../src/game/meta/SaveData';
 import type { RetentionView } from '../../src/net/ApiClient';
 import { makeWeekKey } from '../../src/game/meta/retention';
+import { setToastSink } from '../../src/net/log';
 
 // The scene reads Date.now() internally (no injectable clock) — retention.weekly.weekKey must be
 // the REAL current ISO week key, or weeklyPoints()/weeklyClaimableTiers() treat it as stale and
@@ -165,5 +166,80 @@ describe('DailyScene — weekly active chest tab', () => {
 
     expect(findText(scene.container, (txt) => txt === t('daily.tasks.rewardClaimed'))).not.toBeNull();
     scene.destroy();
+  });
+});
+
+describe('DailyScene — weekly chest claim toast per reward kind', () => {
+  function claimViaLastHit(scene: DailyScene): void {
+    const s = scene as unknown as Internals;
+    s.activeTab = 'weekly';
+    s.render();
+    s.hits[s.hits.length - 1]!.fn();
+  }
+
+  it('material reward toast', async () => {
+    const save: SaveData = { ...makeNewSave(), retention: { weekly: { weekKey: CURRENT_WEEK_KEY, points: 9, claimedTiers: [] } } };
+    let toast: string | null = null;
+    setToastSink((text) => { toast = text; });
+    const scene = buildDaily(save, {
+      async onClaimWeekly() { return { reward: { kind: 'material', count: 20, id: 'lead' } }; },
+    });
+    await flush();
+    claimViaLastHit(scene);
+    await flush();
+
+    expect(toast).toBe(t('daily.checkin.rewardMaterial', { n: 20 }));
+    scene.destroy();
+    setToastSink(() => {});
+  });
+
+  it('equipment reward toast', async () => {
+    const save: SaveData = { ...makeNewSave(), retention: { weekly: { weekKey: CURRENT_WEEK_KEY, points: 15, claimedTiers: [9] } } };
+    let toast: string | null = null;
+    setToastSink((text) => { toast = text; });
+    const scene = buildDaily(save, {
+      async onClaimWeekly() { return { reward: { kind: 'equipment', count: 1, id: 'eq_t1_sword' } }; },
+    });
+    await flush();
+    claimViaLastHit(scene);
+    await flush();
+
+    expect(toast).toBe(t('daily.checkin.rewardEquipment'));
+    scene.destroy();
+    setToastSink(() => {});
+  });
+
+  it('skin reward toast', async () => {
+    const save: SaveData = { ...makeNewSave(), retention: { weekly: { weekKey: CURRENT_WEEK_KEY, points: 21, claimedTiers: [9, 15] } } };
+    let toast: string | null = null;
+    setToastSink((text) => { toast = text; });
+    const scene = buildDaily(save, {
+      async onClaimWeekly() { return { reward: { kind: 'skin', count: 1, id: 'skin_shop_c1' } }; },
+    });
+    await flush();
+    claimViaLastHit(scene);
+    await flush();
+
+    expect(toast).toBe(t('daily.weekly.rewardSkin'));
+    scene.destroy();
+    setToastSink(() => {});
+  });
+
+  it('a rejected claim (e.g. already claimed by a concurrent tab) shows an error toast and clears busy, without crashing', async () => {
+    const save: SaveData = { ...makeNewSave(), retention: { weekly: { weekKey: CURRENT_WEEK_KEY, points: 9, claimedTiers: [] } } };
+    let toastKind: string | null = null;
+    setToastSink((_text, kind) => { toastKind = kind; });
+    const scene = buildDaily(save, {
+      async onClaimWeekly() { throw new Error('409 ALREADY_CLAIMED'); },
+    });
+    await flush();
+    const s = scene as unknown as Internals;
+    claimViaLastHit(scene);
+    await flush();
+
+    expect(toastKind).toBe('error');
+    expect(s.bt.busy).toBe(false);
+    scene.destroy();
+    setToastSink(() => {});
   });
 });
