@@ -136,6 +136,21 @@ describe.skipIf(!mongo)('equipment backend e2e', () => {
     expect((await readInv())[r.data.instance.id]).toBeTruthy();
   });
 
+  it('craft stamps provenance: sourceType="craft" + obtainedAt≈now (ITEM_IDENTITY_DESIGN.md, 2026-08-04)', async () => {
+    await seedMaterials({ scrap: 20 });
+    const before = Date.now();
+    const r = body(await craft('wp_pencil', 'ik-provenance'));
+    const after = Date.now();
+    expect(r.data.instance.sourceType).toBe('craft');
+    expect(r.data.instance.obtainedAt).toBeGreaterThanOrEqual(before);
+    expect(r.data.instance.obtainedAt).toBeLessThanOrEqual(after);
+    // Round-trips through the equipmentInstances collection (toInstanceDoc/fromInstanceDoc), not just the
+    // one-shot mutation response.
+    const stored = (await readInv())[r.data.instance.id]!;
+    expect(stored.sourceType).toBe('craft');
+    expect(stored.obtainedAt).toBe(r.data.instance.obtainedAt);
+  });
+
   it('craft rarity secondary affixes: wp_pen (fine) rolls 1 secondary affix', async () => {
     await seedMaterials({ scrap: 20, lead: 10 });
     const r = body(await craft('wp_pen', 'ik2')); // fine, recipe scrap:8 lead:2, 1 secondary affix

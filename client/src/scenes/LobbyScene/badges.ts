@@ -232,8 +232,8 @@ export function BadgesMixin<TBase extends LobbySceneBaseCtor>(Base: TBase): TBas
 
       if (this.retentionBadge)      drawDot(this.dailyBtnRect);
       if (this.mailBadge > 0)       drawDot(this.mailStripRect);
-      if (this.achievementBadge)    drawDot(this.achieveStripRect);
-      // Events strip item has no badge (it's a contextual entry, not a reward).
+      // Events / feedback strip items have no badge — feedback submission has no "unread" concept
+      // (UI_DESIGN.md §4.1.1), events is a contextual entry rather than a reward.
     }
   };
 }

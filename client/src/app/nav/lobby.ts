@@ -1,5 +1,6 @@
 // Lobby navigation + social/achievement/retention/events red-dot refreshers. Extracted from createAppCore.
 import * as analytics from '../../analytics';
+import { requestFeedbackDialog } from '../../net/log';
 import { t, type TranslationKey } from '../../i18n';
 import { isFirstChapterCleared } from '../../game/campaign/progress';
 import { hasClaimable, reachedTierKeys } from '../../game/meta/achievements';
@@ -194,6 +195,7 @@ export function createLobbyNav(ctx: AppCtx): Pick<Nav, 'goLobby'> {
       onOpenCards() { analytics.click('lobby.cards'); withGuide('cards', 'guide.cards.title', 'guide.cards.body', () => nav.goCardRoster(goLobby)); },
       onOpenStats() { analytics.click('lobby.stats'); nav.goStats(); },
       ...(online ? { onOpenAchievements: () => nav.goAchievements(goLobby) } : {}),
+      ...(online ? { onOpenFeedback: () => { analytics.click('lobby.feedback'); requestFeedbackDialog(); } } : {}),
       ...(online ? { onOpenDaily: () => { analytics.click('lobby.daily'); withGuide('daily', 'guide.daily.title', 'guide.daily.body', () => nav.goDaily()); }, onOpenEvents: () => { analytics.click('lobby.events'); nav.goEvents(); } } : {}),
       onOpenWorld() { analytics.click('lobby.world'); withGuide('world', 'guide.world.title', 'guide.world.body', () => nav.goWorldEntry()); },
       ...(online ? { onOpenAuction: () => withGuide('auction', 'guide.auction.title', 'guide.auction.body', () => nav.goAuctionFromLobby()) } : {}),

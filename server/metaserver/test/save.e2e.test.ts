@@ -68,7 +68,11 @@ describe.skipIf(!mongo)('metaserver save-service e2e', () => {
   });
 
   it('GET /save with token → auto-creates new save rev 1 (starter roster grant), coins 0', async () => {
+    // Starter cards are actually granted inside /auth/device itself (maybeGrantStarterCards), not by this
+    // GET — capture the provenance window around authDevice(), not around the read.
+    const before = Date.now();
     const { token, accountId } = await authDevice('device-2');
+    const after = Date.now();
     const r = await app.inject({
       method: 'GET',
       url: '/save',
@@ -79,6 +83,14 @@ describe.skipIf(!mongo)('metaserver save-service e2e', () => {
     expect(save.rev).toBe(1); // account creation grants the starter card roster (CC-2) → one write → fresh save is rev 1
     expect(save.accountId).toBe(accountId);
     expect(save.wallet.coins).toBe(0);
+    // Provenance (ITEM_IDENTITY_DESIGN.md, 2026-08-04): the 3 starter cards are tagged sourceType='starter'.
+    const starterCards: Array<{ sourceType?: string; obtainedAt?: number }> = Object.values(save.cardInv);
+    expect(starterCards).toHaveLength(3);
+    for (const c of starterCards) {
+      expect(c.sourceType).toBe('starter');
+      expect(c.obtainedAt).toBeGreaterThanOrEqual(before);
+      expect(c.obtainedAt).toBeLessThanOrEqual(after);
+    }
   });
 
   it('concurrent flag writes with the same starting rev → both eventually apply (mutateSave retries internally, no client-visible conflict)', async () => {

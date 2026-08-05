@@ -20,6 +20,7 @@ import { sidebarNavW } from '../../ui/widgets/HubTabs';
 import type { WorldApiClient, AuctionView } from '../../net/WorldApiClient';
 import { WorldApiError } from '../../net/WorldApiClient';
 import type { SaveData, EquipmentInstance, CardInstance } from '../../game/meta/SaveData';
+import { skinDisplayName } from '../../game/meta/skinDefs';
 import { caretDisplay } from '../../ui/inputDisplay';
 import { ScrollTapGesture } from '../../ui/scrollTapGesture';
 import { wheelScrollY } from '../../ui/wheelScroll';
@@ -54,7 +55,7 @@ export interface AuctionSceneCallbacks {
 }
 
 export type AucTab = 'all' | 'mine' | 'bids';
-export type ItemClass = 'material' | 'equipment' | 'card';
+export type ItemClass = 'material' | 'equipment' | 'card' | 'skin';
 
 export const HUD_H = 50;
 // 1.5x the original 44 — approved 15.07.2026 category-bar enlargement pass.
@@ -75,7 +76,7 @@ export const MATERIALS = ['scrap', 'lead', 'binding'] as const;
 // otherwise createAuction throws BAD_REQUEST. No longer user-selectable (all listings run 72h).
 export const AUCTION_DURATION_SEC = 72 * 3600;
 // Category filter for the market tab — matches AuctionView.itemType ('' = no filter).
-export const FILTERS = ['', 'material', 'equipment', 'card'] as const;
+export const FILTERS = ['', 'material', 'equipment', 'card', 'skin'] as const;
 export type AucFilter = typeof FILTERS[number];
 
 // Background-poll cadence. auctionsvc is a pure REST service with no push channel (own DB, port 18086,
@@ -136,6 +137,7 @@ export class AuctionSceneBase {
   protected createMaterial: typeof MATERIALS[number] = 'scrap';
   protected createEquipId: string | null = null; // selected equipment instance (class='equipment')
   protected createCardId: string | null = null;   // selected card instance (class='card')
+  protected createSkinId: string | null = null;   // selected skin id (class='skin')
   protected createSaleMode: 'fixed' | 'auction' = 'fixed';
   protected createQty = 1;
   protected createPrice = 10;        // fixed buy-now unit price
@@ -347,6 +349,7 @@ export class AuctionSceneBase {
   protected itemKind(itemType: string | undefined, material?: string): IconKind {
     if (itemType === 'equipment') return 'armor';
     if (itemType === 'card') return 'cards';
+    if (itemType === 'skin') return 'brush';
     return (material ?? 'scrap') as IconKind;
   }
 
@@ -364,6 +367,10 @@ export class AuctionSceneBase {
     if (auc.itemType === 'card') {
       const inst = auc.item?.['instance'] as CardInstance | undefined;
       return inst ? `${this.cardName(inst.defId)} Lv.${inst.level}` : t('auction.filterCard');
+    }
+    if (auc.itemType === 'skin') {
+      const skinId = auc.item?.['skinId'] as string | undefined;
+      return skinId ? skinDisplayName(skinId) : t('auction.filterSkin');
     }
     const mat = (auc.item?.['material'] as string | undefined) ?? 'scrap';
     return `${t(`auction.${mat as 'scrap' | 'lead' | 'binding'}`)} ×${auc.qty}`;
@@ -552,6 +559,8 @@ export class AuctionSceneBase {
         CARD_HAS_GEAR:           t('auction.err.cardHasGear'),
         CARD_NOT_FOUND:          t('auction.err.closed'),
         EQUIP_NOT_FOUND:         t('auction.err.closed'),
+        SKIN_IN_USE:             t('auction.err.skinInUse'),
+        SKIN_NOT_FOUND:          t('auction.err.closed'),
       };
       return map[e.code] ?? e.message;
     }
@@ -642,6 +651,7 @@ export interface AuctionSceneBase {
   renderItemPicker(): void;
   listableEquipment(): EquipmentInstance[];
   listableCards(): CardInstance[];
+  listableSkins(): string[];
   selectedItemLabel(): string | null;
   openItemPicker(): void;
   cancelItemPicker(): void;

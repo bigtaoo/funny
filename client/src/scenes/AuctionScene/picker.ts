@@ -13,7 +13,8 @@ import { drawScrollIndicator } from '../../ui/widgets/ScrollIndicator';
 import type { EquipmentInstance, CardInstance, EquipRarity } from '../../game/meta/SaveData';
 import { getEquipDef } from '../../game/meta/equipmentDefs';
 import { buildEquipIcon } from '../../render/atlas/equipmentAtlas';
-import { cardInstanceArtUrl, getArtTexture } from '../../render/cardArt';
+import { cardInstanceArtUrl, getArtTexture, unitPortraitUrl } from '../../render/cardArt';
+import { SKIN_TARGET_UNIT, skinDisplayName, allEquippedSkins } from '../../game/meta/skinDefs';
 import { FILTERS, type AucFilter, MATERIALS, type Constructor, type AuctionSceneBaseCtor } from './base';
 
 // Icon-card grid metrics (mirrors EquipmentScene/inventory.ts's responsive column layout), enlarged 1.5x
@@ -29,15 +30,19 @@ const EQUIP_VALUE_BY_RARITY: Record<EquipRarity, number> = { common: 50, fine: 1
 // Cards have no server reference price at all — this is a level-based sort heuristic only.
 const CARD_VALUE_BASE = 500;
 const CARD_VALUE_PER_LEVEL = 300;
+// Skins have no server reference price either (no rarity/level) — flat sort heuristic only.
+const SKIN_VALUE = 800;
 
 interface PickEntry {
   label: string;
   value: number;
   locked: boolean;
-  cls: 'material' | 'equipment' | 'card';
+  cls: 'material' | 'equipment' | 'card' | 'skin';
   /** Material glyph name (cls === 'material') or def id (equipment/card) used to resolve the real per-item picture. */
   material?: typeof MATERIALS[number];
   defId?: string;
+  /** Skin id (cls === 'skin') — skins have no defId/instance, just a catalogue id (see skinDefs.ts). */
+  skinId?: string;
   onPick: () => void;
 }
 
@@ -45,6 +50,7 @@ export interface PickerHandlers {
   renderItemPicker(): void;
   listableEquipment(): EquipmentInstance[];
   listableCards(): CardInstance[];
+  listableSkins(): string[];
   selectedItemLabel(): string | null;
   openItemPicker(): void;
   cancelItemPicker(): void;
@@ -70,6 +76,14 @@ export function PickerMixin<TBase extends AuctionSceneBaseCtor>(Base: TBase): TB
       return Object.values(save.cardInv ?? {}).filter((c) => !Object.values(c.gear ?? {}).some((v) => !!v));
     }
 
+    /** Owned skin ids eligible for listing: not currently equipped on any card (mirrors server escrowSkin's isSkinEquipped guard). */
+    listableSkins(): string[] {
+      const save = this.cb.getSave?.();
+      if (!save) return [];
+      const equipped = new Set(allEquippedSkins(save.equipped ?? {}));
+      return (save.inventory?.skins ?? []).filter((id) => !equipped.has(id));
+    }
+
     /** Label of the currently selected item (any class) for the create form, or null when none is chosen (or it is no longer listable). */
     selectedItemLabel(): string | null {
       if (this.createClass === 'material') {
@@ -78,6 +92,10 @@ export function PickerMixin<TBase extends AuctionSceneBaseCtor>(Base: TBase): TB
       if (this.createClass === 'equipment') {
         const inst = this.listableEquipment().find((e) => e.id === this.createEquipId);
         return inst ? `${this.equipName(inst.defId)} +${inst.level}` : null;
+      }
+      if (this.createClass === 'skin') {
+        const skinId = this.listableSkins().find((id) => id === this.createSkinId);
+        return skinId ? skinDisplayName(skinId) : null;
       }
       const inst = this.listableCards().find((c) => c.id === this.createCardId);
       return inst ? `${this.cardName(inst.defId)} Lv.${inst.level}` : null;
@@ -135,6 +153,15 @@ export function PickerMixin<TBase extends AuctionSceneBaseCtor>(Base: TBase): TB
         });
       }
 
+      // Skins are a plain owned/not-owned set (no qty, no instance) — at most one entry per skinId.
+      for (const skinId of this.listableSkins()) {
+        entries.push({
+          skinId, label: skinDisplayName(skinId),
+          value: SKIN_VALUE, locked: false, cls: 'skin',
+          onPick: () => { this.createClass = 'skin'; this.createSkinId = skinId; this.closeItemPicker(); },
+        });
+      }
+
       entries.sort((a, b) => b.value - a.value);
       return entries;
     }
@@ -172,10 +199,10 @@ export function PickerMixin<TBase extends AuctionSceneBaseCtor>(Base: TBase): TB
     private renderPickerSidebar(): number {
       const { w, h, landscape } = this;
       const y = this.headerH + 8;
-      const keys: Record<AucFilter, 'auction.filterAll' | 'auction.filterEquipment' | 'auction.filterCard' | 'auction.filterMaterial'> = {
-        '': 'auction.filterAll', equipment: 'auction.filterEquipment', card: 'auction.filterCard', material: 'auction.filterMaterial',
+      const keys: Record<AucFilter, 'auction.filterAll' | 'auction.filterEquipment' | 'auction.filterCard' | 'auction.filterMaterial' | 'auction.filterSkin'> = {
+        '': 'auction.filterAll', equipment: 'auction.filterEquipment', card: 'auction.filterCard', material: 'auction.filterMaterial', skin: 'auction.filterSkin',
       };
-      const icons: Partial<Record<AucFilter, IconKind>> = { equipment: 'armor', card: 'cards', material: 'scrap' };
+      const icons: Partial<Record<AucFilter, IconKind>> = { equipment: 'armor', card: 'cards', material: 'scrap', skin: 'brush' };
       const hubTabs: HubTab[] = FILTERS.map((f) => ({ label: t(keys[f]), active: f === this.pickerFilter, icon: icons[f] }));
       const onSelect = (i: number): void => {
         const f = FILTERS[i]!;
@@ -275,6 +302,29 @@ export function PickerMixin<TBase extends AuctionSceneBaseCtor>(Base: TBase): TB
             tex.baseTexture.once('loaded', () => this.render());
           }
         }
+      } else if (entry.cls === 'skin' && entry.skinId) {
+        const unitType = SKIN_TARGET_UNIT[entry.skinId];
+        const artUrl = unitType ? unitPortraitUrl(unitType, entry.skinId) ?? undefined : undefined;
+        if (artUrl) {
+          const tex = getArtTexture(artUrl);
+          if (tex.baseTexture.valid) {
+            const scale = Math.min(size / tex.width, size / tex.height);
+            const sp = new PIXI.Sprite(tex);
+            sp.anchor.set(0.5);
+            sp.scale.set(scale);
+            sp.position.set(cx, cy);
+            this.bodyLayer.addChild(sp);
+            return;
+          }
+          if (!this.artHooked.has(artUrl)) {
+            this.artHooked.add(artUrl);
+            tex.baseTexture.once('loaded', () => this.render());
+          }
+        }
+        const icon = buildIcon('brush', size, C.dark);
+        icon.x = cx - size / 2; icon.y = cy - size / 2;
+        this.bodyLayer.addChild(icon);
+        return;
       }
       if (entry.cls === 'material') {
         const icon = buildMaterialIcon(entry.material ?? 'scrap', size, C.dark);
@@ -300,10 +350,10 @@ export function PickerMixin<TBase extends AuctionSceneBaseCtor>(Base: TBase): TB
         this.bodyLayer.addChild(lk);
       }
 
-      this.renderPickIcon(entry, x + cardW / 2, y + 18 + 19.5, 39, seedFor(x, y, cardW));
+      this.renderPickIcon(entry, x + cardW / 2, y + 14 + 28, 56, seedFor(x, y, cardW));
 
       const nameLbl = txt(entry.label, FS.body, C.dark, true);
-      nameLbl.anchor.set(0.5, 0); nameLbl.x = x + cardW / 2; nameLbl.y = y + 78;
+      nameLbl.anchor.set(0.5, 0); nameLbl.x = x + cardW / 2; nameLbl.y = y + 88;
       if (nameLbl.width > cardW - 18) nameLbl.scale.set((cardW - 18) / nameLbl.width);
       this.bodyLayer.addChild(nameLbl);
 

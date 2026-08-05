@@ -433,6 +433,12 @@ components:
                 type: number
         locked:
           type: boolean
+        sourceType:
+          type: string
+          description: Provenance tag (e.g. 'craft', 'gacha:<orderId>', 'checkin:<monthKey>', 'pve_drop:<levelId>'). Optional — absent on pre-2026-08-04 instances. No consumer reads this yet; reserved for future support/anti-cheat tooling (ITEM_IDENTITY_DESIGN.md).
+        obtainedAt:
+          type: integer
+          description: Epoch ms when this instance was created. Optional, same caveat as sourceType.
     CardInstance:
       type: object
       required:
@@ -460,6 +466,12 @@ components:
         locked:
           type: boolean
           description: Locked cards cannot be used as fusion material
+        sourceType:
+          type: string
+          description: Provenance tag (e.g. 'starter', 'checkin', 'pve_anchor:<levelId>', 'pve_drop:<levelId>', 'gacha:<orderId>'). Optional — absent on pre-2026-08-04 instances. No consumer reads this yet; reserved for future support/anti-cheat tooling (ITEM_IDENTITY_DESIGN.md).
+        obtainedAt:
+          type: integer
+          description: Epoch ms when this instance was created. Optional, same caveat as sourceType.
     AuthResult:
       type: object
       required:
@@ -595,6 +607,12 @@ components:
           type: string
         qty:
           type: integer
+        dailyLimit:
+          type: integer
+          description: Daily purchase cap (counts purchases, not units); omitted when the item has no cap.
+        purchasedToday:
+          type: integer
+          description: Purchases made today by the requesting account, present iff dailyLimit is present.
     GachaPool:
       type: object
       required:
@@ -1531,6 +1549,57 @@ paths:
         '403':
           $ref: '#/components/responses/ErrorResp'
         '409':
+          $ref: '#/components/responses/ErrorResp'
+  /feedback:
+    post:
+      operationId: submitFeedback
+      tags:
+        - auth
+      summary: Submit free-text player feedback (UI_DESIGN.md §4.1.1 lobby entry, SERVER_API.md §2.13). Ops-review-only, no status machine; rate-limited per account.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - text
+              properties:
+                text:
+                  type: string
+                  minLength: 1
+                  maxLength: 1000
+      responses:
+        '200':
+          description: Feedback submitted
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - ok
+                  - data
+                properties:
+                  ok:
+                    type: boolean
+                    enum:
+                      - true
+                  data:
+                    type: object
+                    required:
+                      - ok
+                    properties:
+                      ok:
+                        type: boolean
+                        enum:
+                          - true
+        '400':
+          $ref: '#/components/responses/ErrorResp'
+        '401':
+          $ref: '#/components/responses/ErrorResp'
+        '429':
           $ref: '#/components/responses/ErrorResp'
   /save:
     get:

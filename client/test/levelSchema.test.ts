@@ -65,6 +65,38 @@ describe('parseLevelDefinition', () => {
     expect(() => parseLevelDefinition(minimal())).not.toThrow();
   });
 
+  it('parses story.realLayerKey (chapter-end "real layer" interlude, world.md「章末真实层」)', () => {
+    const withKey: any = minimal();
+    withKey.story = { outroKey: 'campaign.ch1.outro', realLayerKey: 'campaign.realLayer.ch1' };
+    const parsed = parseLevelDefinition(withKey);
+    expect(parsed.story?.outroKey).toBe('campaign.ch1.outro');
+    expect(parsed.story?.realLayerKey).toBe('campaign.realLayer.ch1');
+  });
+
+  it('every chapter\'s last level (chN_lv10) carries the matching realLayerKey', () => {
+    // One per chapter (see IllustratedInterludeScene + realLayerInterludeArt.ts) — ch6 reuses
+    // campaign.epilogue rather than a dedicated campaign.realLayer.ch6 key.
+    const expected: Record<string, string> = {
+      ch1_lv10: 'campaign.realLayer.ch1',
+      ch2_lv10: 'campaign.realLayer.ch2',
+      ch3_lv10: 'campaign.realLayer.ch3',
+      ch4_lv10: 'campaign.realLayer.ch4',
+      ch5_lv10: 'campaign.realLayer.ch5',
+      ch6_lv10: 'campaign.epilogue',
+    };
+    for (const [id, key] of Object.entries(expected)) {
+      expect(CAMPAIGN_LEVELS[id]?.story?.realLayerKey).toBe(key);
+    }
+  });
+
+  it('no other level carries a realLayerKey — it is exclusive to each chapter\'s last level', () => {
+    const lastLevels = new Set(['ch1_lv10', 'ch2_lv10', 'ch3_lv10', 'ch4_lv10', 'ch5_lv10', 'ch6_lv10']);
+    for (const id of CAMPAIGN_LEVEL_ORDER) {
+      if (lastLevels.has(id)) continue;
+      expect(CAMPAIGN_LEVELS[id]!.story?.realLayerKey).toBeUndefined();
+    }
+  });
+
   it('rejects an unknown unit type', () => {
     const bad = minimal();
     bad.waves.entries[0]!.unitType = 'dragon';

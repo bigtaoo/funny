@@ -198,7 +198,8 @@
   "nameKey": "campaign.ch5.lv10.name",
   "briefKey": "campaign.ch5.lv10.brief",
   "story": {
-    "outroKey": "campaign.ch5.outro"
+    "outroKey": "campaign.ch5.outro",
+    "realLayerKey": "campaign.realLayer.ch5"
   },
   "startInk": 0,
   "enemyScale": {

@@ -381,6 +381,13 @@
 
 ---
 
+## 作者欢迎邮件 + 玩家反馈入口（ONBOARDING_DESIGN.md §5.1 / UI_DESIGN.md §4.1.1）
+
+- [x] **作者欢迎邮件** ✅（2026-08-04）：`server/metaserver/src/service/pve.ts` `pveClear` 检测生涯首次真正通关（`cur.progress.cleared.length===0`），走 `insertSystemMail`（dispatchKey=`welcome.author`，幂等，best-effort，不阻塞结算）发一封作者第一人称感谢信 + 金币×1000 附件；i18n key `mail.welcome.author.subject/body`（zh/en/de）。e2e：`test/pve.e2e.test.ts`（首触发+去重+推送，2026-08-05 追加 best-effort 一例：邮件发送异常时结算不受影响）。
+- [x] **玩家反馈入口** ✅（2026-08-04）：大厅右侧竖条把低使用率的成就格换成反馈格（`onOpenFeedback`，成就墙仍可经 Career hub/解锁 toast 访问）。**服务端**：`POST /feedback`（`server/metaserver/src/service/auth.ts` `submitFeedback`，`FEEDBACK_TEXT_MAX`=1000 + 按账号 `FEEDBACK_RATE_LIMIT_PER_DAY`=5/24h 限流）+ `feedback` 集合（`shared/src/mongo.ts`）+ `GET /internal/feedback`（只读，无状态机）。**admin**：`feedback.view` 能力 + `GET /admin/feedback` 代理（`service/feedback.ts`/`clients/feedback.ts`，镜像 appeals 的"业务方持有数据、admin 只代理"模式）。**客户端**：`FeedbackDialog.ts`（复用 `AppealDialog` 的隐藏 `<input>` 采集技术，stage 级覆盖层，提交成功不关闭面板）+ `net/log.ts` 新增 `setFeedbackSink`/`requestFeedbackDialog` sink。契约：`contracts/openapi/paths/auth.yml` `submitFeedback`。e2e：`test/feedback.e2e.test.ts`（原 7 例：提交/校验/限流/多次提交/内部列表，2026-08-05 追加 3 例：未登录 401、`clientPlatform` 落库/缺省）；2026-08-05 补齐 admin/client 两侧此前的测试空白——`server/admin/test/feedback.e2e.test.ts`（新增，5 例：`FeedbackMixin` 代理/审计/503/`limit`/角色矩阵）+ `clients-barrel.test.ts` 补漏 `HttpFeedbackClient`；`client/test/feedback-prompt.test.ts`（新增，7 例，镜像 `appeal-prompt.test.ts`）+ `client/test/lobby-feedback-nav.test.ts`（新增，2 例：`onOpenFeedback` 的 `online` 门槛）。详见 [`UI_DESIGN.md`](UI_DESIGN.md) §4.1.1 测试覆盖一节。
+
+---
+
 ## i18n（贯穿，随场景落地）
 
 - [~] **I-1** 新增命名空间键（`zh.ts` 为唯一来源，`en`/`de` 同步补全，否则编译报错）：`auth.*`（登录界面，SA）/ `meta.*` / `shop.*` / `gacha.*` / `collection.*` / `room.*` / `profile.*`。随对应 UI 任务一起加。`room.*` 已随 S1-8 落地（zh/en/de 全翻）；`auth.*` **已随 SA-3 落地**（zh/en/de 全翻）；其余随后续场景。

@@ -7,6 +7,7 @@ import { regionFromAcceptLanguage, censorChat } from '@nw/shared';
 import { validateLoginId, validatePassword, validateDisplayName } from '@nw/shared';
 import { RENAME_COST } from '@nw/shared';
 import { APPEAL_REASON_MAX } from '@nw/shared';
+import { FEEDBACK_TEXT_MAX, FEEDBACK_RATE_LIMIT_PER_DAY } from '@nw/shared';
 import { CARD_DEFS } from '@nw/shared';
 import { getOrCreateSave } from '../save.js';
 import {
@@ -33,7 +34,7 @@ type AuthHandlers = Pick<
   MetaHandlers,
   | 'authWx' | 'authDevice' | 'authRegister' | 'authLogin' | 'authPasswordChange'
   | 'deleteAccount' | 'cancelAccountDeletion' | 'recordGdprConsent' | 'authOAuth' | 'authBind' | 'profileRename'
-  | 'submitAppeal'
+  | 'submitAppeal' | 'submitFeedback'
 >;
 
 /** C5-b account soft-delete grace period: POST /account/cancel-deletion is only honored within this window. */
@@ -59,6 +60,12 @@ export function AuthMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase & Cons
       return this.authRate.allow(ip, now);
     }
 
+    /** Feedback submission rate limit (SERVER_API.md §2.13): per-account, not per-IP — a public feedback
+     *  box is meant to be usable behind shared/NAT IPs, and the abuse surface here is one account spamming
+     *  text, not credential stuffing (that's authRate's job). Redis-backed when configured, in-process fallback otherwise. */
+    private readonly feedbackRate: RateLimiter =
+      createRateLimiter(this.deps.redis, 'feedback', FEEDBACK_RATE_LIMIT_PER_DAY, 24 * 60 * 60 * 1000);
+
     /** Grant lichuang/chenshou/suyuan to a brand-new account (CHARACTER_CARDS_DESIGN §4). No-op if account already has cards. */
     private async maybeGrantStarterCards(accountId: string, isNew: boolean): Promise<void> {
       if (!isNew) return;
@@ -69,7 +76,7 @@ export function AuthMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase & Cons
         CARD_DEFS['lichuang']!,
         CARD_DEFS['chenshou']!,
         CARD_DEFS['suyuan']!,
-      ]);
+      ], 'starter');
     }
 
     async authWx(req: FastifyRequest, reply: FastifyReply) {
@@ -456,6 +463,32 @@ export function AuthMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase & Cons
         }
         throw e;
       }
+      return ok({ ok: true });
+    }
+
+    /**
+     * Player free-text feedback (UI_DESIGN.md §4.1.1 lobby entry, SERVER_API.md §2.13). Ops-review-only via
+     * GET /internal/feedback (feedback.view) — no status machine, unlike submitAppeal above. Multiple
+     * submissions per account are allowed (not a "one open ticket" model), guarded only by the rate limit.
+     */
+    async submitFeedback(req: FastifyRequest, reply: FastifyReply) {
+      const accountId = accountIdOf(req);
+      const { text } = req.body as { text: string };
+      const trimmed = text.trim();
+      if (!trimmed) return reply.code(400).send(err(ErrorCode.BAD_REQUEST, 'text required'));
+
+      if (!(await this.feedbackRate.allow(accountId, this.deps.now()))) {
+        return reply.code(429).send(err(ErrorCode.RATE_LIMITED, 'too many feedback submissions, please try again later'));
+      }
+
+      const { cols, now } = this.deps;
+      await cols.feedback.insertOne({
+        _id: randomUUID(),
+        accountId,
+        text: trimmed.slice(0, FEEDBACK_TEXT_MAX),
+        clientPlatform: clientPlatformOf(req),
+        createdAt: now(),
+      });
       return ok({ ok: true });
     }
   };

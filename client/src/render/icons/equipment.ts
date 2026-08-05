@@ -87,7 +87,7 @@ export function drawHp(g: PIXI.Graphics, s: number, color: number): void {
   pen.stroke(pts, { color, width: w, jitter: 0.5, taper: 0.96, double: false });
 }
 
-/** Armor — a shield: flat top, straight sides, tapered point, centre rib. */
+/** Armor — a riveted shield: flat top, straight sides, tapered point, centre rib + cross band + corner rivets. */
 export function drawArmor(g: PIXI.Graphics, s: number, color: number): void {
   const pen = new SketchPen(g, 0x6a12);
   const w = Math.max(1.4, s * 0.05);
@@ -98,6 +98,33 @@ export function drawArmor(g: PIXI.Graphics, s: number, color: number): void {
     { x: cx - hw, y: s * 0.50 }, { x: cx - hw, y: top },
   ], { color, width: w, jitter: 0.45, taper: 0.92, double: false });
   pen.line(cx, top + s * 0.04, cx, s * 0.70, { color, width: w * 0.8, jitter: 0.3, taper: 0.9, double: false, alpha: 0.85 });
+  // Cross band — reads as a riveted plate rather than a bare outline.
+  pen.line(cx - hw * 0.75, top + s * 0.16, cx + hw * 0.75, top + s * 0.16,
+    { color, width: w * 0.75, jitter: 0.4, taper: 0.85, double: false, alpha: 0.85 });
+  // Faint inner rim on the upper-left facet (emboss).
+  pen.stroke([
+    { x: cx - hw * 0.7, y: top + s * 0.05 }, { x: cx + hw * 0.7, y: top + s * 0.05 }, { x: cx + hw * 0.7, y: s * 0.46 },
+  ], { color, width: w * 0.55, jitter: 0.35, taper: 0.85, double: false, alpha: 0.55 });
+  // Corner rivets.
+  pen.circle(cx - hw * 0.62, top + s * 0.06, Math.max(1, s * 0.02), { color, width: w * 0.6, jitter: 0.2, taper: 0.9, double: false });
+  pen.circle(cx + hw * 0.62, top + s * 0.06, Math.max(1, s * 0.02), { color, width: w * 0.6, jitter: 0.2, taper: 0.9, double: false });
+}
+
+/**
+ * Armor, reinforced — `drawArmor` plus a second lower band and a pair of side rivets, for the
+ * longer shop protection tier: a heavier-plated read, not just the same shield + a text label.
+ */
+export function drawArmorHeavy(g: PIXI.Graphics, s: number, color: number): void {
+  drawArmor(g, s, color);
+  const pen = new SketchPen(g, 0x6a13);
+  const w = Math.max(1.4, s * 0.05);
+  const cx = s / 2, hw = s * 0.22;
+  // Second band lower down the plate.
+  pen.line(cx - hw * 0.55, s * 0.46, cx + hw * 0.55, s * 0.46,
+    { color, width: w * 0.7, jitter: 0.4, taper: 0.85, double: false, alpha: 0.8 });
+  // Side rivets flanking the centre rib, below the top pair.
+  pen.circle(cx - hw * 0.85, s * 0.40, Math.max(1, s * 0.02), { color, width: w * 0.6, jitter: 0.2, taper: 0.9, double: false });
+  pen.circle(cx + hw * 0.85, s * 0.40, Math.max(1, s * 0.02), { color, width: w * 0.6, jitter: 0.2, taper: 0.9, double: false });
 }
 
 /** Speed — twin forward chevrons (motion lines). */

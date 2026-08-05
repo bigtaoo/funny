@@ -20,6 +20,7 @@ import { matchBadgeTelemetry } from '../../scenes/ResultScene';
 import type { AppCtx, Nav } from '../appCtx';
 import { PLAYER_PUBLIC_ID_KEY, PLAYER_NAME_KEY, TOKEN_KEY, TUTORIAL_DONE_FLAG } from '../appConstants';
 import { pickPracticeDifficulty } from './lobby';
+import { resolveRealLayerInterlude } from '../../scenes/realLayerInterludeArt';
 
 type GameNav = Pick<Nav,
   'goGame' | 'goCampaignMap' | 'goLevelPrep' | 'goCardRoster' | 'goEquipment' |
@@ -559,15 +560,19 @@ export function createGameNav(ctx: AppCtx): GameNav {
           level_id: levelId,
           ...matchBadgeTelemetry(stats[0]),
         });
-        // Ch6's last level chains a second screen (epilogueKey) after the usual chapter outro —
-        // the campaign's real-world frame-story close. Every other level's story has no
-        // epilogueKey, so this stays a single-element array for them.
-        const outroTexts = winner === 0
-          ? [level.story?.outroKey, level.story?.epilogueKey]
-              .filter((k): k is TranslationKey => !!k)
-              .map((k) => t(k))
-          : undefined;
-        void nav.goResult(winner, stats, 0, kept, undefined, undefined, outroTexts, goCampaignMap, t('result.backToMap'));
+        const outroTexts = winner === 0 && level.story?.outroKey ? [t(level.story.outroKey as TranslationKey)] : undefined;
+        // Each chapter's last level (chN_lv10.json) carries a `realLayerKey` — the Tao/Anna
+        // "real layer" beat for that chapter (world.md「章末真实层」). Shown as its own
+        // illustrated interlude after the result panel, before actually returning to the map;
+        // every other level (or a non-win) has no interlude, so `proceedToMap` is just
+        // `goCampaignMap` (see resolveRealLayerInterlude's own unit tests for the branching).
+        const interlude = resolveRealLayerInterlude(level, winner);
+        const proceedToMap = interlude
+          ? () => views.showRealLayerInterlude(interlude.illustrationUrl, interlude.textKey, {
+              onFinish: () => goCampaignMap(),
+            })
+          : goCampaignMap;
+        void nav.goResult(winner, stats, 0, kept, undefined, undefined, outroTexts, proceedToMap, t('result.backToMap'));
       },
       onExitToLobby() {
         analytics.track('level_abandon', { level_id: levelId, phase: 'in_game' });

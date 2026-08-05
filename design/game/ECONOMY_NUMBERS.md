@@ -304,6 +304,10 @@ F2P 金币龙头：广告（主力）+ 战斗 / 活动 / 称号 / 任务。
 - 落地：`server/metaserver/src/economy.ts`（`deliverOrder` 新增 `kind==='material'` 分支，走 `deliverMailGrant` 的 `materialInc` 参数）+ `service/economy.ts`（`shopBuy` 每日上限校验）+ 客户端 `ShopScene`（材料档在消耗品之后、皮肤之前渲染，标题用共享的 `material.*` 翻译 + 数量后缀）。
 - **副产品修复**：实现过程中发现 `shopBuy` 一直把 `def.grants` 而非请求 `itemId` 传给 `deliverOrder` 的路由查找——`kind='item'`（如 `protect_enhance`）因为 `grants === id` 从未暴露，这次材料档首次出现 `grants !== id`（`mat_buy_scrap` → `scrap`）才使其现形（会被误当皮肤发放）。已随本次改动一并修复。
 
+**2026-08-04 修复（用户截图报告 2 项）**：
+1. **材料档图标错用程序 glyph，不是 AI 位图**：材料图标早在 §20.10/20.12（`EQUIPMENT_DESIGN.md`）就已从 `SketchPen` 程序绘制换成 AI 位图（`materialAtlas.ts`/`buildMaterialIcon`），装备页/抽卡揭示/每日签到/事件/战令都已切换，唯独 `ShopScene`（本节的材料直购档）当初没跟进，还在走 `buildCoinIcon`→`buildIcon` 的程序 glyph 回退路径（`scrap` 撕纸剪影/`lead` 削尖石墨条，在小尺寸下分别读成"书签"和"羽毛笔"，与游戏其它地方的位图观感不一致）。修复：`ShopScene/base.ts` `CardSpec` 新增 `materialKind` 字段，`drawCard` 材料档改走 `buildMaterialIcon`（`ShopScene/shop.ts` 材料循环设置 `materialKind: item.grants`）。
+2. **每日限购档只写"限购次数有限"，不显示已购/上限**：`getShopItems`（`service/economy.ts`）新增 `dailyLimit`/`purchasedToday` 两个字段（`ShopItem` schema，`contracts/openapi/schemas.yml`）——材料档用现成的 `readCounterField`（`dailyCounter.ts`，只读，不占用 `bumpCappedCounter` 的计数）读当日已购次数；非限购商品两字段整体省略。客户端状态行改渲染"今日已购 {used}/{limit}"，到量后 Buy 按钮置灰 + 文案变"今日已达上限"（不必再靠一次失败购买才发现封顶），`onBuy` 购买成功后重新拉取 `/shop/items` 让计数实时刷新。
+
 ---
 
 ## 7. 皮肤（skins）获取矩阵

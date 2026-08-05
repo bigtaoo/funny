@@ -12,10 +12,11 @@ const ALL_KINDS: Record<IconKind, true> = {
   book: true, globe: true, coin: true, trophy: true, castle: true, pencils: true,
   coins: true, coinStack: true, coinSack: true, coinChest: true,
   scrap: true, lead: true, binding: true,
-  atk: true, hp: true, armor: true, spd: true, atkspd: true,
+  atk: true, hp: true, armor: true, armorHeavy: true, spd: true, atkspd: true,
   brush: true,
   swords: true, replay: true, share: true, home: true,
   flag: true, desk: true, cabinet: true, hammer: true,
+  hourglassSm: true, hourglassMd: true, hourglassLg: true,
   tag: true, capsule: true, cards: true, star: true, lock: true, medal: true, zoom: true, gift: true,
   close: true, check: true, play: true,
 };
@@ -33,3 +34,9 @@ describe('icons DRAW dispatch table', () => {
     expect(Object.keys(DRAW).sort()).toEqual(kinds.sort());
   });
 });
+
+// A real PIXI.Graphics needs the headless ADAPTER (canvas/document stubs) that only the `test:ui`
+// harness installs (see test/harness/pixiHeadless.ts) — constructing one under plain `environment:
+// 'node'` throws "document is not defined" before a single draw call runs. The actual geometry
+// smoke-check (every draw fn runs without throwing, incl. the hourglassSm/Md/Lg + armorHeavy tier
+// variants added in SLG_DESIGN_LOG.md §63) lives in test/ui/icons.ui.ts instead.

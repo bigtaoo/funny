@@ -35,6 +35,11 @@ export const REPORT_REASON_MAX = 500;
 /** Maximum length of a player's free-text appeal reason (CONTENT_MODERATION_DESIGN.md CM10). Admin-review-only text, not run through censorChat (same rationale as REPORT_REASON_MAX). */
 export const APPEAL_REASON_MAX = 500;
 
+/** Maximum length of a player's free-text feedback submission (SERVER_API.md §2.13 / UI_DESIGN.md §4.1.1). Admin-review-only text, not run through censorChat (same rationale as APPEAL_REASON_MAX). */
+export const FEEDBACK_TEXT_MAX = 1000;
+/** Feedback submission rate limit: max POST /feedback per account per 24h window (SERVER_API.md §2.13). */
+export const FEEDBACK_RATE_LIMIT_PER_DAY = 5;
+
 // ── Deterministic id derivation (no lookup required; computable by either side) ──────────────
 /**
  * Chat conversation id: two accountIds sorted and concatenated (SOC4). Either party can derive

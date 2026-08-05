@@ -11,6 +11,7 @@ import { PerfMonitor } from './cache/PerfMonitor';
 import { initCrashSentinel, installAnomalyWatchers, setAnomalyStorage, recordConstructSample, recordRenderSample } from './net/anomaly';
 import { SceneManager, type Scene } from './scenes/SceneManager';
 import { IntroScene } from './scenes/IntroScene';
+import { IllustratedInterludeScene } from './scenes/IllustratedInterludeScene';
 import { LobbyScene, type LobbySceneCallbacks } from './scenes/LobbyScene';
 import { GameScene, type GameSceneCallbacks, type GameSceneOptions } from './scenes/GameScene';
 import { RoomScene, type RoomSceneCallbacks } from './scenes/RoomScene';
@@ -51,9 +52,10 @@ import type { Replay, LevelDefinition } from './game';
 import { ScalingManager, createLayout, resettledLayout } from './layout/ScalingManager';
 import { InputManager } from './inputSystem/InputManager';
 import type { ILayout } from './layout/ILayout';
-import { installGlobalErrorHandlers, setToastSink, setAppealSink, showToastMessage } from './net/log';
+import { installGlobalErrorHandlers, setToastSink, setAppealSink, setFeedbackSink, showToastMessage } from './net/log';
 import { GlobalToast } from './ui/GlobalToast';
 import { AppealDialog } from './ui/dialogs/AppealDialog';
+import { FeedbackDialog } from './ui/dialogs/FeedbackDialog';
 import { t } from './i18n';
 import { ui as C } from './render/sketchUi';
 import { setBakeRenderer } from './render/bake';
@@ -122,6 +124,18 @@ class PixiAppViews implements AppViews {
   showIntro(cb: Parameters<AppViews['showIntro']>[0]): void {
     this.leaveLobby();
     this.manager.goto(this.timedBuild('IntroScene', () => new IntroScene(this.layout, this.input, cb)));
+  }
+
+  showRealLayerInterlude(
+    illustrationUrl: string,
+    textKey: Parameters<AppViews['showRealLayerInterlude']>[1],
+    cb: Parameters<AppViews['showRealLayerInterlude']>[2],
+  ): void {
+    this.leaveLobby();
+    this.manager.goto(this.timedBuild(
+      'IllustratedInterludeScene',
+      () => new IllustratedInterludeScene(this.layout, this.input, illustrationUrl, textKey, cb),
+    ));
   }
 
   showConsent(cb: ConsentCallbacks): void {
@@ -516,6 +530,24 @@ export async function startApp(
     dlg.container.zIndex = 9_000; // above scene content, below GlobalToast (10_000)
     app.stage.addChild(dlg.container);
     appealDialog = dlg;
+  });
+
+  // Feedback dialog (UI_DESIGN.md §4.1.1): same stage-level-overlay reasoning as the appeal dialog above,
+  // but opened by a direct player tap on the lobby's feedback strip entry rather than a network error.
+  let feedbackDialog: FeedbackDialog | null = null;
+  setFeedbackSink(() => {
+    if (!core.submitFeedback || feedbackDialog) return;
+    const dlg = new FeedbackDialog(app.screen.width, app.screen.height, {
+      onSubmit: (text) => core.submitFeedback!(text),
+      onClose: () => {
+        app.stage.removeChild(dlg.container);
+        dlg.destroy();
+        feedbackDialog = null;
+      },
+    });
+    dlg.container.zIndex = 9_000; // above scene content, below GlobalToast (10_000)
+    app.stage.addChild(dlg.container);
+    feedbackDialog = dlg;
   });
 
   core.start();

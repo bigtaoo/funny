@@ -280,6 +280,8 @@ schemas:
             id: { type: string }
             value: { type: number }
       locked: { type: boolean }
+      sourceType: { type: string, description: "Provenance tag (e.g. 'craft', 'gacha:<orderId>', 'checkin:<monthKey>', 'pve_drop:<levelId>'). Optional — absent on pre-2026-08-04 instances. No consumer reads this yet; reserved for future support/anti-cheat tooling (ITEM_IDENTITY_DESIGN.md)." }
+      obtainedAt: { type: integer, description: "Epoch ms when this instance was created. Optional, same caveat as sourceType." }
 
   # —— Hero Roster card instance (CC-1/CC-2, CHARACTER_CARDS_DESIGN §2.2) ——
   CardInstance:
@@ -294,6 +296,8 @@ schemas:
         additionalProperties: { type: string }
         description: Per-slot equipped equipment instance ids (slot→equipmentInstanceId)
       locked: { type: boolean, description: Locked cards cannot be used as fusion material }
+      sourceType: { type: string, description: "Provenance tag (e.g. 'starter', 'checkin', 'pve_anchor:<levelId>', 'pve_drop:<levelId>', 'gacha:<orderId>'). Optional — absent on pre-2026-08-04 instances. No consumer reads this yet; reserved for future support/anti-cheat tooling (ITEM_IDENTITY_DESIGN.md)." }
+      obtainedAt: { type: integer, description: "Epoch ms when this instance was created. Optional, same caveat as sourceType." }
 
   # —— Client sync patch (PUT /save only accepts these fields, §2.2) ——
   # From PVE_INTEGRITY_PLAN §8 onward, progress/materials/pveUpgrades become server-authoritative
@@ -373,6 +377,8 @@ schemas:
       kind: { type: string }
       grants: { type: string }
       qty: { type: integer }
+      dailyLimit: { type: integer, description: 'Daily purchase cap (counts purchases, not units); omitted when the item has no cap.' }
+      purchasedToday: { type: integer, description: 'Purchases made today by the requesting account, present iff dailyLimit is present.' }
 
   GachaPool:
     type: object

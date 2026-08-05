@@ -208,6 +208,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/feedback": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Submit free-text player feedback (UI_DESIGN.md §4.1.1 lobby entry, SERVER_API.md §2.13). Ops-review-only, no status machine; rate-limited per account. */
+        post: operations["submitFeedback"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/save": {
         parameters: {
             query?: never;
@@ -1617,6 +1634,10 @@ export interface components {
                 value: number;
             }[];
             locked?: boolean;
+            /** @description Provenance tag (e.g. 'craft', 'gacha:<orderId>', 'checkin:<monthKey>', 'pve_drop:<levelId>'). Optional — absent on pre-2026-08-04 instances. No consumer reads this yet; reserved for future support/anti-cheat tooling (ITEM_IDENTITY_DESIGN.md). */
+            sourceType?: string;
+            /** @description Epoch ms when this instance was created. Optional, same caveat as sourceType. */
+            obtainedAt?: number;
         };
         CardInstance: {
             /** @description Unique instance id (e.g. 'card_a1b2c3') */
@@ -1630,6 +1651,10 @@ export interface components {
             };
             /** @description Locked cards cannot be used as fusion material */
             locked: boolean;
+            /** @description Provenance tag (e.g. 'starter', 'checkin', 'pve_anchor:<levelId>', 'pve_drop:<levelId>', 'gacha:<orderId>'). Optional — absent on pre-2026-08-04 instances. No consumer reads this yet; reserved for future support/anti-cheat tooling (ITEM_IDENTITY_DESIGN.md). */
+            sourceType?: string;
+            /** @description Epoch ms when this instance was created. Optional, same caveat as sourceType. */
+            obtainedAt?: number;
         };
         AuthResult: {
             token: string;
@@ -1687,6 +1712,10 @@ export interface components {
             kind: string;
             grants?: string;
             qty?: number;
+            /** @description Daily purchase cap (counts purchases, not units); omitted when the item has no cap. */
+            dailyLimit?: number;
+            /** @description Purchases made today by the requesting account, present iff dailyLimit is present. */
+            purchasedToday?: number;
         };
         GachaPool: {
             id: string;
@@ -2278,6 +2307,42 @@ export interface operations {
             401: components["responses"]["ErrorResp"];
             403: components["responses"]["ErrorResp"];
             409: components["responses"]["ErrorResp"];
+        };
+    };
+    submitFeedback: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    text: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Feedback submitted */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {boolean} */
+                        ok: true;
+                        data: {
+                            /** @enum {boolean} */
+                            ok: true;
+                        };
+                    };
+                };
+            };
+            400: components["responses"]["ErrorResp"];
+            401: components["responses"]["ErrorResp"];
+            429: components["responses"]["ErrorResp"];
         };
     };
     getSave: {

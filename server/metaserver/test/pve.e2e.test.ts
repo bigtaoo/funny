@@ -1,11 +1,12 @@
 // PvE server-authoritative end-to-end (PVE_INTEGRITY_PLAN §8): /pve/clear completion settlement.
 //   Validates unlock prerequisites, repeatable farming with material grants, daily cap capped.
 // Requires `cd server && docker compose up -d` + `tsc -b` first (imports from dist).
-import { afterAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createMongo, type JwtConfig, type MongoHandle, PVE_DAILY_CLEAR_REWARD_CAP } from '@nw/shared';
 import type { FastifyInstance } from 'fastify';
 import { buildApp } from '../dist/app.js';
 import type { GatewayClient, JudgeRes } from '../dist/gatewayClient.js';
+import { FakeSocialsvc, ThrowingSocialsvc, fakeGateway } from './helpers/fakeClients.js';
 
 const URI = process.env.NW_MONGO_URI ?? 'mongodb://127.0.0.1:27017/?replicaSet=rs0';
 const DB = 'nw_meta_pve_test';
@@ -53,6 +54,53 @@ describe.skipIf(!mongo)('pve server-authoritative e2e', () => {
     expect(r.data.save.progress.cleared).toContain('ch1_lv1');
     expect(r.data.save.progress.stars['ch1_lv1']).toBe(3);
     expect(r.data.save.materials.scrap).toBe(6);
+  });
+
+  it('author welcome mail (ONBOARDING_DESIGN §5.1): first-ever level clear sends an idempotent system mail with 1000 coins + mail_new push; a second clear does not resend it', async () => {
+    const socialsvc = new FakeSocialsvc();
+    const gw = fakeGateway({ available: true }) as GatewayClient & { pushed: { accountId: string; payload: unknown }[] };
+    const welcomeApp = await buildApp({ cols: m.collections, jwt, internalKey: 'k', socialsvc, gateway: gw });
+    const r = body(await welcomeApp.inject({ method: 'POST', url: '/auth/device', payload: { deviceId: `welcome-dev-${Math.random()}` } }));
+    const welcomeToken = r.data.token as string;
+    const welcomeAccountId = r.data.accountId as string;
+    const welcomeAuth = { authorization: `Bearer ${welcomeToken}` };
+    await welcomeApp.inject({ method: 'GET', url: '/save', headers: welcomeAuth }); // initialize save
+
+    await welcomeApp.inject({ method: 'POST', url: '/pve/clear', headers: welcomeAuth, payload: { levelId: 'ch1_lv1', stars: 3 } });
+    const mailId = `welcome.author:${welcomeAccountId}`;
+    expect(socialsvc.mail.has(mailId)).toBe(true);
+    expect(socialsvc.mail.get(mailId)?.attachments).toEqual([{ kind: 'coins', count: 1000 }]);
+    expect(gw.pushed.some((p) => p.accountId === welcomeAccountId && (p.payload as { kind?: string }).kind === 'mail_new')).toBe(true);
+
+    await welcomeApp.inject({ method: 'POST', url: '/pve/clear', headers: welcomeAuth, payload: { levelId: 'ch1_lv2', stars: 3 } });
+    expect(socialsvc.mail.size).toBe(1); // not resent on the second-ever clear
+
+    await welcomeApp.close();
+  });
+
+  it('author welcome mail is best-effort: a failed send does not block clear settlement (reward/progress still applied)', async () => {
+    // gateway left unavailable (fakeGateway()'s default) — same as the plain `app` built in beforeEach —
+    // so this clear takes the deterministic normal-settlement path, not the L1 judge spot-check path
+    // (`hasReward && gateway.available`, service/pve.ts): isFirstClear alone forces a spot-check
+    // (shouldSpotCheck, pveRewards.ts) whenever a judge IS available, which would defer materials to
+    // /pve/verify and make this test about spot-check gating instead of the welcome-mail best-effort path.
+    const gw = fakeGateway() as GatewayClient & { pushed: { accountId: string; payload: unknown }[] };
+    // ThrowingSocialsvc.insertSystemMail rejects on every call (helpers/fakeClients.js) — pve.ts's
+    // `.catch((e) => { req.log.warn(...); return null; })` around the mail send must swallow this.
+    const failApp = await buildApp({ cols: m.collections, jwt, internalKey: 'k', socialsvc: new ThrowingSocialsvc(), gateway: gw });
+    const r = body(await failApp.inject({ method: 'POST', url: '/auth/device', payload: { deviceId: `welcome-fail-dev-${Math.random()}` } }));
+    const failToken = r.data.token as string;
+    const failAuth = { authorization: `Bearer ${failToken}` };
+    await failApp.inject({ method: 'GET', url: '/save', headers: failAuth }); // initialize save
+
+    const clearRes = body(await failApp.inject({ method: 'POST', url: '/pve/clear', headers: failAuth, payload: { levelId: 'ch1_lv1', stars: 3 } }));
+    expect(clearRes.data.capped).toBe(false);
+    expect(clearRes.data.granted).toEqual({ scrap: 6, lead: 2 });
+    expect(clearRes.data.save.progress.cleared).toContain('ch1_lv1');
+    // No mail_new push — the (failed) send never reached the `if (mailResult?.inserted)` branch.
+    expect(gw.pushed.some((p) => (p.payload as { kind?: string }).kind === 'mail_new')).toBe(false);
+
+    await failApp.close();
   });
 
   // CC-2 Hero Roster model: a PvE level drop is granted as a CardInstance in `cardInv` (unitType → CARD_DEFS entry),
@@ -133,6 +181,13 @@ describe.skipIf(!mongo)('pve server-authoritative e2e', () => {
     expect(defCount(r.data.save, 'lichuang')).toBe(2);
     expect(Object.values(r.data.save.cardInv).filter((c: any) => c.defId === 'lichuang')).toHaveLength(2);
     expect(Object.values(r.data.save.cardInv).every((c: any) => c.defId !== 'lichuang' || c.level === 1)).toBe(true);
+    // Provenance (ITEM_IDENTITY_DESIGN.md, 2026-08-04): the PvE drop (not the starter copy) is tagged
+    // sourceType='pve_drop:<levelId>' — distinguish it from the starter grant seeded before this clear.
+    const dropped = Object.values(before.data.save.cardInv).map((c: any) => c.id) as string[];
+    const newLichuang = (Object.values(r.data.save.cardInv) as Array<{ id: string; defId: string; sourceType?: string; obtainedAt?: number }>)
+      .find((c) => c.defId === 'lichuang' && !dropped.includes(c.id));
+    expect(newLichuang?.sourceType).toBe('pve_drop:ch1_lv1');
+    expect(typeof newLichuang?.obtainedAt).toBe('number');
     // Final level (lv10) grants double cards.
     await seedCleared([
       'ch1_lv1', 'ch1_lv2', 'ch1_lv3', 'ch1_lv4', 'ch1_lv5',
@@ -152,6 +207,11 @@ describe.skipIf(!mongo)('pve server-authoritative e2e', () => {
     // ch1 anchor = lichuang (Tao, odd chapter): exactly one level-2 instance, distinct from the level-1 lv10 double drop.
     expect(lvlCount(r.data.save, 'lichuang', 2)).toBe(1);
     expect(r.data.save.stats['campaign.chaptersCleared']).toBe(1);
+    // Provenance (ITEM_IDENTITY_DESIGN.md, 2026-08-04): the exclusive chapter-clear anchor card is tagged
+    // sourceType='pve_anchor:<chapterId>', distinct from the ordinary level-1 'pve_drop:<levelId>' tag.
+    const anchor = (Object.values(r.data.save.cardInv) as Array<{ defId: string; level: number; sourceType?: string }>)
+      .find((c) => c.defId === 'lichuang' && c.level === 2);
+    expect(anchor?.sourceType).toBe('pve_anchor:ch1');
     // Replay the finale: no new chapter clear → no additional level-2 card (level-1 drops still repeat, but the exclusive reward is one-time).
     const r2 = body(await clear('ch1_lv10', 1));
     expect(lvlCount(r2.data.save, 'lichuang', 2)).toBe(1);
@@ -171,6 +231,9 @@ describe.skipIf(!mongo)('pve server-authoritative e2e', () => {
     expect(lvlCount(r.data.save, 'max', 2)).toBe(1);
     // Stat is recomputed as the finale-count of cleared: ch1 finale (seeded) + ch2 finale (just cleared) = 2.
     expect(r.data.save.stats['campaign.chaptersCleared']).toBe(2);
+    const anchor = (Object.values(r.data.save.cardInv) as Array<{ defId: string; level: number; sourceType?: string }>)
+      .find((c) => c.defId === 'max' && c.level === 2);
+    expect(anchor?.sourceType).toBe('pve_anchor:ch2');
   });
 
   it('later chapter drops higher-tier card (CC-2): ch3 drops a shieldbearer card into the roster', async () => {
@@ -182,6 +245,9 @@ describe.skipIf(!mongo)('pve server-authoritative e2e', () => {
     expect(r.data.grantedCards).toEqual({ 'shieldbearer:2': 1 });
     // Drop tier (T2 in the cardKey) is informational; the Hero Roster grants a fresh level-1 shieldbearer (= chenshou) instance.
     expect(defCount(r.data.save, 'chenshou')).toBe(2); // starter + drop
+    const dropped = (Object.values(r.data.save.cardInv) as Array<{ defId: string; sourceType?: string }>)
+      .filter((c) => c.defId === 'chenshou');
+    expect(dropped.some((c) => c.sourceType === 'pve_drop:ch3_lv1')).toBe(true);
   });
 
   it('daily cap: when capped neither materials nor unit cards are granted (CC-2)', async () => {
@@ -207,6 +273,30 @@ describe.skipIf(!mongo)('pve server-authoritative e2e', () => {
     expect(r2.data.granted).toEqual({ scrap: 6, lead: 2 }); // materials still granted
     expect(r2.data.save.materials.scrap).toBe(12);
     expect(r2.data.save.progress.stars['ch1_lv1']).toBe(3); // stars do not regress
+  });
+
+  it('equipment drop stamps provenance sourceType="pve_drop:<levelId>" (ITEM_IDENTITY_DESIGN.md, 2026-08-04)', async () => {
+    // ch1_lv5 has equipmentDrop: {rarity:'common', rate:0.10} (pveRewards.ts) — force the roll to hit by
+    // stubbing Math.random (prepareClearReward's `Math.random() < dropCfg.rate` gate), independent of the
+    // deterministic per-instance seededRng used for slot/affix selection.
+    await seedCleared(['ch1_lv1', 'ch1_lv2', 'ch1_lv3', 'ch1_lv4']);
+    const spy = vi.spyOn(Math, 'random').mockReturnValue(0);
+    try {
+      const before = Date.now();
+      const r = body(await clear('ch1_lv5', 3));
+      const after = Date.now();
+      expect(r.data.grantedEquipment).toBeTruthy();
+      expect(r.data.grantedEquipment.rarity).toBe('common');
+      expect(r.data.grantedEquipment.sourceType).toBe('pve_drop:ch1_lv5');
+      expect(r.data.grantedEquipment.obtainedAt).toBeGreaterThanOrEqual(before);
+      expect(r.data.grantedEquipment.obtainedAt).toBeLessThanOrEqual(after);
+      // Round-trips through the equipmentInstances collection, not just the mutation response.
+      const stored = (await m.collections.equipmentInstances.findOne({ _id: r.data.grantedEquipment.id }))!;
+      expect(stored.sourceType).toBe('pve_drop:ch1_lv5');
+      expect(stored.obtainedAt).toBe(r.data.grantedEquipment.obtainedAt);
+    } finally {
+      spy.mockRestore();
+    }
   });
 
   it('daily cap: clears beyond cap are capped and grant no materials (progress still recorded)', async () => {

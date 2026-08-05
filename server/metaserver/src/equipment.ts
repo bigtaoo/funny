@@ -95,6 +95,8 @@ export function toInstanceDoc(instance: EquipmentInstance, accountId: string): E
     level: instance.level,
     affixes: instance.affixes,
     ...(instance.locked !== undefined ? { locked: instance.locked } : {}),
+    ...(instance.sourceType !== undefined ? { sourceType: instance.sourceType } : {}),
+    ...(instance.obtainedAt !== undefined ? { obtainedAt: instance.obtainedAt } : {}),
   };
 }
 
@@ -106,6 +108,8 @@ function fromInstanceDoc(doc: EquipmentInstanceDoc): EquipmentInstance {
     level: doc.level,
     affixes: doc.affixes,
     ...(doc.locked !== undefined ? { locked: doc.locked } : {}),
+    ...(doc.sourceType !== undefined ? { sourceType: doc.sourceType } : {}),
+    ...(doc.obtainedAt !== undefined ? { obtainedAt: doc.obtainedAt } : {}),
   };
 }
 
@@ -181,6 +185,8 @@ export async function craftEquipment(
     rarity: def.rarity,
     level: 0,
     affixes: rollCraftedAffixes(defId, idempotencyKey),
+    sourceType: 'craft',
+    obtainedAt: now(),
   };
   const craftCost = def.craftCost;
 

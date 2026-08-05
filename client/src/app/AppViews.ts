@@ -23,6 +23,7 @@ import type {
 import type { ProfileData } from '../ui/dialogs/ProfilePopup';
 
 import type { IntroSceneCallbacks } from '../scenes/IntroScene';
+import type { IllustratedInterludeCallbacks } from '../scenes/IllustratedInterludeScene';
 import type { LobbySceneCallbacks } from '../scenes/LobbyScene';
 import type { SettingsSceneCallbacks } from '../scenes/SettingsScene';
 import type { LoginSceneCallbacks } from '../scenes/LoginScene';
@@ -170,6 +171,12 @@ export interface ResultViewProps {
  */
 export interface AppViews {
   showIntro(cb: IntroSceneCallbacks): void;
+  /**
+   * Chapter-end "real layer" interlude (Tao/Anna, world.md「章末真实层」) — one full-bleed
+   * illustration + a single '\n'-separated i18n key, tap-through beat by beat. `textKey`'s
+   * translated value is split into beats by the scene itself.
+   */
+  showRealLayerInterlude(illustrationUrl: string, textKey: TranslationKey, cb: IllustratedInterludeCallbacks): void;
   /** First-launch GDPR / privacy consent gate (C5-c, L1-1). Blocks until accepted. */
   showConsent(cb: ConsentCallbacks): void;
   /** Login-reconnect-prompt: "resume your unfinished match?" shown when GET /save reports an activeMatch. */

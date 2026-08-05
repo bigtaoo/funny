@@ -169,6 +169,16 @@ Collection  Stats     Lobby    Shop/Gacha    Room
 - **LoginScene 离线提示换行（2026-07-11）**：`auth.offlineHint`（EN/DE 较长，monospace 下超 1080 设计宽）改用 `txt(..., wordWrapWidth=w*0.86)` + 居中对齐，两行排版，不再左右裁切。
 - **账号 chip 配色/间距修正（2026-07-19）**：右上角金币 chip 与段位 chip 用户反馈"配色突兀、贴太近"——两者本是不同信息（金币 vs 天梯段位+积分），此前段位徽章却用纯白 `C.light` 文字+边框、无图标，视觉上不成一套。新增 `LobbyScene/base.ts` 的 `TIER_COLORS`（按 `pvp.rank` 取色：unranked 灰、bronze/silver/gold/platinum/diamond/master 各自色），段位 chip 边框+文字改用该色，并加奖杯图标（`buildIcon('trophy', ...)`）与金币图标对称；两 chip 垂直间距从 `chipBandH*0.26/0.58` 拉开到 `0.20/0.74`。见 `LobbyScene/build.ts`。
 
+#### 4.1.1 右侧竖条：成就入口 → 反馈入口（2026-08-04）
+
+右侧竖条（`Daily / Mail / Events / Achievements`，§3 导航结构一节，`onOpenAchievements` 回调，`build.ts` 的 `hasAchieve`/`achieveStripRect`）使用率低，替换为**游戏内反馈入口**（`onOpenFeedback`），常驻可用、不设任何前置条件：
+
+- **视觉**：复用原成就格的位置/尺寸/交互（`achieveStripRect` 重命名为 `feedbackStripRect`，strip tag 由 `'achieve'` 改 `'feedback'`），标签沿用其它格子的短文字风格（`t('lobby.strip.feedback')`），不新增图标图集。不设红点（无"未读"概念，提交即结束，无需玩家再次关注）。
+- **面板**：点击后打开 `FeedbackDialog`（`client/src/ui/dialogs/FeedbackDialog.ts`）——一个 stage 级覆盖层（zIndex 9000，不经 SceneManager，不打断当前场景），结构复用 `AppealDialog` 的隐藏 `<input>` 文本采集技术：标题 + 说明文案 + 单行输入框（镜像显示自动换行）+「提交」/「关闭」按钮。触发走 `net/log.ts` 新增的 `setFeedbackSink`/`requestFeedbackDialog`（与既有 `AppealPrompt` 同一 sink 模式，让 `nav/lobby.ts` 不必引入 PIXI 依赖）。提交成功后**不关闭面板**，原地清空输入框并提示「已收到，谢谢」，允许再次提交（不限制"只能提交一次"）。
+- **成就墙访问路径不受影响**：成就墙本就还能通过 Career hub（`StatsScene`/`TitlesScene`/`CardCodexScene` 共享的 `CareerTabs`）以及成就解锁 toast（`build.ts` 的 `toastRect` 点击直达）访问，拿掉这一个侧栏入口不影响可达性。
+- **接口**：`POST /feedback`（见 [`SERVER_API.md`](SERVER_API.md) §2.13），提交中禁用按钮防重复点击；失败（限流/网络）原地提示失败原因，不清空输入内容（方便重试）。
+- **测试覆盖**（用户要求"全部加测试"后追加，2026-08-05）：落地时只有 `server/metaserver` 的 `feedback.e2e.test.ts`（7 例）+ `pve.e2e.test.ts` 的欢迎邮件一例；本次补齐此前完全无覆盖的三层——① `client/test/feedback-prompt.test.ts`（7 例）：`net/log.ts` 的 `setFeedbackSink`/`requestFeedbackDialog` sink（含"无 sink 已注册"/"sink 抛异常被吞"）、`ApiClient.submitFeedback`（`POST /feedback` 请求体 + 429 等错误透传）、`createAppCore().submitFeedback`（离线为 `undefined`／在线委托 `ApiClient`），镜像既有 `appeal-prompt.test.ts` 对申诉功能的覆盖方式；② `client/test/lobby-feedback-nav.test.ts`（2 例）：`nav/lobby.ts` 的 `onOpenFeedback` 只在 `online` 时才挂上（与 `onOpenAchievements`/`onOpenAuction` 同一门槛），点击触发 `analytics.click('lobby.feedback')` + sink；③ `server/admin`：新增 `test/feedback.e2e.test.ts`（5 例，镶 `FeedbackMixin.listFeedback` 代理/审计/503/`limit` 转发/`feedback.view` 角色矩阵，`contentModerationBridge.e2e.test.ts` 同款写法），并修了 `test/clients-barrel.test.ts` 漏掉的 `HttpFeedbackClient`（barrel 已导出但守卫列表没跟上，功能本身没问题，纯测试盖口）；同时给 `server/metaserver/test/feedback.e2e.test.ts` 补 3 例（未登录 401、`X-NW-Platform` 头透传/缺省两种 `clientPlatform` 落库情况），`pve.e2e.test.ts` 补 1 例（见 [`ONBOARDING_DESIGN.md`](ONBOARDING_DESIGN.md) §5.1 的邮件 best-effort 一例）。PIXI 强耦合的 `build.ts` 侧栏渲染/命中区（`feedbackStripRect` 改名、tap 分发）沿用既有约定未加专项单测——项目里同类渲染逐字段布局代码历来只在 `badges.ts` 这类轻量文件上做过 mock 覆盖，`build.ts` 本身的资源依赖图很重，性价比低，未纳入本次范围。
+
 ### 4.2 RoomScene（好友房，S1）
 ```
 ┌──────────────────────────────┐

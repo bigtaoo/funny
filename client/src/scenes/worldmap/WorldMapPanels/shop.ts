@@ -2,7 +2,7 @@
 // (2026-08-02: pulled out of the Territory Overview panel into a panel of its own).
 import * as PIXI from 'pixi.js-legacy';
 import { t } from '../../../i18n';
-import { ui as C, txt, sketchPanel, seedFor, tearDownChildren } from '../../../render/sketchUi';
+import { ui as C, txt, txtOutlined, sketchPanel, seedFor, tearDownChildren } from '../../../render/sketchUi';
 import { buildIcon } from '../../../render/icons';
 import { FS } from '../../../render/fontScale';
 import { HUD_H } from '../constants';
@@ -10,15 +10,20 @@ import type { SlgShopItemView } from '../../../net/WorldApiClient';
 import type { IconKind } from '../../../render/icons';
 import type { Constructor, WorldMapPanelsBaseCtor } from './base';
 
-// Item-kind → card icon. Was a `private static readonly` on WorldMapPanels; a mixin's class
-// expression is anonymous, so there is no class name to reach a static through — module scope
-// is the direct equivalent and is what the other panel mixins already use for their constants.
+// Item-kind → card icon, for kinds with exactly one visual (no duration tiers). Was a
+// `private static readonly` on WorldMapPanels; a mixin's class expression is anonymous, so
+// there is no class name to reach a static through — module scope is the direct equivalent
+// and is what the other panel mixins already use for their constants.
 const SHOP_KIND_ICON: Record<string, IconKind> = {
-  troop_speedup: 'spd',
   resource_pack: 'coinChest',
-  protection: 'armor',
   battle_pass: 'trophy',
 };
+
+// Escalating icon variants for the two duration-tiered kinds — same idiom `currency.ts` uses
+// for the coin recharge ladder (coin→coins→coinStack→coinSack→coinChest): the longer tier reads
+// as a visually "fuller"/"heavier" glyph, not the same icon carrying only a text-label difference.
+const SPEEDUP_ICON_TIERS: IconKind[] = ['hourglassSm', 'hourglassMd', 'hourglassLg'];
+const PROTECTION_ICON_TIERS: IconKind[] = ['armor', 'armorHeavy'];
 
 export interface ShopHandlers {
   shopLabel(it: SlgShopItemView): string;
@@ -37,6 +42,36 @@ export function ShopMixin<TBase extends WorldMapPanelsBaseCtor>(Base: TBase): TB
           })
           .catch(() => { /* offline */ });
       }
+    }
+
+    /**
+     * Short corner-badge text for tiers that share one icon glyph across kind (troop_speedup /
+     * protection both key off `duration_sec`, so a 1h/8h/24h speedup or an 8h/24h shield look
+     * identical at a glance without this) — `null` for kinds with no duration tier (resource_pack
+     * reads its quantity straight off the name text; battle_pass has only one tier).
+     */
+    private shopBadgeLabel(it: SlgShopItemView): string | null {
+      if (it.kind !== 'troop_speedup' && it.kind !== 'protection') return null;
+      const eff = it.effect as Record<string, number>;
+      return `${Math.round((eff.duration_sec ?? 0) / 3600)}H`;
+    }
+
+    /**
+     * Card icon for `it`: kinds with duration tiers (troop_speedup/protection) rank `it` among
+     * same-kind items by `duration_sec` and index into that kind's escalating icon ladder, so
+     * 1h/8h/24h speedup or 8h/24h shield don't share one identical glyph; other kinds use the
+     * flat `SHOP_KIND_ICON` lookup.
+     */
+    private shopIcon(it: SlgShopItemView): IconKind {
+      const tiers = it.kind === 'troop_speedup' ? SPEEDUP_ICON_TIERS
+        : it.kind === 'protection' ? PROTECTION_ICON_TIERS
+        : null;
+      if (!tiers) return SHOP_KIND_ICON[it.kind] ?? 'tag';
+      const sameKind = this.ctx.shopItems
+        .filter((x) => x.kind === it.kind)
+        .sort((a, b) => ((a.effect as Record<string, number>).duration_sec ?? 0) - ((b.effect as Record<string, number>).duration_sec ?? 0));
+      const rank = Math.max(0, sameKind.findIndex((x) => x.id === it.id));
+      return tiers[Math.min(rank, tiers.length - 1)] as IconKind;
     }
 
     shopLabel(it: SlgShopItemView): string {
@@ -75,9 +110,19 @@ export function ShopMixin<TBase extends WorldMapPanelsBaseCtor>(Base: TBase): TB
       frame.x = imgX; frame.y = imgY;
       layer.addChild(frame);
       const iconSize = imgBox - 12;
-      const icon = buildIcon(SHOP_KIND_ICON[it.kind] ?? 'tag', iconSize, C.accent);
+      const icon = buildIcon(this.shopIcon(it), iconSize, C.accent);
       icon.x = imgX + (imgBox - iconSize) / 2; icon.y = imgY + (imgBox - iconSize) / 2;
       layer.addChild(icon);
+
+      // Duration badge — a corner tag over the frame so same-kind tiers (1h/8h/24h speedup,
+      // 8h/24h shield) read apart by icon alone, not just by the name text beside it.
+      const badgeLabel = this.shopBadgeLabel(it);
+      if (badgeLabel) {
+        const badge = txtOutlined(badgeLabel, FS.micro, C.accent, 0xfaf9f5, 3, true);
+        badge.anchor.set(1, 0);
+        badge.x = imgX + imgBox + 2; badge.y = imgY - 4;
+        layer.addChild(badge);
+      }
 
       const ax = imgX + imgBox + 10;
       const colW = x + cellW - pad - ax;
