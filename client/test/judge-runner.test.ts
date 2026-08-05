@@ -6,10 +6,11 @@
 // frame stream → ok:false (bounded, no crash).
 import { describe, it, expect } from 'vitest';
 import { createGameEngine } from '@nw/engine/GameEngine';
+import type { LevelDefinition } from '@nw/engine/campaign/LevelDefinition';
 import { GamePhase, Side, type InputSource, type OwnerId, type PlayerCommand } from '../src/game';
 import { matchStateHash, runJudge } from '../src/net/judgeRunner';
 import { PlayerCommands } from '../src/net/proto/game';
-import type { JudgeRequest } from '../src/net/proto/transport';
+import { MatchMode, type JudgeRequest } from '../src/net/proto/transport';
 
 const TICK_DT = 1 / 30;
 const SEED = 0xbeef;
@@ -161,5 +162,76 @@ describe('peer judge runner', () => {
       expect(outFullPool.ok).toBe(true);
       expect(outFullPool.stateHash).not.toBe(expectedRestricted);
     }, 30_000);
+  });
+});
+
+// SLG siege recomputation (S8-3, SLG_DESIGN §5.3): runJudge routes to runSiegeJudge whenever
+// req.defenseJson is non-empty (checked before levelId/netplay). This dispatch + its success/
+// malformed-config paths had zero coverage before this file — only the PvP and PvE (pve-judge.test.ts)
+// branches of runJudge were exercised.
+describe('siege judge recomputation (S8-3, SLG_DESIGN §5.3)', () => {
+  const SIEGE_SEED = 7;
+
+  /** No waves, no attacker action needed: `timed_defense` awards the attacker (Bottom/owner 0)
+   *  the win once elapsedTicks reaches durationTicks — deterministic without scripting any plays. */
+  function siegeDefenseConfig(): LevelDefinition {
+    return {
+      id: 'siege_judge_test',
+      chapter: 0,
+      seed: SIEGE_SEED,
+      objective: { kind: 'timed_defense', durationTicks: 300 },
+      waves: { entries: [] },
+    };
+  }
+
+  function buildSiegeJudgeRequest(defenseJson: string, endFrame = 310): JudgeRequest {
+    return {
+      requestId: 'siege-r1',
+      seed: SIEGE_SEED,
+      mode: MatchMode.FRIENDLY,
+      endFrame,
+      frames: [],
+      levelId: '',
+      defenseJson,
+      topDeck: [],
+      bottomDeck: [],
+      cardInstancesJson: '',
+      equipmentInvJson: '',
+    } as JudgeRequest;
+  }
+
+  it('recomputes the same winner as an independent engine run given no attacker action', () => {
+    const level = siegeDefenseConfig();
+    const engine = createGameEngine({ seed: SIEGE_SEED, players: [{ id: 0 }, { id: 1 }], mode: 'siege', level });
+    let guard = 0;
+    while (engine.state.phase !== GamePhase.GameOver && guard < 1000) {
+      engine.tick(TICK_DT);
+      guard++;
+    }
+    expect(engine.state.phase).toBe(GamePhase.GameOver);
+    const expectedWinnerSide: OwnerId = engine.state.winner === Side.Top ? 1 : 0;
+
+    const out = runJudge(buildSiegeJudgeRequest(JSON.stringify(level)));
+    expect(out.ok).toBe(true);
+    expect(out.winnerSide).toBe(expectedWinnerSide);
+    // Siege recomputation never produces a state hash or star count — only the breach outcome matters.
+    expect(out.stateHash).toBe('');
+    expect(out.stars).toBe(0);
+  });
+
+  it('malformed defenseJson (not valid JSON) → ok:false, no crash', () => {
+    const out = runJudge(buildSiegeJudgeRequest('{not valid json'));
+    expect(out.ok).toBe(false);
+  });
+
+  it('dispatch: defenseJson takes priority over levelId (a siege request is never misrouted to the PvE branch)', () => {
+    const level = siegeDefenseConfig();
+    const req = { ...buildSiegeJudgeRequest(JSON.stringify(level)), levelId: 'ch1_lv1' };
+
+    const out = runJudge(req);
+    // runPveJudge would set stars from computeStars(); runSiegeJudge always leaves stars at 0 —
+    // this distinguishes "routed correctly" from "silently fell through to the PvE branch".
+    expect(out.ok).toBe(true);
+    expect(out.stars).toBe(0);
   });
 });
