@@ -4495,11 +4495,15 @@ paths:
                         required:
                           - checkin
                           - daily
+                          - weekly
                         properties:
                           checkin:
                             type: boolean
                           daily:
                             type: boolean
+                          weekly:
+                            type: boolean
+                            description: Any weekly active chest tier (WEEKLY_CHEST_TIERS) reached but not yet claimed this ISO week
                       eventsAvailable:
                         type: boolean
         '401':

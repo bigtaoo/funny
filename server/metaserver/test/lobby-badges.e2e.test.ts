@@ -5,7 +5,7 @@
 // response schema gets silently stripped to `undefined` by fastify's schema-based serialization.
 // Requires `cd server && docker compose up -d` + prior `tsc -b` (imports from dist).
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
-import { createMongo, type JwtConfig, type MongoHandle } from '@nw/shared';
+import { createMongo, makeWeekKey, type JwtConfig, type MongoHandle } from '@nw/shared';
 import type { FastifyInstance } from 'fastify';
 import { buildApp } from '../dist/app.js';
 import type { MetaSocialsvcClient } from '../dist/socialsvcClient.js';
@@ -87,10 +87,41 @@ describe.skipIf(!mongo)('meta GET /lobby/badges e2e', () => {
 
     expect(r.data.retentionClaimable).toHaveProperty('checkin');
     expect(r.data.retentionClaimable).toHaveProperty('daily');
+    expect(r.data.retentionClaimable).toHaveProperty('weekly');
     expect(typeof r.data.retentionClaimable.checkin).toBe('boolean');
     expect(typeof r.data.retentionClaimable.daily).toBe('boolean');
+    expect(typeof r.data.retentionClaimable.weekly).toBe('boolean');
+    expect(r.data.retentionClaimable.weekly).toBe(false); // nothing accrued yet
 
     expect(r.data.eventsAvailable).toBe(false); // no active events seeded
+  });
+
+  // 2026-08-05 fix: getLobbyBadges used to hand-roll checkin/daily only (omitting weekly entirely) —
+  // a player who'd earned a weekly-chest tier but already claimed today's checkin/daily saw no red
+  // dot at all on the lobby's "每日" entry, even though hasRetentionClaimable (retention.ts, used by
+  // the client mirror) already accounted for weekly tiers. Guards the wiring end-to-end: an accrued,
+  // unclaimed weekly tier must surface as retentionClaimable.weekly === true here.
+  it('a reached-but-unclaimed weekly chest tier surfaces as retentionClaimable.weekly = true (2026-08-05 fix)', async () => {
+    app = await buildApp({ cols: m.collections, jwt, internalKey: 'k', now: () => fakeNow });
+    await login();
+
+    const before = body(await app.inject({ method: 'GET', url: '/lobby/badges', headers: auth() }));
+    expect(before.data.retentionClaimable.weekly).toBe(false);
+
+    // Seed retention.weekly directly (accrueRetentionTask is only reachable from inside metaserver's
+    // own settlement points, no HTTP endpoint for it — same technique as retention.e2e.test.ts's
+    // seedWeeklyPoints), past the first tier's threshold (9) and not yet claimed.
+    const doc = await m.collections.saves.findOne({});
+    await m.collections.saves.updateOne(
+      { _id: doc!._id },
+      { $set: { 'save.retention.weekly': { weekKey: makeWeekKey(fakeNow), points: 9, claimedTiers: [] }, rev: doc!.rev + 1 } },
+    );
+
+    const after = body(await app.inject({ method: 'GET', url: '/lobby/badges', headers: auth() }));
+    expect(after.data.retentionClaimable.weekly).toBe(true);
+    // checkin/daily are independently still whatever they were — this fix must not affect them.
+    expect(after.data.retentionClaimable.checkin).toBe(before.data.retentionClaimable.checkin);
+    expect(after.data.retentionClaimable.daily).toBe(before.data.retentionClaimable.daily);
   });
 
   it('socialsvc configured: social badges are proxied through, not stripped', async () => {

@@ -4309,6 +4309,8 @@ export interface operations {
                             retentionClaimable: {
                                 checkin: boolean;
                                 daily: boolean;
+                                /** @description Any weekly active chest tier (WEEKLY_CHEST_TIERS) reached but not yet claimed this ISO week */
+                                weekly: boolean;
                             };
                             eventsAvailable: boolean;
                         };
