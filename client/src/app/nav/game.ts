@@ -20,7 +20,7 @@ import { matchBadgeTelemetry } from '../../scenes/ResultScene';
 import type { AppCtx, Nav } from '../appCtx';
 import { PLAYER_PUBLIC_ID_KEY, PLAYER_NAME_KEY, TOKEN_KEY, TUTORIAL_DONE_FLAG } from '../appConstants';
 import { pickPracticeDifficulty } from './lobby';
-import { REAL_LAYER_INTERLUDE_ART } from '../../scenes/realLayerInterludeArt';
+import { resolveRealLayerInterlude } from '../../scenes/realLayerInterludeArt';
 
 type GameNav = Pick<Nav,
   'goGame' | 'goCampaignMap' | 'goLevelPrep' | 'goCardRoster' | 'goEquipment' |
@@ -564,10 +564,11 @@ export function createGameNav(ctx: AppCtx): GameNav {
         // Each chapter's last level (chN_lv10.json) carries a `realLayerKey` — the Tao/Anna
         // "real layer" beat for that chapter (world.md「章末真实层」). Shown as its own
         // illustrated interlude after the result panel, before actually returning to the map;
-        // every other level has no realLayerKey, so `proceedToMap` is just `goCampaignMap`.
-        const realLayerKey = winner === 0 ? level.story?.realLayerKey as TranslationKey | undefined : undefined;
-        const proceedToMap = realLayerKey
-          ? () => views.showRealLayerInterlude(REAL_LAYER_INTERLUDE_ART[level.chapter]!, realLayerKey, {
+        // every other level (or a non-win) has no interlude, so `proceedToMap` is just
+        // `goCampaignMap` (see resolveRealLayerInterlude's own unit tests for the branching).
+        const interlude = resolveRealLayerInterlude(level, winner);
+        const proceedToMap = interlude
+          ? () => views.showRealLayerInterlude(interlude.illustrationUrl, interlude.textKey, {
               onFinish: () => goCampaignMap(),
             })
           : goCampaignMap;

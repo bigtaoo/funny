@@ -16,6 +16,7 @@ import { InputManager } from '../../src/inputSystem/InputManager';
 import { initI18n } from '../../src/i18n';
 
 import { IntroScene } from '../../src/scenes/IntroScene';
+import { IllustratedInterludeScene } from '../../src/scenes/IllustratedInterludeScene';
 import { LoginScene } from '../../src/scenes/LoginScene';
 import { LobbyScene } from '../../src/scenes/LobbyScene';
 import { SettingsScene } from '../../src/scenes/SettingsScene';
@@ -202,6 +203,17 @@ const SCENES: Array<{ name: string; build: (w: number, h: number) => Scene }> = 
   {
     name: 'IntroScene',
     build: (w, h) => new IntroScene(createLayout(w, h), new InputManager(), { onFinish() {} }),
+  },
+  {
+    name: 'IllustratedInterludeScene',
+    build: (w, h) =>
+      new IllustratedInterludeScene(
+        // A literal string (unlike a real webpack asset import) isn't intercepted by any
+        // asset-stubbing transform, so it must already be a data: URL — PIXI's
+        // determineCrossOrigin() short-circuits before touching `document` (absent in this
+        // headless environment) only for `data:` URLs; see vitest.ui.config.ts's stubBinaryAssets.
+        createLayout(w, h), new InputManager(), 'data:image/png;base64,', 'campaign.realLayer.ch1', { onFinish() {} },
+      ),
   },
   {
     name: 'LoginScene',
