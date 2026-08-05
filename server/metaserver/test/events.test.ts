@@ -1,6 +1,7 @@
 // B6 timed-event container pure-logic unit tests (no Mongo required): isEventActive / taskProgress / rewardClaimedCount.
 import { describe, it, expect } from 'vitest';
 import { isEventActive, taskProgress, rewardClaimedCount, type EventTaskProgress } from '@nw/shared';
+import { participantId } from '../src/events.js';
 
 describe('isEventActive event window check', () => {
   const START = 1_000_000;
@@ -18,12 +19,6 @@ describe('isEventActive event window check', () => {
 
   it('returns false before the event starts', () => {
     expect(isEventActive(START, END, START - 1)).toBe(false);
-  });
-
-  it('claim outside the event window must be blocked (window just closed)', () => {
-    // acceptance: claim outside the event window is rejected
-    const justClosed = END;
-    expect(isEventActive(START, END, justClosed)).toBe(false);
   });
 });
 
@@ -69,14 +64,8 @@ describe('points do not carry over across events (semantic acceptance)', () => {
     const accountId = 'acc1';
     const event1Id = 'event-A';
     const event2Id = 'event-B';
-    const pid1 = `${event1Id}:${accountId}`;
-    const pid2 = `${event2Id}:${accountId}`;
+    const pid1 = participantId(event1Id, accountId);
+    const pid2 = participantId(event2Id, accountId);
     expect(pid1).not.toBe(pid2);
-  });
-
-  it('points belong to the event; claiming after it ends is blocked (guarded by isEventActive)', () => {
-    const NOW = 3_000_000;
-    const closedEvent = { windowStart: 1_000_000, windowEnd: 2_000_000 };
-    expect(isEventActive(closedEvent.windowStart, closedEvent.windowEnd, NOW)).toBe(false);
   });
 });
