@@ -168,3 +168,14 @@ UI 冒烟层够不着的硬故障——只有**真渲染器 / 真 WebGL** 才暴
 - **`test/roomNav.test.ts`**：手搓 `NetSession`（只实现 `room.ts` 真正摸到的那几个方法）+ `HeadlessAppViews` 驱动真实 `createRoomNav()`/`goRoom()`。18 个用例覆盖 `createRoom`/`joinRoom`/`setReady`/`startMatch`/`createRanked`/`cancelQueue` 的直通转发、`onBack` 收尾（关会话+ handlers 收窄到只剩 `onMatchStart` + 回大厅）、无 session 时 `available:false`、房间状态/错误推送落地；autoRanked 分支（网关已开时同步立即排位、未开时等 `onNetState('open')` 才排、同一个 open 事件重复推送不二次排位、`cancelQueue()` 之后下一次 open 能重新排位、无 session 时只警告不抛错）；`onMatchBot` 兜底（合法/非法难度字符串解析、排位标志复位后能再排）；`goDeckBuilder`（真实持久化 `pvpDeck` + 转发 `onSave`、无存档时兜底默认卡组）。
 
 两个新文件加起来 36 个用例。跑通同样需要 worktree 里对 `server/` 单独 `npm install`。
+
+## `proto-wire-compat.test.ts` 向量补全（2026-08-05 审计 backlog 第 4 项）
+
+审计标记这个文件的字节级向量落后于 `transport.proto` 演进——只覆盖最初的 9 个 `ClientMsg` + 9 个 `ServerMsg` oneof 分支，之后新增的 `duel_invite`/`duel_respond`/`client_caps`/`judge_verdict`（client 侧）和 `judge_request`/`friend_*`/`chat_message`/`mail_new`/`march_update`/`tile_update`/`under_attack`/`siege_result`/`family_msg`/`sect_msg`/`nation_msg`/`match_bot`/`duel_invited`/`duel_cancelled`/`queue_state`/`pre_match_lost`/`match_found`（server 侧，19 个）全部零向量，尽管文件头部注释本身就写着"改了 proto 就要重新生成向量"。
+
+**更根本的问题**：这个"重新生成"步骤其实从来没有过脚本——`_proto_vectors.json` 是某次手工跑出来的产物，此后没人跑过第二次。新增：
+
+- **`client/scripts/gen-proto-vectors.mjs`**：独立加载 `server/contracts/transport.proto`（用 protobufjs，`keepCase:true`——跟 `server/gameserver/test/transport.test.ts` 交叉校验服务端手写编解码器用的是同一套机制），对每个 `ClientMsg`/`ServerMsg` oneof 分支各构造一条样例消息，`Envelope.encode()` 后转 hex，写回 `_proto_vectors.json`。protobufjs 是 server workspace 的依赖，client 侧没装——脚本用 `createRequire(server/package.json)` 从 server 的 node_modules 借，不为了一个一次性脚本给 client 加依赖。新增 `npm run proto:vectors`（`client/package.json`）。跑出来的旧 9+9 条向量跟仓库里原有的逐字节相同，验证了这个构造方式跟原作者当年用的是同一套。
+- **`test/proto-wire-compat.test.ts`**：client 侧新增 4 条（塞进现有 `clientCases` 循环，自动走 encode+decode round-trip 比对，不用额外写断言）；server 侧新增 19 条 `it('decodes X', …)`，逐字段断言（`match_found`/`judge_request`——含 `frames`/`topDeck`/`bottomDeck`/`cardInstancesJson` 等 PvE/攻城重算专用字段/`friend_presence`/`friend_request`/`friend_update`（`REMOVED` enum 值）/`chat_message`/`mail_new`/`march_update`/`tile_update`/`under_attack`/`siege_result`（含 2026-08-02 那次 `attackerId`/`marchKind` 归属修复的字段）/`family_msg`/`sect_msg`/`nation_msg`/`match_bot`（uint64 seed + 十进制字符串 difficulty）/`duel_invited`/`duel_cancelled`/`queue_state`（无字段消息）/`pre_match_lost`）。41 个用例全绿（13 client + 28 server）。
+
+以后改 `transport.proto` 新增/改动 oneof 分支：先 `npm run proto:gen`（生成 TS），再 `npm run proto:vectors`（重跑权威字节向量），最后在 `proto-wire-compat.test.ts` 补对应的 `clientCases` 条目或 `it('decodes X', …)` 断言——三步缺一都会让这层"client ts-proto ↔ server protobufjs 字节级互通"回归测试形同虚设。
