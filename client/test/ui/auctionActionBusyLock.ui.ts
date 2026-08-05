@@ -118,6 +118,70 @@ describe('AuctionScene — busy lock prevents duplicate requests', () => {
   });
 });
 
+// doCancel's own success/failure bodies were never driven by any test before this — the busy-lock
+// spec above only proved the SECOND call is a no-op, never that the FIRST call's cancelAuction
+// request body, success toast + refetch, or failure toast actually run (2026-08-05 client-test-audit).
+describe('AuctionScene — doCancel() real request body', () => {
+  it('success: cancels, toasts, refetches both listings feeds, and unlocks', async () => {
+    const cancelAuction = vi.fn(async () => ({ ok: true as const }));
+    const listAuctions = vi.fn(async () => [] as AuctionView[]);
+    const getMyListings = vi.fn(async () => [] as AuctionView[]);
+    const scene = buildMineScene(
+      stubWorldApi({ cancelAuction, listAuctions, getMyListings }),
+      makeAuction({ sellerId: 'acc_me' }),
+      'acc_me',
+    );
+    listAuctions.mockClear(); getMyListings.mockClear(); // drop the constructor's own initial loadData() call
+    const showToast = vi.spyOn(scene, 'showToast');
+
+    await scene.doCancel('auc_1');
+
+    expect(cancelAuction).toHaveBeenCalledWith('auc_1');
+    expect(showToast).toHaveBeenCalledWith(t('auction.cancelled'));
+    // doCancel's success path awaits loadData(), which refetches BOTH feeds (all + mine).
+    expect(listAuctions).toHaveBeenCalledTimes(1);
+    expect(getMyListings).toHaveBeenCalledTimes(1);
+    expect(scene.bt.busy).toBe(false);
+  });
+
+  it('failure: toasts the mapped error and never refetches', async () => {
+    const cancelAuction = vi.fn(async () => { throw new Error('not your listing'); });
+    const listAuctions = vi.fn(async () => [] as AuctionView[]);
+    const scene = buildMineScene(
+      stubWorldApi({ cancelAuction, listAuctions }),
+      makeAuction({ sellerId: 'acc_me' }),
+      'acc_me',
+    );
+    listAuctions.mockClear(); // drop the constructor's own initial loadData() call
+    const showToast = vi.spyOn(scene, 'showToast');
+
+    await scene.doCancel('auc_1');
+
+    expect(showToast).toHaveBeenCalledWith('Error: not your listing', expect.anything());
+    expect(showToast).not.toHaveBeenCalledWith(t('auction.cancelled'));
+    expect(listAuctions).not.toHaveBeenCalled();
+    expect(scene.bt.busy).toBe(false);
+  });
+
+  it('a hung cancelAuction() times out after 10s, toasts common.networkTimeout, and unlocks', async () => {
+    vi.useFakeTimers();
+    try {
+      const cancelAuction = vi.fn(() => new Promise<{ ok: true }>(() => {}));
+      const scene = buildMineScene(stubWorldApi({ cancelAuction }), makeAuction({ sellerId: 'acc_me' }), 'acc_me');
+      const showToast = vi.spyOn(scene, 'showToast');
+
+      const pending = scene.doCancel('auc_1');
+      await vi.advanceTimersByTimeAsync(10_001);
+      await pending;
+
+      expect(showToast).toHaveBeenCalledWith(t('common.networkTimeout'), expect.anything());
+      expect(scene.bt.busy).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
 describe('AuctionScene — list-row Buy button greys out while busy', () => {
   it('has a hit rect when idle, none while the request is pending', async () => {
     const buyAuction = vi.fn(() => new Promise<{ ok: true }>(() => {}));
