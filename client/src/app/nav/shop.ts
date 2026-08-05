@@ -429,6 +429,12 @@ export function createShopNav(ctx: AppCtx): ShopNav {
         analytics.track('daily_reward_claim', { coins });
         return { coins };
       },
+      async onClaimWeekly(threshold: number) {
+        const { save, reward } = await client.claimWeeklyChest(threshold);
+        saveManager.adoptServer(save);
+        analytics.track('weekly_chest_claim', { threshold, kind: reward.kind });
+        return { reward };
+      },
       // onWatchAd is only handed to DailyScene when the platform has a real ad integration —
       // DailyScene hides the "Ads" tab entirely otherwise (no mock ad shown to a real player).
       ...(platform.hasRewardedAd() ? {

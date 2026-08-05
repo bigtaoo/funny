@@ -38,6 +38,7 @@ const PAYLOAD = {
   lifestealPct: 0,
   slowOnHit: null,
   burstOnSingle: false,
+  burstOnSingleMult: 2,
   markEnemies: false,
 };
 

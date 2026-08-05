@@ -4,21 +4,28 @@ import { describe, it, expect } from 'vitest';
 import {
   makeDayKey,
   makeMonthKey,
+  makeWeekKey,
   CHECKIN_REWARDS,
   CHECKIN_TOTAL_DAYS,
   CHECKIN_MILESTONE_DAYS,
   DAILY_TASKS,
   DAILY_POINTS_THRESHOLD,
   DAILY_COINS_REWARD,
+  WEEKLY_CHEST_TIERS,
+  WEEKLY_CHEST_SKIN_POOL,
   resetStaleRetention,
   checkinClaimedCount,
   nextCheckinDay,
   dailyTaskPoints,
   isDailyTaskDone,
   dailyRewardClaimable,
+  weeklyPoints,
+  weeklyClaimableTiers,
   accrueRetentionTask,
   claimCheckinDay,
   claimDailyReward,
+  claimWeeklyTier,
+  pickWeeklyChestSkin,
   type RetentionSave,
 } from '../src/retention';
 
@@ -27,6 +34,16 @@ const T_JUN22 = Date.parse('2026-06-22T10:00:00Z');
 const T_JUN22_LATE = Date.parse('2026-06-22T23:30:00Z');
 const T_JUN23 = Date.parse('2026-06-23T01:00:00Z');
 const T_JUL01 = Date.parse('2026-07-01T00:00:00Z');
+// 2026-06-22 (Mon) / 2026-06-23 (Tue) / 2026-06-28 (Sun) all fall in ISO week 2026-W26;
+// 2026-06-29 (Mon) is the first day of the next ISO week (2026-W27).
+const T_JUN24 = Date.parse('2026-06-24T01:00:00Z');
+const T_JUN25 = Date.parse('2026-06-25T01:00:00Z');
+const T_JUN26 = Date.parse('2026-06-26T01:00:00Z');
+const T_JUN27 = Date.parse('2026-06-27T01:00:00Z');
+const T_JUN28_SAME_WEEK = Date.parse('2026-06-28T23:00:00Z');
+const T_JUN29_NEXT_WEEK = Date.parse('2026-06-29T01:00:00Z');
+// All 7 days of ISO week 2026-W26 (Mon..Sun) — 7 × 3 = 21 raw points, exactly the top tier.
+const WEEK26_ALL_DAYS = [T_JUN22, T_JUN23, T_JUN24, T_JUN25, T_JUN26, T_JUN27, T_JUN28_SAME_WEEK];
 
 // ── time keys ─────────────────────────────────────────────────────────────────────
 
@@ -267,5 +284,167 @@ describe('dailyRewardClaimable / claimDailyReward', () => {
     r.daily!.rewardClaimed = true;
     expect(claimDailyReward(r, T_JUN22)).toEqual({ ok: false, error: 'ALREADY_CLAIMED' });
     expect(dailyRewardClaimable(r, T_JUN22)).toBe(false);
+  });
+});
+
+// ── weekly active chest (§12.3) ──────────────────────────────────────────────────────────
+
+describe('makeWeekKey', () => {
+  it('groups Mon..Sun into the same ISO week', () => {
+    expect(makeWeekKey(T_JUN22)).toBe(makeWeekKey(T_JUN23));
+    expect(makeWeekKey(T_JUN22)).toBe(makeWeekKey(T_JUN28_SAME_WEEK));
+  });
+
+  it('the following Monday is a different ISO week', () => {
+    expect(makeWeekKey(T_JUN29_NEXT_WEEK)).not.toBe(makeWeekKey(T_JUN22));
+  });
+});
+
+describe('accrueRetentionTask — weekly tally alongside the daily one', () => {
+  it('one task completion bumps both daily.taskPoints and weekly.points by the same amount', () => {
+    const r = accrueRetentionTask(undefined, 'pve.clear', T_JUN22);
+    expect(r!.daily!.taskPoints).toBe(1);
+    expect(r!.weekly!.points).toBe(1);
+    expect(r!.weekly!.weekKey).toBe(makeWeekKey(T_JUN22));
+  });
+
+  it('accumulates across multiple days within the same week, unlike the daily bucket which resets', () => {
+    let r = accrueRetentionTask(undefined, 'pve.clear', T_JUN22);
+    r = accrueRetentionTask(r, 'pvp.match', T_JUN22);
+    r = accrueRetentionTask(r, 'gacha.draw', T_JUN22); // day 1 full: daily=3, weekly=3
+    r = accrueRetentionTask(r, 'pve.clear', T_JUN23);  // day 2: daily resets to 0 then +1, weekly keeps accumulating
+    expect(r!.daily!.taskPoints).toBe(1);
+    expect(r!.weekly!.points).toBe(4);
+  });
+
+  it('a full 7-day week lands exactly on the top chest tier, never over (cap math sanity check)', () => {
+    // 7 days × DAILY_TASKS.length tasks is the maximum a real week can ever accrue under the
+    // current task economy — this is really a forward-compat guard (topTier currently equals
+    // that natural maximum exactly) in case DAILY_TASKS point values change later.
+    let r: RetentionSave | undefined;
+    const topTier = WEEKLY_CHEST_TIERS[WEEKLY_CHEST_TIERS.length - 1]!.threshold;
+    for (const day of WEEK26_ALL_DAYS) {
+      for (const task of DAILY_TASKS) {
+        r = accrueRetentionTask(r, task.id, day);
+      }
+    }
+    expect(r!.weekly!.points).toBe(topTier);
+  });
+
+  it('does not double-count a task already completed today (same idempotency guard as the daily bucket)', () => {
+    let r = accrueRetentionTask(undefined, 'pve.clear', T_JUN22);
+    r = accrueRetentionTask(r, 'pve.clear', T_JUN22); // repeat, same day
+    expect(r!.weekly!.points).toBe(1);
+  });
+
+  it('resets the weekly bucket on a new ISO week, independent of the monthly/daily reset', () => {
+    let r = accrueRetentionTask(undefined, 'pve.clear', T_JUN22);
+    r = resetStaleRetention(r, T_JUN29_NEXT_WEEK);
+    expect(r.weekly).toBeUndefined();
+  });
+});
+
+describe('weeklyPoints / weeklyClaimableTiers', () => {
+  it('0 points when nothing recorded / stale', () => {
+    expect(weeklyPoints(undefined, T_JUN22)).toBe(0);
+    const r = accrueRetentionTask(undefined, 'pve.clear', T_JUN22);
+    expect(weeklyPoints(r, T_JUN29_NEXT_WEEK)).toBe(0); // different week → stale
+  });
+
+  it('no tiers claimable below the first threshold', () => {
+    const r = accrueRetentionTask(undefined, 'pve.clear', T_JUN22);
+    expect(weeklyClaimableTiers(r, T_JUN22)).toEqual([]);
+  });
+
+  it('lists every threshold reached, in ascending order, once points clear them', () => {
+    let r: RetentionSave | undefined;
+    const days = [T_JUN22, T_JUN23, T_JUN24, T_JUN28_SAME_WEEK]; // 4 days × 3 tasks = 12 points → clears tier 1 (9) only
+    for (const day of days) {
+      for (const task of DAILY_TASKS) r = accrueRetentionTask(r, task.id, day);
+    }
+    expect(weeklyPoints(r, T_JUN22)).toBe(12);
+    expect(weeklyClaimableTiers(r, T_JUN22)).toEqual([9]);
+  });
+
+  it('excludes tiers already claimed', () => {
+    let r = accrueRetentionTask(undefined, 'pve.clear', T_JUN22);
+    r = accrueRetentionTask(r, 'pvp.match', T_JUN22);
+    r = accrueRetentionTask(r, 'gacha.draw', T_JUN22);
+    r = accrueRetentionTask(r, 'pve.clear', T_JUN23);
+    r = accrueRetentionTask(r, 'pvp.match', T_JUN23);
+    r = accrueRetentionTask(r, 'gacha.draw', T_JUN23);
+    r = accrueRetentionTask(r, 'pve.clear', T_JUN24); // 7 points, still below tier1=9
+    r = accrueRetentionTask(r, 'pvp.match', T_JUN24);
+    r = accrueRetentionTask(r, 'gacha.draw', T_JUN24); // 9 points → tier1 reached
+    expect(weeklyClaimableTiers(r, T_JUN22)).toEqual([9]);
+    const claimed = claimWeeklyTier(r, 9, T_JUN22);
+    expect(claimed.ok).toBe(true);
+    const r2 = { ...r, weekly: (claimed as { newWeekly: typeof r.weekly }).newWeekly };
+    expect(weeklyClaimableTiers(r2, T_JUN22)).toEqual([]);
+  });
+});
+
+describe('claimWeeklyTier', () => {
+  function pointsUpTo(threshold: number): RetentionSave {
+    let r: RetentionSave | undefined;
+    outer: for (const day of WEEK26_ALL_DAYS) {
+      for (const task of DAILY_TASKS) {
+        r = accrueRetentionTask(r, task.id, day);
+        if (r!.weekly!.points >= threshold) break outer;
+      }
+    }
+    return r!;
+  }
+
+  it('rejects an unknown threshold', () => {
+    const r = pointsUpTo(9);
+    expect(claimWeeklyTier(r, 999, T_JUN22)).toEqual({ ok: false, error: 'BAD_REQUEST' });
+  });
+
+  it('rejects a claim before the threshold is reached', () => {
+    const r = accrueRetentionTask(undefined, 'pve.clear', T_JUN22); // 1 point, tier1=9
+    expect(claimWeeklyTier(r, 9, T_JUN22)).toEqual({ ok: false, error: 'NOT_REACHED' });
+  });
+
+  it('succeeds exactly at the threshold and returns the tier reward', () => {
+    const r = pointsUpTo(9);
+    const result = claimWeeklyTier(r, 9, T_JUN22);
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.threshold).toBe(9);
+      expect(result.reward).toEqual(WEEKLY_CHEST_TIERS[0]!.reward);
+      expect(result.newWeekly.claimedTiers).toEqual([9]);
+    }
+  });
+
+  it('rejects a repeat claim of the same tier', () => {
+    const r = pointsUpTo(9);
+    const first = claimWeeklyTier(r, 9, T_JUN22);
+    expect(first.ok).toBe(true);
+    const r2 = { ...r, weekly: (first as { newWeekly: typeof r.weekly }).newWeekly };
+    expect(claimWeeklyTier(r2, 9, T_JUN22)).toEqual({ ok: false, error: 'ALREADY_CLAIMED' });
+  });
+
+  it('two different tiers can both be claimed independently within the same week', () => {
+    const r = pointsUpTo(15);
+    const t1 = claimWeeklyTier(r, 9, T_JUN22);
+    expect(t1.ok).toBe(true);
+    const r2 = { ...r, weekly: (t1 as { newWeekly: typeof r.weekly }).newWeekly };
+    const t2 = claimWeeklyTier(r2, 15, T_JUN22);
+    expect(t2.ok).toBe(true);
+    if (t2.ok) expect(t2.newWeekly.claimedTiers).toEqual([9, 15]);
+  });
+});
+
+describe('pickWeeklyChestSkin', () => {
+  it('always returns an id from WEEKLY_CHEST_SKIN_POOL', () => {
+    for (let i = 0; i < WEEKLY_CHEST_SKIN_POOL.length; i++) {
+      expect(pickWeeklyChestSkin(() => i)).toBe(WEEKLY_CHEST_SKIN_POOL[i]);
+    }
+  });
+
+  it('defaults to Math.random-backed selection when no rng is given', () => {
+    const picked = pickWeeklyChestSkin();
+    expect(WEEKLY_CHEST_SKIN_POOL).toContain(picked);
   });
 });

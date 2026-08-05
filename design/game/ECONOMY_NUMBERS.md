@@ -145,14 +145,20 @@
 
 #### 后期差异化路线（开放）
 
-俗套三档是**最小可用基线**，目的是先让"升满级有质变爽点"成立。后期再做**每单位差异化特性**，替换或叠加通用档，例如：
+俗套三档是**最小可用基线**，目的是先让"升满级有质变爽点"成立。最初的候选方向只是示意（弓兵射程/暴击穿透、医护光环、重甲反伤/护甲随血量、法术单位范围+减速灼烧），未定案。
 
-| 单位 | 候选差异化特性（示意） |
-|---|---|
-| 弓兵 | 射程 +1 / 暴击改为穿透 |
-| 医护 | 治疗光环范围 / 强度增强 |
-| 重甲 | 受击反弹 / 护甲随损血提升 |
-| 法术单位 | 范围 +X / 附加减速·灼烧 |
+**2026-08-05 已落地（v1，T9-only 差异化）**：上面那张候选表跟真实花名册对不上——花名册只有 6 个可养成单位（Infantry/ShieldBearer/Archer + Max/Lena/Mara），**医护（Medic）是 PvE 专属敌兵，没有卡、根本不在养成体系里**，也没有独立的"法术单位"角色。按实际花名册重新分配，且**只替换 T9（"大招"档），T3 暴击 10%/T6 吸血 15% 保持全兵种通用不变**（这两档已经过战斗平衡校准，全部重做等于开一次新的平衡工程；用户拍板缩小范围）：
+
+| 单位 | 定位 | T9 专属特性 | 实现方式（复用/新增引擎机制） |
+|---|---|---|---|
+| Archer 弓箭兵 | 远程 | 射程 2→3 | 直接改 `range`，零新机制 |
+| ShieldBearer 盾兵 | 重甲 | HP≤40% 时护甲额外 +6 | 照抄 Berserker 现成的 `berserkerThreshold` 阈值机制（新增 `armorEnrageThreshold`/`armorEnrageBonus` + `Unit.effectiveArmor` getter） |
+| Lena | 重甲/哨卫 | 受击反弹 20% 伤害给攻击者 | 新机制（`reflectPct`，`CombatSystem.resolveAttackHit` 新增一段，是这批里唯一真正的新战斗逻辑） |
+| Mara | 远程/游击 | 箭矢命中附加减速 20%/1.5s | 复用现成的 `slowOnHit` 字段（已实现但此前无单位使用） |
+| Max | 先锋终结者 | 现有 `burstOnSingle` 倍率 ×2→×2.5 | 数值增强既有技能（新增 `burstOnSingleMult` 参数化原硬编码 `×2`） |
+| Infantry | 标尺/全能 | 不变，保持通用 +1 出兵 | 它是 cp/ink=1.0 的平衡基准单位，故意不特化 |
+
+实现：`server/engine/src/balance/progression.ts` `PER_UNIT_T9_TRAITS`（可辨识联合 `UnitT9Trait`），`applyUnitLevels` 在 T9 判定处优先查这张表，查不到（目前只有 Infantry）才落回通用 `bonusSpawn`。PvP 硬墙不受影响（`buildPvpBlueprints` 从不调用 `applyUnitLevels`，新字段在 PvP 蓝图里恒为 0/undefined，测试覆盖）。测试：`server/engine/src/__tests__/unit_t9_traits.test.ts`（新增，反伤/护甲随血量/burstOnSingleMult 三个组合数值验证）+ `pvp_hardwall.test.ts` 更新（Archer/ShieldBearer 的 T9 断言改成各自专属效果，不再是统一 `+1 spawnCount`）。
 
 > 差异化做的时候，三档**解锁节点（T3/T6/T9）不变**，只替换每档的具体效果；通用三档作为未差异化单位的兜底。仍仅 PvE 注入。
 
@@ -386,7 +392,7 @@ F2P 金币龙头：广告（主力）+ 战斗 / 活动 / 称号 / 任务。
 
 - [ ] **战斗数值随护甲重新演算**（armor 落地引擎时配套重做 TTK/交战平衡，更新 BALANCE.md）—— 独立任务。
 - [ ] 装备系统后期完善（差异化加成、是否加掉级/碎裂硬档 + 保护道具氪点）—— §5 现为俗套基线。
-- [ ] 单位养成特性后期做"每单位差异化特性"—— §4.4 现为通用三档（命名已与成就系统脱钩）。
+- [x] ~~单位养成特性后期做"每单位差异化特性"~~ → **2026-08-05 落地（v1，T9-only）**，见 §4.4 详述——Archer/ShieldBearer/Lena/Mara/Max 各有专属 T9 效果，Infantry 保留通用兜底；T3/T6 仍全兵种通用（范围决定，避免重开平衡工程）。
 - [x] ~~T7+ 卡获取通道调参~~ → **2026-08-03 拍板：不加免费加速通道，明确定位付费/抽卡专属**，见 §4 末尾详述（F2P 现实止步 L5–L6）。
 - [x] ~~碎片兑换表~~ → **2026-08-03 正式放弃**，见 §15.6（`DUPE_REFUND_COINS` 未接入真实发货路径，重复卡本就是融合燃料，不值得新开一套服务器权威碎片系统）。
 - [x] ~~金币→材料兑换~~ → **2026-08-03 落地**，见 §6.5（scrap/lead 可直购，binding 不可购，均带每日上限）。
@@ -433,16 +439,19 @@ F2P 金币龙头：广告（主力）+ 战斗 / 活动 / 称号 / 任务。
 
 > 每日金币 = 广告 50/天 + 每日任务完成 5/天 ≈ **~55 coins/天**。每日任务月度 = 5 × 30 = **~150/月**（对应 §6.1「日常任务/签到」格）；签到里程碑 `bonusCoins` 200/月单独计（R1b，§12.1），调平衡只动「每日任务完成金币」「广告」「签到里程碑 bonusCoins」，不另立第四条。
 
-### 12.3 周常活跃宝箱（P1，缓做）`[可调]`
+### 12.3 周常活跃宝箱 `[可调]` ✅ 2026-08-05 已实现
 
-| 档 | 周活跃点阈值 | 宝箱内容（示例） |
+| 档 | 周活跃点阈值 | 宝箱内容 |
 |---|---|---|
-| 一档 | 30 | 中级材料包 |
-| 二档 | 60 | 装备（低级）/ 高级材料 |
-| 三档 | 100 | 限定皮肤碎片 / 高价值材料 |
+| 一档 | **9**（3 天满勤） | 中级材料包（`mat_lead` ×20） |
+| 二档 | **15**（5 天满勤） | 低级装备（`equip_t1` 随机抽，同签到月末装备格走法） |
+| 三档 | **21**（7 天满勤/满周） | 一件商城皮肤（`skin_shop_c1`/`skin_shop_r1` 随机抽） |
 
-- 周活跃点 = 每日任务点 `weekKey` 累计；宝箱金币（若有）计入月度预算。
-- 跨周（ISO `weekKey`）重置。数值待签到/任务真实活跃数据后调。
+- 周活跃点 = 每日任务点（`pve.clear`/`pvp.match`/`gacha.draw` 各 1 分）按 ISO `weekKey` 累计，与每日任务点同一个结算入口（`accrueRetentionTask`），共用其幂等判定；跨周（ISO `weekKey`）重置。
+- **两处相对原提案的修正（实现时发现原占位数值/内容有硬伤）**：
+  1. **阈值从 30/60/100 改成 9/15/21**——每日任务点上限是 3（3 个任务各 1 分），一周顶多攒 21 分，原来的 30 分永远碰不到，功能会生下来就是死的。改成"3/5/7 天满勤"三档，保留"递进三档、顶档=近乎满周"的设计意图，但真的够得着。
+  2. **三档"限定皮肤碎片"改成一件普通商城皮肤**——全仓库没有"碎片"这个货币概念（皮肤只支持整件发放，`server/metaserver/src/skin.ts`），从零建一套碎片累计+兑换子系统超出这次的范围；改成直接发一件 `skin_shop_*`（非限定，不含 gacha 稀有皮肤 `skin_e1/e2/l1`，避免免费周常白送 legendary）。若后续觉得不够有分量，再考虑做真正的碎片系统。
+- 实现：`server/shared/src/retention.ts`（`makeWeekKey` 新增 ISO 周算法、`WeeklyData`/`WEEKLY_CHEST_TIERS`/`claimWeeklyTier`/`pickWeeklyChestSkin`）→ `server/metaserver/src/service/liveops.ts`（`getRetention` 附带 weekly 字段、新增 `claimWeeklyChest`）→ `POST /retention/weekly/claim`（`server/contracts/openapi/paths/liveops.yml`）→ 客户端 `DailyScene` 新增第四个 tab（复用 `renderDailyTasks` 的卡片+进度条+领取按钮样式，未新建场景）。测试：`server/shared/test/retention.test.ts`（+18 例，含 ISO 周边界）、`server/metaserver/test/retention.e2e.test.ts`（+13 例，真实 Mongo）、`client/test/retention.test.ts`（+11 例）、`client/test/ui/dailySceneWeeklyTab.ui.ts`（新增，4 例）。
 
 ### 12.4 可调参数（并入总表口径）
 
@@ -454,7 +463,7 @@ F2P 金币龙头：广告（主力）+ 战斗 / 活动 / 称号 / 任务。
 | 签到里程碑 bonusCoins | 30/40/50/80（=200/月，R1b） | 留存 |
 | 每日任务数 / 满点阈值 | 3~4 / 3 点 | 留存 |
 | 每日满点金币 | 5 coins/天（=150/月） | 留存 |
-| 周常档阈值 | 30/60/100 | 留存（P1） |
+| 周常档阈值 | 9/15/21（2026-08-05 定案，见 §12.3） | 留存 ✅ |
 
 ---
 

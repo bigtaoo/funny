@@ -40,6 +40,8 @@ export interface ProjectilePayload {
   lifestealPct: number;
   slowOnHit: { mult: number; durationTicks: number } | null;
   burstOnSingle: boolean;
+  /** Multiplier burstOnSingle applies (default 2 at the call site when burstOnSingle is set). */
+  burstOnSingleMult: number;
   markEnemies: boolean;
 }
 

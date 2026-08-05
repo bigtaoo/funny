@@ -117,6 +117,8 @@ export interface SaveData {
   retention?: {
     checkin?: { monthKey: string; claimedDays: number[]; lastClaimedDayKey?: string };
     daily?: { dayKey: string; completedTasks: Record<string, number>; taskPoints: number; rewardClaimed: boolean };
+    /** Weekly active chest progress (§12.3, ISO week key). */
+    weekly?: { weekKey: string; points: number; claimedTiers: number[] };
   };
 
   // —— Stamina (A4, server-authoritative, not sent up on PUT /save). Regenerates 1 point every 6 min, cap 120. Absent defaults to full.

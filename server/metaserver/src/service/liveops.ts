@@ -17,10 +17,15 @@ import {
   DAILY_TASKS,
   DAILY_POINTS_THRESHOLD,
   DAILY_COINS_REWARD,
+  WEEKLY_CHEST_TIERS,
+  claimWeeklyTier,
+  weeklyClaimableTiers,
+  pickWeeklyChestSkin,
   nextCheckinDay,
   dailyRewardClaimable,
   makeDayKey,
   makeMonthKey,
+  makeWeekKey,
   parseTitleId,
   pickRandomCatalogItem,
   CARD_DEFS,
@@ -38,6 +43,7 @@ import { getEventsForAccount, claimEventReward } from '../events.js';
 import { nullMetaSocialsvcClient } from '../socialsvcClient.js';
 import { grantCards } from '../cards.js';
 import { grantEquipment } from '../equipment.js';
+import { grantSkin } from '../skin.js';
 import type { MetaHandlers } from '../generated/routes.gen.js';
 import { accountIdOf, type Constructor, type MetaBaseCtor } from './base.js';
 import type { SocialBadges } from '@nw/shared';
@@ -45,6 +51,7 @@ import type { SocialBadges } from '@nw/shared';
 type LiveOpsHandlers = Pick<
   MetaHandlers,
   | 'getAchievements' | 'claimAchievement' | 'getRetention' | 'claimCheckin' | 'claimDailyReward'
+  | 'claimWeeklyChest'
   | 'getEvents' | 'claimEventReward' | 'getTitles' | 'equipTitle' | 'equipAvatar' | 'equipSkin'
   | 'setFlag' | 'getLobbyBadges'
 >;
@@ -138,10 +145,18 @@ export function LiveOpsMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase & C
       return ok({
         checkin: retention.checkin ?? null,
         daily: retention.daily ?? null,
-        defs: { rewards: CHECKIN_REWARDS, tasks: DAILY_TASKS, pointsThreshold: DAILY_POINTS_THRESHOLD, dailyCoinsReward: DAILY_COINS_REWARD },
+        weekly: retention.weekly ?? null,
+        defs: {
+          rewards: CHECKIN_REWARDS,
+          tasks: DAILY_TASKS,
+          pointsThreshold: DAILY_POINTS_THRESHOLD,
+          dailyCoinsReward: DAILY_COINS_REWARD,
+          weeklyChestTiers: WEEKLY_CHEST_TIERS,
+        },
         claimable: {
           checkin: nextCheckinDay(retention, tsMs) !== null,
           daily: dailyRewardClaimable(retention, tsMs),
+          weeklyTiers: weeklyClaimableTiers(retention, tsMs),
         },
         ads: {
           watchedToday: adsStatus.watchedToday,
@@ -301,6 +316,94 @@ export function LiveOpsMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase & C
       if (!g.ok) return reply.code(502).send(err(ErrorCode.BAD_REQUEST, 'coin grant failed'));
       const save = await mirrorCoins(cols, accountId, g.coinsAfter, tsMs);
       return ok({ save, coins: DAILY_COINS_REWARD });
+    }
+
+    /**
+     * Claim one weekly active chest tier (ECONOMY_NUMBERS §12.3). Mirrors claimCheckin's shape:
+     * record the claim (idempotent, `claimedTiers.includes` guard inside claimWeeklyTier) →
+     * material rewards are written synchronously in the same mutateSave; equipment/skin rewards
+     * resolve their concrete item at claim time (uniform random draw, like checkin's 'card'/
+     * 'equipment' milestones) and deliver via a follow-up call once the claim itself is durable.
+     */
+    async claimWeeklyChest(req: FastifyRequest, reply: FastifyReply) {
+      const accountId = accountIdOf(req);
+      const { now } = this.deps;
+      const tsMs = now();
+      const { threshold } = req.body as { threshold: number };
+
+      let reward: import('@nw/shared').WeeklyChestReward | null = null;
+      const recorded = await this.mutateSave(accountId, (s) => {
+        const r = resetStaleRetention(s.retention, tsMs);
+        const result = claimWeeklyTier(r, threshold, tsMs);
+        if (!result.ok) return result.error;
+        reward = result.reward;
+        const newRetention = { ...r, weekly: result.newWeekly };
+        let next = { ...s, retention: newRetention };
+        if (result.reward.kind === 'material' && result.reward.id) {
+          const matId = result.reward.id;
+          next = {
+            ...next,
+            materials: { ...next.materials, [matId]: (next.materials[matId] ?? 0) + result.reward.count },
+            everOwned: { ...next.everOwned, material: [...new Set([...(next.everOwned?.material ?? []), matId])] },
+          };
+        }
+        return next;
+      });
+      if ('error' in recorded) {
+        if (recorded.error === 'ALREADY_CLAIMED') {
+          return reply.code(409).send(err(ErrorCode.ALREADY_CLAIMED, 'tier already claimed'));
+        }
+        if (recorded.error === 'NOT_REACHED') {
+          return reply.code(400).send(err(ErrorCode.BAD_REQUEST, 'weekly points threshold not reached'));
+        }
+        if (recorded.error === 'BAD_REQUEST') {
+          return reply.code(400).send(err(ErrorCode.BAD_REQUEST, 'unknown chest tier'));
+        }
+        return reply.code(409).send(err(ErrorCode.REV_CONFLICT, recorded.error));
+      }
+      let save = recorded.save;
+      let deliveredId: string | undefined;
+      const claimedReward = reward as import('@nw/shared').WeeklyChestReward | null;
+      if (claimedReward) {
+        const r = claimedReward;
+        if (r.kind === 'equipment') {
+          // Entry-tier gear (equip_t1), same uniform draw + craft-affix roll as checkin's month-end finale.
+          const picked = pickRandomCatalogItem('equip_t1');
+          const def = picked ? EQUIPMENT_DEFS[picked.itemId] : undefined;
+          if (def) {
+            const { cols, now } = this.deps;
+            const instanceId = `eq_weekly_${randomUUID().replace(/-/g, '').slice(0, 16)}`;
+            const instance: EquipmentInstance = {
+              id: instanceId,
+              defId: def.defId,
+              rarity: def.rarity,
+              level: 0,
+              affixes: rollCraftedAffixes(def.defId, instanceId),
+              sourceType: `weekly_chest:${makeWeekKey(tsMs)}`,
+              obtainedAt: tsMs,
+            };
+            const g = await grantEquipment(cols, now, accountId, instance);
+            if (!('error' in g)) {
+              save = await getOrCreateSave(cols, accountId, now());
+              deliveredId = def.defId;
+            }
+          }
+        } else if (r.kind === 'skin') {
+          // Simplified from the doc's "限定皮肤碎片" (see retention.ts WEEKLY_CHEST_TIERS comment) —
+          // grants a whole shop-tier skin. grantSkin is a no-op if already owned (naturally idempotent).
+          const { cols, now } = this.deps;
+          const skinId = pickWeeklyChestSkin();
+          const g = await grantSkin(cols, now, accountId, skinId);
+          if (!('error' in g)) {
+            save = await getOrCreateSave(cols, accountId, now());
+            deliveredId = skinId;
+          }
+        }
+      }
+      const finalReward = claimedReward && deliveredId
+        ? { kind: claimedReward.kind, count: claimedReward.count, id: deliveredId }
+        : claimedReward;
+      return ok({ save, threshold, reward: finalReward });
     }
 
     async getEvents(req: FastifyRequest, reply: FastifyReply) {

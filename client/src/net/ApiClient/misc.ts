@@ -9,6 +9,7 @@ export interface MiscApi {
   getRetention(): Promise<RetentionView>;
   claimCheckin(): Promise<{ save: SaveData; day: number; reward: { kind: string; count: number; id?: string; bonusCoins?: number } }>;
   claimDailyReward(): Promise<{ save: SaveData; coins: number }>;
+  claimWeeklyChest(threshold: number): Promise<{ save: SaveData; threshold: number; reward: { kind: string; count: number; id?: string } }>;
   getEvents(): Promise<EventView[]>;
   claimEventReward(
     eventId: string,
@@ -55,6 +56,10 @@ export function MiscMixin<TBase extends ApiClientBaseCtor>(Base: TBase): TBase &
     /** Claim the daily full-points task coin reward (idempotent). */
     async claimDailyReward(): Promise<{ save: SaveData; coins: number }> {
       return this.post<{ save: SaveData; coins: number }>('/retention/daily/claim', {});
+    }
+    /** Claim one weekly active chest tier (§12.3, idempotent per threshold). */
+    async claimWeeklyChest(threshold: number): Promise<{ save: SaveData; threshold: number; reward: { kind: string; count: number; id?: string } }> {
+      return this.post<{ save: SaveData; threshold: number; reward: { kind: string; count: number; id?: string } }>('/retention/weekly/claim', { threshold });
     }
 
     // ── Limited-time events (B6, ADR-014, requires login token) ──────────────────────────────────

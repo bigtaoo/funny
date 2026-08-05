@@ -118,6 +118,12 @@ export class Unit {
   readonly undying: boolean;
   /** HP fraction 0–1; attack speed ×1.5 when HP < threshold. 0 = disabled. */
   readonly berserkerThreshold: number;
+  /** HP fraction 0–1; below this, effectiveArmor adds armorEnrageBonus. 0 = disabled (ShieldBearer T9 progression trait). */
+  readonly armorEnrageThreshold: number;
+  /** Flat armor added while below armorEnrageThreshold. */
+  readonly armorEnrageBonus: number;
+  /** 0–100; % of actual damage taken reflected back onto the attacker (Lena T9 progression trait). 0 = disabled. */
+  readonly reflectPct: number;
   /** Spawn N units of given type on death (PvE). */
   readonly onDeathSpawn: { type: UnitType; count: number } | null;
   /** Crit chance 0–100 (unit progression T3); 0 = no crit roll (PvP units always 0). */
@@ -142,6 +148,8 @@ export class Unit {
   readonly summonOnTimer: { type: UnitType; intervalTicks: number } | null;
   /** 2× damage when only one live enemy remains (Max, A6). */
   readonly burstOnSingle: boolean;
+  /** Multiplier burstOnSingle applies (default 2; Max T9 progression trait bumps to 2.5). */
+  readonly burstOnSingleMult: number;
   /** Marks target on hit; marked units take +25 % damage for 3 s (Mara, A6). */
   readonly markEnemies: boolean;
 
@@ -217,6 +225,9 @@ export class Unit {
     this.taunt           = bp.taunt           ?? false;
     this.undying         = bp.undying         ?? false;
     this.berserkerThreshold = bp.berserkerThreshold ?? 0;
+    this.armorEnrageThreshold = bp.armorEnrageThreshold ?? 0;
+    this.armorEnrageBonus  = bp.armorEnrageBonus  ?? 0;
+    this.reflectPct         = bp.reflectPct         ?? 0;
     this.onDeathSpawn    = bp.onDeathSpawn    ?? null;
     this.critPct         = bp.critPct         ?? 0;
     this.critMult        = bp.critMult        ?? 1;
@@ -236,6 +247,7 @@ export class Unit {
       : null;
     this.summonCooldownTicks = this.summonOnTimer?.intervalTicks ?? 0;
     this.burstOnSingle   = bp.burstOnSingle   ?? false;
+    this.burstOnSingleMult = bp.burstOnSingleMult ?? 2;
     this.markEnemies     = bp.markEnemies     ?? false;
   }
 
@@ -283,6 +295,18 @@ export class Unit {
     return this.attackIntervalTicks;
   }
 
+  /**
+   * Armor after the low-HP "enrage" modifier (ShieldBearer T9 progression trait, same
+   * HP-threshold-driven-getter shape as effectiveAttackIntervalTicks/berserkerThreshold above,
+   * applied to armor instead of attack speed).
+   */
+  get effectiveArmor(): number {
+    if (this.armorEnrageThreshold > 0 && this.hp < this.maxHp * this.armorEnrageThreshold) {
+      return this.armor + this.armorEnrageBonus;
+    }
+    return this.armor;
+  }
+
   // ── Mutation helpers ───────────────────────────────────────────────────────
 
   /**
@@ -290,7 +314,8 @@ export class Unit {
    * Returns the actual HP lost (after armor reduction, capped to current HP).
    */
   takeDamage(rawAmount: number): number {
-    const effective = this.armor > 0 ? Math.max(1, rawAmount - this.armor) : rawAmount;
+    const armor = this.effectiveArmor;
+    const effective = armor > 0 ? Math.max(1, rawAmount - armor) : rawAmount;
 
     // Undying: survive first lethal hit at 1 HP.
     if (this.undying && !this.undyingTriggered && this.hp - effective <= 0) {

@@ -55,11 +55,16 @@ export const STAT_GROWTH_PER_LEVEL = {
 export const MIN_ATTACK_INTERVAL_RATIO = 0.5;
 
 /**
- * Universal trait breakpoints (ECONOMY_NUMBERS §4.4 unlock table, classic three tiers T3/T6/T9, shared by all progressable unit types):
+ * Universal trait breakpoints (ECONOMY_NUMBERS §4.4 unlock table, T3/T6 shared by all progressable
+ * unit types; T9 is per-unit as of 2026-08-05, see PER_UNIT_T9_TRAITS below):
  *   · T3 critical hit: critPct chance to deal ×critMult damage (multiplied before armor reduction, engine mechanic see CombatSystem).
  *   · T6 lifesteal: on hit, recover HP equal to % of actual damage dealt (additive into lifestealPct, capped across sources by clampEffectCaps ≤30).
- *   · T9 +1 spawn: spawnCount += count (GameEngine reads parsed blueprint at card play).
- * Values aligned with §4.4 unlock table ([adjustable]), per-unit differentiation to be added later (DECISIONS:61).
+ *   · T9 (bonusSpawn) is now only the *fallback* for units with no PER_UNIT_T9_TRAITS entry
+ *     (currently just Infantry — kept generic on purpose, see PER_UNIT_T9_TRAITS doc comment).
+ * Values aligned with §4.4 unlock table ([adjustable]). T3/T6 deliberately NOT differentiated per
+ * unit (scope decision, 2026-08-05): both already went through PvP/PvE balance calibration as
+ * universal constants, and equipment.ts's crit affix base (m_critmult) reads TRAIT_BREAKPOINTS.crit
+ * directly — differentiating those two tiers would be a much larger, separate exercise.
  */
 export const TRAIT_BREAKPOINTS = {
   crit: { level: 3, pct: 10, mult: 1.5 },
@@ -121,7 +126,69 @@ export function applyUnitLevels(
       u.lifestealPct = (u.lifestealPct ?? 0) + TRAIT_BREAKPOINTS.lifesteal.pct;
     }
     if (level >= TRAIT_BREAKPOINTS.bonusSpawn.level) {
-      u.spawnCount = u.spawnCount + TRAIT_BREAKPOINTS.bonusSpawn.count;
+      // T9 is the one tier that differs per unit (ECONOMY_NUMBERS §4.4 "后期差异化路线",
+      // 2026-08-05): a unit with an entry in PER_UNIT_T9_TRAITS gets its own qualitative payoff
+      // instead of the generic +1 spawn. T3 crit / T6 lifesteal above stay universal — replacing
+      // those too would re-open PvP/PvE balance already calibrated around them (scope decision,
+      // see ECONOMY_NUMBERS §4.4).
+      const t9 = PER_UNIT_T9_TRAITS[unitType];
+      if (!t9) {
+        u.spawnCount = u.spawnCount + TRAIT_BREAKPOINTS.bonusSpawn.count;
+      } else {
+        applyUnitT9Trait(u, t9);
+      }
     }
+  }
+}
+
+/**
+ * Per-unit T9 progression payoff (ECONOMY_NUMBERS §4.4 "后期差异化路线"). Units absent from this
+ * table fall back to the generic +1 spawn (TRAIT_BREAKPOINTS.bonusSpawn) — currently only
+ * Infantry, kept undifferentiated on purpose as the cp/ink=1.0 balance anchor (BALANCE.md §5.1).
+ * Each variant reuses an engine mechanism that already exists and is already exercised by some
+ * other unit (splashRadius/slowOnHit/aura_heal precedent) or by a same-shaped HP-threshold getter
+ * (berserkerThreshold → effectiveAttackIntervalTicks), so none of these are new combat mechanics.
+ */
+export type UnitT9Trait =
+  | { kind: 'rangeBonus'; amount: number }
+  | { kind: 'armorEnrage'; threshold: number; bonus: number }
+  | { kind: 'reflect'; pct: number }
+  | { kind: 'slowOnHit'; mult: number; durationSec: number }
+  | { kind: 'burstMult'; mult: number };
+
+export const PER_UNIT_T9_TRAITS: Partial<Record<UnitType, UnitT9Trait>> = {
+  // Archer (弓兵): range 2 → 3. Cheapest possible variant — bp.range is a plain number, no new field.
+  [UnitType.Archer]: { kind: 'rangeBonus', amount: 1 },
+  // ShieldBearer (重甲): armor +6 while below 40% HP. Mirrors Berserker's berserkerThreshold shape
+  // (HP-fraction-gated dynamic getter) but on armor instead of attack speed.
+  [UnitType.ShieldBearer]: { kind: 'armorEnrage', threshold: 0.4, bonus: 6 },
+  // Lena (重甲/哨卫): reflect 20 % of damage taken back onto the attacker — a second "重甲" flavor
+  // distinct from ShieldBearer's (punish attackers instead of just soaking more).
+  [UnitType.Lena]: { kind: 'reflect', pct: 20 },
+  // Mara (远程/游击): arrows also apply a 20 % slow for 1.5 s — slowOnHit already exists and is
+  // fully wired in CombatSystem, just unused by any unit until now.
+  [UnitType.Mara]: { kind: 'slowOnHit', mult: 0.8, durationSec: 1.5 },
+  // Max (先锋终结者): numeric buff to his existing burstOnSingle finisher, ×2 → ×2.5.
+  [UnitType.Max]: { kind: 'burstMult', mult: 2.5 },
+};
+
+function applyUnitT9Trait(u: UnitBlueprint, t9: UnitT9Trait): void {
+  switch (t9.kind) {
+    case 'rangeBonus':
+      u.range = u.range + t9.amount;
+      break;
+    case 'armorEnrage':
+      u.armorEnrageThreshold = t9.threshold;
+      u.armorEnrageBonus = t9.bonus;
+      break;
+    case 'reflect':
+      u.reflectPct = t9.pct;
+      break;
+    case 'slowOnHit':
+      u.slowOnHit = { mult: t9.mult, durationSec: t9.durationSec };
+      break;
+    case 'burstMult':
+      u.burstOnSingleMult = t9.mult;
+      break;
   }
 }
