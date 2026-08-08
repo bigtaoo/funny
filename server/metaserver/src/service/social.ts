@@ -2,7 +2,7 @@
 // NW_SOCIALSVC_INTERNAL_URL is configured. claimMail is the exception: socialsvc atomically marks the
 // claim, then meta performs the actual attachment delivery (coins/equipment/cards/skins/materials).
 import type { FastifyReply, FastifyRequest } from 'fastify';
-import { ErrorCode, err, ok, createLogger } from '@nw/shared';
+import { ErrorCode, err, ok, createLogger, type SkinInstance } from '@nw/shared';
 
 const log = createLogger('meta:social');
 import { getOrCreateSave } from '../save.js';
@@ -171,7 +171,12 @@ export function SocialMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase & Co
         }
         const cur = await getOrCreateSave(cols, accountId, now());
         const newSkins = split.skins.filter((s) => !cur.inventory.skins.includes(s));
-        const save = await deliverMailGrant(cols, accountId, orderId, newSkins, split.items, coinsAfter, now(), split.materials);
+        // Every attached skin becomes a real instance, first-time or already-owned alike (ITEM_IDENTITY_DESIGN.md
+        // task1, 2026-08-08) — `newSkins` above still only drives the everOwned/first-time bookkeeping.
+        const skinInstances: SkinInstance[] = split.skins.map((skinId, i) => (
+          { id: `skin_mail_${orderId}_${i}`, skinId, sourceType: 'mail', obtainedAt: now() }
+        ));
+        const save = await deliverMailGrant(cols, accountId, orderId, newSkins, split.items, coinsAfter, now(), split.materials, skinInstances);
         return ok({ save });
       } catch (e) {
         log.error('mail claim delivery failed — rolling back the claim', { mailId: id, accountId, orderId, err: (e as Error).message });

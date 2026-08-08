@@ -60,12 +60,15 @@ function card(id: string, opts: Partial<CardInstance> = {}): CardInstance {
 function saveWith(equipmentInv: Record<string, EquipmentInstance>, cardInv: Record<string, CardInstance>): SaveData {
   return { ...makeNewSave('acc_1'), equipmentInv, cardInv };
 }
-function saveWithSkins(skins: string[], equipped: Record<string, string> = {}): SaveData {
+function saveWithSkins(skins: string[], equipped: Record<string, string> = {}, skinCounts: Record<string, number> = {}): SaveData {
   const save = makeNewSave('acc_1');
-  return { ...save, inventory: { ...save.inventory, skins }, equipped };
+  return { ...save, inventory: { ...save.inventory, skins }, equipped, skinCounts };
 }
 
-type PickEntry = { cls: 'material' | 'equipment' | 'card' | 'skin'; label: string; value: number; locked: boolean; defId?: string; skinId?: string; material?: string; onPick: () => void };
+type PickEntry = {
+  cls: 'material' | 'equipment' | 'card' | 'skin'; label: string; value: number; locked: boolean;
+  defId?: string; skinId?: string; material?: string; onPick: () => void; onSell?: () => void;
+};
 
 describe('AuctionScene picker — equipment/card dedupe (buildPickEntries)', () => {
   it('collapses N identical equipment instances (same defId+level) into one entry labeled "×N"', () => {
@@ -243,6 +246,79 @@ describe('AuctionScene picker — skins (2026-08-04, AUCTION_DESIGN.md §9 task7
     scene.openItemPicker();
     scene.pickerFilter = 'skin';
     expect(() => scene.render()).not.toThrow();
+    scene.destroy();
+  });
+});
+
+describe('AuctionScene picker — skin instance counts (ITEM_IDENTITY_DESIGN.md task1, 2026-08-08)', () => {
+  it('listableSkins allows a surplus copy of an equipped skin (skinCounts > 1), but not the last one', () => {
+    const surplus = saveWithSkins(['skin_e2'], { 'skin:mara': 'skin_e2' }, { skin_e2: 2 });
+    expect(buildScene({ getSave: () => surplus }).listableSkins()).toEqual(['skin_e2']);
+    const lastOne = saveWithSkins(['skin_e2'], { 'skin:mara': 'skin_e2' }, { skin_e2: 1 });
+    expect(buildScene({ getSave: () => lastOne }).listableSkins()).toEqual([]);
+  });
+
+  it('a duplicate skin (skinCounts > 1) shows a "×N" suffix in its picker label, same as equipment/card groups', () => {
+    const save = saveWithSkins(['skin_e2'], {}, { skin_e2: 3 });
+    const scene = buildScene({ getSave: () => save });
+    const entries: PickEntry[] = scene.buildPickEntries();
+    expect(entries.find((e) => e.cls === 'skin')!.label).toBe(`${skinDisplayName('skin_e2')} ×3`);
+    scene.destroy();
+  });
+
+  it('a lone copy (or a save predating skinCounts) gets no "×N" suffix', () => {
+    const save = saveWithSkins(['skin_e2']); // skinCounts defaults to {} — falls back to "1 copy"
+    const scene = buildScene({ getSave: () => save });
+    const entries: PickEntry[] = scene.buildPickEntries();
+    expect(entries.find((e) => e.cls === 'skin')!.label).toBe(skinDisplayName('skin_e2'));
+    scene.destroy();
+  });
+
+  it('onSell is offered only when cb.sellSkin is wired, and calls it with the picked skinId', async () => {
+    const save = saveWithSkins(['skin_e2'], {}, { skin_e2: 2 });
+    const withoutSell = buildScene({ getSave: () => save });
+    expect(withoutSell.buildPickEntries().find((e: PickEntry) => e.cls === 'skin')!.onSell).toBeUndefined();
+    withoutSell.destroy();
+
+    const sellSkin = vi.fn(async () => ({ credited: 400 }));
+    const withSell = buildScene({ getSave: () => save, sellSkin, reloadSave: vi.fn(async () => {}) });
+    const entry = withSell.buildPickEntries().find((e: PickEntry) => e.cls === 'skin')!;
+    expect(entry.onSell).toBeDefined();
+    await entry.onSell!();
+    expect(sellSkin).toHaveBeenCalledWith('skin_e2');
+    withSell.destroy();
+  });
+
+  it('rendering the picker with a sellable skin entry (split hint row + sell hit zone) does not throw, and the right-half zone triggers sellSkin', () => {
+    const save = saveWithSkins(['skin_e2'], {}, { skin_e2: 2 });
+    const sellSkin = vi.fn(async () => ({ credited: 400 }));
+    const scene = buildScene({ getSave: () => save, sellSkin, reloadSave: vi.fn(async () => {}) });
+    scene.openItemPicker();
+    scene.pickerFilter = 'skin';
+    expect(() => scene.render()).not.toThrow();
+    // Split-row layout pushes two 28px-tall half-width hit zones (list-half then sell-half, in that
+    // push order) ahead of the full-card catch-all — find them by geometry (not identity:
+    // buildPickEntries mints a fresh closure per call, so scene.hitRects' onSell is never
+    // reference-equal to a separately-built entry's), then take the right-hand (larger x) one.
+    const splitHalves = scene.hitRects.filter((h: { rect: { h: number } }) => h.rect.h === 28);
+    expect(splitHalves.length).toBe(2);
+    const sellHalf = splitHalves.reduce((a: { rect: { x: number } }, b: { rect: { x: number } }) => (b.rect.x > a.rect.x ? b : a));
+    sellHalf.action();
+    expect(sellSkin).toHaveBeenCalledWith('skin_e2');
+    scene.destroy();
+  });
+
+  it('a double-tap on sell while the first call is in flight fires only once (sellBusy guard)', async () => {
+    const save = saveWithSkins(['skin_e2'], {}, { skin_e2: 2 });
+    let resolveSell: (v: { credited: number }) => void;
+    const sellSkin = vi.fn(() => new Promise<{ credited: number }>((res) => { resolveSell = res; }));
+    const scene = buildScene({ getSave: () => save, sellSkin, reloadSave: vi.fn(async () => {}) });
+    const entry = scene.buildPickEntries().find((e: PickEntry) => e.cls === 'skin')!;
+    const p1 = entry.onSell!();
+    const p2 = entry.onSell!(); // fired before p1 resolves — must be a no-op, not a second sale
+    resolveSell!({ credited: 400 });
+    await Promise.all([p1, p2]);
+    expect(sellSkin).toHaveBeenCalledTimes(1);
     scene.destroy();
   });
 });

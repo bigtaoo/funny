@@ -441,10 +441,18 @@ describe.skipIf(!mongo)('meta economy orchestration e2e', () => {
     expect(r1.data.results[0]).toMatchObject({ itemId: 'skin_l1', rarity: 'legendary', duplicate: false });
     expect(r1.data.save.inventory.skins).toContain('skin_l1');
     expect(r1.data.save.gacha.pity.standard).toBe(1);
-    // Draw the same item again → marked duplicate, skin not added to inventory again.
+    // Draw the same item again → marked duplicate, skin not added to inventory.skins a second time
+    // (that array stays a dedup "do I own at least one" view — see skin.ts), but unlike the old design
+    // this must NOT be a no-op: a real second SkinInstance is minted (ITEM_IDENTITY_DESIGN.md task1,
+    // 2026-08-08 fix — a duplicate pull used to vanish entirely, no item, no coin refund).
     const r2 = body(await app.inject({ method: 'POST', url: '/gacha/draw', headers: auth(), payload: { poolId: 'standard', count: 1 } }));
     expect(r2.data.results[0].duplicate).toBe(true);
     expect(r2.data.save.inventory.skins.filter((s: string) => s === 'skin_l1')).toHaveLength(1);
+    const instanceDocs = await m.collections.skinInstances.find({ accountId, skinId: 'skin_l1' }).toArray();
+    expect(instanceDocs).toHaveLength(2); // the dupe pull really did mint a second instance, not nothing
+    // GET /save's skinCounts join surfaces the real count so the client can offer the surplus copy for sale/auction.
+    const saveRes = body(await app.inject({ method: 'GET', url: '/save', headers: auth() }));
+    expect(saveRes.data.save.skinCounts.skin_l1).toBe(2);
   });
 
   it('gacha: fire-and-forget orderDelivered failure does not block the response, and the order stays reconcilable (2026-07-15 latency fix)', async () => {

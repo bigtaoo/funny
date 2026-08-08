@@ -5,13 +5,14 @@ import type { FastifyReply, FastifyRequest } from 'fastify';
 import { ErrorCode, ERROR_HTTP_STATUS, err, ok } from '@nw/shared';
 import { craftEquipment, enhanceEquipment, salvageEquipment, equipEquipment, reforgeEquipment } from '../equipment.js';
 import { fuseCards, setCardLock } from '../cards.js';
+import { sellSkinToSystem } from '../skin.js';
 import type { MetaHandlers } from '../generated/routes.gen.js';
 import { accountIdOf, clientPlatformOf, type Constructor, type MetaBaseCtor } from './base.js';
 
 type InventoryHandlers = Pick<
   MetaHandlers,
   | 'craftEquipment' | 'enhanceEquipment' | 'salvageEquipment' | 'equipEquipment' | 'reforgeEquipment'
-  | 'cardsFuse' | 'cardsLock' | 'cardsUnlock'
+  | 'cardsFuse' | 'cardsLock' | 'cardsUnlock' | 'sellSkin'
 >;
 
 export function InventoryMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase & Constructor<InventoryHandlers> {
@@ -131,6 +132,21 @@ export function InventoryMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase &
       const r = await setCardLock(cols, now, accountId, cardInstanceId, false);
       if ('error' in r) return reply.code(ERROR_HTTP_STATUS[r.code] ?? 400).send(err(r.code as ErrorCode, r.error));
       return ok({ save: r.save });
+    }
+
+    /**
+     * Player-initiated sale of one surplus skin instance to the system for coins
+     * (ITEM_IDENTITY_DESIGN.md task1, 2026-08-08) — never automatic; a gacha duplicate only ever
+     * grants an instance, exactly like a first pull. idempotencyKey is idempotent (replay returns
+     * the first result, no second sale/credit).
+     */
+    async sellSkin(req: FastifyRequest, reply: FastifyReply) {
+      const accountId = accountIdOf(req);
+      const { skinId, idempotencyKey } = req.body as { skinId: string; idempotencyKey: string };
+      const { cols, commercial, now } = this.deps;
+      const r = await sellSkinToSystem(cols, commercial, now, accountId, skinId, idempotencyKey);
+      if ('error' in r) return reply.code(ERROR_HTTP_STATUS[r.code] ?? 400).send(err(r.code as ErrorCode, r.error));
+      return ok({ credited: r.credited, coinsAfter: r.coinsAfter, save: r.save });
     }
   };
 }

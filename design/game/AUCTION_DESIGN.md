@@ -48,7 +48,7 @@
 | `material` | `{material: 'scrap'\|'lead'\|'binding'\|…}` | meta `deductMaterial(seller, mat, qty, orderId)` | 系统邮件附件 `{kind:'material', id, count}` | ✅ 实跑 |
 | `equipment` | 挂单入参 `{instanceId}`；存储 `{instance: 完整快照}`（qty 恒 1） | meta `escrowEquipment(seller, instanceId, orderId)`（移出库存回快照） | 系统邮件附件 `{kind:'equipment', instance}`（领取按 id 写回 `equipmentInv`） | ✅ 实跑（A） |
 | `card` | 挂单入参 `{instanceId}`；存储 `{instance: 完整快照}`（qty 恒 1） | meta `escrowCard(seller, instanceId, orderId)`（校验 gear 全空后移出 cardInv） | 系统邮件附件 `{kind:'card', instance}`（领取按 id 写回 `cardInv`） | ✅ 实跑（CC-5） |
-| `skin` | 挂单入参 `{skinId}`；存储 `{skinId}`（qty 恒 1，皮肤无等级/词条，无需实例快照） | meta `escrowSkin(seller, skinId, orderId)`（校验拥有且未装备中后 `$pull` 摘除） | 系统邮件附件 `{kind:'skin', skinId}`（领取按 id `$addToSet` 写回 `inventory.skins`） | meta 托管能力 ✅ 已实现（2026-07-06，§9 任务2）；auctionsvc 拍卖流程 ✅ 已接入（2026-07-06，§9 任务4） |
+| `skin` | 挂单入参 `{skinId}`；存储 `{skinId}`（qty 恒 1，皮肤无等级/词条，无需实例快照——挂单契约保持不变，见下方 2026-08-08 更新） | meta `escrowSkin(seller, skinId, orderId)`（校验拥有 + 若装备中则要求还剩 ≥1 份未挂出的实例才放行，`ITEM_IDENTITY_DESIGN.md` 任务1起从"完全禁止"放宽为"只保护最后一份"） | 系统邮件附件 `{kind:'skin', skinId}`（领取按 id `$addToSet` 写回 `inventory.skins`） | meta 托管能力 ✅ 已实现（2026-07-06，§9 任务2）；auctionsvc 拍卖流程 ✅ 已接入（2026-07-06，§9 任务4） |
 
 - **挂单即托管 + escrow-out 邮件出账**：挂单时立刻从卖方库存移出标的（托管在挂单文档里，拍卖期间背包不可见/不可用），避免「挂着卖但库存已被花掉」的超卖。**所有出账——成交发给买家、撤单/过期/季末退回卖家——一律通过系统邮件附件下发，收件人领取后才入库**（装备/卡附件携带完整实例快照）。金币侧（卖方收款、竞拍退款）仍直接走 commercial。设计依据见 EQUIPMENT_DESIGN §13。
 - **qty/price**：`price` = 每件单价（金币），`totalPrice = price × qty`；材料按堆叠数量挂，装备 v1 单件挂（qty=1，A 节细化）。
@@ -466,8 +466,9 @@ designatedBuyerId?, expireAt(ms), status, buyerId?, rev
   - `client/src/scenes/AuctionScene/list.ts`：分类栏 + `renderItemPicture()` 同步加皮肤分支（市场挂单列表也要能正确显示皮肤图标/标题，不只是 picker）。
   - `client/src/net/WorldApiClient.ts`：`createAuction()` 的 `itemType` 参数字面量类型加 `| 'skin'`（`AuctionView` 类型本身早已含 skin，仅这一处手写封装层缺失）。
   - i18n 三语言文件补 `auction.filterSkin`/`auction.err.skinInUse`。
-- **未改动**：皮肤本身没有实例id（`inventory.skins: string[]` 去重集合，"拥有一份"="拥有全部"），拍卖只按 `skinId` 字符串托管/归还，与装备/角色卡的 instanceId 模型不同，这是既有设计（`skin.ts` 头部注释），不在本任务范围内调整（相关的"是否要给皮肤也上实例id"的讨论见 [[item-identity-audit]] / `ITEM_IDENTITY_DESIGN.md`）。
+- **未改动（截至本任务11当时）**：皮肤本身没有实例id（`inventory.skins: string[]` 去重集合，"拥有一份"="拥有全部"），拍卖只按 `skinId` 字符串托管/归还，与装备/角色卡的 instanceId 模型不同，这是既有设计（`skin.ts` 头部注释），不在本任务范围内调整（相关的"是否要给皮肤也上实例id"的讨论见 [[item-identity-audit]] / `ITEM_IDENTITY_DESIGN.md`）。**2026-08-08 更新**：`ITEM_IDENTITY_DESIGN.md` 任务1已给皮肤加上服务端实例（`skinInstances` 集合），但拍卖挂单的**外部契约**仍是 `{skinId}` 不变——`escrowSkin`/`grantSkin` 对 auctionsvc 而言接口没变，只是内部实现换成了"挑一份实例操作"，本段描述的"拍卖只按 skinId 字符串托管"在挂单接口这一层依然成立。
 - **已知限制（未修复，属于更深的经济系统缺口，不在本任务范围）**：gacha 抽到"重复"皮肤（账号已拥有过）目前是纯 no-op（`markDuplicates`，`economy.ts`），不会产生任何新库存或补偿——即使补上本任务的 picker UI，一个**真正重复**的皮肤仍然不会出现在拍卖列表里，只有"未装备但从未拍卖过的唯一一份"才会。设计文档里"重复转化待S5"的待办（本节 §9 任务2 引用）尚未排期。
+  > **2026-08-08 更新：以上限制已解决**，见 `ITEM_IDENTITY_DESIGN.md` 任务1——皮肤实例化落地，gacha 重复皮肤现在会生成真实第二份实例（不再是 no-op），"装备中不可挂拍"也从"完全禁止"放宽为"只保护最后一份"，多余的那份现在能正常出现在拍卖 picker 里；同时新增玩家主动发起的"出售给系统换金币"入口（`/skins/sell`），与自动转币的原设想不同。挂单契约本身（`{skinId}`）刻意保持不变，见任务1的说明。
 - **验收**：`server/metaserver`（67 文件 804 例）、`server/shared`（35 文件 678 例）、`server/auctionsvc`（9 文件 91 例）全绿；client `tsc --noEmit` 绿；`npm run build:web` 绿（仅预期内 asset-size 警告）；client `vitest run` + `vitest run --config vitest.ui.config.ts`（合计 259 文件 2077 例）全绿。测试覆盖分两批：首批 5 条 `auctionPickerDedupe.ui.ts` 皮肤专项用例（未装备过滤、entry 生成、pick 后 `doCreate` 请求体、分类 tab 渲染）；用户要求"全部加测试"后追加：`auctionScene.ui.ts` 补齐此前完全无覆盖的 `itemKind()`/`auctionLabel()`（含 skin 分支）+ `SKIN_IN_USE`/`SKIN_NOT_FOUND` 错误映射，`equipment.test.ts`（shared）补 `makeGachaEquipInstance`/`makeDropInstance` 的溯源字段透传单测（详见 `ITEM_IDENTITY_DESIGN.md` §2 的溯源字段验收清单）。
 - **未验证**：本次会话 Browser 预览面板未能渲染帧（环境限制），且触达真实 AuctionScene 需要登录态 + 跑起来的 metaserver/auctionsvc 后端，故**没有做浏览器截图验证**，只有 headless PIXI 单测覆盖（真实 PIXI 场景树、无渲染器）+ 生产构建通过。下次有可用预览环境时应补一次真实截图核对。
 

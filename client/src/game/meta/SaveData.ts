@@ -69,6 +69,13 @@ export interface SaveData {
   // —— Server-authoritative section (client read-only, §2) ——
   // wallet/gacha are read-only mirrors of the commercial service authority since S5 (meta fills them after economic operation receipts; client never writes them).
   wallet: { coins: number };
+  // Skin instance counts (ITEM_IDENTITY_DESIGN.md task1, 2026-08-08): skinId → total owned instance
+  // count. `inventory.skins` below is unaffected and stays the plain owned/not-owned view every
+  // pre-existing consumer reads (equip picker, etc.) — this only adds "how many" on top, e.g. so the
+  // auction picker can offer a surplus duplicate for listing/selling even when one copy is equipped.
+  // Additive-only field, backfilled to {} by migrate.ts's fillDefaults for any older local save — no
+  // SAVE_VERSION bump needed (same convention as cardInv/equipmentInv when those were introduced).
+  skinCounts: Record<string, number>;
   inventory: {
     skins: string[];
     items: Record<string, number>;
@@ -216,6 +223,7 @@ export function makeNewSave(accountId = '', now = 0): SaveData {
     rev: 0,
     updatedAt: now,
     wallet: { coins: 0 },
+    skinCounts: {},
     inventory: { skins: [], items: {} },
     gacha: { pity: {} },
     deliveredOrders: [],

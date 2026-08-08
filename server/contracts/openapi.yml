@@ -271,6 +271,13 @@ components:
         equipMailOverflowCount:
           type: integer
           minimum: 0
+        skinCounts:
+          type: object
+          nullable: true
+          additionalProperties:
+            type: integer
+            minimum: 0
+          description: 'Skin instance counts: skinId → total owned instance count'
         equipped:
           type: object
           additionalProperties:
@@ -3168,6 +3175,70 @@ paths:
         '404':
           $ref: '#/components/responses/ErrorResp'
         '409':
+          $ref: '#/components/responses/ErrorResp'
+  /skins/sell:
+    post:
+      operationId: sellSkin
+      tags:
+        - save
+      summary: Player-initiated sale of one surplus skin instance to the system for coins (never automatic — a gacha duplicate only ever grants an instance, exactly like a first pull). Payout is DUPE_REFUND_COINS by the skin's catalogue rarity. Refuses to sell the last remaining instance of a currently-equipped skin. idempotencyKey for idempotency
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - skinId
+                - idempotencyKey
+              properties:
+                skinId:
+                  type: string
+                  description: Skin catalogue id to sell one surplus copy of
+                idempotencyKey:
+                  type: string
+                  description: Client-generated idempotency key; replay returns the first result (no second sale)
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - ok
+                  - data
+                properties:
+                  ok:
+                    type: boolean
+                    enum:
+                      - true
+                  data:
+                    type: object
+                    required:
+                      - credited
+                      - coinsAfter
+                      - save
+                    properties:
+                      credited:
+                        type: integer
+                        description: Coins credited for this sale
+                      coinsAfter:
+                        type: integer
+                        description: Wallet balance after the credit
+                      save:
+                        $ref: '#/components/schemas/SaveData'
+        '400':
+          $ref: '#/components/responses/ErrorResp'
+        '401':
+          $ref: '#/components/responses/ErrorResp'
+        '404':
+          $ref: '#/components/responses/ErrorResp'
+        '409':
+          $ref: '#/components/responses/ErrorResp'
+        '503':
           $ref: '#/components/responses/ErrorResp'
   /cards/fuse:
     post:

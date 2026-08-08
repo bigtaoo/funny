@@ -117,7 +117,8 @@
 | 稀有度边框 | 按等级的笔记本风格边框（4 款） | 美术资源 |
 | 标签 | 仅 `NEW`（首次获得）显示 badge；重复不显示 badge（2026-07-16 决定：「Dup」标签观感突兀，去掉） | 程序绘制 |
 | 名称 | 玩家可读物品名（`displayName()` 解析 itemId → 材料/装备/角色卡/皮肤 i18n key），不显示原始 itemId | 文案 |
-| 退款提示 | 重复时显示退还金额 | 程序绘制 |
+
+> **皮肤重复处理（2026-08-08 改版，见 [ITEM_IDENTITY_DESIGN.md](ITEM_IDENTITY_DESIGN.md) 任务1）**：结果卡本身不再显示"退款提示"——重复皮肤抽到时**照常生成一份真实道具**（皮肤已实例化，`skinInstances` 集合），跟首次获得完全一样只是不打 NEW 标；要不要把多余的那份换成金币，是玩家事后在拍卖行 picker 里主动点"出售"决定的，不是抽卡当下自动发生的。旧版这里写的"退款提示"对应的是从未真正接入发货流程的一版设计（`DUPE_REFUND_COINS` 此前只在离线 econ-sim 里用到），现已被"真实例 + 玩家主动出售"取代。
 
 ### 4.3 Legendary 特效
 
@@ -351,7 +352,7 @@ GachaScene 顶部区域只有 4 个彩色圆点（common/rare/epic/legendary）�
 | 软保底起始 | 70 抽（本文 §3 新增） | 本文 |
 | 十连保底 | epic+ | §4.2 |
 | legendary 基础概率 | 标准池 ≈3.22%（固定概率表 §2.1b）；限定池/扁平权重 1% | §2.1b / §4.1 |
-| 重复退币 legendary | 1,500 coins | §4.3 |
+| 皮肤主动出售 legendary | 1,500 coins（`DUPE_REFUND_COINS.legendary`，`/skins/sell`，玩家主动发起） | [ITEM_IDENTITY_DESIGN.md](ITEM_IDENTITY_DESIGN.md) 任务1 |
 | 月卡每日 | 120 coins × 30 天 | 本文 §5 |
 | 月卡价格 | ¥30 | 本文 §5 |
 | 年卡价格 | ¥298（12 月卡 ¥360 约 83 折取整）× 365 天；人民币定价待中国区上架核定，当前结算币种为 EUR | 本文 §5.1b |

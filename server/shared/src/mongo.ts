@@ -458,7 +458,7 @@ export interface CardIdemDoc {
 export interface EquipmentIdemDoc {
   _id: string; // idempotencyKey / orderId
   accountId: string;
-  op: 'craft' | 'escrow' | 'enhance' | 'salvage' | 'reforge' | 'skin_escrow' | 'checkin_reward' | 'weekly_chest';
+  op: 'craft' | 'escrow' | 'enhance' | 'salvage' | 'reforge' | 'skin_escrow' | 'skin_sell' | 'checkin_reward' | 'weekly_chest';
   /**
    * Snapshot of the first execution result, replayed verbatim on retry:
    *   craft          → produced instance (EquipmentInstance)
@@ -466,6 +466,7 @@ export interface EquipmentIdemDoc {
    *   enhance        → { success, instance } (dice roll result + enhanced instance, E3)
    *   salvage        → { refunded } (total materials returned, E3)
    *   skin_escrow    → { skinId } (auction task2, AUCTION_DESIGN §2.1/§9)
+   *   skin_sell      → { skinId, credited } (player-initiated system sale, ITEM_IDENTITY_DESIGN.md task1)
    *   checkin_reward / weekly_chest → the picked concrete item (RetentionItemPick, liveops.ts) for a
    *     checkin card/equipment milestone or a weekly-chest equipment/skin tier
    */
@@ -502,6 +503,19 @@ export interface EquipmentInstanceDoc {
   level: number;
   affixes: Affix[];
   locked?: boolean;
+  sourceType?: string;
+  obtainedAt?: number;
+}
+
+/**
+ * Skin instance, split out mirroring EquipmentInstanceDoc/CardInstanceDoc's storage pattern
+ * (ITEM_IDENTITY_DESIGN.md task1, 2026-08-08). No level/affixes/rarity to denormalize — skins have
+ * none — so this is just `_id` (instanceId) + `skinId` + provenance. `_id` = instanceId.
+ */
+export interface SkinInstanceDoc {
+  _id: string; // instanceId
+  accountId: string;
+  skinId: string;
   sourceType?: string;
   obtainedAt?: number;
 }
@@ -619,6 +633,8 @@ export interface Collections {
   equipmentInstances: Collection<EquipmentInstanceDoc>;
   // card instances, split out of SaveData.cardInv (perf, 2026-07-27); _id = instanceId
   cardInstances: Collection<CardInstanceDoc>;
+  // skin instances (ITEM_IDENTITY_DESIGN.md task1, 2026-08-08); _id = instanceId
+  skinInstances: Collection<SkinInstanceDoc>;
   // ladder seasons (S11): single global document (_id='current')
   ladderSeasons: Collection<LadderSeasonDoc>;
   // ladder season settlement snapshots (L2-1): one entry per account per season, written at season close, also serves as idempotency ledger
@@ -686,6 +702,7 @@ export async function createMongo(
     internalGrantOrders: db.collection<InternalGrantOrderDoc>('internalGrantOrders'),
     equipmentInstances: db.collection<EquipmentInstanceDoc>('equipmentInstances'),
     cardInstances: db.collection<CardInstanceDoc>('cardInstances'),
+    skinInstances: db.collection<SkinInstanceDoc>('skinInstances'),
     ladderSeasons: db.collection<LadderSeasonDoc>('ladderSeasons'),
     ladderSeasonSnapshots: db.collection<LadderSeasonSnapshotDoc>('ladderSeasonSnapshots'),
     adsTokens: db.collection<AdsTokenDoc>('adsTokens'),
@@ -773,6 +790,8 @@ export async function createMongo(
     await collections.equipmentInstances.createIndex({ accountId: 1 });
     // card instances: fetch-all-for-account (GET /save join, /internal/save-fields, migration, cap-count self-heal).
     await collections.cardInstances.createIndex({ accountId: 1 });
+    // skin instances: fetch-all-for-account (GET /save skinCounts join) + per-skinId lookup (escrow/sell pick one instance).
+    await collections.skinInstances.createIndex({ accountId: 1, skinId: 1 });
     // unique multikey guard (2026-07-29): no equipment instanceId may appear in more than one card's
     // gearInstanceIds across the whole collection — the atomic backstop behind equipEquipment's pre-write
     // check (see CardInstanceDoc.gearInstanceIds doc comment). Sparse: docs without the field (not yet
