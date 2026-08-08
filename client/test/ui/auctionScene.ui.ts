@@ -743,6 +743,44 @@ describe('AuctionScene — market cell equipment level display', () => {
   });
 });
 
+// ── renderAuctionCell() — card level as a real icon-star row, not "Lv.N" text (2026-08-08 follow-up:
+// the equipment branch above got fixed first pass, the card branch was missed) ──────────────────────
+
+describe('AuctionScene — market cell card level display', () => {
+  it('draws a gold-icon star row (one child per level) beneath the name for a leveled card listing', () => {
+    const scene = buildScene();
+    const inst: CardInstance = { id: 'c1', defId: 'lichuang', level: 3, gear: {}, locked: false };
+    scene.allAuctions = [makeAuction({ itemType: 'card', item: { instance: inst } })];
+    scene.activeTab = 'all';
+    scene.loading = false;
+    scene.render();
+
+    const rows = starRows(scene.container);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.children).toHaveLength(3);
+
+    // The old "Lv.3" splice must be gone entirely — bare name, no rendered text mentions "Lv.".
+    const texts = collectTexts(scene.container);
+    expect(texts).toContain(scene.cardName('lichuang'));
+    expect(texts.some((s) => /Lv\.\d/.test(s))).toBe(false);
+    scene.destroy();
+  });
+
+  it('draws exactly one star (not zero, not clamped away) for a level-1 card listing', () => {
+    const scene = buildScene();
+    const inst: CardInstance = { id: 'c1', defId: 'lichuang', level: 1, gear: {}, locked: false };
+    scene.allAuctions = [makeAuction({ itemType: 'card', item: { instance: inst } })];
+    scene.activeTab = 'all';
+    scene.loading = false;
+    scene.render();
+
+    const rows = starRows(scene.container);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.children).toHaveLength(1);
+    scene.destroy();
+  });
+});
+
 // ── renderAuctionCell() — countdown format (d/h/m/s) + compact-card stacking (16.07.2026 fix) ──
 
 describe('AuctionScene — market cell countdown', () => {
