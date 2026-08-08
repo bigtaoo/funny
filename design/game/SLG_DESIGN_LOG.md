@@ -1850,3 +1850,15 @@ cols.tiles.find({ worldId, type: 'base', ownerId: { $nin: excludeOwners } })
 **验证**：`tsc --noEmit` + `npx webpack --mode production` 全绿；`vitest run --config vitest.ui.config.ts`（134 文件/1255 例全绿，含 `worldMapShieldBubble.ui.ts` 四例——`drawShieldDome` 仍是唯一一次 `drawEllipse` 调用，未受拆分影响）。可视化核对：跟上一条一样，用 `mcp__visualize__show_widget` 做了跟新代码逐行对应的 canvas 预览（含一个手动触发"护盾破碎"的按钮），确认呼吸 dome + additive 发光环 + 破碎闪光三层叠起来的视觉效果，未拉起真实 worldsvc 后端验证。
 
 **补测试**（用户要求，同日）：`worldMapShieldBubble.ui.ts` 新增一个 describe 块共 5 例——① 有效护盾在独立的 `shieldGlowFx`（`blendMode===PIXI.BLEND_MODES.ADD`）上画出 4 个 `drawCircle` 闪烁点；② 无护盾时 `shieldGlowFx` 同样一次 `drawCircle` 都不画；③ 两次 `invalidatePool()` 之间把 `tileCache` 里同一基地的 `protectedUntil` 从"未来"改成"过去"（模拟真实时间流逝/`tile_update` 推送），断言 `ctx.shieldGeom` 转移到 `ctx.shieldBreakFx`（`age:0`）且新出现的 `shieldBreakFx` 子节点也是 additive；④ 从未被保护过的基地两次重绘都不会误触发 break flash；⑤ 直接调用 `ctx.view.update(SHIELD_BREAK_LIFE + 0.1)`（同 `worldMapVignette.ui.ts` 已确立的"直接调 lifecycle mixin 方法"套路），断言 `shieldBreakFx` 条目在生命周期耗尽后被清掉。全部通过真实 `WorldMapContext`/`WorldMapRenderer`（非 mock 的 fake ctx），跟原有四例同一套 harness。
+
+## 2026-08-08：进攻队伍选择器对"停留中"队伍的忙碌判定跟服务端不一致——攻击一个看着"空闲"的队伍却报 TEAM_BUSY（用户截图报告，账号 tao）
+
+用户截图：让队伍 1 进攻某玩家，一直提示 "Marching / occupying"，但队伍在基地界面看着是空闲的。
+
+**排查**：`Marching / occupying` 就是 `world.team.busy`（`TEAM_BUSY` 错误码）的文案，不是渲染卡死——服务端真的认为队伍 1 处于占用状态。登生产 VPS 只读查了账号 tao（`accountId a84257d2-…`, world `s1-0`）的 `marches`/`occupations`/`stationed` 三张表（技术见 `game-vps-access-2026-07-14` memory）：`marches` 为空，但 `occupations` 里有一条队伍 1（`teamId:'t1'`）在 tile `(33,289)` 的占领保持记录，`dueAt` 几乎正好是查询那一刻——即队伍 1 刚打赢一次占领、进入 ~5 分钟保持倒计时，随后（几秒后复查）保持结束，落成一条 `stationed` 文档（`mode:'idle'`，即 ADR-051 的"停留"）。
+
+**根因**：队伍 1 当时/随后确实"闲"在野外某格（停留/占领保持中），不是闲在基地——但地图右侧的「⚑ Marches」面板只读 `ctx.marches`（行军中的过境记录），完全不展示占领保持/停留状态，玩家没有任何界面能看到"队伍 1 其实在外面"。真正的 bug 出在 `WorldMapNet.showTeamPicker`（`client/src/scenes/worldmap/WorldMapNet.ts`）的 `busyTeamIds` 过滤：它对"停留"（`mode:'idle'`）队伍的忙碌判定写死为"只有 `mode==='garrison'`（驻扎）才算忙"，注释称这是"镜像服务端的宽松判定"——但服务端 `combatMarch/command.ts` 的 `idleRedispatch` 旁路**只对 `kind==='occupy'` 或 `'move'` 生效，从不包括 `'attack'`**：一个停留中的队伍不能被直接下令进攻，必须先召回。所以进攻选择器（`kind:'attack'`）把停留中的队伍 1 当"空闲"列出来给玩家选，玩家选中后请求送到服务端，服务端按正确规则拒绝，报 `TEAM_BUSY`——客户端过滤条件和服务端真实许可范围不一致。
+
+**修复**（`WorldMapNet.ts`）：`busyTeamIds` 的 stationed 过滤改成按 `kind` 区分——`kind` 是 `'occupy'`/`'move'` 时维持原样（只有 `garrison` 算忙，`idle` 停留队伍可用）；其它情况（`'attack'`）任何停留中的队伍（`idle` 或 `garrison`）都算忙，跟服务端的 `idleRedispatch` 白名单严格对齐。
+
+**验证**：`tsc --noEmit` 全绿；`worldMapOccupyTeamPicker.ui.ts` 新增 3 例（停留队伍在进攻选择器里被排除/在占领·移动选择器里仍可选/驻扎队伍在三种选择器里都排除不受影响）——先临时回退修复确认新例真的会挂（`expected true to be false`），再恢复确认转绿；全量 `npm test`（151 文件/1224 例）+ `npm run test:ui`（135 文件/1269 例）复跑全绿。未改动服务端代码（服务端逻辑本身是对的），纯客户端过滤口径修正。
