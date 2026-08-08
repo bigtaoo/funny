@@ -559,6 +559,46 @@ describe.skipIf(!mongo)('meta economy orchestration e2e', () => {
     });
   });
 
+  it('gacha: equipment NEW badge checks equipmentInstances by defId, not inventory.skins (regression — equipment fell into markDuplicates\' generic skin branch, so a defId already owned kept showing NEW every draw since equipment never lands in inventory.skins)', async () => {
+    comm.coins.set(accountId, 2000);
+    comm.nextResults = [{ itemId: 'wp_marker', rarity: 'rare' }];
+    const r1 = body(await app.inject({ method: 'POST', url: '/gacha/draw', headers: auth(), payload: { poolId: 'standard', count: 1 } }));
+    expect(r1.data.results[0]).toMatchObject({ itemId: 'wp_marker', rarity: 'rare', duplicate: false });
+    // Drawing the same defId again (a distinct instance, possibly a different rolled rarity/level) must be marked duplicate — no NEW badge.
+    comm.nextResults = [{ itemId: 'wp_marker', rarity: 'rare' }];
+    const r2 = body(await app.inject({ method: 'POST', url: '/gacha/draw', headers: auth(), payload: { poolId: 'standard', count: 1 } }));
+    expect(r2.data.results[0]).toMatchObject({ itemId: 'wp_marker', rarity: 'rare', duplicate: true });
+  });
+
+  it('gacha: within a single ten-pull, the first copy of a new equipment defId is NEW and later copies of the same defId in the same batch are duplicate', async () => {
+    comm.coins.set(accountId, 2000);
+    comm.nextResults = Array.from({ length: 10 }, () => ({ itemId: 'wp_marker', rarity: 'rare' as const }));
+    const r = body(await app.inject({ method: 'POST', url: '/gacha/draw', headers: auth(), payload: { poolId: 'standard', count: 10 } }));
+    expect(r.data.results).toHaveLength(10);
+    expect(r.data.results[0].duplicate).toBe(false);
+    expect(r.data.results.slice(1).every((e: { duplicate: boolean }) => e.duplicate)).toBe(true);
+  });
+
+  it('gacha: material NEW badge checks save.materials (already-in-bag), not just within-batch dedup (regression — materials fell into markDuplicates\' generic skin branch, so a material already stacked in the bag still showed NEW as long as it wasn\'t a second copy in the very same pull — exact bug report: player with a large existing Lead/Scraps stack kept seeing NEW on every gacha result)', async () => {
+    comm.coins.set(accountId, 2000);
+    comm.nextResults = [{ itemId: 'mat_scrap', rarity: 'common' }];
+    const r1 = body(await app.inject({ method: 'POST', url: '/gacha/draw', headers: auth(), payload: { poolId: 'standard', count: 1 } }));
+    expect(r1.data.results[0]).toMatchObject({ itemId: 'mat_scrap', rarity: 'common', duplicate: false });
+    // Drawing the same material again in a later, separate draw (scrap already sitting in the bag) must be marked duplicate.
+    comm.nextResults = [{ itemId: 'mat_scrap', rarity: 'common' }];
+    const r2 = body(await app.inject({ method: 'POST', url: '/gacha/draw', headers: auth(), payload: { poolId: 'standard', count: 1 } }));
+    expect(r2.data.results[0]).toMatchObject({ itemId: 'mat_scrap', rarity: 'common', duplicate: true });
+  });
+
+  it('gacha: within a single ten-pull, the first copy of a new material is NEW and later copies of the same material in the same batch are duplicate', async () => {
+    comm.coins.set(accountId, 2000);
+    comm.nextResults = Array.from({ length: 10 }, () => ({ itemId: 'mat_lead', rarity: 'common' as const }));
+    const r = body(await app.inject({ method: 'POST', url: '/gacha/draw', headers: auth(), payload: { poolId: 'standard', count: 10 } }));
+    expect(r.data.results).toHaveLength(10);
+    expect(r.data.results[0].duplicate).toBe(false);
+    expect(r.data.results.slice(1).every((e: { duplicate: boolean }) => e.duplicate)).toBe(true);
+  });
+
   it('gacha: card NEW badge checks cardInv, not inventory.skins (regression — markDuplicates only checked inventory.skins, so an already-owned card kept showing NEW on every later draw since cards never land in inventory.skins)', async () => {
     comm.coins.set(accountId, 2000);
     // 'max' is not one of the 3 auto-granted starter cards (lichuang/chenshou/suyuan), so the account starts without it.

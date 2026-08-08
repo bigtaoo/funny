@@ -55,33 +55,93 @@ export interface OverflowSummary {
 }
 
 /**
- * Mark each result as duplicate or not (compared against current inventory + already granted in
- * this batch; used by the client for loot-box display). Character cards are routed to `cardInv`
- * on delivery (not `inventory.skins`), so they're checked against `ownedCardDefIds` instead —
- * otherwise a card already owned (at any level) would still show the NEW badge every draw.
+ * Mark each result as duplicate or not — drives the reveal UI's NEW badge. "Duplicate" means
+ * lifetime ownership, not merely current possession (2026-08-08 fix; the previous version only
+ * special-cased character cards — see the two bug classes below — and dumped materials/equipment
+ * into the generic "skin" branch, whose within-batch-only dedup meant a material/equipment item the
+ * player had owned for ages still got badged NEW on every draw as long as it wasn't a *second* copy
+ * within the very same pull):
+ *   - materials/equipment routed to `save.materials`/`equipmentInstances` (not `inventory.skins`)
+ *     were never checked against real ownership at all — every first-in-batch material/equipment
+ *     result showed NEW regardless of how much was already in the bag.
+ *   - character cards routed to `cardInv` were checked against `ownedCardDefIds`, which is correct
+ *     but doesn't survive every last copy of a defId being consumed away (fusion fodder) — same gap
+ *     equipment/materials have when spent to zero then re-earned.
+ * Callers own the ownership computation per kind, unioning the live inventory (current cardInv/
+ * equipmentInstances/materials-with-count>0) with that kind's `save.everOwned.*` ledger (additive-
+ * only, survives salvage/consume/sell — see SaveData.everOwned doc comment) so a legacy save whose
+ * everOwned ledger has gaps still gets the right answer from the live inventory, and vice versa.
+ *
+ * `newSkins` stays a separate concern from the skin `duplicate` flag: it drives `inventory.skins`
+ * $addToSet (has this exact skinId ever landed in the array?), which must stay keyed off the plain
+ * array — a skin currently absent from inventory.skins (sold via auction escrow) needs re-adding
+ * even though `everOwned.skin` means it's not a "NEW" pull.
  */
 export function markDuplicates(
   ownedSkins: string[],
-  ownedCardDefIds: string[],
+  everOwnedSkins: string[],
+  ownedHero: string[],
+  ownedEquipment: string[],
+  ownedMaterial: string[],
   results: GachaResultEntry[],
 ): { newSkins: string[]; marked: { itemId: string; rarity: Rarity; duplicate: boolean }[] } {
   const owned = new Set(ownedSkins);
-  const ownedCards = new Set(ownedCardDefIds);
+  const everOwnedSkin = new Set(everOwnedSkins);
+  const ownedHeroSet = new Set(ownedHero);
+  const ownedEquipSet = new Set(ownedEquipment);
+  const ownedMaterialSet = new Set(ownedMaterial);
   const newSkins: string[] = [];
   const marked = results.map((r) => {
     if (CARD_DEFS[r.itemId]) {
-      const duplicate = ownedCards.has(r.itemId);
-      if (!duplicate) ownedCards.add(r.itemId);
+      const duplicate = ownedHeroSet.has(r.itemId);
+      if (!duplicate) ownedHeroSet.add(r.itemId);
       return { itemId: r.itemId, rarity: r.rarity, duplicate };
     }
-    const duplicate = owned.has(r.itemId);
-    if (!duplicate) {
+    if (EQUIPMENT_DEFS[r.itemId]) {
+      const duplicate = ownedEquipSet.has(r.itemId);
+      if (!duplicate) ownedEquipSet.add(r.itemId);
+      return { itemId: r.itemId, rarity: r.rarity, duplicate };
+    }
+    const matGrant = GACHA_MATERIAL_GRANTS[r.itemId];
+    if (matGrant) {
+      const matKey = Object.keys(matGrant)[0]!;
+      const duplicate = ownedMaterialSet.has(matKey);
+      if (!duplicate) ownedMaterialSet.add(matKey);
+      return { itemId: r.itemId, rarity: r.rarity, duplicate };
+    }
+    // Skin: `alreadyInInv` alone still decides `newSkins` (what to $addToSet); `duplicate` (the badge)
+    // additionally checks everOwnedSkin so a re-pulled, previously-sold skin doesn't show NEW.
+    const alreadyInInv = owned.has(r.itemId);
+    const duplicate = alreadyInInv || everOwnedSkin.has(r.itemId);
+    if (!alreadyInInv) {
       owned.add(r.itemId);
       newSkins.push(r.itemId);
     }
     return { itemId: r.itemId, rarity: r.rarity, duplicate };
   });
   return { newSkins, marked };
+}
+
+/**
+ * Union the live inventory (current cardInstances/equipmentInstances defIds + materials-with-
+ * count>0) with each kind's `save.everOwned.*` ledger into the ownedHero/ownedEquipment/
+ * ownedMaterial inputs `markDuplicates` needs. See `markDuplicates`'s doc comment for why the union
+ * — live inventory covers a legacy save whose everOwned ledger predates that item's first grant;
+ * everOwned covers an item since spent/salvaged/fused away entirely. Pure/sync so callers can fetch
+ * `cardDocs`/`equipDocs` concurrently with the save read instead of serializing after it.
+ */
+export function unionOwnershipForDuplicateCheck(
+  cardDefIds: string[],
+  equipDefIds: string[],
+  save: SaveData,
+): { ownedHero: string[]; ownedEquipment: string[]; ownedMaterial: string[] } {
+  const ownedHero = [...new Set([...cardDefIds, ...(save.everOwned?.hero ?? [])])];
+  const ownedEquipment = [...new Set([...equipDefIds, ...(save.everOwned?.equipment ?? [])])];
+  const ownedMaterial = [...new Set([
+    ...Object.entries(save.materials ?? {}).filter(([, n]) => n > 0).map(([k]) => k),
+    ...(save.everOwned?.material ?? []),
+  ])];
+  return { ownedHero, ownedEquipment, ownedMaterial };
 }
 
 /**
@@ -389,7 +449,10 @@ export async function deliverLootBox(
     }
   }
 
-  const { newSkins } = markDuplicates(owned, [], skinResults);
+  // Only `newSkins` is consumed here (drives inventory.skins $addToSet) — `skinResults` is already
+  // filtered to skin-kind entries, so the other three ownership args (unused by the skin branch's
+  // `duplicate` flag, which this call site discards) are irrelevant; pass empty.
+  const { newSkins } = markDuplicates(owned, [], [], [], [], skinResults);
   const hasMixed = Object.keys(materialInc).length > 0 || Object.keys(equipInstances).length > 0;
   const save = await deliverGrant(
     cols, accountId, orderId, newSkins, coinsAfter, pityPatch, now,
