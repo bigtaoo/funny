@@ -9,7 +9,7 @@ import { loadBuildingAtlas } from '../../../render/atlas/buildingAtlasLoader';
 import { tearDownChildren } from '../../../render/sketchUi';
 import { type Constructor, type WorldMapRendererBaseCtor } from './base';
 import { destroyTokenEntry } from './fog';
-import { drawShieldFx } from './shieldFx';
+import { drawShieldDome, drawShieldGlow, drawShieldBreakFx, SHIELD_BREAK_LIFE } from './shieldFx';
 
 export interface LifecycleHandlers {
   update(dt: number): void;
@@ -48,8 +48,25 @@ export function LifecycleMixin<TBase extends WorldMapRendererBaseCtor>(Base: TBa
         for (const [key, geom] of this.ctx.shieldGeom) {
           const cityC = this.ctx.citySprites.get(key);
           const shieldFx = cityC?.getChildByName('shieldFx') as PIXI.Graphics | undefined;
-          if (!shieldFx) { this.ctx.shieldGeom.delete(key); continue; }
-          drawShieldFx(shieldFx, geom, this.ctx.shieldAnimT);
+          const shieldGlowFx = cityC?.getChildByName('shieldGlowFx') as PIXI.Graphics | undefined;
+          if (!shieldFx || !shieldGlowFx) { this.ctx.shieldGeom.delete(key); continue; }
+          drawShieldDome(shieldFx, geom, this.ctx.shieldAnimT);
+          drawShieldGlow(shieldGlowFx, geom, this.ctx.shieldAnimT);
+        }
+      }
+      // One-shot "shield just broke" pop flashes (2026-08-08 follow-up) — age out and self-remove
+      // past SHIELD_BREAK_LIFE; see city.ts refreshCityLayer for where these get queued.
+      if (this.ctx.shieldBreakFx.size > 0) {
+        for (const [key, fx] of this.ctx.shieldBreakFx) {
+          fx.age += dt;
+          const cityC = this.ctx.citySprites.get(key);
+          const shieldBreakFx = cityC?.getChildByName('shieldBreakFx') as PIXI.Graphics | undefined;
+          if (!shieldBreakFx || fx.age >= SHIELD_BREAK_LIFE) {
+            shieldBreakFx?.clear();
+            this.ctx.shieldBreakFx.delete(key);
+            continue;
+          }
+          drawShieldBreakFx(shieldBreakFx, fx, fx.age);
         }
       }
       // L3 overview: flush dirty flag at most once per frame (60fps cap).
@@ -102,6 +119,7 @@ export function LifecycleMixin<TBase extends WorldMapRendererBaseCtor>(Base: TBa
       for (const c of this.ctx.citySprites.values()) c.destroy({ children: true });
       this.ctx.citySprites.clear();
       this.ctx.shieldGeom.clear();
+      this.ctx.shieldBreakFx.clear();
       for (const entry of this.ctx.marchTokenRuntimes.values()) destroyTokenEntry(entry);
       this.ctx.marchTokenRuntimes.clear();
       this.ctx.marchAttackUntil.clear();

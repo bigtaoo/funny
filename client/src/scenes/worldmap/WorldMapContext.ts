@@ -131,9 +131,14 @@ export class WorldMapContext {
    *  the time, reading as a flat static overlay rather than an active field (2026-08-08 follow-up:
    *  "现在就叠加了一张图，不太能懂用途是什么"). See WorldMapRenderer/shieldFx.ts. */
   shieldGeom: Map<string, { cx: number; cy: number; rx: number; ry: number; tp: number }> = new Map();
-  /** Seconds elapsed, feeds drawShieldFx's rotation/pulse phase — a plain accumulator (not
-   *  Date.now()) so shield animation stays deterministic/testable like the rest of update(dt). */
+  /** Seconds elapsed, feeds drawShieldDome/drawShieldGlow's rotation/pulse phase — a plain
+   *  accumulator (not Date.now()) so shield animation stays deterministic/testable like the rest
+   *  of update(dt). */
   shieldAnimT = 0;
+  /** cacheKey → one-shot "shield just broke" pop flash in progress (borrowed from daydayup's
+   *  shield_break flash, 2026-08-08 follow-up). `age` is seconds since the break was first
+   *  observed; lifecycle.update ages it out and deletes the entry past shieldFx.SHIELD_BREAK_LIFE. */
+  shieldBreakFx: Map<string, { cx: number; cy: number; rx: number; ry: number; tp: number; age: number }> = new Map();
   fogGfx!: PIXI.Graphics;
   overlayGfx!: PIXI.Graphics;
   /** March walk-cycle sprites, above overlayGfx so they read on top of the route line/arrowhead. */

@@ -1819,3 +1819,32 @@ cols.tiles.find({ worldId, type: 'base', ownerId: { $nin: excludeOwners } })
 **护盾动画**：原实现（`WorldMapRenderer/city.ts` 的 `shieldFx` Graphics）只在 `refreshCityLayer` 被触发时重绘一次（拍板/缩放/~5s 行军轮询/`invalidatePool`），呼吸用 `Math.sin(Date.now()/450)` 算相位——但相机不动时压根没人再调 `refreshCityLayer`，所以呼吸实际上几乎不动，静止画面看起来就是一张贴死的半透明椭圆图。改法：把绘制逻辑抽成 `WorldMapRenderer/shieldFx.ts::drawShieldFx(g, geom, t)`，`t` 用 `WorldMapContext.shieldAnimT`（`lifecycle.update(dt)` 里逐帧累加的秒数，不用 `Date.now()`，跟其它倒计时/动画一样可测）；`city.ts` 的 `refreshCityLayer` 算出椭圆的局部坐标（`cx/cy/rx/ry/tp`，只随贴图尺寸/缩放变化）后缓存进 `ctx.shieldGeom`（`cacheKey → geom`），`lifecycle.update` 每帧遍历这个 map 用当前 `shieldAnimT` 重绘，不用重算贴图布局，开销可忽略（视口内同时存在护盾的基地本就是少数）。视觉上除了原有的呼吸椭圆（保留，测试仍 spy 这一个 `drawEllipse` 调用不变），加了两层新东西让它读起来像"场"而不是"贴图"：外圈一条慢速旋转的虚线环（跟领地边界同款手绘虚线语言，只是转起来）+ 四个绕环反向旋转、错相闪烁的小光点。基地移除/失去保护时清 `shieldGeom` 里对应 key，`destroy()` 里整体清空，避免残留指向已销毁 Graphics 的条目。
 
 **验证**：`tsc --noEmit` + `npx webpack --mode production` 全绿；`vitest run --config vitest.ui.config.ts`（133 文件/1251 例全绿，含既有的 `worldMapShieldBubble.ui.ts`/`worldMapBuffRow.ui.ts`/`cityTrainTroops.ui.ts` 三个直接覆盖点，后两个的断言从 `.split('{sec}')` 改成 `.split('{d}')` 去匹配新模板前缀）。可视化核对：因为要看到真实 `protectedUntil` 需要拉起整条 worldsvc 后端 + 登录 + 入驻世界，成本远超这次纯前端视觉调整的量级，改用 `mcp__visualize__show_widget` 跑了一份跟 `drawShieldFx` 逐行对应的 canvas 版本（同样的三角函数/参数）做动画预览确认效果，未在真机截图——后续如果这层视觉再有反馈，用 [[worldmap-standalone-debug-render]] 记录的 `?worldmap&desk=N` 假数据套路能更快复现真实渲染路径。
+
+## 2026-08-08：Hero Roster 左侧导航图标（cards/armor/brush）补细节（用户截图反馈）
+
+用户截图反馈 Hero Roster 页左侧 [Hero Roster|Equipment|Skins] 导航条三个图标太单薄（细线描边、无填充），同一张截图里还提到大量 "Li Chuang" 卡片显示成黑白简笔火柴人——排查后确认后者是 `client/src/assets/units/infantry.png` 这张**既有静态 PNG**（Li Chuang 官方设定就是"涂鸦士兵"，故意比 Mara/Lena 的精细彩绘廉价），不是程序绘制、也不是素材缺失，且属于 `art-direction.md` 明确划给 AI 图的角色插画范畴，程序绘制改不动。跟用户确认后**范围收窄为只改三个导航图标**（`drawCards`/`drawArmor`/`drawBrush`，`icons/ui.ts`/`icons/equipment.ts`），角色插画不动。
+
+**实现**：延续 §63 定的"只加填充/细节层，不改剪影"路子（`drawArmor`/`drawHourglass` 那套 layered-alpha 手法，无渐变）：
+- `drawCards`：前后两张卡各加一层低 alpha 纯色填充（`0.12`/`0.16`）给出"纸张厚度"，前卡左上角加一个实心圆点当"卡片角标"，两条 ruled line 下移到留出角标的位置。
+- `drawArmor`：盾身轮廓内加一层 `0.16` alpha 填充；十字横带交叉点加一个实心圆当"铆钉盾徽"；顶角两颗铆钉从空心圆环改实心点（`beginFill` 而非 `pen.circle`），小尺寸下更醒目。`drawArmorHeavy` 的侧边铆钉同步改实心，跟基础层一致。
+- `drawBrush`：这是本次唯一返工过的——第一版按"手柄+铁箍+等宽刷头三角"填充，结果在小尺寸下刷头宽度跟手柄相近，读成了铅笔而非画笔。改法：刷头半宽放大到铁箍半宽的 ~2.7 倍（`s*0.16` vs `s*0.06`），让轮廓在铁箍处明显"炸开"成扇形；刷头内部加两条低 alpha 单根刷毛线增加"毛"的质感；笔尖加一个实心圆点（蘸料）+ 一道拖出的颜料短线。手柄本身也补了一层填充 + 铁箍改实心。
+
+**验证**：`tsc --noEmit` 全绿。可视化验证：Browser pane 这次同样"未显示无法合成帧"（[[client-run-and-visual-verify]] 记录的已知环境限制），改走同一篇记录的 Playwright-to-file 套路——`entries/web.ts` 临时加 `?navicons` 分支起一个只 `buildIcon()` 五张图（`cards`/`armor`/`armorHeavy`/`brush`×2）的独立 canvas，`client/` 下临时 `.mjs` 用 `chromium.launch({args:['--use-gl=angle','--use-angle=swiftshader']})` 截图落盘，同时按 300px 大图和 36px（实际导航栏尺寸）两档核对：小尺寸下三个图标都还清楚可辨，`drawBrush` 改版后明显读成"扇形刷头"而非铅笔。验证完删掉临时分支 + `.mjs` 脚本，`git diff client/src/entries/web.ts` 归零。**共享检出提醒**：截图过程中另一个会话正并发改 `WorldMapRenderer/shieldFx.ts`（即上一条日志记的护盾动画重构，见其"共享检出提醒"），中途一度让整个 webpack bundle 编译失败（`drawShieldFx` 导出名不存在），等了几轮 HMR 后对方改完自愈，没有碰这个文件；最终 `git add` 只列了本任务自己改的 3 个源文件 + 这份设计文档。
+
+## 2026-08-08：护盾特效借鉴 daydayup 的 additive-glow + 破碎闪光（用户提议）
+
+用户提到另一个项目 `D:\daydayup`（PixiJS v8 俯视角射击 roguelite）的角色护盾效果不错，问能不能借鉴，同时给了前提——"如果性能耗费太大就算了"。
+
+**先看 daydayup 怎么做的**：`client/src/game/fx/filters.ts::EnergyShieldFilter` 是一个自定义 fragment shader（Pixi `Filter`），套在角色贴图容器上做"轮廓光晕"（UV 距中心距离 `smoothstep` 出一圈环，`sin(uTime)` 调呼吸相位，`color.rgb += uColor*glow` 把颜色叠进贴图本身）；护盾破碎那一下是另一套东西——`FxController.flash()`，纯 `Graphics` 画 5 层同心圆叠加 `blendMode:'add'`，170ms 生命周期后销毁。
+
+**能不能照搬**：不能 1:1 搬——那是自定义 Pixi `Filter`，每个套 filter 的对象要过一次离屏渲染目标（RTT）合成，这是 filter 机制的固定开销，跟 shader 本身轻不轻无关；本项目的护盾从来是 `PIXI.Graphics` 直接画（矢量描边/填充），没有、也不打算引入自定义 shader pipeline，为了这一个不大的椭圆光泡去接一条新的 filter 管线不值——这正是用户说的"性能耗费太大就算了"那一挡,所以 shader 本体没有借。
+
+**借的是什么**：daydayup 的 shader 里"叠色进贴图"那部分没法在纯 Graphics 方案里等价（那是像素级的"给角色本身打光"，Graphics 只能"贴一层额外图形盖上去"），但另外两个思路是纯 CPU/矢量手法，能直接搬：① **additive 混合**（`blendMode:'add'`，daydayup 的 `flash()`/trail dots 用的手法，本项目 `GachaScene/reveal.ts` 的传说卡拖尾也已经在用同一个 API）——一层薄薄的半透明色，正常混合（`normal`）叠在纸色背景上看起来还是"半透明贴纸"，换成 additive 之后同样的颜色/alpha 会真的"发亮"，视觉上更像"能量场"而不是"多一层灰蓝色蒙版"；② **护盾破碎的一次性闪光**（daydayup 的 `shield_break` 同心圆爆闪）——本项目原来护盾到期就是悄无声息地消失，什么反馈都没有,加一个瞬间的"啵"一下的环形爆闪，玩家才能感知到"保护刚刚结束了"。
+
+**实现**（`WorldMapRenderer/shieldFx.ts` 拆成三层）：
+- `drawShieldFx`→拆成 `drawShieldDome`（原来的呼吸椭圆，`shieldFx` 子节点不变，保持 normal 混合——它是"玻璃罩"，不是"光"，跟纸感背景更协调；既有测试仍 spy 这一个 `drawEllipse` 调用，未受影响）+ `drawShieldGlow`（原来那圈旋转虚线环 + 4 个闪烁点，挪到新的 `shieldGlowFx` 子节点，创建时设 `blendMode = PIXI.BLEND_MODES.ADD`）。
+- 新增 `drawShieldBreakFx`：3 层同心椭圆环，随 `age`（0~`SHIELD_BREAK_LIFE=0.4s`）向外扩散、线宽和透明度同步衰减到 0，挂在新的 `shieldBreakFx` 子节点（同样 additive）。
+- 触发点：`city.ts::refreshCityLayer` 判断 `tile.protectedUntil` 已过期的分支里，如果 `ctx.shieldGeom` 里还留着这个 `cacheKey`（说明上一次重绘时还在保护中，这一次刚掉），就把当时缓存的几何形状塞进新的 `ctx.shieldBreakFx` map（`age:0`），`lifecycle.update` 逐帧给它加 `age`、重绘，超过生命周期就清空 Graphics + 删条目。
+- 性能：额外开销只是——原来一层 Graphics 拆成两层（多一次 `clear`+ 重绘,同数量级的矢量指令，无新增采样/RTT）；破碎闪光是极低频事件（一个基地的保护期到期这件事本身几小时才发生一次）+ 400ms 生命周期到时即挂空，不会常驻。跟 daydayup 的自定义 Filter 比是同一件事"用更便宜的手法造类似的视觉印象"，量级上更接近它的 `flash()`（纯 Graphics + additive）而不是 `EnergyShieldFilter`（自定义 shader + RTT）。
+
+**验证**：`tsc --noEmit` + `npx webpack --mode production` 全绿；`vitest run --config vitest.ui.config.ts`（134 文件/1255 例全绿，含 `worldMapShieldBubble.ui.ts` 四例——`drawShieldDome` 仍是唯一一次 `drawEllipse` 调用，未受拆分影响）。可视化核对：跟上一条一样，用 `mcp__visualize__show_widget` 做了跟新代码逐行对应的 canvas 预览（含一个手动触发"护盾破碎"的按钮），确认呼吸 dome + additive 发光环 + 破碎闪光三层叠起来的视觉效果，未拉起真实 worldsvc 后端验证。
