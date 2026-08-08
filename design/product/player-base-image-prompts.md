@@ -419,3 +419,16 @@ flat — the two bastions are the widest points of the entire image.
 ```
 
 在新图落地前，`playerbase_l7.png`/`playerbase_l8.png` 保持现状（`445aa377`/`8608ad46`），比旧图差不到哪去，先不空着。
+
+### 2026-08-08（同日第三轮）：Lv.7/8 v2 prompt 一次命中，10 张全部达标
+
+用户按上面 v2 prompt 重出了两张（`0e5d40d6`→Lv.7、`4d95d1b3`→Lv.8），离线几何核对：
+
+| 候选 | 目标等级 | contentWidthFrac（满宽=0.9375） | 结论 |
+|---|---|---|---|
+| `0e5d40d6` | Lv.7 | 0.9375（**满宽**） | 采用 |
+| `4d95d1b3` | Lv.8 | 0.91 | 采用 |
+
+"具体锚点"套路（远端插旗子/让物体贴边）比抽象宽高比数字有效，这次一次成功。已改名覆盖 `playerbase_l7/8.png`，重跑 `pack_playerbase_atlas.js` + `patchMergedAtlas.js` 入库；被替换的旧图（`445aa377`/`8608ad46`）连同确认再无用途的 11th 备用图（`fbb0769b`，2026-08-03 就已标注不采用，一直没清理）一并移入 `art/leftover/`。
+
+**至此 10 张玩家基地图全部达到"地台顶到 3×3 菱形边界"的构图要求**（`contentWidthFrac`：Lv.1 0.94 / Lv.2 0.89 / Lv.3 0.82 / Lv.4 0.94 / Lv.5 0.91 / Lv.6 0.85 / Lv.7 0.94 / Lv.8 0.91 / Lv.9 0.83 / Lv.10 0.84，无一低于 0.82），2026-08-08 当天开的这个坑到此收口。
