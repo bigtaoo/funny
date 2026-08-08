@@ -8,13 +8,14 @@ import { FS } from '../../render/fontScale';
 import { drawSidebarTabs, drawBottomNavTabs, sidebarNavW, bottomNavH, type HubTab } from '../../ui/widgets/HubTabs';
 import { t } from '../../i18n';
 import { buildIcon, type IconKind } from '../../render/icons';
+import { levelStarsText } from '../../render/levelStars';
 import { buildMaterialIcon } from '../../render/atlas/materialAtlas';
 import { drawScrollIndicator } from '../../ui/widgets/ScrollIndicator';
 import type { EquipmentInstance, CardInstance, EquipRarity } from '../../game/meta/SaveData';
-import { getEquipDef } from '../../game/meta/equipmentDefs';
+import { getEquipDef, EQUIP_MAX_LEVEL } from '../../game/meta/equipmentDefs';
 import { buildEquipIcon } from '../../render/atlas/equipmentAtlas';
 import { cardInstanceArtUrl, getArtTexture, unitPortraitUrl } from '../../render/cardArt';
-import { SKIN_TARGET_UNIT, skinDisplayName, allEquippedSkins } from '../../game/meta/skinDefs';
+import { SKIN_TARGET_UNIT, skinDisplayName, allEquippedSkins, isKnownSkin } from '../../game/meta/skinDefs';
 import { FILTERS, type AucFilter, MATERIALS, type Constructor, type AuctionSceneBaseCtor } from './base';
 
 // Icon-card grid metrics (mirrors EquipmentScene/inventory.ts's responsive column layout), enlarged 1.5x
@@ -76,12 +77,17 @@ export function PickerMixin<TBase extends AuctionSceneBaseCtor>(Base: TBase): TB
       return Object.values(save.cardInv ?? {}).filter((c) => !Object.values(c.gear ?? {}).some((v) => !!v));
     }
 
-    /** Owned skin ids eligible for listing: not currently equipped on any card (mirrors server escrowSkin's isSkinEquipped guard). */
+    /**
+     * Owned skin ids eligible for listing: not currently equipped on any card (mirrors server
+     * escrowSkin's isSkinEquipped guard), and a known catalogue id — a removed/placeholder SKU or any
+     * other id that leaked into inventory.skins by mistake (see isKnownSkin's doc comment, 2026-08-08)
+     * has no real name/art and must never be offered for listing.
+     */
     listableSkins(): string[] {
       const save = this.cb.getSave?.();
       if (!save) return [];
       const equipped = new Set(allEquippedSkins(save.equipped ?? {}));
-      return (save.inventory?.skins ?? []).filter((id) => !equipped.has(id));
+      return (save.inventory?.skins ?? []).filter((id) => !equipped.has(id) && isKnownSkin(id));
     }
 
     /** Label of the currently selected item (any class) for the create form, or null when none is chosen (or it is no longer listable). */
@@ -91,7 +97,9 @@ export function PickerMixin<TBase extends AuctionSceneBaseCtor>(Base: TBase): TB
       }
       if (this.createClass === 'equipment') {
         const inst = this.listableEquipment().find((e) => e.id === this.createEquipId);
-        return inst ? `${this.equipName(inst.defId)} +${inst.level}` : null;
+        if (!inst) return null;
+        const stars = levelStarsText(inst.level, EQUIP_MAX_LEVEL);
+        return stars ? `${this.equipName(inst.defId)} ${stars}` : this.equipName(inst.defId);
       }
       if (this.createClass === 'skin') {
         const skinId = this.listableSkins().find((id) => id === this.createSkinId);
@@ -125,7 +133,8 @@ export function PickerMixin<TBase extends AuctionSceneBaseCtor>(Base: TBase): TB
         if (g) g.count++; else equipGroups.set(key, { rep: e, count: 1 });
       }
       for (const { rep, count } of equipGroups.values()) {
-        const base = `${this.equipName(rep.defId)} +${rep.level}`;
+        const stars = levelStarsText(rep.level, EQUIP_MAX_LEVEL);
+        const base = stars ? `${this.equipName(rep.defId)} ${stars}` : this.equipName(rep.defId);
         entries.push({
           defId: rep.defId, label: count > 1 ? `${base} ×${count}` : base,
           value: EQUIP_VALUE_BY_RARITY[rep.rarity] ?? 0, locked: false, cls: 'equipment',

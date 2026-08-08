@@ -32,7 +32,7 @@ import { snapFont } from '../../render/fontScale';
 import { FACTION_COLOR } from '../../render/factionIcon';
 import { cardInstanceArtUrl, getArtTexture } from '../../render/cardArt';
 import { drawScrollIndicator } from '../../ui/widgets/ScrollIndicator';
-import { buildIcon } from '../../render/icons';
+import { buildLevelStars } from '../../render/levelStars';
 import { peekViewportH } from '../../ui/widgets/scrollPeek';
 import type { Rect } from '../../layout/ILayout';
 import type { CardInstance } from '../../game/meta/SaveData';
@@ -500,19 +500,12 @@ export function FeedMixin<TBase extends CardSceneBaseCtor>(Base: TBase): TBase &
 
           drawPortrait(currentTarget.id, ringCx, ringCy, centerR, def.faction);
           // Level as a row of gold stars, not "Lv.N" text (2026-07-25) — matches the roster grid
-          // (list.ts) / detail modal (detail.ts) convention: one filled star per level, capped at 9.
-          const stars = new PIXI.Container();
+          // (list.ts) / detail modal (detail.ts) convention: one filled star per level, capped at
+          // MAX_CARD_LEVEL. No maxW cap here (nothing to shrink to fit against) — just centered on width.
+          const starN = Math.max(1, Math.min(MAX_CARD_LEVEL, currentTarget.level));
+          const { container: stars } = buildLevelStars(starN, Infinity, 8 * S, 2 * S);
           stars.name = 'levelStars';
-          const starN = Math.max(1, Math.min(9, currentTarget.level));
-          const starSize = 8 * S;
-          const starGap = 2 * S;
-          for (let i = 0; i < starN; i++) {
-            const st = buildIcon('star', starSize, C.gold);
-            st.x = i * (starSize + starGap);
-            stars.addChild(st);
-          }
-          const starsW = starN * starSize + (starN - 1) * starGap;
-          stars.x = ringCx - starsW / 2; stars.y = ringCy + centerR + 2 * S;
+          stars.x = ringCx - stars.width / 2; stars.y = ringCy + centerR + 2 * S;
           ml.addChild(stars);
 
           const slotPositions: { x: number; y: number }[] = [];

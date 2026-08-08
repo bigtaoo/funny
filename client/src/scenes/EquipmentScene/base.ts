@@ -26,6 +26,7 @@ import { buildEquipIcon } from '../../render/atlas/equipmentAtlas';
 import { buildIcon, type IconKind } from '../../render/icons';
 import { buildMaterialIcon, type MaterialKind } from '../../render/atlas/materialAtlas';
 import { buildCoinIcon } from '../../render/atlas/coinIconAtlas';
+import { buildLevelStars as buildLevelStarsRow, levelStarsText } from '../../render/levelStars';
 
 /**
  * Maxed-star sweep timing (2026-07-26 UX pass): a continuous per-frame flip read as flickery/noisy
@@ -599,36 +600,25 @@ export class EquipmentSceneBase {
 
   /** Item name + enhance level as text stars, e.g. "Marker ★★★" — omits stars entirely at level 0 (the vast majority of items, and printing a bare "+0" everywhere was pure noise). Used only where the label is embedded in a translated sentence; standalone item cards use buildLevelStars() for real gold-icon stars instead. */
   protected itemLabel(defId: string, level: number): string {
-    return level > 0 ? `${this.itemName(defId)} ${'★'.repeat(Math.min(level, EQUIP_MAX_LEVEL))}` : this.itemName(defId);
+    const stars = levelStarsText(level, EQUIP_MAX_LEVEL);
+    return stars ? `${this.itemName(defId)} ${stars}` : this.itemName(defId);
   }
 
   /**
    * Row of gold star icons for the enhance level (one per level, max EQUIP_MAX_LEVEL), scaled down to
-   * fit maxW. Mirrors the card-level star row (CardScene/list.ts). At EQUIP_MAX_LEVEL the whole row is
-   * registered for the periodic left-right sweep driven by update() (see flipStars) — a maxed item's
-   * stars sit static gold and flip briefly every few seconds to call it out among the static rows,
-   * rather than animating every frame.
+   * fit maxW. Delegates the actual draw/fit to the shared render/levelStars helper (also used by
+   * CardScene and AuctionScene) — this wrapper only owns the equipment-specific bits: clamping to
+   * EQUIP_MAX_LEVEL and the maxed-row sweep. At EQUIP_MAX_LEVEL the whole row is registered for the
+   * periodic left-right sweep driven by update() (see flipStars) — a maxed item's stars sit static gold
+   * and flip briefly every few seconds to call it out among the static rows, rather than animating every frame.
    */
   protected buildLevelStars(level: number, maxW: number, size = 14, gap = 3): PIXI.Container {
-    const stars = new PIXI.Container();
     const starN = Math.max(0, Math.min(EQUIP_MAX_LEVEL, level));
-    const maxed = starN === EQUIP_MAX_LEVEL;
-    for (let i = 0; i < starN; i++) {
-      const st = buildIcon('star', size, C.gold);
-      if (maxed) {
-        // Pivot to the icon's own center so scale.x flipping stays in place instead of sliding.
-        st.pivot.set(size / 2, size / 2);
-        st.x = i * (size + gap) + size / 2;
-        st.y = size / 2;
-        this.flipStars.push({ obj: st, phase: i * STAR_SWEEP_STAGGER });
-      } else {
-        st.x = i * (size + gap);
-      }
-      stars.addChild(st);
+    const { container, stars } = buildLevelStarsRow(starN, maxW, size, gap);
+    if (starN === EQUIP_MAX_LEVEL) {
+      stars.forEach((st, i) => this.flipStars.push({ obj: st, phase: i * STAR_SWEEP_STAGGER }));
     }
-    const starsW = starN * size + Math.max(0, starN - 1) * gap;
-    if (starsW > maxW && starsW > 0) stars.scale.set(maxW / starsW);
-    return stars;
+    return container;
   }
 
   /** Affix description: i18n `affix.<id>` template with {v}; main affixes are scaled up by level. */

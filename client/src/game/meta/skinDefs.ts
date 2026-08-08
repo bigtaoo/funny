@@ -5,7 +5,10 @@
 // single global `equipped[EQUIP_SLOT]` slot is replaced by one slot per UnitType.
 import { UnitType } from '@nw/engine/types';
 import { t, TranslationKey } from '../../i18n';
+import { netLog } from '../../net/log';
 import { CARD_DEFS } from './cardDefs';
+
+const log = netLog('skinDefs');
 
 export const SKIN_TARGET_UNIT: Record<string, UnitType> = {
   skin_shop_c1: UnitType.Infantry,
@@ -16,14 +19,44 @@ export const SKIN_TARGET_UNIT: Record<string, UnitType> = {
   skin_l1: UnitType.Max,
 };
 
+// Dedup guard for warnUnknownSkin below — an unmapped id gets re-checked on every render (picker grid,
+// wardrobe tab, …), so without this the same id would spam the log/console every frame it's on screen.
+const warnedUnknownSkins = new Set<string>();
+
+/** Logs once per unique unrecognized skin id — see {@link isKnownSkin}'s doc comment for why this exists. */
+function warnUnknownSkin(skinId: string): void {
+  if (warnedUnknownSkins.has(skinId)) return;
+  warnedUnknownSkins.add(skinId);
+  log.warn('unknown skin id (not in SKIN_TARGET_UNIT) — stale/removed SKU or bad data', { skinId });
+}
+
+/**
+ * Whether `skinId` exists in the current skin catalogue (SKIN_TARGET_UNIT). False for a placeholder
+ * SKU removed from the catalogue before launch (GACHA_DESIGN.md §"上线皮肤目录": `skin_c1~c4`/`skin_r1~r3`
+ * were deleted from economy.ts on 2026-07-02) or any other id that never belonged in `inventory.skins`
+ * in the first place — both were found sitting in a stale test account's inventory on 2026-08-08,
+ * which the auction item-picker then happily listed with a raw-id label + generic icon (looked like a
+ * broken feature; was actually bad data). Logs once per unique unknown id (via netLog's client-log ring
+ * buffer, remotely collectible — FEATURE_FLAGS_DESIGN §9.4) so a repeat is diagnosable without a live
+ * repro. Callers that surface a player's *owned* skins for selection (auction picker's listableSkins;
+ * the wardrobe tab is already implicitly filtered — see skinsForUnitType) should gate through this so
+ * an unknown id can never be listed for auction.
+ */
+export function isKnownSkin(skinId: string): boolean {
+  const known = skinId in SKIN_TARGET_UNIT;
+  if (!known) warnUnknownSkin(skinId);
+  return known;
+}
+
 /**
  * Player-facing skin name: "{character}·{skin label}" (e.g. 李川·皮肤), resolved from the character
- * card the skin re-skins — never the raw catalogue id. Falls back to the id if the skin isn't mapped.
- * Single source of truth for skin naming across the shop grid + gacha odds/result (both call this).
+ * card the skin re-skins — never the raw catalogue id. Falls back to the id if the skin isn't mapped
+ * (see isKnownSkin — also logs the occurrence). Single source of truth for skin naming across the shop
+ * grid + gacha odds/result (both call this).
  */
 export function skinDisplayName(skinId: string): string {
   const unit = SKIN_TARGET_UNIT[skinId];
-  if (!unit) return skinId;
+  if (!unit) { warnUnknownSkin(skinId); return skinId; }
   const target = Object.values(CARD_DEFS).find((d) => d.unitType === unit);
   const base = target ? t((`card.${target.id}.name`) as TranslationKey) : skinId;
   return `${base}·${t('shop.skinLabel')}`;

@@ -5,14 +5,14 @@ import * as PIXI from 'pixi.js-legacy';
 import { t, type TranslationKey } from '../../i18n';
 import { ui as C, txt, sketchPanel, seedFor } from '../../render/sketchUi';
 import { FS } from '../../render/fontScale';
-import { buildIcon } from '../../render/icons';
+import { buildLevelStars } from '../../render/levelStars';
 import { FACTION_COLOR } from '../../render/factionIcon';
 import { cardInstanceArtUrl, getArtTexture } from '../../render/cardArt';
 import { sidebarNavW, bottomNavH } from '../../ui/widgets/HubTabs';
 import { drawScrollIndicator } from '../../ui/widgets/ScrollIndicator';
 import { peekViewportH } from '../../ui/widgets/scrollPeek';
 import type { SaveData, EquipSlot, CardInstance } from '../../game/meta/SaveData';
-import { CARD_DEFS, cardPower } from '../../game/meta/cardDefs';
+import { CARD_DEFS, MAX_CARD_LEVEL, cardPower } from '../../game/meta/cardDefs';
 import { type Constructor, type EquipmentSceneBaseCtor, RES_H, SLOTS } from './base';
 
 // Card-picker grid: icon cards mirroring the Hero Roster (CardScene/list.ts) so the assign flow reads
@@ -169,18 +169,9 @@ export function AssignMixin<TBase extends EquipmentSceneBaseCtor>(Base: TBase): 
       this.bodyLayer.addChild(nameLbl);
 
       let ay = y + pad + 34;
-      // Level as a row of gold stars (one filled star per level, max 9), shrunk to fit the column.
-      const stars = new PIXI.Container();
-      const starN = Math.max(1, Math.min(9, card.level));
-      const starSize = 15;
-      const starGap = 3;
-      for (let i = 0; i < starN; i++) {
-        const st = buildIcon('star', starSize, C.gold);
-        st.x = i * (starSize + starGap);
-        stars.addChild(st);
-      }
-      const starsW = starN * starSize + (starN - 1) * starGap;
-      if (starsW > rightW) stars.scale.set(rightW / starsW);
+      // Level as a row of gold stars (one filled star per level, max MAX_CARD_LEVEL), shrunk to fit the column.
+      const starN = Math.max(1, Math.min(MAX_CARD_LEVEL, card.level));
+      const { container: stars } = buildLevelStars(starN, rightW, 15, 3);
       stars.x = ax; stars.y = ay;
       this.bodyLayer.addChild(stars);
       ay += 24;

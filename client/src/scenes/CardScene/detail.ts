@@ -6,6 +6,7 @@ import { ui as C, sketchPanel, seedFor, tearDownChildren } from '../../render/sk
 import { FS } from '../../render/fontScale';
 import { unitPortraitUrl } from '../../render/cardArt';
 import { buildIcon } from '../../render/icons';
+import { buildLevelStars } from '../../render/levelStars';
 import { buildEquipIcon } from '../../render/atlas/equipmentAtlas';
 import { buildFactionIcon, FACTION_COLOR } from '../../render/factionIcon';
 import { RARITY_COLOR } from '../EquipmentScene/base';
@@ -162,19 +163,10 @@ export function DetailMixin<TBase extends CardSceneBaseCtor>(Base: TBase): TBase
       let statY = portraitY + 2;
 
       // Level as a row of gold stars, not "Lv.N" text — matches the roster grid card convention
-      // (list.ts renderCardCell): level is the headline stat, one filled star per level (max 9).
-      const stars = new PIXI.Container();
+      // (list.ts renderCardCell): level is the headline stat, one filled star per level (max MAX_CARD_LEVEL).
+      const starN = Math.max(1, Math.min(MAX_CARD_LEVEL, card.level));
+      const { container: stars } = buildLevelStars(starN, statMaxW, 14, 3);
       stars.name = 'levelStars';
-      const starN = Math.max(1, Math.min(9, card.level));
-      const starSize = 14;
-      const starGap = 3;
-      for (let i = 0; i < starN; i++) {
-        const st = buildIcon('star', starSize, C.gold);
-        st.x = i * (starSize + starGap);
-        stars.addChild(st);
-      }
-      const starsW = starN * starSize + (starN - 1) * starGap;
-      if (starsW > statMaxW) stars.scale.set(Math.max(0.01, statMaxW / starsW));
       stars.x = statX; stars.y = statY;
       panelRoot.addChild(stars);
       statY += 20;

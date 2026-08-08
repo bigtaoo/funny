@@ -5,6 +5,7 @@ import { t, type TranslationKey } from '../../i18n';
 import { ui as C, txt, sketchPanel, seedFor, marginLineX, tearDownChildren } from '../../render/sketchUi';
 import { FS } from '../../render/fontScale';
 import { buildIcon } from '../../render/icons';
+import { buildLevelStars } from '../../render/levelStars';
 import { buildEquipIcon } from '../../render/atlas/equipmentAtlas';
 import { FACTION_COLOR } from '../../render/factionIcon';
 import { cardInstanceArtUrl } from '../../render/cardArt';
@@ -13,7 +14,7 @@ import { drawSidebarTabs, drawBottomNavTabs, sidebarNavW, bottomNavH, type HubTa
 import { drawScrollIndicator } from '../../ui/widgets/ScrollIndicator';
 import type { SaveData, CardInstance, EquipSlot } from '../../game/meta/SaveData';
 import type { CardSLGState } from '../../net/WorldApiClient';
-import { CARD_DEFS, CARD_INV_CAP, CARD_INV_OVERFLOW_BUFFER, troopCap, cardPower, cardAttack, cardHp } from '../../game/meta/cardDefs';
+import { CARD_DEFS, CARD_INV_CAP, CARD_INV_OVERFLOW_BUFFER, MAX_CARD_LEVEL, troopCap, cardPower, cardAttack, cardHp } from '../../game/meta/cardDefs';
 import {
   type Constructor, type CardSceneBaseCtor,
   CARD_CELL_H, CARD_CELL_W_TARGET, sortCards, injuryCountdown,
@@ -271,20 +272,11 @@ export function ListMixin<TBase extends CardSceneBaseCtor>(Base: TBase): TBase &
 
       let ay = y + pad + 34;
       // Level as a row of gold stars, not a small "Lv.N" — level is the headline stat and a lone
-      // number was too easy to overlook. One filled star per level (max 9); the row shrinks to fit
-      // the info column so high-level cards still stay on one line.
-      const stars = new PIXI.Container();
+      // number was too easy to overlook. One filled star per level (max MAX_CARD_LEVEL); the row
+      // shrinks to fit the info column so high-level cards still stay on one line.
+      const starN = Math.max(1, Math.min(MAX_CARD_LEVEL, card.level));
+      const { container: stars } = buildLevelStars(starN, rightW, 15, 3);
       stars.name = 'levelStars'; // test hook: one child per level star (see cardSceneLevelStars.ui.ts)
-      const starN = Math.max(1, Math.min(9, card.level));
-      const starSize = 15;
-      const starGap = 3;
-      for (let i = 0; i < starN; i++) {
-        const st = buildIcon('star', starSize, C.gold);
-        st.x = i * (starSize + starGap);
-        stars.addChild(st);
-      }
-      const starsW = starN * starSize + (starN - 1) * starGap;
-      if (starsW > rightW) stars.scale.set(rightW / starsW);
       stars.x = ax; stars.y = ay;
       this.bodyLayer.addChild(stars);
       ay += 24;

@@ -74,7 +74,9 @@ describe('AuctionScene picker — equipment/card dedupe (buildPickEntries)', () 
     const entries: PickEntry[] = scene.buildPickEntries();
     const equipEntries = entries.filter((e) => e.cls === 'equipment');
     expect(equipEntries).toHaveLength(1);
-    expect(equipEntries[0].label).toBe(`${scene.equipName('wp_pencil')} +0 ×3`);
+    // Level 0 gets no star suffix at all (2026-08-08: matches EquipmentScene's "+0 everywhere was pure
+    // noise" convention — see levelStarsText) — just the name + the "×N" stack count.
+    expect(equipEntries[0].label).toBe(`${scene.equipName('wp_pencil')} ×3`);
     scene.destroy();
   });
 
@@ -98,8 +100,9 @@ describe('AuctionScene picker — equipment/card dedupe (buildPickEntries)', () 
     const equipEntries = entries.filter((e) => e.cls === 'equipment');
     const cardEntries = entries.filter((e) => e.cls === 'card');
     expect(equipEntries).toHaveLength(2);
+    // Level 0 gets no star suffix (see the dedupe test above) — a lone instance is just the bare name.
     expect(equipEntries.map((e) => e.label).sort()).toEqual(
-      [`${scene.equipName('wp_pencil')} +0 ×2`, `${scene.equipName('wp_marker')} +0`].sort(),
+      [`${scene.equipName('wp_pencil')} ×2`, scene.equipName('wp_marker')].sort(),
     );
     expect(cardEntries).toHaveLength(2);
     expect(cardEntries.map((e) => e.label).sort()).toEqual(
@@ -240,6 +243,29 @@ describe('AuctionScene picker — skins (2026-08-04, AUCTION_DESIGN.md §9 task7
     scene.openItemPicker();
     scene.pickerFilter = 'skin';
     expect(() => scene.render()).not.toThrow();
+    scene.destroy();
+  });
+});
+
+// 2026-08-08: a stale test account's inventory.skins turned out to hold both a removed/placeholder skin
+// SKU (skin_c1~c4/r1~r3, deleted from economy.ts on 2026-07-02 per GACHA_DESIGN.md §"上线皮肤目录") and
+// several equipment/material defIds that never belonged there at all — buildPickEntries happily listed
+// all of them under cls="skin" with a raw-id label + generic icon (looked like a broken feature; was
+// actually bad data — see [[skinDefs.ts]]'s isKnownSkin). listableSkins now filters unknown ids out so
+// they can never reach the picker or be listed for auction.
+describe('AuctionScene picker — unknown/orphaned skin ids are never listable (2026-08-08)', () => {
+  it('listableSkins drops ids with no SKIN_TARGET_UNIT entry (removed SKUs, or non-skin ids that leaked in)', () => {
+    const save = saveWithSkins(['skin_e2', 'skin_c1', 'wp_pen', 'mat_scrap']);
+    const scene = buildScene({ getSave: () => save });
+    expect(scene.listableSkins()).toEqual(['skin_e2']);
+    scene.destroy();
+  });
+
+  it('buildPickEntries contributes no cls="skin" entry for an unknown id', () => {
+    const save = saveWithSkins(['skin_c3', 'skin_r2']);
+    const scene = buildScene({ getSave: () => save });
+    const entries: PickEntry[] = scene.buildPickEntries();
+    expect(entries.filter((e) => e.cls === 'skin')).toHaveLength(0);
     scene.destroy();
   });
 });
