@@ -1289,9 +1289,13 @@ export const WORLD_RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                         "type": "boolean",
                         "description": "G5: this tile is owned by a family ally (within vision, not self). Client renders with friendly colour."
                       },
+                      "sectmate": {
+                        "type": "boolean",
+                        "description": "2026-08-08: this tile is owned by a member of the requester's own sect who is NOT in the requester's family (within vision, not self, not family — that's `ally`; not an allied-sect member — that's `allySect`). Does not share vision (only family does, DECISIONS §18.6); client renders a third \"friendly but not family\" colour."
+                      },
                       "allySect": {
                         "type": "boolean",
-                        "description": "G5: this tile is owned by a member of an allied sect of the player's own sect (within vision, not self, not family). Alliances do not share vision; only distinguished on the map with a yellow border (§8.2, attacking/capturing between allies is forbidden)."
+                        "description": "G5: this tile is owned by a member of an allied sect of the player's own sect (within vision, not self, not family). Alliances do not share vision; distinguished on the map with its own colour + a yellow border (§8.2, attacking/capturing between allies is forbidden)."
                       },
                       "deskLevel": {
                         "type": "integer",
@@ -1396,6 +1400,10 @@ export const WORLD_RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                       "ally": {
                         "type": "boolean",
                         "description": "lod=mid: same-family ally"
+                      },
+                      "sectmate": {
+                        "type": "boolean",
+                        "description": "lod=mid: same-sect member, not family"
                       },
                       "allySect": {
                         "type": "boolean",
@@ -1565,9 +1573,13 @@ export const WORLD_RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                   "type": "boolean",
                   "description": "G5: this tile is owned by a family ally (within vision, not self). Client renders with friendly colour."
                 },
+                "sectmate": {
+                  "type": "boolean",
+                  "description": "2026-08-08: this tile is owned by a member of the requester's own sect who is NOT in the requester's family (within vision, not self, not family — that's `ally`; not an allied-sect member — that's `allySect`). Does not share vision (only family does, DECISIONS §18.6); client renders a third \"friendly but not family\" colour."
+                },
                 "allySect": {
                   "type": "boolean",
-                  "description": "G5: this tile is owned by a member of an allied sect of the player's own sect (within vision, not self, not family). Alliances do not share vision; only distinguished on the map with a yellow border (§8.2, attacking/capturing between allies is forbidden)."
+                  "description": "G5: this tile is owned by a member of an allied sect of the player's own sect (within vision, not self, not family). Alliances do not share vision; distinguished on the map with its own colour + a yellow border (§8.2, attacking/capturing between allies is forbidden)."
                 },
                 "deskLevel": {
                   "type": "integer",
@@ -2737,9 +2749,13 @@ export const WORLD_RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                             "type": "boolean",
                             "description": "G5: this tile is owned by a family ally (within vision, not self). Client renders with friendly colour."
                           },
+                          "sectmate": {
+                            "type": "boolean",
+                            "description": "2026-08-08: this tile is owned by a member of the requester's own sect who is NOT in the requester's family (within vision, not self, not family — that's `ally`; not an allied-sect member — that's `allySect`). Does not share vision (only family does, DECISIONS §18.6); client renders a third \"friendly but not family\" colour."
+                          },
                           "allySect": {
                             "type": "boolean",
-                            "description": "G5: this tile is owned by a member of an allied sect of the player's own sect (within vision, not self, not family). Alliances do not share vision; only distinguished on the map with a yellow border (§8.2, attacking/capturing between allies is forbidden)."
+                            "description": "G5: this tile is owned by a member of an allied sect of the player's own sect (within vision, not self, not family). Alliances do not share vision; distinguished on the map with its own colour + a yellow border (§8.2, attacking/capturing between allies is forbidden)."
                           },
                           "deskLevel": {
                             "type": "integer",
@@ -2819,6 +2835,10 @@ export const WORLD_RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                           "ally": {
                             "type": "boolean",
                             "description": "lod=mid: same-family ally"
+                          },
+                          "sectmate": {
+                            "type": "boolean",
+                            "description": "lod=mid: same-sect member, not family"
                           },
                           "allySect": {
                             "type": "boolean",
@@ -3606,9 +3626,13 @@ export const WORLD_RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                       "type": "boolean",
                       "description": "G5: this tile is owned by a family ally (within vision, not self). Client renders with friendly colour."
                     },
+                    "sectmate": {
+                      "type": "boolean",
+                      "description": "2026-08-08: this tile is owned by a member of the requester's own sect who is NOT in the requester's family (within vision, not self, not family — that's `ally`; not an allied-sect member — that's `allySect`). Does not share vision (only family does, DECISIONS §18.6); client renders a third \"friendly but not family\" colour."
+                    },
                     "allySect": {
                       "type": "boolean",
-                      "description": "G5: this tile is owned by a member of an allied sect of the player's own sect (within vision, not self, not family). Alliances do not share vision; only distinguished on the map with a yellow border (§8.2, attacking/capturing between allies is forbidden)."
+                      "description": "G5: this tile is owned by a member of an allied sect of the player's own sect (within vision, not self, not family). Alliances do not share vision; distinguished on the map with its own colour + a yellow border (§8.2, attacking/capturing between allies is forbidden)."
                     },
                     "deskLevel": {
                       "type": "integer",
@@ -3963,9 +3987,13 @@ export const WORLD_RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                       "type": "boolean",
                       "description": "G5: this tile is owned by a family ally (within vision, not self). Client renders with friendly colour."
                     },
+                    "sectmate": {
+                      "type": "boolean",
+                      "description": "2026-08-08: this tile is owned by a member of the requester's own sect who is NOT in the requester's family (within vision, not self, not family — that's `ally`; not an allied-sect member — that's `allySect`). Does not share vision (only family does, DECISIONS §18.6); client renders a third \"friendly but not family\" colour."
+                    },
                     "allySect": {
                       "type": "boolean",
-                      "description": "G5: this tile is owned by a member of an allied sect of the player's own sect (within vision, not self, not family). Alliances do not share vision; only distinguished on the map with a yellow border (§8.2, attacking/capturing between allies is forbidden)."
+                      "description": "G5: this tile is owned by a member of an allied sect of the player's own sect (within vision, not self, not family). Alliances do not share vision; distinguished on the map with its own colour + a yellow border (§8.2, attacking/capturing between allies is forbidden)."
                     },
                     "deskLevel": {
                       "type": "integer",
@@ -4318,9 +4346,13 @@ export const WORLD_RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                   "type": "boolean",
                   "description": "G5: this tile is owned by a family ally (within vision, not self). Client renders with friendly colour."
                 },
+                "sectmate": {
+                  "type": "boolean",
+                  "description": "2026-08-08: this tile is owned by a member of the requester's own sect who is NOT in the requester's family (within vision, not self, not family — that's `ally`; not an allied-sect member — that's `allySect`). Does not share vision (only family does, DECISIONS §18.6); client renders a third \"friendly but not family\" colour."
+                },
                 "allySect": {
                   "type": "boolean",
-                  "description": "G5: this tile is owned by a member of an allied sect of the player's own sect (within vision, not self, not family). Alliances do not share vision; only distinguished on the map with a yellow border (§8.2, attacking/capturing between allies is forbidden)."
+                  "description": "G5: this tile is owned by a member of an allied sect of the player's own sect (within vision, not self, not family). Alliances do not share vision; distinguished on the map with its own colour + a yellow border (§8.2, attacking/capturing between allies is forbidden)."
                 },
                 "deskLevel": {
                   "type": "integer",
@@ -5223,9 +5255,13 @@ export const WORLD_RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                     "type": "boolean",
                     "description": "G5: this tile is owned by a family ally (within vision, not self). Client renders with friendly colour."
                   },
+                  "sectmate": {
+                    "type": "boolean",
+                    "description": "2026-08-08: this tile is owned by a member of the requester's own sect who is NOT in the requester's family (within vision, not self, not family — that's `ally`; not an allied-sect member — that's `allySect`). Does not share vision (only family does, DECISIONS §18.6); client renders a third \"friendly but not family\" colour."
+                  },
                   "allySect": {
                     "type": "boolean",
-                    "description": "G5: this tile is owned by a member of an allied sect of the player's own sect (within vision, not self, not family). Alliances do not share vision; only distinguished on the map with a yellow border (§8.2, attacking/capturing between allies is forbidden)."
+                    "description": "G5: this tile is owned by a member of an allied sect of the player's own sect (within vision, not self, not family). Alliances do not share vision; distinguished on the map with its own colour + a yellow border (§8.2, attacking/capturing between allies is forbidden)."
                   },
                   "deskLevel": {
                     "type": "integer",
