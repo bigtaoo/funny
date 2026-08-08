@@ -631,6 +631,108 @@ describe.skipIf(!mongo)('meta economy orchestration e2e', () => {
     expect(r.data.results.slice(1).every((e: { duplicate: boolean }) => e.duplicate)).toBe(true);
   });
 
+  // 2026-08-08 fix's core claim: ownership for the NEW badge is "live inventory ∪ everOwned",
+  // never either alone. The four tests above only exercise the happy path where both stay in sync
+  // (a fresh gacha grant sets both together); the tests below decouple them on purpose.
+  describe('NEW badge: everOwned survives the item later being fully removed from the live inventory', () => {
+    it('equipment: defId stays duplicate=true after every instance of it is deleted (e.g. salvaged/reforge-consumed) — only everOwned.equipment can prove this, since the equipmentInstances query alone would come back empty', async () => {
+      comm.coins.set(accountId, 2000);
+      comm.nextResults = [{ itemId: 'wp_marker', rarity: 'rare' }];
+      const r1 = body(await app.inject({ method: 'POST', url: '/gacha/draw', headers: auth(), payload: { poolId: 'standard', count: 1 } }));
+      expect(r1.data.results[0].duplicate).toBe(false);
+      // Simulate every wp_marker instance being salvaged away — the live equipmentInstances query for
+      // this defId now comes back empty, unlike a fresh account that never owned it.
+      await m.collections.equipmentInstances.deleteMany({ accountId, defId: 'wp_marker' });
+      expect(await m.collections.equipmentInstances.countDocuments({ accountId, defId: 'wp_marker' })).toBe(0);
+      comm.nextResults = [{ itemId: 'wp_marker', rarity: 'rare' }];
+      const r2 = body(await app.inject({ method: 'POST', url: '/gacha/draw', headers: auth(), payload: { poolId: 'standard', count: 1 } }));
+      expect(r2.data.results[0].duplicate).toBe(true);
+    });
+
+    it('material: stays duplicate=true after the stack is fully spent to 0 — only everOwned.material can prove this, since save.materials.scrap alone would read 0 (falsy)', async () => {
+      comm.coins.set(accountId, 2000);
+      comm.nextResults = [{ itemId: 'mat_scrap', rarity: 'common' }];
+      const r1 = body(await app.inject({ method: 'POST', url: '/gacha/draw', headers: auth(), payload: { poolId: 'standard', count: 1 } }));
+      expect(r1.data.results[0].duplicate).toBe(false);
+      expect(r1.data.save.materials.scrap).toBe(10);
+      // Simulate spending the whole stack (enhancement/refinement material cost) down to 0.
+      await m.collections.saves.updateOne({ _id: accountId }, { $set: { 'save.materials.scrap': 0 } });
+      comm.nextResults = [{ itemId: 'mat_scrap', rarity: 'common' }];
+      const r2 = body(await app.inject({ method: 'POST', url: '/gacha/draw', headers: auth(), payload: { poolId: 'standard', count: 1 } }));
+      expect(r2.data.results[0].duplicate).toBe(true);
+    });
+
+    it('card: stays duplicate=true after every instance of the defId is deleted (e.g. fused away as fodder) — only everOwned.hero can prove this, since the cardInstances query alone would come back empty', async () => {
+      comm.coins.set(accountId, 2000);
+      comm.nextResults = [{ itemId: 'max', rarity: 'epic' }];
+      const r1 = body(await app.inject({ method: 'POST', url: '/gacha/draw', headers: auth(), payload: { poolId: 'standard', count: 1 } }));
+      expect(r1.data.results[0].duplicate).toBe(false);
+      await m.collections.cardInstances.deleteMany({ accountId, defId: 'max' });
+      expect(await m.collections.cardInstances.countDocuments({ accountId, defId: 'max' })).toBe(0);
+      comm.nextResults = [{ itemId: 'max', rarity: 'epic' }];
+      const r2 = body(await app.inject({ method: 'POST', url: '/gacha/draw', headers: auth(), payload: { poolId: 'standard', count: 1 } }));
+      expect(r2.data.results[0].duplicate).toBe(true);
+    });
+
+    it('skin: a copy sold via auction escrow (removed from inventory.skins, everOwned.skin untouched) stays duplicate=true on re-pull, AND is still re-added to inventory.skins — the two concerns markDuplicates keeps separate', async () => {
+      comm.coins.set(accountId, 2000);
+      comm.nextResults = [{ itemId: 'skin_e1', rarity: 'epic' }];
+      const r1 = body(await app.inject({ method: 'POST', url: '/gacha/draw', headers: auth(), payload: { poolId: 'standard', count: 1 } }));
+      expect(r1.data.results[0].duplicate).toBe(false);
+      expect(r1.data.save.inventory.skins).toContain('skin_e1');
+      // Simulate auction escrow: the skin leaves inventory.skins (the "current copy" view) but
+      // everOwned.skin — the lifetime "ever obtained" ledger — is untouched (per its own doc comment,
+      // this is exactly what it exists to survive).
+      await m.collections.saves.updateOne({ _id: accountId }, { $pull: { 'save.inventory.skins': 'skin_e1' } });
+      const mid = body(await app.inject({ method: 'GET', url: '/save', headers: auth() }));
+      expect(mid.data.save.inventory.skins).not.toContain('skin_e1');
+      expect(mid.data.save.everOwned.skin).toContain('skin_e1');
+      comm.nextResults = [{ itemId: 'skin_e1', rarity: 'epic' }];
+      const r2 = body(await app.inject({ method: 'POST', url: '/gacha/draw', headers: auth(), payload: { poolId: 'standard', count: 1 } }));
+      expect(r2.data.results[0].duplicate).toBe(true); // no NEW badge — everOwned.skin remembers it
+      expect(r2.data.save.inventory.skins).toContain('skin_e1'); // but it's still re-added to the plain array
+    });
+  });
+
+  // The other half of the union: a legacy save whose everOwned ledger has a gap for an item the
+  // account demonstrably already has (predates the ledger, or some other write path never
+  // populated it) must still resolve from the live inventory alone.
+  describe('NEW badge: live inventory alone (empty everOwned) is still enough to suppress the badge', () => {
+    it('equipment seeded directly into equipmentInstances (bypassing gacha, so everOwned.equipment is never touched) is still duplicate=true on a gacha re-pull of the same defId', async () => {
+      await seedEquipmentBatch(m, accountId, [
+        { id: 'legacy_eq_1', defId: 'wp_marker', rarity: 'rare', level: 0, affixes: [] },
+      ]);
+      const before = body(await app.inject({ method: 'GET', url: '/save', headers: auth() }));
+      expect(before.data.save.everOwned?.equipment ?? []).not.toContain('wp_marker');
+      comm.coins.set(accountId, 2000);
+      comm.nextResults = [{ itemId: 'wp_marker', rarity: 'rare' }];
+      const r = body(await app.inject({ method: 'POST', url: '/gacha/draw', headers: auth(), payload: { poolId: 'standard', count: 1 } }));
+      expect(r.data.results[0].duplicate).toBe(true);
+    });
+
+    it('card seeded directly into cardInstances (bypassing gacha, so everOwned.hero is never touched) is still duplicate=true on a gacha re-pull of the same defId', async () => {
+      await seedCardBatch(m, accountId, [
+        { id: 'legacy_card_1', defId: 'max', level: 1, gear: {}, locked: false },
+      ]);
+      const before = body(await app.inject({ method: 'GET', url: '/save', headers: auth() }));
+      expect(before.data.save.everOwned?.hero ?? []).not.toContain('max');
+      comm.coins.set(accountId, 2000);
+      comm.nextResults = [{ itemId: 'max', rarity: 'epic' }];
+      const r = body(await app.inject({ method: 'POST', url: '/gacha/draw', headers: auth(), payload: { poolId: 'standard', count: 1 } }));
+      expect(r.data.results[0].duplicate).toBe(true);
+    });
+
+    it('material set directly on save.materials (bypassing gacha, so everOwned.material is never touched) is still duplicate=true on a gacha re-pull of the same material', async () => {
+      await m.collections.saves.updateOne({ _id: accountId }, { $set: { 'save.materials.scrap': 5 } });
+      const before = body(await app.inject({ method: 'GET', url: '/save', headers: auth() }));
+      expect(before.data.save.everOwned?.material ?? []).not.toContain('scrap');
+      comm.coins.set(accountId, 2000);
+      comm.nextResults = [{ itemId: 'mat_scrap', rarity: 'common' }];
+      const r = body(await app.inject({ method: 'POST', url: '/gacha/draw', headers: auth(), payload: { poolId: 'standard', count: 1 } }));
+      expect(r.data.results[0].duplicate).toBe(true);
+    });
+  });
+
   it('ad cap: more than 5 times → 429', async () => {
     for (let i = 0; i < 5; i++) {
       fakeNow += ADS_MIN_INTERVAL_MS + 1000;
