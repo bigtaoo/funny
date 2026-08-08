@@ -27,6 +27,7 @@ import { SectScene } from '../../src/scenes/SectScene';
 import { FriendsScene } from '../../src/scenes/FriendsScene';
 import { AuctionScene } from '../../src/scenes/AuctionScene';
 import { FeedbackDialog } from '../../src/ui/dialogs/FeedbackDialog';
+import { AppealDialog } from '../../src/ui/dialogs/AppealDialog';
 import { ui as C } from '../../src/render/sketchUi';
 import type { WorldApiClient } from '../../src/net/WorldApiClient';
 
@@ -482,6 +483,74 @@ describe('FeedbackDialog — input field caret (2026-08-08: was a plain string c
 
     ticker.destroy();
     scene.destroy();
+  });
+});
+
+// More angles on the same 2026-08-08 ticker-wiring fix, beyond "does the caret blink at all":
+// the closure shape app.ts actually uses (`let feedbackDialog: FeedbackDialog | null = null`,
+// reassigned by setFeedbackSink/closeFeedbackDialog, read by a ticker callback registered ONCE in
+// startApp() and never removed for the app's whole lifetime) has edge cases none of the tests above
+// exercise, since they all hold a single instance for the test's whole duration.
+describe('app.ts ticker wiring — closure/reopen/AppealDialog edge cases (2026-08-08 fix, more angles)', () => {
+  it('AppealDialog.update() (no-op today, zero args) survives being driven by the same real-Ticker shape', async () => {
+    const dlg = new AppealDialog(800, 1280, 'ACCOUNT_BANNED', { onSubmit: async () => {}, onClose() {} });
+    const ticker = new PIXI.Ticker();
+    ticker.autoStart = false;
+    // Mirrors app.ts's `appealDialog?.update()` — note zero args, unlike feedbackDialog's `update(dt)`.
+    ticker.add(() => { dlg.update(); });
+    expect(() => {
+      ticker.update(performance.now());
+      ticker.update(performance.now() + 20);
+      ticker.update(performance.now() + 40);
+    }).not.toThrow();
+    ticker.destroy();
+    dlg.destroy();
+  });
+
+  it('the ticker callback tolerates feedbackDialog being nulled out mid-stream (mirrors closeFeedbackDialog())', () => {
+    let feedbackDialog: FeedbackDialog | null = new FeedbackDialog(800, 1280, { onSubmit: async () => {}, onClose() {} });
+    (feedbackDialog as unknown as { openInput(): void }).openInput();
+
+    const ticker = new PIXI.Ticker();
+    ticker.autoStart = false;
+    // Exact app.ts shape: the callback closes over the outer `let`, not a fixed instance.
+    ticker.add(() => { feedbackDialog?.update(ticker.deltaMS / 1000); });
+    ticker.update(performance.now());
+    expect(collectTexts(feedbackDialog.container)).toContain('|');
+
+    // closeFeedbackDialog() does dlg.destroy() then feedbackDialog = null — the SAME already-registered
+    // ticker callback (added once in startApp(), never removed) keeps firing every frame afterward.
+    feedbackDialog.destroy();
+    feedbackDialog = null;
+    expect(() => {
+      for (let i = 0; i < 5; i++) ticker.update(performance.now() + i * 20);
+    }).not.toThrow();
+
+    ticker.destroy();
+  });
+
+  it('reopening (a fresh instance replacing the outer `let`) keeps blinking — the callback reads the variable, not a captured instance', async () => {
+    let feedbackDialog: FeedbackDialog | null = null;
+    const ticker = new PIXI.Ticker();
+    ticker.autoStart = false;
+    ticker.add(() => { feedbackDialog?.update(ticker.deltaMS / 1000); });
+    ticker.update(performance.now()); // ticking with nothing open yet must be a harmless no-op
+
+    // setFeedbackSink()'s handler: construct a new dialog and assign it to the same outer variable.
+    feedbackDialog = new FeedbackDialog(800, 1280, { onSubmit: async () => {}, onClose() {} });
+    (feedbackDialog as unknown as { openInput(): void }).openInput();
+    expect(collectTexts(feedbackDialog.container)).toContain('|');
+
+    let elapsed = 0;
+    while (elapsed < 560) {
+      await new Promise((r) => setTimeout(r, 50));
+      elapsed += 50;
+      ticker.update(performance.now());
+    }
+    expect(collectTexts(feedbackDialog.container)).not.toContain('|'); // the NEW instance blinks too
+
+    feedbackDialog.destroy();
+    ticker.destroy();
   });
 });
 
