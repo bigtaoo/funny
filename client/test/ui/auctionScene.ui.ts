@@ -20,6 +20,8 @@ import { setToastSink } from '../../src/net/log';
 import { cardInstanceArtUrl } from '../../src/render/cardArt';
 import { skinEquipKey, skinDisplayName } from '../../src/game/meta/skinDefs';
 import { UnitType } from '@nw/engine/types';
+import { SCALE as FORM_SCALE } from '../../src/scenes/AuctionScene/createForm';
+import { snapFont } from '../../src/render/fontScale';
 
 // Every export passes through untouched except cardInstanceArtUrl, wrapped in vi.fn (keeping its
 // real implementation) so the 2026-08-01-scoping spec below can inspect call arguments.
@@ -123,6 +125,19 @@ function findLabelPos(container: PIXI.Container, label: string): { x: number; y:
   const walk = (node: PIXI.Container): void => {
     if (found) return;
     if (node instanceof PIXI.Text && node.text === label) { found = { x: node.x, y: node.y }; return; }
+    for (const c of node.children) walk(c as PIXI.Container);
+  };
+  walk(container);
+  return found;
+}
+
+/** Find the (first) PIXI.Text node whose text matches `label` and return the node itself
+ *  (for asserting style — fontSize/fontWeight/etc — rather than just position). */
+function findTextNode(container: PIXI.Container, label: string): PIXI.Text | null {
+  let found: PIXI.Text | null = null;
+  const walk = (node: PIXI.Container): void => {
+    if (found) return;
+    if (node instanceof PIXI.Text && node.text === label) { found = node; return; }
     for (const c of node.children) walk(c as PIXI.Container);
   };
   walk(container);
@@ -627,6 +642,75 @@ describe('AuctionScene — editable price field (openNumInput)', () => {
     scene.caretOn = false;
     scene.openCreateForm();
     expect(collectTexts(scene.container)).not.toContain('80|');
+    scene.destroy();
+  });
+});
+
+// ── create-form item field: doubled height + selected-item emphasis (2026-08-08) ─────────────
+
+describe('AuctionScene — create form item field (doubled height + emphasis)', () => {
+  it('doubles the standard 30*SCALE input-row height, and stays the very first modalHits entry', () => {
+    const scene = buildScene();
+    scene.createClass = 'material'; // default, always has a selected label ("Scrap")
+    scene.openCreateForm();
+
+    // The item field's tap-to-open-picker hit rect is pushed before any other row (qty/sale mode/
+    // price/buyer/buttons), so it's always index 0 regardless of createClass/saleMode.
+    const itemHit = scene.modalHits[0];
+    expect(itemHit.rect.h).toBe(60 * FORM_SCALE); // was 30*SCALE pre-2026-08-08
+
+    const openItemPicker = vi.spyOn(scene, 'openItemPicker');
+    itemHit.action();
+    expect(openItemPicker).toHaveBeenCalledTimes(1);
+    scene.destroy();
+  });
+
+  it('keeps the doubled height even with no item selected yet (only the emphasis styling differs)', () => {
+    const scene = buildScene(); // no getSave → listableEquipment() is empty → selectedItemLabel() is null
+    scene.createClass = 'equipment';
+    scene.createEquipId = null;
+    scene.openCreateForm();
+
+    expect(scene.selectedItemLabel()).toBeNull();
+    expect(scene.modalHits[0].rect.h).toBe(60 * FORM_SCALE);
+    scene.destroy();
+  });
+
+  it('renders the selected item name larger and bold — reads at a glance vs. the plain placeholder', () => {
+    const scene = buildScene();
+    scene.createClass = 'material'; // selectedItemLabel() → "Scrap"
+    scene.openCreateForm();
+
+    const label = findTextNode(scene.container, t('auction.scrap'));
+    expect(label).not.toBeNull();
+    // fontSize goes through snapFont() (snaps to a fixed size grid), so compare against that,
+    // not the raw 17*SCALE multiplication.
+    expect(label!.style.fontSize).toBe(snapFont(17 * FORM_SCALE));
+    expect(label!.style.fontWeight).toBe('bold');
+    scene.destroy();
+  });
+
+  it('renders the unselected placeholder at the plain, non-emphasized size/weight', () => {
+    const scene = buildScene();
+    scene.createClass = 'equipment';
+    scene.createEquipId = null; // no selection → placeholder shown
+    scene.openCreateForm();
+
+    const placeholder = findTextNode(scene.container, t('auction.tapChoose'));
+    expect(placeholder).not.toBeNull();
+    expect(placeholder!.style.fontSize).toBe(snapFont(13 * FORM_SCALE));
+    expect(placeholder!.style.fontWeight).toBe('normal');
+    scene.destroy();
+  });
+
+  it('does not overlap the row below it (Qty) after the extra height was added to the layout math', () => {
+    const scene = buildScene();
+    scene.createClass = 'material'; // isMaterial → a Qty row is rendered right after the item field
+    scene.openCreateForm();
+
+    const itemHit = scene.modalHits[0];
+    const qtyMinusHit = scene.modalHits[1]; // Qty's "−" stepper button, first hit pushed after the item field
+    expect(qtyMinusHit.rect.y).toBeGreaterThan(itemHit.rect.y + itemHit.rect.h);
     scene.destroy();
   });
 });
