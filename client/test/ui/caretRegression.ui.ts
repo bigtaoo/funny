@@ -450,6 +450,39 @@ describe('FeedbackDialog — input field caret (2026-08-08: was a plain string c
     expect(span).toBeGreaterThanOrEqual(lineH * 3);
     scene.destroy();
   });
+
+  // 2026-08-08 bug: FeedbackDialog (and AppealDialog) are stage-level overlays mounted directly on
+  // app.stage, outside SceneManager entirely — SceneManager.onTick only ticks its own
+  // current/overlayScene, so nothing was calling FeedbackDialog.update() in production. The caret
+  // blinked correctly in every test above because those tests call scene.update(dt) themselves; that
+  // never proved anyone else does in the real app. This drives it through a REAL PIXI.Ticker exactly
+  // the way app.ts's `app.ticker.add(() => feedbackDialog?.update(app.ticker.deltaMS/1000))` fix does,
+  // over real wall-clock time — the closest a headless test gets to the actual production wiring.
+  // See test/appTickerDialogWiring.test.ts for the complementary static check that app.ts itself still
+  // contains that call.
+  it('a real PIXI.Ticker driven exactly like app.ts (2026-08-08 fix) blinks the caret over real time', async () => {
+    const scene = build();
+    scene.openInput();
+    expect(collectTexts(scene.container)).toContain('|'); // caret on right after openInput(), synchronously
+
+    const ticker = new PIXI.Ticker();
+    ticker.autoStart = false; // default minFPS=10 clamp stays on, same as the real app.ticker
+    ticker.add(() => { scene.update(ticker.deltaMS / 1000); });
+    ticker.update(performance.now()); // prime lastTime (first call's huge delta-vs-sentinel gets clamped)
+
+    // Drive real frames every ~50ms (well under the clamp, so each tick's deltaMS reflects real
+    // elapsed time) until real wall-clock time has crossed the 0.5s blink half-period.
+    let elapsed = 0;
+    while (elapsed < 560) {
+      await new Promise((r) => setTimeout(r, 50));
+      elapsed += 50;
+      ticker.update(performance.now());
+    }
+    expect(collectTexts(scene.container)).not.toContain('|'); // must have blinked OFF from a ticker alone
+
+    ticker.destroy();
+    scene.destroy();
+  });
 });
 
 describe('LoginScene — email/password field caret (already-correct baseline)', () => {
