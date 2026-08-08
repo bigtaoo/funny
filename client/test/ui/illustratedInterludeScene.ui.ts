@@ -2,9 +2,9 @@
 // interlude (world.md「章末真实层」). Generalizes IntroScene's fade/auto-advance/skip loop, so
 // this focuses on what's actually NEW relative to IntroScene (which has no dedicated behavior
 // test beyond the startup smoke in scenes.ui.ts): splitting a single i18n key on '\n' into
-// beats that replace each other one at a time (instead of IntroScene's fixed multi-key array
-// that stacks all lines at once), and the illustration fading to FULL opacity (not IntroScene's
-// 0.6-alpha backdrop). Runs under the headless PIXI adapter (test/harness/pixiHeadless.ts via
+// beats (instead of IntroScene's fixed multi-key array) that fade in and STACK one at a time,
+// same as IntroScene, plus the illustration fading to FULL opacity (not IntroScene's 0.6-alpha
+// backdrop). Runs under the headless PIXI adapter (test/harness/pixiHeadless.ts via
 // vitest.ui.config.ts). Run: npm run test:ui
 import { describe, it, expect } from 'vitest';
 import * as PIXI from 'pixi.js-legacy';
@@ -27,9 +27,9 @@ const LANDSCAPE: [number, number] = [1920, 1080];
 
 type Rect = { x: number; y: number; w: number; h: number };
 type SceneInternals = {
-  currentIndex: number;
+  shownCount: number;
   beats: string[];
-  lineText: PIXI.Text;
+  lines: PIXI.Text[];
   illustration: PIXI.Sprite;
   skipRect: Rect;
 };
@@ -53,42 +53,41 @@ function advance(scene: IllustratedInterludeScene, seconds: number): void {
 }
 
 describe('IllustratedInterludeScene', () => {
-  it('splits the i18n key on \\n into multiple beats and starts on the first, invisible', () => {
+  it('splits the i18n key on \\n into multiple beats, one PIXI.Text per beat, and starts on the first, invisible', () => {
     const { scene, internals } = build(() => {});
     expect(internals.beats.length).toBeGreaterThan(1);
-    expect(internals.currentIndex).toBe(0);
-    expect(internals.lineText.text).toBe(internals.beats[0]);
-    expect(internals.lineText.alpha).toBe(0);
+    expect(internals.lines.length).toBe(internals.beats.length);
+    expect(internals.shownCount).toBe(1);
+    internals.lines.forEach((line, i) => expect(line.text).toBe(internals.beats[i]));
+    expect(internals.lines[0]!.alpha).toBe(0);
     scene.destroy();
   });
 
   it('fades the current beat in over time, then holds at full alpha without advancing on its own yet', () => {
     const { scene, internals } = build(() => {});
     advance(scene, 2); // comfortably past the fade, nowhere near the auto-advance idle delay
-    expect(internals.lineText.alpha).toBe(1);
-    expect(internals.currentIndex).toBe(0);
+    expect(internals.lines[0]!.alpha).toBe(1);
+    expect(internals.shownCount).toBe(1);
     scene.destroy();
   });
 
   it('a tap mid-fade completes the fade instantly instead of advancing', () => {
     const { scene, input, internals } = build(() => {});
     scene.update(0.05); // still fading in
-    expect(internals.lineText.alpha).toBeLessThan(1);
+    expect(internals.lines[0]!.alpha).toBeLessThan(1);
     input._emitDown(10, 10); // anywhere away from the skip button
-    expect(internals.lineText.alpha).toBe(1);
-    expect(internals.currentIndex).toBe(0);
+    expect(internals.lines[0]!.alpha).toBe(1);
+    expect(internals.shownCount).toBe(1);
     scene.destroy();
   });
 
-  it('a tap once fully shown swaps in the next beat (replacing it, not stacking it)', () => {
+  it('a tap once fully shown reveals the next beat WITHOUT hiding the previous one (stacking, not replacing)', () => {
     const { scene, input, internals } = build(() => {});
     advance(scene, 2);
-    const firstBeatText = internals.beats[0]!;
     input._emitDown(10, 10);
-    expect(internals.currentIndex).toBe(1);
-    expect(internals.lineText.text).toBe(internals.beats[1]);
-    expect(internals.lineText.text).not.toBe(firstBeatText);
-    expect(internals.lineText.alpha).toBe(0); // the new beat starts invisible again
+    expect(internals.shownCount).toBe(2);
+    expect(internals.lines[0]!.alpha).toBe(1); // first beat stays fully visible
+    expect(internals.lines[1]!.alpha).toBe(0); // the new beat starts invisible and fades in on its own
     scene.destroy();
   });
 
@@ -99,13 +98,22 @@ describe('IllustratedInterludeScene', () => {
     // 7s per beat comfortably covers fade-in (0.8s) + the 5s idle auto-advance delay, without
     // enough slack left over to also complete a second beat's fade+idle in the same window.
     for (let i = 0; i < total - 1; i++) advance(scene, 7);
-    expect(internals.currentIndex).toBe(total - 1);
+    expect(internals.shownCount).toBe(total);
     expect(calls).toBe(0); // reaching the last beat does not itself finish the scene
 
     // Sitting on the fully-shown last beat must NOT auto-finish, unlike every earlier beat.
     advance(scene, 10);
-    expect(internals.currentIndex).toBe(total - 1);
+    expect(internals.shownCount).toBe(total);
     expect(calls).toBe(0);
+    scene.destroy();
+  });
+
+  it('once every beat has been shown, all of them remain fully visible (the whole passage reads at once)', () => {
+    const { scene, internals } = build(() => {});
+    const total = internals.beats.length;
+    for (let i = 0; i < total - 1; i++) advance(scene, 7);
+    advance(scene, 2); // let the last beat finish fading
+    internals.lines.forEach((line) => expect(line.alpha).toBe(1));
     scene.destroy();
   });
 

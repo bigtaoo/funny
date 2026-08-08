@@ -15,11 +15,12 @@ import { getArtTexture } from '../render/cardArt';
 // `chapter-interlude-art-prompts.md` for the six illustrations and their prompts.
 //
 // Mechanically this is IntroScene's fade/auto-advance/skip loop, generalized: instead of a
-// fixed 7-key array with the art as a 0.6-alpha backdrop behind centered text, this takes a
-// single illustration + a single i18n key whose value is '\n'-separated into beats. The
-// illustration is shown at full opacity (it's the point, not atmosphere) and every prompt in
-// chapter-interlude-art-prompts.md deliberately leaves the upper third of the frame plain —
-// that's where the narration lives, one beat at a time, replacing itself rather than stacking.
+// fixed 7-key array of PIXI.Text objects, this takes a single illustration + a single i18n key
+// whose value is '\n'-separated into beats, one PIXI.Text per beat built upfront. The
+// illustration is shown at full opacity (it's the point, not atmosphere), and — like
+// IntroScene — beats fade in one at a time and STACK rather than replace each other, so by the
+// last beat the whole passage is still on screen and reads as one continuous piece, the same way
+// the opening story does.
 
 const FADE_DURATION = 0.8; // seconds per beat's fade-in
 const AUTO_ADVANCE_DELAY = 5; // seconds a fully-shown beat waits before advancing itself
@@ -40,12 +41,12 @@ export class IllustratedInterludeScene implements Scene {
   private readonly cb: IllustratedInterludeCallbacks;
   private readonly beats: string[];
 
-  private currentIndex   = 0;
+  private lines:          PIXI.Text[] = [];
+  private shownCount     = 0;       // beats fully requested so far
   private fadeT          = 0;       // current beat's fade progress (seconds)
   private settledT       = 0;       // seconds the current beat has been fully visible
   private illustration!: PIXI.Sprite;
   private illustrationFadeT = 0;
-  private lineText!:    PIXI.Text;
   private hintText!:    PIXI.Text;
   private hintPulse     = 0;
   private skipRect:     Rect = { x: 0, y: 0, w: 0, h: 0 };
@@ -68,6 +69,7 @@ export class IllustratedInterludeScene implements Scene {
     this.build(illustrationUrl);
 
     this.unsubs.push(input.onDown((x, y) => this.handleDown(x, y)));
+    this.shownCount = 1; // start fading in the first beat immediately
   }
 
   // ── Scene interface ────────────────────────────────────────────────────────
@@ -76,16 +78,19 @@ export class IllustratedInterludeScene implements Scene {
     this.illustrationFadeT += dt;
     this.illustration.alpha = Math.min(1, this.illustrationFadeT / ILLUSTRATION_FADE_DURATION);
 
-    const isLastBeat = this.currentIndex === this.beats.length - 1;
-    if (this.lineText.alpha < 1) {
-      this.fadeT += dt;
-      this.lineText.alpha = Math.min(1, this.fadeT / FADE_DURATION);
-      if (this.lineText.alpha >= 1) this.settledT = 0; // just finished fading — restart the idle countdown
-    } else if (!isLastBeat) {
-      this.settledT += dt;
-      if (this.settledT >= AUTO_ADVANCE_DELAY) {
-        this.settledT = 0;
-        this.step();
+    if (this.shownCount > 0 && this.shownCount <= this.lines.length) {
+      const line = this.lines[this.shownCount - 1]!;
+      const isLastBeat = this.shownCount === this.lines.length;
+      if (line.alpha < 1) {
+        this.fadeT += dt;
+        line.alpha = Math.min(1, this.fadeT / FADE_DURATION);
+        if (line.alpha >= 1) this.settledT = 0; // just finished fading — restart the idle countdown
+      } else if (!isLastBeat) {
+        this.settledT += dt;
+        if (this.settledT >= AUTO_ADVANCE_DELAY) {
+          this.settledT = 0;
+          this.step();
+        }
       }
     }
 
@@ -115,17 +120,19 @@ export class IllustratedInterludeScene implements Scene {
   }
 
   /**
-   * One step forward: completes the current beat's fade if still in progress, otherwise swaps in
+   * One step forward: completes the current beat's fade if still in progress, otherwise reveals
    * the next beat (or finishes on the last one). Shared by taps (handleDown) and the automatic
    * per-beat timeout in update() — a tap just does early what the timeout would do anyway.
    */
   private step(): void {
-    if (this.lineText.alpha < 1) {
-      this.lineText.alpha = 1;
+    const current = this.lines[this.shownCount - 1];
+    if (current && current.alpha < 1) {
+      current.alpha = 1;
       this.settledT = 0;
-    } else if (this.currentIndex < this.beats.length - 1) {
-      this.currentIndex++;
-      this.showBeat(this.currentIndex);
+    } else if (this.shownCount < this.lines.length) {
+      this.shownCount++;
+      this.fadeT = 0;
+      this.settledT = 0;
     } else {
       this.finish();
     }
@@ -138,13 +145,6 @@ export class IllustratedInterludeScene implements Scene {
   }
 
   // ── Build ──────────────────────────────────────────────────────────────────
-
-  private showBeat(index: number): void {
-    this.lineText.text = this.beats[index] ?? '';
-    this.lineText.alpha = 0;
-    this.fadeT = 0;
-    this.settledT = 0;
-  }
 
   private build(illustrationUrl: string): void {
     const { w, h } = this;
@@ -168,29 +168,37 @@ export class IllustratedInterludeScene implements Scene {
     else illustrationTex.baseTexture.once('loaded', fitIllustration);
     this.container.addChild(this.illustration);
 
-    // Narration — one beat at a time, centered in the upper band every interlude illustration
-    // deliberately leaves plain (see chapter-interlude-art-prompts.md's "upper third stays
-    // blank" instruction in every prompt).
+    // Narration — one beat revealed at a time, stacking downward from the top of the blank band
+    // every interlude illustration deliberately leaves plain (see chapter-interlude-art-prompts.md's
+    // "upper third stays blank" instruction in every prompt). Mirrors IntroScene: all beats are
+    // built upfront as separate PIXI.Text objects, so once every beat has faded in the passage
+    // reads top-to-bottom as one continuous piece instead of vanishing behind the next line.
     const bandH = h * TEXT_BAND_HEIGHT_FRAC;
     const fontSize = FS.heading;
-    this.lineText = makeText('', {
-      fontSize,
-      fill: ui.dark,
-      fontFamily: 'serif',
-      wordWrap: true,
-      wordWrapWidth: w * 0.82,
-      align: 'center',
-      lineHeight: Math.round(fontSize * 1.4),
-    });
-    this.lineText.anchor.set(0.5, 0.5);
-    this.lineText.x = w / 2;
-    this.lineText.y = Math.round(bandH * 0.55);
-    this.lineText.alpha = 0;
-    this.container.addChild(this.lineText);
-    this.showBeat(0);
+    const lineGapY = Math.round(fontSize * 1.7);
+    const startY = Math.round(bandH * 0.32);
 
-    // Tap-to-continue hint — kept inside the same blank band so it never has to compete for
-    // legibility against whatever is drawn in the illustration itself.
+    this.beats.forEach((beat, i) => {
+      const text = makeText(beat, {
+        fontSize,
+        fill: ui.dark,
+        fontFamily: 'serif',
+        wordWrap: true,
+        wordWrapWidth: w * 0.82,
+        align: 'center',
+        lineHeight: Math.round(fontSize * 1.4),
+      });
+      text.anchor.set(0.5, 0.5);
+      text.x = w / 2;
+      text.y = startY + i * lineGapY;
+      text.alpha = 0;
+      this.container.addChild(text);
+      this.lines.push(text);
+    });
+
+    // Tap-to-continue hint — anchored below the lowest beat so it never overlaps the stacked
+    // text once every beat (e.g. the 8-beat epilogue) has revealed itself.
+    const blockBottomY = startY + (this.beats.length - 1) * lineGapY + Math.round(fontSize * 1.4);
     this.hintText = makeText(t('story.tapToContinue'), {
       fontSize: FS.label,
       fill: ui.mid,
@@ -198,7 +206,7 @@ export class IllustratedInterludeScene implements Scene {
     });
     this.hintText.anchor.set(0.5, 1);
     this.hintText.x = w / 2;
-    this.hintText.y = Math.round(bandH * 0.94);
+    this.hintText.y = Math.max(Math.round(bandH * 0.94), blockBottomY + Math.round(fontSize * 0.9));
     this.container.addChild(this.hintText);
 
     // Skip button (top-right)
