@@ -432,3 +432,7 @@ flat — the two bastions are the widest points of the entire image.
 "具体锚点"套路（远端插旗子/让物体贴边）比抽象宽高比数字有效，这次一次成功。已改名覆盖 `playerbase_l7/8.png`，重跑 `pack_playerbase_atlas.js` + `patchMergedAtlas.js` 入库；被替换的旧图（`445aa377`/`8608ad46`）连同确认再无用途的 11th 备用图（`fbb0769b`，2026-08-03 就已标注不采用，一直没清理）一并移入 `art/leftover/`。
 
 **至此 10 张玩家基地图全部达到"地台顶到 3×3 菱形边界"的构图要求**（`contentWidthFrac`：Lv.1 0.94 / Lv.2 0.89 / Lv.3 0.82 / Lv.4 0.94 / Lv.5 0.91 / Lv.6 0.85 / Lv.7 0.94 / Lv.8 0.91 / Lv.9 0.83 / Lv.10 0.84，无一低于 0.82），2026-08-08 当天开的这个坑到此收口。
+
+### 2026-08-08（收尾）：真机截图复核，而非只有离线几何模拟
+
+上面三轮的判定都是靠离线复现 `citySpriteTiles`/`cityPlotMaskPoints` 几何叠加真实图集像素，没有实机截图。收尾前补了一次真机验证：临时给 `client/src/entries/web.ts` 加了个 `?worldmapdebug` 分支（构造真实 `WorldMapScene`，reject-fast 的 `WorldApiClient` stub 跳过登录/后端，在地图上摆 10 个"我的基地"测试块，每级一个），Playwright 依次把镜头切到每个基地截图——走的是客户端真正的渲染代码路径（`playerbase_atlas` → `getPlayerBaseTextureForLevel` → `WorldMapRenderer/city.ts` 的 `tile.mine` 分支），不是模拟。10 级截图里"连接己方领地"的绿色虚线框正好是每个基地自己的地块边界，肉眼确认全部贴边，跟离线核算的结论一致。调试脚手架（临时文件 + `web.ts` 分支 + Playwright 脚本）验证完已删除/还原，不留痕迹。
