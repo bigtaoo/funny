@@ -77,6 +77,19 @@ export type ServerMsg =
       startFrame: number;
       log: FrameCmds[];
       curFrame: number;
+      // Login-reconnect-prompt cold resume (2026-08-08 fix): mirrors match_start's fields above so
+      // a client with no matchInfo from this process (a freshly launched app, not a live in-session
+      // WS blip) can rebuild it from conn_resync alone — see NetInputSource.onConnResync (client).
+      roomId?: string;
+      mode?: number;
+      localSide?: number;
+      opponentName?: string;
+      opponentPublicId?: string;
+      opponentTitle?: string;
+      opponentAvatarId?: string;
+      opponentSkins?: string[];
+      topDeck?: string[];
+      bottomDeck?: string[];
     }
   | { case: 'peer_dc'; side: number; graceMs: number }
   | {
@@ -169,7 +182,24 @@ export function encodeServer(msg: ServerMsg): Uint8Array {
       server = { frameBatch: { toFrame: msg.toFrame, frames: framesToWire(msg.frames) } };
       break;
     case 'conn_resync':
-      server = { connResync: { seed: msg.seed, startFrame: msg.startFrame, log: framesToWire(msg.log), curFrame: msg.curFrame } };
+      server = {
+        connResync: {
+          seed: msg.seed,
+          startFrame: msg.startFrame,
+          log: framesToWire(msg.log),
+          curFrame: msg.curFrame,
+          roomId: msg.roomId ?? '',
+          mode: msg.mode ?? 0,
+          localSide: msg.localSide ?? 0,
+          opponentName: msg.opponentName ?? '',
+          opponentPublicId: msg.opponentPublicId ?? '',
+          opponentTitle: msg.opponentTitle ?? '',
+          opponentAvatarId: msg.opponentAvatarId ?? '',
+          opponentSkins: msg.opponentSkins ?? [],
+          topDeck: msg.topDeck ?? [],
+          bottomDeck: msg.bottomDeck ?? [],
+        },
+      };
       break;
     case 'peer_dc':
       server = { peerDc: { side: msg.side, graceMs: msg.graceMs } };

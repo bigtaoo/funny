@@ -203,6 +203,29 @@ export class NetInputSource implements InputSource {
   }
 
   private onConnResync(r: ConnResync): void {
+    // Cold resume (login-reconnect-prompt, 2026-08-08 fix): this connection never received
+    // match_start in this process (a freshly launched app, not a live in-session WS blip) — there
+    // is no matchInfo to rebuild the engine from. conn_resync now mirrors MatchStart's fields for
+    // exactly this case; a warm in-session reconnect already has matchInfo (set by its own earlier
+    // match_start) and skips this branch, so its behavior is unchanged.
+    if (!this.matchInfo) {
+      this.matchInfo = {
+        roomId: r.roomId,
+        mode: r.mode,
+        seed: r.seed,
+        startFrame: r.startFrame,
+        localSide: r.localSide,
+        opponentName: r.opponentName,
+        opponentPublicId: r.opponentPublicId,
+        opponentTitle: r.opponentTitle,
+        opponentAvatarId: r.opponentAvatarId,
+        opponentSkins: r.opponentSkins,
+        decks: r.topDeck.length > 0 || r.bottomDeck.length > 0
+          ? { top: r.topDeck, bottom: r.bottomDeck }
+          : undefined,
+      };
+      this.opts.onMatchStart?.(this.matchInfo);
+    }
     // Reconnect: merge the replayed non-empty frames (>last_frame) and jump the
     // watermark to cur_frame. Already-held frames (≤ old watermark) are
     // deterministic duplicates — re-ingesting is a no-op in content.
