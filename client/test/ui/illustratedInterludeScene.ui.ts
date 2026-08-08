@@ -11,6 +11,7 @@ import * as PIXI from 'pixi.js-legacy';
 import { createLayout } from '../../src/layout/ScalingManager';
 import { InputManager } from '../../src/inputSystem/InputManager';
 import { initI18n } from '../../src/i18n';
+import { TranslationKey } from '../../src/i18n';
 import { IllustratedInterludeScene } from '../../src/scenes/IllustratedInterludeScene';
 
 const memStore = (() => {
@@ -31,19 +32,27 @@ type SceneInternals = {
   beats: string[];
   lines: PIXI.Text[];
   illustration: PIXI.Sprite;
+  hintText: PIXI.Text;
   skipRect: Rect;
 };
 
-function build(onFinish: (skipped?: boolean) => void): { scene: IllustratedInterludeScene; input: InputManager; internals: SceneInternals } {
+/**
+ * @param textKey defaults to `campaign.realLayer.ch1`, a real 4-beat key (see i18n/locales/en.ts)
+ * — using a production key (rather than a fabricated one) means this test breaks if someone ever
+ * collapses it back to a single line, which would be a real content regression, not just a test
+ * fixture change. `campaign.epilogue` (8 beats) is the other production key exercised below, for
+ * the layout tests that specifically care about a beat count larger than any Ch1–5 interlude.
+ */
+function build(
+  onFinish: (skipped?: boolean) => void,
+  textKey: TranslationKey = 'campaign.realLayer.ch1',
+): { scene: IllustratedInterludeScene; input: InputManager; internals: SceneInternals } {
   const [w, h] = LANDSCAPE;
   const input = new InputManager();
-  // campaign.realLayer.ch1 is a real 4-beat key (see i18n/locales/en.ts) — using the production
-  // key (rather than a fabricated one) means this test breaks if someone ever collapses it back
-  // to a single line, which would be a real content regression, not just a test fixture change.
   // Must be a data: URL — a literal string isn't intercepted by any asset-stubbing transform
   // (unlike a real webpack asset import), and PIXI's determineCrossOrigin() only short-circuits
   // before touching `document` (absent in this headless environment) for `data:` URLs.
-  const scene = new IllustratedInterludeScene(createLayout(w, h), input, 'data:image/png;base64,', 'campaign.realLayer.ch1', { onFinish });
+  const scene = new IllustratedInterludeScene(createLayout(w, h), input, 'data:image/png;base64,', textKey, { onFinish });
   return { scene, input, internals: scene as unknown as SceneInternals };
 }
 
@@ -157,6 +166,47 @@ describe('IllustratedInterludeScene', () => {
     expect(internals.illustration.alpha).toBe(0);
     advance(scene, 2);
     expect(internals.illustration.alpha).toBe(1);
+    scene.destroy();
+  });
+
+  it('lays out every beat centered on the same x, stacked strictly downward with a fixed gap', () => {
+    const { scene, internals } = build(() => {});
+    const xs = internals.lines.map((l) => l.x);
+    expect(new Set(xs).size).toBe(1); // all centered on the same column
+    const ys = internals.lines.map((l) => l.y);
+    for (let i = 1; i < ys.length; i++) expect(ys[i]).toBeGreaterThan(ys[i - 1]!); // strictly downward
+    const gaps = new Set<number>();
+    for (let i = 1; i < ys.length; i++) gaps.add(ys[i]! - ys[i - 1]!);
+    expect(gaps.size).toBe(1); // one consistent per-beat gap, not ad-hoc spacing
+    scene.destroy();
+  });
+
+  it('the tap-to-continue hint sits below the lowest beat, scaling with a longer passage (epilogue, 8 beats)', () => {
+    const short = build(() => {}, 'campaign.realLayer.ch1'); // 4 beats
+    const long = build(() => {}, 'campaign.epilogue'); // 8 beats — same passage as the story.line.1~.7 callback
+    expect(long.internals.beats.length).toBeGreaterThan(short.internals.beats.length);
+
+    const lastLineBottomY = (internals: SceneInternals): number => {
+      const lastLine = internals.lines[internals.lines.length - 1]!;
+      return lastLine.y; // anchor is (0.5, 0.5): y is the line's own center, hint must clear it
+    };
+
+    // The hint must never sit above the last beat's line, in either passage length ...
+    expect(short.internals.hintText.y).toBeGreaterThan(lastLineBottomY(short.internals));
+    expect(long.internals.hintText.y).toBeGreaterThan(lastLineBottomY(long.internals));
+    // ... and the longer passage's taller stack pushes the hint further down than the short one's.
+    expect(long.internals.hintText.y).toBeGreaterThan(short.internals.hintText.y);
+
+    short.scene.destroy();
+    long.scene.destroy();
+  });
+
+  it('building with a longer passage (epilogue) still starts on the first beat, invisible, same as any other key', () => {
+    const { scene, internals } = build(() => {}, 'campaign.epilogue');
+    expect(internals.beats.length).toBe(8);
+    expect(internals.lines.length).toBe(8);
+    expect(internals.shownCount).toBe(1);
+    expect(internals.lines[0]!.alpha).toBe(0);
     scene.destroy();
   });
 });
