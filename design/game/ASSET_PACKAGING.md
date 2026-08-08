@@ -1,6 +1,6 @@
 # 资源分包与加载策略（ASSET_PACKAGING）
 
-> 状态：实现中 · 权威：本文（资源分层/加载/分包的单一来源）· 更新：2026-07-29（§9 新增 Web/App 资源分级）
+> 状态：实现中 · 权威：本文（资源分层/加载/分包的单一来源）· 更新：2026-08-08（§10 新增 PvP/PvE 进场资源闸门）
 
 游戏要在 **Web（含 CrazyGames）/ 微信小游戏 / 手机套壳** 三个平台发布，三者对"资源何时进内存"的约束完全不同。本文锁定：
 
@@ -178,3 +178,26 @@ frame 名称互不冲突（合并前用脚本核对过），故直接共享一�
 **已应用**：`client/src/assets/logo.png`（256px/129KB，L0 闸门项，见 `bootManifest.ts`）+ `client/src/assets/logo.hires.png`（1024px/1.9MB，均来自既有 `art/logo/derived/` 输出，非新生成美术）。
 
 **后续候选**：其余 L0/常驻大图（如登录/大厅背景类，若未来引入）可按同一约定接入，无需再动 webpack 配置。
+
+---
+
+## 10. PvP / PvE 进场资源闸门（2026-08-08）
+
+**动机**：用户反馈——"进 PvP/SLG/PvE 时，需要的资源要检测一下是否已经加载，没加载就走加载界面，不要进场之后才发现没资源（空着或错误图标）"。审计发现 `GameScene`（PvP-vs-AI / 联机 PvP / 战役 PvE 共用）确实有这个缺口，SLG（`WorldMapScene`）已经有对应机制、不需要改：
+
+| 场景 | 进场前是否等资源就绪 | 缺口 |
+|---|---|---|
+| **PvP / PvE**（`GameScene`） | ❌ 否——`UnitView` 构造时对全部兵种 `.tao`（含皮肤覆盖）+ `GameScene` 对英雄/法术卡图（`cardArt.preloadL1CardArtTextures`）都是 `void` 掉的 fire-and-forget，未就绪单位画占位圆圈直到某帧异步 resolve | **有**——本节修复对象 |
+| **SLG**（`WorldMapScene`） | ✅ 是——构造即铺一层不透明"加载中"封面（`WorldMapRenderer/build.ts` 的 `buildLoadingOverlay`），`bootstrap()` 对 `terrain/city/playerBase/res/building` 五个 atlas 走 `Promise.allSettled` 才 `renderMap()`+`hideLoading()`（外加 8s 兜底超时防卡死） | 无（已有正确模式，本节不改） |
+
+**修复**（`client/src/assets/battleAssets.ts` + `client/src/app.ts`）：
+
+- `ensureBattleAssets(opts, onProgress?)`：预热 `StickmanRuntime.loadAsset` 缓存——覆盖 `UnitView.STICKMAN_ASSETS` 全部兵种（含 PvE 专属神话生物）+ 双方 `resolveSkinOverrides(equippedSkins/opponentSkins)` 皮肤覆盖（去重 URL 后逐个 `loadAsset`）+ `cardArt.preloadL1CardArtTextures()`（英雄/法术卡图）。逐 step try/catch，永不 reject（照抄 `bootManifest.preloadBoot` 的容错写法）——单个资源失败只是继续用已有占位，不卡死闸门。
+  - **有意预热全量 `STICKMAN_ASSETS`，不按对局实际阵容裁剪**：PvP 对手是 AI 还是真人、走哪个牌组在进场那一刻不完全可知；集合本身很小（12 兵种，`StickmanRuntime.loadAsset`/`preloadTexture` 都按 URL 幂等缓存，warm 过一次后再调是免费的），全量预热比"精确算出这局到底要哪些资源"更简单也更不容易漏。同一份闸门天然覆盖 PvE（战役关卡神话生物同样在 `STICKMAN_ASSETS` 里）。
+- `PixiAppViews.enterBattle()`（`app.ts`）：`showGame`/`showGameNet` 共用的私有 helper——`input.suppress(true)` 冻结背后仍在显示的旧场景（**输入不走 PIXI**，纯视觉遮罩挡不住点击，同 client-modules.md §28 fade 闸门的道理）→ 构造 `LoadingOverlay`（复用 L0 闸门那个手绘进度条组件，`app.ts` 已有实例，构造参数只要 `PIXI.Application`，无 i18n 耦合，可以在 L0 之外二次实例化）→ `await ensureBattleAssets(opts, onProgress)` 边等边刷新进度条 → `destroy()` overlay → 真正 `manager.goto(scene, {fade:true})`。`goto` 自己的 fade 转场会再次 `suppress(true)`（幂等空操作）并在淡入结束后 `suppress(false)`，闸门等待期与随后的 fade 转场对输入的冻结无缝衔接，没有"loading 遮罩已经收起但输入还没解冻"或反过来的窗口。
+  - `showGame`（PvP-vs-AI / 战役 / 教学关，`nav/game.ts` 三个调用点共用）直接 `void this.enterBattle('GameScene', opts, () => new GameScene(...))`。
+  - `showGameNet`（联机 PvP，`nav/result.ts:goGameNet`）需要在 `enterBattle` 的 Promise resolve **之前**就把 `NetGameView` 同步返回给调用方——调用方紧接着把 `applyNetState/applyPeerDc/applyMatchOver` 挂到 `session.handlers`，而对手的网络推送在 loading 遮罩还没收起时就可能已经到达（socket 早已连上）。解法：`scene` 初始为 `null`，配一个 `pending` 队列——loading 期间的推送先 `push` 进队列，`enterBattle` resolve 拿到真实 `scene` 后按顺序 `flush`；`GameScene` 自身已有的 destroyed-guard 处理的是对称的另一半（"场景销毁后还收到推送"），这里补的是"场景还没造出来就收到推送"。
+- **幂等性是这个方案免费的前提**：`StickmanRuntime.loadAsset`（按 URL 缓存 Promise）、`preloadTexture`（`assetIO().textureSource` 结果 + PIXI 纹理缓存）都已经是 URL 级幂等——`ensureBattleAssets` 预热完，`UnitView`/`GameScene` 构造时重复调用同一批 loader 完全免费（缓存命中，不重新下载/解析），不需要额外"跳过已加载"的判断逻辑。
+- **回归测试**：`client/test/ui/battleAssets.ui.ts`（`ensureBattleAssets` 覆盖全部默认兵种 + 双方皮肤覆盖 + 卡图；单个 `.tao` 失败不 reject；progress 回调 0→total 逐步推进）。放在 `test/ui/` 而非 `test/` 根目录纯粹因为它 import 了 `UnitView.ts`（间接拉进 `.tao`/`.png` 资源 import），只有 `vitest.ui.config.ts` 的 `stubBinaryAssets` 插件能解析。
+
+**未覆盖范围**（有意不做，避免蔓延）：`CityScene`（SLG 内政面板）的 `resAtlas`/`cityBldAtlas` 加载依旧是文档已注明的"有意 fire-and-forget，先用文字/emoji 占位再补图标"渐进增强模式，不属于本次"进大场景"闸门的范围；社交类子面板（Family/Sect/Auction/DefenseEditor）同理未动。
