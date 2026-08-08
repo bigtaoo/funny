@@ -180,9 +180,9 @@ export function PoolMixin<TBase extends WorldMapRendererBaseCtor>(Base: TBase): 
       return true;
     }
 
-    /** Stable-ish owner identity for anchor detection: prefer ownerPublicId, else the mine/ally/enemy class. */
+    /** Stable-ish owner identity for anchor detection: prefer ownerPublicId, else the mine/ally/sectmate/enemy class. */
     ownerKeyOf(t: WorldTileView): string {
-      return t.ownerPublicId ?? (t.mine ? 'me' : t.ally ? 'ally' : t.occupied ? 'enemy' : 'none');
+      return t.ownerPublicId ?? (t.mine ? 'me' : t.ally ? 'ally' : t.sectmate ? 'sectmate' : t.occupied ? 'enemy' : 'none');
     }
   };
 }

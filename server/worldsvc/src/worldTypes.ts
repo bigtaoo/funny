@@ -85,6 +85,13 @@ export interface WorldTileView {
    */
   ally?: boolean;
   /**
+   * 2026-08-08: this tile is owned by a member of the requester's own sect who is NOT in the requester's
+   * family (within vision, not self; family members use `ally` instead, allied-sect members use `allySect`).
+   * Does not share vision (only family does, DECISIONS §18.6) — this is purely a third map-colour tag so
+   * fellow-sect territory outside your family no longer renders identically to a stranger's.
+   */
+  sectmate?: boolean;
+  /**
    * G5: this tile is owned by a member of an "allied sect" of the player's own sect (within vision, not the
    * requester, not a family member). Alliances do not share vision; they are only distinguished by a yellow
    * border marker on the map (§8.2). Family allies use `ally`; this field is specifically for cross-sect alliances.
@@ -120,6 +127,8 @@ export interface WorldTileSparseView {
   mine?: boolean;
   /** Populated when lod=mid (same-family ally). */
   ally?: boolean;
+  /** Populated when lod=mid (same-sect member, not family). */
+  sectmate?: boolean;
   /** Populated when lod=mid (allied sect member, not family). */
   allySect?: boolean;
 }

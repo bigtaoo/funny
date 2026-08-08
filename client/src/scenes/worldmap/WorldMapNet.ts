@@ -86,6 +86,7 @@ export class WorldMapNet {
             occupied: true,
             ...(s.mine ? { mine: true } : {}),
             ...(s.ally ? { ally: true } : {}),
+            ...(s.sectmate ? { sectmate: true } : {}),
             ...(s.allySect ? { allySect: true } : {}),
           });
         }
@@ -126,6 +127,7 @@ export class WorldMapNet {
             occupied: true,
             ...(s.mine ? { mine: true } : {}),
             ...(s.ally ? { ally: true } : {}),
+            ...(s.sectmate ? { sectmate: true } : {}),
             ...(s.allySect ? { allySect: true } : {}),
           });
         }

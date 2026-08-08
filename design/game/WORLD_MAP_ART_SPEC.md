@@ -45,6 +45,10 @@
 | `overlay_enemy_base.png` | 敌方主城叠层（浓红墨） | `#cc3333` α=0.85 |
 | `overlay_ally.png` | 家族盟友领地叠层（绿墨） | `#9cd6a4` α=0.85 |
 | `overlay_ally_base.png` | 家族盟友主城叠层（浓绿墨） | `#46a85a` α=0.85 |
+| `overlay_sectmate.png` | 宗门成员（非同家族）领地叠层（紫墨，2026-08-08 新增，不共享视野） | `#c9a8e0` α=0.85 |
+| `overlay_sectmate_base.png` | 宗门成员主城叠层（浓紫墨） | `#8e44ad` α=0.85 |
+| `overlay_allysect.png` | 盟友宗门领地叠层（琥珀墨，2026-08-08 新增，叠加既有黄描边，不共享视野） | `#f0c987` α=0.85 |
+| `overlay_allysect_base.png` | 盟友宗门主城叠层（浓琥珀墨） | `#d68910` α=0.85 |
 | `overlay_fog.png` | 视野外迷雾叠层（铅笔灰半透明） | `#6b6458` α=0.4 |
 
 **要求**：

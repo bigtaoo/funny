@@ -129,14 +129,25 @@ export const ENEMY_TINT      = 0xe69090; // enemy territory (light red ink — A
 export const ENEMY_BASE_TINT = 0xcc3333; // enemy capital (deep red ink)
 export const ALLY_TINT      = 0x9cd6a4; // family-ally territory (light green ink — G5 friendly third color)
 export const ALLY_BASE_TINT = 0x46a85a; // family-ally capital (deep green ink)
+// 2026-08-08: two more ownership colors, filling the gap where a fellow-sect member outside the requester's
+// family, or a member of an allied (other) sect, used to render as plain enemy red with no distinction —
+// see DECISIONS.md ADR-024 correction note.
+export const SECT_TINT           = 0xc9a8e0; // sect-mate territory, different family same sect (light purple ink — friendly but not family, no shared vision)
+export const SECT_BASE_TINT      = 0x8e44ad; // sect-mate capital (deep purple ink)
+export const ALLY_SECT_TINT      = 0xf0c987; // allied-sect territory, cross-guild alliance (light amber ink — no shared vision, §8.2)
+export const ALLY_SECT_BASE_TINT = 0xd68910; // allied-sect capital (deep amber ink)
 export const FOG_COLOR      = 0xc9c2b2; // fog of war (light warm paper-grey, thin overlay on terrain)
 export const CLOUD_COLOR    = 0xcfc7b6; // off-map cloud/mist veil (warm paper-grey) — hides the blank paper beyond the map edge
-export const ALLY_SECT_BORDER = 0xe6a817; // allied-sect territory yellow border (amber gold, G5; marks without shared vision, §8.2)
+export const ALLY_SECT_BORDER = 0xe6a817; // allied-sect territory yellow border (amber gold, G5; on top of ALLY_SECT_TINT's wash, marks without shared vision, §8.2)
 
-/** Ownership color for the wash/border overlay, or null when the tile is unowned. */
+/** Ownership color for the wash/border overlay, or null when the tile is unowned. Priority: self > family
+ * ally > sect-mate (own sect, different family) > allied-sect (other sect, ≤2 alliances) > enemy — mirrors
+ * the server's mutually-exclusive tagging order in worldsvc core/map.ts getMap. */
 export function ownerTint(tile: WorldTileView): number | null {
   if (tile.mine)     return tile.type === 'base' ? MINE_BASE_TINT : MINE_TINT;
   if (tile.ally)     return tile.type === 'base' ? ALLY_BASE_TINT : ALLY_TINT;
+  if (tile.sectmate) return tile.type === 'base' ? SECT_BASE_TINT : SECT_TINT;
+  if (tile.allySect) return tile.type === 'base' ? ALLY_SECT_BASE_TINT : ALLY_SECT_TINT;
   if (tile.occupied) return tile.type === 'base' ? ENEMY_BASE_TINT : ENEMY_TINT;
   return null;
 }

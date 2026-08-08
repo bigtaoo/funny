@@ -847,7 +847,9 @@ export interface components {
             visible?: boolean;
             /** @description G5: this tile is owned by a family ally (within vision, not self). Client renders with friendly colour. */
             ally?: boolean;
-            /** @description G5: this tile is owned by a member of an allied sect of the player's own sect (within vision, not self, not family). Alliances do not share vision; only distinguished on the map with a yellow border (§8.2, attacking/capturing between allies is forbidden). */
+            /** @description 2026-08-08: this tile is owned by a member of the requester's own sect who is NOT in the requester's family (within vision, not self, not family — that's `ally`; not an allied-sect member — that's `allySect`). Does not share vision (only family does, DECISIONS §18.6); client renders a third "friendly but not family" colour. */
+            sectmate?: boolean;
+            /** @description G5: this tile is owned by a member of an allied sect of the player's own sect (within vision, not self, not family). Alliances do not share vision; distinguished on the map with its own colour + a yellow border (§8.2, attacking/capturing between allies is forbidden). */
             allySect?: boolean;
             /** @description Main-base anchor only: owner's `desk` building level (1-10), mirrored from playerWorld onto the anchor tile whenever a desk upgrade completes. Drives the player-base art frame (playerbase_l{n}) on the requester's own base tile (see design/product/player-base-image-prompts.md); absent = level 1. */
             deskLevel?: number;
@@ -868,6 +870,8 @@ export interface components {
             mine?: boolean;
             /** @description lod=mid: same-family ally */
             ally?: boolean;
+            /** @description lod=mid: same-sect member, not family */
+            sectmate?: boolean;
             /** @description lod=mid: allied sect member (not family) */
             allySect?: boolean;
         };

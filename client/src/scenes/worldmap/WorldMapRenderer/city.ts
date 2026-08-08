@@ -5,6 +5,7 @@ import { BASE_FOOTPRINT, citySpriteTiles, cityGroundFwdPx, cityPlotMaskPoints } 
 import { getCityTextureForLevel, getCityContentTopFracForLevel, isCityAtlasReady } from '../../../render/atlas/cityAtlasLoader';
 import { getPlayerBaseTextureForLevel, getPlayerBaseContentTopFracForLevel } from '../../../render/atlas/playerBaseAtlasLoader';
 import { tileToScreen, visibleTileBounds, ISO_RATIO } from '../../../render/isoGrid';
+import { SECT_BASE_TINT, ALLY_SECT_BASE_TINT } from '../tileStyle';
 import { HUD_H, BASE_SPRITE_TILES } from '../constants';
 import { t } from '../../../i18n';
 import { makeText } from '../../../render/pixiText';
@@ -139,7 +140,12 @@ export function CityMixin<TBase extends WorldMapRendererBaseCtor>(Base: TBase): 
           const ownerStr = tile.mine ? this.ctx.cb.playerName : (tile.ownerName ?? '');
           label.text = ownerStr ? `${ownerStr} ${levelStr}` : levelStr;
           label.style.fontSize = Math.round(Math.max(9, Math.min(20, tp * 0.16)));
-          label.style.fill = tile.mine ? 0x2266cc : (tile.ally ? 0x2e8b40 : (tile.occupied ? 0xcc2222 : 0x888888));
+          label.style.fill = tile.mine ? 0x2266cc
+            : tile.ally ? 0x2e8b40
+            : tile.sectmate ? SECT_BASE_TINT
+            : tile.allySect ? ALLY_SECT_BASE_TINT
+            : tile.occupied ? 0xcc2222
+            : 0x888888;
           const reservedBarH = Math.max(3, tp * 0.07) + Math.max(2, tp * 0.04);
           label.position.set(0, -sprite.height * (1 - contentTopFrac) - reservedBarH - 2);
 

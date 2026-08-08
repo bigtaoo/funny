@@ -33,6 +33,7 @@ export interface WorldTileSparseView {
   type: string;
   mine?: boolean;
   ally?: boolean;
+  sectmate?: boolean;
   allySect?: boolean;
 }
 
