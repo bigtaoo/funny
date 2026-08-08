@@ -578,6 +578,16 @@ designatedBuyerId?, expireAt(ms), status, buyerId?, rev
 - **修复**：`auctionEquipLevel()` 更名为 `auctionItemLevel()` 并扩展为同时读装备/角色卡实例的 `level`（材料/皮肤仍返回 0），新增 `auctionItemMaxLevel(auc)` 按 `itemType` 返回对应的 `EQUIP_MAX_LEVEL`/`MAX_CARD_LEVEL` 供星星行/文字星星做 clamp。`auctionLabel()` 的角色卡分支去掉 `Lv.${level}` 后缀，改为裸名字（同装备分支）；`auctionLabelText()` 改用 `auctionItemLevel`/`auctionItemMaxLevel` 对任意实例类型折回文字星星；`list.ts` 市场卡片的星星行改用同一对方法，不再局限于装备。`picker.ts` 的 `selectedItemLabel()` 与 `buildPickEntries()` 的角色卡分支均改为 `levelStarsText(level, MAX_CARD_LEVEL)`，与装备分支写法对称。
 - **验收**：`tsc --noEmit` 全绿；`vitest run --config vitest.ui.config.ts` 覆盖 `test/ui/auctionScene.ui.ts`（73 例，含新增的角色卡裸名字/文字星星断言，`auctionEquipLevel`→`auctionItemLevel` 改名同步更新调用点）、`test/ui/auctionPickerDedupe.ui.ts`（17 例，角色卡分组标签断言从 `"Su Yuan Lv.1 ×4"` 更新为 `"Su Yuan ★ ×4"`）、`auctionBackButtonHitWidth.ui.ts`/`auctionActionBusyLock.ui.ts` 全绿，共 109 例。纯 UI 展示层改动，未额外做浏览器截图验证（该场景需要一个挂有真实角色卡拍卖单的活跃账号 + 完整后端才能复现，headless 测试已直接对 PIXI 对象树断言了本次改动前后的确切文本/星星差异）。
 
+### 创建挂单表单：出售物品字段加倍高度 + 视觉重点显示（2026-08-08）
+
+- **问题**：用户对着挂单表单截图画圈反馈——"Item: Scrap"这一栏应该加倍高度、重点显示，让玩家一眼看出当前要卖的是什么；同时确认手动输入价格时是否统一用了带光标的输入框样式。
+- **改动**（`client/src/scenes/AuctionScene/createForm.ts`，`openCreateForm()`）：
+  - Item 选择字段（`field`）高度从标准输入行的 `30*SCALE` 翻倍到 `itemFieldH = 60*SCALE`；图标从 `16*SCALE` 放大到 `itemIconSize = 32*SCALE`，与字段高度同比放大；图标/文字改用居中定位（图标按 `(itemFieldH - itemIconSize)/2` 垂直居中，文字 `anchor.set(0, 0.5)` + `field.y + fieldH/2`）取代之前按字段旧高度手调的固定像素偏移，避免放大后错位。
+  - 已选中物品时（`selLabel` 非空）额外做"重点显示"：字段底色从中性纸色 `0xfaf9f5` 换成浅蓝强调色 `0xeaf1fb`（`ui.accent` 的浅色调）、边框从 2px 加粗到 3px、文字从 `13*SCALE` 常规体放大到 `17*SCALE` 粗体。未选中时（占位提示"点击选择"）维持原有中性样式不变，避免占位态也跟着"抢眼"。
+  - `mh`（弹窗总高度）与 `cy`（后续行起始位置）的计算同步加上多出的 `30*SCALE`——弹窗高度公式里原有的 `(...) * VA` 分组是纵向留白系数（`VA=SCALE*1.2`），字段加高是单独的绝对像素增量，两者不能混在一起乘同一个系数，故作为独立加项累加，避免弹窗要么裁切按钮行要么底部留白过多。
+  - 手动输入价格的光标输入框：核查后确认**这部分已经是现状**，未改动——`price`/`startPrice`/`buyout` 三个数值字段在 07-27 那次改动（`7751f4f0` "auction listing form — tap-to-type prices with auto-clamp"）里已经统一接入 `editKey` + `caretDisplay()` 机制（点击变成可输入框、输入中光标 `|` 闪烁、失焦按护栏 clamp），与本次改的 Item 字段、以及既有的"指定买家"字段共用同一套输入框视觉语言（`sketchPanel` 同款 fill/border 配色）。数量（Qty）字段沿用原样不加框——它只有 `-`/`+` 步进、无点击输入诉求，用户反馈原文也只提到"价格"，未涉及数量。
+- **验收**：`tsc --noEmit` 绿；`npm run build:web` 通过（仅预置的资源体积警告，与本次改动无关）；`vitest run --config vitest.ui.config.ts` 全量回归绿（含既有 `auctionScene.ui.ts` 覆盖的 `openCreateForm` 系列用例，未新增专项用例——纯几何/样式调整，既有命中矩形/文本断言足以覆盖回归风险）。未做浏览器截图验证：本次会话 Browser 预览面板未能渲染帧（画布尺寸 0×0），排查后发现根因不是面板本身，而是拍卖行等菜单场景需要登录态 + 一整套跑起来的后端（metaserver 等 11 个服务 + Mongo）才能进入，本次会话未拉起后端，仅有 headless PIXI 单测覆盖（真实场景树、无渲染器）+ 生产构建通过。下次有可用登录环境时应补一次真实截图核对本次的字段放大/配色效果。
+
 ---
 
 *本文为拍卖行机制权威，DRAFT/⚠️ 处随实现与拍板细化；数值以 `server/shared/src/slg.ts` 为准。*
