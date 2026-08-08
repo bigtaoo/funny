@@ -342,6 +342,36 @@ describe('accrueRetentionTask — weekly tally alongside the daily one', () => {
   });
 });
 
+describe('WEEKLY_CHEST_TIERS', () => {
+  it('has exactly 3 ascending tiers at thresholds 9/15/21', () => {
+    expect(WEEKLY_CHEST_TIERS).toHaveLength(3);
+    expect(WEEKLY_CHEST_TIERS.map((t) => t.threshold)).toEqual([9, 15, 21]);
+  });
+
+  it('every tier grants a positive count', () => {
+    for (const t of WEEKLY_CHEST_TIERS) expect(t.reward.count).toBeGreaterThan(0);
+  });
+
+  it('tier 1 is a material pack (lead), tier 2 an entry-tier equipment draw', () => {
+    expect(WEEKLY_CHEST_TIERS[0]!.reward).toMatchObject({ kind: 'material', id: 'lead' });
+    expect(WEEKLY_CHEST_TIERS[1]!.reward.kind).toBe('equipment');
+  });
+
+  // Regression lock for the 2026-08-08 change (RETENTION_DESIGN §10.8): tier 3 used to be a plain
+  // shop skin (kind: 'skin', resolved via the now-removed pickWeeklyChestSkin/WEEKLY_CHEST_SKIN_POOL)
+  // — replaced with a random legendary card because a shop skin felt like a weak flagship reward for
+  // this tier's full-week bar. This pins the reward kind so a future edit can't silently regress it.
+  it('tier 3 (top tier) is a card, not the old shop-skin reward', () => {
+    expect(WEEKLY_CHEST_TIERS[2]!.reward.kind).toBe('card');
+    expect(WEEKLY_CHEST_TIERS[2]!.reward.count).toBe(1);
+  });
+
+  it('WeeklyChestRewardKind no longer has a "skin" option (removed alongside the shop-skin reward)', () => {
+    const kinds = new Set(WEEKLY_CHEST_TIERS.map((t) => t.reward.kind));
+    expect(kinds.has('skin' as never)).toBe(false);
+  });
+});
+
 describe('weeklyPoints / weeklyClaimableTiers', () => {
   it('0 points when nothing recorded / stale', () => {
     expect(weeklyPoints(undefined, T_JUN22)).toBe(0);

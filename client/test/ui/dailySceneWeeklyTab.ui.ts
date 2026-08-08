@@ -130,6 +130,24 @@ describe('DailyScene — weekly active chest tab', () => {
     scene.destroy();
   });
 
+  // Covers renderWeekly's singleItem check (equipment/card kinds render icon-only, no "+N" —
+  // mirrors BattlePassScene's single-item skin display; material renders "+N" alongside its icon).
+  it('the material tier shows a "+20" count; the equipment and card tiers (single-item rewards) show no count', async () => {
+    const save: SaveData = {
+      ...makeNewSave(),
+      retention: { weekly: { weekKey: CURRENT_WEEK_KEY, points: 21, claimedTiers: [] } },
+    };
+    const scene = buildDaily(save);
+    await flush();
+    const s = scene as unknown as Internals;
+    s.activeTab = 'weekly';
+    s.render();
+
+    expect(findText(scene.container, (txt) => txt === '+20')).not.toBeNull(); // tier 1: material x20
+    expect(findText(scene.container, (txt) => txt === '+1')).toBeNull(); // tiers 2/3: equipment + card are single-item, no count text
+    scene.destroy();
+  });
+
   it('a tier below its threshold has no claim hit registered (nav-only hit count baseline)', async () => {
     const save: SaveData = {
       ...makeNewSave(),
