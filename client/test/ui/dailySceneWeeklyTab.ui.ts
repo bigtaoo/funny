@@ -81,6 +81,37 @@ function buildDaily(save: SaveData, cb: Partial<DailyCallbacks> = {}): DailyScen
   });
 }
 
+describe('DailyScene — header title follows the active tab', () => {
+  // Regression for the 2026-08-08 bug: the top SceneHeader used to be hardcoded to t('daily.title')
+  // ("Daily") no matter which sidebar tab was active, so the Weekly Chest tab still read "Daily" at
+  // the top — misleading since the tab content right below it is clearly weekly-scoped.
+  it('shows the weekly-tab title, not the generic "Daily" hub title, when the weekly tab is active', async () => {
+    const save: SaveData = { ...makeNewSave(), retention: { weekly: { weekKey: CURRENT_WEEK_KEY, points: 0, claimedTiers: [] } } };
+    const scene = buildDaily(save);
+    await flush();
+    const s = scene as unknown as Internals;
+    s.activeTab = 'weekly';
+    s.render();
+
+    expect(findText(scene.container, (txt) => txt === t('daily.title'))).toBeNull();
+    expect(findText(scene.container, (txt) => txt === t('daily.weekly.title'))).not.toBeNull();
+    scene.destroy();
+  });
+
+  it('shows the tasks-tab title when the daily-tasks tab is active', async () => {
+    const save: SaveData = { ...makeNewSave() };
+    const scene = buildDaily(save);
+    await flush();
+    const s = scene as unknown as Internals;
+    s.activeTab = 'tasks';
+    s.render();
+
+    expect(findText(scene.container, (txt) => txt === t('daily.title'))).toBeNull();
+    expect(findText(scene.container, (txt) => txt === t('daily.tasks.title'))).not.toBeNull();
+    scene.destroy();
+  });
+});
+
 describe('DailyScene — weekly active chest tab', () => {
   it('shows the points progress for each of the three tiers', async () => {
     const save: SaveData = {

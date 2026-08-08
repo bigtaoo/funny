@@ -1,6 +1,6 @@
 # 留存系统设计 — Daily Retention（签到 / 每日任务 / 周常）
 
-> 状态：**P0 已实现（2026-06-22）**，签到奖励表 + Tab 改版见 §10.4（2026-07-05）；签到去体力 + 里程碑加金币（R1b）见 §10.5（2026-08-01） · 权威：**本文（留存系统机制单一来源）**；数值（奖励/上限/曲线）镜像并最终落 [`ECONOMY_NUMBERS.md §12`](ECONOMY_NUMBERS.md)（DRAFT 初值）· 更新：2026-08-01
+> 状态：**P0 已实现（2026-06-22）**，签到奖励表 + Tab 改版见 §10.4（2026-07-05）；签到去体力 + 里程碑加金币（R1b）见 §10.5（2026-08-01）；顶部标题跟随子 Tab 修复见 §10.7（2026-08-08） · 权威：**本文（留存系统机制单一来源）**；数值（奖励/上限/曲线）镜像并最终落 [`ECONOMY_NUMBERS.md §12`](ECONOMY_NUMBERS.md)（DRAFT 初值）· 更新：2026-08-08
 >
 > **实现记录（B5 2026-06-22）**：
 > - `server/shared/src/retention.ts` — 纯函数 + 类型（`RetentionSave`, `CHECKIN_REWARDS[30]`, `DAILY_TASKS[3]`, `accrueRetentionTask`, `claimCheckinDay`, `claimDailyReward`）
@@ -337,3 +337,11 @@ POST /retention/weekly/claim            (JWT) { tier:1|2|3 } → { save, granted
 - **边界**：`claimCheckinDay`（`server/shared/src/retention.ts`）的纯函数里 `nextSlot > CHECKIN_TOTAL_DAYS`（月满）判断先于 `lastClaimedDayKey === 当前日`（今日已领）判断，导致"当月最后一格（第30格）当天重试"报的是 `MONTH_FULL` 而不是 `ALREADY_CLAIMED_TODAY`——两者本质是同一种可恢复场景，`claimCheckin` 的恢复分支据此把两个错误码合并处理，用 `lastClaimedDayKey` 而不是错误码本身来判断"是不是今天这次领取"。
 
 **回归测试**（`server/metaserver/test/retention.e2e.test.ts`，新增 `describe('retention delivery resilience (2026-08-05 fix)')`）：镜像 `pve.e2e.test.ts` 的手法——包一层 `saves.findOneAndUpdate`，让发放调用自己内部的 rev-guard 写入必输，验证（a）领取状态照样落库、（b）失败响应是 502 不是静默 200、（c）解除拦截后重试补发**同一件**道具/发放**同一笔**金币，且再重试一次也不会变成两件/两笔。覆盖周常装备 tier、周常皮肤 tier、签到第 30 格装备+bonusCoins、每日任务金币四条路径。
+
+### 10.7 修复：Daily 顶部标题不跟随子 Tab（2026-08-08）
+
+**背景**：用户反馈截图——在"周常宝箱"子 Tab 下，页面顶部 `SceneHeader` 仍显示固定的 `t('daily.title')`（"Daily"/"每日"），与左侧高亮的"周常宝箱" Tab、内容区自己的"周常宝箱"小标题不一致，读起来像是标题没跟上当前子 Tab（`client/src/scenes/DailyScene.ts` 原 `drawSceneHeader(..., t('daily.title'))` 不随 `activeTab` 变化，四个子 Tab 下顶部永远是同一行字）。
+
+**修复**：顶部标题改为按 `activeTab` 取对应 Tab 自己的 i18n key（`TAB_TITLE_KEY: Record<DailyTab, TranslationKey>`，映射到 `daily.checkin.title` / `daily.tasks.title` / `daily.weekly.title` / `daily.ads.title`，与左侧 Tab 文案、内容区小标题同源，不新增翻译）。大厅入口按钮（`LobbyScene` "每日" 图标）与引导文案仍用原来的 `daily.title`，不受影响——那是整个留存功能的入口标签，不是本页内部标题，语义不同不合并。
+
+**回归测试**：`client/test/ui/dailySceneWeeklyTab.ui.ts` 新增 `describe('DailyScene — header title follows the active tab')`，断言切到 `weekly`/`tasks` Tab 时找不到 `t('daily.title')` 文本、能找到对应 Tab 自己的标题文本。
