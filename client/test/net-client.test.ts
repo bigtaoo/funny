@@ -110,6 +110,45 @@ describe('NetClient connect / reconnect', () => {
     expect(onReconnect).toHaveBeenCalledTimes(1); // fires only on reconnect open, not on first connect
   });
 
+  // Login-reconnect-prompt cold resume (2026-08-08 fix): rejoinMatch() builds a brand-new NetClient
+  // whose very first open is, server-side, a mid-match reconnect (the room already has this side
+  // occupied) — without treatFirstOpenAsReconnect, plain everOpened semantics would treat it as an
+  // ordinary first connect and never fire onReconnect, so the upper layer never sends conn_resume
+  // and both sides wait on each other forever (the "Reconnect button does nothing" bug).
+  it('treatFirstOpenAsReconnect fires onReconnect on the very first open, not just subsequent ones', async () => {
+    const { platform, sockets } = fakePlatform();
+    const onReconnect = vi.fn();
+    const client = new NetClient(platform, {
+      url: 'ws://x/ws',
+      tokenProvider: async () => 'tok',
+      pingIntervalMs: 0,
+      treatFirstOpenAsReconnect: true,
+      handlers: { onServerMsg: () => {}, onReconnect },
+    });
+    client.connect();
+    await tick();
+    sockets[0]!.open();
+
+    expect(client.getState()).toBe('open');
+    expect(onReconnect).toHaveBeenCalledTimes(1);
+  });
+
+  it('without treatFirstOpenAsReconnect (default), the first open does not fire onReconnect (regression guard)', async () => {
+    const { platform, sockets } = fakePlatform();
+    const onReconnect = vi.fn();
+    const client = new NetClient(platform, {
+      url: 'ws://x/ws',
+      tokenProvider: async () => 'tok',
+      pingIntervalMs: 0,
+      handlers: { onServerMsg: () => {}, onReconnect },
+    });
+    client.connect();
+    await tick();
+    sockets[0]!.open();
+
+    expect(onReconnect).not.toHaveBeenCalled();
+  });
+
   it('connect() during a pending reconnect does not spawn a second socket (regression)', async () => {
     // Bug: connect() only short-circuited on 'connecting'/'open', so calling it while 'reconnecting'
     // (e.g. NetSession.connect() re-invoked on every scene entry) raced a second openSocket() under

@@ -420,6 +420,10 @@ export class NetSession {
       // freshToken(), which can mint a new token on each retry) — an expired-ticket-for-a-gone-room
       // or room-mismatch rejection can never succeed on retry, so treat them as fatal here too.
       extraFatalCloseCodes: onFailed ? [4401, 4403] : undefined,
+      // Login-reconnect-prompt cold resume (2026-08-08 fix): `onFailed` is only ever passed by
+      // rejoinMatch(), so its presence doubles as "this connection's first open is actually a
+      // mid-match reconnect from the server's point of view" — see NetClient's doc comment.
+      treatFirstOpenAsReconnect: !!onFailed,
       handlers: {
         onServerMsg: (m) => this.routeData(m),
         onStateChange: (s) => {
@@ -439,9 +443,13 @@ export class NetSession {
           this.handlers.onNetState?.(s);
         },
         // Mid-match game-plane reconnect → ask the server to replay frames past
-        // our watermark and resume the metronome (S1-4).
+        // our watermark and resume the metronome (S1-4). `this.roomId` is unset on a cold resume
+        // (login-reconnect-prompt: this NetSession never saw its own match_start yet) — send it
+        // anyway rather than gating on it (2026-08-08 fix): the server resolves the room from the
+        // connection's own ticket, never from this message field, so an empty string is harmless,
+        // and conn_resync now carries everything (incl. room_id) needed to rebuild matchInfo.
         onReconnect: () => {
-          if (this.roomId) this.game?.resume(this.roomId, this.input.resumeFrame());
+          this.game?.resume(this.roomId, this.input.resumeFrame());
         },
       },
     });

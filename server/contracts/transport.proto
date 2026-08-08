@@ -121,11 +121,26 @@ message MatchStart {
   repeated string opponent_skins     = 12;  // opponent's equipped character skin ids (UI use, display only; empty = no skins equipped, incl. bots)
 }
 
+// Login-reconnect-prompt cold resume (2026-08-08 fix): a client reconnecting from a freshly
+// launched app (not a live in-session WS blip) never received match_start in this process — it
+// has no matchInfo to rebuild the engine from. Fields 5-13 mirror MatchStart so NetInputSource can
+// reconstruct MatchStartInfo from conn_resync alone; a warm in-session reconnect (matchInfo already
+// cached from this session's own match_start) simply ignores them as redundant.
 message ConnResync {
-  uint64             seed        = 1;
-  uint32             start_frame = 2;
-  repeated FrameCmds log         = 3;   // non-empty frame log
-  uint32             cur_frame   = 4;
+  uint64             seed               = 1;
+  uint32             start_frame        = 2;
+  repeated FrameCmds log                = 3;   // non-empty frame log
+  uint32             cur_frame          = 4;
+  string             room_id            = 5;
+  MatchMode          mode               = 6;
+  uint32             local_side         = 7;
+  string             opponent_name      = 8;   // opponent display name (UI use, display only)
+  string             opponent_public_id = 9;   // opponent 9-digit numeric public id (UI use, display only)
+  string             opponent_title     = 10;  // opponent's equipped title id (UI use, display only; empty string = no title)
+  string             opponent_avatar_id = 11;  // opponent's equipped avatar id (UI use, display only; empty string = no avatar)
+  repeated string    opponent_skins     = 12;  // opponent's equipped character skin ids (UI use, display only; empty = no skins equipped, incl. bots)
+  repeated string    top_deck           = 13;  // side-0 player's deck (PVP_LOADOUT §6.2); both sides receive both decks for deterministic engine construction
+  repeated string    bottom_deck        = 14;  // side-1 player's deck
 }
 
 // Match found / host started the game (pushed by gateway control plane, M18/M20). The client uses this to connect to the game data-plane WS:

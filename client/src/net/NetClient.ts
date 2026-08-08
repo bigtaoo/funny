@@ -60,6 +60,18 @@ export interface NetClientOptions {
    * (NetSession.freshToken), so its 4401 (stale/expired token) is transient and must keep retrying.
    */
   extraFatalCloseCodes?: number[];
+  /**
+   * Treat this NetClient's very first successful open as a reconnect (fires `onReconnect`
+   * immediately instead of only from the second open onward). Opt-in for the login-reconnect-
+   * prompt's cold resume (2026-08-08 fix): `rejoinMatch` builds a brand-new NetClient whose first
+   * open is, from the *server's* perspective, a mid-match reconnect (the room already has this
+   * side occupied) — but plain `everOpened` semantics would treat it as an ordinary first connect
+   * and never call `onReconnect`, so the upper layer never sends `conn_resume` and both sides wait
+   * on each other forever (the "Reconnect button does nothing" bug). Normal fresh connections
+   * (gateway, and the game plane's own first-ever match_found) must NOT set this — see NetSession's
+   * `connectGame` for where it's threaded through.
+   */
+  treatFirstOpenAsReconnect?: boolean;
   /** Application-layer heartbeat interval (ms); keeps the connection alive and produces visible traffic for the server. Default 25000; 0 = disabled. */
   pingIntervalMs?: number;
   /** Log tag (distinguishes the gateway / game connections). Default 'ws'. */
@@ -111,7 +123,7 @@ export class NetClient {
     if (this.state === 'connecting' || this.state === 'open' || this.state === 'reconnecting') return;
     this.intentional = false;
     this.attempt = 0;
-    this.everOpened = false;
+    this.everOpened = !!this.opt.treatFirstOpenAsReconnect;
     void this.openSocket();
   }
 

@@ -338,12 +338,28 @@ export class Room {
       return;
     }
     slot.conn = conn;
+    // Decks are identical across both slots (same ticket payload); use whichever slot has them —
+    // mirrors launch()'s own lookup.
+    const decks = this.slots.find((s) => s.decks)?.decks;
     conn.send({
       case: 'conn_resync',
       seed: this.seed,
       startFrame: START_FRAME,
       log: this.log.filter((f) => f.frame > lastFrame),
       curFrame: this.curFrame,
+      // Login-reconnect-prompt cold resume (2026-08-08 fix): mirror launch()'s match_start payload
+      // here too, so a client reconnecting from a freshly launched app (no matchInfo from this
+      // process — see NetInputSource.onConnResync) can rebuild the engine from conn_resync alone.
+      // Redundant, harmless no-op for a warm in-session reconnect that already has this info.
+      roomId: this.roomId,
+      mode: this.mode,
+      localSide: slot.side,
+      opponentName: slot.name,
+      opponentPublicId: slot.publicId,
+      ...(slot.opponentTitle ? { opponentTitle: slot.opponentTitle } : {}),
+      ...(slot.opponentAvatarId ? { opponentAvatarId: slot.opponentAvatarId } : {}),
+      ...(slot.opponentSkins.length ? { opponentSkins: slot.opponentSkins } : {}),
+      ...(decks ? { topDeck: decks.top, bottomDeck: decks.bottom } : {}),
     });
 
     if (this.slots.every((s) => s.conn)) {

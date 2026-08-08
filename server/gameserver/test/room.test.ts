@@ -164,6 +164,35 @@ describe('Room', () => {
     expect(rs.log.map((f) => f.frame)).toEqual([9]);
   });
 
+  // Login-reconnect-prompt cold resume (2026-08-08 fix): a client reconnecting from a freshly
+  // launched app never received match_start in this process (see client's NetInputSource/NetClient
+  // regression tests for the other half) — conn_resync must carry everything MatchStart would have,
+  // or the client has no way to rebuild its engine and the "resume your match?" dialog hangs forever.
+  it('conn_resync mirrors match_start\'s full payload (room/mode/side/opponent/decks) for a cold client rebuild', () => {
+    room.addPlayer(asConn(c0), 'n0', 'pub-0', 'title-0', { top: ['t1'], bottom: ['b1'] }, 'avatar-0', ['skin-0']);
+    room.addPlayer(asConn(c1), 'n1', 'pub-1', 'title-1', { top: ['t1'], bottom: ['b1'] }, 'avatar-1', ['skin-1']);
+    room.onDisconnect(1, asConn(c1));
+    c1.outbox = [];
+
+    // A cold client has no prior watermark — it asks for everything from frame 0.
+    room.resume(asConn(c1), 0);
+
+    const rs = lastOf(c1, 'conn_resync')!;
+    expect(rs.roomId).toBe('room-1');
+    expect(rs.mode).toBe(MatchMode.FRIENDLY);
+    expect(rs.localSide).toBe(1);
+    // slot.name/publicId/etc are echoed straight from whatever this side's own addPlayer() call
+    // carried (Room is agnostic to the self<->opponent cross-wiring — that happens one layer up,
+    // in the ticket matchsvc signs) — mirrors launch()'s own `opponentName: s.name` for slot s.
+    expect(rs.opponentName).toBe('n1');
+    expect(rs.opponentPublicId).toBe('pub-1');
+    expect(rs.opponentTitle).toBe('title-1');
+    expect(rs.opponentAvatarId).toBe('avatar-1');
+    expect(rs.opponentSkins).toEqual(['skin-1']);
+    expect(rs.topDeck).toEqual(['t1']);
+    expect(rs.bottomDeck).toEqual(['b1']);
+  });
+
   it('reportResult both sides hash agree → match_over base + reports hashOk', () => {
     startMatch();
     vi.advanceTimersByTime(100);
