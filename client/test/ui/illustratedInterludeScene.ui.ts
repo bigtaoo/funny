@@ -2,15 +2,16 @@
 // interlude (world.md「章末真实层」). Generalizes IntroScene's fade/auto-advance/skip loop, so
 // this focuses on what's actually NEW relative to IntroScene (which has no dedicated behavior
 // test beyond the startup smoke in scenes.ui.ts): splitting a single i18n key on '\n' into
-// beats that replace each other one at a time (instead of IntroScene's fixed multi-key array
-// that stacks all lines at once), and the illustration fading to FULL opacity (not IntroScene's
-// 0.6-alpha backdrop). Runs under the headless PIXI adapter (test/harness/pixiHeadless.ts via
+// beats (instead of IntroScene's fixed multi-key array) that fade in and STACK one at a time,
+// same as IntroScene, plus the illustration fading to FULL opacity (not IntroScene's 0.6-alpha
+// backdrop). Runs under the headless PIXI adapter (test/harness/pixiHeadless.ts via
 // vitest.ui.config.ts). Run: npm run test:ui
 import { describe, it, expect } from 'vitest';
 import * as PIXI from 'pixi.js-legacy';
 import { createLayout } from '../../src/layout/ScalingManager';
 import { InputManager } from '../../src/inputSystem/InputManager';
 import { initI18n } from '../../src/i18n';
+import { TranslationKey } from '../../src/i18n';
 import { IllustratedInterludeScene } from '../../src/scenes/IllustratedInterludeScene';
 
 const memStore = (() => {
@@ -27,23 +28,31 @@ const LANDSCAPE: [number, number] = [1920, 1080];
 
 type Rect = { x: number; y: number; w: number; h: number };
 type SceneInternals = {
-  currentIndex: number;
+  shownCount: number;
   beats: string[];
-  lineText: PIXI.Text;
+  lines: PIXI.Text[];
   illustration: PIXI.Sprite;
+  hintText: PIXI.Text;
   skipRect: Rect;
 };
 
-function build(onFinish: (skipped?: boolean) => void): { scene: IllustratedInterludeScene; input: InputManager; internals: SceneInternals } {
+/**
+ * @param textKey defaults to `campaign.realLayer.ch1`, a real 4-beat key (see i18n/locales/en.ts)
+ * — using a production key (rather than a fabricated one) means this test breaks if someone ever
+ * collapses it back to a single line, which would be a real content regression, not just a test
+ * fixture change. `campaign.epilogue` (8 beats) is the other production key exercised below, for
+ * the layout tests that specifically care about a beat count larger than any Ch1–5 interlude.
+ */
+function build(
+  onFinish: (skipped?: boolean) => void,
+  textKey: TranslationKey = 'campaign.realLayer.ch1',
+): { scene: IllustratedInterludeScene; input: InputManager; internals: SceneInternals } {
   const [w, h] = LANDSCAPE;
   const input = new InputManager();
-  // campaign.realLayer.ch1 is a real 4-beat key (see i18n/locales/en.ts) — using the production
-  // key (rather than a fabricated one) means this test breaks if someone ever collapses it back
-  // to a single line, which would be a real content regression, not just a test fixture change.
   // Must be a data: URL — a literal string isn't intercepted by any asset-stubbing transform
   // (unlike a real webpack asset import), and PIXI's determineCrossOrigin() only short-circuits
   // before touching `document` (absent in this headless environment) for `data:` URLs.
-  const scene = new IllustratedInterludeScene(createLayout(w, h), input, 'data:image/png;base64,', 'campaign.realLayer.ch1', { onFinish });
+  const scene = new IllustratedInterludeScene(createLayout(w, h), input, 'data:image/png;base64,', textKey, { onFinish });
   return { scene, input, internals: scene as unknown as SceneInternals };
 }
 
@@ -53,42 +62,41 @@ function advance(scene: IllustratedInterludeScene, seconds: number): void {
 }
 
 describe('IllustratedInterludeScene', () => {
-  it('splits the i18n key on \\n into multiple beats and starts on the first, invisible', () => {
+  it('splits the i18n key on \\n into multiple beats, one PIXI.Text per beat, and starts on the first, invisible', () => {
     const { scene, internals } = build(() => {});
     expect(internals.beats.length).toBeGreaterThan(1);
-    expect(internals.currentIndex).toBe(0);
-    expect(internals.lineText.text).toBe(internals.beats[0]);
-    expect(internals.lineText.alpha).toBe(0);
+    expect(internals.lines.length).toBe(internals.beats.length);
+    expect(internals.shownCount).toBe(1);
+    internals.lines.forEach((line, i) => expect(line.text).toBe(internals.beats[i]));
+    expect(internals.lines[0]!.alpha).toBe(0);
     scene.destroy();
   });
 
   it('fades the current beat in over time, then holds at full alpha without advancing on its own yet', () => {
     const { scene, internals } = build(() => {});
     advance(scene, 2); // comfortably past the fade, nowhere near the auto-advance idle delay
-    expect(internals.lineText.alpha).toBe(1);
-    expect(internals.currentIndex).toBe(0);
+    expect(internals.lines[0]!.alpha).toBe(1);
+    expect(internals.shownCount).toBe(1);
     scene.destroy();
   });
 
   it('a tap mid-fade completes the fade instantly instead of advancing', () => {
     const { scene, input, internals } = build(() => {});
     scene.update(0.05); // still fading in
-    expect(internals.lineText.alpha).toBeLessThan(1);
+    expect(internals.lines[0]!.alpha).toBeLessThan(1);
     input._emitDown(10, 10); // anywhere away from the skip button
-    expect(internals.lineText.alpha).toBe(1);
-    expect(internals.currentIndex).toBe(0);
+    expect(internals.lines[0]!.alpha).toBe(1);
+    expect(internals.shownCount).toBe(1);
     scene.destroy();
   });
 
-  it('a tap once fully shown swaps in the next beat (replacing it, not stacking it)', () => {
+  it('a tap once fully shown reveals the next beat WITHOUT hiding the previous one (stacking, not replacing)', () => {
     const { scene, input, internals } = build(() => {});
     advance(scene, 2);
-    const firstBeatText = internals.beats[0]!;
     input._emitDown(10, 10);
-    expect(internals.currentIndex).toBe(1);
-    expect(internals.lineText.text).toBe(internals.beats[1]);
-    expect(internals.lineText.text).not.toBe(firstBeatText);
-    expect(internals.lineText.alpha).toBe(0); // the new beat starts invisible again
+    expect(internals.shownCount).toBe(2);
+    expect(internals.lines[0]!.alpha).toBe(1); // first beat stays fully visible
+    expect(internals.lines[1]!.alpha).toBe(0); // the new beat starts invisible and fades in on its own
     scene.destroy();
   });
 
@@ -99,13 +107,22 @@ describe('IllustratedInterludeScene', () => {
     // 7s per beat comfortably covers fade-in (0.8s) + the 5s idle auto-advance delay, without
     // enough slack left over to also complete a second beat's fade+idle in the same window.
     for (let i = 0; i < total - 1; i++) advance(scene, 7);
-    expect(internals.currentIndex).toBe(total - 1);
+    expect(internals.shownCount).toBe(total);
     expect(calls).toBe(0); // reaching the last beat does not itself finish the scene
 
     // Sitting on the fully-shown last beat must NOT auto-finish, unlike every earlier beat.
     advance(scene, 10);
-    expect(internals.currentIndex).toBe(total - 1);
+    expect(internals.shownCount).toBe(total);
     expect(calls).toBe(0);
+    scene.destroy();
+  });
+
+  it('once every beat has been shown, all of them remain fully visible (the whole passage reads at once)', () => {
+    const { scene, internals } = build(() => {});
+    const total = internals.beats.length;
+    for (let i = 0; i < total - 1; i++) advance(scene, 7);
+    advance(scene, 2); // let the last beat finish fading
+    internals.lines.forEach((line) => expect(line.alpha).toBe(1));
     scene.destroy();
   });
 
@@ -149,6 +166,47 @@ describe('IllustratedInterludeScene', () => {
     expect(internals.illustration.alpha).toBe(0);
     advance(scene, 2);
     expect(internals.illustration.alpha).toBe(1);
+    scene.destroy();
+  });
+
+  it('lays out every beat centered on the same x, stacked strictly downward with a fixed gap', () => {
+    const { scene, internals } = build(() => {});
+    const xs = internals.lines.map((l) => l.x);
+    expect(new Set(xs).size).toBe(1); // all centered on the same column
+    const ys = internals.lines.map((l) => l.y);
+    for (let i = 1; i < ys.length; i++) expect(ys[i]).toBeGreaterThan(ys[i - 1]!); // strictly downward
+    const gaps = new Set<number>();
+    for (let i = 1; i < ys.length; i++) gaps.add(ys[i]! - ys[i - 1]!);
+    expect(gaps.size).toBe(1); // one consistent per-beat gap, not ad-hoc spacing
+    scene.destroy();
+  });
+
+  it('the tap-to-continue hint sits below the lowest beat, scaling with a longer passage (epilogue, 8 beats)', () => {
+    const short = build(() => {}, 'campaign.realLayer.ch1'); // 4 beats
+    const long = build(() => {}, 'campaign.epilogue'); // 8 beats — same passage as the story.line.1~.7 callback
+    expect(long.internals.beats.length).toBeGreaterThan(short.internals.beats.length);
+
+    const lastLineBottomY = (internals: SceneInternals): number => {
+      const lastLine = internals.lines[internals.lines.length - 1]!;
+      return lastLine.y; // anchor is (0.5, 0.5): y is the line's own center, hint must clear it
+    };
+
+    // The hint must never sit above the last beat's line, in either passage length ...
+    expect(short.internals.hintText.y).toBeGreaterThan(lastLineBottomY(short.internals));
+    expect(long.internals.hintText.y).toBeGreaterThan(lastLineBottomY(long.internals));
+    // ... and the longer passage's taller stack pushes the hint further down than the short one's.
+    expect(long.internals.hintText.y).toBeGreaterThan(short.internals.hintText.y);
+
+    short.scene.destroy();
+    long.scene.destroy();
+  });
+
+  it('building with a longer passage (epilogue) still starts on the first beat, invisible, same as any other key', () => {
+    const { scene, internals } = build(() => {}, 'campaign.epilogue');
+    expect(internals.beats.length).toBe(8);
+    expect(internals.lines.length).toBe(8);
+    expect(internals.shownCount).toBe(1);
+    expect(internals.lines[0]!.alpha).toBe(0);
     scene.destroy();
   });
 });

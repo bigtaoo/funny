@@ -16,7 +16,7 @@ import type {
   PathCell,
   TileRun,
 } from '@nw/shared';
-import { FAMILY_MSG_RETENTION_SEC, troopCapFor } from '@nw/shared';
+import { FAMILY_MSG_RETENTION_SEC, troopCapFor, TRAIN_SPEEDUP_BUFF_MULT } from '@nw/shared';
 import type { Filter } from 'mongodb';
 
 /** Defense configuration: a restricted subset of the engine LevelDefinition (P2/P5, embedded rather than a separate collection). Opaque placeholder until S8-3 wires up the engine. */
@@ -190,6 +190,37 @@ export function trainingQueueOps(queue: TrainingEntry[]): { set: Record<string, 
   return queue.length > 0 ? { set: { nextTrainingCompleteAt: queue[0]!.completeAt }, unset: {} } : { set: {}, unset: { nextTrainingCompleteAt: '' } };
 }
 
+/**
+ * S8-8 fix (2026-08-08): fold the train-speedup buff's effect for the real-time window [fromT, toT] into
+ * `queue`'s completeAt/startAt. While `speedupUntil` is in the future, the WHOLE queue advances
+ * TRAIN_SPEEDUP_BUFF_MULT× faster than real time — every entry's clock shifts earlier by the same amount
+ * (`extra`), which preserves both each entry's own duration (completeAt-startAt) and the
+ * startAt(i+1)===completeAt(i) chain invariant, so no cascade re-link is needed afterward (contrast with
+ * speedupTraining's coin-based instant-skip, which changes each entry's duration and must re-chain).
+ *
+ * Callers must persist the returned queue AND advance a `speedupSettledAt` bookkeeping field to `toT`
+ * together (same $set) — this is the incremental high-water mark that lets the buff apply continuously
+ * (purchase → every later trainTroops/speedupTraining/shop call → the 2s scheduler tick) without
+ * double-crediting the same real-time window twice. `fromT` is normally the caller's
+ * `doc.speedupSettledAt ?? toT` (nothing to catch up on a doc the buff has never touched).
+ *
+ * Pure — never mutates `queue`. Returns the SAME array reference (not a copy) when there is no overlap:
+ * the common case for players with no active buff, or ones already caught up — callers rely on this
+ * identity to cheaply skip a wasted write (see ShopService/CityService/processCompletedTraining).
+ */
+export function applyTrainingSpeedupCatchup(
+  queue: TrainingEntry[],
+  speedupUntil: number | undefined,
+  fromT: number,
+  toT: number,
+): TrainingEntry[] {
+  if (!speedupUntil || queue.length === 0 || toT <= fromT) return queue;
+  const overlap = Math.min(toT, speedupUntil) - fromT;
+  if (overlap <= 0) return queue;
+  const extra = overlap * (TRAIN_SPEEDUP_BUFF_MULT - 1);
+  return queue.map((e) => ({ ...e, startAt: e.startAt - extra, completeAt: e.completeAt - extra }));
+}
+
 /** Build queue entry (SLG_CITY_DESIGN §4). Mirrors TrainingEntry: chained scheduling, scheduler applies the level when completeAt is reached. */
 export interface BuildQueueEntry {
   key: BuildingKey;   // which building is being upgraded
@@ -232,6 +263,22 @@ export interface PlayerWorldDoc {
   trainingQueue?: TrainingEntry[]; // training queue (S8-2, ≤ TROOP_TRAIN_QUEUE_MAX entries)
   /** Mirror of `trainingQueue[0].completeAt`, absent when the queue is empty — see `trainingQueueOps`. Indexed; scheduler-only, never read by clients. */
   nextTrainingCompleteAt?: number;
+  /**
+   * S8-8 fix (2026-08-08): train-speedup shop buff end time (ms epoch) — while `now < speedupUntil`, the
+   * training queue advances at TRAIN_SPEEDUP_BUFF_MULT× real-time speed (applyTrainingSpeedupCatchup).
+   * Stacks additively across repeat purchases from max(current speedupUntil, now) — same pattern as
+   * TileDoc.protectedUntil, never wasting overlap. Returned to the client (PlayerWorldView) so the HUD can
+   * render a countdown; the client compares against Date.now() itself (present-but-expired is harmless).
+   */
+  speedupUntil?: number;
+  /**
+   * S8-8 fix: high-water mark up to which the speedup buff's time-compression has already been folded
+   * into `trainingQueue`'s completeAt/startAt (applyTrainingSpeedupCatchup) — incremental bookkeeping so
+   * the buff applies continuously without double-crediting the same real-time window twice. Absent =
+   * nothing to catch up yet (no buff has ever touched this doc). Indexed alongside speedupUntil;
+   * scheduler-only, never read by clients.
+   */
+  speedupSettledAt?: number;
   hasBattlePass?: boolean;         // current season battle pass (S8-8, cleared on season reset)
   /** Home-city building levels (SLG_CITY_DESIGN; desk defaults to 1, others to 0 when absent). Season-scoped — cleared with the doc on resetSeason. */
   buildings?: Partial<Record<BuildingKey, number>>;
@@ -716,6 +763,14 @@ export async function createWorldMongo(
     await collections.playerWorld.createIndex(
       { nextBuildCompleteAt: 1 },
       { partialFilterExpression: { nextBuildCompleteAt: { $exists: true } } },
+    );
+    // Speedup-buff catch-up scan (processCompletedTraining, every 2s, S8-8 fix 2026-08-08): finds players
+    // with an active/recently-active train-speedup buff so their trainingQueue's completeAt can be
+    // continuously compressed (applyTrainingSpeedupCatchup) even between the player's own actions.
+    // Partial: only docs that have ever bought a speedup carry the field, so it stays small.
+    await collections.playerWorld.createIndex(
+      { speedupUntil: 1 },
+      { partialFilterExpression: { speedupUntil: { $exists: true } } },
     );
     await collections.marches.createIndex({ worldId: 1, ownerId: 1 });
     // getMarches' vision-gated "other players' marches" branch does `find({worldId, status:'marching'})`

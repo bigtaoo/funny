@@ -145,6 +145,20 @@ const MARKER_Y = 12;   // fallback feet ground Y (circle units / no shadow)
 const HIT_FLASH_COLOR = 0xff5a2b;
 
 /**
+ * Spell-target-preview outline color/alpha — reuses `fx.meteor` (same hue as the
+ * 2×2/column target-rect fill in BoardView) so the unit outline and the board-cell
+ * highlight read as one signal: "this is what the AoE spell you're aiming will hit".
+ * Sustained (not a fade) while the player hovers/drags an AoE spell — see
+ * {@link UnitView.setSpellTargetPreview} — as opposed to HIT_FLASH_COLOR's brief
+ * post-impact pop.
+ */
+const SPELL_TARGET_COLOR = fx.meteor;
+const SPELL_TARGET_ALPHA = 0.6;
+
+/** Shared empty set — avoids an allocation on every no-AoE-selected highlight refresh. */
+const NO_SPELL_TARGETS: ReadonlySet<number> = new Set();
+
+/**
  * Faction ground marker — a highlighter wash overlaid on the unit's shadow
  * (cx, cy = shadow center; rx, ry = wash half-extents). Three stacked ellipses:
  * a wide soft halo, a stronger mid disc, and a saturated core, so every unit
@@ -304,6 +318,9 @@ export class UnitView {
   /** Pool monitor deregister function (stickman pool data source); called in destroy(). */
   private readonly unregisterStickmanStat: () => void;
 
+  /** Unit ids currently outlined by {@link setSpellTargetPreview} — tracked so the next call can clear exactly the ones that fell out of the new set. */
+  private previewUnitIds: ReadonlySet<number> = NO_SPELL_TARGETS;
+
   constructor(
     boardView: BoardView,
     localSide: Side = Side.Bottom,
@@ -433,6 +450,33 @@ export class UnitView {
       if (off) return { x: sprite.x + off.x, y: sprite.y + off.y };
     }
     return { x: sprite.x, y: sprite.y };
+  }
+
+  /**
+   * Outline exactly the units that fall inside the currently hovered/dragged AoE
+   * spell's footprint (2×2 meteor anchor, rockslide column, …) — requested fix:
+   * the 2×2 target-rect fill alone doesn't tell the player which units' centers
+   * actually sit inside it, so a frequently-used spell like Meteor kept missing
+   * the intended target. Called every time GameRenderer/input.ts recomputes the
+   * placement highlight (pointer move + the 10Hz board-state refresh), so this is
+   * a plain diff against the previous call, not an animation.
+   *
+   * Only stickman-rendered units (the vast majority — see STICKMAN_ASSETS) get the
+   * outline; it reuses the same outline-sprite texture as {@link playHitEffect}'s
+   * hit-flash via `setOutlineFlash`, just held steady instead of faded. Circle
+   * placeholder units (pre-.tao-load fallback) have no outline texture and are
+   * silently skipped, same limitation `playHitEffect` already accepts.
+   */
+  setSpellTargetPreview(unitIds: ReadonlySet<number>): void {
+    if (unitIds === this.previewUnitIds) return;
+    for (const id of this.previewUnitIds) {
+      if (unitIds.has(id)) continue;
+      this.stickmanRuntimes.get(id)?.setOutlineFlash(null);
+    }
+    for (const id of unitIds) {
+      this.stickmanRuntimes.get(id)?.setOutlineFlash(SPELL_TARGET_COLOR, SPELL_TARGET_ALPHA);
+    }
+    this.previewUnitIds = unitIds;
   }
 
   playHitEffect(unitId: number): void {
@@ -782,6 +826,7 @@ export class UnitView {
 
     this.stickmanRuntimes.clear();
     this.stickmanPoolKeys.clear();
+    this.previewUnitIds = NO_SPELL_TARGETS;
     this.sprites.clear();
     this.hpTimers.clear();
     this.assets.clear();

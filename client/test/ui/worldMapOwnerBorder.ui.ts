@@ -12,7 +12,7 @@ import { WorldMapRenderer } from '../../src/scenes/worldmap/WorldMapRenderer';
 import { WorldMapPanels } from '../../src/scenes/worldmap/WorldMapPanels';
 import { WorldMapInput } from '../../src/scenes/worldmap/WorldMapInput';
 import { drawTileL1, drawTileL2 } from '../../src/scenes/worldmap/tileGraphics';
-import { MINE_TINT, MINE_BASE_TINT } from '../../src/scenes/worldmap/tileStyle';
+import { MINE_TINT, MINE_BASE_TINT, ownerTint, SECT_TINT, ALLY_SECT_TINT, ALLY_SECT_BORDER } from '../../src/scenes/worldmap/tileStyle';
 import type { ILayout } from '../../src/layout/ILayout';
 import type { WorldTileView } from '../../src/net/WorldApiClient';
 
@@ -148,5 +148,29 @@ describe('drawTileL1 / drawTileL2 ownerBorder gating (2026-08-01 declutter pass)
     const lineStyles = spyLineStyle(g);
     drawTileL2(g, 0xffffff, MINE_TINT, false, 38);
     expect(lineStyles.some(l => l.width === 1.4 && l.color === MINE_TINT)).toBe(true);
+  });
+
+  // 2026-08-08 (ADR-060): sect-mate and allied-sect tiles used to fall through to plain enemy red — end-to-end
+  // check that ownerTint()'s pick actually reaches the real drawTileL1 wash (not just a unit-tested lookup table).
+  it('a sect-mate tile (own sect, different family) draws the purple SECT_TINT wash via ownerTint', () => {
+    const g = new PIXI.Graphics();
+    const beginFills = spyBeginFill(g);
+    const tile = { x: 5, y: 5, type: 'territory', level: 1, sectmate: true } as WorldTileView;
+    const owner = ownerTint(tile);
+    expect(owner).toBe(SECT_TINT);
+    drawTileL1(g, tile, 0xffffff, owner, false, 76, false, 'terrain_grass', null, 5, 5, 'w1');
+    expect(beginFills.some(f => f.color === SECT_TINT && f.alpha === 0.16)).toBe(true);
+  });
+
+  it('an allied-sect tile draws the amber ALLY_SECT_TINT wash (not enemy red) plus the existing yellow border ring', () => {
+    const g = new PIXI.Graphics();
+    const beginFills = spyBeginFill(g);
+    const lineStyles = spyLineStyle(g);
+    const tile = { x: 5, y: 5, type: 'territory', level: 1, occupied: true, allySect: true } as WorldTileView;
+    const owner = ownerTint(tile);
+    expect(owner).toBe(ALLY_SECT_TINT);
+    drawTileL1(g, tile, 0xffffff, owner, false, 76, false, 'terrain_grass', null, 5, 5, 'w1');
+    expect(beginFills.some(f => f.color === ALLY_SECT_TINT && f.alpha === 0.16)).toBe(true); // amber wash, not enemy red
+    expect(lineStyles.some(l => l.color === ALLY_SECT_BORDER)).toBe(true); // yellow border still layered on top
   });
 });

@@ -122,19 +122,22 @@ describe.skipIf(!mongo)('worldsvc alliance territory marking e2e (G5 / §8.2 V5)
   let svc: WorldService;
   let socialsvc: FakeSocialsvc;
 
-  // Sect/family ids (chain: a∈famA∈sectA, sectA allied with sectB; ally1/ally2∈famB∈sectB; enemy∈famE∈sectC with no alliance).
+  // Sect/family ids (chain: a∈famA∈sectA, sectA allied with sectB; ally1/ally2∈famB∈sectB; enemy∈famE∈sectC
+  // with no alliance; sectmate1∈famC∈sectA — a SIBLING family in a's own sect, 2026-08-08 addition).
   const sectA = `s:${W}:AAA`;
   const sectB = `s:${W}:BBB`;
   const sectC = `s:${W}:CCC`;
   const famA = `f:${W}:A`;
   const famB = `f:${W}:B`;
   const famE = `f:${W}:E`;
+  const famC = `f:${W}:C`;
 
-  // ADR-025: capitals are a 3×3 footprint, so anchors must be ≥3 apart (Chebyshev). These three sit within
+  // ADR-025: capitals are a 3×3 footprint, so anchors must be ≥3 apart (Chebyshev). These sit within
   // a's base vision radius (VISION_BASE_RADIUS=5, viewport centred at 6,6) yet do not overlap each other.
   const A_POS = { x: 5, y: 5 };
   const ALLY_POS = { x: 9, y: 9 };
   const ENEMY_POS = { x: 5, y: 9 };
+  const SECTMATE_POS = { x: 9, y: 5 };
 
   /** Registers families in socialsvc + their sect membership; sects themselves stay in the worldsvc `sects` collection (allySectMemberIds reads them directly). */
   async function setupAlliance(): Promise<void> {
@@ -142,8 +145,9 @@ describe.skipIf(!mongo)('worldsvc alliance territory marking e2e (G5 / §8.2 V5)
     socialsvc.addFamily(famB, 'ally1', 'B', 'B', sectB);
     socialsvc.addMember('ally2', famB);
     socialsvc.addFamily(famE, 'enemy', 'E', 'E', sectC);
+    socialsvc.addFamily(famC, 'sectmate1', 'C', 'C', sectA); // sibling family, same sect as 'a', not allied
     await m.collections.sects.insertMany([
-      { _id: sectA, worldId: W, name: 'A', tag: 'AAA', leaderFamilyId: famA, leaderId: 'a', memberFamilyCount: 1, allySectIds: [sectB], prosperity: 0, rev: 1 },
+      { _id: sectA, worldId: W, name: 'A', tag: 'AAA', leaderFamilyId: famA, leaderId: 'a', memberFamilyCount: 2, allySectIds: [sectB], prosperity: 0, rev: 1 },
       { _id: sectB, worldId: W, name: 'B', tag: 'BBB', leaderFamilyId: famB, leaderId: 'ally1', memberFamilyCount: 1, allySectIds: [sectA], prosperity: 0, rev: 1 },
       { _id: sectC, worldId: W, name: 'C', tag: 'CCC', leaderFamilyId: famE, leaderId: 'enemy', memberFamilyCount: 1, allySectIds: [], prosperity: 0, rev: 1 },
     ]);
@@ -174,11 +178,26 @@ describe.skipIf(!mongo)('worldsvc alliance territory marking e2e (G5 / §8.2 V5)
     expect(allyTile).toMatchObject({ type: 'base', occupied: true, visible: true, allySect: true });
     expect(allyTile.mine).toBeUndefined();
     expect(allyTile.ally).toBeUndefined(); // cross-sect alliance — not the same family
+    expect(allyTile.sectmate).toBeUndefined();
 
     const enemyTile = view.tiles.find((t) => t.x === ENEMY_POS.x && t.y === ENEMY_POS.y)!;
     expect(enemyTile).toMatchObject({ type: 'base', occupied: true, visible: true });
     expect(enemyTile.allySect).toBeUndefined(); // not an allied sect → not marked
     expect(enemyTile.ally).toBeUndefined();
+    expect(enemyTile.sectmate).toBeUndefined();
+  });
+
+  it('2026-08-08: sibling-family territory in the requester\'s OWN sect is marked sectmate (not ally / not allySect / not mine)', async () => {
+    await setupAlliance();
+    await svc.joinWorld(W, 'a', A_POS.x, A_POS.y);
+    await svc.joinWorld(W, 'sectmate1', SECTMATE_POS.x, SECTMATE_POS.y); // sibling family, same sect, within vision
+
+    const view = await svc.getMap(W, 'a', 6, 6, 5);
+    const tile = view.tiles.find((t) => t.x === SECTMATE_POS.x && t.y === SECTMATE_POS.y)!;
+    expect(tile).toMatchObject({ type: 'base', occupied: true, visible: true, sectmate: true });
+    expect(tile.mine).toBeUndefined();
+    expect(tile.ally).toBeUndefined(); // different family — not the shared-vision tier
+    expect(tile.allySect).toBeUndefined(); // same sect, not a cross-sect alliance
   });
 
   it('alliance does not share vision: distant allied territory structure + allySect mark are public, but its INTEL stays fogged', async () => {

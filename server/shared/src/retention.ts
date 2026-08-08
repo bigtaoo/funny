@@ -144,14 +144,18 @@ export const DAILY_COINS_REWARD: number = 5;
 // 2. Tier-3 reward kind. The doc's tier-3 example was "限定皮肤碎片 / 高价值材料" — a skin
 //    *fragment* currency. No fragment/shard concept exists anywhere in the codebase (skins are
 //    only ever granted whole, server/metaserver/src/skin.ts), and building one from scratch was
-//    out of scope for this pass. Substituted a whole non-limited shop skin instead (still
-//    delivers "top tier reward is a skin", just not a limited one) — kind: 'skin' below resolves
-//    via pickWeeklyChestSkin() at claim time, mirroring how CheckinReward's 'card'/'equipment'
-//    kinds defer the concrete pick to the caller. Each tier is a single reward (not the doc's
+//    out of scope for this pass. Originally substituted a whole non-limited shop skin instead
+//    (kind: 'skin', resolved via a shop-tier-only skin pool at claim time) — **superseded
+//    2026-08-08** (user feedback: a shop skin felt like a weak flagship reward for a full-week
+//    grind) with a random **legendary** (Anna-faction, "orange") card instead:
+//    `pickRandomCatalogItem('card', rng, 'legendary')` narrows the same catalog pick checkin's
+//    day-14 card milestone uses (which draws from *all* rarities) down to legendary only — a
+//    materially better reward than checkin's, which fits the harder-to-reach full-week bar (21
+//    points ≈ 7 perfect days) this tier gates on. Each tier is a single reward (not the doc's
 //    tier2/tier3 "+ 材料" combo) to keep v1 simple; revisit both of these if real activity data
 //    says the tiers feel off.
 
-export type WeeklyChestRewardKind = 'material' | 'equipment' | 'skin';
+export type WeeklyChestRewardKind = 'material' | 'equipment' | 'card';
 
 export interface WeeklyChestReward {
   kind: WeeklyChestRewardKind;
@@ -168,22 +172,8 @@ export interface WeeklyChestTierDef {
 export const WEEKLY_CHEST_TIERS: WeeklyChestTierDef[] = [
   { threshold: 9,  reward: { kind: 'material',  count: 20, id: 'lead' } },     // 中级材料包（3 天满勤）
   { threshold: 15, reward: { kind: 'equipment', count: 1 } },                  // 低级装备，entry-tier equip_t1（5 天满勤）
-  { threshold: 21, reward: { kind: 'skin',      count: 1 } },                  // 限定皮肤 → 简化为一件商城皮肤，见上方实现说明（7 天满勤/满周）
+  { threshold: 21, reward: { kind: 'card',      count: 1 } },                  // 随机传说卡（橙卡，Anna 阵营）→ 见上方实现说明（7 天满勤/满周）
 ];
-
-/**
- * Tier-3 skin pool: deliberately restricted to the plain shop-tier skins, NOT the rarer Anna
- * gacha skins (skin_e1/e2/l1, epic/legendary) that share the same GACHA_CATALOG 'skin' category —
- * pulling from the full category via pickRandomCatalogItem('skin') would make a repeatable free
- * weekly reward hand out a legendary skin, far too generous for this tier.
- */
-export const WEEKLY_CHEST_SKIN_POOL = ['skin_shop_c1', 'skin_shop_r1'] as const;
-
-/** Uniform random pick from WEEKLY_CHEST_SKIN_POOL. `rng` is injectable for deterministic tests (mirrors pickRandomCatalogItem). */
-export function pickWeeklyChestSkin(rng: (max: number) => number = (max) => Math.floor(Math.random() * max)): string {
-  const idx = Math.min(WEEKLY_CHEST_SKIN_POOL.length - 1, Math.max(0, rng(WEEKLY_CHEST_SKIN_POOL.length)));
-  return WEEKLY_CHEST_SKIN_POOL[idx] ?? WEEKLY_CHEST_SKIN_POOL[0];
-}
 
 // ── Save data types (SaveData.retention sub-block) ──────────────────────────────────
 

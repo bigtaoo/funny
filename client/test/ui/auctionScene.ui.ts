@@ -89,6 +89,18 @@ function buildScene(cb: Record<string, unknown> = {}): any {
   });
 }
 
+/** Every named star-row container in the rendered tree (list.ts tags the equipment-level icon row
+ *  'levelStars', mirroring CardScene's own convention — see cardSceneLevelStars.ui.ts). */
+function starRows(container: PIXI.Container): PIXI.Container[] {
+  const out: PIXI.Container[] = [];
+  const walk = (node: PIXI.Container): void => {
+    if (node.name === 'levelStars') out.push(node);
+    for (const c of node.children) walk(c as PIXI.Container);
+  };
+  walk(container);
+  return out;
+}
+
 /** All PIXI.Text content currently in the display tree, recursing sub-containers. */
 function collectTexts(root: PIXI.Container): string[] {
   const out: string[] = [];
@@ -217,6 +229,53 @@ describe('AuctionScene — auctionLabel()', () => {
       .toBe(`${t('auction.lead')} ×3`);
     expect(scene.auctionLabel(makeAuction({ itemType: 'equipment', item: {} }))).toBe(t('auction.filterEquipment'));
     expect(scene.auctionLabel(makeAuction({ itemType: 'card', item: {} }))).toBe(t('auction.filterCard'));
+    scene.destroy();
+  });
+
+  // 2026-08-08: equipment used to get "+N" spliced onto the name here; the level now comes out of
+  // list.ts as a separate icon-star row (auctionEquipLevel) instead — auctionLabel itself is bare name.
+  it('an equipment listing\'s label is the bare name, with no "+N" level suffix', () => {
+    const scene = buildScene();
+    const inst: EquipmentInstance = { id: 'e1', defId: 'wp_pencil', rarity: 'common', level: 3, affixes: [] };
+    expect(scene.auctionLabel(makeAuction({ itemType: 'equipment', item: { instance: inst } })))
+      .toBe(scene.equipName('wp_pencil'));
+    scene.destroy();
+  });
+});
+
+// ── auctionEquipLevel() / auctionLabelText() — the level-extraction + text-star fallback that
+// replaced the old "+N" string splice (2026-08-08, see AUCTION_DESIGN.md) ────────────────────────
+
+describe('AuctionScene — auctionEquipLevel() / auctionLabelText()', () => {
+  it('auctionEquipLevel is 0 for a non-equipment listing, and for an equipment listing with no instance', () => {
+    const scene = buildScene();
+    expect(scene.auctionEquipLevel(makeAuction({ itemType: 'material', item: { material: 'scrap' } }))).toBe(0);
+    expect(scene.auctionEquipLevel(makeAuction({ itemType: 'equipment', item: {} }))).toBe(0);
+    scene.destroy();
+  });
+
+  it('auctionEquipLevel reads the instance level straight through for an equipment listing', () => {
+    const scene = buildScene();
+    const inst: EquipmentInstance = { id: 'e1', defId: 'wp_pencil', rarity: 'common', level: 5, affixes: [] };
+    expect(scene.auctionEquipLevel(makeAuction({ itemType: 'equipment', item: { instance: inst } }))).toBe(5);
+    scene.destroy();
+  });
+
+  it('auctionLabelText appends text stars for a leveled equipment listing, bare name at level 0', () => {
+    const scene = buildScene();
+    const leveled: EquipmentInstance = { id: 'e1', defId: 'wp_pencil', rarity: 'common', level: 3, affixes: [] };
+    const unleveled: EquipmentInstance = { id: 'e2', defId: 'wp_pencil', rarity: 'common', level: 0, affixes: [] };
+    expect(scene.auctionLabelText(makeAuction({ itemType: 'equipment', item: { instance: leveled } })))
+      .toBe(`${scene.equipName('wp_pencil')} ★★★`);
+    expect(scene.auctionLabelText(makeAuction({ itemType: 'equipment', item: { instance: unleveled } })))
+      .toBe(scene.equipName('wp_pencil'));
+    scene.destroy();
+  });
+
+  it('auctionLabelText is identical to auctionLabel for non-equipment classes (no level to fold in)', () => {
+    const scene = buildScene();
+    const auc = makeAuction({ itemType: 'card', item: {} });
+    expect(scene.auctionLabelText(auc)).toBe(scene.auctionLabel(auc));
     scene.destroy();
   });
 });
@@ -608,6 +667,55 @@ describe('AuctionScene — My Listings status badges', () => {
     const hits: Hit[] = scene.hitRects;
     const hit = hits.find(({ rect: r }) => pos!.x >= r.x && pos!.x <= r.x + r.w && pos!.y >= r.y && pos!.y <= r.y + r.h);
     expect(hit).toBeUndefined();
+    scene.destroy();
+  });
+});
+
+// ── renderAuctionCell() — equipment level as a real icon-star row, not "+N" text (2026-08-08) ──
+
+describe('AuctionScene — market cell equipment level display', () => {
+  it('draws a gold-icon star row (one child per level) beneath the name for a leveled equipment listing', () => {
+    const scene = buildScene();
+    const inst: EquipmentInstance = { id: 'e1', defId: 'wp_pencil', rarity: 'common', level: 4, affixes: [] };
+    scene.allAuctions = [makeAuction({ itemType: 'equipment', item: { instance: inst } })];
+    scene.activeTab = 'all';
+    scene.loading = false;
+    scene.render();
+
+    const rows = starRows(scene.container);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.children).toHaveLength(4);
+
+    // The old "+4" splice must be gone — the name label is bare, and no rendered text is "+N".
+    const texts = collectTexts(scene.container);
+    expect(texts).toContain(scene.equipName('wp_pencil'));
+    expect(texts.some((s) => /^\+\d+$/.test(s))).toBe(false);
+    scene.destroy();
+  });
+
+  it('draws no star row (and no "+0") for an unenhanced equipment listing', () => {
+    const scene = buildScene();
+    const inst: EquipmentInstance = { id: 'e1', defId: 'wp_pencil', rarity: 'common', level: 0, affixes: [] };
+    scene.allAuctions = [makeAuction({ itemType: 'equipment', item: { instance: inst } })];
+    scene.activeTab = 'all';
+    scene.loading = false;
+    scene.render();
+
+    expect(starRows(scene.container)).toHaveLength(0);
+    const texts = collectTexts(scene.container);
+    expect(texts).toContain(scene.equipName('wp_pencil'));
+    expect(texts.some((s) => s.includes('+0'))).toBe(false);
+    scene.destroy();
+  });
+
+  it('draws no star row for a non-equipment listing (material)', () => {
+    const scene = buildScene();
+    scene.allAuctions = [makeAuction({ itemType: 'material', item: { material: 'scrap' }, qty: 5 })];
+    scene.activeTab = 'all';
+    scene.loading = false;
+    scene.render();
+
+    expect(starRows(scene.container)).toHaveLength(0);
     scene.destroy();
   });
 });

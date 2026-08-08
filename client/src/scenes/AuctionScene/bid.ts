@@ -48,7 +48,7 @@ export function BidMixin<TBase extends AuctionSceneBaseCtor>(Base: TBase): TBase
       ml.addChild(panel);
 
       let cy = my + 26;
-      const titleLbl = txt(this.auctionLabel(auc), FS.bodyLg, C.dark, true);
+      const titleLbl = txt(this.auctionLabelText(auc), FS.bodyLg, C.dark, true);
       titleLbl.x = mx + 24; titleLbl.y = cy;
       ml.addChild(titleLbl);
       cy += 36;

@@ -150,10 +150,12 @@ export class WorldMapInput {
       return;
     }
 
-    if (tile?.ally || tile?.allySect) {
-      // Ally territory (family §8.2, or an allied-sect member): friendly land — cannot be attacked (server
-      // rejects with ALLY_TILE) or occupied. Per the 驻守 rule (2026-08-02) a team MAY still be sent to
-      // Garrison (驻扎) here to help defend it — same friendlyAccountIds set the server uses to block siege.
+    if (tile?.ally || tile?.sectmate || tile?.allySect) {
+      // Ally territory (family §8.2, a fellow sect member outside the family, or an allied-sect member):
+      // friendly land — cannot be attacked (server rejects with ALLY_TILE) or occupied. Sect-mate added
+      // 2026-08-08: this branch must mirror `friendlyAccountIds` (self+family+own sect+allied sects) exactly,
+      // or the client offers Attack on land the server will reject. Per the 驻守 rule (2026-08-02) a team MAY
+      // still be sent to Garrison (驻扎) here to help defend it — same friendlyAccountIds set the server uses to block siege.
       // 停留 idle has no defensive claim and stays own/neutral-tile-only, so it isn't offered here. Unsupported
       // options are omitted outright rather than shown disabled.
       const ownerLine = tile.ownerName

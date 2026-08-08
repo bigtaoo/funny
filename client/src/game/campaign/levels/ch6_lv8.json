@@ -247,6 +247,7 @@
     }
   },
   "nameKey": "campaign.ch6.lv8.name",
+  "briefKey": "campaign.ch6.lv8.brief",
   "startInk": 28,
   "inkRegenMult": 1.42,
   "enemyScale": {

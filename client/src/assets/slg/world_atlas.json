@@ -349,7 +349,8 @@
         "w": 256,
         "h": 256
       },
-      "contentTop": 0.56640625
+      "contentTop": 0.48828125,
+      "contentWidthFrac": 0.9375
     },
     "playerbase_l2": {
       "frame": {
@@ -370,7 +371,8 @@
         "w": 256,
         "h": 256
       },
-      "contentTop": 0.49609375
+      "contentTop": 0.4375,
+      "contentWidthFrac": 0.89453125
     },
     "playerbase_l3": {
       "frame": {
@@ -391,7 +393,8 @@
         "w": 256,
         "h": 256
       },
-      "contentTop": 0.44921875
+      "contentTop": 0.4375,
+      "contentWidthFrac": 0.81640625
     },
     "playerbase_l4": {
       "frame": {
@@ -412,7 +415,8 @@
         "w": 256,
         "h": 256
       },
-      "contentTop": 0.4375
+      "contentTop": 0.4375,
+      "contentWidthFrac": 0.765625
     },
     "playerbase_l5": {
       "frame": {
@@ -433,7 +437,8 @@
         "w": 256,
         "h": 256
       },
-      "contentTop": 0.4375
+      "contentTop": 0.4375,
+      "contentWidthFrac": 0.76953125
     },
     "playerbase_l6": {
       "frame": {
@@ -454,7 +459,8 @@
         "w": 256,
         "h": 256
       },
-      "contentTop": 0.4375
+      "contentTop": 0.4375,
+      "contentWidthFrac": 0.734375
     },
     "playerbase_l7": {
       "frame": {
@@ -475,7 +481,8 @@
         "w": 256,
         "h": 256
       },
-      "contentTop": 0.4375
+      "contentTop": 0.4375,
+      "contentWidthFrac": 0.70703125
     },
     "playerbase_l8": {
       "frame": {
@@ -496,7 +503,8 @@
         "w": 256,
         "h": 256
       },
-      "contentTop": 0.4375
+      "contentTop": 0.4375,
+      "contentWidthFrac": 0.6796875
     },
     "playerbase_l9": {
       "frame": {
@@ -517,7 +525,8 @@
         "w": 256,
         "h": 256
       },
-      "contentTop": 0.45703125
+      "contentTop": 0.4375,
+      "contentWidthFrac": 0.828125
     },
     "playerbase_l10": {
       "frame": {
@@ -538,7 +547,8 @@
         "w": 256,
         "h": 256
       },
-      "contentTop": 0.4375
+      "contentTop": 0.4375,
+      "contentWidthFrac": 0.65625
     },
     "res_graphite": {
       "frame": {

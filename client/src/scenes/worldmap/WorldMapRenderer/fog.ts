@@ -237,7 +237,7 @@ export function FogMixin<TBase extends WorldMapRendererBaseCtor>(Base: TBase): T
       const tp = this.ctx.tp;
       const { panX, panY, mapW, mapH } = this.ctx;
       const diamond = diamondPath(tp);
-      // Group by ownership so each color batches one fill/stroke pass (own = red ink, enemy = blue ink —
+      // Group by ownership so each color batches one fill/stroke pass (own = blue ink, enemy = red ink —
       // the same convention as territory tints / march arrows).
       for (const mine of [true, false]) {
         const zones = stationed.filter((s) => s.mode === 'garrison' && (s.mine !== false) === mine);
@@ -438,7 +438,7 @@ export function FogMixin<TBase extends WorldMapRendererBaseCtor>(Base: TBase): T
           }
           if (entry.mode === 'stickman') {
             if (entry.runtime) {
-              entry.runtime.setSilhouette(march.mine === false ? ENEMY_BASE_TINT : null); // enemy march = flat blue (ADR-051 P4)
+              entry.runtime.setSilhouette(march.mine === false ? ENEMY_BASE_TINT : null); // enemy march = flat red (ADR-051 P4)
               entry.runtime.syncState('moving');
               entry.runtime.update(dt);
               entry.runtime.container.position.set(hx, hy);
@@ -540,7 +540,7 @@ export function FogMixin<TBase extends WorldMapRendererBaseCtor>(Base: TBase): T
      * Idle-standing sprite on every tile holding a stationed team (ctx.stationed, refreshed alongside marches).
      * Unlike march/occupy tokens these are NOT torn down on arrival — the team stands there (playing the 'idle'
      * clip) until moved or recalled (2026-07-23 field-stationing). ADR-051 (P4): ctx.stationed now also carries
-     * ENEMY stationed teams within vision (s.mine === false); those are recolored to a flat blue silhouette
+     * ENEMY stationed teams within vision (s.mine === false); those are recolored to a flat red silhouette
      * (setSilhouette(ENEMY_BASE_TINT)) so friend/foe reads at a glance, while own teams keep their full-color
      * rig. 驻扎 vs 停留 is conveyed by the 3×3 zone aura (renderGarrisonZones), not the token itself. Mirrors
      * syncOccupyTokens' pooled-runtime pattern; runtimes for tiles no longer stationed are torn down.
@@ -588,7 +588,7 @@ export function FogMixin<TBase extends WorldMapRendererBaseCtor>(Base: TBase): T
           }
           if (entry.mode === 'stickman') {
             if (entry.runtime) {
-              entry.runtime.setSilhouette(s.mine === false ? ENEMY_BASE_TINT : null); // enemy = flat blue; own keeps art
+              entry.runtime.setSilhouette(s.mine === false ? ENEMY_BASE_TINT : null); // enemy = flat red; own keeps art
               entry.runtime.syncState('idle'); // unknown state → 'idle' clip (STATE_ANIM fallback)
               entry.runtime.update(dt);
               entry.runtime.container.position.set(cx, cy);

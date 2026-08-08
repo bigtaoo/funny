@@ -9,7 +9,7 @@ import { IPlatform } from './platform/IPlatform';
 import { MemoryMonitor } from './cache/MemoryMonitor';
 import { PerfMonitor } from './cache/PerfMonitor';
 import { initCrashSentinel, installAnomalyWatchers, setAnomalyStorage, recordConstructSample, recordRenderSample } from './net/anomaly';
-import { SceneManager, type Scene } from './scenes/SceneManager';
+import { SceneManager, type Scene, type DialogGate } from './scenes/SceneManager';
 import { IntroScene } from './scenes/IntroScene';
 import { IllustratedInterludeScene } from './scenes/IllustratedInterludeScene';
 import { LobbyScene, type LobbySceneCallbacks } from './scenes/LobbyScene';
@@ -467,11 +467,15 @@ export async function startApp(
   let layout: ILayout = createLayout(screenW, screenH, Side.Bottom, insets);
   const scaling = new ScalingManager(app, layout, insets);
   const input = new InputManager();
+  // Stage-level dialogs (AppealDialog/FeedbackDialog, wired further down) live outside this manager
+  // entirely — `dialogGate.close` is filled in once they exist; the mutable holder lets `manager`
+  // reference it before that point (see DialogGate on SceneManager for why goto() needs this).
+  const dialogGate: DialogGate = { close: () => {} };
   // The manager freezes `input` for the span of each scene-fade: taps bypass Pixi (DOM-fed), so the
   // fade's cover can't block them, and a tap mid-fade would otherwise hit the outgoing scene's
   // still-live hit-rects. Only the explicitly-faded transitions (enter/exit match, enter/exit SLG)
   // ever engage this — plain instant scene switches never freeze input.
-  const manager = new SceneManager(app, scaling.gameLayer, input);
+  const manager = new SceneManager(app, scaling.gameLayer, input, dialogGate);
   platform.setupInput(app, input, (sx, sy) => scaling.toDesignSpace(sx, sy));
 
   // ── L0 boot-tier preload gate (ASSET_PACKAGING §3) ──────────────────────────
@@ -534,16 +538,23 @@ export async function startApp(
 
   // Feedback dialog (UI_DESIGN.md §4.1.1): same stage-level-overlay reasoning as the appeal dialog above,
   // but opened by a direct player tap on the lobby's feedback strip entry rather than a network error.
+  // Unlike the appeal dialog, it's wired into `dialogGate` (see SceneManager's DialogGate) — Feedback is
+  // only ever reachable from the Lobby, so an unrelated background nav (a pushed match starting, an
+  // async world-shard resolve) firing while it's open should close it, not leave its Close button
+  // pointing at whatever scene that nav silently landed on (2026-08-08 bug report).
   let feedbackDialog: FeedbackDialog | null = null;
+  const closeFeedbackDialog = (): void => {
+    if (!feedbackDialog) return;
+    app.stage.removeChild(feedbackDialog.container);
+    feedbackDialog.destroy();
+    feedbackDialog = null;
+  };
+  dialogGate.close = closeFeedbackDialog;
   setFeedbackSink(() => {
     if (!core.submitFeedback || feedbackDialog) return;
     const dlg = new FeedbackDialog(app.screen.width, app.screen.height, {
       onSubmit: (text) => core.submitFeedback!(text),
-      onClose: () => {
-        app.stage.removeChild(dlg.container);
-        dlg.destroy();
-        feedbackDialog = null;
-      },
+      onClose: closeFeedbackDialog,
     });
     dlg.container.zIndex = 9_000; // above scene content, below GlobalToast (10_000)
     app.stage.addChild(dlg.container);

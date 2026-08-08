@@ -6,7 +6,7 @@ import { getResLevelTexture, getResTexture, isResAtlasReady } from '../../render
 import { getTerrainTexture, isTerrainAtlasReady } from '../../render/atlas/terrainAtlasLoader';
 import { getBuildingTexture, isBuildingAtlasReady } from '../../render/atlas/buildingAtlasLoader';
 import { isCityAtlasReady } from '../../render/atlas/cityAtlasLoader';
-import { FOG_COLOR, ALLY_SECT_BORDER, TERRAIN_TEX_ALPHA, TERRAIN_TEX_ALPHA_DEFAULT, TERRAIN_TEX_TINT, TERRAIN_TEX_TINT_DEFAULT, biomeGroundTint, obstacleTextureName } from './tileStyle';
+import { FOG_COLOR, ALLY_SECT_BORDER, SECT_BASE_TINT, ALLY_SECT_BASE_TINT, TERRAIN_TEX_ALPHA, TERRAIN_TEX_ALPHA_DEFAULT, TERRAIN_TEX_TINT, TERRAIN_TEX_TINT_DEFAULT, biomeGroundTint, obstacleTextureName } from './tileStyle';
 import type { TerrainTextureName } from '../../render/atlas/terrainAtlasLoader';
 import type { WorldTileView } from '../../net/WorldApiClient';
 import { worldSeed, obstacleShoreAt, type ProceduralTile } from '@nw/shared';
@@ -143,13 +143,18 @@ export function drawTileL1(
   // City icon on capital tiles: sprite layer handles this once the atlas is ready.
   if (isAnchor && !isCityAtlasReady()) {
     // Programmatic fallback icon, drawn once on the base's center anchor until the atlas decodes.
-    drawCityIcon(g, tile!.mine ?? false, tile!.ally ?? false, tile!.level ?? 1, tp);
+    drawCityIcon(g, tile!.mine ?? false, tile!.ally ?? false, tile!.sectmate ?? false, tile!.allySect ?? false, tile!.level ?? 1, tp);
   }
 
   if (tile && tile.level > 1) {
     // Was the square's top-right corner (tp-6,6); nearest diamond analog is the
     // midpoint of the top→right edge, nudged slightly inward.
-    const dotColor = tile.mine ? 0xcc2222 : (tile.ally ? 0x2e8b40 : (tile.occupied ? 0x2266cc : 0x888888));
+    const dotColor = tile.mine ? 0x2266cc
+      : tile.ally ? 0x2e8b40
+      : tile.sectmate ? SECT_BASE_TINT
+      : tile.allySect ? ALLY_SECT_BASE_TINT
+      : tile.occupied ? 0xcc2222
+      : 0x888888;
     const v = diamondVertices(tp - 1);
     const dotX = (v.top[0] + v.right[0]) / 2 * 0.85;
     const dotY = (v.top[1] + v.right[1]) / 2 * 0.85;
@@ -195,10 +200,18 @@ export function drawTileL1(
     }
   }
 
-  // ADR-051 (P5): player-built structure marker (arrowTower / blocker), tinted by ownership (own red / enemy
-  // blue, matching the territory/march colour convention). Geometric for v1 — no dedicated atlas art yet.
+  // ADR-051 (P5): player-built structure marker (arrowTower / blocker), tinted by the TILE's ownership class
+  // (own blue / family green / sect-mate purple / allied-sect amber / enemy red — same convention as the
+  // territory wash, ADR-003 iron rule). Structures can only be built on own/family land (§8-O2), but a
+  // sect-mate or allied-sect member can equally build on THEIR own land, so this is a real 5-way distinction
+  // from the viewer's side, not just `structure.mine` (kept on the type for "can I demolish this" only, see
+  // WorldMapInput). Geometric for v1 — no dedicated atlas art yet.
   if (tile?.structure) {
-    const col = tile.structure.mine === true ? 0xcc3333 : 0x4477cc;
+    const col = tile.mine ? 0x4477cc
+      : tile.ally ? 0x46a85a
+      : tile.sectmate ? SECT_BASE_TINT
+      : tile.allySect ? ALLY_SECT_BASE_TINT
+      : 0xcc3333;
     const baseY = hh - 4;
     if (tile.structure.kind === 'arrowTower') {
       const towerW = Math.max(4, tp * 0.16);
@@ -286,10 +299,18 @@ export function drawHpBar(g: PIXI.Graphics, hp: number, maxHp: number, tp: numbe
  * Tier 4 (lv 9-10): grand citadel. Will be replaced by AI-generated sprites once assets land.
  */
 
-export function drawCityIcon(g: PIXI.Graphics, mine: boolean, ally: boolean, lv: number, tp: number): void {
+export function drawCityIcon(g: PIXI.Graphics, mine: boolean, ally: boolean, sectmate: boolean, allySect: boolean, lv: number, tp: number): void {
   const tier = lv <= 2 ? 1 : lv <= 5 ? 2 : lv <= 8 ? 3 : 4;
-  const ink = mine ? 0xcc2222 : (ally ? 0x2e8b40 : 0x224488);
-  const fill = mine ? 0xf5d5d5 : (ally ? 0xd5f0e0 : 0xd5e0f5);
+  const ink = mine ? 0x224488
+    : ally ? 0x2e8b40
+    : sectmate ? SECT_BASE_TINT
+    : allySect ? ALLY_SECT_BASE_TINT
+    : 0xcc2222;
+  const fill = mine ? 0xd5e0f5
+    : ally ? 0xd5f0e0
+    : sectmate ? 0xe8dcf0
+    : allySect ? 0xf5e8c8
+    : 0xf5d5d5;
   const margin = Math.max(4, tp * 0.08);
   const inner = tp - 1 - margin * 2;
   // `g`'s local origin is now the tile's diamond CENTER (see drawTileL1), not the old

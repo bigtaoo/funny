@@ -75,13 +75,26 @@ if (-not $SkipMongo) {
 }
 
 if (-not $SkipShared) {
-  Write-Host "[2/3] shared watch" -ForegroundColor Yellow
+  Write-Host "[2/4] shared watch" -ForegroundColor Yellow
   Start-DevWindow 'shared' @{} 'npx tsc -b shared --watch'
 } else {
-  Write-Host "[2/3] skip shared watch" -ForegroundColor DarkGray
+  Write-Host "[2/4] skip shared watch" -ForegroundColor DarkGray
 }
 
-Write-Host "[3/3] service processes" -ForegroundColor Yellow
+# Regenerate committed codegen products (openapi routes.gen.ts / proto TS) before starting any
+# service — each package's own `predev`/`prebuild` npm hook only fires via `npm run dev`/`build`,
+# but the windows below run `node --watch` directly (bypassing npm scripts), so without this step
+# an edited .yml/.proto with a forgotten manual regen would silently start stale (2026-08-08: this
+# exact drift got past a human on openapi-world.yml + openapi-social.yml and only PR CI caught it).
+Write-Host "[3/4] regen codegen (openapi + proto)" -ForegroundColor Yellow
+Push-Location metaserver;  npm run gen:api:contracts; npm run gen:api:server; Pop-Location
+Push-Location worldsvc;   npm run gen:api:world;      Pop-Location
+Push-Location socialsvc;  npm run gen:api:social;     Pop-Location
+Push-Location auctionsvc; npm run gen:api:auction;    Pop-Location
+Push-Location gateway;    npm run proto:gen;          Pop-Location
+Push-Location gameserver; npm run proto:gen;          Pop-Location
+
+Write-Host "[4/4] service processes" -ForegroundColor Yellow
 foreach ($p in $procs) {
   $dir = Join-Path $server $p.dir
   Start-DevWindow $p.name $p.env 'node --watch --import tsx src/index.ts' $dir

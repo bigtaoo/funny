@@ -401,8 +401,8 @@
 ### 8.2 宗门
 
 - **组成**：最多 **30 个家族**（≤900 人）。
-- **宗门内视野共享**：宗门成员共享侦察视野（地图迷雾对盟友透明）。
-- **合纵连横（联盟）**：宗门可与至多 **2 个**其他宗门结盟（3 宗门联盟上限）；盟友间禁止进攻/夺地；**盟友不共享视野**；地图上对盟友土地颜色标记区分。
+- **宗门内视野共享**：宗门成员共享侦察视野（地图迷雾对盟友透明）。**实现口径收窄记录（DECISIONS §18.6）**：视野共享实际只做到**家族**级（`familyMemberIds`），未扩到整个宗门；宗门内非同家族成员之前甚至在地图上**没有专属颜色**（会被当成敌方渲染），2026-08-08（DECISIONS ADR-060）补上第三档地图色（紫墨 `sectmate`，仍不共享视野），连地判定/驻扎目标/攻击豁免这几处逻辑本就早已按整个宗门算，只是着色一直没跟上。
+- **合纵连横（联盟）**：宗门可与至多 **2 个**其他宗门结盟（3 宗门联盟上限）；盟友间禁止进攻/夺地；**盟友不共享视野**；地图上对盟友土地颜色标记区分（黄描边 + 2026-08-08 起额外配琥珀墨底色，DECISIONS ADR-060）。
 - **门主继承**：门主主城被攻破 → 主城被动迁移到新位置（见 §3.4，所有玩家通用规则）；**额外**令所有宗门成员损失 50% 当前资源（重大惩罚，城主周围宗门成员有强烈互保动机）。门主职位通过**罢免投票**更换：各家族族长发起，超过 **2/3 族长同意 + 同时提名新门主**方可执行。
 - **宗门频道**（Redis pub/sub，✅ 已实现）：宗门内全员广播频道。worldsvc 落库后把消息发到 `GW_PUSH_REDIS_CHANNEL`（`nw:gw:push`，一条带收件人列表），各 gateway 实例订阅后只向本机在线成员扇出（≤900 人不做 worldsvc 端 O(n) HTTP 直推；天然支持多 gateway 横扩，SOC9）。无 Redis → 降级为 gateway client 逐个 HTTP push 兜底；离线成员靠 REST 拉历史（TTL 7 天）。
 
@@ -532,6 +532,7 @@
   - 验证：`shared` + `worldsvc` 两包 `tsc --noEmit` 全绿（无 `marchDurationSec` 遗留引用）。
 - **S8-7 赛季**：大区分配（宗门强弱平衡匹配）/赛季开启/赛季重置（清领地/兵力/繁荣度/国家归属）/结算（按宗门占国数排名/奖励材料皮肤称号）。**→ 可编码实现规格见 §17**（赛季四段式现状盘点 + 7 处代码冲突修正 + settle 发奖/排名落库/reset 原子化/admin 鉴权/繁荣度评分/G6 分配算法）。
 - **S8-8 变现 + 运营**：加速/资源包/科技直购/战令（commercial）+ admin 赛季运维。
+  - **训练加速语义修正 + 护盾/加速 UI（2026-08-08 fix）**：`slg_speedup_1h/8h/24h` 原实现在购买瞬间把整段 `duration_sec` 一次性吞进当前训练队列（等价于「立即完成」道具），与商品描述「加速训练 N 小时」不符，且对购买后才排队的批次毫无增益。改为持久 buff：`playerWorld.speedupUntil`（ms 到期时间，叠加规则同 `tile.protectedUntil`——`max(现有, now) + 新购时长`）+ `speedupSettledAt`（增量结算高水位线）；`TRAIN_SPEEDUP_BUFF_MULT=2`（`@nw/shared`，三档道具倍率一致，只差价格/时长）。生效期内训练队列（含购买前已排队、购买后新排队的批次）整体按 2 倍速推进，通过 `applyTrainingSpeedupCatchup`（`worldsvc/db.ts`）把「buff 覆盖的真实流逝时间 ×(倍率-1)」折算成额外提前量，均匀前移队列里每个批次的 `startAt`/`completeAt`（保持批次自身时长与链式排队不变，无需级联重算）；接入点：`ShopService.buySlgShopItem`（troop_speedup 分支）/`CityService.trainTroops`/`speedupTraining`/`processCompletedTraining`（2s 调度 tick，新增 `speedupUntil` 存在性扫描，让没有其它操作触发的玩家也能持续折算）。`PlayerWorldView` 新增 `speedupUntil`（训练加速剩余）+ `baseProtectedUntil`（主城护盾剩余，镜像 `TileDoc.protectedUntil`，与 `hp`/`maxHp` 同款镜像理由——HUD 不依赖主城格子是否在当前视口缓存里）。**客户端 UI**（此前两个 buff 生效了但完全没地方看）：世界地图主城 tile 上叠一层半透明呼吸光泡（`WorldMapRenderer/city.ts`，任意一方主城处于保护期都会显示，不只自己的）；`WorldMapPanels/hud.ts` 状态卡下方新增 buff 行，护盾/加速各一条图标+倒计时（复用商店已有的 `armorHeavy`/`hourglassMd` 图标 + 新增 i18n key `world.speedup`，`world.protected` 早已存在但从未被调用过）；CityScene 训练面板（`modals.ts`）header 下方加「训练加速 x2（剩 Ns）」一行。worldsvc 测试补 `city-training.e2e.test.ts`（6 条：即时不吞队列/已排队批次 2x 完成/购买后新排队批次同享 2x/多次购买叠加时长/到期恢复 1x/`speedupTraining` 先折算再花币）+ `shop.e2e.test.ts`（`getMe` 镜像 `baseProtectedUntil`/`speedupUntil` 1 条）。
 - **B7 国家/世界公频 ✅（2026-06-22，§6.4）**：同 world 内所有玩家均可发言的公开频道（选项对称家族/宗门/公频三级）。
   - **服务端**：`NationMessageDoc`（`nationMessages` 集合，TTL 7 天，`worldId + ts` 复合索引）；`NationChannelService.sendMessage`（校验 `playerWorld` 入驻 → 落库 → `gateway.broadcast(worldMemberAccountIds, nation_msg)`）+ `getChannel`（分页历史）。`worldsvc/httpApi.ts` 加 `POST /nation/message` + `GET /nation/channel`；`worldsvc/index.ts` 实例化 `NationChannelService` 传入 `startHttpApi`。
   - **广播**：复用 `HttpWorldGatewayClient.broadcast`——Redis 可用 → 一条到 `GW_PUSH_REDIS_CHANNEL`，各 gateway 扇出在线成员；无 Redis → O(n) HTTP push 兜底。`SlgPushMsg` 新增 `nation_msg` 分支（`worldId/fromPublicId/fromName/body/ts`）。

@@ -52,7 +52,7 @@ function retentionWithTiers(): RetentionView {
       weeklyChestTiers: [
         { threshold: 9, reward: { kind: 'material', count: 20, id: 'lead' } },
         { threshold: 15, reward: { kind: 'equipment', count: 1 } },
-        { threshold: 21, reward: { kind: 'skin', count: 1 } },
+        { threshold: 21, reward: { kind: 'card', count: 1 } },
       ],
     },
     claimable: { checkin: false, daily: false, weeklyTiers: [] },
@@ -81,6 +81,37 @@ function buildDaily(save: SaveData, cb: Partial<DailyCallbacks> = {}): DailyScen
   });
 }
 
+describe('DailyScene — header title follows the active tab', () => {
+  // Regression for the 2026-08-08 bug: the top SceneHeader used to be hardcoded to t('daily.title')
+  // ("Daily") no matter which sidebar tab was active, so the Weekly Chest tab still read "Daily" at
+  // the top — misleading since the tab content right below it is clearly weekly-scoped.
+  it('shows the weekly-tab title, not the generic "Daily" hub title, when the weekly tab is active', async () => {
+    const save: SaveData = { ...makeNewSave(), retention: { weekly: { weekKey: CURRENT_WEEK_KEY, points: 0, claimedTiers: [] } } };
+    const scene = buildDaily(save);
+    await flush();
+    const s = scene as unknown as Internals;
+    s.activeTab = 'weekly';
+    s.render();
+
+    expect(findText(scene.container, (txt) => txt === t('daily.title'))).toBeNull();
+    expect(findText(scene.container, (txt) => txt === t('daily.weekly.title'))).not.toBeNull();
+    scene.destroy();
+  });
+
+  it('shows the tasks-tab title when the daily-tasks tab is active', async () => {
+    const save: SaveData = { ...makeNewSave() };
+    const scene = buildDaily(save);
+    await flush();
+    const s = scene as unknown as Internals;
+    s.activeTab = 'tasks';
+    s.render();
+
+    expect(findText(scene.container, (txt) => txt === t('daily.title'))).toBeNull();
+    expect(findText(scene.container, (txt) => txt === t('daily.tasks.title'))).not.toBeNull();
+    scene.destroy();
+  });
+});
+
 describe('DailyScene — weekly active chest tab', () => {
   it('shows the points progress for each of the three tiers', async () => {
     const save: SaveData = {
@@ -96,6 +127,24 @@ describe('DailyScene — weekly active chest tab', () => {
     expect(findText(scene.container, (txt) => txt.includes('9'))).not.toBeNull();
     expect(findText(scene.container, (txt) => txt.includes('15'))).not.toBeNull();
     expect(findText(scene.container, (txt) => txt.includes('21'))).not.toBeNull();
+    scene.destroy();
+  });
+
+  // Covers renderWeekly's singleItem check (equipment/card kinds render icon-only, no "+N" —
+  // mirrors BattlePassScene's single-item skin display; material renders "+N" alongside its icon).
+  it('the material tier shows a "+20" count; the equipment and card tiers (single-item rewards) show no count', async () => {
+    const save: SaveData = {
+      ...makeNewSave(),
+      retention: { weekly: { weekKey: CURRENT_WEEK_KEY, points: 21, claimedTiers: [] } },
+    };
+    const scene = buildDaily(save);
+    await flush();
+    const s = scene as unknown as Internals;
+    s.activeTab = 'weekly';
+    s.render();
+
+    expect(findText(scene.container, (txt) => txt === '+20')).not.toBeNull(); // tier 1: material x20
+    expect(findText(scene.container, (txt) => txt === '+1')).toBeNull(); // tiers 2/3: equipment + card are single-item, no count text
     scene.destroy();
   });
 
@@ -209,18 +258,18 @@ describe('DailyScene — weekly chest claim toast per reward kind', () => {
     setToastSink(() => {});
   });
 
-  it('skin reward toast', async () => {
+  it('card reward toast (tier 3, replaced the shop skin with a random legendary card, 2026-08-08)', async () => {
     const save: SaveData = { ...makeNewSave(), retention: { weekly: { weekKey: CURRENT_WEEK_KEY, points: 21, claimedTiers: [9, 15] } } };
     let toast: string | null = null;
     setToastSink((text) => { toast = text; });
     const scene = buildDaily(save, {
-      async onClaimWeekly() { return { reward: { kind: 'skin', count: 1, id: 'skin_shop_c1' } }; },
+      async onClaimWeekly() { return { reward: { kind: 'card', count: 1, id: 'max' } }; },
     });
     await flush();
     claimViaLastHit(scene);
     await flush();
 
-    expect(toast).toBe(t('daily.weekly.rewardSkin'));
+    expect(toast).toBe(t('daily.weekly.rewardCard'));
     scene.destroy();
     setToastSink(() => {});
   });

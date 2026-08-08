@@ -120,6 +120,26 @@ describe.skipIf(!mongo)('worldsvc SLG shop e2e', () => {
     expect(spent.length).toBe(item.dailyLimit! + 1);
   });
 
+  // S8-8 UI fix (2026-08-08): getMe() mirrors the shield's tile-level protectedUntil (baseProtectedUntil)
+  // and the training-speedup buff's speedupUntil onto PlayerWorldView, so the HUD can render both without
+  // depending on the base tile being in the current map viewport.
+  it('getMe mirrors slg_shield_8h onto baseProtectedUntil and slg_speedup_1h onto speedupUntil', async () => {
+    const svc = new WorldService({ cols: m.collections, redis: null, commercial: fakeCommercial, mapW: SLG_MAP_W, mapH: SLG_MAP_H, now });
+    await svc.joinWorld(W, 'a', 10, 10);
+
+    // A fresh capital already starts with an initial 8h shield (territory.ts joinWorld) — baseProtectedUntil
+    // mirrors that from the start; speedupUntil has no such default and stays absent until first purchased.
+    let me = await svc.getMe(W, 'a');
+    expect(me.baseProtectedUntil).toBe(nowMs + 28800 * 1000);
+    expect(me.speedupUntil).toBeUndefined();
+
+    await svc.buySlgShopItem(W, 'a', 'slg_shield_8h'); // stacks additively on top of the join-time shield
+    await svc.buySlgShopItem(W, 'a', 'slg_speedup_1h');
+    me = await svc.getMe(W, 'a');
+    expect(me.baseProtectedUntil).toBe(nowMs + 28800 * 1000 + 28800 * 1000);
+    expect(me.speedupUntil).toBe(nowMs + 3600 * 1000);
+  });
+
   it('items with no dailyLimit (protection/battle_pass) are unbounded', async () => {
     const svc = new WorldService({ cols: m.collections, redis: null, commercial: fakeCommercial, mapW: SLG_MAP_W, mapH: SLG_MAP_H, now });
     await svc.joinWorld(W, 'a', 10, 10);

@@ -26,6 +26,8 @@ import { FamilyScene } from '../../src/scenes/FamilyScene';
 import { SectScene } from '../../src/scenes/SectScene';
 import { FriendsScene } from '../../src/scenes/FriendsScene';
 import { AuctionScene } from '../../src/scenes/AuctionScene';
+import { FeedbackDialog } from '../../src/ui/dialogs/FeedbackDialog';
+import { ui as C } from '../../src/render/sketchUi';
 import type { WorldApiClient } from '../../src/net/WorldApiClient';
 
 // Minimal DOM stub so openHiddenInput() (document.createElement / body.appendChild /
@@ -345,6 +347,107 @@ describe('AuctionScene — designated-buyer field caret', () => {
     scene.caretOn = true;
     scene.openCreateForm();
     expect(collectTexts(scene.container)).not.toContain('acc_42|');
+    scene.destroy();
+  });
+});
+
+describe('FeedbackDialog — input field caret (2026-08-08: was a plain string concat, no caretDisplay)', () => {
+  function build(): any {
+    return new FeedbackDialog(800, 1280, { onSubmit: async () => {}, onClose() {} });
+  }
+
+  it('starts unfocused: placeholder shown, no cursor', () => {
+    const scene = build();
+    expect(collectTexts(scene.container)).not.toContain('|');
+    scene.destroy();
+  });
+
+  it('tapping the field (openInput) focuses it and shows a blinking cursor on an empty value', () => {
+    const scene = build();
+    scene.openInput(); // simulates the pointertap handler wired on the input box
+    expect(scene.inputActive).toBe(true);
+    expectBlinkingCaret(scene.container, (on: boolean) => { scene.caretOn = on; }, () => scene.refreshLabel(), '|');
+    scene.destroy();
+  });
+
+  it('typed text keeps a trailing blinking cursor and switches the label to dark (not placeholder grey)', () => {
+    const scene = build();
+    scene.openInput();
+    scene.feedbackText = 'great game, love the ink splatter!';
+    expectBlinkingCaret(scene.container, (on: boolean) => { scene.caretOn = on; }, () => scene.refreshLabel(), 'great game, love the ink splatter!|');
+    scene.refreshLabel();
+    // PIXI's TextStyle.fill setter normalizes a numeric color to its CSS hex-string form.
+    expect(scene.feedbackLabel.style.fill).toBe('#' + C.dark.toString(16).padStart(6, '0'));
+    scene.destroy();
+  });
+
+  it('update(dt) drives the blink on the same 0.5s cycle as SettingsScene', () => {
+    const scene = build();
+    scene.openInput();
+    scene.feedbackText = 'hi';
+    scene.refreshLabel();
+    expect(collectTexts(scene.container)).toContain('hi|');
+    scene.update(0.5); // one half-period
+    expect(collectTexts(scene.container)).toContain('hi');
+    expect(collectTexts(scene.container)).not.toContain('hi|');
+    scene.update(0.5); // back on
+    expect(collectTexts(scene.container)).toContain('hi|');
+    scene.destroy();
+  });
+
+  it('update(dt) is a no-op while unfocused — no caretTimer ticking, no re-render, when nothing is open', () => {
+    const scene = build();
+    scene.feedbackText = 'draft';
+    scene.refreshLabel();
+    const before = scene.feedbackLabel.text;
+    scene.update(0.5);
+    scene.update(0.5);
+    expect(scene.feedbackLabel.text).toBe(before); // unchanged — inputActive is false
+    scene.destroy();
+  });
+
+  it('unfocused field never shows a cursor regardless of blink phase', () => {
+    const scene = build();
+    scene.feedbackText = 'draft';
+    scene.inputActive = false;
+    scene.caretOn = true;
+    scene.refreshLabel();
+    expect(collectTexts(scene.container)).not.toContain('draft|');
+    scene.destroy();
+  });
+
+  it('blurring the hidden input (simulated) drops the cursor and stops the blink', () => {
+    const scene = build();
+    scene.openInput();
+    scene.feedbackText = 'note';
+    scene.refreshLabel();
+    expect(collectTexts(scene.container)).toContain('note|');
+
+    // Mirrors the real 'blur' listener registered in openInput().
+    scene.inputActive = false;
+    scene.refreshLabel();
+    expect(collectTexts(scene.container)).not.toContain('note|');
+    expect(collectTexts(scene.container)).toContain('note');
+
+    // Ticking update(dt) afterwards must not resurrect the cursor.
+    scene.update(0.5);
+    scene.update(0.5);
+    expect(collectTexts(scene.container)).not.toContain('note|');
+    scene.destroy();
+  });
+
+  it('input box holds at least 3 visible lines of wrapped text (2026-08-08: was a single line)', () => {
+    const scene = build();
+    const lineH = scene.feedbackLabel.style.lineHeight as number;
+    // Before this fix feedbackLabel never set an explicit lineHeight at all (PIXI default 0,
+    // meaning "derive from font metrics") — an explicit positive value is itself the regression
+    // signal that the box was resized around a known line height rather than a single-line guess.
+    expect(lineH).toBeGreaterThan(0);
+    // statusLabel is laid out right after the input box (+ a small fixed gap), and feedbackLabel is
+    // now top-anchored at the box's inner top padding — so this vertical span is a tight lower bound
+    // on the box's real content height, without needing to expose inputH itself as a field.
+    const span = scene.statusLabel.y - scene.feedbackLabel.y;
+    expect(span).toBeGreaterThanOrEqual(lineH * 3);
     scene.destroy();
   });
 });

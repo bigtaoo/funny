@@ -146,7 +146,7 @@
                                 type: object
                                 required: [kind, count]
                                 properties:
-                                  kind:  { type: string, enum: [material, equipment, skin] }
+                                  kind:  { type: string, enum: [material, equipment, card] }
                                   count: { type: integer }
                                   id:    { type: string, description: Material id (scrap/lead/binding), set only when kind=material }
                     claimable:
@@ -263,9 +263,9 @@
                       type: object
                       required: [kind, count]
                       properties:
-                        kind: { type: string, enum: [material, equipment, skin] }
+                        kind: { type: string, enum: [material, equipment, card] }
                         count: { type: integer }
-                        id:    { type: string, description: Material id (material) or the drawn/granted defId (equipment/skin) }
+                        id:    { type: string, description: Material id (material) or the drawn/granted defId (equipment/card) }
       '400': { $ref: '#/components/responses/ErrorResp' }
       '401': { $ref: '#/components/responses/ErrorResp' }
       '409': { $ref: '#/components/responses/ErrorResp' }

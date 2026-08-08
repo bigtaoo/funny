@@ -201,9 +201,14 @@ export function ModalsMixin<TBase extends CitySceneBaseCtor>(Base: TBase): TBase
       const bld = this.me?.buildings;
       const resources = this.me?.resources as Partial<Record<ResourceType, number>> | undefined;
       const trainQueue = this.me?.trainingQueue ?? [];
+      const now = serverNow();
+      // S8-8 fix (2026-08-08): the shop's `slg_speedup_*` items now start a persistent 2x-speed buff
+      // (see server/worldsvc ShopService.buySlgShopItem) instead of one-time-draining the queue at
+      // purchase time — surface that here so a player who bought it can see it's actually working.
+      const speedupActive = (this.me?.speedupUntil ?? 0) > now;
 
       const mw = Math.min(340, w - 24);
-      const contentH = 12 + 28 + 20 + trainQueue.length * 16 + 4 + 36 + (trainQueue.length > 0 ? 34 : 0) + 12;
+      const contentH = 12 + 28 + (speedupActive ? 18 : 0) + 20 + trainQueue.length * 16 + 4 + 36 + (trainQueue.length > 0 ? 34 : 0) + 12;
       const mh = Math.min(contentH, h - 16);
       const scale = this.modalScaleFor(mw, mh);
       const screenW = mw * scale;
@@ -237,6 +242,15 @@ export function ModalsMixin<TBase extends CitySceneBaseCtor>(Base: TBase): TBase
       panelRoot.addChild(hdrTxt);
       iy += 28;
 
+      if (speedupActive) {
+        const remainSec = Math.max(0, Math.ceil(((this.me?.speedupUntil ?? 0) - now) / 1000));
+        const buffLbl = st(t('world.speedup', { sec: remainSec }), FS.tiny, C.accent, true);
+        buffLbl.x = 10;
+        buffLbl.y = iy;
+        panelRoot.addChild(buffLbl);
+        iy += 18;
+      }
+
       const tc = troopCapFor(bld);
       const ts = this.me?.troops ?? 0;
       const troopLbl = st(t('city.troopCap').replace('{cur}', String(ts)).replace('{cap}', String(tc)), FS.tiny, C.mid);
@@ -250,7 +264,6 @@ export function ModalsMixin<TBase extends CitySceneBaseCtor>(Base: TBase): TBase
       const queueFull = trainQueue.length >= queueMax;
       const capLeft = Math.max(0, tc - ts - queuedQty);
       const costPerTroop = troopTrainCost(1);
-      const now = serverNow();
       for (const e of trainQueue) {
         const sec = Math.max(0, Math.ceil((e.completeAt - now) / 1000));
         const ql = st(t('city.trainEntry').replace('{n}', String(e.qty)).replace('{time}', formatDuration(sec)), FS.tiny, C.dark);

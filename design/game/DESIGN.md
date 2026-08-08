@@ -276,6 +276,20 @@ pendingCardDown: { x, y, handIndex } | null             // 按下卡牌后，判
 
 按下卡牌时先记入 `pendingCardDown`；`handleMove` 检测是否超过阈值，超过则升为拖拽并清除 pending；`handleUp` 中 pending 未转化为拖拽则激活 tap-select。
 
+### 群体伤害法术的受击单位描边预览（2026-08-08）
+
+用户反馈：PvP/PvE 里群体伤害法术（尤其高频使用的 2×2 Meteor）只看得到落点方框，看不出方框里到底会命中哪些单位，经常打偏。修复：`GameRenderer/input.ts` 的 `updatePlacementHighlights` 在算出落点方框（`showMeteorTargetHighlight`/`showColumnTargetHighlight`）的同时，额外算出方框内**实际会被打到**的单位 id 集合，交给 `UnitView.setSpellTargetPreview(unitIds)` 对这些单位描边高亮：
+
+- **判定逻辑与引擎侧伤害判定同源**（避免 UI 预览和实际命中结果不一致）：
+  - Meteor（`meteorTargetUnits`）：镜像 `SpellSystem.castMeteor`——只描边 2×2 内的**敌方**单位，己方单位（法术只伤敌方）不描边。
+  - Rockslide（`columnTargetUnits`，PvE-only）：镜像 `SpellSystem.castRockslide`——描边整列**双方**单位（该法术无阵营过滤）。
+  - BridgeCollapse（PvE-only）：只是封路、不造成伤害，没有"命中单位"概念，不描边。
+- **描边实现**：复用 `UnitView` 已有的 hit-flash 描边贴图机制（`StickmanRuntime.setOutlineFlash(color, alpha)`，此前只用于受击闪光），改为悬停/拖拽期间**持续**点亮（不淡出），颜色复用 `fx.meteor`（与落点方框同色，读作同一个信号）。每次 `updatePlacementHighlights` 重算时做 diff（新增点亮、消失的清除），与棋盘方框刷新同一节奏（指针移动 + 10Hz 的 `refreshPlacementHighlights` 兜底刷新）。取消拖拽/取消 tap-select 时一并清空。
+- **已知限制**：只有走 `.tao` 骨骼动画的单位（绝大多数正式单位类型）会描边；`.tao` 资源尚未加载完成时的圆点占位单位没有描边贴图，不描边——与既有受击闪光的降级行为一致。
+- **回归测试**（两层）：
+  - `client/test/ui/gameRendererSpellTargetPreview.ui.ts`——经 `InputManager` 走真实 `handleDown/handleMove/handleUp`，直接断言 `unitView.previewUnitIds`（`setSpellTargetPreview` 内部 diff 用的 id 集合，不依赖 `.tao` 异步加载即可验证）：Meteor 2×2 敌我过滤（含已死亡单位排除）、悬停点位切换时新增/清除、取消拖拽/取消 tap-select 清空、Meteor tap-select 态下悬停实时预览、从 Meteor 切到其它卡牌后残留描边被清空、Rockslide 整列双方描边（含已死亡单位排除）。
+  - `client/test/ui/unitViewSpellTargetPreview.ui.ts`——绕过 `.tao` 异步加载（headless 环境里资源必定加载失败），直接向 `UnitView` 私有的 `stickmanRuntimes` 塞入假 runtime（同 `marchTokenAnimation.ui.ts` 手法），断言 `setSpellTargetPreview` 真的调用了 `setOutlineFlash`：点亮用的颜色/新掉出集合的单位被 `setOutlineFlash(null)`、无 runtime 的单位 id 静默跳过不抛错、同一个 Set 引用重复调用是真正的 no-op（10Hz 刷新在未选中法术时高频复用同一个空集合常量）。
+
 ### 卡面渲染（`HandView`）
 
 每个卡槽自上而下：类型字符（U/B/S，左上）→ 插画（`art` 精灵）→ 名称（底部居中加粗 13px）→ 费用圆（右下）。

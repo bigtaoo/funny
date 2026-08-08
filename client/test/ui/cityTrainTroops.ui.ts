@@ -87,6 +87,9 @@ type TrainFixture = {
   buildings?: Partial<Record<string, number>>;
   resources?: Partial<Record<string, number>>;
   trainingQueue?: { qty: number; startAt: number; completeAt: number }[];
+  /** S8-8 fix (2026-08-08): train-speedup shop buff end time (ms epoch) — see renderTrainModal's
+   *  speedupActive badge. */
+  speedupUntil?: number;
   /** Override trainTroops' resolved/rejected behavior — defaults to resolving with `me`. */
   trainTroopsImpl?: (worldId: string, qty: number) => Promise<PlayerWorldView>;
 };
@@ -102,6 +105,7 @@ function stubWorldApiWithTrain(fx: TrainFixture): { api: WorldApiClient; me: Pla
     buildings: fx.buildings ?? {},
     buildQueue: [],
     trainingQueue: fx.trainingQueue ?? [],
+    speedupUntil: fx.speedupUntil,
     cardState: {},
     teamState: {},
   } as unknown as PlayerWorldView;
@@ -300,5 +304,54 @@ describe('CityScene home-desk Train Troops tile + modal (2026-07-21)', () => {
     expect(speedupTraining).toHaveBeenCalledTimes(1);
     expect(speedupTraining.mock.calls[0]![0]).toBe('world:1:0');
     scene.destroy();
+  });
+
+  // S8-8 fix (2026-08-08): slg_speedup_* shop items now start a persistent 2x-speed buff
+  // (speedupUntil) instead of one-time-draining the queue at purchase time — the modal must show
+  // it's actually active, or a player who bought it has no way to tell.
+  describe('training-speedup buff badge (S8-8 fix, 2026-08-08)', () => {
+    it('shows a "training x2" badge with a countdown when speedupUntil is in the future', async () => {
+      const { scene } = await openTrainModal({
+        troops: 0, resources: { ink: 100000 }, speedupUntil: Date.now() + 1800_000,
+      });
+      const texts = collectTexts(scene.container);
+      const prefix = t('world.speedup').split('{sec}')[0]!;
+      expect(texts.some((s) => s.startsWith(prefix))).toBe(true);
+      scene.destroy();
+    });
+
+    it('shows no badge when speedupUntil is absent', async () => {
+      const { scene } = await openTrainModal({ troops: 0, resources: { ink: 100000 } });
+      const texts = collectTexts(scene.container);
+      const prefix = t('world.speedup').split('{sec}')[0]!;
+      expect(texts.some((s) => s.startsWith(prefix))).toBe(false);
+      scene.destroy();
+    });
+
+    it('shows no badge once speedupUntil has already passed', async () => {
+      const { scene } = await openTrainModal({
+        troops: 0, resources: { ink: 100000 }, speedupUntil: Date.now() - 1000,
+      });
+      const texts = collectTexts(scene.container);
+      const prefix = t('world.speedup').split('{sec}')[0]!;
+      expect(texts.some((s) => s.startsWith(prefix))).toBe(false);
+      scene.destroy();
+    });
+
+    it('does not shift the preset/speedup button hit order — the badge adds height, not a hit rect', async () => {
+      const now = Date.now();
+      const { inner, trainTroops } = await openTrainModal({
+        troops: 0, resources: { ink: 100000 }, speedupUntil: now + 1800_000,
+        trainingQueue: [{ qty: 10, startAt: now, completeAt: now + 60000 }],
+      });
+      // Same hit-order contract as the "renders a speedup button" test above: [+100, +500, Max,
+      // speedup, close-catch-all] — the badge is a plain Text label, not a Hit, so it must not
+      // have inserted itself into `hits` and shifted these indices.
+      const modalHits = trainModalHits(inner);
+      const preset100 = modalHits[0]!;
+      tap(inner, preset100.x + preset100.w / 2, preset100.y + preset100.h / 2);
+      await new Promise((r) => setTimeout(r, 0));
+      expect(trainTroops).toHaveBeenCalledWith('world:1:0', 100);
+    });
   });
 });

@@ -17850,7 +17850,7 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                             "enum": [
                               "material",
                               "equipment",
-                              "skin"
+                              "card"
                             ]
                           },
                           "count": {
@@ -19747,7 +19747,7 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                   "enum": [
                     "material",
                     "equipment",
-                    "skin"
+                    "card"
                   ]
                 },
                 "count": {
@@ -19755,7 +19755,7 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                 },
                 "id": {
                   "type": "string",
-                  "description": "Material id (material) or the drawn/granted defId (equipment/skin)"
+                  "description": "Material id (material) or the drawn/granted defId (equipment/card)"
                 }
               }
             }

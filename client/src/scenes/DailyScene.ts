@@ -51,6 +51,15 @@ interface Hit { x: number; y: number; w: number; h: number; fn: () => void }
 
 type DailyTab = 'checkin' | 'tasks' | 'weekly' | 'ads';
 
+/** Per-tab header title key — the top bar reflects the active sub-tab (was a hardcoded 'daily.title'
+ * ("Daily") no matter which tab was selected, which read wrong while e.g. viewing Weekly Chest). */
+const TAB_TITLE_KEY: Record<DailyTab, TranslationKey> = {
+  checkin: 'daily.checkin.title',
+  tasks: 'daily.tasks.title',
+  weekly: 'daily.weekly.title',
+  ads: 'daily.ads.title',
+};
+
 /** Formats a remaining-ms duration as "mm:ss" for the ads-tab cooldown button label. */
 function formatCooldown(ms: number): string {
   const totalSec = Math.max(0, Math.ceil(ms / 1000));
@@ -152,7 +161,7 @@ export class DailyScene implements Scene {
     if (decoC) this.container.addChild(decoC);
 
     // Title bar (unified SceneHeader: back top-left + cached chrome, UI_DESIGN §3.1/§2.1).
-    const hdr = drawSceneHeader(this.container, w, h, t('daily.title'));
+    const hdr = drawSceneHeader(this.container, w, h, t(TAB_TITLE_KEY[this.activeTab]));
     this.hits.push({ x: hdr.backRect.x, y: hdr.backRect.y, w: hdr.backRect.w, h: hdr.backRect.h, fn: () => this.cb.onBack() });
 
     const save = this.cb.getSave?.();
@@ -459,7 +468,7 @@ export class DailyScene implements Scene {
 
       if (def) {
         const icon = rewardIcon(def.reward.kind, def.reward.id);
-        const singleItem = def.reward.kind === 'equipment' || def.reward.kind === 'skin';
+        const singleItem = def.reward.kind === 'equipment' || def.reward.kind === 'card';
         const iconY = cy + cardH * 0.58;
         if (icon) {
           const rc = Math.round(cardH * 0.3);
@@ -596,7 +605,7 @@ export class DailyScene implements Scene {
       const rewardDesc =
         r.reward.kind === 'material' ? t('daily.checkin.rewardMaterial', { n: r.reward.count })
         : r.reward.kind === 'equipment' ? t('daily.checkin.rewardEquipment')
-        : t('daily.weekly.rewardSkin');
+        : t('daily.weekly.rewardCard');
       this.showToast(rewardDesc);
     } catch (e) {
       this.showToast(e instanceof TimeoutError ? t('common.networkTimeout') : t('daily.tasks.claimFailed'), 'error');

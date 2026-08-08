@@ -1289,9 +1289,13 @@ export const WORLD_RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                         "type": "boolean",
                         "description": "G5: this tile is owned by a family ally (within vision, not self). Client renders with friendly colour."
                       },
+                      "sectmate": {
+                        "type": "boolean",
+                        "description": "2026-08-08: this tile is owned by a member of the requester's own sect who is NOT in the requester's family (within vision, not self, not family — that's `ally`; not an allied-sect member — that's `allySect`). Does not share vision (only family does, DECISIONS §18.6); client renders a third \"friendly but not family\" colour."
+                      },
                       "allySect": {
                         "type": "boolean",
-                        "description": "G5: this tile is owned by a member of an allied sect of the player's own sect (within vision, not self, not family). Alliances do not share vision; only distinguished on the map with a yellow border (§8.2, attacking/capturing between allies is forbidden)."
+                        "description": "G5: this tile is owned by a member of an allied sect of the player's own sect (within vision, not self, not family). Alliances do not share vision; distinguished on the map with its own colour + a yellow border (§8.2, attacking/capturing between allies is forbidden)."
                       },
                       "deskLevel": {
                         "type": "integer",
@@ -1396,6 +1400,10 @@ export const WORLD_RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                       "ally": {
                         "type": "boolean",
                         "description": "lod=mid: same-family ally"
+                      },
+                      "sectmate": {
+                        "type": "boolean",
+                        "description": "lod=mid: same-sect member, not family"
                       },
                       "allySect": {
                         "type": "boolean",
@@ -1565,9 +1573,13 @@ export const WORLD_RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                   "type": "boolean",
                   "description": "G5: this tile is owned by a family ally (within vision, not self). Client renders with friendly colour."
                 },
+                "sectmate": {
+                  "type": "boolean",
+                  "description": "2026-08-08: this tile is owned by a member of the requester's own sect who is NOT in the requester's family (within vision, not self, not family — that's `ally`; not an allied-sect member — that's `allySect`). Does not share vision (only family does, DECISIONS §18.6); client renders a third \"friendly but not family\" colour."
+                },
                 "allySect": {
                   "type": "boolean",
-                  "description": "G5: this tile is owned by a member of an allied sect of the player's own sect (within vision, not self, not family). Alliances do not share vision; only distinguished on the map with a yellow border (§8.2, attacking/capturing between allies is forbidden)."
+                  "description": "G5: this tile is owned by a member of an allied sect of the player's own sect (within vision, not self, not family). Alliances do not share vision; distinguished on the map with its own colour + a yellow border (§8.2, attacking/capturing between allies is forbidden)."
                 },
                 "deskLevel": {
                   "type": "integer",
@@ -1768,6 +1780,16 @@ export const WORLD_RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                     "maxHp": {
                       "type": "integer",
                       "description": "D-CITY-8: own main base's durability cap (= baseDurabilityMax(wall level)). Client renders the durability bar as hp/maxHp."
+                    },
+                    "speedupUntil": {
+                      "type": "integer",
+                      "format": "int64",
+                      "description": "S8-8 fix (2026-08-08): train-speedup shop buff end time (ms epoch) — while in the future, the training queue advances at 2x real-time speed (TRAIN_SPEEDUP_BUFF_MULT). Present whenever the player has ever bought a speedup, even once expired; client compares against Date.now() itself (same contract as WorldTileView.protectedUntil) to render a HUD countdown/icon."
+                    },
+                    "baseProtectedUntil": {
+                      "type": "integer",
+                      "format": "int64",
+                      "description": "S8-8 UI fix (2026-08-08): mirror of the main base anchor tile's protection-shield end time (ms epoch; see WorldTileView.protectedUntil), so the HUD can render a shield countdown without depending on the base tile being in the current map viewport. Absent when the base has never been shielded."
                     }
                   }
                 },
@@ -2024,6 +2046,16 @@ export const WORLD_RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                 "maxHp": {
                   "type": "integer",
                   "description": "D-CITY-8: own main base's durability cap (= baseDurabilityMax(wall level)). Client renders the durability bar as hp/maxHp."
+                },
+                "speedupUntil": {
+                  "type": "integer",
+                  "format": "int64",
+                  "description": "S8-8 fix (2026-08-08): train-speedup shop buff end time (ms epoch) — while in the future, the training queue advances at 2x real-time speed (TRAIN_SPEEDUP_BUFF_MULT). Present whenever the player has ever bought a speedup, even once expired; client compares against Date.now() itself (same contract as WorldTileView.protectedUntil) to render a HUD countdown/icon."
+                },
+                "baseProtectedUntil": {
+                  "type": "integer",
+                  "format": "int64",
+                  "description": "S8-8 UI fix (2026-08-08): mirror of the main base anchor tile's protection-shield end time (ms epoch; see WorldTileView.protectedUntil), so the HUD can render a shield countdown without depending on the base tile being in the current map viewport. Absent when the base has never been shielded."
                 }
               }
             }
@@ -2218,6 +2250,16 @@ export const WORLD_RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                 "maxHp": {
                   "type": "integer",
                   "description": "D-CITY-8: own main base's durability cap (= baseDurabilityMax(wall level)). Client renders the durability bar as hp/maxHp."
+                },
+                "speedupUntil": {
+                  "type": "integer",
+                  "format": "int64",
+                  "description": "S8-8 fix (2026-08-08): train-speedup shop buff end time (ms epoch) — while in the future, the training queue advances at 2x real-time speed (TRAIN_SPEEDUP_BUFF_MULT). Present whenever the player has ever bought a speedup, even once expired; client compares against Date.now() itself (same contract as WorldTileView.protectedUntil) to render a HUD countdown/icon."
+                },
+                "baseProtectedUntil": {
+                  "type": "integer",
+                  "format": "int64",
+                  "description": "S8-8 UI fix (2026-08-08): mirror of the main base anchor tile's protection-shield end time (ms epoch; see WorldTileView.protectedUntil), so the HUD can render a shield countdown without depending on the base tile being in the current map viewport. Absent when the base has never been shielded."
                 }
               }
             }
@@ -2519,6 +2561,16 @@ export const WORLD_RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                         "maxHp": {
                           "type": "integer",
                           "description": "D-CITY-8: own main base's durability cap (= baseDurabilityMax(wall level)). Client renders the durability bar as hp/maxHp."
+                        },
+                        "speedupUntil": {
+                          "type": "integer",
+                          "format": "int64",
+                          "description": "S8-8 fix (2026-08-08): train-speedup shop buff end time (ms epoch) — while in the future, the training queue advances at 2x real-time speed (TRAIN_SPEEDUP_BUFF_MULT). Present whenever the player has ever bought a speedup, even once expired; client compares against Date.now() itself (same contract as WorldTileView.protectedUntil) to render a HUD countdown/icon."
+                        },
+                        "baseProtectedUntil": {
+                          "type": "integer",
+                          "format": "int64",
+                          "description": "S8-8 UI fix (2026-08-08): mirror of the main base anchor tile's protection-shield end time (ms epoch; see WorldTileView.protectedUntil), so the HUD can render a shield countdown without depending on the base tile being in the current map viewport. Absent when the base has never been shielded."
                         }
                       }
                     },
@@ -2697,9 +2749,13 @@ export const WORLD_RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                             "type": "boolean",
                             "description": "G5: this tile is owned by a family ally (within vision, not self). Client renders with friendly colour."
                           },
+                          "sectmate": {
+                            "type": "boolean",
+                            "description": "2026-08-08: this tile is owned by a member of the requester's own sect who is NOT in the requester's family (within vision, not self, not family — that's `ally`; not an allied-sect member — that's `allySect`). Does not share vision (only family does, DECISIONS §18.6); client renders a third \"friendly but not family\" colour."
+                          },
                           "allySect": {
                             "type": "boolean",
-                            "description": "G5: this tile is owned by a member of an allied sect of the player's own sect (within vision, not self, not family). Alliances do not share vision; only distinguished on the map with a yellow border (§8.2, attacking/capturing between allies is forbidden)."
+                            "description": "G5: this tile is owned by a member of an allied sect of the player's own sect (within vision, not self, not family). Alliances do not share vision; distinguished on the map with its own colour + a yellow border (§8.2, attacking/capturing between allies is forbidden)."
                           },
                           "deskLevel": {
                             "type": "integer",
@@ -2779,6 +2835,10 @@ export const WORLD_RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                           "ally": {
                             "type": "boolean",
                             "description": "lod=mid: same-family ally"
+                          },
+                          "sectmate": {
+                            "type": "boolean",
+                            "description": "lod=mid: same-sect member, not family"
                           },
                           "allySect": {
                             "type": "boolean",
@@ -3188,6 +3248,16 @@ export const WORLD_RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                 "maxHp": {
                   "type": "integer",
                   "description": "D-CITY-8: own main base's durability cap (= baseDurabilityMax(wall level)). Client renders the durability bar as hp/maxHp."
+                },
+                "speedupUntil": {
+                  "type": "integer",
+                  "format": "int64",
+                  "description": "S8-8 fix (2026-08-08): train-speedup shop buff end time (ms epoch) — while in the future, the training queue advances at 2x real-time speed (TRAIN_SPEEDUP_BUFF_MULT). Present whenever the player has ever bought a speedup, even once expired; client compares against Date.now() itself (same contract as WorldTileView.protectedUntil) to render a HUD countdown/icon."
+                },
+                "baseProtectedUntil": {
+                  "type": "integer",
+                  "format": "int64",
+                  "description": "S8-8 UI fix (2026-08-08): mirror of the main base anchor tile's protection-shield end time (ms epoch; see WorldTileView.protectedUntil), so the HUD can render a shield countdown without depending on the base tile being in the current map viewport. Absent when the base has never been shielded."
                 }
               }
             }
@@ -3382,6 +3452,16 @@ export const WORLD_RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                 "maxHp": {
                   "type": "integer",
                   "description": "D-CITY-8: own main base's durability cap (= baseDurabilityMax(wall level)). Client renders the durability bar as hp/maxHp."
+                },
+                "speedupUntil": {
+                  "type": "integer",
+                  "format": "int64",
+                  "description": "S8-8 fix (2026-08-08): train-speedup shop buff end time (ms epoch) — while in the future, the training queue advances at 2x real-time speed (TRAIN_SPEEDUP_BUFF_MULT). Present whenever the player has ever bought a speedup, even once expired; client compares against Date.now() itself (same contract as WorldTileView.protectedUntil) to render a HUD countdown/icon."
+                },
+                "baseProtectedUntil": {
+                  "type": "integer",
+                  "format": "int64",
+                  "description": "S8-8 UI fix (2026-08-08): mirror of the main base anchor tile's protection-shield end time (ms epoch; see WorldTileView.protectedUntil), so the HUD can render a shield countdown without depending on the base tile being in the current map viewport. Absent when the base has never been shielded."
                 }
               }
             }
@@ -3546,9 +3626,13 @@ export const WORLD_RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                       "type": "boolean",
                       "description": "G5: this tile is owned by a family ally (within vision, not self). Client renders with friendly colour."
                     },
+                    "sectmate": {
+                      "type": "boolean",
+                      "description": "2026-08-08: this tile is owned by a member of the requester's own sect who is NOT in the requester's family (within vision, not self, not family — that's `ally`; not an allied-sect member — that's `allySect`). Does not share vision (only family does, DECISIONS §18.6); client renders a third \"friendly but not family\" colour."
+                    },
                     "allySect": {
                       "type": "boolean",
-                      "description": "G5: this tile is owned by a member of an allied sect of the player's own sect (within vision, not self, not family). Alliances do not share vision; only distinguished on the map with a yellow border (§8.2, attacking/capturing between allies is forbidden)."
+                      "description": "G5: this tile is owned by a member of an allied sect of the player's own sect (within vision, not self, not family). Alliances do not share vision; distinguished on the map with its own colour + a yellow border (§8.2, attacking/capturing between allies is forbidden)."
                     },
                     "deskLevel": {
                       "type": "integer",
@@ -3725,6 +3809,16 @@ export const WORLD_RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                         "maxHp": {
                           "type": "integer",
                           "description": "D-CITY-8: own main base's durability cap (= baseDurabilityMax(wall level)). Client renders the durability bar as hp/maxHp."
+                        },
+                        "speedupUntil": {
+                          "type": "integer",
+                          "format": "int64",
+                          "description": "S8-8 fix (2026-08-08): train-speedup shop buff end time (ms epoch) — while in the future, the training queue advances at 2x real-time speed (TRAIN_SPEEDUP_BUFF_MULT). Present whenever the player has ever bought a speedup, even once expired; client compares against Date.now() itself (same contract as WorldTileView.protectedUntil) to render a HUD countdown/icon."
+                        },
+                        "baseProtectedUntil": {
+                          "type": "integer",
+                          "format": "int64",
+                          "description": "S8-8 UI fix (2026-08-08): mirror of the main base anchor tile's protection-shield end time (ms epoch; see WorldTileView.protectedUntil), so the HUD can render a shield countdown without depending on the base tile being in the current map viewport. Absent when the base has never been shielded."
                         }
                       }
                     }
@@ -3893,9 +3987,13 @@ export const WORLD_RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                       "type": "boolean",
                       "description": "G5: this tile is owned by a family ally (within vision, not self). Client renders with friendly colour."
                     },
+                    "sectmate": {
+                      "type": "boolean",
+                      "description": "2026-08-08: this tile is owned by a member of the requester's own sect who is NOT in the requester's family (within vision, not self, not family — that's `ally`; not an allied-sect member — that's `allySect`). Does not share vision (only family does, DECISIONS §18.6); client renders a third \"friendly but not family\" colour."
+                    },
                     "allySect": {
                       "type": "boolean",
-                      "description": "G5: this tile is owned by a member of an allied sect of the player's own sect (within vision, not self, not family). Alliances do not share vision; only distinguished on the map with a yellow border (§8.2, attacking/capturing between allies is forbidden)."
+                      "description": "G5: this tile is owned by a member of an allied sect of the player's own sect (within vision, not self, not family). Alliances do not share vision; distinguished on the map with its own colour + a yellow border (§8.2, attacking/capturing between allies is forbidden)."
                     },
                     "deskLevel": {
                       "type": "integer",
@@ -4072,6 +4170,16 @@ export const WORLD_RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                         "maxHp": {
                           "type": "integer",
                           "description": "D-CITY-8: own main base's durability cap (= baseDurabilityMax(wall level)). Client renders the durability bar as hp/maxHp."
+                        },
+                        "speedupUntil": {
+                          "type": "integer",
+                          "format": "int64",
+                          "description": "S8-8 fix (2026-08-08): train-speedup shop buff end time (ms epoch) — while in the future, the training queue advances at 2x real-time speed (TRAIN_SPEEDUP_BUFF_MULT). Present whenever the player has ever bought a speedup, even once expired; client compares against Date.now() itself (same contract as WorldTileView.protectedUntil) to render a HUD countdown/icon."
+                        },
+                        "baseProtectedUntil": {
+                          "type": "integer",
+                          "format": "int64",
+                          "description": "S8-8 UI fix (2026-08-08): mirror of the main base anchor tile's protection-shield end time (ms epoch; see WorldTileView.protectedUntil), so the HUD can render a shield countdown without depending on the base tile being in the current map viewport. Absent when the base has never been shielded."
                         }
                       }
                     }
@@ -4238,9 +4346,13 @@ export const WORLD_RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                   "type": "boolean",
                   "description": "G5: this tile is owned by a family ally (within vision, not self). Client renders with friendly colour."
                 },
+                "sectmate": {
+                  "type": "boolean",
+                  "description": "2026-08-08: this tile is owned by a member of the requester's own sect who is NOT in the requester's family (within vision, not self, not family — that's `ally`; not an allied-sect member — that's `allySect`). Does not share vision (only family does, DECISIONS §18.6); client renders a third \"friendly but not family\" colour."
+                },
                 "allySect": {
                   "type": "boolean",
-                  "description": "G5: this tile is owned by a member of an allied sect of the player's own sect (within vision, not self, not family). Alliances do not share vision; only distinguished on the map with a yellow border (§8.2, attacking/capturing between allies is forbidden)."
+                  "description": "G5: this tile is owned by a member of an allied sect of the player's own sect (within vision, not self, not family). Alliances do not share vision; distinguished on the map with its own colour + a yellow border (§8.2, attacking/capturing between allies is forbidden)."
                 },
                 "deskLevel": {
                   "type": "integer",
@@ -4600,6 +4712,16 @@ export const WORLD_RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                         "maxHp": {
                           "type": "integer",
                           "description": "D-CITY-8: own main base's durability cap (= baseDurabilityMax(wall level)). Client renders the durability bar as hp/maxHp."
+                        },
+                        "speedupUntil": {
+                          "type": "integer",
+                          "format": "int64",
+                          "description": "S8-8 fix (2026-08-08): train-speedup shop buff end time (ms epoch) — while in the future, the training queue advances at 2x real-time speed (TRAIN_SPEEDUP_BUFF_MULT). Present whenever the player has ever bought a speedup, even once expired; client compares against Date.now() itself (same contract as WorldTileView.protectedUntil) to render a HUD countdown/icon."
+                        },
+                        "baseProtectedUntil": {
+                          "type": "integer",
+                          "format": "int64",
+                          "description": "S8-8 UI fix (2026-08-08): mirror of the main base anchor tile's protection-shield end time (ms epoch; see WorldTileView.protectedUntil), so the HUD can render a shield countdown without depending on the base tile being in the current map viewport. Absent when the base has never been shielded."
                         }
                       }
                     }
@@ -4814,6 +4936,16 @@ export const WORLD_RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                 "maxHp": {
                   "type": "integer",
                   "description": "D-CITY-8: own main base's durability cap (= baseDurabilityMax(wall level)). Client renders the durability bar as hp/maxHp."
+                },
+                "speedupUntil": {
+                  "type": "integer",
+                  "format": "int64",
+                  "description": "S8-8 fix (2026-08-08): train-speedup shop buff end time (ms epoch) — while in the future, the training queue advances at 2x real-time speed (TRAIN_SPEEDUP_BUFF_MULT). Present whenever the player has ever bought a speedup, even once expired; client compares against Date.now() itself (same contract as WorldTileView.protectedUntil) to render a HUD countdown/icon."
+                },
+                "baseProtectedUntil": {
+                  "type": "integer",
+                  "format": "int64",
+                  "description": "S8-8 UI fix (2026-08-08): mirror of the main base anchor tile's protection-shield end time (ms epoch; see WorldTileView.protectedUntil), so the HUD can render a shield countdown without depending on the base tile being in the current map viewport. Absent when the base has never been shielded."
                 }
               }
             }
@@ -5123,9 +5255,13 @@ export const WORLD_RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                     "type": "boolean",
                     "description": "G5: this tile is owned by a family ally (within vision, not self). Client renders with friendly colour."
                   },
+                  "sectmate": {
+                    "type": "boolean",
+                    "description": "2026-08-08: this tile is owned by a member of the requester's own sect who is NOT in the requester's family (within vision, not self, not family — that's `ally`; not an allied-sect member — that's `allySect`). Does not share vision (only family does, DECISIONS §18.6); client renders a third \"friendly but not family\" colour."
+                  },
                   "allySect": {
                     "type": "boolean",
-                    "description": "G5: this tile is owned by a member of an allied sect of the player's own sect (within vision, not self, not family). Alliances do not share vision; only distinguished on the map with a yellow border (§8.2, attacking/capturing between allies is forbidden)."
+                    "description": "G5: this tile is owned by a member of an allied sect of the player's own sect (within vision, not self, not family). Alliances do not share vision; distinguished on the map with its own colour + a yellow border (§8.2, attacking/capturing between allies is forbidden)."
                   },
                   "deskLevel": {
                     "type": "integer",
@@ -5551,6 +5687,16 @@ export const WORLD_RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                 "maxHp": {
                   "type": "integer",
                   "description": "D-CITY-8: own main base's durability cap (= baseDurabilityMax(wall level)). Client renders the durability bar as hp/maxHp."
+                },
+                "speedupUntil": {
+                  "type": "integer",
+                  "format": "int64",
+                  "description": "S8-8 fix (2026-08-08): train-speedup shop buff end time (ms epoch) — while in the future, the training queue advances at 2x real-time speed (TRAIN_SPEEDUP_BUFF_MULT). Present whenever the player has ever bought a speedup, even once expired; client compares against Date.now() itself (same contract as WorldTileView.protectedUntil) to render a HUD countdown/icon."
+                },
+                "baseProtectedUntil": {
+                  "type": "integer",
+                  "format": "int64",
+                  "description": "S8-8 UI fix (2026-08-08): mirror of the main base anchor tile's protection-shield end time (ms epoch; see WorldTileView.protectedUntil), so the HUD can render a shield countdown without depending on the base tile being in the current map viewport. Absent when the base has never been shielded."
                 }
               }
             }
@@ -5745,6 +5891,16 @@ export const WORLD_RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                 "maxHp": {
                   "type": "integer",
                   "description": "D-CITY-8: own main base's durability cap (= baseDurabilityMax(wall level)). Client renders the durability bar as hp/maxHp."
+                },
+                "speedupUntil": {
+                  "type": "integer",
+                  "format": "int64",
+                  "description": "S8-8 fix (2026-08-08): train-speedup shop buff end time (ms epoch) — while in the future, the training queue advances at 2x real-time speed (TRAIN_SPEEDUP_BUFF_MULT). Present whenever the player has ever bought a speedup, even once expired; client compares against Date.now() itself (same contract as WorldTileView.protectedUntil) to render a HUD countdown/icon."
+                },
+                "baseProtectedUntil": {
+                  "type": "integer",
+                  "format": "int64",
+                  "description": "S8-8 UI fix (2026-08-08): mirror of the main base anchor tile's protection-shield end time (ms epoch; see WorldTileView.protectedUntil), so the HUD can render a shield countdown without depending on the base tile being in the current map viewport. Absent when the base has never been shielded."
                 }
               }
             }
@@ -5939,6 +6095,16 @@ export const WORLD_RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                 "maxHp": {
                   "type": "integer",
                   "description": "D-CITY-8: own main base's durability cap (= baseDurabilityMax(wall level)). Client renders the durability bar as hp/maxHp."
+                },
+                "speedupUntil": {
+                  "type": "integer",
+                  "format": "int64",
+                  "description": "S8-8 fix (2026-08-08): train-speedup shop buff end time (ms epoch) — while in the future, the training queue advances at 2x real-time speed (TRAIN_SPEEDUP_BUFF_MULT). Present whenever the player has ever bought a speedup, even once expired; client compares against Date.now() itself (same contract as WorldTileView.protectedUntil) to render a HUD countdown/icon."
+                },
+                "baseProtectedUntil": {
+                  "type": "integer",
+                  "format": "int64",
+                  "description": "S8-8 UI fix (2026-08-08): mirror of the main base anchor tile's protection-shield end time (ms epoch; see WorldTileView.protectedUntil), so the HUD can render a shield countdown without depending on the base tile being in the current map viewport. Absent when the base has never been shielded."
                 }
               }
             }
@@ -6133,6 +6299,16 @@ export const WORLD_RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                 "maxHp": {
                   "type": "integer",
                   "description": "D-CITY-8: own main base's durability cap (= baseDurabilityMax(wall level)). Client renders the durability bar as hp/maxHp."
+                },
+                "speedupUntil": {
+                  "type": "integer",
+                  "format": "int64",
+                  "description": "S8-8 fix (2026-08-08): train-speedup shop buff end time (ms epoch) — while in the future, the training queue advances at 2x real-time speed (TRAIN_SPEEDUP_BUFF_MULT). Present whenever the player has ever bought a speedup, even once expired; client compares against Date.now() itself (same contract as WorldTileView.protectedUntil) to render a HUD countdown/icon."
+                },
+                "baseProtectedUntil": {
+                  "type": "integer",
+                  "format": "int64",
+                  "description": "S8-8 UI fix (2026-08-08): mirror of the main base anchor tile's protection-shield end time (ms epoch; see WorldTileView.protectedUntil), so the HUD can render a shield countdown without depending on the base tile being in the current map viewport. Absent when the base has never been shielded."
                 }
               }
             }
@@ -6824,6 +7000,16 @@ export const WORLD_RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                 "maxHp": {
                   "type": "integer",
                   "description": "D-CITY-8: own main base's durability cap (= baseDurabilityMax(wall level)). Client renders the durability bar as hp/maxHp."
+                },
+                "speedupUntil": {
+                  "type": "integer",
+                  "format": "int64",
+                  "description": "S8-8 fix (2026-08-08): train-speedup shop buff end time (ms epoch) — while in the future, the training queue advances at 2x real-time speed (TRAIN_SPEEDUP_BUFF_MULT). Present whenever the player has ever bought a speedup, even once expired; client compares against Date.now() itself (same contract as WorldTileView.protectedUntil) to render a HUD countdown/icon."
+                },
+                "baseProtectedUntil": {
+                  "type": "integer",
+                  "format": "int64",
+                  "description": "S8-8 UI fix (2026-08-08): mirror of the main base anchor tile's protection-shield end time (ms epoch; see WorldTileView.protectedUntil), so the HUD can render a shield countdown without depending on the base tile being in the current map viewport. Absent when the base has never been shielded."
                 }
               }
             }

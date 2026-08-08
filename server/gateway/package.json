@@ -4,10 +4,14 @@
   "private": true,
   "main": "dist/index.js",
   "scripts": {
+    "prebuild": "npm run proto:gen",
     "build": "tsc -b",
+    "pretypecheck": "npm run proto:gen",
     "typecheck": "tsc --noEmit",
+    "predev": "npm run proto:gen",
     "dev": "node --watch --import tsx src/index.ts",
     "start": "node dist/index.js",
+    "pretest": "npm run proto:gen",
     "test": "vitest run",
     "proto:gen": "node scripts/gen-proto.mjs"
   },

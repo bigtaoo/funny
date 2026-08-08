@@ -43,12 +43,24 @@ const PAD_FRAC = 0.02;
 // plot by a full tile of height, covering ~2 rows of tiles behind it (2026-08-02 report). The old
 // CONTENT_SCALE=0.8 shrank both axes together and so could never fix the ASPECT that caused it.
 // Now the two axes are budgeted independently and `fit: 'inside'` honours whichever binds:
-//   width  — unchanged in practice (~0.8 cell ≈ 2.5 of the plot's 3 tiles wide; never overhung)
+//   width  — the content should reach exactly the plot's OWN width (BASE_FOOTPRINT tiles) within the
+//            BASE_SPRITE_TILES-wide sprite cell the renderer scales this frame up to — i.e. the same
+//            ~7% overhang-then-clip margin `city_atlas` gets from filling its cell edge-to-edge, not a
+//            few more tiles of comfort room. (2026-08-08: the original 0.8 was exactly that — a
+//            comfort margin left over from the pre-ground-plate art below — leaving every frame
+//            visibly narrower than its 3×3 diamond, worst on the low levels players see most; see the
+//            git history of this comment for the before/after renders.)
 //   height — derived from the plot's real screen height, times a small allowance for spires/flags
 // Kept deliberately proportional (no non-uniform squash) so the hand-drawn isometric perspective isn't
-// distorted; the cost is that tall-and-narrow frames (l1, l7) also lose width and read a bit small on
-// the plot. That is a stopgap: the real fix is re-drawn art with a ground plate and a wide-not-tall
-// silhouette — see design/product/player-base-image-prompts.md § "构图硬规".
+// distorted; the cost is that frames whose own aspect is narrower than the target (most of levels
+// 2-10 — the ground plate itself is properly wide, but taller upper structure keeps height-binding
+// first) still fall short of the full plot width. That remaining gap is a real content trade-off, not
+// a formula bug: matching it exactly would need HEIGHT_BUDGET_K raised enough to let those frames grow
+// ~40% taller first, which reopens the 2026-08-02 "covers the rows behind it" overhang this budget
+// exists to prevent (verified by rendering the sprite+mask geometry standalone before touching this
+// constant — see design/product/player-base-image-prompts.md § "接入现状"). The real fix for those
+// remaining levels is art whose ground plate reaches the frame edge without the upper structure also
+// growing taller — a follow-up art pass, not a script constant.
 // Mirrors of client-side constants (worldmap/constants.ts, render/isoGrid.ts, @nw/shared core.ts) —
 // this script is standalone Node with no TS import path, so keep them in sync by hand.
 const BASE_SPRITE_TILES = 3.2;
@@ -56,7 +68,7 @@ const BASE_FOOTPRINT = 3;
 const ISO_RATIO = 0.5;
 /** How far above the plot's own screen height the building may legitimately rise (spires, flagpoles). */
 const HEIGHT_BUDGET_K = 1.2;
-const CONTENT_W_FRAC = 0.8;
+const CONTENT_W_FRAC = BASE_FOOTPRINT / BASE_SPRITE_TILES;
 const CONTENT_H_FRAC = (BASE_FOOTPRINT * ISO_RATIO * HEIGHT_BUDGET_K) / BASE_SPRITE_TILES;
 
 const TSTEP = 33;
@@ -167,11 +179,19 @@ async function makeCell(srcPath) {
     .toBuffer();
   const fm = await sharp(fitted).metadata();
   const fittedH = fm.height ?? CELL;
+  const fittedW = fm.width ?? CELL;
   const buf = await sharp({ create: { width: CELL, height: CELL, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } } })
-    .composite([{ input: fitted, left: Math.round((CELL - (fm.width ?? CELL)) / 2), top: CELL - fittedH }])
+    .composite([{ input: fitted, left: Math.round((CELL - fittedW) / 2), top: CELL - fittedH }])
     .png()
     .toBuffer();
-  return { buf, contentTop: (CELL - fittedH) / CELL };
+  // contentWidthFrac mirrors contentTop but for the OTHER axis: fraction of the CELL actually filled
+  // by content width. `fit:'inside'` binds on whichever axis hits its budget first (CONTENT_W_FRAC vs
+  // CONTENT_H_FRAC) — a frame bound by height legitimately comes out narrower than CONTENT_W_FRAC, so
+  // this is NOT always equal to CONTENT_W_FRAC; it's the actual measured fill, which is exactly what
+  // cityAtlasContentTop.ui.ts's regression test needs (2026-08-08: CONTENT_W_FRAC alone drifting back
+  // to a too-small comfort margin, as it did between 2026-08-02 and today, wouldn't be caught by any
+  // height-only assertion — this field lets a test catch it directly off the baked atlas data).
+  return { buf, contentTop: (CELL - fittedH) / CELL, contentWidthFrac: fittedW / CELL };
 }
 
 async function main() {
@@ -192,8 +212,8 @@ async function main() {
     }
     const dx = (i % COLS) * CELL;
     const dy = Math.floor(i / COLS) * CELL;
-    const { buf: cellBuf, contentTop } = await makeCell(srcPath);
-    console.log(`${name.padEnd(14)} ← ${file.padEnd(20)} → (${dx},${dy})  contentTop=${contentTop.toFixed(2)}`);
+    const { buf: cellBuf, contentTop, contentWidthFrac } = await makeCell(srcPath);
+    console.log(`${name.padEnd(14)} ← ${file.padEnd(20)} → (${dx},${dy})  contentTop=${contentTop.toFixed(2)}  contentWidthFrac=${contentWidthFrac.toFixed(2)}`);
     composites.push({ input: cellBuf, left: dx, top: dy });
     frames[name] = {
       frame: { x: dx, y: dy, w: CELL, h: CELL },
@@ -201,9 +221,10 @@ async function main() {
       trimmed: false,
       spriteSourceSize: { x: 0, y: 0, w: CELL, h: CELL },
       sourceSize: { w: CELL, h: CELL },
-      // Non-standard field, see pack_city_atlas.js — read directly off the raw JSON by
-      // playerBaseAtlasLoader.getPlayerBaseContentTopFracForLevel.
+      // Non-standard fields, see pack_city_atlas.js — read directly off the raw JSON by
+      // playerBaseAtlasLoader.getPlayerBaseContentTopFracForLevel/getPlayerBaseContentWidthFracForLevel.
       contentTop,
+      contentWidthFrac,
     };
   }
 

@@ -3856,7 +3856,7 @@ export interface operations {
                                     threshold: number;
                                     reward: {
                                         /** @enum {string} */
-                                        kind: "material" | "equipment" | "skin";
+                                        kind: "material" | "equipment" | "card";
                                         count: number;
                                         /** @description Material id (scrap/lead/binding) */
                                         id?: string;
@@ -3991,9 +3991,9 @@ export interface operations {
                             threshold: number;
                             reward: {
                                 /** @enum {string} */
-                                kind: "material" | "equipment" | "skin";
+                                kind: "material" | "equipment" | "card";
                                 count: number;
-                                /** @description Material id (material) or the drawn/granted defId (equipment/skin) */
+                                /** @description Material id (material) or the drawn/granted defId (equipment/card) */
                                 id?: string;
                             };
                         };

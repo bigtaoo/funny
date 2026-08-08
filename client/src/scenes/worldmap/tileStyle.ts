@@ -6,8 +6,9 @@
 //     are heavily desaturated (paper-adjacent, warm/neutral) so they never masquerade as an
 //     ownership hue and only whisper the biome zone at the L2/L3 overview.
 //   • OWNERSHIP → the only strong color, applied as a translucent wash + colored border/accent
-//     (see ownerTint + drawTileL1/L2), following the "enemy blue, player red" convention:
-//     own = red ink, enemy = blue ink, family-ally = green ink.
+//     (see ownerTint + drawTileL1/L2), following the global faction-color iron rule (ADR-003,
+//     art-direction.md §3.2 — never touched by skins): own = blue ink, enemy = red ink,
+//     family-ally = green ink.
 
 import type { WorldTileView } from '../../net/WorldApiClient';
 import { proceduralTile, biomeMixAt } from '@nw/shared';
@@ -122,20 +123,31 @@ export const TERRAIN_TEX_TINT: Partial<Record<TerrainTextureName, number>> = {
   terrain_stronghold: 0xba9a80, // NPC stronghold — muted stone brown, deepened 2026-07-11
 };
 
-export const MINE_TINT      = 0xe69090; // own territory (light red ink)
-export const MINE_BASE_TINT = 0xcc3333; // own capital (deep red ink)
-export const ENEMY_TINT     = 0x90a8e6; // enemy territory (light blue ink)
-export const ENEMY_BASE_TINT= 0x4477cc; // enemy capital (deep blue ink)
+export const MINE_TINT       = 0x90a8e6; // own territory (light blue ink — ADR-003 iron rule: own = blue)
+export const MINE_BASE_TINT  = 0x4477cc; // own capital (deep blue ink)
+export const ENEMY_TINT      = 0xe69090; // enemy territory (light red ink — ADR-003 iron rule: enemy = red)
+export const ENEMY_BASE_TINT = 0xcc3333; // enemy capital (deep red ink)
 export const ALLY_TINT      = 0x9cd6a4; // family-ally territory (light green ink — G5 friendly third color)
 export const ALLY_BASE_TINT = 0x46a85a; // family-ally capital (deep green ink)
+// 2026-08-08: two more ownership colors, filling the gap where a fellow-sect member outside the requester's
+// family, or a member of an allied (other) sect, used to render as plain enemy red with no distinction —
+// see DECISIONS.md ADR-024 correction note.
+export const SECT_TINT           = 0xc9a8e0; // sect-mate territory, different family same sect (light purple ink — friendly but not family, no shared vision)
+export const SECT_BASE_TINT      = 0x8e44ad; // sect-mate capital (deep purple ink)
+export const ALLY_SECT_TINT      = 0xf0c987; // allied-sect territory, cross-guild alliance (light amber ink — no shared vision, §8.2)
+export const ALLY_SECT_BASE_TINT = 0xd68910; // allied-sect capital (deep amber ink)
 export const FOG_COLOR      = 0xc9c2b2; // fog of war (light warm paper-grey, thin overlay on terrain)
 export const CLOUD_COLOR    = 0xcfc7b6; // off-map cloud/mist veil (warm paper-grey) — hides the blank paper beyond the map edge
-export const ALLY_SECT_BORDER = 0xe6a817; // allied-sect territory yellow border (amber gold, G5; marks without shared vision, §8.2)
+export const ALLY_SECT_BORDER = 0xe6a817; // allied-sect territory yellow border (amber gold, G5; on top of ALLY_SECT_TINT's wash, marks without shared vision, §8.2)
 
-/** Ownership color for the wash/border overlay, or null when the tile is unowned. */
+/** Ownership color for the wash/border overlay, or null when the tile is unowned. Priority: self > family
+ * ally > sect-mate (own sect, different family) > allied-sect (other sect, ≤2 alliances) > enemy — mirrors
+ * the server's mutually-exclusive tagging order in worldsvc core/map.ts getMap. */
 export function ownerTint(tile: WorldTileView): number | null {
   if (tile.mine)     return tile.type === 'base' ? MINE_BASE_TINT : MINE_TINT;
   if (tile.ally)     return tile.type === 'base' ? ALLY_BASE_TINT : ALLY_TINT;
+  if (tile.sectmate) return tile.type === 'base' ? SECT_BASE_TINT : SECT_TINT;
+  if (tile.allySect) return tile.type === 'base' ? ALLY_SECT_BASE_TINT : ALLY_SECT_TINT;
   if (tile.occupied) return tile.type === 'base' ? ENEMY_BASE_TINT : ENEMY_TINT;
   return null;
 }

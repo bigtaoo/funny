@@ -151,6 +151,7 @@
     }
   },
   "nameKey": "campaign.ch1.lv4.name",
+  "briefKey": "campaign.ch1.lv4.brief",
   "startInk": 36,
   "inkRegenMult": 1.5
 }

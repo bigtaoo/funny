@@ -59,6 +59,23 @@ export interface InputGate {
   swallowNextUp(): void;
 }
 
+/**
+ * Closes a stage-level modal the manager otherwise can't see — FeedbackDialog (app.ts) is mounted
+ * directly on `app.stage`, outside `targetStage`/`overlayScene` entirely, so it can be opened from
+ * (only) the lobby without any SceneManager wiring. That independence has a cost: an unconditional
+ * background `goto()` (a pushed match starting, an async world-shard resolve landing while the
+ * player is still idling on the lobby) used to swap the scene underneath the dialog silently, so its
+ * Close button could reveal a level or the SLG map instead of the Lobby the player opened it from —
+ * 2026-08-08 bug report. `goto()` calls this first, same "hard swap means done with this whole area"
+ * reasoning it already applies to its own `overlayScene`, just extended to a dialog it can't see
+ * directly. Deliberately NOT wired to AppealDialog — that one is meant to survive a scene change
+ * underneath it (its own doc comment: "never destroys whatever the player was doing"), since it can
+ * be triggered by a network error from literally any scene, not just the lobby.
+ */
+export interface DialogGate {
+  close(): void;
+}
+
 /** easeInOutQuad — cheap, dependency-free; symmetric acceleration/deceleration. */
 function easeInOutQuad(t: number): number {
   return t < 0.5 ? 2 * t * t : 1 - (-2 * t + 2) ** 2 / 2;
@@ -106,6 +123,8 @@ export class SceneManager {
     targetStage?: PIXI.Container,
     /** Pointer-input source frozen for the duration of each fade (see {@link InputGate}). */
     private readonly inputGate?: InputGate,
+    /** Stage-level modal (see {@link DialogGate}) closed at the start of every hard `goto()`. */
+    private readonly dialogGate?: DialogGate,
   ) {
     this.targetStage = targetStage ?? app.stage;
     app.ticker.add(this.onTick, this);
@@ -114,6 +133,11 @@ export class SceneManager {
   }
 
   goto(scene: Scene, opts?: GotoOptions): void {
+    // Same "done with this whole area" reasoning as the overlayScene drop below, extended to a
+    // dialog this manager can't see (see DialogGate) — must run before the swap, not after, so a
+    // background nav (match push, async world-shard resolve) can't leave the dialog's Close button
+    // pointing at whatever scene now sits underneath it.
+    this.dialogGate?.close();
     // A hard scene swap always means "done with this whole area" — drop any overlay riding on top
     // of `current` first so it doesn't linger as an orphaned child on top of the new scene.
     if (this.overlayScene) {

@@ -1,6 +1,6 @@
 # 留存系统设计 — Daily Retention（签到 / 每日任务 / 周常）
 
-> 状态：**P0 已实现（2026-06-22）**，签到奖励表 + Tab 改版见 §10.4（2026-07-05）；签到去体力 + 里程碑加金币（R1b）见 §10.5（2026-08-01） · 权威：**本文（留存系统机制单一来源）**；数值（奖励/上限/曲线）镜像并最终落 [`ECONOMY_NUMBERS.md §12`](ECONOMY_NUMBERS.md)（DRAFT 初值）· 更新：2026-08-01
+> 状态：**P0 已实现（2026-06-22）**，签到奖励表 + Tab 改版见 §10.4（2026-07-05）；签到去体力 + 里程碑加金币（R1b）见 §10.5（2026-08-01）；顶部标题跟随子 Tab 修复见 §10.7、周常宝箱 tier-3 皮肤→传说卡调整见 §10.8（均 2026-08-08） · 权威：**本文（留存系统机制单一来源）**；数值（奖励/上限/曲线）镜像并最终落 [`ECONOMY_NUMBERS.md §12`](ECONOMY_NUMBERS.md)（DRAFT 初值）· 更新：2026-08-08
 >
 > **实现记录（B5 2026-06-22）**：
 > - `server/shared/src/retention.ts` — 纯函数 + 类型（`RetentionSave`, `CHECKIN_REWARDS[30]`, `DAILY_TASKS[3]`, `accrueRetentionTask`, `claimCheckinDay`, `claimDailyReward`）
@@ -337,3 +337,27 @@ POST /retention/weekly/claim            (JWT) { tier:1|2|3 } → { save, granted
 - **边界**：`claimCheckinDay`（`server/shared/src/retention.ts`）的纯函数里 `nextSlot > CHECKIN_TOTAL_DAYS`（月满）判断先于 `lastClaimedDayKey === 当前日`（今日已领）判断，导致"当月最后一格（第30格）当天重试"报的是 `MONTH_FULL` 而不是 `ALREADY_CLAIMED_TODAY`——两者本质是同一种可恢复场景，`claimCheckin` 的恢复分支据此把两个错误码合并处理，用 `lastClaimedDayKey` 而不是错误码本身来判断"是不是今天这次领取"。
 
 **回归测试**（`server/metaserver/test/retention.e2e.test.ts`，新增 `describe('retention delivery resilience (2026-08-05 fix)')`）：镜像 `pve.e2e.test.ts` 的手法——包一层 `saves.findOneAndUpdate`，让发放调用自己内部的 rev-guard 写入必输，验证（a）领取状态照样落库、（b）失败响应是 502 不是静默 200、（c）解除拦截后重试补发**同一件**道具/发放**同一笔**金币，且再重试一次也不会变成两件/两笔。覆盖周常装备 tier、周常皮肤 tier、签到第 30 格装备+bonusCoins、每日任务金币四条路径。
+
+### 10.7 修复：Daily 顶部标题不跟随子 Tab（2026-08-08）
+
+**背景**：用户反馈截图——在"周常宝箱"子 Tab 下，页面顶部 `SceneHeader` 仍显示固定的 `t('daily.title')`（"Daily"/"每日"），与左侧高亮的"周常宝箱" Tab、内容区自己的"周常宝箱"小标题不一致，读起来像是标题没跟上当前子 Tab（`client/src/scenes/DailyScene.ts` 原 `drawSceneHeader(..., t('daily.title'))` 不随 `activeTab` 变化，四个子 Tab 下顶部永远是同一行字）。
+
+**修复**：顶部标题改为按 `activeTab` 取对应 Tab 自己的 i18n key（`TAB_TITLE_KEY: Record<DailyTab, TranslationKey>`，映射到 `daily.checkin.title` / `daily.tasks.title` / `daily.weekly.title` / `daily.ads.title`，与左侧 Tab 文案、内容区小标题同源，不新增翻译）。大厅入口按钮（`LobbyScene` "每日" 图标）与引导文案仍用原来的 `daily.title`，不受影响——那是整个留存功能的入口标签，不是本页内部标题，语义不同不合并。
+
+**回归测试**：`client/test/ui/dailySceneWeeklyTab.ui.ts` 新增 `describe('DailyScene — header title follows the active tab')`，断言切到 `weekly`/`tasks` Tab 时找不到 `t('daily.title')` 文本、能找到对应 Tab 自己的标题文本。
+
+### 10.8 调整：周常宝箱 tier-3 奖励由「商城皮肤」改为「随机传说卡（橙卡）」（2026-08-08）
+
+**背景**：用户反馈——周常宝箱最高档（21 点，7 天满勤/满周）此前发一件商城普通皮肤（`skin_shop_c1`/`skin_shop_r1` 二选一，见 §10.7 前 WEEKLY_CHEST_TIERS 注释），对需要满周活跃才够到的顶档奖励而言分量偏轻；改为随机发一张**传说品阶（Anna 阵营，界面上呈"橙色"）**的角色卡。
+
+**实现**：
+- `server/shared/src/gachaCatalog.ts#pickRandomCatalogItem` 新增可选第三参 `rarity?: Rarity`，把同一个类目内的候选池按展示稀有度再筛一层——`pickRandomCatalogItem('card', rng, 'legendary')` 只在 Anna 阵营卡（`max`/`lena`/`mara`）里随机，checkin 第 14 天里程碑仍用不带 `rarity` 的调用（全品阶都能抽到，含史诗 Tao 卡）。
+- `server/shared/src/retention.ts`：`WeeklyChestRewardKind` 去掉 `'skin'`，加 `'card'`；`WEEKLY_CHEST_TIERS[2].reward` 改为 `{ kind: 'card', count: 1 }`；随之删除只服务于旧 skin 分支的 `WEEKLY_CHEST_SKIN_POOL` / `pickWeeklyChestSkin`（无其它调用点，未保留兼容垫片）。
+- `server/metaserver/src/service/liveops.ts#settleWeeklyChestReward`：`'skin'` 分支换成 `'card'` 分支，镜像 `settleCheckinReward` 的 card 分支写法（`deliverRetentionReward` → `grantCard`），只是随机池收窄到 `rarity: 'legendary'`；`RetentionItemPick`/`deliverRetentionReward` 同步去掉 `'skin'` 变体（checkin 从未用过它，收窄后 `grantSkin` 在这条发放路径上彻底不可达，导入一并删除）。
+- 契约：`openapi/paths/liveops.yml` 两处 `reward.kind` 的 enum 从 `[material, equipment, skin]` 改为 `[material, equipment, card]`，`gen:api:contracts` / `gen:api:server` / 客户端 `rest:gen` 重新生成。
+- 客户端：`DailyScene.ts` 的 `singleItem`（装备/卡是单件展示，不带 `+N`）判断、领取 toast 文案分支同步从 `'skin'` 改判 `'card'`；i18n key `daily.weekly.rewardSkin` 复用改名为 `daily.weekly.rewardCard`（zh/en/de 三语同步改文案，未新增/遗留 key）。
+
+**回归测试**：
+- `server/shared/test/gachaCatalog.test.ts` 新增 `describe('pickRandomCatalogItem')`：不带 `rarity` 时全品阶可抽到；带 `rarity: 'legendary'` 时只抽到 Anna 阵营卡；类目/稀有度组合为空池时返回 `undefined`。
+- `server/metaserver/test/retention.e2e.test.ts`：tier-3 用例改为断言 `reward.kind === 'card'` 且 `CARD_DEFS[id].faction === 'anna'`；发放弹性用例（原 `failsOnSkinGrant`）改为 `failsOnCardGrant`（比对 `save.cardInvCount` 而非 `inventory.skins`），断言与 checkin day-14 card 用例同款——账号自带 3 张 Tao 阵营新手卡（`auth.ts#maybeGrantStarterCards`），`cardInv` 从不为空，因此用「相对于领取前快照的新增卡」而非绝对数量判定，避免把新手卡误判成本次发放的卡。
+- `client/test/ui/dailySceneWeeklyTab.ui.ts`：weekly-claim-toast 用例的 tier-3 分支改判 `kind: 'card'` + `t('daily.weekly.rewardCard')`。

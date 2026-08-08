@@ -316,6 +316,21 @@ tips of the tallest spires are the only exception to the two-tone palette.
 
 > 已知小瑕疵，暂不返工：Lv.7（环形+摊开书）视觉冲击强于 Lv.8（网格），密度递进在这一档有个小回落。想平滑的话把 Lv.7/Lv.8 两张对调即可。另外美术地台的透视比地图的 2:1 略陡，地台菱形和地块菱形不完全重合，横向溢出由 `cityPlotMaskPoints` 裁掉，实机看不出来。
 
+### 2026-08-08：宽度预算修正——低级别地台没填满 3×3 菱形
+
+用户反馈：自己基地（真机截图，Lv.1）的地台明显比地图上画出的 3×3 菱形边界窄，两侧留有一截空地，"处理了两次反而更奇怪"。
+
+排查：`CONTENT_W_FRAC = 0.8` 一直是 2026-08-02 那批**无地台**旧图遗留的经验值——特意留了余量，不是"贴图应有宽度"。矮宽新图（8-03 入库）本身没问题，但打包脚本仍按旧预算裁，于是即使新图地台画得再宽，也只能填到 cell 宽度的 80%，而 3×3 地块换算到 `BASE_SPRITE_TILES` 宽的 sprite cell 里应占 `BASE_FOOTPRINT / BASE_SPRITE_TILES = 3/3.2 ≈ 93.75%`（`city_atlas` 走的是"贴满整格，靠 `cityPlotMaskPoints` 裁多出的 ~7%"这条路，`playerbase` 应该一致）。用标准渲染公式（`tileToScreen`/`citySpriteTiles`/`cityPlotMaskPoints`）离线复现了地台+裁剪菱形的几何再叠加真实图集像素核对，10 级里 Lv.1/2/3/9（外接框比目标更宽，宽度预算先触底）确认是"贴图内容本该顶到菱形边，却被 0.8 的老预算收窄了"，其余等级本来就是高度预算先触底、不受 W_FRAC 影响。
+
+修复：`CONTENT_W_FRAC` 改成 `BASE_FOOTPRINT / BASE_SPRITE_TILES`（0.8 → 0.9375），`HEIGHT_BUDGET_K`/`CONTENT_H_FRAC` 不动——2026-08-02 那次修的"压住后排格子"问题因此不会回归（验证过：把两个预算都调宽到能让 Lv.10 满宽，Lv.10 的绘制高度会从 1.8 tile 涨到 2.5+ tile，重新覆盖后排，所以只动宽度）。
+
+结果（重跑 `pack_playerbase_atlas.js` + `patchMergedAtlas.js` 后核对）：
+- Lv.1（用户报告的那级）：地台宽度从填满 cell 的 80% 涨到 93.8%（=目标满宽），真机截图确认地台边缘正好顶到地图画出的绿色虚线 3×3 菱形——即用户要的"刚好覆盖玩家自己的 9 格"。
+- Lv.2/3/9 同样变宽（宽度预算触底的等级），Lv.4~8/10（高度预算先触底，本次改动够不到它们）维持不变——这批仍是已知的"两侧留一点空地"，跟 2026-08-03 记的瑕疵是同一件事，真出图重画地台更宽、身形不跟着变高才能根治，留给后续美术返工。
+- `client/test/ui/cityAtlasContentTop.ui.ts` 的上下界断言（1.8 tile 上限 / 0.75 tile 下限）无需改，10 级全部在界内（重新算过的 `contentTop`：Lv.1=0.49，Lv.2/3/4~10=0.44，其中 2/3/9 相比之前的 0.50/0.45/0.44 分别变化，宽度预算触底的等级 `contentTop` 由 `fittedH` 反算，随宽度预算变化联动）。
+
+**补测（同日）**：上面这批断言全读 `contentTop`（高度轴），今天这个 bug 从头到尾没碰过高度轴——照旧跑不会挂，等于这次的回归完全没测试覆盖。补了 `pack_playerbase_atlas.js` 新字段 `contentWidthFrac`（跟 `contentTop` 同款，量的是宽度轴实际填充比例）+ `playerBaseAtlasLoader.getPlayerBaseContentWidthFracForLevel()`，`cityAtlasContentTop.ui.ts` 新增 3 例：每级 `contentWidthFrac` 落在 `(0,1]`；10 级里**至少有一级**必须顶到 `BASE_FOOTPRINT/BASE_SPRITE_TILES`（不硬编码具体是哪一级——宽度触底的等级会随美术批次的长宽比变化，但"一个都够不到"就是回归本身，`CONTENT_W_FRAC=0.8` 时会全员卡在 0.8，正好触发这条断言）；每级不低于 0.5（防裁切失败）。手动验证过测试真的会抓：把 `CONTENT_W_FRAC` 临时改回 0.8、重跑打包，"至少一级够宽"断言按预期挂掉（0.80078125 < 0.9175），改回来再重跑，12 例全绿。
+
 ### 2026-08-02：高度预算（缩小是权宜之计，重出图才是正解）
 
 `pack_playerbase_atlas.js` 原先只有一个正方形 `CONTENT_SCALE = 0.8`，宽高同缩，改不了导致问题的**长宽比**。现拆成两个独立预算：

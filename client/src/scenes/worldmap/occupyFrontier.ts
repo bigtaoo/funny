@@ -1,6 +1,9 @@
 // ADR-039 "连地" occupy-frontier computation, split out of the renderer so it is unit-testable without PIXI.
-// A frontier cell = a neutral, occupiable tile 4-directionally adjacent to the player's own / same-family
-// territory (the own capital's 3×3 footprint always counts, even if a ring cell lost its ownerId). This is
+// A frontier cell = a neutral, occupiable tile 4-directionally adjacent to the player's own / same-family /
+// same-sect territory (the own capital's 3×3 footprint always counts, even if a ring cell lost its ownerId).
+// Sect-mate (2026-08-08) included because server-side connectivity is scoped to the whole sect
+// (isConnectedToSectTerritory / ownSectFamilyIds = own family ∪ sibling families in the SAME sect), NOT just
+// family — allied-*other*-sect territory is deliberately excluded (alliance doesn't merge frontiers). This is
 // the client-visible half of the connectivity rule enforced server-side by isConnectedToSectTerritory —
 // used to draw the "here's where you can expand" outline. 4-directional (shared-edge) on purpose: a
 // grid-diagonal tile only touches at a corner (it merely *looks* adjacent in the isometric projection).
@@ -11,6 +14,7 @@ export interface FrontierTile {
   occupied?: boolean;
   mine?: boolean;
   ally?: boolean;
+  sectmate?: boolean;
   contestedUntil?: number;
   visible?: boolean;
 }
@@ -31,8 +35,8 @@ export interface OccupyFrontierParams {
 
 /**
  * Returns the occupiable frontier tiles within `bounds`: neutral + occupiable terrain, not fogged / mid-hold,
- * and 4-adjacent to a tile the player owns (own capital footprint, or a `mine`/`ally` tile). Order follows the
- * scan (row-major); callers dedupe implicitly since each (x,y) is visited once.
+ * and 4-adjacent to a tile the player owns (own capital footprint, or a `mine`/`ally`/`sectmate` tile). Order
+ * follows the scan (row-major); callers dedupe implicitly since each (x,y) is visited once.
  */
 export function occupyFrontierCells(params: OccupyFrontierParams): { x: number; y: number }[] {
   const { worldId, mapW, mapH, bounds, mainBaseTile, tileCache, parseAnchor } = params;
@@ -46,7 +50,7 @@ export function occupyFrontierCells(params: OccupyFrontierParams): { x: number; 
     if (x < 0 || y < 0 || x >= mapW || y >= mapH) return false;
     if (baseCells.has(`${x}:${y}`)) return true;
     const t = tileCache.get(`${x}:${y}`);
-    return !!(t && (t.mine || t.ally));
+    return !!(t && (t.mine || t.ally || t.sectmate));
   };
 
   const out: { x: number; y: number }[] = [];

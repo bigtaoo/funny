@@ -1,7 +1,7 @@
 // worldsvc SLG shop domain (S8-8). Peeled out of the WorldService god-class (2026-07-03).
 // Depends only on WorldCore (shared state + settle + getMe). No behavior change.
 import { SLG_SHOP_ITEMS, isSlgShopItemId, SlgError, playerWorldId, RESOURCE_TYPES, RESOURCE_CAP } from '@nw/shared';
-import { trainingQueueOps } from './db';
+import { trainingQueueOps, applyTrainingSpeedupCatchup } from './db';
 import type { WorldCore } from './core';
 import type { PlayerWorldView } from './worldTypes';
 
@@ -72,30 +72,34 @@ export class ShopService {
       let result: { matchedCount: number };
 
       if (item.kind === 'troop_speedup') {
-        const secToSpeed = Number(item.effect['duration_sec'] ?? 0);
-        // Simplified version of speedupTraining logic (coins already deducted; operate on queue directly)
-        const queue = (fresh.trainingQueue ?? []).slice();
-        let remaining = secToSpeed * 1000;
+        // S8-8 fix (2026-08-08): this used to spend the whole duration as a one-time instant-skip against
+        // whatever was queued *at purchase time* — didn't match the item description ("speed up training
+        // for N hours") and gave zero benefit to anything queued afterward. Now mirrors the `protection`
+        // branch below: stacks a `speedupUntil` buff (additive from max(current, t), never wasting
+        // overlap) that makes the WHOLE queue — present and future batches alike — advance
+        // TRAIN_SPEEDUP_BUFF_MULT× faster for the purchased duration.
+        const durSec = Number(item.effect['duration_sec'] ?? 0);
+        // Catch up any buff-time already elapsed under the OLD speedupUntil before extending it (must run
+        // before the extension below, else the just-added duration would be mistaken for already-elapsed).
+        const settledFrom = fresh.speedupSettledAt ?? t;
+        const caughtUp = applyTrainingSpeedupCatchup(fresh.trainingQueue ?? [], fresh.speedupUntil, settledFrom, t);
         let troopsReady = 0;
-        for (let i = 0; i < queue.length && remaining > 0; ) {
-          const e = queue[i]!;
-          const left = e.completeAt - t;
-          if (remaining >= left) {
-            remaining -= left;
-            troopsReady += e.qty;
-            queue.splice(i, 1);
-          } else {
-            queue[i] = { ...e, completeAt: e.completeAt - remaining };
-            remaining = 0;
-            i++;
-          }
-        }
+        const queue = caughtUp.filter((e) => {
+          if (e.completeAt <= t) { troopsReady += e.qty; return false; }
+          return true;
+        });
         const newTroops = Math.min(fresh.troopCap, fresh.troops + troopsReady);
+        const currentSpeedupUntil = fresh.speedupUntil ?? t;
+        const newSpeedupUntil = Math.max(currentSpeedupUntil, t) + durSec * 1000;
         const tq = trainingQueueOps(queue);
         result = await cols.playerWorld.updateOne(
           filter,
           {
-            $set: { resources, troops: newTroops, trainingQueue: queue, lastTickAt: t, ...shopCountSet, ...tq.set },
+            $set: {
+              resources, troops: newTroops, trainingQueue: queue,
+              speedupUntil: newSpeedupUntil, speedupSettledAt: t,
+              lastTickAt: t, ...shopCountSet, ...tq.set,
+            },
             $inc: { rev: 1 },
             ...(Object.keys(tq.unset).length ? { $unset: tq.unset } : {}),
           },

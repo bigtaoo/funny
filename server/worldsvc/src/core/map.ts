@@ -60,6 +60,9 @@ export class WorldCoreMap extends WorldCoreVision {
     const vis = (x: number, y: number): boolean => isInVision(sources, x, y);
     // Family member set (including self): visible family ally territory is tagged ally (client renders in friendly color, not enemy color).
     const family = await this.familyMemberIds(worldId, accountId);
+    // Own sect's OTHER families (not own family, not allied sects): visible territory is tagged sectmate
+    // (client renders a third "friendly but not family" colour, 2026-08-08).
+    const sectMates = await this.sectMateMemberIds(worldId, accountId);
     // Allied sect member set (≤2 allied sects): visible allied territory is tagged allySect (client renders yellow border, §8.2).
     const allySect = await this.allySectMemberIds(worldId, accountId);
 
@@ -85,13 +88,16 @@ export class WorldCoreMap extends WorldCoreVision {
           ? profileMap.get(o.ownerId) : undefined;
         const view = o ? this.tileDocView(o, accountId, ownerProfile, now) : this.terrainView(worldId, x, y, baseByKey.get(`${x}:${y}`));
         const ally = !!o?.ownerId && o.ownerId !== accountId && family.has(o.ownerId);
-        // Alliance tag: not own tile, not family, belongs to an allied sect member (family ally takes priority; the two are mutually exclusive).
-        const allied = !ally && !!o?.ownerId && o.ownerId !== accountId && allySect.has(o.ownerId);
+        // Sect-mate tag: not own tile, not family, belongs to a fellow member of the requester's own sect (mutually exclusive with ally/allied).
+        const sectmate = !ally && !!o?.ownerId && o.ownerId !== accountId && sectMates.has(o.ownerId);
+        // Alliance tag: not own tile, not family, not sect-mate, belongs to an allied sect member (mutually exclusive with the other two).
+        const allied = !ally && !sectmate && !!o?.ownerId && o.ownerId !== accountId && allySect.has(o.ownerId);
         // Static structure layer is public map-wide; only intel (garrison/HP/watchtower) is fog-gated (see gateIntel).
         tiles.push({
           ...this.gateIntel(view, vis(x, y)),
           visible: true,
           ...(ally ? { ally: true } : {}),
+          ...(sectmate ? { sectmate: true } : {}),
           ...(allied ? { allySect: true } : {}),
         });
       }
@@ -128,9 +134,11 @@ export class WorldCoreMap extends WorldCoreVision {
       .toArray();
 
     let family = new Set<string>([accountId]);
+    let sectMateSet = new Set<string>();
     let allySectSet = new Set<string>();
     if (lod === 'mid') {
       family = await this.familyMemberIds(worldId, accountId);
+      sectMateSet = await this.sectMateMemberIds(worldId, accountId);
       allySectSet = await this.allySectMemberIds(worldId, accountId);
     }
 
@@ -141,6 +149,7 @@ export class WorldCoreMap extends WorldCoreVision {
         tile.mine = true;
       } else if (lod === 'mid' && o.ownerId) {
         if (family.has(o.ownerId)) tile.ally = true;
+        else if (sectMateSet.has(o.ownerId)) tile.sectmate = true;
         else if (allySectSet.has(o.ownerId)) tile.allySect = true;
       }
       return tile;
@@ -191,11 +200,16 @@ export class WorldCoreMap extends WorldCoreVision {
       territoryCount: await this.deps.cols.tiles.countDocuments({ worldId, ownerId: accountId }),
       ...(doc.hasBattlePass ? { hasBattlePass: true } : {}),
       ...(doc.mainBaseTile ? { mainBaseTile: doc.mainBaseTile } : {}),
+      // S8-8 UI fix (2026-08-08): mirror the anchor tile's protection-shield end time onto the player view,
+      // same reasoning as hp/maxHp below — the HUD needs this regardless of whether the base tile happens
+      // to be in the current map viewport (tileCache), so it can't rely on WorldTileView.protectedUntil alone.
+      ...(baseAnchor?.protectedUntil ? { baseProtectedUntil: baseAnchor.protectedUntil } : {}),
       ...(baseAnchor ? siegeHpView(baseAnchor, this.deps.now()) : {}),
       ...(doc.familyId ? { familyId: doc.familyId } : {}),
       ...(doc.trainingQueue && doc.trainingQueue.length > 0
         ? { trainingQueue: doc.trainingQueue.map((e) => ({ qty: e.qty, startAt: e.startAt, completeAt: e.completeAt })) }
         : {}),
+      ...(doc.speedupUntil ? { speedupUntil: doc.speedupUntil } : {}),
       ...(doc.buildings ? { buildings: doc.buildings } : {}),
       ...(doc.buildQueue && doc.buildQueue.length > 0
         ? { buildQueue: doc.buildQueue.map((e) => ({ key: e.key, toLevel: e.toLevel, startAt: e.startAt, completeAt: e.completeAt })) }

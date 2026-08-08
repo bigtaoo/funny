@@ -37,6 +37,9 @@ const DRAG_THRESHOLD = 8; // px in design space before a press becomes a drag
 // something that needs per-frame precision, so recompute at ~10Hz instead of every tick.
 const HIGHLIGHT_REFRESH_INTERVAL = 0.1;
 
+/** Shared empty set passed to UnitView.setSpellTargetPreview when no AoE spell is being aimed. */
+const EMPTY_UNIT_IDS: ReadonlySet<number> = new Set();
+
 export interface InputHandlers {
   handleDown(x: number, y: number): void;
   handleMove(x: number, y: number): void;
@@ -320,6 +323,7 @@ export function InputMixin<TBase extends GameRendererBaseCtor>(Base: TBase): TBa
       this.tapSelect = null;
       this.handView.clearSelection();
       this.boardView.clearHighlights();
+      this.unitView.setSpellTargetPreview(EMPTY_UNIT_IDS);
     }
 
     // ── Shared placement logic ─────────────────────────────────────────────────
@@ -359,6 +363,7 @@ export function InputMixin<TBase extends GameRendererBaseCtor>(Base: TBase): TBa
       col: number, row: number, x: number, y: number,
     ): void {
       this.boardView.clearHighlights();
+      let spellTargets: Set<number> | null = null;
 
       switch (cardType) {
         case CardType.Unit: {
@@ -382,15 +387,48 @@ export function InputMixin<TBase extends GameRendererBaseCtor>(Base: TBase): TBa
         case CardType.Spell: {
           if (spellType === SpellType.Meteor && !this.layout.isOutsideBoard(x, y)) {
             this.boardView.showMeteorTargetHighlight(col, row);
+            spellTargets = this.meteorTargetUnits(col, row);
           } else if (
             (spellType === SpellType.Rockslide || spellType === SpellType.BridgeCollapse)
             && !this.layout.isOutsideBoard(x, y)
           ) {
             this.boardView.showColumnTargetHighlight(col);
+            // Rockslide (unlike Meteor) hits every unit in the column regardless of side
+            // (SpellSystem.castRockslide has no side filter); BridgeCollapse only blocks
+            // movement, it deals no damage, so there's no "units hit" set to preview.
+            if (spellType === SpellType.Rockslide) spellTargets = this.columnTargetUnits(col);
           }
           break;
         }
       }
+
+      // Outline the units actually inside the hovered AoE footprint — the target-rect
+      // fill alone doesn't show which units' centers fall inside it (2026-08-08 fix:
+      // the frequently-used 2×2 Meteor kept missing its intended target because of this).
+      this.unitView.setSpellTargetPreview(spellTargets ?? EMPTY_UNIT_IDS);
+    }
+
+    /** Enemy units (Meteor spares the caster's own side) whose integer cell falls in the 2×2 area anchored at (col, row) — mirrors SpellSystem.castMeteor's hit test. */
+    private meteorTargetUnits(col: number, row: number): Set<number> {
+      const targets = new Set<number>();
+      const maxCol = col + 1;
+      const maxRow = row + 1;
+      for (const unit of this.engine.state.board.units.values()) {
+        if (unit.isDead) continue;
+        if (unit.side === this.layout.localSide) continue; // never hit own units — see SpellSystem.castMeteor
+        if (unit.col >= col && unit.col <= maxCol && unit.row >= row && unit.row <= maxRow) targets.add(unit.id);
+      }
+      return targets;
+    }
+
+    /** All units (both sides) standing in `col` — mirrors SpellSystem.castRockslide's hit test (no side filter). */
+    private columnTargetUnits(col: number): Set<number> {
+      const targets = new Set<number>();
+      for (const unit of this.engine.state.board.units.values()) {
+        if (unit.isDead) continue;
+        if (unit.col === col) targets.add(unit.id);
+      }
+      return targets;
     }
 
     // ── Helpers ────────────────────────────────────────────────────────────────
@@ -406,6 +444,7 @@ export function InputMixin<TBase extends GameRendererBaseCtor>(Base: TBase): TBa
       this.dragOnBoard = false;
       this.handView.clearSelection();
       this.boardView.clearHighlights();
+      this.unitView.setSpellTargetPreview(EMPTY_UNIT_IDS);
     }
 
     private overRect(x: number, y: number, r: Rect): boolean {

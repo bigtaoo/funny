@@ -3,7 +3,7 @@
 // after fastify-openapi-glue serialization — regression test for the 2026-06-24 check-in calendar `+undefined` bug (RETENTION_DESIGN §10.1).
 // Requires `cd server && docker compose up -d` + prior `tsc -b` (imports from dist).
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
-import { createMongo, makeDayKey, makeMonthKey, makeWeekKey, DAILY_COINS_REWARD, type JwtConfig, type MongoHandle } from '@nw/shared';
+import { createMongo, makeDayKey, makeMonthKey, makeWeekKey, DAILY_COINS_REWARD, CARD_DEFS, type JwtConfig, type MongoHandle } from '@nw/shared';
 import type { FastifyInstance } from 'fastify';
 import { buildApp } from '../dist/app.js';
 import type { CommercialClient, UndeliveredOrder } from '../dist/commercialClient.js';
@@ -264,15 +264,19 @@ describe.skipIf(!mongo)('meta retention e2e', () => {
       expect(granted!.sourceType).toBe(`weekly_chest:${makeWeekKey(fakeNow)}`);
     });
 
-    it('tier 3 (skin): reward lands in save.inventory.skins, drawn from the shop-tier pool only', async () => {
+    it('tier 3 (card): reward lands in save.cardInv as a legendary (Anna-faction) card only (2026-08-08: replaced the shop-skin reward)', async () => {
       await seedWeeklyPoints(21);
       const r = body(await app.inject({
         method: 'POST', url: '/retention/weekly/claim', headers: auth(), payload: { threshold: 21 },
       }));
       expect(r.ok).toBe(true);
-      expect(r.data.reward.kind).toBe('skin');
-      expect(['skin_shop_c1', 'skin_shop_r1']).toContain(r.data.reward.id);
-      expect(r.data.save.inventory.skins).toContain(r.data.reward.id);
+      expect(r.data.reward.kind).toBe('card');
+      expect(typeof r.data.reward.id).toBe('string');
+      expect(CARD_DEFS[r.data.reward.id]?.faction).toBe('anna'); // legendary display rarity, see gachaCatalog.ts cardCatalog()
+      const cards: Array<{ defId: string; sourceType?: string }> = Object.values(r.data.save.cardInv ?? {});
+      const granted = cards.find((c) => c.defId === r.data.reward.id);
+      expect(granted).toBeDefined();
+      expect(granted!.sourceType).toBe(`weekly_chest:${makeWeekKey(fakeNow)}`);
     });
 
     it('all three tiers are independently claimable within the same week', async () => {
@@ -305,7 +309,7 @@ describe.skipIf(!mongo)('meta retention e2e', () => {
   // ── delivery resilience (2026-08-05 fix) ────────────────────────────────────────────────────
   //
   // Root cause class (see liveops.ts deliverRetentionReward's doc comment): claimCheckin/
-  // claimWeeklyChest mark the underlying claim durably BEFORE the equipment/skin/coin grant call
+  // claimWeeklyChest mark the underlying claim durably BEFORE the equipment/card/coin grant call
   // runs. That ordering is correct and unchanged (it's the single race-free gate for concurrent
   // duplicate requests) — the bug was that a failed grant afterward used to be silently swallowed:
   // the claim stayed marked forever, the item was never delivered, and a retry just bounced off
@@ -337,11 +341,8 @@ describe.skipIf(!mongo)('meta retention e2e', () => {
     }
     const failsOnEquipmentGrant = () => wrapFailingSaves((current, incoming) =>
       incoming.equipmentInvCount !== (current.save as { equipmentInvCount: number }).equipmentInvCount);
-    const failsOnSkinGrant = () => wrapFailingSaves((current, incoming) => {
-      const before = (current.save as { inventory?: { skins?: string[] } }).inventory?.skins ?? [];
-      const after = (incoming as { inventory?: { skins?: string[] } }).inventory?.skins ?? [];
-      return after.length !== before.length;
-    });
+    const failsOnCardGrant = () => wrapFailingSaves((current, incoming) =>
+      incoming.cardInvCount !== (current.save as { cardInvCount: number }).cardInvCount); // mirrors pve.e2e.test.ts's isCardGrantWrite check
 
     it('weekly chest equipment tier (15): a failed grantEquipment leaves the tier durably claimed but undelivered; retrying resumes delivering the SAME item exactly once', async () => {
       await seedWeeklyPoints(15);
@@ -385,9 +386,15 @@ describe.skipIf(!mongo)('meta retention e2e', () => {
       expect(Object.keys(third.data.save.equipmentInv ?? {}).length).toBe(1);
     });
 
-    it('weekly chest skin tier (21): a failed grantSkin leaves the tier durably claimed but undelivered; retrying resumes delivering the SAME item exactly once', async () => {
+    it('weekly chest card tier (21): a failed grantCard leaves the tier durably claimed but undelivered; retrying resumes delivering the SAME card exactly once', async () => {
+      // Baseline includes the account's 3 onboarding starter cards (auth.ts maybeGrantStarterCards)
+      // — cardInv is never empty for a real save, so track ids relative to this baseline instead of
+      // asserting raw counts, same technique as the day-14 checkin card milestone test above.
+      const before = body(await app.inject({ method: 'GET', url: '/save', headers: auth() }));
+      const baselineIds = new Set(Object.keys(before.data.save.cardInv ?? {}));
+
       await seedWeeklyPoints(21);
-      const failingApp = await buildApp({ cols: { ...m.collections, saves: failsOnSkinGrant() }, jwt, internalKey: 'k', commercial: new FakeCommercial(), now: () => fakeNow });
+      const failingApp = await buildApp({ cols: { ...m.collections, saves: failsOnCardGrant() }, jwt, internalKey: 'k', commercial: new FakeCommercial(), now: () => fakeNow });
       try {
         const failed = await failingApp.inject({ method: 'POST', url: '/retention/weekly/claim', headers: auth(), payload: { threshold: 21 } });
         expect(failed.statusCode).toBe(502);
@@ -395,18 +402,34 @@ describe.skipIf(!mongo)('meta retention e2e', () => {
         await failingApp.close();
       }
 
+      // Tier is durably marked claimed even though delivery failed. The card *instance* already
+      // landed at this point — grantCard's cardInstances upsert runs unconditionally before its own
+      // rev-guarded save.cardInvCount bump (cards.ts, same "ordering discipline, not transactions"
+      // house style as equipment.ts) — only that count mirror is what the forced failure actually
+      // hits. The real gap this fix closes is the idem ledger's `committed` flag staying false,
+      // which is what the retry below exercises: without it, nothing tells a later request "resume
+      // this exact card" instead of losing track of it or re-rolling a different one.
       const saveAfterFailure = body(await app.inject({ method: 'GET', url: '/save', headers: auth() }));
-      expect(saveAfterFailure.data.save.inventory.skins).toEqual([]);
+      const newCardsAfterFailure = Object.keys(saveAfterFailure.data.save.cardInv ?? {}).filter((id) => !baselineIds.has(id));
+      expect(newCardsAfterFailure.length).toBe(1); // already landed, just not yet marked committed
 
       const retried = body(await app.inject({ method: 'POST', url: '/retention/weekly/claim', headers: auth(), payload: { threshold: 21 } }));
       expect(retried.ok).toBe(true);
-      expect(retried.data.reward.kind).toBe('skin');
-      expect(['skin_shop_c1', 'skin_shop_r1']).toContain(retried.data.reward.id);
-      expect(retried.data.save.inventory.skins).toEqual([retried.data.reward.id]); // exactly one, not doubled
+      expect(retried.data.reward.kind).toBe('card');
+      expect(CARD_DEFS[retried.data.reward.id]?.faction).toBe('anna');
+      const newCards = Object.entries(retried.data.save.cardInv ?? {})
+        .filter(([id]) => !baselineIds.has(id))
+        .map(([, c]) => c as { defId: string });
+      expect(newCards.length).toBe(1); // exactly one new card, not a second re-rolled one from the retry
+      expect(newCards[0].defId).toBe(retried.data.reward.id);
 
+      // A third call replays the same already-delivered card (idem ledger `committed: true`) rather
+      // than granting a second one or erroring.
       const third = body(await app.inject({ method: 'POST', url: '/retention/weekly/claim', headers: auth(), payload: { threshold: 21 } }));
+      expect(third.ok).toBe(true);
       expect(third.data.reward.id).toBe(retried.data.reward.id);
-      expect(third.data.save.inventory.skins).toEqual([retried.data.reward.id]);
+      const thirdNewCards = Object.keys(third.data.save.cardInv ?? {}).filter((id) => !baselineIds.has(id));
+      expect(thirdNewCards.length).toBe(1); // still exactly one new card after a third replay
     });
 
     it('checkin day-30 equipment milestone: a failed grantEquipment leaves the day durably claimed but undelivered (bonusCoins too); retrying delivers the SAME item + the bonus exactly once', async () => {

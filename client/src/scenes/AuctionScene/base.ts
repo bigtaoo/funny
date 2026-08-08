@@ -20,6 +20,8 @@ import { sidebarNavW } from '../../ui/widgets/HubTabs';
 import type { WorldApiClient, AuctionView } from '../../net/WorldApiClient';
 import { WorldApiError } from '../../net/WorldApiClient';
 import type { SaveData, EquipmentInstance, CardInstance } from '../../game/meta/SaveData';
+import { EQUIP_MAX_LEVEL } from '../../game/meta/equipmentDefs';
+import { levelStarsText } from '../../render/levelStars';
 import { skinDisplayName } from '../../game/meta/skinDefs';
 import { caretDisplay } from '../../ui/inputDisplay';
 import { ScrollTapGesture } from '../../ui/scrollTapGesture';
@@ -358,11 +360,17 @@ export class AuctionSceneBase {
     return mode === 'auction' ? 'hammer' : 'tag';
   }
 
-  /** Human label for a listing row/title, per item class. */
+  /**
+   * Human label for a listing row/title, per item class — bare item name for equipment (no level
+   * suffix at all; a raw "+N" read as noise once every other item view had already moved to stars —
+   * see 08.08.2026 report). list.ts draws the level as a real gold-icon star row beneath this instead
+   * (see auctionEquipLevel); text-only contexts with no room for a separate icon row use
+   * auctionLabelText below, which folds the level back in as text stars.
+   */
   protected auctionLabel(auc: AuctionView): string {
     if (auc.itemType === 'equipment') {
       const inst = auc.item?.['instance'] as EquipmentInstance | undefined;
-      return inst ? `${this.equipName(inst.defId)} +${inst.level}` : t('auction.filterEquipment');
+      return inst ? this.equipName(inst.defId) : t('auction.filterEquipment');
     }
     if (auc.itemType === 'card') {
       const inst = auc.item?.['instance'] as CardInstance | undefined;
@@ -374,6 +382,24 @@ export class AuctionSceneBase {
     }
     const mat = (auc.item?.['material'] as string | undefined) ?? 'scrap';
     return `${t(`auction.${mat as 'scrap' | 'lead' | 'binding'}`)} ×${auc.qty}`;
+  }
+
+  /** Equipment enhancement level for a listing (0 for non-equipment, or an equipment listing whose
+   *  instance snapshot is missing) — list.ts uses this to draw a real gold-icon star row beneath the
+   *  name (mirrors EquipmentScene.buildLevelStars). */
+  protected auctionEquipLevel(auc: AuctionView): number {
+    if (auc.itemType !== 'equipment') return 0;
+    const inst = auc.item?.['instance'] as EquipmentInstance | undefined;
+    return inst?.level ?? 0;
+  }
+
+  /** auctionLabel, with the equipment enhancement level folded back in as text stars (e.g.
+   *  "Foil Cover ★★★") instead of the old "+N" — for text-only slots with no room for a separate
+   *  icon-star row (the bid modal title). Mirrors EquipmentScene.itemLabel's text-star convention. */
+  protected auctionLabelText(auc: AuctionView): string {
+    const base = this.auctionLabel(auc);
+    const stars = levelStarsText(this.auctionEquipLevel(auc), EQUIP_MAX_LEVEL);
+    return stars ? `${base} ${stars}` : base;
   }
 
   // ── Price guardrail band (create-form reference price) ───────────────────────

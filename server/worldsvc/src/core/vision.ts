@@ -53,6 +53,26 @@ export class WorldCoreVision extends WorldCoreSpawn {
   }
 
   /**
+   * 2026-08-08: set of accountIds of the player's own sect's OTHER families — same sect, NOT own family
+   * (that's `familyMemberIds`) and NOT an allied sect (that's `allySectMemberIds`). Chain: accountId →
+   * playerWorld.familyId/sectId → sect's member families (socialsvc) minus own family → members joined
+   * to this world. Does not share vision (only family does, DECISIONS §18.6); used only by getMap to tag
+   * a third ownership colour distinct from family-ally/allied-sect/enemy. No family/no sect → empty set.
+   */
+  protected async sectMateMemberIds(worldId: string, accountId: string): Promise<Set<string>> {
+    const { cols } = this.deps;
+    const result = new Set<string>();
+    const myPw = await cols.playerWorld.findOne({ _id: playerWorldId(worldId, accountId) });
+    if (!myPw?.familyId || !myPw.sectId) return result;
+    const sectFams = await this.socialsvc.getFamiliesBySect(myPw.sectId);
+    const famIds = sectFams.map((f) => f.familyId).filter((fid) => fid !== myPw.familyId);
+    if (famIds.length === 0) return result;
+    const members = await cols.playerWorld.find({ worldId, familyId: { $in: famIds } }).toArray();
+    for (const m of members) result.add(m.accountId);
+    return result;
+  }
+
+  /**
    * R-3 (§8.2 / §18.7): the set of accountIds the player must NOT siege — "friendly fire" prevention.
    * Covers three friendly tiers: self + own family (≤30) + own sect (all families sharing the sect) +
    * allied sects (`sect.allySectIds`, ≤2). Blocking only allied *other* sects while leaving same-sect

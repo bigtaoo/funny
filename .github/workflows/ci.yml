@@ -48,6 +48,10 @@ jobs:
       - name: server codegen check (auctionsvc openapi)
         working-directory: server/auctionsvc
         run: npm run gen:api:auction:check
+      # socialsvc REST codegen staleness check (openapi-social.yml, self-contained spec)
+      - name: server codegen check (socialsvc openapi)
+        working-directory: server/socialsvc
+        run: npm run gen:api:social:check
       # ADR-023 P3: gateway + gameserver proto codegen staleness check
       - name: server codegen check (proto gateway+gameserver)
         working-directory: server
