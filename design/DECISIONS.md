@@ -205,9 +205,10 @@
 
 - **决策**（用户拍板）：世界地图渲染把两个正交信号彻底分层，止住「彩色方块拼贴」的粗糙观感。
   1. **地形/资源 = 安静的近纸底填充**。资源「类型」由手绘 motif（`drawResMotif`，L1）承载，**不再靠饱和背景色**。`RES_COLORS` 重度去饱和为纸邻近的暖/中性色，只在 L2/L3 概览时轻声提示 biome 分区，且刻意避开红/蓝/绿以免冒充归属色。
-  2. **归属 = 唯一的强色**，以半透明 wash + 彩色描边/角标叠加（`ownerTint` + `drawTileL1/L2`），沿用「我红敌蓝、盟友绿」。L3 概览仍让归属色主导整格（态势可读性）。
-- **为什么**：旧实现里颜色同时表达「地形类型」和「归属」，且 `RES_COLORS` 的绿/蓝直接撞 ally 绿 / enemy 蓝 —— 一块资源地看起来像别人的地盘；每格 0.85 实心填充 + 硬边框 = 全图花花绿绿，与手绘笔记本纸感相反。
+  2. **归属 = 唯一的强色**，以半透明 wash + 彩色描边/角标叠加（`ownerTint` + `drawTileL1/L2`），沿用「我蓝敌红、盟友绿」（ADR-003）。L3 概览仍让归属色主导整格（态势可读性）。
+- **为什么**：旧实现里颜色同时表达「地形类型」和「归属」，且 `RES_COLORS` 的绿/蓝直接撞 ally 绿 / enemy 红 —— 一块资源地看起来像别人的地盘；每格 0.85 实心填充 + 硬边框 = 全图花花绿绿，与手绘笔记本纸感相反。
 - **不动的铁律**：ADR-003 我蓝敌红 / [`product/art-direction.md`](product/art-direction.md) §3.2 归属色未改；本条只改地形/资源底色与「归属改画描边而非整格填充」的呈现方式。
+- **订正（2026-08-08，用户截图报告世界地图归属色发现问题）**：本条第 2 点原文一度笔误成「我红敌蓝、盟友绿」，且与紧接着「不动的铁律：ADR-003 我蓝敌红未改」自相矛盾——`tileStyle.ts`/`tileGraphics.ts`/`WorldMapRenderer/{city,fog}.ts` 及 `WORLD_MAP_ART_SPEC.md`/`META_TASKS.md`/`SLG_DESIGN_LOG.md`/`SLG_FIELD_BATTLE_DESIGN.md`/`city-image-prompts.md` 均照着错误文本把 SLG 世界地图（领地 wash、主城标签/等级点、行军箭头敌方色、驻扎光圈、箭塔/阻挡建筑 tint）实现成了自己=红、敌方=蓝，与 ADR-003 铁律相悖且沿用了一年有余。现已改回自己=蓝、敌方=红，与全局阵营色唯一约定对齐；上方原文按订正后的版本直接改写（不留错误版本，避免继续被抄），历史脉络见此条。
 - **影响**：仅客户端 `client/src/scenes/WorldMapScene.ts`（`TERRAIN_COLORS`/`RES_COLORS`/新增 `ownerTint`+`terrainFill`/`drawTileL1`/`drawTileL2`）。无服务端/契约改动。
 
 ## ADR-026 SLG 建筑攻防 = 血量 + 逐队守军波次 + 攻城值延迟结算 — Accepted — 2026-07-02

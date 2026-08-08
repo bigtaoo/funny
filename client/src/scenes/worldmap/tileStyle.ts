@@ -6,8 +6,9 @@
 //     are heavily desaturated (paper-adjacent, warm/neutral) so they never masquerade as an
 //     ownership hue and only whisper the biome zone at the L2/L3 overview.
 //   • OWNERSHIP → the only strong color, applied as a translucent wash + colored border/accent
-//     (see ownerTint + drawTileL1/L2), following the "enemy blue, player red" convention:
-//     own = red ink, enemy = blue ink, family-ally = green ink.
+//     (see ownerTint + drawTileL1/L2), following the global faction-color iron rule (ADR-003,
+//     art-direction.md §3.2 — never touched by skins): own = blue ink, enemy = red ink,
+//     family-ally = green ink.
 
 import type { WorldTileView } from '../../net/WorldApiClient';
 import { proceduralTile, biomeMixAt } from '@nw/shared';
@@ -122,10 +123,10 @@ export const TERRAIN_TEX_TINT: Partial<Record<TerrainTextureName, number>> = {
   terrain_stronghold: 0xba9a80, // NPC stronghold — muted stone brown, deepened 2026-07-11
 };
 
-export const MINE_TINT      = 0xe69090; // own territory (light red ink)
-export const MINE_BASE_TINT = 0xcc3333; // own capital (deep red ink)
-export const ENEMY_TINT     = 0x90a8e6; // enemy territory (light blue ink)
-export const ENEMY_BASE_TINT= 0x4477cc; // enemy capital (deep blue ink)
+export const MINE_TINT       = 0x90a8e6; // own territory (light blue ink — ADR-003 iron rule: own = blue)
+export const MINE_BASE_TINT  = 0x4477cc; // own capital (deep blue ink)
+export const ENEMY_TINT      = 0xe69090; // enemy territory (light red ink — ADR-003 iron rule: enemy = red)
+export const ENEMY_BASE_TINT = 0xcc3333; // enemy capital (deep red ink)
 export const ALLY_TINT      = 0x9cd6a4; // family-ally territory (light green ink — G5 friendly third color)
 export const ALLY_BASE_TINT = 0x46a85a; // family-ally capital (deep green ink)
 export const FOG_COLOR      = 0xc9c2b2; // fog of war (light warm paper-grey, thin overlay on terrain)

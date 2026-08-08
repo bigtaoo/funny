@@ -101,7 +101,7 @@ describe('WorldMap city name/level label (2026-08-01)', () => {
     expect(label.text).toBe('Lv.2');
   });
 
-  it('ink color follows ownership: mine=red, ally=green, occupied=blue, neutral=gray', () => {
+  it('ink color follows ownership: mine=blue, ally=green, occupied=red, neutral=gray (ADR-003 iron rule)', () => {
     // PIXI's TextStyle normalizes a numeric `fill` to a CSS hex string on readback.
     const hex = (n: number): string => `#${n.toString(16).padStart(6, '0')}`;
     const colorFor = (extra: Partial<WorldTileView>, cx: number): string => {
@@ -109,9 +109,9 @@ describe('WorldMap city name/level label (2026-08-01)', () => {
       placeBase(ctx, cx, 130, extra);
       return String(renderLabel(ctx, cx, 130).style.fill);
     };
-    expect(colorFor({ mine: true }, 140)).toBe(hex(0xcc2222));
+    expect(colorFor({ mine: true }, 140)).toBe(hex(0x2266cc));
     expect(colorFor({ mine: false, ally: true }, 150)).toBe(hex(0x2e8b40));
-    expect(colorFor({ mine: false, ally: false, occupied: true }, 160)).toBe(hex(0x2266cc));
+    expect(colorFor({ mine: false, ally: false, occupied: true }, 160)).toBe(hex(0xcc2222));
     expect(colorFor({ mine: false, ally: false, occupied: false }, 170)).toBe(hex(0x888888));
   });
 

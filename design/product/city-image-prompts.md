@@ -148,4 +148,4 @@ detail layers, prominent gold accents on the tallest spires.
 代码已接入：`getCityTextureForLevel(level)`（`client/src/render/atlas/cityAtlasLoader.ts` + `tools/map-editor/src/render/atlas/cityAtlasLoader.ts`）按等级取 `city_l{level}`，回退 `city_lv{tier}`。
 - **游戏内**：`WorldMapRenderer.refreshCityLayer` 为玩家主城（`base`）**和** NPC 城池节点（`allCityNodes`：州府/关隘城/分级城/世界中心）各放一个精灵，尺寸按 `footprint/BASE_FOOTPRINT × BASE_SPRITE_TILES` 缩放（城越高越大）。
 - **编辑器**：`refreshCitySprites`（`tools/map-editor/src/index.ts`）用同一函数、同一缩放规则画城池——所见即游戏内所见。
-- 阵营 tint（自己红 `0xcc2222` / 友军绿 `0x2e8b40` / 敌方蓝 `0x224488`）目前只作用于玩家主城的动态层，NPC 城池按原图渲染。
+- 阵营 tint（自己蓝 `0x224488` / 友军绿 `0x2e8b40` / 敌方红 `0xcc2222`，ADR-003 铁律）目前只作用于玩家主城的动态层，NPC 城池按原图渲染。

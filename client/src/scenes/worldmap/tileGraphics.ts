@@ -149,7 +149,7 @@ export function drawTileL1(
   if (tile && tile.level > 1) {
     // Was the square's top-right corner (tp-6,6); nearest diamond analog is the
     // midpoint of the top→right edge, nudged slightly inward.
-    const dotColor = tile.mine ? 0xcc2222 : (tile.ally ? 0x2e8b40 : (tile.occupied ? 0x2266cc : 0x888888));
+    const dotColor = tile.mine ? 0x2266cc : (tile.ally ? 0x2e8b40 : (tile.occupied ? 0xcc2222 : 0x888888));
     const v = diamondVertices(tp - 1);
     const dotX = (v.top[0] + v.right[0]) / 2 * 0.85;
     const dotY = (v.top[1] + v.right[1]) / 2 * 0.85;
@@ -195,10 +195,10 @@ export function drawTileL1(
     }
   }
 
-  // ADR-051 (P5): player-built structure marker (arrowTower / blocker), tinted by ownership (own red / enemy
-  // blue, matching the territory/march colour convention). Geometric for v1 — no dedicated atlas art yet.
+  // ADR-051 (P5): player-built structure marker (arrowTower / blocker), tinted by ownership (own blue / enemy
+  // red, matching the territory/march colour convention — ADR-003 iron rule). Geometric for v1 — no dedicated atlas art yet.
   if (tile?.structure) {
-    const col = tile.structure.mine === true ? 0xcc3333 : 0x4477cc;
+    const col = tile.structure.mine === true ? 0x4477cc : 0xcc3333;
     const baseY = hh - 4;
     if (tile.structure.kind === 'arrowTower') {
       const towerW = Math.max(4, tp * 0.16);
@@ -288,8 +288,8 @@ export function drawHpBar(g: PIXI.Graphics, hp: number, maxHp: number, tp: numbe
 
 export function drawCityIcon(g: PIXI.Graphics, mine: boolean, ally: boolean, lv: number, tp: number): void {
   const tier = lv <= 2 ? 1 : lv <= 5 ? 2 : lv <= 8 ? 3 : 4;
-  const ink = mine ? 0xcc2222 : (ally ? 0x2e8b40 : 0x224488);
-  const fill = mine ? 0xf5d5d5 : (ally ? 0xd5f0e0 : 0xd5e0f5);
+  const ink = mine ? 0x224488 : (ally ? 0x2e8b40 : 0xcc2222);
+  const fill = mine ? 0xd5e0f5 : (ally ? 0xd5f0e0 : 0xf5d5d5);
   const margin = Math.max(4, tp * 0.08);
   const inner = tp - 1 - margin * 2;
   // `g`'s local origin is now the tile's diamond CENTER (see drawTileL1), not the old
