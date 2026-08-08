@@ -1768,6 +1768,16 @@ export const WORLD_RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                     "maxHp": {
                       "type": "integer",
                       "description": "D-CITY-8: own main base's durability cap (= baseDurabilityMax(wall level)). Client renders the durability bar as hp/maxHp."
+                    },
+                    "speedupUntil": {
+                      "type": "integer",
+                      "format": "int64",
+                      "description": "S8-8 fix (2026-08-08): train-speedup shop buff end time (ms epoch) — while in the future, the training queue advances at 2x real-time speed (TRAIN_SPEEDUP_BUFF_MULT). Present whenever the player has ever bought a speedup, even once expired; client compares against Date.now() itself (same contract as WorldTileView.protectedUntil) to render a HUD countdown/icon."
+                    },
+                    "baseProtectedUntil": {
+                      "type": "integer",
+                      "format": "int64",
+                      "description": "S8-8 UI fix (2026-08-08): mirror of the main base anchor tile's protection-shield end time (ms epoch; see WorldTileView.protectedUntil), so the HUD can render a shield countdown without depending on the base tile being in the current map viewport. Absent when the base has never been shielded."
                     }
                   }
                 },
@@ -2024,6 +2034,16 @@ export const WORLD_RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                 "maxHp": {
                   "type": "integer",
                   "description": "D-CITY-8: own main base's durability cap (= baseDurabilityMax(wall level)). Client renders the durability bar as hp/maxHp."
+                },
+                "speedupUntil": {
+                  "type": "integer",
+                  "format": "int64",
+                  "description": "S8-8 fix (2026-08-08): train-speedup shop buff end time (ms epoch) — while in the future, the training queue advances at 2x real-time speed (TRAIN_SPEEDUP_BUFF_MULT). Present whenever the player has ever bought a speedup, even once expired; client compares against Date.now() itself (same contract as WorldTileView.protectedUntil) to render a HUD countdown/icon."
+                },
+                "baseProtectedUntil": {
+                  "type": "integer",
+                  "format": "int64",
+                  "description": "S8-8 UI fix (2026-08-08): mirror of the main base anchor tile's protection-shield end time (ms epoch; see WorldTileView.protectedUntil), so the HUD can render a shield countdown without depending on the base tile being in the current map viewport. Absent when the base has never been shielded."
                 }
               }
             }
@@ -2218,6 +2238,16 @@ export const WORLD_RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                 "maxHp": {
                   "type": "integer",
                   "description": "D-CITY-8: own main base's durability cap (= baseDurabilityMax(wall level)). Client renders the durability bar as hp/maxHp."
+                },
+                "speedupUntil": {
+                  "type": "integer",
+                  "format": "int64",
+                  "description": "S8-8 fix (2026-08-08): train-speedup shop buff end time (ms epoch) — while in the future, the training queue advances at 2x real-time speed (TRAIN_SPEEDUP_BUFF_MULT). Present whenever the player has ever bought a speedup, even once expired; client compares against Date.now() itself (same contract as WorldTileView.protectedUntil) to render a HUD countdown/icon."
+                },
+                "baseProtectedUntil": {
+                  "type": "integer",
+                  "format": "int64",
+                  "description": "S8-8 UI fix (2026-08-08): mirror of the main base anchor tile's protection-shield end time (ms epoch; see WorldTileView.protectedUntil), so the HUD can render a shield countdown without depending on the base tile being in the current map viewport. Absent when the base has never been shielded."
                 }
               }
             }
@@ -2519,6 +2549,16 @@ export const WORLD_RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                         "maxHp": {
                           "type": "integer",
                           "description": "D-CITY-8: own main base's durability cap (= baseDurabilityMax(wall level)). Client renders the durability bar as hp/maxHp."
+                        },
+                        "speedupUntil": {
+                          "type": "integer",
+                          "format": "int64",
+                          "description": "S8-8 fix (2026-08-08): train-speedup shop buff end time (ms epoch) — while in the future, the training queue advances at 2x real-time speed (TRAIN_SPEEDUP_BUFF_MULT). Present whenever the player has ever bought a speedup, even once expired; client compares against Date.now() itself (same contract as WorldTileView.protectedUntil) to render a HUD countdown/icon."
+                        },
+                        "baseProtectedUntil": {
+                          "type": "integer",
+                          "format": "int64",
+                          "description": "S8-8 UI fix (2026-08-08): mirror of the main base anchor tile's protection-shield end time (ms epoch; see WorldTileView.protectedUntil), so the HUD can render a shield countdown without depending on the base tile being in the current map viewport. Absent when the base has never been shielded."
                         }
                       }
                     },
@@ -3188,6 +3228,16 @@ export const WORLD_RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                 "maxHp": {
                   "type": "integer",
                   "description": "D-CITY-8: own main base's durability cap (= baseDurabilityMax(wall level)). Client renders the durability bar as hp/maxHp."
+                },
+                "speedupUntil": {
+                  "type": "integer",
+                  "format": "int64",
+                  "description": "S8-8 fix (2026-08-08): train-speedup shop buff end time (ms epoch) — while in the future, the training queue advances at 2x real-time speed (TRAIN_SPEEDUP_BUFF_MULT). Present whenever the player has ever bought a speedup, even once expired; client compares against Date.now() itself (same contract as WorldTileView.protectedUntil) to render a HUD countdown/icon."
+                },
+                "baseProtectedUntil": {
+                  "type": "integer",
+                  "format": "int64",
+                  "description": "S8-8 UI fix (2026-08-08): mirror of the main base anchor tile's protection-shield end time (ms epoch; see WorldTileView.protectedUntil), so the HUD can render a shield countdown without depending on the base tile being in the current map viewport. Absent when the base has never been shielded."
                 }
               }
             }
@@ -3382,6 +3432,16 @@ export const WORLD_RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                 "maxHp": {
                   "type": "integer",
                   "description": "D-CITY-8: own main base's durability cap (= baseDurabilityMax(wall level)). Client renders the durability bar as hp/maxHp."
+                },
+                "speedupUntil": {
+                  "type": "integer",
+                  "format": "int64",
+                  "description": "S8-8 fix (2026-08-08): train-speedup shop buff end time (ms epoch) — while in the future, the training queue advances at 2x real-time speed (TRAIN_SPEEDUP_BUFF_MULT). Present whenever the player has ever bought a speedup, even once expired; client compares against Date.now() itself (same contract as WorldTileView.protectedUntil) to render a HUD countdown/icon."
+                },
+                "baseProtectedUntil": {
+                  "type": "integer",
+                  "format": "int64",
+                  "description": "S8-8 UI fix (2026-08-08): mirror of the main base anchor tile's protection-shield end time (ms epoch; see WorldTileView.protectedUntil), so the HUD can render a shield countdown without depending on the base tile being in the current map viewport. Absent when the base has never been shielded."
                 }
               }
             }
@@ -3725,6 +3785,16 @@ export const WORLD_RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                         "maxHp": {
                           "type": "integer",
                           "description": "D-CITY-8: own main base's durability cap (= baseDurabilityMax(wall level)). Client renders the durability bar as hp/maxHp."
+                        },
+                        "speedupUntil": {
+                          "type": "integer",
+                          "format": "int64",
+                          "description": "S8-8 fix (2026-08-08): train-speedup shop buff end time (ms epoch) — while in the future, the training queue advances at 2x real-time speed (TRAIN_SPEEDUP_BUFF_MULT). Present whenever the player has ever bought a speedup, even once expired; client compares against Date.now() itself (same contract as WorldTileView.protectedUntil) to render a HUD countdown/icon."
+                        },
+                        "baseProtectedUntil": {
+                          "type": "integer",
+                          "format": "int64",
+                          "description": "S8-8 UI fix (2026-08-08): mirror of the main base anchor tile's protection-shield end time (ms epoch; see WorldTileView.protectedUntil), so the HUD can render a shield countdown without depending on the base tile being in the current map viewport. Absent when the base has never been shielded."
                         }
                       }
                     }
@@ -4072,6 +4142,16 @@ export const WORLD_RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                         "maxHp": {
                           "type": "integer",
                           "description": "D-CITY-8: own main base's durability cap (= baseDurabilityMax(wall level)). Client renders the durability bar as hp/maxHp."
+                        },
+                        "speedupUntil": {
+                          "type": "integer",
+                          "format": "int64",
+                          "description": "S8-8 fix (2026-08-08): train-speedup shop buff end time (ms epoch) — while in the future, the training queue advances at 2x real-time speed (TRAIN_SPEEDUP_BUFF_MULT). Present whenever the player has ever bought a speedup, even once expired; client compares against Date.now() itself (same contract as WorldTileView.protectedUntil) to render a HUD countdown/icon."
+                        },
+                        "baseProtectedUntil": {
+                          "type": "integer",
+                          "format": "int64",
+                          "description": "S8-8 UI fix (2026-08-08): mirror of the main base anchor tile's protection-shield end time (ms epoch; see WorldTileView.protectedUntil), so the HUD can render a shield countdown without depending on the base tile being in the current map viewport. Absent when the base has never been shielded."
                         }
                       }
                     }
@@ -4600,6 +4680,16 @@ export const WORLD_RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                         "maxHp": {
                           "type": "integer",
                           "description": "D-CITY-8: own main base's durability cap (= baseDurabilityMax(wall level)). Client renders the durability bar as hp/maxHp."
+                        },
+                        "speedupUntil": {
+                          "type": "integer",
+                          "format": "int64",
+                          "description": "S8-8 fix (2026-08-08): train-speedup shop buff end time (ms epoch) — while in the future, the training queue advances at 2x real-time speed (TRAIN_SPEEDUP_BUFF_MULT). Present whenever the player has ever bought a speedup, even once expired; client compares against Date.now() itself (same contract as WorldTileView.protectedUntil) to render a HUD countdown/icon."
+                        },
+                        "baseProtectedUntil": {
+                          "type": "integer",
+                          "format": "int64",
+                          "description": "S8-8 UI fix (2026-08-08): mirror of the main base anchor tile's protection-shield end time (ms epoch; see WorldTileView.protectedUntil), so the HUD can render a shield countdown without depending on the base tile being in the current map viewport. Absent when the base has never been shielded."
                         }
                       }
                     }
@@ -4814,6 +4904,16 @@ export const WORLD_RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                 "maxHp": {
                   "type": "integer",
                   "description": "D-CITY-8: own main base's durability cap (= baseDurabilityMax(wall level)). Client renders the durability bar as hp/maxHp."
+                },
+                "speedupUntil": {
+                  "type": "integer",
+                  "format": "int64",
+                  "description": "S8-8 fix (2026-08-08): train-speedup shop buff end time (ms epoch) — while in the future, the training queue advances at 2x real-time speed (TRAIN_SPEEDUP_BUFF_MULT). Present whenever the player has ever bought a speedup, even once expired; client compares against Date.now() itself (same contract as WorldTileView.protectedUntil) to render a HUD countdown/icon."
+                },
+                "baseProtectedUntil": {
+                  "type": "integer",
+                  "format": "int64",
+                  "description": "S8-8 UI fix (2026-08-08): mirror of the main base anchor tile's protection-shield end time (ms epoch; see WorldTileView.protectedUntil), so the HUD can render a shield countdown without depending on the base tile being in the current map viewport. Absent when the base has never been shielded."
                 }
               }
             }
@@ -5551,6 +5651,16 @@ export const WORLD_RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                 "maxHp": {
                   "type": "integer",
                   "description": "D-CITY-8: own main base's durability cap (= baseDurabilityMax(wall level)). Client renders the durability bar as hp/maxHp."
+                },
+                "speedupUntil": {
+                  "type": "integer",
+                  "format": "int64",
+                  "description": "S8-8 fix (2026-08-08): train-speedup shop buff end time (ms epoch) — while in the future, the training queue advances at 2x real-time speed (TRAIN_SPEEDUP_BUFF_MULT). Present whenever the player has ever bought a speedup, even once expired; client compares against Date.now() itself (same contract as WorldTileView.protectedUntil) to render a HUD countdown/icon."
+                },
+                "baseProtectedUntil": {
+                  "type": "integer",
+                  "format": "int64",
+                  "description": "S8-8 UI fix (2026-08-08): mirror of the main base anchor tile's protection-shield end time (ms epoch; see WorldTileView.protectedUntil), so the HUD can render a shield countdown without depending on the base tile being in the current map viewport. Absent when the base has never been shielded."
                 }
               }
             }
@@ -5745,6 +5855,16 @@ export const WORLD_RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                 "maxHp": {
                   "type": "integer",
                   "description": "D-CITY-8: own main base's durability cap (= baseDurabilityMax(wall level)). Client renders the durability bar as hp/maxHp."
+                },
+                "speedupUntil": {
+                  "type": "integer",
+                  "format": "int64",
+                  "description": "S8-8 fix (2026-08-08): train-speedup shop buff end time (ms epoch) — while in the future, the training queue advances at 2x real-time speed (TRAIN_SPEEDUP_BUFF_MULT). Present whenever the player has ever bought a speedup, even once expired; client compares against Date.now() itself (same contract as WorldTileView.protectedUntil) to render a HUD countdown/icon."
+                },
+                "baseProtectedUntil": {
+                  "type": "integer",
+                  "format": "int64",
+                  "description": "S8-8 UI fix (2026-08-08): mirror of the main base anchor tile's protection-shield end time (ms epoch; see WorldTileView.protectedUntil), so the HUD can render a shield countdown without depending on the base tile being in the current map viewport. Absent when the base has never been shielded."
                 }
               }
             }
@@ -5939,6 +6059,16 @@ export const WORLD_RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                 "maxHp": {
                   "type": "integer",
                   "description": "D-CITY-8: own main base's durability cap (= baseDurabilityMax(wall level)). Client renders the durability bar as hp/maxHp."
+                },
+                "speedupUntil": {
+                  "type": "integer",
+                  "format": "int64",
+                  "description": "S8-8 fix (2026-08-08): train-speedup shop buff end time (ms epoch) — while in the future, the training queue advances at 2x real-time speed (TRAIN_SPEEDUP_BUFF_MULT). Present whenever the player has ever bought a speedup, even once expired; client compares against Date.now() itself (same contract as WorldTileView.protectedUntil) to render a HUD countdown/icon."
+                },
+                "baseProtectedUntil": {
+                  "type": "integer",
+                  "format": "int64",
+                  "description": "S8-8 UI fix (2026-08-08): mirror of the main base anchor tile's protection-shield end time (ms epoch; see WorldTileView.protectedUntil), so the HUD can render a shield countdown without depending on the base tile being in the current map viewport. Absent when the base has never been shielded."
                 }
               }
             }
@@ -6133,6 +6263,16 @@ export const WORLD_RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                 "maxHp": {
                   "type": "integer",
                   "description": "D-CITY-8: own main base's durability cap (= baseDurabilityMax(wall level)). Client renders the durability bar as hp/maxHp."
+                },
+                "speedupUntil": {
+                  "type": "integer",
+                  "format": "int64",
+                  "description": "S8-8 fix (2026-08-08): train-speedup shop buff end time (ms epoch) — while in the future, the training queue advances at 2x real-time speed (TRAIN_SPEEDUP_BUFF_MULT). Present whenever the player has ever bought a speedup, even once expired; client compares against Date.now() itself (same contract as WorldTileView.protectedUntil) to render a HUD countdown/icon."
+                },
+                "baseProtectedUntil": {
+                  "type": "integer",
+                  "format": "int64",
+                  "description": "S8-8 UI fix (2026-08-08): mirror of the main base anchor tile's protection-shield end time (ms epoch; see WorldTileView.protectedUntil), so the HUD can render a shield countdown without depending on the base tile being in the current map viewport. Absent when the base has never been shielded."
                 }
               }
             }
@@ -6824,6 +6964,16 @@ export const WORLD_RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                 "maxHp": {
                   "type": "integer",
                   "description": "D-CITY-8: own main base's durability cap (= baseDurabilityMax(wall level)). Client renders the durability bar as hp/maxHp."
+                },
+                "speedupUntil": {
+                  "type": "integer",
+                  "format": "int64",
+                  "description": "S8-8 fix (2026-08-08): train-speedup shop buff end time (ms epoch) — while in the future, the training queue advances at 2x real-time speed (TRAIN_SPEEDUP_BUFF_MULT). Present whenever the player has ever bought a speedup, even once expired; client compares against Date.now() itself (same contract as WorldTileView.protectedUntil) to render a HUD countdown/icon."
+                },
+                "baseProtectedUntil": {
+                  "type": "integer",
+                  "format": "int64",
+                  "description": "S8-8 UI fix (2026-08-08): mirror of the main base anchor tile's protection-shield end time (ms epoch; see WorldTileView.protectedUntil), so the HUD can render a shield countdown without depending on the base tile being in the current map viewport. Absent when the base has never been shielded."
                 }
               }
             }

@@ -191,11 +191,16 @@ export class WorldCoreMap extends WorldCoreVision {
       territoryCount: await this.deps.cols.tiles.countDocuments({ worldId, ownerId: accountId }),
       ...(doc.hasBattlePass ? { hasBattlePass: true } : {}),
       ...(doc.mainBaseTile ? { mainBaseTile: doc.mainBaseTile } : {}),
+      // S8-8 UI fix (2026-08-08): mirror the anchor tile's protection-shield end time onto the player view,
+      // same reasoning as hp/maxHp below — the HUD needs this regardless of whether the base tile happens
+      // to be in the current map viewport (tileCache), so it can't rely on WorldTileView.protectedUntil alone.
+      ...(baseAnchor?.protectedUntil ? { baseProtectedUntil: baseAnchor.protectedUntil } : {}),
       ...(baseAnchor ? siegeHpView(baseAnchor, this.deps.now()) : {}),
       ...(doc.familyId ? { familyId: doc.familyId } : {}),
       ...(doc.trainingQueue && doc.trainingQueue.length > 0
         ? { trainingQueue: doc.trainingQueue.map((e) => ({ qty: e.qty, startAt: e.startAt, completeAt: e.completeAt })) }
         : {}),
+      ...(doc.speedupUntil ? { speedupUntil: doc.speedupUntil } : {}),
       ...(doc.buildings ? { buildings: doc.buildings } : {}),
       ...(doc.buildQueue && doc.buildQueue.length > 0
         ? { buildQueue: doc.buildQueue.map((e) => ({ key: e.key, toLevel: e.toLevel, startAt: e.startAt, completeAt: e.completeAt })) }

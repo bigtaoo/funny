@@ -147,6 +147,13 @@ export interface PlayerWorldView {
   familyId?: string;
   /** Training queue (S8-2, sorted by completeAt ascending); client C4 renders countdowns based on this. */
   trainingQueue?: { qty: number; startAt: number; completeAt: number }[];
+  /**
+   * S8-8 fix (2026-08-08): train-speedup shop buff end time (ms epoch) — while in the future, the training
+   * queue advances at TRAIN_SPEEDUP_BUFF_MULT× real-time speed (see db.ts PlayerWorldDoc.speedupUntil).
+   * Present whenever the player has ever bought a speedup, even once expired; client compares against
+   * Date.now() itself (same contract as WorldTileView.protectedUntil).
+   */
+  speedupUntil?: number;
   /** Home-city building levels (SLG_CITY_DESIGN; desk≥1, others≥0). */
   buildings?: Partial<Record<BuildingKey, number>>;
   /** Build queue (SLG_CITY_DESIGN §4, ordered by completeAt ascending); client CityScene renders countdowns. */
@@ -159,6 +166,13 @@ export interface PlayerWorldView {
   hp?: number;
   /** D-CITY-8: own main base's durability cap (= baseDurabilityMax(wall level)). Client renders the durability bar as hp/maxHp, same contract as WorldTileView. */
   maxHp?: number;
+  /**
+   * S8-8 UI fix (2026-08-08): mirror of the main base anchor tile's `protectedUntil` (see
+   * WorldTileView.protectedUntil / TileDoc.protectedUntil), same rationale as hp/maxHp above — lets the
+   * HUD render a shield countdown without depending on the base tile being in the current map viewport.
+   * Absent when the player has no resolved main base yet, or the base has never been shielded.
+   */
+  baseProtectedUntil?: number;
 }
 
 /** March view (REST response / push payload source). */

@@ -90,11 +90,14 @@ export function CityMixin<TBase extends WorldMapRendererBaseCtor>(Base: TBase): 
             label.anchor.set(0.5, 1);
             const hpGfx = new PIXI.Graphics();  // damaged-base HP bar, hovers above the building
             hpGfx.name = 'hpbar';
+            const shieldFx = new PIXI.Graphics();  // protection-shield bubble overlay (S8-8 UI fix, 2026-08-08)
+            shieldFx.name = 'shieldFx';
             cityC = new PIXI.Container();
             cityC.addChild(sprite);
             cityC.addChild(plotMask);
             cityC.addChild(label);
             cityC.addChild(hpGfx);
+            cityC.addChild(shieldFx); // topmost: a translucent dome over the building reads clearest
             this.ctx.cityLayer.addChild(cityC);
             this.ctx.citySprites.set(cacheKey, cityC);
           }
@@ -172,6 +175,26 @@ export function CityMixin<TBase extends WorldMapRendererBaseCtor>(Base: TBase): 
             hpbar.beginFill(fillColor, 0.95);
             hpbar.drawRect(bxh, byh, barW * ratio, barH);
             hpbar.endFill();
+          }
+
+          // S8-8 UI fix (2026-08-08): the capital-protection shield (slg_shield_8h/24h, TileDoc.protectedUntil)
+          // took effect server-side but had no visual — a shielded base looked identical to an unshielded one.
+          // Any base still under protection (own or another player's — WorldMapInput already hides the attack
+          // button for a protected enemy tile, so seeing the shield at a glance is useful there too) gets a
+          // translucent bubble dome over the building, with a slow breathing pulse so it reads as "active" at
+          // a glance rather than a flat static overlay.
+          const shieldFx = cityC.getChildByName('shieldFx') as PIXI.Graphics;
+          shieldFx.clear();
+          if ((tile.protectedUntil ?? 0) > Date.now()) {
+            const cx = 0;
+            const cy = -sprite.height * (1 - contentTopFrac) * 0.5;
+            const rx = sprite.width * 0.42;
+            const ry = sprite.height * (1 - contentTopFrac) * 0.62;
+            const pulse = 0.5 + 0.5 * Math.sin(Date.now() / 450);
+            shieldFx.lineStyle(Math.max(1.5, tp * 0.02), 0x5fd4ff, 0.7 + 0.25 * pulse);
+            shieldFx.beginFill(0x5fd4ff, 0.1 + 0.06 * pulse);
+            shieldFx.drawEllipse(cx, cy, rx, ry);
+            shieldFx.endFill();
           }
         }
       }

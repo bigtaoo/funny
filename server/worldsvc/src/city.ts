@@ -31,7 +31,7 @@ import {
 } from '@nw/shared';
 import { validateAttackerArmy, sanitizeCardArmy } from './siegeEngine';
 import { WorldCore } from './core';
-import { trainingQueueOps, buildQueueOps, type TrainingEntry, type BuildQueueEntry, type TeamTemplate } from './db';
+import { trainingQueueOps, buildQueueOps, applyTrainingSpeedupCatchup, type TrainingEntry, type BuildQueueEntry, type TeamTemplate } from './db';
 import type { PlayerWorldView } from './worldTypes';
 
 /**
@@ -62,14 +62,25 @@ export class CityService {
     const pw = await cols.playerWorld.findOne({ _id: playerWorldId(worldId, accountId) });
     if (!pw) throw new SlgError('TILE_NOT_OWNED', 'Not yet in the world');
 
-    const queue = pw.trainingQueue ?? [];
+    const t = now();
+    // S8-8 fix (2026-08-08): fold in any train-speedup buff progress since the last touch before
+    // validating/queuing — a batch the buff has already finished (only possible if the 2s scheduler tick
+    // is lagging) must count toward `troops`/the cap check, not linger in the queue as a phantom slot.
+    const settledFrom = pw.speedupSettledAt ?? t;
+    const caughtUp = applyTrainingSpeedupCatchup(pw.trainingQueue ?? [], pw.speedupUntil, settledFrom, t);
+    let extraTroopsReady = 0;
+    const queue = caughtUp.filter((e) => {
+      if (e.completeAt <= t) { extraTroopsReady += e.qty; return false; }
+      return true;
+    });
+    const troops = pw.troops + extraTroopsReady;
+
     // drillYard raises the training queue slot count (SLG_CITY_DESIGN); falls back to TROOP_TRAIN_QUEUE_MAX with no buildings.
     if (queue.length >= trainQueueMaxFor(pw.buildings)) throw new SlgError('BAD_REQUEST', 'Training queue is full');
 
     const inTraining = queue.reduce((s, e) => s + e.qty, 0);
-    if (pw.troops + inTraining + qty > pw.troopCap) throw new SlgError('TROOP_CAP_REACHED', 'Troops after training would exceed the cap');
+    if (troops + inTraining + qty > pw.troopCap) throw new SlgError('TROOP_CAP_REACHED', 'Troops after training would exceed the cap');
 
-    const t = now();
     const resources = this.core.settle(pw, t);
     const cost = troopTrainCost(qty);
     for (const rt of RESOURCE_TYPES) {
@@ -78,7 +89,10 @@ export class CityService {
     for (const rt of RESOURCE_TYPES) resources[rt] = (resources[rt] ?? 0) - (cost[rt] ?? 0);
     const inkCost = cost.ink ?? 0;
 
-    // Training starts immediately after the previous batch finishes (chained queue); if no batch is in progress, start immediately.
+    // Training starts immediately after the previous (already buff-caught-up) batch finishes; if no batch
+    // is in progress, start immediately. Note: this new entry's own duration is NOT pre-multiplied by the
+    // buff — the buff instead speeds up the whole queue uniformly (via applyTrainingSpeedupCatchup) as
+    // real time passes while it's active, which transparently covers entries added after purchase too.
     const lastComplete = queue.length > 0 ? queue[queue.length - 1]!.completeAt : t;
     // Battle pass bonus (S8-8): hasBattlePass → training speed +20% (duration ×0.8). drillYard further speeds training (SLG_CITY_DESIGN, ×drillTrainMult).
     const trainSpeedMult = (pw.hasBattlePass ? 0.8 : 1) * drillTrainMult(pw.buildings);
@@ -89,17 +103,15 @@ export class CityService {
       startAt: lastComplete,
       completeAt: lastComplete + duration,
     };
-    // The queue is chained (entry.completeAt ≥ every existing entry's), so the head never changes here
-    // unless the queue was empty — either way it's just the earlier of the two.
-    const { set: nextTrainingCompleteAt } = trainingQueueOps([queue[0] ?? entry]);
+    const nextQueue = [...queue, entry];
+    const tq = trainingQueueOps(nextQueue);
     // rev-guard: resources/queue above were computed from this exact read (`pw`); a concurrent trainTroops/
     // upgradeBuilding/etc. call that lands first bumps rev, so this write must fail rather than silently
     // overwrite the other call's debit with a whole-object $set computed from stale resources (double-spend).
     const result = await cols.playerWorld.updateOne(
       { _id: pw._id, rev: pw.rev },
       {
-        $set: { resources, lastTickAt: t, ...nextTrainingCompleteAt },
-        $push: { trainingQueue: entry } as never,
+        $set: { resources, troops, trainingQueue: nextQueue, speedupSettledAt: t, lastTickAt: t, ...tq.set },
         $inc: { rev: 1 },
       },
     );
@@ -139,7 +151,11 @@ export class CityService {
 
       const t = now();
       const resources = this.core.settle(fresh, t);
-      const newQueue = (fresh.trainingQueue ?? []).slice();
+      // S8-8 fix: fold in any train-speedup buff progress since the last touch before spending coins on
+      // top of it — otherwise this coin-based instant-skip would operate on stale (un-caught-up) completeAt
+      // values and under-credit the buff's already-elapsed portion.
+      const settledFrom = fresh.speedupSettledAt ?? t;
+      const newQueue = applyTrainingSpeedupCatchup(fresh.trainingQueue ?? [], fresh.speedupUntil, settledFrom, t).slice();
       let remaining = speedSec * 1000;
       let troopsReady = 0;
 
@@ -170,7 +186,7 @@ export class CityService {
       const result = await cols.playerWorld.updateOne(
         { _id: fresh._id, rev: fresh.rev },
         {
-          $set: { resources, troops: newTroops, trainingQueue: newQueue, lastTickAt: t, ...tq.set },
+          $set: { resources, troops: newTroops, trainingQueue: newQueue, speedupSettledAt: t, lastTickAt: t, ...tq.set },
           $inc: { rev: 1 },
           ...(Object.keys(tq.unset).length ? { $unset: tq.unset } : {}),
         },
@@ -185,12 +201,38 @@ export class CityService {
    * Process completed training batches (called by the scheduler every 2s).
    * Iterate all playerWorld documents with a trainingQueue; extract batches where completeAt ≤ now;
    * atomically $inc troops + $pull completed entries. Returns the number of entries processed.
+   *
+   * S8-8 fix (2026-08-08): before the due-scan, first folds the train-speedup buff into every
+   * buff-active player's persisted queue (applyTrainingSpeedupCatchup) — this is the sole place that
+   * keeps the buff advancing for a player who isn't otherwise touching their queue (trainTroops/
+   * speedupTraining/shop purchase all also catch up on their own read, but a player who does nothing
+   * still needs the queue to speed up on the clock). Cheap: only docs that have ever bought a speedup
+   * carry `speedupUntil` (partial index), so this is a small extra scan, not a full collection walk.
    */
   async processCompletedTraining(nowMs?: number): Promise<number> {
     const { cols } = this.core.deps;
     const t = nowMs ?? this.core.deps.now();
+
+    const buffed = await cols.playerWorld
+      .find({ speedupUntil: { $exists: true }, nextTrainingCompleteAt: { $exists: true } })
+      .project<{ _id: string; trainingQueue: TrainingEntry[]; speedupUntil?: number; speedupSettledAt?: number }>({
+        _id: 1, trainingQueue: 1, speedupUntil: 1, speedupSettledAt: 1,
+      })
+      .toArray();
+    for (const doc of buffed) {
+      const settledFrom = doc.speedupSettledAt ?? t;
+      const queue = applyTrainingSpeedupCatchup(doc.trainingQueue ?? [], doc.speedupUntil, settledFrom, t);
+      if (queue === doc.trainingQueue) continue; // no-op catch-up (buff not active this window) — nothing to persist
+      const tq = trainingQueueOps(queue);
+      await cols.playerWorld.updateOne(
+        { _id: doc._id },
+        { $set: { trainingQueue: queue, speedupSettledAt: t, ...tq.set }, $inc: { rev: 1 } },
+      );
+    }
+
     // Find all players with a non-empty queue whose first entry has completed (the first entry finishes
     // earliest) — via the indexed `nextTrainingCompleteAt` mirror, not the array itself (see trainingQueueOps).
+    // Re-read after the catch-up writes above so a buff-compressed completion is found in the same tick.
     const docs = await cols.playerWorld
       .find({ nextTrainingCompleteAt: { $lte: t } })
       .project<{ _id: string; troops: number; troopCap: number; trainingQueue: TrainingEntry[] }>({
