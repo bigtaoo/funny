@@ -865,6 +865,7 @@ export const zh = {
   'world.occupyingMine': '我方占领中（{sec}s 后落地）',
   'world.mine': '我的领地',
   'world.protected': '保护中（剩 {sec}s）',
+  'world.speedup': '训练加速 x2（剩 {sec}s）',
   'world.garrison': '驻军 {n}',
   'world.resLevel': '{res} · Lv.{lv}',
   'world.recommendTroops': '建议兵力 {n}',

@@ -435,6 +435,15 @@ export const TROOP_TRAIN_QUEUE_MAX = 2;
 /** Speed-up rate: seconds of training time per coin spent (DRAFT, 60 s/coin). */
 export const TROOP_SPEEDUP_SECS_PER_COIN = 60;
 /**
+ * Train-speedup shop buff multiplier (S8-8 fix, 2026-08-08): while a player's `speedupUntil` is in the
+ * future, the training queue advances at this multiple of real-time speed — the shop items
+ * (`slg_speedup_1h/8h/24h`) only differ in price/duration, not in how much faster training gets. Replaces
+ * the earlier (incorrect) implementation that spent the whole duration as a one-time instant-skip against
+ * whatever was queued at purchase time, which didn't match the item description ("speed up training for
+ * N hours") — see worldsvc CityService.trainTroops/processCompletedTraining + ShopService.buySlgShopItem.
+ */
+export const TRAIN_SPEEDUP_BUFF_MULT = 2;
+/**
  * Instant-return rate for a 'return' march (2026-08-01, SLG_DESIGN_LOG §46): seconds of remaining travel time
  * per coin spent. Same DRAFT rate as TROOP_SPEEDUP_SECS_PER_COIN, kept as its own constant so the two economies
  * can be tuned independently.

@@ -207,6 +207,41 @@ export function HudMixin<TBase extends WorldMapPanelsBaseCtor>(Base: TBase): TBa
           }
         }
         ry += cardH + 12;
+
+        // ── Active buffs (S8-8 UI fix, 2026-08-08): the capital-protection shield and the
+        // training-speedup buff both took effect server-side with no way to see them or how much
+        // time is left — see baseProtectedUntil/speedupUntil (PlayerWorldView). One compact chip
+        // (icon + countdown) per active buff, reusing the same glyphs the shop panel already uses
+        // for these items (SPEEDUP_ICON_TIERS/PROTECTION_ICON_TIERS in shop.ts) so the HUD and the
+        // shop read as the same visual language. ──
+        const buffNow = serverNow();
+        const buffs: { icon: IconKind; label: string }[] = [];
+        const shieldUntil = this.ctx.me.baseProtectedUntil ?? 0;
+        if (shieldUntil > buffNow) {
+          buffs.push({ icon: 'armorHeavy', label: t('world.protected', { sec: Math.ceil((shieldUntil - buffNow) / 1000) }) });
+        }
+        const speedupUntil = this.ctx.me.speedupUntil ?? 0;
+        if (speedupUntil > buffNow) {
+          buffs.push({ icon: 'hourglassMd', label: t('world.speedup', { sec: Math.ceil((speedupUntil - buffNow) / 1000) }) });
+        }
+        if (buffs.length > 0) {
+          const buffRowH = 40;
+          const buffPanelH = buffRowH * buffs.length + 8;
+          const buffPanel = sketchPanel(rightW, buffPanelH, { fill: C.paper, border: C.mid, seed: seedFor(2, 7, rightW) });
+          buffPanel.x = rx; buffPanel.y = ry;
+          hud.addChild(buffPanel);
+          for (let i = 0; i < buffs.length; i++) {
+            const rowY = buffPanel.y + 4 + i * buffRowH;
+            const bIcon = buildIcon(buffs[i].icon, 26, C.dark);
+            bIcon.x = rx + 12; bIcon.y = rowY + (buffRowH - 26) / 2;
+            hud.addChild(bIcon);
+            const bLbl = txt(buffs[i].label, FS.label, C.dark);
+            bLbl.anchor.set(0, 0.5);
+            bLbl.x = rx + 46; bLbl.y = rowY + buffRowH / 2;
+            hud.addChild(bLbl);
+          }
+          ry += buffPanelH + 12;
+        }
       }
 
       // Marches badge — collapsed by default (flag glyph + count); tap toggles the expanded

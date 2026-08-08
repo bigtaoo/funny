@@ -851,6 +851,7 @@ export const en: Record<TranslationKey, string> = {
   'world.occupyingMine': 'Your occupation holds ({sec}s until it lands)',
   'world.mine': 'My Territory',
   'world.protected': 'Protected ({sec}s)',
+  'world.speedup': 'Training ×2 ({sec}s)',
   'world.garrison': 'Garrison {n}',
   'world.resLevel': '{res} · Lv.{lv}',
   'world.recommendTroops': 'Recommended troops {n}',
