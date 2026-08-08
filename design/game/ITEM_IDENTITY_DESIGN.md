@@ -44,7 +44,7 @@
 - [x] **gacha 重复皮肤 = 真实例，不再自动转币**：`economy.ts` 的 `deliverLootBox`/`deliverGrant`/`deliverMailGrant`/`deliverOrder`（fate 兑换、商店直购）现在对**每一次**皮肤结果都铸造一个 `SkinInstance`（id 取 `skin_gacha_<orderId>_<i>` 等确定性格式，幂等），无论是不是重复——`markDuplicates`/`newSkins` 只决定 NEW 徽章和 `everOwned` 记账，不再决定"要不要发东西"。
 - [x] **"卖给系统"= 玩家主动操作，绝不自动**：新增 `POST /skins/sell`（`skin.ts sellSkinToSystem`），售价复用已有的 `DUPE_REFUND_COINS[目录稀有度]`（legendary 1500/epic 400/rare 50/common 10，与 GACHA_DESIGN §4.3 一致，没有另编数字），走 `commercial.grant` 幂等入账。同一个"最后一份保护装备中"的规则同时用于挂拍和出售。
 - [x] **客户端**：`SaveData.skinCounts?: Record<string,number>`（GET /save 自动 join，additive-only 字段，`migrate.ts` 的 `fillDefaults` 自动补 `{}`，未升版本号）；`AuctionScene` picker 的 `listableSkins()` 放宽为"未装备，或有多余份数"；picker 卡片新增"出售"分区（拍卖/出售各占底部一半热区），走 `client.sellSkin()` → `/skins/sell`。
-- **验收**：`server/metaserver/test/skin.e2e.test.ts`（14 例，含"装备中的多余份可挂拍/可出售，最后一份仍被拒绝"）+ `economy.e2e.test.ts` 新增断言（重复皮肤真的铸造第二个实例、`skinCounts` 正确）；metaserver 全量 840 例、shared 713 例、auctionsvc 97 例全绿；client `tsc --noEmit` 全绿，UI 套件 1241 例 + 常规套件 1221 例全绿（含 `auctionPickerDedupe.ui.ts` 新增 6 例：放宽后的 listableSkins、"×N"标签、onSell 接线、双击防抖、渲染不崩溃）。
+- **验收**：`server/metaserver/test/skin.e2e.test.ts`（15 例，含"装备中的多余份可挂拍/可出售，最后一份仍被拒绝"、`grantSkin` 落地真实例、同一账号两次交易同一 skinId 叠出 2 份实例）+ `economy.e2e.test.ts` 新增断言（重复皮肤真的铸造第二个实例、`skinCounts` 正确、商店/命运点重复兑换同一皮肤也铸造第二实例、老账号 GET /save 自愈幂等不重复补实例）+ `mail-claim.e2e.test.ts` 新增断言（邮件附件重复皮肤同样铸造第二实例）；metaserver 全量 845 例、shared 713 例、auctionsvc 97 例全绿；client `tsc --noEmit` 全绿，UI 套件 1241 例 + 常规套件 1224 例全绿（含 `auctionPickerDedupe.ui.ts` 新增 6 例：放宽后的 listableSkins、"×N"标签、onSell 接线、双击防抖、渲染不崩溃；`api-client.test.ts`/`migrate.test.ts` 各新增 `sellSkin` 请求体 / `skinCounts` 向后兼容补全用例）。
 
 ### 任务2：材料实例化（范围最大，依赖任务1的实例化模式跑通后再做）
 

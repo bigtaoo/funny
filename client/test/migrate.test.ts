@@ -56,6 +56,24 @@ describe('migrate v3 → v4 (Hero Roster: retired fields are actually deleted, n
   });
 });
 
+// skinCounts (ITEM_IDENTITY_DESIGN.md task1, 2026-08-08): additive-only field, backfilled by
+// fillDefaults from makeNewSave()'s default ({}) — no explicit migration step / SAVE_VERSION bump
+// needed, same convention as cardInv/equipmentInv when those were introduced (see the v1→v2 comment
+// in migrate.ts's MIGRATIONS array).
+describe('skinCounts backfill (additive field, no explicit migration step)', () => {
+  it('a save from before this field existed gets skinCounts backfilled to {}', () => {
+    const raw = { version: SAVE_VERSION, inventory: { skins: ['skin_l1'], items: {} } }; // no skinCounts at all
+    const save = migrate(raw);
+    expect(save.skinCounts).toEqual({});
+  });
+
+  it('a save that already has skinCounts keeps its real values (no accidental reset)', () => {
+    const raw = { version: SAVE_VERSION, skinCounts: { skin_l1: 2 } };
+    const save = migrate(raw);
+    expect(save.skinCounts).toEqual({ skin_l1: 2 });
+  });
+});
+
 // 2026-08-03 fix: migrate() used to unconditionally force `filled.version = SAVE_VERSION` even when
 // the incoming save was already AHEAD of this client's SAVE_VERSION (a newer client/server build's
 // save read by a stale client bundle mid-rollout) — the `while (v < SAVE_VERSION)` loop never runs

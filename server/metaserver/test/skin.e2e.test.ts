@@ -94,7 +94,7 @@ describe.skipIf(!mongo)('skin escrow/grant backend e2e', () => {
     expect((await readSave()).inventory.skins).toEqual(['skin_ink_red']);
   });
 
-  it('grant: writes skinId back to target inventory.skins', async () => {
+  it('grant: writes skinId back to target inventory.skins, and mints a real skinInstances row (ITEM_IDENTITY_DESIGN.md task1, 2026-08-08 — not just a Set membership flip)', async () => {
     await seedSkins([]);
     const buyer = body(await app.inject({ method: 'POST', url: '/auth/device', payload: { deviceId: 'skin-buyer' } }));
     await app.inject({ method: 'GET', url: '/save', headers: { authorization: `Bearer ${buyer.data.token}` } });
@@ -102,6 +102,18 @@ describe.skipIf(!mongo)('skin escrow/grant backend e2e', () => {
     expect(gr.ok).toBe(true);
     const buyerSave = (await m.collections.saves.findOne({ _id: buyer.data.accountId }))!.save;
     expect(buyerSave.inventory.skins).toContain('skin_ink_blue');
+    expect(await m.collections.skinInstances.countDocuments({ accountId: buyer.data.accountId, skinId: 'skin_ink_blue' })).toBe(1);
+  });
+
+  it('grant: buying the same skinId twice (two trades, two orderIds) stacks two real instances — a trade transfer is fungible, not deduped like the old Set-only model', async () => {
+    await seedSkins([]);
+    const buyer = body(await app.inject({ method: 'POST', url: '/auth/device', payload: { deviceId: 'skin-buyer-2' } }));
+    await app.inject({ method: 'GET', url: '/save', headers: { authorization: `Bearer ${buyer.data.token}` } });
+    await grant('skin_ink_blue', 'trade-1', buyer.data.accountId);
+    await grant('skin_ink_blue', 'trade-2', buyer.data.accountId);
+    const buyerSave = (await m.collections.saves.findOne({ _id: buyer.data.accountId }))!.save;
+    expect(buyerSave.inventory.skins.filter((id: string) => id === 'skin_ink_blue')).toHaveLength(1); // still a dedup set
+    expect(await m.collections.skinInstances.countDocuments({ accountId: buyer.data.accountId, skinId: 'skin_ink_blue' })).toBe(2);
   });
 
   it('escrow idempotency: replaying the same orderId returns the same result (no double-removal side effects)', async () => {

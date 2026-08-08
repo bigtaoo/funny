@@ -354,6 +354,16 @@ describe.skipIf(!mongo)('meta economy orchestration e2e', () => {
     expect(r.data.save.deliveredOrders).toHaveLength(1);
   });
 
+  it('shop direct purchase of an already-owned skin still delivers a real second instance (ITEM_IDENTITY_DESIGN.md task1, 2026-08-08 — used to be a silent no-op)', async () => {
+    comm.coins.set(accountId, 1000);
+    await app.inject({ method: 'POST', url: '/shop/buy', headers: auth(), payload: { itemId: 'skin_shop_c1' } });
+    const r2 = body(await app.inject({ method: 'POST', url: '/shop/buy', headers: auth(), payload: { itemId: 'skin_shop_c1' } }));
+    expect(r2.ok).toBe(true);
+    expect(r2.data.save.wallet.coins).toBe(400); // charged both times: 1000-300-300
+    expect(r2.data.save.inventory.skins.filter((s: string) => s === 'skin_shop_c1')).toHaveLength(1); // still a dedup set
+    expect(await m.collections.skinInstances.countDocuments({ accountId, skinId: 'skin_shop_c1' })).toBe(2); // but 2 real instances exist
+  });
+
   it('insufficient balance → 402', async () => {
     const r = await app.inject({ method: 'POST', url: '/shop/buy', headers: auth(), payload: { itemId: 'skin_shop_e1' } });
     expect(r.statusCode).toBe(402);
@@ -453,6 +463,22 @@ describe.skipIf(!mongo)('meta economy orchestration e2e', () => {
     // GET /save's skinCounts join surfaces the real count so the client can offer the surplus copy for sale/auction.
     const saveRes = body(await app.inject({ method: 'GET', url: '/save', headers: auth() }));
     expect(saveRes.data.save.skinCounts.skin_l1).toBe(2);
+  });
+
+  it('skinCounts self-heals a legacy account (inventory.skins populated, zero skinInstances rows) to exactly 1 instance, idempotently across repeat reads (ITEM_IDENTITY_DESIGN.md task1, 2026-08-08)', async () => {
+    // Simulates a pre-2026-08-08 save: owned per inventory.skins, but this account predates the
+    // skinInstances collection entirely (no instance rows at all for it).
+    await m.collections.saves.updateOne({ _id: accountId }, { $set: { 'save.inventory.skins': ['skin_l1'] } });
+    expect(await m.collections.skinInstances.countDocuments({ accountId, skinId: 'skin_l1' })).toBe(0);
+
+    const r1 = body(await app.inject({ method: 'GET', url: '/save', headers: auth() }));
+    expect(r1.data.save.skinCounts.skin_l1).toBe(1);
+    expect(await m.collections.skinInstances.countDocuments({ accountId, skinId: 'skin_l1' })).toBe(1);
+
+    // A second read must not mint a duplicate legacy instance ($setOnInsert idempotency).
+    const r2 = body(await app.inject({ method: 'GET', url: '/save', headers: auth() }));
+    expect(r2.data.save.skinCounts.skin_l1).toBe(1);
+    expect(await m.collections.skinInstances.countDocuments({ accountId, skinId: 'skin_l1' })).toBe(1);
   });
 
   it('gacha: fire-and-forget orderDelivered failure does not block the response, and the order stays reconcilable (2026-07-15 latency fix)', async () => {
@@ -664,6 +690,16 @@ describe.skipIf(!mongo)('meta economy orchestration e2e', () => {
     expect(r.data.granted).toBe('skin_l1');
     expect(r.data.save.monetization.fatePoints).toBe(0);
     expect(r.data.save.inventory.skins).toContain('skin_l1');
+  });
+
+  it('fate redeem of an already-owned skin still delivers a real second instance (ITEM_IDENTITY_DESIGN.md task1, 2026-08-08 — used to be a silent no-op)', async () => {
+    comm.fatePoints.set(accountId, 60);
+    await app.inject({ method: 'POST', url: '/fate/redeem', headers: auth(), payload: { itemId: 'skin_l1' } });
+    const r2 = body(await app.inject({ method: 'POST', url: '/fate/redeem', headers: auth(), payload: { itemId: 'skin_l1' } }));
+    expect(r2.ok).toBe(true);
+    expect(r2.data.save.monetization.fatePoints).toBe(0); // 60 - 30 - 30
+    expect(r2.data.save.inventory.skins.filter((s: string) => s === 'skin_l1')).toHaveLength(1);
+    expect(await m.collections.skinInstances.countDocuments({ accountId, skinId: 'skin_l1' })).toBe(2);
   });
 
   it('fate redeem: insufficient fate points → 402 FATE_INSUFFICIENT', async () => {
