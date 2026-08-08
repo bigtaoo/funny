@@ -98,6 +98,17 @@ describe('WorldMapInput garrison targeting rule (own + ally only, 2026-08-02)', 
     expect(labels).toEqual([t('world.actGarrison'), '✕']);
   });
 
+  it('a sect-mate tile (tile.sectmate, own sect different family — 2026-08-08 ADR-060) also offers Garrison, never Attack', () => {
+    const h = buildHarness();
+    h.ctx.tileCache.set(`${FAR.x}:${FAR.y}`, { occupied: true, sectmate: true, ownerName: 'SiblingFam' } as WorldTileView);
+    h.input.onTileClick(FAR.x, FAR.y);
+    const labels = (h.showModal.mock.calls[0][1] as Btn[]).map((b) => b.label);
+    // Before this branch included `sectmate`, this tile fell through to the generic enemy branch and
+    // offered Attack — which the server's friendlyAccountIds would reject with ALLY_TILE.
+    expect(labels).toEqual([t('world.actGarrison'), '✕']);
+    expect(labels).not.toContain(t('world.actAttack'));
+  });
+
   it('tapping Garrison on an ally tile dispatches move with garrison intent', () => {
     const h = buildHarness();
     h.ctx.tileCache.set(`${FAR.x}:${FAR.y}`, { occupied: true, ally: true } as WorldTileView);

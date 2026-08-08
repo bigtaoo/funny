@@ -86,6 +86,21 @@ describe('occupyFrontierCells (ADR-039 连地 frontier)', () => {
     expect(cells.length).toBe(4);
   });
 
+  // 2026-08-08 (ADR-060): server-side connectivity (isConnectedToSectTerritory/ownSectFamilyIds) is scoped to
+  // the WHOLE sect, not just family — a sect-mate's land legitimately extends the frontier too. Before
+  // `sectmate` was threaded through `ownsCell`, this tile was invisible to the preview even though the
+  // server would accept an occupy march departing from a target adjacent to it.
+  it('a sect-mate (own sect, different family) tile also seeds the frontier', () => {
+    const c = findClearCenter(2);
+    const tiles = new Map<string, FrontierTile>([[`${c.x}:${c.y}`, { occupied: true, sectmate: true }]]);
+    const cells = occupyFrontierCells({
+      worldId: W, mapW: MAP, mapH: MAP,
+      bounds: { minTx: c.x - 1, maxTx: c.x + 1, minTy: c.y - 1, maxTy: c.y + 1 },
+      mainBaseTile: null, tileCache: tiles, parseAnchor,
+    });
+    expect(cells.length).toBe(4);
+  });
+
   it('excludes occupied, fogged, and mid-occupation-hold neighbours', () => {
     const c = findClearCenter(2);
     const tiles = new Map<string, FrontierTile>([

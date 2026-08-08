@@ -209,6 +209,29 @@ describe.skipIf(!mongo)('worldsvc getMapSparse e2e', () => {
     expect(tile!.mine).toBeUndefined();
   });
 
+  it('lod=mid: sibling-family member in the requester\'s OWN sect: sectmate=true, not ally (2026-08-08, ADR-060)', async () => {
+    const posA = findNeutral(10, 10);
+    const posC = findNeutral(30, 10);
+    const sectA = `s:${W}:AAA`;
+    const famA = socialsvc.addFamily(`f:${W}:FA`, 'player-a', 'FamA', 'FA');
+    const famC = socialsvc.addFamily(`f:${W}:FC`, 'player-c', 'FamC', 'FC');
+    await socialsvc.setSect(famA, sectA);
+    await socialsvc.setSect(famC, sectA); // sibling family, SAME sect as player-a — not player-a's own family
+    await m.collections.sects.insertOne({
+      _id: sectA, worldId: W, name: 'A', tag: 'AAA', leaderFamilyId: famA, leaderId: 'player-a',
+      memberFamilyCount: 2, allySectIds: [], prosperity: 0, rev: 1,
+    });
+    await svc.joinWorld(W, 'player-a', posA.x, posA.y);
+    await svc.joinWorld(W, 'player-c', posC.x, posC.y);
+
+    const view = await svc.getMapSparse(W, 'player-a', posC.x, posC.y, 3, 'mid');
+    const tile = view.tiles.find((t) => t.x === posC.x && t.y === posC.y);
+    expect(tile).toBeDefined();
+    expect(tile!.sectmate).toBe(true);
+    expect(tile!.ally).toBeUndefined();
+    expect(tile!.mine).toBeUndefined();
+  });
+
   it('radius clipping: MAX_RADIUS 40 upper bound; request r=999 is truncated', async () => {
     const view = await svc.getMapSparse(W, 'a', 10, 10, 999, 'thin');
     expect(view.r).toBe(40);
