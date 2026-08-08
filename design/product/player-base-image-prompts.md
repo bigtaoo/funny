@@ -329,6 +329,8 @@ tips of the tallest spires are the only exception to the two-tone palette.
 - Lv.2/3/9 同样变宽（宽度预算触底的等级），Lv.4~8/10（高度预算先触底，本次改动够不到它们）维持不变——这批仍是已知的"两侧留一点空地"，跟 2026-08-03 记的瑕疵是同一件事，真出图重画地台更宽、身形不跟着变高才能根治，留给后续美术返工。
 - `client/test/ui/cityAtlasContentTop.ui.ts` 的上下界断言（1.8 tile 上限 / 0.75 tile 下限）无需改，10 级全部在界内（重新算过的 `contentTop`：Lv.1=0.49，Lv.2/3/4~10=0.44，其中 2/3/9 相比之前的 0.50/0.45/0.44 分别变化，宽度预算触底的等级 `contentTop` 由 `fittedH` 反算，随宽度预算变化联动）。
 
+**补测（同日）**：上面这批断言全读 `contentTop`（高度轴），今天这个 bug 从头到尾没碰过高度轴——照旧跑不会挂，等于这次的回归完全没测试覆盖。补了 `pack_playerbase_atlas.js` 新字段 `contentWidthFrac`（跟 `contentTop` 同款，量的是宽度轴实际填充比例）+ `playerBaseAtlasLoader.getPlayerBaseContentWidthFracForLevel()`，`cityAtlasContentTop.ui.ts` 新增 3 例：每级 `contentWidthFrac` 落在 `(0,1]`；10 级里**至少有一级**必须顶到 `BASE_FOOTPRINT/BASE_SPRITE_TILES`（不硬编码具体是哪一级——宽度触底的等级会随美术批次的长宽比变化，但"一个都够不到"就是回归本身，`CONTENT_W_FRAC=0.8` 时会全员卡在 0.8，正好触发这条断言）；每级不低于 0.5（防裁切失败）。手动验证过测试真的会抓：把 `CONTENT_W_FRAC` 临时改回 0.8、重跑打包，"至少一级够宽"断言按预期挂掉（0.80078125 < 0.9175），改回来再重跑，12 例全绿。
+
 ### 2026-08-02：高度预算（缩小是权宜之计，重出图才是正解）
 
 `pack_playerbase_atlas.js` 原先只有一个正方形 `CONTENT_SCALE = 0.8`，宽高同缩，改不了导致问题的**长宽比**。现拆成两个独立预算：
