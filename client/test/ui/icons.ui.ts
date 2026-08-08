@@ -23,6 +23,9 @@ const ALL_KINDS: IconKind[] = [
   'hourglassSm', 'hourglassMd', 'hourglassLg',
   'tag', 'capsule', 'cards', 'star', 'lock', 'medal', 'zoom', 'gift',
   'close', 'check', 'play',
+  'titleBronze', 'titleSilver', 'titleGold', 'titlePlatinum', 'titleDiamond',
+  'titleStar', 'titleMaster', 'titleGrandmaster', 'titleKing',
+  'titleChampion', 'titleTop3',
 ];
 
 describe('icons DRAW dispatch table — geometry smoke check', () => {
