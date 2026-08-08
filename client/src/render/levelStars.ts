@@ -23,7 +23,7 @@ export interface LevelStars {
  * Row of `count` gold star icons, scaled down to fit `maxW` when it would otherwise overflow. Callers
  * own their own level→count clamping (max level differs by item type) — this just draws and fits the row.
  */
-export function buildLevelStars(count: number, maxW: number, size = 14, gap = 3, color = C.gold): LevelStars {
+export function buildLevelStars(count: number, maxW: number, size = 14, gap = 3, color: number = C.gold): LevelStars {
   const container = new PIXI.Container();
   const stars: PIXI.DisplayObject[] = [];
   const n = Math.max(0, count);
