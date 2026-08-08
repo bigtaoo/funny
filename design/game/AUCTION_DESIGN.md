@@ -587,7 +587,17 @@ designatedBuyerId?, expireAt(ms), status, buyerId?, rev
   - 已选中物品时（`selLabel` 非空）额外做"重点显示"：字段底色从中性纸色 `0xfaf9f5` 换成浅蓝强调色 `0xeaf1fb`（`ui.accent` 的浅色调）、边框从 2px 加粗到 3px、文字从 `13*SCALE` 常规体放大到 `17*SCALE` 粗体。未选中时（占位提示"点击选择"）维持原有中性样式不变，避免占位态也跟着"抢眼"。
   - `mh`（弹窗总高度）与 `cy`（后续行起始位置）的计算同步加上多出的 `30*SCALE`——弹窗高度公式里原有的 `(...) * VA` 分组是纵向留白系数（`VA=SCALE*1.2`），字段加高是单独的绝对像素增量，两者不能混在一起乘同一个系数，故作为独立加项累加，避免弹窗要么裁切按钮行要么底部留白过多。
   - 手动输入价格的光标输入框：核查后确认**这部分已经是现状**，未改动——`price`/`startPrice`/`buyout` 三个数值字段在 07-27 那次改动（`7751f4f0` "auction listing form — tap-to-type prices with auto-clamp"）里已经统一接入 `editKey` + `caretDisplay()` 机制（点击变成可输入框、输入中光标 `|` 闪烁、失焦按护栏 clamp），与本次改的 Item 字段、以及既有的"指定买家"字段共用同一套输入框视觉语言（`sketchPanel` 同款 fill/border 配色）。数量（Qty）字段沿用原样不加框——它只有 `-`/`+` 步进、无点击输入诉求，用户反馈原文也只提到"价格"，未涉及数量。
-- **验收**：`tsc --noEmit` 绿；`npm run build:web` 通过（仅预置的资源体积警告，与本次改动无关）；`vitest run --config vitest.ui.config.ts` 全量回归绿（含既有 `auctionScene.ui.ts` 覆盖的 `openCreateForm` 系列用例，未新增专项用例——纯几何/样式调整，既有命中矩形/文本断言足以覆盖回归风险）。未做浏览器截图验证：本次会话 Browser 预览面板未能渲染帧（画布尺寸 0×0），排查后发现根因不是面板本身，而是拍卖行等菜单场景需要登录态 + 一整套跑起来的后端（metaserver 等 11 个服务 + Mongo）才能进入，本次会话未拉起后端，仅有 headless PIXI 单测覆盖（真实场景树、无渲染器）+ 生产构建通过。下次有可用登录环境时应补一次真实截图核对本次的字段放大/配色效果。
+- **验收**：`tsc --noEmit` 绿；`npm run build:web` 通过（仅预置的资源体积警告，与本次改动无关）；`vitest run --config vitest.ui.config.ts` 全量回归绿（含既有 `auctionScene.ui.ts` 覆盖的 `openCreateForm` 系列用例）。未做浏览器截图验证：本次会话 Browser 预览面板未能渲染帧（画布尺寸 0×0），排查后发现根因不是面板本身，而是拍卖行等菜单场景需要登录态 + 一整套跑起来的后端（metaserver 等 11 个服务 + Mongo）才能进入，本次会话未拉起后端，仅有 headless PIXI 单测覆盖（真实场景树、无渲染器）+ 生产构建通过。下次有可用登录环境时应补一次真实截图核对本次的字段放大/配色效果。
+
+### 上一条目补专项测试（2026-08-08 续）
+
+- **问题**：上一条目落地时只靠既有的 `openCreateForm` 通用回归用例兜底，没有为"字段加倍高度 + 选中态视觉重点显示"这条具体改动写专项断言——用户随后要求补测试。
+- **改动**：
+  - `client/src/scenes/AuctionScene/createForm.ts`：`SCALE` 常量加 `export`，供测试按同一个乘数算期望几何值，不需要在测试里重复硬编码 `1.5`。
+  - `client/test/ui/auctionScene.ui.ts`：新增 `describe('AuctionScene — create form item field (doubled height + emphasis)')`，5 个用例：① 高度确实是标准输入行的 2 倍（`60*SCALE`），且它始终是 `modalHits[0]`（物品字段的命中矩形永远最先入队，与 `createClass`/`saleMode` 无关），点击命中矩形真的触发 `openItemPicker()`；② 未选中物品（`equipment` 类 + 无 `getSave` 回调 → `selectedItemLabel()` 为 `null`）时高度依旧加倍，只是视觉样式不同；③ 已选中物品时文字节点的 `style.fontSize`/`style.fontWeight` 分别是加大字号（经 `snapFont()` 吸附后的值，不是裸算的 `17*SCALE`）+ `'bold'`；④ 未选中占位提示的字号/字重则是普通档位（`snapFont(13*SCALE)` + `'normal'`）；⑤ 高度加倍后紧跟着的 Qty 步进器命中矩形的 y 坐标仍然严格在物品字段下方，没有因为这次布局调整而重叠。
+  - 新增测试辅助函数 `findTextNode()`（`findLabelPos()` 的姊妹函数，返回节点本身而非仅返回坐标，用于断言 `.style` 而非仅位置）。
+  - **踩坑记录**：字号断言最初直接写死 `17 * SCALE`/`13 * SCALE`（25.5/19.5），实际渲染值是 24/20——`txt()` 的字号要过 `snapFont()` 吸附到一套固定字号档位，不是原始像素值；改为用 `snapFont()` 本身计算期望值后通过。
+- **验收**：`tsc --noEmit`（含 `tsconfig.test.json`）全绿；`npm run build:web` 通过；`vitest run --config vitest.ui.config.ts` 对 `auctionScene.ui.ts`（80 例，新增 5 例）单独绿，再跑 `auctionScene.ui.ts`/`auctionActionBusyLock.ui.ts`/`auctionPickerDedupe.ui.ts`/`auctionBackButtonHitWidth.ui.ts`/`caretRegression.ui.ts`/`scenes.ui.ts` 六个拍卖/UI 相关文件合计 254 例全绿。纯测试新增，未改变任何渲染行为，不涉及浏览器截图。
 
 ---
 

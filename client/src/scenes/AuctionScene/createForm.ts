@@ -16,7 +16,9 @@ export interface CreateFormHandlers {
 }
 
 // Dialog is rendered 1.5x larger than the original design for legibility.
-const SCALE = 1.5;
+// Exported so tests can compute expected geometry (item-field height/icon size/etc.) instead of
+// re-hardcoding the multiplier — see test/ui/auctionScene.ui.ts's item-field describe block.
+export const SCALE = 1.5;
 // Vertical metrics use an extra 1.2x so the dialog stands 20% taller (roomier row spacing) than its
 // content-derived height, while element widths/fonts stay at SCALE.
 const VA = SCALE * 1.2;
