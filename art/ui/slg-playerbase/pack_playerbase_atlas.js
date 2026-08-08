@@ -179,11 +179,19 @@ async function makeCell(srcPath) {
     .toBuffer();
   const fm = await sharp(fitted).metadata();
   const fittedH = fm.height ?? CELL;
+  const fittedW = fm.width ?? CELL;
   const buf = await sharp({ create: { width: CELL, height: CELL, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } } })
-    .composite([{ input: fitted, left: Math.round((CELL - (fm.width ?? CELL)) / 2), top: CELL - fittedH }])
+    .composite([{ input: fitted, left: Math.round((CELL - fittedW) / 2), top: CELL - fittedH }])
     .png()
     .toBuffer();
-  return { buf, contentTop: (CELL - fittedH) / CELL };
+  // contentWidthFrac mirrors contentTop but for the OTHER axis: fraction of the CELL actually filled
+  // by content width. `fit:'inside'` binds on whichever axis hits its budget first (CONTENT_W_FRAC vs
+  // CONTENT_H_FRAC) — a frame bound by height legitimately comes out narrower than CONTENT_W_FRAC, so
+  // this is NOT always equal to CONTENT_W_FRAC; it's the actual measured fill, which is exactly what
+  // cityAtlasContentTop.ui.ts's regression test needs (2026-08-08: CONTENT_W_FRAC alone drifting back
+  // to a too-small comfort margin, as it did between 2026-08-02 and today, wouldn't be caught by any
+  // height-only assertion — this field lets a test catch it directly off the baked atlas data).
+  return { buf, contentTop: (CELL - fittedH) / CELL, contentWidthFrac: fittedW / CELL };
 }
 
 async function main() {
@@ -204,8 +212,8 @@ async function main() {
     }
     const dx = (i % COLS) * CELL;
     const dy = Math.floor(i / COLS) * CELL;
-    const { buf: cellBuf, contentTop } = await makeCell(srcPath);
-    console.log(`${name.padEnd(14)} ← ${file.padEnd(20)} → (${dx},${dy})  contentTop=${contentTop.toFixed(2)}`);
+    const { buf: cellBuf, contentTop, contentWidthFrac } = await makeCell(srcPath);
+    console.log(`${name.padEnd(14)} ← ${file.padEnd(20)} → (${dx},${dy})  contentTop=${contentTop.toFixed(2)}  contentWidthFrac=${contentWidthFrac.toFixed(2)}`);
     composites.push({ input: cellBuf, left: dx, top: dy });
     frames[name] = {
       frame: { x: dx, y: dy, w: CELL, h: CELL },
@@ -213,9 +221,10 @@ async function main() {
       trimmed: false,
       spriteSourceSize: { x: 0, y: 0, w: CELL, h: CELL },
       sourceSize: { w: CELL, h: CELL },
-      // Non-standard field, see pack_city_atlas.js — read directly off the raw JSON by
-      // playerBaseAtlasLoader.getPlayerBaseContentTopFracForLevel.
+      // Non-standard fields, see pack_city_atlas.js — read directly off the raw JSON by
+      // playerBaseAtlasLoader.getPlayerBaseContentTopFracForLevel/getPlayerBaseContentWidthFracForLevel.
       contentTop,
+      contentWidthFrac,
     };
   }
 

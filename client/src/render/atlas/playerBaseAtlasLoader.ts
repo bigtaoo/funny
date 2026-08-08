@@ -37,6 +37,22 @@ export function getPlayerBaseContentTopFracForLevel(level: number): number {
 }
 
 /**
+ * Fraction (0-1] of the packed 256px cell's WIDTH actually filled by content — mirrors
+ * {@link getPlayerBaseContentTopFracForLevel} but for the horizontal axis (2026-08-08, see
+ * pack_playerbase_atlas.js's `contentWidthFrac`). Not currently consumed by the renderer (the sprite
+ * is always scaled to the full `BASE_SPRITE_TILES`-wide square regardless), but exposed so
+ * cityAtlasContentTop.ui.ts can assert against the real baked value that the plot's own width is
+ * actually reached — the bug this field was added to catch (`CONTENT_W_FRAC` quietly drifting back to
+ * a too-small comfort margin) has no other symptom a test could see, since it doesn't change
+ * `contentTop`. Falls back to 1 (assume full width) if the atlas predates this field.
+ */
+export function getPlayerBaseContentWidthFracForLevel(level: number): number {
+  const lv = Math.max(1, Math.min(10, Math.round(level)));
+  const frames = (atlasData as { frames: Record<string, { contentWidthFrac?: number }> }).frames;
+  return frames[`playerbase_l${lv}`]?.contentWidthFrac ?? 1;
+}
+
+/**
  * Decode + parse the shared world atlas. Idempotent; concurrent calls share one
  * in-flight promise. Failure is non-fatal — the base falls back to the shared
  * city atlas (see WorldMapRenderer/city.ts).
