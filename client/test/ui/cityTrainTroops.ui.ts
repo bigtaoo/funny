@@ -315,7 +315,7 @@ describe('CityScene home-desk Train Troops tile + modal (2026-07-21)', () => {
         troops: 0, resources: { ink: 100000 }, speedupUntil: Date.now() + 1800_000,
       });
       const texts = collectTexts(scene.container);
-      const prefix = t('world.speedup').split('{sec}')[0]!;
+      const prefix = t('world.speedup').split('{d}')[0]!;
       expect(texts.some((s) => s.startsWith(prefix))).toBe(true);
       scene.destroy();
     });
@@ -323,7 +323,7 @@ describe('CityScene home-desk Train Troops tile + modal (2026-07-21)', () => {
     it('shows no badge when speedupUntil is absent', async () => {
       const { scene } = await openTrainModal({ troops: 0, resources: { ink: 100000 } });
       const texts = collectTexts(scene.container);
-      const prefix = t('world.speedup').split('{sec}')[0]!;
+      const prefix = t('world.speedup').split('{d}')[0]!;
       expect(texts.some((s) => s.startsWith(prefix))).toBe(false);
       scene.destroy();
     });
@@ -333,7 +333,7 @@ describe('CityScene home-desk Train Troops tile + modal (2026-07-21)', () => {
         troops: 0, resources: { ink: 100000 }, speedupUntil: Date.now() - 1000,
       });
       const texts = collectTexts(scene.container);
-      const prefix = t('world.speedup').split('{sec}')[0]!;
+      const prefix = t('world.speedup').split('{d}')[0]!;
       expect(texts.some((s) => s.startsWith(prefix))).toBe(false);
       scene.destroy();
     });

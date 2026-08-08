@@ -124,6 +124,16 @@ export class WorldMapContext {
   l3Dirty = false;
   cityLayer!: PIXI.Container;
   citySprites: Map<string, PIXI.Container> = new Map();
+  /** cacheKey ("x:y" or "node:id") → local-space geometry of an active capital-protection shield
+   *  bubble, cached by city.ts refreshCityLayer so lifecycle.update can re-animate it (spin/pulse)
+   *  every frame without recomputing sprite layout — otherwise the shield only redraws whenever
+   *  something else triggers refreshCityLayer (pan/zoom/poll) and sits visibly frozen the rest of
+   *  the time, reading as a flat static overlay rather than an active field (2026-08-08 follow-up:
+   *  "现在就叠加了一张图，不太能懂用途是什么"). See WorldMapRenderer/shieldFx.ts. */
+  shieldGeom: Map<string, { cx: number; cy: number; rx: number; ry: number; tp: number }> = new Map();
+  /** Seconds elapsed, feeds drawShieldFx's rotation/pulse phase — a plain accumulator (not
+   *  Date.now()) so shield animation stays deterministic/testable like the rest of update(dt). */
+  shieldAnimT = 0;
   fogGfx!: PIXI.Graphics;
   overlayGfx!: PIXI.Graphics;
   /** March walk-cycle sprites, above overlayGfx so they read on top of the route line/arrowhead. */

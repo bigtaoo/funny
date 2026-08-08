@@ -1,5 +1,6 @@
 // Scene lifecycle: per-frame update (loading spinner, toast timer, L3 flush),
 // atlas bootstrap behind the loading cover, and teardown of pooled Graphics / city sprites.
+import * as PIXI from 'pixi.js-legacy';
 import { loadResAtlas } from '../../../render/atlas/resAtlasLoader';
 import { loadCityAtlas } from '../../../render/atlas/cityAtlasLoader';
 import { loadPlayerBaseAtlas } from '../../../render/atlas/playerBaseAtlasLoader';
@@ -8,6 +9,7 @@ import { loadBuildingAtlas } from '../../../render/atlas/buildingAtlasLoader';
 import { tearDownChildren } from '../../../render/sketchUi';
 import { type Constructor, type WorldMapRendererBaseCtor } from './base';
 import { destroyTokenEntry } from './fog';
+import { drawShieldFx } from './shieldFx';
 
 export interface LifecycleHandlers {
   update(dt: number): void;
@@ -38,6 +40,18 @@ export function LifecycleMixin<TBase extends WorldMapRendererBaseCtor>(Base: TBa
         if (this.ctx.toastTimer <= 0) tearDownChildren(this.ctx.toastLayer);
       }
       this.updateVignette(dt);
+      // Protection-shield bubbles (S8-8 follow-up, 2026-08-08): re-animate every active shield's
+      // dashed ring/pulse every frame instead of only on the sporadic redraws refreshCityLayer
+      // gets (pan/zoom/poll) — see WorldMapContext.shieldGeom / WorldMapRenderer/shieldFx.ts.
+      this.ctx.shieldAnimT += dt;
+      if (this.ctx.shieldGeom.size > 0) {
+        for (const [key, geom] of this.ctx.shieldGeom) {
+          const cityC = this.ctx.citySprites.get(key);
+          const shieldFx = cityC?.getChildByName('shieldFx') as PIXI.Graphics | undefined;
+          if (!shieldFx) { this.ctx.shieldGeom.delete(key); continue; }
+          drawShieldFx(shieldFx, geom, this.ctx.shieldAnimT);
+        }
+      }
       // L3 overview: flush dirty flag at most once per frame (60fps cap).
       if (this.ctx.l3Dirty && this.ctx.zoom === 3) {
         this.renderMapL3();
@@ -87,6 +101,7 @@ export function LifecycleMixin<TBase extends WorldMapRendererBaseCtor>(Base: TBa
       this.ctx.pool = [];
       for (const c of this.ctx.citySprites.values()) c.destroy({ children: true });
       this.ctx.citySprites.clear();
+      this.ctx.shieldGeom.clear();
       for (const entry of this.ctx.marchTokenRuntimes.values()) destroyTokenEntry(entry);
       this.ctx.marchTokenRuntimes.clear();
       this.ctx.marchAttackUntil.clear();

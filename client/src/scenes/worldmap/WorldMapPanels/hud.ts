@@ -7,6 +7,7 @@ import { ui as C, txt, sketchPanel, sketchButton, seedFor, tearDownChildren } fr
 import { buildIcon } from '../../../render/icons';
 import { FS, snapFont } from '../../../render/fontScale';
 import { serverNow } from '../../../net/serverClock';
+import { dhmsFromMs } from '../formatDuration';
 import { MARCH_RETURN_SPEEDUP_SECS_PER_COIN } from '@nw/shared';
 import { getResTexture } from '../../../render/atlas/resAtlasLoader';
 import { HUD_H } from '../constants';
@@ -218,11 +219,13 @@ export function HudMixin<TBase extends WorldMapPanelsBaseCtor>(Base: TBase): TBa
         const buffs: { icon: IconKind; label: string }[] = [];
         const shieldUntil = this.ctx.me.baseProtectedUntil ?? 0;
         if (shieldUntil > buffNow) {
-          buffs.push({ icon: 'armorHeavy', label: t('world.protected', { sec: Math.ceil((shieldUntil - buffNow) / 1000) }) });
+          // 天/时/分/秒 breakdown (2026-08-08 UI fix) — a bare "146282s" is unreadable; these
+          // shields commonly run 8-24h+ so days/hours matter more than the leftover seconds.
+          buffs.push({ icon: 'armorHeavy', label: t('world.protected', dhmsFromMs(shieldUntil - buffNow)) });
         }
         const speedupUntil = this.ctx.me.speedupUntil ?? 0;
         if (speedupUntil > buffNow) {
-          buffs.push({ icon: 'hourglassMd', label: t('world.speedup', { sec: Math.ceil((speedupUntil - buffNow) / 1000) }) });
+          buffs.push({ icon: 'hourglassMd', label: t('world.speedup', dhmsFromMs(speedupUntil - buffNow)) });
         }
         if (buffs.length > 0) {
           const buffRowH = 40;

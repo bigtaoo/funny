@@ -3,7 +3,7 @@ import * as PIXI from 'pixi.js-legacy';
 import { t } from '../../i18n';
 import { ui as C, txt, scaledTxt, sketchPanel, seedFor } from '../../render/sketchUi';
 import { FS } from '../../render/fontScale';
-import { formatDuration } from '../worldmap/formatDuration';
+import { formatDuration, dhmsFromMs } from '../worldmap/formatDuration';
 import { serverNow } from '../../net/serverClock';
 import { buildIcon } from '../../render/icons';
 import type { BuildingKey } from '../../net/WorldApiClient';
@@ -243,8 +243,9 @@ export function ModalsMixin<TBase extends CitySceneBaseCtor>(Base: TBase): TBase
       iy += 28;
 
       if (speedupActive) {
-        const remainSec = Math.max(0, Math.ceil(((this.me?.speedupUntil ?? 0) - now) / 1000));
-        const buffLbl = st(t('world.speedup', { sec: remainSec }), FS.tiny, C.accent, true);
+        // 天/时/分/秒 breakdown (2026-08-08 UI fix) — matches the world-map HUD's buff chip.
+        const remainMs = Math.max(0, (this.me?.speedupUntil ?? 0) - now);
+        const buffLbl = st(t('world.speedup', dhmsFromMs(remainMs)), FS.tiny, C.accent, true);
         buffLbl.x = 10;
         buffLbl.y = iy;
         panelRoot.addChild(buffLbl);

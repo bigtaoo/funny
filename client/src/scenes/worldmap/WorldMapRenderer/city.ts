@@ -9,6 +9,7 @@ import { SECT_BASE_TINT, ALLY_SECT_BASE_TINT } from '../tileStyle';
 import { HUD_H, BASE_SPRITE_TILES } from '../constants';
 import { t } from '../../../i18n';
 import { makeText } from '../../../render/pixiText';
+import { drawShieldFx } from './shieldFx';
 import { type Constructor, type WorldMapRendererBaseCtor } from './base';
 
 export interface CityHandlers {
@@ -190,17 +191,18 @@ export function CityMixin<TBase extends WorldMapRendererBaseCtor>(Base: TBase): 
           // translucent bubble dome over the building, with a slow breathing pulse so it reads as "active" at
           // a glance rather than a flat static overlay.
           const shieldFx = cityC.getChildByName('shieldFx') as PIXI.Graphics;
-          shieldFx.clear();
           if ((tile.protectedUntil ?? 0) > Date.now()) {
             const cx = 0;
             const cy = -sprite.height * (1 - contentTopFrac) * 0.5;
             const rx = sprite.width * 0.42;
             const ry = sprite.height * (1 - contentTopFrac) * 0.62;
-            const pulse = 0.5 + 0.5 * Math.sin(Date.now() / 450);
-            shieldFx.lineStyle(Math.max(1.5, tp * 0.02), 0x5fd4ff, 0.7 + 0.25 * pulse);
-            shieldFx.beginFill(0x5fd4ff, 0.1 + 0.06 * pulse);
-            shieldFx.drawEllipse(cx, cy, rx, ry);
-            shieldFx.endFill();
+            // Cache the local-space geometry so lifecycle.update can re-animate this bubble every
+            // frame (spin/breathe) without recomputing sprite layout — see WorldMapContext.shieldGeom.
+            this.ctx.shieldGeom.set(cacheKey, { cx, cy, rx, ry, tp });
+            drawShieldFx(shieldFx, { cx, cy, rx, ry, tp }, this.ctx.shieldAnimT);
+          } else {
+            shieldFx.clear();
+            this.ctx.shieldGeom.delete(cacheKey);
           }
         }
       }
