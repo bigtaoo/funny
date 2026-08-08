@@ -345,6 +345,79 @@ describe('full-link E2E (live stack)', () => {
     await waitFor(() => a.views.screen === 'lobby' && b.views.screen === 'lobby', 'back to lobby');
   });
 
+  // Regression for the 2026-08-08 "点了 Reconnect 进不去" bug report: login-reconnect-prompt hung
+  // forever whenever the room was STILL ALIVE (opponent still connected, gameserver never
+  // restarted) — the one previous fix (2026-07-28) only covered the room being genuinely gone.
+  // Three compounding bugs (see MATCHSVC_DESIGN.md §9.2) meant this path had never actually worked
+  // since the feature shipped — auth-reconnect-prompt.test.ts mocks NetSession.rejoinMatch entirely,
+  // so no test ever drove a real ticket handshake into a still-live Room. This one does: a genuine
+  // mid-match connection drop (not a graceful room_leave/forfeit) + a brand-new headless core seeded
+  // from the dropped client's own persisted storage (same "app restart" technique as the account-
+  // lifecycle test above), while the opponent and the room are still very much alive server-side.
+  it('login-reconnect-prompt: a mid-match connection drop + fresh app relaunch resumes the SAME live match (2026-08-08 regression)', async () => {
+    const a = createClient();
+    const b = createClient();
+    await registerAndEnterLobby(a, 'Dropped Player');
+    await registerAndEnterLobby(b, 'Waiting Opponent');
+
+    a.views.lobby!.onOpenRoom();
+    await waitFor(() => a.views.lastRoomNetState === 'open', 'A gateway open', 15_000);
+    a.views.room!.createRoom();
+    await waitFor(() => !!a.views.lastRoomState?.code, 'A room code assigned', 15_000);
+    const code = a.views.lastRoomState!.code;
+
+    b.views.lobby!.onOpenRoom();
+    await waitFor(() => b.views.lastRoomNetState === 'open', 'B gateway open', 15_000);
+    b.views.room!.joinRoom(code);
+    await waitFor(
+      () => (a.views.lastRoomState?.players.length ?? 0) >= 2 && (b.views.lastRoomState?.players.length ?? 0) >= 2,
+      'both players in room',
+      15_000,
+    );
+    a.views.room!.setReady(true);
+    b.views.room!.setReady(true);
+    await waitFor(() => a.views.screen === 'gameNet' && b.views.screen === 'gameNet', 'both matched (friendly)', 25_000);
+
+    // Real frame history to catch up on — proves the frame-log replay half of the fix, not just
+    // the "does the dialog navigate anywhere at all" half.
+    const [tA] = await Promise.all([a.views.driveFor(1000), b.views.driveFor(1000)]);
+    expect(tA, 'client A lockstep did not advance before the drop').toBeGreaterThan(0);
+
+    // Simulate A's connection dying (crash / OS kill / network loss) — NOT an explicit leave: from
+    // the server's point of view this is exactly what onExitToLobby's session.close() produces
+    // (the data-plane socket just closes; Room.onDisconnect sees no reported result and starts its
+    // 60s grace period, same as any other unannounced drop) — the match is NOT forfeited or ended.
+    const snapshot = a.platform.snapshotStorage();
+    a.views.gameNet!.cb.onExitToLobby();
+
+    // Fresh app relaunch on the same device: a brand-new headless core seeded from the dropped
+    // client's own persisted storage (token survives; no in-memory NetSession/engine state does).
+    const restart = createClientFrom(snapshot);
+    restart.core.start();
+
+    // GET /save's activeMatch (Redis-backed, matchsvc-written at match start, still live — gameserver
+    // never restarted and the match never ended) surfaces the "resume your match?" dialog instead of
+    // dropping straight into the lobby.
+    await waitFor(() => restart.views.screen === 'reconnectPrompt', 'reconnect prompt shown', 15_000);
+    restart.views.reconnectPrompt!.onReconnect();
+
+    // The actual bug: before the fix, this next line's wait would time out — the dialog just sat
+    // there forever with no error, no toast, nothing (conn_resume never sent / matchInfo never
+    // rebuilt). Reaching 'gameNet' here proves the full cold-resume round trip works end to end.
+    await waitFor(() => restart.views.screen === 'gameNet', 'resumed into the live match', 15_000);
+    expect(restart.platform.openedSockets.find((u) => u.includes('ticket=')), 'no ticketed game socket on resume').toBeTruthy();
+
+    // And the resumed engine is actually live (receiving frame_batch), not just parked on the scene.
+    const [tRestart, tB] = await Promise.all([restart.views.driveFor(1000), b.views.driveFor(1000)]);
+    expect(tRestart, 'resumed client lockstep did not advance').toBeGreaterThan(0);
+    expect(tB, 'opponent lockstep did not advance while waiting for the resume').toBeGreaterThan(0);
+
+    // Clean up: both sides leave so the room doesn't linger past this test.
+    restart.views.gameNet!.cb.onExitToLobby();
+    b.views.gameNet!.cb.onExitToLobby();
+    await waitFor(() => restart.views.screen === 'lobby' && b.views.screen === 'lobby', 'back to lobby');
+  });
+
   it('negative paths: duplicate loginId is rejected; a broke account cannot buy', async () => {
     const loginId = uid();
     const pw = 'password123';
