@@ -61,7 +61,7 @@ import { ui as C } from './render/sketchUi';
 import { setBakeRenderer } from './render/bake';
 import { installTextPaddingFloor } from './render/pixiText';
 import { preloadBoot } from './assets/bootManifest';
-import { ensureBattleAssets } from './assets/battleAssets';
+import { enterBattle, DeferredSceneCalls } from './app/battleGate';
 import { LoadingOverlay } from './ui/LoadingOverlay';
 import { createAppCore } from './app/createAppCore';
 import type { AppViews, LobbyView, RoomView, FriendsView, ChatView, NetGameView, ResultViewProps, FadeOpts, MountOpts } from './app/AppViews';
@@ -122,25 +122,6 @@ class PixiAppViews implements AppViews {
     return scene;
   }
 
-  /**
-   * Shared pre-match gate for showGame/showGameNet (ASSET_PACKAGING §10): freezes input on the
-   * still-live outgoing scene (input bypasses PIXI — same reasoning as SceneManager's own fade
-   * gate, client-modules.md §28), shows a LoadingOverlay while `ensureBattleAssets` warms unit
-   * rigs/skins/card art, THEN builds + gotos the real scene. Closes the placeholder-circle /
-   * blank-card-art flash that a bare `manager.goto(new GameScene(...))` could show the first
-   * time a session fields a rarely-used hero/skin. `manager.goto(..., {fade:true})`'s own
-   * transition takes over un-suppressing input once the fade settles — calling `suppress(true)`
-   * again there is a harmless no-op.
-   */
-  private async enterBattle<T extends Scene>(name: string, opts: GameSceneOptions, build: () => T): Promise<T> {
-    this.input.suppress(true);
-    const overlay = new LoadingOverlay(this.app);
-    await ensureBattleAssets(opts, (done, total) => overlay.setProgress(total ? done / total : 1));
-    overlay.destroy();
-    const scene = this.timedBuild(name, build);
-    this.manager.goto(scene, { fade: true });
-    return scene;
-  }
 
   showIntro(cb: Parameters<AppViews['showIntro']>[0]): void {
     this.leaveLobby();
@@ -303,7 +284,11 @@ class PixiAppViews implements AppViews {
     this.leaveLobby();
     // Entering a match is one of the handful of transitions that cross-fade (see SceneManager);
     // enterBattle gates that fade behind the L1 asset-readiness loading screen (ASSET_PACKAGING §10).
-    void this.enterBattle('GameScene', opts, () => new GameScene(this.layout, this.input, cb, opts));
+    void enterBattle(
+      { app: this.app, manager: this.manager, input: this.input },
+      opts,
+      () => this.timedBuild('GameScene', () => new GameScene(this.layout, this.input, cb, opts)),
+    );
   }
 
   showRoom(cb: RoomSceneCallbacks): RoomView {
@@ -403,21 +388,20 @@ class PixiAppViews implements AppViews {
     // enterBattle is async (asset-readiness gate, ASSET_PACKAGING §10) but the caller (nav/result.ts)
     // needs a NetGameView synchronously to wire up session.handlers right away — a server push
     // (net_state/peer_dc/match_over) can legitimately arrive while the loading screen is still up
-    // (the socket is already live), so buffer those calls until the scene actually exists, then
-    // flush in order. GameScene's own destroyed-guard covers the symmetric case (push arriving
-    // after the scene is torn down); this covers the "before it's built yet" case.
-    let scene: GameScene | null = null;
-    const pending: Array<(s: GameScene) => void> = [];
-    const flushOrQueue = (fn: (s: GameScene) => void): void => { if (scene) fn(scene); else pending.push(fn); };
+    // (the socket is already live), so DeferredSceneCalls buffers those until the scene actually
+    // exists, then flushes in order. GameScene's own destroyed-guard covers the symmetric case
+    // (push arriving after the scene is torn down); this covers the "before it's built yet" case.
+    const deferred = new DeferredSceneCalls<GameScene>();
     // Entering a match is one of the handful of transitions that cross-fade (see SceneManager).
-    void this.enterBattle('GameScene', opts, () => new GameScene(netLayout, this.input, cb, opts)).then((s) => {
-      scene = s;
-      pending.splice(0).forEach((fn) => fn(s));
-    });
+    void enterBattle(
+      { app: this.app, manager: this.manager, input: this.input },
+      opts,
+      () => this.timedBuild('GameScene', () => new GameScene(netLayout, this.input, cb, opts)),
+    ).then((s) => deferred.resolve(s));
     return {
-      applyNetState:  (s) => flushOrQueue((sc) => sc.applyNetState(s)),
-      applyPeerDc:    (p) => flushOrQueue((sc) => sc.applyPeerDc(p)),
-      applyMatchOver: (m) => flushOrQueue((sc) => sc.applyMatchOver(m)),
+      applyNetState:  (s) => deferred.call((sc) => sc.applyNetState(s)),
+      applyPeerDc:    (p) => deferred.call((sc) => sc.applyPeerDc(p)),
+      applyMatchOver: (m) => deferred.call((sc) => sc.applyMatchOver(m)),
     };
   }
 }
