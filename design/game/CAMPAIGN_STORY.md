@@ -422,7 +422,7 @@ campaign.ch2.lv1.name   = "三强"
 
 - `IllustratedInterludeScene` 不再是单个 `lineText` 复用文本对象、`currentIndex` 切换内容，而是像 `IntroScene` 一样把每一拍都建成独立的 `PIXI.Text`（`lines: PIXI.Text[]`），`shownCount` 只增不减；淡入/点按补全/自动前进/跳过机制不变，只是「翻到下一拍」不再清空上一拍，而是在其下方再淡入一条
 - 文字块从插画预留的上三分之一空白带顶部开始向下堆叠（`startY`/`lineGapY` 按 `FS.heading` 换算），提示语 `story.tapToContinue` 锚点相应下移到堆叠文字块的下方，避免和最后一拍重叠；尾声（8 拍）文字块会略微超出原本的三分之一留白，属已知取舍——就像开场的 7 行一样，读完整段的可读性优先于严格贴合留白带
-- 测试同步改写：`client/test/ui/illustratedInterludeScene.ui.ts` 断言改为「前一拍保持满 alpha、下一拍独立淡入」，新增「全部拍完后每一条都还在」的用例
+- 测试同步改写：`client/test/ui/illustratedInterludeScene.ui.ts` 断言改为「前一拍保持满 alpha、下一拍独立淡入」，新增「全部拍完后每一条都还在」的用例；后续补测布局层面——每一拍同一 x 居中、y 严格递增且间距恒定，以及提示语 `hintText` 的 y 会随段落变长（`campaign.epilogue` 8 拍 vs `campaign.realLayer.ch1` 4 拍）相应下移、始终不盖住最后一拍，覆盖到 13 项
 
 ### 全关卡开场文案补全（2026-08-08）
 
