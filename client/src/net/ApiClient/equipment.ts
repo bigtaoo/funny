@@ -25,6 +25,7 @@ export interface EquipmentApi {
     materialId: string,
     idempotencyKey: string,
   ): Promise<{ instance: EquipmentInstance; save: LeanSaveResponse }>;
+  sellSkin(skinId: string, idempotencyKey: string): Promise<{ credited: number; coinsAfter: number; save: SaveData }>;
 }
 
 export function EquipmentMixin<TBase extends ApiClientBaseCtor>(Base: TBase): TBase & Constructor<EquipmentApi> {
@@ -123,6 +124,18 @@ export function EquipmentMixin<TBase extends ApiClientBaseCtor>(Base: TBase): TB
       return this.post<{ instance: EquipmentInstance; save: LeanSaveResponse }>('/equipment/reforge', {
         targetId,
         materialId,
+        idempotencyKey,
+      });
+    }
+
+    /**
+     * Sell one surplus skin instance to the system for coins (ITEM_IDENTITY_DESIGN.md task1,
+     * 2026-08-08) — player-initiated only, never automatic on a gacha duplicate. Refuses to sell the
+     * last remaining instance of a currently-equipped skin → 409 SKIN_IN_USE; not owned → 404 SKIN_NOT_FOUND.
+     */
+    async sellSkin(skinId: string, idempotencyKey: string): Promise<{ credited: number; coinsAfter: number; save: SaveData }> {
+      return this.post<{ credited: number; coinsAfter: number; save: SaveData }>('/skins/sell', {
+        skinId,
         idempotencyKey,
       });
     }

@@ -16,7 +16,9 @@ export interface CreateFormHandlers {
 }
 
 // Dialog is rendered 1.5x larger than the original design for legibility.
-const SCALE = 1.5;
+// Exported so tests can compute expected geometry (item-field height/icon size/etc.) instead of
+// re-hardcoding the multiplier — see test/ui/auctionScene.ui.ts's item-field describe block.
+export const SCALE = 1.5;
 // Vertical metrics use an extra 1.2x so the dialog stands 20% taller (roomier row spacing) than its
 // content-derived height, while element widths/fonts stay at SCALE.
 const VA = SCALE * 1.2;
@@ -37,8 +39,9 @@ export function CreateFormMixin<TBase extends AuctionSceneBaseCtor>(Base: TBase)
       const priceRowsH = auctionMode ? ROW * 2 : ROW; // auction: startPrice + buyout
       // Keep the price guardrail band for the current item in sync (fires one fetch per item selection).
       this.ensureRefBand(this.currentListingCategory());
-      // item(field=48) + [qty only for material] + saleMode + price(s) + refBand(22) + buyer(label+field=60) + info(26) + buttons(50) + pads(26)
-      const mh = (16 + 48 + 60 + 26 + 22 + 50 + 10) * VA + ROW * (1 + (isMaterial ? 1 : 0)) + priceRowsH;
+      // item(field=48, doubled to 78 below — the extra 30*SCALE isn't part of the VA-scaled group)
+      // + [qty only for material] + saleMode + price(s) + refBand(22) + buyer(label+field=60) + info(26) + buttons(50) + pads(26)
+      const mh = (16 + 48 + 60 + 26 + 22 + 50 + 10) * VA + 30 * SCALE + ROW * (1 + (isMaterial ? 1 : 0)) + priceRowsH;
       const mx = (w - mw) / 2;
       const my = Math.max(50 + 4, (h - mh) / 2);
 
@@ -54,24 +57,34 @@ export function CreateFormMixin<TBase extends AuctionSceneBaseCtor>(Base: TBase)
 
       // Item — unified selector across material/equipment/card: tap opens a picker listing every sellable
       // item (materials always offered; equipment/card require getSave), sorted by estimated value descending.
+      // Field is 2x the normal input row height and gets an emphasized fill/border/bold-large label once
+      // an item is picked, so the currently-listed item reads at a glance (2026-08-08, "重点显示当前出售物品").
       const il0 = txt(t('auction.item') + ':', snapFont(13 * SCALE), C.dark);
       il0.x = mx + 10 * SCALE; il0.y = cy;
       ml.addChild(il0);
       const selLabel = this.selectedItemLabel();
-      const field = sketchPanel(mw - 20 * SCALE, 30 * SCALE, { fill: 0xfaf9f5, border: selLabel ? C.accent : C.mid, seed: seedFor(cy, 2, mw - 20 * SCALE) });
+      const itemFieldH = 60 * SCALE; // doubled from the standard 30*SCALE input row
+      const itemIconSize = 32 * SCALE;
+      const field = sketchPanel(mw - 20 * SCALE, itemFieldH, {
+        fill: selLabel ? 0xeaf1fb : 0xfaf9f5,
+        border: selLabel ? C.accent : C.mid,
+        width: selLabel ? 3 : 2,
+        seed: seedFor(cy, 2, mw - 20 * SCALE),
+      });
       field.x = mx + 10 * SCALE; field.y = cy + 18 * SCALE;
       ml.addChild(field);
       const itemIconKind = this.itemKind(this.createClass, this.createMaterial);
       const ic = itemIconKind === 'scrap' || itemIconKind === 'lead' || itemIconKind === 'binding'
-        ? buildMaterialIcon(itemIconKind as MaterialKind, 16 * SCALE, selLabel ? C.dark : C.mid)
-        : buildIcon(itemIconKind, 16 * SCALE, selLabel ? C.dark : C.mid);
-      ic.x = mx + 16 * SCALE; ic.y = cy + 24 * SCALE;
+        ? buildMaterialIcon(itemIconKind as MaterialKind, itemIconSize, selLabel ? C.dark : C.mid)
+        : buildIcon(itemIconKind, itemIconSize, selLabel ? C.dark : C.mid);
+      ic.x = mx + 16 * SCALE; ic.y = field.y + (itemFieldH - itemIconSize) / 2;
       ml.addChild(ic);
-      const fl = txt(selLabel ?? t('auction.tapChoose'), snapFont(12 * SCALE), selLabel ? C.dark : C.mid);
-      fl.x = mx + 38 * SCALE; fl.y = cy + 25 * SCALE;
+      const fl = txt(selLabel ?? t('auction.tapChoose'), snapFont((selLabel ? 17 : 13) * SCALE), selLabel ? C.dark : C.mid, !!selLabel);
+      fl.anchor.set(0, 0.5);
+      fl.x = mx + 16 * SCALE + itemIconSize + 10 * SCALE; fl.y = field.y + itemFieldH / 2;
       ml.addChild(fl);
-      this.modalHits.push({ rect: { x: mx + 10 * SCALE, y: cy + 18 * SCALE, w: mw - 20 * SCALE, h: 30 * SCALE }, action: () => this.openItemPicker() });
-      cy += 48 * VA;
+      this.modalHits.push({ rect: { x: mx + 10 * SCALE, y: field.y, w: mw - 20 * SCALE, h: itemFieldH }, action: () => this.openItemPicker() });
+      cy += 48 * VA + 30 * SCALE;
 
       // Qty (material only; equipment/card are unique instances, qty forced to 1 server-side).
       if (isMaterial) {

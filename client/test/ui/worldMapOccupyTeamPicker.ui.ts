@@ -319,6 +319,55 @@ describe('WorldMapNet.showTeamPicker — sort order (nearest, then troops, then 
   });
 });
 
+// Idle-stationed attack parity (2026-08-08): reported bug (account tao) — a team stood idle in the field
+// (停留, not 驻扎/garrison) after a successful occupy, so the attack picker listed it as pickable
+// (busyTeamIds only ever excluded `mode==='garrison'`), the player picked it, and the server rejected the
+// order with TEAM_BUSY — at the time, combatMarch/command.ts's idleRedispatch bypass only whitelisted kind
+// 'occupy'/'move', never 'attack'. The user's desired behavior (confirmed): attack should have the SAME
+// forward-staging parity as occupy — a team parked out in the field should be attackable-in-place too, no
+// round trip home required. Fixed server-side (idleRedispatch now also covers 'attack') rather than
+// tightening the client — the client filter was already correct for the target design, the server was the
+// one lagging behind it.
+describe('WorldMapNet.showTeamPicker — idle-stationed team has attack parity with occupy/move (2026-08-08)', () => {
+  it('an idle (停留) stationed team is usable in the ATTACK picker too — parity with occupy/move', async () => {
+    const { net, showModal } = buildHarness({
+      teams: [{ id: 't1', name: 'Alpha', army: [{ cardInstanceId: 'c1' }] }],
+      cardState: { c1: { currentTroops: 500 } },
+      stationed: [{ x: 33, y: 289, teamId: 't1', mine: true, mode: 'idle' }],
+    });
+    await net.showTeamPicker(ANCHOR.x, ANCHOR.y, 'attack');
+    const buttons = showModal.mock.calls[0][1] as { label: string }[];
+    expect(buttons.some((b) => b.label.startsWith('Alpha'))).toBe(true);
+  });
+
+  it('the same idle-stationed team remains usable for occupy/move', async () => {
+    const { net, showModal } = buildHarness({
+      teams: [{ id: 't1', name: 'Alpha', army: [{ cardInstanceId: 'c1' }] }],
+      cardState: { c1: { currentTroops: 500 } },
+      stationed: [{ x: 33, y: 289, teamId: 't1', mine: true, mode: 'idle' }],
+    });
+    await net.showTeamPicker(ANCHOR.x, ANCHOR.y, 'occupy');
+    expect((showModal.mock.calls[0][1] as { label: string }[]).some((b) => b.label.startsWith('Alpha'))).toBe(true);
+
+    showModal.mockClear();
+    await net.showTeamPicker(ANCHOR.x, ANCHOR.y, 'move');
+    expect((showModal.mock.calls[0][1] as { label: string }[]).some((b) => b.label.startsWith('Alpha'))).toBe(true);
+  });
+
+  it('a garrison-stationed (驻扎) team stays excluded from every kind, including attack', async () => {
+    const { net, showModal } = buildHarness({
+      teams: [{ id: 't1', name: 'Alpha', army: [{ cardInstanceId: 'c1' }] }],
+      cardState: { c1: { currentTroops: 500 } },
+      stationed: [{ x: 33, y: 289, teamId: 't1', mine: true, mode: 'garrison' }],
+    });
+    for (const kind of ['attack', 'occupy', 'move'] as const) {
+      showModal.mockClear();
+      await net.showTeamPicker(ANCHOR.x, ANCHOR.y, kind);
+      expect((showModal.mock.calls[0][1] as { label: string }[]).some((b) => b.label.startsWith('Alpha'))).toBe(false);
+    }
+  });
+});
+
 // In-flight dispatch gate (2026-07-22 §32): the reported bug had a team marched twice. The realistic client
 // trigger is a double-dispatch WINDOW: after picking a team, startMarch is in flight and ctx.marches has not
 // refreshed yet, so a second picker (on another tile) still saw the team as idle and sent it again. pendingTeamIds

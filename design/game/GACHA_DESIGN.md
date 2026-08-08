@@ -117,7 +117,16 @@
 | 稀有度边框 | 按等级的笔记本风格边框（4 款） | 美术资源 |
 | 标签 | 仅 `NEW`（首次获得）显示 badge；重复不显示 badge（2026-07-16 决定：「Dup」标签观感突兀，去掉） | 程序绘制 |
 | 名称 | 玩家可读物品名（`displayName()` 解析 itemId → 材料/装备/角色卡/皮肤 i18n key），不显示原始 itemId | 文案 |
-| 退款提示 | 重复时显示退还金额 | 程序绘制 |
+
+> **皮肤重复处理（2026-08-08 改版，见 [ITEM_IDENTITY_DESIGN.md](ITEM_IDENTITY_DESIGN.md) 任务1）**：结果卡本身不再显示"退款提示"——重复皮肤抽到时**照常生成一份真实道具**（皮肤已实例化，`skinInstances` 集合），跟首次获得完全一样只是不打 NEW 标；要不要把多余的那份换成金币，是玩家事后在拍卖行 picker 里主动点"出售"决定的，不是抽卡当下自动发生的。旧版这里写的"退款提示"对应的是从未真正接入发货流程的一版设计（`DUPE_REFUND_COINS` 此前只在离线 econ-sim 里用到），现已被"真实例 + 玩家主动出售"取代。
+
+> **NEW 判定覆盖四类物品（2026-08-08 修复，`markDuplicates` / `unionOwnershipForDuplicateCheck`，见 `server/metaserver/src/economy.ts`）**：修复前 `markDuplicates` 只对角色卡做了"查背包"（`cardInv` defId），材料/装备都落进了通用的"皮肤"分支——那条分支只在**本次结果列表内**去重，跟玩家背包里已经攒了多少完全无关（bug 现场：账号已经囤了一大堆 Lead/Scraps，十连里第一张材料仍然打 NEW）。现在四类物品统一按"这辈子有没有拥有过"判定，不打 NEW 的条件：
+> - **角色卡**：`cardInstances` 里已有同 `defId` 的实例（不论等级/星级），或 `everOwned.hero` 记录过
+> - **装备**：`equipmentInstances` 里已有同 `defId` 的实例（不论品质/强化等级），或 `everOwned.equipment` 记录过——跟拥有过的卡牌同一口径：曾经拥有一件即可，哪怕后来强化消耗/分解掉了也不再算 NEW
+> - **材料**：`save.materials[matKey] > 0`，或 `everOwned.material` 记录过——即使材料后来被强化/合成花光归零，再次抽到也不算 NEW
+> - **皮肤**：`inventory.skins` 已包含该 skinId，或 `everOwned.skin` 记录过（覆盖拍卖行寄售把皮肤移出 `inventory.skins` 后又没买回来的情形）；但 `inventory.skins` 该不该 `$addToSet` 这个 id 仍然只看 `inventory.skins` 本身，不受 `everOwned` 影响——两者是分开的关注点，不能混为一谈
+>
+> 每类都是"背包现状 ∪ everOwned 终身账本"取并集，不是二选一：这样老账号即使 `everOwned` 账本有历史空洞（该字段是后加的），只要背包里现在确实有，也不会误打 NEW；反过来若背包里的实例后来被清空（分解/合成/卖掉），只要 `everOwned` 记得，也不会显示 NEW。
 
 ### 4.3 Legendary 特效
 
@@ -351,7 +360,7 @@ GachaScene 顶部区域只有 4 个彩色圆点（common/rare/epic/legendary）�
 | 软保底起始 | 70 抽（本文 §3 新增） | 本文 |
 | 十连保底 | epic+ | §4.2 |
 | legendary 基础概率 | 标准池 ≈3.22%（固定概率表 §2.1b）；限定池/扁平权重 1% | §2.1b / §4.1 |
-| 重复退币 legendary | 1,500 coins | §4.3 |
+| 皮肤主动出售 legendary | 1,500 coins（`DUPE_REFUND_COINS.legendary`，`/skins/sell`，玩家主动发起） | [ITEM_IDENTITY_DESIGN.md](ITEM_IDENTITY_DESIGN.md) 任务1 |
 | 月卡每日 | 120 coins × 30 天 | 本文 §5 |
 | 月卡价格 | ¥30 | 本文 §5 |
 | 年卡价格 | ¥298（12 月卡 ¥360 约 83 折取整）× 365 天；人民币定价待中国区上架核定，当前结算币种为 EUR | 本文 §5.1b |

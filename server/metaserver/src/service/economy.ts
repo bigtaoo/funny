@@ -38,6 +38,7 @@ import { verifyAdPlatformToken } from '../ads.js';
 import type { GachaPoolView } from '../commercialClient.js';
 import {
   markDuplicates,
+  unionOwnershipForDuplicateCheck,
   deliverLootBox,
   deliverOrder,
   mirrorCoins,
@@ -235,16 +236,22 @@ export function EconomyMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase & C
       // Route each result: mat_* → materials, equipment defId → equipment instance, character card
       // defId → hero card grant (cardInstances via grantHeroCards), everything else → skin (idempotent
       // inventory.skins add; duplicate-to-coin conversion deferred to S5, see economy.ts comment).
-      // `marked` (new/duplicate badges for the reveal UI) is computed on the full raw result list,
-      // checking cards against owned cardInstances defIds (not inventory.skins) since that's where they
-      // land. Cards moved to their own collection (2026-07-27 split, cards.ts) — a projected defId-only
-      // query here is lighter than the old in-memory map read (and lighter than a full assembleCardInv join).
-      const [cur, ownedCardDocs] = await Promise.all([
+      // `marked` (new/duplicate badges for the reveal UI) is computed on the full raw result list —
+      // every kind checked against real lifetime ownership (live inventory ∪ everOwned ledger; see
+      // markDuplicates/unionOwnershipForDuplicateCheck doc comments), not just cards. Projected
+      // defId-only queries (cards moved to their own collection 2026-07-27, equipment 2026-07-26) run
+      // alongside savePromise instead of after it.
+      const [cur, cardDocs, equipDocs] = await Promise.all([
         savePromise,
         cols.cardInstances.find({ accountId }, { projection: { defId: 1 } }).toArray(),
+        cols.equipmentInstances.find({ accountId }, { projection: { defId: 1 } }).toArray(),
       ]);
-      const ownedCardDefIds = ownedCardDocs.map((d) => d.defId);
-      const { marked } = markDuplicates(cur.inventory.skins, ownedCardDefIds, draw.results);
+      const { ownedHero, ownedEquipment, ownedMaterial } = unionOwnershipForDuplicateCheck(
+        cardDocs.map((d) => d.defId), equipDocs.map((d) => d.defId), cur,
+      );
+      const { marked } = markDuplicates(
+        cur.inventory.skins, cur.everOwned?.skin ?? [], ownedHero, ownedEquipment, ownedMaterial, draw.results,
+      );
       const { save, overflow, cardGrants, equipmentGrants } = await deliverLootBox(
         cols,
         commercial,
@@ -546,12 +553,17 @@ export function EconomyMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase & C
       }
 
       // Mark new/dup for the reveal BEFORE delivery mutates the skin set (mirrors gachaDraw's convention).
-      const [before, beforeCardDocs] = await Promise.all([
+      const [before, beforeCardDocs, beforeEquipDocs] = await Promise.all([
         getOrCreateSave(cols, accountId, now()),
         cols.cardInstances.find({ accountId }, { projection: { defId: 1 } }).toArray(),
+        cols.equipmentInstances.find({ accountId }, { projection: { defId: 1 } }).toArray(),
       ]);
-      const beforeCardDefIds = beforeCardDocs.map((d) => d.defId);
-      const marked = markDuplicates(before.inventory.skins, beforeCardDefIds, r.results).marked;
+      const { ownedHero, ownedEquipment, ownedMaterial } = unionOwnershipForDuplicateCheck(
+        beforeCardDocs.map((d) => d.defId), beforeEquipDocs.map((d) => d.defId), before,
+      );
+      const marked = markDuplicates(
+        before.inventory.skins, before.everOwned?.skin ?? [], ownedHero, ownedEquipment, ownedMaterial, r.results,
+      ).marked;
       // starter_draw delivers pack items (loot-box routing); starter_growth grants coins/subscription only (no items).
       if (r.results.length > 0) {
         await deliverOrder(

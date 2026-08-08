@@ -354,6 +354,16 @@ describe.skipIf(!mongo)('meta economy orchestration e2e', () => {
     expect(r.data.save.deliveredOrders).toHaveLength(1);
   });
 
+  it('shop direct purchase of an already-owned skin still delivers a real second instance (ITEM_IDENTITY_DESIGN.md task1, 2026-08-08 — used to be a silent no-op)', async () => {
+    comm.coins.set(accountId, 1000);
+    await app.inject({ method: 'POST', url: '/shop/buy', headers: auth(), payload: { itemId: 'skin_shop_c1' } });
+    const r2 = body(await app.inject({ method: 'POST', url: '/shop/buy', headers: auth(), payload: { itemId: 'skin_shop_c1' } }));
+    expect(r2.ok).toBe(true);
+    expect(r2.data.save.wallet.coins).toBe(400); // charged both times: 1000-300-300
+    expect(r2.data.save.inventory.skins.filter((s: string) => s === 'skin_shop_c1')).toHaveLength(1); // still a dedup set
+    expect(await m.collections.skinInstances.countDocuments({ accountId, skinId: 'skin_shop_c1' })).toBe(2); // but 2 real instances exist
+  });
+
   it('insufficient balance → 402', async () => {
     const r = await app.inject({ method: 'POST', url: '/shop/buy', headers: auth(), payload: { itemId: 'skin_shop_e1' } });
     expect(r.statusCode).toBe(402);
@@ -441,10 +451,34 @@ describe.skipIf(!mongo)('meta economy orchestration e2e', () => {
     expect(r1.data.results[0]).toMatchObject({ itemId: 'skin_l1', rarity: 'legendary', duplicate: false });
     expect(r1.data.save.inventory.skins).toContain('skin_l1');
     expect(r1.data.save.gacha.pity.standard).toBe(1);
-    // Draw the same item again → marked duplicate, skin not added to inventory again.
+    // Draw the same item again → marked duplicate, skin not added to inventory.skins a second time
+    // (that array stays a dedup "do I own at least one" view — see skin.ts), but unlike the old design
+    // this must NOT be a no-op: a real second SkinInstance is minted (ITEM_IDENTITY_DESIGN.md task1,
+    // 2026-08-08 fix — a duplicate pull used to vanish entirely, no item, no coin refund).
     const r2 = body(await app.inject({ method: 'POST', url: '/gacha/draw', headers: auth(), payload: { poolId: 'standard', count: 1 } }));
     expect(r2.data.results[0].duplicate).toBe(true);
     expect(r2.data.save.inventory.skins.filter((s: string) => s === 'skin_l1')).toHaveLength(1);
+    const instanceDocs = await m.collections.skinInstances.find({ accountId, skinId: 'skin_l1' }).toArray();
+    expect(instanceDocs).toHaveLength(2); // the dupe pull really did mint a second instance, not nothing
+    // GET /save's skinCounts join surfaces the real count so the client can offer the surplus copy for sale/auction.
+    const saveRes = body(await app.inject({ method: 'GET', url: '/save', headers: auth() }));
+    expect(saveRes.data.save.skinCounts.skin_l1).toBe(2);
+  });
+
+  it('skinCounts self-heals a legacy account (inventory.skins populated, zero skinInstances rows) to exactly 1 instance, idempotently across repeat reads (ITEM_IDENTITY_DESIGN.md task1, 2026-08-08)', async () => {
+    // Simulates a pre-2026-08-08 save: owned per inventory.skins, but this account predates the
+    // skinInstances collection entirely (no instance rows at all for it).
+    await m.collections.saves.updateOne({ _id: accountId }, { $set: { 'save.inventory.skins': ['skin_l1'] } });
+    expect(await m.collections.skinInstances.countDocuments({ accountId, skinId: 'skin_l1' })).toBe(0);
+
+    const r1 = body(await app.inject({ method: 'GET', url: '/save', headers: auth() }));
+    expect(r1.data.save.skinCounts.skin_l1).toBe(1);
+    expect(await m.collections.skinInstances.countDocuments({ accountId, skinId: 'skin_l1' })).toBe(1);
+
+    // A second read must not mint a duplicate legacy instance ($setOnInsert idempotency).
+    const r2 = body(await app.inject({ method: 'GET', url: '/save', headers: auth() }));
+    expect(r2.data.save.skinCounts.skin_l1).toBe(1);
+    expect(await m.collections.skinInstances.countDocuments({ accountId, skinId: 'skin_l1' })).toBe(1);
   });
 
   it('gacha: fire-and-forget orderDelivered failure does not block the response, and the order stays reconcilable (2026-07-15 latency fix)', async () => {
@@ -525,6 +559,46 @@ describe.skipIf(!mongo)('meta economy orchestration e2e', () => {
     });
   });
 
+  it('gacha: equipment NEW badge checks equipmentInstances by defId, not inventory.skins (regression — equipment fell into markDuplicates\' generic skin branch, so a defId already owned kept showing NEW every draw since equipment never lands in inventory.skins)', async () => {
+    comm.coins.set(accountId, 2000);
+    comm.nextResults = [{ itemId: 'wp_marker', rarity: 'rare' }];
+    const r1 = body(await app.inject({ method: 'POST', url: '/gacha/draw', headers: auth(), payload: { poolId: 'standard', count: 1 } }));
+    expect(r1.data.results[0]).toMatchObject({ itemId: 'wp_marker', rarity: 'rare', duplicate: false });
+    // Drawing the same defId again (a distinct instance, possibly a different rolled rarity/level) must be marked duplicate — no NEW badge.
+    comm.nextResults = [{ itemId: 'wp_marker', rarity: 'rare' }];
+    const r2 = body(await app.inject({ method: 'POST', url: '/gacha/draw', headers: auth(), payload: { poolId: 'standard', count: 1 } }));
+    expect(r2.data.results[0]).toMatchObject({ itemId: 'wp_marker', rarity: 'rare', duplicate: true });
+  });
+
+  it('gacha: within a single ten-pull, the first copy of a new equipment defId is NEW and later copies of the same defId in the same batch are duplicate', async () => {
+    comm.coins.set(accountId, 2000);
+    comm.nextResults = Array.from({ length: 10 }, () => ({ itemId: 'wp_marker', rarity: 'rare' as const }));
+    const r = body(await app.inject({ method: 'POST', url: '/gacha/draw', headers: auth(), payload: { poolId: 'standard', count: 10 } }));
+    expect(r.data.results).toHaveLength(10);
+    expect(r.data.results[0].duplicate).toBe(false);
+    expect(r.data.results.slice(1).every((e: { duplicate: boolean }) => e.duplicate)).toBe(true);
+  });
+
+  it('gacha: material NEW badge checks save.materials (already-in-bag), not just within-batch dedup (regression — materials fell into markDuplicates\' generic skin branch, so a material already stacked in the bag still showed NEW as long as it wasn\'t a second copy in the very same pull — exact bug report: player with a large existing Lead/Scraps stack kept seeing NEW on every gacha result)', async () => {
+    comm.coins.set(accountId, 2000);
+    comm.nextResults = [{ itemId: 'mat_scrap', rarity: 'common' }];
+    const r1 = body(await app.inject({ method: 'POST', url: '/gacha/draw', headers: auth(), payload: { poolId: 'standard', count: 1 } }));
+    expect(r1.data.results[0]).toMatchObject({ itemId: 'mat_scrap', rarity: 'common', duplicate: false });
+    // Drawing the same material again in a later, separate draw (scrap already sitting in the bag) must be marked duplicate.
+    comm.nextResults = [{ itemId: 'mat_scrap', rarity: 'common' }];
+    const r2 = body(await app.inject({ method: 'POST', url: '/gacha/draw', headers: auth(), payload: { poolId: 'standard', count: 1 } }));
+    expect(r2.data.results[0]).toMatchObject({ itemId: 'mat_scrap', rarity: 'common', duplicate: true });
+  });
+
+  it('gacha: within a single ten-pull, the first copy of a new material is NEW and later copies of the same material in the same batch are duplicate', async () => {
+    comm.coins.set(accountId, 2000);
+    comm.nextResults = Array.from({ length: 10 }, () => ({ itemId: 'mat_lead', rarity: 'common' as const }));
+    const r = body(await app.inject({ method: 'POST', url: '/gacha/draw', headers: auth(), payload: { poolId: 'standard', count: 10 } }));
+    expect(r.data.results).toHaveLength(10);
+    expect(r.data.results[0].duplicate).toBe(false);
+    expect(r.data.results.slice(1).every((e: { duplicate: boolean }) => e.duplicate)).toBe(true);
+  });
+
   it('gacha: card NEW badge checks cardInv, not inventory.skins (regression — markDuplicates only checked inventory.skins, so an already-owned card kept showing NEW on every later draw since cards never land in inventory.skins)', async () => {
     comm.coins.set(accountId, 2000);
     // 'max' is not one of the 3 auto-granted starter cards (lichuang/chenshou/suyuan), so the account starts without it.
@@ -555,6 +629,108 @@ describe.skipIf(!mongo)('meta economy orchestration e2e', () => {
     expect(r.data.results).toHaveLength(10);
     expect(r.data.results[0].duplicate).toBe(false);
     expect(r.data.results.slice(1).every((e: { duplicate: boolean }) => e.duplicate)).toBe(true);
+  });
+
+  // 2026-08-08 fix's core claim: ownership for the NEW badge is "live inventory ∪ everOwned",
+  // never either alone. The four tests above only exercise the happy path where both stay in sync
+  // (a fresh gacha grant sets both together); the tests below decouple them on purpose.
+  describe('NEW badge: everOwned survives the item later being fully removed from the live inventory', () => {
+    it('equipment: defId stays duplicate=true after every instance of it is deleted (e.g. salvaged/reforge-consumed) — only everOwned.equipment can prove this, since the equipmentInstances query alone would come back empty', async () => {
+      comm.coins.set(accountId, 2000);
+      comm.nextResults = [{ itemId: 'wp_marker', rarity: 'rare' }];
+      const r1 = body(await app.inject({ method: 'POST', url: '/gacha/draw', headers: auth(), payload: { poolId: 'standard', count: 1 } }));
+      expect(r1.data.results[0].duplicate).toBe(false);
+      // Simulate every wp_marker instance being salvaged away — the live equipmentInstances query for
+      // this defId now comes back empty, unlike a fresh account that never owned it.
+      await m.collections.equipmentInstances.deleteMany({ accountId, defId: 'wp_marker' });
+      expect(await m.collections.equipmentInstances.countDocuments({ accountId, defId: 'wp_marker' })).toBe(0);
+      comm.nextResults = [{ itemId: 'wp_marker', rarity: 'rare' }];
+      const r2 = body(await app.inject({ method: 'POST', url: '/gacha/draw', headers: auth(), payload: { poolId: 'standard', count: 1 } }));
+      expect(r2.data.results[0].duplicate).toBe(true);
+    });
+
+    it('material: stays duplicate=true after the stack is fully spent to 0 — only everOwned.material can prove this, since save.materials.scrap alone would read 0 (falsy)', async () => {
+      comm.coins.set(accountId, 2000);
+      comm.nextResults = [{ itemId: 'mat_scrap', rarity: 'common' }];
+      const r1 = body(await app.inject({ method: 'POST', url: '/gacha/draw', headers: auth(), payload: { poolId: 'standard', count: 1 } }));
+      expect(r1.data.results[0].duplicate).toBe(false);
+      expect(r1.data.save.materials.scrap).toBe(10);
+      // Simulate spending the whole stack (enhancement/refinement material cost) down to 0.
+      await m.collections.saves.updateOne({ _id: accountId }, { $set: { 'save.materials.scrap': 0 } });
+      comm.nextResults = [{ itemId: 'mat_scrap', rarity: 'common' }];
+      const r2 = body(await app.inject({ method: 'POST', url: '/gacha/draw', headers: auth(), payload: { poolId: 'standard', count: 1 } }));
+      expect(r2.data.results[0].duplicate).toBe(true);
+    });
+
+    it('card: stays duplicate=true after every instance of the defId is deleted (e.g. fused away as fodder) — only everOwned.hero can prove this, since the cardInstances query alone would come back empty', async () => {
+      comm.coins.set(accountId, 2000);
+      comm.nextResults = [{ itemId: 'max', rarity: 'epic' }];
+      const r1 = body(await app.inject({ method: 'POST', url: '/gacha/draw', headers: auth(), payload: { poolId: 'standard', count: 1 } }));
+      expect(r1.data.results[0].duplicate).toBe(false);
+      await m.collections.cardInstances.deleteMany({ accountId, defId: 'max' });
+      expect(await m.collections.cardInstances.countDocuments({ accountId, defId: 'max' })).toBe(0);
+      comm.nextResults = [{ itemId: 'max', rarity: 'epic' }];
+      const r2 = body(await app.inject({ method: 'POST', url: '/gacha/draw', headers: auth(), payload: { poolId: 'standard', count: 1 } }));
+      expect(r2.data.results[0].duplicate).toBe(true);
+    });
+
+    it('skin: a copy sold via auction escrow (removed from inventory.skins, everOwned.skin untouched) stays duplicate=true on re-pull, AND is still re-added to inventory.skins — the two concerns markDuplicates keeps separate', async () => {
+      comm.coins.set(accountId, 2000);
+      comm.nextResults = [{ itemId: 'skin_e1', rarity: 'epic' }];
+      const r1 = body(await app.inject({ method: 'POST', url: '/gacha/draw', headers: auth(), payload: { poolId: 'standard', count: 1 } }));
+      expect(r1.data.results[0].duplicate).toBe(false);
+      expect(r1.data.save.inventory.skins).toContain('skin_e1');
+      // Simulate auction escrow: the skin leaves inventory.skins (the "current copy" view) but
+      // everOwned.skin — the lifetime "ever obtained" ledger — is untouched (per its own doc comment,
+      // this is exactly what it exists to survive).
+      await m.collections.saves.updateOne({ _id: accountId }, { $pull: { 'save.inventory.skins': 'skin_e1' } });
+      const mid = body(await app.inject({ method: 'GET', url: '/save', headers: auth() }));
+      expect(mid.data.save.inventory.skins).not.toContain('skin_e1');
+      expect(mid.data.save.everOwned.skin).toContain('skin_e1');
+      comm.nextResults = [{ itemId: 'skin_e1', rarity: 'epic' }];
+      const r2 = body(await app.inject({ method: 'POST', url: '/gacha/draw', headers: auth(), payload: { poolId: 'standard', count: 1 } }));
+      expect(r2.data.results[0].duplicate).toBe(true); // no NEW badge — everOwned.skin remembers it
+      expect(r2.data.save.inventory.skins).toContain('skin_e1'); // but it's still re-added to the plain array
+    });
+  });
+
+  // The other half of the union: a legacy save whose everOwned ledger has a gap for an item the
+  // account demonstrably already has (predates the ledger, or some other write path never
+  // populated it) must still resolve from the live inventory alone.
+  describe('NEW badge: live inventory alone (empty everOwned) is still enough to suppress the badge', () => {
+    it('equipment seeded directly into equipmentInstances (bypassing gacha, so everOwned.equipment is never touched) is still duplicate=true on a gacha re-pull of the same defId', async () => {
+      await seedEquipmentBatch(m, accountId, [
+        { id: 'legacy_eq_1', defId: 'wp_marker', rarity: 'rare', level: 0, affixes: [] },
+      ]);
+      const before = body(await app.inject({ method: 'GET', url: '/save', headers: auth() }));
+      expect(before.data.save.everOwned?.equipment ?? []).not.toContain('wp_marker');
+      comm.coins.set(accountId, 2000);
+      comm.nextResults = [{ itemId: 'wp_marker', rarity: 'rare' }];
+      const r = body(await app.inject({ method: 'POST', url: '/gacha/draw', headers: auth(), payload: { poolId: 'standard', count: 1 } }));
+      expect(r.data.results[0].duplicate).toBe(true);
+    });
+
+    it('card seeded directly into cardInstances (bypassing gacha, so everOwned.hero is never touched) is still duplicate=true on a gacha re-pull of the same defId', async () => {
+      await seedCardBatch(m, accountId, [
+        { id: 'legacy_card_1', defId: 'max', level: 1, gear: {}, locked: false },
+      ]);
+      const before = body(await app.inject({ method: 'GET', url: '/save', headers: auth() }));
+      expect(before.data.save.everOwned?.hero ?? []).not.toContain('max');
+      comm.coins.set(accountId, 2000);
+      comm.nextResults = [{ itemId: 'max', rarity: 'epic' }];
+      const r = body(await app.inject({ method: 'POST', url: '/gacha/draw', headers: auth(), payload: { poolId: 'standard', count: 1 } }));
+      expect(r.data.results[0].duplicate).toBe(true);
+    });
+
+    it('material set directly on save.materials (bypassing gacha, so everOwned.material is never touched) is still duplicate=true on a gacha re-pull of the same material', async () => {
+      await m.collections.saves.updateOne({ _id: accountId }, { $set: { 'save.materials.scrap': 5 } });
+      const before = body(await app.inject({ method: 'GET', url: '/save', headers: auth() }));
+      expect(before.data.save.everOwned?.material ?? []).not.toContain('scrap');
+      comm.coins.set(accountId, 2000);
+      comm.nextResults = [{ itemId: 'mat_scrap', rarity: 'common' }];
+      const r = body(await app.inject({ method: 'POST', url: '/gacha/draw', headers: auth(), payload: { poolId: 'standard', count: 1 } }));
+      expect(r.data.results[0].duplicate).toBe(true);
+    });
   });
 
   it('ad cap: more than 5 times → 429', async () => {
@@ -656,6 +832,16 @@ describe.skipIf(!mongo)('meta economy orchestration e2e', () => {
     expect(r.data.granted).toBe('skin_l1');
     expect(r.data.save.monetization.fatePoints).toBe(0);
     expect(r.data.save.inventory.skins).toContain('skin_l1');
+  });
+
+  it('fate redeem of an already-owned skin still delivers a real second instance (ITEM_IDENTITY_DESIGN.md task1, 2026-08-08 — used to be a silent no-op)', async () => {
+    comm.fatePoints.set(accountId, 60);
+    await app.inject({ method: 'POST', url: '/fate/redeem', headers: auth(), payload: { itemId: 'skin_l1' } });
+    const r2 = body(await app.inject({ method: 'POST', url: '/fate/redeem', headers: auth(), payload: { itemId: 'skin_l1' } }));
+    expect(r2.ok).toBe(true);
+    expect(r2.data.save.monetization.fatePoints).toBe(0); // 60 - 30 - 30
+    expect(r2.data.save.inventory.skins.filter((s: string) => s === 'skin_l1')).toHaveLength(1);
+    expect(await m.collections.skinInstances.countDocuments({ accountId, skinId: 'skin_l1' })).toBe(2);
   });
 
   it('fate redeem: insufficient fate points → 402 FATE_INSUFFICIENT', async () => {

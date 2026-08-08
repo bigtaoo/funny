@@ -189,8 +189,13 @@ export class WorldMapNet {
     // Idle-team gate (2026-07-15): a team already committed to an active (non-recalled) march — marching or
     // holding a captured tile — must not accept a new order (mirrors the server-side TEAM_BUSY check in
     // combatMarch.ts, which checks both `marches` and `occupations`).
-    // ADR-051 (P3c): a 停留 idle field team is NOT busy — it can be re-commanded (move / 就地占领) straight from
-    // where it stands, so only 驻扎 garrison stationed teams count as busy here (mirrors the relaxed server gate).
+    // ADR-051 (P3c, scope extended 2026-08-08 to include attack): a 停留 idle field team is NOT busy — it can
+    // be re-commanded straight from where it stands, for attack/occupy/move alike (mirrors the server-side
+    // idleRedispatch bypass in combatMarch/command.ts). Only 驻扎 garrison stationed teams count as busy here.
+    // (2026-08-08 user report: a forward-stationed team looked idle but attack kept failing TEAM_BUSY — turned
+    // out the server itself didn't allow attack-in-place at the time; fixed server-side to match this filter,
+    // which already treated idle-stationed as free for every kind — see slg-attack-picker-idle-stationed
+    // memory for the full incident, including the brief kind-restricted intermediate fix this superseded.)
     const busyTeamIds = new Set([
       ...this.ctx.marches.filter((m) => m.mine && m.teamId).map((m) => m.teamId),
       ...this.ctx.occupations.filter((o) => o.teamId).map((o) => o.teamId),

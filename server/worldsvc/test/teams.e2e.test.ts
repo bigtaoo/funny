@@ -567,7 +567,7 @@ describe.skipIf(!mongo)('worldsvc teams + siege replay e2e', () => {
     expect(pwAfter!.rev).toBe(pwBefore!.rev + 1);
   });
 
-  it('idle-team gate: a team stays "out" through the occupation-hold countdown, not just in transit', async () => {
+  it('idle-team gate: a team stays "out" through the occupation-hold countdown (busyHold blocks any kind, unconditionally); once it settles into 停留 idle, it can attack straight from there (2026-08-08 parity change) instead of requiring a recall first', async () => {
     await svc.joinWorld(W, 'a', 10, 10);
     const target = findCoord(30, 30, (t) => t.type === 'resource' && t.level <= 2);
     const proc = proceduralTile(W, target.x, target.y);
@@ -582,13 +582,15 @@ describe.skipIf(!mongo)('worldsvc teams + siege replay e2e', () => {
     expect(await svc.processDueArrivals()).toBe(1);
 
     // won the PvE battle → occupation hold pending (tile not yet owned) → team is still "out" during the hold.
+    // busyHold (the `occupations` doc) blocks a new order unconditionally, regardless of kind — that part of
+    // the idle-team gate is untouched by the 2026-08-08 attack-parity change below.
     const held = await svc.getTile(W, 'a', target.x, target.y);
     expect(held.contestedByMe).toBe(true);
     const other = findCoord(5, 5);
     await expect(svc.startMarch(W, 'a', 10, 10, other.x, other.y, 'attack', 1, 't1')).rejects.toThrow(/marching, occupying, or stationed/i);
 
-    // hold elapses → ownership lands, but by default (autoReturn off) the capturing team STAYS stationed on
-    // the captured tile (2026-07-23) — it is still "out" and cannot take a fresh order until recalled.
+    // hold elapses → ownership lands; by default (autoReturn off) the capturing team STAYS stationed (停留 idle)
+    // on the captured tile (2026-07-23).
     nowMs = held.contestedUntil!;
     expect(await svc.processDueOccupations()).toBe(1);
     const stationed = await svc.getStationed(W, 'a');
@@ -596,13 +598,92 @@ describe.skipIf(!mongo)('worldsvc teams + siege replay e2e', () => {
     const target2 = findCoord(20, 40);
     await setupDefender('d', target2.x, target2.y, 50);
     await connect(svc, 'a', target2);
-    await expect(svc.startMarch(W, 'a', 10, 10, target2.x, target2.y, 'attack', 1, 't1')).rejects.toThrow(/marching, occupying, or stationed/i);
 
-    // recall the stationed team home → return leg → on arrival the slot is idle again and can take a new order.
-    const back = await svc.recallStationed(W, 'a', 't1');
-    nowMs = (back as { arriveAt: number }).arriveAt;
+    // 2026-08-08 (user request, account tao): a 停留 idle team has the same forward-staging parity for attack as
+    // it already had for occupy/move — it can be sent straight into a fresh siege from where it stands, no
+    // recall/round-trip home required. See slg-attack-picker-idle-stationed-busy-mismatch memory + field-redispatch
+    // e2e's dedicated "re-dispatch attack" case for the deeper coverage; this just confirms it holds after a real
+    // occupy→hold→settle chain too, not only from a plain move-into-station setup.
+    const mv2 = await svc.startMarch(W, 'a', 10, 10, target2.x, target2.y, 'attack', 1, 't1');
+    expect(mv2.kind).toBe('attack');
+    expect(mv2.fromTile).toBe(tileId(W, target.x, target.y)); // departed from the field cell, not (10,10)
+    expect(await svc.getStationed(W, 'a')).toHaveLength(0); // old station cell claimed/freed by the re-dispatch
+  });
+
+  // The two tests above only cover march CREATION (idleRedispatch's origin override / snapshot carry-over /
+  // atomic station-doc claim) — neither actually processes the resulting siege. This combination (an
+  // idle-redispatched attack that runs a REAL combat resolution to either outcome) was unreachable before
+  // 2026-08-08 since attack could never be idle-redispatched at all; it's genuinely new state space, not just
+  // a re-run of existing coverage, so it gets its own full end-to-end cases.
+  it('re-dispatch attack that WINS: territory transfers to the attacker, and the team ends up fully free (no march, no stationed presence) — same as a win from base', async () => {
+    await svc.joinWorld(W, 'a', 10, 10);
+    const station = findCoord(14, 14, (t) => t.type === 'resource' || t.type === 'neutral');
+    // 12×160 = 1920 vs a 100-garrison defender — the exact overwhelming-force ratio already proven to guarantee
+    // capture via the real engine in the "siege with team" test above.
+    const entries = await armyWithTroops('a', 12, 160);
+    await svc.setTeams(W, 'a', [{ id: 't1', name: 'Assault', army: entries }]);
+
+    // Park t1 idle in the field first (plain move, no combat) — this is the "team looked idle in the field"
+    // state from the original bug report.
+    const parkMv = await svc.startMarch(W, 'a', 10, 10, station.x, station.y, 'move', 1, 't1');
+    nowMs = parkMv.arriveAt;
     expect(await svc.processDueArrivals()).toBe(1);
-    await expect(svc.startMarch(W, 'a', 10, 10, target2.x, target2.y, 'attack', 1, 't1')).resolves.toBeTruthy();
+    expect((await svc.getStationed(W, 'a')).some((s) => s.teamId === 't1')).toBe(true);
+
+    const tgt = findCoord(30, 30, (t) => t.level <= 2); // low level: base HP within a single battle's reach
+    await setupDefender('b', tgt.x, tgt.y, 100, 800);
+    await connect(svc, 'a', tgt);
+
+    const mv = await svc.startMarch(W, 'a', 10, 10, tgt.x, tgt.y, 'attack', 1, 't1');
+    expect(mv.fromTile).toBe(tileId(W, station.x, station.y)); // departed from the field cell, not (10,10)
+    expect(await svc.getStationed(W, 'a')).toHaveLength(0); // field cell freed atomically at dispatch time
+
+    nowMs = mv.arriveAt;
+    expect(await svc.processDueArrivals()).toBe(1);
+
+    const tile = await svc.getTile(W, 'a', tgt.x, tgt.y);
+    expect(tile.mine).toBe(true); // territory captured
+    // Winning an attack (unlike occupy) never parks the team on the captured tile — the surviving army becomes
+    // the tile's garrison stat, and the team slot itself is immediately free again, with nothing left tracked
+    // anywhere (marches are claim-and-deleted once processed; no return leg on a win).
+    expect(await svc.getStationed(W, 'a')).toHaveLength(0);
+    expect(await svc.getMarches(W, 'a')).toHaveLength(0);
+    await expect(svc.startMarch(W, 'a', 10, 10, findCoord(40, 5).x, findCoord(40, 5).y, 'move', 1, 't1')).resolves.toBeTruthy();
+  });
+
+  it('re-dispatch attack that LOSES: survivors retreat all the way home to mainBaseTile, not back to the field cell they departed from', async () => {
+    await svc.joinWorld(W, 'a', 10, 10);
+    const station = findCoord(14, 14, (t) => t.type === 'resource' || t.type === 'neutral');
+    // 10×6 = 60 troops vs a 50-garrison defender — the exact ratio the "en route to an attack" test above found
+    // to reliably lose via the real engine (outnumbers on paper, nowhere near the overwhelming-force threshold).
+    const entries = await armyWithTroops('a', 10, 6);
+    await svc.setTeams(W, 'a', [{ id: 't1', name: 'Vanguard', army: entries }]);
+
+    const parkMv = await svc.startMarch(W, 'a', 10, 10, station.x, station.y, 'move', 1, 't1');
+    nowMs = parkMv.arriveAt;
+    expect(await svc.processDueArrivals()).toBe(1);
+
+    const tgt = findCoord(30, 30);
+    await setupDefender('b', tgt.x, tgt.y, 50);
+    await connect(svc, 'a', tgt);
+
+    const mv = await svc.startMarch(W, 'a', 10, 10, tgt.x, tgt.y, 'attack', 1, 't1');
+    expect(mv.fromTile).toBe(tileId(W, station.x, station.y));
+    expect(await svc.getStationed(W, 'a')).toHaveLength(0); // field cell already freed at dispatch time
+
+    nowMs = mv.arriveAt;
+    expect(await svc.processDueArrivals()).toBe(1);
+
+    const tile = await svc.getTile(W, 'a', tgt.x, tgt.y);
+    expect(tile.mine).toBeFalsy(); // defender kept the tile — the siege lost
+
+    // Survivors retreat home over a travel-time return leg — to the player's BASE (10,10), not back to the
+    // field cell (station) they originally departed from; nothing re-parks at the old field cell on a loss
+    // either (it was atomically freed at dispatch time regardless of the eventual outcome).
+    const backLeg = (await svc.getMarches(W, 'a')).find((mmv) => mmv.kind === 'return');
+    expect(backLeg).toBeDefined();
+    expect(backLeg!.toTile).toBe(tileId(W, 10, 10));
+    expect(await svc.getStationed(W, 'a')).toHaveLength(0);
   });
 
   it('cancelOccupation: team management can force a mid-hold team back to idle instantly, no troop refund, tile reverts to unclaimed', async () => {

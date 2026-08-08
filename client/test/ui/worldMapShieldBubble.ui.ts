@@ -15,6 +15,7 @@ import { WorldMapContext, type WorldMapCallbacks } from '../../src/scenes/worldm
 import { WorldMapRenderer } from '../../src/scenes/worldmap/WorldMapRenderer';
 import { WorldMapPanels } from '../../src/scenes/worldmap/WorldMapPanels';
 import { WorldMapInput } from '../../src/scenes/worldmap/WorldMapInput';
+import { SHIELD_BREAK_LIFE } from '../../src/scenes/worldmap/WorldMapRenderer/shieldFx';
 import type { ILayout } from '../../src/layout/ILayout';
 import type { WorldTileView } from '../../src/net/WorldApiClient';
 
@@ -122,5 +123,92 @@ describe('WorldMap capital-protection shield bubble (S8-8 UI fix, 2026-08-08)', 
     placeBase(ctx, 430, 430, { mine: true, protectedUntil: Date.now() + 3_600_000 });
     const { ellipses } = renderAndSpyShield(ctx, 430, 430);
     expect(ellipses).toHaveLength(1);
+  });
+});
+
+describe('WorldMap shield glow layer + break-flash pop (2026-08-08 follow-up, borrowed from daydayup\'s EnergyShieldFilter/flash)', () => {
+  it('an active shield draws its rotating ring/sparkles on a separate additive-blend shieldGlowFx child', () => {
+    const ctx = buildScene();
+    placeBase(ctx, 500, 500, { mine: false, protectedUntil: Date.now() + 3_600_000 });
+    ctx.view.centerAt(500, 500);
+    ctx.view.invalidatePool();
+    const cityC = ctx.citySprites.get('500:500');
+    const shieldGlowFx = cityC!.getChildByName('shieldGlowFx') as PIXI.Graphics;
+    expect(shieldGlowFx, 'the city container should own a shieldGlowFx child').toBeTruthy();
+    expect(shieldGlowFx.blendMode).toBe(PIXI.BLEND_MODES.ADD);
+
+    const sparkles: { x: number; y: number }[] = [];
+    vi.spyOn(shieldGlowFx, 'drawCircle').mockImplementation(function (this: PIXI.Graphics, x, y) {
+      sparkles.push({ x, y });
+      return this;
+    });
+    ctx.view.invalidatePool(); // re-runs refreshCityLayer → redraws shieldGlowFx with the spy attached
+    expect(sparkles).toHaveLength(4); // the four sparkle ticks drawn each redraw by drawShieldGlow
+  });
+
+  it('a base with no active shield draws nothing on shieldGlowFx either', () => {
+    const ctx = buildScene();
+    placeBase(ctx, 510, 510, { mine: false });
+    ctx.view.centerAt(510, 510);
+    ctx.view.invalidatePool();
+    const cityC = ctx.citySprites.get('510:510');
+    const shieldGlowFx = cityC!.getChildByName('shieldGlowFx') as PIXI.Graphics;
+    const sparkles: unknown[] = [];
+    vi.spyOn(shieldGlowFx, 'drawCircle').mockImplementation(function (this: PIXI.Graphics) {
+      sparkles.push(1);
+      return this;
+    });
+    ctx.view.invalidatePool();
+    expect(sparkles).toHaveLength(0);
+  });
+
+  it('protection lapsing between two redraws pops a one-shot break flash', () => {
+    const ctx = buildScene();
+    const key = '520:520';
+    placeBase(ctx, 520, 520, { mine: false, protectedUntil: Date.now() + 3_600_000 });
+    ctx.view.centerAt(520, 520);
+    ctx.view.invalidatePool();
+    expect(ctx.shieldGeom.has(key)).toBe(true);
+    expect(ctx.shieldBreakFx.has(key)).toBe(false);
+
+    // Simulate real time passing past protectedUntil — flip just the anchor tile's field and
+    // redraw, same as a live tile_update push/poll refresh would deliver.
+    const tile = ctx.tileCache.get(key)!;
+    ctx.tileCache.set(key, { ...tile, protectedUntil: Date.now() - 1000 });
+    ctx.view.invalidatePool();
+
+    expect(ctx.shieldGeom.has(key)).toBe(false);
+    expect(ctx.shieldBreakFx.has(key)).toBe(true);
+    expect(ctx.shieldBreakFx.get(key)!.age).toBe(0);
+
+    const cityC = ctx.citySprites.get(key);
+    const shieldBreakFx = cityC!.getChildByName('shieldBreakFx') as PIXI.Graphics;
+    expect(shieldBreakFx, 'the city container should own a shieldBreakFx child').toBeTruthy();
+    expect(shieldBreakFx.blendMode).toBe(PIXI.BLEND_MODES.ADD);
+  });
+
+  it('a base that was never protected does not pop a break flash on redraw', () => {
+    const ctx = buildScene();
+    const key = '530:530';
+    placeBase(ctx, 530, 530, { mine: false });
+    ctx.view.centerAt(530, 530);
+    ctx.view.invalidatePool();
+    ctx.view.invalidatePool();
+    expect(ctx.shieldBreakFx.has(key)).toBe(false);
+  });
+
+  it('the break-flash pop self-clears after its lifetime elapses', () => {
+    const ctx = buildScene();
+    const key = '540:540';
+    placeBase(ctx, 540, 540, { mine: false, protectedUntil: Date.now() + 3_600_000 });
+    ctx.view.centerAt(540, 540);
+    ctx.view.invalidatePool();
+    const tile = ctx.tileCache.get(key)!;
+    ctx.tileCache.set(key, { ...tile, protectedUntil: Date.now() - 1000 });
+    ctx.view.invalidatePool();
+    expect(ctx.shieldBreakFx.has(key)).toBe(true);
+
+    ctx.view.update(SHIELD_BREAK_LIFE + 0.1);
+    expect(ctx.shieldBreakFx.has(key)).toBe(false);
   });
 });

@@ -19,8 +19,10 @@ import { drawSceneHeader, sceneHeaderHeight, HEADER_ACCENT, drawHeaderCurrency }
 import { sidebarNavW } from '../../ui/widgets/HubTabs';
 import type { WorldApiClient, AuctionView } from '../../net/WorldApiClient';
 import { WorldApiError } from '../../net/WorldApiClient';
+import { ApiError } from '../../net/ApiClient';
 import type { SaveData, EquipmentInstance, CardInstance } from '../../game/meta/SaveData';
 import { EQUIP_MAX_LEVEL } from '../../game/meta/equipmentDefs';
+import { MAX_CARD_LEVEL } from '../../game/meta/cardDefs';
 import { levelStarsText } from '../../render/levelStars';
 import { skinDisplayName } from '../../game/meta/skinDefs';
 import { caretDisplay } from '../../ui/inputDisplay';
@@ -54,6 +56,13 @@ export interface AuctionSceneCallbacks {
    * client-side from the already-loaded market list. Optional; without it the tab is empty.
    */
   myAccountId?: string;
+  /**
+   * Sell one surplus skin instance to the system for coins (ITEM_IDENTITY_DESIGN.md task1,
+   * 2026-08-08) — a separate, player-initiated action alongside listing on the market; never
+   * automatic. Optional: without it, the picker only offers auctioning, not the sell shortcut
+   * (e.g. tests, or a lobby-entry context that hasn't wired the metaserver client through).
+   */
+  sellSkin?(skinId: string): Promise<{ credited: number }>;
 }
 
 export type AucTab = 'all' | 'mine' | 'bids';
@@ -133,6 +142,10 @@ export class AuctionSceneBase {
 
   /** Async card-art texture URLs already hooked for a re-render on load (avoids double-subscribing). */
   protected readonly artHooked = new Set<string>();
+
+  /** skinIds with an in-flight sellSkin call (ITEM_IDENTITY_DESIGN.md task1, 2026-08-08) — guards the
+   *  picker's sell button against a double-tap firing two concurrent sales before the first lands. */
+  protected readonly sellBusy = new Set<string>();
 
   // Create form state
   protected createClass: ItemClass = 'material';
@@ -361,10 +374,10 @@ export class AuctionSceneBase {
   }
 
   /**
-   * Human label for a listing row/title, per item class — bare item name for equipment (no level
-   * suffix at all; a raw "+N" read as noise once every other item view had already moved to stars —
-   * see 08.08.2026 report). list.ts draws the level as a real gold-icon star row beneath this instead
-   * (see auctionEquipLevel); text-only contexts with no room for a separate icon row use
+   * Human label for a listing row/title, per item class — bare item name for equipment/card (no level
+   * suffix at all; a raw "+N"/"Lv.N" read as noise once every other item view had already moved to
+   * stars — see 08.08.2026 report). list.ts draws the level as a real gold-icon star row beneath this
+   * instead (see auctionItemLevel); text-only contexts with no room for a separate icon row use
    * auctionLabelText below, which folds the level back in as text stars.
    */
   protected auctionLabel(auc: AuctionView): string {
@@ -374,7 +387,7 @@ export class AuctionSceneBase {
     }
     if (auc.itemType === 'card') {
       const inst = auc.item?.['instance'] as CardInstance | undefined;
-      return inst ? `${this.cardName(inst.defId)} Lv.${inst.level}` : t('auction.filterCard');
+      return inst ? this.cardName(inst.defId) : t('auction.filterCard');
     }
     if (auc.itemType === 'skin') {
       const skinId = auc.item?.['skinId'] as string | undefined;
@@ -384,21 +397,32 @@ export class AuctionSceneBase {
     return `${t(`auction.${mat as 'scrap' | 'lead' | 'binding'}`)} ×${auc.qty}`;
   }
 
-  /** Equipment enhancement level for a listing (0 for non-equipment, or an equipment listing whose
-   *  instance snapshot is missing) — list.ts uses this to draw a real gold-icon star row beneath the
-   *  name (mirrors EquipmentScene.buildLevelStars). */
-  protected auctionEquipLevel(auc: AuctionView): number {
-    if (auc.itemType !== 'equipment') return 0;
-    const inst = auc.item?.['instance'] as EquipmentInstance | undefined;
-    return inst?.level ?? 0;
+  /** Enhancement/character level for a listing (0 for material/skin, or an instance-backed listing
+   *  whose snapshot is missing) — list.ts uses this to draw a real gold-icon star row beneath the
+   *  name (mirrors EquipmentScene/CardScene.buildLevelStars). */
+  protected auctionItemLevel(auc: AuctionView): number {
+    if (auc.itemType === 'equipment') {
+      const inst = auc.item?.['instance'] as EquipmentInstance | undefined;
+      return inst?.level ?? 0;
+    }
+    if (auc.itemType === 'card') {
+      const inst = auc.item?.['instance'] as CardInstance | undefined;
+      return inst?.level ?? 0;
+    }
+    return 0;
   }
 
-  /** auctionLabel, with the equipment enhancement level folded back in as text stars (e.g.
-   *  "Foil Cover ★★★") instead of the old "+N" — for text-only slots with no room for a separate
-   *  icon-star row (the bid modal title). Mirrors EquipmentScene.itemLabel's text-star convention. */
+  /** Clamp cap for auctionItemLevel's star row — matches the item class's own max level. */
+  protected auctionItemMaxLevel(auc: AuctionView): number {
+    return auc.itemType === 'card' ? MAX_CARD_LEVEL : EQUIP_MAX_LEVEL;
+  }
+
+  /** auctionLabel, with the equipment/card level folded back in as text stars (e.g. "Foil Cover ★★★")
+   *  instead of the old "+N"/"Lv.N" — for text-only slots with no room for a separate icon-star row
+   *  (the bid modal title). Mirrors EquipmentScene.itemLabel's text-star convention. */
   protected auctionLabelText(auc: AuctionView): string {
     const base = this.auctionLabel(auc);
-    const stars = levelStarsText(this.auctionEquipLevel(auc), EQUIP_MAX_LEVEL);
+    const stars = levelStarsText(this.auctionItemLevel(auc), this.auctionItemMaxLevel(auc));
     return stars ? `${base} ${stars}` : base;
   }
 
@@ -564,6 +588,17 @@ export class AuctionSceneBase {
 
   protected errorMsg(e: unknown): string {
     if (e instanceof TimeoutError) return t('common.networkTimeout');
+    // sellSkin (ITEM_IDENTITY_DESIGN.md task1, 2026-08-08) talks to metaserver, not auctionsvc/worldsvc,
+    // so its errors surface as ApiError rather than WorldApiError — reuses the same skin error copy.
+    if (e instanceof ApiError) {
+      const map: Record<string, string> = {
+        SKIN_IN_USE: t('auction.err.skinInUse'),
+        SKIN_NOT_FOUND: t('auction.err.closed'),
+        INSUFFICIENT_FUNDS: t('auction.err.insufficientFunds'),
+        NOT_IMPLEMENTED: t('auction.err.notImpl'),
+      };
+      return map[e.code] ?? e.message;
+    }
     if (e instanceof WorldApiError) {
       const map: Record<string, string> = {
         AUCTION_CLOSED:          t('auction.err.closed'),

@@ -37,6 +37,31 @@ function matchStartMsg(seed: number, localSide: number, startFrame = 0): ServerM
   } as ServerMsg;
 }
 
+/** conn_resync — carries the same match-rebuild fields as match_start (2026-08-08 cold-resume fix). */
+function connResyncMsg(
+  seed: number,
+  startFrame: number,
+  log: FrameCmds[],
+  curFrame: number,
+  opts: { roomId?: string; localSide?: number; opponentName?: string; topDeck?: string[]; bottomDeck?: string[] } = {},
+): ServerMsg {
+  return {
+    connResync: {
+      seed, startFrame, log, curFrame,
+      roomId: opts.roomId ?? 'room-1',
+      mode: 0,
+      localSide: opts.localSide ?? 0,
+      opponentName: opts.opponentName ?? '',
+      opponentPublicId: '',
+      opponentTitle: '',
+      opponentAvatarId: '',
+      opponentSkins: [],
+      topDeck: opts.topDeck ?? [],
+      bottomDeck: opts.bottomDeck ?? [],
+    },
+  } as ServerMsg;
+}
+
 const noopSink: CmdSink = { submitCmd: () => {} };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -123,19 +148,49 @@ describe('NetInputSource — take() / buffer / watermark', () => {
     ni.handleServerMsg(matchStartMsg(7, 1));
     ni.handleServerMsg(frameBatchMsg(3));
     // reconnect: server replays non-empty frame 6 and says cur_frame=9
-    ni.handleServerMsg({
-      connResync: {
-        seed: 7,
-        startFrame: 0,
-        log: [{ frame: 6, cmds: [{ side: 0, commands: encPlay(1, 2) }] }],
-        curFrame: 9,
-      },
-    } as ServerMsg);
+    ni.handleServerMsg(connResyncMsg(7, 0, [{ frame: 6, cmds: [{ side: 0, commands: encPlay(1, 2) }] }], 9));
     expect(ni.take(6)).toEqual([
       { type: 'play_card', owner: 0, tick: 6, handIndex: 1, col: 2, row: 0 },
     ]);
     expect(ni.take(9)).toEqual([]);
     expect(ni.resumeFrame()).toBe(9);
+  });
+
+  // Login-reconnect-prompt cold resume (2026-08-08 fix): a freshly launched app's NetInputSource
+  // never saw match_start in this process — conn_resync alone must be able to rebuild matchInfo
+  // and fire onMatchStart, or the app never builds the engine / leaves the dialog stuck.
+  it('conn_resync arriving before any match_start rebuilds matchInfo and fires onMatchStart (cold resume)', () => {
+    const started: unknown[] = [];
+    const ni = new NetInputSource(noopSink, { bufferFrames: 0, onMatchStart: (info) => started.push(info) });
+    expect(ni.matchStartInfo).toBeNull();
+
+    ni.handleServerMsg(connResyncMsg(
+      42, 0,
+      [{ frame: 6, cmds: [{ side: 0, commands: encPlay(1, 2) }] }],
+      9,
+      { roomId: 'room-cold', localSide: 1, opponentName: 'Bob', topDeck: ['t1'], bottomDeck: ['b1'] },
+    ));
+
+    expect(started).toHaveLength(1);
+    expect(ni.matchStartInfo).toMatchObject({
+      roomId: 'room-cold', seed: 42, localSide: 1, opponentName: 'Bob',
+      decks: { top: ['t1'], bottom: ['b1'] },
+    });
+    // The replayed frame log + watermark are usable immediately — no separate catch-up round trip needed.
+    expect(ni.take(6)).toEqual([
+      { type: 'play_card', owner: 0, tick: 6, handIndex: 1, col: 2, row: 0 },
+    ]);
+    expect(ni.resumeFrame()).toBe(9);
+  });
+
+  it('conn_resync does NOT re-fire onMatchStart when matchInfo already exists (warm in-session reconnect, no regression)', () => {
+    const started: unknown[] = [];
+    const ni = new NetInputSource(noopSink, { bufferFrames: 0, onMatchStart: (info) => started.push(info) });
+    ni.handleServerMsg(matchStartMsg(7, 1));
+    expect(started).toHaveLength(1);
+
+    ni.handleServerMsg(connResyncMsg(7, 0, [], 9));
+    expect(started).toHaveLength(1); // unchanged — the cold-rebuild branch must not re-trigger here
   });
 });
 

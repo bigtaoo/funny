@@ -48,7 +48,7 @@
 | `material` | `{material: 'scrap'\|'lead'\|'binding'\|…}` | meta `deductMaterial(seller, mat, qty, orderId)` | 系统邮件附件 `{kind:'material', id, count}` | ✅ 实跑 |
 | `equipment` | 挂单入参 `{instanceId}`；存储 `{instance: 完整快照}`（qty 恒 1） | meta `escrowEquipment(seller, instanceId, orderId)`（移出库存回快照） | 系统邮件附件 `{kind:'equipment', instance}`（领取按 id 写回 `equipmentInv`） | ✅ 实跑（A） |
 | `card` | 挂单入参 `{instanceId}`；存储 `{instance: 完整快照}`（qty 恒 1） | meta `escrowCard(seller, instanceId, orderId)`（校验 gear 全空后移出 cardInv） | 系统邮件附件 `{kind:'card', instance}`（领取按 id 写回 `cardInv`） | ✅ 实跑（CC-5） |
-| `skin` | 挂单入参 `{skinId}`；存储 `{skinId}`（qty 恒 1，皮肤无等级/词条，无需实例快照） | meta `escrowSkin(seller, skinId, orderId)`（校验拥有且未装备中后 `$pull` 摘除） | 系统邮件附件 `{kind:'skin', skinId}`（领取按 id `$addToSet` 写回 `inventory.skins`） | meta 托管能力 ✅ 已实现（2026-07-06，§9 任务2）；auctionsvc 拍卖流程 ✅ 已接入（2026-07-06，§9 任务4） |
+| `skin` | 挂单入参 `{skinId}`；存储 `{skinId}`（qty 恒 1，皮肤无等级/词条，无需实例快照——挂单契约保持不变，见下方 2026-08-08 更新） | meta `escrowSkin(seller, skinId, orderId)`（校验拥有 + 若装备中则要求还剩 ≥1 份未挂出的实例才放行，`ITEM_IDENTITY_DESIGN.md` 任务1起从"完全禁止"放宽为"只保护最后一份"） | 系统邮件附件 `{kind:'skin', skinId}`（领取按 id `$addToSet` 写回 `inventory.skins`） | meta 托管能力 ✅ 已实现（2026-07-06，§9 任务2）；auctionsvc 拍卖流程 ✅ 已接入（2026-07-06，§9 任务4） |
 
 - **挂单即托管 + escrow-out 邮件出账**：挂单时立刻从卖方库存移出标的（托管在挂单文档里，拍卖期间背包不可见/不可用），避免「挂着卖但库存已被花掉」的超卖。**所有出账——成交发给买家、撤单/过期/季末退回卖家——一律通过系统邮件附件下发，收件人领取后才入库**（装备/卡附件携带完整实例快照）。金币侧（卖方收款、竞拍退款）仍直接走 commercial。设计依据见 EQUIPMENT_DESIGN §13。
 - **qty/price**：`price` = 每件单价（金币），`totalPrice = price × qty`；材料按堆叠数量挂，装备 v1 单件挂（qty=1，A 节细化）。
@@ -263,7 +263,7 @@ designatedBuyerId?, expireAt(ms), status, buyerId?, rev
 - **类别选择器**：创建表单顶部加 `material/equipment/card` 三选一（`ITEM_CLASSES`）；装备/角色卡两类需 `getSave` 回调读库存（未注入时——如 UI 测试——仅提供材料档，两格灰显）。
 - **实例选择器**：装备/角色卡档不显示材料按钮与数量（唯一实例，qty 服务端强制 1），改显「已选实例」字段；点击进入**场景级 picker 覆盖层**（`pickerKind`，复用列表拖拽滚动），选中回创建表单。可挂过滤镜像服务端 escrow 守卫——装备排除已锁定 + 已被任意角色卡穿戴；角色卡要求 gear 全空（锁定卡仍可挂，picker 标 🔒）。
 - **挂单流转**：`doCreate` 按类别分发 `createAuction(itemType, {instanceId})`；装备/角色卡成交后 escrow 已从 meta save 移除该实例，故 `reloadSave()`（`saveManager.refresh()`）重拉权威 save 使 picker 不再列出该件。
-- **市场/我的/出价展示**：`auctionLabel(auc)` 按 `itemType` 读 `item.instance` 快照渲染名（装备 `equip.<defId>.name +lv`、角色卡 `card.<defId>.name Lv.n`、材料沿用 `×qty`）；市场筛选条加 `card` 档。
+- **市场/我的/出价展示**：`auctionLabel(auc)` 按 `itemType` 读 `item.instance` 快照渲染名（材料沿用 `×qty`；装备/角色卡等级展示方式历经 2026-08-08 两轮修复，见下方对应条目，现均为裸名字 + 独立金色星星行/文字星星）；市场筛选条加 `card` 档。
 - **错误码映射**：补 `CARD_HAS_GEAR`（角色卡仍有装备）/`CARD_NOT_FOUND`/`EQUIP_NOT_FOUND`。i18n 三语补 `itemClass`/`class*`/`filterCard`/`pick*`/`tapChoose`/`no{Equip,Cards}`/`err.cardHasGear`。
 
 **挂单表单简化 + 统一选品器（2026-07-05）**：按用户反馈重做挂单表单——
@@ -466,8 +466,9 @@ designatedBuyerId?, expireAt(ms), status, buyerId?, rev
   - `client/src/scenes/AuctionScene/list.ts`：分类栏 + `renderItemPicture()` 同步加皮肤分支（市场挂单列表也要能正确显示皮肤图标/标题，不只是 picker）。
   - `client/src/net/WorldApiClient.ts`：`createAuction()` 的 `itemType` 参数字面量类型加 `| 'skin'`（`AuctionView` 类型本身早已含 skin，仅这一处手写封装层缺失）。
   - i18n 三语言文件补 `auction.filterSkin`/`auction.err.skinInUse`。
-- **未改动**：皮肤本身没有实例id（`inventory.skins: string[]` 去重集合，"拥有一份"="拥有全部"），拍卖只按 `skinId` 字符串托管/归还，与装备/角色卡的 instanceId 模型不同，这是既有设计（`skin.ts` 头部注释），不在本任务范围内调整（相关的"是否要给皮肤也上实例id"的讨论见 [[item-identity-audit]] / `ITEM_IDENTITY_DESIGN.md`）。
+- **未改动（截至本任务11当时）**：皮肤本身没有实例id（`inventory.skins: string[]` 去重集合，"拥有一份"="拥有全部"），拍卖只按 `skinId` 字符串托管/归还，与装备/角色卡的 instanceId 模型不同，这是既有设计（`skin.ts` 头部注释），不在本任务范围内调整（相关的"是否要给皮肤也上实例id"的讨论见 [[item-identity-audit]] / `ITEM_IDENTITY_DESIGN.md`）。**2026-08-08 更新**：`ITEM_IDENTITY_DESIGN.md` 任务1已给皮肤加上服务端实例（`skinInstances` 集合），但拍卖挂单的**外部契约**仍是 `{skinId}` 不变——`escrowSkin`/`grantSkin` 对 auctionsvc 而言接口没变，只是内部实现换成了"挑一份实例操作"，本段描述的"拍卖只按 skinId 字符串托管"在挂单接口这一层依然成立。
 - **已知限制（未修复，属于更深的经济系统缺口，不在本任务范围）**：gacha 抽到"重复"皮肤（账号已拥有过）目前是纯 no-op（`markDuplicates`，`economy.ts`），不会产生任何新库存或补偿——即使补上本任务的 picker UI，一个**真正重复**的皮肤仍然不会出现在拍卖列表里，只有"未装备但从未拍卖过的唯一一份"才会。设计文档里"重复转化待S5"的待办（本节 §9 任务2 引用）尚未排期。
+  > **2026-08-08 更新：以上限制已解决**，见 `ITEM_IDENTITY_DESIGN.md` 任务1——皮肤实例化落地，gacha 重复皮肤现在会生成真实第二份实例（不再是 no-op），"装备中不可挂拍"也从"完全禁止"放宽为"只保护最后一份"，多余的那份现在能正常出现在拍卖 picker 里；同时新增玩家主动发起的"出售给系统换金币"入口（`/skins/sell`），与自动转币的原设想不同。挂单契约本身（`{skinId}`）刻意保持不变，见任务1的说明。
 - **验收**：`server/metaserver`（67 文件 804 例）、`server/shared`（35 文件 678 例）、`server/auctionsvc`（9 文件 91 例）全绿；client `tsc --noEmit` 绿；`npm run build:web` 绿（仅预期内 asset-size 警告）；client `vitest run` + `vitest run --config vitest.ui.config.ts`（合计 259 文件 2077 例）全绿。测试覆盖分两批：首批 5 条 `auctionPickerDedupe.ui.ts` 皮肤专项用例（未装备过滤、entry 生成、pick 后 `doCreate` 请求体、分类 tab 渲染）；用户要求"全部加测试"后追加：`auctionScene.ui.ts` 补齐此前完全无覆盖的 `itemKind()`/`auctionLabel()`（含 skin 分支）+ `SKIN_IN_USE`/`SKIN_NOT_FOUND` 错误映射，`equipment.test.ts`（shared）补 `makeGachaEquipInstance`/`makeDropInstance` 的溯源字段透传单测（详见 `ITEM_IDENTITY_DESIGN.md` §2 的溯源字段验收清单）。
 - **未验证**：本次会话 Browser 预览面板未能渲染帧（环境限制），且触达真实 AuctionScene 需要登录态 + 跑起来的 metaserver/auctionsvc 后端，故**没有做浏览器截图验证**，只有 headless PIXI 单测覆盖（真实 PIXI 场景树、无渲染器）+ 生产构建通过。下次有可用预览环境时应补一次真实截图核对。
 
@@ -571,6 +572,32 @@ designatedBuyerId?, expireAt(ms), status, buyerId?, rev
 - **数据清理**：SSH 到 VPS，`docker exec server-metaserver-1` 跑一次性脚本，把该账号 `saves` collection 文档的 `save.inventory.skins` 从 23 个 id 过滤到只保留当前目录里真实存在的 6 个（`skin_shop_c1`/`skin_shop_r1`/`skin_shop_e1`/`skin_e1`/`skin_e2`/`skin_l1`），移除的 17 个 id 全部核对过并非真正拥有的物品（装备/材料本身在各自的 `equipmentInv`/materials 计数里另有正确记录，不受影响）。先 dry-run 打印 before/after 确认无误，再执行真正的 `updateOne`。
 - **客户端防护（问题一未来再发生时能快速定位）**：`skinDefs.ts` 新增 `isKnownSkin(skinId)`——查不到 `SKIN_TARGET_UNIT` 映射时，除返回 `false` 外还通过 `netLog('skinDefs').warn(...)` 记一条日志（进 `net/log.ts` 的客户端日志环形缓冲区，可被 `FEATURE_FLAGS_DESIGN` §9.4 的定向采集远程拉取），同一个 id 只记一次，不会刷屏。`AuctionScene/picker.ts` 的 `listableSkins()` 接入这个校验——库存里任何不在当前皮肤目录里的 id（无论是被下架的占位 SKU 还是本不该出现在这里的其它类 id）都会被过滤掉，永远不会出现在选择页里、也永远不能被拿去挂拍卖。
 - **验收**：`tsc --noEmit` 全绿；`npm run build:web` 通过（仅预置的资源体积警告，与本次改动无关）；`vitest run --config vitest.ui.config.ts` 全量 128 个文件 1159 例全绿（`test/ui/auctionPickerDedupe.ui.ts` 新增 2 例覆盖未知皮肤 id 被过滤，另外 2 例装备等级为 0 时的标签断言从 `"Pencil +0 ×3"` 更新为 `"Pencil ×3"`）。VPS 数据清理已在生产环境实际执行（dry-run 核对无误后再写），未做浏览器截图验证（该账号的库存已改变，且改动本身是"能否正确过滤/显示"的逻辑问题，headless 测试已充分覆盖）。
+
+### 修复：角色卡拍卖条目仍显示"Lv.N"文本，漏了同一轮星星化改造（2026-08-08 续）
+
+- **问题**：上一条目只把装备分支接进了共享的 `levelStars.ts`，角色卡分支被漏掉——拍卖行「出售物品选择页」（`picker.ts` 的 `buildPickEntries`/`selectedItemLabel`）、市场列表标题（`base.ts` 的 `auctionLabel`）、市场列表名字下方的星星行（`list.ts`，靠 `auctionEquipLevel()` 取等级，该方法对 `itemType==='card'` 直接短路返回 0）三处角色卡仍手写 `` `${cardName} Lv.${level}` ``，跟角色卡背包/详情弹窗（`CardScene/list.ts`、`detail.ts`，早就用 `buildLevelStars` 画金色星星）不一致（用户报告：拍卖行截图里 "Li Chuang Lv.3" 仍是文字，同页装备条目 "Foil Cover ★★★★★" 已经是星星）。
+- **修复**：`auctionEquipLevel()` 更名为 `auctionItemLevel()` 并扩展为同时读装备/角色卡实例的 `level`（材料/皮肤仍返回 0），新增 `auctionItemMaxLevel(auc)` 按 `itemType` 返回对应的 `EQUIP_MAX_LEVEL`/`MAX_CARD_LEVEL` 供星星行/文字星星做 clamp。`auctionLabel()` 的角色卡分支去掉 `Lv.${level}` 后缀，改为裸名字（同装备分支）；`auctionLabelText()` 改用 `auctionItemLevel`/`auctionItemMaxLevel` 对任意实例类型折回文字星星；`list.ts` 市场卡片的星星行改用同一对方法，不再局限于装备。`picker.ts` 的 `selectedItemLabel()` 与 `buildPickEntries()` 的角色卡分支均改为 `levelStarsText(level, MAX_CARD_LEVEL)`，与装备分支写法对称。
+- **验收**：`tsc --noEmit` 全绿；`vitest run --config vitest.ui.config.ts` 覆盖 `test/ui/auctionScene.ui.ts`（75 例，含新增的角色卡裸名字/文字星星断言，`auctionEquipLevel`→`auctionItemLevel` 改名同步更新调用点，以及市场卡片 `renderAuctionCell()` 真实渲染层面的角色卡星星行断言——一颗星对应等级 1、三颗对应等级 3、渲染文本里再不出现 `Lv.\d`）、`test/ui/auctionPickerDedupe.ui.ts`（23 例，角色卡分组标签断言从 `"Su Yuan Lv.1 ×4"` 更新为 `"Su Yuan ★ ×4"`）、`auctionBackButtonHitWidth.ui.ts`/`auctionActionBusyLock.ui.ts` 全绿，共 117 例。纯 UI 展示层改动，未额外做浏览器截图验证（该场景需要一个挂有真实角色卡拍卖单的活跃账号 + 完整后端才能复现，headless 测试已直接对 PIXI 对象树断言了本次改动前后的确切文本/星星差异）。
+
+### 创建挂单表单：出售物品字段加倍高度 + 视觉重点显示（2026-08-08）
+
+- **问题**：用户对着挂单表单截图画圈反馈——"Item: Scrap"这一栏应该加倍高度、重点显示，让玩家一眼看出当前要卖的是什么；同时确认手动输入价格时是否统一用了带光标的输入框样式。
+- **改动**（`client/src/scenes/AuctionScene/createForm.ts`，`openCreateForm()`）：
+  - Item 选择字段（`field`）高度从标准输入行的 `30*SCALE` 翻倍到 `itemFieldH = 60*SCALE`；图标从 `16*SCALE` 放大到 `itemIconSize = 32*SCALE`，与字段高度同比放大；图标/文字改用居中定位（图标按 `(itemFieldH - itemIconSize)/2` 垂直居中，文字 `anchor.set(0, 0.5)` + `field.y + fieldH/2`）取代之前按字段旧高度手调的固定像素偏移，避免放大后错位。
+  - 已选中物品时（`selLabel` 非空）额外做"重点显示"：字段底色从中性纸色 `0xfaf9f5` 换成浅蓝强调色 `0xeaf1fb`（`ui.accent` 的浅色调）、边框从 2px 加粗到 3px、文字从 `13*SCALE` 常规体放大到 `17*SCALE` 粗体。未选中时（占位提示"点击选择"）维持原有中性样式不变，避免占位态也跟着"抢眼"。
+  - `mh`（弹窗总高度）与 `cy`（后续行起始位置）的计算同步加上多出的 `30*SCALE`——弹窗高度公式里原有的 `(...) * VA` 分组是纵向留白系数（`VA=SCALE*1.2`），字段加高是单独的绝对像素增量，两者不能混在一起乘同一个系数，故作为独立加项累加，避免弹窗要么裁切按钮行要么底部留白过多。
+  - 手动输入价格的光标输入框：核查后确认**这部分已经是现状**，未改动——`price`/`startPrice`/`buyout` 三个数值字段在 07-27 那次改动（`7751f4f0` "auction listing form — tap-to-type prices with auto-clamp"）里已经统一接入 `editKey` + `caretDisplay()` 机制（点击变成可输入框、输入中光标 `|` 闪烁、失焦按护栏 clamp），与本次改的 Item 字段、以及既有的"指定买家"字段共用同一套输入框视觉语言（`sketchPanel` 同款 fill/border 配色）。数量（Qty）字段沿用原样不加框——它只有 `-`/`+` 步进、无点击输入诉求，用户反馈原文也只提到"价格"，未涉及数量。
+- **验收**：`tsc --noEmit` 绿；`npm run build:web` 通过（仅预置的资源体积警告，与本次改动无关）；`vitest run --config vitest.ui.config.ts` 全量回归绿（含既有 `auctionScene.ui.ts` 覆盖的 `openCreateForm` 系列用例）。未做浏览器截图验证：本次会话 Browser 预览面板未能渲染帧（画布尺寸 0×0），排查后发现根因不是面板本身，而是拍卖行等菜单场景需要登录态 + 一整套跑起来的后端（metaserver 等 11 个服务 + Mongo）才能进入，本次会话未拉起后端，仅有 headless PIXI 单测覆盖（真实场景树、无渲染器）+ 生产构建通过。下次有可用登录环境时应补一次真实截图核对本次的字段放大/配色效果。
+
+### 上一条目补专项测试（2026-08-08 续）
+
+- **问题**：上一条目落地时只靠既有的 `openCreateForm` 通用回归用例兜底，没有为"字段加倍高度 + 选中态视觉重点显示"这条具体改动写专项断言——用户随后要求补测试。
+- **改动**：
+  - `client/src/scenes/AuctionScene/createForm.ts`：`SCALE` 常量加 `export`，供测试按同一个乘数算期望几何值，不需要在测试里重复硬编码 `1.5`。
+  - `client/test/ui/auctionScene.ui.ts`：新增 `describe('AuctionScene — create form item field (doubled height + emphasis)')`，5 个用例：① 高度确实是标准输入行的 2 倍（`60*SCALE`），且它始终是 `modalHits[0]`（物品字段的命中矩形永远最先入队，与 `createClass`/`saleMode` 无关），点击命中矩形真的触发 `openItemPicker()`；② 未选中物品（`equipment` 类 + 无 `getSave` 回调 → `selectedItemLabel()` 为 `null`）时高度依旧加倍，只是视觉样式不同；③ 已选中物品时文字节点的 `style.fontSize`/`style.fontWeight` 分别是加大字号（经 `snapFont()` 吸附后的值，不是裸算的 `17*SCALE`）+ `'bold'`；④ 未选中占位提示的字号/字重则是普通档位（`snapFont(13*SCALE)` + `'normal'`）；⑤ 高度加倍后紧跟着的 Qty 步进器命中矩形的 y 坐标仍然严格在物品字段下方，没有因为这次布局调整而重叠。
+  - 新增测试辅助函数 `findTextNode()`（`findLabelPos()` 的姊妹函数，返回节点本身而非仅返回坐标，用于断言 `.style` 而非仅位置）。
+  - **踩坑记录**：字号断言最初直接写死 `17 * SCALE`/`13 * SCALE`（25.5/19.5），实际渲染值是 24/20——`txt()` 的字号要过 `snapFont()` 吸附到一套固定字号档位，不是原始像素值；改为用 `snapFont()` 本身计算期望值后通过。
+- **验收**：`tsc --noEmit`（含 `tsconfig.test.json`）全绿；`npm run build:web` 通过；`vitest run --config vitest.ui.config.ts` 对 `auctionScene.ui.ts`（80 例，新增 5 例）单独绿，再跑 `auctionScene.ui.ts`/`auctionActionBusyLock.ui.ts`/`auctionPickerDedupe.ui.ts`/`auctionBackButtonHitWidth.ui.ts`/`caretRegression.ui.ts`/`scenes.ui.ts` 六个拍卖/UI 相关文件合计 254 例全绿。纯测试新增，未改变任何渲染行为，不涉及浏览器截图。
 
 ---
 

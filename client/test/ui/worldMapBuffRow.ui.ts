@@ -64,8 +64,8 @@ describe('WorldMapPanels.renderHud — shield/speedup buff row (S8-8 UI fix, 202
     const { ctx, panels } = buildHudHarness();
     panels.renderHud();
     const texts = hudTexts(ctx);
-    expect(texts.some((s) => s.includes(t('world.protected').split('{sec}')[0]!))).toBe(false);
-    expect(texts.some((s) => s.includes(t('world.speedup').split('{sec}')[0]!))).toBe(false);
+    expect(texts.some((s) => s.includes(t('world.protected').split('{d}')[0]!))).toBe(false);
+    expect(texts.some((s) => s.includes(t('world.speedup').split('{d}')[0]!))).toBe(false);
   });
 
   it('shows a shield countdown chip when baseProtectedUntil is in the future', () => {
@@ -74,7 +74,7 @@ describe('WorldMapPanels.renderHud — shield/speedup buff row (S8-8 UI fix, 202
     const texts = hudTexts(ctx);
     // Countdown seconds are computed against Date.now() at render time — assert the label prefix
     // (same "don't pin the exact second" convention as cityTrainTroops.ui.ts's queue-entry test).
-    const prefix = t('world.protected').split('{sec}')[0]!;
+    const prefix = t('world.protected').split('{d}')[0]!;
     expect(texts.some((s) => s.startsWith(prefix))).toBe(true);
   });
 
@@ -82,7 +82,7 @@ describe('WorldMapPanels.renderHud — shield/speedup buff row (S8-8 UI fix, 202
     const { ctx, panels } = buildHudHarness({ baseProtectedUntil: Date.now() - 1000 });
     panels.renderHud();
     const texts = hudTexts(ctx);
-    const prefix = t('world.protected').split('{sec}')[0]!;
+    const prefix = t('world.protected').split('{d}')[0]!;
     expect(texts.some((s) => s.startsWith(prefix))).toBe(false);
   });
 
@@ -90,7 +90,7 @@ describe('WorldMapPanels.renderHud — shield/speedup buff row (S8-8 UI fix, 202
     const { ctx, panels } = buildHudHarness({ speedupUntil: Date.now() + 1800_000 });
     panels.renderHud();
     const texts = hudTexts(ctx);
-    const prefix = t('world.speedup').split('{sec}')[0]!;
+    const prefix = t('world.speedup').split('{d}')[0]!;
     expect(texts.some((s) => s.startsWith(prefix))).toBe(true);
   });
 
@@ -98,7 +98,7 @@ describe('WorldMapPanels.renderHud — shield/speedup buff row (S8-8 UI fix, 202
     const { ctx, panels } = buildHudHarness({ speedupUntil: Date.now() - 1000 });
     panels.renderHud();
     const texts = hudTexts(ctx);
-    const prefix = t('world.speedup').split('{sec}')[0]!;
+    const prefix = t('world.speedup').split('{d}')[0]!;
     expect(texts.some((s) => s.startsWith(prefix))).toBe(false);
   });
 
@@ -109,8 +109,8 @@ describe('WorldMapPanels.renderHud — shield/speedup buff row (S8-8 UI fix, 202
     });
     panels.renderHud();
     const texts = hudTexts(ctx);
-    const shieldPrefix = t('world.protected').split('{sec}')[0]!;
-    const speedupPrefix = t('world.speedup').split('{sec}')[0]!;
+    const shieldPrefix = t('world.protected').split('{d}')[0]!;
+    const speedupPrefix = t('world.speedup').split('{d}')[0]!;
     expect(texts.some((s) => s.startsWith(shieldPrefix))).toBe(true);
     expect(texts.some((s) => s.startsWith(speedupPrefix))).toBe(true);
   });

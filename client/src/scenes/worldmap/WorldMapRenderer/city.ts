@@ -9,6 +9,7 @@ import { SECT_BASE_TINT, ALLY_SECT_BASE_TINT } from '../tileStyle';
 import { HUD_H, BASE_SPRITE_TILES } from '../constants';
 import { t } from '../../../i18n';
 import { makeText } from '../../../render/pixiText';
+import { drawShieldDome, drawShieldGlow } from './shieldFx';
 import { type Constructor, type WorldMapRendererBaseCtor } from './base';
 
 export interface CityHandlers {
@@ -91,14 +92,28 @@ export function CityMixin<TBase extends WorldMapRendererBaseCtor>(Base: TBase): 
             label.anchor.set(0.5, 1);
             const hpGfx = new PIXI.Graphics();  // damaged-base HP bar, hovers above the building
             hpGfx.name = 'hpbar';
-            const shieldFx = new PIXI.Graphics();  // protection-shield bubble overlay (S8-8 UI fix, 2026-08-08)
+            const shieldFx = new PIXI.Graphics();  // protection-shield dome (S8-8 UI fix, 2026-08-08)
             shieldFx.name = 'shieldFx';
+            // Rotating dashed ring + sparkles (2026-08-08 follow-up, borrowed from daydayup's
+            // additive-glow shield accents) — separate Graphics so it can run additive blend
+            // without also blowing out the dome's "glass" fill/stroke above.
+            const shieldGlowFx = new PIXI.Graphics();
+            shieldGlowFx.name = 'shieldGlowFx';
+            shieldGlowFx.blendMode = PIXI.BLEND_MODES.ADD;
+            // One-shot pop when protection lapses (2026-08-08 follow-up, borrowed from daydayup's
+            // shield_break flash) — empty/inert until a shield actually breaks.
+            const shieldBreakFx = new PIXI.Graphics();
+            shieldBreakFx.name = 'shieldBreakFx';
+            shieldBreakFx.blendMode = PIXI.BLEND_MODES.ADD;
             cityC = new PIXI.Container();
             cityC.addChild(sprite);
             cityC.addChild(plotMask);
             cityC.addChild(label);
             cityC.addChild(hpGfx);
-            cityC.addChild(shieldFx); // topmost: a translucent dome over the building reads clearest
+            // Topmost, in draw order dome → glow → break-pop: the pop briefly reads over everything.
+            cityC.addChild(shieldFx);
+            cityC.addChild(shieldGlowFx);
+            cityC.addChild(shieldBreakFx);
             this.ctx.cityLayer.addChild(cityC);
             this.ctx.citySprites.set(cacheKey, cityC);
           }
@@ -190,17 +205,26 @@ export function CityMixin<TBase extends WorldMapRendererBaseCtor>(Base: TBase): 
           // translucent bubble dome over the building, with a slow breathing pulse so it reads as "active" at
           // a glance rather than a flat static overlay.
           const shieldFx = cityC.getChildByName('shieldFx') as PIXI.Graphics;
-          shieldFx.clear();
+          const shieldGlowFx = cityC.getChildByName('shieldGlowFx') as PIXI.Graphics;
           if ((tile.protectedUntil ?? 0) > Date.now()) {
             const cx = 0;
             const cy = -sprite.height * (1 - contentTopFrac) * 0.5;
             const rx = sprite.width * 0.42;
             const ry = sprite.height * (1 - contentTopFrac) * 0.62;
-            const pulse = 0.5 + 0.5 * Math.sin(Date.now() / 450);
-            shieldFx.lineStyle(Math.max(1.5, tp * 0.02), 0x5fd4ff, 0.7 + 0.25 * pulse);
-            shieldFx.beginFill(0x5fd4ff, 0.1 + 0.06 * pulse);
-            shieldFx.drawEllipse(cx, cy, rx, ry);
-            shieldFx.endFill();
+            const geom = { cx, cy, rx, ry, tp };
+            // Cache the local-space geometry so lifecycle.update can re-animate this bubble every
+            // frame (spin/breathe) without recomputing sprite layout — see WorldMapContext.shieldGeom.
+            this.ctx.shieldGeom.set(cacheKey, geom);
+            drawShieldDome(shieldFx, geom, this.ctx.shieldAnimT);
+            drawShieldGlow(shieldGlowFx, geom, this.ctx.shieldAnimT);
+          } else {
+            // Was protected as of the last redraw and just dropped out — pop a one-shot break
+            // flash at the same spot (2026-08-08 follow-up, borrowed from daydayup's shield_break).
+            const priorGeom = this.ctx.shieldGeom.get(cacheKey);
+            if (priorGeom) this.ctx.shieldBreakFx.set(cacheKey, { ...priorGeom, age: 0 });
+            shieldFx.clear();
+            shieldGlowFx.clear();
+            this.ctx.shieldGeom.delete(cacheKey);
           }
         }
       }

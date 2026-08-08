@@ -29,6 +29,11 @@ import {
   drawTag, drawCapsule, drawCards, drawStar, drawLock, drawMedal, drawZoom, drawGift,
   drawClose, drawCheck, drawPlay,
 } from './icons/ui';
+import {
+  drawTitleBronze, drawTitleSilver, drawTitleGold, drawTitlePlatinum, drawTitleDiamond,
+  drawTitleStar, drawTitleMaster, drawTitleGrandmaster, drawTitleKing,
+  drawTitleChampion, drawTitleTop3,
+} from './icons/titles';
 
 export type IconKind =
   | 'book' | 'globe' | 'coin' | 'trophy' | 'castle' | 'pencils'
@@ -63,6 +68,13 @@ export type IconKind =
   | 'lock'
   // Leaderboard top-3 rank medal (tinted gold / silver / bronze per rank).
   | 'medal'
+  // TitlesScene title-wall fallback for dynamic (non-permanent) titles: 9 ladder ranks
+  // (bronze→king, escalating detail) + 2 SLG season titles (shield silhouette). See
+  // icons/titles.ts — distinct from 'medal' above, which stays a single undifferentiated
+  // glyph for the leaderboard's simpler 3-colour top-3 tint.
+  | 'titleBronze' | 'titleSilver' | 'titleGold' | 'titlePlatinum' | 'titleDiamond'
+  | 'titleStar' | 'titleMaster' | 'titleGrandmaster' | 'titleKing'
+  | 'titleChampion' | 'titleTop3'
   // Zoom cycle button (WorldMapScene HUD): a magnifier lens + handle.
   | 'zoom'
   // Mail attachment marker (FriendsScene): a wrapped present with a bow.
@@ -109,6 +121,17 @@ export const DRAW: Record<IconKind, (g: PIXI.Graphics, s: number, color: number)
   star:    drawStar,
   lock:    drawLock,
   medal:   drawMedal,
+  titleBronze: drawTitleBronze,
+  titleSilver: drawTitleSilver,
+  titleGold: drawTitleGold,
+  titlePlatinum: drawTitlePlatinum,
+  titleDiamond: drawTitleDiamond,
+  titleStar: drawTitleStar,
+  titleMaster: drawTitleMaster,
+  titleGrandmaster: drawTitleGrandmaster,
+  titleKing: drawTitleKing,
+  titleChampion: drawTitleChampion,
+  titleTop3: drawTitleTop3,
   zoom:    drawZoom,
   gift:    drawGift,
   close:   drawClose,

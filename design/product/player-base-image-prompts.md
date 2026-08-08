@@ -365,3 +365,74 @@ node art/scripts/patchMergedAtlas.js client/src/assets/slg/playerbase_atlas.json
 - `client/src/render/atlas/playerBaseAtlasLoader.ts` 提供 `loadPlayerBaseAtlas()`/`getPlayerBaseTextureForLevel(level)`；`WorldMapRenderer/lifecycle.ts` 随其余图集一起加载
 - `WorldMapRenderer/city.ts` 按 `tile.mine` 分支选图（自己的基地用这套，其他玩家的基地和 NPC 城池节点继续用 `city_atlas`）
 - 服务端 `worldsvc/src/city.ts` 的 `applyDueBuilds` 在 desk 完工时把新等级写入 `TileDoc.deskLevel`（新字段），`core/map.ts tileDocView` 透出到 `WorldTileView.deskLevel`（`server/contracts/openapi-world.yml` 已加对应 schema 字段，client/worldsvc 的生成类型已同步重新生成）
+
+## 2026-08-08（同日第二轮）：重出图，Lv.4/5/6/10 落地，Lv.7/8 仍不够宽
+
+上一节末尾留的坑（Lv.4-8/10 高度预算先触底，宽度填不满）用户直接重出了 7 张新图丢进 `art/ui/slg-playerbase/`。逐张核对（离线复现 `citySpriteTiles`/`cityPlotMaskPoints`/`tileToScreen` 几何 + 叠加真实打包后的图集像素，方法同上一节"验证技术"）：
+
+| 候选 | 目标等级 | contentWidthFrac（满宽=0.9375） | 对比旧图 | 结论 |
+|---|---|---|---|---|
+| `db469fcb` | Lv.4 | 0.94（满宽） | 旧 0.77 | **采用** |
+| `9db3987e` | Lv.5 | 0.91 | 旧 0.77 | **采用** |
+| `0a256a95` | Lv.6 | 0.85 | 旧 0.73 | **采用**（仍有一丝缝，明显好转） |
+| `5dfc4f19` | Lv.7 | 0.71 | 旧 0.71 | **不采用**——同心环画得太圆，宽度几乎没涨 |
+| `acf658c8` | Lv.8 | 0.68 | 旧 0.68 | **不采用**——两侧堡垒没顶到画幅边缘 |
+| `53f7ed55` | Lv.10 | 0.84 | 旧 0.66 | **采用** |
+| `0b1ef4e0` | Lv.10（备选） | 未测（同构更圆，肉眼明显更窄）| — | **不采用**，比 `53f7ed55` 差 |
+
+采用的 4 张已改名覆盖 `playerbase_l4/5/6/10.png`，重跑 `pack_playerbase_atlas.js` + `patchMergedAtlas.js` 入库。未采用的 3 张 + 被替换下来的旧图（`798c5a2a`/`510840c1`/`01f1a353`/`74edac36`）+ 仓库里一直没清理的 2026-07-17 最早一批高瘦无地台源图（10 个文件）一并移入 `art/leftover/`。
+
+**Lv.7/Lv.8 仍要再出一版**——两张的通病是"同心环/两翼堡垒画在偏中间、没顶到画幅左右边缘"，即使把 prompt 里的宽高比数字写高（如 12:7），AI 出图也不会精确对齐这个数字，得给一个更具体可执行的画面指令（"在两个远端塔尖各插一面旗子作宽度标记，甚至允许旗子/堡垒被画幅边缘裁到一半"）比抽象宽高比更有效——这正是 `db469fcb`（Lv.4，满宽）成功的构图套路，搬到 Lv.7/8 上：
+
+### `playerbase_l7` v2 prompt
+
+```
+A wide desk-pad ground plate filled by a reinforced book-fortress: the double
+concentric ring of flat-stacked books is drawn as a WIDE FLAT OVAL, not a
+circle — squash it left-right so the ring's own left and right edges touch the
+very left and right edges of the picture frame (put a small flag at each of
+those two tips so the width is unmistakable), with a walkway between the outer
+and inner ring, three squat correction-tape-roll towers spaced along that
+horizontal oval (one AT the far-left tip, one AT the far-right tip, one at the
+back — none of the three near the center), a large hardcover book lying open
+as the central keep with a small bookmark pennant. Dense and detailed, clearly
+well-defended — depth comes from the extra ring pushed wide, not from extra
+height or a circular footprint. The finished silhouette must look noticeably
+WIDER than Lv6's fortress, never narrower.
+[+ style]
+```
+
+### `playerbase_l8` v2 prompt
+
+```
+A wide desk-pad ground plate completely filled by a massive sprawling
+stronghold: a broad platform of encyclopedias and binders stacked only a few
+deep runs the full width of the picture, its left and right ends touching the
+very left and right edges of the frame — put a glue stick lying on its side as
+a squat bastion AT each of those two tips (half the bastion may even crop off
+the edge of the frame, that's fine, it must NOT float with empty plate beside
+it), a stapler-and-hole-puncher gatehouse across the whole front edge between
+them, and a moat drawn as a wavy blue ink-outline puddle running around the
+plate's rim. Impressive through sheer footprint and horizontal spread, low and
+flat — the two bastions are the widest points of the entire image.
+[+ style]
+```
+
+在新图落地前，`playerbase_l7.png`/`playerbase_l8.png` 保持现状（`445aa377`/`8608ad46`），比旧图差不到哪去，先不空着。
+
+### 2026-08-08（同日第三轮）：Lv.7/8 v2 prompt 一次命中，10 张全部达标
+
+用户按上面 v2 prompt 重出了两张（`0e5d40d6`→Lv.7、`4d95d1b3`→Lv.8），离线几何核对：
+
+| 候选 | 目标等级 | contentWidthFrac（满宽=0.9375） | 结论 |
+|---|---|---|---|
+| `0e5d40d6` | Lv.7 | 0.9375（**满宽**） | 采用 |
+| `4d95d1b3` | Lv.8 | 0.91 | 采用 |
+
+"具体锚点"套路（远端插旗子/让物体贴边）比抽象宽高比数字有效，这次一次成功。已改名覆盖 `playerbase_l7/8.png`，重跑 `pack_playerbase_atlas.js` + `patchMergedAtlas.js` 入库；被替换的旧图（`445aa377`/`8608ad46`）连同确认再无用途的 11th 备用图（`fbb0769b`，2026-08-03 就已标注不采用，一直没清理）一并移入 `art/leftover/`。
+
+**至此 10 张玩家基地图全部达到"地台顶到 3×3 菱形边界"的构图要求**（`contentWidthFrac`：Lv.1 0.94 / Lv.2 0.89 / Lv.3 0.82 / Lv.4 0.94 / Lv.5 0.91 / Lv.6 0.85 / Lv.7 0.94 / Lv.8 0.91 / Lv.9 0.83 / Lv.10 0.84，无一低于 0.82），2026-08-08 当天开的这个坑到此收口。
+
+### 2026-08-08（收尾）：真机截图复核，而非只有离线几何模拟
+
+上面三轮的判定都是靠离线复现 `citySpriteTiles`/`cityPlotMaskPoints` 几何叠加真实图集像素，没有实机截图。收尾前补了一次真机验证：临时给 `client/src/entries/web.ts` 加了个 `?worldmapdebug` 分支（构造真实 `WorldMapScene`，reject-fast 的 `WorldApiClient` stub 跳过登录/后端，在地图上摆 10 个"我的基地"测试块，每级一个），Playwright 依次把镜头切到每个基地截图——走的是客户端真正的渲染代码路径（`playerbase_atlas` → `getPlayerBaseTextureForLevel` → `WorldMapRenderer/city.ts` 的 `tile.mine` 分支），不是模拟。10 级截图里"连接己方领地"的绿色虚线框正好是每个基地自己的地块边界，肉眼确认全部贴边，跟离线核算的结论一致。调试脚手架（临时文件 + `web.ts` 分支 + Playwright 脚本）验证完已删除/还原，不留痕迹。

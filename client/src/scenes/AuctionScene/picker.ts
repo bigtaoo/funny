@@ -13,6 +13,7 @@ import { buildMaterialIcon } from '../../render/atlas/materialAtlas';
 import { drawScrollIndicator } from '../../ui/widgets/ScrollIndicator';
 import type { EquipmentInstance, CardInstance, EquipRarity } from '../../game/meta/SaveData';
 import { getEquipDef, EQUIP_MAX_LEVEL } from '../../game/meta/equipmentDefs';
+import { MAX_CARD_LEVEL } from '../../game/meta/cardDefs';
 import { buildEquipIcon } from '../../render/atlas/equipmentAtlas';
 import { cardInstanceArtUrl, getArtTexture, unitPortraitUrl } from '../../render/cardArt';
 import { SKIN_TARGET_UNIT, skinDisplayName, allEquippedSkins, isKnownSkin } from '../../game/meta/skinDefs';
@@ -45,6 +46,14 @@ interface PickEntry {
   /** Skin id (cls === 'skin') — skins have no defId/instance, just a catalogue id (see skinDefs.ts). */
   skinId?: string;
   onPick: () => void;
+  /**
+   * Sell this skin to the system for coins instead of listing it (ITEM_IDENTITY_DESIGN.md task1,
+   * 2026-08-08) — only ever set for cls==='skin' entries, and only when `cb.sellSkin` is wired
+   * (present). Every skin that reaches the picker at all is already sellable under the identical
+   * "not equipped, or a surplus copy" guard `listableSkins()` applies for auctioning — no separate
+   * eligibility check needed here.
+   */
+  onSell?: () => void;
 }
 
 export interface PickerHandlers {
@@ -78,16 +87,25 @@ export function PickerMixin<TBase extends AuctionSceneBaseCtor>(Base: TBase): TB
     }
 
     /**
-     * Owned skin ids eligible for listing: not currently equipped on any card (mirrors server
-     * escrowSkin's isSkinEquipped guard), and a known catalogue id — a removed/placeholder SKU or any
-     * other id that leaked into inventory.skins by mistake (see isKnownSkin's doc comment, 2026-08-08)
-     * has no real name/art and must never be offered for listing.
+     * Owned skin ids eligible for listing: a known catalogue id (a removed/placeholder SKU or any other
+     * id that leaked into inventory.skins by mistake — see isKnownSkin's doc comment, 2026-08-08 — has
+     * no real name/art and must never be offered), and either not currently equipped, or owned in
+     * surplus (skinCounts > 1 — a duplicate gacha pull, ITEM_IDENTITY_DESIGN.md task1, 2026-08-08) —
+     * mirrors the server's escrowSkin guard, which only protects the LAST remaining copy of an equipped
+     * skin, not every copy. `skinCounts` may be absent on a save pulled before this field existed
+     * (client-only default fills it to {} via migrate.ts, but a stale in-memory object from before a
+     * reconcile could still lack it) — falls back to "exactly 1 copy" (the old behavior) in that case.
      */
     listableSkins(): string[] {
       const save = this.cb.getSave?.();
       if (!save) return [];
       const equipped = new Set(allEquippedSkins(save.equipped ?? {}));
-      return (save.inventory?.skins ?? []).filter((id) => !equipped.has(id) && isKnownSkin(id));
+      const counts = save.skinCounts ?? {};
+      return (save.inventory?.skins ?? []).filter((id) => {
+        if (!isKnownSkin(id)) return false;
+        if (!equipped.has(id)) return true;
+        return (counts[id] ?? 1) > 1;
+      });
     }
 
     /** Label of the currently selected item (any class) for the create form, or null when none is chosen (or it is no longer listable). */
@@ -106,7 +124,9 @@ export function PickerMixin<TBase extends AuctionSceneBaseCtor>(Base: TBase): TB
         return skinId ? skinDisplayName(skinId) : null;
       }
       const inst = this.listableCards().find((c) => c.id === this.createCardId);
-      return inst ? `${this.cardName(inst.defId)} Lv.${inst.level}` : null;
+      if (!inst) return null;
+      const stars = levelStarsText(inst.level, MAX_CARD_LEVEL);
+      return stars ? `${this.cardName(inst.defId)} ${stars}` : this.cardName(inst.defId);
     }
 
     /**
@@ -154,7 +174,8 @@ export function PickerMixin<TBase extends AuctionSceneBaseCtor>(Base: TBase): TB
         }
       }
       for (const { rep, count } of cardGroups.values()) {
-        const base = `${this.cardName(rep.defId)} Lv.${rep.level}`;
+        const stars = levelStarsText(rep.level, MAX_CARD_LEVEL);
+        const base = stars ? `${this.cardName(rep.defId)} ${stars}` : this.cardName(rep.defId);
         entries.push({
           defId: rep.defId, label: count > 1 ? `${base} ×${count}` : base,
           value: CARD_VALUE_BASE + (rep.level - 1) * CARD_VALUE_PER_LEVEL, locked: rep.locked, cls: 'card',
@@ -162,12 +183,21 @@ export function PickerMixin<TBase extends AuctionSceneBaseCtor>(Base: TBase): TB
         });
       }
 
-      // Skins are a plain owned/not-owned set (no qty, no instance) — at most one entry per skinId.
+      // Skins: `inventory.skins` is still an owned/not-owned set (at most one entry per skinId here —
+      // escrow/sell always take exactly one unit regardless of which instance backs it), but a
+      // duplicate gacha pull can now leave a skinId with 2+ real instances (ITEM_IDENTITY_DESIGN.md
+      // task1, 2026-08-08) — surfaced via skinCounts, mirrors the "×N" treatment equipment/card groups
+      // get above. Every entry that reaches the picker is already sellable under the same guard as
+      // listing (see listableSkins), so onSell is offered whenever the callback is wired.
+      const skinCounts = this.cb.getSave?.()?.skinCounts ?? {};
       for (const skinId of this.listableSkins()) {
+        const count = skinCounts[skinId] ?? 1;
+        const base = skinDisplayName(skinId);
         entries.push({
-          skinId, label: skinDisplayName(skinId),
+          skinId, label: count > 1 ? `${base} ×${count}` : base,
           value: SKIN_VALUE, locked: false, cls: 'skin',
           onPick: () => { this.createClass = 'skin'; this.createSkinId = skinId; this.closeItemPicker(); },
+          onSell: this.cb.sellSkin ? () => this.sellSkinFromPicker(skinId) : undefined,
         });
       }
 
@@ -366,11 +396,47 @@ export function PickerMixin<TBase extends AuctionSceneBaseCtor>(Base: TBase): TB
       if (nameLbl.width > cardW - 18) nameLbl.scale.set((cardW - 18) / nameLbl.width);
       this.bodyLayer.addChild(nameLbl);
 
-      const hint = txt(t('auction.pickHint'), FS.small, C.accent, true);
-      hint.anchor.set(0.5, 1); hint.x = x + cardW / 2; hint.y = y + CARD_H - 8;
-      this.bodyLayer.addChild(hint);
+      // Skins with a wired sellSkin callback get a second action (ITEM_IDENTITY_DESIGN.md task1,
+      // 2026-08-08): split the bottom hint row into "list on market" (left) / "sell to system" (right),
+      // each with their own hit zone pushed BEFORE the full-card catch-all below so a tap on either
+      // half is intercepted first (hitRects resolve in push order, first match wins — see handleDown).
+      if (entry.onSell) {
+        const half = cardW / 2;
+        const auctionHint = txt(t('auction.pickHint'), FS.small, C.accent, true);
+        auctionHint.anchor.set(0.5, 1); auctionHint.x = x + half / 2; auctionHint.y = y + CARD_H - 8;
+        this.bodyLayer.addChild(auctionHint);
+        const sellHint = txt(t('auction.sellHint'), FS.small, C.mid, true);
+        sellHint.anchor.set(0.5, 1); sellHint.x = x + half + half / 2; sellHint.y = y + CARD_H - 8;
+        this.bodyLayer.addChild(sellHint);
+        this.hitRects.push({ rect: { x, y: y + CARD_H - 28, w: half, h: 28 }, action: entry.onPick });
+        this.hitRects.push({ rect: { x: x + half, y: y + CARD_H - 28, w: half, h: 28 }, action: entry.onSell });
+      } else {
+        const hint = txt(t('auction.pickHint'), FS.small, C.accent, true);
+        hint.anchor.set(0.5, 1); hint.x = x + cardW / 2; hint.y = y + CARD_H - 8;
+        this.bodyLayer.addChild(hint);
+      }
 
       this.hitRects.push({ rect: { x, y, w: cardW, h: CARD_H }, action: entry.onPick });
+    }
+
+    /**
+     * Sell one surplus skin instance to the system for coins, from the picker (ITEM_IDENTITY_DESIGN.md
+     * task1, 2026-08-08). Guarded by `sellBusy` against a double-tap firing two concurrent sales for
+     * the same skinId before the first response (and its save/picker refresh) lands.
+     */
+    private async sellSkinFromPicker(skinId: string): Promise<void> {
+      if (this.sellBusy.has(skinId)) return;
+      this.sellBusy.add(skinId);
+      try {
+        const { credited } = await this.cb.sellSkin!(skinId);
+        await this.cb.reloadSave?.();
+        this.showToast(t('auction.sellSuccess', { coins: String(credited) }));
+        if (this.itemPickerOpen) this.render();
+      } catch (e) {
+        this.showToast(this.errorMsg(e), C.red);
+      } finally {
+        this.sellBusy.delete(skinId);
+      }
     }
   };
 }

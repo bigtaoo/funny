@@ -718,6 +718,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/skins/sell": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Player-initiated sale of one surplus skin instance to the system for coins (never automatic — a gacha duplicate only ever grants an instance, exactly like a first pull). Payout is DUPE_REFUND_COINS by the skin's catalogue rarity. Refuses to sell the last remaining instance of a currently-equipped skin. idempotencyKey for idempotency */
+        post: operations["sellSkin"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/cards/fuse": {
         parameters: {
             query?: never;
@@ -1586,6 +1603,10 @@ export interface components {
             cardInvCount?: number;
             cardMailOverflowCount?: number;
             equipMailOverflowCount?: number;
+            /** @description Skin instance counts: skinId → total owned instance count */
+            skinCounts?: {
+                [key: string]: number;
+            } | null;
             equipped: {
                 [key: string]: string;
             };
@@ -3458,6 +3479,50 @@ export interface operations {
             401: components["responses"]["ErrorResp"];
             404: components["responses"]["ErrorResp"];
             409: components["responses"]["ErrorResp"];
+        };
+    };
+    sellSkin: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description Skin catalogue id to sell one surplus copy of */
+                    skinId: string;
+                    /** @description Client-generated idempotency key; replay returns the first result (no second sale) */
+                    idempotencyKey: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {boolean} */
+                        ok: true;
+                        data: {
+                            /** @description Coins credited for this sale */
+                            credited: number;
+                            /** @description Wallet balance after the credit */
+                            coinsAfter: number;
+                            save: components["schemas"]["SaveData"];
+                        };
+                    };
+                };
+            };
+            400: components["responses"]["ErrorResp"];
+            401: components["responses"]["ErrorResp"];
+            404: components["responses"]["ErrorResp"];
+            409: components["responses"]["ErrorResp"];
+            503: components["responses"]["ErrorResp"];
         };
     };
     cardsFuse: {

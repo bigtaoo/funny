@@ -864,8 +864,8 @@ export const zh = {
   'world.occupying': '占领中（{sec}s 后结算）',
   'world.occupyingMine': '我方占领中（{sec}s 后落地）',
   'world.mine': '我的领地',
-  'world.protected': '保护中（剩 {sec}s）',
-  'world.speedup': '训练加速 x2（剩 {sec}s）',
+  'world.protected': '保护中（剩{d}天{h}时{m}分{s}秒）',
+  'world.speedup': '训练加速 x2（剩{d}天{h}时{m}分{s}秒）',
   'world.garrison': '驻军 {n}',
   'world.resLevel': '{res} · Lv.{lv}',
   'world.recommendTroops': '建议兵力 {n}',
@@ -1252,6 +1252,8 @@ export const zh = {
   'auction.tapChoose': '点击选择物品',
   'auction.pickItem': '选择要出售的物品',
   'auction.pickHint': '选择 ›',
+  'auction.sellHint': '出售 ›',
+  'auction.sellSuccess': '已出售，获得 {coins} 金币',
   'auction.noItems': '没有可出售的物品',
 
   // ── Campaign level names & briefings ─────────────────────────────────────

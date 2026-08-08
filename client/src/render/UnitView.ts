@@ -83,8 +83,12 @@ const SKIN_ASSETS: Record<string, Partial<Record<UnitType, string>>> = {
  * the default STICKMAN_ASSETS bundle); a type absent from the result has no equipped skin and falls
  * back to the default at the call site. Kept separate from the default set so the two can be loaded
  * into distinct side-scoped maps (see the {@link UnitView} constructor / {@link acquireSprite}).
+ *
+ * Exported for reuse by `assets/battleAssets.ts` (pre-match asset-readiness gate, ASSET_PACKAGING
+ * §10) — it needs the exact same skin→url resolution to pre-warm StickmanRuntime's cache before
+ * the scene is shown, so it doesn't compute this independently.
  */
-function resolveSkinOverrides(equippedSkins: readonly string[]): Partial<Record<UnitType, string>> {
+export function resolveSkinOverrides(equippedSkins: readonly string[]): Partial<Record<UnitType, string>> {
   let overrides: Partial<Record<UnitType, string>> = {};
   for (const id of equippedSkins) {
     const skin = SKIN_ASSETS[id];

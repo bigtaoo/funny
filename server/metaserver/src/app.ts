@@ -8,6 +8,7 @@ import { createLogger, internalKeysFromEnv } from '@nw/shared';
 import { MetaService } from './service.js';
 import { assembleEquipmentInv } from './equipment.js';
 import { assembleCardInv } from './cards.js';
+import { assembleSkinCounts } from './skin.js';
 import { registerAdCallbackRoutes } from './ads.js';
 import { registerPaddleRoutes } from './paddle.js';
 
@@ -161,6 +162,13 @@ export async function buildApp(opts: BuildAppOpts): Promise<FastifyInstance> {
       if (opts.cols.cardInstances && save.cardInv !== null) {
         const fromInstances = await assembleCardInv(opts.cols, save.accountId, save);
         save.cardInv = save.cardInv === undefined ? fromInstances : { ...save.cardInv, ...fromInstances };
+      }
+      // Skin instance counts (ITEM_IDENTITY_DESIGN.md task1, 2026-08-08): same backfill-on-`undefined`,
+      // skip-on-`null` convention as equipmentInv/cardInv above. Unlike those two, skinCounts has no
+      // "mid-migration merge" concern (it's a brand-new field, nothing embedded to reconcile against) —
+      // a plain assign is enough.
+      if (opts.cols.skinInstances && save.skinCounts !== null) {
+        save.skinCounts = await assembleSkinCounts(opts.cols, save.accountId, save);
       }
     }
     return payload;

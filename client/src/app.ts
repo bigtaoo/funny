@@ -61,6 +61,7 @@ import { ui as C } from './render/sketchUi';
 import { setBakeRenderer } from './render/bake';
 import { installTextPaddingFloor } from './render/pixiText';
 import { preloadBoot } from './assets/bootManifest';
+import { enterBattle, DeferredSceneCalls } from './app/battleGate';
 import { LoadingOverlay } from './ui/LoadingOverlay';
 import { createAppCore } from './app/createAppCore';
 import type { AppViews, LobbyView, RoomView, FriendsView, ChatView, NetGameView, ResultViewProps, FadeOpts, MountOpts } from './app/AppViews';
@@ -120,6 +121,7 @@ class PixiAppViews implements AppViews {
     recordConstructSample(name, dt);
     return scene;
   }
+
 
   showIntro(cb: Parameters<AppViews['showIntro']>[0]): void {
     this.leaveLobby();
@@ -280,8 +282,13 @@ class PixiAppViews implements AppViews {
 
   showGame(cb: GameSceneCallbacks, opts: GameSceneOptions): void {
     this.leaveLobby();
-    // Entering a match is one of the handful of transitions that cross-fade (see SceneManager).
-    this.manager.goto(this.timedBuild('GameScene', () => new GameScene(this.layout, this.input, cb, opts)), { fade: true });
+    // Entering a match is one of the handful of transitions that cross-fade (see SceneManager);
+    // enterBattle gates that fade behind the L1 asset-readiness loading screen (ASSET_PACKAGING §10).
+    void enterBattle(
+      { app: this.app, manager: this.manager, input: this.input },
+      opts,
+      () => this.timedBuild('GameScene', () => new GameScene(this.layout, this.input, cb, opts)),
+    );
   }
 
   showRoom(cb: RoomSceneCallbacks): RoomView {
@@ -378,13 +385,23 @@ class PixiAppViews implements AppViews {
     const side = ownerToSide(localSide);
     const { width, height } = this.platform.getScreenSize();
     const netLayout = createLayout(width, height, side, this.platform.getSafeAreaInsets?.());
-    const scene = this.timedBuild('GameScene', () => new GameScene(netLayout, this.input, cb, opts));
+    // enterBattle is async (asset-readiness gate, ASSET_PACKAGING §10) but the caller (nav/result.ts)
+    // needs a NetGameView synchronously to wire up session.handlers right away — a server push
+    // (net_state/peer_dc/match_over) can legitimately arrive while the loading screen is still up
+    // (the socket is already live), so DeferredSceneCalls buffers those until the scene actually
+    // exists, then flushes in order. GameScene's own destroyed-guard covers the symmetric case
+    // (push arriving after the scene is torn down); this covers the "before it's built yet" case.
+    const deferred = new DeferredSceneCalls<GameScene>();
     // Entering a match is one of the handful of transitions that cross-fade (see SceneManager).
-    this.manager.goto(scene, { fade: true });
+    void enterBattle(
+      { app: this.app, manager: this.manager, input: this.input },
+      opts,
+      () => this.timedBuild('GameScene', () => new GameScene(netLayout, this.input, cb, opts)),
+    ).then((s) => deferred.resolve(s));
     return {
-      applyNetState:  (s) => scene.applyNetState(s),
-      applyPeerDc:    (p) => scene.applyPeerDc(p),
-      applyMatchOver: (m) => scene.applyMatchOver(m),
+      applyNetState:  (s) => deferred.call((sc) => sc.applyNetState(s)),
+      applyPeerDc:    (p) => deferred.call((sc) => sc.applyPeerDc(p)),
+      applyMatchOver: (m) => deferred.call((sc) => sc.applyMatchOver(m)),
     };
   }
 }
@@ -559,6 +576,18 @@ export async function startApp(
     dlg.container.zIndex = 9_000; // above scene content, below GlobalToast (10_000)
     app.stage.addChild(dlg.container);
     feedbackDialog = dlg;
+  });
+
+  // Stage-level dialogs sit outside targetStage, so SceneManager.onTick (which only ticks
+  // `current`/`overlayScene`) never reaches them — nobody was calling FeedbackDialog.update(), so its
+  // caret-blink timer (caretTimer/caretOn) never advanced and the cursor rendered as a permanently
+  // solid '|' instead of blinking (2026-08-08 bug report). Drive both dialogs' update() here instead,
+  // same self-ticking role GlobalToast.tick() plays for its own stage-level overlay. AppealDialog's
+  // update() takes no args (it's a no-op today) but ticking it too costs nothing and avoids this same
+  // wiring gap resurfacing if it ever grows a timer.
+  app.ticker.add(() => {
+    appealDialog?.update();
+    feedbackDialog?.update(app.ticker.deltaMS / 1000);
   });
 
   core.start();

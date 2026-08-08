@@ -284,8 +284,47 @@ describe.skipIf(!mongo)('worldsvc idle re-dispatch + in-place occupation e2e (AD
     expect(await svc.processDueArrivals()).toBe(1);
     expect((await m.collections.stationed.findOne({ _id: tileId(W, a.x, a.y) }))?.mode).toBe('garrison');
 
-    // A garrison is busy — re-dispatch (move or in-place occupy) is rejected until it is recalled.
+    // A garrison is busy — re-dispatch (move, in-place occupy, or attack) is rejected until it is recalled.
     await expect(svc.startMarch(W, 'a', a.x, a.y, b.x, b.y, 'move', 1, 't1')).rejects.toThrow(/marching, occupying, or stationed/i);
     await expect(svc.startMarch(W, 'a', a.x, a.y, a.x, a.y, 'occupy', 1, 't1')).rejects.toThrow(/marching, occupying, or stationed/i);
+    await expect(svc.startMarch(W, 'a', a.x, a.y, b.x, b.y, 'attack', 1, 't1')).rejects.toThrow(/marching, occupying, or stationed/i);
+  });
+
+  // Feature (2026-08-08, user request, account tao): attack gets the same forward-staging parity as occupy/move —
+  // a 停留 idle team standing in the field can be sent straight into a siege without first recalling it home.
+  // Previously idleRedispatch only whitelisted kind 'occupy'/'move', so this same setup threw TEAM_BUSY.
+  it('re-dispatch attack: an idle team launches a siege straight from its station cell — no recall, no round trip home', async () => {
+    await svc.joinWorld(W, 'a', 5, 5);
+    await setupStrongTeam('t1');
+    const a = findCoord((t) => t.type === 'resource' || t.type === 'neutral', 10, 10);
+    const target = findCoord((t) => t.type === 'resource' || t.type === 'neutral', 16, 16, new Set([`${a.x}:${a.y}`]));
+    const aTid = tileId(W, a.x, a.y);
+    const targetTid = tileId(W, target.x, target.y);
+
+    // Someone else's territory — a valid siege target.
+    await m.collections.tiles.updateOne(
+      { _id: targetTid },
+      { $set: { _id: targetTid, worldId: W, x: target.x, y: target.y, type: 'territory', level: 1, ownerId: 'rival', garrison: 0, rev: 0 } as TileDoc },
+      { upsert: true },
+    );
+    await connect(target); // ADR-039: border the target with own territory so the siege clears the connectivity gate
+
+    await stationIdleAt(a);
+    const troopsBefore = (await svc.getMe(W, 'a')).troops;
+
+    // Re-command the idle team straight from its station cell A into a siege on `target` — no recall, and the
+    // client's own-base coordinates (a stale/irrelevant origin for an idle re-dispatch) are ignored server-side.
+    const mv = await svc.startMarch(W, 'a', 5, 5, target.x, target.y, 'attack', 1, 't1');
+    expect(mv.kind).toBe('attack');
+    expect(mv.fromTile).toBe(aTid); // departed from the field cell, not the base
+    expect(mv.toTile).toBe(targetTid);
+    expect(mv.teamId).toBe('t1');
+
+    // Old station cell is claimed/freed immediately (atomic StationedDoc removal, same as move/occupy re-dispatch).
+    expect(await m.collections.stationed.findOne({ _id: aTid })).toBeNull();
+    expect(redis.occHas(W, aTid)).toBe(false);
+
+    // Card army + idle re-dispatch → the pool is never touched, same exemption as move/occupy re-dispatch.
+    expect((await svc.getMe(W, 'a')).troops).toBe(troopsBefore);
   });
 });

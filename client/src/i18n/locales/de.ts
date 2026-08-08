@@ -850,8 +850,8 @@ export const de: Record<TranslationKey, string> = {
   'world.occupying': 'Wird besetzt (noch {sec}s)',
   'world.occupyingMine': 'Deine Besetzung hält (noch {sec}s bis Übernahme)',
   'world.mine': 'Mein Gebiet',
-  'world.protected': 'Geschützt ({sec}s)',
-  'world.speedup': 'Ausbildung ×2 (noch {sec}s)',
+  'world.protected': 'Geschützt (noch {d}T {h}Std {m}Min {s}Sek)',
+  'world.speedup': 'Ausbildung ×2 (noch {d}T {h}Std {m}Min {s}Sek)',
   'world.garrison': 'Garnison {n}',
   'world.resLevel': '{res} · Lv.{lv}',
   'world.recommendTroops': 'Empfohlene Truppen {n}',
@@ -1238,6 +1238,8 @@ export const de: Record<TranslationKey, string> = {
   'auction.tapChoose': 'Zum Auswählen tippen',
   'auction.pickItem': 'Gegenstand zum Verkauf wählen',
   'auction.pickHint': 'Wählen ›',
+  'auction.sellHint': 'Verkaufen ›',
+  'auction.sellSuccess': 'Verkauft für {coins} Münzen',
   'auction.noItems': 'Keine verkäuflichen Gegenstände',
 
   // ── Kampagnenlevel: Namen & Briefings ────────────────────────────────────

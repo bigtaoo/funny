@@ -221,6 +221,34 @@ describe.skipIf(!meta || !social)('mail claim: real cross-service wire (metaserv
     expect(b.data.save.inventory.skins).not.toContain('scrap');
   });
 
+  it('claiming a mail skin attachment for an already-owned skin still delivers a real second instance (ITEM_IDENTITY_DESIGN.md task1, 2026-08-08 — used to be a silent no-op, same bug class as the shop/fate/gacha paths)', async () => {
+    // Seed a real pre-existing instance (not just the legacy inventory.skins marker) so this test
+    // exercises a genuine "second real instance", not a legacy-account self-heal creating the first one.
+    await m.collections.saves.updateOne({ _id: accountId }, { $set: { 'save.inventory.skins': ['skin_shop_c1'] } });
+    await m.collections.skinInstances.insertOne({ _id: 'pre_existing_skin_shop_c1', accountId, skinId: 'skin_shop_c1', sourceType: 'test' });
+
+    const mailSvc = new MailService({
+      cols: s.collections,
+      gateway: { available: false, push: async () => {}, pushMany: async () => {}, presence: async () => ({}), invalidateFriends: async () => {} },
+      meta: { available: false, resolveByPublicId: async () => null, batchProfiles: async () => new Map() },
+      now: () => Date.now(),
+    });
+    const dispatchKey = `comp.dupskin.${accountId}`;
+    await mailSvc.insertSystemMail(dispatchKey, accountId, {
+      subject: 'comp.mail.subject',
+      body: 'comp.mail.body',
+      attachments: [{ kind: 'skin', id: 'skin_shop_c1' }],
+      expireDays: 30,
+    });
+
+    const mailId = `${dispatchKey}:${accountId}`;
+    const res = await app.inject({ method: 'POST', url: `/mail/${encodeURIComponent(mailId)}/claim`, headers: auth(), payload: {} });
+    expect(res.statusCode).toBe(200);
+    const b = body(res);
+    expect(b.data.save.inventory.skins.filter((s2: string) => s2 === 'skin_shop_c1')).toHaveLength(1); // still a dedup set
+    expect(await m.collections.skinInstances.countDocuments({ accountId, skinId: 'skin_shop_c1' })).toBe(2); // pre-existing + the mail-delivered copy
+  });
+
   // comm-audit-internal-2026-07-28 P0-4: a post-claim delivery failure must not strand the mail
   // claimed-but-undelivered. Before this fix, the coin grant failing after claimMailAtomic had
   // already marked the mail claimed left it permanently unclaimable (ALREADY_CLAIMED forever) with

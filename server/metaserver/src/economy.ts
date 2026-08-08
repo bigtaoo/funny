@@ -8,11 +8,13 @@
 //    previously write-only and this guard did not exist, allowing double-delivery under concurrency).
 //  • Wallet mirror — wallet.coins / gacha.pity are authoritative in commercial; meta only writes
 //    the mirror section after a receipt, for offline display.
-//  • Duplicate conversion (refund coins / shards) is deferred to S5 (§4.3 refund amount TBD +
-//    re-grant recalculation is not idempotent); only new skins are granted for now; the channel
-//    in commercial is already prepared.
+//  • Skin duplicates (ITEM_IDENTITY_DESIGN.md task1, 2026-08-08): every gacha skin result — first
+//    pull or dupe alike — now grants a real SkinInstance (see skin.ts); the old design where a
+//    duplicate was silently dropped (no item, no coin refund, despite GACHA_DESIGN §4.3 describing an
+//    auto-refund that was never actually wired up) is gone. Cashing in a surplus copy for coins is a
+//    separate, player-initiated action (skin.ts sellSkinToSystem), never automatic.
 import { createHash } from 'node:crypto';
-import type { Collections, SaveData, Rarity, EquipmentInstance, CardInstance, RedisLike } from '@nw/shared';
+import type { Collections, SaveData, Rarity, EquipmentInstance, CardInstance, SkinInstance, RedisLike } from '@nw/shared';
 import {
   EQUIPMENT_DEFS, GACHA_MATERIAL_GRANTS, makeGachaEquipInstance, EQUIPMENT_INV_CAP,
   EQUIP_FULL_COMPENSATION_COINS, EQUIP_INV_FULL_MAIL_COUNT, CARD_DEFS,
@@ -22,6 +24,7 @@ import {
 import { grantCards as grantHeroCards } from './cards.js';
 import { insertSystemMail } from './mail.js';
 import { toInstanceDoc } from './equipment.js';
+import { toInstanceDoc as toSkinInstanceDoc } from './skin.js';
 import type { MetaSocialsvcClient } from './socialsvcClient.js';
 import type { CommercialClient, GachaResultEntry, WalletView } from './commercialClient.js';
 
@@ -52,33 +55,93 @@ export interface OverflowSummary {
 }
 
 /**
- * Mark each result as duplicate or not (compared against current inventory + already granted in
- * this batch; used by the client for loot-box display). Character cards are routed to `cardInv`
- * on delivery (not `inventory.skins`), so they're checked against `ownedCardDefIds` instead —
- * otherwise a card already owned (at any level) would still show the NEW badge every draw.
+ * Mark each result as duplicate or not — drives the reveal UI's NEW badge. "Duplicate" means
+ * lifetime ownership, not merely current possession (2026-08-08 fix; the previous version only
+ * special-cased character cards — see the two bug classes below — and dumped materials/equipment
+ * into the generic "skin" branch, whose within-batch-only dedup meant a material/equipment item the
+ * player had owned for ages still got badged NEW on every draw as long as it wasn't a *second* copy
+ * within the very same pull):
+ *   - materials/equipment routed to `save.materials`/`equipmentInstances` (not `inventory.skins`)
+ *     were never checked against real ownership at all — every first-in-batch material/equipment
+ *     result showed NEW regardless of how much was already in the bag.
+ *   - character cards routed to `cardInv` were checked against `ownedCardDefIds`, which is correct
+ *     but doesn't survive every last copy of a defId being consumed away (fusion fodder) — same gap
+ *     equipment/materials have when spent to zero then re-earned.
+ * Callers own the ownership computation per kind, unioning the live inventory (current cardInv/
+ * equipmentInstances/materials-with-count>0) with that kind's `save.everOwned.*` ledger (additive-
+ * only, survives salvage/consume/sell — see SaveData.everOwned doc comment) so a legacy save whose
+ * everOwned ledger has gaps still gets the right answer from the live inventory, and vice versa.
+ *
+ * `newSkins` stays a separate concern from the skin `duplicate` flag: it drives `inventory.skins`
+ * $addToSet (has this exact skinId ever landed in the array?), which must stay keyed off the plain
+ * array — a skin currently absent from inventory.skins (sold via auction escrow) needs re-adding
+ * even though `everOwned.skin` means it's not a "NEW" pull.
  */
 export function markDuplicates(
   ownedSkins: string[],
-  ownedCardDefIds: string[],
+  everOwnedSkins: string[],
+  ownedHero: string[],
+  ownedEquipment: string[],
+  ownedMaterial: string[],
   results: GachaResultEntry[],
 ): { newSkins: string[]; marked: { itemId: string; rarity: Rarity; duplicate: boolean }[] } {
   const owned = new Set(ownedSkins);
-  const ownedCards = new Set(ownedCardDefIds);
+  const everOwnedSkin = new Set(everOwnedSkins);
+  const ownedHeroSet = new Set(ownedHero);
+  const ownedEquipSet = new Set(ownedEquipment);
+  const ownedMaterialSet = new Set(ownedMaterial);
   const newSkins: string[] = [];
   const marked = results.map((r) => {
     if (CARD_DEFS[r.itemId]) {
-      const duplicate = ownedCards.has(r.itemId);
-      if (!duplicate) ownedCards.add(r.itemId);
+      const duplicate = ownedHeroSet.has(r.itemId);
+      if (!duplicate) ownedHeroSet.add(r.itemId);
       return { itemId: r.itemId, rarity: r.rarity, duplicate };
     }
-    const duplicate = owned.has(r.itemId);
-    if (!duplicate) {
+    if (EQUIPMENT_DEFS[r.itemId]) {
+      const duplicate = ownedEquipSet.has(r.itemId);
+      if (!duplicate) ownedEquipSet.add(r.itemId);
+      return { itemId: r.itemId, rarity: r.rarity, duplicate };
+    }
+    const matGrant = GACHA_MATERIAL_GRANTS[r.itemId];
+    if (matGrant) {
+      const matKey = Object.keys(matGrant)[0]!;
+      const duplicate = ownedMaterialSet.has(matKey);
+      if (!duplicate) ownedMaterialSet.add(matKey);
+      return { itemId: r.itemId, rarity: r.rarity, duplicate };
+    }
+    // Skin: `alreadyInInv` alone still decides `newSkins` (what to $addToSet); `duplicate` (the badge)
+    // additionally checks everOwnedSkin so a re-pulled, previously-sold skin doesn't show NEW.
+    const alreadyInInv = owned.has(r.itemId);
+    const duplicate = alreadyInInv || everOwnedSkin.has(r.itemId);
+    if (!alreadyInInv) {
       owned.add(r.itemId);
       newSkins.push(r.itemId);
     }
     return { itemId: r.itemId, rarity: r.rarity, duplicate };
   });
   return { newSkins, marked };
+}
+
+/**
+ * Union the live inventory (current cardInstances/equipmentInstances defIds + materials-with-
+ * count>0) with each kind's `save.everOwned.*` ledger into the ownedHero/ownedEquipment/
+ * ownedMaterial inputs `markDuplicates` needs. See `markDuplicates`'s doc comment for why the union
+ * — live inventory covers a legacy save whose everOwned ledger predates that item's first grant;
+ * everOwned covers an item since spent/salvaged/fused away entirely. Pure/sync so callers can fetch
+ * `cardDocs`/`equipDocs` concurrently with the save read instead of serializing after it.
+ */
+export function unionOwnershipForDuplicateCheck(
+  cardDefIds: string[],
+  equipDefIds: string[],
+  save: SaveData,
+): { ownedHero: string[]; ownedEquipment: string[]; ownedMaterial: string[] } {
+  const ownedHero = [...new Set([...cardDefIds, ...(save.everOwned?.hero ?? [])])];
+  const ownedEquipment = [...new Set([...equipDefIds, ...(save.everOwned?.equipment ?? [])])];
+  const ownedMaterial = [...new Set([
+    ...Object.entries(save.materials ?? {}).filter(([, n]) => n > 0).map(([k]) => k),
+    ...(save.everOwned?.material ?? []),
+  ])];
+  return { ownedHero, ownedEquipment, ownedMaterial };
 }
 
 /**
@@ -99,6 +162,7 @@ export async function deliverGrant(
   materialInc?: Record<string, number>,
   equipInstances?: Record<string, EquipmentInstance>,
   equipMailOverflowCount?: number,
+  skinInstances?: SkinInstance[],
 ): Promise<SaveData> {
   // Equipment instances live in the equipmentInstances collection (2026-07-26 split, see equipment.ts) —
   // upsert them independently of the saves write below, idempotent by instanceId (deterministic ids
@@ -111,6 +175,17 @@ export async function deliverGrant(
     await cols.equipmentInstances.updateOne(
       { _id: id },
       { $set: toInstanceDoc(inst, accountId) },
+      { upsert: true },
+    );
+  }
+  // Skin instances (ITEM_IDENTITY_DESIGN.md task1, 2026-08-08): one row per skin result — first pull or
+  // dupe alike, unlike `newSkins` below which only covers first-time-ever ones (for everOwned/NEW-badge
+  // purposes). Upsert-by-id is idempotent the same way as equipInstances above (deterministic ids, see
+  // deliverLootBox), so a reconciliation retry never double-mints.
+  for (const inst of skinInstances ?? []) {
+    await cols.skinInstances.updateOne(
+      { _id: inst.id },
+      { $set: toSkinInstanceDoc(inst, accountId) },
       { upsert: true },
     );
   }
@@ -174,7 +249,18 @@ export async function deliverMailGrant(
   coinsAfter: number | null,
   now: number,
   materialInc: Record<string, number> = {},
+  skinInstances: SkinInstance[] = [],
 ): Promise<SaveData> {
+  // Skin instances (ITEM_IDENTITY_DESIGN.md task1, 2026-08-08): a mail attachment for a skin the
+  // player already owns used to vanish on claim (filtered out of `newSkins` upstream, same bug class as
+  // the gacha loot-box path) — every attached skin now becomes a real instance regardless.
+  for (const inst of skinInstances) {
+    await cols.skinInstances.updateOne(
+      { _id: inst.id },
+      { $set: toSkinInstanceDoc(inst, accountId) },
+      { upsert: true },
+    );
+  }
   const set: Record<string, unknown> = { 'save.updatedAt': now };
   if (coinsAfter !== null) set['save.wallet.coins'] = coinsAfter;
   const inc: Record<string, number> = { 'save.rev': 1, rev: 1 };
@@ -327,6 +413,7 @@ export async function deliverLootBox(
   let equipMailOverflowCount = invCount < EQUIPMENT_INV_CAP ? 0 : (cur?.save.equipMailOverflowCount ?? 0);
 
   const skinResults: GachaResultEntry[] = [];
+  const skinInstances: SkinInstance[] = [];
   const materialInc: Record<string, number> = {};
   const equipInstances: Record<string, EquipmentInstance> = {};
   const equipMailInstances: EquipmentInstance[] = [];
@@ -352,17 +439,27 @@ export async function deliverLootBox(
     } else if (CARD_DEFS[r.itemId]) {
       cardDefs.push(CARD_DEFS[r.itemId]!);
     } else {
+      // Skin (ITEM_IDENTITY_DESIGN.md task1, 2026-08-08): every result becomes a real instance — first
+      // pull or dupe alike, deterministic id from orderId+index (mirrors the equipment branch above), so
+      // a reconciliation retry of this whole call never double-mints. markDuplicates below still decides
+      // the NEW-badge / everOwned bookkeeping, but no longer decides whether an instance is granted at
+      // all — that used to be the same flag, which is the bug: a "duplicate" pull got nothing.
       skinResults.push(r);
+      skinInstances.push({ id: `skin_gacha_${orderId}_${i}`, skinId: r.itemId, sourceType: `gacha:${orderId}`, obtainedAt: now });
     }
   }
 
-  const { newSkins } = markDuplicates(owned, [], skinResults);
+  // Only `newSkins` is consumed here (drives inventory.skins $addToSet) — `skinResults` is already
+  // filtered to skin-kind entries, so the other three ownership args (unused by the skin branch's
+  // `duplicate` flag, which this call site discards) are irrelevant; pass empty.
+  const { newSkins } = markDuplicates(owned, [], [], [], [], skinResults);
   const hasMixed = Object.keys(materialInc).length > 0 || Object.keys(equipInstances).length > 0;
   const save = await deliverGrant(
     cols, accountId, orderId, newSkins, coinsAfter, pityPatch, now,
     hasMixed ? materialInc : undefined,
     hasMixed ? equipInstances : undefined,
     equipMailInstances.length > 0 || equipCompensatedCoins > 0 ? equipMailOverflowCount : undefined,
+    skinInstances.length > 0 ? skinInstances : undefined,
   );
 
   if (equipMailInstances.length > 0) {
@@ -433,11 +530,16 @@ export async function deliverOrder(
   now: number,
 ): Promise<{ save: SaveData; overflow?: OverflowSummary }> {
   // Fate Point redemption (§7): a single self-chosen legendary skin, delivered idempotently like a shop skin.
+  // Grants a real instance even if already owned (ITEM_IDENTITY_DESIGN.md task1, 2026-08-08) — same fix
+  // as the gacha loot-box branch below, for the same reason: a redemption/purchase must never silently
+  // do nothing just because the player picked something they already have.
   if (order.kind === 'fate' && order.result.itemId) {
     const cur = await cols.saves.findOne({ _id: accountId });
     const owned = cur?.save.inventory.skins ?? [];
-    const newSkins = owned.includes(order.result.itemId) ? [] : [order.result.itemId];
-    const save = await deliverGrant(cols, accountId, order._id, newSkins, coinsAfter, pityPatch, now);
+    const itemId = order.result.itemId;
+    const newSkins = owned.includes(itemId) ? [] : [itemId];
+    const skinInstances: SkinInstance[] = [{ id: `skin_fate_${order._id}`, skinId: itemId, sourceType: 'fate', obtainedAt: now }];
+    const save = await deliverGrant(cols, accountId, order._id, newSkins, coinsAfter, pityPatch, now, undefined, undefined, undefined, skinInstances);
     await commercial.orderDelivered({ orderId: order._id });
     return { save };
   }
@@ -463,7 +565,8 @@ export async function deliverOrder(
       return { save };
     }
     const newSkins = owned.includes(itemId) ? [] : [itemId];
-    const save = await deliverGrant(cols, accountId, order._id, newSkins, coinsAfter, pityPatch, now);
+    const skinInstances: SkinInstance[] = [{ id: `skin_shop_${order._id}`, skinId: itemId, sourceType: 'shop', obtainedAt: now }];
+    const save = await deliverGrant(cols, accountId, order._id, newSkins, coinsAfter, pityPatch, now, undefined, undefined, undefined, skinInstances);
     await commercial.orderDelivered({ orderId: order._id });
     return { save };
   }

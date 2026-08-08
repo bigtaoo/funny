@@ -54,9 +54,10 @@ export function CommandMixin<TBase extends MarchServiceBaseCtor>(Base: TBase): T
       // the march (see MarchDoc.leaderUnitType) so it renders identically for the owner and for enemies viewing it
       // in vision (who cannot otherwise read the owner's cardInv). See leaderUnit.ts::resolveLeaderUnitType.
       let leaderUnitType: string | undefined;
-      // ADR-051 (P3c): re-dispatch of an *idle* (停留) field team — commanded again straight from where it stands
-      // (move/occupy), without recalling home first. Set inside the team block below; drives the origin override,
-      // the from-tile ownership skip, the pool-deduction skip, and the atomic StationedDoc claim before insert.
+      // ADR-051 (P3c, scope extended 2026-08-08 to include attack): re-dispatch of an *idle* (停留) field team —
+      // commanded again straight from where it stands (attack/move/occupy), without recalling home first. Set
+      // inside the team block below; drives the origin override, the from-tile ownership skip, the
+      // pool-deduction skip, and the atomic StationedDoc claim before insert.
       let idleRedispatch = false;
       // 'move' (2026-07-23) is always team-based — "选中的部队" is a team, and a moved team parks on the tile as a
       // whole (unlike reinforce's faceless garrison), so there is no flat-pool move path.
@@ -75,9 +76,11 @@ export function CommandMixin<TBase extends MarchServiceBaseCtor>(Base: TBase): T
           cols.occupations.findOne({ worldId, ownerId: accountId, teamId }),
           cols.stationed.findOne({ worldId, ownerId: accountId, teamId }),
         ]);
-        // ADR-051 (P3c): a 停留 idle field team is NOT busy — it can be re-commanded in place (move/occupy) straight
-        // from where it stands (§4.3). A 驻扎 garrison stays locked (must recall first), as do marching/holding teams.
-        idleRedispatch = !!busyStationed && busyStationed.mode !== 'garrison' && (kind === 'occupy' || kind === 'move');
+        // ADR-051 (P3c): a 停留 idle field team is NOT busy — it can be re-commanded straight from where it stands,
+        // for any of attack/occupy/move (2026-08-08: attack added — user wanted parity with occupy, a
+        // forward-stationed team should be usable to launch a fresh siege without a round trip home first).
+        // A 驻扎 garrison stays locked (must recall first), as do marching/holding teams.
+        idleRedispatch = !!busyStationed && busyStationed.mode !== 'garrison' && (kind === 'occupy' || kind === 'move' || kind === 'attack');
         if (busyMarch || busyHold || (busyStationed && !idleRedispatch)) {
           throw new SlgError('TEAM_BUSY', 'Team is already marching, occupying, or stationed; recall it first');
         }

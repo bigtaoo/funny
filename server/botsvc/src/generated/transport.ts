@@ -186,12 +186,36 @@ export interface MatchStart {
   opponentSkins: string[];
 }
 
+/**
+ * Login-reconnect-prompt cold resume (2026-08-08 fix): a client reconnecting from a freshly
+ * launched app (not a live in-session WS blip) never received match_start in this process — it
+ * has no matchInfo to rebuild the engine from. Fields 5-13 mirror MatchStart so NetInputSource can
+ * reconstruct MatchStartInfo from conn_resync alone; a warm in-session reconnect (matchInfo already
+ * cached from this session's own match_start) simply ignores them as redundant.
+ */
 export interface ConnResync {
   seed: number;
   startFrame: number;
   /** non-empty frame log */
   log: FrameCmds[];
   curFrame: number;
+  roomId: string;
+  mode: MatchMode;
+  localSide: number;
+  /** opponent display name (UI use, display only) */
+  opponentName: string;
+  /** opponent 9-digit numeric public id (UI use, display only) */
+  opponentPublicId: string;
+  /** opponent's equipped title id (UI use, display only; empty string = no title) */
+  opponentTitle: string;
+  /** opponent's equipped avatar id (UI use, display only; empty string = no avatar) */
+  opponentAvatarId: string;
+  /** opponent's equipped character skin ids (UI use, display only; empty = no skins equipped, incl. bots) */
+  opponentSkins: string[];
+  /** side-0 player's deck (PVP_LOADOUT §6.2); both sides receive both decks for deterministic engine construction */
+  topDeck: string[];
+  /** side-1 player's deck */
+  bottomDeck: string[];
 }
 
 /**
@@ -1983,7 +2007,22 @@ export const MatchStart: MessageFns<MatchStart> = {
 };
 
 function createBaseConnResync(): ConnResync {
-  return { seed: 0, startFrame: 0, log: [], curFrame: 0 };
+  return {
+    seed: 0,
+    startFrame: 0,
+    log: [],
+    curFrame: 0,
+    roomId: "",
+    mode: 0,
+    localSide: 0,
+    opponentName: "",
+    opponentPublicId: "",
+    opponentTitle: "",
+    opponentAvatarId: "",
+    opponentSkins: [],
+    topDeck: [],
+    bottomDeck: [],
+  };
 }
 
 export const ConnResync: MessageFns<ConnResync> = {
@@ -1999,6 +2038,36 @@ export const ConnResync: MessageFns<ConnResync> = {
     }
     if (message.curFrame !== 0) {
       writer.uint32(32).uint32(message.curFrame);
+    }
+    if (message.roomId !== "") {
+      writer.uint32(42).string(message.roomId);
+    }
+    if (message.mode !== 0) {
+      writer.uint32(48).int32(message.mode);
+    }
+    if (message.localSide !== 0) {
+      writer.uint32(56).uint32(message.localSide);
+    }
+    if (message.opponentName !== "") {
+      writer.uint32(66).string(message.opponentName);
+    }
+    if (message.opponentPublicId !== "") {
+      writer.uint32(74).string(message.opponentPublicId);
+    }
+    if (message.opponentTitle !== "") {
+      writer.uint32(82).string(message.opponentTitle);
+    }
+    if (message.opponentAvatarId !== "") {
+      writer.uint32(90).string(message.opponentAvatarId);
+    }
+    for (const v of message.opponentSkins) {
+      writer.uint32(98).string(v!);
+    }
+    for (const v of message.topDeck) {
+      writer.uint32(106).string(v!);
+    }
+    for (const v of message.bottomDeck) {
+      writer.uint32(114).string(v!);
     }
     return writer;
   },
@@ -2042,6 +2111,86 @@ export const ConnResync: MessageFns<ConnResync> = {
           message.curFrame = reader.uint32();
           continue;
         }
+        case 5: {
+          if (tag !== 42) {
+            break;
+          }
+
+          message.roomId = reader.string();
+          continue;
+        }
+        case 6: {
+          if (tag !== 48) {
+            break;
+          }
+
+          message.mode = reader.int32() as any;
+          continue;
+        }
+        case 7: {
+          if (tag !== 56) {
+            break;
+          }
+
+          message.localSide = reader.uint32();
+          continue;
+        }
+        case 8: {
+          if (tag !== 66) {
+            break;
+          }
+
+          message.opponentName = reader.string();
+          continue;
+        }
+        case 9: {
+          if (tag !== 74) {
+            break;
+          }
+
+          message.opponentPublicId = reader.string();
+          continue;
+        }
+        case 10: {
+          if (tag !== 82) {
+            break;
+          }
+
+          message.opponentTitle = reader.string();
+          continue;
+        }
+        case 11: {
+          if (tag !== 90) {
+            break;
+          }
+
+          message.opponentAvatarId = reader.string();
+          continue;
+        }
+        case 12: {
+          if (tag !== 98) {
+            break;
+          }
+
+          message.opponentSkins.push(reader.string());
+          continue;
+        }
+        case 13: {
+          if (tag !== 106) {
+            break;
+          }
+
+          message.topDeck.push(reader.string());
+          continue;
+        }
+        case 14: {
+          if (tag !== 114) {
+            break;
+          }
+
+          message.bottomDeck.push(reader.string());
+          continue;
+        }
       }
       if ((tag & 7) === 4 || tag === 0) {
         break;
@@ -2060,6 +2209,16 @@ export const ConnResync: MessageFns<ConnResync> = {
     message.startFrame = object.startFrame ?? 0;
     message.log = object.log?.map((e) => FrameCmds.fromPartial(e)) || [];
     message.curFrame = object.curFrame ?? 0;
+    message.roomId = object.roomId ?? "";
+    message.mode = object.mode ?? 0;
+    message.localSide = object.localSide ?? 0;
+    message.opponentName = object.opponentName ?? "";
+    message.opponentPublicId = object.opponentPublicId ?? "";
+    message.opponentTitle = object.opponentTitle ?? "";
+    message.opponentAvatarId = object.opponentAvatarId ?? "";
+    message.opponentSkins = object.opponentSkins?.map((e) => e) || [];
+    message.topDeck = object.topDeck?.map((e) => e) || [];
+    message.bottomDeck = object.bottomDeck?.map((e) => e) || [];
     return message;
   },
 };

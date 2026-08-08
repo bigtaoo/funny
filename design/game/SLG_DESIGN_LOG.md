@@ -1809,3 +1809,72 @@ cols.tiles.find({ worldId, type: 'base', ownerId: { $nin: excludeOwners } })
 
 **验证**：重跑 `pack_playerbase_atlas.js` + `patchMergedAtlas.js` 更新 `world_atlas.{png,json}`；`client/test/ui/cityAtlasContentTop.ui.ts`（9 例）+ `tsc --noEmit` 全绿。可视化验证走 [[worldmap-standalone-debug-render]] 记录的套路：`entries/web.ts` 临时加 `?worldmap&desk=N` 分支（reject-fast 的 `worldApi` stub + 手填 3×3 `tileCache`/`ctx.me.mainBaseTile`），起 `game` dev server，因为本机 Browser pane 这次又是"未显示无法合成帧"，改用 `client/` 下临时 `.mjs` 直接 Playwright 截图落盘（[[client-run-and-visual-verify]]）：Lv.1 真机截图确认地台边缘正好顶到绿色虚线 3×3 边界；Lv.10 仍能看到两侧留白（预期内，高度预算触底的档位这次没动，跟 2026-08-03 记的已知瑕疵是同一件事，留给后续美术地台加宽的返工）。验证完把临时 `?worldmap` 分支从 `web.ts` 完整 `git checkout` 还原，`.mjs` 截图脚本删除。
 **共享检出提醒**：这次会话期间主目录里另一个会话在并发改 `app.ts`/`SceneManager.ts`/`AuctionScene`/`CardScene`/`EquipmentScene`/`WorldMapRenderer/city.ts`/`tileStyle.ts`/`tileGraphics.ts`（HMR 日志能看到 `tileStyle.ts` 的改动通过 `fog.ts→WorldMapRenderer.ts→WorldMapScene.ts` 一路冒泡到 `web.ts`）——最终 `git add` 只精确列了本任务自己改的 3 个文件（`pack_playerbase_atlas.js` + `world_atlas.png/json`）+ 这两份设计文档，没有 `git add -A`，没有碰上述任何一个别人正在改的文件。
+
+## 2026-08-08：护盾/加速倒计时改天时分秒 + 护盾贴图改成持续动画（用户截图反馈）
+
+用户截图反馈两点：①主城状态卡的 `Protected (146282s)` / `Training ×2 (86374s)` 倒计时直接显示裸秒数，玩家看不懂；②主城上叠的护盾"就是一张图"，看不出这层半透明光泡是干什么用的（§35 引入的呼吸光泡，见本文件 S8-8 条目）。
+
+**倒计时格式**：`world.protected`/`world.speedup` 两个 i18n key 的 `{sec}s` 占位换成 `{d}天{h}时{m}分{s}秒`（en `{d}d {h}h {m}m {s}s`、de `{d}T {h}Std {m}Min {s}Sek`），复用 `AuctionScene.timeLeft` 早已确立的"永远显示四段、不裁零位"惯例（未裁剪：`0天23时59分34秒` 这类恰好不到一天的情况也照常显示"0天"，跟拍卖行 `d:0` 的展示方式一致，不引入第二套裁剪规则）。新增 `formatDuration.ts::dhmsFromMs(ms)`（毫秒 → `{d,h,m,s}` 整数对象）给两处调用点用：`WorldMapPanels/hud.ts` 的 buff 行、`CityScene/modals.ts` 训练面板的加速提示行。只动这两个 key——世界地图行军列表的 `{remaining}s`、`world.occupying`/`world.occupyingMine` 的裸秒数不在本次截图反馈范围内，未改。
+
+**护盾动画**：原实现（`WorldMapRenderer/city.ts` 的 `shieldFx` Graphics）只在 `refreshCityLayer` 被触发时重绘一次（拍板/缩放/~5s 行军轮询/`invalidatePool`），呼吸用 `Math.sin(Date.now()/450)` 算相位——但相机不动时压根没人再调 `refreshCityLayer`，所以呼吸实际上几乎不动，静止画面看起来就是一张贴死的半透明椭圆图。改法：把绘制逻辑抽成 `WorldMapRenderer/shieldFx.ts::drawShieldFx(g, geom, t)`，`t` 用 `WorldMapContext.shieldAnimT`（`lifecycle.update(dt)` 里逐帧累加的秒数，不用 `Date.now()`，跟其它倒计时/动画一样可测）；`city.ts` 的 `refreshCityLayer` 算出椭圆的局部坐标（`cx/cy/rx/ry/tp`，只随贴图尺寸/缩放变化）后缓存进 `ctx.shieldGeom`（`cacheKey → geom`），`lifecycle.update` 每帧遍历这个 map 用当前 `shieldAnimT` 重绘，不用重算贴图布局，开销可忽略（视口内同时存在护盾的基地本就是少数）。视觉上除了原有的呼吸椭圆（保留，测试仍 spy 这一个 `drawEllipse` 调用不变），加了两层新东西让它读起来像"场"而不是"贴图"：外圈一条慢速旋转的虚线环（跟领地边界同款手绘虚线语言，只是转起来）+ 四个绕环反向旋转、错相闪烁的小光点。基地移除/失去保护时清 `shieldGeom` 里对应 key，`destroy()` 里整体清空，避免残留指向已销毁 Graphics 的条目。
+
+**验证**：`tsc --noEmit` + `npx webpack --mode production` 全绿；`vitest run --config vitest.ui.config.ts`（133 文件/1251 例全绿，含既有的 `worldMapShieldBubble.ui.ts`/`worldMapBuffRow.ui.ts`/`cityTrainTroops.ui.ts` 三个直接覆盖点，后两个的断言从 `.split('{sec}')` 改成 `.split('{d}')` 去匹配新模板前缀）。可视化核对：因为要看到真实 `protectedUntil` 需要拉起整条 worldsvc 后端 + 登录 + 入驻世界，成本远超这次纯前端视觉调整的量级，改用 `mcp__visualize__show_widget` 跑了一份跟 `drawShieldFx` 逐行对应的 canvas 版本（同样的三角函数/参数）做动画预览确认效果，未在真机截图——后续如果这层视觉再有反馈，用 [[worldmap-standalone-debug-render]] 记录的 `?worldmap&desk=N` 假数据套路能更快复现真实渲染路径。
+
+## 2026-08-08：Hero Roster 左侧导航图标（cards/armor/brush）补细节（用户截图反馈）
+
+用户截图反馈 Hero Roster 页左侧 [Hero Roster|Equipment|Skins] 导航条三个图标太单薄（细线描边、无填充），同一张截图里还提到大量 "Li Chuang" 卡片显示成黑白简笔火柴人——排查后确认后者是 `client/src/assets/units/infantry.png` 这张**既有静态 PNG**（Li Chuang 官方设定就是"涂鸦士兵"，故意比 Mara/Lena 的精细彩绘廉价），不是程序绘制、也不是素材缺失，且属于 `art-direction.md` 明确划给 AI 图的角色插画范畴，程序绘制改不动。跟用户确认后**范围收窄为只改三个导航图标**（`drawCards`/`drawArmor`/`drawBrush`，`icons/ui.ts`/`icons/equipment.ts`），角色插画不动。
+
+**实现**：延续 §63 定的"只加填充/细节层，不改剪影"路子（`drawArmor`/`drawHourglass` 那套 layered-alpha 手法，无渐变）：
+- `drawCards`：前后两张卡各加一层低 alpha 纯色填充（`0.12`/`0.16`）给出"纸张厚度"，前卡左上角加一个实心圆点当"卡片角标"，两条 ruled line 下移到留出角标的位置。
+- `drawArmor`：盾身轮廓内加一层 `0.16` alpha 填充；十字横带交叉点加一个实心圆当"铆钉盾徽"；顶角两颗铆钉从空心圆环改实心点（`beginFill` 而非 `pen.circle`），小尺寸下更醒目。`drawArmorHeavy` 的侧边铆钉同步改实心，跟基础层一致。
+- `drawBrush`：这是本次唯一返工过的——第一版按"手柄+铁箍+等宽刷头三角"填充，结果在小尺寸下刷头宽度跟手柄相近，读成了铅笔而非画笔。改法：刷头半宽放大到铁箍半宽的 ~2.7 倍（`s*0.16` vs `s*0.06`），让轮廓在铁箍处明显"炸开"成扇形；刷头内部加两条低 alpha 单根刷毛线增加"毛"的质感；笔尖加一个实心圆点（蘸料）+ 一道拖出的颜料短线。手柄本身也补了一层填充 + 铁箍改实心。
+
+**验证**：`tsc --noEmit` 全绿。可视化验证：Browser pane 这次同样"未显示无法合成帧"（[[client-run-and-visual-verify]] 记录的已知环境限制），改走同一篇记录的 Playwright-to-file 套路——`entries/web.ts` 临时加 `?navicons` 分支起一个只 `buildIcon()` 五张图（`cards`/`armor`/`armorHeavy`/`brush`×2）的独立 canvas，`client/` 下临时 `.mjs` 用 `chromium.launch({args:['--use-gl=angle','--use-angle=swiftshader']})` 截图落盘，同时按 300px 大图和 36px（实际导航栏尺寸）两档核对：小尺寸下三个图标都还清楚可辨，`drawBrush` 改版后明显读成"扇形刷头"而非铅笔。验证完删掉临时分支 + `.mjs` 脚本，`git diff client/src/entries/web.ts` 归零。**共享检出提醒**：截图过程中另一个会话正并发改 `WorldMapRenderer/shieldFx.ts`（即上一条日志记的护盾动画重构，见其"共享检出提醒"），中途一度让整个 webpack bundle 编译失败（`drawShieldFx` 导出名不存在），等了几轮 HMR 后对方改完自愈，没有碰这个文件；最终 `git add` 只列了本任务自己改的 3 个源文件 + 这份设计文档。
+
+## 2026-08-08：护盾特效借鉴 daydayup 的 additive-glow + 破碎闪光（用户提议）
+
+用户提到另一个项目 `D:\daydayup`（PixiJS v8 俯视角射击 roguelite）的角色护盾效果不错，问能不能借鉴，同时给了前提——"如果性能耗费太大就算了"。
+
+**先看 daydayup 怎么做的**：`client/src/game/fx/filters.ts::EnergyShieldFilter` 是一个自定义 fragment shader（Pixi `Filter`），套在角色贴图容器上做"轮廓光晕"（UV 距中心距离 `smoothstep` 出一圈环，`sin(uTime)` 调呼吸相位，`color.rgb += uColor*glow` 把颜色叠进贴图本身）；护盾破碎那一下是另一套东西——`FxController.flash()`，纯 `Graphics` 画 5 层同心圆叠加 `blendMode:'add'`，170ms 生命周期后销毁。
+
+**能不能照搬**：不能 1:1 搬——那是自定义 Pixi `Filter`，每个套 filter 的对象要过一次离屏渲染目标（RTT）合成，这是 filter 机制的固定开销，跟 shader 本身轻不轻无关；本项目的护盾从来是 `PIXI.Graphics` 直接画（矢量描边/填充），没有、也不打算引入自定义 shader pipeline，为了这一个不大的椭圆光泡去接一条新的 filter 管线不值——这正是用户说的"性能耗费太大就算了"那一挡,所以 shader 本体没有借。
+
+**借的是什么**：daydayup 的 shader 里"叠色进贴图"那部分没法在纯 Graphics 方案里等价（那是像素级的"给角色本身打光"，Graphics 只能"贴一层额外图形盖上去"），但另外两个思路是纯 CPU/矢量手法，能直接搬：① **additive 混合**（`blendMode:'add'`，daydayup 的 `flash()`/trail dots 用的手法，本项目 `GachaScene/reveal.ts` 的传说卡拖尾也已经在用同一个 API）——一层薄薄的半透明色，正常混合（`normal`）叠在纸色背景上看起来还是"半透明贴纸"，换成 additive 之后同样的颜色/alpha 会真的"发亮"，视觉上更像"能量场"而不是"多一层灰蓝色蒙版"；② **护盾破碎的一次性闪光**（daydayup 的 `shield_break` 同心圆爆闪）——本项目原来护盾到期就是悄无声息地消失，什么反馈都没有,加一个瞬间的"啵"一下的环形爆闪，玩家才能感知到"保护刚刚结束了"。
+
+**实现**（`WorldMapRenderer/shieldFx.ts` 拆成三层）：
+- `drawShieldFx`→拆成 `drawShieldDome`（原来的呼吸椭圆，`shieldFx` 子节点不变，保持 normal 混合——它是"玻璃罩"，不是"光"，跟纸感背景更协调；既有测试仍 spy 这一个 `drawEllipse` 调用，未受影响）+ `drawShieldGlow`（原来那圈旋转虚线环 + 4 个闪烁点，挪到新的 `shieldGlowFx` 子节点，创建时设 `blendMode = PIXI.BLEND_MODES.ADD`）。
+- 新增 `drawShieldBreakFx`：3 层同心椭圆环，随 `age`（0~`SHIELD_BREAK_LIFE=0.4s`）向外扩散、线宽和透明度同步衰减到 0，挂在新的 `shieldBreakFx` 子节点（同样 additive）。
+- 触发点：`city.ts::refreshCityLayer` 判断 `tile.protectedUntil` 已过期的分支里，如果 `ctx.shieldGeom` 里还留着这个 `cacheKey`（说明上一次重绘时还在保护中，这一次刚掉），就把当时缓存的几何形状塞进新的 `ctx.shieldBreakFx` map（`age:0`），`lifecycle.update` 逐帧给它加 `age`、重绘，超过生命周期就清空 Graphics + 删条目。
+- 性能：额外开销只是——原来一层 Graphics 拆成两层（多一次 `clear`+ 重绘,同数量级的矢量指令，无新增采样/RTT）；破碎闪光是极低频事件（一个基地的保护期到期这件事本身几小时才发生一次）+ 400ms 生命周期到时即挂空，不会常驻。跟 daydayup 的自定义 Filter 比是同一件事"用更便宜的手法造类似的视觉印象"，量级上更接近它的 `flash()`（纯 Graphics + additive）而不是 `EnergyShieldFilter`（自定义 shader + RTT）。
+
+**验证**：`tsc --noEmit` + `npx webpack --mode production` 全绿；`vitest run --config vitest.ui.config.ts`（134 文件/1255 例全绿，含 `worldMapShieldBubble.ui.ts` 四例——`drawShieldDome` 仍是唯一一次 `drawEllipse` 调用，未受拆分影响）。可视化核对：跟上一条一样，用 `mcp__visualize__show_widget` 做了跟新代码逐行对应的 canvas 预览（含一个手动触发"护盾破碎"的按钮），确认呼吸 dome + additive 发光环 + 破碎闪光三层叠起来的视觉效果，未拉起真实 worldsvc 后端验证。
+
+**补测试**（用户要求，同日）：`worldMapShieldBubble.ui.ts` 新增一个 describe 块共 5 例——① 有效护盾在独立的 `shieldGlowFx`（`blendMode===PIXI.BLEND_MODES.ADD`）上画出 4 个 `drawCircle` 闪烁点；② 无护盾时 `shieldGlowFx` 同样一次 `drawCircle` 都不画；③ 两次 `invalidatePool()` 之间把 `tileCache` 里同一基地的 `protectedUntil` 从"未来"改成"过去"（模拟真实时间流逝/`tile_update` 推送），断言 `ctx.shieldGeom` 转移到 `ctx.shieldBreakFx`（`age:0`）且新出现的 `shieldBreakFx` 子节点也是 additive；④ 从未被保护过的基地两次重绘都不会误触发 break flash；⑤ 直接调用 `ctx.view.update(SHIELD_BREAK_LIFE + 0.1)`（同 `worldMapVignette.ui.ts` 已确立的"直接调 lifecycle mixin 方法"套路），断言 `shieldBreakFx` 条目在生命周期耗尽后被清掉。全部通过真实 `WorldMapContext`/`WorldMapRenderer`（非 mock 的 fake ctx），跟原有四例同一套 harness。
+
+## 2026-08-08：进攻队伍选择器对"停留中"队伍的忙碌判定跟服务端不一致——攻击一个看着"空闲"的队伍却报 TEAM_BUSY（用户截图报告，账号 tao）
+
+用户截图：让队伍 1 进攻某玩家，一直提示 "Marching / occupying"，但队伍在基地界面看着是空闲的。
+
+**排查**：`Marching / occupying` 就是 `world.team.busy`（`TEAM_BUSY` 错误码）的文案，不是渲染卡死——服务端真的认为队伍 1 处于占用状态。登生产 VPS 只读查了账号 tao（`accountId a84257d2-…`, world `s1-0`）的 `marches`/`occupations`/`stationed` 三张表（技术见 `game-vps-access-2026-07-14` memory）：`marches` 为空，但 `occupations` 里有一条队伍 1（`teamId:'t1'`）在 tile `(33,289)` 的占领保持记录，`dueAt` 几乎正好是查询那一刻——即队伍 1 刚打赢一次占领、进入 ~5 分钟保持倒计时，随后（几秒后复查）保持结束，落成一条 `stationed` 文档（`mode:'idle'`，即 ADR-051 的"停留"）。
+
+**根因**：队伍 1 当时/随后确实"闲"在野外某格（停留/占领保持中），不是闲在基地——但地图右侧的「⚑ Marches」面板只读 `ctx.marches`（行军中的过境记录），完全不展示占领保持/停留状态，玩家没有任何界面能看到"队伍 1 其实在外面"。真正的 bug 出在 `WorldMapNet.showTeamPicker`（`client/src/scenes/worldmap/WorldMapNet.ts`）的 `busyTeamIds` 过滤：它对"停留"（`mode:'idle'`）队伍的忙碌判定写死为"只有 `mode==='garrison'`（驻扎）才算忙"，注释称这是"镜像服务端的宽松判定"——但服务端 `combatMarch/command.ts` 的 `idleRedispatch` 旁路**只对 `kind==='occupy'` 或 `'move'` 生效，从不包括 `'attack'`**：一个停留中的队伍不能被直接下令进攻，必须先召回。所以进攻选择器（`kind:'attack'`）把停留中的队伍 1 当"空闲"列出来给玩家选，玩家选中后请求送到服务端，服务端按正确规则拒绝，报 `TEAM_BUSY`——客户端过滤条件和服务端真实许可范围不一致。
+
+**第一版修复**（先做的，后被用户否决）：以为客户端筛选口径需要"收紧"去对齐服务端——`busyTeamIds` 的 stationed 过滤改成按 `kind` 区分，`'attack'` 时任何停留队伍都算忙。补了 3 个客户端回归例（含临时回退确认会挂、恢复确认转绿），`tsc --noEmit` + 全量 `npm test`/`npm run test:ui` 全绿。
+
+**用户澄清真实需求**：把结果给用户看后，用户说要的效果是反过来的——"我要的结果是攻城和打地一样的，队伍停留在外面的时候也是可用过去进攻的"。也就是说 P3c 原设计"idleRedispatch 只放行 `move`/`occupy`，`attack` 故意排除"这条 2026-07-24 的范围限制本身就不是用户想要的行为；第一版修复精确对齐了服务端的（错误）现状，方向反了。
+
+**改成扩展服务端 `idleRedispatch` 范围**（`combatMarch/command.ts`）：把判断条件的 `kind==='occupy' || kind==='move'` 加上 `|| kind==='attack'`。走查了 `startMarch` 剩余分支——目标校验（siege 的所有者/连地/护盾/友军检查）只看 `toTile`，跟 `fromTile`（是否是队伍当前站的野战格而非玩家基地）无关，`idleRedispatch` 已有的兵力快照/兵池豁免/领地校验跳过/原子 `findOneAndDelete` 都是按 kind 通用生效的代码路径，加 `attack` 不需要额外分支——确认放行是安全的。
+
+**同步撤销客户端第一版的"kind 区分"**（`WorldMapNet.ts`）：改回三种 kind 统一处理——只要不是 `mode==='garrison'`，停留队伍永不算忙，跟扩展后的服务端严格对齐。
+
+**测试**：
+- `worldMapOccupyTeamPicker.ui.ts` 的 3 个新例翻转期望（原来断言"进攻选择器排除停留队伍"，现在断言"进攻选择器和占领/移动选择器一样能选中停留队伍"）。
+- `field-redispatch.e2e.test.ts` 新增「re-dispatch attack」例：队伍停留在野战格 A，直接对另一玩家的地块发起进攻（不召回），断言 `mv.kind==='attack'`、`mv.fromTile` 是 A 而不是主城、旧驻留 doc 被原子释放、兵池分毫不动——跟已有的 move/occupy 再指挥例同一套断言风格。
+- `teams.e2e.test.ts` 里一条依赖旧行为的断言过期失效：「占领 hold 结算后队伍停留在野战格，直接进攻会被拒绝，须先召回」——这条断言测的正是用户想改掉的旧行为，整段重写为「占领 hold 进行中（`occupations` 文档还在）依然无条件拒绝任何指令（这部分不受影响）；hold 结算、队伍落成停留 idle 后，能直接从该格发起新的进攻」。
+- 两处都先跑通旧代码确认会挂（`promise resolved ... instead of rejecting` / `expected true to be false`），改完代码后确认转绿。
+
+**验证**：`server/worldsvc` 相关 3 个 e2e 文件（`field-redispatch.e2e.test.ts` 5 例、`teams.e2e.test.ts` 19 例）+ 全量 `npx vitest run`（worldsvc 整包）全绿；client 侧 `tsc --noEmit` + `npm test`（151/1224）+ `npm run test:ui`（135/1269）全绿。
+
+**教训**：修 bug 前先把"服务端当前行为"当成"正确行为"去对齐客户端，是默认假设服务端设计没问题——但这次服务端那条范围限制本身就是产品决策的对象，不是既定事实。跟用户确认完修复效果后再定案，避免"修对了旧设计、修错了新需求"。
+
+**补测试（同日，用户问"有新的测试需要加吗"）**：之前的「re-dispatch attack」e2e 例只测了行军创建（原点回落、驻留 doc 原子释放），从没真正跑过战斗结算——因为在这个功能之前，"停留队伍被再指挥去攻城、还真的打了一场仗"这个状态组合根本不可达（attack 之前压根不能被 idle-redispatch），不是"补一个已有覆盖的重复例"，是补一块新出现的状态空间。`teams.e2e.test.ts` 加两例：①**打赢**——地块易主，队伍打完之后彻底自由（无行军、无停留，跟从主城出发打赢的处置完全一样，读 `combatSiege/arrival.ts` 的赢分支确认——赢了从不 park 队伍，兵直接变成地块驻军值）；②**打输**——幸存兵力经由 travel-time 返程一路走回**主城**（`mainBaseTile`），不是回到出发的野战格（读 `combatShared.ts::startReturnMarch` 确认它永远算去主城的路径，跟出发点无关）。两例都先临时改回旧条件确认真的会报 TEAM_BUSY，再恢复确认转绿。

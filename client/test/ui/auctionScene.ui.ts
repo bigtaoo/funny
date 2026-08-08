@@ -20,6 +20,8 @@ import { setToastSink } from '../../src/net/log';
 import { cardInstanceArtUrl } from '../../src/render/cardArt';
 import { skinEquipKey, skinDisplayName } from '../../src/game/meta/skinDefs';
 import { UnitType } from '@nw/engine/types';
+import { SCALE as FORM_SCALE } from '../../src/scenes/AuctionScene/createForm';
+import { snapFont } from '../../src/render/fontScale';
 
 // Every export passes through untouched except cardInstanceArtUrl, wrapped in vi.fn (keeping its
 // real implementation) so the 2026-08-01-scoping spec below can inspect call arguments.
@@ -123,6 +125,19 @@ function findLabelPos(container: PIXI.Container, label: string): { x: number; y:
   const walk = (node: PIXI.Container): void => {
     if (found) return;
     if (node instanceof PIXI.Text && node.text === label) { found = { x: node.x, y: node.y }; return; }
+    for (const c of node.children) walk(c as PIXI.Container);
+  };
+  walk(container);
+  return found;
+}
+
+/** Find the (first) PIXI.Text node whose text matches `label` and return the node itself
+ *  (for asserting style — fontSize/fontWeight/etc — rather than just position). */
+function findTextNode(container: PIXI.Container, label: string): PIXI.Text | null {
+  let found: PIXI.Text | null = null;
+  const walk = (node: PIXI.Container): void => {
+    if (found) return;
+    if (node instanceof PIXI.Text && node.text === label) { found = node; return; }
     for (const c of node.children) walk(c as PIXI.Container);
   };
   walk(container);
@@ -233,7 +248,7 @@ describe('AuctionScene — auctionLabel()', () => {
   });
 
   // 2026-08-08: equipment used to get "+N" spliced onto the name here; the level now comes out of
-  // list.ts as a separate icon-star row (auctionEquipLevel) instead — auctionLabel itself is bare name.
+  // list.ts as a separate icon-star row (auctionItemLevel) instead — auctionLabel itself is bare name.
   it('an equipment listing\'s label is the bare name, with no "+N" level suffix', () => {
     const scene = buildScene();
     const inst: EquipmentInstance = { id: 'e1', defId: 'wp_pencil', rarity: 'common', level: 3, affixes: [] };
@@ -241,23 +256,38 @@ describe('AuctionScene — auctionLabel()', () => {
       .toBe(scene.equipName('wp_pencil'));
     scene.destroy();
   });
+
+  // 2026-08-08 follow-up: the card branch had the same bug — "Li Chuang Lv.3" text while every other
+  // item view (including the roster/detail card treatment) had already moved to stars. Bare name here
+  // too, level comes out of list.ts's icon-star row like equipment.
+  it('a card listing\'s label is the bare name, with no "Lv.N" level suffix', () => {
+    const scene = buildScene();
+    const inst: CardInstance = { id: 'c1', defId: 'lichuang', level: 3, gear: {}, locked: false };
+    expect(scene.auctionLabel(makeAuction({ itemType: 'card', item: { instance: inst } })))
+      .toBe(scene.cardName('lichuang'));
+    scene.destroy();
+  });
 });
 
-// ── auctionEquipLevel() / auctionLabelText() — the level-extraction + text-star fallback that
-// replaced the old "+N" string splice (2026-08-08, see AUCTION_DESIGN.md) ────────────────────────
+// ── auctionItemLevel() / auctionItemMaxLevel() / auctionLabelText() — the level-extraction +
+// text-star fallback that replaced the old "+N" / "Lv.N" string splices (2026-08-08, see
+// AUCTION_DESIGN.md; extended to cover cards the same day once the card branch turned up unfixed) ──
 
-describe('AuctionScene — auctionEquipLevel() / auctionLabelText()', () => {
-  it('auctionEquipLevel is 0 for a non-equipment listing, and for an equipment listing with no instance', () => {
+describe('AuctionScene — auctionItemLevel() / auctionLabelText()', () => {
+  it('auctionItemLevel is 0 for material listings, and for equipment/card listings with no instance', () => {
     const scene = buildScene();
-    expect(scene.auctionEquipLevel(makeAuction({ itemType: 'material', item: { material: 'scrap' } }))).toBe(0);
-    expect(scene.auctionEquipLevel(makeAuction({ itemType: 'equipment', item: {} }))).toBe(0);
+    expect(scene.auctionItemLevel(makeAuction({ itemType: 'material', item: { material: 'scrap' } }))).toBe(0);
+    expect(scene.auctionItemLevel(makeAuction({ itemType: 'equipment', item: {} }))).toBe(0);
+    expect(scene.auctionItemLevel(makeAuction({ itemType: 'card', item: {} }))).toBe(0);
     scene.destroy();
   });
 
-  it('auctionEquipLevel reads the instance level straight through for an equipment listing', () => {
+  it('auctionItemLevel reads the instance level straight through for equipment and card listings', () => {
     const scene = buildScene();
-    const inst: EquipmentInstance = { id: 'e1', defId: 'wp_pencil', rarity: 'common', level: 5, affixes: [] };
-    expect(scene.auctionEquipLevel(makeAuction({ itemType: 'equipment', item: { instance: inst } }))).toBe(5);
+    const equip: EquipmentInstance = { id: 'e1', defId: 'wp_pencil', rarity: 'common', level: 5, affixes: [] };
+    const card: CardInstance = { id: 'c1', defId: 'lichuang', level: 3, gear: {}, locked: false };
+    expect(scene.auctionItemLevel(makeAuction({ itemType: 'equipment', item: { instance: equip } }))).toBe(5);
+    expect(scene.auctionItemLevel(makeAuction({ itemType: 'card', item: { instance: card } }))).toBe(3);
     scene.destroy();
   });
 
@@ -272,9 +302,17 @@ describe('AuctionScene — auctionEquipLevel() / auctionLabelText()', () => {
     scene.destroy();
   });
 
-  it('auctionLabelText is identical to auctionLabel for non-equipment classes (no level to fold in)', () => {
+  it('auctionLabelText appends text stars for a leveled card listing too (not the old "Lv.N" text)', () => {
     const scene = buildScene();
-    const auc = makeAuction({ itemType: 'card', item: {} });
+    const leveled: CardInstance = { id: 'c1', defId: 'lichuang', level: 3, gear: {}, locked: false };
+    expect(scene.auctionLabelText(makeAuction({ itemType: 'card', item: { instance: leveled } })))
+      .toBe(`${scene.cardName('lichuang')} ★★★`);
+    scene.destroy();
+  });
+
+  it('auctionLabelText is identical to auctionLabel for material/skin classes (no level to fold in)', () => {
+    const scene = buildScene();
+    const auc = makeAuction({ itemType: 'material', item: { material: 'scrap' } });
     expect(scene.auctionLabelText(auc)).toBe(scene.auctionLabel(auc));
     scene.destroy();
   });
@@ -608,6 +646,75 @@ describe('AuctionScene — editable price field (openNumInput)', () => {
   });
 });
 
+// ── create-form item field: doubled height + selected-item emphasis (2026-08-08) ─────────────
+
+describe('AuctionScene — create form item field (doubled height + emphasis)', () => {
+  it('doubles the standard 30*SCALE input-row height, and stays the very first modalHits entry', () => {
+    const scene = buildScene();
+    scene.createClass = 'material'; // default, always has a selected label ("Scrap")
+    scene.openCreateForm();
+
+    // The item field's tap-to-open-picker hit rect is pushed before any other row (qty/sale mode/
+    // price/buyer/buttons), so it's always index 0 regardless of createClass/saleMode.
+    const itemHit = scene.modalHits[0];
+    expect(itemHit.rect.h).toBe(60 * FORM_SCALE); // was 30*SCALE pre-2026-08-08
+
+    const openItemPicker = vi.spyOn(scene, 'openItemPicker');
+    itemHit.action();
+    expect(openItemPicker).toHaveBeenCalledTimes(1);
+    scene.destroy();
+  });
+
+  it('keeps the doubled height even with no item selected yet (only the emphasis styling differs)', () => {
+    const scene = buildScene(); // no getSave → listableEquipment() is empty → selectedItemLabel() is null
+    scene.createClass = 'equipment';
+    scene.createEquipId = null;
+    scene.openCreateForm();
+
+    expect(scene.selectedItemLabel()).toBeNull();
+    expect(scene.modalHits[0].rect.h).toBe(60 * FORM_SCALE);
+    scene.destroy();
+  });
+
+  it('renders the selected item name larger and bold — reads at a glance vs. the plain placeholder', () => {
+    const scene = buildScene();
+    scene.createClass = 'material'; // selectedItemLabel() → "Scrap"
+    scene.openCreateForm();
+
+    const label = findTextNode(scene.container, t('auction.scrap'));
+    expect(label).not.toBeNull();
+    // fontSize goes through snapFont() (snaps to a fixed size grid), so compare against that,
+    // not the raw 17*SCALE multiplication.
+    expect(label!.style.fontSize).toBe(snapFont(17 * FORM_SCALE));
+    expect(label!.style.fontWeight).toBe('bold');
+    scene.destroy();
+  });
+
+  it('renders the unselected placeholder at the plain, non-emphasized size/weight', () => {
+    const scene = buildScene();
+    scene.createClass = 'equipment';
+    scene.createEquipId = null; // no selection → placeholder shown
+    scene.openCreateForm();
+
+    const placeholder = findTextNode(scene.container, t('auction.tapChoose'));
+    expect(placeholder).not.toBeNull();
+    expect(placeholder!.style.fontSize).toBe(snapFont(13 * FORM_SCALE));
+    expect(placeholder!.style.fontWeight).toBe('normal');
+    scene.destroy();
+  });
+
+  it('does not overlap the row below it (Qty) after the extra height was added to the layout math', () => {
+    const scene = buildScene();
+    scene.createClass = 'material'; // isMaterial → a Qty row is rendered right after the item field
+    scene.openCreateForm();
+
+    const itemHit = scene.modalHits[0];
+    const qtyMinusHit = scene.modalHits[1]; // Qty's "−" stepper button, first hit pushed after the item field
+    expect(qtyMinusHit.rect.y).toBeGreaterThan(itemHit.rect.y + itemHit.rect.h);
+    scene.destroy();
+  });
+});
+
 // ── myBids() — "My Bids" tab: auctions where I'm currently the top bidder ─────────────────────
 
 describe('AuctionScene — myBids()', () => {
@@ -716,6 +823,44 @@ describe('AuctionScene — market cell equipment level display', () => {
     scene.render();
 
     expect(starRows(scene.container)).toHaveLength(0);
+    scene.destroy();
+  });
+});
+
+// ── renderAuctionCell() — card level as a real icon-star row, not "Lv.N" text (2026-08-08 follow-up:
+// the equipment branch above got fixed first pass, the card branch was missed) ──────────────────────
+
+describe('AuctionScene — market cell card level display', () => {
+  it('draws a gold-icon star row (one child per level) beneath the name for a leveled card listing', () => {
+    const scene = buildScene();
+    const inst: CardInstance = { id: 'c1', defId: 'lichuang', level: 3, gear: {}, locked: false };
+    scene.allAuctions = [makeAuction({ itemType: 'card', item: { instance: inst } })];
+    scene.activeTab = 'all';
+    scene.loading = false;
+    scene.render();
+
+    const rows = starRows(scene.container);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.children).toHaveLength(3);
+
+    // The old "Lv.3" splice must be gone entirely — bare name, no rendered text mentions "Lv.".
+    const texts = collectTexts(scene.container);
+    expect(texts).toContain(scene.cardName('lichuang'));
+    expect(texts.some((s) => /Lv\.\d/.test(s))).toBe(false);
+    scene.destroy();
+  });
+
+  it('draws exactly one star (not zero, not clamped away) for a level-1 card listing', () => {
+    const scene = buildScene();
+    const inst: CardInstance = { id: 'c1', defId: 'lichuang', level: 1, gear: {}, locked: false };
+    scene.allAuctions = [makeAuction({ itemType: 'card', item: { instance: inst } })];
+    scene.activeTab = 'all';
+    scene.loading = false;
+    scene.render();
+
+    const rows = starRows(scene.container);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.children).toHaveLength(1);
     scene.destroy();
   });
 });

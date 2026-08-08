@@ -4,7 +4,7 @@ import { ILayout, Rect } from '../layout/ILayout';
 import { InputManager } from '../inputSystem/InputManager';
 import { t } from '../i18n';
 import { ui as C, txt, buildPaperBackground, sketchPanel, seedFor, tearDownChildren } from '../render/sketchUi';
-import { buildIcon } from '../render/icons';
+import { buildIcon, IconKind } from '../render/icons';
 import { titleIconUrl, getTitleIconTexture } from '../render/titleArt';
 import { buildDecorCLayer } from '../render/decorCLayer';
 import { drawSceneHeader } from '../ui/widgets/SceneHeader';
@@ -47,6 +47,26 @@ export interface TitlesSceneCallbacks {
 }
 
 interface Hit { rect: Rect; fn: () => void; }
+
+/** Dynamic (non-permanent) title fallback glyphs — see render/icons/titles.ts. */
+const LADDER_RANK_ICON: Readonly<Record<string, IconKind>> = {
+  bronze: 'titleBronze', silver: 'titleSilver', gold: 'titleGold', platinum: 'titlePlatinum',
+  diamond: 'titleDiamond', star: 'titleStar', master: 'titleMaster', grandmaster: 'titleGrandmaster', king: 'titleKing',
+};
+const SLG_TITLE_ICON: Readonly<Record<string, IconKind>> = { champion: 'titleChampion', top3: 'titleTop3' };
+
+/**
+ * Pick the fallback glyph for a title with no bespoke AI art (titleIconUrl() === null): parse
+ * the ladder rank / SLG key out of the dynamic id and map it to its distinct medal/shield glyph;
+ * unrecognised ids (future title sources) fall back to the old undifferentiated 'medal'.
+ */
+function fallbackTitleIcon(titleId: string): IconKind {
+  const lm = titleId.match(/^ladder\.s\d+\.(\w+)$/);
+  if (lm) { const icon = LADDER_RANK_ICON[lm[1]!]; if (icon) return icon; }
+  const sm = titleId.match(/^slg\.s\d+\.(\w+)$/);
+  if (sm) { const icon = SLG_TITLE_ICON[sm[1]!]; if (icon) return icon; }
+  return 'medal';
+}
 
 export class TitlesScene implements Scene {
   readonly container: PIXI.Container;
@@ -294,7 +314,7 @@ export class TitlesScene implements Scene {
       }
     } else {
       const iconS = Math.min(boxH, boxMaxW);
-      const icon = buildIcon('medal', iconS, color);
+      const icon = buildIcon(fallbackTitleIcon(titleId), iconS, color);
       icon.x = x + cellW / 2 - iconS / 2; icon.y = iconTop + (boxH - iconS) / 2;
       icon.alpha = isOwned ? 1 : 0.6;
       this.body.addChild(icon);

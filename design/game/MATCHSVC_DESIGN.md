@@ -201,6 +201,26 @@ POST /internal/match/report
 
 **验证**：`gameserver/test/roomManager.test.ts`/`metaserver/test/internal.test.ts`/`client/test/auth-reconnect-prompt.test.ts` 补充对应用例（见各自 test 文件）；`tsc -b` 全量 server 包 + client `tsc --noEmit` 通过。
 
+### 9.2 房间仍存活时点 Reconnect 卡死（2026-08-08 修复）
+
+**症状**：线上实测反馈——房间**并没有**消失（对手还在、gameserver 没重启），点「Reconnect」后对话框还是**永久卡在原地**，没有 toast 也没有报错。跟 §9.1 长得像但根因完全不同：§9.1 修的是"房间真没了"这条路径（`onFailed` 走 toast+回大厅），这次是"房间明明还活着，但两边永远等对方先动手"。
+
+**根因**：§9 末尾那句"重连成功后既有的 `onMatchStart` 流程自动接管场景跳转"是错的——从来没有验证过对局仍存活时的冷启动重连：
+
+1. **client 从不发 `conn_resume`**：`rejoinMatch()` 走 `connectGame()` 建一个全新的 `NetClient`；`NetClient.onOpen` 只在 `everOpened`（上次已经开过一次）为真时才触发 `onReconnect`（发 `conn_resume` 的地方），而这是这个 `NetClient` 实例的第一次 `open`——`everOpened` 起始就是 `false`。`NetSession` 里 `onReconnect` 回调本身还额外拿 `if (this.roomId)` 兜底，而 `this.roomId` 只在收到过一次 `match_start` 之后才会被填（`NetInputSource` 的 `onMatchStart` 包装里赋值）——冷启动这两个条件全部不成立，`conn_resume` 永远发不出去。
+2. **即使发了，服务端 `Room.takeover()` 也不会回应 `match_start`**：`RoomManager.join()` 发现 side 已被占用（`hasSide`）→ 调 `takeover()`；`IN_MATCH` 阶段的 `takeover()` **故意**不重绑 `slot.conn`（见 §「对局前重连误销毁房间」旁边那条 2026-08-04 修复的注释），只等客户端主动发 `conn_resume` 触发 `Room.resume()`。
+3. **即使 `conn_resume` 真发出去了，client 也无法靠 `conn_resync` 重建对局**：`ConnResync` 消息原本只有 `seed/start_frame/log/cur_frame`——没有 `room_id/mode/local_side/opponent_*/decks`，`NetInputSource.onConnResync()` 只合并帧、从不重建 `matchInfo`、也从不触发 `onMatchStart`。而冷启动的这个 App 进程从未收到过 `match_start`，`matchInfo` 是 `null`——没有 `onMatchStart` 就没有 `nav.goGameNet()`，引擎永远造不出来，对话框自然停在原地。
+
+三层问题叠加，等价于该功能从 2026-07-15 上线以来，"对局仍存活"这条最常见的重连路径其实从未真正跑通过——`client/test/auth-reconnect-prompt.test.ts` 里 `netSession.rejoinMatch` 全程是手写 mock，没有一个测试真正走过 `NetClient`→`Room` 的完整链路。
+
+**修复**（三处对应上面三层，缺一不可）：
+
+- **`NetClient` 新增 `treatFirstOpenAsReconnect` 选项**：置位后 `connect()` 把 `everOpened` 初始值设为 `true`，使这个实例的**第一次** `open` 也按 `onReconnect` 语义处理。`NetSession.connectGame()` 复用既有的 `onFailed` 是否传入来判定（`onFailed` 只在 `rejoinMatch` 路径才会传）——不需要新增额外参数。`onReconnect` 回调里去掉 `if (this.roomId)` 判断，直接发 `resume(this.roomId, ...)`：`roomId` 空字符串对服务端无害，因为 `RoomManager.handle()` 从连接自身的 ticket 解析房间，从不读 `conn_resume` 消息体里的 `room_id` 字段。
+- **`ConnResync` 消息扩到与 `MatchStart`同构**：新增 `room_id/mode/local_side/opponent_name/opponent_public_id/opponent_title/opponent_avatar_id/opponent_skins/top_deck/bottom_deck`（proto 字段 5-14）。`Room.resume()` 现在镜像 `launch()` 的取值逻辑一并下发；对热重连（本会话内已有 `match_start`）这些字段是冗余但无害的重复信息。
+- **`NetInputSource.onConnResync()` 补上冷启动重建分支**：`if (!this.matchInfo)` 时从 `conn_resync` 的新字段重建完整 `MatchStartInfo` 并触发 `onMatchStart`（走跟真实 `match_start` 完全一样的下游路径：`NetSession` 记录 `roomId`/`localSide` → `nav.goGameNet()` 建引擎）；随后照常合并帧日志、把水位推到 `cur_frame`——引擎一起步就直接吃到完整历史帧「快进」追上当前进度，复用的正是 `NetInputSource` 类文档里本来就有的"conn_resync 后快进"机制，热重连分支保持完全不变（`matchInfo` 已存在时跳过重建）。
+
+**验证**：`server/gameserver/test/room.test.ts` 新增 `conn_resync` 完整回放 `match_start` 全字段的用例；`client/test/net-client.test.ts` 覆盖 `treatFirstOpenAsReconnect`；`client/test/net-input-source.test.ts` 覆盖冷/热两种 `conn_resync` 分支（热重连不应二次触发 `onMatchStart`）；新增 `client/test/net-session-cold-resume.test.ts` 端到端验证 `rejoinMatch()` 首次 `open` 即发出 `conn_resume`。`tsc -b` 全量 server 包 + client `tsc --noEmit` 通过，proto 改动后各服务 `npm run proto:gen` 重新生成并提交产物。
+
 ## 10. 好友切磋邀请（friend duel invite，2026-07-25 补文档）
 
 好友列表页新增"切磋"按钮：A 邀请在线好友 B → B 60 秒内接受/拒绝/超时 → 接受则两人直接进同一局，**不走 `RoomScene` 的手动房间码流程**，而是直接复用 §3 的 `startMatch('friendly', a, b)`——省掉了创建房间/交换码/双方 ready 的整套 UI 交互，两个 accountId 一早就都知道。
