@@ -19,6 +19,9 @@ const ALL_KINDS: Record<IconKind, true> = {
   hourglassSm: true, hourglassMd: true, hourglassLg: true,
   tag: true, capsule: true, cards: true, star: true, lock: true, medal: true, zoom: true, gift: true,
   close: true, check: true, play: true,
+  titleBronze: true, titleSilver: true, titleGold: true, titlePlatinum: true, titleDiamond: true,
+  titleStar: true, titleMaster: true, titleGrandmaster: true, titleKing: true,
+  titleChampion: true, titleTop3: true,
 };
 
 describe('icons DRAW dispatch table', () => {
