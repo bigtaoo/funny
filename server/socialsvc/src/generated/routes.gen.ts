@@ -547,13 +547,13 @@ export const SOCIAL_RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = 
                           "items": {
                             "type": "object",
                             "required": [
-                              "accountId",
                               "role",
                               "joinedAt"
                             ],
                             "properties": {
                               "accountId": {
-                                "type": "string"
+                                "type": "string",
+                                "description": "Omitted when the requester is not a member of this family (GET /social/family/:id is a public route reachable for any family id; internal accountIds are only exposed within the family itself)."
                               },
                               "role": {
                                 "type": "string",
@@ -832,13 +832,13 @@ export const SOCIAL_RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = 
                       "items": {
                         "type": "object",
                         "required": [
-                          "accountId",
                           "role",
                           "joinedAt"
                         ],
                         "properties": {
                           "accountId": {
-                            "type": "string"
+                            "type": "string",
+                            "description": "Omitted when the requester is not a member of this family (GET /social/family/:id is a public route reachable for any family id; internal accountIds are only exposed within the family itself)."
                           },
                           "role": {
                             "type": "string",
@@ -1037,13 +1037,13 @@ export const SOCIAL_RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = 
                           "items": {
                             "type": "object",
                             "required": [
-                              "accountId",
                               "role",
                               "joinedAt"
                             ],
                             "properties": {
                               "accountId": {
-                                "type": "string"
+                                "type": "string",
+                                "description": "Omitted when the requester is not a member of this family (GET /social/family/:id is a public route reachable for any family id; internal accountIds are only exposed within the family itself)."
                               },
                               "role": {
                                 "type": "string",
