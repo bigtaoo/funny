@@ -11,7 +11,7 @@ import { buildIcon, type IconKind } from '../../render/icons';
 import { buildLevelStars } from '../../render/levelStars';
 import { buildMaterialIcon, type MaterialKind } from '../../render/atlas/materialAtlas';
 import { drawScrollIndicator } from '../../ui/widgets/ScrollIndicator';
-import { getEquipDef, EQUIP_MAX_LEVEL } from '../../game/meta/equipmentDefs';
+import { getEquipDef } from '../../game/meta/equipmentDefs';
 import { buildEquipIcon } from '../../render/atlas/equipmentAtlas';
 import { serverNow } from '../../net/serverClock';
 import { cardInstanceArtUrl, getArtTexture, unitPortraitUrl } from '../../render/cardArt';
@@ -222,11 +222,13 @@ export function ListMixin<TBase extends AuctionSceneBaseCtor>(Base: TBase): TBas
 
       let ay = y + pad + Math.max(28, itemLbl.height + 8);
 
-      // Equipment enhancement level as a row of gold star icons beneath the name — matches the
-      // EquipmentScene bag-card treatment (buildLevelStars) instead of the old "+N" text suffix.
-      const equipLevel = Math.max(0, Math.min(EQUIP_MAX_LEVEL, this.auctionEquipLevel(auc)));
-      if (equipLevel > 0) {
-        const { container: stars } = buildLevelStars(equipLevel, rightW, 12, 2);
+      // Equipment enhancement level / card level as a row of gold star icons beneath the name —
+      // matches the EquipmentScene/CardScene bag-card treatment (buildLevelStars) instead of text
+      // ("+N"/"Lv.N" — see 08.08.2026 report: the auction house still showed "Lv.3" text for cards
+      // after equipment had already moved to stars).
+      const itemLevel = Math.max(0, Math.min(this.auctionItemMaxLevel(auc), this.auctionItemLevel(auc)));
+      if (itemLevel > 0) {
+        const { container: stars } = buildLevelStars(itemLevel, rightW, 12, 2);
         stars.name = 'levelStars'; // test hook: one child per level star (mirrors CardScene's convention)
         stars.x = ax; stars.y = ay;
         this.bodyLayer.addChild(stars);

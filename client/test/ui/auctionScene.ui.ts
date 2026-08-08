@@ -233,7 +233,7 @@ describe('AuctionScene — auctionLabel()', () => {
   });
 
   // 2026-08-08: equipment used to get "+N" spliced onto the name here; the level now comes out of
-  // list.ts as a separate icon-star row (auctionEquipLevel) instead — auctionLabel itself is bare name.
+  // list.ts as a separate icon-star row (auctionItemLevel) instead — auctionLabel itself is bare name.
   it('an equipment listing\'s label is the bare name, with no "+N" level suffix', () => {
     const scene = buildScene();
     const inst: EquipmentInstance = { id: 'e1', defId: 'wp_pencil', rarity: 'common', level: 3, affixes: [] };
@@ -241,23 +241,38 @@ describe('AuctionScene — auctionLabel()', () => {
       .toBe(scene.equipName('wp_pencil'));
     scene.destroy();
   });
+
+  // 2026-08-08 follow-up: the card branch had the same bug — "Li Chuang Lv.3" text while every other
+  // item view (including the roster/detail card treatment) had already moved to stars. Bare name here
+  // too, level comes out of list.ts's icon-star row like equipment.
+  it('a card listing\'s label is the bare name, with no "Lv.N" level suffix', () => {
+    const scene = buildScene();
+    const inst: CardInstance = { id: 'c1', defId: 'lichuang', level: 3, gear: {}, locked: false };
+    expect(scene.auctionLabel(makeAuction({ itemType: 'card', item: { instance: inst } })))
+      .toBe(scene.cardName('lichuang'));
+    scene.destroy();
+  });
 });
 
-// ── auctionEquipLevel() / auctionLabelText() — the level-extraction + text-star fallback that
-// replaced the old "+N" string splice (2026-08-08, see AUCTION_DESIGN.md) ────────────────────────
+// ── auctionItemLevel() / auctionItemMaxLevel() / auctionLabelText() — the level-extraction +
+// text-star fallback that replaced the old "+N" / "Lv.N" string splices (2026-08-08, see
+// AUCTION_DESIGN.md; extended to cover cards the same day once the card branch turned up unfixed) ──
 
-describe('AuctionScene — auctionEquipLevel() / auctionLabelText()', () => {
-  it('auctionEquipLevel is 0 for a non-equipment listing, and for an equipment listing with no instance', () => {
+describe('AuctionScene — auctionItemLevel() / auctionLabelText()', () => {
+  it('auctionItemLevel is 0 for material listings, and for equipment/card listings with no instance', () => {
     const scene = buildScene();
-    expect(scene.auctionEquipLevel(makeAuction({ itemType: 'material', item: { material: 'scrap' } }))).toBe(0);
-    expect(scene.auctionEquipLevel(makeAuction({ itemType: 'equipment', item: {} }))).toBe(0);
+    expect(scene.auctionItemLevel(makeAuction({ itemType: 'material', item: { material: 'scrap' } }))).toBe(0);
+    expect(scene.auctionItemLevel(makeAuction({ itemType: 'equipment', item: {} }))).toBe(0);
+    expect(scene.auctionItemLevel(makeAuction({ itemType: 'card', item: {} }))).toBe(0);
     scene.destroy();
   });
 
-  it('auctionEquipLevel reads the instance level straight through for an equipment listing', () => {
+  it('auctionItemLevel reads the instance level straight through for equipment and card listings', () => {
     const scene = buildScene();
-    const inst: EquipmentInstance = { id: 'e1', defId: 'wp_pencil', rarity: 'common', level: 5, affixes: [] };
-    expect(scene.auctionEquipLevel(makeAuction({ itemType: 'equipment', item: { instance: inst } }))).toBe(5);
+    const equip: EquipmentInstance = { id: 'e1', defId: 'wp_pencil', rarity: 'common', level: 5, affixes: [] };
+    const card: CardInstance = { id: 'c1', defId: 'lichuang', level: 3, gear: {}, locked: false };
+    expect(scene.auctionItemLevel(makeAuction({ itemType: 'equipment', item: { instance: equip } }))).toBe(5);
+    expect(scene.auctionItemLevel(makeAuction({ itemType: 'card', item: { instance: card } }))).toBe(3);
     scene.destroy();
   });
 
@@ -272,9 +287,17 @@ describe('AuctionScene — auctionEquipLevel() / auctionLabelText()', () => {
     scene.destroy();
   });
 
-  it('auctionLabelText is identical to auctionLabel for non-equipment classes (no level to fold in)', () => {
+  it('auctionLabelText appends text stars for a leveled card listing too (not the old "Lv.N" text)', () => {
     const scene = buildScene();
-    const auc = makeAuction({ itemType: 'card', item: {} });
+    const leveled: CardInstance = { id: 'c1', defId: 'lichuang', level: 3, gear: {}, locked: false };
+    expect(scene.auctionLabelText(makeAuction({ itemType: 'card', item: { instance: leveled } })))
+      .toBe(`${scene.cardName('lichuang')} ★★★`);
+    scene.destroy();
+  });
+
+  it('auctionLabelText is identical to auctionLabel for material/skin classes (no level to fold in)', () => {
+    const scene = buildScene();
+    const auc = makeAuction({ itemType: 'material', item: { material: 'scrap' } });
     expect(scene.auctionLabelText(auc)).toBe(scene.auctionLabel(auc));
     scene.destroy();
   });

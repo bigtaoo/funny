@@ -13,6 +13,7 @@ import { buildMaterialIcon } from '../../render/atlas/materialAtlas';
 import { drawScrollIndicator } from '../../ui/widgets/ScrollIndicator';
 import type { EquipmentInstance, CardInstance, EquipRarity } from '../../game/meta/SaveData';
 import { getEquipDef, EQUIP_MAX_LEVEL } from '../../game/meta/equipmentDefs';
+import { MAX_CARD_LEVEL } from '../../game/meta/cardDefs';
 import { buildEquipIcon } from '../../render/atlas/equipmentAtlas';
 import { cardInstanceArtUrl, getArtTexture, unitPortraitUrl } from '../../render/cardArt';
 import { SKIN_TARGET_UNIT, skinDisplayName, allEquippedSkins, isKnownSkin } from '../../game/meta/skinDefs';
@@ -106,7 +107,9 @@ export function PickerMixin<TBase extends AuctionSceneBaseCtor>(Base: TBase): TB
         return skinId ? skinDisplayName(skinId) : null;
       }
       const inst = this.listableCards().find((c) => c.id === this.createCardId);
-      return inst ? `${this.cardName(inst.defId)} Lv.${inst.level}` : null;
+      if (!inst) return null;
+      const stars = levelStarsText(inst.level, MAX_CARD_LEVEL);
+      return stars ? `${this.cardName(inst.defId)} ${stars}` : this.cardName(inst.defId);
     }
 
     /**
@@ -154,7 +157,8 @@ export function PickerMixin<TBase extends AuctionSceneBaseCtor>(Base: TBase): TB
         }
       }
       for (const { rep, count } of cardGroups.values()) {
-        const base = `${this.cardName(rep.defId)} Lv.${rep.level}`;
+        const stars = levelStarsText(rep.level, MAX_CARD_LEVEL);
+        const base = stars ? `${this.cardName(rep.defId)} ${stars}` : this.cardName(rep.defId);
         entries.push({
           defId: rep.defId, label: count > 1 ? `${base} ×${count}` : base,
           value: CARD_VALUE_BASE + (rep.level - 1) * CARD_VALUE_PER_LEVEL, locked: rep.locked, cls: 'card',

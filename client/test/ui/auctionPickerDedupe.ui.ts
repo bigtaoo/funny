@@ -86,7 +86,9 @@ describe('AuctionScene picker — equipment/card dedupe (buildPickEntries)', () 
     const entries: PickEntry[] = scene.buildPickEntries();
     const cardEntries = entries.filter((e) => e.cls === 'card');
     expect(cardEntries).toHaveLength(1);
-    expect(cardEntries[0].label).toBe(`${scene.cardName('suyuan')} Lv.1 ×4`);
+    // 2026-08-08: cards now show a gold-star level too (matches equipment's convention and the
+    // roster/detail card treatment) — no more "Lv.N" text.
+    expect(cardEntries[0].label).toBe(`${scene.cardName('suyuan')} ★ ×4`);
     scene.destroy();
   });
 
@@ -106,7 +108,7 @@ describe('AuctionScene picker — equipment/card dedupe (buildPickEntries)', () 
     );
     expect(cardEntries).toHaveLength(2);
     expect(cardEntries.map((e) => e.label).sort()).toEqual(
-      [`${scene.cardName('suyuan')} Lv.1`, `${scene.cardName('max')} Lv.5`].sort(),
+      [`${scene.cardName('suyuan')} ★`, `${scene.cardName('max')} ★★★★★`].sort(),
     );
     scene.destroy();
   });

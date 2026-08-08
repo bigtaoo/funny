@@ -263,7 +263,7 @@ designatedBuyerId?, expireAt(ms), status, buyerId?, rev
 - **类别选择器**：创建表单顶部加 `material/equipment/card` 三选一（`ITEM_CLASSES`）；装备/角色卡两类需 `getSave` 回调读库存（未注入时——如 UI 测试——仅提供材料档，两格灰显）。
 - **实例选择器**：装备/角色卡档不显示材料按钮与数量（唯一实例，qty 服务端强制 1），改显「已选实例」字段；点击进入**场景级 picker 覆盖层**（`pickerKind`，复用列表拖拽滚动），选中回创建表单。可挂过滤镜像服务端 escrow 守卫——装备排除已锁定 + 已被任意角色卡穿戴；角色卡要求 gear 全空（锁定卡仍可挂，picker 标 🔒）。
 - **挂单流转**：`doCreate` 按类别分发 `createAuction(itemType, {instanceId})`；装备/角色卡成交后 escrow 已从 meta save 移除该实例，故 `reloadSave()`（`saveManager.refresh()`）重拉权威 save 使 picker 不再列出该件。
-- **市场/我的/出价展示**：`auctionLabel(auc)` 按 `itemType` 读 `item.instance` 快照渲染名（装备 `equip.<defId>.name +lv`、角色卡 `card.<defId>.name Lv.n`、材料沿用 `×qty`）；市场筛选条加 `card` 档。
+- **市场/我的/出价展示**：`auctionLabel(auc)` 按 `itemType` 读 `item.instance` 快照渲染名（材料沿用 `×qty`；装备/角色卡等级展示方式历经 2026-08-08 两轮修复，见下方对应条目，现均为裸名字 + 独立金色星星行/文字星星）；市场筛选条加 `card` 档。
 - **错误码映射**：补 `CARD_HAS_GEAR`（角色卡仍有装备）/`CARD_NOT_FOUND`/`EQUIP_NOT_FOUND`。i18n 三语补 `itemClass`/`class*`/`filterCard`/`pick*`/`tapChoose`/`no{Equip,Cards}`/`err.cardHasGear`。
 
 **挂单表单简化 + 统一选品器（2026-07-05）**：按用户反馈重做挂单表单——
@@ -571,6 +571,12 @@ designatedBuyerId?, expireAt(ms), status, buyerId?, rev
 - **数据清理**：SSH 到 VPS，`docker exec server-metaserver-1` 跑一次性脚本，把该账号 `saves` collection 文档的 `save.inventory.skins` 从 23 个 id 过滤到只保留当前目录里真实存在的 6 个（`skin_shop_c1`/`skin_shop_r1`/`skin_shop_e1`/`skin_e1`/`skin_e2`/`skin_l1`），移除的 17 个 id 全部核对过并非真正拥有的物品（装备/材料本身在各自的 `equipmentInv`/materials 计数里另有正确记录，不受影响）。先 dry-run 打印 before/after 确认无误，再执行真正的 `updateOne`。
 - **客户端防护（问题一未来再发生时能快速定位）**：`skinDefs.ts` 新增 `isKnownSkin(skinId)`——查不到 `SKIN_TARGET_UNIT` 映射时，除返回 `false` 外还通过 `netLog('skinDefs').warn(...)` 记一条日志（进 `net/log.ts` 的客户端日志环形缓冲区，可被 `FEATURE_FLAGS_DESIGN` §9.4 的定向采集远程拉取），同一个 id 只记一次，不会刷屏。`AuctionScene/picker.ts` 的 `listableSkins()` 接入这个校验——库存里任何不在当前皮肤目录里的 id（无论是被下架的占位 SKU 还是本不该出现在这里的其它类 id）都会被过滤掉，永远不会出现在选择页里、也永远不能被拿去挂拍卖。
 - **验收**：`tsc --noEmit` 全绿；`npm run build:web` 通过（仅预置的资源体积警告，与本次改动无关）；`vitest run --config vitest.ui.config.ts` 全量 128 个文件 1159 例全绿（`test/ui/auctionPickerDedupe.ui.ts` 新增 2 例覆盖未知皮肤 id 被过滤，另外 2 例装备等级为 0 时的标签断言从 `"Pencil +0 ×3"` 更新为 `"Pencil ×3"`）。VPS 数据清理已在生产环境实际执行（dry-run 核对无误后再写），未做浏览器截图验证（该账号的库存已改变，且改动本身是"能否正确过滤/显示"的逻辑问题，headless 测试已充分覆盖）。
+
+### 修复：角色卡拍卖条目仍显示"Lv.N"文本，漏了同一轮星星化改造（2026-08-08 续）
+
+- **问题**：上一条目只把装备分支接进了共享的 `levelStars.ts`，角色卡分支被漏掉——拍卖行「出售物品选择页」（`picker.ts` 的 `buildPickEntries`/`selectedItemLabel`）、市场列表标题（`base.ts` 的 `auctionLabel`）、市场列表名字下方的星星行（`list.ts`，靠 `auctionEquipLevel()` 取等级，该方法对 `itemType==='card'` 直接短路返回 0）三处角色卡仍手写 `` `${cardName} Lv.${level}` ``，跟角色卡背包/详情弹窗（`CardScene/list.ts`、`detail.ts`，早就用 `buildLevelStars` 画金色星星）不一致（用户报告：拍卖行截图里 "Li Chuang Lv.3" 仍是文字，同页装备条目 "Foil Cover ★★★★★" 已经是星星）。
+- **修复**：`auctionEquipLevel()` 更名为 `auctionItemLevel()` 并扩展为同时读装备/角色卡实例的 `level`（材料/皮肤仍返回 0），新增 `auctionItemMaxLevel(auc)` 按 `itemType` 返回对应的 `EQUIP_MAX_LEVEL`/`MAX_CARD_LEVEL` 供星星行/文字星星做 clamp。`auctionLabel()` 的角色卡分支去掉 `Lv.${level}` 后缀，改为裸名字（同装备分支）；`auctionLabelText()` 改用 `auctionItemLevel`/`auctionItemMaxLevel` 对任意实例类型折回文字星星；`list.ts` 市场卡片的星星行改用同一对方法，不再局限于装备。`picker.ts` 的 `selectedItemLabel()` 与 `buildPickEntries()` 的角色卡分支均改为 `levelStarsText(level, MAX_CARD_LEVEL)`，与装备分支写法对称。
+- **验收**：`tsc --noEmit` 全绿；`vitest run --config vitest.ui.config.ts` 覆盖 `test/ui/auctionScene.ui.ts`（73 例，含新增的角色卡裸名字/文字星星断言，`auctionEquipLevel`→`auctionItemLevel` 改名同步更新调用点）、`test/ui/auctionPickerDedupe.ui.ts`（17 例，角色卡分组标签断言从 `"Su Yuan Lv.1 ×4"` 更新为 `"Su Yuan ★ ×4"`）、`auctionBackButtonHitWidth.ui.ts`/`auctionActionBusyLock.ui.ts` 全绿，共 109 例。纯 UI 展示层改动，未额外做浏览器截图验证（该场景需要一个挂有真实角色卡拍卖单的活跃账号 + 完整后端才能复现，headless 测试已直接对 PIXI 对象树断言了本次改动前后的确切文本/星星差异）。
 
 ---
 
