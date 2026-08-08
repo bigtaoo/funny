@@ -22,7 +22,7 @@
 
 import { describe, it, expect, vi } from 'vitest';
 import * as PIXI from 'pixi.js-legacy';
-import { SceneManager, type Scene, type InputGate } from '../../src/scenes/SceneManager';
+import { SceneManager, type Scene, type InputGate, type DialogGate } from '../../src/scenes/SceneManager';
 import { InputManager } from '../../src/inputSystem/InputManager';
 
 /** Fake PIXI.Application exposing just what SceneManager touches, plus a manual frame(). */
@@ -288,6 +288,73 @@ describe('SceneManager overlays (pushOverlay/popOverlay)', () => {
     expect(first.destroy).toHaveBeenCalledTimes(1);
     expect(stage.children).not.toContain(first.container);
     expect(stage.children).toContain(second.container);
+  });
+});
+
+describe('SceneManager DialogGate (2026-08-08: FeedbackDialog Close landing on a random level/SLG)', () => {
+  // Background: FeedbackDialog is mounted directly on app.stage, outside this manager entirely, so
+  // it can be opened from (only) the lobby without any SceneManager wiring. A background nav firing
+  // while it's open (a pushed match starting, an async world-shard resolve racing a fast double-tap
+  // on the World button) used to swap the scene underneath it silently — the dialog's Close button
+  // then revealed whatever that background nav landed on instead of the Lobby it was opened from.
+  // DialogGate.close() is called at the very top of every goto(), same "hard swap means done with
+  // this whole area" reasoning goto() already applies to its own overlayScene.
+  function makeDialogGate(): DialogGate & { close: ReturnType<typeof vi.fn> } {
+    return { close: vi.fn() };
+  }
+
+  it('goto() closes the dialog gate on an instant (non-fade) swap', () => {
+    const { app } = makeApp();
+    const gate = makeDialogGate();
+    const mgr = new SceneManager(app, undefined, undefined, gate);
+    mgr.goto(makeScene());
+    expect(gate.close).toHaveBeenCalledTimes(1);
+  });
+
+  it('goto() closes the dialog gate immediately when a fade is requested — not deferred until the fade settles', () => {
+    const { app, frame } = makeApp();
+    const gate = makeDialogGate();
+    const mgr = new SceneManager(app, undefined, undefined, gate);
+    mgr.goto(makeScene()); // cold, instant
+    gate.close.mockClear();
+
+    mgr.goto(makeScene(), { fade: true }); // starts fading out; swap hasn't happened yet
+    expect(gate.close).toHaveBeenCalledTimes(1); // already closed — not waiting for settle()
+
+    settle(frame);
+    expect(gate.close).toHaveBeenCalledTimes(1); // settling the fade doesn't call it again
+  });
+
+  it('a mid-fade retarget calls close() again for the new goto(), not just the first', () => {
+    const { app } = makeApp();
+    const gate = makeDialogGate();
+    const mgr = new SceneManager(app, undefined, undefined, gate);
+    mgr.goto(makeScene()); // cold
+    mgr.goto(makeScene(), { fade: true }); // fade-out in flight
+    mgr.goto(makeScene(), { fade: true }); // retargets mid-fade-out
+    expect(gate.close).toHaveBeenCalledTimes(3); // once per goto() call
+  });
+
+  it('pushOverlay/popOverlay do NOT call the dialog gate — only a hard goto() does', () => {
+    // FeedbackDialog is only ever reachable from the Lobby, which never sits under a pushOverlay
+    // panel — scoping the gate to goto() (not pushOverlay) keeps it from firing on unrelated SLG
+    // panel opens that have nothing to do with the lobby-only dialog.
+    const { app } = makeApp();
+    const gate = makeDialogGate();
+    const mgr = new SceneManager(app, undefined, undefined, gate);
+    mgr.goto(makeScene());
+    gate.close.mockClear();
+    mgr.pushOverlay(makeScene());
+    mgr.popOverlay();
+    expect(gate.close).not.toHaveBeenCalled();
+  });
+
+  it('goto() works with no dialogGate configured at all (optional, backward-compatible)', () => {
+    const { app, stage } = makeApp();
+    const mgr = new SceneManager(app); // no 4th arg
+    const scene = makeScene();
+    expect(() => mgr.goto(scene)).not.toThrow();
+    expect(stage.children).toContain(scene.container);
   });
 });
 

@@ -2,6 +2,8 @@
  * FeedbackDialog — in-game player feedback entry (UI_DESIGN.md §4.1.1): opened from the lobby's right-side
  * strip (replacing the low-usage achievement shortcut there). Structurally the same self-drawn blocking
  * full-screen card as {@link AppealDialog}, reusing its hidden-`<input>`-overlay text capture technique.
+ * Unlike AppealDialog it uses the caret-blink unified field treatment (see `ui/inputDisplay.ts`,
+ * SettingsScene's rename field) since feedback is a longer, multi-line note, not a one-shot reason string.
  *
  * Unlike AppealDialog, a successful submit does NOT close the dialog — it clears the input and shows an
  * inline "received, thanks" confirmation, so the player can send another note without reopening the panel
@@ -13,6 +15,7 @@ import type { Scene } from '../../scenes/SceneManager';
 import { ui as C, txt, buildPaperBackground, sketchPanel, seedFor } from '../../render/sketchUi';
 import { snapFont } from '../../render/fontScale';
 import { t } from '../../i18n/index';
+import { caretDisplay } from '../inputDisplay';
 
 // Mirrors server/shared/src/social.ts FEEDBACK_TEXT_MAX (1000) — not imported: '@nw/shared' resolves to a
 // curated browser-safe subset (see client/webpack.config.js), same reason AppealDialog hardcodes its own max.
@@ -31,6 +34,9 @@ export class FeedbackDialog implements Scene {
   private statusLabel!: PIXI.Text;
   private submitBtn!: PIXI.Container;
   private submitting = false;
+  private inputActive = false;
+  private caretOn = true;
+  private caretTimer = 0;
 
   constructor(
     private readonly w: number,
@@ -41,7 +47,11 @@ export class FeedbackDialog implements Scene {
     this.build();
   }
 
-  update(): void { /* static */ }
+  update(dt: number): void {
+    if (!this.inputActive) return;
+    this.caretTimer += dt;
+    if (this.caretTimer >= 0.5) { this.caretTimer = 0; this.caretOn = !this.caretOn; this.refreshLabel(); }
+  }
 
   destroy(): void {
     this.removeHiddenInput();
@@ -56,7 +66,17 @@ export class FeedbackDialog implements Scene {
     }
   }
 
+  /** Mirrors the caretDisplay() convention (ui/inputDisplay.ts, SettingsScene rename field): show a
+   *  blinking '|' while focused, dark text once something's typed, mid-grey placeholder otherwise. */
+  private refreshLabel(): void {
+    this.feedbackLabel.text = caretDisplay(this.feedbackText, this.inputActive && this.caretOn, t('feedback.placeholder'));
+    this.feedbackLabel.style.fill = (this.feedbackText || (this.inputActive && this.caretOn)) ? C.dark : C.mid;
+  }
+
   private openInput(): void {
+    this.inputActive = true;
+    this.caretOn = true; this.caretTimer = 0;
+    this.refreshLabel();
     if (this.hiddenInput) { this.hiddenInput.focus(); return; }
     const inp = document.createElement('input');
     inp.type = 'text';
@@ -66,10 +86,12 @@ export class FeedbackDialog implements Scene {
     document.body.appendChild(inp);
     inp.addEventListener('input', () => {
       this.feedbackText = inp.value;
-      this.feedbackLabel.text = this.feedbackText || t('feedback.placeholder');
+      this.refreshLabel();
       if (this.statusLabel.text) this.statusLabel.text = ''; // typing again clears any prior status message
     });
     inp.addEventListener('blur', () => {
+      this.inputActive = false;
+      this.refreshLabel();
       this.removeHiddenInput();
     });
     document.body.appendChild(inp);
@@ -91,7 +113,7 @@ export class FeedbackDialog implements Scene {
       await this.cb.onSubmit(text);
       // Stays open (unlike AppealDialog's onClose) — feedback allows repeated submissions.
       this.feedbackText = '';
-      this.feedbackLabel.text = t('feedback.placeholder');
+      this.refreshLabel();
       this.statusLabel.style.fill = C.green;
       this.statusLabel.text = t('feedback.sent');
     } catch {
@@ -128,7 +150,11 @@ export class FeedbackDialog implements Scene {
     const padTop = unit * 0.06;
     const gapTitleBody = unit * 0.06;
     const gapBodyInput = unit * 0.07;
-    const inputH = Math.round(unit * 0.13);
+    // At least 3 visible lines (user ask 2026-08-08): pad top/bottom + 3× line height, vs. the
+    // single-line 0.13×unit every other sketchPanel field in this dialog family uses.
+    const feedbackLineH = Math.round(unit * 0.052);
+    const inputPadY = Math.round(unit * 0.025);
+    const inputH = Math.round(inputPadY * 2 + feedbackLineH * 3);
     const gapInputErr = unit * 0.03;
     const errH = Math.round(unit * 0.05);
     const gapErrBtn = unit * 0.05;
@@ -165,12 +191,15 @@ export class FeedbackDialog implements Scene {
     inputBox.on('pointertap', () => this.openInput());
     this.container.addChild(inputBox);
 
-    this.feedbackLabel = txt(t('feedback.placeholder'), snapFont(Math.round(unit * 0.038)), C.mid);
-    this.feedbackLabel.anchor.set(0, 0.5);
+    // Top-anchored (not vertically centered) so a growing multi-line note fills the box downward,
+    // same as the paragraph fields elsewhere; caretDisplay() appends the blinking '|' (ui/inputDisplay.ts).
+    this.feedbackLabel = txt(caretDisplay('', false, t('feedback.placeholder')), snapFont(Math.round(unit * 0.038)), C.mid);
+    this.feedbackLabel.anchor.set(0, 0);
     this.feedbackLabel.x = inputX + Math.round(inputW * 0.03);
-    this.feedbackLabel.y = inputY + inputH / 2;
+    this.feedbackLabel.y = inputY + inputPadY;
     this.feedbackLabel.style.wordWrap = true;
     this.feedbackLabel.style.wordWrapWidth = inputW * 0.94;
+    this.feedbackLabel.style.lineHeight = feedbackLineH;
     this.container.addChild(this.feedbackLabel);
 
     this.statusLabel = txt('', snapFont(Math.round(unit * 0.034)), C.red);
