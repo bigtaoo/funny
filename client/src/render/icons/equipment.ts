@@ -87,11 +87,23 @@ export function drawHp(g: PIXI.Graphics, s: number, color: number): void {
   pen.stroke(pts, { color, width: w, jitter: 0.5, taper: 0.96, double: false });
 }
 
-/** Armor — a riveted shield: flat top, straight sides, tapered point, centre rib + cross band + corner rivets. */
+/**
+ * Armor — a riveted shield: flat top, straight sides, tapered point, centre rib + cross band +
+ * corner rivets. Body carries a flat alpha fill (plate "weight", same layered-alpha trick as the
+ * SLG shop's coin/hourglass tiers — no gradient) plus a filled boss + solid rivets so it reads as
+ * a plated shield at nav-icon size instead of a bare outline.
+ */
 export function drawArmor(g: PIXI.Graphics, s: number, color: number): void {
   const pen = new SketchPen(g, 0x6a12);
   const w = Math.max(1.4, s * 0.05);
   const cx = s / 2, hw = s * 0.22, top = s * 0.24;
+  const outline = [
+    cx - hw, top, cx + hw, top,
+    cx + hw, s * 0.50, cx, s * 0.80,
+    cx - hw, s * 0.50, cx - hw, top,
+  ];
+  // Flat plate fill — gives the shield body "weight" without a gradient.
+  g.beginFill(color, 0.16); g.lineStyle(0); g.drawPolygon(outline); g.endFill();
   pen.stroke([
     { x: cx - hw, y: top }, { x: cx + hw, y: top },
     { x: cx + hw, y: s * 0.50 }, { x: cx, y: s * 0.80 },
@@ -105,9 +117,13 @@ export function drawArmor(g: PIXI.Graphics, s: number, color: number): void {
   pen.stroke([
     { x: cx - hw * 0.7, y: top + s * 0.05 }, { x: cx + hw * 0.7, y: top + s * 0.05 }, { x: cx + hw * 0.7, y: s * 0.46 },
   ], { color, width: w * 0.55, jitter: 0.35, taper: 0.85, double: false, alpha: 0.55 });
-  // Corner rivets.
-  pen.circle(cx - hw * 0.62, top + s * 0.06, Math.max(1, s * 0.02), { color, width: w * 0.6, jitter: 0.2, taper: 0.9, double: false });
-  pen.circle(cx + hw * 0.62, top + s * 0.06, Math.max(1, s * 0.02), { color, width: w * 0.6, jitter: 0.2, taper: 0.9, double: false });
+  // Centre boss — a small filled disc where the band crosses the rib, reads as a raised stud.
+  g.beginFill(color, 0.7); g.lineStyle(0); g.drawCircle(cx, top + s * 0.16, Math.max(1.4, s * 0.028)); g.endFill();
+  // Corner rivets — solid dots (was hollow rings), more legible at icon size.
+  g.beginFill(color, 0.9); g.lineStyle(0);
+  g.drawCircle(cx - hw * 0.62, top + s * 0.06, Math.max(1, s * 0.022));
+  g.drawCircle(cx + hw * 0.62, top + s * 0.06, Math.max(1, s * 0.022));
+  g.endFill();
 }
 
 /**
@@ -122,9 +138,11 @@ export function drawArmorHeavy(g: PIXI.Graphics, s: number, color: number): void
   // Second band lower down the plate.
   pen.line(cx - hw * 0.55, s * 0.46, cx + hw * 0.55, s * 0.46,
     { color, width: w * 0.7, jitter: 0.4, taper: 0.85, double: false, alpha: 0.8 });
-  // Side rivets flanking the centre rib, below the top pair.
-  pen.circle(cx - hw * 0.85, s * 0.40, Math.max(1, s * 0.02), { color, width: w * 0.6, jitter: 0.2, taper: 0.9, double: false });
-  pen.circle(cx + hw * 0.85, s * 0.40, Math.max(1, s * 0.02), { color, width: w * 0.6, jitter: 0.2, taper: 0.9, double: false });
+  // Side rivets flanking the centre rib, below the top pair — solid dots, matches drawArmor's.
+  g.beginFill(color, 0.9); g.lineStyle(0);
+  g.drawCircle(cx - hw * 0.85, s * 0.40, Math.max(1, s * 0.022));
+  g.drawCircle(cx + hw * 0.85, s * 0.40, Math.max(1, s * 0.022));
+  g.endFill();
 }
 
 /** Speed — twin forward chevrons (motion lines). */
@@ -148,18 +166,59 @@ export function drawAtkspd(g: PIXI.Graphics, s: number, color: number): void {
   ], { color, width: w, jitter: 0.35, taper: 0.88, double: false });
 }
 
-/** Brush (skin / appearance) — a paintbrush at a diagonal with a ferrule + paint tip. */
+/**
+ * Brush (skin / appearance) — a paintbrush at a diagonal: filled wood handle, a solid ferrule
+ * band, and bristles that visibly FLARE out past the ferrule into a fanned tip (the wedge must
+ * read wider than the handle, or it reads as a pencil point instead of a brush) — plus a couple
+ * of individual bristle-strand lines for texture and a dabbed paint blob at the point. Same
+ * layered flat-fill trick as `drawArmor`/the SLG shop icons — no gradient, just more filled
+ * shapes than the bare-outline original so it reads as a "loaded brush" at nav-icon size.
+ */
 export function drawBrush(g: PIXI.Graphics, s: number, color: number): void {
   const pen = new SketchPen(g, 0x6b89);
   const w = Math.max(1.4, s * 0.05);
-  const top = { x: s * 0.76, y: s * 0.20 }, neck = { x: s * 0.46, y: s * 0.50 }, tip = { x: s * 0.28, y: s * 0.72 };
-  pen.line(top.x, top.y, neck.x, neck.y, { color, width: w, jitter: 0.4, taper: 0.85, double: false }); // handle
+  const top = { x: s * 0.76, y: s * 0.20 }, neck = { x: s * 0.46, y: s * 0.50 }, tip = { x: s * 0.24, y: s * 0.76 };
   const dx = neck.x - top.x, dy = neck.y - top.y, len = Math.hypot(dx, dy) || 1;
-  const px = (-dy / len) * s * 0.06, py = (dx / len) * s * 0.06;
-  pen.line(neck.x + px, neck.y + py, neck.x - px, neck.y - py, { color, width: w * 0.9, jitter: 0.3, taper: 0.8, double: false }); // ferrule
+  const hpx = (-dy / len) * s * 0.045, hpy = (dx / len) * s * 0.045; // handle half-width, perpendicular
+  // Filled wood handle — a thin capsule from the butt end to the ferrule.
+  g.beginFill(color, 0.55); g.lineStyle(0);
+  g.drawPolygon([
+    top.x + hpx, top.y + hpy, neck.x + hpx, neck.y + hpy,
+    neck.x - hpx, neck.y - hpy, top.x - hpx, top.y - hpy,
+  ]);
+  g.endFill();
+  pen.line(top.x, top.y, neck.x, neck.y, { color, width: w, jitter: 0.4, taper: 0.85, double: false }); // handle rim
+  const fpx = (-dy / len) * s * 0.06, fpy = (dx / len) * s * 0.06; // ferrule half-width (base of the flare)
+  // Ferrule — a solid metal band, the neck the bristles flare out from.
+  g.beginFill(color, 0.8); g.lineStyle(0);
+  g.drawPolygon([
+    neck.x + hpx, neck.y + hpy, neck.x + fpx, neck.y + fpy,
+    neck.x - fpx, neck.y - fpy, neck.x - hpx, neck.y - hpy,
+  ]);
+  g.endFill();
+  // Bristle fan — the tip half-width is ~3x the ferrule's, so the silhouette visibly widens past
+  // the neck instead of tapering to a point (the "pencil" failure mode of a narrower wedge).
+  const tpx = (-dy / len) * s * 0.16, tpy = (dx / len) * s * 0.16;
+  const tipL = { x: tip.x + tpx, y: tip.y + tpy }, tipR = { x: tip.x - tpx, y: tip.y - tpy };
+  g.beginFill(color, 0.45); g.lineStyle(0);
+  g.drawPolygon([neck.x + fpx, neck.y + fpy, tipL.x, tipL.y, tipR.x, tipR.y, neck.x - fpx, neck.y - fpy]);
+  g.endFill();
   pen.stroke([
-    { x: neck.x + px, y: neck.y + py }, { x: tip.x, y: tip.y }, { x: neck.x - px, y: neck.y - py },
-  ], { color, width: w * 0.9, jitter: 0.45, taper: 0.9, double: false }); // bristles
-  pen.line(tip.x - s * 0.04, tip.y + s * 0.06, tip.x + s * 0.10, tip.y + s * 0.04,
-    { color, width: w * 0.7, jitter: 0.5, taper: 0.6, double: false, alpha: 0.8 }); // paint stroke
+    { x: neck.x + fpx, y: neck.y + fpy }, { x: tipL.x, y: tipL.y },
+  ], { color, width: w * 0.8, jitter: 0.4, taper: 0.85, double: false }); // fan rim, left edge
+  pen.stroke([
+    { x: neck.x - fpx, y: neck.y - fpy }, { x: tipR.x, y: tipR.y },
+  ], { color, width: w * 0.8, jitter: 0.4, taper: 0.85, double: false }); // fan rim, right edge
+  pen.line(tipL.x, tipL.y, tipR.x, tipR.y, { color, width: w * 0.7, jitter: 0.4, taper: 0.9, double: false }); // tip edge
+  // A couple of individual bristle-strand ticks inside the fan, for texture.
+  for (const t of [0.35, 0.65]) {
+    const bx = tipR.x + (tipL.x - tipR.x) * t, by = tipR.y + (tipL.y - tipR.y) * t;
+    pen.line(neck.x, neck.y, bx, by, { color, width: w * 0.35, jitter: 0.3, taper: 0.5, double: false, alpha: 0.5 });
+  }
+  // A dabbed blob of paint at the tip, plus a short trailing stroke off to the side.
+  g.beginFill(color, 0.85); g.lineStyle(0);
+  g.drawCircle(tip.x, tip.y + s * 0.02, Math.max(1.4, s * 0.03));
+  g.endFill();
+  pen.line(tip.x, tip.y + s * 0.05, tip.x + s * 0.13, tip.y + s * 0.03,
+    { color, width: w * 0.6, jitter: 0.5, taper: 0.5, double: false, alpha: 0.7 }); // paint stroke
 }

@@ -103,24 +103,37 @@ export function drawCapsule(g: PIXI.Graphics, s: number, color: number): void {
     { color, width: w * 0.7, jitter: 0.2, taper: 0.6, double: false, alpha: 0.8 });
 }
 
-/** Cards (roster) — two overlapping cards, the front ruled with a couple of lines. */
+/**
+ * Cards (roster) — two overlapping cards, each with a flat alpha fill (paper "weight", same
+ * layered trick as `drawArmor`/the SLG shop icons — no gradient) so they read as card stock
+ * rather than bare outlines; the front card gets a small filled rank pip in its corner + two
+ * ruled lines.
+ */
 export function drawCards(g: PIXI.Graphics, s: number, color: number): void {
   const pen = new SketchPen(g, 0x7cd3);
   const w = Math.max(1.4, s * 0.045);
   // Back card, shifted up-right (drawn first → behind).
+  const back = [s * 0.42, s * 0.24, s * 0.74, s * 0.24, s * 0.74, s * 0.66, s * 0.42, s * 0.66];
+  g.beginFill(color, 0.12); g.lineStyle(0); g.drawPolygon(back); g.endFill();
   pen.stroke([
     { x: s * 0.42, y: s * 0.24 }, { x: s * 0.74, y: s * 0.24 },
     { x: s * 0.74, y: s * 0.66 }, { x: s * 0.42, y: s * 0.66 }, { x: s * 0.42, y: s * 0.24 },
   ], { color, width: w * 0.85, jitter: 0.4, taper: 0.9, double: false, alpha: 0.75 });
   // Front card.
+  const front = [s * 0.26, s * 0.34, s * 0.58, s * 0.34, s * 0.58, s * 0.78, s * 0.26, s * 0.78];
+  g.beginFill(color, 0.16); g.lineStyle(0); g.drawPolygon(front); g.endFill();
   pen.stroke([
     { x: s * 0.26, y: s * 0.34 }, { x: s * 0.58, y: s * 0.34 },
     { x: s * 0.58, y: s * 0.78 }, { x: s * 0.26, y: s * 0.78 }, { x: s * 0.26, y: s * 0.34 },
   ], { color, width: w, jitter: 0.45, taper: 0.92, double: false });
-  // Two faint ruled lines on the front card.
+  // Rank pip — a small filled dot in the front card's top-left corner (reads as a card marker).
+  g.beginFill(color, 0.85); g.lineStyle(0);
+  g.drawCircle(s * 0.315, s * 0.395, Math.max(1.2, s * 0.025));
+  g.endFill();
+  // Two ruled lines on the front card (portrait-area separator).
   const lw = Math.max(1, s * 0.022);
   for (let i = 0; i < 2; i++) {
-    const ly = s * 0.50 + i * s * 0.12;
+    const ly = s * 0.56 + i * s * 0.10;
     pen.line(s * 0.31, ly, s * 0.53, ly, { color, width: lw, jitter: 0.25, taper: 0.7, double: false, alpha: 0.7 });
   }
 }
