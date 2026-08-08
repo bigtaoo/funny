@@ -4,7 +4,7 @@ import { ui as C, txt, buildPaperBackground, sketchPanel, seedFor, tearDownChild
 import { buildIcon } from '../../render/icons';
 import { WorldApiError } from '../../net/WorldApiClient';
 import { serverNow } from '../../net/serverClock';
-import type { TeamTemplate, StationedView } from '../../net/WorldApiClient';
+import type { TeamTemplate } from '../../net/WorldApiClient';
 import { carriedTroops, teamDisplayName } from '../../game/meta/teamTroops';
 import { cardPower } from '../../game/meta/cardDefs';
 import { proceduralTile, ARROW_TOWER_COST, BLOCKER_COST } from '@nw/shared';
@@ -189,21 +189,17 @@ export class WorldMapNet {
     // Idle-team gate (2026-07-15): a team already committed to an active (non-recalled) march — marching or
     // holding a captured tile — must not accept a new order (mirrors the server-side TEAM_BUSY check in
     // combatMarch.ts, which checks both `marches` and `occupations`).
-    // ADR-051 (P3c): a 停留 idle field team is NOT busy for occupy/move — it can be re-commanded straight from
-    // where it stands. But the server's idleRedispatch bypass (combatMarch/command.ts) only whitelists
-    // kind 'occupy'/'move', never 'attack' — an idle-stationed team can't be ordered to attack in place, it
-    // must be recalled home first. This picker is shared across all three kinds, so the exclusion must mirror
-    // that split: only skip idle (non-garrison) stationed teams here when kind is occupy/move; for 'attack',
-    // ANY stationed team (idle or garrison) is busy. (2026-08-08 fix: previously always skipped idle-stationed
-    // regardless of kind, so the attack picker showed an idle-stationed team as pickable and the server then
-    // rejected it with TEAM_BUSY — see 停留队伍看起来空闲却报 Marching/occupying report.)
-    const stationedBusy = kind === 'occupy' || kind === 'move'
-      ? (s: StationedView) => s.mine !== false && s.mode === 'garrison'
-      : (s: StationedView) => s.mine !== false;
+    // ADR-051 (P3c, scope extended 2026-08-08 to include attack): a 停留 idle field team is NOT busy — it can
+    // be re-commanded straight from where it stands, for attack/occupy/move alike (mirrors the server-side
+    // idleRedispatch bypass in combatMarch/command.ts). Only 驻扎 garrison stationed teams count as busy here.
+    // (2026-08-08 user report: a forward-stationed team looked idle but attack kept failing TEAM_BUSY — turned
+    // out the server itself didn't allow attack-in-place at the time; fixed server-side to match this filter,
+    // which already treated idle-stationed as free for every kind — see slg-attack-picker-idle-stationed
+    // memory for the full incident, including the brief kind-restricted intermediate fix this superseded.)
     const busyTeamIds = new Set([
       ...this.ctx.marches.filter((m) => m.mine && m.teamId).map((m) => m.teamId),
       ...this.ctx.occupations.filter((o) => o.teamId).map((o) => o.teamId),
-      ...this.ctx.stationed.filter(stationedBusy).map((s) => s.teamId), // enemy stationed ignored (teamId blanked anyway)
+      ...this.ctx.stationed.filter((s) => s.mine !== false && s.mode === 'garrison').map((s) => s.teamId), // own 驻扎 = locked; own 停留 idle = free; enemy stationed ignored (teamId blanked anyway)
       ...this.pendingTeamIds, // in-flight dispatch not yet reflected in ctx.marches
     ]);
     // Committed troops = the strength the team actually CARRIES, from each card's cardState.currentTroops

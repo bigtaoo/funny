@@ -1859,6 +1859,20 @@ cols.tiles.find({ worldId, type: 'base', ownerId: { $nin: excludeOwners } })
 
 **根因**：队伍 1 当时/随后确实"闲"在野外某格（停留/占领保持中），不是闲在基地——但地图右侧的「⚑ Marches」面板只读 `ctx.marches`（行军中的过境记录），完全不展示占领保持/停留状态，玩家没有任何界面能看到"队伍 1 其实在外面"。真正的 bug 出在 `WorldMapNet.showTeamPicker`（`client/src/scenes/worldmap/WorldMapNet.ts`）的 `busyTeamIds` 过滤：它对"停留"（`mode:'idle'`）队伍的忙碌判定写死为"只有 `mode==='garrison'`（驻扎）才算忙"，注释称这是"镜像服务端的宽松判定"——但服务端 `combatMarch/command.ts` 的 `idleRedispatch` 旁路**只对 `kind==='occupy'` 或 `'move'` 生效，从不包括 `'attack'`**：一个停留中的队伍不能被直接下令进攻，必须先召回。所以进攻选择器（`kind:'attack'`）把停留中的队伍 1 当"空闲"列出来给玩家选，玩家选中后请求送到服务端，服务端按正确规则拒绝，报 `TEAM_BUSY`——客户端过滤条件和服务端真实许可范围不一致。
 
-**修复**（`WorldMapNet.ts`）：`busyTeamIds` 的 stationed 过滤改成按 `kind` 区分——`kind` 是 `'occupy'`/`'move'` 时维持原样（只有 `garrison` 算忙，`idle` 停留队伍可用）；其它情况（`'attack'`）任何停留中的队伍（`idle` 或 `garrison`）都算忙，跟服务端的 `idleRedispatch` 白名单严格对齐。
+**第一版修复**（先做的，后被用户否决）：以为客户端筛选口径需要"收紧"去对齐服务端——`busyTeamIds` 的 stationed 过滤改成按 `kind` 区分，`'attack'` 时任何停留队伍都算忙。补了 3 个客户端回归例（含临时回退确认会挂、恢复确认转绿），`tsc --noEmit` + 全量 `npm test`/`npm run test:ui` 全绿。
 
-**验证**：`tsc --noEmit` 全绿；`worldMapOccupyTeamPicker.ui.ts` 新增 3 例（停留队伍在进攻选择器里被排除/在占领·移动选择器里仍可选/驻扎队伍在三种选择器里都排除不受影响）——先临时回退修复确认新例真的会挂（`expected true to be false`），再恢复确认转绿；全量 `npm test`（151 文件/1224 例）+ `npm run test:ui`（135 文件/1269 例）复跑全绿。未改动服务端代码（服务端逻辑本身是对的），纯客户端过滤口径修正。
+**用户澄清真实需求**：把结果给用户看后，用户说要的效果是反过来的——"我要的结果是攻城和打地一样的，队伍停留在外面的时候也是可用过去进攻的"。也就是说 P3c 原设计"idleRedispatch 只放行 `move`/`occupy`，`attack` 故意排除"这条 2026-07-24 的范围限制本身就不是用户想要的行为；第一版修复精确对齐了服务端的（错误）现状，方向反了。
+
+**改成扩展服务端 `idleRedispatch` 范围**（`combatMarch/command.ts`）：把判断条件的 `kind==='occupy' || kind==='move'` 加上 `|| kind==='attack'`。走查了 `startMarch` 剩余分支——目标校验（siege 的所有者/连地/护盾/友军检查）只看 `toTile`，跟 `fromTile`（是否是队伍当前站的野战格而非玩家基地）无关，`idleRedispatch` 已有的兵力快照/兵池豁免/领地校验跳过/原子 `findOneAndDelete` 都是按 kind 通用生效的代码路径，加 `attack` 不需要额外分支——确认放行是安全的。
+
+**同步撤销客户端第一版的"kind 区分"**（`WorldMapNet.ts`）：改回三种 kind 统一处理——只要不是 `mode==='garrison'`，停留队伍永不算忙，跟扩展后的服务端严格对齐。
+
+**测试**：
+- `worldMapOccupyTeamPicker.ui.ts` 的 3 个新例翻转期望（原来断言"进攻选择器排除停留队伍"，现在断言"进攻选择器和占领/移动选择器一样能选中停留队伍"）。
+- `field-redispatch.e2e.test.ts` 新增「re-dispatch attack」例：队伍停留在野战格 A，直接对另一玩家的地块发起进攻（不召回），断言 `mv.kind==='attack'`、`mv.fromTile` 是 A 而不是主城、旧驻留 doc 被原子释放、兵池分毫不动——跟已有的 move/occupy 再指挥例同一套断言风格。
+- `teams.e2e.test.ts` 里一条依赖旧行为的断言过期失效：「占领 hold 结算后队伍停留在野战格，直接进攻会被拒绝，须先召回」——这条断言测的正是用户想改掉的旧行为，整段重写为「占领 hold 进行中（`occupations` 文档还在）依然无条件拒绝任何指令（这部分不受影响）；hold 结算、队伍落成停留 idle 后，能直接从该格发起新的进攻」。
+- 两处都先跑通旧代码确认会挂（`promise resolved ... instead of rejecting` / `expected true to be false`），改完代码后确认转绿。
+
+**验证**：`server/worldsvc` 相关 3 个 e2e 文件（`field-redispatch.e2e.test.ts` 5 例、`teams.e2e.test.ts` 19 例）+ 全量 `npx vitest run`（worldsvc 整包）全绿；client 侧 `tsc --noEmit` + `npm test`（151/1224）+ `npm run test:ui`（135/1269）全绿。
+
+**教训**：修 bug 前先把"服务端当前行为"当成"正确行为"去对齐客户端，是默认假设服务端设计没问题——但这次服务端那条范围限制本身就是产品决策的对象，不是既定事实。跟用户确认完修复效果后再定案，避免"修对了旧设计、修错了新需求"。

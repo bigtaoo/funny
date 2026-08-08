@@ -319,14 +319,17 @@ describe('WorldMapNet.showTeamPicker — sort order (nearest, then troops, then 
   });
 });
 
-// Kind-aware idle-stationed busy gate (2026-08-08): reported bug (account tao) — team looked idle in the
-// field (停留, not 驻扎/garrison) after a successful occupy, so the attack picker listed it as pickable
+// Idle-stationed attack parity (2026-08-08): reported bug (account tao) — a team stood idle in the field
+// (停留, not 驻扎/garrison) after a successful occupy, so the attack picker listed it as pickable
 // (busyTeamIds only ever excluded `mode==='garrison'`), the player picked it, and the server rejected the
-// order with TEAM_BUSY (combatMarch/command.ts's idleRedispatch bypass only whitelists kind 'occupy'/'move',
-// never 'attack') — "Marching / occupying" toast on a team that visibly wasn't marching. Fix makes the
-// client-side exclusion kind-aware to mirror the server exactly.
-describe('WorldMapNet.showTeamPicker — idle-stationed busy gate is kind-aware (2026-08-08 fix)', () => {
-  it('an idle (停留) stationed team is excluded from the ATTACK picker — server has no idleRedispatch bypass for attack', async () => {
+// order with TEAM_BUSY — at the time, combatMarch/command.ts's idleRedispatch bypass only whitelisted kind
+// 'occupy'/'move', never 'attack'. The user's desired behavior (confirmed): attack should have the SAME
+// forward-staging parity as occupy — a team parked out in the field should be attackable-in-place too, no
+// round trip home required. Fixed server-side (idleRedispatch now also covers 'attack') rather than
+// tightening the client — the client filter was already correct for the target design, the server was the
+// one lagging behind it.
+describe('WorldMapNet.showTeamPicker — idle-stationed team has attack parity with occupy/move (2026-08-08)', () => {
+  it('an idle (停留) stationed team is usable in the ATTACK picker too — parity with occupy/move', async () => {
     const { net, showModal } = buildHarness({
       teams: [{ id: 't1', name: 'Alpha', army: [{ cardInstanceId: 'c1' }] }],
       cardState: { c1: { currentTroops: 500 } },
@@ -334,10 +337,10 @@ describe('WorldMapNet.showTeamPicker — idle-stationed busy gate is kind-aware 
     });
     await net.showTeamPicker(ANCHOR.x, ANCHOR.y, 'attack');
     const buttons = showModal.mock.calls[0][1] as { label: string }[];
-    expect(buttons.some((b) => b.label.startsWith('Alpha'))).toBe(false);
+    expect(buttons.some((b) => b.label.startsWith('Alpha'))).toBe(true);
   });
 
-  it('the same idle-stationed team remains usable for occupy/move — server DOES bypass idleRedispatch there', async () => {
+  it('the same idle-stationed team remains usable for occupy/move', async () => {
     const { net, showModal } = buildHarness({
       teams: [{ id: 't1', name: 'Alpha', army: [{ cardInstanceId: 'c1' }] }],
       cardState: { c1: { currentTroops: 500 } },
@@ -351,7 +354,7 @@ describe('WorldMapNet.showTeamPicker — idle-stationed busy gate is kind-aware 
     expect((showModal.mock.calls[0][1] as { label: string }[]).some((b) => b.label.startsWith('Alpha'))).toBe(true);
   });
 
-  it('a garrison-stationed (驻扎) team stays excluded from every kind — unaffected by this fix', async () => {
+  it('a garrison-stationed (驻扎) team stays excluded from every kind, including attack', async () => {
     const { net, showModal } = buildHarness({
       teams: [{ id: 't1', name: 'Alpha', army: [{ cardInstanceId: 'c1' }] }],
       cardState: { c1: { currentTroops: 500 } },
