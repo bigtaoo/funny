@@ -286,7 +286,9 @@ pendingCardDown: { x, y, handIndex } | null             // 按下卡牌后，判
   - BridgeCollapse（PvE-only）：只是封路、不造成伤害，没有"命中单位"概念，不描边。
 - **描边实现**：复用 `UnitView` 已有的 hit-flash 描边贴图机制（`StickmanRuntime.setOutlineFlash(color, alpha)`，此前只用于受击闪光），改为悬停/拖拽期间**持续**点亮（不淡出），颜色复用 `fx.meteor`（与落点方框同色，读作同一个信号）。每次 `updatePlacementHighlights` 重算时做 diff（新增点亮、消失的清除），与棋盘方框刷新同一节奏（指针移动 + 10Hz 的 `refreshPlacementHighlights` 兜底刷新）。取消拖拽/取消 tap-select 时一并清空。
 - **已知限制**：只有走 `.tao` 骨骼动画的单位（绝大多数正式单位类型）会描边；`.tao` 资源尚未加载完成时的圆点占位单位没有描边贴图，不描边——与既有受击闪光的降级行为一致。
-- **回归测试**：`client/test/ui/gameRendererSpellTargetPreview.ui.ts`——直接断言 `unitView.previewUnitIds`（`setSpellTargetPreview` 内部 diff 用的 id 集合，不依赖 `.tao` 异步加载即可验证），覆盖 Meteor 2×2 敌我过滤、悬停点位切换时新增/清除、取消拖拽清空、Rockslide 整列双方描边。
+- **回归测试**（两层）：
+  - `client/test/ui/gameRendererSpellTargetPreview.ui.ts`——经 `InputManager` 走真实 `handleDown/handleMove/handleUp`，直接断言 `unitView.previewUnitIds`（`setSpellTargetPreview` 内部 diff 用的 id 集合，不依赖 `.tao` 异步加载即可验证）：Meteor 2×2 敌我过滤（含已死亡单位排除）、悬停点位切换时新增/清除、取消拖拽/取消 tap-select 清空、Meteor tap-select 态下悬停实时预览、从 Meteor 切到其它卡牌后残留描边被清空、Rockslide 整列双方描边（含已死亡单位排除）。
+  - `client/test/ui/unitViewSpellTargetPreview.ui.ts`——绕过 `.tao` 异步加载（headless 环境里资源必定加载失败），直接向 `UnitView` 私有的 `stickmanRuntimes` 塞入假 runtime（同 `marchTokenAnimation.ui.ts` 手法），断言 `setSpellTargetPreview` 真的调用了 `setOutlineFlash`：点亮用的颜色/新掉出集合的单位被 `setOutlineFlash(null)`、无 runtime 的单位 id 静默跳过不抛错、同一个 Set 引用重复调用是真正的 no-op（10Hz 刷新在未选中法术时高频复用同一个空集合常量）。
 
 ### 卡面渲染（`HandView`）
 

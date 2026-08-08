@@ -131,6 +131,102 @@ describe('GameRenderer InputMixin — spell target unit preview', () => {
     renderer.destroy();
   });
 
+  it('tap-selecting Meteor, then hovering the board, previews the footprint under the pointer', () => {
+    // Unlike Rockslide/BridgeCollapse, Meteor's tap-select mode DOES track the pointer live
+    // (the `tapSelect?.spellType === SpellType.Meteor` branch in handleMove) — this is the
+    // primary path a player actually aims a tap-selected Meteor with before tapping to confirm.
+    const { engine, layout, renderer, input } = buildRenderer();
+    forceHandSlot(engine, meteorCard);
+
+    const enemy = new Unit(UnitType.Infantry, Side.Top, 4, 6); // inside the 2×2 anchored at (3,5)
+    engine.state.board.addUnit(enemy);
+
+    const center = (renderer as any).handView.slotCenter(0);
+    input._emitDown(center.x, center.y);
+    input._emitUp(center.x, center.y); // tap-select, no drag
+    expect((renderer as any).tapSelect?.handIndex).toBe(0);
+    expect(((renderer as any).unitView.previewUnitIds as Set<number>).size).toBe(0); // nothing hovered yet
+
+    const boardPt = layout.gridToScreen(3, 5);
+    input._emitMove(boardPt.x, boardPt.y);
+
+    expect(((renderer as any).unitView.previewUnitIds as Set<number>).has(enemy.id)).toBe(true);
+    renderer.destroy();
+  });
+
+  it('cancelling a Meteor tap-select clears the preview', () => {
+    const { engine, layout, renderer, input } = buildRenderer();
+    forceHandSlot(engine, meteorCard);
+
+    const enemy = new Unit(UnitType.Infantry, Side.Top, 4, 6);
+    engine.state.board.addUnit(enemy);
+
+    const center = (renderer as any).handView.slotCenter(0);
+    input._emitDown(center.x, center.y);
+    input._emitUp(center.x, center.y);
+    const boardPt = layout.gridToScreen(3, 5);
+    input._emitMove(boardPt.x, boardPt.y);
+    expect(((renderer as any).unitView.previewUnitIds as Set<number>).size).toBe(1);
+
+    // Tapping the already-selected card again deselects (cancelTapSelect).
+    input._emitDown(center.x, center.y);
+    input._emitUp(center.x, center.y);
+
+    expect((renderer as any).tapSelect).toBeNull();
+    expect(((renderer as any).unitView.previewUnitIds as Set<number>).size).toBe(0);
+    renderer.destroy();
+  });
+
+  it('a dead unit inside the Meteor footprint is never previewed', () => {
+    const { engine, layout, renderer, input } = buildRenderer();
+    forceHandSlot(engine, meteorCard);
+
+    const dead = new Unit(UnitType.Infantry, Side.Top, 4, 6);
+    dead.hp = 0; // isDead → true; mirrors SpellSystem.castMeteor's `if (unit.isDead) continue`
+    engine.state.board.addUnit(dead);
+
+    const from = (renderer as any).handView.slotCenter(0);
+    const to   = layout.gridToScreen(3, 5);
+    input._emitDown(from.x, from.y);
+    input._emitMove(to.x, to.y);
+
+    expect(((renderer as any).unitView.previewUnitIds as Set<number>).has(dead.id)).toBe(false);
+    expect(((renderer as any).unitView.previewUnitIds as Set<number>).size).toBe(0);
+    renderer.destroy();
+  });
+
+  it('switching the drag away from Meteor to any other card clears the leftover spell-target preview', () => {
+    // Regression guard for the top-of-updatePlacementHighlights default: every branch other than
+    // Meteor/Rockslide must still end up passing an empty set to setSpellTargetPreview, not skip
+    // the call and leave a stale outline from the previous (spell) selection.
+    const { engine, layout, renderer, input } = buildRenderer();
+    forceHandSlot(engine, meteorCard);
+
+    const enemy = new Unit(UnitType.Infantry, Side.Top, 4, 6);
+    engine.state.board.addUnit(enemy);
+
+    const meteorFrom = (renderer as any).handView.slotCenter(0);
+    const boardPt     = layout.gridToScreen(3, 5);
+    input._emitDown(meteorFrom.x, meteorFrom.y);
+    input._emitMove(boardPt.x, boardPt.y);
+    expect(((renderer as any).unitView.previewUnitIds as Set<number>).size).toBe(1);
+    input._emitMove(-5000, -5000);
+    input._emitUp(-5000, -5000); // cancel the meteor drag
+
+    // Now drag whatever other card RNG dealt into some other slot onto the board.
+    const player = engine.state.bottomPlayer;
+    const otherSlot = player.hand.slots.findIndex((s, i) => i !== 0 && !!s);
+    expect(otherSlot).toBeGreaterThanOrEqual(0);
+    player.addInkFp(toFp(100));
+    const otherFrom = (renderer as any).handView.slotCenter(otherSlot);
+    const otherTo   = layout.gridToScreen(2, 15);
+    input._emitDown(otherFrom.x, otherFrom.y);
+    input._emitMove(otherTo.x, otherTo.y);
+
+    expect(((renderer as any).unitView.previewUnitIds as Set<number>).size).toBe(0);
+    renderer.destroy();
+  });
+
   it('dragging Rockslide over a column previews every unit in it, both sides alike', () => {
     // Rockslide's tap-select mode has no live pointer-hover preview (only Meteor's tap-select
     // wires handleMove → updatePlacementHighlights, see input.ts) — that's a pre-existing gap
@@ -160,6 +256,26 @@ describe('GameRenderer InputMixin — spell target unit preview', () => {
     expect(preview.has(otherCol.id)).toBe(false);
     expect(preview.size).toBe(2);
 
+    renderer.destroy();
+  });
+
+  it('a dead unit in the Rockslide column is never previewed', () => {
+    const { engine, layout, renderer, input } = buildRenderer();
+    const p = engine.state.bottomPlayer;
+    p.hand.drawIntoSlot(0, rockslideCard, 9999);
+    p.addInkFp(toFp(100));
+
+    const dead = new Unit(UnitType.Infantry, Side.Top, 5, 6);
+    dead.hp = 0; // mirrors SpellSystem.castRockslide's `if (unit.isDead) continue`
+    engine.state.board.addUnit(dead);
+
+    const from    = (renderer as any).handView.slotCenter(0);
+    const boardPt = layout.gridToScreen(5, 5);
+    input._emitDown(from.x, from.y);
+    input._emitMove(boardPt.x, boardPt.y);
+
+    expect(((renderer as any).unitView.previewUnitIds as Set<number>).has(dead.id)).toBe(false);
+    expect(((renderer as any).unitView.previewUnitIds as Set<number>).size).toBe(0);
     renderer.destroy();
   });
 });
