@@ -97,6 +97,30 @@ describe('parseLevelDefinition', () => {
     }
   });
 
+  it('every campaign level carries a briefKey — every level shows a story beat at the start (2026-08-08)', () => {
+    // Product ask: every level opens with a story line, no exceptions. Lv4/Lv8 ("纯战斗关") used
+    // to be the one gap — LevelPrepScene rendered a blank panel for them (visible on e.g. Level 24
+    // = ch3_lv4) until briefKey was added for all twelve Lv4/Lv8 levels across the six chapters.
+    for (const id of CAMPAIGN_LEVEL_ORDER) {
+      if (id === 'ch_stress') continue; // perf fixture, not a real narrative level
+      expect(CAMPAIGN_LEVELS[id]!.briefKey, `${id} is missing briefKey`).toBeDefined();
+    }
+  });
+
+  it('outroKey is exclusive to each chapter\'s last level — only special (finale) levels end with a story', () => {
+    // Complements the realLayerKey exclusivity check above: the other end of the product ask
+    // ("只有特殊关卡在结束时有故事") is that ResultScene's outro overlay never fires outside the
+    // six chapter finales.
+    const lastLevels = new Set(['ch1_lv10', 'ch2_lv10', 'ch3_lv10', 'ch4_lv10', 'ch5_lv10', 'ch6_lv10']);
+    for (const id of CAMPAIGN_LEVEL_ORDER) {
+      if (lastLevels.has(id)) {
+        expect(CAMPAIGN_LEVELS[id]!.story?.outroKey, `${id} should carry an outroKey`).toBeDefined();
+      } else {
+        expect(CAMPAIGN_LEVELS[id]!.story?.outroKey).toBeUndefined();
+      }
+    }
+  });
+
   it('rejects an unknown unit type', () => {
     const bad = minimal();
     bad.waves.entries[0]!.unitType = 'dragon';
