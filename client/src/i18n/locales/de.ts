@@ -1238,6 +1238,8 @@ export const de: Record<TranslationKey, string> = {
   'auction.tapChoose': 'Zum Auswählen tippen',
   'auction.pickItem': 'Gegenstand zum Verkauf wählen',
   'auction.pickHint': 'Wählen ›',
+  'auction.sellHint': 'Verkaufen ›',
+  'auction.sellSuccess': 'Verkauft für {coins} Münzen',
   'auction.noItems': 'Keine verkäuflichen Gegenstände',
 
   // ── Kampagnenlevel: Namen & Briefings ────────────────────────────────────

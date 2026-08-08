@@ -8,6 +8,7 @@ import { allEquippedSkins } from '../../game/meta/skinDefs';
 import type { WorldMapView } from '../../scenes/WorldMapScene';
 import type { AppCtx, Nav } from '../appCtx';
 import { TOKEN_KEY } from '../appConstants';
+import { genUuid } from '../../platform/uuid';
 
 type WorldNav = Pick<Nav,
   'goWorldEntry' | 'goAuctionFromLobby' | 'goWorldMap' | 'goSiegeReplay' | 'goDefenseEditor' |
@@ -15,6 +16,21 @@ type WorldNav = Pick<Nav,
 
 export function createWorldNav(ctx: AppCtx): WorldNav {
   const { api, saveManager, platform, state, views, nav, getNetSession, playerName, resolveWorldShard } = ctx;
+
+  /**
+   * Sell one surplus skin instance to the system for coins (ITEM_IDENTITY_DESIGN.md task1,
+   * 2026-08-08) — shared by both AuctionScene entry points below. `api` is only ever undefined when
+   * fully offline, which both showAuction entry points already gate on (token check before opening the
+   * scene at all) — this throws instead of silently no-op'ing so the picker's catch surfaces an error
+   * toast rather than pretending the sale happened.
+   */
+  async function sellSkin(skinId: string): Promise<{ credited: number }> {
+    if (!api) throw new Error('offline');
+    const { credited, save } = await api.sellSkin(skinId, genUuid());
+    saveManager.adoptServer(save);
+    analytics.track('skin_sell', { skin_id: skinId, credited });
+    return { credited };
+  }
 
   function goWorldEntry(): void {
     // Note: getWorldBaseUrl() returns '' in Docker/production (same-origin nginx proxy,
@@ -42,6 +58,7 @@ export function createWorldNav(ctx: AppCtx): WorldNav {
       onSaveChanged: (listener: () => void) => saveManager.subscribe(listener),
       reloadSave: async () => { await saveManager.refresh(); },
       myAccountId: saveManager.get().accountId,
+      sellSkin,
     });
   }
 
@@ -278,6 +295,7 @@ export function createWorldNav(ctx: AppCtx): WorldNav {
       onSaveChanged: (listener: () => void) => saveManager.subscribe(listener),
       reloadSave: async () => { await saveManager.refresh(); },
       myAccountId: saveManager.get().accountId,
+      sellSkin,
     }, { overlay: opts?.overlay });
   }
 

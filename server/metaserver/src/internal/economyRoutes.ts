@@ -288,7 +288,7 @@ export function registerEconomyRoutes(app: FastifyInstance, ctx: InternalCtx): v
         return reply.send({ ok: true, deduped: true });
       }
     }
-    const r = await grantSkin(cols, now, accountId, skinId);
+    const r = await grantSkin(cols, now, accountId, skinId, orderId);
     if ('error' in r) {
       if (orderId) await releaseGrantOrder(cols, orderId);
       return reply.code(ERROR_HTTP_STATUS[r.code] ?? 400).send({ ok: false, error: r.error, code: r.code });

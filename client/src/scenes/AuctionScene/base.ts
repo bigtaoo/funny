@@ -19,6 +19,7 @@ import { drawSceneHeader, sceneHeaderHeight, HEADER_ACCENT, drawHeaderCurrency }
 import { sidebarNavW } from '../../ui/widgets/HubTabs';
 import type { WorldApiClient, AuctionView } from '../../net/WorldApiClient';
 import { WorldApiError } from '../../net/WorldApiClient';
+import { ApiError } from '../../net/ApiClient';
 import type { SaveData, EquipmentInstance, CardInstance } from '../../game/meta/SaveData';
 import { EQUIP_MAX_LEVEL } from '../../game/meta/equipmentDefs';
 import { MAX_CARD_LEVEL } from '../../game/meta/cardDefs';
@@ -55,6 +56,13 @@ export interface AuctionSceneCallbacks {
    * client-side from the already-loaded market list. Optional; without it the tab is empty.
    */
   myAccountId?: string;
+  /**
+   * Sell one surplus skin instance to the system for coins (ITEM_IDENTITY_DESIGN.md task1,
+   * 2026-08-08) — a separate, player-initiated action alongside listing on the market; never
+   * automatic. Optional: without it, the picker only offers auctioning, not the sell shortcut
+   * (e.g. tests, or a lobby-entry context that hasn't wired the metaserver client through).
+   */
+  sellSkin?(skinId: string): Promise<{ credited: number }>;
 }
 
 export type AucTab = 'all' | 'mine' | 'bids';
@@ -134,6 +142,10 @@ export class AuctionSceneBase {
 
   /** Async card-art texture URLs already hooked for a re-render on load (avoids double-subscribing). */
   protected readonly artHooked = new Set<string>();
+
+  /** skinIds with an in-flight sellSkin call (ITEM_IDENTITY_DESIGN.md task1, 2026-08-08) — guards the
+   *  picker's sell button against a double-tap firing two concurrent sales before the first lands. */
+  protected readonly sellBusy = new Set<string>();
 
   // Create form state
   protected createClass: ItemClass = 'material';
@@ -576,6 +588,17 @@ export class AuctionSceneBase {
 
   protected errorMsg(e: unknown): string {
     if (e instanceof TimeoutError) return t('common.networkTimeout');
+    // sellSkin (ITEM_IDENTITY_DESIGN.md task1, 2026-08-08) talks to metaserver, not auctionsvc/worldsvc,
+    // so its errors surface as ApiError rather than WorldApiError — reuses the same skin error copy.
+    if (e instanceof ApiError) {
+      const map: Record<string, string> = {
+        SKIN_IN_USE: t('auction.err.skinInUse'),
+        SKIN_NOT_FOUND: t('auction.err.closed'),
+        INSUFFICIENT_FUNDS: t('auction.err.insufficientFunds'),
+        NOT_IMPLEMENTED: t('auction.err.notImpl'),
+      };
+      return map[e.code] ?? e.message;
+    }
     if (e instanceof WorldApiError) {
       const map: Record<string, string> = {
         AUCTION_CLOSED:          t('auction.err.closed'),

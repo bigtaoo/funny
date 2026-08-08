@@ -1,6 +1,6 @@
 # 物品身份基准：唯一id / 状态 / 溯源
 
-> 状态：设计中（第1部分已实现，第2部分为后续待办）· 权威：本文 · 更新：2026-08-04
+> 状态：设计中（第1、2部分已实现，材料/称号实例化为后续待办）· 权威：本文 · 更新：2026-08-08
 
 ## 0. 背景
 
@@ -34,11 +34,17 @@
 
 > 执行约定同 [AUCTION_DESIGN.md](AUCTION_DESIGN.md) §9：`[ ]` 未开始 / `[~]` 进行中 / `[x]` 完成，按编号顺序做，每个任务独立 worktree + 独立分支。新会话直接说「开始物品身份任务N」定位到本节。
 
-### 任务1：皮肤实例化（范围最小，优先做）
+### 任务1：皮肤实例化 ✅（2026-08-08）
 
-- [ ] **范围**：`inventory.skins: string[]` → 每份皮肤一个独立实例（`SkinInstance{id, skinId, sourceType, obtainedAt}`），仿 `EquipmentInstance` 的模式建 `skinInstances` 集合。
-- **必须先定案的经济学问题**：皮肤实例化后，gacha 抽到"重复"皮肤该怎么处理——现状 `markDuplicates`（`server/metaserver/src/economy.ts`）对重复皮肤是纯 no-op（不生成新实例，不补偿），设计文档里"重复转化待S5"的待办（`economy.ts` 头部注释）尚未排期。若要让"卖掉多余的皮肤"这个用户诉求真正成立，重复抽中必须真的生成一份新实例（而不是被丢弃），这个决策要先过一遍 [GACHA_DESIGN.md](GACHA_DESIGN.md)/[ECONOMY_BALANCE.md](ECONOMY_BALANCE.md) 的经济验证流程（参考 [SLG_ECONOMY_CHECK.md](SLG_ECONOMY_CHECK.md) 的核验方法），不能悄悄改。
-- **影响面**：`server/metaserver/src/skin.ts`（`escrowSkin`/`grantSkin` 整个从"字符串增删"改成"实例增删"）、`server/shared/src/types.ts`/`mongo.ts`、`server/auctionsvc/src/auctionService.ts` 的 skin 分支（挂单体从 `{skinId}` 改成 `{instanceId}`，仿装备/卡牌）、`client/src/scenes/AuctionScene/*`（本次刚接入的 skin picker 要跟着改）、皮肤装备槽逻辑（`equipped['skin:<UnitType>']` 现在存的是 skinId，要改存 instanceId 还是保留 skinId+另查一份"当前实例"，需要设计）、`design/game/GACHA_DESIGN.md` 的重复处理章节。
+- **起因**：账号 tao 抽到一个重复皮肤，背包不显示、也拿不去拍卖——排查发现 `markDuplicates` 对重复皮肤是纯 no-op（不生成新实例，不补偿），GACHA_DESIGN §4.3 写的"重复退币"从未真正接入发货流程（`DUPE_REFUND_COINS` 此前只在离线 `econ-sim` 里用到）。
+- [x] **数据模型**：新增 `SkinInstance{id, skinId, sourceType?, obtainedAt?}`（`server/shared/src/types.ts`）+ `skinInstances` 集合（`server/shared/src/mongo.ts`，`_id`=instanceId，索引 `{accountId,skinId}`）。**`inventory.skins: string[]` 语义完全不变**——仍是"当前是否拥有至少一份"的去重视图，`skin.ts` 负责在实例增减时同步它，这样已有的 ~20 处读取点（装备槽校验/`everOwned`/客户端等）零改动。
+- [x] **`skin.ts` 重写**：`escrowSkin`/`grantSkin`/新增 `sellSkinToSystem` 都改成对 `skinInstances` 做增删；`escrowSkin`/`sellSkinToSystem` 的"已装备"限制从"完全禁止"放宽为"只保护装备中的最后一份"（`effectiveCount<=1` 才拒绝，`Math.max(count,1)` 兼容老账号——见下）；`grantSkin`（拍卖成交/撤单/过期归还）铸造一份新实例，皮肤同质无词条，不需要保留原实例身份。
+- [x] **auctionsvc 契约刻意不改**：ADR-059 原计划挂单体从 `{skinId}` 改 `{instanceId}`（仿装备/卡牌），实现时改为**保持 `{skinId}` 不变**——`escrowSkin(accountId, skinId, orderId)` 对 auctionsvc 而言接口完全没变，内部实现从"字符串增删"换成"挑一份实例删掉"是纯粹的内部换血。理由：皮肤本就同质（无等级/词条），instanceId 对调用方毫无信息量，暴露它只会平白无故牵动 auctionsvc/contracts/client 三处（`auctionService.ts`/openapi-auction schema/`AuctionScene` picker），而这次真正要修的 bug（重复皮肤消失）跟"挂单体长什么样"无关。零改动即可验证：`auctionsvc` 全量测试原样通过。
+- [x] **老账号自愈**（不做 SAVE_VERSION 迁移）：`assembleSkinCounts`（GET /save 的 skinCounts join，`app.ts` preSerialization hook，仿 `assembleEquipmentInv`）遇到"`inventory.skins` 里有、但 `skinInstances` 一份都没有"的 skinId，`$setOnInsert` 补一条 `sourceType:'legacy'` 的实例——幂等，并发调用不会重复补。`escrowSkin`/`sellSkinToSystem` 同样有 `Math.max(count,1)` 兜底，即使某个请求抢在自愈之前到达也不会误判"未拥有"。
+- [x] **gacha 重复皮肤 = 真实例，不再自动转币**：`economy.ts` 的 `deliverLootBox`/`deliverGrant`/`deliverMailGrant`/`deliverOrder`（fate 兑换、商店直购）现在对**每一次**皮肤结果都铸造一个 `SkinInstance`（id 取 `skin_gacha_<orderId>_<i>` 等确定性格式，幂等），无论是不是重复——`markDuplicates`/`newSkins` 只决定 NEW 徽章和 `everOwned` 记账，不再决定"要不要发东西"。
+- [x] **"卖给系统"= 玩家主动操作，绝不自动**：新增 `POST /skins/sell`（`skin.ts sellSkinToSystem`），售价复用已有的 `DUPE_REFUND_COINS[目录稀有度]`（legendary 1500/epic 400/rare 50/common 10，与 GACHA_DESIGN §4.3 一致，没有另编数字），走 `commercial.grant` 幂等入账。同一个"最后一份保护装备中"的规则同时用于挂拍和出售。
+- [x] **客户端**：`SaveData.skinCounts?: Record<string,number>`（GET /save 自动 join，additive-only 字段，`migrate.ts` 的 `fillDefaults` 自动补 `{}`，未升版本号）；`AuctionScene` picker 的 `listableSkins()` 放宽为"未装备，或有多余份数"；picker 卡片新增"出售"分区（拍卖/出售各占底部一半热区），走 `client.sellSkin()` → `/skins/sell`。
+- **验收**：`server/metaserver/test/skin.e2e.test.ts`（14 例，含"装备中的多余份可挂拍/可出售，最后一份仍被拒绝"）+ `economy.e2e.test.ts` 新增断言（重复皮肤真的铸造第二个实例、`skinCounts` 正确）；metaserver 全量 840 例、shared 713 例、auctionsvc 97 例全绿；client `tsc --noEmit` 全绿，UI 套件 1241 例 + 常规套件 1221 例全绿（含 `auctionPickerDedupe.ui.ts` 新增 6 例：放宽后的 listableSkins、"×N"标签、onSell 接线、双击防抖、渲染不崩溃）。
 
 ### 任务2：材料实例化（范围最大，依赖任务1的实例化模式跑通后再做）
 
@@ -56,7 +62,7 @@
 
 ## 4. 与其它文档的关系
 
-- [AUCTION_DESIGN.md](AUCTION_DESIGN.md) §2.1/§9：材料/装备/角色卡/皮肤四类可交易品的挂单模型（本文任务1完成后，皮肤挂单体从 `{skinId}` 改为 `{instanceId}`，需要同步改 AUCTION_DESIGN 的标的表）。
+- [AUCTION_DESIGN.md](AUCTION_DESIGN.md) §2.1/§9：材料/装备/角色卡/皮肤四类可交易品的挂单模型——**皮肤挂单体维持 `{skinId}` 不变**（任务1实现时的决策，见上，未按原计划改成 `{instanceId}`）。
 - [EQUIPMENT_DESIGN.md](EQUIPMENT_DESIGN.md) / [CHARACTER_CARDS_DESIGN.md](CHARACTER_CARDS_DESIGN.md)：`sourceType`/`obtainedAt` 字段定义（本文 §2，已实现）。
-- [GACHA_DESIGN.md](GACHA_DESIGN.md)：皮肤"重复抽中"的经济学处理（本文任务1的前置决策）。
-- [DECISIONS.md](../DECISIONS.md) ADR-059：本文所有结论的决策记录。
+- [GACHA_DESIGN.md](GACHA_DESIGN.md) §4.3：皮肤"重复抽中"的经济学处理——已改为「真实例 + 玩家主动出售」，见上。
+- [DECISIONS.md](../DECISIONS.md) ADR-059 / ADR-061：本文所有结论的决策记录。
