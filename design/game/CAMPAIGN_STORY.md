@@ -416,6 +416,14 @@ campaign.ch2.lv1.name   = "三强"
 - 展示时机：胜利结算之后、返回 `CampaignMapScene` 之前（`client/src/app/nav/game.ts` 的 `proceedToMap`），而不是像旧 `epilogueKey` 那样卡在结算面板揭晓之前——六章行为统一，不再是 ch6 特例
 - 六张插画的资源映射：`client/src/scenes/realLayerInterludeArt.ts`
 
+### 章末真实层插画：文字改回堆叠展示（2026-08-08）
+
+上一节把展示机制定为「文字逐条替换」，与 `IntroScene` 的「多行堆叠」刻意做了区分；但实际体验下来，替换式看完最后一拍，前面几拍已经从画面上消失，读不到完整的一段话。改回和开场一致的展示方式：
+
+- `IllustratedInterludeScene` 不再是单个 `lineText` 复用文本对象、`currentIndex` 切换内容，而是像 `IntroScene` 一样把每一拍都建成独立的 `PIXI.Text`（`lines: PIXI.Text[]`），`shownCount` 只增不减；淡入/点按补全/自动前进/跳过机制不变，只是「翻到下一拍」不再清空上一拍，而是在其下方再淡入一条
+- 文字块从插画预留的上三分之一空白带顶部开始向下堆叠（`startY`/`lineGapY` 按 `FS.heading` 换算），提示语 `story.tapToContinue` 锚点相应下移到堆叠文字块的下方，避免和最后一拍重叠；尾声（8 拍）文字块会略微超出原本的三分之一留白，属已知取舍——就像开场的 7 行一样，读完整段的可读性优先于严格贴合留白带
+- 测试同步改写：`client/test/ui/illustratedInterludeScene.ui.ts` 断言改为「前一拍保持满 alpha、下一拍独立淡入」，新增「全部拍完后每一条都还在」的用例
+
 ### 全关卡开场文案补全（2026-08-08）
 
 产品诉求：每一关开战前都应该有一段故事；结局文案只保留在特殊关卡（章末 Lv10 决赛）。此前 outro/realLayer 已经天然只挂在 Lv10 上，无需改动；但 Lv4/Lv8（原「纯战斗关」）开战前完全空白——`LevelPrepScene` 的简报面板不渲染，`Level 24`（`ch3_lv4`）这类关卡的确认页因此有大片空白。本次去掉「纯战斗关」分类，Lv4/Lv8 并入「氛围关」，各配一句 1 句、30-50 字的过渡文案：
