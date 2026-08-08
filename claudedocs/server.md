@@ -36,6 +36,7 @@
 
 - **metaserver 契约按域拆分（ADR-040，2026-07-14）**：`contracts/openapi.yml` 本身已是生成产物（文件头 `AUTO-GENERATED ... DO NOT EDIT`），**改契约不要手改这个文件**——改 `contracts/openapi/paths/<domain>.yml`（9 个 fragment，一一对应 `metaserver/src/service/*.ts` 的 mixin：auth/save/pve/economy/inventory/progression/liveops/social/telemetry）或 `contracts/openapi/schemas.yml`（共享 schema/responses），然后在 `server/metaserver/` 跑 `npm run gen:api:contracts` 重新合并出 `openapi.yml`。
 - **metaserver REST 路由（ADR-023，2026-06-30）**：`contracts/openapi.yml` → `server/contracts/scripts/gen-openapi-server.mjs` → `metaserver/src/generated/routes.gen.ts`（已入库）。改完 fragment 后先 `npm run gen:api:contracts` 再 `npm run gen:api:server` 重生成，一并提交。CI 依次验证 `npm run gen:api:contracts:check`、`npm run gen:api:server:check`（文件过期则失败）。坏 spec（如未加引号的逗号）在 codegen 阶段直接报错，不进运行时。
+- **codegen 自动前置（2026-08-08）**：metaserver / worldsvc / socialsvc / auctionsvc（openapi）+ gateway / gameserver（proto）六个包各自的 `build`/`typecheck`/`dev`/`test` 都挂了对应 `pre<script>`，本地跑这四个命令时 npm 会自动先跑一遍 `gen:api:*`（metaserver 是 `gen:api:contracts && gen:api:server`）/`proto:gen`，不用再记得手动生成——**这不是取代 CI 的 `:check` 步骤**，只是把「忘记生成」的窗口从「commit 前」提前到「本地敲命令那一刻」；CI 的 staleness check 仍是最后一道防线（防手改生成文件、跳过 npm 脚本直接改 `.yml`/`.proto` 又不本地跑一遍等场景）。`npm run dev:all`（`dev-up.ps1`）走的是 `node --watch` 直连、不经过 npm 脚本，因此在 `dev-up.ps1` 里单独插了一步「regen codegen」覆盖这条路径。触发事件：同一天两次因为改 `.yml` 忘记重新生成导致 CI 挂（worldsvc sect-mate 字段、socialsvc accountId 字段）。
 
 ## 启动（dev）
 

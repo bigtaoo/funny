@@ -5,10 +5,14 @@
   "description": "Standalone auction house service (AUCTION_DESIGN §9), decoupled from worldsvc/worldId",
   "main": "dist/index.js",
   "scripts": {
+    "prebuild": "npm run gen:api:auction",
     "build": "tsc -b",
+    "pretypecheck": "npm run gen:api:auction",
     "typecheck": "tsc --noEmit",
+    "predev": "npm run gen:api:auction",
     "dev": "node --watch --import tsx src/index.ts",
     "start": "node dist/index.js",
+    "pretest": "npm run gen:api:auction",
     "test": "vitest run",
     "gen:api:auction": "node ../contracts/scripts/gen-openapi-auction.mjs",
     "gen:api:auction:check": "node ../contracts/scripts/gen-openapi-auction.mjs --check"

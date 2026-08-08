@@ -4,10 +4,14 @@
   "private": true,
   "main": "dist/index.js",
   "scripts": {
+    "prebuild": "npm run gen:api:social",
     "build": "tsc -b",
+    "pretypecheck": "npm run gen:api:social",
     "typecheck": "tsc --noEmit",
+    "predev": "npm run gen:api:social",
     "dev": "node --watch --import tsx src/index.ts",
     "start": "node dist/index.js",
+    "pretest": "npm run gen:api:social",
     "test": "vitest run",
     "gen:api:social": "node ../contracts/scripts/gen-openapi-social.mjs",
     "gen:api:social:check": "node ../contracts/scripts/gen-openapi-social.mjs --check"
