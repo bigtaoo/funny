@@ -52,7 +52,7 @@ function retentionWithTiers(): RetentionView {
       weeklyChestTiers: [
         { threshold: 9, reward: { kind: 'material', count: 20, id: 'lead' } },
         { threshold: 15, reward: { kind: 'equipment', count: 1 } },
-        { threshold: 21, reward: { kind: 'skin', count: 1 } },
+        { threshold: 21, reward: { kind: 'card', count: 1 } },
       ],
     },
     claimable: { checkin: false, daily: false, weeklyTiers: [] },
@@ -240,18 +240,18 @@ describe('DailyScene — weekly chest claim toast per reward kind', () => {
     setToastSink(() => {});
   });
 
-  it('skin reward toast', async () => {
+  it('card reward toast (tier 3, replaced the shop skin with a random legendary card, 2026-08-08)', async () => {
     const save: SaveData = { ...makeNewSave(), retention: { weekly: { weekKey: CURRENT_WEEK_KEY, points: 21, claimedTiers: [9, 15] } } };
     let toast: string | null = null;
     setToastSink((text) => { toast = text; });
     const scene = buildDaily(save, {
-      async onClaimWeekly() { return { reward: { kind: 'skin', count: 1, id: 'skin_shop_c1' } }; },
+      async onClaimWeekly() { return { reward: { kind: 'card', count: 1, id: 'max' } }; },
     });
     await flush();
     claimViaLastHit(scene);
     await flush();
 
-    expect(toast).toBe(t('daily.weekly.rewardSkin'));
+    expect(toast).toBe(t('daily.weekly.rewardCard'));
     scene.destroy();
     setToastSink(() => {});
   });

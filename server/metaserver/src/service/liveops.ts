@@ -20,7 +20,6 @@ import {
   WEEKLY_CHEST_TIERS,
   claimWeeklyTier,
   weeklyClaimableTiers,
-  pickWeeklyChestSkin,
   nextCheckinDay,
   dailyRewardClaimable,
   makeDayKey,
@@ -46,7 +45,6 @@ import { getEventsForAccount, claimEventReward } from '../events.js';
 import { nullMetaSocialsvcClient } from '../socialsvcClient.js';
 import { grantCard } from '../cards.js';
 import { grantEquipment } from '../equipment.js';
-import { grantSkin } from '../skin.js';
 import type { MetaHandlers } from '../generated/routes.gen.js';
 import { accountIdOf, type Constructor, type MetaBaseCtor } from './base.js';
 import type { SocialBadges } from '@nw/shared';
@@ -56,12 +54,11 @@ function idemExpireAt(nowMs: number): Date {
 }
 
 /** The concrete item resolved for a checkin/weekly-chest reward that needs an async delivery call
- *  (card/equipment/skin — material rewards are applied synchronously and never reach this). Picked
+ *  (card/equipment — material rewards are applied synchronously and never reach this). Picked
  *  ONCE and persisted to `cols.equipmentIdem` before the grant call runs (see deliverRetentionReward). */
 type RetentionItemPick =
   | { kind: 'card'; instance: CardInstance; defId: string }
-  | { kind: 'equipment'; instance: EquipmentInstance; defId: string }
-  | { kind: 'skin'; skinId: string };
+  | { kind: 'equipment'; instance: EquipmentInstance; defId: string };
 
 type LiveOpsHandlers = Pick<
   MetaHandlers,
@@ -184,7 +181,7 @@ export function LiveOpsMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase & C
     }
 
     /**
-     * Deliver a checkin/weekly-chest reward that needs an async grant call (card/equipment/skin —
+     * Deliver a checkin/weekly-chest reward that needs an async grant call (card/equipment —
      * material/stamina/coins are handled by their own callers and never reach here) exactly once,
      * surviving a failed grant across retries.
      *
@@ -192,7 +189,7 @@ export function LiveOpsMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase & C
      * durably (mutateSave, "already claimed" guard) BEFORE this ever runs — that ordering is correct
      * and unchanged, it's the single race-free gate that lets concurrent duplicate requests serialize
      * to one winner. The bug was in what happened AFTER: the picked item's grant call
-     * (grantEquipment/grantSkin/grantCard) could fail (rev conflict, transient DB blip) and the
+     * (grantEquipment/grantCard) could fail (rev conflict, transient DB blip) and the
      * failure was silently swallowed — the claim stayed marked forever, the item was never delivered,
      * and a client retry just got bounced with ALREADY_CLAIMED before ever reaching the grant again.
      *
@@ -201,8 +198,12 @@ export function LiveOpsMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase & C
      * picked and persisted with `committed: false` BEFORE the grant call runs, so re-entering this
      * method later (the caller re-enters it from the ALREADY_CLAIMED recovery branch) resumes
      * delivering the *same* item — picked once, never re-rolled — instead of losing it or granting a
-     * second, different one. grantEquipment/grantSkin/grantCard are themselves idempotent by
-     * instance.id/skinId, so replaying the grant call itself is always safe too.
+     * second, different one. grantEquipment/grantCard are themselves idempotent by
+     * instance.id, so replaying the grant call itself is always safe too.
+     *
+     * (2026-08-08: dropped the 'skin' variant — the weekly chest's tier-3 skin reward was replaced
+     * by a legendary card, and checkin never used 'skin' here; grantSkin is no longer reachable from
+     * this delivery path at all, see retention.ts WEEKLY_CHEST_TIERS comment.)
      */
     private async deliverRetentionReward(
       accountId: string,
@@ -228,11 +229,10 @@ export function LiveOpsMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase & C
       }
       if (!claim) return { error: 'reward grant failed, retry', code: 'REV_CONFLICT' };
       const picked = claim.result as RetentionItemPick;
-      const deliveredId = picked.kind === 'skin' ? picked.skinId : picked.defId;
+      const deliveredId = picked.defId;
       if (claim.committed) return { deliveredId }; // already delivered by an earlier attempt — pure replay, no DB write
 
       const g = picked.kind === 'equipment' ? await grantEquipment(cols, now, accountId, picked.instance)
-        : picked.kind === 'skin' ? await grantSkin(cols, now, accountId, picked.skinId)
         : await grantCard(cols, now, accountId, picked.instance);
       if ('error' in g) return { error: g.error, code: g.code };
       await cols.equipmentIdem.updateOne({ _id: orderId }, { $set: { committed: true } });
@@ -463,12 +463,21 @@ export function LiveOpsMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase & C
         });
         if ('error' in r) return r;
         deliveredId = r.deliveredId;
-      } else if (reward.kind === 'skin') {
-        // Simplified from the doc's "限定皮肤碎片" (see retention.ts WEEKLY_CHEST_TIERS comment) —
-        // grants a whole shop-tier skin. grantSkin is itself a no-op if already owned, but the pick
-        // still goes through the same idem ledger so a retry doesn't re-roll a *different* skin.
+      } else if (reward.kind === 'card') {
+        // Random legendary (Anna-faction, "orange") card — see retention.ts WEEKLY_CHEST_TIERS
+        // comment (2026-08-08) for why this replaced the original whole-shop-skin substitution.
+        // Mirrors settleCheckinReward's 'card' branch, narrowed to rarity: 'legendary' instead of
+        // drawing from the whole (epic + legendary) card catalogue.
         const orderId = `weekly_chest_item:${accountId}:${weekKey}:${threshold}`;
-        const r = await this.deliverRetentionReward(accountId, orderId, 'weekly_chest', () => ({ kind: 'skin', skinId: pickWeeklyChestSkin() }));
+        const r = await this.deliverRetentionReward(accountId, orderId, 'weekly_chest', () => {
+          const picked = pickRandomCatalogItem('card', undefined, 'legendary');
+          const def = (picked && CARD_DEFS[picked.itemId]) || Object.values(CARD_DEFS).find((c) => c.faction === 'anna')!; // see settleCheckinReward's card branch for the fallback rationale
+          const instanceId = `card_weekly_${randomUUID().replace(/-/g, '').slice(0, 16)}`;
+          return {
+            kind: 'card', defId: def.id,
+            instance: { id: instanceId, defId: def.id, level: 1, gear: {}, locked: false, sourceType: `weekly_chest:${weekKey}`, obtainedAt: now() },
+          };
+        });
         if ('error' in r) return r;
         deliveredId = r.deliveredId;
       }
@@ -480,7 +489,7 @@ export function LiveOpsMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase & C
     /**
      * Claim one weekly active chest tier (ECONOMY_NUMBERS §12.3). Mirrors claimCheckin's shape:
      * record the claim (idempotent, `claimedTiers.includes` guard inside claimWeeklyTier) →
-     * material rewards are written synchronously in the same mutateSave; equipment/skin rewards
+     * material rewards are written synchronously in the same mutateSave; equipment/card rewards
      * resolve their concrete item at claim time (uniform random draw, like checkin's 'card'/
      * 'equipment' milestones) and deliver via a follow-up call once the claim itself is durable.
      */
@@ -512,11 +521,11 @@ export function LiveOpsMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase & C
         if (recorded.error === 'ALREADY_CLAIMED') {
           // 2026-08-05 resilience fix: mirrors claimCheckin's ALREADY_CLAIMED_TODAY recovery branch
           // (see deliverRetentionReward's doc comment for the root cause) — the tier was already
-          // durably marked claimed, possibly by an earlier request whose equipment/skin delivery then
+          // durably marked claimed, possibly by an earlier request whose equipment/card delivery then
           // failed. WEEKLY_CHEST_TIERS' reward kind is static per threshold (not derived from
           // transactional state), so it can be looked up directly without re-running claimWeeklyTier.
           const tierDef = WEEKLY_CHEST_TIERS.find((t) => t.threshold === threshold);
-          if (tierDef && (tierDef.reward.kind === 'equipment' || tierDef.reward.kind === 'skin')) {
+          if (tierDef && (tierDef.reward.kind === 'equipment' || tierDef.reward.kind === 'card')) {
             const settled = await this.settleWeeklyChestReward(accountId, threshold, tierDef.reward, tsMs);
             if ('error' in settled) return reply.code(502).send(err(ErrorCode.REV_CONFLICT, settled.error));
             return ok({ save: settled.save, threshold, reward: settled.reward });

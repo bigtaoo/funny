@@ -101,12 +101,17 @@ export function catalogItem(itemId: string): GachaCatalogItem | undefined {
  * (commercial/gacha.ts rollCustomGacha) — checkin has no ops-authored weights to reuse, and metaserver
  * does not depend on @nw/commercial, so this stays a pure @nw/shared pick over the same catalogue
  * instead of crossing the service boundary. `rng` is injectable for deterministic tests.
+ *
+ * `rarity` optionally narrows the pool to one display rarity within the category — e.g. the weekly
+ * chest's top tier (RETENTION_DESIGN §10.7) restricts `pickRandomCatalogItem('card', rng, 'legendary')`
+ * to the Anna-faction cards only, instead of the unrestricted card pool checkin's day-14 milestone uses.
  */
 export function pickRandomCatalogItem(
   category: GachaCategory,
   rng: (max: number) => number = (max) => Math.floor(Math.random() * max),
+  rarity?: Rarity,
 ): GachaCatalogItem | undefined {
-  const pool = GACHA_CATALOG.filter((i) => i.category === category);
+  const pool = GACHA_CATALOG.filter((i) => i.category === category && (rarity === undefined || i.rarity === rarity));
   if (!pool.length) return undefined;
   return pool[rng(pool.length)];
 }

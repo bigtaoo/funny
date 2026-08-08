@@ -468,7 +468,7 @@ export class DailyScene implements Scene {
 
       if (def) {
         const icon = rewardIcon(def.reward.kind, def.reward.id);
-        const singleItem = def.reward.kind === 'equipment' || def.reward.kind === 'skin';
+        const singleItem = def.reward.kind === 'equipment' || def.reward.kind === 'card';
         const iconY = cy + cardH * 0.58;
         if (icon) {
           const rc = Math.round(cardH * 0.3);
@@ -605,7 +605,7 @@ export class DailyScene implements Scene {
       const rewardDesc =
         r.reward.kind === 'material' ? t('daily.checkin.rewardMaterial', { n: r.reward.count })
         : r.reward.kind === 'equipment' ? t('daily.checkin.rewardEquipment')
-        : t('daily.weekly.rewardSkin');
+        : t('daily.weekly.rewardCard');
       this.showToast(rewardDesc);
     } catch (e) {
       this.showToast(e instanceof TimeoutError ? t('common.networkTimeout') : t('daily.tasks.claimFailed'), 'error');

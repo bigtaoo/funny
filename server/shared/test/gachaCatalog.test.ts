@@ -5,6 +5,7 @@ import {
   GACHA_CATALOG,
   catalogItem,
   catalogByCategory,
+  pickRandomCatalogItem,
   customPoolCost,
   customPoolCostTen,
   customPoolEntries,
@@ -61,6 +62,34 @@ describe('GACHA_CATALOG', () => {
     const grouped = catalogByCategory();
     const total = GACHA_CATEGORY_ORDER.reduce((s, c) => s + grouped[c].length, 0);
     expect(total).toBe(GACHA_CATALOG.length);
+  });
+});
+
+// ── pickRandomCatalogItem rarity filter (RETENTION_DESIGN §10.7, 2026-08-08) ────────────────────
+// The weekly chest's top tier narrows the card category down to legendary (Anna-faction, "orange")
+// only, unlike checkin's day-14 card milestone which draws from the whole unrestricted category.
+describe('pickRandomCatalogItem', () => {
+  it('without a rarity filter, picks from the whole category (both epic and legendary cards reachable)', () => {
+    const seen = new Set(GACHA_CATALOG.filter((i) => i.category === 'card').map((_, i) => i));
+    for (let i = 0; i < seen.size; i++) {
+      const picked = pickRandomCatalogItem('card', () => i);
+      expect(picked?.category).toBe('card');
+    }
+  });
+
+  it('with rarity: "legendary", only ever returns Anna-faction cards', () => {
+    const legendaryCards = GACHA_CATALOG.filter((i) => i.category === 'card' && i.rarity === 'legendary');
+    expect(legendaryCards.length).toBeGreaterThan(0); // sanity: the filtered pool isn't accidentally empty
+    for (let i = 0; i < legendaryCards.length; i++) {
+      const picked = pickRandomCatalogItem('card', () => i, 'legendary');
+      expect(picked?.rarity).toBe('legendary');
+      expect(legendaryCards.map((c) => c.itemId)).toContain(picked?.itemId);
+    }
+    expect(pickRandomCatalogItem('card', () => 0, 'legendary')?.itemId).toBe('max'); // Anna card, sanity anchor
+  });
+
+  it('an empty filtered pool (e.g. a category/rarity combo that does not exist) returns undefined', () => {
+    expect(pickRandomCatalogItem('material', () => 0, 'legendary')).toBeUndefined(); // no legendary materials exist
   });
 });
 

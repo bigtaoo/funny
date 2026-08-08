@@ -12,7 +12,6 @@ import {
   DAILY_POINTS_THRESHOLD,
   DAILY_COINS_REWARD,
   WEEKLY_CHEST_TIERS,
-  WEEKLY_CHEST_SKIN_POOL,
   resetStaleRetention,
   checkinClaimedCount,
   nextCheckinDay,
@@ -25,7 +24,6 @@ import {
   claimCheckinDay,
   claimDailyReward,
   claimWeeklyTier,
-  pickWeeklyChestSkin,
   type RetentionSave,
 } from '../src/retention';
 
@@ -433,18 +431,5 @@ describe('claimWeeklyTier', () => {
     const t2 = claimWeeklyTier(r2, 15, T_JUN22);
     expect(t2.ok).toBe(true);
     if (t2.ok) expect(t2.newWeekly.claimedTiers).toEqual([9, 15]);
-  });
-});
-
-describe('pickWeeklyChestSkin', () => {
-  it('always returns an id from WEEKLY_CHEST_SKIN_POOL', () => {
-    for (let i = 0; i < WEEKLY_CHEST_SKIN_POOL.length; i++) {
-      expect(pickWeeklyChestSkin(() => i)).toBe(WEEKLY_CHEST_SKIN_POOL[i]);
-    }
-  });
-
-  it('defaults to Math.random-backed selection when no rng is given', () => {
-    const picked = pickWeeklyChestSkin();
-    expect(WEEKLY_CHEST_SKIN_POOL).toContain(picked);
   });
 });

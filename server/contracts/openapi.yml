@@ -3799,7 +3799,7 @@ paths:
                                       enum:
                                         - material
                                         - equipment
-                                        - skin
+                                        - card
                                     count:
                                       type: integer
                                     id:
@@ -4010,12 +4010,12 @@ paths:
                             enum:
                               - material
                               - equipment
-                              - skin
+                              - card
                           count:
                             type: integer
                           id:
                             type: string
-                            description: Material id (material) or the drawn/granted defId (equipment/skin)
+                            description: Material id (material) or the drawn/granted defId (equipment/card)
         '400':
           $ref: '#/components/responses/ErrorResp'
         '401':

@@ -439,19 +439,20 @@ F2P 金币龙头：广告（主力）+ 战斗 / 活动 / 称号 / 任务。
 
 > 每日金币 = 广告 50/天 + 每日任务完成 5/天 ≈ **~55 coins/天**。每日任务月度 = 5 × 30 = **~150/月**（对应 §6.1「日常任务/签到」格）；签到里程碑 `bonusCoins` 200/月单独计（R1b，§12.1），调平衡只动「每日任务完成金币」「广告」「签到里程碑 bonusCoins」，不另立第四条。
 
-### 12.3 周常活跃宝箱 `[可调]` ✅ 2026-08-05 已实现
+### 12.3 周常活跃宝箱 `[可调]` ✅ 2026-08-05 已实现，三档奖励 2026-08-08 调整（见下）
 
 | 档 | 周活跃点阈值 | 宝箱内容 |
 |---|---|---|
 | 一档 | **9**（3 天满勤） | 中级材料包（`mat_lead` ×20） |
 | 二档 | **15**（5 天满勤） | 低级装备（`equip_t1` 随机抽，同签到月末装备格走法） |
-| 三档 | **21**（7 天满勤/满周） | 一件商城皮肤（`skin_shop_c1`/`skin_shop_r1` 随机抽） |
+| 三档 | **21**（7 天满勤/满周） | 一张传说卡（Anna 阵营 `max`/`lena`/`mara` 随机抽，界面呈橙色；**2026-08-08 前**是一件商城皮肤，见下方修正 3） |
 
 - 周活跃点 = 每日任务点（`pve.clear`/`pvp.match`/`gacha.draw` 各 1 分）按 ISO `weekKey` 累计，与每日任务点同一个结算入口（`accrueRetentionTask`），共用其幂等判定；跨周（ISO `weekKey`）重置。
-- **两处相对原提案的修正（实现时发现原占位数值/内容有硬伤）**：
+- **相对原提案的修正（实现/调整过程中发现原占位数值/内容有硬伤，或产品反馈分量不够）**：
   1. **阈值从 30/60/100 改成 9/15/21**——每日任务点上限是 3（3 个任务各 1 分），一周顶多攒 21 分，原来的 30 分永远碰不到，功能会生下来就是死的。改成"3/5/7 天满勤"三档，保留"递进三档、顶档=近乎满周"的设计意图，但真的够得着。
-  2. **三档"限定皮肤碎片"改成一件普通商城皮肤**——全仓库没有"碎片"这个货币概念（皮肤只支持整件发放，`server/metaserver/src/skin.ts`），从零建一套碎片累计+兑换子系统超出这次的范围；改成直接发一件 `skin_shop_*`（非限定，不含 gacha 稀有皮肤 `skin_e1/e2/l1`，避免免费周常白送 legendary）。若后续觉得不够有分量，再考虑做真正的碎片系统。
-- 实现：`server/shared/src/retention.ts`（`makeWeekKey` 新增 ISO 周算法、`WeeklyData`/`WEEKLY_CHEST_TIERS`/`claimWeeklyTier`/`pickWeeklyChestSkin`）→ `server/metaserver/src/service/liveops.ts`（`getRetention` 附带 weekly 字段、新增 `claimWeeklyChest`）→ `POST /retention/weekly/claim`（`server/contracts/openapi/paths/liveops.yml`）→ 客户端 `DailyScene` 新增第四个 tab（复用 `renderDailyTasks` 的卡片+进度条+领取按钮样式，未新建场景）。测试：`server/shared/test/retention.test.ts`（+18 例，含 ISO 周边界）、`server/metaserver/test/retention.e2e.test.ts`（+13 例，真实 Mongo）、`client/test/retention.test.ts`（+11 例）、`client/test/ui/dailySceneWeeklyTab.ui.ts`（新增，8 例，含三种奖励类型各自的领取 toast 文案 + 领取失败的 error toast/busy 复位）。
+  2. **三档"限定皮肤碎片"改成一件普通商城皮肤（2026-08-05）**——全仓库没有"碎片"这个货币概念（皮肤只支持整件发放，`server/metaserver/src/skin.ts`），从零建一套碎片累计+兑换子系统超出这次的范围；改成直接发一件 `skin_shop_*`（非限定，不含 gacha 稀有皮肤 `skin_e1/e2/l1`，避免免费周常白送 legendary）。
+  3. **三档"商城皮肤"再改成"随机传说卡"（2026-08-08，产品反馈）**——一件普通商城皮肤对需要满周活跃才够到的顶档奖励而言分量偏轻；改为 `pickRandomCatalogItem('card', rng, 'legendary')`（新增 `rarity` 过滤参数）从 Anna 阵营卡里随机抽一张，比商城皮肤更有分量，也比 checkin 第 14 天"全品阶随机卡"里程碑更稀有——匹配这一档更高的门槛（7 天满勤/满周 vs checkin 的月历第 14 格）。原 `WEEKLY_CHEST_SKIN_POOL`/`pickWeeklyChestSkin` 随之删除（唯一调用点已不存在，未保留兼容垫片）。
+- 实现：`server/shared/src/retention.ts`（`makeWeekKey` 新增 ISO 周算法、`WeeklyData`/`WEEKLY_CHEST_TIERS`/`claimWeeklyTier`）→ `server/shared/src/gachaCatalog.ts`（`pickRandomCatalogItem` 新增可选 `rarity` 过滤参数）→ `server/metaserver/src/service/liveops.ts`（`getRetention` 附带 weekly 字段、新增 `claimWeeklyChest`，tier-3 走 `settleWeeklyChestReward` 的 `'card'` 分支）→ `POST /retention/weekly/claim`（`server/contracts/openapi/paths/liveops.yml`）→ 客户端 `DailyScene` 新增第四个 tab（复用 `renderDailyTasks` 的卡片+进度条+领取按钮样式，未新建场景）。测试：`server/shared/test/retention.test.ts`、`server/shared/test/gachaCatalog.test.ts`（`pickRandomCatalogItem` 稀有度过滤）、`server/metaserver/test/retention.e2e.test.ts`（真实 Mongo，tier-3 + 发放弹性用例）、`client/test/retention.test.ts`、`client/test/ui/dailySceneWeeklyTab.ui.ts`（三种奖励类型各自的领取 toast 文案 + 领取失败的 error toast/busy 复位）。详见 [`RETENTION_DESIGN.md §10.8`](RETENTION_DESIGN.md)。
 
 ### 12.4 可调参数（并入总表口径）
 
