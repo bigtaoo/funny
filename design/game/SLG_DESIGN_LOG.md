@@ -1876,3 +1876,5 @@ cols.tiles.find({ worldId, type: 'base', ownerId: { $nin: excludeOwners } })
 **验证**：`server/worldsvc` 相关 3 个 e2e 文件（`field-redispatch.e2e.test.ts` 5 例、`teams.e2e.test.ts` 19 例）+ 全量 `npx vitest run`（worldsvc 整包）全绿；client 侧 `tsc --noEmit` + `npm test`（151/1224）+ `npm run test:ui`（135/1269）全绿。
 
 **教训**：修 bug 前先把"服务端当前行为"当成"正确行为"去对齐客户端，是默认假设服务端设计没问题——但这次服务端那条范围限制本身就是产品决策的对象，不是既定事实。跟用户确认完修复效果后再定案，避免"修对了旧设计、修错了新需求"。
+
+**补测试（同日，用户问"有新的测试需要加吗"）**：之前的「re-dispatch attack」e2e 例只测了行军创建（原点回落、驻留 doc 原子释放），从没真正跑过战斗结算——因为在这个功能之前，"停留队伍被再指挥去攻城、还真的打了一场仗"这个状态组合根本不可达（attack 之前压根不能被 idle-redispatch），不是"补一个已有覆盖的重复例"，是补一块新出现的状态空间。`teams.e2e.test.ts` 加两例：①**打赢**——地块易主，队伍打完之后彻底自由（无行军、无停留，跟从主城出发打赢的处置完全一样，读 `combatSiege/arrival.ts` 的赢分支确认——赢了从不 park 队伍，兵直接变成地块驻军值）；②**打输**——幸存兵力经由 travel-time 返程一路走回**主城**（`mainBaseTile`），不是回到出发的野战格（读 `combatShared.ts::startReturnMarch` 确认它永远算去主城的路径，跟出发点无关）。两例都先临时改回旧条件确认真的会报 TEAM_BUSY，再恢复确认转绿。
