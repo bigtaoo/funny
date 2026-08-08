@@ -578,5 +578,17 @@ export async function startApp(
     feedbackDialog = dlg;
   });
 
+  // Stage-level dialogs sit outside targetStage, so SceneManager.onTick (which only ticks
+  // `current`/`overlayScene`) never reaches them — nobody was calling FeedbackDialog.update(), so its
+  // caret-blink timer (caretTimer/caretOn) never advanced and the cursor rendered as a permanently
+  // solid '|' instead of blinking (2026-08-08 bug report). Drive both dialogs' update() here instead,
+  // same self-ticking role GlobalToast.tick() plays for its own stage-level overlay. AppealDialog's
+  // update() takes no args (it's a no-op today) but ticking it too costs nothing and avoids this same
+  // wiring gap resurfacing if it ever grows a timer.
+  app.ticker.add(() => {
+    appealDialog?.update();
+    feedbackDialog?.update(app.ticker.deltaMS / 1000);
+  });
+
   core.start();
 }
