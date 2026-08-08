@@ -261,6 +261,7 @@
     }
   },
   "nameKey": "campaign.ch5.lv8.name",
+  "briefKey": "campaign.ch5.lv8.brief",
   "startInk": 58,
   "enemyScale": {
     "hp": 1.08,

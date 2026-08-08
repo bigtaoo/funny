@@ -193,6 +193,7 @@
     }
   },
   "nameKey": "campaign.ch2.lv4.name",
+  "briefKey": "campaign.ch2.lv4.brief",
   "startInk": 13,
   "inkRegenMult": 1.16
 }
