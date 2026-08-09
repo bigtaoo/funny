@@ -80,11 +80,30 @@ function renderLabel(ctx: WorldMapContext, cx: number, cy: number): PIXI.Text {
 }
 
 describe('WorldMap city name/level label (2026-08-01)', () => {
-  it('own base shows the player\'s own name + level (unified rule, own included)', () => {
+  it('own base shows the player\'s own name + desk level (unified rule, own included)', () => {
     const ctx = buildScene();
-    placeBase(ctx, 100, 100, { mine: true, level: 3 });
+    // `level` here is intentionally a decoy: for the requester's own base the label must read
+    // `deskLevel`, not the tile's terrain-generation `level` (see the 2026-08-09 regression below).
+    placeBase(ctx, 100, 100, { mine: true, level: 3, deskLevel: 8 });
     const label = renderLabel(ctx, 100, 100);
-    expect(label.text).toBe('Tao Lv.3');
+    expect(label.text).toBe('Tao Lv.8');
+  });
+
+  it('own base falls back to Lv.1 when deskLevel is absent (new base, no desk upgrade yet)', () => {
+    const ctx = buildScene();
+    placeBase(ctx, 105, 105, { mine: true, level: 3 }); // deskLevel absent
+    const label = renderLabel(ctx, 105, 105);
+    expect(label.text).toBe('Tao Lv.1');
+  });
+
+  it('regression (2026-08-09): own base label tracks deskLevel across desk upgrades, ignoring the ' +
+     'terrain-generation `level` frozen at spawn — a real lvl-9 desk was still showing "Lv.1"', () => {
+    const ctx = buildScene();
+    // `level: 1` mimics the spawn-time terrain level that never gets touched again; `deskLevel: 9`
+    // mimics a base that has since upgraded its desk building all the way to level 9.
+    placeBase(ctx, 106, 106, { mine: true, level: 1, deskLevel: 9 });
+    const label = renderLabel(ctx, 106, 106);
+    expect(label.text).toBe('Tao Lv.9');
   });
 
   it('another player\'s base shows their ownerName + level', () => {
