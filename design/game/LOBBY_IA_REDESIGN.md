@@ -531,7 +531,7 @@
 **验证**：`tsc --noEmit` 全绿；`npm run build:web` 生产构建成功（仅预置体积告警）；`npm run test:ui -- shopGroupTabs sidebarRailOrientation scenes.ui`（4 文件 166 例）全绿，无回归。**未做真人截图走查**：本次会话 Browser 预览面板同样报 "pane not displayed"（同 §20.5/§21 的已知环境限制），已确认 dev server 正常起、竖屏视口挂载；用户知情后可自行在实机/浏览器里核对最终视觉效果。
 - **涉及文件**：`client/src/scenes/GachaScene/base.ts`（`contentBounds`）、`client/src/ui/widgets/HubTabs.ts`（`drawBottomNavTabs` 背景条）。
 
-## 22. Hero Roster 竖屏三连修：网格 90% 宽 + mask 裁剪 + 底部导航栏加背景（2026-08-09）
+## 23. Hero Roster 竖屏三连修：网格 90% 宽 + mask 裁剪 + 底部导航栏加背景（2026-08-09）
 
 > 状态：**已实现**。用户反馈 Hero Roster（`CardScene`）竖屏截图三处问题：①卡片网格没铺满屏宽 90%；②卡片列表会盖住底部页签栏；③底部页签栏没有背景（透传出后面内容）。①②是 `CardScene`（`client/src/scenes/CardScene/list.ts`）自身的问题，③出在两者共用的 `HubTabs.drawBottomNavTabs`（`client/src/ui/widgets/HubTabs.ts`），后者被 14 个场景复用，一并修好对全部竖屏底部导航栏生效。
 
