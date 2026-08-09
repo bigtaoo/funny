@@ -195,7 +195,14 @@ export class CardCodexScene implements Scene {
     // reserves width for it (falls back to the same flat margin as "no sidebar"), and the scroll
     // viewport/clip stops `bottomNavH` short of the screen bottom instead so scrolled cards never
     // slide in behind the bar.
-    const contentX = this.landscape && hasSidebar ? sidebarNavW(w, h, true) + Math.round(w * 0.025) : Math.round(w * 0.06);
+    //
+    // Portrait's own margin (below) is a centred 90%-wide column — the same convention LobbyScene
+    // uses for its portrait content (build.ts's `fullContentW`) — rather than landscape's flat
+    // left/right margins, which read as too narrow once there's no rail eating into the width (09.08.2026).
+    const fullContentW = Math.round(w * 0.9);
+    const contentX = this.landscape
+      ? (hasSidebar ? sidebarNavW(w, h, true) + Math.round(w * 0.025) : Math.round(w * 0.06))
+      : Math.round((w - fullContentW) / 2);
     const contentTop = tbH + Math.round(h * 0.02);
     const bottomBarH = !this.landscape && hasSidebar ? bottomNavH(h) : 0;
     const viewBottom = h - bottomBarH;
@@ -208,7 +215,8 @@ export class CardCodexScene implements Scene {
     this.container.addChild(layer);
     this.layer = layer;
 
-    const bottom = this.renderCards(contentX, contentTop, w - contentX - Math.round(w * 0.03));
+    const avail = this.landscape ? w - contentX - Math.round(w * 0.03) : fullContentW;
+    const bottom = this.renderCards(contentX, contentTop, avail);
 
     const bottomPad = Math.round(h * 0.03);
     this.maxScroll = Math.max(0, bottom + bottomPad - viewBottom);
@@ -222,7 +230,7 @@ export class CardCodexScene implements Scene {
   // ── Cards codex ────────────────────────────────────────────────────────────────
 
   private renderCards(left: number, top: number, avail: number): number {
-    const { h } = this;
+    const { w, h } = this;
     const owned = this.cb.getOwnedUnitTypes();
 
     const seen = new Set<string>();
@@ -237,7 +245,14 @@ export class CardCodexScene implements Scene {
     const cols = 2;
     const gap = Math.round(avail * 0.045);
     const tileW = Math.round((avail - gap) / cols);
-    const tileH = Math.round(h * 0.19);
+    // The tile's illustration is a square spanning the full tile height (see drawCardTile), so tileH
+    // doubles as that square's side length. It must read off the design canvas's *short* edge — the
+    // same axis sidebarNavW keys off (its own doc comment explains why: designWidth/designHeight swap
+    // meaning between orientations, portrait 1080x1920 vs landscape 1920x1080). Landscape's short edge
+    // is `h`, so `h * 0.19` was correct there — but portrait's short edge is `w`, and using `h` (the
+    // long edge, 1920) instead produced a tile-height square nearly twice too tall, squeezing the
+    // right-hand info panel down to a sliver too narrow for a card name to fit (09.08.2026 fix).
+    const tileH = Math.round((this.landscape ? h : w) * 0.19);
     const rowGap = Math.round(h * 0.022);
     let y = top;
 
@@ -309,6 +324,11 @@ export class CardCodexScene implements Scene {
 
     const name = txt(t(card.nameKey as TranslationKey), snapFont(Math.round(h * 0.15)), locked ? C.mid : C.dark, true);
     name.anchor.set(0, 0); name.x = textX; name.y = y + Math.round(h * 0.12);
+    // Belt-and-suspenders against a long localized name outrunning the panel (mirrors the shrink-to-fit
+    // guard HubTabs.ts already applies to its own nav labels) — the tileH fix above is the real cure,
+    // this just makes sure nothing overflows even at the width's edge case.
+    const maxNameW = infoW - pad * 2;
+    if (name.width > maxNameW) name.scale.set(maxNameW / name.width);
     this.layer.addChild(name);
 
     const typeLabel = card.cardType === CardType.Unit ? t('collection.cardType.unit')

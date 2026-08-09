@@ -545,3 +545,21 @@
 
 **验证**：`tsc --noEmit` 全绿；`npm run build:web` 生产构建成功（仅预置的资源体积告警，与本次无关）；`npm run test:ui`（全量 140 个文件 / 1303 例）全绿，无回归。**未做真人截图走查**：本次会话 Browser 预览面板同样报 "pane not displayed"（`preview_start` 能起服务、`document.querySelectorAll('canvas').length === 1` 证明页面真渲染了，但 `computer{action:"screenshot"}`/点击交互全部因面板未显示而超时/拒绝）——延续 §20.5/§21 记录的同一环境限制，改用上面两条读取真实 PIXI 场景几何坐标的 UI 测试做数值级验证，未肉眼核对最终像素效果。
 - **涉及文件**：`client/src/scenes/CardScene/list.ts`（`renderList()` 竖屏 left/avail 分支 + `gridLayer`/mask）、`client/src/ui/widgets/HubTabs.ts`（`drawBottomNavTabs()` 背景层）、`client/test/ui/cardRosterPortraitWidthAndClip.ui.ts`（新增）、`design/game/CHARACTER_CARDS_DESIGN.md` §10.1（网格左起点/mask 说明同步更新）。
+
+## 24. Collection（`CardCodexScene`）竖屏三处修复：内容区 90% 宽 + 卡名裁切 + 底部导航栏背景（2026-08-09）
+
+> 状态：**已实现**。用户看着竖屏 Collection（图鉴）页面截图反馈三点：①内容没铺满屏宽 90%；②角色名称没显示完全（如「Infantry」显示成「Infa」）；③底部页签栏没有背景。③当天早些时候已经在 `HubTabs.ts` 的 `drawBottomNavTabs` 里统一修过（§22/§23 同一处改动，覆盖全部竖屏 Career/Shop 类底部导航栏），Collection 页无需再动；本节只处理①②，两个都在 `CardCodexScene.ts` 自身。
+
+**问题 1（内容区宽度）**：`render()` 里竖屏分支写的是 `contentX = Math.round(w * 0.06)`、`avail = w - contentX - Math.round(w * 0.03)`——左 6%/右 3% 的不对称留白，总宽约 91%，既不是本文档 §21/§23 那种居中 90% 的约定，也不是刻意设计，只是历史遗留的一组数字。
+
+**问题 2（卡名裁切，真正的根因）**：`renderCards()` 的 `tileH = Math.round(h * 0.19)` 直接用 `this.h`（design canvas 高度）算 tile 高度，而 `drawCardTile()` 把插画画成边长 = tileH 的正方形（`imgBox = h`）。竖屏 design canvas 是 1080×1920，`h`=1920 是**长边**；横屏是 1920×1080，`h`=1080 才是**短边**——`sidebarNavW()` 的文档注释早就讲过这个坑（design 坐标轴在两个方向上互换含义，短边有时读 `w` 有时读 `h`），`tileH` 这行显然没套用同一约定。结果竖屏下插画正方形边长 365px（`round(1920*0.19)`），而 tile 总宽只有约 470px（91% 宽两栏），右侧信息面板被挤到只剩 ~85px——不管整体宽度改不改 90%，这点空间都塞不下任何角色名。横屏因为 `h`=1080 恰好是短边，插画只有 205px，一直没暴露这个 bug。
+
+**方案**：
+1. `contentX`/`avail`：竖屏改成 `fullContentW = Math.round(w * 0.9)`、`contentX = Math.round((w - fullContentW) / 2)`、`avail = fullContentW`，与 §21/§23 同一约定；横屏分支（含"无侧栏"兜底）保持原公式一字不动。
+2. `tileH`：改成 `Math.round((this.landscape ? h : w) * 0.19)`——横屏继续读 `h`（短边，数值不变），竖屏改读 `w`（短边，1080），插画正方形从 365px 缩到 205px，信息面板宽度从 ~85px 恢复到 ~250px+。
+3. 另外给卡名文字加了一道 shrink-to-fit 兜底（`if (name.width > maxNameW) name.scale.set(...)`），照抄 `HubTabs.ts` 的 nav 标签同款写法——tileH 修正是真正的解法，这道只是防将来某个本地化长名字仍然溢出。
+
+**测试**：新增 `client/test/ui/cardCodexPortraitWidthAndText.ui.ts`（5 条 `it`）：竖屏三条——①用真实 `createLayout(1080,1920)` 构造场景，从私有 `hits`（`scroll:true` 的插画点击热区）读两栏的 x，断言最左边等于居中 90% 公式、两栏间距等于 `tileW+gap`；②断言热区 `w===h===round(1080*0.19)`（新公式），而不是旧的 `round(1920*0.19)=365`；③遍历场景找出所有卡名 `PIXI.Text` 节点，断言 `scale.x` 全部 `≈1`（没有一个需要靠 shrink-to-fit 兜底才能塞下，证明 tileH 修正本身就够）。横屏两条regression guard——插画热区仍是 `round(1080*0.19)`（`h`，公式路径没变数值也没变）、且左起点不等于竖屏 90% 居中公式（防止两条分支被误合并）。
+
+**验证**：`tsc --noEmit` 全绿；`npm run build:web` 生产构建成功（仅预置体积告警）；`npm run test:ui -t "CardCodexScene"`（含新增 5 例）12/12 通过，无回归。**未做真人截图走查**：本次会话 Browser 预览面板同样报 "pane not displayed"（同 §20.5/§21–23 的已知环境限制）；这次额外确认了根因——`requestAnimationFrame` 在该 tab 里完全不触发（`window.__capture` 调度后多次轮询仍是 `not ready`），即该 tab 处于未合成/未渲染状态，浏览器根本没有在跑动画帧，不是 WebGL `preserveDrawingBuffer` 时序问题那么简单，是这个环境下该面板此刻就没有被真正显示出来。改用上面的 UI 测试读取真实 PIXI 几何坐标做数值级验证，未肉眼核对最终像素效果。
+- **涉及文件**：`client/src/scenes/CardCodexScene.ts`（`render()` 的 `contentX`/`avail` 竖屏分支、`renderCards()` 的 `tileH`、`drawCardTile()` 的卡名 shrink-to-fit）、`client/test/ui/cardCodexPortraitWidthAndText.ui.ts`（新增）。
