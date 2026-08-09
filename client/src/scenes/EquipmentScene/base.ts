@@ -107,6 +107,11 @@ export const CELL_GAP = 36;
 export const CELL_GAP_X = CELL_GAP * 2; // horizontal gap between grid cells only — doubled per 2026-07-17 legibility pass
 export const EQUIP_CELL_H = 266; // +50% atop the previous 177 (2026-07-16 inventory legibility pass)
 export const EQUIP_CELL_W_TARGET = 360; // tightened from 480 (2026-07-17) — 480 left a wide empty band between the glyph and the craft/level column
+// Portrait's fixed 1080 design width only ever fits two EQUIP_CELL_W_TARGET columns (avail ≈
+// 1008), leaving a ~200px blank band on the right instead of a third column of content
+// (2026-08-09 UX fix). Landscape's wider canvas already reaches 3+ target-width columns on its
+// own, so this floor only ever kicks in for portrait's inventory grid — see InventoryMixin.
+export const EQUIP_CELL_W_MIN = 260;
 // Craft grid: same column + cell sizing as the inventory grid so the icon
 // frames read at the same scale; cost chips + craft button sit beside the glyph.
 export const CRAFT_CELL_H = EQUIP_CELL_H;

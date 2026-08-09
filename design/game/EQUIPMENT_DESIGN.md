@@ -458,6 +458,16 @@ buildSiegeBlueprints(levels, equipped, inv)
 
 **回归测试**：新增用例覆盖"`enhance()` 回调内同步调用 `onSaveChanged` 监听器"这一更贴近真实接线的场景（模拟 `saveManager.adoptServerPartial` 的同步通知时机），断言强化并关闭弹窗后，未被触碰的同网格其它格子的按钮 hitRects 与强制 `render()` 后一致（即已经是启用状态，不需要额外滚动才能修复）。
 
+### 11.5 实现记录（2026-08-09，✅）— 竖屏背包网格：2 列变 3 列 + 居中
+
+**症状**：截图反馈——竖屏（手机）装备页背包 tab 只铺 2 列图标卡，右侧留一条约 200px 的空白纸边；玩家一屏看到的物品少，需要更多滚动才能翻完整包（截图里 325/300 件的库存尤其明显），读感是"下面一大片被挡住看不到"。
+
+**根因**：`InventoryMixin.renderInventory` 的列数公式 `cols = floor((avail+CELL_GAP_X)/(EQUIP_CELL_W_TARGET+CELL_GAP_X))` 只按 360px 目标列宽算——横屏画布够宽，这个门槛下能凑出 3+ 列，剩余空白只是小比例边距；但竖屏 `avail` 固定 ≈1008px（`PortraitLayout.DESIGN_W=1080`，与设备实际分辨率无关），360 门槛下最多只够 2 列（`cellW` 封顶在目标宽，不撑满），剩余空白占整行的 ~20%，观感就重了。
+
+**修复**：`EquipmentScene/base.ts` 新增 `EQUIP_CELL_W_MIN=260`；`renderInventory` 里列数改用 `landscape ? EQUIP_CELL_W_TARGET : EQUIP_CELL_W_MIN` 作为列宽门槛（仅竖屏放宽，横屏原有列数/间距不变）——竖屏 `avail≈1008` 下算出 3 列、每列 288px（介于 260~360 之间），且 `3×288+2×CELL_GAP_X` 恰好等于 `avail`，整行零剩余，不再需要额外居中；额外加一道 `gridOffset`（竖屏下 `(avail-实际行宽)/2`）兜底更窄屏幕仍只凑出 2 列时的居中，不再整行贴左留白在右。
+
+**回归测试**：`client/test/ui/equipmentGridLayout.ui.ts` 新增竖屏用例——断言背包网格整行铺满 3 列、每列宽度落在 `[EQUIP_CELL_W_MIN, EQUIP_CELL_W_TARGET]` 区间，且行右边缘正好落在竖屏设计宽（1080）减一个 `CELL_GAP` 处（无残留空白）；连同既有横屏用例（列数/间距/遮罩不变）一起跑通，`tsc --noEmit` + webpack 生产构建验证。
+
 ---
 
 ## 12. 经济联动

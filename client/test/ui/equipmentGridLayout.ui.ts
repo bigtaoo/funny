@@ -14,7 +14,7 @@ import { createLayout } from '../../src/layout/ScalingManager';
 import { InputManager } from '../../src/inputSystem/InputManager';
 import { initI18n } from '../../src/i18n';
 import { EquipmentScene, type EquipmentCallbacks } from '../../src/scenes/EquipmentScene';
-import { CELL_GAP, CELL_GAP_X, EQUIP_CELL_H, CRAFT_CELL_H } from '../../src/scenes/EquipmentScene/base';
+import { CELL_GAP, CELL_GAP_X, EQUIP_CELL_H, EQUIP_CELL_W_MIN, EQUIP_CELL_W_TARGET, CRAFT_CELL_H } from '../../src/scenes/EquipmentScene/base';
 import { makeNewSave } from '../../src/game/meta/SaveData';
 import type { SaveData, EquipRarity } from '../../src/game/meta/SaveData';
 
@@ -29,6 +29,7 @@ const memStore = (() => {
 initI18n('en', memStore, ['zh', 'en', 'de']);
 
 const LANDSCAPE: [number, number] = [1280, 800];
+const PORTRAIT: [number, number] = [375, 812];
 
 interface Rect { x: number; y: number; w: number; h: number; }
 interface SceneInternals {
@@ -197,6 +198,35 @@ describe('EquipmentScene — craft grid: horizontal-only gap doubling + scroll m
     const masked = findMaskedLayers(scene.container);
     expect(masked.length).toBeGreaterThan(0);
     expect(masked.some((m) => m.maskRect.y > internals.headerH)).toBe(true);
+    scene.destroy();
+  });
+});
+
+// Portrait's fixed 1080 design width used to only ever fit two EQUIP_CELL_W_TARGET (360) columns
+// (avail ≈ 1008), leaving a ~200px blank band on the right of every row instead of a third column
+// of actual content (2026-08-09 UX fix). Landscape is untouched — see the describes above.
+describe('EquipmentScene — inventory grid: portrait fits a 3rd, narrower column instead of a blank band', () => {
+  it('packs 3 columns per row, each within [EQUIP_CELL_W_MIN, EQUIP_CELL_W_TARGET], filling the row with no leftover blank band', () => {
+    const scene = buildScene(...PORTRAIT);
+    const cells = (scene as unknown as SceneInternals).hitRects
+      .map((h) => h.rect)
+      .filter((r) => r.h === EQUIP_CELL_H);
+    const rows = groupByRow(cells);
+    expect(rows.length).toBeGreaterThan(1);
+
+    const fullRow = rows.find((r) => r.length === 3);
+    expect(fullRow).toBeDefined();
+    const row = fullRow!;
+    for (const cell of row) {
+      expect(cell.w).toBeGreaterThanOrEqual(EQUIP_CELL_W_MIN);
+      expect(cell.w).toBeLessThanOrEqual(EQUIP_CELL_W_TARGET);
+    }
+    // The row spans from the grid's left edge to the screen's right margin (one CELL_GAP in from
+    // w) — i.e. it fills the available width exactly, instead of stopping two columns short and
+    // leaving the remainder as blank margin on the right.
+    const last = row[row.length - 1];
+    const rightEdge = last.x + last.w;
+    expect(rightEdge).toBeCloseTo(1080 - CELL_GAP, 0); // portrait design width (fixed at 1080) minus the right CELL_GAP
     scene.destroy();
   });
 });
