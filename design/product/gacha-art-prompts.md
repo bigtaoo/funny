@@ -274,9 +274,9 @@ Bold ink outlines, minimal detail, stationery/notebook aesthetic.
 > - `skin_shop_c1`（陶·李川/Infantry，商店 common）：`a simple stickman soldier drawn in pencil`, `gray pencil`
 > - `skin_shop_r1`（陶·苏远/Archer，商店 rare）：`a neat stickman archer with fountain pen details`, `royal blue`
 > - `skin_shop_e1`（陶·陈守/ShieldBearer，商店 epic）：`an elaborate stickman shield bearer with marker-drawn armor`, `deep purple`
-> - `skin_e1`（Anna·Lena，抽卡 epic）：`an elaborate sentinel warrior with marker-drawn detail`, `deep purple`
-> - `skin_e2`（Anna·Mara，抽卡 epic）：`a sleek marksman with marker-drawn detail`, `deep purple`
-> - `skin_l1`（Anna·Max，抽卡 legendary·旗舰）：`a majestic armored commander with gold ink details`, `gold and cream`
+> - `skin_e1`（Anna·Lena，抽卡 epic）：`an elaborate sentinel warrior with marker-drawn detail`, `orange`（2026-08-09 改色，原 `deep purple`）
+> - `skin_e2`（Anna·Mara，抽卡 epic）：`a sleek marksman with marker-drawn detail`, `orange`（2026-08-09 改色，原 `deep purple`）
+> - `skin_l1`（Anna·Max，抽卡 legendary·旗舰）：`a majestic armored commander with gold ink details`, `orange`（2026-08-09 改色，原 `gold and cream`）
 
 ### 文具材料图标（通用模板）
 

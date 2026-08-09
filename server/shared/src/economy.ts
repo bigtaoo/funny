@@ -42,7 +42,7 @@ export const GACHA_CATEGORY_ORDER: GachaCategory[] = [
  * `mat_scrap` is deliberately absent — it is the remainder pool (see STANDARD_POOL_REMAINDER_ITEM /
  * fixedOddsTable), computed as 100 − Σ(this table) rather than hand-specified. Values below carry over the
  * §2.1a-derived percentages for anything the owner hasn't re-specified yet; max/lena/mara + the three
- * skins were repriced 2026-07-15.
+ * skins were repriced 2026-07-15; skin_e1/skin_e2 repriced again 2026-08-09.
  */
 export const STANDARD_POOL_FIXED_ODDS: Record<string, number> = {
   mat_lead: 16.29,
@@ -62,8 +62,8 @@ export const STANDARD_POOL_FIXED_ODDS: Record<string, number> = {
   wp_highlighter: 0.27,
   ar_foil: 0.27,
   tk_seal: 0.27,
-  skin_e1: 0.1, // Lena skin (epic)
-  skin_e2: 0.1, // Mara skin (epic)
+  skin_e1: 0.05, // Lena skin (epic), repriced 0.10%→0.05% (2026-08-09)
+  skin_e2: 0.03, // Mara skin (epic), repriced 0.10%→0.03% (2026-08-09)
   skin_l1: 0.01, // Max skin (legendary, flagship)
 };
 
