@@ -849,6 +849,8 @@ export function SiegeArrivalMixin<TBase extends SiegeServiceBaseCtor>(Base: TBas
     /**
      * Sweep NPC garrison from a neutral / resource tile (sweep arrival). No occupation: on success, loot resources + surviving troops return to the pool;
      * on failure, attacker troop losses (survivors still return to the pool, possibly 0). If the tile is already player-occupied on arrival → refund troops (miss).
+     * The outcome itself is always the cheap linear formula (never the real engine) — a synthesized formation is
+     * built purely so the battle report has something to replay (see the `replay` local below).
      */
     async applySweep(m: MarchDoc, pw: PlayerWorldDoc, t: number): Promise<void> {
       const { cols } = this.core.deps;
@@ -868,7 +870,22 @@ export function SiegeArrivalMixin<TBase extends SiegeServiceBaseCtor>(Base: TBas
       const proc = proceduralTile(m.worldId, this.core.coordX(m.toTile), this.core.coordY(m.toTile));
       // Morale (行军疲劳, not the card 士气加成): scale attacker strength by the march's remaining morale (see applySiege above for detail).
       const effTroops = Math.round(m.troops * moraleCombatMultiplier(m.morale ?? MARCH_MORALE_MAX));
-      const res = resolveSiege(effTroops, npcGarrison(proc.level));
+      const tileLevel = proc.level;
+      const garrison = npcGarrison(tileLevel);
+      const res = resolveSiege(effTroops, garrison);
+      // Replay traceability (closing the one gap §45/SLG_DESIGN_LOG.md left open on purpose: sweep never built a
+      // formation, so there was nothing to persist for client-side replay spectating). Synthesize the same
+      // presentation-only inputs the cheap paths elsewhere already store unconditionally (attack/occupy
+      // territory, stronghold/crossing PvE) so every combat action against a real garrison is replayable, not
+      // just attack/occupy. The outcome above is still decided by the linear formula, not this synthesized
+      // formation — replaying can show a different winner than the recorded `res.outcome`, same accepted drift
+      // as every other cheap-resolved battle (SiegeDoc.seed doc comment: presentation-only, not authoritative).
+      const replay: SiegeReplayInputs = {
+        seed: siegeSeedFromId(m._id),
+        attackerArmy: synthesizeArmy(effTroops, 'attacker'),
+        defenderConfig: { garrison: synthesizeArmy(garrison, 'defender'), defenderBaseHp: npcBaseHp(tileLevel) },
+        tileLevel,
+      };
       let loot = emptyResources();
       if (res.outcome === 'attacker_win') {
         const rt: ResourceType = proc.resType ?? 'ink';
@@ -887,7 +904,7 @@ export function SiegeArrivalMixin<TBase extends SiegeServiceBaseCtor>(Base: TBas
           army: m.army, teamId: m.teamId, leaderUnitType: m.leaderUnitType,
         }, t);
       }
-      const siege = await this.recordSiege(m, undefined, res.outcome, t, null);
+      const siege = await this.recordSiege(m, undefined, res.outcome, t, replay);
       void this.core.pushMarch(m.ownerId, this.core.marchView({ ...m, status: 'arrived' }));
       void this.core.pushSiege(m.ownerId, siege, lootSummary(loot));
     }

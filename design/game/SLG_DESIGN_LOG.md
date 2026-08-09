@@ -1891,4 +1891,20 @@ cols.tiles.find({ worldId, type: 'base', ownerId: { $nin: excludeOwners } })
 
 **教训**：修 bug 前先把"服务端当前行为"当成"正确行为"去对齐客户端，是默认假设服务端设计没问题——但这次服务端那条范围限制本身就是产品决策的对象，不是既定事实。跟用户确认完修复效果后再定案，避免"修对了旧设计、修错了新需求"。
 
+## 2026-08-09：扫荡（sweep）战报补录像——§45 刻意留下的最后一个 `hasReplay:false` 缺口（用户报告）
+
+用户看「Battle replays」列表发现一批 `Atk·Win`/`Atk·Loss` 行没有 `Lv.` 标注、也没有录像按钮，怀疑是打玩家领地漏了录像。核实这批行其实是**扫荡中立/资源地块**的战报，不是打玩家领地——列表里 `Lv.` 只在 `tileLevel` 字段存在时才显示（`replay.ts` `renderReplayPanel`），且 `roleTxt` 对 `attack`/`sweep` 两种 march kind 一视同仁都显示 `Atk`（角色标签不分战斗类型），玩家肉眼完全没法区分"打玩家地没录像"和"扫荡中立地没录像"，这正是用户误判的根源。
+
+**排查结论（沿用 §45 已定案的因果链）**：`applySiege`/`applyOccupy` 打玩家领地/PvE 险地渡口，自 §45 起无条件持久化 replay 输入（哪怕走廉价公式或引擎崩溃）；`applySweep`（`combatSiege/arrival.ts`）当时被明确排除在外——从不构造 army 编队，纯粹是"兵力数字过 `resolveSiege` 线性公式"，§45 原话"没有可存的东西"。用户确认自己全程没用过"扫荡"按钮、只用"围攻"，但游戏机制上打无主中立地块（有驻军）时客户端只提供"占领"或"扫荡"两个按钮（`WorldMapInput.ts`），没有"围攻"选项——用户口头描述的"正常打"很可能就是点了"扫荡"按钮，只是心理上没有区分这三种战斗类型。
+
+**用户诉求**：不想再靠猜测区分是 bug 还是设计限制，要求"所有战斗都加录像"。
+
+**修复**（`combatSiege/arrival.ts` `applySweep`）：不改变结算本身（仍是线性公式 `resolveSiege(effTroops, npcGarrison(level))`，不接入真实引擎），只是仿照 `applyOccupy`/`applySiege` 已有的做法，额外合成一份纯展示用的编队数据存进 `SiegeDoc`：`attackerArmy = synthesizeArmy(effTroops,'attacker')`、`defenderConfig = { garrison: synthesizeArmy(garrison,'defender'), defenderBaseHp: npcBaseHp(level) }`、`tileLevel = proc.level`、`seed = siegeSeedFromId(m._id)`，`recordSiege` 从传 `null` 改成传这份 `replay`。跟 §45 的"存崩溃现场"同一套风险认知——重播出来的胜负可能跟落地结算的 `res.outcome` 不一致（`db.ts` `SiegeDoc.seed` 早就写明重播是纯展示、非权威），接受同类既有风险，不是新缺陷。至此 `hasReplay:false` 只剩一种情况：`occupation.ts` 的 `npcGarrison<=0`"无战斗即时占领"分支（`resourceDensity=1.0` 下这条分支从不触发，纯防御性兜底）。
+
+`combatDefense.ts`/`combatSiege/helpers.ts` 里三处引用§45因果链的注释同步更新，去掉"NPC 扫荡"这条例外。
+
+**验证**：`server/worldsvc` `tsc --noEmit` 全绿；`test/siege.e2e.test.ts` 两个既有 sweep 用例（赢/输）各补 `seed`/`attackerArmy`/`defenderConfig`/`tileLevel` 断言（原用例只断言战果本身，没断言过录像字段），连同 `siege-cheap-fallback.test.ts`/`stronghold.e2e.test.ts`/`passage.e2e.test.ts`/`siege-crash-replay.e2e.test.ts` 共 5 文件/34 例全绿，确认扫荡在赢/输两种结果下都拿到完整可重播的字段，且没有破坏任何既有断言。
+
+**追加测试（同日，用户要求"加测试"）**：上面的断言只查了 `sieges` 集合的原始字段，没有走过用户实际会碰到的两条链路——`listSieges`（截图里那个战报列表接口，`hasReplay` 的真正来源）和 `getSiegeReplay`（点"replay & verify"实际调用的接口）。给赢/输两个 sweep 用例都追加了端到端断言：`svc.listSieges(...)` 找到这条战报，`hasReplay` 为 `true`；`svc.getSiegeReplay(...)` 真的不抛错、返回的 `level.attackerArmy` 是数组；赢用例额外断言 `replay.defenderName===''`（sweep 打的是 NPC，没有 `defenderId`，`getSiegeReplay` 按文档注释跳过对手名解析）。证伪：临时把 `applySweep` 里 `recordSiege` 的 `replay` 参数改回 `null`（仅这一行，不动其余代码）单独重跑这两例，2/2 必现失败（`expected undefined to deeply equal Any<Number>`，卡在新加的 `seed` 断言上，还没跑到 `listSieges`/`getSiegeReplay` 那一步）；改回 `replay` 复跑，`server/worldsvc` `tsc --noEmit` + 上述 5 文件/34 例全部转绿。
+
 **补测试（同日，用户问"有新的测试需要加吗"）**：之前的「re-dispatch attack」e2e 例只测了行军创建（原点回落、驻留 doc 原子释放），从没真正跑过战斗结算——因为在这个功能之前，"停留队伍被再指挥去攻城、还真的打了一场仗"这个状态组合根本不可达（attack 之前压根不能被 idle-redispatch），不是"补一个已有覆盖的重复例"，是补一块新出现的状态空间。`teams.e2e.test.ts` 加两例：①**打赢**——地块易主，队伍打完之后彻底自由（无行军、无停留，跟从主城出发打赢的处置完全一样，读 `combatSiege/arrival.ts` 的赢分支确认——赢了从不 park 队伍，兵直接变成地块驻军值）；②**打输**——幸存兵力经由 travel-time 返程一路走回**主城**（`mainBaseTile`），不是回到出发的野战格（读 `combatShared.ts::startReturnMarch` 确认它永远算去主城的路径，跟出发点无关）。两例都先临时改回旧条件确认真的会报 TEAM_BUSY，再恢复确认转绿。

@@ -6,7 +6,8 @@
 //   ① attack territory attacker_win → tile ownership transferred (survivors become new garrison) + loot resources + both sides yield recalculated + sieges + siege_result;
 //   ② attack territory defender_win → garrison reduced (attacker weaker → fully destroyed, no return march);
 //   ③ attack main base attacker_win → non-capturable: garrison cleared + protection shield + loot + attacker survivors return and troops refunded;
-//   ④ sweep NPC attacker_win → loot captured + troops return; defender_win → troop attrition, no loot;
+//   ④ sweep NPC attacker_win → loot captured + troops return; defender_win → troop attrition, no loot; both
+//      outcomes now also persist a synthesized replay (traceability follow-up to §45, no engine involved);
 //   ⑤ validation: attack unowned tile / attack own tile / sweep occupied tile / attack protected tile.
 // Note: troop count → engine formation via synthesizeArmy (v1 bridge before G3-2c editor), so surviving
 //   troops are determined by engine combat (non-linear formula); assertions only check "direction + structural
@@ -329,6 +330,23 @@ describe.skipIf(!mongo)('worldsvc siege e2e', () => {
     const siege = await m.collections.sieges.findOne({ worldId: W, attackerId: 'a' });
     expect(siege).toMatchObject({ outcome: 'attacker_win', marchKind: 'sweep' });
     expect(siege?.defenderId).toBeUndefined();
+    // Replay traceability follow-up to §45: sweep now synthesizes a presentation-only formation purely so the
+    // report has something to replay, even though the outcome above is still the cheap linear formula.
+    expect(siege?.seed).toEqual(expect.any(Number));
+    expect(siege?.attackerArmy?.length).toBeGreaterThan(0);
+    expect(siege?.tileLevel).toBe(proc.level);
+    // hasReplay surfaces true through the actual client-facing list endpoint (the one the replay browser in the
+    // screenshot report reads), not just raw DB fields — and the stored inputs are actually fetchable end-to-end
+    // (getSiegeReplay's buildSiegeBattle reconstruction succeeds, it does not throw REPLAY_UNAVAILABLE).
+    const rows = await svc.listSieges(W, 'a');
+    const row = rows.find((r) => r.siegeId === siege!._id);
+    expect(row?.hasReplay).toBe(true);
+    const replay = await svc.getSiegeReplay(W, 'a', siege!._id);
+    expect(replay.seed).toBe(siege!.seed);
+    expect(Array.isArray((replay.level as { attackerArmy?: unknown }).attackerArmy)).toBe(true);
+    // Sweep is PvE (no defenderId) — the replay's defender side is the synthesized NPC garrison, not a player;
+    // getSiegeReplay skips display-name resolution for a missing defenderId (see combatDefense.ts doc comment).
+    expect(replay.defenderName).toBe('');
 
     // The survivors are in transit on a fresh 'return' leg; advancing to its arrival credits them to the pool.
     const marches = await svc.getMarches(W, 'a');
@@ -355,6 +373,15 @@ describe.skipIf(!mongo)('worldsvc siege e2e', () => {
     expect((await svc.getMe(W, 'a')).resources?.[rt] ?? 0).toBe(0);
     const siege = await m.collections.sieges.findOne({ worldId: W, attackerId: 'a' });
     expect(siege?.outcome).toBe('defender_win');
+    // A losing sweep is replayable too (same follow-up as the win case above) — including end-to-end through
+    // listSieges/getSiegeReplay, not just the raw DB fields (mirrors the win case's round-trip check).
+    expect(siege?.seed).toEqual(expect.any(Number));
+    expect(siege?.defenderConfig?.garrison?.length).toBeGreaterThan(0);
+    const rows = await svc.listSieges(W, 'a');
+    expect(rows.find((r) => r.siegeId === siege!._id)?.hasReplay).toBe(true);
+    const replay = await svc.getSiegeReplay(W, 'a', siege!._id);
+    expect(replay.outcome).toBe('defender_win');
+    expect(Array.isArray((replay.level as { attackerArmy?: unknown }).attackerArmy)).toBe(true);
   });
 
   it('validation: attack unowned tile / attack own tile / sweep occupied tile / attack protected tile', async () => {
