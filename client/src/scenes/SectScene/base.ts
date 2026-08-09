@@ -314,11 +314,15 @@ export class SectSceneBase {
     const busy = this.bt.busy;
     const addBtn = (label: string, color: number, action: () => void, seed: number): void => {
       const c = busy ? C.mid : color;
-      const lbl = add(txt(label, FS.tiny, c));
+      // Measure the label off-tree first, then add the panel *before* the label so the label
+      // paints on top of it — adding the opaque sketchPanel fill after the text hid the text
+      // entirely (border-only button, still clickable since hit-testing doesn't care about z-order).
+      const lbl = txt(label, FS.tiny, c);
       const bw = Math.ceil(lbl.width) + padX * 2;
       const bx = x - bw;
       const btn = add(sketchPanel(bw, bh, { fill: 0xf8f8f0, border: c, seed: seedFor(seed, 3, bw) }));
       btn.x = bx; btn.y = by;
+      add(lbl);
       lbl.anchor.set(0.5, 0.5); lbl.x = bx + bw / 2; lbl.y = by + bh / 2;
       if (!busy) this.hitRects.push({ rect: { x: bx, y: by, w: bw, h: bh }, action });
       x = bx - 8;
