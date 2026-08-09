@@ -2507,6 +2507,28 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                           "type": "boolean"
                         }
                       }
+                    },
+                    "weekly": {
+                      "type": "object",
+                      "required": [
+                        "weekKey",
+                        "points",
+                        "claimedTiers"
+                      ],
+                      "properties": {
+                        "weekKey": {
+                          "type": "string"
+                        },
+                        "points": {
+                          "type": "integer"
+                        },
+                        "claimedTiers": {
+                          "type": "array",
+                          "items": {
+                            "type": "integer"
+                          }
+                        }
+                      }
                     }
                   }
                 }
@@ -3170,6 +3192,28 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                         },
                         "rewardClaimed": {
                           "type": "boolean"
+                        }
+                      }
+                    },
+                    "weekly": {
+                      "type": "object",
+                      "required": [
+                        "weekKey",
+                        "points",
+                        "claimedTiers"
+                      ],
+                      "properties": {
+                        "weekKey": {
+                          "type": "string"
+                        },
+                        "points": {
+                          "type": "integer"
+                        },
+                        "claimedTiers": {
+                          "type": "array",
+                          "items": {
+                            "type": "integer"
+                          }
                         }
                       }
                     }
@@ -4068,6 +4112,28 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                           "type": "boolean"
                         }
                       }
+                    },
+                    "weekly": {
+                      "type": "object",
+                      "required": [
+                        "weekKey",
+                        "points",
+                        "claimedTiers"
+                      ],
+                      "properties": {
+                        "weekKey": {
+                          "type": "string"
+                        },
+                        "points": {
+                          "type": "integer"
+                        },
+                        "claimedTiers": {
+                          "type": "array",
+                          "items": {
+                            "type": "integer"
+                          }
+                        }
+                      }
                     }
                   }
                 }
@@ -4753,6 +4819,28 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                         },
                         "rewardClaimed": {
                           "type": "boolean"
+                        }
+                      }
+                    },
+                    "weekly": {
+                      "type": "object",
+                      "required": [
+                        "weekKey",
+                        "points",
+                        "claimedTiers"
+                      ],
+                      "properties": {
+                        "weekKey": {
+                          "type": "string"
+                        },
+                        "points": {
+                          "type": "integer"
+                        },
+                        "claimedTiers": {
+                          "type": "array",
+                          "items": {
+                            "type": "integer"
+                          }
                         }
                       }
                     }
@@ -5536,6 +5624,28 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                           "type": "boolean"
                         }
                       }
+                    },
+                    "weekly": {
+                      "type": "object",
+                      "required": [
+                        "weekKey",
+                        "points",
+                        "claimedTiers"
+                      ],
+                      "properties": {
+                        "weekKey": {
+                          "type": "string"
+                        },
+                        "points": {
+                          "type": "integer"
+                        },
+                        "claimedTiers": {
+                          "type": "array",
+                          "items": {
+                            "type": "integer"
+                          }
+                        }
+                      }
                     }
                   }
                 }
@@ -6247,6 +6357,28 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                             },
                             "rewardClaimed": {
                               "type": "boolean"
+                            }
+                          }
+                        },
+                        "weekly": {
+                          "type": "object",
+                          "required": [
+                            "weekKey",
+                            "points",
+                            "claimedTiers"
+                          ],
+                          "properties": {
+                            "weekKey": {
+                              "type": "string"
+                            },
+                            "points": {
+                              "type": "integer"
+                            },
+                            "claimedTiers": {
+                              "type": "array",
+                              "items": {
+                                "type": "integer"
+                              }
                             }
                           }
                         }
@@ -7034,6 +7166,28 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                           "type": "boolean"
                         }
                       }
+                    },
+                    "weekly": {
+                      "type": "object",
+                      "required": [
+                        "weekKey",
+                        "points",
+                        "claimedTiers"
+                      ],
+                      "properties": {
+                        "weekKey": {
+                          "type": "string"
+                        },
+                        "points": {
+                          "type": "integer"
+                        },
+                        "claimedTiers": {
+                          "type": "array",
+                          "items": {
+                            "type": "integer"
+                          }
+                        }
+                      }
                     }
                   }
                 }
@@ -7634,6 +7788,28 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                           "type": "boolean"
                         }
                       }
+                    },
+                    "weekly": {
+                      "type": "object",
+                      "required": [
+                        "weekKey",
+                        "points",
+                        "claimedTiers"
+                      ],
+                      "properties": {
+                        "weekKey": {
+                          "type": "string"
+                        },
+                        "points": {
+                          "type": "integer"
+                        },
+                        "claimedTiers": {
+                          "type": "array",
+                          "items": {
+                            "type": "integer"
+                          }
+                        }
+                      }
                     }
                   }
                 }
@@ -8229,6 +8405,28 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                         },
                         "rewardClaimed": {
                           "type": "boolean"
+                        }
+                      }
+                    },
+                    "weekly": {
+                      "type": "object",
+                      "required": [
+                        "weekKey",
+                        "points",
+                        "claimedTiers"
+                      ],
+                      "properties": {
+                        "weekKey": {
+                          "type": "string"
+                        },
+                        "points": {
+                          "type": "integer"
+                        },
+                        "claimedTiers": {
+                          "type": "array",
+                          "items": {
+                            "type": "integer"
+                          }
                         }
                       }
                     }
@@ -8827,6 +9025,28 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                         },
                         "rewardClaimed": {
                           "type": "boolean"
+                        }
+                      }
+                    },
+                    "weekly": {
+                      "type": "object",
+                      "required": [
+                        "weekKey",
+                        "points",
+                        "claimedTiers"
+                      ],
+                      "properties": {
+                        "weekKey": {
+                          "type": "string"
+                        },
+                        "points": {
+                          "type": "integer"
+                        },
+                        "claimedTiers": {
+                          "type": "array",
+                          "items": {
+                            "type": "integer"
+                          }
                         }
                       }
                     }
@@ -9429,6 +9649,28 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                         },
                         "rewardClaimed": {
                           "type": "boolean"
+                        }
+                      }
+                    },
+                    "weekly": {
+                      "type": "object",
+                      "required": [
+                        "weekKey",
+                        "points",
+                        "claimedTiers"
+                      ],
+                      "properties": {
+                        "weekKey": {
+                          "type": "string"
+                        },
+                        "points": {
+                          "type": "integer"
+                        },
+                        "claimedTiers": {
+                          "type": "array",
+                          "items": {
+                            "type": "integer"
+                          }
                         }
                       }
                     }
@@ -10053,6 +10295,28 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                         },
                         "rewardClaimed": {
                           "type": "boolean"
+                        }
+                      }
+                    },
+                    "weekly": {
+                      "type": "object",
+                      "required": [
+                        "weekKey",
+                        "points",
+                        "claimedTiers"
+                      ],
+                      "properties": {
+                        "weekKey": {
+                          "type": "string"
+                        },
+                        "points": {
+                          "type": "integer"
+                        },
+                        "claimedTiers": {
+                          "type": "array",
+                          "items": {
+                            "type": "integer"
+                          }
                         }
                       }
                     }
@@ -10696,6 +10960,28 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                           "type": "boolean"
                         }
                       }
+                    },
+                    "weekly": {
+                      "type": "object",
+                      "required": [
+                        "weekKey",
+                        "points",
+                        "claimedTiers"
+                      ],
+                      "properties": {
+                        "weekKey": {
+                          "type": "string"
+                        },
+                        "points": {
+                          "type": "integer"
+                        },
+                        "claimedTiers": {
+                          "type": "array",
+                          "items": {
+                            "type": "integer"
+                          }
+                        }
+                      }
                     }
                   }
                 }
@@ -11295,6 +11581,28 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                         },
                         "rewardClaimed": {
                           "type": "boolean"
+                        }
+                      }
+                    },
+                    "weekly": {
+                      "type": "object",
+                      "required": [
+                        "weekKey",
+                        "points",
+                        "claimedTiers"
+                      ],
+                      "properties": {
+                        "weekKey": {
+                          "type": "string"
+                        },
+                        "points": {
+                          "type": "integer"
+                        },
+                        "claimedTiers": {
+                          "type": "array",
+                          "items": {
+                            "type": "integer"
+                          }
                         }
                       }
                     }
@@ -11905,6 +12213,28 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                           "type": "boolean"
                         }
                       }
+                    },
+                    "weekly": {
+                      "type": "object",
+                      "required": [
+                        "weekKey",
+                        "points",
+                        "claimedTiers"
+                      ],
+                      "properties": {
+                        "weekKey": {
+                          "type": "string"
+                        },
+                        "points": {
+                          "type": "integer"
+                        },
+                        "claimedTiers": {
+                          "type": "array",
+                          "items": {
+                            "type": "integer"
+                          }
+                        }
+                      }
                     }
                   }
                 }
@@ -12501,6 +12831,28 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                         },
                         "rewardClaimed": {
                           "type": "boolean"
+                        }
+                      }
+                    },
+                    "weekly": {
+                      "type": "object",
+                      "required": [
+                        "weekKey",
+                        "points",
+                        "claimedTiers"
+                      ],
+                      "properties": {
+                        "weekKey": {
+                          "type": "string"
+                        },
+                        "points": {
+                          "type": "integer"
+                        },
+                        "claimedTiers": {
+                          "type": "array",
+                          "items": {
+                            "type": "integer"
+                          }
                         }
                       }
                     }
@@ -13228,6 +13580,28 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                           "type": "boolean"
                         }
                       }
+                    },
+                    "weekly": {
+                      "type": "object",
+                      "required": [
+                        "weekKey",
+                        "points",
+                        "claimedTiers"
+                      ],
+                      "properties": {
+                        "weekKey": {
+                          "type": "string"
+                        },
+                        "points": {
+                          "type": "integer"
+                        },
+                        "claimedTiers": {
+                          "type": "array",
+                          "items": {
+                            "type": "integer"
+                          }
+                        }
+                      }
                     }
                   }
                 }
@@ -13833,6 +14207,28 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                           "type": "boolean"
                         }
                       }
+                    },
+                    "weekly": {
+                      "type": "object",
+                      "required": [
+                        "weekKey",
+                        "points",
+                        "claimedTiers"
+                      ],
+                      "properties": {
+                        "weekKey": {
+                          "type": "string"
+                        },
+                        "points": {
+                          "type": "integer"
+                        },
+                        "claimedTiers": {
+                          "type": "array",
+                          "items": {
+                            "type": "integer"
+                          }
+                        }
+                      }
                     }
                   }
                 }
@@ -14428,6 +14824,28 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                         },
                         "rewardClaimed": {
                           "type": "boolean"
+                        }
+                      }
+                    },
+                    "weekly": {
+                      "type": "object",
+                      "required": [
+                        "weekKey",
+                        "points",
+                        "claimedTiers"
+                      ],
+                      "properties": {
+                        "weekKey": {
+                          "type": "string"
+                        },
+                        "points": {
+                          "type": "integer"
+                        },
+                        "claimedTiers": {
+                          "type": "array",
+                          "items": {
+                            "type": "integer"
+                          }
                         }
                       }
                     }
@@ -15089,6 +15507,28 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                           "type": "boolean"
                         }
                       }
+                    },
+                    "weekly": {
+                      "type": "object",
+                      "required": [
+                        "weekKey",
+                        "points",
+                        "claimedTiers"
+                      ],
+                      "properties": {
+                        "weekKey": {
+                          "type": "string"
+                        },
+                        "points": {
+                          "type": "integer"
+                        },
+                        "claimedTiers": {
+                          "type": "array",
+                          "items": {
+                            "type": "integer"
+                          }
+                        }
+                      }
                     }
                   }
                 }
@@ -15694,6 +16134,28 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                         },
                         "rewardClaimed": {
                           "type": "boolean"
+                        }
+                      }
+                    },
+                    "weekly": {
+                      "type": "object",
+                      "required": [
+                        "weekKey",
+                        "points",
+                        "claimedTiers"
+                      ],
+                      "properties": {
+                        "weekKey": {
+                          "type": "string"
+                        },
+                        "points": {
+                          "type": "integer"
+                        },
+                        "claimedTiers": {
+                          "type": "array",
+                          "items": {
+                            "type": "integer"
+                          }
                         }
                       }
                     }
@@ -16338,6 +16800,28 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                           "type": "boolean"
                         }
                       }
+                    },
+                    "weekly": {
+                      "type": "object",
+                      "required": [
+                        "weekKey",
+                        "points",
+                        "claimedTiers"
+                      ],
+                      "properties": {
+                        "weekKey": {
+                          "type": "string"
+                        },
+                        "points": {
+                          "type": "integer"
+                        },
+                        "claimedTiers": {
+                          "type": "array",
+                          "items": {
+                            "type": "integer"
+                          }
+                        }
+                      }
                     }
                   }
                 }
@@ -16935,6 +17419,28 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                           "type": "boolean"
                         }
                       }
+                    },
+                    "weekly": {
+                      "type": "object",
+                      "required": [
+                        "weekKey",
+                        "points",
+                        "claimedTiers"
+                      ],
+                      "properties": {
+                        "weekKey": {
+                          "type": "string"
+                        },
+                        "points": {
+                          "type": "integer"
+                        },
+                        "claimedTiers": {
+                          "type": "array",
+                          "items": {
+                            "type": "integer"
+                          }
+                        }
+                      }
                     }
                   }
                 }
@@ -17530,6 +18036,28 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                         },
                         "rewardClaimed": {
                           "type": "boolean"
+                        }
+                      }
+                    },
+                    "weekly": {
+                      "type": "object",
+                      "required": [
+                        "weekKey",
+                        "points",
+                        "claimedTiers"
+                      ],
+                      "properties": {
+                        "weekKey": {
+                          "type": "string"
+                        },
+                        "points": {
+                          "type": "integer"
+                        },
+                        "claimedTiers": {
+                          "type": "array",
+                          "items": {
+                            "type": "integer"
+                          }
                         }
                       }
                     }
@@ -18505,6 +19033,28 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                           "type": "boolean"
                         }
                       }
+                    },
+                    "weekly": {
+                      "type": "object",
+                      "required": [
+                        "weekKey",
+                        "points",
+                        "claimedTiers"
+                      ],
+                      "properties": {
+                        "weekKey": {
+                          "type": "string"
+                        },
+                        "points": {
+                          "type": "integer"
+                        },
+                        "claimedTiers": {
+                          "type": "array",
+                          "items": {
+                            "type": "integer"
+                          }
+                        }
+                      }
                     }
                   }
                 }
@@ -19361,6 +19911,28 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                           "type": "boolean"
                         }
                       }
+                    },
+                    "weekly": {
+                      "type": "object",
+                      "required": [
+                        "weekKey",
+                        "points",
+                        "claimedTiers"
+                      ],
+                      "properties": {
+                        "weekKey": {
+                          "type": "string"
+                        },
+                        "points": {
+                          "type": "integer"
+                        },
+                        "claimedTiers": {
+                          "type": "array",
+                          "items": {
+                            "type": "integer"
+                          }
+                        }
+                      }
                     }
                   }
                 }
@@ -19993,6 +20565,28 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                           "type": "boolean"
                         }
                       }
+                    },
+                    "weekly": {
+                      "type": "object",
+                      "required": [
+                        "weekKey",
+                        "points",
+                        "claimedTiers"
+                      ],
+                      "properties": {
+                        "weekKey": {
+                          "type": "string"
+                        },
+                        "points": {
+                          "type": "integer"
+                        },
+                        "claimedTiers": {
+                          "type": "array",
+                          "items": {
+                            "type": "integer"
+                          }
+                        }
+                      }
                     }
                   }
                 }
@@ -20594,6 +21188,28 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                         },
                         "rewardClaimed": {
                           "type": "boolean"
+                        }
+                      }
+                    },
+                    "weekly": {
+                      "type": "object",
+                      "required": [
+                        "weekKey",
+                        "points",
+                        "claimedTiers"
+                      ],
+                      "properties": {
+                        "weekKey": {
+                          "type": "string"
+                        },
+                        "points": {
+                          "type": "integer"
+                        },
+                        "claimedTiers": {
+                          "type": "array",
+                          "items": {
+                            "type": "integer"
+                          }
                         }
                       }
                     }
@@ -21456,6 +22072,28 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                           "type": "boolean"
                         }
                       }
+                    },
+                    "weekly": {
+                      "type": "object",
+                      "required": [
+                        "weekKey",
+                        "points",
+                        "claimedTiers"
+                      ],
+                      "properties": {
+                        "weekKey": {
+                          "type": "string"
+                        },
+                        "points": {
+                          "type": "integer"
+                        },
+                        "claimedTiers": {
+                          "type": "array",
+                          "items": {
+                            "type": "integer"
+                          }
+                        }
+                      }
                     }
                   }
                 }
@@ -22051,6 +22689,28 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                         },
                         "rewardClaimed": {
                           "type": "boolean"
+                        }
+                      }
+                    },
+                    "weekly": {
+                      "type": "object",
+                      "required": [
+                        "weekKey",
+                        "points",
+                        "claimedTiers"
+                      ],
+                      "properties": {
+                        "weekKey": {
+                          "type": "string"
+                        },
+                        "points": {
+                          "type": "integer"
+                        },
+                        "claimedTiers": {
+                          "type": "array",
+                          "items": {
+                            "type": "integer"
+                          }
                         }
                       }
                     }
@@ -22650,6 +23310,28 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                           "type": "boolean"
                         }
                       }
+                    },
+                    "weekly": {
+                      "type": "object",
+                      "required": [
+                        "weekKey",
+                        "points",
+                        "claimedTiers"
+                      ],
+                      "properties": {
+                        "weekKey": {
+                          "type": "string"
+                        },
+                        "points": {
+                          "type": "integer"
+                        },
+                        "claimedTiers": {
+                          "type": "array",
+                          "items": {
+                            "type": "integer"
+                          }
+                        }
+                      }
                     }
                   }
                 }
@@ -23245,6 +23927,28 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                         },
                         "rewardClaimed": {
                           "type": "boolean"
+                        }
+                      }
+                    },
+                    "weekly": {
+                      "type": "object",
+                      "required": [
+                        "weekKey",
+                        "points",
+                        "claimedTiers"
+                      ],
+                      "properties": {
+                        "weekKey": {
+                          "type": "string"
+                        },
+                        "points": {
+                          "type": "integer"
+                        },
+                        "claimedTiers": {
+                          "type": "array",
+                          "items": {
+                            "type": "integer"
+                          }
                         }
                       }
                     }
@@ -24858,6 +25562,28 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                         },
                         "rewardClaimed": {
                           "type": "boolean"
+                        }
+                      }
+                    },
+                    "weekly": {
+                      "type": "object",
+                      "required": [
+                        "weekKey",
+                        "points",
+                        "claimedTiers"
+                      ],
+                      "properties": {
+                        "weekKey": {
+                          "type": "string"
+                        },
+                        "points": {
+                          "type": "integer"
+                        },
+                        "claimedTiers": {
+                          "type": "array",
+                          "items": {
+                            "type": "integer"
+                          }
                         }
                       }
                     }

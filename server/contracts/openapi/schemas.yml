@@ -254,6 +254,23 @@ schemas:
                 additionalProperties: { type: integer }
               taskPoints: { type: integer }
               rewardClaimed: { type: boolean }
+          # ⚠ Added 2026-08-09: was missing since the weekly active chest shipped (~2026-08-01) — same
+          # stripping bug as the warning above, just scoped to this one sub-field instead of the whole
+          # object, so it was much harder to notice: checkin/daily worked fine, GET /lobby/badges and
+          # GET /retention (separate response shapes, not SaveData) correctly showed the lobby red dot
+          # and the Weekly tab's reward defs, but every SaveData-shaped response (login/GET /save/every
+          # claim endpoint) silently dropped save.retention.weekly — so saveManager's local mirror never
+          # had it, and DailyScene's weeklyClaimableTiers(save, now) (the actual claim-button gate) was
+          # permanently empty no matter how many weekly points a player earned. See RETENTION_DESIGN.md §10.12.
+          weekly:
+            type: object
+            required: [weekKey, points, claimedTiers]
+            properties:
+              weekKey: { type: string }
+              points: { type: integer }
+              claimedTiers:
+                type: array
+                items: { type: integer }
 
   # Achievement definitions (hardcoded in @nw/shared, served by GET /achievements; clients use these + stats to compute tier locally).
   Achievement:
