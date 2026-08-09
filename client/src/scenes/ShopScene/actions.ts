@@ -10,6 +10,7 @@ import { type Constructor, type ShopSceneBaseCtor, type ShopActionResult } from 
 export interface ActionHandlers {
   loadItems(): Promise<void>;
   onBuy(itemId: string, itemName: string): Promise<void>;
+  onBuyBulk(itemId: string, itemName: string, qty: number): Promise<void>;
   onRedeem(): Promise<void>;
   onRecharge(tierId: string): Promise<void>;
   runDeal(action: () => Promise<ShopActionResult>, okKey: TranslationKey, itemName?: string): Promise<void>;
@@ -52,6 +53,41 @@ export function ActionsMixin<TBase extends ShopSceneBaseCtor>(Base: TBase): TBas
       } catch (e) {
         showToastMessage(t(e instanceof TimeoutError ? 'common.networkTimeout' : 'shop.error'), 'error');
       } finally {
+        this.bt.stop();
+        this.render();
+      }
+    }
+
+    /**
+     * Repeat-buy a re-buyable consumable `qty` times in one tap (e.g. the "×10" button next to a
+     * material/item's normal Buy — bulk-buying enhance-protection stones one click at a time was the
+     * reported friction). Not a server-side batch: this fires `qty` sequential `cb.buy()` calls under a
+     * single busy-lock, stopping at the first failure (insufficient funds mid-run, daily cap hit, etc.)
+     * — functionally identical to the player tapping Buy `qty` times, just without the taps. `loadItems()`
+     * only refreshes once at the end (not after every unit) so a bulk buy costs one extra GET, not `qty`.
+     */
+    async onBuyBulk(itemId: string, itemName: string, qty: number): Promise<void> {
+      if (this.bt.busy) return;
+      this.blurPromo();
+      this.bt.start();
+      this.render();
+      let bought = 0;
+      let failKey: TranslationKey | null = null;
+      try {
+        for (let i = 0; i < qty; i++) {
+          const res = await withTimeout(this.cb.buy(itemId));
+          if (!res.ok) { failKey = res.key; break; }
+          bought++;
+        }
+      } catch (e) {
+        failKey = e instanceof TimeoutError ? 'common.networkTimeout' : 'shop.error';
+      } finally {
+        if (bought > 0) {
+          showToastMessage(t('shop.boughtNamedQty', { name: itemName, qty: bought }), 'success');
+          await this.loadItems(); // refresh dailyLimit/purchasedToday + coin balance once, not per unit
+        } else if (failKey) {
+          showToastMessage(t(failKey), 'error');
+        }
         this.bt.stop();
         this.render();
       }

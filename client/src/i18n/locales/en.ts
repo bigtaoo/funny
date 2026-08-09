@@ -379,6 +379,8 @@ export const en: Record<TranslationKey, string> = {
   'shop.free': 'Free',
   'shop.bought': 'Purchased',
   'shop.boughtNamed': 'Purchased: {name}',
+  'shop.boughtNamedQty': 'Purchased: {name} ×{qty}',
+  'shop.buyX10': 'Buy ×10',
   'shop.insufficient': 'Not enough coins',
   'shop.error': 'Purchase failed — please retry',
   'shop.back': '← Back',

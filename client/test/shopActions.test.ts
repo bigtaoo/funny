@@ -99,6 +99,114 @@ describe('ShopScene — onBuy() catch/timeout branch', () => {
   });
 });
 
+// ── onBuyBulk ─────────────────────────────────────────────────────────────────
+
+describe('ShopScene — onBuyBulk() busy-lock', () => {
+  it('a second call while the first is in flight does not re-issue any purchase', async () => {
+    const scene = buildScene();
+    scene.cb.buy.mockReturnValueOnce(new Promise<ShopActionResult>(() => {})); // never resolves
+
+    void scene.onBuyBulk('protect_enhance', 'Enhance Protection Stone', 10);
+    void scene.onBuyBulk('protect_enhance', 'Enhance Protection Stone', 10);
+    await Promise.resolve();
+
+    expect(scene.cb.buy).toHaveBeenCalledTimes(1);
+    expect(scene.bt.busy).toBe(true);
+  });
+});
+
+describe('ShopScene — onBuyBulk() success', () => {
+  it('calls buy() qty times with the same itemId, toasts the bought count, and refreshes the catalog exactly once', async () => {
+    const scene = buildScene();
+    const spy = vi.spyOn(log, 'showToastMessage');
+
+    await scene.onBuyBulk('protect_enhance', 'Enhance Protection Stone', 10);
+
+    expect(scene.cb.buy).toHaveBeenCalledTimes(10);
+    expect(scene.cb.buy).toHaveBeenCalledWith('protect_enhance');
+    expect(spy).toHaveBeenCalledWith(
+      t('shop.boughtNamedQty', { name: 'Enhance Protection Stone', qty: 10 }), 'success',
+    );
+    expect(scene.cb.loadItems).toHaveBeenCalledTimes(1); // one refresh, not one per unit
+    expect(scene.bt.busy).toBe(false);
+  });
+});
+
+describe('ShopScene — onBuyBulk() partial failure (e.g. hits a daily cap or runs out of coins mid-run)', () => {
+  it('stops at the first ok:false, toasts however many actually landed, and still refreshes once', async () => {
+    const scene = buildScene();
+    scene.cb.buy
+      .mockResolvedValueOnce({ ok: true })
+      .mockResolvedValueOnce({ ok: true })
+      .mockResolvedValueOnce({ ok: true })
+      .mockResolvedValueOnce({ ok: false, key: 'shop.insufficient' as never });
+    const spy = vi.spyOn(log, 'showToastMessage');
+
+    await scene.onBuyBulk('protect_enhance', 'Enhance Protection Stone', 10);
+
+    expect(scene.cb.buy).toHaveBeenCalledTimes(4); // stopped right after the failure, no further attempts
+    expect(spy).toHaveBeenCalledWith(
+      t('shop.boughtNamedQty', { name: 'Enhance Protection Stone', qty: 3 }), 'success',
+    );
+    expect(scene.cb.loadItems).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('ShopScene — onBuyBulk() total failure', () => {
+  it('the very first call failing toasts the mapped error key and never refreshes the catalog', async () => {
+    const scene = buildScene();
+    scene.cb.buy.mockResolvedValueOnce({ ok: false, key: 'shop.insufficient' as never });
+    const spy = vi.spyOn(log, 'showToastMessage');
+
+    await scene.onBuyBulk('protect_enhance', 'Enhance Protection Stone', 10);
+
+    expect(scene.cb.buy).toHaveBeenCalledTimes(1);
+    expect(spy).toHaveBeenCalledWith(t('shop.insufficient' as never), 'error');
+    expect(scene.cb.loadItems).not.toHaveBeenCalled();
+  });
+
+  it('a thrown error on the first call maps to the generic shop-error toast', async () => {
+    const scene = buildScene();
+    scene.cb.buy.mockRejectedValueOnce(new Error('network down'));
+    const spy = vi.spyOn(log, 'showToastMessage');
+
+    await scene.onBuyBulk('protect_enhance', 'Enhance Protection Stone', 10);
+
+    expect(spy).toHaveBeenCalledWith(t('shop.error'), 'error');
+    expect(scene.cb.loadItems).not.toHaveBeenCalled();
+  });
+
+  it('a TimeoutError partway through still keeps whatever already succeeded', async () => {
+    const scene = buildScene();
+    scene.cb.buy
+      .mockResolvedValueOnce({ ok: true })
+      .mockResolvedValueOnce({ ok: true })
+      .mockRejectedValueOnce(new TimeoutError());
+    const spy = vi.spyOn(log, 'showToastMessage');
+
+    await scene.onBuyBulk('protect_enhance', 'Enhance Protection Stone', 10);
+
+    expect(scene.cb.buy).toHaveBeenCalledTimes(3);
+    expect(spy).toHaveBeenCalledWith(
+      t('shop.boughtNamedQty', { name: 'Enhance Protection Stone', qty: 2 }), 'success',
+    );
+  });
+});
+
+describe('ShopScene — onBuyBulk() edge case: qty=0', () => {
+  it('never calls buy(), never toasts, and still releases the busy-lock — defensive guard against a future caller passing a bad qty', async () => {
+    const scene = buildScene();
+    const spy = vi.spyOn(log, 'showToastMessage');
+
+    await scene.onBuyBulk('protect_enhance', 'Enhance Protection Stone', 0);
+
+    expect(scene.cb.buy).not.toHaveBeenCalled();
+    expect(spy).not.toHaveBeenCalled();
+    expect(scene.cb.loadItems).not.toHaveBeenCalled();
+    expect(scene.bt.busy).toBe(false);
+  });
+});
+
 // ── onRedeem (promo code) ─────────────────────────────────────────────────────
 
 describe('ShopScene — onRedeem() guards', () => {

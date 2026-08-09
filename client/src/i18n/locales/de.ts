@@ -379,6 +379,8 @@ export const de: Record<TranslationKey, string> = {
   'shop.free': 'Kostenlos',
   'shop.bought': 'Gekauft',
   'shop.boughtNamed': 'Gekauft: {name}',
+  'shop.boughtNamedQty': 'Gekauft: {name} ×{qty}',
+  'shop.buyX10': '×10 kaufen',
   'shop.insufficient': 'Nicht genug Münzen',
   'shop.error': 'Kauf fehlgeschlagen — bitte erneut versuchen',
   'shop.back': '← Zurück',
