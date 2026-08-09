@@ -634,6 +634,7 @@ export class ShopSceneBase {
 export interface ShopSceneBase {
   loadItems(): Promise<void>;
   onBuy(itemId: string, itemName: string): Promise<void>;
+  onBuyBulk(itemId: string, itemName: string, qty: number): Promise<void>;
   onRedeem(): Promise<void>;
   onRecharge(tierId: string): Promise<void>;
   runDeal(action: () => Promise<ShopActionResult>, okKey: TranslationKey, itemName?: string): Promise<void>;

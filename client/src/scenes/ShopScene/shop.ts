@@ -39,6 +39,11 @@ const YEAR_CARD_YUAN = 298;
 const YEAR_CARD_LIST_YUAN = 360;
 const STARTER_DRAW_YUAN = 6;
 const STARTER_GROWTH_YUAN = 30;
+// Bulk-buy shortcut for re-buyable consumables (item-kind shop entries, e.g. protect_enhance) — see
+// ActionsMixin.onBuyBulk. Materials aren't included here: their per-item `qty` already bundles units,
+// and a ×10 shortcut would interact with MATERIAL_SHOP_DAILY_CAP (purchase count, not unit count) in a
+// way that needs its own UX, not just wired through unchanged.
+const BULK_BUY_QTY = 10;
 
 export interface ShopHandlers {
   drawShopGrid(body: PIXI.Container, top: number): void;
@@ -173,6 +178,7 @@ export function ShopMixin<TBase extends ShopSceneBaseCtor>(Base: TBase): TBase &
           if (item.kind !== 'item') continue;
           // Consumables aren't "owned" — always re-buyable while affordable.
           const canBuy = !busy && this.cb.getCoins() >= item.cost;
+          const canBuy10 = !busy && this.cb.getCoins() >= item.cost * BULK_BUY_QTY;
           const known = item.id === 'protect_enhance';
           const itemTitle = known ? t('shop.item.protect_enhance.name') : `${t('shop.itemLabel')} · ${item.id}`;
           specs.push({
@@ -180,7 +186,10 @@ export function ShopMixin<TBase extends ShopSceneBaseCtor>(Base: TBase): TBase &
             title: itemTitle,
             lines: known ? [{ text: t('shop.item.protect_enhance.desc'), color: C.mid }] : [],
             coinAmount: item.cost,
-            buttons: [{ label: t('shop.buy'), enabled: canBuy, primary: true, fn: () => void this.onBuy(item.id, itemTitle) }],
+            buttons: [
+              { label: t('shop.buyX10'), enabled: canBuy10, primary: false, fn: () => void this.onBuyBulk(item.id, itemTitle, BULK_BUY_QTY) },
+              { label: t('shop.buy'), enabled: canBuy, primary: true, fn: () => void this.onBuy(item.id, itemTitle) },
+            ],
           });
         }
         for (const item of this.items) {

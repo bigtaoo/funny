@@ -346,6 +346,50 @@ describe('ShopScene — consumable items (kind="item") render their own name/des
   });
 });
 
+describe('ShopScene — consumable items get a "×10" bulk-buy shortcut above Buy (buying protection stones one at a time was reported friction)', () => {
+  const flush = () => new Promise((r) => setTimeout(r, 0));
+  const BUY_X10 = t('shop.buyX10');
+
+  it('shows the ×10 button (disabled) alongside an enabled Buy when coins cover one but not ten', async () => {
+    // buildShop's default getCoins() is 1000; protect_enhance costs 500 → covers 1 (Buy enabled) but not 10.
+    const scene = buildShop({
+      loadItems: async () => [{ id: 'protect_enhance', cost: 500, kind: 'item', grants: 'protect_enhance' }],
+    });
+    await flush();
+    expect(findLabelPos(scene.container, BUY_X10)).not.toBeNull();
+    const hits = (scene as unknown as { hits: Hit[] }).hits;
+    const pos10 = findLabelPos(scene.container, BUY_X10)!;
+    expect(hits.some(({ rect: r }) => pos10.x >= r.x && pos10.x <= r.x + r.w && pos10.y >= r.y && pos10.y <= r.y + r.h))
+      .toBe(false); // disabled — no hit rect
+    expect(findLabelPos(scene.container, t('shop.buy'))).not.toBeNull();
+    scene.destroy();
+  });
+
+  it('tapping ×10 (once affordable) calls buy() ten times with the catalog id and refreshes the catalog once', async () => {
+    const buyIds: string[] = [];
+    const scene = buildShop({
+      getCoins: () => 5000, // 10× the 500 cost
+      loadItems: async () => [{ id: 'protect_enhance', cost: 500, kind: 'item', grants: 'protect_enhance' }],
+      buy: async (itemId: string) => { buyIds.push(itemId); return { ok: true }; },
+    });
+    await flush();
+    tapLabel(scene, BUY_X10);
+    await flush();
+    await flush();
+    expect(buyIds).toEqual(Array(10).fill('protect_enhance'));
+    scene.destroy();
+  });
+
+  it('does not show the ×10 shortcut for material bundles (their qty already bundles units; caps need their own UX)', async () => {
+    const scene = buildShop({
+      loadItems: async () => [{ id: 'mat_buy_scrap', cost: 20, kind: 'material', grants: 'scrap', qty: 10 }],
+    });
+    await flush();
+    expect(findLabelPos(scene.container, BUY_X10)).toBeNull();
+    scene.destroy();
+  });
+});
+
 describe('ShopScene — material bundles (kind="material", ECONOMY_NUMBERS §6.5 gold→material exchange)', () => {
   const flush = () => new Promise((r) => setTimeout(r, 0));
 
