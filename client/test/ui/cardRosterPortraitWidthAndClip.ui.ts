@@ -14,6 +14,7 @@ import { createLayout } from '../../src/layout/ScalingManager';
 import { InputManager } from '../../src/inputSystem/InputManager';
 import { initI18n } from '../../src/i18n';
 import { CardScene, type CardCallbacks } from '../../src/scenes/CardScene';
+import { sidebarNavW } from '../../src/ui/widgets/HubTabs';
 import { makeNewSave } from '../../src/game/meta/SaveData';
 import type { CardInstance } from '../../src/game/meta/SaveData';
 
@@ -52,6 +53,24 @@ function buildPortraitScene(count: number): CardScene {
   };
   // PortraitLayout pegs designWidth to a fixed 1080 regardless of the screen size passed in.
   return new CardScene(createLayout(1080, 1920), new InputManager(), cb);
+}
+
+function buildLandscapeScene(count: number): CardScene {
+  const save = makeNewSave();
+  const cards = Array.from({ length: count }, (_, i) => makeCard(`c${i}`, 'lichuang', 1));
+  save.cardInv = Object.fromEntries(cards.map((c) => [c.id, c]));
+  const cb: CardCallbacks = {
+    onBack() {},
+    getSave: () => save,
+    fuseCards: async () => ({ ok: true }),
+    setCardLock: async () => ({ ok: true }),
+    getOwnedSkins: () => [],
+    getEquippedSkin: () => null,
+    equipSkin: () => {},
+  };
+  // 16:9 screen → LandscapeLayout design space is exactly 1920x1080 (designHeight pegged to the
+  // short edge 1080; designWidth = max(1920, round(1080 * availW/availH)) = 1920 at this ratio).
+  return new CardScene(createLayout(1920, 1080), new InputManager(), cb);
 }
 
 describe('CardScene roster grid — portrait width + bottom-nav clip (2026-08-09)', () => {
@@ -97,6 +116,28 @@ describe('CardScene roster grid — portrait width + bottom-nav clip (2026-08-09
     for (const r of cellRects.values()) {
       expect(r.y).toBeGreaterThanOrEqual(bounds.y - 1); // top-of-row draw-cull tolerance
     }
+
+    scene.destroy();
+  });
+});
+
+describe('CardScene roster grid — landscape left offset unchanged (regression guard, 2026-08-09)', () => {
+  it('still starts the grid right of the sidebar rail (sidebarNavW + ROSTER_GAP), not the new portrait 90% column', () => {
+    const scene = buildLandscapeScene(10);
+    const { cellRects } = scene as unknown as SceneInternals;
+
+    const w = 1920;
+    const h = 1080;
+    const ROSTER_GAP = 24; // private to list.ts — mirrored here, same idiom as EXPECTED_RAIL_W elsewhere
+    const expectedLeft = sidebarNavW(w, h, true) + ROSTER_GAP; // 216 + 24 = 240
+    const expectedAvail = w - expectedLeft - ROSTER_GAP; // 1656
+
+    const xs = [...cellRects.values()].map((r) => r.x);
+    const rights = [...cellRects.values()].map((r) => r.x + r.w);
+    expect(Math.min(...xs)).toBe(expectedLeft);
+    expect(Math.max(...rights)).toBe(expectedLeft + expectedAvail);
+    // Sanity check this isn't coincidentally equal to the portrait 90%-centered formula.
+    expect(expectedLeft).not.toBe(Math.round((w - Math.round(w * 0.9)) / 2));
 
     scene.destroy();
   });
