@@ -1,6 +1,6 @@
 # SLG 地图覆盖建筑 — icon_watchtower 改版 / icon_blocker 新增 prompt
 
-状态：**prompt 草拟，尚未出图**（2026-08-09）——本文档只是给下一步 AI 出图用的 prompt 稿，`art/ui/slg-map/` 下还没有对应的新源图，`building_atlas` / `world_atlas` 也还没重新打包。跟 [`slg-terrain-art.md`](slg-terrain-art.md)「已定稿」的口径不一样，别误当成已验收。
+状态：**已出图、已接入（2026-08-09）**——两张新源图已落地 `art/ui/slg-map/`（`icon_watchtower.png` 覆盖旧版，`icon_blocker.png` 新增），`pack_buildings.cjs` 重新打包 `building_atlas` 后，用一次性脚本 [`appendAtlasFrames.js`](../../art/scripts/appendAtlasFrames.js)（§3 有写为什么不能直接跑 `mergeAssetAtlases.js`/`patchMergedAtlas.js`）把这两帧并入了 `world_atlas.{png,json}`（其余 85 个既有帧逐帧比对未变）。§2 的 prompt 仍保留作为出图依据/未来再改版的参照，§4 补了验收记录。旧版 `icon_watchtower.png`（正视立面版）移到了 `art/leftover/icon_watchtower_v1_frontal_2026-08-09.png`。
 关联：现有三张覆盖建筑规格见 [`design/game/WORLD_MAP_ART_SPEC.md`](../game/WORLD_MAP_ART_SPEC.md) §三/§四；出图/改色铁律见 [`art-direction.md`](art-direction.md) §〇；地形层出图先例见 [`slg-terrain-art.md`](slg-terrain-art.md)；资源母题出图先例见 [`slg-resource-art.md`](slg-resource-art.md)；渲染实现见 [`tileGraphics.ts`](../../client/src/scenes/worldmap/tileGraphics.ts) `placeBuildingSprite`。
 
 ---
@@ -14,8 +14,8 @@
 - **路障（`tile.structure.kind !== 'arrowTower'`）**：v1 起就没有专属美术，纯 `PIXI.Graphics` 画一个米白矩形 + X 形撑木（[`tileGraphics.ts:236-247`](../../client/src/scenes/worldmap/tileGraphics.ts) 改动前），按 TILE 归属描边变色，是几何占位不是图，观感和其余已出图的建筑不统一（用户截图里那个"信封"形状就是这个几何占位在小尺寸下的样子）。
 
 处理方式：
-1. **`icon_watchtower`**：不是换个姿势重画同一构图，是**改视角**——从正视立面改成跟 `building_keep`/`building_stronghold` 同一套 3/4 俯视透视、宽幅构图，让缩放后的宽度也能撑满菱形格，见 §2。
-2. **`icon_blocker`**：新增一张，同一视觉语言，横向宽幅的路障/栅栏结构，见 §2。渲染层已接好回退路径（[`tileGraphics.ts`](../../client/src/scenes/worldmap/tileGraphics.ts) 的 `structure.kind !== 'arrowTower'` 分支先试 `placeBuildingSprite(g, 'icon_blocker', …)`，图集未就位时回退原几何占位），`pack_buildings.cjs` 的文件匹配正则已加入 `icon_blocker`；**只欠源图**。
+1. **`icon_watchtower`**：不是换个姿势重画同一构图，是**改视角**——从正视立面改成跟 `building_keep`/`building_stronghold` 同一套 3/4 俯视透视、宽幅构图，让缩放后的宽度也能撑满菱形格，见 §2。**已出图**：新源图是一座宽脚架、四面撑开的高台望楼（带两侧的布幡装饰），裁边后 256×198（~1.29:1），比旧版 86×256（~1:3）宽了近 4 倍。
+2. **`icon_blocker`**：新增一张，同一视觉语言，横向宽幅的路障/栅栏结构，见 §2。渲染层已接好回退路径（[`tileGraphics.ts`](../../client/src/scenes/worldmap/tileGraphics.ts) 的 `structure.kind !== 'arrowTower'` 分支先试 `placeBuildingSprite(g, 'icon_blocker', …)`，图集未就位时回退原几何占位），`pack_buildings.cjs` 的文件匹配正则已加入 `icon_blocker`。**已出图**：新源图是一排交叉削尖的木桩（画成铅笔形状，呼应"文具战争"主题）用绳索绑扎，横向铺满，裁边后 256×88（~2.9:1），比 v1 的几何 X 撑木占位更宽更有细节。
 
 ---
 
@@ -75,23 +75,27 @@ notebook grid lines, ruled lines
 
 ---
 
-## 3. 出图后的管线
+## 3. 出图后的管线（已执行，2026-08-09）
 
-沿用 `building_keep`/`building_stronghold` 现有管线（`pack_buildings.cjs`），流程：
+沿用 `building_keep`/`building_stronghold` 现有管线（`pack_buildings.cjs`），实际跑法：
 
-1. 源图（白底 png/webp）落到 `art/ui/slg-map/`，语义名 `icon_watchtower.png`（覆盖现有旧图）/ `icon_blocker.png`（新文件）。
-2. `node art/ui/slg-map/pack_buildings.cjs`（复用 `client/node_modules/sharp`）——近白→透明 + 内容裁边 + 长边缩放到 256，重新生成 `client/src/assets/slg/building_atlas.{png,json}`。脚本文件匹配正则已包含 `icon_blocker`（本次改动，见 [`pack_buildings.cjs`](../../art/ui/slg-map/pack_buildings.cjs)），不用再改脚本。
-3. **⚠️ 关键：这一步不能漏**——客户端实际加载的是合并图集 `client/src/assets/slg/world_atlas.{png,json}`（2026-07-27 起 `building_atlas`/`terrain_atlas`/`res_atlas` 等已被 `art/scripts/mergeAssetAtlases.js` 合并进这一张共享页，且合并前的分源图集**已从仓库删除**，见 [`patchMergedAtlas.js`](../../art/scripts/patchMergedAtlas.js) 头部说明）。这意味着：
-   - `icon_blocker` 是全新帧，`world_atlas.json` 里本来就没有它的条目 —— **`patchMergedAtlas.js` 无法插入新帧**（遇到目标缺帧会跳过，不会新增，见该脚本 `missing.push(name)` 分支），必须走「从 git 恢复被删的分源图集 → 重跑 `mergeAssetAtlases.js` 完整重新合并」这条路，不能只跑 patch 脚本。
-   - `icon_watchtower` 换了构图比例后，裁边+长边缩放算出来的新帧尺寸大概率跟 `world_atlas.json` 里现有的 `icon_watchtower` 帧尺寸（改动前为 86×256）不一致——`patchMergedAtlas.js` 遇到尺寸变化会直接报错拒绝（"a full re-merge is required"），同样需要走完整重新合并这条路，不能指望 patch 脚本蒙混过去。
-   - 简言之：这次的两张图（一张换比例、一张全新）都绕不开完整重新合并，出图后请先确认能拿到 `mergeAssetAtlases.js` 需要的分源图集（从 git 历史恢复或重新导出），别直接跑 `patchMergedAtlas.js` 踩上面两个坑。
-4. 渲染层挂点已就位（本次改动）：`tileGraphics.ts` 的 `icon_blocker` 走 `placeBuildingSprite(g, 'icon_blocker', tp, hh, tp * 0.5, false)`，图集未就位/帧缺失时自动回退原几何 X 撑木占位，不会因为没出图而报错或空白。
-5. **验收后可能要回调的渲染常量**（新图定下来再看，不用出图前先猜）：
-   - `icon_watchtower` 目标高度 `tp * 0.95`（[`tileGraphics.ts:190`](../../client/src/scenes/worldmap/tileGraphics.ts:190)）是照旧版竖条构图定的；改成矮胖宽脚构图后，同样的目标高度会让整体路缘宽度变化——如果新图实际比例跟 §1 约束不完全一致，先跑真图实测缩放后的菱形格内视觉效果，再决定要不要调这个系数。
-   - `icon_blocker` 目标高度暂定 `tp * 0.5`（比 `arrowTower` 几何占位的 `tp * 0.42` 略高，因为新图预期是横向宽幅而非高塔，实际数值以出图后目测为准）。
+1. 源图（白底 png）落到 `art/ui/slg-map/`，语义名 `icon_watchtower.png`（覆盖旧图，旧图移至 `art/leftover/icon_watchtower_v1_frontal_2026-08-09.png`）/ `icon_blocker.png`（新文件）。
+2. `node art/ui/slg-map/pack_buildings.cjs`（复用 `client/node_modules/sharp`）——近白→透明 + 内容裁边 + 长边缩放到 256，重新生成 `client/src/assets/slg/building_atlas.{png,json}`（6 帧：4 张未变 + 这次的 2 张）。脚本文件匹配正则已包含 `icon_blocker`。
+3. **合并进 `world_atlas` 这一步没法直接用现成脚本**——客户端实际加载的是合并图集 `client/src/assets/slg/world_atlas.{png,json}`（2026-07-27 起 `building_atlas`/`terrain_atlas`/`res_atlas` 等已被 `art/scripts/mergeAssetAtlases.js` 合并进这一张共享页，且合并前的分源图集**已从仓库删除**，见 [`patchMergedAtlas.js`](../../art/scripts/patchMergedAtlas.js) 头部说明）：
+   - `icon_blocker` 是全新帧——`patchMergedAtlas.js` 遇到目标缺帧只会跳过（`missing.push(name)`），不会新增。
+   - `icon_watchtower` 换了构图比例，裁边+长边缩放后的新帧尺寸（256×198）跟 `world_atlas.json` 里原来的尺寸（86×256）不一致——`patchMergedAtlas.js` 遇到尺寸变化直接 `process.exit(1)`，且是在写盘之前就退出，不会留下半吊子状态。
+   - 完整重新合并（`mergeAssetAtlases.js`）又需要另外 5 个分源图集（terrain/city/playerbase/res/city_bld）的 png+json，这些已经从仓库删除、盘上也没有——要重新生成它们全部（重跑它们各自的 packer）风险面/工作量都远超"就改两张建筑图标"该有的范围。
+   - 实际做法：新写了一个更小范围的一次性脚本 [`art/scripts/appendAtlasFrames.js`](../../art/scripts/appendAtlasFrames.js)——只处理明确点名的帧：尺寸不变的就照 `patchMergedAtlas.js` 的办法原位覆盖像素；尺寸变了/全新的就在页面底部铅笔式追加一条新行（画布长高，其余已有内容原样保留，不移动、不重新排版）。跑法：`NODE_PATH="$(pwd)/client/node_modules" node art/scripts/appendAtlasFrames.js client/src/assets/slg/building_atlas.json client/src/assets/slg/world_atlas.json icon_watchtower icon_blocker`。跑完后**删掉了**临时生成的 `building_atlas.{png,json}`（这两个文件本来就不进仓库，见上面"已从仓库删除"）。
+   - 验证：跑完后逐帧比对了 `world_atlas.json`（86 帧不变 + `icon_watchtower` 尺寸更新 + `icon_blocker` 新增，无其它字段变化）和抽样帧的原始像素（`building_keep`/`building_stronghold`/`terrain_grass`/`res_ink_l5`/`city_lv1` 等，坐标未变的帧内容一致；受益于 PNG 重新走 `palette` 压缩，个别通道有 ≤4/255 的量化噪声，肉眼不可见，跟 `patchMergedAtlas.js` 本来就有的同款副作用一致，不是本次改动引入的新问题）。
+4. 渲染层挂点已就位：`tileGraphics.ts` 的 `icon_blocker` 走 `placeBuildingSprite(g, 'icon_blocker', tp, hh, tp * 0.5, false)`，图集未就位/帧缺失时自动回退原几何 X 撑木占位。
+5. **渲染常量**（已按实际出图尺寸核对）：
+   - `icon_watchtower` 目标高度 `tp * 0.95`（[`tileGraphics.ts:190`](../../client/src/scenes/worldmap/tileGraphics.ts:190)）不变——新图裁边后 256×198（~1.29:1），单靠新构图比例，同样的目标高度换算出的宽度已经跟 `building_keep`（229×256，targetH `tp*1.3`）同量级，不用再调这个系数。
+   - `icon_blocker` 目标高度 `tp * 0.5`（[`tileGraphics.ts:236`](../../client/src/scenes/worldmap/tileGraphics.ts:236)）不变——新图裁边后 256×88（~2.9:1），换算下来屏幕宽度约 `1.45×tp`，占菱形格全宽（`2×tp`）的 ~73%，符合"横向铺满"的诉求，不用再调。
+   - 这两个数字是算出来的估算，还没有拿真实后端+浏览器截图核对过（本环境这次也没能截图，见会话记忆）；如果之后有人在真机上看着不对，再回来微调。
 
 ---
 
 ## 4. 出图验收记录
 
-（尚未出图，暂无记录——出图后按 [`slg-terrain-art.md` §5](slg-terrain-art.md) 的格式在此追加每版的通过/不通过原因。）
+- **`icon_watchtower` v2（2026-08-09，通过）**：改成宽脚架高台望楼，3/4 俯视透视，四足向外撑开撑满画面，两侧各挂一副布幡装饰；裁边后 256×198（~1.29:1），跟 `building_keep`/`building_stronghold` 的构图语言统一，解决了 v1 正视立面「又细又空」的问题。旧图归档 `art/leftover/icon_watchtower_v1_frontal_2026-08-09.png`。
+- **`icon_blocker` v1（2026-08-09，通过）**：一排交叉削尖的木桩（画成铅笔形状，呼应游戏"文具战争"母题）用绳索绑扎，横向贯穿画面；裁边后 256×88（~2.9:1），是这批里最宽幅/最扁的一张，符合"路障=挡路的横向障碍"的语义，比 v1 起一直用的几何 X 撑木占位更有细节、也更宽。用铅笔当木桩这个处理没有写进 §2 的 prompt 里（当时只写了泛用的"wooden stakes"），但完全贴合项目的文具母题，判定通过，不要求重出。

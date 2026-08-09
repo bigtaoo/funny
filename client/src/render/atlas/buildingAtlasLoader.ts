@@ -8,11 +8,11 @@
  *   building_stronghold — dark NPC fort (tile type `stronghold`)
  *   building_bridge     — capturable river crossing bridge (tile type `bridge`)
  *   building_plankway   — capturable mountain crossing plankway (tile type `plankway`)
- *   icon_watchtower     — player-built lookout (tile.watchtower)
- *   icon_blocker        — player-built barricade (tile.structure, kind !== 'arrowTower';
- *                          prompt drafted but not yet generated — see
- *                          design/product/slg-building-art.md — falls back to the
- *                          programmatic X-brace marker until the frame exists)
+ *   icon_watchtower     — player-built lookout (tile.watchtower); re-shot 2026-08-09 from a
+ *                          front-elevation drawing to a wide 3/4-iso one, see
+ *                          design/product/slg-building-art.md
+ *   icon_blocker        — player-built barricade (tile.structure, kind !== 'arrowTower');
+ *                          added 2026-08-09, see design/product/slg-building-art.md
  *
  * Loading is fire-and-forget (called on WorldMapScene construction). A decode failure
  * does not block the map: keep/stronghold still show their terrain ground texture, and
@@ -24,7 +24,7 @@ import { worldAtlas as atlas } from './worldAtlas';
 /** True once the atlas PNG has decoded and frames are parsed. */
 export const isBuildingAtlasReady = atlas.isReady;
 
-/** Texture for a building frame (`building_keep` | `building_stronghold` | `building_bridge` | `building_plankway` | `icon_watchtower`), or null. */
+/** Texture for a building frame (`building_keep` | `building_stronghold` | `building_bridge` | `building_plankway` | `icon_watchtower` | `icon_blocker`), or null. */
 export const getBuildingTexture = atlas.getTexture;
 
 /**

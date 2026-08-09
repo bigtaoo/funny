@@ -1632,22 +1632,22 @@
     },
     "icon_watchtower": {
       "frame": {
-        "x": 1538,
-        "y": 260,
-        "w": 86,
-        "h": 256
+        "x": 0,
+        "y": 3584,
+        "w": 256,
+        "h": 198
       },
       "rotated": false,
       "trimmed": false,
       "spriteSourceSize": {
         "x": 0,
         "y": 0,
-        "w": 86,
-        "h": 256
+        "w": 256,
+        "h": 198
       },
       "sourceSize": {
-        "w": 86,
-        "h": 256
+        "w": 256,
+        "h": 198
       }
     },
     "bld_cabinet": {
@@ -1749,6 +1749,26 @@
         "w": 245,
         "h": 256
       }
+    },
+    "icon_blocker": {
+      "frame": {
+        "x": 256,
+        "y": 3584,
+        "w": 256,
+        "h": 88
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 256,
+        "h": 88
+      },
+      "sourceSize": {
+        "w": 256,
+        "h": 88
+      }
     }
   },
   "meta": {
@@ -1757,7 +1777,7 @@
     "format": "RGBA8888",
     "size": {
       "w": 2048,
-      "h": 3584
+      "h": 3782
     },
     "scale": "1"
   }

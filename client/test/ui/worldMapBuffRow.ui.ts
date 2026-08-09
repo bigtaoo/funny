@@ -127,3 +127,50 @@ describe('WorldMapPanels.renderHud — shield/speedup buff row (S8-8 UI fix, 202
     expect(ctx.hudLayer.children.length).toBe(firstCount);
   });
 });
+
+// Coverage for the 2026-08-09 UI fix: at the old fixed FS.label (24px) with no wordWrap, the
+// countdown labels ("Protected (1d 1h 41m 41s)" / German "Geschützt (noch ...)" — even longer)
+// ran past the right edge of the fixed-width status panel and got clipped by the canvas bounds
+// (reported via annotated screenshot). Fix: smaller font + wordWrap + per-label row height sized
+// from the actual wrapped text height.
+function buffLabelNodes(ctx: WorldMapContext): PIXI.Text[] {
+  return (ctx.hudLayer.children as PIXI.DisplayObject[]).filter((c): c is PIXI.Text => c instanceof PIXI.Text)
+    .filter((tx) => tx.text.startsWith(t('world.protected').split('{d}')[0]!) || tx.text.startsWith(t('world.speedup').split('{d}')[0]!));
+}
+
+describe('WorldMapPanels.renderHud — buff label no longer clips past the panel edge (2026-08-09 UI fix)', () => {
+  it('every buff label has wordWrap enabled with a finite width that keeps it inside the status panel', () => {
+    const { ctx, panels } = buildHudHarness({ baseProtectedUntil: Date.now() + 3600_000 });
+    panels.renderHud();
+    const labels = buffLabelNodes(ctx);
+    expect(labels.length).toBe(1);
+    const lbl = labels[0]!;
+    expect(lbl.style.wordWrap).toBe(true);
+    expect(lbl.style.wordWrapWidth).toBeGreaterThan(0);
+    // Right edge of the label's wrap box must stay within the canvas, clear of the 16px margin
+    // the status card is inset by (see renderHud's `rx = w - rightW - 16`).
+    expect(lbl.x + lbl.style.wordWrapWidth!).toBeLessThanOrEqual(W - 16);
+  });
+
+  it("a label that would overflow unwrapped renders at or under its wordWrapWidth (PIXI actually wrapped it, didn't just clip)", () => {
+    const { ctx, panels } = buildHudHarness({ baseProtectedUntil: Date.now() + 3600_000 });
+    panels.renderHud();
+    const lbl = buffLabelNodes(ctx)[0]!;
+    // A single unwrapped line at this font would be wider than the box (that's the original bug);
+    // the rendered width must not exceed the configured wrap width (small AA/measurement slack).
+    expect(lbl.width).toBeLessThanOrEqual(lbl.style.wordWrapWidth! + 2);
+  });
+
+  it('two simultaneous buff chips stack into separate, non-overlapping rows', () => {
+    const { ctx, panels } = buildHudHarness({
+      baseProtectedUntil: Date.now() + 3600_000,
+      speedupUntil: Date.now() + 1800_000,
+    });
+    panels.renderHud();
+    const labels = buffLabelNodes(ctx);
+    expect(labels.length).toBe(2);
+    const [first, second] = labels.sort((a, b) => a.y - b.y);
+    // Second row must start at/after the first row's label bottom — no vertical overlap.
+    expect(second!.y).toBeGreaterThanOrEqual(first!.y + first!.height - 1); // -1 slack for rounding
+  });
+});
