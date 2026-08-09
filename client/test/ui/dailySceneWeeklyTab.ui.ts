@@ -72,8 +72,8 @@ function flush(): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, 0));
 }
 
-function buildDaily(save: SaveData, cb: Partial<DailyCallbacks> = {}): DailyScene {
-  return new DailyScene(createLayout(800, 1280), new InputManager(), {
+function buildDaily(save: SaveData, cb: Partial<DailyCallbacks> = {}, layout = createLayout(800, 1280)): DailyScene {
+  return new DailyScene(layout, new InputManager(), {
     onBack() {},
     getSave: () => save,
     getRetention: () => Promise.resolve(retentionWithTiers()),
@@ -290,5 +290,78 @@ describe('DailyScene — weekly chest claim toast per reward kind', () => {
     expect(s.bt.busy).toBe(false);
     scene.destroy();
     setToastSink(() => {});
+  });
+});
+
+describe('DailyScene — weekly tab progress label leaves room for the Claim button (2026-08-09 portrait overlap fix)', () => {
+  // Regression for the reported bug: renderWeekly's progress label ("0 / 9 activity points") used
+  // an unwrapped txt() call, and its font (sized off cardH) renders large enough in portrait to run
+  // straight through the "Claim" button — the headless measureText mock (length*7, independent of
+  // fontSize) can't reproduce that overlap directly (see claudedocs "measureText mock is
+  // font-size-independent" note / client-run-and-visual-verify memory), so these tests assert the
+  // GEOMETRIC INVARIANT the fix establishes instead: the label's word-wrap column is capped to end
+  // strictly before the button's left edge, regardless of what any particular font renders to.
+  function labelFor(scene: DailyScene, threshold: 9 | 15 | 21, points: number): PIXI.Text {
+    const s = scene as unknown as Internals;
+    s.activeTab = 'weekly';
+    s.render();
+    const label = findText(scene.container, (txt) => txt === t('daily.weekly.pointsProgress', { n: Math.min(points, threshold), threshold }));
+    expect(label).not.toBeNull();
+    return label!;
+  }
+
+  it('portrait: label is word-wrapped, and its wrap column ends before the Claim button', async () => {
+    // points=9 makes tier 1 claimable → exactly one claim hit past the nav-only baseline (see the
+    // "reached-but-unclaimed tier" test above), so s.hits[last] is unambiguously the Claim button.
+    const save: SaveData = { ...makeNewSave(), retention: { weekly: { weekKey: CURRENT_WEEK_KEY, points: 9, claimedTiers: [] } } };
+    const scene = buildDaily(save, { async onClaimWeekly() { return { reward: { kind: 'material', count: 20, id: 'lead' } }; } }, createLayout(800, 1280)); // portrait
+    await flush();
+    const label = labelFor(scene, 9, 9);
+    const s = scene as unknown as Internals;
+    const btnX = s.hits[s.hits.length - 1]!.x;
+
+    expect(label.style.wordWrap).toBe(true);
+    expect(typeof label.style.wordWrapWidth).toBe('number');
+    expect(label.style.wordWrapWidth as number).toBeGreaterThan(0);
+    // The wrap column (label's left edge + its wrap width) must end strictly before the button's
+    // left edge — this is what actually keeps the label out of the button's way, independent of
+    // however wide any given string renders at any given font size.
+    expect(label.x + (label.style.wordWrapWidth as number)).toBeLessThan(btnX);
+    scene.destroy();
+  });
+
+  it('landscape: same word-wrap cap applies (proportional to cardW, not orientation) and still ends before the button', async () => {
+    const save: SaveData = { ...makeNewSave(), retention: { weekly: { weekKey: CURRENT_WEEK_KEY, points: 9, claimedTiers: [] } } };
+    const scene = buildDaily(save, { async onClaimWeekly() { return { reward: { kind: 'material', count: 20, id: 'lead' } }; } }, createLayout(1280, 800)); // landscape
+    await flush();
+    const label = labelFor(scene, 9, 9);
+    const s = scene as unknown as Internals;
+    const btnX = s.hits[s.hits.length - 1]!.x;
+
+    expect(label.style.wordWrap).toBe(true);
+    expect(label.x + (label.style.wordWrapWidth as number)).toBeLessThan(btnX);
+    scene.destroy();
+  });
+
+  it('all three tiers share the same wrap cap, each clearing its own Claim button', async () => {
+    // points=21 reaches every threshold → all three tiers are claimable, giving one button hit
+    // each, pushed in WEEKLY_CHEST_THRESHOLDS order (9, 15, 21) right after the 3 nav-only hits.
+    const save: SaveData = { ...makeNewSave(), retention: { weekly: { weekKey: CURRENT_WEEK_KEY, points: 21, claimedTiers: [] } } };
+    const scene = buildDaily(save, { async onClaimWeekly() { return { reward: { kind: 'material', count: 20, id: 'lead' } }; } }, createLayout(800, 1280));
+    await flush();
+    const s = scene as unknown as Internals;
+    s.activeTab = 'weekly';
+    s.render();
+    expect(s.hits.length).toBe(6); // 3 nav + 3 claim buttons
+
+    const thresholds: Array<9 | 15 | 21> = [9, 15, 21];
+    thresholds.forEach((threshold, i) => {
+      const label = findText(scene.container, (txt) => txt === t('daily.weekly.pointsProgress', { n: threshold, threshold }));
+      expect(label).not.toBeNull();
+      const btnX = s.hits[3 + i]!.x;
+      expect(label!.style.wordWrap).toBe(true);
+      expect(label!.x + (label!.style.wordWrapWidth as number)).toBeLessThan(btnX);
+    });
+    scene.destroy();
   });
 });
