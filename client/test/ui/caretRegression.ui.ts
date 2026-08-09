@@ -28,6 +28,8 @@ import { FriendsScene } from '../../src/scenes/FriendsScene';
 import { AuctionScene } from '../../src/scenes/AuctionScene';
 import { FeedbackDialog } from '../../src/ui/dialogs/FeedbackDialog';
 import { AppealDialog } from '../../src/ui/dialogs/AppealDialog';
+import { ConsentDialog } from '../../src/ui/dialogs/ConsentDialog';
+import { ReconnectPromptDialog } from '../../src/ui/dialogs/ReconnectPromptDialog';
 import { ui as C } from '../../src/render/sketchUi';
 import type { WorldApiClient } from '../../src/net/WorldApiClient';
 
@@ -486,37 +488,78 @@ describe('FeedbackDialog — input field caret (2026-08-08: was a plain string c
   });
 });
 
-// 2026-08-09 bug: the full-screen `dim` overlay (drawn behind the card to block the Lobby underneath)
-// never got `eventMode`/`hitArea` set, so PIXI's hit-testing skipped straight past it to whatever Lobby
-// control sits at that screen position — a tap anywhere on the dimmed backdrop (not just the card)
-// passed through as if the dialog wasn't there. This is orientation-agnostic (nothing in `build()`
-// branches hit-testing by landscape/portrait — the `landscape` check only sizes the card), but only
-// got reported for portrait: landscape happens to have nothing clickable positioned behind the card,
-// while portrait's Lobby bottom nav sits directly behind it. Fix mirrors SceneManager's own
-// tap-swallowing fade overlay (`showOverlay()`): `eventMode = 'static'` + explicit full-screen `hitArea`.
-describe('FeedbackDialog — dim backdrop swallows taps in both orientations (2026-08-09 click-through fix)', () => {
+// 2026-08-09 bug: the full-screen `dim` overlay (drawn behind the card to block whatever's underneath)
+// never got `eventMode`/`hitArea` set on any of the four self-drawn "blocking full-screen card" dialogs
+// in this family (Feedback/Appeal/Consent/Reconnect — see their near-identical class docs), so PIXI's
+// hit-testing skipped straight past `dim` to whatever sat at that screen position — a tap anywhere on
+// the dimmed backdrop (not just the card) passed through as if the dialog wasn't there. Reported against
+// FeedbackDialog specifically: it's mounted directly on `app.stage` (app.ts) alongside whatever scene is
+// still live underneath, same as AppealDialog — both are genuinely exploitable click-throughs. The bug
+// itself is orientation-agnostic (nothing in any of these `build()` methods branches hit-testing by
+// landscape/portrait — the `landscape` check only sizes the card); FeedbackDialog only got reported for
+// portrait because that's where the Lobby's bottom nav happens to sit directly behind the card, while
+// landscape had nothing clickable positioned there. ConsentDialog/ReconnectPromptDialog go through
+// `manager.goto()` instead (SceneManager guarantees only one scene is ever mounted, so there's nothing
+// live to click through to today) — fixed anyway for defense-in-depth/consistency with their siblings.
+// Fix mirrors SceneManager's own tap-swallowing fade overlay (`showOverlay()`): `eventMode = 'static'`
+// + explicit full-screen `hitArea`.
+describe('Stage-level "blocking full-screen card" dialogs — dim backdrop swallows taps in both orientations (2026-08-09 click-through fix)', () => {
+  // All four share the same build() shape: buildPaperBackground() added first, `dim` second.
   function findDim(container: PIXI.Container): PIXI.Graphics {
-    // The dim backdrop is the second child added in build() — a full-screen PIXI.Graphics rect,
-    // right after the paper background.
     const dim = container.children[1] as PIXI.Graphics;
     expect(dim).toBeInstanceOf(PIXI.Graphics);
     return dim;
   }
 
-  it('landscape (1280x800): dim backdrop is static and hit-tests the full screen', () => {
-    const scene = new FeedbackDialog(1280, 800, { onSubmit: async () => {}, onClose() {} });
-    const dim = findDim(scene.container);
+  function expectFullScreenDim(container: PIXI.Container, w: number, h: number): void {
+    const dim = findDim(container);
     expect(dim.eventMode).toBe('static');
-    expect(dim.hitArea).toEqual(new PIXI.Rectangle(0, 0, 1280, 800));
-    scene.destroy();
+    expect(dim.hitArea).toEqual(new PIXI.Rectangle(0, 0, w, h));
+  }
+
+  const SIZES: Array<[label: string, w: number, h: number]> = [
+    ['landscape (1280x800)', 1280, 800],
+    ['portrait (800x1280)', 800, 1280],
+  ];
+
+  describe('FeedbackDialog', () => {
+    for (const [label, w, h] of SIZES) {
+      it(`${label}: dim backdrop is static and hit-tests the full screen`, () => {
+        const scene = new FeedbackDialog(w, h, { onSubmit: async () => {}, onClose() {} });
+        expectFullScreenDim(scene.container, w, h);
+        scene.destroy();
+      });
+    }
   });
 
-  it('portrait (800x1280): dim backdrop is static and hit-tests the full screen (was missing before this fix)', () => {
-    const scene = new FeedbackDialog(800, 1280, { onSubmit: async () => {}, onClose() {} });
-    const dim = findDim(scene.container);
-    expect(dim.eventMode).toBe('static');
-    expect(dim.hitArea).toEqual(new PIXI.Rectangle(0, 0, 800, 1280));
-    scene.destroy();
+  describe('AppealDialog', () => {
+    for (const [label, w, h] of SIZES) {
+      it(`${label}: dim backdrop is static and hit-tests the full screen`, () => {
+        const scene = new AppealDialog(w, h, 'ACCOUNT_BANNED', { onSubmit: async () => {}, onClose() {} });
+        expectFullScreenDim(scene.container, w, h);
+        scene.destroy();
+      });
+    }
+  });
+
+  describe('ConsentDialog', () => {
+    for (const [label, w, h] of SIZES) {
+      it(`${label}: dim backdrop is static and hit-tests the full screen`, () => {
+        const scene = new ConsentDialog(w, h, { onAccept() {} });
+        expectFullScreenDim(scene.container, w, h);
+        scene.destroy();
+      });
+    }
+  });
+
+  describe('ReconnectPromptDialog', () => {
+    for (const [label, w, h] of SIZES) {
+      it(`${label}: dim backdrop is static and hit-tests the full screen`, () => {
+        const scene = new ReconnectPromptDialog(w, h, { onReconnect() {}, onDecline() {} });
+        expectFullScreenDim(scene.container, w, h);
+        scene.destroy();
+      });
+    }
   });
 });
 

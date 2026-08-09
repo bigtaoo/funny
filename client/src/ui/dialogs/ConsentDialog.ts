@@ -48,6 +48,13 @@ export class ConsentDialog implements Scene {
     // Dim the page so the card reads as a modal.
     const dim = new PIXI.Graphics();
     dim.beginFill(0x000000, 0.45).drawRect(0, 0, w, h).endFill();
+    // Swallow taps (see FeedbackDialog's 2026-08-09 fix). Today `manager.goto()` never leaves another
+    // scene mounted underneath this one, so there's nothing live to click through to yet — this is
+    // defense-in-depth matching the sibling stage-level dialogs (Feedback/Appeal) in case that ever
+    // changes, and keeps "backdrop tap does NOT dismiss" (see class doc) true at the hit-test level,
+    // not just by omission of a handler.
+    dim.eventMode = 'static';
+    dim.hitArea = new PIXI.Rectangle(0, 0, w, h);
     this.container.addChild(dim);
 
     // Orientation-aware sizing: landscape drives off 80% of the screen height,
