@@ -215,25 +215,13 @@ export class WorldMapInput {
       return;
     }
 
-    if (tile?.type === 'center') {
-      this.ctx.panels.showToast(t('world.center'));
-      return;
-    }
-
-    // Stronghold (G8 §3.1): while unoccupied it is an ultra-strong NPC garrison — cannot be directly occupied or swept, only besieged (march with a team). Once captured it becomes a territory tile handled by the mine/occupied branches above.
-    if (tile?.type === 'stronghold') {
-      this.ctx.panels.showModal(
-        [t('world.stronghold'), t('world.strongholdHint'), `(${tx}, ${ty})`],
-        [
-          { label: t('world.actAttack'), action: () => void this.ctx.net.showTeamPicker(tx, ty, 'attack') },
-          { label: '✕', action: () => this.ctx.panels.closeModal() },
-        ],
-      );
-      return;
-    }
-
-    // Neutral tile, mid occupation-hold (ADR-037 §5.4): the tile has no owner yet, but a pending occupier has
-    // already won the PvE battle and is waiting out the hold countdown before ownership lands.
+    // Mid occupation-hold (ADR-037 §5.4, widened 2026-08-09 — every capture in the game now goes
+    // through this, not just neutral-land occupy: PvP territory/crossing attacks, PvE
+    // stronghold/crossing captures): the tile has no owner yet, but SOME pending claimant has already
+    // won the battle and is waiting out the hold countdown before ownership lands. Checked before the
+    // 'stronghold' branch below — a contested stronghold still carries `type:'stronghold'` throughout
+    // the hold (see writeContestedHold), so without this ordering a stronghold mid-hold would
+    // wrongly show "attack the NPC garrison" instead of "occupying, Xs left" / the expulsion offer.
     if (tile?.contestedUntil) {
       const secLeft = Math.max(0, Math.ceil((tile.contestedUntil - Date.now()) / 1000));
       if (tile.contestedByMe) {
@@ -250,6 +238,23 @@ export class WorldMapInput {
         { label: '✕', action: () => this.ctx.panels.closeModal() },
       ];
       this.ctx.panels.showModal([t('world.occupying').replace('{sec}', String(secLeft)), `(${tx}, ${ty})`], holdButtons);
+      return;
+    }
+
+    if (tile?.type === 'center') {
+      this.ctx.panels.showToast(t('world.center'));
+      return;
+    }
+
+    // Stronghold (G8 §3.1): while unoccupied it is an ultra-strong NPC garrison — cannot be directly occupied or swept, only besieged (march with a team). Once captured it becomes a territory tile handled by the mine/occupied branches above.
+    if (tile?.type === 'stronghold') {
+      this.ctx.panels.showModal(
+        [t('world.stronghold'), t('world.strongholdHint'), `(${tx}, ${ty})`],
+        [
+          { label: t('world.actAttack'), action: () => void this.ctx.net.showTeamPicker(tx, ty, 'attack') },
+          { label: '✕', action: () => this.ctx.panels.closeModal() },
+        ],
+      );
       return;
     }
 

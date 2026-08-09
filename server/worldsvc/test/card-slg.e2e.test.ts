@@ -11,6 +11,7 @@ import {
   CARD_INJURY_DURATION_MS,
   CARD_RECOVER_COIN_COST,
   strongholdGarrison,
+  OCCUPY_HOLD_SEC,
   baseFootprintCells,
   baseFootprintInBounds,
 } from '@nw/shared';
@@ -482,6 +483,15 @@ describe.skipIf(!mongo)('CC-3 card-based SLG e2e', () => {
     const mv = await svc.startMarch(W, 'a', strongholdBase.x, strongholdBase.y, sh.x, sh.y, 'attack', 1, 't1');
     nowMs = mv.arriveAt;
     expect(await svc.processDueArrivals()).toBe(1);
+
+    // 2026-08-09 (ADR-062 §5.4.5): a stronghold win no longer lands instantly — it enters an OCCUPY_HOLD_SEC
+    // occupation hold (still 'stronghold', no ownerId yet); settle it before asserting final ownership. The
+    // regression this test guards (card team's real cardState.currentTroops strength being used for the
+    // forced-cheap-siege comparison, not the card-slot-count m.troops) is unaffected by the hold delay.
+    const held = await svc.getTile(W, 'a', sh.x, sh.y);
+    expect(held.contestedByMe).toBe(true);
+    nowMs = held.contestedUntil ?? (mv.arriveAt + OCCUPY_HOLD_SEC * 1000);
+    expect(await svc.processDueOccupations()).toBe(1);
 
     const tile = await svc.getTile(W, 'a', sh.x, sh.y);
     expect(tile).toMatchObject({ type: 'territory', mine: true });

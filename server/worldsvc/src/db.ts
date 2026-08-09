@@ -514,6 +514,13 @@ export interface OccupationDoc {
   y: number;
   level: number;
   resType?: ResourceType;
+  /**
+   * 2026-08-09: the TileType `settleOccupation` writes once this hold settles. Absent = 'territory'
+   * (the pre-existing default — a captured neutral/stronghold tile always becomes plain territory).
+   * Only ever 'bridge'/'plankway' in practice — a captured crossing must KEEP its passage type rather
+   * than settle into 'territory' like every other capture (see writeContestedHold's settleType).
+   */
+  type?: TileType;
   garrison: number;      // surviving troops; becomes the tile's garrison on settlement
   dueAt: number;         // ms; scheduler settles when now >= dueAt
   /** ADR-026 §2 / idle-team gate (2026-07-15): team slot that won this hold, carried over from MarchDoc.teamId so the team stays "out" through the occupation countdown, not just in transit. */

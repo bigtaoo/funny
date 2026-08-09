@@ -1,8 +1,12 @@
 // worldsvc stronghold (G8 §3.1) end-to-end: real Mongo + fake clock + captured pushes.
 //   Stronghold = a procedurally generated high-strategic-value PvE tile, defended by an overwhelmingly strong NPC;
 //   cannot be occupied directly or swept — must be taken via siege attack.
-//   ① Attack wins (overwhelming force) → tile becomes a territory (survivors fold back into garrison) +
-//      one-time rich resource reward + sieges attacker_win + siege_result/tile_update push + territoryCount +1;
+//   ① Attack wins (overwhelming force) → 2026-08-09 (user decision — "nothing transfers instantly after a
+//      battle win"): capture no longer lands immediately — the tile enters an OCCUPY_HOLD_SEC occupation
+//      hold (contestedBy=attacker, type stays 'stronghold', no ownerId/territoryCount yet), while the
+//      one-time rich resource reward + material loot STILL land immediately + sieges attacker_win/tile_update
+//      push fire right away; only after the hold elapses (processDueOccupations) does the tile settle into
+//      plain territory + ownerId + territoryCount +1;
 //   ② Attack loses (insufficient troops) → tile not captured (remains an ownerless procedural stronghold) +
 //      surviving troops retreat home + sieges defender_win + no reward;
 //   ③ Validation: direct occupy / sweep on a stronghold → throws error (must use attack siege);
@@ -21,6 +25,7 @@ import {
   SLG_MAP_W,
   SLG_MAP_H,
   TROOP_CAP_BASE,
+  OCCUPY_HOLD_SEC,
   baseFootprintCells,
   baseFootprintInBounds,
 } from '@nw/shared';
@@ -160,7 +165,7 @@ describe.skipIf(!mongo)('worldsvc stronghold e2e (G8)', () => {
     await expect(svc.joinWorld(W, 'z', sh.x, sh.y)).rejects.toMatchObject({ code: 'BAD_REQUEST' });
   });
 
-  it('attack wins (overwhelming force): captured as territory mine + surviving garrison + rich reward + sieges attacker_win + push', async () => {
+  it('attack wins (overwhelming force): rich reward lands immediately, but capture itself enters an occupation hold — territory/ownerId only land once the hold elapses', async () => {
     await svc.joinWorld(W, 'a', base.x, base.y);
     await setTroops('a', 15_000); // well-developed army (drillYard+5), far exceeds the stronghold garrison (11,500) → guaranteed win
     const before = (await svc.getMe(W, 'a')).resources!;
@@ -173,32 +178,48 @@ describe.skipIf(!mongo)('worldsvc stronghold e2e (G8)', () => {
     nowMs = mv.arriveAt;
     expect(await svc.processDueArrivals()).toBe(1);
 
-    // Captured → tile becomes a territory.
-    const tile = await svc.getTile(W, 'a', sh.x, sh.y);
-    expect(tile).toMatchObject({ type: 'territory', mine: true });
-    expect(tile.garrison).toBeGreaterThan(0);
-    const me = await svc.getMe(W, 'a');
-    expect(me.territoryCount).toBe(10); // ADR-025: 3×3 capital (9 tiles) + captured stronghold (1)
+    // 2026-08-09: victory itself does NOT capture instantly — tile enters an occupation hold. Still 'stronghold'
+    // (not yet 'territory'), no ownerId, territoryCount unchanged (still just the 3×3 base).
+    const held = await svc.getTile(W, 'a', sh.x, sh.y);
+    expect(held.mine).toBeUndefined();
+    expect(held.contestedByMe).toBe(true);
+    expect(held.contestedUntil).toBe(mv.arriveAt + OCCUPY_HOLD_SEC * 1000);
+    const rawHeld = await m.collections.tiles.findOne({ _id: tileId(W, sh.x, sh.y) });
+    expect(rawHeld?.type).toBe('stronghold');
+    expect(rawHeld?.ownerId).toBeUndefined();
+    const meMidHold = await svc.getMe(W, 'a');
+    expect(meMidHold.territoryCount).toBe(9); // ADR-025: 3×3 capital only — stronghold not landed yet
 
-    // One-time rich reward credited (based on tile level × resource kind).
+    // One-time rich reward + material loot are STILL immediate (unaffected by the hold — only the tile hand-off
+    // itself is delayed): based on tile level × resource kind.
     const proc = proceduralTile(W, sh.x, sh.y);
     const rt = proc.resType ?? 'ink';
-    expect((me.resources?.[rt] ?? 0) - (before[rt] ?? 0)).toBeGreaterThanOrEqual(
+    expect((meMidHold.resources?.[rt] ?? 0) - (before[rt] ?? 0)).toBeGreaterThanOrEqual(
       STRONGHOLD_LOOT_PER_LEVEL * sh.level,
     );
-
-    // Additional progression material loot into the unified pool (§19.5 / G4): grantMaterial scales linearly by level, orderId is idempotent.
     const expected = strongholdMaterialLoot(sh.level);
     const grant = matGrants.find((g) => g.accountId === 'a');
     expect(grant).toMatchObject({ material: expected.material, qty: expected.qty });
     expect(grant!.orderId).toBe(`stronghold_loot:${W}:${tileId(W, sh.x, sh.y)}:${mv.arriveAt}`);
 
-    // sieges attacker_win (NPC defender → no defenderId) + siege_result pushed to attacker + tile_update.
+    // sieges attacker_win (NPC defender → no defenderId) + siege_result pushed to attacker + tile_update — all
+    // fire at the moment of victory, not delayed by the hold.
     const siege = await m.collections.sieges.findOne({ worldId: W, attackerId: 'a' });
     expect(siege).toMatchObject({ outcome: 'attacker_win', tile: tileId(W, sh.x, sh.y) });
     expect(siege?.defenderId).toBeUndefined();
     expect(pushes.some((p) => p.msg.kind === 'siege_result' && p.accountId === 'a')).toBe(true);
     expect(pushes.some((p) => p.msg.kind === 'tile_update' && p.accountId === 'a')).toBe(true);
+
+    // Hold elapses → settleOccupation finalizes: stronghold becomes plain territory, ownerId lands, territoryCount +1.
+    const occDoc = await m.collections.occupations.findOne({ _id: tileId(W, sh.x, sh.y) });
+    expect(occDoc).toMatchObject({ ownerId: 'a', dueAt: held.contestedUntil });
+    nowMs = held.contestedUntil!;
+    expect(await svc.processDueOccupations()).toBe(1);
+    const tile = await svc.getTile(W, 'a', sh.x, sh.y);
+    expect(tile).toMatchObject({ type: 'territory', mine: true });
+    expect(tile.garrison).toBeGreaterThan(0);
+    const me = await svc.getMe(W, 'a');
+    expect(me.territoryCount).toBe(10); // ADR-025: 3×3 capital (9 tiles) + captured stronghold (1)
   });
 
   it('regression: capture reward survives a concurrent resource-changing settlement instead of clobbering or losing it', async () => {
@@ -300,7 +321,12 @@ describe.skipIf(!mongo)('worldsvc stronghold e2e (G8)', () => {
     nowMs = mv.arriveAt;
     expect(await svc.processDueArrivals()).toBe(1);
 
-    const tile = await svc.getTile(W, 'a', sh.x, sh.y);
+    // 2026-08-09: win → occupation hold, not instant capture; settle it before asserting final ownership.
+    let tile = await svc.getTile(W, 'a', sh.x, sh.y);
+    expect(tile.contestedByMe).toBe(true);
+    nowMs = tile.contestedUntil!;
+    expect(await svc.processDueOccupations()).toBe(1);
+    tile = await svc.getTile(W, 'a', sh.x, sh.y);
     expect(tile).toMatchObject({ type: 'territory', mine: true });
 
     const siege = await m.collections.sieges.findOne({ worldId: W, attackerId: 'a' });

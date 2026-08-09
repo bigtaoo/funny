@@ -18,6 +18,8 @@ import {
   SlgError,
   type SiegeResolution,
   type ProceduralTile,
+  type TileType,
+  type ResourceType,
 } from '@nw/shared';
 import { runSiegeBattle, synthesizeArmy, scaleArmyByRatio, sumArmyHp, resolveCardArmy, toEngineCardInstances, computeCardStateUpdates, shouldUseCheapSiege } from '../siegeEngine';
 import type { GarrisonEntry, EngineCardInstance, EngineEquipInv } from '@nw/engine';
@@ -27,12 +29,25 @@ import { refundTroops, startReturnMarch, parkMarchInPlace } from '../combatShare
 import type { SiegeServiceBaseCtor, Constructor } from './base';
 import type { WorldCore } from '../core';
 
+/** Minimal "what does this tile look like right now" shape `writeContestedHold`/`startOccupationHold`
+ * need — satisfied by a `ProceduralTile` (neutral/stronghold/crossing PvE captures) or a plain literal
+ * built from a real `TileDoc` (PvP territory/crossing captures, which must use the target's ACTUAL
+ * current level/resType, not a re-derived procedural guess — a captured tile can already differ from
+ * its procedural default in ways `proceduralTile()` would not know about). */
+export interface HoldTileDesc {
+  type: TileType;
+  level: number;
+  resType?: ResourceType;
+}
+
 export interface OccupationHandlers {
   applyOccupy(m: MarchDoc, pw: PlayerWorldDoc, t: number): Promise<void>;
   applyOccupationExpulsion(m: MarchDoc, pw: PlayerWorldDoc, tile: TileDoc, t: number): Promise<void>;
   processDueOccupations(nowMs?: number): Promise<number>;
   cancelOccupation(worldId: string, accountId: string, teamId: string): Promise<void>;
   getOccupations(worldId: string, accountId: string): Promise<OccupationView[]>;
+  writeContestedHold(m: MarchDoc, pw: PlayerWorldDoc, desc: HoldTileDesc, x: number, y: number, survivors: number, t: number, defenderId?: string): Promise<void>;
+  startOccupationHold(m: MarchDoc, pw: PlayerWorldDoc, desc: HoldTileDesc, x: number, y: number, survivors: number, t: number, replay: SiegeReplayInputs | null): Promise<void>;
 }
 
 /**
@@ -294,37 +309,57 @@ export function OccupationMixin<TBase extends SiegeServiceBaseCtor>(Base: TBase)
     }
 
     /**
-     * Start (or restart, on expulsion) an occupation hold: write the tile's contested fields (no ownerId yet),
-     * upsert the OccupationDoc keyed by tileId, and schedule the delayed settlement. Reused by both the fresh
-     * PvE-win path (applyOccupy) and the expulsion-win path (applyOccupationExpulsion).
+     * Write the contested-hold state onto a tile: TileDoc contested fields (`desc.type/level/resType`
+     * kept as the tile's PRE-capture look — e.g. still 'stronghold'/'bridge'/a resource type; no
+     * `ownerId` yet) + upsert the matching OccupationDoc. Pure data write, no push/recordSiege — every
+     * caller keeps doing those its own way (some inline per outcome branch, `landSiege`
+     * (combatSiege/arrival.ts) via its own shared tail) so calling this never risks a double-push.
+     * 2026-08-09 (user decision — "nothing in the game transfers instantly after a battle win"):
+     * generalized from the old neutral-land-only `startOccupationHold` so applyStrongholdSiege /
+     * applyCrossingSiege (PvE) and landSiege's PvP territory/crossing branch (arrival.ts) all funnel
+     * through the same write instead of each hand-rolling an instant `$set ownerId`.
+     * `settleType` — what `settleOccupation` will write to `TileDoc.type` once the hold elapses —
+     * auto-derives to `desc.type` for a crossing (bridge/plankway must STAY a passage) or 'territory'
+     * for everything else (matches the pre-existing occupy/stronghold behavior of flipping display
+     * type only on settlement, see `TileDoc.type`/OccupationDoc.type` for the field itself).
+     * `defenderId`, when set (a PvP capture with a previous owner), recomputes and writes THAT
+     * account's yieldRate right away — they lose the tile's yield the instant they lose the battle,
+     * even though the winner's claim is still pending.
      */
-    private async startOccupationHold(
+    override async writeContestedHold(
       m: MarchDoc,
       pw: PlayerWorldDoc,
-      proc: ProceduralTile,
+      desc: HoldTileDesc,
       x: number,
       y: number,
       survivors: number,
       t: number,
-      replay: SiegeReplayInputs | null,
+      defenderId?: string,
     ): Promise<void> {
       const { cols } = this.core.deps;
       const dueAt = t + OCCUPY_HOLD_SEC * 1000;
+      const settleType: TileType = (desc.type === 'bridge' || desc.type === 'plankway') ? desc.type : 'territory';
       const tileDoc: TileDoc = {
         _id: m.toTile,
         worldId: m.worldId,
         x,
         y,
-        type: proc.type,
-        level: proc.level,
-        ...(proc.resType ? { resType: proc.resType } : {}),
+        type: desc.type,
+        level: desc.level,
+        ...(desc.resType ? { resType: desc.resType } : {}),
         contestedBy: m.ownerId,
         contestedUntil: dueAt,
         contestedGarrison: survivors,
         ...(pw.familyId ? { contestedFamilyId: pw.familyId } : {}),
         rev: 0,
       };
-      await cols.tiles.updateOne({ _id: m.toTile }, { $set: tileDoc }, { upsert: true });
+      // $unset clears whatever a PvP target previously carried as an owned tile (ownerId/garrison/
+      // protectedUntil/structure) — a no-op for the PvE/neutral callers, which never had those fields.
+      await cols.tiles.updateOne(
+        { _id: m.toTile },
+        { $set: tileDoc, $unset: { ownerId: '', garrison: '', protectedUntil: '', structure: '' } },
+        { upsert: true },
+      );
 
       const occDoc: OccupationDoc = {
         _id: m.toTile,
@@ -334,8 +369,9 @@ export function OccupationMixin<TBase extends SiegeServiceBaseCtor>(Base: TBase)
         tile: m.toTile,
         x,
         y,
-        level: proc.level,
-        ...(proc.resType ? { resType: proc.resType } : {}),
+        level: desc.level,
+        ...(desc.resType ? { resType: desc.resType } : {}),
+        ...(settleType !== 'territory' ? { type: settleType } : {}),
         garrison: survivors,
         dueAt,
         ...(m.teamId ? { teamId: m.teamId } : {}),
@@ -343,6 +379,36 @@ export function OccupationMixin<TBase extends SiegeServiceBaseCtor>(Base: TBase)
       };
       await cols.occupations.updateOne({ _id: m.toTile }, { $set: occDoc }, { upsert: true });
 
+      if (defenderId) {
+        const defYield = await this.core.recomputeYield(m.worldId, defenderId);
+        await cols.playerWorld.updateOne(
+          { _id: playerWorldId(m.worldId, defenderId) },
+          { $set: { yieldRate: defYield }, $inc: { rev: 1 } },
+        );
+      }
+    }
+
+    /**
+     * Start (or restart, on expulsion) an occupation hold, then do the "no defender" push/recordSiege
+     * that applyOccupy / applyOccupationExpulsion / the PvE stronghold+crossing captures all share
+     * (their target is always ownerless, and this only ever runs on an attacker_win — a loss never
+     * reaches this method). `landSiege` (PvP territory/crossing, combatSiege/arrival.ts) calls
+     * `writeContestedHold` directly instead: it already has its own shared tail that records/pushes
+     * for BOTH outcomes (hold-start included) using the real defenderId, so routing it through here
+     * too would double-push.
+     */
+    override async startOccupationHold(
+      m: MarchDoc,
+      pw: PlayerWorldDoc,
+      desc: HoldTileDesc,
+      x: number,
+      y: number,
+      survivors: number,
+      t: number,
+      replay: SiegeReplayInputs | null,
+    ): Promise<void> {
+      const { cols } = this.core.deps;
+      await this.writeContestedHold(m, pw, desc, x, y, survivors, t);
       void this.core.bumpFamilyActivity(m.worldId, pw.familyId, 1);
       const siege = await this.recordSiege(m, undefined, 'attacker_win', t, replay);
       void this.core.pushMarch(m.ownerId, this.core.marchView({ ...m, status: 'arrived' }));
@@ -422,12 +488,15 @@ export function OccupationMixin<TBase extends SiegeServiceBaseCtor>(Base: TBase)
       const tile = await cols.tiles.findOne({ _id: d.tile });
       if (!tile || tile.contestedBy !== d.ownerId) return; // stale (expelled / already settled elsewhere) — nothing to finalize
 
+      // 2026-08-09: `d.type` is only ever set for a captured crossing (writeContestedHold's
+      // settleType) — a bridge/plankway MUST keep its passage type on settlement, unlike every other
+      // hold (neutral/stronghold/PvP-territory), which always settles into plain 'territory'.
       const tileDoc: TileDoc = {
         _id: d.tile,
         worldId: d.worldId,
         x: d.x,
         y: d.y,
-        type: 'territory',
+        type: d.type ?? 'territory',
         level: d.level,
         ...(d.resType ? { resType: d.resType } : {}),
         ownerId: d.ownerId,
