@@ -948,6 +948,7 @@ export const zh = {
   'world.underAttack': '⚠ 领地受袭',
   'world.underAttackMsg': '{name} 将于 {sec}s 后围攻 {tile}',
   'world.siegeWin': '围攻得手！{loot}',
+  'world.siegeWinHold': '围攻得手，进入占领倒计时（5 分钟后落地）',
   'world.siegeLoss': '围攻失利',
   'world.siegeDraw': '围攻僵持',
   'world.defendHeld': '守土成功',

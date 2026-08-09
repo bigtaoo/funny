@@ -53,6 +53,8 @@
 
 > ⚠️ **有效 legendary 率从 §2.1a 拍板的 ~1% 升到 ~3.22%**：三张传说卡各 0.8%（合计 2.4%）+ equip_t3 三件 0.27%×3=0.81% + skin_l1 0.01%。这是本轮调参的直接后果（owner 已知悉，未要求联动收窄），未来若要收紧 legendary 率需明确再拍板。
 
+> **2026-08-09 补充调参**：`skin_e1`(Lena) 0.10%→**0.05%**，`skin_e2`(Mara) 0.10%→**0.03%**（`skin_l1` 不变）；差额并入 `mat_scrap` 余量池。同批次两款皮肤的立绘配色也从紫色调改为橙色调（见 §9.5 表格 + `skin-art-prompts.md`）。实现：`economy.ts STANDARD_POOL_FIXED_ODDS`；测试同步更新 `server/commercial/test/gacha.test.ts` 的 bucket 边界。
+
 **保底与真实概率一致性问题的修复**：核查发现旧实现里，硬保底（90 抽）/软保底（70 抽起）/十连保底命中传说时，走的是 `pickItem(itemsByRarity.legendary)` **均匀随机**（7 件各 1/7 ≈14.3%），完全不看两阶段权重——这意味着 §2.1a 时代"展示概率"和"玩家实际长期概率"是两回事：base 概率越低，均匀保底的干扰就越大（旧 0.03% 的 Max 实际长期概率被拉到约 0.15%~0.16%，5 倍多）。本次一并修复：`pickItem` 现在有 `pool.fixedOdds` 时也按同一张表加权（在被强制的稀有度档内按相对比例抽），而不是均匀抽。这样 base 抽、软保底抽、硬保底抽三条路径用的是**同一份概率权重**，`poolEntries` 展示的百分比即为真实长期概率（唯一残留差异：pity 机制保证"迟早出货"，会让 legendary 的**总频率**略高于纯 base 抽算出来的 3.22%，但传说物品之间的**相对比例**——比如 Max:Lena:Mara = 1:1:1——在任何路径下都精确保持，不会被保底打乱）。
 
 **实现**：`economy.ts fixedOddsTable()` / `STANDARD_POOL_FIXED_ODDS` / `STANDARD_POOL_REMAINDER_ITEM`；`GachaPoolDef.fixedOdds`/`remainderItemId`（仅常驻池设置）；`commercial/src/gacha.ts rollFixedOddsItem`（基础抽）+ `pickItem`（保底路径，`fixedOdds` 存在时加权，否则回退均匀）。限定池（`buildLimitedPool`）与新手包（`rollStarterPack`）不设 `fixedOdds`，继续走原扁平 rarity 抽 + 均匀 pick，行为不变。概率公示 `poolEntries` 对固定概率池直接读表展开（不再是 `P(类别)·P(物品|类别)`）。测试：`server/shared/test/economy.test.ts` + `server/commercial/test/gacha.test.ts`。
@@ -328,9 +330,9 @@ GachaScene 顶部区域只有 4 个彩色圆点（common/rare/epic/legendary）�
 | `skin_shop_c1` | 商店直卖 300 | 李川 / Infantry | common | 陶方，灰白调 |
 | `skin_shop_r1` | 商店直卖 800 | 苏远 / Archer | rare | 陶方，蓝色调 |
 | `skin_shop_e1` | 商店直卖 1800 | 陈守 / ShieldBearer | epic | 陶方，紫色调 |
-| `skin_e1` | 抽卡（标准池 epic） | Lena | epic | Anna 方，紫色调 |
-| `skin_e2` | 抽卡（标准池 epic） | Mara | epic | Anna 方，紫色调 |
-| `skin_l1` | 抽卡（标准池 legendary） | Max（旗舰） | legendary | Anna 方，金色 |
+| `skin_e1` | 抽卡（标准池 epic） | Lena | epic | Anna 方，橙色调（原紫色调，2026-08-09 改色） |
+| `skin_e2` | 抽卡（标准池 epic） | Mara | epic | Anna 方，橙色调（原紫色调，2026-08-09 改色） |
+| `skin_l1` | 抽卡（标准池 legendary） | Max（旗舰） | legendary | Anna 方，橙色调（原金米调，2026-08-09 改色） |
 | 装备（`wp_pen` 等） | 抽卡 | — | — | 对应文具实物，程序侧会加稀有度边框 |
 | 材料（`mat_scrap` 等） | 抽卡 | — | — | 碎纸/铅笔屑/装订针等文具感材料 |
 

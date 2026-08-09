@@ -47,6 +47,11 @@ export class ReconnectPromptDialog implements Scene {
     // Dim the page so the card reads as a modal.
     const dim = new PIXI.Graphics();
     dim.beginFill(0x000000, 0.45).drawRect(0, 0, w, h).endFill();
+    // Swallow taps (see FeedbackDialog's 2026-08-09 fix) — same defense-in-depth reasoning as
+    // ConsentDialog: `manager.goto()` never leaves another scene mounted underneath this one today,
+    // but matching the sibling stage-level dialogs keeps this consistent if that ever changes.
+    dim.eventMode = 'static';
+    dim.hitArea = new PIXI.Rectangle(0, 0, w, h);
     this.container.addChild(dim);
 
     // Same orientation-aware minimum-size + grow-to-fit approach as ConsentDialog, scaled 1.5x

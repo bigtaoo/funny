@@ -40,6 +40,17 @@ export interface DailyCallbacks {
   onBack(): void;
   getSave?(): SaveData | undefined;
   getRetention?(): Promise<RetentionView>;
+  /**
+   * Subscribe to local save changes (SaveManager.subscribe), same convention as every other
+   * post-lobby scene (ShopScene/GachaScene/CardScene/.../LobbyScene — see their `onSaveChanged`).
+   * DailyScene had been missing this wire-up: goDaily() fires `saveManager.refresh()` on entry so
+   * retention progress from a just-finished PvE/PvP match shows immediately, but that refresh
+   * resolves independently of (and can land after) this scene's own getRetention() round trip —
+   * without a subscription, the calendar/tasks/weekly tabs render once against whatever `save` was
+   * still in memory at that moment and then never update, even though the lobby's red dot (which
+   * re-fetches its own badges fresh on every lobby entry) already shows something claimable.
+   */
+  onSaveChanged?(listener: () => void): () => void;
   onCheckin?(): Promise<{ day: number; reward: { kind: string; count: number; id?: string; bonusCoins?: number } }>;
   onClaimDaily?(): Promise<{ coins: number }>;
   onClaimWeekly?(threshold: number): Promise<{ reward: { kind: string; count: number; id?: string } }>;
@@ -105,6 +116,7 @@ export class DailyScene implements Scene {
     this.landscape = layout.orientation === 'landscape';
     this.cb = cb;
     this.unsubs.push(input.onDown((x, y) => this.handleDown(x, y)));
+    if (cb.onSaveChanged) this.unsubs.push(cb.onSaveChanged(() => { if (!this.destroyed) this.render(); }));
     this.render();
     void this.load();
   }
@@ -243,10 +255,23 @@ export class DailyScene implements Scene {
     this.container.addChild(sec);
 
     const COLS = 6;
+    const ROWS = 5;
     const innerPad = areaW * 0.04;
     const cellW = (areaW - innerPad * 2) / COLS;
     const cellH = Math.min(areaH * 0.78 / 5, cellW * 0.8);
     const gridTop = top + sec.height + h * 0.015;
+
+    // Portrait's cells stay compact (capped by cellW*0.8 aspect, since the narrower width already
+    // shrinks cellW well below what areaH could support), which used to leave the fixed h*0.006 row
+    // gap from landscape and bunch all 5 rows into the page's top third with a blank void below
+    // (user report, 2026-08-09). Landscape's areaH is already ~consumed by ROWS*cellH so this is a
+    // no-op there — spread only kicks in when portrait's leftover vertical space is positive.
+    let rowGap = h * 0.006;
+    if (!this.landscape) {
+      const gridAvailH = top + areaH - gridTop;
+      const spread = gridAvailH - ROWS * cellH;
+      if (spread > 0) rowGap = spread / (ROWS - 1);
+    }
 
     const monthKey = makeMonthKey(nowMs);
     const claimedDays = (save.retention?.checkin?.monthKey === monthKey
@@ -260,7 +285,7 @@ export class DailyScene implements Scene {
       const col = (day - 1) % COLS;
       const row = Math.floor((day - 1) / COLS);
       const cx = areaX + innerPad + col * cellW + cellW * 0.5;
-      const cy = gridTop + row * (cellH + h * 0.006) + cellH * 0.5;
+      const cy = gridTop + row * (cellH + rowGap) + cellH * 0.5;
       const x = cx - cellW * 0.46;
       const y = cy - cellH * 0.46;
       const cw = cellW * 0.92;

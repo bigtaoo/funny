@@ -29,7 +29,8 @@ describe('fixed-odds base roll', () => {
   });
 
   it('a roll landing in the remainder bucket picks mat_scrap (common)', () => {
-    // mat_scrap's bucket starts once every explicit odds entry is exhausted (Σ others × 1000 = 51860).
+    // mat_scrap's bucket starts once every explicit odds entry is exhausted (Σ others × 1000 = 51740,
+    // after skin_e1/skin_e2's 2026-08-09 reprice to 0.05%/0.03%).
     const { results } = rollGacha(pool, 1, 0, seq([99999]));
     expect(results[0]).toEqual({ itemId: 'mat_scrap', rarity: 'common' });
   });
@@ -47,7 +48,7 @@ describe('fixed-odds base roll', () => {
   });
 
   it('skin_l1 (Max skin, flagship legendary) sits in a narrow 10-wide bucket (0.01%)', () => {
-    const { results, pityAfter } = rollGacha(pool, 1, 0, seq([51855]));
+    const { results, pityAfter } = rollGacha(pool, 1, 0, seq([51735]));
     expect(results[0]).toEqual({ itemId: 'skin_l1', rarity: 'legendary' });
     expect(pityAfter).toBe(0);
   });
@@ -113,13 +114,13 @@ describe('pity-path weighting (§2.1b fix: pity is no longer uniform among legen
 
   it('ten-pull epic floor promotion respects the odds-table ratio between epic items', () => {
     // 9 base rolls in the mat_scrap bucket (common, no epic+) force the tenFloor promotion on pull 10,
-    // which consumes an 11th rng call weighted across itemsByRarity.epic. skin_e1[0,100) skin_e2[100,200)
-    // mat_binding[200,4450) wp_marker[4450,5450) ar_leather[5450,6450) tk_sticker[6450,7450)
-    // lichuang[7450,12420) chenshou[12420,17390) suyuan[17390,22360).
+    // which consumes an 11th rng call weighted across itemsByRarity.epic. skin_e1[0,50) skin_e2[50,80)
+    // mat_binding[80,4330) wp_marker[4330,5330) ar_leather[5330,6330) tk_sticker[6330,7330)
+    // lichuang[7330,12300) chenshou[12300,17270) suyuan[17270,22240).
     const floorItem = (roll: number) =>
       rollGacha(pool, 10, 0, seq([...Array(10).fill(99999), roll])).results[9]!;
-    expect(floorItem(50)).toEqual({ itemId: 'skin_e1', rarity: 'epic' });
-    expect(floorItem(150)).toEqual({ itemId: 'skin_e2', rarity: 'epic' });
+    expect(floorItem(25)).toEqual({ itemId: 'skin_e1', rarity: 'epic' });
+    expect(floorItem(60)).toEqual({ itemId: 'skin_e2', rarity: 'epic' });
     expect(floorItem(300)).toEqual({ itemId: 'mat_binding', rarity: 'epic' }); // 4.25% → by far the widest epic bucket
     expect(floorItem(8000)).toEqual({ itemId: 'lichuang', rarity: 'epic' });
   });
@@ -137,8 +138,8 @@ describe('poolEntries (fixed odds)', () => {
     expect(prob('max')).toBeCloseTo(0.008, 4);
     expect(prob('lena')).toBeCloseTo(0.008, 4);
     expect(prob('mara')).toBeCloseTo(0.008, 4);
-    expect(prob('skin_e1')).toBeCloseTo(0.001, 4); // Lena skin, repriced 0.50%→0.10% (2026-07-15)
-    expect(prob('skin_e2')).toBeCloseTo(0.001, 4); // Mara skin
+    expect(prob('skin_e1')).toBeCloseTo(0.0005, 4); // Lena skin, repriced 0.10%→0.05% (2026-08-09)
+    expect(prob('skin_e2')).toBeCloseTo(0.0003, 4); // Mara skin, repriced 0.10%→0.03% (2026-08-09)
     expect(prob('skin_l1')).toBeCloseTo(0.0001, 4); // Max skin (flagship), repriced 0.10%→0.01%
 
     const explicitSum = Object.values(STANDARD_POOL_FIXED_ODDS).reduce((a, b) => a + b, 0);

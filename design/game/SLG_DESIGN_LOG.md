@@ -1810,6 +1810,20 @@ cols.tiles.find({ worldId, type: 'base', ownerId: { $nin: excludeOwners } })
 **验证**：重跑 `pack_playerbase_atlas.js` + `patchMergedAtlas.js` 更新 `world_atlas.{png,json}`；`client/test/ui/cityAtlasContentTop.ui.ts`（9 例）+ `tsc --noEmit` 全绿。可视化验证走 [[worldmap-standalone-debug-render]] 记录的套路：`entries/web.ts` 临时加 `?worldmap&desk=N` 分支（reject-fast 的 `worldApi` stub + 手填 3×3 `tileCache`/`ctx.me.mainBaseTile`），起 `game` dev server，因为本机 Browser pane 这次又是"未显示无法合成帧"，改用 `client/` 下临时 `.mjs` 直接 Playwright 截图落盘（[[client-run-and-visual-verify]]）：Lv.1 真机截图确认地台边缘正好顶到绿色虚线 3×3 边界；Lv.10 仍能看到两侧留白（预期内，高度预算触底的档位这次没动，跟 2026-08-03 记的已知瑕疵是同一件事，留给后续美术地台加宽的返工）。验证完把临时 `?worldmap` 分支从 `web.ts` 完整 `git checkout` 还原，`.mjs` 截图脚本删除。
 **共享检出提醒**：这次会话期间主目录里另一个会话在并发改 `app.ts`/`SceneManager.ts`/`AuctionScene`/`CardScene`/`EquipmentScene`/`WorldMapRenderer/city.ts`/`tileStyle.ts`/`tileGraphics.ts`（HMR 日志能看到 `tileStyle.ts` 的改动通过 `fog.ts→WorldMapRenderer.ts→WorldMapScene.ts` 一路冒泡到 `web.ts`）——最终 `git add` 只精确列了本任务自己改的 3 个文件（`pack_playerbase_atlas.js` + `world_atlas.png/json`）+ 这两份设计文档，没有 `git add -A`，没有碰上述任何一个别人正在改的文件。
 
+## 2026-08-09：9级基地地台缺口是已知美术残留 + 基地上方等级标签读错字段（用户截图反馈，账号 tao）
+
+用户截图标出自己 9 级基地两侧的地台缺口，追问"基地还是没用刚好覆盖自己的 9 格"；追问基地贴图上方显示的等级数字也不对。两件事分开排查：
+
+**① 9 级地台缺口——不是新 bug，是 2026-08-08 那次修复本就承认的已知残留**：核对当前已打包的 `client/src/assets/slg/world_atlas.json`，`playerbase_l9` 的 `contentWidthFrac` 实测 `0.828`（满值应为 `BASE_FOOTPRINT/BASE_SPRITE_TILES=0.9375`）——跟 [[2026-08-08 条目]] 记录的"Lv.9 属于高度预算先触底的档位，横向天然填不满，留给美术后续重画地台"完全对得上，用户看到的正是这个已知、已记录、暂未处理的美术缺口，不需要再动渲染代码或打包脚本；`baseFootprintCells`/`tileToScreen`/`cityGroundFwdPx`/`cityPlotMaskPoints` 这条坐标链路逐行代入验证过仍是自洽的。
+
+**② 等级标签 bug（真问题，已修）**：`client/src/scenes/worldmap/WorldMapRenderer/city.ts` 的 `refreshCityLayer()` 里，贴图选择（`playerBaseTex`，第69行）早就正确区分了"自己主城用 `deskLevel`"（desk 建筑等级，1-10，每次升级 desk 都会同步），但紧跟着的标签文案拼接（第157行原代码）漏掉了同样的分支，统一用第65行的 `tile.level`——这是 tile 的地形生成等级，只在出生/迁城那一刻写一次（`server/worldsvc/src/core/spawn.ts`），此后 desk 升级完全不会回写这个字段（回写只发生在 `server/worldsv/src/city.ts` 的 desk 升级完成分支，目标是 `deskLevel` 不是 `level`）。结果：自己主城升到 9 级后，贴图正确变成 9 级的"文具堡垒"图，标签却停留在出生时的旧数字（本例是 1）不再变化。
+
+修复：标签数字改成跟贴图选择同一分支——`tile.mine ? (tile.deskLevel ?? 1) : (tile.level ?? 1)`，不再直接复用第65行算出的 `lv`。
+
+**测试**：`worldMapCityLabel.ui.ts` 原有例子 `placeBase(ctx, 100, 100, { mine: true, level: 3 })` 断言 `'Tao Lv.3'` 本身就是把这个错误行为写死当预期——改成显式区分 `level`/`deskLevel`（`level:3, deskLevel:8` 断言 `'Tao Lv.8'`），加一例 `deskLevel` 缺省时回退 `Lv.1`，再加一例专门复现本次 bug 场景（`level:1, deskLevel:9` 断言 `'Tao Lv.9'`，对应"出生时 1 级、desk 升到 9 级"）。
+
+**验证受阻记录**：本地 `.claude/worktrees/base-level-label-fix/` 全新 worktree 里，`npx vitest run --config vitest.ui.config.ts` 跑该测试文件（以及任何其它既有 `*.ui.ts`，非本次改动引入）都在 transform 阶段报 `Failed to load url jsonwebtoken ... in server/shared/src/jwt.ts` 而整体失败——`server/shared/src/index.ts`（`vitest.ui.config.ts` 给 `@nw/shared` 配的别名目标，注意不同于 `vitest.config.ts` 给的 `slg/index.ts`）的导入链路显然会摸到只有服务端才装的 `jsonwebtoken`。反复用干净 `npm ci`、精确 lockfile 版本对比（`vite`/`vitest`/`pixi.js-legacy` 版本三方一致）、清短路径 worktree（排除 Windows 长路径/junction 干扰）排除到最后，主目录当前能跑通、全新 worktree 稳定复现失败，且 `diff -rq` 确认两边 `server/shared/src` 字节级相同——原因未查清，怀疑跟主目录 `client/node_modules` 里某个残留/未被 lockfile 记录的历史安装状态有关，属于跟本次改动无关的预置环境问题，值得单独立一个任务专门查（尤其因为它会挡住任何"全新 worktree 里跑 `test:ui`"的验证流程，不只是这一次）。本次改动改用 `tsc --noEmit -p tsconfig.test.json` 全绿代替，逻辑上直接复刻了同函数里第69行已经上线跑通的 `tile.mine ? ... deskLevel ... : ...` 分支写法。
+
 ## 2026-08-08：护盾/加速倒计时改天时分秒 + 护盾贴图改成持续动画（用户截图反馈）
 
 用户截图反馈两点：①主城状态卡的 `Protected (146282s)` / `Training ×2 (86374s)` 倒计时直接显示裸秒数，玩家看不懂；②主城上叠的护盾"就是一张图"，看不出这层半透明光泡是干什么用的（§35 引入的呼吸光泡，见本文件 S8-8 条目）。
@@ -1876,5 +1890,21 @@ cols.tiles.find({ worldId, type: 'base', ownerId: { $nin: excludeOwners } })
 **验证**：`server/worldsvc` 相关 3 个 e2e 文件（`field-redispatch.e2e.test.ts` 5 例、`teams.e2e.test.ts` 19 例）+ 全量 `npx vitest run`（worldsvc 整包）全绿；client 侧 `tsc --noEmit` + `npm test`（151/1224）+ `npm run test:ui`（135/1269）全绿。
 
 **教训**：修 bug 前先把"服务端当前行为"当成"正确行为"去对齐客户端，是默认假设服务端设计没问题——但这次服务端那条范围限制本身就是产品决策的对象，不是既定事实。跟用户确认完修复效果后再定案，避免"修对了旧设计、修错了新需求"。
+
+## 2026-08-09：扫荡（sweep）战报补录像——§45 刻意留下的最后一个 `hasReplay:false` 缺口（用户报告）
+
+用户看「Battle replays」列表发现一批 `Atk·Win`/`Atk·Loss` 行没有 `Lv.` 标注、也没有录像按钮，怀疑是打玩家领地漏了录像。核实这批行其实是**扫荡中立/资源地块**的战报，不是打玩家领地——列表里 `Lv.` 只在 `tileLevel` 字段存在时才显示（`replay.ts` `renderReplayPanel`），且 `roleTxt` 对 `attack`/`sweep` 两种 march kind 一视同仁都显示 `Atk`（角色标签不分战斗类型），玩家肉眼完全没法区分"打玩家地没录像"和"扫荡中立地没录像"，这正是用户误判的根源。
+
+**排查结论（沿用 §45 已定案的因果链）**：`applySiege`/`applyOccupy` 打玩家领地/PvE 险地渡口，自 §45 起无条件持久化 replay 输入（哪怕走廉价公式或引擎崩溃）；`applySweep`（`combatSiege/arrival.ts`）当时被明确排除在外——从不构造 army 编队，纯粹是"兵力数字过 `resolveSiege` 线性公式"，§45 原话"没有可存的东西"。用户确认自己全程没用过"扫荡"按钮、只用"围攻"，但游戏机制上打无主中立地块（有驻军）时客户端只提供"占领"或"扫荡"两个按钮（`WorldMapInput.ts`），没有"围攻"选项——用户口头描述的"正常打"很可能就是点了"扫荡"按钮，只是心理上没有区分这三种战斗类型。
+
+**用户诉求**：不想再靠猜测区分是 bug 还是设计限制，要求"所有战斗都加录像"。
+
+**修复**（`combatSiege/arrival.ts` `applySweep`）：不改变结算本身（仍是线性公式 `resolveSiege(effTroops, npcGarrison(level))`，不接入真实引擎），只是仿照 `applyOccupy`/`applySiege` 已有的做法，额外合成一份纯展示用的编队数据存进 `SiegeDoc`：`attackerArmy = synthesizeArmy(effTroops,'attacker')`、`defenderConfig = { garrison: synthesizeArmy(garrison,'defender'), defenderBaseHp: npcBaseHp(level) }`、`tileLevel = proc.level`、`seed = siegeSeedFromId(m._id)`，`recordSiege` 从传 `null` 改成传这份 `replay`。跟 §45 的"存崩溃现场"同一套风险认知——重播出来的胜负可能跟落地结算的 `res.outcome` 不一致（`db.ts` `SiegeDoc.seed` 早就写明重播是纯展示、非权威），接受同类既有风险，不是新缺陷。至此 `hasReplay:false` 只剩一种情况：`occupation.ts` 的 `npcGarrison<=0`"无战斗即时占领"分支（`resourceDensity=1.0` 下这条分支从不触发，纯防御性兜底）。
+
+`combatDefense.ts`/`combatSiege/helpers.ts` 里三处引用§45因果链的注释同步更新，去掉"NPC 扫荡"这条例外。
+
+**验证**：`server/worldsvc` `tsc --noEmit` 全绿；`test/siege.e2e.test.ts` 两个既有 sweep 用例（赢/输）各补 `seed`/`attackerArmy`/`defenderConfig`/`tileLevel` 断言（原用例只断言战果本身，没断言过录像字段），连同 `siege-cheap-fallback.test.ts`/`stronghold.e2e.test.ts`/`passage.e2e.test.ts`/`siege-crash-replay.e2e.test.ts` 共 5 文件/34 例全绿，确认扫荡在赢/输两种结果下都拿到完整可重播的字段，且没有破坏任何既有断言。
+
+**追加测试（同日，用户要求"加测试"）**：上面的断言只查了 `sieges` 集合的原始字段，没有走过用户实际会碰到的两条链路——`listSieges`（截图里那个战报列表接口，`hasReplay` 的真正来源）和 `getSiegeReplay`（点"replay & verify"实际调用的接口）。给赢/输两个 sweep 用例都追加了端到端断言：`svc.listSieges(...)` 找到这条战报，`hasReplay` 为 `true`；`svc.getSiegeReplay(...)` 真的不抛错、返回的 `level.attackerArmy` 是数组；赢用例额外断言 `replay.defenderName===''`（sweep 打的是 NPC，没有 `defenderId`，`getSiegeReplay` 按文档注释跳过对手名解析）。证伪：临时把 `applySweep` 里 `recordSiege` 的 `replay` 参数改回 `null`（仅这一行，不动其余代码）单独重跑这两例，2/2 必现失败（`expected undefined to deeply equal Any<Number>`，卡在新加的 `seed` 断言上，还没跑到 `listSieges`/`getSiegeReplay` 那一步）；改回 `replay` 复跑，`server/worldsvc` `tsc --noEmit` + 上述 5 文件/34 例全部转绿。
 
 **补测试（同日，用户问"有新的测试需要加吗"）**：之前的「re-dispatch attack」e2e 例只测了行军创建（原点回落、驻留 doc 原子释放），从没真正跑过战斗结算——因为在这个功能之前，"停留队伍被再指挥去攻城、还真的打了一场仗"这个状态组合根本不可达（attack 之前压根不能被 idle-redispatch），不是"补一个已有覆盖的重复例"，是补一块新出现的状态空间。`teams.e2e.test.ts` 加两例：①**打赢**——地块易主，队伍打完之后彻底自由（无行军、无停留，跟从主城出发打赢的处置完全一样，读 `combatSiege/arrival.ts` 的赢分支确认——赢了从不 park 队伍，兵直接变成地块驻军值）；②**打输**——幸存兵力经由 travel-time 返程一路走回**主城**（`mainBaseTile`），不是回到出发的野战格（读 `combatShared.ts::startReturnMarch` 确认它永远算去主城的路径，跟出发点无关）。两例都先临时改回旧条件确认真的会报 TEAM_BUSY，再恢复确认转绿。

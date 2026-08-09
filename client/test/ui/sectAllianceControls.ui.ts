@@ -87,6 +87,13 @@ function texts(scene: any): { text: string; y: number }[] {
   return out;
 }
 
+/** Index of `label` within `scene.container.children` (the header layer) — used by the z-order
+ *  regression checks below, which need the raw sibling order rather than just presence/absence. */
+function headerChildIndexOf(scene: any, label: string): number {
+  const children: PIXI.DisplayObject[] = scene.container.children;
+  return children.findIndex((c) => c instanceof PIXI.Text && c.text === label);
+}
+
 describe('SectScene — alliance controls', () => {
   it('sect leader sees Ally + Manage Allies in the header (landscape)', async () => {
     const scene = buildScene(makeSect({ leaderId: 'me' }), makeMyFamily('leader', 'me'));
@@ -116,5 +123,43 @@ describe('SectScene — alliance controls', () => {
     expect(all.some((t) => t.text === 'Allies (2)')).toBe(true);
     expect(all.some((t) => t.text === 'Manage Allies')).toBe(false);
     expect(all.some((t) => t.text === 'Ally')).toBe(false);
+  });
+
+  // Regression coverage for the 2026-08-09 fix: drawHeaderAllianceButtons' addBtn closure used to
+  // add() the label *before* the sketchPanel backdrop, so the opaque panel (later child = painted
+  // on top in PixiJS) fully hid the label — button still clickable, just visually empty. These
+  // assert sibling order directly rather than mere presence, since a plain texts() presence check
+  // (as above) passes either way and did not catch the original bug.
+  it('sect leader header buttons: label paints above its own backdrop, not hidden by it', async () => {
+    const scene = buildScene(makeSect({ leaderId: 'me' }), makeMyFamily('leader', 'me'));
+    await scene.loadData();
+    scene.render();
+
+    const children: PIXI.DisplayObject[] = scene.container.children;
+    const manageIdx = headerChildIndexOf(scene, 'Manage Allies');
+    const allyIdx = headerChildIndexOf(scene, 'Ally');
+    expect(manageIdx).toBeGreaterThan(-1);
+    expect(allyIdx).toBeGreaterThan(-1);
+    // addBtn adds each button's sketchPanel backdrop then immediately its label — so a correctly
+    // ordered label's direct predecessor is always the (non-Text) panel, never another label's
+    // text. Checking global "everything after the first label is text" doesn't work here since
+    // two buttons interleave (panel1, label1, panel2, label2) — panel2 legitimately follows
+    // label1 without occluding it, so the per-button adjacency check below is the real invariant.
+    expect(children[manageIdx - 1]).not.toBeInstanceOf(PIXI.Text);
+    expect(children[allyIdx - 1]).not.toBeInstanceOf(PIXI.Text);
+  });
+
+  it('regular member header button: label paints above its own backdrop, not hidden by it', async () => {
+    const scene = buildScene(
+      makeSect({ leaderId: 'boss', allySectIds: ['a1', 'a2'] }),
+      makeMyFamily('member', 'boss'),
+    );
+    await scene.loadData();
+    scene.render();
+
+    const children: PIXI.DisplayObject[] = scene.container.children;
+    const alliesIdx = headerChildIndexOf(scene, 'Allies (2)');
+    expect(alliesIdx).toBeGreaterThan(-1);
+    expect(children[alliesIdx - 1]).not.toBeInstanceOf(PIXI.Text);
   });
 });

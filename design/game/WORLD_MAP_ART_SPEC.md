@@ -64,7 +64,8 @@
 
 | 资产名 | 描述 | 尺寸 | 当前程序占位 |
 |---|---|---|---|
-| ~~`icon_watchtower.png`~~ | 瞭望塔（己方领地建造，扩视野） | — | ✅ **已接入手绘贴图**（`building_atlas` 帧 `icon_watchtower`，见 §四）；atlas 未就绪时回落几何塔身 |
+| ~~`icon_watchtower.png`~~ | 瞭望塔（己方领地建造，扩视野） | — | ✅ **改版完成**（2026-08-09）：旧图是正视立面构图，缩放后偏细高、撑不满格子；换成 3/4 俯视宽脚架构图后已接入 `building_atlas`，见 [`slg-building-art.md`](../product/slg-building-art.md)；atlas 未就绪时回落几何塔身 |
+| `icon_blocker.png` | 路障（己方/家族领地建造，`tile.structure` 非 arrowTower 的一种） | — | ✅ **出图完成**（2026-08-09）：v1 起一直是几何 X 撑木占位，现已出图（交叉铅笔状木桩绑扎栅栏）并接入 `building_atlas`，见 [`slg-building-art.md`](../product/slg-building-art.md)；atlas 未就绪时回落几何占位 |
 | `icon_level_dot.png` | 等级指示圆点（格子升级后右上角） | 12×12 | 实心圆，颜色按归属（保持程序绘制，可动态取归属色，不出图） |
 | `icon_allysect_border.png` | 联盟宗门黄色内描边（重复九宫格拼接） | 96×96 | 程序描边（保持程序绘制，不出图） |
 
@@ -77,15 +78,16 @@
 | `city_lv1..4` | 我/敌/盟主城（4 级建筑，归属靠程序上色） | ✅ 已接入 `city_atlas`（3×3 base 锚点，深度排序图层） |
 | `building_keep` | 战略要点/咽喉点建筑（城楼门楼） | ✅ 已接入 `building_atlas`（2026-07-03） |
 | `building_stronghold` | 险地 NPC 据点（暗色石垒） | ✅ 已接入 `building_atlas`（2026-07-03） |
-| `icon_watchtower` | 己方瞭望塔（扩视野） | ✅ 已接入 `building_atlas`（2026-07-03） |
+| `icon_watchtower` | 己方瞭望塔（扩视野） | ✅ 改版完成——3/4 俯视宽脚架构图，详见 [`slg-building-art.md`](../product/slg-building-art.md) |
+| `icon_blocker` | 己方/家族路障（`tile.structure`） | ✅ 已接入 `building_atlas`（2026-08-09），详见 [`slg-building-art.md`](../product/slg-building-art.md) |
 
-> **接入落地（2026-07-03）**：`building_keep` / `building_stronghold` / `icon_watchtower` 三张手绘钢笔线稿
+> **接入落地（2026-07-03，2026-08-09 追加 icon_blocker + icon_watchtower 改版）**：`building_keep` / `building_stronghold` / `icon_watchtower` 三张手绘钢笔线稿
 > 经 `art/ui/slg-map/pack_buildings.cjs`（近白→透明+裁边+长边 256，同 `res` 管线）打包为
 > `client/src/assets/slg/building_atlas.{png,json}`，`buildingAtlasLoader.ts` 懒加载 + 并入进场
 > loading 门控。渲染在 `WorldMapScene.drawTileL1` → `placeBuildingSprite()`：
 > - keep/stronghold 属**地形层**（type 由 `proceduralTile` 决定、全图可见），随格底纹一起画、fog 下压淡；
-> - watchtower 属**动态层**（`tile.watchtower`），fog 下隐藏，atlas 未就绪回落原几何塔身；
-> - 三张均为中性墨线**不 tint**，归属由格下水洗表达；bottom-center 锚在菱形下部使建筑「立」在格上。
+> - watchtower/blocker 属**动态层**（`tile.watchtower` / `tile.structure`），fog 下隐藏，atlas 未就绪回落原几何占位；
+> - 五张均为中性墨线**不 tint**，归属由格下水洗表达；bottom-center 锚在菱形下部使建筑「立」在格上。
 >
 > 旧规划里 `building_base_mine/enemy/ally.png` 三张**作废**——主城改由 `city_atlas`（4 级 × 程序上色）承担，
 > 不再按阵营出三份。原 64×64 尺寸列亦作废（打包按长边 256、渲染期按 tile 尺寸缩放）。

@@ -607,7 +607,7 @@ export class WorldMapNet {
     );
   }
 
-  applySiegeResult(s: SiegeResult): void {
+  async applySiegeResult(s: SiegeResult): Promise<void> {
     if (this.ctx.destroyed) return;
     // The attacking march is about to drop off `ctx.marches` (refreshMarches below) and get torn
     // down by fog.ts syncMarchTokens — mark it to keep playing 'attacking' a beat longer instead
@@ -621,8 +621,13 @@ export class WorldMapNet {
         this.ctx.marchAttackUntil.set(s.marchId, Date.now() + durSec * 1000);
       }
     }
-    // Ownership / resources / troops may all have shifted — refetch the lot.
-    void this.loadMapViewport().then(() => { if (!this.ctx.destroyed) this.ctx.view.renderMap(); });
+    // Ownership / resources / troops may all have shifted — refetch before classifying (2026-08-09:
+    // this can no longer be a fire-and-forget side effect like refreshMe/refreshMarches below — the
+    // attack-win branch needs the freshly-refetched target tile's `contestedByMe` to tell an
+    // occupation-hold start apart from an instant final outcome).
+    await this.loadMapViewport();
+    if (this.ctx.destroyed) return;
+    this.ctx.view.renderMap();
     void this.refreshMe();
     void this.refreshMarches();
 
@@ -635,18 +640,31 @@ export class WorldMapNet {
     // never needs to remember its own past action.
     const amInitiator = s.attackerId === this.ctx.cb.accountId;
     if (amInitiator && s.marchKind === 'attack') {
-      // We attacked — show the outcome + offer replay & verify (anti-cheat, C2).
-      const loot = s.lootSummary ?? '';
-      const line = s.outcome === 'attacker_win' ? t('world.siegeWin').replace('{loot}', loot)
-        : s.outcome === 'defender_win' ? t('world.siegeLoss')
-        : t('world.siegeDraw');
-      this.ctx.panels.showModal(
-        [line],
-        [
-          { label: t('world.replaySiege'), action: () => { this.ctx.panels.closeModal(); this.ctx.cb.onReplaySiege(s.siegeId); } },
-          { label: '✕', action: () => this.ctx.panels.closeModal() },
-        ],
-      );
+      // 2026-08-09 (user decision): a territory (or occupation-expulsion) win no longer hands over
+      // ownership instantly — it starts the same OCCUPY_HOLD_SEC hold as occupying neutral land
+      // (worldsvc combatSiege/arrival.ts landSiege §territory branch, occupation.ts
+      // applyOccupationExpulsion). The just-refetched target tile's `contestedByMe` is the
+      // server-authoritative signal for that (identical to how the occupy branch below already
+      // distinguishes its own win): show the same lightweight toast instead of a blocking "Siege
+      // won!" modal. A base siege / structure chip / PvE stronghold-or-crossing capture is still an
+      // instant final outcome (no contestedByMe) and keeps the outcome + replay & verify modal.
+      const [tx, ty] = this.ctx.parseTileId(s.tile);
+      const tile = this.ctx.tileCache.get(`${tx}:${ty}`);
+      if (s.outcome === 'attacker_win' && tile?.contestedByMe) {
+        this.ctx.panels.showToast(t('world.siegeWinHold'), C.dark);
+      } else {
+        const loot = s.lootSummary ?? '';
+        const line = s.outcome === 'attacker_win' ? t('world.siegeWin').replace('{loot}', loot)
+          : s.outcome === 'defender_win' ? t('world.siegeLoss')
+          : t('world.siegeDraw');
+        this.ctx.panels.showModal(
+          [line],
+          [
+            { label: t('world.replaySiege'), action: () => { this.ctx.panels.closeModal(); this.ctx.cb.onReplaySiege(s.siegeId); } },
+            { label: '✕', action: () => this.ctx.panels.closeModal() },
+          ],
+        );
+      }
     } else if (amInitiator && s.marchKind === 'occupy') {
       // We launched an occupy (PvE land-grab, ADR-037). It reports back as a SiegeResult but is our own action —
       // a win begins the occupation hold, a non-win means the NPC garrison held. Lightweight toast (no replay

@@ -934,6 +934,7 @@ export const en: Record<TranslationKey, string> = {
   'world.underAttack': '⚠ Under attack',
   'world.underAttackMsg': '{name} sieges {tile} in {sec}s',
   'world.siegeWin': 'Siege won! {loot}',
+  'world.siegeWinHold': 'Siege won — territory contested, settling in 5 min',
   'world.siegeLoss': 'Siege lost',
   'world.siegeDraw': 'Siege stalemate',
   'world.defendHeld': 'Defense held',

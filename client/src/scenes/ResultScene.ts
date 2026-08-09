@@ -271,6 +271,11 @@ export class ResultScene implements Scene {
   ): void {
     const { w, h } = this;
     const playerStats = stats[this.localOwner]!; // the local player's stats (owner 0 or 1)
+    // Portrait's design space swaps which axis is "short": h is the long axis (>=1920,
+    // vs. landscape's fixed 1080), so h-fraction offsets tuned against landscape's short
+    // h blow up in portrait. Only the spots that actually overflowed get a portrait branch
+    // below — everything else scales fine since it grows/shrinks together with the extra room.
+    const isPortrait = h > w;
 
     // Background — shared hand-drawn notebook page (baked per size).
     this.container.addChild(buildPaperBackground('resultbg', w, h));
@@ -378,6 +383,7 @@ export class ResultScene implements Scene {
       heroDetail.anchor.set(0.5, 0);
       heroDetail.x = w / 2;
       heroDetail.y = heroText.y + heroText.height + h * 0.01;
+      heroDetail.name = 'resultHeroDetail'; // test hook — see test/ui/resultScenePortraitBadgeRow.ui.ts
       this.container.addChild(heroDetail);
 
       // Secondary badges — a centred row of small icon medallions (no text list).
@@ -387,12 +393,20 @@ export class ResultScene implements Scene {
         const gap   = Math.round(w * 0.04);
         const rowW  = cellW * rest.length + gap * (rest.length - 1);
         const rowX  = (w - rowW) / 2;
-        const rowY  = heroDetail.y + heroDetail.height - h * 0.041;
+        // Landscape tucks this row up slightly toward heroDetail (small pull-up against a
+        // short h=1080). In portrait h is the long axis (>=1920), so that same pull-up
+        // scales past the actual gap available and drags the row up into heroDetail's text
+        // (VICTORY screenshot: badge icons overlapping "took 0 damage") — use a plain
+        // downward gap there instead.
+        const rowY  = isPortrait
+          ? heroDetail.y + heroDetail.height + h * 0.02
+          : heroDetail.y + heroDetail.height - h * 0.041;
         rest.forEach((badge, i) => {
           const medallion = this.buildBadgeMedallion(badge, playerStats);
           medallion.scale.set(1.2);
           medallion.x = rowX + i * (cellW + gap) + cellW / 2; // medallion is centred at its origin
           medallion.y = rowY;
+          medallion.name = 'resultSecondaryBadge'; // test hook — see test/ui/resultScenePortraitBadgeRow.ui.ts
           this.container.addChild(medallion);
         });
       }

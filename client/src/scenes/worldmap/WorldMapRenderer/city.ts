@@ -154,7 +154,15 @@ export function CityMixin<TBase extends WorldMapRendererBaseCtor>(Base: TBase): 
           // (whether or not the bar is actually showing this frame) so the label doesn't
           // jump up/down as a siege starts or ends.
           const label = cityC.getChildByName('label') as PIXI.Text;
-          const levelStr = t('city.lvlLabel').replace('{lvl}', String(lv));
+          // Mirror the texture-selection branch above (line 69): for the requester's own base the
+          // player-facing level is the desk building level (1-10, updated on every desk upgrade), not
+          // `tile.level` — that field is the tile's terrain-generation level, written once at spawn/
+          // relocation and never touched again by desk upgrades (server/worldsvc/src/core/spawn.ts).
+          // Using `lv` unconditionally here left the label frozen at the spawn-time value forever while
+          // the sprite (already on `deskLevel`) correctly advanced — reported 2026-08-09 on a real lvl-9
+          // base still showing "Lv.1".
+          const labelLv = tile.mine ? (tile.deskLevel ?? 1) : lv;
+          const levelStr = t('city.lvlLabel').replace('{lvl}', String(labelLv));
           const ownerStr = tile.mine ? this.ctx.cb.playerName : (tile.ownerName ?? '');
           label.text = ownerStr ? `${ownerStr} ${levelStr}` : levelStr;
           label.style.fontSize = Math.round(Math.max(9, Math.min(20, tp * 0.16)));

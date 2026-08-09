@@ -924,6 +924,39 @@ describe('LobbyScene — hit rects do not overlap', () => {
   }
 });
 
+// ── LobbyScene: content column widens to 90% in portrait, stays 82% in landscape ──
+// Regression: hero button / pillar column used a single 82% width fraction for
+// both orientations. Portrait screens read the fixed side margins as
+// proportionally larger, so portrait now widens to 90%; landscape is untouched.
+describe('LobbyScene — content column width follows orientation', () => {
+  for (const [label, [w, h], expectedFrac] of [
+    ['portrait', PORTRAIT, 0.90],
+    ['landscape', LANDSCAPE, 0.82],
+  ] as const) {
+    it(`btnRect width is ${expectedFrac * 100}% of design width — ${label}`, () => {
+      const layout = createLayout(w, h);
+      const scene = new LobbyScene(layout, new InputManager(), {
+        onStartGame() {},
+        onOpenCampaign() {},
+        onOpenRoom() {},
+        onOpenWorld() {},
+        onOpenShop() {},
+        onOpenCards() {},
+        onOpenStats() {},
+        onOpenProfile() {},
+        // No onOpenDaily wired ⇒ hasSideStrip is false, so contentW === fullContentW
+        // exactly and btnRect.w directly reflects the orientation fraction below.
+        playerName: 'Tester',
+      });
+
+      const btnRect = (scene as any).btnRect as { x: number; y: number; w: number; h: number };
+      expect(btnRect.w).toBe(Math.round(layout.designWidth * expectedFrac));
+
+      scene.destroy();
+    });
+  }
+});
+
 // ── LevelPrepScene: layout invariants (regression for 6-row overflow bug) ────
 describe('LevelPrepScene — layout invariants', () => {
   function buildPrep(w: number, h: number, staminaCurrent = 120) {

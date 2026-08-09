@@ -80,7 +80,7 @@ export class WorldMapScene implements Scene {
   applyMarchUpdate(m: MarchUpdate): void { this.ctx.net.applyMarchUpdate(m); }
   applyTileUpdate(tu: TileUpdate): void { this.ctx.net.applyTileUpdate(tu); }
   applyUnderAttack(u: UnderAttack): void { this.ctx.net.applyUnderAttack(u); }
-  applySiegeResult(s: SiegeResult): void { this.ctx.net.applySiegeResult(s); }
+  applySiegeResult(s: SiegeResult): void { void this.ctx.net.applySiegeResult(s); }
   applyNationMsg(n: NationMsg): void { this.ctx.net.applyNationMsg(n); }
 
   destroy(): void {

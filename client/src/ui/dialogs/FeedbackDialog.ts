@@ -130,6 +130,13 @@ export class FeedbackDialog implements Scene {
 
     const dim = new PIXI.Graphics();
     dim.beginFill(0x000000, 0.45).drawRect(0, 0, w, h).endFill();
+    // Swallow taps so they don't fall through to the Lobby underneath (same pattern as
+    // SceneManager's fade overlay) — this dim layer never blocked hit-testing before, so every
+    // tap on it passed straight through to whatever Lobby control sits at that screen position.
+    // Bug is orientation-agnostic, but only showed up in portrait because that's where the Lobby's
+    // bottom nav happens to sit directly behind the card; landscape had nothing clickable there.
+    dim.eventMode = 'static';
+    dim.hitArea = new PIXI.Rectangle(0, 0, w, h);
     this.container.addChild(dim);
 
     const landscape = w > h;

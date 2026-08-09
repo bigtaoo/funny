@@ -40,6 +40,22 @@ const CRIT_RING_SPEED = 7.5; // rad/s → fast, urgent throb
 const BLOCK_BLINK_SEC   = 1.6; // start blinking when this many seconds of block remain
 const BLOCK_BLINK_SPEED = 9;   // rad/s — fast "about to clear" pulse
 
+/**
+ * Idle faction ground patch under each base (敌红我蓝, art-direction §3.2): a soft
+ * layered color wash at the castle's foot, drawn once and left static — same
+ * "colored ground patch under a full-color AI asset" language as UnitView's
+ * drawFactionMarker, not a persistent outline (§3.4 explicitly bans standing
+ * outline glow: it beats against the hand-drawn ink linework and moirés).
+ */
+export function drawFactionGroundPatch(g: PIXI.Graphics, color: number, rect: Rect): void {
+  const cx = 0, cy = rect.h * 0.32; // castle art sits high in its frame; patch anchors near its foot
+  const rx = rect.w * 0.34, ry = rect.h * 0.1;
+  g.clear();
+  g.beginFill(color, 0.16); g.drawEllipse(cx,        cy,        rx * 1.3, ry * 1.3); g.endFill();
+  g.beginFill(color, 0.24); g.drawEllipse(cx,        cy,        rx,       ry);       g.endFill();
+  g.beginFill(color, 0.34); g.drawEllipse(cx,        cy,        rx * 0.6, ry * 0.6); g.endFill();
+}
+
 interface BaseRef {
   sprite:   PIXI.Sprite;
   crackGfx: PIXI.Graphics;
@@ -638,6 +654,7 @@ export class BoardView {
     con.y = rect.y + rect.h / 2;
 
     const ringGfx = new PIXI.Graphics(); // critical throb — behind the sprite (halo)
+    const groundGfx = new PIXI.Graphics(); // idle faction ground patch — under everything
 
     const s = new PIXI.Sprite(tex);
     s.anchor.set(0.5);
@@ -652,8 +669,9 @@ export class BoardView {
 
     const crackGfx = new PIXI.Graphics();
     const pulseGfx = new PIXI.Graphics();   // under-attack outline, drawn on top
-    con.addChild(ringGfx, s, crackGfx, pulseGfx);
+    con.addChild(groundGfx, ringGfx, s, crackGfx, pulseGfx);
     this.container.addChild(con);
+    drawFactionGroundPatch(groundGfx, ringColor, rect);
     return { sprite: s, crackGfx, pulseGfx, pulseT: 0, pulseSeed: 1, rect, upgradeTier: 0, ringGfx, ringColor, critical: false, container: con };
   }
 

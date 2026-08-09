@@ -3,10 +3,14 @@
 //   "both-sides pre-deployed deterministic auto-battle" for authoritative win/loss + real surviving HP (§16);
 //   NPC sweep = cheap resolveSiege (§5.3, non-critical).
 //   Marching immediately pushes under_attack warning / settlement on arrival:
-//   ① attack territory attacker_win → tile ownership transferred (survivors become new garrison) + loot resources + both sides yield recalculated + sieges + siege_result;
+//   ① attack territory attacker_win → 2026-08-09: no longer instant — enters an OCCUPY_HOLD_SEC contested hold
+//      (mirrors ADR-037 §5.4 neutral-land occupation) before ownership actually transfers; loot + the
+//      defender's yield recalc still happen immediately, sieges + siege_result still fire at the moment of
+//      victory, and `processDueOccupations` after the hold elapses finalizes ownership + the attacker's yield;
 //   ② attack territory defender_win → garrison reduced (attacker weaker → fully destroyed, no return march);
 //   ③ attack main base attacker_win → non-capturable: garrison cleared + protection shield + loot + attacker survivors return and troops refunded;
-//   ④ sweep NPC attacker_win → loot captured + troops return; defender_win → troop attrition, no loot;
+//   ④ sweep NPC attacker_win → loot captured + troops return; defender_win → troop attrition, no loot; both
+//      outcomes now also persist a synthesized replay (traceability follow-up to §45, no engine involved);
 //   ⑤ validation: attack unowned tile / attack own tile / sweep occupied tile / attack protected tile.
 // Note: troop count → engine formation via synthesizeArmy (v1 bridge before G3-2c editor), so surviving
 //   troops are determined by engine combat (non-linear formula); assertions only check "direction + structural
@@ -24,6 +28,7 @@ import {
   SLG_MAP_H,
   GARRISON_PER_TILE,
   OCCUPY_MIN_TROOPS,
+  OCCUPY_HOLD_SEC,
   TROOP_CAP_BASE,
   MARCH_MORALE_MAX,
   MARCH_MORALE_FLOOR_TILES,
@@ -191,18 +196,25 @@ describe.skipIf(!mongo)('worldsvc siege e2e', () => {
     const preLootInk = (await svc.getMe(W, 'a')).resources?.ink ?? 0;
     expect(await svc.processDueArrivals()).toBe(1);
 
-    // Tile ownership transferred: now belongs to a, garrison = engine survivors folded back (>0, attacker 800 troops vs defender 500).
-    const tile = await svc.getTile(W, 'a', tgt.x, tgt.y);
-    expect(tile).toMatchObject({ type: 'territory', mine: true });
-    expect(tile.garrison).toBeGreaterThan(0);
-    const me = await svc.getMe(W, 'a');
-    expect(me.territoryCount).toBe(11); // ADR-025: 9 base footprint cells + 1 ADR-039 connector tile + 1 captured territory tile
-    // Loot 25%: a +250 ink on top of its pre-loot balance, b -250 → 750.
-    expect(me.resources?.ink).toBe(preLootInk + Math.floor(1000 * SIEGE_LOOT_RATE));
+    // 2026-08-09: winning a PvP territory siege no longer hands over ownerId instantly — b loses the tile
+    // right away (ownerId cleared) but a's claim only confirms after OCCUPY_HOLD_SEC, mirroring the neutral-
+    // land occupation hold (ADR-037 §5.4, occupation.ts's startOccupationHold/settleOccupation machinery).
+    let tile = await svc.getTile(W, 'a', tgt.x, tgt.y);
+    expect(tile.mine).toBeUndefined();
+    expect(tile.contestedByMe).toBe(true);
+    expect(tile.contestedUntil).toBe(mv.arriveAt + OCCUPY_HOLD_SEC * 1000);
+    const meMidHold = await svc.getMe(W, 'a');
+    expect(meMidHold.territoryCount).toBe(10); // 9 base footprint cells + 1 ADR-039 connector tile; captured tile not landed yet
+
+    // Loot 25% and the DEFENDER's yield recompute happen immediately regardless of the hold (b stops
+    // benefitting from a tile it no longer controls right away): a +250 ink on top of its pre-loot balance,
+    // b -250 → 750. The attacker's own yield gain waits for settlement below, same as any neutral capture.
+    expect((await svc.getMe(W, 'a')).resources?.ink).toBe(preLootInk + Math.floor(1000 * SIEGE_LOOT_RATE));
     const bRes = (await svc.getMe(W, 'b')).resources;
     expect(bRes?.ink).toBe(1000 - Math.floor(1000 * SIEGE_LOOT_RATE));
 
-    // sieges record + siege_result pushed to both parties.
+    // sieges record + siege_result pushed to both parties — unaffected by the hold; the battle report settles
+    // at the moment of victory, not when the claim later confirms.
     const siege = await m.collections.sieges.findOne({ worldId: W, attackerId: 'a' });
     expect(siege).toMatchObject({ outcome: 'attacker_win', defenderId: 'b', tile: tileId(W, tgt.x, tgt.y), marchKind: 'attack' });
     const sr = pushes.filter((p) => p.msg.kind === 'siege_result');
@@ -215,6 +227,16 @@ describe.skipIf(!mongo)('worldsvc siege e2e', () => {
     for (const p of sr) {
       expect(p.msg).toMatchObject({ attackerId: 'a', marchKind: 'attack' });
     }
+
+    // Hold elapses → ownership finalized via processDueOccupations (same scheduler tick as any neutral-land
+    // capture; settleOccupation doesn't care that this tile used to be player-owned).
+    nowMs = tile.contestedUntil!;
+    expect(await svc.processDueOccupations()).toBe(1);
+    tile = await svc.getTile(W, 'a', tgt.x, tgt.y);
+    expect(tile).toMatchObject({ type: 'territory', mine: true });
+    expect(tile.garrison).toBeGreaterThan(0); // engine survivors folded back (>0, attacker 800 troops vs defender 500)
+    const me = await svc.getMe(W, 'a');
+    expect(me.territoryCount).toBe(11); // ADR-025: 9 base footprint cells + 1 ADR-039 connector tile + 1 captured territory tile
     void mv;
   });
 
@@ -258,10 +280,16 @@ describe.skipIf(!mongo)('worldsvc siege e2e', () => {
     nowMs = mv.arriveAt;
     expect(await svc.processDueArrivals()).toBe(1);
 
-    const tile = await svc.getTile(W, 'a', tgt.x, tgt.y);
-    expect(tile).toMatchObject({ type: 'territory', mine: true });
+    // 2026-08-09: win → contested hold, not instant ownership (see the first test in this file for the full
+    // rationale); settle it before asserting final ownership.
+    let tile = await svc.getTile(W, 'a', tgt.x, tgt.y);
+    expect(tile.contestedByMe).toBe(true);
     const siege = await m.collections.sieges.findOne({ worldId: W, attackerId: 'a' });
     expect(siege?.outcome).toBe('attacker_win');
+    nowMs = tile.contestedUntil!;
+    expect(await svc.processDueOccupations()).toBe(1);
+    tile = await svc.getTile(W, 'a', tgt.x, tgt.y);
+    expect(tile).toMatchObject({ type: 'territory', mine: true });
     // 2026-08-01 traceability decision: the cheap linear path still persists replay inputs (so a lopsided/
     // skipped battle stays inspectable afterward) — only a genuine engine crash drops them. Deterministic
     // attacker_win regardless of run-to-run engine congestion is still the actual bug-guard here.
@@ -329,6 +357,23 @@ describe.skipIf(!mongo)('worldsvc siege e2e', () => {
     const siege = await m.collections.sieges.findOne({ worldId: W, attackerId: 'a' });
     expect(siege).toMatchObject({ outcome: 'attacker_win', marchKind: 'sweep' });
     expect(siege?.defenderId).toBeUndefined();
+    // Replay traceability follow-up to §45: sweep now synthesizes a presentation-only formation purely so the
+    // report has something to replay, even though the outcome above is still the cheap linear formula.
+    expect(siege?.seed).toEqual(expect.any(Number));
+    expect(siege?.attackerArmy?.length).toBeGreaterThan(0);
+    expect(siege?.tileLevel).toBe(proc.level);
+    // hasReplay surfaces true through the actual client-facing list endpoint (the one the replay browser in the
+    // screenshot report reads), not just raw DB fields — and the stored inputs are actually fetchable end-to-end
+    // (getSiegeReplay's buildSiegeBattle reconstruction succeeds, it does not throw REPLAY_UNAVAILABLE).
+    const rows = await svc.listSieges(W, 'a');
+    const row = rows.find((r) => r.siegeId === siege!._id);
+    expect(row?.hasReplay).toBe(true);
+    const replay = await svc.getSiegeReplay(W, 'a', siege!._id);
+    expect(replay.seed).toBe(siege!.seed);
+    expect(Array.isArray((replay.level as { attackerArmy?: unknown }).attackerArmy)).toBe(true);
+    // Sweep is PvE (no defenderId) — the replay's defender side is the synthesized NPC garrison, not a player;
+    // getSiegeReplay skips display-name resolution for a missing defenderId (see combatDefense.ts doc comment).
+    expect(replay.defenderName).toBe('');
 
     // The survivors are in transit on a fresh 'return' leg; advancing to its arrival credits them to the pool.
     const marches = await svc.getMarches(W, 'a');
@@ -355,6 +400,15 @@ describe.skipIf(!mongo)('worldsvc siege e2e', () => {
     expect((await svc.getMe(W, 'a')).resources?.[rt] ?? 0).toBe(0);
     const siege = await m.collections.sieges.findOne({ worldId: W, attackerId: 'a' });
     expect(siege?.outcome).toBe('defender_win');
+    // A losing sweep is replayable too (same follow-up as the win case above) — including end-to-end through
+    // listSieges/getSiegeReplay, not just the raw DB fields (mirrors the win case's round-trip check).
+    expect(siege?.seed).toEqual(expect.any(Number));
+    expect(siege?.defenderConfig?.garrison?.length).toBeGreaterThan(0);
+    const rows = await svc.listSieges(W, 'a');
+    expect(rows.find((r) => r.siegeId === siege!._id)?.hasReplay).toBe(true);
+    const replay = await svc.getSiegeReplay(W, 'a', siege!._id);
+    expect(replay.outcome).toBe('defender_win');
+    expect(Array.isArray((replay.level as { attackerArmy?: unknown }).attackerArmy)).toBe(true);
   });
 
   it('validation: attack unowned tile / attack own tile / sweep occupied tile / attack protected tile', async () => {

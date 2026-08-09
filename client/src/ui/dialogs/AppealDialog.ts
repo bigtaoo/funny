@@ -106,6 +106,12 @@ export class AppealDialog implements Scene {
 
     const dim = new PIXI.Graphics();
     dim.beginFill(0x000000, 0.45).drawRect(0, 0, w, h).endFill();
+    // Swallow taps (see FeedbackDialog's 2026-08-09 fix, same reasoning) — AppealDialog is mounted
+    // directly on app.stage alongside whatever scene is still live underneath (it can fire from any
+    // scene on a network error, not just the lobby), so without this every tap on the backdrop fell
+    // through to that scene's own still-active controls.
+    dim.eventMode = 'static';
+    dim.hitArea = new PIXI.Rectangle(0, 0, w, h);
     this.container.addChild(dim);
 
     const landscape = w > h;

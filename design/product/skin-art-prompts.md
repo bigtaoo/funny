@@ -13,9 +13,11 @@
 | `skin_shop_c1` | 李川 / Infantry | common | 灰白调 | ✅ 已出图定稿，[`art/skins/infantry.png`](../../art/skins/infantry.png)；§1 prompt 为此图基准 |
 | `skin_shop_r1` | 苏远 / Archer | rare | 蓝色调 | ✅ 已出图定稿，[`art/skins/archer.png`](../../art/skins/archer.png)；§2 v3 prompt 命中（3/4 侧身回望 + 侧分短发 + 弓上弦） |
 | `skin_shop_e1` | 陈守 / ShieldBearer | epic | 紫色调 | 🟡 已出图 [`art/skins/shieldbearer.png`](../../art/skins/shieldbearer.png)（§3 v2 prompt，体型/叉腿盾墙/寸头全中）；**留 1 项待调**：肤色偏深 + 黑卷发，与另两人（浅暖褐肤 + 棕发）不一致，破坏"方家三兄弟"读感，重出时加 `light warm tan skin matching his friends, brown hair not black` |
-| `skin_e1` | Anna·Lena | epic | 紫色调 | ✅ 已出图定稿（2026-07-26），[`art/skins/lena.png`](../../art/skins/lena.png)；§6 v2 prompt 命中 |
-| `skin_e2` | Anna·Mara | epic | 紫色调 | ✅ 已出图定稿（2026-07-26），[`art/skins/mara.png`](../../art/skins/mara.png)；§5 v2 prompt 命中 |
-| `skin_l1` | Anna·Max | legendary | 金米调 | ✅ 已出图定稿（2026-07-26），[`art/skins/max.png`](../../art/skins/max.png)；§4 v2 prompt 命中 |
+| `skin_e1` | Anna·Lena | epic | 橙色调（原紫色调） | ✅ 已出图定稿（2026-07-26），2026-08-09 改色为橙，[`art/skins/lena.png`](../../art/skins/lena.png)；§6 v2 prompt 命中 |
+| `skin_e2` | Anna·Mara | epic | 橙色调（原紫色调） | ✅ 已出图定稿（2026-07-26），2026-08-09 改色为橙，[`art/skins/mara.png`](../../art/skins/mara.png)；§5 v2 prompt 命中 |
+| `skin_l1` | Anna·Max | legendary | 橙色调（原金米调） | ✅ 已出图定稿（2026-07-26），2026-08-09 改色为橙，[`art/skins/max.png`](../../art/skins/max.png)；§4 v2 prompt 命中 |
+
+> **2026-08-09 改色为橙**：owner 要求把 Lena/Mara/Max 三款皮肤的配色统一改成橙色（原 epic 紫金公式 + legendary 金米调）。做法是**程序化改色**，不是重新出图：对已出图定稿的成品资产（`client/src/assets/units/skins/skin_{lena,mara,max}.{png,tao}`、`art/skins/{lena,mara,max}/*.png`、对应的 `.tao.editor` 动画师工程内嵌图）做色相区间替换——只对主色带（Lena/Mara 的深紫/亮紫/薰衣草，Max 的金/米）做色相偏移+饱和度/明度提升到橙色，金饰边、蓝方阵营锚点（蓝宝石/蓝绳）、肤色、发色、黑色描线、白底透明不动。因此本文档下方各条 prompt 里写的具体色号（`#6B3F73`/`#AA55CC`/`#C9A227` 等）已不是当前上线资产的真实颜色，只保留作历史记录/若未来要从零重新出图时的参照——重新出图时需先把 prompt 里的色号语言换成橙色公式再用。`.xcf` 分层源文件未跟着改色（GIMP 图层改色需手工做，本次未做），仅供将来重新出图的分层基底，不代表当前上线外观。
 
 三个角色的身高档位（`art-direction.md` 身高规格表）：李川 M 普通 / 苏远 **S 小个子** / 陈守 **L 高个子**——立绘构图要读得出这个身高差，不能三人等高。
 

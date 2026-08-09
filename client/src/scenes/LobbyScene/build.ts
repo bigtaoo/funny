@@ -366,7 +366,10 @@ export function BuildMixin<TBase extends LobbySceneBaseCtor>(Base: TBase): TBase
       const sideGap    = hasSideStrip ? Math.round(w * 0.018) : 0;
 
       // Content narrows to make room for the strip; left margin unchanged.
-      const fullContentW = Math.round(w * 0.82);
+      // Portrait screens are narrower in absolute terms, so the fixed side
+      // margins read as proportionally larger — widen to 90% there; landscape
+      // keeps its original 82% (plenty of width to spare already).
+      const fullContentW = Math.round(w * (this.portrait ? 0.90 : 0.82));
       const contentX     = Math.round((w - fullContentW) / 2);
       const contentW     = fullContentW - sideItemSz - sideGap;
       const sideX        = contentX + contentW + sideGap;

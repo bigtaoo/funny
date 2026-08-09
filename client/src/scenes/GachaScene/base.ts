@@ -323,11 +323,17 @@ export class GachaSceneBase implements Scene {
     if (decoC) this.container.addChild(decoC);
   }
 
-  /** Content column bounds: shifted right of the sidebar rail when in the shop group (landscape
-   *  only — portrait's bottom bar reserves no width), else full width. */
+  /** Content column bounds: shifted right of the sidebar rail when in the shop group AND landscape
+   *  (portrait's bottom bar reserves no width — else a standalone 5%-of-w pad each side, 90% total,
+   *  matching BattlePassScene/RechargeScene's contentBounds); landscape non-group case stays full
+   *  width, unchanged. */
   protected contentBounds(): { x0: number; w: number } {
     const { w, h, landscape } = this;
-    if (!this.cb.openShop || !landscape) return { x0: 0, w };
+    if (!landscape) {
+      const pad = Math.round(w * 0.05);
+      return { x0: pad, w: w - pad * 2 };
+    }
+    if (!this.cb.openShop) return { x0: 0, w };
     const gap = Math.round(w * 0.02);
     const x0 = sidebarNavW(w, h, true) + gap;
     return { x0, w: w - x0 - gap };

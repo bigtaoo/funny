@@ -361,3 +361,27 @@ POST /retention/weekly/claim            (JWT) { tier:1|2|3 } → { save, granted
 - `server/shared/test/gachaCatalog.test.ts` 新增 `describe('pickRandomCatalogItem')`：不带 `rarity` 时全品阶可抽到；带 `rarity: 'legendary'` 时只抽到 Anna 阵营卡；类目/稀有度组合为空池时返回 `undefined`。
 - `server/metaserver/test/retention.e2e.test.ts`：tier-3 用例改为断言 `reward.kind === 'card'` 且 `CARD_DEFS[id].faction === 'anna'`；发放弹性用例（原 `failsOnSkinGrant`）改为 `failsOnCardGrant`（比对 `save.cardInvCount` 而非 `inventory.skins`），断言与 checkin day-14 card 用例同款——账号自带 3 张 Tao 阵营新手卡（`auth.ts#maybeGrantStarterCards`），`cardInv` 从不为空，因此用「相对于领取前快照的新增卡」而非绝对数量判定，避免把新手卡误判成本次发放的卡。
 - `client/test/ui/dailySceneWeeklyTab.ui.ts`：weekly-claim-toast 用例的 tier-3 分支改判 `kind: 'card'` + `t('daily.weekly.rewardCard')`。
+
+### 10.9 修复：Daily 页红点亮但打开后三个 Tab 都没有可领取项（2026-08-09）
+
+**背景**：用户截图反馈——大厅"每日"图标红点亮着，点进去后"每日签到"月历 Tab 里 1-7 天已打勾、后面全是灰色锁定格，没有任何一格是可领的高亮态，`Daily Tasks`/`Weekly Chest` 两个子 Tab 也没有能点的领取按钮，像是红点在骗人。
+
+**根因**：`DailyScene` 的日历/任务/周常三个 Tab 全都读本地 `save.retention.*`（`this.cb.getSave()`，即 `saveManager.get()` 的内存镜像），只有 defs/ads 这两块读服务器新拉的 `this.retention`（`getRetention()`）。而大厅"每日"红点走的是完全独立的一条链路——`lobby.ts` 每次进大厅都重新 `GET /lobby/badges`，服务端当场读库算 `retentionClaimable`，天然新鲜。两条链路唯一的粘合点是 `goDaily()` 里的 `void saveManager.refresh()`：进 Daily 页时顺手触发一次后台刷新，让"刚打完一局"带来的签到/任务/周常进度尽快体现在本地镜像里——但这是个**无等待的 fire-and-forget** 调用，跟 `getRetention()` 各走各的网络请求，谁先回来不确定。核对了 `SaveManager.ts` 才发现真正缺的一环：**其它所有大厅后续场景**（ShopScene/GachaScene/CardScene/EquipmentScene/FriendsScene/SectScene/CityScene/... 全部）都在场景挂载时接了 `cb.onSaveChanged`（`saveManager.subscribe(...)`，本地写入/reconcile 后同步触发监听器），本地镜像事后刷新到位时能自己重渲染一次；唯独 `DailyScene` 从建立起就没有接这根线——如果 `refresh()` 比场景自己的首帧渲染晚回来，`render()` 再也不会被谁触发第二次，玩家看到的永远是挂载那一瞬间的旧 `save` 快照，红点亮着但页面上什么都点不动，直到手动退出再重进（新的一次 `getSave()` 读取碰巧已经是新值）才会"自愈"。
+
+**修复**：`DailyCallbacks` 新增可选的 `onSaveChanged?(listener): () => void`，构造函数里 `if (cb.onSaveChanged) this.unsubs.push(cb.onSaveChanged(() => { if (!this.destroyed) this.render(); }));`——与 ShopScene 等场景完全同款写法；`client/src/app/nav/shop.ts#goDaily()` 补上 `onSaveChanged: (listener) => saveManager.subscribe(listener)` 这一行实参。不改三个 Tab 本身读 `save` 的既有设计（`renderCheckin`/`renderDailyTasks`/`renderWeekly` 都不动——"挂载即刻用本地镜像先渲染，不等网络"仍是对的，缺的只是"镜像事后刷新到位要能通知场景重渲染"这一步）。
+
+**回归测试**：新增 `client/test/ui/dailySceneSaveChanged.ui.ts`（4 例）——① 用可篡改的 `save` 引用挂载场景，先渡过一帧确认 `Daily Tasks` Tab 停在 0/3、没有领取热区；随后原地改写同一个 `save.retention.daily`（模拟 `saveManager.refresh()` 晚到）、手动触发保存下来的 `onSaveChanged` 监听器，断言页面自己刷成 3/3 且多出一个可点的领取热区；② `destroy()` 后监听器要被解绑，且残留引用被误调用也不能抛异常；③④ 同款手法各补一例覆盖另外两个 Tab——「月历」从"今天已领、下一格锁定"翻到"下一格可领"（`lastClaimedDayKey` 回退一天）多出一个 hit 且点击真的调到 `onCheckin`；「周常宝箱」从 5 分翻到 9 分（跨过第一档门槛）多出一个 hit 且点击调到 `onClaimWeekly(9)`——不止测"订阅生效"，也测三个 Tab 各自的读数确实跟着刷新，不会出现"改完签到 Tab 好了，任务/周常 Tab 还是各自另一套 bug"的假阳性。改回修复前的代码（去掉 `DailyCallbacks.onSaveChanged` 接线）复测确认前 2 例会失败，加回修复后转绿。
+
+再新增 `client/test/dailyNav-saveChanged.test.ts`（2 例，`shopNav-peerBadges.test.ts` 同款 `createShopNav()` + 真实 `SaveManager` 集成手法，不经 PIXI）——UI 测试给场景喂的是手写 mock `onSaveChanged`，测的是 `DailyScene` 自己接线对不对，测不出 `client/src/app/nav/shop.ts#goDaily()` 里那一行真实接线（`onSaveChanged: (listener) => saveManager.subscribe(listener)`）本身被删掉/写错的情况；这个测试文件直接跑真实 `createShopNav()`，验证 `nav.goDaily()` 交给场景的 `onSaveChanged` 确实接到了真实 `SaveManager.subscribe`——`saveManager.adoptServer()`/`.update()` 触发的通知能传到监听器，`unsub()` 后不再传；另一例覆盖 `!api`（离线）分支直接 `goLobby()`、从不到达 `showDaily()`。临时删掉 `shop.ts` 里那一行接线复测确认第一例失败（`onSaveChanged` 读到 `undefined`），加回后转绿。
+
+### 10.10 修复：竖屏月历 5 行挤在页面顶部三分之一，下方大片空白（2026-08-09）
+
+**背景**：用户截图反馈——竖屏「每日签到」月历 Tab，30 格（6 列 × 5 行）全部挤在内容区顶部，第 25-30 行下面到底部导航栏之间是一大片空白，整体看起来"没铺满"。横屏这个 Tab 此前已经是对的，用户特别强调这次只改竖屏，不能碰横屏。
+
+**根因**：`renderCheckin` 的格子高度 `cellH = Math.min(areaH*0.78/5, cellW*0.8)` 由宽高比封顶（`cellW*0.8`），行间距却固定用 `h*0.006`。竖屏内容列比横屏窄很多，`cellW` 小 → `cellW*0.8` 这个上限总是小于按 `areaH` 算出的另一路上限，于是 `cellH` 被钳制在一个跟屏幕实际高度无关的小值上；固定的行间距又只有 `h*0.006`（几像素），5 行叠起来自然远够不到内容区底部。横屏反过来——`areaH` 本身就跟 `ROWS*cellH` 接近，这个钳制几乎从不生效，所以横屏一直没这个问题。
+
+**修复**：`client/src/scenes/DailyScene.ts#renderCheckin` 只在 `!this.landscape` 分支里，把内容区剩余的可用高度（`gridAvailH - ROWS*cellH`）算出来均分成 4 段行间距，让 5 行整体松散地铺到内容区底部；格子本身大小不变。横屏分支的行间距原样保留 `h*0.006`，逐字节未改动。
+
+**回归测试**：新增 `client/test/ui/dailySceneCheckinRowSpread.ui.ts`（3 例）——① 竖屏单次渲染断言 5 行行距彼此相差 <1px（不会一边挤一边空）；② 竖屏同宽不同高两次渲染（`PortraitLayout.designWidth` 是固定常量，两次渲染 `cellW`/`cellH` 完全相同）断言行距差 >50px——旧的固定 `h*0.006` 公式在这个高度差下只会长约 13px，验证行距确实随可用高度铺开而非停留在旧公式的量级；③ 横屏两组不同绝对尺寸但同宽高比的配置（`LandscapeLayout.designHeight` 是固定常量）断言两次渲染算出的行距数组逐项相等，证明横屏这条路径完全没被这次改动碰到。临时把修复 revert 回旧公式复测，确认用例②会红（实测差值 17.5px，卡在 50 的门槛下），加回修复后转绿。
+
+`tsc --noEmit`、`npm run typecheck`、`npm run lint`、`npm run build:web` 均绿；`test/ui/dailySceneWeeklyTab.ui.ts`（11 例）、`test/ui/scenes.ui.ts`（112 例）、`test/retention.test.ts`（24 例）、`test/shopNav-peerBadges.test.ts`（8 例）全量复跑无回归。

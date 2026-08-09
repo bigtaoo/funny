@@ -12,6 +12,7 @@ import type { WorldCore } from '../core';
 import type { SiegeReplayInputs } from '../worldTypes';
 import type { TileDoc, PlayerWorldDoc, MarchDoc, SiegeDoc } from '../db';
 import type { SiegeOutcome, ResourceType } from '@nw/shared';
+import type { HoldTileDesc } from './occupation';
 
 // ── Mixin plumbing ────────────────────────────────────────────────────────────
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -33,4 +34,8 @@ export interface SiegeServiceBase {
   passiveRelocate(worldId: string, defenderId: string, t: number): Promise<void>;
   buildDefenderConfig(target: TileDoc, effGarrison: number, inOwnNation: boolean): { garrison?: unknown; defenderBuildings?: unknown; defenderBaseLevel?: unknown; defenderBaseHp?: unknown } | null;
   applyOccupationExpulsion(m: MarchDoc, pw: PlayerWorldDoc, tile: TileDoc, t: number): Promise<void>;
+  // 2026-08-09: every capture (not just neutral-land occupy) now funnels through these two — see
+  // occupation.ts's writeContestedHold/startOccupationHold doc comments for the write-vs-write+push split.
+  writeContestedHold(m: MarchDoc, pw: PlayerWorldDoc, desc: HoldTileDesc, x: number, y: number, survivors: number, t: number, defenderId?: string): Promise<void>;
+  startOccupationHold(m: MarchDoc, pw: PlayerWorldDoc, desc: HoldTileDesc, x: number, y: number, survivors: number, t: number, replay: SiegeReplayInputs | null): Promise<void>;
 }

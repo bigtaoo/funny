@@ -67,11 +67,16 @@ export function HudMixin<TBase extends WorldMapPanelsBaseCtor>(Base: TBase): TBa
       layer.addChild(sIcon); layer.addChild(sTxt);
       this.ctx.shopBtnRect = { x: shopBtn.x, y: shopBtn.y, w: shopW, h: aucH };
 
-      // Per-resource production readout — centered between the back button and the shop
-      // button, replacing the old "World" title text.
+      // Per-resource readout — centered between the back button and the shop button,
+      // replacing the old "World" title text. Two stacked lines per resource: production
+      // rate on top, current stockpile total underneath (2026-08-09: the total used to live
+      // only in the right-side troops/territory card — moved up here, alongside the rate it
+      // feeds, so both numbers for a resource read together instead of in two separate panels).
       const yieldRate = this.ctx.me?.yieldRate ?? {};
-      const iconSize = Math.round(headerH * 0.34);
-      const fontSize = snapFont(Math.round(headerH * 0.26));
+      const resTotals = this.ctx.me?.resources ?? {};
+      const iconSize = Math.round(headerH * 0.42);
+      const fontSize = snapFont(Math.round(headerH * 0.2));
+      const lineGap = 2;
       const gap = Math.round(headerH * 0.3);
       const cluster = new PIXI.Container();
       let cx = 0;
@@ -85,10 +90,13 @@ export function HudMixin<TBase extends WorldMapPanelsBaseCtor>(Base: TBase): TBa
           cluster.addChild(sp);
           cx += iconSize + 3;
         }
-        const lbl = txt(`+${rate}`, fontSize, C.dark);
-        lbl.anchor.set(0, 0.5); lbl.x = cx; lbl.y = 0;
-        cluster.addChild(lbl);
-        cx += lbl.width + gap;
+        const rateLbl = txt(`+${rate}`, fontSize, C.dark);
+        const totalLbl = txt(resTotals[rt] !== undefined ? `${resTotals[rt]}` : '', fontSize, C.mid);
+        const blockH = rateLbl.height + lineGap + totalLbl.height;
+        rateLbl.x = cx; rateLbl.y = -blockH / 2;
+        totalLbl.x = cx; totalLbl.y = -blockH / 2 + rateLbl.height + lineGap;
+        cluster.addChild(rateLbl); cluster.addChild(totalLbl);
+        cx += Math.max(rateLbl.width, totalLbl.width) + gap;
       }
       cx -= gap;
       const leftBound = this.ctx.backRect.x + this.ctx.backRect.w + 8;
@@ -166,7 +174,9 @@ export function HudMixin<TBase extends WorldMapPanelsBaseCtor>(Base: TBase): TBa
       let ry = this.ctx.topInset + 16;
 
       if (this.ctx.me?.joined) {
-        const cardH = 116;
+        // Resource stockpile totals moved up into the header production readout
+        // (renderHeaderHud, 2026-08-09) — this card now only shows troops/territory.
+        const cardH = 56;
         const card = sketchPanel(rightW, cardH, { fill: C.paper, border: C.mid, seed: seedFor(2, 5, rightW) });
         card.x = rx; card.y = ry;
         hud.addChild(card);
@@ -176,37 +186,9 @@ export function HudMixin<TBase extends WorldMapPanelsBaseCtor>(Base: TBase): TBa
         const territory = this.ctx.me.territoryCount ?? 0;
         const line1 = `${t('world.troops')} ${troops}/${troopCap}  ${t('world.territory')} ${territory}`;
         const lbl1 = txt(line1, FS.bodyLg, C.dark);
-        lbl1.x = rx + 16; lbl1.y = ry + 12;
+        lbl1.anchor.set(0, 0.5);
+        lbl1.x = rx + 16; lbl1.y = ry + cardH / 2;
         hud.addChild(lbl1);
-
-        // Resource counts: hand-drawn motif icon (res_atlas, reused from the map tiles) + count,
-        // replacing the earlier emoji glyphs that broke the notebook art style. Falls back to
-        // emoji only while the atlas is still decoding (getResTexture null).
-        const res = this.ctx.me.resources ?? {};
-        const RES_EMOJI: Record<string, string> = { ink: '🖋️', paper: '📄', graphite: '✏️', metal: '🔩', sticker: '⭐' };
-        const RES_ICON = 30;
-        let ix = rx + 16;
-        const resRowY = ry + 64;
-        for (const rt of ['ink', 'paper', 'graphite', 'metal', 'sticker']) {
-          if (res[rt] === undefined) continue;
-          const tex = getResTexture(rt);
-          if (tex) {
-            const sp = new PIXI.Sprite(tex);
-            sp.width = sp.height = RES_ICON;
-            sp.x = ix; sp.y = resRowY - 6;
-            hud.addChild(sp);
-            ix += RES_ICON + 2;
-            const cnt = txt(`${res[rt]}`, FS.bodyLg, C.dark);
-            cnt.x = ix; cnt.y = resRowY;
-            hud.addChild(cnt);
-            ix += cnt.width + 16;
-          } else {
-            const lbl = txt(`${RES_EMOJI[rt]}${res[rt]}`, FS.bodyLg, C.dark);
-            lbl.x = ix; lbl.y = resRowY;
-            hud.addChild(lbl);
-            ix += lbl.width + 16;
-          }
-        }
         ry += cardH + 12;
 
         // ── Active buffs (S8-8 UI fix, 2026-08-08): the capital-protection shield and the
@@ -228,20 +210,30 @@ export function HudMixin<TBase extends WorldMapPanelsBaseCtor>(Base: TBase): TBa
           buffs.push({ icon: 'hourglassMd', label: t('world.speedup', dhmsFromMs(speedupUntil - buffNow)) });
         }
         if (buffs.length > 0) {
-          const buffRowH = 40;
-          const buffPanelH = buffRowH * buffs.length + 8;
+          // 2026-08-09 UI fix: at FS.label (24px) with no wrap, the "Protected (1d 1h 41m 41s)" /
+          // German "Geschützt (noch ...)" strings ran past the panel's right edge and got clipped
+          // by the canvas bounds. Drop to a smaller font and give each label a wordWrapWidth
+          // (icon column reserves 34px) so it wraps to 2 lines instead of overflowing; row height
+          // is sized per-label from the actual wrapped text height so single-line locales (en/zh)
+          // stay compact while German's longer strings get the extra room they need.
+          const buffFont = FS.tiny;
+          const buffLabelW = rightW - 34 - 12;
+          const rendered = buffs.map((b) => {
+            const bLbl = txt(b.label, buffFont, C.dark, false, buffLabelW);
+            return { icon: b.icon, bLbl, rowH: Math.max(34, bLbl.height + 10) };
+          });
+          const buffPanelH = rendered.reduce((sum, r) => sum + r.rowH, 0) + 8;
           const buffPanel = sketchPanel(rightW, buffPanelH, { fill: C.paper, border: C.mid, seed: seedFor(2, 7, rightW) });
           buffPanel.x = rx; buffPanel.y = ry;
           hud.addChild(buffPanel);
-          for (let i = 0; i < buffs.length; i++) {
-            const rowY = buffPanel.y + 4 + i * buffRowH;
-            const bIcon = buildIcon(buffs[i].icon, 26, C.dark);
-            bIcon.x = rx + 12; bIcon.y = rowY + (buffRowH - 26) / 2;
+          let rowY = buffPanel.y + 4;
+          for (const r of rendered) {
+            const bIcon = buildIcon(r.icon, 26, C.dark);
+            bIcon.x = rx + 12; bIcon.y = rowY + (r.rowH - 26) / 2;
             hud.addChild(bIcon);
-            const bLbl = txt(buffs[i].label, FS.label, C.dark);
-            bLbl.anchor.set(0, 0.5);
-            bLbl.x = rx + 46; bLbl.y = rowY + buffRowH / 2;
-            hud.addChild(bLbl);
+            r.bLbl.x = rx + 34; r.bLbl.y = rowY + (r.rowH - r.bLbl.height) / 2;
+            hud.addChild(r.bLbl);
+            rowY += r.rowH;
           }
           ry += buffPanelH + 12;
         }

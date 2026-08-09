@@ -75,7 +75,7 @@ export class DefenseService {
    * Retrieve the "replay spectating" level for a decisive siege (G3-2c, §16.3). Both attacker and defender can read it (spectating is not authoritative; purely visual).
    * Reconstructs buildSiegeBattle from the seed + both sides' formations + tile level persisted by landSiege → shape aligned with the client's LevelDefinition.
    * The client reruns the same siege headless in siege mode using an empty ReplayInputSource and the same seed, reproducing exactly what worldsvc ran.
-   * If replay inputs are missing (cheap fallback / NPC sweep / old battle report) → REPLAY_UNAVAILABLE.
+   * If replay inputs are missing (no-combat instant occupy / old battle report) → REPLAY_UNAVAILABLE.
    */
   async getSiegeReplay(
     worldId: string,
@@ -131,9 +131,10 @@ export class DefenseService {
    * `hasReplay` tells the client which rows are actually replayable. As of 2026-08-01, replay inputs are stored
    * unconditionally — the cheap linear formula path (`shouldUseCheapSiege`) and a genuine engine-crash fallback
    * both still persist them (traceability decision — see combatSiege/arrival.ts applySiege), and getSiegeReplay
-   * degrades safely if a stored crash-fallback battle can't actually be reconstructed. Only a no-combat instant
-   * occupy (empty NPC garrison — no army was ever built) or a legacy battle report predating this field leave
-   * `hasReplay` false.
+   * degrades safely if a stored crash-fallback battle can't actually be reconstructed. The sweep follow-up
+   * extended this to `applySweep`, which used to never build a formation at all — it now synthesizes one purely
+   * for replay storage, so sweeping a neutral tile is replayable too. Only a no-combat instant occupy (empty NPC
+   * garrison — no army was ever built) or a legacy battle report predating this field leave `hasReplay` false.
    */
   async listSieges(worldId: string, accountId: string, limit = SIEGE_LIST_MAX): Promise<SiegeSummaryView[]> {
     const n = Math.max(1, Math.min(SIEGE_LIST_MAX, Math.floor(limit) || SIEGE_LIST_MAX));

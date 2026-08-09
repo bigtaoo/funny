@@ -2,7 +2,7 @@
 // scrolling icon-card grid, and the per-card cell renderer.
 import * as PIXI from 'pixi.js-legacy';
 import { t, type TranslationKey } from '../../i18n';
-import { ui as C, txt, sketchPanel, seedFor, marginLineX, tearDownChildren } from '../../render/sketchUi';
+import { ui as C, txt, sketchPanel, seedFor, tearDownChildren } from '../../render/sketchUi';
 import { FS } from '../../render/fontScale';
 import { buildIcon } from '../../render/icons';
 import { buildLevelStars } from '../../render/levelStars';
@@ -160,20 +160,30 @@ export function ListMixin<TBase extends CardSceneBaseCtor>(Base: TBase): TBase &
       }
 
       const sorted = sortCards(cards, save.equipmentInv ?? {}, cardState);
-      // Start the grid right of the sidebar rail (landscape, when shown) or the red margin rule
-      // (portrait — the bottom nav bar reserves no width); right pad stays one ROSTER_GAP.
-      const left = (this.landscape && this.showSidebar ? sidebarNavW(w, h, true) : marginLineX(w)) + ROSTER_GAP;
-      const avail = w - left - ROSTER_GAP;
+      // Landscape starts the grid right of the sidebar rail; portrait has no side rail (the nav
+      // moves to a bottom bar, §18) so the grid instead fills 90% of the screen width, centered —
+      // same portrait content-column convention as Lobby's `fullContentW` (LobbyScene/build.ts) —
+      // instead of the old notebook-margin-based left offset, which read as an off-center ~9%
+      // left / ~2% right gap rather than a deliberately inset column (2026-08-09 fix).
+      let left: number, avail: number;
+      if (this.landscape) {
+        left = sidebarNavW(w, h, true) + ROSTER_GAP;
+        avail = w - left - ROSTER_GAP;
+      } else {
+        avail = Math.round(w * 0.9);
+        left = Math.round((w - avail) / 2);
+      }
       // Fixed 5-per-row roster (was auto-fit ~6): wider cards, roomier gaps. Clamp down on narrow viewports.
       const cols = Math.max(1, Math.min(ROSTER_COLS, Math.floor((avail + ROSTER_GAP) / (CARD_CELL_W_TARGET + ROSTER_GAP))));
       const cellW = (avail - ROSTER_GAP * (cols - 1)) / cols;
       const rows = Math.ceil(sorted.length / cols);
       const totalH = rows * (CARD_CELL_H + ROSTER_GAP) + ROSTER_GAP;
-      // No PIXI mask backs this grid (draw-cull only, see renderCardCell) — a row is either drawn in
-      // full or skipped entirely, never cropped. peekViewportH's mid-row shrink is for *masked* grids
-      // where it produces a genuine partial-row crop; applied here it just excludes a row that would
-      // otherwise render in full within the naive viewport, leaving a dead gap at the bottom that
-      // pops the row in only once scrolling pushes it past the shrunk cutoff (2026-07-23 roster bug).
+      // Row visibility below is still draw-cull only (a row either draws in full or is skipped
+      // entirely, never cropped) — see renderCardCell. peekViewportH's mid-row shrink is for grids
+      // that *rely on* that crop to show a genuine partial row; applied here it would just exclude a
+      // row that would otherwise render in full within the naive viewport, leaving a dead gap at the
+      // bottom that pops the row in only once scrolling pushes it past the shrunk cutoff (2026-07-23
+      // roster bug) — so availH stays the plain reserved height, not a peekViewportH() result.
       // Also the wheel-scroll viewport bounds, see wheelScroll.ts.
       const maxScroll = Math.max(0, totalH - availH);
       this.scrollY = Math.max(0, Math.min(this.scrollY, maxScroll));
@@ -185,23 +195,35 @@ export function ListMixin<TBase extends CardSceneBaseCtor>(Base: TBase): TBase &
       this.cellContainers = new Map();
       this.cellRects = new Map();
       const outerLayer = this.bodyLayer;
+      // Cards draw into a masked sub-layer so a row straddling the availH edge (still counted
+      // "visible" by the draw-cull check above, since only its *top* has to be within bounds) never
+      // bleeds past listY+availH and paints over the portrait bottom nav bar drawn just below it —
+      // mirrors EquipmentScene InventoryMixin's identical gridLayer/clip treatment (2026-08-09 fix).
+      const gridLayer = new PIXI.Container();
+      outerLayer.addChild(gridLayer);
+      const clip = new PIXI.Graphics();
+      clip.beginFill(0xffffff).drawRect(0, listY, w, availH).endFill();
+      outerLayer.addChild(clip);
+      gridLayer.mask = clip;
+      this.bodyLayer = gridLayer;
       sorted.forEach((card, i) => {
         const col = i % cols;
         const row = Math.floor(i / cols);
         const x = left + col * (cellW + ROSTER_GAP);
         const y = listY + ROSTER_GAP + row * (CARD_CELL_H + ROSTER_GAP) - this.scrollY;
         if (y + CARD_CELL_H >= listY && y <= listY + availH) {
-          // Each cell renders into its own container (child of the same outer bodyLayer) so a later
+          // Each cell renders into its own container (child of gridLayer) so a later
           // applyCardState() can tear down and redraw just this one cell — see refreshCardCell().
           const cellC = new PIXI.Container();
-          outerLayer.addChild(cellC);
+          gridLayer.addChild(cellC);
           this.cellContainers.set(card.id, cellC);
           this.cellRects.set(card.id, { x, y, w: cellW });
           this.bodyLayer = cellC;
           this.renderCardCell(card, x, y, cellW, cardState[card.id], now, save);
-          this.bodyLayer = outerLayer;
+          this.bodyLayer = gridLayer;
         }
       });
+      this.bodyLayer = outerLayer;
 
       drawScrollIndicator(this.bodyLayer, { x: left, y: listY, w: avail, h: availH }, this.scrollY, Math.max(0, totalH - availH));
     }

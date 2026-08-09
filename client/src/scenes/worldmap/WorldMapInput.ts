@@ -51,6 +51,20 @@ export class WorldMapInput {
    * player's friendly set is exactly {self}, fully known here, so the check is safe. Returns true (=allow)
    * whenever connectivity cannot be confidently disproven.
    */
+  /**
+   * Resource type + level line for a tile's info panel/modal, e.g. "Paper Lv3" (§ resourceDensity=1.0 —
+   * nearly every tile carries a resType, whether neutral or already captured). Previously only the
+   * neutral fallthrough branch of onTileClick showed this — the mine/ally/enemy branches all `return`
+   * before reaching it, so a captured tile's resource type was invisible in its info panel even though
+   * the server always sends `resType` regardless of ownership (2026-08-09 fix, see tileGraphics.ts's
+   * motifResType for the matching map-icon fix). Returns null when the tile carries no resType.
+   */
+  private resLevelLine(tile: WorldTileView): string | null {
+    if (!tile.resType) return null;
+    const RES_LABEL: Record<string, string> = { ink: t('world.ink'), paper: t('world.paper'), graphite: t('world.graphite'), metal: t('world.metal'), sticker: t('world.sticker') };
+    return t('world.resLevel').replace('{res}', RES_LABEL[tile.resType] ?? tile.resType).replace('{lv}', String(tile.level ?? 1));
+  }
+
   private occupyConnected(tx: number, ty: number): boolean {
     const me = this.ctx.me;
     if (me?.familyId) return true; // in a family / possibly a sect → sibling-family tiles are invisible to us; defer to the server
@@ -146,6 +160,8 @@ export class WorldMapInput {
       if (tile.watchtower) head.push(t('world.hasWatchtower'));
       if (tile.structure) head.push(t(tile.structure.kind === 'arrowTower' ? 'world.hasArrowTower' : 'world.hasBlocker'));
       head.push(`(${tx}, ${ty})`);
+      const mineResLine = this.resLevelLine(tile);
+      if (mineResLine) head.push(mineResLine);
       this.ctx.panels.showModal(head, myButtons);
       return;
     }
@@ -172,6 +188,8 @@ export class WorldMapInput {
       const allyHead = [t('world.allyTile'), ownerLine, `(${tx}, ${ty})`];
       if (tile.structure) allyHead.push(t(tile.structure.kind === 'arrowTower' ? 'world.hasArrowTower' : 'world.hasBlocker'));
       if (tile.maxHp && tile.hp != null) allyHead.push(t('world.buildingHp').replace('{hp}', String(tile.hp)).replace('{max}', String(tile.maxHp)));
+      const allyResLine = this.resLevelLine(tile);
+      if (allyResLine) allyHead.push(allyResLine);
       this.ctx.panels.showModal(allyHead, allyButtons);
       return;
     }
@@ -191,7 +209,35 @@ export class WorldMapInput {
       // ADR-051 (P5): flag an enemy structure so the player knows attacking this tile razes it.
       if (tile.structure) enemyHead.push(t(tile.structure.kind === 'arrowTower' ? 'world.hasArrowTower' : 'world.hasBlocker'));
       if (tile.maxHp && tile.hp != null) enemyHead.push(t('world.buildingHp').replace('{hp}', String(tile.hp)).replace('{max}', String(tile.maxHp)));
+      const enemyResLine = this.resLevelLine(tile);
+      if (enemyResLine) enemyHead.push(enemyResLine);
       this.ctx.panels.showModal(enemyHead, buttons);
+      return;
+    }
+
+    // Mid occupation-hold (ADR-037 §5.4, widened 2026-08-09 — every capture in the game now goes
+    // through this, not just neutral-land occupy: PvP territory/crossing attacks, PvE
+    // stronghold/crossing captures): the tile has no owner yet, but SOME pending claimant has already
+    // won the battle and is waiting out the hold countdown before ownership lands. Checked before the
+    // 'stronghold' branch below — a contested stronghold still carries `type:'stronghold'` throughout
+    // the hold (see writeContestedHold), so without this ordering a stronghold mid-hold would
+    // wrongly show "attack the NPC garrison" instead of "occupying, Xs left" / the expulsion offer.
+    if (tile?.contestedUntil) {
+      const secLeft = Math.max(0, Math.ceil((tile.contestedUntil - Date.now()) / 1000));
+      if (tile.contestedByMe) {
+        // My own pending hold — nothing to do but watch the countdown (no reinforcement in v1).
+        this.ctx.panels.showModal([t('world.occupyingMine').replace('{sec}', String(secLeft)), `(${tx}, ${ty})`], [
+          { label: '✕', action: () => this.ctx.panels.closeModal() },
+        ]);
+        return;
+      }
+      // Someone else is holding it — offer an expelling attack instead of occupy/sweep (occupying it directly
+      // would just bounce off the pending holder's contestedBy at arrival; use attack to fight their held garrison).
+      const holdButtons: { label: string; action: () => void }[] = [
+        { label: t('world.actAttack'), action: () => void this.ctx.net.showTeamPicker(tx, ty, 'attack') },
+        { label: '✕', action: () => this.ctx.panels.closeModal() },
+      ];
+      this.ctx.panels.showModal([t('world.occupying').replace('{sec}', String(secLeft)), `(${tx}, ${ty})`], holdButtons);
       return;
     }
 
@@ -209,27 +255,6 @@ export class WorldMapInput {
           { label: '✕', action: () => this.ctx.panels.closeModal() },
         ],
       );
-      return;
-    }
-
-    // Neutral tile, mid occupation-hold (ADR-037 §5.4): the tile has no owner yet, but a pending occupier has
-    // already won the PvE battle and is waiting out the hold countdown before ownership lands.
-    if (tile?.contestedUntil) {
-      const secLeft = Math.max(0, Math.ceil((tile.contestedUntil - Date.now()) / 1000));
-      if (tile.contestedByMe) {
-        // My own pending hold — nothing to do but watch the countdown (no reinforcement in v1).
-        this.ctx.panels.showModal([t('world.occupyingMine').replace('{sec}', String(secLeft)), `(${tx}, ${ty})`], [
-          { label: '✕', action: () => this.ctx.panels.closeModal() },
-        ]);
-        return;
-      }
-      // Someone else is holding it — offer an expelling attack instead of occupy/sweep (occupying it directly
-      // would just bounce off the pending holder's contestedBy at arrival; use attack to fight their held garrison).
-      const holdButtons: { label: string; action: () => void }[] = [
-        { label: t('world.actAttack'), action: () => void this.ctx.net.showTeamPicker(tx, ty, 'attack') },
-        { label: '✕', action: () => this.ctx.panels.closeModal() },
-      ];
-      this.ctx.panels.showModal([t('world.occupying').replace('{sec}', String(secLeft)), `(${tx}, ${ty})`], holdButtons);
       return;
     }
 
@@ -275,9 +300,9 @@ export class WorldMapInput {
     // and a recommended-troops line (system NPC garrison strength for this level, ADR-037 §5.4's npcGarrison —
     // the same reference strength the occupy battle resolves against) so the player can size their march
     // before committing, instead of guessing.
-    if (tile?.resType) {
-      const RES_LABEL: Record<string, string> = { ink: t('world.ink'), paper: t('world.paper'), graphite: t('world.graphite'), metal: t('world.metal'), sticker: t('world.sticker') };
-      headLines.push(t('world.resLevel').replace('{res}', RES_LABEL[tile.resType] ?? tile.resType).replace('{lv}', String(tile.level ?? 1)));
+    if (tile) {
+      const neutralResLine = this.resLevelLine(tile);
+      if (neutralResLine) headLines.push(neutralResLine);
     }
     headLines.push(t('world.recommendTroops').replace('{n}', String(npcGarrison(tile?.level ?? 1))));
     this.ctx.panels.showModal(headLines, buttons);
