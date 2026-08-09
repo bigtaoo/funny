@@ -1810,6 +1810,20 @@ cols.tiles.find({ worldId, type: 'base', ownerId: { $nin: excludeOwners } })
 **验证**：重跑 `pack_playerbase_atlas.js` + `patchMergedAtlas.js` 更新 `world_atlas.{png,json}`；`client/test/ui/cityAtlasContentTop.ui.ts`（9 例）+ `tsc --noEmit` 全绿。可视化验证走 [[worldmap-standalone-debug-render]] 记录的套路：`entries/web.ts` 临时加 `?worldmap&desk=N` 分支（reject-fast 的 `worldApi` stub + 手填 3×3 `tileCache`/`ctx.me.mainBaseTile`），起 `game` dev server，因为本机 Browser pane 这次又是"未显示无法合成帧"，改用 `client/` 下临时 `.mjs` 直接 Playwright 截图落盘（[[client-run-and-visual-verify]]）：Lv.1 真机截图确认地台边缘正好顶到绿色虚线 3×3 边界；Lv.10 仍能看到两侧留白（预期内，高度预算触底的档位这次没动，跟 2026-08-03 记的已知瑕疵是同一件事，留给后续美术地台加宽的返工）。验证完把临时 `?worldmap` 分支从 `web.ts` 完整 `git checkout` 还原，`.mjs` 截图脚本删除。
 **共享检出提醒**：这次会话期间主目录里另一个会话在并发改 `app.ts`/`SceneManager.ts`/`AuctionScene`/`CardScene`/`EquipmentScene`/`WorldMapRenderer/city.ts`/`tileStyle.ts`/`tileGraphics.ts`（HMR 日志能看到 `tileStyle.ts` 的改动通过 `fog.ts→WorldMapRenderer.ts→WorldMapScene.ts` 一路冒泡到 `web.ts`）——最终 `git add` 只精确列了本任务自己改的 3 个文件（`pack_playerbase_atlas.js` + `world_atlas.png/json`）+ 这两份设计文档，没有 `git add -A`，没有碰上述任何一个别人正在改的文件。
 
+## 2026-08-09：9级基地地台缺口是已知美术残留 + 基地上方等级标签读错字段（用户截图反馈，账号 tao）
+
+用户截图标出自己 9 级基地两侧的地台缺口，追问"基地还是没用刚好覆盖自己的 9 格"；追问基地贴图上方显示的等级数字也不对。两件事分开排查：
+
+**① 9 级地台缺口——不是新 bug，是 2026-08-08 那次修复本就承认的已知残留**：核对当前已打包的 `client/src/assets/slg/world_atlas.json`，`playerbase_l9` 的 `contentWidthFrac` 实测 `0.828`（满值应为 `BASE_FOOTPRINT/BASE_SPRITE_TILES=0.9375`）——跟 [[2026-08-08 条目]] 记录的"Lv.9 属于高度预算先触底的档位，横向天然填不满，留给美术后续重画地台"完全对得上，用户看到的正是这个已知、已记录、暂未处理的美术缺口，不需要再动渲染代码或打包脚本；`baseFootprintCells`/`tileToScreen`/`cityGroundFwdPx`/`cityPlotMaskPoints` 这条坐标链路逐行代入验证过仍是自洽的。
+
+**② 等级标签 bug（真问题，已修）**：`client/src/scenes/worldmap/WorldMapRenderer/city.ts` 的 `refreshCityLayer()` 里，贴图选择（`playerBaseTex`，第69行）早就正确区分了"自己主城用 `deskLevel`"（desk 建筑等级，1-10，每次升级 desk 都会同步），但紧跟着的标签文案拼接（第157行原代码）漏掉了同样的分支，统一用第65行的 `tile.level`——这是 tile 的地形生成等级，只在出生/迁城那一刻写一次（`server/worldsvc/src/core/spawn.ts`），此后 desk 升级完全不会回写这个字段（回写只发生在 `server/worldsv/src/city.ts` 的 desk 升级完成分支，目标是 `deskLevel` 不是 `level`）。结果：自己主城升到 9 级后，贴图正确变成 9 级的"文具堡垒"图，标签却停留在出生时的旧数字（本例是 1）不再变化。
+
+修复：标签数字改成跟贴图选择同一分支——`tile.mine ? (tile.deskLevel ?? 1) : (tile.level ?? 1)`，不再直接复用第65行算出的 `lv`。
+
+**测试**：`worldMapCityLabel.ui.ts` 原有例子 `placeBase(ctx, 100, 100, { mine: true, level: 3 })` 断言 `'Tao Lv.3'` 本身就是把这个错误行为写死当预期——改成显式区分 `level`/`deskLevel`（`level:3, deskLevel:8` 断言 `'Tao Lv.8'`），加一例 `deskLevel` 缺省时回退 `Lv.1`，再加一例专门复现本次 bug 场景（`level:1, deskLevel:9` 断言 `'Tao Lv.9'`，对应"出生时 1 级、desk 升到 9 级"）。
+
+**验证受阻记录**：本地 `.claude/worktrees/base-level-label-fix/` 全新 worktree 里，`npx vitest run --config vitest.ui.config.ts` 跑该测试文件（以及任何其它既有 `*.ui.ts`，非本次改动引入）都在 transform 阶段报 `Failed to load url jsonwebtoken ... in server/shared/src/jwt.ts` 而整体失败——`server/shared/src/index.ts`（`vitest.ui.config.ts` 给 `@nw/shared` 配的别名目标，注意不同于 `vitest.config.ts` 给的 `slg/index.ts`）的导入链路显然会摸到只有服务端才装的 `jsonwebtoken`。反复用干净 `npm ci`、精确 lockfile 版本对比（`vite`/`vitest`/`pixi.js-legacy` 版本三方一致）、清短路径 worktree（排除 Windows 长路径/junction 干扰）排除到最后，主目录当前能跑通、全新 worktree 稳定复现失败，且 `diff -rq` 确认两边 `server/shared/src` 字节级相同——原因未查清，怀疑跟主目录 `client/node_modules` 里某个残留/未被 lockfile 记录的历史安装状态有关，属于跟本次改动无关的预置环境问题，值得单独立一个任务专门查（尤其因为它会挡住任何"全新 worktree 里跑 `test:ui`"的验证流程，不只是这一次）。本次改动改用 `tsc --noEmit -p tsconfig.test.json` 全绿代替，逻辑上直接复刻了同函数里第69行已经上线跑通的 `tile.mine ? ... deskLevel ... : ...` 分支写法。
+
 ## 2026-08-08：护盾/加速倒计时改天时分秒 + 护盾贴图改成持续动画（用户截图反馈）
 
 用户截图反馈两点：①主城状态卡的 `Protected (146282s)` / `Training ×2 (86374s)` 倒计时直接显示裸秒数，玩家看不懂；②主城上叠的护盾"就是一张图"，看不出这层半透明光泡是干什么用的（§35 引入的呼吸光泡，见本文件 S8-8 条目）。
