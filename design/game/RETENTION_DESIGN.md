@@ -374,4 +374,14 @@ POST /retention/weekly/claim            (JWT) { tier:1|2|3 } → { save, granted
 
 再新增 `client/test/dailyNav-saveChanged.test.ts`（2 例，`shopNav-peerBadges.test.ts` 同款 `createShopNav()` + 真实 `SaveManager` 集成手法，不经 PIXI）——UI 测试给场景喂的是手写 mock `onSaveChanged`，测的是 `DailyScene` 自己接线对不对，测不出 `client/src/app/nav/shop.ts#goDaily()` 里那一行真实接线（`onSaveChanged: (listener) => saveManager.subscribe(listener)`）本身被删掉/写错的情况；这个测试文件直接跑真实 `createShopNav()`，验证 `nav.goDaily()` 交给场景的 `onSaveChanged` 确实接到了真实 `SaveManager.subscribe`——`saveManager.adoptServer()`/`.update()` 触发的通知能传到监听器，`unsub()` 后不再传；另一例覆盖 `!api`（离线）分支直接 `goLobby()`、从不到达 `showDaily()`。临时删掉 `shop.ts` 里那一行接线复测确认第一例失败（`onSaveChanged` 读到 `undefined`），加回后转绿。
 
+### 10.10 修复：竖屏月历 5 行挤在页面顶部三分之一，下方大片空白（2026-08-09）
+
+**背景**：用户截图反馈——竖屏「每日签到」月历 Tab，30 格（6 列 × 5 行）全部挤在内容区顶部，第 25-30 行下面到底部导航栏之间是一大片空白，整体看起来"没铺满"。横屏这个 Tab 此前已经是对的，用户特别强调这次只改竖屏，不能碰横屏。
+
+**根因**：`renderCheckin` 的格子高度 `cellH = Math.min(areaH*0.78/5, cellW*0.8)` 由宽高比封顶（`cellW*0.8`），行间距却固定用 `h*0.006`。竖屏内容列比横屏窄很多，`cellW` 小 → `cellW*0.8` 这个上限总是小于按 `areaH` 算出的另一路上限，于是 `cellH` 被钳制在一个跟屏幕实际高度无关的小值上；固定的行间距又只有 `h*0.006`（几像素），5 行叠起来自然远够不到内容区底部。横屏反过来——`areaH` 本身就跟 `ROWS*cellH` 接近，这个钳制几乎从不生效，所以横屏一直没这个问题。
+
+**修复**：`client/src/scenes/DailyScene.ts#renderCheckin` 只在 `!this.landscape` 分支里，把内容区剩余的可用高度（`gridAvailH - ROWS*cellH`）算出来均分成 4 段行间距，让 5 行整体松散地铺到内容区底部；格子本身大小不变。横屏分支的行间距原样保留 `h*0.006`，逐字节未改动。
+
+**回归测试**：新增 `client/test/ui/dailySceneCheckinRowSpread.ui.ts`（3 例）——① 竖屏单次渲染断言 5 行行距彼此相差 <1px（不会一边挤一边空）；② 竖屏同宽不同高两次渲染（`PortraitLayout.designWidth` 是固定常量，两次渲染 `cellW`/`cellH` 完全相同）断言行距差 >50px——旧的固定 `h*0.006` 公式在这个高度差下只会长约 13px，验证行距确实随可用高度铺开而非停留在旧公式的量级；③ 横屏两组不同绝对尺寸但同宽高比的配置（`LandscapeLayout.designHeight` 是固定常量）断言两次渲染算出的行距数组逐项相等，证明横屏这条路径完全没被这次改动碰到。临时把修复 revert 回旧公式复测，确认用例②会红（实测差值 17.5px，卡在 50 的门槛下），加回修复后转绿。
+
 `tsc --noEmit`、`npm run typecheck`、`npm run lint`、`npm run build:web` 均绿；`test/ui/dailySceneWeeklyTab.ui.ts`（11 例）、`test/ui/scenes.ui.ts`（112 例）、`test/retention.test.ts`（24 例）、`test/shopNav-peerBadges.test.ts`（8 例）全量复跑无回归。
