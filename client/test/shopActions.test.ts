@@ -193,6 +193,20 @@ describe('ShopScene — onBuyBulk() total failure', () => {
   });
 });
 
+describe('ShopScene — onBuyBulk() edge case: qty=0', () => {
+  it('never calls buy(), never toasts, and still releases the busy-lock — defensive guard against a future caller passing a bad qty', async () => {
+    const scene = buildScene();
+    const spy = vi.spyOn(log, 'showToastMessage');
+
+    await scene.onBuyBulk('protect_enhance', 'Enhance Protection Stone', 0);
+
+    expect(scene.cb.buy).not.toHaveBeenCalled();
+    expect(spy).not.toHaveBeenCalled();
+    expect(scene.cb.loadItems).not.toHaveBeenCalled();
+    expect(scene.bt.busy).toBe(false);
+  });
+});
+
 // ── onRedeem (promo code) ─────────────────────────────────────────────────────
 
 describe('ShopScene — onRedeem() guards', () => {
