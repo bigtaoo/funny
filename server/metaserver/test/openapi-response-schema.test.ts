@@ -13,6 +13,7 @@ import { readFileSync } from 'fs';
 import yaml from 'js-yaml';
 import { describe, expect, it } from 'vitest';
 import { SPEC_PATH } from '../dist/app.js';
+import type { CheckinData, DailyData, WeeklyData } from '@nw/shared';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Node = any;
@@ -90,5 +91,51 @@ describe('openapi.yml response schemas have no field-stripping risk', () => {
       }
     }
     expect(offenders, `The following response objects will be stripped to {} by fast-json-stringify — add properties or additionalProperties:\n${offenders.join('\n')}`).toEqual([]);
+  });
+});
+
+// Companion guard for the bug class the test above CANNOT catch: an object that already declares
+// *some* properties (so it never trips "stripped to {}") but is missing a sibling property that the
+// application actually reads/writes. That's exactly what happened to SaveData.retention.weekly
+// (RETENTION_DESIGN §10.12) — checkin/daily were declared and worked fine, weekly shipped into
+// RetentionSave (~2026-08-01) without ever being added here, and fast-json-stringify silently
+// dropped it from every SaveData-shaped response (login/GET /save/every claim endpoint) for over a
+// week before a live player report surfaced it — meanwhile GET /retention (a separate, unschema'd
+// response shape) returned it correctly the whole time, which is what made the report so confusing.
+//
+// The fixture below is typed against the real `@nw/shared` interfaces via `Required<...>` — if
+// CheckinData/DailyData/WeeklyData (or RetentionSave itself) ever gain a new field, `tsc -b` refuses
+// to compile this file until the fixture is updated, which is exactly the moment to also remember
+// the schema. This is a general technique, not weekly-specific: extend the fixture (and, if new
+// sub-objects appear, the walk below) whenever SaveData grows another server-authoritative section
+// that the client reads a specific sub-field of.
+describe('SaveData.retention schema declares every field RetentionSave (the real shared type) has', () => {
+  const sampleRetention: { checkin: Required<CheckinData>; daily: Required<DailyData>; weekly: Required<WeeklyData> } = {
+    checkin: { monthKey: '2026-08', claimedDays: [1], lastClaimedDayKey: '2026-08-01' },
+    daily: { dayKey: '2026-08-01', completedTasks: { 'pve.clear': 1 }, taskPoints: 1, rewardClaimed: false },
+    weekly: { weekKey: '2026-W32', points: 9, claimedTiers: [9] },
+  };
+
+  it('every key of a fully-populated RetentionSave survives a walk against the schema (would have caught §10.12)', () => {
+    const saveSchema = deref((spec.components.schemas as Node).SaveData);
+    const retentionSchema = saveSchema?.properties?.retention;
+    expect(retentionSchema, 'SaveData schema has no `retention` property at all').toBeTruthy();
+
+    const missing: string[] = [];
+    function walk(obj: Node, schemaNode: Node, path: string): void {
+      const node = deref(schemaNode);
+      if (!node || typeof obj !== 'object' || obj === null || Array.isArray(obj)) return;
+      // A map-typed node (`additionalProperties` schema, e.g. completedTasks: Record<taskId, number>)
+      // accepts any key by design — nothing to look up per-key, unlike a fixed `properties` object.
+      const ap = node.additionalProperties;
+      if (ap === true || (ap && typeof ap === 'object')) return;
+      for (const key of Object.keys(obj)) {
+        const propSchema = node.properties?.[key];
+        if (!propSchema) { missing.push(`${path}.${key}`); continue; }
+        walk(obj[key], propSchema, `${path}.${key}`);
+      }
+    }
+    walk(sampleRetention, retentionSchema, 'retention');
+    expect(missing, `SaveData.retention is missing schema declarations for: ${missing.join(', ')} — add them to contracts/openapi/schemas.yml or the client will silently never see them`).toEqual([]);
   });
 });
