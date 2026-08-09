@@ -501,4 +501,17 @@
 - `tsc --noEmit` 逐批次全绿；`npm run build:web` 生产构建成功（仅预置的资源体积告警，与本次无关）。
 - `npm run test:ui` 全量跑过：修好的 6 个用例转绿；其余约 50 个测试文件失败均为本 worktree 未 `npm install` 过 `server/`（`server/node_modules` 不存在）导致的 `Failed to load url jsonwebtoken` 环境问题，与本次改动无关（`git stash` 前同样会失败，只是本次任务未去装 `server/` 依赖来验证这一点，而是核实了失败原因与改动内容无关联）。
 - **未做真人截图走查**：本地 Browser 预览面板在验证阶段未显示（工具报 "pane not displayed"），已用脚本确认 dev server 正常挂载、竖屏视口渲染（375×812 canvas 存在），但无法截图核对像素级效果；用户知情后选择跳过截图、仅凭代码审查 + 类型检查 + 全量 UI 测试收尾。如后续发现竖屏视觉细节问题（尤其是 §20.3 提到的"无 mask 场景内容是否会跟底部栏抢位置"这类需要肉眼判断的边界情况），按本节记录的文件列表定位。
+
+## 21. 竖屏首页内容区宽度 82%→90%（2026-08-09）
+
+> 状态：**已实现**。用户反馈竖屏大厅（`LobbyScene`）整体内容没铺满页面，要求竖屏下占页面宽度 90%；横屏不受影响。
+
+**问题**：`build.ts` 的 `fullContentW = Math.round(w * 0.82)`（见本文档第 212 行「contentW 收窄」一节）竖横屏共用同一条 82% 宽度公式。竖屏设计宽度固定 1080（`PortraitLayout.DESIGN_W`），本身就是整屏宽度；横屏设计宽度通常远大于 1080。同样 18% 的留白比例，横屏因为绝对宽度大，两侧留白只是常规边距，竖屏则显得内容"缩在中间没铺满"。
+
+**方案**：`fullContentW = Math.round(w * (this.portrait ? 0.90 : 0.82))`——竖屏放宽到 90%，横屏保持原来的 82% 不变。`this.portrait` 是 `LobbySceneBase` 已有字段（`layout.orientation === 'portrait'`），不需要新增状态。hero「START MATCH」按钮（`btnRect`）、Campaign/World 两个 pillar、右侧 Daily/Mail/Feedback/Auction 竖条全部共用这个收窄后的宽度，所以竖屏下整条内容列一起变宽，横屏公式路径完全没碰。
+
+**测试**：`client/test/ui/scenes.ui.ts` 新增 `describe('LobbyScene — content column width follows orientation')`，portrait/landscape 各一条 `it`：不接 `onOpenDaily`（不生成侧竖条，`contentW === fullContentW`，不必处理侧栏扣减），直接构造真实 `LobbyScene` 读取 `btnRect.w`，断言等于 `Math.round(layout.designWidth * frac)`（portrait 0.90 / landscape 0.82）。
+
+**验证**：`tsc --noEmit` 全绿；`npm run test:ui -t "LobbyScene"` 15/15 通过（含新增 2 例）。**未做真人截图走查**：本次会话 Browser 预览面板同样未显示（"pane not displayed"），额外尝试过 canvas 像素读取（`drawImage`+`getImageData`）也拿不到真实像素——WebGL 默认不 `preserveDrawingBuffer`，非合成状态下读到的是清空后的纯黑缓冲区，并非真实渲染结果。用户知情后选择跳过截图，仅凭比例数值改动的低风险 + 类型检查 + UI 测试收尾。
+- **涉及文件**：`client/src/scenes/LobbyScene/build.ts`（`fullContentW` 一行）、`client/test/ui/scenes.ui.ts`（新增 describe 块）。
 - **涉及文件**（24 个原引用 `sidebarNavW` 的文件 + 4 个测试文件，逐一见 §20.1–20.4）。
