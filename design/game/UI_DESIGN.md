@@ -958,4 +958,20 @@ BattlePassScene 当初是把「滚动定位」和「内容重建」两条路径�
 
 **验证**：`npx tsc --noEmit`（client）全绿；`npm test`（923 用例）+ `npm run test:ui`（860 用例）全通过。
 
+## 29. ResultScene 竖屏次要徽章行压字修复（2026-08-09）
+
+**问题（用户截图反馈，竖屏）**：结算页竖屏下"VICTORY"标题下方信息全挤在一起——次要徽章（`[Best Damage]`/`[Efficient]` 两枚小圆形图标）的图标直接压在了主徽章详情句「Base only took 0 damage」的文字尾部上。横屏下完全正常。
+
+**根因**：`ResultScene.ts` 次要徽章行的纵向定位公式是 `heroDetail.y + heroDetail.height - h * 0.041`——一个针对横屏微调的"回吸"值：横屏 `LandscapeLayout` 的 `designHeight`（即这里的 `h`）固定 1080，回吸量约 44px，贴着上一行文字，视觉正常。但竖屏 `PortraitLayout`（[PortraitLayout.ts](../../client/src/layout/PortraitLayout.ts)）的设计坐标系是**轴互换**的：`designWidth` 固定 1080，`designHeight`（这里的 `h`）反而是长边，通常 ≥1920。同一个 `h*0.041` 公式在竖屏下回吸量涨到 ≥79px，直接把徽章图标拽进了上一行文字所在的位置，造成截图里的挤压——这不是"元素太多"，是同一个公式被两种轴互换的设计坐标系共用，横屏调好的回吸量在竖屏被放大了近一倍。
+
+**修复**（[ResultScene.ts:401](../../client/src/scenes/ResultScene.ts:401)）：加 `isPortrait = h > w` 分支，竖屏改成正向下移一点间距（`+ h * 0.02`），横屏原公式不动：
+
+```ts
+const rowY  = isPortrait
+  ? heroDetail.y + heroDetail.height + h * 0.02
+  : heroDetail.y + heroDetail.height - h * 0.041;  // 横屏原公式，未改动
+```
+
+**验证**：`npm run typecheck` 全绿；新增 `client/test/ui/resultScenePortraitBadgeRow.ui.ts`（用真实 `PortraitLayout`/`LandscapeLayout` 设计尺寸 1080×1920 / 1920×1080 构造场景，校准 stats 让 `computeBadges()` 稳定产出「主徽章+2 次要徽章」布局）：竖屏用例断言每个次要徽章顶部 y ≥ 主徽章详情文字底部 y（不重叠）；横屏用例断言 `rowY` 精确等于原公式（锁死横屏不受影响）。临时把公式改回旧版重跑，竖屏用例确实报错（徽章顶部 534.84 < 应为 ≥613.56 的文字底部，即截图里的挤压量），横屏用例仍通过——证明测试不是空断言，改回修复后复查全绿。`ResultScene` 既有 UI 冒烟测试（back-chip/outro tap-through 等）8/8 通过。真实浏览器验证：Browser 面板截图工具本次同样报「pane 未显示、无法合成帧」（同 §23/§26/§27/§28 的限制），且尝试用 `entries/web-e2e.ts` 的 `window.__nwE2E.views.showResult(...)` 直接灌数据绕过登录/对局后，WebGL canvas 的 `toDataURL()` 读出的是全黑帧（`preserveDrawingBuffer` 默认 false + 该会话里 Chromium 标签页始终处于"隐藏"状态导致合成帧被提前清空/rAF 被节流），未能截图肉眼确认；已通过上述单测锁定根因数值 + 手工按两种屏幕真实设计尺寸复核公式两侧的具体像素量。
+
 **补测**（同日）：上面「改动」只删了旧的「回调被调用」测试，没有为新的「原始图片」7 处调用点补回归覆盖——为防止日后有人无意中把 `equipped` 参数传回去、悄悄复发本节最初要修的误读问题，逐场景新增用例：`GachaScene.ts`（`gachaResultCard.ui.ts`）、`AuctionScene/list.ts` + `picker.ts`（`auctionScene.ui.ts`）、`CardScene/list.ts`（`cardSceneLevelStars.ui.ts`）、`CardScene/feed.ts` 两处调用点（`cardFusePanel.ui.ts`）、`EquipmentScene/assign.ts`（`equipmentAssignGrid.ui.ts`）、`FriendsScene/mail.ts`（`mailAttachmentIcons.ui.ts`）。手法：`vi.mock('.../cardArt', importOriginal)` 只把 `cardInstanceArtUrl` 包一层 `vi.fn`（保留真实实现），断言调用参数长度 ≤1（即未传 `equipped`）——而非比对渲染出的贴图，因为 headless PIXI 下所有二进制资产桩成同一张 1×1 PNG data URI，贴图身份判别不出「画的是哪张图」。
