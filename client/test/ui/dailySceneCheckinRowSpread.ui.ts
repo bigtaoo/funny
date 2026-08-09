@@ -142,3 +142,47 @@ describe('DailyScene checkin grid — row spacing (2026-08-09 portrait spread fi
     expect(gapsOf(smallYs)).toEqual(gapsOf(bigYs));
   });
 });
+
+/** Number text's `.x` for days 1..n, in day order — one sample per column of the first row. */
+function colXs(container: PIXI.Container, days: number[]): number[] {
+  return days.map((day) => {
+    const txt = findText(container, (s) => s === String(day));
+    expect(txt).not.toBeNull();
+    return txt!.x;
+  });
+}
+
+describe('DailyScene checkin grid — column count (2026-08-09 portrait 5-col tweak)', () => {
+  it('portrait: lays out exactly 5 columns before wrapping to row 2 (not 6)', async () => {
+    const scene = await buildCheckinTab(800, 2160);
+    // Days 1-5 are row 0's 5 columns — strictly increasing x, evenly spaced.
+    const rowXs = colXs(scene.container, [1, 2, 3, 4, 5]);
+    for (let i = 1; i < rowXs.length; i++) expect(rowXs[i]!).toBeGreaterThan(rowXs[i - 1]!);
+    const spacing = rowXs[1]! - rowXs[0]!;
+    for (let i = 2; i < rowXs.length; i++) {
+      expect(Math.abs((rowXs[i]! - rowXs[i - 1]!) - spacing)).toBeLessThan(1);
+    }
+    // Day 6 wraps back to column 0 (same x as day 1) on the next row (greater y) — if COLS were
+    // still 6, day 6 would instead sit in row 0's 6th column (x further right than day 5, same y).
+    const day1 = findText(scene.container, (s) => s === '1')!;
+    const day6 = findText(scene.container, (s) => s === '6')!;
+    expect(Math.abs(day6.x - day1.x)).toBeLessThan(1);
+    expect(day6.y).toBeGreaterThan(day1.y);
+    scene.destroy();
+  });
+
+  it('landscape: still lays out 6 columns before wrapping (must not regress — only portrait changed)', async () => {
+    const scene = await buildCheckinTab(1280, 800);
+    const rowXs = colXs(scene.container, [1, 2, 3, 4, 5, 6]);
+    for (let i = 1; i < rowXs.length; i++) expect(rowXs[i]!).toBeGreaterThan(rowXs[i - 1]!);
+    const spacing = rowXs[1]! - rowXs[0]!;
+    for (let i = 2; i < rowXs.length; i++) {
+      expect(Math.abs((rowXs[i]! - rowXs[i - 1]!) - spacing)).toBeLessThan(1);
+    }
+    const day1 = findText(scene.container, (s) => s === '1')!;
+    const day7 = findText(scene.container, (s) => s === '7')!;
+    expect(Math.abs(day7.x - day1.x)).toBeLessThan(1);
+    expect(day7.y).toBeGreaterThan(day1.y);
+    scene.destroy();
+  });
+});
