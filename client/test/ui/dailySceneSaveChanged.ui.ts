@@ -15,7 +15,7 @@ import { DailyScene, type DailyCallbacks } from '../../src/scenes/DailyScene';
 import { makeNewSave } from '../../src/game/meta/SaveData';
 import type { SaveData } from '../../src/game/meta/SaveData';
 import type { RetentionView } from '../../src/net/ApiClient';
-import { makeDayKey } from '../../src/game/meta/retention';
+import { makeDayKey, makeMonthKey, makeWeekKey } from '../../src/game/meta/retention';
 import * as PIXI from 'pixi.js-legacy';
 
 const memStore = (() => {
@@ -121,5 +121,78 @@ describe('DailyScene — reacts to a save change after mount (2026-08-09 stale-r
     expect(unsubCalled).toBe(true);
     // Firing a stale listener reference post-destroy must not throw (render() guards on `destroyed`).
     expect(() => savedListener?.()).not.toThrow();
+  });
+
+  // The 'tasks' case above proves the subscription itself works; these two cover the other two
+  // tabs (renderCheckin/renderWeekly independently read `save.retention.checkin`/`.weekly`) so a
+  // future change that re-derives one of them from a different source doesn't silently regress.
+  it('checkin tab: a day that rolls from "already claimed today" to claimable picks up a new hit', async () => {
+    const monthKey = makeMonthKey(Date.now());
+    const todayKey = makeDayKey(Date.now());
+    const save: SaveData = {
+      ...makeNewSave(),
+      // 7 days claimed, and the 7th was claimed "today" — nextCheckinDay() gates one slot per real
+      // day, so this is the exact stale-mirror state: nothing claimable until the local mirror
+      // learns the calendar day has actually moved on (or, in the field, that a background refresh
+      // brought in state the server already knew about).
+      retention: { checkin: { monthKey, claimedDays: [1, 2, 3, 4, 5, 6, 7], lastClaimedDayKey: todayKey } },
+    };
+    let savedListener: (() => void) | null = null;
+    let checkinCalls = 0;
+    const cb: DailyCallbacks = {
+      onBack() {},
+      getSave: () => save,
+      getRetention: () => Promise.resolve(emptyRetention()),
+      onSaveChanged: (listener: () => void) => { savedListener = listener; return () => { savedListener = null; }; },
+      async onCheckin() { checkinCalls++; return { day: 8, reward: { kind: 'coins', count: 5 } }; },
+    };
+    const scene = new DailyScene(createLayout(800, 1280), new InputManager(), cb);
+    await flush();
+    const s = scene as unknown as Internals;
+    s.activeTab = 'checkin';
+    s.render();
+    const baselineHits = s.hits.length; // no claimable cell yet → only nav hits
+
+    // Local mirror catches up: `lastClaimedDayKey` moves to yesterday, so day 8 is now claimable.
+    save.retention!.checkin!.lastClaimedDayKey = '2000-01-01';
+    savedListener!();
+
+    expect(s.hits.length).toBe(baselineHits + 1);
+    s.hits[s.hits.length - 1]!.fn();
+    await flush();
+    expect(checkinCalls).toBe(1);
+    scene.destroy();
+  });
+
+  it('weekly tab: a tier crossing its point threshold picks up a new claim hit', async () => {
+    const weekKey = makeWeekKey(Date.now());
+    const save: SaveData = { ...makeNewSave(), retention: { weekly: { weekKey, points: 5, claimedTiers: [] } } };
+    let savedListener: (() => void) | null = null;
+    let claimedThreshold: number | null = null;
+    const cb: DailyCallbacks = {
+      onBack() {},
+      getSave: () => save,
+      getRetention: () => Promise.resolve(emptyRetention()),
+      onSaveChanged: (listener: () => void) => { savedListener = listener; return () => { savedListener = null; }; },
+      async onClaimWeekly(threshold: number) {
+        claimedThreshold = threshold;
+        return { reward: { kind: 'material', count: 20, id: 'lead' } };
+      },
+    };
+    const scene = new DailyScene(createLayout(800, 1280), new InputManager(), cb);
+    await flush();
+    const s = scene as unknown as Internals;
+    s.activeTab = 'weekly';
+    s.render();
+    const baselineHits = s.hits.length; // 5 points, below every 9/15/21 threshold → no claim hit yet
+
+    save.retention!.weekly = { weekKey, points: 9, claimedTiers: [] };
+    savedListener!();
+
+    expect(s.hits.length).toBe(baselineHits + 1);
+    s.hits[s.hits.length - 1]!.fn();
+    await flush();
+    expect(claimedThreshold).toBe(9);
+    scene.destroy();
   });
 });
