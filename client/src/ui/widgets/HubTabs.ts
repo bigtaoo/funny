@@ -281,6 +281,18 @@ export function drawBottomNavTabs(
   const hits: Array<{ rect: Rect; fn: () => void }> = [];
   if (tabs.length === 0) return { hits };
 
+  // Full-width backing strip drawn first: without it the pad/gap slivers around and between the
+  // individual tab cell panels below were transparent, letting scrolled body content (or the bare
+  // paper background) show through right up to the screen's bottom edge — reading as a see-through
+  // bar rather than a solid nav bar docked to the bottom of the screen (2026-08-09 fix). Fill is
+  // `C.dark` (not `C.paper`, LobbyScene's own bottom nav convention — build.ts's `navBg` — uses the
+  // same dark-cover-at-0.9-alpha look): `C.paper` (0xfaf6ee) sits almost on top of the page bg
+  // (0xf5f0e8), so the strip was there but unreadable as a bar. Individual cells still draw their own
+  // lighter paper-fill panels on top for inactive tabs, reading as cards docked on a dark shelf.
+  const bg = new PIXI.Graphics();
+  bg.beginFill(C.dark, 0.92).drawRect(0, y, w, barH).endFill();
+  container.addChild(bg);
+
   const pad = Math.round(w * 0.02);
   const gap = Math.round(w * 0.015);
   const cellW = Math.round((w - pad * 2 - gap * (tabs.length - 1)) / tabs.length);

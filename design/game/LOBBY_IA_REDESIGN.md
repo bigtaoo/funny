@@ -515,3 +515,33 @@
 **验证**：`tsc --noEmit` 全绿；`npm run test:ui -t "LobbyScene"` 15/15 通过（含新增 2 例）。**未做真人截图走查**：本次会话 Browser 预览面板同样未显示（"pane not displayed"），额外尝试过 canvas 像素读取（`drawImage`+`getImageData`）也拿不到真实像素——WebGL 默认不 `preserveDrawingBuffer`，非合成状态下读到的是清空后的纯黑缓冲区，并非真实渲染结果。用户知情后选择跳过截图，仅凭比例数值改动的低风险 + 类型检查 + UI 测试收尾。
 - **涉及文件**：`client/src/scenes/LobbyScene/build.ts`（`fullContentW` 一行）、`client/test/ui/scenes.ui.ts`（新增 describe 块）。
 - **涉及文件**（24 个原引用 `sidebarNavW` 的文件 + 4 个测试文件，逐一见 §20.1–20.4）。
+
+## 22. GachaScene 竖屏内容区补齐 90%，底部页签栏加可见背景（2026-08-09）
+
+> 状态：**已实现**。用户看着 Gacha 页面截图反馈"竖屏占满宽度的90%"+"下面的页签加背景"；同一 shop group 的 `BattlePassScene`/`RechargeScene` 早就是 90%（§20 落地时就写成 `rightPad`），只有 `GachaScene` 是例外。
+
+**问题 1（内容区宽度）**：`GachaScene/base.ts` 的 `contentBounds()` 竖屏分支写的是 `if (!this.cb.openShop || !landscape) return { x0: 0, w }`——横屏非 shop-group 和竖屏共用同一条"满宽"分支，唯独竖屏没有像 `BattlePassScene.contentBounds()`/`RechargeScene.contentBounds()` 那样留 5%×2 边距。翻页书 banner（`page.ts` `bannerW = cw*0.78`）、单/十连按钮（`cw*0.78`）、pity 条、奖池选择条（`cw*0.9`）全部派生自这个 `cw`，所以竖屏下整页看起来比同组其它页面窄。
+
+**方案**：拆开竖屏/横屏两条分支——竖屏单独算 `pad = Math.round(w*0.05)` 返回 `{x0:pad, w:w-2*pad}`（=90%），横屏分支（含 `!openShop` 时的满宽兜底）原样保留，一行没动。
+
+**问题 2（底部页签栏背景）**：`HubTabs.ts` 的 `drawBottomNavTabs`（Shop/Gacha/BattlePass/Recharge 竖屏共用的底部页签栏）当天早些时候已经加过一条整条通栏背景（修「格间露底」的透光问题），但填色用的是 `C.paper`（0xfaf6ee）——跟页面纸底色 `ui.bg`（0xf5f0e8）几乎同色，背景条视觉上"画了但看不见"，跟用户反馈的"没背景"是同一回事。
+
+**方案**：填色从 `C.paper` 换成 `C.dark`（0x2c2c2a）+ 0.9 透明度，对齐 `LobbyScene` 自己底部导航栏（`build.ts` 的 `navBg.beginFill(C.cover, 0.9)`）已验证过的深色通栏做法，去掉原来意义不大的单像素顶边线。未接入的 inactive 页签格仍用浅色 `sketchPanel`（paper 底+描边），叠在深色通栏上读成"卡片贴在深色底栏上"，与 active 格（深底+强调色描边+白字）区分明显。`drawSidebarTabs`（横屏侧栏）完全没碰。
+
+**验证**：`tsc --noEmit` 全绿；`npm run build:web` 生产构建成功（仅预置体积告警）；`npm run test:ui -- shopGroupTabs sidebarRailOrientation scenes.ui`（4 文件 166 例）全绿，无回归。**未做真人截图走查**：本次会话 Browser 预览面板同样报 "pane not displayed"（同 §20.5/§21 的已知环境限制），已确认 dev server 正常起、竖屏视口挂载；用户知情后可自行在实机/浏览器里核对最终视觉效果。
+- **涉及文件**：`client/src/scenes/GachaScene/base.ts`（`contentBounds`）、`client/src/ui/widgets/HubTabs.ts`（`drawBottomNavTabs` 背景条）。
+
+## 22. Hero Roster 竖屏三连修：网格 90% 宽 + mask 裁剪 + 底部导航栏加背景（2026-08-09）
+
+> 状态：**已实现**。用户反馈 Hero Roster（`CardScene`）竖屏截图三处问题：①卡片网格没铺满屏宽 90%；②卡片列表会盖住底部页签栏；③底部页签栏没有背景（透传出后面内容）。①②是 `CardScene`（`client/src/scenes/CardScene/list.ts`）自身的问题，③出在两者共用的 `HubTabs.drawBottomNavTabs`（`client/src/ui/widgets/HubTabs.ts`），后者被 14 个场景复用，一并修好对全部竖屏底部导航栏生效。
+
+**①网格宽度**：`renderList()` 里竖屏左起点此前和横屏共用一行三元表达式，读的是 `marginLineX(w) + ROSTER_GAP`（页边线右侧起排，右边只留一个 `ROSTER_GAP`≈24px）——不是本文档 §21 那种"整列居中收窄"，而是一个偶然形成的、左宽右窄的不对称留白。改成竖屏专属分支：`avail = round(w*0.9)`，`left = round((w-avail)/2)`，与 §21 `LobbyScene.fullContentW` 竖屏 90% 同一约定。横屏分支（`sidebarNavW(w,h,true) + ROSTER_GAP`）未动。副作用：`avail` 从 935 变成 972（`w=1080`），跨过 `ROSTER_COLS` 的一个列数分界点，竖屏默认从 2 列变 3 列（`CARD_CELL_W_TARGET=300` 时仍能整除排下 3 列且格宽略增至 308px）——判定为期望内的行为，铺满宽度本来就该让贪心分列算法多塞一列，而非保留旧列数、只加空白边距。
+
+**②mask 裁剪**：`renderList()` 原先明确写了"网格不上 mask，行级 draw-cull（整行画/整行跳过，从不裁切）"，理由是 2026-07-23 的教训——`peekViewportH` 式收缩可视区配合真 mask 才有意义，套在没有真 mask 的地方只会让本该露出一角的行整行消失。但没有 mask 也意味着：滚动到中间态时，一行只要**顶部**还在 `[listY, listY+availH]` 内就整行画出来，即使它的**底部**已经越过 `availH` 边界、画进了 `bottomNavH(h)` 预留区，盖住后画的底部导航栏。解法不是引入 `peekViewportH`（教训依旧适用），而是给卡片套一层裁剪到 `[listY, listY+availH]` 的 `gridLayer`/`clip` 子层——`EquipmentScene` InventoryMixin 早就是这么做的（`inventory.ts` 的同名 `gridLayer`/`clip` 写法），照抄即可，两者本来就该一致。
+
+**③底部导航栏背景**：`drawBottomNavTabs` 每个 tab 格子本身有 `sketchPanel` 实心填充，但格子之间的 `gap` 和两端的 `pad` 从未画任何背景——透明，滚动内容能透出来贴到屏幕底边，读起来像"导航栏是半透明/没铺满"而不是一条实体导航栏。补一条铺满 `(0,y)`–`(w, y+barH)` 的背景层，画在所有 tab 格子之前（`container.addChild` 顺序最先，天然被格子盖在下面）。
+
+**测试**：新增 `client/test/ui/cardRosterPortraitWidthAndClip.ui.ts`（两条 `it`）：①用真实 `createLayout(1080,1920)` 构造竖屏 `CardScene`，读 `cellRects` 断言网格最左/最右边缘精确落在 `round((w-round(w*0.9))/2)` / `w - 同值`；②构造 20 张卡片触发滚动，读 `cellContainers` 找到某张卡的容器，沿 `.parent` 找到 `gridLayer`，断言其 `.mask` 存在且 `getLocalBounds()` 的 y/height 精确等于 `[headerH, headerH+availH]`（严格小于屏幕高度，即确实给底部导航栏让出了空间）。
+
+**验证**：`tsc --noEmit` 全绿；`npm run build:web` 生产构建成功（仅预置的资源体积告警，与本次无关）；`npm run test:ui`（全量 140 个文件 / 1303 例）全绿，无回归。**未做真人截图走查**：本次会话 Browser 预览面板同样报 "pane not displayed"（`preview_start` 能起服务、`document.querySelectorAll('canvas').length === 1` 证明页面真渲染了，但 `computer{action:"screenshot"}`/点击交互全部因面板未显示而超时/拒绝）——延续 §20.5/§21 记录的同一环境限制，改用上面两条读取真实 PIXI 场景几何坐标的 UI 测试做数值级验证，未肉眼核对最终像素效果。
+- **涉及文件**：`client/src/scenes/CardScene/list.ts`（`renderList()` 竖屏 left/avail 分支 + `gridLayer`/mask）、`client/src/ui/widgets/HubTabs.ts`（`drawBottomNavTabs()` 背景层）、`client/test/ui/cardRosterPortraitWidthAndClip.ui.ts`（新增）、`design/game/CHARACTER_CARDS_DESIGN.md` §10.1（网格左起点/mask 说明同步更新）。
