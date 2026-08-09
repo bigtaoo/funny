@@ -486,6 +486,40 @@ describe('FeedbackDialog — input field caret (2026-08-08: was a plain string c
   });
 });
 
+// 2026-08-09 bug: the full-screen `dim` overlay (drawn behind the card to block the Lobby underneath)
+// never got `eventMode`/`hitArea` set, so PIXI's hit-testing skipped straight past it to whatever Lobby
+// control sits at that screen position — a tap anywhere on the dimmed backdrop (not just the card)
+// passed through as if the dialog wasn't there. This is orientation-agnostic (nothing in `build()`
+// branches hit-testing by landscape/portrait — the `landscape` check only sizes the card), but only
+// got reported for portrait: landscape happens to have nothing clickable positioned behind the card,
+// while portrait's Lobby bottom nav sits directly behind it. Fix mirrors SceneManager's own
+// tap-swallowing fade overlay (`showOverlay()`): `eventMode = 'static'` + explicit full-screen `hitArea`.
+describe('FeedbackDialog — dim backdrop swallows taps in both orientations (2026-08-09 click-through fix)', () => {
+  function findDim(container: PIXI.Container): PIXI.Graphics {
+    // The dim backdrop is the second child added in build() — a full-screen PIXI.Graphics rect,
+    // right after the paper background.
+    const dim = container.children[1] as PIXI.Graphics;
+    expect(dim).toBeInstanceOf(PIXI.Graphics);
+    return dim;
+  }
+
+  it('landscape (1280x800): dim backdrop is static and hit-tests the full screen', () => {
+    const scene = new FeedbackDialog(1280, 800, { onSubmit: async () => {}, onClose() {} });
+    const dim = findDim(scene.container);
+    expect(dim.eventMode).toBe('static');
+    expect(dim.hitArea).toEqual(new PIXI.Rectangle(0, 0, 1280, 800));
+    scene.destroy();
+  });
+
+  it('portrait (800x1280): dim backdrop is static and hit-tests the full screen (was missing before this fix)', () => {
+    const scene = new FeedbackDialog(800, 1280, { onSubmit: async () => {}, onClose() {} });
+    const dim = findDim(scene.container);
+    expect(dim.eventMode).toBe('static');
+    expect(dim.hitArea).toEqual(new PIXI.Rectangle(0, 0, 800, 1280));
+    scene.destroy();
+  });
+});
+
 // More angles on the same 2026-08-08 ticker-wiring fix, beyond "does the caret blink at all":
 // the closure shape app.ts actually uses (`let feedbackDialog: FeedbackDialog | null = null`,
 // reassigned by setFeedbackSink/closeFeedbackDialog, read by a ticker callback registered ONCE in
