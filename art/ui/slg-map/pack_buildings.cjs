@@ -1,10 +1,11 @@
 /**
  * pack_buildings.cjs — Process SLG map overlay-building sketches into a PixiJS-ready atlas.
  *
- * Three hand-drawn structures that sit centered ON a map tile (as opposed to the ground-texture
- * terrain atlas): building_keep (strategic chokepoint gatehouse), building_stronghold (dark NPC
- * fort), icon_watchtower (player-built lookout). Ownership color / level / HP are composed at
- * runtime by the map renderer — this script only produces the neutral ink sprites.
+ * Hand-drawn structures that sit centered ON a map tile (as opposed to the ground-texture
+ * terrain atlas): building_keep/building_stronghold/building_bridge/building_plankway (terrain-
+ * layer buildings) + icon_watchtower/icon_blocker (player-built, tile.watchtower/tile.structure).
+ * Ownership color / level / HP are composed at runtime by the map renderer — this script only
+ * produces the neutral ink sprites.
  *
  * Same pipeline as pack_resources.cjs (near-white → transparent + content crop + proportional
  * scale), but a larger long edge: these render roughly tile-sized on screen, not clustered.
@@ -71,9 +72,9 @@ async function loadSprite(file) {
 
 async function main() {
   const files = fs.readdirSync(__dirname)
-    .filter((f) => /^(building_.*|icon_watchtower)\.(webp|png)$/i.test(f))
+    .filter((f) => /^(building_.*|icon_watchtower|icon_blocker)\.(webp|png)$/i.test(f))
     .sort();
-  if (!files.length) { console.error('No building_*/icon_watchtower.{webp,png} files found'); process.exit(1); }
+  if (!files.length) { console.error('No building_*/icon_watchtower/icon_blocker.{webp,png} files found'); process.exit(1); }
 
   const sprites = [];
   for (const f of files) sprites.push(await loadSprite(path.join(__dirname, f)));

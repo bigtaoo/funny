@@ -64,7 +64,8 @@
 
 | 资产名 | 描述 | 尺寸 | 当前程序占位 |
 |---|---|---|---|
-| ~~`icon_watchtower.png`~~ | 瞭望塔（己方领地建造，扩视野） | — | ✅ **已接入手绘贴图**（`building_atlas` 帧 `icon_watchtower`，见 §四）；atlas 未就绪时回落几何塔身 |
+| ~~`icon_watchtower.png`~~ | 瞭望塔（己方领地建造，扩视野） | — | ⚠️ **改版中**（2026-08-09）：现有图是正视立面构图，缩放后偏细高、撑不满格子，反馈"图标不对"——新构图 prompt 见 [`slg-building-art.md`](../product/slg-building-art.md)，尚未出图；atlas 未就绪/尺寸不匹配时回落几何塔身 |
+| `icon_blocker.png` | 路障（己方/家族领地建造，`tile.structure` 非 arrowTower 的一种） | — | ⚠️ **待出图**（2026-08-09）：v1 起一直是几何 X 撑木占位，反馈"图标不对"——新 prompt 见 [`slg-building-art.md`](../product/slg-building-art.md)；渲染层已接好 `placeBuildingSprite('icon_blocker', …)` 回退路径，`pack_buildings.cjs` 已支持该文件名，只欠源图 |
 | `icon_level_dot.png` | 等级指示圆点（格子升级后右上角） | 12×12 | 实心圆，颜色按归属（保持程序绘制，可动态取归属色，不出图） |
 | `icon_allysect_border.png` | 联盟宗门黄色内描边（重复九宫格拼接） | 96×96 | 程序描边（保持程序绘制，不出图） |
 
@@ -77,7 +78,8 @@
 | `city_lv1..4` | 我/敌/盟主城（4 级建筑，归属靠程序上色） | ✅ 已接入 `city_atlas`（3×3 base 锚点，深度排序图层） |
 | `building_keep` | 战略要点/咽喉点建筑（城楼门楼） | ✅ 已接入 `building_atlas`（2026-07-03） |
 | `building_stronghold` | 险地 NPC 据点（暗色石垒） | ✅ 已接入 `building_atlas`（2026-07-03） |
-| `icon_watchtower` | 己方瞭望塔（扩视野） | ✅ 已接入 `building_atlas`（2026-07-03） |
+| `icon_watchtower` | 己方瞭望塔（扩视野） | ⚠️ 改版中——旧图视角/构图跟 keep/stronghold 不统一，新 prompt 见 [`slg-building-art.md`](../product/slg-building-art.md) |
+| `icon_blocker` | 己方/家族路障（`tile.structure`） | ⚠️ 待出图——v1 起无美术，新 prompt 见 [`slg-building-art.md`](../product/slg-building-art.md) |
 
 > **接入落地（2026-07-03）**：`building_keep` / `building_stronghold` / `icon_watchtower` 三张手绘钢笔线稿
 > 经 `art/ui/slg-map/pack_buildings.cjs`（近白→透明+裁边+长边 256，同 `res` 管线）打包为

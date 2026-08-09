@@ -29,7 +29,13 @@ export function drawTileL1(
   // Resource type of this tile (from live tile state, else the uncached procedural value) — drives
   // the motif sprite. May be the level-gated copper-mine override ('sticker'), which is a scattered
   // per-tile special, NOT a spatial zone — so it must NOT drive the ground wash (see groundResType).
-  const motifResType = tile?.type === 'resource' ? tile.resType : (!tile && proc?.type === 'resource' ? proc.resType : undefined);
+  // 2026-08-09 bug fix: this used to require `tile.type === 'resource'`, so the icon vanished the
+  // moment ANY tile was captured (occupied territory writes `type: 'territory'` but keeps `resType`
+  // on the doc — see worldsvc settleOccupation/landSiege — and the server always sends `resType`
+  // whenever present, regardless of `type`, see core/map.ts tileDocView). A live tile's resType is now
+  // trusted unconditionally; only the uncached PROCEDURAL fallback (no live tile yet) still gates on
+  // proc.type==='resource', since a procedural guess for a captured tile's real type isn't available.
+  const motifResType = tile ? tile.resType : (proc?.type === 'resource' ? proc.resType : undefined);
   // Ground wash uses the tile's PROVINCE leaning type (ignores the copper override, which is a
   // scattered per-tile special, not a province-level trait) so a whole province reads as one
   // continuous region even where copper/sticker tiles poke through as icons, and even though the
@@ -205,7 +211,7 @@ export function drawTileL1(
   // territory wash, ADR-003 iron rule). Structures can only be built on own/family land (§8-O2), but a
   // sect-mate or allied-sect member can equally build on THEIR own land, so this is a real 5-way distinction
   // from the viewer's side, not just `structure.mine` (kept on the type for "can I demolish this" only, see
-  // WorldMapInput). Geometric for v1 — no dedicated atlas art yet.
+  // WorldMapInput).
   if (tile?.structure) {
     const col = tile.mine ? 0x4477cc
       : tile.ally ? 0x46a85a
@@ -227,7 +233,9 @@ export function drawTileL1(
       g.beginFill(0x3a2a18, 0.9); // arrow slit
       g.drawRect(-1, baseY - towerH * 0.62, 2, towerH * 0.3);
       g.endFill();
-    } else {
+    } else if (!placeBuildingSprite(g, 'icon_blocker', tp, hh, tp * 0.5, false)) {
+      // Geometric fallback while the `icon_blocker` atlas art (design/product/slg-building-art.md)
+      // hasn't been generated/packed yet — see icon_watchtower just above for the same pattern.
       const w = Math.max(6, tp * 0.5);
       const h = Math.max(5, tp * 0.22);
       g.lineStyle(2, col, 0.95);
