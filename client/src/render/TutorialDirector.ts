@@ -2,6 +2,7 @@ import * as PIXI from 'pixi.js-legacy';
 import { makeText } from './pixiText';
 import { tearDownChildren } from './sketchUi';
 import { CardType, SpellType, GameState } from '../game';
+import { TOP_SPAWN_ROW } from '@nw/engine/config';
 import { ILayout, Rect } from '../layout/ILayout';
 import { t, type TranslationKey } from '../i18n';
 import { drawHudButton, hudButtonText } from '../ui/widgets/hudButton';
@@ -318,9 +319,11 @@ export class TutorialDirector {
     this.slotRing.visible = false;
     this.clusterRing.visible = false;
     if (beat.kind === 'spell') {
-      // Spell beat: draw a pulse ring at the setup enemy cluster landing point (target lane, upper enemy side — high row = top).
-      const rows = this.layout.boardRect.h / this.layout.cellSize;
-      const p = this.layout.gridToScreen(beat.col, Math.round(rows * 0.72));
+      // Spell beat: draw a pulse ring at the setup enemy cluster landing point. The level JSON
+      // (ch0_tutorial.json) has no board.laneLength override for this wave, so the setup group
+      // spawns and sits at the engine's fixed TOP_SPAWN_ROW (campaign.ts) — anchor the ring there
+      // (not a guessed board-percentage row) so it lines up with where the enemies actually land.
+      const p = this.layout.gridToScreen(beat.col, TOP_SPAWN_ROW);
       this.clusterRing.position.set(p.x, p.y);
       this.clusterRing.visible = true;
     }
