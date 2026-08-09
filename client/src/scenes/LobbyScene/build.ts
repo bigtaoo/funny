@@ -182,7 +182,7 @@ export function BuildMixin<TBase extends LobbySceneBaseCtor>(Base: TBase): TBase
       // `brandMidY`/`logoSize` position the brand lockup; `tbH` is the total dark
       // header height. In landscape chipBandH === tbH (one shared band). All the
       // math lives in the PIXI-free headerMetrics() so it can be unit-tested.
-      const { chipBandH, tbH, brandMidY, logoSize, subtitleY, nameMaxFactor, ulH } =
+      const { chipBandH, chipBandY, tbH, brandMidY, logoSize, subtitleY, nameMaxFactor, ulH } =
         headerMetrics(w, h, this.portrait);
       const titleBg = new PIXI.Graphics();
       titleBg.beginFill(C.cover);
@@ -219,10 +219,12 @@ export function BuildMixin<TBase extends LobbySceneBaseCtor>(Base: TBase): TBase
       subtitle.x = titleX + title.width / 2;
 
       // Top-left profile chip (avatar + name) — opens the personal settings screen.
-      // Lives in the top chip band (geometry unchanged from the old single-row header).
+      // Lives in the chip band (landscape: shares the single header row with the
+      // centered lockup; portrait: its own row below the brand row — chipBandY offsets it).
+      const chipMidY = chipBandY + chipBandH * 0.5;
       const av = Math.round(chipBandH * 0.46);
       const avX = Math.round(w * 0.03);
-      const avY = Math.round(chipBandH * 0.5 - av / 2);
+      const avY = Math.round(chipMidY - av / 2);
       const avatar = buildAvatar(av, this.cb.playerName, 21, this.cb.avatarId);
       avatar.x = avX; avatar.y = avY;
       this.container.addChild(avatar);
@@ -231,7 +233,7 @@ export function BuildMixin<TBase extends LobbySceneBaseCtor>(Base: TBase): TBase
       const nameLabel = txt(this.cb.playerName, snapFont(Math.round(chipBandH * 0.24)), 0xffffff, true);
       nameLabel.anchor.set(0, 0.5);
       nameLabel.x = avX + av + nameGap;
-      nameLabel.y = chipBandH * 0.5;
+      nameLabel.y = chipMidY;
       // Keep the profile chip clear of the brand lockup (portrait: half the band;
       // landscape: leave room for the centered lockup).
       const nameMax = w * nameMaxFactor - (av + nameGap);
@@ -262,36 +264,23 @@ export function BuildMixin<TBase extends LobbySceneBaseCtor>(Base: TBase): TBase
       const chipX = w - Math.round(w * 0.04);
       if (this.cb.offline) {
         const login = txt(t('auth.loginEntry'), FS.heading, C.gold, true);
-        login.anchor.set(1, 0.5); login.x = chipX; login.y = chipBandH * 0.5;
+        login.anchor.set(1, 0.5); login.x = chipX; login.y = chipMidY;
         this.container.addChild(login);
         const pad = Math.round(h * 0.02);
         this.accountChipRect = {
-          x: login.x - login.width - pad, y: chipBandH * 0.5 - login.height / 2 - pad,
+          x: login.x - login.width - pad, y: chipMidY - login.height / 2 - pad,
           w: login.width + 2 * pad, h: login.height + 2 * pad,
         };
         this.accountChipFn = this.cb.onLogin ?? null;
       } else if (this.cb.pvp) {
         const pvp = this.cb.pvp;
-        // Two stacked chips in the header's right column: coins · ladder rank.
-        // Pulled further apart (was 0.26/0.58 of chipBandH) so the two chip
-        // frames read as clearly separate buttons rather than a huddled pair.
         // Logout intentionally omitted here — it sat right below the rank badge and
         // players fat-fingered it while tapping through to the leaderboard; log out
         // still lives in SettingsScene.
-        // Gap between the two frames: 0.26/0.70 of the band leaves a moderate
-        // seam (~a quarter chip-height). 0.20/0.74 read as drifting apart;
-        // 0.26/0.58 overlapped ("huddled"). This sits between the two.
-        const coinsY = chipBandH * 0.26;
-        const rankY  = chipBandH * 0.70;
         const chipPad = Math.round(h * 0.012);
         const iconSz  = Math.round(h * 0.032);
         const iconGap = Math.round(h * 0.01);
 
-        // Measure both labels up front so the two chips can share ONE width and
-        // one left edge — they used to be fit to each label independently
-        // ("98948k" vs "Gold · 1271"), which left the frames ragged and
-        // misaligned. Icons align on a common left edge; text is left-anchored
-        // right after the icon; both frames end flush at chipX (+chipPad).
         const coins = this.cb.getCoins?.();
         const coinLbl = typeof coins === 'number'
           ? txt(fmtCoins(coins), FS.label, C.gold, true) : null;
@@ -300,57 +289,116 @@ export function BuildMixin<TBase extends LobbySceneBaseCtor>(Base: TBase): TBase
         const tierColor = TIER_COLORS[pvp.rank] ?? C.light;
         const badgeLabel = txt(badge, FS.label, tierColor, true);
 
-        const maxLabelW = Math.max(coinLbl ? coinLbl.width : 0, badgeLabel.width);
-        const contentLeft = Math.round(chipX - (iconSz + iconGap + maxLabelW));
-        const chipRectX = contentLeft - chipPad;
-        const chipRectW = (chipX - contentLeft) + 2 * chipPad;
+        if (this.portrait) {
+          // Portrait: coins + rank sit SIDE BY SIDE in the identity row (avatar/name
+          // is on the left of the same row — see chipMidY above), right-aligned as
+          // two separate chips instead of stacked in a top-right corner.
+          const chipGap = Math.round(w * 0.02);
+          const rankIconY = Math.round(chipMidY - iconSz / 2);
+          const rankChipW = iconSz + iconGap + badgeLabel.width + 2 * chipPad;
+          const rankChipX = chipX - rankChipW;
 
-        // Soft-currency balance (server-authoritative mirror) — only meaningful online.
-        if (coinLbl) {
-          const coinIconY = Math.round(coinsY - iconSz / 2);
-          if (this.cb.onOpenRecharge) {
-            this.coinsChipRect = {
-              x: chipRectX, y: coinIconY - chipPad, w: chipRectW, h: iconSz + 2 * chipPad,
-            };
-            // Standard chip frame (§ shared sketchPanel) behind the coin readout so it
-            // reads as a real button, not bare text floating on the dark title bar.
-            const coinBg = sketchPanel(this.coinsChipRect.w, this.coinsChipRect.h,
-              { fill: C.paper, border: C.gold, width: 1.6, seed: 73 });
-            coinBg.alpha = 0.32;
-            coinBg.x = this.coinsChipRect.x; coinBg.y = this.coinsChipRect.y;
-            this.container.addChild(coinBg);
+          if (this.cb.onOpenLeaderboard) {
+            this.rankChipRect = { x: rankChipX, y: rankIconY - chipPad, w: rankChipW, h: iconSz + 2 * chipPad };
+            const rankBg = sketchPanel(this.rankChipRect.w, this.rankChipRect.h,
+              { fill: C.paper, border: tierColor, width: 1.6, seed: 74 });
+            rankBg.alpha = 0.32;
+            rankBg.x = this.rankChipRect.x; rankBg.y = this.rankChipRect.y;
+            this.container.addChild(rankBg);
           }
-          // Coin icon at the shared left edge — same AI atlas glyph as the shop header
-          // (falls back to the procedural buildIcon draw until coinIconAtlas loads).
-          const coinIcon = buildCoinIcon('coin', iconSz, C.gold);
-          coinIcon.x = contentLeft; coinIcon.y = coinIconY;
-          this.container.addChild(coinIcon);
-          coinLbl.anchor.set(0, 0.5);
-          coinLbl.x = contentLeft + iconSz + iconGap; coinLbl.y = coinsY;
-          this.container.addChild(coinLbl);
-        }
+          const rankIcon = buildIcon('trophy', iconSz, tierColor);
+          rankIcon.x = rankChipX + chipPad; rankIcon.y = rankIconY;
+          this.container.addChild(rankIcon);
+          badgeLabel.anchor.set(0, 0.5);
+          badgeLabel.x = rankChipX + chipPad + iconSz + iconGap; badgeLabel.y = chipMidY;
+          this.container.addChild(badgeLabel);
 
-        // Ladder rank badge — its own tier color (not the currency gold, not flat
-        // grey) so a glance tells coins and rank apart even before reading the text.
-        const rankIconY = Math.round(rankY - iconSz / 2);
-        if (this.cb.onOpenLeaderboard) {
-          this.rankChipRect = {
-            x: chipRectX, y: rankIconY - chipPad, w: chipRectW, h: iconSz + 2 * chipPad,
-          };
-          const rankBg = sketchPanel(this.rankChipRect.w, this.rankChipRect.h,
-            { fill: C.paper, border: tierColor, width: 1.6, seed: 74 });
-          rankBg.alpha = 0.32;
-          rankBg.x = this.rankChipRect.x; rankBg.y = this.rankChipRect.y;
-          this.container.addChild(rankBg);
+          if (coinLbl) {
+            const coinIconY = Math.round(chipMidY - iconSz / 2);
+            const coinChipW = iconSz + iconGap + coinLbl.width + 2 * chipPad;
+            const coinChipX = rankChipX - chipGap - coinChipW;
+            if (this.cb.onOpenRecharge) {
+              this.coinsChipRect = { x: coinChipX, y: coinIconY - chipPad, w: coinChipW, h: iconSz + 2 * chipPad };
+              const coinBg = sketchPanel(this.coinsChipRect.w, this.coinsChipRect.h,
+                { fill: C.paper, border: C.gold, width: 1.6, seed: 73 });
+              coinBg.alpha = 0.32;
+              coinBg.x = this.coinsChipRect.x; coinBg.y = this.coinsChipRect.y;
+              this.container.addChild(coinBg);
+            }
+            const coinIcon = buildCoinIcon('coin', iconSz, C.gold);
+            coinIcon.x = coinChipX + chipPad; coinIcon.y = coinIconY;
+            this.container.addChild(coinIcon);
+            coinLbl.anchor.set(0, 0.5);
+            coinLbl.x = coinChipX + chipPad + iconSz + iconGap; coinLbl.y = chipMidY;
+            this.container.addChild(coinLbl);
+          }
+        } else {
+          // Landscape: two stacked chips in the header's right column: coins · ladder rank.
+          // Pulled further apart (was 0.26/0.58 of chipBandH) so the two chip
+          // frames read as clearly separate buttons rather than a huddled pair.
+          // Gap between the two frames: 0.26/0.70 of the band leaves a moderate
+          // seam (~a quarter chip-height). 0.20/0.74 read as drifting apart;
+          // 0.26/0.58 overlapped ("huddled"). This sits between the two.
+          const coinsY = chipBandY + chipBandH * 0.26;
+          const rankY  = chipBandY + chipBandH * 0.70;
+
+          // Measure both labels up front so the two chips can share ONE width and
+          // one left edge — they used to be fit to each label independently
+          // ("98948k" vs "Gold · 1271"), which left the frames ragged and
+          // misaligned. Icons align on a common left edge; text is left-anchored
+          // right after the icon; both frames end flush at chipX (+chipPad).
+          const maxLabelW = Math.max(coinLbl ? coinLbl.width : 0, badgeLabel.width);
+          const contentLeft = Math.round(chipX - (iconSz + iconGap + maxLabelW));
+          const chipRectX = contentLeft - chipPad;
+          const chipRectW = (chipX - contentLeft) + 2 * chipPad;
+
+          // Soft-currency balance (server-authoritative mirror) — only meaningful online.
+          if (coinLbl) {
+            const coinIconY = Math.round(coinsY - iconSz / 2);
+            if (this.cb.onOpenRecharge) {
+              this.coinsChipRect = {
+                x: chipRectX, y: coinIconY - chipPad, w: chipRectW, h: iconSz + 2 * chipPad,
+              };
+              // Standard chip frame (§ shared sketchPanel) behind the coin readout so it
+              // reads as a real button, not bare text floating on the dark title bar.
+              const coinBg = sketchPanel(this.coinsChipRect.w, this.coinsChipRect.h,
+                { fill: C.paper, border: C.gold, width: 1.6, seed: 73 });
+              coinBg.alpha = 0.32;
+              coinBg.x = this.coinsChipRect.x; coinBg.y = this.coinsChipRect.y;
+              this.container.addChild(coinBg);
+            }
+            // Coin icon at the shared left edge — same AI atlas glyph as the shop header
+            // (falls back to the procedural buildIcon draw until coinIconAtlas loads).
+            const coinIcon = buildCoinIcon('coin', iconSz, C.gold);
+            coinIcon.x = contentLeft; coinIcon.y = coinIconY;
+            this.container.addChild(coinIcon);
+            coinLbl.anchor.set(0, 0.5);
+            coinLbl.x = contentLeft + iconSz + iconGap; coinLbl.y = coinsY;
+            this.container.addChild(coinLbl);
+          }
+
+          // Ladder rank badge — its own tier color (not the currency gold, not flat
+          // grey) so a glance tells coins and rank apart even before reading the text.
+          const rankIconY = Math.round(rankY - iconSz / 2);
+          if (this.cb.onOpenLeaderboard) {
+            this.rankChipRect = {
+              x: chipRectX, y: rankIconY - chipPad, w: chipRectW, h: iconSz + 2 * chipPad,
+            };
+            const rankBg = sketchPanel(this.rankChipRect.w, this.rankChipRect.h,
+              { fill: C.paper, border: tierColor, width: 1.6, seed: 74 });
+            rankBg.alpha = 0.32;
+            rankBg.x = this.rankChipRect.x; rankBg.y = this.rankChipRect.y;
+            this.container.addChild(rankBg);
+          }
+          // Trophy icon at the same left edge as the coin icon so both chips read as
+          // the same component with a swapped glyph/color.
+          const rankIcon = buildIcon('trophy', iconSz, tierColor);
+          rankIcon.x = contentLeft; rankIcon.y = rankIconY;
+          this.container.addChild(rankIcon);
+          badgeLabel.anchor.set(0, 0.5);
+          badgeLabel.x = contentLeft + iconSz + iconGap; badgeLabel.y = rankY;
+          this.container.addChild(badgeLabel);
         }
-        // Trophy icon at the same left edge as the coin icon so both chips read as
-        // the same component with a swapped glyph/color.
-        const rankIcon = buildIcon('trophy', iconSz, tierColor);
-        rankIcon.x = contentLeft; rankIcon.y = rankIconY;
-        this.container.addChild(rankIcon);
-        badgeLabel.anchor.set(0, 0.5);
-        badgeLabel.x = contentLeft + iconSz + iconGap; badgeLabel.y = rankY;
-        this.container.addChild(badgeLabel);
       }
 
       // ── Main content stack ─────────────────────────────────────────────────
@@ -367,15 +415,19 @@ export function BuildMixin<TBase extends LobbySceneBaseCtor>(Base: TBase): TBase
 
       // Content narrows to make room for the strip; left margin unchanged.
       // Portrait screens are narrower in absolute terms, so the fixed side
-      // margins read as proportionally larger — widen to 90% there; landscape
-      // keeps its original 82% (plenty of width to spare already).
-      const fullContentW = Math.round(w * (this.portrait ? 0.90 : 0.82));
+      // margins read as proportionally larger — widen to 93% there (the identity
+      // chip band collapsing to one row freed some width too; landscape keeps its
+      // original 82%, plenty of width to spare already).
+      const fullContentW = Math.round(w * (this.portrait ? 0.93 : 0.82));
       const contentX     = Math.round((w - fullContentW) / 2);
       const contentW     = fullContentW - sideItemSz - sideGap;
       const sideX        = contentX + contentW + sideGap;
 
-      const heroH   = Math.round(h * 0.165);
-      const pillarH = Math.round(h * 0.155);
+      // Portrait's identity chip band collapsed from a two-row stack to one row
+      // (see headerMetrics), freeing header height — spend a slice of it here so
+      // the hero/pillar buttons read slightly larger, not just repositioned.
+      const heroH   = Math.round(h * (this.portrait ? 0.175 : 0.165));
+      const pillarH = Math.round(h * (this.portrait ? 0.165 : 0.155));
       const gapA    = Math.round(h * 0.04);  // hero → pillars
 
       const stackH  = heroH + gapA + pillarH;

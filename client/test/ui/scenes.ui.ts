@@ -924,13 +924,15 @@ describe('LobbyScene — hit rects do not overlap', () => {
   }
 });
 
-// ── LobbyScene: content column widens to 90% in portrait, stays 82% in landscape ──
+// ── LobbyScene: content column widens to 93% in portrait, stays 82% in landscape ──
 // Regression: hero button / pillar column used a single 82% width fraction for
 // both orientations. Portrait screens read the fixed side margins as
-// proportionally larger, so portrait now widens to 90%; landscape is untouched.
+// proportionally larger, so portrait now widens to 93% (bumped from 90% once the
+// header's identity chip band collapsed to one row and freed up width — see the
+// "portrait identity row" describe block below); landscape is untouched.
 describe('LobbyScene — content column width follows orientation', () => {
   for (const [label, [w, h], expectedFrac] of [
-    ['portrait', PORTRAIT, 0.90],
+    ['portrait', PORTRAIT, 0.93],
     ['landscape', LANDSCAPE, 0.82],
   ] as const) {
     it(`btnRect width is ${expectedFrac * 100}% of design width — ${label}`, () => {
@@ -955,6 +957,114 @@ describe('LobbyScene — content column width follows orientation', () => {
       scene.destroy();
     });
   }
+});
+
+// ── LobbyScene: hero/pillar buttons grow slightly in portrait ────────────────
+// Regression for the header reflow below: collapsing the identity chip band from
+// a two-row stack (coins over rank) to one row freed header height in portrait,
+// which was spent on the hero/pillar buttons (both grow ~6%); landscape's header
+// never had a stacked sub-row to begin with, so its fractions are untouched.
+describe('LobbyScene — hero/pillar button size follows orientation', () => {
+  for (const [label, [w, h], heroFrac, pillarFrac] of [
+    ['portrait', PORTRAIT, 0.175, 0.165],
+    ['landscape', LANDSCAPE, 0.165, 0.155],
+  ] as const) {
+    it(`btnRect/campaignBtnRect height match the orientation fraction — ${label}`, () => {
+      const layout = createLayout(w, h);
+      const scene = new LobbyScene(layout, new InputManager(), {
+        onStartGame() {},
+        onOpenCampaign() {},
+        onOpenRoom() {},
+        onOpenWorld() {},
+        onOpenShop() {},
+        onOpenCards() {},
+        onOpenStats() {},
+        onOpenProfile() {},
+        playerName: 'Tester',
+      });
+
+      const btnRect      = (scene as any).btnRect         as { h: number };
+      const campaignRect = (scene as any).campaignBtnRect as { h: number };
+      expect(btnRect.h).toBe(Math.round(layout.designHeight * heroFrac));
+      expect(campaignRect.h).toBe(Math.round(layout.designHeight * pillarFrac));
+
+      scene.destroy();
+    });
+  }
+});
+
+// ── LobbyScene: portrait identity row — avatar/coins/rank sit side by side ───
+// Regression for the header reflow: the brand lockup (logo + title) now gets its
+// own row on top in portrait, with the profile chip (avatar+name), coin balance
+// and ladder-rank badge packed into ONE row below it — coins/rank used to stack
+// vertically in the top-right corner (landscape still does this; it shares one
+// row with the centered lockup and has the width to spare). Covers both the
+// row-collapse itself (same y, no overlap) and the right-alignment (rank chip
+// flush to the header's right margin, coins chip immediately to its left).
+describe('LobbyScene — identity chip row', () => {
+  function buildOnlineLobby(w: number, h: number) {
+    const layout = createLayout(w, h);
+    const scene = new LobbyScene(layout, new InputManager(), {
+      onStartGame() {},
+      onOpenCampaign() {},
+      onOpenRoom() {},
+      onOpenWorld() {},
+      onOpenShop() {},
+      onOpenCards() {},
+      onOpenStats() {},
+      onOpenProfile() {},
+      onOpenRecharge() {},
+      onOpenLeaderboard() {},
+      getCoins: () => 97757000,
+      pvp: { rank: 'platinum', elo: 1376 },
+      playerName: 'tao',
+    });
+    return { layout, scene };
+  }
+
+  it('portrait: coins chip and rank chip share the same row (no longer stacked)', () => {
+    const { scene } = buildOnlineLobby(...PORTRAIT);
+
+    const coinsRect = (scene as any).coinsChipRect as { x: number; y: number; w: number; h: number };
+    const rankRect  = (scene as any).rankChipRect  as { x: number; y: number; w: number; h: number };
+
+    expect(coinsRect.w).toBeGreaterThan(0);
+    expect(rankRect.w).toBeGreaterThan(0);
+    expect(coinsRect.y).toBe(rankRect.y); // exact same row, not just "close"
+    expect(rectsOverlap(coinsRect, rankRect)).toBe(false);
+    expect(coinsRect.x + coinsRect.w).toBeLessThanOrEqual(rankRect.x); // coins sits left of rank
+
+    scene.destroy();
+  });
+
+  it('portrait: rank chip is right-aligned to the header margin, profile chip is clear of both', () => {
+    const { layout, scene } = buildOnlineLobby(...PORTRAIT);
+
+    const rankRect    = (scene as any).rankChipRect    as { x: number; y: number; w: number; h: number };
+    const profileRect = (scene as any).profileChipRect as { x: number; y: number; w: number; h: number };
+
+    // Right-aligned to the same margin the header block uses elsewhere (w - w*0.04).
+    expect(rankRect.x + rankRect.w).toBeLessThanOrEqual(Math.round(layout.designWidth * 0.96));
+    expect(rankRect.x + rankRect.w).toBeGreaterThan(Math.round(layout.designWidth * 0.9));
+    // Profile chip (avatar+name) sits in the same identity row, to the left, clear of the chips.
+    expect(rectsOverlap(profileRect, rankRect)).toBe(false);
+    expect(profileRect.x).toBeLessThan(rankRect.x);
+
+    scene.destroy();
+  });
+
+  it('landscape: coins chip and rank chip still stack vertically (unchanged)', () => {
+    const { scene } = buildOnlineLobby(...LANDSCAPE);
+
+    const coinsRect = (scene as any).coinsChipRect as { x: number; y: number; w: number; h: number };
+    const rankRect  = (scene as any).rankChipRect  as { x: number; y: number; w: number; h: number };
+
+    expect(coinsRect.y).not.toBe(rankRect.y);
+    expect(rankRect.y).toBeGreaterThan(coinsRect.y); // rank sits below coins, per the 0.26/0.70 split
+    expect(rectsOverlap(coinsRect, rankRect)).toBe(false);
+
+    scene.destroy();
+  });
 });
 
 // ── LevelPrepScene: layout invariants (regression for 6-row overflow bug) ────
