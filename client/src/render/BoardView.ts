@@ -47,7 +47,7 @@ const BLOCK_BLINK_SPEED = 9;   // rad/s — fast "about to clear" pulse
  * drawFactionMarker, not a persistent outline (§3.4 explicitly bans standing
  * outline glow: it beats against the hand-drawn ink linework and moirés).
  */
-function drawFactionGroundPatch(g: PIXI.Graphics, color: number, rect: Rect): void {
+export function drawFactionGroundPatch(g: PIXI.Graphics, color: number, rect: Rect): void {
   const cx = 0, cy = rect.h * 0.32; // castle art sits high in its frame; patch anchors near its foot
   const rx = rect.w * 0.34, ry = rect.h * 0.1;
   g.clear();
