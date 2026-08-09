@@ -388,6 +388,13 @@ commercial 此前完全没有 Redis 依赖，本次新增：`config.ts` 补 `NW_
 
 **约定**：服务端代码（`server/`，不含 `generated/` 生成产物与测试文件）单文件尽量不超过 500 行。审计当时排除生成产物/测试后共 369 个源文件，30 个（约 8%）超限，集中在 metaserver(8)/worldsvc(7)/engine(4)/socialsvc(3)/shared(2)/commercial(2)/matchsvc/gateway/auctionsvc/admin(各1)。拆分统一走本文档已有的**"薄装配壳 + 关注点分层"**范式（见上文 `WorldCore`/`combatMarch`/`AnalyticsService`/`MetaService` 各条），不发明新规则；原文件收编为几十行装配壳并 `export *`，外部导入路径零改动。
 
+**拆分形态的优先级（2026-08-09 补充，用户明确要求）**：`薄装配壳 + 关注点分层`具体落地有三种形态，按以下顺序择优，**继承链是兜底，不是默认**：
+1. **独立函数模块**（首选）：原文件本就是一组互相独立的函数/无共享私有状态的 if-chain（如 `equipment.ts` 的 11 个操作、`httpApi.ts` 的路由 if-chain）——按操作/路由域切文件，每个文件是纯函数或 `(ctx) => boolean` 的链式 handler，零继承。
+2. **独立类 + 组合**（次选）：原文件是单个类，但拆开后各层之间的交叉调用不多，或值得为此花改动量——每层是独立类，构造器接一份类型化 `deps`（沿用现有 `AuctionServiceDeps` 一类的手写注入风格，**不引入 InversifyJS/tsyringe 等 IoC 容器**——那类库解决的是"启动时怎么装配整个 app"，不解决"类内部方法怎么拆",没必要为拆文件引入新架构层）；层间要互相调用的，把对方实例当构造器参数显式传入，装配壳里 `new` 出各层再拼成 facade，只转发原来对外公开的方法。这样每层的依赖是构造器签名里看得见的，不是"祖先链里恰好有这个 protected 字段"。
+3. **线性继承链**（兜底，仅当 1/2 的改动量或风险明显不划算才退回）：原类内部方法层层 `this.xxx()` 互相调用、共享同一份 `deps`，要拆成真正独立的类意味着大量调用点改写（`this.foo()` → `this.layerX.foo()`），风险和工作量都远超"机械提取、原测试原样绿"的量级时，才用 `class B extends A {}` 做零行为改动的物理搬运（`auctionService.ts`/`WorldCore`/`combatMarch`/`AnalyticsService`/`MetaService` 都是在这个前提下选的）。**代价**：链上方法为跨层访问被迫从 `private` 放宽到 `protected`，链的先后顺序是隐性约束，且不解决"某一层自己又长胖"的问题（`pve.ts`/`liveops.ts`/`arrival.ts`/`occupation.ts` 已经复现了这一点，见下文）——选它时心里要清楚这只是把行数问题往后推了一层，不是真的降耦合。
+
+已合并的 5 个继承链先例（`WorldCore`/`combatMarch`/`AnalyticsService`/`MetaService`/`AuctionService`）不因为这条新顺序回头重写；下面"其余 27 个"里 `Gateway.ts`/`Matchsvc.ts`（还没上继承链的单类）优先试 2，只有组合改动量不划算才退回 3。
+
 **试点 3 个代表不同拆分形态的文件，全部 tsc/测试全绿后再决定是否铺开**：
 - **`metaserver/src/equipment.ts`**（965→43 行装配壳）：11 个互相独立的大函数（craft/escrow/grant/enhance/salvage/equip/reforge 各是一次完整业务操作，彼此零共享私有状态，只共享几个 helper），按操作分文件是最自然的切法——`equipment/{helpers,craft,trade,enhance,salvage,equip,reforge}.ts`，`helpers.ts` 收 `EquipError(Code)`/`toInstanceDoc`/`fromInstanceDoc`/`isEquipped`/`assembleEquipmentInv`/`leanSave`/`settleEquipCoins`（原来除 `toInstanceDoc`/`assembleEquipmentInv` 外都是模块私有，因跨文件复用改为 `export`，经 `equipment.ts` 的 `export *` 进了对外面，副作用同 `AnalyticsService` 拆分先例）。metaserver 858 测试（含 `equipment.e2e.test.ts` 44 例）全绿。
 - **`auctionsvc/src/auctionService.ts`**（925→30 行装配壳）：单个 `AuctionService` 类，之前没有 mixin 链先例——按 `WorldCore`/`combatMarch` 同款**线性继承链**新开一条：`auctionService/base.ts`（deps + `AuctionView`/`AuctionServiceDeps` 类型 + doc↔view 映射纯函数）→`pricing.ts`（C 每日限额 + G 价格护栏）→`delivery.ts`（系统邮件发货）→`listing.ts`（只读查询）→`create.ts`（创建挂单）→`trade.ts`（购买/出价/结算/取消/过期批处理）→`audit.ts`（D/G7 异常扫描）；`bumpDaily`/`checkPriceGuard`/`deliverItem`/`deliverCoins` 等原模块私有方法因跨层调用改 `protected`，`makeAuctionId`/`categoryOf`/`docToView` 等自由函数保留 `base.ts` 导出。auctionsvc 97 测试全绿。
