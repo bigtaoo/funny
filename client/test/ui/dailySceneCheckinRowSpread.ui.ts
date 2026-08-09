@@ -1,10 +1,15 @@
 // Regression for the 2026-08-09 portrait row-spread fix (user report): renderCheckin's per-row
 // vertical gap used to be a fixed `h*0.006` in both orientations, which — combined with cellH
 // being capped by the cellW*0.8 aspect ratio once portrait's narrower content column shrinks
-// cellW below what the tab's actual height could support — bunched all 5 rows into the top third
+// cellW below what the tab's actual height could support — bunched all rows into the top third
 // of the tab with a large blank void below (screenshot in the report). The fix spreads the gap
 // across whatever vertical space is left, but ONLY in portrait — landscape (already correct per
 // the report) must keep the exact original fixed-gap formula untouched.
+//
+// Follow-up (2026-08-09, second report): even with the spread fix, portrait's gaps still read as
+// too large because 6 narrow columns capped cellW (and so cellH) small. Portrait now uses 5
+// columns/6 rows instead of landscape's 6/5 — wider, taller cells that eat more of the available
+// height and leave less to spread as gaps. Landscape is untouched (still 6 cols/5 rows).
 //
 // Runs under the headless PIXI adapter (vitest.ui.config.ts setupFiles).
 
@@ -67,10 +72,19 @@ async function buildCheckinTab(w: number, h: number): Promise<DailyScene> {
   return scene;
 }
 
-/** Day-1/7/13/19/25 are the col-0 cell of each of the 6-col/5-row grid's 5 rows — their number
- *  text's `.y` gives one sample point per row, in render order (top to bottom). */
-function rowYs(container: PIXI.Container): number[] {
+/** Day-1/7/13/19/25 are the col-0 cell of each of the landscape 6-col/5-row grid's 5 rows — their
+ *  number text's `.y` gives one sample point per row, in render order (top to bottom). */
+function rowYsLandscape(container: PIXI.Container): number[] {
   return [1, 7, 13, 19, 25].map((day) => {
+    const txt = findText(container, (s) => s === String(day));
+    expect(txt).not.toBeNull();
+    return txt!.y;
+  });
+}
+
+/** Day-1/6/11/16/21/26 are the col-0 cell of each of the portrait 5-col/6-row grid's 6 rows. */
+function rowYsPortrait(container: PIXI.Container): number[] {
+  return [1, 6, 11, 16, 21, 26].map((day) => {
     const txt = findText(container, (s) => s === String(day));
     expect(txt).not.toBeNull();
     return txt!.y;
@@ -82,9 +96,9 @@ function gapsOf(ys: number[]): number[] {
 }
 
 describe('DailyScene checkin grid — row spacing (2026-08-09 portrait spread fix)', () => {
-  it('portrait: the 5 rows are evenly spaced (no lopsided bunching)', async () => {
+  it('portrait: the 6 rows are evenly spaced (no lopsided bunching)', async () => {
     const scene = await buildCheckinTab(800, 2160);
-    const gaps = gapsOf(rowYs(scene.container));
+    const gaps = gapsOf(rowYsPortrait(scene.container));
     for (const g of gaps.slice(1)) expect(Math.abs(g - gaps[0]!)).toBeLessThan(1);
     scene.destroy();
   });
@@ -97,11 +111,11 @@ describe('DailyScene checkin grid — row spacing (2026-08-09 portrait spread fi
   // gap) grows roughly with the extra height itself — hundreds of px, not a handful.
   it('portrait: the row gap grows with the available height instead of staying pinned to a few px (proves the spread is live, not the old fixed h*0.006)', async () => {
     const shortScene = await buildCheckinTab(800, 2160);
-    const shortGap = gapsOf(rowYs(shortScene.container))[0]!;
+    const shortGap = gapsOf(rowYsPortrait(shortScene.container))[0]!;
     shortScene.destroy();
 
     const tallScene = await buildCheckinTab(800, 4320); // double the design height (see PortraitLayout's aspect-driven designHeight)
-    const tallGap = gapsOf(rowYs(tallScene.container))[0]!;
+    const tallGap = gapsOf(rowYsPortrait(tallScene.container))[0]!;
     tallScene.destroy();
 
     // Old code's growth for this height delta: (4320-2160)*0.006 ≈ 13px. Comfortably clear that
@@ -118,11 +132,11 @@ describe('DailyScene checkin grid — row spacing (2026-08-09 portrait spread fi
     // must therefore produce byte-for-byte identical row gaps; any divergence would mean the
     // portrait-only branch leaked into (or altered) the landscape path.
     const smallScene = await buildCheckinTab(1280, 800);
-    const smallYs = rowYs(smallScene.container);
+    const smallYs = rowYsLandscape(smallScene.container);
     smallScene.destroy();
 
     const bigScene = await buildCheckinTab(2560, 1600);
-    const bigYs = rowYs(bigScene.container);
+    const bigYs = rowYsLandscape(bigScene.container);
     bigScene.destroy();
 
     expect(gapsOf(smallYs)).toEqual(gapsOf(bigYs));

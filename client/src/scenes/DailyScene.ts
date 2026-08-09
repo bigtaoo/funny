@@ -277,18 +277,24 @@ export class DailyScene implements Scene {
     sec.x = areaX + areaW * 0.05; sec.y = top;
     this.container.addChild(sec);
 
-    const COLS = 6;
-    const ROWS = 5;
+    // Portrait: 5 columns (6 rows) instead of landscape's 6 columns (5 rows) — user report
+    // (2026-08-09, screenshot): with 6 columns the narrow portrait width capped cellW hard, and
+    // since cellH is itself capped by cellW*0.8 (see below), cells stayed small while the leftover
+    // vertical space widened into a big gap between rows. Fewer, wider columns raise the cellW cap,
+    // which raises cellH too — bigger cells that eat more of the available height, leaving less to
+    // spread as row gaps. Landscape's width was never the constraint, so it keeps 6/5 unchanged.
+    const COLS = this.landscape ? 6 : 5;
+    const ROWS = Math.ceil(30 / COLS);
     const innerPad = areaW * 0.04;
     const cellW = (areaW - innerPad * 2) / COLS;
-    const cellH = Math.min(areaH * 0.78 / 5, cellW * 0.8);
+    const cellH = Math.min(areaH * 0.78 / ROWS, cellW * 0.8);
     const gridTop = top + sec.height + h * 0.015;
 
-    // Portrait's cells stay compact (capped by cellW*0.8 aspect, since the narrower width already
-    // shrinks cellW well below what areaH could support), which used to leave the fixed h*0.006 row
-    // gap from landscape and bunch all 5 rows into the page's top third with a blank void below
-    // (user report, 2026-08-09). Landscape's areaH is already ~consumed by ROWS*cellH so this is a
-    // no-op there — spread only kicks in when portrait's leftover vertical space is positive.
+    // Portrait's cells are still capped by the cellW*0.8 aspect ratio (now a looser cap thanks to
+    // the 5-col width above, but rarely the exact areaH/ROWS fit), which used to leave the fixed
+    // h*0.006 row gap from landscape and bunch all rows into the page's top third with a blank void
+    // below (user report, 2026-08-09). Landscape's areaH is already ~consumed by ROWS*cellH so this
+    // is a no-op there — spread only kicks in when portrait's leftover vertical space is positive.
     let rowGap = h * 0.006;
     if (!this.landscape) {
       const gridAvailH = top + areaH - gridTop;

@@ -1,6 +1,6 @@
 # 留存系统设计 — Daily Retention（签到 / 每日任务 / 周常）
 
-> 状态：**P0 已实现（2026-06-22）**，签到奖励表 + Tab 改版见 §10.4（2026-07-05）；签到去体力 + 里程碑加金币（R1b）见 §10.5（2026-08-01）；顶部标题跟随子 Tab 修复见 §10.7、周常宝箱 tier-3 皮肤→传说卡调整见 §10.8（均 2026-08-08）；Daily 页红点/可领项不一致的两轮修复见 §10.9（陈旧数据，2026-08-09）与 §10.11（打开的初始 Tab 选错，2026-08-09） · 权威：**本文（留存系统机制单一来源）**；数值（奖励/上限/曲线）镜像并最终落 [`ECONOMY_NUMBERS.md §12`](ECONOMY_NUMBERS.md)（DRAFT 初值）· 更新：2026-08-09
+> 状态：**P0 已实现（2026-06-22）**，签到奖励表 + Tab 改版见 §10.4（2026-07-05）；签到去体力 + 里程碑加金币（R1b）见 §10.5（2026-08-01）；顶部标题跟随子 Tab 修复见 §10.7、周常宝箱 tier-3 皮肤→传说卡调整见 §10.8（均 2026-08-08）；Daily 页红点/可领项不一致的两轮修复见 §10.9（陈旧数据，2026-08-09）与 §10.11（打开的初始 Tab 选错，2026-08-09）；竖屏月历行间距/列数两轮调整见 §10.10、§10.13（均 2026-08-09） · 权威：**本文（留存系统机制单一来源）**；数值（奖励/上限/曲线）镜像并最终落 [`ECONOMY_NUMBERS.md §12`](ECONOMY_NUMBERS.md)（DRAFT 初值）· 更新：2026-08-09
 >
 > **实现记录（B5 2026-06-22）**：
 > - `server/shared/src/retention.ts` — 纯函数 + 类型（`RetentionSave`, `CHECKIN_REWARDS[30]`, `DAILY_TASKS[3]`, `accrueRetentionTask`, `claimCheckinDay`, `claimDailyReward`）
@@ -411,3 +411,13 @@ POST /retention/weekly/claim            (JWT) { tier:1|2|3 } → { save, granted
 **回归测试**：`server/metaserver/test/retention.e2e.test.ts` 新增一例——`seedWeeklyPoints(9)` 后分别调 `GET /save` 和 `POST /retention/weekly/claim`，断言两个响应的 `data.save.retention.weekly` 都完整存在（不是 `GET /retention`，那条早就测过、也从没坏过）。临时把 schema 里刚加的 `weekly` 属性去掉复测，确认这个新用例会失败（`expected undefined to match object`），证实它确实能抓住这一类"字段声明在 schema 里但又被漏掉"的回归；加回修复后转绿。全量复跑 `test/retention.e2e.test.ts`（18 例）、`test/openapi-request-schema.test.ts`（113 例）、`test/openapi-response-schema.test.ts`、`test/bundle-openapi.test.ts`（4 例）、metaserver 全量 `vitest run` 均绿；client 侧 `tsc --noEmit` 绿，`test/ui/dailyScene*.ui.ts`（24 例）复跑无回归。
 
 **补一道通用契约守卫（同日）**：上面这条 e2e 用例只挡住"`weekly` 这一次"；`test/openapi-response-schema.test.ts` 原有的"响应对象不会被剥空"检查（§10.1 那条）也只抓"整个对象没有任何 `properties`"的极端情况，抓不到"对象已经声明了几个字段、但漏了其中一个"这种更隐蔽的drift——`weekly` 这次正是这种。在同一文件里新增一个不依赖 Mongo 的静态契约测试：拿 `@nw/shared` 里真实的 `CheckinData`/`DailyData`/`WeeklyData` 类型，用 `Required<...>` 撑出一个字段齐全的样例对象（这几个接口任何一个将来新增字段，`tsc -b` 都会因为这份样例没跟着补字段而编译失败，逼着改动的人正视这个测试），再逐层把样例对象的每个 key 去 `SaveData.retention` 的 schema 里核对是否声明；对 `additionalProperties` 形式的 map 字段（如 `completedTasks`）跳过逐 key 核对（key 本来就是任意的）。临时把 `weekly` 从样例对齐的 schema 里去掉复测，确认精确报出 `retention.weekly` 缺失；恢复后转绿。这是本文档 §10.1/§10.2/§10.12 反复踩同一类 bug 后，第一次把"教训"落成一道能自动拦截未来同类回归的测试，而不是只留一句注释。
+
+### 10.13 调整：竖屏月历改 5 列×6 行（原 6 列×5 行），格子放大、行距收紧（2026-08-09）
+
+**背景**：§10.10 把竖屏的行间距从固定 `h*0.006` 改成"铺满剩余高度"，但用户截图跟进反馈——铺满之后行距本身还是显得太松，格子相对页面显得小；建议改成一行 5 格（而不是 6 格），格子整体放大。
+
+**根因/动机**：不是 bug，是 §10.10 修完之后暴露出的下一层观感问题。`renderCheckin` 的 `cellH = Math.min(areaH*0.78/ROWS, cellW*0.8)` 在竖屏一直被 `cellW*0.8` 这个宽高比上限钳制（见 §10.10 根因）——列数越多、`cellW` 越窄、这个上限越低，格子和行距都被压小；§10.10 只解决了"剩余空间去哪了"，没解决"格子本身偏小"这一层。
+
+**修复**：`client/src/scenes/DailyScene.ts#renderCheckin` 的 `COLS` 从固定 `6` 改成 `this.landscape ? 6 : 5`（`ROWS = Math.ceil(30 / COLS)`，横屏仍是 5 行，竖屏变 6 行），`cellH` 公式里原来硬编码的 `/5` 也改成 `/ROWS`（避免行数变了但除数没跟着变）。列数减少让 `cellW`（从而 `cellH` 的上限）变大，§10.10 已有的"剩余空间铺满行距"逻辑随 `ROWS`/`cellH` 的新值自动生效，不用改。横屏分支的 `COLS`/`ROWS` 原样保留 6/5，逐字节未改动。用同一份 headless PIXI 渲染在 800×2160 竖屏下实测：列宽从旧 6 列的 ≈149px 涨到新 5 列的 ≈179px（+20%），行距从旧 ≈495px 降到新 ≈391px（−21%）——格子变大、行间距同时收紧，两个诉求同时满足，不是"此消彼长"。
+
+**回归测试**：`client/test/ui/dailySceneCheckinRowSpread.ui.ts` 的竖屏采样点从 6 列网格的 col-0 序列（day 1/7/13/19/25）改成 5 列网格的 col-0 序列（day 1/6/11/16/21/26），横屏采样点保持 day 1/7/13/19/25（横屏列数未变）；三个用例的断言逻辑（行距均匀、行距随可用高度线性增长、横屏跨绝对尺寸行距不变）不变，只是采样的 day 号跟着新列数调整。`tsc --noEmit` 绿；`test/ui/dailyScene*.ui.ts`（24 例）全量复跑无回归。
