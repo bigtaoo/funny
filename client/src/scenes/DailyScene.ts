@@ -515,7 +515,19 @@ export class DailyScene implements Scene {
       bg.x = PAD; bg.y = cy;
       this.container.addChild(bg);
 
-      const label = txt(t('daily.weekly.pointsProgress', { n: Math.min(points, threshold), threshold }), snapFont(Math.round(cardH * 0.28)), 0x333333);
+      // Wrapped and width-capped to the left ~55% of the card (mirrors renderDailyTasks' label
+      // cap above) — the card is much taller in portrait than landscape (both share the same
+      // areaH-derived cardH, but portrait's design height stretches far past landscape's), so
+      // this font (sized off cardH) renders large enough to run the unwrapped progress string
+      // straight into the "Claim" button sitting at cardW*0.65 (09.08.2026 bug report: button
+      // looked "misplaced" in portrait because the text was drawn on top of/through it — the
+      // button was fine, the label just wasn't clipped to make room for it). Landscape's cardH
+      // is small enough that the string already fits on one line well inside the cap, so this
+      // is a no-op there.
+      const label = txt(
+        t('daily.weekly.pointsProgress', { n: Math.min(points, threshold), threshold }),
+        snapFont(Math.round(cardH * 0.28)), 0x333333, false, cardW * 0.55,
+      );
       label.x = PAD + cardW * 0.05;
       label.y = cy + cardH * 0.14;
       this.container.addChild(label);
