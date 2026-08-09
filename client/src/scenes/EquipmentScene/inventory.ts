@@ -12,7 +12,7 @@ import type { SaveData, EquipSlot, EquipRarity, EquipmentInstance } from '../../
 import { getEquipDef, affixKind } from '../../game/meta/equipmentDefs';
 import {
   type Constructor, type EquipmentSceneBaseCtor, type EquipTab, type SectionKey,
-  LOADOUT_H, FILTER_H, SECTION_H, CELL_GAP, CELL_GAP_X, EQUIP_CELL_H, EQUIP_CELL_W_TARGET, EQUIP_CELL_W_MIN, LIST_TOP_PAD,
+  LOADOUT_H, FILTER_H, SECTION_H, CELL_GAP, CELL_GAP_X, EQUIP_CELL_H, equipGridColumns, LIST_TOP_PAD,
   SLOTS, RARITY_COLOR,
 } from './base';
 
@@ -226,23 +226,9 @@ export function InventoryMixin<TBase extends EquipmentSceneBaseCtor>(Base: TBase
       // Item cells start right of the sidebar rail; right pad stays one CELL_GAP.
       const gridLeft = left + CELL_GAP;
       const avail = w - gridLeft - CELL_GAP;
-      // Portrait's narrow avail (~1008) only ever clears one more EQUIP_CELL_W_TARGET column past
-      // the first, leaving a wide blank band on the right (2026-08-09 UX fix) — drop the column
-      // floor to EQUIP_CELL_W_MIN there so a slightly narrower third column fills that space with
-      // actual content instead of margin. Landscape's much wider canvas already reaches 3+
-      // target-width columns without this, so it keeps the stricter floor (its own leftover is a
-      // thin, proportionally minor margin — see the cellW cap comment below).
-      const colFloor = landscape ? EQUIP_CELL_W_TARGET : EQUIP_CELL_W_MIN;
-      const cols = Math.max(1, Math.floor((avail + CELL_GAP_X) / (colFloor + CELL_GAP_X)));
-      // Cap at the target width instead of stretching to fill the row — dividing the full
-      // available width evenly across `cols` left cards much wider than their content needed,
-      // reading as mostly blank paper; any leftover width is just unused margin on the right.
-      const cellW = Math.min(EQUIP_CELL_W_TARGET, (avail - CELL_GAP_X * (cols - 1)) / cols);
-      // Center the row block when it still doesn't fill `avail` (e.g. a portrait screen narrower
-      // than 3 min-width columns, falling back to 2) instead of hugging the left edge and leaving
-      // all the slack on the right — the original complaint this whole block fixes.
-      const rowW = cols * cellW + CELL_GAP_X * (cols - 1);
-      const gridOffset = !landscape ? Math.max(0, (avail - rowW) / 2) : 0;
+      // See equipGridColumns (EquipmentScene/base.ts) for the column-width-floor + centering math
+      // and equipmentGridColumns.test.ts for its unit coverage — 2026-08-09 UX fix.
+      const { cols, cellW, offset: gridOffset } = equipGridColumns(avail, landscape);
 
       // Layout pass: headers span a full row and reset the column cursor; item
       // cells pack left-to-right into `cols` columns. `off` is the vertical
