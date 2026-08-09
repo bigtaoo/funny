@@ -417,6 +417,7 @@ export function createShopNav(ctx: AppCtx): ShopNav {
       onBack() { nav.goLobby(); },
       getSave: () => saveManager.get(),
       getRetention: () => client.getRetention(),
+      onSaveChanged: (listener: () => void) => saveManager.subscribe(listener),
       async onCheckin() {
         const { save, day, reward } = await client.claimCheckin();
         saveManager.adoptServer(save);
