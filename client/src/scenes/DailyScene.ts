@@ -115,10 +115,33 @@ export class DailyScene implements Scene {
     this.h = layout.designHeight;
     this.landscape = layout.orientation === 'landscape';
     this.cb = cb;
+    this.activeTab = DailyScene.pickInitialTab(cb.getSave?.());
     this.unsubs.push(input.onDown((x, y) => this.handleDown(x, y)));
     if (cb.onSaveChanged) this.unsubs.push(cb.onSaveChanged(() => { if (!this.destroyed) this.render(); }));
     this.render();
     void this.load();
+  }
+
+  /**
+   * Which sub-tab to land on when the scene first opens (09.08.2026 bug report follow-up).
+   * DailyScene used to always start on 'checkin' regardless of where the actual reward was — the
+   * lobby's "每日" red dot lights up on `checkin || daily-tasks || weekly` (see lobby.ts
+   * refreshLobbyBadges), but on most days the checkin slot is already claimed and the daily-tasks
+   * threshold isn't reached yet, so the *only* lit sub-tab is Weekly. A player tapping the red dot
+   * landed on an empty-looking Checkin tab and never noticed the small badge dot on the Weekly tab
+   * over in the sidebar, reporting it as "red dot lit, nothing to claim" even though a weekly chest
+   * tier was sitting there claimable the whole time.
+   * Priority mirrors the lobby's OR order exactly, so whichever tab the red dot is "about" is the
+   * one the player actually lands on; falls back to 'checkin' (the pre-fix default) when nothing is
+   * claimable, same as visiting Daily with a clean slate always has.
+   */
+  private static pickInitialTab(save: SaveData | undefined): DailyTab {
+    if (!save) return 'checkin';
+    const nowMs = Date.now();
+    if (nextCheckinDay(save, nowMs) !== null) return 'checkin';
+    if (dailyRewardClaimable(save, nowMs)) return 'tasks';
+    if (weeklyClaimableTiers(save, nowMs).length > 0) return 'weekly';
+    return 'checkin';
   }
 
   update(dt: number): void {

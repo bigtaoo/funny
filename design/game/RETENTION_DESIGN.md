@@ -1,6 +1,6 @@
 # 留存系统设计 — Daily Retention（签到 / 每日任务 / 周常）
 
-> 状态：**P0 已实现（2026-06-22）**，签到奖励表 + Tab 改版见 §10.4（2026-07-05）；签到去体力 + 里程碑加金币（R1b）见 §10.5（2026-08-01）；顶部标题跟随子 Tab 修复见 §10.7、周常宝箱 tier-3 皮肤→传说卡调整见 §10.8（均 2026-08-08） · 权威：**本文（留存系统机制单一来源）**；数值（奖励/上限/曲线）镜像并最终落 [`ECONOMY_NUMBERS.md §12`](ECONOMY_NUMBERS.md)（DRAFT 初值）· 更新：2026-08-08
+> 状态：**P0 已实现（2026-06-22）**，签到奖励表 + Tab 改版见 §10.4（2026-07-05）；签到去体力 + 里程碑加金币（R1b）见 §10.5（2026-08-01）；顶部标题跟随子 Tab 修复见 §10.7、周常宝箱 tier-3 皮肤→传说卡调整见 §10.8（均 2026-08-08）；Daily 页红点/可领项不一致的两轮修复见 §10.9（陈旧数据，2026-08-09）与 §10.11（打开的初始 Tab 选错，2026-08-09） · 权威：**本文（留存系统机制单一来源）**；数值（奖励/上限/曲线）镜像并最终落 [`ECONOMY_NUMBERS.md §12`](ECONOMY_NUMBERS.md)（DRAFT 初值）· 更新：2026-08-09
 >
 > **实现记录（B5 2026-06-22）**：
 > - `server/shared/src/retention.ts` — 纯函数 + 类型（`RetentionSave`, `CHECKIN_REWARDS[30]`, `DAILY_TASKS[3]`, `accrueRetentionTask`, `claimCheckinDay`, `claimDailyReward`）
@@ -385,3 +385,13 @@ POST /retention/weekly/claim            (JWT) { tier:1|2|3 } → { save, granted
 **回归测试**：新增 `client/test/ui/dailySceneCheckinRowSpread.ui.ts`（3 例）——① 竖屏单次渲染断言 5 行行距彼此相差 <1px（不会一边挤一边空）；② 竖屏同宽不同高两次渲染（`PortraitLayout.designWidth` 是固定常量，两次渲染 `cellW`/`cellH` 完全相同）断言行距差 >50px——旧的固定 `h*0.006` 公式在这个高度差下只会长约 13px，验证行距确实随可用高度铺开而非停留在旧公式的量级；③ 横屏两组不同绝对尺寸但同宽高比的配置（`LandscapeLayout.designHeight` 是固定常量）断言两次渲染算出的行距数组逐项相等，证明横屏这条路径完全没被这次改动碰到。临时把修复 revert 回旧公式复测，确认用例②会红（实测差值 17.5px，卡在 50 的门槛下），加回修复后转绿。
 
 `tsc --noEmit`、`npm run typecheck`、`npm run lint`、`npm run build:web` 均绿；`test/ui/dailySceneWeeklyTab.ui.ts`（11 例）、`test/ui/scenes.ui.ts`（112 例）、`test/retention.test.ts`（24 例）、`test/shopNav-peerBadges.test.ts`（8 例）全量复跑无回归。
+
+### 10.11 修复：§10.9 上线后同类报告复现——Daily 页固定打开「签到」Tab，红点实际在「周常」（2026-08-09）
+
+**背景**：账号 `tao`（`publicId 233784986`）线上反馈——§10.9 修复已合并进 `main` 并部署到 `a.gamestao.com`/`nivara.gamestao.com`（`version.json` 核对为部署后的 commit），大厅"每日"红点依旧亮着，点进去"啥都没有可领"。登 VPS 直接读 `saves` 集合该账号的 `save.retention` 现场数据核对：`checkin.lastClaimedDayKey` 就是今天（签到已领）、`daily.taskPoints=2 < 3`（任务未达标），但 `weekly.points=9`、`claimedTiers=[]`——**周常宝箱第一档（9 分）恰好达标且未领**，用 `weeklyClaimableTiers()` 手工带入这份原始数据验证确实返回 `[9]`。也就是说服务端 `GET /lobby/badges` 的 `retentionClaimable.weekly=true` 是对的，红点没说谎，§10.9 的 `onSaveChanged` 接线也确实生效（数据不是陈旧的）——真正的领取项一直都在，只是在「周常宝箱」这个子 Tab 里。
+
+**根因**：`DailyScene` 的 `activeTab` 初值硬编码成 `'checkin'`（`private activeTab: DailyTab = 'checkin';`），无论三个子 Tab 里到底哪个真的有可领项，进页面永远先停在「每日签到」。而大厅红点的点亮条件是 `checkin || daily || weekly` 三者任一（`lobby.ts#refreshLobbyBadges`）——月历前几天签到掉、每日任务刚好卡在门槛下是很常见的日常状态，红点唯一亮起的原因是「周常」这种情况其实比"三个 Tab 都有货"更常见。玩家点开红点、停在看起来空空如也的签到月历（1-7 天已打勾、后面全部锁定灰色），完全没有理由去点旁边侧栏一个不起眼的小红点去翻「周常」Tab，于是复现出跟 §10.9 表面症状一模一样的报告——但两次是完全不同的根因（§10.9 是数据陈旧，这次是数据新鲜但落错了 Tab）。
+
+**修复**：新增 `DailyScene.pickInitialTab(save)` 静态方法，构造函数里 `this.activeTab = DailyScene.pickInitialTab(cb.getSave?.());`（放在 `render()`/`load()` 之前，用挂载时刻已有的本地 `save` 镜像现算，不等网络）。判定顺序刻意跟 `lobby.ts` 点亮红点的 OR 顺序完全一致（`checkin` → `tasks` → `weekly`）：`nextCheckinDay()` 非空就留在签到；否则 `dailyRewardClaimable()` 为真就落到任务；否则 `weeklyClaimableTiers().length>0` 就落到周常；三者都没有则退回签到（跟修复前的默认行为一致，"什么都不能领"时停在签到本来就没问题）。三个 Tab 自身的渲染逻辑（`renderCheckin`/`renderDailyTasks`/`renderWeekly`）完全不动。
+
+**回归测试**：新增 `client/test/ui/dailySceneInitialTab.ui.ts`（6 例）——① 全新存档、三个 Tab 都不可领，确认仍停在签到（默认行为不回归）；② 签到可领 + 周常也可领，确认优先级把场景留在签到（不是"随便挑一个能领的"）；③ 签到已领、任务达标，确认落到「每日任务」；④ 精确复现账号 `tao` 的现场数据（签到已领 + 任务 2/3 + 周常 9 分未领），确认落到「周常宝箱」——这是本次报告的直接回归用例；⑤ 三者全部已领（含周常 `claimedTiers:[9]`），确认退回签到而不是卡在一个同样空的周常 Tab 上；⑥ 不传 `getSave` 回调（未登录态）不抛异常、退回签到。改回硬编码 `'checkin'` 复测确认 ③④ 会红，加回修复后转绿。`tsc --noEmit` 绿；`test/ui/dailySceneSaveChanged.ui.ts`（4 例）、`test/ui/dailySceneCheckinRowSpread.ui.ts`（3 例）、`test/ui/dailySceneWeeklyTab.ui.ts`（11 例）全量复跑无回归（后两者的用例会在渲染前手动把 `activeTab` 改回目标 Tab，不受初始 Tab 选择影响）。
