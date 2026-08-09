@@ -1647,6 +1647,11 @@ export interface components {
                     taskPoints: number;
                     rewardClaimed: boolean;
                 };
+                weekly?: {
+                    weekKey: string;
+                    points: number;
+                    claimedTiers: number[];
+                };
             };
         };
         Achievement: {

@@ -9,6 +9,7 @@ describe('headerMetrics (LobbyScene header geometry)', () => {
   it('landscape uses one shared band: chipBandH === tbH', () => {
     const m = headerMetrics(LANDSCAPE.w, LANDSCAPE.h, false);
     expect(m.chipBandH).toBe(m.tbH);
+    expect(m.chipBandY).toBe(0);
     // Single-row header height is exactly h*0.16 (no extra brand row).
     expect(m.tbH).toBe(Math.round(LANDSCAPE.h * 0.16));
   });
@@ -22,18 +23,19 @@ describe('headerMetrics (LobbyScene header geometry)', () => {
     expect(m.ulH).toBe(Math.round(LANDSCAPE.h * 0.02));
   });
 
-  it('portrait splits into a chip band + a brand row below it', () => {
+  it('portrait splits into a brand row on top + a chip band below it', () => {
     const m = headerMetrics(PORTRAIT.w, PORTRAIT.h, true);
-    const chipBandH = Math.round(PORTRAIT.h * 0.16);
     const brandRowH = Math.round(PORTRAIT.h * 0.09);
+    const chipBandH = Math.round(PORTRAIT.h * 0.12);
     expect(m.chipBandH).toBe(chipBandH);
+    expect(m.chipBandY).toBe(brandRowH); // chip band sits below the brand row now
     expect(m.tbH).toBe(chipBandH + brandRowH); // taller than the single row
     expect(m.tbH).toBeGreaterThan(m.chipBandH);
-    // Brand lockup sits inside the lower row, clear of the chip band.
-    expect(m.brandMidY).toBeGreaterThan(m.chipBandH);
-    expect(m.subtitleY).toBeGreaterThan(m.chipBandH);
+    // Brand lockup sits inside the top row, clear of the chip band below it.
+    expect(m.brandMidY).toBeLessThan(m.chipBandY);
+    expect(m.subtitleY).toBeLessThanOrEqual(m.chipBandY);
     expect(m.logoSize).toBe(Math.round(brandRowH * 0.9));
-    expect(m.nameMaxFactor).toBe(0.5); // chips own half the band each
+    expect(m.nameMaxFactor).toBe(0.5); // profile chip owns half the band, chips the other half
   });
 
   it('portrait logo is smaller and header taller than landscape (the two-row trade-off)', () => {

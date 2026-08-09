@@ -12,7 +12,7 @@ import type { SaveData, EquipSlot, EquipRarity, EquipmentInstance } from '../../
 import { getEquipDef, affixKind } from '../../game/meta/equipmentDefs';
 import {
   type Constructor, type EquipmentSceneBaseCtor, type EquipTab, type SectionKey,
-  LOADOUT_H, FILTER_H, SECTION_H, CELL_GAP, CELL_GAP_X, EQUIP_CELL_H, EQUIP_CELL_W_TARGET, LIST_TOP_PAD,
+  LOADOUT_H, FILTER_H, SECTION_H, CELL_GAP, CELL_GAP_X, EQUIP_CELL_H, equipGridColumns, LIST_TOP_PAD,
   SLOTS, RARITY_COLOR,
 } from './base';
 
@@ -226,11 +226,9 @@ export function InventoryMixin<TBase extends EquipmentSceneBaseCtor>(Base: TBase
       // Item cells start right of the sidebar rail; right pad stays one CELL_GAP.
       const gridLeft = left + CELL_GAP;
       const avail = w - gridLeft - CELL_GAP;
-      const cols = Math.max(1, Math.floor((avail + CELL_GAP_X) / (EQUIP_CELL_W_TARGET + CELL_GAP_X)));
-      // Cap at the target width instead of stretching to fill the row — dividing the full
-      // available width evenly across `cols` left cards much wider than their content needed,
-      // reading as mostly blank paper; any leftover width is just unused margin on the right.
-      const cellW = Math.min(EQUIP_CELL_W_TARGET, (avail - CELL_GAP_X * (cols - 1)) / cols);
+      // See equipGridColumns (EquipmentScene/base.ts) for the column-width-floor + centering math
+      // and equipmentGridColumns.test.ts for its unit coverage — 2026-08-09 UX fix.
+      const { cols, cellW, offset: gridOffset } = equipGridColumns(avail, landscape);
 
       // Layout pass: headers span a full row and reset the column cursor; item
       // cells pack left-to-right into `cols` columns. `off` is the vertical
@@ -252,7 +250,7 @@ export function InventoryMixin<TBase extends EquipmentSceneBaseCtor>(Base: TBase
           continue;
         }
         if (collapsed) continue;
-        const x = gridLeft + col * (cellW + CELL_GAP_X);
+        const x = gridLeft + gridOffset + col * (cellW + CELL_GAP_X);
         placed.push({ kind: 'item', inst: entry.inst, isEquipped: entry.isEquipped, count: entry.count, x, off });
         col++;
         if (col >= cols) { col = 0; off += EQUIP_CELL_H + CELL_GAP; }

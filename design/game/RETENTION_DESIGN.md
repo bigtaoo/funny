@@ -1,6 +1,6 @@
 # 留存系统设计 — Daily Retention（签到 / 每日任务 / 周常）
 
-> 状态：**P0 已实现（2026-06-22）**，签到奖励表 + Tab 改版见 §10.4（2026-07-05）；签到去体力 + 里程碑加金币（R1b）见 §10.5（2026-08-01）；顶部标题跟随子 Tab 修复见 §10.7、周常宝箱 tier-3 皮肤→传说卡调整见 §10.8（均 2026-08-08） · 权威：**本文（留存系统机制单一来源）**；数值（奖励/上限/曲线）镜像并最终落 [`ECONOMY_NUMBERS.md §12`](ECONOMY_NUMBERS.md)（DRAFT 初值）· 更新：2026-08-08
+> 状态：**P0 已实现（2026-06-22）**，签到奖励表 + Tab 改版见 §10.4（2026-07-05）；签到去体力 + 里程碑加金币（R1b）见 §10.5（2026-08-01）；顶部标题跟随子 Tab 修复见 §10.7、周常宝箱 tier-3 皮肤→传说卡调整见 §10.8（均 2026-08-08）；Daily 页红点/可领项不一致的两轮修复见 §10.9（陈旧数据，2026-08-09）与 §10.11（打开的初始 Tab 选错，2026-08-09）；竖屏月历行间距/列数两轮调整见 §10.10、§10.13，竖屏周常宝箱进度文字压按钮修复见 §10.14（均 2026-08-09） · 权威：**本文（留存系统机制单一来源）**；数值（奖励/上限/曲线）镜像并最终落 [`ECONOMY_NUMBERS.md §12`](ECONOMY_NUMBERS.md)（DRAFT 初值）· 更新：2026-08-09
 >
 > **实现记录（B5 2026-06-22）**：
 > - `server/shared/src/retention.ts` — 纯函数 + 类型（`RetentionSave`, `CHECKIN_REWARDS[30]`, `DAILY_TASKS[3]`, `accrueRetentionTask`, `claimCheckinDay`, `claimDailyReward`）
@@ -385,3 +385,53 @@ POST /retention/weekly/claim            (JWT) { tier:1|2|3 } → { save, granted
 **回归测试**：新增 `client/test/ui/dailySceneCheckinRowSpread.ui.ts`（3 例）——① 竖屏单次渲染断言 5 行行距彼此相差 <1px（不会一边挤一边空）；② 竖屏同宽不同高两次渲染（`PortraitLayout.designWidth` 是固定常量，两次渲染 `cellW`/`cellH` 完全相同）断言行距差 >50px——旧的固定 `h*0.006` 公式在这个高度差下只会长约 13px，验证行距确实随可用高度铺开而非停留在旧公式的量级；③ 横屏两组不同绝对尺寸但同宽高比的配置（`LandscapeLayout.designHeight` 是固定常量）断言两次渲染算出的行距数组逐项相等，证明横屏这条路径完全没被这次改动碰到。临时把修复 revert 回旧公式复测，确认用例②会红（实测差值 17.5px，卡在 50 的门槛下），加回修复后转绿。
 
 `tsc --noEmit`、`npm run typecheck`、`npm run lint`、`npm run build:web` 均绿；`test/ui/dailySceneWeeklyTab.ui.ts`（11 例）、`test/ui/scenes.ui.ts`（112 例）、`test/retention.test.ts`（24 例）、`test/shopNav-peerBadges.test.ts`（8 例）全量复跑无回归。
+
+### 10.11 修复：§10.9 上线后同类报告复现——Daily 页固定打开「签到」Tab，红点实际在「周常」（2026-08-09）
+
+**背景**：账号 `tao`（`publicId 233784986`）线上反馈——§10.9 修复已合并进 `main` 并部署到 `a.gamestao.com`/`nivara.gamestao.com`（`version.json` 核对为部署后的 commit），大厅"每日"红点依旧亮着，点进去"啥都没有可领"。登 VPS 直接读 `saves` 集合该账号的 `save.retention` 现场数据核对：`checkin.lastClaimedDayKey` 就是今天（签到已领）、`daily.taskPoints=2 < 3`（任务未达标），但 `weekly.points=9`、`claimedTiers=[]`——**周常宝箱第一档（9 分）恰好达标且未领**，用 `weeklyClaimableTiers()` 手工带入这份原始数据验证确实返回 `[9]`。也就是说服务端 `GET /lobby/badges` 的 `retentionClaimable.weekly=true` 是对的，红点没说谎，§10.9 的 `onSaveChanged` 接线也确实生效（数据不是陈旧的）——真正的领取项一直都在，只是在「周常宝箱」这个子 Tab 里。
+
+**根因**：`DailyScene` 的 `activeTab` 初值硬编码成 `'checkin'`（`private activeTab: DailyTab = 'checkin';`），无论三个子 Tab 里到底哪个真的有可领项，进页面永远先停在「每日签到」。而大厅红点的点亮条件是 `checkin || daily || weekly` 三者任一（`lobby.ts#refreshLobbyBadges`）——月历前几天签到掉、每日任务刚好卡在门槛下是很常见的日常状态，红点唯一亮起的原因是「周常」这种情况其实比"三个 Tab 都有货"更常见。玩家点开红点、停在看起来空空如也的签到月历（1-7 天已打勾、后面全部锁定灰色），完全没有理由去点旁边侧栏一个不起眼的小红点去翻「周常」Tab，于是复现出跟 §10.9 表面症状一模一样的报告——但两次是完全不同的根因（§10.9 是数据陈旧，这次是数据新鲜但落错了 Tab）。
+
+**修复**：新增 `DailyScene.pickInitialTab(save)` 静态方法，构造函数里 `this.activeTab = DailyScene.pickInitialTab(cb.getSave?.());`（放在 `render()`/`load()` 之前，用挂载时刻已有的本地 `save` 镜像现算，不等网络）。判定顺序刻意跟 `lobby.ts` 点亮红点的 OR 顺序完全一致（`checkin` → `tasks` → `weekly`）：`nextCheckinDay()` 非空就留在签到；否则 `dailyRewardClaimable()` 为真就落到任务；否则 `weeklyClaimableTiers().length>0` 就落到周常；三者都没有则退回签到（跟修复前的默认行为一致，"什么都不能领"时停在签到本来就没问题）。三个 Tab 自身的渲染逻辑（`renderCheckin`/`renderDailyTasks`/`renderWeekly`）完全不动。
+
+**回归测试**：新增 `client/test/ui/dailySceneInitialTab.ui.ts`（6 例）——① 全新存档、三个 Tab 都不可领，确认仍停在签到（默认行为不回归）；② 签到可领 + 周常也可领，确认优先级把场景留在签到（不是"随便挑一个能领的"）；③ 签到已领、任务达标，确认落到「每日任务」；④ 精确复现账号 `tao` 的现场数据（签到已领 + 任务 2/3 + 周常 9 分未领），确认落到「周常宝箱」——这是本次报告的直接回归用例；⑤ 三者全部已领（含周常 `claimedTiers:[9]`），确认退回签到而不是卡在一个同样空的周常 Tab 上；⑥ 不传 `getSave` 回调（未登录态）不抛异常、退回签到。改回硬编码 `'checkin'` 复测确认 ③④ 会红，加回修复后转绿。`tsc --noEmit` 绿；`test/ui/dailySceneSaveChanged.ui.ts`（4 例）、`test/ui/dailySceneCheckinRowSpread.ui.ts`（3 例）、`test/ui/dailySceneWeeklyTab.ui.ts`（11 例）全量复跑无回归（后两者的用例会在渲染前手动把 `activeTab` 改回目标 Tab，不受初始 Tab 选择影响）。
+
+> **更新（同日，见 §10.12）**：本节"根因"部分的判断——"红点没说谎，真正的领取项一直都在，只是落在了错误的 Tab 上"——只说对了一半。用户随后反馈"翻到周常 Tab 里也没有可领取的"，才挖出更深一层的根因：`save.retention.weekly` 这个客户端实际读取的字段，在**所有** `SaveData` 形状的响应里都被序列化层静默剥掉了（本节的 Tab 选择修复本身没错，也保留，但单独这一条并不足以让用户看到可领取的周常宝箱）。
+
+### 10.12 修复：周常宝箱在生产环境对所有玩家永久不可领——`SaveData.retention` 的 OpenAPI schema 漏声明 `weekly` 字段（2026-08-09）
+
+**背景**：§10.11 的 Tab 选择修复本该已经解决账号 `tao` 的报告，但用户回复"周常的任务里也没有可以领取"——也就是说就算打开正确的 Tab，那格子看起来依然是"未达标"的灰色态，领取按钮不可点。
+
+**根因**：这是本文档 §10.1/§10.2 早就踩过、也写下了"教训"的同一个 bug 类——`server/contracts/openapi/schemas.yml` 的 `SaveData.retention` 早年只声明了 `checkin`/`daily` 两个子块（§10.1/§10.2 修的就是这两个），2026-08-01 上线周常宝箱时新增了 `save.retention.weekly` 这个字段（服务端读写、Mongo 里数据完全正常），却漏了同步进这份 schema。`checkin`/`daily` 那次 bug 是"整个 `retention` 对象被剥空"，容易一眼看出；这次 `weekly` 是在一个本身已经声明、部分字段齐全的对象里漏了一个子属性，fast-json-stringify 序列化时只保留 schema 里明确列出的属性——`checkin`/`daily` 照常返回，唯独 `weekly` 被静默剥掉，不报错也不留痕迹，比"整个对象消失"更难被人工排查发现。
+
+用登 VPS 铸造的诊断用 JWT（复用容器里已有的 `NW_JWT_SECRET` + `jsonwebtoken`，纯只读调用自家已实现的接口，不涉及任何用户凭据）直接对比了账号 `tao` 的两个接口现场返回：`GET /api/retention`（自定义响应形状，非 `SaveData`）正确带着 `weekly:{...}` 和 `claimable.weeklyTiers:[9]`；`GET /api/save`（`SaveData` schema 序列化）的 `retention` 字段里则只有 `checkin`/`daily`，`weekly` 完全不存在。`DailyScene` 的可领取判定（`weeklyClaimableTiers(save, now)`，§10.11 引用的那条）读的正是后者（`saveManager.get()` 本地镜像，来自登录/`GET /save`/每个 claim 端点的响应），从未读过 `getRetention()` 拿到的那份完整数据——`this.retention` 只用来拿 `defs`/`ads`。也就是说自 2026-08-01 周常宝箱上线以来，**任何玩家的周常宝箱在客户端都从未真正可领取过**，大厅红点却因为 `getLobbyBadges`（直接读库现算，不经过这份 schema）一直正确点亮，才让这个 bug 藏了一周多没被发现——两次用户报告（§10.11、本节）表面症状一样，是完全不同的两层根因先后暴露出来的。
+
+**修复**：`server/contracts/openapi/schemas.yml` 的 `SaveData.retention.properties` 补上 `weekly`（`weekKey`/`points`/`claimedTiers`，与 `RetentionSave.WeeklyData` 逐字段对应），跑 `npm run gen:api:contracts && npm run gen:api:server`（metaserver）+ `npm run rest:gen`（client）重新生成 `server/contracts/openapi.yml`、`server/metaserver/src/generated/routes.gen.ts`、`client/src/net/openapi*.ts`。客户端 `client/src/game/meta/SaveData.ts` 的手写 TS 类型本身早就声明了 `weekly?`（编译期看起来完全正确），这也是这个 bug 格外隐蔽的原因——类型对得上，线上数据却在序列化这一步被悄悄剥掉，`tsc` 抓不出这种"字段在类型里存在、在 wire format 里消失"的落差。
+
+**回归测试**：`server/metaserver/test/retention.e2e.test.ts` 新增一例——`seedWeeklyPoints(9)` 后分别调 `GET /save` 和 `POST /retention/weekly/claim`，断言两个响应的 `data.save.retention.weekly` 都完整存在（不是 `GET /retention`，那条早就测过、也从没坏过）。临时把 schema 里刚加的 `weekly` 属性去掉复测，确认这个新用例会失败（`expected undefined to match object`），证实它确实能抓住这一类"字段声明在 schema 里但又被漏掉"的回归；加回修复后转绿。全量复跑 `test/retention.e2e.test.ts`（18 例）、`test/openapi-request-schema.test.ts`（113 例）、`test/openapi-response-schema.test.ts`、`test/bundle-openapi.test.ts`（4 例）、metaserver 全量 `vitest run` 均绿；client 侧 `tsc --noEmit` 绿，`test/ui/dailyScene*.ui.ts`（24 例）复跑无回归。
+
+**补一道通用契约守卫（同日）**：上面这条 e2e 用例只挡住"`weekly` 这一次"；`test/openapi-response-schema.test.ts` 原有的"响应对象不会被剥空"检查（§10.1 那条）也只抓"整个对象没有任何 `properties`"的极端情况，抓不到"对象已经声明了几个字段、但漏了其中一个"这种更隐蔽的drift——`weekly` 这次正是这种。在同一文件里新增一个不依赖 Mongo 的静态契约测试：拿 `@nw/shared` 里真实的 `CheckinData`/`DailyData`/`WeeklyData` 类型，用 `Required<...>` 撑出一个字段齐全的样例对象（这几个接口任何一个将来新增字段，`tsc -b` 都会因为这份样例没跟着补字段而编译失败，逼着改动的人正视这个测试），再逐层把样例对象的每个 key 去 `SaveData.retention` 的 schema 里核对是否声明；对 `additionalProperties` 形式的 map 字段（如 `completedTasks`）跳过逐 key 核对（key 本来就是任意的）。临时把 `weekly` 从样例对齐的 schema 里去掉复测，确认精确报出 `retention.weekly` 缺失；恢复后转绿。这是本文档 §10.1/§10.2/§10.12 反复踩同一类 bug 后，第一次把"教训"落成一道能自动拦截未来同类回归的测试，而不是只留一句注释。
+
+### 10.13 调整：竖屏月历改 5 列×6 行（原 6 列×5 行），格子放大、行距收紧（2026-08-09）
+
+**背景**：§10.10 把竖屏的行间距从固定 `h*0.006` 改成"铺满剩余高度"，但用户截图跟进反馈——铺满之后行距本身还是显得太松，格子相对页面显得小；建议改成一行 5 格（而不是 6 格），格子整体放大。
+
+**根因/动机**：不是 bug，是 §10.10 修完之后暴露出的下一层观感问题。`renderCheckin` 的 `cellH = Math.min(areaH*0.78/ROWS, cellW*0.8)` 在竖屏一直被 `cellW*0.8` 这个宽高比上限钳制（见 §10.10 根因）——列数越多、`cellW` 越窄、这个上限越低，格子和行距都被压小；§10.10 只解决了"剩余空间去哪了"，没解决"格子本身偏小"这一层。
+
+**修复**：`client/src/scenes/DailyScene.ts#renderCheckin` 的 `COLS` 从固定 `6` 改成 `this.landscape ? 6 : 5`（`ROWS = Math.ceil(30 / COLS)`，横屏仍是 5 行，竖屏变 6 行），`cellH` 公式里原来硬编码的 `/5` 也改成 `/ROWS`（避免行数变了但除数没跟着变）。列数减少让 `cellW`（从而 `cellH` 的上限）变大，§10.10 已有的"剩余空间铺满行距"逻辑随 `ROWS`/`cellH` 的新值自动生效，不用改。横屏分支的 `COLS`/`ROWS` 原样保留 6/5，逐字节未改动。用同一份 headless PIXI 渲染在 800×2160 竖屏下实测：列宽从旧 6 列的 ≈149px 涨到新 5 列的 ≈179px（+20%），行距从旧 ≈495px 降到新 ≈391px（−21%）——格子变大、行间距同时收紧，两个诉求同时满足，不是"此消彼长"。
+
+**回归测试**：`client/test/ui/dailySceneCheckinRowSpread.ui.ts` 的竖屏采样点从 6 列网格的 col-0 序列（day 1/7/13/19/25）改成 5 列网格的 col-0 序列（day 1/6/11/16/21/26），横屏采样点保持 day 1/7/13/19/25（横屏列数未变）；三个用例的断言逻辑（行距均匀、行距随可用高度线性增长、横屏跨绝对尺寸行距不变）不变，只是采样的 day 号跟着新列数调整。
+
+补新增一组结构性用例，直接锁住"列数"这个事实（前面三例只测行距均匀/增长趋势，COLS 意外改回 6 也不会让它们变红——行距公式本身跟 COLS 无关，只跟 ROWS/cellH 有关）：① 竖屏断言 day 1-5（第 0 行 5 列）横坐标严格递增且等距，day 6 横坐标与 day 1 相同（回到第 0 列）且纵坐标更大（换行）——如果 COLS 还是 6，day 6 会落在第 0 行第 6 列（横坐标继续右移、纵坐标不变），断言会红；② 横屏同款断言但采样 day 1-6/day 7，确认横屏仍是 6 列未被连带改动。临时把 `COLS` 改回硬编码 `6` 复测，确认新增两例中的竖屏例（以及前面两条竖屏行距例，因为 6 列时 `cellH` 又被钳到旧的小值）会红，横屏例保持绿（验证测试没有假阳性）；改回 `this.landscape ? 6 : 5` 后全部（5 例）转绿。`tsc --noEmit` 绿；`test/ui/dailyScene*.ui.ts`（26 例）全量复跑无回归。
+
+### 10.14 修复：竖屏「周常宝箱」进度文字压着「领取」按钮（2026-08-09）
+
+**背景**：用户截图反馈——竖屏「周常宝箱」子 Tab，每档卡片的 `0 / 9 activity points` 这行进度文字一路铺到卡片右侧，直接压在灰色「领取」按钮上面，像是按钮位置摆错了；用户特别强调这次只改竖屏，不能碰横屏（横屏这个 Tab 一直是对的）。
+
+**根因**：`renderWeekly` 的进度文字用的是不带换行的 `txt(...)`（对比同文件 `renderDailyTasks` 的任务标签早就用 `makeText(..., {wordWrap:true, wordWrapWidth: cardW*0.6})` 把标签限制在卡片左 60% 内，专门空出右侧给状态文字——这次的 `renderWeekly` 漏做了同一件事）。卡片高度 `cardH = areaH*0.22` 两个 Tab 共用同一套公式，但字号是按 `cardH` 算的（`snapFont(cardH*0.28)`），卡片宽度 `cardW` 却是按 `areaW` 算的——`PortraitLayout` 的设计高度会随屏幕宽高比拉伸到远超横屏（`design/…` 之外的既有事实，`PortraitLayout.designHeight` 取 `max(1920, 1080*screenH/screenW)`），横屏的设计高度不会这样拉伸。结果同一套"字号按卡片高度算"的公式，在竖屏算出的字号明显偏大，未加宽度限制的文字一行就能铺出比卡片本身还宽，直接盖住卡片右侧固定摆放的「领取」按钮（按钮左边缘固定在 `cardW*0.65` 处）；横屏卡片矮很多，同一字号自然小得多，从未撞到按钮。
+
+**修复**：`client/src/scenes/DailyScene.ts#renderWeekly` 给进度文字的 `txt(...)` 调用补上第五个参数 `wordWrapWidth = cardW*0.55`（`txt()` 本身早就支持这个可选参数，只是这处调用没传），让文字换行封顶在按钮左边缘（`cardW*0.65`）之前，留出安全间距。没有改字号、没有改按钮/图标的任何坐标——横屏那行字本来就在 `cardW*0.55` 以内、从不换行，这处改动对横屏是纯粹的 no-op。
+
+**验证**：用 Playwright 直连本地 `start:e2e` 入口的 `window.__nwE2E.views.showDaily(...)`（绕开登录/后端，直接灌一份 `points=0`、三档均未达标的假 `save`/`retention`）截图复现——竖屏修复前文字尾部与「领取」按钮明显重叠，修复后文字在按钮前换行（第二、三档换成 3 行，与下方图标之间仍留有空隙，不再侵入），横屏截图逐像素对照修复前后布局未变。`tsc --noEmit`、`npm run test:ui`（114 例）、`npm test`（157 个文件 / 1249 例）全量复跑无回归。
+
+**回归测试**：`client/test/ui/dailySceneWeeklyTab.ui.ts` 新增 3 例。headless `test:ui` 的 `measureText` mock 按字符数固定给宽度（跟字号无关，见 `claudedocs/worktrees.md`/`client-run-and-visual-verify` 记忆），没法直接在这一层复现"字号太大导致溢出"这个现象本身，于是转而断言修复真正建立的**几何不变量**：label 的换行列宽（`x + wordWrapWidth`）严格小于「领取」按钮左边缘 `x`，跟具体哪个字体在哪个字号下实际渲染多宽无关。①竖屏：断言 `wordWrap===true`、`wordWrapWidth` 是正数、换行列右边界严格小于按钮 `x`；②横屏：同一断言（验证同一个换行封顶公式在横屏下不会反而把按钮挤到列内——按比例算的公式在两个方向都成立）；③三档一次性：`points=21` 让三档全部可领，逐档核对各自的换行列都在各自的按钮之前结束（防止只测了第一档、后两档因为"15"/"21"多一位数字导致公式算错的情况漏测）。临时把 `renderWeekly` 的换行参数去掉复测（还原成修复前的纯 `txt(...)` 调用），确认三例都会红（`wordWrap` 变 `false`、换行列退回 PIXI 默认的 100 也可能巧合小于某些按钮 `x`——因此每例都显式先断言 `wordWrap===true`，不能只看列宽比较，否则会有假阴性）；加回修复后三例转绿；`test/ui/scenes.ui.ts`（119 例）、`dailySceneCheckinRowSpread.ui.ts`（5 例）、`dailySceneSaveChanged.ui.ts`（4 例）、`dailySceneInitialTab.ui.ts`（6 例）、本文件（14 例）合计 148 例全量复跑无回归，`tsc --noEmit` 绿。

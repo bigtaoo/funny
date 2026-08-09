@@ -14,6 +14,8 @@ export interface HeaderMetrics {
   tbH: number;
   /** Band whose vertical midline the corner chips (profile / account) center on. */
   chipBandH: number;
+  /** Y where the chip band starts (0 when it shares the single landscape row). */
+  chipBandY: number;
   /** Y of the logo+title lockup midline. */
   brandMidY: number;
   /** Logo edge length (square). */
@@ -32,19 +34,24 @@ export interface HeaderMetrics {
  * - Landscape (wide): the classic SINGLE row — corner chips and the centered
  *   logo+title lockup share one band, so `chipBandH === tbH`. The large logo
  *   (`tbH*0.9`) and midline (`tbH*0.45`) match the pre-two-row layout exactly.
- * - Portrait (narrow): the lockup drops to its OWN row below the chip band, since
- *   it is wider than the gap between the two corner chips.
+ * - Portrait (narrow): the brand lockup gets its OWN row on top (logo is wider
+ *   than the gap a shared row would leave); the identity chip band (avatar +
+ *   coins + rank, all side-by-side now) sits in its own row right below it.
+ *   The chip band no longer needs to fit two stacked sub-rows (coins/rank used
+ *   to stack vertically in the corner), so it's shallower than before — that
+ *   freed height goes to the hero/pillar buttons in build.ts.
  */
 export function headerMetrics(w: number, h: number, portrait: boolean): HeaderMetrics {
   if (portrait) {
     const brandRowH = Math.round(h * 0.09);
-    const chipBandH = Math.round(h * 0.16);
+    const chipBandH = Math.round(h * 0.12);
     return {
       chipBandH,
-      tbH: chipBandH + brandRowH,
-      brandMidY: chipBandH + Math.round(brandRowH * 0.34),
+      chipBandY: brandRowH,
+      tbH: brandRowH + chipBandH,
+      brandMidY: Math.round(brandRowH * 0.34),
       logoSize: Math.round(brandRowH * 0.9),
-      subtitleY: chipBandH + Math.round(brandRowH * 0.82),
+      subtitleY: Math.round(brandRowH * 0.82),
       nameMaxFactor: 0.5,
       ulH: Math.round(h * 0.015),
     };
@@ -52,6 +59,7 @@ export function headerMetrics(w: number, h: number, portrait: boolean): HeaderMe
   const tbH = Math.round(h * 0.16);
   return {
     chipBandH: tbH,
+    chipBandY: 0,
     tbH,
     brandMidY: Math.round(tbH * 0.45),
     logoSize: Math.round(tbH * 0.9),

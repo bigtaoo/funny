@@ -304,6 +304,29 @@ describe.skipIf(!mongo)('meta retention e2e', () => {
       expect(r.data.weekly.claimedTiers).toEqual([9]);
       expect(r.data.claimable.weeklyTiers).toEqual([15]);
     });
+
+    // Regression for RETENTION_DESIGN §10.12 (2026-08-09): `GET /retention`'s own response shape
+    // (RetentionView, not SaveData) was never affected — the test above already proved that. The
+    // actual bug was that `SaveData`'s `retention` schema (contracts/openapi/schemas.yml) declared
+    // `checkin`/`daily` but never `weekly`, so fastify's response serialization silently stripped
+    // `weekly` off of *every* SaveData-shaped response (GET /save, login, every claim endpoint —
+    // this one included). The client's own claim gate (DailyScene → weeklyClaimableTiers(save, now))
+    // reads exclusively from that stripped `save.retention.weekly`, not from GET /retention's fine
+    // copy, so the weekly chest was unclaimable for every player who reached a tier, in production,
+    // since the feature shipped — the lobby red dot (a separate, unschema'd response) still lit up
+    // correctly, which is what made this look like "red dot lit, nothing there" instead of an
+    // obvious missing-field bug. Assert on the `save` block of a SaveData-shaped response
+    // specifically (not /retention) so a future re-stripping regresses this test, not just silence.
+    it('save.retention.weekly (the SaveData-shaped field the client actually reads) is not stripped by response serialization', async () => {
+      await seedWeeklyPoints(9);
+      const viaGetSave = body(await app.inject({ method: 'GET', url: '/save', headers: auth() }));
+      expect(viaGetSave.data.save.retention.weekly).toMatchObject({ points: 9, claimedTiers: [] });
+
+      const viaClaim = body(await app.inject({
+        method: 'POST', url: '/retention/weekly/claim', headers: auth(), payload: { threshold: 9 },
+      }));
+      expect(viaClaim.data.save.retention.weekly).toMatchObject({ points: 9, claimedTiers: [9] });
+    });
   });
 
   // ── delivery resilience (2026-08-05 fix) ────────────────────────────────────────────────────

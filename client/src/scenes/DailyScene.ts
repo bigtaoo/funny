@@ -115,10 +115,33 @@ export class DailyScene implements Scene {
     this.h = layout.designHeight;
     this.landscape = layout.orientation === 'landscape';
     this.cb = cb;
+    this.activeTab = DailyScene.pickInitialTab(cb.getSave?.());
     this.unsubs.push(input.onDown((x, y) => this.handleDown(x, y)));
     if (cb.onSaveChanged) this.unsubs.push(cb.onSaveChanged(() => { if (!this.destroyed) this.render(); }));
     this.render();
     void this.load();
+  }
+
+  /**
+   * Which sub-tab to land on when the scene first opens (09.08.2026 bug report follow-up).
+   * DailyScene used to always start on 'checkin' regardless of where the actual reward was — the
+   * lobby's "每日" red dot lights up on `checkin || daily-tasks || weekly` (see lobby.ts
+   * refreshLobbyBadges), but on most days the checkin slot is already claimed and the daily-tasks
+   * threshold isn't reached yet, so the *only* lit sub-tab is Weekly. A player tapping the red dot
+   * landed on an empty-looking Checkin tab and never noticed the small badge dot on the Weekly tab
+   * over in the sidebar, reporting it as "red dot lit, nothing to claim" even though a weekly chest
+   * tier was sitting there claimable the whole time.
+   * Priority mirrors the lobby's OR order exactly, so whichever tab the red dot is "about" is the
+   * one the player actually lands on; falls back to 'checkin' (the pre-fix default) when nothing is
+   * claimable, same as visiting Daily with a clean slate always has.
+   */
+  private static pickInitialTab(save: SaveData | undefined): DailyTab {
+    if (!save) return 'checkin';
+    const nowMs = Date.now();
+    if (nextCheckinDay(save, nowMs) !== null) return 'checkin';
+    if (dailyRewardClaimable(save, nowMs)) return 'tasks';
+    if (weeklyClaimableTiers(save, nowMs).length > 0) return 'weekly';
+    return 'checkin';
   }
 
   update(dt: number): void {
@@ -254,18 +277,24 @@ export class DailyScene implements Scene {
     sec.x = areaX + areaW * 0.05; sec.y = top;
     this.container.addChild(sec);
 
-    const COLS = 6;
-    const ROWS = 5;
+    // Portrait: 5 columns (6 rows) instead of landscape's 6 columns (5 rows) — user report
+    // (2026-08-09, screenshot): with 6 columns the narrow portrait width capped cellW hard, and
+    // since cellH is itself capped by cellW*0.8 (see below), cells stayed small while the leftover
+    // vertical space widened into a big gap between rows. Fewer, wider columns raise the cellW cap,
+    // which raises cellH too — bigger cells that eat more of the available height, leaving less to
+    // spread as row gaps. Landscape's width was never the constraint, so it keeps 6/5 unchanged.
+    const COLS = this.landscape ? 6 : 5;
+    const ROWS = Math.ceil(30 / COLS);
     const innerPad = areaW * 0.04;
     const cellW = (areaW - innerPad * 2) / COLS;
-    const cellH = Math.min(areaH * 0.78 / 5, cellW * 0.8);
+    const cellH = Math.min(areaH * 0.78 / ROWS, cellW * 0.8);
     const gridTop = top + sec.height + h * 0.015;
 
-    // Portrait's cells stay compact (capped by cellW*0.8 aspect, since the narrower width already
-    // shrinks cellW well below what areaH could support), which used to leave the fixed h*0.006 row
-    // gap from landscape and bunch all 5 rows into the page's top third with a blank void below
-    // (user report, 2026-08-09). Landscape's areaH is already ~consumed by ROWS*cellH so this is a
-    // no-op there — spread only kicks in when portrait's leftover vertical space is positive.
+    // Portrait's cells are still capped by the cellW*0.8 aspect ratio (now a looser cap thanks to
+    // the 5-col width above, but rarely the exact areaH/ROWS fit), which used to leave the fixed
+    // h*0.006 row gap from landscape and bunch all rows into the page's top third with a blank void
+    // below (user report, 2026-08-09). Landscape's areaH is already ~consumed by ROWS*cellH so this
+    // is a no-op there — spread only kicks in when portrait's leftover vertical space is positive.
     let rowGap = h * 0.006;
     if (!this.landscape) {
       const gridAvailH = top + areaH - gridTop;
@@ -486,7 +515,19 @@ export class DailyScene implements Scene {
       bg.x = PAD; bg.y = cy;
       this.container.addChild(bg);
 
-      const label = txt(t('daily.weekly.pointsProgress', { n: Math.min(points, threshold), threshold }), snapFont(Math.round(cardH * 0.28)), 0x333333);
+      // Wrapped and width-capped to the left ~55% of the card (mirrors renderDailyTasks' label
+      // cap above) — the card is much taller in portrait than landscape (both share the same
+      // areaH-derived cardH, but portrait's design height stretches far past landscape's), so
+      // this font (sized off cardH) renders large enough to run the unwrapped progress string
+      // straight into the "Claim" button sitting at cardW*0.65 (09.08.2026 bug report: button
+      // looked "misplaced" in portrait because the text was drawn on top of/through it — the
+      // button was fine, the label just wasn't clipped to make room for it). Landscape's cardH
+      // is small enough that the string already fits on one line well inside the cap, so this
+      // is a no-op there.
+      const label = txt(
+        t('daily.weekly.pointsProgress', { n: Math.min(points, threshold), threshold }),
+        snapFont(Math.round(cardH * 0.28)), 0x333333, false, cardW * 0.55,
+      );
       label.x = PAD + cardW * 0.05;
       label.y = cy + cardH * 0.14;
       this.container.addChild(label);
