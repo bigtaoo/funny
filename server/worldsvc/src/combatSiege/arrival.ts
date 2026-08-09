@@ -1,8 +1,9 @@
 // S8-3 siege / sweep arrival settlement: applySiege dispatches to the ADR-026 main-base wave path
-// (applyBaseSiege), the stronghold PvE path (applyStrongholdSiege), or the immediate territory landing
-// (landSiege); applySweep handles neutral/resource-tile clears. Bodies moved verbatim out of
-// combatSiege.ts (2026-07-07 split). Depends on the helpers mixin (buildDefenderConfig / recordSiege /
-// transferLoot / applySectLeaderPenalty / passiveRelocate). No behavior change.
+// (applyBaseSiege), the stronghold PvE path (applyStrongholdSiege), or the territory/base/structure/
+// crossing landing (landSiege) — 2026-08-09: a plain-territory win there is no longer instant, see
+// landSiege's own doc comment; applySweep handles neutral/resource-tile clears. Bodies moved verbatim
+// out of combatSiege.ts (2026-07-07 split). Depends on the helpers mixin (buildDefenderConfig /
+// recordSiege / transferLoot / applySectLeaderPenalty / passiveRelocate).
 import {
   proceduralTile,
   siegeSeedFromId,
@@ -27,6 +28,7 @@ import {
   SLG_TEAM_INJURY_MS,
   MARCH_MORALE_MAX,
   moraleCombatMultiplier,
+  OCCUPY_HOLD_SEC,
   type CardInstance,
   type ResourceType,
   type SiegeOutcome,
@@ -36,7 +38,7 @@ import {
 import { runSiegeBattle, synthesizeArmy, scaleArmyHp, scaleArmyByRatio, sumArmyHp, toDefenderFormation, resolveCardArmy, toEngineCardInstances, computeCardStateUpdates, shouldUseCheapSiege } from '../siegeEngine';
 import type { GarrisonEntry, EngineCardInstance, EngineEquipInv } from '@nw/engine';
 import { ENGINE_VERSION } from '@nw/engine';
-import type { TileDoc, PlayerWorldDoc, MarchDoc, SiegeDamageDoc } from '../db';
+import type { TileDoc, PlayerWorldDoc, MarchDoc, SiegeDamageDoc, OccupationDoc } from '../db';
 import { lootSummary, emptyResources } from '../core';
 import type { SiegeReplayInputs } from '../worldTypes';
 import type { SaveFields } from '../metaClient';
@@ -55,7 +57,16 @@ export function SiegeArrivalMixin<TBase extends SiegeServiceBaseCtor>(Base: TBas
     /**
      * Siege another player's territory/capital (attack arrival). On arrival, re-validate that the target is still enemy-owned and unprotected; otherwise refund troops.
      * Cheap linear settlement resolveSiege(attacker troops, garrison):
-     *   - attacker_win + territory → tile changes hands (survivors become the new garrison) + loot defeated player's resources + both sides recompute yield;
+     *   - attacker_win + plain territory → 2026-08-09: NOT instant anymore — starts the same OCCUPY_HOLD_SEC
+     *     occupation hold as occupying neutral land (mirrors ADR-037 §5.4's startOccupationHold): the defender
+     *     loses the tile (and its yield) right away, but the attacker's ownerId only lands OCCUPY_HOLD_SEC later
+     *     via settleOccupation — during which anyone (including the original owner) can expel the pending
+     *     claim via a fresh 'attack' march (see the `!target?.ownerId && contestedBy` branch above). Loot still
+     *     transfers and the win is still recorded/pushed immediately, unaffected. A team the attacker marched
+     *     with is held busy for the hold too and defaults to stationing on the tile once it settles — same
+     *     team-lifecycle semantics as a real occupy hold, deliberate (user decision), not a bug.
+     *   - attacker_win + player-owned bridge/plankway → unchanged, still instant (excluded from the above so
+     *     settleOccupation's hardcoded `type:'territory'` on settlement doesn't turn a crossing into plain land).
      *   - attacker_win + base      → capital cannot be permanently taken: garrison wiped + defeated player gets a protection shield + loot taken + attacker survivors return to troop pool;
      *   - defender_win             → all attacker committed troops destroyed (already deducted on departure, not refunded) + defender garrison takes casualties.
      */
@@ -702,10 +713,14 @@ export function SiegeArrivalMixin<TBase extends SiegeServiceBaseCtor>(Base: TBas
     }
 
     /**
-     * Apply a single siege settlement result (G3-1 extraction, §16.4): write tile hand-off / loot / garrison / nation founding / passive relocation (attacker_win)
-     * or defender garrison casualties (defender_win) according to res + record SiegeDoc + push march/siege/tile events.
-     * Currently called immediately by `applySiege` (cheap settlement path unchanged); after G3-2 delayed settlement, both the judge re-computation confirmation and
-     * the timeout fallback paths will share this single landing point.
+     * Apply a single siege settlement result (G3-1 extraction, §16.4): write loot / garrison / nation founding /
+     * passive relocation (attacker_win) or defender garrison casualties (defender_win) according to res + record
+     * SiegeDoc + push march/siege/tile events. Currently called immediately by `applySiege` (cheap settlement
+     * path unchanged); after G3-2 delayed settlement, both the judge re-computation confirmation and the timeout
+     * fallback paths will share this single landing point.
+     * 2026-08-09: tile hand-off is no longer part of this uniformly-immediate list for a plain-territory
+     * attacker_win — that branch now starts an OCCUPY_HOLD_SEC occupation hold instead (see the branch's own
+     * comment below); base/structure/crossing outcomes and defender_win are unaffected, still immediate.
      */
     private async landSiege(
       m: MarchDoc,
@@ -761,23 +776,26 @@ export function SiegeArrivalMixin<TBase extends SiegeServiceBaseCtor>(Base: TBas
             }, t);
           }
           // The tile did not change hands → no ownership/nation/yield change; the defender simply keeps a weakened structure.
-        } else {
-          // Territory changes hands (or a structure was ground to hp≤0 in this assault → razed by the $unset below): survivors become the new garrison (troops were deducted on departure; do not modify the attacker pool again); both sides recompute yield.
-          // A captured crossing (bridge/plankway) KEEPS its type so it stays a passage, and carries the new owner's
-          // familyId so `passableGateKeys` grants the owner & family transit (plain territory captures set no familyId).
-          const isCrossing = target.type === 'bridge' || target.type === 'plankway';
+        } else if (target.type === 'bridge' || target.type === 'plankway') {
+          // Captured crossing (bridge/plankway, PLAYER-owned — the NPC-defended case is
+          // applyCrossingSiege above and never reaches here): hands over instantly, unchanged.
+          // Deliberately NOT folded into the 2026-08-09 occupation-hold change below (plain territory
+          // only) — settleOccupation hardcodes `type: 'territory'` on settlement, which would turn a
+          // captured crossing back into plain land and break its passage function; a choke point
+          // flipping hands is rare/low-stakes enough that this edge case wasn't worth teaching
+          // settleOccupation a second tile-type outcome for.
           await cols.tiles.updateOne(
             { _id: m.toTile },
             {
               $set: {
-                type: isCrossing ? target.type : 'territory',
+                type: target.type,
                 ownerId: m.ownerId,
                 garrison: res.attackerSurvivors,
-                ...(isCrossing && pw.familyId ? { familyId: pw.familyId } : {}),
+                ...(pw.familyId ? { familyId: pw.familyId } : {}),
               },
               // Clear stale family passage on a crossing captured by a familyless player, the protection shield, and
               // (ADR-051 P5) any player structure the previous owner built — a captured tile's tower/blocker is razed.
-              $unset: { protectedUntil: '', structure: '', ...(isCrossing && !pw.familyId ? { familyId: '' } : {}) },
+              $unset: { protectedUntil: '', structure: '', ...(!pw.familyId ? { familyId: '' } : {}) },
               $inc: { rev: 1 },
             },
           );
@@ -793,8 +811,65 @@ export function SiegeArrivalMixin<TBase extends SiegeServiceBaseCtor>(Base: TBas
             { _id: playerWorldId(m.worldId, defenderId) },
             { $set: { yieldRate: defYield }, $inc: { rev: 1 } },
           );
-          // Capital tile captured → nation changes hands (S8-6.5)
           void this.core.applyNationChange(m.worldId, target.x, target.y, m.ownerId, pw.familyId);
+        } else {
+          // Plain territory changes hands — 2026-08-09 (user decision): no longer instant. Mirrors the
+          // neutral-land occupation hold (§5.4, ADR-037) instead of writing ownerId right away:
+          // ownership is cleared immediately (the defender stops yielding from a tile they no longer
+          // control) but the winner's claim only confirms after OCCUPY_HOLD_SEC, reusing the EXACT same
+          // OccupationDoc / settleOccupation / processDueOccupations machinery as occupying a neutral
+          // tile (occupation.ts) — settleOccupation doesn't care whether the tile was neutral or
+          // previously player-owned, it just finalizes whichever contestedBy claim is still standing.
+          // During the hold, applySiege's existing `!target?.ownerId && contestedBy` branch already lets
+          // the ORIGINAL owner (or anyone else) send a fresh 'attack' march to fight the held garrison
+          // via applyOccupationExpulsion — no extra code needed there, since clearing ownerId here makes
+          // this tile indistinguishable from a contested neutral one. Survivors become the pending
+          // `contestedGarrison` (troops were deducted on departure; do not modify the attacker pool
+          // again). The client stops showing a blocking "Siege won!" modal for this case
+          // (WorldMapNet.applySiegeResult) — same lightweight toast as an occupy win.
+          const dueAt = t + OCCUPY_HOLD_SEC * 1000;
+          await cols.tiles.updateOne(
+            { _id: m.toTile },
+            {
+              $set: {
+                contestedBy: m.ownerId,
+                contestedUntil: dueAt,
+                contestedGarrison: res.attackerSurvivors,
+                ...(pw.familyId ? { contestedFamilyId: pw.familyId } : {}),
+              },
+              // ownerId cleared right away (see above); garrison is meaningless without an owner during
+              // the hold (the real number lives in contestedGarrison); protection shield / any player
+              // structure the previous owner built are razed, same as the old instant path.
+              $unset: { ownerId: '', garrison: '', protectedUntil: '', structure: '' },
+              $inc: { rev: 1 },
+            },
+          );
+          // ADR-051 (P5): clear a razed arrow tower's 3×3 coverage from the reverse index (its TileDoc.structure was unset above).
+          if (target.structure?.kind === 'arrowTower') await this.core.removeCover(m.worldId, target.x, target.y, m.toTile);
+          const occDoc: OccupationDoc = {
+            _id: m.toTile,
+            worldId: m.worldId,
+            ownerId: m.ownerId,
+            ...(pw.familyId ? { familyId: pw.familyId } : {}),
+            tile: m.toTile,
+            x: target.x,
+            y: target.y,
+            level: target.level,
+            ...(target.resType ? { resType: target.resType } : {}),
+            garrison: res.attackerSurvivors,
+            dueAt,
+            ...(m.teamId ? { teamId: m.teamId } : {}),
+            ...(m.leaderUnitType ? { leaderUnitType: m.leaderUnitType } : {}),
+          };
+          await cols.occupations.updateOne({ _id: m.toTile }, { $set: occDoc }, { upsert: true });
+          // Defender loses this tile's yield the instant they lose the battle (they no longer control
+          // it, even though the winner's claim is still pending); the winner's own yield gain + nation
+          // change wait for settleOccupation, exactly like every neutral-land capture.
+          const defYield = await this.core.recomputeYield(m.worldId, defenderId);
+          await cols.playerWorld.updateOne(
+            { _id: playerWorldId(m.worldId, defenderId) },
+            { $set: { yieldRate: defYield }, $inc: { rev: 1 } },
+          );
         }
       } else {
         // Defender wins: garrison reduced to survivors; attacker survivors retreat home over a travel-time

@@ -235,8 +235,14 @@ describe.skipIf(!mongo)('worldsvc nation-bonus e2e', () => {
     nowMs = mv.arriveAt;
     expect(await svc.processDueArrivals()).toBe(1);
 
-    expect((await svc.getTile(W, 'a', tgt.x, tgt.y)).mine).toBe(true); // tile changed hands to attacker
+    // 2026-08-09: winning a PvP attack now enters an OCCUPY_HOLD_SEC contested hold instead of transferring
+    // ownership instantly (mirrors ADR-037 §5.4 neutral-land occupation) — settle it before asserting capture.
+    const held = await svc.getTile(W, 'a', tgt.x, tgt.y);
+    expect(held.contestedByMe).toBe(true);
     const siege = await m.collections.sieges.findOne({ worldId: W, attackerId: 'a' });
     expect(siege?.outcome).toBe('attacker_win');
+    nowMs = held.contestedUntil!;
+    expect(await svc.processDueOccupations()).toBe(1);
+    expect((await svc.getTile(W, 'a', tgt.x, tgt.y)).mine).toBe(true); // tile changed hands to attacker
   });
 });

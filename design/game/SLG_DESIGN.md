@@ -290,7 +290,7 @@
 
 ### 5.3 权威结算分级（SLG11，**已按 §16/ADR-007 改**）
 
-- **关键战斗（服务器权威、无手操可跳过）**：占领/丢失真人领地、家族战、攻打有真人驻军的格子。`worldsvc` 进程内直接跑 `runSiegeBattle`（seed+双方预布阵）算出结果并即时落地（领地易主、掠夺入账）——这就是唯一一次计算，不存在「客户端先算、服务器再复算校验」的二段式流程，`judgeRunner` 不参与 SLG。
+- **关键战斗（服务器权威、无手操可跳过）**：占领/丢失真人领地、家族战、攻打有真人驻军的格子。`worldsvc` 进程内直接跑 `runSiegeBattle`（seed+双方预布阵）算出结果——这就是唯一一次计算，不存在「客户端先算、服务器再复算校验」的二段式流程，`judgeRunner` 不参与 SLG。**掠夺入账仍然即时**（战斗判定那一刻就转移资源），但**领地易主不再即时**：普通领地（非主城、非 bridge/plankway 关口）攻打胜利后走 §5.4.4 的占领倒计时，与占中立地同一套延迟落地机制（ADR-062，2026-08-09）；主城（被打败触发 `passiveRelocate`，主城本身打不下来）、关口（易主仍即时，见 §5.4.4 结尾的排除说明）不受影响。
 - **非关键（信任客户端 / 廉价数值结算，可抽检）**：扫荡自己领地、清中立 NPC、碾压级目标自动战。
 - 阈值（何为「碾压级」可走廉价结算）后期调参。
 
@@ -327,6 +327,12 @@
 - **旧版 `TerritoryService.occupyTile()`（S8-1 瞬间占领，`territory.ts`）如何处理**：**保留但标注为内部/测试专用，不再对外暴露真实产品流程**。理由：客户端 `WorldMapInput.ts` 的"占领"按钮已改为调用 `startMarch(kind:'occupy')`（见客户端小节）；生产环境下不再有调用方直接命中 `POST /world/tile/occupy`。保留该方法本体是因为①它是 e2e 测试里搭建"玩家已有领地"前置状态的最快方式（大量既有测试用它铺垫场景，删除会连带重写一批与本次改动无关的测试）；②它本身逻辑（无 NPC 驻军、瞬间落地）恰好对应 5.4「`garrison≤0` 防御性兜底」这一支线的语义，两者保持一致不产生行为矛盾。契约 `openapi.yml`/`openapi-world.yml` 对应端点文档补充一行"内部/测试用途，产品客户端请走 march occupy"的说明；不做 404/移除。
 
 - **契约改动**：`WorldTileView` 新增 `contestedUntil`（占领落地时刻，ms）+ `contestedByMe`（占领倒计时中且待定占领人是当前请求者本人，供客户端区分"我在占"还是"别人在占"）。`MarchView`/推送管线不新增字段——战斗胜负复用既有 `siege_result` 推送（`pushSiege`），占领中/占领完成的格子状态复用既有 `tile_update` 推送（`pushTile`）+ 下次 `getMap`/`getTile` 轮询即可看到 `contestedUntil` 倒计时，客户端不需要新的推送类型。
+
+- **5.4.4 PvP 攻打真人领地复用同一套占领倒计时（ADR-062，2026-08-09，用户反馈）**：用户报告"攻打其他玩家的地"和"占中立地"体验不一致——PvP 攻城胜利后走的是 §16 旧模型的"即时易主"（`combatSiege/arrival.ts` `landSiege`），弹一个独立的"Siege won!"弹窗；占中立地却是 5.4.2 的倒计时+轻量 toast。拍板：**普通领地格（非主城、非 bridge/plankway 关口）的 PvP 攻打胜利，从"即时易主"改成走 5.4.2 同一套占领倒计时**——胜利那一刻：防守方立刻失去这块地（`ownerId` 清空，`yieldRate` 立即重算，掠夺/战报仍然即时结算不变），但攻击方**同样不会**立刻拿到，而是写 `contestedBy`/`contestedUntil`/`contestedGarrison`，upsert 一份 `OccupationDoc`，5 分钟后 `settleOccupation` 才真正落地 `ownerId`/`yieldRate`/`applyNationChange`——`settleOccupation` 本身不区分"这格以前是中立还是玩家领地"，直接复用，零改动。倒计时期间，原防守方（或任何人）可以对这个"无主但 `contestedBy` 有人"的格子发起新的 `attack`，天然落进 5.4.3 已有的驱逐分支（`applySiege` 顶部 `!target?.ownerId && contestedBy` 判断）——即"PvP 占地也有一个 5 分钟的反打窗口"，不需要为此新增代码。
+  - **客户端**：`WorldMapNet.applySiegeResult` 原先只要 `marchKind==='attack'` 就弹"Siege won!"+回放校验的 modal；现在攻方胜利时先看目标格刷新后的 `contestedByMe`——为真（本次胜利只是开了个倒计时，含 5.4.3 的驱逐胜利）则改成跟占领中立地一样的轻量 toast（`world.siegeWinHold`），回放仍可从"Battle replays"列表打开；为假（主城/关口/结构磨血未破防/PvE 据点或关口）则维持原 modal——服务器权威信号，不靠客户端猜测。
+  - **明确排除**：`target.type` 是 `bridge`/`plankway`（玩家已拥有的关口）——`settleOccupation` 结算时把 `type` 硬编码成 `'territory'`，关口走这条路会丢失通行功能，收益（关口易手本就低频/低风险）不值得为此教 `settleOccupation` 认第二种落地 type，故关口攻打**保持即时易手不变**。主城攻打（打不下来，只触发 `passiveRelocate`）、`target.structure` 血量未耗尽的磨血分支，同样不受影响。
+  - **地块资源类型显示 bug 一并修复**：调研过程中发现地图图标（`tileGraphics.ts` `motifResType`）和点格信息面板（`WorldMapInput.ts`）都把"显示 `resType`"错误地绑定在"`tile.type==='resource'`"或"落进中立分支"上——但服务器（`core/map.ts` `tileDocView`）从来是"只要 `resType` 存在就下发，不管 `type`"，占领/攻占结算也一直保留 `resType` 字段（`settleOccupation`/`landSiege` 都显式带上）。改成"只要有 `resType` 就画/就显示"，不再要求 `type==='resource'` 或落在中立分支——已占领的地块现在也能看到自己的资源类型+等级。
+- **影响**：`server/worldsvc/src/combatSiege/arrival.ts`（`landSiege` territory 分支）；`client/src/scenes/worldmap/{WorldMapNet.ts,tileGraphics.ts,WorldMapInput.ts}`；`client/src/i18n/locales/{zh,en,de}.ts`（新增 `world.siegeWinHold`）；`client/test/ui/worldMapSiegeResultToast.ui.ts`；`server/worldsvc/test/siege.e2e.test.ts` 等受影响的 e2e 用例。
 
 ### 5.5 全量 code review 发现的 5 处 worldsvc 问题（2026-08-04）
 

@@ -153,8 +153,20 @@ describe.skipIf(!mongo)('worldsvc structure-durability e2e (ADR-051 §5.2)', () 
     expect(tile!.garrison).toBe(0);
     expect(redis.coverSize(W)).toBe(9);
 
-    // Assault #2: 600 survivors vs 400 hp → hp≤0 → tower razed, tile captured by 'a', 3×3 coverage swept.
+    // Assault #2: 600 survivors vs 400 hp → hp≤0 → tower razed, coverage swept immediately; the tile itself now
+    // enters an OCCUPY_HOLD_SEC contested hold (2026-08-09) rather than changing hands instantly — mirrors the
+    // neutral-land occupation hold (ADR-037 §5.4).
     await attack(20, 5, 600);
+    tile = await m.collections.tiles.findOne({ _id: tid });
+    expect(tile!.ownerId).toBeUndefined();
+    expect(tile!.contestedBy).toBe('a');
+    expect(tile!.contestedGarrison).toBe(600); // survivors become the pending garrison
+    expect(tile!.structure).toBeUndefined();
+    expect(redis.coverSize(W)).toBe(0); // coverage sweep is unconditional/immediate, not deferred to settlement
+
+    // Hold elapses → ownership finalized (processDueOccupations, same machinery as any neutral-land capture).
+    nowMs = tile!.contestedUntil!;
+    expect(await svc.processDueOccupations()).toBe(1);
     tile = await m.collections.tiles.findOne({ _id: tid });
     expect(tile!.ownerId).toBe('a');
     expect(tile!.structure).toBeUndefined();
@@ -174,8 +186,17 @@ describe.skipIf(!mongo)('worldsvc structure-durability e2e (ADR-051 §5.2)', () 
     expect(tile!.ownerId).toBe('b');
     expect(tile!.structure!.hp).toBe(300);
 
-    // Capture: 500 ≥ 300 → blocker destroyed, tile taken.
+    // Capture: 500 ≥ 300 → blocker destroyed; the tile enters an OCCUPY_HOLD_SEC contested hold (2026-08-09)
+    // rather than changing hands instantly (mirrors ADR-037 §5.4's neutral-land occupation hold).
     await attack(20, 5, 500);
+    tile = await m.collections.tiles.findOne({ _id: tid });
+    expect(tile!.ownerId).toBeUndefined();
+    expect(tile!.contestedBy).toBe('a');
+    expect(tile!.structure).toBeUndefined();
+
+    // Hold elapses → ownership finalized.
+    nowMs = tile!.contestedUntil!;
+    expect(await svc.processDueOccupations()).toBe(1);
     tile = await m.collections.tiles.findOne({ _id: tid });
     expect(tile!.ownerId).toBe('a');
     expect(tile!.structure).toBeUndefined();

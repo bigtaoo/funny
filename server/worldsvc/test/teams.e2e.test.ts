@@ -383,8 +383,13 @@ describe.skipIf(!mongo)('worldsvc teams + siege replay e2e', () => {
     nowMs = mv.arriveAt;
     expect(await svc.processDueArrivals()).toBe(1);
 
-    // tile ownership changes hands (12-unit assault overwhelms the 100 garrison).
-    const tile = await svc.getTile(W, 'a', tgt.x, tgt.y);
+    // 2026-08-09: winning a PvP attack now enters an OCCUPY_HOLD_SEC contested hold instead of transferring
+    // ownership instantly (mirrors ADR-037 §5.4 neutral-land occupation) — settle it before asserting capture.
+    let tile = await svc.getTile(W, 'a', tgt.x, tgt.y);
+    expect(tile?.contestedByMe).toBe(true);
+    nowMs = tile!.contestedUntil!;
+    expect(await svc.processDueOccupations()).toBe(1);
+    tile = await svc.getTile(W, 'a', tgt.x, tgt.y);
     expect(tile?.mine).toBe(true);
 
     // battle report persists replay inputs.
@@ -615,7 +620,7 @@ describe.skipIf(!mongo)('worldsvc teams + siege replay e2e', () => {
   // idle-redispatched attack that runs a REAL combat resolution to either outcome) was unreachable before
   // 2026-08-08 since attack could never be idle-redispatched at all; it's genuinely new state space, not just
   // a re-run of existing coverage, so it gets its own full end-to-end cases.
-  it('re-dispatch attack that WINS: territory transfers to the attacker, and the team ends up fully free (no march, no stationed presence) — same as a win from base', async () => {
+  it('re-dispatch attack that WINS: territory transfers to the attacker after an occupation hold, and the team ends up stationed on the captured tile (idle-redispatchable) rather than free', async () => {
     await svc.joinWorld(W, 'a', 10, 10);
     const station = findCoord(14, 14, (t) => t.type === 'resource' || t.type === 'neutral');
     // 12×160 = 1920 vs a 100-garrison defender — the exact overwhelming-force ratio already proven to guarantee
@@ -641,13 +646,35 @@ describe.skipIf(!mongo)('worldsvc teams + siege replay e2e', () => {
     nowMs = mv.arriveAt;
     expect(await svc.processDueArrivals()).toBe(1);
 
-    const tile = await svc.getTile(W, 'a', tgt.x, tgt.y);
-    expect(tile.mine).toBe(true); // territory captured
-    // Winning an attack (unlike occupy) never parks the team on the captured tile — the surviving army becomes
-    // the tile's garrison stat, and the team slot itself is immediately free again, with nothing left tracked
-    // anywhere (marches are claim-and-deleted once processed; no return leg on a win).
+    // 2026-08-09: winning a PvP attack now enters an OCCUPY_HOLD_SEC contested hold instead of transferring
+    // ownership instantly (mirrors ADR-037 §5.4 neutral-land occupation, occupation.ts's startOccupationHold) —
+    // settle it before asserting capture.
+    let tile = await svc.getTile(W, 'a', tgt.x, tgt.y);
+    expect(tile.contestedByMe).toBe(true);
+    // Marches are claim-and-deleted once processed (no return leg on a win), so the march itself is gone right
+    // away — but landSiege's new hold branch hands the team off to an OccupationDoc (mirroring applyOccupy),
+    // which the TEAM_BUSY gate (combatMarch/command.ts, `cols.occupations.findOne({...,teamId})`) treats as
+    // "busy" exactly like a real occupy hold: the team is NOT free to be re-dispatched until the hold settles
+    // (a departure from the old instant-capture behavior this test's title/comment used to describe, when an
+    // attack win never created a hold at all — flagged to the user, not changed here per task instructions).
     expect(await svc.getStationed(W, 'a')).toHaveLength(0);
     expect(await svc.getMarches(W, 'a')).toHaveLength(0);
+    await expect(svc.startMarch(W, 'a', 10, 10, findCoord(40, 5).x, findCoord(40, 5).y, 'move', 1, 't1')).rejects.toMatchObject({
+      code: 'TEAM_BUSY',
+    });
+
+    nowMs = tile.contestedUntil!;
+    expect(await svc.processDueOccupations()).toBe(1);
+    tile = await svc.getTile(W, 'a', tgt.x, tgt.y);
+    expect(tile.mine).toBe(true); // territory captured
+    // settleOccupation's post-capture disposition (2026-07-23 decision, occupation.ts) applies uniformly to any
+    // capture, attack or occupy: a team without autoReturn STAYS stationed on the tile it just took, rather than
+    // freeing instantly — so the team is now stationed here, not free, once the hold settles.
+    const stationedAfter = await svc.getStationed(W, 'a');
+    expect(stationedAfter).toHaveLength(1);
+    expect(stationedAfter[0]).toMatchObject({ teamId: 't1', x: tgt.x, y: tgt.y });
+    // Stationed in 'idle' mode (not 'garrison') → ADR-051 P3c/2026-08-08 idle-redispatch still applies: it CAN
+    // be re-commanded straight from where it stands without an explicit recall first.
     await expect(svc.startMarch(W, 'a', 10, 10, findCoord(40, 5).x, findCoord(40, 5).y, 'move', 1, 't1')).resolves.toBeTruthy();
   });
 
