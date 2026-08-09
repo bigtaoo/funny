@@ -34,6 +34,10 @@ const BASE_HIT_PULSE_GROW  = 0.18;  // outline expands by this fraction as it fa
 // where a haste-rush ends the game, so it draws the eye to the board, not the HUD.
 const CRIT_RING_SPEED = 7.5; // rad/s → fast, urgent throb
 
+// Castle art fill ratio within its 2×2 base rect — see buildBaseRef() for why this
+// isn't 1.0.
+const BASE_ART_INSET = 0.86;
+
 // 断路 (BridgeCollapse) persistent lane overlay. The 0.6s cast VFX alone was easy to
 // miss while the lane stays blocked for 8s; this overlay marks the lane for its full
 // duration and blinks in the final seconds to telegraph the lane reopening.
@@ -658,8 +662,14 @@ export class BoardView {
 
     const s = new PIXI.Sprite(tex);
     s.anchor.set(0.5);
-    s.width  = rect.w;
-    s.height = rect.h;
+    // Inset the castle art within its 2×2 rect (BASE_ART_INSET) so it doesn't
+    // draw edge-to-edge with the boundary — at full rect.w/h the castle wall
+    // touched the very next cell with zero gap, reading as "overlapping" the
+    // building placed right next to it (2026-08-09 user report, PvE + PvP).
+    // Buildings already sit inset within their own cell (SPRITE_SIZE=56 in a
+    // 70px CELL, ~10% each side in BuildingView.ts); match that here.
+    s.width  = rect.w * BASE_ART_INSET;
+    s.height = rect.h * BASE_ART_INSET;
     if (mirror) {
       // Distinguish the enemy base with a horizontal flip in BOTH orientations.
       // (Portrait used to flip vertically, but an upside-down castle reads as a
