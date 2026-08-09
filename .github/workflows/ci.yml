@@ -59,6 +59,13 @@ jobs:
           npm run proto:gen --workspace=@nw/gateway
           npm run proto:gen --workspace=@nw/gameserver
           git diff --exit-code gateway/src/generated gameserver/src/generated
+      # claudedocs/server.md "单文件 500 行收敛": baseline-drift check, not a hard <=500 gate —
+      # only fails on a NEW file crossing 500 lines or a known baseline file growing past its
+      # recorded count (server/scripts/file-length-baseline.json); the 27 pre-existing over-limit
+      # files are tracked debt, not blocked on.
+      - name: server file length check
+        working-directory: server
+        run: npm run check:filelength
       - name: server typecheck (tsc -b)
         working-directory: server
         run: npx tsc -b shared engine metaserver gateway matchsvc gameserver commercial worldsvc auctionsvc admin analyticsvc
