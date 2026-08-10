@@ -70,6 +70,14 @@ export class SeasonManagementService {
   /**
    * Open a season: create the world document (idempotent — if it already exists, update status → open).
    * worldId must have the form `s{season}-{shard}`.
+   *
+   * season/shard are immutable per worldId once created (worldDocs.ts's `_id: "s{season}-{shard}"` convention;
+   * seasonResults/slgTitleId/march-and-tile worldId-prefix checks all assume it). Reopening an existing worldId
+   * with a *different* season/shard used to silently no-op on those fields — `$setOnInsert` only fires on a
+   * real insert, so a reopen against an existing _id quietly kept the old season/shard while still returning
+   * success (2026-08-10 incident: ops "Open a new world" against an already-open worldId with a bumped Season
+   * field looked like it worked but never advanced the active season — see SLG_DESIGN_LOG.md §17.15). Guard it
+   * explicitly so a mismatched reopen fails loudly instead of stranding players on the old map.
    */
   async openSeason(
     worldId: string,
@@ -78,6 +86,13 @@ export class SeasonManagementService {
     capacity: number,
   ): Promise<void> {
     const { cols, now } = this.core.deps;
+    const existing = await cols.worlds.findOne({ _id: worldId }, { projection: { season: 1, shard: 1 } });
+    if (existing && (existing.season !== season || existing.shard !== shard)) {
+      throw new SlgError(
+        'BAD_REQUEST',
+        `worldId ${worldId} is already pinned to season ${existing.season}/shard ${existing.shard}; cannot reopen it as season ${season}/shard ${shard}. Allocate a new worldId for a new season instead of reusing this one.`,
+      );
+    }
     await cols.worlds.updateOne(
       { _id: worldId },
       {

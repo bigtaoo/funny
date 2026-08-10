@@ -17,6 +17,7 @@ import { ENGINE_VERSION } from '@nw/engine';
 import { createWorldMongo, type WorldMongo, type NationDoc, type WorldDoc } from '../src/db';
 import { WorldService } from '../src/service';
 import { startHttpApi } from '../src/httpApi';
+import { MapTemplateService } from '../src/mapTemplateService';
 import type { WorldMailClient, WorldMailContent } from '../src/mailClient';
 import type { WorldSocialsvcClient, SocialsvcChannel, FamilyMembership, FamilySummary } from '../src/socialsvcClient';
 import type { WorldRedis } from '../src/redis';
@@ -345,7 +346,10 @@ describe.skipIf(!mongo)('worldsvc season ops e2e', () => {
 
     beforeEach(async () => {
       await seed('active');
-      server = startHttpApi({ host: '127.0.0.1', port: 0, jwtSecret: SECRET, internalKey: KEY }, svc, {} as never, {} as never, {} as never);
+      // Real MapTemplateService (not a stub): /admin/world/open and /admin/world/reset clone the active
+      // template on success. No active template in this DB → safe no-op (see mapTemplateService.ts).
+      const mapTemplateSvc = new MapTemplateService({ cols: m.collections, now: () => 1_700_000_000_000 });
+      server = startHttpApi({ host: '127.0.0.1', port: 0, jwtSecret: SECRET, internalKey: KEY }, svc, {} as never, {} as never, {} as never, mapTemplateSvc);
       await new Promise<void>((res) => server.on('listening', res));
       base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
     });

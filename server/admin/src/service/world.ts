@@ -1,6 +1,6 @@
 // SLG season ops (G7/§17.7). Proxies worldsvc /admin/world/* + audit + operational sequence constraint
 // (must settle before reset, to prevent loss of history).
-import type { SlgWorldSummary } from '../clients';
+import type { SlgAllocateResult, SlgWorldSummary } from '../clients';
 import type { AdminBaseCtor, Constructor } from './base';
 import { AdminError } from './errors';
 
@@ -11,6 +11,7 @@ export interface WorldHandlers {
   slgResetSeason(actor: string, worldId: string): Promise<unknown>;
   slgCloseSeason(actor: string, worldId: string): Promise<void>;
   slgMergeShard(actor: string, worldId: string, targetWorldId: string): Promise<{ moved: number; failed: string[] }>;
+  slgAllocateNextSeason(actor: string, season: number, capacity?: number): Promise<SlgAllocateResult>;
 }
 
 export function WorldMixin<TBase extends AdminBaseCtor>(Base: TBase): TBase & Constructor<WorldHandlers> {
@@ -67,6 +68,18 @@ export function WorldMixin<TBase extends AdminBaseCtor>(Base: TBase): TBase & Co
     async slgMergeShard(actor: string, worldId: string, targetWorldId: string): Promise<{ moved: number; failed: string[] }> {
       const r = await this.world.mergeWorld(worldId, targetWorldId);
       await this.audit(actor, 'slg.season.merge', { target: worldId, summary: `→${targetWorldId} moved=${r.moved} failed=${r.failed.length}` });
+      return r;
+    }
+
+    /**
+     * Allocate + open the next season (high-risk, super only): snake-draft last season's sects across N shards
+     * by strength, then open every shard for `season` (§20.4). This is the only operation that actually advances
+     * the active season number — reopening an existing worldId via slgOpenSeason silently keeps its old season
+     * (2026-08-10 incident, see SLG_DESIGN_LOG.md §17.15). Audited.
+     */
+    async slgAllocateNextSeason(actor: string, season: number, capacity?: number): Promise<SlgAllocateResult> {
+      const r = await this.world.allocateNextSeason(season, capacity);
+      await this.audit(actor, 'slg.season.allocate', { target: `season ${season}`, summary: `shards=${r.shardCount} worldIds=${r.worldIds.join(',')} families=${r.allocatedFamilies}` });
       return r;
     }
   };

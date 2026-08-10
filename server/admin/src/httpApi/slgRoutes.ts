@@ -63,6 +63,14 @@ export async function handleSlgRoutes(ctx: RouteCtx): Promise<boolean> {
     send(res, 200, { ok: true, result });
     return true;
   }
+  if (method === 'POST' && path === '/admin/slg/season/allocate') {
+    requireCap(actor, 'slg.season.manage');
+    const b = await readJson(req);
+    const capacity = b.capacity != null ? Number(b.capacity) : undefined;
+    const result = await svc.slgAllocateNextSeason(actor.adminId, Number(b.season), capacity);
+    send(res, 200, { ok: true, result });
+    return true;
+  }
 
   // ── SLG anomalous transaction audit (G7 anti-RMT, §17.7) ──
   if (method === 'GET' && path === '/admin/slg/audit/anomalies') {

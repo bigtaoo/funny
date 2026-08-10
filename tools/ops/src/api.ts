@@ -28,6 +28,7 @@ import type {
   PvpCardStatRow,
   ReportView,
   Session,
+  SlgAllocateResult,
   SlgShopItemOverrideDoc,
   SlgShopItemRow,
   SlgWorldSummary,
@@ -405,6 +406,15 @@ export class Api {
   /** G6 shard merge (§27): move every remaining player out of worldId (source) into targetWorldId, then close worldId. */
   async slgMergeShard(worldId: string, targetWorldId: string): Promise<{ moved: number; failed: string[] }> {
     const r = await this.req<{ result: { moved: number; failed: string[] } }>('POST', '/admin/slg/season/merge', { worldId, targetWorldId });
+    return r.result;
+  }
+  /**
+   * G6 next-season allocation (§20.4): snake-draft last season's sects across N shards, then opens+clones every
+   * shard for `season`. The correct way to start a new season — reopening an existing worldId via slgOpenSeason
+   * silently keeps its old season number instead (2026-08-10 incident).
+   */
+  async slgAllocateNextSeason(season: number, capacity?: number): Promise<SlgAllocateResult> {
+    const r = await this.req<{ result: SlgAllocateResult }>('POST', '/admin/slg/season/allocate', capacity != null ? { season, capacity } : { season });
     return r.result;
   }
 

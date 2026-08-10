@@ -14,6 +14,13 @@ export interface SlgWorldSummary {
   engineVersion?: number;
 }
 
+/** Result of allocateNextSeason: the shards it opened for the new season (§20.4 snake-draft allocation). */
+export interface SlgAllocateResult {
+  shardCount: number;
+  worldIds: string[];
+  allocatedFamilies: number;
+}
+
 export interface WorldClient {
   readonly available: boolean;
   listWorlds(): Promise<SlgWorldSummary[]>;
@@ -23,6 +30,13 @@ export interface WorldClient {
   closeWorld(worldId: string): Promise<void>;
   /** G6 shard merge (§27): move every remaining player out of worldId (source) into targetWorldId, then close worldId. */
   mergeWorld(worldId: string, targetWorldId: string): Promise<{ moved: number; failed: string[] }>;
+  /**
+   * G6 multi-shard new-season allocation (§20.4): snake-draft last season's sects across N shards by strength,
+   * then open every shard world for `season` (map template clone included). The only path that actually
+   * advances the active season number — reusing openWorld/`/admin/slg/season/open` on an existing worldId
+   * silently no-ops the season field instead (2026-08-10 incident, see SLG_DESIGN_LOG.md §17.15).
+   */
+  allocateNextSeason(season: number, capacity?: number): Promise<SlgAllocateResult>;
 
   // ── Map templates (§24 Layer A, admin map editor) ──
   listMapTemplates(): Promise<MapTemplateSummary[]>;
@@ -105,6 +119,13 @@ export class HttpWorldClient implements WorldClient {
       moved: number;
       failed: string[];
     };
+  }
+  async allocateNextSeason(season: number, capacity?: number): Promise<SlgAllocateResult> {
+    return (await this.post(
+      '/admin/world/allocate',
+      capacity != null ? { season, capacity } : { season },
+      HttpWorldClient.SEASON_OP_TIMEOUT_MS,
+    )) as SlgAllocateResult;
   }
 
   private get(path: string): Promise<unknown> {

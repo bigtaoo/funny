@@ -51,6 +51,14 @@ class FakeWorld implements WorldClient {
   async settleWorld() { return {}; }
   async resetWorld() { return {}; }
   async closeWorld() {}
+  async mergeWorld() { return { moved: 0, failed: [] }; }
+  async allocateNextSeason() { return { shardCount: 0, worldIds: [], allocatedFamilies: 0 }; }
+  async listMapTemplates() { return []; }
+  async generateMapTemplate() { return { templateId: '', width: 0, height: 0, version: 1, tileCount: 0, active: false, createdAt: 0, updatedAt: 0 }; }
+  async getMapTemplateTiles() { return []; }
+  async saveMapTemplateTiles() { return { updated: 0 }; }
+  async activateMapTemplate() {}
+  async deleteMapTemplate() {}
 }
 class FakeAuction implements AuctionClient {
   available = true;
