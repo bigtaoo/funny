@@ -523,7 +523,9 @@ export async function deliverOrder(
   order: {
     _id: string;
     kind: 'shop' | 'gacha' | 'fate' | 'starter';
-    result: { itemId?: string; results?: GachaResultEntry[]; poolId?: string };
+    // qty (bulk-buy, 2026-08-10): units to deliver for a 'shop' order, charged together in one
+    // shopCharge call — absent/1 for a single-unit purchase and for every other order kind.
+    result: { itemId?: string; results?: GachaResultEntry[]; poolId?: string; qty?: number };
   },
   coinsAfter: number,
   pityPatch: Record<string, number> | null,
@@ -551,21 +553,30 @@ export async function deliverOrder(
   // kind='item' → inventory.items (consumables such as protect_enhance, E7); kind='skin' → skins.
   if (order.kind === 'shop' && order.result.itemId) {
     const itemId = order.result.itemId;
+    // Units charged together by this order (bulk-buy, 2026-08-10) — defaults to 1 for every
+    // pre-existing single-unit purchase. commercial's shopCharge already validated/clamped this
+    // against SHOP_BUY_MAX_QTY before charging, so it's trusted here.
+    const qty = order.result.qty ?? 1;
     const shopDef = findShopItem(itemId);
     if (shopDef?.kind === 'item') {
-      const itemInc: Record<string, number> = { [itemId]: 1 };
+      const itemInc: Record<string, number> = { [itemId]: qty };
       const save = await deliverMailGrant(cols, accountId, order._id, [], itemInc, coinsAfter, now);
       await commercial.orderDelivered({ orderId: order._id });
       return { save };
     }
     if (shopDef?.kind === 'material') {
-      const materialInc: Record<string, number> = { [shopDef.grants]: shopDef.qty ?? 1 };
+      const materialInc: Record<string, number> = { [shopDef.grants]: (shopDef.qty ?? 1) * qty };
       const save = await deliverMailGrant(cols, accountId, order._id, [], {}, coinsAfter, now, materialInc);
       await commercial.orderDelivered({ orderId: order._id });
       return { save };
     }
     const newSkins = owned.includes(itemId) ? [] : [itemId];
-    const skinInstances: SkinInstance[] = [{ id: `skin_shop_${order._id}`, skinId: itemId, sourceType: 'shop', obtainedAt: now }];
+    // One real instance per unit (ITEM_IDENTITY_DESIGN.md task1 already grants a real instance per
+    // purchase even when re-buying an owned skin — qty>1 just repeats that qty times in one order).
+    const skinInstances: SkinInstance[] = Array.from({ length: qty }, (_, i) => ({
+      id: qty === 1 ? `skin_shop_${order._id}` : `skin_shop_${order._id}_${i}`,
+      skinId: itemId, sourceType: 'shop', obtainedAt: now,
+    }));
     const save = await deliverGrant(cols, accountId, order._id, newSkins, coinsAfter, pityPatch, now, undefined, undefined, undefined, skinInstances);
     await commercial.orderDelivered({ orderId: order._id });
     return { save };

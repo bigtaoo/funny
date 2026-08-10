@@ -616,6 +616,12 @@ const BODY_SCHEMAS: Record<string, unknown> = {
     "properties": {
       "itemId": {
         "type": "string"
+      },
+      "qty": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 20,
+        "default": 1
       }
     }
   },

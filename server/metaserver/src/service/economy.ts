@@ -19,6 +19,7 @@ import {
   ADS_DAILY_CAP,
   ADS_MIN_INTERVAL_MS,
   MATERIAL_SHOP_DAILY_CAP,
+  SHOP_BUY_MAX_QTY,
   PRODUCT_STARTER_GROWTH,
   GROWTH_PACK_WINDOW_DAYS,
   accrueRetentionTask,
@@ -165,28 +166,42 @@ export function EconomyMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase & C
       return ok({ pools });
     }
 
+    /**
+     * `qty` (default 1, capped at SHOP_BUY_MAX_QTY, 2026-08-10): buy several units in one request instead
+     * of the client looping `qty` sequential calls (the old "×10" button fired 10 full round-trips —
+     * client→meta→redis + meta→commercial→Mongo + meta→Mongo — serially, which is what made it visibly
+     * slower than every other single-shot shop action). All-or-nothing: a daily cap that can't fit the
+     * whole qty, or a balance that can't cover it, rejects the entire request and charges nothing —
+     * matches what the client's "can I afford qty×cost" affordability gate already assumes, so no
+     * partial-fulfillment bookkeeping is needed here.
+     */
     async shopBuy(req: FastifyRequest, reply: FastifyReply) {
       if (!this.ensureCommercial(reply)) return;
       const accountId = accountIdOf(req);
-      const { itemId } = req.body as { itemId: string };
+      const { itemId, qty: rawQty } = req.body as { itemId: string; qty?: number };
+      const qty = Number.isInteger(rawQty) && (rawQty as number) >= 1
+        ? Math.min(rawQty as number, SHOP_BUY_MAX_QTY)
+        : 1;
       const def = findShopItem(itemId);
       if (!def) return reply.code(400).send(err(ErrorCode.BAD_REQUEST, 'unknown item'));
 
       const { cols, commercial, now, redis } = this.deps;
 
       // Material shop bundles (gold→material exchange, ECONOMY_NUMBERS §6.5) carry a daily purchase cap —
-      // checked (and claimed) before charging coins, so a capped-out attempt never touches the wallet.
+      // checked (and claimed, for the FULL qty at once) before charging coins, so a capped-out attempt
+      // never touches the wallet. bumpCappedCounter rolls the whole `by` back on overshoot (never a
+      // partial bump), so a qty that doesn't fit the remaining daily allowance is rejected outright.
       if (def.kind === 'material') {
         const cap = MATERIAL_SHOP_DAILY_CAP[itemId];
         if (cap !== undefined) {
           const dayKey = adsDayKey(now());
-          const allowed = await bumpCappedCounter(redis, 'shopMatDaily', accountId, dayKey, itemId, cap);
+          const allowed = await bumpCappedCounter(redis, 'shopMatDaily', accountId, dayKey, itemId, cap, qty);
           if (!allowed) return reply.code(400).send(err(ErrorCode.BAD_REQUEST, 'daily material purchase cap reached'));
         }
       }
 
       const orderId = randomUUID();
-      const charge = await commercial.shopCharge({ accountId, itemId, cost: def.cost, orderId, clientPlatform: clientPlatformOf(req) });
+      const charge = await commercial.shopCharge({ accountId, itemId, cost: def.cost, qty, orderId, clientPlatform: clientPlatformOf(req) });
       if (!charge.ok) {
         if (charge.error === 'INSUFFICIENT_FUNDS') {
           return reply.code(402).send(err(ErrorCode.INSUFFICIENT_FUNDS, 'not enough coins'));
@@ -202,7 +217,7 @@ export function EconomyMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase & C
       // through to the skin-grant path instead of the material path).
       const { save } = await deliverOrder(
         cols, commercial, this.deps.socialsvc ?? nullMetaSocialsvcClient, accountId,
-        { _id: orderId, kind: 'shop', result: { itemId } },
+        { _id: orderId, kind: 'shop', result: { itemId, qty } },
         charge.coinsAfter, null, now(),
       );
       return ok({ save, granted: def.grants });

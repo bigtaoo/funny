@@ -199,6 +199,15 @@ export const MATERIAL_SHOP_DAILY_CAP: Record<string, number> = {
   mat_buy_lead: 6, // ×3 lead/purchase = 18 lead/day
 };
 
+/**
+ * Max `qty` accepted by a single POST /shop/buy call (2026-08-10, closes the "×10 button = 10 sequential
+ * round trips" latency bug — the client used to fire `cb.buy()` qty times in a loop under one busy-lock;
+ * now it's one request that charges/delivers all `qty` units server-side). Bounded well above the client's
+ * BULK_BUY_QTY=10 button so the UI has headroom, but still a hard ceiling against a malformed/adversarial
+ * request asking for an absurd quantity in one call.
+ */
+export const SHOP_BUY_MAX_QTY = 20;
+
 // Duplicate conversion (§4.3). Original design: common/rare → shards, epic/legendary → coin refund;
 // but shards land in client-synced materials, which client PUT overwrites (authority conflict), and
 // the shard redemption table is "TBD". S5 unifies to coin refund for now (authoritative wallet,

@@ -438,7 +438,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Direct purchase (deduct coins → deliver item → push save) */
+        /** Direct purchase (deduct coins → deliver item → push save). Optional qty (default 1) buys several units in one charge+delivery instead of the caller looping — all-or-nothing (insufficient funds or a daily cap that can't fit the whole qty rejects the entire request, nothing is charged). */
         post: operations["shopBuy"];
         delete?: never;
         options?: never;
@@ -2855,6 +2855,8 @@ export interface operations {
             content: {
                 "application/json": {
                     itemId: string;
+                    /** @default 1 */
+                    qty?: number;
                 };
             };
         };

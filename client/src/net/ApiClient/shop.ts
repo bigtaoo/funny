@@ -5,7 +5,7 @@ import type { ShopItem } from './types';
 
 export interface ShopApi {
   getShopItems(): Promise<ShopItem[]>;
-  shopBuy(itemId: string): Promise<{ save: SaveData; granted: string }>;
+  shopBuy(itemId: string, qty?: number): Promise<{ save: SaveData; granted: string }>;
   adsReward(adToken: string, platform?: string): Promise<{ save: SaveData; granted: number }>;
   iapVerify(platform: string, receipt: string): Promise<{ save: SaveData; granted: number }>;
   paddleCheckout(tierId: string): Promise<{ transactionId: string }>;
@@ -24,9 +24,13 @@ export function ShopMixin<TBase extends ApiClientBaseCtor>(Base: TBase): TBase &
       return data.items;
     }
 
-    /** Direct purchase: deduct coins → grant item → push back authoritative save. */
-    async shopBuy(itemId: string): Promise<{ save: SaveData; granted: string }> {
-      return this.post<{ save: SaveData; granted: string }>('/shop/buy', { itemId });
+    /**
+     * Direct purchase: deduct coins → grant item → push back authoritative save.
+     * `qty` (bulk-buy, e.g. the shop's "×10" button, 2026-08-10) buys several units in this one
+     * request — the server charges/delivers all of them atomically, all-or-nothing.
+     */
+    async shopBuy(itemId: string, qty?: number): Promise<{ save: SaveData; granted: string }> {
+      return this.post<{ save: SaveData; granted: string }>('/shop/buy', qty && qty > 1 ? { itemId, qty } : { itemId });
     }
 
     /** Ad reward (daily cap or cooldown not elapsed → ApiError('DAILY_CAP_REACHED'), 429). */

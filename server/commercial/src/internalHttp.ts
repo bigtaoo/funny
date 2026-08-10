@@ -126,6 +126,7 @@ export function startInternalHttp(
                 accountId: str(b.accountId),
                 itemId: str(b.itemId),
                 cost: num(b.cost, 0),
+                qty: num(b.qty, 1),
                 orderId: str(b.orderId),
                 clientPlatform: strOpt(b.clientPlatform),
               }),
