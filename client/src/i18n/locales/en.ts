@@ -370,6 +370,9 @@ export const en: Record<TranslationKey, string> = {
   'auth.err.passwordMismatch': 'Passwords do not match',
   'auth.err.network': 'Network error — please retry',
   'auth.err.banned': 'This account has been suspended',
+  // 2026-08-10: logging back in within the 7-day grace period now auto-restores the account (see
+  // restoreIfWithinGrace); reaching this means the grace period has elapsed and the data is gone.
+  'auth.err.deleted': "This account's 7-day grace period has ended — its data was permanently erased and cannot be recovered",
 
   // ── Shop / top-up (S2-6) ────────────────────────────────────────────────────
   'shop.title': 'Shop',

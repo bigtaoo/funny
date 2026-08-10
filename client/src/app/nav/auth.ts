@@ -262,6 +262,9 @@ export function mapAuthError(e: unknown): TranslationKey {
     case 'WEAK_PASSWORD':       return 'auth.err.weak';
     case 'BAD_REQUEST':         return 'auth.err.loginId';
     case 'ACCOUNT_BANNED':      return 'auth.err.banned';
+    // Reaching this now (2026-08-10 fix) means the 7-day grace period has actually elapsed — a login
+    // attempt still within it auto-restores server-side (see restoreIfWithinGrace) and never gets here.
+    case 'ACCOUNT_DELETED':     return 'auth.err.deleted';
     default:                    return 'auth.err.network';
   }
 }

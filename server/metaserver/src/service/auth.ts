@@ -66,6 +66,31 @@ export function AuthMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase & Cons
     private readonly feedbackRate: RateLimiter =
       createRateLimiter(this.deps.redis, 'feedback', FEEDBACK_RATE_LIMIT_PER_DAY, 24 * 60 * 60 * 1000);
 
+    /**
+     * C5-b grace-period restore (fix for the 2026-08-10 lockout report: a soft-deleted account could
+     * never actually be restored by "logging back in" despite that being exactly what the deletion
+     * confirmation copy (settings.deleteAccount.confirmBody), the privacy policy §7, and this account's
+     * own DELETE /account doc comment promise). Root cause was ordering: every auth entrypoint called
+     * rejectIfBanned — which unconditionally 410s a deletedAt account — *before* signing a token, so
+     * POST /account/cancel-deletion (the only working undo, added by P0-13/B14) was unreachable once
+     * deletedAt was set: it requires a bearer token, and no token could ever be issued again.
+     * Called right before rejectIfBanned in every credential-resolution auth handler (authWx/authDevice/
+     * authLogin/authOAuth): if this account is soft-deleted but still within the 7-day grace window, a
+     * successful login *is* the restore action — clear deletedAt/deletionConfirmToken so rejectIfBanned
+     * sees a live account and the rest of the handler proceeds normally (ban checks still apply as usual).
+     * Past the grace window this is a no-op — rejectIfBanned still 410s, matching "超过 7 天数据将被永久清除".
+     */
+    private async restoreIfWithinGrace(accountId: string): Promise<void> {
+      const { cols, now, accountCache } = this.deps;
+      const doc = await cols.accounts.findOne({ _id: accountId }, { projection: { deletedAt: 1 } });
+      if (!doc?.deletedAt || now() - doc.deletedAt >= ACCOUNT_DELETE_GRACE_MS) return;
+      await cols.accounts.updateOne(
+        { _id: accountId },
+        { $unset: { deletedAt: '', deletionConfirmToken: '' } },
+      );
+      accountCache.invalidateBanStatus(accountId);
+    }
+
     /** Grant lichuang/chenshou/suyuan to a brand-new account (CHARACTER_CARDS_DESIGN §4). No-op if account already has cards. */
     private async maybeGrantStarterCards(accountId: string, isNew: boolean): Promise<void> {
       if (!isNew) return;
@@ -89,6 +114,7 @@ export function AuthMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase & Cons
         this.deps.now(),
         region,
       );
+      await this.restoreIfWithinGrace(accountId);
       if (await this.rejectIfBanned(this.deps.cols, accountId, reply)) return;
       const token = signToken(accountId, this.deps.jwt);
       const publicId = await ensurePublicId(this.deps.cols, accountId);
@@ -105,6 +131,7 @@ export function AuthMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase & Cons
         this.deps.now(),
         region,
       );
+      await this.restoreIfWithinGrace(accountId);
       if (await this.rejectIfBanned(this.deps.cols, accountId, reply)) return;
       const token = signToken(accountId, this.deps.jwt);
       const publicId = await ensurePublicId(this.deps.cols, accountId);
@@ -169,6 +196,7 @@ export function AuthMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase & Cons
         return reply.code(401).send(err(ErrorCode.INVALID_CREDENTIALS, 'invalid loginId or password'));
       }
       const { accountId, isNew, isAnonymous, displayName } = account;
+      await this.restoreIfWithinGrace(accountId);
       if (await this.rejectIfBanned(this.deps.cols, accountId, reply)) return;
       const token = signToken(accountId, this.deps.jwt);
       const publicId = await ensurePublicId(this.deps.cols, accountId);
@@ -196,12 +224,14 @@ export function AuthMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase & Cons
 
     /**
      * C5-b Account soft-delete (required by Apple 5.1.1(v)).
-     * Writes accounts.deletedAt; subsequent auth calls return ACCOUNT_DELETED (410).
-     * Async cleanup after the 7-day grace period is triggered by admin/cron (this phase only marks the account).
+     * Writes accounts.deletedAt; subsequent auth calls return ACCOUNT_DELETED (410) unless the account
+     * logs back in within the 7-day grace period, which restores it (see restoreIfWithinGrace — fixed
+     * 2026-08-10, previously logging back in did NOT restore despite the confirmation copy promising it).
      * confirmToken is persisted alongside deletedAt (not just minted and discarded) so
-     * POST /account/cancel-deletion can verify it and undo the soft-delete within the grace period
-     * (comm-audit-2026-07-27 finding B14 — previously the token was generated, returned, and never
-     * stored anywhere, and no cancellation endpoint existed at all).
+     * POST /account/cancel-deletion can verify it and undo the soft-delete immediately within the same
+     * session, without needing to log out and back in (comm-audit-2026-07-27 finding B14 — previously
+     * the token was generated, returned, and never stored anywhere, and no cancellation endpoint existed
+     * at all).
      */
     async deleteAccount(req: FastifyRequest) {
       const accountId = accountIdOf(req);
@@ -293,6 +323,7 @@ export function AuthMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase & Cons
         this.deps.now(),
         region,
       );
+      await this.restoreIfWithinGrace(accountId);
       if (await this.rejectIfBanned(this.deps.cols, accountId, reply)) return;
       const token = signToken(accountId, this.deps.jwt);
       const publicId = await ensurePublicId(this.deps.cols, accountId);

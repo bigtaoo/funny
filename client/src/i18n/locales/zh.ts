@@ -375,6 +375,8 @@ export const zh = {
   'auth.err.passwordMismatch': '两次输入的密码不一致',
   'auth.err.network': '网络错误，请重试',
   'auth.err.banned': '该账号已被封禁',
+  // 2026-08-10：重新登录已能在 7 天宽限期内自动恢复账号（见 restoreIfWithinGrace），走到这条说明宽限期已过，数据已被清除。
+  'auth.err.deleted': '该账号的 7 天宽限期已过，数据已被永久清除，无法恢复',
 
   // ── Shop / top-up (S2-6) ─────────────────────────────────────────────────────
   'shop.title': '商店',

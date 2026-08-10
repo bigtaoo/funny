@@ -370,6 +370,9 @@ export const de: Record<TranslationKey, string> = {
   'auth.err.passwordMismatch': 'Passwörter stimmen nicht überein',
   'auth.err.network': 'Netzwerkfehler — bitte erneut versuchen',
   'auth.err.banned': 'Dieses Konto wurde gesperrt',
+  // 2026-08-10: erneutes Anmelden innerhalb der 7-Tage-Karenzzeit stellt das Konto jetzt automatisch
+  // wieder her (siehe restoreIfWithinGrace); dieser Fall bedeutet, die Karenzzeit ist abgelaufen.
+  'auth.err.deleted': 'Die 7-tägige Karenzzeit dieses Kontos ist abgelaufen — die Daten wurden endgültig gelöscht und können nicht wiederhergestellt werden',
 
   // ── Shop / Aufladen (S2-6) ──────────────────────────────────────────────────
   'shop.title': 'Shop',
