@@ -5,7 +5,6 @@
   "commercial/src/iap.ts": 517,
   "engine/src/campaign/levelSchema.ts": 527,
   "metaserver/src/accounts.ts": 528,
-  "socialsvc/src/friendService.ts": 541,
   "engine/src/systems/CombatSystem.ts": 553,
   "commercial/src/service/base.ts": 571,
   "engine/src/systems/AISystem.ts": 573,
