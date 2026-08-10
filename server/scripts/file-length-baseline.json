@@ -12,7 +12,6 @@
   "worldsvc/src/combatSiege/occupation.ts": 576,
   "metaserver/src/internal/matchReport.ts": 601,
   "worldsvc/src/season.ts": 638,
-  "socialsvc/src/familyService.ts": 666,
   "metaserver/src/service/economy.ts": 674,
   "metaserver/src/economy.ts": 682,
   "worldsvc/src/city.ts": 682,
