@@ -317,13 +317,13 @@ describe.skipIf(!mongo)('analyticsvc service domains (funnel / dist / sessions w
       expect(Object.prototype.hasOwnProperty.call(doc, 'ip')).toBe(false);
     });
 
-    // Real-bug documentation (see final report): events_count is only $inc'd inside the
-    // `if (sessionStart && batch.session_id)` branch of ingestEvents (src/service/ingest.ts). A batch
-    // that doesn't itself carry a session_start event never touches events_count, even though its
-    // events were durably inserted into the `events` collection. In real traffic a session normally
-    // sends its session_start once and several more event-only batches afterwards, so events_count
-    // ends up permanently stuck at whatever the first (session_start) batch's event count was.
-    it('events_count only accumulates on batches that carry a session_start event (documents current, likely-unintended behavior)', async () => {
+    // Fixed 2026-08-10 (was pinned as a documented bug): events_count used to $inc only inside the
+    // `if (sessionStart && batch.session_id)` branch of ingestEvents (src/service/ingest.ts), so a
+    // batch that didn't itself carry a session_start event never touched events_count even though its
+    // events were durably inserted into the `events` collection. Real traffic sends session_start once
+    // and several more event-only batches afterwards, so events_count was permanently undercounted.
+    // The trigger is now just "batch has a session_id" — every batch's event count accumulates.
+    it('events_count accumulates across batches regardless of whether each one carries a session_start event', async () => {
       await svc.ingestEvents(
         {
           session_id: 'sess-write-2', device_id: 'dev-write-2', platform: 'web', os: 'Windows', game_version: '1', locale: 'en',
@@ -337,8 +337,8 @@ describe.skipIf(!mongo)('analyticsvc service domains (funnel / dist / sessions w
       let doc = await mongo!.collections.sessions.findOne({ _id: 'sess-write-2' });
       expect(doc?.events_count).toBe(2);
 
-      // A second, later batch for the same session with no session_start — 3 more real events land in
-      // the `events` collection, but events_count on the sessions doc is not touched.
+      // A second, later batch for the same session with no session_start — its 3 events must still
+      // land in events_count (this is the case that used to be silently dropped).
       await svc.ingestEvents(
         {
           session_id: 'sess-write-2', device_id: 'dev-write-2', platform: 'web', os: 'Windows', game_version: '1', locale: 'en',
@@ -351,10 +351,38 @@ describe.skipIf(!mongo)('analyticsvc service domains (funnel / dist / sessions w
         undefined,
       );
       doc = await mongo!.collections.sessions.findOne({ _id: 'sess-write-2' });
-      expect(doc?.events_count).toBe(2); // unchanged — the follow-up batch had no session_start
+      expect(doc?.events_count).toBe(5); // 2 + 3, accumulated across both batches
+
+      // A third batch, also without session_start, must add on top rather than reset or double-count.
+      await svc.ingestEvents(
+        {
+          session_id: 'sess-write-2', device_id: 'dev-write-2', platform: 'web', os: 'Windows', game_version: '1', locale: 'en',
+          events: [{ event: 'ui_click', ts: Date.now() + 400 }],
+        },
+        undefined,
+      );
+      doc = await mongo!.collections.sessions.findOne({ _id: 'sess-write-2' });
+      expect(doc?.events_count).toBe(6); // 5 + 1
 
       const totalEventsForSession = await mongo!.collections.events.countDocuments({ session_id: 'sess-write-2' });
-      expect(totalEventsForSession).toBe(5); // all 5 raw events were inserted, just not reflected in events_count
+      expect(totalEventsForSession).toBe(6); // events_count now matches the raw events collection exactly
+    });
+
+    it('a session_id with no session_start event yet still upserts a sessions doc and counts its events (defends against session_start loss/reorder)', async () => {
+      await svc.ingestEvents(
+        {
+          session_id: 'sess-write-no-start', device_id: 'dev-write-no-start', platform: 'web', os: 'Windows', game_version: '1', locale: 'en',
+          events: [
+            { event: 'ui_click', ts: Date.now() },
+            { event: 'ui_click', ts: Date.now() + 1 },
+          ],
+        },
+        undefined,
+      );
+      const doc = await mongo!.collections.sessions.findOne({ _id: 'sess-write-no-start' });
+      expect(doc).toBeTruthy();
+      expect(doc?.events_count).toBe(2);
+      expect(doc?.scenes_visited).toEqual([]); // $setOnInsert defaults still applied on first-touch upsert
     });
 
     it('a session_end event sets ended_at/duration_sec/scenes_visited on the existing sessions doc', async () => {
