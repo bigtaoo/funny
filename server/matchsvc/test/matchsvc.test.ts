@@ -267,6 +267,75 @@ describe('Matchsvc ranked', () => {
   });
 });
 
+// ── "already busy" guards (Matchsvc.ts split, 2026-08-10) ──────────────────────
+// The single class's ALREADY_IN_ROOM guard used to check both "already in a room" and "already
+// queued" inline, in one place. After the composition split it's the same combined behavior but
+// enforced from two different sides: enqueue()'s own check now lives in queue.ts (reading rooms.ts
+// through the narrow RoomLookupPort), while roomCreate/roomJoin's "already queued?" half lives in
+// the Matchsvc.ts shell (reading queue.hasQueued() directly, so rooms.ts never has to depend on
+// queue.ts). None of these four combinations had a test before the split — the shell-owned half in
+// particular is exactly the part that could silently vanish in a refactor without anyone noticing.
+describe('Matchsvc already-busy guards (room ↔ queue cross-check across the split)', () => {
+  it('roomCreate while already in a room → ALREADY_IN_ROOM, no second room created (rooms.ts\'s own check)', () => {
+    const { svc, last } = setup();
+    svc.roomCreate('a', 'Alice', '100000001');
+    expect(svc.stats().rooms).toBe(1);
+    svc.roomCreate('a', 'Alice', '100000001'); // same account, tries again
+    expect(last('a', 'room_error')).toMatchObject({ code: 'ALREADY_IN_ROOM' });
+    expect(svc.stats().rooms).toBe(1); // no second room
+  });
+
+  it('roomJoin while already in a room → ALREADY_IN_ROOM, does not also join the other room (rooms.ts\'s own check)', () => {
+    const { svc, last } = setup();
+    svc.roomCreate('a', 'Alice', '100000001');
+    svc.roomCreate('b', 'Bob', '100000002');
+    const rsB = last('b', 'room_state');
+    if (rsB?.kind !== 'room_state') throw new Error();
+    svc.roomJoin('a', 'Alice', '100000001', rsB.code); // a is already hosting its own room
+    expect(last('a', 'room_error')).toMatchObject({ code: 'ALREADY_IN_ROOM' });
+    expect(rsB.players).toHaveLength(1); // b's room never gained a second slot
+  });
+
+  it('roomCreate while already in the ranked queue → ALREADY_IN_ROOM, no room created (shell reads queue.hasQueued())', async () => {
+    const { svc, last } = setup();
+    await svc.enqueue('a', 'Alice', '100000001', 1000); // stays queued, no partner to pair with
+    expect(svc.stats().queue).toBe(1);
+    svc.roomCreate('a', 'Alice', '100000001');
+    expect(last('a', 'room_error')).toMatchObject({ code: 'ALREADY_IN_ROOM' });
+    expect(svc.stats().rooms).toBe(0);
+  });
+
+  it('roomJoin while already in the ranked queue → ALREADY_IN_ROOM, does not join (shell reads queue.hasQueued())', async () => {
+    const { svc, last } = setup();
+    svc.roomCreate('b', 'Bob', '100000002');
+    const rsB = last('b', 'room_state');
+    if (rsB?.kind !== 'room_state') throw new Error();
+    await svc.enqueue('a', 'Alice', '100000001', 1000); // stays queued
+    svc.roomJoin('a', 'Alice', '100000001', rsB.code);
+    expect(last('a', 'room_error')).toMatchObject({ code: 'ALREADY_IN_ROOM' });
+    expect(rsB.players).toHaveLength(1);
+  });
+
+  it('enqueue while already in a friendly room is ignored (queue.ts reads rooms.ts via RoomLookupPort)', async () => {
+    const { svc, pushed } = setup();
+    svc.roomCreate('a', 'Alice', '100000001');
+    const before = pushed.length;
+    await svc.enqueue('a', 'Alice', '100000001', 1000);
+    expect(svc.stats().queue).toBe(0); // never admitted to the queue
+    expect(pushed.length).toBe(before); // enqueue-ignored is silent (log only, no push — same as pre-split)
+  });
+
+  it('enqueue while already queued is ignored, not a re-enqueue (queue.ts\'s own self-check)', async () => {
+    const { svc, pushed } = setup();
+    await svc.enqueue('a', 'Alice', '100000001', 1000);
+    expect(svc.stats().queue).toBe(1);
+    const before = pushed.length;
+    await svc.enqueue('a', 'Alice', '100000001', 1500); // same account, different elo — should be a no-op, not a replace
+    expect(svc.stats().queue).toBe(1); // still exactly one entry
+    expect(pushed.length).toBe(before); // no additional push
+  });
+});
+
 describe('Matchsvc bot-fallback (feature flag match_bot_fallback)', () => {
   async function makeCache(docs: unknown[]): Promise<FeatureFlagCache> {
     const cache = new FeatureFlagCache({ fetchAll: async () => docs });
