@@ -22,6 +22,7 @@ import { initI18n } from '../../src/i18n';
 import { GameRenderer } from '../../src/render/GameRenderer';
 import { createLocalMatch } from '../../src/app/matchEngine';
 import { getLevel } from '../../src/game';
+import { BASE_COLS } from '@nw/engine/config';
 
 // In-memory storage so initI18n (which persists the locale) has somewhere to write.
 const memStore = (() => {
@@ -110,6 +111,22 @@ describe('GameRenderer InputMixin — drag to place', () => {
     input._emitUp(buildRect.x, buildRect.y);
 
     expect(playCard).toHaveBeenCalledTimes(1);
+    renderer.destroy();
+  });
+
+  it('dragging a building card onto a base column is rejected — engine.playCard is not called', () => {
+    const { engine, layout, input, renderer } = buildRenderer();
+    const playCard = vi.spyOn(engine, 'playCard');
+
+    const from = (renderer as any).handView.slotCenter(SLOT_BUILDING_TOWER_A);
+    // Base columns are never a legal building lane — see ATTACK_LANES in commands.ts.
+    const to = layout.gridToScreen(BASE_COLS[0], 0); // row 0 = bottom building row
+
+    input._emitDown(from.x, from.y);
+    input._emitMove(to.x, to.y);
+    input._emitUp(to.x, to.y);
+
+    expect(playCard).not.toHaveBeenCalled();
     renderer.destroy();
   });
 
