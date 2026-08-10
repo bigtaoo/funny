@@ -20,7 +20,7 @@ import {
   applyEquipment,
   clampEffectCaps,
   EFFECT_CAPS,
-  ENHANCE_COEFF_PER_LEVEL,
+  enhanceMultiplier,
   type EngineCardInstance,
   type EngineEquipInv,
   type EngineAffix,
@@ -84,12 +84,12 @@ describe('Equipment combat-power monotonicity (§8)', () => {
     expect(bp5[UnitType.Infantry].attack).toBeGreaterThan(bp0[UnitType.Infantry].attack);
   });
 
-  it('main affix scaling follows base × (1 + value/100 × (1 + coefficient×level))', () => {
+  it('main affix scaling follows base × (1 + value/100 × ENHANCE_LEVEL_MULTIPLIER[level])', () => {
     const value = 20;
     const level = 5;
     const { cards, inv } = equipAll([{ id: 'm_atk', value }], level);
     const camp = buildCampaignBlueprints(cards, inv);
-    const effPct = (value / 100) * (1 + ENHANCE_COEFF_PER_LEVEL * level);
+    const effPct = (value / 100) * enhanceMultiplier(level);
     const expected = Math.round(UNIT_BLUEPRINTS[UnitType.Infantry].attack * (1 + effPct));
     expect(camp[UnitType.Infantry].attack).toBe(expected);
   });

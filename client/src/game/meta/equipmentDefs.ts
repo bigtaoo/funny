@@ -7,7 +7,7 @@
 //
 // ⚠️ Field changes must be kept in sync in three places (same discipline as SaveData.ts): this file ↔ server/shared/src/equipment.ts.
 //    The server remains the sole authority: the UI uses this data to **preview** costs/rates; actual charges/dice rolls follow the server response.
-//    The enhancement scaling coefficient (ENHANCE_COEFF_PER_LEVEL) is imported directly from @nw/engine and is not duplicated here.
+//    The enhancement multiplier table (ENHANCE_LEVEL_MULTIPLIER / enhanceMultiplier) is imported directly from @nw/engine and is not duplicated here.
 
 import type { EquipSlot, EquipRarity } from './SaveData';
 
@@ -73,6 +73,17 @@ export function isSalvageable(rarity: EquipRarity, level: number): boolean {
 export function enhanceSuccessRate(fromLevel: number): number {
   if (fromLevel < 0 || fromLevel >= EQUIP_MAX_LEVEL) return 0;
   return (EQUIP_MAX_LEVEL - fromLevel) / 10;
+}
+
+/**
+ * Enhancement demote chance on failure (mirrors server/shared enhanceDemoteChance, ADR-063):
+ * +0~+6 never demote; +7/+8 attempts risk falling back one level on failure. Used for the UI's
+ * demote-risk warning line — the server remains authoritative for the actual roll.
+ */
+export function enhanceDemoteChance(fromLevel: number): number {
+  if (fromLevel === 7) return 0.2;
+  if (fromLevel === 8) return 0.25;
+  return 0;
 }
 
 export interface EnhanceCost {

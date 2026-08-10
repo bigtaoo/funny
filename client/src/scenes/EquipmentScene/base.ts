@@ -21,7 +21,7 @@ import { ScrollTapGesture } from '../../ui/scrollTapGesture';
 import { wheelScrollY } from '../../ui/wheelScroll';
 import type { SaveData, EquipSlot, EquipRarity, EquipmentInstance } from '../../game/meta/SaveData';
 import { affixKind, EQUIPMENT_INV_CAP, EQUIP_MAX_LEVEL, type EnhanceCost } from '../../game/meta/equipmentDefs';
-import { ENHANCE_COEFF_PER_LEVEL } from '@nw/engine/balance/equipment';
+import { enhanceMultiplier } from '@nw/engine/balance/equipment';
 import { buildEquipIcon } from '../../render/atlas/equipmentAtlas';
 import { buildIcon, type IconKind } from '../../render/icons';
 import { buildMaterialIcon, type MaterialKind } from '../../render/atlas/materialAtlas';
@@ -665,7 +665,7 @@ export class EquipmentSceneBase {
   /** Affix description: i18n `affix.<id>` template with {v}; main affixes are scaled up by level. */
   protected affixDesc(id: string, value: number, level: number): string {
     const shown = affixKind(id) === 'main'
-      ? Math.round(value * (1 + ENHANCE_COEFF_PER_LEVEL * level))
+      ? Math.round(value * enhanceMultiplier(level))
       : value;
     const key = `affix.${id}` as TranslationKey;
     const s = t(key, { v: shown });

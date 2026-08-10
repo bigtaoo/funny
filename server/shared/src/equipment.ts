@@ -90,8 +90,10 @@ export function isSalvageable(rarity: EquipRarity, level: number): boolean {
 
 // ── Enhancement (E3, EQUIPMENT_DESIGN §6 / ECONOMY_NUMBERS §5.2, DRAFT [adjustable]) ────────
 //
-// Enhancement increments an instance's level by 1 (0→9), is probability-based, and can fail. Failure does not
-// reduce level or break the item — it only consumes the materials + coins for that attempt (mild mode, §6.1).
+// Enhancement increments an instance's level by 1 (0→9), is probability-based, and can fail. At +0~+6,
+// failure only consumes the materials + coins for that attempt (mild mode, §6.1). From +7 onward
+// (ADR-063), the reward curve (see ENHANCE_LEVEL_MULTIPLIER, @nw/engine/balance/equipment) steepens
+// enough that a failure also risks knocking the item back one level — see enhanceDemoteChance below.
 // The primary coin/material sink comes from the sustained failure cost at high levels with low success rates (§6.2).
 // Final values live in ECONOMY_NUMBERS §5 (pending); placeholders below are runnable (README §0: stats live in code).
 
@@ -133,6 +135,29 @@ export function enhanceCost(fromLevel: number): EnhanceCost {
 export function rollEnhanceSuccess(seedKey: string, fromLevel: number): boolean {
   const rng = seededRng(hashSeed(`enhance:${seedKey}:${fromLevel}`));
   return rng() < enhanceSuccessRate(fromLevel);
+}
+
+/**
+ * Enhancement demote chance on a failed attempt (§6.1, ADR-063): +0~+6 never demote (soft loss only,
+ * unchanged from the original "mild mode"); +7/+8 attempts risk knocking the item back one level,
+ * matching the outsized payoff ENHANCE_LEVEL_MULTIPLIER now grants those levels. Only consulted when
+ * `rollEnhanceSuccess` already returned false. fromLevel is the current level before the attempt
+ * (same convention as enhanceSuccessRate).
+ */
+export function enhanceDemoteChance(fromLevel: number): number {
+  if (fromLevel === 7) return 0.2;
+  if (fromLevel === 8) return 0.25;
+  return 0;
+}
+
+/**
+ * Demote dice roll (**server-authoritative**, deterministically bound to idempotencyKey + fromLevel):
+ * uses a distinct seed namespace from `rollEnhanceSuccess` so the two rolls don't share an RNG stream,
+ * while staying replay-consistent under the same key (§18.2).
+ */
+export function rollEnhanceDemote(seedKey: string, fromLevel: number): boolean {
+  const rng = seededRng(hashSeed(`enhance-demote:${seedKey}:${fromLevel}`));
+  return rng() < enhanceDemoteChance(fromLevel);
 }
 
 /**
