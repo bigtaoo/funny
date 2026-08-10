@@ -91,6 +91,26 @@ export interface SkinInstanceDoc {
 }
 
 /**
+ * Material instance, mirroring EquipmentInstanceDoc/SkinInstanceDoc's storage pattern but scoped down
+ * per `MaterialInstance`'s doc comment (shared/src/types.ts): `_id` = instanceId, one row per GRANT EVENT
+ * (not per physical unit) — `count` carries that event's batch size. TTL-expired via `expireAt`
+ * (`MATERIAL_INSTANCE_TTL_MS` in metaserver/src/material.ts has the retention-window rationale) — unlike
+ * equipmentInstances/skinInstances, whose row deletion IS the item's actual removal (so they must live
+ * exactly as long as the item does), a MaterialInstance is pure write-once history nothing ever reads
+ * back to reconstruct current state, so it's safe to let rows expire outright instead of needing a
+ * DELIVERED_ORDERS_CAP-style $push+$slice cap.
+ */
+export interface MaterialInstanceDoc {
+  _id: string; // instanceId
+  accountId: string;
+  materialId: string;
+  count: number;
+  sourceType?: string;
+  obtainedAt?: number;
+  expireAt: Date; // TTL anchor (expireAfterSeconds: 0), see doc comment above
+}
+
+/**
  * Card instance, split out of `SaveData.cardInv` (perf, 2026-07-27 audit, same rationale + convention
  * as `EquipmentInstanceDoc` above): the Hero Roster (up to 500 cards) was a second unbounded contributor
  * to save-doc bloat on Atlas M0, alongside equipment. `_id` = instanceId (unchanged from the old embedded
@@ -145,6 +165,7 @@ export async function ensureInventoryIndexes(
   equipmentInstances: Collection<EquipmentInstanceDoc>,
   cardInstances: Collection<CardInstanceDoc>,
   skinInstances: Collection<SkinInstanceDoc>,
+  materialInstances: Collection<MaterialInstanceDoc>,
 ): Promise<void> {
   // card operation idempotency ledger TTL auto-expiry (CC-2, expireAt is an absolute expiry time → expireAfterSeconds:0).
   await cardIdem.createIndex({ expireAt: 1 }, { expireAfterSeconds: 0 });
@@ -158,6 +179,10 @@ export async function ensureInventoryIndexes(
   await cardInstances.createIndex({ accountId: 1 });
   // skin instances: fetch-all-for-account (GET /save skinCounts join) + per-skinId lookup (escrow/sell pick one instance).
   await skinInstances.createIndex({ accountId: 1, skinId: 1 });
+  // material instances (ITEM_IDENTITY_DESIGN.md task2, 2026-08-10): per-account+materialId lookup for any
+  // future CS/audit tooling, mirroring skinInstances' compound index. TTL auto-expiry (see MaterialInstanceDoc).
+  await materialInstances.createIndex({ accountId: 1, materialId: 1 });
+  await materialInstances.createIndex({ expireAt: 1 }, { expireAfterSeconds: 0 });
   // unique multikey guard (2026-07-29): no equipment instanceId may appear in more than one card's
   // gearInstanceIds across the whole collection — the atomic backstop behind equipEquipment's pre-write
   // check (see CardInstanceDoc.gearInstanceIds doc comment). Sparse: docs without the field (not yet

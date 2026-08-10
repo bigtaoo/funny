@@ -290,6 +290,20 @@ describe.skipIf(!mongo)('meta economy orchestration e2e', () => {
     expect(again.ok).toBe(false);
   });
 
+  it('recharge milestone tier 3 (crosses 5000 cents): material reward (lead×6) stamps provenance (ITEM_IDENTITY_DESIGN.md task2, 2026-08-10)', async () => {
+    // 3× t1999 (1999 usdCents each) = 5997, crosses tier 3's 5000-cent threshold (rewards: coins(550) + lead(6)).
+    for (let i = 0; i < 3; i++) {
+      await app.inject({ method: 'POST', url: '/iap/verify', headers: auth(), payload: { platform: 'web', receipt: 'tier:t1999' } });
+    }
+    const claim = body(await app.inject({ method: 'POST', url: '/recharge/claim', headers: auth(), payload: { tierId: 3 } }));
+    expect(claim.ok).toBe(true);
+    expect(claim.data.rewards).toEqual([{ kind: 'coins', count: 550 }, { kind: 'material', id: 'lead', count: 6 }]);
+    expect(claim.data.save.materials.lead).toBe(6);
+    const inst = await m.collections.materialInstances.findOne({ accountId, materialId: 'lead' });
+    expect(inst).toMatchObject({ count: 6, sourceType: 'recharge:3' });
+    expect(typeof inst?.obtainedAt).toBe('number');
+  });
+
   it('regression (2026-08-03 fix): recharge milestone coins are reconciled on a later ALREADY_CLAIMED retry after the first grant failed', async () => {
     // Root cause: the milestone tier is marked claimed (irreversibly — a repeat claim bounces off
     // ALREADY_CLAIMED) BEFORE the coin grant runs. If that grant throws or returns ok:false, the coins
@@ -476,9 +490,16 @@ describe.skipIf(!mongo)('meta economy orchestration e2e', () => {
     expect(r.data.save.wallet.coins).toBe(980); // 1000-20
     expect(r.data.save.inventory.items?.mat_buy_scrap).toBeUndefined();
     expect(r.data.save.inventory.skins).not.toContain('mat_buy_scrap');
+    // Material provenance (ITEM_IDENTITY_DESIGN.md task2, 2026-08-10): a direct material purchase mints
+    // one materialInstances row tagged sourceType='shop', count = the batch this purchase delivered.
+    const inst = await m.collections.materialInstances.findOne({ accountId, materialId: 'scrap', sourceType: 'shop' });
+    expect(inst?.count).toBe(10);
+    expect(typeof inst?.obtainedAt).toBe('number');
     // A second purchase accumulates (materials are $inc'd, not a set).
     const r2 = body(await app.inject({ method: 'POST', url: '/shop/buy', headers: auth(), payload: { itemId: 'mat_buy_scrap' } }));
     expect(r2.data.save.materials.scrap).toBe(20);
+    // Second purchase = a distinct order → a distinct materialInstances row (not overwritten/merged).
+    expect(await m.collections.materialInstances.countDocuments({ accountId, materialId: 'scrap', sourceType: 'shop' })).toBe(2);
   });
 
   it('shop direct purchase: mat_buy_scrap daily cap (5 purchases/day = 50 scrap) rejects the 6th with 400, without charging coins', async () => {
@@ -609,6 +630,12 @@ describe.skipIf(!mongo)('meta economy orchestration e2e', () => {
     expect(r1.data.save.materials.scrap).toBe(10);
     expect(r2.data.save.materials.scrap).toBe(10);
     expect(r3.data.save.materials.scrap).toBe(10); // not 20, not 40 — the dedup guard holds every time
+    // Material provenance (ITEM_IDENTITY_DESIGN.md task2, 2026-08-10): same dedup guard also protects the
+    // provenance ledger — exactly one materialInstances row, not one per reconciliation replay.
+    const insts = await m.collections.materialInstances.find({ accountId, materialId: 'scrap' }).toArray();
+    expect(insts).toHaveLength(1);
+    expect(insts[0]!.count).toBe(10);
+    expect(insts[0]!.sourceType).toMatch(/^gacha:/);
   });
 
   it('gacha: standard-pool character card result lands in cardInv, not inventory.skins (regression — gachaDraw used to skip the loot-box category routing entirely)', async () => {

@@ -13,6 +13,7 @@ import {
 } from '@nw/shared';
 import { getOrCreateSave } from '../../save.js';
 import { mirrorCoins, mirrorWalletFrom, adsDayKey } from '../../economy.js';
+import { recordMaterialGrants } from '../../material.js';
 import { accountIdOf, clientPlatformOf, type ServiceDeps } from '../base.js';
 
 const log = createLogger('meta:economy');
@@ -200,6 +201,21 @@ export async function claimRechargeMilestoneHandler(ctx: RechargeMilestoneCtx, r
     }
   }
   const rewards = claimedRewards!;
+  // Material provenance (ITEM_IDENTITY_DESIGN.md task2, 2026-08-10): best-effort, after the mutateSave
+  // above has already durably committed the counter increment(s). Each recharge tier is claimable at
+  // most once per account ever (unlike battle pass, milestones don't reset per season), so
+  // (accountId, tierId) alone is a safe natural idempotency key.
+  const materialGrants: Record<string, number> = {};
+  for (const reward of rewards) {
+    if (reward.kind === 'material' && reward.id && reward.count > 0) {
+      materialGrants[reward.id] = (materialGrants[reward.id] ?? 0) + reward.count;
+    }
+  }
+  if (Object.keys(materialGrants).length > 0) {
+    await recordMaterialGrants(
+      ctx.deps.cols, accountId, `recharge_${accountId}_t${tierId}`, materialGrants, `recharge:${tierId}`, ctx.deps.now(),
+    );
+  }
   const finalSave = await reconcileRechargeCoins(ctx.deps, accountId, tierId, clientPlatform, out.save);
   return ok({ save: finalSave, rewards });
 }

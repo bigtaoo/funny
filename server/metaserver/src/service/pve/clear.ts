@@ -9,6 +9,7 @@ import { ErrorCode, err, ok, findPveLevel, shouldSpotCheck, sanitizePvpReportedS
 import { getOrCreateSave } from '../../save.js';
 import { grantCards, assembleCardInv } from '../../cards.js';
 import { toInstanceDoc, assembleEquipmentInv } from '../../equipment.js';
+import { recordMaterialGrants } from '../../material.js';
 import { insertSystemMail } from '../../mail.js';
 import { accrueEventTask } from '../../events.js';
 import { nullMetaSocialsvcClient } from '../../socialsvcClient.js';
@@ -140,6 +141,15 @@ async function settleNormalClear(
       { $set: toInstanceDoc(pendingDrop, accountId) },
       { upsert: true },
     );
+  }
+  // Material provenance (ITEM_IDENTITY_DESIGN.md task2, 2026-08-10): best-effort, after the mutateSave
+  // above has already durably committed the counter increment(s). Unlike every other grant site in this
+  // module, a plain PvE clear has no pre-existing per-event idempotency key (no orderId/verifyId — this
+  // is the non-spot-checked path), so a fresh random id is used; a client retry minting a second
+  // provenance row here is a harmless, self-expiring blemish (see MaterialInstance's doc comment) since
+  // this ledger is never read back to reconstruct state.
+  if (Object.keys(grant).length > 0) {
+    await recordMaterialGrants(cols, accountId, randomUUID(), grant, `pve_drop:${levelId}`, now());
   }
 
   const grantedEquipment = dropGranted ? pendingDrop : undefined;

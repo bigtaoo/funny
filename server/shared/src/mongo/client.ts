@@ -28,6 +28,7 @@ import {
   type EquipmentInstanceDoc,
   type CardInstanceDoc,
   type SkinInstanceDoc,
+  type MaterialInstanceDoc,
   ensureInventoryIndexes,
 } from './inventoryDocs';
 import { type PvpCardStatDoc, type PvpPlaySequenceDoc, ensureBalanceIndexes } from './balanceDocs';
@@ -76,6 +77,7 @@ export async function createMongo(
     equipmentInstances: db.collection<EquipmentInstanceDoc>('equipmentInstances'),
     cardInstances: db.collection<CardInstanceDoc>('cardInstances'),
     skinInstances: db.collection<SkinInstanceDoc>('skinInstances'),
+    materialInstances: db.collection<MaterialInstanceDoc>('materialInstances'),
     ladderSeasons: db.collection<LadderSeasonDoc>('ladderSeasons'),
     ladderSeasonSnapshots: db.collection<LadderSeasonSnapshotDoc>('ladderSeasonSnapshots'),
     adsTokens: db.collection<AdsTokenDoc>('adsTokens'),
@@ -108,6 +110,7 @@ export async function createMongo(
       collections.equipmentInstances,
       collections.cardInstances,
       collections.skinInstances,
+      collections.materialInstances,
     );
     await ensureBalanceIndexes(collections.pvpCardStats);
     await ensureMiscIndexes(collections.adsTokens, collections.events, collections.eventParticipants);

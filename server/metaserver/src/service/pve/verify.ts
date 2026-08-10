@@ -8,6 +8,7 @@ import { ErrorCode, err, ok, findPveLevel, PVE_REJECT_BAN_THRESHOLD, accrueStats
 import { getOrCreateSave } from '../../save.js';
 import { grantCards } from '../../cards.js';
 import { toInstanceDoc } from '../../equipment.js';
+import { recordMaterialGrants } from '../../material.js';
 import { insertSystemMail } from '../../mail.js';
 import { accrueEventTask } from '../../events.js';
 import { nullMetaSocialsvcClient } from '../../socialsvcClient.js';
@@ -42,6 +43,7 @@ async function deliverVerifiedClearReward(
   levelId: string,
   reward: Record<string, number>,
   statsJson: string | undefined,
+  verifyId: string,
 ): Promise<{
   save: SaveData;
   granted: Record<string, number>;
@@ -100,6 +102,14 @@ async function deliverVerifiedClearReward(
       { $set: toInstanceDoc(pendingDrop, accountId) },
       { upsert: true },
     );
+  }
+  // Material provenance (ITEM_IDENTITY_DESIGN.md task2, 2026-08-10): best-effort, after the mutateSave
+  // above has already durably committed the counter increment(s). Unlike settleNormalClear (clear.ts),
+  // this path DOES have a natural per-event idempotency key — verifyId (a pveVerifications doc can only
+  // transition out of 'pending' once, see pveVerifyHandler's status check) — so it's used instead of a
+  // random id, making a client retry of the verify submission re-assert the same row.
+  if (Object.keys(grant).length > 0) {
+    await recordMaterialGrants(cols, accountId, `pve_verify_${verifyId}`, grant, `pve_drop:${levelId}`, now());
   }
 
   const grantedEquipment = dropGranted ? pendingDrop : undefined;
@@ -257,6 +267,7 @@ export async function pveVerifyHandler(ctx: PveVerifyCtx, req: FastifyRequest, r
     doc.levelId,
     level.reward,
     status === 'verified' ? verdict.statsJson : undefined,
+    verifyId,
   );
   if ('error' in granted) return reply.code(409).send(err(ErrorCode.REV_CONFLICT, granted.error));
   // B6 counterpart for the spot-check path (best-effort, mirrors the normal-clear path in pveClear).

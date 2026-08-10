@@ -60,6 +60,41 @@ export interface SkinInstance {
   obtainedAt?: number;
 }
 
+/**
+ * Material instance (ITEM_IDENTITY_DESIGN.md task2, 2026-08-10) — a deliberately coarser instantiation
+ * than EquipmentInstance/CardInstance/SkinInstance above. Materials (`SaveData.materials`: scrap/lead/
+ * binding/stamina + generic `inventory.items` entries) are pure quantity resources with no level/affixes,
+ * are not tradeable (unlike skins — no escrow/transfer needed), and are granted at far higher frequency
+ * than any other item type (every PvE clear, every gacha pull, every check-in...). Minting one row per
+ * physical unit the way skins/equipment do would multiply write volume by the average grant batch size
+ * for zero gameplay benefit (§1 audit of ITEM_IDENTITY_DESIGN.md: "给每份材料分配实例id不会解锁任何新玩
+ * 法，只会带来存储/性能成本") — so a MaterialInstance instead represents one GRANT EVENT for one
+ * material/item id: `count` is the batch size that single event delivered, not always 1.
+ * `SaveData.materials` / `inventory.items` (the `Record<string, number>` running-total counters) are
+ * completely unchanged and stay the sole source of truth for "how many do I currently have" — unlike
+ * SkinInstance, those counters were never a lossy dedup view, so there is no equivalent of
+ * `assembleSkinCounts`/`skinCounts` needed to reconcile them against the instance ledger.
+ * `materialInstances` is a write-mostly provenance ledger: nothing reads it back yet (same "reserved for
+ * future support/anti-cheat tooling" caveat as EquipmentInstance.sourceType), it is only ever written on
+ * the GRANT side, and it TTL-expires (metaserver/src/material.ts) rather than needing a
+ * DELIVERED_ORDERS_CAP-style cap, since — unlike an equipment/skin instance row, whose deletion IS the
+ * item's actual removal — deleting a MaterialInstance row loses no live state at all. Consumption
+ * (craft/enhance material cost, `/internal/materials/deduct`) is intentionally NOT instrumented here: it
+ * keeps decrementing the plain counter exactly as before, with no attempt to pick and remove a specific
+ * instance — materials are fungible, so "which units were spent" carries no information a future
+ * consumer could use, and trying to make consumption instance-accurate would require redesigning every
+ * one of the ~10 consumption call sites' rev-conflict retry loops for a ledger nothing yet reads.
+ */
+export interface MaterialInstance {
+  id: string; // instance id (generated server-side; deterministic wherever the caller already has a natural per-event idempotency key)
+  materialId: string; // materials.* key (scrap/lead/binding/stamina) OR inventory.items.* key (protect_enhance, mat_buy_scrap, ...)
+  count: number; // batch size granted by this one event — NOT one row per physical unit, see interface doc comment above
+  /** Provenance tag, same convention as EquipmentInstance.sourceType (e.g. 'gacha:<orderId>', 'checkin:<monthKey>', 'mail'). */
+  sourceType?: string;
+  /** Epoch ms when this grant event happened. Optional, same caveat as EquipmentInstance.obtainedAt. */
+  obtainedAt?: number;
+}
+
 /** Slot → instance id mapping for a single loadout. */
 export type GearSlotMap = Partial<Record<EquipSlot, string /* instanceId */>>;
 
