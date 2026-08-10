@@ -9,7 +9,6 @@
   "engine/src/systems/CombatSystem.ts": 553,
   "commercial/src/service/base.ts": 571,
   "engine/src/systems/AISystem.ts": 573,
-  "metaserver/src/cards.ts": 574,
   "worldsvc/src/combatSiege/occupation.ts": 576,
   "metaserver/src/internal/matchReport.ts": 601,
   "worldsvc/src/season.ts": 638,
