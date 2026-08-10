@@ -474,6 +474,34 @@ describe('CardScene fuse panel — auto-retarget when the tapped card has too fe
     expect(ringStarCount(modalLayerOf(scene))).toBe(1);
     spy.mockRestore();
   });
+
+  // 2026-08-10: "deployed" was moved to the TOP of the ranking (previously it sat below "same
+  // character line" — see CHARACTER_CARDS_DESIGN §3.2). Regression: since materials are shared by
+  // faction (not by defId), a deep bench of the character the player was already fusing could
+  // perpetually win the same-defId tier and starve a deployed card of any OTHER character of a turn —
+  // player-reported symptom was "fed 50+ Lv.1 cards, the deployed cards are still Lv.1". This isolates
+  // that exact conflict: sameDefIdBench matches the target's defId (would win under the old order) but
+  // deployedOther, a DIFFERENT character, is on an SLG team — it must win now.
+  it('prefers a deployed card of a different character over a same-defId bench card', () => {
+    const target = makeCard('target', 'lena', { level: 5 }); // faction anna, no materials at all
+    const sameDefIdBench = makeCard('sameDefIdBench', 'lena', { level: 2 }); // same defId as target, NOT deployed
+    const deployedOther = makeCard('deployedOther', 'mara', { level: 1 });  // different defId, faction anna, deployed
+    const cardInv: Record<string, CardInstance> = { target, sameDefIdBench, deployedOther };
+    for (let i = 0; i < FUSION_MATERIAL_COUNT; i++) cardInv[`benchMat${i}`] = makeCard(`benchMat${i}`, 'max', { level: 2 });
+    for (let i = 0; i < FUSION_MATERIAL_COUNT; i++) cardInv[`deployedMat${i}`] = makeCard(`deployedMat${i}`, 'max', { level: 1 });
+
+    const spy = vi.spyOn(log, 'showToastMessage');
+    const scene = buildScene(baseCb(cardInv, {
+      getCardState: () => ({ deployedOther: { teamId: 'team-1' } }),
+    } as unknown as Partial<CardCallbacks>));
+    (scene as unknown as { openFuseSelect: (c: CardInstance) => void }).openFuseSelect(target);
+
+    expect(spy).toHaveBeenCalledTimes(1);
+    // Ring centers on deployedOther (Lv.1), not sameDefIdBench (Lv.2) — deployed now outranks matching
+    // the character line being fused.
+    expect(ringStarCount(modalLayerOf(scene))).toBe(1);
+    spy.mockRestore();
+  });
 });
 
 describe('CardScene fuse panel — auto-continue after a successful fuse', () => {
