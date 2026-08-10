@@ -4,8 +4,6 @@
   "commercial/src/iap.ts": 517,
   "engine/src/campaign/levelSchema.ts": 527,
   "metaserver/src/accounts.ts": 528,
-  "engine/src/systems/CombatSystem.ts": 553,
-  "engine/src/systems/AISystem.ts": 573,
   "metaserver/src/internal/matchReport.ts": 601,
   "metaserver/src/service/economy.ts": 689,
   "metaserver/src/economy.ts": 693
