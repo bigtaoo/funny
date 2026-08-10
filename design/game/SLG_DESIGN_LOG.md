@@ -648,6 +648,7 @@ if (path.startsWith('/admin/world/')) {
 - `openSeason` reopen 守卫：同 season/shard 幂等放行；season 不同 / shard 不同均拒绝且不修改已有文档。
 - `/admin/world/allocate` 配合已激活的地图模板：断言新开的 worldId 在 `mapBaselineRows` 里真的拿到了克隆的行数据（不是只看 200/worldIds，那样测不出克隆有没有发生）。
 - 顺带修了 `shard.e2e.test.ts`/`season-ops.e2e.test.ts` 里 `startHttpApi(...)` 测试夹具缺第 6 个参数 `mapTemplateSvc`（一直传的是 5 个参数，`mapTemplateSvc` 是 `undefined`）——`allocate` 路由过去从不touch这个依赖所以一直没暴露，这次修复引入的调用让它在测试里直接抛 `Cannot read properties of undefined`，顺手在两个测试文件里补了一个真实的 `MapTemplateService`（无激活模板时是安全 no-op）。
+- **补记（同日）**：`server/admin` 层此前对整条 SLG 赛季生命周期（open/settle/reset/close/merge/allocate）**零测试覆盖**——`season-audit.e2e.test.ts` 只测异常审计工单流程，`FakeWorld` 把这几个方法全部桩成空操作。新增 `server/admin/test/season-ops.e2e.test.ts`（真实 Mongo）：逐方法断言转发给 `WorldClient` 的确切参数、返回值、写入 `auditLog` 的 `AuditAction`/`target`/`summary`；`slgResetSeason` 的「必须先 settle 才能 reset」409 守卫正反两个方向都覆盖；`slg.season.manage`/`slg.season.view` 两个能力的角色矩阵（support 都没有、viewer 只有 view、super 都有）。9 例全绿，admin 全量套件（10 文件 92 例）随之全绿。
 
 **遗留**：ops「Open a new world」表单仍保留作为低级 escape hatch（重开已关闭的世界、单独补一个分片），没有删除，只是在 UI 文案上标注了优先用「Allocate next season」。
 
