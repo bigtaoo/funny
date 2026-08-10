@@ -217,6 +217,11 @@ components:
           items:
             type: string
           description: Set of owned title ids (awarded by season settlement / achievement / admin; order reflects acquisition order)
+        titleGrants:
+          type: object
+          additionalProperties:
+            type: integer
+          description: titleId → obtainedAt (epoch ms); parallel map to titles, not required to have an entry for every owned title
         battlePass:
           $ref: '#/components/schemas/BattlePassData'
         rechargeMilestone:
@@ -4334,6 +4339,9 @@ paths:
                             seasonNo:
                               type: integer
                               description: Season number (only for ladder/slg type titles)
+                            obtainedAt:
+                              type: integer
+                              description: Grant timestamp (epoch ms); absent for titles granted before ITEM_IDENTITY_DESIGN.md task3 (2026-08-10) was deployed
                       equipped:
                         type: string
                         nullable: true

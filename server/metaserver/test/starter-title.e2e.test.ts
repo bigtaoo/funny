@@ -52,6 +52,8 @@ describe.skipIf(!mongo)('starter title grant e2e', () => {
     const save = await getSave(token);
     expect(save.save.titles).toContain('event.newbie');
     expect(save.save.equipped.title).toBe('event.newbie');
+    // ITEM_IDENTITY_DESIGN.md task3 (2026-08-10): makeNewSave stamps titleGrants alongside titles.
+    expect(typeof save.save.titleGrants?.['event.newbie']).toBe('number');
   });
 
   it('backfills a pre-existing account that lacks the title, and auto-equips it when nothing is worn', async () => {
@@ -126,5 +128,51 @@ describe.skipIf(!mongo)('starter title grant e2e', () => {
     const finalDoc = await m.collections.saves.findOne({ _id: accountId });
     expect(finalDoc?.save.titles).toContain('event.concurrent_test'); // title survives regardless of which write "won" the race
     expect(finalDoc?.save.flags?.raced).toBe(true); // competing write's change also survives
+  });
+
+  // ── titleGrants (ITEM_IDENTITY_DESIGN.md task3, 2026-08-10) ─────────────────────────────
+
+  it('grantTitleToPlayer stamps titleGrants[titleId] with the grant time it is called with', async () => {
+    const { token, accountId } = await authDevice('starter-dev-titlegrant-1');
+    await getSave(token); // ensure the save document exists
+    const grantAt = 1_700_000_000_000;
+    await grantTitleToPlayer(m.collections, accountId, 'ach.pvp.veteran', grantAt);
+
+    const doc = await m.collections.saves.findOne({ _id: accountId });
+    expect(doc?.save.titles).toContain('ach.pvp.veteran');
+    expect(doc?.save.titleGrants?.['ach.pvp.veteran']).toBe(grantAt);
+  });
+
+  it('a legacy save with titles but no titleGrants field does not crash, and only the newly granted title gets an obtainedAt', async () => {
+    const { token, accountId } = await authDevice('starter-dev-titlegrant-legacy');
+    const legacy = makeNewSave(accountId, 1000);
+    // Simulate a save created before task3 shipped: titles[] exists, titleGrants does not.
+    (legacy as { titles: string[] }).titles = ['event.newbie'];
+    delete (legacy as { titleGrants?: Record<string, number> }).titleGrants;
+    await m.collections.saves.updateOne({ _id: accountId }, { $set: { save: legacy, rev: legacy.rev } });
+
+    await getSave(token); // sanity: reading the legacy save doesn't crash
+    const grantAt = 1_700_000_001_000;
+    await grantTitleToPlayer(m.collections, accountId, 'event.founder', grantAt);
+
+    const doc = await m.collections.saves.findOne({ _id: accountId });
+    expect(doc?.save.titles).toEqual(expect.arrayContaining(['event.newbie', 'event.founder']));
+    // Only the newly granted title has a recorded obtainedAt; the pre-existing 'event.newbie' from the
+    // legacy save is not retroactively backfilled (expected — see ITEM_IDENTITY_DESIGN.md §3 task3).
+    expect(doc?.save.titleGrants?.['event.founder']).toBe(grantAt);
+    expect(doc?.save.titleGrants?.['event.newbie']).toBeUndefined();
+  });
+
+  it('re-granting an already-owned title is idempotent: titleGrants keeps the original obtainedAt, not the second call\'s', async () => {
+    const { token, accountId } = await authDevice('starter-dev-titlegrant-idem');
+    await getSave(token);
+    const firstAt = 1_700_000_002_000;
+    const secondAt = 1_700_000_099_000; // much later — must NOT overwrite firstAt
+    await grantTitleToPlayer(m.collections, accountId, 'ach.all_chapters', firstAt);
+    await grantTitleToPlayer(m.collections, accountId, 'ach.all_chapters', secondAt);
+
+    const doc = await m.collections.saves.findOne({ _id: accountId });
+    expect((doc?.save.titles as string[]).filter((t) => t === 'ach.all_chapters')).toHaveLength(1);
+    expect(doc?.save.titleGrants?.['ach.all_chapters']).toBe(firstAt);
   });
 });

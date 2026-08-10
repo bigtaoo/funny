@@ -1,6 +1,6 @@
 # 物品身份基准：唯一id / 状态 / 溯源
 
-> 状态：设计中（第1、2部分已实现，材料/称号实例化为后续待办）· 权威：本文 · 更新：2026-08-08
+> 状态：设计中（第1、2部分+称号实例化已实现，材料实例化为后续待办）· 权威：本文 · 更新：2026-08-10
 
 ## 0. 背景
 
@@ -55,8 +55,9 @@
 
 ### 任务3：称号实例化（无交易需求，优先级最低）
 
-- [ ] **范围**：`titles: string[]` → 每个称号一个独立实例（至少补上 `obtainedAt`，`titles.ts` 头部注释已经明确写了"grant time is not persisted"）。
+- [x] **范围**：`titles: string[]` → 每个称号一个独立实例（至少补上 `obtainedAt`，`titles.ts` 头部注释已经明确写了"grant time is not persisted"）。✅（2026-08-10）
 - **备注**：称号终身不可移除、不可交易，不需要 escrow/grant 那套"实例转移"逻辑，只需要在授予时多存一条 `{titleId, obtainedAt}` 记录（甚至可以只是给 `titles: string[]` 平行加一个 `titleGrants: Record<string, number>` 时间戳映射，不需要完整实例化）。三个任务里工程量最小，但也没有明确的玩法/客服需求驱动，排在最后。
+- **落地（2026-08-10）**：采用文档建议的轻量方案，未做完整实例化——新增 `SaveData.titleGrants?: Record<string, number>`（titleId→obtainedAt epoch ms，可选/向后兼容，无需 `SAVE_VERSION` 迁移）。**唯一授予入口** `metaserver/src/titles.ts` 的 `grantTitleToPlayer`（`ladderRoutes.ts`/`ladderSeason.ts`/`achievements.ts`/`save.ts` 的新手赠予等全部调用点都走这一个函数，无需逐一改）在写 `titles` 的同时写 `titleGrants[titleId]`，**幂等**——已存在的 key 不覆盖，防御一次假设性的重复授予把 `obtainedAt` 挪后。`GET /titles`（`service/liveops/profile.ts` `getTitlesHandler`）把两者 join 成 wire 响应，缺失时省略 `obtainedAt` 字段（老账号/该称号早于本次改动授予）。`makeNewSave` 里起始称号同步打上 `obtainedAt`。客户端 `SaveData.ts` 镜像同名字段（只读展示用，非当前任何 UI 强需求）。**影响文件**：`server/shared/src/types.ts`（字段+`makeNewSave`）、`server/shared/src/titles.ts`（注释更新）、`server/metaserver/src/titles.ts`（写入逻辑）、`server/metaserver/src/service/liveops/profile.ts`（join 逻辑）、`client/src/game/meta/SaveData.ts`（镜像）、openapi 契约三处（`openapi.yml`/`paths/liveops.yml`/`schemas.yml`）+ 生成产物。**测试**：`metaserver/test/titles.test.ts`（+2：直接写入的 obtainedAt 正确返回、老账号缺失字段时省略）+ `metaserver/test/starter-title.e2e.test.ts`（+3：grantTitleToPlayer 打时间戳、老账号无 titleGrants 字段不炸且只有新授予的称号有 obtainedAt、重复授予幂等不挪时间）。**验收**：`tsc -b shared metaserver` + client `tsc --noEmit` 全干净；shared 722 测试、metaserver 全量 68 文件 886 测试、client tsc 全绿。
 
 ---
 

@@ -100,9 +100,43 @@ describe('GET /titles (L2-2)', () => {
     const res = await app.inject({ method: 'GET', url: '/titles', headers: auth });
     expect(res.statusCode).toBe(200);
     expect(res.json().data).toEqual({
-      titles: [{ id: 'event.newbie', source: 'event' }],
+      // ITEM_IDENTITY_DESIGN.md task3 (2026-08-10): makeNewSave also stamps titleGrants['event.newbie'],
+      // so the starter title now round-trips with an obtainedAt (real Date.now(), hence expect.any).
+      titles: [{ id: 'event.newbie', source: 'event', obtainedAt: expect.any(Number) }],
       equipped: 'event.newbie',
     });
+    await app.close();
+  });
+
+  it('titleGrants records the obtainedAt timestamp for a directly-seeded title (task3)', async () => {
+    const cols = fakeCols({
+      accountId: ACC,
+      mutate: (s) => {
+        s.titles = ['event.founder'];
+        s.titleGrants = { 'event.founder': 12345 };
+        s.equipped = { title: 'event.founder' };
+      },
+    });
+    const app = await makeApp(cols);
+    const res = await app.inject({ method: 'GET', url: '/titles', headers: auth });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().data.titles).toEqual([{ id: 'event.founder', source: 'event', obtainedAt: 12345 }]);
+    await app.close();
+  });
+
+  it('a title with no titleGrants entry (legacy account) omits obtainedAt', async () => {
+    const cols = fakeCols({
+      accountId: ACC,
+      mutate: (s) => {
+        s.titles = ['event.founder'];
+        s.titleGrants = undefined; // simulate a pre-task3 save
+        s.equipped = { title: 'event.founder' };
+      },
+    });
+    const app = await makeApp(cols);
+    const res = await app.inject({ method: 'GET', url: '/titles', headers: auth });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().data.titles).toEqual([{ id: 'event.founder', source: 'event' }]);
     await app.close();
   });
 });
