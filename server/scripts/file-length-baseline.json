@@ -22,6 +22,5 @@
   "admin/src/httpApi.ts": 712,
   "metaserver/src/service/liveops.ts": 742,
   "metaserver/src/service/pve.ts": 838,
-  "worldsvc/src/combatSiege/arrival.ts": 909,
-  "worldsvc/src/db.ts": 916
+  "worldsvc/src/combatSiege/arrival.ts": 909
 }
