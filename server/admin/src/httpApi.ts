@@ -2,11 +2,43 @@
 // The second layer, X-Internal-Key, is held by admin when calling business services (in clients.ts) and is unrelated here.
 // Uses node:http (admin does not import fastify). Every endpoint enforces capability checks server-side (hiding buttons in the frontend does not count, §6).
 // CORS: admin is internal-only, but the frontend is a pure browser client → allow all origins (Bearer header auth, not cookie, no credentials needed).
-import { createServer, type Server, type IncomingMessage, type ServerResponse } from 'http';
-import { signToken, verifyToken, createLogger, roleHasCapability, type AdminCapability, type InternalAuthVerifier, type JwtConfig } from '@nw/shared';
-import { AdminError, type Actor, type AdminService } from './service';
+//
+// startHttpApi was a single ~712-line function (one big if-chain over node:http request/response, not a
+// framework router) — 2026-08-10 split into a thin dispatcher + one file per route domain under
+// ./httpApi/, same "chain of responsibility" shape worldsvc/httpApi.ts pioneered: each domain handler
+// takes the shared `RouteCtx` and returns `true` once it has matched a route and sent a response, `false`
+// to let the next handler try. No two domain files match the same method+path, so route resolution is
+// unchanged even though the call order below groups differently than the original physical if-chain order
+// (e.g. `pvp-card-stats` moved next to `analytics.view`'s other routes, `reports`/`appeals`/`feedback`
+// moved next to `anticheat` under one "trust & safety" file) — safe precisely because path sets are
+// disjoint across groups, same reasoning as an index-creation call order having no behavioral meaning
+// once the collections don't overlap. `session.ts` is the one exception mirroring worldsvc's
+// `/admin/world/*`: its `handlePreAuth` runs BEFORE the JWT/actor exists at all (health/OPTIONS/the three
+// X-Internal-Key internal endpoints), and `handleLogin` runs after that but still before `authenticate()`.
+//   httpApi/helpers.ts        wire helpers (readJson/send/clientIp/str/numOpt) + authenticate/requireCap + RouteDeps/BaseCtx/RouteCtx types
+//   httpApi/session.ts        preAuth (health/OPTIONS/internal flags+shop-prices+wordlists) + login + logout/me
+//   httpApi/monitorRoutes.ts  monitor live/trend, analytics summary/events, PvP card win-rate report
+//   httpApi/playerRoutes.ts   player search/detail/password-reset, manual ban/unban (S4-4)
+//   httpApi/trustSafetyRoutes.ts anticheat review queue, UGC report queue, player appeal queue, feedback (read-only)
+//   httpApi/compRoutes.ts     compensation ticket create/list/preview/approve/reject/cancel/retry
+//   httpApi/opsConfigRoutes.ts audit log, feature flags, SLG shop price overrides, moderation wordlist overlays
+//   httpApi/accountRoutes.ts  admin account management (superadmin)
+//   httpApi/slgRoutes.ts      ladder season ops + SLG season/audit/map-template ops (worldsvc proxy, G7/§17.7/§24)
+//   httpApi/commerceRoutes.ts Paddle webhook event log, limited-time events, custom gacha pools
+import { createServer, type Server } from 'http';
+import { createLogger, type InternalAuthVerifier, type JwtConfig } from '@nw/shared';
+import { AdminError, type AdminService } from './service';
 import { EventsClientError } from './clients';
-import type { CompTarget, EventInput, CustomPoolConfig } from '@nw/shared';
+import { send, authenticate, type BaseCtx, type RouteCtx } from './httpApi/helpers';
+import { handlePreAuth, handleLogin, handleSession } from './httpApi/session';
+import { handleMonitorRoutes } from './httpApi/monitorRoutes';
+import { handlePlayerRoutes } from './httpApi/playerRoutes';
+import { handleTrustSafetyRoutes } from './httpApi/trustSafetyRoutes';
+import { handleCompRoutes } from './httpApi/compRoutes';
+import { handleOpsConfigRoutes } from './httpApi/opsConfigRoutes';
+import { handleAccountRoutes } from './httpApi/accountRoutes';
+import { handleSlgRoutes } from './httpApi/slgRoutes';
+import { handleCommerceRoutes } from './httpApi/commerceRoutes';
 
 const log = createLogger('admin:http');
 
@@ -18,680 +50,34 @@ export interface HttpApiOpts {
   internalAuth: InternalAuthVerifier;
 }
 
-function readJson(req: IncomingMessage): Promise<Record<string, unknown>> {
-  return new Promise((resolve, reject) => {
-    let body = '';
-    req.on('data', (c) => {
-      body += c;
-      if (body.length > 1 << 20) reject(new Error('payload too large'));
-    });
-    req.on('end', () => {
-      try {
-        resolve(body ? (JSON.parse(body) as Record<string, unknown>) : {});
-      } catch (e) {
-        reject(e as Error);
-      }
-    });
-    req.on('error', reject);
-  });
-}
-
-function send(res: ServerResponse, status: number, body: unknown): void {
-  res.writeHead(status, {
-    'content-type': 'application/json',
-    'access-control-allow-origin': '*',
-    'access-control-allow-methods': 'GET,POST,PATCH,PUT,DELETE,OPTIONS',
-    'access-control-allow-headers': 'authorization,content-type',
-  });
-  res.end(JSON.stringify(body));
-}
-
-function clientIp(req: IncomingMessage): string | undefined {
-  const xff = req.headers['x-forwarded-for'];
-  if (typeof xff === 'string') return xff.split(',')[0]!.trim();
-  return req.socket.remoteAddress ?? undefined;
-}
-
-const str = (v: unknown): string => (typeof v === 'string' ? v : '');
-const numOpt = (v: string | null): number | undefined => {
-  if (v === null || v === '') return undefined;
-  const n = Number(v);
-  return Number.isFinite(n) ? n : undefined;
-};
-
 export function startHttpApi(opts: HttpApiOpts, svc: AdminService): Server {
   const { jwt, internalAuth } = opts;
 
-  /** Extracts the authenticated actor; throws AdminError(401) on failure. */
-  const authenticate = async (req: IncomingMessage): Promise<Actor> => {
-    const header = req.headers['authorization'];
-    const m = typeof header === 'string' ? /^Bearer\s+(.+)$/i.exec(header.trim()) : null;
-    if (!m) throw new AdminError(401, 'unauthorized', 'missing bearer token');
-    let adminId: string;
-    try {
-      adminId = verifyToken(m[1]!, jwt);
-    } catch {
-      throw new AdminError(401, 'unauthorized', 'invalid token');
-    }
-    const doc = await svc.getAccount(adminId);
-    if (!doc || doc.disabled) throw new AdminError(401, 'unauthorized', 'account disabled or gone');
-    return { adminId: doc._id, username: doc.username, displayName: doc.displayName, role: doc.role };
-  };
-
-  const requireCap = (actor: Actor, cap: AdminCapability): void => {
-    if (!roleHasCapability(actor.role, cap)) {
-      throw new AdminError(403, 'forbidden', `missing capability: ${cap}`);
-    }
-  };
-
   const server = createServer((req, res) => {
     void (async () => {
-      // CORS preflight.
-      if (req.method === 'OPTIONS') {
-        res.writeHead(204, {
-          'access-control-allow-origin': '*',
-          'access-control-allow-methods': 'GET,POST,PATCH,PUT,DELETE,OPTIONS',
-          'access-control-allow-headers': 'authorization,content-type',
-        });
-        res.end();
-        return;
-      }
-      // Liveness probe (no auth).
-      if (req.method === 'GET' && req.url === '/health') {
-        send(res, 200, { ok: true, service: 'admin' });
-        return;
-      }
-      // ── Internal endpoint: raw feature flag rules (X-Internal-Key, not admin JWT; database-less backends poll here) ──
-      // A player JWT cannot satisfy X-Internal-Key (structurally rejected), and this endpoint only reads raw rules without evaluating them —
-      // consumers fetch the rules and call evaluateFlag in their own process with the current user context.
-      if (req.method === 'GET' && (req.url ?? '').split('?')[0] === '/admin/internal/flags') {
-        if (!internalAuth.verify(req.headers).ok) {
-          log.warn('internal flags request rejected: bad X-Internal-Key', {
-            caller: req.headers['x-internal-caller'],
-          });
-          send(res, 401, { ok: false, error: 'unauthorized' });
-          return;
-        }
-        try {
-          send(res, 200, { ok: true, flags: await svc.getInternalFlags() });
-        } catch (e) {
-          log.error('internal flags fetch failed', { err: (e as Error).message });
-          send(res, 500, { ok: false, error: 'internal error' });
-        }
-        return;
-      }
-      // ── Internal endpoint: raw SLG shop price overrides (X-Internal-Key; worldsvc has no DB connection to admin) ──
-      // Same shape as the internal flags endpoint above: raw override docs only, worldsvc merges them onto
-      // SLG_SHOP_ITEMS locally via resolveSlgShopItem.
-      if (req.method === 'GET' && (req.url ?? '').split('?')[0] === '/admin/internal/slg-shop-prices') {
-        if (!internalAuth.verify(req.headers).ok) {
-          log.warn('internal slg-shop-prices request rejected: bad X-Internal-Key', {
-            caller: req.headers['x-internal-caller'],
-          });
-          send(res, 401, { ok: false, error: 'unauthorized' });
-          return;
-        }
-        try {
-          send(res, 200, { ok: true, items: await svc.getInternalShopPrices() });
-        } catch (e) {
-          log.error('internal slg-shop-prices fetch failed', { err: (e as Error).message });
-          send(res, 500, { ok: false, error: 'internal error' });
-        }
-        return;
-      }
-      // ── Internal endpoint: raw content-moderation word list overlays (X-Internal-Key; metaserver/socialsvc/worldsvc have no DB connection to admin) ──
-      // Same shape as the internal flags/slg-shop-prices endpoints above: raw overlay docs only, consumers
-      // merge them onto REGION_WORDLISTS locally via WordlistCache (CONTENT_MODERATION_DESIGN.md §3.2).
-      if (req.method === 'GET' && (req.url ?? '').split('?')[0] === '/admin/internal/moderation-wordlists') {
-        if (!internalAuth.verify(req.headers).ok) {
-          log.warn('internal moderation-wordlists request rejected: bad X-Internal-Key', {
-            caller: req.headers['x-internal-caller'],
-          });
-          send(res, 401, { ok: false, error: 'unauthorized' });
-          return;
-        }
-        try {
-          send(res, 200, { ok: true, items: await svc.getInternalWordlists() });
-        } catch (e) {
-          log.error('internal moderation-wordlists fetch failed', { err: (e as Error).message });
-          send(res, 500, { ok: false, error: 'internal error' });
-        }
-        return;
-      }
-
       const url = new URL(req.url ?? '', `http://${req.headers.host ?? 'admin'}`);
-      const path = url.pathname;
-      const method = req.method ?? 'GET';
+      const base: BaseCtx = { req, res, method: req.method ?? 'GET', path: url.pathname, url, svc, jwt, internalAuth };
+
+      // CORS preflight / health / internal (X-Internal-Key) endpoints — all reachable with zero admin JWT.
+      if (await handlePreAuth(base)) return;
 
       try {
-        // ── Login (no session required) ──
-        if (method === 'POST' && path === '/admin/login') {
-          const b = await readJson(req);
-          const doc = await svc.authenticate(str(b.username), str(b.password), clientIp(req));
-          const token = signToken(doc._id, jwt);
-          const { admin, capabilities } = svc.meView(doc);
-          return send(res, 200, { ok: true, token, admin, capabilities });
-        }
+        // Login (no session required — this is what creates one).
+        if (await handleLogin(base)) return;
 
         // All other endpoints require a session.
-        const actor = await authenticate(req);
+        const actor = await authenticate(req, jwt, svc);
+        const ctx: RouteCtx = { ...base, actor };
 
-        if (method === 'POST' && path === '/admin/logout') {
-          await svc.audit(actor.adminId, 'logout', { ip: clientIp(req) });
-          return send(res, 200, { ok: true });
-        }
-        if (method === 'GET' && path === '/admin/me') {
-          const doc = await svc.getAccount(actor.adminId);
-          if (!doc) throw new AdminError(401, 'unauthorized', 'gone');
-          return send(res, 200, { ok: true, ...svc.meView(doc) });
-        }
-
-        // ── Monitoring ──
-        if (method === 'GET' && path === '/admin/monitor/live') {
-          requireCap(actor, 'monitor.view');
-          return send(res, 200, { ok: true, ...(await svc.liveStats()) });
-        }
-        if (method === 'GET' && path === '/admin/monitor/trend') {
-          requireCap(actor, 'monitor.view');
-          const points = await svc.trend({
-            metric: url.searchParams.get('metric') ?? '',
-            from: numOpt(url.searchParams.get('from')),
-            to: numOpt(url.searchParams.get('to')),
-          });
-          return send(res, 200, { ok: true, points });
-        }
-
-        // ── Analytics ──
-        if (method === 'GET' && path === '/admin/analytics/summary') {
-          requireCap(actor, 'analytics.view');
-          return send(res, 200, { ok: true, ...(await svc.analyticsSummary()) });
-        }
-        if (method === 'GET' && path === '/admin/analytics/events') {
-          requireCap(actor, 'analytics.view');
-          const type = url.searchParams.get('type') ?? 'event_counts';
-          const days = Math.min(90, Math.max(1, Number(url.searchParams.get('days') ?? '7')));
-          const platform = url.searchParams.get('platform') ?? undefined;
-          return send(res, 200, { ok: true, ...(await svc.analyticsQuery(type, days, platform)) });
-        }
-
-        // ── Player fuzzy search (nickname / login account / public id / accountId) ──
-        if (method === 'GET' && path === '/admin/players/search') {
-          requireCap(actor, 'player.lookup');
-          const q = url.searchParams.get('q') ?? '';
-          return send(res, 200, { ok: true, players: await svc.searchPlayers(actor.adminId, q) });
-        }
-
-        // ── Player detail (by accountId, fetched after clicking a fuzzy search result) ──
-        if (method === 'GET' && path.startsWith('/admin/player/account/')) {
-          requireCap(actor, 'player.lookup');
-          const accountId = decodeURIComponent(path.slice('/admin/player/account/'.length));
-          return send(res, 200, { ok: true, player: await svc.lookupPlayerByAccountId(accountId) });
-        }
-
-        // ── Player detail (by 9-digit public id) ──
-        if (method === 'GET' && path.startsWith('/admin/player/')) {
-          requireCap(actor, 'player.lookup');
-          const publicId = decodeURIComponent(path.slice('/admin/player/'.length));
-          return send(res, 200, { ok: true, player: await svc.lookupPlayer(publicId) });
-        }
-
-        // ── Player password reset (player.password_reset, super only): support tool for players with no
-        // contact method on file, who cannot use self-service /auth/password/change (needs the old password) ──
-        const pwResetMatch = path.match(/^\/admin\/players\/([^/]+)\/reset-password$/);
-        if (method === 'POST' && pwResetMatch) {
-          requireCap(actor, 'player.password_reset');
-          const accountId = decodeURIComponent(pwResetMatch[1] ?? '');
-          const b = await readJson(req);
-          await svc.resetPlayerPassword(actor.adminId, accountId, str(b.password));
-          return send(res, 200, { ok: true });
-        }
-
-        // ── PvP card win-rate report (BALANCE data pipeline P1) ──
-        if (method === 'GET' && path === '/admin/pvp-card-stats') {
-          requireCap(actor, 'analytics.view');
-          const mode = url.searchParams.get('mode') ?? undefined;
-          const since = url.searchParams.get('since') ?? undefined;
-          const cards = await svc.listPvpCardStats({ mode, since });
-          return send(res, 200, { ok: true, cards });
-        }
-
-        // ── Manual ban / unban (S4-4) ──
-        const banMatch = path.match(/^\/admin\/accounts\/([^/]+)\/(ban|unban)$/);
-        if (method === 'POST' && banMatch) {
-          requireCap(actor, 'anticheat.action');
-          const accountId = decodeURIComponent(banMatch[1] ?? '');
-          const action = (banMatch[2] ?? 'ban') as 'ban' | 'unban';
-          const result = action === 'ban'
-            ? await svc.banAccount(accountId)
-            : await svc.unbanAccount(accountId);
-          await svc.audit(actor.adminId, action === 'ban' ? 'account.ban' : 'account.unban', { target: accountId });
-          return send(res, result.ok ? 200 : 502, { ok: result.ok });
-        }
-
-        // ── Achievement anti-cheat review queue (S9-7) ──
-        if (method === 'GET' && path === '/admin/anticheat/reviews') {
-          requireCap(actor, 'anticheat.view');
-          const accountId = url.searchParams.get('accountId') ?? undefined;
-          const status = url.searchParams.get('status') ?? undefined;
-          const limit = Math.min(100, Math.max(1, Number(url.searchParams.get('limit') ?? '50')));
-          const reviews = await svc.listAntiCheatReviews(actor.adminId, {
-            ...(accountId ? { accountId } : {}),
-            ...(status ? { status } : {}),
-            limit,
-          });
-          return send(res, 200, { ok: true, reviews });
-        }
-
-        // ── Resolve an anti-cheat review (anticheat.action): human decides dismiss vs ban ──
-        const reviewResolveMatch = path.match(/^\/admin\/anticheat\/reviews\/([^/]+)\/resolve$/);
-        if (method === 'POST' && reviewResolveMatch) {
-          requireCap(actor, 'anticheat.action');
-          const id = decodeURIComponent(reviewResolveMatch[1] ?? '');
-          const b = await readJson(req);
-          const resolution = str(b.resolution);
-          if (resolution !== 'dismissed' && resolution !== 'banned') {
-            return send(res, 400, { ok: false, error: 'resolution must be dismissed or banned' });
-          }
-          await svc.resolveAntiCheatReview(actor.adminId, id, str(b.accountId), resolution);
-          return send(res, 200, { ok: true });
-        }
-
-        // ── Compensation tickets ──
-        if (method === 'POST' && path === '/admin/comp/tickets') {
-          const b = await readJson(req);
-          // Initiating capability (single/global) is precisely validated by service based on scope.
-          const ticket = await svc.initiateTicket(actor, {
-            scope: str(b.scope),
-            target: b.target as CompTarget,
-            mail: b.mail as never,
-            reason: str(b.reason),
-          });
-          return send(res, 200, { ok: true, ticket });
-        }
-        if (method === 'GET' && path === '/admin/comp/tickets') {
-          requireCap(actor, 'comp.view');
-          const status = url.searchParams.get('status');
-          const tickets = await svc.listTickets(status ? { status } : {});
-          return send(res, 200, { ok: true, tickets });
-        }
-        if (method === 'POST' && path === '/admin/comp/preview') {
-          const b = await readJson(req);
-          return send(res, 200, {
-            ok: true,
-            ...(await svc.preview(actor, { scope: str(b.scope), target: b.target as CompTarget })),
-          });
-        }
-        const ticketAction = /^\/admin\/comp\/tickets\/([^/]+)\/(approve|reject|cancel|retry)$/.exec(path);
-        if (method === 'POST' && ticketAction) {
-          const id = decodeURIComponent(ticketAction[1]!);
-          const action = ticketAction[2]!;
-          if (action === 'approve') {
-            return send(res, 200, { ok: true, ticket: await svc.approveTicket(actor, id) });
-          }
-          if (action === 'reject') {
-            const b = await readJson(req);
-            return send(res, 200, { ok: true, ticket: await svc.rejectTicket(actor, id, str(b.note)) });
-          }
-          if (action === 'cancel') {
-            return send(res, 200, { ok: true, ticket: await svc.cancelTicket(actor, id) });
-          }
-          // retry
-          return send(res, 200, { ok: true, ticket: await svc.retryTicket(actor, id) });
-        }
-
-        // ── Audit ──
-        if (method === 'GET' && path === '/admin/audit') {
-          requireCap(actor, 'audit.view.self');
-          const entries = await svc.listAudit(actor, {
-            ...(url.searchParams.get('actor') ? { actor: url.searchParams.get('actor')! } : {}),
-            from: numOpt(url.searchParams.get('from')),
-            to: numOpt(url.searchParams.get('to')),
-          });
-          return send(res, 200, { ok: true, entries });
-        }
-
-        // ── Feature flags (config.manage) ──
-        if (method === 'GET' && path === '/admin/config/flags') {
-          requireCap(actor, 'config.manage');
-          return send(res, 200, { ok: true, flags: await svc.getConfigFlags() });
-        }
-        const flagPut = /^\/admin\/config\/flags\/([^/]+)$/.exec(path);
-        if (method === 'PUT' && flagPut) {
-          requireCap(actor, 'config.manage');
-          const key = decodeURIComponent(flagPut[1]!);
-          const b = await readJson(req);
-          const flag = await svc.upsertFlag(actor, key, {
-            ...(typeof b.enabled === 'boolean' ? { enabled: b.enabled } : {}),
-            ...(b.rollout !== undefined ? { rollout: b.rollout } : {}),
-            ...(typeof b.desc === 'string' ? { desc: b.desc } : {}),
-          });
-          return send(res, 200, { ok: true, flag });
-        }
-
-        // ── SLG shop price overrides (slg.shop.manage) ──
-        if (method === 'GET' && path === '/admin/config/slg-shop') {
-          requireCap(actor, 'slg.shop.manage');
-          return send(res, 200, { ok: true, items: await svc.getShopConfig() });
-        }
-        const shopPut = /^\/admin\/config\/slg-shop\/([^/]+)$/.exec(path);
-        if (method === 'PUT' && shopPut) {
-          requireCap(actor, 'slg.shop.manage');
-          const id = decodeURIComponent(shopPut[1]!);
-          const b = await readJson(req);
-          const item = await svc.upsertShopItem(actor, id, {
-            ...(b.cost !== undefined ? { cost: b.cost } : {}),
-            ...(b.effect !== undefined ? { effect: b.effect } : {}),
-          });
-          return send(res, 200, { ok: true, item });
-        }
-
-        // ── Content-moderation word list overlays (moderation.wordlist.manage, CONTENT_MODERATION_DESIGN §3.2) ──
-        if (method === 'GET' && path === '/admin/moderation/wordlists') {
-          requireCap(actor, 'moderation.wordlist.manage');
-          return send(res, 200, { ok: true, regions: await svc.getWordlistConfig() });
-        }
-        const wordlistAdd = /^\/admin\/moderation\/wordlists\/([^/]+)\/words$/.exec(path);
-        if (method === 'POST' && wordlistAdd) {
-          requireCap(actor, 'moderation.wordlist.manage');
-          const region = decodeURIComponent(wordlistAdd[1]!);
-          const b = await readJson(req);
-          const doc = await svc.addWord(actor, region, str(b.word));
-          return send(res, 200, { ok: true, doc });
-        }
-        const wordlistRemove = /^\/admin\/moderation\/wordlists\/([^/]+)\/words\/([^/]+)$/.exec(path);
-        if (method === 'DELETE' && wordlistRemove) {
-          requireCap(actor, 'moderation.wordlist.manage');
-          const region = decodeURIComponent(wordlistRemove[1]!);
-          const word = decodeURIComponent(wordlistRemove[2]!);
-          const doc = await svc.removeWord(actor, region, word);
-          return send(res, 200, { ok: true, doc });
-        }
-
-        // ── UGC report review queue (reports.view/.action, CONTENT_MODERATION_DESIGN.md CM9/CM11) ──
-        if (method === 'GET' && path === '/admin/reports') {
-          requireCap(actor, 'reports.view');
-          const status = url.searchParams.get('status') ?? undefined;
-          const limit = Math.min(200, Math.max(1, Number(url.searchParams.get('limit') ?? '100')));
-          const reports = await svc.listReports(actor.adminId, { ...(status ? { status } : {}), limit });
-          return send(res, 200, { ok: true, reports });
-        }
-        const reportResolveMatch = path.match(/^\/admin\/reports\/([^/]+)\/resolve$/);
-        if (method === 'POST' && reportResolveMatch) {
-          requireCap(actor, 'reports.action');
-          const id = decodeURIComponent(reportResolveMatch[1] ?? '');
-          const b = await readJson(req);
-          const resolution = str(b.resolution);
-          if (resolution !== 'dismissed' && resolution !== 'upheld') {
-            return send(res, 400, { ok: false, error: 'resolution must be dismissed or upheld' });
-          }
-          const penalty = await svc.resolveReport(actor, id, str(b.accountId), resolution);
-          return send(res, 200, { ok: true, ...penalty });
-        }
-
-        // ── Player appeal review queue (appeals.view/.action, CONTENT_MODERATION_DESIGN.md CM10/CM11) ──
-        if (method === 'GET' && path === '/admin/appeals') {
-          requireCap(actor, 'appeals.view');
-          const status = url.searchParams.get('status') ?? undefined;
-          const limit = Math.min(200, Math.max(1, Number(url.searchParams.get('limit') ?? '100')));
-          const appeals = await svc.listAppeals(actor.adminId, { ...(status ? { status } : {}), limit });
-          return send(res, 200, { ok: true, appeals });
-        }
-        const appealResolveMatch = path.match(/^\/admin\/appeals\/([^/]+)\/resolve$/);
-        if (method === 'POST' && appealResolveMatch) {
-          requireCap(actor, 'appeals.action');
-          const id = decodeURIComponent(appealResolveMatch[1] ?? '');
-          const b = await readJson(req);
-          const resolution = str(b.resolution);
-          if (resolution !== 'approved' && resolution !== 'denied') {
-            return send(res, 400, { ok: false, error: 'resolution must be approved or denied' });
-          }
-          const note = typeof b.note === 'string' ? b.note : undefined;
-          await svc.resolveAppeal(actor, id, resolution, note);
-          return send(res, 200, { ok: true });
-        }
-
-        // ── Player feedback (feedback.view, read-only — UI_DESIGN.md §4.1.1 / SERVER_API.md §2.13) ──
-        if (method === 'GET' && path === '/admin/feedback') {
-          requireCap(actor, 'feedback.view');
-          const limit = Math.min(200, Math.max(1, Number(url.searchParams.get('limit') ?? '100')));
-          const feedback = await svc.listFeedback(actor.adminId, { limit });
-          return send(res, 200, { ok: true, feedback });
-        }
-
-        // ── Account management (superadmin) ──
-        if (method === 'GET' && path === '/admin/accounts') {
-          requireCap(actor, 'admin.manage');
-          return send(res, 200, { ok: true, accounts: await svc.listAccounts() });
-        }
-        if (method === 'POST' && path === '/admin/accounts') {
-          requireCap(actor, 'admin.manage');
-          const b = await readJson(req);
-          const account = await svc.createAccount(actor, {
-            username: str(b.username),
-            password: str(b.password),
-            role: str(b.role),
-            displayName: str(b.displayName),
-          });
-          return send(res, 200, { ok: true, account });
-        }
-        const acctPatch = /^\/admin\/accounts\/([^/]+)$/.exec(path);
-        if (method === 'PATCH' && acctPatch) {
-          requireCap(actor, 'admin.manage');
-          const id = decodeURIComponent(acctPatch[1]!);
-          const b = await readJson(req);
-          const account = await svc.updateAccount(actor, id, {
-            ...(typeof b.role === 'string' ? { role: b.role } : {}),
-            ...(typeof b.disabled === 'boolean' ? { disabled: b.disabled } : {}),
-            ...(typeof b.displayName === 'string' ? { displayName: b.displayName } : {}),
-          });
-          return send(res, 200, { ok: true, account });
-        }
-        const acctReset = /^\/admin\/accounts\/([^/]+)\/reset-password$/.exec(path);
-        if (method === 'POST' && acctReset) {
-          requireCap(actor, 'admin.manage');
-          const id = decodeURIComponent(acctReset[1]!);
-          const b = await readJson(req);
-          await svc.resetPassword(actor, id, str(b.password));
-          return send(res, 200, { ok: true });
-        }
-
-        // ── Ladder season operations (SE-3) ──
-        if (method === 'GET' && path === '/admin/ladder/season/current') {
-          requireCap(actor, 'ladder.season.manage');
-          const season = await svc.getLadderCurrentSeason();
-          return send(res, 200, { ok: true, season });
-        }
-        if (method === 'POST' && path === '/admin/ladder/season/roll') {
-          requireCap(actor, 'ladder.season.manage');
-          const season = await svc.rollLadderSeason(actor.adminId);
-          return send(res, 200, { ok: true, season });
-        }
-
-        // ── SLG season operations (G7/§17.7) ──
-        if (method === 'GET' && path === '/admin/slg/worlds') {
-          requireCap(actor, 'slg.season.view');
-          const worlds = await svc.slgListWorlds();
-          return send(res, 200, { ok: true, worlds });
-        }
-        if (method === 'POST' && path === '/admin/slg/season/open') {
-          requireCap(actor, 'slg.season.manage');
-          const b = await readJson(req);
-          await svc.slgOpenSeason(actor.adminId, str(b.worldId), Number(b.season ?? 1), Number(b.shard ?? 1), Number(b.capacity ?? 10000));
-          return send(res, 200, { ok: true });
-        }
-        if (method === 'POST' && path === '/admin/slg/season/settle') {
-          requireCap(actor, 'slg.season.manage');
-          const b = await readJson(req);
-          const ranking = await svc.slgSettleSeason(actor.adminId, str(b.worldId));
-          return send(res, 200, { ok: true, ranking });
-        }
-        if (method === 'POST' && path === '/admin/slg/season/reset') {
-          requireCap(actor, 'slg.season.manage');
-          const b = await readJson(req);
-          const result = await svc.slgResetSeason(actor.adminId, str(b.worldId));
-          return send(res, 200, { ok: true, result });
-        }
-        if (method === 'POST' && path === '/admin/slg/season/close') {
-          requireCap(actor, 'slg.season.manage');
-          const b = await readJson(req);
-          await svc.slgCloseSeason(actor.adminId, str(b.worldId));
-          return send(res, 200, { ok: true });
-        }
-        if (method === 'POST' && path === '/admin/slg/season/merge') {
-          requireCap(actor, 'slg.season.manage');
-          const b = await readJson(req);
-          const result = await svc.slgMergeShard(actor.adminId, str(b.worldId), str(b.targetWorldId));
-          return send(res, 200, { ok: true, result });
-        }
-
-        // ── SLG anomalous transaction audit (G7 anti-RMT, §17.7) ──
-        if (method === 'GET' && path === '/admin/slg/audit/anomalies') {
-          requireCap(actor, 'slg.audit.view');
-          const worldId = url.searchParams.get('worldId') ?? '';
-          if (!worldId) throw new AdminError(400, 'bad_request', 'worldId required');
-          const anomalies = await svc.slgScanAnomalies(worldId, numOpt(url.searchParams.get('windowSec')));
-          return send(res, 200, { ok: true, anomalies });
-        }
-        if (method === 'GET' && path === '/admin/slg/audit/listings') {
-          requireCap(actor, 'slg.audit.view');
-          const sellerId = url.searchParams.get('sellerId') ?? undefined;
-          const itemType = url.searchParams.get('itemType') ?? undefined;
-          const status = url.searchParams.get('status') ?? undefined;
-          const itemName = url.searchParams.get('itemName') ?? undefined;
-          const listings = await svc.slgQueryAuctionListings({
-            sellerId,
-            itemType: itemType as never,
-            status: status as never,
-            itemName,
-            limit: numOpt(url.searchParams.get('limit')),
-          });
-          return send(res, 200, { ok: true, listings });
-        }
-        if (method === 'GET' && path === '/admin/slg/audit/tickets') {
-          requireCap(actor, 'slg.audit.view');
-          const status = url.searchParams.get('status');
-          const tickets = await svc.slgListAuditTickets(status ? { status } : {});
-          return send(res, 200, { ok: true, tickets });
-        }
-        if (method === 'POST' && path === '/admin/slg/audit/tickets') {
-          requireCap(actor, 'slg.audit.manage');
-          const b = await readJson(req);
-          const ticket = await svc.slgFileAuditTicket(actor, b.snapshot as never);
-          return send(res, 200, { ok: true, ticket });
-        }
-        const auditResolve = /^\/admin\/slg\/audit\/tickets\/([^/]+)\/resolve$/.exec(path);
-        if (method === 'POST' && auditResolve) {
-          requireCap(actor, 'slg.audit.manage');
-          const id = decodeURIComponent(auditResolve[1]!);
-          const b = await readJson(req);
-          const ticket = await svc.slgResolveAuditTicket(actor, id, str(b.disposition), str(b.note));
-          return send(res, 200, { ok: true, ticket });
-        }
-
-        // ── SLG map templates (§24, admin map editor) ──
-        if (method === 'GET' && path === '/admin/slg/map-templates') {
-          requireCap(actor, 'slg.map.view');
-          return send(res, 200, { ok: true, templates: await svc.slgListMapTemplates() });
-        }
-        if (method === 'POST' && path === '/admin/slg/map-templates/generate') {
-          requireCap(actor, 'slg.map.manage');
-          const b = await readJson(req);
-          const summary = await svc.slgGenerateMapTemplate(actor.adminId, str(b.templateId), Number(b.width), Number(b.height));
-          return send(res, 200, { ok: true, template: summary });
-        }
-        const mapTiles = /^\/admin\/slg\/map-templates\/([^/]+)\/tiles$/.exec(path);
-        if (method === 'GET' && mapTiles) {
-          requireCap(actor, 'slg.map.view');
-          const templateId = decodeURIComponent(mapTiles[1]!);
-          const tiles = await svc.slgGetMapTemplateTiles(
-            templateId,
-            Number(url.searchParams.get('x') ?? '0'),
-            Number(url.searchParams.get('y') ?? '0'),
-            Number(url.searchParams.get('w') ?? '100'),
-            Number(url.searchParams.get('h') ?? '100'),
-          );
-          return send(res, 200, { ok: true, tiles });
-        }
-        if (method === 'PUT' && mapTiles) {
-          requireCap(actor, 'slg.map.manage');
-          const templateId = decodeURIComponent(mapTiles[1]!);
-          const b = await readJson(req);
-          const result = await svc.slgSaveMapTemplateTiles(actor.adminId, templateId, Array.isArray(b.tiles) ? (b.tiles as never[]) : []);
-          return send(res, 200, { ok: true, ...result });
-        }
-        const mapActivate = /^\/admin\/slg\/map-templates\/([^/]+)\/activate$/.exec(path);
-        if (method === 'POST' && mapActivate) {
-          requireCap(actor, 'slg.map.manage');
-          await svc.slgActivateMapTemplate(actor.adminId, decodeURIComponent(mapActivate[1]!));
-          return send(res, 200, { ok: true });
-        }
-        const mapDelete = /^\/admin\/slg\/map-templates\/([^/]+)$/.exec(path);
-        if (method === 'DELETE' && mapDelete) {
-          requireCap(actor, 'slg.map.manage');
-          await svc.slgDeleteMapTemplate(actor.adminId, decodeURIComponent(mapDelete[1]!));
-          return send(res, 200, { ok: true });
-        }
-
-
-        // ── Paddle webhook event log (support/CS lookup, paddle.events.view) ──
-        if (method === 'GET' && path === '/admin/paddle/events') {
-          requireCap(actor, 'paddle.events.view');
-          const events = await svc.listPaddleEvents({
-            accountId: url.searchParams.get('accountId') ?? undefined,
-            transactionId: url.searchParams.get('transactionId') ?? undefined,
-            limit: numOpt(url.searchParams.get('limit')),
-          });
-          return send(res, 200, { ok: true, events });
-        }
-
-        // ── Limited-time event management (B6, events.manage) ──
-        if (method === 'GET' && path === '/admin/events') {
-          requireCap(actor, 'events.manage');
-          return send(res, 200, { ok: true, events: await svc.listEvents() });
-        }
-        if (method === 'POST' && path === '/admin/events') {
-          requireCap(actor, 'events.manage');
-          const b = await readJson(req);
-          const event = await svc.createEvent(actor, b as unknown as EventInput);
-          return send(res, 200, { ok: true, event });
-        }
-        const eventPut = /^\/admin\/events\/([^/]+)$/.exec(path);
-        if (method === 'PATCH' && eventPut) {
-          requireCap(actor, 'events.manage');
-          const id = decodeURIComponent(eventPut[1]!);
-          const b = await readJson(req);
-          const event = await svc.updateEvent(actor, id, b as unknown as EventInput);
-          return send(res, 200, { ok: true, event });
-        }
-        const eventDel = /^\/admin\/events\/([^/]+)$/.exec(path);
-        if (method === 'DELETE' && eventDel) {
-          requireCap(actor, 'events.manage');
-          const id = decodeURIComponent(eventDel[1]!);
-          await svc.deleteEvent(actor, id);
-          return send(res, 200, { ok: true });
-        }
-
-        // ── Custom gacha pool management (GACHA_DESIGN §12, gacha.pools.manage) ──
-        if (method === 'GET' && path === '/admin/gacha/pools') {
-          requireCap(actor, 'gacha.pools.manage');
-          return send(res, 200, { ok: true, pools: await svc.listGachaPools() });
-        }
-        if (method === 'GET' && path === '/admin/gacha/catalog') {
-          requireCap(actor, 'gacha.pools.manage');
-          return send(res, 200, { ok: true, catalog: await svc.gachaCatalog() });
-        }
-        if (method === 'POST' && path === '/admin/gacha/pools/custom') {
-          requireCap(actor, 'gacha.pools.manage');
-          const b = await readJson(req);
-          const r = await svc.createCustomPool(actor, b as unknown as CustomPoolConfig);
-          return send(res, 200, { ok: true, id: r.id });
-        }
-        if (method === 'POST' && path === '/admin/gacha/pools/close') {
-          requireCap(actor, 'gacha.pools.manage');
-          const b = (await readJson(req)) as { id?: string };
-          const r = await svc.closeGachaPool(actor, String(b.id ?? ''));
-          return send(res, 200, { ok: true, id: r.id });
-        }
+        if (await handleSession(ctx)) return;
+        if (await handleMonitorRoutes(ctx)) return;
+        if (await handlePlayerRoutes(ctx)) return;
+        if (await handleTrustSafetyRoutes(ctx)) return;
+        if (await handleCompRoutes(ctx)) return;
+        if (await handleOpsConfigRoutes(ctx)) return;
+        if (await handleAccountRoutes(ctx)) return;
+        if (await handleSlgRoutes(ctx)) return;
+        if (await handleCommerceRoutes(ctx)) return;
 
         send(res, 404, { ok: false, error: 'not found' });
       } catch (e) {

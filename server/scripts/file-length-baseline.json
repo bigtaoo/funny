@@ -19,7 +19,6 @@
   "metaserver/src/economy.ts": 682,
   "worldsvc/src/city.ts": 682,
   "socialsvc/src/httpApi.ts": 708,
-  "admin/src/httpApi.ts": 712,
   "metaserver/src/service/liveops.ts": 742,
   "metaserver/src/service/pve.ts": 838,
   "worldsvc/src/combatSiege/arrival.ts": 909
