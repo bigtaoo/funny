@@ -1,6 +1,6 @@
 # Notebook Wars — 海外合规设计（Web / iOS / Google Play）
 
-> 状态：设计中 · 权威：本文（海外三渠道合规的单一入口）· 更新：2026-06-21
+> 状态：设计中 · 权威：本文（海外三渠道合规的单一入口）· 更新：2026-08-10（§2 表格/§8 checklist 勾选核对——隐私政策页/EU同意弹窗/删除账号入口三项实际代码里均已实现，文档此前未跟着勾，见下方对应行）
 >
 > ⚠️ **本文是工程侧合规映射，不是法律意见。** 涉及隐私政策文本、年龄分级问卷答案、未成年人判定阈值等，最终以平台审核要求与法务/律师确认为准。本文负责的是「把合规义务翻译成代码/配置/上架清单上的 TODO」。
 
@@ -20,15 +20,15 @@
 
 | 义务 | 来源 | 适用渠道 | 命中我们的系统 | 现状 |
 |---|---|---|---|---|
-| 隐私政策（公开链接） | 三大平台 + 各地区法律 | Web / iOS / Android | 全局 | ❌ 待写 |
-| GDPR / UK GDPR（同意、数据权利、删除） | 欧盟 / 英国 | 全（有 EU/UK 玩家即触发） | account / analyticsvc / commercial | 🟡 部分（analytics §10 有删除钩子） |
+| 隐私政策（公开链接） | 三大平台 + 各地区法律 | Web / iOS / Android | 全局 | ✅ `client/public/web/privacy.html` 已上线，登录/设置页可点（核对日期见本节脚注） |
+| GDPR / UK GDPR（同意、数据权利、删除） | 欧盟 / 英国 | 全（有 EU/UK 玩家即触发） | account / analyticsvc / commercial | ✅ 首启同意弹窗（`ConsentDialog`/`AppViews.ts` C5-c/L1-1）+ 删除账号（见下）+ analytics 按 user_id 删事件 |
 | COPPA（13 岁以下儿童） | 美国 | 全 | account（年龄门）/ analyticsvc | ✅ 已定级 **13+ / 不面向儿童**（ADR-018），规避 COPPA |
-| 年龄分级（IARC / ESRB / PEGI / Apple） | 平台 | iOS / Android（+ 部分 web 平台） | 含 gacha/社交需如实勾选 | ❌ 待填问卷 |
-| **抽卡概率公示（odds disclosure）** | **Apple 3.1.1 / Google Play / 多地区法律** | **全** | **commercial GachaPool weight + pity** | 🟡 数据已在 commercial，缺公示页 |
-| 平台内购强制（数字商品只能用平台 IAP） | Apple 3.1.1 / Google Play Payments | iOS / Android | commercial 充值 / `iapVerify` | 🟡 客户端有 dev 桩，待接真 SDK |
-| iOS 隐私营养标签 + ATT | Apple | iOS | analyticsvc 采集项 | ❌ 待填 |
-| Google Play 数据安全表 | Google | Android | analyticsvc 采集项 | ❌ 待填 |
-| 应用内删除账号入口 | Apple 5.1.1(v)（有注册即强制） | iOS（Android 跟进） | account / save / commercial | ❌ 待建 |
+| 年龄分级（IARC / ESRB / PEGI / Apple） | 平台 | iOS / Android（+ 部分 web 平台） | 含 gacha/社交需如实勾选 | ❌ 待填问卷（需上架时人工在 ASC/Play Console 操作，非代码任务） |
+| **抽卡概率公示（odds disclosure）** | **Apple 3.1.1 / Google Play / 多地区法律** | **全** | **commercial GachaPool weight + pity** | ✅ `GachaScene/odds.ts`（`OddsMixin`）逐物品精确百分比 + 保底规则文案，服务端下发 `entry.probability`（见 §4，本节此前描述已过期） |
+| 平台内购强制（数字商品只能用平台 IAP） | Apple 3.1.1 / Google Play Payments | iOS / Android | commercial 充值 / `iapVerify` | 🟡 服务端验单已就绪且生产 fail-closed；客户端原生下单 SDK 待接（需真实开发者账号，见 `IAP_CREDENTIALS.md`），月卡/年卡 web 端已接 Paddle |
+| iOS 隐私营养标签 + ATT | Apple | iOS | analyticsvc 采集项 | ❌ 待填（需上架时人工在 ASC 操作，非代码任务） |
+| Google Play 数据安全表 | Google | Android | analyticsvc 采集项 | ❌ 待填（需上架时人工在 Play Console 操作，非代码任务） |
+| 应用内删除账号入口 | Apple 5.1.1(v)（有注册即强制） | iOS（Android 跟进） | account / save / commercial | ✅ `DELETE /account`（软删+7天宽限撤销，见 §3.5/`SERVER_API.md §2.10`）+ `SettingsScene` 入口 |
 | UGC 治理（昵称 / 私聊） | 平台 + 各地区 | 全 | social 私聊 / displayName | ✅ 敏感词过滤 + 拉黑 + 举报（2026-07-27 补齐，见 §7） |
 
 ---
@@ -73,12 +73,11 @@
 > 我们有盲盒（`GachaScene` + commercial RNG），这条**中外通吃**：Apple 3.1.1、Google Play 都强制付费随机道具**公示各结果掉率**;部分地区已立法。
 
 - **数据源已就位**：掉率 = commercial `GachaPool` 的 `weight`（COMMERCIAL §3）；保底 = `pity`。**不要在文档/客户端另写一套概率**——从配置算、单一来源。
-- **待建：概率公示页**。在 `GachaScene` 给每个卡池一个「概率详情」入口，列出：
-  - 每个稀有度 / 物品的**精确百分比**（由 weight 归一化算出）；
-  - **保底规则**（多少抽必出 X）的明示文字；
-  - 十连等捆绑的综合说明。
-- **可由服务器下发**：commercial/meta 在 `getGachaPools` 回执里带归一化后的 `displayRates`，客户端纯展示（防止客户端口径漂移、便于审核取证）。
-- i18n：`gacha.odds.*` 全语种。
+- **✅ 已建成（本节此前标"待建"，2026-08-10 核对代码后更正）**：`GachaScene/odds.ts`（`OddsMixin`）给每个卡池提供「概率详情」入口，列出：
+  - 每个物品的**精确百分比**（`entry.probability`，服务端归一化后下发，客户端纯展示，`.toFixed(2)`）；
+  - **保底规则**（`pool.pityThreshold` 达到必出，`gacha.oddsDetail.pityRule`）的明示文字；
+  - 总计校验（`gacha.oddsDetail.total`）。
+- i18n：`gacha.oddsDetail.*` 全语种（zh/en/de）已翻译。
 
 ---
 
@@ -119,11 +118,11 @@
 ## 8. 上架前渠道 Checklist
 
 ### 通用（三渠道都要）
-- [ ] 隐私政策页上线（公开 URL）+ 客户端登录页/设置页可点
-- [ ] 抽卡概率公示页（§4）
-- [ ] 删除账号入口 + `POST /account/delete`（§3.5）
+- [x] 隐私政策页上线（公开 URL）+ 客户端登录页/设置页可点（`client/public/web/privacy.html`）
+- [x] 抽卡概率公示页（§4，`GachaScene/odds.ts`）
+- [x] 删除账号入口 + `DELETE /account`（§3.5，端点名与本条历史记录不符——落地时定为 `DELETE /account` 而非 `POST /account/delete`，见 `SERVER_API.md §2.10`）
 - [x] 昵称/私聊敏感词 + 举报/拉黑（§7，2026-07-27 举报补齐）
-- [ ] EU/UK 同意弹窗 + 撤回开关（§3.3）
+- [x] EU/UK 同意弹窗 + 撤回开关（§3.3，`ConsentDialog`/`AppViews.ts` C5-c/L1-1 首启阻塞式同意 + analytics 按 user_id 撤回删除）
 
 ### iOS 专属
 - [ ] 平台 IAP 接入（替换 dev 桩）+ 票据服务端校验
