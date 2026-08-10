@@ -135,6 +135,10 @@ export class FeedbackDialog implements Scene {
     // tap on it passed straight through to whatever Lobby control sits at that screen position.
     // Bug is orientation-agnostic, but only showed up in portrait because that's where the Lobby's
     // bottom nav happens to sit directly behind the card; landscape had nothing clickable there.
+    // NOTE this only covers PixiJS hit-testing, which is the *minority* path: the Lobby routes taps
+    // through the InputManager, fed straight from DOM listeners (WebAdapter), which no display
+    // object can block. App.ts raises `input.holdForModal(true)` for the dialog's whole lifetime for
+    // that half — see InputManager.modals. Both are needed; neither subsumes the other.
     dim.eventMode = 'static';
     dim.hitArea = new PIXI.Rectangle(0, 0, w, h);
     this.container.addChild(dim);
