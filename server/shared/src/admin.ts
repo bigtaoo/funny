@@ -322,6 +322,7 @@ export type AuditAction =
   | 'slg.season.reset'
   | 'slg.season.close'
   | 'slg.season.merge'
+  | 'slg.season.allocate'
   | 'slg.audit.file'
   | 'slg.audit.resolve'
   | 'slg.map.template.generate'

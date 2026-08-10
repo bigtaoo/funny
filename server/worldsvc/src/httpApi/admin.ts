@@ -113,7 +113,15 @@ export async function handleAdminRoutes(
       if (!Number.isFinite(seasonNum)) return sendErr(res, ErrorCode.BAD_REQUEST, 'season required');
       const cap = body.capacity != null ? Number(body.capacity) : undefined;
       if (cap != null && !Number.isFinite(cap)) return sendErr(res, ErrorCode.BAD_REQUEST, 'capacity must be a number');
-      return send(res, 200, ok(await svc.allocateNextSeason(seasonNum, cap)));
+      const result = await svc.allocateNextSeason(seasonNum, cap);
+      // §24 (2026-08-10 incident fix): allocateNextSeason calls openSeason per shard internally but — unlike
+      // the /admin/world/open route below — never clones the active map template into the new worldIds, so a
+      // freshly-allocated season used to fall back to proceduralTile-only terrain even when ops had a curated
+      // template set active. Mirror /open's clone step for every world this allocation just created.
+      for (const worldId of result.worldIds) {
+        await mapTemplateSvc.cloneActiveTemplateInto(worldId);
+      }
+      return send(res, 200, ok(result));
     } catch (e) {
       if (e instanceof SlgError) return sendErr(res, e.code, e.message);
       log.error('unhandled error (allocate)', { err: e instanceof Error ? e : String(e) });

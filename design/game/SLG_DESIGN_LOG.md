@@ -630,6 +630,27 @@ if (path.startsWith('/admin/world/')) {
 - **边界**：只做 active→settling（发奖/落库/发称号），**不自动 reset/close**。开关 `NW_SLG_AUTO_SETTLE`（默认开；`=0` 退回纯 admin）。`getSeason`/`listWorlds`/admin 列表回带 `settleAt` 供 ops 展示「预计结束」。
 - 测试：`season-ops.e2e.test.ts` auto-settle 用例（未到点不结算 / 到点结算一次 / settling 不重入）。
 
+### 17.15 赛季推进静默失败 + ops 缺口修复（2026-08-10，生产事故）
+
+> 用户报告：在 ops 上依次点了「结束当前赛季」（Settle）和「开启新赛季」（Open a new world），赛季奖励也正常收到了，但账号登录后依然进入旧地图。
+
+**根因（两层）**：
+1. ops「Open a new world」表单填了 `worldId`（沿用旧值或手滑）+ 新的 `season` 时，落到 `openSeason`（`worldsvc/src/season/management.ts`）的 Mongo upsert：`season`/`shard`/`mapW`/`mapH`/`capacity` 全放在 `$setOnInsert` 里——**这段只在真正插入新文档时生效**。命中已存在的 `worldId` 时是一次普通 update，`season` 字段完全不写，接口却仍返回 200 成功。生产实测：运营在已有的 `s1-0` 之外新填了 `worldId="s1-1"`、`season` 却仍填了旧值 `1`——虽然这次是插入新文档（不是 `$setOnInsert` 失效），但本质是同一类操作失误：ops 表单没有任何机制防止「新开的世界 season 号没有真正推进」，`getActiveSeasonNo()`（选 `open/active` 里 season 最高的世界）看到的最高 season 仍是 1，所有账号继续被路由回 `s1-0`。
+2. 真正会推进 season 号的 `allocateNextSeason`（`worldsvc/src/season/shard.ts`，§20.4 雪花分片分配）**从未被 admin/ops 暴露过**——只能带 `X-Internal-Key` 直连 worldsvc 内部端口 `POST /admin/world/allocate`，运营完全不知道、也点不到。
+
+**修复**：
+- **`openSeason` 加显式守卫**（`management.ts`）：reopen 一个已存在的 `worldId` 时，若传入的 `season`/`shard` 和库里已有值不一致，直接抛 `SlgError('BAD_REQUEST', …)`，不再静默按 `$setOnInsert` 丢弃——同 season/shard 的幂等 reopen 仍然放行。
+- **补齐 `allocateNextSeason` 缺的地图模板克隆**（`httpApi/admin.ts` 的 `/admin/world/allocate` 路由）：`allocateNextSeason` 内部按 shard 调 `openSeason` 建世界文档，但从不触发 `cloneActiveTemplateInto`——只有 `/admin/world/open`、`/admin/world/reset` 两条路由在 HTTP 层单独补了这一步（§24）。之前只能靠运维手动再补一次 `open` 调用侧面触发，现在 `/admin/world/allocate` 自己在每个新建的 worldId 上补齐克隆。
+- **`allocateNextSeason` 正式接入 admin/ops**（此前完全没有代理链路）：`admin/src/clients/world.ts` 加 `WorldClient.allocateNextSeason` → `admin/src/service/world.ts` 加 `slgAllocateNextSeason`（审计 `slg.season.allocate`，新增 `AuditAction` 枚举值）→ `admin/src/httpApi/slgRoutes.ts` 加 `POST /admin/slg/season/allocate`（能力 `slg.season.manage`）→ ops `tools/ops/src/pages/slgSeason.ts` 新增「Allocate next season」卡片（Season + Capacity 两个输入框），放在「Open a new world」表单上方并注明后者只是补开单个分片/重开已关闭世界的低级接口，推进赛季一律走前者。
+- **应急处理**：VPS 上直接调用内部 `/admin/world/allocate`（`season:2`）+ 补一次 `/admin/world/open` 触发模板克隆，生成 `s2-0` 并确认它成为新的 active season——玩家侧无需任何操作，下次登录自动路由到新图。
+
+**测试**（`server/worldsvc/test/shard.e2e.test.ts`）：
+- `openSeason` reopen 守卫：同 season/shard 幂等放行；season 不同 / shard 不同均拒绝且不修改已有文档。
+- `/admin/world/allocate` 配合已激活的地图模板：断言新开的 worldId 在 `mapBaselineRows` 里真的拿到了克隆的行数据（不是只看 200/worldIds，那样测不出克隆有没有发生）。
+- 顺带修了 `shard.e2e.test.ts`/`season-ops.e2e.test.ts` 里 `startHttpApi(...)` 测试夹具缺第 6 个参数 `mapTemplateSvc`（一直传的是 5 个参数，`mapTemplateSvc` 是 `undefined`）——`allocate` 路由过去从不touch这个依赖所以一直没暴露，这次修复引入的调用让它在测试里直接抛 `Cannot read properties of undefined`，顺手在两个测试文件里补了一个真实的 `MapTemplateService`（无激活模板时是安全 no-op）。
+
+**遗留**：ops「Open a new world」表单仍保留作为低级 escape hatch（重开已关闭的世界、单独补一个分片），没有删除，只是在 UI 文案上标注了优先用「Allocate next season」。
+
 ---
 
 ## 18. G5 视野 / 迷雾系统（2026-06-21 拍板，§8.2 / §2.1 / §15.2 G5）
