@@ -13,6 +13,7 @@ import type {
   EquipmentInstanceDoc,
   CardInstanceDoc,
   SkinInstanceDoc,
+  MaterialInstanceDoc,
 } from './inventoryDocs';
 import type { PvpCardStatDoc, PvpPlaySequenceDoc } from './balanceDocs';
 import type { AdsTokenDoc, EventDoc, EventParticipantDoc } from './miscDocs';
@@ -49,6 +50,9 @@ export interface Collections {
   cardInstances: Collection<CardInstanceDoc>;
   // skin instances (ITEM_IDENTITY_DESIGN.md task1, 2026-08-08); _id = instanceId
   skinInstances: Collection<SkinInstanceDoc>;
+  // material instance provenance ledger (ITEM_IDENTITY_DESIGN.md task2, 2026-08-10); _id = instanceId,
+  // one row per grant EVENT (not per physical unit) — see MaterialInstanceDoc's doc comment.
+  materialInstances: Collection<MaterialInstanceDoc>;
   // ladder seasons (S11): single global document (_id='current')
   ladderSeasons: Collection<LadderSeasonDoc>;
   // ladder season settlement snapshots (L2-1): one entry per account per season, written at season close, also serves as idempotency ledger

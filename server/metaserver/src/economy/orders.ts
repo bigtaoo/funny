@@ -208,13 +208,13 @@ export async function deliverOrder(
     const shopDef = findShopItem(itemId);
     if (shopDef?.kind === 'item') {
       const itemInc: Record<string, number> = { [itemId]: qty };
-      const save = await deliverMailGrant(cols, accountId, order._id, [], itemInc, coinsAfter, now);
+      const save = await deliverMailGrant(cols, accountId, order._id, [], itemInc, coinsAfter, now, {}, [], 'shop');
       await commercial.orderDelivered({ orderId: order._id });
       return { save };
     }
     if (shopDef?.kind === 'material') {
       const materialInc: Record<string, number> = { [shopDef.grants]: (shopDef.qty ?? 1) * qty };
-      const save = await deliverMailGrant(cols, accountId, order._id, [], {}, coinsAfter, now, materialInc);
+      const save = await deliverMailGrant(cols, accountId, order._id, [], {}, coinsAfter, now, materialInc, [], 'shop');
       await commercial.orderDelivered({ orderId: order._id });
       return { save };
     }

@@ -35,6 +35,7 @@ import {
 } from '@nw/shared';
 import { getOrCreateSave } from '../../save.js';
 import { mirrorCoins, adsDayKey, peekAdsStatus } from '../../economy.js';
+import { recordMaterialGrants } from '../../material.js';
 import { accountIdOf, type ServiceDeps } from '../base.js';
 import { deliverRetentionReward } from './helpers.js';
 
@@ -221,6 +222,19 @@ export async function claimCheckinHandler(ctx: RetentionCtx, req: FastifyRequest
   // the rest of the function gets ordinary control-flow narrowing.
   const claimedReward = reward as CheckinReward | null;
   if (!claimedReward) return ok({ save: recorded.save, day: claimedDay, reward: claimedReward });
+  // Material provenance (ITEM_IDENTITY_DESIGN.md task2, 2026-08-10): best-effort, after the mutateSave
+  // above has already durably committed the counter increment — stamina/material are the only two kinds
+  // that mutateSave itself applies (card/equipment/coins are settled below via settleCheckinReward, which
+  // has nothing to do for these two). (accountId, monthKey, claimedDay) is a safe natural idempotency key:
+  // a given calendar day can be claimed at most once per month.
+  if (claimedReward.kind === 'stamina' || (claimedReward.kind === 'material' && claimedReward.id)) {
+    const matId = claimedReward.kind === 'stamina' ? 'stamina' : claimedReward.id!;
+    const monthKey = makeMonthKey(tsMs);
+    await recordMaterialGrants(
+      ctx.deps.cols, accountId, `checkin_${accountId}_${monthKey}_${claimedDay}`,
+      { [matId]: claimedReward.count }, `checkin:${monthKey}`, tsMs,
+    );
+  }
   const settled = await settleCheckinReward(ctx.deps, accountId, claimedDay, claimedReward, tsMs);
   if ('error' in settled) {
     // Claim is durably recorded; delivery failed but is retryable (deterministic orderId) via the
@@ -388,6 +402,17 @@ export async function claimWeeklyChestHandler(ctx: RetentionCtx, req: FastifyReq
   }
   const claimedReward = reward as WeeklyChestReward | null;
   if (!claimedReward) return ok({ save: recorded.save, threshold, reward: claimedReward });
+  // Material provenance (ITEM_IDENTITY_DESIGN.md task2, 2026-08-10): best-effort, mirrors claimCheckin's
+  // treatment above — settleWeeklyChestReward never handles kind='material' (applied synchronously in
+  // the mutateSave closure instead), so record it here. (accountId, weekKey, threshold) is a safe natural
+  // idempotency key: a given tier can be claimed at most once per week.
+  if (claimedReward.kind === 'material' && claimedReward.id) {
+    const weekKey = makeWeekKey(tsMs);
+    await recordMaterialGrants(
+      ctx.deps.cols, accountId, `weekly_${accountId}_${weekKey}_${threshold}`,
+      { [claimedReward.id]: claimedReward.count }, `weekly_chest:${weekKey}`, tsMs,
+    );
+  }
   const settled = await settleWeeklyChestReward(ctx.deps, accountId, threshold, claimedReward, tsMs);
   if ('error' in settled) {
     // Claim is durably recorded; delivery failed but is retryable via the ALREADY_CLAIMED

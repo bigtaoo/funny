@@ -24,13 +24,19 @@ interface CardInstanceRow { _id: string; accountId: string; defId: string; level
 
 interface GrantOrderRow { _id: string; accountId: string; kind: string; ts: number; expireAt: Date }
 
+interface MaterialInstanceRow {
+  _id: string; accountId: string; materialId: string; count: number;
+  sourceType?: string; obtainedAt?: number; expireAt: Date;
+}
+
 function build(seedSaves: SaveDocRow[] = [], seedCards: CardInstanceRow[] = []) {
   const saves = new FakeCollection<SaveDocRow>().seed(...seedSaves);
   const equipmentInstances = new FakeCollection<{ _id: string; accountId: string }>();
   const cardInstances = new FakeCollection<CardInstanceRow>().seed(...seedCards);
   const internalGrantOrders = new FakeCollection<GrantOrderRow>();
   const cardIdem = new FakeCollection<{ _id: string; accountId: string; op: string; result: unknown; expireAt: Date }>();
-  const cols = { saves, equipmentInstances, cardInstances, internalGrantOrders, cardIdem } as unknown as Collections;
+  const materialInstances = new FakeCollection<MaterialInstanceRow>();
+  const cols = { saves, equipmentInstances, cardInstances, internalGrantOrders, cardIdem, materialInstances } as unknown as Collections;
   const ctx: InternalCtx = {
     cols,
     now: () => 1000,
@@ -41,7 +47,7 @@ function build(seedSaves: SaveDocRow[] = [], seedCards: CardInstanceRow[] = []) 
   };
   const app = Fastify();
   registerEconomyRoutes(app, ctx);
-  return { app, saves, cardInstances, internalGrantOrders, cardIdem };
+  return { app, saves, cardInstances, internalGrantOrders, cardIdem, materialInstances };
 }
 
 function card(id: string, extra: Partial<CardInstance> = {}): CardInstance {
@@ -96,6 +102,20 @@ describe('POST /internal/materials/deduct', () => {
     expect((saves.docs.get('a')!.save.materials as Record<string, number>).wood).toBe(6);
   });
 
+  // ITEM_IDENTITY_DESIGN.md task2 (2026-08-10): consumption is deliberately NOT instrumented — the
+  // materialInstances ledger only ever records grants, never deductions (see MaterialInstance's doc
+  // comment for why: materials are fungible, so "which units were spent" carries no information a future
+  // consumer could use).
+  it('deduct never writes a materialInstances row (grant-only provenance ledger)', async () => {
+    const { app, saves, materialInstances } = build([saveRow('a', { materials: { wood: 10 } } as Partial<SaveData>)]);
+    await app.inject({
+      method: 'POST', url: '/internal/materials/deduct', headers: authHeaders,
+      payload: { accountId: 'a', material: 'wood', qty: 4 },
+    });
+    expect((saves.docs.get('a')!.save.materials as Record<string, number>).wood).toBe(6);
+    expect(materialInstances.docs.size).toBe(0);
+  });
+
   // 2026-08-03 fix: orderId was documented but previously unused here (unlike /internal/materials/grant),
   // so a caller retry after a timeout could deduct the same material twice for one logical transaction.
   it('regression (2026-08-03 fix): same orderId retried after success → deduped, no double-deduct', async () => {
@@ -145,7 +165,7 @@ describe('POST /internal/materials/grant', () => {
   });
 
   it('grants onto an existing balance (creates the material key if absent)', async () => {
-    const { app, saves } = build([saveRow('a')]);
+    const { app, saves, materialInstances } = build([saveRow('a')]);
     const res = await app.inject({
       method: 'POST', url: '/internal/materials/grant', headers: authHeaders,
       payload: { accountId: 'a', material: 'iron', qty: 7, orderId: 'o1' },
@@ -153,11 +173,17 @@ describe('POST /internal/materials/grant', () => {
     expect(res.statusCode).toBe(200);
     expect(JSON.parse(res.payload)).toEqual({ ok: true, after: 7 });
     expect((saves.docs.get('a')!.save.materials as Record<string, number>).iron).toBe(7);
+    // Material provenance (ITEM_IDENTITY_DESIGN.md task2, 2026-08-10): the sole cross-service grant path
+    // (worldsvc/auctionsvc) tags the caller's own orderId into sourceType for traceability.
+    const inst = [...materialInstances.docs.values()].find((d) => d.accountId === 'a');
+    expect(inst).toMatchObject({ materialId: 'iron', count: 7, sourceType: 'internal_grant:o1' });
+    expect(typeof inst?.obtainedAt).toBe('number');
+    expect(inst?.expireAt).toBeInstanceOf(Date);
   });
 
   // comm-audit-internal-2026-07-28 batch D: orderId dedup (a caller retry after a timeout must not double-grant).
   it('same orderId retried after success → deduped, no double-grant', async () => {
-    const { app, saves } = build([saveRow('a')]);
+    const { app, saves, materialInstances } = build([saveRow('a')]);
     const payload = { accountId: 'a', material: 'iron', qty: 7, orderId: 'dup-1' };
     const r1 = await app.inject({ method: 'POST', url: '/internal/materials/grant', headers: authHeaders, payload });
     expect(r1.statusCode).toBe(200);
@@ -165,13 +191,17 @@ describe('POST /internal/materials/grant', () => {
     expect(r2.statusCode).toBe(200);
     expect(JSON.parse(r2.payload)).toEqual({ ok: true, deduped: true });
     expect((saves.docs.get('a')!.save.materials as Record<string, number>).iron).toBe(7); // not 14
+    // The dedup short-circuits before even reaching the grant/record-provenance code (see the route's
+    // reserveGrantOrder check) — the deduped replay never calls recordMaterialGrants a second time.
+    expect([...materialInstances.docs.values()].filter((d) => d.accountId === 'a')).toHaveLength(1);
   });
 
-  it('different orderId → grants twice', async () => {
-    const { app, saves } = build([saveRow('a')]);
+  it('different orderId → grants twice, two distinct provenance rows', async () => {
+    const { app, saves, materialInstances } = build([saveRow('a')]);
     await app.inject({ method: 'POST', url: '/internal/materials/grant', headers: authHeaders, payload: { accountId: 'a', material: 'iron', qty: 7, orderId: 'o-a' } });
     await app.inject({ method: 'POST', url: '/internal/materials/grant', headers: authHeaders, payload: { accountId: 'a', material: 'iron', qty: 7, orderId: 'o-b' } });
     expect((saves.docs.get('a')!.save.materials as Record<string, number>).iron).toBe(14);
+    expect([...materialInstances.docs.values()].filter((d) => d.accountId === 'a')).toHaveLength(2);
   });
 
   it('orderId reservation is released after a failed grant, so a retry can go through', async () => {

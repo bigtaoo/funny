@@ -6,6 +6,7 @@ import type { Collections, SaveData, EquipmentInstance, SkinInstance } from '@nw
 import { PRODUCT_STARTER_GROWTH, GROWTH_PACK_WINDOW_DAYS } from '@nw/shared';
 import { toInstanceDoc } from '../equipment.js';
 import { toInstanceDoc as toSkinInstanceDoc } from '../skin.js';
+import { recordMaterialGrants } from '../material.js';
 import type { WalletView } from '../commercialClient.js';
 
 /**
@@ -105,7 +106,16 @@ export async function deliverGrant(
     },
     { returnDocument: 'after' },
   );
-  if (res) return res.save;
+  if (res) {
+    // Material provenance (ITEM_IDENTITY_DESIGN.md task2, 2026-08-10): best-effort, fires only on an
+    // actual fresh delivery (not a reconciliation replay of an already-delivered orderId) — this is the
+    // only deliverGrant caller (deliverLootBox) that ever passes materialInc, and it's always a gacha
+    // draw, so the tag is hardcoded rather than threaded through as another parameter.
+    if (grantedMaterialIds.length > 0) {
+      await recordMaterialGrants(cols, accountId, orderId, materialInc ?? {}, `gacha:${orderId}`, now);
+    }
+    return res.save;
+  }
   const cur = await cols.saves.findOne({ _id: accountId });
   if (!cur) throw new Error('save missing after grant');
   return cur.save;
@@ -129,6 +139,12 @@ export async function deliverMailGrant(
   now: number,
   materialInc: Record<string, number> = {},
   skinInstances: SkinInstance[] = [],
+  // Material/item provenance tag (ITEM_IDENTITY_DESIGN.md task2, 2026-08-10) — defaults to 'mail' (this
+  // function's single highest-traffic caller, social.ts's claimMail, covers every mail-delivered kind
+  // regardless of the mail's original cause: auction settlement, worldsvc season rewards, admin grants,
+  // ...) — same "one generic tag for every mail-sourced item" convention SkinInstance already uses.
+  // Callers with a more specific context (e.g. shop.ts's direct material/item purchases) pass their own.
+  provenanceSourceType = 'mail',
 ): Promise<SaveData> {
   // Skin instances (ITEM_IDENTITY_DESIGN.md task1, 2026-08-08): a mail attachment for a skin the
   // player already owns used to vanish on claim (filtered out of `newSkins` upstream, same bug class as
@@ -165,7 +181,16 @@ export async function deliverMailGrant(
     },
     { returnDocument: 'after' },
   );
-  if (res) return res.save;
+  if (res) {
+    // Material/item provenance (ITEM_IDENTITY_DESIGN.md task2, 2026-08-10): best-effort, only on an
+    // actual fresh delivery (guarded by the same deliveredOrders check as the counter update above).
+    // Materials and inventory.items share the same MaterialInstance ledger shape (both are plain
+    // Record<string,number> quantity resources) but get distinct baseId suffixes so the two namespaces
+    // can never collide on the same instance _id even if a material key and an item key were ever equal.
+    await recordMaterialGrants(cols, accountId, `${orderId}_mat`, materialInc, provenanceSourceType, now);
+    await recordMaterialGrants(cols, accountId, `${orderId}_item`, itemInc, provenanceSourceType, now);
+    return res.save;
+  }
   const cur = await cols.saves.findOne({ _id: accountId });
   if (!cur) throw new Error('save missing after mail grant');
   return cur.save;

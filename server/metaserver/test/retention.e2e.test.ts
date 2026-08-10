@@ -70,6 +70,7 @@ describe.skipIf(!mongo)('meta retention e2e', () => {
   const m = mongo!;
   let app: FastifyInstance;
   let token: string;
+  let accountId: string;
   // Fixed to a 31-day month so 30 sequential daily claims never roll into the next monthKey.
   let fakeNow = new Date('2026-01-01T12:00:00Z').getTime();
 
@@ -84,6 +85,7 @@ describe.skipIf(!mongo)('meta retention e2e', () => {
     app = await buildApp({ cols: m.collections, jwt, internalKey: 'k', commercial: new FakeCommercial(), now: () => fakeNow });
     const r = body(await app.inject({ method: 'POST', url: '/auth/device', payload: { deviceId: 'dev-ret-1' } }));
     token = r.data.token;
+    accountId = r.data.accountId;
     await app.inject({ method: 'GET', url: '/save', headers: auth() }); // create save record
   });
 
@@ -134,6 +136,13 @@ describe.skipIf(!mongo)('meta retention e2e', () => {
     expect(r.data.save.materials.scrap).toBe(9);
     expect(r.data.save.materials.lead).toBe(2);
     expect(r.data.save.inventory.skins).not.toContain('scrap');
+    // Material provenance (ITEM_IDENTITY_DESIGN.md task2, 2026-08-10): day 4's scrap grant mints its own
+    // row (day 1/2 also granted scrap — 3 distinct events, not merged into one row).
+    const scrapInsts = await m.collections.materialInstances.find({ accountId, materialId: 'scrap' }).toArray();
+    expect(scrapInsts).toHaveLength(3);
+    expect(scrapInsts.every((i) => i.count === 3 && i.sourceType === `checkin:${makeMonthKey(fakeNow)}`)).toBe(true);
+    const leadInst = await m.collections.materialInstances.findOne({ accountId, materialId: 'lead' });
+    expect(leadInst).toMatchObject({ count: 2, sourceType: `checkin:${makeMonthKey(fakeNow)}` });
   });
 
   it('POST /retention/checkin: day-14 card milestone lands in save.cardInv, day-30 equipment milestone lands in save.equipmentInv (regression class — same "wrong bucket" bug fixed in gachaDraw/shopBuy)', async () => {
@@ -248,6 +257,9 @@ describe.skipIf(!mongo)('meta retention e2e', () => {
       expect(r.data.threshold).toBe(9);
       expect(r.data.reward).toMatchObject({ kind: 'material', id: 'lead', count: 20 });
       expect(r.data.save.materials.lead).toBeGreaterThanOrEqual(20);
+      // Material provenance (ITEM_IDENTITY_DESIGN.md task2, 2026-08-10).
+      const inst = await m.collections.materialInstances.findOne({ accountId, materialId: 'lead', sourceType: { $regex: /^weekly_chest:/ } });
+      expect(inst?.count).toBe(20);
     });
 
     it('tier 2 (equipment): reward lands in save.equipmentInv as an entry-tier (equip_t1) item', async () => {

@@ -1,6 +1,6 @@
 # 物品身份基准：唯一id / 状态 / 溯源
 
-> 状态：设计中（第1、2部分+称号实例化已实现，材料实例化为后续待办）· 权威：本文 · 更新：2026-08-10
+> 状态：全部三个任务（皮肤/材料/称号实例化）已实现 · 权威：本文 · 更新：2026-08-10
 
 ## 0. 背景
 
@@ -46,12 +46,32 @@
 - [x] **客户端**：`SaveData.skinCounts?: Record<string,number>`（GET /save 自动 join，additive-only 字段，`migrate.ts` 的 `fillDefaults` 自动补 `{}`，未升版本号）；`AuctionScene` picker 的 `listableSkins()` 放宽为"未装备，或有多余份数"；picker 卡片新增"出售"分区（拍卖/出售各占底部一半热区），走 `client.sellSkin()` → `/skins/sell`。
 - **验收**：`server/metaserver/test/skin.e2e.test.ts`（15 例，含"装备中的多余份可挂拍/可出售，最后一份仍被拒绝"、`grantSkin` 落地真实例、同一账号两次交易同一 skinId 叠出 2 份实例）+ `economy.e2e.test.ts` 新增断言（重复皮肤真的铸造第二个实例、`skinCounts` 正确、商店/命运点重复兑换同一皮肤也铸造第二实例、老账号 GET /save 自愈幂等不重复补实例）+ `mail-claim.e2e.test.ts` 新增断言（邮件附件重复皮肤同样铸造第二实例）；metaserver 全量 845 例、shared 713 例、auctionsvc 97 例全绿；client `tsc --noEmit` 全绿，UI 套件 1241 例 + 常规套件 1224 例全绿（含 `auctionPickerDedupe.ui.ts` 新增 6 例：放宽后的 listableSkins、"×N"标签、onSell 接线、双击防抖、渲染不崩溃；`api-client.test.ts`/`migrate.test.ts` 各新增 `sellSkin` 请求体 / `skinCounts` 向后兼容补全用例）。
 
-### 任务2：材料实例化（范围最大，依赖任务1的实例化模式跑通后再做）
+### 任务2：材料实例化 ✅（2026-08-10，采用简化方案——见下方"关键决策"）
 
-- [ ] **范围**：`materials: Record<string,number>` + `inventory.items: Record<string,number>` → 每份材料一个独立实例。
-- **前置**：任务1完成后，materials 复用同一套"实例化仓库"基础设施（集合 schema 模式、escrow/grant 范式、拍卖挂单范式），避免重复设计。
-- **影响面最大**：所有奖励发放入口——战令（`battlepass.ts`）/ 留存签到（`retention.ts`）/ 充值里程碑（`rechargeMilestone.ts`）/ gacha（`gachaCatalog.ts`）/ PvE 掉落 / SLG 大世界资源产出——目前全部是 `{kind:'material', id, count}` 匿名数量增量，要逐一改成"生成N个带来源标签的实例"。库存操作从 Mongo `$inc` 原子加减换成"选择N份实例并原子移除"，需要设计选择策略（扣10个scrap该扣哪10份实例？大概率是"任意选，因为材料同质"，但要写清楚）。
-- **性能预算**：材料产出频率远高于装备/卡牌（战斗/签到批量掉落几个到几十个），存档/集合大小要有上限（参考 `deliveredOrders` 的 `DELIVERED_ORDERS_CAP` 踩坑教训，见 `economy.ts` 头部注释），否则重演该性能问题。
+- **起因**：任务1（皮肤实例化）落地后，用户要求材料/`inventory.items`（通用物品）也补上唯一实例id + 溯源，作为§1审计遗留的最后一项主要缺口（称号见任务3）。
+- [x] **关键决策：不照抄装备/皮肤那套完整 escrow/transfer 范式，改为"只在发放侧铸造、消费侧不追踪具体实例"的简化模型**——这是本任务与任务1最大的分歧点，动手前重新评估了§1审计"给每份材料分配实例id不会解锁任何新玩法，只会带来存储/性能成本"这句话后做出的工程判断：
+  - 材料/通用物品**不可交易**（不像皮肤/装备需要挂拍/转移，`AUCTION_BANNED_MATERIALS` 早已把 binding 材料排除在拍卖之外，其余材料走"数量型"而非"实例快照"挂单）——完整的 escrow/grant/转移一份具体实例的复杂度在这里没有对应的玩法需求。
+  - 材料产出频率远高于装备/卡牌/皮肤（PvE 战斗、gacha、签到、SLG 结算……几乎每个奖励发放入口都会碰到），若照抄"一份实例一行记录 + 消耗时精确原子移除N份"，会把 20-30+ 个调用点的库存操作全部从 Mongo `$inc` 改成"挑选并移除具体实例"，且没有 §1 指出的任何新玩法收益。
+  - **最终模型**：`materials`/`inventory.items` 两个 `Record<string, number>` 计数视图**语义完全不变**，继续是所有 ~200+ 读取点（`$inc materials.scrap` 之类）的唯一权威来源，不做任何 join/自愈逻辑（皮肤需要 `assembleSkinCounts` 是因为 `inventory.skins` 是有损的去重视图；材料计数器从来不是有损视图，没有对应缺口需要补）。新增的 `MaterialInstance{id, materialId, count, sourceType?, obtainedAt?}` 是一个**只写不读的溯源流水**，`count` 代表"这一次发放事件"批量发的数量（而不是每份材料一行）——例如一次 PvE 通关同时掉 6 scrap + 2 lead，落地 2 条实例记录（`{materialId:'scrap',count:6}` + `{materialId:'lead',count:2}`），而不是 8 条。
+  - **只在发放侧埋点，消费侧完全不动**：craft/enhance 扣材料、`/internal/materials/deduct` 扣减、salvage 返还材料，全部继续按原样对计数器做 `$inc`/`$set` 增减，**不追踪扣的是"哪一份"**——因为材料同质，"扣了哪几份"不携带任何未来消费者能用得上的信息（不像装备一份实例有等级/词条，扣哪份是有意义的选择）。`internal-economy.test.ts` 新增一条测试显式断言"deduct 从不写 materialInstances"，把这个不对称性钉成回归测试而不是隐含约定。
+- [x] **数据模型**：`server/shared/src/types.ts` 新增 `MaterialInstance` 接口（含完整决策注释）；`server/shared/src/mongo/inventoryDocs.ts` 新增 `MaterialInstanceDoc`（`_id`=instanceId，`accountId`/`materialId`/`count`/`sourceType?`/`obtainedAt?`/`expireAt`）+ `materialInstances` 集合接入 `Collections`/`createMongo`/`ensureInventoryIndexes`（索引 `{accountId,materialId}` + TTL `{expireAt}`）。
+- [x] **性能预算：TTL 过期，而非 `deliveredOrders` 那种 `$push+$slice` 计数上限**——两者场景不同：`deliveredOrders` 是嵌在 `saves` 文档里的数组，无界增长会拖慢**每一次**存档读写（2026-07-26 事故：900+ 条目导致 ~1s 延迟）；`materialInstances` 是独立集合，从不 join 进 GET/PUT /save 热路径，它的体积只影响 Mongo 的绝对存储量，不影响任何一次存档读写的延迟。因此选择更简单的 TTL 方案：`MATERIAL_INSTANCE_TTL_MS = 30天`（`server/metaserver/src/material.ts`），到期自动过期，不需要额外的"数才能写"逻辑。30天的取舍：足够覆盖现实的客服/审计回溯窗口，同时因为发放是"按事件批量"而非"按份"记录（见上），即便是高频账号（PvE 每日上限20次结算 + gacha 抽卖 + 签到等），30天内的行数量级也远小于逐份记录的方案。
+- [x] **发放入口埋点**（`server/metaserver/src/material.ts` 的 `recordMaterialGrants` 统一实现，发放计数器写入成功后才调用，best-effort、失败只记日志不影响真正的发放）：
+  | 入口 | 文件 | `sourceType` | baseId（幂等键） |
+  |---|---|---|---|
+  | gacha 材料产出 | `economy/delivery.ts` `deliverGrant` | `gacha:<orderId>` | `orderId`（draw 的 orderId，天然全局唯一） |
+  | 商店直购材料/道具 | `economy/orders.ts` → `deliverMailGrant` | `shop` | `<order._id>_mat` / `<order._id>_item` |
+  | 邮件领取（拍卖结算/SLG赛季结算/管理员发放等，统一走 `deliverMailGrant`） | `service/social.ts` `claimMail` | `mail`（沿用皮肤实例已有的"所有邮件来源统一打 mail 标签"惯例，不区分邮件的具体成因） | `mail.claim.<mailId>.<accountId>`（已有的确定性 orderId） |
+  | 跨服务内部授予（worldsvc 据点掠夺战利品等） | `internal/economyRoutes.ts` `POST /internal/materials/grant` | `internal_grant:<orderId>`（无 orderId 时退化为 `internal_grant`） | `orderId ?? randomUUID()` |
+  | 战令奖励 | `service/progression.ts` `claimBattlePass` | `battlepass:s<season>:<track>:<level>` | `bp_<accountId>_s<season>_<track>_<level>` |
+  | 充值里程碑 | `service/economy/subscriptions.ts` `claimRechargeMilestoneHandler` | `recharge:<tierId>` | `recharge_<accountId>_t<tierId>` |
+  | 每日签到 | `service/liveops/retention.ts` `claimCheckinHandler` | `checkin:<monthKey>` | `checkin_<accountId>_<monthKey>_<day>` |
+  | 每周活跃宝箱 | `service/liveops/retention.ts` `claimWeeklyChestHandler` | `weekly_chest:<weekKey>` | `weekly_<accountId>_<weekKey>_<threshold>` |
+  | PvE 掉落（正常结算） | `service/pve/clear.ts` `settleNormalClear` | `pve_drop:<levelId>` | 随机id（该路径本身没有天然幂等键，重试最多留一条无害的多余流水行） |
+  | PvE 掉落（L1 回放校验后结算） | `service/pve/verify.ts` `deliverVerifiedClearReward` | `pve_drop:<levelId>` | `pve_verify_<verifyId>`（`pveVerifications` 文档一旦 settle 状态就不再是 pending，天然幂等） |
+- [x] **已知跳过项（风险控制，如实记录）**：`equipment/salvage.ts` 的材料返还（分解装备退回 70% 材料）**未接入溯源**——它深埋在 salvage 自己的幂等+rev-conflict 重试循环里，返还是"补偿"而非"新增来源"，插入一次额外的 Mongo 写入会略微增加该事务的失败面，且价值有限（返还的材料溯源信息量低于"这批材料最初怎么来的"）。留作后续如有需要再补，不阻塞本任务收尾。
+- [x] **客户端 / openapi 契约：均无需改动**——`materials`/`inventory.items` 的 wire 形状完全没变（不像皮肤那样需要新增 `skinCounts` 只读镜像字段去暴露"重复份数"，材料计数器本来就精确记录数量，没有对应的有损视图需要修补），`client/src/game/meta/SaveData.ts` 和 `server/contracts/openapi/` 都不涉及。
+- **测试覆盖**（新增/扩展，风格仿照任务1"一个埋点一条断言"）：`battlepass.e2e.test.ts`（免费档材料奖励 → `battlepass:s<season>:free:1`）、`server/metaserver/test/economy.e2e.test.ts`（gacha 材料产出 + 3 次 GET /save 重放去重仍只有 1 条流水；商店直购材料两次购买 → 2 条独立流水；新增充值里程碑 tier3 材料奖励用例）、`retention.e2e.test.ts`（签到 day1/2/4 各自独立流水 + day3 lead 流水；每周宝箱 tier1 材料流水）、`pve.e2e.test.ts`（关卡首通同时掉 scrap+lead → 2 条独立流水，一次事件不合并成一条）、`mail-claim.e2e.test.ts`（混合附件邮件的材料+道具各自铸造流水，`sourceType='mail'`，校验 `expireAt = obtainedAt + 30天`）、`internal-economy.test.ts`（`/internal/materials/grant` 打上 `internal_grant:<orderId>` 标签 + orderId 去重不重复记流水 + 不同 orderId 各自记录；新增"`/internal/materials/deduct` 从不写 materialInstances"回归测试，钉死"只记发放不记消耗"的不对称设计）。
 
 ### 任务3：称号实例化（无交易需求，优先级最低）
 

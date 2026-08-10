@@ -19,6 +19,7 @@ import {
 import { getOrCreateSave } from '../save.js';
 import { getCurrentSeason } from '../ladderSeason.js';
 import { mirrorCoins } from '../economy.js';
+import { recordMaterialGrants } from '../material.js';
 import type { MetaHandlers } from '../generated/routes.gen.js';
 import { accountIdOf, clientPlatformOf, type Constructor, type MetaBaseCtor } from './base.js';
 
@@ -174,13 +175,15 @@ export function ProgressionMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase
       const { cols, commercial, now } = this.deps;
 
       // Atomic validate + record claim (optimistic lock prevents double-tap). Material rewards are written to save.materials in the same transaction.
-      let claimedReward: { kind: string; count: number } | null = null;
+      let claimedReward: { kind: string; id?: string; count: number } | null = null;
+      let claimedSeasonNo = 0;
       const out = await this.mutateSave(accountId, (s) => {
         const bp = s.battlePass;
         if (!bp) return 'NO_BATTLEPASS';
         const r = claimBpReward(bp, track, level);
         if (!r.ok) return r.error;
         claimedReward = r.reward;
+        claimedSeasonNo = r.bp.seasonNo;
         const next = { ...s, battlePass: r.bp };
         if (r.reward.kind === 'material' && r.reward.id && r.reward.count > 0) {
           next.materials = { ...s.materials, [r.reward.id]: (s.materials[r.reward.id] ?? 0) + r.reward.count };
@@ -204,6 +207,17 @@ export function ProgressionMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase
       }
       const reward = claimedReward!;
       let finalSave = out.save;
+      // Material provenance (ITEM_IDENTITY_DESIGN.md task2, 2026-08-10): best-effort, after the
+      // mutateSave above has already durably committed the counter increment. `claimBpReward`'s own
+      // claimedFree/claimedPaid-tier guard makes (accountId, seasonNo, track, level) claimable at most
+      // once per season, so this baseId is a safe natural idempotency key (a season reset lets the same
+      // tier be claimed — and thus recorded — again, which is correct: it's a new grant event).
+      if (reward.kind === 'material' && reward.id && reward.count > 0) {
+        await recordMaterialGrants(
+          cols, accountId, `bp_${accountId}_s${claimedSeasonNo}_${track}_${level}`,
+          { [reward.id]: reward.count }, `battlepass:s${claimedSeasonNo}:${track}:${level}`, now(),
+        );
+      }
       // If the reward includes coins, mirror the wallet after delivery via commercial.
       if (reward.kind === 'coins' && reward.count > 0 && commercial.available) {
         try {
