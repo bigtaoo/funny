@@ -39,4 +39,20 @@ describe('app.ts stage-level dialog input gate (2026-08-10: taps fell through to
     expect(src).toMatch(/onClose: closeAppealDialog/);
     expect(src).toMatch(/dialogGate\.close = closeFeedbackDialog/);
   });
+
+  // Forward guard, not a check on today's code: a third interactive overlay mounted straight onto
+  // app.stage would reintroduce the exact same click-through, and nothing else would notice. If this
+  // fails because a NEW dialog was added, the fix is to gate it too (or, if it is non-interactive
+  // like GlobalToast/LoadingOverlay — which add themselves from their own constructors and never
+  // appear here — to widen this assertion with that reasoning written down).
+  it('every dialog mounted directly on app.stage is paired with a gate', () => {
+    const mounts = src.match(/app\.stage\.addChild\(/g) ?? [];
+    const holds = src.match(/input\.holdForModal\(true\)/g) ?? [];
+    expect(mounts).toHaveLength(holds.length);
+  });
+
+  it('the gate is a modal-specific API, not a reuse of the fade gate (they must not clear each other)', () => {
+    // suppress() belongs to SceneManager's fade freeze; app.ts must never touch it directly.
+    expect(src).not.toMatch(/input\.suppress\(/);
+  });
 });
