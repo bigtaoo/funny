@@ -385,6 +385,89 @@ describe.skipIf(!mongo)('analyticsvc service domains (funnel / dist / sessions w
       expect(doc?.scenes_visited).toEqual([]); // $setOnInsert defaults still applied on first-touch upsert
     });
 
+    it('events_count for two different sessions never cross-contaminates when their batches interleave', async () => {
+      await svc.ingestEvents(
+        {
+          session_id: 'sess-write-interleave-a', device_id: 'dev-write-ia', platform: 'web', os: 'Windows', game_version: '1', locale: 'en',
+          events: [{ event: 'session_start', ts: Date.now() }],
+        },
+        undefined,
+      );
+      await svc.ingestEvents(
+        {
+          session_id: 'sess-write-interleave-b', device_id: 'dev-write-ib', platform: 'web', os: 'Windows', game_version: '1', locale: 'en',
+          events: [
+            { event: 'session_start', ts: Date.now() },
+            { event: 'screen_view', ts: Date.now() + 1 },
+          ],
+        },
+        undefined,
+      );
+      await svc.ingestEvents(
+        {
+          session_id: 'sess-write-interleave-a', device_id: 'dev-write-ia', platform: 'web', os: 'Windows', game_version: '1', locale: 'en',
+          events: [
+            { event: 'ui_click', ts: Date.now() + 100 },
+            { event: 'ui_click', ts: Date.now() + 200 },
+          ],
+        },
+        undefined,
+      );
+      await svc.ingestEvents(
+        {
+          session_id: 'sess-write-interleave-b', device_id: 'dev-write-ib', platform: 'web', os: 'Windows', game_version: '1', locale: 'en',
+          events: [{ event: 'ui_click', ts: Date.now() + 300 }],
+        },
+        undefined,
+      );
+
+      const docA = await mongo!.collections.sessions.findOne({ _id: 'sess-write-interleave-a' });
+      const docB = await mongo!.collections.sessions.findOne({ _id: 'sess-write-interleave-b' });
+      expect(docA?.events_count).toBe(3); // 1 (session_start) + 2 (ui_click, ui_click)
+      expect(docB?.events_count).toBe(3); // 2 (session_start, screen_view) + 1 (ui_click)
+    });
+
+    it('a session_end-only batch (no session_start in it) still increments events_count for that batch', async () => {
+      await svc.ingestEvents(
+        {
+          session_id: 'sess-write-end-count', device_id: 'dev-write-end-count', platform: 'web', os: 'Windows', game_version: '1', locale: 'en',
+          events: [{ event: 'session_start', ts: Date.now() }],
+        },
+        undefined,
+      );
+      await svc.ingestEvents(
+        {
+          session_id: 'sess-write-end-count', device_id: 'dev-write-end-count', platform: 'web', os: 'Windows', game_version: '1', locale: 'en',
+          events: [{ event: 'session_end', ts: Date.now() + 1000, props: { duration_sec: 1 } }],
+        },
+        undefined,
+      );
+      const doc = await mongo!.collections.sessions.findOne({ _id: 'sess-write-end-count' });
+      expect(doc?.events_count).toBe(2); // 1 (session_start) + 1 (session_end) — session_end batches count too
+      expect(doc?.ended_at).toBeInstanceOf(Date);
+    });
+
+    it('a single batch carrying both session_start and session_end (very short session) is counted and finalized in one shot', async () => {
+      const startTs = Date.now();
+      const endTs = startTs + 5_000;
+      await svc.ingestEvents(
+        {
+          session_id: 'sess-write-instant', device_id: 'dev-write-instant', platform: 'web', os: 'Windows', game_version: '1', locale: 'en',
+          events: [
+            { event: 'session_start', ts: startTs },
+            { event: 'session_end', ts: endTs, props: { duration_sec: 5, scenes_visited: ['LobbyScene'] } },
+          ],
+        },
+        undefined,
+      );
+      const doc = await mongo!.collections.sessions.findOne({ _id: 'sess-write-instant' });
+      expect(doc?.events_count).toBe(2);
+      expect(doc!.started_at.getTime()).toBeCloseTo(startTs, -2);
+      expect(doc?.ended_at?.getTime()).toBeCloseTo(endTs, -2);
+      expect(doc?.duration_sec).toBe(5);
+      expect(doc?.scenes_visited).toEqual(['LobbyScene']);
+    });
+
     it('a session_end event sets ended_at/duration_sec/scenes_visited on the existing sessions doc', async () => {
       const startTs = Date.now();
       await svc.ingestEvents(
