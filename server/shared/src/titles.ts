@@ -160,7 +160,9 @@ export function slgTitleId(seasonNo: number, key: string): string {
 /**
  * Derives the source and season number from a titleId (pure function; shared between server GET /titles and client display).
  * Naming convention: ladder.s{N}.{rank} | slg.s{N}.{key} | ach.{key} | event.{key}.
- * Note: grant time (grantedAt) is not persisted (titles stores only the id sequence), so it is not derived here.
+ * Note: grant time is tracked separately in SaveData.titleGrants (ITEM_IDENTITY_DESIGN.md task3,
+ * 2026-08-10) — a parallel titleId→obtainedAt map, not derivable from the id itself, so it is not
+ * returned here; see metaserver's getTitlesHandler for where the two are joined for the wire response.
  */
 export function parseTitleId(titleId: string): { source: TitleSource; seasonNo?: number } {
   const lm = titleId.match(/^ladder\.s(\d+)\./);

@@ -21,13 +21,19 @@ export interface ProfileCtx {
   mutateSave: MutateSaveFn;
 }
 
-/** Read all titles granted to the current account (including derived source/seasonNo) + currently equipped title. */
+/**
+ * Read all titles granted to the current account (including derived source/seasonNo + obtainedAt when
+ * known) + currently equipped title. `obtainedAt` comes from `save.titleGrants` (ITEM_IDENTITY_DESIGN.md
+ * task3, 2026-08-10) and is absent for titles granted before that field existed (legacy accounts/titles).
+ */
 export async function getTitlesHandler(deps: ServiceDeps, req: FastifyRequest) {
   const accountId = accountIdOf(req);
   const save = await getOrCreateSave(deps.cols, accountId, deps.now());
+  const grants = save.titleGrants ?? {};
   const titles = (save.titles ?? []).map((id) => {
     const { source, seasonNo } = parseTitleId(id);
-    return { id, source, ...(seasonNo != null ? { seasonNo } : {}) };
+    const obtainedAt = grants[id];
+    return { id, source, ...(seasonNo != null ? { seasonNo } : {}), ...(obtainedAt != null ? { obtainedAt } : {}) };
   });
   return ok({ titles, equipped: save.equipped?.title ?? null });
 }

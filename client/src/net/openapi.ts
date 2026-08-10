@@ -1575,6 +1575,10 @@ export interface components {
             };
             /** @description Set of owned title ids (awarded by season settlement / achievement / admin; order reflects acquisition order) */
             titles?: string[];
+            /** @description titleId → obtainedAt (epoch ms); parallel map to titles, not required to have an entry for every owned title */
+            titleGrants?: {
+                [key: string]: number;
+            };
             battlePass?: components["schemas"]["BattlePassData"];
             rechargeMilestone?: components["schemas"]["RechargeMilestoneData"];
             progress: {
@@ -4198,6 +4202,8 @@ export interface operations {
                                 source: "ladder" | "slg" | "achievement" | "event";
                                 /** @description Season number (only for ladder/slg type titles) */
                                 seasonNo?: number;
+                                /** @description Grant timestamp (epoch ms); absent for titles granted before ITEM_IDENTITY_DESIGN.md task3 (2026-08-10) was deployed */
+                                obtainedAt?: number;
                             }[];
                             /** @description Currently equipped title id; null if none equipped */
                             equipped: string | null;

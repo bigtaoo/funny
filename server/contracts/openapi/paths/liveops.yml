@@ -404,6 +404,7 @@
                           id: { type: string, description: 'Title id (ladder.s{N}.{rank} / slg.s{N}.{key} / ach.{key} / event.{key})' }
                           source: { type: string, enum: [ladder, slg, achievement, event] }
                           seasonNo: { type: integer, description: Season number (only for ladder/slg type titles) }
+                          obtainedAt: { type: integer, description: 'Grant timestamp (epoch ms); absent for titles granted before ITEM_IDENTITY_DESIGN.md task3 (2026-08-10) was deployed' }
                     equipped:
                       type: string
                       nullable: true

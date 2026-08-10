@@ -2144,6 +2144,13 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                   },
                   "description": "Set of owned title ids (awarded by season settlement / achievement / admin; order reflects acquisition order)"
                 },
+                "titleGrants": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "integer"
+                  },
+                  "description": "titleId → obtainedAt (epoch ms); parallel map to titles, not required to have an entry for every owned title"
+                },
                 "battlePass": {
                   "type": "object",
                   "required": [
@@ -2830,6 +2837,13 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                     "type": "string"
                   },
                   "description": "Set of owned title ids (awarded by season settlement / achievement / admin; order reflects acquisition order)"
+                },
+                "titleGrants": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "integer"
+                  },
+                  "description": "titleId → obtainedAt (epoch ms); parallel map to titles, not required to have an entry for every owned title"
                 },
                 "battlePass": {
                   "type": "object",
@@ -3749,6 +3763,13 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                   },
                   "description": "Set of owned title ids (awarded by season settlement / achievement / admin; order reflects acquisition order)"
                 },
+                "titleGrants": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "integer"
+                  },
+                  "description": "titleId → obtainedAt (epoch ms); parallel map to titles, not required to have an entry for every owned title"
+                },
                 "battlePass": {
                   "type": "object",
                   "required": [
@@ -4457,6 +4478,13 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                     "type": "string"
                   },
                   "description": "Set of owned title ids (awarded by season settlement / achievement / admin; order reflects acquisition order)"
+                },
+                "titleGrants": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "integer"
+                  },
+                  "description": "titleId → obtainedAt (epoch ms); parallel map to titles, not required to have an entry for every owned title"
                 },
                 "battlePass": {
                   "type": "object",
@@ -5261,6 +5289,13 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                   },
                   "description": "Set of owned title ids (awarded by season settlement / achievement / admin; order reflects acquisition order)"
                 },
+                "titleGrants": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "integer"
+                  },
+                  "description": "titleId → obtainedAt (epoch ms); parallel map to titles, not required to have an entry for every owned title"
+                },
                 "battlePass": {
                   "type": "object",
                   "required": [
@@ -5995,6 +6030,13 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                         "type": "string"
                       },
                       "description": "Set of owned title ids (awarded by season settlement / achievement / admin; order reflects acquisition order)"
+                    },
+                    "titleGrants": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "integer"
+                      },
+                      "description": "titleId → obtainedAt (epoch ms); parallel map to titles, not required to have an entry for every owned title"
                     },
                     "battlePass": {
                       "type": "object",
@@ -6803,6 +6845,13 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                   },
                   "description": "Set of owned title ids (awarded by season settlement / achievement / admin; order reflects acquisition order)"
                 },
+                "titleGrants": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "integer"
+                  },
+                  "description": "titleId → obtainedAt (epoch ms); parallel map to titles, not required to have an entry for every owned title"
+                },
                 "battlePass": {
                   "type": "object",
                   "required": [
@@ -7425,6 +7474,13 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                   },
                   "description": "Set of owned title ids (awarded by season settlement / achievement / admin; order reflects acquisition order)"
                 },
+                "titleGrants": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "integer"
+                  },
+                  "description": "titleId → obtainedAt (epoch ms); parallel map to titles, not required to have an entry for every owned title"
+                },
                 "battlePass": {
                   "type": "object",
                   "required": [
@@ -8043,6 +8099,13 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                     "type": "string"
                   },
                   "description": "Set of owned title ids (awarded by season settlement / achievement / admin; order reflects acquisition order)"
+                },
+                "titleGrants": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "integer"
+                  },
+                  "description": "titleId → obtainedAt (epoch ms); parallel map to titles, not required to have an entry for every owned title"
                 },
                 "battlePass": {
                   "type": "object",
@@ -8663,6 +8726,13 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                     "type": "string"
                   },
                   "description": "Set of owned title ids (awarded by season settlement / achievement / admin; order reflects acquisition order)"
+                },
+                "titleGrants": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "integer"
+                  },
+                  "description": "titleId → obtainedAt (epoch ms); parallel map to titles, not required to have an entry for every owned title"
                 },
                 "battlePass": {
                   "type": "object",
@@ -9287,6 +9357,13 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                     "type": "string"
                   },
                   "description": "Set of owned title ids (awarded by season settlement / achievement / admin; order reflects acquisition order)"
+                },
+                "titleGrants": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "integer"
+                  },
+                  "description": "titleId → obtainedAt (epoch ms); parallel map to titles, not required to have an entry for every owned title"
                 },
                 "battlePass": {
                   "type": "object",
@@ -9933,6 +10010,13 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                     "type": "string"
                   },
                   "description": "Set of owned title ids (awarded by season settlement / achievement / admin; order reflects acquisition order)"
+                },
+                "titleGrants": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "integer"
+                  },
+                  "description": "titleId → obtainedAt (epoch ms); parallel map to titles, not required to have an entry for every owned title"
                 },
                 "battlePass": {
                   "type": "object",
@@ -10597,6 +10681,13 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                   },
                   "description": "Set of owned title ids (awarded by season settlement / achievement / admin; order reflects acquisition order)"
                 },
+                "titleGrants": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "integer"
+                  },
+                  "description": "titleId → obtainedAt (epoch ms); parallel map to titles, not required to have an entry for every owned title"
+                },
                 "battlePass": {
                   "type": "object",
                   "required": [
@@ -11219,6 +11310,13 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                     "type": "string"
                   },
                   "description": "Set of owned title ids (awarded by season settlement / achievement / admin; order reflects acquisition order)"
+                },
+                "titleGrants": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "integer"
+                  },
+                  "description": "titleId → obtainedAt (epoch ms); parallel map to titles, not required to have an entry for every owned title"
                 },
                 "battlePass": {
                   "type": "object",
@@ -11850,6 +11948,13 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                   },
                   "description": "Set of owned title ids (awarded by season settlement / achievement / admin; order reflects acquisition order)"
                 },
+                "titleGrants": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "integer"
+                  },
+                  "description": "titleId → obtainedAt (epoch ms); parallel map to titles, not required to have an entry for every owned title"
+                },
                 "battlePass": {
                   "type": "object",
                   "required": [
@@ -12469,6 +12574,13 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                     "type": "string"
                   },
                   "description": "Set of owned title ids (awarded by season settlement / achievement / admin; order reflects acquisition order)"
+                },
+                "titleGrants": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "integer"
+                  },
+                  "description": "titleId → obtainedAt (epoch ms); parallel map to titles, not required to have an entry for every owned title"
                 },
                 "battlePass": {
                   "type": "object",
@@ -13217,6 +13329,13 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                   },
                   "description": "Set of owned title ids (awarded by season settlement / achievement / admin; order reflects acquisition order)"
                 },
+                "titleGrants": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "integer"
+                  },
+                  "description": "titleId → obtainedAt (epoch ms); parallel map to titles, not required to have an entry for every owned title"
+                },
                 "battlePass": {
                   "type": "object",
                   "required": [
@@ -13844,6 +13963,13 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                   },
                   "description": "Set of owned title ids (awarded by season settlement / achievement / admin; order reflects acquisition order)"
                 },
+                "titleGrants": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "integer"
+                  },
+                  "description": "titleId → obtainedAt (epoch ms); parallel map to titles, not required to have an entry for every owned title"
+                },
                 "battlePass": {
                   "type": "object",
                   "required": [
@@ -14462,6 +14588,13 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                     "type": "string"
                   },
                   "description": "Set of owned title ids (awarded by season settlement / achievement / admin; order reflects acquisition order)"
+                },
+                "titleGrants": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "integer"
+                  },
+                  "description": "titleId → obtainedAt (epoch ms); parallel map to titles, not required to have an entry for every owned title"
                 },
                 "battlePass": {
                   "type": "object",
@@ -15144,6 +15277,13 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                   },
                   "description": "Set of owned title ids (awarded by season settlement / achievement / admin; order reflects acquisition order)"
                 },
+                "titleGrants": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "integer"
+                  },
+                  "description": "titleId → obtainedAt (epoch ms); parallel map to titles, not required to have an entry for every owned title"
+                },
                 "battlePass": {
                   "type": "object",
                   "required": [
@@ -15772,6 +15912,13 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                     "type": "string"
                   },
                   "description": "Set of owned title ids (awarded by season settlement / achievement / admin; order reflects acquisition order)"
+                },
+                "titleGrants": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "integer"
+                  },
+                  "description": "titleId → obtainedAt (epoch ms); parallel map to titles, not required to have an entry for every owned title"
                 },
                 "battlePass": {
                   "type": "object",
@@ -16437,6 +16584,13 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                   },
                   "description": "Set of owned title ids (awarded by season settlement / achievement / admin; order reflects acquisition order)"
                 },
+                "titleGrants": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "integer"
+                  },
+                  "description": "titleId → obtainedAt (epoch ms); parallel map to titles, not required to have an entry for every owned title"
+                },
                 "battlePass": {
                   "type": "object",
                   "required": [
@@ -17056,6 +17210,13 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                   },
                   "description": "Set of owned title ids (awarded by season settlement / achievement / admin; order reflects acquisition order)"
                 },
+                "titleGrants": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "integer"
+                  },
+                  "description": "titleId → obtainedAt (epoch ms); parallel map to titles, not required to have an entry for every owned title"
+                },
                 "battlePass": {
                   "type": "object",
                   "required": [
@@ -17674,6 +17835,13 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                     "type": "string"
                   },
                   "description": "Set of owned title ids (awarded by season settlement / achievement / admin; order reflects acquisition order)"
+                },
+                "titleGrants": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "integer"
+                  },
+                  "description": "titleId → obtainedAt (epoch ms); parallel map to titles, not required to have an entry for every owned title"
                 },
                 "battlePass": {
                   "type": "object",
@@ -18670,6 +18838,13 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                   },
                   "description": "Set of owned title ids (awarded by season settlement / achievement / admin; order reflects acquisition order)"
                 },
+                "titleGrants": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "integer"
+                  },
+                  "description": "titleId → obtainedAt (epoch ms); parallel map to titles, not required to have an entry for every owned title"
+                },
                 "battlePass": {
                   "type": "object",
                   "required": [
@@ -19548,6 +19723,13 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                   },
                   "description": "Set of owned title ids (awarded by season settlement / achievement / admin; order reflects acquisition order)"
                 },
+                "titleGrants": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "integer"
+                  },
+                  "description": "titleId → obtainedAt (epoch ms); parallel map to titles, not required to have an entry for every owned title"
+                },
                 "battlePass": {
                   "type": "object",
                   "required": [
@@ -20202,6 +20384,13 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                   },
                   "description": "Set of owned title ids (awarded by season settlement / achievement / admin; order reflects acquisition order)"
                 },
+                "titleGrants": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "integer"
+                  },
+                  "description": "titleId → obtainedAt (epoch ms); parallel map to titles, not required to have an entry for every owned title"
+                },
                 "battlePass": {
                   "type": "object",
                   "required": [
@@ -20826,6 +21015,13 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                     "type": "string"
                   },
                   "description": "Set of owned title ids (awarded by season settlement / achievement / admin; order reflects acquisition order)"
+                },
+                "titleGrants": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "integer"
+                  },
+                  "description": "titleId → obtainedAt (epoch ms); parallel map to titles, not required to have an entry for every owned title"
                 },
                 "battlePass": {
                   "type": "object",
@@ -21477,6 +21673,10 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                   "seasonNo": {
                     "type": "integer",
                     "description": "Season number (only for ladder/slg type titles)"
+                  },
+                  "obtainedAt": {
+                    "type": "integer",
+                    "description": "Grant timestamp (epoch ms); absent for titles granted before ITEM_IDENTITY_DESIGN.md task3 (2026-08-10) was deployed"
                   }
                 }
               }
@@ -21708,6 +21908,13 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                     "type": "string"
                   },
                   "description": "Set of owned title ids (awarded by season settlement / achievement / admin; order reflects acquisition order)"
+                },
+                "titleGrants": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "integer"
+                  },
+                  "description": "titleId → obtainedAt (epoch ms); parallel map to titles, not required to have an entry for every owned title"
                 },
                 "battlePass": {
                   "type": "object",
@@ -22328,6 +22535,13 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                   },
                   "description": "Set of owned title ids (awarded by season settlement / achievement / admin; order reflects acquisition order)"
                 },
+                "titleGrants": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "integer"
+                  },
+                  "description": "titleId → obtainedAt (epoch ms); parallel map to titles, not required to have an entry for every owned title"
+                },
                 "battlePass": {
                   "type": "object",
                   "required": [
@@ -22947,6 +23161,13 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                   },
                   "description": "Set of owned title ids (awarded by season settlement / achievement / admin; order reflects acquisition order)"
                 },
+                "titleGrants": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "integer"
+                  },
+                  "description": "titleId → obtainedAt (epoch ms); parallel map to titles, not required to have an entry for every owned title"
+                },
                 "battlePass": {
                   "type": "object",
                   "required": [
@@ -23565,6 +23786,13 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                     "type": "string"
                   },
                   "description": "Set of owned title ids (awarded by season settlement / achievement / admin; order reflects acquisition order)"
+                },
+                "titleGrants": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "integer"
+                  },
+                  "description": "titleId → obtainedAt (epoch ms); parallel map to titles, not required to have an entry for every owned title"
                 },
                 "battlePass": {
                   "type": "object",
@@ -25200,6 +25428,13 @@ const RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                     "type": "string"
                   },
                   "description": "Set of owned title ids (awarded by season settlement / achievement / admin; order reflects acquisition order)"
+                },
+                "titleGrants": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "integer"
+                  },
+                  "description": "titleId → obtainedAt (epoch ms); parallel map to titles, not required to have an entry for every owned title"
                 },
                 "battlePass": {
                   "type": "object",

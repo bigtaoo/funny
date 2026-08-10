@@ -134,6 +134,10 @@ export interface SaveData {
   // —— Titles (S10, TITLE_DESIGN §2). Server-authoritative, not sent up on PUT /save (client read-only).
   // The equipped slot is at equipped['title'] (sync section, client-writable); servers broadcast the opponent's title from it.
   titles?: string[];
+  // —— Title grant timestamps (ITEM_IDENTITY_DESIGN.md task3, 2026-08-10). Mirrors server SaveData.titleGrants,
+  // read-only display use (e.g. "obtained on <date>"); GET /titles also returns per-title obtainedAt directly
+  // (see net/openapi.ts), so this whole-save mirror is a secondary source, not required by any current UI.
+  titleGrants?: Record<string, number>;
 
   // —— Lifetime-owned ledger (avatar unlock across hero/equipment/material/skin). Server-authoritative,
   // not sent up on PUT /save (client read-only). Additive-only: survives the item later being

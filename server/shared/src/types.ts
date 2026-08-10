@@ -153,6 +153,16 @@ export interface SaveData {
   // —— Titles (S10, TITLE_DESIGN §2). Server-authoritative; not writable via PUT /save. Absent = treated as empty set, lazily created. ——
   // Written by season settlement / achievement claim / admin grant; equipped['title'] is the equipped slot (client sync section).
   titles?: string[];
+  // —— Title grant timestamps (ITEM_IDENTITY_DESIGN.md task3, 2026-08-10). ——
+  // titleId → obtainedAt (epoch ms), written alongside every `titles` append. Optional/additive-only
+  // parallel map, not a full instantiation (titles stay a lifelong, non-tradeable string[] — see
+  // ITEM_IDENTITY_DESIGN.md §3 task3 for why the lighter-weight parallel-map shape was chosen over
+  // giving each title its own instance id like equipment/cards). Absent = legacy account granted
+  // before this field existed, or a titleId granted before this field was added to that account;
+  // grantTitleToPlayer (metaserver/src/titles.ts) never overwrites an existing entry (idempotent —
+  // titles are normally granted exactly once, but this guards a hypothetical re-grant from moving the
+  // recorded obtain time).
+  titleGrants?: Record<string, number>;
 
   // —— Lifetime-owned ledger (avatar-unlock across hero/equipment/material/skin categories). Server-
   // authoritative, additive-only ($addToSet at every grant point), never pruned when the current
@@ -321,6 +331,7 @@ export function makeNewSave(accountId: string, now: number): SaveData {
     cardInventory: {},
     // Starter title granted at creation (TITLE_DESIGN §6); auto-worn since it's the only title owned.
     titles: [STARTER_TITLE],
+    titleGrants: { [STARTER_TITLE]: now },
     equipped: { title: STARTER_TITLE },
     flags: {},
     equipmentInvCount: 0,
