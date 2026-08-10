@@ -365,18 +365,18 @@ describe('ShopScene — consumable items get a "×10" bulk-buy shortcut above Bu
     scene.destroy();
   });
 
-  it('tapping ×10 (once affordable) calls buy() ten times with the catalog id and refreshes the catalog once', async () => {
-    const buyIds: string[] = [];
+  it('tapping ×10 (once affordable) calls buy() ONCE with the catalog id + qty=10 (2026-08-10: one request, not ten sequential round trips) and refreshes the catalog', async () => {
+    const calls: [string, number | undefined][] = [];
     const scene = buildShop({
       getCoins: () => 5000, // 10× the 500 cost
       loadItems: async () => [{ id: 'protect_enhance', cost: 500, kind: 'item', grants: 'protect_enhance' }],
-      buy: async (itemId: string) => { buyIds.push(itemId); return { ok: true }; },
+      buy: async (itemId: string, qty?: number) => { calls.push([itemId, qty]); return { ok: true }; },
     });
     await flush();
     tapLabel(scene, BUY_X10);
     await flush();
     await flush();
-    expect(buyIds).toEqual(Array(10).fill('protect_enhance'));
+    expect(calls).toEqual([['protect_enhance', 10]]);
     scene.destroy();
   });
 
@@ -414,7 +414,7 @@ describe('ShopScene — consumable items get a "×10" bulk-buy shortcut above Bu
     const scene = buildShop({
       getCoins: () => wallet.coins,
       loadItems: async () => [{ id: 'protect_enhance', cost: 500, kind: 'item', grants: 'protect_enhance' }],
-      buy: async () => { wallet.coins -= 500; return { ok: true }; },
+      buy: async (_itemId: string, qty?: number) => { wallet.coins -= 500 * (qty ?? 1); return { ok: true }; },
     });
     await flush();
     expect(findLabelPos(scene.container, BUY_X10)).not.toBeNull(); // 5500 >= 5000, starts enabled

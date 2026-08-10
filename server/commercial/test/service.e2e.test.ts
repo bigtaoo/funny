@@ -121,6 +121,50 @@ describe.skipIf(!mongo)('commercial service e2e', () => {
     expect((await svc.getWallet('c')).coins).toBe(250);
   });
 
+  // ── shopCharge `qty` (2026-08-10, bulk-buy): charges cost×qty in one call instead of meta looping N ──
+
+  describe('shopCharge qty', () => {
+    it('debits cost×qty in one call, not just cost, and records the qty on the order for reconciliation', async () => {
+      await svc.grant({ accountId: 'bulk-a', amount: 5000, reason: 'test_fund', orderId: 'fund-bulk-a' });
+      const r = await svc.shopCharge({ accountId: 'bulk-a', itemId: 'protect_enhance', cost: 500, qty: 10, orderId: 'bulk-o1' });
+      expect(r).toMatchObject({ ok: true, coinsAfter: 0, status: 'charged' }); // 5000 - 500*10
+      expect((await svc.getWallet('bulk-a')).coins).toBe(0);
+      const order = await m.collections.orders.findOne({ _id: 'bulk-o1' });
+      expect(order?.cost).toBe(5000); // total charged, not the per-unit price
+      expect(order?.result.qty).toBe(10);
+    });
+
+    it('all-or-nothing: a balance that covers only part of qty×cost is rejected entirely, nothing debited', async () => {
+      await svc.grant({ accountId: 'bulk-b', amount: 2000, reason: 'test_fund', orderId: 'fund-bulk-b' });
+      // 2000 covers 4 units (500 each), not 10.
+      const r = await svc.shopCharge({ accountId: 'bulk-b', itemId: 'protect_enhance', cost: 500, qty: 10, orderId: 'bulk-o2' });
+      expect(r).toEqual({ ok: false, error: 'INSUFFICIENT_FUNDS' });
+      expect((await svc.getWallet('bulk-b')).coins).toBe(2000); // untouched
+    });
+
+    it('omitted qty behaves exactly like qty=1 (backward compatible with every existing caller)', async () => {
+      await svc.grant({ accountId: 'bulk-c', amount: 500, reason: 'test_fund', orderId: 'fund-bulk-c' });
+      const r = await svc.shopCharge({ accountId: 'bulk-c', itemId: 'protect_enhance', cost: 500, orderId: 'bulk-o3' });
+      expect(r).toMatchObject({ ok: true, coinsAfter: 0 });
+    });
+
+    it('rejects qty above SHOP_BUY_MAX_QTY even if meta somehow forwarded one (defense in depth — commercial does not trust meta\'s qty verbatim, same spirit as the cost cross-check)', async () => {
+      await svc.grant({ accountId: 'bulk-d', amount: 100_000, reason: 'test_fund', orderId: 'fund-bulk-d' });
+      const r = await svc.shopCharge({ accountId: 'bulk-d', itemId: 'protect_enhance', cost: 500, qty: 999, orderId: 'bulk-o4' });
+      expect(r).toEqual({ ok: false, error: 'BAD_REQUEST' });
+      expect((await svc.getWallet('bulk-d')).coins).toBe(100_000); // untouched
+    });
+
+    it('rejects a non-positive/non-integer qty (0, negative, fractional)', async () => {
+      await svc.grant({ accountId: 'bulk-e', amount: 5000, reason: 'test_fund', orderId: 'fund-bulk-e' });
+      for (const bad of [0, -1, 1.5]) {
+        const r = await svc.shopCharge({ accountId: 'bulk-e', itemId: 'protect_enhance', cost: 500, qty: bad, orderId: `bulk-o5-${bad}` });
+        expect(r).toEqual({ ok: false, error: 'BAD_REQUEST' });
+      }
+      expect((await svc.getWallet('bulk-e')).coins).toBe(5000); // untouched
+    });
+  });
+
   it('gacha: single draw costs 150, pity+1, orderId idempotent', async () => {
     await svc.grant({ accountId: 'e', amount: 550, reason: 'test_fund', orderId: 'fund-e' }); // 550
     const r1 = await svc.gachaDraw({ accountId: 'e', poolId: 'standard', count: 1, orderId: 'g1' });

@@ -255,12 +255,12 @@ export function createShopNav(ctx: AppCtx): ShopNav {
       onSaveChanged: (listener: () => void) => saveManager.subscribe(listener),
       getOwnedSkins: () => saveManager.get().inventory.skins,
       loadItems: () => client.getShopItems(),
-      async buy(itemId) {
+      async buy(itemId, qty) {
         try {
-          const { save } = await client.shopBuy(itemId);
+          const { save } = await client.shopBuy(itemId, qty);
           saveManager.adoptServer(save);
           converted = true;
-          analytics.track('shop_buy', { item_id: itemId, currency: 'coins' });
+          analytics.track('shop_buy', { item_id: itemId, currency: 'coins', qty: qty ?? 1 });
           return { ok: true };
         } catch (e) {
           return {

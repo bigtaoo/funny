@@ -64,7 +64,10 @@ export interface OrderDoc {
   cost: number;
   status: 'charged' | 'delivered';
   coinsAfter: number; // balance after coin deduction (for idempotent replay)
-  result: { itemId?: string; results?: GachaResultEntry[]; poolId?: string };
+  // qty: units charged/delivered together in one shopCharge call (bulk-buy, ×10 button, 2026-08-10);
+  // absent/1 for every pre-existing order and every other kind. Kept on the order so a crash between
+  // charge and delivery (reconcileUndelivered) replays the exact quantity that was actually paid for.
+  result: { itemId?: string; results?: GachaResultEntry[]; poolId?: string; qty?: number };
   pityAfter?: Record<string, number>;
   refundCoins?: number; // duplicate refund coins computed by meta in the delivery callback (credited on delivered)
   deliveredAt?: number;

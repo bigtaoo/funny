@@ -103,9 +103,10 @@ GET  /match/history?limit=<1..50>              → { matches: MatchHistoryEntry[
 ### 2.3 商店（meta 编排 → commercial，S2-2 / S5-3）
 ```
 GET  /shop/items                               → { items: ShopItem[] }
-POST /shop/buy        { itemId }               → { save: SaveData, granted: ItemId }
+POST /shop/buy        { itemId, qty? }         → { save: SaveData, granted: ItemId }
                                                  | INSUFFICIENT_FUNDS
 ```
+`qty`（2026-08-10，可选，默认 1，1–20）：一次请求内买 `qty` 份，服务端原子完成"校验每日上限（若有）→ 扣费 `cost×qty`→发货 `qty` 份"，全有或全无（详见 `ECONOMY_NUMBERS.md` §6.6）——不是客户端循环调用 `qty` 次。
 
 ### 2.4 盲盒（economy-service，S2-3）
 ```
