@@ -4,45 +4,48 @@
 // landSiege's own doc comment; applySweep handles neutral/resource-tile clears. Bodies moved verbatim
 // out of combatSiege.ts (2026-07-07 split). Depends on the helpers mixin (buildDefenderConfig /
 // recordSiege / transferLoot / applySectLeaderPenalty / passiveRelocate).
+//
+// Split into independent function modules (2026-08-10, 独立函数模块 form — applyBaseSiege/
+// applyStrongholdSiege/applyCrossingSiege/landSiege are all PRIVATE, called only from applySiege in
+// this same file, so unlike pve.ts/liveops.ts's public-mixin-interface handlers there is no
+// requirement that they stay methods on the assembled class at all: each takes `core` (a plain
+// WorldCore instance) and `ctx` (typed narrowly as SiegeServiceBase — declared via interface
+// merging in base.ts, so its cross-mixin methods like recordSiege/writeContestedHold are ordinary
+// PUBLIC members, not `protected`; passing `this` from applySiege's method body upcasts cleanly to
+// that narrower type with no structural-typing wall to work around). applyStrongholdSiege/
+// applyCrossingSiege additionally shrank a lot: their NPC-garrison battle-resolution logic turned out
+// to be byte-identical to applyOccupy's (occupation.ts), so both now call occupationBattle.ts's
+// resolveOccupationBattle/writeOccupyCardState instead of duplicating it locally.
+// - arrival/baseSiege.ts:       applyBaseSiege (ADR-026 wave defense)
+// - arrival/strongholdSiege.ts: applyStrongholdSiege (G8 §3.1 PvE)
+// - arrival/crossingSiege.ts:   applyCrossingSiege (bridge/plankway PvE)
+// - arrival/landSiege.ts:       landSiege (G3-1 territory/base/structure/crossing settlement, §16.4)
+// - arrival/sweep.ts:           applySweep (neutral/resource tile clear)
+// No behavior change.
 import {
   proceduralTile,
   siegeSeedFromId,
   playerWorldId,
   resolveSiege,
-  npcGarrison,
-  npcBaseHp,
-  strongholdGarrison,
-  passageGarrison,
-  STRONGHOLD_LOOT_PER_LEVEL,
-  strongholdMaterialLoot,
   provinceIdxAt,
-  SWEEP_LOOT_PER_LEVEL,
-  RESOURCE_CAP,
-  RESOURCE_TYPES,
-  NATION_BONUS_DEFENSE,
   nationDefenseStrength,
   academyBuff,
-  teamSiegeValue,
-  waveSeed,
-  SLG_SIEGE_DAMAGE_DELAY_MS,
-  SLG_TEAM_INJURY_MS,
   MARCH_MORALE_MAX,
   moraleCombatMultiplier,
-  type CardInstance,
-  type ResourceType,
-  type SiegeOutcome,
   type SiegeResolution,
-  type ProceduralTile,
 } from '@nw/shared';
-import { runSiegeBattle, synthesizeArmy, scaleArmyHp, scaleArmyByRatio, sumArmyHp, toDefenderFormation, resolveCardArmy, toEngineCardInstances, computeCardStateUpdates, shouldUseCheapSiege } from '../siegeEngine';
+import { runSiegeBattle, synthesizeArmy, scaleArmyByRatio, sumArmyHp, resolveCardArmy, toEngineCardInstances, shouldUseCheapSiege } from '../siegeEngine';
 import type { GarrisonEntry, EngineCardInstance, EngineEquipInv } from '@nw/engine';
 import { ENGINE_VERSION } from '@nw/engine';
-import type { TileDoc, PlayerWorldDoc, MarchDoc, SiegeDamageDoc } from '../db';
-import { lootSummary, emptyResources } from '../core';
+import type { TileDoc, PlayerWorldDoc, MarchDoc } from '../db';
 import type { SiegeReplayInputs } from '../worldTypes';
-import type { SaveFields } from '../metaClient';
-import { refundTroops, startReturnMarch, parkMarchInPlace } from '../combatShared';
+import { refundTroops, parkMarchInPlace } from '../combatShared';
 import type { SiegeServiceBaseCtor, Constructor } from './base';
+import { applyBaseSiege } from './arrival/baseSiege';
+import { applyStrongholdSiege } from './arrival/strongholdSiege';
+import { applyCrossingSiege } from './arrival/crossingSiege';
+import { landSiege } from './arrival/landSiege';
+import { applySweep as applySweepImpl } from './arrival/sweep';
 
 export interface SiegeArrivalHandlers {
   applySiege(m: MarchDoc, pw: PlayerWorldDoc, t: number): Promise<void>;
@@ -97,13 +100,13 @@ export function SiegeArrivalMixin<TBase extends SiegeServiceBaseCtor>(Base: TBas
       if (!target?.ownerId) {
         const proc = proceduralTile(m.worldId, this.core.coordX(m.toTile), this.core.coordY(m.toTile));
         if (proc.type === 'stronghold') {
-          await this.applyStrongholdSiege(m, pw, t, proc);
+          await applyStrongholdSiege(this.core, this, m, pw, t, proc);
           return;
         }
         // Crossing PvE capture (bridge/plankway): fight the NPC garrison; victory captures it as an owned crossing
         // (KEEPS its bridge/plankway type so it stays a passage), defeat retreats. Intercept before the miss/refund branch.
         if (proc.type === 'bridge' || proc.type === 'plankway') {
-          await this.applyCrossingSiege(m, pw, t, proc);
+          await applyCrossingSiege(this.core, this, m, pw, t, proc);
           return;
         }
         // ADR-037 (§5.4): target has no owner but is mid occupation-hold (an occupy march already won its PvE
@@ -205,8 +208,8 @@ export function SiegeArrivalMixin<TBase extends SiegeServiceBaseCtor>(Base: TBas
         // synthesized army beyond board capacity clogs lanes (see SIEGE_SYNTH_ARMY_MAX_TROOPS) and must never
         // reach the per-wave engine below.
         const attackerSynthesized = !hasCardArmy && rawArmy.length === 0;
-        await this.applyBaseSiege(
-          m, pw, baseTile, defenderId, defender, inOwnNation,
+        await applyBaseSiege(
+          this.core, this, m, pw, baseTile, defenderId, defender, inOwnNation,
           attackerArmy, cardInstances, cardEquipInv, siegeAcademy, attackerSave?.cardInv ?? {}, attackerSynthesized, t,
           defenderSaveForBase,
         );
@@ -250,660 +253,12 @@ export function SiegeArrivalMixin<TBase extends SiegeServiceBaseCtor>(Base: TBas
         }
       }
       // Replay inputs: persisted to SiegeDoc; the client uses seed + both sides' formations to replay the battle locally for spectating (§16.3).
-      await this.landSiege(m, pw, target, defenderId, defender, res, t, replay);
+      await landSiege(this.core, this, m, pw, target, defenderId, defender, res, t, replay);
     }
 
-    /**
-     * ADR-026 main-base siege: in-base, non-injured defender teams (t1..t5) fight the attacker in waves; the attacker's
-     * surviving troops carry over between waves. Clearing all defenders (or none present) is a garrison win → schedule a
-     * delayed building-HP hit (SiegeDamageDoc, +SLG_SIEGE_DAMAGE_DELAY_MS) equal to the attacking team's siege value.
-     * Each defeated defender team is injured for SLG_TEAM_INJURY_MS (never defends until healed). An attacker wiped
-     * mid-waves fails the siege (no HP damage) and retreats immediately. The real building HP (TileDoc.hp on the anchor)
-     * is only reduced later by processDueSiegeDamage → capture (passiveRelocate) at HP≤0.
-     */
-    private async applyBaseSiege(
-      m: MarchDoc,
-      pw: PlayerWorldDoc,
-      baseTile: TileDoc,
-      defenderId: string,
-      defender: PlayerWorldDoc | null,
-      inOwnNation: boolean,
-      attackerArmy: GarrisonEntry[],
-      cardInstances: EngineCardInstance[] | undefined,
-      cardEquipInv: EngineEquipInv | undefined,
-      siegeAcademy: { hp: number; damage: number; siege: number } | undefined,
-      attackerCardInv: Record<string, CardInstance>,
-      attackerSynthesized: boolean,
-      t: number,
-      defenderSave: SaveFields | null,
-    ): Promise<void> {
-      const { cols } = this.core.deps;
-      const tileLevel = baseTile.level ?? 1;
-      // wall no longer buffs garrison HP during battle — its effect moved to persistent durability
-      // (D-CITY-8; see settleSiegeDamage's use of baseDurabilityMax for the delayed HP hit below).
-
-      // Teams currently out on active (non-recalled) marches are skipped as defenders (ADR-026 §2).
-      const activeMarches = await cols.marches
-        .find({ worldId: m.worldId, ownerId: defenderId, status: { $ne: 'recalled' }, teamId: { $exists: true } })
-        .toArray();
-      const outTeams = new Set(activeMarches.map((x) => x.teamId).filter((id): id is string => !!id));
-
-      // Defender card inventory (resolve team card armies → unit type + troop count). v1: defender cards use base blueprints on defence (no per-card level/gear buff; follow-up).
-      // defenderSave is pre-fetched by the caller (applySiege), in parallel with the attacker's own fetch.
-      const defCardInv = defenderSave?.cardInv ?? {};
-      const defCardState = defender?.cardState ?? {};
-      const teamState = defender?.teamState ?? {};
-
-      // In-base, non-injured teams in t1..t5 order.
-      const defenders = (defender?.teams ?? [])
-        .filter((tm) => tm.army.length > 0 && !outTeams.has(tm.id))
-        .filter((tm) => !((teamState[tm.id]?.injuredUntil ?? 0) > t))
-        .slice()
-        .sort((a, b) => a.id.localeCompare(b.id));
-
-      // Wave battle: attacker survivors carry over between waves (scaled by survival ratio).
-      let survivorArmy: GarrisonEntry[] = attackerArmy.map((e) => ({ ...e }));
-      let attackerSurvivors = sumArmyHp(survivorArmy);
-      const defeatedTeamIds: string[] = [];
-      const replays: SiegeReplayInputs[] = [];
-      let cleared = true;
-
-      for (let i = 0; i < defenders.length; i++) {
-        const tm = defenders[i]!;
-        if (survivorArmy.length === 0 || attackerSurvivors <= 0) { cleared = false; break; }
-        // Re-place the attack-authored team onto defender spawn positions (top half) so the auto-battle isn't degenerate.
-        let defArmy = toDefenderFormation(resolveCardArmy(tm.army, defCardState, defCardInv));
-        if (inOwnNation) defArmy = scaleArmyHp(defArmy, 1 + NATION_BONUS_DEFENSE); // §2.4 nation defence bonus
-        if (defArmy.length === 0) { defeatedTeamIds.push(tm.id); continue; }      // empty/stale team → already cleared (still injured)
-        // ADR-026: the per-wave engine "base" is only a battle terminator (the real building durability is TileDoc.hp,
-        // reduced separately by the delayed siege-value hit). Pin it to the weakest level so each wave is decided by
-        // team-vs-attacker, not by a symbolic base tanking the assault.
-        const defenderConfig = { garrison: defArmy, defenderBaseLevel: 0 };
-        const seed = waveSeed(m._id, i);
-        const deployedHp = sumArmyHp(survivorArmy);
-        let res: SiegeResolution;
-        // A synthesized attacker army beyond board capacity clogs lanes and must never reach the engine (defender
-        // teams are always real, level-schema-validated formations — never synthesized, so no symmetric check needed).
-        if (shouldUseCheapSiege({ attackerTroops: deployedHp, defenderTroops: sumArmyHp(defArmy), attackerSynthesized, defenderSynthesized: false })) {
-          res = resolveSiege(deployedHp, sumArmyHp(defArmy));
-        } else {
-          try {
-            res = await runSiegeBattle({ attackerArmy: survivorArmy, defenderConfig, tileLevel, seed, cardInstances, equipmentInv: cardEquipInv, siegeAcademy });
-          } catch (err) {
-            console.error('[worldsvc] base wave siege engine failed — cheap fallback', { tile: baseTile._id, wave: i, err: (err as Error).message });
-            res = resolveSiege(deployedHp, sumArmyHp(defArmy));
-          }
-        }
-        replays.push({ seed, attackerArmy: survivorArmy, defenderConfig, tileLevel });
-        attackerSurvivors = res.attackerSurvivors;
-        if (res.outcome === 'attacker_win') {
-          defeatedTeamIds.push(tm.id);
-          const ratio = deployedHp > 0 ? res.attackerSurvivors / deployedHp : 0;
-          survivorArmy = scaleArmyByRatio(survivorArmy, ratio);
-          if (survivorArmy.length === 0) { cleared = false; break; } // attacker spent — cleared some waves but cannot continue
-        } else {
-          cleared = false; // repelled by this wave
-          break;
-        }
-      }
-
-      // Persist defender team injuries (each defeated team locked for SLG_TEAM_INJURY_MS).
-      if (defeatedTeamIds.length > 0 && defender) {
-        const injSet: Record<string, unknown> = {};
-        for (const id of defeatedTeamIds) injSet[`teamState.${id}.injuredUntil`] = t + SLG_TEAM_INJURY_MS;
-        await cols.playerWorld.updateOne({ _id: playerWorldId(m.worldId, defenderId) }, { $set: injSet, $inc: { rev: 1 } });
-      }
-
-      const outcome: SiegeOutcome = cleared ? 'attacker_win' : 'defender_win';
-      const replay = replays.length > 0 ? (replays[replays.length - 1] ?? null) : null;
-      const siege = await this.recordSiege(m, defenderId, outcome, t, replay);
-
-      // CC-3: attacker card post-battle state (uniform survival over the whole siege). Card-army survivors are
-      // written ONLY to cardState.currentTroops here — never to playerWorld.troops (see the `else` branch below).
-      const attackArmy = m.army ?? [];
-      const hasCardArmy = attackArmy.some((e) => !!e.cardInstanceId);
-      if (hasCardArmy) {
-        const cardUpdates = computeCardStateUpdates(attackArmy, pw.cardState ?? {}, attackerSurvivors, t);
-        const cardStateSet: Record<string, unknown> = {};
-        for (const [id, update] of Object.entries(cardUpdates)) {
-          cardStateSet[`cardState.${id}.currentTroops`] = update.currentTroops;
-          cardStateSet[`cardState.${id}.injuredUntil`] = update.injuredUntil != null ? update.injuredUntil : null;
-        }
-        if (Object.keys(cardStateSet).length > 0) {
-          await cols.playerWorld.updateOne({ _id: pw._id }, { $set: cardStateSet, $inc: { rev: 1 } });
-        }
-      }
-
-      if (cleared) {
-        // Garrison cleared (or no defenders present): schedule the delayed building-HP hit = attacking team's siege value
-        // (sum of the team's per-card siege value; a real card team is always > 0). Attacker keeps besieging; survivors are refunded at settlement.
-        const damage = teamSiegeValue(m.army ?? [], attackerCardInv);
-        const dmg: SiegeDamageDoc = {
-          _id: siege._id,
-          worldId: m.worldId,
-          attackerId: m.ownerId,
-          defenderId,
-          tile: baseTile._id,
-          isBase: true,
-          damage,
-          attackerSurvivors,
-          ...(pw.familyId ? { familyId: pw.familyId } : {}),
-          dueAt: t + SLG_SIEGE_DAMAGE_DELAY_MS,
-        };
-        await cols.siegeDamage.updateOne({ _id: dmg._id }, { $setOnInsert: dmg }, { upsert: true });
-      } else if (hasCardArmy || attackerSurvivors > 0) {
-        // Attacker repelled: survivors retreat home over a travel-time return leg (2026-08-01,
-        // SLG_DESIGN_LOG §46) instead of an instant pool credit — a card army's survivors were already written
-        // to cardState above, so its return leg carries troops:0 (walking the team home / freeing its slot),
-        // while a flat/legacy army's return leg carries the real survivor count.
-        await startReturnMarch(this.core, {
-          worldId: m.worldId, ownerId: m.ownerId, fromTile: m.toTile,
-          x: this.core.coordX(m.toTile), y: this.core.coordY(m.toTile),
-          troops: hasCardArmy ? 0 : attackerSurvivors,
-          army: m.army, teamId: m.teamId, leaderUnitType: m.leaderUnitType,
-        }, t);
-      }
-
-      // Activity + battle-report push (loot only happens at capture, in settleSiegeDamage → empty here).
-      void this.core.bumpFamilyActivity(m.worldId, pw.familyId, 1);
-      void this.core.bumpFamilyActivity(m.worldId, defender?.familyId, 1);
-      const lootStr = lootSummary(emptyResources());
-      void this.core.pushMarch(m.ownerId, this.core.marchView({ ...m, status: 'arrived' }));
-      void this.core.pushSiege(m.ownerId, siege, lootStr);
-      void this.core.pushSiege(defenderId, siege, lootStr);
-    }
-
-    /**
-     * Stronghold PvE siege capture (G8 §3.1): an ownerless stronghold tile; the system derives an ultra-strong NPC garrison + high base from the tile level.
-     * Uses the authoritative engine siege (bad formation / error → cheap fallback). Victory → one-time rich resource
-     * reward lands immediately, but ownership itself starts an OCCUPY_HOLD_SEC occupation hold (2026-08-09,
-     * writeContestedHold) instead of writing territory right away — nation founding / activity refresh wait for
-     * settleOccupation; Defeat → surviving attackers retreat and return (NPC garrison is not persisted — procedural, not stored in DB; resets next time).
-     * Defender is NPC throughout: no defenderId, no player loot, no protection shield.
-     */
-    private async applyStrongholdSiege(
-      m: MarchDoc,
-      pw: PlayerWorldDoc,
-      t: number,
-      proc: ProceduralTile,
-    ): Promise<void> {
-      const { cols } = this.core.deps;
-      const x = this.core.coordX(m.toTile);
-      const y = this.core.coordY(m.toTile);
-      // CC-3: a card army's committed strength lives in cardState.currentTroops, not playerWorld.troops (see applySiege).
-      const rawArmy = m.army ?? [];
-      const hasCardArmy = rawArmy.some((e) => !!e.cardInstanceId);
-      // Re-validate on arrival: already occupied by another player or self (including simultaneous captures) → skip NPC fight; refund troops as a miss.
-      const occ = await cols.tiles.findOne({ _id: m.toTile });
-      if (occ?.ownerId) {
-        if (m.teamId) {
-          await parkMarchInPlace(this.core, m, m.troops, t);
-        } else {
-          if (!hasCardArmy) await refundTroops(this.core, pw, m.troops, t);
-          void this.core.pushMarch(m.ownerId, this.core.marchView({ ...m, status: 'recalled' }));
-        }
-        return;
-      }
-
-      const garrison = strongholdGarrison(proc.level);
-      // E8/CC-3: fetch attacker's progression snapshot (equipment for the legacy path; cardInv+equipmentInv for a real card army).
-      const attackerSave = await this.core.meta.getSaveFields(m.ownerId, ['cardInv', 'equipmentInv']).catch(() => null);
-      // Morale (行军疲劳, not the card 士气加成): scale attacker strength by the march's remaining morale (see applySiege above for detail).
-      const moraleMult = moraleCombatMultiplier(m.morale ?? MARCH_MORALE_MAX);
-      const rawAttackerArmy: GarrisonEntry[] = hasCardArmy
-        ? resolveCardArmy(rawArmy, pw.cardState ?? {}, attackerSave?.cardInv ?? {})
-        : (rawArmy.length > 0 ? (rawArmy as GarrisonEntry[]) : synthesizeArmy(m.troops, 'attacker'));
-      const attackerArmy: GarrisonEntry[] = scaleArmyByRatio(rawAttackerArmy, moraleMult);
-      // Real attacker strength for the cheap-siege path — see applySiege's territory branch above for why this
-      // must be Math.round(sumArmyHp(rawAttackerArmy) * moraleMult) rather than m.troops (card-slot count for
-      // a card army) or summing the already-scaled attackerArmy (per-unit floor quantization loss at scale).
-      const attackerHp = Math.round(sumArmyHp(rawAttackerArmy) * moraleMult);
-      let cardInstances: EngineCardInstance[] | undefined;
-      let cardEquipInv: EngineEquipInv | undefined;
-      if (hasCardArmy && attackerSave) {
-        const { cardInstances: ci, engEquipInv } = toEngineCardInstances(rawArmy, attackerSave.cardInv ?? {}, attackerSave.equipmentInv ?? {});
-        cardInstances = ci;
-        cardEquipInv = engEquipInv;
-      }
-      // System ultra-strong default garrison + tile-level-scaled base HP (npcBaseHp; 2026-07-17). Stronghold
-      // tiles are max level, so the base is at the top of the curve — consistent with the "extremely hard to
-      // conquer" intent (§3.1); the real gate is still the huge garrison.
-      const tileLevel = proc.level;
-      const defenderConfig = { garrison: synthesizeArmy(garrison, 'defender'), defenderBaseHp: npcBaseHp(tileLevel) };
-      const seed = siegeSeedFromId(m._id);
-
-      // E8: stronghold is also a PvE-like siege; attacker equipment applies in the same way (legacy path only — a
-      // card army's gear is already folded into cardInstances/cardEquipInv above).
-      // Attacker synthesized iff neither a card army nor a real (team-authored) rawArmy was marched with; the NPC
-      // garrison (`defenderConfig`) is always synthesized via synthesizeArmy.
-      const attackerSynthesized = !hasCardArmy && rawArmy.length === 0;
-      let res: SiegeResolution;
-      // 2026-08-01 (traceability decision, see applySiege's territory branch above for the full rationale): replay
-      // inputs are kept unconditionally, including on an engine crash — getSiegeReplay degrades safely on both
-      // ends (see that comment) rather than crashing, so there is no downside to keeping the exact inputs that
-      // caused a crash for later reproduction.
-      const replay: SiegeReplayInputs = { seed, attackerArmy, defenderConfig, tileLevel };
-      if (shouldUseCheapSiege({ attackerTroops: attackerHp, defenderTroops: garrison, attackerSynthesized, defenderSynthesized: true })) {
-        res = resolveSiege(attackerHp, garrison);
-      } else {
-        try {
-          res = await runSiegeBattle({
-            attackerArmy, defenderConfig, tileLevel, seed,
-            cardInstances, equipmentInv: cardEquipInv,
-          });
-        } catch (err) {
-          console.error('[worldsvc] stronghold siege engine failed — fallback to cheap resolve', {
-            tile: m.toTile,
-            err: (err as Error).message,
-          });
-          res = resolveSiege(attackerHp, garrison);
-        }
-      }
-      if (hasCardArmy) {
-        const cardUpdates = computeCardStateUpdates(rawArmy, pw.cardState ?? {}, res.attackerSurvivors, t);
-        const cardStateSet: Record<string, unknown> = {};
-        for (const [id, update] of Object.entries(cardUpdates)) {
-          cardStateSet[`cardState.${id}.currentTroops`] = update.currentTroops;
-          cardStateSet[`cardState.${id}.injuredUntil`] = update.injuredUntil != null ? update.injuredUntil : null;
-        }
-        if (Object.keys(cardStateSet).length > 0) {
-          await cols.playerWorld.updateOne({ _id: pw._id }, { $set: cardStateSet, $inc: { rev: 1 } });
-        }
-      }
-
-      if (res.outcome === 'attacker_win') {
-        // 2026-08-09 (user decision — nothing in the game transfers instantly after a battle win):
-        // capture starts the same OCCUPY_HOLD_SEC hold as every other capture (writeContestedHold);
-        // ownerId/yieldRate/applyNationChange wait for settleOccupation (occupation.ts) — only the
-        // one-time capture reward + material drop below still land immediately (loot convention,
-        // unaffected — same as every other siege outcome in this file).
-        await this.writeContestedHold(m, pw, proc, x, y, res.attackerSurvivors, t);
-        // One-time capture reward (§3.1 "substantial resources"): add to the attacker's resource pool by tile level + resource type (capped).
-        const rt: ResourceType = proc.resType ?? 'ink';
-        const reward = emptyResources();
-        reward[rt] = STRONGHOLD_LOOT_PER_LEVEL * Math.max(1, proc.level);
-        // Rev-guarded refetch+retry (mirrors combatShared.ts refundTroops / combatSiege/helpers.ts
-        // transferLoot's 2026-08-03 fix): `resources` must be computed from a FRESH read each attempt, not
-        // the `pw` snapshot captured at function entry — a blind $set here previously overwrote whatever a
-        // concurrent settlement (e.g. the cardState write just above, this account's own return-march
-        // refund, or any other concurrent mutation) had just applied. Called from the scheduler
-        // (processDueArrivals), not a live HTTP request, so exhaustion is best-effort-logged rather than
-        // thrown — the tile capture above already committed unconditionally and must not be orphaned by a
-        // failure to also apply this one-time resource bonus.
-        const MAX_ATTEMPTS = 5;
-        let rewardApplied = false;
-        for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
-          // Always re-read fresh (not just on retries): the cardState write above, when hasCardArmy, has
-          // already unconditionally bumped rev past `pw.rev`, so trusting the entry snapshot on attempt 0
-          // would guarantee a wasted first failure.
-          const freshPw = (await cols.playerWorld.findOne({ _id: pw._id })) ?? pw;
-          const resources = this.core.settle(freshPw, t);
-          for (const r of RESOURCE_TYPES) resources[r] = Math.min(RESOURCE_CAP, (resources[r] ?? 0) + reward[r]);
-          const settled = await cols.playerWorld.updateOne(
-            { _id: pw._id, rev: freshPw.rev },
-            // yieldRate is NOT recomputed here (2026-08-09) — the attacker doesn't own the stronghold
-            // tile yet during the hold; settleOccupation recomputes it once ownership actually lands.
-            { $set: { resources, lastTickAt: t }, $inc: { rev: 1 } },
-          );
-          if (settled.matchedCount > 0) { rewardApplied = true; break; }
-        }
-        if (!rewardApplied) {
-          console.error('[worldsvc] stronghold capture reward: giving up after rev-conflict retries', { tile: m.toTile, ownerId: m.ownerId });
-        }
-        // Extra progression material drop (§19.5 + G4 §15.6): sent to meta SaveData.materials unified pool (cross-process,
-        // best-effort, orderId idempotent; march is settled once — (worldId, toTile, arriveAt) is stable as idempotent key).
-        const matLoot = strongholdMaterialLoot(proc.level);
-        void this.core.meta.grantMaterial(m.ownerId, matLoot.material, matLoot.qty, `stronghold_loot:${m.worldId}:${m.toTile}:${m.arriveAt}`);
-        void this.core.bumpFamilyActivity(m.worldId, pw.familyId, 1);
-        const siege = await this.recordSiege(m, undefined, res.outcome, t, replay);
-        void this.core.pushMarch(m.ownerId, this.core.marchView({ ...m, status: 'arrived' }));
-        void this.core.pushSiege(m.ownerId, siege, `${lootSummary(reward)},${matLoot.material}+${matLoot.qty}`);
-        const after = await cols.tiles.findOne({ _id: m.toTile });
-        if (after) {
-          void this.core.pushTile(m.ownerId, after);
-          await this.core.pushTileToObservers(after, new Set([m.ownerId])); // G5-2: stronghold capture arrival is visible to observers
-        }
-      } else {
-        // Capture failed: surviving attackers retreat home over a travel-time return leg (2026-08-01,
-        // SLG_DESIGN_LOG §46) instead of an instant pool credit. NPC garrison is not persisted; no casualty write.
-        if (hasCardArmy || res.attackerSurvivors > 0) {
-          await startReturnMarch(this.core, {
-            worldId: m.worldId, ownerId: m.ownerId, fromTile: m.toTile, x, y,
-            troops: hasCardArmy ? 0 : res.attackerSurvivors,
-            army: m.army, teamId: m.teamId, leaderUnitType: m.leaderUnitType,
-          }, t);
-        }
-        void this.core.bumpFamilyActivity(m.worldId, pw.familyId, 1);
-        const siege = await this.recordSiege(m, undefined, res.outcome, t, replay);
-        void this.core.pushMarch(m.ownerId, this.core.marchView({ ...m, status: 'arrived' }));
-        void this.core.pushSiege(m.ownerId, siege, '');
-      }
-    }
-
-    /**
-     * Crossing PvE siege capture (gate→bridge/plankway migration): an ownerless bridge/plankway tile guarded by an
-     * NPC garrison (passageGarrison, weaker than a stronghold). Victory → 2026-08-09: starts an OCCUPY_HOLD_SEC
-     * occupation hold (startOccupationHold) instead of writing ownership right away — settleOccupation still KEEPS
-     * the tile's bridge/plankway type (so it stays a passage) and carries ownerId + familyId (so `passableGateKeys`
-     * grants the owner & family passage) once the hold elapses, with survivors as garrison; no resource/material
-     * loot (crossings are strategic choke points, not resource tiles). Defeat → surviving attackers retreat and
-     * return. Defender is NPC throughout.
-     */
-    private async applyCrossingSiege(
-      m: MarchDoc,
-      pw: PlayerWorldDoc,
-      t: number,
-      proc: ProceduralTile,
-    ): Promise<void> {
-      const { cols } = this.core.deps;
-      const x = this.core.coordX(m.toTile);
-      const y = this.core.coordY(m.toTile);
-      // CC-3: a card army's committed strength lives in cardState.currentTroops, not playerWorld.troops (see applySiege).
-      const rawArmy = m.army ?? [];
-      const hasCardArmy = rawArmy.some((e) => !!e.cardInstanceId);
-      // Re-validate on arrival: captured by someone (or self) in the meantime → skip NPC fight; refund troops as a miss.
-      const occ = await cols.tiles.findOne({ _id: m.toTile });
-      if (occ?.ownerId) {
-        if (m.teamId) {
-          await parkMarchInPlace(this.core, m, m.troops, t);
-        } else {
-          if (!hasCardArmy) await refundTroops(this.core, pw, m.troops, t);
-          void this.core.pushMarch(m.ownerId, this.core.marchView({ ...m, status: 'recalled' }));
-        }
-        return;
-      }
-
-      const garrison = passageGarrison(proc.level);
-      const attackerSave = await this.core.meta.getSaveFields(m.ownerId, ['cardInv', 'equipmentInv']).catch(() => null);
-      // Morale (行军疲劳, not the card 士气加成): scale attacker strength by the march's remaining morale (see applySiege above for detail).
-      const moraleMult = moraleCombatMultiplier(m.morale ?? MARCH_MORALE_MAX);
-      const rawAttackerArmy: GarrisonEntry[] = hasCardArmy
-        ? resolveCardArmy(rawArmy, pw.cardState ?? {}, attackerSave?.cardInv ?? {})
-        : (rawArmy.length > 0 ? (rawArmy as GarrisonEntry[]) : synthesizeArmy(m.troops, 'attacker'));
-      const attackerArmy: GarrisonEntry[] = scaleArmyByRatio(rawAttackerArmy, moraleMult);
-      // Real attacker strength for the cheap-siege path — see applySiege's territory branch above for why this
-      // must be Math.round(sumArmyHp(rawAttackerArmy) * moraleMult) rather than m.troops (card-slot count for
-      // a card army) or summing the already-scaled attackerArmy (per-unit floor quantization loss at scale).
-      const attackerHp = Math.round(sumArmyHp(rawAttackerArmy) * moraleMult);
-      let cardInstances: EngineCardInstance[] | undefined;
-      let cardEquipInv: EngineEquipInv | undefined;
-      if (hasCardArmy && attackerSave) {
-        const { cardInstances: ci, engEquipInv } = toEngineCardInstances(rawArmy, attackerSave.cardInv ?? {}, attackerSave.equipmentInv ?? {});
-        cardInstances = ci;
-        cardEquipInv = engEquipInv;
-      }
-      const tileLevel = proc.level;
-      // Crossing (bridge/plankway) NPC base HP scales with tile level (npcBaseHp; 2026-07-17).
-      const defenderConfig = { garrison: synthesizeArmy(garrison, 'defender'), defenderBaseHp: npcBaseHp(tileLevel) };
-      const seed = siegeSeedFromId(m._id);
-
-      // Attacker synthesized iff neither a card army nor a real (team-authored) rawArmy was marched with; the NPC
-      // garrison (`defenderConfig`) is always synthesized via synthesizeArmy.
-      const attackerSynthesized = !hasCardArmy && rawArmy.length === 0;
-      let res: SiegeResolution;
-      // 2026-08-01 (traceability decision, see applySiege's territory branch above for the full rationale): replay
-      // inputs are kept unconditionally, including on an engine crash — getSiegeReplay degrades safely on both
-      // ends (see that comment) rather than crashing, so there is no downside to keeping the exact inputs that
-      // caused a crash for later reproduction.
-      const replay: SiegeReplayInputs = { seed, attackerArmy, defenderConfig, tileLevel };
-      if (shouldUseCheapSiege({ attackerTroops: attackerHp, defenderTroops: garrison, attackerSynthesized, defenderSynthesized: true })) {
-        res = resolveSiege(attackerHp, garrison);
-      } else {
-        try {
-          res = await runSiegeBattle({
-            attackerArmy, defenderConfig, tileLevel, seed,
-            cardInstances, equipmentInv: cardEquipInv,
-          });
-        } catch (err) {
-          console.error('[worldsvc] crossing siege engine failed — fallback to cheap resolve', {
-            tile: m.toTile,
-            err: (err as Error).message,
-          });
-          res = resolveSiege(attackerHp, garrison);
-        }
-      }
-      if (hasCardArmy) {
-        const cardUpdates = computeCardStateUpdates(rawArmy, pw.cardState ?? {}, res.attackerSurvivors, t);
-        const cardStateSet: Record<string, unknown> = {};
-        for (const [id, update] of Object.entries(cardUpdates)) {
-          cardStateSet[`cardState.${id}.currentTroops`] = update.currentTroops;
-          cardStateSet[`cardState.${id}.injuredUntil`] = update.injuredUntil != null ? update.injuredUntil : null;
-        }
-        if (Object.keys(cardStateSet).length > 0) {
-          await cols.playerWorld.updateOne({ _id: pw._id }, { $set: cardStateSet, $inc: { rev: 1 } });
-        }
-      }
-
-      if (res.outcome === 'attacker_win') {
-        // 2026-08-09 (user decision — nothing in the game transfers instantly after a battle win):
-        // capture starts the same OCCUPY_HOLD_SEC hold as every other capture (startOccupationHold,
-        // which also covers this branch's recordSiege/push — no extra logic needed between write and
-        // push, unlike applyStrongholdSiege's reward loop, so this can call the full helper directly).
-        // `proc.type` is 'bridge'/'plankway' here, so its settleType auto-derives to the SAME crossing
-        // type — settleOccupation still KEEPS it a passage on settlement, it does not become plain
-        // territory (family passage via `passableGateKeys` lands then too, from the OccupationDoc's
-        // familyId — no immediate familyId write needed here anymore).
-        await this.startOccupationHold(m, pw, proc, x, y, res.attackerSurvivors, t, replay);
-      } else {
-        // Capture failed: surviving attackers retreat home over a travel-time return leg (2026-08-01,
-        // SLG_DESIGN_LOG §46) instead of an instant pool credit.
-        if (hasCardArmy || res.attackerSurvivors > 0) {
-          await startReturnMarch(this.core, {
-            worldId: m.worldId, ownerId: m.ownerId, fromTile: m.toTile, x, y,
-            troops: hasCardArmy ? 0 : res.attackerSurvivors,
-            army: m.army, teamId: m.teamId, leaderUnitType: m.leaderUnitType,
-          }, t);
-        }
-        void this.core.bumpFamilyActivity(m.worldId, pw.familyId, 1);
-        const siege = await this.recordSiege(m, undefined, res.outcome, t, replay);
-        void this.core.pushMarch(m.ownerId, this.core.marchView({ ...m, status: 'arrived' }));
-        void this.core.pushSiege(m.ownerId, siege, '');
-      }
-    }
-
-    /**
-     * Apply a single siege settlement result (G3-1 extraction, §16.4): write loot / garrison / nation founding /
-     * passive relocation (attacker_win) or defender garrison casualties (defender_win) according to res + record
-     * SiegeDoc + push march/siege/tile events. Currently called immediately by `applySiege` (cheap settlement
-     * path unchanged); after G3-2 delayed settlement, both the judge re-computation confirmation and the timeout
-     * fallback paths will share this single landing point.
-     * 2026-08-09: tile hand-off is no longer part of this uniformly-immediate list for a plain-territory
-     * attacker_win — that branch now starts an OCCUPY_HOLD_SEC occupation hold instead (see the branch's own
-     * comment below); base/structure/crossing outcomes and defender_win are unaffected, still immediate.
-     */
-    private async landSiege(
-      m: MarchDoc,
-      pw: PlayerWorldDoc,
-      target: TileDoc,
-      defenderId: string,
-      defender: PlayerWorldDoc | null,
-      res: SiegeResolution,
-      t: number,
-      replay: SiegeReplayInputs | null,
-    ): Promise<void> {
-      const { cols } = this.core.deps;
-      let loot = emptyResources();
-      // CC-3: a card army's survivors are written to cardState.currentTroops below, never to playerWorld.troops.
-      const hasCardArmy = !!m.army?.some((e) => !!e.cardInstanceId);
-
-      if (res.outcome === 'attacker_win') {
-        // Loot the defeated player's resources (transfer a proportion from defender to attacker).
-        if (defender) loot = await this.transferLoot(defender, pw, t);
-        if (target.type === 'base') {
-          // The capital cannot be permanently taken, but being defeated triggers passive relocation (§3.4/§8.2, applies to all players):
-          //   1) attacker survivors retreat home over a travel-time return leg (2026-08-01, SLG_DESIGN_LOG §46);
-          //   2) if the defender is a sect leader, all sect members lose 50% of resources (§8.2 major penalty);
-          //   3) defender's capital is randomly relocated to a new empty tile + all currently occupied territory is lost (passiveRelocate).
-          if (hasCardArmy || res.attackerSurvivors > 0) {
-            await startReturnMarch(this.core, {
-              worldId: m.worldId, ownerId: m.ownerId, fromTile: m.toTile, x: target.x, y: target.y,
-              troops: hasCardArmy ? 0 : res.attackerSurvivors,
-              army: m.army, teamId: m.teamId, leaderUnitType: m.leaderUnitType,
-            }, t);
-          }
-          await this.applySectLeaderPenalty(m.worldId, defenderId, t);
-          await this.passiveRelocate(m.worldId, defenderId, t);
-        } else if (target.structure && (target.structure.hp ?? target.structure.hpMax) - res.attackerSurvivors > 0) {
-          // ADR-051 (§5.2 structure durability): the tile carries a player-built structure (arrowTower / blocker) with
-          // hp remaining. Attack-only wear — clearing the garrison chips the structure's hp by the surviving assault
-          // force (troop-scale) instead of instantly razing+capturing. While the structure stands the tile is NOT taken:
-          // the assault retreats (survivors walk home / card survival written below), the garrison is spent, and the
-          // reduced hp persists. Only when hp≤0 (the else branch's raze + capture) does the structure fall and the tile
-          // change hands — so repeated assaults grind the bar down before it drops (§5.2 "多次攻打把血条磨到 0 才倒").
-          const remainingHp = (target.structure.hp ?? target.structure.hpMax) - res.attackerSurvivors;
-          await cols.tiles.updateOne(
-            { _id: m.toTile },
-            { $set: { 'structure.hp': remainingHp, garrison: 0 }, $inc: { rev: 1 } }, // garrison was wiped by the assault; structure alone remains
-          );
-          // Assault retreats home over a travel-time return leg (2026-08-01, SLG_DESIGN_LOG §46) instead of an
-          // instant pool credit.
-          if (hasCardArmy || res.attackerSurvivors > 0) {
-            await startReturnMarch(this.core, {
-              worldId: m.worldId, ownerId: m.ownerId, fromTile: m.toTile, x: target.x, y: target.y,
-              troops: hasCardArmy ? 0 : res.attackerSurvivors,
-              army: m.army, teamId: m.teamId, leaderUnitType: m.leaderUnitType,
-            }, t);
-          }
-          // The tile did not change hands → no ownership/nation/yield change; the defender simply keeps a weakened structure.
-        } else {
-          // Territory (or a player-owned crossing — bridge/plankway) changes hands — 2026-08-09 (user
-          // decision, corrected same-day: "nothing in the game transfers instantly after a battle
-          // win" — this now covers a crossing too, not just plain territory). Mirrors the neutral-land
-          // occupation hold (§5.4, ADR-037) instead of writing ownerId right away: the defender loses
-          // the tile (and its yield) right away, but the winner's claim only confirms after
-          // OCCUPY_HOLD_SEC, reusing the EXACT same OccupationDoc/settleOccupation/processDueOccupations
-          // machinery as occupying a neutral tile (occupation.ts) — settleOccupation doesn't care
-          // whether the tile was neutral or previously player-owned, it just finalizes whichever
-          // contestedBy claim is still standing. `writeContestedHold`'s settleType auto-derives from
-          // `target.type` — a crossing (bridge/plankway) settles back into the SAME crossing type
-          // (stays a passage), everything else settles into plain 'territory'.
-          // During the hold, applySiege's existing `!target?.ownerId && contestedBy` branch already lets
-          // the ORIGINAL owner (or anyone else) send a fresh 'attack' march to fight the held garrison
-          // via applyOccupationExpulsion — no extra code needed there, since clearing ownerId here makes
-          // this tile indistinguishable from a contested neutral one. Survivors become the pending
-          // `contestedGarrison` (troops were deducted on departure; do not modify the attacker pool
-          // again). The client stops showing a blocking "Siege won!" modal for this case
-          // (WorldMapNet.applySiegeResult) — same lightweight toast as an occupy win.
-          // ADR-051 (P5): clear a razed arrow tower's 3×3 coverage from the reverse index BEFORE the
-          // write below unsets TileDoc.structure — removeCover needs the doc that still has it.
-          if (target.structure?.kind === 'arrowTower') await this.core.removeCover(m.worldId, target.x, target.y, m.toTile);
-          await this.writeContestedHold(
-            m, pw,
-            { type: target.type, level: target.level, resType: target.resType },
-            target.x, target.y, res.attackerSurvivors, t, defenderId,
-          );
-        }
-      } else {
-        // Defender wins: garrison reduced to survivors; attacker survivors retreat home over a travel-time
-        // return leg (2026-08-01, SLG_DESIGN_LOG §46; §16.5 survivor refund, engine provides real survivors);
-        // fallen troops are permanently lost. On the cheap fallback path where attackerSurvivors=0 (and no card
-        // army), there is nothing to send home — same as the pre-existing full-wipe convention.
-        await cols.tiles.updateOne(
-          { _id: m.toTile },
-          { $set: { garrison: res.defenderSurvivors }, $inc: { rev: 1 } },
-        );
-        if (hasCardArmy || res.attackerSurvivors > 0) {
-          await startReturnMarch(this.core, {
-            worldId: m.worldId, ownerId: m.ownerId, fromTile: m.toTile, x: target.x, y: target.y,
-            troops: hasCardArmy ? 0 : res.attackerSurvivors,
-            army: m.army, teamId: m.teamId, leaderUnitType: m.leaderUnitType,
-          }, t);
-        }
-      }
-
-      const siege = await this.recordSiege(m, defenderId, res.outcome, t, replay);
-
-      // CC-3: write post-battle cardState (currentTroops + injuredUntil) for attacker card army.
-      const attackArmy = m.army ?? [];
-      if (hasCardArmy) {
-        const cardUpdates = computeCardStateUpdates(attackArmy, pw.cardState ?? {}, res.attackerSurvivors, t);
-        const cardStateSet: Record<string, unknown> = {};
-        for (const [id, update] of Object.entries(cardUpdates)) {
-          cardStateSet[`cardState.${id}.currentTroops`] = update.currentTroops;
-          if (update.injuredUntil != null) cardStateSet[`cardState.${id}.injuredUntil`] = update.injuredUntil;
-          else cardStateSet[`cardState.${id}.injuredUntil`] = null; // clear stale injury
-        }
-        if (Object.keys(cardStateSet).length > 0) {
-          await cols.playerWorld.updateOne({ _id: pw._id }, { $set: cardStateSet, $inc: { rev: 1 } });
-        }
-      }
-
-      // §17.4 activity increment: siege (attacker / defender) → both sides' families +1 (landing point for decisive battles).
-      void this.core.bumpFamilyActivity(m.worldId, pw.familyId, 1);
-      void this.core.bumpFamilyActivity(m.worldId, defender?.familyId, 1);
-      const lootStr = lootSummary(loot);
-      void this.core.pushMarch(m.ownerId, this.core.marchView({ ...m, status: 'arrived' }));
-      void this.core.pushSiege(m.ownerId, siege, lootStr);
-      void this.core.pushSiege(defenderId, siege, lootStr);
-      const after = await cols.tiles.findOne({ _id: m.toTile });
-      if (after) {
-        void this.core.pushTile(m.ownerId, after);
-        void this.core.pushTile(defenderId, after);
-        await this.core.pushTileToObservers(after, new Set([m.ownerId, defenderId])); // G5-2: tile hand-off is visible to observers within vision
-      }
-    }
-
-    /**
-     * Sweep NPC garrison from a neutral / resource tile (sweep arrival). No occupation: on success, loot resources + surviving troops return to the pool;
-     * on failure, attacker troop losses (survivors still return to the pool, possibly 0). If the tile is already player-occupied on arrival → refund troops (miss).
-     * The outcome itself is always the cheap linear formula (never the real engine) — a synthesized formation is
-     * built purely so the battle report has something to replay (see the `replay` local below).
-     */
+    /** Sweep NPC garrison from a neutral / resource tile (sweep arrival) — see arrival/sweep.ts. */
     async applySweep(m: MarchDoc, pw: PlayerWorldDoc, t: number): Promise<void> {
-      const { cols } = this.core.deps;
-      const occ = await cols.tiles.findOne({ _id: m.toTile });
-      if (occ?.ownerId) {
-        // Already occupied (should use attack) → miss; park in place if team-dispatched, else refund troops
-        // (2026-08-01, SLG_DESIGN_LOG §46 — sweep marches are flat-troop only today, so m.teamId is normally
-        // absent here, but the same guard is applied for consistency should that ever change).
-        if (m.teamId) {
-          await parkMarchInPlace(this.core, m, m.troops, t);
-        } else {
-          await refundTroops(this.core, pw, m.troops, t);
-          void this.core.pushMarch(m.ownerId, this.core.marchView({ ...m, status: 'recalled' }));
-        }
-        return;
-      }
-      const proc = proceduralTile(m.worldId, this.core.coordX(m.toTile), this.core.coordY(m.toTile));
-      // Morale (行军疲劳, not the card 士气加成): scale attacker strength by the march's remaining morale (see applySiege above for detail).
-      const effTroops = Math.round(m.troops * moraleCombatMultiplier(m.morale ?? MARCH_MORALE_MAX));
-      const tileLevel = proc.level;
-      const garrison = npcGarrison(tileLevel);
-      const res = resolveSiege(effTroops, garrison);
-      // Replay traceability (closing the one gap §45/SLG_DESIGN_LOG.md left open on purpose: sweep never built a
-      // formation, so there was nothing to persist for client-side replay spectating). Synthesize the same
-      // presentation-only inputs the cheap paths elsewhere already store unconditionally (attack/occupy
-      // territory, stronghold/crossing PvE) so every combat action against a real garrison is replayable, not
-      // just attack/occupy. The outcome above is still decided by the linear formula, not this synthesized
-      // formation — replaying can show a different winner than the recorded `res.outcome`, same accepted drift
-      // as every other cheap-resolved battle (SiegeDoc.seed doc comment: presentation-only, not authoritative).
-      const replay: SiegeReplayInputs = {
-        seed: siegeSeedFromId(m._id),
-        attackerArmy: synthesizeArmy(effTroops, 'attacker'),
-        defenderConfig: { garrison: synthesizeArmy(garrison, 'defender'), defenderBaseHp: npcBaseHp(tileLevel) },
-        tileLevel,
-      };
-      let loot = emptyResources();
-      if (res.outcome === 'attacker_win') {
-        const rt: ResourceType = proc.resType ?? 'ink';
-        loot = emptyResources();
-        loot[rt] = SWEEP_LOOT_PER_LEVEL * Math.max(1, proc.level);
-      }
-      // Loot lands immediately (2026-08-01, SLG_DESIGN_LOG §46: only the physical troops need to walk home —
-      // looted resources are credited at the moment of battle, same as every other siege outcome); surviving
-      // troops retreat home over a travel-time return leg instead of an instant pool credit.
-      await refundTroops(this.core, pw, 0, t, loot);
-      if (res.attackerSurvivors > 0) {
-        await startReturnMarch(this.core, {
-          worldId: m.worldId, ownerId: m.ownerId, fromTile: m.toTile,
-          x: this.core.coordX(m.toTile), y: this.core.coordY(m.toTile),
-          troops: res.attackerSurvivors,
-          army: m.army, teamId: m.teamId, leaderUnitType: m.leaderUnitType,
-        }, t);
-      }
-      const siege = await this.recordSiege(m, undefined, res.outcome, t, replay);
-      void this.core.pushMarch(m.ownerId, this.core.marchView({ ...m, status: 'arrived' }));
-      void this.core.pushSiege(m.ownerId, siege, lootSummary(loot));
+      return applySweepImpl(this.core, this, m, pw, t);
     }
   };
 }
