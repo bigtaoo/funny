@@ -118,7 +118,15 @@ export function CraftMixin<TBase extends EquipmentSceneBaseCtor>(Base: TBase): T
       const bl = txt(t('equip.craftBtn'), FS.body, enabled ? C.light : C.mid);
       bl.anchor.set(0.5, 0.5); bl.x = btnX + btnW / 2; bl.y = btnY + btnH / 2;
       this.bodyLayer.addChild(bl);
-      if (enabled) this.hitRects.push({ rect: { x: btnX, y: btnY, w: btnW, h: btnH }, action: () => void this.doCraft(defId) });
+      if (enabled) {
+        this.hitRects.push({ rect: { x: btnX, y: btnY, w: btnW, h: btnH }, owner: defId, action: () => void this.doCraft(defId) });
+      } else if (!this.bt.busy) {
+        // Tapping a greyed-out button still explains *why*: material shortage is already visible via
+        // the red cost chips above, but "inventory full" has no other on-card cue — surface it here
+        // instead of making players hunt for the small header counter (see equip.err.full).
+        const reason = full ? 'equip.err.full' : 'equip.err.materials';
+        this.hitRects.push({ rect: { x: btnX, y: btnY, w: btnW, h: btnH }, owner: defId, action: () => this.showToast(t(reason), C.red) });
+      }
     }
 
     private async doCraft(defId: string): Promise<void> {

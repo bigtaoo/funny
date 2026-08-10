@@ -984,3 +984,11 @@ buildSiegeBlueprints(levels, equipped, inv)
 - 详见 ECONOMY_NUMBERS.md §6.5 "2026-08-04 修复" 条目（数值/字段设计记在那边，本节只记图标/UI 实现）。
 
 验证：server `@nw/shared`/`@nw/metaserver` 构建 + `tsc --noEmit` 全绿；`economy.e2e.test.ts` 新增一条覆盖 dailyLimit/purchasedToday 随购买递增 + 非限购商品不带这两个字段，40/40 全绿（真实 Mongo）。client `tsc --noEmit` + `webpack build:web` 全绿；`shopScene.ui.ts` 更新/新增两条覆盖限购进度行渲染 + 封顶态按钮置灰，35/35 全绿；`shopGroupTabs`/`shopCoinsScrollBound`/`coinHeaderDisplay`/`shopNav-*` 相关既有套件全绿。因后端（mongo/redis/metaserver/commercial）本次会话未起，且浏览器面板当前无法截图（compositing 环境限制），材料位图本身的最终视觉效果沿用 §20.10/20.11 已验证过的 `buildMaterialIcon`（本次只是让 ShopScene 调用同一条已验证路径），未重复登录截图确认。
+
+### 20.15 实现记录（2026-08-10，✅）— 锻造按钮置灰补充提示（满仓 vs 材料不足）
+
+背景：用户截图锻造 tab，材料（碎屑）明显充足却见「锻造」按钮置灰，一时看不出原因。排查 `renderCraftCell`（`EquipmentScene/craft.ts`）确认 `enabled = affordable && !full && !this.bt.busy`——`affordable`（材料不足）已经有红色成本 chip 作视觉提示，但 `full`（装备背包 `equipmentInv` 达 `EQUIPMENT_INV_CAP`=300 上限）在卡片本身毫无提示，唯一线索是头部一个容易忽略的小号 `count/300` 计数（`base.ts` `renderHeaderCurrency`，满时变红）。用户实际情况正是背包已超过 300 上限（截图头部 `475/300`），锻造 tab 内所有卡片按钮因此同时置灰，误以为是铅笔单独的问题。
+
+落地：置灰按钮不再是死区——`renderCraftCell` 给按钮补一条禁用态命中区（`owner: defId`，供测试按 defId 定位），点按后 `showToast` 弹出对应原因：满仓→`equip.err.full`（"背包已满（300）"，与服务器 `INVENTORY_FULL` 错误码复用同一 i18n key，见 `app/nav/game.ts` 的错误码映射），未满但材料不足→`equip.err.materials`（与 chip 变红的提示重复，但补上一次明确文案，不新增 key）。启用态按钮命中区同步打上 `owner: defId`（原先没有），纯测试可定位性增强，不改行为。
+
+验证：client `tsc --noEmit` 全绿。`test/ui/scenes.ui.ts` 新增一条覆盖：把 `equipmentInv` 填到 300 上限后渲染锻造 tab，按 `owner === 'wp_pencil'` 取到禁用态命中区，触发后断言 `cb.craft` 未被调用、`showToastMessage` 以 `'error'` kind 调用——120/120（含既有两条 craft-tab 用例）全绿。因触发条件需要背包恰好达 300 上限，本机会话后端未起也无法快速摆出这一存档态，浏览器面板 compositing 也不可用（同 §20.14），未做游戏内截图，改用同一份 headless PIXI 场景测试覆盖渲染＋点击＋toast 全链路作为等价验证。
