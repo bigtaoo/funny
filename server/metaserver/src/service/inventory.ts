@@ -32,7 +32,8 @@ export function InventoryMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase &
 
     /**
      * Equipment enhancement (E3, EQUIPMENT_DESIGN §6): server rolls the dice (success rate table) → deduct materials + coins (commercial is authoritative) →
-     * success increments level by 1, failure does not downgrade. idempotencyKey is idempotent (roll and deduction bound to key; replay returns the first result).
+     * success increments level by 1; failure at +0~+6 does not downgrade, failure at +7/+8 risks a 1-level demote unless a protect item covers it (ADR-063).
+     * idempotencyKey is idempotent (roll and deduction bound to key; replay returns the first result).
      */
     async enhanceEquipment(req: FastifyRequest, reply: FastifyReply) {
       const accountId = accountIdOf(req);

@@ -11,6 +11,8 @@ import {
   enhanceSuccessRate,
   enhanceCost,
   rollEnhanceSuccess,
+  enhanceDemoteChance,
+  rollEnhanceDemote,
   salvageRefund,
   isSalvageable,
   MAIN_AFFIX_BY_SLOT,
@@ -157,6 +159,53 @@ describe('rollEnhanceSuccess', () => {
     const N = 2000;
     for (let i = 0; i < N; i++) if (rollEnhanceSuccess(`k${i}`, 8)) hi++;
     expect(hi / N).toBeLessThan(0.2);
+  });
+});
+
+describe('enhanceDemoteChance (ADR-063)', () => {
+  it('is 0 for +0 through +6 (mild tier, no demote)', () => {
+    for (let lv = 0; lv <= 6; lv++) expect(enhanceDemoteChance(lv)).toBe(0);
+  });
+
+  it('is 20% at +7 and 25% at +8 (risk tier)', () => {
+    expect(enhanceDemoteChance(7)).toBeCloseTo(0.2, 10);
+    expect(enhanceDemoteChance(8)).toBeCloseTo(0.25, 10);
+  });
+});
+
+describe('rollEnhanceDemote', () => {
+  it('is deterministic for the same key+level', () => {
+    const a = rollEnhanceDemote('key-xyz', 7);
+    const b = rollEnhanceDemote('key-xyz', 7);
+    expect(a).toBe(b);
+  });
+
+  it('never demotes below +7 (chance is 0, so the roll can never come up true)', () => {
+    for (let i = 0; i < 500; i++) expect(rollEnhanceDemote(`k${i}`, 3)).toBe(false);
+  });
+
+  it('empirical demote frequency at +7 tracks ~20%', () => {
+    let hits = 0;
+    const N = 2000;
+    for (let i = 0; i < N; i++) if (rollEnhanceDemote(`k${i}`, 7)) hits++;
+    expect(hits / N).toBeGreaterThan(0.14);
+    expect(hits / N).toBeLessThan(0.26);
+  });
+
+  it('uses a distinct seed stream from rollEnhanceSuccess (not merely its negation)', () => {
+    // If the two rolls shared a stream, "failed AND demoted" and "failed AND not demoted" keys
+    // wouldn't both be findable at roughly their expected joint rates.
+    let bothFound = 0;
+    let neitherFound = 0;
+    for (let i = 0; i < 300; i++) {
+      const key = `j${i}`;
+      const failed = !rollEnhanceSuccess(key, 7);
+      const demoted = rollEnhanceDemote(key, 7);
+      if (failed && demoted) bothFound++;
+      if (!failed && !demoted) neitherFound++;
+    }
+    expect(bothFound).toBeGreaterThan(0);
+    expect(neitherFound).toBeGreaterThan(0);
   });
 });
 

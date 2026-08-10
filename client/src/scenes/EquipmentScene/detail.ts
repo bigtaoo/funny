@@ -10,7 +10,7 @@ import { FS } from '../../render/fontScale';
 import { withTimeout, TimeoutError } from '../../ui/busyTracker';
 import type { SaveData, EquipSlot, EquipmentInstance } from '../../game/meta/SaveData';
 import {
-  getEquipDef, enhanceSuccessRate, enhanceCost, salvageRefund, affixKind,
+  getEquipDef, enhanceSuccessRate, enhanceDemoteChance, enhanceCost, salvageRefund, affixKind,
   EQUIP_MAX_LEVEL, REFORGE_MATERIAL_RARITY, PROTECT_ENHANCE_ITEM_ID, isSalvageable, reforgeCoinCost,
 } from '../../game/meta/equipmentDefs';
 import { buildIcon, type IconKind } from '../../render/icons';
@@ -52,10 +52,12 @@ export function DetailMixin<TBase extends EquipmentSceneBaseCtor>(Base: TBase): 
       const mw = Math.min(330, w - 24);
       const affixCount = inst.affixes.length;
       const protectCount = save.inventory?.items?.[PROTECT_ENHANCE_ITEM_ID] ?? 0;
+      const demoteChance = maxed ? 0 : enhanceDemoteChance(inst.level);
       // 44 = top(12) + title(26) + affix-gap(6); enhance section is 58 (rate+cost+protect) + 40
       // (gap+confirm button, 2026-07-22b — enhance now requires opening this modal to set the
-      // protect toggle first, see instanceActions) or 24 (maxed); +12 bottom pad.
-      const mh = 44 + affixCount * 20 + (maxed ? 24 : 58 + 40) + 12;
+      // protect toggle first, see instanceActions) + 18 (demote-risk warning line, +7/+8 only,
+      // ADR-063) or 24 (maxed); +12 bottom pad.
+      const mh = 44 + affixCount * 20 + (maxed ? 24 : 58 + 40 + (demoteChance > 0 ? 18 : 0)) + 12;
       const mx = 0;
       const my = 0;
 
@@ -137,6 +139,14 @@ export function DetailMixin<TBase extends EquipmentSceneBaseCtor>(Base: TBase): 
         rateLbl.x = mx + 12; rateLbl.y = cy;
         panelRoot.addChild(rateLbl);
         cy += 18;
+        if (demoteChance > 0) {
+          // Demote-risk warning (ADR-063): only +7/+8 attempts carry this, so it's easy to miss —
+          // called out in red rather than folded into the success-rate line above.
+          const demoteLbl = this.stxt(t('equip.enhanceDemoteWarn').replace('{pct}', String(Math.round(demoteChance * 100))), FS.micro, C.red);
+          demoteLbl.x = mx + 12; demoteLbl.y = cy;
+          panelRoot.addChild(demoteLbl);
+          cy += 18;
+        }
         const affordable = this.canAffordEnhance(save, cost);
         const costColor = affordable ? C.mid : C.red;
         const costLbl = this.stxt(`${t('equip.cost')}:`, FS.micro, costColor);
@@ -285,9 +295,13 @@ export function DetailMixin<TBase extends EquipmentSceneBaseCtor>(Base: TBase): 
       try {
         const res = await withTimeout(this.cb.enhance(instanceId, useProtect || undefined));
         if (res.ok) {
-          // On failure, a protect stone was consumed to keep the materials (server skipMaterials, §6.2);
-          // show the "materials kept" wording so it doesn't contradict the protect toggle the player ticked.
-          const failKey = useProtect ? 'equip.enhanceFailKept' : 'equip.enhanceFail';
+          // Demote (ADR-063) is judged from the actual returned level, not the local protect intent —
+          // protect only blocks it when the server actually had a stone to consume (hasProtect).
+          const demoted = !res.success && res.level < levelBefore;
+          // On a non-demoting failure, a protect stone may have been consumed to keep the materials
+          // (server skipMaterials, §6.2); show the "materials kept" wording so it doesn't contradict
+          // the protect toggle the player ticked.
+          const failKey = demoted ? 'equip.enhanceFailDemoted' : useProtect ? 'equip.enhanceFailKept' : 'equip.enhanceFail';
           this.showToast(res.success
             ? t('equip.enhanceOk').replace('{lv}', String(res.level))
             : t(failKey), res.success ? C.green : C.red);

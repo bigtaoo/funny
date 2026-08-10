@@ -32,7 +32,7 @@ import { TRAIT_BREAKPOINTS } from './progression';
 // on the instance (E0's EquipmentInstance.affixes is a flat Affix[]):
 //   · m_*  Primary affix: always exactly 1 per item, **the only one scaled by enhancement
 //          level** (§7.3). The instance stores the +0 base value;
-//          engine computes effective = base × (1 + ENHANCE_COEFF_PER_LEVEL × level).
+//          engine computes effective = base × ENHANCE_LEVEL_MULTIPLIER[level].
 //   · s_*  Secondary affix: only on rare/epic items, **fixed at its rolled value**,
 //          does not scale with enhancement (engine uses the raw value).
 //   · k_*  Skill/proc: epic only, trigger-based proc (§7.6). **The proc framework is not
@@ -91,8 +91,32 @@ export const AFFIX_FIELD_MAP: Readonly<Record<string, AffixDef>> = {
   s_stamina: { kind: 'noncombat' },
 };
 
-/** Enhancement coefficient: primary affix effective value = base × (1 + coefficient × level) (§7.3 DRAFT 0.10/level → +9 ≈ ×1.9). */
-export const ENHANCE_COEFF_PER_LEVEL = 0.1;
+/**
+ * Enhancement multiplier table: primary affix effective value = base × ENHANCE_LEVEL_MULTIPLIER[level]
+ * (§7.3, ADR-063, DRAFT [tunable]). Non-linear by design, replacing the old flat 0.10/level formula
+ * (+9 ≈ ×1.9): +0~+5 grows slowly (each level's absolute payoff barely changes), +6 marks the
+ * "awakening" breakpoint, and +7~+9 accelerates steeply. The payoff has to outrun the success-rate/
+ * cost/demote-risk curve at high levels (see enhanceDemoteChance in @nw/shared) or nobody has a
+ * reason to push past +6 — see DECISIONS.md ADR-063 for the discussion. +9 ≈ ×4.06 base.
+ */
+export const ENHANCE_LEVEL_MULTIPLIER: readonly number[] = [
+  1.00, // +0
+  1.08, // +1
+  1.17, // +2
+  1.28, // +3
+  1.41, // +4
+  1.56, // +5
+  1.76, // +6 (breakpoint)
+  2.11, // +7
+  2.76, // +8
+  4.06, // +9
+];
+
+/** Cumulative enhancement multiplier for `level` (clamped to the table's range: [0, ENHANCE_LEVEL_MULTIPLIER.length-1]). */
+export function enhanceMultiplier(level: number): number {
+  const lv = Math.max(0, Math.min(Math.round(level), ENHANCE_LEVEL_MULTIPLIER.length - 1));
+  return ENHANCE_LEVEL_MULTIPLIER[lv]!;
+}
 
 // ── Cross-system caps (EQUIPMENT_DESIGN §7.7, prevents stat explosion, DRAFT [tunable]) ──
 //
@@ -224,7 +248,7 @@ function accumInstance(acc: EffectAccum, inst: EngineEquipInstance): void {
     const def = AFFIX_FIELD_MAP[affix.id];
     if (!def) continue; // Unknown affix: silently ignored
     // Primary affixes scale with enhancement level; secondary affixes are fixed.
-    const effective = def.main ? affix.value * (1 + ENHANCE_COEFF_PER_LEVEL * level) : affix.value;
+    const effective = def.main ? affix.value * enhanceMultiplier(level) : affix.value;
     switch (def.kind) {
       case 'mult_atk':
         acc.atkPct += effective / 100;

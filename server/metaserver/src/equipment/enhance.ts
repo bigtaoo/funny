@@ -3,6 +3,7 @@ import {
   EQUIP_MAX_LEVEL,
   PROTECT_ENHANCE_ITEM_ID,
   rollEnhanceSuccess,
+  rollEnhanceDemote,
   enhanceCost,
   type Collections,
   type SaveData,
@@ -23,7 +24,9 @@ import {
 /**
  * Enhances one equipment item (level → level+1). EQUIPMENT_DESIGN §6: server rolls dice
  * (success rate table, −10% per level), materials + coins are deducted on both success and
- * failure (failed-attempt loss is the core sink, §6.2); failure does not reduce level or destroy the item.
+ * failure (failed-attempt loss is the core sink, §6.2). From +7 onward a failed attempt also
+ * risks demoting the item one level (ADR-063, enhanceDemoteChance); a protect item blocks both
+ * the material loss and the demote roll on the same failure.
  *
  * Coins go through commercial authority (`save.wallet.coins` is only a mirror, economy.ts §0),
  * so enhancement requires commercial to be online.
@@ -95,12 +98,17 @@ export async function enhanceEquipment(
   if ((wallet?.coins ?? 0) < cost.coins) return { error: 'not enough coins', code: 'INSUFFICIENT_FUNDS' };
 
   const success = rollEnhanceSuccess(idempotencyKey, fromLevel);
-  const instanceAfter: EquipmentInstance = success ? { ...inst0, level: fromLevel + 1 } : { ...inst0 };
 
   // Protect item (E7 §6.2): on failure consumes 1 protect_enhance → skip material deduction (skipMaterials=true).
   // Coins are still deducted (protect does not waive the enhancement fee, only saves materials); not consumed on success (success has no "failed-attempt loss" to begin with).
   const hasProtect = useProtect && (cur.inventory?.items?.[PROTECT_ENHANCE_ITEM_ID] ?? 0) > 0;
   const skipMaterials = hasProtect && !success;
+  // Demote (ADR-063): only rolled on a failure that isn't already protected — the same protect item
+  // covers both the material loss and the demote risk, since they're both consequences of the same
+  // failed attempt. Only ever non-zero for fromLevel 7/8 (enhanceDemoteChance).
+  const demoted = !success && !hasProtect && rollEnhanceDemote(idempotencyKey, fromLevel);
+  const nextLevel = success ? fromLevel + 1 : demoted ? Math.max(0, fromLevel - 1) : fromLevel;
+  const instanceAfter: EquipmentInstance = { ...inst0, level: nextLevel };
 
   // Idempotency claim (result includes coins + skipMaterials for replay re-settlement). dup = concurrent duplicate → takes the replay path.
   try {
