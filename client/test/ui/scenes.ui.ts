@@ -40,6 +40,7 @@ import { AuctionScene } from '../../src/scenes/AuctionScene';
 import { CityScene } from '../../src/scenes/CityScene';
 import { EquipmentScene } from '../../src/scenes/EquipmentScene';
 import type { EquipmentCallbacks, EquipResult } from '../../src/scenes/EquipmentScene';
+import { EQUIPMENT_INV_CAP } from '../../src/game/meta/equipmentDefs';
 import { BattlePassScene } from '../../src/scenes/BattlePassScene';
 import { DeckBuilderScene } from '../../src/scenes/DeckBuilderScene';
 import { LeaderboardScene } from '../../src/scenes/LeaderboardScene';
@@ -1287,9 +1288,9 @@ describe('EquipmentScene — mixin-split wiring', () => {
 
   it('craft tab: a full equipment bag greys out every Craft button, and tapping one now explains why (equip.err.full) instead of silently doing nothing', async () => {
     const { cb, save, calls } = buildEquipCallbacks('card1');
-    // Pad the bag up to EQUIPMENT_INV_CAP (300) — same shape as buildEquipSave's fixture entries,
+    // Pad the bag up to EQUIPMENT_INV_CAP — same shape as buildEquipSave's fixture entries,
     // materials/rarity don't matter here, only the total instance count does (craft.ts's `full` gate).
-    for (let i = Object.keys(save.equipmentInv).length; i < 300; i++) {
+    for (let i = Object.keys(save.equipmentInv).length; i < EQUIPMENT_INV_CAP; i++) {
       save.equipmentInv[`padding${i}`] = { id: `padding${i}`, defId: 'wp_pencil', rarity: 'common', level: 0, affixes: [] };
     }
     const scene = new EquipmentScene(createLayout(...LANDSCAPE), new InputManager(), cb);

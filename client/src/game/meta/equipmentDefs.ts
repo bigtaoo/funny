@@ -55,8 +55,8 @@ export function craftableDefs(): EquipDef[] {
 
 /** Enhancement level cap (+0..+9). */
 export const EQUIP_MAX_LEVEL = 9;
-/** Hard cap on the number of distinct instances in the inventory (ADR-012). */
-export const EQUIPMENT_INV_CAP = 300;
+/** Hard cap on the number of distinct instances in the inventory (ADR-012; raised 300→1000 2026-08-10). */
+export const EQUIPMENT_INV_CAP = 1000;
 /** Salvage refund ratio / level threshold (§6.3, ADR-012). */
 export const SALVAGE_REFUND_RATIO = 0.7;
 export const SALVAGE_MAX_LEVEL = 4; // +5 and above cannot be salvaged

@@ -74,7 +74,7 @@ export async function escrowEquipment(
  * worldsvc trade transfer (to buyer) / listing cancellation/expiry/season-end return (to seller):
  * writes the instance snapshot into the target account's inventory.
  * Overwrites by instance.id → naturally idempotent (re-delivering the same instance does not duplicate it).
- * Transfer is an "intentional gain" and **bypasses the 300-item cap** (overflow-to-mail fallback
+ * Transfer is an "intentional gain" and **bypasses the 1000-item cap** (overflow-to-mail fallback
  * is §13 follow-up work; this slice does not block trade completion to prevent asset loss).
  */
 export async function grantEquipment(

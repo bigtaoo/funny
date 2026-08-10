@@ -32,7 +32,7 @@ export interface OverflowSummary {
  * commercial order-replay path). Does not mark the order delivered — callers do that
  * themselves (gachaDraw does it fire-and-forget to keep it off the response critical path).
  *
- * Roster/inventory-full overflow (cards ≥500 / equipment ≥300): the first CARD_INV_OVERFLOW_BUFFER
+ * Roster/inventory-full overflow (cards ≥500 / equipment ≥1000): the first CARD_INV_OVERFLOW_BUFFER
  * overflow items per type (since that inventory last had free space) are mailed to the player as
  * real instances instead of being coin-compensated; the persistent per-account counter lives on
  * save.cardMailOverflowCount / save.equipMailOverflowCount. Returned `overflow` lets gachaDraw

@@ -459,7 +459,7 @@ export const en: Record<TranslationKey, string> = {
   'gacha.fate.redeem': 'Redeem',
   'gacha.fate.redeemed': 'Redeemed {item}',
   'gacha.fate.insufficient': 'Not enough Fate Points',
-  // ── Inventory-full overflow toast (card roster 150 / equipment 300 cap) ──
+  // ── Inventory-full overflow toast (card roster 150 / equipment 1000 cap) ──
   'gacha.invFull.mailed': 'Inventory full — {count} item(s) sent to your mail, check there to claim',
   'gacha.invFull.compensated': 'Inventory full — {coins} coins credited as compensation',
   'gacha.invFull.mailedAndCompensated': 'Inventory full — {mailed} item(s) sent to your mail, {coins} coins credited as compensation',
@@ -587,7 +587,7 @@ export const en: Record<TranslationKey, string> = {
   'equip.cancel': 'Cancel',
   'equip.err.materials': 'Not enough materials',
   'equip.err.coins': 'Not enough coins',
-  'equip.err.full': 'Inventory full (300)',
+  'equip.err.full': 'Inventory full (1000)',
   'equip.err.maxLevel': 'Already max level',
   'equip.err.notSalvageable': '+5 and above, or Epic rarity, cannot be salvaged',
   'equip.err.invalidSlot': 'Wrong slot',

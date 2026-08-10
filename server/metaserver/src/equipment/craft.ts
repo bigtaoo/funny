@@ -12,7 +12,7 @@ import { idemExpireAt, toInstanceDoc, leanSave, REV_RETRIES, type EquipError } f
 
 /**
  * Crafts a +0 base equipment item (E2, EQUIPMENT_DESIGN §4/§7).
- * Deducts EQUIPMENT_DEFS[defId].craftCost materials → rolls primary + secondary affixes → adds to inventory (< 300 cap).
+ * Deducts EQUIPMENT_DEFS[defId].craftCost materials → rolls primary + secondary affixes → adds to inventory (< 1000 cap).
  * idempotencyKey idempotent: replays return the first result (no second material deduction, no second roll; the roll itself is deterministically derived from the key).
  */
 export async function craftEquipment(

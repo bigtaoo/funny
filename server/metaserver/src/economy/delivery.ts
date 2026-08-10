@@ -47,7 +47,7 @@ export async function deliverGrant(
   // Equipment instances live in the equipmentInstances collection (2026-07-26 split, see equipment.ts) —
   // upsert them independently of the saves write below, idempotent by instanceId (deterministic ids
   // derived from orderId+index, see deliverLootBox), so a reconciliation retry of this whole call (e.g.
-  // crash before commercial.orderDelivered) is safe to repeat. Not subject to the 300-cap (overflow →
+  // crash before commercial.orderDelivered) is safe to repeat. Not subject to the 1000-cap (overflow →
   // mail/coin, decided by the caller before calling in here — see deliverLootBox). Count is intentionally
   // NOT precisely $inc'd here (would double-count on a retry, unlike the idempotent upsert above); it
   // self-heals via the equipmentInv join that runs on the next GET /save / response serialization.

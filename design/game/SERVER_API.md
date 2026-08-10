@@ -164,7 +164,7 @@ POST /equipment/reforge  { instanceId, fuelInstanceId, lockedIndex?, idempotency
 POST /equipment/equip    { slot, instanceId|null, unitType? }              → { save, equipped }
 ```
 
-- **`/equipment/craft`**：扣材料产 0 级基础装备（堆叠或新实例）；撞 **300 库存硬上限**（堆叠件不计）则拒/转等值材料补偿（§3.3）。
+- **`/equipment/craft`**：扣材料产 0 级基础装备（堆叠或新实例）；撞 **1000 库存硬上限**（堆叠件不计，[ADR-064](DECISIONS.md) 2026-08-10 由 300 扩容）则拒/转等值材料补偿（§3.3）。
 - **`/equipment/enhance`**：**服务器掷骰**（成功率表 80%…+8→9 仅 10%，绑定 `idempotencyKey` 首次结果防「重试改命」）、扣材料/金币、成功则 level+1；**失败只损耗、不掉级、不碎**（ADR-009/010）。
 - **`/equipment/salvage`（ADR-012，分解回收）**：扣实例、返还 **70% 打造基础成本材料**（**强化投入不返还**）；**+5 及以上不可分解** → 返 `NOT_SALVAGEABLE`（可分解范围 +0~+4，含堆叠 0 级冗余件，可批量）。30% 损耗本身是温和 sink，主职清库存。
 - **`/equipment/reforge`**：吞低一级同类装备作燃料、扣金币、重 roll 副词条（可锁一条）。

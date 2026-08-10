@@ -18,7 +18,7 @@ type InventoryHandlers = Pick<
 export function InventoryMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase & Constructor<InventoryHandlers> {
   return class extends Base {
     /**
-     * Equipment crafting (E2, EQUIPMENT_DESIGN §4/§7): deduct stationery materials → roll one +0 base equipment → store (300-item cap).
+     * Equipment crafting (E2, EQUIPMENT_DESIGN §4/§7): deduct stationery materials → roll one +0 base equipment → store (1000-item cap).
      * idempotencyKey is idempotent (client-generated): replay returns the first result without re-deducting materials or re-rolling.
      */
     async craftEquipment(req: FastifyRequest, reply: FastifyReply) {

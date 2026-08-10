@@ -642,7 +642,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Equipment crafting (E2, server-authoritative: deducts stationery materials → rolls one +0 base equipment → adds to inventory [300 cap]). idempotencyKey for idempotency */
+        /** Equipment crafting (E2, server-authoritative: deducts stationery materials → rolls one +0 base equipment → adds to inventory [1000 cap]). idempotencyKey for idempotency */
         post: operations["craftEquipment"];
         delete?: never;
         options?: never;

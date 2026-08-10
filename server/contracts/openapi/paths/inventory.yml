@@ -2,7 +2,7 @@
   post:
     operationId: craftEquipment
     tags: [save]
-    summary: "Equipment crafting (E2, server-authoritative: deducts stationery materials → rolls one +0 base equipment → adds to inventory [300 cap]). idempotencyKey for idempotency"
+    summary: "Equipment crafting (E2, server-authoritative: deducts stationery materials → rolls one +0 base equipment → adds to inventory [1000 cap]). idempotencyKey for idempotency"
     security: [{ bearerAuth: [] }]
     requestBody:
       required: true

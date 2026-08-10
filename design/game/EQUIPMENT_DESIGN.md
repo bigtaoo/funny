@@ -100,10 +100,10 @@ type SlotMap = Partial<Record<EquipSlot, string /*instanceId*/>>;
 合成/掉落持续产出 + 高级件不可分解（§6.3）→ 实例会增长，必须硬性治理存档体积：
 
 - **重复件堆叠**：**0 级、无副词条**的同 `defId` 装备**按数量堆叠**（存 `Record<defId, count>`，不开实例 id），只有"被强化过 / 已 roll 副词条 / 已穿戴 / `locked`"的才升格为独立 `EquipmentInstance`。绝大多数低级重复件走堆叠，不占实例槽。
-- **背包容量硬上限 = 300 独立实例**（[ADR-012](DECISIONS.md)，DRAFT [可调]）。堆叠件**不计入**。逼近上限时提示，引导拿低级件去**分解（§6.3）/ 强化燃料 / 洗练燃料**消耗（这也是 §6/§7.8 sink 的需求侧）。满仓时**禁止再获得新实例**（掉落转为材料补偿，见 §4）。
+- **背包容量硬上限 = 1000 独立实例**（[ADR-012](DECISIONS.md)，DRAFT [可调]；[ADR-064](DECISIONS.md) 2026-08-10 由 300 扩容）。堆叠件**不计入**。逼近上限时提示，引导拿低级件去**分解（§6.3）/ 强化燃料 / 洗练燃料**消耗（这也是 §6/§7.8 sink 的需求侧）。满仓时**禁止再获得新实例**（掉落转为材料补偿，见 §4）。
   - **⚠️ 抽卡溢出改走邮件（2026-07-18）**：此前抽卡途径的满仓溢出装备是**纯丢弃、无任何补偿**（`deliverLootBox` 静默跳过写入，未接入任何 sink）。现改为与 §13 escrow-out 同一套邮件模式：自库存上次有空位起，累计溢出的前 `EQUIP_INV_FULL_MAIL_COUNT`（=10）件装备作为真实实例通过系统邮件下发（`kind:'equipment'` 附件），超出部分转 `EQUIP_FULL_COMPENSATION_COINS`（=10/件）金币补偿；持久计数器 `save.equipMailOverflowCount` 记录已用额度，背包再次出现空位即重置。**仅覆盖抽卡路径**——关卡掉落 faucet（`grantClearReward`，§4.2 一带）与合成 craft 仍是原有"满仓静默跳过，不补偿"口径，未变。
-- **穿戴单独计、不占 300**：被穿戴的实例存在 `equipped`，不计入 300 库存上限。但**穿戴数不另设 1000 之类的大上限**——它**结构性自限 = 3 槽 × loadout 套数**（global 阶段最多 3；byUnit 阶段 = 3 × 兵种数），远低于任何人为上限。⚠️ **堵漏洞**：穿戴既不计库存，就不能成为"靠给一堆兵穿戴囤货"的后门——穿戴上限恒等于槽位结构，多余装备无处可穿，只能留库存（受 300 约束）或走分解/拍卖出口。
-- **存储落点**：v1 把 `equipmentInv` 内嵌进 SaveData 文档（300 实例 × ~150B ≈ 45KB，可接受）；若实测膨胀，迁独立集合 `equipment`（`accountId + instanceId` 索引），见 §18。
+- **穿戴单独计、不占 1000**：被穿戴的实例存在 `equipped`，不计入 1000 库存上限。但**穿戴数不另设更大的上限**——它**结构性自限 = 3 槽 × loadout 套数**（global 阶段最多 3；byUnit 阶段 = 3 × 兵种数），远低于任何人为上限。⚠️ **堵漏洞**：穿戴既不计库存，就不能成为"靠给一堆兵穿戴囤货"的后门——穿戴上限恒等于槽位结构，多余装备无处可穿，只能留库存（受 1000 约束）或走分解/拍卖出口。
+- **存储落点**：v1 把 `equipmentInv` 内嵌进 SaveData 文档（1000 实例 × ~150B ≈ 150KB，可接受）；若实测膨胀，迁独立集合 `equipment`（`accountId + instanceId` 索引），见 §18。
   - **✅ 2026-07-26 已迁移（存储拆分，阶段一）**：实测一个重度测试账号 163 件装备 + 24 张卡把存档文档撑到 81KB，Atlas M0 读写要 ~650-1000ms（对照组 1KB 小文档只要 15-40ms）——不只是装备操作本身慢，**任何一次存档写入**（PVE 结算/邮件领取/广告奖励……）都要连带重写整个 `equipmentInv`。拆分落地为独立 collection `equipmentInstances`（`_id`=instanceId，`{accountId:1}` 索引），`SaveData` 新增 `equipmentInvCount` 镜像字段做 cap 快速校验（会漂移，GET /save 的 join 顺手纠正）。**线格式不变**（客户端/worldsvc 零改动）——`GET /save`/`GET /internal/save-fields` 读完之后现拼回完整 map；`app.ts` 加了一个全局 `preSerialization` 钩子兜底所有返回 `save` 的响应（~30 处 handler 不用逐个记得手动 join）。全代码库没有 Mongo 事务（见 `shared/src/mongo.ts` 文件头），跨 collection 一致性靠"幂等键 + 严格定序 + 只容忍良性漂移"（craft 先扣材料后发装备，防白嫖；escrow/salvage 先删装备表后改计数，防重复可见；reforge 目标先升级后删素材）。落地 = `server/metaserver/src/equipment.ts`（全部改写）+ `economy.ts`/`service/pve.ts` 发货路径 + `internal/economyRoutes.ts` + `app.ts` + 迁移脚本 `metaserver/scripts/migrateEquipmentInv.ts`（幂等，按 `save.equipmentInv` 是否还存在做断点续跑，**必须先在生产跑到 100% 完成再部署新代码**，否则未迁移账号的装备会在读到新代码时"消失"）。
   - **✅ 2026-07-26 已落地（响应精简，阶段二）**：阶段一只解决了"写库"的代价——库里改一件装备不再连累整份文档；但 `craft`/`enhance`/`salvage`/`reforge`/`equip` 这五个接口的**响应**仍然照旧拼回全量 `equipmentInv`（`withEquipmentInv`），单次操作的收益完全没体现在玩家能感知的响应体积/延迟上。核心洞察：这五个接口的调用方**早就知道改了什么**——craft/enhance/reforge 的响应本来就带着改动后的 `instance`；salvage/reforge 消耗掉的 `instanceIds`/`materialId` 本来就是调用方自己发的请求参数；equip 甚至完全不碰 `equipmentInv`。于是不需要发明新的 delta 字段，只需要**不再把全量 map 塞回去**：五个函数统一改为返回 `equipmentInv: null`（`equipment.ts` 的 `leanSave`），显式区分"没变，你自己知道"（`null`）和"忘了填，兜底"（`undefined`，`app.ts` 的 join 钩子只在这种情况下才补全量，`leanSave` 的 `null` 会跳过它）；这样 craft/enhance/salvage/reforge 干脆不再查 `equipmentInstances` 集合，equip 那次纯属浪费的 join 查询直接消失。客户端 `SaveManager` 新增 `adoptServerPartial(save, {upsert?, remove?})`——不能复用整体覆盖式的 `adoptServer`/`reconcile`（若 `equipmentInv` 是 `null`/缺失，wholesale 替换会直接冲掉本地库存），而是先用本地已有的 `instance`/`instanceIds`/`materialId` 在本地拼出完整 map，再喂给现成、已测过的 `reconcile` 合并管线，增量拼装只发生在网络边界这一层。`GET /save`/`/internal/save-fields`（登录/刷新的"全量拉一次"落点）与 gacha/shop/关卡掉落/邮件领装备（`economy.ts`/`service/pve.ts`/`mail.ts`，响应本来就承载材料/金币/进度等大量其它字段，收益没这五个纯装备接口大）暂不在这次范围内，继续走全量 join。上线按"客户端先具备增量能力、确认铺开后再让服务器真正砍全量"两步走（同一份迁移脚本先行的纪律，这次是反过来——客户端能力先行、服务器行为后切）。
   - **✅ 2026-07-27 交叉更新（cardInv 同步拆分，见 `CHARACTER_CARDS_DESIGN §17 CC-15`）**：`cardInv` 照抄阶段一拆到独立集合 `cardInstances` 后，本节 `isEquipped`（判断装备是否被某张卡穿戴）与 §3.4 的 `equipEquipment` 不再能直接读写 `save.cardInv`——`isEquipped` 改成对 `cardInstances` 按 `EQUIP_SLOTS` 各槽位字段做 `$or` 定向查询（找到即真，不用整表拉回内存扫描）；`equipEquipment` 改成直接读写命中的那一份 `cardInstances` 文档的 `gear` 字段，且不再需要连带碰 `saves`（穿戴关系此后完全活在卡实例文档上，没有 save 侧字段要保持同步了，因此也不再带来一次 rev bump——之前 equip 端点会因为改了 `save.cardInv.gear` 而顺带 bump rev，现在不会）。装备侧其余函数（craft/enhance/salvage/reforge/grant）不受影响。
@@ -122,7 +122,7 @@ type SlotMap = Partial<Record<EquipSlot, string /*instanceId*/>>;
 > **解锁时机（DRAFT [可调]）**：装备系统在战役**第 2 章**开放（首章作纯玩法教学，不引入养成），开放时给一段强制引导（合成首件 → 穿戴 → 试打一关）。早期关卡用地板战力即可通（§8），装备从中期才成为门槛——解锁点须早于"无装备打不动"的关卡。最终章节号待战役节奏定（§15）。
 
 
-> **获取口径（[ADR-012](DECISIONS.md)）= 材料为主、打造为骨干 + 低概率直掉成品做"彩头"**。常规掉落主体是**文具材料**（叠加、不爆仓，配合 §3.3 的 300 实例上限）；成品装备主要靠**玩家合成**（确定性、想要啥造啥、无垃圾词条堆积）。仅 **Boss/精英/后期关**保留**低概率直掉一件成品**当 jackpot 爽点——频率压低，实例增量可控，偶发的垃圾件用分解（§6.3）清掉。纯"满地掉装备"会和库存上限 + 仓鼠苦役正面打架，故弃。
+> **获取口径（[ADR-012](DECISIONS.md)）= 材料为主、打造为骨干 + 低概率直掉成品做"彩头"**。常规掉落主体是**文具材料**（叠加、不爆仓，配合 §3.3 的 1000 实例上限）；成品装备主要靠**玩家合成**（确定性、想要啥造啥、无垃圾词条堆积）。仅 **Boss/精英/后期关**保留**低概率直掉一件成品**当 jackpot 爽点——频率压低，实例增量可控，偶发的垃圾件用分解（§6.3）清掉。纯"满地掉装备"会和库存上限 + 仓鼠苦役正面打架，故弃。
 
 | 渠道 | 产出 | 门控 | 权威 |
 |---|---|---|---|
@@ -131,7 +131,7 @@ type SlotMap = Partial<Record<EquipSlot, string /*instanceId*/>>;
 | 抽卡 | 材料为主 + 装备成品低概率彩头（**与皮肤共池**，ADR-017） | coins / 充值 | commercial + meta |
 | 拍卖行（SLG） | 玩家挂单的材料/装备 | coins，10% 税 | worldsvc |
 
-> **满仓补偿**：库存达 300 实例上限（§3.3）时，本应直掉的成品装备**转为等值材料补偿**发放（材料走 999 堆叠，不受实例上限约束），不凭空丢失奖励。
+> **满仓补偿**：库存达 1000 实例上限（§3.3）时，本应直掉的成品装备**转为等值材料补偿**发放（材料走 999 堆叠，不受实例上限约束），不凭空丢失奖励。
 
 > ⚠️ **口径取代（[ADR-010](DECISIONS.md)，2026-06-21）**：旧稿（ECONOMY_BALANCE §5.5 / META_DESIGN §11.4）把「9 级」定义为**5 个同种装备确定性合成升级**，已作废。本文据 ADR-009/ADR-010：
 > - **合成（craft）= 获得渠道**：文具材料 → 一件 **0 级基础装备**（确定性，配方/成本见 ECONOMY_NUMBERS §5，对齐"一件=5 铅笔+1 橡皮"的体感）。
@@ -195,7 +195,7 @@ type SlotMap = Partial<Record<EquipSlot, string /*instanceId*/>>;
 | **权威** | 服务器 `/equipment/salvage` | 扣实例、入材料，服务器权威（§10）；`isSalvageable(rarity, level)` 单一判定函数（`server/shared/src/equipment.ts`），客户端镜像同名函数 |
 
 - **30% 损耗**是设计的：分解不是无损循环，避免"造了分、分了造"刷材料；它的主职是**清库存**，sink 是副产物。
-- 与"满仓禁获得"（§3.3）配合：玩家撞 300 上限时，分解 +0~+4 冗余件（非史诗）腾位，或拿去强化燃料/拍卖。
+- 与"满仓禁获得"（§3.3）配合：玩家撞 1000 上限时，分解 +0~+4 冗余件（非史诗）腾位，或拿去强化燃料/拍卖。
 - +5 以上、或任意等级的史诗件，想清掉只能**上拍卖**（§13，受同时挂拍上限约束）——给高投入/高稀有度件一个**有偿出口**而非销毁。
 
 ---
@@ -490,7 +490,7 @@ buildSiegeBlueprints(levels, equipped, inv)
 | faucet | 关卡掉落 + 合成 + 抽卡 + 拍卖 | §4 |
 | sink | 合成耗材 + **强化失败损耗（主 sink）** + 洗练吞装备 + 强化金币 + **分解 30% 损耗** | §6.2 / §6.3、ECONOMY_NUMBERS §5.3 |
 | 变现点 | 抽卡、材料/体力直购加速、强化保护道具、（SLG）拍卖税/科技直购、（可选）扩挂拍位 | ECONOMY_NUMBERS §7 |
-| 反通胀 | 分解回收（§6.3，+0~4，70% 返）治理低级膨胀 + 300 库存硬上限封顶；高级件靠失败损耗维持金币 sink | §L4 / §6.3 / §3.3 |
+| 反通胀 | 分解回收（§6.3，+0~4，70% 返）治理低级膨胀 + 1000 库存硬上限封顶；高级件靠失败损耗维持金币 sink | §L4 / §6.3 / §3.3 |
 
 ---
 
@@ -509,7 +509,7 @@ buildSiegeBlueprints(levels, equipped, inv)
 放弃"溢出暂存区"，统一为 escrow-out：拍卖物品的**一切出账**（成交给买家 + 流拍/取消/季末退卖家）都经**系统邮件附件**下发，领取后入库。落地：
 
 1. **邮件附件携带实例快照**：`@nw/shared` `MailAttachmentDoc`/`social.ts MailAttachmentView` 与 `contracts/openapi.yml MailAttachmentView` 新增 `kind: 'equipment' | 'card'` + `instance` 字段（携带完整 `EquipmentInstance`/`CardInstance`，词条/暴击/强化/gear 随实例走）。材料仍走 `kind:'material'`。
-2. **领取投递**：metaserver `mail.ts splitAttachments` 增 `equipment`/`cards` 桶；`service.ts claimMail` 领取时按 `instance.id` 写回 `equipmentInv`/`cardInv`（复用 `equipment.ts grantEquipment` + 抽到 `cards.ts` 的 `grantCard`，二者按 id 覆写天然幂等，无 300 上限检查）。领取原子性由 socialsvc `claimMailAtomic` 单发保证。
+2. **领取投递**：metaserver `mail.ts splitAttachments` 增 `equipment`/`cards` 桶；`service.ts claimMail` 领取时按 `instance.id` 写回 `equipmentInv`/`cardInv`（复用 `equipment.ts grantEquipment` + 抽到 `cards.ts` 的 `grantCard`，二者按 id 覆写天然幂等，无 1000 上限检查）。领取原子性由 socialsvc `claimMailAtomic` 单发保证。
 3. **worldsvc 出账改邮件**：`auctionService.ts deliverItem` 不再直接 `meta.grant*`，改 `mail.sendSystemMail`（dispatchKey=各调用点已幂等的 orderId，`auction_buy/settle/cancel/expire/reset:*`），附件类型按物料/装备/卡分派；subject/body 用 i18n key（`auction.mail.sold.*`/`auction.mail.returned.*`，客户端解析，同季末结算邮件机制）。`createAuction` 内 escrow 后的**同步失败回滚**仍走直接 grant（挂单未成立的即时回退，非出账语义）。
 4. **客户端**：`FriendsScene` 邮件详情渲染 equipment/card 附件（名称+等级，`mail.attEquip`/`mail.attCard`，三语），领取流程复用既有 `claimMail`（回新 save 刷库存）。
 
@@ -521,7 +521,7 @@ buildSiegeBlueprints(levels, equipped, inv)
 |---|---|---|
 | E0 数据模型 ✅ | `EquipmentInstance` / `equipmentInv` / `gear` 新结构（types/SaveData/openapi）+ 存档 v1→v2 迁移 + `SyncPatch` 收窄（装备段不进 `PUT /save`） | types/contracts |
 | E1 引擎注入 ✅ | `applyEquipment` + `clampEffectCaps` + campaign/siege 三步链接入 + `GameConfig.equipment` 管线 + 硬墙/单调性/封顶单测（`client/test/equipment.test.ts` 17 项）。见 §9 实现记录 | @nw/engine |
-| E2 获取 ✅ | **合成 `/equipment/craft` ✅**（扣材料→roll 主+副词条→入库[300 上限]，idemKey 幂等）；**关卡掉落 faucet ✅**（`pveRewards` 12 Boss/精英关配置 + `grantClearReward` 外部 roll + `makeDropInstance`，满仓静默跳过，pveClear/pveVerify 回 `grantedEquipment`） | metaserver |
+| E2 获取 ✅ | **合成 `/equipment/craft` ✅**（扣材料→roll 主+副词条→入库[1000 上限]，idemKey 幂等）；**关卡掉落 faucet ✅**（`pveRewards` 12 Boss/精英关配置 + `grantClearReward` 外部 roll + `makeDropInstance`，满仓静默跳过，pveClear/pveVerify 回 `grantedEquipment`） | metaserver |
 | E2.5 拍卖托管 ✅ | meta `escrowEquipment`/`grantEquipment` + `/internal/equipment/{escrow,grant}`（worldsvc 拍卖 A 调用：移出库存托管 / 转移归属 / 退回；穿戴中·locked 拒挂）。见下方实现记录 | metaserver + worldsvc |
 | E3 强化/分解 ✅ | `/equipment/enhance` 服务器掷骰 + 成功率表 + 材料/金币损耗（commercial 走币）；`/equipment/salvage` 分解回收（70%/+5 锁定，§6.3，批量）。见下方实现记录 | metaserver |
 | E4 穿戴 ✅ | `/equipment/equip` + loadout（global/byUnit）+ 客户端 ApiClient 方法。见下方实现记录 | metaserver + client |
@@ -539,7 +539,7 @@ buildSiegeBlueprints(levels, equipped, inv)
 1. **合成 roll 确定性**：实例 id（`eq_${idemKey}`）+ 词条值均由 idempotencyKey 派生（mulberry32 + FNV-1a 种子）。重试/重放产同一件，杜绝"网络重试改命"。主词条按槽位从候选定 1 个（§7.4：weapon→`m_atk`/armor→`m_hp`/trinket→`m_spd` 或 `m_crit` 二选一；单候选槽位不消耗随机流，保证既有 roll 确定性不变），副词条按稀有度从池抽 N 条不重复（common 0 / fine 1 / rare·epic 2，池含 `s_critmult`）。洗练保留实例现有主词条（不因候选随机而翻转），只重洗副词条。数值 DRAFT，权威终点 ECONOMY_NUMBERS §5。
 2. **幂等闸门**：`equipmentIdem` 集合（TTL 7 天）。合成先抢占 idemKey 唯一 _id（dup → 重放首次结果，不二次扣料）；托管按 orderId 记快照（重放返回同实例，防二次移出）；转移按 `instance.id` 覆盖写天然幂等。扣料/移实例走乐观锁 rev 守卫 + 重试（同 internal.ts 材料范式）。
 3. **库存权威 + 拍卖托管语义**：`equipmentInv` 仅 `/equipment/*` + `/internal/equipment/*` 写（PUT /save 不可写，SyncPatch 已收窄）。挂拍 = `escrowEquipment` 移出卖方库存回快照（拍卖单存整件快照）；成交 = `grantEquipment` 转移给买方；撤单/过期/季末 = 退回卖方。**穿戴中（gear 引用）/ locked 拒挂**（`EQUIP_IN_USE`/`EQUIP_LOCKED`）。
-4. **满仓口径**：300 上限只卡 craft（faucet 侧）；**成交/退回不卡**（escrow-out 后一律经系统邮件下发，领取时才入库，邮件即持有缓冲——满仓不会资损、也不突破硬上限，见 §13 实现记录）。
+4. **满仓口径**：1000 上限只卡 craft（faucet 侧）；**成交/退回不卡**（escrow-out 后一律经系统邮件下发，领取时才入库，邮件即持有缓冲——满仓不会资损、也不突破硬上限，见 §13 实现记录）。
    - ⚠️ **本切片范围**：只交付「合成 → 上拍卖交易」闭环以解锁拍卖行 A。**关卡掉落 faucet + E3 强化/分解 + E4 穿戴 + E5 UI 仍待做**（见上表）。
 
 #### E3 + E4 实现记录（2026-06-21，✅）— 强化/分解 + 穿戴
@@ -619,7 +619,7 @@ buildSiegeBlueprints(levels, equipped, inv)
 落地 = `server/shared/src/equipment.ts`（`makeDropInstance` / `REFORGE_MATERIAL_RARITY` / `rollReforgedAffixes`）+ `server/shared/src/pveRewards.ts`（`EquipmentDropConfig` 接口 + 12 个 Boss/精英关 `equipmentDrop` 配置，Ch1–Ch6 lv5/lv10）+ `server/metaserver/src/service.ts`（`grantClearReward` 外部 roll + `pendingDrop` 写入 `mutateSave` + `grantedEquipment` 回执）+ `server/contracts/openapi.yml`（`/pve/clear` + `/pve/verify` 响应增 `grantedEquipment?`）+ 客户端 `ApiClient.pveClear/pveVerify` 返回类型。关键决策：
 
 1. **drop 在 mutateSave 外 roll**：`Math.random()` 在事务外调用（committed 即原子，不需要 determinism），避免事务内随机性。
-2. **满仓静默跳过**：背包 300 上限时不报错、不补偿材料（ADR-012 已拍板）；`grantedEquipment` 仅在实际写入时回。
+2. **满仓静默跳过**：背包 1000 上限时不报错、不补偿材料（ADR-012 已拍板）；`grantedEquipment` 仅在实际写入时回。
 3. **`makeDropInstance` 用 instanceId 作种子**：`seededRng(hashSeed('drop:${instanceId}'))` 保证同 id 重放同槽，满足幂等性要求。
 
 **E6 洗练 Reforge**
@@ -679,7 +679,7 @@ buildSiegeBlueprints(levels, equipped, inv)
 - [ ] 分解/转化渠道（缓解满级膨胀），后期视通胀加。
 - [ ] 阶段二「按兵种独立装备」的开启时机与 UI 成本。
 - [ ] 装备系统**解锁章节号**（暂定第 2 章，§4）+ 引导脚本，待战役节奏定档。
-- [x] ~~背包上限具体值~~ → **硬上限 300 实例**（ADR-012，§3.3）；逼近上限的引导/清理 UX 待细化。
+- [x] ~~背包上限具体值~~ → **硬上限 1000 实例**（ADR-012，[ADR-064](DECISIONS.md) 2026-08-10 由 300 扩容，§3.3）；逼近上限的引导/清理 UX 待细化。
 - [ ] 分解 70% 返还的"打造基础成本"口径需与 ECONOMY_NUMBERS §5 配方表对齐（§6.3）。
 - [x] ~~流拍溢出暂存区的领取 UI~~ → **改为 escrow-out + 系统邮件退回**（放弃暂存区），✅ 已落地（见 §13 实现记录）。剩：拍卖挂单时效（24–48h）落地。
 - [x] ~~装备定义 `defId` 表~~ → 已补 §17。
@@ -698,7 +698,7 @@ buildSiegeBlueprints(levels, equipped, inv)
 | 词条加成数值/区间/权重、强化系数 | ECONOMY_NUMBERS §5（待铺） |
 | 装备基础属性 / `applyEquipment` 乘加算 | `@nw/engine/balance/`（待建） |
 | 装备定义目录（defId/槽位/稀有度/媒材） | 本文 §17（机制权威；属性区间→ECONOMY_NUMBERS §5） |
-| 库存硬上限 / 分解返还% / 分解等级门槛 / 分解稀有度门槛 | 300 / 70% / +5 / 史诗永不可分解（本文 §3.3 / §6.3，ADR-012 / ADR-050） |
+| 库存硬上限 / 分解返还% / 分解等级门槛 / 分解稀有度门槛 | 1000（ADR-064，2026-08-10 由 300 扩容） / 70% / +5 / 史诗永不可分解（本文 §3.3 / §6.3，ADR-012 / ADR-050） |
 | 同时挂拍上限 / 挂单时效 | 5 件 / 24–48h（本文 §13，ADR-012） |
 
 ---
