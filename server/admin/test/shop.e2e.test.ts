@@ -103,6 +103,41 @@ describe.skipIf(!mongo)('admin SLG shop price overrides e2e', () => {
     await expect(svc.upsertShopItem(root, 'slg_res_s', { cost: -5 })).rejects.toThrow(AdminError);
   });
 
+  // Investigation (server-test-backlog project 4): upsertShopItem fetches the existing override doc
+  // (`before`) but ONLY uses it for the audit summary string — it is never merged into the new doc.
+  // The new doc is built solely from this call's `input` and then written with `replaceOne` (whole
+  // document replace, not a field-level $set). So a follow-up call that supplies only `cost` silently
+  // drops a previously-persisted `effect` override (and vice versa).
+  //
+  // Verdict: this is INTENTIONAL whole-document-replace semantics, not a bug — pinned here rather than
+  // fixed, for two reasons:
+  //   1. The sibling FlagsMixin.upsertFlag (src/service/flags.ts) has the exact same shape (fetches
+  //      `before`, uses it only for the audit diff, then replaceOne's a doc built from just this call's
+  //      input) — a second independent mixin from the same feature-flags-style pattern, not a one-off slip.
+  //   2. The only real caller, the ops UI (tools/ops/src/pages/slgShop.ts `pageSlgShop`), pre-fills its
+  //      cost + effect form fields from the CURRENT effective values on load and always submits BOTH
+  //      together on Save (`input = { cost: costVal }` then unconditionally adds `effect` whenever the
+  //      item kind has an effect field at all) — so in the one production code path, a partial-input call
+  //      that would lose data never actually happens.
+  // This test locks the current (replace) behavior in place so it isn't "fixed" into a merge by accident,
+  // and so any future caller that does send partial input (e.g. a scripted/curl PUT) has documented,
+  // tested proof of what happens.
+  it('upsertShopItem replaces the whole override document — a later cost-only call silently drops a previously-set effect override (documented, not a bug: see comment above)', async () => {
+    const withEffect = await svc.upsertShopItem(root, 'slg_speedup_1h', { cost: 250, effect: { duration_sec: 7200 } });
+    expect(withEffect.cost).toBe(250);
+    expect(withEffect.effect).toEqual({ duration_sec: 7200 });
+
+    // Follow-up call touches only cost — effect is NOT repeated in this input.
+    const costOnly = await svc.upsertShopItem(root, 'slg_speedup_1h', { cost: 300 });
+    expect(costOnly.cost).toBe(300);
+    expect(costOnly.effect).toBeUndefined(); // the previously-set effect override is gone from the persisted doc
+
+    const rows = await svc.getShopConfig();
+    const row = rows.find((r) => r.id === 'slg_speedup_1h')!;
+    // effective.effect falls back to the code default (duration_sec: 3600), NOT the 7200 set moments ago.
+    expect(row.effective.effect).toEqual(row.default.effect);
+  });
+
   it('writes an audit entry on every override', async () => {
     await svc.upsertShopItem(root, 'slg_res_s', { cost: 42 });
     const audit = await m.collections.auditLog.find({ action: 'slg.shop.price.update' }).toArray();
