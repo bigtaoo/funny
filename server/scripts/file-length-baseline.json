@@ -1,7 +1,5 @@
 {
   "_readme": "Known files over the 500-line convention (claudedocs/server.md, '单文件 500 行收敛'), as of 2026-08-09. checkFileLength.mjs fails CI only if a file NOT listed here crosses 500 lines, or a listed file grows past the line count recorded here. Splitting a file below 500 lines does not require touching this file (the script reports it as a housekeeping notice instead of failing) but you should still delete its entry and move it into claudedocs/server.md's 已完成 list. Do not bump a recorded number to silence a GREW violation — that defeats the point; split the file or, if truly justified, explain why in claudedocs/server.md next to this edit.",
-  "metaserver/src/accounts.ts": 528,
-  "metaserver/src/internal/matchReport.ts": 601,
   "metaserver/src/service/economy.ts": 689,
   "metaserver/src/economy.ts": 693
 }
