@@ -59,6 +59,14 @@ export function ShopMixin<TBase extends AdminBaseCtor>(Base: TBase): TBase & Con
     /**
      * Write/update a shop item's price/effect override (capability slg.shop.manage). Validates that id is
      * one of the 9 catalog items and that cost/effect values are legal; audits every change (actor / before+after).
+     *
+     * **Whole-document replace, not a field-level merge**: `before` is read only to build the audit summary
+     * string — it is NOT merged into the written doc. The persisted override is built solely from this call's
+     * `input` and then `replaceOne`s the entire document, so a call that supplies only `cost` will drop any
+     * previously-persisted `effect` override (and vice versa). This is intentional (mirrors FlagsMixin.upsertFlag
+     * exactly) and matches the sole real caller (the ops UI, which always resubmits both cost and effect
+     * together) — see the pinning test in test/shop.e2e.test.ts for the exact behavior. Callers other than that
+     * UI must send the complete override every time; a partial-field PATCH-style call is not supported.
      */
     async upsertShopItem(
       actor: Actor,
