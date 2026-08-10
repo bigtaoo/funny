@@ -27,36 +27,68 @@ export function RevealMixin<TBase extends GachaSceneBaseCtor>(Base: TBase): TBas
       header.anchor.set(0.5, 0.5); header.x = w / 2; header.y = Math.round(h * 0.12);
       this.container.addChild(header);
 
-      // Grid: up to 5 columns (a ten-pull → 2 rows of 5; single → 1 card centred).
+      // Grid: landscape always uses the flat 5-wide wrap (a ten-pull → 2 rows of 5; single →
+      // 1 card centred). Portrait ten-pulls use a 3/4/3 "diamond" instead — see rowSizesFor()'s
+      // doc comment for why: a flat 5×2 squeezes each card to 16% of the (narrower) portrait
+      // width, and epic+ pulls are already sorted to the front (GACHA_DESIGN §4.4), so shrinking
+      // the widest row to 4 also gives the eye-catching early pulls a visually larger card.
       const n = results.length;
-      const cols = Math.min(5, n);
-      const rows = Math.ceil(n / cols);
-      const cellW = Math.round(w * 0.16);
-      const cellH = Math.round(cellW * 1.3);
       const gapX = Math.round(w * 0.02);
       const gapY = Math.round(h * 0.02);
-      const gridW = cols * cellW + (cols - 1) * gapX;
-      const startX = (w - gridW) / 2;
-      const gridH = rows * cellH + (rows - 1) * gapY;
+      const rowSizes = this.rowSizesFor(n);
+      const maxCols = Math.max(...rowSizes);
+      // Keep the same overall grid footprint the flat 5-col layout used (5 cards @ 16% width each
+      // + 4 gaps), just redistributed across fewer columns per row — so a 3/4/3 row's cards grow
+      // instead of the whole grid shrinking or growing unexpectedly.
+      const flatCellW = Math.round(w * 0.16);
+      const targetGridW = 5 * flatCellW + 4 * gapX;
+      const cellW = Math.round((targetGridW - (maxCols - 1) * gapX) / maxCols);
+      const cellH = Math.round(cellW * 1.3);
+      const gridH = rowSizes.length * cellH + (rowSizes.length - 1) * gapY;
       const startY = (h - gridH) / 2;
 
-      results.forEach((r, i) => {
-        const col = i % cols;
-        const row = Math.floor(i / cols);
-        const cx = startX + col * (cellW + gapX);
-        const cy = startY + row * (cellH + gapY);
-        this.drawResultCard(r, cx, cy, cellW, cellH, i + 1);
+      let idx = 0;
+      rowSizes.forEach((count, rowIdx) => {
+        const rowW = count * cellW + (count - 1) * gapX;
+        const rowStartX = (w - rowW) / 2;
+        const cy = startY + rowIdx * (cellH + gapY);
+        for (let c = 0; c < count; c++) {
+          const r = results[idx];
+          const cx = rowStartX + c * (cellW + gapX);
+          this.drawResultCard(r, cx, cy, cellW, cellH, idx + 1);
+          idx++;
+        }
       });
 
-      // A 10-pull's 2-row grid can reach as far down as the default hint slot; anchor
-      // below the actual grid bottom instead of a fixed fraction, and outline the text
-      // so it reads over both dark (epic/legendary) and light (common) card stock.
+      // A 10-pull's grid (2 rows landscape, 3 rows portrait) can reach as far down as the
+      // default hint slot; anchor below the actual grid bottom instead of a fixed fraction,
+      // and outline the text so it reads over both dark (epic/legendary) and light (common)
+      // card stock.
       const gridBottom = startY + gridH;
       const hint = txtOutlined(t('gacha.tapContinue'), FS.label, C.light, C.dark, 3);
       hint.anchor.set(0.5, 0.5);
       hint.x = w / 2;
       hint.y = Math.min(Math.round(h * 0.97), Math.max(Math.round(h * 0.92), Math.round(gridBottom + h * 0.03)));
       this.container.addChild(hint);
+    }
+
+    /**
+     * How many cards go in each row of the reveal grid, top to bottom. `draw()` only ever
+     * returns 1 or 10 results (GachaSceneCallbacks.draw's `count: 1 | 10`), so in practice this
+     * is either a single centred card or a ten-pull; the flat wrap-at-5 chunking below is just
+     * a defensive fallback if that ever changes. Landscape keeps the original flat 5-wide wrap
+     * (a ten-pull → [5, 5]). Portrait ten-pulls get a 3/4/3 "diamond" instead (2026-08-10,
+     * user-requested): narrower portrait screens squeezed each of 5-across down to 16% width
+     * with barely-legible name plates, and dropping the widest row to 4 lets every card grow
+     * ~1/4 larger for the same total grid footprint (see targetGridW in drawReveal).
+     */
+    private rowSizesFor(n: number): number[] {
+      if (!this.landscape && n === 10) return [3, 4, 3];
+      const cols = Math.min(5, n) || 1;
+      const rows = Math.ceil(n / cols);
+      const sizes = new Array(rows).fill(cols);
+      sizes[rows - 1] = n - cols * (rows - 1); // last row may be shorter (defensive; not hit by 1/10)
+      return sizes;
     }
 
     private drawResultCard(r: GachaResultEntry, x: number, y: number, w: number, h: number, seed: number): void {
