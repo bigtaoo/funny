@@ -174,7 +174,7 @@
 - **加成**：仅 PvE/SLG 注入数值（攻/血/护甲等），**PvP 恒不读**（硬墙）。
 - **强化等级**：+1 → +9（与单位卡同深度，但走概率而非合成）。
 - **暴击词条**（B 方案，数值权威在代码 `@nw/shared/equipment.ts` + `@nw/engine/balance/equipment.ts`，此处为 DRAFT 基线）：
-  - `m_crit`（饰品主词条，与移速二选一）：暴击**率** base 6 点，随强化放大（+9 ≈ 11.4 点）。
+  - `m_crit`（饰品主词条，与移速二选一）：暴击**率** base 6 点，随强化放大（+9 ≈ **30 点**，[ADR-063](DECISIONS.md) 非线性倍率表 ×5.00，2026-08-10 从 ×4.06 再拔高；旧线性系数下曾是 ×1.9≈11.4 点）。
   - `s_critmult`（rare/epic 副词条）：暴击**伤害** +15..30%（引擎 `value/100` 加到倍率）。
   - 跨源封顶（EQUIPMENT_DESIGN §7.7，引擎 `EFFECT_CAPS`）：暴击率 T3+装备 Σ ≤ **50%**；暴击倍率 T3 基础 1.5× + `s_critmult` Σ ≤ **2.5×**。
 
@@ -186,9 +186,10 @@
 |---|---|---|---|---|---|---|---|---|---|
 | 成功率 | 90% | 80% | 70% | 60% | 50% | 40% | 30% | 20% | **10%** |
 
-- **失败后果**：**不掉级，只损耗本次材料/金币**（俗套温和档——强化失败不毁装备；销毁仅走分解，见 ADR-012 / EQUIPMENT_DESIGN §6.3）。
-- **期望成本**：升到 +9 的期望尝试次数 = Σ(1/p)；如 +8→9 平均 10 次、+7→8 平均 5 次……**整套 3 件 +9 是鲸鱼级长期目标**，正是充值动机所在。
-- `[可调]` 后期可加更狠档：失败掉级 / 碎裂 + 保护道具（氪点）——现不做。
+- **失败后果**（[ADR-063](DECISIONS.md)，2026-08-10 收紧）：
+  - **+0~+6**：不掉级，只损耗本次材料/金币（俗套温和档——强化失败不毁装备；销毁仅走分解，见 ADR-012 / EQUIPMENT_DESIGN §6.3）。
+  - **+7~+8**：失败额外有 **20%/25%** 概率掉 1 级——高级的主词条倍率被拉得很陡（EQUIPMENT_DESIGN §7.3），代价必须同步拉高，否则理性玩家没有冲过 +6 的理由。保护道具（氪点）可同时挡住材料损耗和掉级。
+- **期望成本**：升到 +9 的期望尝试次数 = Σ(1/p)；如 +8→9 平均 10 次、+7→8 平均 5 次（掉级风险会进一步推高实际期望次数，未在此纳入模拟——见 `server/tools/econ-sim` 后续 TODO）……**整套 3 件 +9 是鲸鱼级长期目标**，正是充值动机所在。
 
 ### 5.3 长期通胀提示
 **金币/材料 sink 主要来自"反复强化的失败损耗"**（高级低成功率 = 持续吞材料）。膨胀治理已上 [ADR-012](DECISIONS.md)：**分解回收**（+0~4 返 70%，30% 损耗本身是温和 sink）+ **库存硬上限 300 实例**封顶（堆叠件不计），机制权威见 EQUIPMENT_DESIGN §3.3 / §6.3。高级件（+5↑）不可分解，出口走拍卖/穿戴。
@@ -313,6 +314,16 @@ F2P 金币龙头：广告（主力）+ 战斗 / 活动 / 称号 / 任务。
 **2026-08-04 修复（用户截图报告 2 项）**：
 1. **材料档图标错用程序 glyph，不是 AI 位图**：材料图标早在 §20.10/20.12（`EQUIPMENT_DESIGN.md`）就已从 `SketchPen` 程序绘制换成 AI 位图（`materialAtlas.ts`/`buildMaterialIcon`），装备页/抽卡揭示/每日签到/事件/战令都已切换，唯独 `ShopScene`（本节的材料直购档）当初没跟进，还在走 `buildCoinIcon`→`buildIcon` 的程序 glyph 回退路径（`scrap` 撕纸剪影/`lead` 削尖石墨条，在小尺寸下分别读成"书签"和"羽毛笔"，与游戏其它地方的位图观感不一致）。修复：`ShopScene/base.ts` `CardSpec` 新增 `materialKind` 字段，`drawCard` 材料档改走 `buildMaterialIcon`（`ShopScene/shop.ts` 材料循环设置 `materialKind: item.grants`）。
 2. **每日限购档只写"限购次数有限"，不显示已购/上限**：`getShopItems`（`service/economy.ts`）新增 `dailyLimit`/`purchasedToday` 两个字段（`ShopItem` schema，`contracts/openapi/schemas.yml`）——材料档用现成的 `readCounterField`（`dailyCounter.ts`，只读，不占用 `bumpCappedCounter` 的计数）读当日已购次数；非限购商品两字段整体省略。客户端状态行改渲染"今日已购 {used}/{limit}"，到量后 Buy 按钮置灰 + 文案变"今日已达上限"（不必再靠一次失败购买才发现封顶），`onBuy` 购买成功后重新拉取 `/shop/items` 让计数实时刷新。
+
+### 6.6 商店批量购买 `qty`（2026-08-10 性能修复）
+
+**问题**（用户截图报告）：`protect_enhance` 的"×10"按钮点一下要转很久，明显比其它请求慢。根因：`ShopScene/actions.ts` 的 `onBuyBulk` 在一个 busy-lock 下**顺序**发 10 次独立 `POST /shop/buy`（每次 await 完才发下一次），而单次 `/shop/buy` 本身就是 client→meta→Redis + meta→commercial（内部 HTTP）→Mongo + meta→Mongo 三级串联——买 10 个等于把这条链路原样跑 10 遍且完全排队，而不是网络拥堵。
+
+**修复**：`POST /shop/buy` 新增可选 `qty`（默认 1，`contracts/openapi/paths/economy.yml` 校验 `1–20`，`SHOP_BUY_MAX_QTY` 常量同步兜底防御），服务端一次请求内完成"校验每日上限（若有）→ 扣费 `cost×qty` → 发货 `qty` 份"，全链路只走一次，不再是客户端循环。语义是**全有或全无**：余额不够整批或每日限购容不下整批 `qty`，整单直接拒绝、分文不扣、一件不发——不做"买到第几件算第几件"的部分成交，这与"×10"按钮本来就要求 `coins ≥ cost×10` 才可点是同一假设，不需要额外的部分发货记账。
+
+- **落地范围**：`shared/dailyCounter.ts`（`bumpCappedCounter` 新增 `by` 参数，一次性按 `qty` 增量+校验每日计数器，超额整体回滚不留半截）、`commercial/service/shop.ts`（`shopCharge` 新增 `qty`，`cost` 仍是目录单价、按 `cost×qty` 一次扣款+记账，`qty` 落盘到 `OrderDoc.result` 供崩溃后对账重放）、`metaserver/service/economy.ts`（`shopBuy` 读取/钳制 `qty`）、`metaserver/economy.ts`（`deliverOrder` 按 `qty` 发货：`kind='item'` 按份数 `$inc`、`kind='material'` 按"每份 `qty` 个 × 请求 `qty`"、皮肤按 `qty` 份各生成一个真实实例）。
+- **客户端**：`ShopScene/actions.ts` `onBuyBulk` 从"循环 10 次 `cb.buy(itemId)`"改为一次 `cb.buy(itemId, 10)`；`ApiClient.shopBuy(itemId, qty?)` 透传。
+- **兼容性**：`qty` 缺省 = 1，行为与改动前逐字节一致；`server/contracts/openapi.yml`/`client/src/net/openapi.ts` 随 `npm run gen:api:contracts && gen:api:server`（metaserver）/`npm run rest:gen`（client）重新生成。
 
 ---
 

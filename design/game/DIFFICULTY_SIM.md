@@ -202,8 +202,8 @@ Infantry/ShieldBearer/Archer/Max/Lena/Mara）按档位升级，还会挂一套�
 | T6 | 武器 + 护甲 + 饰品（m_atk / m_hp+s_armor / m_crit，强化 6 级） |
 
 ⚠️ **这套数值是模拟器占位值，不是游戏权威数值**——装备强化系数用的是
-`server/engine/src/balance/equipment.ts` 里真实的 `AFFIX_FIELD_MAP`/`ENHANCE_COEFF_PER_LEVEL`
-机制，但具体数值（+8 atk、+10 hp…）是为了让「档位=卡等级+合理装备」这个模型跑起来而取的
+`server/engine/src/balance/equipment.ts` 里真实的 `AFFIX_FIELD_MAP`/`ENHANCE_LEVEL_MULTIPLIER`
+机制（[ADR-063](DECISIONS.md) 起改为非线性倍率表），但具体数值（+8 atk、+10 hp…）是为了让「档位=卡等级+合理装备」这个模型跑起来而取的
 估计值；`ECONOMY_NUMBERS §5` 的装备数值权威表还未定稿，以后定了要回来对齐这里。
 
 **影响**：接入装备后同档位比纯卡等级更强，ch1 矩阵数值会整体比装备接入前的历史记录更容易

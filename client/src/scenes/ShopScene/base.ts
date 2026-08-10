@@ -55,7 +55,8 @@ export interface ShopSceneCallbacks {
   /** Owned skin ids (to mark already-purchased items). */
   getOwnedSkins(): string[];
   loadItems(): Promise<ShopItem[]>;
-  buy(itemId: string): Promise<ShopActionResult>;
+  /** `qty` (bulk-buy, e.g. onBuyBulk's "×10" button) charges/delivers several units in one request. */
+  buy(itemId: string, qty?: number): Promise<ShopActionResult>;
   /** Dev-only virtual top-up. Not rendered in production; exposed for E2E tests. */
   recharge?(code: string): Promise<ShopActionResult>;
   /** Promo-code redemption (B-PROMO). Absent = row not shown (offline / not logged in). */

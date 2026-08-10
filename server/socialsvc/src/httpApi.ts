@@ -2,127 +2,43 @@
 // Auth: reuses meta JWT — verifyToken only, extracts accountId (no connection to the accounts DB).
 // Internal endpoints: /internal/*, authenticated via X-Internal-Key (called by other services).
 // Uses node:http (same style as worldsvc). Responses wrapped in @nw/shared ApiResp envelope.
-import { createServer, type Server, type IncomingMessage, type ServerResponse } from 'http';
-import {
-  ErrorCode,
-  ERROR_HTTP_STATUS,
-  ok,
-  err,
-  extractBearer,
-  verifyToken,
-  loadInternalAuth,
-  SlgError,
-} from '@nw/shared';
+//
+// startHttpApi was a single ~708-line function (one big if-chain over node:http request/response, not a
+// framework router) — 2026-08-10 split into a thin dispatcher + one file per route domain under
+// ./httpApi/, same "chain of responsibility" shape worldsvc/httpApi.ts and admin/httpApi.ts already use:
+// each domain handler takes the shared context and returns `true` once it has matched a route and sent a
+// response, `false` to let the next handler try. No two domain files match the same method+path, so route
+// resolution is unchanged. Two tiers of context mirror the two auth mechanisms: `BaseCtx` (no accountId)
+// for the four /internal/* domains — X-Internal-Key is checked ONCE by the shell before any of them run,
+// same as the original single `if (!internalAuth.verify(...).ok)` guard — and `RouteCtx` (BaseCtx +
+// accountId) for the five public /social/* domains, built only after JWT verification succeeds.
+//   httpApi/helpers.ts             wire helpers (readJson/send/sendErr/sendSocialErr/numQ) + RouteDeps/BaseCtx/RouteCtx types
+//   httpApi/internalFamilyRoutes.ts   /internal/family/* (by-account, member, batch, by-sect, sect, prosperity/refresh, activity(-and-prosperity), slg-reset)
+//   httpApi/internalMailRoutes.ts     /internal/mail/* (atomic claim/unclaim, system mail single + bulk)
+//   httpApi/internalPushRoutes.ts     /internal/push (generic delegated push) + /internal/presence/{online,offline} (friend presence fan-out)
+//   httpApi/internalReportsRoutes.ts  /internal/reports (UGC review queue list + resolve)
+//   httpApi/familyRoutes.ts        /social/family/* (create/search/browse/join/leave/kick/role/disband/announcement/channel)
+//   httpApi/profileRoutes.ts       /social/profile/:publicId/extra (unified profile-popup rank/family/sect extras)
+//   httpApi/friendRoutes.ts        /social/friends/* + /social/badges (P2)
+//   httpApi/chatRoutes.ts          /social/chat/* direct messages (P2)
+//   httpApi/mailRoutes.ts          /social/mail/* player mail (P2)
+import { createServer, type Server } from 'http';
+import { ErrorCode, extractBearer, verifyToken, loadInternalAuth, SlgError } from '@nw/shared';
 import type { FamilyService } from './familyService';
 import type { FriendService } from './friendService';
 import type { MailService } from './mailService';
 import type { SocialMetaClient } from './metaClient';
-import type { SocialGatewayClient, SocialPushMsg } from './gatewayClient';
-import { CHAT_SEND_RATE_PER_MIN, type ChatRegion } from '@nw/shared';
-
-/**
- * Fan-out of friend online/offline notifications (P3, SOCIAL_SVC_DESIGN §5 Presence push chain).
- * Online: push "I came online" to online friends + push each online friend's status back to me.
- * Offline: only push "I went offline" to online friends (I am already disconnected, no need to push back to me).
- * All best-effort: failures do not affect the main flow.
- */
-async function presenceFanOut(
-  accountId: string,
-  online: boolean,
-  _familySvc: FamilyService,
-  friendSvc: FriendService,
-  gateway: SocialGatewayClient,
-): Promise<void> {
-  if (!gateway.available) return;
-  const friendIds = await friendSvc.getFriendAccountIds(accountId);
-  if (friendIds.length === 0) return;
-
-  const myProfiles = await friendSvc.batchPublicIds([accountId]);
-  const myPublicId = myProfiles.get(accountId);
-  if (!myPublicId) return; // account has no publicId, skip broadcast
-
-  const presenceMap = await gateway.presence(friendIds);
-  const onlineFriendIds = friendIds.filter((id) => presenceMap[id]);
-  if (onlineFriendIds.length === 0 && !online) return;
-
-  // comm-audit batch F item 5: both fan-outs below used to be their own round trip(s) — "I came online/
-  // offline" to every online friend (pushMany → N /gw/push calls) and, on coming online, each friend's
-  // status pushed back to me (N more calls). Collapsed into a single targets[] batch (one /gw/push/batch
-  // HTTP round trip covering all of it) instead of up to 2×onlineFriendIds.length individual pushes.
-  const targets: { accountId: string; msg: SocialPushMsg }[] = [];
-
-  // Push to online friends: I came online / went offline
-  for (const fid of onlineFriendIds) {
-    targets.push({ accountId: fid, msg: { kind: 'friend_presence', publicId: myPublicId, online } });
-  }
-
-  // On coming online: push each online friend's status back to me (so I know who is online)
-  if (online && onlineFriendIds.length > 0) {
-    const friendPids = await friendSvc.batchPublicIds(onlineFriendIds);
-    for (const fid of onlineFriendIds) {
-      const pid = friendPids.get(fid);
-      if (pid) targets.push({ accountId, msg: { kind: 'friend_presence', publicId: pid, online: true } });
-    }
-  }
-
-  if (targets.length > 0) await gateway.pushBatch(targets);
-}
-
-function readJson(req: IncomingMessage): Promise<Record<string, unknown>> {
-  return new Promise((resolve, reject) => {
-    let body = '';
-    req.on('data', (c) => {
-      body += c;
-      if (body.length > 1 << 20) {
-        // Stop reading — a settled promise doesn't stop 'data' events, so without destroy() an
-        // oversized body kept accumulating into `body` unbounded (OOM risk, P0-9 — this internal-port
-        // fix was applied to gateway/matchsvc in the 2026-07-28 comm audit but missed this public port).
-        req.destroy();
-        reject(new Error('payload too large'));
-      }
-    });
-    req.on('end', () => {
-      try {
-        resolve(body ? (JSON.parse(body) as Record<string, unknown>) : {});
-      } catch (e) {
-        reject(e as Error);
-      }
-    });
-    req.on('error', reject);
-  });
-}
-
-function send(res: ServerResponse, status: number, body: unknown): void {
-  res.writeHead(status, {
-    'content-type': 'application/json',
-    'access-control-allow-origin': '*',
-    'access-control-allow-headers': 'authorization,content-type,x-internal-key,x-internal-caller,x-nw-platform,x-chat-region',
-    'access-control-allow-methods': 'GET,POST,PUT,OPTIONS',
-  });
-  res.end(JSON.stringify(body));
-}
-
-function sendErr(res: ServerResponse, code: ErrorCode, message: string): void {
-  send(res, ERROR_HTTP_STATUS[code] ?? 400, err(code, message));
-}
-
-type SocialError = 'NOT_FOUND' | 'BAD_REQUEST' | 'ALREADY_FRIEND' | 'FRIEND_CAP_REACHED' | 'NOT_FRIEND' | 'BLOCKED' | 'MUTED';
-function sendSocialErr(res: ServerResponse, e: SocialError): void {
-  switch (e) {
-    case 'NOT_FOUND': return sendErr(res, ErrorCode.NOT_FOUND, 'not found');
-    case 'ALREADY_FRIEND': return sendErr(res, ErrorCode.ALREADY_FRIEND, 'already friends');
-    case 'FRIEND_CAP_REACHED': return sendErr(res, ErrorCode.FRIEND_CAP_REACHED, 'friend cap reached');
-    case 'NOT_FRIEND': return sendErr(res, ErrorCode.NOT_FRIEND, 'not friends');
-    case 'BLOCKED': return sendErr(res, ErrorCode.BLOCKED, 'blocked');
-    case 'MUTED': return sendErr(res, ErrorCode.ACCOUNT_MUTED, 'muted');
-    default: return sendErr(res, ErrorCode.BAD_REQUEST, 'bad request');
-  }
-}
-
-const numQ = (v: string | null, d: number): number => {
-  const n = v == null ? NaN : Number(v);
-  return Number.isFinite(n) ? n : d;
-};
+import type { SocialGatewayClient } from './gatewayClient';
+import { send, sendErr, type BaseCtx, type RouteCtx } from './httpApi/helpers';
+import { handleInternalFamilyRoutes } from './httpApi/internalFamilyRoutes';
+import { handleInternalMailRoutes } from './httpApi/internalMailRoutes';
+import { handleInternalPushRoutes } from './httpApi/internalPushRoutes';
+import { handleInternalReportsRoutes } from './httpApi/internalReportsRoutes';
+import { handleFamilyRoutes } from './httpApi/familyRoutes';
+import { handleProfileRoutes } from './httpApi/profileRoutes';
+import { handleFriendRoutes } from './httpApi/friendRoutes';
+import { handleChatRoutes } from './httpApi/chatRoutes';
+import { handleMailRoutes } from './httpApi/mailRoutes';
 
 export function startHttpApi(
   opts: { host: string; port: number; jwtSecret: string; internalKey: string },
@@ -148,249 +64,17 @@ export function startHttpApi(
       const url = new URL(req.url ?? '', `http://${req.headers.host ?? 'social'}`);
       const path = url.pathname;
       const q = url.searchParams;
+      const base: BaseCtx = { req, res, method, path, url, q, familySvc, friendSvc, mailSvc, gateway, meta };
 
       // ── Internal endpoints (/internal/*) ─────────────────────────────
       if (path.startsWith('/internal/')) {
         if (!internalAuth.verify(req.headers).ok) {
           return sendErr(res, ErrorCode.UNAUTHENTICATED, 'internal endpoint requires X-Internal-Key');
         }
-
-        // Look up the familyId the player belongs to (called by worldsvc, SS7)
-        {
-          const m = /^\/internal\/family\/by-account\/([^/]+)$/.exec(path);
-          if (method === 'GET' && m) {
-            const accountId = decodeURIComponent(m[1]!);
-            const familyId = await familySvc.getFamilyIdByAccount(accountId);
-            return send(res, 200, ok({ familyId }));
-          }
-        }
-
-        // Delegated push (called by worldsvc / metaserver, §4.2 /internal/push)
-        if (method === 'POST' && path === '/internal/push') {
-          const body = await readJson(req);
-          const channel = body.channel as { kind: string; familyId?: string; sectId?: string; worldId?: string; accountId?: string } | undefined;
-          const event = typeof body.event === 'string' ? body.event : '';
-          const payload = body.payload;
-          // targets: recipient list pre-computed by the caller (P1 interim fallback before sect/world channel Redis pub/sub is implemented in P3).
-          const targets = Array.isArray(body.targets) ? (body.targets as string[]) : null;
-          if (!channel || !event) return sendErr(res, ErrorCode.BAD_REQUEST, 'channel + event required');
-
-          const msg: SocialPushMsg = {
-            kind: event as SocialPushMsg['kind'],
-            ...(payload as object),
-          } as SocialPushMsg;
-
-          if (targets && targets.length > 0) {
-            // Caller provided an explicit recipient list (sect/world channel P1 fallback).
-            await gateway.pushMany(targets, msg);
-          } else if (channel.kind === 'account' && channel.accountId) {
-            await gateway.push(channel.accountId, msg);
-          } else if (channel.kind === 'family' && channel.familyId) {
-            // Push to all online family members (O(n), ≤30 members). No callerId passed (trusted internal
-            // route) → getFamily returns the full member view with accountId always present.
-            const detail = await familySvc.getFamily(channel.familyId);
-            if (detail) {
-              await gateway.pushMany(detail.members.map((m) => m.accountId!), msg);
-            }
-          }
-          // sect/world channel with no targets: P3 will switch to Redis pub/sub routing (currently only persisted to DB, no real-time push).
-          return send(res, 200, ok({}));
-        }
-
-        // P2: atomic mail claim (called by metaserver: marks as claimed and returns the attachment list; metaserver then delivers goods)
-        {
-          const m = /^\/internal\/mail\/([^/]+)\/claim$/.exec(path);
-          if (method === 'POST' && m) {
-            const mailId = decodeURIComponent(m[1]!);
-            const body = await readJson(req);
-            const accountId = typeof body.accountId === 'string' ? body.accountId : null;
-            const orderId = typeof body.orderId === 'string' ? body.orderId : null;
-            if (!accountId || !orderId) return sendErr(res, ErrorCode.BAD_REQUEST, 'accountId + orderId required');
-            const result = await mailSvc.claimMailAtomic(accountId, mailId, orderId);
-            if ('error' in result) {
-              const code = result.error === 'NOT_FOUND' ? ErrorCode.NOT_FOUND
-                : result.error === 'ALREADY_CLAIMED' ? ErrorCode.ALREADY_CLAIMED
-                : ErrorCode.NO_ATTACHMENT;
-              return sendErr(res, code, result.error);
-            }
-            return send(res, 200, ok({ doc: result.doc }));
-          }
-        }
-
-        // comm-audit-internal-2026-07-28 P0-4: roll back a claim when metaserver's post-claim delivery
-        // (commercial.grant / equipment / cards) fails, so the attachment isn't lost forever.
-        {
-          const m = /^\/internal\/mail\/([^/]+)\/unclaim$/.exec(path);
-          if (method === 'POST' && m) {
-            const mailId = decodeURIComponent(m[1]!);
-            const body = await readJson(req);
-            const accountId = typeof body.accountId === 'string' ? body.accountId : null;
-            const orderId = typeof body.orderId === 'string' ? body.orderId : null;
-            if (!accountId || !orderId) return sendErr(res, ErrorCode.BAD_REQUEST, 'accountId + orderId required');
-            const result = await mailSvc.unclaimMailAtomic(accountId, mailId, orderId);
-            return send(res, 200, ok(result));
-          }
-        }
-
-        // P2: send a single system mail (called by metaserver admin / season settlement)
-        if (method === 'POST' && path === '/internal/mail/system') {
-          const body = await readJson(req);
-          const { dispatchKey, to, content } = body as {
-            dispatchKey: string;
-            to: string;
-            content: { subject: string; body: string; expireDays: number };
-          };
-          if (!dispatchKey || !to || !content?.subject) return sendErr(res, ErrorCode.BAD_REQUEST, 'dispatchKey + to + content required');
-          const r = await mailSvc.insertSystemMail(dispatchKey, to, content);
-          return send(res, 200, ok(r));
-        }
-
-        // P2: bulk system mail fan-out (called by metaserver admin / season settlement)
-        if (method === 'POST' && path === '/internal/mail/system/bulk') {
-          const body = await readJson(req);
-          const { dispatchKey, accountIds, content } = body as {
-            dispatchKey: string;
-            accountIds: string[];
-            content: { subject: string; body: string; expireDays: number };
-          };
-          if (!dispatchKey || !Array.isArray(accountIds) || !content?.subject) {
-            return sendErr(res, ErrorCode.BAD_REQUEST, 'dispatchKey + accountIds + content required');
-          }
-          const r = await mailSvc.bulkInsertSystemMail(dispatchKey, accountIds, content);
-          // Push a notification badge to newly inserted recipients — one /gw/push/batch round trip instead
-          // of one /gw/push call per recipient (comm-audit batch F item 5; up to 500 per meta chunk).
-          if (r.insertedAccountIds.length > 0) {
-            void gateway.pushBatch(r.insertedAccountIds.map((aid) => ({
-              accountId: aid,
-              msg: { kind: 'mail_new' as const, mailId: `${dispatchKey}:${aid}`, hasAttachment: r.hasAttachment },
-            }))); // best-effort, does not affect the current response
-          }
-          return send(res, 200, ok(r));
-        }
-
-        // Accumulate activity score (called by worldsvc on capture/battle, SS7)
-        if (method === 'POST' && path === '/internal/family/activity') {
-          const body = await readJson(req);
-          const familyId = typeof body.familyId === 'string' ? body.familyId : null;
-          const delta = typeof body.delta === 'number' ? body.delta : 1;
-          if (!familyId) return sendErr(res, ErrorCode.BAD_REQUEST, 'familyId required');
-          await familySvc.bumpActivity(familyId, delta);
-          return send(res, 200, ok({}));
-        }
-
-        // Membership + family identity in one round trip (called by worldsvc sect permission checks)
-        {
-          const m = /^\/internal\/family\/member\/([^/]+)$/.exec(path);
-          if (method === 'GET' && m) {
-            const accountId = decodeURIComponent(m[1]!);
-            const member = await familySvc.getMember(accountId);
-            return send(res, 200, ok({ member }));
-          }
-        }
-
-        // Batch fetch families by id (called by worldsvc for sect roster display / season settlement)
-        if (method === 'POST' && path === '/internal/family/batch') {
-          const body = await readJson(req);
-          const familyIds = Array.isArray(body.familyIds) ? (body.familyIds as string[]) : [];
-          return send(res, 200, ok({ families: await familySvc.getFamiliesByIds(familyIds) }));
-        }
-
-        // All families currently in a given sect (called by worldsvc sect roster / vote / penalty fan-out)
-        {
-          const m = /^\/internal\/family\/by-sect\/([^/]+)$/.exec(path);
-          if (method === 'GET' && m) {
-            const sectId = decodeURIComponent(m[1]!);
-            return send(res, 200, ok({ families: await familySvc.getFamiliesBySect(sectId) }));
-          }
-        }
-
-        // Set/clear the sect a family belongs to (worldsvc is authoritative; this is a read cache for clients, SLG_DESIGN §8.2)
-        {
-          const m = /^\/internal\/family\/([^/]+)\/sect$/.exec(path);
-          if (method === 'POST' && m) {
-            const familyId = decodeURIComponent(m[1]!);
-            const body = await readJson(req);
-            const sectId = typeof body.sectId === 'string' ? body.sectId : null;
-            const sectName = typeof body.sectName === 'string' ? body.sectName : null;
-            await familySvc.setSect(familyId, sectId, sectName);
-            return send(res, 200, ok({}));
-          }
-        }
-
-        // Recompute + persist prosperity from a worldsvc-supplied territoryCount (worldsvc owns tile ownership)
-        {
-          const m = /^\/internal\/family\/([^/]+)\/prosperity\/refresh$/.exec(path);
-          if (method === 'POST' && m) {
-            const familyId = decodeURIComponent(m[1]!);
-            const body = await readJson(req);
-            const territoryCount = typeof body.territoryCount === 'number' ? body.territoryCount : 0;
-            const prosperity = await familySvc.refreshProsperity(familyId, territoryCount);
-            return send(res, 200, ok({ prosperity }));
-          }
-        }
-
-        // Merged activity bump + prosperity refresh (comm-audit batch F item 9): worldsvc's bumpFamilyActivity
-        // always calls these two back-to-back for the same familyId — one round trip instead of two.
-        {
-          const m = /^\/internal\/family\/([^/]+)\/activity-and-prosperity$/.exec(path);
-          if (method === 'POST' && m) {
-            const familyId = decodeURIComponent(m[1]!);
-            const body = await readJson(req);
-            const delta = typeof body.delta === 'number' ? body.delta : 1;
-            const territoryCount = typeof body.territoryCount === 'number' ? body.territoryCount : 0;
-            const prosperity = await familySvc.bumpActivityAndProsperity(familyId, delta, territoryCount);
-            return send(res, 200, ok({ prosperity }));
-          }
-        }
-
-        // Zero SLG season state on world reset (called by worldsvc's resetSeason, SLG_DESIGN §17.3)
-        {
-          const m = /^\/internal\/family\/([^/]+)\/slg-reset$/.exec(path);
-          if (method === 'POST' && m) {
-            const familyId = decodeURIComponent(m[1]!);
-            await familySvc.resetSlgState(familyId);
-            return send(res, 200, ok({}));
-          }
-        }
-
-        // Presence event (called by gateway, P3): fan-out of friend online/offline notifications
-        if (method === 'POST' && (path === '/internal/presence/online' || path === '/internal/presence/offline')) {
-          const body = await readJson(req);
-          const presenceAccountId = typeof body.accountId === 'string' ? body.accountId : null;
-          if (!presenceAccountId) return sendErr(res, ErrorCode.BAD_REQUEST, 'accountId required');
-          const isOnline = path.endsWith('/online');
-          void presenceFanOut(presenceAccountId, isOnline, familySvc, friendSvc, gateway).catch(() => { /* best-effort */ });
-          return send(res, 200, ok({}));
-        }
-
-        // UGC reports (ops/admin review queue, design-doc-audit-2026-07 COMPLIANCE_GLOBAL.md §7;
-        // status filter + resolve added CONTENT_MODERATION_DESIGN.md CM9/P4).
-        if (method === 'GET' && path === '/internal/reports') {
-          const limit = numQ(q.get('limit'), 200);
-          const statusQ = q.get('status');
-          const status = statusQ === 'dismissed' || statusQ === 'upheld' || statusQ === 'open' ? statusQ : 'open';
-          return send(res, 200, ok({ reports: await friendSvc.listReports(status, limit) }));
-        }
-
-        // Resolve a report (CM9): admin backend is the sole caller, and separately calls metaserver's
-        // penalty endpoint when resolution='upheld' (CM7's single enforcement path — this endpoint never
-        // touches reputationScore itself).
-        {
-          const m = /^\/internal\/reports\/([^/]+)\/resolve$/.exec(path);
-          if (method === 'POST' && m) {
-            const id = decodeURIComponent(m[1]!);
-            const body = await readJson(req);
-            const resolution = body.resolution;
-            if (resolution !== 'dismissed' && resolution !== 'upheld') {
-              return sendErr(res, ErrorCode.BAD_REQUEST, 'resolution must be dismissed or upheld');
-            }
-            const resolvedBy = typeof body.resolvedBy === 'string' ? body.resolvedBy : 'unknown';
-            const okResolved = await friendSvc.resolveReport(id, resolution, resolvedBy);
-            if (!okResolved) return sendErr(res, ErrorCode.NOT_FOUND, 'report not found or already resolved');
-            return send(res, 200, ok({}));
-          }
-        }
-
+        if (await handleInternalFamilyRoutes(base)) return;
+        if (await handleInternalMailRoutes(base)) return;
+        if (await handleInternalPushRoutes(base)) return;
+        if (await handleInternalReportsRoutes(base)) return;
         return sendErr(res, ErrorCode.NOT_FOUND, 'internal endpoint not found');
       }
 
@@ -405,289 +89,14 @@ export function startHttpApi(
         return sendErr(res, ErrorCode.UNAUTHENTICATED, 'invalid token');
       }
 
+      const ctx: RouteCtx = { ...base, accountId };
+
       try {
-        // ── Family ────────────────────────────────────────────────────
-        if (method === 'GET' && path === '/social/family/mine') {
-          return send(res, 200, ok(await familySvc.getMyFamily(accountId)));
-        }
-
-        if (method === 'GET' && path === '/social/family/search') {
-          const tag = q.get('tag');
-          if (!tag) return sendErr(res, ErrorCode.BAD_REQUEST, 'tag required');
-          return send(res, 200, ok(await familySvc.searchByTag(tag)));
-        }
-
-        if (method === 'GET' && path === '/social/family/browse') {
-          const query = q.get('q') ?? undefined;
-          const limitRaw = q.get('limit');
-          const limit = limitRaw ? Number(limitRaw) : 10;
-          return send(res, 200, ok(await familySvc.browseFamilies(query, limit)));
-        }
-
-        if (method === 'POST' && path === '/social/family') {
-          const body = await readJson(req);
-          const name = typeof body.name === 'string' ? body.name : null;
-          const tag = typeof body.tag === 'string' ? body.tag : null;
-          if (!name || !tag) return sendErr(res, ErrorCode.BAD_REQUEST, 'name + tag required');
-          const familyRegion = (req.headers['x-chat-region'] as ChatRegion | undefined) ?? 'global';
-          return send(res, 201, ok(await familySvc.createFamily(accountId, name, tag, familyRegion)));
-        }
-
-        // Must be checked before the generic GET /social/family/:id route below, since "requests"
-        // would otherwise be captured as a familyId by that route's [^/]+ pattern.
-        if (method === 'GET' && path === '/social/family/requests') {
-          return send(res, 200, ok({ requests: await familySvc.listJoinRequests(accountId) }));
-        }
-
-        {
-          const m = /^\/social\/family\/requests\/([^/]+)\/respond$/.exec(path);
-          if (method === 'POST' && m) {
-            const body = await readJson(req);
-            const accept = body.accept === true;
-            await familySvc.respondJoinRequest(accountId, decodeURIComponent(m[1]!), accept);
-            return send(res, 200, ok({}));
-          }
-        }
-
-        {
-          const m = /^\/social\/family\/([^/]+)$/.exec(path);
-          if (method === 'GET' && m) {
-            // Pass the caller's own accountId (2026-08-04 fix): a non-member querying an arbitrary family
-            // id gets accountId stripped from the member list (see getFamily's doc comment).
-            return send(res, 200, ok(await familySvc.getFamily(decodeURIComponent(m[1]!), accountId)));
-          }
-        }
-
-        {
-          const m = /^\/social\/family\/([^/]+)\/join$/.exec(path);
-          if (method === 'POST' && m) {
-            return send(res, 200, ok(await familySvc.requestJoin(accountId, decodeURIComponent(m[1]!))));
-          }
-        }
-
-        if (method === 'POST' && path === '/social/family/leave') {
-          await familySvc.leaveFamily(accountId);
-          return send(res, 200, ok({}));
-        }
-
-        if (method === 'POST' && path === '/social/family/kick') {
-          const body = await readJson(req);
-          const targetId = typeof body.targetId === 'string' ? body.targetId : null;
-          if (!targetId) return sendErr(res, ErrorCode.BAD_REQUEST, 'targetId required');
-          await familySvc.kickMember(accountId, targetId);
-          return send(res, 200, ok({}));
-        }
-
-        if (method === 'POST' && path === '/social/family/role') {
-          const body = await readJson(req);
-          const targetId = typeof body.targetId === 'string' ? body.targetId : null;
-          const role = typeof body.role === 'string' ? body.role : null;
-          if (!targetId || !role) return sendErr(res, ErrorCode.BAD_REQUEST, 'targetId + role required');
-          await familySvc.setRole(accountId, targetId, role as import('@nw/shared').FamilyRole);
-          return send(res, 200, ok({}));
-        }
-
-        if (method === 'POST' && path === '/social/family/disband') {
-          await familySvc.dissolveFamily(accountId);
-          return send(res, 200, ok({}));
-        }
-
-        if (method === 'POST' && path === '/social/family/announcement') {
-          const body = await readJson(req);
-          const announcement = typeof body.announcement === 'string' ? body.announcement : null;
-          if (announcement == null) return sendErr(res, ErrorCode.BAD_REQUEST, 'announcement required');
-          await familySvc.setAnnouncement(accountId, announcement);
-          return send(res, 200, ok({}));
-        }
-
-        {
-          const m = /^\/social\/family\/([^/]+)\/messages$/.exec(path);
-          if (m) {
-            const familyId = decodeURIComponent(m[1]!);
-            if (method === 'GET') {
-              // Fetch channel history: caller must be a member of the family (validated internally by familyService.getChannel)
-              const before = q.get('before') ? Number(q.get('before')) : undefined;
-              const limit = numQ(q.get('limit'), 30);
-              return send(res, 200, ok(await familySvc.getChannel(accountId, before, limit)));
-            }
-            if (method === 'POST') {
-              const body = await readJson(req);
-              const msgBody = typeof body.body === 'string' ? body.body : null;
-              const senderName = typeof body.senderName === 'string' ? body.senderName : accountId;
-              if (!msgBody) return sendErr(res, ErrorCode.BAD_REQUEST, 'body required');
-              const familyChatRegion = (req.headers['x-chat-region'] as ChatRegion | undefined) ?? 'global';
-              return send(res, 200, ok(await familySvc.sendMessage(accountId, senderName, msgBody, familyChatRegion)));
-            }
-            void familyId; // suppress unused var
-          }
-        }
-
-        // Unified profile-popup extras (rank/ELO + family/sect, if any) for an arbitrary player, looked
-        // up by public id — the single place every ProfilePopup instance fetches this from (friends
-        // list / family roster / world chat / battle opponent), instead of each screen threading its
-        // own copy of the same fields through its own view model. Best-effort: an unresolvable publicId
-        // or a lookup failure yields an empty object rather than an error, since the popup already has
-        // enough (name + id) to render without these extras.
-        {
-          const m = /^\/social\/profile\/([^/]+)\/extra$/.exec(path);
-          if (method === 'GET' && m) {
-            const publicId = decodeURIComponent(m[1]!);
-            // comm-audit batch F item 2: was resolveByPublicId + getPlayerRank (two sequential meta hops) —
-            // meta's /internal/player already accepts publicId directly, collapsing this to one hop.
-            const resolved = await meta.getPlayerRankByPublicId(publicId);
-            if (!resolved) return send(res, 200, ok({}));
-            const mem = await familySvc.getMember(resolved.accountId);
-            return send(res, 200, ok({
-              ...(resolved.rank ? { rank: resolved.rank } : {}),
-              ...(resolved.elo !== undefined ? { elo: resolved.elo } : {}),
-              ...(mem?.name ? { familyName: mem.name } : {}),
-              ...(mem?.sectName ? { sectName: mem.sectName } : {}),
-            }));
-          }
-        }
-
-        // ── Friends (P2) ──────────────────────────────────────────────────
-        if (method === 'GET' && path === '/social/friends') {
-          return send(res, 200, ok({ friends: await friendSvc.getFriends(accountId) }));
-        }
-        if (method === 'GET' && path === '/social/friends/requests') {
-          return send(res, 200, ok(await friendSvc.listRequests(accountId)));
-        }
-        if (method === 'GET' && path === '/social/badges') {
-          return send(res, 200, ok(await friendSvc.getSocialBadges(accountId)));
-        }
-        if (method === 'POST' && path === '/social/friends/search') {
-          const body = await readJson(req);
-          const publicId = typeof body.publicId === 'string' ? body.publicId : null;
-          if (!publicId) return sendErr(res, ErrorCode.BAD_REQUEST, 'publicId required');
-          const found = await friendSvc.searchFriend(publicId);
-          if (!found) return sendErr(res, ErrorCode.NOT_FOUND, 'player not found');
-          return send(res, 200, ok(found));
-        }
-        if (method === 'POST' && path === '/social/friends/request') {
-          const body = await readJson(req);
-          const publicId = typeof body.publicId === 'string' ? body.publicId : null;
-          const message = typeof body.message === 'string' ? body.message : undefined;
-          if (!publicId) return sendErr(res, ErrorCode.BAD_REQUEST, 'publicId required');
-          const r2 = await friendSvc.requestFriend(accountId, publicId, message);
-          if (r2.kind === 'error') return sendSocialErr(res, r2.error);
-          return send(res, 200, ok({ requestId: r2.requestId }));
-        }
-        if (method === 'POST' && path === '/social/friends/respond') {
-          const body = await readJson(req);
-          const requestId = typeof body.requestId === 'string' ? body.requestId : null;
-          const accept = typeof body.accept === 'boolean' ? body.accept : null;
-          if (!requestId || accept === null) return sendErr(res, ErrorCode.BAD_REQUEST, 'requestId + accept required');
-          const r2 = await friendSvc.respondFriend(accountId, requestId, accept);
-          if (r2.kind === 'error') return sendSocialErr(res, r2.error);
-          return send(res, 200, ok({ ok: true }));
-        }
-        {
-          const m = /^\/social\/friends\/([^/]+)$/.exec(path);
-          if (method === 'DELETE' && m) {
-            await friendSvc.removeFriend(accountId, decodeURIComponent(m[1]!));
-            return send(res, 200, ok({ ok: true }));
-          }
-        }
-        if (method === 'POST' && path === '/social/friends/block') {
-          const body = await readJson(req);
-          const publicId = typeof body.publicId === 'string' ? body.publicId : null;
-          if (!publicId) return sendErr(res, ErrorCode.BAD_REQUEST, 'publicId required');
-          const ok2 = await friendSvc.blockUser(accountId, publicId);
-          if (!ok2) return sendErr(res, ErrorCode.NOT_FOUND, 'player not found');
-          return send(res, 200, ok({ ok: true }));
-        }
-        {
-          const m = /^\/social\/friends\/block\/([^/]+)$/.exec(path);
-          if (method === 'DELETE' && m) {
-            await friendSvc.unblockUser(accountId, decodeURIComponent(m[1]!));
-            return send(res, 200, ok({ ok: true }));
-          }
-        }
-        // UGC report (design-doc-audit-2026-07, COMPLIANCE_GLOBAL.md §7 "测试期最低线" — pairs with block above).
-        if (method === 'POST' && path === '/social/friends/report') {
-          const body = await readJson(req);
-          const publicId = typeof body.publicId === 'string' ? body.publicId : null;
-          const reason = typeof body.reason === 'string' ? body.reason : '';
-          if (!publicId) return sendErr(res, ErrorCode.BAD_REQUEST, 'publicId required');
-          const ok2 = await friendSvc.reportUser(accountId, publicId, reason);
-          if (!ok2) return sendErr(res, ErrorCode.NOT_FOUND, 'player not found');
-          return send(res, 200, ok({ ok: true }));
-        }
-
-        // ── Direct messages (P2) ──────────────────────────────────────────
-        if (method === 'GET' && path === '/social/chat/conversations') {
-          return send(res, 200, ok({ conversations: await friendSvc.getConversations(accountId) }));
-        }
-        {
-          const m = /^\/social\/chat\/([^/]+)\/messages$/.exec(path);
-          if (method === 'GET' && m) {
-            const convId = decodeURIComponent(m[1]!);
-            const before = q.get('before') ? Number(q.get('before')) : undefined;
-            const limit = numQ(q.get('limit'), 30);
-            const messages = await friendSvc.getMessages(accountId, convId, before, limit);
-            if (messages === null) return sendErr(res, ErrorCode.NOT_FOUND, 'conversation not found');
-            return send(res, 200, ok({ messages }));
-          }
-        }
-        if (method === 'POST' && path === '/social/chat/send') {
-          const body = await readJson(req);
-          const toPublicId = typeof body.toPublicId === 'string' ? body.toPublicId : null;
-          const msgBody = typeof body.body === 'string' ? body.body : null;
-          if (!toPublicId || !msgBody) return sendErr(res, ErrorCode.BAD_REQUEST, 'toPublicId + body required');
-          if (!friendSvc.allowChat(accountId, Date.now(), CHAT_SEND_RATE_PER_MIN)) {
-            return sendErr(res, ErrorCode.RATE_LIMITED, 'too many messages');
-          }
-          const region = (req.headers['x-chat-region'] as ChatRegion | undefined) ?? 'global';
-          const r = await friendSvc.sendMessage(accountId, toPublicId, msgBody, region);
-          if (r.kind === 'error') return sendSocialErr(res, r.error);
-          return send(res, 200, ok({ messageId: r.messageId, ts: r.ts }));
-        }
-        if (method === 'POST' && path === '/social/chat/read') {
-          const body = await readJson(req);
-          const convId = typeof body.convId === 'string' ? body.convId : null;
-          if (!convId) return sendErr(res, ErrorCode.BAD_REQUEST, 'convId required');
-          await friendSvc.markConversationRead(accountId, convId);
-          return send(res, 200, ok({ ok: true }));
-        }
-
-        // ── Mail (P2) ────────────────────────────────────────────────────
-        if (method === 'GET' && path === '/social/mail') {
-          return send(res, 200, ok(await mailSvc.getMail(accountId)));
-        }
-        {
-          const m = /^\/social\/mail\/([^/]+)\/read$/.exec(path);
-          if (method === 'POST' && m) {
-            const mailId = decodeURIComponent(m[1]!);
-            const ok2 = await mailSvc.readMail(accountId, mailId);
-            if (!ok2) return sendErr(res, ErrorCode.NOT_FOUND, 'mail not found');
-            return send(res, 200, ok({ ok: true }));
-          }
-        }
-        {
-          const m = /^\/social\/mail\/([^/]+)$/.exec(path);
-          if (method === 'DELETE' && m) {
-            const r = await mailSvc.deleteMail(accountId, decodeURIComponent(m[1]!));
-            if ('error' in r) {
-              return sendErr(res, ErrorCode.MAIL_HAS_UNCLAIMED_ATTACHMENT, 'mail has an unclaimed attachment; claim it before deleting');
-            }
-            return send(res, 200, ok({ ok: true }));
-          }
-        }
-        if (method === 'POST' && path === '/social/mail/send') {
-          const body = await readJson(req);
-          const toPublicId = typeof body.toPublicId === 'string' ? body.toPublicId : null;
-          const subject = typeof body.subject === 'string' ? body.subject : null;
-          const mailBody = typeof body.body === 'string' ? body.body : '';
-          if (!toPublicId || !subject) return sendErr(res, ErrorCode.BAD_REQUEST, 'toPublicId + subject required');
-          const r = await mailSvc.sendPlayerMail(accountId, toPublicId, subject, mailBody);
-          if (r.kind === 'error') {
-            if (r.error === 'NOT_FRIEND') return sendErr(res, ErrorCode.NOT_FRIEND, 'not friends');
-            if (r.error === 'NOT_FOUND') return sendErr(res, ErrorCode.NOT_FOUND, 'player not found');
-            return sendErr(res, ErrorCode.BAD_REQUEST, 'bad request');
-          }
-          return send(res, 200, ok({ mailId: r.mailId }));
-        }
+        if (await handleFamilyRoutes(ctx)) return;
+        if (await handleProfileRoutes(ctx)) return;
+        if (await handleFriendRoutes(ctx)) return;
+        if (await handleChatRoutes(ctx)) return;
+        if (await handleMailRoutes(ctx)) return;
 
         return sendErr(res, ErrorCode.NOT_FOUND, 'endpoint not found');
       } catch (e) {

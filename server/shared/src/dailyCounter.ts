@@ -118,10 +118,12 @@ function backendOf(redis: RedisLike | null): CounterBackend {
 }
 
 /**
- * Atomically increments `field` and reports whether the increment landed within `cap` (rolls its own
- * increment back on overshoot). Lock-free: HINCRBY is itself atomic on the Redis server, so concurrent
- * callers serialize there; whichever call's post-increment value exceeds cap loses and self-corrects — no
- * Lua needed for this one (contrast bumpGuardedTimestamp below, which does need it).
+ * Atomically increments `field` by `by` (default 1, e.g. a shop bulk-buy charging several units in one
+ * call) and reports whether the increment landed within `cap` (rolls its own increment back on overshoot
+ * — never a partial bump, so a rejected batch leaves the counter exactly where it started). Lock-free:
+ * HINCRBY is itself atomic on the Redis server, so concurrent callers serialize there; whichever call's
+ * post-increment value exceeds cap loses and self-corrects — no Lua needed for this one (contrast
+ * bumpGuardedTimestamp below, which does need it).
  */
 export async function bumpCappedCounter(
   redis: RedisLike | null,
@@ -130,13 +132,14 @@ export async function bumpCappedCounter(
   dayKey: string,
   field: string,
   cap: number,
+  by = 1,
 ): Promise<boolean> {
   const backend = backendOf(redis);
   const key = dailyCounterKey(ns, accountId, dayKey);
-  const after = await backend.hincrby(key, field, 1);
+  const after = await backend.hincrby(key, field, by);
   await backend.expire(key, DAILY_COUNTER_TTL_SEC);
   if (after > cap) {
-    await backend.hincrby(key, field, -1);
+    await backend.hincrby(key, field, -by);
     return false;
   }
   return true;

@@ -1,10 +1,12 @@
 // Material/equipment/card/skin escrow-transfer + progression snapshot — called by worldsvc (auction + siege engine).
+import { randomUUID } from 'node:crypto';
 import type { FastifyInstance } from 'fastify';
 import type { Collections, SaveData, EquipmentInstance, CardInstance, InternalGrantOrderDoc } from '@nw/shared';
 import { createLogger, ERROR_HTTP_STATUS } from '@nw/shared';
 import { escrowEquipment, grantEquipment, assembleEquipmentInv } from '../equipment.js';
 import { escrowCard, grantCard, assembleCardInv, assembleCardInvSubset } from '../cards.js';
 import { escrowSkin, grantSkin } from '../skin.js';
+import { recordMaterialGrants } from '../material.js';
 import type { InternalCtx } from './context.js';
 
 const log = createLogger('meta:internal');
@@ -148,6 +150,14 @@ export function registerEconomyRoutes(app: FastifyInstance, ctx: InternalCtx): v
       );
       if (res) {
         log.info('materials granted', { accountId, material, qty, orderId, after: cur + qty });
+        // Material provenance (ITEM_IDENTITY_DESIGN.md task2, 2026-08-10): best-effort. This is the sole
+        // cross-service grant path (worldsvc stronghold-siege loot, plus any other internal caller), so
+        // the caller's own orderId (when supplied) is embedded in the tag for traceability; falls back to
+        // a fresh id for the rare caller that omits orderId (back-compat — see this route's doc comment).
+        await recordMaterialGrants(
+          cols, accountId, orderId ?? randomUUID(), { [material]: qty },
+          orderId ? `internal_grant:${orderId}` : 'internal_grant', now(),
+        );
         return reply.send({ ok: true, after: cur + qty });
       }
     }

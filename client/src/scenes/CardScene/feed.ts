@@ -13,18 +13,18 @@
 // stacking everything down the middle.
 //
 // Auto-retarget + auto-continue (2026-07-20, revised 2026-07-22, toast trimmed 2026-07-25, ranking
-// extended 2026-08-02): if the tapped target doesn't have 5 eligible materials on hand, the panel
-// silently swaps in the best fusable card instead and toasts the player. After a successful fuse of a
-// level-1/2 target, the panel prefers to KEEP the just-upgraded card (it retains its id, now one level
-// higher) as the target and continue on it while it's still fusable; only when it can't be fused
-// further does it drop back to another card that still has materials — silently, no toast (the ring
-// already shows the swap by changing which portrait sits at the center; the "auto-continue" fast-forward
-// hits this branch on nearly every fuse, so a toast here fired far too often — see roster.fuseAutoRetarget
-// below, which stays toasted since it only fires once per panel-open). "Best fusable card" is ranked by
-// findAutoTarget: same character line first, then same faction, then currently-deployed-to-a-team (the
-// target may be deployed even though deployed cards can never be materials), then highest level — see
-// its doc comment below for the full rationale. Level-3+ targets fuse once and close, requiring the
-// player to reopen the dialog for the next round.
+// extended 2026-08-02, ranking reordered 2026-08-10): if the tapped target doesn't have 5 eligible
+// materials on hand, the panel silently swaps in the best fusable card instead and toasts the player.
+// After a successful fuse of a level-1/2 target, the panel prefers to KEEP the just-upgraded card (it
+// retains its id, now one level higher) as the target and continue on it while it's still fusable; only
+// when it can't be fused further does it drop back to another card that still has materials — silently,
+// no toast (the ring already shows the swap by changing which portrait sits at the center; the
+// "auto-continue" fast-forward hits this branch on nearly every fuse, so a toast here fired far too
+// often — see roster.fuseAutoRetarget below, which stays toasted since it only fires once per
+// panel-open). "Best fusable card" is ranked by findAutoTarget: currently-deployed-to-a-team FIRST (the
+// target may be deployed even though deployed cards can never be materials), then same character line,
+// then same faction, then highest level — see its doc comment below for the full rationale. Level-3+
+// targets fuse once and close, requiring the player to reopen the dialog for the next round.
 import * as PIXI from 'pixi.js-legacy';
 import { t, type TranslationKey } from '../../i18n';
 import { ui as C, txt, sketchPanel, seedFor, tearDownChildren } from '../../render/sketchUi';
@@ -280,20 +280,24 @@ export function FeedMixin<TBase extends CardSceneBaseCtor>(Base: TBase): TBase &
       /** Best owned card to fuse right now: unlocked, below max level, with >= FUSION_MATERIAL_COUNT
        * eligible same-faction same-level materials already on hand. The target itself MAY be deployed
        * (only materials must be free — `candidateOf` below gates the material count, not the target).
-       * Ranked lexicographically, most-significant first (2026-08-02): (1) same `defId` as `preferDefId`
-       * (the card the player was already fusing), so auto-retarget/auto-continue keep working the same
-       * character line when another copy is still fusable; (2) same faction as that card, so falling
-       * back never jumps to an unrelated faction just because it happens to rank higher on some other
-       * axis (e.g. mid-fusing a Tao-faction card should never auto-switch to an Anna-faction one); (3)
-       * currently deployed to an SLG team, so auto-continue prioritizes strengthening the active roster
-       * over bench copies; (4) highest level. */
+       * Ranked lexicographically, most-significant first (2026-08-10, reordered from the 2026-08-02
+       * version): (1) currently deployed to an SLG team, so auto-continue strengthens the active roster
+       * FIRST, even across character lines — a deployed card of a different character now outranks a
+       * bench copy of the character the player was already fusing (previously "same character" sat
+       * above "deployed", so a deep bench of one line could hog the whole shared-faction material pool
+       * before a deployed card of any other line ever got a turn — see MEMORY.md); (2) same `defId` as
+       * `preferDefId` (the card the player was already fusing), so once the deployed tier is tied,
+       * auto-retarget/auto-continue still keep working the same character line when another copy is
+       * still fusable; (3) same faction as that card, so falling back never jumps to an unrelated
+       * faction just because it happens to rank higher on some other axis (e.g. mid-fusing a Tao-faction
+       * card should never auto-switch to an Anna-faction one); (4) highest level. */
       const findAutoTarget = (requireLevel?: number, preferDefId?: string): CardInstance | null => {
         const inv = this.cb.getSave().cardInv ?? {};
         const preferFaction = preferDefId ? CARD_DEFS[preferDefId]?.faction : undefined;
         const rankOf = (c: CardInstance): [number, number, number, number] => [
+          candidateOf(c.id) ? 0 : 1,
           preferDefId && c.defId === preferDefId ? 1 : 0,
           preferFaction && CARD_DEFS[c.defId]?.faction === preferFaction ? 1 : 0,
-          candidateOf(c.id) ? 0 : 1,
           c.level,
         ];
         const isBetter = (a: readonly number[], b: readonly number[]): boolean => {

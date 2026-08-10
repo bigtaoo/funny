@@ -342,6 +342,7 @@ export function InputMixin<TBase extends GameRendererBaseCtor>(Base: TBase): TBa
           break;
         }
         case CardType.Building: {
+          if (!(ATTACK_LANES as readonly number[]).includes(col)) return;
           if (this.engine.state.board.hasBuildingAt(col, this.localBuildRow)) return;
           if (this.engine.state.board.isNoBuild(col, this.localBuildRow)) return;
           this.engine.playCard(handIndex, col);

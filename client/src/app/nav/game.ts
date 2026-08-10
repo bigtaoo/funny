@@ -313,10 +313,17 @@ export function createGameNav(ctx: AppCtx): GameNav {
         } catch (e) { return { ok: false as const, key: equipErrKey(e) }; }
       },
       async enhance(instanceId: string, useProtect?: boolean) {
+        // Captured before the call (not derived from the response) because a failed +7/+8 attempt can
+        // now demote the item (ADR-063) — `instance.level - (success?1:0)` would silently mis-attribute
+        // a demoted result's from_level once level could move by more than the success/fail delta.
+        const fromLevel = saveManager.get().equipmentInv[instanceId]?.level ?? 0;
         try {
           const { success, instance, save } = await client.enhanceEquipment(instanceId, genUuid(), useProtect);
           saveManager.adoptServerPartial(save, { upsert: [instance] });
-          analytics.track('equip_enhance', { def_id: instance.defId, from_level: instance.level - (success ? 1 : 0), success, use_protect: !!useProtect });
+          analytics.track('equip_enhance', {
+            def_id: instance.defId, from_level: fromLevel, success,
+            demoted: instance.level < fromLevel, use_protect: !!useProtect,
+          });
           return { ok: true as const, success, level: instance.level };
         } catch (e) { return { ok: false as const, key: equipErrKey(e) }; }
       },

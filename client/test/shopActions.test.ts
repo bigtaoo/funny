@@ -41,7 +41,7 @@ class FakeShopSceneBase {
   bt = new BusyTracker();
   cb = {
     loadItems: vi.fn(async (): Promise<unknown[]> => []),
-    buy: vi.fn(async (_id: string): Promise<ShopActionResult> => ({ ok: true })),
+    buy: vi.fn(async (_id: string, _qty?: number): Promise<ShopActionResult> => ({ ok: true })),
     redeemPromo: vi.fn(async (_code: string): Promise<ShopActionResult> => ({ ok: true })) as
       ((code: string) => Promise<ShopActionResult>) | undefined,
     rechargeCoins: vi.fn(async (_tier: string): Promise<ShopActionResult> => ({ ok: true })) as
@@ -116,44 +116,24 @@ describe('ShopScene — onBuyBulk() busy-lock', () => {
 });
 
 describe('ShopScene — onBuyBulk() success', () => {
-  it('calls buy() qty times with the same itemId, toasts the bought count, and refreshes the catalog exactly once', async () => {
+  it('calls buy() ONCE with itemId+qty (server charges/delivers all units in one request), toasts the qty bought, and refreshes the catalog', async () => {
     const scene = buildScene();
     const spy = vi.spyOn(log, 'showToastMessage');
 
     await scene.onBuyBulk('protect_enhance', 'Enhance Protection Stone', 10);
 
-    expect(scene.cb.buy).toHaveBeenCalledTimes(10);
-    expect(scene.cb.buy).toHaveBeenCalledWith('protect_enhance');
+    expect(scene.cb.buy).toHaveBeenCalledTimes(1); // one request, not one per unit (2026-08-10 latency fix)
+    expect(scene.cb.buy).toHaveBeenCalledWith('protect_enhance', 10);
     expect(spy).toHaveBeenCalledWith(
       t('shop.boughtNamedQty', { name: 'Enhance Protection Stone', qty: 10 }), 'success',
     );
-    expect(scene.cb.loadItems).toHaveBeenCalledTimes(1); // one refresh, not one per unit
+    expect(scene.cb.loadItems).toHaveBeenCalledTimes(1);
     expect(scene.bt.busy).toBe(false);
   });
 });
 
-describe('ShopScene — onBuyBulk() partial failure (e.g. hits a daily cap or runs out of coins mid-run)', () => {
-  it('stops at the first ok:false, toasts however many actually landed, and still refreshes once', async () => {
-    const scene = buildScene();
-    scene.cb.buy
-      .mockResolvedValueOnce({ ok: true })
-      .mockResolvedValueOnce({ ok: true })
-      .mockResolvedValueOnce({ ok: true })
-      .mockResolvedValueOnce({ ok: false, key: 'shop.insufficient' as never });
-    const spy = vi.spyOn(log, 'showToastMessage');
-
-    await scene.onBuyBulk('protect_enhance', 'Enhance Protection Stone', 10);
-
-    expect(scene.cb.buy).toHaveBeenCalledTimes(4); // stopped right after the failure, no further attempts
-    expect(spy).toHaveBeenCalledWith(
-      t('shop.boughtNamedQty', { name: 'Enhance Protection Stone', qty: 3 }), 'success',
-    );
-    expect(scene.cb.loadItems).toHaveBeenCalledTimes(1);
-  });
-});
-
-describe('ShopScene — onBuyBulk() total failure', () => {
-  it('the very first call failing toasts the mapped error key and never refreshes the catalog', async () => {
+describe('ShopScene — onBuyBulk() failure (e.g. hits a daily cap or the balance dropped mid-flight)', () => {
+  it('an ok:false result toasts the mapped error key, nothing bought, and never refreshes the catalog — all-or-nothing, no partial-bought count', async () => {
     const scene = buildScene();
     scene.cb.buy.mockResolvedValueOnce({ ok: false, key: 'shop.insufficient' as never });
     const spy = vi.spyOn(log, 'showToastMessage');
@@ -165,7 +145,7 @@ describe('ShopScene — onBuyBulk() total failure', () => {
     expect(scene.cb.loadItems).not.toHaveBeenCalled();
   });
 
-  it('a thrown error on the first call maps to the generic shop-error toast', async () => {
+  it('a thrown error maps to the generic shop-error toast', async () => {
     const scene = buildScene();
     scene.cb.buy.mockRejectedValueOnce(new Error('network down'));
     const spy = vi.spyOn(log, 'showToastMessage');
@@ -176,20 +156,15 @@ describe('ShopScene — onBuyBulk() total failure', () => {
     expect(scene.cb.loadItems).not.toHaveBeenCalled();
   });
 
-  it('a TimeoutError partway through still keeps whatever already succeeded', async () => {
+  it('a TimeoutError maps to the network-timeout toast', async () => {
     const scene = buildScene();
-    scene.cb.buy
-      .mockResolvedValueOnce({ ok: true })
-      .mockResolvedValueOnce({ ok: true })
-      .mockRejectedValueOnce(new TimeoutError());
+    scene.cb.buy.mockRejectedValueOnce(new TimeoutError());
     const spy = vi.spyOn(log, 'showToastMessage');
 
     await scene.onBuyBulk('protect_enhance', 'Enhance Protection Stone', 10);
 
-    expect(scene.cb.buy).toHaveBeenCalledTimes(3);
-    expect(spy).toHaveBeenCalledWith(
-      t('shop.boughtNamedQty', { name: 'Enhance Protection Stone', qty: 2 }), 'success',
-    );
+    expect(spy).toHaveBeenCalledWith(t('common.networkTimeout'), 'error');
+    expect(scene.cb.loadItems).not.toHaveBeenCalled();
   });
 });
 

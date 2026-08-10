@@ -108,6 +108,11 @@ schemas:
         type: array
         items: { type: string }
         description: Set of owned title ids (awarded by season settlement / achievement / admin; order reflects acquisition order)
+      # —— Title grant timestamps (ITEM_IDENTITY_DESIGN.md task3, 2026-08-10). Absent for legacy accounts/titles granted before this field existed. ——
+      titleGrants:
+        type: object
+        additionalProperties: { type: integer }
+        description: 'titleId → obtainedAt (epoch ms); parallel map to titles, not required to have an entry for every owned title'
       # —— S11 battle pass ——
       battlePass:
         $ref: '#/components/schemas/BattlePassData'

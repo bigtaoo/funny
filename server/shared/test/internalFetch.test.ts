@@ -3,8 +3,8 @@
 // test are transport-level: timeouts fire, bodies drain, non-2xx JSON still parses, network
 // errors surface as {ok:false,status:0} instead of throwing.
 import { createServer, type Server } from 'node:http';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { fetchInternalJson } from '../src/internalFetch';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { fetchInternalJson, postInternal } from '../src/internalFetch';
 
 const KEY = 'test-internal-key';
 const OPTS = { caller: 'metaserver' as const, key: KEY };
@@ -115,5 +115,62 @@ describe('fetchInternalJson', () => {
     const r = await fetchInternalJson(`${base}/html`, { ...OPTS, retries: 2, backoffMs: 1 });
     expect(r.ok).toBe(false);
     expect(hits.length).toBe(3); // 1 initial + 2 retries
+  });
+});
+
+// ── postInternal: fetchInternalJson's sibling (POST-only, returns a boolean, never the parsed body) ──
+describe('postInternal', () => {
+  it('returns true on 2xx and sends the JSON body', async () => {
+    const r = await postInternal(`${base}/ok`, { a: 1 }, OPTS);
+    expect(r).toBe(true);
+  });
+
+  it('sends x-internal-caller for audit attribution', async () => {
+    hits = [];
+    await postInternal(`${base}/ok`, {}, OPTS);
+    expect(hits[0]?.caller).toBe('metaserver');
+  });
+
+  it('returns false on a 4xx business error and never retries', async () => {
+    hits = [];
+    const r = await postInternal(`${base}/business-error`, {}, { ...OPTS, retries: 3 });
+    expect(r).toBe(false);
+    expect(hits.length).toBe(1);
+  });
+
+  it('logs a warning (no retry) on a 4xx', async () => {
+    const log = { warn: vi.fn(), error: vi.fn(), info: vi.fn(), debug: vi.fn() };
+    const r = await postInternal(`${base}/business-error`, {}, { ...OPTS, log: log as unknown as Parameters<typeof postInternal>[2]['log'] });
+    expect(r).toBe(false);
+    expect(log.warn).toHaveBeenCalledOnce();
+    expect(log.error).not.toHaveBeenCalled();
+  });
+
+  it('retries 5xx up to the retry budget, then logs an error and returns false', async () => {
+    hits = [];
+    const log = { warn: vi.fn(), error: vi.fn(), info: vi.fn(), debug: vi.fn() };
+    const r = await postInternal(`${base}/html`, {}, { ...OPTS, retries: 2, backoffMs: 1, log: log as unknown as Parameters<typeof postInternal>[2]['log'] });
+    expect(r).toBe(false);
+    expect(hits.length).toBe(3); // 1 initial + 2 retries
+    expect(log.error).toHaveBeenCalledOnce();
+  });
+
+  it('times out instead of hanging and returns false', async () => {
+    const started = Date.now();
+    const r = await postInternal(`${base}/slow`, {}, { ...OPTS, timeoutMs: 300 });
+    expect(Date.now() - started).toBeLessThan(3_000);
+    expect(r).toBe(false);
+  });
+
+  it('surfaces connection refusal as false instead of throwing', async () => {
+    const r = await postInternal('http://127.0.0.1:1/nope', {}, { ...OPTS, timeoutMs: 500 });
+    expect(r).toBe(false);
+  });
+
+  it('drains a non-JSON response body without throwing', async () => {
+    // /html replies with text/html, not JSON — postInternal only ever calls res.body?.cancel(),
+    // never res.json(), so a non-JSON payload must not throw.
+    const r = await postInternal(`${base}/html`, {}, OPTS);
+    expect(r).toBe(false);
   });
 });

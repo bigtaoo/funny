@@ -53,6 +53,32 @@ describe('bumpCappedCounter (local in-process fallback, redis=null)', () => {
   });
 });
 
+// ── bumpCappedCounter's `by` param (2026-08-10, shop bulk-buy: claim several units' worth of the daily
+// cap in one atomic call instead of looping bumpCappedCounter qty times) ───────────────────────────────
+
+describe('bumpCappedCounter `by` param (local in-process fallback, redis=null)', () => {
+  it('bumps by the given amount in one call, same as calling by=1 that many times', async () => {
+    const ns = `test-cap-by-${Math.random()}`;
+    expect(await bumpCappedCounter(null, ns, 'acc', 'day1', 'f', 10, 5)).toBe(true); // -> 5
+    expect(await readCounterField(null, ns, 'acc', 'day1', 'f')).toBe(5);
+    expect(await bumpCappedCounter(null, ns, 'acc', 'day1', 'f', 10, 5)).toBe(true); // -> 10, exactly at cap
+    expect(await readCounterField(null, ns, 'acc', 'day1', 'f')).toBe(10);
+  });
+
+  it('rejects a `by` that would overshoot the cap and rolls back the WHOLE amount, not a partial bump', async () => {
+    const ns = `test-cap-by-overshoot-${Math.random()}`;
+    expect(await bumpCappedCounter(null, ns, 'acc', 'day1', 'f', 5, 3)).toBe(true); // -> 3
+    expect(await bumpCappedCounter(null, ns, 'acc', 'day1', 'f', 5, 3)).toBe(false); // would be 6 > cap 5 — all-or-nothing
+    expect(await readCounterField(null, ns, 'acc', 'day1', 'f')).toBe(3); // left exactly where it was, not at a partial 5
+  });
+
+  it('defaults to by=1 when omitted (backward compatible with every existing single-unit caller)', async () => {
+    const ns = `test-cap-by-default-${Math.random()}`;
+    expect(await bumpCappedCounter(null, ns, 'acc', 'day1', 'f', 1)).toBe(true);
+    expect(await readCounterField(null, ns, 'acc', 'day1', 'f')).toBe(1);
+  });
+});
+
 describe('readCounterField (local in-process fallback, redis=null)', () => {
   it('returns 0 for a key/field that has never been written (no throw)', async () => {
     const ns = `test-read-missing-${Math.random()}`;

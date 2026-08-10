@@ -84,12 +84,14 @@ class FakeCommercial implements CommercialClient {
     this.coins.set(a.accountId, this.bal(a.accountId) + 20);
     return { ok: true as const, coinsAfter: this.bal(a.accountId), claimed: 20, subscriptionExpiry: sub.expiry };
   }
-  async shopCharge(a: { accountId: string; itemId: string; cost: number; orderId: string }) {
+  async shopCharge(a: { accountId: string; itemId: string; cost: number; qty?: number; orderId: string }) {
     const ex = this.orders.get(a.orderId);
     if (ex) return { ok: true as const, orderId: a.orderId, coinsAfter: this.bal(a.accountId), status: ex.status };
-    if (this.bal(a.accountId) < a.cost) return { ok: false as const, error: 'INSUFFICIENT_FUNDS' };
-    this.coins.set(a.accountId, this.bal(a.accountId) - a.cost);
-    this.orders.set(a.orderId, { accountId: a.accountId, kind: 'shop', status: 'charged', result: { itemId: a.itemId } });
+    const qty = a.qty ?? 1;
+    const totalCost = a.cost * qty;
+    if (this.bal(a.accountId) < totalCost) return { ok: false as const, error: 'INSUFFICIENT_FUNDS' };
+    this.coins.set(a.accountId, this.bal(a.accountId) - totalCost);
+    this.orders.set(a.orderId, { accountId: a.accountId, kind: 'shop', status: 'charged', result: { itemId: a.itemId, qty } });
     return { ok: true as const, orderId: a.orderId, coinsAfter: this.bal(a.accountId), status: 'charged' };
   }
   async gachaDraw(a: { accountId: string; poolId: string; count: number; orderId: string }) {
@@ -288,6 +290,20 @@ describe.skipIf(!mongo)('meta economy orchestration e2e', () => {
     expect(again.ok).toBe(false);
   });
 
+  it('recharge milestone tier 3 (crosses 5000 cents): material reward (lead×6) stamps provenance (ITEM_IDENTITY_DESIGN.md task2, 2026-08-10)', async () => {
+    // 3× t1999 (1999 usdCents each) = 5997, crosses tier 3's 5000-cent threshold (rewards: coins(550) + lead(6)).
+    for (let i = 0; i < 3; i++) {
+      await app.inject({ method: 'POST', url: '/iap/verify', headers: auth(), payload: { platform: 'web', receipt: 'tier:t1999' } });
+    }
+    const claim = body(await app.inject({ method: 'POST', url: '/recharge/claim', headers: auth(), payload: { tierId: 3 } }));
+    expect(claim.ok).toBe(true);
+    expect(claim.data.rewards).toEqual([{ kind: 'coins', count: 550 }, { kind: 'material', id: 'lead', count: 6 }]);
+    expect(claim.data.save.materials.lead).toBe(6);
+    const inst = await m.collections.materialInstances.findOne({ accountId, materialId: 'lead' });
+    expect(inst).toMatchObject({ count: 6, sourceType: 'recharge:3' });
+    expect(typeof inst?.obtainedAt).toBe('number');
+  });
+
   it('regression (2026-08-03 fix): recharge milestone coins are reconciled on a later ALREADY_CLAIMED retry after the first grant failed', async () => {
     // Root cause: the milestone tier is marked claimed (irreversibly — a repeat claim bounces off
     // ALREADY_CLAIMED) BEFORE the coin grant runs. If that grant throws or returns ok:false, the coins
@@ -381,6 +397,91 @@ describe.skipIf(!mongo)('meta economy orchestration e2e', () => {
     expect(r2.data.save.inventory.items?.protect_enhance).toBe(2);
   });
 
+  // ── Bulk buy (qty param, 2026-08-10) — closes the "×10 button = 10 sequential round trips" latency
+  // bug: the client used to loop cb.buy() qty times under one busy-lock; now it's one request that
+  // charges/delivers all qty units server-side (see ShopScene/actions.ts onBuyBulk + this handler). ──
+
+  it('shop direct purchase: qty>1 charges cost×qty in one request and delivers the full quantity at once (kind="item")', async () => {
+    comm.coins.set(accountId, 10_000);
+    const r = body(await app.inject({ method: 'POST', url: '/shop/buy', headers: auth(), payload: { itemId: 'protect_enhance', qty: 10 } }));
+    expect(r.data.granted).toBe('protect_enhance');
+    expect(r.data.save.inventory.items?.protect_enhance).toBe(10);
+    expect(r.data.save.wallet.coins).toBe(10_000 - 500 * 10);
+  });
+
+  it('shop direct purchase: qty>1 for a material bundle multiplies BOTH the per-purchase qty and the unit count (mat_buy_scrap grants 10/purchase × qty)', async () => {
+    comm.coins.set(accountId, 1000);
+    const r = body(await app.inject({ method: 'POST', url: '/shop/buy', headers: auth(), payload: { itemId: 'mat_buy_scrap', qty: 3 } }));
+    expect(r.data.save.materials.scrap).toBe(30); // 10/purchase × 3
+    expect(r.data.save.wallet.coins).toBe(1000 - 20 * 3);
+  });
+
+  it('shop direct purchase: qty>1 for a skin grants that many real instances in one order, still dedupes inventory.skins to one entry', async () => {
+    comm.coins.set(accountId, 10_000);
+    const r = body(await app.inject({ method: 'POST', url: '/shop/buy', headers: auth(), payload: { itemId: 'skin_shop_c1', qty: 3 } }));
+    expect(r.data.save.wallet.coins).toBe(10_000 - 300 * 3);
+    expect(r.data.save.inventory.skins.filter((s: string) => s === 'skin_shop_c1')).toHaveLength(1); // dedup set, still one entry
+    expect(await m.collections.skinInstances.countDocuments({ accountId, skinId: 'skin_shop_c1' })).toBe(3); // 3 real instances
+  });
+
+  it('shop direct purchase: qty request that cannot be fully afforded is rejected entirely (402), no partial charge and no partial delivery', async () => {
+    comm.coins.set(accountId, 2000); // enough for 4× protect_enhance (500 each), not 10×
+    const r = await app.inject({ method: 'POST', url: '/shop/buy', headers: auth(), payload: { itemId: 'protect_enhance', qty: 10 } });
+    expect(r.statusCode).toBe(402);
+    expect(comm.bal(accountId)).toBe(2000); // untouched
+    const save = body(await app.inject({ method: 'GET', url: '/save', headers: auth() }));
+    expect(save.data.save.inventory.items?.protect_enhance).toBeUndefined(); // nothing delivered
+  });
+
+  it('shop direct purchase: qty above the server-side max (SHOP_BUY_MAX_QTY=20) is rejected outright by request-schema validation (400), never trusted verbatim', async () => {
+    comm.coins.set(accountId, 1_000_000);
+    const r = await app.inject({ method: 'POST', url: '/shop/buy', headers: auth(), payload: { itemId: 'protect_enhance', qty: 999 } });
+    expect(r.statusCode).toBe(400);
+    expect(comm.bal(accountId)).toBe(1_000_000); // rejected before ever reaching the handler — nothing charged
+    // The handler's own qty clamp (economy.ts shopBuy) is a second line of defense for whatever the
+    // route schema doesn't catch — exactly at the max still works.
+    const ok20 = body(await app.inject({ method: 'POST', url: '/shop/buy', headers: auth(), payload: { itemId: 'protect_enhance', qty: 20 } }));
+    expect(ok20.data.save.inventory.items?.protect_enhance).toBe(20);
+  });
+
+  it('shop direct purchase: qty omitted still behaves exactly like qty=1 (default, backward compatible)', async () => {
+    comm.coins.set(accountId, 1000);
+    const r = body(await app.inject({ method: 'POST', url: '/shop/buy', headers: auth(), payload: { itemId: 'protect_enhance' } }));
+    expect(r.data.save.inventory.items?.protect_enhance).toBe(1);
+    expect(r.data.save.wallet.coins).toBe(500);
+  });
+
+  it('shop direct purchase: qty for a material bundle that cannot fit the remaining daily cap is rejected entirely (400), cap left untouched', async () => {
+    comm.coins.set(accountId, 1000);
+    // mat_buy_scrap cap is 5 purchases/day; a qty=6 request would need to claim all 6 in one call.
+    const r = await app.inject({ method: 'POST', url: '/shop/buy', headers: auth(), payload: { itemId: 'mat_buy_scrap', qty: 6 } });
+    expect(r.statusCode).toBe(400);
+    expect(comm.bal(accountId)).toBe(1000); // never charged
+    // The daily counter itself must be untouched too (not partially bumped) — a normal qty=5 buy right
+    // after should still succeed and reach exactly the cap, not be blocked by a phantom partial bump.
+    const r2 = body(await app.inject({ method: 'POST', url: '/shop/buy', headers: auth(), payload: { itemId: 'mat_buy_scrap', qty: 5 } }));
+    expect(r2.data.save.materials.scrap).toBe(50); // 5 purchases × 10, exactly at the daily cap
+  });
+
+  it('reconciliation replays the full bulk qty (not just 1) when a bulk order crashes between charge and delivery', async () => {
+    comm.coins.set(accountId, 10_000);
+    await comm.shopCharge({ accountId, itemId: 'protect_enhance', cost: 500, qty: 7, orderId: 'orphan-bulk-1' });
+    expect(await comm.undeliveredOrders(accountId)).toHaveLength(1);
+    const r = body(await app.inject({ method: 'GET', url: '/save', headers: auth() })); // reconciliation side effect
+    expect(r.data.save.inventory.items?.protect_enhance).toBe(7); // full qty delivered, not 1
+    expect(await comm.undeliveredOrders(accountId)).toHaveLength(0);
+  });
+
+  it('reconciliation replays the full bulk qty for a SKIN order too — qty real instances, still a single dedup entry in inventory.skins', async () => {
+    comm.coins.set(accountId, 10_000);
+    await comm.shopCharge({ accountId, itemId: 'skin_shop_r1', cost: 800, qty: 4, orderId: 'orphan-bulk-skin-1' });
+    expect(await comm.undeliveredOrders(accountId)).toHaveLength(1);
+    const r = body(await app.inject({ method: 'GET', url: '/save', headers: auth() })); // reconciliation side effect
+    expect(r.data.save.inventory.skins.filter((s: string) => s === 'skin_shop_r1')).toHaveLength(1);
+    expect(await m.collections.skinInstances.countDocuments({ accountId, skinId: 'skin_shop_r1' })).toBe(4);
+    expect(await comm.undeliveredOrders(accountId)).toHaveLength(0);
+  });
+
   it('shop direct purchase: kind="material" (mat_buy_scrap) delivers a qty>1 bundle into save.materials, not inventory.items/skins (ECONOMY_NUMBERS §6.5 gold→material exchange)', async () => {
     comm.coins.set(accountId, 1000);
     const r = body(await app.inject({ method: 'POST', url: '/shop/buy', headers: auth(), payload: { itemId: 'mat_buy_scrap' } }));
@@ -389,9 +490,16 @@ describe.skipIf(!mongo)('meta economy orchestration e2e', () => {
     expect(r.data.save.wallet.coins).toBe(980); // 1000-20
     expect(r.data.save.inventory.items?.mat_buy_scrap).toBeUndefined();
     expect(r.data.save.inventory.skins).not.toContain('mat_buy_scrap');
+    // Material provenance (ITEM_IDENTITY_DESIGN.md task2, 2026-08-10): a direct material purchase mints
+    // one materialInstances row tagged sourceType='shop', count = the batch this purchase delivered.
+    const inst = await m.collections.materialInstances.findOne({ accountId, materialId: 'scrap', sourceType: 'shop' });
+    expect(inst?.count).toBe(10);
+    expect(typeof inst?.obtainedAt).toBe('number');
     // A second purchase accumulates (materials are $inc'd, not a set).
     const r2 = body(await app.inject({ method: 'POST', url: '/shop/buy', headers: auth(), payload: { itemId: 'mat_buy_scrap' } }));
     expect(r2.data.save.materials.scrap).toBe(20);
+    // Second purchase = a distinct order → a distinct materialInstances row (not overwritten/merged).
+    expect(await m.collections.materialInstances.countDocuments({ accountId, materialId: 'scrap', sourceType: 'shop' })).toBe(2);
   });
 
   it('shop direct purchase: mat_buy_scrap daily cap (5 purchases/day = 50 scrap) rejects the 6th with 400, without charging coins', async () => {
@@ -522,6 +630,12 @@ describe.skipIf(!mongo)('meta economy orchestration e2e', () => {
     expect(r1.data.save.materials.scrap).toBe(10);
     expect(r2.data.save.materials.scrap).toBe(10);
     expect(r3.data.save.materials.scrap).toBe(10); // not 20, not 40 — the dedup guard holds every time
+    // Material provenance (ITEM_IDENTITY_DESIGN.md task2, 2026-08-10): same dedup guard also protects the
+    // provenance ledger — exactly one materialInstances row, not one per reconciliation replay.
+    const insts = await m.collections.materialInstances.find({ accountId, materialId: 'scrap' }).toArray();
+    expect(insts).toHaveLength(1);
+    expect(insts[0]!.count).toBe(10);
+    expect(insts[0]!.sourceType).toMatch(/^gacha:/);
   });
 
   it('gacha: standard-pool character card result lands in cardInv, not inventory.skins (regression — gachaDraw used to skip the loot-box category routing entirely)', async () => {

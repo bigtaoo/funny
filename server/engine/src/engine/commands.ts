@@ -138,7 +138,7 @@ export function CommandsMixin<TBase extends GameEngineBaseCtor & Constructor<Hel
         // ── Building card ─────────────────────────────────────────────────────
         if (card.cardType === CardType.Building && card.buildingType) {
           const col = cmd.col;
-          if (col === undefined) return;
+          if (col === undefined || !(ATTACK_LANES as readonly number[]).includes(col)) return;
 
           const buildingRow = side === Side.Bottom ? BOTTOM_BUILDING_ROW : TOP_BUILDING_ROW;
           if (this.state.board.hasBuildingAt(col, buildingRow)) return;

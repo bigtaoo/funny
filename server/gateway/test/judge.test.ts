@@ -208,4 +208,53 @@ describe('Gateway peer judge', () => {
     const verdict = await gw.judge({ seed: 1, mode: 1, endFrame: 0, frames: [], exclude: ['a', 'b'] });
     expect(verdict).toEqual({ ok: false });
   });
+
+  // Regression coverage for the 2026-08-10 Gateway.ts → gateway/{connRegistry,peerJudge,...}.ts split
+  // (claudedocs/server.md "单文件 500 行收敛"): the WS close handler cancels a judge's in-flight
+  // pending request via TWO different callbacks — onOffline (guarded: only when the closing socket is
+  // still the account's live connection) and onSocketClosed (unconditional). Neither of these two paths
+  // had a direct test before the split; both are exercised below so a future refactor can't silently
+  // collapse them back into one guarded hook without a red test.
+  describe('judge cancellation on disconnect', () => {
+    it('judge candidate disconnects mid-request → judge() resolves {ok:false} immediately, not after the full JUDGE_TIMEOUT_MS wait', async () => {
+      const port = 19516;
+      const gw = startGateway(port);
+      const a = await connect(port, 'a');
+      const c = await connect(port, 'c');
+      c.send(encodeClient({ client_caps: { can_judge: true } }));
+      await sleep(50);
+
+      const start = Date.now();
+      const verdictP = gw.judge({ seed: 1, mode: 1, endFrame: 0, frames: [], exclude: ['a'] });
+      c.close(); // the picked judge goes offline right after being selected, before ever answering
+      const verdict = await verdictP;
+      const elapsed = Date.now() - start;
+      expect(verdict).toEqual({ ok: false });
+      expect(elapsed).toBeLessThan(2000); // must not wait anywhere near the 20s JUDGE_TIMEOUT_MS fallback
+      void a;
+    });
+
+    it('a pending judge tied to a stale, already-superseded connection is still cancelled when that stale socket\'s close event fires — unconditional cleanup, independent of which socket is currently live for the account', async () => {
+      const port = 19517;
+      const gw = startGateway(port);
+      const a = await connect(port, 'a');
+      const c1 = await connect(port, 'judge-acc');
+      c1.send(encodeClient({ client_caps: { can_judge: true } }));
+      await sleep(50);
+
+      const verdictP = gw.judge({ seed: 1, mode: 1, endFrame: 0, frames: [], exclude: ['a'] });
+      await sleep(20); // let judge() synchronously register the pending request against c1's accountId first
+
+      // A second connection for the SAME accountId takes over: c1 gets evicted with 4409 and is no longer
+      // the "live" connection for 'judge-acc' by the time its close event is actually processed — but the
+      // pending judge request is keyed by accountId, not by the specific socket, so it must still be cancelled.
+      const c1Closed = new Promise<number>((res) => c1.on('close', (code: number) => res(code)));
+      const c2 = await connect(port, 'judge-acc');
+      expect(await c1Closed).toBe(4409);
+
+      const verdict = await verdictP;
+      expect(verdict).toEqual({ ok: false });
+      void a; void c2;
+    });
+  });
 });

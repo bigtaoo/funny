@@ -41,11 +41,18 @@ export async function grantTitleToPlayer(
     const { equippedTitle } = grantTitle(prevTitles, prevEquipped, titleId);
 
     const nextTitles = [...new Set([...prevTitles, titleId])];
+    // ITEM_IDENTITY_DESIGN.md task3 (2026-08-10): record the grant timestamp alongside titles[].
+    // Idempotent — never overwrite an existing entry, so a hypothetical re-grant of an already-owned
+    // title (already handled above by the early return, but kept here defensively) can't clobber the
+    // originally recorded obtainedAt.
+    const prevGrants = doc.save.titleGrants ?? {};
+    const nextGrants = titleId in prevGrants ? prevGrants : { ...prevGrants, [titleId]: now };
     const next: SaveData = {
       ...doc.save,
       rev: doc.save.rev + 1,
       updatedAt: now,
       titles: nextTitles,
+      titleGrants: nextGrants,
       // grantTitle always returns a defined equippedTitle once a title exists to grant (auto-equips
       // when nothing was previously equipped); the `?? titleId` fallback only exists to satisfy
       // Record<string, string>'s value type.

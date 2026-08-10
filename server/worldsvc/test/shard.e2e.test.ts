@@ -24,6 +24,7 @@ import {
 } from '../src/db';
 import { WorldService } from '../src/service';
 import { startHttpApi } from '../src/httpApi';
+import { MapTemplateService } from '../src/mapTemplateService';
 
 const URI = process.env.NW_MONGO_URI ?? 'mongodb://127.0.0.1:27017/?replicaSet=rs0';
 const DB = 'nw_world_shard_test';
@@ -116,6 +117,19 @@ describe.skipIf(!mongo)('worldsvc G6 multi-shard runtime e2e', () => {
     }
   });
 
+  it('openSeason reopen guard: reusing an existing worldId with a different season/shard is rejected, not silently no-op\'d (2026-08-10 incident)', async () => {
+    await svc.openSeason('s9-0', 9, 0, 10000);
+    // Same season/shard: idempotent reopen (e.g. re-running ops after a crash) must still succeed.
+    await expect(svc.openSeason('s9-0', 9, 0, 10000)).resolves.toBeUndefined();
+    // Different season on the same worldId: this is exactly what happened in production — ops meant to advance
+    // the season but reused worldId "s9-0", and $setOnInsert used to silently keep season=9 while returning
+    // success. It must now reject instead of stranding players on the old map.
+    await expect(svc.openSeason('s9-0', 10, 0, 10000)).rejects.toMatchObject({ code: 'BAD_REQUEST' });
+    await expect(svc.openSeason('s9-0', 9, 1, 10000)).rejects.toMatchObject({ code: 'BAD_REQUEST' });
+    // Rejected reopen must not have mutated the existing document.
+    expect(await m.collections.worlds.findOne({ _id: 's9-0' })).toMatchObject({ season: 9, shard: 0 });
+  });
+
   it('resolve sticky: player already has a playerWorld this season → returns same shard', async () => {
     await svc.openSeason('s3-0', 3, 0, 10000);
     await svc.openSeason('s3-1', 3, 1, 10000);
@@ -193,7 +207,11 @@ describe.skipIf(!mongo)('worldsvc G6 multi-shard runtime e2e', () => {
     let server: Server;
     let base: string;
     beforeEach(async () => {
-      server = startHttpApi({ host: '127.0.0.1', port: 0, jwtSecret: SECRET, internalKey: KEY }, svc, {} as never, {} as never, {} as never);
+      // Real MapTemplateService (not a stub): /admin/world/allocate clones the active template into every
+      // shard it opens (2026-08-10 fix) — a `{} as never` stub would throw at runtime since that call is no
+      // longer conditional on an HTTP-layer-only code path. No active template in this DB → safe no-op.
+      const mapTemplateSvc = new MapTemplateService({ cols: m.collections, now: () => 1_700_000_000_000 });
+      server = startHttpApi({ host: '127.0.0.1', port: 0, jwtSecret: SECRET, internalKey: KEY }, svc, {} as never, {} as never, {} as never, mapTemplateSvc);
       await new Promise<void>((res) => server.on('listening', res));
       base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
     });
@@ -233,6 +251,26 @@ describe.skipIf(!mongo)('worldsvc G6 multi-shard runtime e2e', () => {
       expect(p.status).toBe(200);
       const pb = (await p.json()) as { ok: boolean; data: { scannedWorlds: number } };
       expect(pb.data.scannedWorlds).toBeGreaterThanOrEqual(1);
+      server.close();
+    });
+
+    it('valid X-Internal-Key with an active map template → allocate clones it into every newly-opened shard (2026-08-10 fix)', async () => {
+      const mapTemplateSvc = new MapTemplateService({ cols: m.collections, now: () => 1_700_000_000_000 });
+      await mapTemplateSvc.generateTemplate('tpl-a', 4, 4);
+      await mapTemplateSvc.setActiveTemplate('tpl-a');
+
+      const a = await fetch(`${base}/admin/world/allocate`, {
+        method: 'POST', headers: { 'content-type': 'application/json', 'x-internal-key': KEY }, body: JSON.stringify({ season: 10, capacity: 10000 }),
+      });
+      expect(a.status).toBe(200);
+      const ab = (await a.json()) as { ok: boolean; data: { worldIds: string[] } };
+      expect(ab.data.worldIds).toEqual(['s10-0']);
+
+      // allocateNextSeason itself does not clone (that call happens at the HTTP-route layer, see admin.ts) —
+      // asserting on mapBaselineRows (not on the worlds doc) is what actually proves the fix, not just that
+      // the route returned 200.
+      const baseline = await m.collections.mapBaselineRows.find({ worldId: 's10-0' }).toArray();
+      expect(baseline.length).toBe(4); // one row per template height (4)
       server.close();
     });
   });

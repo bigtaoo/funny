@@ -1,6 +1,6 @@
 // Shop purchase / coin sink / coin grant (§6). All three use insert-first orderId idempotency (§6.5):
 // reserve the order slot BEFORE debiting so concurrent same-orderId calls cannot double-charge.
-import { findShopItem } from '@nw/shared';
+import { findShopItem, SHOP_BUY_MAX_QTY } from '@nw/shared';
 import type { OrderDoc } from '../db';
 import type { CommercialBaseCtor, Constructor, Result } from './base';
 import { effectiveCoins, spendChannelOf } from '../spendChannel';
@@ -10,6 +10,8 @@ export interface ShopHandlers {
     accountId: string;
     itemId: string;
     cost: number;
+    /** Units to charge/deliver in this one call (bulk-buy, ×10 button, 2026-08-10). Default 1. */
+    qty?: number;
     orderId: string;
     clientPlatform?: string;
   }): Promise<Result<{ orderId: string; coinsAfter: number; status: OrderDoc['status'] }>>;
@@ -31,11 +33,18 @@ export interface ShopHandlers {
 
 export function ShopMixin<TBase extends CommercialBaseCtor>(Base: TBase): TBase & Constructor<ShopHandlers> {
   return class extends Base {
-    /** Direct shop purchase: debit coins + record order(kind:'shop'). Item delivery is handled by meta. */
+    /**
+     * Direct shop purchase: debit coins + record order(kind:'shop'). Item delivery is handled by meta.
+     * `qty` (2026-08-10, bulk-buy) charges/records several units atomically in this one call — `cost` is
+     * still the *per-unit* catalog price (cross-checked below), the actual debit/ledger delta is
+     * `cost * qty`. All-or-nothing: an insufficient balance for the full qty charges nothing at all
+     * (no partial fulfillment), matching what the client's affordability gate already assumes.
+     */
     async shopCharge(args: {
       accountId: string;
       itemId: string;
       cost: number;
+      qty?: number;
       orderId: string;
       clientPlatform?: string;
     }): Promise<Result<{ orderId: string; coinsAfter: number; status: OrderDoc['status'] }>> {
@@ -53,6 +62,11 @@ export function ShopMixin<TBase extends CommercialBaseCtor>(Base: TBase): TBase 
       // cost is passed from the trusted meta server; we still cross-check against the catalog price to guard against meta-side mismatches (e.g. legendary items that are not for sale would have no price).
       const def = findShopItem(args.itemId);
       if (!def || def.cost !== args.cost) return { ok: false, error: 'BAD_REQUEST' };
+      // qty defensive re-validation (meta already clamps this — see economy.ts shopBuy — but commercial
+      // is the one actually moving coins, so it doesn't take meta's word for it, same spirit as the cost cross-check above).
+      const qty = args.qty ?? 1;
+      if (!Number.isInteger(qty) || qty < 1 || qty > SHOP_BUY_MAX_QTY) return { ok: false, error: 'BAD_REQUEST' };
+      const totalCost = def.cost * qty;
 
       await this.ensureWallet(args.accountId);
       // Insert-first idempotency (§6.5): claim the orderId slot BEFORE debiting so two concurrent calls with the
@@ -62,10 +76,10 @@ export function ShopMixin<TBase extends CommercialBaseCtor>(Base: TBase): TBase 
           _id: args.orderId,
           accountId: args.accountId,
           kind: 'shop',
-          cost: args.cost,
+          cost: totalCost,
           status: 'charged',
           coinsAfter: 0, // back-filled after the debit succeeds
-          result: { itemId: def.grants },
+          result: { itemId: def.grants, qty },
           ts: this.now(),
         });
       } catch (e) {
@@ -77,7 +91,7 @@ export function ShopMixin<TBase extends CommercialBaseCtor>(Base: TBase): TBase 
         throw e;
       }
       const channel = spendChannelOf(args.clientPlatform);
-      const charged = await this.debitEffective(args.accountId, args.cost, channel);
+      const charged = await this.debitEffective(args.accountId, totalCost, channel);
       if (!charged) {
         // Insufficient funds: release the reserved slot so a later top-up can retry the same orderId.
         await this.cols.orders.deleteOne({ _id: args.orderId });
@@ -88,7 +102,7 @@ export function ShopMixin<TBase extends CommercialBaseCtor>(Base: TBase): TBase 
       await this.cols.orders.updateOne({ _id: args.orderId }, { $set: { coinsAfter } });
       await this.cols.ledger.insertOne({
         accountId: args.accountId,
-        delta: -args.cost,
+        delta: -totalCost,
         balanceAfter: coinsAfter,
         reason: 'shop',
         orderId: args.orderId,

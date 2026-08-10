@@ -20,7 +20,8 @@ import {
   applyEquipment,
   clampEffectCaps,
   EFFECT_CAPS,
-  ENHANCE_COEFF_PER_LEVEL,
+  enhanceMultiplier,
+  ENHANCE_LEVEL_MULTIPLIER,
   type EngineCardInstance,
   type EngineEquipInv,
   type EngineAffix,
@@ -84,14 +85,41 @@ describe('Equipment combat-power monotonicity (§8)', () => {
     expect(bp5[UnitType.Infantry].attack).toBeGreaterThan(bp0[UnitType.Infantry].attack);
   });
 
-  it('main affix scaling follows base × (1 + value/100 × (1 + coefficient×level))', () => {
+  it('main affix scaling follows base × (1 + value/100 × ENHANCE_LEVEL_MULTIPLIER[level])', () => {
     const value = 20;
     const level = 5;
     const { cards, inv } = equipAll([{ id: 'm_atk', value }], level);
     const camp = buildCampaignBlueprints(cards, inv);
-    const effPct = (value / 100) * (1 + ENHANCE_COEFF_PER_LEVEL * level);
+    const effPct = (value / 100) * enhanceMultiplier(level);
     const expected = Math.round(UNIT_BLUEPRINTS[UnitType.Infantry].attack * (1 + effPct));
     expect(camp[UnitType.Infantry].attack).toBe(expected);
+  });
+
+  it('ENHANCE_LEVEL_MULTIPLIER pins the exact non-linear curve (ADR-063): slow +0~+5, breakpoint at +6, steep +7~+9, +9 = 5.00x', () => {
+    // Pinned, not derived — a formula-based re-check (e.g. "increases by X per level") would happily
+    // pass even if the curve's actual shape drifted back toward linear; this locks the real numbers
+    // the design decided on, so any accidental edit to the table shows up as a failing assertion here.
+    expect(ENHANCE_LEVEL_MULTIPLIER).toEqual([1.0, 1.08, 1.17, 1.28, 1.41, 1.56, 1.76, 2.11, 2.76, 5.0]);
+  });
+
+  it('ENHANCE_LEVEL_MULTIPLIER is strictly increasing, and each step from +6 on is bigger than the last (steep tail, no plateau)', () => {
+    for (let i = 1; i < ENHANCE_LEVEL_MULTIPLIER.length; i++) {
+      expect(ENHANCE_LEVEL_MULTIPLIER[i]).toBeGreaterThan(ENHANCE_LEVEL_MULTIPLIER[i - 1]);
+    }
+    const stepAt = (lv: number) => ENHANCE_LEVEL_MULTIPLIER[lv] - ENHANCE_LEVEL_MULTIPLIER[lv - 1];
+    // +6→7→8→9 steps each strictly grow (0.35, 0.65, 2.24) — the "payoff must outrun the risk" shape.
+    expect(stepAt(7)).toBeGreaterThan(stepAt(6));
+    expect(stepAt(8)).toBeGreaterThan(stepAt(7));
+    expect(stepAt(9)).toBeGreaterThan(stepAt(8));
+    // The +9 step alone outweighs the entire +0→+8 climb combined (the "last level is the big spike" intent).
+    expect(stepAt(9)).toBeGreaterThan(ENHANCE_LEVEL_MULTIPLIER[8] - ENHANCE_LEVEL_MULTIPLIER[0]);
+  });
+
+  it('enhanceMultiplier clamps out-of-range levels into the table (never throws, never extrapolates)', () => {
+    expect(enhanceMultiplier(0)).toBe(1.0);
+    expect(enhanceMultiplier(9)).toBe(5.0);
+    expect(enhanceMultiplier(-3)).toBe(enhanceMultiplier(0));
+    expect(enhanceMultiplier(999)).toBe(enhanceMultiplier(9));
   });
 
   it('sub affixes are fixed and do not scale with enhancement level', () => {

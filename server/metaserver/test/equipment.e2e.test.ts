@@ -14,6 +14,7 @@ import {
   type EquipmentInstance,
   EQUIPMENT_INV_CAP,
   rollEnhanceSuccess,
+  rollEnhanceDemote,
   enhanceCost,
   salvageRefund,
 } from '@nw/shared';
@@ -75,8 +76,8 @@ describe.skipIf(!mongo)('equipment backend e2e', () => {
 
   const craft = (defId: string, idempotencyKey: string) =>
     app.inject({ method: 'POST', url: '/equipment/craft', headers: auth(), payload: { defId, idempotencyKey } });
-  const enhance = (instanceId: string, idempotencyKey: string) =>
-    app.inject({ method: 'POST', url: '/equipment/enhance', headers: auth(), payload: { instanceId, idempotencyKey } });
+  const enhance = (instanceId: string, idempotencyKey: string, useProtect?: boolean) =>
+    app.inject({ method: 'POST', url: '/equipment/enhance', headers: auth(), payload: { instanceId, idempotencyKey, useProtect } });
   const salvage = (instanceIds: string[], idempotencyKey: string) =>
     app.inject({ method: 'POST', url: '/equipment/salvage', headers: auth(), payload: { instanceIds, idempotencyKey } });
   const equip = (slot: string, instanceId: string | null, cardInstanceId: string) =>
@@ -364,6 +365,48 @@ describe.skipIf(!mongo)('equipment backend e2e', () => {
     expect(r.data.instance.level).toBe(0); // no level loss
     expect(r.data.save.materials.scrap).toBe(100 - cost.materials.scrap); // still consumed
     expect(r.data.save.wallet.coins).toBe(1000 - cost.coins);
+  });
+
+  it('enhance failure at +7 with a demoting roll: level drops to +6 (ADR-063 risk tier)', async () => {
+    let key = '';
+    for (let i = 0; ; i++) {
+      if (!rollEnhanceSuccess(`d${i}`, 7) && rollEnhanceDemote(`d${i}`, 7)) { key = `d${i}`; break; }
+    }
+    await seedInstance('e7a', 'wp_pencil', 7);
+    await seedMaterials({ scrap: 100, lead: 100, binding: 100 });
+    const r = body(await enhance('e7a', key));
+    expect(r.data.success).toBe(false);
+    expect(r.data.instance.level).toBe(6); // demoted one level
+  });
+
+  it('enhance failure at +7 with a non-demoting roll: level stays at +7 (demote is not guaranteed on every failure)', async () => {
+    let key = '';
+    for (let i = 0; ; i++) {
+      if (!rollEnhanceSuccess(`n${i}`, 7) && !rollEnhanceDemote(`n${i}`, 7)) { key = `n${i}`; break; }
+    }
+    await seedInstance('e7b', 'wp_pencil', 7);
+    await seedMaterials({ scrap: 100, lead: 100, binding: 100 });
+    const r = body(await enhance('e7b', key));
+    expect(r.data.success).toBe(false);
+    expect(r.data.instance.level).toBe(7); // not demoted
+  });
+
+  it('a protect item blocks the +7/+8 demote roll too, not just the material loss (ADR-063)', async () => {
+    let key = '';
+    for (let i = 0; ; i++) {
+      if (!rollEnhanceSuccess(`p${i}`, 8) && rollEnhanceDemote(`p${i}`, 8)) { key = `p${i}`; break; }
+    }
+    await seedInstance('e8a', 'wp_pencil', 8);
+    await seedMaterials({ scrap: 100, lead: 100, binding: 100 });
+    await m.collections.saves.updateOne({ _id: accountId }, { $set: { 'save.inventory.items.protect_enhance': 1 } });
+    const cost = enhanceCost(8);
+    const r = body(await enhance('e8a', key, true));
+    expect(r.data.success).toBe(false);
+    expect(r.data.instance.level).toBe(8); // not demoted, even though the underlying roll said it would be
+    expect(r.data.save.materials.scrap).toBe(100); // materials untouched (protect skipped the deduction)
+    expect(r.data.save.wallet.coins).toBe(100000 - cost.coins); // coins are still charged
+    const save = await readSave();
+    expect(save.inventory.items.protect_enhance).toBe(0); // stone consumed
   });
 
   it('enhance idempotency: replaying with the same key does not deduct again or re-roll; result is consistent', async () => {

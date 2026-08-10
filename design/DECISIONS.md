@@ -712,3 +712,27 @@
 - **影响**：`server/worldsvc/src/db.ts`（`OccupationDoc.type`）；`server/worldsvc/src/combatSiege/{occupation.ts,base.ts,arrival.ts}`（`landSiege`/`applyStrongholdSiege`/`applyCrossingSiege` 三处改走占领倒计时）；`client/src/scenes/worldmap/{WorldMapNet.ts,tileGraphics.ts,WorldMapInput.ts}`；`client/src/scenes/WorldMapScene.ts`（`applySiegeResult` 改为 `void` 调用异步方法）；`client/src/i18n/locales/{zh,en,de}.ts`（新增 `world.siegeWinHold`）；`client/test/ui/{worldMapSiegeResultToast.ui.ts,worldMapTileResourceInfo.ui.ts}`；`server/worldsvc/test/{siege,teams,nation-bonus,field-structure-attack,stronghold,passage,card-slg}.e2e.test.ts`（受影响/改写）+ 新建 `server/worldsvc/test/siege-hold-expulsion.e2e.test.ts`；`design/game/SLG_DESIGN.md` §5.1/§5.3/§5.4.4/§5.4.5。
 - **补充（同一会话内测试联调发现，用户已确认接受）**：`landSiege` 的占领倒计时分支给 `OccupationDoc` 写入了出征队伍的 `teamId`（沿用 `applyOccupy`/`startOccupationHold` 同一套字段），带来一个连带效应——带队出征攻打玩家领地的那支队伍，在 5 分钟倒计时期间会被 `combatMarch/command.ts` 的 TEAM_BUSY 门禁（`cols.occupations.findOne({...,teamId})`）判定为忙碌、无法重新派遣；倒计时结算后默认原地驻留（`mode:'idle'`）而非立刻恢复自由，除非该队伍开了 `autoReturn`。这与改动前"赢了攻城队伍立刻恢复自由"的旧行为不同，但与"和占领中立地完全一致"的决策方向吻合，用户确认接受、不做特殊区分。
 - **验证**：`server/worldsvc` 全量 vitest **54 文件 / 456 例**全绿（含 `siege`/`teams`/`nation-bonus`/`field-structure-attack`/`stronghold`/`passage`/`card-slg` 各 e2e 文件里改写的占领倒计时断言 + 新建 `siege-hold-expulsion.e2e.test.ts` 的反打回收覆盖）+ `tsc --noEmit` 全绿；client `tsc --noEmit` 全绿、`npm run build:web` 全绿、`vitest --config vitest.ui.config.ts` 的 `worldMap*` 套件 **27 文件 / 254 例**全绿（含 `worldMapSiegeResultToast.ui.ts` 的占领倒计时 toast 覆盖 + 新建 `worldMapTileResourceInfo.ui.ts` 的 mine/ally/enemy 资源行 + 据点占领中优先级覆盖）。未起真实登录态 + 完整后端栈做浏览器截图（需要双账号真实攻城场景，与自动化 e2e/UI 覆盖的成本不成比例）。
+
+## ADR-063 装备强化：主词条倍率改非线性递增表 + +7/+8 引入掉级风险 — Accepted — 2026-08-10
+
+- **背景**：用户提出，装备强化"每级 +1%"式的**线性**加成——不管是字面的固定百分比，还是旧版 `ENHANCE_COEFF_PER_LEVEL=0.10` 线性系数（`base × (1 + 0.10 × 等级)`，+9 仅 ×1.9）——本质上问题一样：**每一步的边际提升恒定**，+8→+9 和 +0→+1 带来的绝对收益完全相同，只是后面成功率更低、材料/金币消耗更高（`enhanceCost` 材料换算成金币后已是指数级跳升，+8→9 单次期望损耗 2120 coin-eq）。三条曲线里只有"惩罚"在变重，"回报"没跟着变重——理性玩家没有理由冲到 +9，纯粹是沉没成本游戏而非战力游戏。
+- **决策**：
+  1. **主词条放大公式改用非线性倍率表**（`ENHANCE_LEVEL_MULTIPLIER`，`server/engine/src/balance/equipment.ts`，取代 `ENHANCE_COEFF_PER_LEVEL`）：`effective = base × ENHANCE_LEVEL_MULTIPLIER[level]`。+0~+5 缓慢爬升（用户明确要求"前面 0 到 5 也给一个缓慢的增长"，不是旧版的完全线性平坦），+6 是"觉醒"分水岭，+7~+9 陡峭加速（用户明确要求"7、8、9 的属性加成可以更陡峭些"，末两级系数直接定为 0.5 / 1.0，"代价很高，所以收益也要足够高"）：
+
+     | 等级 | +0 | +1 | +2 | +3 | +4 | +5 | +6 | +7 | +8 | +9 |
+     |---|---|---|---|---|---|---|---|---|---|---|
+     | 倍率 | 1.00 | 1.08 | 1.17 | 1.28 | 1.41 | 1.56 | 1.76 | 2.11 | 2.76 | **5.00** |
+
+     满级 5.00 倍基础值（旧版 1.9 倍；本表 +9 档 2026-08-10 当天由 4.06 再拔到 5.00，用户直接指定整数 5.0，单步贡献 +2.24），且单步贡献仍比 +0→+8 全部涨幅加起来还多（+1.76）。用户明确表态"不要在意不平衡"——不为了迁就 `EFFECT_CAPS`（跨系统攻击/生命 ≤60% 等）而收窄这张表，后续如实测撞顶再回来调。
+  2. **+7/+8 引入掉级风险**（`enhanceDemoteChance`/`rollEnhanceDemote`，`server/shared/src/equipment.ts`）：+0~+6 维持原"温和档"（失败不掉级，只损耗材料/金币）；+7→8 失败 **20%** 概率掉 1 级，+8→9 失败 **25%** 概率掉 1 级（用户明确"6级及以下不掉级"，掉级概率数值沿用讨论中间版本的 20%/25%，原分给 +6→7 的 15% 档位随之取消）。刻意**不做保底**（用户明确"不要保底"）——连续失败无上限，纯 RNG。
+  3. **保护道具（`protect_enhance`）语义扩展**：+7/+8 使用时，同一次失败**既不扣材料、也不触发掉级**（`server/metaserver/src/equipment/enhance.ts`：`demoted = !success && !hasProtect && rollEnhanceDemote(...)`）——同一次失败事件的两种后果由同一个保护动作一起挡掉，而不是分别消耗。
+  4. **掉级与分解门槛天然不冲突**：`SALVAGE_MAX_LEVEL=4`（+5 起不可分解），而掉级只发生在 +7/+8 失败时且每次只退 1 级，最低只会退到 +6/+7，不会意外把一件不可分解的高级装备"退"回可分解区间，因此本次不改 `isSalvageable`。
+- **实现要点**：
+  - `server/engine/src/balance/equipment.ts`：新增 `ENHANCE_LEVEL_MULTIPLIER` 数组 + `enhanceMultiplier(level)`，替换旧 `ENHANCE_COEFF_PER_LEVEL` 常量（`accumInstance` 主词条放大改调用它）。
+  - `server/shared/src/equipment.ts`：新增 `enhanceDemoteChance(fromLevel)` + `rollEnhanceDemote(seedKey, fromLevel)`（独立种子命名空间 `enhance-demote:`，与 `rollEnhanceSuccess` 的 `enhance:` 流互不干扰，保持确定性重放）。
+  - `server/metaserver/src/equipment/enhance.ts`：失败分支新增掉级判定，`instanceAfter.level` 按 success/demoted 三态计算；保护道具同时挡材料损耗与掉级。
+  - 客户端镜像同步：`client/src/game/meta/equipmentDefs.ts`（新增 `enhanceDemoteChance` UI 预览镜像）、`client/src/scenes/EquipmentScene/{base.ts,detail.ts}`（属性预览公式改用 `enhanceMultiplier`；详情弹窗 +7/+8 新增红色掉级风险提示行）、`client/src/app/nav/game.ts`（顺手修了一个既有的 analytics 计算 bug：`from_level` 原来靠 `instance.level - (success?1:0)` 反推，掉级引入后这个反推会错，改成调用前直接读当前 level）。
+  - i18n 新增 `equip.enhanceDemoteWarn`/`equip.enhanceFailDemoted`（zh/en/de），`shop.item.protect_enhance.desc` 补充掉级保护说明。
+- **已知遗留（未修，仅记录）**：`server/tools/econ-sim` 的保护道具定价模拟（`enhanceProtect.ts`）目前只按材料损耗计算保护道具的期望价值，未纳入 +7/+8 新增的掉级规避价值——现实中保护道具在这两级应该更划算，但用户已表态"不要在意不平衡"，暂不动模拟器，后续如需重新核价再回来补。
+- **影响**：`server/engine/src/balance/equipment.ts`；`server/shared/src/equipment.ts`；`server/metaserver/src/{equipment/enhance.ts,service/inventory.ts}`；`client/src/game/meta/equipmentDefs.ts`；`client/src/scenes/EquipmentScene/{base.ts,detail.ts}`；`client/src/app/nav/game.ts`；`client/src/i18n/locales/{zh,en,de}.ts`；`design/game/{EQUIPMENT_DESIGN.md §6.1/§6.2/§7.3, ECONOMY_NUMBERS.md §5.1/§5.2, DIFFICULTY_SIM.md}`。
+- **验证**：`server/shared` 装备单测 62 例全绿（新增 `enhanceDemoteChance`/`rollEnhanceDemote` 覆盖，含"两个骰子流互相独立"回归）；`server/metaserver` 装备 e2e 47 例全绿（新增 +7 掉级/不掉级/保护道具挡掉级三例）；`server/auctionsvc` e2e 65 例全绿（`equipEnhanceExpectedCost` 依赖的 `enhanceCost`/`enhanceSuccessRate` 未改，价格逻辑不受影响）；`server/tools/econ-sim` 18 例全绿；`client` 装备相关 vitest（`test/equipment.test.ts` 22 例 + UI 套件 `equipmentDetailProtectLabel`/`shopScene`/`shopActions` 共 68 例）全绿；`server`（engine/shared/metaserver/auctionsvc）`tsc -b` 与 `client` `tsc --noEmit` 均无错误。未起 dev server 截图（纯数值/规则改动，无新增可视化布局需要人工核对，掉级警示文案的排版走既有弹窗高度自适应逻辑）。

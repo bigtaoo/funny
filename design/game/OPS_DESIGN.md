@@ -339,6 +339,8 @@ admin 后端（G7）已全部就绪；补完 `tools/ops` 对应的两个前端�
 - **`types.ts` 新增**：`SlgWorldSummary` / `AuctionAnomaly` / `TradeAuditSnapshot` / `TradeAuditTicketView` / `TradeAuditTicketStatus`（镜像 shared + clients.ts）。
 - **验证**：`tools/ops` tsc --noEmit 零错误。
 
+**补记（2026-08-10，生产事故修复，见 `SLG_DESIGN_LOG.md §17.15`）**：`pageSLGSeason` 加「Allocate next season」卡片（Season + Capacity 两个输入框），放在「Open a new world」表单**上方**，调用新增的 `api.slgAllocateNextSeason(season, capacity?)` → `POST /admin/slg/season/allocate`。这是唯一会真正推进赛季号的操作（内部走 `allocateNextSeason` 雪花分片分配 + 逐 shard 克隆地图模板）；「Open a new world」表单保留作低级 escape hatch（重开已关闭世界 / 单独补一个分片），UI 文案标注优先用前者——此前运营只有后者可用，在已存在的 `worldId` 上重填新 `season` 会被 `$setOnInsert` 静默丢弃，返回成功但赛季号从未真正推进。`types.ts` 新增 `SlgAllocateResult`。
+
 ### 加固 / 优化（2026-06-16，第二轮）
 
 落实 §6 安全要求 + 前端体验补完，四项：

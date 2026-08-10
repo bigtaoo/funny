@@ -119,6 +119,10 @@ describe.skipIf(!mongo)('meta battle pass e2e', () => {
     const save = body(await app.inject({ method: 'GET', url: '/save', headers: auth() }));
     expect(save.data.save.materials.scrap).toBe(2);
     expect(save.data.save.inventory.skins).not.toContain('scrap');
+    // Material provenance (ITEM_IDENTITY_DESIGN.md task2, 2026-08-10).
+    const inst = await m.collections.materialInstances.findOne({ accountId, materialId: 'scrap' });
+    expect(inst?.count).toBe(2);
+    expect(inst?.sourceType).toMatch(/^battlepass:s\d+:free:1$/);
   });
 
   it('claim level-1 free-track reward twice → 409 ALREADY_CLAIMED, materials not double-granted', async () => {

@@ -276,6 +276,13 @@ export interface SlgWorldSummary {
   engineVersion?: number;
 }
 
+/** Result of allocating a new season (§20.4 snake-draft shard allocation) — the shards it just opened. */
+export interface SlgAllocateResult {
+  shardCount: number;
+  worldIds: string[];
+  allocatedFamilies: number;
+}
+
 export type AuctionAnomalyReason = 'repeated' | 'designated' | 'high_value';
 export interface AuctionAnomaly {
   sellerId: string;

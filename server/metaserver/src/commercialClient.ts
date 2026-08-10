@@ -12,7 +12,10 @@ export interface UndeliveredOrder {
   accountId: string;
   // 'fate'/'starter' deliver items like a gacha order (skins/materials/equipment/cards); see economy.deliverOrder.
   kind: 'shop' | 'gacha' | 'fate' | 'starter';
-  result: { itemId?: string; results?: GachaResultEntry[]; poolId?: string };
+  // qty: units charged together in one shopCharge call (bulk-buy, 2026-08-10); absent/1 for a single-unit
+  // shop order and for every non-'shop' kind. deliverOrder's kind==='shop' branch reads this to grant the
+  // full quantity on reconciliation, not just 1, when a bulk buy crashed between charge and delivery.
+  result: { itemId?: string; results?: GachaResultEntry[]; poolId?: string; qty?: number };
 }
 
 /** Wallet view mirrored into SaveData (coins/pity + monetization state §5–§7/§13). */
@@ -54,6 +57,8 @@ export interface CommercialClient {
     accountId: string;
     itemId: string;
     cost: number;
+    /** Units to charge/deliver in this one call (bulk-buy, ×10 button, 2026-08-10). Default 1. */
+    qty?: number;
     orderId: string;
     clientPlatform?: string;
   }): Promise<Body<{ orderId: string; coinsAfter: number; status: string }>>;
@@ -281,7 +286,7 @@ export class HttpCommercialClient implements CommercialClient {
       : null;
   }
 
-  shopCharge(args: { accountId: string; itemId: string; cost: number; orderId: string; clientPlatform?: string }) {
+  shopCharge(args: { accountId: string; itemId: string; cost: number; qty?: number; orderId: string; clientPlatform?: string }) {
     return this.post<{ orderId: string; coinsAfter: number; status: string }>(
       '/internal/shop/charge',
       args,

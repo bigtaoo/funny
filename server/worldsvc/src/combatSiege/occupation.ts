@@ -7,27 +7,18 @@
 // the combat domain.
 import {
   proceduralTile,
-  siegeSeedFromId,
   playerWorldId,
-  resolveSiege,
   npcGarrison,
-  npcBaseHp,
   OCCUPY_HOLD_SEC,
-  MARCH_MORALE_MAX,
-  moraleCombatMultiplier,
   SlgError,
-  type SiegeResolution,
-  type ProceduralTile,
   type TileType,
   type ResourceType,
 } from '@nw/shared';
-import { runSiegeBattle, synthesizeArmy, scaleArmyByRatio, sumArmyHp, resolveCardArmy, toEngineCardInstances, computeCardStateUpdates, shouldUseCheapSiege } from '../siegeEngine';
-import type { GarrisonEntry, EngineCardInstance, EngineEquipInv } from '@nw/engine';
 import type { TileDoc, PlayerWorldDoc, MarchDoc, OccupationDoc, StationedDoc } from '../db';
 import type { SiegeReplayInputs, OccupationView } from '../worldTypes';
 import { refundTroops, startReturnMarch, parkMarchInPlace } from '../combatShared';
 import type { SiegeServiceBaseCtor, Constructor } from './base';
-import type { WorldCore } from '../core';
+import { writeOccupyCardState, resolveOccupationBattle } from './occupationBattle';
 
 /** Minimal "what does this tile look like right now" shape `writeContestedHold`/`startOccupationHold`
  * need — satisfied by a `ProceduralTile` (neutral/stronghold/crossing PvE captures) or a plain literal
@@ -48,28 +39,6 @@ export interface OccupationHandlers {
   getOccupations(worldId: string, accountId: string): Promise<OccupationView[]>;
   writeContestedHold(m: MarchDoc, pw: PlayerWorldDoc, desc: HoldTileDesc, x: number, y: number, survivors: number, t: number, defenderId?: string): Promise<void>;
   startOccupationHold(m: MarchDoc, pw: PlayerWorldDoc, desc: HoldTileDesc, x: number, y: number, survivors: number, t: number, replay: SiegeReplayInputs | null): Promise<void>;
-}
-
-/**
- * Writes post-battle cardState (currentTroops + injuredUntil) for a card army's survivors on an occupy/expulsion
- * march (§6.1 — the card keeps its own troops regardless of outcome). Never touches playerWorld.troops.
- */
-async function writeOccupyCardState(
-  core: WorldCore,
-  m: MarchDoc,
-  pw: PlayerWorldDoc,
-  survivors: number,
-  t: number,
-): Promise<void> {
-  const cardUpdates = computeCardStateUpdates(m.army ?? [], pw.cardState ?? {}, survivors, t);
-  const cardStateSet: Record<string, unknown> = {};
-  for (const [id, update] of Object.entries(cardUpdates)) {
-    cardStateSet[`cardState.${id}.currentTroops`] = update.currentTroops;
-    cardStateSet[`cardState.${id}.injuredUntil`] = update.injuredUntil != null ? update.injuredUntil : null;
-  }
-  if (Object.keys(cardStateSet).length > 0) {
-    await core.deps.cols.playerWorld.updateOne({ _id: pw._id }, { $set: cardStateSet, $inc: { rev: 1 } });
-  }
 }
 
 export function OccupationMixin<TBase extends SiegeServiceBaseCtor>(Base: TBase): TBase & Constructor<OccupationHandlers> {
@@ -147,56 +116,9 @@ export function OccupationMixin<TBase extends SiegeServiceBaseCtor>(Base: TBase)
 
       // Real card team (2026-07-15, SLG_DESIGN §4.2) → resolve via cardState + blueprint injection, same as
       // attack sieges (combatSiege/arrival.ts) — occupying land now reflects the player's actual army, not a
-      // generic synthesized force. Flat/legacy army or none → synthesize as before.
-      const attackerSave = hasCardArmy ? await this.core.meta.getSaveFields(m.ownerId).catch(() => null) : null;
-      // Morale (行军疲劳, not the card 士气加成): scale attacker strength by the march's remaining morale (see combatSiege/arrival.ts applySiege for detail).
-      const moraleMult = moraleCombatMultiplier(m.morale ?? MARCH_MORALE_MAX);
-      const rawAttackerArmy: GarrisonEntry[] = hasCardArmy
-        ? resolveCardArmy(rawArmy, pw.cardState ?? {}, attackerSave?.cardInv ?? {})
-        : (rawArmy.length > 0 ? (rawArmy as GarrisonEntry[]) : synthesizeArmy(m.troops, 'attacker'));
-      const attackerArmy: GarrisonEntry[] = scaleArmyByRatio(rawAttackerArmy, moraleMult);
-      // Real attacker strength for the cheap-siege path: for a card army, m.troops degenerates to roughly the
-      // card-slot count (CC-3 — real strength lives in cardState.currentTroops, already folded into
-      // rawAttackerArmy above via resolveCardArmy), so using m.troops here would floor every card to the base
-      // survival rate regardless of true strength. A single Math.round(...*moraleMult) on the UNSCALED army's
-      // HP sum (rather than summing the already per-unit-floored attackerArmy) avoids quantization loss
-      // compounding across many small HP_PER_UNIT-sized chunks — for a flat/synthesized army
-      // sumArmyHp(rawAttackerArmy) equals m.troops exactly (1 troop = 1 HP unit), so this is byte-for-byte the
-      // same as the old m.troops-based formula for every non-card march, and only changes behavior for card armies.
-      const attackerHp = Math.round(sumArmyHp(rawAttackerArmy) * moraleMult);
-      let cardInstances: EngineCardInstance[] | undefined;
-      let cardEquipInv: EngineEquipInv | undefined;
-      if (hasCardArmy && attackerSave) {
-        const { cardInstances: ci, engEquipInv } = toEngineCardInstances(rawArmy, attackerSave.cardInv ?? {}, attackerSave.equipmentInv ?? {});
-        cardInstances = ci;
-        cardEquipInv = engEquipInv;
-      }
-      const tileLevel = proc.level;
-      const defenderConfig = { garrison: synthesizeArmy(garrison, 'defender'), defenderBaseHp: npcBaseHp(tileLevel) };
-      const seed = siegeSeedFromId(m._id);
-      let res: SiegeResolution;
-      // 2026-08-01 (traceability decision, see combatSiege/arrival.ts applySiege for the full rationale): replay
-      // inputs are kept even on an engine crash — getSiegeReplay degrades safely (see that comment) rather than
-      // crashing, so there is no downside to keeping the exact inputs that caused a crash for later reproduction.
-      const replay: SiegeReplayInputs = { seed, attackerArmy, defenderConfig, tileLevel };
-      // Overwhelming ratio or synthesized-army board overflow → skip the engine outright, same as every other
-      // siege entry point (applySiege/applyStrongholdSiege/applyCrossingSiege) — without this gate, a very large
-      // flat-troop (non-team) occupy march can synthesize an army beyond board capacity, congest the engine, and
-      // spuriously time out to a defender win regardless of true strength (2026-08-03 worldsvc code review).
-      const attackerSynthesized = !hasCardArmy && rawArmy.length === 0;
-      if (shouldUseCheapSiege({ attackerTroops: attackerHp, defenderTroops: garrison, attackerSynthesized, defenderSynthesized: true })) {
-        res = resolveSiege(attackerHp, garrison);
-      } else {
-        try {
-          res = await runSiegeBattle({ attackerArmy, defenderConfig, tileLevel, seed, cardInstances, equipmentInv: cardEquipInv });
-        } catch (err) {
-          console.error('[worldsvc] occupy siege engine failed — fallback to cheap resolve', {
-            tile: m.toTile,
-            err: (err as Error).message,
-          });
-          res = resolveSiege(attackerHp, garrison);
-        }
-      }
+      // generic synthesized force. Flat/legacy army or none → synthesize as before. See occupationBattle.ts
+      // for the full battle-resolution logic (shared verbatim with applyOccupationExpulsion below).
+      const { res, replay } = await resolveOccupationBattle(this.core, m, pw, garrison, proc.level);
 
       if (res.outcome === 'attacker_win') {
         // Card survivors also land on cardState (§6.1 — the card keeps its own troops) in addition to seeding
@@ -237,48 +159,8 @@ export function OccupationMixin<TBase extends SiegeServiceBaseCtor>(Base: TBase)
       const rawArmy = m.army ?? [];
       const hasCardArmy = rawArmy.some((e) => !!e.cardInstanceId);
       const garrison = tile.contestedGarrison ?? 0;
-      const attackerSave = hasCardArmy ? await this.core.meta.getSaveFields(m.ownerId).catch(() => null) : null;
-      // Morale (行军疲劳, not the card 士气加成): scale attacker strength by the march's remaining morale (see combatSiege/arrival.ts applySiege for detail).
-      const moraleMult = moraleCombatMultiplier(m.morale ?? MARCH_MORALE_MAX);
-      const rawAttackerArmy: GarrisonEntry[] = hasCardArmy
-        ? resolveCardArmy(rawArmy, pw.cardState ?? {}, attackerSave?.cardInv ?? {})
-        : (rawArmy.length > 0 ? (rawArmy as GarrisonEntry[]) : synthesizeArmy(m.troops, 'attacker'));
-      const attackerArmy: GarrisonEntry[] = scaleArmyByRatio(rawAttackerArmy, moraleMult);
-      // Real attacker strength for the cheap-siege path — see applyOccupy above for why this must be
-      // Math.round(sumArmyHp(rawAttackerArmy) * moraleMult) rather than m.troops (card-slot count for a card
-      // army) or summing the already-scaled attackerArmy (per-unit floor quantization loss at scale).
-      const attackerHp = Math.round(sumArmyHp(rawAttackerArmy) * moraleMult);
-      let cardInstances: EngineCardInstance[] | undefined;
-      let cardEquipInv: EngineEquipInv | undefined;
-      if (hasCardArmy && attackerSave) {
-        const { cardInstances: ci, engEquipInv } = toEngineCardInstances(rawArmy, attackerSave.cardInv ?? {}, attackerSave.equipmentInv ?? {});
-        cardInstances = ci;
-        cardEquipInv = engEquipInv;
-      }
-      const tileLevel = tile.level ?? 1;
-      const defenderConfig = { garrison: synthesizeArmy(garrison, 'defender'), defenderBaseHp: npcBaseHp(tileLevel) };
-      const seed = siegeSeedFromId(m._id);
-      let res: SiegeResolution;
-      // 2026-08-01 (traceability decision, see combatSiege/arrival.ts applySiege for the full rationale): replay
-      // inputs are kept even on an engine crash — getSiegeReplay degrades safely rather than crashing, so there
-      // is no downside to keeping the exact inputs that caused a crash for later reproduction.
-      const replay: SiegeReplayInputs = { seed, attackerArmy, defenderConfig, tileLevel };
-      // Same gate as applyOccupy above (2026-08-03 worldsvc code review) — an expulsion attempt with a very
-      // large flat-troop army must not reach the engine uncapped either.
-      const attackerSynthesized = !hasCardArmy && rawArmy.length === 0;
-      if (shouldUseCheapSiege({ attackerTroops: attackerHp, defenderTroops: garrison, attackerSynthesized, defenderSynthesized: true })) {
-        res = resolveSiege(attackerHp, garrison);
-      } else {
-        try {
-          res = await runSiegeBattle({ attackerArmy, defenderConfig, tileLevel, seed, cardInstances, equipmentInv: cardEquipInv });
-        } catch (err) {
-          console.error('[worldsvc] occupation expulsion siege engine failed — fallback to cheap resolve', {
-            tile: m.toTile,
-            err: (err as Error).message,
-          });
-          res = resolveSiege(attackerHp, garrison);
-        }
-      }
+      // See occupationBattle.ts for the full battle-resolution logic (shared verbatim with applyOccupy above).
+      const { res, replay } = await resolveOccupationBattle(this.core, m, pw, garrison, tile.level ?? 1);
 
       if (res.outcome === 'attacker_win') {
         // Cancel the old hold (atomic claim by id + expected holder guards against a race with a concurrent

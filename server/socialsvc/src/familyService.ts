@@ -1,666 +1,116 @@
-// Family business layer (SOCIAL_SVC_DESIGN §3/§4, SS2/SS3).
-// A family is a globally persistent entity (no worldId); TAG is unique across the entire database.
-// A player can belong to at most one family at a time (FamilyMemberDoc._id = accountId).
-// Member cap FAMILY_CAP=30; three permission tiers: leader > elder > member.
-import { randomUUID } from 'node:crypto';
-import {
-  FAMILY_CAP,
-  FAMILY_MSG_BODY_MAX,
-  ORG_NAME_WIDTH_MIN,
-  ORG_NAME_WIDTH_MAX,
-  orgNameWidth,
-  SlgError,
-  familyProsperity,
-  censorChat,
-  type FamilyRole,
-  type ChatRegion,
-  type WordlistCache,
-} from '@nw/shared';
-import type { SocialCollections, FamilyDoc, FamilyMemberDoc, FamilyMessageDoc, FamilyJoinRequestDoc } from './db';
-import type { SocialGatewayClient } from './gatewayClient';
-import { nullSocialGatewayClient } from './gatewayClient';
-import type { SocialMetaClient } from './metaClient';
-import { nullSocialMetaClient } from './metaClient';
-import type { MailService } from './mailService';
+// Family business layer facade (SOCIAL_SVC_DESIGN §3/§4, SS2/SS3). A family is a globally persistent
+// entity (no worldId); TAG is unique across the entire database. A player can belong to at most one
+// family at a time (FamilyMemberDoc._id = accountId). Member cap FAMILY_CAP=30; three permission
+// tiers: leader > elder > member.
+//
+// Composed of four independent domain classes (2026-08-10 split, 独立类+组合 form — the original
+// single 666-line class had no natural mixin peer edges, so it splits cleanly into: read-only
+// lookups, membership lifecycle, the chat channel, and worldsvc's internal API) — see family/query.ts
+// / family/membership.ts / family/chat.ts / family/internal.ts. This class is a thin delegating
+// facade so external callers (httpApi routes, this package's own tests) keep importing `FamilyService`
+// from this one path with an unchanged public API and behavior.
+import type { FamilyRole, ChatRegion } from '@nw/shared';
+import type { FamilyServiceDeps } from './family/types';
+import { FamilyQueryService } from './family/query';
+import { FamilyMembershipService } from './family/membership';
+import { FamilyChatService } from './family/chat';
+import { FamilyInternalService } from './family/internal';
 
-export interface FamilyView {
-  familyId: string;
-  name: string;
-  tag: string;
-  leaderId: string;
-  memberCount: number;
-  prosperity: number;
-  /** Prosperity decay anchor ms (needed by worldsvc to lazily decay sect-aggregate prosperity on read; SLG_DESIGN §17.4). */
-  prosperityUpdatedAt?: number;
-  /** Territory tile count (worldsvc-owned mirror). */
-  territoryCount?: number;
-  /** Sect the family currently belongs to (worldsvc-owned mirror; absent = independent family). */
-  sectId?: string;
-  /** Display name of the sect above, mirrored alongside sectId. */
-  sectName?: string;
-  announcement?: string;
-}
-
-/** Membership + family identity in one round trip (internal API, called by worldsvc's requireFamilyLeader). */
-export interface FamilyMembershipView {
-  familyId: string;
-  role: FamilyRole;
-  leaderId: string;
-  name: string;
-  tag: string;
-  memberCount: number;
-  /** Sect the family belongs to, if any (mirrored from FamilyDoc.sectId/sectName). */
-  sectId?: string;
-  /** Display name of the sect above, mirrored alongside sectId. */
-  sectName?: string;
-}
-
-export interface FamilyDetailView extends FamilyView {
-  members: FamilyMemberView[];
-}
-
-export interface FamilyMemberView {
-  /** Omitted when the caller is not a member of this family — see getFamily's `callerId` param. */
-  accountId?: string;
-  role: FamilyRole;
-  joinedAt: number;
-  /** Resolved via SocialMetaClient.batchProfiles; omitted if metaserver lookup is unavailable or the profile is gone. */
-  publicId?: string;
-  displayName?: string;
-  /** Equipped avatar id (composite "<category>:<key>"), resolved via SocialMetaClient.batchProfiles. */
-  avatarId?: string;
-}
-
-/** A pending join request as seen by the approving leader/elder (SS3.x join-approval). */
-export interface FamilyJoinRequestView {
-  requestId: string;
-  accountId: string;
-  /** Resolved via SocialMetaClient.batchProfiles; omitted if the lookup is unavailable. */
-  publicId?: string;
-  displayName?: string;
-  createdAt: number;
-}
-
-export interface FamilyMessageView {
-  id: string;
-  senderId: string;
-  senderName: string;
-  /** Sender's equipped title (称号), if any. */
-  title?: string;
-  /** Sender's family name (家族) — the family itself, since this channel is family-scoped. */
-  familyName?: string;
-  body: string;
-  ts: number;
-}
-
-export interface FamilyServiceDeps {
-  cols: SocialCollections;
-  now: () => number;
-  gateway?: SocialGatewayClient;
-  meta?: SocialMetaClient;
-  /** Used to mail the applicant when their join request is rejected (SS3.x). Omitted in tests that don't exercise that path. */
-  mail?: MailService;
-  /** Content-moderation word list overlay cache (CONTENT_MODERATION_DESIGN.md §3.2); omit = built-in REGION_WORDLISTS only. */
-  wordlists?: WordlistCache;
-}
-
-/** In-process monotonic sequence number to prevent message ID collisions within the same millisecond. */
-let msgSeq = 0;
-
-function makeFamilyId(tag: string): string {
-  return `fam:${tag.toUpperCase()}`;
-}
-
-function docToView(doc: FamilyDoc): FamilyView {
-  return {
-    familyId: doc._id,
-    name: doc.name,
-    tag: doc.tag,
-    leaderId: doc.leaderId,
-    memberCount: doc.memberCount,
-    prosperity: doc.prosperity,
-    prosperityUpdatedAt: doc.prosperityUpdatedAt,
-    ...(doc.territoryCount != null ? { territoryCount: doc.territoryCount } : {}),
-    ...(doc.sectId ? { sectId: doc.sectId } : {}),
-    ...(doc.sectName ? { sectName: doc.sectName } : {}),
-    ...(doc.announcement ? { announcement: doc.announcement } : {}),
-  };
-}
+export * from './family/types';
 
 export class FamilyService {
-  private readonly gateway: SocialGatewayClient;
-  private readonly meta: SocialMetaClient;
-  private readonly mail?: MailService;
+  private readonly query: FamilyQueryService;
+  private readonly membership: FamilyMembershipService;
+  private readonly chat: FamilyChatService;
+  private readonly internal: FamilyInternalService;
 
-  constructor(private readonly deps: FamilyServiceDeps) {
-    this.gateway = deps.gateway ?? nullSocialGatewayClient;
-    this.meta = deps.meta ?? nullSocialMetaClient;
-    this.mail = deps.mail;
+  constructor(deps: FamilyServiceDeps) {
+    this.query = new FamilyQueryService(deps);
+    this.membership = new FamilyMembershipService(deps);
+    this.chat = new FamilyChatService(deps);
+    this.internal = new FamilyInternalService(deps);
   }
 
-  /** Attach resolved publicId/displayName to each member (best-effort; missing profiles are left unresolved). */
-  private async withProfiles(members: (FamilyMemberView & { accountId: string })[]): Promise<FamilyMemberView[]> {
-    const profiles = await this.meta.batchProfiles(members.map((m) => m.accountId));
-    return members.map((m) => {
-      const p = profiles.get(m.accountId);
-      return p ? { ...m, publicId: p.publicId, displayName: p.displayName, ...(p.avatarId ? { avatarId: p.avatarId } : {}) } : m;
-    });
+  // --- read-only lookups (family/query.ts) ---
+  getMyFamily(accountId: string) {
+    return this.query.getMyFamily(accountId);
+  }
+  getFamily(familyId: string, callerId?: string) {
+    return this.query.getFamily(familyId, callerId);
+  }
+  searchByTag(tag: string) {
+    return this.query.searchByTag(tag);
+  }
+  browseFamilies(query: string | undefined, limit = 10) {
+    return this.query.browseFamilies(query, limit);
   }
 
-  /** Get the family the player belongs to (including member list). Returns null if not a member. */
-  async getMyFamily(accountId: string): Promise<FamilyDetailView | null> {
-    const mem = await this.deps.cols.familyMembers.findOne({ _id: accountId });
-    if (!mem) return null;
-    return this.getFamily(mem.familyId);
+  // --- membership lifecycle (family/membership.ts) ---
+  createFamily(leaderId: string, name: string, tag: string, region: ChatRegion = 'global') {
+    return this.membership.createFamily(leaderId, name, tag, region);
+  }
+  joinFamily(accountId: string, familyId: string) {
+    return this.membership.joinFamily(accountId, familyId);
+  }
+  requestJoin(accountId: string, familyId: string) {
+    return this.membership.requestJoin(accountId, familyId);
+  }
+  listJoinRequests(requesterId: string) {
+    return this.membership.listJoinRequests(requesterId);
+  }
+  respondJoinRequest(requesterId: string, requestId: string, accept: boolean) {
+    return this.membership.respondJoinRequest(requesterId, requestId, accept);
+  }
+  leaveFamily(accountId: string) {
+    return this.membership.leaveFamily(accountId);
+  }
+  kickMember(requesterId: string, targetId: string) {
+    return this.membership.kickMember(requesterId, targetId);
+  }
+  setRole(requesterId: string, targetId: string, role: FamilyRole) {
+    return this.membership.setRole(requesterId, targetId, role);
+  }
+  dissolveFamily(requesterId: string) {
+    return this.membership.dissolveFamily(requesterId);
+  }
+  setAnnouncement(requesterId: string, announcement: string) {
+    return this.membership.setAnnouncement(requesterId, announcement);
   }
 
-  /** Get family details by familyId (including member list). */
-  /**
-   * @param callerId When provided and the caller is NOT a member of this family, raw `accountId`s are
-   * stripped from the returned member list (2026-08-04 fix): `GET /social/family/:id` is a public route
-   * reachable for ANY family id (discoverable via browse/search), and every other externally-facing view
-   * in this service deliberately exposes only `publicId`/`displayName` — internal `accountId`s are meant to
-   * be known only within the family itself (used there for role-gated kick/setRole). Omit `callerId` for
-   * trusted internal callers (e.g. `/internal/push`'s family broadcast) that need the real accountIds
-   * regardless of membership.
-   */
-  async getFamily(familyId: string, callerId?: string): Promise<FamilyDetailView | null> {
-    const doc = await this.deps.cols.families.findOne({ _id: familyId });
-    if (!doc) return null;
-    const memberDocs = await this.deps.cols.familyMembers.find({ familyId }).toArray();
-    const isMember = callerId === undefined || memberDocs.some((m) => m.accountId === callerId);
-    const members = await this.withProfiles(memberDocs.map((m) => ({
-      accountId: m.accountId,
-      role: m.role,
-      joinedAt: m.joinedAt,
-    })));
-    return { ...docToView(doc), members: isMember ? members : members.map(({ accountId, ...rest }) => rest as FamilyMemberView) };
+  // --- family chat channel (family/chat.ts) ---
+  sendMessage(accountId: string, senderName: string, body: string, region: ChatRegion = 'global') {
+    return this.chat.sendMessage(accountId, senderName, body, region);
+  }
+  getChannel(accountId: string, before?: number, limit = 30) {
+    return this.chat.getChannel(accountId, before, limit);
   }
 
-  /** Search for a family by TAG (exact match, case-insensitive). */
-  async searchByTag(tag: string): Promise<FamilyView | null> {
-    const doc = await this.deps.cols.families.findOne({ tag: tag.toUpperCase() });
-    return doc ? docToView(doc) : null;
+  // --- internal API for worldsvc (family/internal.ts) ---
+  getFamilyIdByAccount(accountId: string) {
+    return this.internal.getFamilyIdByAccount(accountId);
   }
-
-  /**
-   * Browse joinable families (join-picker source): families with an open slot, fuzzy-matched by
-   * name when `query` is given, sorted by prosperity desc (default view = top-N most prosperous).
-   */
-  async browseFamilies(query: string | undefined, limit = 10): Promise<FamilyView[]> {
-    const filter: Record<string, unknown> = { memberCount: { $lt: FAMILY_CAP } };
-    const trimmed = query?.trim();
-    if (trimmed) {
-      const escaped = trimmed.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      filter.name = { $regex: escaped, $options: 'i' };
-    }
-    const docs = await this.deps.cols.families
-      .find(filter)
-      .sort({ prosperity: -1 })
-      .limit(Math.min(Math.max(limit, 1), 50))
-      .toArray();
-    return docs.map(docToView);
+  bumpActivity(familyId: string, delta = 1) {
+    return this.internal.bumpActivity(familyId, delta);
   }
-
-  /** Create a family. TAG must be unique across the database; the creator becomes the leader; the creator must not already be in another family. */
-  async createFamily(
-    leaderId: string,
-    name: string,
-    tag: string,
-    region: ChatRegion = 'global',
-  ): Promise<FamilyDetailView> {
-    const cols = this.deps.cols;
-    const now = this.deps.now();
-
-    const existing = await cols.familyMembers.findOne({ _id: leaderId });
-    if (existing) throw new SlgError('ALREADY_IN_FAMILY');
-
-    const tagUpper = tag.toUpperCase();
-    if (!/^[A-Z0-9]{2,5}$/.test(tagUpper)) throw new SlgError('BAD_REQUEST');
-    const nameWidth = name ? orgNameWidth(name) : 0;
-    if (nameWidth < ORG_NAME_WIDTH_MIN || nameWidth > ORG_NAME_WIDTH_MAX) throw new SlgError('BAD_REQUEST');
-    // CONTENT_MODERATION_DESIGN.md CM5: family name is long-lived/public like a display name, not
-    // ephemeral chat — a hit rejects creation outright rather than persisting a masked name.
-    if (censorChat(name, region, this.deps.wordlists).hit) throw new SlgError('BAD_REQUEST');
-
-    const fid = makeFamilyId(tagUpper);
-
-    const familyDoc: FamilyDoc = {
-      _id: fid,
-      name,
-      tag: tagUpper,
-      leaderId,
-      memberCount: 1,
-      prosperity: 0,
-      prosperityUpdatedAt: now,
-      activity: 0,
-      createdAt: now,
-      rev: 1,
-    };
-    try {
-      await cols.families.insertOne(familyDoc);
-    } catch (e) {
-      if ((e as { code?: number }).code === 11000) throw new SlgError('ALREADY_IN_FAMILY');
-      throw e;
-    }
-
-    const memberDoc: FamilyMemberDoc = {
-      _id: leaderId,
-      familyId: fid,
-      accountId: leaderId,
-      role: 'leader',
-      joinedAt: now,
-    };
-    await cols.familyMembers.insertOne(memberDoc);
-
-    return {
-      ...docToView(familyDoc),
-      members: await this.withProfiles([{ accountId: leaderId, role: 'leader', joinedAt: now }]),
-    };
+  getMember(accountId: string) {
+    return this.internal.getMember(accountId);
   }
-
-  /**
-   * Add membership directly (cap of 30 members; must not already be in a family). Public routes no
-   * longer call this straight from a join click — see requestJoin/respondJoinRequest above; this is
-   * now reached only via an accepted join request.
-   */
-  async joinFamily(accountId: string, familyId: string): Promise<void> {
-    const cols = this.deps.cols;
-    const now = this.deps.now();
-
-    const existing = await cols.familyMembers.findOne({ _id: accountId });
-    if (existing) throw new SlgError('ALREADY_IN_FAMILY');
-
-    const res = await cols.families.findOneAndUpdate(
-      { _id: familyId, memberCount: { $lt: FAMILY_CAP } },
-      { $inc: { memberCount: 1 } },
-      { returnDocument: 'after' },
-    );
-    if (!res) {
-      const fam = await cols.families.findOne({ _id: familyId });
-      if (!fam) throw new SlgError('NOT_FOUND');
-      throw new SlgError('FAMILY_FULL');
-    }
-
-    const memberDoc: FamilyMemberDoc = {
-      _id: accountId,
-      familyId,
-      accountId,
-      role: 'member',
-      joinedAt: now,
-    };
-    try {
-      await cols.familyMembers.insertOne(memberDoc);
-    } catch (e) {
-      if ((e as { code?: number }).code === 11000) {
-        // Lost a race against a concurrent joinFamily for the SAME account (e.g. two of their pending join
-        // requests, for different families, both accepted around the same time) — familyMembers._id is the
-        // accountId itself, so only one insert can ever win globally. Roll back the memberCount bump this
-        // attempt already committed above, so the losing family's count never drifts above its real roster
-        // (2026-08-04 fix; mirrors createFamily's existing E11000 handling, plus the compensating rollback
-        // createFamily doesn't need since it can't reach this point after a partial commit).
-        await cols.families.updateOne({ _id: familyId }, { $inc: { memberCount: -1 } });
-        throw new SlgError('ALREADY_IN_FAMILY');
-      }
-      throw e;
-    }
+  getFamiliesByIds(familyIds: string[]) {
+    return this.internal.getFamiliesByIds(familyIds);
   }
-
-  /**
-   * Submit a request to join a family (SS3.x join-approval). Does not add membership — a
-   * leader/elder must call respondJoinRequest to accept before joinFamily actually runs.
-   */
-  async requestJoin(accountId: string, familyId: string): Promise<{ requestId: string }> {
-    const cols = this.deps.cols;
-    const now = this.deps.now();
-
-    const existing = await cols.familyMembers.findOne({ _id: accountId });
-    if (existing) throw new SlgError('ALREADY_IN_FAMILY');
-
-    const fam = await cols.families.findOne({ _id: familyId });
-    if (!fam) throw new SlgError('NOT_FOUND');
-    if (fam.memberCount >= FAMILY_CAP) throw new SlgError('FAMILY_FULL');
-
-    const pending = await cols.familyJoinRequests.findOne({ accountId, status: 'pending' });
-    if (pending) throw new SlgError('ALREADY_REQUESTED');
-
-    const requestId = randomUUID();
-    const doc: FamilyJoinRequestDoc = { _id: requestId, familyId, accountId, status: 'pending', createdAt: now };
-    try {
-      await cols.familyJoinRequests.insertOne(doc);
-    } catch (e) {
-      // The findOne check above is not atomic — a concurrent requestJoin for the same account can slip
-      // through between the check and this insert. The partial unique index on {accountId} (db.ts,
-      // status:'pending') is the atomic backstop: the loser hits E11000 here instead of creating a second
-      // pending request (2026-08-04 fix, closing the root cause behind a downstream memberCount-drift race
-      // when both requests are later accepted).
-      if ((e as { code?: number }).code === 11000) throw new SlgError('ALREADY_REQUESTED');
-      throw e;
-    }
-    return { requestId };
+  getFamiliesBySect(sectId: string) {
+    return this.internal.getFamiliesBySect(sectId);
   }
-
-  /** List pending join requests for the caller's own family (leader/elder only). */
-  async listJoinRequests(requesterId: string): Promise<FamilyJoinRequestView[]> {
-    const requesterMem = await this.deps.cols.familyMembers.findOne({ _id: requesterId });
-    if (!requesterMem) throw new SlgError('NOT_IN_FAMILY');
-    if (requesterMem.role === 'member') throw new SlgError('NO_PERMISSION');
-
-    const docs = await this.deps.cols.familyJoinRequests
-      .find({ familyId: requesterMem.familyId, status: 'pending' })
-      .sort({ createdAt: 1 })
-      .toArray();
-    if (docs.length === 0) return [];
-    const profiles = await this.meta.batchProfiles(docs.map((d) => d.accountId));
-    return docs.map((d) => {
-      const p = profiles.get(d.accountId);
-      return {
-        requestId: d._id,
-        accountId: d.accountId,
-        createdAt: d.createdAt,
-        ...(p ? { publicId: p.publicId, displayName: p.displayName } : {}),
-      };
-    });
+  setSect(familyId: string, sectId: string | null, sectName?: string | null) {
+    return this.internal.setSect(familyId, sectId, sectName);
   }
-
-  /**
-   * Approve or reject a pending join request (leader/elder only). Accept runs the same
-   * cap-checked join as joinFamily; reject mails the applicant (SS3.x).
-   */
-  async respondJoinRequest(requesterId: string, requestId: string, accept: boolean): Promise<void> {
-    const cols = this.deps.cols;
-    const requesterMem = await cols.familyMembers.findOne({ _id: requesterId });
-    if (!requesterMem) throw new SlgError('NOT_IN_FAMILY');
-    if (requesterMem.role === 'member') throw new SlgError('NO_PERMISSION');
-
-    const reqDoc = await cols.familyJoinRequests.findOne({ _id: requestId });
-    if (!reqDoc || reqDoc.familyId !== requesterMem.familyId || reqDoc.status !== 'pending') {
-      throw new SlgError('NOT_FOUND');
-    }
-    const now = this.deps.now();
-    const claimed = await cols.familyJoinRequests.findOneAndUpdate(
-      { _id: requestId, status: 'pending' },
-      { $set: { status: accept ? 'accepted' : 'rejected', resolvedAt: now } },
-    );
-    if (!claimed) throw new SlgError('NOT_FOUND');
-
-    if (accept) {
-      await this.joinFamily(reqDoc.accountId, reqDoc.familyId);
-    } else if (this.mail) {
-      const fam = await cols.families.findOne({ _id: reqDoc.familyId });
-      await this.mail.insertSystemMail(
-        `family-join-reject:${reqDoc.familyId}:${reqDoc.accountId}:${now}`,
-        reqDoc.accountId,
-        {
-          subject: 'family.mail.rejected.subject',
-          body: `family.mail.rejected.body|familyName=${fam?.name ?? ''}`,
-          expireDays: 7,
-        },
-      );
-    }
+  refreshProsperity(familyId: string, territoryCount: number) {
+    return this.internal.refreshProsperity(familyId, territoryCount);
   }
-
-  /** Leave the family (the leader must first transfer leadership or dissolve the family). */
-  async leaveFamily(accountId: string): Promise<void> {
-    const cols = this.deps.cols;
-    const memDoc = await cols.familyMembers.findOne({ _id: accountId });
-    if (!memDoc) throw new SlgError('NOT_IN_FAMILY');
-    if (memDoc.role === 'leader') throw new SlgError('BAD_REQUEST');
-
-    const deleted = await cols.familyMembers.deleteOne({ _id: accountId });
-    // Only decrement if THIS call actually removed a row — without the guard, a concurrent duplicate
-    // call (e.g. a network retry of leaveFamily, or racing with kickMember on the same account) that
-    // loses the deleteOne race would still unconditionally decrement, double-counting a single removal
-    // and drifting memberCount below the family's actual member row count (the unsafe direction: an
-    // under-count lets the family creep past FAMILY_CAP instead of just blocking joins prematurely).
-    if (deleted.deletedCount > 0) {
-      await cols.families.updateOne({ _id: memDoc.familyId }, { $inc: { memberCount: -1 } });
-    }
+  bumpActivityAndProsperity(familyId: string, delta: number, territoryCount: number) {
+    return this.internal.bumpActivityAndProsperity(familyId, delta, territoryCount);
   }
-
-  /** Kick a member (leader can kick anyone; elder can only kick members). */
-  async kickMember(requesterId: string, targetId: string): Promise<void> {
-    if (requesterId === targetId) throw new SlgError('BAD_REQUEST');
-    const cols = this.deps.cols;
-
-    const requesterMem = await cols.familyMembers.findOne({ _id: requesterId });
-    if (!requesterMem) throw new SlgError('NOT_IN_FAMILY');
-
-    const targetMem = await cols.familyMembers.findOne({ _id: targetId });
-    if (!targetMem || targetMem.familyId !== requesterMem.familyId) throw new SlgError('NOT_FOUND');
-    if (targetMem.role === 'leader') throw new SlgError('NO_PERMISSION');
-    if (requesterMem.role === 'elder' && targetMem.role === 'elder') throw new SlgError('NO_PERMISSION');
-    if (requesterMem.role === 'member') throw new SlgError('NO_PERMISSION');
-
-    const deleted = await cols.familyMembers.deleteOne({ _id: targetId });
-    // Same guard as leaveFamily: only decrement if this call actually removed the row (protects against
-    // a concurrent leaveFamily/kickMember racing on the same target double-decrementing memberCount).
-    if (deleted.deletedCount > 0) {
-      await cols.families.updateOne({ _id: requesterMem.familyId }, { $inc: { memberCount: -1 } });
-    }
-  }
-
-  /** Set a member's role (leader only). */
-  async setRole(requesterId: string, targetId: string, role: FamilyRole): Promise<void> {
-    if (requesterId === targetId) throw new SlgError('BAD_REQUEST');
-    if (role === 'leader') throw new SlgError('BAD_REQUEST');
-    const cols = this.deps.cols;
-
-    const requesterMem = await cols.familyMembers.findOne({ _id: requesterId });
-    if (!requesterMem || requesterMem.role !== 'leader') throw new SlgError('NO_PERMISSION');
-
-    const targetMem = await cols.familyMembers.findOne({ _id: targetId });
-    if (!targetMem || targetMem.familyId !== requesterMem.familyId) throw new SlgError('NOT_FOUND');
-
-    await cols.familyMembers.updateOne({ _id: targetId }, { $set: { role } });
-  }
-
-  /** Dissolve the family (leader only). Removes all member records, messages, and the family document. */
-  async dissolveFamily(requesterId: string): Promise<void> {
-    const cols = this.deps.cols;
-
-    const requesterMem = await cols.familyMembers.findOne({ _id: requesterId });
-    if (!requesterMem || requesterMem.role !== 'leader') throw new SlgError('NO_PERMISSION');
-
-    const fid = requesterMem.familyId;
-    await cols.familyMembers.deleteMany({ familyId: fid });
-    await cols.familyMessages.deleteMany({ familyId: fid });
-    await cols.families.deleteOne({ _id: fid });
-  }
-
-  /** Update the family announcement (leader / elder). */
-  async setAnnouncement(requesterId: string, announcement: string): Promise<void> {
-    if (announcement.length > 200) throw new SlgError('BAD_REQUEST');
-    const mem = await this.deps.cols.familyMembers.findOne({ _id: requesterId });
-    if (!mem) throw new SlgError('NOT_IN_FAMILY');
-    if (mem.role === 'member') throw new SlgError('NO_PERMISSION');
-    await this.deps.cols.families.updateOne({ _id: mem.familyId }, { $set: { announcement } });
-  }
-
-  /** Send a message to the family channel. Pushes in real time to all other online members. */
-  async sendMessage(
-    accountId: string,
-    senderName: string,
-    body: string,
-    region: ChatRegion = 'global',
-  ): Promise<FamilyMessageView> {
-    const cols = this.deps.cols;
-
-    const mem = await cols.familyMembers.findOne({ _id: accountId });
-    if (!mem) throw new SlgError('NOT_IN_FAMILY');
-    if (!body || body.length > FAMILY_MSG_BODY_MAX) throw new SlgError('BAD_REQUEST');
-
-    // Resolve display name + title from meta (source of truth for renames); best-effort, falls back
-    // to the client-supplied senderName if meta is unavailable or profile not found — a stale/incorrect
-    // client-side cache must never be preferred over the account's real name. Fetched before censoring
-    // the body (CONTENT_MODERATION_DESIGN.md CM7.1): profiles.mutedUntil is the mute-enforcement check,
-    // piggybacked on this call rather than a separate round trip.
-    const profiles = this.meta.available ? await this.meta.batchProfiles([accountId]) : new Map();
-    const mutedUntil = profiles.get(accountId)?.mutedUntil;
-    if (mutedUntil && mutedUntil > this.deps.now()) throw new SlgError('ACCOUNT_MUTED');
-
-    // CONTENT_MODERATION_DESIGN.md CM5: family chat is ephemeral like DM/world chat — mask on hit,
-    // never reject delivery.
-    body = censorChat(body, region, this.deps.wordlists).text;
-
-    const ts = this.deps.now();
-    const seq = ++msgSeq;
-    const msgId = `fm:${mem.familyId}:${ts}:${seq}`;
-    const resolvedSenderName = profiles.get(accountId)?.displayName ?? senderName;
-    const title = profiles.get(accountId)?.equippedTitle;
-    const fromPublicId = profiles.get(accountId)?.publicId ?? '';
-    const familyDoc = await cols.families.findOne({ _id: mem.familyId });
-    const familyName = familyDoc?.name;
-
-    const msgDoc: FamilyMessageDoc = {
-      _id: msgId,
-      familyId: mem.familyId,
-      senderId: accountId,
-      senderName: resolvedSenderName,
-      ...(title ? { title } : {}),
-      ...(familyName ? { familyName } : {}),
-      body,
-      ts: new Date(ts),
-    };
-    await cols.familyMessages.insertOne(msgDoc);
-
-    // Push to all other members (O(n), ≤30 members)
-    const otherMembers = await cols.familyMembers
-      .find({ familyId: mem.familyId, _id: { $ne: accountId } })
-      .toArray();
-    await this.gateway.pushMany(
-      otherMembers.map((m) => m.accountId),
-      { kind: 'family_msg', familyId: mem.familyId, fromPublicId, fromName: resolvedSenderName, title, familyName, body, ts },
-    );
-
-    return { id: msgId, senderId: accountId, senderName: resolvedSenderName, title, familyName, body, ts };
-  }
-
-  /** Get channel history (reverse-chronological pagination; `before` is a ms-epoch cursor; limit ≤50). */
-  async getChannel(
-    accountId: string,
-    before?: number,
-    limit = 30,
-  ): Promise<FamilyMessageView[]> {
-    const cols = this.deps.cols;
-
-    const mem = await cols.familyMembers.findOne({ _id: accountId });
-    if (!mem) throw new SlgError('NOT_IN_FAMILY');
-
-    const realLimit = Math.min(Math.max(limit, 1), 50);
-    const query: Record<string, unknown> = { familyId: mem.familyId };
-    if (before != null) query['ts'] = { $lt: new Date(before) };
-
-    const docs = await cols.familyMessages
-      .find(query)
-      .sort({ ts: -1 })
-      .limit(realLimit)
-      .toArray();
-
-    return docs.map((d) => ({
-      id: d._id,
-      senderId: d.senderId,
-      senderName: d.senderName,
-      title: d.title,
-      familyName: d.familyName,
-      body: d.body,
-      ts: d.ts instanceof Date ? d.ts.getTime() : (d.ts as unknown as number),
-    }));
-  }
-
-  /** Internal API: look up the familyId the player currently belongs to (called by worldsvc). */
-  async getFamilyIdByAccount(accountId: string): Promise<string | null> {
-    const mem = await this.deps.cols.familyMembers.findOne({ _id: accountId });
-    return mem ? mem.familyId : null;
-  }
-
-  /** Internal API: called by worldsvc to increment activity (occupation / battle +1). */
-  async bumpActivity(familyId: string, delta = 1): Promise<void> {
-    await this.deps.cols.families.updateOne(
-      { _id: familyId },
-      { $inc: { activity: delta } },
-    );
-  }
-
-  /** Internal API: membership + family identity in one round trip (called by worldsvc's sect permission checks). Returns null if not in a family. */
-  async getMember(accountId: string): Promise<FamilyMembershipView | null> {
-    const mem = await this.deps.cols.familyMembers.findOne({ _id: accountId });
-    if (!mem) return null;
-    const fam = await this.deps.cols.families.findOne({ _id: mem.familyId });
-    if (!fam) return null;
-    return {
-      familyId: mem.familyId, role: mem.role, leaderId: fam.leaderId, name: fam.name, tag: fam.tag,
-      memberCount: fam.memberCount,
-      ...(fam.sectId ? { sectId: fam.sectId } : {}),
-      ...(fam.sectName ? { sectName: fam.sectName } : {}),
-    };
-  }
-
-  /** Internal API: batch fetch families by id (called by worldsvc for sect roster display / season settlement). Missing ids are silently skipped. */
-  async getFamiliesByIds(familyIds: string[]): Promise<FamilyView[]> {
-    if (familyIds.length === 0) return [];
-    const docs = await this.deps.cols.families.find({ _id: { $in: familyIds } }).toArray();
-    return docs.map(docToView);
-  }
-
-  /** Internal API: all families currently pointing at the given sectId (called by worldsvc sect roster / leave-vote flows). */
-  async getFamiliesBySect(sectId: string): Promise<FamilyView[]> {
-    const docs = await this.deps.cols.families.find({ sectId }).toArray();
-    return docs.map(docToView);
-  }
-
-  /** Internal API: set/clear the sect a family belongs to (called by worldsvc on sect join/leave/found/dissolve; worldsvc is authoritative, this is a read cache for clients). */
-  async setSect(familyId: string, sectId: string | null, sectName?: string | null): Promise<void> {
-    await this.deps.cols.families.updateOne(
-      { _id: familyId },
-      sectId
-        ? { $set: { sectId, ...(sectName ? { sectName } : {}) } }
-        : { $unset: { sectId: '', sectName: '' } },
-    );
-  }
-
-  /**
-   * Internal API: recompute + persist prosperity from a worldsvc-supplied territoryCount (worldsvc owns tile
-   * ownership; socialsvc owns the family doc). Called at explicit refresh points (occupation / siege / sect-founding / settle),
-   * mirroring the pre-P4 worldsvc-local refreshFamilyProsperity semantics. Family not found → returns 0 without writing.
-   */
-  async refreshProsperity(familyId: string, territoryCount: number): Promise<number> {
-    const fam = await this.deps.cols.families.findOne({ _id: familyId });
-    if (!fam) return 0;
-    const prosperity = familyProsperity(territoryCount, fam.memberCount, fam.activity ?? 0);
-    await this.deps.cols.families.updateOne(
-      { _id: familyId },
-      { $set: { prosperity, prosperityUpdatedAt: this.deps.now(), territoryCount } },
-    );
-    return prosperity;
-  }
-
-  /**
-   * Merged bumpActivity + refreshProsperity (comm-audit batch F item 9): worldsvc's bumpFamilyActivity
-   * always calls both back-to-back for the same familyId, so do the $inc then recompute-and-$set in one
-   * round trip instead of two sequential internal-HTTP hops (same "one hop, multiple Mongo ops" shape as
-   * resetSlgState below). Returns the new prosperity value (0 on unknown family, same as refreshProsperity).
-   */
-  async bumpActivityAndProsperity(familyId: string, delta: number, territoryCount: number): Promise<number> {
-    const fam = await this.deps.cols.families.findOneAndUpdate(
-      { _id: familyId },
-      { $inc: { activity: delta } },
-      { returnDocument: 'after' },
-    );
-    if (!fam) return 0;
-    const prosperity = familyProsperity(territoryCount, fam.memberCount, fam.activity ?? 0);
-    await this.deps.cols.families.updateOne(
-      { _id: familyId },
-      { $set: { prosperity, prosperityUpdatedAt: this.deps.now(), territoryCount } },
-    );
-    return prosperity;
-  }
-
-  /** Internal API: zero all SLG season state (territory/prosperity/activity/sect) on world reset (SLG_DESIGN §17.3); family identity/membership is untouched. */
-  async resetSlgState(familyId: string): Promise<void> {
-    await this.deps.cols.families.updateOne(
-      { _id: familyId },
-      { $set: { territoryCount: 0, prosperity: 0, activity: 0, prosperityUpdatedAt: this.deps.now() }, $unset: { sectId: '', sectName: '' } },
-    );
+  resetSlgState(familyId: string) {
+    return this.internal.resetSlgState(familyId);
   }
 }

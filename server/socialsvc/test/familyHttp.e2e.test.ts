@@ -4,7 +4,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { Server } from 'http';
 import type { AddressInfo } from 'net';
-import { signToken, internalHeaders } from '@nw/shared';
+import { signToken, internalHeaders, familyProsperity } from '@nw/shared';
 import { createSocialMongo, type SocialMongo } from '../src/db';
 import { FamilyService } from '../src/familyService';
 import { FriendService } from '../src/friendService';
@@ -247,5 +247,144 @@ describe.skipIf(!mongo)('socialsvc family HTTP routes e2e', () => {
       body: JSON.stringify({ sectId: 'sect:2', sectName: 'Nope' }),
     });
     expect(r.status).toBe(401);
+  });
+
+  // 2026-08-10, familyService.ts split audit: the remaining /internal/family/* routes (all except
+  // :id/sect above) were previously exercised only at the service layer (family.e2e.test.ts calling
+  // `svc.xxx()` directly) and had zero coverage through the actual HTTP route + X-Internal-Key gate
+  // that worldsvc hits in production — a pre-existing gap, not introduced by the split, surfaced by
+  // grepping internalFamilyRoutes.ts's route strings against the test suite (same audit shape as the
+  // admin/socialsvc httpApi.ts if-chain splits earlier the same day). Nested describe so its own
+  // beforeAll creates the dedicated fam:GAMA family *after* the ALFA/BETA-scoped tests above have
+  // already run — GAMA has to exist for these cases, but adding it earlier would leak a third
+  // low-prosperity family into the top-level "GET /social/family/browse: no query" assertion.
+  describe('internal /internal/family/* wire-level (2026-08-10, familyService split audit)', () => {
+    const leaderCAuth = { authorization: `Bearer ${signToken('leader-c', { secret: SECRET })}` };
+
+    beforeAll(async () => {
+      await familySvc.createFamily('leader-c', 'GammaSquad', 'GAMA');
+    });
+
+    it('GET /internal/family/by-account/:accountId: member → familyId; non-member → null (wire-level)', async () => {
+      const internalAuth = internalHeaders('worldsvc', INTERNAL_KEY);
+      const memberRes = await fetch(`${base}/internal/family/by-account/leader-c`, { headers: internalAuth });
+      expect(memberRes.status).toBe(200);
+      expect((await memberRes.json()).data).toEqual({ familyId: 'fam:GAMA' });
+
+      const nonMemberRes = await fetch(`${base}/internal/family/by-account/nobody-xyz`, { headers: internalAuth });
+      expect(nonMemberRes.status).toBe(200);
+      expect((await nonMemberRes.json()).data).toEqual({ familyId: null });
+    });
+
+    it('GET /internal/family/by-account/:accountId: without X-Internal-Key → 401', async () => {
+      const r = await fetch(`${base}/internal/family/by-account/leader-c`);
+      expect(r.status).toBe(401);
+    });
+
+    it('GET /internal/family/member/:accountId: membership + identity in one round trip; unknown → null (wire-level)', async () => {
+      const internalAuth = internalHeaders('worldsvc', INTERNAL_KEY);
+      const r = await fetch(`${base}/internal/family/member/leader-c`, { headers: internalAuth });
+      expect(r.status).toBe(200);
+      expect((await r.json()).data).toEqual({
+        member: expect.objectContaining({ familyId: 'fam:GAMA', role: 'leader', name: 'GammaSquad', tag: 'GAMA' }),
+      });
+
+      const unknownRes = await fetch(`${base}/internal/family/member/nobody-xyz`, { headers: internalAuth });
+      expect(unknownRes.status).toBe(200);
+      expect((await unknownRes.json()).data).toEqual({ member: null });
+    });
+
+    it('POST /internal/family/batch: batch-fetches by id, silently skipping unknown ids (wire-level)', async () => {
+      const internalAuth = internalHeaders('worldsvc', INTERNAL_KEY);
+      const r = await fetch(`${base}/internal/family/batch`, {
+        method: 'POST',
+        headers: { ...internalAuth, 'content-type': 'application/json' },
+        body: JSON.stringify({ familyIds: ['fam:GAMA', 'fam:MISSING'] }),
+      });
+      expect(r.status).toBe(200);
+      const { families } = (await r.json()).data as { families: Array<{ familyId: string }> };
+      expect(families.map((f) => f.familyId)).toEqual(['fam:GAMA']);
+    });
+
+    it('GET /internal/family/by-sect/:sectId: all families currently in that sect (wire-level)', async () => {
+      const internalAuth = internalHeaders('worldsvc', INTERNAL_KEY);
+      await familySvc.setSect('fam:GAMA', 'sect:iron', 'Iron Fist');
+      const r = await fetch(`${base}/internal/family/by-sect/sect:iron`, { headers: internalAuth });
+      expect(r.status).toBe(200);
+      const { families } = (await r.json()).data as { families: Array<{ familyId: string }> };
+      expect(families.map((f) => f.familyId)).toEqual(['fam:GAMA']);
+      await familySvc.setSect('fam:GAMA', null); // reset for the slg-reset test further down
+    });
+
+    it('POST /internal/family/:id/prosperity/refresh: recomputes + persists prosperity from a supplied territoryCount (wire-level)', async () => {
+      const internalAuth = internalHeaders('worldsvc', INTERNAL_KEY);
+      const r = await fetch(`${base}/internal/family/fam:GAMA/prosperity/refresh`, {
+        method: 'POST',
+        headers: { ...internalAuth, 'content-type': 'application/json' },
+        body: JSON.stringify({ territoryCount: 3 }),
+      });
+      expect(r.status).toBe(200);
+      const { prosperity } = (await r.json()).data as { prosperity: number };
+      expect(prosperity).toBe(familyProsperity(3, 1, 0)); // 1 member (leader-c only), activity still 0
+
+      const famRes = await fetch(`${base}/social/family/fam:GAMA`, { headers: leaderCAuth });
+      const fam = (await famRes.json()).data as { prosperity: number; territoryCount?: number };
+      expect(fam.prosperity).toBe(prosperity);
+      expect(fam.territoryCount).toBe(3);
+    });
+
+    it('POST /internal/family/activity: bumps activity, observable via a subsequent prosperity refresh (wire-level)', async () => {
+      const internalAuth = internalHeaders('worldsvc', INTERNAL_KEY);
+      const bumpRes = await fetch(`${base}/internal/family/activity`, {
+        method: 'POST',
+        headers: { ...internalAuth, 'content-type': 'application/json' },
+        body: JSON.stringify({ familyId: 'fam:GAMA', delta: 5 }),
+      });
+      expect(bumpRes.status).toBe(200);
+
+      const refreshRes = await fetch(`${base}/internal/family/fam:GAMA/prosperity/refresh`, {
+        method: 'POST',
+        headers: { ...internalAuth, 'content-type': 'application/json' },
+        body: JSON.stringify({ territoryCount: 3 }),
+      });
+      const { prosperity } = (await refreshRes.json()).data as { prosperity: number };
+      expect(prosperity).toBe(familyProsperity(3, 1, 5)); // activity bumped by the previous request to 5
+    });
+
+    it('POST /internal/family/activity: missing familyId → 400', async () => {
+      const internalAuth = internalHeaders('worldsvc', INTERNAL_KEY);
+      const r = await fetch(`${base}/internal/family/activity`, {
+        method: 'POST',
+        headers: { ...internalAuth, 'content-type': 'application/json' },
+        body: JSON.stringify({ delta: 1 }),
+      });
+      expect(r.status).toBe(400);
+    });
+
+    it('POST /internal/family/:id/activity-and-prosperity: merged bump + refresh lands in one round trip (wire-level)', async () => {
+      const internalAuth = internalHeaders('worldsvc', INTERNAL_KEY);
+      const r = await fetch(`${base}/internal/family/fam:GAMA/activity-and-prosperity`, {
+        method: 'POST',
+        headers: { ...internalAuth, 'content-type': 'application/json' },
+        body: JSON.stringify({ delta: 2, territoryCount: 4 }),
+      });
+      expect(r.status).toBe(200);
+      const { prosperity } = (await r.json()).data as { prosperity: number };
+      expect(prosperity).toBe(familyProsperity(4, 1, 7)); // activity 5 (prior test) + 2 = 7
+    });
+
+    it('POST /internal/family/:id/slg-reset: zeroes territory/prosperity/activity + clears sect, keeps identity (wire-level)', async () => {
+      const internalAuth = internalHeaders('worldsvc', INTERNAL_KEY);
+      await familySvc.setSect('fam:GAMA', 'sect:iron', 'Iron Fist');
+      const r = await fetch(`${base}/internal/family/fam:GAMA/slg-reset`, { method: 'POST', headers: internalAuth });
+      expect(r.status).toBe(200);
+
+      const famRes = await fetch(`${base}/social/family/fam:GAMA`, { headers: leaderCAuth });
+      const fam = (await famRes.json()).data as { prosperity: number; territoryCount?: number; sectId?: string; name: string };
+      expect(fam.prosperity).toBe(0);
+      expect(fam.territoryCount).toBe(0);
+      expect(fam.sectId).toBeUndefined();
+      expect(fam.name).toBe('GammaSquad'); // identity untouched
+    });
   });
 });

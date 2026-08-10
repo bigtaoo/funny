@@ -56,7 +56,45 @@ export async function pageSLGSeason(ctx: Ctx): Promise<void> {
     }
   };
 
-  // Open-new-world form (slg.season.manage only)
+  // Allocate-next-season form (slg.season.manage only) — the correct way to start a new season: snake-draft
+  // last season's sects across N shards by strength, then open+clone every shard for the new season number.
+  // Reopening an existing worldId via "Open a new world" below silently keeps its old season instead of
+  // advancing it (2026-08-10 incident) — this is the only action that actually moves players to a new map.
+  if (canManage) {
+    const nextSeasonInput = h('input', { type: 'number', value: '1', min: '1', style: 'width:80px' }) as HTMLInputElement;
+    const allocCapInput = h('input', { type: 'number', value: '10000', min: '1', style: 'width:100px' }) as HTMLInputElement;
+    const allocErr = h('div', { class: 'err' });
+    const allocBtn = h('button', {}, 'Allocate next season') as HTMLButtonElement;
+    allocBtn.onclick = async (): Promise<void> => {
+      allocErr.textContent = '';
+      const season = Number(nextSeasonInput.value);
+      if (!confirm(`Allocate season ${season} (capacity ${allocCapInput.value} per shard)? This settles shard balancing from the previous season's results and opens fresh worlds — every account will be routed to the new map on next login.`)) return;
+      allocBtn.disabled = true;
+      try {
+        const r = await api.slgAllocateNextSeason(season, Number(allocCapInput.value));
+        showOk(allocErr, `Season ${season} allocated: ${r.shardCount} shard(s) — ${r.worldIds.join(', ')} (${r.allocatedFamilies} families placed)`);
+        await refresh();
+      } catch (e) {
+        showErr(allocErr, e);
+      } finally {
+        allocBtn.disabled = false;
+      }
+    };
+    root.append(
+      h('div', { class: 'card', style: 'margin-bottom:12px' },
+        h('div', { class: 'muted', style: 'margin-bottom:6px' }, 'Allocate next season (recommended way to start a new season)'),
+        h('div', { class: 'row' },
+          h('div', {}, h('label', {}, 'Season'), nextSeasonInput),
+          h('div', {}, h('label', {}, 'Capacity / shard'), allocCapInput),
+          allocBtn,
+        ),
+        allocErr,
+      ),
+    );
+  }
+
+  // Open-new-world form (slg.season.manage only) — low-level escape hatch (re-open a closed world, add a
+  // single extra shard). Prefer "Allocate next season" above for starting an actual new season.
   if (canManage) {
     const wIdInput = h('input', { placeholder: 'worldId (e.g. s1-0)' }) as HTMLInputElement;
     const seasonInput = h('input', { type: 'number', value: '1', min: '1', style: 'width:80px' }) as HTMLInputElement;

@@ -54,6 +54,14 @@ describe.skipIf(!mongo)('pve server-authoritative e2e', () => {
     expect(r.data.save.progress.cleared).toContain('ch1_lv1');
     expect(r.data.save.progress.stars['ch1_lv1']).toBe(3);
     expect(r.data.save.materials.scrap).toBe(6);
+    // Material provenance (ITEM_IDENTITY_DESIGN.md task2, 2026-08-10): one materialInstances row per
+    // material id granted by this single clear event (scrap + lead), tagged sourceType='pve_drop:<levelId>'.
+    const insts = await m.collections.materialInstances.find({ accountId }).toArray();
+    expect(insts).toHaveLength(2);
+    const byId = new Map(insts.map((i) => [i.materialId, i]));
+    expect(byId.get('scrap')).toMatchObject({ count: 6, sourceType: 'pve_drop:ch1_lv1' });
+    expect(byId.get('lead')).toMatchObject({ count: 2, sourceType: 'pve_drop:ch1_lv1' });
+    expect(typeof byId.get('scrap')?.obtainedAt).toBe('number');
   });
 
   it('author welcome mail (ONBOARDING_DESIGN §5.1): first-ever level clear sends an idempotent system mail with 1000 coins + mail_new push; a second clear does not resend it', async () => {

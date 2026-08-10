@@ -180,4 +180,80 @@ describe('validateCustomPool', () => {
       }),
     ).toMatch(/duplicate category/);
   });
+
+  // ── previously-uncovered branches ──────────────────────────────────────────
+  it('rejects a missing id', () => {
+    expect(validateCustomPool({ ...baseCfg, id: undefined })).toMatch(/id/);
+  });
+  it('rejects a missing name', () => {
+    expect(validateCustomPool({ ...baseCfg, name: undefined })).toMatch(/name/);
+  });
+  it('rejects a whitespace-only name', () => {
+    expect(validateCustomPool({ ...baseCfg, name: '   ' })).toMatch(/name/);
+  });
+  it('rejects a missing costSingle', () => {
+    expect(validateCustomPool({ ...baseCfg, costSingle: undefined })).toMatch(/costSingle/);
+  });
+  it('rejects a non-positive costTen', () => {
+    expect(validateCustomPool({ ...baseCfg, costTen: 0 })).toMatch(/costTen/);
+    expect(validateCustomPool({ ...baseCfg, costTen: -5 })).toMatch(/costTen/);
+  });
+  it('rejects a missing startAt/endAt', () => {
+    expect(validateCustomPool({ ...baseCfg, startAt: undefined })).toMatch(/endAt/);
+    expect(validateCustomPool({ ...baseCfg, endAt: undefined })).toMatch(/endAt/);
+  });
+  it('rejects an unknown category', () => {
+    expect(
+      validateCustomPool({
+        ...baseCfg,
+        categories: [{ category: 'not_a_category' as never, weight: 1, items: [{ itemId: 'skin_l1', weight: 1 }] }],
+      }),
+    ).toMatch(/unknown category/);
+  });
+  it('rejects a non-positive category weight', () => {
+    expect(
+      validateCustomPool({
+        ...baseCfg,
+        categories: [{ category: 'skin', weight: 0, items: [{ itemId: 'skin_l1', weight: 1 }] }],
+      }),
+    ).toMatch(/weight must be > 0/);
+  });
+  it('rejects a category with an empty item list', () => {
+    expect(
+      validateCustomPool({ ...baseCfg, categories: [{ category: 'skin', weight: 1, items: [] }] }),
+    ).toMatch(/needs at least one item/);
+  });
+  it('rejects a category with items missing entirely', () => {
+    expect(
+      validateCustomPool({
+        ...baseCfg,
+        categories: [{ category: 'skin', weight: 1 } as unknown as CustomPoolConfig['categories'][number]],
+      }),
+    ).toMatch(/needs at least one item/);
+  });
+  it('rejects a duplicate item within the same category', () => {
+    expect(
+      validateCustomPool({
+        ...baseCfg,
+        categories: [
+          {
+            category: 'material',
+            weight: 1,
+            items: [
+              { itemId: 'mat_scrap', weight: 1 },
+              { itemId: 'mat_scrap', weight: 2 },
+            ],
+          },
+        ],
+      }),
+    ).toMatch(/duplicate item/);
+  });
+  it('rejects a non-positive item weight', () => {
+    expect(
+      validateCustomPool({
+        ...baseCfg,
+        categories: [{ category: 'material', weight: 1, items: [{ itemId: 'mat_scrap', weight: 0 }] }],
+      }),
+    ).toMatch(/weight must be > 0/);
+  });
 });

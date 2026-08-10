@@ -220,6 +220,19 @@ describe.skipIf(!mongo)('commercial service — idempotency / concurrency / boun
     expect((await ledgerOf('sc')).filter((l) => l.reason === 'shop').length).toBe(1);
   });
 
+  it('shopCharge: concurrent duplicate orderId WITH qty>1 debits cost×qty exactly once, not qty times over (2026-08-10 bulk-buy)', async () => {
+    await fund('sc-bulk', 10_000);
+    const calls = Array.from({ length: 6 }, () =>
+      svc.shopCharge({ accountId: 'sc-bulk', itemId: 'protect_enhance', cost: 500, qty: 10, orderId: 'dup-shop-bulk' }),
+    );
+    const res = await Promise.allSettled(calls);
+    expect(res.every((r) => r.status === 'fulfilled')).toBe(true);
+    // 10,000 - 500*10 = 5,000 — debited once for the whole batch, not once per racing call and not per unit.
+    expect((await svc.getWallet('sc-bulk')).coins).toBe(5000);
+    expect(await m.collections.orders.countDocuments({ _id: 'dup-shop-bulk' })).toBe(1);
+    expect((await ledgerOf('sc-bulk')).filter((l) => l.reason === 'shop').length).toBe(1);
+  });
+
   it('spend: concurrent duplicate orderId debits exactly once and never throws', async () => {
     await fund('spc', 1000);
     const calls = Array.from({ length: 6 }, () =>

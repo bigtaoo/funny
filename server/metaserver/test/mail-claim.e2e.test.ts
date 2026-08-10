@@ -219,6 +219,17 @@ describe.skipIf(!meta || !social)('mail claim: real cross-service wire (metaserv
     // None of the non-skin attachments leaked into the skin set.
     expect(b.data.save.inventory.skins).not.toContain('protect_enhance');
     expect(b.data.save.inventory.skins).not.toContain('scrap');
+    // Material/item provenance (ITEM_IDENTITY_DESIGN.md task2, 2026-08-10): both the material and the
+    // generic-item attachment mint their own materialInstances row, tagged sourceType='mail' (the
+    // generic tag every mail-delivered kind gets regardless of the mail's original cause), each with a
+    // 30-day TTL anchor derived from obtainedAt.
+    const matInst = await m.collections.materialInstances.findOne({ accountId, materialId: 'scrap' });
+    expect(matInst).toMatchObject({ count: 7, sourceType: 'mail' });
+    const itemInst = await m.collections.materialInstances.findOne({ accountId, materialId: 'protect_enhance' });
+    expect(itemInst).toMatchObject({ count: 2, sourceType: 'mail' });
+    const obtainedAt = matInst!.obtainedAt!;
+    const expireAt = matInst!.expireAt as unknown as Date;
+    expect(expireAt.getTime() - obtainedAt).toBe(30 * 24 * 3600 * 1000);
   });
 
   it('claiming a mail skin attachment for an already-owned skin still delivers a real second instance (ITEM_IDENTITY_DESIGN.md task1, 2026-08-08 — used to be a silent no-op, same bug class as the shop/fate/gacha paths)', async () => {
