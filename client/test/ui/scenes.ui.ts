@@ -1066,6 +1066,34 @@ describe('LobbyScene — identity chip row', () => {
 
     scene.destroy();
   });
+
+  // Regression for the fmtCoins abbreviation removal (coins now render as the full
+  // "97,757,000"-style number instead of a short "97757k") — the coins chip is sized
+  // from the label's real pixel width (build.ts), so a long full-precision balance
+  // grows the chip well beyond what any abbreviated string ever needed. Confirms that
+  // growth still doesn't crowd out the profile chip on its left, even on a narrow
+  // portrait phone with a near-max balance.
+  it('portrait, narrow phone: a huge full-precision coin balance still does not overlap the profile chip', () => {
+    const layout = createLayout(390, 844);
+    const scene = new LobbyScene(layout, new InputManager(), {
+      onStartGame() {}, onOpenCampaign() {}, onOpenRoom() {}, onOpenWorld() {},
+      onOpenShop() {}, onOpenCards() {}, onOpenStats() {}, onOpenProfile() {},
+      onOpenRecharge() {}, onOpenLeaderboard() {},
+      getCoins: () => 999_999_999,
+      pvp: { rank: 'platinum', elo: 1376 },
+      playerName: 'tao',
+    });
+
+    const profileRect = (scene as any).profileChipRect as { x: number; y: number; w: number; h: number };
+    const coinsRect   = (scene as any).coinsChipRect   as { x: number; y: number; w: number; h: number };
+    const rankRect     = (scene as any).rankChipRect     as { x: number; y: number; w: number; h: number };
+
+    expect(rectsOverlap(profileRect, coinsRect)).toBe(false);
+    expect(rectsOverlap(coinsRect, rankRect)).toBe(false);
+    expect(profileRect.x + profileRect.w).toBeLessThanOrEqual(coinsRect.x);
+
+    scene.destroy();
+  });
 });
 
 // ── LevelPrepScene: layout invariants (regression for 6-row overflow bug) ────

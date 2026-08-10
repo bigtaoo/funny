@@ -9,15 +9,13 @@ describe('fmtCoins (LobbyScene header coin chip)', () => {
     expect(fmtCoins(9999)).toBe('9,999');
   });
 
-  it('formats 10k-99999 as one-decimal "k" (e.g. 23456 -> "23.5k")', () => {
-    expect(fmtCoins(10000)).toBe('10.0k');
-    expect(fmtCoins(23456)).toBe('23.5k');
-    expect(fmtCoins(99999)).toBe('100.0k');
-  });
-
-  it('formats >=100k as integer "k"', () => {
-    expect(fmtCoins(100000)).toBe('100k');
-    expect(fmtCoins(1234567)).toBe('1235k');
+  it('formats values above 10k as the full number with thousands separators, never abbreviated', () => {
+    expect(fmtCoins(10000)).toBe('10,000');
+    expect(fmtCoins(23456)).toBe('23,456');
+    expect(fmtCoins(99999)).toBe('99,999');
+    expect(fmtCoins(100000)).toBe('100,000');
+    expect(fmtCoins(1234567)).toBe('1,234,567');
+    expect(fmtCoins(97084000)).toBe('97,084,000');
   });
 
   it('clamps negative and fractional input (floors, never negative)', () => {
