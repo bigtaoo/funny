@@ -458,6 +458,16 @@ describe.skipIf(!mongo)('meta economy orchestration e2e', () => {
     expect(await comm.undeliveredOrders(accountId)).toHaveLength(0);
   });
 
+  it('reconciliation replays the full bulk qty for a SKIN order too — qty real instances, still a single dedup entry in inventory.skins', async () => {
+    comm.coins.set(accountId, 10_000);
+    await comm.shopCharge({ accountId, itemId: 'skin_shop_r1', cost: 800, qty: 4, orderId: 'orphan-bulk-skin-1' });
+    expect(await comm.undeliveredOrders(accountId)).toHaveLength(1);
+    const r = body(await app.inject({ method: 'GET', url: '/save', headers: auth() })); // reconciliation side effect
+    expect(r.data.save.inventory.skins.filter((s: string) => s === 'skin_shop_r1')).toHaveLength(1);
+    expect(await m.collections.skinInstances.countDocuments({ accountId, skinId: 'skin_shop_r1' })).toBe(4);
+    expect(await comm.undeliveredOrders(accountId)).toHaveLength(0);
+  });
+
   it('shop direct purchase: kind="material" (mat_buy_scrap) delivers a qty>1 bundle into save.materials, not inventory.items/skins (ECONOMY_NUMBERS §6.5 gold→material exchange)', async () => {
     comm.coins.set(accountId, 1000);
     const r = body(await app.inject({ method: 'POST', url: '/shop/buy', headers: auth(), payload: { itemId: 'mat_buy_scrap' } }));

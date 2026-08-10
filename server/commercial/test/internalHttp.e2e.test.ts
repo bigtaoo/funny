@@ -91,6 +91,48 @@ describe.skipIf(!mongo)('commercial internalHttp', () => {
     expect(await r.json()).toMatchObject({ ok: true, coinsGranted: 1100, coinsAfter: 1100 });
   });
 
+  it('POST /internal/shop/charge with qty in the raw JSON body debits cost×qty and records qty on the order (2026-08-10 bulk-buy)', async () => {
+    // Two recharges (500*3=1500 needed; a single t499 recharge only nets 1100 with the first-purchase bonus).
+    await fetch(`${base}/internal/recharge/verify`, {
+      method: 'POST',
+      headers: hdr(KEY),
+      body: JSON.stringify({ accountId: 'bulk-w', platform: 'web', receipt: 'tier:t499', receiptId: 'rx-bulk-1' }),
+    });
+    await fetch(`${base}/internal/recharge/verify`, {
+      method: 'POST',
+      headers: hdr(KEY),
+      body: JSON.stringify({ accountId: 'bulk-w', platform: 'web', receipt: 'tier:t499', receiptId: 'rx-bulk-2' }),
+    });
+    const before = await (await fetch(`${base}/internal/wallet?accountId=bulk-w`, { headers: hdr(KEY) })).json();
+    const r = await fetch(`${base}/internal/shop/charge`, {
+      method: 'POST',
+      headers: hdr(KEY),
+      body: JSON.stringify({ accountId: 'bulk-w', itemId: 'protect_enhance', cost: 500, qty: 3, orderId: 'oBulk' }),
+    });
+    const b = await r.json();
+    expect(b).toMatchObject({ ok: true, coinsAfter: before.coins - 500 * 3, status: 'charged' });
+    const undelivered = await (await fetch(`${base}/internal/orders/undelivered?accountId=bulk-w`, { headers: hdr(KEY) })).json();
+    expect(undelivered.orders[0].result.qty).toBe(3);
+  });
+
+  it('POST /internal/shop/charge omits qty in the raw JSON body → defaults to 1, unchanged from before the qty param existed', async () => {
+    await fetch(`${base}/internal/recharge/verify`, {
+      method: 'POST',
+      headers: hdr(KEY),
+      body: JSON.stringify({ accountId: 'no-qty-w', platform: 'web', receipt: 'tier:t499', receiptId: 'rx-noqty' }),
+    });
+    const before = await (await fetch(`${base}/internal/wallet?accountId=no-qty-w`, { headers: hdr(KEY) })).json();
+    const r = await fetch(`${base}/internal/shop/charge`, {
+      method: 'POST',
+      headers: hdr(KEY),
+      body: JSON.stringify({ accountId: 'no-qty-w', itemId: 'protect_enhance', cost: 500, orderId: 'oNoQty' }),
+    });
+    const b = await r.json();
+    expect(b).toMatchObject({ ok: true, coinsAfter: before.coins - 500 });
+    const undelivered = await (await fetch(`${base}/internal/orders/undelivered?accountId=no-qty-w`, { headers: hdr(KEY) })).json();
+    expect(undelivered.orders[0].result.qty).toBe(1);
+  });
+
   it('GET /internal/orders/undelivered → list', async () => {
     // Recharge first, then spend coins to create an undelivered order.
     await fetch(`${base}/internal/recharge/verify`, {
