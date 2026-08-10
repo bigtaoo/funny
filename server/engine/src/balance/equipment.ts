@@ -97,7 +97,7 @@ export const AFFIX_FIELD_MAP: Readonly<Record<string, AffixDef>> = {
  * (+9 ≈ ×1.9): +0~+5 grows slowly (each level's absolute payoff barely changes), +6 marks the
  * "awakening" breakpoint, and +7~+9 accelerates steeply. The payoff has to outrun the success-rate/
  * cost/demote-risk curve at high levels (see enhanceDemoteChance in @nw/shared) or nobody has a
- * reason to push past +6 — see DECISIONS.md ADR-063 for the discussion. +9 ≈ ×4.06 base.
+ * reason to push past +6 — see DECISIONS.md ADR-063 for the discussion. +9 ≈ ×5.00 base.
  */
 export const ENHANCE_LEVEL_MULTIPLIER: readonly number[] = [
   1.00, // +0
@@ -109,7 +109,7 @@ export const ENHANCE_LEVEL_MULTIPLIER: readonly number[] = [
   1.76, // +6 (breakpoint)
   2.11, // +7
   2.76, // +8
-  4.06, // +9
+  5.00, // +9 (2026-08-10 bump from 4.06 — the last level's payoff needed to read as an even bigger spike)
 ];
 
 /** Cumulative enhancement multiplier for `level` (clamped to the table's range: [0, ENHANCE_LEVEL_MULTIPLIER.length-1]). */
