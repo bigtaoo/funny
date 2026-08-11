@@ -1,10 +1,16 @@
 // auctionsvc AuctionService split — system-mail delivery helpers (see ../auctionService.ts).
+//
+// Independent sibling class (2026-08-11 re-audit, converted from a linear inheritance chain to
+// composition): zero dependencies on any other layer, only `deps` — depended on by trade.ts.
+// `deliverItem`/`deliverCoins` moved from `protected` to public.
 import type { AuctionDoc } from '../db';
 import type { AuctionMailAttachment } from '../mailClient';
-import { AuctionServicePricing } from './pricing';
+import type { AuctionServiceDeps } from './base';
 import { AUCTION_MAIL_EXPIRE_DAYS, equipInstanceOf, cardInstanceOf } from './base';
 
-export class AuctionServiceDelivery extends AuctionServicePricing {
+export class AuctionServiceDelivery {
+  constructor(private readonly deps: AuctionServiceDeps) {}
+
   /**
    * Delivers the listed item to the target account via system mail (escrow-out model, AUCTION_DESIGN):
    *   buyer on sale (reason 'sold') / seller on cancel or expiry (reason 'returned').
@@ -13,7 +19,7 @@ export class AuctionServiceDelivery extends AuctionServicePricing {
    * dispatchKey = orderId → idempotent (each call site passes a stable, unique orderId).
    * Best-effort: mail unavailable → no-op (same degradation as the previous direct-grant path).
    */
-  protected async deliverItem(
+  async deliverItem(
     toAccountId: string,
     doc: AuctionDoc,
     orderId: string,
@@ -49,7 +55,7 @@ export class AuctionServiceDelivery extends AuctionServicePricing {
    * auctionsvc credits coins directly anymore; only real-money recharge goes straight to the wallet.
    * dispatchKey = orderId → idempotent (each call site passes a stable, unique orderId).
    */
-  protected async deliverCoins(
+  async deliverCoins(
     toAccountId: string,
     amount: number,
     orderId: string,

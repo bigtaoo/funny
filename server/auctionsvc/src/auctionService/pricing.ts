@@ -1,4 +1,9 @@
 // auctionsvc AuctionService split — C daily caps + G price guardrail (see ../auctionService.ts).
+//
+// Independent sibling class (2026-08-11 re-audit, converted from a linear inheritance chain to
+// composition): zero dependencies on any other layer, only `deps` — the DAG root, depended on by
+// create.ts and trade.ts. `bumpDaily`/`checkPriceGuard`/`recordSoldPrice` moved from `protected`
+// to public (siblings call them via `this.pricing.xxx(...)`, not through inheritance).
 import {
   AUCTION_DAILY_TTL_SEC,
   AUCTION_PRICE_WINDOW_MIN_SAMPLES,
@@ -11,9 +16,11 @@ import {
   equipEnhanceExpectedCost,
   SlgError,
 } from '@nw/shared';
-import { AuctionServiceBase } from './base';
+import type { AuctionServiceDeps } from './base';
 
-export class AuctionServicePricing extends AuctionServiceBase {
+export class AuctionServicePricing {
+  constructor(private readonly deps: AuctionServiceDeps) {}
+
   // ── C Daily cap counter (keyed by server UTC day boundary, auto-cleared via TTL) ──────────────────────────
   private dayKey(): string {
     return new Date(this.deps.now()).toISOString().slice(0, 10);
@@ -25,7 +32,7 @@ export class AuctionServicePricing extends AuctionServiceBase {
    * Reserves the slot before executing business logic — standard rate-limiting; the rare over-count from a subsequent
    * business failure is conservatively acceptable.
    */
-  protected async bumpDaily(accountId: string, kind: 'lists' | 'buys', cap: number): Promise<void> {
+  async bumpDaily(accountId: string, kind: 'lists' | 'buys', cap: number): Promise<void> {
     const { cols, now } = this.deps;
     const id = `${accountId}:${this.dayKey()}`;
     const res = await cols.auctionDaily.findOneAndUpdate(
@@ -74,7 +81,7 @@ export class AuctionServicePricing extends AuctionServiceBase {
   }
 
   /** Validates that the unit price falls within the refPrice floating band; passes through if no reference price exists (cold start with no static value). */
-  protected async checkPriceGuard(category: string | null, unitPrice: number): Promise<void> {
+  async checkPriceGuard(category: string | null, unitPrice: number): Promise<void> {
     if (!category) return;
     const ref = await this.refPrice(category);
     if (ref == null) return;
@@ -98,7 +105,7 @@ export class AuctionServicePricing extends AuctionServiceBase {
   }
 
   /** After each sale, pushes the unit price into the category sliding window (retains the most recent N entries). */
-  protected async recordSoldPrice(category: string | null, unitPrice: number): Promise<void> {
+  async recordSoldPrice(category: string | null, unitPrice: number): Promise<void> {
     if (!category) return;
     await this.deps.cols.auctionPrices.updateOne(
       { _id: category },

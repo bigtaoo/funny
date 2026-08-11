@@ -1,10 +1,20 @@
 // auctionsvc AuctionService split — create listing (see ../auctionService.ts).
+//
+// Independent sibling class (2026-08-11 re-audit, converted from a linear inheritance chain to
+// composition): depends on AuctionServicePricing (checkPriceGuard/bumpDaily) — the only cross-layer
+// edge in this file, injected via the constructor instead of inherited.
 import { AUCTION_DURATIONS_SEC, AUCTION_MAX_LISTINGS, AUCTION_DAILY_LIST_CAP, AUCTION_BANNED_MATERIALS, SlgError } from '@nw/shared';
 import type { AuctionDoc } from '../db';
-import { AuctionServiceListing } from './listing';
+import type { AuctionServiceDeps } from './base';
 import { docToView, makeAuctionId, nextAuctionSeq, categoryOf, equipInstanceOf, cardInstanceOf, type AuctionView } from './base';
+import type { AuctionServicePricing } from './pricing';
 
-export class AuctionServiceCreate extends AuctionServiceListing {
+export class AuctionServiceCreate {
+  constructor(
+    private readonly deps: AuctionServiceDeps,
+    private readonly pricing: AuctionServicePricing,
+  ) {}
+
   /**
    * Create a listing.
    * itemType='material' → deducts materials from meta (orderId-idempotent).
@@ -72,13 +82,13 @@ export class AuctionServiceCreate extends AuctionServiceListing {
       // guardrail check applies unconditionally to every bid amount including a buyout, so a buyout price
       // above the ceiling would otherwise be accepted here but then be permanently un-triggerable at bid
       // time (PRICE_OUT_OF_RANGE), silently making the seller's configured buyout unusable.
-      await this.checkPriceGuard(categoryOf({ itemType, item }), unitPrice);
-      if (buyoutPrice != null) await this.checkPriceGuard(categoryOf({ itemType, item }), buyoutPrice);
+      await this.pricing.checkPriceGuard(categoryOf({ itemType, item }), unitPrice);
+      if (buyoutPrice != null) await this.pricing.checkPriceGuard(categoryOf({ itemType, item }), buyoutPrice);
       // Concurrent listing count cap
       const openCount = await cols.auctions.countDocuments({ sellerId, status: 'open' });
       if (openCount >= AUCTION_MAX_LISTINGS) throw new SlgError('AUCTION_LIMIT_REACHED');
       // C Daily new-listing cap (reserve slot)
-      await this.bumpDaily(sellerId, 'lists', AUCTION_DAILY_LIST_CAP);
+      await this.pricing.bumpDaily(sellerId, 'lists', AUCTION_DAILY_LIST_CAP);
       // Deduct material from meta (escrow)
       await meta.deductMaterial(sellerId, material, qty, orderId);
     } else if (itemType === 'equipment') {
@@ -93,9 +103,9 @@ export class AuctionServiceCreate extends AuctionServiceListing {
       try {
         // G Price guardrail (equipment by defId/rarity/level category) + C daily cap — return escrowed instance on failure.
         // See the material branch above for why buyoutPrice needs the same guardrail check as unitPrice.
-        await this.checkPriceGuard(`equip:${instance.defId}:${instance.level}`, unitPrice);
-        if (buyoutPrice != null) await this.checkPriceGuard(`equip:${instance.defId}:${instance.level}`, buyoutPrice);
-        await this.bumpDaily(sellerId, 'lists', AUCTION_DAILY_LIST_CAP);
+        await this.pricing.checkPriceGuard(`equip:${instance.defId}:${instance.level}`, unitPrice);
+        if (buyoutPrice != null) await this.pricing.checkPriceGuard(`equip:${instance.defId}:${instance.level}`, buyoutPrice);
+        await this.pricing.bumpDaily(sellerId, 'lists', AUCTION_DAILY_LIST_CAP);
       } catch (e) {
         await meta.grantEquipment(sellerId, instance, `${orderId}:return`);
         throw e;
@@ -111,7 +121,7 @@ export class AuctionServiceCreate extends AuctionServiceListing {
       storedItem = { instance };
       try {
         // C Daily cap — return escrowed card on failure.
-        await this.bumpDaily(sellerId, 'lists', AUCTION_DAILY_LIST_CAP);
+        await this.pricing.bumpDaily(sellerId, 'lists', AUCTION_DAILY_LIST_CAP);
       } catch (e) {
         await meta.grantCard(sellerId, instance, `${orderId}:return`);
         throw e;
@@ -127,7 +137,7 @@ export class AuctionServiceCreate extends AuctionServiceListing {
       storedItem = { skinId: escrowedId };
       try {
         // C Daily cap — return escrowed skin on failure (no price guardrail for skins — cold-start pass-through, market-determined).
-        await this.bumpDaily(sellerId, 'lists', AUCTION_DAILY_LIST_CAP);
+        await this.pricing.bumpDaily(sellerId, 'lists', AUCTION_DAILY_LIST_CAP);
       } catch (e) {
         await meta.grantSkin(sellerId, escrowedId, `${orderId}:return`);
         throw e;

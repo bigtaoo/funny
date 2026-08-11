@@ -12,19 +12,69 @@
 //   G Price guardrail — dynamic sliding-window refPrice + range check (falls back to static values on cold start)
 //   B Auction bidding — saleMode='auction': start price / increment / escrow / anti-snipe / settle on expire
 //
-// AuctionService was a single ~925-line class (925 → shell + 7 files, 2026-08-09 split). Same
-// "linear inheritance chain" convention as worldsvc's WorldCore / metaserver's MarchService —
-// see claudedocs/server.md — one file per concern layer under ./auctionService/, no `this.xxx`
-// call site changes, the composed class is identical:
-//   auctionService/base.ts     AuctionServiceBase     deps + AuctionView/AuctionServiceDeps types + doc↔view mapping helpers
-//   auctionService/pricing.ts  AuctionServicePricing  C daily caps (bumpDaily) + G price guardrail (refPrice/checkPriceGuard/getRefBand/recordSoldPrice)
-//   auctionService/delivery.ts AuctionServiceDelivery system-mail delivery (deliverItem/deliverCoins)
-//   auctionService/listing.ts  AuctionServiceListing  read-only queries: listAuctions/queryListings/getMyListings/purgeClosedListings
-//   auctionService/create.ts   AuctionServiceCreate   createAuction (+ cap-reject rollback)
-//   auctionService/trade.ts    AuctionServiceTrade    buyAuction/placeBid/settleAuctionWin/cancelAuction/processExpiredAuctions
-//   auctionService/audit.ts    AuctionServiceAudit    D/G7 anomaly audit scan (scanAnomalies)
+// AuctionService was a single ~925-line class (925 → shell + 7 files, 2026-08-09 split as a linear
+// inheritance chain). Re-audited 2026-08-11 against claudedocs/server.md's split-priority doc (the
+// same pass that converted 6 other zero-cross-call chains to composition): unlike those 6,
+// AuctionService's chain has REAL cross-layer calls — create.ts and trade.ts both call pricing.ts's
+// methods, and trade.ts also calls delivery.ts's — but they form a clean one-directional DAG (no
+// cycles), so composition still applies cleanly, just with two of the six siblings taking a
+// constructor-injected reference to another instead of standing fully alone:
+//   auctionService/base.ts     (types + AuctionServiceDeps + doc↔view mapping helpers — the DAG's implicit root, no class of its own)
+//   auctionService/pricing.ts  AuctionServicePricing  C daily caps (bumpDaily) + G price guardrail (refPrice/checkPriceGuard/getRefBand/recordSoldPrice) — depends on nothing
+//   auctionService/delivery.ts AuctionServiceDelivery system-mail delivery (deliverItem/deliverCoins) — depends on nothing
+//   auctionService/listing.ts  AuctionServiceListing  read-only queries: listAuctions/queryListings/getMyListings/purgeClosedListings — depends on nothing
+//   auctionService/create.ts   AuctionServiceCreate   createAuction (+ cap-reject rollback) — depends on pricing
+//   auctionService/trade.ts    AuctionServiceTrade    buyAuction/placeBid/settleAuctionWin/cancelAuction/processExpiredAuctions — depends on pricing AND delivery
+//   auctionService/audit.ts    AuctionServiceAudit    D/G7 anomaly audit scan (scanAnomalies) — depends on nothing
+// No behavior change: every method body is unchanged aside from `this.xxx()` → `this.pricing.xxx()`/
+// `this.delivery.xxx()` at the two real cross-layer call sites, and `protected` → public visibility
+// on the handful of methods those two call sites reach (bumpDaily/checkPriceGuard/recordSoldPrice/
+// deliverItem/deliverCoins).
 export { type AuctionView, type AuctionServiceDeps } from './auctionService/base';
+import type { AuctionServiceDeps } from './auctionService/base';
+import { AuctionServicePricing } from './auctionService/pricing';
+import { AuctionServiceDelivery } from './auctionService/delivery';
+import { AuctionServiceListing } from './auctionService/listing';
+import { AuctionServiceCreate } from './auctionService/create';
+import { AuctionServiceTrade } from './auctionService/trade';
 import { AuctionServiceAudit } from './auctionService/audit';
 
-/** The full service, composed from the concern layers above. */
-export class AuctionService extends AuctionServiceAudit {}
+/** The full service, composed from the six concern layers above. */
+export class AuctionService {
+  private readonly pricing: AuctionServicePricing;
+  private readonly delivery: AuctionServiceDelivery;
+  private readonly listing: AuctionServiceListing;
+  private readonly create: AuctionServiceCreate;
+  private readonly trade: AuctionServiceTrade;
+  private readonly audit: AuctionServiceAudit;
+
+  constructor(deps: AuctionServiceDeps) {
+    this.pricing = new AuctionServicePricing(deps);
+    this.delivery = new AuctionServiceDelivery(deps);
+    this.listing = new AuctionServiceListing(deps);
+    this.create = new AuctionServiceCreate(deps, this.pricing);
+    this.trade = new AuctionServiceTrade(deps, this.pricing, this.delivery);
+    this.audit = new AuctionServiceAudit(deps);
+  }
+
+  // ── pricing ──
+  getRefBand(...args: Parameters<AuctionServicePricing['getRefBand']>) { return this.pricing.getRefBand(...args); }
+
+  // ── listing ──
+  listAuctions(...args: Parameters<AuctionServiceListing['listAuctions']>) { return this.listing.listAuctions(...args); }
+  queryListings(...args: Parameters<AuctionServiceListing['queryListings']>) { return this.listing.queryListings(...args); }
+  getMyListings(...args: Parameters<AuctionServiceListing['getMyListings']>) { return this.listing.getMyListings(...args); }
+  purgeClosedListings(...args: Parameters<AuctionServiceListing['purgeClosedListings']>) { return this.listing.purgeClosedListings(...args); }
+
+  // ── create ──
+  createAuction(...args: Parameters<AuctionServiceCreate['createAuction']>) { return this.create.createAuction(...args); }
+
+  // ── trade ──
+  buyAuction(...args: Parameters<AuctionServiceTrade['buyAuction']>) { return this.trade.buyAuction(...args); }
+  placeBid(...args: Parameters<AuctionServiceTrade['placeBid']>) { return this.trade.placeBid(...args); }
+  cancelAuction(...args: Parameters<AuctionServiceTrade['cancelAuction']>) { return this.trade.cancelAuction(...args); }
+  processExpiredAuctions(...args: Parameters<AuctionServiceTrade['processExpiredAuctions']>) { return this.trade.processExpiredAuctions(...args); }
+
+  // ── audit ──
+  scanAnomalies(...args: Parameters<AuctionServiceAudit['scanAnomalies']>) { return this.audit.scanAnomalies(...args); }
+}
