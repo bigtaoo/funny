@@ -1,8 +1,12 @@
 // worldsvc core — scheduling infra & real-time push (WorldCore split, 2026-07-03).
 // Best-effort Redis ZSETs for precise march/siege-damage wake-ups (Mongo scan stays
 // authoritative) plus the gateway push helpers. No behavior change.
+//
+// 2026-08-11 (mixin-chain re-audit, claudedocs/server.md "拆分形态的优先级" 形态②): converted from an
+// `extends WorldCoreYield` inheritance-chain link to composition — zero cross-layer calls (only reads
+// `core.deps`/`core.gateway`/`core.meta`), so this takes a narrow constructor-injected `core: WorldCore`.
 import { baseFootprintCells, tileId } from '@nw/shared';
-import { WorldCoreYield } from './yield';
+import type { WorldCore } from '../core';
 import type { MarchView } from '../worldTypes';
 import type { SiegeDoc, TileDoc } from '../db';
 import type { PlayerProfile } from '../metaClient';
@@ -39,7 +43,9 @@ export interface CoverEntry {
   teamId?: string;
 }
 
-export class WorldCorePush extends WorldCoreYield {
+export class PushService {
+  constructor(private readonly core: WorldCore) {}
+
   // ── ADR-051 (P1): field-unit occupancy index (best-effort Redis hash, field=tileId → occupant JSON) ──
   // Records which field unit currently stands on each tile so the P2 tile-entry encounter check is an O(1)
   // lookup by tile (no Mongo scan). Best-effort like the ZSETs — a missing/failed Redis only disables the
@@ -50,21 +56,21 @@ export class WorldCorePush extends WorldCoreYield {
     return `world:${worldId}:occ`;
   }
   async setOccupancy(worldId: string, tile: string, occ: OccEntry): Promise<void> {
-    if (!this.deps.redis) return;
+    if (!this.core.deps.redis) return;
     try {
-      await this.deps.redis.hset(this.occKey(worldId), tile, JSON.stringify(occ));
+      await this.core.deps.redis.hset(this.occKey(worldId), tile, JSON.stringify(occ));
     } catch {
       /* best-effort: a lost write only weakens the encounter index, never arrival */
     }
   }
   async clearOccupancy(worldId: string, tile: string, id: string): Promise<void> {
-    if (!this.deps.redis) return;
+    if (!this.core.deps.redis) return;
     try {
-      const cur = await this.deps.redis.hget(this.occKey(worldId), tile);
+      const cur = await this.core.deps.redis.hget(this.occKey(worldId), tile);
       if (!cur) return;
       const e = JSON.parse(cur) as OccEntry;
       // Only clear if we still hold the tile — another unit may have taken it since (encounter hand-off, P2).
-      if (e.id === id) await this.deps.redis.hdel(this.occKey(worldId), tile);
+      if (e.id === id) await this.core.deps.redis.hdel(this.occKey(worldId), tile);
     } catch {
       /* best-effort */
     }
@@ -76,9 +82,9 @@ export class WorldCorePush extends WorldCoreYield {
    * is detected first. Best-effort: a null return only disables the encounter for this step, never arrival.
    */
   async getOccupancy(worldId: string, tile: string): Promise<OccEntry | null> {
-    if (!this.deps.redis) return null;
+    if (!this.core.deps.redis) return null;
     try {
-      const cur = await this.deps.redis.hget(this.occKey(worldId), tile);
+      const cur = await this.core.deps.redis.hget(this.occKey(worldId), tile);
       return cur ? (JSON.parse(cur) as OccEntry) : null;
     } catch {
       return null;
@@ -95,7 +101,7 @@ export class WorldCorePush extends WorldCoreYield {
     return `world:${worldId}:cover`;
   }
   private async readCoverMap(worldId: string, tile: string): Promise<Record<string, CoverEntry>> {
-    const cur = await this.deps.redis!.hget(this.coverKey(worldId), tile);
+    const cur = await this.core.deps.redis!.hget(this.coverKey(worldId), tile);
     return cur ? (JSON.parse(cur) as Record<string, CoverEntry>) : {};
   }
   /**
@@ -109,16 +115,16 @@ export class WorldCorePush extends WorldCoreYield {
    * fakes that don't implement it, where there's no real concurrency to race against anyway.
    */
   async addCover(worldId: string, cx: number, cy: number, entry: CoverEntry): Promise<void> {
-    if (!this.deps.redis) return;
+    if (!this.core.deps.redis) return;
     try {
       for (const c of baseFootprintCells(cx, cy)) {
         const tid = tileId(worldId, c.x, c.y);
-        if (this.deps.redis.hmergeJsonField) {
-          await this.deps.redis.hmergeJsonField(this.coverKey(worldId), tid, entry.sourceTile, JSON.stringify(entry));
+        if (this.core.deps.redis.hmergeJsonField) {
+          await this.core.deps.redis.hmergeJsonField(this.coverKey(worldId), tid, entry.sourceTile, JSON.stringify(entry));
         } else {
           const map = await this.readCoverMap(worldId, tid);
           map[entry.sourceTile] = entry;
-          await this.deps.redis.hset(this.coverKey(worldId), tid, JSON.stringify(map));
+          await this.core.deps.redis.hset(this.coverKey(worldId), tid, JSON.stringify(map));
         }
       }
     } catch {
@@ -127,18 +133,18 @@ export class WorldCorePush extends WorldCoreYield {
   }
   /** Remove a coverage source (by its own tile) from its 3×3 footprint centered at (cx,cy). Same atomic-merge reasoning as addCover above. */
   async removeCover(worldId: string, cx: number, cy: number, sourceTile: string): Promise<void> {
-    if (!this.deps.redis) return;
+    if (!this.core.deps.redis) return;
     try {
       for (const c of baseFootprintCells(cx, cy)) {
         const tid = tileId(worldId, c.x, c.y);
-        if (this.deps.redis.hmergeJsonField) {
-          await this.deps.redis.hmergeJsonField(this.coverKey(worldId), tid, sourceTile, null);
+        if (this.core.deps.redis.hmergeJsonField) {
+          await this.core.deps.redis.hmergeJsonField(this.coverKey(worldId), tid, sourceTile, null);
         } else {
           const map = await this.readCoverMap(worldId, tid);
           if (map[sourceTile] === undefined) continue;
           delete map[sourceTile];
-          if (Object.keys(map).length === 0) await this.deps.redis.hdel(this.coverKey(worldId), tid);
-          else await this.deps.redis.hset(this.coverKey(worldId), tid, JSON.stringify(map));
+          if (Object.keys(map).length === 0) await this.core.deps.redis.hdel(this.coverKey(worldId), tid);
+          else await this.core.deps.redis.hset(this.coverKey(worldId), tid, JSON.stringify(map));
         }
       }
     } catch {
@@ -147,7 +153,7 @@ export class WorldCorePush extends WorldCoreYield {
   }
   /** Read every coverage source over `tile` (garrisons / towers), or [] (uncovered / Redis absent / parse error). */
   async getCover(worldId: string, tile: string): Promise<CoverEntry[]> {
-    if (!this.deps.redis) return [];
+    if (!this.core.deps.redis) return [];
     try {
       const map = await this.readCoverMap(worldId, tile);
       return Object.values(map);
@@ -165,9 +171,9 @@ export class WorldCorePush extends WorldCoreYield {
    * a failed/absent Redis only means these indexes go stale rather than resetSeason itself failing.
    */
   async clearSpatialIndexes(worldId: string): Promise<void> {
-    if (!this.deps.redis?.del) return;
+    if (!this.core.deps.redis?.del) return;
     try {
-      await Promise.all([this.deps.redis.del(this.occKey(worldId)), this.deps.redis.del(this.coverKey(worldId))]);
+      await Promise.all([this.core.deps.redis.del(this.occKey(worldId)), this.core.deps.redis.del(this.coverKey(worldId))]);
     } catch {
       /* best-effort */
     }
@@ -175,7 +181,7 @@ export class WorldCorePush extends WorldCoreYield {
 
   // ── Real-time push (best-effort, §14.5) ──
   async pushMarch(accountId: string, v: MarchView): Promise<void> {
-    await this.gateway.push(accountId, {
+    await this.core.gateway.push(accountId, {
       kind: 'march_update',
       marchId: v.marchId,
       marchKind: v.kind,
@@ -194,8 +200,8 @@ export class WorldCorePush extends WorldCoreYield {
   async pushTile(accountId: string, t: TileDoc, ownerProfile?: PlayerProfile | null): Promise<void> {
     const profile = ownerProfile !== undefined
       ? ownerProfile
-      : (t.ownerId && this.meta.available) ? await this.meta.getProfile(t.ownerId).catch(() => null) : null;
-    await this.gateway.push(accountId, {
+      : (t.ownerId && this.core.meta.available) ? await this.core.meta.getProfile(t.ownerId).catch(() => null) : null;
+    await this.core.gateway.push(accountId, {
       kind: 'tile_update',
       tileId: t._id,
       type: t.type,
@@ -207,7 +213,7 @@ export class WorldCorePush extends WorldCoreYield {
     });
   }
   async pushSiege(accountId: string, s: SiegeDoc, lootSummaryStr: string): Promise<void> {
-    await this.gateway.push(accountId, {
+    await this.core.gateway.push(accountId, {
       kind: 'siege_result',
       siegeId: s._id,
       marchId: s.marchId,

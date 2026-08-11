@@ -1,7 +1,7 @@
 // Shop catalog + purchase (S5). Split out of service/economy.ts (2026-08-10, 独立函数模块 form — see
-// economy.ts's facade comment). `shopBuyHandler` takes an explicit `ctx` (deps + `ensureCommercial`,
-// bound by EconomyMixin's class body from its protected base method); `getShopItemsHandler` only ever
-// touches `deps` so it takes that directly, no ctx needed. No behavior change.
+// economy.ts's facade comment). `shopBuyHandler` takes `core: MetaCore` directly (2026-08-11 ctx-bind
+// cleanup — see base.ts's header, for `core.ensureCommercial`); `getShopItemsHandler` only ever touches
+// `deps` so it takes that directly, no `core` needed. No behavior change.
 import { randomUUID } from 'node:crypto';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import {
@@ -10,12 +10,7 @@ import {
 } from '@nw/shared';
 import { deliverOrder, adsDayKey } from '../../economy.js';
 import { nullMetaSocialsvcClient } from '../../socialsvcClient.js';
-import { accountIdOf, clientPlatformOf, type ServiceDeps } from '../base.js';
-
-export interface ShopCtx {
-  deps: ServiceDeps;
-  ensureCommercial: (reply: FastifyReply) => boolean;
-}
+import { accountIdOf, clientPlatformOf, type ServiceDeps, type MetaCore } from '../base.js';
 
 /**
  * Shop item list (catalog single source of truth: @nw/shared). Material bundles carry the
@@ -53,8 +48,8 @@ export async function getShopItemsHandler(deps: ServiceDeps, req: FastifyRequest
  * matches what the client's "can I afford qty×cost" affordability gate already assumes, so no
  * partial-fulfillment bookkeeping is needed here.
  */
-export async function shopBuyHandler(ctx: ShopCtx, req: FastifyRequest, reply: FastifyReply) {
-  if (!ctx.ensureCommercial(reply)) return;
+export async function shopBuyHandler(core: MetaCore, req: FastifyRequest, reply: FastifyReply) {
+  if (!core.ensureCommercial(reply)) return;
   const accountId = accountIdOf(req);
   const { itemId, qty: rawQty } = req.body as { itemId: string; qty?: number };
   const qty = Number.isInteger(rawQty) && (rawQty as number) >= 1
@@ -63,7 +58,7 @@ export async function shopBuyHandler(ctx: ShopCtx, req: FastifyRequest, reply: F
   const def = findShopItem(itemId);
   if (!def) return reply.code(400).send(err(ErrorCode.BAD_REQUEST, 'unknown item'));
 
-  const { cols, commercial, now, redis } = ctx.deps;
+  const { cols, commercial, now, redis } = core.deps;
 
   // Material shop bundles (gold→material exchange, ECONOMY_NUMBERS §6.5) carry a daily purchase cap —
   // checked (and claimed, for the FULL qty at once) before charging coins, so a capped-out attempt
@@ -94,7 +89,7 @@ export async function shopBuyHandler(ctx: ShopCtx, req: FastifyRequest, reply: F
   // which is what surfaced it — a lookup for e.g. 'scrap' finds no shop item and silently falls
   // through to the skin-grant path instead of the material path).
   const { save } = await deliverOrder(
-    cols, commercial, ctx.deps.socialsvc ?? nullMetaSocialsvcClient, accountId,
+    cols, commercial, core.deps.socialsvc ?? nullMetaSocialsvcClient, accountId,
     { _id: orderId, kind: 'shop', result: { itemId, qty } },
     charge.coinsAfter, null, now(),
   );

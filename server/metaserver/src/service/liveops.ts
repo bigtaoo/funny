@@ -3,10 +3,10 @@
 // these handlers read definitions/progress and deliver one-time coin/title claims.
 //
 // Independent sibling class (2026-08-11 mixin-chain split, claudedocs/server.md's "拆分形态的优先级"
-// 形态②): holds `core: MetaCore` — assembled by composition in ../service.ts. Every handler here only
-// ever needs `deps` plus at most `mutateSave`/`ensureCommercial`, bound into a small `ctx` object (now
-// sourced from `this.core`) and handed to a free function in ./liveops/*.ts — see economy.ts's header
-// for why this ctx-bind shape is kept unchanged in this batch.
+// 形态②): holds `core: MetaCore` — assembled by composition in ../service.ts. Every handler here just
+// hands `this.core` straight through to a free function in ./liveops/*.ts (2026-08-11 ctx-bind cleanup
+// — see base.ts's header: no more bound-`ctx`-object, the free functions call `core.mutateSave(...)`/
+// `core.ensureCommercial(...)` directly).
 // - liveops/helpers.ts:      deliverRetentionReward (shared card/equipment delivery step, deps-only)
 // - liveops/achievements.ts: getAchievements + claimAchievement (S9)
 // - liveops/retention.ts:    getRetention + claimCheckin/claimDailyReward/claimWeeklyChest (B5)
@@ -48,10 +48,7 @@ export class LiveOpsService {
     }
 
     async claimAchievement(...args: Parameters<LiveOpsHandlers['claimAchievement']>) {
-      return claimAchievementHandler(
-        { deps: this.core.deps, mutateSave: this.core.mutateSave.bind(this.core), ensureCommercial: this.core.ensureCommercial.bind(this.core) },
-        ...args,
-      );
+      return claimAchievementHandler(this.core, ...args);
     }
 
     async getRetention(...args: Parameters<LiveOpsHandlers['getRetention']>) {
@@ -59,24 +56,15 @@ export class LiveOpsService {
     }
 
     async claimCheckin(...args: Parameters<LiveOpsHandlers['claimCheckin']>) {
-      return claimCheckinHandler(
-        { deps: this.core.deps, mutateSave: this.core.mutateSave.bind(this.core), ensureCommercial: this.core.ensureCommercial.bind(this.core) },
-        ...args,
-      );
+      return claimCheckinHandler(this.core, ...args);
     }
 
     async claimDailyReward(...args: Parameters<LiveOpsHandlers['claimDailyReward']>) {
-      return claimDailyRewardHandler(
-        { deps: this.core.deps, mutateSave: this.core.mutateSave.bind(this.core), ensureCommercial: this.core.ensureCommercial.bind(this.core) },
-        ...args,
-      );
+      return claimDailyRewardHandler(this.core, ...args);
     }
 
     async claimWeeklyChest(...args: Parameters<LiveOpsHandlers['claimWeeklyChest']>) {
-      return claimWeeklyChestHandler(
-        { deps: this.core.deps, mutateSave: this.core.mutateSave.bind(this.core), ensureCommercial: this.core.ensureCommercial.bind(this.core) },
-        ...args,
-      );
+      return claimWeeklyChestHandler(this.core, ...args);
     }
 
     async getEvents(...args: Parameters<LiveOpsHandlers['getEvents']>) {
@@ -96,18 +84,18 @@ export class LiveOpsService {
     }
 
     async equipTitle(...args: Parameters<LiveOpsHandlers['equipTitle']>) {
-      return equipTitleHandler({ deps: this.core.deps, mutateSave: this.core.mutateSave.bind(this.core) }, ...args);
+      return equipTitleHandler(this.core, ...args);
     }
 
     async equipAvatar(...args: Parameters<LiveOpsHandlers['equipAvatar']>) {
-      return equipAvatarHandler({ deps: this.core.deps, mutateSave: this.core.mutateSave.bind(this.core) }, ...args);
+      return equipAvatarHandler(this.core, ...args);
     }
 
     async equipSkin(...args: Parameters<LiveOpsHandlers['equipSkin']>) {
-      return equipSkinHandler({ deps: this.core.deps, mutateSave: this.core.mutateSave.bind(this.core) }, ...args);
+      return equipSkinHandler(this.core, ...args);
     }
 
     async setFlag(...args: Parameters<LiveOpsHandlers['setFlag']>) {
-      return setFlagHandler({ deps: this.core.deps, mutateSave: this.core.mutateSave.bind(this.core) }, ...args);
+      return setFlagHandler(this.core, ...args);
     }
 }

@@ -1,6 +1,14 @@
 // worldsvc core — family / sect membership, fog-of-war vision, and reverse-vision observers.
 // Peeled out of the WorldCore god-class (2026-07-03). Also holds sameFamily and the
 // best-effort family-activity/prosperity bump. No behavior change.
+//
+// 2026-08-11 (mixin-chain re-audit, claudedocs/server.md "拆分形态的优先级" 形态②): converted from an
+// `extends WorldCoreSpawn` inheritance-chain link to composition — cross-layer calls are to the kernel
+// primitives (`coordX`/`coordY`) and to `push.pushTile`, so this takes `core: WorldCore` + a narrow
+// `push: PushService` sibling reference. `allySectMemberIds`/`sectMateMemberIds` go from `protected`
+// (mixin-chain visibility, reachable only from a subclass) to `public` (composition visibility,
+// reachable from any holder of a `VisionService` reference — here, MapService) — the same
+// protected→public cost every mixin-chain-to-composition conversion pays for a method a sibling needs.
 import {
   playerWorldId,
   isInVision,
@@ -10,18 +18,21 @@ import {
   VISION_MARCH_RADIUS,
   type VisionSource,
 } from '@nw/shared';
-import { WorldCoreSpawn } from './spawn';
+import type { WorldCore } from '../core';
+import type { PushService } from './push';
 import { tileVisionRadius } from './helpers';
 import { computeTerritoryCount } from '../prosperity';
 import type { TileDoc } from '../db';
 
-export class WorldCoreVision extends WorldCoreSpawn {
+export class VisionService {
+  constructor(private readonly core: WorldCore, private readonly push: PushService) {}
+
   /** Set of accountIds for the player plus all same-family members (family-level vision sharing / ally determination, §8.2; includes self). Sourced from PlayerWorldDoc.familyId (SS7 mirror, scoped to this world) rather than a local family mirror (dead since P4, see db.ts note above SectDoc). */
   async familyMemberIds(worldId: string, accountId: string): Promise<Set<string>> {
     const ids = new Set<string>([accountId]);
-    const myPw = await this.deps.cols.playerWorld.findOne({ _id: playerWorldId(worldId, accountId) });
+    const myPw = await this.core.deps.cols.playerWorld.findOne({ _id: playerWorldId(worldId, accountId) });
     if (myPw?.familyId) {
-      const mates = await this.deps.cols.playerWorld.find({ worldId, familyId: myPw.familyId }).toArray();
+      const mates = await this.core.deps.cols.playerWorld.find({ worldId, familyId: myPw.familyId }).toArray();
       for (const m of mates) ids.add(m.accountId);
     }
     return ids;
@@ -33,8 +44,8 @@ export class WorldCoreVision extends WorldCoreSpawn {
    * Alliances do **not** share vision (§8.2); used only by getMap to tag allied territory (yellow border). No sect / no alliance → empty set.
    * Does not include self or same-family members (those go through `familyMemberIds`).
    */
-  protected async allySectMemberIds(worldId: string, accountId: string): Promise<Set<string>> {
-    const { cols } = this.deps;
+  async allySectMemberIds(worldId: string, accountId: string): Promise<Set<string>> {
+    const { cols } = this.core.deps;
     const result = new Set<string>();
     const myPw = await cols.playerWorld.findOne({ _id: playerWorldId(worldId, accountId) });
     if (!myPw?.familyId) return result;
@@ -44,7 +55,7 @@ export class WorldCoreVision extends WorldCoreSpawn {
     const mySect = await cols.sects.findOne({ _id: myPw.sectId });
     const allyIds = mySect?.allySectIds ?? [];
     if (allyIds.length === 0) return result;
-    const allyFamilies = (await Promise.all(allyIds.map((sid) => this.socialsvc.getFamiliesBySect(sid)))).flat();
+    const allyFamilies = (await Promise.all(allyIds.map((sid) => this.core.socialsvc.getFamiliesBySect(sid)))).flat();
     const famIds = allyFamilies.map((f) => f.familyId);
     if (famIds.length === 0) return result;
     const members = await cols.playerWorld.find({ worldId, familyId: { $in: famIds } }).toArray();
@@ -59,12 +70,12 @@ export class WorldCoreVision extends WorldCoreSpawn {
    * to this world. Does not share vision (only family does, DECISIONS §18.6); used only by getMap to tag
    * a third ownership colour distinct from family-ally/allied-sect/enemy. No family/no sect → empty set.
    */
-  protected async sectMateMemberIds(worldId: string, accountId: string): Promise<Set<string>> {
-    const { cols } = this.deps;
+  async sectMateMemberIds(worldId: string, accountId: string): Promise<Set<string>> {
+    const { cols } = this.core.deps;
     const result = new Set<string>();
     const myPw = await cols.playerWorld.findOne({ _id: playerWorldId(worldId, accountId) });
     if (!myPw?.familyId || !myPw.sectId) return result;
-    const sectFams = await this.socialsvc.getFamiliesBySect(myPw.sectId);
+    const sectFams = await this.core.socialsvc.getFamiliesBySect(myPw.sectId);
     const famIds = sectFams.map((f) => f.familyId).filter((fid) => fid !== myPw.familyId);
     if (famIds.length === 0) return result;
     const members = await cols.playerWorld.find({ worldId, familyId: { $in: famIds } }).toArray();
@@ -81,7 +92,7 @@ export class WorldCoreVision extends WorldCoreSpawn {
    * joined to this world. No family → just self. Read-only; runs only on the attack branch of startMarch.
    */
   async friendlyAccountIds(worldId: string, accountId: string): Promise<Set<string>> {
-    const { cols } = this.deps;
+    const { cols } = this.core.deps;
     const result = new Set<string>([accountId]);
     const myPw = await cols.playerWorld.findOne({ _id: playerWorldId(worldId, accountId) });
     if (!myPw?.familyId) return result;
@@ -89,7 +100,7 @@ export class WorldCoreVision extends WorldCoreSpawn {
     if (myPw.sectId) {
       const mySect = await cols.sects.findOne({ _id: myPw.sectId });
       const sectIds = [myPw.sectId, ...(mySect?.allySectIds ?? [])]; // own sect + allied sects
-      const fams = (await Promise.all(sectIds.map((sid) => this.socialsvc.getFamiliesBySect(sid)))).flat();
+      const fams = (await Promise.all(sectIds.map((sid) => this.core.socialsvc.getFamiliesBySect(sid)))).flat();
       for (const f of fams) famIds.add(f.familyId);
     }
     const members = await cols.playerWorld.find({ worldId, familyId: { $in: [...famIds] } }).toArray();
@@ -112,7 +123,7 @@ export class WorldCoreVision extends WorldCoreSpawn {
     y0: number,
     y1: number,
   ): Promise<VisionSource[]> {
-    const { cols, now } = this.deps;
+    const { cols, now } = this.core.deps;
     // Vision source owners = self + same-family members (family-level sharing, decided in §8.2).
     const ids = [...(await this.familyMemberIds(worldId, accountId))];
 
@@ -136,8 +147,8 @@ export class WorldCoreVision extends WorldCoreSpawn {
     const t = now();
     for (const m of marches) {
       const pos = marchInterpPos(
-        this.coordX(m.fromTile), this.coordY(m.fromTile),
-        this.coordX(m.toTile), this.coordY(m.toTile),
+        this.core.coordX(m.fromTile), this.core.coordY(m.fromTile),
+        this.core.coordX(m.toTile), this.core.coordY(m.toTile),
         m.departAt, m.arriveAt, t,
       );
       sources.push({ x: pos.x, y: pos.y, radius: VISION_MARCH_RADIUS });
@@ -159,7 +170,7 @@ export class WorldCoreVision extends WorldCoreSpawn {
     exclude: ReadonlySet<string>,
   ): Promise<string[]> {
     if (cells.length === 0) return [];
-    const { cols } = this.deps;
+    const { cols } = this.core.deps;
     const xs = cells.map((c) => c.x);
     const ys = cells.map((c) => c.y);
     const pad = VISION_MAX_RADIUS;
@@ -191,10 +202,10 @@ export class WorldCoreVision extends WorldCoreSpawn {
     if (observers.length === 0) return;
     // comm-audit batch F item 7: resolve the tile owner's profile once here instead of each observer's
     // pushTile call independently re-fetching the same t.ownerId.
-    const ownerProfile = (t.ownerId && this.meta.available)
-      ? await this.meta.getProfile(t.ownerId).catch(() => null)
+    const ownerProfile = (t.ownerId && this.core.meta.available)
+      ? await this.core.meta.getProfile(t.ownerId).catch(() => null)
       : null;
-    for (const acct of observers) void this.pushTile(acct, t, ownerProfile);
+    for (const acct of observers) void this.push.pushTile(acct, t, ownerProfile);
   }
 
   /**
@@ -204,14 +215,14 @@ export class WorldCoreVision extends WorldCoreSpawn {
    * empty set (caller falls back to the player's own tiles only).
    */
   private async ownSectFamilyIds(worldId: string, accountId: string): Promise<Set<string>> {
-    const { cols } = this.deps;
+    const { cols } = this.core.deps;
     const result = new Set<string>();
     const myPw = await cols.playerWorld.findOne({ _id: playerWorldId(worldId, accountId) });
     if (!myPw?.familyId) return result;
     result.add(myPw.familyId);
-    const [myFam] = await this.socialsvc.getFamiliesByIds([myPw.familyId]);
+    const [myFam] = await this.core.socialsvc.getFamiliesByIds([myPw.familyId]);
     if (myFam?.sectId) {
-      const sectFams = await this.socialsvc.getFamiliesBySect(myFam.sectId);
+      const sectFams = await this.core.socialsvc.getFamiliesBySect(myFam.sectId);
       for (const f of sectFams) result.add(f.familyId);
     }
     return result;
@@ -228,7 +239,7 @@ export class WorldCoreVision extends WorldCoreSpawn {
   targetFootprintCells(tile: TileDoc | null | undefined, x: number, y: number): { x: number; y: number }[] {
     if (tile?.type === 'base') return baseFootprintCells(x, y);
     if (tile?.baseRing && tile.baseAnchor) {
-      return baseFootprintCells(this.coordX(tile.baseAnchor), this.coordY(tile.baseAnchor));
+      return baseFootprintCells(this.core.coordX(tile.baseAnchor), this.core.coordY(tile.baseAnchor));
     }
     return [{ x, y }];
   }
@@ -250,7 +261,7 @@ export class WorldCoreVision extends WorldCoreSpawn {
     accountId: string,
     targetCells: readonly { x: number; y: number }[],
   ): Promise<boolean> {
-    const { cols } = this.deps;
+    const { cols } = this.core.deps;
     const famIds = await this.ownSectFamilyIds(worldId, accountId);
     // Resolve the sect's member accounts *and* their capitals in one pass. A member's own capital
     // footprint is treated as guaranteed initial territory (SLG_DESIGN §4.1 "主城落地即视为初始领地")
@@ -267,7 +278,7 @@ export class WorldCoreVision extends WorldCoreSpawn {
     const baseCells = new Set<string>();
     for (const p of memberDocs) {
       if (!p.mainBaseTile) continue;
-      const bx = this.coordX(p.mainBaseTile), by = this.coordY(p.mainBaseTile);
+      const bx = this.core.coordX(p.mainBaseTile), by = this.core.coordY(p.mainBaseTile);
       if (!Number.isFinite(bx) || !Number.isFinite(by)) continue;
       for (const c of baseFootprintCells(bx, by)) baseCells.add(`${c.x}:${c.y}`);
     }
@@ -289,7 +300,7 @@ export class WorldCoreVision extends WorldCoreSpawn {
 
   async sameFamily(worldId: string, a: string, b: string): Promise<boolean> {
     if (a === b) return true;
-    const { cols } = this.deps;
+    const { cols } = this.core.deps;
     const [pa, pb] = await Promise.all([
       cols.playerWorld.findOne({ _id: playerWorldId(worldId, a) }),
       cols.playerWorld.findOne({ _id: playerWorldId(worldId, b) }),
@@ -307,8 +318,8 @@ export class WorldCoreVision extends WorldCoreSpawn {
       // comm-audit batch F item 9: territoryCount is a local Mongo read (worldsvc's own tiles/playerWorld),
       // independent of the socialsvc call — compute it first, then bump+refresh in a single socialsvc hop
       // instead of two sequential ones (bumpActivity, then refreshProsperity).
-      const territoryCount = await computeTerritoryCount(this.deps.cols, worldId, familyId);
-      await this.socialsvc.bumpActivityAndProsperity(familyId, delta, territoryCount);
+      const territoryCount = await computeTerritoryCount(this.core.deps.cols, worldId, familyId);
+      await this.core.socialsvc.bumpActivityAndProsperity(familyId, delta, territoryCount);
     } catch (e) {
       console.error('[worldsvc] bumpFamilyActivity failed', { worldId, familyId, err: (e as Error).message });
     }

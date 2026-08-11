@@ -1,8 +1,8 @@
 // Live-ops retention: check-in calendar + daily tasks (B5) + weekly active chest. Split out of
 // liveops.ts (2026-08-10, 独立函数模块 form — see liveops.ts's facade comment). The claim* handlers
-// take an explicit `ctx` (deps + `mutateSave`, bound by LiveOpsMixin's class body from its protected
-// base method) since they need the rev-guarded read-modify-write; the read-only/settle helpers only
-// ever touched `this.deps`, so they take plain `deps`. No behavior change.
+// take `core: MetaCore` directly (2026-08-11 ctx-bind cleanup — see base.ts's header) since they need
+// `core.mutateSave`/`core.ensureCommercial`; the read-only/settle helpers only ever touched `deps`, so
+// they still take plain `deps`. No behavior change.
 import { randomUUID } from 'node:crypto';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import type { SaveData, CheckinReward, WeeklyChestReward } from '@nw/shared';
@@ -36,19 +36,8 @@ import {
 import { getOrCreateSave } from '../../save.js';
 import { mirrorCoins, adsDayKey, peekAdsStatus } from '../../economy.js';
 import { recordMaterialGrants } from '../../material.js';
-import { accountIdOf, type ServiceDeps } from '../base.js';
+import { accountIdOf, type ServiceDeps, type MetaCore } from '../base.js';
 import { deliverRetentionReward } from './helpers.js';
-
-type MutateSaveFn = (
-  accountId: string,
-  transform: (s: SaveData) => SaveData | string,
-) => Promise<{ save: SaveData } | { error: string }>;
-
-export interface RetentionCtx {
-  deps: ServiceDeps;
-  mutateSave: MutateSaveFn;
-  ensureCommercial: (reply: FastifyReply) => boolean;
-}
 
 /** Read current retention state (including definition tables; used by the client to render the calendar/task cards). */
 export async function getRetentionHandler(deps: ServiceDeps, req: FastifyRequest) {
@@ -151,14 +140,14 @@ async function settleCheckinReward(
 }
 
 /** Claim the next check-in reward for this month (idempotent: already claimed today → 409). */
-export async function claimCheckinHandler(ctx: RetentionCtx, req: FastifyRequest, reply: FastifyReply) {
+export async function claimCheckinHandler(core: MetaCore, req: FastifyRequest, reply: FastifyReply) {
   const accountId = accountIdOf(req);
-  const { now } = ctx.deps;
+  const { now } = core.deps;
   const tsMs = now();
 
   let reward: CheckinReward | null = null;
   let claimedDay = 0;
-  const recorded = await ctx.mutateSave(accountId, (s) => {
+  const recorded = await core.mutateSave(accountId, (s) => {
     const r = resetStaleRetention(s.retention, tsMs);
     const result = claimCheckinDay(r, tsMs);
     if (!result.ok) return result.error;
@@ -203,12 +192,12 @@ export async function claimCheckinHandler(ctx: RetentionCtx, req: FastifyRequest
       // as every other day reports via ALREADY_CLAIMED_TODAY. Disambiguate from a genuine
       // month-exhausted-on-a-different-day 409 via lastClaimedDayKey rather than trusting the tag.
       const dayKey = makeDayKey(tsMs);
-      const peekSave = await getOrCreateSave(ctx.deps.cols, accountId, tsMs);
+      const peekSave = await getOrCreateSave(core.deps.cols, accountId, tsMs);
       const checkin = resetStaleRetention(peekSave.retention, tsMs).checkin;
       const lastDay = checkin?.lastClaimedDayKey === dayKey ? checkin.claimedDays.at(-1) : undefined;
       const lastReward = lastDay ? CHECKIN_REWARDS[lastDay - 1] : undefined;
       if (lastDay && lastReward && (lastReward.kind === 'card' || lastReward.kind === 'equipment' || lastReward.kind === 'coins' || lastReward.bonusCoins)) {
-        const settled = await settleCheckinReward(ctx.deps, accountId, lastDay, lastReward, tsMs);
+        const settled = await settleCheckinReward(core.deps, accountId, lastDay, lastReward, tsMs);
         if ('error' in settled) return reply.code(502).send(err(ErrorCode.REV_CONFLICT, settled.error));
         return ok({ save: settled.save, day: lastDay, reward: settled.reward });
       }
@@ -231,11 +220,11 @@ export async function claimCheckinHandler(ctx: RetentionCtx, req: FastifyRequest
     const matId = claimedReward.kind === 'stamina' ? 'stamina' : claimedReward.id!;
     const monthKey = makeMonthKey(tsMs);
     await recordMaterialGrants(
-      ctx.deps.cols, accountId, `checkin_${accountId}_${monthKey}_${claimedDay}`,
+      core.deps.cols, accountId, `checkin_${accountId}_${monthKey}_${claimedDay}`,
       { [matId]: claimedReward.count }, `checkin:${monthKey}`, tsMs,
     );
   }
-  const settled = await settleCheckinReward(ctx.deps, accountId, claimedDay, claimedReward, tsMs);
+  const settled = await settleCheckinReward(core.deps, accountId, claimedDay, claimedReward, tsMs);
   if ('error' in settled) {
     // Claim is durably recorded; delivery failed but is retryable (deterministic orderId) via the
     // ALREADY_CLAIMED_TODAY recovery branch above the next time this account calls /retention/checkin.
@@ -245,13 +234,13 @@ export async function claimCheckinHandler(ctx: RetentionCtx, req: FastifyRequest
 }
 
 /** Claim daily task completion coins (idempotent: threshold not reached → 400, already claimed → 409). */
-export async function claimDailyRewardHandler(ctx: RetentionCtx, req: FastifyRequest, reply: FastifyReply) {
-  if (!ctx.ensureCommercial(reply)) return;
+export async function claimDailyRewardHandler(core: MetaCore, req: FastifyRequest, reply: FastifyReply) {
+  if (!core.ensureCommercial(reply)) return;
   const accountId = accountIdOf(req);
-  const { commercial, cols, now } = ctx.deps;
+  const { commercial, cols, now } = core.deps;
   const tsMs = now();
 
-  const recorded = await ctx.mutateSave(accountId, (s) => {
+  const recorded = await core.mutateSave(accountId, (s) => {
     const r = resetStaleRetention(s.retention, tsMs);
     const result = calcDailyReward(r, tsMs);
     if (!result.ok) return result.error;
@@ -353,14 +342,14 @@ async function settleWeeklyChestReward(
  * resolve their concrete item at claim time (uniform random draw, like checkin's 'card'/
  * 'equipment' milestones) and deliver via a follow-up call once the claim itself is durable.
  */
-export async function claimWeeklyChestHandler(ctx: RetentionCtx, req: FastifyRequest, reply: FastifyReply) {
+export async function claimWeeklyChestHandler(core: MetaCore, req: FastifyRequest, reply: FastifyReply) {
   const accountId = accountIdOf(req);
-  const { now } = ctx.deps;
+  const { now } = core.deps;
   const tsMs = now();
   const { threshold } = req.body as { threshold: number };
 
   let reward: WeeklyChestReward | null = null;
-  const recorded = await ctx.mutateSave(accountId, (s) => {
+  const recorded = await core.mutateSave(accountId, (s) => {
     const r = resetStaleRetention(s.retention, tsMs);
     const result = claimWeeklyTier(r, threshold, tsMs);
     if (!result.ok) return result.error;
@@ -386,7 +375,7 @@ export async function claimWeeklyChestHandler(ctx: RetentionCtx, req: FastifyReq
       // transactional state), so it can be looked up directly without re-running claimWeeklyTier.
       const tierDef = WEEKLY_CHEST_TIERS.find((t) => t.threshold === threshold);
       if (tierDef && (tierDef.reward.kind === 'equipment' || tierDef.reward.kind === 'card')) {
-        const settled = await settleWeeklyChestReward(ctx.deps, accountId, threshold, tierDef.reward, tsMs);
+        const settled = await settleWeeklyChestReward(core.deps, accountId, threshold, tierDef.reward, tsMs);
         if ('error' in settled) return reply.code(502).send(err(ErrorCode.REV_CONFLICT, settled.error));
         return ok({ save: settled.save, threshold, reward: settled.reward });
       }
@@ -409,11 +398,11 @@ export async function claimWeeklyChestHandler(ctx: RetentionCtx, req: FastifyReq
   if (claimedReward.kind === 'material' && claimedReward.id) {
     const weekKey = makeWeekKey(tsMs);
     await recordMaterialGrants(
-      ctx.deps.cols, accountId, `weekly_${accountId}_${weekKey}_${threshold}`,
+      core.deps.cols, accountId, `weekly_${accountId}_${weekKey}_${threshold}`,
       { [claimedReward.id]: claimedReward.count }, `weekly_chest:${weekKey}`, tsMs,
     );
   }
-  const settled = await settleWeeklyChestReward(ctx.deps, accountId, threshold, claimedReward, tsMs);
+  const settled = await settleWeeklyChestReward(core.deps, accountId, threshold, claimedReward, tsMs);
   if ('error' in settled) {
     // Claim is durably recorded; delivery failed but is retryable via the ALREADY_CLAIMED
     // recovery branch above the next time this account calls /retention/weekly-chest.
