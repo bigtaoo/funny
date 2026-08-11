@@ -302,3 +302,39 @@ describe('AuctionScene composition wiring', () => {
     (scene.destroy as () => void)();
   });
 });
+
+// ── CardScene — list/skins/detail/feed/actions over one CardSceneCore ────────────
+
+describe('CardScene composition wiring', () => {
+  it('shares exactly one CardSceneCore across list/skins/detail/feed/actions, and detail reaches actions/feed + list reaches detail via the SAME instances', async () => {
+    const { CardScene } = await import('../../src/scenes/CardScene');
+    const { makeNewSave } = await import('../../src/game/meta/SaveData');
+    const scene = new CardScene(createLayout(800, 1280), new InputManager(), {
+      onBack() {},
+      getSave: () => makeNewSave(),
+      fuseCards: async () => ({ ok: true }),
+      setCardLock: async () => ({ ok: true }),
+      getOwnedSkins: () => [],
+      getEquippedSkin: () => null,
+      equipSkin() {},
+    }) as unknown as Record<string, unknown>;
+    const core = scene.core;
+    expect(core).toBeDefined();
+    for (const p of ['list', 'skins', 'detail', 'feed', 'actions']) {
+      expect((scene[p] as Record<string, unknown>).core).toBe(core);
+    }
+    // detail.ts depends on actions.ts (doSetLock/doRecover) and feed.ts (openFuseSelect) — must be
+    // the SAME instances the facade holds, not separate copies.
+    expect((scene.detail as Record<string, unknown>).actions).toBe(scene.actions);
+    expect((scene.detail as Record<string, unknown>).feed).toBe(scene.feed);
+    // list.ts depends on detail.ts (openDetail) — same instance.
+    expect((scene.list as Record<string, unknown>).detail).toBe(scene.detail);
+    // actions.ts depends on feed.ts (playFusionAnim) — same instance.
+    expect((scene.actions as Record<string, unknown>).feed).toBe(scene.feed);
+    // feed.ts's confirm-fuse button reaches ActionsPanel.doFuse through the lazy `core.doFuse` hook
+    // the outer assembly overwrites right after constructing ActionsPanel — must not still be the
+    // core.ts no-op default (see core.ts's file-header comment).
+    expect((core as Record<string, unknown>).doFuse).not.toBeUndefined();
+    (scene.destroy as () => void)();
+  });
+});

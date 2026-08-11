@@ -75,7 +75,7 @@ function bySize(hits: Hit[], local: number, modalScale: number): Hit | undefined
 }
 
 function modalScaleOf(scene: CardScene): number {
-  return (scene as unknown as { modalScale: number }).modalScale;
+  return (scene as unknown as { core: { modalScale: number } }).core.modalScale;
 }
 
 function buildScene(cb: CardCallbacks): CardScene {
@@ -85,7 +85,7 @@ function buildScene(cb: CardCallbacks): CardScene {
 function openDetail(scene: CardScene, cardName: string): void {
   const pos = findLabelPos(scene.container, cardName);
   expect(pos, `card "${cardName}" not found in the roster grid`).not.toBeNull();
-  const hits = (scene as unknown as { hitRects: Hit[] }).hitRects;
+  const hits = (scene as unknown as { core: { hitRects: Hit[] } }).core.hitRects;
   const hit = hits.find(({ rect: r }) =>
     pos!.x >= r.x && pos!.x <= r.x + r.w && pos!.y >= r.y && pos!.y <= r.y + r.h);
   expect(hit, `no roster-grid hit under "${cardName}"`).toBeDefined();
@@ -124,7 +124,7 @@ describe('CardScene detail modal — portrait flip (art ⇄ lore)', () => {
 
     expect(hasText(scene.container, LENA_LORE)).toBe(false);
 
-    const modalHits = (scene as unknown as { modalHits: Hit[] }).modalHits;
+    const modalHits = (scene as unknown as { core: { modalHits: Hit[] } }).core.modalHits;
     const flipHit = bySize(modalHits, 96, modalScaleOf(scene));
     expect(flipHit, 'no 96×96 (scaled) portrait-flip hit in the detail modal').toBeDefined();
 
@@ -149,7 +149,7 @@ describe('CardScene detail modal — portrait flip (art ⇄ lore)', () => {
   it('does not show a change-skin badge when the character has no owned skin', () => {
     const scene = buildScene(baseCb({ getOwnedSkins: () => [] }));
     openDetail(scene, 'Lena');
-    const modalHits = (scene as unknown as { modalHits: Hit[] }).modalHits;
+    const modalHits = (scene as unknown as { core: { modalHits: Hit[] } }).core.modalHits;
     expect(bySize(modalHits, 22, modalScaleOf(scene))).toBeUndefined();
   });
 });
@@ -165,23 +165,23 @@ describe('CardScene detail modal — change-skin picker', () => {
     }));
     openDetail(scene, 'Lena');
 
-    const badgeHit = bySize((scene as unknown as { modalHits: Hit[] }).modalHits, 22, modalScaleOf(scene));
+    const badgeHit = bySize((scene as unknown as { core: { modalHits: Hit[] } }).core.modalHits, 22, modalScaleOf(scene));
     expect(badgeHit, 'no 22×22 (scaled) change-skin badge in the detail modal').toBeDefined();
     badgeHit!.action(); // toggles skinPickerOpen + re-renders the modal
 
-    expect((scene as unknown as { skinPickerOpen: boolean }).skinPickerOpen).toBe(true);
+    expect((scene as unknown as { core: { skinPickerOpen: boolean } }).core.skinPickerOpen).toBe(true);
     const skinLabel = skinDisplayName('skin_e1');
     expect(hasText(scene.container, skinLabel)).toBe(true);
 
     const rowPos = findLabelPos(scene.container, skinLabel);
     expect(rowPos).not.toBeNull();
-    const rowHit = (scene as unknown as { modalHits: Hit[] }).modalHits.find(({ rect: r }) =>
+    const rowHit = (scene as unknown as { core: { modalHits: Hit[] } }).core.modalHits.find(({ rect: r }) =>
       rowPos!.x >= r.x && rowPos!.x <= r.x + r.w && rowPos!.y >= r.y && rowPos!.y <= r.y + r.h);
     expect(rowHit, `no hit rect under the "${skinLabel}" picker row`).toBeDefined();
     rowHit!.action();
 
     expect(equipCalls).toEqual([{ unitType: 'lena', skinId: 'skin_e1' }]);
-    expect((scene as unknown as { skinPickerOpen: boolean }).skinPickerOpen).toBe(false);
+    expect((scene as unknown as { core: { skinPickerOpen: boolean } }).core.skinPickerOpen).toBe(false);
     expect(hasText(scene.container, skinLabel)).toBe(false);
   });
 
@@ -193,14 +193,14 @@ describe('CardScene detail modal — change-skin picker', () => {
     openDetail(scene, 'Lena');
 
     // Confirm the flip hit exists BEFORE the picker opens (sanity: the 96×96 hit really is the flip).
-    expect(bySize((scene as unknown as { modalHits: Hit[] }).modalHits, 96, modalScaleOf(scene))).toBeDefined();
+    expect(bySize((scene as unknown as { core: { modalHits: Hit[] } }).core.modalHits, 96, modalScaleOf(scene))).toBeDefined();
 
-    const badgeHit = bySize((scene as unknown as { modalHits: Hit[] }).modalHits, 22, modalScaleOf(scene));
+    const badgeHit = bySize((scene as unknown as { core: { modalHits: Hit[] } }).core.modalHits, 22, modalScaleOf(scene));
     badgeHit!.action(); // opens the skin picker
-    expect((scene as unknown as { skinPickerOpen: boolean }).skinPickerOpen).toBe(true);
+    expect((scene as unknown as { core: { skinPickerOpen: boolean } }).core.skinPickerOpen).toBe(true);
 
     // The flip hit must be gone entirely while the picker is showing.
-    expect(bySize((scene as unknown as { modalHits: Hit[] }).modalHits, 96, modalScaleOf(scene))).toBeUndefined();
-    expect((scene as unknown as { detailFlipped: boolean }).detailFlipped).toBe(false);
+    expect(bySize((scene as unknown as { core: { modalHits: Hit[] } }).core.modalHits, 96, modalScaleOf(scene))).toBeUndefined();
+    expect((scene as unknown as { core: { detailFlipped: boolean } }).core.detailFlipped).toBe(false);
   });
 });

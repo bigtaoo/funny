@@ -108,7 +108,7 @@ describe('CardScene — [Hero Roster|Equipment] rail/bottom-bar by orientation',
   it('renders the Equipment tab as a full-width bottom nav bar cell in portrait (§18), not the narrow rail', () => {
     const { scene } = buildCardScene(...PORTRAIT);
     const layout = createLayout(...PORTRAIT);
-    const hits = (scene as unknown as { hitRects: Hit[] }).hitRects;
+    const hits = (scene as unknown as { core: { hitRects: Hit[] } }).core.hitRects;
     const rect = hitRectForLabel(scene.container, hits, t('equip.title'));
     // Bottom bar: pinned near the screen's bottom edge, each cell much wider than the old narrow
     // rail (full width split evenly across tabs, not a 20%-of-short-edge sidebar).
@@ -119,7 +119,7 @@ describe('CardScene — [Hero Roster|Equipment] rail/bottom-bar by orientation',
 
   it('renders the Equipment tab at the short-edge-pegged rail width in landscape (unchanged)', () => {
     const { scene } = buildCardScene(...LANDSCAPE);
-    const hits = (scene as unknown as { hitRects: Hit[] }).hitRects;
+    const hits = (scene as unknown as { core: { hitRects: Hit[] } }).core.hitRects;
     const rect = hitRectForLabel(scene.container, hits, t('equip.title'));
     expect(rect.w).toBe(EXPECTED_RAIL_W);
     scene.destroy();

@@ -57,8 +57,14 @@ type SceneInternals = {
   handleUp(): void;
 };
 
-function internals(scene: CardScene | EquipmentScene): SceneInternals {
+function internals(scene: EquipmentScene): SceneInternals {
   return scene as unknown as SceneInternals;
+}
+
+/** CardScene (2026-08-11 composition conversion) keeps this same shape, but on `core`, not the
+ *  scene instance itself — see CardScene/core.ts. */
+function cardInternals(scene: CardScene): SceneInternals {
+  return (scene as unknown as { core: SceneInternals }).core;
 }
 
 function buildCardScene(w: number, h: number) {
@@ -102,17 +108,17 @@ function buildEquipmentScene(w: number, h: number) {
   return { scene, calls };
 }
 
-function tapCenter(scene: CardScene | EquipmentScene, rect: Rect): void {
-  internals(scene).handleDown(rect.x + rect.w / 2, rect.y + rect.h / 2);
+function tapCenter(handler: { handleDown(x: number, y: number): void }, rect: Rect): void {
+  handler.handleDown(rect.x + rect.w / 2, rect.y + rect.h / 2);
 }
 
 describe('Back button stays reachable while a detail modal is open', () => {
   it('CardScene: tapping Back with the roster detail modal open calls onBack, not just closes the modal', () => {
     const { scene, calls } = buildCardScene(...LANDSCAPE);
-    (scene as unknown as { openDetail(id: string): void }).openDetail('c1');
-    expect(internals(scene).modalOpen).toBe(true);
+    (scene as unknown as { detail: { openDetail(id: string): void } }).detail.openDetail('c1');
+    expect(cardInternals(scene).modalOpen).toBe(true);
 
-    tapCenter(scene, internals(scene).backRect);
+    tapCenter(cardInternals(scene), cardInternals(scene).backRect);
 
     expect(calls.back).toBe(1);
     scene.destroy();
@@ -120,15 +126,15 @@ describe('Back button stays reachable while a detail modal is open', () => {
 
   it('CardScene: tapping outside the panel (not on Back) still just closes the modal', () => {
     const { scene, calls } = buildCardScene(...LANDSCAPE);
-    (scene as unknown as { openDetail(id: string): void }).openDetail('c1');
+    (scene as unknown as { detail: { openDetail(id: string): void } }).detail.openDetail('c1');
     // Bottom-right corner of the screen: outside both the Back rect and the (now-enlarged,
     // but still centered) panel. Modal hits now fire on pointer-UP (press-drag-release), so a tap
     // is down+up with no drag in between.
-    internals(scene).handleDown(internals(scene).w - 2, internals(scene).h - 2);
-    internals(scene).handleUp();
+    cardInternals(scene).handleDown(cardInternals(scene).w - 2, cardInternals(scene).h - 2);
+    cardInternals(scene).handleUp();
 
     expect(calls.back).toBe(0);
-    expect(internals(scene).modalOpen).toBe(false);
+    expect(cardInternals(scene).modalOpen).toBe(false);
     scene.destroy();
   });
 
@@ -137,7 +143,7 @@ describe('Back button stays reachable while a detail modal is open', () => {
     (scene as unknown as { openDetail(id: string): void }).openDetail('i1');
     expect(internals(scene).modalOpen).toBe(true);
 
-    tapCenter(scene, internals(scene).backRect);
+    tapCenter(internals(scene), internals(scene).backRect);
 
     expect(calls.back).toBe(1);
     scene.destroy();
@@ -149,7 +155,7 @@ describe('Back button stays reachable while a detail modal is open', () => {
     (scene as unknown as { openReforgeSelect(inst: unknown): void }).openReforgeSelect(save.equipmentInv['i1']);
     expect(internals(scene).modalOpen).toBe(true);
 
-    tapCenter(scene, internals(scene).backRect);
+    tapCenter(internals(scene), internals(scene).backRect);
 
     expect(calls.back).toBe(1);
     scene.destroy();
@@ -159,8 +165,8 @@ describe('Back button stays reachable while a detail modal is open', () => {
 describe('Detail/reforge modal panel scales to 80% of the constrained screen axis (aspect ratio preserved)', () => {
   it('CardScene roster detail: landscape fills 80% of screen height', () => {
     const { scene } = buildCardScene(...LANDSCAPE);
-    (scene as unknown as { openDetail(id: string): void }).openDetail('c1');
-    const inner = internals(scene);
+    (scene as unknown as { detail: { openDetail(id: string): void } }).detail.openDetail('c1');
+    const inner = cardInternals(scene);
     expect(inner.landscape).toBe(true);
 
     // Natural (unscaled) content size copied from CardScene/detail.ts openDetail() — not
@@ -185,8 +191,8 @@ describe('Detail/reforge modal panel scales to 80% of the constrained screen axi
 
   it('CardScene roster detail: portrait fills 80% of screen width', () => {
     const { scene } = buildCardScene(...PORTRAIT);
-    (scene as unknown as { openDetail(id: string): void }).openDetail('c1');
-    const inner = internals(scene);
+    (scene as unknown as { detail: { openDetail(id: string): void } }).detail.openDetail('c1');
+    const inner = cardInternals(scene);
     expect(inner.landscape).toBe(false);
 
     const mw0 = 380;
@@ -202,8 +208,8 @@ describe('Detail/reforge modal panel scales to 80% of the constrained screen axi
 
   it('CardScene roster detail: a modalHits rect drawn on modalPanelRoot converts to real screen space', () => {
     const { scene } = buildCardScene(...LANDSCAPE);
-    (scene as unknown as { openDetail(id: string): void }).openDetail('c1');
-    const inner = internals(scene);
+    (scene as unknown as { detail: { openDetail(id: string): void } }).detail.openDetail('c1');
+    const inner = cardInternals(scene);
 
     // The portrait-flip hit is a fixed 96×96 box in local (unscaled) panel space (see
     // cardDetailFlipAndSkin.ui.ts) — its screen-space size must equal 96 * modalScale, and it
