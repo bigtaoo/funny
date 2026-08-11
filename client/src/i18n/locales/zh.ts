@@ -375,6 +375,8 @@ export const zh = {
   'auth.err.passwordMismatch': '两次输入的密码不一致',
   'auth.err.network': '网络错误，请重试',
   'auth.err.banned': '该账号已被封禁',
+  // 2026-08-10：重新登录已能在 7 天宽限期内自动恢复账号（见 restoreIfWithinGrace），走到这条说明宽限期已过，数据已被清除。
+  'auth.err.deleted': '该账号的 7 天宽限期已过，数据已被永久清除，无法恢复',
 
   // ── Shop / top-up (S2-6) ─────────────────────────────────────────────────────
   'shop.title': '商店',
@@ -464,7 +466,7 @@ export const zh = {
   'gacha.fate.redeem': '兑换限定',
   'gacha.fate.redeemed': '已兑换 {item}',
   'gacha.fate.insufficient': '命运点不足',
-  // ── 背包已满溢出提示（角色卡150 / 装备300 上限）──
+  // ── 背包已满溢出提示（角色卡150 / 装备1000 上限）──
   'gacha.invFull.mailed': '背包已满，{count} 件已通过邮件补偿，请前往邮箱领取',
   'gacha.invFull.compensated': '背包已满，已额外获得 {coins} 金币补偿',
   'gacha.invFull.mailedAndCompensated': '背包已满，{mailed} 件已通过邮件补偿，另有 {coins} 金币补偿',
@@ -591,7 +593,7 @@ export const zh = {
   'equip.cancel': '取消',
   'equip.err.materials': '材料不足',
   'equip.err.coins': '金币不足',
-  'equip.err.full': '背包已满（300）',
+  'equip.err.full': '背包已满（1000）',
   'equip.err.maxLevel': '已满级',
   'equip.err.notSalvageable': '+5 及以上或史诗品质不可分解',
   'equip.err.invalidSlot': '槽位不符',

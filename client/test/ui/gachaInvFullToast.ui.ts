@@ -1,5 +1,5 @@
 // Regression coverage for the "inventory full → mail/coin overflow" toast (2026-07-18): players
-// used to keep drawing gacha pulls while the card roster (150) / equipment inventory (300) was full
+// used to keep drawing gacha pulls while the card roster (150) / equipment inventory (1000) was full
 // with zero feedback, silently losing pulls to coin conversion. GachaScene now shows one summary
 // toast after the reveal overlay is dismissed, driven by the server's `overflow` response field.
 import { describe, it, expect, vi } from 'vitest';

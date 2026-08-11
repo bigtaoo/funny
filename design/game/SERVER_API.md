@@ -164,7 +164,7 @@ POST /equipment/reforge  { instanceId, fuelInstanceId, lockedIndex?, idempotency
 POST /equipment/equip    { slot, instanceId|null, unitType? }              → { save, equipped }
 ```
 
-- **`/equipment/craft`**：扣材料产 0 级基础装备（堆叠或新实例）；撞 **300 库存硬上限**（堆叠件不计）则拒/转等值材料补偿（§3.3）。
+- **`/equipment/craft`**：扣材料产 0 级基础装备（堆叠或新实例）；撞 **1000 库存硬上限**（堆叠件不计，[ADR-064](DECISIONS.md) 2026-08-10 由 300 扩容）则拒/转等值材料补偿（§3.3）。
 - **`/equipment/enhance`**：**服务器掷骰**（成功率表 80%…+8→9 仅 10%，绑定 `idempotencyKey` 首次结果防「重试改命」）、扣材料/金币、成功则 level+1；**失败只损耗、不掉级、不碎**（ADR-009/010）。
 - **`/equipment/salvage`（ADR-012，分解回收）**：扣实例、返还 **70% 打造基础成本材料**（**强化投入不返还**）；**+5 及以上不可分解** → 返 `NOT_SALVAGEABLE`（可分解范围 +0~+4，含堆叠 0 级冗余件，可批量）。30% 损耗本身是温和 sink，主职清库存。
 - **`/equipment/reforge`**：吞低一级同类装备作燃料、扣金币、重 roll 副词条（可锁一条）。
@@ -208,6 +208,8 @@ DELETE /account   (JWT)   → { ok, data:{ confirmToken } }
 ```
 
 > 订正 2026-07-07：以代码为准，实现为 `DELETE /account`（openapi `deleteAccount` + auth.ts），**软删**——置 `accounts.deletedAt`，数据经 7 天宽限后异步清除（C5-b Apple 5.1.1(v)），与 `ACCOUNT_DESIGN §C5-b` 一致。旧文「`POST /account/delete { confirm } → { scheduledPurgeAt }`」为设计稿措辞，未落地。
+
+> 订正 2026-08-10：宽限期内「重新登录恢复」曾经只是文案/隐私政策的承诺，代码里从未实现——`authWx`/`authDevice`/`authLogin`/`authOAuth` 在签 token 前就用 `rejectIfBanned` 拒绝了已删除账号，真正能恢复的 `POST /account/cancel-deletion` 又要求已登录的 token，形成死锁，删除即永久锁死。已修复：四个 auth 入口新增 `restoreIfWithinGrace`，宽限期内重新登录会自动清除 `deletedAt`/`deletionConfirmToken` 后正常签发 token；过期则维持 410。详见 `ACCOUNT_DESIGN §C5-b 订正`。
 
 - meta 编排：删/匿名化 `saves` + `accounts`（移除 `openid`/`deviceId`/`loginId`/`displayName` 等 PII）+ 通知 commercial 处理钱包/交易留存（交易记录依税务/审计义务可保留必要最小集，但与身份解绑）+ analyticsvc 按 `user_id` 批删事件 + social 解好友关系/清私聊。
 - **二次确认**在客户端（`SettingsScene`），服务端要求 `confirm:true`；删除不可逆（或给短宽限 `scheduledPurgeAt` 后清除，按法务定）。

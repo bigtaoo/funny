@@ -210,10 +210,65 @@ describe.skipIf(!mongo)('metaserver auth password e2e', () => {
     });
     expect(banRes.statusCode).toBe(200);
 
+    // Probe via /pve/clear (still holding the pre-deletion token), not login: login now runs
+    // restoreIfWithinGrace *before* rejectIfBanned (2026-08-10 fix), which would clear deletedAt here
+    // and turn this into a pure ban-only check — /pve/clear only calls rejectIfBanned, never restores,
+    // so it still exercises the "both flags set" ordering this test is actually about.
+    const probe = await app.inject({
+      method: 'POST', url: '/pve/clear', headers: auth,
+      payload: { levelId: 'ch1_lv1', stars: 1 },
+    });
     // rejectIfBanned (service/base.ts) checks status.deletedAt before status.banned — with both flags
     // set, the response must be 410 ACCOUNT_DELETED, never 403 ACCOUNT_BANNED.
-    const deletedAndBannedLogin = await login('iris', 'secret123');
-    expect(deletedAndBannedLogin.statusCode).toBe(410);
-    expect(body(deletedAndBannedLogin).error.code).toBe('ACCOUNT_DELETED');
+    expect(probe.statusCode).toBe(410);
+    expect(body(probe).error.code).toBe('ACCOUNT_DELETED');
+  });
+
+  it('C5-b (2026-08-10 fix): logging back in within the 7-day grace period restores a soft-deleted account instead of 410ing forever', async () => {
+    const { accountId } = body(await register('juno', 'secret123')).data;
+    const delRes = await app.inject({
+      method: 'DELETE', url: '/account',
+      headers: { authorization: `Bearer ${body(await login('juno', 'secret123')).data.token}` },
+    });
+    expect(delRes.statusCode).toBe(200);
+
+    // Immediately after deletion, login used to 410 forever (rejectIfBanned ran before signToken, and
+    // the only undo — POST /account/cancel-deletion — itself requires a bearer token, which a deleted
+    // account can never obtain). It must now succeed and hand back a working token.
+    const restoredLogin = await login('juno', 'secret123');
+    expect(restoredLogin.statusCode).toBe(200);
+    const { token: restoredToken, accountId: restoredId } = body(restoredLogin).data;
+    expect(restoredId).toBe(accountId);
+    expect(typeof restoredToken).toBe('string');
+
+    // deletedAt/deletionConfirmToken are actually cleared, not just bypassed for this one request.
+    const doc = await m.collections.accounts.findOne({ _id: accountId });
+    expect(doc?.deletedAt).toBeUndefined();
+    expect(doc?.deletionConfirmToken).toBeUndefined();
+
+    // And the restored token works for a normal authenticated call.
+    const saveRes = await app.inject({ method: 'GET', url: '/save', headers: { authorization: `Bearer ${restoredToken}` } });
+    expect(saveRes.statusCode).toBe(200);
+  });
+
+  it('C5-b (2026-08-10 fix): login past the 7-day grace period still 410s — restore is grace-window-only', async () => {
+    const { accountId } = body(await register('kara', 'secret123')).data;
+    const loginToken = body(await login('kara', 'secret123')).data.token;
+    const delRes = await app.inject({
+      method: 'DELETE', url: '/account', headers: { authorization: `Bearer ${loginToken}` },
+    });
+    expect(delRes.statusCode).toBe(200);
+
+    // Back-date deletedAt past the grace window directly (fast-forwarding real wall-clock time isn't
+    // practical in an e2e test) — same technique as account-deletion.test.ts's expired-grace case.
+    const graceMs = 7 * 24 * 60 * 60 * 1000;
+    await m.collections.accounts.updateOne(
+      { _id: accountId },
+      { $set: { deletedAt: Date.now() - graceMs - 1000 } },
+    );
+
+    const expiredLogin = await login('kara', 'secret123');
+    expect(expiredLogin.statusCode).toBe(410);
+    expect(body(expiredLogin).error.code).toBe('ACCOUNT_DELETED');
   });
 });

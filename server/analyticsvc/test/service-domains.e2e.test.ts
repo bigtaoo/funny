@@ -317,13 +317,13 @@ describe.skipIf(!mongo)('analyticsvc service domains (funnel / dist / sessions w
       expect(Object.prototype.hasOwnProperty.call(doc, 'ip')).toBe(false);
     });
 
-    // Real-bug documentation (see final report): events_count is only $inc'd inside the
-    // `if (sessionStart && batch.session_id)` branch of ingestEvents (src/service/ingest.ts). A batch
-    // that doesn't itself carry a session_start event never touches events_count, even though its
-    // events were durably inserted into the `events` collection. In real traffic a session normally
-    // sends its session_start once and several more event-only batches afterwards, so events_count
-    // ends up permanently stuck at whatever the first (session_start) batch's event count was.
-    it('events_count only accumulates on batches that carry a session_start event (documents current, likely-unintended behavior)', async () => {
+    // Fixed 2026-08-10 (was pinned as a documented bug): events_count used to $inc only inside the
+    // `if (sessionStart && batch.session_id)` branch of ingestEvents (src/service/ingest.ts), so a
+    // batch that didn't itself carry a session_start event never touched events_count even though its
+    // events were durably inserted into the `events` collection. Real traffic sends session_start once
+    // and several more event-only batches afterwards, so events_count was permanently undercounted.
+    // The trigger is now just "batch has a session_id" — every batch's event count accumulates.
+    it('events_count accumulates across batches regardless of whether each one carries a session_start event', async () => {
       await svc.ingestEvents(
         {
           session_id: 'sess-write-2', device_id: 'dev-write-2', platform: 'web', os: 'Windows', game_version: '1', locale: 'en',
@@ -337,8 +337,8 @@ describe.skipIf(!mongo)('analyticsvc service domains (funnel / dist / sessions w
       let doc = await mongo!.collections.sessions.findOne({ _id: 'sess-write-2' });
       expect(doc?.events_count).toBe(2);
 
-      // A second, later batch for the same session with no session_start — 3 more real events land in
-      // the `events` collection, but events_count on the sessions doc is not touched.
+      // A second, later batch for the same session with no session_start — its 3 events must still
+      // land in events_count (this is the case that used to be silently dropped).
       await svc.ingestEvents(
         {
           session_id: 'sess-write-2', device_id: 'dev-write-2', platform: 'web', os: 'Windows', game_version: '1', locale: 'en',
@@ -351,10 +351,284 @@ describe.skipIf(!mongo)('analyticsvc service domains (funnel / dist / sessions w
         undefined,
       );
       doc = await mongo!.collections.sessions.findOne({ _id: 'sess-write-2' });
-      expect(doc?.events_count).toBe(2); // unchanged — the follow-up batch had no session_start
+      expect(doc?.events_count).toBe(5); // 2 + 3, accumulated across both batches
+
+      // A third batch, also without session_start, must add on top rather than reset or double-count.
+      await svc.ingestEvents(
+        {
+          session_id: 'sess-write-2', device_id: 'dev-write-2', platform: 'web', os: 'Windows', game_version: '1', locale: 'en',
+          events: [{ event: 'ui_click', ts: Date.now() + 400 }],
+        },
+        undefined,
+      );
+      doc = await mongo!.collections.sessions.findOne({ _id: 'sess-write-2' });
+      expect(doc?.events_count).toBe(6); // 5 + 1
 
       const totalEventsForSession = await mongo!.collections.events.countDocuments({ session_id: 'sess-write-2' });
-      expect(totalEventsForSession).toBe(5); // all 5 raw events were inserted, just not reflected in events_count
+      expect(totalEventsForSession).toBe(6); // events_count now matches the raw events collection exactly
+    });
+
+    it('a session_id with no session_start event yet still upserts a sessions doc and counts its events (defends against session_start loss/reorder)', async () => {
+      await svc.ingestEvents(
+        {
+          session_id: 'sess-write-no-start', device_id: 'dev-write-no-start', platform: 'web', os: 'Windows', game_version: '1', locale: 'en',
+          events: [
+            { event: 'ui_click', ts: Date.now() },
+            { event: 'ui_click', ts: Date.now() + 1 },
+          ],
+        },
+        undefined,
+      );
+      const doc = await mongo!.collections.sessions.findOne({ _id: 'sess-write-no-start' });
+      expect(doc).toBeTruthy();
+      expect(doc?.events_count).toBe(2);
+      expect(doc?.scenes_visited).toEqual([]); // $setOnInsert defaults still applied on first-touch upsert
+    });
+
+    it('events_count for two different sessions never cross-contaminates when their batches interleave', async () => {
+      await svc.ingestEvents(
+        {
+          session_id: 'sess-write-interleave-a', device_id: 'dev-write-ia', platform: 'web', os: 'Windows', game_version: '1', locale: 'en',
+          events: [{ event: 'session_start', ts: Date.now() }],
+        },
+        undefined,
+      );
+      await svc.ingestEvents(
+        {
+          session_id: 'sess-write-interleave-b', device_id: 'dev-write-ib', platform: 'web', os: 'Windows', game_version: '1', locale: 'en',
+          events: [
+            { event: 'session_start', ts: Date.now() },
+            { event: 'screen_view', ts: Date.now() + 1 },
+          ],
+        },
+        undefined,
+      );
+      await svc.ingestEvents(
+        {
+          session_id: 'sess-write-interleave-a', device_id: 'dev-write-ia', platform: 'web', os: 'Windows', game_version: '1', locale: 'en',
+          events: [
+            { event: 'ui_click', ts: Date.now() + 100 },
+            { event: 'ui_click', ts: Date.now() + 200 },
+          ],
+        },
+        undefined,
+      );
+      await svc.ingestEvents(
+        {
+          session_id: 'sess-write-interleave-b', device_id: 'dev-write-ib', platform: 'web', os: 'Windows', game_version: '1', locale: 'en',
+          events: [{ event: 'ui_click', ts: Date.now() + 300 }],
+        },
+        undefined,
+      );
+
+      const docA = await mongo!.collections.sessions.findOne({ _id: 'sess-write-interleave-a' });
+      const docB = await mongo!.collections.sessions.findOne({ _id: 'sess-write-interleave-b' });
+      expect(docA?.events_count).toBe(3); // 1 (session_start) + 2 (ui_click, ui_click)
+      expect(docB?.events_count).toBe(3); // 2 (session_start, screen_view) + 1 (ui_click)
+    });
+
+    it('a session_end-only batch (no session_start in it) still increments events_count for that batch', async () => {
+      await svc.ingestEvents(
+        {
+          session_id: 'sess-write-end-count', device_id: 'dev-write-end-count', platform: 'web', os: 'Windows', game_version: '1', locale: 'en',
+          events: [{ event: 'session_start', ts: Date.now() }],
+        },
+        undefined,
+      );
+      await svc.ingestEvents(
+        {
+          session_id: 'sess-write-end-count', device_id: 'dev-write-end-count', platform: 'web', os: 'Windows', game_version: '1', locale: 'en',
+          events: [{ event: 'session_end', ts: Date.now() + 1000, props: { duration_sec: 1 } }],
+        },
+        undefined,
+      );
+      const doc = await mongo!.collections.sessions.findOne({ _id: 'sess-write-end-count' });
+      expect(doc?.events_count).toBe(2); // 1 (session_start) + 1 (session_end) — session_end batches count too
+      expect(doc?.ended_at).toBeInstanceOf(Date);
+    });
+
+    it('a single batch carrying both session_start and session_end (very short session) is counted and finalized in one shot', async () => {
+      const startTs = Date.now();
+      const endTs = startTs + 5_000;
+      await svc.ingestEvents(
+        {
+          session_id: 'sess-write-instant', device_id: 'dev-write-instant', platform: 'web', os: 'Windows', game_version: '1', locale: 'en',
+          events: [
+            { event: 'session_start', ts: startTs },
+            { event: 'session_end', ts: endTs, props: { duration_sec: 5, scenes_visited: ['LobbyScene'] } },
+          ],
+        },
+        undefined,
+      );
+      const doc = await mongo!.collections.sessions.findOne({ _id: 'sess-write-instant' });
+      expect(doc?.events_count).toBe(2);
+      expect(doc!.started_at.getTime()).toBeCloseTo(startTs, -2);
+      expect(doc?.ended_at?.getTime()).toBeCloseTo(endTs, -2);
+      expect(doc?.duration_sec).toBe(5);
+      expect(doc?.scenes_visited).toEqual(['LobbyScene']);
+    });
+
+    // 2026-08-10 follow-up coverage (task: cover reorder/duplicate/concurrency edges of the events_count
+    // fix above). Real network delivery is not ordered: retries and reordering mean the session_start
+    // batch is not guaranteed to be the first one ingestEvents ever sees for a given session_id.
+    it('an out-of-order session_start batch (arrives AFTER earlier event-only batches) still has its own events counted, but does not retroactively correct started_at', async () => {
+      const firstSeenTs = Date.now();
+      // First-arriving batch has no session_start — this is the batch that bootstraps the sessions doc
+      // via $setOnInsert's `sessionStart?.ts ?? batch.events[0]?.ts` fallback.
+      await svc.ingestEvents(
+        {
+          session_id: 'sess-reorder-1', device_id: 'dev-reorder-1', platform: 'web', os: 'Windows', game_version: '1', locale: 'en',
+          events: [
+            { event: 'ui_click', ts: firstSeenTs },
+            { event: 'ui_click', ts: firstSeenTs + 10 },
+          ],
+        },
+        undefined,
+      );
+      let doc = await mongo!.collections.sessions.findOne({ _id: 'sess-reorder-1' });
+      expect(doc?.events_count).toBe(2);
+      const bootstrappedStartedAt = doc!.started_at.getTime();
+      expect(bootstrappedStartedAt).toBeCloseTo(firstSeenTs, -2);
+
+      // The session_start batch shows up later, carrying a ts that is chronologically EARLIER than the
+      // events that already landed (simulating a delayed/retried send of the very first batch the client
+      // actually produced).
+      const trueSessionStartTs = firstSeenTs - 5000;
+      await svc.ingestEvents(
+        {
+          session_id: 'sess-reorder-1', device_id: 'dev-reorder-1', platform: 'web', os: 'Windows', game_version: '1', locale: 'en',
+          events: [{ event: 'session_start', ts: trueSessionStartTs }],
+        },
+        undefined,
+      );
+      doc = await mongo!.collections.sessions.findOne({ _id: 'sess-reorder-1' });
+      // events_count is not order-sensitive: the late session_start batch's event still lands on top.
+      expect(doc?.events_count).toBe(3);
+      // Documented current semantics: $setOnInsert only ever applies on the update that performs the
+      // insert. Since the doc already existed by the time the session_start batch arrived, started_at
+      // stays pinned to whichever batch arrived FIRST — the actually-earliest event's timestamp (here,
+      // trueSessionStartTs) is silently NOT adopted, even though it is semantically "more correct". This
+      // means started_at means "first-observed-by-the-server" rather than "true earliest event ts" under
+      // reordering; that is a pre-existing property of the upsert shape, not something this fix changed.
+      expect(doc!.started_at.getTime()).toBeCloseTo(bootstrappedStartedAt, -2);
+      expect(doc!.started_at.getTime()).not.toBeCloseTo(trueSessionStartTs, -2);
+    });
+
+    it('a duplicate session_start for the same session (client retry/reconnect) does not re-initialize started_at and still counts its own event exactly once', async () => {
+      const ts1 = Date.now();
+      await svc.ingestEvents(
+        {
+          session_id: 'sess-dup-start', device_id: 'dev-dup-start', platform: 'web', os: 'Windows', game_version: '1', locale: 'en',
+          events: [{ event: 'session_start', ts: ts1 }],
+        },
+        undefined,
+      );
+      let doc = await mongo!.collections.sessions.findOne({ _id: 'sess-dup-start' });
+      expect(doc?.events_count).toBe(1);
+      const firstStartedAt = doc!.started_at.getTime();
+
+      // Duplicate session_start batch, e.g. the client reconnected and resent its startup payload.
+      // Give it a very different ts so an accidental overwrite would be obvious.
+      const ts2 = ts1 + 60_000;
+      await svc.ingestEvents(
+        {
+          session_id: 'sess-dup-start', device_id: 'dev-dup-start', platform: 'web', os: 'Windows', game_version: '1', locale: 'en',
+          events: [{ event: 'session_start', ts: ts2 }],
+        },
+        undefined,
+      );
+      doc = await mongo!.collections.sessions.findOne({ _id: 'sess-dup-start' });
+      // The duplicate session_start batch still carries one real event, so events_count accumulates to 2
+      // — it is not deduplicated (there is no dedup logic in ingestEvents), and it is not double-counted.
+      expect(doc?.events_count).toBe(2);
+      // started_at is untouched by the second session_start: $setOnInsert only fires on the insert that
+      // created the doc, so the duplicate cannot clobber it.
+      expect(doc!.started_at.getTime()).toBeCloseTo(firstStartedAt, -2);
+    });
+
+    it('two concurrent batches for the same already-existing session both land in events_count via Mongo\'s atomic $inc (no lost update)', async () => {
+      // Pre-create the session with a single batch first so both concurrent batches below are plain
+      // $inc updates against an existing document, not two upserts racing to insert the same _id (that
+      // race is covered separately below, for a brand-new session).
+      const sid = 'sess-concurrent-existing';
+      await svc.ingestEvents(
+        {
+          session_id: sid, device_id: 'dev-concurrent-existing', platform: 'web', os: 'Windows', game_version: '1', locale: 'en',
+          events: [{ event: 'session_start', ts: Date.now() }],
+        },
+        undefined,
+      );
+
+      const batchA = svc.ingestEvents(
+        {
+          session_id: sid, device_id: 'dev-concurrent-existing', platform: 'web', os: 'Windows', game_version: '1', locale: 'en',
+          events: [{ event: 'ui_click', ts: Date.now() + 1 }, { event: 'ui_click', ts: Date.now() + 2 }],
+        },
+        undefined,
+      );
+      const batchB = svc.ingestEvents(
+        {
+          session_id: sid, device_id: 'dev-concurrent-existing', platform: 'web', os: 'Windows', game_version: '1', locale: 'en',
+          events: [{ event: 'ui_click', ts: Date.now() + 3 }, { event: 'ui_click', ts: Date.now() + 4 }, { event: 'ui_click', ts: Date.now() + 5 }],
+        },
+        undefined,
+      );
+      await Promise.all([batchA, batchB]);
+
+      const doc = await mongo!.collections.sessions.findOne({ _id: sid });
+      // 1 (session_start) + 2 (batch A) + 3 (batch B) = 6, regardless of interleaving — $inc is atomic
+      // per document, so two concurrent updateOne calls against the same _id serialize at the storage
+      // layer and neither increment is lost.
+      expect(doc?.events_count).toBe(6);
+      const totalEvents = await mongo!.collections.events.countDocuments({ session_id: sid });
+      expect(totalEvents).toBe(6);
+    });
+
+    it('two concurrent batches for a BRAND-NEW session (first ever ingest, both racing to upsert-insert the same _id) still end up with events_count matching both batches combined', async () => {
+      // Unlike the previous test, there is no pre-existing sessions doc here: both batches' updateOne
+      // calls race to be the one that performs the upsert's *insert*. This exercises the same code path
+      // as the very first batch a real session ever sends when the client fires two batches back-to-back
+      // (e.g. session_start + an immediate first UI event) without waiting for the first to land.
+      const sid = 'sess-concurrent-new';
+      const batchA = svc.ingestEvents(
+        {
+          session_id: sid, device_id: 'dev-concurrent-new', platform: 'web', os: 'Windows', game_version: '1', locale: 'en',
+          events: [{ event: 'session_start', ts: Date.now() }, { event: 'ui_click', ts: Date.now() + 1 }],
+        },
+        undefined,
+      );
+      const batchB = svc.ingestEvents(
+        {
+          session_id: sid, device_id: 'dev-concurrent-new', platform: 'web', os: 'Windows', game_version: '1', locale: 'en',
+          events: [{ event: 'ui_click', ts: Date.now() + 2 }, { event: 'ui_click', ts: Date.now() + 3 }, { event: 'ui_click', ts: Date.now() + 4 }],
+        },
+        undefined,
+      );
+      // Neither call should reject: if the upsert-insert race produced an uncaught duplicate-key error
+      // on either side, that would surface here as a rejected promise.
+      await expect(Promise.all([batchA, batchB])).resolves.toBeDefined();
+
+      const doc = await mongo!.collections.sessions.findOne({ _id: sid });
+      expect(doc).toBeTruthy();
+      // 2 (batch A) + 3 (batch B) = 5, regardless of which batch's updateOne performed the insert.
+      expect(doc?.events_count).toBe(5);
+      const totalEvents = await mongo!.collections.events.countDocuments({ session_id: sid });
+      expect(totalEvents).toBe(5);
+    });
+
+    it('a batch with an empty events array never touches the sessions collection, even with a valid session_id (early-return path, unrelated to the events_count fix)', async () => {
+      const sid = 'sess-empty-events';
+      await svc.ingestEvents(
+        {
+          session_id: sid, device_id: 'dev-empty-events', platform: 'web', os: 'Windows', game_version: '1', locale: 'en',
+          events: [],
+        },
+        undefined,
+      );
+      const count = await mongo!.collections.sessions.countDocuments({ _id: sid });
+      expect(count).toBe(0);
+      const eventCount = await mongo!.collections.events.countDocuments({ session_id: sid });
+      expect(eventCount).toBe(0);
     });
 
     it('a session_end event sets ended_at/duration_sec/scenes_visited on the existing sessions doc', async () => {

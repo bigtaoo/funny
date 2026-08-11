@@ -459,18 +459,27 @@ export class DailyScene implements Scene {
     this.container.addChild(ptTxt);
 
     if (this.cb.onClaimDaily) {
-      const btnW = cardW * 0.45;
       const btnH = cardH * 0.85;
-      const btnX = PAD + cardW - btnW;
-      const btnY = summaryY + cardH * 0.08;
-      const btnFill = isClaimed ? 0xaaaaaa : isClaimable ? 0x336644 : 0xaaaaaa;
-      const btnBg = sketchPanel(btnW, btnH, { fill: btnFill, border: 0x666666, width: 1.5, seed: seedFor(btnX, btnY, 0) });
-      btnBg.x = btnX; btnBg.y = btnY;
       const coinsReward = this.retention?.defs?.dailyCoinsReward ?? 2;
       const btnLabel = txt(
         isClaimed ? t('daily.tasks.rewardClaimed') : t('daily.tasks.rewardCoins', { n: coinsReward }),
         snapFont(Math.round(btnH * 0.36)), 0xffffff,
       );
+      // Button width must fit whichever label is showing. A fixed cardW*0.45 fraction (kept below
+      // as a floor, for landscape's squat cards where it was already comfortably wide) undersized
+      // in portrait: cardH — and thus this label's font, sized off btnH — scales with the screen's
+      // *height*, while cardW scales with its much narrower portrait *width*, so the same fraction
+      // yields a big font in a narrow box. "Claimed today" spilled past the button's right edge
+      // there (2026-08-10 bug report, screenshot). Sizing the floor's ceiling-breaker off the
+      // label's actual measured width makes the fix orientation- and locale-agnostic instead of
+      // retuning yet another magic fraction for portrait (or for German's longer strings).
+      const btnPad = btnH * 0.5;
+      const btnW = Math.max(cardW * 0.45, btnLabel.width + btnPad);
+      const btnX = PAD + cardW - btnW;
+      const btnY = summaryY + cardH * 0.08;
+      const btnFill = isClaimed ? 0xaaaaaa : isClaimable ? 0x336644 : 0xaaaaaa;
+      const btnBg = sketchPanel(btnW, btnH, { fill: btnFill, border: 0x666666, width: 1.5, seed: seedFor(btnX, btnY, 0) });
+      btnBg.x = btnX; btnBg.y = btnY;
       btnLabel.anchor.set(0.5, 0.5);
       btnLabel.x = btnX + btnW / 2; btnLabel.y = btnY + btnH / 2;
       this.container.addChild(btnBg, btnLabel);

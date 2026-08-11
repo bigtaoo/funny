@@ -234,7 +234,7 @@ describe.skipIf(!mongo)('equipment backend e2e', () => {
 
   it('craft full inventory → 409 INVENTORY_FULL', async () => {
     await seedMaterials({ scrap: 20 });
-    // Directly seed 300 placeholder instances to fill the inventory
+    // Directly seed EQUIPMENT_INV_CAP placeholder instances to fill the inventory
     const full: EquipmentInstance[] = [];
     for (let i = 0; i < EQUIPMENT_INV_CAP; i++) {
       full.push({ id: `fill_${i}`, defId: 'wp_pencil', rarity: 'common', level: 0, affixes: [] });
@@ -243,6 +243,33 @@ describe.skipIf(!mongo)('equipment backend e2e', () => {
     const res = await craft('wp_pencil', 'ik-full');
     expect(res.statusCode).toBe(409);
     expect(body(res).error.code).toBe('INVENTORY_FULL');
+  });
+
+  it('craft at exactly EQUIPMENT_INV_CAP - 1 instances still succeeds (boundary, guards against an off-by-one on the cap check)', async () => {
+    await seedMaterials({ scrap: 20 });
+    const almostFull: EquipmentInstance[] = [];
+    for (let i = 0; i < EQUIPMENT_INV_CAP - 1; i++) {
+      almostFull.push({ id: `fill_${i}`, defId: 'wp_pencil', rarity: 'common', level: 0, affixes: [] });
+    }
+    await seedEquipmentBatch(m, accountId, almostFull);
+    const res = await craft('wp_pencil', 'ik-almost-full');
+    expect(res.statusCode).toBe(200);
+    expect(Object.keys(await readInv())).toHaveLength(EQUIPMENT_INV_CAP);
+  });
+
+  it('regression (2026-08-10 capacity increase 300→1000): craft still succeeds well past the old 300-item cap', async () => {
+    await seedMaterials({ scrap: 20 });
+    // 500 sits strictly between the legacy 300 cap and the current EQUIPMENT_INV_CAP=1000 — a craft here
+    // used to 409 INVENTORY_FULL before the cap was raised; pins the new capacity so a future accidental
+    // revert of EQUIPMENT_INV_CAP back toward 300 is caught here instead of silently blocking players.
+    const past300: EquipmentInstance[] = [];
+    for (let i = 0; i < 500; i++) {
+      past300.push({ id: `fill_${i}`, defId: 'wp_pencil', rarity: 'common', level: 0, affixes: [] });
+    }
+    await seedEquipmentBatch(m, accountId, past300);
+    const res = await craft('wp_pencil', 'ik-past-300');
+    expect(res.statusCode).toBe(200);
+    expect(Object.keys(await readInv())).toHaveLength(501);
   });
 
   it('craft unknown defId → 400', async () => {

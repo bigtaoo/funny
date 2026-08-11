@@ -71,15 +71,19 @@ export function AuthMixin<TBase extends ApiClientBaseCtor>(Base: TBase): TBase &
     /**
      * Soft-delete account (C5-b, Apple 5.1.1(v)): server sets `deletedAt`; data is purged asynchronously
      * after a 7-day grace period. Returns a confirmation token — pass it to cancelAccountDeletion()
-     * within the grace period (same session, before the token/save are cleared) to undo. Once the
-     * caller clears the local token and returns to the login screen, the account can no longer be
-     * un-deleted through this session (logging back in does NOT restore it — see cancelAccountDeletion).
+     * within the grace period (same session, before the token/save are cleared) for an immediate undo.
+     * Logging back in within the grace period also restores the account (server-side, on any of
+     * /auth/login, /auth/device, /auth/wx, /auth/oauth — fixed 2026-08-10, previously it did not despite
+     * the deletion confirmation copy promising it), so cancelAccountDeletion() is now just the faster,
+     * same-session path — it is no longer the *only* way to undo a deletion.
      */
     async deleteAccount(): Promise<{ confirmToken: string }> {
       return this.request<{ confirmToken: string }>('DELETE', '/account');
     }
 
-    /** Undo a pending soft-delete within the 7-day grace period (C5-b), using the token deleteAccount() returned. */
+    /** Immediate, same-session undo of a pending soft-delete within the 7-day grace period (C5-b), using
+     *  the token deleteAccount() returned. Logging back in later within the grace period also restores
+     *  the account server-side, without needing this token. */
     async cancelAccountDeletion(confirmToken: string): Promise<void> {
       await this.post<{ ok: true }>('/account/cancel-deletion', { confirmToken });
     }

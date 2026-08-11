@@ -26,7 +26,7 @@
 // Responsibilities (2026-08-09 split, 965→shell + 7 files, same "thin shell" convention as
 // combatMarch/core — see claudedocs/server.md; no shared inheritance chain needed since each op
 // is a standalone function, just a shared `equipment/helpers.ts`):
-//   · equipment/craft.ts    craftEquipment   Player crafting (E2): deduct stationery materials → roll a +0 base item → add to inventory (300 cap). idemKey idempotent.
+//   · equipment/craft.ts    craftEquipment   Player crafting (E2): deduct stationery materials → roll a +0 base item → add to inventory (1000 cap). idemKey idempotent.
 //   · equipment/trade.ts    escrowEquipment  worldsvc auction escrow (E2.5): verify not equipped/not locked → remove from seller inventory → return snapshot for worldsvc to store in the listing.
 //                           grantEquipment   worldsvc trade transfer / listing cancellation/expiry return (E2.5): write instance snapshot into target account inventory (overwrite by id = idempotent).
 //   · equipment/enhance.ts  enhanceEquipment Player enhancement (E3): server rolls dice (success rate table) → deduct materials + coins (commercial authoritative) → on success level+1. idemKey idempotent.

@@ -8,8 +8,9 @@
 // out of this first pass — they belong to a heavier render smoke once the UI
 // stabilises (post-launch, per the agreed plan).
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import * as PIXI from 'pixi.js-legacy';
+import * as log from '../../src/net/log';
 import type { Scene } from '../../src/scenes/SceneManager';
 import { createLayout } from '../../src/layout/ScalingManager';
 import { InputManager } from '../../src/inputSystem/InputManager';
@@ -39,6 +40,7 @@ import { AuctionScene } from '../../src/scenes/AuctionScene';
 import { CityScene } from '../../src/scenes/CityScene';
 import { EquipmentScene } from '../../src/scenes/EquipmentScene';
 import type { EquipmentCallbacks, EquipResult } from '../../src/scenes/EquipmentScene';
+import { EQUIPMENT_INV_CAP } from '../../src/game/meta/equipmentDefs';
 import { BattlePassScene } from '../../src/scenes/BattlePassScene';
 import { DeckBuilderScene } from '../../src/scenes/DeckBuilderScene';
 import { LeaderboardScene } from '../../src/scenes/LeaderboardScene';
@@ -1065,6 +1067,34 @@ describe('LobbyScene — identity chip row', () => {
 
     scene.destroy();
   });
+
+  // Regression for the fmtCoins abbreviation removal (coins now render as the full
+  // "97,757,000"-style number instead of a short "97757k") — the coins chip is sized
+  // from the label's real pixel width (build.ts), so a long full-precision balance
+  // grows the chip well beyond what any abbreviated string ever needed. Confirms that
+  // growth still doesn't crowd out the profile chip on its left, even on a narrow
+  // portrait phone with a near-max balance.
+  it('portrait, narrow phone: a huge full-precision coin balance still does not overlap the profile chip', () => {
+    const layout = createLayout(390, 844);
+    const scene = new LobbyScene(layout, new InputManager(), {
+      onStartGame() {}, onOpenCampaign() {}, onOpenRoom() {}, onOpenWorld() {},
+      onOpenShop() {}, onOpenCards() {}, onOpenStats() {}, onOpenProfile() {},
+      onOpenRecharge() {}, onOpenLeaderboard() {},
+      getCoins: () => 999_999_999,
+      pvp: { rank: 'platinum', elo: 1376 },
+      playerName: 'tao',
+    });
+
+    const profileRect = (scene as any).profileChipRect as { x: number; y: number; w: number; h: number };
+    const coinsRect   = (scene as any).coinsChipRect   as { x: number; y: number; w: number; h: number };
+    const rankRect     = (scene as any).rankChipRect     as { x: number; y: number; w: number; h: number };
+
+    expect(rectsOverlap(profileRect, coinsRect)).toBe(false);
+    expect(rectsOverlap(coinsRect, rankRect)).toBe(false);
+    expect(profileRect.x + profileRect.w).toBeLessThanOrEqual(coinsRect.x);
+
+    scene.destroy();
+  });
 });
 
 // ── LevelPrepScene: layout invariants (regression for 6-row overflow bug) ────
@@ -1253,6 +1283,26 @@ describe('EquipmentScene — mixin-split wiring', () => {
     expect(hits.length).toBeGreaterThan(1);
     await (scene as any).doCraft('wp_pencil');
     expect(calls.craft).toEqual(['wp_pencil']);
+    scene.destroy();
+  });
+
+  it('craft tab: a full equipment bag greys out every Craft button, and tapping one now explains why (equip.err.full) instead of silently doing nothing', async () => {
+    const { cb, save, calls } = buildEquipCallbacks('card1');
+    // Pad the bag up to EQUIPMENT_INV_CAP — same shape as buildEquipSave's fixture entries,
+    // materials/rarity don't matter here, only the total instance count does (craft.ts's `full` gate).
+    for (let i = Object.keys(save.equipmentInv).length; i < EQUIPMENT_INV_CAP; i++) {
+      save.equipmentInv[`padding${i}`] = { id: `padding${i}`, defId: 'wp_pencil', rarity: 'common', level: 0, affixes: [] };
+    }
+    const scene = new EquipmentScene(createLayout(...LANDSCAPE), new InputManager(), cb);
+    (scene as any).activeTab = 'craft';
+    (scene as any).render();
+    const hits = (scene as any).hitRects as Array<{ owner?: string; action: () => void }>;
+    const pencilHit = hits.find((hh) => hh.owner === 'wp_pencil');
+    expect(pencilHit).toBeDefined();
+    const spy = vi.spyOn(log, 'showToastMessage');
+    pencilHit!.action();
+    expect(calls.craft).toEqual([]); // full bag → tapping must NOT fire the craft request
+    expect(spy).toHaveBeenCalledWith(expect.any(String), 'error'); // ...but must explain why (equip.err.full)
     scene.destroy();
   });
 

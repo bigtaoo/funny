@@ -47,7 +47,13 @@ export function IngestMixin<TBase extends AnalyticsServiceBaseCtor>(Base: TBase)
       const sessionStart = batch.events.find((e) => e.event === 'session_start');
       const sessionEnd = batch.events.find((e) => e.event === 'session_end');
 
-      if (sessionStart && batch.session_id) {
+      // events_count must track every batch for the session, not just the one carrying
+      // session_start: real traffic sends session_start once and then many event-only batches,
+      // so gating the $inc on session_start's presence left events_count permanently undercounted.
+      // The trigger here is simply "this batch has events for a known session" — batch.events.length
+      // is always > 0 at this point (see the early return above), and this is the only $inc site for
+      // events_count, so each batch still contributes exactly once, with no double-counting.
+      if (batch.session_id) {
         await this.cols.sessions.updateOne(
           { _id: batch.session_id },
           {
@@ -56,7 +62,7 @@ export function IngestMixin<TBase extends AnalyticsServiceBaseCtor>(Base: TBase)
               device_id: batch.device_id ?? '',
               platform: batch.platform ?? 'web',
               os: batch.os ?? '',
-              started_at: clampEventTs(sessionStart.ts, this.now()),
+              started_at: clampEventTs(sessionStart?.ts ?? batch.events[0]?.ts, this.now()),
               scenes_visited: [],
               ...deviceFields,
             },

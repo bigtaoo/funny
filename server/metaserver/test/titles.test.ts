@@ -4,6 +4,7 @@
 import { describe, it, expect } from 'vitest';
 import { makeNewSave, signToken, ladderTitleId, type Collections, type SaveData } from '@nw/shared';
 import { buildApp } from '../src/app.js';
+import { grantTitleToPlayer } from '../src/titles.js';
 import type { FastifyInstance } from 'fastify';
 
 const jwt = { secret: 'test-secret' };
@@ -185,5 +186,62 @@ describe('PUT /title/equip (L2-2)', () => {
     expect(res.statusCode).toBe(200);
     expect(res.json().data.save.equipped.title).toBeUndefined();
     await app.close();
+  });
+});
+
+// grantTitleToPlayer unit coverage (ITEM_IDENTITY_DESIGN.md task3 follow-up, 2026-08-10): the genuine
+// concurrent-write race (two different titleIds granted at once) needs real Mongo to reproduce honestly —
+// see starter-title.e2e.test.ts's 'two different titleIds granted concurrently' test — because this
+// file's FakeCol.findOne returns a live reference into its Map rather than a snapshot copy, so two
+// same-tick reads here would alias the same mutable object and never observe genuine staleness the way
+// a real document read does. What IS safe to test without Mongo: purely sequential multi-grant
+// accumulation (no interleaving at all), and forcing rev-conflict exhaustion with a fake collection whose
+// findOneAndUpdate always refuses (deterministic, cannot be reproduced reliably by hammering real Mongo
+// with exactly 4 competing writes).
+describe('grantTitleToPlayer (unit, no Mongo)', () => {
+  it('sequential grants of different titles to the same account accumulate in titleGrants without overwriting earlier entries', async () => {
+    const cols = fakeCols({ accountId: ACC });
+    await grantTitleToPlayer(cols, ACC, 'ach.one', 1000);
+    await grantTitleToPlayer(cols, ACC, 'ach.two', 2000);
+    await grantTitleToPlayer(cols, ACC, 'ach.three', 3000);
+
+    const row = (cols.saves as unknown as { docs: Map<string, { save: SaveData }> }).docs.get(ACC)!;
+    expect(row.save.titles).toEqual(expect.arrayContaining(['event.newbie', 'ach.one', 'ach.two', 'ach.three']));
+    expect(row.save.titleGrants).toMatchObject({ 'ach.one': 1000, 'ach.two': 2000, 'ach.three': 3000 });
+  });
+
+  it('re-granting the same title again after other titles landed still keeps the original obtainedAt (idempotent, does not disturb the accumulated batch)', async () => {
+    const cols = fakeCols({ accountId: ACC });
+    await grantTitleToPlayer(cols, ACC, 'ach.one', 1000);
+    await grantTitleToPlayer(cols, ACC, 'ach.two', 2000);
+    await grantTitleToPlayer(cols, ACC, 'ach.one', 9999); // re-grant, must be a no-op
+
+    const row = (cols.saves as unknown as { docs: Map<string, { save: SaveData }> }).docs.get(ACC)!;
+    expect(row.save.titles.filter((t) => t === 'ach.one')).toHaveLength(1);
+    expect(row.save.titleGrants).toMatchObject({ 'ach.one': 1000, 'ach.two': 2000 });
+  });
+
+  it('rev conflict exhausted across all 4 attempts: the title is silently not granted, but grantTitleToPlayer still resolves without throwing (known limitation — no error surfaces to the caller)', async () => {
+    // A hand-rolled fake (not the shared FakeCol above) whose findOneAndUpdate always refuses, simulating
+    // an opponent that wins the rev race on every single attempt — the one scenario that's impractical to
+    // force reliably against real MongoDB (would need to time 4 competing writes exactly right).
+    const seed = makeNewSave(ACC, 1000);
+    const row: { _id: string; save: SaveData; rev: number } = { _id: ACC, save: seed, rev: seed.rev };
+    let findOneCalls = 0;
+    const alwaysConflict = {
+      async findOne(q: Record<string, unknown>) {
+        findOneCalls++;
+        return q._id === ACC ? row : null;
+      },
+      async findOneAndUpdate() {
+        return null; // perpetual rev conflict
+      },
+    };
+    const cols = { saves: alwaysConflict } as unknown as Collections;
+
+    await expect(grantTitleToPlayer(cols, ACC, 'ach.never', 5000)).resolves.toBeUndefined();
+    expect(findOneCalls).toBe(4); // all 4 attempts were spent
+    expect(row.save.titles).not.toContain('ach.never');
+    expect(row.save.titleGrants?.['ach.never']).toBeUndefined();
   });
 });

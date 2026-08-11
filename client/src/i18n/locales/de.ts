@@ -370,6 +370,9 @@ export const de: Record<TranslationKey, string> = {
   'auth.err.passwordMismatch': 'Passwörter stimmen nicht überein',
   'auth.err.network': 'Netzwerkfehler — bitte erneut versuchen',
   'auth.err.banned': 'Dieses Konto wurde gesperrt',
+  // 2026-08-10: erneutes Anmelden innerhalb der 7-Tage-Karenzzeit stellt das Konto jetzt automatisch
+  // wieder her (siehe restoreIfWithinGrace); dieser Fall bedeutet, die Karenzzeit ist abgelaufen.
+  'auth.err.deleted': 'Die 7-tägige Karenzzeit dieses Kontos ist abgelaufen — die Daten wurden endgültig gelöscht und können nicht wiederhergestellt werden',
 
   // ── Shop / Aufladen (S2-6) ──────────────────────────────────────────────────
   'shop.title': 'Shop',
@@ -459,7 +462,7 @@ export const de: Record<TranslationKey, string> = {
   'gacha.fate.redeem': 'Einlösen',
   'gacha.fate.redeemed': '{item} eingelöst',
   'gacha.fate.insufficient': 'Nicht genug Schicksalspunkte',
-  // ── Inventar-voll-Überlauf-Hinweis (Heldenkarten 150 / Ausrüstung 300 Limit) ──
+  // ── Inventar-voll-Überlauf-Hinweis (Heldenkarten 150 / Ausrüstung 1000 Limit) ──
   'gacha.invFull.mailed': 'Inventar voll — {count} Gegenstand/Gegenstände per Post gesendet, dort abholen',
   'gacha.invFull.compensated': 'Inventar voll — {coins} Münzen als Ausgleich gutgeschrieben',
   'gacha.invFull.mailedAndCompensated': 'Inventar voll — {mailed} Gegenstand/Gegenstände per Post gesendet, {coins} Münzen als Ausgleich gutgeschrieben',
@@ -587,7 +590,7 @@ export const de: Record<TranslationKey, string> = {
   'equip.cancel': 'Abbrechen',
   'equip.err.materials': 'Nicht genug Material',
   'equip.err.coins': 'Nicht genug Münzen',
-  'equip.err.full': 'Inventar voll (300)',
+  'equip.err.full': 'Inventar voll (1000)',
   'equip.err.maxLevel': 'Bereits Maximalstufe',
   'equip.err.notSalvageable': '+5 und höher oder epische Seltenheit nicht zerlegbar',
   'equip.err.invalidSlot': 'Falscher Slot',

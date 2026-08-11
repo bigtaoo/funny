@@ -63,8 +63,8 @@ export function getEquipDef(defId: string): EquipDef | undefined {
 /** Enhancement level cap (EQUIPMENT_DESIGN §6.1, +0..+9). */
 export const EQUIP_MAX_LEVEL = 9;
 
-/** Hard cap on individual inventory instances (EQUIPMENT_DESIGN §3.3, ADR-012, DRAFT [adjustable]). */
-export const EQUIPMENT_INV_CAP = 300;
+/** Hard cap on individual inventory instances (EQUIPMENT_DESIGN §3.3, ADR-012, DRAFT [adjustable]; raised 300→1000 2026-08-10). */
+export const EQUIPMENT_INV_CAP = 1000;
 
 /** Coin compensation per equipment instance when the inventory is full (overflow → coin sink, mirrors CARD_FULL_COMPENSATION_COINS). [DRAFT → ECONOMY_NUMBERS §6] */
 export const EQUIP_FULL_COMPENSATION_COINS = 10;

@@ -2,7 +2,7 @@
 //   shop/gacha coin deduction → item delivery → mirror, ads cap, iap mirror, reconciliation re-delivery (crash before delivery) with no loss and no duplication.
 // Requires `cd server && docker compose up -d` + `tsc -b` first (imports from dist).
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
-import { createMongo, type JwtConfig, type MongoHandle, ADS_MIN_INTERVAL_MS, CARD_INV_CAP } from '@nw/shared';
+import { createMongo, type JwtConfig, type MongoHandle, ADS_MIN_INTERVAL_MS, CARD_INV_CAP, EQUIPMENT_INV_CAP } from '@nw/shared';
 import type { FastifyInstance } from 'fastify';
 import { buildApp } from '../dist/app.js';
 import type {
@@ -1138,7 +1138,7 @@ describe.skipIf(!mongo2)('gacha inventory-full overflow → mail', () => {
   });
 
   it('equipment full: first 10 overflow instances in one draw are mailed, not coin-compensated (previously silently discarded)', async () => {
-    await fillEquipInv(300);
+    await fillEquipInv(EQUIPMENT_INV_CAP);
     comm.nextResults = Array.from({ length: 10 }, () => ({ itemId: 'wp_pencil', rarity: 'common' as const }));
     const r = body(await app.inject({ method: 'POST', url: '/gacha/draw', headers: auth(), payload: { poolId: 'standard', count: 10 } }));
     expect(r.data.overflow).toMatchObject({ equipMailed: 10, equipCompensatedCoins: 0 });
@@ -1149,7 +1149,7 @@ describe.skipIf(!mongo2)('gacha inventory-full overflow → mail', () => {
   });
 
   it('equipment full: overflow beyond the first 10 (across draws) falls back to coin compensation', async () => {
-    await fillEquipInv(300);
+    await fillEquipInv(EQUIPMENT_INV_CAP);
     comm.nextResults = Array.from({ length: 10 }, () => ({ itemId: 'wp_pencil', rarity: 'common' as const }));
     await app.inject({ method: 'POST', url: '/gacha/draw', headers: auth(), payload: { poolId: 'standard', count: 10 } });
     const second = body(await app.inject({ method: 'POST', url: '/gacha/draw', headers: auth(), payload: { poolId: 'standard', count: 10 } }));
@@ -1157,10 +1157,10 @@ describe.skipIf(!mongo2)('gacha inventory-full overflow → mail', () => {
   });
 
   it('equipment no longer full → mail quota refills (parity with the card-roster case above)', async () => {
-    await fillEquipInv(300);
+    await fillEquipInv(EQUIPMENT_INV_CAP);
     comm.nextResults = Array.from({ length: 10 }, () => ({ itemId: 'wp_pencil', rarity: 'common' as const }));
     await app.inject({ method: 'POST', url: '/gacha/draw', headers: auth(), payload: { poolId: 'standard', count: 10 } });
-    // Free up room: drop back to 299 entries. Bumps rev alongside the raw mutation for the same reason as the
+    // Free up room: drop back to EQUIPMENT_INV_CAP - 1 entries. Bumps rev alongside the raw mutation for the same reason as the
     // card-roster case above — otherwise this can race against the first draw's fire-and-forget bumpRetentionTask.
     await m.collections.equipmentInstances.deleteOne({ _id: 'eq_filler_0' });
     await m.collections.saves.updateOne(
@@ -1181,7 +1181,7 @@ describe.skipIf(!mongo2)('gacha inventory-full overflow → mail', () => {
     const cardMail = socialsvc.sent.find((s) => s.content.attachments?.[0]?.kind === 'card');
     expect(cardMail?.content.attachments?.[0]?.instance).toMatchObject({ defId: 'chenshou', level: 1, locked: false });
 
-    await fillEquipInv(300);
+    await fillEquipInv(EQUIPMENT_INV_CAP);
     comm.nextResults = [{ itemId: 'wp_marker', rarity: 'rare' as const }];
     const r2 = body(await app.inject({ method: 'POST', url: '/gacha/draw', headers: auth(), payload: { poolId: 'standard', count: 1 } }));
     expect(r2.data.overflow.equipMailed).toBe(1);

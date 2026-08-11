@@ -534,7 +534,21 @@ export async function startApp(
   // transport-layer choke point that covers every call site without per-scene wiring. Rendered as a
   // stage-level overlay (same reasoning as GlobalToast: unaffected by scene transitions), not a
   // SceneManager scene, so it never destroys whatever the player was doing when the enforcement hit.
+  //
+  // Both stage-level dialogs sit on top of a scene that stays live AND still subscribed to the
+  // InputManager, and pointer input bypasses PixiJS (DOM-fed — see InputManager.suppressed), so
+  // their own `dim` backdrop cannot stop a tap on the dialog from ALSO hitting the scene's hit-rects
+  // underneath. `input.holdForModal(true/false)` around each dialog's lifetime is what actually
+  // blocks that (2026-08-10 bug report); it must be released on every close path, hence the shared
+  // close helpers below rather than an inline teardown.
   let appealDialog: AppealDialog | null = null;
+  const closeAppealDialog = (): void => {
+    if (!appealDialog) return;
+    app.stage.removeChild(appealDialog.container);
+    appealDialog.destroy();
+    appealDialog = null;
+    input.holdForModal(false);
+  };
   setAppealSink((code) => {
     if (!core.submitAppeal || appealDialog) return;
     const dlg = new AppealDialog(app.screen.width, app.screen.height, code, {
@@ -542,15 +556,12 @@ export async function startApp(
         await core.submitAppeal!(reason);
         showToastMessage(t('appeal.submitted'), 'success');
       },
-      onClose: () => {
-        app.stage.removeChild(dlg.container);
-        dlg.destroy();
-        appealDialog = null;
-      },
+      onClose: closeAppealDialog,
     });
     dlg.container.zIndex = 9_000; // above scene content, below GlobalToast (10_000)
     app.stage.addChild(dlg.container);
     appealDialog = dlg;
+    input.holdForModal(true);
   });
 
   // Feedback dialog (UI_DESIGN.md §4.1.1): same stage-level-overlay reasoning as the appeal dialog above,
@@ -565,6 +576,7 @@ export async function startApp(
     app.stage.removeChild(feedbackDialog.container);
     feedbackDialog.destroy();
     feedbackDialog = null;
+    input.holdForModal(false);
   };
   dialogGate.close = closeFeedbackDialog;
   setFeedbackSink(() => {
@@ -576,6 +588,7 @@ export async function startApp(
     dlg.container.zIndex = 9_000; // above scene content, below GlobalToast (10_000)
     app.stage.addChild(dlg.container);
     feedbackDialog = dlg;
+    input.holdForModal(true);
   });
 
   // Stage-level dialogs sit outside targetStage, so SceneManager.onTick (which only ticks

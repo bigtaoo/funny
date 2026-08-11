@@ -69,7 +69,7 @@ export const ErrorCode = {
   PROSPERITY_TOO_LOW: 'PROSPERITY_TOO_LOW',
   // —— equipment system (E2 crafting + auction equipment trading, EQUIPMENT_DESIGN §4.A/§18) ——
   INSUFFICIENT_MATERIALS: 'INSUFFICIENT_MATERIALS', // insufficient crafting materials
-  INVENTORY_FULL: 'INVENTORY_FULL',                 // equipment inventory at 300-item cap
+  INVENTORY_FULL: 'INVENTORY_FULL',                 // equipment inventory at 1000-item cap
   EQUIP_NOT_FOUND: 'EQUIP_NOT_FOUND',               // equipment instance not found
   EQUIP_LOCKED: 'EQUIP_LOCKED',                     // equipment is locked (to prevent accidental use as fuel) → may not be listed/salvaged
   EQUIP_IN_USE: 'EQUIP_IN_USE',                     // equipment is equipped → may not be listed/salvaged

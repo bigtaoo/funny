@@ -340,6 +340,14 @@ export class BattlePassScene implements Scene {
       snapFont(Math.round(barH * 0.42)), C.light,
     );
     xpLbl.anchor.set(1, 0.5); xpLbl.x = pad + barW - Math.round(barW * 0.03); xpLbl.y = y + barH / 2;
+    // Both labels' font sizes scale off barH (bar *height*), but barW is the content column's
+    // *width* — narrow in portrait. "{xp} XP · {n} XP to next level" (and German's longer
+    // wording) can out-measure the gap left of it by levelLbl, rendering the two directly on top
+    // of each other (2026-08-10 bug report, screenshot). Shrink only the right-hand status text
+    // to whatever room actually remains next to the measured level badge, same idiom as every
+    // other label-vs-available-width clamp in this codebase.
+    const xpAvailW = xpLbl.x - (levelLbl.x + levelLbl.width) - Math.round(barW * 0.02);
+    if (xpAvailW > 0 && xpLbl.width > xpAvailW) xpLbl.scale.set(Math.max(0.55, xpAvailW / xpLbl.width));
     this.container.addChild(xpLbl);
 
     y += barH + Math.round(h * 0.014);

@@ -175,4 +175,25 @@ describe.skipIf(!mongo)('starter title grant e2e', () => {
     expect((doc?.save.titles as string[]).filter((t) => t === 'ach.all_chapters')).toHaveLength(1);
     expect(doc?.save.titleGrants?.['ach.all_chapters']).toBe(firstAt);
   });
+
+  it('two different titleIds granted concurrently to the same account both land — the rev-guard retry loop (up to 4 attempts) does not let one grant silently drop the other\'s titleGrants entry', async () => {
+    // Unlike the single-writer tests above, this fires both grantTitleToPlayer calls via a real Promise.all
+    // against real Mongo so the two requests' findOne/findOneAndUpdate round-trips genuinely interleave
+    // (a fake in-memory collection can't reproduce this honestly — see titles.test.ts's comment on why that
+    // file only covers the purely-sequential and always-conflicting branches). With just two concurrent
+    // writers, the loser of the first rev race is guaranteed to succeed on its own retry (re-reading the
+    // winner's committed doc), well within the 4-attempt budget.
+    const { token, accountId } = await authDevice('starter-dev-titlegrant-concurrent');
+    await getSave(token); // ensure the save document exists
+
+    await Promise.all([
+      grantTitleToPlayer(m.collections, accountId, 'race.title.a', 3_000_000_000_000),
+      grantTitleToPlayer(m.collections, accountId, 'race.title.b', 3_000_000_000_001),
+    ]);
+
+    const doc = await m.collections.saves.findOne({ _id: accountId });
+    expect(doc?.save.titles).toEqual(expect.arrayContaining(['race.title.a', 'race.title.b']));
+    expect(doc?.save.titleGrants?.['race.title.a']).toBe(3_000_000_000_000);
+    expect(doc?.save.titleGrants?.['race.title.b']).toBe(3_000_000_000_001);
+  });
 });
