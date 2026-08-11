@@ -38,13 +38,20 @@ const [W, H] = [800, 1280];
 
 interface Rect { x: number; y: number; w: number; h: number; }
 interface Hit { rect: Rect; fn: () => void; }
-interface ShopSceneInternals {
+/** ShopSceneCore's shape (2026-08-11 composition conversion — see claudedocs/client-modules.md's
+ *  split-form priority note): h/landscape/hits/gridMetrics all moved off the flattened scene onto
+ *  `core`; regionTop/regionBottom are private on the real class, reached the same bypass-cast way
+ *  every other test in this file already reaches Core's public state. */
+interface ShopSceneCoreInternals {
   h: number;
   landscape: boolean;
   hits: Hit[];
   regionTop: number;
   regionBottom: number;
   gridMetrics(): { listX: number; listW: number; gap: number; cols: number; cellW: number; cellH: number };
+}
+interface ShopSceneInternals {
+  core: ShopSceneCoreInternals;
 }
 
 describe('ShopScene Coins tab — portrait squat-aspect dead-gap regression (2026-08-10)', () => {
@@ -83,7 +90,7 @@ describe('ShopScene Coins tab — portrait squat-aspect dead-gap regression (202
 
     // End-to-end: the real scene's body mask reflects that full height — zero dead gap between
     // the mask's bottom edge and the bottom nav bar.
-    expect(scene.regionBottom - scene.regionTop).toBe(availH);
+    expect(scene.core.regionBottom - scene.core.regionTop).toBe(availH);
 
     scene.destroy();
   });
@@ -103,10 +110,10 @@ describe('ShopScene Coins tab — portrait squat-aspect dead-gap regression (202
       initialTab: 'coins',
     } as any) as unknown as ShopSceneInternals & { destroy(): void };
 
-    const { gap, cellH } = scene.gridMetrics();
-    // Every Buy-button hit rect has this exact height (drawCard's btnH — see ShopScene/base.ts).
+    const { gap, cellH } = scene.core.gridMetrics();
+    // Every Buy-button hit rect has this exact height (drawCard's btnH — see ShopScene/card.ts).
     const btnH = Math.round(cellH * 0.13);
-    const buyHits = scene.hits.filter((hit) => hit.rect.h === btnH);
+    const buyHits = scene.core.hits.filter((hit) => hit.rect.h === btnH);
     // 5 WEB_COIN_TIERS, all enabled ⇒ 5 Buy buttons, all registered as hits regardless of whether
     // they're visually clipped (hit-testing isn't gated by the PIXI mask) — so this alone wouldn't
     // have caught the bug. What matters is whether their bottom edge is within the visible region.
@@ -119,11 +126,11 @@ describe('ShopScene Coins tab — portrait squat-aspect dead-gap regression (202
     const rowYs = [...new Set(buyHits.map((h) => h.rect.y))].sort((a, b) => a - b);
     expect(rowYs.length).toBe(3);
     const unit = cellH + gap;
-    const fullRows = Math.floor((scene.regionBottom - scene.regionTop) / unit);
+    const fullRows = Math.floor((scene.core.regionBottom - scene.core.regionTop) / unit);
     const sacrificedRowY = rowYs[fullRows - 1];
     const sacrificedRowBottom = sacrificedRowY + btnH;
-    // regionTop/regionBottom are the body mask's absolute y-bounds (see maskBody in base.ts).
-    expect(sacrificedRowBottom).toBeLessThanOrEqual(scene.regionBottom);
+    // regionTop/regionBottom are the body mask's absolute y-bounds (see maskBody in core.ts).
+    expect(sacrificedRowBottom).toBeLessThanOrEqual(scene.core.regionBottom);
 
     scene.destroy();
   });

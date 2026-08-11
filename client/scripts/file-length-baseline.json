@@ -32,7 +32,6 @@
   "src/scenes/SectScene/base.ts": 532,
   "src/scenes/SectScene/render.ts": 558,
   "src/scenes/SettingsScene.ts": 852,
-  "src/scenes/ShopScene/base.ts": 677,
   "src/scenes/worldmap/tileGraphics.ts": 724,
   "src/scenes/worldmap/WorldMapInput.ts": 510,
   "src/scenes/worldmap/WorldMapNet.ts": 740,

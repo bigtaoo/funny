@@ -9,17 +9,20 @@
  * coverage of any kind — unlike Auction's dedicated `auctionActionBusyLock.ui.ts`, there wasn't
  * even one "representative" test to extend).
  *
- * Follows sectActions.test.ts's / familySendButton.test.ts's pattern: mount `ActionsMixin` directly
- * on a bare-bones fake base — no PIXI needed, since the mixin body only touches `this.bt`,
- * `this.blurPromo()`, `this.render()`, `this.cb.*`, `this.promoCode`, `this.hiddenInput`.
+ * ActionsPanel is now an independent class over `core` (2026-08-11 composition conversion — see
+ * claudedocs/client-modules.md's split-form priority note), no PIXI needed since its body only
+ * touches `core.bt`, `core.blurPromo()`, `core.render()`, `core.cb.*`, `core.promoCode`,
+ * `core.hiddenInput`. `buildScene()` binds ActionsPanel's methods onto the same fake-core object
+ * (mirrors sectActions.test.ts's / familySendButton.test.ts's flattened-fake pattern) so every
+ * existing `scene.onBuy(...)`/`scene.cb`/`scene.bt` reference below keeps working unchanged.
  * `showToastMessage` is a real module function (not a `this.toast()` method), so it's spied via
  * `vi.spyOn(log, 'showToastMessage')` — same technique `gachaInvFullToast.ui.ts` already uses.
  */
 import { describe, it, expect, vi } from 'vitest';
 import * as log from '../src/net/log';
 import { initI18n, t } from '../src/i18n';
-import { ActionsMixin } from '../src/scenes/ShopScene/actions';
-import type { ShopSceneBaseCtor, ShopActionResult } from '../src/scenes/ShopScene/base';
+import { ActionsPanel } from '../src/scenes/ShopScene/actions';
+import type { ShopSceneCore, ShopActionResult } from '../src/scenes/ShopScene/core';
 import { BusyTracker, TimeoutError } from '../src/ui/busyTracker';
 
 const memStore = (() => {
@@ -32,8 +35,8 @@ const memStore = (() => {
 })();
 initI18n('en', memStore, ['zh', 'en', 'de']);
 
-/** Bare-bones stand-in for ShopSceneBase — only the fields actions.ts's mixin body touches. */
-class FakeShopSceneBase {
+/** Bare-bones stand-in for ShopSceneCore — only the fields actions.ts's ActionsPanel body touches. */
+class FakeShopSceneCore {
   items: unknown[] | null = null;
   loading = true;
   promoCode = '';
@@ -51,12 +54,19 @@ class FakeShopSceneBase {
   blurPromo = vi.fn();
 }
 
-const ShopWithActions = ActionsMixin(FakeShopSceneBase as unknown as ShopSceneBaseCtor);
-
-function buildScene(overrides: Partial<FakeShopSceneBase> = {}): any {
-  const scene = new ShopWithActions() as unknown as FakeShopSceneBase & Record<string, any>;
-  Object.assign(scene, overrides);
-  return scene;
+function buildScene(overrides: Partial<FakeShopSceneCore> = {}): any {
+  const core = new FakeShopSceneCore() as unknown as FakeShopSceneCore & Record<string, any>;
+  Object.assign(core, overrides);
+  const actions = new ActionsPanel(core as unknown as ShopSceneCore);
+  return Object.assign(core, {
+    loadItems: actions.loadItems.bind(actions),
+    onBuy: actions.onBuy.bind(actions),
+    onBuyBulk: actions.onBuyBulk.bind(actions),
+    onRedeem: actions.onRedeem.bind(actions),
+    onRecharge: actions.onRecharge.bind(actions),
+    runDeal: actions.runDeal.bind(actions),
+    runUnboundedDeal: actions.runUnboundedDeal.bind(actions),
+  });
 }
 
 // ── onBuy ─────────────────────────────────────────────────────────────────────
@@ -193,7 +203,7 @@ describe('ShopScene — onRedeem() guards', () => {
   });
 
   it('does nothing when redeemPromo is not injected (offline / not logged in)', async () => {
-    const scene = buildScene({ promoCode: 'CODE1', cb: { ...new FakeShopSceneBase().cb, redeemPromo: undefined } });
+    const scene = buildScene({ promoCode: 'CODE1', cb: { ...new FakeShopSceneCore().cb, redeemPromo: undefined } });
     await scene.onRedeem();
     expect(scene.render).not.toHaveBeenCalled();
   });
@@ -266,7 +276,7 @@ describe('ShopScene — onRecharge() guards', () => {
   });
 
   it('does nothing when rechargeCoins is not injected', async () => {
-    const scene = buildScene({ cb: { ...new FakeShopSceneBase().cb, rechargeCoins: undefined } });
+    const scene = buildScene({ cb: { ...new FakeShopSceneCore().cb, rechargeCoins: undefined } });
     await scene.onRecharge('tier1');
     expect(scene.render).not.toHaveBeenCalled();
   });
