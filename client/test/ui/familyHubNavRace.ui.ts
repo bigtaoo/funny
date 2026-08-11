@@ -69,13 +69,13 @@ describe('FriendsScene — navigating to family/sect hub mid-render does not cra
 
     // Player already belongs to a family → drawFamilyTab() takes the
     // "openFamilyHub and bail" branch instead of drawing the info/create UI.
-    scene.tab = 'family';
-    scene.slgLoaded = true;
-    scene.slgStatus = { worldId: 'world:1:0', isLeader: false, familyId: 'fam_1' };
+    scene.core.tab = 'family';
+    scene.core.slgLoaded = true;
+    scene.core.slgStatus = { worldId: 'world:1:0', isLeader: false, familyId: 'fam_1' };
 
     expect(() => scene.render()).not.toThrow();
     expect(destroyedDuringRender).toBe(true);
-    expect(scene.dead).toBe(true);
+    expect(scene.core.dead).toBe(true);
   });
 
   it('drawSectTab: openSectHub destroying the scene synchronously during render() does not throw', () => {
@@ -88,13 +88,13 @@ describe('FriendsScene — navigating to family/sect hub mid-render does not cra
 
     // Player already belongs to a family and a sect → drawSectTab() takes the
     // "openSectHub and bail" branch.
-    scene.tab = 'sect';
-    scene.slgLoaded = true;
-    scene.slgStatus = { worldId: 'world:1:0', isLeader: true, familyId: 'fam_1', sectId: 'sect_1' };
+    scene.core.tab = 'sect';
+    scene.core.slgLoaded = true;
+    scene.core.slgStatus = { worldId: 'world:1:0', isLeader: true, familyId: 'fam_1', sectId: 'sect_1' };
 
     expect(() => scene.render()).not.toThrow();
     expect(destroyedDuringRender).toBe(true);
-    expect(scene.dead).toBe(true);
+    expect(scene.core.dead).toBe(true);
   });
 
   it('loadSLGStatus resolving after the scene has already navigated away does not re-render a dead scene', async () => {
@@ -104,18 +104,18 @@ describe('FriendsScene — navigating to family/sect hub mid-render does not cra
       () => {},
     );
 
-    scene.tab = 'family';
-    scene.slgLoaded = false;
-    scene.slgStatus = null;
+    scene.core.tab = 'family';
+    scene.core.slgLoaded = false;
+    scene.core.slgStatus = null;
     // slgLoaded is false → render() kicks off loadSLGStatus() itself, which
     // resolves to a familyId once awaited, triggering openFamilyHub on the
     // finally-render — must not throw even though the scene destroys itself.
-    (scene as { cb: { loadSLGStatus(): Promise<unknown> } }).cb.loadSLGStatus =
+    (scene as { core: { cb: { loadSLGStatus(): Promise<unknown> } } }).core.cb.loadSLGStatus =
       async () => ({ worldId: 'world:1:0', isLeader: false, familyId: 'fam_1' });
 
     expect(() => scene.render()).not.toThrow();
     await Promise.resolve();
     await Promise.resolve();
-    expect(scene.dead).toBe(true);
+    expect(scene.core.dead).toBe(true);
   });
 });

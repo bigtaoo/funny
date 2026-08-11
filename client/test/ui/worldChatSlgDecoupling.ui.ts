@@ -85,13 +85,13 @@ describe('regression: world chat no longer waits on family/sect (SLG) status', (
 
     // Real interaction path: clicking the "world" tab (switchTab), not the defaultTab
     // constructor shortcut — see the separate defaultTab bug noted below.
-    scene.switchTab('world');
+    scene.core.switchTab('world');
     await Promise.resolve();
     await Promise.resolve();
     scene.render();
 
-    expect(scene.worldLoaded).toBe(true);
-    expect(scene.slgLoaded).toBe(false); // family/sect status still hung — must not block chat
+    expect(scene.core.worldLoaded).toBe(true);
+    expect(scene.core.slgLoaded).toBe(false); // family/sect status still hung — must not block chat
     const texts = collectTexts(scene.container);
     expect(texts).toContain('Bob');
     expect(texts.some((s: string) => s.includes('hello world'))).toBe(true);
@@ -104,7 +104,7 @@ describe('regression: world chat no longer waits on family/sect (SLG) status', (
     const loadSLGStatusCalls = { count: 0 };
     const scene = buildScene({ slgStatusHangs: true, loadSLGStatusCalls });
 
-    scene.switchTab('world');
+    scene.core.switchTab('world');
     await Promise.resolve();
     await Promise.resolve();
     scene.render();
@@ -117,7 +117,7 @@ describe('regression: world chat no longer waits on family/sect (SLG) status', (
     const loadSLGStatusCalls = { count: 0 };
     const scene = buildScene({ slgStatusHangs: false, loadSLGStatusCalls });
 
-    scene.switchTab('family');
+    scene.core.switchTab('family');
     await Promise.resolve();
     await Promise.resolve();
 

@@ -60,14 +60,14 @@ function build(opts: { deleteMail: (id: string) => Promise<void> }): any {
 }
 
 function deleteHit(scene: any): { rect: { x: number; y: number; w: number; h: number }; fn: () => void } {
-  const hits = scene.hits as Array<{ rect: { x: number; y: number; w: number; h: number }; fn: () => void }>;
-  // [800, 1280] below is portrait (w < h → scene.landscape === false), so drawSocialTabRail
+  const hits = scene.core.hits as Array<{ rect: { x: number; y: number; w: number; h: number }; fn: () => void }>;
+  // [800, 1280] below is portrait (w < h → scene.core.landscape === false), so drawSocialTabRail
   // renders the 5-tab bottom nav bar (LOBBY_IA_REDESIGN.md §18/§20) pinned to the very bottom of
   // the screen — bodyBottom (base.ts) reserves bottomNavH above it so the Delete button itself
   // sits higher up, but a naive "greatest y" pick still lands on a bottom-nav cell instead of
   // Delete, since the nav bar's y is closer to h. Exclude anything at/below the nav bar's top
   // edge before picking the bottom-most (Delete, addButton()'d last) of what's left.
-  const navTop = scene.landscape ? Infinity : scene.h - bottomNavH(scene.h);
+  const navTop = scene.core.landscape ? Infinity : scene.core.h - bottomNavH(scene.core.h);
   const contentHits = hits.filter((hp) => hp.rect.y < navTop);
   return contentHits.reduce((a, b) => (b.rect.y > a.rect.y ? b : a));
 }
@@ -89,13 +89,13 @@ describe('FriendsScene mail detail — delete blocked while an attachment is unc
   it('unclaimed attachment: Delete tap toasts instead of deleting', () => {
     let deleteCalls = 0;
     const scene = build({ deleteMail: async () => { deleteCalls++; } });
-    scene.openMailItem = unclaimedGiftMail;
+    scene.core.openMailItem = unclaimedGiftMail;
     scene.render();
 
     deleteHit(scene).fn();
 
     expect(deleteCalls).toBe(0);
-    expect(scene.openMailItem).toBe(unclaimedGiftMail); // detail stays open
+    expect(scene.core.openMailItem).toBe(unclaimedGiftMail); // detail stays open
     expect(toastMsgs[toastMsgs.length - 1]).toBe(t('mail.deleteBlockedAttachment'));
     scene.destroy();
   });
@@ -103,28 +103,28 @@ describe('FriendsScene mail detail — delete blocked while an attachment is unc
   it('claimed attachment: Delete tap calls deleteMail and closes the detail view', async () => {
     let deletedId: string | null = null;
     const scene = build({ deleteMail: async (id: string) => { deletedId = id; } });
-    scene.openMailItem = claimedGiftMail;
+    scene.core.openMailItem = claimedGiftMail;
     scene.render();
 
     deleteHit(scene).fn();
     await Promise.resolve(); await Promise.resolve();
 
     expect(deletedId).toBe('gift:a');
-    expect(scene.openMailItem).toBeNull();
+    expect(scene.core.openMailItem).toBeNull();
     scene.destroy();
   });
 
   it('no attachment: Delete tap calls deleteMail as before', async () => {
     let deletedId: string | null = null;
     const scene = build({ deleteMail: async (id: string) => { deletedId = id; } });
-    scene.openMailItem = plainMail;
+    scene.core.openMailItem = plainMail;
     scene.render();
 
     deleteHit(scene).fn();
     await Promise.resolve(); await Promise.resolve();
 
     expect(deletedId).toBe('plain:a');
-    expect(scene.openMailItem).toBeNull();
+    expect(scene.core.openMailItem).toBeNull();
     scene.destroy();
   });
 
@@ -133,10 +133,10 @@ describe('FriendsScene mail detail — delete blocked while an attachment is unc
       deleteMail: async () => { throw { code: 'MAIL_HAS_UNCLAIMED_ATTACHMENT' }; },
     });
     // Simulate the guard somehow missing client-side (defense in depth): call doMailDelete directly.
-    scene.openMailItem = claimedGiftMail;
-    await scene.doMailDelete(claimedGiftMail);
+    scene.core.openMailItem = claimedGiftMail;
+    await scene.network.doMailDelete(claimedGiftMail);
 
-    expect(scene.openMailItem).toBe(claimedGiftMail);
+    expect(scene.core.openMailItem).toBe(claimedGiftMail);
     expect(toastMsgs[toastMsgs.length - 1]).toBe(t('mail.deleteBlockedAttachment'));
     scene.destroy();
   });

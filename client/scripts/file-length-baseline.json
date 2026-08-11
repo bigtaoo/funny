@@ -24,7 +24,6 @@
   "src/scenes/EquipmentScene/inventory.ts": 589,
   "src/scenes/FamilyScene/base.ts": 560,
   "src/scenes/FamilyScene/render.ts": 547,
-  "src/scenes/FriendsScene/base.ts": 757,
   "src/scenes/LobbyScene/build.ts": 807,
   "src/scenes/LoginScene.ts": 531,
   "src/scenes/ResultScene.ts": 786,

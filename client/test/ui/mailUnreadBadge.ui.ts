@@ -74,14 +74,14 @@ describe('FriendsScene — mail unread badge decrements immediately on read (202
     const { scene, markCalls } = build([m1, m2]);
     await flush(); // load() resolves → mailUnread starts at 2
 
-    expect(scene.mailUnread).toBe(2);
+    expect(scene.core.mailUnread).toBe(2);
 
-    scene.openMail(m1);
+    scene.mail.openMail(m1);
     expect(markCalls).toEqual(['m1']);
     await flush(); // markMailRead resolves synchronously-ish → the fix's decrement runs
 
     expect(m1.read).toBe(true);
-    expect(scene.mailUnread).toBe(1); // decremented immediately, not stuck at 2 until a refresh()
+    expect(scene.core.mailUnread).toBe(1); // decremented immediately, not stuck at 2 until a refresh()
     scene.destroy();
   });
 
@@ -89,13 +89,13 @@ describe('FriendsScene — mail unread badge decrements immediately on read (202
     const readMail: MailView = { ...unreadMail('m3'), read: true } as unknown as MailView;
     const { scene, markCalls } = build([readMail]);
     await flush();
-    expect(scene.mailUnread).toBe(0);
+    expect(scene.core.mailUnread).toBe(0);
 
-    scene.openMail(readMail);
+    scene.mail.openMail(readMail);
     await flush();
 
     expect(markCalls).toEqual([]); // markMailRead is only called for unread mail
-    expect(scene.mailUnread).toBe(0);
+    expect(scene.core.mailUnread).toBe(0);
     scene.destroy();
   });
 
@@ -103,10 +103,10 @@ describe('FriendsScene — mail unread badge decrements immediately on read (202
     const m1 = unreadMail('m1');
     const { scene, markCalls } = build([m1]);
     await flush();
-    expect(scene.mailUnread).toBe(1);
+    expect(scene.core.mailUnread).toBe(1);
 
-    scene.openMail(m1); // first open: marks read, will decrement to 0
-    scene.openMail(m1); // second open: m1.read is still false locally until the first markMailRead resolves
+    scene.mail.openMail(m1); // first open: marks read, will decrement to 0
+    scene.mail.openMail(m1); // second open: m1.read is still false locally until the first markMailRead resolves
     await flush();
 
     // Both opens race past the `!m.read` guard before either resolves, so markMailRead is
@@ -114,7 +114,7 @@ describe('FriendsScene — mail unread badge decrements immediately on read (202
     // asserting the exact call count keeps this test from passing regardless of whether the
     // clamp actually fired).
     expect(markCalls).toEqual(['m1', 'm1']);
-    expect(scene.mailUnread).toBe(0); // clamped, not -1
+    expect(scene.core.mailUnread).toBe(0); // clamped, not -1
     scene.destroy();
   });
 });

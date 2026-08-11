@@ -210,12 +210,12 @@ describe('FriendsScene — family/sect/world tab carets', () => {
   }
 
   function enterSlgTab(scene: any, tab: 'family' | 'sect' | 'world'): void {
-    scene.tab = tab;
-    scene.slgLoaded = true;
+    scene.core.tab = tab;
+    scene.core.slgLoaded = true;
     // drawFamilyTab shows the create/join subview only when familyId is unset (no
     // family yet). drawSectTab requires the OPPOSITE — familyId set (you must be in
     // a family before you can join/create a sect) plus isLeader to reach 'create'.
-    scene.slgStatus = tab === 'sect'
+    scene.core.slgStatus = tab === 'sect'
       ? { worldId: 'world:1:0', isLeader: true, familyId: 'fam_1' }
       : { worldId: 'world:1:0', isLeader: false };
     scene.render();
@@ -224,70 +224,70 @@ describe('FriendsScene — family/sect/world tab carets', () => {
   it('family create-form name field shows a blinking cursor', () => {
     const scene = build();
     enterSlgTab(scene, 'family');
-    scene.familySubview = 'create';
-    scene.familyActiveInput = 'name';
-    scene.familyCreateName = 'MyFamily';
-    expectBlinkingCaret(scene.container, (on) => { scene.caretOn = on; }, () => scene.render(), 'MyFamily|');
+    scene.core.familySubview = 'create';
+    scene.core.familyActiveInput = 'name';
+    scene.core.familyCreateName = 'MyFamily';
+    expectBlinkingCaret(scene.container, (on) => { scene.core.caretOn = on; }, () => scene.render(), 'MyFamily|');
     scene.destroy();
   });
 
   it('family create-form tag field shows a blinking cursor', () => {
     const scene = build();
     enterSlgTab(scene, 'family');
-    scene.familySubview = 'create';
-    scene.familyActiveInput = 'tag';
-    scene.familyCreateTag = 'AB';
-    expectBlinkingCaret(scene.container, (on) => { scene.caretOn = on; }, () => scene.render(), 'AB|');
+    scene.core.familySubview = 'create';
+    scene.core.familyActiveInput = 'tag';
+    scene.core.familyCreateTag = 'AB';
+    expectBlinkingCaret(scene.container, (on) => { scene.core.caretOn = on; }, () => scene.render(), 'AB|');
     scene.destroy();
   });
 
   it('family join-search field shows a blinking cursor', () => {
     const scene = build();
     enterSlgTab(scene, 'family');
-    scene.familySubview = 'joinById';
-    scene.familyActiveInput = 'search';
-    scene.familyBrowseQuery = 'Fam';
-    scene.familyBrowseLoaded = true;
-    expectBlinkingCaret(scene.container, (on) => { scene.caretOn = on; }, () => scene.render(), 'Fam|');
+    scene.core.familySubview = 'joinById';
+    scene.core.familyActiveInput = 'search';
+    scene.core.familyBrowseQuery = 'Fam';
+    scene.core.familyBrowseLoaded = true;
+    expectBlinkingCaret(scene.container, (on) => { scene.core.caretOn = on; }, () => scene.render(), 'Fam|');
     scene.destroy();
   });
 
   it('sect create-form name field shows a blinking cursor', () => {
     const scene = build();
     enterSlgTab(scene, 'sect');
-    scene.sectSubview = 'create';
-    scene.sectActiveInput = 'name';
-    scene.sectCreateName = 'MySect';
-    expectBlinkingCaret(scene.container, (on) => { scene.caretOn = on; }, () => scene.render(), 'MySect|');
+    scene.core.sectSubview = 'create';
+    scene.core.sectActiveInput = 'name';
+    scene.core.sectCreateName = 'MySect';
+    expectBlinkingCaret(scene.container, (on) => { scene.core.caretOn = on; }, () => scene.render(), 'MySect|');
     scene.destroy();
   });
 
   it('sect create-form tag field shows a blinking cursor', () => {
     const scene = build();
     enterSlgTab(scene, 'sect');
-    scene.sectSubview = 'create';
-    scene.sectActiveInput = 'tag';
-    scene.sectCreateTag = 'CD';
-    expectBlinkingCaret(scene.container, (on) => { scene.caretOn = on; }, () => scene.render(), 'CD|');
+    scene.core.sectSubview = 'create';
+    scene.core.sectActiveInput = 'tag';
+    scene.core.sectCreateTag = 'CD';
+    expectBlinkingCaret(scene.container, (on) => { scene.core.caretOn = on; }, () => scene.render(), 'CD|');
     scene.destroy();
   });
 
   it('sect join-by-id field shows a blinking cursor', () => {
     const scene = build();
     enterSlgTab(scene, 'sect');
-    scene.sectSubview = 'joinById';
-    scene.sectActiveInput = 'id';
-    scene.sectJoinId = 'sect_9';
-    expectBlinkingCaret(scene.container, (on) => { scene.caretOn = on; }, () => scene.render(), 'sect_9|');
+    scene.core.sectSubview = 'joinById';
+    scene.core.sectActiveInput = 'id';
+    scene.core.sectJoinId = 'sect_9';
+    expectBlinkingCaret(scene.container, (on) => { scene.core.caretOn = on; }, () => scene.render(), 'sect_9|');
     scene.destroy();
   });
 
   it('world channel input shows a blinking cursor while active', () => {
     const scene = build();
     enterSlgTab(scene, 'world');
-    scene.worldChatActive = true;
-    scene.worldChatInput = 'hello';
-    expectBlinkingCaret(scene.container, (on) => { scene.caretOn = on; }, () => scene.render(), 'hello|');
+    scene.core.worldChatActive = true;
+    scene.core.worldChatInput = 'hello';
+    expectBlinkingCaret(scene.container, (on) => { scene.core.caretOn = on; }, () => scene.render(), 'hello|');
     scene.destroy();
   });
 
@@ -306,14 +306,14 @@ describe('FriendsScene — family/sect/world tab carets', () => {
     // no longer keeps it out of "leftmost bottom hit", since its cells span x>0 too. Exclude
     // anything at/below the nav bar's own top edge (bodyBottom already reserves bottomNavH
     // above it, so the input field itself sits clear of that band).
-    const hits = scene.hits as Array<{ rect: { x: number; y: number; w: number; h: number }; fn: () => void }>;
-    const navTop = scene.landscape ? Infinity : scene.h - bottomNavH(scene.h);
+    const hits = scene.core.hits as Array<{ rect: { x: number; y: number; w: number; h: number }; fn: () => void }>;
+    const navTop = scene.core.landscape ? Infinity : scene.core.h - bottomNavH(scene.core.h);
     const bottom = hits.filter((hh) => hh.rect.y > H * 0.8 && hh.rect.x > 0 && hh.rect.y < navTop);
     const inputHit = bottom.reduce((a, b) => (b.rect.x < a.rect.x ? b : a));
     inputHit.fn(); // simulate the tap
 
-    expect(scene.worldChatActive).toBe(true);
-    scene.caretOn = true;
+    expect(scene.core.worldChatActive).toBe(true);
+    scene.core.caretOn = true;
     scene.render();
     expect(collectTexts(scene.container)).toContain('|'); // empty field + blink-on → caret alone
     scene.destroy();

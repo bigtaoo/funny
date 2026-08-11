@@ -135,12 +135,13 @@ function clickRailTab(scene: any, tab: SocialTab): void {
 }
 
 /** FriendsScene dispatches through the pointer-down/up click path (`onPointerDown` +
- *  `onPointerUp`), not `handleDown`. */
+ *  `onPointerUp`), not `handleDown` — both live on the composed `core` field (2026-08-11
+ *  composition conversion — see claudedocs/client-modules.md's split-form priority note). */
 function clickFriendsRailTab(scene: any, tab: SocialTab): void {
   const pos = tabLabelPos(scene, tab);
   if (!pos) return;
-  scene.onPointerDown(pos.x, pos.y);
-  scene.onPointerUp(pos.x, pos.y);
+  scene.core.onPointerDown(pos.x, pos.y);
+  scene.core.onPointerUp(pos.x, pos.y);
 }
 
 describe('FamilyScene — social tab rail (onNavTab wiring)', () => {
@@ -323,11 +324,11 @@ describe('FriendsScene — social tab rail still dispatches to switchTab after s
     });
   }
 
-  it('clicking each rail tab switches scene.tab accordingly', () => {
+  it('clicking each rail tab switches scene.core.tab accordingly', () => {
     const scene = build();
     for (const tab of TAB_ORDER) {
       clickFriendsRailTab(scene, tab);
-      expect(scene.tab).toBe(tab);
+      expect(scene.core.tab).toBe(tab);
     }
     scene.destroy();
   });
@@ -338,13 +339,13 @@ describe('FriendsScene — social tab rail still dispatches to switchTab after s
     // fixed rail positions can therefore never land on 'sect' itself, even though the clicks
     // that used to hit 'sect'/'world' now hit whatever shifted into that slot instead.
     const scene = build();
-    scene.slgStatus = { worldId: 'world:1:0', isLeader: false, familyId: 'fam_1' };
+    scene.core.slgStatus = { worldId: 'world:1:0', isLeader: false, familyId: 'fam_1' };
     scene.render();
 
     const seenTabs: string[] = [];
     for (const tab of TAB_ORDER) {
       clickFriendsRailTab(scene, tab);
-      seenTabs.push(scene.tab);
+      seenTabs.push(scene.core.tab);
     }
 
     expect(seenTabs).not.toContain('sect');
@@ -357,21 +358,21 @@ describe('FriendsScene — social tab rail still dispatches to switchTab after s
 
   it('sect tab is clickable for a family leader, even with no sect yet', () => {
     const scene = build();
-    scene.slgStatus = { worldId: 'world:1:0', isLeader: true, familyId: 'fam_1' };
+    scene.core.slgStatus = { worldId: 'world:1:0', isLeader: true, familyId: 'fam_1' };
     scene.render();
 
     clickFriendsRailTab(scene, 'sect');
-    expect(scene.tab).toBe('sect');
+    expect(scene.core.tab).toBe('sect');
     scene.destroy();
   });
 
   it('sect tab is clickable for a non-leader whose family already belongs to a sect', () => {
     const scene = build();
-    scene.slgStatus = { worldId: 'world:1:0', isLeader: false, familyId: 'fam_1', sectId: 'sect_1' };
+    scene.core.slgStatus = { worldId: 'world:1:0', isLeader: false, familyId: 'fam_1', sectId: 'sect_1' };
     scene.render();
 
     clickFriendsRailTab(scene, 'sect');
-    expect(scene.tab).toBe('sect');
+    expect(scene.core.tab).toBe('sect');
     scene.destroy();
   });
 });

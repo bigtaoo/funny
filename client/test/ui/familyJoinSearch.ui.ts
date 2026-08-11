@@ -55,13 +55,13 @@ function buildScene(cb: Partial<FriendsSceneCallbacks> = {}): any {
  * directly) — the browse-list fetch is kicked off from that click handler in
  * orgForm.ts, not from drawFamilyJoinForm itself. */
 function enterJoinSubview(scene: any): void {
-  scene.tab = 'family';
-  scene.slgLoaded = true;
-  scene.slgStatus = { worldId: 'world:1:0', isLeader: false };
+  scene.core.tab = 'family';
+  scene.core.slgLoaded = true;
+  scene.core.slgStatus = { worldId: 'world:1:0', isLeader: false };
   scene.render();
   // drawFamilyTab's 'info' branch pushes Create then Join Family last, in that
   // render-tree order — so the last hit registered is the Join Family button.
-  const hits = scene.hits as Array<{ fn: () => void }>;
+  const hits = scene.core.hits as Array<{ fn: () => void }>;
   hits[hits.length - 1]!.fn();
 }
 
@@ -75,7 +75,7 @@ describe('FriendsScene — family join subview (search + browse list)', () => {
 
     expect(browseFamilies).toHaveBeenCalledTimes(1);
     expect(browseFamilies).toHaveBeenCalledWith('');
-    expect(scene.familyBrowseResults).toEqual([fam('fam:AAA', 'Alpha', 'AAA')]);
+    expect(scene.core.familyBrowseResults).toEqual([fam('fam:AAA', 'Alpha', 'AAA')]);
     scene.destroy();
   });
 
@@ -86,7 +86,7 @@ describe('FriendsScene — family join subview (search + browse list)', () => {
     await Promise.resolve();
     await Promise.resolve();
 
-    scene.familySubview = 'info';
+    scene.core.familySubview = 'info';
     scene.render();
     enterJoinSubview(scene);
     await Promise.resolve();
@@ -104,13 +104,13 @@ describe('FriendsScene — family join subview (search + browse list)', () => {
     await Promise.resolve();
     scene.render();
 
-    await scene.doJoinFamily('fam:BBB');
+    await scene.network.doJoinFamily('fam:BBB');
     expect(joinFamily).toHaveBeenCalledWith('fam:BBB');
     // A successful join returns to the info subview and clears the browse cache so
     // re-opening "Join" later fetches fresh (post-join) data instead of stale results.
-    expect(scene.familySubview).toBe('info');
-    expect(scene.familyBrowseResults).toEqual([]);
-    expect(scene.familyBrowseLoaded).toBe(false);
+    expect(scene.core.familySubview).toBe('info');
+    expect(scene.core.familyBrowseResults).toEqual([]);
+    expect(scene.core.familyBrowseLoaded).toBe(false);
     scene.destroy();
   });
 
@@ -122,8 +122,8 @@ describe('FriendsScene — family join subview (search + browse list)', () => {
     await Promise.resolve();
     await Promise.resolve();
 
-    await scene.doJoinFamily('fam:AAA');
-    expect(scene.familySubview).toBe('joinById');
+    await scene.network.doJoinFamily('fam:AAA');
+    expect(scene.core.familySubview).toBe('joinById');
     scene.destroy();
   });
 
@@ -131,18 +131,18 @@ describe('FriendsScene — family join subview (search + browse list)', () => {
     const joinFamily = vi.fn(async () => {});
     const results = [fam('fam:AAA', 'Alpha', 'AAA'), fam('fam:BBB', 'Beta', 'BBB')];
     const scene = buildScene({ browseFamilies: async () => results, joinFamily });
-    scene.tab = 'family';
-    scene.slgLoaded = true;
-    scene.slgStatus = { worldId: 'world:1:0', isLeader: false };
+    scene.core.tab = 'family';
+    scene.core.slgLoaded = true;
+    scene.core.slgStatus = { worldId: 'world:1:0', isLeader: false };
     scene.render();
-    const hitsBefore = scene.hits.length; // tab bar + Create + Join-by-search
+    const hitsBefore = scene.core.hits.length; // tab bar + Create + Join-by-search
 
-    await scene.doJoinFamily('fam:BBB');
-    expect(scene.familyJoinPending).toBe(true);
+    await scene.network.doJoinFamily('fam:BBB');
+    expect(scene.core.familyJoinPending).toBe(true);
     // Success bounces back to the 'info' subview — re-requesting while a request is
     // outstanding is pointless (server-side ALREADY_REQUESTED), so both entry buttons go away.
     scene.render();
-    expect(scene.hits.length).toBe(hitsBefore - 2);
+    expect(scene.core.hits.length).toBe(hitsBefore - 2);
     scene.destroy();
   });
 
@@ -154,15 +154,15 @@ describe('FriendsScene — family join subview (search + browse list)', () => {
     await Promise.resolve();
     await Promise.resolve();
 
-    await scene.doJoinFamily('fam:AAA');
-    expect(scene.familyJoinPending).toBe(true);
+    await scene.network.doJoinFamily('fam:AAA');
+    expect(scene.core.familyJoinPending).toBe(true);
     // Stays on the browse list (unlike the success path) so the now-greyed row is visible.
-    expect(scene.familySubview).toBe('joinById');
+    expect(scene.core.familySubview).toBe('joinById');
     scene.render();
 
     // Row hits push in pairs (Join button, then row-tap-for-detail) — with one result the
     // Join button is second-to-last, the row-detail tap is last.
-    const hits = scene.hits as Array<{ fn: () => void }>;
+    const hits = scene.core.hits as Array<{ fn: () => void }>;
     const before = joinFamily.mock.calls.length;
     hits[hits.length - 2]!.fn();
     expect(joinFamily.mock.calls.length).toBe(before);
@@ -176,11 +176,11 @@ describe('FriendsScene — family join subview (search + browse list)', () => {
     await Promise.resolve();
     await Promise.resolve();
 
-    scene.familyBrowseQuery = 'alp';
-    await scene.loadFamilyBrowse('alp');
+    scene.core.familyBrowseQuery = 'alp';
+    await scene.network.loadFamilyBrowse('alp');
 
     expect(browseFamilies).toHaveBeenLastCalledWith('alp');
-    expect(scene.familyBrowseResults).toEqual([fam('fam:AAA', 'Alpha', 'AAA')]);
+    expect(scene.core.familyBrowseResults).toEqual([fam('fam:AAA', 'Alpha', 'AAA')]);
     scene.destroy();
   });
 
@@ -190,7 +190,7 @@ describe('FriendsScene — family join subview (search + browse list)', () => {
     await Promise.resolve();
     await Promise.resolve();
     expect(() => scene.render()).not.toThrow();
-    expect(scene.familyBrowseResults).toEqual([]);
+    expect(scene.core.familyBrowseResults).toEqual([]);
     scene.destroy();
   });
 
@@ -202,9 +202,9 @@ describe('FriendsScene — family join subview (search + browse list)', () => {
     await Promise.resolve();
     scene.render();
 
-    for (const hit of scene.hits as Array<{ rect: { x: number; y: number; w: number; h: number } }>) {
+    for (const hit of scene.core.hits as Array<{ rect: { x: number; y: number; w: number; h: number } }>) {
       expect(hit.rect.x).toBeGreaterThanOrEqual(0);
-      expect(hit.rect.x + hit.rect.w).toBeLessThanOrEqual(scene.w);
+      expect(hit.rect.x + hit.rect.w).toBeLessThanOrEqual(scene.core.w);
     }
     scene.destroy();
   });

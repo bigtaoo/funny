@@ -272,7 +272,7 @@ describe('scroll-drag render throttle (2026-07-15 perf fix)', () => {
     // Flush the refresh() microtasks queued by the constructor so the 30-row friends list
     // (and its non-zero maxScroll) is actually rendered before we drive the drag.
     await Promise.resolve(); await Promise.resolve(); await Promise.resolve();
-    expect(scene.maxScroll).toBeGreaterThan(0);
+    expect(scene.core.maxScroll).toBeGreaterThan(0);
     // Drag upward (decreasing y) from scrollY=0 so the requested scroll offset actually
     // changes (a downward drag would clamp to the same 0 and never dirty the scroll).
     assertScrollDragThrottledUpward(scene, input);
@@ -295,7 +295,7 @@ describe('scroll-drag render throttle (2026-07-15 perf fix)', () => {
       claimMail: async () => true, deleteMail: async () => {},
     }) as any;
     await Promise.resolve(); await Promise.resolve(); await Promise.resolve();
-    expect(scene.maxScroll).toBeGreaterThan(0);
+    expect(scene.core.maxScroll).toBeGreaterThan(0);
 
     input._emitDown(W / 2, H / 2);
     input._emitMove(W / 2, H / 2 - 20);
@@ -303,7 +303,7 @@ describe('scroll-drag render throttle (2026-07-15 perf fix)', () => {
     input._emitMove(W / 2, H / 2 - 60); // dy = -60 total from down
     scene.update(1 / 60); // single drained render should reflect the LAST move, not an intermediate one
 
-    expect(scene.scrollY).toBe(Math.min(scene.maxScroll, 60));
+    expect(scene.core.scrollY).toBe(Math.min(scene.core.maxScroll, 60));
     scene.destroy();
   });
 
@@ -325,9 +325,9 @@ describe('scroll-drag render throttle (2026-07-15 perf fix)', () => {
       claimMail: async () => true, deleteMail: async () => {},
     }) as any;
     // Stub in a spy so we can tell whether a profile hit fired without relying on ProfilePopup internals.
-    (scene as any).openFriendProfile = (id: string) => opened.push(id);
+    (scene as any).friendsList.openFriendProfile = (id: string) => opened.push(id);
     await Promise.resolve(); await Promise.resolve(); await Promise.resolve();
-    expect(scene.maxScroll).toBeGreaterThan(0);
+    expect(scene.core.maxScroll).toBeGreaterThan(0);
 
     input._emitDown(W / 2, H / 2);
     input._emitMove(W / 2, H / 2 - 20); // exceeds DRAG_THRESHOLD -> dragging = true

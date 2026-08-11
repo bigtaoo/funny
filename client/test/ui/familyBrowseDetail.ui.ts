@@ -61,19 +61,19 @@ function buildScene(cb: Partial<FriendsSceneCallbacks> = {}): any {
 /** Same trick as familyJoinSearch.ui.ts: drives the real "Join Family" button (not a
  * direct field flip), since the browse-list fetch is kicked off from that click handler. */
 function enterJoinSubview(scene: any): void {
-  scene.tab = 'family';
-  scene.slgLoaded = true;
-  scene.slgStatus = { worldId: 'world:1:0', isLeader: false };
+  scene.core.tab = 'family';
+  scene.core.slgLoaded = true;
+  scene.core.slgStatus = { worldId: 'world:1:0', isLeader: false };
   scene.render();
-  const hits = scene.hits as Array<{ fn: () => void }>;
+  const hits = scene.core.hits as Array<{ fn: () => void }>;
   hits[hits.length - 1]!.fn();
 }
 
 /** drawFamilyBrowseList pushes exactly [joinButtonHit, rowHit] per family, in that
  * order, as the very last thing drawFamilyJoinForm renders — so the trailing
- * `2 * count` hits in scene.hits are the row pairs, in list order. */
+ * `2 * count` hits in scene.core.hits are the row pairs, in list order. */
 function rowHits(scene: any, count: number): Array<{ rect: { x: number; y: number; w: number; h: number }; fn: () => void }> {
-  const hits = scene.hits as Array<{ rect: { x: number; y: number; w: number; h: number }; fn: () => void }>;
+  const hits = scene.core.hits as Array<{ rect: { x: number; y: number; w: number; h: number }; fn: () => void }>;
   return hits.slice(hits.length - 2 * count);
 }
 
@@ -113,14 +113,14 @@ describe('FriendsScene — family browse row: Join button vs info preview', () =
 
     const [, rowA] = rowHits(scene, 1);
     rowA!.fn();
-    expect(scene.familyDetailLoading).toBe(true);
+    expect(scene.core.familyDetailLoading).toBe(true);
     await Promise.resolve();
     await Promise.resolve();
 
     expect(viewFamily).toHaveBeenCalledWith('fam:AAA');
     expect(joinFamily).not.toHaveBeenCalled();
-    expect(scene.familyDetailLoading).toBe(false);
-    expect(scene.familyDetailView).toEqual(detail);
+    expect(scene.core.familyDetailLoading).toBe(false);
+    expect(scene.core.familyDetailView).toEqual(detail);
     scene.destroy();
   });
 
@@ -137,10 +137,10 @@ describe('FriendsScene — family browse row: Join button vs info preview', () =
     await Promise.resolve();
     scene.render();
 
-    const hits = scene.hits as Array<{ fn: () => void }>;
+    const hits = scene.core.hits as Array<{ fn: () => void }>;
     const [cancelHit, joinHit] = hits.slice(-2);
     cancelHit!.fn();
-    expect(scene.familyDetailView).toBeNull();
+    expect(scene.core.familyDetailView).toBeNull();
     expect(joinFamily).not.toHaveBeenCalled();
     void joinHit;
     scene.destroy();
@@ -159,14 +159,14 @@ describe('FriendsScene — family browse row: Join button vs info preview', () =
     await Promise.resolve();
     scene.render();
 
-    const hits = scene.hits as Array<{ fn: () => void }>;
+    const hits = scene.core.hits as Array<{ fn: () => void }>;
     const [, joinHit] = hits.slice(-2);
     joinHit!.fn();
     await Promise.resolve();
     await Promise.resolve();
 
     expect(joinFamily).toHaveBeenCalledWith('fam:AAA');
-    expect(scene.familyDetailView).toBeNull();
+    expect(scene.core.familyDetailView).toBeNull();
     scene.destroy();
   });
 
@@ -182,8 +182,8 @@ describe('FriendsScene — family browse row: Join button vs info preview', () =
     await Promise.resolve();
     await Promise.resolve();
 
-    expect(scene.familyDetailLoading).toBe(false);
-    expect(scene.familyDetailView).toBeNull();
+    expect(scene.core.familyDetailLoading).toBe(false);
+    expect(scene.core.familyDetailView).toBeNull();
     expect(() => scene.render()).not.toThrow();
     scene.destroy();
   });
@@ -200,9 +200,9 @@ describe('FriendsScene — family browse row: Join button vs info preview', () =
     await Promise.resolve();
     await Promise.resolve();
 
-    expect(scene.familyDetailView).not.toBeNull();
-    scene.onBack();
-    expect(scene.familyDetailView).toBeNull();
+    expect(scene.core.familyDetailView).not.toBeNull();
+    scene.core.onBack();
+    expect(scene.core.familyDetailView).toBeNull();
     expect(onBack).not.toHaveBeenCalled();
     scene.destroy();
   });
@@ -215,7 +215,7 @@ describe('FriendsScene — family browse row: Join button vs info preview', () =
     scene.render();
 
     expect(() => rowHits(scene, 1)[1]!.fn()).not.toThrow();
-    expect(scene.familyDetailView).toBeNull();
+    expect(scene.core.familyDetailView).toBeNull();
     scene.destroy();
   });
 
@@ -229,9 +229,9 @@ describe('FriendsScene — family browse row: Join button vs info preview', () =
 
     for (const [btn, row] of chunk2(rowHits(scene, results.length))) {
       expect(btn.rect.x).toBeGreaterThanOrEqual(0);
-      expect(btn.rect.x + btn.rect.w).toBeLessThanOrEqual(scene.w);
+      expect(btn.rect.x + btn.rect.w).toBeLessThanOrEqual(scene.core.w);
       expect(row.rect.x).toBeGreaterThanOrEqual(0);
-      expect(row.rect.x + row.rect.w).toBeLessThanOrEqual(scene.w);
+      expect(row.rect.x + row.rect.w).toBeLessThanOrEqual(scene.core.w);
       // No overlap: the row (info-tap) area ends at or before the button starts.
       expect(row.rect.x + row.rect.w).toBeLessThanOrEqual(btn.rect.x);
     }
