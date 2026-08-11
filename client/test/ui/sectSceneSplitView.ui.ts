@@ -82,12 +82,12 @@ function textsOf(scene: any): string[] {
       if ((c as PIXI.Container).children) walk(c as PIXI.Container);
     }
   };
-  walk(scene.bodyLayer);
+  walk(scene.core.bodyLayer);
   return out;
 }
 
 async function flush(scene: any): Promise<void> {
-  await scene.loadData();
+  await scene.data.loadData();
 }
 
 describe('SectScene — landscape split view', () => {
@@ -103,8 +103,8 @@ describe('SectScene — landscape split view', () => {
     // Channel content — visible at the same time as the families, not behind a tab.
     expect(texts.some((s) => s.includes('Sect message 0'))).toBe(true);
     // Divider boundary was computed and sits strictly between the rail and the right edge.
-    expect(scene.chatColX).toBeGreaterThan(scene.railW);
-    expect(scene.chatColX).toBeLessThan(scene.w);
+    expect(scene.core.chatColX).toBeGreaterThan(scene.core.railW);
+    expect(scene.core.chatColX).toBeLessThan(scene.core.w);
   });
 
   it('shows the empty-channel hint instead of leaving the column blank', async () => {
@@ -120,31 +120,31 @@ describe('SectScene — landscape split view', () => {
     await flush(scene);
     scene.render();
 
-    const midY = scene.h / 2;
-    const familiesX = scene.railW + 10;
-    const chatX = scene.chatColX + 10;
+    const midY = scene.core.h / 2;
+    const familiesX = scene.core.railW + 10;
+    const chatX = scene.core.chatColX + 10;
 
     // The channel opens pinned to the latest message (bottom), so its scroll starts at its extent.
-    const chatBottom = scene.scrollYChannel;
+    const chatBottom = scene.core.scrollYChannel;
     expect(chatBottom).toBeGreaterThan(0);
 
     // Drag up inside the families column only.
-    scene.handleDown(familiesX, midY);
-    scene.handleMove(familiesX, midY - 80);
-    scene.handleUp(familiesX, midY - 80);
+    scene.core.handleDown(familiesX, midY);
+    scene.core.handleMove(familiesX, midY - 80);
+    scene.core.handleUp(familiesX, midY - 80);
 
-    expect(scene.scrollY).toBeGreaterThan(0);
-    expect(scene.scrollYChannel).toBe(chatBottom); // channel undisturbed
+    expect(scene.core.scrollY).toBeGreaterThan(0);
+    expect(scene.core.scrollYChannel).toBe(chatBottom); // channel undisturbed
 
-    const scrollYAfterFirstDrag = scene.scrollY;
+    const scrollYAfterFirstDrag = scene.core.scrollY;
 
     // Drag DOWN inside the channel column to scroll up into history — must not disturb the families' scroll.
-    scene.handleDown(chatX, midY);
-    scene.handleMove(chatX, midY + 80);
-    scene.handleUp(chatX, midY + 80);
+    scene.core.handleDown(chatX, midY);
+    scene.core.handleMove(chatX, midY + 80);
+    scene.core.handleUp(chatX, midY + 80);
 
-    expect(scene.scrollYChannel).toBeLessThan(chatBottom);
-    expect(scene.scrollY).toBe(scrollYAfterFirstDrag);
+    expect(scene.core.scrollYChannel).toBeLessThan(chatBottom);
+    expect(scene.core.scrollY).toBe(scrollYAfterFirstDrag);
   });
 });
 
@@ -154,17 +154,17 @@ describe('SectScene — portrait keeps the tab switch', () => {
     await flush(scene);
     scene.render();
 
-    expect(scene.activeTab).toBe('families');
+    expect(scene.core.activeTab).toBe('families');
     let texts = textsOf(scene);
     expect(texts.some((s) => s.includes('[IRQ] Iron Quill'))).toBe(true);
     expect(texts.some((s) => s.includes('Sect message 0'))).toBe(false);
 
-    const channelTabHit = scene.hitRects.find((h: any) =>
-      h.rect.y === scene.headerH && h.rect.x > scene.railW + (scene.w - scene.railW) / 2 - 1);
+    const channelTabHit = scene.core.hitRects.find((h: any) =>
+      h.rect.y === scene.core.headerH && h.rect.x > scene.core.railW + (scene.core.w - scene.core.railW) / 2 - 1);
     expect(channelTabHit).toBeTruthy();
     channelTabHit.action();
 
-    expect(scene.activeTab).toBe('channel');
+    expect(scene.core.activeTab).toBe('channel');
     texts = textsOf(scene);
     expect(texts.some((s) => s.includes('Sect message 0'))).toBe(true);
   });

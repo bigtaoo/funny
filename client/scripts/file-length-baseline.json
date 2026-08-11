@@ -29,8 +29,6 @@
   "src/scenes/LoginScene.ts": 531,
   "src/scenes/ResultScene.ts": 786,
   "src/scenes/RoomScene.ts": 569,
-  "src/scenes/SectScene/base.ts": 532,
-  "src/scenes/SectScene/render.ts": 558,
   "src/scenes/SettingsScene.ts": 852,
   "src/scenes/worldmap/tileGraphics.ts": 724,
   "src/scenes/worldmap/WorldMapInput.ts": 510,

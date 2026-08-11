@@ -76,12 +76,12 @@ function buildScene(sect: SectDetailView, fam: FamilyDetailView): any {
 }
 
 async function flush(scene: any): Promise<void> {
-  await scene.loadData();
+  await scene.data.loadData();
   scene.render();
 }
 
 function voteHits(scene: any): any[] {
-  return scene.hitRects.filter((h: any) => {
+  return scene.core.hitRects.filter((h: any) => {
     // Vote buttons are the only 34-tall action rects in the families column (see ROW_H=68's
     // vote row math in render.ts) — distinguish them from the header alliance buttons (~0.4·headerH).
     return h.rect.h === 34;
@@ -108,7 +108,7 @@ describe('SectScene — removal-vote button gating', () => {
   it('tapping Vote on a third family calls confirmVote with that family\'s id and a resolved label', async () => {
     const scene = buildScene(makeSect(), makeMyFamily('leader'));
     await flush(scene);
-    const confirmVoteSpy = vi.spyOn(scene, 'confirmVote');
+    const confirmVoteSpy = vi.spyOn(scene.actions, 'confirmVote');
 
     // Rows render in memberFamilies order (fam:LEAD skipped, fam:OTHER, then fam:THIRD) — hits are
     // pushed in that same order, so the second surviving hit is fam:THIRD's.
@@ -148,6 +148,6 @@ function allTexts(scene: any): string[] {
       if ((c as PIXI.Container).children) walk(c as PIXI.Container);
     }
   };
-  walk(scene.bodyLayer);
+  walk(scene.core.bodyLayer);
   return out;
 }

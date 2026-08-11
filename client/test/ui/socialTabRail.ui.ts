@@ -99,16 +99,25 @@ function findAllLabelPos(container: PIXI.Container, label: string): Array<{ x: n
  * `hidden` param — its cell doesn't exist at all, unlike the active cell which renders but has
  * no hit rect) — there is nothing to tap in that case.
  */
+/** SectScene keeps `landscape`/`w`/`h`/`handleDown`/`handleUp` on a composed `core` field
+ *  (2026-08-11 composition conversion — see claudedocs/client-modules.md's split-form priority
+ *  note); FamilyScene still carries them flattened directly on the instance — try `.core` first,
+ *  fall back to the flattened shape. */
+function coreOf(scene: any): any {
+  return scene.core ?? scene;
+}
+
 function tabLabelPos(scene: any, tab: SocialTab): { x: number; y: number } | null {
+  const core = coreOf(scene);
   const label = t(TAB_LABEL_KEY[tab]);
   const positions = findAllLabelPos(scene.container, label);
   if (positions.length === 0) return null;
   // Disambiguate against a header title repeating the same text: the real tab cell sits inside
   // the rail band (landscape: left of the rail width) or the bottom-bar band (portrait: within
   // bottomNavH of the screen bottom); a header title never does.
-  const inBar = scene.landscape
-    ? positions.filter((p) => p.x < sidebarNavW(scene.w, scene.h, true))
-    : positions.filter((p) => p.y >= scene.h - bottomNavH(scene.h));
+  const inBar = core.landscape
+    ? positions.filter((p) => p.x < sidebarNavW(core.w, core.h, true))
+    : positions.filter((p) => p.y >= core.h - bottomNavH(core.h));
   return inBar[0] ?? positions[0]!;
 }
 
@@ -120,8 +129,9 @@ function tabLabelPos(scene: any, tab: SocialTab): { x: number; y: number } | nul
 function clickRailTab(scene: any, tab: SocialTab): void {
   const pos = tabLabelPos(scene, tab);
   if (!pos) return;
-  scene.handleDown(pos.x, pos.y);
-  scene.handleUp(pos.x, pos.y);
+  const core = coreOf(scene);
+  core.handleDown(pos.x, pos.y);
+  core.handleUp(pos.x, pos.y);
 }
 
 /** FriendsScene dispatches through the pointer-down/up click path (`onPointerDown` +
@@ -204,8 +214,8 @@ describe('SectScene — social tab rail (onNavTab wiring)', () => {
       worldApi: stubWorldApi(), worldId: 'world:1:0', myAccountId: 'acc_test', playerName: 'Tester',
       getCoins: () => 100000, refreshWallet: async () => {},
     });
-    scene.mode = 'mySect';
-    scene.sect = SECT_FIXTURE;
+    scene.core.mode = 'mySect';
+    scene.core.sect = SECT_FIXTURE;
     scene.render();
     return scene;
   }
@@ -226,8 +236,8 @@ describe('SectScene — social tab rail (onNavTab wiring)', () => {
     const scene = build(() => {});
     // families/channel tab bar hit rects now start at `left` (sidebarNavW), not x=0 —
     // clicking mid-rail (x well inside the rail) must not accidentally hit them.
-    scene.handleDown(Math.round(sidebarNavW(scene.w, scene.h, scene.landscape) / 2), scene.headerH + 10);
-    expect(scene.activeTab).toBe('families'); // unchanged — rail click, not the local tab bar
+    scene.core.handleDown(Math.round(sidebarNavW(scene.core.w, scene.core.h, scene.core.landscape) / 2), scene.core.headerH + 10);
+    expect(scene.core.activeTab).toBe('families'); // unchanged — rail click, not the local tab bar
     scene.destroy();
   });
 
@@ -235,13 +245,13 @@ describe('SectScene — social tab rail (onNavTab wiring)', () => {
     // Regression check for "点击sect页签时，其他页签消失了" (12.07.2026): the rail used to be
     // drawn only from renderMySect(), so any account without a sect — or any account while
     // loadData() is still in flight — landed in a mode that rendered no rail at all. Fixed by
-    // moving the drawSocialTabRail() call into the shared render() dispatcher (base.ts).
+    // moving the drawSocialTabRail() call into the shared render() dispatcher (core.ts).
     const calls: SocialTab[] = [];
     const scene = build((tab) => calls.push(tab));
-    scene.mode = 'noSect';
-    scene.sect = null;
-    scene.inFamily = true;
-    scene.myFamilyRole = 'leader';
+    scene.core.mode = 'noSect';
+    scene.core.sect = null;
+    scene.core.inFamily = true;
+    scene.core.myFamilyRole = 'leader';
     scene.render();
 
     for (const tab of TAB_ORDER) clickRailTab(scene, tab);

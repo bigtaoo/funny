@@ -83,7 +83,7 @@ function texts(scene: any): { text: string; y: number }[] {
       if ((c as PIXI.Container).children) walk(c as PIXI.Container);
     }
   };
-  walk(scene.bodyLayer);
+  walk(scene.core.bodyLayer);
   return out;
 }
 
@@ -97,7 +97,7 @@ function headerChildIndexOf(scene: any, label: string): number {
 describe('SectScene — alliance controls', () => {
   it('sect leader sees Ally + Manage Allies in the header (landscape)', async () => {
     const scene = buildScene(makeSect({ leaderId: 'me' }), makeMyFamily('leader', 'me'));
-    await scene.loadData();
+    await scene.data.loadData();
     scene.render();
 
     const all = texts(scene);
@@ -106,7 +106,7 @@ describe('SectScene — alliance controls', () => {
     expect(manage).toBeTruthy();
     expect(ally).toBeTruthy();
     // Seated in the header, not down in the old bottom bar.
-    expect(manage!.y).toBeLessThan(scene.h / 2);
+    expect(manage!.y).toBeLessThan(scene.core.h / 2);
     // The member-only read-only view button is not shown to the leader.
     expect(all.some((t) => t.text.startsWith('Allies ('))).toBe(false);
   });
@@ -116,7 +116,7 @@ describe('SectScene — alliance controls', () => {
       makeSect({ leaderId: 'boss', allySectIds: ['a1', 'a2'] }),
       makeMyFamily('member', 'boss'),
     );
-    await scene.loadData();
+    await scene.data.loadData();
     scene.render();
 
     const all = texts(scene);
@@ -132,7 +132,7 @@ describe('SectScene — alliance controls', () => {
   // (as above) passes either way and did not catch the original bug.
   it('sect leader header buttons: label paints above its own backdrop, not hidden by it', async () => {
     const scene = buildScene(makeSect({ leaderId: 'me' }), makeMyFamily('leader', 'me'));
-    await scene.loadData();
+    await scene.data.loadData();
     scene.render();
 
     const children: PIXI.DisplayObject[] = scene.container.children;
@@ -154,7 +154,7 @@ describe('SectScene — alliance controls', () => {
       makeSect({ leaderId: 'boss', allySectIds: ['a1', 'a2'] }),
       makeMyFamily('member', 'boss'),
     );
-    await scene.loadData();
+    await scene.data.loadData();
     scene.render();
 
     const children: PIXI.DisplayObject[] = scene.container.children;

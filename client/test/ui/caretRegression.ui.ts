@@ -165,19 +165,19 @@ describe('SectScene — create-form caret', () => {
 
   it('name field shows a blinking cursor while focused', () => {
     const scene = build();
-    scene.mode = 'create';
-    scene.createField = 'name';
-    scene.createName = 'MySect';
-    expectBlinkingCaret(scene.container, (on) => { scene.caretOn = on; }, () => scene.render(), 'MySect|');
+    scene.core.mode = 'create';
+    scene.core.createField = 'name';
+    scene.core.createName = 'MySect';
+    expectBlinkingCaret(scene.container, (on) => { scene.core.caretOn = on; }, () => scene.render(), 'MySect|');
     scene.destroy();
   });
 
   it('tag field shows a blinking cursor while focused and empty', () => {
     const scene = build();
-    scene.mode = 'create';
-    scene.createField = 'tag';
-    scene.createTag = '';
-    expectBlinkingCaret(scene.container, (on) => { scene.caretOn = on; }, () => scene.render(), '|');
+    scene.core.mode = 'create';
+    scene.core.createField = 'tag';
+    scene.core.createTag = '';
+    expectBlinkingCaret(scene.container, (on) => { scene.core.caretOn = on; }, () => scene.render(), '|');
     scene.destroy();
   });
 });

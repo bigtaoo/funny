@@ -1,558 +1,445 @@
 // Render domain: the mode-specific views (loading / no-sect / create form / my-sect with the
 // families + channel tabs) plus the small center-message / center-button / bottom-bar-button helpers.
+//
+// RenderPanel depends on ActionsPanel (via ActionsHandlers — most of its surface, since nearly every
+// button here fires a network action) and InputPanel (via InputHandlers — the create-form/channel
+// hidden-input openers), but neither depends back on Render: one-way, so a plain independent class
+// over `core` + `actions` + `input` (2026-08-11 converted from the former `XMixin(Base)` inheritance
+// chain, per claudedocs/client-modules.md's split-form priority note).
 import * as PIXI from 'pixi.js-legacy';
 import { SECT_CREATE_COST } from '@nw/shared';
 import { t } from '../../i18n';
-import { ui as C, txt, sketchPanel, sketchButton, sketchAccentBar, seedFor } from '../../render/sketchUi';
-import { drawScrollIndicator } from '../../ui/widgets/ScrollIndicator';
-import { peekViewportH } from '../../ui/widgets/scrollPeek';
+import { ui as C, txt, sketchPanel, sketchButton, seedFor } from '../../render/sketchUi';
 import { caretDisplay } from '../../ui/inputDisplay';
-import { drawChatLine } from '../../ui/widgets/chatRow';
-import { type Constructor, type SectSceneBaseCtor, type SectTab, ROW_H } from './base';
 import { FS } from '../../render/fontScale';
+import type { SectSceneCore, SectTab } from './core';
+import type { ActionsHandlers } from './actions';
+import type { InputHandlers } from './input';
+import { renderFamiliesList as renderFamiliesListImpl, renderChannel as renderChannelImpl } from './lists';
 
-export interface RenderHandlers {
-  renderLoading(): void;
-  renderNoSect(): void;
-  renderCreate(): void;
-  renderMySect(): void;
-  renderFamilies(y0: number, maxH: number): void;
-  renderBottomBar(y: number): void;
-  renderChannel(x0: number, colW: number, y0: number, maxH: number, scrollKey: 'scrollY' | 'scrollYChannel'): void;
-  centerMessage(msg: string): void;
-  addCenterButton(label: string, x: number, y: number, action: () => void, seed: number, enabled?: boolean): void;
-  addBarButton(label: string, x: number, y: number, color: number, action: () => void, seed: number, enabled?: boolean): void;
-}
+export class RenderPanel {
+  constructor(
+    private readonly core: SectSceneCore,
+    private readonly actions: ActionsHandlers,
+    private readonly input: InputHandlers
+  ) {}
 
-export function RenderMixin<TBase extends SectSceneBaseCtor>(Base: TBase): TBase & Constructor<RenderHandlers> {
-  return class extends Base {
-    renderLoading(): void {
-      const lbl = txt(t('world.loading'), FS.title, C.dark);
-      lbl.anchor.set(0.5, 0.5);
-      lbl.x = this.w / 2; lbl.y = this.h / 2;
-      this.bodyLayer.addChild(lbl);
+  renderLoading(): void {
+    const core = this.core;
+    const lbl = txt(t('world.loading'), FS.title, C.dark);
+    lbl.anchor.set(0.5, 0.5);
+    lbl.x = core.w / 2; lbl.y = core.h / 2;
+    core.bodyLayer.addChild(lbl);
+  }
+
+  renderNoSect(): void {
+    const core = this.core;
+    const { w, h } = core;
+
+    // Players who aren't a family leader can't act on the sect.
+    if (!core.inFamily) {
+      this.centerMessage(t('sect.notInFamily'));
+      return;
+    }
+    if (!core.isFamilyLeader) {
+      this.centerMessage(t('sect.notLeader'));
+      return;
     }
 
-    renderNoSect(): void {
-      const { w, h } = this;
+    const lbl = txt(t('sect.noSect'), FS.heading, C.dark);
+    lbl.anchor.set(0.5, 0.5);
+    lbl.x = w / 2; lbl.y = h / 2 - 100;
+    core.bodyLayer.addChild(lbl);
 
-      // Players who aren't a family leader can't act on the sect.
-      if (!this.inFamily) {
-        this.centerMessage(t('sect.notInFamily'));
-        return;
-      }
-      if (!this.isFamilyLeader) {
-        this.centerMessage(t('sect.notLeader'));
-        return;
-      }
+    const hint = txt(t('sect.createHint', { n: SECT_CREATE_COST }), FS.label, C.mid);
+    hint.anchor.set(0.5, 0.5);
+    hint.x = w / 2; hint.y = h / 2 - 56;
+    core.bodyLayer.addChild(hint);
 
-      const lbl = txt(t('sect.noSect'), FS.heading, C.dark);
-      lbl.anchor.set(0.5, 0.5);
-      lbl.x = w / 2; lbl.y = h / 2 - 100;
-      this.bodyLayer.addChild(lbl);
+    const canAffordCreate = core.cb.getCoins() >= SECT_CREATE_COST;
+    this.addCenterButton(
+      t('sect.create'), w / 2 - 260, h / 2,
+      () => { core.mode = 'create'; core.render(); },
+      0, canAffordCreate,
+    );
+    this.addCenterButton(t('sect.browse'), w / 2 + 20, h / 2, () => void this.actions.openBrowseList(), 1);
+  }
 
-      const hint = txt(t('sect.createHint', { n: SECT_CREATE_COST }), FS.label, C.mid);
-      hint.anchor.set(0.5, 0.5);
-      hint.x = w / 2; hint.y = h / 2 - 56;
-      this.bodyLayer.addChild(hint);
+  renderCreate(): void {
+    const core = this.core;
+    const { w, h } = core;
 
-      const canAffordCreate = this.cb.getCoins() >= SECT_CREATE_COST;
-      this.addCenterButton(
-        t('sect.create'), w / 2 - 260, h / 2,
-        () => { this.mode = 'create'; this.render(); },
-        0, canAffordCreate,
+    // Whole create-form is scaled up uniformly (constants + fonts) by S so it reads larger
+    // without touching the global font scale. Every geometry value below is pre-multiplied.
+    const S = 1.3;
+
+    // Everything lives inside a centered card in the region RIGHT of the social rail — the
+    // old absolute-x layout overlapped the rail (Family/Sect/World/Mail) and the header text.
+    const left = core.railW;
+    const availW = w - left;
+    const cardW = Math.min(720 * S, availW * 0.9);
+    const cardX = left + (availW - cardW) / 2;
+    const pad = 36 * S;
+    const cx = cardX + cardW / 2;      // card horizontal center (used for title + buttons)
+    const inX = cardX + pad;            // inner content left edge
+    const inW = cardW - pad * 2;        // inner content width
+    const fieldH = 48 * S;
+
+    // Field metrics chosen up front so we can size the card to its content.
+    const titleH = 34 * S, gapAfterTitle = 26 * S;
+    const labelH = 26 * S, gapLabelField = 8 * S;
+    const gapAfterName = 30 * S;
+    const tagLabelH = 24 * S, tagHintH = 20 * S;
+    const tagFieldW = Math.min(260 * S, inW);
+    const gapAfterTag = 40 * S;
+    const btnH = 48 * S;
+
+    const cardH = pad
+      + titleH + gapAfterTitle
+      + labelH + gapLabelField + fieldH + gapAfterName
+      + tagLabelH + tagHintH + fieldH + gapAfterTag
+      + btnH
+      + pad;
+    const cardY = Math.max(core.headerH + 20, core.headerH + (h - core.headerH - cardH) / 2);
+
+    // Card background.
+    const card = sketchPanel(cardW, cardH, { fill: C.paper, border: C.mid, seed: seedFor(7, 0, cardW) });
+    card.x = cardX; card.y = cardY;
+    core.bodyLayer.addChild(card);
+
+    let y = cardY + pad;
+
+    // Title.
+    const title = txt(t('sect.createTitle'), FS.label * S, C.dark);
+    title.anchor.set(0.5, 0); title.x = cx; title.y = y;
+    core.bodyLayer.addChild(title);
+    y += titleH + gapAfterTitle;
+
+    // ── Sect name ──
+    const nameLbl = txt(t('sect.name'), FS.body * S, C.dark);
+    nameLbl.x = inX; nameLbl.y = y;
+    core.bodyLayer.addChild(nameLbl);
+    y += labelH + gapLabelField;
+
+    const nameFocused = core.createField === 'name';
+    const nameField = sketchPanel(inW, fieldH, { fill: 0xfaf9f5, border: nameFocused ? C.accent : C.mid, seed: seedFor(0, 0, inW) });
+    nameField.x = inX; nameField.y = y;
+    core.bodyLayer.addChild(nameField);
+    const nameEmpty = core.createName.length === 0 && !nameFocused;
+    const nl = txt(nameEmpty ? t('social.sect.namePlaceholder') : caretDisplay(core.createName, nameFocused && core.caretOn, ' '), FS.bodyLg * S, nameEmpty ? C.mid : C.dark);
+    nl.anchor.set(0, 0.5); nl.x = inX + 12 * S; nl.y = y + fieldH / 2;
+    core.bodyLayer.addChild(nl);
+    core.hitRects.push({ rect: { x: inX, y, w: inW, h: fieldH }, action: () => this.input.openInputFor('name') });
+    y += fieldH + gapAfterName;
+
+    // ── Tag (short label + hint line underneath) ──
+    const tagLbl = txt(t('sect.tagLabel'), FS.body * S, C.dark);
+    tagLbl.x = inX; tagLbl.y = y;
+    core.bodyLayer.addChild(tagLbl);
+    y += tagLabelH;
+    const tagHint = txt(t('sect.tagHint'), FS.tiny * S, C.mid);
+    tagHint.x = inX; tagHint.y = y;
+    core.bodyLayer.addChild(tagHint);
+    y += tagHintH;
+
+    const tagFocused = core.createField === 'tag';
+    const tagField = sketchPanel(tagFieldW, fieldH, { fill: 0xfaf9f5, border: tagFocused ? C.accent : C.mid, seed: seedFor(1, 0, tagFieldW) });
+    tagField.x = inX; tagField.y = y;
+    core.bodyLayer.addChild(tagField);
+    const tl = txt(caretDisplay(core.createTag, tagFocused && core.caretOn, ' '), FS.bodyLg * S, C.dark);
+    tl.anchor.set(0, 0.5); tl.x = inX + 12 * S; tl.y = y + fieldH / 2;
+    core.bodyLayer.addChild(tl);
+    core.hitRects.push({ rect: { x: inX, y, w: tagFieldW, h: fieldH }, action: () => this.input.openInputFor('tag') });
+    y += fieldH + gapAfterTag;
+
+    // ── Buttons (create + cancel, side by side, centered under the fields) ──
+    const btnW = 150 * S, btnGap = 24 * S;
+    const okX = cx - btnW - btnGap / 2;
+    const cancelX = cx + btnGap / 2;
+
+    const createBusy = core.bt.busy;
+    const okBtn = createBusy
+      ? sketchPanel(btnW, btnH, { fill: C.btnOff, border: C.mid, seed: seedFor(0, 1, btnW) })
+      : sketchButton(btnW, btnH, seedFor(0, 1, btnW));
+    okBtn.x = okX; okBtn.y = y;
+    core.bodyLayer.addChild(okBtn);
+    const ok = txt(t('sect.create'), FS.body * S, createBusy ? C.mid : C.light);
+    ok.anchor.set(0.5, 0.5); ok.x = okX + btnW / 2; ok.y = y + btnH / 2;
+    core.bodyLayer.addChild(ok);
+    if (!createBusy) core.hitRects.push({ rect: { x: okX, y, w: btnW, h: btnH }, action: () => void this.actions.doCreate() });
+
+    const cancelBtn = sketchPanel(btnW, btnH, { fill: 0xeeeeee, border: C.mid, seed: seedFor(1, 1, btnW) });
+    cancelBtn.x = cancelX; cancelBtn.y = y;
+    core.bodyLayer.addChild(cancelBtn);
+    const ca = txt(t('social.sect.cancel'), FS.body * S, C.dark);
+    ca.anchor.set(0.5, 0.5); ca.x = cancelX + btnW / 2; ca.y = y + btnH / 2;
+    core.bodyLayer.addChild(ca);
+    core.hitRects.push({ rect: { x: cancelX, y, w: btnW, h: btnH }, action: () => { core.mode = 'noSect'; core.render(); } });
+  }
+
+  renderMySect(): void {
+    const core = this.core;
+    if (!core.sect) return;
+    // Landscape has room for both columns permanently side by side (matches FamilyScene) — a tab
+    // switch left whichever side wasn't selected mostly blank. Portrait keeps the tab switch.
+    if (core.landscape) {
+      this.renderSplitView();
+    } else {
+      this.renderTabbedView();
+    }
+  }
+
+  private renderTabbedView(): void {
+    const core = this.core;
+    const { w } = core;
+
+    // Rail itself is now drawn unconditionally by the outer render() dispatcher (see ../SectScene.ts).
+    const left = core.railW;
+
+    // Tab bar — starts to the right of the rail, same convention as FamilyScene.
+    const tabs: SectTab[] = ['families', 'channel'];
+    const tabW = (w - left) / tabs.length;
+    for (let i = 0; i < tabs.length; i++) {
+      const tab = tabs[i]!;
+      const active = tab === core.activeTab;
+      const tx = left + i * tabW;
+      const tabH = 48;
+      const tp = sketchPanel(tabW, tabH, { fill: active ? C.paper : 0xddddcc, border: C.mid, seed: seedFor(i, 0, tabW) });
+      tp.x = tx; tp.y = core.headerH;
+      core.bodyLayer.addChild(tp);
+      const tl = txt(t(tab === 'families' ? 'sect.tabFamilies' : 'sect.tabChannel'), FS.label, active ? C.accent : C.dark);
+      tl.anchor.set(0.5, 0.5); tl.x = tx + tabW / 2; tl.y = core.headerH + tabH / 2;
+      core.bodyLayer.addChild(tl);
+      core.hitRects.push({ rect: { x: tx, y: core.headerH, w: tabW, h: tabH }, action: () => { core.activeTab = tab; core.scrollY = 0; core.channelStick = true; core.render(); } });
+    }
+
+    const contentY = core.headerH + 48;
+    const contentH = core.bodyBottom - contentY - 10;
+
+    if (core.activeTab === 'families') {
+      this.renderFamilies(contentY, contentH);
+    } else {
+      this.renderChannel(left, w - left, contentY, contentH, 'scrollY');
+    }
+  }
+
+  /** Landscape: families roster (left) + sect channel (right) always visible side by side. Sect
+   *  identity (name/tag/families/prosperity) + alliance controls live in the header itself now
+   *  (see SectSceneCore.drawHeaderTitle) — this used to duplicate them in a hand-drawn band right
+   *  below the header, which stacked with the column-title band into a cluttered top-left corner
+   *  (see the 25.07.2026 header-declutter pass). */
+  private renderSplitView(): void {
+    const core = this.core;
+    if (!core.sect) return;
+    const { w, h } = core;
+    const left = core.railW;
+    const sect = core.sect;
+    const rightEdge = w - 8;
+
+    // Removal vote banner (if a removal is in progress), directly below the header.
+    let bannerBottom = core.headerH + 12;
+    if (sect.removalVote) {
+      const nom = sect.memberFamilies.find(f => f.familyId === sect.removalVote!.nomineeFamilyId);
+      const banner = txt(
+        t('sect.voteStatus', {
+          name: nom ? `[${nom.tag}] ${nom.name}` : sect.removalVote.nomineeFamilyId,
+          cur: sect.removalVote.voteCount,
+          need: sect.removalVote.needed,
+        }),
+        FS.body, C.red,
       );
-      this.addCenterButton(t('sect.browse'), w / 2 + 20, h / 2, () => void this.openBrowseList(), 1);
+      banner.x = left + 18; banner.y = bannerBottom;
+      core.bodyLayer.addChild(banner);
+      bannerBottom += Math.round(FS.body * 1.5);
     }
 
-    renderCreate(): void {
-      const { w, h } = this;
+    const colLblSize = FS.label;
+    const colLblGap = Math.round(colLblSize * 1.4);
+    const contentY = bannerBottom + colLblGap + 4;
+    const bottomBarH = 42;
+    const contentH = h - contentY - bottomBarH - 8;
 
-      // Whole create-form is scaled up uniformly (constants + fonts) by S so it reads larger
-      // without touching the global font scale. Every geometry value below is pre-multiplied.
-      const S = 1.3;
+    const totalW = w - left;
+    const familiesW = Math.round(totalW * 0.5);
+    const chatX = left + familiesW + 12;
+    const chatW = w - chatX - 8;
+    core.chatColX = chatX - 6;
 
-      // Everything lives inside a centered card in the region RIGHT of the social rail — the
-      // old absolute-x layout overlapped the rail (Family/Sect/World/Mail) and the header text.
-      const left = this.railW;
-      const availW = w - left;
-      const cardW = Math.min(720 * S, availW * 0.9);
-      const cardX = left + (availW - cardW) / 2;
-      const pad = 36 * S;
-      const cx = cardX + cardW / 2;      // card horizontal center (used for title + buttons)
-      const inX = cardX + pad;            // inner content left edge
-      const inW = cardW - pad * 2;        // inner content width
-      const fieldH = 48 * S;
+    // Column-title row: a flat tint strip (no hand-drawn border) so it reads as a subtle section
+    // divider rather than another decorative panel — matches FamilyScene's renderSplitView.
+    const bandY = bannerBottom;
+    const bandH = colLblGap + 4;
+    const band = new PIXI.Graphics();
+    band.beginFill(C.dark, 0.06);
+    band.drawRect(left, bandY, rightEdge - left, bandH);
+    band.endFill();
+    band.lineStyle(1, C.mid, 0.5);
+    band.moveTo(left, bandY + bandH).lineTo(rightEdge, bandY + bandH);
+    core.bodyLayer.addChild(band);
 
-      // Field metrics chosen up front so we can size the card to its content.
-      const titleH = 34 * S, gapAfterTitle = 26 * S;
-      const labelH = 26 * S, gapLabelField = 8 * S;
-      const gapAfterName = 30 * S;
-      const tagLabelH = 24 * S, tagHintH = 20 * S;
-      const tagFieldW = Math.min(260 * S, inW);
-      const gapAfterTag = 40 * S;
-      const btnH = 48 * S;
+    const familiesLbl = txt(t('sect.tabFamilies'), colLblSize, C.mid);
+    familiesLbl.x = left + 12; familiesLbl.y = bandY + 4;
+    core.bodyLayer.addChild(familiesLbl);
+    const channelLbl = txt(t('sect.tabChannel'), colLblSize, C.mid);
+    channelLbl.x = chatX + 4; channelLbl.y = bandY + 4;
+    core.bodyLayer.addChild(channelLbl);
 
-      const cardH = pad
-        + titleH + gapAfterTitle
-        + labelH + gapLabelField + fieldH + gapAfterName
-        + tagLabelH + tagHintH + fieldH + gapAfterTag
-        + btnH
-        + pad;
-      const cardY = Math.max(this.headerH + 20, this.headerH + (h - this.headerH - cardH) / 2);
+    const divider = new PIXI.Graphics();
+    divider.lineStyle(1, C.mid, 0.5);
+    divider.moveTo(core.chatColX, bandY).lineTo(core.chatColX, contentY + contentH);
+    core.bodyLayer.addChild(divider);
 
-      // Card background.
-      const card = sketchPanel(cardW, cardH, { fill: C.paper, border: C.mid, seed: seedFor(7, 0, cardW) });
-      card.x = cardX; card.y = cardY;
-      this.bodyLayer.addChild(card);
+    this.renderFamiliesList(left, familiesW, contentY, contentH, 'scrollY');
+    this.renderChannel(chatX, chatW, contentY, contentH, 'scrollYChannel');
 
-      let y = cardY + pad;
+    this.renderBottomBar(h - bottomBarH - 4);
+  }
 
-      // Title.
-      const title = txt(t('sect.createTitle'), FS.label * S, C.dark);
-      title.anchor.set(0.5, 0); title.x = cx; title.y = y;
-      this.bodyLayer.addChild(title);
-      y += titleH + gapAfterTitle;
+  renderFamilies(y0: number, maxH: number): void {
+    const core = this.core;
+    if (!core.sect) return;
+    const { w } = core;
+    const left = core.railW;
+    const sect = core.sect;
 
-      // ── Sect name ──
-      const nameLbl = txt(t('sect.name'), FS.body * S, C.dark);
-      nameLbl.x = inX; nameLbl.y = y;
-      this.bodyLayer.addChild(nameLbl);
-      y += labelH + gapLabelField;
+    // Sect summary line (name [tag] · families · prosperity) — plain text directly on the paper.
+    // Portrait's narrow header can't fit this on the title bar (landscape lifts it there instead —
+    // see SectSceneCore.drawHeaderTitle), so it stays here, but no longer behind a decorative
+    // hand-drawn band (see the 25.07.2026 header-declutter pass).
+    const summaryH = Math.round(FS.label * 1.6);
+    const summary = txt(
+      `[${sect.tag}] ${sect.name}   ${t('sect.families', { n: sect.memberFamilyCount })}   ${t('sect.prosperity', { n: sect.prosperity })}`,
+      FS.label, C.dark,
+    );
+    summary.anchor.set(0, 0.5); summary.x = left + 18; summary.y = y0 + summaryH / 2;
+    core.bodyLayer.addChild(summary);
+    this.drawAllianceControlsRow(w - 8, y0, summaryH);
 
-      const nameFocused = this.createField === 'name';
-      const nameField = sketchPanel(inW, fieldH, { fill: 0xfaf9f5, border: nameFocused ? C.accent : C.mid, seed: seedFor(0, 0, inW) });
-      nameField.x = inX; nameField.y = y;
-      this.bodyLayer.addChild(nameField);
-      const nameEmpty = this.createName.length === 0 && !nameFocused;
-      const nl = txt(nameEmpty ? t('social.sect.namePlaceholder') : caretDisplay(this.createName, nameFocused && this.caretOn, ' '), FS.bodyLg * S, nameEmpty ? C.mid : C.dark);
-      nl.anchor.set(0, 0.5); nl.x = inX + 12 * S; nl.y = y + fieldH / 2;
-      this.bodyLayer.addChild(nl);
-      this.hitRects.push({ rect: { x: inX, y, w: inW, h: fieldH }, action: () => this.openInputFor('name') });
-      y += fieldH + gapAfterName;
-
-      // ── Tag (short label + hint line underneath) ──
-      const tagLbl = txt(t('sect.tagLabel'), FS.body * S, C.dark);
-      tagLbl.x = inX; tagLbl.y = y;
-      this.bodyLayer.addChild(tagLbl);
-      y += tagLabelH;
-      const tagHint = txt(t('sect.tagHint'), FS.tiny * S, C.mid);
-      tagHint.x = inX; tagHint.y = y;
-      this.bodyLayer.addChild(tagHint);
-      y += tagHintH;
-
-      const tagFocused = this.createField === 'tag';
-      const tagField = sketchPanel(tagFieldW, fieldH, { fill: 0xfaf9f5, border: tagFocused ? C.accent : C.mid, seed: seedFor(1, 0, tagFieldW) });
-      tagField.x = inX; tagField.y = y;
-      this.bodyLayer.addChild(tagField);
-      const tl = txt(caretDisplay(this.createTag, tagFocused && this.caretOn, ' '), FS.bodyLg * S, C.dark);
-      tl.anchor.set(0, 0.5); tl.x = inX + 12 * S; tl.y = y + fieldH / 2;
-      this.bodyLayer.addChild(tl);
-      this.hitRects.push({ rect: { x: inX, y, w: tagFieldW, h: fieldH }, action: () => this.openInputFor('tag') });
-      y += fieldH + gapAfterTag;
-
-      // ── Buttons (create + cancel, side by side, centered under the fields) ──
-      const btnW = 150 * S, btnGap = 24 * S;
-      const okX = cx - btnW - btnGap / 2;
-      const cancelX = cx + btnGap / 2;
-
-      const createBusy = this.bt.busy;
-      const okBtn = createBusy
-        ? sketchPanel(btnW, btnH, { fill: C.btnOff, border: C.mid, seed: seedFor(0, 1, btnW) })
-        : sketchButton(btnW, btnH, seedFor(0, 1, btnW));
-      okBtn.x = okX; okBtn.y = y;
-      this.bodyLayer.addChild(okBtn);
-      const ok = txt(t('sect.create'), FS.body * S, createBusy ? C.mid : C.light);
-      ok.anchor.set(0.5, 0.5); ok.x = okX + btnW / 2; ok.y = y + btnH / 2;
-      this.bodyLayer.addChild(ok);
-      if (!createBusy) this.hitRects.push({ rect: { x: okX, y, w: btnW, h: btnH }, action: () => void this.doCreate() });
-
-      const cancelBtn = sketchPanel(btnW, btnH, { fill: 0xeeeeee, border: C.mid, seed: seedFor(1, 1, btnW) });
-      cancelBtn.x = cancelX; cancelBtn.y = y;
-      this.bodyLayer.addChild(cancelBtn);
-      const ca = txt(t('social.sect.cancel'), FS.body * S, C.dark);
-      ca.anchor.set(0.5, 0.5); ca.x = cancelX + btnW / 2; ca.y = y + btnH / 2;
-      this.bodyLayer.addChild(ca);
-      this.hitRects.push({ rect: { x: cancelX, y, w: btnW, h: btnH }, action: () => { this.mode = 'noSect'; this.render(); } });
-    }
-
-    renderMySect(): void {
-      if (!this.sect) return;
-      // Landscape has room for both columns permanently side by side (matches FamilyScene) — a tab
-      // switch left whichever side wasn't selected mostly blank. Portrait keeps the tab switch.
-      if (this.landscape) {
-        this.renderSplitView();
-      } else {
-        this.renderTabbedView();
-      }
-    }
-
-    private renderTabbedView(): void {
-      const { w } = this;
-
-      // Rail itself is now drawn unconditionally by the base render() dispatcher (see base.ts).
-      const left = this.railW;
-
-      // Tab bar — starts to the right of the rail, same convention as FamilyScene.
-      const tabs: SectTab[] = ['families', 'channel'];
-      const tabW = (w - left) / tabs.length;
-      for (let i = 0; i < tabs.length; i++) {
-        const tab = tabs[i]!;
-        const active = tab === this.activeTab;
-        const tx = left + i * tabW;
-        const tabH = 48;
-        const tp = sketchPanel(tabW, tabH, { fill: active ? C.paper : 0xddddcc, border: C.mid, seed: seedFor(i, 0, tabW) });
-        tp.x = tx; tp.y = this.headerH;
-        this.bodyLayer.addChild(tp);
-        const tl = txt(t(tab === 'families' ? 'sect.tabFamilies' : 'sect.tabChannel'), FS.label, active ? C.accent : C.dark);
-        tl.anchor.set(0.5, 0.5); tl.x = tx + tabW / 2; tl.y = this.headerH + tabH / 2;
-        this.bodyLayer.addChild(tl);
-        this.hitRects.push({ rect: { x: tx, y: this.headerH, w: tabW, h: tabH }, action: () => { this.activeTab = tab; this.scrollY = 0; this.channelStick = true; this.render(); } });
-      }
-
-      const contentY = this.headerH + 48;
-      const contentH = this.bodyBottom - contentY - 10;
-
-      if (this.activeTab === 'families') {
-        this.renderFamilies(contentY, contentH);
-      } else {
-        this.renderChannel(left, w - left, contentY, contentH, 'scrollY');
-      }
-    }
-
-    /** Landscape: families roster (left) + sect channel (right) always visible side by side. Sect
-     *  identity (name/tag/families/prosperity) + alliance controls live in the header itself now
-     *  (see SectSceneBase.drawHeaderTitle) — this used to duplicate them in a hand-drawn band right
-     *  below the header, which stacked with the column-title band into a cluttered top-left corner
-     *  (see the 25.07.2026 header-declutter pass). */
-    private renderSplitView(): void {
-      if (!this.sect) return;
-      const { w, h } = this;
-      const left = this.railW;
-      const sect = this.sect;
-      const rightEdge = w - 8;
-
-      // Removal vote banner (if a removal is in progress), directly below the header.
-      let bannerBottom = this.headerH + 12;
-      if (sect.removalVote) {
-        const nom = sect.memberFamilies.find(f => f.familyId === sect.removalVote!.nomineeFamilyId);
-        const banner = txt(
-          t('sect.voteStatus', {
-            name: nom ? `[${nom.tag}] ${nom.name}` : sect.removalVote.nomineeFamilyId,
-            cur: sect.removalVote.voteCount,
-            need: sect.removalVote.needed,
-          }),
-          FS.body, C.red,
-        );
-        banner.x = left + 18; banner.y = bannerBottom;
-        this.bodyLayer.addChild(banner);
-        bannerBottom += Math.round(FS.body * 1.5);
-      }
-
-      const colLblSize = FS.label;
-      const colLblGap = Math.round(colLblSize * 1.4);
-      const contentY = bannerBottom + colLblGap + 4;
-      const bottomBarH = 42;
-      const contentH = h - contentY - bottomBarH - 8;
-
-      const totalW = w - left;
-      const familiesW = Math.round(totalW * 0.5);
-      const chatX = left + familiesW + 12;
-      const chatW = w - chatX - 8;
-      this.chatColX = chatX - 6;
-
-      // Column-title row: a flat tint strip (no hand-drawn border) so it reads as a subtle section
-      // divider rather than another decorative panel — matches FamilyScene's renderSplitView.
-      const bandY = bannerBottom;
-      const bandH = colLblGap + 4;
-      const band = new PIXI.Graphics();
-      band.beginFill(C.dark, 0.06);
-      band.drawRect(left, bandY, rightEdge - left, bandH);
-      band.endFill();
-      band.lineStyle(1, C.mid, 0.5);
-      band.moveTo(left, bandY + bandH).lineTo(rightEdge, bandY + bandH);
-      this.bodyLayer.addChild(band);
-
-      const familiesLbl = txt(t('sect.tabFamilies'), colLblSize, C.mid);
-      familiesLbl.x = left + 12; familiesLbl.y = bandY + 4;
-      this.bodyLayer.addChild(familiesLbl);
-      const channelLbl = txt(t('sect.tabChannel'), colLblSize, C.mid);
-      channelLbl.x = chatX + 4; channelLbl.y = bandY + 4;
-      this.bodyLayer.addChild(channelLbl);
-
-      const divider = new PIXI.Graphics();
-      divider.lineStyle(1, C.mid, 0.5);
-      divider.moveTo(this.chatColX, bandY).lineTo(this.chatColX, contentY + contentH);
-      this.bodyLayer.addChild(divider);
-
-      this.renderFamiliesList(left, familiesW, contentY, contentH, 'scrollY');
-      this.renderChannel(chatX, chatW, contentY, contentH, 'scrollYChannel');
-
-      this.renderBottomBar(h - bottomBarH - 4);
-    }
-
-    renderFamilies(y0: number, maxH: number): void {
-      if (!this.sect) return;
-      const { w } = this;
-      const left = this.railW;
-      const sect = this.sect;
-
-      // Sect summary line (name [tag] · families · prosperity) — plain text directly on the paper.
-      // Portrait's narrow header can't fit this on the title bar (landscape lifts it there instead —
-      // see SectSceneBase.drawHeaderTitle), so it stays here, but no longer behind a decorative
-      // hand-drawn band (see the 25.07.2026 header-declutter pass).
-      const summaryH = Math.round(FS.label * 1.6);
-      const summary = txt(
-        `[${sect.tag}] ${sect.name}   ${t('sect.families', { n: sect.memberFamilyCount })}   ${t('sect.prosperity', { n: sect.prosperity })}`,
-        FS.label, C.dark,
+    // Removal vote banner.
+    let listTop = y0 + summaryH + 8;
+    if (sect.removalVote) {
+      const nom = sect.memberFamilies.find(f => f.familyId === sect.removalVote!.nomineeFamilyId);
+      const banner = txt(
+        t('sect.voteStatus', {
+          name: nom ? `[${nom.tag}] ${nom.name}` : sect.removalVote.nomineeFamilyId,
+          cur: sect.removalVote.voteCount,
+          need: sect.removalVote.needed,
+        }),
+        FS.body, C.red,
       );
-      summary.anchor.set(0, 0.5); summary.x = left + 18; summary.y = y0 + summaryH / 2;
-      this.bodyLayer.addChild(summary);
-      this.drawAllianceControlsRow(w - 8, y0, summaryH);
-
-      // Removal vote banner.
-      let listTop = y0 + summaryH + 8;
-      if (sect.removalVote) {
-        const nom = sect.memberFamilies.find(f => f.familyId === sect.removalVote!.nomineeFamilyId);
-        const banner = txt(
-          t('sect.voteStatus', {
-            name: nom ? `[${nom.tag}] ${nom.name}` : sect.removalVote.nomineeFamilyId,
-            cur: sect.removalVote.voteCount,
-            need: sect.removalVote.needed,
-          }),
-          FS.body, C.red,
-        );
-        banner.x = left + 18; banner.y = listTop;
-        this.bodyLayer.addChild(banner);
-        listTop += Math.round(FS.body * 1.5);
-      }
-
-      const bottomBarH = 42;
-      const viewH = (y0 + maxH - bottomBarH) - listTop;
-      this.renderFamiliesList(left, w - left, listTop, viewH, 'scrollY');
-
-      this.renderBottomBar(y0 + maxH - bottomBarH);
+      banner.x = left + 18; banner.y = listTop;
+      core.bodyLayer.addChild(banner);
+      listTop += Math.round(FS.body * 1.5);
     }
 
-    /** Family-list column. `x0`/`colW`/`scrollKey` let this render either full-width (portrait tab)
-     *  or as the left half of the landscape split view; `scrollKey` picks which scroll field this
-     *  instance owns so the two columns can scroll independently in the split view. */
-    private renderFamiliesList(x0: number, colW: number, y0: number, maxH: number, scrollKey: 'scrollY' | 'scrollYChannel'): void {
-      if (!this.sect) return;
-      const sect = this.sect;
-      const right = x0 + colW;
+    const bottomBarH = 42;
+    const viewH = (y0 + maxH - bottomBarH) - listTop;
+    this.renderFamiliesList(left, w - left, listTop, viewH, 'scrollY');
 
-      const listH = sect.memberFamilies.length * ROW_H;
-      // Clamp the viewport so it always cuts mid-row when there's more below — a partial next
-      // family row always peeks above the fold instead of landing flush with the column edge.
-      const viewH = peekViewportH(maxH, ROW_H, listH);
-      this.familiesMax = Math.max(0, listH - viewH);
-      this.familiesRegionTop = y0;
-      this.familiesRegionBottom = y0 + viewH;
-      this[scrollKey] = Math.max(0, Math.min(this[scrollKey], this.familiesMax));
+    this.renderBottomBar(y0 + maxH - bottomBarH);
+  }
 
-      const list = new PIXI.Container();
-      const mask = new PIXI.Graphics().beginFill(0xffffff).drawRect(x0, y0, colW, viewH).endFill();
-      list.mask = mask;
-      this.bodyLayer.addChild(list, mask);
+  /** Family-list column. `x0`/`colW`/`scrollKey` let this render either full-width (portrait tab)
+   *  or as the left half of the landscape split view; `scrollKey` picks which scroll field this
+   *  instance owns so the two columns can scroll independently in the split view. Delegates to
+   *  lists.ts (2026-08-11, form ① — see claudedocs/client-modules.md's split-form priority note). */
+  private renderFamiliesList(x0: number, colW: number, y0: number, maxH: number, scrollKey: 'scrollY' | 'scrollYChannel'): void {
+    renderFamiliesListImpl(this.core, this.actions, x0, colW, y0, maxH, scrollKey);
+  }
 
-      let cy = y0 - this[scrollKey];
-      for (const fam of sect.memberFamilies) {
-        if (cy + ROW_H >= y0 && cy <= y0 + viewH) {
-          const isLeaderFam = fam.familyId === sect.leaderFamilyId;
-          const bar = new PIXI.Graphics();
-          sketchAccentBar(bar, ROW_H - 6, isLeaderFam ? C.accent : C.mid);
-          bar.x = x0 + 6; bar.y = cy + 3;
-          list.addChild(bar);
-
-          // Row 1: family name, with the "Leader family" tag inline to its right.
-          const nameLbl = txt(`[${fam.tag}] ${fam.name}`, FS.heading, C.dark);
-          nameLbl.x = x0 + 18; nameLbl.y = cy + 8;
-          list.addChild(nameLbl);
-          if (isLeaderFam) {
-            const ldr = txt(t('sect.leaderFamily'), FS.small, C.accent);
-            ldr.anchor.set(0, 0.5); ldr.x = nameLbl.x + nameLbl.width + 12; ldr.y = cy + 8 + nameLbl.height / 2;
-            list.addChild(ldr);
-          }
-          // Row 2: member / territory counts.
-          const statLbl = txt(`${t('family.members', { n: fam.memberCount })} · ${t('sect.territory', { n: fam.territoryCount })}`, FS.body, C.mid);
-          statLbl.x = x0 + 18; statLbl.y = cy + 8 + nameLbl.height + 6;
-          list.addChild(statLbl);
-
-          // Any family leader (except the current leader family) can launch / vote a removal.
-          if (this.isFamilyLeader && !isLeaderFam) {
-            const busy = this.bt.busy;
-            const voteColor = busy ? C.mid : C.red;
-            const voteW = 104, voteBtnX = right - voteW - 12;
-            const voteBtn = sketchPanel(voteW, 34, { fill: 0xf0e0e0, border: voteColor, seed: seedFor(cy, 1, voteW) });
-            voteBtn.x = voteBtnX; voteBtn.y = cy + (ROW_H - 34) / 2;
-            list.addChild(voteBtn);
-            const vl = txt(t('sect.vote'), FS.body, voteColor);
-            vl.anchor.set(0.5, 0.5); vl.x = voteBtnX + voteW / 2; vl.y = cy + ROW_H / 2;
-            list.addChild(vl);
-            const nomId = fam.familyId;
-            const nomLabel = `[${fam.tag}] ${fam.name}`;
-            if (!busy) this.hitRects.push({ rect: { x: voteBtnX, y: cy + (ROW_H - 34) / 2, w: voteW, h: 34 }, action: () => this.confirmVote(nomId, nomLabel) });
-          }
-        }
-        cy += ROW_H;
-      }
-
-      drawScrollIndicator(this.bodyLayer, { x: x0, y: y0, w: colW, h: viewH }, this[scrollKey], Math.max(0, listH - viewH));
+  renderBottomBar(y: number): void {
+    const core = this.core;
+    const { w } = core;
+    const left = core.railW;
+    const midX = (left + w) / 2;
+    const bw = 150;
+    // Alliance controls (ally / manage allies / allies-view) live in the header in landscape
+    // (see SectSceneCore.drawHeaderTitle) or the summary row in portrait (drawAllianceControlsRow).
+    // The bottom bar keeps only the leave/dissolve action.
+    const busy = core.bt.busy;
+    if (core.isSectLeader) {
+      this.addBarButton(t('sect.dissolve'), left + 6, y, C.red, () => this.actions.confirmDissolve(), 0, !busy);
+    } else if (core.isFamilyLeader) {
+      this.addBarButton(t('sect.leave'), midX - bw / 2, y, C.accent, () => this.actions.confirmLeave(), 0, !busy);
     }
+  }
 
-    renderBottomBar(y: number): void {
-      const { w } = this;
-      const left = this.railW;
-      const midX = (left + w) / 2;
-      const bw = 150;
-      // Alliance controls (ally / manage allies / allies-view) live in the header in landscape
-      // (see SectSceneBase.drawHeaderTitle) or the summary row in portrait (drawAllianceControlsRow).
-      // The bottom bar keeps only the leave/dissolve action.
-      const busy = this.bt.busy;
-      if (this.isSectLeader) {
-        this.addBarButton(t('sect.dissolve'), left + 6, y, C.red, () => this.confirmDissolve(), 0, !busy);
-      } else if (this.isFamilyLeader) {
-        this.addBarButton(t('sect.leave'), midX - bw / 2, y, C.accent, () => this.confirmLeave(), 0, !busy);
-      }
+  /** Alliance controls seated at the right edge of the portrait summary row (laid out
+   *  right-to-left). Landscape draws the equivalent in the header instead — see
+   *  SectSceneCore.drawHeaderAllianceButtons. Viewing the ally list is open to every member
+   *  (regular members need to know who the sect's allies are); forming (ally) and breaking
+   *  (manage allies) alliances stay sect-leader only. */
+  private drawAllianceControlsRow(rightEdge: number, bandY: number, bandH: number): void {
+    const core = this.core;
+    if (!core.sect) return;
+    const bh = Math.min(bandH - 4, 32);
+    const by = bandY + (bandH - bh) / 2;
+    const padX = 14;
+    let x = rightEdge - 8; // right anchor; each button is placed to the left of the previous one
+    const busy = core.bt.busy;
+
+    const addBtn = (label: string, color: number, action: () => void, seed: number): void => {
+      const c = busy ? C.mid : color;
+      const lbl = txt(label, FS.tiny, c);
+      const bw = Math.ceil(lbl.width) + padX * 2;
+      const bx = x - bw;
+      const btn = sketchPanel(bw, bh, { fill: 0xf8f8f0, border: c, seed: seedFor(seed, 3, bw) });
+      btn.x = bx; btn.y = by;
+      core.bodyLayer.addChild(btn);
+      lbl.anchor.set(0.5, 0.5); lbl.x = bx + bw / 2; lbl.y = by + bh / 2;
+      core.bodyLayer.addChild(lbl);
+      if (!busy) core.hitRects.push({ rect: { x: bx, y: by, w: bw, h: bh }, action });
+      x = bx - 8;
+    };
+
+    if (core.isSectLeader) {
+      // Rightmost = manage (break), then ally (form) to its left.
+      addBtn(t('sect.manageAllies'), C.dark, () => void this.actions.openManageAllies(), 2);
+      addBtn(t('sect.ally'), C.accent, () => void this.actions.openAllyList(), 1);
+    } else {
+      addBtn(t('sect.allies', { n: core.sect.allySectIds.length }), C.accent, () => void this.actions.openAlliesView(), 1);
     }
+  }
 
-    /** Alliance controls seated at the right edge of the portrait summary row (laid out
-     *  right-to-left). Landscape draws the equivalent in the header instead — see
-     *  SectSceneBase.drawHeaderAllianceButtons. Viewing the ally list is open to every member
-     *  (regular members need to know who the sect's allies are); forming (ally) and breaking
-     *  (manage allies) alliances stay sect-leader only. */
-    private drawAllianceControlsRow(rightEdge: number, bandY: number, bandH: number): void {
-      if (!this.sect) return;
-      const bh = Math.min(bandH - 4, 32);
-      const by = bandY + (bandH - bh) / 2;
-      const padX = 14;
-      let x = rightEdge - 8; // right anchor; each button is placed to the left of the previous one
-      const busy = this.bt.busy;
+  /** Channel column. Same `x0`/`colW`/`scrollKey` parametrization as `renderFamiliesList` — see
+   *  there. Renders full-width in the portrait tab, or the right half of the landscape split view.
+   *  Delegates to lists.ts (2026-08-11, form ① — see claudedocs/client-modules.md's split-form
+   *  priority note). */
+  renderChannel(x0: number, colW: number, y0: number, maxH: number, scrollKey: 'scrollY' | 'scrollYChannel'): void {
+    renderChannelImpl(this.core, this.actions, this.input, x0, colW, y0, maxH, scrollKey);
+  }
 
-      const addBtn = (label: string, color: number, action: () => void, seed: number): void => {
-        const c = busy ? C.mid : color;
-        const lbl = txt(label, FS.tiny, c);
-        const bw = Math.ceil(lbl.width) + padX * 2;
-        const bx = x - bw;
-        const btn = sketchPanel(bw, bh, { fill: 0xf8f8f0, border: c, seed: seedFor(seed, 3, bw) });
-        btn.x = bx; btn.y = by;
-        this.bodyLayer.addChild(btn);
-        lbl.anchor.set(0.5, 0.5); lbl.x = bx + bw / 2; lbl.y = by + bh / 2;
-        this.bodyLayer.addChild(lbl);
-        if (!busy) this.hitRects.push({ rect: { x: bx, y: by, w: bw, h: bh }, action });
-        x = bx - 8;
-      };
+  // ── Small render helpers ────────────────────────────────────────────────────
 
-      if (this.isSectLeader) {
-        // Rightmost = manage (break), then ally (form) to its left.
-        addBtn(t('sect.manageAllies'), C.dark, () => void this.openManageAllies(), 2);
-        addBtn(t('sect.ally'), C.accent, () => void this.openAllyList(), 1);
-      } else {
-        addBtn(t('sect.allies', { n: this.sect.allySectIds.length }), C.accent, () => void this.openAlliesView(), 1);
-      }
-    }
+  centerMessage(msg: string): void {
+    const core = this.core;
+    const lbl = txt(msg, FS.title, C.dark);
+    lbl.anchor.set(0.5, 0.5);
+    lbl.x = core.w / 2; lbl.y = core.h / 2;
+    core.bodyLayer.addChild(lbl);
+  }
 
-    /** Channel column. Same `x0`/`colW`/`scrollKey` parametrization as `renderFamiliesList` — see
-     *  there. Renders full-width in the portrait tab, or the right half of the landscape split view. */
-    renderChannel(x0: number, colW: number, y0: number, maxH: number, scrollKey: 'scrollY' | 'scrollYChannel'): void {
-      const right = x0 + colW;
-      const inputH = 52;
-      const availH2 = maxH - inputH - 6;
+  addCenterButton(label: string, x: number, y: number, action: () => void, seed: number, enabled = true): void {
+    const core = this.core;
+    const btn = sketchPanel(240, 72, { fill: enabled ? C.dark : C.btnOff, border: enabled ? C.accent : C.mid, seed: seedFor(seed, 0, 240) });
+    btn.x = x; btn.y = y;
+    core.bodyLayer.addChild(btn);
+    const lbl = txt(label, FS.heading, enabled ? C.light : C.mid);
+    lbl.anchor.set(0.5, 0.5); lbl.x = x + 120; lbl.y = y + 36;
+    core.bodyLayer.addChild(lbl);
+    if (enabled) core.hitRects.push({ rect: { x, y, w: 240, h: 72 }, action });
+  }
 
-      if (this.messages.length === 0) {
-        const empty = txt(t('sect.noMessages'), FS.label, C.mid);
-        empty.anchor.set(0.5, 0); empty.x = x0 + colW / 2; empty.y = y0 + 8;
-        this.bodyLayer.addChild(empty);
-      }
-
-      const msgH = this.messages.length * ROW_H;
-      // Clamp the viewport so it always cuts mid-row when there's more below — a partial next
-      // message always peeks above the fold instead of landing flush with the input box.
-      const viewH2 = peekViewportH(availH2, ROW_H, msgH);
-      this.channelMax = Math.max(0, msgH - viewH2);
-      this.channelRegionTop = y0;
-      this.channelRegionBottom = y0 + viewH2;
-      // Pin to the latest message (bottom) unless the user scrolled up to read history.
-      if (this.channelStick) this[scrollKey] = this.channelMax;
-      else this[scrollKey] = Math.max(0, Math.min(this[scrollKey], this.channelMax));
-
-      const list = new PIXI.Container();
-      const mask = new PIXI.Graphics().beginFill(0xffffff).drawRect(x0, y0, colW, viewH2).endFill();
-      list.mask = mask;
-      this.bodyLayer.addChild(list, mask);
-
-      // Channel is returned newest-first; render oldest-at-top for natural reading.
-      const ordered = [...this.messages].reverse();
-      let cy = y0 - this[scrollKey];
-      for (const msg of ordered) {
-        if (cy + ROW_H < y0 || cy > y0 + viewH2) { cy += ROW_H; continue; }
-        drawChatLine(
-          list, x0 + 12, cy + ROW_H / 2,
-          { senderName: msg.senderName, title: msg.title, sectName: msg.sectName, familyName: msg.familyName },
-          msg.body, FS.label, FS.label,
-        );
-        cy += ROW_H;
-      }
-
-      drawScrollIndicator(this.bodyLayer, { x: x0, y: y0, w: colW, h: viewH2 }, this[scrollKey], Math.max(0, msgH - viewH2));
-
-      const inputY = y0 + availH2 + 4;
-      const sendW = 96;
-      const fieldW = colW - sendW - 12;
-      const field = sketchPanel(fieldW, inputH, { fill: 0xfaf9f5, border: this.channelActive ? C.accent : C.mid, seed: seedFor(0, 0, fieldW) });
-      field.x = x0 + 6; field.y = inputY;
-      this.bodyLayer.addChild(field);
-      const fl = txt(
-        caretDisplay(this.channelInput, this.channelActive && this.caretOn, t('sect.msgPlaceholder')),
-        FS.label, this.channelInput ? C.dark : C.mid,
-      );
-      fl.anchor.set(0, 0.5); fl.x = x0 + 12; fl.y = inputY + inputH / 2;
-      this.bodyLayer.addChild(fl);
-      this.hitRects.push({ rect: { x: x0 + 6, y: inputY, w: fieldW, h: inputH }, action: () => this.openSendInput() });
-
-      const sendLabel = this.channelSending ? t('sect.sending') : t('sect.send');
-      const sendBtn = sketchButton(sendW, inputH, seedFor(1, 0, sendW));
-      sendBtn.x = right - sendW; sendBtn.y = inputY;
-      this.bodyLayer.addChild(sendBtn);
-      const sl = txt(sendLabel, FS.heading, C.light);
-      sl.anchor.set(0.5, 0.5); sl.x = right - sendW / 2; sl.y = inputY + inputH / 2;
-      this.bodyLayer.addChild(sl);
-      this.hitRects.push({
-        rect: { x: right - sendW, y: inputY, w: sendW, h: inputH },
-        action: () => { if (!this.channelSending) void this.doSendChannelMessage(); },
-      });
-    }
-
-    // ── Small render helpers ────────────────────────────────────────────────────
-
-    centerMessage(msg: string): void {
-      const lbl = txt(msg, FS.title, C.dark);
-      lbl.anchor.set(0.5, 0.5);
-      lbl.x = this.w / 2; lbl.y = this.h / 2;
-      this.bodyLayer.addChild(lbl);
-    }
-
-    addCenterButton(label: string, x: number, y: number, action: () => void, seed: number, enabled = true): void {
-      const btn = sketchPanel(240, 72, { fill: enabled ? C.dark : C.btnOff, border: enabled ? C.accent : C.mid, seed: seedFor(seed, 0, 240) });
-      btn.x = x; btn.y = y;
-      this.bodyLayer.addChild(btn);
-      const lbl = txt(label, FS.heading, enabled ? C.light : C.mid);
-      lbl.anchor.set(0.5, 0.5); lbl.x = x + 120; lbl.y = y + 36;
-      this.bodyLayer.addChild(lbl);
-      if (enabled) this.hitRects.push({ rect: { x, y, w: 240, h: 72 }, action });
-    }
-
-    addBarButton(label: string, x: number, y: number, color: number, action: () => void, seed: number, enabled = true): void {
-      const bw = 150, bh = 40;
-      const c = enabled ? color : C.mid;
-      const btn = sketchPanel(bw, bh, { fill: 0xf8f8f0, border: c, seed: seedFor(seed, 2, bw) });
-      btn.x = x; btn.y = y;
-      this.bodyLayer.addChild(btn);
-      const lbl = txt(label, FS.body, c);
-      lbl.anchor.set(0.5, 0.5); lbl.x = x + bw / 2; lbl.y = y + bh / 2;
-      this.bodyLayer.addChild(lbl);
-      if (enabled) this.hitRects.push({ rect: { x, y, w: bw, h: bh }, action });
-    }
-  };
+  addBarButton(label: string, x: number, y: number, color: number, action: () => void, seed: number, enabled = true): void {
+    const core = this.core;
+    const bw = 150, bh = 40;
+    const c = enabled ? color : C.mid;
+    const btn = sketchPanel(bw, bh, { fill: 0xf8f8f0, border: c, seed: seedFor(seed, 2, bw) });
+    btn.x = x; btn.y = y;
+    core.bodyLayer.addChild(btn);
+    const lbl = txt(label, FS.body, c);
+    lbl.anchor.set(0.5, 0.5); lbl.x = x + bw / 2; lbl.y = y + bh / 2;
+    core.bodyLayer.addChild(lbl);
+    if (enabled) core.hitRects.push({ rect: { x, y, w: bw, h: bh }, action });
+  }
 }

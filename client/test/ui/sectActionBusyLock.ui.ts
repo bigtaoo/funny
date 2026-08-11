@@ -48,11 +48,11 @@ function buildMySectScene(worldApi: WorldApiClient, sect: SectDetailView, myAcco
     worldApi, worldId: WORLD_ID, myAccountId, playerName: 'Tester',
     getCoins: () => 0, refreshWallet: async () => {},
   });
-  scene.inFamily = true;
-  scene.myFamilyRole = 'leader'; // isFamilyLeader — shows the "Leave" bottom-bar button when not sect leader
-  scene.sect = sect;
-  scene.messages = [];
-  scene.mode = 'mySect';
+  scene.core.inFamily = true;
+  scene.core.myFamilyRole = 'leader'; // isFamilyLeader — shows the "Leave" bottom-bar button when not sect leader
+  scene.core.sect = sect;
+  scene.core.messages = [];
+  scene.core.mode = 'mySect';
   scene.render();
   return scene;
 }
@@ -78,12 +78,12 @@ describe('SectScene — busy lock prevents duplicate requests', () => {
     const leaveSect = vi.fn(() => new Promise<{ ok: true }>(() => {})); // never resolves
     const scene = buildMySectScene(stubWorldApi({ leaveSect }), makeSectDetail());
 
-    void scene.doLeave();
-    void scene.doLeave(); // busy — must short-circuit before touching worldApi
+    void scene.actions.doLeave();
+    void scene.actions.doLeave(); // busy — must short-circuit before touching worldApi
     await Promise.resolve();
 
     expect(leaveSect).toHaveBeenCalledTimes(1);
-    expect(scene.bt.busy).toBe(true);
+    expect(scene.core.bt.busy).toBe(true);
   });
 
   it('doDissolve: unlocks and re-renders once the request resolves', async () => {
@@ -91,11 +91,11 @@ describe('SectScene — busy lock prevents duplicate requests', () => {
     const sect = makeSectDetail({ leaderId: 'me' });
     const scene = buildMySectScene(stubWorldApi({ dissolveSect }), sect, 'me'); // cb.myAccountId === leaderId → isSectLeader
 
-    await scene.doDissolve();
+    await scene.actions.doDissolve();
 
     expect(dissolveSect).toHaveBeenCalledTimes(1);
-    expect(scene.bt.busy).toBe(false);
-    expect(scene.mode).toBe('noSect'); // doDissolve's success path
+    expect(scene.core.bt.busy).toBe(false);
+    expect(scene.core.mode).toBe('noSect'); // doDissolve's success path
   });
 });
 
@@ -107,14 +107,14 @@ describe('SectScene — bottom-bar button greys out while busy', () => {
 
     const pos = findLabelPos(scene.container, t('sect.leave'));
     expect(pos).not.toBeNull();
-    expect(hitUnder(scene.hitRects, pos!)).toBeDefined(); // idle: clickable
+    expect(hitUnder(scene.core.hitRects, pos!)).toBeDefined(); // idle: clickable
 
-    const pending = scene.doLeave();
-    expect(hitUnder(scene.hitRects, pos!)).toBeUndefined(); // busy: greyed out, no hit rect
+    const pending = scene.actions.doLeave();
+    expect(hitUnder(scene.core.hitRects, pos!)).toBeUndefined(); // busy: greyed out, no hit rect
 
     resolveLeave({ ok: true });
     await pending;
-    expect(hitUnder(scene.hitRects, pos!)).toBeUndefined(); // doLeave succeeded → mode flips to 'noSect', bar is gone
+    expect(hitUnder(scene.core.hitRects, pos!)).toBeUndefined(); // doLeave succeeded → mode flips to 'noSect', bar is gone
   });
 
   it('a second tap on the greyed button is a genuine no-op (hitRects has nothing to route it to)', async () => {
@@ -122,9 +122,9 @@ describe('SectScene — bottom-bar button greys out while busy', () => {
     const scene = buildMySectScene(stubWorldApi({ leaveSect }), makeSectDetail());
     const pos = findLabelPos(scene.container, t('sect.leave'))!;
 
-    void scene.doLeave();
+    void scene.actions.doLeave();
     // Simulate the input layer's hit-test during the busy window — same lookup handleDown performs.
-    const hit = hitUnder(scene.hitRects, pos);
+    const hit = hitUnder(scene.core.hitRects, pos);
     expect(hit).toBeUndefined();
     expect(leaveSect).toHaveBeenCalledTimes(1);
   });
@@ -136,14 +136,14 @@ describe('SectScene — network timeout recovers cleanly', () => {
     try {
       const leaveSect = vi.fn(() => new Promise<{ ok: true }>(() => {})); // never resolves
       const scene = buildMySectScene(stubWorldApi({ leaveSect }), makeSectDetail());
-      const showToast = vi.spyOn(scene, 'showToast');
+      const showToast = vi.spyOn(scene.core, 'showToast');
 
-      const pending = scene.doLeave();
+      const pending = scene.actions.doLeave();
       await vi.advanceTimersByTimeAsync(10_001);
       await pending;
 
       expect(showToast).toHaveBeenCalledWith(t('common.networkTimeout'), expect.anything());
-      expect(scene.bt.busy).toBe(false);
+      expect(scene.core.bt.busy).toBe(false);
     } finally {
       vi.useRealTimers();
     }
@@ -153,6 +153,6 @@ describe('SectScene — network timeout recovers cleanly', () => {
 describe('SectScene — errorMsg() classifies TimeoutError', () => {
   it('maps TimeoutError to the common.networkTimeout i18n key instead of falling through to String(e)', () => {
     const scene = buildMySectScene(stubWorldApi({}), makeSectDetail());
-    expect(scene.errorMsg(new TimeoutError())).toBe(t('common.networkTimeout'));
+    expect(scene.core.errorMsg(new TimeoutError())).toBe(t('common.networkTimeout'));
   });
 });
