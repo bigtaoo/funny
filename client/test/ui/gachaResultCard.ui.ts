@@ -64,9 +64,12 @@ function allTexts(container: PIXI.Container): string[] {
   return out;
 }
 
-/** Force the reveal overlay onto a built scene without a real draw() round-trip. */
+/** Force the reveal overlay onto a built scene without a real draw() round-trip. `reveal` lives on
+ *  the composed `core` field (2026-08-11: GachaScene converted from a mixin-chain `extends` to
+ *  composition — see claudedocs/client-modules.md's split-form priority note); the outer scene's
+ *  own private `render()` dispatcher is unaffected, still reachable the same way. */
 function reveal(scene: GachaScene, results: GachaResultEntry[]): void {
-  (scene as unknown as { reveal: GachaResultEntry[] | null }).reveal = results;
+  (scene as unknown as { core: { reveal: GachaResultEntry[] | null } }).core.reveal = results;
   (scene as unknown as { render(): void }).render();
 }
 
@@ -141,9 +144,8 @@ describe('GachaScene — skin result card resolves its dedicated portrait, not t
 
 describe('GachaScene — legendary card border trail', () => {
   const fxOf = (s: GachaScene): Array<{ phase: number; dots: PIXI.Sprite[] }> =>
-    (s as unknown as { revealFx: Array<{ phase: number; dots: PIXI.Sprite[] }> }).revealFx;
-  const tick = (s: GachaScene, dt: number): void =>
-    (s as unknown as { update(dt: number): void }).update(dt);
+    (s as unknown as { core: { revealFx: Array<{ phase: number; dots: PIXI.Sprite[] }> } }).core.revealFx;
+  const tick = (s: GachaScene, dt: number): void => s.update(dt);
   /** (b - a) mod 1, normalised to [0, 1) — perimeter-fraction gap between two comet heads. */
   const phaseGap = (a: number, b: number): number => (((b - a) % 1) + 1) % 1;
 
@@ -187,7 +189,7 @@ describe('GachaScene — legendary card border trail', () => {
     const scene = buildGacha();
     reveal(scene, [{ itemId: 'skin_placeholder', rarity: 'legendary', duplicate: false }]);
     expect(fxOf(scene).length).toBe(2);
-    (scene as unknown as { dismissReveal(): void }).dismissReveal();
+    (scene as unknown as { core: { dismissReveal(): void } }).core.dismissReveal();
     expect(fxOf(scene).length).toBe(0);
     tick(scene, 0.5); // no-op, must not throw with an empty fx list
     scene.destroy();

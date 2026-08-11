@@ -45,7 +45,10 @@ function buildGacha(w: number, h: number, cb: Partial<GachaSceneCallbacks> = {})
 }
 
 function reveal(scene: GachaScene, results: GachaResultEntry[]): void {
-  (scene as unknown as { reveal: GachaResultEntry[] | null }).reveal = results;
+  // `reveal` (the draw-result state) lives on the composed `core` field; the outer scene's own
+  // private `reveal` field is the RevealPanel *instance* (2026-08-11 composition conversion — see
+  // claudedocs/client-modules.md's split-form priority note) — don't confuse the two.
+  (scene as unknown as { core: { reveal: GachaResultEntry[] | null } }).core.reveal = results;
   (scene as unknown as { render(): void }).render();
 }
 
@@ -77,8 +80,11 @@ function splitRows<T>(items: T[], rowSizes: number[]): T[][] {
 const avgX = (row: Array<{ x: number }>): number => row.reduce((s, p) => s + p.x, 0) / row.length;
 
 describe('GachaScene — reveal grid rowSizesFor() (2026-08-10: portrait diamond, landscape unchanged)', () => {
+  // `rowSizesFor` is private on the RevealPanel domain class, held as the outer scene's private
+  // `reveal` field (2026-08-11 composition conversion — see claudedocs/client-modules.md's
+  // split-form priority note).
   const rowSizesOf = (scene: GachaScene, n: number): number[] =>
-    (scene as unknown as { rowSizesFor(n: number): number[] }).rowSizesFor(n);
+    (scene as unknown as { reveal: { rowSizesFor(n: number): number[] } }).reveal.rowSizesFor(n);
 
   it('portrait ten-pull: 3/4/3', () => {
     const { scene } = buildGacha(...PORTRAIT);

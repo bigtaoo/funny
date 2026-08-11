@@ -32,13 +32,18 @@ function buildGacha(drawResult: GachaDrawResult): GachaScene {
   return new GachaScene(createLayout(1920, 1080), new InputManager(), cb);
 }
 
-/** Drive a real draw() + reveal-dismiss round trip via the scene's private handlers (no public API for this — mirrors gachaResultCard.ui.ts's direct-field-access approach). */
+/** Drive a real draw() + reveal-dismiss round trip via the scene's private handlers (no public API
+ *  for this — mirrors gachaResultCard.ui.ts's direct-field-access approach). `pools`/`onDraw`/
+ *  `dismissReveal` live on the composed `core` field (2026-08-11: GachaScene converted from a
+ *  mixin-chain `extends` to composition — see claudedocs/client-modules.md's split-form priority
+ *  note), not flattened onto the outer scene instance any more. */
 async function drawThenDismiss(scene: GachaScene): Promise<void> {
+  const core = (scene as unknown as { core: { pools: unknown[]; onDraw(count: 1 | 10): Promise<void>; dismissReveal(): void } }).core;
   // The constructor kicks off loadPools() without awaiting it (fire-and-forget); onDraw no-ops
   // without a resolved pool, so force one directly rather than racing the real async load.
-  (scene as unknown as { pools: unknown[] }).pools = [{ id: 'standard', name: 'Standard', costSingle: 150, costTen: 1350, entries: [] }];
-  await (scene as unknown as { onDraw(count: 1 | 10): Promise<void> }).onDraw(10);
-  (scene as unknown as { dismissReveal(): void }).dismissReveal();
+  core.pools = [{ id: 'standard', name: 'Standard', costSingle: 150, costTen: 1350, entries: [] }];
+  await core.onDraw(10);
+  core.dismissReveal();
 }
 
 describe('GachaScene — inventory-full overflow toast', () => {
@@ -124,7 +129,7 @@ describe('GachaScene — inventory-full overflow toast', () => {
     });
     await drawThenDismiss(scene); // first draw: overflow present, dismissed and toasted
     const spy = vi.spyOn(log, 'showToastMessage');
-    (scene as unknown as { cb: GachaSceneCallbacks }).cb.draw = async () => ({
+    (scene as unknown as { core: { cb: GachaSceneCallbacks } }).core.cb.draw = async () => ({
       ok: true,
       results: [],
       overflow: { cardMailed: 0, cardCompensatedCoins: 0, equipMailed: 0, equipCompensatedCoins: 0 },
