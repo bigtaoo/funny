@@ -18,7 +18,7 @@
 | 副标题/一句话 | 笔记本里的回合策略战争 | Turn-based strategy in a notebook | Rundenstrategie im Notizbuch |
 | 简短描述 | 在手绘笔记本世界里排兵布阵，东西两本笔记的策略对决。战役 PvE + 实时联机 PvP + 大世界 SLG。 | Command armies in a hand-drawn notebook world — an East-meets-West strategy duel. Campaign PvE + real-time PvP + open-world SLG. | Befehlige Armeen in einer handgezeichneten Notizbuchwelt — ein Strategieduell zwischen Ost und West. Kampagne-PvE + Echtzeit-PvP + Open-World-SLG. |
 
-> 长描述（每渠道字数上限不同）以简短描述为基底扩写，强调：手绘笔记本美术、回合策略深度、战役剧情（陶 vs Anna 东西碰撞）、联机对战、养成（不破坏 PvP 公平）。**避免**「赌博/博彩」类措辞（盲盒措辞统一为「付费随机道具」并指向概率公示）。
+> 长描述（每渠道字数上限不同）以简短描述为基底扩写，强调：手绘笔记本美术、回合策略深度、战役剧情（涛 vs Anna 东西碰撞）、联机对战、养成（不破坏 PvP 公平）。**避免**「赌博/博彩」类措辞（盲盒措辞统一为「付费随机道具」并指向概率公示）。
 
 ### 0.2 关键词 / 标签（待各渠道适配）
 策略, 回合制, 联机对战, 笔记本, 手绘, 战棋 / strategy, turn-based, multiplayer, notebook, hand-drawn, tactics / Strategie, rundenbasiert, Mehrspieler, Notizbuch, Taktik

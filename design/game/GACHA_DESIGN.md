@@ -303,7 +303,7 @@ GachaScene 顶部区域只有 4 个彩色圆点（common/rare/epic/legendary）�
 
 | 文件 | 设计要求 |
 |---|---|
-| `banner_limited_01.png` | 横幅大图，约 900×340px（适配手机/平板横屏），左半角色立绘（首期 = 陶的限定皮肤「墨迹上将」或类似），右半池名 + 限定标签（红色"限定"印章）；笔记本页面背景，手绘笔触风格 |
+| `banner_limited_01.png` | 横幅大图，约 900×340px（适配手机/平板横屏），左半角色立绘（首期 = 涛的限定皮肤「墨迹上将」或类似），右半池名 + 限定标签（红色"限定"印章）；笔记本页面背景，手绘笔触风格 |
 
 ### 9.5 【P1 · 限定池上线前】物品图标
 
@@ -328,9 +328,9 @@ GachaScene 顶部区域只有 4 个彩色圆点（common/rare/epic/legendary）�
 
 | 物品 id | 渠道 | 角色 / 兵种 | 稀有度 | 图标设计要求 |
 |---|---|---|---|---|
-| `skin_shop_c1` | 商店直卖 300 | 李川 / Infantry | common | 陶方，灰白调 |
-| `skin_shop_r1` | 商店直卖 800 | 苏远 / Archer | rare | 陶方，蓝色调 |
-| `skin_shop_e1` | 商店直卖 1800 | 陈守 / ShieldBearer | epic | 陶方，紫色调 |
+| `skin_shop_c1` | 商店直卖 300 | 李川 / Infantry | common | 涛方，灰白调 |
+| `skin_shop_r1` | 商店直卖 800 | 苏远 / Archer | rare | 涛方，蓝色调 |
+| `skin_shop_e1` | 商店直卖 1800 | 陈守 / ShieldBearer | epic | 涛方，紫色调 |
 | `skin_e1` | 抽卡（标准池 epic） | Lena | epic | Anna 方，橙色调（原紫色调，2026-08-09 改色） |
 | `skin_e2` | 抽卡（标准池 epic） | Mara | epic | Anna 方，橙色调（原紫色调，2026-08-09 改色） |
 | `skin_l1` | 抽卡（标准池 legendary） | Max（旗舰） | legendary | Anna 方，橙色调（原金米调，2026-08-09 改色） |

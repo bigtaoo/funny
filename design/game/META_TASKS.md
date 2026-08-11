@@ -329,7 +329,7 @@
 ### 其余确认缺口
 
 - [x] **S4-4 PvE 三振出局封禁** ✅（2026-06-29）：pveClear 增加 `accounts.flags.banned` 检查（管理员手动封号即时生效）；pveVerify 开头增加 `pveBanned` 检查（被封账号无法补传录像）；新增 `POST /internal/accounts/:id/ban` + `unban` 内部端点；admin 层 `POST /admin/accounts/:id/ban` + `unban` 代理（需 `anticheat.action` 权限，super/ops 拥有）；AuditAction 补 `account.ban`/`account.unban`；`shared/admin` 新增 `anticheat.action` 权限；单测 +6（ban/unban 端点）+ e2e 补三振封禁用例。171 单测绿。
-- [x] **皮肤 .tao 资产（上线目录 6 款）** ✅（2026-07-30）：换肤管线（S3-4）+ 6 款全部绑骨接入 `SKIN_ASSETS`——陶三商店直卖（`skin_shop_c1/r1/e1` → Infantry/Archer/ShieldBearer）+ Anna 三抽卡（`skin_e1`→Lena / `skin_e2`→Mara epic，`skin_l1`→Max legendary）。目录见 `GACHA_DESIGN §9.5`，接线见 `UnitView.ts:72-79 SKIN_ASSETS`；6 份 `.tao` + `.tao.editor` 源工程在 `art/skins/{infantry,archer,shieldbearer,lena,mara,max}/`。commit `614d4432`「rig and wire all 6 launch skins into SKIN_ASSETS/shop art」。占位 SKU（`skin_c1~c4`/`skin_r1~r3`）已从 `economy.ts` 删除。
+- [x] **皮肤 .tao 资产（上线目录 6 款）** ✅（2026-07-30）：换肤管线（S3-4）+ 6 款全部绑骨接入 `SKIN_ASSETS`——涛三商店直卖（`skin_shop_c1/r1/e1` → Infantry/Archer/ShieldBearer）+ Anna 三抽卡（`skin_e1`→Lena / `skin_e2`→Mara epic，`skin_l1`→Max legendary）。目录见 `GACHA_DESIGN §9.5`，接线见 `UnitView.ts:72-79 SKIN_ASSETS`；6 份 `.tao` + `.tao.editor` 源工程在 `art/skins/{infantry,archer,shieldbearer,lena,mara,max}/`。commit `614d4432`「rig and wire all 6 launch skins into SKIN_ASSETS/shop art」。占位 SKU（`skin_c1~c4`/`skin_r1~r3`）已从 `economy.ts` 删除。
 - [x] **worldsvc publicId 解析** ✅（2026-06-30）：`getMap`/`getTile`/`pushTile`/`under_attack` 已有 meta.getProfile 反查；本次修复 `sect_msg`/`nation_msg` push payload 的 `fromPublicId` 仍用 accountId 的缺口——`SectService` 和 `NationChannelService` 各加 `meta?: WorldMetaClient` dep，`sendMessage` best-effort 解析 publicId，无 meta 时 fallback 空字符串；index.ts 接线；新增测试 `nation-channel.e2e.test.ts` + sect 追加用例。
 - [x] **实时赛季号下行** ✅（2026-07-01）：`createAppCore.ts` 已动态调用 `worldApi.getActiveSeason()`，`CURRENT_SEASON` 硬编码已去掉，赛季号由 metaserver 下行。
 - [x] **VFX `emitter` 图元** ✅（2026-08-03）：`client/src/render/vfx/{types,primitives}.ts` 实现为纯矢量粒子群（无位图资产），见 `design/tools/vfx-editor/DESIGN.md` §13；vfx-editor 已接入。
@@ -351,7 +351,7 @@
 
 ## CC — 角色卡实例系统（Hero Roster）（CHARACTER_CARDS_DESIGN.md）
 
-> 拍板 2026-07-01：角色卡为独立实例（Hero Roster），6 张卡（陶 3 + Anna 3），等级 1–9 XP 曲线（cost = 5^n），装备槽移入卡实例，SaveData v4，PvP 硬墙不动。详见 `CHARACTER_CARDS_DESIGN.md`。
+> 拍板 2026-07-01：角色卡为独立实例（Hero Roster），6 张卡（涛 3 + Anna 3），等级 1–9 XP 曲线（cost = 5^n），装备槽移入卡实例，SaveData v4，PvP 硬墙不动。详见 `CHARACTER_CARDS_DESIGN.md`。
 >
 > **阶段依赖**：CC-1（类型层）← CC-2（metaserver CRUD）← CC-3（UI + 引擎接线）← CC-4（SLG 兵力）。
 

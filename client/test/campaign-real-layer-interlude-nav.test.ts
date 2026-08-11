@@ -1,5 +1,5 @@
 // End-to-end regression for the chapter-end "real layer" interlude wiring (world.md「章末真实
-// 层：陶与 Anna」): a REAL win, through the production nav (createAppCore -> lobby -> campaign
+// 层：涛与 Anna」): a REAL win, through the production nav (createAppCore -> lobby -> campaign
 // map -> level prep -> goCampaign -> onGameEnd -> ResultScene -> IllustratedInterludeScene ->
 // back to the map), not just resolveRealLayerInterlude's unit-level branching
 // (realLayerInterlude.test.ts).

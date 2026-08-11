@@ -95,7 +95,7 @@
 ### ✅ A6  Anna 侧三角色（依赖 A1/A2，美术并行）
 
 **引擎**（不依赖美术）：
-- `config.ts` 新增 Max / Lena / Mara 三单位定义（数值锚点参照对位陶卡，各有一条差异化机制）。
+- `config.ts` 新增 Max / Lena / Mara 三单位定义（数值锚点参照对位涛卡，各有一条差异化机制）。
 - Max：`burstOnSingle: true`（出 1 强单体）；Lena：`disciplineArmor: 8`（固定减伤）；Mara：`markEnemies: true`（标记增伤）。
 - PvE Ch2/4/6 通关奖励写 `pveRewards.ts`。
 

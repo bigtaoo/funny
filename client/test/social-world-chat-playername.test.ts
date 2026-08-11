@@ -62,9 +62,9 @@ function buildCtx(overrides: { playerName: string; publicId: string }): AppCtx {
 
 describe('regression: world-chat sender name must be the nickname, not the public id', () => {
   it("the world-tab playerName callback returns ctx.playerName(), not storage's public-id key", () => {
-    const { cb } = buildCtx({ playerName: '陶大人', publicId: '233784986' }) as unknown as { cb: FriendsSceneCallbacks };
+    const { cb } = buildCtx({ playerName: '涛大人', publicId: '233784986' }) as unknown as { cb: FriendsSceneCallbacks };
 
-    expect(cb.playerName?.()).toBe('陶大人');
+    expect(cb.playerName?.()).toBe('涛大人');
     // Must never fall back to exposing the raw numeric public id as the display name.
     expect(cb.playerName?.()).not.toBe('233784986');
   });

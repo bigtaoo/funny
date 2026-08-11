@@ -203,7 +203,7 @@
 ### 5.1 作者欢迎邮件（打破第四面墙，一次性）
 
 - **触发**：玩家生涯**首次真正通关一关**（`progress.cleared` 从空到非空，即 `pveClear` 结算前 `cur.progress.cleared.length === 0`）。教学关 `ch0_tutorial` 不计入 `progress`（§2），所以对正常 FTUE 路径而言，这封信会在**教学关之后、通关 `ch1_lv1` 时**首次触发，不是教学关本身。
-- **内容与身份**：以真实作者「陶」的第一人称写一封短信——感谢玩家体验《Notebook Wars》、探索这个故事，欢迎任何反馈与交流，附联系邮箱 `tao@gamestao.com`。这封信是**打破第四面墙**的手法（呼应世界观：叙事里「陶」本身也是这个游戏的作者，见 [`../product/world.md`](../product/world.md) 尾声），不与战役剧情文案（[`CAMPAIGN_STORY.md`](CAMPAIGN_STORY.md)）混同——邮件文案权威在本节，不进 CAMPAIGN_STORY。
+- **内容与身份**：以真实作者「涛」的第一人称写一封短信——感谢玩家体验《Notebook Wars》、探索这个故事，欢迎任何反馈与交流，附联系邮箱 `tao@gamestao.com`。这封信是**打破第四面墙**的手法（呼应世界观：叙事里「涛」本身也是这个游戏的作者，见 [`../product/world.md`](../product/world.md) 尾声），不与战役剧情文案（[`CAMPAIGN_STORY.md`](CAMPAIGN_STORY.md)）混同——邮件文案权威在本节，不进 CAMPAIGN_STORY。
 - **机制**：复用现有系统邮件通道（[`SOCIAL_SVC_DESIGN.md`](SOCIAL_SVC_DESIGN.md) §3.3），走 metaserver 内部 `insertSystemMail` 直调（同进程，不经 HTTP），dispatchKey 固定 `welcome.author`（`${dispatchKey}:${accountId}` 幂等，客户端重试/多端不会重复发信）。**最佳努力（best-effort）**：发信失败只记日志，不阻塞关卡结算响应，也不影响材料/卡牌/成就等正常发奖。
 - **附件**：金币 ×1000（一次性 faucet，数字见 [`ECONOMY_BALANCE.md`](ECONOMY_BALANCE.md) §2.4 同级别一次性奖励口径），`expireDays: 30`（超时未领与其它系统邮件一致过期）。
 - **与反馈入口解耦**：这封信与「游戏内反馈入口」（[`UI_DESIGN.md`](UI_DESIGN.md) 大厅入口一节）是两件独立的事——反馈入口常驻可用，不依赖玩家是否读过/领取过这封信。

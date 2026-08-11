@@ -9,7 +9,7 @@ import type { TranslationKey } from '../i18n';
 
 /**
  * Chapter-end "real layer" interlude art — Tao/Anna's real-world relationship beats running
- * alongside the six-chapter campaign (world.md「章末真实层：陶与 Anna」). Keyed by chapter
+ * alongside the six-chapter campaign (world.md「章末真实层：涛与 Anna」). Keyed by chapter
  * number (1-6); each chapter's last level (`chN_lv10.json`) carries the matching
  * `story.realLayerKey` i18n key (see `LevelDefinition.ts`). Prompts + design notes in
  * `chapter-interlude-art-prompts.md`.

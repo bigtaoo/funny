@@ -208,7 +208,7 @@ No text (leave blank for text overlay), no gradients, no digital effects.
 ### 10. `banner_limited_01.png` — 首期限定 Banner
 
 > 尺寸：**900×340px**（约 8:3 横版），Midjourney 参数：`--ar 8:3`
-> 首期限定主题：陶的限定皮肤（名字待定，以"墨迹上将"为占位）
+> 首期限定主题：涛的限定皮肤（名字待定，以"墨迹上将"为占位）
 > 左半角色立绘区 + 右半文字区（文字用程序叠加，prompt 里留空白）
 
 ```
@@ -271,9 +271,9 @@ Bold ink outlines, minimal detail, stationery/notebook aesthetic.
 ```
 
 > 替换 `[具体物品描述]` 和 `[主色调]`（上线皮肤目录 6 款，每角色 1 款，见 `GACHA_DESIGN §9.5`）：
-> - `skin_shop_c1`（陶·李川/Infantry，商店 common）：`a simple stickman soldier drawn in pencil`, `gray pencil`
-> - `skin_shop_r1`（陶·苏远/Archer，商店 rare）：`a neat stickman archer with fountain pen details`, `royal blue`
-> - `skin_shop_e1`（陶·陈守/ShieldBearer，商店 epic）：`an elaborate stickman shield bearer with marker-drawn armor`, `deep purple`
+> - `skin_shop_c1`（涛·李川/Infantry，商店 common）：`a simple stickman soldier drawn in pencil`, `gray pencil`
+> - `skin_shop_r1`（涛·苏远/Archer，商店 rare）：`a neat stickman archer with fountain pen details`, `royal blue`
+> - `skin_shop_e1`（涛·陈守/ShieldBearer，商店 epic）：`an elaborate stickman shield bearer with marker-drawn armor`, `deep purple`
 > - `skin_e1`（Anna·Lena，抽卡 epic）：`an elaborate sentinel warrior with marker-drawn detail`, `orange`（2026-08-09 改色，原 `deep purple`）
 > - `skin_e2`（Anna·Mara，抽卡 epic）：`a sleek marksman with marker-drawn detail`, `orange`（2026-08-09 改色，原 `deep purple`）
 > - `skin_l1`（Anna·Max，抽卡 legendary·旗舰）：`a majestic armored commander with gold ink details`, `orange`（2026-08-09 改色，原 `gold and cream`）
