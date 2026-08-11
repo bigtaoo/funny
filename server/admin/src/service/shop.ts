@@ -9,7 +9,7 @@ import {
   type SlgShopItem,
   type SlgShopItemOverrideDoc,
 } from '@nw/shared';
-import type { Actor, AdminBaseCtor, Constructor } from './base';
+import type { Actor, AdminCore } from './base';
 import { AdminError } from './errors';
 import { validateShopItemInput, describeShopItem } from './validators';
 
@@ -25,8 +25,9 @@ export interface ShopHandlers {
   ): Promise<SlgShopItemOverrideDoc>;
 }
 
-export function ShopMixin<TBase extends AdminBaseCtor>(Base: TBase): TBase & Constructor<ShopHandlers> {
-  return class extends Base {
+export class ShopService {
+  constructor(private readonly core: AdminCore) {}
+
     // ───────────────────── SLG shop price overrides (§8/G7) ─────────────────────
 
     /**
@@ -36,7 +37,7 @@ export function ShopMixin<TBase extends AdminBaseCtor>(Base: TBase): TBase & Con
     async getShopConfig(): Promise<
       Array<{ id: string; default: SlgShopItem; effective: SlgShopItem; doc: SlgShopItemOverrideDoc | null }>
     > {
-      const docs = await this.cols.slgShopPrices.find({}).toArray();
+      const docs = await this.core.cols.slgShopPrices.find({}).toArray();
       const byId = new Map(docs.map((d) => [d._id, d]));
       return SLG_SHOP_ITEMS.map((item) => {
         const doc = byId.get(item.id) ?? null;
@@ -53,7 +54,7 @@ export function ShopMixin<TBase extends AdminBaseCtor>(Base: TBase): TBase & Con
 
     /** All raw shop price overrides (for the admin internal endpoint GET /admin/internal/slg-shop-prices; returned as-is for worldsvc to merge locally). */
     async getInternalShopPrices(): Promise<SlgShopItemOverrideDoc[]> {
-      return this.cols.slgShopPrices.find({}).toArray();
+      return this.core.cols.slgShopPrices.find({}).toArray();
     }
 
     /**
@@ -74,21 +75,20 @@ export function ShopMixin<TBase extends AdminBaseCtor>(Base: TBase): TBase & Con
       input: { cost?: unknown; effect?: unknown },
     ): Promise<SlgShopItemOverrideDoc> {
       if (!isSlgShopItemId(id)) throw new AdminError(400, 'bad_request', `unknown shop item id: ${id}`);
-      const before = await this.cols.slgShopPrices.findOne({ _id: id });
+      const before = await this.core.cols.slgShopPrices.findOne({ _id: id });
       const { cost, effect } = validateShopItemInput(input);
       const doc: SlgShopItemOverrideDoc = {
         _id: id,
         ...(cost !== undefined ? { cost } : {}),
         ...(effect ? { effect } : {}),
-        updatedAt: this.now(),
+        updatedAt: this.core.now(),
         updatedBy: actor.adminId,
       };
-      await this.cols.slgShopPrices.replaceOne({ _id: id }, doc, { upsert: true });
-      await this.audit(actor.adminId, 'slg.shop.price.update', {
+      await this.core.cols.slgShopPrices.replaceOne({ _id: id }, doc, { upsert: true });
+      await this.core.audit(actor.adminId, 'slg.shop.price.update', {
         target: id,
         summary: `${describeShopItem(before)} → ${describeShopItem(doc)}`,
       });
       return doc;
     }
-  };
 }

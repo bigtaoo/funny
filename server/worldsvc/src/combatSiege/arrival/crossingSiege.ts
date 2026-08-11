@@ -3,13 +3,13 @@
 // Reuses occupationBattle.ts's resolveOccupationBattle/writeOccupyCardState — see strongholdSiege.ts's
 // header comment for why this is safe (identical NPC-garrison battle-resolution logic). Takes `core`
 // (a plain WorldCore instance) and `ctx` (the assembled SiegeService, typed narrowly as
-// SiegeServiceBase). No behavior change.
+// SiegeCtx). No behavior change.
 import type { ProceduralTile } from '@nw/shared';
 import { passageGarrison } from '@nw/shared';
 import type { PlayerWorldDoc, MarchDoc } from '../../db';
 import type { WorldCore } from '../../core';
 import { refundTroops, startReturnMarch, parkMarchInPlace } from '../../combatShared';
-import type { SiegeServiceBase } from '../base';
+import type { SiegeCtx } from '../ctx';
 import { resolveOccupationBattle, writeOccupyCardState } from '../occupationBattle';
 
 /**
@@ -23,7 +23,7 @@ import { resolveOccupationBattle, writeOccupyCardState } from '../occupationBatt
  */
 export async function applyCrossingSiege(
   core: WorldCore,
-  ctx: SiegeServiceBase,
+  ctx: SiegeCtx,
   m: MarchDoc,
   pw: PlayerWorldDoc,
   t: number,

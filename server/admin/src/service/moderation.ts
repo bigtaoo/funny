@@ -4,7 +4,7 @@
 // the DB + audit; metaserver/socialsvc/worldsvc (no DB connection to admin) poll getInternalWordlists()
 // to retrieve raw overlays and merge them onto REGION_WORDLISTS locally (WordlistCache.wordsFor, additive).
 import { REGION_WORDLISTS, type ChatRegion, type WordlistOverrideDoc } from '@nw/shared';
-import type { Actor, AdminBaseCtor, Constructor } from './base';
+import type { Actor, AdminCore } from './base';
 import { AdminError } from './errors';
 
 const CHAT_REGIONS: readonly ChatRegion[] = ['global', 'cn', 'de', 'en'];
@@ -41,10 +41,11 @@ export interface ModerationHandlers {
   removeWord(actor: Actor, region: string, word: string): Promise<WordlistOverrideDoc>;
 }
 
-export function ModerationMixin<TBase extends AdminBaseCtor>(Base: TBase): TBase & Constructor<ModerationHandlers> {
-  return class extends Base {
+export class ModerationService {
+  constructor(private readonly core: AdminCore) {}
+
     async getWordlistConfig(): Promise<ModerationWordlistView[]> {
-      const docs = await this.cols.moderationWordlists.find({}).toArray();
+      const docs = await this.core.cols.moderationWordlists.find({}).toArray();
       const byRegion = new Map(docs.map((d) => [d._id, d]));
       return CHAT_REGIONS.map((region) => {
         const doc = byRegion.get(region);
@@ -58,17 +59,17 @@ export function ModerationMixin<TBase extends AdminBaseCtor>(Base: TBase): TBase
     }
 
     async getInternalWordlists(): Promise<WordlistOverrideDoc[]> {
-      return this.cols.moderationWordlists.find({}).toArray();
+      return this.core.cols.moderationWordlists.find({}).toArray();
     }
 
     async addWord(actor: Actor, regionRaw: string, wordRaw: string): Promise<WordlistOverrideDoc> {
       if (!isChatRegion(regionRaw)) throw new AdminError(400, 'bad_request', `unknown region: ${regionRaw}`);
       const word = validateWord(wordRaw).toLowerCase();
-      const before = await this.cols.moderationWordlists.findOne({ _id: regionRaw });
+      const before = await this.core.cols.moderationWordlists.findOne({ _id: regionRaw });
       const words = before ? [...new Set([...before.words, word])] : [word];
-      const doc: WordlistOverrideDoc = { _id: regionRaw, words, updatedAt: this.now(), updatedBy: actor.adminId };
-      await this.cols.moderationWordlists.replaceOne({ _id: regionRaw }, doc, { upsert: true });
-      await this.audit(actor.adminId, 'moderation.wordlist.update', {
+      const doc: WordlistOverrideDoc = { _id: regionRaw, words, updatedAt: this.core.now(), updatedBy: actor.adminId };
+      await this.core.cols.moderationWordlists.replaceOne({ _id: regionRaw }, doc, { upsert: true });
+      await this.core.audit(actor.adminId, 'moderation.wordlist.update', {
         target: regionRaw,
         summary: `+"${word}" (${words.length} words)`,
       });
@@ -78,15 +79,14 @@ export function ModerationMixin<TBase extends AdminBaseCtor>(Base: TBase): TBase
     async removeWord(actor: Actor, regionRaw: string, wordRaw: string): Promise<WordlistOverrideDoc> {
       if (!isChatRegion(regionRaw)) throw new AdminError(400, 'bad_request', `unknown region: ${regionRaw}`);
       const word = validateWord(wordRaw).toLowerCase();
-      const before = await this.cols.moderationWordlists.findOne({ _id: regionRaw });
+      const before = await this.core.cols.moderationWordlists.findOne({ _id: regionRaw });
       const words = (before?.words ?? []).filter((w) => w !== word);
-      const doc: WordlistOverrideDoc = { _id: regionRaw, words, updatedAt: this.now(), updatedBy: actor.adminId };
-      await this.cols.moderationWordlists.replaceOne({ _id: regionRaw }, doc, { upsert: true });
-      await this.audit(actor.adminId, 'moderation.wordlist.update', {
+      const doc: WordlistOverrideDoc = { _id: regionRaw, words, updatedAt: this.core.now(), updatedBy: actor.adminId };
+      await this.core.cols.moderationWordlists.replaceOne({ _id: regionRaw }, doc, { upsert: true });
+      await this.core.audit(actor.adminId, 'moderation.wordlist.update', {
         target: regionRaw,
         summary: `-"${word}" (${words.length} words)`,
       });
       return doc;
     }
-  };
 }

@@ -1,7 +1,19 @@
-// Shared foundation for the MetaService mixin chain (see ./index assembly in ../service.ts).
-// MetaServiceBase holds `deps` + the genuinely cross-cutting helpers used by more than one domain
-// mixin; each business domain lives in its own sibling file as an `XMixin(Base)` and is chained
-// together into the final MetaService. Domain-local state/helpers stay in their own mixin file.
+// Shared foundation for the MetaService domain classes (see ../service.ts assembly).
+// MetaCore holds `deps` + the genuinely cross-cutting helpers used by more than one domain; each
+// business domain lives in its own sibling file as an independent class taking `(core: MetaCore)` in
+// its constructor (2026-08-11 mixin-chain split, claudedocs/server.md's "拆分形态的优先级" 形态②/
+//独立类+组合). The methods below were `protected` on the old MetaServiceBase — that visibility was
+// exactly why pve.ts/liveops.ts/economy.ts/auth.ts (2026-08-10) couldn't use independent-class-
+// composition and had to fall back to a `.bind(this)`-into-a-plain-ctx-object workaround instead: a
+// `protected` member can't be assigned to any wider/interface-shaped type from outside the class's own
+// inheritance chain, no matter where the read happens. Now that MetaCore is a genuine sibling-holding
+// pattern (not an inheritance chain), these are plain PUBLIC methods — `this.core.mutateSave(...)` etc.
+// just work, no bind/ctx needed for the 5 domains converted directly in this batch (save/inventory/
+// progression/social/telemetry). The 4 domains that already built their own ctx-bind + free-function
+// split (auth/pve/economy/liveops) keep that shape unchanged for this batch — their ctx objects now bind
+// to `this.core` instead of the inherited `this` — removing that scaffolding entirely (now that the
+// protected-member wall it was built to route around no longer exists) is a follow-up simplification,
+// not required for this batch's goal (mixin chain → composition, zero behavior change).
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import type { Collections, JwtConfig, SaveData, FeatureFlagCache, RedisLike, WordlistCache } from '@nw/shared';
 import { ErrorCode, err, accrueRetentionTask, getActiveMatch } from '@nw/shared';
@@ -43,11 +55,6 @@ export interface ServiceDeps {
   accountCache: AccountCache;
 }
 
-// ── Mixin plumbing ────────────────────────────────────────────────────────────
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export type Constructor<T = object> = new (...args: any[]) => T;
-export type MetaBaseCtor = Constructor<MetaServiceBase>;
-
 // ── Stamina system constants (A4) — shared by base.readStaminaSnapshot + PveMixin.deductStamina. ──
 export const STAMINA_CAP = 120;
 export const STAMINA_REGEN_MS = 6 * 60 * 1000; // 6 min per point
@@ -71,16 +78,15 @@ export function clientPlatformOf(req: FastifyRequest): string | undefined {
   return typeof h === 'string' && h ? h : undefined;
 }
 
-export class MetaServiceBase {
-  protected readonly deps: ServiceDeps;
+export class MetaCore {
+  readonly deps: ServiceDeps;
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  constructor(...args: any[]) {
-    this.deps = args[0] as ServiceDeps;
+  constructor(deps: ServiceDeps) {
+    this.deps = deps;
   }
 
   /** Public WebSocket address of the gateway (only sent if configured). Clients use this to connect to the control plane without hardcoding the gateway address. */
-  protected get gatewayField(): { gatewayUrl?: string } {
+  get gatewayField(): { gatewayUrl?: string } {
     return this.deps.gatewayPublicUrl ? { gatewayUrl: this.deps.gatewayPublicUrl } : {};
   }
 
@@ -89,13 +95,13 @@ export class MetaServiceBase {
    * (written by matchsvc at match start, cleared by /internal/match/report at match end). Absent when
    * Redis is unconfigured or there is no active match for this account.
    */
-  protected async activeMatchFieldFor(accountId: string): Promise<{ activeMatch?: import('@nw/shared').ActiveMatchRecord }> {
+  async activeMatchFieldFor(accountId: string): Promise<{ activeMatch?: import('@nw/shared').ActiveMatchRecord }> {
     const record = await getActiveMatch(this.deps.redis, accountId);
     return record ? { activeMatch: record } : {};
   }
 
   /** Economy endpoints are unavailable when commercial is not configured (503). */
-  protected ensureCommercial(reply: FastifyReply): boolean {
+  ensureCommercial(reply: FastifyReply): boolean {
     if (this.deps.commercial.available) return true;
     reply.code(503).send(err(ErrorCode.NOT_IMPLEMENTED, 'commercial service unavailable'));
     return false;
@@ -103,7 +109,7 @@ export class MetaServiceBase {
 
   /** C4/C5-b/CM6: Check account-level ban / temp-ban / soft-delete flags; if flagged, reject the request and return true.
    *  Cached (2026-07-27, accountCache.ts) — a cache hit skips the Mongo round trip entirely. */
-  protected async rejectIfBanned(cols: ServiceDeps['cols'], accountId: string, reply: FastifyReply): Promise<boolean> {
+  async rejectIfBanned(cols: ServiceDeps['cols'], accountId: string, reply: FastifyReply): Promise<boolean> {
     const status = await this.deps.accountCache.getBanStatus(cols, accountId);
     if (status.deletedAt) {
       void reply.code(410).send(err(ErrorCode.ACCOUNT_DELETED, 'account deleted'));
@@ -122,7 +128,7 @@ export class MetaServiceBase {
   }
 
   /** Optimistic-lock read-modify-write on the save document (rev guard + retry, same as applyPvp). transform returns the new save or a business error code string. */
-  protected async mutateSave(
+  async mutateSave(
     accountId: string,
     transform: (s: SaveData) => SaveData | string,
   ): Promise<{ save: SaveData } | { error: string }> {
@@ -155,7 +161,7 @@ export class MetaServiceBase {
   }
 
   /** Read current stamina (including natural regen calculation), used to populate the SaveData.stamina snapshot in responses. */
-  protected async readStaminaSnapshot(
+  async readStaminaSnapshot(
     accountId: string,
     now: number,
   ): Promise<{ current: number; regenAt: number }> {
@@ -174,7 +180,7 @@ export class MetaServiceBase {
   }
 
   /** B5: Idempotently record a daily task event (no-op if already recorded today, no error thrown). Callers fire-and-forget and ignore failures. */
-  protected async bumpRetentionTask(accountId: string, taskId: import('@nw/shared').DailyTaskId): Promise<void> {
+  async bumpRetentionTask(accountId: string, taskId: import('@nw/shared').DailyTaskId): Promise<void> {
     const tsMs = this.deps.now();
     await this.mutateSave(accountId, (s) => {
       const next = accrueRetentionTask(s.retention, taskId, tsMs);

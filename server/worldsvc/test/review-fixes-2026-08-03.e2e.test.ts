@@ -276,8 +276,10 @@ describe.skipIf(!mongo)('worldsvc review-fixes regression (2026-08-03)', () => {
       // path/stepIndex cursor, exactly like the stale `due[]` entry would.
       await m.collections.marches.deleteOne({ _id: 'ghost-stale-march' });
 
+      // 2026-08-11 mixin-chain split: advanceMarch moved from a private MarchService (mixin) method
+      // to a private ArrivalService (sibling class) method — reach it via the facade's `arrival` field.
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const handled = await (svc as any).combat.march.advanceMarch(staleSnapshot, now() + 1);
+      const handled = await (svc as any).combat.march.arrival.advanceMarch(staleSnapshot, now() + 1);
       expect(handled).toBe(true); // fully handled — must not be rescheduled
       expect(redis.occSize(W)).toBe(0); // no phantom occ entry registered for the deleted march
     });
@@ -301,7 +303,7 @@ describe.skipIf(!mongo)('worldsvc review-fixes regression (2026-08-03)', () => {
       );
 
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const handled = await (svc as any).combat.march.advanceMarch(staleSnapshot, now() + 1);
+      const handled = await (svc as any).combat.march.arrival.advanceMarch(staleSnapshot, now() + 1);
       expect(handled).toBe(true);
       expect(redis.occSize(W)).toBe(0);
     });

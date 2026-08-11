@@ -3,7 +3,7 @@
 import { gachaCost, customPoolCost, FATE_POINT_REDEEM_COST } from '@nw/shared';
 import type { GachaResultEntry } from '../db';
 import { rollGacha, rollCustomGacha } from '../gacha';
-import type { CommercialBaseCtor, Constructor, Result } from './base';
+import type { Result, WalletCore } from './base';
 import { effectiveCoins, spendChannelOf } from '../spendChannel';
 
 export interface GachaDrawHandlers {
@@ -31,8 +31,9 @@ export interface GachaDrawHandlers {
   }): Promise<Result<{ orderId: string; itemId: string; coinsAfter: number; fatePointsAfter: number }>>;
 }
 
-export function GachaDrawMixin<TBase extends CommercialBaseCtor>(Base: TBase): TBase & Constructor<GachaDrawHandlers> {
-  return class extends Base {
+export class GachaDrawService {
+  constructor(private readonly core: WalletCore) {}
+
     /** Gacha draw: debit coins + RNG + update pity + record order/gachaHistory. Item delivery is handled by meta. */
     async gachaDraw(args: {
       accountId: string;
@@ -55,12 +56,12 @@ export function GachaDrawMixin<TBase extends CommercialBaseCtor>(Base: TBase): T
       // replay it does a bit of unneeded work (resolvePool/ensureWallet are unused below), which is an acceptable
       // trade since replays are the rare case (client retry of an already-completed draw).
       const [existing, resolved, wallet] = await Promise.all([
-        this.cols.orders.findOne({ _id: args.orderId }),
-        this.resolvePool(args.poolId, this.now()),
-        this.ensureWallet(args.accountId),
+        this.core.cols.orders.findOne({ _id: args.orderId }),
+        this.core.resolvePool(args.poolId, this.core.now()),
+        this.core.ensureWallet(args.accountId),
       ]);
       if (existing && existing.result.results) {
-        const w = await this.cols.wallets.findOne({ _id: existing.accountId });
+        const w = await this.core.cols.wallets.findOne({ _id: existing.accountId });
         return {
           ok: true,
           orderId: existing._id,
@@ -87,12 +88,12 @@ export function GachaDrawMixin<TBase extends CommercialBaseCtor>(Base: TBase): T
       let pityAfter: number;
       let fateGained: number;
       if (resolved.kind === 'custom') {
-        results = rollCustomGacha(resolved.cfg, args.count, this.rng);
+        results = rollCustomGacha(resolved.cfg, args.count, this.core.rng);
         pityAfter = prevPity; // untouched: custom pools do not accrue pity
         fateGained = 0;
       } else {
         const pool = resolved.pool;
-        const roll = rollGacha(pool, args.count, prevPity, this.rng);
+        const roll = rollGacha(pool, args.count, prevPity, this.core.rng);
         results = roll.results;
         pityAfter = roll.pityAfter;
         // Fate points (GACHA_DESIGN §7): in a limited pool, each legendary that is NOT the featured banner is an off-banner miss → +1.
@@ -105,7 +106,7 @@ export function GachaDrawMixin<TBase extends CommercialBaseCtor>(Base: TBase): T
       // Insert-first idempotency (§6.5): reserve the orderId slot (with the rolled results) BEFORE debiting so two
       // concurrent calls with the same orderId cannot both debit. E11000 → replay the existing draw's result.
       try {
-        await this.cols.orders.insertOne({
+        await this.core.cols.orders.insertOne({
           _id: args.orderId,
           accountId: args.accountId,
           kind: 'gacha',
@@ -114,12 +115,12 @@ export function GachaDrawMixin<TBase extends CommercialBaseCtor>(Base: TBase): T
           coinsAfter: 0, // back-filled after the debit succeeds
           result: { results, poolId: args.poolId },
           pityAfter: { [args.poolId]: pityAfter },
-          ts: this.now(),
+          ts: this.core.now(),
         });
       } catch (e) {
         if ((e as { code?: number }).code === 11000) {
-          const o = await this.cols.orders.findOne({ _id: args.orderId });
-          const w = await this.cols.wallets.findOne({ _id: args.accountId });
+          const o = await this.core.cols.orders.findOne({ _id: args.orderId });
+          const w = await this.core.cols.wallets.findOne({ _id: args.accountId });
           return {
             ok: true,
             orderId: args.orderId,
@@ -134,7 +135,7 @@ export function GachaDrawMixin<TBase extends CommercialBaseCtor>(Base: TBase): T
       }
       // Debit effective balance (free pool first, then this platform's recharged bucket, ADR-020) + update pity
       // for this pool (+ credit fate points); single-document atomic op with an effective-balance $expr guard.
-      const charged = await this.debitEffective(
+      const charged = await this.core.debitEffective(
         args.accountId,
         cost,
         channel,
@@ -143,29 +144,29 @@ export function GachaDrawMixin<TBase extends CommercialBaseCtor>(Base: TBase): T
       );
       if (!charged) {
         // Insufficient funds (raced drain after the pre-check): release the reserved slot before returning.
-        await this.cols.orders.deleteOne({ _id: args.orderId });
+        await this.core.cols.orders.deleteOne({ _id: args.orderId });
         return { ok: false, error: 'INSUFFICIENT_FUNDS' };
       }
       const coinsAfter = effectiveCoins(charged, channel);
       const fatePointsAfter = charged.fatePoints ?? 0;
 
-      await this.cols.orders.updateOne({ _id: args.orderId }, { $set: { coinsAfter } });
-      await this.cols.ledger.insertOne({
+      await this.core.cols.orders.updateOne({ _id: args.orderId }, { $set: { coinsAfter } });
+      await this.core.cols.ledger.insertOne({
         accountId: args.accountId,
         delta: -cost,
         balanceAfter: coinsAfter,
         reason: 'gacha',
         orderId: args.orderId,
-        ts: this.now(),
+        ts: this.core.now(),
       });
-      await this.cols.gachaHistory.insertOne({
+      await this.core.cols.gachaHistory.insertOne({
         accountId: args.accountId,
         poolId: args.poolId,
         orderId: args.orderId,
         results,
         pityBefore: prevPity,
         pityAfter,
-        ts: this.now(),
+        ts: this.core.now(),
       });
       return { ok: true, orderId: args.orderId, coinsAfter, pityAfter, results, fateGained, fatePointsAfter };
     }
@@ -182,9 +183,9 @@ export function GachaDrawMixin<TBase extends CommercialBaseCtor>(Base: TBase): T
       orderId: string;
       clientPlatform?: string;
     }): Promise<Result<{ orderId: string; itemId: string; coinsAfter: number; fatePointsAfter: number }>> {
-      const existing = await this.cols.orders.findOne({ _id: args.orderId });
+      const existing = await this.core.cols.orders.findOne({ _id: args.orderId });
       if (existing) {
-        const w = await this.cols.wallets.findOne({ _id: existing.accountId });
+        const w = await this.core.cols.wallets.findOne({ _id: existing.accountId });
         return {
           ok: true,
           orderId: existing._id,
@@ -194,15 +195,15 @@ export function GachaDrawMixin<TBase extends CommercialBaseCtor>(Base: TBase): T
         };
       }
       // The chosen item must be the featured legendary of some limited pool (past or present).
-      const known = await this.cols.gachaPools.findOne({ featuredLegendary: args.itemId });
+      const known = await this.core.cols.gachaPools.findOne({ featuredLegendary: args.itemId });
       if (!known) return { ok: false, error: 'FATE_INVALID_ITEM' };
 
-      await this.ensureWallet(args.accountId);
+      await this.core.ensureWallet(args.accountId);
 
       // Insert-first idempotency (§6.5, mirrors gachaDraw above): reserve the orderId slot BEFORE debiting so two
       // concurrent calls with the same orderId cannot both debit fate points. E11000 → replay the existing redemption.
       try {
-        await this.cols.orders.insertOne({
+        await this.core.cols.orders.insertOne({
           _id: args.orderId,
           accountId: args.accountId,
           kind: 'fate',
@@ -210,12 +211,12 @@ export function GachaDrawMixin<TBase extends CommercialBaseCtor>(Base: TBase): T
           status: 'charged',
           coinsAfter: 0, // back-filled after the debit succeeds
           result: { itemId: args.itemId },
-          ts: this.now(),
+          ts: this.core.now(),
         });
       } catch (e) {
         if ((e as { code?: number }).code === 11000) {
-          const o = await this.cols.orders.findOne({ _id: args.orderId });
-          const w = await this.cols.wallets.findOne({ _id: args.accountId });
+          const o = await this.core.cols.orders.findOne({ _id: args.orderId });
+          const w = await this.core.cols.wallets.findOne({ _id: args.accountId });
           return {
             ok: true,
             orderId: args.orderId,
@@ -227,20 +228,20 @@ export function GachaDrawMixin<TBase extends CommercialBaseCtor>(Base: TBase): T
         throw e;
       }
 
-      const charged = await this.cols.wallets.findOneAndUpdate(
+      const charged = await this.core.cols.wallets.findOneAndUpdate(
         { _id: args.accountId, fatePoints: { $gte: FATE_POINT_REDEEM_COST } },
-        { $inc: { fatePoints: -FATE_POINT_REDEEM_COST, rev: 1 }, $set: { updatedAt: this.now() } },
+        { $inc: { fatePoints: -FATE_POINT_REDEEM_COST, rev: 1 }, $set: { updatedAt: this.core.now() } },
         { returnDocument: 'after' },
       );
       if (!charged) {
         // Insufficient fate points (raced drain after the pre-check): release the reserved slot so a later
         // retry with the same orderId isn't stuck replaying a charge that never actually happened.
-        await this.cols.orders.deleteOne({ _id: args.orderId });
+        await this.core.cols.orders.deleteOne({ _id: args.orderId });
         return { ok: false, error: 'FATE_INSUFFICIENT' };
       }
 
       const coinsAfter = effectiveCoins(charged, spendChannelOf(args.clientPlatform));
-      await this.cols.orders.updateOne({ _id: args.orderId }, { $set: { coinsAfter } });
+      await this.core.cols.orders.updateOne({ _id: args.orderId }, { $set: { coinsAfter } });
       return {
         ok: true,
         orderId: args.orderId,
@@ -249,5 +250,4 @@ export function GachaDrawMixin<TBase extends CommercialBaseCtor>(Base: TBase): T
         fatePointsAfter: charged.fatePoints ?? 0,
       };
     }
-  };
 }

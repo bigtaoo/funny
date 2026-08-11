@@ -3,7 +3,7 @@
 // endpoint (CM7's single enforcement path) in the same operation. Two calls, best-effort (no distributed
 // transaction, same pragmatic choice as TradeAuditTicketView's auto-ban — see slgAudit.ts).
 import type { ReportRow } from '../clients';
-import type { Actor, AdminBaseCtor, Constructor } from './base';
+import type { Actor, AdminCore } from './base';
 import { AdminError } from './errors';
 
 /** Reputation delta applied per upheld report (user-confirmed 2026-07-29, CONTENT_MODERATION_DESIGN.md §4.2 — single tier, not severity-scaled). */
@@ -19,13 +19,14 @@ export interface ReportsHandlers {
   ): Promise<{ reputationScore?: number; action?: string }>;
 }
 
-export function ReportsMixin<TBase extends AdminBaseCtor>(Base: TBase): TBase & Constructor<ReportsHandlers> {
-  return class extends Base {
+export class ReportsService {
+  constructor(private readonly core: AdminCore) {}
+
     /** List reports (reports.view). Defaults to 'open'. Audited (read access to reporter/target ids is itself sensitive). */
     async listReports(actor: string, opts: { status?: string; limit?: number } = {}): Promise<ReportRow[]> {
-      if (!this.reports.available) throw new AdminError(503, 'unavailable', 'social backend unavailable');
-      const rows = await this.reports.listReports(opts);
-      await this.audit(actor, 'report.review', { summary: `${rows.length} reports (status=${opts.status ?? 'open'})` });
+      if (!this.core.reports.available) throw new AdminError(503, 'unavailable', 'social backend unavailable');
+      const rows = await this.core.reports.listReports(opts);
+      await this.core.audit(actor, 'report.review', { summary: `${rows.length} reports (status=${opts.status ?? 'open'})` });
       return rows;
     }
 
@@ -49,12 +50,12 @@ export function ReportsMixin<TBase extends AdminBaseCtor>(Base: TBase): TBase & 
       accountId: string,
       resolution: 'dismissed' | 'upheld',
     ): Promise<{ reputationScore?: number; action?: string }> {
-      if (!this.reports.available) throw new AdminError(503, 'unavailable', 'social backend unavailable');
+      if (!this.core.reports.available) throw new AdminError(503, 'unavailable', 'social backend unavailable');
 
-      let row = (await this.reports.listReports({ status: 'open', limit: 1000 })).find((r) => r._id === id);
+      let row = (await this.core.reports.listReports({ status: 'open', limit: 1000 })).find((r) => r._id === id);
       let alreadyResolved = false;
       if (!row) {
-        row = (await this.reports.listReports({ status: resolution, limit: 1000 })).find((r) => r._id === id);
+        row = (await this.core.reports.listReports({ status: resolution, limit: 1000 })).find((r) => r._id === id);
         if (row) alreadyResolved = true;
       }
       if (!row) throw new AdminError(404, 'not_found', 'report not found or already resolved');
@@ -63,23 +64,22 @@ export function ReportsMixin<TBase extends AdminBaseCtor>(Base: TBase): TBase & 
       }
 
       if (!alreadyResolved) {
-        const res = await this.reports.resolveReport(id, resolution, actor.adminId);
+        const res = await this.core.reports.resolveReport(id, resolution, actor.adminId);
         if (!res.ok) throw new AdminError(404, 'not_found', 'report not found or already resolved');
       }
 
       let penalty: { reputationScore?: number; action?: string } = {};
       if (resolution === 'upheld') {
-        if (!this.enforcement.available) throw new AdminError(503, 'unavailable', 'enforcement backend unavailable');
-        const pen = await this.enforcement.applyPenalty(row.targetId, REPORT_UPHELD_PENALTY);
+        if (!this.core.enforcement.available) throw new AdminError(503, 'unavailable', 'enforcement backend unavailable');
+        const pen = await this.core.enforcement.applyPenalty(row.targetId, REPORT_UPHELD_PENALTY);
         if (!pen.ok) throw new AdminError(502, 'penalty_failed', 'report marked upheld but penalty call failed — retry');
         penalty = { reputationScore: pen.result?.reputationScore, action: pen.result?.action };
       }
 
-      await this.audit(actor.adminId, resolution === 'upheld' ? 'account.penalty' : 'report.review', {
+      await this.core.audit(actor.adminId, resolution === 'upheld' ? 'account.penalty' : 'report.review', {
         target: row.targetId,
         summary: `report ${id} → ${resolution}` + (penalty.action ? ` (${penalty.action}, score=${penalty.reputationScore})` : ''),
       });
       return penalty;
     }
-  };
 }

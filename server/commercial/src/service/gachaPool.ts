@@ -3,7 +3,7 @@
 import { findGachaPool, validateCustomPool, type LimitedPoolConfig, type CustomPoolConfig } from '@nw/shared';
 import type { GachaPoolDoc, CustomGachaPoolDoc } from '../db';
 import { isLimitedPoolActive } from '@nw/shared';
-import type { CommercialBaseCtor, Constructor, Result } from './base';
+import type { Result, WalletCore } from './base';
 
 export interface GachaPoolHandlers {
   createLimitedPool(args: { config: LimitedPoolConfig; createdBy: string }): Promise<Result<{ id: string }>>;
@@ -13,8 +13,9 @@ export interface GachaPoolHandlers {
   listActiveLimitedPools(now: number): Promise<GachaPoolDoc[]>;
 }
 
-export function GachaPoolMixin<TBase extends CommercialBaseCtor>(Base: TBase): TBase & Constructor<GachaPoolHandlers> {
-  return class extends Base {
+export class GachaPoolService {
+  constructor(private readonly core: WalletCore) {}
+
     /** Create (or overwrite) a limited pool config (admin, GACHA_DESIGN §2.2). */
     async createLimitedPool(args: {
       config: LimitedPoolConfig;
@@ -33,9 +34,9 @@ export function GachaPoolMixin<TBase extends CommercialBaseCtor>(Base: TBase): T
         endAt: c.endAt,
         ...(c.fillerLegendaries ? { fillerLegendaries: c.fillerLegendaries } : {}),
         createdBy: args.createdBy,
-        createdAt: this.now(),
+        createdAt: this.core.now(),
       };
-      await this.cols.gachaPools.replaceOne({ _id: c.id }, doc, { upsert: true });
+      await this.core.cols.gachaPools.replaceOne({ _id: c.id }, doc, { upsert: true });
       return { ok: true, id: c.id };
     }
 
@@ -51,7 +52,7 @@ export function GachaPoolMixin<TBase extends CommercialBaseCtor>(Base: TBase): T
       const c = args.config;
       if (validateCustomPool(c) !== null) return { ok: false, error: 'BAD_REQUEST' };
       if (findGachaPool(c.id)) return { ok: false, error: 'BAD_REQUEST' }; // must not shadow a static pool id
-      const prev = await this.cols.gachaPools.findOne({ _id: c.id });
+      const prev = await this.core.cols.gachaPools.findOne({ _id: c.id });
       const doc: CustomGachaPoolDoc = {
         _id: c.id,
         kind: 'custom',
@@ -63,16 +64,16 @@ export function GachaPoolMixin<TBase extends CommercialBaseCtor>(Base: TBase): T
         endAt: c.endAt,
         categories: c.categories,
         createdBy: prev?.createdBy ?? args.createdBy,
-        createdAt: prev?.createdAt ?? this.now(),
+        createdAt: prev?.createdAt ?? this.core.now(),
       };
-      await this.cols.gachaPools.replaceOne({ _id: c.id }, doc, { upsert: true });
+      await this.core.cols.gachaPools.replaceOne({ _id: c.id }, doc, { upsert: true });
       return { ok: true, id: c.id };
     }
 
     /** Close a limited pool early (clamp endAt to now); the config is retained so its featured legendary stays Fate-redeemable. */
     async closeLimitedPool(args: { id: string }): Promise<Result<{ id: string }>> {
-      const now = this.now();
-      const res = await this.cols.gachaPools.findOneAndUpdate(
+      const now = this.core.now();
+      const res = await this.core.cols.gachaPools.findOneAndUpdate(
         { _id: args.id },
         { $set: { endAt: now, closedAt: now } },
       );
@@ -82,12 +83,11 @@ export function GachaPoolMixin<TBase extends CommercialBaseCtor>(Base: TBase): T
 
     /** List all limited pool configs (admin management). */
     async listLimitedPools(): Promise<GachaPoolDoc[]> {
-      return this.cols.gachaPools.find({}).sort({ createdAt: -1 }).toArray();
+      return this.core.cols.gachaPools.find({}).sort({ createdAt: -1 }).toArray();
     }
 
     /** List currently-open limited pool configs (for the client gacha listing). */
     async listActiveLimitedPools(now: number): Promise<GachaPoolDoc[]> {
-      return (await this.cols.gachaPools.find({}).toArray()).filter((p) => isLimitedPoolActive(p, now));
+      return (await this.core.cols.gachaPools.find({}).toArray()).filter((p) => isLimitedPoolActive(p, now));
     }
-  };
 }
