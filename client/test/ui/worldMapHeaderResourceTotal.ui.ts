@@ -24,11 +24,23 @@ initI18n('en', memStore, ['zh', 'en', 'de']);
 const [W, H] = [800, 600];
 const TOP_INSET = 86;
 
-function buildHudHarness(yieldRate: Record<string, number> = {}, resources: Record<string, number> = {}) {
+/** Landscape design dimensions (LandscapeLayout: designHeight fixed at 1080, designWidth grows
+ *  with aspect — 1920 is the classic 16:9 baseline). sceneHeaderHeight(1080) = round(1080*0.12).
+ *  Used by the "landscape unaffected" tests below (2026-08-11). */
+const LANDSCAPE_W = 1920;
+const LANDSCAPE_TOP_INSET = 130;
+
+function buildHudHarness(
+  yieldRate: Record<string, number> = {},
+  resources: Record<string, number> = {},
+  dims: { w?: number; topInset?: number } = {},
+) {
+  const w = dims.w ?? W;
+  const topInset = dims.topInset ?? TOP_INSET;
   const ctx = {
-    w: W, h: H,
-    topInset: TOP_INSET,
-    backRect: { x: 0, y: 0, w: 160, h: TOP_INSET },
+    w, h: H,
+    topInset,
+    backRect: { x: 0, y: 0, w: 160, h: topInset },
     hudLayer: new PIXI.Container(),
     headerHudLayer: new PIXI.Container(),
     worldChatLatest: null,
@@ -139,5 +151,28 @@ describe('WorldMapPanels.renderHud — resource stockpile totals moved into the 
     panels.renderHud();
     const cluster = findCluster(ctx);
     expect(cluster.scale.x).toBe(1);
+  });
+
+  // 2026-08-11 follow-up (user: "确保横屏不受影响" — make sure landscape is unaffected).
+  // The shrink-to-fit fix above only exists because portrait's design width is fixed at 1080
+  // (PortraitLayout.DESIGN_W) — landscape's is a much wider 1920+ (LandscapeLayout, designHeight
+  // fixed at 1080 instead). Same 6-digit-stockpile numbers from the portrait overflow test,
+  // rendered at landscape dimensions: the cluster must have ample room and never trigger the
+  // shrink at all.
+  it('landscape: the same 6-digit totals that overflow in portrait fit at full scale (no shrink)', () => {
+    const { ctx, panels } = buildHudHarness(
+      { ink: 100, paper: 0, graphite: 600, metal: 0, sticker: 0 },
+      { ink: 45859, paper: 136108, graphite: 144207, metal: 135884, sticker: 999999 },
+      { w: LANDSCAPE_W, topInset: LANDSCAPE_TOP_INSET },
+    );
+    panels.renderHud();
+    const cluster = findCluster(ctx);
+    expect(cluster.scale.x).toBe(1);
+    expect(cluster.x).toBeGreaterThanOrEqual(ctx.backRect.x + ctx.backRect.w);
+    expect(cluster.x + cluster.width).toBeLessThanOrEqual(ctx.shopBtnRect.x);
+    const texts = clusterTexts(ctx);
+    expect(texts).toEqual(
+      expect.arrayContaining(['45859', '136108', '144207', '135884', '999999'])
+    );
   });
 });

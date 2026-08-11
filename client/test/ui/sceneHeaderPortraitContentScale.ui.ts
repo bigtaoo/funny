@@ -127,6 +127,18 @@ describe('SceneHeader portrait content scaling (2026-08-11 fix)', () => {
     expect(hdr.backRect.w).toBeGreaterThanOrEqual(chip.width);
   });
 
+  // 2026-08-11 follow-up (user: "确保横屏不受影响" — make sure landscape is unaffected). The
+  // widened backRect.w only matters once the back-button font actually grows past the flat
+  // FS.headline floor (HEADER_CONTENT_RATIO only kicks in above the landscape default, see
+  // backSize's doc comment) — landscape bars (headerH design ≈130) sit below that floor and
+  // must keep reporting exactly the old BACK_HIT_W, not a widened value, so every landscape
+  // caller (incl. WorldMapPanels/hud.ts's resource-cluster leftBound) sees unchanged geometry.
+  it('landscape/compact bars report backRect.w at exactly the flat 160 floor — unaffected by the portrait widening', () => {
+    const c = new PIXI.Container();
+    const hdr = drawSceneHeader(c, 1920, LANDSCAPE_H, 'Auction');
+    expect(hdr.backRect.w).toBe(160);
+  });
+
   it("the floating back button (full-bleed scenes) matches drawSceneHeader's back-button size at the same screen height", () => {
     // drawFloatingBackButton has no real bar, so it must derive the same notional headerH
     // drawSceneHeader would have used, or its back chip would size differently from every other

@@ -32,11 +32,23 @@ initI18n('en', memStore, ['zh', 'en', 'de']);
 const [W, H] = [1000, 700];
 const TOP_INSET = 90;
 
-function buildHudHarness(me: Partial<PlayerWorldView> = {}) {
+/** Landscape design dimensions (LandscapeLayout: designHeight fixed at 1080 — much shorter than
+ *  portrait's ≥1920 — designWidth grows with aspect; 1920 is the 16:9 baseline). Used by the
+ *  "landscape unaffected" tests below (2026-08-11): the status card grew 56px→88px tall, and
+ *  landscape's fixed, comparatively short design height is the tightest-fit case for that growth
+ *  to matter in, unlike portrait where the extra height is negligible against ≥1920. */
+const LANDSCAPE_W = 1920;
+const LANDSCAPE_H = 1080;
+const LANDSCAPE_TOP_INSET = 130;
+
+function buildHudHarness(me: Partial<PlayerWorldView> = {}, dims: { w?: number; h?: number; topInset?: number } = {}) {
+  const w = dims.w ?? W;
+  const h = dims.h ?? H;
+  const topInset = dims.topInset ?? TOP_INSET;
   const ctx = {
-    w: W, h: H,
-    topInset: TOP_INSET,
-    backRect: { x: 0, y: 0, w: 160, h: TOP_INSET },
+    w, h,
+    topInset,
+    backRect: { x: 0, y: 0, w: 160, h: topInset },
     hudLayer: new PIXI.Container(),
     headerHudLayer: new PIXI.Container(),
     worldChatLatest: null,
@@ -106,5 +118,37 @@ describe('WorldMapPanels status card — split into two stat chips (2026-08-11)'
     expect((replaysLbl!.style as PIXI.TextStyle).fill).toBe((marchesLbl!.style as PIXI.TextStyle).fill);
     const expectedLight = `#${C.light.toString(16).padStart(6, '0')}`;
     expect((replaysLbl!.style as PIXI.TextStyle).fill).toBe(expectedLight);
+  });
+
+  // 2026-08-11 follow-up (user: "确保横屏不受影响" — make sure landscape is unaffected). The
+  // status card grew from 56px to 88px tall; landscape's fixed, comparatively short design
+  // height (1080, vs portrait's ≥1920) is the tightest-fit case for that +32px to matter — if it
+  // ever pushed the marches/replay badges past the visible band, landscape would regress even
+  // though the change was aimed at portrait.
+  describe('landscape unaffected (fixed 1080 design height)', () => {
+    it('the right-column stack (status card → marches badge → replay badge) still fits within the screen, nothing pushed off-screen', () => {
+      const { ctx, panels } = buildHudHarness({}, { w: LANDSCAPE_W, h: LANDSCAPE_H, topInset: LANDSCAPE_TOP_INSET });
+      panels.renderHud();
+      expect(ctx.marchBadgeRect.y).toBeGreaterThan(ctx.topInset);
+      expect(ctx.replayBadgeRect.y).toBeGreaterThan(ctx.marchBadgeRect.y + ctx.marchBadgeRect.h);
+      expect(ctx.replayBadgeRect.y + ctx.replayBadgeRect.h).toBeLessThan(LANDSCAPE_H);
+    });
+
+    it('troops/territory still render as two separate value labels at landscape scale', () => {
+      const { ctx, panels } = buildHudHarness({}, { w: LANDSCAPE_W, h: LANDSCAPE_H, topInset: LANDSCAPE_TOP_INSET });
+      panels.renderHud();
+      const texts = allTexts(ctx.hudLayer).map((t) => t.text);
+      expect(texts).toContain('8040/10000');
+      expect(texts).toContain('11');
+    });
+
+    it('Battle Replays badge keeps the light/contrast color at landscape scale too', () => {
+      const { ctx, panels } = buildHudHarness({}, { w: LANDSCAPE_W, h: LANDSCAPE_H, topInset: LANDSCAPE_TOP_INSET });
+      panels.renderHud();
+      const replaysLbl = allTexts(ctx.hudLayer).find((t) => t.text === 'Battle replays');
+      expect(replaysLbl).toBeTruthy();
+      const expectedLight = `#${C.light.toString(16).padStart(6, '0')}`;
+      expect((replaysLbl!.style as PIXI.TextStyle).fill).toBe(expectedLight);
+    });
   });
 });
