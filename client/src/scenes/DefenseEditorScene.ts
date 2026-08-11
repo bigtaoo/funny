@@ -25,23 +25,114 @@
 // runs the engine headless with the attacker army + defender config to compute the authoritative
 // result (§16.8).
 //
-// This file is a thin assembly — see ./DefenseEditorScene/base.ts for the shared state/render
-// dispatcher and ./DefenseEditorScene/{data,render,input}.ts for the per-domain mixins. To add a
-// handler: find the matching domain mixin or add a new one to the chain — do NOT grow this file.
-// DefenseEditorCallbacks/DefenseEditorTarget are re-exported so existing importers
-// (`from './DefenseEditorScene'`) keep resolving to this file, not the directory.
+// This file is a thin assembly — see ./DefenseEditorScene/core.ts for the shared state and
+// ./DefenseEditorScene/{data,render,input}.ts for the per-domain classes. To add a handler: find the
+// matching domain class or add a new one — do NOT grow the domain logic into this file, only its
+// one-line dispatch call. DefenseEditorCallbacks/DefenseEditorTarget are re-exported so existing
+// importers (`from './DefenseEditorScene'`) keep resolving to this file, not the directory.
+//
+// 2026-08-11: converted from the former `XMixin(Base)` inheritance chain to composition — see
+// claudedocs/client-modules.md's split-form priority note. The render dispatcher lives here since
+// only this assembly knows about every domain instance (Core takes a `render` callback instead of
+// owning render() itself). The InputManager onDown/onMove/onUp/onWheel subscriptions live on Core
+// instead (see DefenseEditorScene/core.ts's header comment) — onDown/onMove/onUp are wired there
+// via lazy closures passed in below, since the InputPanel instance they delegate to doesn't exist
+// until after Core is constructed.
 import type { Scene } from './SceneManager';
-import { DefenseEditorSceneBase } from './DefenseEditorScene/base';
-import { DataMixin } from './DefenseEditorScene/data';
-import { RenderMixin } from './DefenseEditorScene/render';
-import { InputMixin } from './DefenseEditorScene/input';
+import type { ILayout } from '../layout/ILayout';
+import type { InputManager } from '../inputSystem/InputManager';
+import { t } from '../i18n';
+import { txt, tearDownChildren, ui as C } from '../render/sketchUi';
+import { FS } from '../render/fontScale';
+import { drawSceneHeader, HEADER_ACCENT } from '../ui/widgets/SceneHeader';
+import { DefenseEditorSceneCore, FOOTER_H, PALETTE_H, PAD } from './DefenseEditorScene/core';
+import type { DefenseEditorCallbacks } from './DefenseEditorScene/core';
+import { DataPanel } from './DefenseEditorScene/data';
+import { RenderPanel } from './DefenseEditorScene/render';
+import { InputPanel } from './DefenseEditorScene/input';
 
-export type { DefenseEditorCallbacks, DefenseEditorTarget } from './DefenseEditorScene/base';
-
-const Assembled = InputMixin(RenderMixin(DataMixin(DefenseEditorSceneBase)));
+export type { DefenseEditorCallbacks, DefenseEditorTarget } from './DefenseEditorScene/core';
 
 /**
- * DefenseEditorScene — the SLG defense/attack-team editor scene registered against SceneManager.
- * Assembled from the per-domain mixin chain over DefenseEditorSceneBase.
+ * DefenseEditorScene — the SLG defense/attack-team editor scene registered against SceneManager,
+ * thin assembly over the per-domain composition (see the file-header comment above).
  */
-export class DefenseEditorScene extends Assembled implements Scene {}
+export class DefenseEditorScene implements Scene {
+  readonly container;
+
+  private readonly core: DefenseEditorSceneCore;
+  private readonly data: DataPanel;
+  private readonly renderPanel: RenderPanel;
+  private readonly input: InputPanel;
+
+  constructor(layout: ILayout, input: InputManager, cb: DefenseEditorCallbacks) {
+    // handlers is a bundle of lazy closures: InputPanel doesn't exist yet (constructed after Core
+    // below), but by the time InputManager actually fires one of these, this constructor has
+    // finished and `this.input` is set — same lazy-binding trick as the `render` callback.
+    this.core = new DefenseEditorSceneCore(layout, cb, () => this.render(), input, {
+      onDown: (x, y) => this.input.handleDown(x, y),
+      onMove: (x, y) => this.input.handleMove(x, y),
+      onUp: (x, y) => this.input.handleUp(x, y),
+    });
+    this.container = this.core.container;
+    this.data = new DataPanel(this.core);
+    this.renderPanel = new RenderPanel(this.core, this.data);
+    this.input = new InputPanel(this.core);
+
+    this.render();
+    void this.data.loadData();
+  }
+
+  update(dt: number): void {
+    this.core.update(dt);
+  }
+
+  destroy(): void {
+    this.core.destroy();
+  }
+
+  private render(): void {
+    const core = this.core;
+    tearDownChildren(core.bodyLayer);
+    core.hits = [];
+    core.rosterCardHits = [];
+    const { w, h } = core;
+
+    // Header: back + title + base-level stepper (drawn on the right slot below)
+    const hdr = drawSceneHeader(core.bodyLayer, w, core.h, core.titleText(), {
+      variant: 'paper',
+      accent: HEADER_ACCENT.slg,
+    });
+    core.hits.push({ rect: hdr.backRect, action: () => core.cb.onBack() });
+
+    // Base-level stepper (defense only — attacker has no base/buildings)
+    if (core.hasBuildingRow) this.renderPanel.renderBaseStepper(w - PAD, 8);
+    // Attack mode: the troop readout (top-left) + Fill/Clear/Save (top-right) live in the header's
+    // free space instead of a bottom footer, so the whole footer band goes to the grid + roster
+    // (2026-07-22, user request "move these two up top").
+    if (core.mode === 'attack') this.renderPanel.renderAttackHeaderControls(hdr.headerH);
+
+    // Attack mode has no bottom footer (controls moved into the header); defense keeps it.
+    const footerH = core.mode === 'attack' ? 0 : FOOTER_H;
+    const gridBottom = h - footerH - 4;
+    if (core.mode === 'attack') {
+      // Left half = formation grid, right half = scrollable card roster (布阵/选卡 split).
+      this.renderPanel.renderAttackBody(hdr.headerH + 4, gridBottom);
+    } else {
+      this.renderPanel.renderPalette(hdr.headerH + 4);
+      const gridTop = hdr.headerH + 4 + PALETTE_H + 4;
+      this.renderPanel.renderGrid(gridTop, gridBottom);
+    }
+
+    // Footer: counts + clear + save (defense only)
+    if (core.mode !== 'attack') this.renderPanel.renderFooter(h - FOOTER_H);
+
+    if (core.loading) {
+      const lbl = txt(t('world.loading'), FS.tiny, C.mid);
+      lbl.anchor.set(0.5, 0.5);
+      lbl.x = w / 2;
+      lbl.y = h / 2;
+      core.bodyLayer.addChild(lbl);
+    }
+  }
+}

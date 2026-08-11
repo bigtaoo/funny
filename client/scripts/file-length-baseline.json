@@ -20,7 +20,6 @@
   "src/scenes/CardScene/feed.ts": 741,
   "src/scenes/CityScene/core.ts": 753,
   "src/scenes/DailyScene.ts": 711,
-  "src/scenes/DefenseEditorScene/render.ts": 549,
   "src/scenes/EquipmentScene/base.ts": 835,
   "src/scenes/EquipmentScene/inventory.ts": 589,
   "src/scenes/FamilyScene/base.ts": 560,
