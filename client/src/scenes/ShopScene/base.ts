@@ -555,43 +555,75 @@ export class ShopSceneBase {
     //    below the art down to just above the buttons. ──
     let ty = imgY + imgSize + Math.round(ch * 0.03);
     const bandBottom = btnTop - Math.round(ch * 0.02);
+    const rowGap = Math.round(ch * 0.02);
 
-    const title = txt(spec.title, snapFont(Math.round(ch * (hasLines ? 0.06 : 0.085))), C.dark, true, innerW);
-    title.anchor.set(0.5, 0); title.x = cx; title.y = ty;
-    body.addChild(title);
-    ty += title.height + Math.round(ch * 0.02);
-
+    // Pre-build whatever price row(s) follow the title so their real measured height is known before
+    // sizing the title below — positioned once ty (and any title shrink) is settled.
+    let coinRow: { ci: PIXI.DisplayObject; amt: PIXI.Text; cs: number; rowW: number; h: number } | undefined;
     if (spec.coinAmount !== undefined) {
       const cs = Math.round(ch * 0.11);
       const amt = txt(spec.coinAmount.toLocaleString(), snapFont(cs), C.gold, true);
       const rowW = cs + Math.round(cw * 0.02) + amt.width;
       const ci = buildCoinIcon('coin', cs, C.gold);
-      ci.x = Math.round(cx - rowW / 2); ci.y = ty;
-      body.addChild(ci);
-      amt.anchor.set(0, 0); amt.x = ci.x + cs + Math.round(cw * 0.02); amt.y = ty + (cs - amt.height) / 2;
-      body.addChild(amt);
-      ty += Math.max(cs, amt.height) + Math.round(ch * 0.02);
+      coinRow = { ci, amt, cs, rowW, h: Math.max(cs, amt.height) };
     }
-
+    let usdRow: { price: PIXI.Text; strike?: PIXI.Text; h: number } | undefined;
     if (spec.usdCents !== undefined) {
       const price = txt(`$${(spec.usdCents / 100).toFixed(2)}`, snapFont(Math.round(ch * 0.11)), C.gold, true);
-      if (spec.usdStrikeCents !== undefined) {
-        const strike = txt(`$${(spec.usdStrikeCents / 100).toFixed(2)}`, snapFont(Math.round(ch * 0.07)), C.mid, false);
+      const strike = spec.usdStrikeCents !== undefined
+        ? txt(`$${(spec.usdStrikeCents / 100).toFixed(2)}`, snapFont(Math.round(ch * 0.07)), C.mid, false)
+        : undefined;
+      usdRow = { price, strike, h: price.height };
+    }
+    const priceReserve = (coinRow ? coinRow.h + rowGap : 0) + (usdRow ? usdRow.h + rowGap : 0);
+
+    // Title can wrap to 3 lines on narrow columns (e.g. portrait's grid) when the product name is long
+    // at the "wide card" font — shrink it a step at a time until the wrapped title plus the price row(s)
+    // below it actually fit above bandBottom, instead of always drawing at the same size and letting the
+    // price land wherever the title happened to end (found 2026-08-11 on the starter_draw card in
+    // portrait: the title wrapped to 3 lines and "$0.99" landed on top of the Buy button below it).
+    let titleFontPx = Math.round(ch * (hasLines ? 0.06 : 0.085));
+    const minTitleFontPx = Math.round(ch * 0.05);
+    let title = txt(spec.title, snapFont(titleFontPx), C.dark, true, innerW);
+    while (ty + title.height + rowGap + priceReserve > bandBottom && titleFontPx > minTitleFontPx) {
+      title.destroy();
+      titleFontPx = Math.max(minTitleFontPx, titleFontPx - Math.max(1, Math.round(ch * 0.006)));
+      title = txt(spec.title, snapFont(titleFontPx), C.dark, true, innerW);
+    }
+    title.anchor.set(0.5, 0); title.x = cx; title.y = ty;
+    body.addChild(title);
+    ty += title.height + rowGap;
+
+    // Even after shrinking, clamp each price row's own start so it can never spill past bandBottom —
+    // the same guard the status/bonus lines block right below already applies.
+    if (coinRow) {
+      const { ci, amt, cs, rowW, h } = coinRow;
+      const py = Math.min(ty, bandBottom - h);
+      ci.x = Math.round(cx - rowW / 2); ci.y = py;
+      body.addChild(ci);
+      amt.anchor.set(0, 0); amt.x = ci.x + cs + Math.round(cw * 0.02); amt.y = py + (h - amt.height) / 2;
+      body.addChild(amt);
+      ty = py + h + rowGap;
+    }
+    if (usdRow) {
+      const { price, strike, h } = usdRow;
+      const py = Math.min(ty, bandBottom - h);
+      if (strike) {
         const gap = Math.round(cw * 0.03);
         const rowW = strike.width + gap + price.width;
-        strike.anchor.set(0, 0.5); strike.x = Math.round(cx - rowW / 2); strike.y = ty + price.height / 2;
+        strike.anchor.set(0, 0.5); strike.x = Math.round(cx - rowW / 2); strike.y = py + price.height / 2;
         body.addChild(strike);
         const line = new PIXI.Graphics();
         line.lineStyle(2, C.mid, 1);
         line.moveTo(strike.x, strike.y).lineTo(strike.x + strike.width, strike.y);
         body.addChild(line);
-        price.anchor.set(0, 0); price.x = strike.x + strike.width + gap; price.y = ty;
+        price.anchor.set(0, 0); price.x = strike.x + strike.width + gap; price.y = py;
         body.addChild(price);
       } else {
-        price.anchor.set(0.5, 0); price.x = cx; price.y = ty;
+        price.anchor.set(0.5, 0); price.x = cx; price.y = py;
         body.addChild(price);
       }
-      ty += price.height + Math.round(ch * 0.02);
+      ty = py + h + rowGap;
     }
 
     // Status / bonus lines (Active, Free, item description…) — centred, wrapped, clamped to the band.
