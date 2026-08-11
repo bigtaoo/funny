@@ -57,7 +57,7 @@ export function ReforgeMixin<TBase extends EquipmentSceneBaseCtor>(Base: TBase):
       this.modalHits = [];
       this.modalOpen = true;
 
-      // Icon-card grid metrics (mirrors AuctionScene/picker.ts's responsive card grid).
+      // Icon-card grid metrics (mirrors AuctionScene/itemPickerRender.ts's responsive card grid).
       const cardW = 96, cardH = 120, gap = 10, pad = 14;
       const titleH = 30, closeAreaH = 44;
       const maxModalW = Math.min(420, w - 24);

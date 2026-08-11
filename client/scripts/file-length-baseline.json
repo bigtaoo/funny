@@ -12,7 +12,6 @@
   "src/render/stickman/StickmanRuntime.ts": 535,
   "src/render/TutorialDirector.ts": 503,
   "src/render/UnitView.ts": 843,
-  "src/scenes/AuctionScene/base.ts": 732,
   "src/scenes/BattlePassScene.ts": 623,
   "src/scenes/CampaignMapScene.ts": 618,
   "src/scenes/CardScene/base.ts": 551,

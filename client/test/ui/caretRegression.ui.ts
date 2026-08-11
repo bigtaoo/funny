@@ -329,26 +329,26 @@ describe('AuctionScene — designated-buyer field caret', () => {
 
   it('buyer field shows a blinking cursor while focused', () => {
     const scene = build();
-    scene.buyerActive = true;
-    scene.createBuyer = 'acc_42';
-    expectBlinkingCaret(scene.container, (on) => { scene.caretOn = on; }, () => scene.openCreateForm(), 'acc_42|');
+    scene.core.buyerActive = true;
+    scene.core.createBuyer = 'acc_42';
+    expectBlinkingCaret(scene.container, (on) => { scene.core.caretOn = on; }, () => scene.createListing.openCreateForm(), 'acc_42|');
     scene.destroy();
   });
 
   it('buyer field shows a blinking cursor while focused and empty (falls back to caret, not placeholder)', () => {
     const scene = build();
-    scene.buyerActive = true;
-    scene.createBuyer = '';
-    expectBlinkingCaret(scene.container, (on) => { scene.caretOn = on; }, () => scene.openCreateForm(), '|');
+    scene.core.buyerActive = true;
+    scene.core.createBuyer = '';
+    expectBlinkingCaret(scene.container, (on) => { scene.core.caretOn = on; }, () => scene.createListing.openCreateForm(), '|');
     scene.destroy();
   });
 
   it('unfocused buyer field never shows a cursor', () => {
     const scene = build();
-    scene.buyerActive = false;
-    scene.createBuyer = 'acc_42';
-    scene.caretOn = true;
-    scene.openCreateForm();
+    scene.core.buyerActive = false;
+    scene.core.createBuyer = 'acc_42';
+    scene.core.caretOn = true;
+    scene.createListing.openCreateForm();
     expect(collectTexts(scene.container)).not.toContain('acc_42|');
     scene.destroy();
   });

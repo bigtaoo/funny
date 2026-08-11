@@ -48,9 +48,9 @@ function buildListScene(worldApi: WorldApiClient, listing: AuctionView, myAccoun
   const scene: any = new AuctionScene(createLayout(W, H), new InputManager(), {
     onBack() {}, worldApi, myAccountId,
   });
-  scene.allAuctions = [listing];
-  scene.activeTab = 'all';
-  scene.loading = false; // constructor's own loadData() fetch is still pending — render the snapshot now
+  scene.core.allAuctions = [listing];
+  scene.core.activeTab = 'all';
+  scene.core.loading = false; // constructor's own loadData() fetch is still pending — render the snapshot now
   scene.render();
   return scene;
 }
@@ -59,9 +59,9 @@ function buildMineScene(worldApi: WorldApiClient, listing: AuctionView, myAccoun
   const scene: any = new AuctionScene(createLayout(W, H), new InputManager(), {
     onBack() {}, worldApi, myAccountId,
   });
-  scene.myListings = [listing];
-  scene.activeTab = 'mine';
-  scene.loading = false;
+  scene.core.myListings = [listing];
+  scene.core.activeTab = 'mine';
+  scene.core.loading = false;
   scene.render();
   return scene;
 }
@@ -87,34 +87,34 @@ describe('AuctionScene — busy lock prevents duplicate requests', () => {
     const buyAuction = vi.fn(() => new Promise<{ ok: true }>(() => {})); // never resolves
     const scene = buildListScene(stubWorldApi({ buyAuction }), makeAuction());
 
-    void scene.doBuy('auc_1');
-    void scene.doBuy('auc_1'); // busy — must short-circuit before touching worldApi
+    void scene.trade.doBuy('auc_1');
+    void scene.trade.doBuy('auc_1'); // busy — must short-circuit before touching worldApi
     await Promise.resolve();
 
     expect(buyAuction).toHaveBeenCalledTimes(1);
-    expect(scene.bt.busy).toBe(true);
+    expect(scene.core.bt.busy).toBe(true);
   });
 
   it('doCancel: a second call while the first is in flight does not re-issue the request', async () => {
     const cancelAuction = vi.fn(() => new Promise<{ ok: true }>(() => {}));
     const scene = buildMineScene(stubWorldApi({ cancelAuction }), makeAuction({ sellerId: 'acc_me' }), 'acc_me');
 
-    void scene.doCancel('auc_1');
-    void scene.doCancel('auc_1');
+    void scene.trade.doCancel('auc_1');
+    void scene.trade.doCancel('auc_1');
     await Promise.resolve();
 
     expect(cancelAuction).toHaveBeenCalledTimes(1);
-    expect(scene.bt.busy).toBe(true);
+    expect(scene.core.bt.busy).toBe(true);
   });
 
   it('doBuy: unlocks once the request resolves', async () => {
     const buyAuction = vi.fn(async () => ({ ok: true as const }));
     const scene = buildListScene(stubWorldApi({ buyAuction }), makeAuction());
 
-    await scene.doBuy('auc_1');
+    await scene.trade.doBuy('auc_1');
 
     expect(buyAuction).toHaveBeenCalledTimes(1);
-    expect(scene.bt.busy).toBe(false);
+    expect(scene.core.bt.busy).toBe(false);
   });
 });
 
@@ -132,16 +132,16 @@ describe('AuctionScene — doCancel() real request body', () => {
       'acc_me',
     );
     listAuctions.mockClear(); getMyListings.mockClear(); // drop the constructor's own initial loadData() call
-    const showToast = vi.spyOn(scene, 'showToast');
+    const showToast = vi.spyOn(scene.core, 'showToast');
 
-    await scene.doCancel('auc_1');
+    await scene.trade.doCancel('auc_1');
 
     expect(cancelAuction).toHaveBeenCalledWith('auc_1');
     expect(showToast).toHaveBeenCalledWith(t('auction.cancelled'));
     // doCancel's success path awaits loadData(), which refetches BOTH feeds (all + mine).
     expect(listAuctions).toHaveBeenCalledTimes(1);
     expect(getMyListings).toHaveBeenCalledTimes(1);
-    expect(scene.bt.busy).toBe(false);
+    expect(scene.core.bt.busy).toBe(false);
   });
 
   it('failure: toasts the mapped error and never refetches', async () => {
@@ -153,14 +153,14 @@ describe('AuctionScene — doCancel() real request body', () => {
       'acc_me',
     );
     listAuctions.mockClear(); // drop the constructor's own initial loadData() call
-    const showToast = vi.spyOn(scene, 'showToast');
+    const showToast = vi.spyOn(scene.core, 'showToast');
 
-    await scene.doCancel('auc_1');
+    await scene.trade.doCancel('auc_1');
 
     expect(showToast).toHaveBeenCalledWith('Error: not your listing', expect.anything());
     expect(showToast).not.toHaveBeenCalledWith(t('auction.cancelled'));
     expect(listAuctions).not.toHaveBeenCalled();
-    expect(scene.bt.busy).toBe(false);
+    expect(scene.core.bt.busy).toBe(false);
   });
 
   it('a hung cancelAuction() times out after 10s, toasts common.networkTimeout, and unlocks', async () => {
@@ -168,14 +168,14 @@ describe('AuctionScene — doCancel() real request body', () => {
     try {
       const cancelAuction = vi.fn(() => new Promise<{ ok: true }>(() => {}));
       const scene = buildMineScene(stubWorldApi({ cancelAuction }), makeAuction({ sellerId: 'acc_me' }), 'acc_me');
-      const showToast = vi.spyOn(scene, 'showToast');
+      const showToast = vi.spyOn(scene.core, 'showToast');
 
-      const pending = scene.doCancel('auc_1');
+      const pending = scene.trade.doCancel('auc_1');
       await vi.advanceTimersByTimeAsync(10_001);
       await pending;
 
       expect(showToast).toHaveBeenCalledWith(t('common.networkTimeout'), expect.anything());
-      expect(scene.bt.busy).toBe(false);
+      expect(scene.core.bt.busy).toBe(false);
     } finally {
       vi.useRealTimers();
     }
@@ -189,10 +189,10 @@ describe('AuctionScene — list-row Buy button greys out while busy', () => {
 
     const pos = findLabelPos(scene.container, t('auction.buy'));
     expect(pos).not.toBeNull();
-    expect(hitUnder(scene.hitRects, pos!)).toBeDefined(); // idle: clickable
+    expect(hitUnder(scene.core.hitRects, pos!)).toBeDefined(); // idle: clickable
 
-    void scene.doBuy('auc_1');
-    expect(hitUnder(scene.hitRects, pos!)).toBeUndefined(); // busy: greyed out, no hit rect
+    void scene.trade.doBuy('auc_1');
+    expect(hitUnder(scene.core.hitRects, pos!)).toBeUndefined(); // busy: greyed out, no hit rect
   });
 });
 
@@ -202,14 +202,14 @@ describe('AuctionScene — network timeout recovers cleanly', () => {
     try {
       const buyAuction = vi.fn(() => new Promise<{ ok: true }>(() => {}));
       const scene = buildListScene(stubWorldApi({ buyAuction }), makeAuction());
-      const showToast = vi.spyOn(scene, 'showToast');
+      const showToast = vi.spyOn(scene.core, 'showToast');
 
-      const pending = scene.doBuy('auc_1');
+      const pending = scene.trade.doBuy('auc_1');
       await vi.advanceTimersByTimeAsync(10_001);
       await pending;
 
       expect(showToast).toHaveBeenCalledWith(t('common.networkTimeout'), expect.anything());
-      expect(scene.bt.busy).toBe(false);
+      expect(scene.core.bt.busy).toBe(false);
     } finally {
       vi.useRealTimers();
     }
@@ -219,6 +219,6 @@ describe('AuctionScene — network timeout recovers cleanly', () => {
 describe('AuctionScene — errorMsg() classifies TimeoutError', () => {
   it('maps TimeoutError to the common.networkTimeout i18n key instead of falling through to String(e)', () => {
     const scene = buildListScene(stubWorldApi({}), makeAuction());
-    expect(scene.errorMsg(new TimeoutError())).toBe(t('common.networkTimeout'));
+    expect(scene.core.errorMsg(new TimeoutError())).toBe(t('common.networkTimeout'));
   });
 });

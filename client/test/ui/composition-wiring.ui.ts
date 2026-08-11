@@ -276,3 +276,29 @@ describe('GameRenderer composition wiring', () => {
     (renderer.destroy as () => void)();
   });
 });
+
+// ── AuctionScene — bid/trade/createListing/list over one AuctionSceneCore ────────
+
+describe('AuctionScene composition wiring', () => {
+  it('shares exactly one AuctionSceneCore across bid/trade/createListing/list, and list reaches bid/trade/createListing via the SAME instances', async () => {
+    const { AuctionScene } = await import('../../src/scenes/AuctionScene');
+    const scene = new AuctionScene(createLayout(800, 1280), new InputManager(), {
+      onBack() {}, worldApi: stubWorldApi(),
+    }) as unknown as Record<string, unknown>;
+    const core = scene.core;
+    expect(core).toBeDefined();
+    for (const p of ['bid', 'trade', 'createListing', 'list']) {
+      expect((scene[p] as Record<string, unknown>).core).toBe(core);
+    }
+    // list.ts's row actions reach bid/trade/createListing through the SAME instances the facade holds,
+    // not separate copies.
+    expect((scene.list as Record<string, unknown>).bid).toBe(scene.bid);
+    expect((scene.list as Record<string, unknown>).trade).toBe(scene.trade);
+    expect((scene.list as Record<string, unknown>).createListing).toBe(scene.createListing);
+    // Core's update()/ensureRefBand's async callback reach CreateListingPanel.openCreateForm through
+    // the lazy `reopenCreateForm` field the outer assembly overwrites right after constructing it —
+    // must not still be the core.ts no-op default.
+    expect((core as Record<string, unknown>).reopenCreateForm).not.toBeUndefined();
+    (scene.destroy as () => void)();
+  });
+});

@@ -12,7 +12,11 @@ import { createLayout } from '../../src/layout/ScalingManager';
 import { InputManager } from '../../src/inputSystem/InputManager';
 import { initI18n, t } from '../../src/i18n';
 import { AuctionScene } from '../../src/scenes/AuctionScene';
-import { AUCTION_DURATION_SEC, AUCTION_POLL_SEC } from '../../src/scenes/AuctionScene/base';
+import { AUCTION_DURATION_SEC, AUCTION_POLL_SEC } from '../../src/scenes/AuctionScene/core';
+import { itemKind, auctionLabel, auctionItemLevel, auctionLabelText, equipName, cardName } from '../../src/scenes/AuctionScene/itemLabels';
+import { listableEquipment, listableCards, selectedItemLabel } from '../../src/scenes/AuctionScene/itemPickerRender';
+import * as itemPickerRenderModule from '../../src/scenes/AuctionScene/itemPickerRender';
+import { openNumInput } from '../../src/scenes/AuctionScene/numInput';
 import { WorldApiError, type AuctionView, type WorldApiClient } from '../../src/net/WorldApiClient';
 import { makeNewSave } from '../../src/game/meta/SaveData';
 import type { SaveData, EquipmentInstance, CardInstance } from '../../src/game/meta/SaveData';
@@ -20,7 +24,7 @@ import { setToastSink } from '../../src/net/log';
 import { cardInstanceArtUrl } from '../../src/render/cardArt';
 import { skinEquipKey, skinDisplayName } from '../../src/game/meta/skinDefs';
 import { UnitType } from '@nw/engine/types';
-import { SCALE as FORM_SCALE } from '../../src/scenes/AuctionScene/createForm';
+import { SCALE as FORM_SCALE } from '../../src/scenes/AuctionScene/createListing';
 import { snapFont } from '../../src/render/fontScale';
 
 // Every export passes through untouched except cardInstanceArtUrl, wrapped in vi.fn (keeping its
@@ -148,7 +152,7 @@ function findTextNode(container: PIXI.Container, label: string): PIXI.Text | nul
 function tapLabel(scene: any, container: PIXI.Container, label: string, hitsField: 'hitRects' | 'modalHits' = 'hitRects'): void {
   const pos = findLabelPos(container, label);
   expect(pos, `label "${label}" not found in rendered tree`).not.toBeNull();
-  const hits: Hit[] = scene[hitsField];
+  const hits: Hit[] = scene.core[hitsField];
   const hit = hits.find(({ rect: r }) => pos!.x >= r.x && pos!.x <= r.x + r.w && pos!.y >= r.y && pos!.y <= r.y + r.h);
   expect(hit, `no hit rect under "${label}"`).toBeDefined();
   hit!.action();
@@ -183,32 +187,32 @@ function withStubbedInput(run: () => void): void {
 describe('AuctionScene — errorMsg()', () => {
   it('maps known WorldApiError codes to their localized message', () => {
     const scene = buildScene();
-    expect(scene.errorMsg(new WorldApiError('AUCTION_CLOSED', 'x'))).toBe(t('auction.err.closed'));
-    expect(scene.errorMsg(new WorldApiError('NOT_DESIGNATED_BUYER', 'x'))).toBe(t('auction.err.notDesignatedBuyer'));
-    expect(scene.errorMsg(new WorldApiError('BID_TOO_LOW', 'x'))).toBe(t('auction.err.bidTooLow'));
+    expect(scene.core.errorMsg(new WorldApiError('AUCTION_CLOSED', 'x'))).toBe(t('auction.err.closed'));
+    expect(scene.core.errorMsg(new WorldApiError('NOT_DESIGNATED_BUYER', 'x'))).toBe(t('auction.err.notDesignatedBuyer'));
+    expect(scene.core.errorMsg(new WorldApiError('BID_TOO_LOW', 'x'))).toBe(t('auction.err.bidTooLow'));
     // Skin listing guards (ITEM_IDENTITY_DESIGN.md, 2026-08-04): mirrors metaserver's escrowSkin errors.
-    expect(scene.errorMsg(new WorldApiError('SKIN_IN_USE', 'x'))).toBe(t('auction.err.skinInUse'));
-    expect(scene.errorMsg(new WorldApiError('SKIN_NOT_FOUND', 'x'))).toBe(t('auction.err.closed'));
+    expect(scene.core.errorMsg(new WorldApiError('SKIN_IN_USE', 'x'))).toBe(t('auction.err.skinInUse'));
+    expect(scene.core.errorMsg(new WorldApiError('SKIN_NOT_FOUND', 'x'))).toBe(t('auction.err.closed'));
     scene.destroy();
   });
 
   it('collapses both fund-related codes onto the same insufficient-funds message', () => {
     const scene = buildScene();
-    expect(scene.errorMsg(new WorldApiError('INSUFFICIENT_FUNDS', 'x'))).toBe(t('auction.err.insufficientFunds'));
-    expect(scene.errorMsg(new WorldApiError('INSUFFICIENT_RESOURCES', 'x'))).toBe(t('auction.err.insufficientFunds'));
+    expect(scene.core.errorMsg(new WorldApiError('INSUFFICIENT_FUNDS', 'x'))).toBe(t('auction.err.insufficientFunds'));
+    expect(scene.core.errorMsg(new WorldApiError('INSUFFICIENT_RESOURCES', 'x'))).toBe(t('auction.err.insufficientFunds'));
     scene.destroy();
   });
 
   it('falls back to e.message for an unmapped WorldApiError code', () => {
     const scene = buildScene();
-    expect(scene.errorMsg(new WorldApiError('SOME_NEW_SERVER_CODE', 'raw server message'))).toBe('raw server message');
+    expect(scene.core.errorMsg(new WorldApiError('SOME_NEW_SERVER_CODE', 'raw server message'))).toBe('raw server message');
     scene.destroy();
   });
 
   it('falls back to String(e) for a non-WorldApiError value', () => {
     const scene = buildScene();
-    expect(scene.errorMsg(new Error('boom'))).toBe('Error: boom');
-    expect(scene.errorMsg('plain string')).toBe('plain string');
+    expect(scene.core.errorMsg(new Error('boom'))).toBe('Error: boom');
+    expect(scene.core.errorMsg('plain string')).toBe('plain string');
     scene.destroy();
   });
 });
@@ -220,11 +224,11 @@ describe('AuctionScene — errorMsg()', () => {
 describe('AuctionScene — itemKind()', () => {
   it('resolves each item class to its glyph, materials to their own icon, and an unrecognized type to the material fallback', () => {
     const scene = buildScene();
-    expect(scene.itemKind('equipment')).toBe('armor');
-    expect(scene.itemKind('card')).toBe('cards');
-    expect(scene.itemKind('skin')).toBe('brush');
-    expect(scene.itemKind('material', 'lead')).toBe('lead');
-    expect(scene.itemKind(undefined)).toBe('scrap'); // material defaults to scrap with no material given
+    expect(itemKind('equipment')).toBe('armor');
+    expect(itemKind('card')).toBe('cards');
+    expect(itemKind('skin')).toBe('brush');
+    expect(itemKind('material', 'lead')).toBe('lead');
+    expect(itemKind(undefined)).toBe('scrap'); // material defaults to scrap with no material given
     scene.destroy();
   });
 });
@@ -232,18 +236,18 @@ describe('AuctionScene — itemKind()', () => {
 describe('AuctionScene — auctionLabel()', () => {
   it('titles a skin listing with its display name, falling back to the generic filter label with no skinId', () => {
     const scene = buildScene();
-    expect(scene.auctionLabel(makeAuction({ itemType: 'skin', item: { skinId: 'skin_e2' } })))
+    expect(auctionLabel(makeAuction({ itemType: 'skin', item: { skinId: 'skin_e2' } })))
       .toBe(skinDisplayName('skin_e2'));
-    expect(scene.auctionLabel(makeAuction({ itemType: 'skin', item: {} }))).toBe(t('auction.filterSkin'));
+    expect(auctionLabel(makeAuction({ itemType: 'skin', item: {} }))).toBe(t('auction.filterSkin'));
     scene.destroy();
   });
 
   it('titles material/equipment/card listings consistently with their own class', () => {
     const scene = buildScene();
-    expect(scene.auctionLabel(makeAuction({ itemType: 'material', item: { material: 'lead' }, qty: 3 })))
+    expect(auctionLabel(makeAuction({ itemType: 'material', item: { material: 'lead' }, qty: 3 })))
       .toBe(`${t('auction.lead')} ×3`);
-    expect(scene.auctionLabel(makeAuction({ itemType: 'equipment', item: {} }))).toBe(t('auction.filterEquipment'));
-    expect(scene.auctionLabel(makeAuction({ itemType: 'card', item: {} }))).toBe(t('auction.filterCard'));
+    expect(auctionLabel(makeAuction({ itemType: 'equipment', item: {} }))).toBe(t('auction.filterEquipment'));
+    expect(auctionLabel(makeAuction({ itemType: 'card', item: {} }))).toBe(t('auction.filterCard'));
     scene.destroy();
   });
 
@@ -252,8 +256,8 @@ describe('AuctionScene — auctionLabel()', () => {
   it('an equipment listing\'s label is the bare name, with no "+N" level suffix', () => {
     const scene = buildScene();
     const inst: EquipmentInstance = { id: 'e1', defId: 'wp_pencil', rarity: 'common', level: 3, affixes: [] };
-    expect(scene.auctionLabel(makeAuction({ itemType: 'equipment', item: { instance: inst } })))
-      .toBe(scene.equipName('wp_pencil'));
+    expect(auctionLabel(makeAuction({ itemType: 'equipment', item: { instance: inst } })))
+      .toBe(equipName('wp_pencil'));
     scene.destroy();
   });
 
@@ -263,8 +267,8 @@ describe('AuctionScene — auctionLabel()', () => {
   it('a card listing\'s label is the bare name, with no "Lv.N" level suffix', () => {
     const scene = buildScene();
     const inst: CardInstance = { id: 'c1', defId: 'lichuang', level: 3, gear: {}, locked: false };
-    expect(scene.auctionLabel(makeAuction({ itemType: 'card', item: { instance: inst } })))
-      .toBe(scene.cardName('lichuang'));
+    expect(auctionLabel(makeAuction({ itemType: 'card', item: { instance: inst } })))
+      .toBe(cardName('lichuang'));
     scene.destroy();
   });
 });
@@ -276,9 +280,9 @@ describe('AuctionScene — auctionLabel()', () => {
 describe('AuctionScene — auctionItemLevel() / auctionLabelText()', () => {
   it('auctionItemLevel is 0 for material listings, and for equipment/card listings with no instance', () => {
     const scene = buildScene();
-    expect(scene.auctionItemLevel(makeAuction({ itemType: 'material', item: { material: 'scrap' } }))).toBe(0);
-    expect(scene.auctionItemLevel(makeAuction({ itemType: 'equipment', item: {} }))).toBe(0);
-    expect(scene.auctionItemLevel(makeAuction({ itemType: 'card', item: {} }))).toBe(0);
+    expect(auctionItemLevel(makeAuction({ itemType: 'material', item: { material: 'scrap' } }))).toBe(0);
+    expect(auctionItemLevel(makeAuction({ itemType: 'equipment', item: {} }))).toBe(0);
+    expect(auctionItemLevel(makeAuction({ itemType: 'card', item: {} }))).toBe(0);
     scene.destroy();
   });
 
@@ -286,8 +290,8 @@ describe('AuctionScene — auctionItemLevel() / auctionLabelText()', () => {
     const scene = buildScene();
     const equip: EquipmentInstance = { id: 'e1', defId: 'wp_pencil', rarity: 'common', level: 5, affixes: [] };
     const card: CardInstance = { id: 'c1', defId: 'lichuang', level: 3, gear: {}, locked: false };
-    expect(scene.auctionItemLevel(makeAuction({ itemType: 'equipment', item: { instance: equip } }))).toBe(5);
-    expect(scene.auctionItemLevel(makeAuction({ itemType: 'card', item: { instance: card } }))).toBe(3);
+    expect(auctionItemLevel(makeAuction({ itemType: 'equipment', item: { instance: equip } }))).toBe(5);
+    expect(auctionItemLevel(makeAuction({ itemType: 'card', item: { instance: card } }))).toBe(3);
     scene.destroy();
   });
 
@@ -295,25 +299,25 @@ describe('AuctionScene — auctionItemLevel() / auctionLabelText()', () => {
     const scene = buildScene();
     const leveled: EquipmentInstance = { id: 'e1', defId: 'wp_pencil', rarity: 'common', level: 3, affixes: [] };
     const unleveled: EquipmentInstance = { id: 'e2', defId: 'wp_pencil', rarity: 'common', level: 0, affixes: [] };
-    expect(scene.auctionLabelText(makeAuction({ itemType: 'equipment', item: { instance: leveled } })))
-      .toBe(`${scene.equipName('wp_pencil')} ★★★`);
-    expect(scene.auctionLabelText(makeAuction({ itemType: 'equipment', item: { instance: unleveled } })))
-      .toBe(scene.equipName('wp_pencil'));
+    expect(auctionLabelText(makeAuction({ itemType: 'equipment', item: { instance: leveled } })))
+      .toBe(`${equipName('wp_pencil')} ★★★`);
+    expect(auctionLabelText(makeAuction({ itemType: 'equipment', item: { instance: unleveled } })))
+      .toBe(equipName('wp_pencil'));
     scene.destroy();
   });
 
   it('auctionLabelText appends text stars for a leveled card listing too (not the old "Lv.N" text)', () => {
     const scene = buildScene();
     const leveled: CardInstance = { id: 'c1', defId: 'lichuang', level: 3, gear: {}, locked: false };
-    expect(scene.auctionLabelText(makeAuction({ itemType: 'card', item: { instance: leveled } })))
-      .toBe(`${scene.cardName('lichuang')} ★★★`);
+    expect(auctionLabelText(makeAuction({ itemType: 'card', item: { instance: leveled } })))
+      .toBe(`${cardName('lichuang')} ★★★`);
     scene.destroy();
   });
 
   it('auctionLabelText is identical to auctionLabel for material/skin classes (no level to fold in)', () => {
     const scene = buildScene();
     const auc = makeAuction({ itemType: 'material', item: { material: 'scrap' } });
-    expect(scene.auctionLabelText(auc)).toBe(scene.auctionLabel(auc));
+    expect(auctionLabelText(auc)).toBe(auctionLabel(auc));
     scene.destroy();
   });
 });
@@ -324,21 +328,21 @@ describe('AuctionScene — minBidFor()', () => {
   it('with no bids yet, the minimum is just the starting price', () => {
     const scene = buildScene();
     const auc = makeAuction({ saleMode: 'auction', price: 100 });
-    expect(scene.minBidFor(auc)).toBe(100);
+    expect(scene.bid.minBidFor(auc)).toBe(100);
     scene.destroy();
   });
 
   it('with a bid, requires +5%% rounded up when that beats +1', () => {
     const scene = buildScene();
     const auc = makeAuction({ saleMode: 'auction', price: 100, topBid: { bidderId: 'acc_x', amount: 100, ts: 0 } });
-    expect(scene.minBidFor(auc)).toBe(105); // ceil(100*1.05)=105 > 101
+    expect(scene.bid.minBidFor(auc)).toBe(105); // ceil(100*1.05)=105 > 101
     scene.destroy();
   });
 
   it('with a bid, falls back to +1 when 5%% would round down to the same price', () => {
     const scene = buildScene();
     const auc = makeAuction({ saleMode: 'auction', price: 1, topBid: { bidderId: 'acc_x', amount: 1, ts: 0 } });
-    expect(scene.minBidFor(auc)).toBe(2); // max(2, ceil(1.05)=2) = 2
+    expect(scene.bid.minBidFor(auc)).toBe(2); // max(2, ceil(1.05)=2) = 2
     scene.destroy();
   });
 });
@@ -360,7 +364,7 @@ describe('AuctionScene — listableEquipment() / listableCards()', () => {
   it('excludes locked equipment', () => {
     const save = saveWith({ e1: equip('e1'), e2: equip('e2', { locked: true }) }, {});
     const scene = buildScene({ getSave: () => save });
-    expect(scene.listableEquipment().map((e: EquipmentInstance) => e.id)).toEqual(['e1']);
+    expect(listableEquipment(scene.core).map((e: EquipmentInstance) => e.id)).toEqual(['e1']);
     scene.destroy();
   });
 
@@ -370,7 +374,7 @@ describe('AuctionScene — listableEquipment() / listableCards()', () => {
       { c1: card('c1', { gear: { weapon: 'e2' } }) },
     );
     const scene = buildScene({ getSave: () => save });
-    expect(scene.listableEquipment().map((e: EquipmentInstance) => e.id)).toEqual(['e1']);
+    expect(listableEquipment(scene.core).map((e: EquipmentInstance) => e.id)).toEqual(['e1']);
     scene.destroy();
   });
 
@@ -380,14 +384,14 @@ describe('AuctionScene — listableEquipment() / listableCards()', () => {
       { c1: card('c1', { gear: {} }), c2: card('c2', { gear: { trinket: 'e1' } }) },
     );
     const scene = buildScene({ getSave: () => save });
-    expect(scene.listableCards().map((c: CardInstance) => c.id)).toEqual(['c1']);
+    expect(listableCards(scene.core).map((c: CardInstance) => c.id)).toEqual(['c1']);
     scene.destroy();
   });
 
   it('returns an empty list for both when getSave is not wired', () => {
     const scene = buildScene();
-    expect(scene.listableEquipment()).toEqual([]);
-    expect(scene.listableCards()).toEqual([]);
+    expect(listableEquipment(scene.core)).toEqual([]);
+    expect(listableCards(scene.core)).toEqual([]);
     scene.destroy();
   });
 });
@@ -398,14 +402,14 @@ describe('AuctionScene — doCreate()', () => {
   it('creates a material listing with the fixed-price payload', async () => {
     const worldApi = stubWorldApi();
     const scene = buildScene({ worldApi });
-    scene.createClass = 'material';
-    scene.createMaterial = 'lead';
-    scene.createQty = 5;
-    scene.createSaleMode = 'fixed';
-    scene.createPrice = 20;
-    scene.createBuyer = 'acc_9';
+    scene.core.createClass = 'material';
+    scene.core.createMaterial = 'lead';
+    scene.core.createQty = 5;
+    scene.core.createSaleMode = 'fixed';
+    scene.core.createPrice = 20;
+    scene.core.createBuyer = 'acc_9';
 
-    await scene.doCreate();
+    await scene.createListing.doCreate();
 
     expect(worldApi.createAuction).toHaveBeenCalledWith(
       'material', { material: 'lead' }, 5, AUCTION_DURATION_SEC,
@@ -418,20 +422,20 @@ describe('AuctionScene — doCreate()', () => {
     const worldApi = stubWorldApi();
     const reloadSave = vi.fn(async () => {});
     const scene = buildScene({ worldApi, reloadSave, getSave: () => makeNewSave('acc_1') });
-    scene.createClass = 'equipment';
-    scene.createEquipId = 'eq_7';
-    scene.createSaleMode = 'auction';
-    scene.createStartPrice = 15;
-    scene.createBuyoutPrice = 0;
+    scene.core.createClass = 'equipment';
+    scene.core.createEquipId = 'eq_7';
+    scene.core.createSaleMode = 'auction';
+    scene.core.createStartPrice = 15;
+    scene.core.createBuyoutPrice = 0;
 
-    await scene.doCreate();
+    await scene.createListing.doCreate();
 
     expect(worldApi.createAuction).toHaveBeenCalledWith(
       'equipment', { instanceId: 'eq_7' }, 1, AUCTION_DURATION_SEC,
       { saleMode: 'auction', startPrice: 15, buyoutPrice: undefined, designatedBuyerId: undefined },
     );
     // Equipment/card listings escrow server-side — the picker selection is cleared and the save re-pulled.
-    expect(scene.createEquipId).toBeNull();
+    expect(scene.core.createEquipId).toBeNull();
     expect(reloadSave).toHaveBeenCalledTimes(1);
     scene.destroy();
   });
@@ -439,12 +443,12 @@ describe('AuctionScene — doCreate()', () => {
   it('creates a card listing with instanceId payload', async () => {
     const worldApi = stubWorldApi();
     const scene = buildScene({ worldApi, reloadSave: vi.fn(async () => {}), getSave: () => makeNewSave('acc_1') });
-    scene.createClass = 'card';
-    scene.createCardId = 'card_3';
-    scene.createSaleMode = 'fixed';
-    scene.createPrice = 500;
+    scene.core.createClass = 'card';
+    scene.core.createCardId = 'card_3';
+    scene.core.createSaleMode = 'fixed';
+    scene.core.createPrice = 500;
 
-    await scene.doCreate();
+    await scene.createListing.doCreate();
 
     expect(worldApi.createAuction).toHaveBeenCalledWith(
       'card', { instanceId: 'card_3' }, 1, AUCTION_DURATION_SEC,
@@ -456,10 +460,10 @@ describe('AuctionScene — doCreate()', () => {
   it('refuses to submit an equipment listing with no instance picked (no API call)', async () => {
     const worldApi = stubWorldApi();
     const scene = buildScene({ worldApi });
-    scene.createClass = 'equipment';
-    scene.createEquipId = null;
+    scene.core.createClass = 'equipment';
+    scene.core.createEquipId = null;
 
-    await scene.doCreate();
+    await scene.createListing.doCreate();
 
     expect(worldApi.createAuction).not.toHaveBeenCalled();
     expect(toastMsgs).toContain(t('auction.selectItem'));
@@ -469,10 +473,10 @@ describe('AuctionScene — doCreate()', () => {
   it('refuses to submit a card listing with no instance picked (no API call)', async () => {
     const worldApi = stubWorldApi();
     const scene = buildScene({ worldApi });
-    scene.createClass = 'card';
-    scene.createCardId = null;
+    scene.core.createClass = 'card';
+    scene.core.createCardId = null;
 
-    await scene.doCreate();
+    await scene.createListing.doCreate();
 
     expect(worldApi.createAuction).not.toHaveBeenCalled();
     expect(toastMsgs).toContain(t('auction.selectItem'));
@@ -484,10 +488,10 @@ describe('AuctionScene — doCreate()', () => {
       createAuction: vi.fn(async () => { throw new WorldApiError('INSUFFICIENT_MATERIALS', 'x'); }),
     });
     const scene = buildScene({ worldApi });
-    scene.createClass = 'material';
-    scene.createMaterial = 'scrap';
+    scene.core.createClass = 'material';
+    scene.core.createMaterial = 'scrap';
 
-    await scene.doCreate();
+    await scene.createListing.doCreate();
 
     expect(toastMsgs).toContain(t('auction.err.noMaterial'));
     scene.destroy();
@@ -499,26 +503,26 @@ describe('AuctionScene — doCreate()', () => {
 describe('AuctionScene — clampToBand()', () => {
   it('snaps a below-floor price up to the floor and an above-ceil price down to the ceil', () => {
     const scene = buildScene();
-    scene.refBand = { ref: 80, floor: 40, ceil: 160 };
-    expect(scene.clampToBand(10)).toBe(40);   // too low → floor
-    expect(scene.clampToBand(500)).toBe(160); // too high → ceil
-    expect(scene.clampToBand(90)).toBe(90);   // in range → unchanged
+    scene.core.refBand = { ref: 80, floor: 40, ceil: 160 };
+    expect(scene.createListing.clampToBand(10)).toBe(40);   // too low → floor
+    expect(scene.createListing.clampToBand(500)).toBe(160); // too high → ceil
+    expect(scene.createListing.clampToBand(90)).toBe(90);   // in range → unchanged
     scene.destroy();
   });
 
   it('uses ceil()/floor() on fractional band edges so the snapped value is always inside the band', () => {
     const scene = buildScene();
-    scene.refBand = { ref: 80, floor: 40.4, ceil: 160.9 };
-    expect(scene.clampToBand(40)).toBe(41);   // floor rounds up (40 < 40.4)
-    expect(scene.clampToBand(200)).toBe(160); // ceil rounds down
+    scene.core.refBand = { ref: 80, floor: 40.4, ceil: 160.9 };
+    expect(scene.createListing.clampToBand(40)).toBe(41);   // floor rounds up (40 < 40.4)
+    expect(scene.createListing.clampToBand(200)).toBe(160); // ceil rounds down
     scene.destroy();
   });
 
   it('passes through unchanged (min 1) when no band is loaded (cards / cold-start)', () => {
     const scene = buildScene();
-    scene.refBand = null;
-    expect(scene.clampToBand(0)).toBe(1);
-    expect(scene.clampToBand(9999)).toBe(9999);
+    scene.core.refBand = null;
+    expect(scene.createListing.clampToBand(0)).toBe(1);
+    expect(scene.createListing.clampToBand(9999)).toBe(9999);
     scene.destroy();
   });
 });
@@ -529,16 +533,16 @@ describe('AuctionScene — editable price field (openNumInput)', () => {
   it('live-updates the bound value on each keystroke (no clamp mid-typing)', () => {
     withStubbedInput(() => {
       const scene = buildScene();
-      scene.refBand = { ref: 80, floor: 40, ceil: 160 };
-      const onChange = (v: number): void => { scene.createStartPrice = Math.max(1, v); };
-      scene.openNumInput('startPrice', 15, onChange, (v: number) => scene.clampToBand(v));
+      scene.core.refBand = { ref: 80, floor: 40, ceil: 160 };
+      const onChange = (v: number): void => { scene.core.createStartPrice = Math.max(1, v); };
+      openNumInput(scene.core, 'startPrice', 15, onChange, (v: number) => scene.createListing.clampToBand(v));
 
-      const inp = scene.hiddenInput as unknown as StubInput;
-      expect(scene.numEditKey).toBe('startPrice');
+      const inp = scene.core.hiddenInput as unknown as StubInput;
+      expect(scene.core.numEditKey).toBe('startPrice');
 
       inp.value = '12';                // below the floor (40) — but not clamped while typing
       inp._fire('input');
-      expect(scene.createStartPrice).toBe(12);
+      expect(scene.core.createStartPrice).toBe(12);
       scene.destroy();
     });
   });
@@ -546,14 +550,14 @@ describe('AuctionScene — editable price field (openNumInput)', () => {
   it('strips non-digit characters from the typed value', () => {
     withStubbedInput(() => {
       const scene = buildScene();
-      const onChange = (v: number): void => { scene.createPrice = Math.max(1, v); };
-      scene.openNumInput('price', 10, onChange);
+      const onChange = (v: number): void => { scene.core.createPrice = Math.max(1, v); };
+      openNumInput(scene.core, 'price', 10, onChange);
 
-      const inp = scene.hiddenInput as unknown as StubInput;
+      const inp = scene.core.hiddenInput as unknown as StubInput;
       inp.value = '1a2b3';
       inp._fire('input');
       expect(inp.value).toBe('123');
-      expect(scene.createPrice).toBe(123);
+      expect(scene.core.createPrice).toBe(123);
       scene.destroy();
     });
   });
@@ -561,18 +565,18 @@ describe('AuctionScene — editable price field (openNumInput)', () => {
   it('snaps a below-floor typed price up to the floor on blur, then clears the edit state', () => {
     withStubbedInput(() => {
       const scene = buildScene();
-      scene.refBand = { ref: 80, floor: 40, ceil: 160 };
-      const onChange = (v: number): void => { scene.createStartPrice = Math.max(1, v); };
-      scene.openNumInput('startPrice', 15, onChange, (v: number) => scene.clampToBand(v));
+      scene.core.refBand = { ref: 80, floor: 40, ceil: 160 };
+      const onChange = (v: number): void => { scene.core.createStartPrice = Math.max(1, v); };
+      openNumInput(scene.core, 'startPrice', 15, onChange, (v: number) => scene.createListing.clampToBand(v));
 
-      const inp = scene.hiddenInput as unknown as StubInput;
+      const inp = scene.core.hiddenInput as unknown as StubInput;
       inp.value = '12';
       inp._fire('input');
       inp._fire('blur');
 
-      expect(scene.createStartPrice).toBe(40);   // clamped up to floor on commit
-      expect(scene.numEditKey).toBeNull();
-      expect(scene.hiddenInput).toBeNull();
+      expect(scene.core.createStartPrice).toBe(40);   // clamped up to floor on commit
+      expect(scene.core.numEditKey).toBeNull();
+      expect(scene.core.hiddenInput).toBeNull();
       scene.destroy();
     });
   });
@@ -580,16 +584,16 @@ describe('AuctionScene — editable price field (openNumInput)', () => {
   it('snaps an above-ceil typed price down to the ceil on blur', () => {
     withStubbedInput(() => {
       const scene = buildScene();
-      scene.refBand = { ref: 80, floor: 40, ceil: 160 };
-      const onChange = (v: number): void => { scene.createStartPrice = Math.max(1, v); };
-      scene.openNumInput('startPrice', 15, onChange, (v: number) => scene.clampToBand(v));
+      scene.core.refBand = { ref: 80, floor: 40, ceil: 160 };
+      const onChange = (v: number): void => { scene.core.createStartPrice = Math.max(1, v); };
+      openNumInput(scene.core, 'startPrice', 15, onChange, (v: number) => scene.createListing.clampToBand(v));
 
-      const inp = scene.hiddenInput as unknown as StubInput;
+      const inp = scene.core.hiddenInput as unknown as StubInput;
       inp.value = '9999';
       inp._fire('input');
       inp._fire('blur');
 
-      expect(scene.createStartPrice).toBe(160);
+      expect(scene.core.createStartPrice).toBe(160);
       scene.destroy();
     });
   });
@@ -597,15 +601,15 @@ describe('AuctionScene — editable price field (openNumInput)', () => {
   it('leaves a value with no clamp fn untouched on blur (e.g. the buyout field)', () => {
     withStubbedInput(() => {
       const scene = buildScene();
-      const onChange = (v: number): void => { scene.createBuyoutPrice = Math.max(0, v); };
-      scene.openNumInput('buyout', 0, onChange);       // no clamp passed
+      const onChange = (v: number): void => { scene.core.createBuyoutPrice = Math.max(0, v); };
+      openNumInput(scene.core, 'buyout', 0, onChange);       // no clamp passed
 
-      const inp = scene.hiddenInput as unknown as StubInput;
+      const inp = scene.core.hiddenInput as unknown as StubInput;
       inp.value = '5000';
       inp._fire('input');
       inp._fire('blur');
 
-      expect(scene.createBuyoutPrice).toBe(5000);
+      expect(scene.core.createBuyoutPrice).toBe(5000);
       scene.destroy();
     });
   });
@@ -613,34 +617,34 @@ describe('AuctionScene — editable price field (openNumInput)', () => {
   it('is wired to the start-price field in the create form (tapping it opens the numeric editor)', () => {
     withStubbedInput(() => {
       const scene = buildScene();
-      scene.createClass = 'equipment'; // no qty row, so '80' below is unambiguously the start price
-      scene.createSaleMode = 'auction';
-      scene.refBand = { ref: 80, floor: 40, ceil: 160 };
-      scene.createStartPrice = 80;     // distinctive value → its rendered field label is unique
-      scene.createBuyoutPrice = 0;
-      scene.openCreateForm();
+      scene.core.createClass = 'equipment'; // no qty row, so '80' below is unambiguously the start price
+      scene.core.createSaleMode = 'auction';
+      scene.core.refBand = { ref: 80, floor: 40, ceil: 160 };
+      scene.core.createStartPrice = 80;     // distinctive value → its rendered field label is unique
+      scene.core.createBuyoutPrice = 0;
+      scene.createListing.openCreateForm();
 
       // Tap the hit sitting under the rendered '80' (the editable start-price field value).
       tapLabel(scene, scene.container, '80', 'modalHits');
-      expect(scene.numEditKey).toBe('startPrice');
+      expect(scene.core.numEditKey).toBe('startPrice');
       scene.destroy();
     });
   });
 
   it('renders a blinking caret in the editable field while it is being typed into', () => {
     const scene = buildScene();
-    scene.createClass = 'material';
-    scene.createSaleMode = 'auction';
-    scene.refBand = { ref: 80, floor: 40, ceil: 160 };
-    scene.createStartPrice = 80;
-    scene.numEditKey = 'startPrice';
+    scene.core.createClass = 'material';
+    scene.core.createSaleMode = 'auction';
+    scene.core.refBand = { ref: 80, floor: 40, ceil: 160 };
+    scene.core.createStartPrice = 80;
+    scene.core.numEditKey = 'startPrice';
 
-    scene.caretOn = true;
-    scene.openCreateForm();
+    scene.core.caretOn = true;
+    scene.createListing.openCreateForm();
     expect(collectTexts(scene.container)).toContain('80|');
 
-    scene.caretOn = false;
-    scene.openCreateForm();
+    scene.core.caretOn = false;
+    scene.createListing.openCreateForm();
     expect(collectTexts(scene.container)).not.toContain('80|');
     scene.destroy();
   });
@@ -651,35 +655,35 @@ describe('AuctionScene — editable price field (openNumInput)', () => {
 describe('AuctionScene — create form item field (doubled height + emphasis)', () => {
   it('doubles the standard 30*SCALE input-row height, and stays the very first modalHits entry', () => {
     const scene = buildScene();
-    scene.createClass = 'material'; // default, always has a selected label ("Scrap")
-    scene.openCreateForm();
+    scene.core.createClass = 'material'; // default, always has a selected label ("Scrap")
+    scene.createListing.openCreateForm();
 
     // The item field's tap-to-open-picker hit rect is pushed before any other row (qty/sale mode/
     // price/buyer/buttons), so it's always index 0 regardless of createClass/saleMode.
-    const itemHit = scene.modalHits[0];
+    const itemHit = scene.core.modalHits[0];
     expect(itemHit.rect.h).toBe(60 * FORM_SCALE); // was 30*SCALE pre-2026-08-08
 
-    const openItemPicker = vi.spyOn(scene, 'openItemPicker');
+    const openItemPickerSpy = vi.spyOn(itemPickerRenderModule, 'openItemPicker');
     itemHit.action();
-    expect(openItemPicker).toHaveBeenCalledTimes(1);
+    expect(openItemPickerSpy).toHaveBeenCalledTimes(1);
     scene.destroy();
   });
 
   it('keeps the doubled height even with no item selected yet (only the emphasis styling differs)', () => {
     const scene = buildScene(); // no getSave → listableEquipment() is empty → selectedItemLabel() is null
-    scene.createClass = 'equipment';
-    scene.createEquipId = null;
-    scene.openCreateForm();
+    scene.core.createClass = 'equipment';
+    scene.core.createEquipId = null;
+    scene.createListing.openCreateForm();
 
-    expect(scene.selectedItemLabel()).toBeNull();
-    expect(scene.modalHits[0].rect.h).toBe(60 * FORM_SCALE);
+    expect(selectedItemLabel(scene.core)).toBeNull();
+    expect(scene.core.modalHits[0].rect.h).toBe(60 * FORM_SCALE);
     scene.destroy();
   });
 
   it('renders the selected item name larger and bold — reads at a glance vs. the plain placeholder', () => {
     const scene = buildScene();
-    scene.createClass = 'material'; // selectedItemLabel() → "Scrap"
-    scene.openCreateForm();
+    scene.core.createClass = 'material'; // selectedItemLabel() → "Scrap"
+    scene.createListing.openCreateForm();
 
     const label = findTextNode(scene.container, t('auction.scrap'));
     expect(label).not.toBeNull();
@@ -692,9 +696,9 @@ describe('AuctionScene — create form item field (doubled height + emphasis)', 
 
   it('renders the unselected placeholder at the plain, non-emphasized size/weight', () => {
     const scene = buildScene();
-    scene.createClass = 'equipment';
-    scene.createEquipId = null; // no selection → placeholder shown
-    scene.openCreateForm();
+    scene.core.createClass = 'equipment';
+    scene.core.createEquipId = null; // no selection → placeholder shown
+    scene.createListing.openCreateForm();
 
     const placeholder = findTextNode(scene.container, t('auction.tapChoose'));
     expect(placeholder).not.toBeNull();
@@ -705,11 +709,11 @@ describe('AuctionScene — create form item field (doubled height + emphasis)', 
 
   it('does not overlap the row below it (Qty) after the extra height was added to the layout math', () => {
     const scene = buildScene();
-    scene.createClass = 'material'; // isMaterial → a Qty row is rendered right after the item field
-    scene.openCreateForm();
+    scene.core.createClass = 'material'; // isMaterial → a Qty row is rendered right after the item field
+    scene.createListing.openCreateForm();
 
-    const itemHit = scene.modalHits[0];
-    const qtyMinusHit = scene.modalHits[1]; // Qty's "−" stepper button, first hit pushed after the item field
+    const itemHit = scene.core.modalHits[0];
+    const qtyMinusHit = scene.core.modalHits[1]; // Qty's "−" stepper button, first hit pushed after the item field
     expect(qtyMinusHit.rect.y).toBeGreaterThan(itemHit.rect.y + itemHit.rect.h);
     scene.destroy();
   });
@@ -720,20 +724,20 @@ describe('AuctionScene — create form item field (doubled height + emphasis)', 
 describe('AuctionScene — myBids()', () => {
   it('keeps only auction-mode listings where I am the current top bidder', () => {
     const scene = buildScene({ myAccountId: 'acc_me' });
-    scene.allAuctions = [
+    scene.core.allAuctions = [
       makeAuction({ auctionId: 'a1', saleMode: 'auction', topBid: { bidderId: 'acc_me', amount: 10, ts: 0 } }),
       makeAuction({ auctionId: 'a2', saleMode: 'auction', topBid: { bidderId: 'acc_other', amount: 20, ts: 0 } }),
       makeAuction({ auctionId: 'a3', saleMode: 'fixed' }), // fixed-price listings never have a topBid
       makeAuction({ auctionId: 'a4', saleMode: 'auction' }), // no bids yet
     ];
-    expect(scene.myBids().map((a: AuctionView) => a.auctionId)).toEqual(['a1']);
+    expect(scene.list.myBids().map((a: AuctionView) => a.auctionId)).toEqual(['a1']);
     scene.destroy();
   });
 
   it('returns an empty list when myAccountId is not wired', () => {
     const scene = buildScene();
-    scene.allAuctions = [makeAuction({ saleMode: 'auction', topBid: { bidderId: 'acc_other', amount: 20, ts: 0 } })];
-    expect(scene.myBids()).toEqual([]);
+    scene.core.allAuctions = [makeAuction({ saleMode: 'auction', topBid: { bidderId: 'acc_other', amount: 20, ts: 0 } })];
+    expect(scene.list.myBids()).toEqual([]);
     scene.destroy();
   });
 });
@@ -743,14 +747,14 @@ describe('AuctionScene — myBids()', () => {
 describe('AuctionScene — My Listings status badges', () => {
   it('open listing shows Cancel; sold/expired/cancelled show a status badge instead', () => {
     const scene = buildScene();
-    scene.myListings = [
+    scene.core.myListings = [
       makeAuction({ auctionId: 'open1', status: 'open' }),
       makeAuction({ auctionId: 'sold1', status: 'sold' }),
       makeAuction({ auctionId: 'exp1', status: 'expired' }),
       makeAuction({ auctionId: 'can1', status: 'cancelled' }),
     ];
-    scene.activeTab = 'mine';
-    scene.loading = false;
+    scene.core.activeTab = 'mine';
+    scene.core.loading = false;
     scene.render();
 
     const texts = collectTexts(scene.container);
@@ -763,15 +767,15 @@ describe('AuctionScene — My Listings status badges', () => {
 
   it('a closed listing exposes no cancel hit rect (badge is informational only)', () => {
     const scene = buildScene();
-    scene.myListings = [makeAuction({ auctionId: 'exp1', status: 'expired' })];
-    scene.activeTab = 'mine';
-    scene.loading = false;
+    scene.core.myListings = [makeAuction({ auctionId: 'exp1', status: 'expired' })];
+    scene.core.activeTab = 'mine';
+    scene.core.loading = false;
     scene.render();
 
     // The status badge must not sit over any actionable hit rect.
     const pos = findLabelPos(scene.container, t('auction.statusExpired'));
     expect(pos).not.toBeNull();
-    const hits: Hit[] = scene.hitRects;
+    const hits: Hit[] = scene.core.hitRects;
     const hit = hits.find(({ rect: r }) => pos!.x >= r.x && pos!.x <= r.x + r.w && pos!.y >= r.y && pos!.y <= r.y + r.h);
     expect(hit).toBeUndefined();
     scene.destroy();
@@ -784,9 +788,9 @@ describe('AuctionScene — market cell equipment level display', () => {
   it('draws a gold-icon star row (one child per level) beneath the name for a leveled equipment listing', () => {
     const scene = buildScene();
     const inst: EquipmentInstance = { id: 'e1', defId: 'wp_pencil', rarity: 'common', level: 4, affixes: [] };
-    scene.allAuctions = [makeAuction({ itemType: 'equipment', item: { instance: inst } })];
-    scene.activeTab = 'all';
-    scene.loading = false;
+    scene.core.allAuctions = [makeAuction({ itemType: 'equipment', item: { instance: inst } })];
+    scene.core.activeTab = 'all';
+    scene.core.loading = false;
     scene.render();
 
     const rows = starRows(scene.container);
@@ -795,7 +799,7 @@ describe('AuctionScene — market cell equipment level display', () => {
 
     // The old "+4" splice must be gone — the name label is bare, and no rendered text is "+N".
     const texts = collectTexts(scene.container);
-    expect(texts).toContain(scene.equipName('wp_pencil'));
+    expect(texts).toContain(equipName('wp_pencil'));
     expect(texts.some((s) => /^\+\d+$/.test(s))).toBe(false);
     scene.destroy();
   });
@@ -803,23 +807,23 @@ describe('AuctionScene — market cell equipment level display', () => {
   it('draws no star row (and no "+0") for an unenhanced equipment listing', () => {
     const scene = buildScene();
     const inst: EquipmentInstance = { id: 'e1', defId: 'wp_pencil', rarity: 'common', level: 0, affixes: [] };
-    scene.allAuctions = [makeAuction({ itemType: 'equipment', item: { instance: inst } })];
-    scene.activeTab = 'all';
-    scene.loading = false;
+    scene.core.allAuctions = [makeAuction({ itemType: 'equipment', item: { instance: inst } })];
+    scene.core.activeTab = 'all';
+    scene.core.loading = false;
     scene.render();
 
     expect(starRows(scene.container)).toHaveLength(0);
     const texts = collectTexts(scene.container);
-    expect(texts).toContain(scene.equipName('wp_pencil'));
+    expect(texts).toContain(equipName('wp_pencil'));
     expect(texts.some((s) => s.includes('+0'))).toBe(false);
     scene.destroy();
   });
 
   it('draws no star row for a non-equipment listing (material)', () => {
     const scene = buildScene();
-    scene.allAuctions = [makeAuction({ itemType: 'material', item: { material: 'scrap' }, qty: 5 })];
-    scene.activeTab = 'all';
-    scene.loading = false;
+    scene.core.allAuctions = [makeAuction({ itemType: 'material', item: { material: 'scrap' }, qty: 5 })];
+    scene.core.activeTab = 'all';
+    scene.core.loading = false;
     scene.render();
 
     expect(starRows(scene.container)).toHaveLength(0);
@@ -834,9 +838,9 @@ describe('AuctionScene — market cell card level display', () => {
   it('draws a gold-icon star row (one child per level) beneath the name for a leveled card listing', () => {
     const scene = buildScene();
     const inst: CardInstance = { id: 'c1', defId: 'lichuang', level: 3, gear: {}, locked: false };
-    scene.allAuctions = [makeAuction({ itemType: 'card', item: { instance: inst } })];
-    scene.activeTab = 'all';
-    scene.loading = false;
+    scene.core.allAuctions = [makeAuction({ itemType: 'card', item: { instance: inst } })];
+    scene.core.activeTab = 'all';
+    scene.core.loading = false;
     scene.render();
 
     const rows = starRows(scene.container);
@@ -845,7 +849,7 @@ describe('AuctionScene — market cell card level display', () => {
 
     // The old "Lv.3" splice must be gone entirely — bare name, no rendered text mentions "Lv.".
     const texts = collectTexts(scene.container);
-    expect(texts).toContain(scene.cardName('lichuang'));
+    expect(texts).toContain(cardName('lichuang'));
     expect(texts.some((s) => /Lv\.\d/.test(s))).toBe(false);
     scene.destroy();
   });
@@ -853,9 +857,9 @@ describe('AuctionScene — market cell card level display', () => {
   it('draws exactly one star (not zero, not clamped away) for a level-1 card listing', () => {
     const scene = buildScene();
     const inst: CardInstance = { id: 'c1', defId: 'lichuang', level: 1, gear: {}, locked: false };
-    scene.allAuctions = [makeAuction({ itemType: 'card', item: { instance: inst } })];
-    scene.activeTab = 'all';
-    scene.loading = false;
+    scene.core.allAuctions = [makeAuction({ itemType: 'card', item: { instance: inst } })];
+    scene.core.activeTab = 'all';
+    scene.core.loading = false;
     scene.render();
 
     const rows = starRows(scene.container);
@@ -875,9 +879,9 @@ describe('AuctionScene — market cell countdown', () => {
     try {
       const scene = buildScene();
       const remainingMs = ((3 * 86400) + (2 * 3600) + (5 * 60) + 20) * 1000;
-      scene.allAuctions = [makeAuction({ status: 'open', expireAt: fixedNow + remainingMs })];
-      scene.activeTab = 'all';
-      scene.loading = false;
+      scene.core.allAuctions = [makeAuction({ status: 'open', expireAt: fixedNow + remainingMs })];
+      scene.core.activeTab = 'all';
+      scene.core.loading = false;
       scene.render();
 
       expect(collectTexts(scene.container)).toContain(t('auction.timeLeft', { d: 3, h: 2, m: 5, s: 20 }));
@@ -894,9 +898,9 @@ describe('AuctionScene — market cell countdown', () => {
     try {
       const scene = buildScene();
       const remainingMs = (2 * 3600 + 30 * 60) * 1000;
-      scene.myListings = [makeAuction({ status: 'sold', expireAt: fixedNow + remainingMs })];
-      scene.activeTab = 'mine';
-      scene.loading = false;
+      scene.core.myListings = [makeAuction({ status: 'sold', expireAt: fixedNow + remainingMs })];
+      scene.core.activeTab = 'mine';
+      scene.core.loading = false;
       scene.render();
 
       expect(collectTexts(scene.container)).not.toContain(t('auction.timeLeft', { d: 0, h: 2, m: 30, s: 0 }));
@@ -908,13 +912,13 @@ describe('AuctionScene — market cell countdown', () => {
 
   it('shows the "For You" badge in Market only when I am the designated buyer', () => {
     const scene = buildScene({ myAccountId: 'acc_me' });
-    scene.allAuctions = [
+    scene.core.allAuctions = [
       makeAuction({ auctionId: 'a_mine', designatedBuyerId: 'acc_me' }),
       makeAuction({ auctionId: 'a_other', designatedBuyerId: 'acc_other' }),
       makeAuction({ auctionId: 'a_open' }),
     ];
-    scene.activeTab = 'all';
-    scene.loading = false;
+    scene.core.activeTab = 'all';
+    scene.core.loading = false;
     scene.render();
 
     expect(collectTexts(scene.container)).toContain(t('auction.exclusive'));
@@ -923,9 +927,9 @@ describe('AuctionScene — market cell countdown', () => {
 
   it('does not show the "For You" badge outside Market (My Auctions / My Bids)', () => {
     const scene = buildScene({ myAccountId: 'acc_me' });
-    scene.myListings = [makeAuction({ designatedBuyerId: 'acc_me' })];
-    scene.activeTab = 'mine';
-    scene.loading = false;
+    scene.core.myListings = [makeAuction({ designatedBuyerId: 'acc_me' })];
+    scene.core.activeTab = 'mine';
+    scene.core.loading = false;
     scene.render();
 
     expect(collectTexts(scene.container)).not.toContain(t('auction.exclusive'));
@@ -943,20 +947,20 @@ describe('AuctionScene — market cell countdown', () => {
     try {
       const remainingMs = (5 * 3600) * 1000;
       const withoutBuyout = buildScene();
-      withoutBuyout.allAuctions = [makeAuction({
+      withoutBuyout.core.allAuctions = [makeAuction({
         auctionId: 'no-buyout', saleMode: 'auction', status: 'open', expireAt: fixedNow + remainingMs,
       })];
-      withoutBuyout.activeTab = 'all';
-      withoutBuyout.loading = false;
+      withoutBuyout.core.activeTab = 'all';
+      withoutBuyout.core.loading = false;
       withoutBuyout.render();
       const yWithoutBuyout = findLabelPos(withoutBuyout.container, t('auction.timeLeft', { d: 0, h: 5, m: 0, s: 0 }))?.y;
 
       const withBuyout = buildScene();
-      withBuyout.allAuctions = [makeAuction({
+      withBuyout.core.allAuctions = [makeAuction({
         auctionId: 'with-buyout', saleMode: 'auction', buyoutPrice: 999, status: 'open', expireAt: fixedNow + remainingMs,
       })];
-      withBuyout.activeTab = 'all';
-      withBuyout.loading = false;
+      withBuyout.core.activeTab = 'all';
+      withBuyout.core.loading = false;
       withBuyout.render();
       const yWithBuyout = findLabelPos(withBuyout.container, t('auction.timeLeft', { d: 0, h: 5, m: 0, s: 0 }))?.y;
 
@@ -978,16 +982,16 @@ describe('AuctionScene — market cell countdown', () => {
     try {
       const scene = buildScene();
       const remainingMs = (1 * 86400 + 3 * 3600) * 1000;
-      scene.allAuctions = [makeAuction({ saleMode: 'auction', buyoutPrice: 999, status: 'open', expireAt: fixedNow + remainingMs })];
-      scene.activeTab = 'all';
-      scene.loading = false;
+      scene.core.allAuctions = [makeAuction({ saleMode: 'auction', buyoutPrice: 999, status: 'open', expireAt: fixedNow + remainingMs })];
+      scene.core.activeTab = 'all';
+      scene.core.loading = false;
       scene.render();
 
       const countdownPos = findLabelPos(scene.container, t('auction.timeLeft', { d: 1, h: 3, m: 0, s: 0 }));
       expect(countdownPos).not.toBeNull();
 
       // The buy/bid button hit rect is the only 96x40 rect in the list (btnW/btnH in list.ts).
-      const btnHit = (scene.hitRects as Hit[]).find(({ rect: r }) => r.w === 96 && r.h === 40);
+      const btnHit = (scene.core.hitRects as Hit[]).find(({ rect: r }) => r.w === 96 && r.h === 40);
       expect(btnHit).toBeDefined();
 
       // Generous line-height allowance (14px font) — the countdown's own bottom edge must sit
@@ -1010,12 +1014,12 @@ describe('AuctionScene — sidebar tabs & filter chips', () => {
     expect(worldApi.getMyListings).toHaveBeenCalledTimes(1);
 
     tapLabel(scene, scene.container, t('auction.tabMine'));
-    expect(scene.activeTab).toBe('mine');
+    expect(scene.core.activeTab).toBe('mine');
     expect(worldApi.listAuctions).toHaveBeenCalledTimes(1); // unchanged — tab switch is local state only
     expect(worldApi.getMyListings).toHaveBeenCalledTimes(1);
 
     tapLabel(scene, scene.container, t('auction.tabBids'));
-    expect(scene.activeTab).toBe('bids');
+    expect(scene.core.activeTab).toBe('bids');
     scene.destroy();
   });
 
@@ -1025,7 +1029,7 @@ describe('AuctionScene — sidebar tabs & filter chips', () => {
     expect(worldApi.listAuctions).toHaveBeenCalledWith(undefined);
 
     tapLabel(scene, scene.container, t('auction.filterEquipment'));
-    expect(scene.allFilter).toBe('equipment');
+    expect(scene.core.allFilter).toBe('equipment');
     expect(worldApi.listAuctions).toHaveBeenCalledTimes(2);
     expect(worldApi.listAuctions).toHaveBeenLastCalledWith({ itemType: 'equipment' });
     scene.destroy();
@@ -1041,7 +1045,7 @@ describe('AuctionScene — sidebar tabs & filter chips', () => {
 
   it('the filter bar is hidden outside the "all" (market) tab', () => {
     const scene = buildScene();
-    scene.activeTab = 'mine';
+    scene.core.activeTab = 'mine';
     scene.render();
     expect(findLabelPos(scene.container, t('auction.filterEquipment'))).toBeNull();
     scene.destroy();
@@ -1061,7 +1065,7 @@ describe('AuctionScene — background poll', () => {
     const scene = buildScene({ worldApi });
     await flush();
     expect(worldApi.listAuctions).toHaveBeenCalledTimes(1);
-    expect(scene.allAuctions).toHaveLength(1);
+    expect(scene.core.allAuctions).toHaveLength(1);
 
     // Not enough time yet — no extra fetch.
     scene.update(AUCTION_POLL_SEC - 1);
@@ -1071,7 +1075,7 @@ describe('AuctionScene — background poll', () => {
     scene.update(2);
     expect(worldApi.listAuctions).toHaveBeenCalledTimes(2);
     await flush();
-    expect(scene.allAuctions).toHaveLength(0);
+    expect(scene.core.allAuctions).toHaveLength(0);
     scene.destroy();
   });
 
@@ -1081,11 +1085,11 @@ describe('AuctionScene — background poll', () => {
     await flush();
     expect(worldApi.listAuctions).toHaveBeenCalledTimes(1);
 
-    scene.modalOpen = true;
+    scene.core.modalOpen = true;
     scene.update(AUCTION_POLL_SEC + 5);
     expect(worldApi.listAuctions).toHaveBeenCalledTimes(1); // suppressed
 
-    scene.modalOpen = false;
+    scene.core.modalOpen = false;
     scene.update(AUCTION_POLL_SEC + 1);
     expect(worldApi.listAuctions).toHaveBeenCalledTimes(2); // resumes once idle
     scene.destroy();
@@ -1094,7 +1098,7 @@ describe('AuctionScene — background poll', () => {
   it('does not fire the poll while still loading the initial data', () => {
     const worldApi = stubWorldApi();
     const scene = buildScene({ worldApi });
-    scene.loading = true; // simulate the in-flight initial load
+    scene.core.loading = true; // simulate the in-flight initial load
     scene.update(AUCTION_POLL_SEC + 1);
     expect(worldApi.listAuctions).toHaveBeenCalledTimes(1); // only the constructor's load
     scene.destroy();
@@ -1104,7 +1108,7 @@ describe('AuctionScene — background poll', () => {
     const worldApi = stubWorldApi();
     const scene = buildScene({ worldApi });
     await flush();
-    scene.itemPickerOpen = true; // picker replaces the list (modalOpen stays false)
+    scene.core.itemPickerOpen = true; // picker replaces the list (modalOpen stays false)
     scene.update(AUCTION_POLL_SEC + 5);
     expect(worldApi.listAuctions).toHaveBeenCalledTimes(1);
     scene.destroy();
@@ -1123,7 +1127,7 @@ describe('AuctionScene — background poll', () => {
     const worldApi = stubWorldApi();
     const scene = buildScene({ worldApi });
     await flush();
-    scene.allFilter = 'equipment';
+    scene.core.allFilter = 'equipment';
     scene.update(AUCTION_POLL_SEC + 1);
     expect(worldApi.listAuctions).toHaveBeenLastCalledWith({ itemType: 'equipment' });
     scene.destroy();
@@ -1157,7 +1161,7 @@ describe('AuctionScene — background poll', () => {
     scene.update(AUCTION_POLL_SEC + 1);
     await flush();
     expect(renderSpy).toHaveBeenCalled();
-    expect(scene.allAuctions[0].price).toBe(120);
+    expect(scene.core.allAuctions[0].price).toBe(120);
     scene.destroy();
   });
 
@@ -1172,12 +1176,12 @@ describe('AuctionScene — background poll', () => {
     await flush();
 
     scene.update(AUCTION_POLL_SEC + 1);       // kicks off pollRefresh (fetch now pending)
-    scene.modalOpen = true;                    // user opens a form while it's in flight
+    scene.core.modalOpen = true;                    // user opens a form while it's in flight
     const renderSpy = vi.spyOn(scene, 'render');
     resolveList([]);                           // fetch resolves with an emptied market
     await flush();
     expect(renderSpy).not.toHaveBeenCalled();  // post-await guard drops it — form untouched
-    expect(scene.allAuctions).toHaveLength(1); // snapshot left as-is
+    expect(scene.core.allAuctions).toHaveLength(1); // snapshot left as-is
     scene.destroy();
   });
 
@@ -1191,10 +1195,10 @@ describe('AuctionScene — background poll', () => {
     });
     const scene = buildScene({ worldApi });
     await flush();
-    expect(scene.allAuctions).toHaveLength(1);
+    expect(scene.core.allAuctions).toHaveLength(1);
     scene.update(AUCTION_POLL_SEC + 1);
     await flush();
-    expect(scene.allAuctions).toHaveLength(1); // unchanged — kept the last good snapshot
+    expect(scene.core.allAuctions).toHaveLength(1); // unchanged — kept the last good snapshot
     scene.destroy();
   });
 
@@ -1205,7 +1209,7 @@ describe('AuctionScene — background poll', () => {
     scene.destroy();
     scene.update(AUCTION_POLL_SEC + 1);
     expect(worldApi.listAuctions).toHaveBeenCalledTimes(1); // no post-destroy fetch
-    await scene.pollRefresh();                              // guarded early-return, no throw
+    await scene.core.pollRefresh();                              // guarded early-return, no throw
     expect(worldApi.listAuctions).toHaveBeenCalledTimes(1);
   });
 });
@@ -1223,12 +1227,12 @@ describe('AuctionScene — buy race', () => {
     await flush();
     toastMsgs.length = 0;
 
-    await scene.doBuy('auc_1');
+    await scene.trade.doBuy('auc_1');
 
     expect(toastMsgs).toContain(t('auction.err.soldOut'));
     expect(worldApi.listAuctions).toHaveBeenCalledTimes(2); // refreshed after the lost race
     await flush();
-    expect(scene.allAuctions).toHaveLength(0);
+    expect(scene.core.allAuctions).toHaveLength(0);
     scene.destroy();
   });
 
@@ -1240,7 +1244,7 @@ describe('AuctionScene — buy race', () => {
     await flush();
     toastMsgs.length = 0;
 
-    await scene.doBuy('auc_1');
+    await scene.trade.doBuy('auc_1');
 
     expect(toastMsgs).toContain(t('auction.err.soldOut'));
     expect(worldApi.listAuctions).toHaveBeenCalledTimes(2); // refreshed
@@ -1255,7 +1259,7 @@ describe('AuctionScene — buy race', () => {
     await flush();
     toastMsgs.length = 0;
 
-    await scene.doBuy('auc_1');
+    await scene.trade.doBuy('auc_1');
 
     expect(toastMsgs).toContain(t('auction.err.insufficientFunds'));
     expect(worldApi.listAuctions).toHaveBeenCalledTimes(1); // no refresh — the listing is still valid
@@ -1273,7 +1277,7 @@ describe('AuctionScene — buy race', () => {
     await flush();
     toastMsgs.length = 0;
 
-    await scene.doBid('auc_1', 150);
+    await scene.bid.doBid('auc_1', 150);
 
     expect(worldApi.placeBid).toHaveBeenCalledWith('auc_1', 150);
     expect(toastMsgs).toContain(t('auction.bidPlaced'));
@@ -1289,7 +1293,7 @@ describe('AuctionScene — buy race', () => {
     await flush();
     toastMsgs.length = 0;
 
-    await scene.doBid('auc_1', 150);
+    await scene.bid.doBid('auc_1', 150);
 
     expect(toastMsgs).toContain(t('auction.err.closed'));
     expect(worldApi.listAuctions).toHaveBeenCalledTimes(2); // stale card refreshed off
@@ -1304,7 +1308,7 @@ describe('AuctionScene — buy race', () => {
     await flush();
     toastMsgs.length = 0;
 
-    await scene.doBid('auc_1', 1);
+    await scene.bid.doBid('auc_1', 1);
 
     expect(toastMsgs).toContain(t('auction.err.bidTooLow'));
     expect(worldApi.listAuctions).toHaveBeenCalledTimes(1);
@@ -1327,8 +1331,8 @@ describe('AuctionScene — card pictures always use the base portrait, never an 
   it('market listing (list.ts): passes only the card instance, not getSave().equipped', () => {
     const save: SaveData = { ...makeNewSave('acc_1'), equipped: { [skinEquipKey(UnitType.Infantry)]: 'skin_shop_c1' } };
     const scene = buildScene({ getSave: () => save });
-    scene.loading = false;
-    scene.allAuctions = [
+    scene.core.loading = false;
+    scene.core.allAuctions = [
       makeAuction({
         itemType: 'card',
         item: { instance: { id: 'c1', defId: 'lichuang', level: 1, gear: {}, locked: false } as CardInstance },
@@ -1351,7 +1355,7 @@ describe('AuctionScene — card pictures always use the base portrait, never an 
       cardInv: { c1: { id: 'c1', defId: 'lichuang', level: 1, gear: {}, locked: false } as CardInstance },
     };
     const scene = buildScene({ getSave: () => save });
-    scene.itemPickerOpen = true;
+    scene.core.itemPickerOpen = true;
     const spy = cardSpy();
     spy.mock.calls.length = 0;
     scene.render();
