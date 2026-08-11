@@ -1944,3 +1944,12 @@ cols.tiles.find({ worldId, type: 'base', ownerId: { $nin: excludeOwners } })
 - Battle replays 徽章原来是低对比度的纸色 `sketchPanel`（浅底深字），紧挨着它上方的 Marches 徽章却一直用高对比度的 `sketchButton`（深底浅字）——同一组动作按钮里视觉权重不统一，改成跟 Marches 一致的 `sketchButton` 样式。
 
 **验证**：`tsc --noEmit` 全绿；`vitest run --config vitest.ui.config.ts` 全量 160 文件/1457 例全绿。新增/改动的回归测试：`sceneHeaderPortraitContentScale.ui.ts`（`backRect.w` 追踪真实 chip 宽度，非硬编码楼层）、`worldMapHeaderResourceTotal.ui.ts`（六位数库存不再溢出商店按钮）、新建 `worldMapStatusCardLegibility.ui.ts`（两个数值块分离渲染 + Battle replays 配色对齐 Marches）——四个新断言均先在改动前的代码上确认必现失败，再确认改动后转绿。受限于本环境 Browser pane 截图不可用（`screenshot failed: pane not displayed`）+ 拉起完整 worldsvc 后端成本过高，本次未做真实像素级截图核对，纯代码/测试验证。
+
+**补测试 + 横屏不受影响核对（同日，用户要求"加测试，并确保横屏不受影响"）**：
+
+三处改动各补一条落在横屏真实尺寸（`LandscapeLayout`：`designHeight` 固定 1080，比竖屏 ≥1920 矮得多，`designWidth` 随宽高比走、16:9 基准 1920）下的断言：
+- 资源栏缩放：把截图里同一组六位数库存换到横屏尺寸（w=1920, headerH=130）跑一遍，断言 `cluster.scale.x===1`（完全不触发缩放，可用空间 ≈1400px 远大于自然宽度 ≈900px）。
+- `backRect.w`：横屏/紧凑档（`headerH` design ≈130，低于 `backSize` 的放大阈值）断言精确等于旧的 `BACK_HIT_W=160`，不被这次改动动到。
+- 兵力/领地卡片：卡高从 56px 涨到 88px，横屏固定的 1080 矮画布是这 32px 增量最吃紧的场景——补一条断言右侧整条列（状态卡→Marches→Battle replays）依然完整落在可视区域内，没有被挤出屏幕；另外两条确认数值分离渲染、Battle replays 配色修复在横屏尺寸下同样成立。
+
+`tsc --noEmit` 全绿；`vitest run --config vitest.ui.config.ts` 全量 161 文件/1466 例全绿。
