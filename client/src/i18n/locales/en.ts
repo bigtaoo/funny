@@ -827,7 +827,7 @@ export const en: Record<TranslationKey, string> = {
   'mail.delete': 'Delete',
   'mail.deleteBlockedAttachment': 'Claim the attachment before deleting this mail',
   'mail.welcome.author.subject': 'A note from the author',
-  'mail.welcome.author.body': "Hi, I'm Tao, the person who made this game. Thank you for playing this far, and for taking the time to explore the story. Here's a little something for you — if you ever have thoughts, feedback, or just want to say hi, I'd love to hear from you: tao@gamestao.com. Have fun!",
+  'mail.welcome.author.body': "Hi, I'm Tao, the person who made this game. Thank you for playing this far, and for taking the time to explore the story. Here's a little something for you — if you ever have thoughts, feedback, or just want to say hi, feel free to email me at tao@gamestao.com, or leave a note on the Feedback page in the lobby. Have fun!",
   // SLG World (S8)
   'world.title': 'World',
   'world.troops': 'Troops',

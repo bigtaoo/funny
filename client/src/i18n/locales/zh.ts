@@ -840,7 +840,7 @@ export const zh = {
   'mail.delete': '删除邮件',
   'mail.deleteBlockedAttachment': '请先领取附件再删除邮件',
   'mail.welcome.author.subject': '来自作者的一封信',
-  'mail.welcome.author.body': '你好，我是这个游戏的作者涛。谢谢你玩到这里，也谢谢你愿意花时间探索这个故事。这里有一点小心意——不管你有什么想法、建议，或者只是想聊聊，都欢迎写信给我：tao@gamestao.com。祝你游戏愉快！',
+  'mail.welcome.author.body': '你好，我是这个游戏的作者涛。谢谢你玩到这里，也谢谢你愿意花时间探索这个故事。这里有一点小心意——不管你有什么想法、建议，还是只是想聊聊，都欢迎写信给我（tao@gamestao.com），或者在大厅的"反馈"页面留言，我们都看得到。祝你游戏愉快！',
   // ── SLG overworld (S8) ────────────────────────────────────────────────────
   'world.title': '大世界',
   'world.troops': '兵力',
