@@ -22,6 +22,7 @@ import * as PIXI from 'pixi.js-legacy';
 import { createLayout } from '../../src/layout/ScalingManager';
 import { InputManager } from '../../src/inputSystem/InputManager';
 import { initI18n, t } from '../../src/i18n';
+import { snapFont } from '../../src/render/fontScale';
 import { FriendsScene } from '../../src/scenes/FriendsScene';
 import { addButton } from '../../src/scenes/FriendsScene/chrome';
 
@@ -39,6 +40,9 @@ initI18n('zh', memStore, ['zh', 'en', 'de']);
 // isn't in play here, so `w` is the full device width both the input box and the send button
 // split, exactly what makes the send button narrow enough to overflow.
 const [W, H] = [400, 900];
+// Matches test/ui/scenes.ui.ts's own LANDSCAPE fixture — the report was portrait-only, this is
+// the "make sure the fix doesn't disturb the orientation that was already fine" side of the bug.
+const [LW, LH] = [1280, 800];
 
 /** Every PIXI.Text currently in the display tree, recursing sub-containers. */
 function collectTextNodes(root: PIXI.Container): PIXI.Text[] {
@@ -53,8 +57,8 @@ function collectTextNodes(root: PIXI.Container): PIXI.Text[] {
   return out;
 }
 
-function build(): any {
-  return new FriendsScene(createLayout(W, H), new InputManager(), {
+function build(w = W, h = H): any {
+  return new FriendsScene(createLayout(w, h), new InputManager(), {
     onBack() {}, onOpenRoom() {},
     myPublicId: '',
     getProfileExtra: async () => ({}),
@@ -151,6 +155,78 @@ describe('FriendsScene world-chat tab — input box overflow fix', () => {
   });
 });
 
+describe('FriendsScene world-chat tab — landscape is unaffected by the portrait fix', () => {
+  // Landscape's content column is generously wide (design width is at least the classic 1920,
+  // and never shrinks the way portrait's device-width-driven sendBtnW/inputW split does) — a
+  // normal-length message and the real send-button label both already fit comfortably. These
+  // pin that the mask/anchor-flip and shrink-to-fit logic added for portrait are true no-ops
+  // here, not just "probably fine because landscape wasn't in the bug report".
+  it('a normal-length composed line stays left-anchored, unshifted from where it drew before the fix', () => {
+    const scene = build(LW, LH);
+    enterWorldTab(scene);
+    scene.core.worldChatActive = true;
+    scene.core.caretOn = true;
+    scene.core.worldChatInput = 'hello world, this is a normal chat message';
+    scene.render();
+
+    const nodes = collectTextNodes(scene.container);
+    const inputTxt = nodes.find((n) => n.text.startsWith(scene.core.worldChatInput));
+    expect(inputTxt).toBeTruthy();
+    expect(inputTxt!.anchor.x).toBe(0);
+    // Left edge sits at the box's left padding, same spot a plain left-anchored, unmasked text
+    // would have drawn at pre-fix — the added mask doesn't shift anything when it isn't cropping.
+    const core = scene.core;
+    const px = core.cX;
+    const sendBtnW = Math.round(core.w * 0.24);
+    const inputW = core.cW - sendBtnW - Math.round(core.w * 0.02);
+    const padX = Math.round(inputW * 0.04);
+    expect(inputTxt!.x).toBe(px + padX);
+
+    scene.destroy();
+  });
+
+  it('an implausibly long line still overflows gracefully (mask + right-anchor) rather than being a portrait-only code path', () => {
+    const scene = build(LW, LH);
+    enterWorldTab(scene);
+    scene.core.worldChatActive = true;
+    scene.core.caretOn = true;
+    // Landscape's own input box is wider than portrait's, so it takes a longer line to
+    // genuinely exceed it — same 180-char line the portrait test uses comfortably clears it.
+    scene.core.worldChatInput = '地方就爱上了科技发达刷屏'.repeat(15);
+    scene.render();
+
+    const nodes = collectTextNodes(scene.container);
+    const inputTxt = nodes.find((n) => n.text.startsWith(scene.core.worldChatInput));
+    expect(inputTxt).toBeTruthy();
+    expect(inputTxt!.mask).toBeInstanceOf(PIXI.Graphics);
+    expect(inputTxt!.anchor.x).toBe(1);
+
+    scene.destroy();
+  });
+
+  it('the real send-button label keeps its default (unshrunk) font size — landscape\'s button is wide enough that the fit loop never engages', () => {
+    const scene = build(LW, LH);
+    enterWorldTab(scene);
+    scene.render();
+
+    const core = scene.core;
+    const sendBtnW = Math.round(core.w * 0.24);
+    const boxH = Math.round(Math.round(core.h * 0.1) * 0.75);
+    const defaultSize = snapFont(Math.round(boxH * 0.36));
+
+    const sendLabel = t('social.world.sendBtn');
+    const nodes = collectTextNodes(scene.container);
+    const btnTxt = nodes.find((n) => n.text === sendLabel);
+    expect(btnTxt).toBeTruthy();
+    expect(btnTxt!.style.fontSize).toBe(defaultSize);
+    // Sanity: the button really is wide enough for this not to be a coincidence — otherwise this
+    // assertion would pass even if the shrink loop mis-fired at a smaller-but-still-valid size.
+    expect(sendBtnW).toBeGreaterThan(300);
+
+    scene.destroy();
+  });
+});
+
 describe('addButton() — shrink-to-fit font sizing (chrome.ts)', () => {
   function fakeCore(): any {
     return { container: new PIXI.Container(), hits: [] };
@@ -182,5 +258,13 @@ describe('addButton() — shrink-to-fit font sizing (chrome.ts)', () => {
     addButton(core, 'OK', 0, 0, 300, 60, 0x2c2c2a, 0xcc9900, () => {}, 0xffffff, 18);
     const label = core.container.children.find((c: PIXI.DisplayObject) => c instanceof PIXI.Text) as PIXI.Text;
     expect(label.style.fontSize).toBe(18);
+  });
+
+  it('the real send button at landscape geometry (461×81, the shape a 1280×800 device computes) does not shrink', () => {
+    const core = fakeCore();
+    addButton(core, '发言 · 50 金币', 0, 0, 461, 81, 0x2c2c2a, 0xcc9900, () => {});
+    const label = core.container.children.find((c: PIXI.DisplayObject) => c instanceof PIXI.Text) as PIXI.Text;
+    expect(label).toBeTruthy();
+    expect(label.style.fontSize).toBe(snapFont(Math.round(81 * 0.36)));
   });
 });
