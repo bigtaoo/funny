@@ -7,7 +7,7 @@ import {
   BOTTOM_SPAWN_ROW,
   TOP_BUILDING_ROW,
   TOP_SPAWN_ROW,
-} from '@game/config';
+} from '@nw/engine/config';
 import type { EditorState, MaskKind } from '../state/EditorState';
 
 /**
