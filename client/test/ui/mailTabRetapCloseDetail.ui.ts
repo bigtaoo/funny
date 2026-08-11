@@ -40,20 +40,20 @@ const mail: MailView = {
 
 type HitRect = { rect: { x: number; y: number; w: number; h: number }; fn: () => void };
 
-// The [800, 1280] fixture below is portrait (w < h → scene.landscape === false), so
+// The [800, 1280] fixture below is portrait (w < h → scene.core.landscape === false), so
 // drawSocialTabRail renders the 5 tabs as the bottom nav bar (drawBottomNavTabs, LOBBY_IA_
 // REDESIGN.md §18/§20), not the old left sidebar rail — its cells are full-bar-height (y ===
-// navTop, h === barH) rather than full-width (x === 0, w === railW). Branch on scene.landscape
+// navTop, h === barH) rather than full-width (x === 0, w === railW). Branch on scene.core.landscape
 // so this still works if the fixture ever changes to a landscape size. railW/barH are read off
 // the scene's own design dims — createLayout maps to a canonical 1080x1920, not the ctor args.
 function railHitsOf(scene: any): HitRect[] {
-  if (scene.landscape) {
-    const railW = sidebarNavW(scene.w, scene.h, scene.landscape);
-    return (scene.hits as HitRect[]).filter((hp) => hp.rect.x === 0 && hp.rect.w === railW);
+  if (scene.core.landscape) {
+    const railW = sidebarNavW(scene.core.w, scene.core.h, scene.core.landscape);
+    return (scene.core.hits as HitRect[]).filter((hp) => hp.rect.x === 0 && hp.rect.w === railW);
   }
-  const barH = bottomNavH(scene.h);
-  const navTop = scene.h - barH;
-  return (scene.hits as HitRect[]).filter((hp) => hp.rect.y === navTop && hp.rect.h === barH);
+  const barH = bottomNavH(scene.core.h);
+  const navTop = scene.core.h - barH;
+  return (scene.core.hits as HitRect[]).filter((hp) => hp.rect.y === navTop && hp.rect.h === barH);
 }
 
 // Center of the Mail rail cell, read off the scene's actual hit rects rather than recomputed
@@ -62,7 +62,7 @@ function railHitsOf(scene: any): HitRect[] {
 // right-most cell in the bottom bar's horizontal strip (portrait — this fixture).
 function mailCellCenter(scene: any): { x: number; y: number } {
   const railHits = railHitsOf(scene);
-  const mailHit = scene.landscape
+  const mailHit = scene.core.landscape
     ? railHits.reduce((lo, hp) => (hp.rect.y > lo.rect.y ? hp : lo), railHits[0]!)
     : railHits.reduce((lo, hp) => (hp.rect.x > lo.rect.x ? hp : lo), railHits[0]!);
   return { x: mailHit.rect.x + mailHit.rect.w / 2, y: mailHit.rect.y + mailHit.rect.h / 2 };
@@ -104,7 +104,7 @@ function tap(input: InputManager, x: number, y: number): void {
 describe('FriendsScene — re-tapping the active Mail tab while a mail is open', () => {
   it('emits a hit rect for every rail tab incl. the active one (so a tap can reach it)', () => {
     const { scene } = build();
-    scene.openMailItem = mail;
+    scene.core.openMailItem = mail;
     scene.render();
     // The bug: drawSidebarTabs emitted no hit for the ACTIVE cell, so with Mail active only 4 of
     // the 5 tabs were tappable and re-tapping Mail could never reach switchTab().
@@ -114,41 +114,41 @@ describe('FriendsScene — re-tapping the active Mail tab while a mail is open',
 
   it('clears openMailItem and returns to the list', () => {
     const { scene, input } = build();
-    scene.openMailItem = mail;
+    scene.core.openMailItem = mail;
     scene.render();
-    expect(scene.tab).toBe('mail');
-    expect(scene.openMailItem).toBe(mail);
+    expect(scene.core.tab).toBe('mail');
+    expect(scene.core.openMailItem).toBe(mail);
 
     const { x, y } = mailCellCenter(scene);
     tap(input, x, y); // re-tap the tab that's already active, through real hit-testing
 
-    expect(scene.tab).toBe('mail');       // stayed on Mail (didn't switch to another tab)
-    expect(scene.openMailItem).toBeNull(); // detail closed → back to the list
+    expect(scene.core.tab).toBe('mail');       // stayed on Mail (didn't switch to another tab)
+    expect(scene.core.openMailItem).toBeNull(); // detail closed → back to the list
     scene.destroy();
   });
 
   it('re-tapping a tab with no mail open is still a no-op (no spurious reload)', () => {
     const { scene, input } = build();
     scene.render();
-    expect(scene.openMailItem).toBeNull();
+    expect(scene.core.openMailItem).toBeNull();
 
     const { x, y } = mailCellCenter(scene);
     tap(input, x, y);
 
-    expect(scene.openMailItem).toBeNull();
-    expect(scene.tab).toBe('mail');
+    expect(scene.core.openMailItem).toBeNull();
+    expect(scene.core.tab).toBe('mail');
     scene.destroy();
   });
 
   it('switching to a different tab still clears openMailItem as before', () => {
     const { scene } = build();
-    scene.openMailItem = mail;
+    scene.core.openMailItem = mail;
     scene.render();
 
-    scene.switchTab('friends');
+    scene.core.switchTab('friends');
 
-    expect(scene.tab).toBe('friends');
-    expect(scene.openMailItem).toBeNull();
+    expect(scene.core.tab).toBe('friends');
+    expect(scene.core.openMailItem).toBeNull();
     scene.destroy();
   });
 });

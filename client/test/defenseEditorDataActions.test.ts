@@ -13,11 +13,16 @@
  */
 import { describe, it, expect, vi } from 'vitest';
 import { initI18n, t } from '../src/i18n';
-import { DataMixin } from '../src/scenes/DefenseEditorScene/data';
+import { DataPanel } from '../src/scenes/DefenseEditorScene/data';
 import {
-  type DefenseEditorSceneBaseCtor, type DefenseEditorTarget, type GarrisonEntry,
-  COLLECTED_UNITS, COLLECTED_BUILDINGS, DEFENSE_ROWS, MAX_BASE_LEVEL,
-} from '../src/scenes/DefenseEditorScene/base';
+  type DefenseEditorTarget,
+  type GarrisonEntry,
+  COLLECTED_UNITS,
+  COLLECTED_BUILDINGS,
+  DEFENSE_ROWS,
+  MAX_BASE_LEVEL,
+} from '../src/scenes/DefenseEditorScene/core';
+import type { DefenseEditorSceneCore } from '../src/scenes/DefenseEditorScene/core';
 import { UNIT_BLUEPRINTS } from '@nw/engine/config';
 import { WorldApiError } from '../src/net/WorldApiClient';
 
@@ -25,8 +30,12 @@ const memStore = (() => {
   const m = new Map<string, string>();
   return {
     getItem: (k: string): string | null => (m.has(k) ? m.get(k)! : null),
-    setItem: (k: string, v: string): void => { m.set(k, v); },
-    removeItem: (k: string): void => { m.delete(k); },
+    setItem: (k: string, v: string): void => {
+      m.set(k, v);
+    },
+    removeItem: (k: string): void => {
+      m.delete(k);
+    },
   };
 })();
 initI18n('en', memStore, ['zh', 'en', 'de']);
@@ -44,8 +53,15 @@ function attackTarget(teamId = 'team1'): DefenseEditorTarget {
   return { mode: 'attack', teamId, teamName: 'Squad A' };
 }
 
-/** Bare-bones stand-in for DefenseEditorSceneBase — only the fields data.ts's mixin body touches. */
-class FakeDefenseEditorSceneBase {
+/**
+ * Bare-bones stand-in for the composed `core` field DataPanel reads/writes through (2026-08-11:
+ * DefenseEditorScene converted from a mixin-chain `extends` to composition — see
+ * claudedocs/client-modules.md's split-form priority note) — only the fields data.ts's class body
+ * touches. `buildArmy()` moved from data.ts onto DefenseEditorSceneCore itself (teamCapacity()/
+ * effectiveLeaderId() there need it too — a true two-way dependency, so it lives on the shared
+ * root instead of either domain), hence it's reproduced here rather than left for DataPanel.
+ */
+class FakeDefenseEditorSceneCore {
   destroyed = false;
   loading = true;
   saving = false;
@@ -55,7 +71,13 @@ class FakeDefenseEditorSceneBase {
   garrison = new Map<string, GarrisonEntry>();
   buildings = new Map<number, string>();
   baseLevel = 0;
-  teams: { id: string; name: string; army: unknown[]; autoReturn?: boolean; leaderCardId?: string }[] = [];
+  teams: {
+    id: string;
+    name: string;
+    army: unknown[];
+    autoReturn?: boolean;
+    leaderCardId?: string;
+  }[] = [];
   autoReturn = false;
   leaderCardId: string | null = null;
   cardState: Record<string, { currentTroops: number; teamId?: string }> = {};
@@ -72,18 +94,42 @@ class FakeDefenseEditorSceneBase {
     },
     worldId: 'w1',
     target: defenseTarget(),
-    getSave: vi.fn(() => ({ cardInv: {}, equipmentInv: {} }) as never),
+    getSave: vi.fn(() => ({ cardInv: {}, equipmentInv: {} } as never)),
   };
   showToast = vi.fn();
   render = vi.fn();
   cellForCard = vi.fn((_id: string): string | undefined => undefined);
+  buildArmy(): { cardInstanceId: string; col: number; row: number }[] {
+    return [...this.garrison.entries()].map(([key, entry]) => {
+      const [col, row] = key.split(':').map(Number);
+      return { cardInstanceId: entry.cardInstanceId!, col: col!, row: row! };
+    });
+  }
 }
 
-const DefenseEditorWithData = DataMixin(FakeDefenseEditorSceneBase as unknown as DefenseEditorSceneBaseCtor);
-
-function buildScene(overrides: Partial<FakeDefenseEditorSceneBase> = {}): any {
-  const scene = new DefenseEditorWithData() as unknown as FakeDefenseEditorSceneBase & Record<string, any>;
-  Object.assign(scene, overrides);
+/** Merges DataPanel's methods onto the fake core object so existing test bodies (`scene.applyConfig(...)`,
+ *  `scene.garrison`, `scene.cb.worldApi...`) keep working unchanged — DataPanel reads/writes through
+ *  `this.core` (= the same object), so bolting its methods on reproduces the old flattened-prototype
+ *  shape the mixin chain used to provide. */
+function buildScene(overrides: Partial<FakeDefenseEditorSceneCore> = {}): any {
+  const core = new FakeDefenseEditorSceneCore();
+  Object.assign(core, overrides);
+  const data = new DataPanel(core as unknown as DefenseEditorSceneCore);
+  const scene = core as unknown as FakeDefenseEditorSceneCore & Record<string, any>;
+  for (const name of [
+    'loadData',
+    'applyArmy',
+    'applyConfig',
+    'persistTeam',
+    'doSave',
+    'doFillTroops',
+    'errorMsg',
+    'injuredCardMsg',
+  ]) {
+    scene[name] = (data as unknown as Record<string, (...args: unknown[]) => unknown>)[name]!.bind(
+      data
+    );
+  }
   return scene;
 }
 
@@ -94,7 +140,10 @@ describe('DefenseEditorScene — applyConfig() decode/sanitization', () => {
     const scene = buildScene();
     scene.applyConfig({ garrison: [{ unitType: UNIT, col: LANE, row: ROW }] });
 
-    expect(scene.garrison.get(`${LANE}:${ROW}`)).toEqual({ unitType: UNIT, hp: UNIT_BLUEPRINTS[UNIT].hp });
+    expect(scene.garrison.get(`${LANE}:${ROW}`)).toEqual({
+      unitType: UNIT,
+      hp: UNIT_BLUEPRINTS[UNIT].hp,
+    });
   });
 
   it('drops a garrison entry with an unknown unitType', () => {
@@ -129,7 +178,12 @@ describe('DefenseEditorScene — applyConfig() decode/sanitization', () => {
 
   it('drops a building entry with an unknown buildingType or non-lane col', () => {
     const scene = buildScene();
-    scene.applyConfig({ defenderBuildings: [{ buildingType: 'not_a_building', col: LANE }, { buildingType: BUILDING, col: 5 }] });
+    scene.applyConfig({
+      defenderBuildings: [
+        { buildingType: 'not_a_building', col: LANE },
+        { buildingType: BUILDING, col: 5 },
+      ],
+    });
     expect(scene.buildings.size).toBe(0);
   });
 
@@ -153,7 +207,10 @@ describe('DefenseEditorScene — applyConfig() decode/sanitization', () => {
 
   it('clears any previously-decoded garrison/buildings before applying the new config', () => {
     const scene = buildScene();
-    scene.applyConfig({ garrison: [{ unitType: UNIT, col: LANE, row: ROW }], defenderBuildings: [{ buildingType: BUILDING, col: LANE }] });
+    scene.applyConfig({
+      garrison: [{ unitType: UNIT, col: LANE, row: ROW }],
+      defenderBuildings: [{ buildingType: BUILDING, col: LANE }],
+    });
     expect(scene.garrison.size).toBe(1);
     expect(scene.buildings.size).toBe(1);
 
@@ -197,7 +254,9 @@ describe('DefenseEditorScene — doSave() defense mode', () => {
     await scene.doSave();
 
     expect(scene.cb.worldApi.setDefense).toHaveBeenCalledWith('w1', 'tile:5:5', {
-      garrison: [], defenderBuildings: [], defenderBaseLevel: 0,
+      garrison: [],
+      defenderBuildings: [],
+      defenderBaseLevel: 0,
     });
     expect(scene.cb.onBack).toHaveBeenCalledTimes(1); // still succeeds — confirms the audit's premise
   });
@@ -234,7 +293,10 @@ describe('DefenseEditorScene — doSave() defense mode', () => {
     scene.cellForCard.mockReturnValueOnce(`${LANE}:${ROW}`);
     scene.garrison.set(`${LANE}:${ROW}`, { unitType: UNIT, hp: 60, cardInstanceId: 'card_x' });
     scene.cb.worldApi.setDefense.mockRejectedValueOnce(
-      new WorldApiError('CARD_INJURED', `Card card_x is injured and cannot be assigned until ${untilMs}`),
+      new WorldApiError(
+        'CARD_INJURED',
+        `Card card_x is injured and cannot be assigned until ${untilMs}`
+      )
     );
 
     await scene.doSave();
@@ -257,13 +319,22 @@ describe('DefenseEditorScene — doSave() defense mode', () => {
 
 describe('DefenseEditorScene — doSave() attack mode delegates to persistTeam/setTeams', () => {
   it('persists the team slot via setTeams and navigates back on success', async () => {
-    const scene = buildScene({ mode: 'attack', cb: { ...new FakeDefenseEditorSceneBase().cb, target: attackTarget('team1') } });
+    const scene = buildScene({
+      mode: 'attack',
+      cb: { ...new FakeDefenseEditorSceneCore().cb, target: attackTarget('team1') },
+    });
     scene.garrison.set(`${LANE}:1`, { unitType: UNIT, hp: 60, cardInstanceId: 'card_x' });
 
     await scene.doSave();
 
     expect(scene.cb.worldApi.setTeams).toHaveBeenCalledWith('w1', [
-      { id: 'team1', name: '', army: [{ cardInstanceId: 'card_x', col: LANE, row: 1 }], autoReturn: false, leaderCardId: undefined },
+      {
+        id: 'team1',
+        name: '',
+        army: [{ cardInstanceId: 'card_x', col: LANE, row: 1 }],
+        autoReturn: false,
+        leaderCardId: undefined,
+      },
     ]);
     expect(scene.cb.onBack).toHaveBeenCalledTimes(1);
   });

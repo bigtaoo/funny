@@ -1,7 +1,7 @@
 // Content-moderation appeal prompt (CONTENT_MODERATION_DESIGN.md §5.3): the transport-layer hook that
 // covers every call site without per-scene wiring (see CLAUDE memory content-moderation-done-2026-07-30).
 //   1. net/log.ts's maybePromptAppeal/setAppealSink sink itself (same pattern as showToastMessage/setToastSink).
-//   2. ApiClientBase.request (metaserver) and WorldApiClient's request helper both call it on
+//   2. ApiClientCore.request (metaserver) and WorldApiClient's request helper both call it on
 //      ACCOUNT_BANNED/ACCOUNT_MUTED, and only on those two codes.
 //   3. createAppCore's AppCore.submitAppeal bridges to ApiClient.submitAppeal, and is undefined when
 //      offline (no api base configured) so the sink can no-op safely.
@@ -65,7 +65,7 @@ describe('net/log: maybePromptAppeal / setAppealSink', () => {
   });
 });
 
-describe('ApiClientBase.request calls maybePromptAppeal on ACCOUNT_BANNED/ACCOUNT_MUTED', () => {
+describe('ApiClientCore.request calls maybePromptAppeal on ACCOUNT_BANNED/ACCOUNT_MUTED', () => {
   afterEach(() => {
     setAppealSink(() => {});
   });

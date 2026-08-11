@@ -1,12 +1,18 @@
-// Shared foundation for the CityScene mixin chain (see ../CityScene.ts assembly).
+// Shared foundation for the CityScene composition (see ../CityScene.ts assembly).
 //
-// CitySceneBase holds every instance field (all `protected`, so the domain mixin bodies keep
-// referencing them verbatim: this.me, this.teams, this.hits, …) + the constructor, the input/scroll
-// plumbing, resource-total simulation (setMe/liveResource/tickResourceTotals), data loading, icon
-// resolution (resIcon/bldIcon), the network actions (doUpgrade/doSpeedup/doTrain/doSpeedupTraining),
-// the render dispatcher, and shared layout helpers (addBtn/fmtNum/modalScaleFor/toScreen/teamOrder/
-// committedTroops/drawArtFit). Each domain (render / modals) lives in its own sibling file as an
-// `XMixin(Base)` and is chained together into the final CityScene.
+// CitySceneCore holds every instance field (all `public`, so the domain classes below keep
+// referencing them via `this.core.xxx`: this.core.me, this.core.teams, this.core.hits, …) + the
+// input/scroll plumbing, resource-total simulation (setMe/liveResource/tickResourceTotals), data
+// loading, icon resolution (resIcon/bldIcon), the network actions (doUpgrade/doSpeedup/doTrain/
+// doSpeedupTraining), and shared layout helpers (addBtn/fmtNum/modalScaleFor/toScreen/teamOrder/
+// committedTroops/drawArtFit) — but NOT the render() dispatcher, which lives on the outer
+// ../CityScene.ts assembly since only it knows about every domain class (Core takes a `render`
+// callback injected at construction instead of owning render() itself, so it never has to call
+// sideways into a sibling domain). Each domain (render / modals) is its own independent class in
+// a sibling file, constructed with `core` (2026-08-11: converted from the former `XMixin(Base)`
+// inheritance chain — the render-dispatch upward calls this used to reach via interface
+// declaration merging are now explicit constructor params/callbacks instead, see
+// claudedocs/client-modules.md's split-form priority note).
 //
 // CityScene — Home-city management (SLG_CITY_DESIGN P1 + P3 D-CITY-8/10/12).
 // Entry: WorldMapScene taps own base tile → "Enter Desk".
@@ -22,15 +28,17 @@ import * as PIXI from 'pixi.js-legacy';
 import type { ILayout } from '../../layout/ILayout';
 import type { InputManager } from '../../inputSystem/InputManager';
 import { t } from '../../i18n';
-import {
-  ui as C, txt, buildPaperBackground, sketchPanel, seedFor, tearDownChildren, marginLineX,
-} from '../../render/sketchUi';
-import { drawSceneHeader, HEADER_ACCENT } from '../../ui/widgets/SceneHeader';
+import { ui as C, txt, sketchPanel, seedFor, tearDownChildren } from '../../render/sketchUi';
 import { FS, snapFont } from '../../render/fontScale';
 import type {
-  WorldApiClient, PlayerWorldView, BuildingKey, TeamTemplate, MarchView, OccupationView,
+  WorldApiClient,
+  PlayerWorldView,
+  BuildingKey,
+  TeamTemplate,
+  MarchView,
+  OccupationView,
 } from '../../net/WorldApiClient';
-import { carriedTroops, teamSlotId, TEAM_CAP } from '../../game/meta/teamTroops';
+import { carriedTroops } from '../../game/meta/teamTroops';
 import { troopCap, cardPower } from '../../game/meta/cardDefs';
 import {
   BUILDING_KEYS,
@@ -40,7 +48,6 @@ import {
 } from '@nw/shared';
 import { BusyTracker } from '../../ui/busyTracker';
 import { showToastMessage } from '../../net/log';
-import { buildDecorCLayer } from '../../render/decorCLayer';
 import { ScrollTapGesture } from '../../ui/scrollTapGesture';
 import { wheelScrollY } from '../../ui/wheelScroll';
 import { buildIcon, type IconKind } from '../../render/icons';
@@ -49,6 +56,7 @@ import { loadCityBldAtlas, getCityBldTexture } from '../../render/atlas/cityBldA
 import { getArtTexture } from '../../render/cardArt';
 import { serverNow } from '../../net/serverClock';
 import type { SaveData, CardInstance } from '../../game/meta/SaveData';
+import { teamSlotId, TEAM_CAP } from '../../game/meta/teamTroops';
 
 // ── Public interface ─────────────────────────────────────────────────────────
 
@@ -68,47 +76,63 @@ export interface CitySceneCallbacks {
 // ── Constants ────────────────────────────────────────────────────────────────
 
 export const RES_COLORS: Readonly<Record<ResourceType, number>> = {
-  ink:      0xa8d870,
-  paper:    0x90b860,
+  ink: 0xa8d870,
+  paper: 0x90b860,
   graphite: 0xb0b0a8,
-  metal:    0xa0b8c8,
-  sticker:  0xe6b8d0,
+  metal: 0xa0b8c8,
+  sticker: 0xe6b8d0,
 };
 
 // Emoji fallbacks — only used while res_atlas is still decoding (rare: the atlas is
 // a module singleton usually already loaded by WorldMapScene before city entry).
 const RES_ICON: Readonly<Record<ResourceType, string>> = {
-  ink: '🖊', paper: '📄', graphite: '✏️', metal: '🔩', sticker: '🏷',
+  ink: '🖊',
+  paper: '📄',
+  graphite: '✏️',
+  metal: '🔩',
+  sticker: '🏷',
 };
 
 const BLD_ICON: Readonly<Record<BuildingKey, string>> = {
-  desk:         '🗂',
-  inkPot:       '🖊',
-  paperTray:    '📄',
+  desk: '🗂',
+  inkPot: '🖊',
+  paperTray: '📄',
   graphiteMill: '✏️',
-  metalForge:   '🔩',
-  stickerShop:  '🏷',
-  cabinet:      '🗄',
-  drillYard:    '⚔️',
-  wall:         '🏯',
-  academy:      '📚',
-  satchel:      '🎒',
+  metalForge: '🔩',
+  stickerShop: '🏷',
+  cabinet: '🗄',
+  drillYard: '⚔️',
+  wall: '🏯',
+  academy: '📚',
+  satchel: '🎒',
 };
 
 // Building glyph source: the five resource-producer buildings reuse the res_atlas
 // motif of what they yield (strong resource↔building visual link, zero new art);
 // the rest use hand-drawn icons.ts line-art.
 const BLD_RES: Partial<Record<BuildingKey, ResourceType>> = {
-  inkPot: 'ink', paperTray: 'paper', graphiteMill: 'graphite', metalForge: 'metal', stickerShop: 'sticker',
+  inkPot: 'ink',
+  paperTray: 'paper',
+  graphiteMill: 'graphite',
+  metalForge: 'metal',
+  stickerShop: 'sticker',
 };
 const BLD_GLYPH: Partial<Record<BuildingKey, IconKind>> = {
-  desk: 'desk', cabinet: 'cabinet', drillYard: 'swords', wall: 'castle', academy: 'book',
+  desk: 'desk',
+  cabinet: 'cabinet',
+  drillYard: 'swords',
+  wall: 'castle',
+  academy: 'book',
 };
 
 // Hand-drawn atlas art (art/ui/slg-desk → city_bld_atlas) supersedes the BLD_GLYPH
 // programmatic line-art / emoji fallback for these five once the atlas has decoded.
 const BLD_ATLAS: Partial<Record<BuildingKey, string>> = {
-  desk: 'bld_desk', cabinet: 'bld_cabinet', drillYard: 'bld_drillYard', wall: 'bld_wall', satchel: 'bld_satchel',
+  desk: 'bld_desk',
+  cabinet: 'bld_cabinet',
+  drillYard: 'bld_drillYard',
+  wall: 'bld_wall',
+  satchel: 'bld_satchel',
 };
 
 // Card-grid sizing — matches the CardScene/Skins wardrobe language (dynamic
@@ -144,79 +168,90 @@ export const GRID_BUILDING_KEYS: readonly BuildingKey[] = BUILDING_KEYS;
 export const TEAM_ROW_CARD_H = 128;
 export const TEAM_ROW_LABEL_H = 26;
 
-interface Hit { x: number; y: number; w: number; h: number; fn: () => void }
+export interface Hit {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  fn: () => void;
+}
 
-// ── Mixin plumbing ────────────────────────────────────────────────────────────
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export type Constructor<T = object> = new (...args: any[]) => T;
-export type CitySceneBaseCtor = Constructor<CitySceneBase>;
-
-export class CitySceneBase {
+export class CitySceneCore {
   readonly container: PIXI.Container;
-  protected readonly w: number;
-  protected readonly h: number;
-  protected readonly cb: CitySceneCallbacks;
+  readonly w: number;
+  readonly h: number;
+  readonly cb: CitySceneCallbacks;
 
-  protected readonly bt = new BusyTracker();
-  protected hits: Hit[] = [];
-  protected readonly unsubs: Array<() => void> = [];
+  readonly bt = new BusyTracker();
+  hits: Hit[] = [];
+  private readonly unsubs: Array<() => void> = [];
   /** Set in destroy(); guards render() so a late async load() re-render can't paint into a torn-down container. */
-  protected destroyed = false;
+  destroyed = false;
   /** Portrait urls we've already subscribed a one-shot 'loaded' re-render to (see drawArtFit). */
-  protected readonly artHooked = new Set<string>();
+  private readonly artHooked = new Set<string>();
 
-  protected me: PlayerWorldView | null = null;
+  me: PlayerWorldView | null = null;
   /** Wall-clock (ms) when `me` was last fetched from the server. Baseline for the client-side
    *  resource-total simulation — mirrors worldsvc settle() so the displayed totals climb between
    *  server round-trips instead of sitting frozen until the next action. */
-  protected meLoadedAt = 0;
+  private meLoadedAt = 0;
   /** Accumulates update() dt; drives the once-per-second resource-total tick. */
-  protected simTimer = 0;
+  private simTimer = 0;
   /** Guards against overlapping getMe() calls from the once-per-second queue-completion check
    *  below (queueRefreshPending). */
-  protected queueRefreshPending = false;
+  private queueRefreshPending = false;
   /** Resource-bar total labels, repopulated each render() and updated in place per second by
    *  tickResourceTotals() — a text-only nudge that avoids a full scene rebuild every second. */
-  protected resTotalLbls: Array<{ rt: ResourceType; lbl: PIXI.Text }> = [];
-  protected teams: TeamTemplate[] = [];
-  protected marches: MarchView[] = [];
-  protected occupations: OccupationView[] = [];
+  resTotalLbls: Array<{ rt: ResourceType; lbl: PIXI.Text }> = [];
+  teams: TeamTemplate[] = [];
+  marches: MarchView[] = [];
+  occupations: OccupationView[] = [];
   /** True once GET /world/teams has settled (either way). Until then the team row draws loading
    *  placeholders instead of five real cards reading "(empty)" — that label claims "you own no
    *  teams", which is a lie during a fetch that takes most of a second against a remote shard. */
-  protected teamsLoaded = false;
+  teamsLoaded = false;
   /** True once BOTH GET /world/march and GET /world/occupations have settled. teamOrder() needs both,
    *  so a filled team's status line stays in its loading state until then rather than flashing
    *  "闲置" at a team that turns out to be marching. */
-  protected ordersLoaded = false;
+  ordersLoaded = false;
   /** 0–2 dot-animation phase for the team-row loading placeholders; advanced by tickLoadDots(). */
-  protected loadDots = 0;
+  loadDots = 0;
   private loadDotTimer = 0;
   /** Left edge of the body content, set each render() to marginLineX() — the red notebook
    *  binding line. Content starts just right of it (no sidebar rail on this single-page scene). */
-  protected contentX = 0;
-  protected selectedBuilding: BuildingKey | null = null;
+  contentX = 0;
+  selectedBuilding: BuildingKey | null = null;
   /** Train-troops modal open flag. Training is its own home-desk tile (sibling to drillYard), not
    *  a drillYard sub-panel — drillYard the building only grants troopCap / train-speed / queue slots. */
-  protected selectedTrain = false;
+  selectedTrain = false;
 
   // Building-grid scroll state (drag-to-scroll, matches the CardScene/TeamsScene pattern).
-  protected scrollY = 0;
-  protected scrollMax = 0;
+  scrollY = 0;
+  scrollMax = 0;
   /** Vertical bounds of whichever grid (domestic building grid / military team panel) is currently
    *  on-screen — set each render() by that grid's own renderer, so the wheel handler below can gate
    *  on the currently-active region without guessing which page is showing. */
-  protected regionTop = 0;
-  protected regionBottom = 0;
+  regionTop = 0;
+  regionBottom = 0;
   /**
    * Tap-vs-drag gesture tracker: defers a hit action to pointer-up and drops it if the pointer
    * dragged (so a drag starting on a building cell scrolls instead of firing it). See ScrollTapGesture.
    */
-  protected readonly gesture = new ScrollTapGesture();
+  private readonly gesture = new ScrollTapGesture();
   /** Set by handleMove instead of rendering inline — avoids a render() per pointermove (jank). */
-  protected scrollDirty = false;
+  private scrollDirty = false;
 
-  constructor(layout: ILayout, input: InputManager, cb: CitySceneCallbacks) {
+  /** @param render Injected by the outer CityScene assembly (which owns the actual render
+   *  dispatcher, since it's the only thing that knows about all domain classes) — Core and the
+   *  domain classes call `this.render()`/`this.core.render()` wherever the old flattened class
+   *  called its own `render()` method verbatim. Does NOT auto-fire the initial render/load — the
+   *  outer assembly does that once domains exist (see ../CityScene.ts). */
+  constructor(
+    layout: ILayout,
+    input: InputManager,
+    cb: CitySceneCallbacks,
+    readonly render: () => void
+  ) {
     this.container = new PIXI.Container();
     this.w = layout.designWidth;
     this.h = layout.designHeight;
@@ -224,19 +259,38 @@ export class CitySceneBase {
     this.unsubs.push(input.onDown((x, y) => this.handleDown(x, y)));
     this.unsubs.push(input.onMove((_x, y) => this.handleMove(y)));
     this.unsubs.push(input.onUp(() => this.handleUp()));
+    // prettier-ignore: `unsubs.push(input.onWheel(` must stay on one line — the static scanner
+    // (test/input-subscription-cleanup.test.ts) checks per-line for `unsubs.push(...onWheel(`.
     this.unsubs.push(input.onWheel((x, y, deltaY) => {
-      // Scroll is disabled while a building is selected — mirrors handleMove exactly.
-      if (this.selectedBuilding) return;
-      const next = wheelScrollY(this.regionTop, this.regionBottom, y, deltaY, this.scrollY, this.scrollMax);
-      if (next !== null) { this.scrollY = next; this.scrollDirty = true; }
-    }));
-    if (cb.onSaveChanged) this.unsubs.push(cb.onSaveChanged(() => { if (!this.destroyed) this.render(); }));
-    this.render();
-    this.load();
+        // Scroll is disabled while a building is selected — mirrors handleMove exactly.
+        if (this.selectedBuilding) return;
+        const next = wheelScrollY(
+          this.regionTop,
+          this.regionBottom,
+          y,
+          deltaY,
+          this.scrollY,
+          this.scrollMax
+        );
+        if (next !== null) {
+          this.scrollY = next;
+          this.scrollDirty = true;
+        }
+      })
+    );
+    if (cb.onSaveChanged)
+      this.unsubs.push(
+        cb.onSaveChanged(() => {
+          if (!this.destroyed) this.render();
+        })
+      );
   }
 
   update(dt: number): void {
-    if (this.scrollDirty) { this.scrollDirty = false; this.render(); }
+    if (this.scrollDirty) {
+      this.scrollDirty = false;
+      this.render();
+    }
     if (this.bt.tick(dt)) this.render();
     if (this.tickLoadDots(dt)) this.render();
     this.simTimer += dt;
@@ -270,14 +324,24 @@ export class CitySceneBase {
     if (this.queueRefreshPending || this.destroyed || !this.me) return;
     const now = Date.now();
     const due =
-      (this.me.buildQueue ?? []).some(q => q.completeAt <= now) ||
-      (this.me.trainingQueue ?? []).some(q => q.completeAt <= now);
+      (this.me.buildQueue ?? []).some((q) => q.completeAt <= now) ||
+      (this.me.trainingQueue ?? []).some((q) => q.completeAt <= now);
     if (!due) return;
     this.queueRefreshPending = true;
-    this.cb.worldApi.getMe(this.cb.worldId)
-      .then(me => { if (!this.destroyed) { this.setMe(me); this.render(); } })
-      .catch(() => { /* offline: retry next tick */ })
-      .finally(() => { this.queueRefreshPending = false; });
+    this.cb.worldApi
+      .getMe(this.cb.worldId)
+      .then((me) => {
+        if (!this.destroyed) {
+          this.setMe(me);
+          this.render();
+        }
+      })
+      .catch(() => {
+        /* offline: retry next tick */
+      })
+      .finally(() => {
+        this.queueRefreshPending = false;
+      });
   }
 
   /** Advance the resource-bar total labels in place (no full render). Mirrors worldsvc settle():
@@ -299,7 +363,7 @@ export class CitySceneBase {
 
   /** Server-consistent client-side resource total: base amount fetched with `me`, grown by the
    *  hourly yield rate since fetch, capped at the cabinet-adjusted storage cap. */
-  protected liveResource(rt: ResourceType): number {
+  liveResource(rt: ResourceType): number {
     const base = this.me?.resources?.[rt] ?? 0;
     const rate = this.me?.yieldRate?.[rt] ?? 0;
     const cap = resourceCapFor(this.me?.buildings);
@@ -331,21 +395,45 @@ export class CitySceneBase {
    * is drained (world-map entry, a burst of taps) requests are served in the order they were made.
    * getTeams goes first because the team row is what the player is waiting on here.
    */
-  private load(): void {
+  load(): void {
     // Resource / producer-building glyphs reuse the res_atlas motifs; re-render once decoded.
-    void loadResAtlas().then(() => this.render()).catch(() => { /* color/emoji fallback */ });
-    void loadCityBldAtlas().then(() => this.render()).catch(() => { /* icons.ts/emoji fallback */ });
+    void loadResAtlas()
+      .then(() => this.render())
+      .catch(() => {
+        /* color/emoji fallback */
+      });
+    void loadCityBldAtlas()
+      .then(() => this.render())
+      .catch(() => {
+        /* icons.ts/emoji fallback */
+      });
 
-    const paint = (): void => { if (!this.destroyed) this.render(); };
+    const paint = (): void => {
+      if (!this.destroyed) this.render();
+    };
 
-    void this.cb.worldApi.getTeams(this.cb.worldId)
-      .then((teams) => { this.teams = teams; })
-      .catch(() => { /* offline — the row falls through to its real empty state */ })
-      .finally(() => { this.teamsLoaded = true; paint(); });
+    void this.cb.worldApi
+      .getTeams(this.cb.worldId)
+      .then((teams) => {
+        this.teams = teams;
+      })
+      .catch(() => {
+        /* offline — the row falls through to its real empty state */
+      })
+      .finally(() => {
+        this.teamsLoaded = true;
+        paint();
+      });
 
-    void this.cb.worldApi.getMe(this.cb.worldId)
-      .then((me) => { this.setMe(me); paint(); })
-      .catch(() => { /* offline — resource bar / building grid keep their pre-load zeros */ });
+    void this.cb.worldApi
+      .getMe(this.cb.worldId)
+      .then((me) => {
+        this.setMe(me);
+        paint();
+      })
+      .catch(() => {
+        /* offline — resource bar / building grid keep their pre-load zeros */
+      });
 
     // marches + occupations both feed teamOrder(), so `ordersLoaded` only flips once both have
     // settled — see the field's doc comment for why the status line waits on that.
@@ -354,20 +442,30 @@ export class CitySceneBase {
       if (--ordersPending === 0) this.ordersLoaded = true;
       paint();
     };
-    void this.cb.worldApi.getMarches(this.cb.worldId)
-      .then((marches) => { this.marches = marches; })
-      .catch(() => { /* offline — treated as no active march */ })
+    void this.cb.worldApi
+      .getMarches(this.cb.worldId)
+      .then((marches) => {
+        this.marches = marches;
+      })
+      .catch(() => {
+        /* offline — treated as no active march */
+      })
       .finally(orderSettled);
-    void this.cb.worldApi.getOccupations(this.cb.worldId)
-      .then((occupations) => { this.occupations = occupations; })
-      .catch(() => { /* offline — treated as no active hold */ })
+    void this.cb.worldApi
+      .getOccupations(this.cb.worldId)
+      .then((occupations) => {
+        this.occupations = occupations;
+      })
+      .catch(() => {
+        /* offline — treated as no active hold */
+      })
       .finally(orderSettled);
   }
 
   // ── Icon resolution ─────────────────────────────────────────────────────────
 
   /** Resource glyph: res_atlas motif sprite when decoded, else the emoji fallback. */
-  protected resIcon(rt: ResourceType, size: number): PIXI.DisplayObject {
+  resIcon(rt: ResourceType, size: number): PIXI.DisplayObject {
     const tex = getResTexture(rt);
     if (tex) {
       const sp = new PIXI.Sprite(tex);
@@ -378,7 +476,7 @@ export class CitySceneBase {
   }
 
   /** Building glyph: producer→res_atlas motif, hand-drawn city_bld_atlas art, then icons.ts line-art, emoji as last resort. */
-  protected bldIcon(key: BuildingKey, size: number, color: number): PIXI.DisplayObject {
+  bldIcon(key: BuildingKey, size: number, color: number): PIXI.DisplayObject {
     const res = BLD_RES[key];
     if (res) return this.resIcon(res, size);
     const frame = BLD_ATLAS[key];
@@ -393,7 +491,7 @@ export class CitySceneBase {
     return txt(BLD_ICON[key], snapFont(Math.round(size * 0.85)), color);
   }
 
-  protected async doUpgrade(key: BuildingKey): Promise<void> {
+  async doUpgrade(key: BuildingKey): Promise<void> {
     if (this.bt.busy) return;
     this.bt.start();
     this.render();
@@ -412,9 +510,9 @@ export class CitySceneBase {
     this.render();
   }
 
-  protected async doSpeedup(key: BuildingKey): Promise<void> {
+  async doSpeedup(key: BuildingKey): Promise<void> {
     if (this.bt.busy) return;
-    const entry = this.me?.buildQueue?.find(q => q.key === key);
+    const entry = this.me?.buildQueue?.find((q) => q.key === key);
     if (!entry) return;
     // serverNow() (P1-1): this determines how many coins are actually charged, so it must use the
     // same server-corrected clock as the price the player was shown (render.ts's renderBuildQueue) —
@@ -435,7 +533,7 @@ export class CitySceneBase {
     this.render();
   }
 
-  protected async doTrain(qty: number): Promise<void> {
+  async doTrain(qty: number): Promise<void> {
     if (this.bt.busy || qty <= 0) return;
     this.bt.start();
     this.render();
@@ -445,7 +543,8 @@ export class CitySceneBase {
       const msg = e instanceof Error ? e.message : '';
       if (msg.includes('cap')) this.showToast(t('city.err.troopCap'), C.red as number);
       else if (msg.includes('queue')) this.showToast(t('city.err.trainQueueFull'), C.red as number);
-      else if (msg.includes('Insufficient')) this.showToast(t('city.err.noResources'), C.red as number);
+      else if (msg.includes('Insufficient'))
+        this.showToast(t('city.err.noResources'), C.red as number);
       else this.showToast(t('city.err.generic'), C.red as number);
     } finally {
       this.bt.stop();
@@ -453,7 +552,7 @@ export class CitySceneBase {
     this.render();
   }
 
-  protected async doSpeedupTraining(coins: number): Promise<void> {
+  async doSpeedupTraining(coins: number): Promise<void> {
     if (this.bt.busy) return;
     this.bt.start();
     this.render();
@@ -474,7 +573,7 @@ export class CitySceneBase {
    * A team only takes what's left in the pool once earlier teams are topped up, so an exhausted
    * pool partially fills whichever team is next in line and leaves the rest untouched.
    */
-  protected async doFillAllTeams(): Promise<void> {
+  async doFillAllTeams(): Promise<void> {
     if (this.bt.busy) return;
     const save = this.cb.getSave?.();
     const cardInv = save?.cardInv ?? {};
@@ -485,11 +584,11 @@ export class CitySceneBase {
     const filledTeamIds = new Set<string>();
 
     for (let i = 0; i < TEAM_CAP && pool > 0; i++) {
-      const team = this.teams.find(tm => tm.id === teamSlotId(i));
+      const team = this.teams.find((tm) => tm.id === teamSlotId(i));
       if (!team) continue;
       const placed = team.army
-        .filter(e => !!e.cardInstanceId)
-        .map(e => ({ id: e.cardInstanceId!, card: cardInv[e.cardInstanceId!] }))
+        .filter((e) => !!e.cardInstanceId)
+        .map((e) => ({ id: e.cardInstanceId!, card: cardInv[e.cardInstanceId!] }))
         .filter((x): x is { id: string; card: CardInstance } => !!x.card);
       if (placed.length === 0) continue;
       placed.sort((a, b) => cardPower(b.card, equipmentInv) - cardPower(a.card, equipmentInv));
@@ -521,10 +620,13 @@ export class CitySceneBase {
         const cs = nextCardState[id];
         nextCardState[id] = { ...cs, currentTroops: (cs?.currentTroops ?? 0) + amount };
       }
-      if (this.me) this.me = { ...this.me, troops: (this.me.troops ?? 0) - total, cardState: nextCardState };
+      if (this.me)
+        this.me = { ...this.me, troops: (this.me.troops ?? 0) - total, cardState: nextCardState };
       this.showToast(
-        t('city.military.fillAllTeamsDone').replace('{n}', String(total)).replace('{teams}', String(filledTeamIds.size)),
-        C.green as number,
+        t('city.military.fillAllTeamsDone')
+          .replace('{n}', String(total))
+          .replace('{teams}', String(filledTeamIds.size)),
+        C.green as number
       );
     } catch {
       this.showToast(t('city.err.generic'), C.red as number);
@@ -534,7 +636,7 @@ export class CitySceneBase {
     this.render();
   }
 
-  protected showToast(msg: string, color: number = C.red as number): void {
+  showToast(msg: string, color: number = C.red as number): void {
     showToastMessage(msg, color === (C.red as number) ? 'error' : 'success');
   }
 
@@ -546,7 +648,10 @@ export class CitySceneBase {
     // scroll and the tap is dropped, so a drag starting on a building cell scrolls instead of firing it.
     let hit: (() => void) | null = null;
     for (const h of this.hits) {
-      if (px >= h.x && px <= h.x + h.w && py >= h.y && py <= h.y + h.h) { hit = h.fn; break; }
+      if (px >= h.x && px <= h.x + h.w && py >= h.y && py <= h.y + h.h) {
+        hit = h.fn;
+        break;
+      }
     }
     this.gesture.down(this.scrollY, py, hit);
   }
@@ -555,7 +660,10 @@ export class CitySceneBase {
     // Scroll is disabled while a building is selected (the detail panel owns the view); taps still fire.
     if (this.selectedBuilding) return;
     const scroll = this.gesture.move(py);
-    if (scroll !== null) { this.scrollY = Math.min(this.scrollMax, scroll); this.scrollDirty = true; }
+    if (scroll !== null) {
+      this.scrollY = Math.min(this.scrollMax, scroll);
+      this.scrollDirty = true;
+    }
   }
 
   private handleUp(): void {
@@ -563,96 +671,31 @@ export class CitySceneBase {
     this.gesture.up()?.();
   }
 
-  // ── Render ────────────────────────────────────────────────────────────────
-
-  protected render(): void {
-    if (this.destroyed) return;
-    tearDownChildren(this.container);
-    this.hits = [];
-    this.resTotalLbls = [];
-    const { w, h } = this;
-
-    // No sidebar rail on this single-page scene, so the red binding line keeps its default
-    // 9%-of-width position (marginLineX) and body content starts just right of it.
-    this.container.addChild(buildPaperBackground('citybg', w, h));
-    const decoC = buildDecorCLayer(w, h);
-    if (decoC) this.container.addChild(decoC);
-
-    const hdr = drawSceneHeader(this.container, w, h, t('city.title'), {
-      variant: 'paper', accent: HEADER_ACCENT.slg,
-    });
-    const backHit: Hit = { x: hdr.backRect.x, y: hdr.backRect.y, w: hdr.backRect.w, h: hdr.backRect.h, fn: () => this.cb.onBack() };
-    this.hits.push(backHit);
-    // Base durability (D-CITY-8) rides in the header bar's free right side.
-    this.renderHeaderDurability(hdr.headerH);
-
-    this.contentX = marginLineX(w);
-    const y = hdr.headerH + 8;
-
-    // Resource bar
-    let cy = this.renderResourceBar(y);
-    cy += 8;
-
-    // Build queue strip
-    cy = this.renderBuildQueue(cy);
-    cy += 8;
-
-    // The 5 team slots pin to the bottom as one compact row; the building grid fills the gap above.
-    const teamsTop = this.renderTeamsRow();
-
-    // Building card grid (scrollable), bottom-limited so it never runs under the team row.
-    this.renderBuildingGrid(cy, teamsTop - 8);
-
-    // Detail modal (popup-scale-to-80% convention, tap-outside-to-close). The page content
-    // sits dimmed underneath — drop its hits (keeping only Back) so a tap there can't
-    // silently switch buildings or trigger speedup instead of dismissing the modal. Opening
-    // a building card (incl. academy/tech-tree) or the train tile routes through here.
-    if (this.selectedBuilding) {
-      this.hits = [backHit];
-      this.renderDetailModal(this.selectedBuilding);
-    } else if (this.selectedTrain) {
-      this.hits = [backHit];
-      this.renderTrainModal();
-    }
-
-    // Busy overlay
-    if (this.bt.busy) {
-      const ov = new PIXI.Graphics();
-      ov.beginFill(0x000000, 0.25);
-      ov.drawRect(0, 0, w, h);
-      ov.endFill();
-      this.container.addChild(ov);
-      const lbl = txt('…', FS.headline, 0xffffff, true);
-      lbl.x = w / 2 - 15;
-      lbl.y = h / 2 - 21;
-      this.container.addChild(lbl);
-    }
-
-  }
-
   // ── Shared helpers ────────────────────────────────────────────────────────
 
   /** Current order tying up a team, if any — mirrors TeamsScene.teamOrder (server's TEAM_BUSY predicate). */
-  protected teamOrder(teamId: string): { march: MarchView } | { occ: OccupationView } | null {
-    const march = this.marches.find(m => m.mine !== false && m.teamId === teamId);
+  teamOrder(teamId: string): { march: MarchView } | { occ: OccupationView } | null {
+    const march = this.marches.find((m) => m.mine !== false && m.teamId === teamId);
     if (march) return { march };
-    const occ = this.occupations.find(o => o.teamId === teamId);
+    const occ = this.occupations.find((o) => o.teamId === teamId);
     if (occ) return { occ };
     return null;
   }
 
   /** Total troops committed across a team's cards — legacy non-card entries count 0 (see teamTroops.ts). */
-  protected committedTroops(army: TeamTemplate['army']): number {
+  committedTroops(army: TeamTemplate['army']): number {
     return carriedTroops(army, this.me?.cardState);
   }
 
   /** Draw a card portrait centred inside a box; re-render once its texture decodes (mirrors DefenseEditorScene). */
-  protected drawArtFit(url: string, x: number, y: number, boxW: number, boxH: number): void {
+  drawArtFit(url: string, x: number, y: number, boxW: number, boxH: number): void {
     const tex = getArtTexture(url);
     if (!tex.baseTexture.valid) {
       if (!this.artHooked.has(url)) {
         this.artHooked.add(url);
-        tex.baseTexture.once('loaded', () => { if (!this.destroyed) this.render(); });
+        tex.baseTexture.once('loaded', () => {
+          if (!this.destroyed) this.render();
+        });
       }
       return;
     }
@@ -664,10 +707,15 @@ export class CitySceneBase {
     this.container.addChild(sp);
   }
 
-  protected addBtn(
-    x: number, y: number, w: number, h: number,
-    label: string, textColor: number, fill: number,
-    fn: () => void,
+  addBtn(
+    x: number,
+    y: number,
+    w: number,
+    h: number,
+    label: string,
+    textColor: number,
+    fill: number,
+    fn: () => void
   ): void {
     const g = sketchPanel(w, h, { fill, border: C.line, width: 1, seed: seedFor(x, y, w) });
     g.x = x;
@@ -680,39 +728,26 @@ export class CitySceneBase {
     this.hits.push({ x, y, w, h, fn });
   }
 
-  protected fmtNum(n: number): string {
+  fmtNum(n: number): string {
     if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
     if (n >= 1_000) return `${Math.floor(n / 1_000)}k`;
     return String(Math.floor(n));
   }
 
-  protected modalScaleFor(mw: number, mh: number): number {
+  modalScaleFor(mw: number, mh: number): number {
     const { w, h } = this;
-    const ref = Math.min(w, h);            // fitted axis — 1080 for both portrait & landscape
-    const target = (ref * 0.8) / mw;       // popup ≈ 80% of the fitted axis wide (matches old portrait)
+    const ref = Math.min(w, h); // fitted axis — 1080 for both portrait & landscape
+    const target = (ref * 0.8) / mw; // popup ≈ 80% of the fitted axis wide (matches old portrait)
     return Math.min(target, (w * 0.92) / mw, (h * 0.92) / mh);
   }
 
   /** Convert a rect drawn in the modal's local (unscaled) frame into real screen space. */
-  protected toScreen(r: { x: number; y: number; w: number; h: number }, originX: number, originY: number, scale: number): { x: number; y: number; w: number; h: number } {
+  toScreen(
+    r: { x: number; y: number; w: number; h: number },
+    originX: number,
+    originY: number,
+    scale: number
+  ): { x: number; y: number; w: number; h: number } {
     return { x: originX + r.x * scale, y: originY + r.y * scale, w: r.w * scale, h: r.h * scale };
   }
-}
-
-// ── Domain entrypoints dispatched to from base-level code (render dispatcher) and across sibling
-// mixins (render → base helpers; modals → base helpers). Declared via interface/class declaration
-// merging so base-level `this.renderHeaderDurability()` / `this.renderDetailModal()` type-check as
-// METHODS (not properties, which would clash with the mixin override — TS2425). Emits NOTHING at
-// runtime, so the real prototype methods provided by the mixins run and all method bodies stay verbatim.
-export interface CitySceneBase {
-  renderHeaderDurability(headerH: number): void;
-  renderTeamsRow(): number;
-  renderTeamCard(i: number, x: number, y: number, cardW: number, cardH: number, now: number): void;
-  renderTeamCardLoading(i: number, x: number, y: number, cardW: number, cardH: number): void;
-  renderResourceBar(startY: number): number;
-  renderBuildQueue(startY: number): number;
-  renderBuildingGrid(startY: number, bottomY: number): void;
-  renderDetailModal(key: BuildingKey): void;
-  renderTrainModal(): void;
-  buildingBonusLines(key: BuildingKey, bld: Partial<Record<BuildingKey, number>> | undefined): string[];
 }

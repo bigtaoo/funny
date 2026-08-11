@@ -1,6 +1,6 @@
 // Social: mail (S6-3, requires login token). Claim goes through commercial + inventory, pushes back authoritative save.
 import type { SaveData } from '../../game/meta/SaveData';
-import { type Constructor, type ApiClientBaseCtor } from './base';
+import type { ApiClientCore } from './core';
 import type { MailView } from './types';
 
 export interface MailApi {
@@ -11,32 +11,37 @@ export interface MailApi {
   sendMail(toPublicId: string, subject: string, body: string): Promise<string>;
 }
 
-export function MailMixin<TBase extends ApiClientBaseCtor>(Base: TBase): TBase & Constructor<MailApi> {
-  return class extends Base {
-    /** Inbox (mail list + unread count). */
-    async getMail(): Promise<{ mail: MailView[]; unread: number }> {
-      return this.request<{ mail: MailView[]; unread: number }>('GET', '/mail');
-    }
+/** Mail domain (see ../ApiClient.ts assembly + ./core.ts for the shared transport). */
+export class MailService implements MailApi {
+  constructor(private readonly core: ApiClientCore) {}
 
-    /** Mark a mail as read. */
-    async readMail(mailId: string): Promise<void> {
-      await this.post<{ ok: boolean }>(`/mail/${encodeURIComponent(mailId)}/read`, {});
-    }
+  /** Inbox (mail list + unread count). */
+  async getMail(): Promise<{ mail: MailView[]; unread: number }> {
+    return this.core.request<{ mail: MailView[]; unread: number }>('GET', '/mail');
+  }
 
-    /** Claim attachment (grants coins/items, idempotent) → pushes back authoritative save. Already claimed → ApiError('ALREADY_CLAIMED'); no attachment → 'NO_ATTACHMENT'. */
-    async claimMail(mailId: string): Promise<{ save: SaveData }> {
-      return this.post<{ save: SaveData }>(`/mail/${encodeURIComponent(mailId)}/claim`, {});
-    }
+  /** Mark a mail as read. */
+  async readMail(mailId: string): Promise<void> {
+    await this.core.post<{ ok: boolean }>(`/mail/${encodeURIComponent(mailId)}/read`, {});
+  }
 
-    /** Delete a mail. Mail with an unclaimed attachment → ApiError('MAIL_HAS_UNCLAIMED_ATTACHMENT'); claim it first. */
-    async deleteMail(mailId: string): Promise<void> {
-      await this.request<{ ok: boolean }>('DELETE', `/mail/${encodeURIComponent(mailId)}`);
-    }
+  /** Claim attachment (grants coins/items, idempotent) → pushes back authoritative save. Already claimed → ApiError('ALREADY_CLAIMED'); no attachment → 'NO_ATTACHMENT'. */
+  async claimMail(mailId: string): Promise<{ save: SaveData }> {
+    return this.core.post<{ save: SaveData }>(`/mail/${encodeURIComponent(mailId)}/claim`, {});
+  }
 
-    /** Send mail between players (gated to friends only, no attachments). Not friends → ApiError('NOT_FRIEND'). */
-    async sendMail(toPublicId: string, subject: string, body: string): Promise<string> {
-      const data = await this.post<{ mailId: string }>('/mail/send', { toPublicId, subject, body });
-      return data.mailId;
-    }
-  };
+  /** Delete a mail. Mail with an unclaimed attachment → ApiError('MAIL_HAS_UNCLAIMED_ATTACHMENT'); claim it first. */
+  async deleteMail(mailId: string): Promise<void> {
+    await this.core.request<{ ok: boolean }>('DELETE', `/mail/${encodeURIComponent(mailId)}`);
+  }
+
+  /** Send mail between players (gated to friends only, no attachments). Not friends → ApiError('NOT_FRIEND'). */
+  async sendMail(toPublicId: string, subject: string, body: string): Promise<string> {
+    const data = await this.core.post<{ mailId: string }>('/mail/send', {
+      toPublicId,
+      subject,
+      body,
+    });
+    return data.mailId;
+  }
 }

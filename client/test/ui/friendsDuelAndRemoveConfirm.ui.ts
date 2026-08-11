@@ -81,8 +81,8 @@ describe('FriendsScene — remove-friend confirm dialog', () => {
     const { scene, spies } = buildFriendsScene(friends);
     await flush();
 
-    (scene as unknown as { confirmRemove(id: string, name: string): void }).confirmRemove('100000001', 'Alice');
-    expect((scene as any).modalOpen).toBe(true);
+    (scene as unknown as { friendsList: { confirmRemove(id: string, name: string): void } }).friendsList.confirmRemove('100000001', 'Alice');
+    expect((scene as any).core.modalOpen).toBe(true);
     expect(spies.removeFriend).not.toHaveBeenCalled();
     scene.destroy();
   });
@@ -92,12 +92,12 @@ describe('FriendsScene — remove-friend confirm dialog', () => {
     const { scene, spies } = buildFriendsScene(friends);
     await flush();
 
-    (scene as unknown as { confirmRemove(id: string, name: string): void }).confirmRemove('100000001', 'Alice');
-    const modalHits = (scene as any).modalHits as Array<{ action: () => void }>;
+    (scene as unknown as { friendsList: { confirmRemove(id: string, name: string): void } }).friendsList.confirmRemove('100000001', 'Alice');
+    const modalHits = (scene as any).core.modalHits as Array<{ action: () => void }>;
     expect(modalHits).toHaveLength(2); // drawConfirmDialog returns [OK, Cancel]
     modalHits[1].action(); // Cancel
 
-    expect((scene as any).modalOpen).toBe(false);
+    expect((scene as any).core.modalOpen).toBe(false);
     expect(spies.removeFriend).not.toHaveBeenCalled();
     scene.destroy();
   });
@@ -107,13 +107,13 @@ describe('FriendsScene — remove-friend confirm dialog', () => {
     const { scene, spies } = buildFriendsScene(friends);
     await flush();
 
-    (scene as unknown as { confirmRemove(id: string, name: string): void }).confirmRemove('100000001', 'Alice');
-    const modalHits = (scene as any).modalHits as Array<{ action: () => void }>;
+    (scene as unknown as { friendsList: { confirmRemove(id: string, name: string): void } }).friendsList.confirmRemove('100000001', 'Alice');
+    const modalHits = (scene as any).core.modalHits as Array<{ action: () => void }>;
     modalHits[0].action(); // OK
     await flush();
 
     expect(spies.removeFriend).toHaveBeenCalledWith('100000001');
-    expect((scene as any).modalOpen).toBe(false);
+    expect((scene as any).core.modalOpen).toBe(false);
     scene.destroy();
   });
 
@@ -122,8 +122,8 @@ describe('FriendsScene — remove-friend confirm dialog', () => {
     const { scene } = buildFriendsScene(friends);
     await flush();
 
-    (scene as unknown as { confirmRemove(id: string, name: string): void }).confirmRemove('100000001', 'Alice');
-    const modalLayer = (scene as any).modalLayer as { children: Array<{ text?: string }> };
+    (scene as unknown as { friendsList: { confirmRemove(id: string, name: string): void } }).friendsList.confirmRemove('100000001', 'Alice');
+    const modalLayer = (scene as any).core.modalLayer as { children: Array<{ text?: string }> };
     const label = modalLayer.children.find((c) => typeof c.text === 'string' && c.text.includes('Alice'));
     expect(label).toBeDefined();
     scene.destroy();
@@ -136,15 +136,15 @@ describe('FriendsScene — remove-friend confirm dialog', () => {
     const { scene, spies } = buildFriendsScene(friends);
     await flush();
 
-    const h = (scene as any).h as number;
+    const h = (scene as any).core.h as number;
     const rh = Math.round(h * 0.10);
     const xW = Math.round(rh * 0.62);
-    const hits = (scene as any).hits as Array<{ rect: { w: number; h: number }; fn: () => void }>;
+    const hits = (scene as any).core.hits as Array<{ rect: { w: number; h: number }; fn: () => void }>;
     const removeHit = hits.find((hit) => Math.round(hit.rect.w) === xW && Math.round(hit.rect.h) === xW);
     expect(removeHit).toBeDefined();
 
     removeHit!.fn();
-    expect((scene as any).modalOpen).toBe(true);
+    expect((scene as any).core.modalOpen).toBe(true);
     expect(spies.removeFriend).not.toHaveBeenCalled(); // confirm first, not an immediate delete
     scene.destroy();
   });
@@ -156,9 +156,9 @@ describe('FriendsScene — duel invite ("切磋")', () => {
     const { scene, spies } = buildFriendsScene(friends);
     await flush();
 
-    (scene as unknown as { doDuel(id: string): void }).doDuel('100000001');
+    (scene as unknown as { network: { doDuel(id: string): void } }).network.doDuel('100000001');
     expect(spies.duelInvite).toHaveBeenCalledWith('100000001');
-    expect((scene as any).sendingDuelTo).toBe('100000001');
+    expect((scene as any).core.sendingDuelTo).toBe('100000001');
     scene.destroy();
   });
 
@@ -170,13 +170,13 @@ describe('FriendsScene — duel invite ("切磋")', () => {
     const { scene, spies } = buildFriendsScene(friends);
     await flush();
 
-    (scene as unknown as { doDuel(id: string): void }).doDuel('100000001'); // re-renders internally
+    (scene as unknown as { network: { doDuel(id: string): void } }).network.doDuel('100000001'); // re-renders internally
     expect(spies.duelInvite).toHaveBeenCalledTimes(1);
 
-    const h = (scene as any).h as number;
+    const h = (scene as any).core.h as number;
     const rh = Math.round(h * 0.10);
     const duelW = Math.round(rh * 1.7);
-    const hits = (scene as any).hits as Array<{ rect: { w: number }; fn: () => void }>;
+    const hits = (scene as any).core.hits as Array<{ rect: { w: number }; fn: () => void }>;
     const duelHits = hits.filter((hit) => Math.round(hit.rect.w) === duelW);
     expect(duelHits).toHaveLength(2); // one per friend row, including the one already invited
 
@@ -190,10 +190,10 @@ describe('FriendsScene — duel invite ("切磋")', () => {
     const { scene, spies } = buildFriendsScene(friends);
     await flush();
 
-    const h = (scene as any).h as number;
+    const h = (scene as any).core.h as number;
     const rh = Math.round(h * 0.10);
     const duelW = Math.round(rh * 1.7);
-    const hits = (scene as any).hits as Array<{ rect: { w: number }; fn: () => void }>;
+    const hits = (scene as any).core.hits as Array<{ rect: { w: number }; fn: () => void }>;
     const duelHit = hits.find((hit) => Math.round(hit.rect.w) === duelW);
     expect(duelHit).toBeDefined();
 
@@ -205,11 +205,11 @@ describe('FriendsScene — duel invite ("切磋")', () => {
   it('doDuelRespond clears the incoming banner and forwards accept/decline to the callback', async () => {
     const { scene, spies } = buildFriendsScene([]);
     await flush();
-    (scene as any).incomingDuelInvite = { inviteId: 'inv-1', fromPublicId: '100000009', fromName: 'Carl', expiresAt: Date.now() + 60_000 };
+    (scene as any).core.incomingDuelInvite = { inviteId: 'inv-1', fromPublicId: '100000009', fromName: 'Carl', expiresAt: Date.now() + 60_000 };
 
-    (scene as unknown as { doDuelRespond(id: string, accept: boolean): void }).doDuelRespond('inv-1', true);
+    (scene as unknown as { network: { doDuelRespond(id: string, accept: boolean): void } }).network.doDuelRespond('inv-1', true);
     expect(spies.duelRespond).toHaveBeenCalledWith('inv-1', true);
-    expect((scene as any).incomingDuelInvite).toBeNull();
+    expect((scene as any).core.incomingDuelInvite).toBeNull();
     scene.destroy();
   });
 
@@ -218,13 +218,13 @@ describe('FriendsScene — duel invite ("切磋")', () => {
     await flush();
 
     (scene as any).applyDuelInvited({ inviteId: 'inv-2', fromPublicId: '100000009', fromName: 'Carl' });
-    expect((scene as any).incomingDuelInvite).toMatchObject({ inviteId: 'inv-2', fromPublicId: '100000009', fromName: 'Carl' });
+    expect((scene as any).core.incomingDuelInvite).toMatchObject({ inviteId: 'inv-2', fromPublicId: '100000009', fromName: 'Carl' });
 
     // drawDuelInviteBanner's Accept/Reject share drawRequestRow's button geometry (bW = round(cW*0.18));
     // this fixture has zero pending friend requests, so these two hits are unambiguously the banner's.
-    const cW = (scene as any).cW as number;
+    const cW = (scene as any).core.cW as number;
     const bW = Math.round(cW * 0.18);
-    const hits = (scene as any).hits as Array<{ rect: { w: number }; fn: () => void }>;
+    const hits = (scene as any).core.hits as Array<{ rect: { w: number }; fn: () => void }>;
     const bannerHits = hits.filter((hit) => Math.round(hit.rect.w) === bW);
     expect(bannerHits).toHaveLength(2); // [accept, reject]
 
@@ -237,11 +237,11 @@ describe('FriendsScene — duel invite ("切磋")', () => {
     const { scene } = buildFriendsScene([]);
     await flush();
     (scene as any).applyDuelInvited({ inviteId: 'inv-3', fromPublicId: '100000009', fromName: 'Carl' });
-    expect((scene as any).incomingDuelInvite).not.toBeNull();
+    expect((scene as any).core.incomingDuelInvite).not.toBeNull();
 
-    (scene as any).incomingDuelInvite.expiresAt = Date.now() - 1; // simulate the 60s window having elapsed
+    (scene as any).core.incomingDuelInvite.expiresAt = Date.now() - 1; // simulate the 60s window having elapsed
     scene.update(1 / 60);
-    expect((scene as any).incomingDuelInvite).toBeNull();
+    expect((scene as any).core.incomingDuelInvite).toBeNull();
     scene.destroy();
   });
 
@@ -249,11 +249,11 @@ describe('FriendsScene — duel invite ("切磋")', () => {
     const friends: FriendView[] = [{ publicId: '100000001', displayName: 'Alice', online: true }];
     const { scene } = buildFriendsScene(friends);
     await flush();
-    (scene as unknown as { doDuel(id: string): void }).doDuel('100000001');
-    expect((scene as any).sendingDuelTo).toBe('100000001');
+    (scene as unknown as { network: { doDuel(id: string): void } }).network.doDuel('100000001');
+    expect((scene as any).core.sendingDuelTo).toBe('100000001');
 
     (scene as any).applyDuelCancelled({ inviteId: 'whatever', reason: 'declined' });
-    expect((scene as any).sendingDuelTo).toBeNull();
+    expect((scene as any).core.sendingDuelTo).toBeNull();
     scene.destroy();
   });
 

@@ -1,21 +1,25 @@
-// Shared foundation for the GachaScene mixin chain (see ../GachaScene.ts assembly).
+// Shared foundation for the GachaScene composition (see ../GachaScene.ts assembly).
 //
-// GachaSceneBase holds every instance field (all `protected`, so the domain mixin bodies keep
-// referencing them verbatim: this.pools, this.reveal, this.oddsScrollY, ...) + the constructor,
-// the Scene lifecycle (update/destroy), the input handlers, the render dispatcher and the shared
-// helpers (contentBounds/displayName/addButton/drawBackground). Each domain (page / reveal / odds)
-// lives in its own sibling file as an `XMixin(Base)` and is chained into the final GachaScene.
+// GachaSceneCore owns every instance field (all `public`, so the domain classes below keep
+// referencing them via `this.core.xxx`: this.core.pools, this.core.reveal, this.core.oddsScrollY,
+// ...) + the Scene-lifecycle plumbing (update/destroy), the input handlers, and the shared helpers
+// (contentBounds/displayName/addButton/drawBackground). The actual `render()` orchestration (which
+// calls the domain classes' draw methods) lives on the outer ../GachaScene.ts assembly, not here —
+// Core takes a `render` callback injected at construction instead of owning render() itself, so it
+// never has to call sideways into a sibling domain class. Each domain (page / reveal / odds) is its
+// own independent class in a sibling file, constructed with `core` (2026-08-11: converted from the
+// former `XMixin(Base)` inheritance chain — the render-dispatch upward calls this used to reach via
+// interface declaration merging are now explicit constructor params/callbacks instead, see
+// claudedocs/client-modules.md's split-form priority note).
 import * as PIXI from 'pixi.js-legacy';
-import { Scene } from '../SceneManager';
 import { ILayout, Rect } from '../../layout/ILayout';
 import { InputManager } from '../../inputSystem/InputManager';
 import { t, TranslationKey } from '../../i18n';
 import type { Rarity } from '../../game/meta/SaveData';
 import type { GachaOverflow, GachaPool, GachaResultEntry } from '../../net/ApiClient';
-import { ui as C, txt, buildPaperBackground, sketchPanel, seedFor, drawLoadingOverlay, tearDownChildren } from '../../render/sketchUi';
+import { ui as C, txt, buildPaperBackground, sketchPanel, seedFor, tearDownChildren } from '../../render/sketchUi';
 import { showToastMessage } from '../../net/log';
 import { buildDecorCLayer } from '../../render/decorCLayer';
-import { preloadGachaTextures } from '../../render/gachaArt';
 import { sidebarNavW } from '../../ui/widgets/HubTabs';
 import { BusyTracker, withTimeout, TimeoutError } from '../../ui/busyTracker';
 import { getEquipDef } from '../../game/meta/equipmentDefs';
@@ -27,7 +31,9 @@ import { LegendaryTrail, pointOnPerim, TRAIL_SPEED, TRAIL_SPAN, hslToHex, trailH
 
 /** itemId prefix → material icon glyph (mat_scrap/mat_lead/mat_binding). */
 export const MATERIAL_ICON: Record<string, 'scrap' | 'lead' | 'binding'> = {
-  mat_scrap: 'scrap', mat_lead: 'lead', mat_binding: 'binding',
+  mat_scrap: 'scrap',
+  mat_lead: 'lead',
+  mat_binding: 'binding',
 };
 
 // ── GachaScene (S2-6) — single / ten-pull lootbox with pity + reveal ───────────
@@ -39,24 +45,23 @@ export const MATERIAL_ICON: Record<string, 'scrap' | 'lead' | 'binding'> = {
 
 /** Rarity → card accent colour (shared visual language with shop/collection later). */
 export const RARITY_COLOR: Record<Rarity, number> = {
-  common:    0x9aa0a6,
-  rare:      0x4477cc,
-  epic:      0xaa55cc,
+  common: 0x9aa0a6,
+  rare: 0x4477cc,
+  epic: 0xaa55cc,
   legendary: 0xddaa33,
 };
 
 /** Rarity → star-pip count (rank at a glance, tinted by RARITY_COLOR). */
 export const RARITY_STARS: Record<Rarity, number> = {
-  common: 1, rare: 2, epic: 3, legendary: 4,
+  common: 1,
+  rare: 2,
+  epic: 3,
+  legendary: 4,
 };
 
-export type GachaDrawResult =
-  | { ok: true; results: GachaResultEntry[]; overflow: GachaOverflow }
-  | { ok: false; key: TranslationKey };
+export type GachaDrawResult = { ok: true; results: GachaResultEntry[]; overflow: GachaOverflow } | { ok: false; key: TranslationKey };
 
-export type FateRedeemResult =
-  | { ok: true; granted: string }
-  | { ok: false; key: TranslationKey };
+export type FateRedeemResult = { ok: true; granted: string } | { ok: false; key: TranslationKey };
 
 export interface GachaSceneCallbacks {
   onBack(): void;
@@ -90,58 +95,70 @@ export interface GachaSceneCallbacks {
   getRechargeBadge?(): boolean;
 }
 
-export interface Hit { rect: Rect; fn: () => void; }
+export interface Hit {
+  rect: Rect;
+  fn: () => void;
+}
 
-/** Was a `private static readonly` on GachaScene. A mixin's class expression is anonymous,
-  * so there is no class name to reach a static through — module scope is the equivalent. */
+/** Was a `private static readonly` on GachaScene. A class expression this deep in a composition
+ *  doesn't get its own name reserved for statics either, so module scope stays the equivalent. */
 export const FATE_COST = 30;
 
-export class GachaSceneBase implements Scene {
+export class GachaSceneCore {
   readonly container: PIXI.Container;
 
-  protected readonly w: number;
-  protected readonly h: number;
-  protected readonly landscape: boolean;
-  protected readonly cb: GachaSceneCallbacks;
+  readonly w: number;
+  readonly h: number;
+  readonly landscape: boolean;
+  readonly cb: GachaSceneCallbacks;
 
-  protected pools: GachaPool[] = [];
-  protected poolIdx = 0;
-  protected get pool(): GachaPool | null { return this.pools[this.poolIdx] ?? null; }
-  protected loading = true;
-  protected readonly bt = new BusyTracker();
-
-  /** Fate Point redeem cost (mirrors @nw/shared FATE_POINT_REDEEM_COST; GACHA_DESIGN §7). */
+  pools: GachaPool[] = [];
+  poolIdx = 0;
+  get pool(): GachaPool | null {
+    return this.pools[this.poolIdx] ?? null;
+  }
+  loading = true;
+  readonly bt = new BusyTracker();
 
   /** Hero-card art urls already hooked for a 'loaded' re-render (odds popup), so we don't double-hook. */
-  protected readonly artHooked = new Set<string>();
+  readonly artHooked = new Set<string>();
   /** Reveal overlay: non-null while showing the latest draw's results. */
-  protected reveal: GachaResultEntry[] | null = null;
+  reveal: GachaResultEntry[] | null = null;
   /**
    * Legendary (orange) reveal cards get a comet-like dot trail looping clockwise around the card's
    * rounded-rect border, advanced in update(dt). Rebuilt each render() (children are torn down by
    * tearDownChildren), so this holds only live objects and never pins the Ticker (see
    * client-memory-leak.md: fx must not outlive the container).
    */
-  protected revealFx: LegendaryTrail[] = [];
+  revealFx: LegendaryTrail[] = [];
   /** Roster/inventory-full overflow from the draw currently shown in `reveal`; toasted once the player dismisses the reveal. */
-  protected revealOverflow: GachaOverflow | null = null;
+  revealOverflow: GachaOverflow | null = null;
   /** Odds-detail overlay open (L1-3, Apple 3.1.1): lists per-item probability + pity rule. */
-  protected oddsOpen = false;
+  oddsOpen = false;
   /** Odds-grid scroll state — the grid shows every pool entry (no rarity grouping/paging), so it can
    *  exceed the panel's height once a pool has more than ~20 items. */
-  protected oddsScrollY = 0;
-  protected oddsScrollMax = 0;
-  protected oddsDragStart: { x: number; y: number; scroll: number; moved: boolean } | null = null;
+  oddsScrollY = 0;
+  oddsScrollMax = 0;
+  oddsDragStart: { x: number; y: number; scroll: number; moved: boolean } | null = null;
   /** Set by handleOddsMove instead of rendering inline — same throttle as CardScene's drag-scroll
    *  (see scroll-drag-throttle-pattern memory: rendering per pointermove causes jank while dragging). */
-  protected oddsScrollDirty = false;
+  oddsScrollDirty = false;
 
-  protected hits: Hit[] = [];
-  protected readonly unsubs: Array<() => void> = [];
+  hits: Hit[] = [];
+  private readonly unsubs: Array<() => void> = [];
   /** Set in destroy(); guards render() so a late async loadPools()/draw() re-render can't paint into a torn-down container. */
-  protected destroyed = false;
+  destroyed = false;
 
-  constructor(layout: ILayout, input: InputManager, cb: GachaSceneCallbacks) {
+  /** @param render Injected by the outer GachaScene assembly (which owns the actual render
+   *  dispatcher, since it's the only thing that knows about all domain classes) — Core and the
+   *  domain classes call `this.render()`/`this.core.render()` wherever the old flattened class
+   *  called its own `render()` method verbatim. */
+  constructor(
+    layout: ILayout,
+    input: InputManager,
+    cb: GachaSceneCallbacks,
+    readonly render: () => void,
+  ) {
     this.container = new PIXI.Container();
     this.w = layout.designWidth;
     this.h = layout.designHeight;
@@ -152,12 +169,9 @@ export class GachaSceneBase implements Scene {
     this.unsubs.push(input.onUp(() => this.handleOddsUp()));
     this.unsubs.push(input.onWheel((_x, y, deltaY) => this.handleOddsWheel(y, deltaY)));
     if (cb.onSaveChanged) this.unsubs.push(cb.onSaveChanged(() => this.render()));
-    this.render();
-    void this.loadPools();
-    void preloadGachaTextures();
   }
 
-  protected async loadPools(): Promise<void> {
+  async loadPools(): Promise<void> {
     try {
       this.pools = await this.cb.loadPools();
     } catch {
@@ -169,7 +183,7 @@ export class GachaSceneBase implements Scene {
   }
 
   /** Redeem Fate Points for the active limited pool's featured legendary (§7). */
-  protected async onRedeemFate(): Promise<void> {
+  async onRedeemFate(): Promise<void> {
     const pool = this.pool;
     if (this.bt.busy || !pool?.featuredLegendary) return;
     this.bt.start();
@@ -186,7 +200,7 @@ export class GachaSceneBase implements Scene {
     }
   }
 
-  protected async onDraw(count: 1 | 10): Promise<void> {
+  async onDraw(count: 1 | 10): Promise<void> {
     if (this.bt.busy || !this.pool) return;
     this.bt.start();
     this.render();
@@ -221,7 +235,10 @@ export class GachaSceneBase implements Scene {
         }
       }
     }
-    if (this.oddsScrollDirty) { this.oddsScrollDirty = false; this.render(); }
+    if (this.oddsScrollDirty) {
+      this.oddsScrollDirty = false;
+      this.render();
+    }
     if (this.bt.tick(dt)) this.render();
   }
 
@@ -231,7 +248,7 @@ export class GachaSceneBase implements Scene {
     this.container.destroy({ children: true });
   }
 
-  protected dismissReveal(): void {
+  dismissReveal(): void {
     this.reveal = null;
     const overflow = this.revealOverflow;
     this.revealOverflow = null;
@@ -248,20 +265,29 @@ export class GachaSceneBase implements Scene {
     }
   }
 
-  protected handleDown(x: number, y: number): void {
+  handleDown(x: number, y: number): void {
     if (this.bt.busy) return;
     // While revealing, any tap continues.
-    if (this.reveal) { this.dismissReveal(); return; }
+    if (this.reveal) {
+      this.dismissReveal();
+      return;
+    }
     // While showing the odds detail, a tap closes it (modal, no inner controls) — but the grid also
     // scrolls, so closing is deferred to handleOddsUp until we know the pointer didn't drag.
-    if (this.oddsOpen) { this.oddsDragStart = { x, y, scroll: this.oddsScrollY, moved: false }; return; }
+    if (this.oddsOpen) {
+      this.oddsDragStart = { x, y, scroll: this.oddsScrollY, moved: false };
+      return;
+    }
     for (const hit of this.hits) {
       const r = hit.rect;
-      if (x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h) { hit.fn(); return; }
+      if (x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h) {
+        hit.fn();
+        return;
+      }
     }
   }
 
-  protected handleOddsMove(y: number): void {
+  handleOddsMove(y: number): void {
     if (!this.oddsDragStart) return;
     const dy = y - this.oddsDragStart.y;
     if (Math.abs(dy) > 6) {
@@ -271,51 +297,38 @@ export class GachaSceneBase implements Scene {
     }
   }
 
-  protected handleOddsUp(): void {
-    if (this.oddsDragStart && !this.oddsDragStart.moved) { this.oddsOpen = false; this.oddsScrollY = 0; this.render(); }
+  handleOddsUp(): void {
+    if (this.oddsDragStart && !this.oddsDragStart.moved) {
+      this.oddsOpen = false;
+      this.oddsScrollY = 0;
+      this.render();
+    }
     this.oddsDragStart = null;
   }
 
   /** Mouse-wheel scroll over the odds grid (browser only, see InputManager.onWheel). Gated to while the
    *  odds overlay is open; bounds mirror drawOdds's gridTop/gridBottom (a pure function of the constant
    *  design height, so it's safe to recompute here without caching them as fields). */
-  protected handleOddsWheel(y: number, deltaY: number): void {
+  handleOddsWheel(y: number, deltaY: number): void {
     if (!this.oddsOpen) return;
     const { top, bottom } = this.oddsGridBounds();
     const next = wheelScrollY(top, bottom, y, deltaY, this.oddsScrollY, this.oddsScrollMax);
-    if (next !== null) { this.oddsScrollY = next; this.oddsScrollDirty = true; }
+    if (next !== null) {
+      this.oddsScrollY = next;
+      this.oddsScrollDirty = true;
+    }
   }
 
   /** Odds-grid vertical bounds — mirrors the gridTop/gridBottom computation in drawOdds (py/ph/gridTop/
    *  gridBottom all derive only from the scene's constant design height `h`, never from pool data). */
-  protected oddsGridBounds(): { top: number; bottom: number } {
+  oddsGridBounds(): { top: number; bottom: number } {
     const { h } = this;
     const ph = Math.round(h * 0.86);
     const py = (h - ph) / 2;
     return { top: py + Math.round(h * 0.075), bottom: py + ph - Math.round(h * 0.135) };
   }
 
-  protected render(): void {
-    if (this.destroyed) return;
-    tearDownChildren(this.container);
-    this.hits = [];
-    this.revealFx = []; // torn down with the container above; repopulated by drawResultCard for legendary cards
-
-    this.drawBackground();
-    const tbH = this.drawHeader();
-    // Landscape draws the rail first (disjoint region from the body, order doesn't matter). Portrait's
-    // bottom bar is drawn AFTER the body so it always paints on top of a tall/unbounded body layout —
-    // drawSidebar unshifts its own hits in that branch so hit-testing still resolves to the nav bar
-    // first, matching the visual stacking, in case of an accidental rect overlap.
-    if (this.landscape) this.drawSidebar(tbH);
-    this.drawBody(tbH);
-    if (!this.landscape) this.drawSidebar(tbH);
-    if (this.reveal) this.drawReveal(this.reveal);
-    if (this.oddsOpen && this.pool) this.drawOdds(this.pool);
-    if (this.bt.loadingVisible) drawLoadingOverlay(this.container, this.w, this.h, this.bt.dots, t('common.processing'));
-  }
-
-  protected drawBackground(): void {
+  drawBackground(): void {
     // Landscape only for now — see ShopScene.drawBackground / LOBBY_IA_REDESIGN §14.
     const railX = this.landscape ? sidebarNavW(this.w, this.h, true) : undefined;
     this.container.addChild(buildPaperBackground('gachabg', this.w, this.h, { railX }));
@@ -327,7 +340,7 @@ export class GachaSceneBase implements Scene {
    *  (portrait's bottom bar reserves no width — else a standalone 5%-of-w pad each side, 90% total,
    *  matching BattlePassScene/RechargeScene's contentBounds); landscape non-group case stays full
    *  width, unchanged. */
-  protected contentBounds(): { x0: number; w: number } {
+  contentBounds(): { x0: number; w: number } {
     const { w, h, landscape } = this;
     if (!landscape) {
       const pad = Math.round(w * 0.05);
@@ -344,47 +357,31 @@ export class GachaSceneBase implements Scene {
    * itemIds like "mat_scrap" — not translated, unreadable). Mirrors drawEntryPicture's item-kind
    * detection so every entry that gets a real picture also gets a real name.
    */
-  protected displayName(itemId: string): string {
+  displayName(itemId: string): string {
     const matKind = MATERIAL_ICON[itemId];
     if (matKind) return t(('material.' + matKind) as TranslationKey);
 
-    if (getEquipDef(itemId)) return t((`equip.${itemId}.name`) as TranslationKey);
+    if (getEquipDef(itemId)) return t(`equip.${itemId}.name` as TranslationKey);
 
-    if (CARD_DEFS[itemId]) return t((`card.${itemId}.name`) as TranslationKey);
+    if (CARD_DEFS[itemId]) return t(`card.${itemId}.name` as TranslationKey);
 
     if (SKIN_TARGET_UNIT[itemId]) return skinDisplayName(itemId);
 
     return itemId;
   }
 
-  protected addButton(
-    label: string, x: number, y: number, w: number, h: number,
-    fill: number, stroke: number, fn: () => void, enabled = true,
-  ): void {
+  addButton(label: string, x: number, y: number, w: number, h: number, fill: number, stroke: number, fn: () => void, enabled = true): void {
     const g = sketchPanel(w, h, { fill, border: stroke, width: 2, seed: seedFor(x, y, w) });
-    g.x = x; g.y = y;
+    g.x = x;
+    g.y = y;
     this.container.addChild(g);
 
     const tl = txt(label, snapFont(Math.round(h * 0.36)), enabled ? 0xffffff : C.mid, true);
-    tl.anchor.set(0.5, 0.5); tl.x = x + w / 2; tl.y = y + h / 2;
+    tl.anchor.set(0.5, 0.5);
+    tl.x = x + w / 2;
+    tl.y = y + h / 2;
     this.container.addChild(tl);
 
     if (enabled) this.hits.push({ rect: { x, y, w, h }, fn });
   }
-}
-
-export type Constructor<T = object> = new (...args: any[]) => T;
-export type GachaSceneBaseCtor = Constructor<GachaSceneBase>;
-
-// ── Domain entrypoints dispatched to from base-level code (the render dispatcher) and across
-// sibling mixins. Declared via interface/class declaration merging so base-level calls type-check
-// as METHODS (properties would clash with the mixin override — TS2425). Emits NOTHING at runtime,
-// so the real prototype methods provided by the mixins run and every body stays verbatim.
-export interface GachaSceneBase {
-  drawBody(tbH: number): void;
-  drawEntryPicture( itemId: string, rarity: Rarity, cx: number, cy: number, size: number, seed: number, parent?: PIXI.Container, ): void;
-  drawHeader(): number;
-  drawOdds(pool: GachaPool): void;
-  drawReveal(results: GachaResultEntry[]): void;
-  drawSidebar(tbH: number): void;
 }

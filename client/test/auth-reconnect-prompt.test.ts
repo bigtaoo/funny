@@ -7,7 +7,7 @@
 // this is exercising nav/auth.ts's own logic, not full app wiring.
 import { describe, it, expect, vi } from 'vitest';
 import { createAuthNav, mapAuthError } from '../src/app/nav/auth';
-import { ApiError } from '../src/net/ApiClient/base';
+import { ApiError } from '../src/net/ApiClient/core';
 import type { AppCtx, AppState, Nav } from '../src/app/appCtx';
 import type { ActiveMatchInfo } from '../src/net/ApiClient';
 import type { ReconnectPromptCallbacks } from '../src/ui/dialogs/ReconnectPromptDialog';

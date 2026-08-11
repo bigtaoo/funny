@@ -57,9 +57,9 @@ function buildNoSectScene(coins: number, cb: Record<string, unknown> = {}): any 
     refreshWallet: async () => {},
     ...cb,
   });
-  scene.inFamily = true;
-  scene.myFamilyRole = 'leader';
-  scene.mode = 'noSect';
+  scene.core.inFamily = true;
+  scene.core.myFamilyRole = 'leader';
+  scene.core.mode = 'noSect';
   scene.render();
   return scene;
 }
@@ -106,7 +106,7 @@ describe('SectScene — Create Sect button afford-gating', () => {
     const scene = buildNoSectScene(SECT_CREATE_COST);
     const pos = findLabelPos(scene.container, t('sect.create'));
     expect(pos).not.toBeNull();
-    expect(hitUnder(scene.hitRects, pos!)).toBeDefined();
+    expect(hitUnder(scene.core.hitRects, pos!)).toBeDefined();
     scene.destroy();
   });
 
@@ -114,7 +114,7 @@ describe('SectScene — Create Sect button afford-gating', () => {
     const scene = buildNoSectScene(SECT_CREATE_COST - 1);
     const pos = findLabelPos(scene.container, t('sect.create'));
     expect(pos).not.toBeNull();
-    expect(hitUnder(scene.hitRects, pos!)).toBeUndefined();
+    expect(hitUnder(scene.core.hitRects, pos!)).toBeUndefined();
     scene.destroy();
   });
 });
@@ -127,10 +127,10 @@ describe('SectScene — doCreate() deducts the coin cost', () => {
       worldApi: stubWorldApi({ createSect }),
       refreshWallet,
     });
-    scene.createName = 'Sky Sect';
-    scene.createTag = 'SKY';
+    scene.core.createName = 'Sky Sect';
+    scene.core.createTag = 'SKY';
 
-    await scene.doCreate();
+    await scene.actions.doCreate();
 
     expect(createSect).toHaveBeenCalledWith(WORLD_ID, 'Sky Sect', 'SKY');
     expect(refreshWallet).toHaveBeenCalledTimes(1);
@@ -144,10 +144,10 @@ describe('SectScene — doCreate() deducts the coin cost', () => {
       worldApi: stubWorldApi({ createSect }),
       refreshWallet,
     });
-    scene.createName = '';
-    scene.createTag = '';
+    scene.core.createName = '';
+    scene.core.createTag = '';
 
-    await scene.doCreate();
+    await scene.actions.doCreate();
 
     expect(createSect).not.toHaveBeenCalled();
     expect(refreshWallet).not.toHaveBeenCalled();

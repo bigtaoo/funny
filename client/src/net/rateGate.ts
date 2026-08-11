@@ -45,5 +45,5 @@ export class RateGate {
   }
 }
 
-/** Shared across ApiClientBase, WorldApiClient, and NetClient's rate-limited WS messages. */
+/** Shared across ApiClientCore, WorldApiClient, and NetClient's rate-limited WS messages. */
 export const globalRequestGate = new RateGate();

@@ -147,13 +147,13 @@ describe('Sect chat — single-line name-tag row', () => {
       worldId: 'w1', myAccountId: 'me', playerName: 'tao',
       getCoins: () => 0, refreshWallet: async () => {},
     } as any);
-    scene.mode = 'mySect';
-    scene.activeTab = 'channel';
-    scene.sect = { sectId: 's1', worldId: 'w1', name: 'Sky Sect', tag: 'SKY', leaderId: 'me', leaderFamilyId: 'fam1', memberFamilyCount: 1, prosperity: 0, memberFamilies: [], allySectIds: [] };
-    scene.messages = messages;
+    scene.core.mode = 'mySect';
+    scene.core.activeTab = 'channel';
+    scene.core.sect = { sectId: 's1', worldId: 'w1', name: 'Sky Sect', tag: 'SKY', leaderId: 'me', leaderFamilyId: 'fam1', memberFamilyCount: 1, prosperity: 0, memberFamilies: [], allySectIds: [] };
+    scene.core.messages = messages;
     scene.render();
 
-    const { texts } = collect(scene.bodyLayer);
+    const { texts } = collect(scene.core.bodyLayer);
     const nameText = texts.find((t) => t.text.startsWith('['));
     const bodyText = texts.find((t) => t.text.includes('hello sect'));
     expect(nameText?.text).toBe('[Grandmaster][IronSect][WangFam]tao');

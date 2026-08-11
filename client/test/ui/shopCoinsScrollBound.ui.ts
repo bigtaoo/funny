@@ -55,10 +55,10 @@ describe('ShopScene Coins tab — scroll bound (totalH) does not double-count th
     // Independently derive gridH the same way coins.ts does (5 fixed WEB_COIN_TIERS), using the
     // scene's own gridMetrics() so cols/cellH/gap always match the real render, whatever the
     // viewport size — only the arithmetic combining them (the actual fix) is under test here.
-    const { gap, cellH, cols } = (scene as any).gridMetrics();
+    const { gap, cellH, cols } = (scene as any).core.gridMetrics();
     const rows = Math.ceil(5 / cols); // WEB_COIN_TIERS.length
     const gridH = rows * (cellH + gap);
-    const promoH = Math.round((scene as any).h * 0.09);
+    const promoH = Math.round((scene as any).core.h * 0.09);
 
     expect(unit).toBe(cellH + gap);
     expect(totalH).toBe(gridH + promoH); // NOT gridH + promoH + gap (the old, buggy formula)
@@ -84,7 +84,7 @@ describe('ShopScene Coins tab — scroll bound (totalH) does not double-count th
     } as any);
 
     const [, , totalH] = spy.mock.calls[spy.mock.calls.length - 1] as [number, number, number];
-    const { gap, cellH, cols } = (scene as any).gridMetrics();
+    const { gap, cellH, cols } = (scene as any).core.gridMetrics();
     const rows = Math.ceil(5 / cols);
     const gridH = rows * (cellH + gap);
 

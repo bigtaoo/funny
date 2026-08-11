@@ -62,15 +62,15 @@ describe('FriendsScene — world chat load failure surfaces an error + retry ins
     await Promise.resolve();
 
     // Failed load: stuck-forever bug would leave worldLoaded=false with no error surfaced.
-    expect(scene.worldLoaded).toBe(false);
-    expect(scene.worldLoadError).toBe(true);
-    expect(scene.worldLoading).toBe(false);
+    expect(scene.core.worldLoaded).toBe(false);
+    expect(scene.core.worldLoadError).toBe(true);
+    expect(scene.core.worldLoading).toBe(false);
 
     // Re-entering the tab must not spin indefinitely on the stale error — retrying should work.
     shouldFail = false;
-    await scene.loadWorldMessages();
+    await scene.network.loadWorldMessages();
 
-    expect(scene.worldLoaded).toBe(true);
-    expect(scene.worldLoadError).toBe(false);
+    expect(scene.core.worldLoaded).toBe(true);
+    expect(scene.core.worldLoadError).toBe(false);
   });
 });

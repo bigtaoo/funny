@@ -1,5 +1,5 @@
 /**
- * gachaDrawAndFateActions.test.ts — direct coverage of GachaScene/base.ts's `onDraw`/`onRedeemFate`
+ * gachaDrawAndFateActions.test.ts — direct coverage of GachaScene/core.ts's `onDraw`/`onRedeemFate`
  * busy-lock + catch/timeout branches. The 2026-08-05 client-test-audit flagged Gacha as having zero
  * busy-lock coverage of any kind, and `onRedeemFate` as never called by any test at all — every
  * other reference to `cb.redeemFate` in the suite only supplies it as a constructor-stub callback
@@ -7,17 +7,19 @@
  * `gachaInvFullToast.ui.ts`; this file adds its busy-lock + catch/timeout branch and all of
  * `onRedeemFate`.
  *
- * `onDraw`/`onRedeemFate` are plain protected methods directly on the exported `GachaSceneBase`
- * class (not behind an exported `XMixin(Base)` factory like Sect/Family/Shop's actions), so this
- * builds a bare object prototype-chained to `GachaSceneBase.prototype` via `Object.create` instead
- * of subclassing — same end result (the getter `pool` and the two target methods run for real
- * against plain instance fields) without invoking the real constructor's PIXI `build()`.
+ * `onDraw`/`onRedeemFate` are plain public methods directly on the exported `GachaSceneCore`
+ * class (2026-08-11: `GachaSceneBase` mixin-chain conversion to composition — see
+ * claudedocs/client-modules.md's split-form priority note; `core`'s `render` used to be a method,
+ * now it's a constructor-injected field, which is why `scene.render = vi.fn()` below still works
+ * unchanged), so this builds a bare object prototype-chained to `GachaSceneCore.prototype` via
+ * `Object.create` instead of subclassing — same end result (the getter `pool` and the two target
+ * methods run for real against plain instance fields) without invoking the real constructor.
  */
 import { describe, it, expect, vi } from 'vitest';
 import * as log from '../src/net/log';
 import { initI18n, t } from '../src/i18n';
-import { GachaSceneBase } from '../src/scenes/GachaScene/base';
-import type { GachaDrawResult, FateRedeemResult } from '../src/scenes/GachaScene/base';
+import { GachaSceneCore } from '../src/scenes/GachaScene/core';
+import type { GachaDrawResult, FateRedeemResult } from '../src/scenes/GachaScene/core';
 import type { GachaPool } from '../src/net/ApiClient';
 import { BusyTracker, TimeoutError } from '../src/ui/busyTracker';
 
@@ -36,12 +38,12 @@ function makePool(overrides: Partial<GachaPool> = {}): GachaPool {
 }
 
 /** Only the fields onDraw()/onRedeemFate() actually touch, prototype-chained to the real
- *  GachaSceneBase so `this.pool` (a getter on the prototype) and the two methods run for real. */
+ *  GachaSceneCore so `this.pool` (a getter on the prototype) and the two methods run for real. */
 function buildScene(overrides: {
   pools?: GachaPool[]; poolIdx?: number;
   draw?: ReturnType<typeof vi.fn>; redeemFate?: ReturnType<typeof vi.fn>;
 } = {}): any {
-  const scene = Object.create(GachaSceneBase.prototype) as any;
+  const scene = Object.create(GachaSceneCore.prototype) as any;
   scene.pools = overrides.pools ?? [makePool()];
   scene.poolIdx = overrides.poolIdx ?? 0;
   scene.bt = new BusyTracker();

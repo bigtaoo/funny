@@ -135,9 +135,12 @@ describe('scene showToast() routes to the global toast sink (success/error kind)
     } as unknown as WorldApiClient;
     const cb: CitySceneCallbacks = { onBack: () => {}, worldApi, worldId: 'world:1:0' };
     const scene = new CityScene(createLayout(W, H), new InputManager(), cb) as any;
-    scene.showToast(MSG);
+    // `showToast` lives on the composed `core` field (2026-08-11: CityScene converted from a
+    // mixin-chain `extends` to composition — see claudedocs/client-modules.md's split-form
+    // priority note), not the outer scene instance.
+    scene.core.showToast(MSG);
     expect(sink).toHaveBeenLastCalledWith(MSG, 'error');
-    scene.showToast(MSG, C.green);
+    scene.core.showToast(MSG, C.green);
     expect(sink).toHaveBeenLastCalledWith(MSG, 'success');
     scene.destroy();
   });

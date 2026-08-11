@@ -43,8 +43,10 @@ function buildGacha(w: number, h: number, cb: Partial<GachaSceneCallbacks>) {
   return { scene, layout };
 }
 
+// `contentBounds` lives on the composed `core` field (2026-08-11: GachaScene converted from a
+// mixin-chain `extends` to composition — see claudedocs/client-modules.md's split-form priority note).
 function contentBounds(scene: GachaScene): { x0: number; w: number } {
-  return (scene as any).contentBounds();
+  return (scene as any).core.contentBounds();
 }
 
 describe('GachaScene — contentBounds() follows orientation (LOBBY_IA_REDESIGN §22)', () => {

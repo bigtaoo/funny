@@ -1,29 +1,33 @@
-// Shared foundation for the SectScene mixin chain (see ../SectScene.ts assembly).
+// Shared foundation for the SectScene composition (see ../SectScene.ts assembly).
 //
-// SectSceneBase holds every instance field (all `protected`, so the domain mixin bodies keep
-// referencing them verbatim: this.mode, this.sect, this.bodyLayer, this.modalLayer, …) + the layer
-// scaffold (build), the static header, the permission getters, the render dispatcher, the shared
-// close-modal / toast / error primitives, and the input/lifecycle plumbing. Each domain (data /
-// render / input overlay / actions / modals) lives in its own sibling file as `XMixin(Base)` and is
-// chained into the final SectScene.
+// SectSceneCore holds every instance field (all `public`, so the domain classes below keep
+// referencing them via `this.core.xxx`: this.core.mode, this.core.sect, this.core.bodyLayer, …) +
+// the layer scaffold (build), the static header, the permission getters, the shared close-modal /
+// toast / error primitives, and the pointer-input/lifecycle plumbing. Core wires all four
+// InputManager subscriptions itself AND owns handleDown/handleMove/handleUp/handleWheel directly —
+// they only ever dispatch through pre-registered `hitRects`/`modalHits` closures (set by whichever
+// domain rendered them), never calling a domain method by name, so there's no two-phase-construction
+// concern here (unlike DefenseEditorScene's InputPanel). Core does NOT own the render() dispatcher
+// (which calls into RenderPanel's mode-specific methods) or the initial loadData() call — both live
+// on the outer ../SectScene.ts assembly since only it knows about every domain instance (Core takes
+// a `render` callback injected at construction instead of owning render() itself).
 //
-// SectScene — SLG sect management scene (S8-4b, C6).
-// A sect = a faction organization composed of families within a region; member unit is a family, linked by family.sectId.
-// Most write operations require the requester to be the family leader (representing the whole family); disband/ally/unally are sect-master only.
-// Channel is readable/writable by any sect member. Real-time push at scale goes through Redis (this slice uses REST polling, see SLG_DESIGN §9.3).
-//
-// Entry point: FamilyScene's "Sect" button (sects are the family of families, naturally belongs in the family UI).
-// Aligned with FamilyScene pattern: modalLayer + hitRects/modalHits (dim click to close), hand-drawn sketchPanel/txt,
-// subscribe input.onDown/Move/Up in constructor + unsubscribe in destroy (SLG scene input subscription was a latent bug, fixed in C3).
+// Each domain (data / modals / actions / input-overlay / render) is its own independent class in a
+// sibling file, constructed with `core` (2026-08-11: converted from the former `XMixin(Base)`
+// inheritance chain — the cross-mixin calls this used to reach via interface declaration merging are
+// now explicit constructor params/callbacks instead, see claudedocs/client-modules.md's split-form
+// priority note). Dependency shape: Render → Actions, InputOverlay; Actions → Data, Modals; Data and
+// Modals depend only on Core — narrow interfaces (DataHandlers/ModalsHandlers/ActionHandlers, each
+// already 1:1 with its class's own public surface) are passed down rather than the whole class, per
+// the composition-priority rule's "only the specific cross-domain methods needed" guidance.
 
 import * as PIXI from 'pixi.js-legacy';
 import type { ILayout } from '../../layout/ILayout';
 import type { InputManager } from '../../inputSystem/InputManager';
 import { t } from '../../i18n';
-import { ui as C, txt, buildPaperBackground, tearDownChildren, sketchPanel, seedFor } from '../../render/sketchUi';
+import { ui as C, buildPaperBackground, tearDownChildren } from '../../render/sketchUi';
 import { showToastMessage } from '../../net/log';
 import { buildDecorCLayer } from '../../render/decorCLayer';
-import { buildIcon } from '../../render/icons';
 import { drawSceneHeader, HEADER_ACCENT } from '../../ui/widgets/SceneHeader';
 import { sidebarNavW, bottomNavH } from '../../ui/widgets/HubTabs';
 import type {
@@ -32,9 +36,9 @@ import type {
 import { WorldApiError } from '../../net/WorldApiClient';
 import { drawSocialTabRail, type SocialTab } from '../../ui/widgets/socialTabRail';
 import { ScrollTapGesture } from '../../ui/scrollTapGesture';
-import { FS } from '../../render/fontScale';
 import { wheelScrollY } from '../../ui/wheelScroll';
 import { BusyTracker, TimeoutError } from '../../ui/busyTracker';
+import { drawHeaderTitle } from './header';
 
 export interface SectSceneCallbacks {
   onBack(): void;
@@ -63,83 +67,78 @@ export type SectTab = 'families' | 'channel';
 export type ViewMode = 'loading' | 'noSect' | 'create' | 'mySect';
 
 // Bumped from 48 so the enlarged (family-matched) row fonts — a heading-size name over a body-size
-// stat line — fit without clipping. See RenderMixin.renderFamiliesList / renderChannel.
+// stat line — fit without clipping. See RenderPanel.renderFamiliesList / renderChannel.
 export const ROW_H = 68;
 
-// ── Mixin plumbing ────────────────────────────────────────────────────────────
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export type Constructor<T = object> = new (...args: any[]) => T;
-export type SectSceneBaseCtor = Constructor<SectSceneBase>;
-
-export class SectSceneBase {
+export class SectSceneCore {
   readonly container: PIXI.Container;
 
-  protected readonly w: number;
-  protected readonly h: number;
-  protected readonly landscape: boolean;
-  protected readonly cb: SectSceneCallbacks;
+  readonly w: number;
+  readonly h: number;
+  readonly landscape: boolean;
+  readonly cb: SectSceneCallbacks;
 
-  protected mode: ViewMode = 'loading';
-  protected activeTab: SectTab = 'families';
+  mode: ViewMode = 'loading';
+  activeTab: SectTab = 'families';
 
   // My family context (drives permission gating).
-  protected myFamilyId: string | null = null;
-  protected myFamilyRole: 'leader' | 'elder' | 'member' | null = null;
-  protected inFamily = false;
+  myFamilyId: string | null = null;
+  myFamilyRole: 'leader' | 'elder' | 'member' | null = null;
+  inFamily = false;
 
-  protected sect: SectDetailView | null = null;
-  protected messages: SectMessageView[] = [];
+  sect: SectDetailView | null = null;
+  messages: SectMessageView[] = [];
   /** cache of all sects in the world — used for browse/ally name resolution. */
-  protected sectsCache: SectView[] = [];
+  sectsCache: SectView[] = [];
 
-  protected bodyLayer!: PIXI.Container;
-  protected modalLayer!: PIXI.Container;
+  bodyLayer!: PIXI.Container;
+  modalLayer!: PIXI.Container;
 
   // Create form
-  protected hiddenInput: HTMLInputElement | null = null;
-  protected createName = '';
-  protected createTag = '';
-  protected createField: 'name' | 'tag' | null = null;
-  protected caretOn = true;
-  protected caretTimer = 0;
+  hiddenInput: HTMLInputElement | null = null;
+  createName = '';
+  createTag = '';
+  createField: 'name' | 'tag' | null = null;
+  caretOn = true;
+  caretTimer = 0;
 
   // Channel message draft — persists the hidden-input value so the visible Send button can send
   // it directly (previously the field and button both just reopened the hidden input, and the
   // only actual send path was a literal Enter keydown, which is unreliable on mobile keyboards).
-  protected channelInput = '';
-  protected channelActive = false;
-  protected channelSending = false;
+  channelInput = '';
+  channelActive = false;
+  channelSending = false;
 
   // Scroll — `scrollY` is the families/single-column scroll; `scrollYChannel` only comes into play
-  // in the landscape split view (see RenderMixin.renderSplitView), where the channel column scrolls
+  // in the landscape split view (see RenderPanel.renderSplitView), where the channel column scrolls
   // independently alongside the families column instead of sharing one tab's scroll state.
-  protected scrollY = 0;
-  protected scrollYChannel = 0;
+  scrollY = 0;
+  scrollYChannel = 0;
   /** Pin the channel to the latest message; cleared once the user scrolls up to read history, re-armed
    *  when they drag back to the bottom or send a message (see renderChannel / handleMove). */
-  protected channelStick = true;
+  channelStick = true;
   /** Channel scroll extent from the last renderChannel — lets handleMove classify a channel drag as
    *  "back at the bottom" (re-stick) vs "scrolled up" (unstick) without recomputing the content height. */
-  protected channelMax = 0;
+  channelMax = 0;
   /** X boundary between the families and channel columns in the landscape split view; used by
    *  handleDown to route a drag to the right column's scroll state. Unused (0) in portrait. */
-  protected chatColX = 0;
+  chatColX = 0;
   /** Families-list viewport vertical bounds + scroll extent, set each renderFamiliesList call — mirrors
    *  channelMax/channelRegion* but for the families column. Touch-drag scroll doesn't need an upfront
    *  region/max (it just clamps on the next render), but wheel scroll (onWheel) needs both known before
    *  the event is handled, so they're captured here purely for that. */
-  protected familiesRegionTop = 0;
-  protected familiesRegionBottom = 0;
-  protected familiesMax = 0;
+  familiesRegionTop = 0;
+  familiesRegionBottom = 0;
+  familiesMax = 0;
   /** Channel viewport vertical bounds, set each renderChannel call — same reasoning as familiesRegion*. */
-  protected channelRegionTop = 0;
-  protected channelRegionBottom = 0;
+  channelRegionTop = 0;
+  channelRegionBottom = 0;
   /** Title-bar height, set from the shared header — drives all body layout below it. */
-  protected headerH = 0;
+  headerH = 0;
   /** Live header text/button nodes (title +, in landscape, the sect identity + alliance controls
    *  lifted out of the body — see drawHeaderTitle), drawn on top of the cached header chrome.
    *  Destroyed and rebuilt each renderHeader() so repeated renders don't stack duplicate nodes. */
-  private headerExtras: PIXI.DisplayObject[] = [];
+  headerExtras: PIXI.DisplayObject[] = [];
   /**
    * Tap-vs-drag gesture tracker: defers a hit action to pointer-up and drops it if the pointer
    * dragged (so a drag starting on a member/list cell scrolls instead of firing it). See ScrollTapGesture.
@@ -151,25 +150,29 @@ export class SectSceneBase {
   private scrollDirty = false;
 
   // Hit rects
-  protected hitRects: { rect: { x: number; y: number; w: number; h: number }; action: () => void }[] = [];
-  protected modalHits: { rect: { x: number; y: number; w: number; h: number }; action: () => void }[] = [];
-  protected modalOpen = false;
+  hitRects: { rect: { x: number; y: number; w: number; h: number }; action: () => void }[] = [];
+  modalHits: { rect: { x: number; y: number; w: number; h: number }; action: () => void }[] = [];
+  modalOpen = false;
 
-  protected destroyed = false;
-  protected readonly unsubs: (() => void)[] = [];
+  destroyed = false;
+  readonly unsubs: (() => void)[] = [];
 
   /** Guards every mutating action below (create/join/leave/dissolve/vote/ally/unally): blocks a
    *  repeat click while one is in flight and drives the busy-button greying in render.ts. */
-  protected readonly bt = new BusyTracker();
+  readonly bt = new BusyTracker();
 
-  constructor(layout: ILayout, input: InputManager, cb: SectSceneCallbacks) {
+  /** @param render Injected by the outer SectScene assembly (which owns the actual render
+   *  dispatcher, since it's the only thing that knows about all domain classes) — Core and the
+   *  domain classes call `this.render()`/`this.core.render()` wherever the old flattened class
+   *  called its own `render()` method verbatim. Does NOT auto-fire the initial loadData() — the
+   *  outer assembly does that after all domain instances exist. */
+  constructor(layout: ILayout, input: InputManager, cb: SectSceneCallbacks, readonly render: () => void) {
     this.w = layout.designWidth;
     this.h = layout.designHeight;
     this.landscape = layout.orientation === 'landscape';
     this.cb = cb;
     this.container = new PIXI.Container();
     this.build();
-    void this.loadData();
 
     this.unsubs.push(input.onDown((x, y) => this.handleDown(x, y)));
     this.unsubs.push(input.onMove((x, y) => this.handleMove(x, y)));
@@ -181,14 +184,14 @@ export class SectSceneBase {
   /** Width of the social hub rail left of the notebook binding line (matches every other left-edge tab
    *  rail); 0 in portrait, where the rail is drawn as a bottom nav bar instead (§18) and reserves no
    *  horizontal space. */
-  protected get railW(): number {
+  get railW(): number {
     return this.landscape ? sidebarNavW(this.w, this.h, true) : 0;
   }
 
   /** Bottom edge for portrait's tabbed body content — stops `bottomNavH` short of the screen so the
    *  bottom nav bar (always shown; drawSocialTabRail has no orientation gate) never overlaps the
    *  families/channel viewport. Landscape's split view has no such bar to avoid. */
-  protected get bodyBottom(): number {
+  get bodyBottom(): number {
     return this.landscape ? this.h : this.h - bottomNavH(this.h);
   }
 
@@ -210,7 +213,7 @@ export class SectSceneBase {
     this.renderHeader();
   }
 
-  protected renderHeader(): void {
+  renderHeader(): void {
     const { w } = this;
     // Draw only the bar chrome + back button from the shared header; the title (and, in landscape,
     // the sect identity + alliance controls lifted out of the body) are drawn live below so we
@@ -220,157 +223,57 @@ export class SectSceneBase {
     });
     this.headerH = hdr.headerH;
     this.hitRects.push({ rect: hdr.backRect, action: () => this.cb.onBack() });
-    this.drawHeaderTitle(hdr.headerH);
+    drawHeaderTitle(this, hdr.headerH);
   }
 
-  /** Header title row. Always shows the "Sect" title just right of the back pill. In landscape
-   *  (where there's horizontal room) it also carries the sect identity that used to live in a
-   *  separate hand-drawn band below the header — `[TAG] Name` + families count + prosperity
-   *  centered, alliance buttons pinned far-right (see the 25.07.2026 header-declutter pass, which
-   *  removed the stacked hand-drawn bands that used to crowd the top-left corner). Portrait keeps
-   *  identity in the body below the header, since the narrow bar can't hold it all on one line. */
-  private drawHeaderTitle(headerH: number): void {
-    const { w, h } = this;
-    for (const n of this.headerExtras) n.destroy();
-    this.headerExtras = [];
-    const add = <T extends PIXI.DisplayObject>(node: T): T => {
-      this.headerExtras.push(node);
-      this.container.addChild(node);
-      return node;
-    };
-    const midY = headerH / 2;
-
-    // Left cluster must clear the back-button pill. Replicates SceneHeader's back-chip metrics
-    // (BACK_X=10, size=0.039·h, padX=0.7·size) so the title always clears the pill.
-    const backSize = Math.round(h * 0.039);
-    const backNode = txt(`← ${t('common.back')}`, backSize, C.accent);
-    const chipW = backNode.width + Math.round(backSize * 0.7) * 2;
-    backNode.destroy();
-    const leftBound = 10 + chipW + Math.round(backSize * 0.6);
-
-    const showIdentity = this.landscape && this.sect && this.mode === 'mySect';
-    const gap = Math.round(w * 0.02);
-    const sect = showIdentity ? this.sect! : null;
-
-    // Build every node up front (unpositioned) so the whole cluster's width can be measured and
-    // centered in the space between the back pill and the alliance buttons.
-    const titleNode = add(txt(t('sect.title'), FS.headline, C.dark, true));
-    let clusterW = titleNode.width;
-
-    let nameNode: PIXI.Text | null = null;
-    let famNode: PIXI.Text | null = null;
-    let star: PIXI.DisplayObject | null = null;
-    let starSize = 0;
-    let prosNode: PIXI.Text | null = null;
-    if (sect) {
-      nameNode = add(txt(`[${sect.tag}] ${sect.name}`, FS.title, C.dark));
-      famNode = add(txt(t('sect.families', { n: sect.memberFamilyCount }), FS.heading, C.mid));
-      starSize = Math.round(h * 0.026);
-      star = add(buildIcon('star', starSize, 0xd4a030));
-      prosNode = add(txt(t('sect.prosperity', { n: sect.prosperity }), FS.heading, 0xa9750f));
-      clusterW += gap + nameNode.width + gap + famNode.width + gap + starSize + 6 + prosNode.width;
-    }
-
-    // Alliance buttons pinned to the header's right edge — placed before centering so their width
-    // is reserved from the available cluster space (mirrors FamilySceneBase pinning the member
-    // count far-right before centering its own title cluster).
-    const btnsLeftX = sect ? this.drawHeaderAllianceButtons(w - 16, headerH, add) : w - 16;
-    const rightBound = sect ? btnsLeftX - gap : btnsLeftX;
-    const available = rightBound - leftBound;
-    let x = leftBound + Math.max(0, (available - clusterW) / 2);
-
-    titleNode.anchor.set(0, 0.5); titleNode.x = x; titleNode.y = midY;
-    x += titleNode.width;
-
-    if (sect && nameNode && famNode && star && prosNode) {
-      x += gap;
-      nameNode.anchor.set(0, 0.5); nameNode.x = x; nameNode.y = midY;
-      x += nameNode.width + gap;
-
-      famNode.anchor.set(0, 0.5); famNode.x = x; famNode.y = midY;
-      x += famNode.width + gap;
-
-      star.x = x; star.y = midY - starSize / 2;
-      x += starSize + 6;
-      prosNode.anchor.set(0, 0.5); prosNode.x = x; prosNode.y = midY;
-    }
-  }
-
-  /** Alliance controls anchored to the header's right edge, laid out right-to-left. Viewing the
-   *  ally list is open to every member (regular members need to know who the sect's allies are);
-   *  forming (ally) and breaking (manage allies) alliances stay sect-leader only. Returns the x it
-   *  stopped at, so the caller can reserve that space when centering the title cluster. Landscape
-   *  only — see drawHeaderTitle's showIdentity gate (portrait keeps these in the body instead,
-   *  via RenderMixin.renderFamilies' drawAllianceControlsRow). */
-  private drawHeaderAllianceButtons(rightEdge: number, headerH: number, add: <T extends PIXI.DisplayObject>(node: T) => T): number {
-    if (!this.sect) return rightEdge;
-    const bh = Math.round(headerH * 0.4);
-    const by = (headerH - bh) / 2;
-    const padX = 14;
-    let x = rightEdge;
-
-    // Busy (a mutating action in flight) greys these out too — mainly to avoid the race of opening
-    // a new ally/manage-ally modal while a previous ally/unally request is still pending.
-    const busy = this.bt.busy;
-    const addBtn = (label: string, color: number, action: () => void, seed: number): void => {
-      const c = busy ? C.mid : color;
-      // Measure the label off-tree first, then add the panel *before* the label so the label
-      // paints on top of it — adding the opaque sketchPanel fill after the text hid the text
-      // entirely (border-only button, still clickable since hit-testing doesn't care about z-order).
-      const lbl = txt(label, FS.tiny, c);
-      const bw = Math.ceil(lbl.width) + padX * 2;
-      const bx = x - bw;
-      const btn = add(sketchPanel(bw, bh, { fill: 0xf8f8f0, border: c, seed: seedFor(seed, 3, bw) }));
-      btn.x = bx; btn.y = by;
-      add(lbl);
-      lbl.anchor.set(0.5, 0.5); lbl.x = bx + bw / 2; lbl.y = by + bh / 2;
-      if (!busy) this.hitRects.push({ rect: { x: bx, y: by, w: bw, h: bh }, action });
-      x = bx - 8;
-    };
-
-    if (this.isSectLeader) {
-      addBtn(t('sect.manageAllies'), C.dark, () => void this.openManageAllies(), 2);
-      addBtn(t('sect.ally'), C.accent, () => void this.openAllyList(), 1);
-    } else {
-      addBtn(t('sect.allies', { n: this.sect.allySectIds.length }), C.accent, () => void this.openAlliesView(), 1);
-    }
-    return x;
-  }
+  /**
+   * Set once by the outer assembly right after ActionsPanel is constructed (Core is constructed
+   * before it, so a direct `actions.openXxx` reference isn't available yet — same lazy-binding
+   * trick as `render`). renderHeader() (and the drawHeaderAllianceButtons call inside it) also runs
+   * from Core's OWN constructor via build(), but `this.sect` is always null then, so
+   * drawHeaderAllianceButtons returns before ever touching this — the default no-op body is never
+   * actually reachable, just here so the field has a well-typed value from the start.
+   */
+  allianceHooks: {
+    openManageAllies(): Promise<void>;
+    openAllyList(): Promise<void>;
+    openAlliesView(): Promise<void>;
+  } = {
+    openManageAllies: async () => {},
+    openAllyList: async () => {},
+    openAlliesView: async () => {},
+  };
 
   // ── Permission helpers ──────────────────────────────────────────────────────
 
-  protected get isFamilyLeader(): boolean { return this.myFamilyRole === 'leader'; }
-  protected get isSectLeader(): boolean { return !!this.sect && this.sect.leaderId === this.cb.myAccountId; }
+  get isFamilyLeader(): boolean { return this.myFamilyRole === 'leader'; }
+  get isSectLeader(): boolean { return !!this.sect && this.sect.leaderId === this.cb.myAccountId; }
 
-  // ── Render ──────────────────────────────────────────────────────────────────
+  // ── Rail + mode dispatch shell (called from the outer render() dispatcher before it hands off to
+  // RenderPanel's mode-specific method) ──────────────────────────────────────────
 
-  protected render(): void {
-    if (this.destroyed) return;
+  /** Tears down + redraws the header/rail chrome shared by every mode; returns nothing — the outer
+   *  render() dispatcher calls this, then draws the rail itself, then switches on `mode`. */
+  beginRender(): void {
     tearDownChildren(this.bodyLayer); // create-form input re-renders per keystroke → free Text textures
     this.hitRects = [];
     this.renderHeader();
+  }
 
-    // Draw the social hub rail in every mode (not just 'mySect') — otherwise the other 4 tabs
-    // vanish while this scene is still loading or has no sect yet, since it replaces FriendsScene
-    // wholesale on navigation.
-    // Hide the sect tab itself once we know the player is neither a family leader nor already
-    // in a sect — same rule FriendsScene's rail applies, kept in sync so navigating between
-    // scenes doesn't flicker the tab in and out.
+  /** Draw the social hub rail in every mode (not just 'mySect') — otherwise the other 4 tabs vanish
+   *  while this scene is still loading or has no sect yet, since it replaces FriendsScene wholesale
+   *  on navigation. Hides the sect tab itself once we know the player is neither a family leader nor
+   *  already in a sect — same rule FriendsScene's rail applies, kept in sync so navigating between
+   *  scenes doesn't flicker the tab in and out. */
+  drawRail(): void {
     const hidden: SocialTab[] = !this.isFamilyLeader && !this.sect ? ['sect'] : [];
     const railHits = drawSocialTabRail(this.bodyLayer, this.w, this.h, this.headerH, this.landscape, 'sect', {}, (tab) => this.cb.onNavTab(tab), hidden);
     this.hitRects.push(...railHits.map((hit) => ({ rect: hit.rect, action: hit.fn })));
-
-    switch (this.mode) {
-      case 'loading': this.renderLoading(); break;
-      case 'noSect': this.renderNoSect(); break;
-      case 'create': this.renderCreate(); break;
-      case 'mySect': this.renderMySect(); break;
-    }
   }
 
   // ── Modals ──────────────────────────────────────────────────────────────────
 
-  protected closeModal(): void {
+  closeModal(): void {
     tearDownChildren(this.modalLayer);
     this.modalHits = [];
     this.modalOpen = false;
@@ -378,11 +281,11 @@ export class SectSceneBase {
 
   // ── Toast ───────────────────────────────────────────────────────────────────
 
-  protected showToast(msg: string, color: number = C.dark): void {
+  showToast(msg: string, color: number = C.dark): void {
     showToastMessage(msg, color === C.red ? 'error' : 'success');
   }
 
-  protected errorMsg(e: unknown): string {
+  errorMsg(e: unknown): string {
     if (e instanceof TimeoutError) return t('common.networkTimeout');
     if (e instanceof WorldApiError) {
       const map: Record<string, string> = {
@@ -495,38 +398,4 @@ export class SectSceneBase {
     tearDownChildren(this.container);
     this.container.destroy({ children: true });
   }
-}
-
-// ── Domain entrypoints dispatched to from base-level code (render / constructor) and across sibling
-// mixins (render → input/actions; actions → modals/data; input → data). Declared via interface/class
-// declaration merging so base-level `this.renderNoSect()` / cross-mixin `this.showSectPickModal()`
-// type-check as METHODS (not properties, which would clash with the mixin override — TS2425). Emits
-// NOTHING at runtime, so the real prototype methods provided by the mixins run and all bodies stay
-// verbatim.
-export interface SectSceneBase {
-  // data
-  loadData(): Promise<void>;
-  loadMySect(sectId: string): Promise<void>;
-  loadChannel(): Promise<void>;
-  // render
-  renderLoading(): void;
-  renderNoSect(): void;
-  renderCreate(): void;
-  renderMySect(): void;
-  // input overlay
-  openInputFor(field: 'name' | 'tag'): void;
-  openSendInput(): void;
-  // actions
-  doCreate(): Promise<void>;
-  openBrowseList(): Promise<void>;
-  confirmLeave(): void;
-  confirmDissolve(): void;
-  confirmVote(nomineeFamilyId: string, nomineeLabel: string): void;
-  openAllyList(): Promise<void>;
-  openAlliesView(): Promise<void>;
-  openManageAllies(): Promise<void>;
-  doSendChannelMessage(): Promise<void>;
-  // modals
-  showSectPickModal(sects: SectView[], onPick: (sectId: string) => void, emptyKey: 'sect.noSects' | 'sect.noAllies', readOnly?: boolean): void;
-  showConfirm(msg: string, onOk: () => void): void;
 }

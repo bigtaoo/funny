@@ -1,5 +1,5 @@
 // Social: friends (S6-1) + private chat (S6-2). Send/fetch via REST; real-time events via gateway push (NetSession).
-import { type Constructor, type ApiClientBaseCtor } from './base';
+import type { ApiClientCore } from './core';
 import type {
   FriendView,
   FriendRequestView,
@@ -27,96 +27,110 @@ export interface SocialApi {
   readChat(convId: string): Promise<void>;
 }
 
-export function SocialMixin<TBase extends ApiClientBaseCtor>(Base: TBase): TBase & Constructor<SocialApi> {
-  return class extends Base {
-    // ── Social: friends (S6-1, requires login token). Send/fetch via REST; real-time events via gateway push (NetSession). ──
-    /** Friend list (includes online status). */
-    async getFriends(): Promise<FriendView[]> {
-      const data = await this.request<{ friends: FriendView[] }>('GET', '/friends');
-      return data.friends;
-    }
+/** Social (friends + private chat) domain (see ../ApiClient.ts assembly + ./core.ts for the shared transport). */
+export class SocialService implements SocialApi {
+  constructor(private readonly core: ApiClientCore) {}
 
-    /** Pending friend requests (received + sent). */
-    async getFriendRequests(): Promise<{ incoming: FriendRequestView[]; outgoing: FriendRequestView[] }> {
-      return this.request<{ incoming: FriendRequestView[]; outgoing: FriendRequestView[] }>(
-        'GET',
-        '/friends/requests',
-      );
-    }
+  // ── Social: friends (S6-1, requires login token). Send/fetch via REST; real-time events via gateway push (NetSession). ──
+  /** Friend list (includes online status). */
+  async getFriends(): Promise<FriendView[]> {
+    const data = await this.core.request<{ friends: FriendView[] }>('GET', '/friends');
+    return data.friends;
+  }
 
-    /** Offline badge aggregate (SOC8): fetched once after login for total unread badge counts; subsequently updated incrementally via social push events. */
-    async getSocialBadges(): Promise<SocialBadges> {
-      return this.request<SocialBadges>('GET', '/social/badges');
-    }
+  /** Pending friend requests (received + sent). */
+  async getFriendRequests(): Promise<{
+    incoming: FriendRequestView[];
+    outgoing: FriendRequestView[];
+  }> {
+    return this.core.request<{ incoming: FriendRequestView[]; outgoing: FriendRequestView[] }>(
+      'GET',
+      '/friends/requests'
+    );
+  }
 
-    /** Search for a player by 9-digit public id. Not found → ApiError('NOT_FOUND') (404). */
-    async searchFriend(publicId: string): Promise<ProfileView> {
-      const data = await this.post<{ profile: ProfileView }>('/friends/search', { publicId });
-      return data.profile;
-    }
+  /** Offline badge aggregate (SOC8): fetched once after login for total unread badge counts; subsequently updated incrementally via social push events. */
+  async getSocialBadges(): Promise<SocialBadges> {
+    return this.core.request<SocialBadges>('GET', '/social/badges');
+  }
 
-    /**
-     * Send a friend request. Already friends → ApiError('ALREADY_FRIEND'); cap exceeded → 'FRIEND_CAP_REACHED';
-     * blocked by target → 'BLOCKED'; target not found → 'NOT_FOUND'.
-     */
-    async requestFriend(publicId: string, message?: string): Promise<string> {
-      const data = await this.post<{ requestId: string }>('/friends/request', {
-        publicId,
-        ...(message ? { message } : {}),
-      });
-      return data.requestId;
-    }
+  /** Search for a player by 9-digit public id. Not found → ApiError('NOT_FOUND') (404). */
+  async searchFriend(publicId: string): Promise<ProfileView> {
+    const data = await this.core.post<{ profile: ProfileView }>('/friends/search', { publicId });
+    return data.profile;
+  }
 
-    /** Accept / decline a friend request (accept=true → creates bidirectional edge). */
-    async respondFriend(requestId: string, accept: boolean): Promise<void> {
-      await this.post<{ ok: boolean }>('/friends/respond', { requestId, accept });
-    }
+  /**
+   * Send a friend request. Already friends → ApiError('ALREADY_FRIEND'); cap exceeded → 'FRIEND_CAP_REACHED';
+   * blocked by target → 'BLOCKED'; target not found → 'NOT_FOUND'.
+   */
+  async requestFriend(publicId: string, message?: string): Promise<string> {
+    const data = await this.core.post<{ requestId: string }>('/friends/request', {
+      publicId,
+      ...(message ? { message } : {}),
+    });
+    return data.requestId;
+  }
 
-    /** Remove a friend (bidirectional). */
-    async removeFriend(publicId: string): Promise<void> {
-      await this.request<{ ok: boolean }>('DELETE', `/friends/${encodeURIComponent(publicId)}`);
-    }
+  /** Accept / decline a friend request (accept=true → creates bidirectional edge). */
+  async respondFriend(requestId: string, accept: boolean): Promise<void> {
+    await this.core.post<{ ok: boolean }>('/friends/respond', { requestId, accept });
+  }
 
-    /** Block a user (removes friendship + blocks friend requests / private messages). */
-    async blockUser(publicId: string): Promise<void> {
-      await this.post<{ ok: boolean }>('/friends/block', { publicId });
-    }
+  /** Remove a friend (bidirectional). */
+  async removeFriend(publicId: string): Promise<void> {
+    await this.core.request<{ ok: boolean }>('DELETE', `/friends/${encodeURIComponent(publicId)}`);
+  }
 
-    /** Unblock a user. */
-    async unblockUser(publicId: string): Promise<void> {
-      await this.request<{ ok: boolean }>('DELETE', `/friends/block/${encodeURIComponent(publicId)}`);
-    }
+  /** Block a user (removes friendship + blocks friend requests / private messages). */
+  async blockUser(publicId: string): Promise<void> {
+    await this.core.post<{ ok: boolean }>('/friends/block', { publicId });
+  }
 
-    /** File a UGC report against another player (design-doc-audit-2026-07, COMPLIANCE_GLOBAL.md §7). Admin-review-only; does not block/unfriend. */
-    async reportUser(publicId: string, reason: string): Promise<void> {
-      await this.post<{ ok: boolean }>('/friends/report', { publicId, reason });
-    }
+  /** Unblock a user. */
+  async unblockUser(publicId: string): Promise<void> {
+    await this.core.request<{ ok: boolean }>(
+      'DELETE',
+      `/friends/block/${encodeURIComponent(publicId)}`
+    );
+  }
 
-    // ── Social: private chat (S6-2, requires login token). Send via REST; receive messages via gateway push (NetSession). ──
-    /** Conversation list (includes per-conversation unread count + last message snippet). */
-    async getConversations(): Promise<ConversationView[]> {
-      const data = await this.request<{ conversations: ConversationView[] }>('GET', '/chat/conversations');
-      return data.conversations;
-    }
+  /** File a UGC report against another player (design-doc-audit-2026-07, COMPLIANCE_GLOBAL.md §7). Admin-review-only; does not block/unfriend. */
+  async reportUser(publicId: string, reason: string): Promise<void> {
+    await this.core.post<{ ok: boolean }>('/friends/report', { publicId, reason });
+  }
 
-    /** Fetch conversation history (paginated, reverse chronological). `before` = cursor (epoch ms, retrieves messages older than this). */
-    async getMessages(convId: string, before?: number, limit = 30): Promise<ChatMessageView[]> {
-      const qs = `?limit=${limit}${before !== undefined ? `&before=${before}` : ''}`;
-      const data = await this.request<{ messages: ChatMessageView[] }>(
-        'GET',
-        `/chat/${encodeURIComponent(convId)}/messages${qs}`,
-      );
-      return data.messages;
-    }
+  // ── Social: private chat (S6-2, requires login token). Send via REST; receive messages via gateway push (NetSession). ──
+  /** Conversation list (includes per-conversation unread count + last message snippet). */
+  async getConversations(): Promise<ConversationView[]> {
+    const data = await this.core.request<{ conversations: ConversationView[] }>(
+      'GET',
+      '/chat/conversations'
+    );
+    return data.conversations;
+  }
 
-    /** Send a private chat message. Not friends → ApiError('NOT_FRIEND'); blocked → 'BLOCKED'; rate limited → 'RATE_LIMITED' (429). */
-    async sendChat(toPublicId: string, body: string): Promise<{ messageId: string; ts: number }> {
-      return this.post<{ messageId: string; ts: number }>('/chat/send', { toPublicId, body }, { 'X-Chat-Region': currentChatRegion() });
-    }
+  /** Fetch conversation history (paginated, reverse chronological). `before` = cursor (epoch ms, retrieves messages older than this). */
+  async getMessages(convId: string, before?: number, limit = 30): Promise<ChatMessageView[]> {
+    const qs = `?limit=${limit}${before !== undefined ? `&before=${before}` : ''}`;
+    const data = await this.core.request<{ messages: ChatMessageView[] }>(
+      'GET',
+      `/chat/${encodeURIComponent(convId)}/messages${qs}`
+    );
+    return data.messages;
+  }
 
-    /** Mark a conversation as read (clears unread count). */
-    async readChat(convId: string): Promise<void> {
-      await this.post<{ ok: boolean }>('/chat/read', { convId });
-    }
-  };
+  /** Send a private chat message. Not friends → ApiError('NOT_FRIEND'); blocked → 'BLOCKED'; rate limited → 'RATE_LIMITED' (429). */
+  async sendChat(toPublicId: string, body: string): Promise<{ messageId: string; ts: number }> {
+    return this.core.post<{ messageId: string; ts: number }>(
+      '/chat/send',
+      { toPublicId, body },
+      { 'X-Chat-Region': currentChatRegion() }
+    );
+  }
+
+  /** Mark a conversation as read (clears unread count). */
+  async readChat(convId: string): Promise<void> {
+    await this.core.post<{ ok: boolean }>('/chat/read', { convId });
+  }
 }

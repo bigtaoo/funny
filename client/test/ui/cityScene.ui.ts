@@ -62,8 +62,11 @@ type CitySceneInternals = {
   render(): void;
 };
 
+// All of these live on the composed `core` field (2026-08-11: CityScene converted from a
+// mixin-chain `extends` to composition — see claudedocs/client-modules.md's split-form priority
+// note), not flattened onto the outer scene instance any more.
 function internals(scene: CityScene): CitySceneInternals {
-  return scene as unknown as CitySceneInternals;
+  return (scene as unknown as { core: CitySceneInternals }).core;
 }
 
 /**
@@ -834,7 +837,9 @@ describe('CityScene queue-completion refresh (P0-9, comm-audit-2026-07-27 findin
     await new Promise((r) => setTimeout(r, 0)); // let the re-fetch promise resolve
 
     expect(getMeCalls).toEqual([1, 2]); // exactly one refresh, not a storm
-    expect((scene as unknown as { me: PlayerWorldView | null }).me?.buildQueue).toEqual([]);
+    // `me` lives on the composed `core` field (2026-08-11: CityScene converted from a mixin-chain
+    // `extends` to composition — see claudedocs/client-modules.md's split-form priority note).
+    expect((scene as unknown as { core: { me: PlayerWorldView | null } }).core.me?.buildQueue).toEqual([]);
     scene.destroy();
   });
 
