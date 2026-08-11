@@ -1,10 +1,22 @@
 // auctionsvc AuctionService split — buy / bid / cancel / expiry settlement (see ../auctionService.ts).
+//
+// Independent sibling class (2026-08-11 re-audit, converted from a linear inheritance chain to
+// composition): depends on AuctionServicePricing (checkPriceGuard/bumpDaily/recordSoldPrice) AND
+// AuctionServiceDelivery (deliverItem/deliverCoins) — the only file in the chain needing both.
 import { AUCTION_TAX_RATE, AUCTION_DAILY_BUY_CAP, AUCTION_MIN_INCREMENT_RATIO, AUCTION_ANTI_SNIPE_WINDOW_SEC, SlgError } from '@nw/shared';
 import type { AuctionDoc } from '../db';
-import { AuctionServiceCreate } from './create';
+import type { AuctionServiceDeps } from './base';
 import { docToView, categoryOf, type AuctionView } from './base';
+import type { AuctionServicePricing } from './pricing';
+import type { AuctionServiceDelivery } from './delivery';
 
-export class AuctionServiceTrade extends AuctionServiceCreate {
+export class AuctionServiceTrade {
+  constructor(
+    private readonly deps: AuctionServiceDeps,
+    private readonly pricing: AuctionServicePricing,
+    private readonly delivery: AuctionServiceDelivery,
+  ) {}
+
   /**
    * Purchase an auction listing (fixed-price only; atomically claims status open→sold).
    * Designated-buyer check → daily cap (C) → deduct buyer coins → atomic status update → deliver item → pay seller (after tax).
@@ -25,7 +37,7 @@ export class AuctionServiceTrade extends AuctionServiceCreate {
     }
 
     // C Daily purchase cap (reserve slot before charging)
-    await this.bumpDaily(buyerId, 'buys', AUCTION_DAILY_BUY_CAP);
+    await this.pricing.bumpDaily(buyerId, 'buys', AUCTION_DAILY_BUY_CAP);
 
     const totalPrice = doc.price * doc.qty;
     const tax = Math.floor(totalPrice * AUCTION_TAX_RATE);
@@ -44,18 +56,18 @@ export class AuctionServiceTrade extends AuctionServiceCreate {
     );
     if (!updated) {
       // Concurrently sniped by another buyer → refund buyer coins via mail (best-effort)
-      await this.deliverCoins(buyerId, totalPrice, `${buyOrderId}:refund`, 'refund');
+      await this.delivery.deliverCoins(buyerId, totalPrice, `${buyOrderId}:refund`, 'refund');
       throw new SlgError('AUCTION_CLOSED');
     }
 
     // 3. Deliver item to buyer via system mail (escrow-out: buyer claims the attachment)
-    await this.deliverItem(buyerId, doc, `${buyOrderId}:item`, 'sold');
+    await this.delivery.deliverItem(buyerId, doc, `${buyOrderId}:item`, 'sold');
 
     // 4. Pay seller coins via mail (after tax, best-effort)
-    await this.deliverCoins(doc.sellerId, sellerReceives, `${buyOrderId}:seller`, 'proceeds');
+    await this.delivery.deliverCoins(doc.sellerId, sellerReceives, `${buyOrderId}:seller`, 'proceeds');
 
     // G Record sale unit price into sliding window
-    await this.recordSoldPrice(categoryOf(doc), doc.price);
+    await this.pricing.recordSoldPrice(categoryOf(doc), doc.price);
 
     return docToView(updated);
   }
@@ -94,10 +106,10 @@ export class AuctionServiceTrade extends AuctionServiceCreate {
     }
 
     // G Price guardrail (bid unit price is also subject to the guardrail)
-    await this.checkPriceGuard(categoryOf(doc), amount);
+    await this.pricing.checkPriceGuard(categoryOf(doc), amount);
 
     // C Daily bid cap
-    await this.bumpDaily(bidderId, 'buys', AUCTION_DAILY_BUY_CAP);
+    await this.pricing.bumpDaily(bidderId, 'buys', AUCTION_DAILY_BUY_CAP);
 
     const prevBid = doc.topBid;
     const escrowTotal = amount * doc.qty;
@@ -125,13 +137,13 @@ export class AuctionServiceTrade extends AuctionServiceCreate {
     );
     if (!updated) {
       // Concurrently superseded or already closed → refund this escrow via mail
-      await this.deliverCoins(bidderId, escrowTotal, `${bidOrderId}:refund`, 'refund');
+      await this.delivery.deliverCoins(bidderId, escrowTotal, `${bidOrderId}:refund`, 'refund');
       throw new SlgError('AUCTION_CLOSED');
     }
 
     // 4. Refund previous top bidder's escrowed coins via mail (best-effort, idempotent)
     if (prevBid) {
-      await this.deliverCoins(
+      await this.delivery.deliverCoins(
         prevBid.bidderId,
         prevBid.amount * doc.qty,
         `auction_bid_refund:${auctionId}:${prevBid.bidderId}:${prevBid.amount}`,
@@ -169,11 +181,11 @@ export class AuctionServiceTrade extends AuctionServiceCreate {
     const orderId = `auction_settle:${doc._id}`;
 
     // Deliver item to the winner via system mail (escrow-out: winner claims the attachment)
-    await this.deliverItem(top.bidderId, doc, `${orderId}:item`, 'sold');
+    await this.delivery.deliverItem(top.bidderId, doc, `${orderId}:item`, 'sold');
     // Pay seller post-tax proceeds via mail
-    await this.deliverCoins(doc.sellerId, sellerReceives, `${orderId}:seller`, 'proceeds');
+    await this.delivery.deliverCoins(doc.sellerId, sellerReceives, `${orderId}:seller`, 'proceeds');
     // G Record sale unit price
-    await this.recordSoldPrice(categoryOf(doc), top.amount);
+    await this.pricing.recordSoldPrice(categoryOf(doc), top.amount);
 
     return docToView(updated);
   }
@@ -205,7 +217,7 @@ export class AuctionServiceTrade extends AuctionServiceCreate {
     if (!updated) throw new SlgError('AUCTION_CLOSED');
 
     // Return item to seller via system mail (escrow-out: seller claims the attachment to get it back)
-    await this.deliverItem(sellerId, doc, `auction_cancel:${auctionId}`, 'returned');
+    await this.delivery.deliverItem(sellerId, doc, `auction_cancel:${auctionId}`, 'returned');
 
     return docToView(updated);
   }
@@ -244,7 +256,7 @@ export class AuctionServiceTrade extends AuctionServiceCreate {
       if (!res) continue; // concurrently claimed by another processor, skip
 
       // Return item to seller via system mail (escrow-out: seller claims the attachment to get it back)
-      await this.deliverItem(doc.sellerId, doc, `auction_expire:${doc._id}`, 'returned');
+      await this.delivery.deliverItem(doc.sellerId, doc, `auction_expire:${doc._id}`, 'returned');
       processed++;
     }
     return processed;

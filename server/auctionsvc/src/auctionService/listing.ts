@@ -1,9 +1,14 @@
 // auctionsvc AuctionService split — read-only listing queries (see ../auctionService.ts).
+//
+// Independent sibling class (2026-08-11 re-audit, converted from a linear inheritance chain to
+// composition): zero dependencies on any other layer, only `deps`.
 import type { AuctionListingAdminView, AuctionListingQuery } from '@nw/shared';
-import { AuctionServiceDelivery } from './delivery';
+import type { AuctionServiceDeps } from './base';
 import { docToAdminView, docToView, type AuctionView, AUCTION_CLOSED_RETENTION_SEC, MY_LISTINGS_FETCH_LIMIT, QUERY_FETCH_CAP } from './base';
 
-export class AuctionServiceListing extends AuctionServiceDelivery {
+export class AuctionServiceListing {
+  constructor(private readonly deps: AuctionServiceDeps) {}
+
   /**
    * Lists open auctions (optionally filtered by itemType), sorted by price ascending, limit ≤50.
    * Designated-buyer listings are hidden from everyone except the seller and the designated buyer
