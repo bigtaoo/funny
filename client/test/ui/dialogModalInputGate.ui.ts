@@ -218,7 +218,7 @@ function appLike(w: number, h: number, opts: { gated?: boolean } = {}) {
   // The Lobby's nav callbacks really navigate here, so "where did the player land" is observable —
   // mirroring nav/lobby.ts, which routes all of these through nav.goXxx() → manager.goto().
   const navTo = (name: string) => () => { fired.push(name); mgr.goto(stubScene(name)); };
-  const cb = lobbyCallbacks(fired) as Record<string, unknown>;
+  const cb = lobbyCallbacks(fired) as unknown as Record<string, unknown>;
   for (const k of ['onStartRanked', 'onOpenCampaign', 'onOpenWorld', 'onOpenRoom']) cb[k] = navTo(k);
 
   const lobby = new LobbyScene(layout, input, cb as unknown as LobbySceneCallbacks);
@@ -252,7 +252,7 @@ function appLike(w: number, h: number, opts: { gated?: boolean } = {}) {
       ]!;
     const b = ctrl.getBounds();
     input._emitDown(b.x + b.width / 2, b.y + b.height / 2); // DOM-fed path (leaks to the scene)
-    ctrl.emit('pointertap');                               // PixiJS path (the dialog's own handler)
+    (ctrl.emit as (event: string) => void)('pointertap');  // PixiJS path (the dialog's own handler)
   };
 
   return {
