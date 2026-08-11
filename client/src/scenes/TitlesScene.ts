@@ -68,6 +68,25 @@ function fallbackTitleIcon(titleId: string): IconKind {
   return 'medal';
 }
 
+/**
+ * Clamp a bottom-anchored status badge's y so it never overlaps content that ends at
+ * `contentBottom` — the full-name label above a card's badge can word-wrap to extra lines on a
+ * narrow card (long locale full names, e.g. "Notebook Conqueror"), and the badge must yield
+ * downward past wherever that label actually ended instead of sitting at its usual fixed offset
+ * from the card's bottom (2026-08-11 portrait title-wall overlap fix).
+ *
+ * Exported and pure so it can be unit-tested directly with plain numbers: PIXI's word-wrap under
+ * the headless UI-test harness measures text width as a flat length-based approximation (see
+ * test/harness/pixiHeadless.ts's `measureText`), which doesn't reproduce the character-width
+ * growth a real font size triggers — so the actual multi-line wrap this fixes can't be reliably
+ * reproduced through a full scene render in that harness. Testing this arithmetic in isolation
+ * (test/titlesBadgeOverflow.test.ts) is what actually covers the fix; see also client-testing.md's
+ * `judgeRunner.ts` `export`-for-testability precedent.
+ */
+export function badgeYBelowContent(preferredY: number, contentBottom: number, gap: number): number {
+  return Math.max(preferredY, contentBottom + gap);
+}
+
 export class TitlesScene implements Scene {
   readonly container: PIXI.Container;
 
@@ -357,13 +376,13 @@ export class TitlesScene implements Scene {
       const badge = txt(t('titles.locked'), snapFont(Math.round(cellH * 0.08)), C.mid);
       badge.anchor.set(0.5, 1);
       badge.x = x + cellW / 2;
-      badge.y = Math.max(y + cellH - Math.round(cellH * 0.06), contentBottom + Math.round(cellH * 0.03));
+      badge.y = badgeYBelowContent(y + cellH - Math.round(cellH * 0.06), contentBottom, Math.round(cellH * 0.03));
       this.body.addChild(badge);
       return;
     }
 
     if (equipped) {
-      const hintY = Math.max(y + cellH - Math.round(cellH * 0.06), contentBottom + Math.round(cellH * 0.06));
+      const hintY = badgeYBelowContent(y + cellH - Math.round(cellH * 0.06), contentBottom, Math.round(cellH * 0.06));
       const badge = txt(t('titles.equipped'), snapFont(Math.round(cellH * 0.08)), C.gold, true);
       badge.anchor.set(0.5, 1); badge.x = x + cellW / 2; badge.y = hintY - Math.round(cellH * 0.08);
       this.body.addChild(badge);
