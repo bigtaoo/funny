@@ -147,7 +147,7 @@ test('integration: CombatSystem.fireProjectile draws the real projectile id from
   assert.equal(new Set(ids).size, ids.length, 'fireProjectile handed out a duplicate id');
 });
 
-test('integration: campaign escorts (engine/base.ts) get per-instance numericIds, starting at 5000', () => {
+test('integration: campaign escorts (engine/setup/preplaced.ts) get per-instance numericIds, starting at 5000', () => {
   const level: LevelDefinition = {
     id: 'test_escorts',
     chapter: 0,

@@ -147,7 +147,7 @@ test('integration: placing a building via the play_card command path draws its i
   assert.equal(engine.state.board.buildings.get(id!)?.id, id, 'placed building is retrievable from board.buildings by its event id');
 });
 
-test('integration: defenderBuildings (engine/base.ts) get per-instance ids, starting at 0', () => {
+test('integration: defenderBuildings (engine/setup/preplaced.ts) get per-instance ids, starting at 0', () => {
   const level: LevelDefinition = {
     id: 'test_defender_buildings',
     chapter: 0,

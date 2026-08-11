@@ -22,7 +22,7 @@ export { fireProjectile, tickProjectiles } from './combat/projectiles';
  * by concern (target acquisition / attack execution + shared hit resolution /
  * projectile lifecycle / the tick() orchestrator). This class is now a thin
  * shell whose only job is preserving the `new CombatSystem().tick(state)`
- * public API that `engine/base.ts` and the engine test suite construct.
+ * public API that `engine/ctx.ts`'s createSystems() and the engine test suite construct.
  */
 export class CombatSystem {
   tick(state: GameState): void {

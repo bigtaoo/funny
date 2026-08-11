@@ -20,7 +20,7 @@ export { DIFFICULTY };
 
 /**
  * AISystem — reads game state, returns PlayerCommand[] for this tick.
- * Does NOT mutate state; commands are processed by GameEngine.processCommand().
+ * Does NOT mutate state; commands are processed by engine/sim/commands.ts's processCommand().
  * Uses integer tick counts for decision pacing — no floating-point timers.
  *
  * The AI plays the Top side (owner 1, base at row {@link TOP_BUILDING_ROW}).
