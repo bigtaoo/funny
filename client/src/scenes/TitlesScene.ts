@@ -236,7 +236,13 @@ export class TitlesScene implements Scene {
 
     const gap = Math.round(h * 0.03);
     const cellWTarget = Math.round(w * 0.17);
-    const cellH = Math.round(h * 0.32);
+    // Card height must read off the design canvas's *short* edge, not raw `h` — designWidth/
+    // designHeight swap meaning between orientations (portrait 1080x1920 vs landscape 1920x1080,
+    // see ILayout.ts), so landscape's short edge is `h` but portrait's is `w`. Using `h` unconditionally
+    // (as this used to) made portrait cards ~3.3x taller than wide instead of matching landscape's
+    // near-square proportions — same class of bug CardCodexScene's tileH fixed (2026-08-09), applied
+    // here 2026-08-11 after a portrait screenshot showed absurdly narrow, overlapping-text cards.
+    const cellH = Math.round((this.landscape ? h : w) * 0.32);
     const cols = Math.max(1, Math.floor((gridW + gap) / (cellWTarget + gap)));
     const cellW = Math.min(cellWTarget, (gridW - gap * (cols - 1)) / cols);
 
@@ -340,19 +346,29 @@ export class TitlesScene implements Scene {
     fullLbl.alpha = isOwned ? 0.85 : 0.65;
     this.body.addChild(fullLbl);
 
+    // Long locale full names (e.g. "Notebook Conqueror") can word-wrap to 2+ lines on a narrow
+    // card, but the status badge(s) below are otherwise placed at a fixed offset from the card's
+    // *bottom* — with no idea how tall the label above actually rendered, a wrapped label runs
+    // straight into the badge text. Measure the label's real bottom and let the badge yield
+    // downward past it when needed, instead of overlapping (2026-08-11 portrait title-wall fix).
+    const contentBottom = fullLbl.y + fullLbl.height;
+
     if (!isOwned) {
       const badge = txt(t('titles.locked'), snapFont(Math.round(cellH * 0.08)), C.mid);
-      badge.anchor.set(0.5, 1); badge.x = x + cellW / 2; badge.y = y + cellH - Math.round(cellH * 0.06);
+      badge.anchor.set(0.5, 1);
+      badge.x = x + cellW / 2;
+      badge.y = Math.max(y + cellH - Math.round(cellH * 0.06), contentBottom + Math.round(cellH * 0.03));
       this.body.addChild(badge);
       return;
     }
 
     if (equipped) {
+      const hintY = Math.max(y + cellH - Math.round(cellH * 0.06), contentBottom + Math.round(cellH * 0.06));
       const badge = txt(t('titles.equipped'), snapFont(Math.round(cellH * 0.08)), C.gold, true);
-      badge.anchor.set(0.5, 1); badge.x = x + cellW / 2; badge.y = y + cellH - Math.round(cellH * 0.14);
+      badge.anchor.set(0.5, 1); badge.x = x + cellW / 2; badge.y = hintY - Math.round(cellH * 0.08);
       this.body.addChild(badge);
       const hint = txt(t('titles.tapUnequip'), snapFont(Math.round(cellH * 0.06)), C.mid);
-      hint.anchor.set(0.5, 1); hint.x = x + cellW / 2; hint.y = y + cellH - Math.round(cellH * 0.06);
+      hint.anchor.set(0.5, 1); hint.x = x + cellW / 2; hint.y = hintY;
       this.body.addChild(hint);
     }
 
