@@ -2,10 +2,12 @@
  * GameEngine orchestration smoke tests (createGameEngine / step / tick).
  *
  * The prior tests in this directory exercise isolated pieces (blueprints, armor math,
- * movement) but nothing drove the actual engine loop end-to-end. Added alongside the
- * GameEngine.ts → engine/*.ts mixin split (base/helpers/campaign/commands/winCondition/loop)
- * so a wrong mixin application order or a dropped `this` binding fails loudly here instead
- * of only showing up as a subtle runtime desync.
+ * movement) but nothing drove the actual engine loop end-to-end. Originally added
+ * alongside the GameEngine.ts → engine/*.ts mixin split (base/helpers/campaign/commands/
+ * winCondition/loop); the mixin chain was later replaced by an explicit
+ * setup/sim/driver split (claudedocs/server.md "engine/GameEngine") — these tests now
+ * exercise engine/sim/*.ts's free functions via the same public API, plus the golden
+ * replay suite (__tests__/goldenReplay/) that pins full simulation output bit-for-bit.
  */
 
 import { strict as assert } from 'node:assert';
@@ -25,7 +27,7 @@ function pvpConfig(seed: number): GameConfig {
   return { seed, players: [{ id: 0 }, { id: 1 }] };
 }
 
-// ── Loop + initial events (LoopMixin.step / emitInitialEvents) ─────────────────────────
+// ── Loop + initial events (sim/step.ts stepEngine / emitInitialEvents) ─────────────────
 
 test('GameEngine.step(0, []) deals both hands and emits resource_changed once per side', () => {
   const engine = createGameEngine(pvpConfig(1));
@@ -46,7 +48,7 @@ test('GameEngine.step is idempotent-safe after GameOver: returns [] instead of r
   assert.deepEqual(events, []);
 });
 
-// ── Commands (CommandsMixin.processCommand / consumeCardSlot) ──────────────────────────
+// ── Commands (sim/commands.ts processCommand / consumeCardSlot) ────────────────────────
 
 test('play_card command spends ink, spawns a unit, and draws a replacement card', () => {
   const engine = createGameEngine(pvpConfig(2));
@@ -103,7 +105,7 @@ test('engine.playCard() self-forwards through LocalInputSource and applies on th
   assert.ok(hasUnit, 'the unit placed via playCard() actually landed on the board');
 });
 
-// ── Win condition (WinConditionMixin + CampaignMixin, via runHeadless) ─────────────────
+// ── Win condition (sim/winCondition.ts + sim/campaign.ts, via runHeadless) ─────────────
 
 test('campaign timed_defense objective ends the match with GamePhase.GameOver and Bottom winning', () => {
   const level: LevelDefinition = {
@@ -229,9 +231,9 @@ test('levelSchema validates defenderBaseHp: accepts a positive int, rejects <1 a
   assert.throws(() => parseLevelDefinition({ ...base, defenderBaseHp: 100_001 }), LevelParseError);
 });
 
-// ── Scripted enemy waves (CampaignMixin.spawnEnemyUnit + WaveDirector) ─────────────────
+// ── Scripted enemy waves (sim/campaign.ts spawnEnemyUnit + WaveDirector) ───────────────
 
-test('a scripted wave spawns via CampaignMixin and a leak past the base ends the match with Top winning', () => {
+test('a scripted wave spawns via sim/campaign.ts and a leak past the base ends the match with Top winning', () => {
   const col = ATTACK_LANES[0];
   const level: LevelDefinition = {
     id: 'test_leak_limit',

@@ -1,18 +1,21 @@
-// GameEngine — battle engine core. The implementing class is assembled from domain mixins
-// living in ./engine/*.ts, chained onto GameEngineBase (./engine/base.ts, which also holds the
-// full constructor / mode-setup logic). To add engine behavior: find the matching domain mixin
-// (loop / commands / campaign / winCondition / helpers) or add a new one to the chain below —
-// do NOT grow this file. This is a pure mechanical split of the former monolithic
-// GameEngineImpl; method bodies were moved verbatim.
+// GameEngine — battle engine core. Assembled from three independent layers (see
+// claudedocs/server.md "engine/GameEngine" for the full rationale behind this split):
+//   - engine/setup/*.ts   — one-time construction (buildEngineCtx) from a GameConfig
+//   - engine/sim/*.ts     — the deterministic simulation, pure functions of (ctx, tick,
+//                           commands); never touches wall-clock or the InputSource
+//   - engine/driver/*.ts  — wall-clock playback (RealtimeDriver); the headless path
+//                           (runHeadless.ts) bypasses this entirely and drives sim/step.ts
+//                           directly through the same public step()/state that this
+//                           facade exposes
+// This file itself is the thin facade: it owns the InputSource (the one piece that must
+// never leak into sim/**) and implements IGameEngine by delegating to the layers above.
 import { LocalInputSource } from './net/InputSource';
 import type { InputSource } from './net/InputSource';
-import type { GameConfig, IGameEngine } from './types';
-import { GameEngineBase } from './engine/base';
-import { HelpersMixin } from './engine/helpers';
-import { CampaignMixin } from './engine/campaign';
-import { CommandsMixin } from './engine/commands';
-import { WinConditionMixin } from './engine/winCondition';
-import { LoopMixin } from './engine/loop';
+import type { GameConfig, GameEvent, IGameEngine, PlayerCommand } from './types';
+import { buildEngineCtx } from './engine/setup/buildCtx';
+import type { EngineCtx } from './engine/ctx';
+import { stepEngine } from './engine/sim/step';
+import { RealtimeDriver } from './engine/driver/realtimeDriver';
 
 // ─── Factory ──────────────────────────────────────────────────────────────────
 
@@ -29,24 +32,47 @@ export function createGameEngine(config: GameConfig, input?: InputSource): IGame
 }
 
 // ─── Implementation (not exported) ───────────────────────────────────────────
-//
-// Mixin application order matters: each domain can only call into domains already applied
-// before it (TypeScript infers `this` through the generic chain, so a mixin sees exactly the
-// members mixed in so far). Dependency order here:
-//   Helpers      — no dependencies (drawIntoSlot, accumulateBuildingSurvival)
-//   Campaign     — no dependencies (spawnEnemyUnit, hasLivingEnemyUnits)
-//   Commands     — needs Helpers (consumeCardSlot → drawIntoSlot)
-//   WinCondition — needs Campaign (survive objective → hasLivingEnemyUnits)
-//   Loop         — needs all four (step() orchestrates commands/campaign/win-check/survival)
 
-const Assembled = LoopMixin(
-  WinConditionMixin(
-    CommandsMixin(
-      CampaignMixin(
-        HelpersMixin(GameEngineBase),
-      ),
-    ),
-  ),
-);
+class GameEngineImpl implements IGameEngine {
+  private readonly ctx: EngineCtx;
+  private readonly input: InputSource;
+  private readonly driver = new RealtimeDriver();
 
-class GameEngineImpl extends Assembled implements IGameEngine {}
+  constructor(config: GameConfig, input: InputSource) {
+    this.ctx = buildEngineCtx(config);
+    this.input = input;
+  }
+
+  get state() {
+    return this.ctx.state;
+  }
+
+  step(tick: number, commands: readonly PlayerCommand[]): readonly GameEvent[] {
+    return stepEngine(this.ctx, tick, commands);
+  }
+
+  tick(dt: number): void {
+    const frameEvents = this.driver.tick(dt, this.input, (tick, cmds) => stepEngine(this.ctx, tick, cmds));
+    // Always overwrite — on a 0-step frame this clears stale events so the renderer
+    // doesn't re-process them.
+    this.ctx.state.setEvents(frameEvents);
+  }
+
+  // ─── Render-facing API ───────────────────────────────────────────────────
+  // These only submit into the InputSource — the actual command handling (and its
+  // access to game state) lives in engine/sim/commands.ts's processCommand, reached via
+  // step()/tick() above. Stamped with driver.currentTick, matching the tick a
+  // LocalInputSource-submitted command self-forwards onto.
+
+  playCard(handIndex: number, col: number, row?: number): void {
+    this.input.submit({ type: 'play_card', owner: 0, tick: this.driver.currentTick, handIndex, col, row });
+  }
+
+  upgradeBase(): void {
+    this.input.submit({ type: 'upgrade_base', owner: 0, tick: this.driver.currentTick });
+  }
+
+  refreshHand(): void {
+    this.input.submit({ type: 'refresh_hand', owner: 0, tick: this.driver.currentTick });
+  }
+}
