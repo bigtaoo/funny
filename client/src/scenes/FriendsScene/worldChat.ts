@@ -37,18 +37,35 @@ export class WorldChatPanel {
     const sendBtnW = Math.round(w * 0.24);
     const inputW = core.cW - sendBtnW - Math.round(w * 0.02);
 
-    const inputBg = sketchPanel(inputW, Math.round(inputH * 0.75), {
+    const inputBoxH = Math.round(inputH * 0.75);
+    const inputBg = sketchPanel(inputW, inputBoxH, {
       fill: C.paper, border: core.worldChatActive ? C.accent : C.line, width: 2, seed: seedFor(px, inputY, inputW),
     });
     inputBg.x = px; inputBg.y = inputY + Math.round(inputH * 0.125);
     core.container.addChild(inputBg);
+    const padX = Math.round(inputW * 0.04);
     const inputTxt = txt(
       caretDisplay(core.worldChatInput, core.worldChatActive && core.caretOn, t('social.world.placeholder')),
       snapFont(Math.round(inputH * 0.3)),
       core.worldChatInput ? C.dark : C.mid,
     );
-    inputTxt.anchor.set(0, 0.5);
-    inputTxt.x = px + Math.round(inputW * 0.04);
+    // Clip to the input box (portrait's narrow inputW made a long line spill past the box and
+    // over the send button, see git history) and, once the line overflows, anchor from the right
+    // so the caret at the end stays visible while typing — same scroll behaviour a native text
+    // input gives you.
+    const inputClip = new PIXI.Graphics();
+    inputClip.beginFill(0xffffff);
+    inputClip.drawRect(px, inputBg.y, inputW, inputBoxH);
+    inputClip.endFill();
+    core.container.addChild(inputClip);
+    inputTxt.mask = inputClip;
+    if (inputTxt.width > inputW - padX * 2) {
+      inputTxt.anchor.set(1, 0.5);
+      inputTxt.x = px + inputW - padX;
+    } else {
+      inputTxt.anchor.set(0, 0.5);
+      inputTxt.x = px + padX;
+    }
     inputTxt.y = inputY + inputH / 2;
     core.container.addChild(inputTxt);
     core.hits.push({ rect: { x: px, y: inputY, w: inputW, h: inputH }, fn: () => {

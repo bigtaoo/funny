@@ -136,7 +136,16 @@ export function addButton(
     ic.x = x + (w - sz) / 2; ic.y = y + (h - sz) / 2;
     target.addChild(ic);
   } else {
-    const tl = txt(label, fontSize ?? snapFont(Math.round(h * 0.36)), textColor, true);
+    // Shrink to fit when the label (e.g. a cost suffix like "发言 · 50 金币") is wider than the
+    // button — narrow portrait buttons otherwise let the text spill past the button's border.
+    let size = fontSize ?? snapFont(Math.round(h * 0.36));
+    const maxTextW = w * 0.88;
+    let tl = txt(label, size, textColor, true);
+    while (tl.width > maxTextW && size > 10) {
+      size -= 1;
+      tl.destroy();
+      tl = txt(label, size, textColor, true);
+    }
     tl.anchor.set(0.5, 0.5); tl.x = x + w / 2; tl.y = y + h / 2;
     target.addChild(tl);
   }
