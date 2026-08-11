@@ -79,7 +79,7 @@ export class ConsentDialog implements Scene {
 
     const body = makeText(t('consent.body'), {
       fontSize: snapFont(Math.round(unit * 0.04)), fill: C.dark, fontFamily: 'monospace',
-      wordWrap: true, wordWrapWidth: cardW * 0.84, lineHeight: Math.round(unit * 0.06),
+      wordWrap: true, wordWrapWidth: cardW * 0.84, breakWords: true, lineHeight: Math.round(unit * 0.06),
     });
     body.anchor.set(0.5, 0);
 
