@@ -1019,3 +1019,22 @@ const rowY  = isPortrait
 **验证**：`npx tsc --noEmit`（client）全绿；`client/test/ui/shopScene.ui.ts` 原有 43 例全绿（几何在正常情况下与改前逐像素一致，因为不缩不夹时 `Math.min` 取的就是原值）+ 新增 2 例（`ShopScene.drawCard — a long title never pushes the price row onto the Buy button`）：直接调用 `drawCard()`（不经真实网格，因为 headless 文本测量桩[client/test/harness/pixiHeadless.ts]按字符数算宽度、不随字号缩放，短标题在真实网格宽度下量不出换行）灌一个刻意很长的标题 + 窄 `cw/ch`，断言价格/金币行底边 ≤ Buy 按钮顶边——临时改回旧代码复跑，两个新例都如预期报错（价格压到按钮上），改回修复后复绿，确认测试不是空断言。真实浏览器验证：`npm run start:e2e`（端口 9096）+ `window.__nwE2E.views.showShop(...)` 直接灌数据，Playwright 截图对比：改前标题真换成 3 行、价格压在「Buy」上；改后标题回落 2 行、价格清楚留在按钮上方，与截图描述完全对应。
 
 **补测**（同日）：原先 2 例只覆盖了 `coinAmount` 和无删除线的 `usdCents` 分支，`usdStrikeCents`（划线原价，如年卡的"原价 $3.60 划线 现价 $2.98"）走的是另一段布局代码（划线价横排在现价左边而非叠在下面），同一个 `py` 钳制理论上两边都用了，但没有专门测过——补一例 `usdStrikeCents` 场景，断言现价和划线价底边都 ≤ Buy 顶边；临时改回旧代码复跑确认这例也如预期报错。另补一例"标题一行就放得下"的常规场景，断言价格行 y 精确等于"标题底边 + `rowGap`"（即钳制在有富余空间时是纯粹的 no-op，不会误伤正常卡片的原有布局）——这条锁定的是修复"不该动的地方一个像素都不该动"，防止日后有人改坏 `Math.min` 的判断条件而在正常场景里悄悄挪位置却没人发现。
+
+## 32. 竖屏顶部标题栏返回按钮/标题字号跟随栏高缩放（2026-08-11）
+
+**问题（用户截图反馈，"卡背包"页竖屏）**：顶部标题栏（返回按钮、标题、右上角金币）看着偏小，用户当时判断是"栏高度不够"。
+
+**根因（跟直觉相反——栏其实不矮，是内容没跟着栏高长）**：`sceneHeaderHeight(h) = h*0.12`（[SceneHeader.ts:74](../../client/src/ui/widgets/SceneHeader.ts:74)）里的 `h` 是 `PortraitLayout` 动态拉伸过的设计高度——为了不在修长竖屏（notch 机型）上留黑边，`designHeight` 会随屏幕宽高比一路涨到远超参考值 1920。实测 375×812 手机：`headerH` 换算回真实屏幕约 **98px**（占屏幕高度稳定 12%，一点不小）。但返回按钮/标题字号一直用固定语义 token `FS.headline`（42 设计 px），这个 token 是按设备**短边**（竖屏下=屏幕宽度）换算的，完全不随 `headerH` 变化——同一台设备换算下来只有 **≈15px**，横屏（栏仅 ≈45px 高）也是这同一个 15px。栏越高，字号原地不动，视觉上就是四周空出一圈，显得"内容小"。右上角金币簇更极端：`CardScene`/`EquipmentScene` 当初（[topbar-sizing-unified-2026-07-12](../../claudedocs/client-modules.md)）特意把它钉死成"headerH=100 等效"大小，本次未动，留作后续单独评估。
+
+**修复**（[SceneHeader.ts:86-101](../../client/src/ui/widgets/SceneHeader.ts:86)）：`backSize(headerH)` 从"返回固定 `FS.headline`"改成 `Math.max(FS.headline, Math.round(headerH * 0.30))`——比例系数按"横屏默认栏高（design ≈130）算出来低于 42 这个下限"反推，保证横屏/紧凑栏完全不变，只有比这更高的栏才会真正放大。标题默认字号（[SceneHeader.ts:264](../../client/src/ui/widgets/SceneHeader.ts:264)）复用同一个 `size`，跟返回按钮保持一致（原来两者本就是同一个 `FS.headline`）。`drawFloatingBackButton`（全出血场景如 WorldMapScene 的独立返回按钮）没有真实栏，改用 `backSize(sceneHeaderHeight(h))` 算一个"假想栏高"，保证跟同屏幕高度下 `drawSceneHeader` 的返回按钮大小一致。
+
+**效果（Node 脚本按真实缩放公式算的换算值）**：
+
+| 场景 | headerH 真实 px | 返回/标题字号 修复前 | 修复后 |
+|---|---|---|---|
+| 横屏（任意机型） | ≈45px | 14.6px | 14.6px（不变） |
+| 竖屏 375×812 | ≈98px | 14.6px | ≈29.2px |
+| 竖屏 iPhone 13 类 390×844 | ≈101px | 14.6px | ≈30.3px |
+| 竖屏 iPad 类 834×1194 | ≈143px | 14.6px | ≈42.9px |
+
+**验证**：`npx tsc --noEmit` 全绿；`npm run test:ui`（156 文件/1422 例）+ `npx vitest run`（主单测 160 文件/1275 例）全绿，无回归；`npm run build:web` 生产构建通过。新增 `client/test/ui/sceneHeaderPortraitContentScale.ui.ts`（5 例）：横屏/紧凑栏字号不变、竖屏高栏字号按 `Math.round(headerH*0.30)` 精确放大、`titleSize` 覆写仍优先、返回按钮字号同步放大（不只是标题）、`drawFloatingBackButton` 与 `drawSceneHeader` 在同一屏幕高度下返回按钮大小一致——`git stash` 临时回退 `SceneHeader.ts` 复跑，5 例里 2 例如预期报错（`expected 42 to be greater than 42`），确认不是空断言。真实浏览器截图：本次会话 Browser 面板同样报"pane 未显示、无法合成帧"（同 §23/§26/§27/§28/§29/§30/§31 的环境限制，非本次改动引入），改用上表的真实缩放公式算值替代像素级截图核对。金币簇（右上角）的"钉死绝对大小"例外本次未动，如需一并放大需先确认竖屏下跟标题是否会挤在一起。

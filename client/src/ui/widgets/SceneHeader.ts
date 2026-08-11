@@ -82,9 +82,22 @@ export interface SceneHeaderResult {
   backRect: Rect;
 }
 
-/** Back-glyph font size — kept in one place so every scene's back reads alike. */
-function backSize(h: number): number {
-  return FS.headline; // 1.5x the original 0.026 — approved 12.07.2026 back-button enlargement.
+/**
+ * Back-glyph (and default title) font size — kept in one place so every scene's
+ * back/title reads alike. Scales with the bar's own actual `headerH` above a flat
+ * `FS.headline` floor, instead of the flat token alone: `PortraitLayout` stretches
+ * design height (and therefore `sceneHeaderHeight`) on tall/notched phones so the
+ * bar keeps a constant ~12% of screen height, but the old flat-token size didn't
+ * grow with it — on a tall portrait bar (~98px real on a 375×812 screen) the text
+ * stayed pinned at ~15px, reading as "the header is too small" when the bar itself
+ * had plenty of headroom going unused. `HEADER_CONTENT_RATIO` is tuned so a
+ * landscape/compact bar (`headerH` design ≈130) computes below the floor and falls
+ * back to the unchanged `FS.headline` size — only bars taller than that actually grow.
+ * Approved 11.08.2026 (portrait top-bar content-too-small fix).
+ */
+const HEADER_CONTENT_RATIO = 0.30;
+function backSize(headerH: number): number {
+  return Math.max(FS.headline, Math.round(headerH * HEADER_CONTENT_RATIO)); // 1.5x the original 0.026 — approved 12.07.2026 back-button enlargement.
 }
 
 /** Chip fill for the back-button pill, keyed by where it sits. */
@@ -236,7 +249,7 @@ export function drawSceneHeader(
   const headerH = opts?.headerH ?? sceneHeaderHeight(h);
   const variant = opts?.variant ?? 'paper';
   const accent = opts?.accent ?? HEADER_ACCENT.lobby;
-  const size = backSize(h);
+  const size = backSize(headerH);
   const label = `← ${t('common.back')}`; // "← " + back
 
   const chrome = getCachedDisplay(
@@ -248,7 +261,7 @@ export function drawSceneHeader(
 
   if (title !== null) {
     const titleColor = variant === 'paper' ? C.dark : 0xffffff;
-    const titleNode = txt(title, opts?.titleSize ?? FS.headline, titleColor, true);
+    const titleNode = txt(title, opts?.titleSize ?? size, titleColor, true);
     if (opts?.titleAlign === 'left') {
       // Sit just right of the back pill so a right-aligned currency cluster has room.
       titleNode.anchor.set(0, 0.5);
@@ -280,7 +293,10 @@ export interface FloatingBackButtonResult {
  * paper fill) to read over arbitrary content.
  */
 export function drawFloatingBackButton(container: PIXI.Container, h: number): FloatingBackButtonResult {
-  const size = backSize(h);
+  // No real bar here (full-bleed scene), so size off the notional bar height a
+  // regular header would have used at this screen height — keeps this chip
+  // matching drawSceneHeader's back-button size on the same device.
+  const size = backSize(sceneHeaderHeight(h));
   const label = `← ${t('common.back')}`;
 
   const { w: chipW, h: chipH } = backChipSize(label, size);
