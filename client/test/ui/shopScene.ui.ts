@@ -935,4 +935,55 @@ describe('ShopScene.drawCard — a long title never pushes the price row onto th
     expect(price!.bottom).toBeLessThanOrEqual(buy!.top);
     scene.destroy();
   });
+
+  // The strike-through branch (usdStrikeCents, e.g. the year card's "was $X now $Y") lays the struck
+  // price out beside the current price rather than below it, but still shares the same `py` clamp — a
+  // prior version of this fix could plausibly have applied the clamp only to the non-strike branch, so
+  // this exercises that path specifically rather than assuming symmetry with the plain-price test above.
+  it('clamps the price row when it has a strike-through list price too', () => {
+    const scene = buildShop({});
+    const container = new PIXI.Container();
+    const drawCard = (scene as unknown as {
+      drawCard(body: PIXI.Container, spec: unknown, x: number, y: number, cw: number, ch: number): void;
+    }).drawCard.bind(scene);
+    const longTitle = 'Starter First Draw Extra Long Bonus Value Mega Pack Deal';
+    drawCard(container, {
+      icon: 'gift', iconColor: 0xffcc00, title: longTitle, usdCents: 298, usdStrikeCents: 360,
+      buttons: [{ label: t('shop.buy'), enabled: true, primary: true }],
+    }, 0, 0, 140, 180);
+
+    const price = labelBox(container, '$2.98');
+    const strike = labelBox(container, '$3.60');
+    const buy = labelBox(container, t('shop.buy'));
+    expect(price, 'price should render').not.toBeNull();
+    expect(strike, 'struck list price should render').not.toBeNull();
+    expect(buy, 'buy button should render').not.toBeNull();
+    expect(price!.bottom).toBeLessThanOrEqual(buy!.top);
+    expect(strike!.bottom).toBeLessThanOrEqual(buy!.top);
+    scene.destroy();
+  });
+
+  // Guards the "no room lost in the common case" half of the fix: when the title comfortably fits on
+  // one line, the price row must land exactly where the pre-fix code always put it (immediately below
+  // the title, separated by the same `rowGap`) — neither the title-shrink loop nor the bandBottom clamp
+  // should ever fire, let alone shift the layout, when there was no overlap risk to begin with.
+  it('does not move the price row when the title comfortably fits (no regression for the normal case)', () => {
+    const scene = buildShop({});
+    const container = new PIXI.Container();
+    const drawCard = (scene as unknown as {
+      drawCard(body: PIXI.Container, spec: unknown, x: number, y: number, cw: number, ch: number): void;
+    }).drawCard.bind(scene);
+    const ch = 600;
+    drawCard(container, {
+      icon: 'gift', iconColor: 0xffcc00, title: 'Monthly Card', usdCents: 499,
+      buttons: [{ label: t('shop.buy'), enabled: true, primary: true }],
+    }, 0, 0, 400, ch);
+
+    const title = labelBox(container, 'Monthly Card');
+    const price = labelBox(container, '$4.99');
+    expect(title, 'title should render').not.toBeNull();
+    expect(price, 'price should render').not.toBeNull();
+    expect(price!.top).toBe(title!.bottom + Math.round(ch * 0.02));
+    scene.destroy();
+  });
 });
