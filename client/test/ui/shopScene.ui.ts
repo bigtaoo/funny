@@ -877,3 +877,62 @@ describe('ShopScene — Coins tab always peeks the next tier row, even on a wide
     scene.destroy();
   });
 });
+
+// Regression coverage for the 2026-08-11 fix: on a narrow enough card column, a long title wraps to 3
+// lines at drawCard()'s default title font (found on the "Starter First-Draw Pack" starter_draw card
+// in portrait's 2-column grid — confirmed with a real Playwright screenshot, since the wrap itself
+// depends on real font-glyph metrics; see below). The price row below the title was positioned purely
+// off the title's own wrapped height with no check against bandBottom (unlike the status/bonus lines
+// block right below it, which already clamps), so it landed on top of the Buy button underneath.
+// drawCard() now shrinks the title font to leave room, and — belt-and-suspenders — clamps the price
+// row's own start position against bandBottom so it can never spill onto the button even if shrinking
+// alone isn't enough.
+//
+// This drives drawCard() directly (bypassing the real grid) with a deliberately long, many-word
+// synthetic title at a narrow cw: the headless text-measure mock is font-size-independent (see
+// client/test/harness/pixiHeadless.ts — width scales with character count only, not fontSize), so it
+// cannot reproduce a big-real-font wrap from a short title the way the real browser did. A long-enough
+// title still wraps across several lines purely from word count vs cw under the mock, which is what
+// actually exercises the bandBottom clamp this fix added — the font-shrink half of the fix is the part
+// only a real screenshot can confirm.
+describe('ShopScene.drawCard — a long title never pushes the price row onto the Buy button', () => {
+  it('clamps the price row against bandBottom when the title wraps onto it', () => {
+    const scene = buildShop({});
+    const container = new PIXI.Container();
+    const drawCard = (scene as unknown as {
+      drawCard(body: PIXI.Container, spec: unknown, x: number, y: number, cw: number, ch: number): void;
+    }).drawCard.bind(scene);
+    const longTitle = 'Starter First Draw Extra Long Bonus Value Mega Pack Deal';
+    drawCard(container, {
+      icon: 'gift', iconColor: 0xffcc00, title: longTitle, yuanPrice: 6,
+      buttons: [{ label: t('shop.buy'), enabled: true, primary: true }],
+    }, 0, 0, 140, 180);
+
+    const price = labelBox(container, '¥6');
+    const buy = labelBox(container, t('shop.buy'));
+    expect(price, 'price should render').not.toBeNull();
+    expect(buy, 'buy button should render').not.toBeNull();
+    expect(price!.bottom).toBeLessThanOrEqual(buy!.top);
+    scene.destroy();
+  });
+
+  it('clamps the coin-amount row the same way', () => {
+    const scene = buildShop({});
+    const container = new PIXI.Container();
+    const drawCard = (scene as unknown as {
+      drawCard(body: PIXI.Container, spec: unknown, x: number, y: number, cw: number, ch: number): void;
+    }).drawCard.bind(scene);
+    const longTitle = 'Starter First Draw Extra Long Bonus Value Mega Pack Deal';
+    drawCard(container, {
+      icon: 'gift', iconColor: 0xffcc00, title: longTitle, coinAmount: 300,
+      buttons: [{ label: t('shop.buy'), enabled: true, primary: true }],
+    }, 0, 0, 140, 180);
+
+    const price = labelBox(container, '300');
+    const buy = labelBox(container, t('shop.buy'));
+    expect(price, 'coin amount should render').not.toBeNull();
+    expect(buy, 'buy button should render').not.toBeNull();
+    expect(price!.bottom).toBeLessThanOrEqual(buy!.top);
+    scene.destroy();
+  });
+});
