@@ -169,7 +169,10 @@ describe('scroll-drag render throttle (2026-07-15 perf fix)', () => {
     }) as any;
     // Start the drag well below the (short, 10-building) card grid — an empty decorative
     // area, not a building card — so the gesture scrolls instead of opening a detail modal.
-    const y = scene.h - 20;
+    // `h` lives on the composed `core` field (2026-08-11: CityScene converted from a mixin-chain
+    // `extends` to composition — see claudedocs/client-modules.md's split-form priority note);
+    // `render` stays on the outer scene, still spyable the same way.
+    const y = scene.core.h - 20;
     const renderSpy = vi.spyOn(scene, 'render');
     input._emitDown(W / 2, y);
     input._emitMove(W / 2, y - 20);

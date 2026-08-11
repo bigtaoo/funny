@@ -47,8 +47,10 @@ type CitySceneInternals = {
   render(): void;
 };
 
+// Lives on the composed `core` field (2026-08-11: CityScene converted from a mixin-chain `extends`
+// to composition — see claudedocs/client-modules.md's split-form priority note).
 function internals(scene: CityScene): CitySceneInternals {
-  return scene as unknown as CitySceneInternals;
+  return (scene as unknown as { core: CitySceneInternals }).core;
 }
 
 function tap(inner: CitySceneInternals, x: number, y: number): void {
