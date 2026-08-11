@@ -123,9 +123,9 @@ export interface CardSpec {
   title: string;
   /** Prominent gold coin amount (coin glyph + number), shown under the title (skins / coin tiers). */
   coinAmount?: number;
-  /** Yuan price (subscription cards). strike = original list price rendered with a line through it. */
-  yuanPrice?: number;
-  yuanStrike?: number;
+  /** USD price in cents (subscription cards / starter packs). strike = original list price, line-through. */
+  usdCents?: number;
+  usdStrikeCents?: number;
   /** Small stacked info lines beside the icon (status / bonus / badges). */
   lines?: { text: string; color: number }[];
   /** Top-right corner badge (savings / best value). */
@@ -462,7 +462,7 @@ export class ShopSceneBase {
 
   /**
    * Draw one product card as an image-dominant vertical tile: a big square art/icon fills the top,
-   * then title, price (coins or ¥ with optional strike-through), any status lines, and the action
+   * then title, price (coins or $ with optional strike-through), any status lines, and the action
    * button(s) stack full-width below it. A savings badge sits in the top-right corner over the art.
    * Everything is horizontally centered so several narrow cards read cleanly across a row.
    */
@@ -573,10 +573,10 @@ export class ShopSceneBase {
       ty += Math.max(cs, amt.height) + Math.round(ch * 0.02);
     }
 
-    if (spec.yuanPrice !== undefined) {
-      const price = txt(`¥${spec.yuanPrice}`, snapFont(Math.round(ch * 0.11)), C.gold, true);
-      if (spec.yuanStrike !== undefined) {
-        const strike = txt(`¥${spec.yuanStrike}`, snapFont(Math.round(ch * 0.07)), C.mid, false);
+    if (spec.usdCents !== undefined) {
+      const price = txt(`$${(spec.usdCents / 100).toFixed(2)}`, snapFont(Math.round(ch * 0.11)), C.gold, true);
+      if (spec.usdStrikeCents !== undefined) {
+        const strike = txt(`$${(spec.usdStrikeCents / 100).toFixed(2)}`, snapFont(Math.round(ch * 0.07)), C.mid, false);
         const gap = Math.round(cw * 0.03);
         const rowW = strike.width + gap + price.width;
         strike.anchor.set(0, 0.5); strike.x = Math.round(cx - rowW / 2); strike.y = ty + price.height / 2;

@@ -28,17 +28,25 @@ const SKIN_PLACEHOLDER_ART: Record<string, string> = {
   skin_shop_e1: skinShieldBearerArtUrl as string,
 };
 
-// Subscription-card / starter-pack display prices (¥). Mirror of GACHA_DESIGN §5/§6; these drive the
-// strike-through + savings badge / price label only, no client-side coin debit. On web the buy button
+// Subscription-card / starter-pack display prices (USD cents). Mirror of GACHA_DESIGN §5/§6; these drive
+// the strike-through + savings badge / price label only, no client-side coin debit. On web the buy button
 // runs a real Paddle checkout for this amount; native (apple/google) runs the real store purchase via
 // nativeIapPurchase() (nav/shop.ts doBuySubscription/doBuyStarter) — both platforms require a verified
 // receipt before the server grants anything (2026-07-27, closes a prior "treated as authorized" gap).
-// Year = 12×¥30 (¥360) at ~10% off → ¥298.
-const MONTHLY_CARD_YUAN = 30;
-const YEAR_CARD_YUAN = 298;
-const YEAR_CARD_LIST_YUAN = 360;
-const STARTER_DRAW_YUAN = 6;
-const STARTER_GROWTH_YUAN = 30;
+// Year = 12×$4.99 ($59.99) at ~17% off → $49.99.
+// 2026-08-11: switched from CNY to USD (see economy.ts's *_USD_CENTS constants) — CNY/China-region
+// pricing deferred to a separate pass.
+const MONTHLY_CARD_USD_CENTS = 499;
+const YEAR_CARD_USD_CENTS = 4999;
+const YEAR_CARD_LIST_USD_CENTS = 5999;
+const STARTER_DRAW_USD_CENTS = 99;
+const STARTER_GROWTH_USD_CENTS = 499;
+// Savings badge amount: whole-dollar cents format as "$N" (not "$N.00") — the badge is a fixed-position
+// top-right overlay on the card art (drawCard) with no width-fit/shrink, so keeping it as short as the
+// old "省 ¥62"/"Save ¥62" int display avoids it running into the art underneath (2026-08-11, caught by
+// screenshot-verifying the CNY→USD price switch: "Save $10.00" visibly overlapped the year-card ticket icon).
+const fmtUsdSavings = (cents: number): string =>
+  cents % 100 === 0 ? `$${cents / 100}` : `$${(cents / 100).toFixed(2)}`;
 // Bulk-buy shortcut for re-buyable consumables (item-kind shop entries, e.g. protect_enhance) — see
 // ActionsMixin.onBuyBulk. Materials aren't included here: their per-item `qty` already bundles units,
 // and a ×10 shortcut would interact with MATERIAL_SHOP_DAILY_CAP (purchase count, not unit count) in a
@@ -124,7 +132,7 @@ export function ShopMixin<TBase extends ShopSceneBaseCtor>(Base: TBase): TBase &
         }
         specs.push({
           icon: 'coinChest', iconColor: C.gold, artUrl: monthlyCardArtUrl as string, title: t('shop.monthlyCard'), highlight: true,
-          yuanPrice: MONTHLY_CARD_YUAN,
+          usdCents: MONTHLY_CARD_USD_CENTS,
           lines: [{ text: active ? t('shop.monthlyActive') : t('shop.monthlyInactive'), color: active ? C.green : C.mid }],
           expiringSoonStamp: expiringSoon,
           buttons,
@@ -135,8 +143,8 @@ export function ShopMixin<TBase extends ShopSceneBaseCtor>(Base: TBase): TBase &
       if (this.cb.buyYearCard) {
         specs.push({
           icon: 'trophy', iconColor: C.gold, artUrl: yearCardArtUrl as string, title: t('shop.yearCard'), highlight: true,
-          yuanPrice: YEAR_CARD_YUAN, yuanStrike: YEAR_CARD_LIST_YUAN,
-          badge: { text: t('shop.save', { amount: `¥${YEAR_CARD_LIST_YUAN - YEAR_CARD_YUAN}` }), color: C.green },
+          usdCents: YEAR_CARD_USD_CENTS, usdStrikeCents: YEAR_CARD_LIST_USD_CENTS,
+          badge: { text: t('shop.save', { amount: fmtUsdSavings(YEAR_CARD_LIST_USD_CENTS - YEAR_CARD_USD_CENTS) }), color: C.green },
           lines: [{ text: active ? t('shop.monthlyActive') : t('shop.monthlyInactive'), color: active ? C.green : C.mid }],
           buttons: [
             active
@@ -146,21 +154,22 @@ export function ShopMixin<TBase extends ShopSceneBaseCtor>(Base: TBase): TBase &
         });
       }
 
-      // Starter packs: one-time paid first-purchase-funnel products (GACHA_DESIGN §6, ¥6/¥30 — NOT free;
-      // 2026-07-27 fix, see STARTER_DRAW_YUAN/STARTER_GROWTH_YUAN above). Drop the card entirely once
-      // claimed — a disabled "Owned" tile sitting in the grid forever reads as a broken purchase, not a
-      // claimed reward. Unbounded: the buy button may run a real store purchase sheet / Paddle overlay.
+      // Starter packs: one-time paid first-purchase-funnel products (GACHA_DESIGN §6, $0.99/$4.99 — NOT
+      // free; 2026-07-27 fix, see STARTER_DRAW_USD_CENTS/STARTER_GROWTH_USD_CENTS above). Drop the card
+      // entirely once claimed — a disabled "Owned" tile sitting in the grid forever reads as a broken
+      // purchase, not a claimed reward. Unbounded: the buy button may run a real store purchase sheet /
+      // Paddle overlay.
       if (this.cb.buyStarter) {
-        const packs: { id: 'starter_draw' | 'starter_growth'; label: TranslationKey; icon: IconKind; art: string; yuan: number }[] = [
-          { id: 'starter_draw', label: 'shop.starterDraw', icon: 'capsule', art: starterDrawArtUrl as string, yuan: STARTER_DRAW_YUAN },
-          { id: 'starter_growth', label: 'shop.starterGrowth', icon: 'gift', art: starterGrowthArtUrl as string, yuan: STARTER_GROWTH_YUAN },
+        const packs: { id: 'starter_draw' | 'starter_growth'; label: TranslationKey; icon: IconKind; art: string; usdCents: number }[] = [
+          { id: 'starter_draw', label: 'shop.starterDraw', icon: 'capsule', art: starterDrawArtUrl as string, usdCents: STARTER_DRAW_USD_CENTS },
+          { id: 'starter_growth', label: 'shop.starterGrowth', icon: 'gift', art: starterGrowthArtUrl as string, usdCents: STARTER_GROWTH_USD_CENTS },
         ];
         for (const pk of packs) {
           if (mon.starterUsed.includes(pk.id)) continue;
           if (pk.id === 'starter_growth' && mon.starterGrowthEligible === false) continue;
           specs.push({
             icon: pk.icon, iconColor: C.gold, artUrl: pk.art, title: t(pk.label),
-            yuanPrice: pk.yuan,
+            usdCents: pk.usdCents,
             buttons: [{
               label: t('shop.buy'), enabled: !busy, primary: true,
               fn: () => void this.runUnboundedDeal(() => this.cb.buyStarter!(pk.id), 'shop.bought', t(pk.label)),

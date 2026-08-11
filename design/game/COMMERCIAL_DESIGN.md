@@ -476,7 +476,8 @@ ShopScene → buyMonthlyCard()/buyYearCard() → createAppCore.doBuySubscription
   既有"回调不存在就不渲染按钮"惯例（`rechargeCoins`/Coins 页签同款）自动隐藏这三张卡的购买按钮，而不是留一个点了必
   400 的死按钮。`getMonetization`/`claimMonthlyCard`（纯读/纯已购领取，无支付语义）不受影响，登录即可用。
 - **客户端价格展示**：`ShopScene` 新手包卡片此前硬编码显示"免费"（`shop.free`），现改为 `yuanPrice`（¥6/¥30，同
-  `STARTER_DRAW_YUAN`/`STARTER_GROWTH_YUAN`），与月卡/年卡同一套价格渲染。
+  `STARTER_DRAW_YUAN`/`STARTER_GROWTH_YUAN`），与月卡/年卡同一套价格渲染。*（2026-08-11 起改名为 `usdCents`/
+  `STARTER_DRAW_USD_CENTS`，展示价改 $0.99/$4.99，见 `GACHA_DESIGN.md §11.1` 该日期条目。）*
 - **测试**：`server/metaserver/test/economy.e2e.test.ts`（三端点补 `platform`/`receipt`）、
   `server/metaserver/test/paddle-routes.e2e.test.ts`（新增新手包 checkout+webhook 5 例，含幂等重放）、
   `client/test/shopNav-buySubscription.test.ts`（原生购买+收据传递+取消/拒绝路径+null-iapKind 隐藏按钮断言）、

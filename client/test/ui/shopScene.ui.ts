@@ -245,18 +245,18 @@ describe('ShopScene — monthly card daily claim greys out once claimed today', 
   });
 });
 
-describe('ShopScene — starter packs show their real ¥ price (GACHA_DESIGN §6, not free) and disappear once claimed', () => {
+describe('ShopScene — starter packs show their real $ price (GACHA_DESIGN §6, not free) and disappear once claimed', () => {
   const flush = () => new Promise((r) => setTimeout(r, 0));
   const STARTER_GROWTH = t('shop.starterGrowth');
 
-  it('shows the ¥30 price (not "Free") and a tappable Buy button before claiming', async () => {
+  it('shows the $4.99 price (not "Free") and a tappable Buy button before claiming', async () => {
     const scene = buildShop({
       getMonetization: () => ({ subscriptionExpiry: 0, starterUsed: [] }),
       buyStarter: async () => ({ ok: true }),
     });
     await flush();
     expect(findLabelPos(scene.container, STARTER_GROWTH)).not.toBeNull();
-    expect(findLabelPos(scene.container, '¥30')).not.toBeNull();
+    expect(findLabelPos(scene.container, '$4.99')).not.toBeNull();
     expect(findLabelPos(scene.container, t('shop.free'))).toBeNull();
     scene.destroy();
   });
@@ -784,17 +784,17 @@ describe('ShopScene — landscape shop grid is 3-up and the price never overlaps
     scene.destroy();
   });
 
-  it('draws the monthly-card ¥ price strictly above its buttons (no overlap)', async () => {
-    // Only the monthly card renders (no year card / skins), so "¥30" and "Buy" are unique to it.
+  it('draws the monthly-card $ price strictly above its buttons (no overlap)', async () => {
+    // Only the monthly card renders (no year card / skins), so "$4.99" and "Buy" are unique to it.
     const scene = buildLandscape({
       getMonetization: () => ({ subscriptionExpiry: 0, starterUsed: [] }),
       buyMonthlyCard: async () => ({ ok: true }),
       claimMonthlyCard: async () => ({ ok: true }),
     });
     await flush();
-    const price = labelBox(scene.container, '¥30');
+    const price = labelBox(scene.container, '$4.99');
     const buy = labelBox(scene.container, t('shop.buy'));
-    expect(price, 'yuan price should render').not.toBeNull();
+    expect(price, 'usd price should render').not.toBeNull();
     expect(buy, 'buy button should render').not.toBeNull();
     expect(price!.bottom).toBeLessThanOrEqual(buy!.top);
     scene.destroy();
