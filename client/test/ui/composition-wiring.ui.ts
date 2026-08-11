@@ -21,6 +21,8 @@ import { createLayout } from '../../src/layout/ScalingManager';
 import { InputManager } from '../../src/inputSystem/InputManager';
 import { initI18n } from '../../src/i18n';
 import type { WorldApiClient, TeamTemplate } from '../../src/net/WorldApiClient';
+import { createLocalMatch } from '../../src/app/matchEngine';
+import { getLevel } from '../../src/game';
 
 const memStore = (() => {
   const m = new Map<string, string>();
@@ -245,5 +247,32 @@ describe('FriendsScene composition wiring', () => {
     // be the core.ts no-op default (see core.ts's file-header comment).
     expect((core as Record<string, unknown>).net).toBe(scene.network);
     (scene.destroy as () => void)();
+  });
+});
+
+// ── GameRenderer — events/input over one GameRendererCore ────────────────────────
+
+describe('GameRenderer composition wiring', () => {
+  it('shares exactly one GameRendererCore across events/input, and Core reaches both back via its lazy events/input fields', async () => {
+    const { GameRenderer } = await import('../../src/render/GameRenderer');
+    const level = getLevel('ch1_lv1')!;
+    const { engine } = createLocalMatch({ level });
+    const renderer = new GameRenderer(
+      engine, createLayout(800, 1280), new InputManager(),
+    ) as unknown as Record<string, unknown>;
+    const core = renderer.core as Record<string, unknown>;
+    expect(core).toBeDefined();
+    expect((renderer.events as Record<string, unknown>).core).toBe(core);
+    expect((renderer.input as Record<string, unknown>).core).toBe(core);
+    // Core's onDown/onMove/onUp wiring (and forceTutorialVictory/update/destroy) reach EventsPanel/
+    // InputPanel through the lazy `events`/`input` back-references the outer assembly overwrites
+    // right after constructing each — must be the SAME instances the facade itself holds, not a
+    // second pair (see core.ts's file-header comment).
+    expect(core.events).toBe(renderer.events);
+    expect(core.input).toBe(renderer.input);
+    // Non-spectator construction wires all 3 InputManager subscriptions (onDown/onMove/onUp).
+    expect((core.unsubs as unknown[]).length).toBe(3);
+    (renderer.init as () => void)();
+    (renderer.destroy as () => void)();
   });
 });

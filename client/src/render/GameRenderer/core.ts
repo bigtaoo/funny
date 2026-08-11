@@ -1,10 +1,25 @@
-// Shared foundation for the GameRenderer mixin chain (see ../GameRenderer.ts assembly).
-// GameRendererBase owns every instance field (views, engine/layout refs, tutorial, net status) + the
-// scene-graph builder + the per-frame update/destroy lifecycle. Input handling lives in ./input.ts
-// (InputMixin) and event/VFX handling lives in ./events.ts (EventMixin); each is chained on top of this
-// base into the final GameRenderer.
+// Shared foundation for the GameRenderer composition (see ../GameRenderer.ts assembly).
+//
+// GameRendererCore owns every instance field (all public unless genuinely internal-only, so the
+// domain classes below keep referencing them via `this.core.xxx`) + the scene-graph builder + the
+// per-frame update/destroy lifecycle. Input handling lives in ./input.ts (InputPanel) and event/VFX
+// handling lives in ./events.ts (EventsPanel) — each an independent class constructed with `core`,
+// see ../GameRenderer.ts's assembly.
+//
+// Core holds `events`/`input` back-references (assigned by the outer assembly right after
+// constructing each, mirroring FriendsScene/core.ts's lazy `net` field) because its own
+// update()/destroy()/forceTutorialVictory() need to call into them. None of those three call sites
+// fire synchronously inside THIS constructor, so no closure-based two-phase trick is needed for
+// them — only the InputManager onDown/onMove/onUp wiring below does, via closures that read
+// `this.input` lazily (by the time InputManager actually fires one, the outer assembly's
+// constructor has already finished and `this.input` is set).
+//
+// 2026-08-11: converted from the former `EventMixin(InputMixin(GameRendererBase))` inheritance
+// chain to composition — see claudedocs/client-modules.md's split-form priority note. The old
+// `export interface GameRendererBase { ... }` declaration-merging block (needed only to satisfy TS
+// across the mixin boundary) is gone entirely; input.ts/events.ts reach this class's members
+// through an explicit `core` reference instead of inherited `this.xxx`.
 import * as PIXI from 'pixi.js-legacy';
-import { makeText } from '../pixiText';
 import { BOTTOM_BUILDING_ROW, BOTTOM_SPAWN_ROW, TOP_BUILDING_ROW, TOP_SPAWN_ROW } from '@nw/engine/config';
 
 /** HP fraction at/under which a base is "critical" (~last HP cell) — triggers the board ring. */
@@ -22,15 +37,13 @@ import {
   sideToOwner,
   TICK_RATE,
 } from '../../game';
-import { ILayout, Rect } from '../../layout/ILayout';
-import { t } from '../../i18n';
+import { ILayout } from '../../layout/ILayout';
 import { InputManager } from '../../inputSystem/InputManager';
 import { BoardView } from '../BoardView';
 import type { BattleLabelContext } from '../battleLabels';
 import { BuildingView } from '../BuildingView';
 import { HandView } from '../HandView';
 import { HUDView } from '../HUDView';
-import { drawHudButton } from '../../ui/widgets/hudButton';
 import { NetStatusView } from '../NetStatusView';
 import { UnitView } from '../UnitView';
 import type { EngineCardInstance, EngineEquipInv } from '@nw/engine';
@@ -41,9 +54,10 @@ import { buildWearOverlay } from '../wearOverlay';
 import { ProfilePopup, type ProfileData, type ProfileExtra } from '../../ui/dialogs/ProfilePopup';
 import { stateRecorder } from '../../game/replay/StateRecorder';
 import { registerPool } from '../../cache/poolRegistry';
-import { snapFont } from '../fontScale';
-import { factionInk } from '../theme';
 import { netLog } from '../../net/log';
+import type { EventsPanel } from './events';
+import type { InputPanel } from './input';
+import { drawOpponentLabel, drawReplayNameLabels } from './labels';
 
 const log = netLog('GameRenderer');
 
@@ -55,17 +69,18 @@ export interface GameProfiles {
   getProfileExtra?(publicId: string): Promise<ProfileExtra>;
 }
 
-// ── Mixin plumbing ────────────────────────────────────────────────────────────
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export type Constructor<T = object> = new (...args: any[]) => T;
-export type GameRendererBaseCtor = Constructor<GameRendererBase>;
-
 /**
- * GameRenderer — purely visual + InputManager-driven input.
- * No PIXI interactive/hitArea anywhere.  All hit-testing is manual in design space.
+ * GameRendererCore — purely visual + InputManager-driven input, shared state root for the
+ * event/input domain classes (see file-header comment). No PIXI interactive/hitArea anywhere.
+ * All hit-testing is manual in design space.
  */
-export class GameRendererBase {
+export class GameRendererCore {
   readonly container: PIXI.Container;
+
+  /** Set by the outer GameRenderer assembly right after construction — see file-header comment. */
+  events!: EventsPanel;
+  /** Set by the outer GameRenderer assembly right after construction — see file-header comment. */
+  input!: InputPanel;
 
   onGameEnd:     ((winner: OwnerId | null, stats: [PlayerStats, PlayerStats], summary: MatchSummary) => void) | null = null;
   onExitToLobby: (() => void) | null = null;
@@ -76,7 +91,8 @@ export class GameRendererBase {
   // queue (GameEngine §step), so game_over/game_draw events are re-consumed by update() every
   // frame → without this lock, onGameEnd would fire repeatedly (→ duplicate recordClear /
   // duplicate level_complete analytics, see the double-fire bug). Settlement fires exactly once.
-  protected gameEnded = false;
+  // Written by EventsPanel.handleEvent (game_over/game_draw) and read by InputPanel.handleDown.
+  gameEnded = false;
   /**
    * Handle of the deferred onGameEnd settlement (game_over/game_draw/tutorial victory all schedule
    * it a couple seconds after the banner shows, via scheduleGameEnd() below). Tracked so destroy()
@@ -86,67 +102,67 @@ export class GameRendererBase {
    */
   private gameEndTimer: ReturnType<typeof setTimeout> | null = null;
 
-  protected readonly engine: IGameEngine;
-  protected readonly layout: ILayout;
+  readonly engine: IGameEngine;
+  readonly layout: ILayout;
 
   // Which game owner the *local* player controls (derived from the layout's
   // localSide). For single-player / campaign / netplay host this is 0 (Bottom);
   // for the netplay joiner it is 1 (Top). All "is this mine?" decisions — hand,
   // HUD, upgrade, placement validation rows, base-damage flash — key off this
   // instead of hardcoding owner 0.
-  protected readonly localOwner:    OwnerId;
-  protected readonly localBuildRow: number;
-  protected readonly localSpawnRow: number;
+  readonly localOwner:    OwnerId;
+  readonly localBuildRow: number;
+  readonly localSpawnRow: number;
 
   /** True for online lockstep matches — enables the waiting-for-opponent overlay. */
-  protected readonly netEnabled: boolean;
+  private readonly netEnabled: boolean;
 
   /** Opponent / local identities for the tap-to-view profile popup (netplay only). */
-  protected readonly oppProfile:  ProfileData | null;
-  protected readonly selfProfile: ProfileData | null;
-  protected readonly fetchProfileExtra?: (publicId: string) => Promise<ProfileExtra>;
-  protected profilePopup: ProfilePopup | null = null;
+  readonly oppProfile:  ProfileData | null;
+  readonly selfProfile: ProfileData | null;
+  private readonly fetchProfileExtra?: (publicId: string) => Promise<ProfileExtra>;
+  profilePopup: ProfilePopup | null = null;
 
-  protected boardView!:    BoardView;
-  protected unitView!:     UnitView;
+  boardView!:    BoardView;
+  unitView!:     UnitView;
   /** Equipped skin ids (one per character, LOBBY_IA_REDESIGN §15), passed to UnitView for the texture swap. */
-  protected readonly equippedSkins: readonly string[] = [];
+  private readonly equippedSkins: readonly string[] = [];
   /** Opponent's equipped skin ids, when known (real PvP only — see UnitView.acquireSprite); always empty for AI/bot opponents. */
-  protected readonly opponentSkins: readonly string[] = [];
+  private readonly opponentSkins: readonly string[] = [];
   /** Hero Roster card instances (PvE/siege only) for the battle-render gear overlay (§20.4); null = none. */
-  protected readonly cardInstances: EngineCardInstance[] | null = null;
+  private readonly cardInstances: EngineCardInstance[] | null = null;
   /** Equipment inventory for resolving worn gear slot ids in the overlay (§20.4); null = none. */
-  protected readonly equipmentInv: EngineEquipInv | null = null;
+  private readonly equipmentInv: EngineEquipInv | null = null;
   /** Corner hand-lettering to scrawl in the margins (art-direction §6.2 group B). */
-  protected readonly battleLabelCtx: BattleLabelContext = {};
-  protected buildingView!: BuildingView;
+  private readonly battleLabelCtx: BattleLabelContext = {};
+  buildingView!: BuildingView;
 
-  protected handView!:     HandView;
-  protected hudView!:      HUDView;
-  protected netStatus!:    NetStatusView;
-  protected vfxSystem!:    VFXSystem;
+  handView!:     HandView;
+  hudView!:      HUDView;
+  netStatus!:    NetStatusView;
+  vfxSystem!:    VFXSystem;
 
   // Net stall detection: seconds the engine has failed to advance a tick.
-  protected stallTime = 0;
+  private stallTime = 0;
 
   // Unsubscribe functions from InputManager
-  protected readonly unsubs: Array<() => void> = [];
+  readonly unsubs: Array<() => void> = [];
 
   /** Memory-guard deregistration function (projectile reuse pool); called in destroy(). */
-  protected readonly unregisterProjectileStat: () => void;
+  private readonly unregisterProjectileStat: () => void;
 
   /** Tutorial director (activated only for the dedicated tutorial level ch0_tutorial); orchestrates presentation-layer checkpoints / tours / never-lose guarantee. */
-  protected tutorial: TutorialDirector | null = null;
-  protected tutorialEnabled = false;
+  tutorial: TutorialDirector | null = null;
+  private tutorialEnabled = false;
 
   /** Campaign (PvE) level: the surrender button/dialog reword to "exit level". Set before init(). */
-  protected campaignMode = false;
+  private campaignMode = false;
   setCampaignMode(v: boolean): void { this.campaignMode = v; }
 
   /** Replay playback: no input wiring, surrender button hidden, base/viewpoint name labels drawn. */
-  protected readonly spectator: boolean;
-  /** Owner-indexed display names (0 = bottom, 1 = top) shown by the replay player; null outside replay. */
-  protected readonly replayNames: readonly [string, string] | null;
+  private readonly spectator: boolean;
+  /** Owner-indexed display names (0 = bottom, 1 = top) shown by the replay player; null outside replay. Read by labels.ts's drawReplayNameLabels(). */
+  readonly replayNames: readonly [string, string] | null;
 
   constructor(
     engine: IGameEngine,
@@ -184,7 +200,7 @@ export class GameRendererBase {
 
     this.unregisterProjectileStat = registerPool({
       label: 'projectile',
-      idle: () => this.projectilePool.length,
+      idle: () => this.events.projectilePool.length,
       bytesEach: 3 * 1024,
     });
 
@@ -192,9 +208,9 @@ export class GameRendererBase {
     // all input wiring so taps never select cards, drag, or open the pause menu.
     // The ReplayScene draws its own transport controls on top.
     if (!spectator) {
-      this.unsubs.push(input.onDown((x, y) => this.handleDown(x, y)));
-      this.unsubs.push(input.onMove((x, y) => this.handleMove(x, y)));
-      this.unsubs.push(input.onUp((x, y)   => this.handleUp(x, y)));
+      this.unsubs.push(input.onDown((x, y) => this.input.handleDown(x, y)));
+      this.unsubs.push(input.onMove((x, y) => this.input.handleMove(x, y)));
+      this.unsubs.push(input.onUp((x, y)   => this.input.handleUp(x, y)));
     }
 
     this.tutorialEnabled = tutorial;
@@ -203,7 +219,7 @@ export class GameRendererBase {
   // ── Local player helper ──────────────────────────────────────────────────────
 
   /** The GameState player the local client controls (mirrors `localOwner`). */
-  protected localPlayer(state: GameState) {
+  localPlayer(state: GameState) {
     return this.localOwner === 0 ? state.bottomPlayer : state.topPlayer;
   }
 
@@ -254,12 +270,12 @@ export class GameRendererBase {
    * (showGameOver → onGameEnd), but triggered by the director rather than the engine
    * (tutorial level never actually decides a winner, §3.5).
    */
-  protected forceTutorialVictory(): void {
+  private forceTutorialVictory(): void {
     if (this.gameEnded) return;
     this.gameEnded = true;
     const winner = this.localOwner;
     stateRecorder.setWinner(winner);
-    this.cancelDrag(); this.cancelTapSelect();
+    this.input.cancelDrag(); this.input.cancelTapSelect();
     this.hudView.showGameOver(winner, this.localOwner);
     const stats = this.engine.state.snapshotStats();
     const summary = this.engine.state.snapshotSummary();
@@ -271,7 +287,7 @@ export class GameRendererBase {
    * can cancel it (see gameEndTimer's doc comment). Callers (here + events.ts's game_over/game_draw)
    * are expected to have already set `gameEnded = true` and shown the banner.
    */
-  protected scheduleGameEnd(fn: () => void, delayMs: number): void {
+  scheduleGameEnd(fn: () => void, delayMs: number): void {
     this.gameEndTimer = setTimeout(() => { this.gameEndTimer = null; fn(); }, delayMs);
   }
 
@@ -285,7 +301,7 @@ export class GameRendererBase {
     // State recorder (REPLAY_SHARE_DESIGN §2.1): both live matches and replay playback capture frames here;
     // internally skips on duplicate tick / unconfigured — zero engine intrusion.
     stateRecorder.capture(state);
-    for (const event of state.events) this.handleEvent(event, state);
+    for (const event of state.events) this.events.handleEvent(event, state);
     this.boardView.update(dt);
     // 断路: persistent overlay on every column BridgeCollapse has blocked, for the full
     // block (tempBlockedCols maps col → expiry tick). Empty most of the time — cheap early-out.
@@ -305,9 +321,9 @@ export class GameRendererBase {
     this.boardView.setBaseCritical(0, state.bottomPlayer.baseHp > 0 && state.bottomPlayer.baseHp <= state.bottomPlayer.maxBaseHp * BASE_CRITICAL_RATIO);
     this.boardView.setBaseCritical(1, state.topPlayer.baseHp > 0 && state.topPlayer.baseHp <= state.topPlayer.maxBaseHp * BASE_CRITICAL_RATIO);
     this.vfxSystem.update(dt);
-    if (this.vignetteAlpha > 0) {
-      this.vignetteAlpha = Math.max(0, this.vignetteAlpha - dt / GameRendererBase.VIGNETTE_FADE);
-      this.drawVignette();
+    if (this.events.vignetteAlpha > 0) {
+      this.events.vignetteAlpha = Math.max(0, this.events.vignetteAlpha - dt / GameRendererCore.VIGNETTE_FADE);
+      this.events.drawVignette();
     }
     this.unitView.sync(state.board, dt);
     this.buildingView.update(dt);
@@ -328,7 +344,7 @@ export class GameRendererBase {
    * the waiting-for-opponent spinner so the frozen board doesn't read as a hang.
    * Skip while paused or after game over — those freezes are intentional.
    */
-  protected updateNetWaiting(state: GameState, prevTicks: number, dt: number): void {
+  private updateNetWaiting(state: GameState, prevTicks: number, dt: number): void {
     const advanced = state.elapsedTicks > prevTicks;
     const live = state.phase === GamePhase.Playing && !this.hudView.isPaused;
     if (advanced || !live) {
@@ -366,12 +382,7 @@ export class GameRendererBase {
     });
     this.safeDestroyStep('projectileStat', () => this.unregisterProjectileStat());
     this.safeDestroyStep('unsubs', () => this.unsubs.forEach(u => u()));
-    this.safeDestroyStep('drag', () => {
-      this.drag?.ghost.destroy();
-      this.drag            = null;
-      this.tapSelect       = null;
-      this.pendingCardDown = null;
-    });
+    this.safeDestroyStep('drag', () => this.input.destroy());
     this.safeDestroyStep('profilePopup', () => this.profilePopup?.destroy());
     this.safeDestroyStep('vfxSystem', () => this.vfxSystem.destroy());
 
@@ -379,18 +390,18 @@ export class GameRendererBase {
       // Unregister in-flight escort fade/blink ticks first — otherwise a still-running
       // one keeps its closure (and everything it captures) alive via Ticker.shared,
       // the same GC-root leak documented in claudedocs/client-memory-leak.md §2.1.
-      for (const tick of this.escortEffectTicks) PIXI.Ticker.shared.remove(tick);
-      this.escortEffectTicks.clear();
-      for (const sprite of this.escortSprites.values()) sprite.destroy();
-      this.escortSprites.clear();
+      for (const tick of this.events.escortEffectTicks) PIXI.Ticker.shared.remove(tick);
+      this.events.escortEffectTicks.clear();
+      for (const sprite of this.events.escortSprites.values()) sprite.destroy();
+      this.events.escortSprites.clear();
     });
     this.safeDestroyStep('projectileSprites', () => {
-      for (const sprite of this.projectileSprites.values()) sprite.destroy();
-      this.projectileSprites.clear();
+      for (const sprite of this.events.projectileSprites.values()) sprite.destroy();
+      this.events.projectileSprites.clear();
     });
     this.safeDestroyStep('projectilePool', () => {
-      for (const sprite of this.projectilePool) sprite.destroy();
-      this.projectilePool.length = 0;
+      for (const sprite of this.events.projectilePool) sprite.destroy();
+      this.events.projectilePool.length = 0;
     });
 
     // Mop up whatever is left under the root (HUD, net status, vignette, escort/
@@ -409,7 +420,7 @@ export class GameRendererBase {
 
   // ── Scene graph ────────────────────────────────────────────────────────────
 
-  protected buildSceneGraph(): void {
+  private buildSceneGraph(): void {
     // New match / new replay segment start: clear the single state recorder slot (REPLAY_SHARE_DESIGN §2.1).
     stateRecorder.reset();
     this.boardView    = new BoardView(this.layout);
@@ -424,14 +435,14 @@ export class GameRendererBase {
     this.netStatus    = new NetStatusView(this.layout);
     this.vfxSystem    = new VFXSystem();
 
-    this.escortLayer = new PIXI.Container();
-    this.projectileLayer = new PIXI.Container();
+    this.events.escortLayer = new PIXI.Container();
+    this.events.projectileLayer = new PIXI.Container();
 
     this.container.addChild(this.boardView.container);
     this.container.addChild(this.unitView.container);
     this.container.addChild(this.buildingView.container);
-    this.container.addChild(this.escortLayer);           // escort units above buildings
-    this.container.addChild(this.projectileLayer);       // arrows above units, below VFX
+    this.container.addChild(this.events.escortLayer);       // escort units above buildings
+    this.container.addChild(this.events.projectileLayer);   // arrows above units, below VFX
     this.container.addChild(this.vfxSystem.container);  // above units, below HUD
 
     // Worn-notebook overlay (art-direction §3.1) — faint static grain/creases
@@ -444,127 +455,22 @@ export class GameRendererBase {
     this.container.addChild(this.handView.container);
     this.container.addChild(this.hudView.container);            // HUD foreground + overlays, above hand
 
-    this.vignetteGfx = new PIXI.Graphics();
-    this.vignetteGfx.interactiveChildren = false;
-    this.container.addChild(this.vignetteGfx);                  // screen-edge flash
+    this.events.vignetteGfx = new PIXI.Graphics();
+    this.events.vignetteGfx.interactiveChildren = false;
+    this.container.addChild(this.events.vignetteGfx);           // screen-edge flash
     this.container.addChild(this.netStatus.container);          // network status pill
 
     // Netplay only: show the opponent's name on the top strip and enable the
     // tap-to-view-profile popup (opponent + self). Single-player / campaign keep
     // the AI/anonymous opponent non-clickable.
     if (this.netEnabled && this.oppProfile) {
-      this.drawOpponentLabel();
+      drawOpponentLabel(this);
       this.profilePopup = new ProfilePopup(this.layout.designWidth, this.layout.designHeight, this.fetchProfileExtra);
       this.container.addChild(this.profilePopup.container); // topmost — above status pill
     }
 
     // Replay playback: label both bases with their player names and mark the current viewpoint.
-    if (this.spectator && this.replayNames) this.drawReplayNameLabels();
+    if (this.spectator && this.replayNames) drawReplayNameLabels(this);
   }
 
-  /**
-   * Replay-only name labels (S1-RP). Two pieces:
-   *  • a name plate above each base — the local (viewpoint) side over `playerBaseRect`,
-   *    the opponent over `enemyBaseRect`, keyed off `localOwner` so they follow a viewpoint flip;
-   *  • a "View: <name>" tag in the bottom-left strip so the current viewpoint is unambiguous.
-   * Both read from `replayNames` (owner-indexed); no-op outside replay (gated by the caller).
-   */
-  protected drawReplayNameLabels(): void {
-    const names = this.replayNames!;
-    const localName = names[this.localOwner];
-    const enemyName = names[this.localOwner === 0 ? 1 : 0];
-
-    // Base name plates (over each base, centered on the base rect's top edge).
-    const plate = (name: string, rect: Rect): void => {
-      const label = makeText(name, {
-        fontSize: snapFont(22), fill: 0x333333, fontWeight: 'bold', fontFamily: 'monospace',
-      });
-      const padX = 12;
-      const bw = Math.ceil(label.width) + padX * 2;
-      const bh = Math.ceil(label.height) + 8;
-      const bx = Math.round(rect.x + rect.w / 2 - bw / 2);
-      const by = Math.round(rect.y - bh - 6);
-      const bg = new PIXI.Graphics();
-      drawHudButton(bg, bw, bh, 'secondary', { radius: 4 });
-      bg.x = bx; bg.y = by;
-      label.anchor.set(0.5);
-      label.x = bx + bw / 2;
-      label.y = by + bh / 2;
-      this.container.addChild(bg, label);
-    };
-    plate(localName, this.layout.playerBaseRect());
-    plate(enemyName, this.layout.enemyBaseRect());
-
-    // Current-viewpoint tag in the bottom-left strip (above the ink counter).
-    const vp = makeText(t('replay.viewpoint', { name: localName }), {
-      fontSize: snapFont(22), fill: 0x2a5599, fontWeight: 'bold', fontFamily: 'monospace',
-    });
-    const bl = this.layout.hudBottomLeftRect;
-    vp.x = Math.round(bl.x + 14);
-    vp.y = Math.round(bl.y + 6);
-    this.container.addChild(vp);
-  }
-
-  /**
-   * Opponent nickname on the top HUD strip, in a shared-style button background
-   * sitting just left of the (board-centered) enemy HP bar — so the name reads
-   * right before the opponent's HP. The profile-tap region is tightened to this
-   * button. Vertical band / height reuse the surrender button's.
-   */
-  protected drawOpponentLabel(): void {
-    const sr = this.hudView.getSurrenderRect();
-    const hp = this.hudView.getEnemyHpRect();
-    const label = makeText(this.oppProfile!.name || '?', {
-      fontSize: snapFont(Math.max(12, Math.round(sr.h * 0.5))),
-      fill: factionInk.enemy, fontWeight: 'bold', fontFamily: 'monospace',
-    });
-
-    const padX = 14;
-    const bw = Math.ceil(label.width) + padX * 2;
-    const bh = sr.h;
-    const bx = hp.x - 12 - bw;  // gap of 12px before the enemy HP bar
-    const by = sr.y;
-
-    const bg = new PIXI.Graphics();
-    drawHudButton(bg, bw, bh, 'secondary', { radius: 4 });
-    bg.x = bx;
-    bg.y = by;
-
-    label.anchor.set(0.5);
-    label.x = bx + bw / 2;
-    label.y = by + bh / 2;
-
-    this.container.addChild(bg, label);
-    this.hudView.setEnemyInfoRect({ x: bx, y: by, w: bw, h: bh });
-  }
-}
-
-// ── Cross-mixin members dispatched to from base-level code (constructor input wiring, update()'s
-// vignette fade, destroy()'s drag/event-sprite teardown). Declared via interface/class declaration
-// merging so base-level `this.handleDown()` / `this.drawVignette()` etc. type-check (methods as
-// METHODS, not properties, which would clash with the mixin's override — TS2425). Emits NOTHING at
-// runtime — the real fields/prototype methods come from InputMixin (./input.ts) and EventMixin
-// (./events.ts), and their bodies stay verbatim.
-export interface GameRendererBase {
-  // InputMixin
-  drag: import('./input').DragState | null;
-  tapSelect: import('./input').TapSelectState | null;
-  pendingCardDown: { x: number; y: number; handIndex: number } | null;
-  handleDown(x: number, y: number): void;
-  handleMove(x: number, y: number): void;
-  handleUp(x: number, y: number): void;
-  cancelDrag(): void;
-  cancelTapSelect(): void;
-
-  // EventMixin
-  escortLayer: PIXI.Container;
-  escortSprites: Map<string, PIXI.Container>;
-  escortEffectTicks: Set<() => void>;
-  projectileLayer: PIXI.Container;
-  projectileSprites: Map<number, PIXI.Container>;
-  projectilePool: PIXI.Container[];
-  vignetteGfx: PIXI.Graphics;
-  vignetteAlpha: number;
-  handleEvent(event: import('../../game').GameEvent, state: GameState): void;
-  drawVignette(): void;
 }

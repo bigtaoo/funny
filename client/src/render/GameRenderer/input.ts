@@ -1,13 +1,20 @@
 // Input domain: drag-to-place, tap-select-then-tap-to-place, and the upgrade-button drag, plus the
 // shared placement-highlight / card-commit logic they both drive. All hit-testing is manual in design
-// space (no PIXI interactive/hitArea). Chained onto GameRendererBase (./base.ts) — see ../GameRenderer.ts.
+// space (no PIXI interactive/hitArea). Independent class constructed with `core` (see
+// ../GameRenderer.ts's assembly) — never reaches into EventsPanel (one-directional: events.ts reaches
+// this file's cancelDrag/cancelTapSelect/drag/tapSelect through `core.input`, not the other way).
+//
+// 2026-08-11: converted from the former `InputMixin(Base)` mixin chain to composition — see
+// claudedocs/client-modules.md's split-form priority note. The `update(dt)` override that used to
+// call `super.update(dt)` then run the highlight-refresh accumulator is now a plain `update(dt)`
+// method the outer assembly calls AFTER `core.update(dt)` — same order, no `super` needed.
 import * as PIXI from 'pixi.js-legacy';
 import { makeText } from '../pixiText';
 import { ATTACK_LANES, BOARD_COLS } from '@nw/engine/config';
 import { CardType, SpellType } from '../../game';
 import { Rect } from '../../layout/ILayout';
 import { t, type TranslationKey } from '../../i18n';
-import type { Constructor, GameRendererBaseCtor } from './base';
+import type { GameRendererCore } from './core';
 import { FS } from '../fontScale';
 
 // ── Drag state ─────────────────────────────────────────────────────────────────
@@ -40,437 +47,443 @@ const HIGHLIGHT_REFRESH_INTERVAL = 0.1;
 /** Shared empty set passed to UnitView.setSpellTargetPreview when no AoE spell is being aimed. */
 const EMPTY_UNIT_IDS: ReadonlySet<number> = new Set();
 
-export interface InputHandlers {
-  handleDown(x: number, y: number): void;
-  handleMove(x: number, y: number): void;
-  handleUp(x: number, y: number): void;
-  cancelDrag(): void;
-  cancelTapSelect(): void;
-  refreshPlacementHighlights(): void;
-}
+export class InputPanel {
+  drag:      DragState | null = null;
+  dragCol    = -1;
+  dragRow    = -1;
+  dragOnBoard = false;
 
-export function InputMixin<TBase extends GameRendererBaseCtor>(Base: TBase): TBase & Constructor<InputHandlers> {
-  return class extends Base {
-    drag:      DragState | null = null;
-    dragCol    = -1;
-    dragRow    = -1;
-    dragOnBoard = false;
+  // Tap-select: card selected by tap, placement confirmed by tapping a column
+  tapSelect: TapSelectState | null = null;
 
-    // Tap-select: card selected by tap, placement confirmed by tapping a column
-    tapSelect: TapSelectState | null = null;
+  // Pending card press — deferred until we know if it's a tap or drag
+  pendingCardDown: { x: number; y: number; handIndex: number } | null = null;
+  private downX = 0;
+  private downY = 0;
 
-    // Pending card press — deferred until we know if it's a tap or drag
-    pendingCardDown: { x: number; y: number; handIndex: number } | null = null;
-    private downX = 0;
-    private downY = 0;
+  // Last pointer position while a drag/tap-select is active, so per-tick highlight
+  // refreshes (see update()) can recompute without a fresh pointer-move event.
+  private lastPointerX = 0;
+  private lastPointerY = 0;
 
-    // Last pointer position while a drag/tap-select is active, so per-tick highlight
-    // refreshes (see update()) can recompute without a fresh pointer-move event.
-    private lastPointerX = 0;
-    private lastPointerY = 0;
+  private highlightRefreshAccum = 0;
 
-    private highlightRefreshAccum = 0;
+  constructor(private readonly core: GameRendererCore) {}
 
-    // Board state (unit occupancy) changes every tick independent of pointer input,
-    // so the active placement highlight must be re-evaluated periodically too — see
-    // refreshPlacementHighlights() below for why.
-    update(dt: number): void {
-      super.update(dt);
-      this.highlightRefreshAccum += dt;
-      if (this.highlightRefreshAccum >= HIGHLIGHT_REFRESH_INTERVAL) {
-        this.highlightRefreshAccum = 0;
-        this.refreshPlacementHighlights();
+  // Board state (unit occupancy) changes every tick independent of pointer input,
+  // so the active placement highlight must be re-evaluated periodically too — see
+  // refreshPlacementHighlights() below for why. Called by the outer assembly right
+  // after core.update(dt) — same order the old InputMixin's `super.update(dt)` then
+  // own-body sequence ran in.
+  update(dt: number): void {
+    this.highlightRefreshAccum += dt;
+    if (this.highlightRefreshAccum >= HIGHLIGHT_REFRESH_INTERVAL) {
+      this.highlightRefreshAccum = 0;
+      this.refreshPlacementHighlights();
+    }
+  }
+
+  // ── Input handling (design-space coords) ─────────────────────────────────
+
+  handleDown(x: number, y: number): void {
+    this.downX = x;
+    this.downY = y;
+
+    // Tutorial director intercepts taps first: if it hits its own buttons (next/finish/skip)
+    // or is in tour/graduation phase → swallow the tap, don't pass to board/hand (§3.4).
+    // During phase B checkpoint it passes non-button taps through so the player can drag cards normally.
+    if (this.core.tutorial?.handleDown(x, y)) return;
+
+    // Profile popup open → its own dim backdrop (PIXI interactive) handles the
+    // close tap; swallow the manual hit-test so nothing behind it fires.
+    if (this.core.profilePopup?.isOpen) return;
+
+    // Match already decided (game_over/game_draw/tutorial graduation): settlement
+    // (onGameEnd) is scheduled but deferred a couple seconds (see events.ts/core.ts).
+    // Nothing — surrender included — should still be actionable in that window; the
+    // player must not be able to fire onExitToLobby while a deferred onGameEnd is
+    // still pending (double-settlement / stray navigation after the match ended).
+    if (this.core.gameEnded) return;
+
+    // Surrender confirmation overlay intercepts all input
+    if (this.core.hudView.isPaused) {
+      const cancel  = this.core.hudView.getSurrenderCancelRect();
+      const confirm = this.core.hudView.getSurrenderConfirmRect();
+      if (cancel && this.overRect(x, y, cancel)) {
+        this.core.hudView.hideSurrenderConfirm();
+      } else if (confirm && this.overRect(x, y, confirm)) {
+        this.core.hudView.hideSurrenderConfirm();
+        this.core.onExitToLobby?.();
+      }
+      return;
+    }
+
+    // Surrender button — opens the confirmation overlay above.
+    if (this.overRect(x, y, this.core.hudView.getSurrenderRect())) {
+      this.cancelTapSelect();
+      this.core.hudView.showSurrenderConfirm();
+      return;
+    }
+
+    // Upgrade button — tap to upgrade immediately, no drag-onto-base needed.
+    if (this.core.hudView.upgradeEnabled && this.overRect(x, y, this.core.hudView.getUpgradeRect())) {
+      this.cancelTapSelect();
+      if (this.core.localPlayer(this.core.engine.state).canUpgradeBase()) this.core.engine.upgradeBase();
+      return;
+    }
+
+    // Refresh-hand button — simple tap (no drag): spend ink, redraw all cards.
+    if (this.core.hudView.refreshEnabled && this.overRect(x, y, this.core.hudView.getRefreshRect())) {
+      this.cancelTapSelect();
+      this.cancelDrag();
+      this.core.engine.refreshHand();
+      return;
+    }
+
+    // Opponent profile (top strip, netplay only — no cards live up there).
+    if (this.core.profilePopup && this.core.oppProfile && this.overRect(x, y, this.core.hudView.getEnemyInfoRect())) {
+      this.core.profilePopup.show(this.core.oppProfile);
+      return;
+    }
+
+    // Hand cards — defer drag start until we see movement (tap vs drag)
+    const cardIdx = this.core.handView.hitTestCardIndex(x, y);
+    if (cardIdx >= 0) {
+      this.pendingCardDown = { x, y, handIndex: cardIdx };
+      return;
+    }
+
+    // Local profile (bottom-strip info column) — checked AFTER cards so a card
+    // in the same area always wins; only empty HUD space opens the popup.
+    if (this.core.profilePopup && this.core.selfProfile && this.overRect(x, y, this.core.hudView.getPlayerInfoRect())) {
+      this.core.profilePopup.show(this.core.selfProfile);
+      return;
+    }
+
+    // Board area while in tap-select: placement handled on handleUp
+  }
+
+  handleMove(x: number, y: number): void {
+    // Pending card down: check if moved far enough to become a drag
+    if (this.pendingCardDown && !this.drag) {
+      const dx = x - this.pendingCardDown.x;
+      const dy = y - this.pendingCardDown.y;
+      if (Math.sqrt(dx * dx + dy * dy) > DRAG_THRESHOLD) {
+        const handIndex = this.pendingCardDown.handIndex;
+        this.pendingCardDown = null;
+        this.cancelTapSelect();
+        this.startCardDrag(handIndex);
       }
     }
 
-    // ── Input handling (design-space coords) ─────────────────────────────────
+    this.lastPointerX = x;
+    this.lastPointerY = y;
 
-    handleDown(x: number, y: number): void {
-      this.downX = x;
-      this.downY = y;
+    if (this.drag) {
+      this.drag.ghost.x = x;
+      this.drag.ghost.y = y;
 
-      // Tutorial director intercepts taps first: if it hits its own buttons (next/finish/skip)
-      // or is in tour/graduation phase → swallow the tap, don't pass to board/hand (§3.4).
-      // During phase B checkpoint it passes non-button taps through so the player can drag cards normally.
-      if (this.tutorial?.handleDown(x, y)) return;
-
-      // Profile popup open → its own dim backdrop (PIXI interactive) handles the
-      // close tap; swallow the manual hit-test so nothing behind it fires.
-      if (this.profilePopup?.isOpen) return;
-
-      // Match already decided (game_over/game_draw/tutorial graduation): settlement
-      // (onGameEnd) is scheduled but deferred a couple seconds (see events.ts/base.ts).
-      // Nothing — surrender included — should still be actionable in that window; the
-      // player must not be able to fire onExitToLobby while a deferred onGameEnd is
-      // still pending (double-settlement / stray navigation after the match ended).
-      if (this.gameEnded) return;
-
-      // Surrender confirmation overlay intercepts all input
-      if (this.hudView.isPaused) {
-        const cancel  = this.hudView.getSurrenderCancelRect();
-        const confirm = this.hudView.getSurrenderConfirmRect();
-        if (cancel && this.overRect(x, y, cancel)) {
-          this.hudView.hideSurrenderConfirm();
-        } else if (confirm && this.overRect(x, y, confirm)) {
-          this.hudView.hideSurrenderConfirm();
-          this.onExitToLobby?.();
-        }
-        return;
+      const onBoard = !this.core.layout.isOutsideBoard(x, y);
+      const col = this.core.layout.screenToCol(x, y);
+      const row = this.core.layout.screenToRow(x, y);
+      if (col !== this.dragCol || row !== this.dragRow || onBoard !== this.dragOnBoard) {
+        this.dragCol     = col;
+        this.dragRow     = row;
+        this.dragOnBoard = onBoard;
+        this.updatePlacementHighlights(this.drag.cardType, this.drag.spellType, col, row, x, y);
       }
-
-      // Surrender button — opens the confirmation overlay above.
-      if (this.overRect(x, y, this.hudView.getSurrenderRect())) {
-        this.cancelTapSelect();
-        this.hudView.showSurrenderConfirm();
-        return;
-      }
-
-      // Upgrade button — tap to upgrade immediately, no drag-onto-base needed.
-      if (this.hudView.upgradeEnabled && this.overRect(x, y, this.hudView.getUpgradeRect())) {
-        this.cancelTapSelect();
-        if (this.localPlayer(this.engine.state).canUpgradeBase()) this.engine.upgradeBase();
-        return;
-      }
-
-      // Refresh-hand button — simple tap (no drag): spend ink, redraw all cards.
-      if (this.hudView.refreshEnabled && this.overRect(x, y, this.hudView.getRefreshRect())) {
-        this.cancelTapSelect();
-        this.cancelDrag();
-        this.engine.refreshHand();
-        return;
-      }
-
-      // Opponent profile (top strip, netplay only — no cards live up there).
-      if (this.profilePopup && this.oppProfile && this.overRect(x, y, this.hudView.getEnemyInfoRect())) {
-        this.profilePopup.show(this.oppProfile);
-        return;
-      }
-
-      // Hand cards — defer drag start until we see movement (tap vs drag)
-      const cardIdx = this.handView.hitTestCardIndex(x, y);
-      if (cardIdx >= 0) {
-        this.pendingCardDown = { x, y, handIndex: cardIdx };
-        return;
-      }
-
-      // Local profile (bottom-strip info column) — checked AFTER cards so a card
-      // in the same area always wins; only empty HUD space opens the popup.
-      if (this.profilePopup && this.selfProfile && this.overRect(x, y, this.hudView.getPlayerInfoRect())) {
-        this.profilePopup.show(this.selfProfile);
-        return;
-      }
-
-      // Board area while in tap-select: placement handled on handleUp
+      return;
     }
 
-    handleMove(x: number, y: number): void {
-      // Pending card down: check if moved far enough to become a drag
-      if (this.pendingCardDown && !this.drag) {
-        const dx = x - this.pendingCardDown.x;
-        const dy = y - this.pendingCardDown.y;
-        if (Math.sqrt(dx * dx + dy * dy) > DRAG_THRESHOLD) {
-          const handIndex = this.pendingCardDown.handIndex;
-          this.pendingCardDown = null;
-          this.cancelTapSelect();
-          this.startCardDrag(handIndex);
-        }
-      }
-
-      this.lastPointerX = x;
-      this.lastPointerY = y;
-
-      if (this.drag) {
-        this.drag.ghost.x = x;
-        this.drag.ghost.y = y;
-
-        const onBoard = !this.layout.isOutsideBoard(x, y);
-        const col = this.layout.screenToCol(x, y);
-        const row = this.layout.screenToRow(x, y);
-        if (col !== this.dragCol || row !== this.dragRow || onBoard !== this.dragOnBoard) {
-          this.dragCol     = col;
-          this.dragRow     = row;
-          this.dragOnBoard = onBoard;
-          this.updatePlacementHighlights(this.drag.cardType, this.drag.spellType, col, row, x, y);
-        }
-        return;
-      }
-
-      // Tap-select hover: update Meteor target preview as pointer moves over board
-      if (this.tapSelect?.cardType === CardType.Spell && this.tapSelect?.spellType === SpellType.Meteor) {
-        if (!this.layout.isOutsideBoard(x, y)) {
-          const col = this.layout.screenToCol(x, y);
-          const row = this.layout.screenToRow(x, y);
-          this.updatePlacementHighlights(CardType.Spell, SpellType.Meteor, col, row, x, y);
-        }
+    // Tap-select hover: update Meteor target preview as pointer moves over board
+    if (this.tapSelect?.cardType === CardType.Spell && this.tapSelect?.spellType === SpellType.Meteor) {
+      if (!this.core.layout.isOutsideBoard(x, y)) {
+        const col = this.core.layout.screenToCol(x, y);
+        const row = this.core.layout.screenToRow(x, y);
+        this.updatePlacementHighlights(CardType.Spell, SpellType.Meteor, col, row, x, y);
       }
     }
+  }
 
-    /**
-     * Re-evaluate the active drag/tap-select highlight against current board state.
-     * Occupancy (e.g. the spawn-row slot a lane is blocked on) can change every tick
-     * as units move/die, independent of pointer movement, so a highlight painted once
-     * at drag/select-start would otherwise go stale (still red after the slot frees up).
-     */
-    refreshPlacementHighlights(): void {
-      if (this.drag) {
+  /**
+   * Re-evaluate the active drag/tap-select highlight against current board state.
+   * Occupancy (e.g. the spawn-row slot a lane is blocked on) can change every tick
+   * as units move/die, independent of pointer movement, so a highlight painted once
+   * at drag/select-start would otherwise go stale (still red after the slot frees up).
+   */
+  refreshPlacementHighlights(): void {
+    if (this.drag) {
+      this.updatePlacementHighlights(
+        this.drag.cardType, this.drag.spellType, this.dragCol, this.dragRow,
+        this.lastPointerX, this.lastPointerY,
+      );
+      return;
+    }
+    if (this.tapSelect) {
+      // Meteor's targeting reticle tracks the pointer even in tap-select mode;
+      // other card types don't use col/row here (see updatePlacementHighlights).
+      if (this.tapSelect.cardType === CardType.Spell && this.tapSelect.spellType === SpellType.Meteor) {
+        const col = this.core.layout.screenToCol(this.lastPointerX, this.lastPointerY);
+        const row = this.core.layout.screenToRow(this.lastPointerX, this.lastPointerY);
         this.updatePlacementHighlights(
-          this.drag.cardType, this.drag.spellType, this.dragCol, this.dragRow,
+          this.tapSelect.cardType, this.tapSelect.spellType, col, row,
           this.lastPointerX, this.lastPointerY,
         );
-        return;
-      }
-      if (this.tapSelect) {
-        // Meteor's targeting reticle tracks the pointer even in tap-select mode;
-        // other card types don't use col/row here (see updatePlacementHighlights).
-        if (this.tapSelect.cardType === CardType.Spell && this.tapSelect.spellType === SpellType.Meteor) {
-          const col = this.layout.screenToCol(this.lastPointerX, this.lastPointerY);
-          const row = this.layout.screenToRow(this.lastPointerX, this.lastPointerY);
-          this.updatePlacementHighlights(
-            this.tapSelect.cardType, this.tapSelect.spellType, col, row,
-            this.lastPointerX, this.lastPointerY,
-          );
-        } else {
-          this.updatePlacementHighlights(this.tapSelect.cardType, this.tapSelect.spellType, -1, -1, 0, 0);
-        }
+      } else {
+        this.updatePlacementHighlights(this.tapSelect.cardType, this.tapSelect.spellType, -1, -1, 0, 0);
       }
     }
+  }
 
-    handleUp(x: number, y: number): void {
-      // Resolve pending card press
-      if (this.pendingCardDown) {
-        const pd = this.pendingCardDown;
-        this.pendingCardDown = null;
-
-        if (this.tapSelect && this.tapSelect.handIndex === pd.handIndex) {
-          // Tapped the already-selected card → deselect
-          this.cancelTapSelect();
-          return;
-        }
-        // Activate tap-select for this card (cancels any previous selection first)
-        this.cancelTapSelect();
-        this.startTapSelect(pd.handIndex);
-        return;
-      }
-
-      if (this.drag) {
-        // card drag
-        if (this.layout.isOutsideBoard(x, y)) { this.cancelDrag(); return; }
-        const col = this.layout.screenToCol(x, y);
-        const row = this.layout.screenToRow(x, y);
-        this.commitCardPlay(
-          this.drag.handIndex, this.drag.cardType, this.drag.spellType, col, row,
-        );
-        this.cancelDrag();
-        return;
-      }
-
-      // Tap-select mode: tap the board to place
-      if (this.tapSelect) {
-        // Tapping the selected card itself cancels
-        const cardIdx = this.handView.hitTestCardIndex(x, y);
-        if (cardIdx === this.tapSelect.handIndex) {
-          this.cancelTapSelect();
-          return;
-        }
-        if (!this.layout.isOutsideBoard(x, y)) {
-          const col = this.layout.screenToCol(x, y);
-          const row = this.layout.screenToRow(x, y);
-          const { handIndex, cardType, spellType } = this.tapSelect;
-          this.cancelTapSelect();
-          this.commitCardPlay(handIndex, cardType, spellType, col, row);
-        }
-      }
-    }
-
-    // ── Card drag ──────────────────────────────────────────────────────────────
-
-    private startCardDrag(handIndex: number): void {
-      const player = this.localPlayer(this.engine.state);
-      const slot   = player.hand.slots[handIndex];
-      if (!slot || player.ink < slot.card.cost) return;
-
-      const card   = slot.card;
-      const ghost  = this.buildDragGhost(t(card.nameKey as TranslationKey), card.cost);
-      const center = this.handView.slotCenter(handIndex);
-      ghost.x = center.x;
-      ghost.y = center.y;
-      this.container.addChild(ghost);
-
-      this.drag        = { kind: 'card', handIndex, cardType: card.cardType, spellType: card.spellType, ghost };
-      this.dragCol     = -1;
-      this.dragRow     = -1;
-      this.dragOnBoard = false;
-      this.handView.setSelectedCard(handIndex);
-      this.updatePlacementHighlights(card.cardType, card.spellType, -1, -1, center.x, center.y);
-    }
-
-    // ── Tap-select ─────────────────────────────────────────────────────────────
-
-    private startTapSelect(handIndex: number): void {
-      const player = this.localPlayer(this.engine.state);
-      const slot   = player.hand.slots[handIndex];
-      if (!slot || player.ink < slot.card.cost) return;
-
-      const card = slot.card;
-      this.tapSelect = { handIndex, cardType: card.cardType, spellType: card.spellType };
-      this.handView.setSelectedCard(handIndex);
-      // Show placement highlights immediately (static for unit/building, empty for meteor until hover)
-      this.updatePlacementHighlights(card.cardType, card.spellType, -1, -1, 0, 0);
-    }
-
-    cancelTapSelect(): void {
-      if (!this.tapSelect) return;
-      this.tapSelect = null;
-      this.handView.clearSelection();
-      this.boardView.clearHighlights();
-      this.unitView.setSpellTargetPreview(EMPTY_UNIT_IDS);
-    }
-
-    // ── Shared placement logic ─────────────────────────────────────────────────
-
-    private commitCardPlay(
-      handIndex: number, cardType: CardType, spellType: SpellType | undefined,
-      col: number, row: number,
-    ): void {
-      // Tutorial checkpoint: only the target card type is allowed this beat; wrong plays are rejected (avoids waste / going off-script, §3.4).
-      if (this.tutorial && !this.tutorial.allowCardPlay(cardType, spellType)) return;
-      switch (cardType) {
-        case CardType.Unit: {
-          if (!(ATTACK_LANES as readonly number[]).includes(col)) return;
-          if (this.engine.state.board.isCellOccupiedByUnit(col, this.localSpawnRow)) return;
-          this.engine.playCard(handIndex, col);
-          break;
-        }
-        case CardType.Building: {
-          if (!(ATTACK_LANES as readonly number[]).includes(col)) return;
-          if (this.engine.state.board.hasBuildingAt(col, this.localBuildRow)) return;
-          if (this.engine.state.board.isNoBuild(col, this.localBuildRow)) return;
-          this.engine.playCard(handIndex, col);
-          break;
-        }
-        case CardType.Spell: {
-          if (spellType === SpellType.Haste)       this.engine.playCard(handIndex, 0);
-          else if (spellType === SpellType.Meteor)  this.engine.playCard(handIndex, col, row);
-          else if (spellType === SpellType.Rockslide || spellType === SpellType.BridgeCollapse) {
-            this.engine.playCard(handIndex, col);
-          }
-          break;
-        }
-      }
-    }
-
-    private updatePlacementHighlights(
-      cardType: CardType, spellType: SpellType | undefined,
-      col: number, row: number, x: number, y: number,
-    ): void {
-      this.boardView.clearHighlights();
-      let spellTargets: Set<number> | null = null;
-
-      switch (cardType) {
-        case CardType.Unit: {
-          const blocked = new Set<number>();
-          for (const lane of ATTACK_LANES) {
-            if (this.engine.state.board.isCellOccupiedByUnit(lane, this.localSpawnRow)) blocked.add(lane);
-          }
-          this.boardView.showUnitLaneHighlights(Array.from(ATTACK_LANES), blocked, col);
-          break;
-        }
-        case CardType.Building: {
-          const valid: number[] = [];
-          for (let c = 0; c < BOARD_COLS; c++) {
-            if (!(ATTACK_LANES as readonly number[]).includes(c)) continue;
-            if (this.engine.state.board.isNoBuild(c, this.localBuildRow)) continue;
-            if (!this.engine.state.board.hasBuildingAt(c, this.localBuildRow)) valid.push(c);
-          }
-          this.boardView.showBuildingHighlights(valid, this.localBuildRow);
-          break;
-        }
-        case CardType.Spell: {
-          if (spellType === SpellType.Meteor && !this.layout.isOutsideBoard(x, y)) {
-            this.boardView.showMeteorTargetHighlight(col, row);
-            spellTargets = this.meteorTargetUnits(col, row);
-          } else if (
-            (spellType === SpellType.Rockslide || spellType === SpellType.BridgeCollapse)
-            && !this.layout.isOutsideBoard(x, y)
-          ) {
-            this.boardView.showColumnTargetHighlight(col);
-            // Rockslide (unlike Meteor) hits every unit in the column regardless of side
-            // (SpellSystem.castRockslide has no side filter); BridgeCollapse only blocks
-            // movement, it deals no damage, so there's no "units hit" set to preview.
-            if (spellType === SpellType.Rockslide) spellTargets = this.columnTargetUnits(col);
-          }
-          break;
-        }
-      }
-
-      // Outline the units actually inside the hovered AoE footprint — the target-rect
-      // fill alone doesn't show which units' centers fall inside it (2026-08-08 fix:
-      // the frequently-used 2×2 Meteor kept missing its intended target because of this).
-      this.unitView.setSpellTargetPreview(spellTargets ?? EMPTY_UNIT_IDS);
-    }
-
-    /** Enemy units (Meteor spares the caster's own side) whose integer cell falls in the 2×2 area anchored at (col, row) — mirrors SpellSystem.castMeteor's hit test. */
-    private meteorTargetUnits(col: number, row: number): Set<number> {
-      const targets = new Set<number>();
-      const maxCol = col + 1;
-      const maxRow = row + 1;
-      for (const unit of this.engine.state.board.units.values()) {
-        if (unit.isDead) continue;
-        if (unit.side === this.layout.localSide) continue; // never hit own units — see SpellSystem.castMeteor
-        if (unit.col >= col && unit.col <= maxCol && unit.row >= row && unit.row <= maxRow) targets.add(unit.id);
-      }
-      return targets;
-    }
-
-    /** All units (both sides) standing in `col` — mirrors SpellSystem.castRockslide's hit test (no side filter). */
-    private columnTargetUnits(col: number): Set<number> {
-      const targets = new Set<number>();
-      for (const unit of this.engine.state.board.units.values()) {
-        if (unit.isDead) continue;
-        if (unit.col === col) targets.add(unit.id);
-      }
-      return targets;
-    }
-
-    // ── Helpers ────────────────────────────────────────────────────────────────
-
-    cancelDrag(): void {
+  handleUp(x: number, y: number): void {
+    // Resolve pending card press
+    if (this.pendingCardDown) {
+      const pd = this.pendingCardDown;
       this.pendingCardDown = null;
-      if (!this.drag) return;
-      this.drag.ghost.parent?.removeChild(this.drag.ghost);
-      this.drag.ghost.destroy();
-      this.drag        = null;
-      this.dragCol     = -1;
-      this.dragRow     = -1;
-      this.dragOnBoard = false;
-      this.handView.clearSelection();
-      this.boardView.clearHighlights();
-      this.unitView.setSpellTargetPreview(EMPTY_UNIT_IDS);
+
+      if (this.tapSelect && this.tapSelect.handIndex === pd.handIndex) {
+        // Tapped the already-selected card → deselect
+        this.cancelTapSelect();
+        return;
+      }
+      // Activate tap-select for this card (cancels any previous selection first)
+      this.cancelTapSelect();
+      this.startTapSelect(pd.handIndex);
+      return;
     }
 
-    private overRect(x: number, y: number, r: Rect): boolean {
-      return x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h;
+    if (this.drag) {
+      // card drag
+      if (this.core.layout.isOutsideBoard(x, y)) { this.cancelDrag(); return; }
+      const col = this.core.layout.screenToCol(x, y);
+      const row = this.core.layout.screenToRow(x, y);
+      this.commitCardPlay(
+        this.drag.handIndex, this.drag.cardType, this.drag.spellType, col, row,
+      );
+      this.cancelDrag();
+      return;
     }
 
-    private buildDragGhost(label: string, cost: number, accentColor = 0x2244aa): PIXI.Container {
-      const c   = new PIXI.Container();
-      const gfx = new PIXI.Graphics();
-      gfx.beginFill(0xfaf6ee, 0.9);
-      gfx.lineStyle(2, accentColor);
-      gfx.drawRoundedRect(-32, -42, 64, 84, 6);
-      gfx.endFill();
-
-      const nameText = makeText(label, { fontSize: FS.micro, fill: 0x222222, align: 'center' });
-      nameText.anchor.set(0.5, 0.5);
-      nameText.y = -10;
-
-      const costText = makeText(String(cost), { fontSize: FS.tiny, fill: accentColor, fontWeight: 'bold' });
-      costText.anchor.set(0.5, 0.5);
-      costText.y = 18;
-
-      c.addChild(gfx, nameText, costText);
-      c.alpha = 0.9;
-      return c;
+    // Tap-select mode: tap the board to place
+    if (this.tapSelect) {
+      // Tapping the selected card itself cancels
+      const cardIdx = this.core.handView.hitTestCardIndex(x, y);
+      if (cardIdx === this.tapSelect.handIndex) {
+        this.cancelTapSelect();
+        return;
+      }
+      if (!this.core.layout.isOutsideBoard(x, y)) {
+        const col = this.core.layout.screenToCol(x, y);
+        const row = this.core.layout.screenToRow(x, y);
+        const { handIndex, cardType, spellType } = this.tapSelect;
+        this.cancelTapSelect();
+        this.commitCardPlay(handIndex, cardType, spellType, col, row);
+      }
     }
-  };
+  }
+
+  // ── Card drag ──────────────────────────────────────────────────────────────
+
+  private startCardDrag(handIndex: number): void {
+    const player = this.core.localPlayer(this.core.engine.state);
+    const slot   = player.hand.slots[handIndex];
+    if (!slot || player.ink < slot.card.cost) return;
+
+    const card   = slot.card;
+    const ghost  = this.buildDragGhost(t(card.nameKey as TranslationKey), card.cost);
+    const center = this.core.handView.slotCenter(handIndex);
+    ghost.x = center.x;
+    ghost.y = center.y;
+    this.core.container.addChild(ghost);
+
+    this.drag        = { kind: 'card', handIndex, cardType: card.cardType, spellType: card.spellType, ghost };
+    this.dragCol     = -1;
+    this.dragRow     = -1;
+    this.dragOnBoard = false;
+    this.core.handView.setSelectedCard(handIndex);
+    this.updatePlacementHighlights(card.cardType, card.spellType, -1, -1, center.x, center.y);
+  }
+
+  // ── Tap-select ─────────────────────────────────────────────────────────────
+
+  private startTapSelect(handIndex: number): void {
+    const player = this.core.localPlayer(this.core.engine.state);
+    const slot   = player.hand.slots[handIndex];
+    if (!slot || player.ink < slot.card.cost) return;
+
+    const card = slot.card;
+    this.tapSelect = { handIndex, cardType: card.cardType, spellType: card.spellType };
+    this.core.handView.setSelectedCard(handIndex);
+    // Show placement highlights immediately (static for unit/building, empty for meteor until hover)
+    this.updatePlacementHighlights(card.cardType, card.spellType, -1, -1, 0, 0);
+  }
+
+  cancelTapSelect(): void {
+    if (!this.tapSelect) return;
+    this.tapSelect = null;
+    this.core.handView.clearSelection();
+    this.core.boardView.clearHighlights();
+    this.core.unitView.setSpellTargetPreview(EMPTY_UNIT_IDS);
+  }
+
+  // ── Shared placement logic ─────────────────────────────────────────────────
+
+  private commitCardPlay(
+    handIndex: number, cardType: CardType, spellType: SpellType | undefined,
+    col: number, row: number,
+  ): void {
+    // Tutorial checkpoint: only the target card type is allowed this beat; wrong plays are rejected (avoids waste / going off-script, §3.4).
+    if (this.core.tutorial && !this.core.tutorial.allowCardPlay(cardType, spellType)) return;
+    switch (cardType) {
+      case CardType.Unit: {
+        if (!(ATTACK_LANES as readonly number[]).includes(col)) return;
+        if (this.core.engine.state.board.isCellOccupiedByUnit(col, this.core.localSpawnRow)) return;
+        this.core.engine.playCard(handIndex, col);
+        break;
+      }
+      case CardType.Building: {
+        if (!(ATTACK_LANES as readonly number[]).includes(col)) return;
+        if (this.core.engine.state.board.hasBuildingAt(col, this.core.localBuildRow)) return;
+        if (this.core.engine.state.board.isNoBuild(col, this.core.localBuildRow)) return;
+        this.core.engine.playCard(handIndex, col);
+        break;
+      }
+      case CardType.Spell: {
+        if (spellType === SpellType.Haste)       this.core.engine.playCard(handIndex, 0);
+        else if (spellType === SpellType.Meteor)  this.core.engine.playCard(handIndex, col, row);
+        else if (spellType === SpellType.Rockslide || spellType === SpellType.BridgeCollapse) {
+          this.core.engine.playCard(handIndex, col);
+        }
+        break;
+      }
+    }
+  }
+
+  private updatePlacementHighlights(
+    cardType: CardType, spellType: SpellType | undefined,
+    col: number, row: number, x: number, y: number,
+  ): void {
+    this.core.boardView.clearHighlights();
+    let spellTargets: Set<number> | null = null;
+
+    switch (cardType) {
+      case CardType.Unit: {
+        const blocked = new Set<number>();
+        for (const lane of ATTACK_LANES) {
+          if (this.core.engine.state.board.isCellOccupiedByUnit(lane, this.core.localSpawnRow)) blocked.add(lane);
+        }
+        this.core.boardView.showUnitLaneHighlights(Array.from(ATTACK_LANES), blocked, col);
+        break;
+      }
+      case CardType.Building: {
+        const valid: number[] = [];
+        for (let c = 0; c < BOARD_COLS; c++) {
+          if (!(ATTACK_LANES as readonly number[]).includes(c)) continue;
+          if (this.core.engine.state.board.isNoBuild(c, this.core.localBuildRow)) continue;
+          if (!this.core.engine.state.board.hasBuildingAt(c, this.core.localBuildRow)) valid.push(c);
+        }
+        this.core.boardView.showBuildingHighlights(valid, this.core.localBuildRow);
+        break;
+      }
+      case CardType.Spell: {
+        if (spellType === SpellType.Meteor && !this.core.layout.isOutsideBoard(x, y)) {
+          this.core.boardView.showMeteorTargetHighlight(col, row);
+          spellTargets = this.meteorTargetUnits(col, row);
+        } else if (
+          (spellType === SpellType.Rockslide || spellType === SpellType.BridgeCollapse)
+          && !this.core.layout.isOutsideBoard(x, y)
+        ) {
+          this.core.boardView.showColumnTargetHighlight(col);
+          // Rockslide (unlike Meteor) hits every unit in the column regardless of side
+          // (SpellSystem.castRockslide has no side filter); BridgeCollapse only blocks
+          // movement, it deals no damage, so there's no "units hit" set to preview.
+          if (spellType === SpellType.Rockslide) spellTargets = this.columnTargetUnits(col);
+        }
+        break;
+      }
+    }
+
+    // Outline the units actually inside the hovered AoE footprint — the target-rect
+    // fill alone doesn't show which units' centers fall inside it (2026-08-08 fix:
+    // the frequently-used 2×2 Meteor kept missing its intended target because of this).
+    this.core.unitView.setSpellTargetPreview(spellTargets ?? EMPTY_UNIT_IDS);
+  }
+
+  /** Enemy units (Meteor spares the caster's own side) whose integer cell falls in the 2×2 area anchored at (col, row) — mirrors SpellSystem.castMeteor's hit test. */
+  private meteorTargetUnits(col: number, row: number): Set<number> {
+    const targets = new Set<number>();
+    const maxCol = col + 1;
+    const maxRow = row + 1;
+    for (const unit of this.core.engine.state.board.units.values()) {
+      if (unit.isDead) continue;
+      if (unit.side === this.core.layout.localSide) continue; // never hit own units — see SpellSystem.castMeteor
+      if (unit.col >= col && unit.col <= maxCol && unit.row >= row && unit.row <= maxRow) targets.add(unit.id);
+    }
+    return targets;
+  }
+
+  /** All units (both sides) standing in `col` — mirrors SpellSystem.castRockslide's hit test (no side filter). */
+  private columnTargetUnits(col: number): Set<number> {
+    const targets = new Set<number>();
+    for (const unit of this.core.engine.state.board.units.values()) {
+      if (unit.isDead) continue;
+      if (unit.col === col) targets.add(unit.id);
+    }
+    return targets;
+  }
+
+  // ── Helpers ────────────────────────────────────────────────────────────────
+
+  cancelDrag(): void {
+    this.pendingCardDown = null;
+    if (!this.drag) return;
+    this.drag.ghost.parent?.removeChild(this.drag.ghost);
+    this.drag.ghost.destroy();
+    this.drag        = null;
+    this.dragCol     = -1;
+    this.dragRow     = -1;
+    this.dragOnBoard = false;
+    this.core.handView.clearSelection();
+    this.core.boardView.clearHighlights();
+    this.core.unitView.setSpellTargetPreview(EMPTY_UNIT_IDS);
+  }
+
+  private overRect(x: number, y: number, r: Rect): boolean {
+    return x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h;
+  }
+
+  private buildDragGhost(label: string, cost: number, accentColor = 0x2244aa): PIXI.Container {
+    const c   = new PIXI.Container();
+    const gfx = new PIXI.Graphics();
+    gfx.beginFill(0xfaf6ee, 0.9);
+    gfx.lineStyle(2, accentColor);
+    gfx.drawRoundedRect(-32, -42, 64, 84, 6);
+    gfx.endFill();
+
+    const nameText = makeText(label, { fontSize: FS.micro, fill: 0x222222, align: 'center' });
+    nameText.anchor.set(0.5, 0.5);
+    nameText.y = -10;
+
+    const costText = makeText(String(cost), { fontSize: FS.tiny, fill: accentColor, fontWeight: 'bold' });
+    costText.anchor.set(0.5, 0.5);
+    costText.y = 18;
+
+    c.addChild(gfx, nameText, costText);
+    c.alpha = 0.9;
+    return c;
+  }
+
+  /**
+   * Reset drag/tap-select/pending-press state and free the drag ghost — called from
+   * GameRendererCore.destroy() as an isolated step (see its file-header comment: this
+   * deliberately does NOT call cancelDrag()/cancelTapSelect(), which touch
+   * handView/boardView/unitView — those sub-views are already destroyed by the time this
+   * runs in the destroy() sequence).
+   */
+  destroy(): void {
+    this.drag?.ghost.destroy();
+    this.drag            = null;
+    this.tapSelect       = null;
+    this.pendingCardDown = null;
+  }
 }

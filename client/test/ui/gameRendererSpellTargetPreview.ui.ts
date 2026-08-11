@@ -70,12 +70,12 @@ describe('GameRenderer InputMixin — spell target unit preview', () => {
     engine.state.board.addUnit(outsideEnemy);
     engine.state.board.addUnit(insideFriend);
 
-    const from = (renderer as any).handView.slotCenter(0);
+    const from = (renderer as any).core.handView.slotCenter(0);
     const to   = layout.gridToScreen(3, 5);
     input._emitDown(from.x, from.y);
     input._emitMove(to.x, to.y); // past DRAG_THRESHOLD → starts the card drag, hovering (3,5)
 
-    const preview: Set<number> = (renderer as any).unitView.previewUnitIds;
+    const preview: Set<number> = (renderer as any).core.unitView.previewUnitIds;
     expect(preview.has(insideEnemy.id)).toBe(true);
     expect(preview.has(outsideEnemy.id)).toBe(false);
     expect(preview.has(insideFriend.id)).toBe(false);
@@ -93,18 +93,18 @@ describe('GameRenderer InputMixin — spell target unit preview', () => {
     engine.state.board.addUnit(nearOrigin);
     engine.state.board.addUnit(nearFar);
 
-    const from = (renderer as any).handView.slotCenter(0);
+    const from = (renderer as any).core.handView.slotCenter(0);
     input._emitDown(from.x, from.y);
 
     const p1 = layout.gridToScreen(1, 1);
     input._emitMove(p1.x, p1.y);
-    let preview: Set<number> = (renderer as any).unitView.previewUnitIds;
+    let preview: Set<number> = (renderer as any).core.unitView.previewUnitIds;
     expect(preview.has(nearOrigin.id)).toBe(true);
     expect(preview.has(nearFar.id)).toBe(false);
 
     const p2 = layout.gridToScreen(8, 8);
     input._emitMove(p2.x, p2.y);
-    preview = (renderer as any).unitView.previewUnitIds;
+    preview = (renderer as any).core.unitView.previewUnitIds;
     expect(preview.has(nearOrigin.id)).toBe(false);
     expect(preview.has(nearFar.id)).toBe(true);
 
@@ -118,16 +118,16 @@ describe('GameRenderer InputMixin — spell target unit preview', () => {
     const enemy = new Unit(UnitType.Infantry, Side.Top, 4, 6);
     engine.state.board.addUnit(enemy);
 
-    const from = (renderer as any).handView.slotCenter(0);
+    const from = (renderer as any).core.handView.slotCenter(0);
     const to   = layout.gridToScreen(3, 5);
     input._emitDown(from.x, from.y);
     input._emitMove(to.x, to.y);
-    expect(((renderer as any).unitView.previewUnitIds as Set<number>).size).toBe(1);
+    expect(((renderer as any).core.unitView.previewUnitIds as Set<number>).size).toBe(1);
 
     input._emitMove(-5000, -5000); // off board
     input._emitUp(-5000, -5000);   // cancels the drag
 
-    expect(((renderer as any).unitView.previewUnitIds as Set<number>).size).toBe(0);
+    expect(((renderer as any).core.unitView.previewUnitIds as Set<number>).size).toBe(0);
     renderer.destroy();
   });
 
@@ -141,16 +141,16 @@ describe('GameRenderer InputMixin — spell target unit preview', () => {
     const enemy = new Unit(UnitType.Infantry, Side.Top, 4, 6); // inside the 2×2 anchored at (3,5)
     engine.state.board.addUnit(enemy);
 
-    const center = (renderer as any).handView.slotCenter(0);
+    const center = (renderer as any).core.handView.slotCenter(0);
     input._emitDown(center.x, center.y);
     input._emitUp(center.x, center.y); // tap-select, no drag
-    expect((renderer as any).tapSelect?.handIndex).toBe(0);
-    expect(((renderer as any).unitView.previewUnitIds as Set<number>).size).toBe(0); // nothing hovered yet
+    expect((renderer as any).input.tapSelect?.handIndex).toBe(0);
+    expect(((renderer as any).core.unitView.previewUnitIds as Set<number>).size).toBe(0); // nothing hovered yet
 
     const boardPt = layout.gridToScreen(3, 5);
     input._emitMove(boardPt.x, boardPt.y);
 
-    expect(((renderer as any).unitView.previewUnitIds as Set<number>).has(enemy.id)).toBe(true);
+    expect(((renderer as any).core.unitView.previewUnitIds as Set<number>).has(enemy.id)).toBe(true);
     renderer.destroy();
   });
 
@@ -161,19 +161,19 @@ describe('GameRenderer InputMixin — spell target unit preview', () => {
     const enemy = new Unit(UnitType.Infantry, Side.Top, 4, 6);
     engine.state.board.addUnit(enemy);
 
-    const center = (renderer as any).handView.slotCenter(0);
+    const center = (renderer as any).core.handView.slotCenter(0);
     input._emitDown(center.x, center.y);
     input._emitUp(center.x, center.y);
     const boardPt = layout.gridToScreen(3, 5);
     input._emitMove(boardPt.x, boardPt.y);
-    expect(((renderer as any).unitView.previewUnitIds as Set<number>).size).toBe(1);
+    expect(((renderer as any).core.unitView.previewUnitIds as Set<number>).size).toBe(1);
 
     // Tapping the already-selected card again deselects (cancelTapSelect).
     input._emitDown(center.x, center.y);
     input._emitUp(center.x, center.y);
 
-    expect((renderer as any).tapSelect).toBeNull();
-    expect(((renderer as any).unitView.previewUnitIds as Set<number>).size).toBe(0);
+    expect((renderer as any).input.tapSelect).toBeNull();
+    expect(((renderer as any).core.unitView.previewUnitIds as Set<number>).size).toBe(0);
     renderer.destroy();
   });
 
@@ -185,13 +185,13 @@ describe('GameRenderer InputMixin — spell target unit preview', () => {
     dead.hp = 0; // isDead → true; mirrors SpellSystem.castMeteor's `if (unit.isDead) continue`
     engine.state.board.addUnit(dead);
 
-    const from = (renderer as any).handView.slotCenter(0);
+    const from = (renderer as any).core.handView.slotCenter(0);
     const to   = layout.gridToScreen(3, 5);
     input._emitDown(from.x, from.y);
     input._emitMove(to.x, to.y);
 
-    expect(((renderer as any).unitView.previewUnitIds as Set<number>).has(dead.id)).toBe(false);
-    expect(((renderer as any).unitView.previewUnitIds as Set<number>).size).toBe(0);
+    expect(((renderer as any).core.unitView.previewUnitIds as Set<number>).has(dead.id)).toBe(false);
+    expect(((renderer as any).core.unitView.previewUnitIds as Set<number>).size).toBe(0);
     renderer.destroy();
   });
 
@@ -205,11 +205,11 @@ describe('GameRenderer InputMixin — spell target unit preview', () => {
     const enemy = new Unit(UnitType.Infantry, Side.Top, 4, 6);
     engine.state.board.addUnit(enemy);
 
-    const meteorFrom = (renderer as any).handView.slotCenter(0);
+    const meteorFrom = (renderer as any).core.handView.slotCenter(0);
     const boardPt     = layout.gridToScreen(3, 5);
     input._emitDown(meteorFrom.x, meteorFrom.y);
     input._emitMove(boardPt.x, boardPt.y);
-    expect(((renderer as any).unitView.previewUnitIds as Set<number>).size).toBe(1);
+    expect(((renderer as any).core.unitView.previewUnitIds as Set<number>).size).toBe(1);
     input._emitMove(-5000, -5000);
     input._emitUp(-5000, -5000); // cancel the meteor drag
 
@@ -218,12 +218,12 @@ describe('GameRenderer InputMixin — spell target unit preview', () => {
     const otherSlot = player.hand.slots.findIndex((s, i) => i !== 0 && !!s);
     expect(otherSlot).toBeGreaterThanOrEqual(0);
     player.addInkFp(toFp(100));
-    const otherFrom = (renderer as any).handView.slotCenter(otherSlot);
+    const otherFrom = (renderer as any).core.handView.slotCenter(otherSlot);
     const otherTo   = layout.gridToScreen(2, 15);
     input._emitDown(otherFrom.x, otherFrom.y);
     input._emitMove(otherTo.x, otherTo.y);
 
-    expect(((renderer as any).unitView.previewUnitIds as Set<number>).size).toBe(0);
+    expect(((renderer as any).core.unitView.previewUnitIds as Set<number>).size).toBe(0);
     renderer.destroy();
   });
 
@@ -245,12 +245,12 @@ describe('GameRenderer InputMixin — spell target unit preview', () => {
     engine.state.board.addUnit(inColFriend);
     engine.state.board.addUnit(otherCol);
 
-    const from    = (renderer as any).handView.slotCenter(0);
+    const from    = (renderer as any).core.handView.slotCenter(0);
     const boardPt = layout.gridToScreen(5, 5);
     input._emitDown(from.x, from.y);
     input._emitMove(boardPt.x, boardPt.y); // past DRAG_THRESHOLD → starts the card drag, hovering col 5
 
-    const preview: Set<number> = (renderer as any).unitView.previewUnitIds;
+    const preview: Set<number> = (renderer as any).core.unitView.previewUnitIds;
     expect(preview.has(inCol.id)).toBe(true);
     expect(preview.has(inColFriend.id)).toBe(true);
     expect(preview.has(otherCol.id)).toBe(false);
@@ -269,13 +269,13 @@ describe('GameRenderer InputMixin — spell target unit preview', () => {
     dead.hp = 0; // mirrors SpellSystem.castRockslide's `if (unit.isDead) continue`
     engine.state.board.addUnit(dead);
 
-    const from    = (renderer as any).handView.slotCenter(0);
+    const from    = (renderer as any).core.handView.slotCenter(0);
     const boardPt = layout.gridToScreen(5, 5);
     input._emitDown(from.x, from.y);
     input._emitMove(boardPt.x, boardPt.y);
 
-    expect(((renderer as any).unitView.previewUnitIds as Set<number>).has(dead.id)).toBe(false);
-    expect(((renderer as any).unitView.previewUnitIds as Set<number>).size).toBe(0);
+    expect(((renderer as any).core.unitView.previewUnitIds as Set<number>).has(dead.id)).toBe(false);
+    expect(((renderer as any).core.unitView.previewUnitIds as Set<number>).size).toBe(0);
     renderer.destroy();
   });
 });

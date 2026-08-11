@@ -55,18 +55,18 @@ describe('GameRenderer InputMixin — column-targeted spell cards', () => {
     const { engine, layout, renderer, input } = buildRenderer();
     const playCard = vi.spyOn(engine, 'playCard');
     const slot = findHandSlot(engine, 'rockslide');
-    const center = (renderer as any).handView.slotCenter(slot);
+    const center = (renderer as any).core.handView.slotCenter(slot);
 
     input._emitDown(center.x, center.y);
     input._emitUp(center.x, center.y);
-    expect((renderer as any).tapSelect?.handIndex).toBe(slot);
+    expect((renderer as any).input.tapSelect?.handIndex).toBe(slot);
 
     const boardPt = layout.gridToScreen(3, 5);
     input._emitDown(boardPt.x, boardPt.y);
     input._emitUp(boardPt.x, boardPt.y);
 
     expect(playCard).toHaveBeenCalledWith(slot, 3);
-    expect((renderer as any).tapSelect).toBeNull();
+    expect((renderer as any).input.tapSelect).toBeNull();
     renderer.destroy();
   });
 
@@ -74,18 +74,18 @@ describe('GameRenderer InputMixin — column-targeted spell cards', () => {
     const { engine, layout, renderer, input } = buildRenderer();
     const playCard = vi.spyOn(engine, 'playCard');
     const slot = findHandSlot(engine, 'bridge_collapse');
-    const center = (renderer as any).handView.slotCenter(slot);
+    const center = (renderer as any).core.handView.slotCenter(slot);
 
     input._emitDown(center.x, center.y);
     input._emitUp(center.x, center.y);
-    expect((renderer as any).tapSelect?.handIndex).toBe(slot);
+    expect((renderer as any).input.tapSelect?.handIndex).toBe(slot);
 
     const boardPt = layout.gridToScreen(5, 5);
     input._emitDown(boardPt.x, boardPt.y);
     input._emitUp(boardPt.x, boardPt.y);
 
     expect(playCard).toHaveBeenCalledWith(slot, 5);
-    expect((renderer as any).tapSelect).toBeNull();
+    expect((renderer as any).input.tapSelect).toBeNull();
     renderer.destroy();
   });
 
@@ -93,7 +93,7 @@ describe('GameRenderer InputMixin — column-targeted spell cards', () => {
     const { engine, layout, renderer, input } = buildRenderer();
     const playCard = vi.spyOn(engine, 'playCard');
     const slot = findHandSlot(engine, 'rockslide');
-    const from = (renderer as any).handView.slotCenter(slot);
+    const from = (renderer as any).core.handView.slotCenter(slot);
     const to   = layout.gridToScreen(7, 5);
 
     input._emitDown(from.x, from.y);
@@ -101,7 +101,7 @@ describe('GameRenderer InputMixin — column-targeted spell cards', () => {
     input._emitUp(to.x, to.y);
 
     expect(playCard).toHaveBeenCalledWith(slot, 7);
-    expect((renderer as any).drag).toBeNull();
+    expect((renderer as any).input.drag).toBeNull();
     renderer.destroy();
   });
 
@@ -109,7 +109,7 @@ describe('GameRenderer InputMixin — column-targeted spell cards', () => {
     const { engine, renderer, input } = buildRenderer();
     const playCard = vi.spyOn(engine, 'playCard');
     const slot = findHandSlot(engine, 'rockslide');
-    const from    = (renderer as any).handView.slotCenter(slot);
+    const from    = (renderer as any).core.handView.slotCenter(slot);
     const outside = { x: -5000, y: -5000 };
 
     input._emitDown(from.x, from.y);
@@ -117,7 +117,7 @@ describe('GameRenderer InputMixin — column-targeted spell cards', () => {
     input._emitUp(outside.x, outside.y);
 
     expect(playCard).not.toHaveBeenCalled();
-    expect((renderer as any).drag).toBeNull();
+    expect((renderer as any).input.drag).toBeNull();
     renderer.destroy();
   });
 });

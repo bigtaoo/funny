@@ -7,7 +7,6 @@
   "src/net/ApiClient.ts": 555,
   "src/net/WorldApiClient.ts": 534,
   "src/render/BoardView.ts": 850,
-  "src/render/GameRenderer/base.ts": 570,
   "src/render/HandView.ts": 511,
   "src/render/HUDView.ts": 586,
   "src/render/stickman/StickmanRuntime.ts": 535,
