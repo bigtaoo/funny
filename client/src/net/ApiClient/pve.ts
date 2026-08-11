@@ -2,7 +2,7 @@
 import type { SaveData, EquipmentInstance } from '../../game/meta/SaveData';
 import { packReplayBlob, unpackReplayBlob } from '../replayCompress';
 import { decodeReplayGz } from '../serverReplay';
-import { type Constructor, type ApiClientBaseCtor } from './base';
+import type { ApiClientCore } from './core';
 import type { ServerReplay, MatchHistoryEntry } from './types';
 
 export interface PveApi {
@@ -10,7 +10,7 @@ export interface PveApi {
     levelId: string,
     stars: number,
     unitLevels?: Record<string, number>,
-    stats?: Record<string, number>,
+    stats?: Record<string, number>
   ): Promise<{
     save: SaveData;
     granted: Record<string, number>;
@@ -26,132 +26,150 @@ export interface PveApi {
   pveVerify(
     verifyId: string,
     endFrame: number,
-    frames: { frame: number; cmds: { side: number; commands: string }[] }[],
-  ): Promise<{ save: SaveData; granted: Record<string, number>; capped: boolean; verified: boolean; grantedEquipment?: EquipmentInstance }>;
+    frames: { frame: number; cmds: { side: number; commands: string }[] }[]
+  ): Promise<{
+    save: SaveData;
+    granted: Record<string, number>;
+    capped: boolean;
+    verified: boolean;
+    grantedEquipment?: EquipmentInstance;
+  }>;
   purchaseStamina(): Promise<{ stamina: { current: number; regenAt: number } }>;
   pveEnter(levelId: string): Promise<{ stamina: { current: number; regenAt: number } }>;
   getMatchHistory(limit?: number): Promise<MatchHistoryEntry[]>;
   getMatchReplay(roomId: string): Promise<ServerReplay>;
 }
 
-export function PveMixin<TBase extends ApiClientBaseCtor>(Base: TBase): TBase & Constructor<PveApi> {
-  return class extends Base {
-    // ── PvE server authority (PVE_INTEGRITY_PLAN §8, requires login token) ─────────────
-    // progress/stars/materials are server-authoritative fields; level completion goes through pveClear
-    // (below), which returns the full authoritative SaveData (client adopts the mirror). Only callable
-    // when online. (The per-stat pveUpgrade endpoint that used to live here was removed 2026-07-30 —
-    // dead since CC-1 moved unit progression to per-card Hero Roster/cardInv.)
+/** PvE/replay/match-history domain (see ../ApiClient.ts assembly + ./core.ts for the shared transport). */
+export class PveService implements PveApi {
+  constructor(private readonly core: ApiClientCore) {}
 
-    /**
-     * PvE level-clear settlement: server validates the unlock → grants materials + cards within the daily cap → writes progress/stars → pushes back.
-     * L1 sampling check (§8.6 step 3): when the request is sampled, returns `needsReplay + verifyId` (materials held back); the caller must submit the replay via {@link pveVerify} for re-computation and crediting.
-     * `unitLevels` is the client-side unit blueprint snapshot at game start (L0 anomaly detection, S12).
-     */
-    async pveClear(
-      levelId: string,
-      stars: number,
-      unitLevels?: Record<string, number>,
-      stats?: Record<string, number>,
-    ): Promise<{
+  // ── PvE server authority (PVE_INTEGRITY_PLAN §8, requires login token) ─────────────
+  // progress/stars/materials are server-authoritative fields; level completion goes through pveClear
+  // (below), which returns the full authoritative SaveData (client adopts the mirror). Only callable
+  // when online. (The per-stat pveUpgrade endpoint that used to live here was removed 2026-07-30 —
+  // dead since CC-1 moved unit progression to per-card Hero Roster/cardInv.)
+
+  /**
+   * PvE level-clear settlement: server validates the unlock → grants materials + cards within the daily cap → writes progress/stars → pushes back.
+   * L1 sampling check (§8.6 step 3): when the request is sampled, returns `needsReplay + verifyId` (materials held back); the caller must submit the replay via {@link pveVerify} for re-computation and crediting.
+   * `unitLevels` is the client-side unit blueprint snapshot at game start (L0 anomaly detection, S12).
+   */
+  async pveClear(
+    levelId: string,
+    stars: number,
+    unitLevels?: Record<string, number>,
+    stats?: Record<string, number>
+  ): Promise<{
+    save: SaveData;
+    granted: Record<string, number>;
+    capped: boolean;
+    needsReplay?: boolean;
+    verifyId?: string;
+    grantedEquipment?: EquipmentInstance;
+  }> {
+    return this.core.post<{
       save: SaveData;
       granted: Record<string, number>;
       capped: boolean;
       needsReplay?: boolean;
       verifyId?: string;
       grantedEquipment?: EquipmentInstance;
-    }> {
-      return this.post<{
-        save: SaveData;
-        granted: Record<string, number>;
-        capped: boolean;
-        needsReplay?: boolean;
-        verifyId?: string;
-        grantedEquipment?: EquipmentInstance;
-      }>('/pve/clear', {
-        levelId,
-        stars,
-        ...(unitLevels ? { unitLevels } : {}),
-        ...(stats ? { stats } : {}),
-      });
-    }
+    }>('/pve/clear', {
+      levelId,
+      stars,
+      ...(unitLevels ? { unitLevels } : {}),
+      ...(stats ? { stats } : {}),
+    });
+  }
 
-    /** Create a replay share link (S1-RP): 7-day TTL; anyone with the shareId can retrieve the replay (no login required). */
-    async createReplayShare(roomId: string): Promise<{ shareId: string }> {
-      return this.post<{ shareId: string }>(`/match/${roomId}/replay/share`, {});
-    }
+  /** Create a replay share link (S1-RP): 7-day TTL; anyone with the shareId can retrieve the replay (no login required). */
+  async createReplayShare(roomId: string): Promise<{ shareId: string }> {
+    return this.core.post<{ shareId: string }>(`/match/${roomId}/replay/share`, {});
+  }
 
-    /** Retrieve a replay via share link (S1-RP): no login required. Server returns compressed `replayGz`; decompressed here. */
-    async getReplayByShare(shareId: string): Promise<{ replay: ServerReplay }> {
-      const data = await this.request<{ replayGz: string }>('GET', `/share/replay/${shareId}`);
-      return { replay: await decodeReplayGz(data.replayGz) };
-    }
+  /** Retrieve a replay via share link (S1-RP): no login required. Server returns compressed `replayGz`; decompressed here. */
+  async getReplayByShare(shareId: string): Promise<{ replay: ServerReplay }> {
+    const data = await this.core.request<{ replayGz: string }>('GET', `/share/replay/${shareId}`);
+    return { replay: await decodeReplayGz(data.replayGz) };
+  }
 
-    /**
-     * Out-of-game sharing of a state-stream replay — mint a share code (REPLAY_SHARE_DESIGN §3.1): uploads the client-generated state-stream blob
-     * and returns an unguessable shareCode. Login required. The blob is gzip+base64 compressed before upload (repetitive delta JSON compresses extremely well, §7);
-     * the server stores it opaquely. Size exceeded / rate limited → ApiError('BAD_REQUEST' / 'RATE_LIMITED').
-     */
-    async createStateReplayShare(blob: unknown): Promise<{ shareCode: string }> {
-      const packed = await packReplayBlob(blob);
-      return this.post<{ shareCode: string }>('/replay/share', { blob: packed });
-    }
+  /**
+   * Out-of-game sharing of a state-stream replay — mint a share code (REPLAY_SHARE_DESIGN §3.1): uploads the client-generated state-stream blob
+   * and returns an unguessable shareCode. Login required. The blob is gzip+base64 compressed before upload (repetitive delta JSON compresses extremely well, §7);
+   * the server stores it opaquely. Size exceeded / rate limited → ApiError('BAD_REQUEST' / 'RATE_LIMITED').
+   */
+  async createStateReplayShare(blob: unknown): Promise<{ shareCode: string }> {
+    const packed = await packReplayBlob(blob);
+    return this.core.post<{ shareCode: string }>('/replay/share', { blob: packed });
+  }
 
-    /** Public retrieval of a state-stream replay (REPLAY_SHARE_DESIGN §3.2): no login required; decompresses back to EncodedStateReplay after retrieval.
-     *  Not found / expired → ApiError('NOT_FOUND'). */
-    async getStateReplayShare(shareCode: string): Promise<{ blob: unknown }> {
-      const { blob } = await this.request<{ blob: unknown }>('GET', `/r/${shareCode}`);
-      return { blob: await unpackReplayBlob(blob) };
-    }
+  /** Public retrieval of a state-stream replay (REPLAY_SHARE_DESIGN §3.2): no login required; decompresses back to EncodedStateReplay after retrieval.
+   *  Not found / expired → ApiError('NOT_FOUND'). */
+  async getStateReplayShare(shareCode: string): Promise<{ blob: unknown }> {
+    const { blob } = await this.core.request<{ blob: unknown }>('GET', `/r/${shareCode}`);
+    return { blob: await unpackReplayBlob(blob) };
+  }
 
-    /** L1 replay sampling re-computation: submit the replay frames for a sampled level clear → headless third-party re-computation → materials are granted only if the computed stars meet or exceed the claimed value. */
-    async pveVerify(
-      verifyId: string,
-      endFrame: number,
-      frames: { frame: number; cmds: { side: number; commands: string }[] }[],
-    ): Promise<{ save: SaveData; granted: Record<string, number>; capped: boolean; verified: boolean; grantedEquipment?: EquipmentInstance }> {
-      return this.post<{
-        save: SaveData;
-        granted: Record<string, number>;
-        capped: boolean;
-        verified: boolean;
-        grantedEquipment?: EquipmentInstance;
-      }>('/pve/verify', { verifyId, endFrame, frames });
-    }
+  /** L1 replay sampling re-computation: submit the replay frames for a sampled level clear → headless third-party re-computation → materials are granted only if the computed stars meet or exceed the claimed value. */
+  async pveVerify(
+    verifyId: string,
+    endFrame: number,
+    frames: { frame: number; cmds: { side: number; commands: string }[] }[]
+  ): Promise<{
+    save: SaveData;
+    granted: Record<string, number>;
+    capped: boolean;
+    verified: boolean;
+    grantedEquipment?: EquipmentInstance;
+  }> {
+    return this.core.post<{
+      save: SaveData;
+      granted: Record<string, number>;
+      capped: boolean;
+      verified: boolean;
+      grantedEquipment?: EquipmentInstance;
+    }>('/pve/verify', { verifyId, endFrame, frames });
+  }
 
-    // ── Stamina system (A4) ──────────────────────────────────────────────────────────
+  // ── Stamina system (A4) ──────────────────────────────────────────────────────────
 
-    /** Replenish stamina (A4): costs 30 coins → grants +60 stamina (cap 120). Insufficient coins → 402. */
-    async purchaseStamina(): Promise<{ stamina: { current: number; regenAt: number } }> {
-      return this.post<{ stamina: { current: number; regenAt: number } }>('/pve/stamina/purchase', {
+  /** Replenish stamina (A4): costs 30 coins → grants +60 stamina (cap 120). Insufficient coins → 402. */
+  async purchaseStamina(): Promise<{ stamina: { current: number; regenAt: number } }> {
+    return this.core.post<{ stamina: { current: number; regenAt: number } }>(
+      '/pve/stamina/purchase',
+      {
         amount: 60,
-      });
-    }
+      }
+    );
+  }
 
-    /** PvE level entry (A4): deducts stamina the moment the player commits to a level (no refund on retreat/loss). Insufficient stamina → 402. */
-    async pveEnter(levelId: string): Promise<{ stamina: { current: number; regenAt: number } }> {
-      return this.post<{ stamina: { current: number; regenAt: number } }>('/pve/enter', { levelId });
-    }
+  /** PvE level entry (A4): deducts stamina the moment the player commits to a level (no refund on retreat/loss). Insufficient stamina → 402. */
+  async pveEnter(levelId: string): Promise<{ stamina: { current: number; regenAt: number } }> {
+    return this.core.post<{ stamina: { current: number; regenAt: number } }>('/pve/enter', {
+      levelId,
+    });
+  }
 
-    /** Recent match history (ranked / friendly, reverse chronological order; requires login token). */
-    async getMatchHistory(limit = 20): Promise<MatchHistoryEntry[]> {
-      const data = await this.request<{ matches: MatchHistoryEntry[] }>(
-        'GET',
-        `/match/history?limit=${limit}`,
-      );
-      return data.matches;
-    }
+  /** Recent match history (ranked / friendly, reverse chronological order; requires login token). */
+  async getMatchHistory(limit = 20): Promise<MatchHistoryEntry[]> {
+    const data = await this.core.request<{ matches: MatchHistoryEntry[] }>(
+      'GET',
+      `/match/history?limit=${limit}`
+    );
+    return data.matches;
+  }
 
-    /**
-     * Retrieve the server-side replay for a match (participants only; opaque frames, decoded for
-     * playback by net/serverReplay). The server sends the replay still gzip-compressed (`replayGz`,
-     * S1-RP storage cost fix) — decompression happens here, client-side, to save bandwidth. 404 → ApiError.
-     */
-    async getMatchReplay(roomId: string): Promise<ServerReplay> {
-      const data = await this.request<{ replayGz: string }>(
-        'GET',
-        `/match/${encodeURIComponent(roomId)}/replay`,
-      );
-      return decodeReplayGz(data.replayGz);
-    }
-  };
+  /**
+   * Retrieve the server-side replay for a match (participants only; opaque frames, decoded for
+   * playback by net/serverReplay). The server sends the replay still gzip-compressed (`replayGz`,
+   * S1-RP storage cost fix) — decompression happens here, client-side, to save bandwidth. 404 → ApiError.
+   */
+  async getMatchReplay(roomId: string): Promise<ServerReplay> {
+    const data = await this.core.request<{ replayGz: string }>(
+      'GET',
+      `/match/${encodeURIComponent(roomId)}/replay`
+    );
+    return decodeReplayGz(data.replayGz);
+  }
 }

@@ -125,7 +125,7 @@ export function showToastMessage(text: string, kind: ToastKind = 'error'): void 
 
 /**
  * Appeal prompt render outlet (CONTENT_MODERATION_DESIGN.md §5.3): same sink pattern as the toast above,
- * registered once by app.ts (mounts an AppealDialog on app.stage). ApiClientBase.request / WorldApiClient's
+ * registered once by app.ts (mounts an AppealDialog on app.stage). ApiClientCore.request / WorldApiClient's
  * request helper both call maybePromptAppeal() right before throwing on an ACCOUNT_BANNED/ACCOUNT_MUTED
  * error — a single choke point that covers every current and future call site without per-scene wiring.
  */

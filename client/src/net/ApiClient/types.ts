@@ -52,7 +52,12 @@ export type EventView =
 /** GET /retention response: check-in calendar + daily tasks + definition table + badge counts. */
 export interface RetentionView {
   checkin: { monthKey: string; claimedDays: number[] } | null;
-  daily: { dayKey: string; completedTasks: Record<string, number>; taskPoints: number; rewardClaimed: boolean } | null;
+  daily: {
+    dayKey: string;
+    completedTasks: Record<string, number>;
+    taskPoints: number;
+    rewardClaimed: boolean;
+  } | null;
   /** Weekly active chest progress (§12.3, ISO week key). */
   weekly: { weekKey: string; points: number; claimedTiers: number[] } | null;
   defs: {
@@ -63,7 +68,13 @@ export interface RetentionView {
     weeklyChestTiers: { threshold: number; reward: { kind: string; count: number; id?: string } }[];
   };
   claimable: { checkin: boolean; daily: boolean; weeklyTiers: number[] };
-  ads: { watchedToday: number; cap: number; rewardCoins: number; cooldownMs: number; nextAvailableAt: number };
+  ads: {
+    watchedToday: number;
+    cap: number;
+    rewardCoins: number;
+    cooldownMs: number;
+    nextAvailableAt: number;
+  };
 }
 
 // —— Aggregated lobby badges (P1-4, comm-audit-2026-07-27) ——

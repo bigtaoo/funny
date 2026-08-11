@@ -1,10 +1,13 @@
-// Shared foundation for the WorldMapPanels mixin chain (see ../WorldMapPanels.ts assembly).
+// Shared foundation for the WorldMapPanels composition (see ../WorldMapPanels.ts assembly).
 //
-// WorldMapPanelsBase holds the single `ctx` field (protected, so the domain mixin bodies keep
-// referencing `this.ctx.*` verbatim) + the modal/toast/deploy primitives and the panel chrome
+// WorldMapPanelsCore holds the single `ctx` field (public, so the sibling panel classes below
+// can reference `this.core.ctx.*`) + the modal/toast/deploy primitives and the panel chrome
 // helpers (panelButton / panelButtonIn / beginScrollList) that every panel draws itself with,
-// plus the agoText formatter. Each panel domain (hud / shop / territory / replay) lives in its
-// own sibling file as an `XMixin(Base)` and is chained into the final WorldMapPanels.
+// plus the agoText formatter. Each panel domain (hud / shop / territory / replay) is its own
+// independent class in a sibling file, constructed with `core` and composed into the final
+// WorldMapPanels facade (2026-08-11: converted from the former `XMixin(Base)` inheritance chain
+// — zero cross-domain `this.*` calls, so this was pure file-splitting via a chain, see
+// claudedocs/client-modules.md's split-form priority note).
 import * as PIXI from 'pixi.js-legacy';
 import { t } from '../../../i18n';
 import { ui as C, txt, sketchPanel, seedFor, tearDownChildren } from '../../../render/sketchUi';
@@ -14,10 +17,13 @@ import { FS, snapFont } from '../../../render/fontScale';
 import { HUD_H, MARGIN, CONFIRM_H } from '../constants';
 import type { WorldMapContext, DeployKind } from '../WorldMapContext';
 
-export class WorldMapPanelsBase {
-  constructor(protected readonly ctx: WorldMapContext) {}
+export class WorldMapPanelsCore {
+  constructor(readonly ctx: WorldMapContext) {}
 
-  showModal(lines: string[], buttons: { label: string; action: () => void; disabled?: boolean }[]): void {
+  showModal(
+    lines: string[],
+    buttons: { label: string; action: () => void; disabled?: boolean }[]
+  ): void {
     const ml = this.ctx.modalLayer;
     tearDownChildren(ml);
 
@@ -49,7 +55,8 @@ export class WorldMapPanelsBase {
       lbl.anchor.set(0.5, 0);
       return lbl;
     });
-    const textH = labels.reduce((sum, lbl) => sum + lbl.height, 0) + lineGap * Math.max(0, labels.length - 1);
+    const textH =
+      labels.reduce((sum, lbl) => sum + lbl.height, 0) + lineGap * Math.max(0, labels.length - 1);
     const btnAreaH = btnH * rows + rowGap * (rows - 1);
     const mh = Math.max(CONFIRM_H * 1.5, topPad + textH + btnGap + btnAreaH + btnGap);
     const my = (h - HUD_H - mh) / 2;
@@ -60,12 +67,14 @@ export class WorldMapPanelsBase {
     ml.addChild(dim);
 
     const panel = sketchPanel(mw, mh, { fill: C.paper, border: C.dark, seed: seedFor(0, 0, mw) });
-    panel.x = mx; panel.y = my;
+    panel.x = mx;
+    panel.y = my;
     ml.addChild(panel);
 
     let ly = my + topPad;
     for (const lbl of labels) {
-      lbl.x = mx + mw / 2; lbl.y = ly;
+      lbl.x = mx + mw / 2;
+      lbl.y = ly;
       ml.addChild(lbl);
       ly += lbl.height + lineGap;
     }
@@ -79,25 +88,35 @@ export class WorldMapPanelsBase {
       const rowStart = row * cols;
       const rowCount = Math.min(cols, buttons.length - rowStart);
       const colInRow = i - rowStart;
-      const bx = mx + (mw - (btnW + modalMargin) * rowCount + modalMargin) / 2 + colInRow * (btnW + modalMargin);
+      const bx =
+        mx +
+        (mw - (btnW + modalMargin) * rowCount + modalMargin) / 2 +
+        colInRow * (btnW + modalMargin);
       const by = btnTop + row * (btnH + rowGap);
       // Disabled buttons (e.g. Occupy on a tile not connected to the player's territory, ADR-039) use the
       // shared pale-grey disabled styling; the action is still registered so tapping it surfaces a toast
       // explaining why, rather than reading as a dead click.
       const disabled = !!btn.disabled;
-      const bp = sketchPanel(btnW, btnH, { fill: disabled ? C.btnDis : C.dark, border: disabled ? C.btnOff : C.accent, seed: seedFor(bx, by, btnW) });
-      bp.x = bx; bp.y = by;
+      const bp = sketchPanel(btnW, btnH, {
+        fill: disabled ? C.btnDis : C.dark,
+        border: disabled ? C.btnOff : C.accent,
+        seed: seedFor(bx, by, btnW),
+      });
+      bp.x = bx;
+      bp.y = by;
       ml.addChild(bp);
       // '✕' cancel buttons render the hand-drawn close glyph instead of the bare dingbat.
       if (btn.label === '✕') {
         const ic = buildIcon('close', 48, C.light);
-        ic.x = bx + btnW / 2 - 24; ic.y = by + btnH / 2 - 24;
+        ic.x = bx + btnW / 2 - 24;
+        ic.y = by + btnH / 2 - 24;
         ml.addChild(ic);
       } else {
         // Word-wrap to the button's own width so long labels (or squeezed columns) never bleed into neighbors.
         const bl = txt(btn.label, FS.title, disabled ? C.mid : C.light, false, btnW - 16);
         bl.anchor.set(0.5, 0.5);
-        bl.x = bx + btnW / 2; bl.y = by + btnH / 2;
+        bl.x = bx + btnW / 2;
+        bl.y = by + btnH / 2;
         ml.addChild(bl);
       }
       this.ctx.modalBtnRects.push({ rect: { x: bx, y: by, w: btnW, h: btnH }, action: btn.action });
@@ -131,7 +150,13 @@ export class WorldMapPanelsBase {
     // Equipment enhance dialog's own confirm button — and covered them while the toast was visible.)
     const tw = Math.min(w - 40, 720);
     const th = 84;
-    const box = sketchPanel(tw, th, { fill: C.dark, fillAlpha: 0.88, border: color, width: 1, seed: 7 });
+    const box = sketchPanel(tw, th, {
+      fill: C.dark,
+      fillAlpha: 0.88,
+      border: color,
+      width: 1,
+      seed: 7,
+    });
     box.x = (w - tw) / 2;
     box.y = Math.round(h * 0.8 - th / 2);
     tl.addChild(box);
@@ -145,13 +170,22 @@ export class WorldMapPanelsBase {
 
   showDeployDialog(tx: number, ty: number, kind: DeployKind): void {
     const me = this.ctx.me;
-    if (!me?.joined || !me.mainBaseTile) { this.showToast(t('world.needBase'), C.red); return; }
+    if (!me?.joined || !me.mainBaseTile) {
+      this.showToast(t('world.needBase'), C.red);
+      return;
+    }
     const avail = Math.max(0, Math.floor(me.troops ?? 0));
-    const kindLabel = kind === 'attack' ? t('world.actAttack')
-      : kind === 'reinforce' ? t('world.actReinforce')
-      : kind === 'sweep' ? t('world.actSweep')
-      : t('world.actOccupy');
-    const send = (qty: number): void => { void this.ctx.net.doMarch(tx, ty, kind, qty); };
+    const kindLabel =
+      kind === 'attack'
+        ? t('world.actAttack')
+        : kind === 'reinforce'
+        ? t('world.actReinforce')
+        : kind === 'sweep'
+        ? t('world.actSweep')
+        : t('world.actOccupy');
+    const send = (qty: number): void => {
+      void this.ctx.net.doMarch(tx, ty, kind, qty);
+    };
     this.showModal(
       [t('world.deployTitle').replace('{avail}', String(avail)), `${kindLabel} → (${tx}, ${ty})`],
       [
@@ -159,26 +193,46 @@ export class WorldMapPanelsBase {
         { label: t('world.deployHalf'), action: () => send(Math.floor(avail / 2)) },
         { label: t('world.deployAll'), action: () => send(avail) },
         { label: '✕', action: () => this.closeModal() },
-      ],
+      ]
     );
   }
 
   panelButton(
-    label: string, x: number, y: number, bw: number, bh: number,
-    fill: number, action: () => void, fontSize = 11,
+    label: string,
+    x: number,
+    y: number,
+    bw: number,
+    bh: number,
+    fill: number,
+    action: () => void,
+    fontSize = 11
   ): void {
     const ml = this.ctx.modalLayer;
     const bp = sketchPanel(bw, bh, { fill, border: C.accent, seed: seedFor(x, y, bw) });
-    bp.x = x; bp.y = y;
+    bp.x = x;
+    bp.y = y;
     ml.addChild(bp);
     const bl = txt(label, snapFont(fontSize), C.light);
     bl.anchor.set(0.5, 0.5);
-    bl.x = x + bw / 2; bl.y = y + bh / 2;
+    bl.x = x + bw / 2;
+    bl.y = y + bh / 2;
     ml.addChild(bl);
     this.ctx.modalBtnRects.push({ rect: { x, y, w: bw, h: bh }, action });
   }
 
-  beginScrollList(x: number, y: number, w: number, h: number, contentH: number, rerender: () => void = () => this.renderTerritoryPanel()): PIXI.Container {
+  /**
+   * `rerender` is required (no default) — the four call sites (hud/shop/territory/replay's own
+   * panels) always pass their own re-render closure. There is no cross-domain default to fall
+   * back to here: this class has no visibility into which panel is currently open.
+   */
+  beginScrollList(
+    x: number,
+    y: number,
+    w: number,
+    h: number,
+    contentH: number,
+    rerender: () => void
+  ): PIXI.Container {
     this.ctx.infoScrollRect = { x, y, w, h };
     this.ctx.infoMaxScroll = Math.max(0, contentH - h);
     this.ctx.infoScrollY = Math.max(0, Math.min(this.ctx.infoScrollY, this.ctx.infoMaxScroll));
@@ -202,36 +256,38 @@ export class WorldMapPanelsBase {
    * the tap action still fires, so a disabled row can surface an explanatory toast instead of reading as dead.
    */
   panelButtonIn(
-    layer: PIXI.Container, label: string, x: number, y: number, bw: number, bh: number,
-    fill: number, action: () => void, disabled = false,
+    layer: PIXI.Container,
+    label: string,
+    x: number,
+    y: number,
+    bw: number,
+    bh: number,
+    fill: number,
+    action: () => void,
+    disabled = false
   ): void {
-    const bp = sketchPanel(bw, bh, { fill: disabled ? C.btnDis : fill, border: disabled ? C.btnOff : C.accent, seed: seedFor(x, y, bw) });
-    bp.x = x; bp.y = y;
+    const bp = sketchPanel(bw, bh, {
+      fill: disabled ? C.btnDis : fill,
+      border: disabled ? C.btnOff : C.accent,
+      seed: seedFor(x, y, bw),
+    });
+    bp.x = x;
+    bp.y = y;
     layer.addChild(bp);
     const bl = txt(label, FS.micro, disabled ? C.mid : C.light);
     bl.anchor.set(0.5, 0.5);
-    bl.x = x + bw / 2; bl.y = y + bh / 2;
+    bl.x = x + bw / 2;
+    bl.y = y + bh / 2;
     layer.addChild(bl);
     this.ctx.modalBtnRects.push({ rect: { x, y, w: bw, h: bh }, action });
   }
 
   /** Compact "how long ago" label from a millisecond delta (m/h/d), for battle-report rows. */
-  protected agoText(deltaMs: number): string {
+  agoText(deltaMs: number): string {
     const min = Math.max(0, Math.floor(deltaMs / 60000));
     if (min < 60) return `${min}m`;
     const hr = Math.floor(min / 60);
     if (hr < 24) return `${hr}h`;
     return `${Math.floor(hr / 24)}d`;
   }
-}
-
-export type Constructor<T = object> = new (...args: any[]) => T;
-export type WorldMapPanelsBaseCtor = Constructor<WorldMapPanelsBase>;
-
-// ── Domain entrypoints reached across sibling mixins (base's beginScrollList default re-render,
-// the panels that re-render themselves after an action). Declared via interface/class declaration
-// merging so `this.renderTerritoryPanel()` type-checks as a METHOD (a property would clash with the
-// mixin override — TS2425). Emits NOTHING at runtime; the mixins provide the real prototype methods.
-export interface WorldMapPanelsBase {
-  renderTerritoryPanel(): void;
 }
