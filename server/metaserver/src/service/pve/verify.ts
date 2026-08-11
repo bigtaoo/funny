@@ -1,7 +1,8 @@
 // PvE L1 replay spot-check re-simulation (PVE_INTEGRITY_PLAN §8.6). Split out of pve.ts (2026-08-10,
-// 独立函数模块 form — see pve.ts's facade comment). `pveVerifyHandler` takes its dependencies as an
-// explicit `ctx` parameter (deps + the one protected base method it needs, bound by PveMixin's class
-// body) instead of a mixin's `this`. No behavior change.
+// 独立函数模块 form — see pve.ts's facade comment). `pveVerifyHandler` takes `core: MetaCore` directly
+// (2026-08-11 ctx-bind cleanup — see base.ts's header and clear.ts's header for why the internal
+// `deliverVerifiedClearReward` helper below also takes `core` rather than an extracted `mutateSave`
+// function reference). No behavior change.
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import type { SaveData, EquipmentInstance } from '@nw/shared';
 import { ErrorCode, err, ok, findPveLevel, PVE_REJECT_BAN_THRESHOLD, accrueStats, accrueRetentionTask, sanitizePvpReportedStats } from '@nw/shared';
@@ -12,18 +13,8 @@ import { recordMaterialGrants } from '../../material.js';
 import { insertSystemMail } from '../../mail.js';
 import { accrueEventTask } from '../../events.js';
 import { nullMetaSocialsvcClient } from '../../socialsvcClient.js';
-import { accountIdOf, type ServiceDeps } from '../base.js';
+import { accountIdOf, type MetaCore } from '../base.js';
 import { applyMaterialAndEquipmentGrant, prepareClearReward } from './helpers.js';
-
-type MutateSaveFn = (
-  accountId: string,
-  transform: (s: SaveData) => SaveData | string,
-) => Promise<{ save: SaveData } | { error: string }>;
-
-export interface PveVerifyCtx {
-  deps: ServiceDeps;
-  mutateSave: MutateSaveFn;
-}
 
 /**
  * Consolidated post-verification reward delivery for the pveVerify (L1 spot-check) path — same
@@ -37,8 +28,7 @@ export interface PveVerifyCtx {
  * deliveries) and is parsed the same defensive way accrueJudgedPveStats used to.
  */
 async function deliverVerifiedClearReward(
-  deps: ServiceDeps,
-  mutateSave: MutateSaveFn,
+  core: MetaCore,
   accountId: string,
   levelId: string,
   reward: Record<string, number>,
@@ -51,9 +41,9 @@ async function deliverVerifiedClearReward(
   grantedEquipment?: EquipmentInstance;
   capped: boolean;
 } | { error: string }> {
-  const { cols, now } = deps;
+  const { cols, now } = core.deps;
   const { capped, grant, cardGrant, defsToGrant, pendingDrop } =
-    await prepareClearReward(deps.redis, now(), accountId, levelId, reward);
+    await prepareClearReward(core.deps.redis, now(), accountId, levelId, reward);
 
   let cleanStats: Record<string, number> | undefined;
   if (statsJson) {
@@ -79,7 +69,7 @@ async function deliverVerifiedClearReward(
   }
 
   let dropGranted = false;
-  const out = await mutateSave(accountId, (s) => {
+  const out = await core.mutateSave(accountId, (s) => {
     const grantResult = applyMaterialAndEquipmentGrant(s, grant, pendingDrop);
     dropGranted = grantResult.dropGranted;
     let next = grantResult.next;
@@ -122,9 +112,9 @@ async function deliverVerifiedClearReward(
  * If no judge is available (no candidates / timeout / re-simulation failure) → benefit-of-doubt: deliver anyway (honest players are not penalized for missing judges);
  * if re-simulated stars < claimed → flagged as suspicious, materials not delivered + recorded as rejected.
  */
-export async function pveVerifyHandler(ctx: PveVerifyCtx, req: FastifyRequest, reply: FastifyReply) {
+export async function pveVerifyHandler(core: MetaCore, req: FastifyRequest, reply: FastifyReply) {
   const accountId = accountIdOf(req);
-  const { cols, gateway, now } = ctx.deps;
+  const { cols, gateway, now } = core.deps;
   const { verifyId, frames, endFrame } = req.body as {
     verifyId: string;
     frames: { frame: number; cmds: { side: number; commands: string }[] }[];
@@ -200,7 +190,7 @@ export async function pveVerifyHandler(ctx: PveVerifyCtx, req: FastifyRequest, r
     // tick) — see PVE_INTEGRITY_PLAN.md fairness note. Every rejection now files an ops review
     // ticket instead; a human decides whether to ban via the anti-cheat review queue.
     let rejectCount = 1;
-    const saved = await ctx.mutateSave(accountId, (s) => {
+    const saved = await core.mutateSave(accountId, (s) => {
       const ac = s.antiCheat ?? { statSuspicion: 0 };
       rejectCount = (ac.pveRejectCount ?? 0) + 1;
       return {
@@ -230,7 +220,7 @@ export async function pveVerifyHandler(ctx: PveVerifyCtx, req: FastifyRequest, r
       { returnDocument: 'after', projection: { 'flags.pveWarnings': 1, publicId: 1 } },
     );
     // Best-effort: a failed warning mail must not block the reject-count/review flow above.
-    await insertSystemMail(ctx.deps.socialsvc ?? nullMetaSocialsvcClient, `pve-warn-${verifyId}`, accountId, {
+    await insertSystemMail(core.deps.socialsvc ?? nullMetaSocialsvcClient, `pve-warn-${verifyId}`, accountId, {
       subject: 'Fair Play Warning',
       body: 'Unusual PvE activity was detected. Repeated flags may be reviewed by our team.',
       expireDays: 30,
@@ -261,8 +251,7 @@ export async function pveVerifyHandler(ctx: PveVerifyCtx, req: FastifyRequest, r
   // The judge is a random third-party headless re-simulation → players cannot fabricate it; still passes through L1 caps as a cheap backstop against
   // "player colluding with the judge to farm stats" (out-of-bounds data discarded entirely, does not block material delivery). A2: counts are only written at this server-authoritative settlement point.
   const granted = await deliverVerifiedClearReward(
-    ctx.deps,
-    ctx.mutateSave,
+    core,
     accountId,
     doc.levelId,
     level.reward,

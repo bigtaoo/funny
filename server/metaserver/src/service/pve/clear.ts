@@ -1,7 +1,11 @@
 // PvE normal-clear settlement + the L1 spot-check decision (PVE_INTEGRITY_PLAN §8). Split out of
-// pve.ts (2026-08-10, 独立函数模块 form — see pve.ts's facade comment). `pveClearHandler` takes its
-// dependencies as an explicit `ctx` parameter (deps + the three protected base methods it needs, bound
-// by PveMixin's class body) instead of a mixin's `this`. No behavior change.
+// pve.ts (2026-08-10, 独立函数模块 form — see pve.ts's facade comment). `pveClearHandler` takes
+// `core: MetaCore` directly (2026-08-11 ctx-bind cleanup — see base.ts's header: now that MetaCore's
+// members are plain public methods, there is no more `protected`-visibility wall to route around with a
+// bound-methods ctx object; every internal helper below takes `core` too and calls `core.mutateSave(...)`
+// as an ordinary method call, rather than extracting `mutateSave` as a bare function reference — a bare
+// extracted method reference would need `.bind()` again the moment it's called without its receiver).
+// No behavior change.
 import { randomUUID } from 'node:crypto';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import type { SaveData, EquipmentInstance } from '@nw/shared';
@@ -13,7 +17,7 @@ import { recordMaterialGrants } from '../../material.js';
 import { insertSystemMail } from '../../mail.js';
 import { accrueEventTask } from '../../events.js';
 import { nullMetaSocialsvcClient } from '../../socialsvcClient.js';
-import { accountIdOf, type ServiceDeps } from '../base.js';
+import { accountIdOf, type MetaCore } from '../base.js';
 import {
   applyClearProgress,
   applyMaterialAndEquipmentGrant,
@@ -24,18 +28,6 @@ import {
   WELCOME_MAIL_DISPATCH_KEY,
 } from './helpers.js';
 
-type MutateSaveFn = (
-  accountId: string,
-  transform: (s: SaveData) => SaveData | string,
-) => Promise<{ save: SaveData } | { error: string }>;
-
-export interface PveClearCtx {
-  deps: ServiceDeps;
-  rejectIfBanned: (cols: ServiceDeps['cols'], accountId: string, reply: FastifyReply) => Promise<boolean>;
-  mutateSave: MutateSaveFn;
-  readStaminaSnapshot: (accountId: string, now: number) => Promise<{ current: number; regenAt: number }>;
-}
-
 /**
  * Write progress/stars (unlock + record stars, taking the max), without touching materials.
  * Also detects a first chapter clear and reports it via `newlyClearedChapter` (the `ch{N}` id) so the
@@ -45,13 +37,13 @@ export interface PveClearCtx {
  * rev race and re-reads a cleared that already contains the finale → no double-fire).
  */
 async function writeClearProgress(
-  mutateSave: MutateSaveFn,
+  core: MetaCore,
   accountId: string,
   levelId: string,
   stars: number,
 ): Promise<{ save: SaveData; newlyClearedChapter?: string } | { error: string }> {
   let newlyClearedChapter: string | undefined;
-  const out = await mutateSave(accountId, (s) => {
+  const out = await core.mutateSave(accountId, (s) => {
     const r = applyClearProgress(s, levelId, stars);
     newlyClearedChapter = r.newlyClearedChapter;
     return r.next;
@@ -73,8 +65,7 @@ async function writeClearProgress(
  * writes (cardInvCount mirror + the `cardInstances` collection) and must not be duplicated here.
  */
 async function settleNormalClear(
-  deps: ServiceDeps,
-  mutateSave: MutateSaveFn,
+  core: MetaCore,
   accountId: string,
   levelId: string,
   stars: number,
@@ -88,9 +79,9 @@ async function settleNormalClear(
   capped: boolean;
   newlyClearedChapter?: string;
 } | { error: string }> {
-  const { cols, now } = deps;
+  const { cols, now } = core.deps;
   const { capped, grant, cardGrant, defsToGrant, pendingDrop } =
-    await prepareClearReward(deps.redis, now(), accountId, levelId, reward);
+    await prepareClearReward(core.deps.redis, now(), accountId, levelId, reward);
 
   // PvE stat feed (S9-3b): passes through sanitizePvpReportedStats (L1 caps as a backstop against
   // "colluding with the judge to farm stats"; out-of-bounds data is discarded entirely, without blocking
@@ -119,7 +110,7 @@ async function settleNormalClear(
   // ── One consolidated read-modify-write ──
   let newlyClearedChapter: string | undefined;
   let dropGranted = false;
-  const out = await mutateSave(accountId, (s) => {
+  const out = await core.mutateSave(accountId, (s) => {
     const progressResult = applyClearProgress(s, levelId, stars);
     newlyClearedChapter = progressResult.newlyClearedChapter;
     const grantResult = applyMaterialAndEquipmentGrant(progressResult.next, grant, pendingDrop);
@@ -168,9 +159,9 @@ async function settleNormalClear(
  * L1 spot-check (§8.6 step 3): if selected (first clear / blueprint anomaly / random) and a judge is available, **do not deliver materials yet**;
  * record a pveVerifications entry and respond with `needsReplay + verifyId` so the client can submit the replay to /pve/verify for re-simulation and credit.
  */
-export async function pveClearHandler(ctx: PveClearCtx, req: FastifyRequest, reply: FastifyReply) {
+export async function pveClearHandler(core: MetaCore, req: FastifyRequest, reply: FastifyReply) {
   const accountId = accountIdOf(req);
-  const { cols, now, gateway } = ctx.deps;
+  const { cols, now, gateway } = core.deps;
   const { levelId, stars: starsRaw, pveUpgrades: clientUpgradesLegacy, unitLevels: clientUnitLevels, stats: clientStats } = req.body as {
     levelId: string;
     stars: number;
@@ -189,7 +180,7 @@ export async function pveClearHandler(ctx: PveClearCtx, req: FastifyRequest, rep
     return reply.code(400).send(err(ErrorCode.BAD_REQUEST, 'stars must be 1..3'));
   }
 
-  if (await ctx.rejectIfBanned(cols, accountId, reply)) return;
+  if (await core.rejectIfBanned(cols, accountId, reply)) return;
   const cur = await getOrCreateSave(cols, accountId, now());
   if (cur.antiCheat?.pveBanned) {
     return reply.code(403).send(err(ErrorCode.ACCOUNT_BANNED, 'account banned'));
@@ -204,7 +195,7 @@ export async function pveClearHandler(ctx: PveClearCtx, req: FastifyRequest, rep
   // Independent of reward legitimacy/spot-check below — it's a fixed one-time thank-you, not a farmable
   // reward. Best-effort: a failed send must not block clear settlement; dispatchKey makes retries a no-op.
   if (cur.progress.cleared.length === 0) {
-    const mailResult = await insertSystemMail(ctx.deps.socialsvc ?? nullMetaSocialsvcClient, WELCOME_MAIL_DISPATCH_KEY, accountId, {
+    const mailResult = await insertSystemMail(core.deps.socialsvc ?? nullMetaSocialsvcClient, WELCOME_MAIL_DISPATCH_KEY, accountId, {
       subject: 'mail.welcome.author.subject',
       body: 'mail.welcome.author.body',
       attachments: [{ kind: 'coins', count: 1000 }],
@@ -235,7 +226,7 @@ export async function pveClearHandler(ctx: PveClearCtx, req: FastifyRequest, rep
     if (shouldSpotCheck({ isFirstClear, blueprintMismatch, rand: Math.random() })) {
       const reason = blueprintMismatch ? 'anomaly' : isFirstClear ? 'first' : 'sample';
       // Write progress/stars (unlock proceeds normally) but do not deliver materials; record the spot-check and wait for the client to submit the replay for re-simulation.
-      const prog = await writeClearProgress(ctx.mutateSave, accountId, levelId, stars);
+      const prog = await writeClearProgress(core, accountId, levelId, stars);
       if ('error' in prog) return reply.code(409).send(err(ErrorCode.REV_CONFLICT, prog.error));
       // Chapter-clear exclusive card (§4): tied to the first-chapter-clear detection (same trigger as the
       // campaign.chaptersCleared stat, which is also written here on the spot-check path) — it is a one-time,
@@ -243,7 +234,7 @@ export async function pveClearHandler(ctx: PveClearCtx, req: FastifyRequest, rep
       // withholds only the farmable material reward). Delivered on this path so it fires exactly once.
       let progSave = prog.save;
       if (prog.newlyClearedChapter) {
-        const s2 = await grantChapterClearCard(cols, now, ctx.deps.commercial, accountId, prog.newlyClearedChapter);
+        const s2 = await grantChapterClearCard(cols, now, core.deps.commercial, accountId, prog.newlyClearedChapter);
         if (s2) progSave = s2;
       }
       const verifyId = randomUUID();
@@ -269,7 +260,7 @@ export async function pveClearHandler(ctx: PveClearCtx, req: FastifyRequest, rep
         ts: now(),
         expireAt: new Date(now() + PVE_VERIFICATION_RETENTION_MS),
       });
-      const saveWithSt = { ...progSave, stamina: await ctx.readStaminaSnapshot(accountId, now()) };
+      const saveWithSt = { ...progSave, stamina: await core.readStaminaSnapshot(accountId, now()) };
       return ok({
         save: saveWithSt,
         granted: {},
@@ -283,18 +274,18 @@ export async function pveClearHandler(ctx: PveClearCtx, req: FastifyRequest, rep
 
   // Normal clear: progress/stars + materials/cards/judged-stats/retention settle in one consolidated
   // write (settleNormalClear, 2026-07-27 — previously 4 separate full-document mutateSave calls).
-  const granted = await settleNormalClear(ctx.deps, ctx.mutateSave, accountId, levelId, stars, level.reward, clientStats);
+  const granted = await settleNormalClear(core, accountId, levelId, stars, level.reward, clientStats);
   if ('error' in granted) return reply.code(409).send(err(ErrorCode.REV_CONFLICT, granted.error));
   // Chapter-clear exclusive card (§4): fires once per chapter (first-clear detection), granted after the
   // consolidated write so its own re-read of the save reflects the level-2 anchor card in the response.
   let latestSave = granted.save;
   if (granted.newlyClearedChapter) {
-    const s2 = await grantChapterClearCard(cols, now, ctx.deps.commercial, accountId, granted.newlyClearedChapter);
+    const s2 = await grantChapterClearCard(cols, now, core.deps.commercial, accountId, granted.newlyClearedChapter);
     if (s2) latestSave = s2;
   }
   // B6: record event task "pve.clear" (best-effort).
   accrueEventTask(cols, accountId, 'pve.clear', now()).catch(() => {});
-  const saveWithSt = { ...latestSave, stamina: await ctx.readStaminaSnapshot(accountId, now()) };
+  const saveWithSt = { ...latestSave, stamina: await core.readStaminaSnapshot(accountId, now()) };
   return ok({
     save: saveWithSt,
     granted: granted.granted,

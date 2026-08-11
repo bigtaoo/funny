@@ -3,14 +3,14 @@
 // rewarded ads, IAP receipt verification, and promo codes.
 //
 // Independent sibling class (2026-08-11 mixin-chain split, claudedocs/server.md's "拆分形态的优先级"
-// 形态②): holds `core: MetaCore` — assembled by composition in ../service.ts. Every handler still
-// binds a small `ctx` object (`{ deps, ensureCommercial, ... }`, now sourced from `this.core` instead
-// of the old inherited `this`) and hands it to a free function living in ./economy/*.ts — this
-// ctx-bind shape was originally forced by MetaServiceBase's `protected` visibility (2026-08-10 split);
-// now that MetaCore's methods are plain public members, the ctx-bind is no longer structurally
-// necessary and could be simplified to passing `core` directly — left as a documented follow-up rather
-// than done in this batch, since it would mean touching all ~20 free-function files in ./economy/,
-// ./pve/, ./liveops/, ./auth/ for a purely internal cleanup with zero external behavior change.
+// 形态②): holds `core: MetaCore` — assembled by composition in ../service.ts. Every handler here just
+// hands `this.core` straight through to a free function living in ./economy/*.ts (2026-08-11 ctx-bind
+// cleanup — see base.ts's header: the bound-`ctx`-object shape this used to build — `{ deps,
+// ensureCommercial, ... }`, each member bound off `this.core` — was forced by MetaServiceBase's
+// `protected` visibility, 2026-08-10 split; now that MetaCore's members are plain public methods, every
+// ./economy/*.ts handler just takes `core: MetaCore` and calls `core.ensureCommercial(...)`/
+// `core.mutateSave(...)`/`core.bumpRetentionTask(...)` directly — no bind, no ctx object). Applied the
+// same way across all ~20 free-function files in ./economy/, ./pve/, ./liveops/, ./auth/.
 // - economy/shop.ts:          getShopItems + shopBuy
 // - economy/gacha.ts:         getGachaPools + gachaDraw + redeemFate (GACHA_DESIGN §2/§7)
 // - economy/subscriptions.ts: monthlyCardBuy/yearCardBuy/monthlyCardClaim + claimRechargeMilestone (§5/§13)
@@ -44,7 +44,7 @@ export class EconomyService {
     }
 
     async shopBuy(...args: Parameters<EconomyHandlers['shopBuy']>) {
-      return shopBuyHandler({ deps: this.core.deps, ensureCommercial: this.core.ensureCommercial.bind(this.core) }, ...args);
+      return shopBuyHandler(this.core, ...args);
     }
 
     async getGachaPools() {
@@ -52,56 +52,42 @@ export class EconomyService {
     }
 
     async gachaDraw(...args: Parameters<EconomyHandlers['gachaDraw']>) {
-      return gachaDrawHandler(
-        {
-          deps: this.core.deps,
-          ensureCommercial: this.core.ensureCommercial.bind(this.core),
-          bumpRetentionTask: this.core.bumpRetentionTask.bind(this.core),
-        },
-        ...args,
-      );
+      return gachaDrawHandler(this.core, ...args);
     }
 
     async redeemFate(...args: Parameters<EconomyHandlers['redeemFate']>) {
-      return redeemFateHandler({ deps: this.core.deps, ensureCommercial: this.core.ensureCommercial.bind(this.core) }, ...args);
+      return redeemFateHandler(this.core, ...args);
     }
 
     async monthlyCardBuy(...args: Parameters<EconomyHandlers['monthlyCardBuy']>) {
-      return monthlyCardBuyHandler({ deps: this.core.deps, ensureCommercial: this.core.ensureCommercial.bind(this.core) }, ...args);
+      return monthlyCardBuyHandler(this.core, ...args);
     }
 
     async yearCardBuy(...args: Parameters<EconomyHandlers['yearCardBuy']>) {
-      return yearCardBuyHandler({ deps: this.core.deps, ensureCommercial: this.core.ensureCommercial.bind(this.core) }, ...args);
+      return yearCardBuyHandler(this.core, ...args);
     }
 
     async monthlyCardClaim(...args: Parameters<EconomyHandlers['monthlyCardClaim']>) {
-      return monthlyCardClaimHandler({ deps: this.core.deps, ensureCommercial: this.core.ensureCommercial.bind(this.core) }, ...args);
+      return monthlyCardClaimHandler(this.core, ...args);
     }
 
     async claimRechargeMilestone(...args: Parameters<EconomyHandlers['claimRechargeMilestone']>) {
-      return claimRechargeMilestoneHandler(
-        {
-          deps: this.core.deps,
-          ensureCommercial: this.core.ensureCommercial.bind(this.core),
-          mutateSave: this.core.mutateSave.bind(this.core),
-        },
-        ...args,
-      );
+      return claimRechargeMilestoneHandler(this.core, ...args);
     }
 
     async starterBuy(...args: Parameters<EconomyHandlers['starterBuy']>) {
-      return starterBuyHandler({ deps: this.core.deps, ensureCommercial: this.core.ensureCommercial.bind(this.core) }, ...args);
+      return starterBuyHandler(this.core, ...args);
     }
 
     async adsReward(...args: Parameters<EconomyHandlers['adsReward']>) {
-      return adsRewardHandler({ deps: this.core.deps, ensureCommercial: this.core.ensureCommercial.bind(this.core) }, ...args);
+      return adsRewardHandler(this.core, ...args);
     }
 
     async iapVerify(...args: Parameters<EconomyHandlers['iapVerify']>) {
-      return iapVerifyHandler({ deps: this.core.deps, ensureCommercial: this.core.ensureCommercial.bind(this.core) }, ...args);
+      return iapVerifyHandler(this.core, ...args);
     }
 
     async redeemPromoCode(...args: Parameters<EconomyHandlers['redeemPromoCode']>) {
-      return redeemPromoCodeHandler({ deps: this.core.deps, ensureCommercial: this.core.ensureCommercial.bind(this.core) }, ...args);
+      return redeemPromoCodeHandler(this.core, ...args);
     }
 }

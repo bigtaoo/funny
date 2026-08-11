@@ -2,8 +2,16 @@
 // The top layer of the WorldCore chain: full & sparse viewport reads with fog-of-war,
 // single-tile reads, the settled player-state read (getMe), and the tile→view mappers.
 // No behavior change — methods copied verbatim from the original core.ts.
+//
+// 2026-08-11 (mixin-chain re-audit, claudedocs/server.md "拆分形态的优先级" 形态②): converted from an
+// `extends WorldCoreVision` inheritance-chain link to composition — cross-layer calls go to the vision
+// sibling (`computeVisionSources`/`familyMemberIds`/`sectMateMemberIds`/`allySectMemberIds`), the yield
+// sibling (`settle`), and the kernel primitives (`coordX`/`coordY`), so this takes `core: WorldCore` +
+// narrow `yieldSvc: YieldService` + `vision: VisionService` sibling references.
 import { proceduralTile, tileId, playerWorldId, isInVision, sliceRuns, tileAtX, type ProceduralTile } from '@nw/shared';
-import { WorldCoreVision } from './vision';
+import type { WorldCore } from '../core';
+import type { YieldService } from './yield';
+import type { VisionService } from './vision';
 import { siegeHpView } from './helpers';
 import type { TileDoc } from '../db';
 import type { PlayerProfile } from '../metaClient';
@@ -16,7 +24,13 @@ import {
   type PlayerWorldView,
 } from '../worldTypes';
 
-export class WorldCoreMap extends WorldCoreVision {
+export class MapService {
+  constructor(
+    private readonly core: WorldCore,
+    private readonly yieldSvc: YieldService,
+    private readonly vision: VisionService,
+  ) {}
+
   async getMap(
     worldId: string,
     accountId: string,
@@ -24,7 +38,7 @@ export class WorldCoreMap extends WorldCoreVision {
     cy: number,
     r: number,
   ): Promise<WorldMapView> {
-    const { cols, mapW, mapH } = this.deps;
+    const { cols, mapW, mapH } = this.core.deps;
     const rad = Math.max(0, Math.min(MAP_VIEW_MAX_RADIUS, Math.floor(r)));
     const x0 = Math.max(0, Math.floor(cx) - rad);
     const x1 = Math.min(mapW - 1, Math.floor(cx) + rad);
@@ -52,19 +66,19 @@ export class WorldCoreMap extends WorldCoreVision {
       }
     }
 
-    const now = this.deps.now(); // D-CITY-8: shared `now` for lazy durability regen across the whole viewport batch
+    const now = this.core.deps.now(); // D-CITY-8: shared `now` for lazy durability regen across the whole viewport batch
     // G5 vision: compute the requester's currently visible tile set (own/family territory + capitals + in-transit marches).
     // Fog now gates only INTEL (garrison / HP / watchtower) per tile — the static structure layer (location /
     // ownership / base identity / level / occupation state) is public map-wide (2026-07-24 fog-model change, see gateIntel).
-    const sources = await this.computeVisionSources(worldId, accountId, x0, x1, y0, y1);
+    const sources = await this.vision.computeVisionSources(worldId, accountId, x0, x1, y0, y1);
     const vis = (x: number, y: number): boolean => isInVision(sources, x, y);
     // Family member set (including self): visible family ally territory is tagged ally (client renders in friendly color, not enemy color).
-    const family = await this.familyMemberIds(worldId, accountId);
+    const family = await this.vision.familyMemberIds(worldId, accountId);
     // Own sect's OTHER families (not own family, not allied sects): visible territory is tagged sectmate
     // (client renders a third "friendly but not family" colour, 2026-08-08).
-    const sectMates = await this.sectMateMemberIds(worldId, accountId);
+    const sectMates = await this.vision.sectMateMemberIds(worldId, accountId);
     // Allied sect member set (≤2 allied sects): visible allied territory is tagged allySect (client renders yellow border, §8.2).
-    const allySect = await this.allySectMemberIds(worldId, accountId);
+    const allySect = await this.vision.allySectMemberIds(worldId, accountId);
 
     // Batch-resolve display names for every other player's territory in the viewport. Ownership is now public
     // map-wide (fog gates only marching troops + garrison/HP intel), so owner names show regardless of vision —
@@ -76,8 +90,8 @@ export class WorldCoreMap extends WorldCoreVision {
     )];
     // comm-audit batch F item 7: was N individual getProfile round trips (one per distinct owner in the
     // viewport); meta's /internal/account/batch-profiles resolves them all in one call.
-    const profileMap = otherOwnerIds.length > 0 && this.meta.available
-      ? await this.meta.batchProfiles(otherOwnerIds)
+    const profileMap = otherOwnerIds.length > 0 && this.core.meta.available
+      ? await this.core.meta.batchProfiles(otherOwnerIds)
       : new Map<string, PlayerProfile>();
 
     const tiles: WorldTileView[] = [];
@@ -118,7 +132,7 @@ export class WorldCoreMap extends WorldCoreVision {
     r: number,
     lod: 'thin' | 'mid',
   ): Promise<WorldMapSparseView> {
-    const { cols, mapW, mapH } = this.deps;
+    const { cols, mapW, mapH } = this.core.deps;
     const rad = Math.max(0, Math.min(MAP_VIEW_MAX_RADIUS, Math.floor(r)));
     const x0 = Math.max(0, Math.floor(cx) - rad);
     const x1 = Math.min(mapW - 1, Math.floor(cx) + rad);
@@ -137,9 +151,9 @@ export class WorldCoreMap extends WorldCoreVision {
     let sectMateSet = new Set<string>();
     let allySectSet = new Set<string>();
     if (lod === 'mid') {
-      family = await this.familyMemberIds(worldId, accountId);
-      sectMateSet = await this.sectMateMemberIds(worldId, accountId);
-      allySectSet = await this.allySectMemberIds(worldId, accountId);
+      family = await this.vision.familyMemberIds(worldId, accountId);
+      sectMateSet = await this.vision.sectMateMemberIds(worldId, accountId);
+      allySectSet = await this.vision.allySectMemberIds(worldId, accountId);
     }
 
     const tiles: WorldTileSparseView[] = owned.map((o) => {
@@ -163,31 +177,31 @@ export class WorldCoreMap extends WorldCoreVision {
     // Fetch the override (single-tile, keyed by tileId) and the §24 terrain baseline row (keyed by worldId:y,
     // run-length-encoded — see shared/src/slg/mapRle.ts) together, then pick out this x from the row's runs.
     const [o, baselineRow] = await Promise.all([
-      this.deps.cols.tiles.findOne({ _id: tileId(worldId, x, y) }),
-      this.deps.cols.mapBaselineRows.findOne({ _id: `${worldId}:${y}` }),
+      this.core.deps.cols.tiles.findOne({ _id: tileId(worldId, x, y) }),
+      this.core.deps.cols.mapBaselineRows.findOne({ _id: `${worldId}:${y}` }),
     ]);
     if (!o) return this.terrainView(worldId, x, y, baselineRow ? tileAtX(baselineRow.runs, x) : undefined);
-    const sources = await this.computeVisionSources(worldId, accountId, x, x, y, y);
-    const ownerProfile = (o.ownerId && o.ownerId !== accountId && this.meta.available)
-      ? await this.meta.getProfile(o.ownerId).catch(() => null) : undefined;
+    const sources = await this.vision.computeVisionSources(worldId, accountId, x, x, y, y);
+    const ownerProfile = (o.ownerId && o.ownerId !== accountId && this.core.meta.available)
+      ? await this.core.meta.getProfile(o.ownerId).catch(() => null) : undefined;
     // Structure/ownership is public map-wide; only intel (garrison/HP/watchtower) needs vision (same gate as getMap).
     return { ...this.gateIntel(this.tileDocView(o, accountId, ownerProfile ?? undefined), isInVision(sources, x, y)), visible: true };
   }
 
   /** Player state in the world: resources are lazily settled (computed on read as yieldRate × dt, capped at RESOURCE_CAP). §14.3. */
   async getMe(worldId: string, accountId: string): Promise<PlayerWorldView> {
-    const doc = await this.deps.cols.playerWorld.findOne({
+    const doc = await this.core.deps.cols.playerWorld.findOne({
       _id: playerWorldId(worldId, accountId),
     });
     if (!doc) return { joined: false, worldId };
-    const resources = this.settle(doc, this.deps.now());
+    const resources = this.yieldSvc.settle(doc, this.core.deps.now());
     // D-CITY-8: surface the main base's persistent durability under the same hp/maxHp field
     // names as WorldTileView (siegeHpView), so CityScene's military-page durability panel and
     // WorldMapScene's tile HP bar read the identical contract. Best-effort: a missing/racing
     // anchor tile (e.g. mid-relocate) just omits hp/maxHp rather than failing the whole getMe().
     const baseAnchor = doc.mainBaseTile
-      ? await this.deps.cols.tiles.findOne({
-          _id: tileId(worldId, this.coordX(doc.mainBaseTile), this.coordY(doc.mainBaseTile)),
+      ? await this.core.deps.cols.tiles.findOne({
+          _id: tileId(worldId, this.core.coordX(doc.mainBaseTile), this.core.coordY(doc.mainBaseTile)),
         })
       : null;
     return {
@@ -197,14 +211,14 @@ export class WorldCoreMap extends WorldCoreVision {
       troopCap: doc.troopCap,
       resources,
       yieldRate: doc.yieldRate,
-      territoryCount: await this.deps.cols.tiles.countDocuments({ worldId, ownerId: accountId }),
+      territoryCount: await this.core.deps.cols.tiles.countDocuments({ worldId, ownerId: accountId }),
       ...(doc.hasBattlePass ? { hasBattlePass: true } : {}),
       ...(doc.mainBaseTile ? { mainBaseTile: doc.mainBaseTile } : {}),
       // S8-8 UI fix (2026-08-08): mirror the anchor tile's protection-shield end time onto the player view,
       // same reasoning as hp/maxHp below — the HUD needs this regardless of whether the base tile happens
       // to be in the current map viewport (tileCache), so it can't rely on WorldTileView.protectedUntil alone.
       ...(baseAnchor?.protectedUntil ? { baseProtectedUntil: baseAnchor.protectedUntil } : {}),
-      ...(baseAnchor ? siegeHpView(baseAnchor, this.deps.now()) : {}),
+      ...(baseAnchor ? siegeHpView(baseAnchor, this.core.deps.now()) : {}),
       ...(doc.familyId ? { familyId: doc.familyId } : {}),
       ...(doc.trainingQueue && doc.trainingQueue.length > 0
         ? { trainingQueue: doc.trainingQueue.map((e) => ({ qty: e.qty, startAt: e.startAt, completeAt: e.completeAt })) }
@@ -219,7 +233,7 @@ export class WorldCoreMap extends WorldCoreVision {
     };
   }
 
-  tileDocView(o: TileDoc, accountId: string, ownerProfile?: PlayerProfile, now: number = this.deps.now()): WorldTileView {
+  tileDocView(o: TileDoc, accountId: string, ownerProfile?: PlayerProfile, now: number = this.core.deps.now()): WorldTileView {
     return {
       x: o.x,
       y: o.y,

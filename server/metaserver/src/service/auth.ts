@@ -3,10 +3,17 @@
 //
 // Split into independent function modules (2026-08-11, same "薄装配壳 + 关注点分层" form as
 // pve.ts/liveops.ts — see claudedocs/server.md's split-priority doc). Every handler only ever needs
-// `this.core.deps` plus a handful of protected MetaServiceBase methods (rejectIfBanned/ensureCommercial) or
-// this mixin's own private rate-limit checks — never anything from *another* domain mixin — so each
-// handler group binds exactly what it needs into a small `ctx` object and hands off to a free function
-// living outside the class. No behavior change: every method body was moved verbatim.
+// `this.core.deps` plus a handful of MetaCore methods (rejectIfBanned/ensureCommercial/gatewayField) or
+// this class's own private rate-limit checks — never anything from *another* domain mixin.
+//
+// 2026-08-11 ctx-bind cleanup (see base.ts's header): now that MetaCore's members are plain public
+// methods, credential.ts/oauthBind.ts/profile.ts's ctx objects no longer flatten+bind individual
+// MetaCore members — `profileRenameHandler` takes `this.core` directly, and
+// credential.ts/oauthBind.ts's `CredentialCtx`/`OAuthCtx` collapse their MetaCore-derived fields into
+// one `core: MetaCore` field, keeping only the genuinely AuthService-only extras
+// (`allowAuthAttempt`/`oauth`) as separate ctx fields (still `.bind(this)`-ed, since those really are
+// this class's own private state, not a MetaCore passthrough). No behavior change: every method body
+// was moved verbatim.
 // - auth/helpers.ts:        restoreIfWithinGrace/maybeGrantStarterCards — deps-only, shared by every handler below
 // - auth/credential.ts:     authWx/authDevice/authRegister/authLogin/authPasswordChange
 // - auth/oauthBind.ts:      authOAuth/authBind
@@ -69,35 +76,19 @@ export class AuthService {
     }
 
     async authWx(req: FastifyRequest, reply: FastifyReply) {
-      return authWxHandler(
-        { deps: this.core.deps, rejectIfBanned: this.core.rejectIfBanned.bind(this.core), allowAuthAttempt: this.allowAuthAttempt.bind(this), gatewayField: this.core.gatewayField },
-        req,
-        reply,
-      );
+      return authWxHandler({ core: this.core, allowAuthAttempt: this.allowAuthAttempt.bind(this) }, req, reply);
     }
 
     async authDevice(req: FastifyRequest, reply: FastifyReply) {
-      return authDeviceHandler(
-        { deps: this.core.deps, rejectIfBanned: this.core.rejectIfBanned.bind(this.core), allowAuthAttempt: this.allowAuthAttempt.bind(this), gatewayField: this.core.gatewayField },
-        req,
-        reply,
-      );
+      return authDeviceHandler({ core: this.core, allowAuthAttempt: this.allowAuthAttempt.bind(this) }, req, reply);
     }
 
     async authRegister(req: FastifyRequest, reply: FastifyReply) {
-      return authRegisterHandler(
-        { deps: this.core.deps, rejectIfBanned: this.core.rejectIfBanned.bind(this.core), allowAuthAttempt: this.allowAuthAttempt.bind(this), gatewayField: this.core.gatewayField },
-        req,
-        reply,
-      );
+      return authRegisterHandler({ core: this.core, allowAuthAttempt: this.allowAuthAttempt.bind(this) }, req, reply);
     }
 
     async authLogin(req: FastifyRequest, reply: FastifyReply) {
-      return authLoginHandler(
-        { deps: this.core.deps, rejectIfBanned: this.core.rejectIfBanned.bind(this.core), allowAuthAttempt: this.allowAuthAttempt.bind(this), gatewayField: this.core.gatewayField },
-        req,
-        reply,
-      );
+      return authLoginHandler({ core: this.core, allowAuthAttempt: this.allowAuthAttempt.bind(this) }, req, reply);
     }
 
     async authPasswordChange(req: FastifyRequest, reply: FastifyReply) {
@@ -106,7 +97,7 @@ export class AuthService {
 
     async authOAuth(req: FastifyRequest, reply: FastifyReply) {
       return authOAuthHandler(
-        { deps: this.core.deps, oauth: this.oauth, rejectIfBanned: this.core.rejectIfBanned.bind(this.core), allowAuthAttempt: this.allowAuthAttempt.bind(this), gatewayField: this.core.gatewayField },
+        { core: this.core, oauth: this.oauth, allowAuthAttempt: this.allowAuthAttempt.bind(this) },
         req,
         reply,
       );
@@ -114,7 +105,7 @@ export class AuthService {
 
     async authBind(req: FastifyRequest, reply: FastifyReply) {
       return authBindHandler(
-        { deps: this.core.deps, oauth: this.oauth, rejectIfBanned: this.core.rejectIfBanned.bind(this.core), allowAuthAttempt: this.allowAuthAttempt.bind(this), gatewayField: this.core.gatewayField },
+        { core: this.core, oauth: this.oauth, allowAuthAttempt: this.allowAuthAttempt.bind(this) },
         req,
         reply,
       );
@@ -133,7 +124,7 @@ export class AuthService {
     }
 
     async profileRename(req: FastifyRequest, reply: FastifyReply) {
-      return profileRenameHandler({ deps: this.core.deps, ensureCommercial: this.core.ensureCommercial.bind(this.core) }, req, reply);
+      return profileRenameHandler(this.core, req, reply);
     }
 
     async submitAppeal(req: FastifyRequest, reply: FastifyReply) {

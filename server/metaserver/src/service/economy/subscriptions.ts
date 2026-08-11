@@ -1,10 +1,10 @@
 // Monthly/year subscription cards (GACHA_DESIGN §5) + cumulative-recharge milestones (GACHA_DESIGN
 // §13, ADR-045). Split out of service/economy.ts (2026-08-10, 独立函数模块 form — see economy.ts's
-// facade comment). `claimRechargeMilestoneHandler` takes an explicit `ctx` (deps + `ensureCommercial`/
-// `mutateSave`, bound by EconomyMixin's class body from its protected base methods); the other three
-// handlers only need `ensureCommercial` + `deps`. `reconcileRechargeCoins` (a private method on the
-// original mixin) only ever touched `this.deps`, so it became a plain deps-parameterized function with
-// no ctx needed at all. No behavior change.
+// facade comment). `claimRechargeMilestoneHandler` and the other three handlers all take `core:
+// MetaCore` directly (2026-08-11 ctx-bind cleanup — see base.ts's header, for `core.ensureCommercial`/
+// `core.mutateSave`). `reconcileRechargeCoins` (a private method on the original mixin) only ever
+// touched `deps`, so it stays a plain deps-parameterized function — no `core` needed at all. No
+// behavior change.
 import { randomUUID } from 'node:crypto';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import {
@@ -14,25 +14,9 @@ import {
 import { getOrCreateSave } from '../../save.js';
 import { mirrorCoins, mirrorWalletFrom, adsDayKey } from '../../economy.js';
 import { recordMaterialGrants } from '../../material.js';
-import { accountIdOf, clientPlatformOf, type ServiceDeps } from '../base.js';
+import { accountIdOf, clientPlatformOf, type ServiceDeps, type MetaCore } from '../base.js';
 
 const log = createLogger('meta:economy');
-
-type MutateSaveFn = (
-  accountId: string,
-  transform: (s: SaveData) => SaveData | string,
-) => Promise<{ save: SaveData } | { error: string }>;
-
-export interface SubscriptionsCtx {
-  deps: ServiceDeps;
-  ensureCommercial: (reply: FastifyReply) => boolean;
-}
-
-export interface RechargeMilestoneCtx {
-  deps: ServiceDeps;
-  ensureCommercial: (reply: FastifyReply) => boolean;
-  mutateSave: MutateSaveFn;
-}
 
 /** Map a commercial subscription-card error to a client error code (single-slot gate surfaces ALREADY_ACTIVE; else BAD_REQUEST). */
 function subscriptionErrCode(error: string): ErrorCode {
@@ -47,14 +31,14 @@ function subscriptionErrCode(error: string): ErrorCode {
  * `commercial.monthlyCardBuy` in-process after its own signature check (see paddle.ts), so it is
  * unaffected by this gate.
  */
-export async function monthlyCardBuyHandler(ctx: SubscriptionsCtx, req: FastifyRequest, reply: FastifyReply) {
-  if (!ctx.ensureCommercial(reply)) return;
+export async function monthlyCardBuyHandler(core: MetaCore, req: FastifyRequest, reply: FastifyReply) {
+  if (!core.ensureCommercial(reply)) return;
   const accountId = accountIdOf(req);
   const { platform, receipt } = (req.body ?? {}) as { platform?: string; receipt?: string };
   if (!platform || !receipt) {
     return reply.code(400).send(err(ErrorCode.BAD_REQUEST, 'missing platform/receipt'));
   }
-  const { cols, commercial, now } = ctx.deps;
+  const { cols, commercial, now } = core.deps;
   const receiptId = `${platform}:${receipt}`;
   const v = await commercial.verifyNonCoinReceipt({
     accountId, platform, receipt, receiptId, expectedProduct: 'monthly_card',
@@ -77,14 +61,14 @@ export async function monthlyCardBuyHandler(ctx: SubscriptionsCtx, req: FastifyR
  * Buy the year card (GACHA_DESIGN §5): 365-day subscription, same single-slot gate + daily claim as
  * the monthly card. Same receipt-verification gate as monthlyCardBuy — see its doc comment.
  */
-export async function yearCardBuyHandler(ctx: SubscriptionsCtx, req: FastifyRequest, reply: FastifyReply) {
-  if (!ctx.ensureCommercial(reply)) return;
+export async function yearCardBuyHandler(core: MetaCore, req: FastifyRequest, reply: FastifyReply) {
+  if (!core.ensureCommercial(reply)) return;
   const accountId = accountIdOf(req);
   const { platform, receipt } = (req.body ?? {}) as { platform?: string; receipt?: string };
   if (!platform || !receipt) {
     return reply.code(400).send(err(ErrorCode.BAD_REQUEST, 'missing platform/receipt'));
   }
-  const { cols, commercial, now } = ctx.deps;
+  const { cols, commercial, now } = core.deps;
   const receiptId = `${platform}:${receipt}`;
   const v = await commercial.verifyNonCoinReceipt({
     accountId, platform, receipt, receiptId, expectedProduct: 'year_card',
@@ -102,10 +86,10 @@ export async function yearCardBuyHandler(ctx: SubscriptionsCtx, req: FastifyRequ
 }
 
 /** Claim the monthly card's daily coins (GACHA_DESIGN §5): once per UTC day while the subscription is active. */
-export async function monthlyCardClaimHandler(ctx: SubscriptionsCtx, req: FastifyRequest, reply: FastifyReply) {
-  if (!ctx.ensureCommercial(reply)) return;
+export async function monthlyCardClaimHandler(core: MetaCore, req: FastifyRequest, reply: FastifyReply) {
+  if (!core.ensureCommercial(reply)) return;
   const accountId = accountIdOf(req);
-  const { cols, commercial, now } = ctx.deps;
+  const { cols, commercial, now } = core.deps;
   const dayKey = adsDayKey(now());
   const clientPlatform = clientPlatformOf(req);
   const r = await commercial.monthlyCardClaim({ accountId, dayKey, clientPlatform });
@@ -160,18 +144,18 @@ async function reconcileRechargeCoins(
  * idempotency), an ALREADY_CLAIMED response can still recompute the tier's coin reward and retry the
  * grant here — a no-op if it already succeeded, an actual delivery if it didn't.
  */
-export async function claimRechargeMilestoneHandler(ctx: RechargeMilestoneCtx, req: FastifyRequest, reply: FastifyReply) {
-  if (!ctx.ensureCommercial(reply)) return;
+export async function claimRechargeMilestoneHandler(core: MetaCore, req: FastifyRequest, reply: FastifyReply) {
+  if (!core.ensureCommercial(reply)) return;
   const accountId = accountIdOf(req);
   const { tierId } = req.body as { tierId: number };
-  const { commercial } = ctx.deps;
+  const { commercial } = core.deps;
   const clientPlatform = clientPlatformOf(req);
 
   const wallet = await commercial.getWallet(accountId, clientPlatform);
   if (!wallet) return reply.code(400).send(err(ErrorCode.BAD_REQUEST, 'wallet unavailable'));
 
   let claimedRewards: RechargeReward[] | null = null;
-  const out = await ctx.mutateSave(accountId, (s) => {
+  const out = await core.mutateSave(accountId, (s) => {
     const data = s.rechargeMilestone ?? makeFreshRechargeMilestone();
     const r = claimRechargeReward(data, wallet.totalRechargeCents, tierId);
     if (!r.ok) return r.error;
@@ -194,7 +178,7 @@ export async function claimRechargeMilestoneHandler(ctx: RechargeMilestoneCtx, r
         // Best-effort: retry the coin grant for this tier in case a prior claim committed the
         // milestone but never actually delivered the coins (see docstring above). Deterministic
         // orderId makes this safe to repeat even if it already succeeded.
-        await reconcileRechargeCoins(ctx.deps, accountId, tierId, clientPlatform);
+        await reconcileRechargeCoins(core.deps, accountId, tierId, clientPlatform);
         return reply.code(409).send(err(ErrorCode.ALREADY_CLAIMED, 'already claimed'));
       default:
         return reply.code(409).send(err(ErrorCode.REV_CONFLICT, out.error));
@@ -213,9 +197,9 @@ export async function claimRechargeMilestoneHandler(ctx: RechargeMilestoneCtx, r
   }
   if (Object.keys(materialGrants).length > 0) {
     await recordMaterialGrants(
-      ctx.deps.cols, accountId, `recharge_${accountId}_t${tierId}`, materialGrants, `recharge:${tierId}`, ctx.deps.now(),
+      core.deps.cols, accountId, `recharge_${accountId}_t${tierId}`, materialGrants, `recharge:${tierId}`, core.deps.now(),
     );
   }
-  const finalSave = await reconcileRechargeCoins(ctx.deps, accountId, tierId, clientPlatform, out.save);
+  const finalSave = await reconcileRechargeCoins(core.deps, accountId, tierId, clientPlatform, out.save);
   return ok({ save: finalSave, rewards });
 }

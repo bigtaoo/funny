@@ -1,5 +1,12 @@
 // authWx/authDevice/authRegister/authLogin/authPasswordChange (2026-08-11 split of service/auth.ts —
 // see auth.ts's shell comment for the overall split rationale/module map).
+//
+// 2026-08-11 ctx-bind cleanup (see base.ts's header): `CredentialCtx` used to flatten `deps`/
+// `rejectIfBanned`/`gatewayField` (all MetaCore members, each individually `.bind(this.core)`-ed) plus
+// `allowAuthAttempt` (AuthService's own private method) into one object. Now that MetaCore's members
+// are plain public methods, the MetaCore-derived half collapses to a single `core: MetaCore` field —
+// no bind needed, `ctx.core.rejectIfBanned(...)` is an ordinary method call — while `allowAuthAttempt`
+// (genuinely AuthService-only, not a MetaCore member) stays a separate ctx field.
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { ErrorCode, err, ok, signToken } from '@nw/shared';
 import { regionFromAcceptLanguage, censorChat } from '@nw/shared';
@@ -13,14 +20,12 @@ import {
   resolveByDevice,
   resolveByOpenid,
 } from '../../accounts.js';
-import { accountIdOf, type ServiceDeps } from '../base.js';
+import { accountIdOf, type ServiceDeps, type MetaCore } from '../base.js';
 import { restoreIfWithinGrace, maybeGrantStarterCards } from './helpers.js';
 
 export interface CredentialCtx {
-  deps: ServiceDeps;
-  rejectIfBanned: (cols: ServiceDeps['cols'], accountId: string, reply: FastifyReply) => Promise<boolean>;
+  core: MetaCore;
   allowAuthAttempt: (req: FastifyRequest, now: number) => Promise<boolean>;
-  gatewayField: { gatewayUrl?: string };
 }
 
 export async function authWxHandler(ctx: CredentialCtx, req: FastifyRequest, reply: FastifyReply) {
@@ -28,38 +33,38 @@ export async function authWxHandler(ctx: CredentialCtx, req: FastifyRequest, rep
   const openid = await exchangeWxCode(code);
   const region = regionFromAcceptLanguage(req.headers['accept-language']);
   const { accountId, isNew, isAnonymous, displayName } = await resolveByOpenid(
-    ctx.deps.cols,
+    ctx.core.deps.cols,
     openid,
-    ctx.deps.now(),
+    ctx.core.deps.now(),
     region,
   );
-  await restoreIfWithinGrace(ctx.deps, accountId);
-  if (await ctx.rejectIfBanned(ctx.deps.cols, accountId, reply)) return;
-  const token = signToken(accountId, ctx.deps.jwt);
-  const publicId = await ensurePublicId(ctx.deps.cols, accountId);
-  await maybeGrantStarterCards(ctx.deps, accountId, isNew);
-  return ok({ token, accountId, isNew, isAnonymous, publicId, ...(displayName ? { displayName } : {}), ...ctx.gatewayField });
+  await restoreIfWithinGrace(ctx.core.deps, accountId);
+  if (await ctx.core.rejectIfBanned(ctx.core.deps.cols, accountId, reply)) return;
+  const token = signToken(accountId, ctx.core.deps.jwt);
+  const publicId = await ensurePublicId(ctx.core.deps.cols, accountId);
+  await maybeGrantStarterCards(ctx.core.deps, accountId, isNew);
+  return ok({ token, accountId, isNew, isAnonymous, publicId, ...(displayName ? { displayName } : {}), ...ctx.core.gatewayField });
 }
 
 export async function authDeviceHandler(ctx: CredentialCtx, req: FastifyRequest, reply: FastifyReply) {
   const { deviceId } = req.body as { deviceId: string };
   const region = regionFromAcceptLanguage(req.headers['accept-language']);
   const { accountId, isNew, isAnonymous, displayName } = await resolveByDevice(
-    ctx.deps.cols,
+    ctx.core.deps.cols,
     deviceId,
-    ctx.deps.now(),
+    ctx.core.deps.now(),
     region,
   );
-  await restoreIfWithinGrace(ctx.deps, accountId);
-  if (await ctx.rejectIfBanned(ctx.deps.cols, accountId, reply)) return;
-  const token = signToken(accountId, ctx.deps.jwt);
-  const publicId = await ensurePublicId(ctx.deps.cols, accountId);
-  await maybeGrantStarterCards(ctx.deps, accountId, isNew);
-  return ok({ token, accountId, isNew, isAnonymous, publicId, ...(displayName ? { displayName } : {}), ...ctx.gatewayField });
+  await restoreIfWithinGrace(ctx.core.deps, accountId);
+  if (await ctx.core.rejectIfBanned(ctx.core.deps.cols, accountId, reply)) return;
+  const token = signToken(accountId, ctx.core.deps.jwt);
+  const publicId = await ensurePublicId(ctx.core.deps.cols, accountId);
+  await maybeGrantStarterCards(ctx.core.deps, accountId, isNew);
+  return ok({ token, accountId, isNew, isAnonymous, publicId, ...(displayName ? { displayName } : {}), ...ctx.core.gatewayField });
 }
 
 export async function authRegisterHandler(ctx: CredentialCtx, req: FastifyRequest, reply: FastifyReply) {
-  if (!(await ctx.allowAuthAttempt(req, ctx.deps.now()))) {
+  if (!(await ctx.allowAuthAttempt(req, ctx.core.deps.now()))) {
     return reply.code(429).send(err(ErrorCode.RATE_LIMITED, 'too many auth attempts, try later'));
   }
   const { loginId, password, displayName } = req.body as {
@@ -81,46 +86,46 @@ export async function authRegisterHandler(ctx: CredentialCtx, req: FastifyReques
   if (displayName !== undefined) {
     const nameErr = validateDisplayName(displayName);
     if (nameErr) return reply.code(400).send(err(ErrorCode.BAD_REQUEST, nameErr));
-    if (censorChat(displayName.trim(), region, ctx.deps.wordlists ?? undefined).hit) {
+    if (censorChat(displayName.trim(), region, ctx.core.deps.wordlists ?? undefined).hit) {
       return reply.code(400).send(err(ErrorCode.BAD_REQUEST, 'display name contains disallowed words'));
     }
   }
 
   const result = await registerWithPassword(
-    ctx.deps.cols,
+    ctx.core.deps.cols,
     loginId,
     password,
     displayName,
-    ctx.deps.now(),
+    ctx.core.deps.now(),
     region,
   );
   if (result.kind === 'taken') {
     return reply.code(409).send(err(ErrorCode.LOGIN_ID_TAKEN, 'loginId already registered'));
   }
   const { accountId, isNew, isAnonymous } = result.account;
-  const token = signToken(accountId, ctx.deps.jwt);
-  const publicId = await ensurePublicId(ctx.deps.cols, accountId);
-  await maybeGrantStarterCards(ctx.deps, accountId, isNew);
-  return ok({ token, accountId, isNew, isAnonymous, publicId, ...(displayName ? { displayName } : {}), ...ctx.gatewayField });
+  const token = signToken(accountId, ctx.core.deps.jwt);
+  const publicId = await ensurePublicId(ctx.core.deps.cols, accountId);
+  await maybeGrantStarterCards(ctx.core.deps, accountId, isNew);
+  return ok({ token, accountId, isNew, isAnonymous, publicId, ...(displayName ? { displayName } : {}), ...ctx.core.gatewayField });
 }
 
 export async function authLoginHandler(ctx: CredentialCtx, req: FastifyRequest, reply: FastifyReply) {
-  if (!(await ctx.allowAuthAttempt(req, ctx.deps.now()))) {
+  if (!(await ctx.allowAuthAttempt(req, ctx.core.deps.now()))) {
     return reply.code(429).send(err(ErrorCode.RATE_LIMITED, 'too many auth attempts, try later'));
   }
   const { loginId, password } = req.body as { loginId: string; password: string };
   const region = regionFromAcceptLanguage(req.headers['accept-language']);
-  const account = await loginWithPassword(ctx.deps.cols, loginId, password, region);
+  const account = await loginWithPassword(ctx.core.deps.cols, loginId, password, region);
   if (!account) {
     return reply.code(401).send(err(ErrorCode.INVALID_CREDENTIALS, 'invalid loginId or password'));
   }
   const { accountId, isNew, isAnonymous, displayName } = account;
-  await restoreIfWithinGrace(ctx.deps, accountId);
-  if (await ctx.rejectIfBanned(ctx.deps.cols, accountId, reply)) return;
-  const token = signToken(accountId, ctx.deps.jwt);
-  const publicId = await ensurePublicId(ctx.deps.cols, accountId);
-  await maybeGrantStarterCards(ctx.deps, accountId, isNew);
-  return ok({ token, accountId, isNew, isAnonymous, publicId, ...(displayName ? { displayName } : {}), ...ctx.gatewayField });
+  await restoreIfWithinGrace(ctx.core.deps, accountId);
+  if (await ctx.core.rejectIfBanned(ctx.core.deps.cols, accountId, reply)) return;
+  const token = signToken(accountId, ctx.core.deps.jwt);
+  const publicId = await ensurePublicId(ctx.core.deps.cols, accountId);
+  await maybeGrantStarterCards(ctx.core.deps, accountId, isNew);
+  return ok({ token, accountId, isNew, isAnonymous, publicId, ...(displayName ? { displayName } : {}), ...ctx.core.gatewayField });
 }
 
 export async function authPasswordChangeHandler(deps: ServiceDeps, req: FastifyRequest, reply: FastifyReply) {

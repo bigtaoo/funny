@@ -1,6 +1,11 @@
 // worldsvc core — spawn selection & 3×3 base footprint helpers (ADR-025).
 // Peeled out of the WorldCore god-class (2026-07-03). Random/near-family spawn point
 // selection plus the footprint build/validate/integrity/purge primitives. No behavior change.
+//
+// 2026-08-11 (mixin-chain re-audit, claudedocs/server.md "拆分形态的优先级" 形态②): converted from an
+// `extends WorldCoreNation` inheritance-chain link to composition — cross-layer calls are all to the
+// kernel primitives (`inBounds`/`coordX`/`coordY`), so this takes a narrow constructor-injected
+// `core: WorldCore`.
 import {
   proceduralTile,
   tileId,
@@ -12,16 +17,18 @@ import {
   GARRISON_PER_TILE,
   type ResourceType,
 } from '@nw/shared';
-import { WorldCoreNation } from './nation';
+import type { WorldCore } from '../core';
 import { SPAWN_NEAR_FAMILY_RADIUS, SPAWN_OUTER_MIN_DR } from './helpers';
 import type { TileDoc } from '../db';
 
-export class WorldCoreSpawn extends WorldCoreNation {
+export class SpawnService {
+  constructor(private readonly core: WorldCore) {}
+
   async pickRandomEmptyTile(
     worldId: string,
     minDr = 0,
   ): Promise<{ x: number; y: number; level: number; resType?: ResourceType } | null> {
-    const { mapW, mapH } = this.deps;
+    const { mapW, mapH } = this.core.deps;
     const cx = mapW / 2;
     const cy = mapH / 2;
     const maxDist = Math.sqrt(cx * cx + cy * cy);
@@ -62,7 +69,7 @@ export class WorldCoreSpawn extends WorldCoreNation {
     accountId: string,
     familyId?: string,
   ): Promise<{ x: number; y: number; level: number; resType?: ResourceType } | null> {
-    const { cols } = this.deps;
+    const { cols } = this.core.deps;
     if (familyId) {
       const mates = await cols.playerWorld.find({ worldId, familyId }).project<{ accountId: string }>({ accountId: 1 }).toArray();
       const mateIds = mates.map((m) => m.accountId).filter((id): id is string => !!id && id !== accountId);
@@ -100,13 +107,13 @@ export class WorldCoreSpawn extends WorldCoreNation {
         }
       }
       for (const [x, y] of this.shuffled(ring)) {
-        if (!this.inBounds(x, y)) continue;
+        if (!this.core.inBounds(x, y)) continue;
         const proc = proceduralTile(worldId, x, y);
         if (proc.type === 'center' || proc.type === 'obstacle' || proc.type === 'bridge' || proc.type === 'plankway' || proc.type === 'stronghold') {
           continue;
         }
         // ADR-025: the candidate anchor must host the whole 3×3 footprint.
-        if (!(await this.footprintFree(worldId, x, y, this.deps.mapW, this.deps.mapH))) continue;
+        if (!(await this.footprintFree(worldId, x, y, this.core.deps.mapW, this.core.deps.mapH))) continue;
         return { x, y, level: proc.level, ...(proc.resType ? { resType: proc.resType } : {}) };
       }
     }
@@ -218,7 +225,7 @@ export class WorldCoreSpawn extends WorldCoreNation {
       }
     }
     const ids = cells.map(({ x, y }) => tileId(worldId, x, y));
-    const existing = await this.deps.cols.tiles
+    const existing = await this.core.deps.cols.tiles
       .find({ _id: { $in: ids } })
       .project<{ ownerId?: string }>({ ownerId: 1 })
       .toArray();
@@ -244,7 +251,7 @@ export class WorldCoreSpawn extends WorldCoreNation {
       }
     }
     const ids = cells.map(({ x, y }) => tileId(worldId, x, y));
-    const existing = await this.deps.cols.tiles
+    const existing = await this.core.deps.cols.tiles
       .find({ _id: { $in: ids } })
       .project<{ ownerId?: string }>({ ownerId: 1 })
       .toArray();
@@ -263,12 +270,12 @@ export class WorldCoreSpawn extends WorldCoreNation {
    * than tolerated — the client renders the city sprite only on a full 3×3 anchor.
    */
   async isBaseIntact(worldId: string, accountId: string, mainBaseTile: string): Promise<boolean> {
-    const ax = this.coordX(mainBaseTile);
-    const ay = this.coordY(mainBaseTile);
+    const ax = this.core.coordX(mainBaseTile);
+    const ay = this.core.coordY(mainBaseTile);
     if (!Number.isFinite(ax) || !Number.isFinite(ay)) return false;
-    if (!baseFootprintInBounds(ax, ay, this.deps.mapW, this.deps.mapH)) return false;
+    if (!baseFootprintInBounds(ax, ay, this.core.deps.mapW, this.core.deps.mapH)) return false;
     const ids = baseFootprintCells(ax, ay).map(({ x, y }) => tileId(worldId, x, y));
-    const cells = await this.deps.cols.tiles
+    const cells = await this.core.deps.cols.tiles
       .find({ _id: { $in: ids } })
       .project<{ ownerId?: string; type?: string }>({ ownerId: 1, type: 1 })
       .toArray();
@@ -283,7 +290,7 @@ export class WorldCoreSpawn extends WorldCoreNation {
    * naturally (they reference tiles by id and no-op once the tiles are gone).
    */
   async purgePlayerWorld(worldId: string, accountId: string): Promise<void> {
-    await this.deps.cols.tiles.deleteMany({ worldId, ownerId: accountId });
-    await this.deps.cols.playerWorld.deleteOne({ _id: playerWorldId(worldId, accountId) });
+    await this.core.deps.cols.tiles.deleteMany({ worldId, ownerId: accountId });
+    await this.core.deps.cols.playerWorld.deleteOne({ _id: playerWorldId(worldId, accountId) });
   }
 }

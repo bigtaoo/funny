@@ -6,11 +6,12 @@
 // Hero Roster / cardInv) — no accounts can gain new pveUpgrades levels anymore.
 //
 // Independent sibling class (2026-08-11 mixin-chain split, claudedocs/server.md's "拆分形态的优先级"
-// 形态②): holds `core: MetaCore` — assembled by composition in ../service.ts. Every handler still
-// binds a small `ctx` object (now sourced from `this.core` instead of the old inherited `this`) and
-// hands it to a free function living in ./pve/*.ts — see economy.ts's header for why this ctx-bind
-// shape (originally forced by MetaServiceBase's `protected` visibility, 2026-08-10 split) is kept
-// unchanged in this batch rather than simplified away. Two of the original private helpers
+// 形态②): holds `core: MetaCore` — assembled by composition in ../service.ts. Each handler hands
+// `this.core` straight through to a free function living in ./pve/*.ts (2026-08-11 ctx-bind cleanup —
+// see base.ts's header: the bound-`ctx`-object shape this used to build was forced by
+// MetaServiceBase's `protected` visibility, 2026-08-10 split; MetaCore's members are plain public
+// methods now, so every ./pve/*.ts handler just takes `core: MetaCore` and calls `core.mutateSave(...)`
+// etc. directly — no bind, no ctx object). Two of the original private helpers
 // (`bumpPveRewardCap`/`deductStamina`/`grantChapterClearCard`/`prepareClearReward`) turned out to only
 // ever touch `deps` fields, not a bound method — those are plain deps-parameterized functions with no
 // ctx needed at all (pve/helpers.ts).
@@ -30,7 +31,7 @@ export class PveService {
   constructor(private readonly core: MetaCore) {}
 
     async pveEnter(...args: Parameters<PveHandlers['pveEnter']>) {
-      return pveEnterHandler({ deps: this.core.deps, rejectIfBanned: this.core.rejectIfBanned.bind(this.core) }, ...args);
+      return pveEnterHandler(this.core, ...args);
     }
 
     async purchaseStamina(...args: Parameters<PveHandlers['purchaseStamina']>) {
@@ -38,18 +39,10 @@ export class PveService {
     }
 
     async pveClear(...args: Parameters<PveHandlers['pveClear']>) {
-      return pveClearHandler(
-        {
-          deps: this.core.deps,
-          rejectIfBanned: this.core.rejectIfBanned.bind(this.core),
-          mutateSave: this.core.mutateSave.bind(this.core),
-          readStaminaSnapshot: this.core.readStaminaSnapshot.bind(this.core),
-        },
-        ...args,
-      );
+      return pveClearHandler(this.core, ...args);
     }
 
     async pveVerify(...args: Parameters<PveHandlers['pveVerify']>) {
-      return pveVerifyHandler({ deps: this.core.deps, mutateSave: this.core.mutateSave.bind(this.core) }, ...args);
+      return pveVerifyHandler(this.core, ...args);
     }
 }
