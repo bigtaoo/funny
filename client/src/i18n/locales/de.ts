@@ -183,11 +183,11 @@ export const de: Record<TranslationKey, string> = {
 
   // ── Intro beim ersten Start (Hintergrundgeschichte) ───────────────────────
   'story.line.1': 'Taos Noten waren immer gut gewesen – so gut, dass selbst er es ein bisschen sinnlos fand.',
-  'story.line.2': 'Diese Stadt war weit weg von zu Hause, Freunde gab es wenige, und er hatte sich daran gewöhnt, allein zu sein.',
+  'story.line.2': 'Diese Stadt war weit weg von zu Hause, er hatte nicht viele Freunde und war es gewohnt, allein zu sein.',
   'story.line.3': 'An seinem Geburtstag reichte ihm sein Vater ein Heft. „Schreib was auf“, sagte er.',
   'story.line.4': 'Er wusste nicht, was er aufschreiben sollte. Die erste Seite blieb lange leer.',
-  'story.line.5': 'Später zeichnete er eine kleine Figur darauf. Dann noch eine.',
-  'story.line.6': 'Die Figuren bekamen Namen, Orte, zu denen sie mussten, Kämpfe, die sie austragen mussten.',
+  'story.line.5': 'Später zeichnete er seine erste Figur darauf. Dann noch eine.',
+  'story.line.6': 'Nach und nach bekamen die Figuren Namen, Orte, an die sie gehen wollten, und Kämpfe, die sie kämpfen mussten.',
   'story.line.7': 'Daraus wurde eine ganze Welt – in der nicht zählte, wer am klügsten war, sondern ob jemand deinen nächsten Schritt verstand.',
   'story.tapToContinue': 'Zum Fortfahren tippen',
   'story.skip': 'Überspringen »',
