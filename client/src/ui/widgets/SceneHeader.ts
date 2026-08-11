@@ -274,7 +274,15 @@ export function drawSceneHeader(
     container.addChild(titleNode);
   }
 
-  return { headerH, backRect: { x: 0, y: 0, w: BACK_HIT_W, h: headerH } };
+  // Hit/geometry width: at least the comfortable BACK_HIT_W tap target, but never smaller
+  // than the chip actually drawn — on a tall portrait bar (backSize scales with headerH,
+  // 11.08.2026) the chip can render wider than the old flat 160. Callers elsewhere (e.g.
+  // WorldMapPanels/hud.ts's resource-cluster leftBound) treat this as "where the back
+  // button ends" to avoid drawing over it; a too-small reported width let the resource
+  // cluster's opaque background paint over the tail of the back label ("← Bac[k]" bug,
+  // same-day regression from the backSize portrait scale-up).
+  const chipW = backChipSize(label, size).w;
+  return { headerH, backRect: { x: 0, y: 0, w: Math.max(BACK_HIT_W, chipW), h: headerH } };
 }
 
 /** Local origin of the floating back chip in design space — same 10px inset as the bar (§3.1). */

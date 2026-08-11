@@ -110,4 +110,34 @@ describe('WorldMapPanels.renderHud — resource stockpile totals moved into the 
     panels.renderHud();
     expect(clusterTexts(ctx).length).toBe(first);
   });
+
+  // 2026-08-11 portrait clipping fix: with real-world 6-digit stockpiles (see the user's
+  // screenshot — 45859/136108/144207/135884), the 5-resource cluster's nominal (unscaled)
+  // width badly overflows the header's available space between the back button and the
+  // shop/auction buttons — nothing previously clamped it, so the tail resources' totals
+  // rendered past the visible canvas edge and were cut off mid-digit. renderHeaderHud now
+  // shrinks the whole cluster to fit; assert it never overlaps the shop button regardless
+  // of how large the numbers get.
+  it('shrinks the cluster so large 6-digit totals never overlap the shop button', () => {
+    const { ctx, panels } = buildHudHarness(
+      { ink: 100, paper: 0, graphite: 600, metal: 0, sticker: 0 },
+      { ink: 45859, paper: 136108, graphite: 144207, metal: 135884, sticker: 999999 },
+    );
+    panels.renderHud();
+    const cluster = findCluster(ctx);
+    expect(cluster.x).toBeGreaterThanOrEqual(ctx.backRect.x + ctx.backRect.w);
+    expect(cluster.x + cluster.width).toBeLessThanOrEqual(ctx.shopBtnRect.x);
+    // Every total must still be present (not dropped/truncated) — just drawn smaller.
+    const texts = clusterTexts(ctx);
+    expect(texts).toEqual(
+      expect.arrayContaining(['45859', '136108', '144207', '135884', '999999'])
+    );
+  });
+
+  it('does not shrink the cluster when it already fits (small totals stay at full scale)', () => {
+    const { ctx, panels } = buildHudHarness({ ink: 5 }, { ink: 12, paper: 3 });
+    panels.renderHud();
+    const cluster = findCluster(ctx);
+    expect(cluster.scale.x).toBe(1);
+  });
 });

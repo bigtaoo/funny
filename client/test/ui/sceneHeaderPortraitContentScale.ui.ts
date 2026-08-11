@@ -92,6 +92,41 @@ describe('SceneHeader portrait content scaling (2026-08-11 fix)', () => {
     expect(fontSizeOf(tall)).toBeGreaterThan(fontSizeOf(compact));
   });
 
+  // Same-day follow-up (2026-08-11): the back-button font growing above made the tall-portrait
+  // chip visibly wider than the hardcoded BACK_HIT_W=160 backRect used to report — a real bug,
+  // not just a hit-testing nit. WorldMapPanels/hud.ts reads backRect.w to know "where the back
+  // button ends" and positions the resource-cluster's opaque background right after it; an
+  // under-reported width let that background paint over the tail of the back label ("← Bac[k]"
+  // in the user's screenshot). backRect.w must track the real chip, not just the tap-target floor.
+  it('backRect.w on a tall portrait bar is at least as wide as the actually-rendered back chip (not the flat tap-target floor)', () => {
+    const tall = new PIXI.Container();
+    const tallHdr = drawSceneHeader(tall, 1080, TALL_PORTRAIT_H, 'Roster');
+
+    // The back chip is the last child added to the chrome container (see buildChrome: bg →
+    // guilloche weave → accent rule → chip).
+    const chrome = tall.children[0] as PIXI.Container;
+    const chip = chrome.children[chrome.children.length - 1] as PIXI.Container;
+    expect(chip).toBeTruthy();
+    // width getter includes children's rendered bounds — the pill background sized to fit the label.
+    expect(tallHdr.backRect.w).toBeGreaterThanOrEqual(chip.width);
+  });
+
+  // The headless text-metrics stub (test/harness/pixiHeadless.ts) measures purely by character
+  // count, not fontSize, so a moderately tall bar's chip growth can coincidentally still land
+  // right at the flat 160 floor in this env even though real font rendering would clearly exceed
+  // it (padding alone — independent of the stub — already scales with headerH). Use an extreme
+  // height so the chip's padding-driven growth unambiguously clears the floor even under the
+  // crude stub, proving backRect.w tracks the chip rather than staying pinned at 160.
+  it('backRect.w grows past the flat 160 floor on an extremely tall bar, tracking the real chip', () => {
+    const EXTREME_PORTRAIT_H = 6000;
+    const c = new PIXI.Container();
+    const hdr = drawSceneHeader(c, 1080, EXTREME_PORTRAIT_H, 'Roster');
+    const chrome = c.children[0] as PIXI.Container;
+    const chip = chrome.children[chrome.children.length - 1] as PIXI.Container;
+    expect(hdr.backRect.w).toBeGreaterThan(160);
+    expect(hdr.backRect.w).toBeGreaterThanOrEqual(chip.width);
+  });
+
   it("the floating back button (full-bleed scenes) matches drawSceneHeader's back-button size at the same screen height", () => {
     // drawFloatingBackButton has no real bar, so it must derive the same notional headerH
     // drawSceneHeader would have used, or its back chip would size differently from every other

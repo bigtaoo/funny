@@ -121,14 +121,29 @@ export class HudPanel implements HudHandlers {
     cx -= gap;
     const leftBound = this.core.ctx.backRect.x + this.core.ctx.backRect.w + 8;
     const rightBound = shopBtn.x - 8;
-    cluster.x = leftBound + Math.max(0, (rightBound - leftBound - cx) / 2);
+
+    // Shrink-to-fit (2026-08-11 portrait clipping fix): at nominal sizes, 5 resources'
+    // rate+total labels can badly overflow the narrow portrait design width (1080) once
+    // stockpiles grow past a few digits — e.g. ~1550px of content vs ~560px available
+    // between the back button and the shop/auction buttons. Previously nothing clamped
+    // this, so the tail resources (and their totals) rendered past the visible canvas
+    // edge and were cut off mid-digit. Scale the whole cluster down uniformly rather than
+    // wrapping/reflowing — keeps every resource visible and legible instead of some being
+    // silently unreadable off-screen. Floor of 0.55 keeps the smallest case still legible;
+    // below that we accept a slight overflow rather than shrinking to illegible text.
+    const availW = Math.max(0, rightBound - leftBound);
+    const fitScale = cx > availW ? Math.max(0.55, availW / cx) : 1;
+    if (fitScale < 1) cluster.scale.set(fitScale);
+    const drawnW = cx * fitScale;
+
+    cluster.x = leftBound + Math.max(0, (rightBound - leftBound - drawnW) / 2);
     cluster.y = headerH / 2;
 
     // Independent background panel behind the resource cluster, distinguishing it from the
     // shared header-bar chrome instead of floating directly on it.
     const padX = 10,
       padY = Math.round(headerH * 0.14);
-    const bgPanel = sketchPanel(cx + padX * 2, headerH - padY * 2, {
+    const bgPanel = sketchPanel(drawnW + padX * 2, headerH - padY * 2, {
       fill: C.paper,
       border: C.mid,
       seed: seedFor(2, 0, cx),
@@ -141,7 +156,7 @@ export class HudPanel implements HudHandlers {
     this.core.ctx.resClusterRect = {
       x: bgPanel.x,
       y: bgPanel.y,
-      w: cx + padX * 2,
+      w: drawnW + padX * 2,
       h: headerH - padY * 2,
     };
   }
@@ -227,7 +242,15 @@ export class HudPanel implements HudHandlers {
     if (this.core.ctx.me?.joined) {
       // Resource stockpile totals moved up into the header production readout
       // (renderHeaderHud, 2026-08-09) — this card now only shows troops/territory.
-      const cardH = 56;
+      //
+      // 2026-08-11 legibility pass (user screenshot: "portrait UI too hard to read"):
+      // was a single FS.bodyLg sentence ("Troops 8040/10000  Territory 11") crammed into a
+      // 56px-tall strip — at portrait's narrower design width that reads as one small,
+      // undifferentiated line of digits. Split into two icon-led stat chips (same "dense
+      // stats need cards, not a text line" call as the Territory Overview panel redesign
+      // — see [[territory-overview-table-cards]]) so each number gets its own visual
+      // weight and a scannable icon instead of competing for space in one sentence.
+      const cardH = 88;
       const card = sketchPanel(rightW, cardH, {
         fill: C.paper,
         border: C.mid,
@@ -240,14 +263,35 @@ export class HudPanel implements HudHandlers {
       const troops = this.core.ctx.me.troops ?? 0;
       const troopCap = this.core.ctx.me.troopCap ?? 0;
       const territory = this.core.ctx.me.territoryCount ?? 0;
-      const line1 = `${t('world.troops')} ${troops}/${troopCap}  ${t(
-        'world.territory'
-      )} ${territory}`;
-      const lbl1 = txt(line1, FS.bodyLg, C.dark);
-      lbl1.anchor.set(0, 0.5);
-      lbl1.x = rx + 16;
-      lbl1.y = ry + cardH / 2;
-      hud.addChild(lbl1);
+      const halfW = rightW / 2;
+      const statIconSize = 30;
+      const stats: { icon: IconKind; value: string; label: string }[] = [
+        { icon: 'swords', value: `${troops}/${troopCap}`, label: t('world.troops') },
+        { icon: 'castle', value: `${territory}`, label: t('world.territory') },
+      ];
+      stats.forEach((s, i) => {
+        const colX = rx + i * halfW;
+        const icon = buildIcon(s.icon, statIconSize, C.dark);
+        icon.x = colX + 14;
+        icon.y = ry + 14;
+        hud.addChild(icon);
+        const valLbl = txt(s.value, FS.heading, C.dark, true);
+        valLbl.anchor.set(0, 0.5);
+        valLbl.x = colX + 14 + statIconSize + 8;
+        valLbl.y = ry + 14 + statIconSize / 2;
+        hud.addChild(valLbl);
+        const capLbl = txt(s.label, FS.tiny, C.mid);
+        capLbl.x = colX + 14;
+        capLbl.y = ry + 14 + statIconSize + 8;
+        hud.addChild(capLbl);
+        if (i === 0) {
+          const div = new PIXI.Graphics();
+          div.lineStyle(1, C.mid, 0.5);
+          div.moveTo(colX + halfW, 10);
+          div.lineTo(colX + halfW, cardH - 10);
+          hud.addChild(div);
+        }
+      });
       ry += cardH + 12;
 
       // ── Active buffs (S8-8 UI fix, 2026-08-08): the capital-protection shield and the
@@ -440,21 +484,21 @@ export class HudPanel implements HudHandlers {
         ry = listPanel.y + listH + 12;
       }
 
-      // Battle-replays badge — sits directly below the marches badge; tapping opens the last-100 replay browser.
+      // Battle-replays badge — sits directly below the marches badge; tapping opens the last-100
+      // replay browser. 2026-08-11 legibility pass: was the one badge in this stack still on the
+      // low-contrast paper `sketchPanel` (dark text on light paper, easy to lose against the pale
+      // map underneath) while its sibling above it (Marches) already used the higher-contrast
+      // `sketchButton` fill + light text — switched to match, so the two feel like one action group.
       const repH = 64;
-      const repBadge = sketchPanel(rightW, repH, {
-        fill: C.paper,
-        border: C.mid,
-        seed: seedFor(6, 3, rightW),
-      });
+      const repBadge = sketchButton(rightW, repH, seedFor(6, 3, rightW));
       repBadge.x = rx;
       repBadge.y = ry;
       hud.addChild(repBadge);
-      const repIcon = buildIcon('replay', 28, C.dark);
+      const repIcon = buildIcon('replay', 28, C.light);
       repIcon.x = rx + 20;
       repIcon.y = ry + (repH - 28) / 2;
       hud.addChild(repIcon);
-      const repTxt = txt(t('world.replays'), FS.label, C.dark);
+      const repTxt = txt(t('world.replays'), FS.label, C.light);
       repTxt.anchor.set(0, 0.5);
       repTxt.x = rx + 60;
       repTxt.y = ry + repH / 2;
