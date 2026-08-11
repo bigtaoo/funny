@@ -7,7 +7,7 @@ import { ok, FLAG_KEYS, flagDefault, extractBearer, verifyToken, FLAG_PLATFORMS 
 import { ErrorCode, err } from '@nw/shared';
 import { buildLokiPayload, buildAnomalyLokiPayload, pushToLoki, type ClientLogEntry, type ClientAnomalyEvent } from '../clientLog.js';
 import type { MetaHandlers } from '../generated/routes.gen.js';
-import { createRateLimiter, type Constructor, type MetaBaseCtor } from './base.js';
+import { createRateLimiter, type RateLimiter, type MetaCore } from './base.js';
 
 type TelemetryHandlers = Pick<
   MetaHandlers,
@@ -17,12 +17,17 @@ type TelemetryHandlers = Pick<
 /** 4 client log level flags (ordered by verbosity; for documentation/guard use only). */
 const CLIENT_LOG_KEYS = FLAG_KEYS.filter((k) => k.startsWith('client_log_'));
 
-export function TelemetryMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase & Constructor<TelemetryHandlers> {
-  return class extends Base {
-    /** Rate limit for "full coverage" anomaly event uploads, keyed by IP: at most 30 POST /client/anomaly
-     *  requests per IP per 60s (guards against Loki flooding). Redis-backed when configured (2026-07-27,
-     *  precise across instances); in-process fallback otherwise — see createRateLimiter in base.ts. */
-    private readonly anomalyRate = createRateLimiter(this.deps.redis, 'anomaly', 30, 60 * 1000);
+export class TelemetryService {
+  /** Rate limit for "full coverage" anomaly event uploads, keyed by IP: at most 30 POST /client/anomaly
+   *  requests per IP per 60s (guards against Loki flooding). Redis-backed when configured (2026-07-27,
+   *  precise across instances); in-process fallback otherwise — see createRateLimiter in base.ts. */
+  private readonly anomalyRate: RateLimiter;
+
+  constructor(private readonly core: MetaCore) {
+    // Built in the constructor body, not as a field initializer — see save.ts's constructor comment for
+    // why (target: ES2022 real class-fields semantics would read `this.core` as undefined here).
+    this.anomalyRate = createRateLimiter(this.core.deps.redis, 'anomaly', 30, 60 * 1000);
+  }
 
     /** Parse the flag evaluation context from the request: platform/publicId from query params + optional accountId from token. */
     private flagCtx(req: FastifyRequest): FlagContext {
@@ -32,11 +37,11 @@ export function TelemetryMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase &
       if (typeof q.platform === 'string' && (FLAG_PLATFORMS as readonly string[]).includes(q.platform)) {
         ctx.platform = q.platform as FlagPlatform;
       }
-      if (this.deps.region) ctx.region = this.deps.region;
+      if (this.core.deps.region) ctx.region = this.core.deps.region;
       // Login state is optional: if a token is provided, parse the accountId for more precise evaluation; missing/invalid token is silently ignored (bootstrap is callable anonymously).
       const token = extractBearer(req.headers['authorization']);
       if (token) {
-        try { ctx.accountId = verifyToken(token, this.deps.jwt); } catch { /* anonymous */ }
+        try { ctx.accountId = verifyToken(token, this.core.deps.jwt); } catch { /* anonymous */ }
       }
       return ctx;
     }
@@ -48,7 +53,7 @@ export function TelemetryMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase &
      */
     async bootstrap(req: FastifyRequest) {
       const flags: Record<string, boolean> = {};
-      const cache = this.deps.flags;
+      const cache = this.core.deps.flags;
       if (cache) {
         const ctx = this.flagCtx(req);
         for (const key of FLAG_KEYS) {
@@ -65,7 +70,7 @@ export function TelemetryMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase &
 
     /** Whether this publicId is currently named in the allowPublicIds of any client_log_* flag (prevents arbitrary clients from flooding Loki with logs). */
     private isClientLogTargeted(publicId: string): boolean {
-      const cache = this.deps.flags;
+      const cache = this.core.deps.flags;
       if (!cache) return false;
       for (const key of CLIENT_LOG_KEYS) {
         if (cache.rawDoc(key)?.rollout?.allowPublicIds?.includes(publicId)) return true;
@@ -97,18 +102,18 @@ export function TelemetryMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase &
         const e: ClientLogEntry = {
           level: typeof o.level === 'string' ? o.level : 'info',
           msg,
-          ts: typeof o.ts === 'number' && Number.isFinite(o.ts) ? o.ts : this.deps.now(),
+          ts: typeof o.ts === 'number' && Number.isFinite(o.ts) ? o.ts : this.core.deps.now(),
         };
         if (typeof o.tag === 'string' && o.tag) e.tag = o.tag.slice(0, 64);
         return [e];
       });
 
       const payload = buildLokiPayload(publicId, entries, platform, () =>
-        (BigInt(this.deps.now()) * 1_000_000n).toString(),
+        (BigInt(this.core.deps.now()) * 1_000_000n).toString(),
       );
       if (payload) {
         // fire-and-forget: does not block the response; failures are silent (attach onError only when needed during debugging).
-        void pushToLoki(this.deps.lokiPushUrl, payload);
+        void pushToLoki(this.core.deps.lokiPushUrl, payload);
       }
       return ok({ accepted: entries.length });
     }
@@ -125,7 +130,7 @@ export function TelemetryMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase &
         return reply.code(400).send(err(ErrorCode.BAD_REQUEST, 'missing events'));
       }
       // IP rate limit: over-limit is silently discarded (no 4xx, to prevent clients from retrying based on the response / probing the rate limit threshold).
-      if (!(await this.anomalyRate.allow(req.ip ?? 'unknown', this.deps.now()))) return ok({ accepted: 0 });
+      if (!(await this.anomalyRate.allow(req.ip ?? 'unknown', this.core.deps.now()))) return ok({ accepted: 0 });
 
       // publicId is optional (anomalies can occur before login); defaults to 'anon' and is still reported to enable statistics on anonymous anomalies.
       // Length-capped (2026-08-03 fix, matching msg/type/buildVersion below): this endpoint is
@@ -149,16 +154,16 @@ export function TelemetryMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase &
         const e: ClientAnomalyEvent = {
           type,
           msg,
-          ts: typeof o.ts === 'number' && Number.isFinite(o.ts) ? o.ts : this.deps.now(),
+          ts: typeof o.ts === 'number' && Number.isFinite(o.ts) ? o.ts : this.core.deps.now(),
         };
         if (typeof o.detail === 'string' && o.detail) e.detail = o.detail.slice(0, 1000);
         return [e];
       });
 
       const payload = buildAnomalyLokiPayload(publicId, events, platform, buildVersion, () =>
-        (BigInt(this.deps.now()) * 1_000_000n).toString(),
+        (BigInt(this.core.deps.now()) * 1_000_000n).toString(),
       );
-      if (payload) void pushToLoki(this.deps.lokiPushUrl, payload);
+      if (payload) void pushToLoki(this.core.deps.lokiPushUrl, payload);
       return ok({ accepted: events.length });
     }
 
@@ -171,5 +176,4 @@ export function TelemetryMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase &
     async postAnalyticsEvents(_req: FastifyRequest, reply: FastifyReply) {
       return reply.code(501).send({ ok: false, error: { code: 'NOT_IMPLEMENTED', message: 'analytics events not served by metaserver' } });
     }
-  };
 }

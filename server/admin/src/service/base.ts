@@ -1,9 +1,13 @@
-// Shared foundation for the AdminService mixin chain (see ../service.ts assembly).
-// AdminServiceBase holds `deps` (unpacked into protected fields, so domain mixin method bodies keep
-// referencing `this.cols` / `this.now` verbatim) + the genuinely cross-cutting helpers used by more
-// than one domain mixin (audit / actorNames / requireCap) plus the in-memory login-attempt table owned
-// by the constructor. Each business domain lives in its own sibling file as an `XMixin(Base)` and is
-// chained together into the final AdminService. Domain-local state/helpers stay in their own mixin file.
+// Shared foundation for the AdminService domain classes (see ../service.ts assembly).
+//
+// AdminCore holds `deps` (unpacked into public readonly fields, so domain class method bodies keep
+// referencing `this.core.cols` / `this.core.now` verbatim) + the genuinely cross-cutting helpers used
+// by more than one domain (audit / actorNames / requireCap). Each business domain lives in its own
+// sibling file as an independent class taking `(core: AdminCore)` in its constructor (2026-08-11
+// mixin-chain split, claudedocs/server.md's "拆分形态的优先级" 形态②/独立类+组合 — the 18 domains
+// had zero cross-domain `this.*` calls in the mixin chain, only these three shared helpers, so
+// composition replaces the chain one-for-one with no narrow per-pair interfaces needed). Domain-local
+// state/helpers (e.g. auth.ts's login-attempt table) stay in their own domain file, not here.
 import { randomUUID } from 'node:crypto';
 import {
   roleHasCapability,
@@ -50,15 +54,11 @@ export interface AdminServiceDeps {
   now: () => number;
 }
 
-// ── Mixin plumbing ────────────────────────────────────────────────────────────
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export type Constructor<T = object> = new (...args: any[]) => T;
-export type AdminBaseCtor = Constructor<AdminServiceBase>;
-
 // Login failure rate limiting (OPS_DESIGN §6 "login failure rate limiting"). The admin service holds internal secrets
 // and exposes a port to operators, making it a high-value attack target. Uses a per-username sliding-window counter;
 // reaching the threshold locks the account for a period. In-memory state (sufficient for a single admin instance;
-// migrate to Redis if horizontally scaled).
+// migrate to Redis if horizontally scaled). Only auth.ts uses these — kept here as shared constants (imported by
+// auth.ts) rather than moved there, since they're the public contract of the rate-limit window, not internal detail.
 export const LOGIN_MAX_FAILURES = 5; // max failures within the window
 export const LOGIN_WINDOW_MS = 15 * 60 * 1000; // sliding window for failure counting
 export const LOGIN_LOCKOUT_MS = 15 * 60 * 1000; // lockout duration after threshold is reached
@@ -69,41 +69,33 @@ export interface LoginAttempt {
   lockedUntil: number;
 }
 
-export class AdminServiceBase {
-  protected readonly deps: AdminServiceDeps;
-  // Deps unpacked into protected fields so domain-mixin method bodies keep referencing them verbatim (this.cols, this.now, …).
-  protected readonly cols: AdminCollections;
-  protected readonly stats: StatsClient;
-  protected readonly players: PlayerClient;
-  protected readonly antiCheat: AntiCheatClient;
-  protected readonly mismatches: MismatchClient;
-  protected readonly pvpCardStats: PvpCardStatsClient;
-  protected readonly suspiciousPve: SuspiciousPveClient;
-  protected readonly mail: MailDispatcher;
-  protected readonly analytics: AnalyticsClient;
-  protected readonly world: WorldClient;
-  protected readonly auction: AuctionClient;
-  protected readonly ladder: LadderClient;
-  protected readonly events: EventsClient;
-  protected readonly gachaPools: GachaPoolsClient;
-  protected readonly promo: PromoClient;
-  protected readonly paddleEvents: PaddleEventsClient;
-  protected readonly reports: ReportsClient;
-  protected readonly appeals: AppealsClient;
-  protected readonly enforcement: EnforcementClient;
-  protected readonly feedback: FeedbackClient;
-  protected readonly now: () => number;
-  /** Login failure rate-limit table (keyed by attacker-controlled username, in-memory). */
-  protected readonly loginAttempts = new Map<string, LoginAttempt>();
-  /** Last full-table sweep of `loginAttempts` (auth.ts's maybeSweepLoginAttempts) — without it, failed
-   * logins against nonexistent usernames (never hit the `.delete()` on success) grow this map without
-   * bound for as long as the process lives. */
-  protected lastLoginAttemptsSweepAt = 0;
+export class AdminCore {
+  // Deps unpacked into public readonly fields so domain-class method bodies keep referencing them
+  // verbatim (this.core.cols, this.core.now, …) — no protected-visibility wall to work around since
+  // these are now sibling classes, not mixin-chain descendants.
+  readonly cols: AdminCollections;
+  readonly stats: StatsClient;
+  readonly players: PlayerClient;
+  readonly antiCheat: AntiCheatClient;
+  readonly mismatches: MismatchClient;
+  readonly pvpCardStats: PvpCardStatsClient;
+  readonly suspiciousPve: SuspiciousPveClient;
+  readonly mail: MailDispatcher;
+  readonly analytics: AnalyticsClient;
+  readonly world: WorldClient;
+  readonly auction: AuctionClient;
+  readonly ladder: LadderClient;
+  readonly events: EventsClient;
+  readonly gachaPools: GachaPoolsClient;
+  readonly promo: PromoClient;
+  readonly paddleEvents: PaddleEventsClient;
+  readonly reports: ReportsClient;
+  readonly appeals: AppealsClient;
+  readonly enforcement: EnforcementClient;
+  readonly feedback: FeedbackClient;
+  readonly now: () => number;
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  constructor(...args: any[]) {
-    const deps = args[0] as AdminServiceDeps;
-    this.deps = deps;
+  constructor(deps: AdminServiceDeps) {
     this.cols = deps.cols;
     this.stats = deps.stats;
     this.players = deps.players;
@@ -127,7 +119,7 @@ export class AdminServiceBase {
     this.now = deps.now;
   }
 
-  protected requireCap(actor: Actor, cap: AdminCapability): void {
+  requireCap(actor: Actor, cap: AdminCapability): void {
     if (!roleHasCapability(actor.role, cap)) {
       throw new AdminError(403, 'forbidden', `missing capability: ${cap}`);
     }
@@ -155,7 +147,7 @@ export class AdminServiceBase {
     }
   }
 
-  protected async actorNames(ids: string[]): Promise<Map<string, string>> {
+  async actorNames(ids: string[]): Promise<Map<string, string>> {
     const uniq = [...new Set(ids)].filter((x) => !x.startsWith('unknown:'));
     const out = new Map<string, string>();
     if (uniq.length === 0) return out;

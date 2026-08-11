@@ -17,8 +17,12 @@ import { accountIdOf, clientPlatformOf, type ServiceDeps } from '../base.js';
 
 const log = createLogger('meta:economy');
 
-/** Client-facing gacha pool view (GACHA_DESIGN §2 + §8): static + active limited pools with per-entry odds. */
-interface PoolView {
+/** Client-facing gacha pool view (GACHA_DESIGN §2 + §8): static + active limited pools with per-entry odds.
+ * Exported (2026-08-11 mixin-chain split) so EconomyService.getGachaPools's inferred return type can be
+ * named in the .d.ts — under the old mixin form, EconomyMixin's explicit `Constructor<EconomyHandlers>`
+ * return-type annotation erased this internal detail from declaration emit; a plain class method has no
+ * such annotation, so tsc must be able to name every type it infers. */
+export interface PoolView {
   id: string;
   costSingle: number;
   costTen: number;

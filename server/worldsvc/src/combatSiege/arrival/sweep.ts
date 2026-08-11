@@ -1,7 +1,7 @@
 // Sweep NPC garrison from a neutral / resource tile (sweep arrival). Split out of arrival.ts
 // (2026-08-10, 独立函数模块 form). `applySweep` is public (SiegeArrivalHandlers), so arrival.ts keeps a
 // thin delegating method — see arrival.ts's facade comment. Takes `core` (a plain WorldCore instance)
-// and `ctx` (the assembled SiegeService, typed narrowly as SiegeServiceBase; only `recordSiege` here).
+// and `ctx` (the assembled SiegeService, typed narrowly as SiegeCtx; only `recordSiege` here).
 // No behavior change.
 import { proceduralTile, siegeSeedFromId, resolveSiege, npcGarrison, npcBaseHp, SWEEP_LOOT_PER_LEVEL, MARCH_MORALE_MAX, moraleCombatMultiplier, type ResourceType } from '@nw/shared';
 import { synthesizeArmy } from '../../siegeEngine';
@@ -10,7 +10,7 @@ import { lootSummary, emptyResources } from '../../core';
 import type { WorldCore } from '../../core';
 import type { SiegeReplayInputs } from '../../worldTypes';
 import { refundTroops, startReturnMarch, parkMarchInPlace } from '../../combatShared';
-import type { SiegeServiceBase } from '../base';
+import type { SiegeCtx } from '../ctx';
 
 /**
  * Sweep NPC garrison from a neutral / resource tile (sweep arrival). No occupation: on success, loot resources + surviving troops return to the pool;
@@ -18,7 +18,7 @@ import type { SiegeServiceBase } from '../base';
  * The outcome itself is always the cheap linear formula (never the real engine) — a synthesized formation is
  * built purely so the battle report has something to replay (see the `replay` local below).
  */
-export async function applySweep(core: WorldCore, ctx: SiegeServiceBase, m: MarchDoc, pw: PlayerWorldDoc, t: number): Promise<void> {
+export async function applySweep(core: WorldCore, ctx: SiegeCtx, m: MarchDoc, pw: PlayerWorldDoc, t: number): Promise<void> {
   const { cols } = core.deps;
   const occ = await cols.tiles.findOne({ _id: m.toTile });
   if (occ?.ownerId) {

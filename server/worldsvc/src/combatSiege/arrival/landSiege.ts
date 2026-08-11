@@ -1,7 +1,7 @@
 // Apply a single siege settlement result (G3-1 extraction, §16.4). Split out of arrival.ts (2026-08-10,
 // 独立函数模块 form — landSiege is private, called only from applySiege in the same file). Takes `core`
 // (a plain WorldCore instance) and `ctx` (the assembled SiegeService, typed narrowly as
-// SiegeServiceBase). No behavior change.
+// SiegeCtx). No behavior change.
 import type { SiegeResolution } from '@nw/shared';
 import { computeCardStateUpdates } from '../../siegeEngine';
 import type { TileDoc, PlayerWorldDoc, MarchDoc } from '../../db';
@@ -9,7 +9,7 @@ import { lootSummary, emptyResources } from '../../core';
 import type { WorldCore } from '../../core';
 import type { SiegeReplayInputs } from '../../worldTypes';
 import { startReturnMarch } from '../../combatShared';
-import type { SiegeServiceBase } from '../base';
+import type { SiegeCtx } from '../ctx';
 
 /**
  * Apply a single siege settlement result (G3-1 extraction, §16.4): write loot / garrison / nation founding /
@@ -23,7 +23,7 @@ import type { SiegeServiceBase } from '../base';
  */
 export async function landSiege(
   core: WorldCore,
-  ctx: SiegeServiceBase,
+  ctx: SiegeCtx,
   m: MarchDoc,
   pw: PlayerWorldDoc,
   target: TileDoc,

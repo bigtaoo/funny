@@ -2,7 +2,7 @@
 // bonus CAS + cross-account receipt guard. claimFirstPurchaseBonus is recharge-only (kept private here).
 import { FIRST_PURCHASE_BONUS_MULTIPLIER } from '@nw/shared';
 import type { IapProductKind } from '../iap';
-import type { CommercialBaseCtor, Constructor, Result } from './base';
+import type { Result, WalletCore } from './base';
 import type { PaddleEventDoc } from '../db';
 import { effectiveCoins, rechargeChannelOf, spendChannelOf } from '../spendChannel';
 
@@ -60,17 +60,18 @@ export interface RechargeHandlers {
   listPaddleEvents(args: { accountId?: string; transactionId?: string; limit?: number }): Promise<PaddleEventDoc[]>;
 }
 
-export function RechargeMixin<TBase extends CommercialBaseCtor>(Base: TBase): TBase & Constructor<RechargeHandlers> {
-  return class extends Base {
+export class RechargeService {
+  constructor(private readonly core: WalletCore) {}
+
     /**
      * Atomically claim the first-purchase bonus slot.
      * Sets `firstPurchasedAt` only if it doesn't exist yet (CAS-style).
      * Returns true when THIS call claimed it (i.e. this is the first purchase).
      */
     private async claimFirstPurchaseBonus(accountId: string): Promise<boolean> {
-      const result = await this.cols.wallets.findOneAndUpdate(
+      const result = await this.core.cols.wallets.findOneAndUpdate(
         { _id: accountId, firstPurchasedAt: { $exists: false } },
-        { $set: { firstPurchasedAt: this.now() } },
+        { $set: { firstPurchasedAt: this.core.now() } },
       );
       return result !== null;
     }
@@ -95,15 +96,15 @@ export function RechargeMixin<TBase extends CommercialBaseCtor>(Base: TBase): TB
       receiptId: string,
       clientPlatform: string | undefined,
     ): Promise<number> {
-      if (this.isStaleClaim(doc.ts)) {
-        const already = await this.cols.ledger.findOne({ accountId: doc.accountId, receiptId });
+      if (this.core.isStaleClaim(doc.ts)) {
+        const already = await this.core.cols.ledger.findOne({ accountId: doc.accountId, receiptId });
         if (!already) {
-          const claimed = await this.cols.recharges.findOneAndUpdate(
+          const claimed = await this.core.cols.recharges.findOneAndUpdate(
             { _id: doc._id, healedAt: { $exists: false } },
-            { $set: { healedAt: this.now() } },
+            { $set: { healedAt: this.core.now() } },
           );
           if (claimed) {
-            return this.credit(doc.accountId, doc.coinsGranted, 'recharge', {
+            return this.core.credit(doc.accountId, doc.coinsGranted, 'recharge', {
               receiptId,
               rechargeUsdCents: doc.usdCents,
               channel: rechargeChannelOf(doc.platform) ?? undefined,
@@ -112,7 +113,7 @@ export function RechargeMixin<TBase extends CommercialBaseCtor>(Base: TBase): TB
           }
         }
       }
-      const w = await this.cols.wallets.findOne({ _id: doc.accountId });
+      const w = await this.core.cols.wallets.findOne({ _id: doc.accountId });
       return effectiveCoins(w, spendChannelOf(clientPlatform));
     }
 
@@ -124,7 +125,7 @@ export function RechargeMixin<TBase extends CommercialBaseCtor>(Base: TBase): TB
       receiptId: string;
       clientPlatform?: string;
     }): Promise<Result<{ coinsAfter: number; coinsGranted: number }>> {
-      const existing = await this.cols.recharges.findOne({ _id: args.receiptId });
+      const existing = await this.core.cols.recharges.findOne({ _id: args.receiptId });
       if (existing) {
         // Receipt already consumed: replay only if it belongs to the same account (return that account's balance);
         // otherwise reject — prevents mirroring another account's balance to the requester (cross-account balance leak).
@@ -132,49 +133,49 @@ export function RechargeMixin<TBase extends CommercialBaseCtor>(Base: TBase): TB
         const coinsAfter = await this.healRechargeCredit(existing, args.receiptId, args.clientPlatform);
         return { ok: true, coinsAfter, coinsGranted: existing.coinsGranted };
       }
-      const v = await this.verifyReceipt(args.platform, args.receipt);
+      const v = await this.core.verifyReceipt(args.platform, args.receipt);
       if (!v.ok) return { ok: false, error: 'INVALID_RECEIPT' };
       const usdCents = v.usdCents ?? 0;
 
       // First persist the receipt record (unique receiptId prevents concurrent duplicate grants), then credit coins.
       try {
-        await this.cols.recharges.insertOne({
+        await this.core.cols.recharges.insertOne({
           _id: args.receiptId,
           accountId: args.accountId,
           platform: args.platform,
           coinsGranted: v.coins,
           status: 'granted',
           rawReceipt: args.receipt,
-          ts: this.now(),
+          ts: this.core.now(),
           usdCents,
         });
       } catch (e) {
         // Concurrent race: a unique conflict means another request already processed it; re-read and return the existing result.
         if ((e as { code?: number }).code === 11000) {
-          const r = await this.cols.recharges.findOne({ _id: args.receiptId });
+          const r = await this.core.cols.recharges.findOne({ _id: args.receiptId });
           // Same cross-account guard: if the receipt was already claimed by a different account, reject.
           if (r && r.accountId !== args.accountId) return { ok: false, error: 'INVALID_RECEIPT' };
           const coinsAfter = r
             ? await this.healRechargeCredit(r, args.receiptId, args.clientPlatform)
-            : effectiveCoins(await this.cols.wallets.findOne({ _id: args.accountId }), spendChannelOf(args.clientPlatform));
+            : effectiveCoins(await this.core.cols.wallets.findOne({ _id: args.accountId }), spendChannelOf(args.clientPlatform));
           return { ok: true, coinsAfter, coinsGranted: r?.coinsGranted ?? v.coins };
         }
         throw e;
       }
       // ensureWallet BEFORE claiming the first-purchase bonus: claimFirstPurchaseBonus's CAS has no upsert, so on a
       // genuine first purchase the wallet must already exist or the 2× bonus would leak to the second recharge (§6.5).
-      await this.ensureWallet(args.accountId);
+      await this.core.ensureWallet(args.accountId);
       const isFirst = await this.claimFirstPurchaseBonus(args.accountId);
       const coinsGranted = isFirst ? v.coins * FIRST_PURCHASE_BONUS_MULTIPLIER : v.coins;
       // The receipt slot was reserved above with the pre-bonus v.coins; back-fill the actual granted amount so a
       // later idempotent replay reports the bonus-inclusive value (mirrors the orders coinsAfter back-fill).
       if (coinsGranted !== v.coins) {
-        await this.cols.recharges.updateOne({ _id: args.receiptId }, { $set: { coinsGranted } });
+        await this.core.cols.recharges.updateOne({ _id: args.receiptId }, { $set: { coinsGranted } });
       }
       // Real money: fund the recharged bucket matching the VERIFIED platform (ADR-020), not the free pool.
       // rechargeChannelOf returns null for unrecognized platform strings (dev-stub `dev`/`dev-*`) — falls
       // back to `channel: undefined` (free pool), same as before this feature existed.
-      const coinsAfter = await this.credit(args.accountId, coinsGranted, 'recharge', {
+      const coinsAfter = await this.core.credit(args.accountId, coinsGranted, 'recharge', {
         receiptId: args.receiptId,
         rechargeUsdCents: usdCents,
         channel: rechargeChannelOf(args.platform) ?? undefined,
@@ -190,7 +191,7 @@ export function RechargeMixin<TBase extends CommercialBaseCtor>(Base: TBase): TB
       receiptId: string;
       expectedProduct: IapProductKind;
     }): Promise<Result<{ product: IapProductKind }>> {
-      const existing = await this.cols.recharges.findOne({ _id: args.receiptId });
+      const existing = await this.core.cols.recharges.findOne({ _id: args.receiptId });
       if (existing) {
         // Cross-account guard (mirrors rechargeVerify) + cross-product guard: a receipt already consumed
         // for a different product (or a different account) can't be replayed to claim this one.
@@ -198,24 +199,24 @@ export function RechargeMixin<TBase extends CommercialBaseCtor>(Base: TBase): TB
         if (existing.product !== args.expectedProduct) return { ok: false, error: 'INVALID_RECEIPT' };
         return { ok: true, product: args.expectedProduct };
       }
-      const v = await this.verifyReceipt(args.platform, args.receipt);
+      const v = await this.core.verifyReceipt(args.platform, args.receipt);
       if (!v.ok || !v.product || v.product !== args.expectedProduct) {
         return { ok: false, error: 'INVALID_RECEIPT' };
       }
       try {
-        await this.cols.recharges.insertOne({
+        await this.core.cols.recharges.insertOne({
           _id: args.receiptId,
           accountId: args.accountId,
           platform: args.platform,
           coinsGranted: 0,
           status: 'granted',
           rawReceipt: args.receipt,
-          ts: this.now(),
+          ts: this.core.now(),
           product: v.product,
         });
       } catch (e) {
         if ((e as { code?: number }).code === 11000) {
-          const r = await this.cols.recharges.findOne({ _id: args.receiptId });
+          const r = await this.core.cols.recharges.findOne({ _id: args.receiptId });
           if (!r || r.accountId !== args.accountId || r.product !== args.expectedProduct) {
             return { ok: false, error: 'INVALID_RECEIPT' };
           }
@@ -245,42 +246,42 @@ export function RechargeMixin<TBase extends CommercialBaseCtor>(Base: TBase): TB
         return { ok: false, error: 'BAD_REQUEST' };
       }
       const receiptId = `paddle:${args.transactionId}`;
-      const existing = await this.cols.recharges.findOne({ _id: receiptId });
+      const existing = await this.core.cols.recharges.findOne({ _id: receiptId });
       if (existing) {
         if (existing.accountId !== args.accountId) return { ok: false, error: 'INVALID_RECEIPT' };
         const coinsAfter = await this.healRechargeCredit(existing, receiptId, undefined);
         return { ok: true, coinsAfter, coinsGranted: existing.coinsGranted };
       }
 
-      await this.ensureWallet(args.accountId);
+      await this.core.ensureWallet(args.accountId);
       const isFirst = await this.claimFirstPurchaseBonus(args.accountId);
       const coinsGranted = isFirst ? args.coins * FIRST_PURCHASE_BONUS_MULTIPLIER : args.coins;
       const usdCents = args.usdCents ?? 0;
 
       try {
-        await this.cols.recharges.insertOne({
+        await this.core.cols.recharges.insertOne({
           _id: receiptId,
           accountId: args.accountId,
           platform: 'paddle',
           coinsGranted,
           status: 'granted',
           rawReceipt: args.transactionId,
-          ts: this.now(),
+          ts: this.core.now(),
           usdCents,
         });
       } catch (e) {
         if ((e as { code?: number }).code === 11000) {
-          const r = await this.cols.recharges.findOne({ _id: receiptId });
+          const r = await this.core.cols.recharges.findOne({ _id: receiptId });
           if (r && r.accountId !== args.accountId) return { ok: false, error: 'INVALID_RECEIPT' };
           const coinsAfter = r
             ? await this.healRechargeCredit(r, receiptId, undefined)
-            : effectiveCoins(await this.cols.wallets.findOne({ _id: args.accountId }), 'web');
+            : effectiveCoins(await this.core.cols.wallets.findOne({ _id: args.accountId }), 'web');
           return { ok: true, coinsAfter, coinsGranted: r?.coinsGranted ?? coinsGranted };
         }
         throw e;
       }
       // Paddle only serves the web build — always the 'web' bucket (ADR-020), never a client-declared platform.
-      const coinsAfter = await this.credit(args.accountId, coinsGranted, 'recharge', {
+      const coinsAfter = await this.core.credit(args.accountId, coinsGranted, 'recharge', {
         receiptId,
         rechargeUsdCents: usdCents,
         channel: 'web',
@@ -291,27 +292,27 @@ export function RechargeMixin<TBase extends CommercialBaseCtor>(Base: TBase): TB
     /** Decrement totalRechargeCents for a refunded Paddle transaction (GACHA_DESIGN §13, ADR-045). See RechargeHandlers.paddleRefund doc. */
     async paddleRefund(args: { transactionId: string }): Promise<Result<{ decrementedCents: number }>> {
       const receiptId = `paddle:${args.transactionId}`;
-      const doc = await this.cols.recharges.findOne({ _id: receiptId });
+      const doc = await this.core.cols.recharges.findOne({ _id: receiptId });
       if (!doc || doc.refundedAt || !doc.usdCents) return { ok: true, decrementedCents: 0 };
 
       const amount = doc.usdCents;
       // Claim the refund atomically first (refundedAt-absent guard): Paddle redelivers webhooks at-least-once,
       // so two concurrent refund events for the same transaction must not both pass the pre-check above and
       // both decrement totalRechargeCents. Only the request that wins this guarded update proceeds to decrement.
-      const claimed = await this.cols.recharges.updateOne(
+      const claimed = await this.core.cols.recharges.updateOne(
         { _id: receiptId, refundedAt: { $exists: false } },
-        { $set: { refundedAt: this.now() } },
+        { $set: { refundedAt: this.core.now() } },
       );
       if (claimed.matchedCount === 0) return { ok: true, decrementedCents: 0 };
 
-      await this.cols.wallets.findOneAndUpdate(
+      await this.core.cols.wallets.findOneAndUpdate(
         { _id: doc.accountId },
         [
           {
             $set: {
               totalRechargeCents: { $max: [0, { $subtract: [{ $ifNull: ['$totalRechargeCents', 0] }, amount] }] },
               rev: { $add: ['$rev', 1] },
-              updatedAt: this.now(),
+              updatedAt: this.core.now(),
             },
           },
         ],
@@ -327,7 +328,7 @@ export function RechargeMixin<TBase extends CommercialBaseCtor>(Base: TBase): TB
       rawEvent: string;
     }): Promise<void> {
       const _id = `${args.transactionId}:${args.eventType}`;
-      await this.cols.paddleEvents.updateOne(
+      await this.core.cols.paddleEvents.updateOne(
         { _id },
         {
           $set: {
@@ -337,7 +338,7 @@ export function RechargeMixin<TBase extends CommercialBaseCtor>(Base: TBase): TB
             status: args.status,
             accountId: args.accountId,
             rawEvent: args.rawEvent,
-            ts: this.now(),
+            ts: this.core.now(),
           },
         },
         { upsert: true },
@@ -352,11 +353,10 @@ export function RechargeMixin<TBase extends CommercialBaseCtor>(Base: TBase): TB
       const filter: Partial<Record<'accountId' | 'transactionId', string>> = {};
       if (args.accountId) filter.accountId = args.accountId;
       if (args.transactionId) filter.transactionId = args.transactionId;
-      return this.cols.paddleEvents
+      return this.core.cols.paddleEvents
         .find(filter)
         .sort({ ts: -1 })
         .limit(Math.min(args.limit ?? 100, 500))
         .toArray();
     }
-  };
 }

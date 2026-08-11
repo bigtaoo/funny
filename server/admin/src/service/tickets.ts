@@ -17,7 +17,7 @@ import {
   type CompTicketView,
 } from '@nw/shared';
 import type { CompTicketDoc } from '../db';
-import type { Actor, AdminBaseCtor, Constructor } from './base';
+import type { Actor, AdminCore } from './base';
 import { AdminError } from './errors';
 import { validateMail, validateTarget, describeTarget } from './validators';
 
@@ -45,8 +45,9 @@ const ALL_TICKET_STATUS: readonly CompTicketStatus[] = [
   'failed',
 ];
 
-export function TicketsMixin<TBase extends AdminBaseCtor>(Base: TBase): TBase & Constructor<TicketsHandlers> {
-  return class extends Base {
+export class TicketsService {
+  constructor(private readonly core: AdminCore) {}
+
     // ───────────────────────── Compensation tickets ─────────────────────────
 
     async initiateTicket(
@@ -58,7 +59,7 @@ export function TicketsMixin<TBase extends AdminBaseCtor>(Base: TBase): TBase & 
         throw new AdminError(400, 'bad_request', 'scope must be single|global');
       }
       // Validate initiation capability (single player vs. all players).
-      this.requireCap(actor, requiredInitiateCapability(scope));
+      this.core.requireCap(actor, requiredInitiateCapability(scope));
 
       const reason = (input.reason ?? '').trim();
       if (!reason) throw new AdminError(400, 'bad_request', 'reason required');
@@ -77,11 +78,11 @@ export function TicketsMixin<TBase extends AdminBaseCtor>(Base: TBase): TBase & 
         status: 'pending',
         amountTier,
         initiatedBy: actor.adminId,
-        initiatedAt: this.now(),
+        initiatedAt: this.core.now(),
         dispatchKey: randomUUID(),
       };
-      await this.cols.compTickets.insertOne(doc);
-      await this.audit(actor.adminId, 'comp.initiate', {
+      await this.core.cols.compTickets.insertOne(doc);
+      await this.core.audit(actor.adminId, 'comp.initiate', {
         target: doc._id,
         summary: `${scope} ${describeTarget(target)} value=${totalCoinValue(mail.attachments)} tier=${amountTier}`,
       });
@@ -96,7 +97,7 @@ export function TicketsMixin<TBase extends AdminBaseCtor>(Base: TBase): TBase & 
         }
         q.status = filter.status as CompTicketStatus;
       }
-      const docs = await this.cols.compTickets.find(q).sort({ initiatedAt: -1 }).limit(200).toArray();
+      const docs = await this.core.cols.compTickets.find(q).sort({ initiatedAt: -1 }).limit(200).toArray();
       return Promise.all(docs.map((d) => this.toTicketView(d)));
     }
 
@@ -105,7 +106,7 @@ export function TicketsMixin<TBase extends AdminBaseCtor>(Base: TBase): TBase & 
      * ③ approver has the capability required for this scope/tier. On passing, sets status to approved and immediately executes (dispatches the system mail).
      */
     async approveTicket(actor: Actor, id: string): Promise<CompTicketView> {
-      const doc = await this.cols.compTickets.findOne({ _id: id });
+      const doc = await this.core.cols.compTickets.findOne({ _id: id });
       if (!doc) throw new AdminError(404, 'not_found', 'no such ticket');
       if (doc.status !== 'pending') throw new AdminError(409, 'conflict', `ticket is ${doc.status}`);
       const cap = requiredApproveCapability(doc.scope, doc.amountTier);
@@ -120,15 +121,15 @@ export function TicketsMixin<TBase extends AdminBaseCtor>(Base: TBase): TBase & 
         }
         selfApproved = true;
       }
-      this.requireCap(actor, cap);
+      this.core.requireCap(actor, cap);
 
-      const res = await this.cols.compTickets.findOneAndUpdate(
+      const res = await this.core.cols.compTickets.findOneAndUpdate(
         { _id: id, status: 'pending' },
-        { $set: { status: 'approved', approvedBy: actor.adminId, approvedAt: this.now() } },
+        { $set: { status: 'approved', approvedBy: actor.adminId, approvedAt: this.core.now() } },
         { returnDocument: 'after' },
       );
       if (!res) throw new AdminError(409, 'conflict', 'ticket no longer pending');
-      await this.audit(actor.adminId, 'comp.approve', {
+      await this.core.audit(actor.adminId, 'comp.approve', {
         target: id,
         summary: selfApproved ? `${doc.scope} [SELF-APPROVED:no-other-approver]` : doc.scope,
       });
@@ -142,7 +143,7 @@ export function TicketsMixin<TBase extends AdminBaseCtor>(Base: TBase): TBase & 
      */
     private async hasOtherEligibleApprover(initiatorId: string, cap: AdminCapability): Promise<boolean> {
       const eligibleRoles = ADMIN_ROLES.filter((r) => roleHasCapability(r, cap));
-      const count = await this.cols.adminAccounts.countDocuments({
+      const count = await this.core.cols.adminAccounts.countDocuments({
         _id: { $ne: initiatorId },
         disabled: { $ne: true },
         // Seed super-admins are dormant backup/bootstrap accounts, not active operators; exclude them (otherwise the seed would always block a single super from self-approving).
@@ -153,38 +154,38 @@ export function TicketsMixin<TBase extends AdminBaseCtor>(Base: TBase): TBase & 
     }
 
     async rejectTicket(actor: Actor, id: string, note: string): Promise<CompTicketView> {
-      const doc = await this.cols.compTickets.findOne({ _id: id });
+      const doc = await this.core.cols.compTickets.findOne({ _id: id });
       if (!doc) throw new AdminError(404, 'not_found', 'no such ticket');
       if (doc.status !== 'pending') throw new AdminError(409, 'conflict', `ticket is ${doc.status}`);
       if (doc.initiatedBy === actor.adminId) {
         throw new AdminError(403, 'forbidden', 'initiator cannot reject own ticket');
       }
-      this.requireCap(actor, requiredApproveCapability(doc.scope, doc.amountTier));
-      const res = await this.cols.compTickets.findOneAndUpdate(
+      this.core.requireCap(actor, requiredApproveCapability(doc.scope, doc.amountTier));
+      const res = await this.core.cols.compTickets.findOneAndUpdate(
         { _id: id, status: 'pending' },
-        { $set: { status: 'rejected', approvedBy: actor.adminId, approvedAt: this.now(), error: note } },
+        { $set: { status: 'rejected', approvedBy: actor.adminId, approvedAt: this.core.now(), error: note } },
         { returnDocument: 'after' },
       );
       if (!res) throw new AdminError(409, 'conflict', 'ticket no longer pending');
-      await this.audit(actor.adminId, 'comp.reject', { target: id, summary: note });
+      await this.core.audit(actor.adminId, 'comp.reject', { target: id, summary: note });
       return this.toTicketView(res);
     }
 
     /** Cancel a ticket (pending only; initiator or super admin). */
     async cancelTicket(actor: Actor, id: string): Promise<CompTicketView> {
-      const doc = await this.cols.compTickets.findOne({ _id: id });
+      const doc = await this.core.cols.compTickets.findOne({ _id: id });
       if (!doc) throw new AdminError(404, 'not_found', 'no such ticket');
       if (doc.status !== 'pending') throw new AdminError(409, 'conflict', `ticket is ${doc.status}`);
       if (doc.initiatedBy !== actor.adminId && actor.role !== 'super') {
         throw new AdminError(403, 'forbidden', 'only initiator or super can cancel');
       }
-      const res = await this.cols.compTickets.findOneAndUpdate(
+      const res = await this.core.cols.compTickets.findOneAndUpdate(
         { _id: id, status: 'pending' },
-        { $set: { status: 'cancelled', approvedBy: actor.adminId, approvedAt: this.now() } },
+        { $set: { status: 'cancelled', approvedBy: actor.adminId, approvedAt: this.core.now() } },
         { returnDocument: 'after' },
       );
       if (!res) throw new AdminError(409, 'conflict', 'ticket no longer pending');
-      await this.audit(actor.adminId, 'comp.cancel', { target: id });
+      await this.core.audit(actor.adminId, 'comp.cancel', { target: id });
       return this.toTicketView(res);
     }
 
@@ -197,26 +198,26 @@ export function TicketsMixin<TBase extends AdminBaseCtor>(Base: TBase): TBase & 
       // must be gated by the same capability — without this, ANY authenticated admin, regardless of role,
       // could probe how many players a global compensation broadcast would reach with no capability check
       // at all (the httpApi.ts route never called requireCap either).
-      this.requireCap(actor, requiredInitiateCapability(input.scope));
+      this.core.requireCap(actor, requiredInitiateCapability(input.scope));
       const target = validateTarget(input.scope, input.target);
       if (input.scope === 'single') return { recipientCount: 1, available: true };
-      const r = await this.mail.preview({ scope: 'global', target });
+      const r = await this.core.mail.preview({ scope: 'global', target });
       return { recipientCount: r.recipientCount, available: r.ok };
     }
 
     /** Retry a failed ticket execution (failed → re-dispatch; dispatchKey is unchanged, so the mail backend prevents duplicates). */
     async retryTicket(actor: Actor, id: string): Promise<CompTicketView> {
-      const doc = await this.cols.compTickets.findOne({ _id: id });
+      const doc = await this.core.cols.compTickets.findOne({ _id: id });
       if (!doc) throw new AdminError(404, 'not_found', 'no such ticket');
       if (doc.status !== 'failed') throw new AdminError(409, 'conflict', `ticket is ${doc.status}`);
-      this.requireCap(actor, requiredApproveCapability(doc.scope, doc.amountTier));
+      this.core.requireCap(actor, requiredApproveCapability(doc.scope, doc.amountTier));
       // Atomic claim (mirrors approveTicket's status CAS): only the caller that wins this update actually
       // executes. The loser of a concurrent double-click gets 409 instead of also calling mail.send —
       // execute() clears retryLockedAt on every path (success or failure), so a later, non-concurrent
       // retry is never blocked by a stale claim.
-      const claimed = await this.cols.compTickets.findOneAndUpdate(
+      const claimed = await this.core.cols.compTickets.findOneAndUpdate(
         { _id: id, status: 'failed', retryLockedAt: { $exists: false } },
-        { $set: { retryLockedAt: this.now() } },
+        { $set: { retryLockedAt: this.core.now() } },
         { returnDocument: 'after' },
       );
       if (!claimed) throw new AdminError(409, 'conflict', 'retry already in progress');
@@ -228,7 +229,7 @@ export function TicketsMixin<TBase extends AdminBaseCtor>(Base: TBase): TBase & 
      * on failure sets status to failed (retryable). Execution ≠ credit — it only delivers the mail to the player's inbox; the reward is credited via commercial/inventory when the player claims it.
      */
     private async execute(doc: CompTicketDoc): Promise<CompTicketView> {
-      const res = await this.mail.send({
+      const res = await this.core.mail.send({
         dispatchKey: doc.dispatchKey,
         scope: doc.scope,
         target: doc.target,
@@ -238,37 +239,37 @@ export function TicketsMixin<TBase extends AdminBaseCtor>(Base: TBase): TBase & 
         expireDays: doc.mail.expireDays,
       });
       if (res.ok) {
-        const updated = await this.cols.compTickets.findOneAndUpdate(
+        const updated = await this.core.cols.compTickets.findOneAndUpdate(
           { _id: doc._id },
           {
             $set: {
               status: 'executed',
-              executedAt: this.now(),
+              executedAt: this.core.now(),
               ...(typeof res.recipientCount === 'number' ? { recipientCount: res.recipientCount } : {}),
             },
             $unset: { error: '', retryLockedAt: '' },
           },
           { returnDocument: 'after' },
         );
-        await this.audit(doc.initiatedBy, 'comp.execute', {
+        await this.core.audit(doc.initiatedBy, 'comp.execute', {
           target: doc._id,
           summary: `recipients=${res.recipientCount ?? '?'}`,
         });
         return this.toTicketView(updated ?? doc);
       }
       const err = res.error ?? 'mail dispatch failed';
-      const updated = await this.cols.compTickets.findOneAndUpdate(
+      const updated = await this.core.cols.compTickets.findOneAndUpdate(
         { _id: doc._id },
         { $set: { status: 'failed', error: err }, $unset: { retryLockedAt: '' } },
         { returnDocument: 'after' },
       );
       log.warn('ticket execute failed', { ticketId: doc._id, err });
-      await this.audit(doc.initiatedBy, 'comp.execute.failed', { target: doc._id, summary: err });
+      await this.core.audit(doc.initiatedBy, 'comp.execute.failed', { target: doc._id, summary: err });
       return this.toTicketView(updated ?? { ...doc, status: 'failed', error: err });
     }
 
     private async toTicketView(doc: CompTicketDoc): Promise<CompTicketView> {
-      const names = await this.actorNames(
+      const names = await this.core.actorNames(
         [doc.initiatedBy, doc.approvedBy].filter((x): x is string => !!x),
       );
       return {
@@ -290,5 +291,4 @@ export function TicketsMixin<TBase extends AdminBaseCtor>(Base: TBase): TBase & 
         ...(doc.error ? { error: doc.error } : {}),
       };
     }
-  };
 }

@@ -1,5 +1,5 @@
 // Monthly / year subscription card buys + daily claim (GACHA_DESIGN §5). The shared activation logic
-// (applySubscription / subscriptionCardBuy) lives on CommercialServiceBase (also used by starterBuy's growth path).
+// (applySubscription / subscriptionCardBuy) lives on WalletCore (also used by starterBuy's growth path).
 import {
   MONTHLY_CARD_DAYS,
   MONTHLY_CARD_DAILY_COINS,
@@ -7,7 +7,7 @@ import {
   YEAR_CARD_DAYS,
   YEAR_CARD_IMMEDIATE_COINS,
 } from '@nw/shared';
-import type { CommercialBaseCtor, Constructor, Result, WalletView } from './base';
+import type { Result, WalletView, WalletCore } from './base';
 import { walletView } from './base';
 import { effectiveCoins, rechargeChannelOf, spendChannelOf } from '../spendChannel';
 
@@ -34,18 +34,17 @@ export interface SubscriptionHandlers {
   }): Promise<Result<{ coinsAfter: number; claimed: number; subscriptionExpiry: number; wallet: WalletView }>>;
 }
 
-export function SubscriptionMixin<TBase extends CommercialBaseCtor>(
-  Base: TBase,
-): TBase & Constructor<SubscriptionHandlers> {
-  return class extends Base {
-    /** Activate the monthly card (GACHA_DESIGN §5): 30-day subscription + 600 immediate coins. */
+export class SubscriptionService {
+  constructor(private readonly core: WalletCore) {}
+
+  /** Activate the monthly card (GACHA_DESIGN §5): 30-day subscription + 600 immediate coins. */
     async monthlyCardBuy(args: {
       accountId: string;
       orderId: string;
       rechargePlatform?: string;
       clientPlatform?: string;
     }): Promise<Result<{ coinsAfter: number; subscriptionExpiry: number; wallet: WalletView }>> {
-      return this.subscriptionCardBuy({
+      return this.core.subscriptionCardBuy({
         accountId: args.accountId,
         orderId: args.orderId,
         clientPlatform: args.clientPlatform,
@@ -62,7 +61,7 @@ export function SubscriptionMixin<TBase extends CommercialBaseCtor>(
       rechargePlatform?: string;
       clientPlatform?: string;
     }): Promise<Result<{ coinsAfter: number; subscriptionExpiry: number; wallet: WalletView }>> {
-      return this.subscriptionCardBuy({
+      return this.core.subscriptionCardBuy({
         accountId: args.accountId,
         orderId: args.orderId,
         clientPlatform: args.clientPlatform,
@@ -83,9 +82,9 @@ export function SubscriptionMixin<TBase extends CommercialBaseCtor>(
       dayKey: string;
       clientPlatform?: string;
     }): Promise<Result<{ coinsAfter: number; claimed: number; subscriptionExpiry: number; wallet: WalletView }>> {
-      const now = this.now();
-      await this.ensureWallet(args.accountId);
-      const res = await this.cols.wallets.findOneAndUpdate(
+      const now = this.core.now();
+      await this.core.ensureWallet(args.accountId);
+      const res = await this.core.cols.wallets.findOneAndUpdate(
         { _id: args.accountId, 'subscription.expiry': { $gt: now }, 'subscription.lastClaimDayKey': { $ne: args.dayKey } },
         {
           $inc: { coins: MONTHLY_CARD_DAILY_COINS, rev: 1 },
@@ -95,7 +94,7 @@ export function SubscriptionMixin<TBase extends CommercialBaseCtor>(
       );
       const channel = spendChannelOf(args.clientPlatform);
       if (!res) {
-        const w = await this.cols.wallets.findOne({ _id: args.accountId });
+        const w = await this.core.cols.wallets.findOne({ _id: args.accountId });
         return {
           ok: true,
           coinsAfter: effectiveCoins(w, channel),
@@ -105,7 +104,7 @@ export function SubscriptionMixin<TBase extends CommercialBaseCtor>(
         };
       }
       const coinsAfter = effectiveCoins(res, channel);
-      await this.cols.ledger.insertOne({
+      await this.core.cols.ledger.insertOne({
         accountId: args.accountId,
         delta: MONTHLY_CARD_DAILY_COINS,
         balanceAfter: coinsAfter,
@@ -120,5 +119,4 @@ export function SubscriptionMixin<TBase extends CommercialBaseCtor>(
         wallet: walletView(res, args.clientPlatform),
       };
     }
-  };
 }

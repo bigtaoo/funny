@@ -1,6 +1,6 @@
 // Ad reward + tiered victory coin credit (§2.3b). victoryCredit authoritatively enforces the daily win cap.
 import { VICTORY_DAILY_WIN_CAP, bumpCappedCounter } from '@nw/shared';
-import type { CommercialBaseCtor, Constructor, Result } from './base';
+import type { Result, WalletCore } from './base';
 import { effectiveCoins, spendChannelOf } from '../spendChannel';
 
 export interface RewardsHandlers {
@@ -18,8 +18,9 @@ export interface RewardsHandlers {
   }): Promise<Result<{ coinsAfter: number; credited: number; capped: boolean }>>;
 }
 
-export function RewardsMixin<TBase extends CommercialBaseCtor>(Base: TBase): TBase & Constructor<RewardsHandlers> {
-  return class extends Base {
+export class RewardsService {
+  constructor(private readonly core: WalletCore) {}
+
     /** Ad reward coin credit (meta has already validated the ad proof + daily cap; commercial only credits coins and records the ledger entry). */
     async adsCredit(args: {
       accountId: string;
@@ -31,7 +32,7 @@ export function RewardsMixin<TBase extends CommercialBaseCtor>(Base: TBase): TBa
       // through the `=== 0` check below and reach credit()'s unconditional wallet $inc.
       const amount = Number.isFinite(args.amount) ? Math.max(0, Math.floor(args.amount)) : 0;
       if (amount === 0) return { ok: false, error: 'BAD_REQUEST' };
-      const coinsAfter = await this.credit(args.accountId, amount, 'ads', { clientPlatform: args.clientPlatform });
+      const coinsAfter = await this.core.credit(args.accountId, amount, 'ads', { clientPlatform: args.clientPlatform });
       return { ok: true, coinsAfter };
     }
 
@@ -52,14 +53,13 @@ export function RewardsMixin<TBase extends CommercialBaseCtor>(Base: TBase): TBa
       const amount = Number.isFinite(args.amount) ? Math.max(0, Math.floor(args.amount)) : 0;
       if (amount === 0) return { ok: false, error: 'BAD_REQUEST' };
 
-      const allowed = await bumpCappedCounter(this.redis, 'victoryDaily', args.accountId, args.dayKey, 'wins', VICTORY_DAILY_WIN_CAP);
+      const allowed = await bumpCappedCounter(this.core.redis, 'victoryDaily', args.accountId, args.dayKey, 'wins', VICTORY_DAILY_WIN_CAP);
       if (!allowed) {
         // Daily cap reached: do not credit coins.
-        const w = await this.cols.wallets.findOne({ _id: args.accountId });
+        const w = await this.core.cols.wallets.findOne({ _id: args.accountId });
         return { ok: true, coinsAfter: effectiveCoins(w, spendChannelOf(args.clientPlatform)), credited: 0, capped: true };
       }
-      const coinsAfter = await this.credit(args.accountId, amount, 'victory', { clientPlatform: args.clientPlatform });
+      const coinsAfter = await this.core.credit(args.accountId, amount, 'victory', { clientPlatform: args.clientPlatform });
       return { ok: true, coinsAfter, credited: amount, capped: false };
     }
-  };
 }

@@ -11,7 +11,7 @@ import {
   type TrendPoint,
 } from '@nw/shared';
 import type { AnalyticsQueryResult, AntiCheatReviewRow, PlayerProfile, PlayerSummary } from '../clients';
-import type { Actor, AdminBaseCtor, Constructor } from './base';
+import type { Actor, AdminCore } from './base';
 import { AdminError } from './errors';
 
 const ALL_TICKET_STATUS: readonly CompTicketStatus[] = [
@@ -50,8 +50,9 @@ export interface AnalyticsHandlers {
   sampleOnce(): Promise<void>;
 }
 
-export function AnalyticsMixin<TBase extends AdminBaseCtor>(Base: TBase): TBase & Constructor<AnalyticsHandlers> {
-  return class extends Base {
+export class AnalyticsService {
+  constructor(private readonly core: AdminCore) {}
+
     // ───────────────────────── Audit ─────────────────────────
 
     /**
@@ -75,8 +76,8 @@ export function AnalyticsMixin<TBase extends AdminBaseCtor>(Base: TBase): TBase 
         if (filter.to !== undefined) ts.$lte = filter.to;
         q.ts = ts;
       }
-      const docs = await this.cols.auditLog.find(q).sort({ ts: -1 }).limit(500).toArray();
-      const names = await this.actorNames(docs.map((d) => d.actor));
+      const docs = await this.core.cols.auditLog.find(q).sort({ ts: -1 }).limit(500).toArray();
+      const names = await this.core.actorNames(docs.map((d) => d.actor));
       return docs.map((d) => ({
         id: d._id,
         actor: d.actor,
@@ -92,8 +93,8 @@ export function AnalyticsMixin<TBase extends AdminBaseCtor>(Base: TBase): TBase 
     // ───────────────────────── Monitoring / trends / analytics ─────────────────────────
 
     async liveStats(): Promise<LiveStats & { available: boolean }> {
-      const live = await this.stats.fetchLive();
-      return { ...live, available: this.stats.available };
+      const live = await this.core.stats.fetchLive();
+      return { ...live, available: this.core.stats.available };
     }
 
     async trend(input: { metric: string; from?: number; to?: number }): Promise<TrendPoint[]> {
@@ -107,7 +108,7 @@ export function AnalyticsMixin<TBase extends AdminBaseCtor>(Base: TBase): TBase 
         if (input.to !== undefined) ts.$lte = input.to;
         q.ts = ts;
       }
-      const docs = await this.cols.metricSnapshots
+      const docs = await this.core.cols.metricSnapshots
         .find(q)
         .sort({ ts: 1 })
         .limit(2000)
@@ -122,11 +123,11 @@ export function AnalyticsMixin<TBase extends AdminBaseCtor>(Base: TBase): TBase 
       tickets: Record<CompTicketStatus, number>;
     }> {
       const live = await this.liveStats();
-      const since = this.now() - 24 * 3600 * 1000;
+      const since = this.core.now() - 24 * 3600 * 1000;
       // One aggregation across all metrics instead of METRIC_KEYS.length separate `.find().toArray()`
       // calls that pulled every snapshot in the window into app memory just to reduce() avg/peak/samples
       // — the driver/server can do that reduction without ever materializing the raw docs client-side.
-      const grouped = await this.cols.metricSnapshots
+      const grouped = await this.core.cols.metricSnapshots
         .aggregate<{ _id: MetricKey; avg: number; peak: number; samples: number }>([
           { $match: { metric: { $in: METRIC_KEYS }, ts: { $gte: since } } },
           { $group: { _id: '$metric', avg: { $avg: '$value' }, peak: { $max: '$value' }, samples: { $sum: 1 } } },
@@ -140,15 +141,15 @@ export function AnalyticsMixin<TBase extends AdminBaseCtor>(Base: TBase): TBase 
       }
       const tickets = {} as Record<CompTicketStatus, number>;
       for (const st of ALL_TICKET_STATUS) {
-        tickets[st] = await this.cols.compTickets.countDocuments({ status: st });
+        tickets[st] = await this.core.cols.compTickets.countDocuments({ status: st });
       }
       return { live, last24h, tickets };
     }
 
     /** Aggregated analytics query (proxied to analyticsvc /internal/query, A9-6). */
     async analyticsQuery(type: string, days: number, platform?: string): Promise<AnalyticsQueryResult & { available: boolean }> {
-      if (!this.analytics.available) return { available: false };
-      const result = await this.analytics.query(type, days, platform);
+      if (!this.core.analytics.available) return { available: false };
+      const result = await this.core.analytics.query(type, days, platform);
       return { ...result, available: true };
     }
 
@@ -156,10 +157,10 @@ export function AnalyticsMixin<TBase extends AdminBaseCtor>(Base: TBase): TBase 
     async lookupPlayer(publicId: string): Promise<PlayerProfile> {
       const pid = (publicId ?? '').trim();
       if (!/^\d{9}$/.test(pid)) throw new AdminError(400, 'bad_request', 'publicId must be 9 digits');
-      if (!this.players.available) {
+      if (!this.core.players.available) {
         throw new AdminError(503, 'unavailable', 'player lookup backend unavailable');
       }
-      const p = await this.players.lookupByPublicId(pid);
+      const p = await this.core.players.lookupByPublicId(pid);
       if (!p) throw new AdminError(404, 'not_found', 'no such player');
       return p;
     }
@@ -168,10 +169,10 @@ export function AnalyticsMixin<TBase extends AdminBaseCtor>(Base: TBase): TBase 
     async lookupPlayerByAccountId(accountId: string): Promise<PlayerProfile> {
       const id = (accountId ?? '').trim();
       if (!id) throw new AdminError(400, 'bad_request', 'accountId required');
-      if (!this.players.available) {
+      if (!this.core.players.available) {
         throw new AdminError(503, 'unavailable', 'player lookup backend unavailable');
       }
-      const p = await this.players.lookupByAccountId(id);
+      const p = await this.core.players.lookupByAccountId(id);
       if (!p) throw new AdminError(404, 'not_found', 'no such player');
       return p;
     }
@@ -180,11 +181,11 @@ export function AnalyticsMixin<TBase extends AdminBaseCtor>(Base: TBase): TBase 
     async searchPlayers(actor: string, q: string): Promise<PlayerSummary[]> {
       const term = (q ?? '').trim();
       if (term.length < 2) throw new AdminError(400, 'bad_request', 'query too short (min 2)');
-      if (!this.players.available) {
+      if (!this.core.players.available) {
         throw new AdminError(503, 'unavailable', 'player lookup backend unavailable');
       }
-      const rows = await this.players.search(term, 20);
-      await this.audit(actor, 'player.search', { summary: `q=${term} → ${rows.length} hits` });
+      const rows = await this.core.players.search(term, 20);
+      await this.core.audit(actor, 'player.search', { summary: `q=${term} → ${rows.length} hits` });
       return rows;
     }
 
@@ -198,12 +199,12 @@ export function AnalyticsMixin<TBase extends AdminBaseCtor>(Base: TBase): TBase 
       if (!id) throw new AdminError(400, 'bad_request', 'accountId required');
       const pwErr = validatePassword(password);
       if (pwErr) throw new AdminError(400, 'bad_request', pwErr);
-      if (!this.players.available) {
+      if (!this.core.players.available) {
         throw new AdminError(503, 'unavailable', 'player lookup backend unavailable');
       }
-      const result = await this.players.resetPassword(id, password);
+      const result = await this.core.players.resetPassword(id, password);
       if (!result.ok) throw new AdminError(409, 'reset_failed', result.error);
-      await this.audit(actor, 'player.password_reset', { target: id });
+      await this.core.audit(actor, 'player.password_reset', { target: id });
     }
 
     /** Achievement anti-cheat review queue (anticheat.view, S9-7). Defaults to open status; can be filtered by accountId. Audited. */
@@ -211,11 +212,11 @@ export function AnalyticsMixin<TBase extends AdminBaseCtor>(Base: TBase): TBase 
       actor: string,
       opts: { accountId?: string; status?: string; limit?: number } = {},
     ): Promise<AntiCheatReviewRow[]> {
-      if (!this.antiCheat.available) {
+      if (!this.core.antiCheat.available) {
         throw new AdminError(503, 'unavailable', 'anti-cheat backend unavailable');
       }
-      const rows = await this.antiCheat.listReviews(opts);
-      await this.audit(actor, 'anticheat.view', {
+      const rows = await this.core.antiCheat.listReviews(opts);
+      await this.core.audit(actor, 'anticheat.view', {
         ...(opts.accountId ? { target: opts.accountId } : {}),
         summary: `${rows.length} reviews (status=${opts.status ?? 'open'})`,
       });
@@ -233,19 +234,19 @@ export function AnalyticsMixin<TBase extends AdminBaseCtor>(Base: TBase): TBase 
       accountId: string,
       resolution: 'dismissed' | 'banned',
     ): Promise<void> {
-      if (!this.antiCheat.available) {
+      if (!this.core.antiCheat.available) {
         throw new AdminError(503, 'unavailable', 'anti-cheat backend unavailable');
       }
       if (resolution === 'banned') {
-        if (!this.suspiciousPve.available) {
+        if (!this.core.suspiciousPve.available) {
           throw new AdminError(503, 'unavailable', 'ban backend unavailable');
         }
-        const banRes = await this.suspiciousPve.banAccount(accountId);
+        const banRes = await this.core.suspiciousPve.banAccount(accountId);
         if (!banRes.ok) throw new AdminError(502, 'ban_failed', 'failed to ban account');
       }
-      const res = await this.antiCheat.resolveReview(id, resolution, actor);
+      const res = await this.core.antiCheat.resolveReview(id, resolution, actor);
       if (!res.ok) throw new AdminError(404, 'not_found', 'review not found');
-      await this.audit(actor, resolution === 'banned' ? 'account.ban' : 'anticheat.review.resolve', {
+      await this.core.audit(actor, resolution === 'banned' ? 'account.ban' : 'anticheat.review.resolve', {
         target: accountId,
         summary: `review ${id} → ${resolution}`,
       });
@@ -255,8 +256,8 @@ export function AnalyticsMixin<TBase extends AdminBaseCtor>(Base: TBase): TBase 
 
     /** Take one live-state time-series snapshot (called by the sampling timer). Records 0 on error (sampling must not be interrupted). */
     async sampleOnce(): Promise<void> {
-      const live = await this.stats.fetchLive();
-      const ts = this.now();
+      const live = await this.core.stats.fetchLive();
+      const ts = this.core.now();
       const at = new Date(ts);
       const vals: Record<MetricKey, number> = {
         online: live.online,
@@ -265,9 +266,8 @@ export function AnalyticsMixin<TBase extends AdminBaseCtor>(Base: TBase): TBase 
         gameInstances: live.gameInstances,
         gameLoad: live.gameLoad ?? 0,
       };
-      await this.cols.metricSnapshots.insertMany(
+      await this.core.cols.metricSnapshots.insertMany(
         METRIC_KEYS.map((metric) => ({ metric, ts, value: vals[metric], at })),
       );
     }
-  };
 }

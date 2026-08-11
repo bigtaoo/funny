@@ -1,17 +1,23 @@
-// Shared foundation for the CommercialService mixin chain (see ../service.ts assembly).
-// CommercialServiceBase holds `deps` (unpacked into protected fields, so domain mixin method bodies keep
-// referencing `this.cols` / `this.now` / `this.rng` / `this.verifyReceipt` verbatim) + the genuinely
-// cross-cutting helpers used by more than one domain mixin: ensureWallet / credit (recharge/ads/shop/…),
-// resolvePool (gachaDraw/redeemFate/starterBuy), applySubscription / subscriptionCardBuy (monthly/year card
-// buys AND starterBuy's growth path). Each business domain lives in its own sibling file as an `XMixin(Base)`
-// and is chained together into the final CommercialService. Domain-local helpers stay in their own mixin file.
+// Shared foundation for the CommercialService domain classes (see ../service.ts assembly).
+// WalletCore holds `deps` (unpacked into public readonly fields, so domain-class method bodies keep
+// referencing `this.core.cols` / `this.core.now` / `this.core.rng` / `this.core.verifyReceipt`
+// verbatim) + the genuinely cross-cutting wallet primitives used by more than one domain: ensureWallet /
+// credit (recharge/ads/shop/…), resolvePool (gachaDraw/redeemFate/starterBuy), applySubscription /
+// subscriptionCardBuy (monthly/year card buys AND starterBuy's growth path). Each business domain lives
+// in its own sibling file as an independent class taking `(core: WalletCore)` in its constructor
+// (2026-08-11 mixin-chain split, claudedocs/server.md's "拆分形态的优先级" 形态②/独立类+组合 —
+// WalletCore is exactly the "两边都依赖的更底层类" the priority doc calls for: it was already the root
+// of the DAG, not a link in a chain, so converting the 10 domains from mixins to siblings holding a
+// WalletCore reference is a direct application of the same pattern, not a new one). Domain-local helpers
+// (e.g. recharge.ts's claimFirstPurchaseBonus) stay in their own domain file, not here.
 // The stateless DTOs (ServiceErr/Result/CommercialDeps/WalletView/ResolvedPool) and the free functions that
 // project/convert them (devVerifyReceipt/walletView/limitedConfigFromDoc/customConfigFromDoc) live in
 // ./walletView.ts (2026-08-10 split, kept under 500 lines) — re-exported below so every existing `from
-// './base'` import elsewhere in the mixin chain keeps working unchanged.
+// './base'` import elsewhere keeps working unchanged.
 //
 // Money-invariant correctness is priority #1: this is a pure mechanical split — method bodies were moved
-// verbatim. Do NOT change, reorder, or "improve" any logic here.
+// verbatim (only their visibility changed from `protected` to public, since sibling classes call them
+// through `this.core.X` rather than inheriting them). Do NOT change, reorder, or "improve" any logic here.
 import { type Rarity, type RedisLike } from '@nw/shared';
 import type { CommercialCollections, WalletDoc } from '../db';
 import { isCustomPoolDoc } from '../db';
@@ -44,26 +50,21 @@ export {
   type CommercialDeps,
 };
 
-// ── Mixin plumbing ────────────────────────────────────────────────────────────
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export type Constructor<T = object> = new (...args: any[]) => T;
-export type CommercialBaseCtor = Constructor<CommercialServiceBase>;
-
-export class CommercialServiceBase {
-  protected readonly deps: CommercialDeps;
-  // Deps unpacked into protected fields so domain-mixin method bodies keep referencing them verbatim (this.cols, this.now, …).
-  protected readonly cols: CommercialCollections;
-  protected readonly now: () => number;
-  protected readonly rng?: RandInt;
-  protected readonly redis: RedisLike | null;
-  protected readonly verifyReceipt: (
+export class WalletCore {
+  readonly deps: CommercialDeps;
+  // Deps unpacked into public readonly fields so domain-class method bodies keep referencing them
+  // verbatim (this.core.cols, this.core.now, …) — no protected-visibility wall to work around since
+  // these are now sibling classes, not mixin-chain descendants.
+  readonly cols: CommercialCollections;
+  readonly now: () => number;
+  readonly rng?: RandInt;
+  readonly redis: RedisLike | null;
+  readonly verifyReceipt: (
     platform: string,
     receipt: string,
   ) => Promise<{ ok: boolean; coins: number; usdCents?: number; product?: IapProductKind }>;
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  constructor(...args: any[]) {
-    const deps = args[0] as CommercialDeps;
+  constructor(deps: CommercialDeps) {
     this.deps = deps;
     this.cols = deps.cols;
     this.now = deps.now;
@@ -85,14 +86,14 @@ export class CommercialServiceBase {
    * died mid-flight) only matters on a MUCH later retry (after a client-visible timeout or restart), so
    * erring long here costs nothing but a slower recovery.
    */
-  protected static readonly REPLAY_HEAL_GRACE_MS = 15000;
+  private static readonly REPLAY_HEAL_GRACE_MS = 15000;
 
-  protected isStaleClaim(claimedAtMs: number): boolean {
-    return this.now() - claimedAtMs > CommercialServiceBase.REPLAY_HEAL_GRACE_MS;
+  isStaleClaim(claimedAtMs: number): boolean {
+    return this.now() - claimedAtMs > WalletCore.REPLAY_HEAL_GRACE_MS;
   }
 
   /** Fetch or create the wallet (upserts coins:0 rev:0 on first access). */
-  protected async ensureWallet(accountId: string): Promise<WalletDoc> {
+  async ensureWallet(accountId: string): Promise<WalletDoc> {
     const res = await this.cols.wallets.findOneAndUpdate(
       { _id: accountId },
       {
@@ -121,7 +122,7 @@ export class CommercialServiceBase {
    * @nw/shared; limited pools are built from the admin-authored config in `gachaPools` and are only returned
    * while inside their [startAt, endAt) window. Returns null when unknown or a closed/out-of-window limited pool.
    */
-  protected async resolvePool(poolId: string, now: number): Promise<ResolvedPool | null> {
+  async resolvePool(poolId: string, now: number): Promise<ResolvedPool | null> {
     const stat = findGachaPool(poolId);
     if (stat) return { kind: 'derived', pool: stat };
     const doc = await this.cols.gachaPools.findOne({ _id: poolId });
@@ -140,7 +141,7 @@ export class CommercialServiceBase {
    * genuinely channel-verified real-money credits (recharge/paddleComplete); every other credit reason (ads,
    * victory, promo, refund, grant, subscription daily claim) stays on the free pool, spendable everywhere.
    */
-  protected async credit(
+  async credit(
     accountId: string,
     amount: number,
     reason: string,
@@ -174,7 +175,7 @@ export class CommercialServiceBase {
    * effective balance is insufficient (guard failed, nothing debited) — callers map this to INSUFFICIENT_FUNDS.
    * `extraSet`/`extraSetOnUpdate` let callers (gachaDraw's pity) piggyback extra fields on the SAME atomic op.
    */
-  protected async debitEffective(
+  async debitEffective(
     accountId: string,
     amount: number,
     channel: RechargeChannel,
@@ -209,7 +210,7 @@ export class CommercialServiceBase {
    * path passes no channel since it isn't real money yet). Returned `coinsAfter` is the EFFECTIVE balance for
    * `ref.clientPlatform` (defaults to 'web').
    */
-  protected async applySubscription(
+  async applySubscription(
     accountId: string,
     days: number,
     immediateCoins: number,
@@ -262,7 +263,7 @@ export class CommercialServiceBase {
    * fails the filter), so this returns null exactly when — and only when — the caller should report
    * ALREADY_ACTIVE instead of applying a partial/double credit.
    */
-  protected async applySubscriptionIfInactive(
+  async applySubscriptionIfInactive(
     accountId: string,
     days: number,
     immediateCoins: number,
@@ -312,7 +313,7 @@ export class CommercialServiceBase {
    * coins and double-extending the subscription. The loser reads the current wallet snapshot instead, same
    * as the non-stale "still likely in-flight" branch already does.
    */
-  protected async claimOrderResume(orderId: string): Promise<boolean> {
+  async claimOrderResume(orderId: string): Promise<boolean> {
     const res = await this.cols.orders.findOneAndUpdate(
       { _id: orderId, status: 'charged', healClaimedAt: { $exists: false } },
       { $set: { healClaimedAt: this.now() } },
@@ -327,7 +328,7 @@ export class CommercialServiceBase {
    * verification (native/WeChat: verifyNonCoinReceipt; web: Paddle webhook signature) happens in the caller
    * (meta) BEFORE this is invoked — see monthlyCardBuy/yearCardBuy's `channel` doc.
    */
-  protected async subscriptionCardBuy(args: {
+  async subscriptionCardBuy(args: {
     accountId: string;
     orderId: string;
     days: number;

@@ -1,7 +1,7 @@
 // Custom gacha pool management (GACHA_DESIGN §12, gacha.pools.manage). Proxies the meta gacha-pools store + audit.
 import { catalogByCategory, type CustomPoolConfig, type GachaCategory, type GachaCatalogItem } from '@nw/shared';
 import type { AdminGachaPool } from '../clients';
-import type { Actor, AdminBaseCtor, Constructor } from './base';
+import type { Actor, AdminCore } from './base';
 import { AdminError } from './errors';
 
 export interface GachaHandlers {
@@ -11,13 +11,14 @@ export interface GachaHandlers {
   closeGachaPool(actor: Actor, id: string): Promise<{ id: string }>;
 }
 
-export function GachaMixin<TBase extends AdminBaseCtor>(Base: TBase): TBase & Constructor<GachaHandlers> {
-  return class extends Base {
+export class GachaService {
+  constructor(private readonly core: AdminCore) {}
+
     // ───────────────────── Custom gacha pool management (GACHA_DESIGN §12, gacha.pools.manage) ────────
     /** List all stored gacha pool configs (derived + custom). Returns empty if meta is unreachable. */
     async listGachaPools(): Promise<AdminGachaPool[]> {
-      if (!this.gachaPools.available) return [];
-      return this.gachaPools.list();
+      if (!this.core.gachaPools.available) return [];
+      return this.core.gachaPools.list();
     }
 
     /**
@@ -31,18 +32,17 @@ export function GachaMixin<TBase extends AdminBaseCtor>(Base: TBase): TBase & Co
 
     /** Create/replace an ops-authored custom pool; meta-side validation failure throws EventsClientError (httpApi → 4xx). Audited. */
     async createCustomPool(actor: Actor, config: CustomPoolConfig): Promise<{ id: string }> {
-      if (!this.gachaPools.available) throw new AdminError(503, 'gacha_unavailable', 'meta not configured');
-      const r = await this.gachaPools.createCustom(config, actor.adminId);
-      await this.audit(actor.adminId, 'gacha.pool.create', { target: r.id, summary: config.name });
+      if (!this.core.gachaPools.available) throw new AdminError(503, 'gacha_unavailable', 'meta not configured');
+      const r = await this.core.gachaPools.createCustom(config, actor.adminId);
+      await this.core.audit(actor.adminId, 'gacha.pool.create', { target: r.id, summary: config.name });
       return r;
     }
 
     /** Close a gacha pool early (clamp its window to now). Audited. */
     async closeGachaPool(actor: Actor, id: string): Promise<{ id: string }> {
-      if (!this.gachaPools.available) throw new AdminError(503, 'gacha_unavailable', 'meta not configured');
-      const r = await this.gachaPools.close(id);
-      await this.audit(actor.adminId, 'gacha.pool.close', { target: r.id });
+      if (!this.core.gachaPools.available) throw new AdminError(503, 'gacha_unavailable', 'meta not configured');
+      const r = await this.core.gachaPools.close(id);
+      await this.core.audit(actor.adminId, 'gacha.pool.close', { target: r.id });
       return r;
     }
-  };
 }

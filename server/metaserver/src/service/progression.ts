@@ -21,15 +21,17 @@ import { getCurrentSeason } from '../ladderSeason.js';
 import { mirrorCoins } from '../economy.js';
 import { recordMaterialGrants } from '../material.js';
 import type { MetaHandlers } from '../generated/routes.gen.js';
-import { accountIdOf, clientPlatformOf, type Constructor, type MetaBaseCtor } from './base.js';
+import { accountIdOf, clientPlatformOf, type MetaCore } from './base.js';
 
 /** Minimum gap between two accepted bot-result reports per account — backstops the 30s bot-fallback queue timeout against scripted spam. */
 const BOT_RESULT_MIN_GAP_MS = 15_000;
 
 type ProgressionHandlers = Pick<MetaHandlers, 'getLeaderboard' | 'buyBattlePass' | 'claimBattlePass' | 'submitBotResult'>;
 
-/** One row of the season Top-100 leaderboard (SE-5). */
-interface LeaderboardEntry {
+/** One row of the season Top-100 leaderboard (SE-5). Exported (2026-08-11 mixin-chain split) so
+ * ProgressionService.getLeaderboard's inferred return type can be named in the .d.ts — see
+ * economy/gacha.ts's PoolView doc comment for the full explanation. */
+export interface LeaderboardEntry {
   rank: number;
   displayName: string;
   publicId: string;
@@ -40,8 +42,9 @@ interface LeaderboardEntry {
 
 const LEADERBOARD_CACHE_MS = 60 * 1000;
 
-export function ProgressionMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase & Constructor<ProgressionHandlers> {
-  return class extends Base {
+export class ProgressionService {
+  constructor(private readonly core: MetaCore) {}
+
     /**
      * SE-5: 60s in-process cache of the season Top-100 (the `entries` array only — the per-caller `me`
      * standing is always recomputed live). Keyed by seasonNo so a season roll implicitly invalidates it.
@@ -54,7 +57,7 @@ export function ProgressionMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase
      * Pure read — no per-caller state — so the result is safely shared across callers via the 60s cache.
      */
     private async buildLeaderboardTop100(seasonNo: number): Promise<LeaderboardEntry[]> {
-      const { cols } = this.deps;
+      const { cols } = this.core.deps;
       const top = await cols.saves
         .find({ 'save.pvp.seasonNo': seasonNo })
         .sort({ 'save.pvp.elo': -1 })
@@ -84,7 +87,7 @@ export function ProgressionMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase
 
     /** Top-100 ladder leaderboard (current season ELO descending, S11 §5). Top-100 is served from a 60s process cache; the caller's own `me` standing is always recomputed live. */
     async getLeaderboard(req: FastifyRequest) {
-      const { cols, now } = this.deps;
+      const { cols, now } = this.core.deps;
       const season = await getCurrentSeason(cols, now());
 
       // SE-5: reuse the cached Top-100 when it is for this season and still fresh; otherwise rebuild + cache.
@@ -120,9 +123,9 @@ export function ProgressionMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase
 
     /** Purchase the current season's battle pass (600 coins, S11 §9). */
     async buyBattlePass(req: FastifyRequest, reply: FastifyReply) {
-      if (!this.ensureCommercial(reply)) return;
+      if (!this.core.ensureCommercial(reply)) return;
       const accountId = accountIdOf(req);
-      const { cols, commercial, now } = this.deps;
+      const { cols, commercial, now } = this.core.deps;
 
       // Confirm/create battle pass data first (lazy creation: initialized on first purchase this season).
       const save = await getOrCreateSave(cols, accountId, now());
@@ -150,7 +153,7 @@ export function ProgressionMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase
       }
 
       // Atomically write hasPass=true (optimistic lock).
-      const out = await this.mutateSave(accountId, (s) => {
+      const out = await this.core.mutateSave(accountId, (s) => {
         const curBp = s.battlePass?.seasonNo === currentSeason.seasonNo
           ? s.battlePass
           : makeFreshBattlePass(currentSeason.seasonNo);
@@ -172,12 +175,12 @@ export function ProgressionMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase
     async claimBattlePass(req: FastifyRequest, reply: FastifyReply) {
       const accountId = accountIdOf(req);
       const { track, level } = req.body as { track: 'free' | 'paid'; level: number };
-      const { cols, commercial, now } = this.deps;
+      const { cols, commercial, now } = this.core.deps;
 
       // Atomic validate + record claim (optimistic lock prevents double-tap). Material rewards are written to save.materials in the same transaction.
       let claimedReward: { kind: string; id?: string; count: number } | null = null;
       let claimedSeasonNo = 0;
-      const out = await this.mutateSave(accountId, (s) => {
+      const out = await this.core.mutateSave(accountId, (s) => {
         const bp = s.battlePass;
         if (!bp) return 'NO_BATTLEPASS';
         const r = claimBpReward(bp, track, level);
@@ -241,12 +244,12 @@ export function ProgressionMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase
     async submitBotResult(req: FastifyRequest, reply: FastifyReply) {
       const accountId = accountIdOf(req);
       const { won } = req.body as { won: boolean };
-      const { now } = this.deps;
+      const { now } = this.core.deps;
 
       let appliedDelta = 0;
       let resultElo = 0;
       let resultRank = '';
-      const out = await this.mutateSave(accountId, (s) => {
+      const out = await this.core.mutateSave(accountId, (s) => {
         const pvp = s.pvp;
         const tsNow = now();
         const nextRetention = accrueRetentionTask(s.retention, 'pvp.match', tsNow);
@@ -275,5 +278,4 @@ export function ProgressionMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase
       }
       return ok({ elo: resultElo, rank: resultRank, delta: appliedDelta });
     }
-  };
 }
