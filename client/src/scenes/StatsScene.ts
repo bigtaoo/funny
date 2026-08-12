@@ -1,11 +1,9 @@
 import * as PIXI from 'pixi.js-legacy';
 import { Scene } from './SceneManager';
-import { ILayout, Rect } from '../layout/ILayout';
+import { ILayout } from '../layout/ILayout';
 import { InputManager } from '../inputSystem/InputManager';
 import { t, TranslationKey } from '../i18n';
-import { ui as C, txt, buildPaperBackground, sketchPanel, sketchAccentBar, seedFor, tearDownChildren } from '../render/sketchUi';
-import { buildIcon, type IconKind } from '../render/icons';
-import { snapFont } from '../render/fontScale';
+import { ui as C, buildPaperBackground, tearDownChildren } from '../render/sketchUi';
 import { buildDecorCLayer } from '../render/decorCLayer';
 import { drawSceneHeader } from '../ui/widgets/SceneHeader';
 import { drawCareerTabs } from '../ui/widgets/CareerTabs';
@@ -14,6 +12,7 @@ import { drawScrollIndicator } from '../ui/widgets/ScrollIndicator';
 import { wheelScrollY } from '../ui/wheelScroll';
 import { MATERIAL_ORDER } from '@nw/engine/balance/pveUpgrades';
 import type { MatchHistoryEntry } from '../net/ApiClient';
+import { type Hit, type Row, sectionHeight, historyHeight, drawHistorySection, drawSection } from './StatsScene/panels';
 
 // ── StatsScene — match record / stats page (lobby "stats" nav) ───────────────────
 //
@@ -66,9 +65,6 @@ export interface StatsCallbacks {
   /** Current season info for the banner (SE-6). */
   season?: { seasonNo: number; endAt: number };
 }
-
-interface Hit { rect: Rect; fn: () => void; }
-interface Row { label: string; value: string; valueColor?: number; rowHit?: () => void; valueIcon?: IconKind; }
 
 export class StatsScene implements Scene {
   readonly container: PIXI.Container;
@@ -293,14 +289,14 @@ export class StatsScene implements Scene {
       const rightX = contentX + leftW + colGap;
 
       // Left: ranked + campaign + collection
-      let ly = this.drawSection(leftX, topY, leftW, t('stats.pvp'), C.accent, pvpRows);
+      let ly = drawSection(this.container, this.hits, this.h, leftX, topY, leftW, t('stats.pvp'), C.accent, pvpRows);
       ly += gap;
-      ly = this.drawSection(leftX, ly, leftW, t('stats.campaign'), C.gold, campaignRows);
+      ly = drawSection(this.container, this.hits, this.h, leftX, ly, leftW, t('stats.campaign'), C.gold, campaignRows);
       ly += gap;
-      this.drawSection(leftX, ly, leftW, t('stats.collection'), C.green, collectionRows);
+      drawSection(this.container, this.hits, this.h, leftX, ly, leftW, t('stats.collection'), C.green, collectionRows);
 
       // Right: match history
-      this.drawHistorySection(rightX, topY, rightW);
+      drawHistorySection(this.container, this.hits, this.h, this.cb, this.history, rightX, topY, rightW);
     } else {
       // ── Portrait: single column with narrower margins, scrollable when the four ────
       // stacked sections (ranked/campaign/collection/history) overflow the screen — the
@@ -312,10 +308,10 @@ export class StatsScene implements Scene {
 
       // Pure height calc (no drawing) so the viewport + scrollMax can be sized up front.
       const totalContentH =
-        this.sectionHeight(pvpRows) + gap +
-        this.sectionHeight(campaignRows) + gap +
-        this.sectionHeight(collectionRows) + gap +
-        this.historyHeight();
+        sectionHeight(this.h, pvpRows) + gap +
+        sectionHeight(this.h, campaignRows) + gap +
+        sectionHeight(this.h, collectionRows) + gap +
+        historyHeight(this.h, !!this.cb.loadHistory, this.history);
 
       const bottomReserve = hasSidebar ? bottomNavH(h) : 0;
       const viewTop = topY;
@@ -334,177 +330,14 @@ export class StatsScene implements Scene {
       this.bodyMask = mask;
 
       let y = viewTop - this.scrollY;
-      y = this.drawSection(contentX, y, secW, t('stats.pvp'), C.accent, pvpRows, this.body); y += gap;
-      y = this.drawSection(contentX, y, secW, t('stats.campaign'), C.gold, campaignRows, this.body); y += gap;
-      y = this.drawSection(contentX, y, secW, t('stats.collection'), C.green, collectionRows, this.body); y += gap;
-      this.drawHistorySection(contentX, y, secW, this.body);
+      y = drawSection(this.body, this.hits, this.h, contentX, y, secW, t('stats.pvp'), C.accent, pvpRows); y += gap;
+      y = drawSection(this.body, this.hits, this.h, contentX, y, secW, t('stats.campaign'), C.gold, campaignRows); y += gap;
+      y = drawSection(this.body, this.hits, this.h, contentX, y, secW, t('stats.collection'), C.green, collectionRows); y += gap;
+      drawHistorySection(this.body, this.hits, this.h, this.cb, this.history, contentX, y, secW);
 
       drawScrollIndicator(this.container, { x: contentX, y: viewTop, w: secW, h: viewH }, this.scrollY, this.scrollMax);
       drawCareer();
     }
   }
 
-  /** Pure height calc for {@link drawSection} — same formula, no drawing. Used to size the
-   *  portrait scroll viewport before anything is placed. */
-  private sectionHeight(rows: Row[]): number {
-    const titleH = Math.round(this.h * 0.034);
-    const rowH = Math.round(this.h * 0.03);
-    const padV = Math.round(this.h * 0.012);
-    return titleH + rows.length * rowH + padV * 2;
-  }
-
-  /** Pure height calc for {@link drawHistorySection} — same formula, no drawing. */
-  private historyHeight(): number {
-    const titleH = Math.round(this.h * 0.034);
-    const entryH = Math.round(this.h * 0.048);
-    const padV = Math.round(this.h * 0.012);
-    const hasNotice = !this.cb.loadHistory || this.history === null || this.history.length === 0;
-    const bodyRows = hasNotice ? 1 : this.history!.length;
-    return titleH + bodyRows * entryH + padV * 2;
-  }
-
-  /**
-   * Match-history panel — the most recent {@link HISTORY_LIMIT} games, each shown as a
-   * "me vs opponent" line (with a crossed-swords glyph) plus a win/loss result chip,
-   * rather than the generic label:value list used by the stat panels. Empty / loading /
-   * offline states render a single centred notice inside the panel.
-   */
-  private drawHistorySection(x: number, y: number, w: number, parent: PIXI.Container = this.container): number {
-    const { h } = this;
-    const titleH = Math.round(h * 0.034);
-    const entryH = Math.round(h * 0.048);
-    const padV = Math.round(h * 0.012);
-    const accent = C.mid;
-
-    const notice = !this.cb.loadHistory
-      ? t('stats.historyOffline')
-      : this.history === null
-        ? t('stats.historyLoading')
-        : this.history.length === 0
-          ? t('stats.historyEmpty')
-          : null;
-    const entries = notice ? [] : this.history!;
-    const bodyRows = notice ? 1 : entries.length;
-    const panelH = titleH + bodyRows * entryH + padV * 2;
-
-    const box = sketchPanel(w, panelH, { fill: C.paper, border: C.line, width: 1.6, seed: seedFor(x, y, w) });
-    box.x = x; box.y = y;
-    sketchAccentBar(box, panelH, accent, seedFor(x, panelH, 7));
-    parent.addChild(box);
-
-    const titleLbl = txt(t('stats.history'), snapFont(Math.round(titleH * 0.7)), accent, true);
-    titleLbl.anchor.set(0, 0); titleLbl.x = x + Math.round(w * 0.05); titleLbl.y = y + padV;
-    parent.addChild(titleLbl);
-
-    const bodyTop = y + padV + titleH;
-
-    if (notice) {
-      const n = txt(notice, snapFont(Math.round(entryH * 0.5)), C.mid);
-      n.anchor.set(0.5, 0.5); n.x = x + w / 2; n.y = bodyTop + entryH / 2;
-      parent.addChild(n);
-      return y + panelH;
-    }
-
-    const glyphX = x + Math.round(w * 0.045);
-    const matchupX = x + Math.round(w * 0.11);
-    const valRight = x + w - Math.round(w * 0.05);
-    const me = this.cb.playerName || t('stats.you');
-
-    entries.forEach((m, i) => {
-      const ry = bodyTop + i * entryH;
-
-      // Hairline separator between entries (skip above the first one).
-      if (i > 0) {
-        const sep = new PIXI.Graphics();
-        sep.lineStyle(1, C.line, 0.5);
-        sep.moveTo(x + Math.round(w * 0.045), ry); sep.lineTo(valRight, ry);
-        parent.addChild(sep);
-      }
-
-      // Crossed-swords glyph marks a match; doubles as the replay affordance when watchable.
-      const gsz = Math.round(entryH * 0.5);
-      const glyph = buildIcon('swords', gsz, m.result === 'win' ? C.green : m.result === 'loss' ? C.red : C.mid);
-      glyph.x = glyphX; glyph.y = ry + entryH / 2 - gsz / 2;
-      parent.addChild(glyph);
-
-      // "me vs opponent" — the opponent name is truncated so the matchup never collides
-      // with the result chip on the right.
-      const opp = m.opponentName || (m.opponentPublicId ? `#${m.opponentPublicId}` : t('stats.historyUnknownOpp'));
-      const matchup = `${this.truncate(me, 10)} vs ${this.truncate(opp, 12)}`;
-      const mt = txt(matchup, snapFont(Math.round(entryH * 0.42)), C.dark);
-      mt.anchor.set(0, 0.5); mt.x = matchupX; mt.y = ry + entryH / 2;
-      parent.addChild(mt);
-
-      // Result chip: win/loss plus signed ELO delta (delta absent for friendly matches).
-      const res = m.result === 'win' ? t('stats.win') : m.result === 'loss' ? t('stats.loss') : '—';
-      const elo = m.eloDelta !== undefined ? `  ${m.eloDelta >= 0 ? '+' : ''}${m.eloDelta}` : '';
-      const resColor = m.result === 'win' ? C.green : m.result === 'loss' ? C.red : C.mid;
-      const rt = txt(res + elo, snapFont(Math.round(entryH * 0.44)), resColor, true);
-      rt.anchor.set(1, 0.5); rt.x = valRight; rt.y = ry + entryH / 2;
-      parent.addChild(rt);
-
-      if (this.cb.onWatchReplay) {
-        this.hits.push({ rect: { x, y: ry, w, h: entryH }, fn: () => this.cb.onWatchReplay!(m.roomId) });
-      }
-    });
-
-    return y + panelH;
-  }
-
-  /** Clip an over-long display name to `max` chars with an ellipsis, so matchup lines stay on one row. */
-  private truncate(s: string, max: number): string {
-    return s.length > max ? s.slice(0, max - 1) + '…' : s;
-  }
-
-  /**
-   * A titled hand-drawn panel with label:value rows. Returns the y just below it
-   * so sections stack. Height grows with row count.
-   */
-  private drawSection(x: number, y: number, w: number, title: string, accent: number, rows: Row[], parent: PIXI.Container = this.container): number {
-    const { h } = this;
-    const titleH = Math.round(h * 0.034);
-    const rowH = Math.round(h * 0.03);
-    const padV = Math.round(h * 0.012);
-    const panelH = titleH + rows.length * rowH + padV * 2;
-
-    const box = sketchPanel(w, panelH, { fill: C.paper, border: C.line, width: 1.6, seed: seedFor(x, y, w) });
-    box.x = x; box.y = y;
-    sketchAccentBar(box, panelH, accent, seedFor(x, panelH, 6));
-    parent.addChild(box);
-
-    const titleLbl = txt(title, snapFont(Math.round(titleH * 0.7)), accent, true);
-    titleLbl.anchor.set(0, 0); titleLbl.x = x + Math.round(w * 0.05); titleLbl.y = y + padV;
-    parent.addChild(titleLbl);
-
-    let ry = y + padV + titleH;
-    for (const row of rows) {
-      if (row.label) {
-        const lbl = txt(row.label, snapFont(Math.round(rowH * 0.62)), C.mid);
-        lbl.anchor.set(0, 0.5); lbl.x = x + Math.round(w * 0.07); lbl.y = ry + rowH / 2;
-        parent.addChild(lbl);
-      }
-      const val = txt(row.value, snapFont(Math.round(rowH * 0.66)), row.valueColor ?? C.dark, true);
-      const valRight = x + w - Math.round(w * 0.05);
-      val.anchor.set(1, 0.5); val.x = valRight; val.y = ry + rowH / 2;
-      parent.addChild(val);
-      // Optional hand-drawn glyph to the left of the value (e.g. a star for the star count).
-      if (row.valueIcon) {
-        const isz = Math.round(rowH * 0.7);
-        const ic = buildIcon(row.valueIcon, isz, row.valueColor ?? C.gold);
-        ic.x = valRight - val.width - isz - 4; ic.y = ry + rowH / 2 - isz / 2;
-        parent.addChild(ic);
-      }
-      // Rows with a watchable replay: draw a hand-drawn play glyph on the left + a full-row hit area.
-      if (row.rowHit) {
-        const psz = Math.round(rowH * 0.6);
-        const play = buildIcon('play', psz, accent);
-        play.x = x + Math.round(w * 0.035); play.y = ry + rowH / 2 - psz / 2;
-        parent.addChild(play);
-        this.hits.push({ rect: { x, y: ry, w, h: rowH }, fn: row.rowHit });
-      }
-      ry += rowH;
-    }
-
-    return y + panelH;
-  }
 }
