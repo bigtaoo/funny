@@ -28,6 +28,7 @@ import { resolveBlueprints } from '../engine/setup/blueprints';
 import { buildSiegeGarrisonBlueprints } from '../balance/pveUpgrades';
 import { UNIT_MAX_LEVEL } from '../balance/progression';
 import { UNIT_BLUEPRINTS, ATTACK_LANES, TOP_SPAWN_ROW } from '../config';
+import { toFp } from '../math/fixed';
 import { Side, UnitType } from '../types';
 import type { GameConfig } from '../types';
 import type { EngineCardInstance } from '../balance/equipment';
@@ -51,17 +52,17 @@ test('resolveBlueprints: siege mode enemyWaveBlueprints is isolated from the att
 
   // The attacker's own table DID get buffed by the level-9 card (sanity check the fixture is real).
   assert.ok(
-    unitBlueprints[UnitType.Infantry].hp > UNIT_BLUEPRINTS[UnitType.Infantry].hp,
+    unitBlueprints[UnitType.Infantry].hp_fp > UNIT_BLUEPRINTS[UnitType.Infantry].hp_fp,
     'sanity: attacker unitBlueprints.infantry.hp should be buffed by the max-level card',
   );
 
   // The NPC/garrison-facing table must stay at plain baseline, regardless of the attacker's card.
   assert.equal(
-    enemyWaveBlueprints[UnitType.Infantry].hp, UNIT_BLUEPRINTS[UnitType.Infantry].hp,
+    enemyWaveBlueprints[UnitType.Infantry].hp_fp, UNIT_BLUEPRINTS[UnitType.Infantry].hp_fp,
     'siege enemyWaveBlueprints.infantry.hp must NOT inherit the attacker\'s card-level buff',
   );
   assert.equal(
-    enemyWaveBlueprints[UnitType.Infantry].attack, UNIT_BLUEPRINTS[UnitType.Infantry].attack,
+    enemyWaveBlueprints[UnitType.Infantry].attack_fp, UNIT_BLUEPRINTS[UnitType.Infantry].attack_fp,
     'siege enemyWaveBlueprints.infantry.attack must NOT inherit the attacker\'s card-level buff',
   );
   assert.notEqual(
@@ -78,18 +79,18 @@ test('resolveBlueprints: siege enemyWaveBlueprints ignores equipmentInv and sieg
     siegeAcademy: { hp: 0.5, damage: 0.5, siege: 0.5 },
   };
   const { enemyWaveBlueprints } = resolveBlueprints(config, 'siege');
-  assert.equal(enemyWaveBlueprints[UnitType.Infantry].hp, UNIT_BLUEPRINTS[UnitType.Infantry].hp,
+  assert.equal(enemyWaveBlueprints[UnitType.Infantry].hp_fp, UNIT_BLUEPRINTS[UnitType.Infantry].hp_fp,
     'siegeAcademy must not leak into the NPC-facing table either');
 });
 
 test('buildSiegeGarrisonBlueprints: returns a plain clone equal to UNIT_BLUEPRINTS byte-for-byte', () => {
   const bp = buildSiegeGarrisonBlueprints();
   for (const ut of [UnitType.Infantry, UnitType.ShieldBearer, UnitType.Archer]) {
-    assert.equal(bp[ut].hp, UNIT_BLUEPRINTS[ut].hp, `${ut}.hp`);
-    assert.equal(bp[ut].attack, UNIT_BLUEPRINTS[ut].attack, `${ut}.attack`);
+    assert.equal(bp[ut].hp_fp, UNIT_BLUEPRINTS[ut].hp_fp, `${ut}.hp`);
+    assert.equal(bp[ut].attack_fp, UNIT_BLUEPRINTS[ut].attack_fp, `${ut}.attack`);
   }
-  bp[UnitType.Infantry].hp = 99999;
-  assert.equal(UNIT_BLUEPRINTS[UnitType.Infantry].hp, 60, 'must be an independent clone, not the shared constant');
+  bp[UnitType.Infantry].hp_fp = toFp(99999);
+  assert.equal(UNIT_BLUEPRINTS[UnitType.Infantry].hp_fp, toFp(60), 'must be an independent clone, not the shared constant');
 });
 
 // ── Integration-level guard: a real siege battle's constructed garrison Unit instance must carry
@@ -122,21 +123,21 @@ test('siege battle: garrison Unit of the same unitType as a leveled attacker car
 
   // The attacker's own unit legitimately benefits from its owner's max-level card.
   assert.ok(
-    attackerUnit!.maxHp > UNIT_BLUEPRINTS[UnitType.Infantry].hp,
+    attackerUnit!.maxHp_fp > UNIT_BLUEPRINTS[UnitType.Infantry].hp_fp,
     'attacker infantry maxHp should reflect the max-level card buff',
   );
   assert.ok(
-    attackerUnit!.attack > UNIT_BLUEPRINTS[UnitType.Infantry].attack,
+    attackerUnit!.attack_fp > UNIT_BLUEPRINTS[UnitType.Infantry].attack_fp,
     'attacker infantry attack should reflect the max-level card buff',
   );
 
   // The NPC garrison of the SAME unitType must NOT have received that same buff.
   assert.equal(
-    garrisonUnit!.maxHp, UNIT_BLUEPRINTS[UnitType.Infantry].hp,
+    garrisonUnit!.maxHp_fp, UNIT_BLUEPRINTS[UnitType.Infantry].hp_fp,
     'garrison infantry maxHp must stay at baseline — this is the exact leak that caused the real occupy-loss incident',
   );
   assert.equal(
-    garrisonUnit!.attack, UNIT_BLUEPRINTS[UnitType.Infantry].attack,
+    garrisonUnit!.attack_fp, UNIT_BLUEPRINTS[UnitType.Infantry].attack_fp,
     'garrison infantry attack must stay at baseline',
   );
 });
