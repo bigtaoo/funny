@@ -183,3 +183,28 @@ UI 冒烟层够不着的硬故障——只有**真渲染器 / 真 WebGL** 才暴
 - **`test/proto-wire-compat.test.ts`**：client 侧新增 4 条（塞进现有 `clientCases` 循环，自动走 encode+decode round-trip 比对，不用额外写断言）；server 侧新增 19 条 `it('decodes X', …)`，逐字段断言（`match_found`/`judge_request`——含 `frames`/`topDeck`/`bottomDeck`/`cardInstancesJson` 等 PvE/攻城重算专用字段/`friend_presence`/`friend_request`/`friend_update`（`REMOVED` enum 值）/`chat_message`/`mail_new`/`march_update`/`tile_update`/`under_attack`/`siege_result`（含 2026-08-02 那次 `attackerId`/`marchKind` 归属修复的字段）/`family_msg`/`sect_msg`/`nation_msg`/`match_bot`（uint64 seed + 十进制字符串 difficulty）/`duel_invited`/`duel_cancelled`/`queue_state`（无字段消息）/`pre_match_lost`）。41 个用例全绿（13 client + 28 server）。
 
 以后改 `transport.proto` 新增/改动 oneof 分支：先 `npm run proto:gen`（生成 TS），再 `npm run proto:vectors`（重跑权威字节向量），最后在 `proto-wire-compat.test.ts` 补对应的 `clientCases` 条目或 `it('decodes X', …)` 断言——三步缺一都会让这层"client ts-proto ↔ server protobufjs 字节级互通"回归测试形同虚设。
+
+## 组合化 lazy hook / merge 行为回归（2026-08-12）
+
+2026-08-11/08-12 那批 client 端 `XMixin(Base)` 继承链 → 组合（独立类 + composition）转换里，每条链的双向依赖都是用 **lazy hook** 解开的：`XSceneCore` 上声明一个**默认 no-op** 的字段，外层 assembly 在真正的兄弟类构造出来之后立刻覆写成 `() => this.sibling.method()`。已有的 `test/ui/composition-wiring.ui.ts` 只钉住这件事的**身份**一半（`expect(core.someHook).not.toBeUndefined()`、`expect(a.sibling).toBe(scene.sibling)`）——但 hook 字段**永远**是 defined 的（no-op 默认值的全部意义就在这儿），所以 assembly 哪怕完全漏掉某一行 `this.core.xHook = ...`，这些断言照样全绿。
+
+逐个 boundary 做了"删掉 assembly 里的 hook 赋值、看现有全量套件红不红"的实测，结论分成两半：
+
+**已被现有测试真实覆盖（不重复补）**——删掉 hook 赋值后立刻变红：
+
+- CardScene `core.doFuse`（feed 的确认按钮 → `ActionsPanel.doFuse` → `FeedPanel.playFusionAnim`）：`test/ui/cardFusePanel.ui.ts` 红 14 条，含它自己那条 "end-to-end: the real animation + busy update() ticks run to completion" 全链路。
+- EquipmentScene `core.doEquipHook`（AssignPanel 卡片选择器 → `DetailPanel.doEquip`）：`test/ui/scenes.ui.ts` 的 "bag mode: instanceActions(Equip) → … → core.doEquipHook → …" 变红。
+- EquipmentScene `core.refreshInstanceCellHook`（`DetailPanel.doEnhance` → InventoryPanel 单格增量重绘）：`test/ui/equipmentEnhanceIncrementalRedraw.ui.ts` 第一条变红——no-op 默认值返回 `false`，`doEnhance` 退化成整屏 `render()`，把该测试按身份钉住的 cell container 全换掉了。（默认 worker pool 下这条退化路径会先把 worker 堆吃爆再报断言，`--pool=threads` 才看到干净的 `Object.is` 失败；两种情况都是红。）
+- GameRenderer `core.input` / `core.events` 反向引用：gameRendererInput / SpellInput / SurrenderRace / gameScenes 合计红 14 条。
+
+**完全零行为覆盖（本轮新补）**：
+
+- **`test/ui/worldMapRefreshBundle.ui.ts`（5 条，本批风险最高）** —— WorldMapRenderer 转换没用 lazy hook，而是把 `pool.invalidatePool()` 里那捆 "pool + city + fog 全刷" 的编排**上提到了 assembly**，再以 `refreshMap: () => void` 闭包注入给 `build.ts`/`viewport.ts`/`lifecycle.ts`。于是这三处各自成了一根可以被悄悄拔掉的线：`build.ts` 改回调 `this.pool.invalidatePool()`（转换前的方法名在 pool 兄弟类上**仍然真实存在**），瓦片池照样完美刷新，而城市精灵原地冻结、交互 overlay 变陈旧——正是转换前那条 pool↔city 环存在的意义。5 条用例分别驱动 `build()` / `setZoom()` / `renderMap()` / `refreshPool()` / `lifecycle.bootstrap()`（走它自己的 8s 安全网 reveal，因为 headless 下 atlas 的 `Promise.allSettled` 永远不落地），每条都用真实可观察状态而非 spy 计数断言三个域都真干了活：pool 看 `ctx.pool` 槽位的 `tx/ty` 是否从哨兵值被重新赋值、city 看 `ctx.citySprites` 容器的屏幕 x/y 是否跟住当前 pan/zoom、fog 看 `ctx.fogGfx` 的 PIXI geometry 是否非空（`renderFog()` 只可能经由 `fog.renderOverlay()` 到达，所以画过的 fogGfx 就是这半边跑过的证据）。
+- **`test/ui/composition-hooks.ui.ts`（13 条）** —— `composition-wiring.ui.ts` 的**行为**对照件：
+  - AuctionScene `core.reopenCreateForm`（3 条）：删掉这行赋值，275 条 auction/scene 测试全绿——物品选择结果照样落在 Core 上（`auctionPickerDedupe.ui.ts` 的断言全通过），但玩家被丢回普通市场列表，刚才填了一半的上架表单直接从屏幕上消失。新用例走真实路径（打开创建表单 → 点 `modalHits[0]` 物品字段 → 选中条目 / 点 header Back 取消 / ref-band 请求迟到回调），断言表单真的回到屏幕上、且渲染出刚选中物品的标签（证明是选完之后重新 render 的，不是选之前的旧画面）。
+  - EquipmentScene `core.cancelAssignHook`（1 条）：此前没有任何测试碰过 `backAction()`。新用例进入 assign 子模式后点 header Back，断言选卡器被取消且 `cb.onBack()` **没**被调用（no-op 默认值会让 Back 在选卡器里彻底失灵）。
+  - LobbyScene `core.buildHook`（3 条）：删掉赋值后全量 163 文件 / 1491 条全绿——因为 assembly 构造函数是**直接**调 `this.build.build()` 的，首屏绘制根本不经过 hook。而 `rebuild()` 是先把整个 container 拆掉再调 hook 重绘，所以 hook 一死，任何 rebuild（活动窗口开启、`onSaveChanged` 钱包写入、coin-icon atlas 首屏后就绪）都会把大厅刷成**全白**。新用例走 `applyEventsAvailable(true/false)` → `BadgesPanel` → `core.rebuild()` → `buildHook()` → `build()`，断言 container 重新有子节点、且 `eventsBtnRect` 真的出现/消失；另加一条钉住"assembly 自己那个 `unsubs` 数组在 destroy() 时真被 drain"（LobbyScene 是本批唯一 update/destroy/`input.onDown` 不归 Core 的链，`core.destroy()` 单独跑并不会解开这个订阅——`test/input-subscription-cleanup.test.ts` 只静态扫同文件里有没有 push+drain 这一对，不验证运行时）。
+  - GameRenderer `EventsPanel` 经 `core.input` 取消拖拽/点选（6 条）：`card_played`/`card_expired`/`game_over`/`game_draw` 这 4 个事件此前只被单独测过，从没有一条测试是**拖拽真的在进行中**的时候把事件投进去的——也就是这几个分支之所以需要 `core.input` 的那半边跨域调用从未被执行。新用例用真实 `_emitDown/_emitMove` 起一个未松手的拖拽（或 down+up 起一个 tap-select），再 `events.handleEvent(...)`，并各配一条反例（对手的 `card_played`、别的手牌槽位的 `card_expired`）证明不是无脑清空。
+- **`test/familySendButton.test.ts` 新增 "the merged text-entry + send unit" describe（3 条）** —— FamilyScene 的双向依赖是用**合并类**（不是 hook）解的：`doSendMsg`/`submitMessage` 从 actions.ts 搬到了 `InputPanel`，和 `openSendInput`/`openInputFor` 同居。原有测试两半各测一边，而且"还没有草稿 → 打开输入框"那条**把 `openSendInput` mock 掉了**，所以两半从来没在真实类上互相驱动过一次。新用例跑完整往返（第一次点 Send 打开真实隐藏 input → 输入 → blur（真实点击时 blur 先把 `core.sendInput` 置空）→ 第二次点 Send 提交刚输入的内容），外加 Enter 键这另一张脸。合并**新引入**的风险就是两条路径共享 Core 上的 `sendText`/`sendInput` 且**动作顺序是有意义的**：`doSendMsg()` 必须在移交给 `openSendInput()` **之前**清 `sendText`（后者用它给新 DOM input 播种），把这两句换个顺序，重开的输入框就会带着刚发出去的旧草稿——用例特意用"纯空格草稿"入场把这个顺序变得可观测（实测：不用空格草稿的话换顺序不变红）。
+
+**每一条新用例都做了 red-then-green 实测**（逐个临时破坏对应接线/断言目标，确认变红，再还原）——具体破坏点见各文件头部注释。收尾验证：`tsc --noEmit` 干净，`npm run test:ui` 163 文件 / 1491 条绿，`npm test` 161 文件 / 1283 条绿，`npm run build:web` OK。
