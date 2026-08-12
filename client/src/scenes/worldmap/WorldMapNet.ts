@@ -69,6 +69,10 @@ export class WorldMapNet {
       if (entry.me.mainBaseTile) {
         const [bx, by] = this.ctx.parseTileId(entry.me.mainBaseTile);
         this.ctx.view.centerAt(bx, by);
+        // SLG opening guide chain (ONBOARDING_DESIGN §4.2) step1 — highlight the newly-known main
+        // city until tapped/skipped. Gated on the flag (not `entry.me.justJoined`) so a returning
+        // player who joined before this feature shipped still gets it once.
+        if (!(this.ctx.cb.getFlag?.('guide.world.step1') ?? false)) this.ctx.guideStep = 'step1';
       }
 
       if (entry.map) {
@@ -327,6 +331,7 @@ export class WorldMapNet {
       if (this.ctx.me.mainBaseTile) {
         const [bx, by] = this.ctx.parseTileId(this.ctx.me.mainBaseTile);
         this.ctx.view.centerAt(bx, by);
+        if (!(this.ctx.cb.getFlag?.('guide.world.step1') ?? false)) this.ctx.guideStep = 'step1';
       }
       await this.loadMapViewport();
       this.ctx.view.renderMap(); this.ctx.panels.renderHud();

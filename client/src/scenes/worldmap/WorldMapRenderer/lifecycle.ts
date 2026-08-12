@@ -10,6 +10,10 @@ import { tearDownChildren } from '../../../render/sketchUi';
 import { destroyTokenEntry } from './tokens';
 import { drawShieldDome, drawShieldGlow, drawShieldBreakFx, SHIELD_BREAK_LIFE } from './shieldFx';
 import { updateLoadingErase, cancelLoadingErase } from './loadingReveal';
+import { t } from '../../../i18n';
+import { tileToScreen, ISO_RATIO } from '../../../render/isoGrid';
+import { BASE_FOOTPRINT, citySpriteTiles, cityGroundFwdPx } from '@nw/shared';
+import { BASE_SPRITE_TILES } from '../constants';
 import type { WorldMapRendererCore } from './core';
 import type { WorldMapRendererFog } from './fog';
 import type { WorldMapRendererVignette } from './vignette';
@@ -56,6 +60,7 @@ export class WorldMapRendererLifecycle implements LifecycleHandlers {
       if (ctx.toastTimer <= 0) tearDownChildren(ctx.toastLayer);
     }
     this.vignette.updateVignette(dt);
+    this.updateGuide(dt);
     // Protection-shield bubbles (S8-8 follow-up, 2026-08-08): re-animate every active shield's
     // dashed ring/pulse every frame instead of only on the sporadic redraws refreshCityLayer
     // gets (pan/zoom/poll) — see WorldMapContext.shieldGeom / WorldMapRenderer/shieldFx.ts.
@@ -105,6 +110,47 @@ export class WorldMapRendererLifecycle implements LifecycleHandlers {
     ) {
       this.fog.renderOverlay(dt);
     }
+  }
+
+  /**
+   * SLG opening guide chain (ONBOARDING_DESIGN §4.2): step1 highlights the player's own main city
+   * until tapped (WorldMapInput.onTileClick sets ctx.guideStep back to null on hit); step4 is a
+   * target-less closing tip shown once back from the city, after step3 (CityScene's own "return"
+   * highlight) has completed. Both are just derived from current flags/state every frame — cheap
+   * (one tileToScreen call + a Graphics redraw), and naturally re-decided on every call, so there is
+   * no separate "clear it" bookkeeping to get wrong.
+   */
+  private updateGuide(dt: number): void {
+    const ctx = this.core.ctx;
+    if (!ctx.guide) return; // only assigned by WorldMapRendererBuild.build() — some UI tests skip it
+    const viewport = { w: ctx.w, h: ctx.h };
+    ctx.guide.update(dt);
+    if (ctx.guideStep === 'step1' && ctx.me?.mainBaseTile) {
+      const parsed = ctx.parseTileStrict(ctx.me.mainBaseTile);
+      if (parsed) {
+        const [bx, by] = parsed;
+        const size = citySpriteTiles(BASE_FOOTPRINT, BASE_SPRITE_TILES) * ctx.tp;
+        const s = tileToScreen(bx, by, ctx.tp);
+        const groundY = ctx.panY + s.y + cityGroundFwdPx(BASE_FOOTPRINT, ctx.tp, ISO_RATIO);
+        const cx = ctx.panX + s.x;
+        ctx.guide.showAt(
+          { x: cx - size / 2, y: groundY - size, w: size, h: size },
+          t('guide.world.step1.body'),
+          viewport,
+          { onSkip: () => { ctx.cb.setFlag?.('guide.world.step1', true); ctx.guideStep = null; } },
+        );
+      }
+      return;
+    }
+    if ((ctx.cb.getFlag?.('guide.world.step3') ?? false) && !(ctx.cb.getFlag?.('guide.world.step4') ?? false)) {
+      ctx.guide.showCard(
+        t('guide.world.step4.body'), t('guide.gotIt'),
+        () => ctx.cb.setFlag?.('guide.world.step4', true),
+        viewport,
+      );
+      return;
+    }
+    ctx.guide.hide();
   }
 
   /** Load the map atlases behind the loading cover, then reveal the map fully textured. */

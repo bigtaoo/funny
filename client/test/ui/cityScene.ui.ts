@@ -138,6 +138,9 @@ function buildScene(w: number, h: number): { scene: CityScene; input: InputManag
     onBack: () => { calls.back++; },
     worldApi: stubWorldApi(),
     worldId: 'world:1:0',
+    // These tests are about grid/hit-rect structure, not the SLG opening guide chain
+    // (ONBOARDING_DESIGN §4.2) — mark every step seen so its skip-glyph hit never joins the count.
+    getFlag: () => true,
   };
   const scene = new CityScene(createLayout(w, h), input, cb);
   return { scene, input, calls };
@@ -291,6 +294,9 @@ describe('CityScene header base-durability (D-CITY-8; moved into the header 2026
       onBack: () => {},
       worldApi: stubWorldApiWithDurability(hp, maxHp),
       worldId: 'world:1:0',
+      // Not about the SLG opening guide chain (ONBOARDING_DESIGN §4.2) — keep its skip-glyph hit
+      // out of these hit-count assertions.
+      getFlag: () => true,
     };
     const scene = new CityScene(createLayout(...PORTRAIT), input, cb);
     await new Promise((r) => setTimeout(r, 0));
@@ -359,6 +365,9 @@ describe('CityScene bottom team row (D-CITY-10; pinned single row 2026-07-23)', 
       worldApi: stubWorldApiWithTeams(fx),
       worldId: 'world:1:0',
       onEditTeam,
+      // Not about the SLG opening guide chain (ONBOARDING_DESIGN §4.2) — keep its skip-glyph hit
+      // out of these hit-count assertions.
+      getFlag: () => true,
       ...(fx.cardInv ? { getSave: () => ({ cardInv: fx.cardInv, equipmentInv: {} } as unknown as SaveData) } : {}),
     };
     const scene = new CityScene(createLayout(...dims), input, cb);

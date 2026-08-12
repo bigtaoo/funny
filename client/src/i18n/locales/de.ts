@@ -246,7 +246,12 @@ export const de: Record<TranslationKey, string> = {
   'guide.daily.title': 'Täglich einloggen',
   'guide.daily.body': 'Täglich einloggen für Belohnungen; Serien zahlen mehr. Tagesaufgaben bringen extra.',
   'guide.world.title': 'Die Große Welt',
-  'guide.world.body': 'Eine offene Welt: Land beanspruchen, Klan bauen, belagern. Der schwerste Modus — lass dir Zeit.',
+  'guide.world.body': 'Eine offene Welt: Tippe zuerst auf deine Hauptstadt auf der Karte, um mit dem Bauen zu beginnen, dann Land beanspruchen, Klan bauen, belagern. Der schwerste Modus — lass dir Zeit.',
+  // ── SLG opening guide chain (ONBOARDING_DESIGN §4.2) — spotlight bubbles, no title, body-only ──
+  'guide.world.step1.body': 'Das ist deine Hauptstadt — tippe darauf, um mit dem Bauen zu beginnen',
+  'guide.world.step2.body': 'Tippe auf eine Gebäudekarte zum Bauen/Aufwerten; tippe auf das Ausbildungsfeld, um Truppen auszubilden',
+  'guide.world.step3.body': 'Tippe hier, um zur Weltkarte zurückzukehren',
+  'guide.world.step4.body': 'Tippe auf freies Land neben deiner Stadt, um Truppen zu entsenden und es zu erobern',
 
   // ── Freundesraum (Online, S1) ─────────────────────────────────────────────
   'room.title': 'Freundesduell',

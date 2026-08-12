@@ -24,6 +24,7 @@ import { txt, tearDownChildren, buildPaperBackground, marginLineX } from '../ren
 import { drawSceneHeader, HEADER_ACCENT } from '../ui/widgets/SceneHeader';
 import { FS } from '../render/fontScale';
 import { buildDecorCLayer } from '../render/decorCLayer';
+import { GuideOverlay } from '../render/GuideOverlay';
 import { CitySceneCore } from './CityScene/core';
 import type { CitySceneCallbacks, Hit } from './CityScene/core';
 import { RenderPanel } from './CityScene/render';
@@ -43,8 +44,15 @@ export class CityScene implements Scene {
   private readonly modals: ModalsPanel;
 
   constructor(layout: ILayout, input: InputManager, cb: CitySceneCallbacks) {
-    this.core = new CitySceneCore(layout, input, cb, () => this.render());
-    this.container = this.core.container;
+    const guide = new GuideOverlay();
+    this.core = new CitySceneCore(layout, input, cb, () => this.render(), guide);
+    // Wrapper container, NOT `core.container` directly: render() below does a full
+    // `tearDownChildren(core.container)` + rebuild on every state change, which would wipe out any
+    // guide ring/bubble added straight into it. `guide.root` is a second, never-torn-down sibling
+    // added after `core.container` so it renders on top (ONBOARDING_DESIGN §4.2 step2/step3).
+    this.container = new PIXI.Container();
+    this.container.addChild(this.core.container);
+    this.container.addChild(guide.root);
     this.renderPanel = new RenderPanel(this.core);
     this.modals = new ModalsPanel(this.core);
 
@@ -57,7 +65,11 @@ export class CityScene implements Scene {
   }
 
   destroy(): void {
+    // core.destroy() frees core.container + guide.root (both children of the wrapper below), but
+    // never touches the wrapper itself — without this, `this.container` (what SceneManager/tests
+    // actually hold as this scene's exposed container) never flips `.destroyed`.
     this.core.destroy();
+    this.container.destroy({ children: true });
   }
 
   private render(): void {
@@ -83,11 +95,28 @@ export class CityScene implements Scene {
       y: hdr.backRect.y,
       w: hdr.backRect.w,
       h: hdr.backRect.h,
-      fn: () => core.cb.onBack(),
+      fn: () => {
+        core.cb.setFlag?.('guide.world.step3', true);
+        core.cb.onBack();
+      },
     };
     core.hits.push(backHit);
     // Base durability (D-CITY-8) rides in the header bar's free right side.
     this.renderPanel.renderHeaderDurability(hdr.headerH);
+
+    // SLG opening guide chain step3 (ONBOARDING_DESIGN §4.2): once step2 (renderBuildingGrid, below)
+    // is done, highlight the way back out. Decided fresh every render() pass — the `!step2` case is
+    // a deliberate no-op here (renderBuildingGrid owns showing its own ring then); the "both done"
+    // case explicitly hides so a stale ring from an earlier pass never lingers.
+    if (!(core.cb.getFlag?.('guide.world.step2') ?? false)) {
+      // renderBuildingGrid (below) will call guide.showAt for its own target.
+    } else if (!(core.cb.getFlag?.('guide.world.step3') ?? false)) {
+      core.guide.showAt(hdr.backRect, t('guide.world.step3.body'), { w, h }, {
+        onSkip: () => core.cb.setFlag?.('guide.world.step3', true),
+      });
+    } else {
+      core.guide.hide();
+    }
 
     core.contentX = marginLineX(w);
     const y = hdr.headerH + 8;
@@ -112,9 +141,15 @@ export class CityScene implements Scene {
     // a building card (incl. academy/tech-tree) or the train tile routes through here.
     if (core.selectedBuilding) {
       core.hits = [backHit];
+      // renderBuildingGrid (above) may have just called guide.showAt for step2's ring on tile 0 —
+      // a modal opening supersedes it outright (same reasoning as the hits reset above: nothing
+      // else on the page should be tappable while it's up), so drop it before it can end up
+      // shadowing one of the modal's own buttons via the currentAction() splice at the end of render().
+      core.guide.hide();
       this.modals.renderDetailModal(core.selectedBuilding);
     } else if (core.selectedTrain) {
       core.hits = [backHit];
+      core.guide.hide();
       this.modals.renderTrainModal();
     }
 
@@ -130,5 +165,14 @@ export class CityScene implements Scene {
       lbl.y = h / 2 - 21;
       core.container.addChild(lbl);
     }
+
+    // SLG opening guide chain (ONBOARDING_DESIGN §4.2): splice whatever guide.showAt/showCard call
+    // above (here or in renderBuildingGrid) left as the current action into this render pass's own
+    // hit list. Appended, not unshifted: the guide's bubble/skip glyph is always positioned outside
+    // its target rect (positionBubble's above/below placement), so in practice it never overlaps
+    // another hit — appending preserves the long-standing `hits[0] === backHit` assumption several
+    // existing tests rely on (see cityScene.ui.ts's modal-hit-gating describe block).
+    const guideHit = core.guide.currentAction();
+    if (guideHit) core.hits.push({ ...guideHit.rect, fn: guideHit.fn });
   }
 }

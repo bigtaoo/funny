@@ -7,6 +7,7 @@ import { buildPaperBackground } from '../../../render/sketchUi';
 import { makeText } from '../../../render/pixiText';
 import { FS } from '../../../render/fontScale';
 import { drawSceneHeader, HEADER_ACCENT } from '../../../ui/widgets/SceneHeader';
+import { GuideOverlay } from '../../../render/GuideOverlay';
 import { HUD_H } from '../constants';
 import { beginLoadingErase } from './loadingReveal';
 import type { WorldMapRendererCore } from './core';
@@ -103,6 +104,12 @@ export class WorldMapRendererBuild implements BuildHandlers {
     // (including HUD/modals) so a siege hit reads even while a panel is open.
     ctx.vignetteGfx = new PIXI.Graphics();
     ctx.container.addChild(ctx.vignetteGfx);
+
+    // SLG opening guide chain (ONBOARDING_DESIGN §4.2) — topmost persistent layer, above HUD/modals
+    // too, so its highlight ring/bubble always reads on top; mounted once here (never touched by
+    // refreshPool/refreshCityLayer/renderHud, all of which tear down other layers, not this one).
+    ctx.guide = new GuideOverlay();
+    ctx.container.addChild(ctx.guide.root);
 
     // Loading cover — top-most so the half-built / untextured map never peeks through.
     this.buildLoadingOverlay();
