@@ -829,7 +829,7 @@ describe('LobbyScene — applyWorldAvailable', () => {
 
   it('initial state: worldOfflineBadgeLayer is empty (health not yet checked)', () => {
     const scene = buildLobby();
-    const layer = (scene as any).worldOfflineBadgeLayer as PIXI.Container;
+    const layer = (scene as any).core.worldOfflineBadgeLayer as PIXI.Container;
     expect(layer).toBeInstanceOf(PIXI.Container);
     expect(layer.children).toHaveLength(0);
     scene.destroy();
@@ -838,7 +838,7 @@ describe('LobbyScene — applyWorldAvailable', () => {
   it('applyWorldAvailable(false) draws the offline badge', () => {
     const scene = buildLobby();
     scene.applyWorldAvailable(false);
-    const layer = (scene as any).worldOfflineBadgeLayer as PIXI.Container;
+    const layer = (scene as any).core.worldOfflineBadgeLayer as PIXI.Container;
     expect(layer.children.length).toBeGreaterThan(0);
     scene.destroy();
   });
@@ -846,7 +846,7 @@ describe('LobbyScene — applyWorldAvailable', () => {
   it('applyWorldAvailable(true) keeps the badge layer empty', () => {
     const scene = buildLobby();
     scene.applyWorldAvailable(true);
-    const layer = (scene as any).worldOfflineBadgeLayer as PIXI.Container;
+    const layer = (scene as any).core.worldOfflineBadgeLayer as PIXI.Container;
     expect(layer.children).toHaveLength(0);
     scene.destroy();
   });
@@ -854,9 +854,9 @@ describe('LobbyScene — applyWorldAvailable', () => {
   it('badge is cleared after switching false → true', () => {
     const scene = buildLobby();
     scene.applyWorldAvailable(false);
-    expect((scene as any).worldOfflineBadgeLayer.children.length).toBeGreaterThan(0);
+    expect((scene as any).core.worldOfflineBadgeLayer.children.length).toBeGreaterThan(0);
     scene.applyWorldAvailable(true);
-    expect((scene as any).worldOfflineBadgeLayer.children).toHaveLength(0);
+    expect((scene as any).core.worldOfflineBadgeLayer.children).toHaveLength(0);
     scene.destroy();
   });
 
@@ -888,10 +888,10 @@ describe('LobbyScene — hit rects do not overlap', () => {
         playerName: 'Tester',
       });
 
-      const worldRect    = (scene as any).worldPillarRect  as { x: number; y: number; w: number; h: number };
-      const btnRect      = (scene as any).btnRect         as { x: number; y: number; w: number; h: number };
-      const campaignRect = (scene as any).campaignBtnRect as { x: number; y: number; w: number; h: number };
-      const dailyRect    = (scene as any).dailyBtnRect    as { x: number; y: number; w: number; h: number };
+      const worldRect    = (scene as any).core.worldPillarRect  as { x: number; y: number; w: number; h: number };
+      const btnRect      = (scene as any).core.btnRect         as { x: number; y: number; w: number; h: number };
+      const campaignRect = (scene as any).core.campaignBtnRect as { x: number; y: number; w: number; h: number };
+      const dailyRect    = (scene as any).core.dailyBtnRect    as { x: number; y: number; w: number; h: number };
 
       expect(rectsOverlap(worldRect, btnRect)).toBe(false);
       expect(rectsOverlap(worldRect, campaignRect)).toBe(false);
@@ -915,7 +915,7 @@ describe('LobbyScene — hit rects do not overlap', () => {
         playerName: 'Tester',
       });
 
-      const r = (scene as any).worldPillarRect as { x: number; y: number; w: number; h: number };
+      const r = (scene as any).core.worldPillarRect as { x: number; y: number; w: number; h: number };
       expect(r.w).toBeGreaterThan(0);
       expect(r.h).toBeGreaterThan(0);
       expect(r.x).toBeGreaterThanOrEqual(0);
@@ -953,7 +953,7 @@ describe('LobbyScene — content column width follows orientation', () => {
         playerName: 'Tester',
       });
 
-      const btnRect = (scene as any).btnRect as { x: number; y: number; w: number; h: number };
+      const btnRect = (scene as any).core.btnRect as { x: number; y: number; w: number; h: number };
       expect(btnRect.w).toBe(Math.round(layout.designWidth * expectedFrac));
 
       scene.destroy();
@@ -985,8 +985,8 @@ describe('LobbyScene — hero/pillar button size follows orientation', () => {
         playerName: 'Tester',
       });
 
-      const btnRect      = (scene as any).btnRect         as { h: number };
-      const campaignRect = (scene as any).campaignBtnRect as { h: number };
+      const btnRect      = (scene as any).core.btnRect         as { h: number };
+      const campaignRect = (scene as any).core.campaignBtnRect as { h: number };
       expect(btnRect.h).toBe(Math.round(layout.designHeight * heroFrac));
       expect(campaignRect.h).toBe(Math.round(layout.designHeight * pillarFrac));
 
@@ -1027,8 +1027,8 @@ describe('LobbyScene — identity chip row', () => {
   it('portrait: coins chip and rank chip share the same row (no longer stacked)', () => {
     const { scene } = buildOnlineLobby(...PORTRAIT);
 
-    const coinsRect = (scene as any).coinsChipRect as { x: number; y: number; w: number; h: number };
-    const rankRect  = (scene as any).rankChipRect  as { x: number; y: number; w: number; h: number };
+    const coinsRect = (scene as any).core.coinsChipRect as { x: number; y: number; w: number; h: number };
+    const rankRect  = (scene as any).core.rankChipRect  as { x: number; y: number; w: number; h: number };
 
     expect(coinsRect.w).toBeGreaterThan(0);
     expect(rankRect.w).toBeGreaterThan(0);
@@ -1042,8 +1042,8 @@ describe('LobbyScene — identity chip row', () => {
   it('portrait: rank chip is right-aligned to the header margin, profile chip is clear of both', () => {
     const { layout, scene } = buildOnlineLobby(...PORTRAIT);
 
-    const rankRect    = (scene as any).rankChipRect    as { x: number; y: number; w: number; h: number };
-    const profileRect = (scene as any).profileChipRect as { x: number; y: number; w: number; h: number };
+    const rankRect    = (scene as any).core.rankChipRect    as { x: number; y: number; w: number; h: number };
+    const profileRect = (scene as any).core.profileChipRect as { x: number; y: number; w: number; h: number };
 
     // Right-aligned to the same margin the header block uses elsewhere (w - w*0.04).
     expect(rankRect.x + rankRect.w).toBeLessThanOrEqual(Math.round(layout.designWidth * 0.96));
@@ -1058,8 +1058,8 @@ describe('LobbyScene — identity chip row', () => {
   it('landscape: coins chip and rank chip still stack vertically (unchanged)', () => {
     const { scene } = buildOnlineLobby(...LANDSCAPE);
 
-    const coinsRect = (scene as any).coinsChipRect as { x: number; y: number; w: number; h: number };
-    const rankRect  = (scene as any).rankChipRect  as { x: number; y: number; w: number; h: number };
+    const coinsRect = (scene as any).core.coinsChipRect as { x: number; y: number; w: number; h: number };
+    const rankRect  = (scene as any).core.rankChipRect  as { x: number; y: number; w: number; h: number };
 
     expect(coinsRect.y).not.toBe(rankRect.y);
     expect(rankRect.y).toBeGreaterThan(coinsRect.y); // rank sits below coins, per the 0.26/0.70 split
@@ -1085,9 +1085,9 @@ describe('LobbyScene — identity chip row', () => {
       playerName: 'tao',
     });
 
-    const profileRect = (scene as any).profileChipRect as { x: number; y: number; w: number; h: number };
-    const coinsRect   = (scene as any).coinsChipRect   as { x: number; y: number; w: number; h: number };
-    const rankRect     = (scene as any).rankChipRect     as { x: number; y: number; w: number; h: number };
+    const profileRect = (scene as any).core.profileChipRect as { x: number; y: number; w: number; h: number };
+    const coinsRect   = (scene as any).core.coinsChipRect   as { x: number; y: number; w: number; h: number };
+    const rankRect     = (scene as any).core.rankChipRect     as { x: number; y: number; w: number; h: number };
 
     expect(rectsOverlap(profileRect, coinsRect)).toBe(false);
     expect(rectsOverlap(coinsRect, rankRect)).toBe(false);

@@ -1,21 +1,55 @@
-// Shared foundation for the LobbyScene mixin chain (see ../LobbyScene.ts assembly).
-// LobbySceneBase holds every instance field (all `protected`, so the domain mixins keep referencing them
-// verbatim: this.btnRect, this.socialBadge, …) + the Scene interface (constructor/update/destroy) + the
-// shared render primitives (txt/fmtCoins/sketchPanel/drawBtn/buildBackground/randomAiName) used across the
-// mixins. Each domain (layout/build, badges, overlays) lives in its own sibling file as an `XMixin(Base)`
-// and is chained together into the final LobbyScene.
+// Shared foundation for the LobbyScene composition (see ../LobbyScene.ts assembly).
+//
+// LobbySceneCore holds every instance field (all `public`, so the domain classes/free-function
+// modules below keep referencing them via `core.xxx`: core.btnRect, core.socialBadge, …) + the
+// shared render primitives (txt/fmtCoins/sketchPanel/drawBtn/buildBackground/randomAiName) used
+// across the domains. Core does NOT own the Scene interface (update()/destroy() dispatch) — unlike
+// every other conversion in this batch, the outer ../LobbyScene.ts assembly owns update()/destroy()
+// directly, because the original mixin chain's update() called two different sibling methods by
+// name (BuildMixin's matchFound(), OverlaysMixin's clearToast()) rather than a single injected
+// callback — only the assembly has references to both siblings (see LobbyScene.ts's file-header
+// comment for the full reasoning). Core's own constructor is correspondingly thin: it does NOT run
+// the initial layout build() or subscribe input.onDown (both need BuildPanel, which doesn't exist
+// yet at Core-construction time) — the assembly does both, in dependency order, right after
+// constructing every domain.
+//
+// One genuine two-phase-construction wrinkle: rebuild() (full teardown + relayout, needed when a
+// strip item appears/disappears, or once the coin-icon atlas finishes loading after the first draw)
+// only ever touches Core-owned fields except for the final "now redraw everything" step, which is
+// BuildPanel's build() — a method that doesn't exist yet when Core's own constructor wires up the
+// onSaveChanged/coinIconAtlas listeners that (later, async) need to call it. Resolved via the
+// established default-no-op-field two-phase-construction pattern (see client-modules.md): Core
+// declares `buildHook` defaulting to a no-op, and the outer assembly overwrites it with the real
+// `() => this.build.build()` immediately after constructing BuildPanel, before anything can fire.
+//
+// One genuine bidirectional dependency surfaced during the conversion: the old build.ts's build()
+// called badges.ts's drawSocialBadge()/drawAchievementBadge()/drawShopBadge()/
+// drawWorldOfflineBadge()/drawSideStripBadges() (to paint current badge state into the freshly-built
+// layers), while badges.ts's applyEventsAvailable() called build.ts's own rebuild() (defined in
+// badges.ts, tearing down Core state then calling build()) whenever the events strip item needs to
+// appear/disappear. Splitting "paint the badge dots" and "trigger a full relayout" across the same
+// two files was the wrong boundary: rebuild() itself doesn't actually belong to the badges domain at
+// all — it's a whole-scene concern (the exact same teardown+build() sequence coinIconAtlas and
+// onSaveChanged already needed from Core's own constructor), it just happened to live in badges.ts
+// because that's where the first caller that needed it (events-strip visibility) was implemented.
+// Moving rebuild() here (Core) removes the back-edge entirely: badges.ts now only ever calls
+// `this.core.rebuild()` (a plain Core method, same as any other domain would), and build.ts depends
+// on badges.ts one-way (calling its draw*Badge methods after constructing fresh layers) like every
+// other clean pair in this batch. overlays.ts remains a clean leaf exactly as previously reported —
+// re-verified via grep: build.ts calls its clearGuide()/clearSettlement()/clearToast()/
+// showInfoToast(), nothing calls back the other way.
+//
+// LobbyScene — main menu / hub (S2).
 import * as PIXI from 'pixi.js-legacy';
 import { ILayout, Rect } from '../../layout/ILayout';
-import { InputManager } from '../../inputSystem/InputManager';
-import { t } from '../../i18n';
 import { SketchPen } from '../../render/sketch';
 import { palette } from '../../render/theme';
 import { bake } from '../../render/bake';
-import { IconKind } from '../../render/icons';
 import { BoilingSprite } from '../../render/boil';
 import { StickmanRuntime } from '../../render/stickman/StickmanRuntime';
 import { loadCoinIconAtlas } from '../../render/atlas/coinIconAtlas';
 import { makeText } from '../../render/pixiText';
+import { tearDownChildren } from '../../render/sketchUi';
 
 export { fmtCoins } from './format';
 
@@ -137,7 +171,7 @@ export interface LobbySceneCallbacks {
   onStartGame(opponentName: string): void;
   /**
    * Enter real PvP ranked matchmaking (online). Only invoked when `online` is
-   * true; otherwise the start button falls back to the local AI match.
+   * true; otherwise the start button falls back to the local AI quick-match.
    */
   onStartRanked?(): void;
   /** True when logged in + an online server is configured → match = real PvP. */
@@ -220,125 +254,126 @@ export interface LobbySceneCallbacks {
 
 export type LobbyState = 'idle' | 'matching' | 'vs';
 
-export type Constructor<T = object> = new (...args: any[]) => T;
-export type LobbySceneBaseCtor = Constructor<LobbySceneBase>;
-
-export class LobbySceneBase {
+export class LobbySceneCore {
   readonly container: PIXI.Container;
 
-  protected readonly w: number;
-  protected readonly h: number;
-  /** True in portrait; landscape keeps the original single-row header (see build()'s header block). */
-  protected readonly portrait: boolean;
-  protected readonly cb: LobbySceneCallbacks;
+  readonly w: number;
+  readonly h: number;
+  /** True in portrait; landscape keeps the original single-row header (see build.ts's header block). */
+  readonly portrait: boolean;
+  readonly cb: LobbySceneCallbacks;
 
-  protected state:        LobbyState = 'idle';
-  protected matchTimer    = 0;
-  protected vsTimer       = 0;
-  protected dotsTimer     = 0;
-  protected dotCount      = 0;
-  protected opponentName  = '';
+  state:        LobbyState = 'idle';
+  matchTimer    = 0;
+  vsTimer       = 0;
+  dotsTimer     = 0;
+  dotCount      = 0;
+  opponentName  = '';
 
-  protected btnBg!:    PIXI.Graphics;
-  protected btnLabel!: PIXI.Text;
-  protected vsLayer!:  PIXI.Container;
-  protected oppLabel!: PIXI.Text;
+  btnBg!:    PIXI.Graphics;
+  btnLabel!: PIXI.Text;
+  vsLayer!:  PIXI.Container;
+  oppLabel!: PIXI.Text;
   /** Boiling-line title underline (art-direction §5.4); cleaned up in destroy. */
-  protected titleBoil: BoilingSprite | null = null;
+  titleBoil: BoilingSprite | null = null;
   /**
    * Ambient silhouette figure stamped on the hero button (mirrors the crossed-pencils
    * motif on the right) — a random playable character, tinted flat black + faded,
    * cycling through random animation clips. Populated once its .tao bundle loads
    * (async), so it's absent for the first render frame or two.
    */
-  protected heroFigure: StickmanRuntime | null = null;
+  heroFigure: StickmanRuntime | null = null;
   /** Clip names available on the loaded heroFigure asset, for random cycling. */
-  protected heroFigureClips: string[] = [];
+  heroFigureClips: string[] = [];
   /** Countdown (seconds) to the next random clip swap. */
-  protected heroFigureSwapTimer = 0;
+  heroFigureSwapTimer = 0;
 
   /** Hit rect for the start/matching button, in design space. */
-  protected btnRect: Rect = { x: 0, y: 0, w: 0, h: 0 };
+  btnRect: Rect = { x: 0, y: 0, w: 0, h: 0 };
   /** Hit rect for the single campaign (PvE) entry button, in design space. */
-  protected campaignBtnRect: Rect = { x: 0, y: 0, w: 0, h: 0 };
+  campaignBtnRect: Rect = { x: 0, y: 0, w: 0, h: 0 };
   /** Hit rect for the world map (SLG) pillar card — promoted out of the bottom nav into the main layout. */
-  protected worldPillarRect: Rect = { x: 0, y: 0, w: 0, h: 0 };
+  worldPillarRect: Rect = { x: 0, y: 0, w: 0, h: 0 };
   /** Hit rect for the bottom-nav "social" slot (opens RoomScene). */
-  protected socialNavRect: Rect = { x: 0, y: 0, w: 0, h: 0 };
+  socialNavRect: Rect = { x: 0, y: 0, w: 0, h: 0 };
   /** Hit rect for the bottom-nav "shop" slot (opens ShopScene). */
-  protected shopNavRect: Rect = { x: 0, y: 0, w: 0, h: 0 };
+  shopNavRect: Rect = { x: 0, y: 0, w: 0, h: 0 };
   /** Hit rect for the bottom-nav "cards" slot (opens CardScene, the Hero Roster). */
-  protected cardsNavRect: Rect = { x: 0, y: 0, w: 0, h: 0 };
+  cardsNavRect: Rect = { x: 0, y: 0, w: 0, h: 0 };
   /** Hit rect for the bottom-nav "stats" slot (opens StatsScene). */
-  protected statsNavRect: Rect = { x: 0, y: 0, w: 0, h: 0 };
+  statsNavRect: Rect = { x: 0, y: 0, w: 0, h: 0 };
   /** Hit rect for the top-right account chip (login when offline / logout when on). */
-  protected accountChipRect: Rect | null = null;
-  protected accountChipFn: (() => void) | null = null;
+  accountChipRect: Rect | null = null;
+  accountChipFn: (() => void) | null = null;
   /** Hit rect for the header coin balance (opens the shop's recharge tab). Online only. */
-  protected coinsChipRect: Rect | null = null;
+  coinsChipRect: Rect | null = null;
   /** Hit rect for the header rank badge (opens the leaderboard). Online only. */
-  protected rankChipRect: Rect | null = null;
+  rankChipRect: Rect | null = null;
   /** Hit rect for the top-left profile chip (opens SettingsScene). */
-  protected profileChipRect: Rect = { x: 0, y: 0, w: 0, h: 0 };
+  profileChipRect: Rect = { x: 0, y: 0, w: 0, h: 0 };
 
   /** Aggregate social unread (friends + chat + mail) → red dot on the social nav slot. */
-  protected socialBadge = 0;
+  socialBadge = 0;
   /** Mail-only unread count → red dot on the dedicated mail strip item (must not include friend/chat unread). */
-  protected mailBadge = 0;
+  mailBadge = 0;
   /** Re-drawn layer for the social badge so updates don't rebuild the whole nav bar. */
-  protected socialBadgeLayer: PIXI.Container | null = null;
+  socialBadgeLayer: PIXI.Container | null = null;
   /** Any achievement tier is claimable (ACHIEVEMENT_DESIGN §4.1) → red dot on the stats nav slot. */
-  protected achievementBadge = false;
+  achievementBadge = false;
   /** Re-drawn layer for the achievement dot (cheap refresh, no nav rebuild). */
-  protected achievementBadgeLayer: PIXI.Container | null = null;
+  achievementBadgeLayer: PIXI.Container | null = null;
   /** Monthly/year card active with today's daily reward unclaimed → red dot on the shop nav slot. */
-  protected shopBadge = false;
+  shopBadge = false;
   /** Re-drawn layer for the shop dot (cheap refresh, no nav rebuild). */
-  protected shopBadgeLayer: PIXI.Container | null = null;
+  shopBadgeLayer: PIXI.Container | null = null;
   /** Retention claimable (B5: checkin or daily reward) → red dot on the daily strip item. */
-  protected retentionBadge = false;
+  retentionBadge = false;
   /** Hit rect for the daily strip item. */
-  protected dailyBtnRect: Rect = { x: 0, y: 0, w: 0, h: 0 };
+  dailyBtnRect: Rect = { x: 0, y: 0, w: 0, h: 0 };
   /** B6: whether a live event window exists → show the events strip item. */
-  protected eventsAvailable = false;
+  eventsAvailable = false;
   /** Hit rect for the events strip item. */
-  protected eventsBtnRect: Rect = { x: 0, y: 0, w: 0, h: 0 };
+  eventsBtnRect: Rect = { x: 0, y: 0, w: 0, h: 0 };
   /** Hit rect for the mail strip item (P2). */
-  protected mailStripRect: Rect = { x: 0, y: 0, w: 0, h: 0 };
+  mailStripRect: Rect = { x: 0, y: 0, w: 0, h: 0 };
   /** Hit rect for the achievements strip item (P2). */
-  protected feedbackStripRect: Rect = { x: 0, y: 0, w: 0, h: 0 };
-  protected auctionStripRect: Rect = { x: 0, y: 0, w: 0, h: 0 };
+  feedbackStripRect: Rect = { x: 0, y: 0, w: 0, h: 0 };
+  auctionStripRect: Rect = { x: 0, y: 0, w: 0, h: 0 };
   /** Cheap-refresh layer for the red dots on the right-side strip (daily/mail/achievement). */
-  protected sideStripBadgeLayer: PIXI.Container | null = null;
+  sideStripBadgeLayer: PIXI.Container | null = null;
   /** null = not yet checked; true = reachable; false = unreachable → show badge. */
-  protected worldOnline: boolean | null = null;
+  worldOnline: boolean | null = null;
   /** Cheap-refresh layer for the worldsvc-offline indicator on the world nav slot. */
-  protected worldOfflineBadgeLayer: PIXI.Container | null = null;
+  worldOfflineBadgeLayer: PIXI.Container | null = null;
   /** Transient "achievement unlocked" toast (S9-5b): own top-most layer + auto-fade timer + tap-to-open rect. */
-  protected toastLayer: PIXI.Container | null = null;
-  protected toastTimer = 0;
-  protected toastRect: Rect | null = null;
+  toastLayer: PIXI.Container | null = null;
+  toastTimer = 0;
+  toastRect: Rect | null = null;
   /** Season-settlement modal overlay (SE-6). Blocks lobby taps until dismissed. */
-  protected settlementLayer: PIXI.Container | null = null;
-  protected settlementDismissRect: Rect | null = null;
+  settlementLayer: PIXI.Container | null = null;
+  settlementDismissRect: Rect | null = null;
   /** First-time feature guide overlay (ONBOARDING §4.1). After dismissal the callback continues navigation to the feature. */
-  protected guideLayer: PIXI.Container | null = null;
-  protected guideDismissRect: Rect | null = null;
-  protected guideOnDismiss: (() => void) | null = null;
+  guideLayer: PIXI.Container | null = null;
+  guideDismissRect: Rect | null = null;
+  guideOnDismiss: (() => void) | null = null;
   /** Set on destroy so a late-resolving badge fetch skips touching a dead container. */
-  protected destroyed = false;
+  destroyed = false;
 
-  protected readonly unsubs: Array<() => void> = [];
+  readonly unsubs: Array<() => void> = [];
 
-  constructor(layout: ILayout, input: InputManager, cb: LobbySceneCallbacks) {
+  /** Set by the outer LobbyScene assembly right after constructing BuildPanel — rebuild() needs to
+   *  invoke the full layout rebuild, which lives on a sibling domain Core can't reference at its own
+   *  construction time (two-phase construction; see client-modules.md's default-no-op-field
+   *  pattern, same shape as SectSceneCore's allianceHooks / DefenseEditorSceneCore's handlers). */
+  buildHook: () => void = () => {};
+
+  constructor(layout: ILayout, cb: LobbySceneCallbacks) {
     this.container = new PIXI.Container();
     this.w  = layout.designWidth;
     this.h  = layout.designHeight;
     this.portrait = layout.orientation === 'portrait';
     this.cb = cb;
-    this.build();
 
-    this.unsubs.push(input.onDown((x, y) => this.handleDown(x, y)));
     if (cb.onSaveChanged) this.unsubs.push(cb.onSaveChanged(() => { if (!this.destroyed) this.rebuild(); }));
 
     // Header coin balance uses the shop's AI atlas glyph (buildCoinIcon); rebuild once it's
@@ -348,36 +383,28 @@ export class LobbySceneBase {
       .then(() => { if (!this.destroyed) this.rebuild(); });
   }
 
-  // ── Scene interface ────────────────────────────────────────────────────────
-
-  update(dt: number): void {
-    if (this.state === 'matching') {
-      this.matchTimer += dt;
-      this.dotsTimer  += dt;
-      if (this.dotsTimer >= 0.4) {
-        this.dotsTimer = 0;
-        this.dotCount  = (this.dotCount + 1) % 4;
-        this.btnLabel.text = t('lobby.matching') + '.'.repeat(this.dotCount);
-      }
-      if (this.matchTimer >= 1.8) this.matchFound();
-    } else if (this.state === 'vs') {
-      this.vsTimer += dt;
-      if (this.vsTimer >= 2.5) this.cb.onStartGame(this.opponentName);
-    }
-    if (this.toastTimer > 0) {
-      this.toastTimer -= dt;
-      if (this.toastTimer <= 0) this.clearToast();
-      else if (this.toastLayer) this.toastLayer.alpha = Math.min(1, this.toastTimer / 0.4);
-    }
-    if (this.heroFigure) {
-      this.heroFigure.update(dt);
-      this.heroFigureSwapTimer -= dt;
-      if (this.heroFigureSwapTimer <= 0 && this.heroFigureClips.length > 0) {
-        this.heroFigureSwapTimer = 1.6 + Math.random() * 1.6;
-        const name = this.heroFigureClips[Math.floor(Math.random() * this.heroFigureClips.length)]!;
-        this.heroFigure.play(name);
-      }
-    }
+  /**
+   * Full teardown + rebuild — needed when a layout element (strip item) appears or changes, or
+   * when the coin-icon atlas finishes loading after the first draw. titleBoil / heroFigure are
+   * Ticker.shared-driven and hold sprites that tearDownChildren() is about to destroy — destroy
+   * them explicitly first, same as destroy(), so their next tick doesn't touch a dead PIXI object
+   * (that used to freeze the scene's update loop — see test/render/lobbyRebuildTeardown.test.ts).
+   */
+  rebuild(): void {
+    this.titleBoil?.destroy();
+    this.titleBoil = null;
+    this.heroFigure?.destroy();
+    this.heroFigure = null;
+    this.heroFigureClips = [];
+    this.heroFigureSwapTimer = 0;
+    tearDownChildren(this.container);
+    this.toastLayer = null;
+    this.settlementLayer = null;
+    this.achievementBadgeLayer = null;
+    this.shopBadgeLayer = null;
+    this.socialBadgeLayer = null;
+    this.sideStripBadgeLayer = null;
+    this.buildHook();
   }
 
   destroy(): void {
@@ -400,25 +427,4 @@ export class LobbySceneBase {
     // overlays / rebuild) already early-return on `this.destroyed`.
     this.container.destroy({ children: true });
   }
-}
-
-// ── cross-mixin entrypoints — see FriendsScene/base.ts for why this interface-merge exists:
-// it lets base-level code (constructor/update) and same-layer mixins call methods that live in
-// sibling mixin files (invisible to each other and to base) as real METHOD calls, emitting
-// nothing at runtime — the actual prototype methods provided by the mixins run unchanged.
-export interface LobbySceneBase {
-  build(): void;
-  handleDown(x: number, y: number): void;
-  onStartPressed(): void;
-  matchFound(): void;
-  drawSocialBadge(): void;
-  drawAchievementBadge(): void;
-  drawShopBadge(): void;
-  drawWorldOfflineBadge(): void;
-  drawSideStripBadges(): void;
-  rebuild(): void;
-  clearGuide(): void;
-  clearSettlement(): void;
-  clearToast(): void;
-  showInfoToast(text: string, icon?: IconKind): void;
 }

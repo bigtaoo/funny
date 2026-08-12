@@ -47,21 +47,21 @@ vi.mock('pixi.js-legacy', () => {
   };
 });
 
-// ── webpack-served asset used by coinIconAtlas.ts (imported transitively via base.ts) ──
+// ── webpack-served asset used by coinIconAtlas.ts (imported transitively via core.ts) ──
 vi.mock('../../src/assets/shop/coins.png',  () => ({ default: 'coins.png' }));
 vi.mock('../../src/assets/shop/coins.json', () => ({ default: { frames: {}, meta: {} } }));
 
-// ── jszip stub (StickmanRuntime, imported transitively via base.ts) ────────────
+// ── jszip stub (StickmanRuntime, imported transitively via core.ts) ────────────
 vi.mock('jszip', () => ({ default: { loadAsync: () => Promise.reject(new Error('unused in this test')) } }));
 
 // ── Imports (after all vi.mock declarations) ───────────────────────────────────
-import { BadgesMixin } from '../../src/scenes/LobbyScene/badges';
-import type { LobbySceneBaseCtor } from '../../src/scenes/LobbyScene/base';
+import { BadgesPanel } from '../../src/scenes/LobbyScene/badges';
+import type { LobbySceneCore } from '../../src/scenes/LobbyScene/core';
 
 const RECT = { x: 0, y: 0, w: 40, h: 40 };
 
-/** Bare-bones stand-in for LobbySceneBase — only the fields badges.ts touches. */
-class FakeLobbySceneBase {
+/** Bare-bones stand-in for LobbySceneCore — only the fields badges.ts touches. */
+class FakeLobbySceneCore {
   destroyed = false;
   h = 800;
   socialBadge = 0;
@@ -76,38 +76,29 @@ class FakeLobbySceneBase {
   achieveStripRect = RECT;
 }
 
-interface TestScene {
-  socialBadge: number;
-  mailBadge: number;
-  socialBadgeLayer: { children: unknown[] };
-  sideStripBadgeLayer: { children: unknown[] };
-  mailStripRect: typeof RECT;
-  applySocialBadge(total: number, mail: number): void;
-}
-
-const LobbyWithBadges = BadgesMixin(FakeLobbySceneBase as unknown as LobbySceneBaseCtor);
-
 describe('LobbyScene mail strip red dot — must track mail-only unread, not the social aggregate', () => {
   it('does NOT light up the mail strip when unread is all friend-request/chat (mail: 0)', () => {
-    const scene = new LobbyWithBadges() as unknown as TestScene;
+    const core = new FakeLobbySceneCore() as unknown as LobbySceneCore;
+    const badges = new BadgesPanel(core);
 
     // GET /social/badges: 1 pending friend request, 0 unread mail → total: 1, mail: 0.
-    scene.applySocialBadge(1, 0);
+    badges.applySocialBadge(1, 0);
 
-    expect(scene.socialBadge).toBe(1);       // social nav dot: aggregate, unaffected
-    expect(scene.mailBadge).toBe(0);         // mail strip dot: must stay 0
-    expect(scene.sideStripBadgeLayer.children.length).toBe(0); // no dot drawn on the mail strip
+    expect(core.socialBadge).toBe(1);       // social nav dot: aggregate, unaffected
+    expect(core.mailBadge).toBe(0);         // mail strip dot: must stay 0
+    expect((core.sideStripBadgeLayer as unknown as { children: unknown[] }).children.length).toBe(0); // no dot drawn on the mail strip
   });
 
   it('lights up the mail strip once there really is unread mail', () => {
-    const scene = new LobbyWithBadges() as unknown as TestScene;
+    const core = new FakeLobbySceneCore() as unknown as LobbySceneCore;
+    const badges = new BadgesPanel(core);
 
-    scene.applySocialBadge(2, 1); // 1 friend request + 1 unread mail = total 2, mail 1
-    expect(scene.mailBadge).toBe(1);
-    expect(scene.sideStripBadgeLayer.children.length).toBe(1); // dot drawn once, for the mail strip
+    badges.applySocialBadge(2, 1); // 1 friend request + 1 unread mail = total 2, mail 1
+    expect(core.mailBadge).toBe(1);
+    expect((core.sideStripBadgeLayer as unknown as { children: unknown[] }).children.length).toBe(1); // dot drawn once, for the mail strip
 
-    scene.applySocialBadge(0, 0); // all read → dot clears
-    expect(scene.mailBadge).toBe(0);
-    expect(scene.sideStripBadgeLayer.children.length).toBe(0);
+    badges.applySocialBadge(0, 0); // all read → dot clears
+    expect(core.mailBadge).toBe(0);
+    expect((core.sideStripBadgeLayer as unknown as { children: unknown[] }).children.length).toBe(0);
   });
 });

@@ -407,3 +407,40 @@ describe('EquipmentScene composition wiring', () => {
     (scene.destroy as () => void)();
   });
 });
+
+// ── LobbyScene — build/badges/overlays over one LobbySceneCore ───────────────────
+
+describe('LobbyScene composition wiring', () => {
+  it('shares exactly one LobbySceneCore across build/badges/overlays, and build reaches badges/overlays via the SAME instances', async () => {
+    const { LobbyScene } = await import('../../src/scenes/LobbyScene');
+    const scene = new LobbyScene(createLayout(800, 1280), new InputManager(), {
+      onStartGame() {},
+      onOpenCampaign() {},
+      onOpenRoom() {},
+      onOpenShop() {},
+      onOpenCards() {},
+      onOpenStats() {},
+      onOpenProfile() {},
+      playerName: 'Guest',
+    }) as unknown as Record<string, unknown>;
+    const core = scene.core;
+    expect(core).toBeDefined();
+    for (const p of ['build', 'badges', 'overlays']) {
+      expect((scene[p] as Record<string, unknown>).core).toBe(core);
+    }
+    // build.ts depends one-way on badges.ts (paints the badge dots right after constructing fresh
+    // layers) and overlays.ts (handleDown dispatches guide/settlement/toast dismissal through it) —
+    // must be the SAME instances the facade holds, not separate copies. Neither badges.ts nor
+    // overlays.ts holds a reference back to build.ts — see core.ts's file-header comment for how the
+    // old build.ts↔badges.ts bidirectional pair (build() calling drawXBadge methods, badges.ts's
+    // rebuild() calling back into build()) was resolved by moving rebuild() onto Core instead.
+    expect((scene.build as Record<string, unknown>).badges).toBe(scene.badges);
+    expect((scene.build as Record<string, unknown>).overlays).toBe(scene.overlays);
+    // Core's rebuild() (fired from its own onSaveChanged/coinIconAtlas construction-time hooks, and
+    // from badges.ts's applyEventsAvailable) reaches BuildPanel.build() through the lazy `buildHook`
+    // field the outer assembly overwrites right after constructing BuildPanel — must not still be
+    // the core.ts no-op default.
+    expect((core as Record<string, unknown>).buildHook).not.toBeUndefined();
+    (scene.destroy as () => void)();
+  });
+});

@@ -3,7 +3,7 @@
 // geometry/z-order coverage of that strip itself) originally filled with `ui.paper` (0xfaf6ee) —
 // visually indistinguishable from the page background `ui.bg` (0xf5f0e8), so the strip was drawn
 // but unreadable as a bar. Pins the fix: fill is `ui.dark` at a near-opaque alpha, matching
-// LobbyScene's own bottom-nav convention (`navBg.beginFill(C.cover, 0.9)` in LobbyScene/build.ts).
+// LobbyScene's own bottom-nav convention (`navBg.beginFill(C.cover, 0.9)` in LobbyScene/bottomNav.ts).
 //
 // Runs under the headless PIXI adapter (vitest.ui.config.ts setupFiles). Run: npm run test:ui
 import { describe, it, expect } from 'vitest';

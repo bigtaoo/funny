@@ -1,7 +1,7 @@
 // Coverage for the 2026-08-09 Hero Roster portrait fix (design/game/CHARACTER_CARDS_DESIGN.md §10):
 //   1. the roster grid was reading a notebook-margin-based left offset in portrait (~9% left / ~2%
 //      right gap) instead of a deliberately-centered content column — it now fills 90% of the screen
-//      width, centered, matching Lobby's portrait `fullContentW` convention (LobbyScene/build.ts).
+//      width, centered, matching Lobby's portrait `fullContentW` convention (LobbyScene/mainContent.ts).
 //   2. the grid had no PIXI mask (draw-cull only — a row straddling the bottom edge still drew in
 //      full), so mid-scroll it could paint over the portrait bottom nav bar reserved just below it.
 //      It now draws into a masked sub-layer clipped to [listY, listY+availH], mirroring
