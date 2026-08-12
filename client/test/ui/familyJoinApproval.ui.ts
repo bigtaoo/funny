@@ -35,7 +35,7 @@ function makeFamily(overrides: Partial<FamilyDetailView> = {}): FamilyDetailView
 }
 
 function textsOf(scene: any): string[] {
-  return scene.bodyLayer.children
+  return scene.core.bodyLayer.children
     .filter((c: unknown) => c instanceof PIXI.Text)
     .map((c: PIXI.Text) => c.text);
 }
@@ -57,7 +57,7 @@ function buildScene(family: FamilyDetailView, requests: FamilyJoinRequestView[],
 }
 
 async function flush(scene: any): Promise<void> {
-  await scene.loadData();
+  await scene.data.loadData();
 }
 
 describe('FamilyScene — pending join-request approval', () => {
@@ -66,7 +66,7 @@ describe('FamilyScene — pending join-request approval', () => {
     await flush(scene);
     scene.render();
 
-    expect(scene.cb.worldApi.listJoinRequests).toHaveBeenCalled();
+    expect(scene.core.cb.worldApi.listJoinRequests).toHaveBeenCalled();
     expect(textsOf(scene).some((s: string) => s.includes('Pending'))).toBe(false);
     scene.destroy();
   });
@@ -91,7 +91,7 @@ describe('FamilyScene — pending join-request approval', () => {
     const memberScene = buildScene(memberFamily, requests);
     await flush(memberScene);
     memberScene.render();
-    expect(memberScene.cb.worldApi.listJoinRequests).not.toHaveBeenCalled();
+    expect(memberScene.core.cb.worldApi.listJoinRequests).not.toHaveBeenCalled();
     expect(textsOf(memberScene).some((s: string) => s.includes('Pending'))).toBe(false);
 
     scene.destroy();
@@ -108,14 +108,14 @@ describe('FamilyScene — pending join-request approval', () => {
 
     // The button is the only hit rect landing exactly at contentY (tab bar + info band bottom) —
     // every other hit (back pill, rail tabs, tab-switch bar, per-member row) sits at a different y.
-    const contentY = scene.headerH + Math.round(scene.h * 0.05) + scene.infoBandH;
-    const btnHit = scene.hitRects.find((h: any) => h.rect.y === contentY + 2);
+    const contentY = scene.core.headerH + Math.round(scene.core.h * 0.05) + scene.core.infoBandH;
+    const btnHit = scene.core.hitRects.find((h: any) => h.rect.y === contentY + 2);
     expect(btnHit).toBeTruthy();
-    expect(scene.modalOpen).toBe(false);
+    expect(scene.core.modalOpen).toBe(false);
     btnHit.action();
 
-    expect(scene.modalOpen).toBe(true);
-    const modalTexts = scene.modalLayer.children
+    expect(scene.core.modalOpen).toBe(true);
+    const modalTexts = scene.core.modalLayer.children
       .filter((c: unknown) => c instanceof PIXI.Text)
       .map((c: PIXI.Text) => c.text);
     expect(modalTexts).toContain('Newbie');
@@ -141,21 +141,21 @@ describe('FamilyScene — pending join-request approval', () => {
     });
     await flush(scene);
     scene.render();
-    scene.openJoinRequests();
+    scene.actions.openJoinRequests();
 
     // Approve/Reject buttons are the only 52-tall hit rects (width now follows the measured
     // label, not a fixed literal — German "Ablehnen"/"Annehmen" run longer than English).
     // (Hits fire-and-forget the async handler — `action()` returns void, not a promise — so call
     // the underlying handler directly to await it deterministically; the rect count above already
     // proves the button wiring exists.)
-    const rowHits = scene.modalHits.filter((h: any) => h.rect.h === 52);
+    const rowHits = scene.core.modalHits.filter((h: any) => h.rect.h === 52);
     expect(rowHits).toHaveLength(2);
-    await scene.doRespondJoinRequest('r1', true);
+    await scene.actions.doRespondJoinRequest('r1', true);
 
-    expect(scene.cb.worldApi.respondJoinRequest).toHaveBeenCalledWith('r1', true);
+    expect(scene.core.cb.worldApi.respondJoinRequest).toHaveBeenCalledWith('r1', true);
     expect(getFamilyCalls).toBe(1);
-    expect(scene.modalOpen).toBe(false);
-    expect(scene.members.map((m: FamilyMemberView) => m.accountId)).toContain('applicant1');
+    expect(scene.core.modalOpen).toBe(false);
+    expect(scene.core.members.map((m: FamilyMemberView) => m.accountId)).toContain('applicant1');
     scene.destroy();
   });
 
@@ -168,16 +168,16 @@ describe('FamilyScene — pending join-request approval', () => {
     const scene = buildScene(makeFamily(), requests, { getFamily });
     await flush(scene);
     scene.render();
-    scene.openJoinRequests();
+    scene.actions.openJoinRequests();
 
-    const rowHits = scene.modalHits.filter((h: any) => h.rect.h === 52);
+    const rowHits = scene.core.modalHits.filter((h: any) => h.rect.h === 52);
     expect(rowHits).toHaveLength(4); // 2 requests × (approve + reject)
-    await scene.doRespondJoinRequest('r1', false);
+    await scene.actions.doRespondJoinRequest('r1', false);
 
-    expect(scene.cb.worldApi.respondJoinRequest).toHaveBeenCalledWith('r1', false);
+    expect(scene.core.cb.worldApi.respondJoinRequest).toHaveBeenCalledWith('r1', false);
     expect(getFamily).not.toHaveBeenCalled(); // rejection doesn't touch the roster
-    expect(scene.joinRequests.map((r: FamilyJoinRequestView) => r.requestId)).toEqual(['r2']);
-    expect(scene.modalOpen).toBe(true); // one request remains → modal stays open, refreshed
+    expect(scene.core.joinRequests.map((r: FamilyJoinRequestView) => r.requestId)).toEqual(['r2']);
+    expect(scene.core.modalOpen).toBe(true); // one request remains → modal stays open, refreshed
     scene.destroy();
   });
 });
@@ -202,7 +202,7 @@ function buildApplicantScene(overrides: Record<string, unknown> = {}): any {
   };
   const scene = new FamilyScene(createLayout(390, 844), new InputManager(), cb as any) as any;
   const toasts: { msg: string; color: number }[] = [];
-  scene.showToast = (msg: string, color: number) => toasts.push({ msg, color });
+  scene.core.showToast = (msg: string, color: number) => toasts.push({ msg, color });
   scene.toasts = toasts;
   return scene;
 }
@@ -212,13 +212,13 @@ describe('FamilyScene — applicant side (join a family submits a request, not m
     const requestJoinFamily = vi.fn(async () => ({ requestId: 'req1' }));
     const scene = buildApplicantScene({ requestJoinFamily });
     await flush(scene);
-    expect(scene.mode).toBe('noFamily');
+    expect(scene.core.mode).toBe('noFamily');
 
-    await scene.doJoin('fam:AAA');
+    await scene.actions.doJoin('fam:AAA');
 
     expect(requestJoinFamily).toHaveBeenCalledWith('fam:AAA');
-    expect(scene.mode).toBe('noFamily'); // still not a member — approval is pending
-    expect(scene.modalOpen).toBe(false); // the pick modal closed
+    expect(scene.core.mode).toBe('noFamily'); // still not a member — approval is pending
+    expect(scene.core.modalOpen).toBe(false); // the pick modal closed
     expect(scene.toasts).toEqual([{ msg: 'Request submitted — waiting for approval', color: expect.any(Number) }]);
   });
 
@@ -226,11 +226,11 @@ describe('FamilyScene — applicant side (join a family submits a request, not m
     const scene = buildApplicantScene();
     await flush(scene);
 
-    await scene.openJoinList();
+    await scene.actions.openJoinList();
 
-    expect(scene.cb.worldApi.listFamilies).toHaveBeenCalled();
-    expect(scene.modalOpen).toBe(true);
-    const modalTexts = scene.modalLayer.children
+    expect(scene.core.cb.worldApi.listFamilies).toHaveBeenCalled();
+    expect(scene.core.modalOpen).toBe(true);
+    const modalTexts = scene.core.modalLayer.children
       .filter((c: unknown) => c instanceof PIXI.Text)
       .map((c: PIXI.Text) => c.text);
     expect(modalTexts.some((s: string) => s.includes('Alpha'))).toBe(true);
@@ -241,7 +241,7 @@ describe('FamilyScene — applicant side (join a family submits a request, not m
     const scene = buildApplicantScene({ requestJoinFamily });
     await flush(scene);
 
-    await scene.doJoin('fam:AAA');
+    await scene.actions.doJoin('fam:AAA');
 
     expect(scene.toasts).toEqual([
       { msg: 'You already applied — waiting for approval', color: expect.any(Number) },

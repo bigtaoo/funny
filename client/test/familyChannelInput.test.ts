@@ -12,8 +12,9 @@
  * caret (see caretRegression.ui.ts for the render half).
  */
 import { describe, it, expect, vi } from 'vitest';
-import { InputMixin } from '../src/scenes/FamilyScene/input';
-import type { FamilySceneBaseCtor } from '../src/scenes/FamilyScene/base';
+import { InputPanel } from '../src/scenes/FamilyScene/input';
+import type { FamilySceneCore } from '../src/scenes/FamilyScene/core';
+import type { DataHandlers } from '../src/scenes/FamilyScene/data';
 
 /** Fake DOM <input> that records its event listeners so a test can fire them by name. */
 interface FakeInput {
@@ -41,83 +42,85 @@ function installDocument(): { created: FakeInput[] } {
   return { created };
 }
 
-/** Only the fields openSendInput() reads/writes. */
-class FakeBase {
-  destroyed = false;
-  sendInput: unknown = null;
-  sendText = '';
-  caretOn = false;
-  caretTimer = 99;
-  render = vi.fn();
+/** Bare-bones stand-in for FamilySceneCore — only the fields openSendInput() reads/writes. */
+function fakeCore(): FamilySceneCore {
+  return {
+    destroyed: false,
+    sendInput: null,
+    sendText: '',
+    caretOn: false,
+    caretTimer: 99,
+    render: vi.fn(),
+  } as unknown as FamilySceneCore;
 }
 
-const FamilyWithInput = InputMixin(FakeBase as unknown as FamilySceneBaseCtor);
-
-interface TestScene {
-  destroyed: boolean;
-  sendInput: FakeInput | null;
-  sendText: string;
-  caretOn: boolean;
-  caretTimer: number;
-  render: ReturnType<typeof vi.fn>;
-  openSendInput(): void;
-}
+const fakeData: DataHandlers = {
+  loadData: vi.fn(),
+  loadMyFamily: vi.fn(),
+  loadChannel: vi.fn(),
+  loadJoinRequests: vi.fn(),
+  applyFamilyMsg: vi.fn(),
+};
 
 describe('FamilyScene channel input — openSendInput()', () => {
   it('mirrors typed characters into sendText and re-renders (the "can\'t type into chat" fix)', () => {
     const { created } = installDocument();
-    const scene = new FamilyWithInput() as unknown as TestScene;
+    const core = fakeCore();
+    const input = new InputPanel(core, fakeData);
 
-    scene.openSendInput();
+    input.openSendInput();
     const el = created[0]!;
-    expect(scene.sendInput).toBe(el);
+    expect(core.sendInput).toBe(el);
     // Focusing the field kicks the caret on and resets its blink phase.
-    expect(scene.caretOn).toBe(true);
-    expect(scene.caretTimer).toBe(0);
+    expect(core.caretOn).toBe(true);
+    expect(core.caretTimer).toBe(0);
 
     el.value = 'hel';
     el._listeners.input!({});
-    expect(scene.sendText).toBe('hel');
+    expect(core.sendText).toBe('hel');
 
     el.value = 'hello';
     el._listeners.input!({});
-    expect(scene.sendText).toBe('hello');
-    expect(scene.render).toHaveBeenCalled();
+    expect(core.sendText).toBe('hello');
+    expect(core.render).toHaveBeenCalled();
   });
 
   it('seeds the hidden input with the existing draft so reopening keeps the text', () => {
     const { created } = installDocument();
-    const scene = new FamilyWithInput() as unknown as TestScene;
-    scene.sendText = 'draft in progress';
+    const core = fakeCore();
+    core.sendText = 'draft in progress';
+    const input = new InputPanel(core, fakeData);
 
-    scene.openSendInput();
+    input.openSendInput();
 
     expect(created[0]!.value).toBe('draft in progress');
   });
 
   it('blur clears sendInput and re-renders', () => {
     const { created } = installDocument();
-    const scene = new FamilyWithInput() as unknown as TestScene;
+    const core = fakeCore();
+    const input = new InputPanel(core, fakeData);
 
-    scene.openSendInput();
+    input.openSendInput();
     created[0]!._listeners.blur!({});
 
-    expect(scene.sendInput).toBeNull();
-    expect(scene.render).toHaveBeenCalled();
+    expect(core.sendInput).toBeNull();
+    expect(core.render).toHaveBeenCalled();
   });
 
   it('does not re-render after the scene is destroyed', () => {
     const { created } = installDocument();
-    const scene = new FamilyWithInput() as unknown as TestScene;
+    const core = fakeCore();
+    const input = new InputPanel(core, fakeData);
 
-    scene.openSendInput();
-    scene.render.mockClear();
-    scene.destroyed = true;
+    input.openSendInput();
+    (core.render as ReturnType<typeof vi.fn>).mockClear();
+    core.destroyed = true;
 
     created[0]!.value = 'x';
     created[0]!._listeners.input!({});
 
-    expect(scene.sendText).toBe('x');            // value still mirrored…
-    expect(scene.render).not.toHaveBeenCalled(); // …but no render on a torn-down scene
+    expect(core.sendText).toBe('x');            // value still mirrored…
+    expect(core.render).not.toHaveBeenCalled(); // …but no render on a torn-down scene
   });
 });

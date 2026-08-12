@@ -61,7 +61,7 @@ function buildScene(w: number, h: number, messages: FamilyMessageView[]): any {
 }
 
 async function flush(scene: any): Promise<void> {
-  await scene.loadData();
+  await scene.data.loadData();
 }
 
 /** Channel rows are drawn into a masked sub-container (the scroll clip), so walk the whole
@@ -75,7 +75,7 @@ function textNodesOf(scene: any): PIXI.Text[] {
       if ((c as PIXI.Container).children) walk(c as PIXI.Container);
     }
   };
-  walk(scene.bodyLayer);
+  walk(scene.core.bodyLayer);
   return out;
 }
 
@@ -88,7 +88,7 @@ function maskedContainersOf(scene: any): PIXI.Container[] {
       if ((c as PIXI.Container).children) walk(c as PIXI.Container);
     }
   };
-  walk(scene.bodyLayer);
+  walk(scene.core.bodyLayer);
   return out;
 }
 
@@ -115,8 +115,8 @@ describe('FamilyScene — channel message ordering (newest-first server data →
     const scene = buildScene(1200, 950, makeMessagesNewestFirst(3));
     await flush(scene);
 
-    expect(scene.messages[0].body).toBe('msg number 3'); // still newest-first internally
-    expect(scene.messages[2].body).toBe('msg number 1');
+    expect(scene.core.messages[0].body).toBe('msg number 3'); // still newest-first internally
+    expect(scene.core.messages[2].body).toBe('msg number 1');
   });
 });
 
@@ -136,8 +136,8 @@ describe('FamilyScene — channel scroll clip (no header overlap while scrolling
     // Half a row of scroll — the classic "row straddles the fold" case that used to bleed
     // upward into the header/tab band above the channel list before the mask was added.
     // Release the bottom-pin first so the manual mid-row scroll isn't snapped back to the latest.
-    scene.channelStick = false;
-    scene.scrollYChannel = Math.round(scene.rowH / 2);
+    scene.core.channelStick = false;
+    scene.core.scrollYChannel = Math.round(scene.core.rowH / 2);
     scene.render();
 
     // Every Text node belonging to a channel message ("msg number N") must live under the
@@ -145,7 +145,7 @@ describe('FamilyScene — channel scroll clip (no header overlap while scrolling
     const maskedSet = new Set(maskedContainersOf(scene));
     const isUnderAMaskedContainer = (node: PIXI.DisplayObject): boolean => {
       let p: PIXI.Container | null = node.parent;
-      while (p && p !== scene.bodyLayer) {
+      while (p && p !== scene.core.bodyLayer) {
         if (maskedSet.has(p)) return true;
         p = p.parent;
       }
@@ -164,17 +164,17 @@ describe('FamilyScene — send scrolls to the newest message (bottom), not the t
     const scene = buildScene(1200, 950, makeMessagesNewestFirst(20));
     await flush(scene);
     // Simulate the user having scrolled up to read history (released the bottom-pin, parked at top).
-    scene.channelStick = false;
-    scene.scrollYChannel = 0;
+    scene.core.channelStick = false;
+    scene.core.scrollYChannel = 0;
     scene.render();
-    expect(scene.scrollYChannel).toBe(0);
+    expect(scene.core.scrollYChannel).toBe(0);
 
     // Don't await: submitMessage() runs the optimistic prepend + render() synchronously before its
     // first `await` (the network send) — asserting on the settled promise would instead observe the
     // state AFTER loadChannel() has replaced `messages` with the mocked (pre-send) server response.
-    void scene.submitMessage('hello family!');
+    void scene.input.submitMessage('hello family!');
 
-    expect(scene.scrollYChannel).toBeGreaterThan(0);
+    expect(scene.core.scrollYChannel).toBeGreaterThan(0);
     // The optimistic echo is visible at the bottom (largest y among channel rows), not the top.
     const texts = textNodesOf(scene);
     const sentBody = texts.find((t) => t.text === ': hello family!')!;

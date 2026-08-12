@@ -57,9 +57,11 @@ function makeMessages(n: number): FamilyMessageView[] {
   }));
 }
 
-/** Builds a real FamilyScene (mixin chain assembled, headless PIXI) against a fake worldApi that
+/** Builds a real FamilyScene (composition assembly, headless PIXI) against a fake worldApi that
  *  resolves immediately with the given family/members/messages — enough to drive the real
- *  render code paths without a network or a full app graph. */
+ *  render code paths without a network or a full app graph. Scene state (mode/family/messages/…)
+ *  lives on `scene.core` (2026-08-11 mixin→composition conversion); domain actions live on
+ *  `scene.data`/`scene.actions`/`scene.input` — see FamilyScene/core.ts's file-header comment. */
 function buildScene(w: number, h: number, family: FamilyDetailView, messages: FamilyMessageView[]): any {
   const worldApi = {
     getMyFamily: async () => family,
@@ -76,7 +78,7 @@ function buildScene(w: number, h: number, family: FamilyDetailView, messages: Fa
 /** Like `buildScene`, but bypasses `createLayout()` with a raw layout object so the design width
  *  actually is `w` — `PortraitLayout` otherwise pins `designWidth` to a fixed 1080 regardless of
  *  the physical screen size passed in, which would make a "narrow screen" test meaningless. Valid
- *  because `FamilySceneBase`'s constructor only reads `designWidth`/`designHeight`/`orientation`
+ *  because `FamilySceneCore`'s constructor only reads `designWidth`/`designHeight`/`orientation`
  *  off its `layout` param (TS field privacy is erased at runtime — plain duck typing works). */
 function buildSceneAtWidth(w: number, h: number, orientation: 'portrait' | 'landscape', family: FamilyDetailView, messages: FamilyMessageView[]): any {
   const worldApi = {
@@ -93,11 +95,11 @@ function buildSceneAtWidth(w: number, h: number, orientation: 'portrait' | 'land
 }
 
 /** Flushes the getMyFamily → applyFamily → getFamilyChannel promise chain kicked off by the
- *  constructor's fire-and-forget `void this.loadData()`, by awaiting a fresh loadData() call
+ *  constructor's fire-and-forget `void this.data.loadData()`, by awaiting a fresh loadData() call
  *  directly — this is what actually regresses against the missing-`await` bug (see file header):
  *  with the bug, this resolves before `messages` is populated; with the fix, it doesn't. */
 async function flush(scene: any): Promise<void> {
-  await scene.loadData();
+  await scene.data.loadData();
 }
 
 // Channel rows are drawn into a masked sub-container (the chat scroll clip), so walk the whole
@@ -111,7 +113,7 @@ function textsOf(scene: any): string[] {
       if ((c as PIXI.Container).children) walk(c as PIXI.Container);
     }
   };
-  walk(scene.bodyLayer);
+  walk(scene.core.bodyLayer);
   return out;
 }
 
@@ -128,21 +130,21 @@ describe('FamilyScene — data load ordering (applyFamily await regression)', ()
     const scene = buildScene(1200, 950, makeFamily({ memberCount: 1 }), makeMessages(5));
     await flush(scene);
 
-    expect(scene.mode).toBe('myFamily');
-    expect(scene.messages).toHaveLength(5);
-    expect(scene.messages[0].body).toBe('Message number 0 about strategy');
+    expect(scene.core.mode).toBe('myFamily');
+    expect(scene.core.messages).toHaveLength(5);
+    expect(scene.core.messages[0].body).toBe('Message number 0 about strategy');
   });
 
   it('same fix applies to loadMyFamily() (used by the join-family flow)', async () => {
     const scene = buildScene(1200, 950, makeFamily({ memberCount: 1 }), []);
     await flush(scene);
-    scene.messages = [];
+    scene.core.messages = [];
 
-    scene.cb.worldApi.getFamily = async () => makeFamily({ memberCount: 1 });
-    scene.cb.worldApi.getFamilyChannel = async () => makeMessages(3);
-    await scene.loadMyFamily('fam1');
+    scene.core.cb.worldApi.getFamily = async () => makeFamily({ memberCount: 1 });
+    scene.core.cb.worldApi.getFamilyChannel = async () => makeMessages(3);
+    await scene.data.loadMyFamily('fam1');
 
-    expect(scene.messages).toHaveLength(3);
+    expect(scene.core.messages).toHaveLength(3);
   });
 });
 
@@ -159,8 +161,8 @@ describe('FamilyScene — landscape split view', () => {
     // Channel content — visible at the same time as the roster, not behind a tab.
     expect(texts.some((s) => s.includes('Message number 0'))).toBe(true);
     // Divider boundary was computed and sits strictly between the rail and the right edge.
-    expect(scene.chatColX).toBeGreaterThan(scene.railW);
-    expect(scene.chatColX).toBeLessThan(scene.w);
+    expect(scene.core.chatColX).toBeGreaterThan(scene.core.railW);
+    expect(scene.core.chatColX).toBeLessThan(scene.core.w);
   });
 
   it('shows the empty-channel hint instead of leaving the column blank', async () => {
@@ -176,31 +178,31 @@ describe('FamilyScene — landscape split view', () => {
     await flush(scene);
     scene.render();
 
-    const midY = scene.h / 2;
-    const rosterX = scene.railW + 10;
-    const chatX = scene.chatColX + 10;
+    const midY = scene.core.h / 2;
+    const rosterX = scene.core.railW + 10;
+    const chatX = scene.core.chatColX + 10;
 
     // The channel opens pinned to the latest message (bottom), so its scroll starts at its extent.
-    const chatBottom = scene.scrollYChannel;
+    const chatBottom = scene.core.scrollYChannel;
     expect(chatBottom).toBeGreaterThan(0);
 
     // Drag up inside the roster column only.
-    scene.handleDown(rosterX, midY);
-    scene.handleMove(rosterX, midY - 80);
-    scene.handleUp(rosterX, midY - 80);
+    scene.core.handleDown(rosterX, midY);
+    scene.core.handleMove(rosterX, midY - 80);
+    scene.core.handleUp(rosterX, midY - 80);
 
-    expect(scene.scrollY).toBeGreaterThan(0);
-    expect(scene.scrollYChannel).toBe(chatBottom); // channel undisturbed
+    expect(scene.core.scrollY).toBeGreaterThan(0);
+    expect(scene.core.scrollYChannel).toBe(chatBottom); // channel undisturbed
 
-    const scrollYAfterFirstDrag = scene.scrollY;
+    const scrollYAfterFirstDrag = scene.core.scrollY;
 
     // Drag DOWN inside the channel column to scroll up into history — must not disturb the roster.
-    scene.handleDown(chatX, midY);
-    scene.handleMove(chatX, midY + 80);
-    scene.handleUp(chatX, midY + 80);
+    scene.core.handleDown(chatX, midY);
+    scene.core.handleMove(chatX, midY + 80);
+    scene.core.handleUp(chatX, midY + 80);
 
-    expect(scene.scrollYChannel).toBeLessThan(chatBottom);
-    expect(scene.scrollY).toBe(scrollYAfterFirstDrag);
+    expect(scene.core.scrollYChannel).toBeLessThan(chatBottom);
+    expect(scene.core.scrollY).toBe(scrollYAfterFirstDrag);
   });
 });
 
@@ -210,17 +212,17 @@ describe('FamilyScene — portrait keeps the tab switch', () => {
     await flush(scene);
     scene.render();
 
-    expect(scene.activeTab).toBe('members');
+    expect(scene.core.activeTab).toBe('members');
     let texts = textsOf(scene);
     expect(texts).toContain('tao');
     expect(texts.some((s) => s.includes('Message number 0'))).toBe(false);
 
-    const channelTabHit = scene.hitRects.find((h: any) =>
-      h.rect.y === scene.headerH && h.rect.x > scene.railW + (scene.w - scene.railW) / 2 - 1);
+    const channelTabHit = scene.core.hitRects.find((h: any) =>
+      h.rect.y === scene.core.headerH && h.rect.x > scene.core.railW + (scene.core.w - scene.core.railW) / 2 - 1);
     expect(channelTabHit).toBeTruthy();
     channelTabHit.action();
 
-    expect(scene.activeTab).toBe('channel');
+    expect(scene.core.activeTab).toBe('channel');
     texts = textsOf(scene);
     expect(texts.some((s) => s.includes('Message number 0'))).toBe(true);
     expect(texts).not.toContain('tao');
@@ -242,7 +244,7 @@ describe('FamilyScene — portrait info band long-name handling', () => {
     await flush(scene);
     scene.render();
 
-    const children = scene.bodyLayer.children.filter((c: unknown) => c instanceof PIXI.Text) as PIXI.Text[];
+    const children = scene.core.bodyLayer.children.filter((c: unknown) => c instanceof PIXI.Text) as PIXI.Text[];
     const nameLbl = children.find((c) => c.text.startsWith('[LSGLD]'));
     // "Members " (with the trailing space) picks the "Members 1/30" count label, not the bare
     // "Members" tab-bar label that portrait also draws (both would match a plain `.includes`).
@@ -298,9 +300,9 @@ describe('FamilyScene — member rows & self action', () => {
 
     // The bottom-bar Sect button is gone. ('Sect' still legitimately appears as a left-rail nav tab
     // for a leader — assert only that no Sect control exists outside the rail.)
-    const sectOutsideRail = (scene.bodyLayer.children as any[])
+    const sectOutsideRail = (scene.core.bodyLayer.children as any[])
       .filter((c) => c instanceof PIXI.Text && c.text === 'Sect')
-      .some((c) => c.x >= scene.railW);
+      .some((c) => c.x >= scene.core.railW);
     expect(sectOutsideRail).toBe(false);
 
     const texts = textsOf(scene);
@@ -338,7 +340,7 @@ describe('FamilyScene — member rows & self action', () => {
     await flush(scene);
     scene.render();
 
-    const rows = scene.bodyLayer.children.filter((c: unknown) => c instanceof PIXI.Text) as PIXI.Text[];
+    const rows = scene.core.bodyLayer.children.filter((c: unknown) => c instanceof PIXI.Text) as PIXI.Text[];
     const name = rows.find((c) => c.text === 'tao')!;
     const role = rows.find((c) => c.text === 'Leader')!;
     expect(name).toBeTruthy();
@@ -348,7 +350,7 @@ describe('FamilyScene — member rows & self action', () => {
     // …and sits on roughly the same line (centres within a few px), not stacked above it.
     const nameMid = name.y + name.height / 2;
     const roleMid = role.y + role.height / 2;
-    expect(Math.abs(nameMid - roleMid)).toBeLessThan(scene.rowH * 0.25);
+    expect(Math.abs(nameMid - roleMid)).toBeLessThan(scene.core.rowH * 0.25);
   });
 
   it('gives each visible member row a card background behind the text', async () => {
@@ -358,7 +360,7 @@ describe('FamilyScene — member rows & self action', () => {
 
     // sketchPanel() row backgrounds are Containers (not Text/Graphics accent bars). There must be
     // at least one background container per rendered member row.
-    const panels = scene.bodyLayer.children.filter(
+    const panels = scene.core.bodyLayer.children.filter(
       (c: unknown) => c instanceof PIXI.Container && !(c instanceof PIXI.Text),
     );
     expect(panels.length).toBeGreaterThanOrEqual(3);
@@ -367,17 +369,17 @@ describe('FamilyScene — member rows & self action', () => {
   it('clicking Dissolve on a lone leaders row triggers confirmDissolve', async () => {
     const scene = buildScene(1200, 950, makeFamily({ memberCount: 1, members: makeMembers(1) }), []);
     await flush(scene);
-    scene.confirmDissolve = vi.fn();
+    scene.actions.confirmDissolve = vi.fn();
     scene.render();
 
-    const btn = (scene.bodyLayer.children as PIXI.Text[]).find(
+    const btn = (scene.core.bodyLayer.children as PIXI.Text[]).find(
       (c) => c instanceof PIXI.Text && c.text === 'Dissolve Family',
     )!;
     // Label anchor is (0.5,0.5) so its x/y are the button centre — route a tap there.
     // The hit action fires on pointer-up now (ScrollTapGesture defers taps so a drag scrolls).
-    scene.handleDown(btn.x, btn.y);
-    scene.handleUp(btn.x, btn.y);
-    expect(scene.confirmDissolve).toHaveBeenCalledTimes(1);
+    scene.core.handleDown(btn.x, btn.y);
+    scene.core.handleUp(btn.x, btn.y);
+    expect(scene.actions.confirmDissolve).toHaveBeenCalledTimes(1);
   });
 
   it('clicking Leave on a non-leaders row triggers confirmLeave', async () => {
@@ -387,15 +389,15 @@ describe('FamilyScene — member rows & self action', () => {
     ];
     const scene = buildScene(1200, 950, makeFamily({ memberCount: 2, members, leaderId: 'boss' }), []);
     await flush(scene);
-    scene.confirmLeave = vi.fn();
+    scene.actions.confirmLeave = vi.fn();
     scene.render();
 
-    const btn = (scene.bodyLayer.children as PIXI.Text[]).find(
+    const btn = (scene.core.bodyLayer.children as PIXI.Text[]).find(
       (c) => c instanceof PIXI.Text && c.text === 'Leave Family',
     )!;
-    scene.handleDown(btn.x, btn.y);
-    scene.handleUp(btn.x, btn.y);
-    expect(scene.confirmLeave).toHaveBeenCalledTimes(1);
+    scene.core.handleDown(btn.x, btn.y);
+    scene.core.handleUp(btn.x, btn.y);
+    expect(scene.actions.confirmLeave).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -404,14 +406,14 @@ describe('FamilyScene — channel send box shows the draft (input fix, render ha
     // Landscape shows the channel column permanently, so no tab switch is needed.
     const scene = buildScene(1200, 950, makeFamily({ memberCount: 1, members: makeMembers(1) }), []);
     await flush(scene);
-    scene.sendInput = {}; // truthy → the field is "focused/active"
-    scene.sendText = 'hello';
+    scene.core.sendInput = {}; // truthy → the field is "focused/active"
+    scene.core.sendText = 'hello';
 
-    scene.caretOn = true;
+    scene.core.caretOn = true;
     scene.render();
     expect(textsOf(scene)).toContain('hello|');
 
-    scene.caretOn = false;
+    scene.core.caretOn = false;
     scene.render();
     const off = textsOf(scene);
     expect(off).toContain('hello');
@@ -421,9 +423,9 @@ describe('FamilyScene — channel send box shows the draft (input fix, render ha
   it('shows the placeholder (no caret) when the field is not focused', async () => {
     const scene = buildScene(1200, 950, makeFamily({ memberCount: 1, members: makeMembers(1) }), []);
     await flush(scene);
-    scene.sendInput = null;
-    scene.sendText = '';
-    scene.caretOn = true;
+    scene.core.sendInput = null;
+    scene.core.sendText = '';
+    scene.core.caretOn = true;
     scene.render();
 
     const texts = textsOf(scene);

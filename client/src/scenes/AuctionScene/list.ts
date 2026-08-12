@@ -1,5 +1,9 @@
 // Market list tab: left sidebar (Market/My Auctions/My Bids), the category filter bar, the auction row list,
 // and the bottom "create listing" button.
+// Converted from ListMixin(Base) to composition (2026-08-11) — see core.ts's file-header comment.
+// Depends one-directionally on Bid/TradeActions/CreateListing (row actions open their flows; none of
+// those three ever call back into List) via the narrow interfaces below, mirroring
+// DefenseEditorScene/render.ts's `saveActions: SaveActionsHandlers` pattern.
 import * as PIXI from 'pixi.js-legacy';
 import { ui as C, txt, sketchPanel, sketchButton, seedFor } from '../../render/sketchUi';
 import { FS } from '../../render/fontScale';
@@ -16,403 +20,423 @@ import { buildEquipIcon } from '../../render/atlas/equipmentAtlas';
 import { serverNow } from '../../net/serverClock';
 import { cardInstanceArtUrl, getArtTexture, unitPortraitUrl } from '../../render/cardArt';
 import { SKIN_TARGET_UNIT } from '../../game/meta/skinDefs';
-import { FILTER_H, AUC_CELL_GAP, AUC_CELL_H, AUC_CELL_W_TARGET, FILTERS, type AucFilter, type AucTab } from './base';
-import { type Constructor, type AuctionSceneBaseCtor } from './base';
+import { FILTER_H, AUC_CELL_GAP, AUC_CELL_H, AUC_CELL_W_TARGET, FILTERS, type AucFilter, type AucTab } from './types';
+import type { AuctionSceneCore } from './core';
+import { itemKind, saleModeKind, auctionLabel, auctionItemLevel, auctionItemMaxLevel } from './itemLabels';
 
-export interface ListHandlers {
-  renderSidebar(): number;
-  renderFilterBar(contentX: number): number;
-  renderList(auctions: AuctionView[], contentX: number, filterH?: number): void;
-  renderAuctionCell(auc: AuctionView, x: number, y: number, cellW: number, now: number): void;
-  renderCreateButton(contentX: number): void;
-  myBids(): AuctionView[];
+/** Narrow slice of BidPanel that List's row actions need — opening the bid modal for an auction-mode listing. */
+export interface BidOpener {
+  openBidForm(auc: AuctionView): void;
 }
 
-export function ListMixin<TBase extends AuctionSceneBaseCtor>(Base: TBase): TBase & Constructor<ListHandlers> {
-  return class extends Base {
-    /** Auctions where I'm currently the top bidder ("My Bids") — derived client-side from the open market list (no dedicated endpoint). */
-    myBids(): AuctionView[] {
-      const me = this.cb.myAccountId;
-      if (!me) return [];
-      return this.allAuctions.filter((a) => a.saleMode === 'auction' && a.topBid?.bidderId === me);
+/** Narrow slice of TradeActionsPanel that List's row actions need — confirm-then-buy/cancel. */
+export interface TradeOpener {
+  confirmBuy(auctionId: string, price: number): void;
+  confirmCancel(auctionId: string): void;
+}
+
+/** Narrow slice of CreateListingPanel that List's "+ List Item" button needs. */
+export interface CreateFormOpener {
+  openCreateForm(): void;
+}
+
+export class ListPanel {
+  constructor(
+    private readonly core: AuctionSceneCore,
+    private readonly bid: BidOpener,
+    private readonly trade: TradeOpener,
+    private readonly createListing: CreateFormOpener,
+  ) {}
+
+  /** Auctions where I'm currently the top bidder ("My Bids") — derived client-side from the open market list (no dedicated endpoint). */
+  myBids(): AuctionView[] {
+    const core = this.core;
+    const me = core.cb.myAccountId;
+    if (!me) return [];
+    return core.allAuctions.filter((a) => a.saleMode === 'auction' && a.topBid?.bidderId === me);
+  }
+
+  /**
+   * Market / My Auctions / My Bids. Landscape: a left nav rail (`sidebarNavW`, matching every
+   * other hub's left tab rail) below the header — returns its width so body content (filter bar /
+   * list / create button) starts clear of it. Portrait: a bottom nav bar instead (§18) — returns
+   * 0 (no width reservation); the list/create-button height math reserves `bottomNavH` off the
+   * bottom instead (see renderList/renderCreateButton).
+   */
+  renderSidebar(): number {
+    const core = this.core;
+    const { w, h, landscape } = core;
+    const tabs: AucTab[] = ['all', 'mine', 'bids'];
+    const labelKeys: Record<AucTab, 'auction.tabAll' | 'auction.tabMine' | 'auction.tabBids'> = {
+      all: 'auction.tabAll', mine: 'auction.tabMine', bids: 'auction.tabBids',
+    };
+    const icons: Record<AucTab, IconKind> = { all: 'tag', mine: 'cards', bids: 'hammer' };
+    const hubTabs: HubTab[] = tabs.map((tab) => ({ label: t(labelKeys[tab]), active: tab === core.activeTab, icon: icons[tab] }));
+    const onSelect = (i: number): void => {
+      const tab = tabs[i]!;
+      if (core.activeTab !== tab) { core.activeTab = tab; core.scrollY = 0; core.render(); }
+    };
+    if (!landscape) {
+      const barH = bottomNavH(h);
+      const { hits } = drawBottomNavTabs(core.bodyLayer, w, h - barH, barH, hubTabs, onSelect);
+      for (const hit of hits) core.hitRects.push({ rect: hit.rect, action: hit.fn });
+      return 0;
     }
+    const sidebarW = sidebarNavW(w, h, true);
+    const { hits } = drawSidebarTabs(core.bodyLayer, sidebarW, core.headerH, h, hubTabs, onSelect);
+    for (const hit of hits) core.hitRects.push({ rect: hit.rect, action: hit.fn });
+    return sidebarW;
+  }
 
-    /**
-     * Market / My Auctions / My Bids. Landscape: a left nav rail (`sidebarNavW`, matching every
-     * other hub's left tab rail) below the header — returns its width so body content (filter bar /
-     * list / create button) starts clear of it. Portrait: a bottom nav bar instead (§18) — returns
-     * 0 (no width reservation); the list/create-button height math reserves `bottomNavH` off the
-     * bottom instead (see renderList/renderCreateButton).
-     */
-    renderSidebar(): number {
-      const { w, h, landscape } = this;
-      const tabs: AucTab[] = ['all', 'mine', 'bids'];
-      const labelKeys: Record<AucTab, 'auction.tabAll' | 'auction.tabMine' | 'auction.tabBids'> = {
-        all: 'auction.tabAll', mine: 'auction.tabMine', bids: 'auction.tabBids',
-      };
-      const icons: Record<AucTab, IconKind> = { all: 'tag', mine: 'cards', bids: 'hammer' };
-      const hubTabs: HubTab[] = tabs.map((tab) => ({ label: t(labelKeys[tab]), active: tab === this.activeTab, icon: icons[tab] }));
-      const onSelect = (i: number): void => {
-        const tab = tabs[i]!;
-        if (this.activeTab !== tab) { this.activeTab = tab; this.scrollY = 0; this.render(); }
-      };
-      if (!landscape) {
-        const barH = bottomNavH(h);
-        const { hits } = drawBottomNavTabs(this.bodyLayer, w, h - barH, barH, hubTabs, onSelect);
-        for (const hit of hits) this.hitRects.push({ rect: hit.rect, action: hit.fn });
-        return 0;
+  renderFilterBar(contentX: number): number {
+    const core = this.core;
+    const { w } = core;
+    const y = core.headerH;
+    const contentW = w - contentX;
+    const chipW = contentW / FILTERS.length;
+    const keys: Record<AucFilter, 'auction.filterAll' | 'auction.filterMaterial' | 'auction.filterEquipment' | 'auction.filterCard' | 'auction.filterSkin'> = {
+      '': 'auction.filterAll', material: 'auction.filterMaterial', equipment: 'auction.filterEquipment', card: 'auction.filterCard', skin: 'auction.filterSkin',
+    };
+    // 1.5x the original chip metrics (padding/icon/font) — approved 15.07.2026 category-bar
+    // enlargement pass. Chip width itself is unchanged (still contentW / FILTERS.length), so the
+    // label is measured and scaled down if it would otherwise overflow the chip (see maxLblW below).
+    const pad = 9;
+    const iconSize = 30;
+    const fontSize = FS.bodyLg;
+    for (let i = 0; i < FILTERS.length; i++) {
+      const f = FILTERS[i]!;
+      const active = f === core.allFilter;
+      const chip = sketchPanel(chipW - pad, FILTER_H - 12, { fill: active ? C.dark : 0xeeeeee, border: active ? C.accent : C.mid, seed: seedFor(i, 3, chipW) });
+      chip.x = contentX + i * chipW + pad / 2; chip.y = y + 3;
+      core.bodyLayer.addChild(chip);
+      const midY = y + 3 + (FILTER_H - 12) / 2;
+      const hasIcon = f !== '';
+      const iconGap = hasIcon ? iconSize + 8 : 0;
+      // Category glyph prefix (the 'all' filter stays text-only).
+      if (hasIcon) {
+        const fi = buildIcon(itemKind(f), iconSize, active ? C.light : C.dark);
+        fi.x = contentX + i * chipW + pad / 2 + 12; fi.y = midY - iconSize / 2;
+        core.bodyLayer.addChild(fi);
       }
-      const sidebarW = sidebarNavW(w, h, true);
-      const { hits } = drawSidebarTabs(this.bodyLayer, sidebarW, this.headerH, h, hubTabs, onSelect);
-      for (const hit of hits) this.hitRects.push({ rect: hit.rect, action: hit.fn });
-      return sidebarW;
-    }
-
-    renderFilterBar(contentX: number): number {
-      const { w } = this;
-      const y = this.headerH;
-      const contentW = w - contentX;
-      const chipW = contentW / FILTERS.length;
-      const keys: Record<AucFilter, 'auction.filterAll' | 'auction.filterMaterial' | 'auction.filterEquipment' | 'auction.filterCard' | 'auction.filterSkin'> = {
-        '': 'auction.filterAll', material: 'auction.filterMaterial', equipment: 'auction.filterEquipment', card: 'auction.filterCard', skin: 'auction.filterSkin',
-      };
-      // 1.5x the original chip metrics (padding/icon/font) — approved 15.07.2026 category-bar
-      // enlargement pass. Chip width itself is unchanged (still contentW / FILTERS.length), so the
-      // label is measured and scaled down if it would otherwise overflow the chip (see maxLblW below).
-      const pad = 9;
-      const iconSize = 30;
-      const fontSize = FS.bodyLg;
-      for (let i = 0; i < FILTERS.length; i++) {
-        const f = FILTERS[i]!;
-        const active = f === this.allFilter;
-        const chip = sketchPanel(chipW - pad, FILTER_H - 12, { fill: active ? C.dark : 0xeeeeee, border: active ? C.accent : C.mid, seed: seedFor(i, 3, chipW) });
-        chip.x = contentX + i * chipW + pad / 2; chip.y = y + 3;
-        this.bodyLayer.addChild(chip);
-        const midY = y + 3 + (FILTER_H - 12) / 2;
-        const hasIcon = f !== '';
-        const iconGap = hasIcon ? iconSize + 8 : 0;
-        // Category glyph prefix (the 'all' filter stays text-only).
-        if (hasIcon) {
-          const fi = buildIcon(this.itemKind(f), iconSize, active ? C.light : C.dark);
-          fi.x = contentX + i * chipW + pad / 2 + 12; fi.y = midY - iconSize / 2;
-          this.bodyLayer.addChild(fi);
-        }
-        const lbl = txt(t(keys[f]), fontSize, active ? C.light : C.dark);
-        const maxLblW = chipW - pad - 20 - iconGap;
-        if (lbl.width > maxLblW) lbl.scale.set(Math.max(0.5, maxLblW / lbl.width));
-        lbl.anchor.set(0.5, 0.5);
-        lbl.x = contentX + i * chipW + pad / 2 + 12 + iconGap + maxLblW / 2;
-        lbl.y = midY;
-        this.bodyLayer.addChild(lbl);
-        this.hitRects.push({
-          rect: { x: contentX + i * chipW + pad / 2, y: y + 3, w: chipW - pad, h: FILTER_H - 12 },
-          action: () => { if (this.allFilter !== f) { this.allFilter = f; this.scrollY = 0; void this.loadData(); } },
-        });
-      }
-      return FILTER_H;
-    }
-
-    renderList(auctions: AuctionView[], contentX: number, filterH = 0): void {
-      const { w, h } = this;
-      const listY = this.headerH + filterH;
-      const createBtnH = 100; // reserves room for the 2x "+ List Item" button below
-      // Portrait's tab nav is a bottom bar instead of a left rail (§18) — reserve bottomNavH off the
-      // bottom, below the create button (which itself shifts up by the same amount).
-      const availH = h - listY - createBtnH - 10 - (this.landscape ? 0 : bottomNavH(h));
-      const contentW = w - contentX;
-      const emptyKeys: Record<AucTab, 'auction.empty' | 'auction.myEmpty' | 'auction.bidsEmpty'> = {
-        all: 'auction.empty', mine: 'auction.myEmpty', bids: 'auction.bidsEmpty',
-      };
-      // Default to "nothing to scroll" — overwritten below once the real grid geometry is known;
-      // covers the loading/empty early-returns so a stale wheel event can't scroll a hidden list.
-      this.scrollMax = 0;
-
-      if (this.loading) {
-        const lbl = txt(t('world.loading'), FS.small, C.dark);
-        lbl.anchor.set(0.5, 0.5); lbl.x = contentX + contentW / 2; lbl.y = listY + availH / 2;
-        this.bodyLayer.addChild(lbl);
-        return;
-      }
-
-      if (auctions.length === 0) {
-        const lbl = txt(t(emptyKeys[this.activeTab]), FS.small, C.dark);
-        lbl.anchor.set(0.5, 0.5); lbl.x = contentX + contentW / 2; lbl.y = listY + availH / 2;
-        this.bodyLayer.addChild(lbl);
-        return;
-      }
-
-      // Card grid (mirrors CardScene's roster grid): as many columns as fit AUC_CELL_W_TARGET, wrapping rows.
-      const left = contentX + AUC_CELL_GAP;
-      const avail = contentW - AUC_CELL_GAP * 2;
-      const cols = Math.max(1, Math.floor((avail + AUC_CELL_GAP) / (AUC_CELL_W_TARGET + AUC_CELL_GAP)));
-      const cellW = (avail - AUC_CELL_GAP * (cols - 1)) / cols;
-      const rows = Math.ceil(auctions.length / cols);
-      const totalH = rows * (AUC_CELL_H + AUC_CELL_GAP) + AUC_CELL_GAP;
-      // No PIXI mask backs this grid (draw-cull only, below) — a row is either drawn in full or
-      // skipped entirely, never cropped, so peekViewportH's mid-row shrink would just exclude a
-      // row that fits fine and leave a dead gap (2026-07-23 correction, UI_DESIGN.md §25). Use the
-      // naive availH directly (also the wheel-scroll viewport bounds, see wheelScroll.ts).
-      this.scrollMax = Math.max(0, totalH - availH);
-      this.scrollY = Math.max(0, Math.min(this.scrollY, this.scrollMax));
-      this.scrollRegionTop = listY;
-      this.scrollRegionBottom = listY + availH;
-
-      const now = serverNow();
-      auctions.forEach((auc, i) => {
-        const col = i % cols;
-        const row = Math.floor(i / cols);
-        const x = left + col * (cellW + AUC_CELL_GAP);
-        const y = listY + AUC_CELL_GAP + row * (AUC_CELL_H + AUC_CELL_GAP) - this.scrollY;
-        if (y + AUC_CELL_H >= listY && y <= listY + availH) {
-          this.renderAuctionCell(auc, x, y, cellW, now);
-        }
+      const lbl = txt(t(keys[f]), fontSize, active ? C.light : C.dark);
+      const maxLblW = chipW - pad - 20 - iconGap;
+      if (lbl.width > maxLblW) lbl.scale.set(Math.max(0.5, maxLblW / lbl.width));
+      lbl.anchor.set(0.5, 0.5);
+      lbl.x = contentX + i * chipW + pad / 2 + 12 + iconGap + maxLblW / 2;
+      lbl.y = midY;
+      core.bodyLayer.addChild(lbl);
+      core.hitRects.push({
+        rect: { x: contentX + i * chipW + pad / 2, y: y + 3, w: chipW - pad, h: FILTER_H - 12 },
+        action: () => { if (core.allFilter !== f) { core.allFilter = f; core.scrollY = 0; void core.loadData(); } },
       });
+    }
+    return FILTER_H;
+  }
 
-      drawScrollIndicator(this.bodyLayer, { x: left, y: listY, w: avail, h: availH }, this.scrollY, Math.max(0, totalH - availH));
+  renderList(auctions: AuctionView[], contentX: number, filterH = 0): void {
+    const core = this.core;
+    const { w, h } = core;
+    const listY = core.headerH + filterH;
+    const createBtnH = 100; // reserves room for the 2x "+ List Item" button below
+    // Portrait's tab nav is a bottom bar instead of a left rail (§18) — reserve bottomNavH off the
+    // bottom, below the create button (which itself shifts up by the same amount).
+    const availH = h - listY - createBtnH - 10 - (core.landscape ? 0 : bottomNavH(h));
+    const contentW = w - contentX;
+    const emptyKeys: Record<AucTab, 'auction.empty' | 'auction.myEmpty' | 'auction.bidsEmpty'> = {
+      all: 'auction.empty', mine: 'auction.myEmpty', bids: 'auction.bidsEmpty',
+    };
+    // Default to "nothing to scroll" — overwritten below once the real grid geometry is known;
+    // covers the loading/empty early-returns so a stale wheel event can't scroll a hidden list.
+    core.scrollMax = 0;
+
+    if (core.loading) {
+      const lbl = txt(t('world.loading'), FS.small, C.dark);
+      lbl.anchor.set(0.5, 0.5); lbl.x = contentX + contentW / 2; lbl.y = listY + availH / 2;
+      core.bodyLayer.addChild(lbl);
+      return;
     }
 
-    /**
-     * Auction card cell: a framed item-class glyph on the left (CardScene roster-card treatment),
-     * with name/price/status stacked to its right and the row action pinned bottom-right.
-     */
-    renderAuctionCell(auc: AuctionView, x: number, y: number, cellW: number, now: number): void {
-      const pad = 14;
-      const isAuction = auc.saleMode === 'auction';
+    if (auctions.length === 0) {
+      const lbl = txt(t(emptyKeys[core.activeTab]), FS.small, C.dark);
+      lbl.anchor.set(0.5, 0.5); lbl.x = contentX + contentW / 2; lbl.y = listY + availH / 2;
+      core.bodyLayer.addChild(lbl);
+      return;
+    }
 
-      const cell = sketchPanel(cellW, AUC_CELL_H, { fill: 0xfaf9f5, border: C.mid, seed: seedFor(x, y, cellW) });
-      cell.x = x; cell.y = y;
-      this.bodyLayer.addChild(cell);
+    // Card grid (mirrors CardScene's roster grid): as many columns as fit AUC_CELL_W_TARGET, wrapping rows.
+    const left = contentX + AUC_CELL_GAP;
+    const avail = contentW - AUC_CELL_GAP * 2;
+    const cols = Math.max(1, Math.floor((avail + AUC_CELL_GAP) / (AUC_CELL_W_TARGET + AUC_CELL_GAP)));
+    const cellW = (avail - AUC_CELL_GAP * (cols - 1)) / cols;
+    const rows = Math.ceil(auctions.length / cols);
+    const totalH = rows * (AUC_CELL_H + AUC_CELL_GAP) + AUC_CELL_GAP;
+    // No PIXI mask backs this grid (draw-cull only, below) — a row is either drawn in full or
+    // skipped entirely, never cropped, so peekViewportH's mid-row shrink would just exclude a
+    // row that fits fine and leave a dead gap (2026-07-23 correction, UI_DESIGN.md §25). Use the
+    // naive availH directly (also the wheel-scroll viewport bounds, see wheelScroll.ts).
+    core.scrollMax = Math.max(0, totalH - availH);
+    core.scrollY = Math.max(0, Math.min(core.scrollY, core.scrollMax));
+    core.scrollRegionTop = listY;
+    core.scrollRegionBottom = listY + availH;
 
-      // ── Left: framed item picture (square, capped so a tall cell doesn't crowd out the text
-      // column to its right — see renderItemPicture for the real per-item art). ──
-      const imgSize = Math.min(AUC_CELL_H - pad * 2, 130);
-      const imgX = x + pad; const imgY = y + (AUC_CELL_H - imgSize) / 2;
-      const frame = sketchPanel(imgSize, imgSize, { fill: 0xf0eee7, border: C.mid, seed: seedFor(x, y, imgSize) });
-      frame.x = imgX; frame.y = imgY;
-      this.bodyLayer.addChild(frame);
-      this.renderItemPicture(auc, imgX + imgSize / 2, imgY + imgSize / 2, Math.round(imgSize * 0.62), seedFor(x, y, imgSize));
-
-      // Sale-mode glyph badge, top-right corner of the frame (tag = buy-now, gavel = auction).
-      const modeIcon = buildIcon(this.saleModeKind(isAuction ? 'auction' : 'fixed'), 22, isAuction ? C.red : C.mid);
-      modeIcon.x = imgX + imgSize - 22; modeIcon.y = imgY;
-      this.bodyLayer.addChild(modeIcon);
-
-      // Designated-buyer badge: shown in "Market" when I'm the account this listing is exclusive to
-      // (server already hides it from everyone else; this just distinguishes it from the open market).
-      if (this.activeTab === 'all' && auc.designatedBuyerId && auc.designatedBuyerId === this.cb.myAccountId) {
-        const badge = txt(t('auction.exclusive'), FS.tiny, C.light, true);
-        badge.anchor.set(0, 0);
-        const bx = x + pad; const by = y + pad;
-        const bw = badge.width + 12; const bh = badge.height + 8;
-        const badgeBg = sketchPanel(bw, bh, { fill: C.accent, border: C.accent, seed: seedFor(x, y, bw) });
-        badgeBg.x = bx; badgeBg.y = by;
-        this.bodyLayer.addChild(badgeBg);
-        badge.x = bx + 6; badge.y = by + 4;
-        this.bodyLayer.addChild(badge);
+    const now = serverNow();
+    auctions.forEach((auc, i) => {
+      const col = i % cols;
+      const row = Math.floor(i / cols);
+      const x = left + col * (cellW + AUC_CELL_GAP);
+      const y = listY + AUC_CELL_GAP + row * (AUC_CELL_H + AUC_CELL_GAP) - core.scrollY;
+      if (y + AUC_CELL_H >= listY && y <= listY + availH) {
+        this.renderAuctionCell(auc, x, y, cellW, now);
       }
+    });
 
-      // ── Right: info column (name, price, buyout, countdown) ──
-      const ax = imgX + imgSize + 16;
-      const rightW = x + cellW - pad - ax;
+    drawScrollIndicator(core.bodyLayer, { x: left, y: listY, w: avail, h: availH }, core.scrollY, Math.max(0, totalH - availH));
+  }
 
-      const itemLbl = txt(this.auctionLabel(auc), FS.bodyLg, C.dark, true);
-      itemLbl.x = ax; itemLbl.y = y + pad;
-      itemLbl.style.wordWrap = true; itemLbl.style.wordWrapWidth = Math.max(20, rightW);
-      this.bodyLayer.addChild(itemLbl);
+  /**
+   * Auction card cell: a framed item-class glyph on the left (CardScene roster-card treatment),
+   * with name/price/status stacked to its right and the row action pinned bottom-right.
+   */
+  renderAuctionCell(auc: AuctionView, x: number, y: number, cellW: number, now: number): void {
+    const core = this.core;
+    const pad = 14;
+    const isAuction = auc.saleMode === 'auction';
 
-      let ay = y + pad + Math.max(28, itemLbl.height + 8);
+    const cell = sketchPanel(cellW, AUC_CELL_H, { fill: 0xfaf9f5, border: C.mid, seed: seedFor(x, y, cellW) });
+    cell.x = x; cell.y = y;
+    core.bodyLayer.addChild(cell);
 
-      // Equipment enhancement level / card level as a row of gold star icons beneath the name —
-      // matches the EquipmentScene/CardScene bag-card treatment (buildLevelStars) instead of text
-      // ("+N"/"Lv.N" — see 08.08.2026 report: the auction house still showed "Lv.3" text for cards
-      // after equipment had already moved to stars).
-      const itemLevel = Math.max(0, Math.min(this.auctionItemMaxLevel(auc), this.auctionItemLevel(auc)));
-      if (itemLevel > 0) {
-        const { container: stars } = buildLevelStars(itemLevel, rightW, 12, 2);
-        stars.name = 'levelStars'; // test hook: one child per level star (mirrors CardScene's convention)
-        stars.x = ax; stars.y = ay;
-        this.bodyLayer.addChild(stars);
-        ay += Math.max(20, stars.height + 6);
-      }
+    // ── Left: framed item picture (square, capped so a tall cell doesn't crowd out the text
+    // column to its right — see renderItemPicture for the real per-item art). ──
+    const imgSize = Math.min(AUC_CELL_H - pad * 2, 130);
+    const imgX = x + pad; const imgY = y + (AUC_CELL_H - imgSize) / 2;
+    const frame = sketchPanel(imgSize, imgSize, { fill: 0xf0eee7, border: C.mid, seed: seedFor(x, y, imgSize) });
+    frame.x = imgX; frame.y = imgY;
+    core.bodyLayer.addChild(frame);
+    this.renderItemPicture(auc, imgX + imgSize / 2, imgY + imgSize / 2, Math.round(imgSize * 0.62), seedFor(x, y, imgSize));
 
-      // Fixed-price: show the unit sale price; auction: show the current bid (or the starting price when no bids).
-      const priceText = isAuction
-        ? `${t(auc.topBid ? 'auction.currentBid' : 'auction.startPrice')}: ${auc.price}`
-        : `${t('auction.price')}: ${auc.price}`;
-      const priceLbl = txt(priceText, FS.body, C.accent, true);
-      priceLbl.x = ax; priceLbl.y = ay;
-      priceLbl.style.wordWrap = true; priceLbl.style.wordWrapWidth = Math.max(20, rightW);
-      this.bodyLayer.addChild(priceLbl);
-      ay += Math.max(26, priceLbl.height + 8);
+    // Sale-mode glyph badge, top-right corner of the frame (tag = buy-now, gavel = auction).
+    const modeIcon = buildIcon(saleModeKind(isAuction ? 'auction' : 'fixed'), 22, isAuction ? C.red : C.mid);
+    modeIcon.x = imgX + imgSize - 22; modeIcon.y = imgY;
+    core.bodyLayer.addChild(modeIcon);
 
-      if (isAuction && auc.buyoutPrice) {
-        const boLbl = txt(t('auction.buyoutAt').replace('{price}', String(auc.buyoutPrice)), FS.tiny, C.mid);
-        boLbl.x = ax; boLbl.y = ay;
-        boLbl.style.wordWrap = true; boLbl.style.wordWrapWidth = Math.max(20, rightW);
-        this.bodyLayer.addChild(boLbl);
-        ay += Math.max(20, boLbl.height + 6);
-      }
+    // Designated-buyer badge: shown in "Market" when I'm the account this listing is exclusive to
+    // (server already hides it from everyone else; this just distinguishes it from the open market).
+    if (core.activeTab === 'all' && auc.designatedBuyerId && auc.designatedBuyerId === core.cb.myAccountId) {
+      const badge = txt(t('auction.exclusive'), FS.tiny, C.light, true);
+      badge.anchor.set(0, 0);
+      const bx = x + pad; const by = y + pad;
+      const bw = badge.width + 12; const bh = badge.height + 8;
+      const badgeBg = sketchPanel(bw, bh, { fill: C.accent, border: C.accent, seed: seedFor(x, y, bw) });
+      badgeBg.x = bx; badgeBg.y = by;
+      core.bodyLayer.addChild(badgeBg);
+      badge.x = bx + 6; badge.y = by + 4;
+      core.bodyLayer.addChild(badge);
+    }
 
-      // Countdown only makes sense for a live listing — closed history cells (sold/expired/cancelled) would
-      // otherwise all read "0d 0h 0m 0s". Those show a status badge instead (My-Listings branch below).
-      // Stacked right below the price/buyout block (not pinned to the card's bottom edge — that left a
-      // dead gap and put it fighting the buy button for the same row, see 16.07.2026 "看起来太乱了" report)
-      // and shown as days/hours/minutes/seconds since listings run up to 72h.
-      if (auc.status === 'open') {
-        const remainingSec = Math.max(0, Math.floor((auc.expireAt - now) / 1000));
-        const d = Math.floor(remainingSec / 86400);
-        const h = Math.floor((remainingSec % 86400) / 3600);
-        const m = Math.floor((remainingSec % 3600) / 60);
-        const s = remainingSec % 60;
-        const expLbl = txt(t('auction.timeLeft', { d, h, m, s }), FS.tiny, C.mid);
-        expLbl.x = ax; expLbl.y = ay;
-        expLbl.style.wordWrap = true; expLbl.style.wordWrapWidth = Math.max(20, rightW);
-        this.bodyLayer.addChild(expLbl);
-      }
+    // ── Right: info column (name, price, buyout, countdown) ──
+    const ax = imgX + imgSize + 16;
+    const rightW = x + cellW - pad - ax;
 
-      // ── Bottom-right: action button / status badge ──
-      const btnW = 96; const btnH = 40;
-      const btnX = x + cellW - pad - btnW; const btnY = y + AUC_CELL_H - pad - btnH;
+    const itemLbl = txt(auctionLabel(auc), FS.bodyLg, C.dark, true);
+    itemLbl.x = ax; itemLbl.y = y + pad;
+    itemLbl.style.wordWrap = true; itemLbl.style.wordWrapWidth = Math.max(20, rightW);
+    core.bodyLayer.addChild(itemLbl);
 
-      if (this.activeTab === 'all') {
-        const aucId = auc.auctionId;
-        // Own listings can surface in the market (e.g. a designated-buyer listing the seller is
-        // allowed to see, see listAuctions). Self-purchase/self-bid is rejected server-side
-        // (sellerId===buyerId → BAD_REQUEST), so show a passive marker instead of a dead Buy/Bid button.
-        if (auc.sellerId === this.cb.myAccountId) {
-          const ownLbl = txt(t('auction.yourListing'), FS.small, C.mid);
-          ownLbl.anchor.set(1, 0.5); ownLbl.x = btnX + btnW; ownLbl.y = btnY + btnH / 2;
-          this.bodyLayer.addChild(ownLbl);
-        } else {
-          const busy = this.bt.busy;
-          const btn = busy
-            ? sketchPanel(btnW, btnH, { fill: C.btnOff, border: C.mid, seed: seedFor(y, 0, btnW) })
-            : sketchButton(btnW, btnH, seedFor(y, 0, btnW));
-          btn.x = btnX; btn.y = btnY;
-          this.bodyLayer.addChild(btn);
-          const bl = txt(isAuction ? t('auction.bid') : t('auction.buy'), FS.small, busy ? C.mid : C.light);
-          bl.anchor.set(0.5, 0.5); bl.x = btnX + btnW / 2; bl.y = btnY + btnH / 2;
-          this.bodyLayer.addChild(bl);
-          if (!busy) {
-            this.hitRects.push({
-              rect: { x: btnX, y: btnY, w: btnW, h: btnH },
-              action: isAuction ? () => this.openBidForm(auc) : () => this.confirmBuy(aucId, auc.price),
-            });
-          }
-        }
-      } else if (this.activeTab === 'mine') {
-        if (auc.status === 'open') {
-          // Live listing → cancel action.
-          const busy = this.bt.busy;
-          const cancelColor = busy ? C.mid : C.red;
-          const cancelBtn = sketchPanel(btnW, btnH, { fill: 0xf0e0e0, border: cancelColor, seed: seedFor(y, 1, btnW) });
-          cancelBtn.x = btnX; cancelBtn.y = btnY;
-          this.bodyLayer.addChild(cancelBtn);
-          const cl = txt(t('auction.cancel'), FS.small, cancelColor);
-          cl.anchor.set(0.5, 0.5); cl.x = btnX + btnW / 2; cl.y = btnY + btnH / 2;
-          this.bodyLayer.addChild(cl);
-          const aucId = auc.auctionId;
-          if (!busy) this.hitRects.push({ rect: { x: btnX, y: btnY, w: btnW, h: btnH }, action: () => this.confirmCancel(aucId) });
-        } else {
-          // Closed history cell → status badge (sold = accent, expired/cancelled = muted), no action.
-          const statusKey = auc.status === 'sold'
-            ? 'auction.statusSold'
-            : auc.status === 'cancelled'
-              ? 'auction.statusCancelled'
-              : 'auction.statusExpired';
-          const badge = txt(t(statusKey), FS.small, auc.status === 'sold' ? C.accent : C.mid, true);
-          badge.anchor.set(1, 0.5); badge.x = x + cellW - pad; badge.y = btnY + btnH / 2;
-          this.bodyLayer.addChild(badge);
-        }
+    let ay = y + pad + Math.max(28, itemLbl.height + 8);
+
+    // Equipment enhancement level / card level as a row of gold star icons beneath the name —
+    // matches the EquipmentScene/CardScene bag-card treatment (buildLevelStars) instead of text
+    // ("+N"/"Lv.N" — see 08.08.2026 report: the auction house still showed "Lv.3" text for cards
+    // after equipment had already moved to stars).
+    const itemLevel = Math.max(0, Math.min(auctionItemMaxLevel(auc), auctionItemLevel(auc)));
+    if (itemLevel > 0) {
+      const { container: stars } = buildLevelStars(itemLevel, rightW, 12, 2);
+      stars.name = 'levelStars'; // test hook: one child per level star (mirrors CardScene's convention)
+      stars.x = ax; stars.y = ay;
+      core.bodyLayer.addChild(stars);
+      ay += Math.max(20, stars.height + 6);
+    }
+
+    // Fixed-price: show the unit sale price; auction: show the current bid (or the starting price when no bids).
+    const priceText = isAuction
+      ? `${t(auc.topBid ? 'auction.currentBid' : 'auction.startPrice')}: ${auc.price}`
+      : `${t('auction.price')}: ${auc.price}`;
+    const priceLbl = txt(priceText, FS.body, C.accent, true);
+    priceLbl.x = ax; priceLbl.y = ay;
+    priceLbl.style.wordWrap = true; priceLbl.style.wordWrapWidth = Math.max(20, rightW);
+    core.bodyLayer.addChild(priceLbl);
+    ay += Math.max(26, priceLbl.height + 8);
+
+    if (isAuction && auc.buyoutPrice) {
+      const boLbl = txt(t('auction.buyoutAt').replace('{price}', String(auc.buyoutPrice)), FS.tiny, C.mid);
+      boLbl.x = ax; boLbl.y = ay;
+      boLbl.style.wordWrap = true; boLbl.style.wordWrapWidth = Math.max(20, rightW);
+      core.bodyLayer.addChild(boLbl);
+      ay += Math.max(20, boLbl.height + 6);
+    }
+
+    // Countdown only makes sense for a live listing — closed history cells (sold/expired/cancelled) would
+    // otherwise all read "0d 0h 0m 0s". Those show a status badge instead (My-Listings branch below).
+    // Stacked right below the price/buyout block (not pinned to the card's bottom edge — that left a
+    // dead gap and put it fighting the buy button for the same row, see 16.07.2026 "看起来太乱了" report)
+    // and shown as days/hours/minutes/seconds since listings run up to 72h.
+    if (auc.status === 'open') {
+      const remainingSec = Math.max(0, Math.floor((auc.expireAt - now) / 1000));
+      const d = Math.floor(remainingSec / 86400);
+      const h = Math.floor((remainingSec % 86400) / 3600);
+      const m = Math.floor((remainingSec % 3600) / 60);
+      const s = remainingSec % 60;
+      const expLbl = txt(t('auction.timeLeft', { d, h, m, s }), FS.tiny, C.mid);
+      expLbl.x = ax; expLbl.y = ay;
+      expLbl.style.wordWrap = true; expLbl.style.wordWrapWidth = Math.max(20, rightW);
+      core.bodyLayer.addChild(expLbl);
+    }
+
+    // ── Bottom-right: action button / status badge ──
+    const btnW = 96; const btnH = 40;
+    const btnX = x + cellW - pad - btnW; const btnY = y + AUC_CELL_H - pad - btnH;
+
+    if (core.activeTab === 'all') {
+      const aucId = auc.auctionId;
+      // Own listings can surface in the market (e.g. a designated-buyer listing the seller is
+      // allowed to see, see listAuctions). Self-purchase/self-bid is rejected server-side
+      // (sellerId===buyerId → BAD_REQUEST), so show a passive marker instead of a dead Buy/Bid button.
+      if (auc.sellerId === core.cb.myAccountId) {
+        const ownLbl = txt(t('auction.yourListing'), FS.small, C.mid);
+        ownLbl.anchor.set(1, 0.5); ownLbl.x = btnX + btnW; ownLbl.y = btnY + btnH / 2;
+        core.bodyLayer.addChild(ownLbl);
       } else {
-        // My Bids: informational only (leading bidder, not the owner) — no action button, just a status badge.
-        const badge = txt(t('auction.leading'), FS.small, C.accent, true);
-        badge.anchor.set(1, 0.5); badge.x = x + cellW - pad; badge.y = btnY + btnH / 2;
-        this.bodyLayer.addChild(badge);
+        const busy = core.bt.busy;
+        const btn = busy
+          ? sketchPanel(btnW, btnH, { fill: C.btnOff, border: C.mid, seed: seedFor(y, 0, btnW) })
+          : sketchButton(btnW, btnH, seedFor(y, 0, btnW));
+        btn.x = btnX; btn.y = btnY;
+        core.bodyLayer.addChild(btn);
+        const bl = txt(isAuction ? t('auction.bid') : t('auction.buy'), FS.small, busy ? C.mid : C.light);
+        bl.anchor.set(0.5, 0.5); bl.x = btnX + btnW / 2; bl.y = btnY + btnH / 2;
+        core.bodyLayer.addChild(bl);
+        if (!busy) {
+          core.hitRects.push({
+            rect: { x: btnX, y: btnY, w: btnW, h: btnH },
+            action: isAuction ? () => this.bid.openBidForm(auc) : () => this.trade.confirmBuy(aucId, auc.price),
+          });
+        }
       }
+    } else if (core.activeTab === 'mine') {
+      if (auc.status === 'open') {
+        // Live listing → cancel action.
+        const busy = core.bt.busy;
+        const cancelColor = busy ? C.mid : C.red;
+        const cancelBtn = sketchPanel(btnW, btnH, { fill: 0xf0e0e0, border: cancelColor, seed: seedFor(y, 1, btnW) });
+        cancelBtn.x = btnX; cancelBtn.y = btnY;
+        core.bodyLayer.addChild(cancelBtn);
+        const cl = txt(t('auction.cancel'), FS.small, cancelColor);
+        cl.anchor.set(0.5, 0.5); cl.x = btnX + btnW / 2; cl.y = btnY + btnH / 2;
+        core.bodyLayer.addChild(cl);
+        const aucId = auc.auctionId;
+        if (!busy) core.hitRects.push({ rect: { x: btnX, y: btnY, w: btnW, h: btnH }, action: () => this.trade.confirmCancel(aucId) });
+      } else {
+        // Closed history cell → status badge (sold = accent, expired/cancelled = muted), no action.
+        const statusKey = auc.status === 'sold'
+          ? 'auction.statusSold'
+          : auc.status === 'cancelled'
+            ? 'auction.statusCancelled'
+            : 'auction.statusExpired';
+        const badge = txt(t(statusKey), FS.small, auc.status === 'sold' ? C.accent : C.mid, true);
+        badge.anchor.set(1, 0.5); badge.x = x + cellW - pad; badge.y = btnY + btnH / 2;
+        core.bodyLayer.addChild(badge);
+      }
+    } else {
+      // My Bids: informational only (leading bidder, not the owner) — no action button, just a status badge.
+      const badge = txt(t('auction.leading'), FS.small, C.accent, true);
+      badge.anchor.set(1, 0.5); badge.x = x + cellW - pad; badge.y = btnY + btnH / 2;
+      core.bodyLayer.addChild(badge);
     }
+  }
 
-    /**
-     * Real per-item picture for a market cell (mirrors GachaScene.drawEntryPicture): equipment gets
-     * its per-slot/rarity procedural glyph, cards get the real unit art PNG, materials keep their
-     * dedicated icon glyph. Centered at (cx, cy) in a `size`×`size` box.
-     */
-    private renderItemPicture(auc: AuctionView, cx: number, cy: number, size: number, seed: number): void {
-      if (auc.itemType === 'equipment') {
-        const inst = auc.item?.['instance'] as EquipmentInstance | undefined;
-        const def = inst ? getEquipDef(inst.defId) : undefined;
-        if (def) {
-          const icon = buildEquipIcon(inst?.defId, def.slot, def.rarity, size, seed);
-          icon.x = cx; icon.y = cy;
-          this.bodyLayer.addChild(icon);
+  /**
+   * Real per-item picture for a market cell (mirrors GachaScene.drawEntryPicture): equipment gets
+   * its per-slot/rarity procedural glyph, cards get the real unit art PNG, materials keep their
+   * dedicated icon glyph. Centered at (cx, cy) in a `size`×`size` box.
+   */
+  private renderItemPicture(auc: AuctionView, cx: number, cy: number, size: number, seed: number): void {
+    const core = this.core;
+    if (auc.itemType === 'equipment') {
+      const inst = auc.item?.['instance'] as EquipmentInstance | undefined;
+      const def = inst ? getEquipDef(inst.defId) : undefined;
+      if (def) {
+        const icon = buildEquipIcon(inst?.defId, def.slot, def.rarity, size, seed);
+        icon.x = cx; icon.y = cy;
+        core.bodyLayer.addChild(icon);
+        return;
+      }
+    } else if (auc.itemType === 'card') {
+      const inst = auc.item?.['instance'] as CardInstance | undefined;
+      const artUrl = inst ? cardInstanceArtUrl(inst) ?? undefined : undefined;
+      if (artUrl) {
+        const tex = getArtTexture(artUrl);
+        if (tex.baseTexture.valid) {
+          const scale = Math.min(size / tex.width, size / tex.height);
+          const sp = new PIXI.Sprite(tex);
+          sp.anchor.set(0.5);
+          sp.scale.set(scale);
+          sp.position.set(cx, cy);
+          core.bodyLayer.addChild(sp);
           return;
         }
-      } else if (auc.itemType === 'card') {
-        const inst = auc.item?.['instance'] as CardInstance | undefined;
-        const artUrl = inst ? cardInstanceArtUrl(inst) ?? undefined : undefined;
-        if (artUrl) {
-          const tex = getArtTexture(artUrl);
-          if (tex.baseTexture.valid) {
-            const scale = Math.min(size / tex.width, size / tex.height);
-            const sp = new PIXI.Sprite(tex);
-            sp.anchor.set(0.5);
-            sp.scale.set(scale);
-            sp.position.set(cx, cy);
-            this.bodyLayer.addChild(sp);
-            return;
-          }
-          if (!this.artHooked.has(artUrl)) {
-            this.artHooked.add(artUrl);
-            tex.baseTexture.once('loaded', () => this.render());
-          }
-        }
-      } else if (auc.itemType === 'skin') {
-        const skinId = auc.item?.['skinId'] as string | undefined;
-        const unitType = skinId ? SKIN_TARGET_UNIT[skinId] : undefined;
-        const artUrl = unitType && skinId ? unitPortraitUrl(unitType, skinId) ?? undefined : undefined;
-        if (artUrl) {
-          const tex = getArtTexture(artUrl);
-          if (tex.baseTexture.valid) {
-            const scale = Math.min(size / tex.width, size / tex.height);
-            const sp = new PIXI.Sprite(tex);
-            sp.anchor.set(0.5);
-            sp.scale.set(scale);
-            sp.position.set(cx, cy);
-            this.bodyLayer.addChild(sp);
-            return;
-          }
-          if (!this.artHooked.has(artUrl)) {
-            this.artHooked.add(artUrl);
-            tex.baseTexture.once('loaded', () => this.render());
-          }
+        if (!core.artHooked.has(artUrl)) {
+          core.artHooked.add(artUrl);
+          tex.baseTexture.once('loaded', () => core.render());
         }
       }
-      // Material listing (or an equipment/card def that vanished) → dedicated icon (bitmap-first,
-      // mirrors every other material-icon site — EquipmentScene/GachaScene/DailyScene/etc, see
-      // materialAtlas.ts's "every material-icon site MUST go through here" contract).
-      const kind = this.itemKind(auc.itemType, auc.item?.['material'] as string | undefined);
-      const icon = kind === 'scrap' || kind === 'lead' || kind === 'binding'
-        ? buildMaterialIcon(kind as MaterialKind, size, C.dark)
-        : buildIcon(kind, size, C.dark);
-      icon.x = cx - size / 2; icon.y = cy - size / 2;
-      this.bodyLayer.addChild(icon);
+    } else if (auc.itemType === 'skin') {
+      const skinId = auc.item?.['skinId'] as string | undefined;
+      const unitType = skinId ? SKIN_TARGET_UNIT[skinId] : undefined;
+      const artUrl = unitType && skinId ? unitPortraitUrl(unitType, skinId) ?? undefined : undefined;
+      if (artUrl) {
+        const tex = getArtTexture(artUrl);
+        if (tex.baseTexture.valid) {
+          const scale = Math.min(size / tex.width, size / tex.height);
+          const sp = new PIXI.Sprite(tex);
+          sp.anchor.set(0.5);
+          sp.scale.set(scale);
+          sp.position.set(cx, cy);
+          core.bodyLayer.addChild(sp);
+          return;
+        }
+        if (!core.artHooked.has(artUrl)) {
+          core.artHooked.add(artUrl);
+          tex.baseTexture.once('loaded', () => core.render());
+        }
+      }
     }
+    // Material listing (or an equipment/card def that vanished) → dedicated icon (bitmap-first,
+    // mirrors every other material-icon site — EquipmentScene/GachaScene/DailyScene/etc, see
+    // materialAtlas.ts's "every material-icon site MUST go through here" contract).
+    const kind = itemKind(auc.itemType, auc.item?.['material'] as string | undefined);
+    const icon = kind === 'scrap' || kind === 'lead' || kind === 'binding'
+      ? buildMaterialIcon(kind as MaterialKind, size, C.dark)
+      : buildIcon(kind, size, C.dark);
+    icon.x = cx - size / 2; icon.y = cy - size / 2;
+    core.bodyLayer.addChild(icon);
+  }
 
-    renderCreateButton(contentX: number): void {
-      const { w, h, landscape } = this;
-      const contentW = w - contentX;
-      // 2x the previous 200x44 button.
-      const btnW = 400; const btnH = 88;
-      // Portrait's tab nav is a bottom bar (§18) — this button sits just above it instead of at the
-      // screen edge.
-      const btnY = h - btnH - 12 - (landscape ? 0 : bottomNavH(h));
-      const btn = sketchButton(btnW, btnH, seedFor(0, 0, btnW));
-      btn.x = contentX + contentW / 2 - btnW / 2; btn.y = btnY;
-      this.bodyLayer.addChild(btn);
-      const bl = txt(`+ ${t('auction.create')}`, FS.title, C.light);
-      bl.anchor.set(0.5, 0.5); bl.x = contentX + contentW / 2; bl.y = btnY + btnH / 2;
-      this.bodyLayer.addChild(bl);
-      this.hitRects.push({ rect: { x: contentX + contentW / 2 - btnW / 2, y: btnY, w: btnW, h: btnH }, action: () => this.openCreateForm() });
-    }
-  };
+  renderCreateButton(contentX: number): void {
+    const core = this.core;
+    const { w, h, landscape } = core;
+    const contentW = w - contentX;
+    // 2x the previous 200x44 button.
+    const btnW = 400; const btnH = 88;
+    // Portrait's tab nav is a bottom bar (§18) — this button sits just above it instead of at the
+    // screen edge.
+    const btnY = h - btnH - 12 - (landscape ? 0 : bottomNavH(h));
+    const btn = sketchButton(btnW, btnH, seedFor(0, 0, btnW));
+    btn.x = contentX + contentW / 2 - btnW / 2; btn.y = btnY;
+    core.bodyLayer.addChild(btn);
+    const bl = txt(`+ ${t('auction.create')}`, FS.title, C.light);
+    bl.anchor.set(0.5, 0.5); bl.x = contentX + contentW / 2; bl.y = btnY + btnH / 2;
+    core.bodyLayer.addChild(bl);
+    core.hitRects.push({ rect: { x: contentX + contentW / 2 - btnW / 2, y: btnY, w: btnW, h: btnH }, action: () => this.createListing.openCreateForm() });
+  }
 }

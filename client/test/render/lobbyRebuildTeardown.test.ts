@@ -2,16 +2,24 @@
  * lobbyRebuildTeardown.test.ts — regression test for the LobbyScene freeze fixed
  * 2026-07-13.
  *
- * Background: LobbyScene.rebuild() (badges.ts) tears down the container's
- * children (tearDownChildren → destroy({children:true})) to redraw the scene,
- * but only nulled `this.titleBoil` without destroying it, and left
- * `this.heroFigure` untouched entirely. Both are Ticker-driven: titleBoil hooks
- * PIXI.Ticker.shared directly, and heroFigure is advanced every frame from
- * update(). Once their sprites were destroyed out from under them, the next
- * tick set a property (e.g. `sprite.x`) on an object whose `transform` PIXI
- * had nulled on destroy() — a TypeError that froze the whole ticker (PIXI 7
- * aborts the update loop on any listener throw), matching the "scene update
- * threw (contained)" freeze report.
+ * Background: LobbyScene's rebuild() tears down the container's children
+ * (tearDownChildren → destroy({children:true})) to redraw the scene, but only
+ * nulled `this.titleBoil` without destroying it, and left `this.heroFigure`
+ * untouched entirely. Both are Ticker-driven: titleBoil hooks PIXI.Ticker.shared
+ * directly, and heroFigure is advanced every frame from update(). Once their
+ * sprites were destroyed out from under them, the next tick set a property
+ * (e.g. `sprite.x`) on an object whose `transform` PIXI had nulled on destroy()
+ * — a TypeError that froze the whole ticker (PIXI 7 aborts the update loop on
+ * any listener throw), matching the "scene update threw (contained)" freeze
+ * report.
+ *
+ * 2026-08-12: rebuild() moved from badges.ts (BadgesMixin) to LobbySceneCore
+ * itself during the mixin→composition conversion (see claudedocs/client-modules.md
+ * and ../../src/scenes/LobbyScene/core.ts's file-header comment) — it's a
+ * whole-scene concern (teardown + re-invoke the full layout build), not
+ * badges-specific; badges.ts's applyEventsAvailable() now just calls
+ * `core.rebuild()` like any other caller. This test targets LobbySceneCore
+ * directly instead of the old BadgesMixin.
  *
  * Run with: npm run test:render
  */
@@ -79,20 +87,25 @@ vi.mock('pixi.js-legacy', () => {
   };
 });
 
-// ── webpack-served asset used by coinIconAtlas.ts (imported transitively via base.ts) ──
+// ── webpack-served asset used by coinIconAtlas.ts (imported transitively via core.ts) ──
 vi.mock('../../src/assets/shop/coins.png',  () => ({ default: 'coins.png' }));
 vi.mock('../../src/assets/shop/coins.json', () => ({ default: { frames: {}, meta: {} } }));
 
-// ── jszip stub (StickmanRuntime, imported transitively via base.ts) ────────────
+// ── jszip stub (StickmanRuntime, imported transitively via core.ts) ────────────
 vi.mock('jszip', () => ({ default: { loadAsync: () => Promise.reject(new Error('unused in this test')) } }));
 
 // ── Imports (after all vi.mock declarations) ───────────────────────────────────
-import { BadgesMixin } from '../../src/scenes/LobbyScene/badges';
-import type { LobbySceneBaseCtor } from '../../src/scenes/LobbyScene/base';
+import { LobbySceneCore } from '../../src/scenes/LobbyScene/core';
 import { tearDownChildren } from '../../src/render/sketchUi';
 
-/** Bare-bones stand-in for LobbySceneBase — only the fields rebuild() touches. */
-class FakeLobbySceneBase {
+/**
+ * Bare-bones stand-in for LobbySceneCore — only the fields rebuild() touches, but borrows the REAL
+ * `rebuild()` implementation via `Function.prototype.call` so this regression test exercises actual
+ * production code rather than a hand-copied duplicate (LobbySceneCore's own constructor pulls in
+ * `ILayout`/`LobbySceneCallbacks`/ the ctor's onSaveChanged+coinIconAtlas wiring, which this test
+ * doesn't need — only `rebuild()`'s teardown-then-buildHook() sequence).
+ */
+class FakeLobbySceneCore {
   container = { removeChildren: (): unknown[] => [] as unknown[] };
   toastLayer: unknown = null;
   settlementLayer: unknown = null;
@@ -105,49 +118,41 @@ class FakeLobbySceneBase {
   heroFigureClips: string[] = [];
   heroFigureSwapTimer = 0;
   destroyed = false;
-  build = vi.fn();
-}
+  buildHook = vi.fn();
 
-/** Public view of the fields under test — bypasses the real LobbySceneBase's `protected` modifiers, which don't apply to our FakeLobbySceneBase stand-in at runtime. */
-interface TestScene {
-  titleBoil: { destroy(): void } | null;
-  heroFigure: { destroy(): void } | null;
-  heroFigureClips: string[];
-  heroFigureSwapTimer: number;
-  build: ReturnType<typeof vi.fn>;
-  rebuild(): void;
+  rebuild(): void {
+    LobbySceneCore.prototype.rebuild.call(this as unknown as LobbySceneCore);
+  }
 }
-
-const LobbyWithBadges = BadgesMixin(FakeLobbySceneBase as unknown as LobbySceneBaseCtor);
 
 describe('LobbyScene rebuild() — titleBoil/heroFigure teardown (freeze regression)', () => {
   it('destroys titleBoil and heroFigure before rebuilding, instead of leaving stale references', () => {
-    const scene = new LobbyWithBadges() as unknown as TestScene;
+    const core = new FakeLobbySceneCore();
     const titleBoilDestroy = vi.fn();
     const heroFigureDestroy = vi.fn();
-    scene.titleBoil = { destroy: titleBoilDestroy };
-    scene.heroFigure = { destroy: heroFigureDestroy };
-    scene.heroFigureClips = ['idle', 'attack'];
-    scene.heroFigureSwapTimer = 2.4;
+    core.titleBoil = { destroy: titleBoilDestroy };
+    core.heroFigure = { destroy: heroFigureDestroy };
+    core.heroFigureClips = ['idle', 'attack'];
+    core.heroFigureSwapTimer = 2.4;
 
-    scene.rebuild();
+    core.rebuild();
 
     // Regression: the old code only did `this.titleBoil = null` (no destroy call)
     // and never touched heroFigure at all — this would fail against that code.
     expect(titleBoilDestroy).toHaveBeenCalledTimes(1);
     expect(heroFigureDestroy).toHaveBeenCalledTimes(1);
-    expect(scene.titleBoil).toBeNull();
-    expect(scene.heroFigure).toBeNull();
-    expect(scene.heroFigureClips).toEqual([]);
-    expect(scene.heroFigureSwapTimer).toBe(0);
-    expect(scene.build).toHaveBeenCalledTimes(1);
+    expect(core.titleBoil).toBeNull();
+    expect(core.heroFigure).toBeNull();
+    expect(core.heroFigureClips).toEqual([]);
+    expect(core.heroFigureSwapTimer).toBe(0);
+    expect(core.buildHook).toHaveBeenCalledTimes(1);
   });
 
   it('is a no-op destroy call when titleBoil/heroFigure were never set (first build)', () => {
-    const scene = new LobbyWithBadges() as unknown as TestScene;
-    expect(() => scene.rebuild()).not.toThrow();
-    expect(scene.titleBoil).toBeNull();
-    expect(scene.heroFigure).toBeNull();
+    const core = new FakeLobbySceneCore();
+    expect(() => core.rebuild()).not.toThrow();
+    expect(core.titleBoil).toBeNull();
+    expect(core.heroFigure).toBeNull();
   });
 
   it('sanity: tearDownChildren really does destroy a container\'s children (the hazard rebuild() must race against)', () => {

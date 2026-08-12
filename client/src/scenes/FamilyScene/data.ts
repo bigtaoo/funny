@@ -1,6 +1,10 @@
 // Data loading for the family scene: fetch membership, family detail, and channel messages.
+//
+// DataPanel has no dependency on any other domain class — Actions and Input both depend on IT
+// (2026-08-11 converted from the former `XMixin(Base)` inheritance chain to an independent class
+// over `core`, per claudedocs/client-modules.md's split-form priority note).
 import type { FamilyDetailView, FamilyMessageView } from '../../net/WorldApiClient';
-import { type Constructor, type FamilySceneBaseCtor } from './base';
+import type { FamilySceneCore } from './core';
 
 export interface DataHandlers {
   loadData(): Promise<void>;
@@ -10,77 +14,83 @@ export interface DataHandlers {
   applyFamilyMsg(msg: FamilyMessageView): void;
 }
 
-export function DataMixin<TBase extends FamilySceneBaseCtor>(Base: TBase): TBase & Constructor<DataHandlers> {
-  return class extends Base {
-    async loadData(): Promise<void> {
-      if (this.destroyed) return;
-      // Best-effort, independent of the family fetch below — only gates the member-profile
-      // popup's "Add Friend" action, so a failure here shouldn't block showing the roster.
-      void this.cb.getFriendPublicIds().then((ids) => {
-        if (!this.destroyed) this.friendPublicIds = ids;
-      }).catch(() => { /* keep the empty default */ });
-      try {
-        // Family membership lives in socialsvc; worldsvc's playerWorld.familyId is a
-        // join-time-only mirror that never reflects a family created/joined afterward.
-        const fam = await this.cb.worldApi.getMyFamily();
-        if (fam) {
-          await this.applyFamily(fam);
-        } else {
-          this.mode = 'noFamily';
-        }
-      } catch {
-        this.mode = 'noFamily';
+export class DataPanel implements DataHandlers {
+  constructor(private readonly core: FamilySceneCore) {}
+
+  async loadData(): Promise<void> {
+    const core = this.core;
+    if (core.destroyed) return;
+    // Best-effort, independent of the family fetch below — only gates the member-profile
+    // popup's "Add Friend" action, so a failure here shouldn't block showing the roster.
+    void core.cb.getFriendPublicIds().then((ids) => {
+      if (!core.destroyed) core.friendPublicIds = ids;
+    }).catch(() => { /* keep the empty default */ });
+    try {
+      // Family membership lives in socialsvc; worldsvc's playerWorld.familyId is a
+      // join-time-only mirror that never reflects a family created/joined afterward.
+      const fam = await core.cb.worldApi.getMyFamily();
+      if (fam) {
+        await this.applyFamily(fam);
+      } else {
+        core.mode = 'noFamily';
       }
-      if (!this.destroyed) this.render();
+    } catch {
+      core.mode = 'noFamily';
     }
+    if (!core.destroyed) core.render();
+  }
 
-    async loadMyFamily(familyId: string): Promise<void> {
-      const fam = await this.cb.worldApi.getFamily(familyId);
-      await this.applyFamily(fam);
-    }
+  async loadMyFamily(familyId: string): Promise<void> {
+    const core = this.core;
+    const fam = await core.cb.worldApi.getFamily(familyId);
+    await this.applyFamily(fam);
+  }
 
-    private async applyFamily(fam: FamilyDetailView): Promise<void> {
-      this.family = fam;
-      this.members = fam.members ?? [];
-      this.mode = 'myFamily';
-      // Paint the roster/identity as soon as the family is known — the channel is a second
-      // round-trip, so don't hold the whole scene blank on it. loadData()/doJoin() render again
-      // once loadChannel() lands, filling the message list in.
-      if (!this.destroyed) this.render();
-      await this.loadChannel();
-      await this.loadJoinRequests();
-    }
+  private async applyFamily(fam: FamilyDetailView): Promise<void> {
+    const core = this.core;
+    core.family = fam;
+    core.members = fam.members ?? [];
+    core.mode = 'myFamily';
+    // Paint the roster/identity as soon as the family is known — the channel is a second
+    // round-trip, so don't hold the whole scene blank on it. loadData()/doJoin() render again
+    // once loadChannel() lands, filling the message list in.
+    if (!core.destroyed) core.render();
+    await this.loadChannel();
+    await this.loadJoinRequests();
+  }
 
-    async loadChannel(): Promise<void> {
-      if (!this.family) return;
-      const ch = await this.cb.worldApi.getFamilyChannel(this.family.familyId);
-      this.messages = ch;
-    }
+  async loadChannel(): Promise<void> {
+    const core = this.core;
+    if (!core.family) return;
+    const ch = await core.cb.worldApi.getFamilyChannel(core.family.familyId);
+    core.messages = ch;
+  }
 
-    async loadJoinRequests(): Promise<void> {
-      if (!this.family || !this.isFamilyApprover) { this.joinRequests = []; return; }
-      try {
-        this.joinRequests = await this.cb.worldApi.listJoinRequests();
-      } catch {
-        this.joinRequests = [];
-      }
-      if (!this.destroyed) this.render();
+  async loadJoinRequests(): Promise<void> {
+    const core = this.core;
+    if (!core.family || !core.isFamilyApprover) { core.joinRequests = []; return; }
+    try {
+      core.joinRequests = await core.cb.worldApi.listJoinRequests();
+    } catch {
+      core.joinRequests = [];
     }
+    if (!core.destroyed) core.render();
+  }
 
-    /**
-     * Received a real-time family channel message (gateway push, socialsvc → gateway) → deduplicate,
-     * insert, and re-render if needed. Mirrors SectScene's applySectMsg; messages are newest-first
-     * (consistent with getFamilyChannel), so new messages are unshifted to the front.
-     */
-    applyFamilyMsg(msg: FamilyMessageView): void {
-      if (this.destroyed) return;
-      if (this.messages.some((m) => m.ts === msg.ts && m.senderId === msg.senderId && m.body === msg.body)) {
-        return; // deduplicate with polling / resend
-      }
-      this.messages.unshift(msg);
-      // Landscape shows the channel column permanently (split view), so re-render regardless of
-      // the active tab; portrait only needs it while the channel tab is showing.
-      if (this.mode === 'myFamily' && (this.landscape || this.activeTab === 'channel')) this.render();
+  /**
+   * Received a real-time family channel message (gateway push, socialsvc → gateway) → deduplicate,
+   * insert, and re-render if needed. Mirrors SectScene's applySectMsg; messages are newest-first
+   * (consistent with getFamilyChannel), so new messages are unshifted to the front.
+   */
+  applyFamilyMsg(msg: FamilyMessageView): void {
+    const core = this.core;
+    if (core.destroyed) return;
+    if (core.messages.some((m) => m.ts === msg.ts && m.senderId === msg.senderId && m.body === msg.body)) {
+      return; // deduplicate with polling / resend
     }
-  };
+    core.messages.unshift(msg);
+    // Landscape shows the channel column permanently (split view), so re-render regardless of
+    // the active tab; portrait only needs it while the channel tab is showing.
+    if (core.mode === 'myFamily' && (core.landscape || core.activeTab === 'channel')) core.render();
+  }
 }

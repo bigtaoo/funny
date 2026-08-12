@@ -122,10 +122,10 @@ describe('Family chat — single-line name-tag row', () => {
       worldApi, worldId: 'w1', myAccountId: 'me', playerName: 'tao',
       getFriendPublicIds: async () => new Set<string>(),
     } as any);
-    await scene.loadData();
+    await scene.data.loadData();
     scene.render();
 
-    const { texts } = collect(scene.bodyLayer);
+    const { texts } = collect(scene.core.bodyLayer);
     const nameText = texts.find((t) => t.text.startsWith('[') && t.text.endsWith('tao'));
     const bodyText = texts.find((t) => t.text.includes('hello family'));
     expect(nameText?.text).toBe('[Grandmaster][WangFam]tao');

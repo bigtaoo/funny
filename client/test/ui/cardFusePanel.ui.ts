@@ -92,7 +92,7 @@ function hitUnder(hits: Hit[], pos: { x: number; y: number }): Hit | undefined {
 }
 
 function modalHitsOf(scene: CardScene): Hit[] {
-  return (scene as unknown as { modalHits: Hit[] }).modalHits;
+  return (scene as unknown as { core: { modalHits: Hit[] } }).core.modalHits;
 }
 
 /** The fuse panel draws everything into modalLayer, which sits on top of (and independent from) the
@@ -102,24 +102,24 @@ function modalHitsOf(scene: CardScene): Hit[] {
  * background grid cell instead of (or in addition to) the fuse row. Restricting the search to
  * modalLayer sidesteps that collision entirely. */
 function modalLayerOf(scene: CardScene): PIXI.Container {
-  return (scene as unknown as { modalLayer: PIXI.Container }).modalLayer;
+  return (scene as unknown as { core: { modalLayer: PIXI.Container } }).core.modalLayer;
 }
 
 /** Coin balance + capacity readout (renderHeaderCurrency) lives here — separate from bodyLayer/modalLayer. */
 function headerOverlayLayerOf(scene: CardScene): PIXI.Container {
-  return (scene as unknown as { headerOverlayLayer: PIXI.Container }).headerOverlayLayer;
+  return (scene as unknown as { core: { headerOverlayLayer: PIXI.Container } }).core.headerOverlayLayer;
 }
 
 function feedScrollPxOf(scene: CardScene): number {
-  return (scene as unknown as { feedScrollPx: number }).feedScrollPx;
+  return (scene as unknown as { core: { feedScrollPx: number } }).core.feedScrollPx;
 }
 
 function modalOpenOf(scene: CardScene): boolean {
-  return (scene as unknown as { modalOpen: boolean }).modalOpen;
+  return (scene as unknown as { core: { modalOpen: boolean } }).core.modalOpen;
 }
 
 function detailIdOf(scene: CardScene): string | null {
-  return (scene as unknown as { detailId: string | null }).detailId;
+  return (scene as unknown as { core: { detailId: string | null } }).core.detailId;
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -142,7 +142,7 @@ async function flushAsync(): Promise<void> {
  * the left column, not centered on the whole panel width.
  */
 function slotZeroPos(scene: CardScene, groupsCount: number): { x: number; y: number } {
-  const headerH = (scene as unknown as { headerH: number }).headerH;
+  const headerH = (scene as unknown as { core: { headerH: number } }).core.headerH;
   const topLimit = headerH + 4;
   const availH = Math.max(0, (H - 8) - topLimit);
   const listRows = Math.min(Math.max(groupsCount, 1), 4);
@@ -206,12 +206,12 @@ function baseCb(cardInv: Record<string, CardInstance>, overrides: Partial<CardCa
 }
 
 function openFuse(scene: CardScene, target: CardInstance): void {
-  (scene as unknown as { openFuseSelect: (c: CardInstance) => void }).openFuseSelect(target);
+  (scene as unknown as { feed: { openFuseSelect: (c: CardInstance) => void } }).feed.openFuseSelect(target);
   // The placeholder fusion animation drives itself off requestAnimationFrame, which the headless
   // PIXI test harness stubs to a no-op that never re-invokes its callback (see pixiHeadless.ts) —
   // any test that taps Confirm on a fully-filled ring must stub this first, or the awaited
   // doFuse()/playFusionAnim() promise chain hangs forever.
-  (scene as unknown as { playFusionAnim: () => Promise<void> }).playFusionAnim = async () => {};
+  (scene as unknown as { feed: { playFusionAnim: () => Promise<void> } }).feed.playFusionAnim = async () => {};
 }
 
 const MAX_NAME = t('card.max.name' as never);
@@ -379,7 +379,7 @@ describe('CardScene fuse panel — candidate list scroll state', () => {
     const { scene, input } = buildSceneWithInput(baseCb(cardInv));
     openFuse(scene, target);
     expect(feedScrollPxOf(scene)).toBe(0);
-    expect((scene as unknown as { feedScrollMax: number }).feedScrollMax).toBe(0);
+    expect((scene as unknown as { core: { feedScrollMax: number } }).core.feedScrollMax).toBe(0);
 
     // A drag over the (non-overflowing) list is a no-op, not a crash.
     const startPos = findLabelPos(modalLayerOf(scene), MAX_NAME)!;
@@ -401,7 +401,7 @@ describe('CardScene fuse panel — auto-retarget when the tapped card has too fe
 
     const spy = vi.spyOn(log, 'showToastMessage');
     const scene = buildScene(baseCb(cardInv));
-    (scene as unknown as { openFuseSelect: (c: CardInstance) => void }).openFuseSelect(target);
+    (scene as unknown as { feed: { openFuseSelect: (c: CardInstance) => void } }).feed.openFuseSelect(target);
 
     expect(spy).toHaveBeenCalledTimes(1);
     expect(spy.mock.calls[0][0]).toBe(t('roster.fuseAutoRetarget'));
@@ -440,7 +440,7 @@ describe('CardScene fuse panel — auto-retarget when the tapped card has too fe
 
     const spy = vi.spyOn(log, 'showToastMessage');
     const scene = buildScene(baseCb(cardInv));
-    (scene as unknown as { openFuseSelect: (c: CardInstance) => void }).openFuseSelect(target);
+    (scene as unknown as { feed: { openFuseSelect: (c: CardInstance) => void } }).feed.openFuseSelect(target);
 
     expect(spy).toHaveBeenCalledTimes(1);
     // Ring centers on sameFactionLow (Lv.1, faction anna), not crossFactionHigh despite its higher level.
@@ -467,7 +467,7 @@ describe('CardScene fuse panel — auto-retarget when the tapped card has too fe
     const scene = buildScene(baseCb(cardInv, {
       getCardState: () => ({ deployedCard: { teamId: 'team-1' } }),
     } as unknown as Partial<CardCallbacks>));
-    (scene as unknown as { openFuseSelect: (c: CardInstance) => void }).openFuseSelect(target);
+    (scene as unknown as { feed: { openFuseSelect: (c: CardInstance) => void } }).feed.openFuseSelect(target);
 
     expect(spy).toHaveBeenCalledTimes(1);
     // Ring centers on deployedCard (Lv.1), not benchCard (Lv.2) — deployed outranks the higher level.
@@ -494,7 +494,7 @@ describe('CardScene fuse panel — auto-retarget when the tapped card has too fe
     const scene = buildScene(baseCb(cardInv, {
       getCardState: () => ({ deployedOther: { teamId: 'team-1' } }),
     } as unknown as Partial<CardCallbacks>));
-    (scene as unknown as { openFuseSelect: (c: CardInstance) => void }).openFuseSelect(target);
+    (scene as unknown as { feed: { openFuseSelect: (c: CardInstance) => void } }).feed.openFuseSelect(target);
 
     expect(spy).toHaveBeenCalledTimes(1);
     // Ring centers on deployedOther (Lv.1), not sameDefIdBench (Lv.2) — deployed now outranks matching
@@ -725,11 +725,11 @@ describe('CardScene fuse panel — animation is not torn down by the busy re-ren
     for (let i = 0; i < FUSION_MATERIAL_COUNT; i++) cardInv[`mat${i}`] = makeCard(`mat${i}`, 'max', { level: 3 });
 
     const scene = buildScene(baseCb(cardInv));
-    priv(scene).openFuseSelect(target);
-    priv(scene).detailId = target.id; // the fuse is always reached from the detail modal in production
+    priv(scene).feed.openFuseSelect(target);
+    priv(scene).core.detailId = target.id; // the fuse is always reached from the detail modal in production
     // Hold the animation open so the fuse stays in flight while we pump update().
     let releaseAnim: () => void = () => {};
-    priv(scene).playFusionAnim = () => new Promise<void>((r) => { releaseAnim = r; });
+    priv(scene).feed.playFusionAnim = () => new Promise<void>((r) => { releaseAnim = r; });
 
     const rowLabel = MAX_NAME;
     for (let i = 0; i < FUSION_MATERIAL_COUNT; i++) {
@@ -738,8 +738,8 @@ describe('CardScene fuse panel — animation is not torn down by the busy re-ren
     hitUnder(modalHitsOf(scene), findLabelPos(modalLayerOf(scene), `${t('roster.fuseBtn')} (${FUSION_MATERIAL_COUNT}/${FUSION_MATERIAL_COUNT})`)!)!.action();
     await flushAsync(); // doFuse → fuseCards resolves → parks on the awaited playFusionAnim
 
-    expect(priv(scene).fuseInProgress).toBe(true);
-    const openDetailSpy = vi.spyOn(priv(scene), 'openDetail');
+    expect(priv(scene).core.fuseInProgress).toBe(true);
+    const openDetailSpy = vi.spyOn(priv(scene).detail, 'openDetail');
 
     // Cross the 1s loading threshold, then several dot cycles — the OLD bug rebuilt the modal here.
     priv(scene).update(1.2);
@@ -750,7 +750,7 @@ describe('CardScene fuse panel — animation is not torn down by the busy re-ren
 
     releaseAnim();
     await flushAsync();
-    expect(priv(scene).fuseInProgress).toBe(false); // flag released so the scene isn't stuck busy
+    expect(priv(scene).core.fuseInProgress).toBe(false); // flag released so the scene isn't stuck busy
     openDetailSpy.mockRestore();
   });
 
@@ -778,11 +778,11 @@ describe('CardScene fuse panel — animation is not torn down by the busy re-ren
         return { ok: true };
       },
     }));
-    priv(scene).openFuseSelect(target);
-    priv(scene).detailId = target.id; // the fuse is always reached from the detail modal in production
+    priv(scene).feed.openFuseSelect(target);
+    priv(scene).core.detailId = target.id; // the fuse is always reached from the detail modal in production
     // Hold the animation open so we can inspect the modal right after fuseCards resolves.
     let releaseAnim: () => void = () => {};
-    priv(scene).playFusionAnim = () => new Promise<void>((r) => { releaseAnim = r; });
+    priv(scene).feed.playFusionAnim = () => new Promise<void>((r) => { releaseAnim = r; });
 
     const rowLabel = MAX_NAME;
     for (let i = 0; i < FUSION_MATERIAL_COUNT; i++) {
@@ -811,14 +811,14 @@ describe('CardScene fuse panel — animation is not torn down by the busy re-ren
       for (let i = 0; i < FUSION_MATERIAL_COUNT; i++) cardInv[`mat${i}`] = makeCard(`mat${i}`, 'max', { level: 3 });
 
       const scene = buildScene(baseCb(cardInv));
-      priv(scene).openFuseSelect(target); // real playFusionAnim
-      priv(scene).fuseRingGeom = null; // skip the converge phase → straight to the burst phase
+      priv(scene).feed.openFuseSelect(target); // real playFusionAnim
+      priv(scene).feed.fuseRingGeom = null; // skip the converge phase → straight to the burst phase
 
-      const p = priv(scene).playFusionAnim() as Promise<void>;
+      const p = priv(scene).feed.playFusionAnim() as Promise<void>;
       expect(rafQueue.length).toBe(1); // burst phase registered its first frame synchronously
 
       // Destroy the burst/flash out from under the loop — exactly what the busy re-render used to do.
-      tearDownChildren(priv(scene).modalLayer);
+      tearDownChildren(priv(scene).core.modalLayer);
       // The next frame must NOT throw "Cannot read properties of null (reading 'clear')".
       expect(() => rafQueue.shift()!(performance.now())).not.toThrow();
       await p; // and the promise resolves instead of hanging forever
@@ -841,8 +841,8 @@ describe('CardScene fuse panel — animation is not torn down by the busy re-ren
       for (let i = 0; i < FUSION_MATERIAL_COUNT; i++) cardInv[`mat${i}`] = makeCard(`mat${i}`, 'max', { level: 3 });
 
       const scene = buildScene(baseCb(cardInv));
-      priv(scene).openFuseSelect(target); // REAL playFusionAnim, driven by the controllable rAF + clock
-      priv(scene).detailId = target.id;
+      priv(scene).feed.openFuseSelect(target); // REAL playFusionAnim, driven by the controllable rAF + clock
+      priv(scene).core.detailId = target.id;
 
       const rowLabel = MAX_NAME;
       for (let i = 0; i < FUSION_MATERIAL_COUNT; i++) {
@@ -869,8 +869,8 @@ describe('CardScene fuse panel — animation is not torn down by the busy re-ren
       await flushAsync();
 
       expect(threw).toBeNull();                 // no "reading 'clear'" crash
-      expect(priv(scene).bt.busy).toBe(false);  // fuse settled — didn't hang on an unresolved promise
-      expect(priv(scene).fuseInProgress).toBe(false);
+      expect(priv(scene).core.bt.busy).toBe(false);  // fuse settled — didn't hang on an unresolved promise
+      expect(priv(scene).core.fuseInProgress).toBe(false);
       expect(modalOpenOf(scene)).toBe(false);   // level-3 target closes the panel after a successful fuse
       expect(detailIdOf(scene)).toBeNull();
     } finally {
@@ -887,7 +887,7 @@ describe('CardScene fuse panel — animation is not torn down by the busy re-ren
     // Server error path: fuseCards throws (playFusionAnim is never reached, so its stub is moot).
     const scene = buildScene(baseCb(cardInv, { fuseCards: async () => { throw new Error('network boom'); } }));
     openFuse(scene, target);
-    priv(scene).detailId = target.id;
+    priv(scene).core.detailId = target.id;
 
     const rowLabel = MAX_NAME;
     for (let i = 0; i < FUSION_MATERIAL_COUNT; i++) {
@@ -896,8 +896,8 @@ describe('CardScene fuse panel — animation is not torn down by the busy re-ren
     hitUnder(modalHitsOf(scene), findLabelPos(modalLayerOf(scene), `${t('roster.fuseBtn')} (${FUSION_MATERIAL_COUNT}/${FUSION_MATERIAL_COUNT})`)!)!.action();
     await flushAsync();
 
-    expect(priv(scene).fuseInProgress).toBe(false); // finally cleared it even though the fuse failed
-    expect(priv(scene).bt.busy).toBe(false);
+    expect(priv(scene).core.fuseInProgress).toBe(false); // finally cleared it even though the fuse failed
+    expect(priv(scene).core.bt.busy).toBe(false);
     // The busy re-render is no longer suppressed, and normal update() ticks still work.
     expect(() => priv(scene).update(0.1)).not.toThrow();
   });
@@ -924,7 +924,7 @@ describe('CardScene fuse panel — animation is not torn down by the busy re-ren
     });
 
     expect(findLabelPos(headerOverlayLayerOf(scene), (100).toLocaleString())).not.toBeNull();
-    expect(priv(scene).fuseInProgress).toBe(false);
+    expect(priv(scene).core.fuseInProgress).toBe(false);
 
     // Nobody calls scene.render() themselves — this must be the onSaveChanged listener alone.
     mgr.update((s) => { s.wallet.coins = 250; });
@@ -964,9 +964,9 @@ describe('CardScene fuse panel — animation is not torn down by the busy re-ren
       getEquippedSkin: () => null,
       equipSkin() {},
     });
-    priv(scene).openFuseSelect(target);
-    priv(scene).detailId = target.id;
-    priv(scene).playFusionAnim = async () => {}; // no rAF driving in this test
+    priv(scene).feed.openFuseSelect(target);
+    priv(scene).core.detailId = target.id;
+    priv(scene).feed.playFusionAnim = async () => {}; // no rAF driving in this test
 
     const rowLabel = MAX_NAME;
     for (let i = 0; i < FUSION_MATERIAL_COUNT; i++) {
@@ -975,7 +975,7 @@ describe('CardScene fuse panel — animation is not torn down by the busy re-ren
     hitUnder(modalHitsOf(scene), findLabelPos(modalLayerOf(scene), `${t('roster.fuseBtn')} (${FUSION_MATERIAL_COUNT}/${FUSION_MATERIAL_COUNT})`)!)!.action();
     await flushAsync();
 
-    expect(priv(scene).fuseInProgress).toBe(false); // fuse settled, guard released
+    expect(priv(scene).core.fuseInProgress).toBe(false); // fuse settled, guard released
     expect(modalOpenOf(scene)).toBe(false);          // level-3 target closed the panel on settle
     expect(findLabelPos(headerOverlayLayerOf(scene), (500).toLocaleString())).not.toBeNull(); // picked up the fuse's own coin change on settle
 
@@ -1020,8 +1020,8 @@ describe('CardScene fuse panel — post-burst halo (2026-08-02 strengthened endi
     const cardInv: Record<string, CardInstance> = { target };
     for (let i = 0; i < FUSION_MATERIAL_COUNT; i++) cardInv[`mat${i}`] = makeCard(`mat${i}`, 'max', { level: 3 });
     const scene = buildScene(baseCb(cardInv));
-    priv(scene).openFuseSelect(target);
-    priv(scene).fuseRingGeom = null; // skip the converge phase → straight to the burst/halo phase
+    priv(scene).feed.openFuseSelect(target);
+    priv(scene).feed.fuseRingGeom = null; // skip the converge phase → straight to the burst/halo phase
 
     return {
       scene, rafQueue, clock,
@@ -1032,14 +1032,14 @@ describe('CardScene fuse panel — post-burst halo (2026-08-02 strengthened endi
   it('keeps something on screen after the burst\'s own ~700ms is over, then fully cleans up', async () => {
     const { scene, rafQueue, clock, restore } = setup();
     try {
-      const staticChildCount = priv(scene).modalLayer.children.length;
-      const p = priv(scene).playFusionAnim() as Promise<void>;
+      const staticChildCount = priv(scene).core.modalLayer.children.length;
+      const p = priv(scene).feed.playFusionAnim() as Promise<void>;
       expect(rafQueue.length).toBe(1); // first frame registered synchronously
 
       driveFrames(rafQueue, clock, 13); // 13 * 60ms = 780ms elapsed — past the 700ms burst, well before the ~1180ms total
       // The shockwave (flash + burst ring/spokes) has torn itself down by now, but the halo is still
       // standing: one extra transient child beyond whatever the static ring/list panel already had.
-      expect(priv(scene).modalLayer.children.length).toBeGreaterThan(staticChildCount);
+      expect(priv(scene).core.modalLayer.children.length).toBeGreaterThan(staticChildCount);
       let resolved = false;
       p.then(() => { resolved = true; });
       await Promise.resolve();
@@ -1049,7 +1049,7 @@ describe('CardScene fuse panel — post-burst halo (2026-08-02 strengthened endi
       expect(rafQueue.length).toBe(0);
       await p;
 
-      expect(priv(scene).modalLayer.children.length).toBe(staticChildCount); // no leaked graphics
+      expect(priv(scene).core.modalLayer.children.length).toBe(staticChildCount); // no leaked graphics
     } finally {
       restore();
     }
@@ -1059,7 +1059,7 @@ describe('CardScene fuse panel — post-burst halo (2026-08-02 strengthened endi
     const { scene, rafQueue, clock, restore } = setup();
     const clearSpy = vi.spyOn(PIXI.Graphics.prototype, 'clear');
     try {
-      const p = priv(scene).playFusionAnim() as Promise<void>;
+      const p = priv(scene).feed.playFusionAnim() as Promise<void>;
 
       driveFrames(rafQueue, clock, 13); // past the 700ms burst
       const clearCallsAtBurstEnd = clearSpy.mock.calls.length;
@@ -1099,7 +1099,7 @@ describe('CardScene fuse panel — fills 80% of the primary viewport axis (2026-
     const scene = new CardScene(createLayout(1920, 1080), new InputManager(), baseCb(withMaterials(target)));
     openFuse(scene, target);
 
-    const availH = (1080 - 8) - ((priv(scene).headerH as number) + 4);
+    const availH = (1080 - 8) - ((priv(scene).core.headerH as number) + 4);
     expect(availH).toBeGreaterThanOrEqual(1080 * 0.8); // 80% is reachable, not clamped by the header
     expect(panelRect(scene).h).toBeCloseTo(1080 * 0.8, 0);
   });
@@ -1149,7 +1149,7 @@ describe('CardScene fuse panel — Cancel/backdrop do not abort an in-flight fus
     hitUnder(modalHitsOf(scene), findLabelPos(modalLayerOf(scene), `${t('roster.fuseBtn')} (${FUSION_MATERIAL_COUNT}/${FUSION_MATERIAL_COUNT})`)!)!.action();
     // doFuse's synchronous prelude (bt.start() + feedRedraw()) has already run by the time .action()
     // returns — fuseCards itself is still pending (we control its resolution above).
-    expect(priv(scene).bt.busy).toBe(true);
+    expect(priv(scene).core.bt.busy).toBe(true);
     const cancelPosBusy = findLabelPos(modalLayerOf(scene), t('equip.cancel'));
     expect(cancelPosBusy, 'Cancel label still present, dimmed').not.toBeNull();
     // Whatever hit (if any) now covers that pixel — the panel's own inert backdrop no-op legitimately
@@ -1159,9 +1159,9 @@ describe('CardScene fuse panel — Cancel/backdrop do not abort an in-flight fus
     expect(modalOpenOf(scene)).toBe(true);
 
     releaseFuse({ ok: true });
-    priv(scene).playFusionAnim = async () => {};
+    priv(scene).feed.playFusionAnim = async () => {};
     await flushAsync();
-    expect(priv(scene).bt.busy).toBe(false);
+    expect(priv(scene).core.bt.busy).toBe(false);
   });
 
   it('tapping the backdrop corner while busy does not close the panel (no stale onFuseSettled clobber later)', async () => {
@@ -1177,7 +1177,7 @@ describe('CardScene fuse panel — Cancel/backdrop do not abort an in-flight fus
     fillRing(scene, MAX_NAME);
     hitUnder(modalHitsOf(scene), findLabelPos(modalLayerOf(scene), `${t('roster.fuseBtn')} (${FUSION_MATERIAL_COUNT}/${FUSION_MATERIAL_COUNT})`)!)!.action();
 
-    expect(priv(scene).bt.busy).toBe(true);
+    expect(priv(scene).core.bt.busy).toBe(true);
     // Simulate the player tapping a screen corner (would hit the full-backdrop dismiss if it were
     // still registered) — must be a no-op: the ring stays open, nothing closes.
     const cornerHit = hitUnder(modalHitsOf(scene), { x: 1, y: 1 });
@@ -1185,7 +1185,7 @@ describe('CardScene fuse panel — Cancel/backdrop do not abort an in-flight fus
     expect(modalOpenOf(scene)).toBe(true); // still open — the request is still in flight
 
     releaseFuse({ ok: true });
-    priv(scene).playFusionAnim = async () => {};
+    priv(scene).feed.playFusionAnim = async () => {};
     await flushAsync();
   });
 });
@@ -1208,11 +1208,11 @@ describe('CardScene fuse panel — onFuseSettled destroyed-guard (2026-08-03 fix
       hitUnder(modalHitsOf(scene), findLabelPos(modalLayerOf(scene), MAX_NAME)!)!.action();
     }
     hitUnder(modalHitsOf(scene), findLabelPos(modalLayerOf(scene), `${t('roster.fuseBtn')} (${FUSION_MATERIAL_COUNT}/${FUSION_MATERIAL_COUNT})`)!)!.action();
-    expect(priv(scene).bt.busy).toBe(true);
+    expect(priv(scene).core.bt.busy).toBe(true);
 
     // Player backs out of the roster while the request is still in flight.
     scene.destroy();
-    expect(priv(scene).destroyed).toBe(true);
+    expect(priv(scene).core.destroyed).toBe(true);
 
     // The (now-stale) request finally resolves — must not throw.
     expect(() => releaseFuse({ ok: true })).not.toThrow();
@@ -1235,13 +1235,13 @@ describe('CardScene fuse panel — fuseRingOpen blocks external re-render from s
     const scene = buildScene(baseCb(cardInv, {
       onSaveChanged: (listener) => { savedListener = listener; return () => {}; },
     }));
-    priv(scene).openFuseSelect(target);
-    priv(scene).detailId = target.id; // the fuse is always reached from an already-open detail modal
+    priv(scene).feed.openFuseSelect(target);
+    priv(scene).core.detailId = target.id; // the fuse is always reached from an already-open detail modal
 
-    expect(priv(scene).fuseInProgress).toBe(false); // pre-confirm: no network call in flight yet
-    expect(priv(scene).fuseRingOpen).toBe(true);     // but the ring itself is still up
+    expect(priv(scene).core.fuseInProgress).toBe(false); // pre-confirm: no network call in flight yet
+    expect(priv(scene).core.fuseRingOpen).toBe(true);     // but the ring itself is still up
 
-    const openDetailSpy = vi.spyOn(priv(scene), 'openDetail');
+    const openDetailSpy = vi.spyOn(priv(scene).detail, 'openDetail');
     // An unrelated save mutation elsewhere (e.g. an overlay scene) fires the listener — this must NOT
     // reopen the plain detail popup over the still-in-progress ring.
     // (Indirected through a closure: reading `savedListener` in the same scope as its `let` declaration
@@ -1261,12 +1261,12 @@ describe('CardScene fuse panel — fuseRingOpen blocks external re-render from s
     for (let i = 0; i < FUSION_MATERIAL_COUNT; i++) cardInv[`mat${i}`] = makeCard(`mat${i}`, 'max', { level: 3 });
 
     const scene = buildScene(baseCb(cardInv));
-    priv(scene).openFuseSelect(target);
-    expect(priv(scene).fuseRingOpen).toBe(true);
+    priv(scene).feed.openFuseSelect(target);
+    expect(priv(scene).core.fuseRingOpen).toBe(true);
 
     hitUnder(modalHitsOf(scene), findLabelPos(modalLayerOf(scene), t('equip.cancel')) ?? { x: -1, y: -1 })?.action();
     // (Cancel's label key in CardScene reuses 'equip.cancel', same shared string as EquipmentScene.)
-    expect(priv(scene).fuseRingOpen).toBe(false);
+    expect(priv(scene).core.fuseRingOpen).toBe(false);
     expect(modalOpenOf(scene)).toBe(false);
   });
 });

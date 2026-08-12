@@ -1,5 +1,5 @@
 // Regression coverage for the portrait-art loading spinner (drawArtFit / drawLoadingSpinner,
-// CardScene/base.ts): a not-yet-loaded portrait texture used to leave its box blank (just the
+// CardScene/core.ts): a not-yet-loaded portrait texture used to leave its box blank (just the
 // sketchPanel frame behind it) until the texture streamed in. It now draws a hand-drawn spinning
 // ink ring in place, rotated every frame via update() — same visual language as the WorldMap
 // first-paint loading cover (WorldMapRenderer/build.ts buildLoadingOverlay).
@@ -26,7 +26,7 @@ const memStore = (() => {
 initI18n('en', memStore, ['zh', 'en', 'de']);
 
 type SceneInternals = {
-  activeSpinners: PIXI.Graphics[];
+  core: { activeSpinners: PIXI.Graphics[] };
   update(dt: number): void;
   render(): void;
   destroy(): void;
@@ -55,9 +55,9 @@ describe('CardScene — portrait art loading spinner', () => {
     // every portrait's baseTexture stays invalid for the life of the test — exactly the "still
     // streaming in" state drawArtFit now covers, for every card in the (skins-tab) grid.
     const scene = buildSkinsScene();
-    expect(scene.activeSpinners.length).toBeGreaterThan(0);
+    expect(scene.core.activeSpinners.length).toBeGreaterThan(0);
 
-    const spinner = scene.activeSpinners[0];
+    const spinner = scene.core.activeSpinners[0];
     const before = spinner.rotation;
     scene.update(1 / 60);
     expect(spinner.rotation).not.toBe(before);
@@ -67,11 +67,11 @@ describe('CardScene — portrait art loading spinner', () => {
 
   it('drops destroyed spinners instead of touching them on the next update', () => {
     const scene = buildSkinsScene();
-    const spinner = scene.activeSpinners[0];
+    const spinner = scene.core.activeSpinners[0];
     spinner.destroy();
     // Must not throw when a spinner was torn down (e.g. by a modal teardown) between renders.
     expect(() => scene.update(1 / 60)).not.toThrow();
-    expect(scene.activeSpinners).not.toContain(spinner);
+    expect(scene.core.activeSpinners).not.toContain(spinner);
     scene.destroy();
   });
 
@@ -80,31 +80,31 @@ describe('CardScene — portrait art loading spinner', () => {
     const cb: CardCallbacks = {
       ...baseCb(),
       getSave: () => ({ ...makeNewSave(), cardInv: { [owned.id]: owned } }),
-      // initialTab omitted — defaults to 'list' (base.ts: this.tab = cb.initialTab ?? 'list').
+      // initialTab omitted — defaults to 'list' (core.ts: this.tab = cb.initialTab ?? 'list').
     };
     const scene = new CardScene(createLayout(1920, 1080), new InputManager(), cb) as unknown as SceneInternals;
-    expect(scene.activeSpinners.length).toBeGreaterThan(0);
+    expect(scene.core.activeSpinners.length).toBeGreaterThan(0);
     scene.destroy();
   });
 
   it('does not accumulate spinners across repeated renders while still loading', () => {
     const scene = buildSkinsScene();
-    const n1 = scene.activeSpinners.length;
+    const n1 = scene.core.activeSpinners.length;
     expect(n1).toBeGreaterThan(0);
 
     // A re-render (e.g. triggered by a scroll or a save-changed callback) must tear down and
     // redraw the current frame's spinners, not pile new ones on top of stale destroyed ones.
     scene.render();
-    expect(scene.activeSpinners.length).toBe(n1);
+    expect(scene.core.activeSpinners.length).toBe(n1);
     scene.render();
-    expect(scene.activeSpinners.length).toBe(n1);
+    expect(scene.core.activeSpinners.length).toBe(n1);
 
     scene.destroy();
   });
 
   it('replaces the spinner with the real sprite once the texture finishes loading', () => {
     const scene = buildSkinsScene();
-    const before = scene.activeSpinners.length;
+    const before = scene.core.activeSpinners.length;
     expect(before).toBeGreaterThan(0);
 
     // lichuang (CARD_DEFS declaration order) → unit_infantry portrait — same url skins.ts resolved
@@ -123,7 +123,7 @@ describe('CardScene — portrait art loading spinner', () => {
     tex.baseTexture.emit('loaded', tex.baseTexture);
 
     // Every spinner is gone now that the (shared) texture is valid — none left "loading".
-    expect(scene.activeSpinners.length).toBe(0);
+    expect(scene.core.activeSpinners.length).toBe(0);
 
     scene.destroy();
   });

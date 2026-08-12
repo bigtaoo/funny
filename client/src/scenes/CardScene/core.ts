@@ -1,10 +1,24 @@
-// Shared foundation for the CardScene mixin chain (see ../CardScene.ts assembly).
+// Shared foundation for the CardScene composition (see ../CardScene.ts assembly).
 //
-// CardSceneBase holds every instance field (all `protected`, so the panel/action mixin bodies keep
-// referencing them verbatim: this.bt, this.detailId, this.modalLayer, …) + the layer scaffold (build),
-// the render dispatcher, the shared portrait helper (drawArtFit), modal/toast primitives, and the
-// input/lifecycle plumbing. Each UI domain (list / detail modal / feed flow) and the network actions
-// live in their own sibling file as `XMixin(Base)` and are chained into the final CardScene.
+// CardSceneCore holds every instance field (all public, so the domain classes below keep
+// referencing them via `this.core.xxx`: this.core.bt, this.core.detailId, this.core.modalLayer, …)
+// + the layer scaffold (build), the shared portrait helper (drawArtFit), modal/toast primitives, and
+// the input/lifecycle plumbing — but NOT the render() dispatcher, which lives on the outer
+// ../CardScene.ts assembly since only it knows about every domain class (Core takes a `render`
+// callback injected at construction instead of owning render() itself, so it never has to call
+// sideways into a sibling domain). Each domain (list / skins / detail / feed / actions) is its own
+// independent class in a sibling file, constructed with `core` (2026-08-11: converted from the
+// former `XMixin(Base)` inheritance chain — the render-dispatch upward calls this used to reach via
+// interface declaration merging are now explicit constructor params/callbacks instead, see
+// claudedocs/client-modules.md's split-form priority note).
+//
+// feed.ts's confirm-fuse button needs to call actions.ts's doFuse, but actions.ts is constructed
+// AFTER feed.ts in the outer assembly (actions.ts itself needs a `feed` reference for
+// playFusionAnim, so feed must exist first) — a genuine bidirectional dependency between feed and
+// actions. Rather than merge the two classes, {@link doFuse} is a lazy hook on Core (default no-op)
+// that the outer assembly overwrites with the real `(...) => this.actions.doFuse(...)` immediately
+// after constructing ActionsPanel — same "default no-op field, overwritten right after the real
+// sibling exists" pattern as AuctionScene's `reopenCreateForm`/SectScene's `allianceHooks`.
 //
 // CardScene — Hero Roster UI (CHARACTER_CARDS_DESIGN §10).
 //   List: card inventory grouped deployed-first, power desc within each group; capacity counter (n/500).
@@ -16,11 +30,9 @@ import type { ILayout } from '../../layout/ILayout';
 import type { InputManager } from '../../inputSystem/InputManager';
 import { t, type TranslationKey } from '../../i18n';
 import {
-  ui as C, txt, scaledTxt, buildPaperBackground, sketchPanel, seedFor,
-  drawLoadingOverlay, tearDownChildren,
+  ui as C, scaledTxt, buildPaperBackground, tearDownChildren,
 } from '../../render/sketchUi';
 import { buildDecorCLayer } from '../../render/decorCLayer';
-import { FS } from '../../render/fontScale';
 import { getArtTexture, containScale } from '../../render/cardArt';
 import { drawSceneHeader, HEADER_ACCENT } from '../../ui/widgets/SceneHeader';
 import { sidebarNavW } from '../../ui/widgets/HubTabs';
@@ -83,7 +95,7 @@ export interface CardCallbacks {
  * already-open roster — see game.ts goCardRoster.
  */
 export interface CardRosterView {
-  /** Re-render just the SLG-derived bits of already-visible cells; see CardSceneBase.applyCardState. */
+  /** Re-render just the SLG-derived bits of already-visible cells; see ListPanel.applyCardState. */
   applyCardState(): void;
 }
 
@@ -100,6 +112,8 @@ export const CARD_CELL_H = 266; // 1.5x the previous 177 (taller hero cards)
 export const CARD_CELL_W_TARGET = 300;
 
 export interface Rect { x: number; y: number; w: number; h: number; }
+
+export interface Hit { rect: Rect; action: () => void; owner?: string; }
 
 const DEF_ORDER = Object.keys(CARD_DEFS);
 
@@ -137,42 +151,40 @@ export function injuryCountdown(injuredUntil: number, now: number): string {
   return secsLeft >= 60 ? `${Math.ceil(secsLeft / 60)}m` : `${secsLeft}s`;
 }
 
-// ── Mixin plumbing ────────────────────────────────────────────────────────────
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export type Constructor<T = object> = new (...args: any[]) => T;
-export type CardSceneBaseCtor = Constructor<CardSceneBase>;
+/** feed.ts's fuse-confirm button call signature — see the file-header comment on {@link CardSceneCore.doFuse}. */
+export type DoFuseFn = (targetId: string, materialIds: string[], onSettled?: (success: boolean) => void) => Promise<void>;
 
-export class CardSceneBase {
+export class CardSceneCore {
   readonly container: PIXI.Container;
 
-  protected readonly w: number;
-  protected readonly h: number;
-  protected readonly landscape: boolean;
-  protected readonly cb: CardCallbacks;
-  protected readonly bt = new BusyTracker();
+  readonly w: number;
+  readonly h: number;
+  readonly landscape: boolean;
+  readonly cb: CardCallbacks;
+  readonly bt = new BusyTracker();
 
-  protected bodyLayer!: PIXI.Container;
-  protected modalLayer!: PIXI.Container;
-  protected loadingLayer!: PIXI.Container;
+  bodyLayer!: PIXI.Container;
+  modalLayer!: PIXI.Container;
+  loadingLayer!: PIXI.Container;
   /** Drawn after the static header chrome so the coin balance + capacity readout sit on the same row as the title (matches EquipmentScene, EQUIPMENT_DESIGN header-alignment fix). */
-  protected headerOverlayLayer!: PIXI.Container;
+  headerOverlayLayer!: PIXI.Container;
 
-  protected backRect: Rect = { x: 0, y: 0, w: 0, h: 0 };
+  backRect: Rect = { x: 0, y: 0, w: 0, h: 0 };
   /** Title-bar height, set from the shared header in build() — drives all body layout below it. */
-  protected headerH = 0;
+  headerH = 0;
   /** `owner` (card instance id) tags a roster-cell hit so applyCardState()'s refresh can drop and
-   *  re-add just that cell's hit without touching the rest of the list — see ListMixin.refreshCardCell. */
-  protected hitRects: { rect: Rect; action: () => void; owner?: string }[] = [];
-  protected modalHits: { rect: Rect; action: () => void }[] = [];
+   *  re-add just that cell's hit without touching the rest of the list — see ListPanel.refreshCardCell. */
+  hitRects: Hit[] = [];
+  modalHits: { rect: Rect; action: () => void }[] = [];
   /**
    * Drag-slider hit zones for the modal layer (feed quantity slider, 2026-07-18): unlike modalHits
    * (tap-vs-drag deferred to pointer-up via ScrollTapGesture), a slider must track the pointer live
    * while down, so it's a separate list checked first in handleDown/handleMove.
    */
-  protected modalSliders: { rect: Rect; onDrag: (x: number) => void }[] = [];
+  private modalSliders: { rect: Rect; onDrag: (x: number) => void }[] = [];
   /** Slider currently being dragged (set on a down inside a modalSliders rect), or null. */
   private activeModalSlider: ((x: number) => void) | null = null;
-  protected modalOpen = false;
+  modalOpen = false;
   /**
    * Detail-modal scale transform (popup-scale-to-80pct fix, 2026-07-14): the whole modal panel is
    * drawn in a local (unscaled) frame onto {@link modalPanelRoot}, then that container is scaled up
@@ -180,14 +192,14 @@ export class CardSceneBase {
    * be converted to real screen space via {@link toModalScreen} — identity (scale 1, origin 0) when
    * no modal is open.
    */
-  protected modalScale = 1;
-  protected modalOriginX = 0;
-  protected modalOriginY = 0;
+  modalScale = 1;
+  modalOriginX = 0;
+  modalOriginY = 0;
   /** Container for modal-panel content that should scale/position as one unit — see {@link modalScale}. */
-  protected modalPanelRoot!: PIXI.Container;
+  modalPanelRoot!: PIXI.Container;
 
-  protected detailId: string | null = null;
-  protected scrollY = 0;
+  detailId: string | null = null;
+  scrollY = 0;
   /**
    * Vertical bounds + max scroll of whichever grid is currently on screen (roster list / skins
    * wardrobe — mutually exclusive, so one set of fields covers both). Set at the end of each
@@ -195,9 +207,9 @@ export class CardSceneBase {
    * wheelScroll.ts) since neither render pass otherwise stores its listY/viewH/maxScroll past the
    * render() call that computed them.
    */
-  protected scrollRegionTop = 0;
-  protected scrollRegionBottom = 0;
-  protected maxScroll = 0;
+  scrollRegionTop = 0;
+  scrollRegionBottom = 0;
+  maxScroll = 0;
   /**
    * Tap-vs-drag gesture tracker: defers a cell's hit action to pointer-up and drops it if the pointer
    * dragged (so a drag starting on a card scrolls instead of opening its detail). See ScrollTapGesture.
@@ -206,25 +218,25 @@ export class CardSceneBase {
   /** Set by handleMove instead of rendering inline — see EquipmentSceneBase.scrollDirty for why. */
   private scrollDirty = false;
   /** [Cards|Equipment?|Skins] sidebar nav — always shown (Skins is always reachable, LOBBY_IA_REDESIGN §15). */
-  protected readonly showSidebar = true;
+  private readonly showSidebar = true;
   /** Active content tab: the card grid, or the skins wardrobe. */
-  protected tab: CardSceneTab = 'list';
+  tab: CardSceneTab = 'list';
   /** Detail modal portrait flip state (front = art, back = lore) — tap the portrait to flip. */
-  protected detailFlipped = false;
+  detailFlipped = false;
   /** Detail modal: whether the skin picker popover is open. */
-  protected skinPickerOpen = false;
+  skinPickerOpen = false;
   /** Feed-select modal: pixel scroll offset of the (drag-scrollable) material list. */
-  protected feedScrollPx = 0;
+  feedScrollPx = 0;
   /** Feed-select modal: largest valid {@link feedScrollPx} (contentH − listH); set each redraw. */
-  protected feedScrollMax = 0;
+  feedScrollMax = 0;
   /** Feed-select modal: latched by a drag-move, consumed in update() to redraw at most once per frame. */
-  protected feedScrollDirty = false;
-  /** Feed-select modal: the panel redraw closure, so base input/update code can re-draw it. Null when closed. */
-  protected feedRedraw: (() => void) | null = null;
+  private feedScrollDirty = false;
+  /** Feed-select modal: the panel redraw closure, so update()/handleMove can re-draw it. Null when closed. */
+  feedRedraw: (() => void) | null = null;
   /** Removes the in-flight portrait flip's PIXI.Ticker.shared listener, if any (avoids leaking it across re-renders/destroy). */
-  protected flipTickerCleanup: (() => void) | null = null;
+  flipTickerCleanup: (() => void) | null = null;
 
-  protected destroyed = false;
+  destroyed = false;
   /**
    * True for the whole span of a fuse (network call + `playFusionAnim`). While set, the busy-dots
    * re-render in `update()` must NOT run: `render()` would reopen the detail modal (detailId stays
@@ -233,30 +245,46 @@ export class CardSceneBase {
    * "Cannot read properties of null (reading 'clear')", which also leaves the fuse promise unresolved
    * and `bt.busy` stuck on forever. The fuse ring is already drawn (feedRedraw) and stays put.
    */
-  protected fuseInProgress = false;
+  fuseInProgress = false;
   /**
    * True for the whole span the fusion ring is shown (openFuseSelect → actually closed/settled),
    * a strict superset of fuseInProgress (which only covers the network-call span). Pre-confirm —
    * while the player is still picking materials — `openFuseSelect` never clears `detailId`, so an
    * unguarded `render()`/`applyCardState()` (e.g. from `cb.onSaveChanged` firing for an unrelated
    * save change) would reopen the plain detail popup over the still-open ring (2026-08-03 fix) —
-   * `render()`'s modal dispatch and `applyCardState()` both check this before touching detailId.
+   * the assembly's `render()` dispatch and `applyCardState()` both check this before touching detailId.
    */
-  protected fuseRingOpen = false;
-  protected readonly unsubs: (() => void)[] = [];
+  fuseRingOpen = false;
+  private readonly unsubs: (() => void)[] = [];
   /** Portrait urls whose texture we've hooked for a one-shot re-render on load. */
-  protected readonly artHooked = new Set<string>();
+  private readonly artHooked = new Set<string>();
   /**
    * Ink-ring spinners currently drawn in place of not-yet-loaded portrait art (see drawArtFit /
-   * drawLoadingSpinner). Repopulated every render() pass; update() spins whichever of these are
-   * still alive (a render pass elsewhere — e.g. openDetail's own tearDownChildren — may have
-   * destroyed one before the next full render() clears the array, hence the `destroyed` filter).
+   * drawLoadingSpinner). Repopulated every render() pass (by the outer assembly); update() spins
+   * whichever of these are still alive (a render pass elsewhere — e.g. openDetail's own
+   * tearDownChildren — may have destroyed one before the next full render() clears the array, hence
+   * the `destroyed` filter).
    */
-  protected activeSpinners: PIXI.Graphics[] = [];
+  activeSpinners: PIXI.Graphics[] = [];
   /** Shared rotation angle for {@link activeSpinners}, advanced in update(). */
   private spinnerAngle = 0;
 
-  constructor(layout: ILayout, input: InputManager, cb: CardCallbacks) {
+  /**
+   * Fuse network action — see the file-header comment. Default no-op until the outer assembly
+   * overwrites it right after constructing ActionsPanel.
+   */
+  doFuse: DoFuseFn = async () => {};
+
+  /** @param render Injected by the outer CardScene assembly (which owns the actual render
+   *  dispatcher, since it's the only thing that knows about every domain class) — Core and the
+   *  domain classes call `this.render()`/`this.core.render()` wherever the old flattened class
+   *  called its own `render()` method verbatim. */
+  constructor(
+    layout: ILayout,
+    input: InputManager,
+    cb: CardCallbacks,
+    readonly render: () => void,
+  ) {
     this.w = layout.designWidth;
     this.h = layout.designHeight;
     this.landscape = layout.orientation === 'landscape';
@@ -264,7 +292,6 @@ export class CardSceneBase {
     this.tab = cb.initialTab ?? 'list';
     this.container = new PIXI.Container();
     this.build();
-    this.render();
 
     this.unsubs.push(input.onDown((x, y) => this.handleDown(x, y)));
     this.unsubs.push(input.onMove((x, y) => this.handleMove(x, y)));
@@ -311,39 +338,12 @@ export class CardSceneBase {
     this.container.addChild(this.headerOverlayLayer);
   }
 
-  // ── Render ────────────────────────────────────────────────────────────────
-
-  protected render(): void {
-    if (this.destroyed) return;
-    tearDownChildren(this.bodyLayer);
-    this.hitRects = [];
-    tearDownChildren(this.loadingLayer);
-    this.activeSpinners = [];
-    this.hitRects.push({ rect: this.backRect, action: () => this.cb.onBack() });
-
-    this.renderHeaderCurrency();
-    this.renderSidebar();
-    if (this.tab === 'skins') this.renderSkinsTab();
-    else this.renderList();
-
-    if (this.fuseRingOpen) {
-      // The fusion ring owns its own redraw (feedRedraw) and must not be reopened-over or closed by
-      // a generic render() pass — see fuseRingOpen's doc comment.
-    } else if (this.tab === 'list' && this.detailId) {
-      this.openDetail(this.detailId);
-    } else if (this.modalOpen) {
-      this.closeModal();
-    }
-
-    if (this.bt.loadingVisible) drawLoadingOverlay(this.loadingLayer, this.w, this.h, this.bt.dots, t('common.processing'));
-  }
-
   /**
    * Draw a unit portrait, centered & fit into a box; re-render once the texture loads.
    * Pass `boxH` to fit into a (possibly non-square) rectangle — the portrait scales to
    * whichever axis is tighter and stays centered, so tall cells never clip or stretch it.
    */
-  protected drawArtFit(url: string, x: number, y: number, box: number, layer: PIXI.Container = this.bodyLayer, boxH?: number): void {
+  drawArtFit(url: string, x: number, y: number, box: number, layer: PIXI.Container = this.bodyLayer, boxH?: number): void {
     const tex = getArtTexture(url);
     const bh = boxH ?? box;
     if (!tex.baseTexture.valid) {
@@ -381,14 +381,14 @@ export class CardSceneBase {
 
   // ── Modal helpers ─────────────────────────────────────────────────────────
 
-  protected closeDetail(): void {
+  closeDetail(): void {
     this.detailId = null;
     this.detailFlipped = false;
     this.skinPickerOpen = false;
     this.closeModal();
   }
 
-  protected closeModal(): void {
+  closeModal(): void {
     this.flipTickerCleanup?.();
     this.flipTickerCleanup = null;
     tearDownChildren(this.modalLayer);
@@ -407,7 +407,7 @@ export class CardSceneBase {
   }
 
   /** Convert a rect drawn in {@link modalPanelRoot}'s local (unscaled) space into real screen space. */
-  protected toModalScreen(r: Rect): Rect {
+  toModalScreen(r: Rect): Rect {
     return {
       x: this.modalOriginX + r.x * this.modalScale,
       y: this.modalOriginY + r.y * this.modalScale,
@@ -420,13 +420,13 @@ export class CardSceneBase {
    * `txt()` for content drawn onto {@link modalPanelRoot} — compensates PIXI.Text's raster
    * blur from the later `modalPanelRoot.scale.set(modalScale)` (see {@link scaledTxt}).
    */
-  protected stxt(label: string, size: number, color: number, bold = false, wordWrapWidth?: number): PIXI.Text {
+  stxt(label: string, size: number, color: number, bold = false, wordWrapWidth?: number): PIXI.Text {
     return scaledTxt(this.modalScale)(label, size, color, bold, wordWrapWidth);
   }
 
   // ── Toast ─────────────────────────────────────────────────────────────────
 
-  protected showToast(msg: string, color: number = C.dark): void {
+  showToast(msg: string, color: number = C.dark): void {
     showToastMessage(msg, color === C.red ? 'error' : 'success');
   }
 
@@ -516,36 +516,4 @@ export class CardSceneBase {
     this.unsubs.length = 0;
     this.container.destroy({ children: true });
   }
-}
-
-// ── Panel/action entrypoints dispatched to from base-level code (render) and across sibling mixins
-// (list → openDetail; detail → feed/actions; feed → actions). Declared via interface/class declaration
-// merging so base-level `this.renderList()` / `this.openDetail()` type-check as METHODS (not properties,
-// which would clash with the mixin override — TS2425). Emits NOTHING at runtime, so the real prototype
-// methods provided by the mixins run and all method bodies stay verbatim.
-export interface CardSceneBase {
-  renderSidebar(): void;
-  renderHeaderCurrency(): void;
-  renderList(): void;
-  renderCardCell(card: CardInstance, x: number, y: number, cellW: number, state: CardSLGState | undefined, now: number, save: SaveData): void;
-  /**
-   * Re-render only the SLG-derived bits (border color / troop count / deployed tag, + the detail
-   * modal if open) of already-visible roster cells, after cb.getCardState()/getTeamName() data
-   * changes — e.g. a worldsvc fetch that resolved after the roster's own load window gave up
-   * (game.ts goCardRoster). No full render(): deliberately does NOT re-sort/reposition cells even
-   * though sortCards' deployed-first grouping does read this same state — a card that *becomes*
-   * deployed via this late patch stays wherever it was already drawn until the next full render(),
-   * trading perfect ordering for not yanking the grid (and the user's scroll position) out from
-   * under them right as they're looking at it.
-   */
-  applyCardState(): void;
-  openDetail(cardId: string): void;
-  renderDetailGearSlots(card: CardInstance, mx: number, cy: number, mw: number, save: SaveData): void;
-  openFuseSelect(target: CardInstance): void;
-  doFuse(targetId: string, materialIds: string[], onSettled?: (success: boolean) => void): Promise<void>;
-  doSetLock(cardId: string, locked: boolean): Promise<void>;
-  doRecover(cardId: string): Promise<void>;
-  renderSkinsTab(): void;
-  /** Placeholder in-engine fusion animation (programmer art; see FeedMixin). Resolves when it finishes. */
-  playFusionAnim?(): Promise<void>;
 }

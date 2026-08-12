@@ -1,6 +1,6 @@
 // Coverage for ADR-058's busy-lock + button-greying extension to FamilyScene: a mutating action
 // (create/leave here, representative of dissolve/kick/setRole/join-request-response which share
-// the same `if (this.bt.busy) return; ... withTimeout(...) ... finally { this.bt.stop(); render() }`
+// the same `if (core.bt.busy) return; ... withTimeout(...) ... finally { core.bt.stop(); render() }`
 // wrapper) must not fire twice while the first request is in flight, the acting button must grey
 // out (no hit rect) during that window, and a hung request must time out and recover.
 //
@@ -30,6 +30,9 @@ function stubWorldApi(overrides: Partial<WorldApiClient> = {}): WorldApiClient {
   return { ...overrides } as unknown as WorldApiClient;
 }
 
+/** Scene state (mode/family/members/bt/hitRects/…) lives on `scene.core`; mutating actions
+ *  (doCreate/doLeave/…) live on `scene.actions` — see FamilyScene/core.ts's file-header comment
+ *  (2026-08-11 mixin→composition conversion). */
 function buildCreateScene(worldApi: WorldApiClient): any {
   const scene: any = new FamilyScene(createLayout(W, H), new InputManager(), {
     onBack() {}, onOpenSect() {}, onNavTab() {},
@@ -37,9 +40,9 @@ function buildCreateScene(worldApi: WorldApiClient): any {
     getFriendPublicIds: async () => new Set<string>(),
     addFriend: async () => {}, openChat: () => {},
   });
-  scene.mode = 'create';
-  scene.createName = 'Iron Quill';
-  scene.createTag = 'IRQ';
+  scene.core.mode = 'create';
+  scene.core.createName = 'Iron Quill';
+  scene.core.createTag = 'IRQ';
   scene.render();
   return scene;
 }
@@ -53,10 +56,10 @@ function buildMyFamilyScene(worldApi: WorldApiClient, members: FamilyMemberView[
     getFriendPublicIds: async () => new Set<string>(),
     addFriend: async () => {}, openChat: () => {},
   });
-  scene.family = { familyId: 'fam1', name: 'Iron Quill', tag: 'IRQ', leaderId: members.find((m) => m.role === 'leader')?.accountId ?? 'me', memberCount: members.length, prosperity: 0 };
-  scene.members = members;
-  scene.messages = [];
-  scene.mode = 'myFamily';
+  scene.core.family = { familyId: 'fam1', name: 'Iron Quill', tag: 'IRQ', leaderId: members.find((m) => m.role === 'leader')?.accountId ?? 'me', memberCount: members.length, prosperity: 0 };
+  scene.core.members = members;
+  scene.core.messages = [];
+  scene.core.mode = 'myFamily';
   scene.render();
   return scene;
 }
@@ -82,23 +85,23 @@ describe('FamilyScene — busy lock prevents duplicate requests', () => {
     const createFamily = vi.fn(() => new Promise<never>(() => {})); // never resolves
     const scene = buildCreateScene(stubWorldApi({ createFamily }));
 
-    void scene.doCreate();
-    void scene.doCreate(); // busy — must short-circuit before touching worldApi
+    void scene.actions.doCreate();
+    void scene.actions.doCreate(); // busy — must short-circuit before touching worldApi
     await Promise.resolve();
 
     expect(createFamily).toHaveBeenCalledTimes(1);
-    expect(scene.bt.busy).toBe(true);
+    expect(scene.core.bt.busy).toBe(true);
   });
 
   it('doCreate: unlocks and switches to myFamily once the request resolves', async () => {
     const createFamily = vi.fn(async () => ({ familyId: 'fam1', name: 'Iron Quill', tag: 'IRQ', leaderId: 'me', memberCount: 1, prosperity: 0, members: [] }));
     const scene = buildCreateScene(stubWorldApi({ createFamily }));
 
-    await scene.doCreate();
+    await scene.actions.doCreate();
 
     expect(createFamily).toHaveBeenCalledTimes(1);
-    expect(scene.bt.busy).toBe(false);
-    expect(scene.mode).toBe('myFamily');
+    expect(scene.core.bt.busy).toBe(false);
+    expect(scene.core.mode).toBe('myFamily');
   });
 });
 
@@ -109,10 +112,10 @@ describe('FamilyScene — Create button greys out while busy', () => {
 
     const pos = findLabelPos(scene.container, t('family.create'));
     expect(pos).not.toBeNull();
-    expect(hitUnder(scene.hitRects, pos!)).toBeDefined(); // idle: clickable
+    expect(hitUnder(scene.core.hitRects, pos!)).toBeDefined(); // idle: clickable
 
-    void scene.doCreate();
-    expect(hitUnder(scene.hitRects, pos!)).toBeUndefined(); // busy: greyed out, no hit rect
+    void scene.actions.doCreate();
+    expect(hitUnder(scene.core.hitRects, pos!)).toBeUndefined(); // busy: greyed out, no hit rect
   });
 });
 
@@ -127,10 +130,10 @@ describe('FamilyScene — own-row Leave button greys out while busy', () => {
 
     const pos = findLabelPos(scene.container, t('family.leave'));
     expect(pos).not.toBeNull();
-    expect(hitUnder(scene.hitRects, pos!)).toBeDefined();
+    expect(hitUnder(scene.core.hitRects, pos!)).toBeDefined();
 
-    void scene.doLeave();
-    expect(hitUnder(scene.hitRects, pos!)).toBeUndefined();
+    void scene.actions.doLeave();
+    expect(hitUnder(scene.core.hitRects, pos!)).toBeUndefined();
     expect(leaveFamily).toHaveBeenCalledTimes(1);
   });
 });
@@ -145,14 +148,14 @@ describe('FamilyScene — network timeout recovers cleanly', () => {
         { accountId: 'lead', role: 'leader', joinedAt: 0, displayName: 'Boss', publicId: '2' },
       ];
       const scene = buildMyFamilyScene(stubWorldApi({ leaveFamily }), members, 'me');
-      const showToast = vi.spyOn(scene, 'showToast');
+      const showToast = vi.spyOn(scene.core, 'showToast');
 
-      const pending = scene.doLeave();
+      const pending = scene.actions.doLeave();
       await vi.advanceTimersByTimeAsync(10_001);
       await pending;
 
       expect(showToast).toHaveBeenCalledWith(t('common.networkTimeout'), expect.anything());
-      expect(scene.bt.busy).toBe(false);
+      expect(scene.core.bt.busy).toBe(false);
     } finally {
       vi.useRealTimers();
     }
@@ -162,6 +165,6 @@ describe('FamilyScene — network timeout recovers cleanly', () => {
 describe('FamilyScene — errorMsg() classifies TimeoutError', () => {
   it('maps TimeoutError to the common.networkTimeout i18n key instead of falling through to String(e)', () => {
     const scene = buildCreateScene(stubWorldApi({}));
-    expect(scene.errorMsg(new TimeoutError())).toBe(t('common.networkTimeout'));
+    expect(scene.core.errorMsg(new TimeoutError())).toBe(t('common.networkTimeout'));
   });
 });

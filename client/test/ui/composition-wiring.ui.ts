@@ -21,6 +21,8 @@ import { createLayout } from '../../src/layout/ScalingManager';
 import { InputManager } from '../../src/inputSystem/InputManager';
 import { initI18n } from '../../src/i18n';
 import type { WorldApiClient, TeamTemplate } from '../../src/net/WorldApiClient';
+import { createLocalMatch } from '../../src/app/matchEngine';
+import { getLevel } from '../../src/game';
 
 const memStore = (() => {
   const m = new Map<string, string>();
@@ -88,6 +90,46 @@ describe('WorldMapPanels composition wiring', () => {
     for (const p of ['hud', 'shop', 'territory', 'replay']) {
       expect((panels[p] as Record<string, unknown>).core).toBe(core);
     }
+  });
+});
+
+// ── WorldMapRenderer — build/viewport/pool/city/fog/vignette/lifecycle over one Core ─────────
+
+describe('WorldMapRenderer composition wiring', () => {
+  it('shares exactly one WorldMapRendererCore across all 7 domain classes, with city→pool and the build/viewport/lifecycle→refreshMap bundle reaching the SAME instances', async () => {
+    const { WorldMapContext } = await import('../../src/scenes/worldmap/WorldMapContext');
+    const { WorldMapRenderer } = await import('../../src/scenes/worldmap/WorldMapRenderer');
+    const layout = { designWidth: 1280, designHeight: 800 } as unknown as ConstructorParameters<typeof WorldMapContext>[0];
+    const cb = {
+      onBack() {}, onOpenChat() {}, onOpenAuction() {}, onReplaySiege() {}, onOpenCity() {},
+      onOpenDefense() {}, worldApi: stubWorldApi(), worldId: 'world:1:0', playerName: 'tester',
+      accountId: 'acc_test', storage: memStore,
+    } as unknown as ConstructorParameters<typeof WorldMapContext>[1];
+    const ctx = new WorldMapContext(layout, cb);
+    const view = new WorldMapRenderer(ctx) as unknown as Record<string, unknown>;
+    const core = view.core;
+    expect(core).toBeDefined();
+    for (const p of ['pool', 'city', 'fog', 'vignette', 'buildPanel', 'viewport', 'lifecycle']) {
+      expect((view[p] as Record<string, unknown>).core).toBe(core);
+    }
+    // The chain's two genuine bidirectional pairs (both hubbed on the old pool.ts — pool↔city over
+    // refreshCityLayer()/isBaseAnchor(), pool↔fog over renderOverlay()/invalidatePool(), see
+    // WorldMapRenderer.ts's file-header comment) were resolved by hoisting the "refresh everything"
+    // trigger to this assembly rather than adding lazy hooks: pool no longer references city or fog
+    // at all. city.ts's one-directional dependency on pool (isBaseAnchor) is the only surviving
+    // cross-domain reference among pool/city/fog — must be the SAME pool instance the facade holds.
+    expect((view.city as Record<string, unknown>).pool).toBe(view.pool);
+    // build.ts/viewport.ts/lifecycle.ts each need the pool+city+fog "refresh everything" bundle
+    // mid-method (build()/setZoom()/bootstrap()) — injected as a `refreshMap` closure over the
+    // assembly itself (safe: like every sibling here, those methods only ever run after `new
+    // WorldMapRenderer(ctx)` has fully returned). build.ts/viewport.ts also need pool directly
+    // (buildPool()); lifecycle.ts needs fog/vignette directly (its per-frame update() calls
+    // fog.renderMapL3()/renderOverlay() and vignette.updateVignette() without the full bundle).
+    expect((view.buildPanel as Record<string, unknown>).pool).toBe(view.pool);
+    expect((view.viewport as Record<string, unknown>).pool).toBe(view.pool);
+    expect((view.lifecycle as Record<string, unknown>).fog).toBe(view.fog);
+    expect((view.lifecycle as Record<string, unknown>).vignette).toBe(view.vignette);
+    expect((view.lifecycle as Record<string, unknown>).build).toBe(view.buildPanel);
   });
 });
 
@@ -212,6 +254,34 @@ describe('SectScene composition wiring', () => {
   });
 });
 
+// ── FamilyScene — data/actions/input/renderPanel over one FamilySceneCore ────────
+
+describe('FamilyScene composition wiring', () => {
+  it('shares exactly one FamilySceneCore across every domain class, with the actions/input→data and renderPanel→actions/input chain reaching the SAME instances', async () => {
+    const { FamilyScene } = await import('../../src/scenes/FamilyScene');
+    const scene = new FamilyScene(createLayout(1280, 800), new InputManager(), {
+      onBack() {}, onOpenSect() {}, onNavTab() {},
+      async addFriend() {}, async getFriendPublicIds() { return new Set<string>(); },
+      openChat() {},
+      worldApi: stubWorldApi(), worldId: 'world:1:0', myAccountId: 'acc_test', playerName: 'Tester',
+    }) as unknown as Record<string, unknown>;
+    const core = scene.core;
+    expect(core).toBeDefined();
+    for (const p of ['data', 'actions', 'input', 'renderPanel']) {
+      expect((scene[p] as Record<string, unknown>).core).toBe(core);
+    }
+    // actions.ts/input.ts both depend on data.ts (DataHandlers) — must be the one shared instance.
+    // (The old mixin chain's one genuine bidirectional dependency, actions↔input over sending a
+    // channel message, was resolved by moving both halves onto InputPanel — see
+    // FamilyScene/core.ts's file-header comment — so input.ts has no dependency on actions.ts.)
+    expect((scene.actions as Record<string, unknown>).data).toBe(scene.data);
+    expect((scene.input as Record<string, unknown>).data).toBe(scene.data);
+    expect((scene.renderPanel as Record<string, unknown>).actions).toBe(scene.actions);
+    expect((scene.renderPanel as Record<string, unknown>).input).toBe(scene.input);
+    (scene.destroy as () => void)();
+  });
+});
+
 // ── FriendsScene — network + 5 tab panels over one FriendsSceneCore ──────────────
 
 describe('FriendsScene composition wiring', () => {
@@ -244,6 +314,173 @@ describe('FriendsScene composition wiring', () => {
     // field the outer assembly overwrites right after constructing NetworkPanel — must not still
     // be the core.ts no-op default (see core.ts's file-header comment).
     expect((core as Record<string, unknown>).net).toBe(scene.network);
+    (scene.destroy as () => void)();
+  });
+});
+
+// ── GameRenderer — events/input over one GameRendererCore ────────────────────────
+
+describe('GameRenderer composition wiring', () => {
+  it('shares exactly one GameRendererCore across events/input, and Core reaches both back via its lazy events/input fields', async () => {
+    const { GameRenderer } = await import('../../src/render/GameRenderer');
+    const level = getLevel('ch1_lv1')!;
+    const { engine } = createLocalMatch({ level });
+    const renderer = new GameRenderer(
+      engine, createLayout(800, 1280), new InputManager(),
+    ) as unknown as Record<string, unknown>;
+    const core = renderer.core as Record<string, unknown>;
+    expect(core).toBeDefined();
+    expect((renderer.events as Record<string, unknown>).core).toBe(core);
+    expect((renderer.input as Record<string, unknown>).core).toBe(core);
+    // Core's onDown/onMove/onUp wiring (and forceTutorialVictory/update/destroy) reach EventsPanel/
+    // InputPanel through the lazy `events`/`input` back-references the outer assembly overwrites
+    // right after constructing each — must be the SAME instances the facade itself holds, not a
+    // second pair (see core.ts's file-header comment).
+    expect(core.events).toBe(renderer.events);
+    expect(core.input).toBe(renderer.input);
+    // Non-spectator construction wires all 3 InputManager subscriptions (onDown/onMove/onUp).
+    expect((core.unsubs as unknown[]).length).toBe(3);
+    (renderer.init as () => void)();
+    (renderer.destroy as () => void)();
+  });
+});
+
+// ── AuctionScene — bid/trade/createListing/list over one AuctionSceneCore ────────
+
+describe('AuctionScene composition wiring', () => {
+  it('shares exactly one AuctionSceneCore across bid/trade/createListing/list, and list reaches bid/trade/createListing via the SAME instances', async () => {
+    const { AuctionScene } = await import('../../src/scenes/AuctionScene');
+    const scene = new AuctionScene(createLayout(800, 1280), new InputManager(), {
+      onBack() {}, worldApi: stubWorldApi(),
+    }) as unknown as Record<string, unknown>;
+    const core = scene.core;
+    expect(core).toBeDefined();
+    for (const p of ['bid', 'trade', 'createListing', 'list']) {
+      expect((scene[p] as Record<string, unknown>).core).toBe(core);
+    }
+    // list.ts's row actions reach bid/trade/createListing through the SAME instances the facade holds,
+    // not separate copies.
+    expect((scene.list as Record<string, unknown>).bid).toBe(scene.bid);
+    expect((scene.list as Record<string, unknown>).trade).toBe(scene.trade);
+    expect((scene.list as Record<string, unknown>).createListing).toBe(scene.createListing);
+    // Core's update()/ensureRefBand's async callback reach CreateListingPanel.openCreateForm through
+    // the lazy `reopenCreateForm` field the outer assembly overwrites right after constructing it —
+    // must not still be the core.ts no-op default.
+    expect((core as Record<string, unknown>).reopenCreateForm).not.toBeUndefined();
+    (scene.destroy as () => void)();
+  });
+});
+
+// ── CardScene — list/skins/detail/feed/actions over one CardSceneCore ────────────
+
+describe('CardScene composition wiring', () => {
+  it('shares exactly one CardSceneCore across list/skins/detail/feed/actions, and detail reaches actions/feed + list reaches detail via the SAME instances', async () => {
+    const { CardScene } = await import('../../src/scenes/CardScene');
+    const { makeNewSave } = await import('../../src/game/meta/SaveData');
+    const scene = new CardScene(createLayout(800, 1280), new InputManager(), {
+      onBack() {},
+      getSave: () => makeNewSave(),
+      fuseCards: async () => ({ ok: true }),
+      setCardLock: async () => ({ ok: true }),
+      getOwnedSkins: () => [],
+      getEquippedSkin: () => null,
+      equipSkin() {},
+    }) as unknown as Record<string, unknown>;
+    const core = scene.core;
+    expect(core).toBeDefined();
+    for (const p of ['list', 'skins', 'detail', 'feed', 'actions']) {
+      expect((scene[p] as Record<string, unknown>).core).toBe(core);
+    }
+    // detail.ts depends on actions.ts (doSetLock/doRecover) and feed.ts (openFuseSelect) — must be
+    // the SAME instances the facade holds, not separate copies.
+    expect((scene.detail as Record<string, unknown>).actions).toBe(scene.actions);
+    expect((scene.detail as Record<string, unknown>).feed).toBe(scene.feed);
+    // list.ts depends on detail.ts (openDetail) — same instance.
+    expect((scene.list as Record<string, unknown>).detail).toBe(scene.detail);
+    // actions.ts depends on feed.ts (playFusionAnim) — same instance.
+    expect((scene.actions as Record<string, unknown>).feed).toBe(scene.feed);
+    // feed.ts's confirm-fuse button reaches ActionsPanel.doFuse through the lazy `core.doFuse` hook
+    // the outer assembly overwrites right after constructing ActionsPanel — must not still be the
+    // core.ts no-op default (see core.ts's file-header comment).
+    expect((core as Record<string, unknown>).doFuse).not.toBeUndefined();
+    (scene.destroy as () => void)();
+  });
+});
+
+// ── EquipmentScene — inventory/craft/detail/assign/reforge over one EquipmentSceneCore ──────────
+
+describe('EquipmentScene composition wiring', () => {
+  it('shares exactly one EquipmentSceneCore across inventory/craft/detail/assign/reforge, and detail reaches assign/reforge + inventory reaches detail via the SAME instances', async () => {
+    const { EquipmentScene } = await import('../../src/scenes/EquipmentScene');
+    const { makeNewSave } = await import('../../src/game/meta/SaveData');
+    const scene = new EquipmentScene(createLayout(1280, 800), new InputManager(), {
+      onBack() {},
+      getSave: () => makeNewSave(),
+      craft: async () => ({ ok: true }),
+      enhance: async () => ({ ok: true, success: true, level: 1 }),
+      salvage: async () => ({ ok: true }),
+      equip: async () => ({ ok: true }),
+      reforge: async () => ({ ok: true }),
+      activeCardInstanceId: '',
+    }) as unknown as Record<string, unknown>;
+    const core = scene.core;
+    expect(core).toBeDefined();
+    for (const p of ['inventory', 'craft', 'detail', 'assign', 'reforge']) {
+      expect((scene[p] as Record<string, unknown>).core).toBe(core);
+    }
+    // detail.ts depends on assign.ts (beginAssign/ownerCardId) and reforge.ts (openReforgeSelect) —
+    // must be the SAME instances the facade holds, not separate copies.
+    expect((scene.detail as Record<string, unknown>).assign).toBe(scene.assign);
+    expect((scene.detail as Record<string, unknown>).reforge).toBe(scene.reforge);
+    // inventory.ts depends on detail.ts (instanceActions/openDetail) — same instance.
+    expect((scene.inventory as Record<string, unknown>).detail).toBe(scene.detail);
+    // Two genuine bidirectional pairs surfaced during the conversion (see core.ts's file-header
+    // comment): assign.ts's doEquipTo reaches DetailPanel.doEquip through the lazy `core.doEquipHook`
+    // hook, and detail.ts's doEnhance reaches InventoryPanel.refreshInstanceCell through the lazy
+    // `core.refreshInstanceCellHook` hook — both overwritten by the outer assembly right after
+    // constructing the real target; must not still be the core.ts no-op defaults.
+    expect((core as Record<string, unknown>).doEquipHook).not.toBeUndefined();
+    expect((core as Record<string, unknown>).refreshInstanceCellHook).not.toBeUndefined();
+    // backAction() (fired from the header Back button) reaches AssignPanel.cancelAssign through the
+    // lazy `core.cancelAssignHook` hook while in assign mode — same pattern, third hook.
+    expect((core as Record<string, unknown>).cancelAssignHook).not.toBeUndefined();
+    (scene.destroy as () => void)();
+  });
+});
+
+// ── LobbyScene — build/badges/overlays over one LobbySceneCore ───────────────────
+
+describe('LobbyScene composition wiring', () => {
+  it('shares exactly one LobbySceneCore across build/badges/overlays, and build reaches badges/overlays via the SAME instances', async () => {
+    const { LobbyScene } = await import('../../src/scenes/LobbyScene');
+    const scene = new LobbyScene(createLayout(800, 1280), new InputManager(), {
+      onStartGame() {},
+      onOpenCampaign() {},
+      onOpenRoom() {},
+      onOpenShop() {},
+      onOpenCards() {},
+      onOpenStats() {},
+      onOpenProfile() {},
+      playerName: 'Guest',
+    }) as unknown as Record<string, unknown>;
+    const core = scene.core;
+    expect(core).toBeDefined();
+    for (const p of ['build', 'badges', 'overlays']) {
+      expect((scene[p] as Record<string, unknown>).core).toBe(core);
+    }
+    // build.ts depends one-way on badges.ts (paints the badge dots right after constructing fresh
+    // layers) and overlays.ts (handleDown dispatches guide/settlement/toast dismissal through it) —
+    // must be the SAME instances the facade holds, not separate copies. Neither badges.ts nor
+    // overlays.ts holds a reference back to build.ts — see core.ts's file-header comment for how the
+    // old build.ts↔badges.ts bidirectional pair (build() calling drawXBadge methods, badges.ts's
+    // rebuild() calling back into build()) was resolved by moving rebuild() onto Core instead.
+    expect((scene.build as Record<string, unknown>).badges).toBe(scene.badges);
+    expect((scene.build as Record<string, unknown>).overlays).toBe(scene.overlays);
+    // Core's rebuild() (fired from its own onSaveChanged/coinIconAtlas construction-time hooks, and
+    // from badges.ts's applyEventsAvailable) reaches BuildPanel.build() through the lazy `buildHook`
+    // field the outer assembly overwrites right after constructing BuildPanel — must not still be
+    // the core.ts no-op default.
+    expect((core as Record<string, unknown>).buildHook).not.toBeUndefined();
     (scene.destroy as () => void)();
   });
 });

@@ -28,8 +28,8 @@ const LANDSCAPE: [number, number] = [1280, 800];
 
 interface Rect { x: number; y: number; w: number; h: number; }
 interface SceneInternals {
-  modalHits: { rect: Rect; action: () => void }[];
-  openReforgeSelect(target: EquipmentInstance): void;
+  core: { modalHits: { rect: Rect; action: () => void }[] };
+  reforge: { openReforgeSelect(target: EquipmentInstance): void };
 }
 
 function buildSave(): SaveData {
@@ -70,10 +70,10 @@ describe('EquipmentScene — reforge material picker is an icon-card grid, never
   it('offers exactly one card (unenhanced fuel collapsed), excluding the enhanced and equipped instances', () => {
     const { scene, save } = buildScene();
     const internals = scene as unknown as SceneInternals;
-    internals.openReforgeSelect(save.equipmentInv.target);
+    internals.reforge.openReforgeSelect(save.equipmentInv.target);
 
     // stack card(s) + close button + panel-catch + outside-catch, in that push order.
-    const cardHits = internals.modalHits.slice(0, -3);
+    const cardHits = internals.core.modalHits.slice(0, -3);
     expect(cardHits.length).toBe(1);
     // The card hit is sized like a portrait icon card (glyph + name stacked), not the old
     // full-width 44px-tall text row — height comfortably exceeds width, both well above 44px.
@@ -89,11 +89,11 @@ describe('EquipmentScene — reforge material picker is an icon-card grid, never
       reforge: async (_targetId, materialId) => { reforgedWith = materialId; return { ok: true }; },
     });
     const internals = scene as unknown as SceneInternals;
-    internals.openReforgeSelect(save.equipmentInv.target);
+    internals.reforge.openReforgeSelect(save.equipmentInv.target);
 
-    const cardHit = internals.modalHits[0];
+    const cardHit = internals.core.modalHits[0];
     cardHit.action(); // opens the OK/Cancel confirm dialog
-    const confirmOk = internals.modalHits[0];
+    const confirmOk = internals.core.modalHits[0];
     confirmOk.action(); // confirms → doReforge
     await Promise.resolve();
     await Promise.resolve();
@@ -122,9 +122,9 @@ describe('EquipmentScene — reforge material picker is an icon-card grid, never
     };
     const scene = new EquipmentScene(createLayout(...LANDSCAPE), new InputManager(), cb);
     const internals = scene as unknown as SceneInternals;
-    internals.openReforgeSelect(save.equipmentInv.target);
+    internals.reforge.openReforgeSelect(save.equipmentInv.target);
 
-    const cardHits = internals.modalHits.slice(0, -3);
+    const cardHits = internals.core.modalHits.slice(0, -3);
     expect(cardHits.length).toBe(0); // locked_fuel is the only otherwise-eligible candidate — must not appear
     scene.destroy();
   });
@@ -147,9 +147,9 @@ describe('EquipmentScene — reforge material picker is an icon-card grid, never
     };
     const scene = new EquipmentScene(createLayout(...LANDSCAPE), new InputManager(), cb);
     const internals = scene as unknown as SceneInternals;
-    internals.openReforgeSelect(save.equipmentInv.target);
+    internals.reforge.openReforgeSelect(save.equipmentInv.target);
 
-    const cardHits = internals.modalHits.slice(0, -3);
+    const cardHits = internals.core.modalHits.slice(0, -3);
     expect(cardHits.length).toBe(0);
     scene.destroy();
   });

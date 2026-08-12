@@ -1,20 +1,27 @@
 // Inventory tab: sidebar (group nav + Inventory/Craft sub-tabs), slot filter, the loadout strip
 // (three equip slots for the active card), and the item grid (icon-card cells, stacked by defId+rarity).
+//
+// Depends on `detail` (instanceActions/openDetail) as a direct constructor param — DetailPanel is
+// constructed before InventoryPanel (see core.ts's file-header comment). refreshInstanceCell (the
+// single-cell in-place redraw optimization detail.ts's doEnhance uses) is wired onto
+// `core.refreshInstanceCellHook` by the outer assembly right after this class is constructed.
 import * as PIXI from 'pixi.js-legacy';
 import { t, type TranslationKey } from '../../i18n';
-import { ui as C, txt, sketchPanel, seedFor, marginLineX, tearDownChildren } from '../../render/sketchUi';
+import { ui as C, txt, marginLineX, tearDownChildren } from '../../render/sketchUi';
 import { FS } from '../../render/fontScale';
 import { drawSidebarTabs, drawBottomNavTabs, sidebarNavW, bottomNavH, type HubTab } from '../../ui/widgets/HubTabs';
 import { drawScrollIndicator } from '../../ui/widgets/ScrollIndicator';
 import { peekViewportH } from '../../ui/widgets/scrollPeek';
-import { buildIcon } from '../../render/icons';
 import type { SaveData, EquipSlot, EquipRarity, EquipmentInstance } from '../../game/meta/SaveData';
-import { getEquipDef, affixKind } from '../../game/meta/equipmentDefs';
+import { getEquipDef } from '../../game/meta/equipmentDefs';
 import {
-  type Constructor, type EquipmentSceneBaseCtor, type EquipTab, type SectionKey,
   LOADOUT_H, FILTER_H, SECTION_H, CELL_GAP, CELL_GAP_X, EQUIP_CELL_H, equipGridColumns, LIST_TOP_PAD,
-  SLOTS, RARITY_COLOR,
-} from './base';
+} from './layout';
+import { equippedIds } from './helpers';
+import type { EquipTab, SectionKey } from './types';
+import type { EquipmentSceneCore } from './core';
+import type { DetailPanel } from './detail';
+import { renderInstanceCell, renderLoadout } from './cells';
 
 export type { SectionKey };
 
@@ -22,568 +29,387 @@ export type DisplayEntry =
   | { kind: 'header'; label: string; key: SectionKey }
   | { kind: 'item'; inst: EquipmentInstance; count: number; isEquipped: boolean };
 
-export interface InventoryHandlers {
-  renderSidebar(): void;
-  renderInventory(bodyTop: number): void;
-  renderSlotFilter(x: number, y: number, w: number): void;
-}
+export class InventoryPanel {
+  /**
+   * Per-instance cell container + on-screen rect from the last renderInventory layout pass — lets
+   * refreshInstanceCell() redraw a single cell in place instead of a full relayout. Only populated
+   * for on-screen, non-header rows; cleared and rebuilt on every full renderInventory.
+   *
+   * Unlike the old mixin-chain version, a plain `= new Map()` initializer is safe here: the outer
+   * assembly's first render() call happens strictly after every domain class (including this one)
+   * has finished constructing, so there's no window where render() runs before this field is set.
+   */
+  private cellContainers = new Map<string, PIXI.Container>();
+  private cellRects = new Map<string, { x: number; y: number; w: number }>();
+  /**
+   * Ordered signature (header/item keys + stack counts) of the last renderInventory's display
+   * entries. refreshInstanceCell() recomputes this fresh and compares — a mismatch means an
+   * enhance's level-up reshuffled the stack grouping or the level-desc sort order, so the cached
+   * cell rects are no longer trustworthy and it must fall back to a full render().
+   */
+  private lastEntrySig: string[] = [];
 
-export function InventoryMixin<TBase extends EquipmentSceneBaseCtor>(Base: TBase): TBase & Constructor<InventoryHandlers> {
-  return class extends Base {
-    /**
-     * Per-instance cell container + on-screen rect from the last renderInventory layout pass —
-     * lets refreshInstanceCell() redraw a single cell in place instead of a full relayout. Only
-     * populated for on-screen, non-header rows; cleared and rebuilt on every full renderInventory.
-     *
-     * Declared with NO initializer (unlike a plain `= new Map()`): the base class constructor calls
-     * render() — which assigns these via renderInventory() — before this mixin's own field
-     * initializers run; a `= new Map()` here would still execute right after `super()` and clobber
-     * that first render's population with an empty map. renderInventory() always assigns a fresh
-     * value before anything reads these, so there's no window where they're read while genuinely
-     * unset.
-     */
-    private cellContainers!: Map<string, PIXI.Container>;
-    private cellRects!: Map<string, { x: number; y: number; w: number }>;
-    /**
-     * Ordered signature (header/item keys + stack counts) of the last renderInventory's display
-     * entries. refreshInstanceCell() recomputes this fresh and compares — a mismatch means an
-     * enhance's level-up reshuffled the stack grouping or the level-desc sort order, so the cached
-     * cell rects are no longer trustworthy and it must fall back to a full render().
-     */
-    private lastEntrySig!: string[];
+  constructor(
+    private readonly core: EquipmentSceneCore,
+    private readonly detail: DetailPanel,
+  ) {}
 
-    /** Filter + sort pass shared by renderInventory and refreshInstanceCell (kept identical so a
-     *  fast-path signature comparison is meaningful). */
-    private sortedInstances(save: SaveData): EquipmentInstance[] {
-      const allInstances = Object.values(save.equipmentInv);
-      const instances = this.filterSlot === 'all'
-        ? allInstances
-        : allInstances.filter(x => getEquipDef(x.defId)?.slot === this.filterSlot);
-      const rarOrder: EquipRarity[] = ['epic', 'rare', 'fine', 'common'];
-      const equippedIds = this.equippedIds(save);
-      instances.sort((a, b) => {
-        const ea = equippedIds.has(a.id) ? 0 : 1;
-        const eb = equippedIds.has(b.id) ? 0 : 1;
-        if (ea !== eb) return ea - eb;
-        const ra = rarOrder.indexOf(a.rarity) - rarOrder.indexOf(b.rarity);
-        if (ra !== 0) return ra;
-        if (b.level !== a.level) return b.level - a.level;
-        return a.id < b.id ? -1 : 1;
-      });
-      return instances;
-    }
+  /** Filter + sort pass shared by renderInventory and refreshInstanceCell (kept identical so a
+   *  fast-path signature comparison is meaningful). */
+  private sortedInstances(save: SaveData): EquipmentInstance[] {
+    const allInstances = Object.values(save.equipmentInv);
+    const instances = this.core.filterSlot === 'all'
+      ? allInstances
+      : allInstances.filter(x => getEquipDef(x.defId)?.slot === this.core.filterSlot);
+    const rarOrder: EquipRarity[] = ['epic', 'rare', 'fine', 'common'];
+    const equippedSet = equippedIds(save);
+    instances.sort((a, b) => {
+      const ea = equippedSet.has(a.id) ? 0 : 1;
+      const eb = equippedSet.has(b.id) ? 0 : 1;
+      if (ea !== eb) return ea - eb;
+      const ra = rarOrder.indexOf(a.rarity) - rarOrder.indexOf(b.rarity);
+      if (ra !== 0) return ra;
+      if (b.level !== a.level) return b.level - a.level;
+      return a.id < b.id ? -1 : 1;
+    });
+    return instances;
+  }
 
-    private entrySignature(entries: DisplayEntry[]): string[] {
-      return entries.map(e => (e.kind === 'header' ? `h:${e.key}` : `i:${e.inst.id}:${e.count}`));
-    }
+  private entrySignature(entries: DisplayEntry[]): string[] {
+    return entries.map(e => (e.kind === 'header' ? `h:${e.key}` : `i:${e.inst.id}:${e.count}`));
+  }
 
-    /**
-     * Redraw one grid cell in place (level/affix/action changes only) after an enhance whose level
-     * change doesn't reorder or regroup the list, instead of a full renderInventory relayout — see
-     * DetailMixin.doEnhance. Returns false (caller falls back to render()) when the cell isn't
-     * on-screen/tracked, the entries signature changed since the last full render (stack split or a
-     * level-desc reorder within the same rarity group), or the instance is also mirrored in the
-     * loadout strip above (equipped gear needs that refreshed too).
-     */
-    refreshInstanceCell(instanceId: string): boolean {
-      if (this.activeTab !== 'inv' || this.assign) return false;
-      const container = this.cellContainers.get(instanceId);
-      const rect = this.cellRects.get(instanceId);
-      if (!container || container.destroyed || !rect) return false;
+  /**
+   * Redraw one grid cell in place (level/affix/action changes only) after an enhance whose level
+   * change doesn't reorder or regroup the list, instead of a full renderInventory relayout — see
+   * DetailPanel.doEnhance (via core.refreshInstanceCellHook). Returns false (caller falls back to
+   * render()) when the cell isn't on-screen/tracked, the entries signature changed since the last
+   * full render (stack split or a level-desc reorder within the same rarity group), or the instance
+   * is also mirrored in the loadout strip above (equipped gear needs that refreshed too).
+   */
+  refreshInstanceCell(instanceId: string): boolean {
+    const core = this.core;
+    if (core.activeTab !== 'inv' || core.assign) return false;
+    const container = this.cellContainers.get(instanceId);
+    const rect = this.cellRects.get(instanceId);
+    if (!container || container.destroyed || !rect) return false;
 
-      const save = this.cb.getSave();
-      const inst = save.equipmentInv[instanceId];
-      if (!inst) return false;
-      const equippedIds = this.equippedIds(save);
-      if (equippedIds.has(instanceId)) return false;
+    const save = core.cb.getSave();
+    const inst = save.equipmentInv[instanceId];
+    if (!inst) return false;
+    const equippedSet = equippedIds(save);
+    if (equippedSet.has(instanceId)) return false;
 
-      const entries = this.buildDisplayEntries(this.sortedInstances(save), equippedIds);
-      const sig = this.entrySignature(entries);
-      if (sig.length !== this.lastEntrySig.length || sig.some((s, i) => s !== this.lastEntrySig[i])) return false;
-      const entry = entries.find(
-        (e): e is Extract<DisplayEntry, { kind: 'item' }> => e.kind === 'item' && e.inst.id === instanceId,
-      );
-      if (!entry) return false;
+    const entries = this.buildDisplayEntries(this.sortedInstances(save), equippedSet);
+    const sig = this.entrySignature(entries);
+    if (sig.length !== this.lastEntrySig.length || sig.some((s, i) => s !== this.lastEntrySig[i])) return false;
+    const entry = entries.find(
+      (e): e is Extract<DisplayEntry, { kind: 'item' }> => e.kind === 'item' && e.inst.id === instanceId,
+    );
+    if (!entry) return false;
 
-      tearDownChildren(container);
-      this.hitRects = this.hitRects.filter((h) => h.owner !== instanceId);
-      const outerLayer = this.bodyLayer;
-      this.bodyLayer = container;
-      this.renderInstanceCell(inst, rect.x, rect.y, rect.w, entry.isEquipped, entry.count);
-      this.bodyLayer = outerLayer;
-      this.lastEntrySig = sig;
-      return true;
-    }
+    tearDownChildren(container);
+    core.hitRects = core.hitRects.filter((h) => h.owner !== instanceId);
+    const outerLayer = core.bodyLayer;
+    core.bodyLayer = container;
+    renderInstanceCell(core, this.detail, inst, rect.x, rect.y, rect.w, entry.isEquipped, entry.count);
+    core.bodyLayer = outerLayer;
+    this.lastEntrySig = sig;
+    return true;
+  }
 
-    /**
-     * Landscape: left sidebar rail, stacked inside the notebook-margin gutter (`marginLineX`) below
-     * the header — the progression group nav [<peer>|Equipment] (LOBBY_IA_REDESIGN P1.5, only when
-     * peerTab is injected) on top, then the Inventory/Craft sub-tabs always underneath, then any
-     * trailing peers (Skins) below that (EquipmentCallbacks.trailingPeers) so they shift down
-     * instead of disappearing (see LOBBY_IA_REDESIGN.md §8 sidebar addendum).
-     *
-     * Portrait (§18): the left rail becomes a bottom nav bar, and there's no "nested under" concept
-     * left for a single bar to express — so all the *peer-level* items (leading peerTab + Equipment
-     * itself + trailing peers) combine into ONE bottom bar (they're all peers of the same growth
-     * group, just split across landscape's before/after-subtabs stacking for a different reason).
-     * The Inventory/Craft sub-tabs move to a header strip instead — see base.ts's renderHeaderRow.
-     */
-    renderSidebar(): void {
-      const { w, h, landscape } = this;
+  /**
+   * Landscape: left sidebar rail, stacked inside the notebook-margin gutter (`marginLineX`) below
+   * the header — the progression group nav [<peer>|Equipment] (LOBBY_IA_REDESIGN P1.5, only when
+   * peerTab is injected) on top, then the Inventory/Craft sub-tabs always underneath, then any
+   * trailing peers (Skins) below that (EquipmentCallbacks.trailingPeers) so they shift down
+   * instead of disappearing (see LOBBY_IA_REDESIGN.md §8 sidebar addendum).
+   *
+   * Portrait (§18): the left rail becomes a bottom nav bar, and there's no "nested under" concept
+   * left for a single bar to express — so all the *peer-level* items (leading peerTab + Equipment
+   * itself + trailing peers) combine into ONE bottom bar (they're all peers of the same growth
+   * group, just split across landscape's before/after-subtabs stacking for a different reason).
+   * The Inventory/Craft sub-tabs move to a header strip instead — see the assembly's renderHeaderRow.
+   */
+  renderSidebar(): void {
+    const core = this.core;
+    const { w, h, landscape } = core;
 
-      if (!landscape) {
-        if (!this.hasGroupNav) return;
-        const peers: HubTab[] = [];
-        const actions: Array<() => void> = [];
-        if (this.showGroup && this.cb.peerTab) {
-          peers.push({ label: t(this.cb.peerTab.labelKey), active: false, icon: this.cb.peerTab.icon });
-          actions.push(() => this.cb.peerTab?.onSelect());
-        }
-        peers.push({ label: t('equip.title'), active: true, icon: 'armor' });
-        actions.push(() => {});
-        for (const p of this.cb.trailingPeers ?? []) {
-          peers.push({ label: t(p.labelKey), active: false, icon: p.icon });
-          actions.push(() => p.onSelect());
-        }
-        const barH = bottomNavH(h);
-        const { hits } = drawBottomNavTabs(this.bodyLayer, w, h - barH, barH, peers, (i) => actions[i]?.());
-        for (const hit of hits) this.hitRects.push({ rect: hit.rect, action: hit.fn });
-        return;
+    if (!landscape) {
+      if (!core.hasGroupNav) return;
+      const peers: HubTab[] = [];
+      const actions: Array<() => void> = [];
+      if (core.showGroup && core.cb.peerTab) {
+        peers.push({ label: t(core.cb.peerTab.labelKey), active: false, icon: core.cb.peerTab.icon });
+        actions.push(() => core.cb.peerTab?.onSelect());
       }
-
-      const sidebarW = sidebarNavW(w, h, true);
-      let y = this.headerH;
-
-      if (this.showGroup && this.cb.peerTab) {
-        const groupTabs: HubTab[] = [
-          { label: t(this.cb.peerTab.labelKey), active: false, icon: this.cb.peerTab.icon },
-          { label: t('equip.title'), active: true, icon: 'armor' },
-        ];
-        const group = drawSidebarTabs(this.bodyLayer, sidebarW, y, h, groupTabs, (i) => {
-          if (i === 0) this.cb.peerTab?.onSelect();
-        });
-        for (const hit of group.hits) this.hitRects.push({ rect: hit.rect, action: hit.fn });
-        y = group.bottom + Math.round(h * 0.03);
+      peers.push({ label: t('equip.title'), active: true, icon: 'armor' });
+      actions.push(() => {});
+      for (const p of core.cb.trailingPeers ?? []) {
+        peers.push({ label: t(p.labelKey), active: false, icon: p.icon });
+        actions.push(() => p.onSelect());
       }
+      const barH = bottomNavH(h);
+      const { hits } = drawBottomNavTabs(core.bodyLayer, w, h - barH, barH, peers, (i) => actions[i]?.());
+      for (const hit of hits) core.hitRects.push({ rect: hit.rect, action: hit.fn });
+      return;
+    }
 
-      const subTabs: { key: EquipTab; label: TranslationKey }[] = [
-        { key: 'inv', label: 'equip.tabInv' },
-        { key: 'craft', label: 'equip.tabCraft' },
+    const sidebarW = sidebarNavW(w, h, true);
+    let y = core.headerH;
+
+    if (core.showGroup && core.cb.peerTab) {
+      const groupTabs: HubTab[] = [
+        { label: t(core.cb.peerTab.labelKey), active: false, icon: core.cb.peerTab.icon },
+        { label: t('equip.title'), active: true, icon: 'armor' },
       ];
-      const sub = drawSidebarTabs(
-        this.bodyLayer, sidebarW, y, h,
-        subTabs.map((tab) => ({ label: t(tab.label), active: tab.key === this.activeTab })),
-        (i) => {
-          const key = subTabs[i].key;
-          if (this.activeTab !== key) { this.activeTab = key; this.scrollY = 0; this.render(); }
-        },
-        { sub: true },
-      );
-      for (const hit of sub.hits) this.hitRects.push({ rect: hit.rect, action: hit.fn });
-
-      // Peers after Equipment in the growth group ([Cards | Equipment | Skins]) render *below* the
-      // Inventory/Craft sub-tabs, so the sub-tabs stay nested under Equipment and the trailing peer
-      // (Skins) shifts down instead of disappearing — see EquipmentCallbacks.trailingPeers.
-      const trailing = this.cb.trailingPeers ?? [];
-      if (trailing.length > 0) {
-        const ty = sub.bottom + Math.round(h * 0.03);
-        const peerTabs: HubTab[] = trailing.map((p) => ({ label: t(p.labelKey), active: false, icon: p.icon }));
-        const after = drawSidebarTabs(this.bodyLayer, sidebarW, ty, h, peerTabs, (i) => trailing[i]?.onSelect());
-        for (const hit of after.hits) this.hitRects.push({ rect: hit.rect, action: hit.fn });
-      }
+      const group = drawSidebarTabs(core.bodyLayer, sidebarW, y, h, groupTabs, (i) => {
+        if (i === 0) core.cb.peerTab?.onSelect();
+      });
+      for (const hit of group.hits) core.hitRects.push({ rect: hit.rect, action: hit.fn });
+      y = group.bottom + Math.round(h * 0.03);
     }
 
-    renderInventory(bodyTop: number): void {
-      const { w, h, landscape } = this;
-      const save = this.cb.getSave();
-      // Item cells (and the loadout strip below) start right of the sidebar rail (landscape); portrait's
-      // sidebar is a bottom bar (§18), so there's no width reservation there.
-      const left = landscape ? sidebarNavW(w, h, true) : 0;
-      // Bag mode (no active card) has no single-card loadout to show; the list starts right below the header row.
-      let listY = bodyTop;
-      if (!this.bag) { this.renderLoadout(save, bodyTop, left); listY = bodyTop + LOADOUT_H; }
-      // Portrait's peer-level bottom bar (when shown) reserves bottomNavH off the bottom.
-      const availH = h - listY - 8 - (!landscape && this.hasGroupNav ? bottomNavH(h) : 0);
+    const subTabs: { key: EquipTab; label: TranslationKey }[] = [
+      { key: 'inv', label: 'equip.tabInv' },
+      { key: 'craft', label: 'equip.tabCraft' },
+    ];
+    const sub = drawSidebarTabs(
+      core.bodyLayer, sidebarW, y, h,
+      subTabs.map((tab) => ({ label: t(tab.label), active: tab.key === core.activeTab })),
+      (i) => {
+        const key = subTabs[i].key;
+        if (core.activeTab !== key) { core.activeTab = key; core.scrollY = 0; core.render(); }
+      },
+      { sub: true },
+    );
+    for (const hit of sub.hits) core.hitRects.push({ rect: hit.rect, action: hit.fn });
 
-      const instances = this.sortedInstances(save);
+    // Peers after Equipment in the growth group ([Cards | Equipment | Skins]) render *below* the
+    // Inventory/Craft sub-tabs, so the sub-tabs stay nested under Equipment and the trailing peer
+    // (Skins) shifts down instead of disappearing — see EquipmentCallbacks.trailingPeers.
+    const trailing = core.cb.trailingPeers ?? [];
+    if (trailing.length > 0) {
+      const ty = sub.bottom + Math.round(h * 0.03);
+      const peerTabs: HubTab[] = trailing.map((p) => ({ label: t(p.labelKey), active: false, icon: p.icon }));
+      const after = drawSidebarTabs(core.bodyLayer, sidebarW, ty, h, peerTabs, (i) => trailing[i]?.onSelect());
+      for (const hit of after.hits) core.hitRects.push({ rect: hit.rect, action: hit.fn });
+    }
+  }
 
-      if (instances.length === 0) {
-        const lbl = txt(t('equip.invEmpty'), FS.heading, C.mid);
-        lbl.anchor.set(0.5, 0.5); lbl.x = w / 2; lbl.y = listY + availH / 2;
-        this.bodyLayer.addChild(lbl);
-        this.maxScroll = 0;
-        this.lastEntrySig = [];
-        this.cellContainers = new Map();
-        this.cellRects = new Map();
-        return;
-      }
+  renderInventory(bodyTop: number): void {
+    const core = this.core;
+    const { w, h, landscape } = core;
+    const save = core.cb.getSave();
+    // Item cells (and the loadout strip below) start right of the sidebar rail (landscape); portrait's
+    // sidebar is a bottom bar (§18), so there's no width reservation there.
+    const left = landscape ? sidebarNavW(w, h, true) : 0;
+    // Bag mode (no active card) has no single-card loadout to show; the list starts right below the header row.
+    let listY = bodyTop;
+    if (!core.bag) { renderLoadout(core, this.detail, save, bodyTop, left); listY = bodyTop + LOADOUT_H; }
+    // Portrait's peer-level bottom bar (when shown) reserves bottomNavH off the bottom.
+    const availH = h - listY - 8 - (!landscape && core.hasGroupNav ? bottomNavH(h) : 0);
 
-      // Sort: equipped first, then rarity desc, then level desc — stable, deterministic (see
-      // sortedInstances()).
-      const equippedIds = this.equippedIds(save);
-      const entries = this.buildDisplayEntries(instances, equippedIds);
-      this.lastEntrySig = this.entrySignature(entries);
-      // Item cells start right of the sidebar rail; right pad stays one CELL_GAP.
-      const gridLeft = left + CELL_GAP;
-      const avail = w - gridLeft - CELL_GAP;
-      // See equipGridColumns (EquipmentScene/base.ts) for the column-width-floor + centering math
-      // and equipmentGridColumns.test.ts for its unit coverage — 2026-08-09 UX fix.
-      const { cols, cellW, offset: gridOffset } = equipGridColumns(avail, landscape);
+    const instances = this.sortedInstances(save);
 
-      // Layout pass: headers span a full row and reset the column cursor; item
-      // cells pack left-to-right into `cols` columns. `off` is the vertical
-      // offset from listY (pre-scroll), computed up-front to clamp scrollY.
-      // Items belonging to a collapsed section are skipped entirely (no space reserved).
-      type Placed =
-        | { kind: 'header'; label: string; key: SectionKey; off: number }
-        | { kind: 'item'; inst: EquipmentInstance; isEquipped: boolean; count: number; x: number; off: number };
-      const placed: Placed[] = [];
-      let off = LIST_TOP_PAD;
-      let col = 0;
-      let collapsed = false;
-      for (const entry of entries) {
-        if (entry.kind === 'header') {
-          if (col !== 0) { off += EQUIP_CELL_H + CELL_GAP; col = 0; }
-          collapsed = this.collapsedSections.has(entry.key);
-          placed.push({ kind: 'header', label: entry.label, key: entry.key, off });
-          off += SECTION_H;
-          continue;
-        }
-        if (collapsed) continue;
-        const x = gridLeft + gridOffset + col * (cellW + CELL_GAP_X);
-        placed.push({ kind: 'item', inst: entry.inst, isEquipped: entry.isEquipped, count: entry.count, x, off });
-        col++;
-        if (col >= cols) { col = 0; off += EQUIP_CELL_H + CELL_GAP; }
-      }
-      if (col !== 0) off += EQUIP_CELL_H + CELL_GAP;
-      const totalH = off + CELL_GAP;
-      // Clamp the viewport so it always cuts mid-row when there's more below — a partial next card
-      // always peeks above the fold instead of the screen looking coincidentally "full".
-      const listH = peekViewportH(availH, EQUIP_CELL_H + CELL_GAP, totalH);
-      const maxScroll = Math.max(0, totalH - listH);
-      this.scrollY = Math.max(0, Math.min(this.scrollY, maxScroll));
-      this.scrollRegionTop = listY;
-      this.scrollRegionBottom = listY + listH;
-      this.maxScroll = maxScroll;
-
-      // Cards are drawn into a masked sub-layer so an overscrolled row never bleeds up past listY
-      // and paints over the slot filter bar / loadout strip above it (they only skip rows fully
-      // outside [listY, listY+listH], so a row straddling that edge would otherwise render in full).
-      const gridLayer = new PIXI.Container();
-      this.bodyLayer.addChild(gridLayer);
-      const clip = new PIXI.Graphics();
-      clip.beginFill(0xffffff).drawRect(0, listY, w, listH).endFill();
-      this.bodyLayer.addChild(clip);
-      gridLayer.mask = clip;
+    if (instances.length === 0) {
+      const lbl = txt(t('equip.invEmpty'), FS.heading, C.mid);
+      lbl.anchor.set(0.5, 0.5); lbl.x = w / 2; lbl.y = listY + availH / 2;
+      core.bodyLayer.addChild(lbl);
+      core.maxScroll = 0;
+      this.lastEntrySig = [];
       this.cellContainers = new Map();
       this.cellRects = new Map();
-      const outerLayer = this.bodyLayer;
-      this.bodyLayer = gridLayer;
-      for (const p of placed) {
-        const y = listY + p.off - this.scrollY;
-        const eh = p.kind === 'header' ? SECTION_H : EQUIP_CELL_H;
-        if (y + eh < listY || y > listY + listH) continue;
-        if (p.kind === 'header') { this.renderSectionHeader(p.label, p.key, y); continue; }
-        // Each item cell gets its own container (rather than drawing loose into gridLayer) so
-        // refreshInstanceCell() can tear down and redraw just this one cell in place later.
-        const cellC = new PIXI.Container();
-        gridLayer.addChild(cellC);
-        this.cellContainers.set(p.inst.id, cellC);
-        this.cellRects.set(p.inst.id, { x: p.x, y, w: cellW });
-        this.bodyLayer = cellC;
-        this.renderInstanceCell(p.inst, p.x, y, cellW, p.isEquipped, p.count);
-        this.bodyLayer = gridLayer;
+      return;
+    }
+
+    // Sort: equipped first, then rarity desc, then level desc — stable, deterministic (see
+    // sortedInstances()).
+    const equippedSet = equippedIds(save);
+    const entries = this.buildDisplayEntries(instances, equippedSet);
+    this.lastEntrySig = this.entrySignature(entries);
+    // Item cells start right of the sidebar rail; right pad stays one CELL_GAP.
+    const gridLeft = left + CELL_GAP;
+    const avail = w - gridLeft - CELL_GAP;
+    // See equipGridColumns (EquipmentScene/layout.ts) for the column-width-floor + centering math
+    // and equipmentGridColumns.test.ts for its unit coverage — 2026-08-09 UX fix.
+    const { cols, cellW, offset: gridOffset } = equipGridColumns(avail, landscape);
+
+    // Layout pass: headers span a full row and reset the column cursor; item
+    // cells pack left-to-right into `cols` columns. `off` is the vertical
+    // offset from listY (pre-scroll), computed up-front to clamp scrollY.
+    // Items belonging to a collapsed section are skipped entirely (no space reserved).
+    type Placed =
+      | { kind: 'header'; label: string; key: SectionKey; off: number }
+      | { kind: 'item'; inst: EquipmentInstance; isEquipped: boolean; count: number; x: number; off: number };
+    const placed: Placed[] = [];
+    let off = LIST_TOP_PAD;
+    let col = 0;
+    let collapsed = false;
+    for (const entry of entries) {
+      if (entry.kind === 'header') {
+        if (col !== 0) { off += EQUIP_CELL_H + CELL_GAP; col = 0; }
+        collapsed = core.collapsedSections.has(entry.key);
+        placed.push({ kind: 'header', label: entry.label, key: entry.key, off });
+        off += SECTION_H;
+        continue;
       }
-      this.bodyLayer = outerLayer;
-
-      drawScrollIndicator(this.bodyLayer, { x: gridLeft, y: listY, w: avail, h: listH }, this.scrollY, Math.max(0, totalH - listH));
+      if (collapsed) continue;
+      const x = gridLeft + gridOffset + col * (cellW + CELL_GAP_X);
+      placed.push({ kind: 'item', inst: entry.inst, isEquipped: entry.isEquipped, count: entry.count, x, off });
+      col++;
+      if (col >= cols) { col = 0; off += EQUIP_CELL_H + CELL_GAP; }
     }
+    if (col !== 0) off += EQUIP_CELL_H + CELL_GAP;
+    const totalH = off + CELL_GAP;
+    // Clamp the viewport so it always cuts mid-row when there's more below — a partial next card
+    // always peeks above the fold instead of the screen looking coincidentally "full".
+    const listH = peekViewportH(availH, EQUIP_CELL_H + CELL_GAP, totalH);
+    const maxScroll = Math.max(0, totalH - listH);
+    core.scrollY = Math.max(0, Math.min(core.scrollY, maxScroll));
+    core.scrollRegionTop = listY;
+    core.scrollRegionBottom = listY + listH;
+    core.maxScroll = maxScroll;
 
-    /** Slot filter bar (All / Weapon / Armor / Trinket), confined to [x, x+w) — the right column. */
-    renderSlotFilter(x: number, y: number, w: number): void {
-      const filters: { key: EquipSlot | 'all'; label: string }[] = [
-        { key: 'all',     label: t('equip.filterAll') },
-        { key: 'weapon',  label: t('equip.slot.weapon') },
-        { key: 'armor',   label: t('equip.slot.armor') },
-        { key: 'trinket', label: t('equip.slot.trinket') },
-      ];
-      const fw = w / filters.length;
-      const bg = new PIXI.Graphics();
-      bg.beginFill(0xe8e5da).drawRect(x, y, w, FILTER_H).endFill();
-      this.bodyLayer.addChild(bg);
-
-      filters.forEach((f, i) => {
-        const active = this.filterSlot === f.key;
-        const fx = x + i * fw;
-        if (active) {
-          const hlt = new PIXI.Graphics();
-          hlt.beginFill(0xfaf9f5).drawRoundedRect(fx + 3, y + 3, fw - 6, FILTER_H - 6, 3).endFill();
-          this.bodyLayer.addChild(hlt);
-        }
-        const lbl = txt(f.label, FS.label, active ? C.accent : C.dark, active);
-        lbl.anchor.set(0.5, 0.5); lbl.x = fx + fw / 2; lbl.y = y + FILTER_H / 2;
-        this.bodyLayer.addChild(lbl);
-        this.hitRects.push({
-          rect: { x: fx, y, w: fw, h: FILTER_H },
-          action: () => {
-            if (this.filterSlot !== f.key) { this.filterSlot = f.key; this.scrollY = 0; this.render(); }
-          },
-        });
-      });
+    // Cards are drawn into a masked sub-layer so an overscrolled row never bleeds up past listY
+    // and paints over the slot filter bar / loadout strip above it (they only skip rows fully
+    // outside [listY, listY+listH], so a row straddling that edge would otherwise render in full).
+    const gridLayer = new PIXI.Container();
+    core.bodyLayer.addChild(gridLayer);
+    const clip = new PIXI.Graphics();
+    clip.beginFill(0xffffff).drawRect(0, listY, w, listH).endFill();
+    core.bodyLayer.addChild(clip);
+    gridLayer.mask = clip;
+    this.cellContainers = new Map();
+    this.cellRects = new Map();
+    const outerLayer = core.bodyLayer;
+    core.bodyLayer = gridLayer;
+    for (const p of placed) {
+      const y = listY + p.off - core.scrollY;
+      const eh = p.kind === 'header' ? SECTION_H : EQUIP_CELL_H;
+      if (y + eh < listY || y > listY + listH) continue;
+      if (p.kind === 'header') { this.renderSectionHeader(p.label, p.key, y); continue; }
+      // Each item cell gets its own container (rather than drawing loose into gridLayer) so
+      // refreshInstanceCell() can tear down and redraw just this one cell in place later.
+      const cellC = new PIXI.Container();
+      gridLayer.addChild(cellC);
+      this.cellContainers.set(p.inst.id, cellC);
+      this.cellRects.set(p.inst.id, { x: p.x, y, w: cellW });
+      core.bodyLayer = cellC;
+      renderInstanceCell(core, this.detail, p.inst, p.x, y, cellW, p.isEquipped, p.count);
+      core.bodyLayer = gridLayer;
     }
+    core.bodyLayer = outerLayer;
 
-    /**
-     * Section divider header ("Equipped" / "Bag"), aligned with the item grid (right of the
-     * sidebar/margin rule, shifted right a bit further so it doesn't hug the rule) and sized 2x
-     * for legibility. Tapping it toggles that section's cards collapsed/expanded — the chevron
-     * shows the current state. Bold + dark so it reads against the paper texture.
-     */
-    private renderSectionHeader(label: string, key: SectionKey, cy: number): void {
-      const { w } = this;
-      const collapsed = this.collapsedSections.has(key);
-      const left = marginLineX(w) + CELL_GAP + 20;
-      const lbl = txt(`${collapsed ? '▶' : '▼'} ${label}`, FS.label, C.dark, true);
-      lbl.x = left; lbl.y = cy + (SECTION_H - lbl.height) / 2;
-      this.bodyLayer.addChild(lbl);
-      const lineX = lbl.x + lbl.width + 10;
-      const lineY = cy + SECTION_H / 2;
-      const line = new PIXI.Graphics();
-      line.lineStyle(1, C.mid, 0.5).moveTo(lineX, lineY).lineTo(w - 14, lineY);
-      this.bodyLayer.addChild(line);
-      this.hitRects.push({
-        rect: { x: 0, y: cy, w, h: SECTION_H },
+    drawScrollIndicator(core.bodyLayer, { x: gridLeft, y: listY, w: avail, h: listH }, core.scrollY, Math.max(0, totalH - listH));
+  }
+
+  /** Slot filter bar (All / Weapon / Armor / Trinket), confined to [x, x+w) — the right column. */
+  renderSlotFilter(x: number, y: number, w: number): void {
+    const core = this.core;
+    const filters: { key: EquipSlot | 'all'; label: string }[] = [
+      { key: 'all',     label: t('equip.filterAll') },
+      { key: 'weapon',  label: t('equip.slot.weapon') },
+      { key: 'armor',   label: t('equip.slot.armor') },
+      { key: 'trinket', label: t('equip.slot.trinket') },
+    ];
+    const fw = w / filters.length;
+    const bg = new PIXI.Graphics();
+    bg.beginFill(0xe8e5da).drawRect(x, y, w, FILTER_H).endFill();
+    core.bodyLayer.addChild(bg);
+
+    filters.forEach((f, i) => {
+      const active = core.filterSlot === f.key;
+      const fx = x + i * fw;
+      if (active) {
+        const hlt = new PIXI.Graphics();
+        hlt.beginFill(0xfaf9f5).drawRoundedRect(fx + 3, y + 3, fw - 6, FILTER_H - 6, 3).endFill();
+        core.bodyLayer.addChild(hlt);
+      }
+      const lbl = txt(f.label, FS.label, active ? C.accent : C.dark, active);
+      lbl.anchor.set(0.5, 0.5); lbl.x = fx + fw / 2; lbl.y = y + FILTER_H / 2;
+      core.bodyLayer.addChild(lbl);
+      core.hitRects.push({
+        rect: { x: fx, y, w: fw, h: FILTER_H },
         action: () => {
-          if (collapsed) this.collapsedSections.delete(key);
-          else this.collapsedSections.add(key);
-          this.render();
+          if (core.filterSlot !== f.key) { core.filterSlot = f.key; core.scrollY = 0; core.render(); }
         },
       });
+    });
+  }
+
+  /**
+   * Section divider header ("Equipped" / "Bag"), aligned with the item grid (right of the
+   * sidebar/margin rule, shifted right a bit further so it doesn't hug the rule) and sized 2x
+   * for legibility. Tapping it toggles that section's cards collapsed/expanded — the chevron
+   * shows the current state. Bold + dark so it reads against the paper texture.
+   */
+  private renderSectionHeader(label: string, key: SectionKey, cy: number): void {
+    const core = this.core;
+    const { w } = core;
+    const collapsed = core.collapsedSections.has(key);
+    const left = marginLineX(w) + CELL_GAP + 20;
+    const lbl = txt(`${collapsed ? '▶' : '▼'} ${label}`, FS.label, C.dark, true);
+    lbl.x = left; lbl.y = cy + (SECTION_H - lbl.height) / 2;
+    core.bodyLayer.addChild(lbl);
+    const lineX = lbl.x + lbl.width + 10;
+    const lineY = cy + SECTION_H / 2;
+    const line = new PIXI.Graphics();
+    line.lineStyle(1, C.mid, 0.5).moveTo(lineX, lineY).lineTo(w - 14, lineY);
+    core.bodyLayer.addChild(line);
+    core.hitRects.push({
+      rect: { x: 0, y: cy, w, h: SECTION_H },
+      action: () => {
+        if (collapsed) core.collapsedSections.delete(key);
+        else core.collapsedSections.add(key);
+        core.render();
+      },
+    });
+  }
+
+  /**
+   * Convert a sorted instance list into display entries with section headers and stack counts.
+   * - Same defId + rarity + level=0, not equipped and not locked → merged into one row (shows ×N).
+   * - Equipped / locked / level>0 → always a separate row.
+   * - One section header is inserted for the Equipped section and one for the Bag section.
+   */
+  private buildDisplayEntries(
+    sorted: EquipmentInstance[],
+    equippedSet: Set<string>,
+  ): DisplayEntry[] {
+    const entries: DisplayEntry[] = [];
+    let inEquippedSection = false;
+    let inBagSection = false;
+    const seenStacks = new Set<string>();
+
+    for (const inst of sorted) {
+      const isEquipped = equippedSet.has(inst.id);
+
+      if (isEquipped && !inEquippedSection) {
+        inEquippedSection = true;
+        entries.push({ kind: 'header', label: t('equip.sectionEquipped'), key: 'equipped' });
+      }
+      if (!isEquipped && !inBagSection) {
+        inBagSection = true;
+        entries.push({ kind: 'header', label: t('equip.sectionBag'), key: 'bag' });
+      }
+
+      if (isEquipped || inst.locked || inst.level > 0) {
+        entries.push({ kind: 'item', inst, count: 1, isEquipped });
+        continue;
+      }
+
+      // Unenhanced items are stackable: merge by defId+rarity.
+      const key = `${inst.defId}:${inst.rarity}`;
+      if (seenStacks.has(key)) continue;
+      seenStacks.add(key);
+      const count = sorted.filter(
+        x => !equippedSet.has(x.id) && !x.locked && x.level === 0 &&
+             x.defId === inst.defId && x.rarity === inst.rarity,
+      ).length;
+      entries.push({ kind: 'item', inst, count, isEquipped: false });
     }
 
-    /**
-     * Convert a sorted instance list into display entries with section headers and stack counts.
-     * - Same defId + rarity + level=0, not equipped and not locked → merged into one row (shows ×N).
-     * - Equipped / locked / level>0 → always a separate row.
-     * - One section header is inserted for the Equipped section and one for the Bag section.
-     */
-    private buildDisplayEntries(
-      sorted: EquipmentInstance[],
-      equippedIds: Set<string>,
-    ): DisplayEntry[] {
-      const entries: DisplayEntry[] = [];
-      let inEquippedSection = false;
-      let inBagSection = false;
-      const seenStacks = new Set<string>();
-
-      for (const inst of sorted) {
-        const isEquipped = equippedIds.has(inst.id);
-
-        if (isEquipped && !inEquippedSection) {
-          inEquippedSection = true;
-          entries.push({ kind: 'header', label: t('equip.sectionEquipped'), key: 'equipped' });
-        }
-        if (!isEquipped && !inBagSection) {
-          inBagSection = true;
-          entries.push({ kind: 'header', label: t('equip.sectionBag'), key: 'bag' });
-        }
-
-        if (isEquipped || inst.locked || inst.level > 0) {
-          entries.push({ kind: 'item', inst, count: 1, isEquipped });
-          continue;
-        }
-
-        // Unenhanced items are stackable: merge by defId+rarity.
-        const key = `${inst.defId}:${inst.rarity}`;
-        if (seenStacks.has(key)) continue;
-        seenStacks.add(key);
-        const count = sorted.filter(
-          x => !equippedIds.has(x.id) && !x.locked && x.level === 0 &&
-               x.defId === inst.defId && x.rarity === inst.rarity,
-        ).length;
-        entries.push({ kind: 'item', inst, count, isEquipped: false });
-      }
-
-      return entries;
-    }
-
-    /** Loadout strip (Weapon/Armor/Trinket preview cells), confined to the right column — right of the sidebar rail, mirroring the filter bar and item grid below it. */
-    private renderLoadout(save: SaveData, y: number, left: number): void {
-      const { w } = this;
-      const label = txt(t('equip.loadout'), FS.micro, C.mid);
-      label.x = left + 10; label.y = y + 4;
-      this.bodyLayer.addChild(label);
-
-      // CC-1: gear lives on the active card instance, not on a global loadout.
-      const activeCard = save.cardInv?.[this.cb.activeCardInstanceId];
-      const gear = activeCard?.gear ?? {};
-      const cellW = (w - left - 8 * 4) / 3;
-      const cellH = LOADOUT_H - 28;
-      SLOTS.forEach((slot, i) => {
-        const x = left + 8 + i * (cellW + 8);
-        const cy = y + 22;
-        const instId = gear[slot];
-        const inst = instId ? save.equipmentInv[instId] : undefined;
-        const border = inst ? RARITY_COLOR[inst.rarity] : C.mid;
-        const cell = sketchPanel(cellW, cellH, { fill: 0xfaf9f5, border, seed: seedFor(i, 7, cellW) });
-        cell.x = x; cell.y = cy;
-        this.bodyLayer.addChild(cell);
-
-        // Slot label: when equipped, show the slot type in small text as a secondary hint; when empty, show it bold so the player can easily identify open slots.
-        const slotLbl = txt(t(`equip.slot.${slot}` as TranslationKey), FS.micro, inst ? C.mid : C.dark, !inst);
-        slotLbl.anchor.set(0.5, 0); slotLbl.x = x + cellW / 2; slotLbl.y = cy + 4;
-        this.bodyLayer.addChild(slotLbl);
-
-        if (inst) {
-          this.addGlyph(slot, inst.rarity, x + cellW / 2, cy + cellH * 0.34, 30, seedFor(i, 13, cellW), 1, inst.defId);
-          const nm = txt(this.itemName(inst.defId), FS.micro, C.dark);
-          nm.anchor.set(0.5, 0.5); nm.x = x + cellW / 2; nm.y = cy + cellH * 0.66;
-          this.bodyLayer.addChild(nm);
-          if (inst.level > 0) {
-            const starSize = 10;
-            const stars = this.buildLevelStars(inst.level, cellW - 8, starSize, 2);
-            // Bottom-anchored (not a cellH fraction) so the row always clears the slot cell's
-            // bottom border regardless of cellH — a fraction-based y previously let the stars
-            // overrun the border by a few px (2026-08-01).
-            stars.x = x + cellW / 2 - stars.width / 2; stars.y = cy + cellH - starSize - 4;
-            this.bodyLayer.addChild(stars);
-          }
-          this.hitRects.push({ rect: { x, y: cy, w: cellW, h: cellH }, action: () => this.openDetail(inst.id) });
-        } else {
-          // Empty slot: addGlyph renders the hollow "+" placeholder (no defId), paired
-          // with the "empty" label so the player can clearly identify open positions.
-          this.addGlyph(slot, 'common', x + cellW / 2, cy + cellH * 0.45, 28, seedFor(i, 13, cellW), 1);
-          const empty = txt(t('equip.slotEmpty'), FS.micro, C.mid);
-          empty.anchor.set(0.5, 0.5); empty.x = x + cellW / 2; empty.y = cy + cellH * 0.88;
-          this.bodyLayer.addChild(empty);
-        }
-      });
-    }
-
-    /**
-     * Icon-card cell: name + level across the top (stack count / lock badge in the top-right
-     * corner), equipment glyph on the left, rarity / equipped tag / affix stat lines on the right,
-     * action hint bottom-right. Border color encodes rarity when equipped, neutral otherwise.
-     */
-    private renderInstanceCell(inst: EquipmentInstance, x: number, y: number, cellW: number, equipped: boolean, count = 1): void {
-      const pad = 8;
-      const color = RARITY_COLOR[inst.rarity];
-      const save = this.cb.getSave();
-      // Available on-card actions (enhance / equip / reforge / salvage …) — unavailable ones are
-      // omitted so they're hidden rather than greyed (2026-07-22: actions moved off the detail modal
-      // onto the cell; a tap on a button fires it directly, a tap on the card body opens the info modal).
-      const actions = this.instanceActions(save, inst);
-      // Border always encodes rarity (equipped or not) so the color language is consistent
-      // across the Equipped strip and the Bag grid — it used to fall back to neutral grey
-      // for unequipped items, which made rarity only readable via the text label.
-      const cell = sketchPanel(cellW, EQUIP_CELL_H, { fill: 0xfaf9f5, border: color, seed: seedFor(x, y, cellW) });
-      cell.x = x; cell.y = y;
-      this.bodyLayer.addChild(cell);
-
-      // Top-right corner badge: lock icon takes priority; otherwise the stack count (×N). The two
-      // never coexist — stacked entries are always unlocked/level 0 (see buildDisplayEntries), so a
-      // locked instance is never also a counted stack.
-      let cornerBadgeW = 0;
-      if (inst.locked) {
-        const l = buildIcon('lock', 18, C.mid);
-        l.x = x + cellW - pad - 18; l.y = y + pad;
-        this.bodyLayer.addChild(l);
-        cornerBadgeW = 18;
-      } else if (count > 1) {
-        const badge = txt(`×${count}`, FS.body, C.mid, true);
-        badge.anchor.set(1, 0); badge.x = x + cellW - pad; badge.y = y + pad;
-        this.bodyLayer.addChild(badge);
-        cornerBadgeW = badge.width;
-      }
-
-      // Top: name (scaled down to fit if too wide, leaving room for the corner badge above).
-      const name = txt(this.itemName(inst.defId), FS.bodyLg, C.dark, true);
-      name.x = x + pad; name.y = y + pad;
-      const nameMaxW = cellW - pad * 2 - (cornerBadgeW > 0 ? cornerBadgeW + 8 : 0);
-      if (name.width > nameMaxW) name.scale.set(Math.min(1, nameMaxW / name.width));
-      this.bodyLayer.addChild(name);
-
-      // Enhance level as a row of gold stars beneath the name, in place of the old "+N" suffix
-      // (matches the Hero Roster / Card level-star convention). Header row grows to make room.
-      const headerH = inst.level > 0 ? 40 : 32;
-      if (inst.level > 0) {
-        const stars = this.buildLevelStars(inst.level, cellW - pad * 2);
-        stars.x = x + pad; stars.y = y + pad + 20;
-        this.bodyLayer.addChild(stars);
-      }
-
-      // Bottom band reserved for the action button row (only when there are actions to show);
-      // the glyph frame shrinks to leave room for it. Icon + small label stack → a bit taller.
-      const btnBandH = actions.length > 0 ? 46 : 0;
-      const bandGap = actions.length > 0 ? 8 : 0;
-
-      // Left: glyph in a rarity-bordered frame.
-      const slot = getEquipDef(inst.defId)?.slot ?? 'weapon';
-      const imgBox = EQUIP_CELL_H - (pad + headerH) - pad - btnBandH - bandGap;
-      const imgX = x + pad;
-      const imgY = y + pad + headerH;
-      const frame = sketchPanel(imgBox, imgBox, { fill: 0xf0eee7, border: color, seed: seedFor(x, y, imgBox) });
-      frame.x = imgX; frame.y = imgY;
-      this.bodyLayer.addChild(frame);
-      this.addGlyph(slot, inst.rarity, imgX + imgBox / 2, imgY + imgBox / 2, imgBox - 8, seedFor(x, imgBox, cellW), 1, inst.defId);
-
-      // Right: rarity / equipped tag on top, then the item's affix lines (its stats, e.g.
-      // "Health +10%") shown directly beside the icon — no need to open the detail modal just to
-      // see what a piece rolls. Main affix highlighted in accent color, sub/skill in neutral dark
-      // (mirrors the detail modal's affix list styling). Stack count moved to the top-right corner
-      // badge above, so this column is now stat space instead of duplicate count text.
-      const ax = imgX + imgBox + 12;
-      const colW = x + cellW - pad - ax;
-      let ay = imgY + 4;
-      const rar = txt(t(`equip.rarity.${inst.rarity}` as TranslationKey), FS.body, color, true);
-      rar.x = ax; rar.y = ay; this.bodyLayer.addChild(rar); ay += 26;
-      if (equipped) {
-        const slotLabel = t(`equip.slot.${slot}` as TranslationKey);
-        const e = txt(`[${t('equip.equipped')} · ${slotLabel}]`, FS.small, C.green, true);
-        if (e.width > colW) e.scale.set(Math.max(0.01, colW / e.width));
-        e.x = ax; e.y = ay; this.bodyLayer.addChild(e); ay += 22;
-      }
-      for (const af of inst.affixes) {
-        const afColor = affixKind(af.id) === 'main' ? C.accent : C.dark;
-        const line = txt(this.affixDesc(af.id, af.value, inst.level), FS.small, afColor);
-        if (line.width > colW) line.scale.set(Math.max(0.01, colW / line.width));
-        line.x = ax; line.y = ay; this.bodyLayer.addChild(line); ay += 20;
-      }
-
-      // Action buttons along the bottom of the cell, spanning its full width. Each is an icon-forward
-      // button (glyph on top, small label under it) so every operation is a tap away on this one
-      // screen — no need to open the item first. Only truly-unavailable actions are omitted (hidden);
-      // a momentarily-busy one stays put but greyed (see CellAction.disabled) so the button band
-      // never changes height while a request is in flight. Pushed to hitRects *before* the full-cell
-      // rect below so a button tap wins over the card-body detail tap.
-      if (actions.length > 0) {
-        const n = actions.length;
-        const bgap = 5;
-        const by = y + EQUIP_CELL_H - pad - btnBandH;
-        const bw = (cellW - pad * 2 - bgap * (n - 1)) / n;
-        actions.forEach((a, i) => {
-          const bx = x + pad + i * (bw + bgap);
-          const fill = a.disabled ? C.btnOff : a.fill;
-          const stroke = a.disabled ? C.mid : a.stroke;
-          const g = sketchPanel(bw, btnBandH, { fill, border: stroke, seed: seedFor(bx, by, bw) });
-          g.x = bx; g.y = by;
-          this.bodyLayer.addChild(g);
-          // Light ink on the dark/blue fills, dark on the pale (salvage/unequip) fills; muted grey once disabled.
-          const onDark = !a.disabled && (a.fill === C.dark || a.fill === 0x3355aa);
-          const inkColor = a.disabled ? C.mid : (onDark ? C.light : C.dark);
-          const iconSz = 20;
-          const ic = buildIcon(a.icon, iconSz, inkColor);
-          ic.x = bx + bw / 2 - iconSz / 2; ic.y = by + 5;
-          this.bodyLayer.addChild(ic);
-          const lbl = txt(a.label, FS.micro, inkColor, true);
-          lbl.anchor.set(0.5, 0.5); lbl.x = bx + bw / 2; lbl.y = by + btnBandH - 10;
-          if (lbl.width > bw - 4) lbl.scale.set(Math.max(0.35, (bw - 4) / lbl.width));
-          this.bodyLayer.addChild(lbl);
-          if (!a.disabled) this.hitRects.push({ rect: { x: bx, y: by, w: bw, h: btnBandH }, owner: inst.id, action: a.fn });
-        });
-      }
-
-      // Card body (outside the buttons) opens the info modal — affixes, enhance rate/cost, protect toggle.
-      this.hitRects.push({ rect: { x, y, w: cellW, h: EQUIP_CELL_H }, owner: inst.id, action: () => this.openDetail(inst.id) });
-    }
-  };
+    return entries;
+  }
 }

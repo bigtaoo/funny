@@ -118,37 +118,37 @@ describe('FamilyScene — create-form caret', () => {
 
   it('name field shows a blinking cursor while focused and empty', () => {
     const scene = build();
-    scene.mode = 'create';
-    scene.createField = 'name';
-    scene.createName = '';
-    expectBlinkingCaret(scene.container, (on) => { scene.caretOn = on; }, () => scene.render(), '|');
+    scene.core.mode = 'create';
+    scene.core.createField = 'name';
+    scene.core.createName = '';
+    expectBlinkingCaret(scene.container, (on) => { scene.core.caretOn = on; }, () => scene.render(), '|');
     scene.destroy();
   });
 
   it('name field shows a blinking cursor appended to typed text', () => {
     const scene = build();
-    scene.mode = 'create';
-    scene.createField = 'name';
-    scene.createName = 'MyFamily';
-    expectBlinkingCaret(scene.container, (on) => { scene.caretOn = on; }, () => scene.render(), 'MyFamily|');
+    scene.core.mode = 'create';
+    scene.core.createField = 'name';
+    scene.core.createName = 'MyFamily';
+    expectBlinkingCaret(scene.container, (on) => { scene.core.caretOn = on; }, () => scene.render(), 'MyFamily|');
     scene.destroy();
   });
 
   it('tag field shows a blinking cursor while focused', () => {
     const scene = build();
-    scene.mode = 'create';
-    scene.createField = 'tag';
-    scene.createTag = 'AB';
-    expectBlinkingCaret(scene.container, (on) => { scene.caretOn = on; }, () => scene.render(), 'AB|');
+    scene.core.mode = 'create';
+    scene.core.createField = 'tag';
+    scene.core.createTag = 'AB';
+    expectBlinkingCaret(scene.container, (on) => { scene.core.caretOn = on; }, () => scene.render(), 'AB|');
     scene.destroy();
   });
 
   it('unfocused fields never show a cursor regardless of blink phase', () => {
     const scene = build();
-    scene.mode = 'create';
-    scene.createField = null;
-    scene.createName = 'MyFamily';
-    scene.caretOn = true;
+    scene.core.mode = 'create';
+    scene.core.createField = null;
+    scene.core.createName = 'MyFamily';
+    scene.core.caretOn = true;
     scene.render();
     expect(collectTexts(scene.container)).not.toContain('MyFamily|');
     scene.destroy();
@@ -329,26 +329,26 @@ describe('AuctionScene — designated-buyer field caret', () => {
 
   it('buyer field shows a blinking cursor while focused', () => {
     const scene = build();
-    scene.buyerActive = true;
-    scene.createBuyer = 'acc_42';
-    expectBlinkingCaret(scene.container, (on) => { scene.caretOn = on; }, () => scene.openCreateForm(), 'acc_42|');
+    scene.core.buyerActive = true;
+    scene.core.createBuyer = 'acc_42';
+    expectBlinkingCaret(scene.container, (on) => { scene.core.caretOn = on; }, () => scene.createListing.openCreateForm(), 'acc_42|');
     scene.destroy();
   });
 
   it('buyer field shows a blinking cursor while focused and empty (falls back to caret, not placeholder)', () => {
     const scene = build();
-    scene.buyerActive = true;
-    scene.createBuyer = '';
-    expectBlinkingCaret(scene.container, (on) => { scene.caretOn = on; }, () => scene.openCreateForm(), '|');
+    scene.core.buyerActive = true;
+    scene.core.createBuyer = '';
+    expectBlinkingCaret(scene.container, (on) => { scene.core.caretOn = on; }, () => scene.createListing.openCreateForm(), '|');
     scene.destroy();
   });
 
   it('unfocused buyer field never shows a cursor', () => {
     const scene = build();
-    scene.buyerActive = false;
-    scene.createBuyer = 'acc_42';
-    scene.caretOn = true;
-    scene.openCreateForm();
+    scene.core.buyerActive = false;
+    scene.core.createBuyer = 'acc_42';
+    scene.core.caretOn = true;
+    scene.createListing.openCreateForm();
     expect(collectTexts(scene.container)).not.toContain('acc_42|');
     scene.destroy();
   });

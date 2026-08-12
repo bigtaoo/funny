@@ -402,12 +402,12 @@ describe('ReplayScene — transport chrome geometry (§26)', () => {
     // GameRenderer.vignetteAlpha right before a losing game_over fires.
     for (let i = 0; i < scene.endFrame - 1 && !scene.ended; i++) scene.update(1 / 30);
     expect(scene.ended).toBe(false);
-    scene.renderer.vignetteAlpha = 1;
+    scene.renderer.events.vignetteAlpha = 1;
 
     scene.update(1 / 30); // the final tick: pushes currentTick to endFrame, ends playback
 
     expect(scene.ended).toBe(true);
-    expect(scene.renderer.vignetteAlpha).toBe(0);
+    expect(scene.renderer.events.vignetteAlpha).toBe(0);
 
     scene.destroy();
   });

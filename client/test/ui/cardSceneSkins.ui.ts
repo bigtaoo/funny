@@ -41,7 +41,7 @@ function findLabelPos(container: PIXI.Container, label: string): { x: number; y:
 function tap(scene: { container: PIXI.Container }, label: string): void {
   const pos = findLabelPos(scene.container, label);
   expect(pos, `label "${label}" not found in rendered tree`).not.toBeNull();
-  const hits = (scene as unknown as { hitRects: Hit[] }).hitRects;
+  const hits = (scene as unknown as { core: { hitRects: Hit[] } }).core.hitRects;
   const hit = hits.find(({ rect: r }) =>
     pos!.x >= r.x && pos!.x <= r.x + r.w && pos!.y >= r.y && pos!.y <= r.y + r.h);
   expect(hit, `no hit rect under label "${label}"`).toBeDefined();
@@ -133,8 +133,8 @@ describe('CardScene — Skins tab card grid layout', () => {
     const layout = { designWidth: 1920, designHeight: 400, orientation: 'landscape' } as unknown as
       Parameters<typeof buildSkinsScene>[1];
     const scene = buildSkinsScene(input, layout);
-    const s = scene as unknown as { scrollY: number };
-    expect(s.scrollY).toBe(0);
+    const s = scene as unknown as { core: { scrollY: number } };
+    expect(s.core.scrollY).toBe(0);
 
     // chenshou's tile (column 1, row 0) stays on-screen both before and after the drag below.
     const before = findLabelPos(scene.container, skinDisplayName('skin_shop_e1'))!;
@@ -145,7 +145,7 @@ describe('CardScene — Skins tab card grid layout', () => {
     input._emitDown(150, 150);
     input._emitMove(150, 150 - 100);
     (scene as unknown as { update(dt: number): void }).update(1 / 60);
-    expect(s.scrollY).toBeGreaterThan(0);
+    expect(s.core.scrollY).toBeGreaterThan(0);
 
     const after = findLabelPos(scene.container, skinDisplayName('skin_shop_e1'))!;
     expect(after.y).toBeLessThan(before.y); // content shifted up as scrollY increased
@@ -153,29 +153,29 @@ describe('CardScene — Skins tab card grid layout', () => {
     // Dragging far past the bottom must clamp, not scroll indefinitely.
     input._emitMove(150, 150 - 100000);
     (scene as unknown as { update(dt: number): void }).update(1 / 60);
-    const clampedScrollY = s.scrollY;
+    const clampedScrollY = s.core.scrollY;
     input._emitMove(150, 150 - 200000);
     (scene as unknown as { update(dt: number): void }).update(1 / 60);
-    expect(s.scrollY).toBe(clampedScrollY);
+    expect(s.core.scrollY).toBe(clampedScrollY);
     input._emitUp(150, 150 - 200000);
 
     // Dragging back up past the top must clamp to 0.
     input._emitDown(150, 150);
     input._emitMove(150, 150 + 100000);
     (scene as unknown as { update(dt: number): void }).update(1 / 60);
-    expect(s.scrollY).toBe(0);
+    expect(s.core.scrollY).toBe(0);
     scene.destroy();
   });
 
   it('does not scroll on a tall viewport where all cards already fit', () => {
     const input = new InputManager();
     const scene = buildSkinsScene(input, createLayout(1920, 1080));
-    const s = scene as unknown as { scrollY: number; update(dt: number): void };
+    const s = scene as unknown as { core: { scrollY: number }; update(dt: number): void };
 
     input._emitDown(600, 400);
     input._emitMove(600, 400 - 1000);
     s.update(1 / 60);
-    expect(s.scrollY).toBe(0);
+    expect(s.core.scrollY).toBe(0);
     scene.destroy();
   });
 });

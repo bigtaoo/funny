@@ -47,12 +47,13 @@ function mineTile(x: number, y: number, extra: Partial<WorldTileView> = {}): Wor
   return { x, y, type: 'territory', level: 1, mine: true, ...extra } as WorldTileView;
 }
 
-// TS privacy on ownerHasBoundary (declared via the PoolMixin's PoolHandlers interface) is
-// compile-time only — calling it through `as any` here mirrors the existing pattern the
-// codebase already uses for reaching into scene internals in throwaway/debug contexts.
+// TS privacy on ownerHasBoundary (declared via WorldMapRendererPool's PoolHandlers interface,
+// and on the private `pool` field of the WorldMapRenderer assembly) is compile-time only —
+// reaching through `as any` here mirrors the existing pattern the codebase already uses for
+// reaching into scene internals in throwaway/debug contexts.
 function hasBoundary(ctx: WorldMapContext, owner: number, x: number, y: number): boolean {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  return (ctx.view as any).ownerHasBoundary(owner, x, y);
+  return (ctx.view as any).pool.ownerHasBoundary(owner, x, y);
 }
 
 describe('ownerHasBoundary (2026-08-01 declutter pass)', () => {

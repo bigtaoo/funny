@@ -11,6 +11,8 @@ import { createLayout } from '../../src/layout/ScalingManager';
 import { InputManager } from '../../src/inputSystem/InputManager';
 import { initI18n, t } from '../../src/i18n';
 import { AuctionScene } from '../../src/scenes/AuctionScene';
+import { buildPickEntries, openItemPicker, listableSkins, selectedItemLabel } from '../../src/scenes/AuctionScene/itemPickerRender';
+import { equipName, cardName } from '../../src/scenes/AuctionScene/itemLabels';
 import { makeNewSave } from '../../src/game/meta/SaveData';
 import type { SaveData, EquipmentInstance, CardInstance } from '../../src/game/meta/SaveData';
 import type { WorldApiClient, AuctionView } from '../../src/net/WorldApiClient';
@@ -74,24 +76,24 @@ describe('AuctionScene picker — equipment/card dedupe (buildPickEntries)', () 
   it('collapses N identical equipment instances (same defId+level) into one entry labeled "×N"', () => {
     const save = saveWith({ e1: equip('e1'), e2: equip('e2'), e3: equip('e3') }, {});
     const scene = buildScene({ getSave: () => save });
-    const entries: PickEntry[] = scene.buildPickEntries();
+    const entries: PickEntry[] = buildPickEntries(scene.core);
     const equipEntries = entries.filter((e) => e.cls === 'equipment');
     expect(equipEntries).toHaveLength(1);
     // Level 0 gets no star suffix at all (2026-08-08: matches EquipmentScene's "+0 everywhere was pure
     // noise" convention — see levelStarsText) — just the name + the "×N" stack count.
-    expect(equipEntries[0].label).toBe(`${scene.equipName('wp_pencil')} ×3`);
+    expect(equipEntries[0].label).toBe(`${equipName('wp_pencil')} ×3`);
     scene.destroy();
   });
 
   it('collapses N identical card instances (same defId+level) into one entry labeled "×N"', () => {
     const save = saveWith({}, { c1: card('c1'), c2: card('c2'), c3: card('c3'), c4: card('c4') });
     const scene = buildScene({ getSave: () => save });
-    const entries: PickEntry[] = scene.buildPickEntries();
+    const entries: PickEntry[] = buildPickEntries(scene.core);
     const cardEntries = entries.filter((e) => e.cls === 'card');
     expect(cardEntries).toHaveLength(1);
     // 2026-08-08: cards now show a gold-star level too (matches equipment's convention and the
     // roster/detail card treatment) — no more "Lv.N" text.
-    expect(cardEntries[0].label).toBe(`${scene.cardName('suyuan')} ★ ×4`);
+    expect(cardEntries[0].label).toBe(`${cardName('suyuan')} ★ ×4`);
     scene.destroy();
   });
 
@@ -101,17 +103,17 @@ describe('AuctionScene picker — equipment/card dedupe (buildPickEntries)', () 
       { c1: card('c1'), c2: card('c2', { defId: 'max', level: 5 }) },
     );
     const scene = buildScene({ getSave: () => save });
-    const entries: PickEntry[] = scene.buildPickEntries();
+    const entries: PickEntry[] = buildPickEntries(scene.core);
     const equipEntries = entries.filter((e) => e.cls === 'equipment');
     const cardEntries = entries.filter((e) => e.cls === 'card');
     expect(equipEntries).toHaveLength(2);
     // Level 0 gets no star suffix (see the dedupe test above) — a lone instance is just the bare name.
     expect(equipEntries.map((e) => e.label).sort()).toEqual(
-      [`${scene.equipName('wp_pencil')} ×2`, scene.equipName('wp_marker')].sort(),
+      [`${equipName('wp_pencil')} ×2`, equipName('wp_marker')].sort(),
     );
     expect(cardEntries).toHaveLength(2);
     expect(cardEntries.map((e) => e.label).sort()).toEqual(
-      [`${scene.cardName('suyuan')} ★`, `${scene.cardName('max')} ★★★★★`].sort(),
+      [`${cardName('suyuan')} ★`, `${cardName('max')} ★★★★★`].sort(),
     );
     scene.destroy();
   });
@@ -119,10 +121,10 @@ describe('AuctionScene picker — equipment/card dedupe (buildPickEntries)', () 
   it('picking a merged equipment entry resolves to one of the actual grouped instance ids', () => {
     const save = saveWith({ e1: equip('e1'), e2: equip('e2'), e3: equip('e3') }, {});
     const scene = buildScene({ getSave: () => save });
-    const entries: PickEntry[] = scene.buildPickEntries();
+    const entries: PickEntry[] = buildPickEntries(scene.core);
     entries.find((e) => e.cls === 'equipment')!.onPick();
-    expect(scene.createClass).toBe('equipment');
-    expect(['e1', 'e2', 'e3']).toContain(scene.createEquipId);
+    expect(scene.core.createClass).toBe('equipment');
+    expect(['e1', 'e2', 'e3']).toContain(scene.core.createEquipId);
     scene.destroy();
   });
 
@@ -134,25 +136,25 @@ describe('AuctionScene picker — equipment/card dedupe (buildPickEntries)', () 
     const scene = buildScene({ getSave: () => save });
     // Note: listableCards() only excludes cards with gear equipped, not locked ones — locked cards are
     // still listable, just flagged. A locked representative would falsely hide an otherwise-pickable group.
-    const entries: PickEntry[] = scene.buildPickEntries();
+    const entries: PickEntry[] = buildPickEntries(scene.core);
     const cardEntry = entries.find((e) => e.cls === 'card')!;
     expect(cardEntry.locked).toBe(false);
     cardEntry.onPick();
-    expect(scene.createCardId).toBe('c2');
+    expect(scene.core.createCardId).toBe('c2');
     scene.destroy();
   });
 
   it('a card group where every instance is locked is itself marked locked', () => {
     const save = saveWith({}, { c1: card('c1', { locked: true }), c2: card('c2', { locked: true }) });
     const scene = buildScene({ getSave: () => save });
-    const entries: PickEntry[] = scene.buildPickEntries();
+    const entries: PickEntry[] = buildPickEntries(scene.core);
     expect(entries.find((e) => e.cls === 'card')!.locked).toBe(true);
     scene.destroy();
   });
 
   it('materials are unaffected by the equipment/card dedupe logic (still one entry per material type)', () => {
     const scene = buildScene();
-    const entries: PickEntry[] = scene.buildPickEntries();
+    const entries: PickEntry[] = buildPickEntries(scene.core);
     expect(entries.filter((e) => e.cls === 'material')).toHaveLength(3); // scrap/lead/binding
     scene.destroy();
   });
@@ -162,7 +164,7 @@ describe('AuctionScene picker — real per-item icon wiring (defId carried throu
   it('equipment/card entries carry the defId needed to draw the real glyph/art, not a fixed class icon', () => {
     const save = saveWith({ e1: equip('e1', { defId: 'wp_marker', rarity: 'rare' }) }, { c1: card('c1', { defId: 'max', level: 3 }) });
     const scene = buildScene({ getSave: () => save });
-    const entries: PickEntry[] = scene.buildPickEntries();
+    const entries: PickEntry[] = buildPickEntries(scene.core);
     expect(entries.find((e) => e.cls === 'equipment')!.defId).toBe('wp_marker');
     expect(entries.find((e) => e.cls === 'card')!.defId).toBe('max');
     scene.destroy();
@@ -174,24 +176,24 @@ describe('AuctionScene picker — real per-item icon wiring (defId carried throu
       { c1: card('c1'), c2: card('c2'), c3: card('c3', { defId: 'does_not_exist' }) },
     );
     const scene = buildScene({ getSave: () => save });
-    expect(() => scene.openItemPicker()).not.toThrow();
-    expect(scene.itemPickerOpen).toBe(true);
+    expect(() => openItemPicker(scene.core)).not.toThrow();
+    expect(scene.core.itemPickerOpen).toBe(true);
     scene.destroy();
   });
 
   it('renders exactly one card per distinct defId+level regardless of how many raw instances exist', () => {
     const save = saveWith({ e1: equip('e1'), e2: equip('e2'), e3: equip('e3') }, {});
     const scene = buildScene({ getSave: () => save });
-    scene.openItemPicker();
-    scene.pickerFilter = 'equipment';
+    openItemPicker(scene.core);
+    scene.core.pickerFilter = 'equipment';
     scene.render();
     // One rendered card == one hit rect beyond the fixed chrome (back button + sidebar tab rail).
-    const pickHits = scene.hitRects.filter((h: { action: () => void }) => {
+    const pickHits = scene.core.hitRects.filter((h: { action: () => void }) => {
       // Sidebar-tab/back actions don't touch createEquipId; the picker card's onPick does.
-      const before = scene.createEquipId;
+      const before = scene.core.createEquipId;
       h.action();
-      const touched = scene.createEquipId !== before || (before === null && scene.createEquipId !== null);
-      scene.createEquipId = before; // restore, since some other hits might also be pressed by this loop
+      const touched = scene.core.createEquipId !== before || (before === null && scene.core.createEquipId !== null);
+      scene.core.createEquipId = before; // restore, since some other hits might also be pressed by this loop
       return touched;
     });
     expect(pickHits).toHaveLength(1);
@@ -204,14 +206,14 @@ describe('AuctionScene picker — skins (2026-08-04, AUCTION_DESIGN.md §9 task7
     // skin_e2 → UnitType.Mara (skinDefs.ts SKIN_TARGET_UNIT); equipped under the per-unit 'skin:<UnitType>' slot.
     const save = saveWithSkins(['skin_e1', 'skin_e2'], { 'skin:mara': 'skin_e2' });
     const scene = buildScene({ getSave: () => save });
-    expect(scene.listableSkins()).toEqual(['skin_e1']);
+    expect(listableSkins(scene.core)).toEqual(['skin_e1']);
     scene.destroy();
   });
 
   it('an owned, unequipped skin appears in buildPickEntries with cls="skin" and its display name', () => {
     const save = saveWithSkins(['skin_e2']);
     const scene = buildScene({ getSave: () => save });
-    const entries: PickEntry[] = scene.buildPickEntries();
+    const entries: PickEntry[] = buildPickEntries(scene.core);
     const skinEntries = entries.filter((e) => e.cls === 'skin');
     expect(skinEntries).toHaveLength(1);
     expect(skinEntries[0].skinId).toBe('skin_e2');
@@ -222,7 +224,7 @@ describe('AuctionScene picker — skins (2026-08-04, AUCTION_DESIGN.md §9 task7
   it('a skin with no owned copies (or fully equipped) contributes no entry', () => {
     const save = saveWithSkins(['skin_e2'], { 'skin:mara': 'skin_e2' });
     const scene = buildScene({ getSave: () => save });
-    const entries: PickEntry[] = scene.buildPickEntries();
+    const entries: PickEntry[] = buildPickEntries(scene.core);
     expect(entries.filter((e) => e.cls === 'skin')).toHaveLength(0);
     scene.destroy();
   });
@@ -231,13 +233,13 @@ describe('AuctionScene picker — skins (2026-08-04, AUCTION_DESIGN.md §9 task7
     const save = saveWithSkins(['skin_e2']);
     const createAuction = vi.fn(async () => ({}));
     const scene = buildScene({ getSave: () => save, worldApi: { ...stubWorldApi(), createAuction } });
-    const entries: PickEntry[] = scene.buildPickEntries();
+    const entries: PickEntry[] = buildPickEntries(scene.core);
     entries.find((e) => e.cls === 'skin')!.onPick();
-    expect(scene.createClass).toBe('skin');
-    expect(scene.createSkinId).toBe('skin_e2');
-    expect(scene.selectedItemLabel()).toBe(skinDisplayName('skin_e2'));
+    expect(scene.core.createClass).toBe('skin');
+    expect(scene.core.createSkinId).toBe('skin_e2');
+    expect(selectedItemLabel(scene.core)).toBe(skinDisplayName('skin_e2'));
 
-    await scene.doCreate();
+    await scene.createListing.doCreate();
     expect(createAuction).toHaveBeenCalledWith('skin', { skinId: 'skin_e2' }, 1, expect.any(Number), expect.any(Object));
     scene.destroy();
   });
@@ -245,8 +247,8 @@ describe('AuctionScene picker — skins (2026-08-04, AUCTION_DESIGN.md §9 task7
   it('the skin category tab is included in FILTERS and renders without throwing', () => {
     const save = saveWithSkins(['skin_e2']);
     const scene = buildScene({ getSave: () => save });
-    scene.openItemPicker();
-    scene.pickerFilter = 'skin';
+    openItemPicker(scene.core);
+    scene.core.pickerFilter = 'skin';
     expect(() => scene.render()).not.toThrow();
     scene.destroy();
   });
@@ -255,15 +257,15 @@ describe('AuctionScene picker — skins (2026-08-04, AUCTION_DESIGN.md §9 task7
 describe('AuctionScene picker — skin instance counts (ITEM_IDENTITY_DESIGN.md task1, 2026-08-08)', () => {
   it('listableSkins allows a surplus copy of an equipped skin (skinCounts > 1), but not the last one', () => {
     const surplus = saveWithSkins(['skin_e2'], { 'skin:mara': 'skin_e2' }, { skin_e2: 2 });
-    expect(buildScene({ getSave: () => surplus }).listableSkins()).toEqual(['skin_e2']);
+    expect(listableSkins(buildScene({ getSave: () => surplus }).core)).toEqual(['skin_e2']);
     const lastOne = saveWithSkins(['skin_e2'], { 'skin:mara': 'skin_e2' }, { skin_e2: 1 });
-    expect(buildScene({ getSave: () => lastOne }).listableSkins()).toEqual([]);
+    expect(listableSkins(buildScene({ getSave: () => lastOne }).core)).toEqual([]);
   });
 
   it('a duplicate skin (skinCounts > 1) shows a "×N" suffix in its picker label, same as equipment/card groups', () => {
     const save = saveWithSkins(['skin_e2'], {}, { skin_e2: 3 });
     const scene = buildScene({ getSave: () => save });
-    const entries: PickEntry[] = scene.buildPickEntries();
+    const entries: PickEntry[] = buildPickEntries(scene.core);
     expect(entries.find((e) => e.cls === 'skin')!.label).toBe(`${skinDisplayName('skin_e2')} ×3`);
     scene.destroy();
   });
@@ -271,7 +273,7 @@ describe('AuctionScene picker — skin instance counts (ITEM_IDENTITY_DESIGN.md 
   it('a lone copy (or a save predating skinCounts) gets no "×N" suffix', () => {
     const save = saveWithSkins(['skin_e2']); // skinCounts defaults to {} — falls back to "1 copy"
     const scene = buildScene({ getSave: () => save });
-    const entries: PickEntry[] = scene.buildPickEntries();
+    const entries: PickEntry[] = buildPickEntries(scene.core);
     expect(entries.find((e) => e.cls === 'skin')!.label).toBe(skinDisplayName('skin_e2'));
     scene.destroy();
   });
@@ -279,12 +281,12 @@ describe('AuctionScene picker — skin instance counts (ITEM_IDENTITY_DESIGN.md 
   it('onSell is offered only when cb.sellSkin is wired, and calls it with the picked skinId', async () => {
     const save = saveWithSkins(['skin_e2'], {}, { skin_e2: 2 });
     const withoutSell = buildScene({ getSave: () => save });
-    expect(withoutSell.buildPickEntries().find((e: PickEntry) => e.cls === 'skin')!.onSell).toBeUndefined();
+    expect(buildPickEntries(withoutSell.core).find((e: PickEntry) => e.cls === 'skin')!.onSell).toBeUndefined();
     withoutSell.destroy();
 
     const sellSkin = vi.fn(async () => ({ credited: 400 }));
     const withSell = buildScene({ getSave: () => save, sellSkin, reloadSave: vi.fn(async () => {}) });
-    const entry = withSell.buildPickEntries().find((e: PickEntry) => e.cls === 'skin')!;
+    const entry = buildPickEntries(withSell.core).find((e: PickEntry) => e.cls === 'skin')!;
     expect(entry.onSell).toBeDefined();
     await entry.onSell!();
     expect(sellSkin).toHaveBeenCalledWith('skin_e2');
@@ -295,14 +297,14 @@ describe('AuctionScene picker — skin instance counts (ITEM_IDENTITY_DESIGN.md 
     const save = saveWithSkins(['skin_e2'], {}, { skin_e2: 2 });
     const sellSkin = vi.fn(async () => ({ credited: 400 }));
     const scene = buildScene({ getSave: () => save, sellSkin, reloadSave: vi.fn(async () => {}) });
-    scene.openItemPicker();
-    scene.pickerFilter = 'skin';
+    openItemPicker(scene.core);
+    scene.core.pickerFilter = 'skin';
     expect(() => scene.render()).not.toThrow();
     // Split-row layout pushes two 28px-tall half-width hit zones (list-half then sell-half, in that
     // push order) ahead of the full-card catch-all — find them by geometry (not identity:
-    // buildPickEntries mints a fresh closure per call, so scene.hitRects' onSell is never
+    // buildPickEntries mints a fresh closure per call, so scene.core.hitRects' onSell is never
     // reference-equal to a separately-built entry's), then take the right-hand (larger x) one.
-    const splitHalves = scene.hitRects.filter((h: { rect: { h: number } }) => h.rect.h === 28);
+    const splitHalves = scene.core.hitRects.filter((h: { rect: { h: number } }) => h.rect.h === 28);
     expect(splitHalves.length).toBe(2);
     const sellHalf = splitHalves.reduce((a: { rect: { x: number } }, b: { rect: { x: number } }) => (b.rect.x > a.rect.x ? b : a));
     sellHalf.action();
@@ -315,7 +317,7 @@ describe('AuctionScene picker — skin instance counts (ITEM_IDENTITY_DESIGN.md 
     let resolveSell: (v: { credited: number }) => void;
     const sellSkin = vi.fn(() => new Promise<{ credited: number }>((res) => { resolveSell = res; }));
     const scene = buildScene({ getSave: () => save, sellSkin, reloadSave: vi.fn(async () => {}) });
-    const entry = scene.buildPickEntries().find((e: PickEntry) => e.cls === 'skin')!;
+    const entry = buildPickEntries(scene.core).find((e: PickEntry) => e.cls === 'skin')!;
     const p1 = entry.onSell!();
     const p2 = entry.onSell!(); // fired before p1 resolves — must be a no-op, not a second sale
     resolveSell!({ credited: 400 });
@@ -335,14 +337,14 @@ describe('AuctionScene picker — unknown/orphaned skin ids are never listable (
   it('listableSkins drops ids with no SKIN_TARGET_UNIT entry (removed SKUs, or non-skin ids that leaked in)', () => {
     const save = saveWithSkins(['skin_e2', 'skin_c1', 'wp_pen', 'mat_scrap']);
     const scene = buildScene({ getSave: () => save });
-    expect(scene.listableSkins()).toEqual(['skin_e2']);
+    expect(listableSkins(scene.core)).toEqual(['skin_e2']);
     scene.destroy();
   });
 
   it('buildPickEntries contributes no cls="skin" entry for an unknown id', () => {
     const save = saveWithSkins(['skin_c3', 'skin_r2']);
     const scene = buildScene({ getSave: () => save });
-    const entries: PickEntry[] = scene.buildPickEntries();
+    const entries: PickEntry[] = buildPickEntries(scene.core);
     expect(entries.filter((e) => e.cls === 'skin')).toHaveLength(0);
     scene.destroy();
   });

@@ -65,7 +65,7 @@ function buildEquipmentSceneWithProtectStock(protectCount: number): EquipmentSce
 describe('EquipmentScene detail modal — protect-item label', () => {
   it('substitutes {n} exactly once, with no leftover placeholder or duplicated ×count', () => {
     const scene = buildEquipmentSceneWithProtectStock(3);
-    scene.openDetail('inst_1');
+    (scene as unknown as { detail: { openDetail(id: string): void } }).detail.openDetail('inst_1');
 
     const expected = t('equip.protect').replace('{n}', '3');
     const label = findLabel(scene.container, (text) => text.startsWith('Protection Stone'));
@@ -79,7 +79,7 @@ describe('EquipmentScene detail modal — protect-item label', () => {
 
   it('reflects a zero protect-item count the same way', () => {
     const scene = buildEquipmentSceneWithProtectStock(0);
-    scene.openDetail('inst_1');
+    (scene as unknown as { detail: { openDetail(id: string): void } }).detail.openDetail('inst_1');
 
     const expected = t('equip.protect').replace('{n}', '0');
     const label = findLabel(scene.container, (text) => text.startsWith('Protection Stone'));

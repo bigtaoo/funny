@@ -38,8 +38,8 @@ const PICK_CELL_H = 266;
 
 interface Rect { x: number; y: number; w: number; h: number; }
 interface SceneInternals {
-  hitRects: { rect: Rect; action: () => void }[];
-  beginAssign(instId: string, slot: 'weapon' | 'armor' | 'trinket'): void;
+  core: { hitRects: { rect: Rect; action: () => void }[] };
+  assign: { beginAssign(instId: string, slot: 'weapon' | 'armor' | 'trinket'): void };
 }
 
 function buildSave(): SaveData {
@@ -87,9 +87,9 @@ describe('EquipmentScene — assign picker renders as an icon-card grid', () => 
   it('lays candidate cards into multiple columns per row (not a one-per-row list)', () => {
     const scene = buildScene(...LANDSCAPE);
     const internals = scene as unknown as SceneInternals;
-    internals.beginAssign('inst_wp', 'weapon');
+    internals.assign.beginAssign('inst_wp', 'weapon');
 
-    const cells = internals.hitRects.map((h) => h.rect).filter((r) => r.h === PICK_CELL_H);
+    const cells = internals.core.hitRects.map((h) => h.rect).filter((r) => r.h === PICK_CELL_H);
     expect(cells.length).toBe(12); // one hit per candidate card
 
     const rows = groupByRow(cells);
@@ -121,8 +121,8 @@ describe('EquipmentScene — assign picker renders as an icon-card grid', () => 
     };
     const scene2 = new EquipmentScene(createLayout(...LANDSCAPE), new InputManager(), cb);
     const int2 = scene2 as unknown as SceneInternals;
-    int2.beginAssign('inst_wp', 'weapon');
-    const cellHit = int2.hitRects.find((h) => h.rect.h === PICK_CELL_H);
+    int2.assign.beginAssign('inst_wp', 'weapon');
+    const cellHit = int2.core.hitRects.find((h) => h.rect.h === PICK_CELL_H);
     expect(cellHit).toBeTruthy();
     cellHit!.action();
     await Promise.resolve();
@@ -154,7 +154,7 @@ describe('EquipmentScene — assign picker always uses the base portrait, never 
     const scene = new EquipmentScene(createLayout(...LANDSCAPE), new InputManager(), cb);
     const spy = cardInstanceArtUrl as unknown as { mock: { calls: unknown[][] } };
     spy.mock.calls.length = 0;
-    (scene as unknown as SceneInternals).beginAssign('inst_wp', 'weapon');
+    (scene as unknown as SceneInternals).assign.beginAssign('inst_wp', 'weapon');
 
     const cardCalls = spy.mock.calls.filter((call) => (call[0] as { defId?: string } | undefined)?.defId === 'lichuang');
     expect(cardCalls.length).toBeGreaterThan(0);

@@ -1,33 +1,53 @@
-// Shared foundation for the FamilyScene mixin chain (see ../FamilyScene.ts assembly).
+// Shared foundation for the FamilyScene composition (see ../FamilyScene.ts assembly).
 //
-// FamilySceneBase holds every instance field (all `protected`, so the domain mixin bodies keep
-// referencing them verbatim: this.mode, this.family, this.bodyLayer, …) + the layer scaffold (build),
-// the render dispatcher, the shared confirm-modal / toast / error primitives, and the input/lifecycle
-// plumbing. Each UI domain (data / render / input overlay / actions) lives in its own sibling file as
-// `XMixin(Base)` and is chained into the final FamilyScene.
+// FamilySceneCore holds every instance field (all `public`, so the domain classes below keep
+// referencing them via `this.core.xxx`: this.core.mode, this.core.family, this.core.bodyLayer, …) +
+// the layer scaffold (build), the static header, the shared confirm-modal / toast / error
+// primitives, the member-profile popup, and the pointer-input/lifecycle plumbing. Core wires all
+// four InputManager subscriptions itself AND owns handleDown/handleMove/handleUp/handleWheel
+// directly — they only ever dispatch through pre-registered `hitRects`/`modalHits` closures (set by
+// whichever domain rendered them), never calling a domain method by name, so there's no
+// two-phase-construction concern here. Core does NOT own the render() dispatcher (which calls into
+// RenderPanel's mode-specific methods) — that lives on the outer ../FamilyScene.ts assembly since
+// only it knows about every domain instance (Core takes a `render` callback injected at
+// construction instead of owning render() itself).
 //
-// FamilyScene — SLG family management scene (S8-4)
+// Each domain (data / input-overlay / actions / render) is its own independent class in a sibling
+// file, constructed with `core` (2026-08-11: converted from the former `XMixin(Base)` inheritance
+// chain — the cross-mixin calls this used to reach via interface declaration merging are now
+// explicit constructor params instead, see claudedocs/client-modules.md's split-form priority
+// note). Dependency shape: Render → Actions, Input; Actions → Data; Input → Data; Data depends only
+// on Core.
+//
+// One genuine bidirectional dependency surfaced during the conversion: the old actions.ts's
+// doSendMsg() called input.ts's openSendInput() (when there's no draft yet) while input.ts's Enter-
+// key handler called actions.ts's submitMessage() (to actually send). Splitting "open the hidden
+// input" and "submit whatever it collected" across two domain classes was the wrong boundary — both
+// are just two faces of the channel's single text-entry flow, so submitMessage() and doSendMsg()
+// moved to InputPanel alongside openSendInput()/openInputFor() (submitMessage needs DataPanel's
+// loadChannel() to reconcile after sending, hence InputPanel takes `data` too). ActionsPanel no
+// longer references Input at all — one-way (Render → Actions, Input) like every other pair.
+//
+// FamilyScene — SLG family management scene (S8-4).
 // State machine: noFamily → search/create branch; myFamily → channel/members
 import * as PIXI from 'pixi.js-legacy';
 import type { ILayout } from '../../layout/ILayout';
 import type { InputManager } from '../../inputSystem/InputManager';
 import { t } from '../../i18n';
-import { ui as C, txt, buildPaperBackground, sketchPanel, sketchButton, seedFor, tearDownChildren } from '../../render/sketchUi';
+import { ui as C, txt, buildPaperBackground, tearDownChildren } from '../../render/sketchUi';
 import { drawConfirmDialog } from '../../ui/dialogs/confirmDialog';
 import { ProfilePopup, type ProfileAction } from '../../ui/dialogs/ProfilePopup';
 import { showToastMessage } from '../../net/log';
-import { FS } from '../../render/fontScale';
-import { buildIcon } from '../../render/icons';
 import { buildDecorCLayer } from '../../render/decorCLayer';
 import { drawSceneHeader, HEADER_ACCENT } from '../../ui/widgets/SceneHeader';
 import { sidebarNavW, bottomNavH } from '../../ui/widgets/HubTabs';
-import { FAMILY_CAP } from '@nw/shared';
 import type { WorldApiClient, FamilyDetailView, FamilyMemberView, FamilyMessageView, FamilyJoinRequestView } from '../../net/WorldApiClient';
 import { WorldApiError } from '../../net/WorldApiClient';
 import { drawSocialTabRail, type SocialTab } from '../../ui/widgets/socialTabRail';
 import { ScrollTapGesture } from '../../ui/scrollTapGesture';
 import { wheelScrollY } from '../../ui/wheelScroll';
 import { BusyTracker, TimeoutError } from '../../ui/busyTracker';
+import { drawHeaderTitle } from './header';
 
 export interface FamilySceneCallbacks {
   onBack(): void;
@@ -57,79 +77,75 @@ export interface FamilySceneView {
 export type FamilyTab = 'members' | 'channel';
 export type ViewMode = 'loading' | 'noFamily' | 'create' | 'myFamily';
 
-// ── Mixin plumbing ────────────────────────────────────────────────────────────
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export type Constructor<T = object> = new (...args: any[]) => T;
-export type FamilySceneBaseCtor = Constructor<FamilySceneBase>;
-
-export class FamilySceneBase {
+export class FamilySceneCore {
   readonly container: PIXI.Container;
 
-  protected readonly w: number;
-  protected readonly h: number;
-  protected readonly landscape: boolean;
-  protected readonly cb: FamilySceneCallbacks;
+  readonly w: number;
+  readonly h: number;
+  readonly landscape: boolean;
+  readonly cb: FamilySceneCallbacks;
 
-  protected mode: ViewMode = 'loading';
-  protected activeTab: FamilyTab = 'members';
+  mode: ViewMode = 'loading';
+  activeTab: FamilyTab = 'members';
 
-  protected family: FamilyDetailView | null = null;
-  protected members: FamilyMemberView[] = [];
-  protected messages: FamilyMessageView[] = [];
+  family: FamilyDetailView | null = null;
+  members: FamilyMemberView[] = [];
+  messages: FamilyMessageView[] = [];
   /** Pending join requests for my family — populated only when I'm a leader/elder (see isFamilyApprover). */
-  protected joinRequests: FamilyJoinRequestView[] = [];
+  joinRequests: FamilyJoinRequestView[] = [];
   /** publicIds of the caller's current friends (see FamilySceneCallbacks.getFriendPublicIds) — gates the
    *  member-profile popup's "Add Friend" action so it doesn't show on rows that are already friends. */
-  protected friendPublicIds: Set<string> = new Set();
+  friendPublicIds: Set<string> = new Set();
 
-  protected bodyLayer!: PIXI.Container;
-  protected modalLayer!: PIXI.Container;
+  bodyLayer!: PIXI.Container;
+  modalLayer!: PIXI.Container;
   /** Unified player-info popup — opened by tapping a member's name in the roster. */
-  protected readonly profilePopup: ProfilePopup;
+  readonly profilePopup: ProfilePopup;
 
   // Input overlay for create form
-  protected hiddenInput: HTMLInputElement | null = null;
+  hiddenInput: HTMLInputElement | null = null;
   // Input overlay for the channel send box — set while open so the Send button can read its value.
   // `sendText` mirrors its value so the on-canvas field shows what's being typed (+ blinking caret),
   // instead of staying stuck on the placeholder (the "can't type into chat" bug).
-  protected sendInput: HTMLInputElement | null = null;
-  protected sendText = '';
-  protected createName = '';
-  protected createTag = '';
-  protected createField: 'name' | 'tag' | null = null;
-  protected caretOn = true;
-  protected caretTimer = 0;
+  sendInput: HTMLInputElement | null = null;
+  sendText = '';
+  createName = '';
+  createTag = '';
+  createField: 'name' | 'tag' | null = null;
+  caretOn = true;
+  caretTimer = 0;
 
   // Scroll — `scrollY` is the roster/single-column scroll; `scrollYChannel` only comes into play
-  // in the landscape split view (see RenderMixin.renderSplitView), where the channel column
+  // in the landscape split view (see RenderPanel.renderSplitView), where the channel column
   // scrolls independently alongside the roster column instead of sharing one tab's scroll state.
-  protected scrollY = 0;
-  protected scrollYChannel = 0;
+  scrollY = 0;
+  scrollYChannel = 0;
   /** Pin the channel to the latest message; cleared once the user scrolls up to read history, re-armed
    *  when they drag back to the bottom or send a message (see renderChannel / handleMove / submitMessage). */
-  protected channelStick = true;
+  channelStick = true;
   /** Channel scroll extent from the last renderChannel — lets handleMove classify a channel drag as
    *  "back at the bottom" (re-stick) vs "scrolled up" (unstick) without recomputing the content height. */
-  protected channelMax = 0;
+  channelMax = 0;
   /** X boundary between the roster and channel columns in the landscape split view; used by
    *  handleDown to route a drag to the right column's scroll state. Unused (0) in portrait. */
-  protected chatColX = 0;
+  chatColX = 0;
   /** Roster viewport vertical bounds + scroll extent, set each renderMembers call — mirrors
    *  channelMax/channelRegion* but for the members column. Touch-drag scroll doesn't need an upfront
    *  region/max (it just clamps on the next render), but wheel scroll (handleWheel) needs both known
    *  before the event is handled, so they're captured here purely for that. */
-  protected membersRegionTop = 0;
-  protected membersRegionBottom = 0;
-  protected membersMax = 0;
+  membersRegionTop = 0;
+  membersRegionBottom = 0;
+  membersMax = 0;
   /** Channel viewport vertical bounds, set each renderChannel call — same reasoning as membersRegion*. */
-  protected channelRegionTop = 0;
-  protected channelRegionBottom = 0;
+  channelRegionTop = 0;
+  channelRegionBottom = 0;
   /** Title-bar height, set from the shared header — drives all body layout below it. */
-  protected headerH = 0;
+  headerH = 0;
   /** Live header text nodes (title + landscape family identity), drawn on top of the cached header
    *  chrome. Destroyed and rebuilt each renderHeader() so repeated renders (e.g. scroll drags) don't
-   *  stack duplicate Text nodes on the container. */
-  private headerExtras: PIXI.DisplayObject[] = [];
+   *  stack duplicate Text nodes on the container. Public: header.ts (a form① free-function module,
+   *  not a domain class) rebuilds this list directly — see drawHeaderTitle's file-header comment. */
+  headerExtras: PIXI.DisplayObject[] = [];
   /**
    * Tap-vs-drag gesture tracker: defers a hit action to pointer-up and drops it if the pointer
    * dragged (so a drag starting on a member/message cell scrolls instead of firing it). See ScrollTapGesture.
@@ -144,19 +160,24 @@ export class FamilySceneBase {
   private scrollDirty = false;
 
   // Hit rects
-  protected hitRects: { rect: { x: number; y: number; w: number; h: number }; action: () => void }[] = [];
-  protected modalHits: { rect: { x: number; y: number; w: number; h: number }; action: () => void }[] = [];
-  protected modalOpen = false;
+  hitRects: { rect: { x: number; y: number; w: number; h: number }; action: () => void }[] = [];
+  modalHits: { rect: { x: number; y: number; w: number; h: number }; action: () => void }[] = [];
+  modalOpen = false;
 
-  protected destroyed = false;
-  protected readonly unsubs: (() => void)[] = [];
+  destroyed = false;
+  private readonly unsubs: (() => void)[] = [];
 
   /** Guards every mutating action below (create/join/leave/dissolve/kick/setRole/join-request
    *  response/send message): blocks a repeat click while one is in flight and drives the busy-button
    *  greying in render.ts. */
-  protected readonly bt = new BusyTracker();
+  readonly bt = new BusyTracker();
 
-  constructor(layout: ILayout, input: InputManager, cb: FamilySceneCallbacks) {
+  /** @param render Injected by the outer FamilyScene assembly (which owns the actual render
+   *  dispatcher, since it's the only thing that knows about every domain instance) — Core and the
+   *  domain classes call `this.render()`/`core.render()` wherever the old flattened class called
+   *  its own `render()` method verbatim. Does NOT auto-fire the initial loadData() — the outer
+   *  assembly does that after all domain instances exist. */
+  constructor(layout: ILayout, input: InputManager, cb: FamilySceneCallbacks, readonly render: () => void) {
     this.w = layout.designWidth;
     this.h = layout.designHeight;
     this.landscape = layout.orientation === 'landscape';
@@ -164,11 +185,6 @@ export class FamilySceneBase {
     this.container = new PIXI.Container();
     this.profilePopup = new ProfilePopup(this.w, this.h, (publicId) => cb.worldApi.getProfileExtra(publicId));
     this.build();
-    // Paint the rail + loading state on the same frame the scene mounts, so switching to the
-    // family tab shows the chrome instantly instead of a blank body while loadData()'s network
-    // round-trips are in flight (the "tab switch takes several seconds" complaint).
-    this.render();
-    void this.loadData();
 
     this.unsubs.push(input.onDown((x, y) => this.handleDown(x, y)));
     this.unsubs.push(input.onMove((x, y) => this.handleMove(x, y)));
@@ -179,43 +195,43 @@ export class FamilySceneBase {
   /** Width of the social hub rail left of the notebook binding line (matches every other left-edge tab
    *  rail); 0 in portrait, where the rail is drawn as a bottom nav bar instead (§18) and reserves no
    *  horizontal space. */
-  protected get railW(): number {
+  get railW(): number {
     return this.landscape ? sidebarNavW(this.w, this.h, true) : 0;
   }
 
   /** Bottom edge for portrait's tabbed body content — stops `bottomNavH` short of the screen so the
    *  bottom nav bar (always shown; drawSocialTabRail has no orientation gate) never overlaps the
    *  roster/channel viewport. Landscape's split view has no such bar to avoid. */
-  protected get bodyBottom(): number {
+  get bodyBottom(): number {
     return this.landscape ? this.h : this.h - bottomNavH(this.h);
   }
 
   /** Font size as a fraction of design height. The family scene originally hardcoded 10–15px, which
    *  renders tiny in the 1920×1080 / 1080×1920 design space — sizing off `h` matches FriendsScene and
    *  the rest of the social hub so the text is legible instead of near-invisible. */
-  protected fs(frac: number): number {
+  fs(frac: number): number {
     return Math.round(this.h * frac);
   }
 
   /** Roster / channel list row height (was a fixed 48px — too short for legible two-line rows). */
-  protected get rowH(): number {
+  get rowH(): number {
     return Math.round(this.h * 0.062);
   }
 
   /** Height of the family identity band below the header. Portrait keeps the full name/count +
    *  prosperity + announcement band; landscape lifts the identity into the header (see
    *  drawHeaderTitle) and reserves the band only for an announcement, if any. */
-  protected get infoBandH(): number {
+  get infoBandH(): number {
     if (this.landscape) return this.family?.announcement ? Math.round(this.h * 0.04) : 0;
     return Math.round(this.h * 0.085);
   }
 
-  protected get isFamilyLeader(): boolean {
+  get isFamilyLeader(): boolean {
     return this.family?.members?.find((m) => m.accountId === this.cb.myAccountId)?.role === 'leader';
   }
 
   /** Leader or elder — the two roles allowed to review join requests (matches familyService's server-side gate). */
-  protected get isFamilyApprover(): boolean {
+  get isFamilyApprover(): boolean {
     const role = this.family?.members?.find((m) => m.accountId === this.cb.myAccountId)?.role;
     return role === 'leader' || role === 'elder';
   }
@@ -242,7 +258,7 @@ export class FamilySceneBase {
     this.renderHeader();
   }
 
-  protected renderHeader(): void {
+  renderHeader(): void {
     const { w } = this;
     // Draw only the bar chrome + back button from the shared header; the title (and, in landscape,
     // the family identity lifted out of the info band) are drawn live below so we control layout.
@@ -251,113 +267,38 @@ export class FamilySceneBase {
     });
     this.headerH = hdr.headerH;
     this.hitRects.push({ rect: hdr.backRect, action: () => this.cb.onBack() });
-    this.drawHeaderTitle(hdr.headerH);
+    drawHeaderTitle(this, hdr.headerH);
   }
 
-  /** Muted secondary ink (a step below C.dark, still legible on paper) — matches RenderMixin's MUTED. */
-  private static readonly MUTED = 0x5a574f;
+  // ── Rail + mode dispatch shell (called from the outer render() dispatcher before it hands off to
+  // RenderPanel's mode-specific method) ──────────────────────────────────────────
 
-  /** Header title row. Always shows the "Family" title just right of the back pill. In landscape
-   *  (where there's horizontal room) it also carries the family identity the info band used to hold:
-   *  `[TAG] Name` + prosperity on the left, member count pinned far-right. Portrait keeps that identity
-   *  in the info band below the header, since the narrow bar can't hold it all on one line. */
-  private drawHeaderTitle(headerH: number): void {
-    const { w, h } = this;
-    for (const n of this.headerExtras) n.destroy();
-    this.headerExtras = [];
-    const add = <T extends PIXI.DisplayObject>(node: T): T => {
-      this.headerExtras.push(node);
-      this.container.addChild(node);
-      return node;
-    };
-    const midY = headerH / 2;
-
-    // Left cluster must clear the back-button pill. Replicates SceneHeader's back-chip
-    // metrics (BACK_X=10, size=0.039·h, padX=0.7·size) so the title always clears the pill.
-    const backSize = Math.round(h * 0.039);
-    const backNode = txt(`← ${t('common.back')}`, backSize, C.accent);
-    const chipW = backNode.width + Math.round(backSize * 0.7) * 2;
-    backNode.destroy();
-    const leftBound = 10 + chipW + Math.round(backSize * 0.6);
-
-    const showIdentity = this.landscape && this.family && this.mode === 'myFamily';
-    const gap = Math.round(w * 0.02);
-    const fam = showIdentity ? this.family! : null;
-
-    // Build every node up front (unpositioned) so we can measure the whole cluster's width and
-    // center it in the space between the back pill and the member count, instead of it always
-    // starting flush against the back button — which read lopsided once the identity was moved
-    // into the landscape header.
-    const titleNode = add(txt(t('family.title'), FS.headline, C.dark, true));
-    let clusterW = titleNode.width;
-
-    let nameNode: PIXI.Text | null = null;
-    let star: PIXI.DisplayObject | null = null;
-    let starSize = 0;
-    let prosNode: PIXI.Text | null = null;
-    let countNode: PIXI.Text | null = null;
-    if (fam) {
-      nameNode = add(txt(`[${fam.tag}] ${fam.name}`, FS.title, C.dark));
-      starSize = Math.round(h * 0.026);
-      star = add(buildIcon('star', starSize, 0xd4a030));
-      prosNode = add(txt(t('family.prosperity', { n: fam.prosperity }), FS.heading, 0xa9750f));
-      countNode = add(txt(t('family.memberCount', { n: fam.memberCount, cap: FAMILY_CAP }), FS.heading, FamilySceneBase.MUTED));
-      clusterW += gap + nameNode.width + gap + starSize + 6 + prosNode.width;
-    }
-
-    const rightBound = countNode ? w - 16 - countNode.width - gap : w - 16;
-    const available = rightBound - leftBound;
-    let x = leftBound + Math.max(0, (available - clusterW) / 2);
-
-    titleNode.anchor.set(0, 0.5); titleNode.x = x; titleNode.y = midY;
-    x += titleNode.width;
-
-    if (fam && nameNode && star && prosNode && countNode) {
-      x += gap;
-      nameNode.anchor.set(0, 0.5); nameNode.x = x; nameNode.y = midY;
-      x += nameNode.width + gap;
-
-      star.x = x; star.y = midY - starSize / 2;
-      x += starSize + 6;
-      prosNode.anchor.set(0, 0.5); prosNode.x = x; prosNode.y = midY;
-
-      countNode.anchor.set(1, 0.5); countNode.x = w - 16; countNode.y = midY;
-    }
-  }
-
-  // ── Render ────────────────────────────────────────────────────────────────
-
-  protected render(): void {
-    if (this.destroyed) return;
+  /** Tears down + redraws the header/rail chrome shared by every mode; returns nothing — the outer
+   *  render() dispatcher calls this, then draws the rail itself, then switches on `mode`. */
+  beginRender(): void {
     tearDownChildren(this.bodyLayer); // create-form input re-renders per keystroke → free Text textures
     this.hitRects = [];
     this.renderHeader();
+  }
 
-    // Draw the social hub rail in every mode (not just 'myFamily') — otherwise the other 4 tabs
-    // vanish while this scene is still loading or has no family yet, since it replaces FriendsScene
-    // wholesale on navigation.
-    // Same sect-tab visibility rule as FriendsScene's rail: hide it unless this player is a
-    // family leader (who could found/join a sect) or their family is already in one.
+  /** Draw the social hub rail in every mode (not just 'myFamily') — otherwise the other 4 tabs
+   *  vanish while this scene is still loading or has no family yet, since it replaces FriendsScene
+   *  wholesale on navigation. Same sect-tab visibility rule as FriendsScene's rail: hide it unless
+   *  this player is a family leader (who could found/join a sect) or their family is already in one. */
+  drawRail(): void {
     const hidden: SocialTab[] = !this.isFamilyLeader && !this.family?.sectId ? ['sect'] : [];
     const railHits = drawSocialTabRail(this.bodyLayer, this.w, this.h, this.headerH, this.landscape, 'family', { family: this.joinRequests.length }, (tab) => this.cb.onNavTab(tab), hidden);
     this.hitRects.push(...railHits.map((hit) => ({ rect: hit.rect, action: hit.fn })));
-
-    switch (this.mode) {
-      case 'loading': this.renderLoading(); break;
-      case 'noFamily': this.renderNoFamily(); break;
-      case 'create': this.renderCreate(); break;
-      case 'myFamily': this.renderMyFamily(); break;
-    }
   }
 
   // ── Confirm modal ─────────────────────────────────────────────────────────
 
-  protected showConfirm(msg: string, onOk: () => void): void {
+  showConfirm(msg: string, onOk: () => void): void {
     this.modalOpen = true;
     this.modalHits = drawConfirmDialog(this.modalLayer, this.w, this.h, msg, onOk, () => this.closeModal());
   }
 
-  protected closeModal(): void {
+  closeModal(): void {
     tearDownChildren(this.modalLayer);
     this.modalHits = [];
     this.modalOpen = false;
@@ -365,11 +306,11 @@ export class FamilySceneBase {
 
   // ── Toast ──────────────────────────────────────────────────────────────────
 
-  protected showToast(msg: string, color: number = C.dark): void {
+  showToast(msg: string, color: number = C.dark): void {
     showToastMessage(msg, color === C.red ? 'error' : 'success');
   }
 
-  protected errorMsg(e: unknown): string {
+  errorMsg(e: unknown): string {
     if (e instanceof TimeoutError) return t('common.networkTimeout');
     if (e instanceof WorldApiError) {
       const map: Record<string, string> = {
@@ -489,7 +430,7 @@ export class FamilySceneBase {
    *  them, "Add Friend" otherwise (neither for my own row). Rank/ELO/family/sect are fetched by the
    *  popup itself (see ProfilePopup's `fetchExtra`) — this only supplies what the roster already has
    *  for free (name/avatar). */
-  protected openMemberProfile(mem: FamilyMemberView): void {
+  openMemberProfile(mem: FamilyMemberView): void {
     const isMe = mem.accountId === this.cb.myAccountId;
     const alreadyFriend = !!mem.publicId && this.friendPublicIds.has(mem.publicId);
     const actions: ProfileAction[] = [];
@@ -525,36 +466,4 @@ export class FamilySceneBase {
       this.showToast((code && map[code]) ?? t('friends.error'), C.red);
     }
   }
-}
-
-// ── Domain entrypoints dispatched to from base-level code (render dispatcher, constructor) and across
-// sibling mixins (render → input/actions; actions → data; input → data). Declared via interface/class
-// declaration merging so base-level `this.renderLoading()` / `this.loadData()` type-check as METHODS
-// (not properties, which would clash with the mixin override — TS2425). Emits NOTHING at runtime, so
-// the real prototype methods provided by the mixins run and all method bodies stay verbatim.
-export interface FamilySceneBase {
-  // data
-  loadData(): Promise<void>;
-  loadMyFamily(familyId: string): Promise<void>;
-  loadChannel(): Promise<void>;
-  loadJoinRequests(): Promise<void>;
-  applyFamilyMsg(msg: FamilyMessageView): void;
-  // render
-  renderLoading(): void;
-  renderNoFamily(): void;
-  renderCreate(): void;
-  renderMyFamily(): void;
-  // input overlay
-  openInputFor(field: 'name' | 'tag'): void;
-  openSendInput(): void;
-  // actions
-  doCreate(): Promise<void>;
-  openJoinList(): Promise<void>;
-  doSendMsg(): Promise<void>;
-  submitMessage(body: string): Promise<void>;
-  doSetRole(targetId: string, role: 'elder' | 'member'): Promise<void>;
-  confirmKick(targetId: string, name: string): void;
-  confirmDissolve(): void;
-  confirmLeave(): void;
-  openJoinRequests(): void;
 }

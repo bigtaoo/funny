@@ -3,7 +3,7 @@
 // clipped by a PIXI mask — but the constructor only subscribed to `input.onDown`,
 // so `scrollY` was never mutated and everything past the first screen was
 // permanently clipped. Fix: wire onMove/onUp + a drag-scroll handler mirroring
-// EquipmentScene/base.ts's pattern.
+// EquipmentScene/core.ts's pattern.
 //
 // Runs under the headless PIXI adapter (vitest.ui.config.ts setupFiles).
 

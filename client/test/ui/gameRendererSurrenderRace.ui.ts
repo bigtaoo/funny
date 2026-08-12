@@ -38,7 +38,7 @@ const SEED = 0x1234abcd;
 /** Drives the real engine to an actual game_over by zeroing the local (bottom) base's HP, then
  *  ticks the scene once so GameRenderer's events.ts processes the resulting event for real. */
 function driveToGameOver(scene: GameScene, renderer: any): void {
-  const engine = renderer.engine;
+  const engine = renderer.core.engine;
   engine.state.bottomPlayer.baseHp = 0;
   scene.update(1 / 30);
 }
@@ -60,14 +60,14 @@ describe('GameRenderer — post-game-over surrender race (2026-08-03 fix)', () =
     const renderer = (scene as unknown as { renderer: any }).renderer;
 
     driveToGameOver(scene, renderer);
-    expect(renderer.gameEnded).toBe(true);
+    expect(renderer.core.gameEnded).toBe(true);
     expect(ended).toBe(false); // onGameEnd is still deferred (2s), hasn't fired yet
 
     // Tap Surrender, then tap where Confirm would be — must be a complete no-op.
-    const sr = renderer.hudView.getSurrenderRect();
+    const sr = renderer.core.hudView.getSurrenderRect();
     input._emitDown(sr.x + sr.w / 2, sr.y + sr.h / 2);
     input._emitUp(sr.x + sr.w / 2, sr.y + sr.h / 2);
-    expect(renderer.hudView.isPaused).toBe(false); // never even opened the confirm overlay
+    expect(renderer.core.hudView.isPaused).toBe(false); // never even opened the confirm overlay
     expect(exited).toBe(false);
 
     scene.destroy();
@@ -84,7 +84,7 @@ describe('GameRenderer — post-game-over surrender race (2026-08-03 fix)', () =
     const renderer = (scene as unknown as { renderer: any }).renderer;
 
     driveToGameOver(scene, renderer);
-    expect(renderer.gameEnded).toBe(true);
+    expect(renderer.core.gameEnded).toBe(true);
 
     scene.destroy(); // player exits (e.g. via a legitimate path) while onGameEnd is still pending
 

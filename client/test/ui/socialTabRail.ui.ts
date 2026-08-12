@@ -99,10 +99,10 @@ function findAllLabelPos(container: PIXI.Container, label: string): Array<{ x: n
  * `hidden` param — its cell doesn't exist at all, unlike the active cell which renders but has
  * no hit rect) — there is nothing to tap in that case.
  */
-/** SectScene keeps `landscape`/`w`/`h`/`handleDown`/`handleUp` on a composed `core` field
- *  (2026-08-11 composition conversion — see claudedocs/client-modules.md's split-form priority
- *  note); FamilyScene still carries them flattened directly on the instance — try `.core` first,
- *  fall back to the flattened shape. */
+/** FamilyScene/SectScene both keep `landscape`/`w`/`h`/`handleDown`/`handleUp` on a composed
+ *  `core` field (2026-08-11 composition conversion — see claudedocs/client-modules.md's
+ *  split-form priority note); the `?? scene` fallback is now dead for these two but kept for any
+ *  future caller that hasn't converted yet. */
 function coreOf(scene: any): any {
   return scene.core ?? scene;
 }
@@ -151,9 +151,9 @@ describe('FamilyScene — social tab rail (onNavTab wiring)', () => {
       openChat() {},
       worldApi: stubWorldApi(), worldId: 'world:1:0', myAccountId: 'acc_test', playerName: 'Tester',
     });
-    scene.mode = 'myFamily';
-    scene.family = FAMILY_FIXTURE;
-    scene.members = [];
+    scene.core.mode = 'myFamily';
+    scene.core.family = FAMILY_FIXTURE;
+    scene.core.members = [];
     scene.render();
     return scene;
   }
@@ -195,8 +195,8 @@ describe('FamilyScene — social tab rail (onNavTab wiring)', () => {
     // render() dispatcher (base.ts) so it runs for every mode.
     const calls: SocialTab[] = [];
     const scene = build((tab) => calls.push(tab));
-    scene.mode = 'noFamily';
-    scene.family = null;
+    scene.core.mode = 'noFamily';
+    scene.core.family = null;
     scene.render();
 
     for (const tab of TAB_ORDER) clickRailTab(scene, tab);

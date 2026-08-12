@@ -1,6 +1,7 @@
 // Regression coverage for D-CITY-8's client "表现层" (world-map base HP bar + full-screen
-// red-tint VFX, task #4): the VignetteMixin drawing/decay logic (WorldMapRenderer/vignette.ts)
-// and the WorldMapNet.applyTileUpdate trigger that decides WHEN to flash it.
+// red-tint VFX, task #4): the WorldMapRendererVignette drawing/decay logic
+// (WorldMapRenderer/vignette.ts) and the WorldMapNet.applyTileUpdate trigger that decides WHEN
+// to flash it.
 //
 // The HP bar itself needed no client change (tileGraphics.ts's existing drawHpBar already draws
 // for any damaged tile, own base included, once the server started mapping durability into the
@@ -25,7 +26,14 @@ function flush(): Promise<void> {
   return new Promise((r) => setTimeout(r, 0));
 }
 
-// ── VignetteMixin: flashDamageVignette / updateVignette / drawVignette ──────────────────────
+// ── WorldMapRendererVignette: flashDamageVignette / updateVignette / drawVignette ───────────
+//
+// flashDamageVignette() is forwarded on the WorldMapRenderer assembly (WorldMapNet calls it
+// externally); updateVignette()/drawVignette() are not part of that external surface (only
+// lifecycle.ts's update() calls updateVignette internally), so — same pattern the other
+// composition conversions in this batch use for internal-only methods — this test reaches into
+// the private `vignette` sibling directly via `as any` rather than adding assembly forwards no
+// production call site needs.
 
 function buildRendererCtx(): WorldMapContext {
   return {
@@ -34,6 +42,11 @@ function buildRendererCtx(): WorldMapContext {
     vignetteGfx: new PIXI.Graphics(),
     vignetteAlpha: 0,
   } as unknown as WorldMapContext;
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function vignetteOf(view: WorldMapRenderer): { updateVignette(dt: number): void; drawVignette(): void } {
+  return (view as any).vignette;
 }
 
 describe('WorldMapRenderer vignette (D-CITY-8 base-damage flash)', () => {
@@ -50,12 +63,12 @@ describe('WorldMapRenderer vignette (D-CITY-8 base-damage flash)', () => {
     const view = new WorldMapRenderer(ctx);
     view.flashDamageVignette();
 
-    view.updateVignette(0.2);
+    vignetteOf(view).updateVignette(0.2);
     expect(ctx.vignetteAlpha).toBeGreaterThan(0);
     expect(ctx.vignetteAlpha).toBeLessThan(1);
     expect(ctx.vignetteGfx.geometry.graphicsData.length).toBeGreaterThan(0);
 
-    view.updateVignette(10); // well past the fade window
+    vignetteOf(view).updateVignette(10); // well past the fade window
     expect(ctx.vignetteAlpha).toBe(0);
     // Once fully faded, the overlay must be cleared — not left painted at the last alpha.
     expect(ctx.vignetteGfx.geometry.graphicsData.length).toBe(0);
@@ -65,7 +78,7 @@ describe('WorldMapRenderer vignette (D-CITY-8 base-damage flash)', () => {
     const ctx = buildRendererCtx();
     const view = new WorldMapRenderer(ctx);
     expect(ctx.vignetteAlpha).toBe(0);
-    view.updateVignette(0.016);
+    vignetteOf(view).updateVignette(0.016);
     expect(ctx.vignetteAlpha).toBe(0);
     expect(ctx.vignetteGfx.geometry.graphicsData.length).toBe(0);
   });
@@ -76,7 +89,7 @@ describe('WorldMapRenderer vignette (D-CITY-8 base-damage flash)', () => {
     // Paint something first, then force alpha back to 0 and redraw — must come back empty.
     view.flashDamageVignette();
     ctx.vignetteAlpha = 0;
-    view.drawVignette();
+    vignetteOf(view).drawVignette();
     expect(ctx.vignetteGfx.geometry.graphicsData.length).toBe(0);
   });
 });

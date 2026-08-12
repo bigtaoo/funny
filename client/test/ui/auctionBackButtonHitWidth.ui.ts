@@ -13,6 +13,8 @@ import { InputManager } from '../../src/inputSystem/InputManager';
 import { initI18n } from '../../src/i18n';
 import { drawSceneHeader } from '../../src/ui/widgets/SceneHeader';
 import { AuctionScene, type AuctionSceneCallbacks } from '../../src/scenes/AuctionScene';
+import { openItemPicker } from '../../src/scenes/AuctionScene/itemPickerRender';
+import type { AuctionSceneCore } from '../../src/scenes/AuctionScene/core';
 import type { WorldApiClient } from '../../src/net/WorldApiClient';
 import * as PIXI from 'pixi.js-legacy';
 
@@ -30,14 +32,16 @@ const LANDSCAPE: [number, number] = [1920, 1080];
 
 type Rect = { x: number; y: number; w: number; h: number };
 type Hit = { rect: Rect; action: () => void };
-type SceneInternals = {
+type CoreInternals = {
   backRect: Rect;
   hitRects: Hit[];
   itemPickerOpen: boolean;
   handleDown(x: number, y: number): void;
   handleUp(x: number, y: number): void;
+};
+type SceneInternals = {
+  core: CoreInternals & AuctionSceneCore;
   render(): void;
-  openItemPicker(): void;
 };
 
 function internals(scene: AuctionScene): SceneInternals {
@@ -69,7 +73,7 @@ function standardBackHitWidth(): number {
 describe('AuctionScene back-button hit rect matches the shared SceneHeader standard width', () => {
   it('matches on initial render', () => {
     const { scene } = buildScene();
-    expect(internals(scene).backRect.w).toBe(standardBackHitWidth());
+    expect(internals(scene).core.backRect.w).toBe(standardBackHitWidth());
     scene.destroy();
   });
 
@@ -77,7 +81,7 @@ describe('AuctionScene back-button hit rect matches the shared SceneHeader stand
     const { scene } = buildScene();
     internals(scene).render();
     internals(scene).render();
-    expect(internals(scene).backRect.w).toBe(standardBackHitWidth());
+    expect(internals(scene).core.backRect.w).toBe(standardBackHitWidth());
     scene.destroy();
   });
 
@@ -86,22 +90,22 @@ describe('AuctionScene back-button hit rect matches the shared SceneHeader stand
     const w = standardBackHitWidth();
     expect(w).toBeGreaterThan(80); // sanity: the regression only reproduces if the standard is wider than 80
     // The hit action fires on pointer-up now (ScrollTapGesture defers taps so a drag scrolls).
-    internals(scene).handleDown(w - 1, 10);
-    internals(scene).handleUp(w - 1, 10);
+    internals(scene).core.handleDown(w - 1, 10);
+    internals(scene).core.handleUp(w - 1, 10);
     expect(calls.back).toBe(1);
     scene.destroy();
   });
 
   it('while the item picker overlay is open, the same wide back area cancels the picker (not a no-op)', () => {
     const { scene, calls } = buildScene();
-    internals(scene).openItemPicker();
-    expect(internals(scene).itemPickerOpen).toBe(true);
+    openItemPicker(internals(scene).core);
+    expect(internals(scene).core.itemPickerOpen).toBe(true);
 
     const w = standardBackHitWidth();
-    internals(scene).handleDown(w - 1, 10);
-    internals(scene).handleUp(w - 1, 10);
+    internals(scene).core.handleDown(w - 1, 10);
+    internals(scene).core.handleUp(w - 1, 10);
 
-    expect(internals(scene).itemPickerOpen).toBe(false);
+    expect(internals(scene).core.itemPickerOpen).toBe(false);
     expect(calls.back).toBe(0); // picker-cancel, not scene onBack
     scene.destroy();
   });
