@@ -1,11 +1,11 @@
 # 决策日志（ADR）
 
-> 状态：实现中 · 权威：本文 · 更新：2026-08-01
+> 状态：实现中 · 权威：本文 · 更新：2026-08-12
 
 记录**会造成文档间漂移**的关键拍板：改数值口径、改命名、改架构、废弃旧方案。
 每条 ADR 注明：日期、决策、影响的文档、为什么。新拍板追加在末尾，不改旧条目（要改就加一条新的 *Supersedes*）。
 
-格式：`ADR-NNN 标题 — 状态(Accepted/Superseded) — 日期`
+格式：`ADR-NNN 标题 — 状态(Accepted/Superseded) — 日期`（`Proposed` = 已登记、未拍板的候选提案，不代表当前实现，实施前需另开确认）
 
 ---
 
@@ -747,3 +747,21 @@
 - **为什么**：用户直接拍板扩容数字，不改变治理机制本身——与 ADR-043（角色卡背包 150→500）同类操作，先加测试锁住新值再改常量，避免"改了数字但测试还断言旧值"的静默漂移。
 - **验证**：`server/shared` 装备单测 62 例全绿；`server/metaserver` 装备 e2e **49 例**（含新增 2 例）+ economy e2e **70 例**（含 4 处改写的 equipment-overflow 用例）全绿；`client` UI 套件 `scenes.ui.ts`（120 例，含改写的满仓灰化用例）+ `gachaInvFullToast.ui.ts`（7 例）全绿；`server`（全 11 服务 + engine/shared workspaces）`typecheck` 与 `client` `tsc --noEmit` + `npm run build:web` 均无错误。纯数值调参 + 文案数字变化，未起 dev server 截图（三语 toast/头部计数器的排版逻辑不变，只是数字本身变长，走既有自适应文本渡染，无需人工核对布局）。
 - **验证**：`server/shared` 装备单测 62 例全绿（新增 `enhanceDemoteChance`/`rollEnhanceDemote` 覆盖，含"两个骰子流互相独立"回归）；`server/metaserver` 装备 e2e 47 例全绿（新增 +7 掉级/不掉级/保护道具挡掉级三例）；`server/auctionsvc` e2e 65 例全绿（`equipEnhanceExpectedCost` 依赖的 `enhanceCost`/`enhanceSuccessRate` 未改，价格逻辑不受影响）；`server/tools/econ-sim` 18 例全绿；`client` 装备相关 vitest（`test/equipment.test.ts` 22 例 + UI 套件 `equipmentDetailProtectLabel`/`shopScene`/`shopActions` 共 68 例）全绿；`server`（engine/shared/metaserver/auctionsvc）`tsc -b` 与 `client` `tsc --noEmit` 均无错误。未起 dev server 截图（纯数值/规则改动，无新增可视化布局需要人工核对，掉级警示文案的排版走既有弹窗高度自适应逻辑）。
+
+## ADR-065 引擎数值全面定点化（所有战斗数值 ×FP_SCALE，非仅需逐 tick 累积的量） — Proposed — 2026-08-12
+
+- **提案**：`server/engine` 目前只有"需要逐 tick 累积小数进度"的量走 `FP_SCALE`（=1000）定点整数——位置 `y_fp`/`col_fp`、速度 `speed_fp`、回血累加器 `regenFpPerTick`/`healAccFp`、墨水 `_ink_fp`（见 `math/fixed.ts`）；HP/攻击力/护甲等"离散整数点"数值（`config.ts` 里 `hp: 60`、`attack: 12`）以及装备强化倍率（`balance/equipment.ts` `ENHANCE_LEVEL_MULTIPLIER`）都是普通浮点/整数运算，只在写回 blueprint 前 `Math.round()` 一次。用户提出：把**所有**战斗数值（不限于当前已定点的累加类）统一放大 1000 倍存成定点整数，理由是客户端可以在定点精度上做更精确的显示。
+- **背景（本提案的来源）**：`server/engine/src/__tests__/equip_crit.test.ts` 修复 "+9 ≈×1.9" 陈旧断言（ADR-063 强化倍率表从线性改非线性后，测试期望值 11.4 未同步更新，实际值应为 30）过程中，用户对"强化倍率是浮点小数、装备烤 blueprint 时 `Math.round()` 收尾"这一现状提出疑问，讨论后延伸为这条更大范围的架构提案。
+- **现状核实**（讨论中已确认，非本提案待验证项）：
+  - HP/攻击力**不是**放大 1000 倍存的——`Unit.ts` 直接 `this.hp = bp.hp`/`this.attack = bp.attack`，`config.ts` 里也是 `hp: 60` 这种个位数/两位数字面量，不是 `60000`。
+  - `balance/equipment.ts` 的强化倍率计算发生在**开局前一次性 bake blueprint**，不在逐 tick 循环里，不存在浮点累积误差；`Math.round()` 收尾后落地的整数已经是这个数值域该有的精度（游戏里没有 118.4 血这种设计意图）。`critPct`/`critMult` 没有最终 `Math.round()`，但只用于跟 `combatPrng.nextInt(100)`（已是整数）做一次性阈值比较，不参与累积。
+  - 换算路径本身不丢精度：`equipment.ts` 输出的整数 HP/攻击力，若后续要接入 `FP_SCALE`，乘以 1000 是精确整数运算（`460 × 1000 = 460000`），不会在换算这一步引入新误差。
+- **范围（如采纳，影响面很大，需要另开评审逐一过一遍）**：
+  - `config.ts` 数值权威表（ADR-001）——`hp`/`attack`/`armor` 等字段全部改成 ×1000 存，或保留原样在读取/序列化边界统一 ×1000，两种做法对"数值权威在 config.ts"这条约定的冲击不同，需先定调。
+  - `Unit.ts`/`CombatSystem`/`systems/combat/hitResolution.ts`/`TraitSystem.ts`/`balance/{equipment,pveUpgrades,progression}.ts` 等所有直接读写 `hp`/`attack`/`armor`/`critPct` 做整数运算和比较的地方要跟着换算。
+  - `server/contracts/*.proto`（game/replay/transport 三份）——线上协议里这些字段的语义变了，客户端解析、现网/回放兼容都要考虑版本迁移。
+  - 现有黄金回放测试（`goldenReplay.test.js`）和大量单测里硬编码的整数期望值会全部作废，需要重新生成校验基准。
+  - `client/src` 显示层（HUD/战斗数值提示等）——如果客户端要展示"定点精度带来的更精细数字"，需要明确具体是哪个场景现在显示不够精确（HP/攻击力本身已经是整数点，"更精确"目前缺少一个具体的、当前确实丢失信息的场景作为验收标准）。
+  - `design/game/{BALANCE.md,ECONOMY_NUMBERS.md,EQUIPMENT_DESIGN.md}` 等数值/机制基准文档的数字口径要同步改注释与示例。
+- **决策**：**暂不实施**。先登记为候选提案，等一个具体的"客户端现在显示不精确"的场景把验收标准钉死、并对上面范围逐条过一遍取舍后再开 Accepted 的 ADR。本次任务（`equip_crit.test.ts` 补测试）范围不受影响，未改 `balance/equipment.ts` 任何生产逻辑。
+- **影响**：暂无（Proposed，未落地）。如后续拍板，预计影响 `server/engine/src/{config.ts,Unit.ts,systems/**,balance/**}`、`server/contracts/*.proto`、`client/src` 显示层、`design/game/{BALANCE.md,ECONOMY_NUMBERS.md,EQUIPMENT_DESIGN.md}`。
