@@ -95,6 +95,12 @@ export class SiegeHelpersService {
             attackerArmy: replay.attackerArmy as ArmyEntry[],
             defenderConfig: (replay.defenderConfig as DefenseConfig | null) ?? null,
             tileLevel: replay.tileLevel,
+            // 2026-08-12 fix: without these, getSiegeReplay's from-scratch reconstruction silently
+            // drops the attacker's actual card level/equipment/academy bonuses — see SiegeDoc's field
+            // doc comment (db/combatDocs.ts) for the full incident this closes.
+            ...(replay.cardInstances ? { cardInstances: replay.cardInstances } : {}),
+            ...(replay.equipmentInv ? { equipmentInv: replay.equipmentInv } : {}),
+            ...(replay.siegeAcademy ? { siegeAcademy: replay.siegeAcademy } : {}),
           }
         : {}),
     };

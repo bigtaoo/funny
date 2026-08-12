@@ -13,6 +13,7 @@ import {
   type Replay,
   type LevelDefinition,
 } from '../game';
+import type { EngineCardInstance, EngineEquipInv } from '@nw/engine';
 import { t } from '../i18n';
 import { netLog } from '../net/log';
 import { ui, sketchPanel, seedFor } from '../render/sketchUi';
@@ -102,6 +103,17 @@ export class ReplayScene implements Scene {
      * side, not a side fixed at recording time.
      */
     private readonly equippedSkins: readonly string[] = [],
+    /**
+     * 2026-08-12 fix (siege replay fidelity, G3-2c): the attacker's card level/equipment/academy
+     * inputs, straight from worldsvc's `getSiegeReplay` — the SAME inputs the real battle settlement
+     * fed into `buildSiegeBlueprints`. Without these, `mode==='siege'` falls back to plain baseline
+     * blueprints (engine/setup/blueprints.ts), reconstructing a materially different fight from what
+     * actually decided the recorded `outcome` — see worldTypes.ts's SiegeReplayInputs doc comment for
+     * the production incident this closes. Always absent for a campaign/PvP replay (siege-only field).
+     */
+    private readonly cardInstances?: EngineCardInstance[],
+    private readonly equipmentInv?: EngineEquipInv,
+    private readonly siegeAcademy?: { hp: number; damage: number; siege: number },
   ) {
     this.container = new PIXI.Container();
 
@@ -198,6 +210,12 @@ export class ReplayScene implements Scene {
         mode: this.replay.mode,
         ...(level ? { level } : {}),
         ...(this.replay.decks ? { decks: this.replay.decks } : {}),
+        // 2026-08-12 fix: siege replays must resolve unitBlueprints from the ATTACKER's real
+        // cardInstances/equipmentInv/siegeAcademy, same as the settlement that produced `outcome` —
+        // see this class's constructor doc comment.
+        ...(this.cardInstances ? { cardInstances: this.cardInstances } : {}),
+        ...(this.equipmentInv ? { equipmentInv: this.equipmentInv } : {}),
+        ...(this.siegeAcademy ? { siegeAcademy: this.siegeAcademy } : {}),
       },
       src,
     );
@@ -215,7 +233,10 @@ export class ReplayScene implements Scene {
     const renderer = new GameRenderer(
       engine, lay, this.input,
       /* netEnabled */ false, /* spectator */ true,
-      {}, this.equippedSkins, null, null, /* tutorial */ false, {},
+      // 2026-08-12 fix: previously always null,null here (even for a siege replay with real card
+      // data available) — every siege replay silently drew zero equipment-gear glyphs on units. Now
+      // mirrors the same attacker cardInstances/equipmentInv the engine config above resolves from.
+      {}, this.equippedSkins, this.cardInstances ?? null, this.equipmentInv ?? null, /* tutorial */ false, {},
       this.replayNames,
     );
     renderer.init();

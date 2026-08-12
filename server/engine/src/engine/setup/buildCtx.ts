@@ -41,7 +41,8 @@ export function buildEngineCtx(config: GameConfig): EngineCtx {
   const waveDirector = new WaveDirector(level, new Prng(config.seed ^ 0x5A5A5A5A));
 
   applyBoardSetup(state, level);
-  const { garrisonUnits, attackerArmyUnits, defenderBuildingList } = createPreplacedEntities(state, level);
+  const { garrisonUnits, attackerArmyUnits, defenderBuildingList } =
+    createPreplacedEntities(state, level, enemyWaveBlueprints);
   const initialSpellCards = applyPveDrawPolicy(state, level, config.seed);
 
   return {

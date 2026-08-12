@@ -13,6 +13,7 @@
 // runtime. Do NOT add a value import of any scene class.
 
 import type { OwnerId, PlayerStats, Replay, LevelDefinition } from '../game';
+import type { EngineCardInstance, EngineEquipInv } from '@nw/engine';
 import type { TranslationKey } from '../i18n';
 import type { NetState } from '../net/NetClient';
 import type {
@@ -212,7 +213,12 @@ export interface AppViews {
   showDaily(cb: DailyCallbacks): void;
   /** Limited-time events (B6, ADR-014). */
   showEvents(cb: EventCallbacks): void;
-  showReplay(replay: Replay, cb: ReplaySceneCallbacks, level?: LevelDefinition, equippedSkins?: readonly string[]): void;
+  showReplay(
+    replay: Replay, cb: ReplaySceneCallbacks, level?: LevelDefinition, equippedSkins?: readonly string[],
+    // 2026-08-12 fix (siege replay fidelity, G3-2c): see ReplayScene's constructor doc comment.
+    cardInstances?: EngineCardInstance[], equipmentInv?: EngineEquipInv,
+    siegeAcademy?: { hp: number; damage: number; siege: number },
+  ): void;
   showResult(props: ResultViewProps): void;
   /**
    * Dumb state-stream player (REPLAY_SHARE_DESIGN §4.2): no engine, directly accessible without login.

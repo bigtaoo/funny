@@ -84,7 +84,14 @@ export async function resolveOccupationBattle(
   // 2026-08-01 (traceability decision, see combatSiege/arrival.ts applySiege for the full rationale): replay
   // inputs are kept even on an engine crash — getSiegeReplay degrades safely (see that comment) rather than
   // crashing, so there is no downside to keeping the exact inputs that caused a crash for later reproduction.
-  const replay: SiegeReplayInputs = { seed, attackerArmy, defenderConfig, tileLevel };
+  // 2026-08-12 fix: cardInstances/equipmentInv MUST be included too — these are the exact inputs about to be
+  // passed to runSiegeBattle below; omitting them made every card-army replay reconstruct from plain baseline
+  // blueprints instead of the attacker's real stats (see SiegeReplayInputs' doc comment for the incident).
+  const replay: SiegeReplayInputs = {
+    seed, attackerArmy, defenderConfig, tileLevel,
+    ...(cardInstances ? { cardInstances } : {}),
+    ...(cardEquipInv ? { equipmentInv: cardEquipInv } : {}),
+  };
   // Overwhelming ratio or synthesized-army board overflow → skip the engine outright, same as every other
   // siege entry point (applySiege/applyStrongholdSiege/applyCrossingSiege) — without this gate, a very large
   // flat-troop (non-team) occupy march can synthesize an army beyond board capacity, congest the engine, and

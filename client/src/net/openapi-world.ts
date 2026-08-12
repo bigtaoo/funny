@@ -1111,6 +1111,17 @@ export interface components {
             };
             attackerName: string;
             defenderName: string;
+            cardInstances?: {
+                [key: string]: unknown;
+            }[];
+            equipmentInv?: {
+                [key: string]: unknown;
+            };
+            siegeAcademy?: {
+                hp: number;
+                damage: number;
+                siege: number;
+            };
         };
         SiegeSummaryView: {
             siegeId: string;
