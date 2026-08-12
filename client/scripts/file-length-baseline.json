@@ -18,8 +18,6 @@
   "src/scenes/CityScene/core.ts": 753,
   "src/scenes/DailyScene.ts": 711,
   "src/scenes/EquipmentScene/core.ts": 525,
-  "src/scenes/FamilyScene/base.ts": 560,
-  "src/scenes/FamilyScene/render.ts": 547,
   "src/scenes/LobbyScene/build.ts": 807,
   "src/scenes/LoginScene.ts": 531,
   "src/scenes/ResultScene.ts": 786,

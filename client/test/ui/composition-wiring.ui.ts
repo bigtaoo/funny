@@ -214,6 +214,34 @@ describe('SectScene composition wiring', () => {
   });
 });
 
+// ── FamilyScene — data/actions/input/renderPanel over one FamilySceneCore ────────
+
+describe('FamilyScene composition wiring', () => {
+  it('shares exactly one FamilySceneCore across every domain class, with the actions/input→data and renderPanel→actions/input chain reaching the SAME instances', async () => {
+    const { FamilyScene } = await import('../../src/scenes/FamilyScene');
+    const scene = new FamilyScene(createLayout(1280, 800), new InputManager(), {
+      onBack() {}, onOpenSect() {}, onNavTab() {},
+      async addFriend() {}, async getFriendPublicIds() { return new Set<string>(); },
+      openChat() {},
+      worldApi: stubWorldApi(), worldId: 'world:1:0', myAccountId: 'acc_test', playerName: 'Tester',
+    }) as unknown as Record<string, unknown>;
+    const core = scene.core;
+    expect(core).toBeDefined();
+    for (const p of ['data', 'actions', 'input', 'renderPanel']) {
+      expect((scene[p] as Record<string, unknown>).core).toBe(core);
+    }
+    // actions.ts/input.ts both depend on data.ts (DataHandlers) — must be the one shared instance.
+    // (The old mixin chain's one genuine bidirectional dependency, actions↔input over sending a
+    // channel message, was resolved by moving both halves onto InputPanel — see
+    // FamilyScene/core.ts's file-header comment — so input.ts has no dependency on actions.ts.)
+    expect((scene.actions as Record<string, unknown>).data).toBe(scene.data);
+    expect((scene.input as Record<string, unknown>).data).toBe(scene.data);
+    expect((scene.renderPanel as Record<string, unknown>).actions).toBe(scene.actions);
+    expect((scene.renderPanel as Record<string, unknown>).input).toBe(scene.input);
+    (scene.destroy as () => void)();
+  });
+});
+
 // ── FriendsScene — network + 5 tab panels over one FriendsSceneCore ──────────────
 
 describe('FriendsScene composition wiring', () => {

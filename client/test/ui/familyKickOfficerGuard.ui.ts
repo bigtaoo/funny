@@ -49,13 +49,13 @@ function buildScene(): any {
   };
   const scene = new FamilyScene(createLayout(390, 844), new InputManager(), cb as any) as any;
   const toasts: { msg: string; color: number }[] = [];
-  scene.showToast = (msg: string, color: number) => toasts.push({ msg, color });
+  scene.core.showToast = (msg: string, color: number) => toasts.push({ msg, color });
   scene.toasts = toasts;
   return scene;
 }
 
 async function flush(scene: any): Promise<void> {
-  await scene.loadData();
+  await scene.data.loadData();
   scene.render();
 }
 
@@ -63,7 +63,7 @@ async function flush(scene: any): Promise<void> {
 // covers the whole name/role area (narrow for short test names, but noticeably taller), so
 // picking the minimum height among the narrow rects reliably isolates the Kick buttons.
 function findKickHits(scene: any): any[] {
-  const narrow = scene.hitRects.filter((h: any) => h.rect.w < 150);
+  const narrow = scene.core.hitRects.filter((h: any) => h.rect.w < 150);
   const minH = Math.min(...narrow.map((h: any) => h.rect.h));
   return narrow
     .filter((h: any) => h.rect.h === minH)
@@ -75,7 +75,7 @@ describe('FamilyScene — elder cannot be kicked without demoting first', () => 
     const scene = buildScene();
     await flush(scene);
 
-    const elder = scene.members.find((m: FamilyMemberView) => m.accountId === 'elderAcc');
+    const elder = scene.core.members.find((m: FamilyMemberView) => m.accountId === 'elderAcc');
     expect(elder.role).toBe('elder');
 
     // Kick hits are the narrowest per-row action rects; the elder row's sits above the member row's.
@@ -85,14 +85,14 @@ describe('FamilyScene — elder cannot be kicked without demoting first', () => 
     const [elderKick, memberKick] = kickHits;
 
     elderKick.action();
-    expect(scene.modalOpen).toBe(false);
+    expect(scene.core.modalOpen).toBe(false);
     expect(scene.toasts).toEqual([
       { msg: 'This member holds an office — demote them first before kicking', color: expect.any(Number) },
     ]);
 
     scene.toasts.length = 0;
     memberKick.action();
-    expect(scene.modalOpen).toBe(true);
+    expect(scene.core.modalOpen).toBe(true);
     expect(scene.toasts).toEqual([]);
 
     scene.destroy();
@@ -102,13 +102,13 @@ describe('FamilyScene — elder cannot be kicked without demoting first', () => 
     const scene = buildScene();
     await flush(scene);
 
-    await scene.doSetRole('elderAcc', 'member');
+    await scene.actions.doSetRole('elderAcc', 'member');
     scene.render();
 
     const kickHits = findKickHits(scene);
     // Both rows are now plain members — either Kick hit should open the confirm dialog.
     kickHits[0].action();
-    expect(scene.modalOpen).toBe(true);
+    expect(scene.core.modalOpen).toBe(true);
     expect(scene.toasts).toEqual([]);
 
     scene.destroy();

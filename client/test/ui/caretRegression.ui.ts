@@ -118,37 +118,37 @@ describe('FamilyScene — create-form caret', () => {
 
   it('name field shows a blinking cursor while focused and empty', () => {
     const scene = build();
-    scene.mode = 'create';
-    scene.createField = 'name';
-    scene.createName = '';
-    expectBlinkingCaret(scene.container, (on) => { scene.caretOn = on; }, () => scene.render(), '|');
+    scene.core.mode = 'create';
+    scene.core.createField = 'name';
+    scene.core.createName = '';
+    expectBlinkingCaret(scene.container, (on) => { scene.core.caretOn = on; }, () => scene.render(), '|');
     scene.destroy();
   });
 
   it('name field shows a blinking cursor appended to typed text', () => {
     const scene = build();
-    scene.mode = 'create';
-    scene.createField = 'name';
-    scene.createName = 'MyFamily';
-    expectBlinkingCaret(scene.container, (on) => { scene.caretOn = on; }, () => scene.render(), 'MyFamily|');
+    scene.core.mode = 'create';
+    scene.core.createField = 'name';
+    scene.core.createName = 'MyFamily';
+    expectBlinkingCaret(scene.container, (on) => { scene.core.caretOn = on; }, () => scene.render(), 'MyFamily|');
     scene.destroy();
   });
 
   it('tag field shows a blinking cursor while focused', () => {
     const scene = build();
-    scene.mode = 'create';
-    scene.createField = 'tag';
-    scene.createTag = 'AB';
-    expectBlinkingCaret(scene.container, (on) => { scene.caretOn = on; }, () => scene.render(), 'AB|');
+    scene.core.mode = 'create';
+    scene.core.createField = 'tag';
+    scene.core.createTag = 'AB';
+    expectBlinkingCaret(scene.container, (on) => { scene.core.caretOn = on; }, () => scene.render(), 'AB|');
     scene.destroy();
   });
 
   it('unfocused fields never show a cursor regardless of blink phase', () => {
     const scene = build();
-    scene.mode = 'create';
-    scene.createField = null;
-    scene.createName = 'MyFamily';
-    scene.caretOn = true;
+    scene.core.mode = 'create';
+    scene.core.createField = null;
+    scene.core.createName = 'MyFamily';
+    scene.core.caretOn = true;
     scene.render();
     expect(collectTexts(scene.container)).not.toContain('MyFamily|');
     scene.destroy();
