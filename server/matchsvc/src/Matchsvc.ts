@@ -24,10 +24,12 @@
 //   • queue        — ranked ELO-proximity matchmaking (enqueue, bot-fallback timeout, pair → start).
 //   • duel         — friend-challenge ("切磋") pending-invite + 60s-timeout layer.
 // queue depends on rooms one-directionally (narrow RoomLookupPort, "already in a room?" at enqueue time);
-// rooms/queue/duel each depend on matchStarter (narrow MatchStarterPort). No sibling ever depends back on
-// one that depends on it. The other half of the cross-check — "already queued?" for roomCreate/roomJoin's
-// ALREADY_IN_ROOM guard — is read by this shell from queue.hasQueued() directly below, rather than giving
-// rooms.ts a dependency on queue.ts, so rooms.ts stays the one-directional foundational layer (see
+// duel depends on both rooms and queue the same way (narrow RoomLookupPort/QueueLookupPort, "already
+// committed elsewhere?" at invite/accept time — matchmaking-mutex-audit, 2026-08-12); rooms/queue/duel
+// each depend on matchStarter (narrow MatchStarterPort). No sibling ever depends back on one that depends
+// on it. The other half of the cross-check — "already queued?" for roomCreate/roomJoin's ALREADY_IN_ROOM
+// guard — is read by this shell from queue.hasQueued() directly below, rather than giving rooms.ts a
+// dependency on queue.ts, so rooms.ts stays the one-directional foundational layer (see
 // matchsvc/types.ts's RoomLookupPort doc comment). Likewise roomLeave/onDisconnected call both queue.dequeue()
 // and rooms' own handling — that's this shell (the parent) calling two children, not a sibling-to-sibling edge.
 import { createLogger, type FeatureFlagCache, type RedisLike } from '@nw/shared';
@@ -93,7 +95,10 @@ export class Matchsvc {
       now: opts.now,
       autoTick: opts.autoTick,
     });
-    this.duel = new DuelService({ push, redis: this.redis, now: this.now, matchStarter });
+    // rooms/queue passed one-directionally (narrow RoomLookupPort/QueueLookupPort read, see duel.ts's
+    // header comment) — duel.ts uses them to reject an invite/accept when either party is already
+    // committed to a room or the ranked queue, same "leave first" policy as the room↔queue guard above.
+    this.duel = new DuelService({ push, redis: this.redis, now: this.now, matchStarter, rooms: this.rooms, queue: this.queue });
   }
 
   /**

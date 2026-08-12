@@ -756,6 +756,8 @@ export const de: Record<TranslationKey, string> = {
   'friends.duel.notFound': 'Spieler nicht gefunden',
   'friends.duel.lost': 'Duell-Einladung verloren — bitte erneut versuchen',
   'friends.duel.rateLimited': 'Zu viele Duell-Einladungen — bitte kurz warten',
+  // Raum/Rangliste-Warteschlange-Sperre (matchmaking-mutex-audit, 2026-08-12): eine Seite ist bereits im Raum oder in der Warteschlange.
+  'friends.duel.busy': 'Duell nicht möglich: bitte zuerst den Raum verlassen oder die Suche abbrechen',
   // Global toast (any scene, P0-8): the in-scene banner (friends.duelInviteBanner) only shows while
   // sitting on FriendsScene, so this fires everywhere else the invite arrives.
   'friends.duel.invitedToast': '{name} fordert dich zum Duell heraus — sieh bei Freunden nach',

@@ -756,6 +756,8 @@ export const en: Record<TranslationKey, string> = {
   'friends.duel.notFound': 'Player not found',
   'friends.duel.lost': 'Duel invite lost — please try again',
   'friends.duel.rateLimited': 'Too many duel invites — please wait a moment',
+  // Room/ranked-queue mutex (matchmaking-mutex-audit, 2026-08-12): either side is already in a room or queue.
+  'friends.duel.busy': 'Cannot duel: leave your room or cancel matchmaking first',
   // Global toast (any scene, P0-8): the in-scene banner (friends.duelInviteBanner) only shows while
   // sitting on FriendsScene, so this fires everywhere else the invite arrives.
   'friends.duel.invitedToast': '{name} challenged you to a duel — check Friends',

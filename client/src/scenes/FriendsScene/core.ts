@@ -278,10 +278,14 @@ export class FriendsSceneCore {
     this.render();
   }
 
-  /** Only ever about MY own outstanding sent invite (accept never reaches here — see DuelInvited doc;
-   *  matchsvc allows exactly one at a time, so there's nothing to disambiguate by inviteId here). */
+  /** Mostly about MY own outstanding sent invite (matchsvc allows exactly one at a time, so there's
+   *  nothing to disambiguate by inviteId here) — with one exception: reason:'busy' (matchmaking-mutex-
+   *  audit, 2026-08-12) is pushed to the *invitee* when their own accept was rejected because either
+   *  side is already in a room/queue (matchsvc's duel.ts). `sendingDuelTo = null` is then a harmless
+   *  no-op on the invitee's client (never set to begin with). */
   applyDuelCancelled(d: DuelCancelled): void {
     this.sendingDuelTo = null;
+    this.incomingDuelInvite = null;
     const key: TranslationKey =
       d.reason === 'declined' ? 'friends.duel.declined'
       : d.reason === 'timeout' ? 'friends.duel.timeout'
@@ -293,6 +297,9 @@ export class FriendsSceneCore {
       // Was previously falling into the 'notFound' default below, which reads as an outright wrong
       // "player not found" message rather than a rate-limit notice.
       : d.reason === 'rate_limited' ? 'friends.duel.rateLimited'
+      // Room/queue mutex guard (matchmaking-mutex-audit, 2026-08-12): either side was already committed
+      // to a friendly room or the ranked queue — see this method's doc comment.
+      : d.reason === 'busy' ? 'friends.duel.busy'
       : 'friends.duel.notFound';
     this.toast(key);
     this.render();

@@ -1,12 +1,20 @@
 // Matchsvc.ts split (2026-08-10, ≤500-line convention, composition layer): friend-challenge ("切磋",
 // ADR friends-duel-confirm) — a pending-invite + 60s-timeout layer on top of the same MatchStarterPort
 // the room-ready/ranked-pair flows already use. No room code exchange: the gateway already knows both
-// accountIds. Independent of rooms.ts/queue.ts — a duel invite never checks room/queue membership
-// (matches the original single-class behavior), so this has no dependency on either sibling.
+// accountIds.
+//
+// room/queue busy-guard (2026-08-12, matchmaking-mutex-audit): a duel invite/accept USED TO never check
+// room/queue membership at all (matches the original single-class behavior) — an account mid-ranked-search
+// or sitting in a friendly room could accept a duel and end up double-committed (this account's ranked
+// queue entry, or its room, silently stale while a friendly match already started underneath it). Now reads
+// `rooms`/`queue` one-directionally (same narrow-port shape queue.ts already uses to read rooms.ts — see
+// RoomLookupPort's doc comment in types.ts) purely to REJECT with a "leave first" push, same policy as
+// roomCreate/roomJoin's ALREADY_IN_ROOM guard; it never auto-leaves a room or auto-dequeues on either
+// party's behalf.
 import { randomUUID } from 'crypto';
 import { createLogger, type RedisLike } from '@nw/shared';
 import { saveDuelInvite, deleteDuelInvite, type PersistedDuelInvite } from '../persist';
-import { DUEL_TIMEOUT_MS, type DuelInvite, type DuelPlayer, type MatchStarterPort, type Push } from './types';
+import { DUEL_TIMEOUT_MS, type DuelInvite, type DuelPlayer, type MatchStarterPort, type Push, type QueueLookupPort, type RoomLookupPort } from './types';
 
 const log = createLogger('matchsvc');
 
@@ -15,6 +23,8 @@ export interface DuelServiceDeps {
   redis: RedisLike | null;
   now: () => number;
   matchStarter: MatchStarterPort;
+  rooms: RoomLookupPort;
+  queue: QueueLookupPort;
 }
 
 export class DuelService {
@@ -23,8 +33,19 @@ export class DuelService {
 
   constructor(private readonly deps: DuelServiceDeps) {}
 
+  /** True if `accountId` is already committed to a friendly room or the ranked queue — the same
+   *  "leave first" condition rooms.ts/queue.ts already gate on (see this file's header comment). */
+  private isBusy(accountId: string): boolean {
+    return this.deps.rooms.hasRoom(accountId) || this.deps.queue.hasQueued(accountId);
+  }
+
   /** `from` is fully resolved by the gateway (profile + elo-validated deck) before this is called. */
   duelInvite(from: DuelPlayer, toAccountId: string): void {
+    if (this.isBusy(from.accountId)) {
+      log.info('duel invite rejected: inviter already in room/queue', { from: from.accountId });
+      this.deps.push(from.accountId, { kind: 'duel_cancelled', inviteId: '', reason: 'busy' });
+      return;
+    }
     // A second invite from the same inviter replaces the first (re-clicking "duel" reads as "retry",
     // not "queue another one") — cancel the stale one the same way a decline would.
     const prevId = this.pendingDuelByAccount.get(from.accountId);
@@ -49,6 +70,14 @@ export class DuelService {
   async duelRespond(toAccountId: string, inviteId: string, accept: boolean, profile?: DuelPlayer): Promise<void> {
     const invite = this.duelInvites.get(inviteId);
     if (!invite || invite.toAccountId !== toAccountId) return;
+    // Busy-guard (matchmaking-mutex-audit, 2026-08-12): checked BEFORE tearing down the invite, and only
+    // on the accept path — a reject leaves the invite pending so either side can retry once they've left
+    // their room/queue, same "leave first" policy as ALREADY_IN_ROOM (this file's header comment).
+    if (accept && profile && (this.isBusy(toAccountId) || this.isBusy(invite.from.accountId))) {
+      log.info('duel accept rejected: a party is already in room/queue', { inviteId, from: invite.from.accountId, toAccountId });
+      this.deps.push(toAccountId, { kind: 'duel_cancelled', inviteId, reason: 'busy' });
+      return;
+    }
     clearTimeout(invite.timer);
     this.duelInvites.delete(inviteId);
     this.pendingDuelByAccount.delete(invite.from.accountId);

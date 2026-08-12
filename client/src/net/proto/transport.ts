@@ -364,10 +364,13 @@ export interface DuelInvited {
 }
 
 /**
- * Pushed back to the inviter on the unhappy path only (accept never reaches here — see DuelInvited doc).
+ * Pushed back to the inviter on the unhappy path only, EXCEPT reason:'busy' (see below) which goes to
+ * the invitee instead.
  * reason: declined | timeout | offline | not_found | lost (matchsvc restarted and this outstanding sent
  * invite could not be recovered — see PreMatchLost below; the inviter's client treats it the same as any
- * other unhappy-path cancellation).
+ * other unhappy-path cancellation) | rate_limited | busy (matchmaking-mutex-audit, 2026-08-12: pushed to
+ * the *invitee* when their accept was rejected because either side is already in a room or the ranked
+ * queue — see matchsvc's duel.ts).
  */
 export interface DuelCancelled {
   inviteId: string;

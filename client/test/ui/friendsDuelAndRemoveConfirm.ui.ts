@@ -262,6 +262,7 @@ describe('FriendsScene — duel invite ("切磋")', () => {
     ['timeout', 'friends.duel.timeout'],
     ['offline', 'friends.duel.offline'],
     ['not_found', 'friends.duel.notFound'],
+    ['busy', 'friends.duel.busy'], // matchmaking-mutex-audit, 2026-08-12: either side already in room/queue
     ['some-unrecognized-reason', 'friends.duel.notFound'], // unknown reason falls back to notFound
   ] as const)('applyDuelCancelled(reason=%s) toasts %s', async (reason, key) => {
     const { scene } = buildFriendsScene([]);

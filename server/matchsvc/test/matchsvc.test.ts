@@ -576,6 +576,79 @@ describe('Matchsvc duel invite ("切磋", ADR friends-duel-confirm)', () => {
     svc.duelRespond('b', 'not-a-real-invite-id', true, player('b', 'Bob', '100000002')); // wrong inviteId
     expect(pushed.length).toBe(before);
   });
+
+  // ── room/queue busy-guard (matchmaking-mutex-audit, 2026-08-12) ─────────────────
+  // Duel invites used to never check room/queue membership at all — an account mid-ranked-search or
+  // sitting in a friendly room could still accept (or send) a duel and end up double-committed. These
+  // mirror the "already busy" guards above, but for the third pre-match state.
+  describe('room/queue busy-guard', () => {
+    it('duelInvite while the inviter is already in a room → duel_cancelled{reason:busy} to the inviter, no invite created', () => {
+      const { svc, last, pushed } = setup();
+      svc.roomCreate('a', 'Alice', '100000001');
+      const before = pushed.length;
+
+      svc.duelInvite(player('a', 'Alice', '100000001'), 'b');
+
+      expect(last('a', 'duel_cancelled')).toMatchObject({ reason: 'busy' });
+      expect(pushed.slice(before).some((p) => p.msg.kind === 'duel_invited')).toBe(false);
+    });
+
+    it('duelInvite while the inviter is already in the ranked queue → duel_cancelled{reason:busy}, no invite created', async () => {
+      const { svc, last, pushed } = setup();
+      await svc.enqueue('a', 'Alice', '100000001', 1000);
+      const before = pushed.length;
+
+      svc.duelInvite(player('a', 'Alice', '100000001'), 'b');
+
+      expect(last('a', 'duel_cancelled')).toMatchObject({ reason: 'busy' });
+      expect(pushed.slice(before).some((p) => p.msg.kind === 'duel_invited')).toBe(false);
+    });
+
+    it('accepting while the invitee is already in a room → duel_cancelled{reason:busy} to the invitee, no match_found, invite stays pending', async () => {
+      const { svc, last, pushed } = setup();
+      svc.duelInvite(player('a', 'Alice', '100000001'), 'b');
+      const inv = last('b', 'duel_invited');
+      if (inv?.kind !== 'duel_invited') throw new Error();
+      svc.roomCreate('b', 'Bob', '100000002');
+
+      await svc.duelRespond('b', inv.inviteId, true, player('b', 'Bob', '100000002'));
+
+      expect(last('b', 'duel_cancelled')).toMatchObject({ reason: 'busy', inviteId: inv.inviteId });
+      expect(pushed.some((p) => p.msg.kind === 'match_found')).toBe(false);
+
+      // Invite is still alive: leave the room, retry, and this time it goes through.
+      svc.roomLeave('b');
+      await svc.duelRespond('b', inv.inviteId, true, player('b', 'Bob', '100000002'));
+      expect(last('a', 'match_found')?.kind).toBe('match_found');
+      expect(last('b', 'match_found')?.kind).toBe('match_found');
+    });
+
+    it('accepting while the invitee is already in the ranked queue → duel_cancelled{reason:busy}, no match_found', async () => {
+      const { svc, last, pushed } = setup();
+      svc.duelInvite(player('a', 'Alice', '100000001'), 'b');
+      const inv = last('b', 'duel_invited');
+      if (inv?.kind !== 'duel_invited') throw new Error();
+      await svc.enqueue('b', 'Bob', '100000002', 1000);
+
+      await svc.duelRespond('b', inv.inviteId, true, player('b', 'Bob', '100000002'));
+
+      expect(last('b', 'duel_cancelled')).toMatchObject({ reason: 'busy', inviteId: inv.inviteId });
+      expect(pushed.some((p) => p.msg.kind === 'match_found')).toBe(false);
+    });
+
+    it('accepting while the inviter became busy after sending the invite → duel_cancelled{reason:busy} to the invitee, no match_found', async () => {
+      const { svc, last, pushed } = setup();
+      svc.duelInvite(player('a', 'Alice', '100000001'), 'b');
+      const inv = last('b', 'duel_invited');
+      if (inv?.kind !== 'duel_invited') throw new Error();
+      svc.roomCreate('a', 'Alice', '100000001'); // inviter joins a room while the invite is outstanding
+
+      await svc.duelRespond('b', inv.inviteId, true, player('b', 'Bob', '100000002'));
+
+      expect(last('b', 'duel_cancelled')).toMatchObject({ reason: 'busy', inviteId: inv.inviteId });
+      expect(pushed.some((p) => p.msg.kind === 'match_found')).toBe(false);
+    });
+  });
 });
 
 // ── Room code character set ───────────────────────────────────────────────────
