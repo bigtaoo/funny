@@ -6514,6 +6514,36 @@ export const WORLD_RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                 },
                 "defenderName": {
                   "type": "string"
+                },
+                "cardInstances": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": true
+                  }
+                },
+                "equipmentInv": {
+                  "type": "object",
+                  "additionalProperties": true
+                },
+                "siegeAcademy": {
+                  "type": "object",
+                  "required": [
+                    "hp",
+                    "damage",
+                    "siege"
+                  ],
+                  "properties": {
+                    "hp": {
+                      "type": "number"
+                    },
+                    "damage": {
+                      "type": "number"
+                    },
+                    "siege": {
+                      "type": "number"
+                    }
+                  }
                 }
               }
             }

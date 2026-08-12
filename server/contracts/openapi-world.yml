@@ -598,6 +598,23 @@ components:
         # crossing / ownerless building) — the client falls back to a generic placeholder.
         attackerName: { type: string }
         defenderName: { type: string }
+        # 2026-08-12 fix: the attacker's card/equipment/academy inputs the REAL settlement fed into
+        # buildSiegeBlueprints — without these, the client's headless re-simulation falls back to plain
+        # baseline blueprints for a card-army battle, able to show a different winner than `outcome`.
+        # Absent for a flat/synthesized-army battle report, or a legacy record predating this fix.
+        cardInstances:
+          type: array
+          items: { type: object, additionalProperties: true }
+        equipmentInv:
+          type: object
+          additionalProperties: true
+        siegeAcademy:
+          type: object
+          required: [hp, damage, siege]
+          properties:
+            hp: { type: number }
+            damage: { type: number }
+            siege: { type: number }
 
     # Compact battle-report row for the recent-sieges replay browser (last-100). role/hasReplay are relative
     # to the requester; only replayable rows (hasReplay=true) can be opened via GET /world/siege/{id}/replay.

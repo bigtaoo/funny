@@ -179,6 +179,29 @@ export function buildSiegeBlueprints(
 }
 
 /**
+ * SLG siege NPC-garrison baseline (2026-08-12 fix, SLG_DESIGN_LOG.md §"NPC 守军蓝图串味"): a tile's
+ * defending garrison must NEVER read the ATTACKER's own {@link buildSiegeBlueprints} table. Before this
+ * fix, `engine/setup/preplaced.ts` built both `attackerArmy` (Bottom) and `garrison` (Top) pre-placed
+ * units from the exact same per-`unitType` blueprint table — and that table is leveled/equipped/academy-
+ * buffed entirely from the ATTACKER's own progression (buildCampaignBlueprints keys strictly off the
+ * attacker's `cardInstances`/`equipmentInv`, with no concept of "which side"). Consequence: if the
+ * attacker's strongest card happens to be the same `unitType` as the tile's NPC garrison (a very common
+ * case — most garrisons + most attacking armies both lean on Infantry/Archer), leveling up or equipping
+ * that card silently buffed the garrison defending against it by the exact same multiplier, eating into
+ * (or in a real production case, 2026-08-12, fully reversing — see the zihao1 occupy-loss investigation)
+ * the intended power advantage. A siege target's difficulty already scales entirely via troop COUNT
+ * (`npcGarrison(level)`, shared/src/slg/siege.ts) and base building HP (`npcBaseHp(tileLevel)`) — the
+ * garrison's PER-UNIT combat stats (attack/armor/hp-per-unit) were always meant to be the plain baseline,
+ * same idea as campaign mode's `enemyScale` isolation just above, except siege has no analogous scale
+ * knob to apply, so this is simply the unbuffed clone. Wired into `engine/setup/blueprints.ts`'s
+ * `enemyWaveBlueprints` for `mode==='siege'`, and consumed by `preplaced.ts`'s garrison (Top-side) block —
+ * the `attackerArmy` (Bottom-side) block is untouched and still reads the buffed `unitBlueprints`.
+ */
+export function buildSiegeGarrisonBlueprints(): Record<UnitType, UnitBlueprint> {
+  return cloneBlueprints();
+}
+
+/**
  * Applies upgrade levels as multiplicative modifiers to blueprints (in-place mutation). Unknown id / level 0 / above maxLevel are all safely clamped.
  * The single SaveData→blueprint injection point (§5.2).
  */

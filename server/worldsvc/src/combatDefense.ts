@@ -1,6 +1,7 @@
 // worldsvc combat domain: defense config (S8-4) + siege replay spectating (G3-2c).
 // Peeled out of CombatService (2026-07-03). Depends on WorldCore for shared state and family checks. No behavior change.
 import { buildSiegeBattle, playerWorldId, SlgError, type SiegeOutcome } from '@nw/shared';
+import type { EngineCardInstance, EngineEquipInv } from '@nw/engine';
 import { validateDefenseConfig } from './siegeEngine';
 import { WorldCore } from './core';
 import type { SiegeSummaryView } from './worldTypes';
@@ -76,6 +77,13 @@ export class DefenseService {
    * Reconstructs buildSiegeBattle from the seed + both sides' formations + tile level persisted by landSiege → shape aligned with the client's LevelDefinition.
    * The client reruns the same siege headless in siege mode using an empty ReplayInputSource and the same seed, reproducing exactly what worldsvc ran.
    * If replay inputs are missing (no-combat instant occupy / old battle report) → REPLAY_UNAVAILABLE.
+   * 2026-08-12 fix: also returns `cardInstances`/`equipmentInv`/`siegeAcademy` (absent on a
+   * flat/synthesized-army battle report, or a legacy record predating this fix) so the client's headless
+   * re-simulation resolves the SAME `unitBlueprints` the real settlement did (mode:'siege' requires these
+   * on `GameConfig` — see engine/setup/blueprints.ts). Without them the client used to silently fall back
+   * to plain baseline blueprints for a card-army battle — "replaying" a materially different fight, able
+   * to show a different winner than the recorded `outcome` (see SiegeReplayInputs' doc comment,
+   * worldTypes.ts, for the production incident this closes).
    */
   async getSiegeReplay(
     worldId: string,
@@ -88,6 +96,9 @@ export class DefenseService {
     level: Record<string, unknown>;
     attackerName: string;
     defenderName: string;
+    cardInstances?: EngineCardInstance[];
+    equipmentInv?: EngineEquipInv;
+    siegeAcademy?: { hp: number; damage: number; siege: number };
   }> {
     const siege = await this.core.deps.cols.sieges.findOne({ _id: sid, worldId });
     if (!siege) throw new SlgError('NOT_FOUND', 'Battle report not found');
@@ -113,7 +124,12 @@ export class DefenseService {
       this.resolveDisplayName(siege.attackerId),
       siege.defenderId ? this.resolveDisplayName(siege.defenderId) : Promise.resolve(''),
     ]);
-    return { siegeId: sid, seed: siege.seed, outcome: siege.outcome, level, attackerName, defenderName };
+    return {
+      siegeId: sid, seed: siege.seed, outcome: siege.outcome, level, attackerName, defenderName,
+      ...(siege.cardInstances ? { cardInstances: siege.cardInstances } : {}),
+      ...(siege.equipmentInv ? { equipmentInv: siege.equipmentInv } : {}),
+      ...(siege.siegeAcademy ? { siegeAcademy: siege.siegeAcademy } : {}),
+    };
   }
 
   /** Resolve a player's display name via the meta service; '' when meta is unavailable or the lookup fails. */

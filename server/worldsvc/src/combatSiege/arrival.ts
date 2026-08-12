@@ -262,7 +262,17 @@ export class ArrivalService {
     // not authoritative), so replaying a cheap-resolved battle can show a different winner than the
     // recorded/settled `res.outcome` — an accepted tradeoff (same drift category already accepted for
     // mid-season engineVersion drift, see the warning a few lines up).
-    const replay: SiegeReplayInputs = { seed, attackerArmy, defenderConfig, tileLevel };
+    // 2026-08-12 fix: cardInstances/equipmentInv/siegeAcademy must ride along too — these are the exact
+    // inputs about to be passed to runSiegeBattle a few lines down (or already fed the shared-blueprint
+    // table `buildSiegeBlueprints` builds from); omitting them made every card-army replay reconstruct
+    // from plain baseline blueprints instead of the attacker's real stats (see SiegeReplayInputs' doc
+    // comment, worldTypes.ts, for the production incident this closes).
+    const replay: SiegeReplayInputs = {
+      seed, attackerArmy, defenderConfig, tileLevel,
+      ...(cardInstances ? { cardInstances } : {}),
+      ...(cardEquipInv ? { equipmentInv: cardEquipInv } : {}),
+      ...(siegeAcademy ? { siegeAcademy } : {}),
+    };
     if (shouldUseCheapSiege({ attackerTroops: attackerHp, defenderTroops: effGarrison, attackerSynthesized, defenderSynthesized })) {
       res = resolveSiege(attackerHp, effGarrison);
     } else {

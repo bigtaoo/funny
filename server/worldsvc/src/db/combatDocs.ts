@@ -3,6 +3,7 @@
 // "pending hold" doc shapes (building-HP damage / occupation), and stationed (parked) teams.
 import type { Collection } from 'mongodb';
 import type { MarchKind, SiegeOutcome, ResourceType, TileType, PathCell } from '@nw/shared';
+import type { EngineCardInstance, EngineEquipInv } from '@nw/engine';
 import type { ArmyEntry } from './playerDocs';
 import type { DefenseConfig } from './worldDocs';
 
@@ -111,6 +112,20 @@ export interface SiegeDoc {
   attackerArmy?: ArmyEntry[];
   defenderConfig?: DefenseConfig | null;
   tileLevel?: number;
+  /**
+   * 2026-08-12 fix (replay-fidelity gap): the attacker's card instances/equipment/academy buff, the
+   * SAME inputs `resolveOccupationBattle`/`applySiege` actually fed into `buildSiegeBlueprints` at
+   * settlement time. Without these, a from-scratch replay of a card-army battle rebuilds every unit's
+   * attack/armor/abilities from plain baseline blueprints instead of the attacker's real stats — this is
+   * a much larger source of outcome divergence than the pre-existing cheap-formula/crash-fallback
+   * caveat (seed/attackerArmy/defenderConfig/tileLevel's doc comment above), since it silently drops
+   * data that was actually authoritative rather than skipping a step that never ran. Absent for a
+   * flat/synthesized army (no card team attached) — same absence rule as `attackerArmy`'s per-entry
+   * cardInstanceId.
+   */
+  cardInstances?: EngineCardInstance[];
+  equipmentInv?: EngineEquipInv;
+  siegeAcademy?: { hp: number; damage: number; siege: number };
 }
 
 /**

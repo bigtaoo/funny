@@ -3,6 +3,7 @@
 import * as analytics from '../../analytics';
 import { ENGINE_VERSION } from '../../game';
 import type { Replay, LevelDefinition } from '../../game';
+import type { EngineCardInstance, EngineEquipInv } from '@nw/engine';
 import { WorldApiClient } from '../../net/WorldApiClient';
 import { allEquippedSkins } from '../../game/meta/skinDefs';
 import type { WorldMapView } from '../../scenes/WorldMapScene';
@@ -162,12 +163,23 @@ export function createWorldNav(ctx: AppCtx): WorldNav {
     let seed = 0;
     let attackerName = '';
     let defenderName = '';
+    // 2026-08-12 fix: the attacker's card/equipment/academy inputs the real settlement used to
+    // resolve unitBlueprints — see ReplayScene's constructor doc comment for why these must ride
+    // along, or a card-army replay can reconstruct a materially different (even outcome-flipping)
+    // fight from plain baseline blueprints. Loosely typed on the wire (openapi-world.yml declares
+    // them as free-form objects, same as `level`); cast to the engine's real shape here.
+    let cardInstances: EngineCardInstance[] | undefined;
+    let equipmentInv: EngineEquipInv | undefined;
+    let siegeAcademy: { hp: number; damage: number; siege: number } | undefined;
     try {
       const data = await worldApi.getSiegeReplay(worldId, siegeId);
       level = data.level as unknown as LevelDefinition;
       seed = data.seed;
       attackerName = data.attackerName;
       defenderName = data.defenderName;
+      cardInstances = data.cardInstances as unknown as EngineCardInstance[] | undefined;
+      equipmentInv = data.equipmentInv as unknown as EngineEquipInv | undefined;
+      siegeAcademy = data.siegeAcademy;
     } catch {
       goWorldMap(worldApi, worldId);
       return;
@@ -188,7 +200,10 @@ export function createWorldNav(ctx: AppCtx): WorldNav {
       endFrame,
       meta: { players: { bottom: attackerName, top: defenderName } },
     };
-    views.showReplay(replay, { onExit() { goWorldMap(worldApi, worldId); } }, level, allEquippedSkins(saveManager.get().equipped));
+    views.showReplay(
+      replay, { onExit() { goWorldMap(worldApi, worldId); } }, level, allEquippedSkins(saveManager.get().equipped),
+      cardInstances, equipmentInv, siegeAcademy,
+    );
   }
 
   /**

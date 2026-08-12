@@ -1,7 +1,7 @@
 // Resolve match blueprints from GameConfig — verbatim extract of engine/base.ts's old
 // constructor (§5.2/§6.1 hard wall: this is the ONLY place PvE upgrades enter the
 // engine; PvP/netplay always get the read-only constants).
-import { buildPvpBlueprints, buildCampaignBlueprints, buildSiegeBlueprints } from '../../balance/pveUpgrades';
+import { buildPvpBlueprints, buildCampaignBlueprints, buildSiegeBlueprints, buildSiegeGarrisonBlueprints } from '../../balance/pveUpgrades';
 import type { GameConfig, GameMode, UnitBlueprint, UnitType } from '../../types';
 
 export interface ResolvedBlueprints {
@@ -24,17 +24,27 @@ export function resolveBlueprints(config: GameConfig, mode: GameMode): ResolvedB
   // the bot fields the player's ch1-leveled Tao units) multiplied by the per-level hp/damage
   // factors.
   let enemyWaveBlueprints = unitBlueprints;
-  const enemyScale = mode === 'campaign' ? config.level?.enemyScale : undefined;
-  if (enemyScale) {
-    const hpMult  = enemyScale.hp     ?? 1;
-    const dmgMult = enemyScale.damage ?? 1;
-    const scaled = buildPvpBlueprints();
-    for (const key of Object.keys(scaled) as UnitType[]) {
-      const bp = scaled[key];
-      bp.hp     = Math.max(1, Math.round(bp.hp * hpMult));
-      bp.attack = Math.max(1, Math.round(bp.attack * dmgMult));
+  if (mode === 'siege') {
+    // 2026-08-12 fix (see buildSiegeGarrisonBlueprints' doc comment): siege NEVER shares the
+    // attacker-buffed `unitBlueprints` with the defending side, unconditionally — unlike campaign's
+    // `enemyScale`, which is an opt-in per-level knob, siege has no equivalent "leave it shared" case;
+    // the tile's garrison/NPC units must always read plain baseline stats, since a same-typed attacker
+    // card would otherwise buff its own defender by construction (this is what preplaced.ts's Top-side
+    // garrison block now consumes instead of `unitBlueprints`).
+    enemyWaveBlueprints = buildSiegeGarrisonBlueprints();
+  } else {
+    const enemyScale = mode === 'campaign' ? config.level?.enemyScale : undefined;
+    if (enemyScale) {
+      const hpMult  = enemyScale.hp     ?? 1;
+      const dmgMult = enemyScale.damage ?? 1;
+      const scaled = buildPvpBlueprints();
+      for (const key of Object.keys(scaled) as UnitType[]) {
+        const bp = scaled[key];
+        bp.hp     = Math.max(1, Math.round(bp.hp * hpMult));
+        bp.attack = Math.max(1, Math.round(bp.attack * dmgMult));
+      }
+      enemyWaveBlueprints = scaled;
     }
-    enemyWaveBlueprints = scaled;
   }
 
   return { unitBlueprints, enemyWaveBlueprints };

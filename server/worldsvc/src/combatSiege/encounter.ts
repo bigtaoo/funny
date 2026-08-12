@@ -237,7 +237,16 @@ export class EncounterService {
     // 2026-08-01 (traceability decision, see combatSiege/arrival.ts applySiege for the full rationale): replay
     // inputs are kept unconditionally, including on an engine crash — getSiegeReplay degrades safely on both
     // ends rather than crashing, so there is no downside to keeping the exact inputs that caused a crash.
-    const replay: SiegeReplayInputs = { seed, attackerArmy, defenderConfig, tileLevel };
+    // 2026-08-12 fix: aCardInstances/aCardEquipInv are the exact attacker inputs fed into runSiegeBattle
+    // just below (or the shared blueprint table, on the cheap path) — omitting them made a from-scratch
+    // replay of a card-army encounter reconstruct from plain baseline blueprints instead of the
+    // attacker's real stats (see SiegeReplayInputs' doc comment, worldTypes.ts). Field encounters have
+    // no siegeAcademy input (v1 simplification, same as the defender's gear — see the comment above).
+    const replay: SiegeReplayInputs = {
+      seed, attackerArmy, defenderConfig, tileLevel,
+      ...(aCardInstances ? { cardInstances: aCardInstances } : {}),
+      ...(aCardEquipInv ? { equipmentInv: aCardEquipInv } : {}),
+    };
     if (shouldUseCheapSiege({ attackerTroops: attackerHp, defenderTroops: defenderHp, attackerSynthesized, defenderSynthesized })) {
       res = resolveSiege(attackerHp, defenderHp);
     } else {
