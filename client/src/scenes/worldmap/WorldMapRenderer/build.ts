@@ -8,6 +8,7 @@ import { makeText } from '../../../render/pixiText';
 import { FS } from '../../../render/fontScale';
 import { drawSceneHeader, HEADER_ACCENT } from '../../../ui/widgets/SceneHeader';
 import { HUD_H } from '../constants';
+import { beginLoadingErase } from './loadingReveal';
 import type { WorldMapRendererCore } from './core';
 import type { WorldMapRendererPool } from './pool';
 
@@ -147,14 +148,12 @@ export class WorldMapRendererBuild implements BuildHandlers {
     ctx.loadingSpinner = spinner;
   }
 
-  /** Remove the first-paint loading cover (idempotent); clears the safety timeout. */
+  /** Reveal the map: clears the safety timeout and hands the first-paint loading cover off to its
+   *  eraser-wipe reveal (loadingReveal.ts) instead of popping it away outright. Idempotent — see
+   *  beginLoadingErase's doc comment. */
   hideLoading(): void {
     const ctx = this.core.ctx;
     if (ctx.loadingTimeout) { clearTimeout(ctx.loadingTimeout); ctx.loadingTimeout = null; }
-    if (ctx.loadingLayer) {
-      ctx.loadingLayer.destroy({ children: true });
-      ctx.loadingLayer = null;
-      ctx.loadingSpinner = null;
-    }
+    beginLoadingErase(ctx);
   }
 }

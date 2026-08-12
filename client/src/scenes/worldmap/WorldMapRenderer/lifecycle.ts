@@ -9,6 +9,7 @@ import { loadBuildingAtlas } from '../../../render/atlas/buildingAtlasLoader';
 import { tearDownChildren } from '../../../render/sketchUi';
 import { destroyTokenEntry } from './tokens';
 import { drawShieldDome, drawShieldGlow, drawShieldBreakFx, SHIELD_BREAK_LIFE } from './shieldFx';
+import { updateLoadingErase, cancelLoadingErase } from './loadingReveal';
 import type { WorldMapRendererCore } from './core';
 import type { WorldMapRendererFog } from './fog';
 import type { WorldMapRendererVignette } from './vignette';
@@ -38,6 +39,8 @@ export class WorldMapRendererLifecycle implements LifecycleHandlers {
       ctx.loadingAngle += dt * 4;
       ctx.loadingSpinner.rotation = ctx.loadingAngle;
     }
+    // Eraser-wipe reveal of the loading cover, once hideLoading() has handed it off (loadingReveal.ts).
+    if (ctx.loadingEraseLayer) updateLoadingErase(ctx, dt);
     // Once-per-second HUD countdown refresh (P1-1): march/siege remaining-time text previously only
     // advanced on the ~5s poll tick or an incoming push, sitting visibly frozen in between. This just
     // repaints the HUD from existing state — no network — so it's cheap and safe to run continuously
@@ -128,6 +131,7 @@ export class WorldMapRendererLifecycle implements LifecycleHandlers {
   destroy(): void {
     const ctx = this.core.ctx;
     if (ctx.loadingTimeout) { clearTimeout(ctx.loadingTimeout); ctx.loadingTimeout = null; }
+    cancelLoadingErase(ctx);
     if (ctx.hiddenInput) { ctx.hiddenInput.remove(); ctx.hiddenInput = null; }
     for (const s of ctx.pool) s.g.destroy();
     ctx.pool = [];
