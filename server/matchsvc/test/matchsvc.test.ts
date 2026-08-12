@@ -648,6 +648,47 @@ describe('Matchsvc duel invite ("切磋", ADR friends-duel-confirm)', () => {
       expect(last('b', 'duel_cancelled')).toMatchObject({ reason: 'busy', inviteId: inv.inviteId });
       expect(pushed.some((p) => p.msg.kind === 'match_found')).toBe(false);
     });
+
+    it('declining still works even while the invitee is busy — the busy-guard only gates accept', async () => {
+      const { svc, last } = setup();
+      svc.duelInvite(player('a', 'Alice', '100000001'), 'b');
+      const inv = last('b', 'duel_invited');
+      if (inv?.kind !== 'duel_invited') throw new Error();
+      svc.roomCreate('b', 'Bob', '100000002'); // b is busy, but declining doesn't need to leave first
+
+      await svc.duelRespond('b', inv.inviteId, false);
+
+      expect(last('a', 'duel_cancelled')).toMatchObject({ reason: 'declined', inviteId: inv.inviteId });
+    });
+
+    it('inviting a busy target is not blocked at invite-time — only the inviter\'s own state is checked; rejection happens at accept-time instead', () => {
+      const { svc, last } = setup();
+      svc.roomCreate('b', 'Bob', '100000002'); // the invitee, not the inviter, is busy
+
+      svc.duelInvite(player('a', 'Alice', '100000001'), 'b');
+
+      expect(last('b', 'duel_invited')?.kind).toBe('duel_invited'); // invite still reaches b
+      expect(last('a', 'duel_cancelled')).toBeUndefined(); // inviter itself was never busy
+    });
+
+    it('a busy second invite attempt leaves the first outstanding invite untouched (busy-guard runs before the replace-on-reinvite logic)', () => {
+      const { svc, last, pushed } = setup();
+      svc.duelInvite(player('a', 'Alice', '100000001'), 'b');
+      const inv1 = last('b', 'duel_invited');
+      if (inv1?.kind !== 'duel_invited') throw new Error();
+      svc.roomCreate('a', 'Alice', '100000001'); // inviter becomes busy before re-inviting someone else
+      const before = pushed.length;
+
+      svc.duelInvite(player('a', 'Alice', '100000001'), 'c');
+
+      expect(last('a', 'duel_cancelled')).toMatchObject({ reason: 'busy' }); // rejection for the new attempt
+      expect(pushed.slice(before).some((p) => p.msg.kind === 'duel_invited' && p.acc === 'c')).toBe(false); // c never invited
+      // The original invite to b is still alive and respondable — it was never replaced/cancelled.
+      svc.roomLeave('a');
+      const p = pushed.length;
+      svc.duelRespond('b', inv1.inviteId, false);
+      expect(pushed.slice(p).some((x) => x.acc === 'a' && x.msg.kind === 'duel_cancelled')).toBe(true);
+    });
   });
 });
 
