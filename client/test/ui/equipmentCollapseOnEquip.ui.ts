@@ -14,7 +14,7 @@ import { createLayout } from '../../src/layout/ScalingManager';
 import { InputManager } from '../../src/inputSystem/InputManager';
 import { initI18n } from '../../src/i18n';
 import { EquipmentScene, type EquipmentCallbacks, type EquipResult } from '../../src/scenes/EquipmentScene';
-import type { SectionKey } from '../../src/scenes/EquipmentScene/base';
+import type { SectionKey } from '../../src/scenes/EquipmentScene/types';
 import { makeNewSave } from '../../src/game/meta/SaveData';
 import type { SaveData, EquipSlot } from '../../src/game/meta/SaveData';
 
@@ -31,8 +31,8 @@ initI18n('en', memStore, ['zh', 'en', 'de']);
 const LANDSCAPE: [number, number] = [1280, 800];
 
 interface SceneInternals {
-  collapsedSections: Set<SectionKey>;
-  doEquip(slot: EquipSlot, instanceId: string | null, cardId: string): Promise<void>;
+  core: { collapsedSections: Set<SectionKey> };
+  detail: { doEquip(slot: EquipSlot, instanceId: string | null, cardId: string): Promise<void> };
 }
 
 function buildSave(): SaveData {
@@ -67,7 +67,7 @@ describe('EquipmentScene — Equipped section starts collapsed, and stays collap
   it('starts with "equipped" already collapsed on scene construction (2026-08-01)', () => {
     const scene = buildScene(async () => ({ ok: true }));
     const internals = scene as unknown as SceneInternals;
-    expect(internals.collapsedSections.has('equipped')).toBe(true);
+    expect(internals.core.collapsedSections.has('equipped')).toBe(true);
     scene.destroy();
   });
 
@@ -75,31 +75,31 @@ describe('EquipmentScene — Equipped section starts collapsed, and stays collap
     const scene = buildScene(async () => ({ ok: true }));
     const internals = scene as unknown as SceneInternals;
 
-    await internals.doEquip('weapon', 'inst_wp', 'card1');
+    await internals.detail.doEquip('weapon', 'inst_wp', 'card1');
 
-    expect(internals.collapsedSections.has('equipped')).toBe(true);
+    expect(internals.core.collapsedSections.has('equipped')).toBe(true);
     scene.destroy();
   });
 
   it('does NOT re-collapse an explicitly-expanded section on unequip (instanceId = null)', async () => {
     const scene = buildScene(async () => ({ ok: true }));
     const internals = scene as unknown as SceneInternals;
-    internals.collapsedSections.delete('equipped'); // player tapped the header open
+    internals.core.collapsedSections.delete('equipped'); // player tapped the header open
 
-    await internals.doEquip('weapon', null, 'card1');
+    await internals.detail.doEquip('weapon', null, 'card1');
 
-    expect(internals.collapsedSections.has('equipped')).toBe(false);
+    expect(internals.core.collapsedSections.has('equipped')).toBe(false);
     scene.destroy();
   });
 
   it('does NOT re-collapse an explicitly-expanded section when the server rejects the equip', async () => {
     const scene = buildScene(async () => ({ ok: false, key: 'equip.err.generic' }));
     const internals = scene as unknown as SceneInternals;
-    internals.collapsedSections.delete('equipped'); // player tapped the header open
+    internals.core.collapsedSections.delete('equipped'); // player tapped the header open
 
-    await internals.doEquip('weapon', 'inst_wp', 'card1');
+    await internals.detail.doEquip('weapon', 'inst_wp', 'card1');
 
-    expect(internals.collapsedSections.has('equipped')).toBe(false);
+    expect(internals.core.collapsedSections.has('equipped')).toBe(false);
     scene.destroy();
   });
 });
@@ -110,7 +110,7 @@ describe('EquipmentScene — leaves the scene (cb.onBack) after a successful equ
     const scene = buildScene(async () => ({ ok: true }), () => { backCalls++; });
     const internals = scene as unknown as SceneInternals;
 
-    await internals.doEquip('weapon', 'inst_wp', 'card1');
+    await internals.detail.doEquip('weapon', 'inst_wp', 'card1');
 
     expect(backCalls).toBe(1);
     scene.destroy();
@@ -121,7 +121,7 @@ describe('EquipmentScene — leaves the scene (cb.onBack) after a successful equ
     const scene = buildScene(async () => ({ ok: true }), () => { backCalls++; });
     const internals = scene as unknown as SceneInternals;
 
-    await internals.doEquip('weapon', null, 'card1');
+    await internals.detail.doEquip('weapon', null, 'card1');
 
     expect(backCalls).toBe(0);
     scene.destroy();
@@ -132,7 +132,7 @@ describe('EquipmentScene — leaves the scene (cb.onBack) after a successful equ
     const scene = buildScene(async () => ({ ok: false, key: 'equip.err.generic' }), () => { backCalls++; });
     const internals = scene as unknown as SceneInternals;
 
-    await internals.doEquip('weapon', 'inst_wp', 'card1');
+    await internals.detail.doEquip('weapon', 'inst_wp', 'card1');
 
     expect(backCalls).toBe(0);
     scene.destroy();

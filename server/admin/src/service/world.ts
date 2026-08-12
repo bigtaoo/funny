@@ -1,7 +1,7 @@
 // SLG season ops (G7/§17.7). Proxies worldsvc /admin/world/* + audit + operational sequence constraint
 // (must settle before reset, to prevent loss of history).
 import type { SlgAllocateResult, SlgWorldSummary } from '../clients';
-import type { AdminBaseCtor, Constructor } from './base';
+import type { AdminCore } from './base';
 import { AdminError } from './errors';
 
 export interface WorldHandlers {
@@ -14,27 +14,28 @@ export interface WorldHandlers {
   slgAllocateNextSeason(actor: string, season: number, capacity?: number): Promise<SlgAllocateResult>;
 }
 
-export function WorldMixin<TBase extends AdminBaseCtor>(Base: TBase): TBase & Constructor<WorldHandlers> {
-  return class extends Base {
+export class WorldService {
+  constructor(private readonly core: AdminCore) {}
+
     // ───────────────────── SLG season ops (G7/§17.7) ─────────────────────
     // Proxies worldsvc /admin/world/* + audit + operational sequence constraint (must settle before reset, to prevent loss of history).
 
     /** List operational summaries for all worlds (capability slg.season.view). Returns empty if worldsvc is unreachable. */
     async slgListWorlds(): Promise<SlgWorldSummary[]> {
-      if (!this.world.available) return [];
-      return this.world.listWorlds();
+      if (!this.core.world.available) return [];
+      return this.core.world.listWorlds();
     }
 
     /** Open a new world (high-risk, super only). Audited. */
     async slgOpenSeason(actor: string, worldId: string, season: number, shard: number, capacity: number): Promise<void> {
-      await this.world.openWorld(worldId, season, shard, capacity);
-      await this.audit(actor, 'slg.season.open', { target: worldId, summary: `s${season}-${shard} cap=${capacity}` });
+      await this.core.world.openWorld(worldId, season, shard, capacity);
+      await this.core.audit(actor, 'slg.season.open', { target: worldId, summary: `s${season}-${shard} cap=${capacity}` });
     }
 
     /** Settle a world (persist seasonResults + distribute rewards). Audited. */
     async slgSettleSeason(actor: string, worldId: string): Promise<unknown> {
-      const r = await this.world.settleWorld(worldId);
-      await this.audit(actor, 'slg.season.settle', { target: worldId });
+      const r = await this.core.world.settleWorld(worldId);
+      await this.core.audit(actor, 'slg.season.settle', { target: worldId });
       return r;
     }
 
@@ -44,20 +45,20 @@ export function WorldMixin<TBase extends AdminBaseCtor>(Base: TBase): TBase & Co
      * (prevents skipping settlement and losing seasonResults history, §17.7). worldsvc enforces the same guard (double safety net).
      */
     async slgResetSeason(actor: string, worldId: string): Promise<unknown> {
-      const worlds = await this.world.listWorlds();
+      const worlds = await this.core.world.listWorlds();
       const w = worlds.find((x) => x.worldId === worldId);
       if (w && w.status !== 'settling' && w.status !== 'resetting') {
         throw new AdminError(409, 'conflict', `must settle before reset (current status=${w.status}, expected settling)`);
       }
-      const r = await this.world.resetWorld(worldId);
-      await this.audit(actor, 'slg.season.reset', { target: worldId });
+      const r = await this.core.world.resetWorld(worldId);
+      await this.core.audit(actor, 'slg.season.reset', { target: worldId });
       return r;
     }
 
     /** Close a world (archive it). Audited. */
     async slgCloseSeason(actor: string, worldId: string): Promise<void> {
-      await this.world.closeWorld(worldId);
-      await this.audit(actor, 'slg.season.close', { target: worldId });
+      await this.core.world.closeWorld(worldId);
+      await this.core.audit(actor, 'slg.season.close', { target: worldId });
     }
 
     /**
@@ -66,8 +67,8 @@ export function WorldMixin<TBase extends AdminBaseCtor>(Base: TBase): TBase & Co
      * that could not be moved (logged server-side, left in the closing shard). Audited with the move count.
      */
     async slgMergeShard(actor: string, worldId: string, targetWorldId: string): Promise<{ moved: number; failed: string[] }> {
-      const r = await this.world.mergeWorld(worldId, targetWorldId);
-      await this.audit(actor, 'slg.season.merge', { target: worldId, summary: `→${targetWorldId} moved=${r.moved} failed=${r.failed.length}` });
+      const r = await this.core.world.mergeWorld(worldId, targetWorldId);
+      await this.core.audit(actor, 'slg.season.merge', { target: worldId, summary: `→${targetWorldId} moved=${r.moved} failed=${r.failed.length}` });
       return r;
     }
 
@@ -78,9 +79,8 @@ export function WorldMixin<TBase extends AdminBaseCtor>(Base: TBase): TBase & Co
      * (2026-08-10 incident, see SLG_DESIGN_LOG.md §17.15). Audited.
      */
     async slgAllocateNextSeason(actor: string, season: number, capacity?: number): Promise<SlgAllocateResult> {
-      const r = await this.world.allocateNextSeason(season, capacity);
-      await this.audit(actor, 'slg.season.allocate', { target: `season ${season}`, summary: `shards=${r.shardCount} worldIds=${r.worldIds.join(',')} families=${r.allocatedFamilies}` });
+      const r = await this.core.world.allocateNextSeason(season, capacity);
+      await this.core.audit(actor, 'slg.season.allocate', { target: `season ${season}`, summary: `shards=${r.shardCount} worldIds=${r.worldIds.join(',')} families=${r.allocatedFamilies}` });
       return r;
     }
-  };
 }

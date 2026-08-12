@@ -1,7 +1,7 @@
 // Coverage for the 2026-08-09 Hero Roster portrait fix (design/game/CHARACTER_CARDS_DESIGN.md §10):
 //   1. the roster grid was reading a notebook-margin-based left offset in portrait (~9% left / ~2%
 //      right gap) instead of a deliberately-centered content column — it now fills 90% of the screen
-//      width, centered, matching Lobby's portrait `fullContentW` convention (LobbyScene/build.ts).
+//      width, centered, matching Lobby's portrait `fullContentW` convention (LobbyScene/mainContent.ts).
 //   2. the grid had no PIXI mask (draw-cull only — a row straddling the bottom edge still drew in
 //      full), so mid-scroll it could paint over the portrait bottom nav bar reserved just below it.
 //      It now draws into a masked sub-layer clipped to [listY, listY+availH], mirroring
@@ -33,9 +33,11 @@ function makeCard(id: string, defId: string, level: number): CardInstance {
 }
 
 interface SceneInternals {
-  cellRects: Map<string, { x: number; y: number; w: number }>;
-  cellContainers: Map<string, PIXI.Container>;
-  headerH: number;
+  list: {
+    cellRects: Map<string, { x: number; y: number; w: number }>;
+    cellContainers: Map<string, PIXI.Container>;
+  };
+  core: { headerH: number };
 }
 
 function buildPortraitScene(count: number): CardScene {
@@ -76,7 +78,7 @@ function buildLandscapeScene(count: number): CardScene {
 describe('CardScene roster grid — portrait width + bottom-nav clip (2026-08-09)', () => {
   it('centers the grid in a column 90% of the design width, not the old ~9%-left/~2%-right margin gap', () => {
     const scene = buildPortraitScene(6);
-    const { cellRects } = scene as unknown as SceneInternals;
+    const { cellRects } = (scene as unknown as SceneInternals).list;
 
     const w = 1080;
     const expectedAvail = Math.round(w * 0.9); // 972
@@ -93,7 +95,9 @@ describe('CardScene roster grid — portrait width + bottom-nav clip (2026-08-09
 
   it('draws the grid into a masked layer clipped to [headerH, headerH+availH] so it cannot paint into the bottom nav bar', () => {
     const scene = buildPortraitScene(20); // enough rows to exceed one screen and force scrolling
-    const { cellRects, cellContainers, headerH } = scene as unknown as SceneInternals;
+    const internals = scene as unknown as SceneInternals;
+    const { cellRects, cellContainers } = internals.list;
+    const { headerH } = internals.core;
     expect(cellRects.size).toBeGreaterThan(0);
 
     const [firstId] = cellContainers.keys();
@@ -124,7 +128,7 @@ describe('CardScene roster grid — portrait width + bottom-nav clip (2026-08-09
 describe('CardScene roster grid — landscape left offset unchanged (regression guard, 2026-08-09)', () => {
   it('still starts the grid right of the sidebar rail (sidebarNavW + ROSTER_GAP), not the new portrait 90% column', () => {
     const scene = buildLandscapeScene(10);
-    const { cellRects } = scene as unknown as SceneInternals;
+    const { cellRects } = (scene as unknown as SceneInternals).list;
 
     const w = 1920;
     const h = 1080;

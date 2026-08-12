@@ -21,7 +21,7 @@ import { createLayout } from '../../src/layout/ScalingManager';
 import { InputManager } from '../../src/inputSystem/InputManager';
 import { initI18n } from '../../src/i18n';
 import { EquipmentScene, type EquipmentCallbacks } from '../../src/scenes/EquipmentScene';
-import { EQUIP_CELL_H } from '../../src/scenes/EquipmentScene/base';
+import { EQUIP_CELL_H } from '../../src/scenes/EquipmentScene/layout';
 import { makeNewSave } from '../../src/game/meta/SaveData';
 import type { SaveData } from '../../src/game/meta/SaveData';
 
@@ -37,14 +37,16 @@ initI18n('en', memStore, ['zh', 'en', 'de']);
 
 interface Rect { x: number; y: number; w: number; h: number; }
 interface SceneInternals {
-  modalHits: { rect: Rect; action: () => void }[];
-  hitRects: { rect: Rect; action: () => void; owner?: string }[];
-  cellContainers: Map<string, PIXI.Container>;
-  bt: { busy: boolean; start(): void; stop(): void };
-  modalScale: number;
-  detailId: string | null;
+  core: {
+    modalHits: { rect: Rect; action: () => void }[];
+    hitRects: { rect: Rect; action: () => void; owner?: string }[];
+    bt: { busy: boolean; start(): void; stop(): void };
+    modalScale: number;
+    detailId: string | null;
+  };
+  inventory: { cellContainers: Map<string, PIXI.Container> };
+  detail: { openDetail(id: string): void };
   render(): void;
-  openDetail(id: string): void;
 }
 
 /**
@@ -54,15 +56,15 @@ interface SceneInternals {
  * card-body tap is *never* gated by `disabled`, so counting it would hide a stuck-disabled bug.
  */
 function actionHitsFor(internals: SceneInternals, owner: string): { rect: Rect; action: () => void; owner?: string }[] {
-  return internals.hitRects.filter((h) => h.owner === owner && Math.abs(h.rect.h - 46) < 0.5);
+  return internals.core.hitRects.filter((h) => h.owner === owner && Math.abs(h.rect.h - 46) < 0.5);
 }
 
 /** modalHits store screen-space rects (post toModalScreen(), scaled by modalScale) — the confirm
  *  button's *local* height is detail.ts's `btnH = 32`, so match against that scaled by modalScale
  *  rather than the raw 32 (see detail.ts openDetail's `scale = h*0.8/mh` popup-scale transform). */
 function findConfirmHit(internals: SceneInternals): { rect: Rect; action: () => void } | undefined {
-  const expected = 32 * internals.modalScale;
-  return internals.modalHits.find((h) => Math.abs(h.rect.h - expected) < 0.5);
+  const expected = 32 * internals.core.modalScale;
+  return internals.core.modalHits.find((h) => Math.abs(h.rect.h - expected) < 0.5);
 }
 
 function buildSave(): SaveData {
@@ -127,20 +129,20 @@ describe('EquipmentScene — enhance incremental redraw (2026-07-28)', () => {
     });
     const internals = scene as unknown as SceneInternals;
 
-    const containerA = internals.cellContainers.get('inst_A');
-    const containerB = internals.cellContainers.get('inst_B');
+    const containerA = internals.inventory.cellContainers.get('inst_A');
+    const containerB = internals.inventory.cellContainers.get('inst_B');
     expect(containerA).toBeDefined();
     expect(containerB).toBeDefined();
     const childrenBBefore = [...containerB!.children];
 
-    internals.openDetail('inst_A');
+    internals.detail.openDetail('inst_A');
     const confirm = findConfirmHit(internals);
     expect(confirm).toBeDefined();
     confirm!.action();
     await flush();
 
-    expect(internals.cellContainers.get('inst_A')).toBe(containerA); // redrawn in place, same container
-    expect(internals.cellContainers.get('inst_B')).toBe(containerB); // completely untouched
+    expect(internals.inventory.cellContainers.get('inst_A')).toBe(containerA); // redrawn in place, same container
+    expect(internals.inventory.cellContainers.get('inst_B')).toBe(containerB); // completely untouched
     expect(sameRefs([...containerB!.children], childrenBBefore)).toBe(true); // not even torn down
 
     scene.destroy();
@@ -151,16 +153,16 @@ describe('EquipmentScene — enhance incremental redraw (2026-07-28)', () => {
     const scene = buildScene(save, async () => ({ ok: true, success: false, level: 0 }));
     const internals = scene as unknown as SceneInternals;
 
-    const containerA = internals.cellContainers.get('inst_A');
+    const containerA = internals.inventory.cellContainers.get('inst_A');
     const childrenABefore = [...containerA!.children];
 
-    internals.openDetail('inst_A');
+    internals.detail.openDetail('inst_A');
     const confirm = findConfirmHit(internals);
     expect(confirm).toBeDefined();
     confirm!.action();
     await flush();
 
-    expect(internals.cellContainers.get('inst_A')).toBe(containerA);
+    expect(internals.inventory.cellContainers.get('inst_A')).toBe(containerA);
     expect(sameRefs([...containerA!.children], childrenABefore)).toBe(true);
 
     scene.destroy();
@@ -171,13 +173,13 @@ describe('EquipmentScene — enhance incremental redraw (2026-07-28)', () => {
     const scene = buildScene(save, async () => ({ ok: true, success: true, level: 1 }));
     const internals = scene as unknown as SceneInternals;
 
-    const frameIdle = findGlyphFrame(internals.cellContainers.get('inst_A')!);
+    const frameIdle = findGlyphFrame(internals.inventory.cellContainers.get('inst_A')!);
     expect(frameIdle).not.toBeNull();
 
-    internals.bt.start();
+    internals.core.bt.start();
     internals.render();
-    const frameBusy = findGlyphFrame(internals.cellContainers.get('inst_A')!);
-    internals.bt.stop();
+    const frameBusy = findGlyphFrame(internals.inventory.cellContainers.get('inst_A')!);
+    internals.core.bt.stop();
 
     expect(frameBusy).not.toBeNull();
     expect(frameBusy!.w).toBe(frameIdle!.w);
@@ -225,7 +227,7 @@ describe('EquipmentScene — enhance mid-flight save-push does not leave sibling
     const save = buildSave();
     const { scene, internals } = buildRealisticScene(save);
 
-    internals.openDetail('inst_A');
+    internals.detail.openDetail('inst_A');
     const confirm = findConfirmHit(internals);
     expect(confirm).toBeDefined();
     confirm!.action();
@@ -248,7 +250,7 @@ describe('EquipmentScene — enhance mid-flight save-push does not leave sibling
     const save = buildSave();
     const { scene, internals } = buildRealisticScene(save);
 
-    internals.openDetail('inst_A');
+    internals.detail.openDetail('inst_A');
     const confirm = findConfirmHit(internals);
     expect(confirm).toBeDefined();
     confirm!.action();
@@ -257,9 +259,9 @@ describe('EquipmentScene — enhance mid-flight save-push does not leave sibling
     // Close the modal exactly the way a tap-outside does: DetailMixin's closeDetail() just clears
     // detailId and tears down the modal layer — it never touches the grid/hitRects. If the grid was
     // already correct at settle time, closing the modal changes nothing about it.
-    const outerHit = internals.modalHits[internals.modalHits.length - 1];
+    const outerHit = internals.core.modalHits[internals.core.modalHits.length - 1];
     outerHit.action();
-    expect(internals.detailId).toBeNull();
+    expect(internals.core.detailId).toBeNull();
 
     const afterClose = actionHitsFor(internals, 'inst_B');
     internals.render();
@@ -283,17 +285,17 @@ describe('EquipmentScene — enhance mid-flight save-push does not leave sibling
 
     // Enhance whichever instance the grid picked as the stack's representative — enhancing it splits
     // it off (level > 0) from the remaining 23-item stack, which gets a new representative id.
-    const repId = [...internals.cellContainers.keys()][0];
-    internals.openDetail(repId);
+    const repId = [...internals.inventory.cellContainers.keys()][0];
+    internals.detail.openDetail(repId);
     const confirm = findConfirmHit(internals);
     expect(confirm).toBeDefined();
     confirm!.action();
     await flush();
 
-    const outerHit = internals.modalHits[internals.modalHits.length - 1];
+    const outerHit = internals.core.modalHits[internals.core.modalHits.length - 1];
     outerHit.action(); // close, like the user tapping outside the modal
 
-    const otherOwners = [...new Set(internals.hitRects.map((h) => h.owner).filter((o): o is string => !!o && o !== repId))];
+    const otherOwners = [...new Set(internals.core.hitRects.map((h) => h.owner).filter((o): o is string => !!o && o !== repId))];
     expect(otherOwners.length).toBeGreaterThan(0); // the remaining stack must still be represented by some row
 
     const settled = otherOwners.flatMap((o) => actionHitsFor(internals, o));

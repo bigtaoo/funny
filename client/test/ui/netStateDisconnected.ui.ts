@@ -69,8 +69,8 @@ describe('GameScene — NetStatusView shows a distinct message for a permanent d
     const scene = buildNetGameScene();
     scene.applyNetState('disconnected');
     expect(hasText(scene.container, GONE)).toBe(true);
-    const netStatusContainer = (scene as unknown as { renderer: { netStatus: { container: PIXI.Container } } })
-      .renderer.netStatus.container;
+    const netStatusContainer = (scene as unknown as { renderer: { core: { netStatus: { container: PIXI.Container } } } })
+      .renderer.core.netStatus.container;
     expect(netStatusContainer.visible).toBe(true);
 
     scene.applyNetState('open');

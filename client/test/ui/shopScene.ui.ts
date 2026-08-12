@@ -20,11 +20,32 @@ import { InputManager } from '../../src/inputSystem/InputManager';
 import { initI18n, t } from '../../src/i18n';
 import { skinDisplayName } from '../../src/game/meta/skinDefs';
 import { ShopScene, type ShopSceneCallbacks } from '../../src/scenes/ShopScene';
+import { drawCard as drawCardImpl } from '../../src/scenes/ShopScene/card';
+import type { ShopSceneCore as ShopSceneCoreType } from '../../src/scenes/ShopScene/core';
 // Same asset the shop borrows as skin_shop_c1's placeholder art (SKIN_PLACEHOLDER_ART in shop.ts).
 // Under vitest.ui.config.ts every .png import stubs to a 1×1 data-URI string, so this resolves to
 // the exact URL the scene feeds to getArtTexture() — i.e. the same cached PIXI texture object.
 import infantryArtUrl from '../../src/assets/units/infantry.png';
 import { buildMaterialIcon } from '../../src/render/atlas/materialAtlas';
+
+type Hit = { rect: { x: number; y: number; w: number; h: number }; fn: () => void };
+
+/** Reach ShopScene's composed `core` field (2026-08-11 composition conversion — see
+ *  claudedocs/client-modules.md's split-form priority note): `hits`/`h`/`w`/`landscape`/`render`/
+ *  `gridMetrics`/`bodyMask` all moved off the flattened instance onto `core`. */
+function internals(scene: ShopScene): {
+  core: {
+    hits: Hit[];
+    h: number;
+    w: number;
+    landscape: boolean;
+    render(): void;
+    gridMetrics(): { listX: number; listW: number; gap: number; cols: number; cellW: number; cellH: number };
+    bodyMask: PIXI.Graphics | null;
+  };
+} {
+  return scene as unknown as ReturnType<typeof internals>;
+}
 
 // Wrap-don't-replace treatment (same convention as mailAttachmentIcons.ui.ts's 2026-08-01 spec):
 // the 2026-08-04 fix routes ShopScene's material cards through buildMaterialIcon (the AI-bitmap
@@ -47,8 +68,6 @@ const memStore = (() => {
 initI18n('en', memStore, ['zh', 'en', 'de']);
 
 const [W, H] = [800, 1280];
-
-type Hit = { rect: { x: number; y: number; w: number; h: number }; fn: () => void };
 
 /**
  * Find the LAST PIXI.Text node whose text matches `label` and return its render position.
@@ -82,10 +101,10 @@ function labelBox(container: PIXI.Container, label: string): { top: number; bott
 }
 
 /** Tap the tab/field whose visible label is `label` via the scene's real hit list. */
-function tapLabel(scene: { container: PIXI.Container }, label: string): void {
+function tapLabel(scene: ShopScene, label: string): void {
   const pos = findLabelPos(scene.container, label);
   expect(pos, `label "${label}" not found in rendered tree`).not.toBeNull();
-  const hits = (scene as unknown as { hits: Hit[] }).hits;
+  const hits = internals(scene).core.hits;
   const hit = hits.find(({ rect: r }) =>
     pos!.x >= r.x && pos!.x <= r.x + r.w && pos!.y >= r.y && pos!.y <= r.y + r.h);
   expect(hit, `no hit rect under "${label}"`).toBeDefined();
@@ -123,7 +142,6 @@ describe('ShopScene — group nav is a bottom bar in portrait, not a horizontal 
     expect(battlepass).not.toBeNull();
 
     // One horizontal row (§18): all four cells share the bottom bar's y, ordered left-to-right by x.
-    const { h } = scene as unknown as { h: number };
     expect(Math.abs(coins!.y - shop!.y)).toBeLessThan(2);
     expect(Math.abs(gacha!.y - shop!.y)).toBeLessThan(2);
     expect(Math.abs(battlepass!.y - shop!.y)).toBeLessThan(2);
@@ -132,6 +150,7 @@ describe('ShopScene — group nav is a bottom bar in portrait, not a horizontal 
     expect(battlepass!.x).toBeGreaterThan(gacha!.x);
 
     // Pinned to the bottom of the screen, not stacked below the header.
+    const { h } = internals(scene).core;
     expect(shop!.y).toBeGreaterThan(h * 0.8);
 
     scene.destroy();
@@ -165,7 +184,7 @@ describe('ShopScene — monthly card daily claim greys out once claimed today', 
   function findButtonHit(scene: ShopScene, label: string): Hit | undefined {
     const pos = findLabelPos(scene.container, label);
     if (!pos) return undefined;
-    const hits = (scene as unknown as { hits: Hit[] }).hits;
+    const hits = internals(scene).core.hits;
     return hits.find(({ rect: r }) => pos.x >= r.x && pos.x <= r.x + r.w && pos.y >= r.y && pos.y <= r.y + r.h);
   }
 
@@ -245,18 +264,18 @@ describe('ShopScene — monthly card daily claim greys out once claimed today', 
   });
 });
 
-describe('ShopScene — starter packs show their real ¥ price (GACHA_DESIGN §6, not free) and disappear once claimed', () => {
+describe('ShopScene — starter packs show their real $ price (GACHA_DESIGN §6, not free) and disappear once claimed', () => {
   const flush = () => new Promise((r) => setTimeout(r, 0));
   const STARTER_GROWTH = t('shop.starterGrowth');
 
-  it('shows the ¥30 price (not "Free") and a tappable Buy button before claiming', async () => {
+  it('shows the $4.99 price (not "Free") and a tappable Buy button before claiming', async () => {
     const scene = buildShop({
       getMonetization: () => ({ subscriptionExpiry: 0, starterUsed: [] }),
       buyStarter: async () => ({ ok: true }),
     });
     await flush();
     expect(findLabelPos(scene.container, STARTER_GROWTH)).not.toBeNull();
-    expect(findLabelPos(scene.container, '¥30')).not.toBeNull();
+    expect(findLabelPos(scene.container, '$4.99')).not.toBeNull();
     expect(findLabelPos(scene.container, t('shop.free'))).toBeNull();
     scene.destroy();
   });
@@ -357,7 +376,7 @@ describe('ShopScene — consumable items get a "×10" bulk-buy shortcut above Bu
     });
     await flush();
     expect(findLabelPos(scene.container, BUY_X10)).not.toBeNull();
-    const hits = (scene as unknown as { hits: Hit[] }).hits;
+    const hits = internals(scene).core.hits;
     const pos10 = findLabelPos(scene.container, BUY_X10)!;
     expect(hits.some(({ rect: r }) => pos10.x >= r.x && pos10.x <= r.x + r.w && pos10.y >= r.y && pos10.y <= r.y + r.h))
       .toBe(false); // disabled — no hit rect
@@ -401,7 +420,7 @@ describe('ShopScene — consumable items get a "×10" bulk-buy shortcut above Bu
     expect(calls).toBe(1);
 
     // A second real tap right after can't even reach the handler: the button just redrew disabled.
-    const hits = (scene as unknown as { hits: Hit[] }).hits;
+    const hits = internals(scene).core.hits;
     const pos10 = findLabelPos(scene.container, BUY_X10)!;
     expect(hits.some(({ rect: r }) => pos10.x >= r.x && pos10.x <= r.x + r.w && pos10.y >= r.y && pos10.y <= r.y + r.h))
       .toBe(false);
@@ -426,7 +445,7 @@ describe('ShopScene — consumable items get a "×10" bulk-buy shortcut above Bu
 
     // 5500 - 10×500 = 500 left: still covers one Buy, no longer covers ten.
     expect(wallet.coins).toBe(500);
-    const hits = (scene as unknown as { hits: Hit[] }).hits;
+    const hits = internals(scene).core.hits;
     const pos10 = findLabelPos(scene.container, BUY_X10)!;
     expect(hits.some(({ rect: r }) => pos10.x >= r.x && pos10.x <= r.x + r.w && pos10.y >= r.y && pos10.y <= r.y + r.h))
       .toBe(false); // ×10 now disabled
@@ -618,7 +637,7 @@ describe('ShopScene — first-purchase 2× badge only shows while the bonus is s
 
     // Simulate the post-purchase mirror refresh (saveManager.adoptServer): the badge must clear on re-render.
     state.firstPurchaseUsed = true;
-    (scene as unknown as { render(): void }).render();
+    internals(scene).core.render();
     expect(findLabelPos(scene.container, FIRST_DOUBLE)).toBeNull();
     scene.destroy();
   });
@@ -765,7 +784,7 @@ describe('ShopScene — landscape shop grid is 3-up and the price never overlaps
 
   it('lays the grid out 3 columns wide in landscape', () => {
     const scene = buildLandscape({});
-    const { cols } = (scene as unknown as { gridMetrics(): { cols: number } }).gridMetrics();
+    const { cols } = internals(scene).core.gridMetrics();
     expect(cols).toBe(3);
     scene.destroy();
   });
@@ -784,17 +803,17 @@ describe('ShopScene — landscape shop grid is 3-up and the price never overlaps
     scene.destroy();
   });
 
-  it('draws the monthly-card ¥ price strictly above its buttons (no overlap)', async () => {
-    // Only the monthly card renders (no year card / skins), so "¥30" and "Buy" are unique to it.
+  it('draws the monthly-card $ price strictly above its buttons (no overlap)', async () => {
+    // Only the monthly card renders (no year card / skins), so "$4.99" and "Buy" are unique to it.
     const scene = buildLandscape({
       getMonetization: () => ({ subscriptionExpiry: 0, starterUsed: [] }),
       buyMonthlyCard: async () => ({ ok: true }),
       claimMonthlyCard: async () => ({ ok: true }),
     });
     await flush();
-    const price = labelBox(scene.container, '¥30');
+    const price = labelBox(scene.container, '$4.99');
     const buy = labelBox(scene.container, t('shop.buy'));
-    expect(price, 'yuan price should render').not.toBeNull();
+    expect(price, 'usd price should render').not.toBeNull();
     expect(buy, 'buy button should render').not.toBeNull();
     expect(price!.bottom).toBeLessThanOrEqual(buy!.top);
     scene.destroy();
@@ -827,10 +846,10 @@ describe('ShopScene — Coins tab always peeks the next tier row, even on a wide
 
   it('caps cellH against the height budget instead of letting it grow unbounded with a widened design width', () => {
     const scene = buildWideCoins({});
-    const { w, h, landscape } = scene as unknown as { w: number; h: number; landscape: boolean };
+    const { w, h, landscape } = internals(scene).core;
     expect(landscape).toBe(true);
     expect(w).toBeGreaterThan(1920); // sanity: this aspect really does widen the design space
-    const { cellH } = (scene as unknown as { gridMetrics(): { cellH: number } }).gridMetrics();
+    const { cellH } = internals(scene).core.gridMetrics();
     expect(cellH).toBeLessThanOrEqual(Math.round(h * 0.6));
     scene.destroy();
   });
@@ -840,12 +859,10 @@ describe('ShopScene — Coins tab always peeks the next tier row, even on a wide
     await flush();
     expect(labelBox(scene.container, '$49.99'), 'second-row tier card should be in the render tree').not.toBeNull();
 
-    const { h } = scene as unknown as { h: number };
-    const { cols, cellH, gap } = (scene as unknown as {
-      gridMetrics(): { cols: number; cellH: number; gap: number };
-    }).gridMetrics();
+    const { h } = internals(scene).core;
+    const { cols, cellH, gap } = internals(scene).core.gridMetrics();
     expect(cols).toBe(3); // 5 tiers at 3-up → row 1 (0-indexed) holds tiers 4-5, the "second row"
-    const mask = (scene as unknown as { bodyMask: PIXI.Graphics | null }).bodyMask;
+    const mask = internals(scene).core.bodyMask;
     expect(mask).not.toBeNull();
     const bounds = mask!.getLocalBounds();
     const maskBottom = bounds.y + bounds.height;
@@ -874,6 +891,112 @@ describe('ShopScene — Coins tab always peeks the next tier row, even on a wide
     const firstRowBuy = buyBoxes.reduce((a, b) => (a.top < b.top ? a : b));
     expect(firstRowBuy.bottom).toBeLessThanOrEqual(maskBottom);
 
+    scene.destroy();
+  });
+});
+
+// Regression coverage for the 2026-08-11 fix: on a narrow enough card column, a long title wraps to 3
+// lines at drawCard()'s default title font (found on the "Starter First-Draw Pack" starter_draw card
+// in portrait's 2-column grid — confirmed with a real Playwright screenshot, since the wrap itself
+// depends on real font-glyph metrics; see below). The price row below the title was positioned purely
+// off the title's own wrapped height with no check against bandBottom (unlike the status/bonus lines
+// block right below it, which already clamps), so it landed on top of the Buy button underneath.
+// drawCard() now shrinks the title font to leave room, and — belt-and-suspenders — clamps the price
+// row's own start position against bandBottom so it can never spill onto the button even if shrinking
+// alone isn't enough.
+//
+// This drives drawCard() directly (bypassing the real grid) with a deliberately long, many-word
+// synthetic title at a narrow cw: the headless text-measure mock is font-size-independent (see
+// client/test/harness/pixiHeadless.ts — width scales with character count only, not fontSize), so it
+// cannot reproduce a big-real-font wrap from a short title the way the real browser did. A long-enough
+// title still wraps across several lines purely from word count vs cw under the mock, which is what
+// actually exercises the bandBottom clamp this fix added — the font-shrink half of the fix is the part
+// only a real screenshot can confirm.
+describe('ShopScene.drawCard — a long title never pushes the price row onto the Buy button', () => {
+  it('clamps the price row against bandBottom when the title wraps onto it', () => {
+    const scene = buildShop({});
+    const container = new PIXI.Container();
+    const drawCard = (spec: Parameters<typeof drawCardImpl>[2], x: number, y: number, cw: number, ch: number) =>
+      drawCardImpl(internals(scene).core as unknown as ShopSceneCoreType, container, spec, x, y, cw, ch);
+    const longTitle = 'Starter First Draw Extra Long Bonus Value Mega Pack Deal';
+    drawCard({
+      icon: 'gift', iconColor: 0xffcc00, title: longTitle, usdCents: 99,
+      buttons: [{ label: t('shop.buy'), enabled: true, primary: true }],
+    }, 0, 0, 140, 180);
+
+    const price = labelBox(container, '$0.99');
+    const buy = labelBox(container, t('shop.buy'));
+    expect(price, 'price should render').not.toBeNull();
+    expect(buy, 'buy button should render').not.toBeNull();
+    expect(price!.bottom).toBeLessThanOrEqual(buy!.top);
+    scene.destroy();
+  });
+
+  it('clamps the coin-amount row the same way', () => {
+    const scene = buildShop({});
+    const container = new PIXI.Container();
+    const drawCard = (spec: Parameters<typeof drawCardImpl>[2], x: number, y: number, cw: number, ch: number) =>
+      drawCardImpl(internals(scene).core as unknown as ShopSceneCoreType, container, spec, x, y, cw, ch);
+    const longTitle = 'Starter First Draw Extra Long Bonus Value Mega Pack Deal';
+    drawCard({
+      icon: 'gift', iconColor: 0xffcc00, title: longTitle, coinAmount: 300,
+      buttons: [{ label: t('shop.buy'), enabled: true, primary: true }],
+    }, 0, 0, 140, 180);
+
+    const price = labelBox(container, '300');
+    const buy = labelBox(container, t('shop.buy'));
+    expect(price, 'coin amount should render').not.toBeNull();
+    expect(buy, 'buy button should render').not.toBeNull();
+    expect(price!.bottom).toBeLessThanOrEqual(buy!.top);
+    scene.destroy();
+  });
+
+  // The strike-through branch (usdStrikeCents, e.g. the year card's "was $X now $Y") lays the struck
+  // price out beside the current price rather than below it, but still shares the same `py` clamp — a
+  // prior version of this fix could plausibly have applied the clamp only to the non-strike branch, so
+  // this exercises that path specifically rather than assuming symmetry with the plain-price test above.
+  it('clamps the price row when it has a strike-through list price too', () => {
+    const scene = buildShop({});
+    const container = new PIXI.Container();
+    const drawCard = (spec: Parameters<typeof drawCardImpl>[2], x: number, y: number, cw: number, ch: number) =>
+      drawCardImpl(internals(scene).core as unknown as ShopSceneCoreType, container, spec, x, y, cw, ch);
+    const longTitle = 'Starter First Draw Extra Long Bonus Value Mega Pack Deal';
+    drawCard({
+      icon: 'gift', iconColor: 0xffcc00, title: longTitle, usdCents: 298, usdStrikeCents: 360,
+      buttons: [{ label: t('shop.buy'), enabled: true, primary: true }],
+    }, 0, 0, 140, 180);
+
+    const price = labelBox(container, '$2.98');
+    const strike = labelBox(container, '$3.60');
+    const buy = labelBox(container, t('shop.buy'));
+    expect(price, 'price should render').not.toBeNull();
+    expect(strike, 'struck list price should render').not.toBeNull();
+    expect(buy, 'buy button should render').not.toBeNull();
+    expect(price!.bottom).toBeLessThanOrEqual(buy!.top);
+    expect(strike!.bottom).toBeLessThanOrEqual(buy!.top);
+    scene.destroy();
+  });
+
+  // Guards the "no room lost in the common case" half of the fix: when the title comfortably fits on
+  // one line, the price row must land exactly where the pre-fix code always put it (immediately below
+  // the title, separated by the same `rowGap`) — neither the title-shrink loop nor the bandBottom clamp
+  // should ever fire, let alone shift the layout, when there was no overlap risk to begin with.
+  it('does not move the price row when the title comfortably fits (no regression for the normal case)', () => {
+    const scene = buildShop({});
+    const container = new PIXI.Container();
+    const drawCard = (spec: Parameters<typeof drawCardImpl>[2], x: number, y: number, cw: number, ch: number) =>
+      drawCardImpl(internals(scene).core as unknown as ShopSceneCoreType, container, spec, x, y, cw, ch);
+    const ch = 600;
+    drawCard({
+      icon: 'gift', iconColor: 0xffcc00, title: 'Monthly Card', usdCents: 499,
+      buttons: [{ label: t('shop.buy'), enabled: true, primary: true }],
+    }, 0, 0, 400, ch);
+
+    const title = labelBox(container, 'Monthly Card');
+    const price = labelBox(container, '$4.99');
+    expect(title, 'title should render').not.toBeNull();
+    expect(price, 'price should render').not.toBeNull();
+    expect(price!.top).toBe(title!.bottom + Math.round(ch * 0.02));
     scene.destroy();
   });
 });

@@ -1930,3 +1930,26 @@ cols.tiles.find({ worldId, type: 'base', ownerId: { $nin: excludeOwners } })
 **追加测试（同日，用户要求"加测试"）**：上面的断言只查了 `sieges` 集合的原始字段，没有走过用户实际会碰到的两条链路——`listSieges`（截图里那个战报列表接口，`hasReplay` 的真正来源）和 `getSiegeReplay`（点"replay & verify"实际调用的接口）。给赢/输两个 sweep 用例都追加了端到端断言：`svc.listSieges(...)` 找到这条战报，`hasReplay` 为 `true`；`svc.getSiegeReplay(...)` 真的不抛错、返回的 `level.attackerArmy` 是数组；赢用例额外断言 `replay.defenderName===''`（sweep 打的是 NPC，没有 `defenderId`，`getSiegeReplay` 按文档注释跳过对手名解析）。证伪：临时把 `applySweep` 里 `recordSiege` 的 `replay` 参数改回 `null`（仅这一行，不动其余代码）单独重跑这两例，2/2 必现失败（`expected undefined to deeply equal Any<Number>`，卡在新加的 `seed` 断言上，还没跑到 `listSieges`/`getSiegeReplay` 那一步）；改回 `replay` 复跑，`server/worldsvc` `tsc --noEmit` + 上述 5 文件/34 例全部转绿。
 
 **补测试（同日，用户问"有新的测试需要加吗"）**：之前的「re-dispatch attack」e2e 例只测了行军创建（原点回落、驻留 doc 原子释放），从没真正跑过战斗结算——因为在这个功能之前，"停留队伍被再指挥去攻城、还真的打了一场仗"这个状态组合根本不可达（attack 之前压根不能被 idle-redispatch），不是"补一个已有覆盖的重复例"，是补一块新出现的状态空间。`teams.e2e.test.ts` 加两例：①**打赢**——地块易主，队伍打完之后彻底自由（无行军、无停留，跟从主城出发打赢的处置完全一样，读 `combatSiege/arrival.ts` 的赢分支确认——赢了从不 park 队伍，兵直接变成地块驻军值）；②**打输**——幸存兵力经由 travel-time 返程一路走回**主城**（`mainBaseTile`），不是回到出发的野战格（读 `combatShared.ts::startReturnMarch` 确认它永远算去主城的路径，跟出发点无关）。两例都先临时改回旧条件确认真的会报 TEAM_BUSY，再恢复确认转绿。
+
+## 2026-08-11：竖屏 SLG 地图 HUD 可读性差（用户截图）——资源栏数字溢出裁切 + 返回按钮被资源面板盖住 + 兵力/领地卡片可读性重做
+
+用户截图（竖屏，账号 tao）：顶部返回按钮文字被裁成"← Bac"、右上资源数字"135884"最后一位被切在画布边缘、右侧 Troops/Territory 一行小字挤在一起看不清。
+
+**根因一（资源栏溢出，`WorldMapPanels/hud.ts::renderHeaderHud`）**：5 种资源的"+速率/总量"两行标签在竖屏设计宽度（`PortraitLayout.DESIGN_W=1080`，跟横屏的 1920 不是同一个数）下从没做过宽度预算检查——按真实截图里的六位数库存（45859/136108/144207/135884）实测，5 个资源块的自然总宽 ≈1550px，而返回按钮与商店/拍卖行按钮之间实际能用的空间只有 ≈560px，接近 3 倍溢出，多出来的部分直接画到设计画布外被裁掉。修复：整簇改成"算出自然宽度→超出可用空间就整体等比缩小（floor 0.55，避免缩到不可读）"，不改变横屏（本来就够宽，不触发缩放）。
+
+**根因二（返回按钮被盖，`ui/widgets/SceneHeader.ts` + `WorldMapPanels/hud.ts`）**：当天早些时候的另一次修复（`ed817c48`，竖屏下 `backSize(headerH)` 让返回按钮字号跟着 `headerH` 变大）让返回按钮的真实渲染宽度在竖屏下明显超过原来写死的 `BACK_HIT_W=160`，但 `drawSceneHeader` 返回的 `backRect.w` 一直硬编码成这个 160、从未反映真实宽度。`WorldMapRenderer/build.ts` 里资源面板所在的 `headerHudLayer` 又是刻意画在 `topLayer`（返回按钮所在层）**之上**的（注释原话"so the header's paper fill doesn't hide it"），`hud.ts` 用这个偏小的 `backRect.w` 算资源簇的起始 x（`leftBound`），于是资源簇的不透明纸色背景起点比真实按钮宽度更靠左，正好盖住了"Back"的"k"——同一天两次改动叠加出的回归，不是独立的新 bug。修复：`backRect.w` 改成 `max(BACK_HIT_W, 真实 chip 宽度)`，两处调用方都不用改。
+
+**顺带的可读性重做（用户要求"目前 UI 可读性太差"，非仅修 bug）**：
+- Troops/Territory 状态卡从一句挤在 56px 高条里的 `FS.bodyLg` 句子（"Troops 8040/10000  Territory 11"）拆成两个图标领头的独立数值块（`FS.heading` 加粗数值 + 小号说明文字），卡片相应加高到 88px——跟 [[territory-overview-table-cards]] 那次"密集数字要用卡片/表格而不是一行小字"是同一条经验。
+- Battle replays 徽章原来是低对比度的纸色 `sketchPanel`（浅底深字），紧挨着它上方的 Marches 徽章却一直用高对比度的 `sketchButton`（深底浅字）——同一组动作按钮里视觉权重不统一，改成跟 Marches 一致的 `sketchButton` 样式。
+
+**验证**：`tsc --noEmit` 全绿；`vitest run --config vitest.ui.config.ts` 全量 160 文件/1457 例全绿。新增/改动的回归测试：`sceneHeaderPortraitContentScale.ui.ts`（`backRect.w` 追踪真实 chip 宽度，非硬编码楼层）、`worldMapHeaderResourceTotal.ui.ts`（六位数库存不再溢出商店按钮）、新建 `worldMapStatusCardLegibility.ui.ts`（两个数值块分离渲染 + Battle replays 配色对齐 Marches）——四个新断言均先在改动前的代码上确认必现失败，再确认改动后转绿。受限于本环境 Browser pane 截图不可用（`screenshot failed: pane not displayed`）+ 拉起完整 worldsvc 后端成本过高，本次未做真实像素级截图核对，纯代码/测试验证。
+
+**补测试 + 横屏不受影响核对（同日，用户要求"加测试，并确保横屏不受影响"）**：
+
+三处改动各补一条落在横屏真实尺寸（`LandscapeLayout`：`designHeight` 固定 1080，比竖屏 ≥1920 矮得多，`designWidth` 随宽高比走、16:9 基准 1920）下的断言：
+- 资源栏缩放：把截图里同一组六位数库存换到横屏尺寸（w=1920, headerH=130）跑一遍，断言 `cluster.scale.x===1`（完全不触发缩放，可用空间 ≈1400px 远大于自然宽度 ≈900px）。
+- `backRect.w`：横屏/紧凑档（`headerH` design ≈130，低于 `backSize` 的放大阈值）断言精确等于旧的 `BACK_HIT_W=160`，不被这次改动动到。
+- 兵力/领地卡片：卡高从 56px 涨到 88px，横屏固定的 1080 矮画布是这 32px 增量最吃紧的场景——补一条断言右侧整条列（状态卡→Marches→Battle replays）依然完整落在可视区域内，没有被挤出屏幕；另外两条确认数值分离渲染、Battle replays 配色修复在横屏尺寸下同样成立。
+
+`tsc --noEmit` 全绿；`vitest run --config vitest.ui.config.ts` 全量 161 文件/1466 例全绿。

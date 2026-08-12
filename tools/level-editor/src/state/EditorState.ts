@@ -1,5 +1,5 @@
-import type { Cell, EscortSpec, HazardSpec, LevelDefinition, WaveEntry } from '@game/campaign/LevelDefinition';
-import { ATTACK_LANES, BOARD_ROWS } from '@game/config';
+import type { Cell, EscortSpec, HazardSpec, LevelDefinition, WaveEntry } from '@nw/engine/campaign/LevelDefinition';
+import { ATTACK_LANES, BOARD_ROWS } from '@nw/engine/config';
 
 /** Cell-mask paint layers. */
 export type MaskKind = 'blocked' | 'noBuild';

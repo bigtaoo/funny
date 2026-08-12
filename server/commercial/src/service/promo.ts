@@ -1,6 +1,6 @@
 // Promo code create/list/redeem (B-PROMO). Redemption dedup via promoRedemptions._id=`accountId:code`.
 import type { PromoCodeDoc, PromoRedemptionDoc } from '../db';
-import type { CommercialBaseCtor, Constructor, Result } from './base';
+import type { Result, WalletCore } from './base';
 
 export interface PromoHandlers {
   createPromoCode(args: {
@@ -19,8 +19,9 @@ export interface PromoHandlers {
   }): Promise<Result<{ coinsAfter: number; coinsGranted: number }>>;
 }
 
-export function PromoMixin<TBase extends CommercialBaseCtor>(Base: TBase): TBase & Constructor<PromoHandlers> {
-  return class extends Base {
+export class PromoService {
+  constructor(private readonly core: WalletCore) {}
+
     /** Create a promo code (called by admin, forwarded internally via meta). code is normalized to uppercase. */
     async createPromoCode(args: {
       code: string;
@@ -33,7 +34,7 @@ export function PromoMixin<TBase extends CommercialBaseCtor>(Base: TBase): TBase
       const code = args.code.trim().toUpperCase();
       if (!code || args.coins <= 0) return { ok: false, error: 'BAD_REQUEST' };
       try {
-        await this.cols.promoCodes.insertOne({
+        await this.core.cols.promoCodes.insertOne({
           _id: code,
           coins: Math.floor(args.coins),
           ...(args.expiresAt !== undefined ? { expiresAt: args.expiresAt } : {}),
@@ -41,7 +42,7 @@ export function PromoMixin<TBase extends CommercialBaseCtor>(Base: TBase): TBase
           redeemed: 0,
           ...(args.note ? { note: args.note } : {}),
           createdBy: args.createdBy,
-          createdAt: this.now(),
+          createdAt: this.core.now(),
         });
       } catch (e) {
         if ((e as { code?: number }).code === 11000) return { ok: false, error: 'BAD_REQUEST' };
@@ -52,7 +53,7 @@ export function PromoMixin<TBase extends CommercialBaseCtor>(Base: TBase): TBase
 
     /** List all promo codes (for admin management). */
     async listPromoCodes(): Promise<PromoCodeDoc[]> {
-      return this.cols.promoCodes.find({}).sort({ createdAt: -1 }).toArray();
+      return this.core.cols.promoCodes.find({}).sort({ createdAt: -1 }).toArray();
     }
 
     /**
@@ -67,13 +68,13 @@ export function PromoMixin<TBase extends CommercialBaseCtor>(Base: TBase): TBase
       clientPlatform?: string;
     }): Promise<Result<{ coinsAfter: number; coinsGranted: number }>> {
       const code = args.code.trim().toUpperCase();
-      const def = await this.cols.promoCodes.findOne({ _id: code });
+      const def = await this.core.cols.promoCodes.findOne({ _id: code });
       if (!def) return { ok: false, error: 'PROMO_NOT_FOUND' };
-      if (def.expiresAt !== undefined && def.expiresAt < this.now()) return { ok: false, error: 'PROMO_EXPIRED' };
+      if (def.expiresAt !== undefined && def.expiresAt < this.core.now()) return { ok: false, error: 'PROMO_EXPIRED' };
       if (def.totalLimit !== undefined && def.redeemed >= def.totalLimit) return { ok: false, error: 'PROMO_EXHAUSTED' };
 
       const redemptionId = `${args.accountId}:${code}`;
-      const existing = await this.cols.promoRedemptions.findOne({ _id: redemptionId });
+      const existing = await this.core.cols.promoRedemptions.findOne({ _id: redemptionId });
       if (existing) return this.healOrRejectPromoReplay(existing, redemptionId, args.clientPlatform);
 
       const redemption: PromoRedemptionDoc = {
@@ -81,13 +82,13 @@ export function PromoMixin<TBase extends CommercialBaseCtor>(Base: TBase): TBase
         accountId: args.accountId,
         code,
         coinsGranted: def.coins,
-        ts: this.now(),
+        ts: this.core.now(),
       };
       try {
-        await this.cols.promoRedemptions.insertOne(redemption);
+        await this.core.cols.promoRedemptions.insertOne(redemption);
       } catch (e) {
         if ((e as { code?: number }).code === 11000) {
-          const r = await this.cols.promoRedemptions.findOne({ _id: redemptionId });
+          const r = await this.core.cols.promoRedemptions.findOne({ _id: redemptionId });
           if (r) return this.healOrRejectPromoReplay(r, redemptionId, args.clientPlatform);
           return { ok: false, error: 'PROMO_ALREADY_USED' };
         }
@@ -95,8 +96,8 @@ export function PromoMixin<TBase extends CommercialBaseCtor>(Base: TBase): TBase
       }
 
       // Atomically increment redemption count (best-effort; does not hard-guard the total — soft check above is sufficient; at most 1 over-limit concurrently).
-      await this.cols.promoCodes.updateOne({ _id: code }, { $inc: { redeemed: 1 } });
-      const coinsAfter = await this.credit(args.accountId, def.coins, 'promo', {
+      await this.core.cols.promoCodes.updateOne({ _id: code }, { $inc: { redeemed: 1 } });
+      const coinsAfter = await this.core.credit(args.accountId, def.coins, 'promo', {
         orderId: redemptionId,
         clientPlatform: args.clientPlatform,
       });
@@ -121,19 +122,18 @@ export function PromoMixin<TBase extends CommercialBaseCtor>(Base: TBase): TBase
       redemptionId: string,
       clientPlatform: string | undefined,
     ): Promise<Result<{ coinsAfter: number; coinsGranted: number }>> {
-      if (!this.isStaleClaim(redemption.ts)) return { ok: false, error: 'PROMO_ALREADY_USED' };
-      const landed = await this.cols.ledger.findOne({ accountId: redemption.accountId, orderId: redemptionId });
+      if (!this.core.isStaleClaim(redemption.ts)) return { ok: false, error: 'PROMO_ALREADY_USED' };
+      const landed = await this.core.cols.ledger.findOne({ accountId: redemption.accountId, orderId: redemptionId });
       if (landed) return { ok: false, error: 'PROMO_ALREADY_USED' };
-      const claimed = await this.cols.promoRedemptions.findOneAndUpdate(
+      const claimed = await this.core.cols.promoRedemptions.findOneAndUpdate(
         { _id: redemptionId, healedAt: { $exists: false } },
-        { $set: { healedAt: this.now() } },
+        { $set: { healedAt: this.core.now() } },
       );
       if (!claimed) return { ok: false, error: 'PROMO_ALREADY_USED' };
-      const coinsAfter = await this.credit(redemption.accountId, redemption.coinsGranted, 'promo', {
+      const coinsAfter = await this.core.credit(redemption.accountId, redemption.coinsGranted, 'promo', {
         orderId: redemptionId,
         clientPlatform,
       });
       return { ok: true, coinsAfter, coinsGranted: redemption.coinsGranted };
     }
-  };
 }

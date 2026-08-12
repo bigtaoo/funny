@@ -11,7 +11,7 @@ import { grantEquipment } from '../equipment.js';
 import { grantCard } from '../cards.js';
 import { deliverMailGrant } from '../economy.js';
 import type { MetaHandlers } from '../generated/routes.gen.js';
-import { accountIdOf, type Constructor, type MetaBaseCtor } from './base.js';
+import { accountIdOf, type MetaCore } from './base.js';
 
 type SocialHandlers = Pick<
   MetaHandlers,
@@ -21,8 +21,9 @@ type SocialHandlers = Pick<
   | 'claimMail' | 'sendMail'
 >;
 
-export function SocialMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase & Constructor<SocialHandlers> {
-  return class extends Base {
+export class SocialService {
+  constructor(private readonly core: MetaCore) {}
+
     /** Proxy to socialsvc (pass-through JWT + body). socialsvc not configured → 503. */
     private async proxySocial(
       req: FastifyRequest,
@@ -30,12 +31,12 @@ export function SocialMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase & Co
       socialPath: string,
       body?: unknown,
     ): Promise<void> {
-      if (!this.deps.socialsvc?.available) {
+      if (!this.core.deps.socialsvc?.available) {
         reply.code(503).send(err(ErrorCode.NOT_IMPLEMENTED, 'socialsvc not configured'));
         return;
       }
       const auth = (req.headers.authorization ?? '') as string;
-      const r = await this.deps.socialsvc.proxy(req.method, socialPath, body ?? null, auth);
+      const r = await this.core.deps.socialsvc.proxy(req.method, socialPath, body ?? null, auth);
       reply.status(r.status).send(r.data);
     }
 
@@ -120,9 +121,9 @@ export function SocialMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase & Co
     async claimMail(req: FastifyRequest, reply: FastifyReply) {
       const accountId = accountIdOf(req);
       const { id } = req.params as { id: string };
-      const { cols, commercial, now } = this.deps;
+      const { cols, commercial, now } = this.core.deps;
 
-      if (!this.deps.socialsvc?.available) {
+      if (!this.core.deps.socialsvc?.available) {
         return reply.code(503).send(err(ErrorCode.NOT_IMPLEMENTED, 'socialsvc not configured'));
       }
       // Deterministic orderId (2026-08-03 fix, was randomUUID() per call): commercial.grant and
@@ -131,7 +132,7 @@ export function SocialMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase & Co
       // coin attachment a second time — commercial's own idempotency never recognized it as a repeat.
       // Keying on mailId+accountId makes every retry of the same claim collapse onto the same order.
       const orderId = `mail.claim.${id}.${accountId}`;
-      const claimedResult = await this.deps.socialsvc.claimMail(id, accountId, orderId);
+      const claimedResult = await this.core.deps.socialsvc.claimMail(id, accountId, orderId);
       if ('error' in claimedResult) {
         if (claimedResult.error === 'NOT_FOUND') return reply.code(404).send(err(ErrorCode.NOT_FOUND, 'mail not found'));
         if (claimedResult.error === 'NO_ATTACHMENT') return reply.code(400).send(err(ErrorCode.NO_ATTACHMENT, 'no attachment'));
@@ -180,7 +181,7 @@ export function SocialMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase & Co
         return ok({ save });
       } catch (e) {
         log.error('mail claim delivery failed — rolling back the claim', { mailId: id, accountId, orderId, err: (e as Error).message });
-        await this.deps.socialsvc.unclaimMail(id, accountId, orderId);
+        await this.core.deps.socialsvc.unclaimMail(id, accountId, orderId);
         return reply.code(503).send(err(ErrorCode.NOT_IMPLEMENTED, 'delivery failed, please retry'));
       }
     }
@@ -188,5 +189,4 @@ export function SocialMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase & Co
     async sendMail(req: FastifyRequest, reply: FastifyReply) {
       return this.proxySocial(req, reply, '/social/mail/send', req.body);
     }
-  };
 }

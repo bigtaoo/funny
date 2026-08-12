@@ -60,7 +60,11 @@ async function flush(): Promise<void> {
 }
 
 /** Reads back the private roster/grid/drag fields the pointer path touches — TS privacy is
- *  compile-time only, same reasoning as defenseEditorAttackCards.ui.ts's cellCenter helper. */
+ *  compile-time only, same reasoning as defenseEditorAttackCards.ui.ts's cellCenter helper.
+ *  2026-08-11: DefenseEditorScene converted from a mixin-chain `extends` to composition (see
+ *  claudedocs/client-modules.md's split-form priority note) — these all live on the composed
+ *  `core` field now, and handleDown/handleMove/handleUp live on the composed `input` field
+ *  (see inputOf below). */
 function fields(scene: DefenseEditorScene): {
   rosterX: number; rosterY: number; rosterW: number; rosterH: number;
   rosterCardHits: { rect: { x: number; y: number; w: number; h: number }; cardId: string; unitType: string }[];
@@ -69,7 +73,15 @@ function fields(scene: DefenseEditorScene): {
   garrison: Map<string, { cardInstanceId?: string }>;
   scrollY: number;
 } {
-  return scene as unknown as ReturnType<typeof fields>;
+  return (scene as unknown as { core: unknown }).core as ReturnType<typeof fields>;
+}
+
+function inputOf(scene: DefenseEditorScene): {
+  handleDown(x: number, y: number): void;
+  handleMove(x: number, y: number): void;
+  handleUp(x: number, y: number): void;
+} {
+  return (scene as unknown as { input: unknown }).input as ReturnType<typeof inputOf>;
 }
 
 function cellCenter(scene: DefenseEditorScene, col: number, dr: number): [number, number] {
@@ -89,7 +101,7 @@ describe('DefenseEditorScene — roster-to-grid drag placement (pointer path)', 
     await flush();
     const [rx, ry] = firstRosterCardCenter(scene);
 
-    (scene as unknown as { handleDown(x: number, y: number): void }).handleDown(rx, ry);
+    inputOf(scene).handleDown(rx, ry);
 
     const s = fields(scene);
     expect(s.dragCardId).toBe('c0');
@@ -102,7 +114,7 @@ describe('DefenseEditorScene — roster-to-grid drag placement (pointer path)', 
     await flush();
     const [rx, ry] = firstRosterCardCenter(scene);
     const [gx, gy] = cellCenter(scene, 0, 0);
-    const handle = scene as unknown as { handleDown(x: number, y: number): void; handleMove(x: number, y: number): void };
+    const handle = inputOf(scene);
 
     handle.handleDown(rx, ry);
     handle.handleMove(gx, gy); // crosses left of rosterX → promotes to an active drag
@@ -115,9 +127,7 @@ describe('DefenseEditorScene — roster-to-grid drag placement (pointer path)', 
     await flush();
     const [rx, ry] = firstRosterCardCenter(scene);
     const [gx, gy] = cellCenter(scene, 0, 0);
-    const handle = scene as unknown as {
-      handleDown(x: number, y: number): void; handleMove(x: number, y: number): void; handleUp(x: number, y: number): void;
-    };
+    const handle = inputOf(scene);
 
     handle.handleDown(rx, ry);
     handle.handleMove(gx, gy);
@@ -137,9 +147,7 @@ describe('DefenseEditorScene — roster-to-grid drag placement (pointer path)', 
     // Column 5 is not in ATTACK_LANES (server/engine/src/config.ts) — a valid-looking grid coordinate
     // whose col index still fails onGridTap's lane check.
     const [gx, gy] = cellCenter(scene, 5, 0);
-    const handle = scene as unknown as {
-      handleDown(x: number, y: number): void; handleMove(x: number, y: number): void; handleUp(x: number, y: number): void;
-    };
+    const handle = inputOf(scene);
 
     handle.handleDown(rx, ry);
     handle.handleMove(gx, gy);
@@ -154,9 +162,7 @@ describe('DefenseEditorScene — roster-to-grid drag placement (pointer path)', 
   it('dropping a card that is already placed elsewhere moves it (old cell clears) — real drop path, not onGridTap called directly', async () => {
     const { scene } = buildHarness({ cardCount: 1, cardState: { c0: { currentTroops: 200 } } });
     await flush();
-    const handle = scene as unknown as {
-      handleDown(x: number, y: number): void; handleMove(x: number, y: number): void; handleUp(x: number, y: number): void;
-    };
+    const handle = inputOf(scene);
 
     // First drop at (0,0).
     let [rx, ry] = firstRosterCardCenter(scene);
@@ -178,9 +184,7 @@ describe('DefenseEditorScene — roster-to-grid drag placement (pointer path)', 
     const { scene } = buildHarness({ cardCount: 6 });
     await flush();
     const [rx, ry] = firstRosterCardCenter(scene);
-    const handle = scene as unknown as {
-      handleDown(x: number, y: number): void; handleMove(x: number, y: number): void; handleUp(x: number, y: number): void;
-    };
+    const handle = inputOf(scene);
 
     handle.handleDown(rx, ry);
     handle.handleMove(rx, ry + 80); // moves, but stays inside the roster column (x unchanged)

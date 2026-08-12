@@ -1,11 +1,17 @@
 // worldsvc core — nation primitives (S8-6.5). Peeled out of the WorldCore god-class (2026-07-03).
 // Capital doc init, nation founding/conquest on capital capture, naming, and province lookup
 // (angle-sector ring model, ADR-034 — replaces the old Voronoi-nearest-capital lookup).
+//
+// 2026-08-11 (mixin-chain re-audit, claudedocs/server.md "拆分形态的优先级" 形态②): converted from an
+// `extends WorldCorePush` inheritance-chain link to composition — the only cross-layer call is
+// `capitalsFor` (kernel), so this takes a narrow constructor-injected `core: WorldCore`.
 import { capitalIdxAt, provinceIdxAt, SlgError, censorChat, orgNameWidth, ORG_NAME_WIDTH_MIN, ORG_NAME_WIDTH_MAX, type ChatRegion } from '@nw/shared';
-import { WorldCorePush } from './push';
+import type { WorldCore } from '../core';
 import type { NationDoc } from '../db';
 
-export class WorldCoreNation extends WorldCorePush {
+export class NationService {
+  constructor(private readonly core: WorldCore) {}
+
   // ── S8-6.5: nation system ──────────────────────────────────────
 
   /**
@@ -13,18 +19,18 @@ export class WorldCoreNation extends WorldCorePush {
    * Skips existing documents ($setOnInsert + unique _id prevents duplicates).
    */
   async initNations(worldId: string): Promise<void> {
-    const caps = this.capitalsFor(worldId);
+    const caps = this.core.capitalsFor(worldId);
     for (let i = 0; i < caps.length; i++) {
       const [x, y] = caps[i]!;
       const id = `nation:${worldId}:${i}`;
       const doc: NationDoc = { _id: id, worldId, capitalIdx: i, x, y, rev: 0 };
-      await this.deps.cols.nations.updateOne({ _id: id }, { $setOnInsert: doc }, { upsert: true });
+      await this.core.deps.cols.nations.updateOne({ _id: id }, { $setOnInsert: doc }, { upsert: true });
     }
   }
 
   /** Get the state of all nations in a world. */
   async getNations(worldId: string): Promise<NationDoc[]> {
-    return this.deps.cols.nations.find({ worldId }).toArray();
+    return this.core.deps.cols.nations.find({ worldId }).toArray();
   }
 
   /**
@@ -39,16 +45,16 @@ export class WorldCoreNation extends WorldCorePush {
     winnerAccountId: string,
     winnerFamilyId?: string,
   ): Promise<boolean> {
-    const idx = capitalIdxAt(x, y, this.capitalsFor(worldId));
+    const idx = capitalIdxAt(x, y, this.core.capitalsFor(worldId));
     if (idx < 0) return false; // not a capital tile
     const nationId = `nation:${worldId}:${idx}`;
-    await this.deps.cols.nations.updateOne(
+    await this.core.deps.cols.nations.updateOne(
       { _id: nationId },
       {
         $set: {
           ownerId: winnerAccountId,
           ...(winnerFamilyId ? { familyId: winnerFamilyId } : {}),
-          foundedAt: this.deps.now(),
+          foundedAt: this.core.deps.now(),
           rev: 1, // overwrite, not incremented (simplified; can be changed to $inc later)
         },
         // Clear the old nation name before the new occupier renames it. familyId must go here too
@@ -75,14 +81,14 @@ export class WorldCoreNation extends WorldCorePush {
     // ephemeral chat — a hit rejects the rename outright rather than persisting a masked name. This was
     // previously the one persistent public player-chosen string in the codebase with no moderation check
     // at all (2026-08-03 worldsvc code review).
-    if (censorChat(name, region, this.wordlists).hit) {
+    if (censorChat(name, region, this.core.wordlists).hit) {
       throw new SlgError('BAD_REQUEST', 'Name contains disallowed words');
     }
     const nationId = `nation:${worldId}:${capitalIdx}`;
-    const nation = await this.deps.cols.nations.findOne({ _id: nationId });
+    const nation = await this.core.deps.cols.nations.findOne({ _id: nationId });
     if (!nation?.ownerId) throw new SlgError('TILE_NOT_OWNED', 'This capital has no nation yet');
     if (nation.ownerId !== accountId) throw new SlgError('NO_PERMISSION', 'Only the capital occupier can name the nation');
-    await this.deps.cols.nations.updateOne({ _id: nationId }, { $set: { nationName: name } });
+    await this.core.deps.cols.nations.updateOne({ _id: nationId }, { $set: { nationName: name } });
   }
 
   /**
@@ -92,6 +98,6 @@ export class WorldCoreNation extends WorldCorePush {
   async getNationAt(worldId: string, x: number, y: number): Promise<NationDoc | null> {
     const idx = provinceIdxAt(x, y);
     const nationId = `nation:${worldId}:${idx}`;
-    return this.deps.cols.nations.findOne({ _id: nationId });
+    return this.core.deps.cols.nations.findOne({ _id: nationId });
   }
 }

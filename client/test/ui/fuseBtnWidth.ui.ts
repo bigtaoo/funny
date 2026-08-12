@@ -57,14 +57,14 @@ describe('fuse modal Confirm/Cancel buttons auto-fit label width per locale', ()
       } as unknown as CardCallbacks;
 
       const scene = new CardScene(createLayout(1920, 1080), new InputManager(), cb);
-      (scene as unknown as { openFuseSelect: (c: CardInstance) => void }).openFuseSelect(target);
+      (scene as unknown as { feed: { openFuseSelect: (c: CardInstance) => void } }).feed.openFuseSelect(target);
 
-      const hitsOf = (): Hit[] => (scene as unknown as { modalHits: Hit[] }).modalHits;
+      const hitsOf = (): Hit[] => (scene as unknown as { core: { modalHits: Hit[] } }).core.modalHits;
       // The fuse panel's own layer, searched instead of the whole scene: target is 'lena' with 5 owned
       // 'max' materials, so the background roster grid also renders 5 cells named "Max" — searching
       // scene.container for the bare row label (no more "Lv.N" suffix, 2026-07-25) would collide with
       // those background cells instead of the fuse row.
-      const modalLayer = (scene as unknown as { modalLayer: PIXI.Container }).modalLayer;
+      const modalLayer = (scene as unknown as { core: { modalLayer: PIXI.Container } }).core.modalLayer;
       // Fill all 5 slots so Confirm renders "(5/5)" and registers a tappable hit.
       const rowLabel = t('card.max.name' as never);
       for (let i = 0; i < FUSION_MATERIAL_COUNT; i++) {

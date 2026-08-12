@@ -1,7 +1,7 @@
 // Coin-anomaly daily audit (COMMERCIAL_DESIGN §6.6, 2026-07-26): aggregates the ledger for accounts whose
 // non-recharge coin gain in a single UTC day exceeds a threshold, for the OPS anti-cheat review queue
 // (metaserver AntiCheatReviewDoc.kind:'coin_anomaly'). Pure read — never mutates the wallet/ledger.
-import type { CommercialBaseCtor, Constructor } from './base';
+import type { WalletCore } from './base';
 
 export interface CoinGainRow {
   accountId: string;
@@ -18,14 +18,15 @@ export interface AuditHandlers {
   auditCoinGains(dayKey: string, minGain: number): Promise<CoinGainRow[]>;
 }
 
-export function AuditMixin<TBase extends CommercialBaseCtor>(Base: TBase): TBase & Constructor<AuditHandlers> {
-  return class extends Base {
+export class AuditService {
+  constructor(private readonly core: WalletCore) {}
+
     async auditCoinGains(dayKey: string, minGain: number): Promise<CoinGainRow[]> {
       const dayStart = Date.parse(`${dayKey}T00:00:00.000Z`);
       if (Number.isNaN(dayStart)) return [];
       const dayEnd = dayStart + 24 * 3600 * 1000;
 
-      const rows = await this.cols.ledger
+      const rows = await this.core.cols.ledger
         .aggregate<{ _id: string; gain: number }>([
           { $match: { ts: { $gte: dayStart, $lt: dayEnd }, delta: { $gt: 0 }, reason: { $ne: 'recharge' } } },
           { $group: { _id: '$accountId', gain: { $sum: '$delta' } } },
@@ -36,5 +37,4 @@ export function AuditMixin<TBase extends CommercialBaseCtor>(Base: TBase): TBase
 
       return rows.map((r) => ({ accountId: r._id, nonRechargeGain: r.gain }));
     }
-  };
 }

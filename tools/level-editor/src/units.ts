@@ -1,4 +1,4 @@
-import { UnitType } from '@game/types';
+import { UnitType } from '@nw/engine/types';
 
 /**
  * Editor-side display metadata for unit types.

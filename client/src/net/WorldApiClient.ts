@@ -6,571 +6,441 @@
 // All responses are wrapped in { ok: true, data: T } | { ok: false, code, message }.
 //
 // DTO types are generated from server/contracts/openapi-world.yml via npm run rest:gen
-// → src/net/openapi-world.ts. Do NOT hand-edit these type aliases.
+// → src/net/openapi-world.ts. Do NOT hand-edit these type aliases (now re-exported from
+// ./WorldApiClient/types.ts, see that file).
 // AuctionView is the exception: auctionsvc is a standalone service with its own contract
 // (server/contracts/openapi-auction.yml → src/net/openapi-auction.ts, AUCTION_DESIGN §9).
-
-import { getWorldBaseUrl, getSocialBaseUrl, getAuctionBaseUrl } from './config';
+//
+// The client is split by domain — each part lives in ./WorldApiClient/*.ts as an independent
+// class constructed with the shared `WorldApiCore` (./WorldApiClient/core.ts, which owns the
+// storage-backed token read + the shared req() transport). To add an endpoint: find the matching
+// domain service (world / defenseTeams / siege / nationsSeason / shop / family / auction / sect /
+// worldChannel / cityOps), add the method there + its matching one-line forward below, or add a
+// new domain file — do NOT grow the domain logic into this file. All DTO/view types + WorldApiError
+// are re-exported so existing importers (`from '../net/WorldApiClient'`) keep resolving to this
+// file, not the directory.
+//
+// 2026-08-11: converted from a single 700+ line flat class to composition — zero cross-domain
+// `this.*` calls except listFamilies→getMyFamily (both kept together in ./WorldApiClient/family.ts),
+// see claudedocs/client-modules.md's split-form priority note. `WorldApiClient` itself is now a
+// thin forwarding facade (one line per endpoint) rather than one big class — every method on this
+// class exists solely because dozens of call sites across the codebase already call
+// `worldApi.methodName(...)` directly and must keep resolving.
 import type { IStorage } from '../platform/IPlatform';
-import type { components, operations } from './openapi-world';
-import type { components as socialComponents } from './openapi-social';
-import type { components as auctionComponents } from './openapi-auction';
-import { sampleServerNow } from './serverClock';
-import { requestPlatformHeader } from './ApiClient/base';
-import { currentChatRegion } from './chatRegion';
-import { maybePromptAppeal } from './log';
-import { globalRequestGate } from './rateGate';
+import { WorldApiCore } from './WorldApiClient/core';
+import { WorldService } from './WorldApiClient/world';
+import { DefenseTeamsService } from './WorldApiClient/defenseTeams';
+import { SiegeService } from './WorldApiClient/siege';
+import { NationsSeasonService } from './WorldApiClient/nationsSeason';
+import { SlgShopService } from './WorldApiClient/shop';
+import { FamilyService } from './WorldApiClient/family';
+import { AuctionApiService } from './WorldApiClient/auction';
+import { SectService } from './WorldApiClient/sect';
+import { WorldChannelService } from './WorldApiClient/worldChannel';
+import { CityOpsService } from './WorldApiClient/cityOps';
+import type {
+  WorldMapView,
+  WorldMapSparseView,
+  WorldTileView,
+  MarchView,
+  OccupationView,
+  StationedView,
+  PlayerWorldView,
+  EnterWorldView,
+  ShardTransferTargetView,
+  MarchKind,
+  DefenseConfig,
+  TeamTemplate,
+  SiegeReplayView,
+  SiegeSummaryView,
+  NationView,
+  SeasonView,
+  SlgShopItemView,
+  FamilyDetailView,
+  FamilyView,
+  FamilyJoinRequestView,
+  FamilyMessageView,
+  PlayerProfileExtra,
+  FamilyRole,
+  AuctionView,
+  SectView,
+  SectDetailView,
+  SectVoteResult,
+  SectMessageView,
+  WorldChatMessage,
+  BuildingKey,
+} from './WorldApiClient/types';
 
-// ── Generated DTO type aliases (single source of truth = openapi-world.yml) ──
+export { WorldApiError } from './WorldApiClient/core';
+export type {
+  WorldTileView,
+  WorldTileSparseView,
+  WorldMapView,
+  WorldMapSparseView,
+  PlayerWorldView,
+  MarchView,
+  OccupationView,
+  StationedView,
+  FamilyMemberView,
+  FamilyView,
+  FamilyDetailView,
+  FamilyJoinRequestView,
+  FamilyMessageView,
+  AuctionView,
+  NationView,
+  SeasonView,
+  SlgShopItemView,
+  SiegeReplayView,
+  SiegeSummaryView,
+  DefenseConfig,
+  TeamTemplate,
+  ShardTransferTargetView,
+  ArmyEntry,
+  SectView,
+  SectDetailView,
+  SectMemberFamilyView,
+  SectMessageView,
+  SectVoteResult,
+  BuildingKey,
+  CardSLGState,
+  EnterWorldView,
+  PlayerProfileExtra,
+  WorldChatMessage,
+} from './WorldApiClient/types';
 
-export type WorldTileView = components['schemas']['WorldTileView'];
-export type WorldMapView = components['schemas']['WorldMapView'];
-
-/** Sparse occupied tile (zoom 2/3 bird's-eye layer; contains only occupied tiles). */
-export interface WorldTileSparseView {
-  x: number;
-  y: number;
-  type: string;
-  mine?: boolean;
-  ally?: boolean;
-  sectmate?: boolean;
-  allySect?: boolean;
-}
-
-export interface WorldMapSparseView {
-  worldId: string;
-  cx: number;
-  cy: number;
-  r: number;
-  lod: 'thin' | 'mid';
-  tiles: WorldTileSparseView[];
-}
-export type PlayerWorldView = components['schemas']['PlayerWorldView'];
-export type MarchView = components['schemas']['MarchView'];
-export type OccupationView = components['schemas']['OccupationView'];
-export type StationedView = components['schemas']['StationedView'];
-
-// Family DTOs are generated from server/contracts/openapi-social.yml (socialsvc's own contract,
-// SOCIAL_SVC_DESIGN.md §4.1) via npm run rest:gen → src/net/openapi-social.ts. Do NOT hand-edit these type aliases.
-export type FamilyMemberView = socialComponents['schemas']['FamilyMemberView'];
-export type FamilyView = socialComponents['schemas']['FamilyView'];
-export type FamilyDetailView = socialComponents['schemas']['FamilyDetailView'];
-export type FamilyJoinRequestView = socialComponents['schemas']['FamilyJoinRequestView'];
-export type FamilyMessageView = socialComponents['schemas']['FamilyMessageView'];
-
-export type AuctionView = auctionComponents['schemas']['AuctionView'];
-export type NationView = components['schemas']['NationView'];
-export type SeasonView = components['schemas']['SeasonView'];
-export type SlgShopItemView = components['schemas']['SlgShopItemView'];
-export type SiegeReplayView = components['schemas']['SiegeReplayView'];
-export type SiegeSummaryView = components['schemas']['SiegeSummaryView'];
-export type DefenseConfig = components['schemas']['DefenseConfig'];
-export type TeamTemplate = components['schemas']['TeamTemplate'];
-export type ShardTransferTargetView = components['schemas']['ShardTransferTargetView'];
-export type ArmyEntry = components['schemas']['ArmyEntry'];
-export type SectView = components['schemas']['SectView'];
-export type SectDetailView = components['schemas']['SectDetailView'];
-export type SectMemberFamilyView = components['schemas']['SectMemberFamilyView'];
-export type SectMessageView = components['schemas']['SectMessageView'];
-export type SectVoteResult = components['schemas']['SectVoteResult'];
-export type BuildingKey = components['schemas']['BuildingKey'];
-export type CardSLGState = components['schemas']['CardSLGState'];
-
-/** GET-alike aggregated response for POST /world/enter (P1-5, comm-audit-2026-07-27). */
-export type EnterWorldView =
-  NonNullable<operations['enterWorld']['responses']['200']['content']['application/json']['data']>;
-
-/** Rank/ELO/family/sect for an arbitrary player, fetched by public id (see {@link getProfileExtra}). */
-export interface PlayerProfileExtra {
-  rank?: string;
-  elo?: number;
-  familyName?: string;
-  sectName?: string;
-}
-
-export interface WorldChatMessage {
-  id: string;
-  senderId: string;
-  senderName: string;
-  /** 9-digit public id (display-only); empty if unknown (meta unavailable or message predates this field). */
-  senderPublicId: string;
-  /** Sender's equipped title (称号), if any. */
-  title?: string;
-  /** Sender's sect name (宗门), if any. */
-  sectName?: string;
-  /** Sender's family name (家族), if any. */
-  familyName?: string;
-  body: string;
-  ts: number;
-}
-
-// Derived enum types for method parameters
-type MarchKind = Exclude<MarchView['kind'], 'return'>;
-type FamilyRole = FamilyMemberView['role'];
-
-const TOKEN_KEY = 'nw_token';
-
-// ── Error ────────────────────────────────────────────────────────────────────
-
-export class WorldApiError extends Error {
-  constructor(public readonly code: string, message: string) {
-    super(message);
-    this.name = 'WorldApiError';
-  }
-}
-
-// ── Client ───────────────────────────────────────────────────────────────────
-
+/**
+ * WorldApiClient — SLG REST client for worldsvc, thin forwarding facade over the per-domain
+ * composition (see the file-header comment above). Owns one `WorldApiCore` (transport + token
+ * read) and one instance of each domain service, all constructed with that same core.
+ */
 export class WorldApiClient {
-  constructor(private readonly storage: IStorage) {}
+  private readonly core: WorldApiCore;
+  private readonly world: WorldService;
+  private readonly defenseTeams: DefenseTeamsService;
+  private readonly siege: SiegeService;
+  private readonly nationsSeason: NationsSeasonService;
+  private readonly slgShop: SlgShopService;
+  private readonly family: FamilyService;
+  private readonly auction: AuctionApiService;
+  private readonly sect: SectService;
+  private readonly worldChannel: WorldChannelService;
+  private readonly cityOps: CityOpsService;
+
+  constructor(storage: IStorage) {
+    this.core = new WorldApiCore(storage);
+    this.world = new WorldService(this.core);
+    this.defenseTeams = new DefenseTeamsService(this.core);
+    this.siege = new SiegeService(this.core);
+    this.nationsSeason = new NationsSeasonService(this.core);
+    this.slgShop = new SlgShopService(this.core);
+    this.family = new FamilyService(this.core);
+    this.auction = new AuctionApiService(this.core);
+    this.sect = new SectService(this.core);
+    this.worldChannel = new WorldChannelService(this.core);
+    this.cityOps = new CityOpsService(this.core);
+  }
 
   get available(): boolean {
-    // '' (Docker/prod same-origin proxy) and 'http://...' (dev explicit URL) are both valid
-    // — worldsvc is reachable in any standard build. The old `!== ''` guard was wrong.
-    return true;
+    return this.core.available;
   }
 
-  /**
-   * Ping worldsvc /health. Returns false ONLY on a definitive non-2xx response
-   * from a reachable server (e.g. 503 = up-but-unhealthy).
-   *
-   * The probe is a plain cross-origin fetch that reads the status. This works because
-   * Caddy routes /health → worldsvc (see server/Caddyfile), and worldsvc's /health
-   * sends `access-control-allow-origin: *` like its other public routes — so the read
-   * is CORS-allowed and no red "Cross-Origin Request Blocked" error is logged. (Before
-   * that route existed, /health fell through to Caddy's CORS-less fallback and the
-   * browser blocked the read.)
-   *
-   * A thrown fetch (timeout / connection refused) is treated as INCONCLUSIVE →
-   * returns true (no offline badge). Rationale: better to let the user click through
-   * and hit real error handling than to mislabel a working service as offline. This
-   * is an expected, harmless condition, so it's logged as a warning, not an error.
-   */
-  async checkHealth(): Promise<boolean> {
-    const base = getWorldBaseUrl();
-    // Empty base = same-origin nginx proxy (Docker/production). worldsvc is guaranteed
-    // up by the Docker healthcheck; no external ping needed or possible (nginx only
-    // routes /world* /auction* (family moved to socialsvc /social/family/*), not
-    // /health). Return true immediately.
-    if (!base) return true;
-    try {
-      const ctrl = new AbortController();
-      const id = setTimeout(() => ctrl.abort(), 3000);
-      const res = await fetch(`${base}/health`, { signal: ctrl.signal });
-      clearTimeout(id);
-      return res.ok;
-    } catch {
-      // Inconclusive (timeout / connection refused) — do not claim offline. Warn,
-      // don't error: this is an expected, harmless condition (see method doc).
-      console.warn(`[world] /health probe inconclusive for ${base}; assuming reachable`);
-      return true;
-    }
+  checkHealth(): Promise<boolean> {
+    return this.core.checkHealth();
   }
 
-  private token(): string | null {
-    return this.storage.getItem(TOKEN_KEY);
+  // ── World (./WorldApiClient/world.ts) ─────────────────────────────────────
+  getMe(worldId: string): Promise<PlayerWorldView> {
+    return this.world.getMe(worldId);
   }
 
-  private async req<T>(
-    method: string,
-    path: string,
-    body?: unknown,
-    timeoutMs = 10_000,
-    baseOverride?: string,
-    extraHeaders?: Record<string, string>,
-  ): Promise<T> {
-    const base = baseOverride ?? getWorldBaseUrl();
-    const url = base + path;
-    const token = this.token();
-    // X-NW-Platform (ADR-020): which recharged-pool bucket a spend should draw from. Worldsvc/auction
-    // spend paths never sent this (comm-audit-internal-2026-07-28 P0-7) — iOS/Android players got
-    // charged from the web bucket for SLG/auction purchases, same field ApiClient/base.ts sends.
-    const headers: Record<string, string> = { 'Content-Type': 'application/json', 'X-NW-Platform': requestPlatformHeader(), ...extraHeaders };
-    if (token) headers['Authorization'] = `Bearer ${token}`;
-
-    await globalRequestGate.acquire();
-    const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), timeoutMs);
-    let res: Response;
-    try {
-      res = await fetch(url, {
-        method,
-        headers,
-        signal: ctrl.signal,
-        ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
-      });
-    } catch (e) {
-      // AbortError → convert to TypeError so callers see a consistent network failure.
-      throw new TypeError(`world api ${method} ${path} failed: ${String(e)}`);
-    } finally {
-      clearTimeout(timer);
-    }
-
-    // Standard @nw/shared ApiResp envelope: { ok:false, error:{ code, message } }
-    // (same shape metaserver's ApiClient reads). NOT top-level code/message — reading
-    // json.code here silently collapsed every world/auction/social error to 'UNKNOWN',
-    // breaking the AuctionScene error-code→toast mapping. Kept tolerant of a missing error.
-    const json = await res.json() as { ok: boolean; data?: T; error?: { code?: string; message?: string } };
-    if (!json.ok) {
-      maybePromptAppeal(json.error?.code ?? 'UNKNOWN');
-      throw new WorldApiError(json.error?.code ?? 'UNKNOWN', json.error?.message ?? 'world api error');
-    }
-    return json.data as T;
+  getMap(worldId: string, cx: number, cy: number, r: number): Promise<WorldMapView> {
+    return this.world.getMap(worldId, cx, cy, r);
   }
 
-  // ── World ──────────────────────────────────────────────────────────────────
-
-  async getMe(worldId: string): Promise<PlayerWorldView> {
-    const data = await this.req<PlayerWorldView & { serverNow?: number }>('GET', `/world/me?worldId=${encodeURIComponent(worldId)}`);
-    // P1-1 clock-offset sample — getMe is the highest-frequency SLG round-trip.
-    if (typeof data.serverNow === 'number') sampleServerNow(data.serverNow);
-    return data;
-  }
-
-  async getMap(worldId: string, cx: number, cy: number, r: number): Promise<WorldMapView> {
-    return this.req('GET', `/world/map?worldId=${encodeURIComponent(worldId)}&cx=${cx}&cy=${cy}&r=${r}`);
-  }
-
-  /** Sparse occupied layer (zoom 2/3): returns only occupied tiles; no profile RPC, no visibility computation. */
-  async getMapSparse(worldId: string, cx: number, cy: number, r: number, lod: 'thin' | 'mid'): Promise<WorldMapSparseView> {
-    return this.req('GET', `/world/map/sparse?worldId=${encodeURIComponent(worldId)}&cx=${cx}&cy=${cy}&r=${r}&lod=${lod}`);
-  }
-
-  async getTile(worldId: string, x: number, y: number): Promise<WorldTileView> {
-    return this.req('GET', `/world/tile/${x}:${y}:${encodeURIComponent(worldId)}`);
-  }
-
-  async getMarches(worldId: string): Promise<MarchView[]> {
-    return this.req('GET', `/world/march?worldId=${encodeURIComponent(worldId)}`);
-  }
-
-  /** Own active occupation-holds (2026-07-15 team management: status + cancel affordance). */
-  async getOccupations(worldId: string): Promise<OccupationView[]> {
-    return this.req('GET', `/world/occupations?worldId=${encodeURIComponent(worldId)}`);
-  }
-
-  /** Own teams stationed on tiles (2026-07-23 field-stationing: idle-sprite rendering + recall affordance). */
-  async getStationed(worldId: string): Promise<StationedView[]> {
-    return this.req('GET', `/world/stationed?worldId=${encodeURIComponent(worldId)}`);
-  }
-
-  /** Full list of owned tiles (territory + captured stronghold; excludes the 3×3 capital footprint). Backs the Territory Overview panel (SLG_DESIGN_LOG.md §26). */
-  async getTerritories(worldId: string): Promise<WorldTileView[]> {
-    return this.req('GET', `/world/territories?worldId=${encodeURIComponent(worldId)}`);
-  }
-
-  /** Enter the world: the system automatically places the player's city (§3.4; prefers near family → outer-ring newcomer zone); spawn point is server-determined, player does not pass coordinates. */
-  async joinWorld(worldId: string): Promise<PlayerWorldView> {
-    return this.req('POST', '/world/join', { worldId });
-  }
-
-  /**
-   * Aggregated SLG-entry fetch (P1-5, comm-audit-2026-07-27): merges getMe+joinWorld+getMap(or
-   * getMapSparse)+getMarches+getOccupations+getStationed+getSeason+getNations+getWorldChannel into one
-   * round-trip, replacing the 9-request waterfall WorldMapNet.loadData() used to fire on every
-   * world-map entry. `r` is the viewport radius (independent of map center — the server derives cx/cy
-   * itself from the resolved mainBaseTile); `zoom` picks `map` (1) vs `mapSparse` (2/3).
-   */
-  async enterWorld(worldId: string, r: number, zoom: 1 | 2 | 3): Promise<EnterWorldView> {
-    const data = await this.req<EnterWorldView & { me: PlayerWorldView & { serverNow?: number } }>(
-      'POST', '/world/enter', { worldId, r, zoom },
-    );
-    if (typeof data.me.serverNow === 'number') sampleServerNow(data.me.serverNow);
-    return data;
-  }
-
-  /** Mid-season shard transfer (G6/§27): candidate destination shards for the player's current shard. */
-  async getTransferTargets(worldId: string): Promise<ShardTransferTargetView[]> {
-    return this.req('GET', `/world/season/transfer/targets?worldId=${encodeURIComponent(worldId)}`);
-  }
-
-  /** Mid-season shard transfer (G6/§27): forfeits all shard-scoped state in fromWorldId, re-joins toWorldId fresh. */
-  async transferShard(fromWorldId: string, toWorldId: string): Promise<PlayerWorldView> {
-    return this.req('POST', '/world/season/transfer', { fromWorldId, toWorldId });
-  }
-
-  /** Return the current active SLG season number from worldsvc (§20.8). No auth required. */
-  async getActiveSeason(timeoutMs = 10_000): Promise<{ season: number }> {
-    return this.req('GET', '/world/active-season', undefined, timeoutMs);
-  }
-
-  /**
-   * Resolve which shard this account should enter for the given season (G6/§20): resolve only, no city placement; returns the real worldId before entering the map (stickiness > family > solo random; overflow opens a new shard).
-   */
-  async resolveSeason(season: number): Promise<{ worldId: string }> {
-    return this.req('POST', '/world/season/resolve', { season });
-  }
-
-  /**
-   * Season join (G6/§20): server resolves the shard for this account (sect > family > solo random; overflow opens a new shard) then **automatically places the city** (§3.4).
-   * The returned PlayerWorldView contains the resolved `worldId`; client uses it to enter the map. Player does not pass coordinates.
-   */
-  async joinSeason(season: number): Promise<PlayerWorldView> {
-    return this.req('POST', '/world/season/join', { season });
-  }
-
-  /** Abandon an owned tile. Returns the updated player world state (P1-3: was mis-declared as bare
-   *  {ok:true} — the server always returned the full PlayerWorldView, so the caller can adopt it
-   *  directly instead of following up with a separate GET /world/me). */
-  async abandonTile(worldId: string, x: number, y: number): Promise<PlayerWorldView> {
-    return this.req('POST', '/world/abandon', { worldId, x, y });
-  }
-
-  /** Actively relocate the player's base (costs RELOCATE_COST coins to move to (x,y)). Returns the updated player world state after relocation. */
-  async relocateBase(worldId: string, x: number, y: number): Promise<PlayerWorldView> {
-    return this.req('POST', '/world/relocate', { worldId, x, y });
-  }
-
-  /** Build a watchtower (spend WATCHTOWER_COST resources on owned territory at (x,y) to create a large-radius persistent vision source; §18 G5 V2).
-   *  Returns the built tile plus `me` (P1-3: resource cost isn't visible on the tile itself; the caller
-   *  adopts `me` directly instead of a separate GET /world/me). */
-  async buildWatchtower(worldId: string, x: number, y: number): Promise<WorldTileView & { me: PlayerWorldView }> {
-    return this.req('POST', '/world/watchtower', { worldId, x, y });
-  }
-
-  /** ADR-051 (P5): build a player structure (arrowTower / blocker) on own or same-family territory at (x,y).
-   *  Returns the built tile plus `me` (P1-3, same reasoning as buildWatchtower above). */
-  async buildStructure(worldId: string, x: number, y: number, kind: 'arrowTower' | 'blocker'): Promise<WorldTileView & { me: PlayerWorldView }> {
-    return this.req('POST', '/world/structure', { worldId, x, y, kind });
-  }
-
-  /** ADR-051 (P5): demolish one's own structure at (x,y). */
-  async demolishStructure(worldId: string, x: number, y: number): Promise<WorldTileView> {
-    return this.req('POST', '/world/structure/demolish', { worldId, x, y });
-  }
-
-  /** Returns the created march plus `me` (P1-3: committed troops/resources aren't visible on the march
-   *  itself; the caller adopts `me` directly and locally appends the march to its cached list, instead
-   *  of following up with GET /world/march + GET /world/me). */
-  async startMarch(
+  getMapSparse(
     worldId: string,
-    fromX: number, fromY: number,
-    toX: number, toY: number,
+    cx: number,
+    cy: number,
+    r: number,
+    lod: 'thin' | 'mid'
+  ): Promise<WorldMapSparseView> {
+    return this.world.getMapSparse(worldId, cx, cy, r, lod);
+  }
+
+  getTile(worldId: string, x: number, y: number): Promise<WorldTileView> {
+    return this.world.getTile(worldId, x, y);
+  }
+
+  getMarches(worldId: string): Promise<MarchView[]> {
+    return this.world.getMarches(worldId);
+  }
+
+  getOccupations(worldId: string): Promise<OccupationView[]> {
+    return this.world.getOccupations(worldId);
+  }
+
+  getStationed(worldId: string): Promise<StationedView[]> {
+    return this.world.getStationed(worldId);
+  }
+
+  getTerritories(worldId: string): Promise<WorldTileView[]> {
+    return this.world.getTerritories(worldId);
+  }
+
+  joinWorld(worldId: string): Promise<PlayerWorldView> {
+    return this.world.joinWorld(worldId);
+  }
+
+  enterWorld(worldId: string, r: number, zoom: 1 | 2 | 3): Promise<EnterWorldView> {
+    return this.world.enterWorld(worldId, r, zoom);
+  }
+
+  getTransferTargets(worldId: string): Promise<ShardTransferTargetView[]> {
+    return this.world.getTransferTargets(worldId);
+  }
+
+  transferShard(fromWorldId: string, toWorldId: string): Promise<PlayerWorldView> {
+    return this.world.transferShard(fromWorldId, toWorldId);
+  }
+
+  getActiveSeason(timeoutMs?: number): Promise<{ season: number }> {
+    return this.world.getActiveSeason(timeoutMs);
+  }
+
+  resolveSeason(season: number): Promise<{ worldId: string }> {
+    return this.world.resolveSeason(season);
+  }
+
+  joinSeason(season: number): Promise<PlayerWorldView> {
+    return this.world.joinSeason(season);
+  }
+
+  abandonTile(worldId: string, x: number, y: number): Promise<PlayerWorldView> {
+    return this.world.abandonTile(worldId, x, y);
+  }
+
+  relocateBase(worldId: string, x: number, y: number): Promise<PlayerWorldView> {
+    return this.world.relocateBase(worldId, x, y);
+  }
+
+  buildWatchtower(
+    worldId: string,
+    x: number,
+    y: number
+  ): Promise<WorldTileView & { me: PlayerWorldView }> {
+    return this.world.buildWatchtower(worldId, x, y);
+  }
+
+  buildStructure(
+    worldId: string,
+    x: number,
+    y: number,
+    kind: 'arrowTower' | 'blocker'
+  ): Promise<WorldTileView & { me: PlayerWorldView }> {
+    return this.world.buildStructure(worldId, x, y, kind);
+  }
+
+  demolishStructure(worldId: string, x: number, y: number): Promise<WorldTileView> {
+    return this.world.demolishStructure(worldId, x, y);
+  }
+
+  startMarch(
+    worldId: string,
+    fromX: number,
+    fromY: number,
+    toX: number,
+    toY: number,
     kind: MarchKind,
     troops: number,
     teamId?: string,
-    /** ADR-051 (P3a/P4): 'garrison' parks the arriving team as a 驻扎 garrison (defends its 3×3 footprint, stays busy);
-     * omitted / 'idle' keeps it 停留 idle (free to re-command). Only honored server-side for kind='move'. */
-    stationMode?: 'idle' | 'garrison',
+    stationMode?: 'idle' | 'garrison'
   ): Promise<MarchView & { me: PlayerWorldView }> {
-    return this.req('POST', '/world/march', {
-      worldId, fromX, fromY, toX, toY, kind, troops,
-      ...(teamId ? { teamId } : {}),
-      ...(stationMode === 'garrison' ? { stationMode } : {}),
-    });
+    return this.world.startMarch(
+      worldId,
+      fromX,
+      fromY,
+      toX,
+      toY,
+      kind,
+      troops,
+      teamId,
+      stationMode
+    );
   }
 
-  async recallMarch(marchId: string, worldId: string): Promise<{ ok: true }> {
-    return this.req('POST', `/world/march/${encodeURIComponent(marchId)}/recall`, { worldId });
+  recallMarch(marchId: string, worldId: string): Promise<{ ok: true }> {
+    return this.world.recallMarch(marchId, worldId);
   }
 
-  /** Pay coins to instantly complete an in-transit 'return' march (2026-08-01, SLG_DESIGN_LOG §46). Cost is server-computed from remaining travel time — no coin amount is sent. */
-  async instantReturnMarch(marchId: string, worldId: string): Promise<PlayerWorldView> {
-    return this.req('POST', `/world/march/${encodeURIComponent(marchId)}/instant-return`, { worldId });
+  instantReturnMarch(marchId: string, worldId: string): Promise<PlayerWorldView> {
+    return this.world.instantReturnMarch(marchId, worldId);
   }
 
-  /** Force a team stuck in an occupation-hold back to idle immediately (garrison forfeited, no refund). */
-  async cancelOccupation(teamId: string, worldId: string): Promise<{ ok: true }> {
-    return this.req('POST', `/world/team/${encodeURIComponent(teamId)}/cancel-occupation`, { worldId });
+  cancelOccupation(teamId: string, worldId: string): Promise<{ ok: true }> {
+    return this.world.cancelOccupation(teamId, worldId);
   }
 
-  /** Recall a stationed team home (2026-07-23): dispatches a return leg tile→base; the slot frees when it arrives. */
-  async recallStationed(teamId: string, worldId: string): Promise<MarchView> {
-    return this.req('POST', `/world/team/${encodeURIComponent(teamId)}/recall-stationed`, { worldId });
+  recallStationed(teamId: string, worldId: string): Promise<MarchView> {
+    return this.world.recallStationed(teamId, worldId);
   }
 
-  // ── Troops (training queue S8-2) ──────────────────────────────────────────────────
-
-  /** Queue troop training (consumes ink + time). Returns the updated player state. */
-  async trainTroops(worldId: string, qty: number): Promise<PlayerWorldView> {
-    return this.req('POST', '/world/troops/train', { worldId, qty });
+  // ── Troops / city buildings / CC-4 (./WorldApiClient/cityOps.ts) ─────────
+  trainTroops(worldId: string, qty: number): Promise<PlayerWorldView> {
+    return this.cityOps.trainTroops(worldId, qty);
   }
 
-  /** Speed up training with coins (deducted via the commercial service). */
-  async speedupTraining(worldId: string, coins: number): Promise<PlayerWorldView> {
-    return this.req('POST', '/world/troops/speedup', { worldId, coins });
+  speedupTraining(worldId: string, coins: number): Promise<PlayerWorldView> {
+    return this.cityOps.speedupTraining(worldId, coins);
   }
 
-  // ── Defense (config embedded, S8-4) ────────────────────────────────────────
-
-  /** Read the current defense config (pre-filled by the C3 editor). tileKey='base' for the main city or '{x}:{y}' for a territory tile; returns null if not set. */
-  async getDefense(worldId: string, tileKey: string): Promise<DefenseConfig | null> {
-    return this.req('GET', `/world/defense?worldId=${encodeURIComponent(worldId)}&tileKey=${encodeURIComponent(tileKey)}`);
+  upgradeBuilding(worldId: string, key: BuildingKey): Promise<PlayerWorldView> {
+    return this.cityOps.upgradeBuilding(worldId, key);
   }
 
-  /** Set or update the defense config. tileKey='base' for the main city or '{x}:{y}' for a territory tile. */
-  async setDefense(worldId: string, tileKey: string, defenseConfig: DefenseConfig): Promise<{ ok: true }> {
-    return this.req('PUT', '/world/defense', { worldId, tileKey, defenseConfig });
+  speedupBuild(worldId: string, key: BuildingKey, coins: number): Promise<PlayerWorldView> {
+    return this.cityOps.speedupBuild(worldId, key, coins);
   }
 
-  // ── Teams (attack formation templates, G3-2c) ─────────────────────────────────────────────
-
-  /** Read the attack formation template list (pre-fills the team editor / march team selector). */
-  async getTeams(worldId: string): Promise<TeamTemplate[]> {
-    return this.req('GET', `/world/teams?worldId=${encodeURIComponent(worldId)}`);
+  distributeTroops(worldId: string, allocations: Record<string, number>): Promise<{ ok: true }> {
+    return this.cityOps.distributeTroops(worldId, allocations);
   }
 
-  /** Overwrite attack formation templates (pass the full set at once, max 5 teams). */
-  async setTeams(worldId: string, teams: TeamTemplate[]): Promise<{ ok: true }> {
-    return this.req('PUT', '/world/teams', { worldId, teams });
+  recoverCard(worldId: string, cardInstanceId: string): Promise<{ ok: true }> {
+    return this.cityOps.recoverCard(worldId, cardInstanceId);
   }
 
-  // ── Siege replay (spectator replay, G3-2c) ──────────────────────────────────────────
-
-  /**
-   * Fetch the replay level for a key siege (seed + LevelDefinition reconstructed from both armies). Readable by both attacker and defender.
-   * Client uses the returned seed to headlessly re-run in siege mode with an empty ReplayInputSource → exact byte-for-byte reproduction.
-   */
-  async getSiegeReplay(worldId: string, siegeId: string): Promise<SiegeReplayView> {
-    return this.req('GET', `/world/siege/${encodeURIComponent(siegeId)}/replay?worldId=${encodeURIComponent(worldId)}`);
+  // ── Defense / teams (./WorldApiClient/defenseTeams.ts) ───────────────────
+  getDefense(worldId: string, tileKey: string): Promise<DefenseConfig | null> {
+    return this.defenseTeams.getDefense(worldId, tileKey);
   }
 
-  /** Recent siege battle reports (attacker or defender), newest first — backing the last-100 replay browser. */
-  async listSieges(worldId: string, limit = 100): Promise<SiegeSummaryView[]> {
-    return this.req('GET', `/world/sieges?worldId=${encodeURIComponent(worldId)}&limit=${limit}`);
+  setDefense(
+    worldId: string,
+    tileKey: string,
+    defenseConfig: DefenseConfig
+  ): Promise<{ ok: true }> {
+    return this.defenseTeams.setDefense(worldId, tileKey, defenseConfig);
   }
 
-  // ── Nations (nation system S8-6.5) ───────────────────────────────────────────────
-
-  async getNations(worldId: string): Promise<NationView[]> {
-    return this.req('GET', `/world/nations?worldId=${encodeURIComponent(worldId)}`);
+  getTeams(worldId: string): Promise<TeamTemplate[]> {
+    return this.defenseTeams.getTeams(worldId);
   }
 
-  async setNationName(worldId: string, capitalIdx: number, name: string): Promise<{ ok: true }> {
-    return this.req('POST', `/world/nations/${capitalIdx}/name`, { worldId, name });
+  setTeams(worldId: string, teams: TeamTemplate[]): Promise<{ ok: true }> {
+    return this.defenseTeams.setTeams(worldId, teams);
   }
 
-  // ── Season (S8-7) ──────────────────────────────────────────────────────
-
-  async getSeason(worldId: string): Promise<SeasonView> {
-    return this.req('GET', `/world/season?worldId=${encodeURIComponent(worldId)}`);
+  // ── Siege replay (./WorldApiClient/siege.ts) ──────────────────────────────
+  getSiegeReplay(worldId: string, siegeId: string): Promise<SiegeReplayView> {
+    return this.siege.getSiegeReplay(worldId, siegeId);
   }
 
-  // ── SLG Shop (monetization S8-8) ────────────────────────────────────────────────────
-
-  async getShopItems(): Promise<SlgShopItemView[]> {
-    return this.req('GET', '/world/shop/items');
+  listSieges(worldId: string, limit?: number): Promise<SiegeSummaryView[]> {
+    return this.siege.listSieges(worldId, limit);
   }
 
-  /** Returns the updated player world state (P1-3: was mis-declared as bare {ok:true} — the server
-   *  always returned the full PlayerWorldView, so the caller can adopt it directly instead of a
-   *  separate GET /world/me). */
-  async buyShopItem(worldId: string, itemId: string): Promise<PlayerWorldView> {
-    return this.req('POST', '/world/shop/buy', { worldId, itemId });
+  // ── Nations / season (./WorldApiClient/nationsSeason.ts) ─────────────────
+  getNations(worldId: string): Promise<NationView[]> {
+    return this.nationsSeason.getNations(worldId);
   }
 
-  // ── Family ─────────────────────────────────────────────────────────────────
-
-  /** The caller's own family (live from socialsvc), or null if not in one. Not a "list of joinable families" despite the name below. */
-  async getMyFamily(): Promise<FamilyDetailView | null> {
-    return this.req('GET', '/social/family/mine', undefined, 10_000, getSocialBaseUrl());
+  setNationName(worldId: string, capitalIdx: number, name: string): Promise<{ ok: true }> {
+    return this.nationsSeason.setNationName(worldId, capitalIdx, name);
   }
 
-  async listFamilies(): Promise<FamilyView[]> {
-    const fam = await this.getMyFamily();
-    return fam ? [fam] : [];
+  getSeason(worldId: string): Promise<SeasonView> {
+    return this.nationsSeason.getSeason(worldId);
   }
 
-  async getFamily(familyId: string): Promise<FamilyDetailView> {
-    return this.req('GET', `/social/family/${encodeURIComponent(familyId)}`, undefined, 10_000, getSocialBaseUrl());
+  // ── SLG shop (./WorldApiClient/shop.ts) ───────────────────────────────────
+  getShopItems(): Promise<SlgShopItemView[]> {
+    return this.slgShop.getShopItems();
   }
 
-  async createFamily(name: string, tag: string): Promise<FamilyDetailView> {
-    return this.req('POST', '/social/family', { name, tag }, 10_000, getSocialBaseUrl(), { 'X-Chat-Region': currentChatRegion() });
+  buyShopItem(worldId: string, itemId: string): Promise<PlayerWorldView> {
+    return this.slgShop.buyShopItem(worldId, itemId);
   }
 
-  /** Submit a request to join a family — leader/elder approval required before membership takes effect. */
-  async requestJoinFamily(familyId: string): Promise<{ requestId: string }> {
-    return this.req('POST', `/social/family/${encodeURIComponent(familyId)}/join`, {}, 10_000, getSocialBaseUrl());
+  // ── Family (./WorldApiClient/family.ts) ───────────────────────────────────
+  getMyFamily(): Promise<FamilyDetailView | null> {
+    return this.family.getMyFamily();
   }
 
-  /** Pending join requests for the caller's own family (leader/elder only). */
-  async listJoinRequests(): Promise<FamilyJoinRequestView[]> {
-    const res = await this.req<{ requests: FamilyJoinRequestView[] }>('GET', '/social/family/requests', undefined, 10_000, getSocialBaseUrl());
-    return res.requests;
+  listFamilies(): Promise<FamilyView[]> {
+    return this.family.listFamilies();
   }
 
-  /** Approve or reject a pending join request (leader/elder only). Rejection mails the applicant. */
-  async respondJoinRequest(requestId: string, accept: boolean): Promise<{ ok: true }> {
-    return this.req('POST', `/social/family/requests/${encodeURIComponent(requestId)}/respond`, { accept }, 10_000, getSocialBaseUrl());
+  getFamily(familyId: string): Promise<FamilyDetailView> {
+    return this.family.getFamily(familyId);
   }
 
-  /** Browse joinable families: top-N by prosperity (default), or fuzzy name-matched when `query` is given. Only families with an open slot are returned. */
-  async browseFamilies(query?: string, limit = 10): Promise<FamilyView[]> {
-    const qs = new URLSearchParams();
-    if (query) qs.set('q', query);
-    qs.set('limit', String(limit));
-    return this.req('GET', `/social/family/browse?${qs.toString()}`, undefined, 10_000, getSocialBaseUrl());
+  createFamily(name: string, tag: string): Promise<FamilyDetailView> {
+    return this.family.createFamily(name, tag);
   }
 
-  async leaveFamily(): Promise<{ ok: true }> {
-    return this.req('POST', '/social/family/leave', {}, 10_000, getSocialBaseUrl());
+  requestJoinFamily(familyId: string): Promise<{ requestId: string }> {
+    return this.family.requestJoinFamily(familyId);
   }
 
-  async kickMember(targetId: string): Promise<{ ok: true }> {
-    return this.req('POST', '/social/family/kick', { targetId }, 10_000, getSocialBaseUrl());
+  listJoinRequests(): Promise<FamilyJoinRequestView[]> {
+    return this.family.listJoinRequests();
   }
 
-  async setRole(targetId: string, role: FamilyRole): Promise<{ ok: true }> {
-    return this.req('POST', '/social/family/role', { targetId, role }, 10_000, getSocialBaseUrl());
+  respondJoinRequest(requestId: string, accept: boolean): Promise<{ ok: true }> {
+    return this.family.respondJoinRequest(requestId, accept);
   }
 
-  async dissolveFamily(): Promise<{ ok: true }> {
-    return this.req('POST', '/social/family/disband', {}, 10_000, getSocialBaseUrl());
+  browseFamilies(query?: string, limit?: number): Promise<FamilyView[]> {
+    return this.family.browseFamilies(query, limit);
   }
 
-  async sendFamilyMessage(familyId: string, body: string, senderName?: string): Promise<{ id: string }> {
-    return this.req('POST', `/social/family/${encodeURIComponent(familyId)}/messages`, { body, ...(senderName ? { senderName } : {}) }, 10_000, getSocialBaseUrl(), { 'X-Chat-Region': currentChatRegion() });
+  leaveFamily(): Promise<{ ok: true }> {
+    return this.family.leaveFamily();
   }
 
-  async getFamilyChannel(
+  kickMember(targetId: string): Promise<{ ok: true }> {
+    return this.family.kickMember(targetId);
+  }
+
+  setRole(targetId: string, role: FamilyRole): Promise<{ ok: true }> {
+    return this.family.setRole(targetId, role);
+  }
+
+  dissolveFamily(): Promise<{ ok: true }> {
+    return this.family.dissolveFamily();
+  }
+
+  sendFamilyMessage(familyId: string, body: string, senderName?: string): Promise<{ id: string }> {
+    return this.family.sendFamilyMessage(familyId, body, senderName);
+  }
+
+  getFamilyChannel(
     familyId: string,
-    opts?: { before?: number; limit?: number },
+    opts?: { before?: number; limit?: number }
   ): Promise<FamilyMessageView[]> {
-    const params = new URLSearchParams();
-    if (opts?.before) params.set('before', String(opts.before));
-    if (opts?.limit) params.set('limit', String(opts.limit));
-    const qs = params.toString() ? `?${params}` : '';
-    return this.req('GET', `/social/family/${encodeURIComponent(familyId)}/messages${qs}`, undefined, 10_000, getSocialBaseUrl());
+    return this.family.getFamilyChannel(familyId, opts);
   }
 
-  /** Unified profile-popup extras (rank/ELO + family/sect, if any) for an arbitrary player, looked up
-   *  by public id — {@link ProfilePopup} fetches this itself on open rather than each screen threading
-   *  its own copy of the same fields. All fields absent when the player has none of them. */
-  async getProfileExtra(publicId: string): Promise<PlayerProfileExtra> {
-    return this.req('GET', `/social/profile/${encodeURIComponent(publicId)}/extra`, undefined, 10_000, getSocialBaseUrl());
+  getProfileExtra(publicId: string): Promise<PlayerProfileExtra> {
+    return this.family.getProfileExtra(publicId);
   }
 
-  // ── Auction ────────────────────────────────────────────────────────────────
-
-  async listAuctions(
-    opts?: { itemType?: string; limit?: number },
-  ): Promise<AuctionView[]> {
-    const params = new URLSearchParams();
-    if (opts?.itemType) params.set('itemType', opts.itemType);
-    if (opts?.limit) params.set('limit', String(opts.limit));
-    const qs = params.toString() ? `?${params}` : '';
-    return this.req('GET', `/auction/list${qs}`, undefined, 10_000, getAuctionBaseUrl());
+  // ── Auction (./WorldApiClient/auction.ts) ─────────────────────────────────
+  listAuctions(opts?: { itemType?: string; limit?: number }): Promise<AuctionView[]> {
+    return this.auction.listAuctions(opts);
   }
 
-  async getMyListings(): Promise<AuctionView[]> {
-    return this.req('GET', '/auction/mine', undefined, 10_000, getAuctionBaseUrl());
+  getMyListings(): Promise<AuctionView[]> {
+    return this.auction.getMyListings();
   }
 
-  /**
-   * Price guardrail band for a listing category (e.g. `material:scrap`, `equip:<defId>:<level>`), used by the
-   * create-listing form to show the seller the acceptable range before submitting. Returns null when the
-   * category is unguarded / cold-start (any price allowed). floor/ceil match the server's PRICE_OUT_OF_RANGE check.
-   */
-  async getAuctionRefBand(category: string): Promise<{ ref: number; floor: number; ceil: number } | null> {
-    return this.req('GET', `/auction/refprice?category=${encodeURIComponent(category)}`, undefined, 10_000, getAuctionBaseUrl());
+  getAuctionRefBand(
+    category: string
+  ): Promise<{ ref: number; floor: number; ceil: number } | null> {
+    return this.auction.getAuctionRefBand(category);
   }
 
-  /**
-   * Create a listing. fixed mode: pass price (buy-now unit price); auction mode: pass saleMode='auction' + startPrice (opening unit price)
-   * + optional buyoutPrice (buy-now floor unit price).
-   */
-  async createAuction(
+  createAuction(
     itemType: 'material' | 'equipment' | 'card' | 'skin',
     item: Record<string, unknown>,
     qty: number,
@@ -581,132 +451,84 @@ export class WorldApiClient {
       startPrice?: number;
       buyoutPrice?: number;
       designatedBuyerId?: string;
-    },
+    }
   ): Promise<AuctionView> {
-    return this.req('POST', '/auction/create', {
-      itemType, item, qty, durationSec,
-      saleMode: opts?.saleMode ?? 'fixed',
-      ...(opts?.price != null ? { price: opts.price } : {}),
-      ...(opts?.startPrice != null ? { startPrice: opts.startPrice } : {}),
-      ...(opts?.buyoutPrice != null ? { buyoutPrice: opts.buyoutPrice } : {}),
-      ...(opts?.designatedBuyerId ? { designatedBuyerId: opts.designatedBuyerId } : {}),
-    }, 10_000, getAuctionBaseUrl());
+    return this.auction.createAuction(itemType, item, qty, durationSec, opts);
   }
 
-  async buyAuction(auctionId: string): Promise<{ ok: true }> {
-    return this.req('POST', `/auction/${encodeURIComponent(auctionId)}/buy`, {}, 10_000, getAuctionBaseUrl());
+  buyAuction(auctionId: string): Promise<{ ok: true }> {
+    return this.auction.buyAuction(auctionId);
   }
 
-  /** Place a bid (saleMode='auction'). amount = bid unit price; reaching or exceeding buyoutPrice closes the auction immediately. */
-  async placeBid(auctionId: string, amount: number): Promise<AuctionView> {
-    return this.req('POST', `/auction/${encodeURIComponent(auctionId)}/bid`, { amount }, 10_000, getAuctionBaseUrl());
+  placeBid(auctionId: string, amount: number): Promise<AuctionView> {
+    return this.auction.placeBid(auctionId, amount);
   }
 
-  async cancelAuction(auctionId: string): Promise<{ ok: true }> {
-    return this.req('POST', `/auction/${encodeURIComponent(auctionId)}/cancel`, {}, 10_000, getAuctionBaseUrl());
+  cancelAuction(auctionId: string): Promise<{ ok: true }> {
+    return this.auction.cancelAuction(auctionId);
   }
 
-  // ── Sect (S8-4b) ────────────────────────────────────────────────────────
-
-  async listSects(worldId: string): Promise<SectView[]> {
-    return this.req('GET', `/sect/list?worldId=${encodeURIComponent(worldId)}`);
+  // ── Sect (./WorldApiClient/sect.ts) ───────────────────────────────────────
+  listSects(worldId: string): Promise<SectView[]> {
+    return this.sect.listSects(worldId);
   }
 
-  async getSect(sectId: string): Promise<SectDetailView> {
-    return this.req('GET', `/sect/${encodeURIComponent(sectId)}`);
+  getSect(sectId: string): Promise<SectDetailView> {
+    return this.sect.getSect(sectId);
   }
 
-  async createSect(worldId: string, name: string, tag: string): Promise<SectDetailView> {
-    return this.req('POST', '/sect/create', { worldId, name, tag });
+  createSect(worldId: string, name: string, tag: string): Promise<SectDetailView> {
+    return this.sect.createSect(worldId, name, tag);
   }
 
-  async joinSect(worldId: string, sectId: string): Promise<{ ok: true }> {
-    return this.req('POST', '/sect/join', { worldId, sectId });
+  joinSect(worldId: string, sectId: string): Promise<{ ok: true }> {
+    return this.sect.joinSect(worldId, sectId);
   }
 
-  async leaveSect(worldId: string): Promise<{ ok: true }> {
-    return this.req('POST', '/sect/leave', { worldId });
+  leaveSect(worldId: string): Promise<{ ok: true }> {
+    return this.sect.leaveSect(worldId);
   }
 
-  async dissolveSect(worldId: string): Promise<{ ok: true }> {
-    return this.req('POST', '/sect/dissolve', { worldId });
+  dissolveSect(worldId: string): Promise<{ ok: true }> {
+    return this.sect.dissolveSect(worldId);
   }
 
-  async allySect(worldId: string, targetSectId: string): Promise<{ ok: true }> {
-    return this.req('POST', '/sect/ally', { worldId, targetSectId });
+  allySect(worldId: string, targetSectId: string): Promise<{ ok: true }> {
+    return this.sect.allySect(worldId, targetSectId);
   }
 
-  async unallySect(worldId: string, targetSectId: string): Promise<{ ok: true }> {
-    return this.req('POST', '/sect/unally', { worldId, targetSectId });
+  unallySect(worldId: string, targetSectId: string): Promise<{ ok: true }> {
+    return this.sect.unallySect(worldId, targetSectId);
   }
 
-  async voteRemoveSectLeader(worldId: string, nomineeFamilyId: string): Promise<SectVoteResult> {
-    return this.req('POST', '/sect/vote-remove-leader', { worldId, nomineeFamilyId });
+  voteRemoveSectLeader(worldId: string, nomineeFamilyId: string): Promise<SectVoteResult> {
+    return this.sect.voteRemoveSectLeader(worldId, nomineeFamilyId);
   }
 
-  async sendSectMessage(worldId: string, body: string, senderName?: string): Promise<SectMessageView> {
-    return this.req('POST', '/sect/message', { worldId, body, ...(senderName ? { senderName } : {}) });
+  sendSectMessage(worldId: string, body: string, senderName?: string): Promise<SectMessageView> {
+    return this.sect.sendSectMessage(worldId, body, senderName);
   }
 
-  async getSectChannel(
+  getSectChannel(
     worldId: string,
-    opts?: { before?: number; limit?: number },
+    opts?: { before?: number; limit?: number }
   ): Promise<SectMessageView[]> {
-    const params = new URLSearchParams({ worldId });
-    if (opts?.before) params.set('before', String(opts.before));
-    if (opts?.limit) params.set('limit', String(opts.limit));
-    return this.req('GET', `/sect/channel?${params}`);
+    return this.sect.getSectChannel(worldId, opts);
   }
 
-  // ── World channel (nation/public chat, S6-4, 50 coins per message) ──────────────────────────────
-
-  async getWorldChannel(
+  // ── World channel (./WorldApiClient/worldChannel.ts) ──────────────────────
+  getWorldChannel(
     worldId: string,
-    opts?: { before?: number; limit?: number },
+    opts?: { before?: number; limit?: number }
   ): Promise<WorldChatMessage[]> {
-    const params = new URLSearchParams({ worldId });
-    if (opts?.before) params.set('before', String(opts.before));
-    if (opts?.limit) params.set('limit', String(opts.limit));
-    return this.req('GET', `/nation/channel?${params}`);
+    return this.worldChannel.getWorldChannel(worldId, opts);
   }
 
-  async sendWorldChannelMessage(
+  sendWorldChannelMessage(
     worldId: string,
     body: string,
-    senderName: string,
+    senderName: string
   ): Promise<WorldChatMessage> {
-    return this.req('POST', '/nation/message', { worldId, body, senderName });
-  }
-
-  // ── City buildings (SLG_CITY_DESIGN P1) ──────────────────────────────────
-
-  async upgradeBuilding(worldId: string, key: BuildingKey): Promise<PlayerWorldView> {
-    return this.req('POST', '/world/build/upgrade', { worldId, key });
-  }
-
-  async speedupBuild(worldId: string, key: BuildingKey, coins: number): Promise<PlayerWorldView> {
-    return this.req('POST', '/world/build/speedup', { worldId, key, coins });
-  }
-
-  // ── CC-4: troop distribution and card recovery ────────────────────────────
-
-  /**
-   * Distribute troops from the base troop stock to card slots (CC-4, CHARACTER_CARDS_DESIGN §6.5).
-   * allocations: cardInstanceId → troops to add. Server validates stock + troopCap per card.
-   */
-  async distributeTroops(
-    worldId: string,
-    allocations: Record<string, number>,
-  ): Promise<{ ok: true }> {
-    return this.req('POST', '/world/troops/distribute', { worldId, allocations });
-  }
-
-  /**
-   * Spend coins to immediately recover an injured card (CC-4, CHARACTER_CARDS_DESIGN §7.2).
-   * Clears injuredUntil for the card; unlocks the team if no remaining injuries.
-   * Insufficient coins → WorldApiError('INSUFFICIENT_FUNDS').
-   */
-  async recoverCard(worldId: string, cardInstanceId: string): Promise<{ ok: true }> {
-    return this.req('POST', '/world/troops/recover', { worldId, cardInstanceId });
+    return this.worldChannel.sendWorldChannelMessage(worldId, body, senderName);
   }
 }

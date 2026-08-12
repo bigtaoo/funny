@@ -1,10 +1,18 @@
 // Network actions + their confirm dialogs: create / browse-join, leave, dissolve, remove-leader vote,
 // and ally / unally management. Each mutation calls the world API, refreshes state, and re-renders.
+//
+// ActionsPanel depends on DataPanel (via the narrow DataHandlers interface — loadMySect/loadChannel)
+// and ModalsPanel (via ModalsHandlers — showSectPickModal/showConfirm), but neither depends back on
+// Actions: one-way, so a plain independent class over `core` + `data` + `modals` (2026-08-11
+// converted from the former `XMixin(Base)` inheritance chain, per claudedocs/client-modules.md's
+// split-form priority note). RenderPanel and InputPanel depend on Actions in turn.
 import { t } from '../../i18n';
 import { ui as C } from '../../render/sketchUi';
 import type { SectView } from '../../net/WorldApiClient';
-import { type Constructor, type SectSceneBaseCtor } from './base';
 import { withTimeout } from '../../ui/busyTracker';
+import type { SectSceneCore } from './core';
+import type { DataHandlers } from './data';
+import type { ModalsHandlers } from './modals';
 
 export interface ActionsHandlers {
   doCreate(): Promise<void>;
@@ -26,232 +34,248 @@ export interface ActionsHandlers {
   doSendChannelMessage(): Promise<void>;
 }
 
-export function ActionsMixin<TBase extends SectSceneBaseCtor>(Base: TBase): TBase & Constructor<ActionsHandlers> {
-  return class extends Base {
-    async doCreate(): Promise<void> {
-      if (!this.createName.trim() || !this.createTag.trim()) {
-        this.showToast(t('sect.err.badReq'), C.red); return;
-      }
-      if (this.bt.busy) return;
-      this.bt.start();
-      this.render();
-      try {
-        this.sect = await withTimeout(this.cb.worldApi.createSect(this.cb.worldId, this.createName.trim(), this.createTag.trim()));
-        this.messages = [];
-        this.mode = 'mySect';
-        this.activeTab = 'families';
-        this.render();
-        // SECT_CREATE_COST was spent server-side (commercial service, off the createSect
-        // response) — pull the deducted balance back into the local wallet cache.
-        await this.cb.refreshWallet();
-      } catch (e) {
-        this.showToast(this.errorMsg(e), C.red);
-      } finally {
-        this.bt.stop();
-        this.render();
-      }
-    }
+export class ActionsPanel implements ActionsHandlers {
+  constructor(
+    private readonly core: SectSceneCore,
+    private readonly data: DataHandlers,
+    private readonly modals: ModalsHandlers
+  ) {}
 
-    async openBrowseList(): Promise<void> {
-      try {
-        this.sectsCache = await this.cb.worldApi.listSects(this.cb.worldId);
-        this.showSectPickModal(this.sectsCache, (sid) => void this.doJoin(sid), 'sect.noSects');
-      } catch (e) {
-        this.showToast(this.errorMsg(e), C.red);
-      }
+  async doCreate(): Promise<void> {
+    const core = this.core;
+    if (!core.createName.trim() || !core.createTag.trim()) {
+      core.showToast(t('sect.err.badReq'), C.red); return;
     }
+    if (core.bt.busy) return;
+    core.bt.start();
+    core.render();
+    try {
+      core.sect = await withTimeout(core.cb.worldApi.createSect(core.cb.worldId, core.createName.trim(), core.createTag.trim()));
+      core.messages = [];
+      core.mode = 'mySect';
+      core.activeTab = 'families';
+      core.render();
+      // SECT_CREATE_COST was spent server-side (commercial service, off the createSect
+      // response) — pull the deducted balance back into the local wallet cache.
+      await core.cb.refreshWallet();
+    } catch (e) {
+      core.showToast(core.errorMsg(e), C.red);
+    } finally {
+      core.bt.stop();
+      core.render();
+    }
+  }
 
-    async doJoin(sectId: string): Promise<void> {
-      if (this.bt.busy) return;
-      this.closeModal();
-      this.bt.start();
-      this.render();
-      try {
-        await withTimeout(this.cb.worldApi.joinSect(this.cb.worldId, sectId));
-        await this.loadMySect(sectId);
-      } catch (e) {
-        this.showToast(this.errorMsg(e), C.red);
-      } finally {
-        this.bt.stop();
-        this.render();
-      }
+  async openBrowseList(): Promise<void> {
+    const core = this.core;
+    try {
+      core.sectsCache = await core.cb.worldApi.listSects(core.cb.worldId);
+      this.modals.showSectPickModal(core.sectsCache, (sid) => void this.doJoin(sid), 'sect.noSects');
+    } catch (e) {
+      core.showToast(core.errorMsg(e), C.red);
     }
+  }
 
-    confirmLeave(): void {
-      this.showConfirm(t('sect.confirmLeave'), () => void this.doLeave());
+  async doJoin(sectId: string): Promise<void> {
+    const core = this.core;
+    if (core.bt.busy) return;
+    core.closeModal();
+    core.bt.start();
+    core.render();
+    try {
+      await withTimeout(core.cb.worldApi.joinSect(core.cb.worldId, sectId));
+      await this.data.loadMySect(sectId);
+    } catch (e) {
+      core.showToast(core.errorMsg(e), C.red);
+    } finally {
+      core.bt.stop();
+      core.render();
     }
+  }
 
-    async doLeave(): Promise<void> {
-      if (this.bt.busy) return;
-      this.closeModal();
-      this.bt.start();
-      this.render();
-      try {
-        await withTimeout(this.cb.worldApi.leaveSect(this.cb.worldId));
-        this.sect = null; this.messages = [];
-        this.mode = 'noSect';
-      } catch (e) {
-        this.showToast(this.errorMsg(e), C.red);
-      } finally {
-        this.bt.stop();
-        this.render();
-      }
-    }
+  confirmLeave(): void {
+    this.modals.showConfirm(t('sect.confirmLeave'), () => void this.doLeave());
+  }
 
-    confirmDissolve(): void {
-      this.showConfirm(t('sect.confirmDissolve'), () => void this.doDissolve());
+  async doLeave(): Promise<void> {
+    const core = this.core;
+    if (core.bt.busy) return;
+    core.closeModal();
+    core.bt.start();
+    core.render();
+    try {
+      await withTimeout(core.cb.worldApi.leaveSect(core.cb.worldId));
+      core.sect = null; core.messages = [];
+      core.mode = 'noSect';
+    } catch (e) {
+      core.showToast(core.errorMsg(e), C.red);
+    } finally {
+      core.bt.stop();
+      core.render();
     }
+  }
 
-    async doDissolve(): Promise<void> {
-      if (this.bt.busy) return;
-      this.closeModal();
-      this.bt.start();
-      this.render();
-      try {
-        await withTimeout(this.cb.worldApi.dissolveSect(this.cb.worldId));
-        this.sect = null; this.messages = [];
-        this.mode = 'noSect';
-      } catch (e) {
-        this.showToast(this.errorMsg(e), C.red);
-      } finally {
-        this.bt.stop();
-        this.render();
-      }
-    }
+  confirmDissolve(): void {
+    this.modals.showConfirm(t('sect.confirmDissolve'), () => void this.doDissolve());
+  }
 
-    confirmVote(nomineeFamilyId: string, nomineeLabel: string): void {
-      this.showConfirm(t('sect.confirmVote', { name: nomineeLabel }), () => void this.doVote(nomineeFamilyId));
+  async doDissolve(): Promise<void> {
+    const core = this.core;
+    if (core.bt.busy) return;
+    core.closeModal();
+    core.bt.start();
+    core.render();
+    try {
+      await withTimeout(core.cb.worldApi.dissolveSect(core.cb.worldId));
+      core.sect = null; core.messages = [];
+      core.mode = 'noSect';
+    } catch (e) {
+      core.showToast(core.errorMsg(e), C.red);
+    } finally {
+      core.bt.stop();
+      core.render();
     }
+  }
 
-    async doVote(nomineeFamilyId: string): Promise<void> {
-      if (this.bt.busy) return;
-      this.closeModal();
-      this.bt.start();
-      this.render();
-      try {
-        const res = await withTimeout(this.cb.worldApi.voteRemoveSectLeader(this.cb.worldId, nomineeFamilyId));
-        this.showToast(
-          res.passed ? t('sect.votePassed') : t('sect.voteCounted', { cur: res.voteCount, need: res.needed }),
-          res.passed ? C.accent : C.dark,
-        );
-        if (this.sect) await this.loadMySect(this.sect.sectId);
-      } catch (e) {
-        this.showToast(this.errorMsg(e), C.red);
-      } finally {
-        this.bt.stop();
-        this.render();
-      }
-    }
+  confirmVote(nomineeFamilyId: string, nomineeLabel: string): void {
+    this.modals.showConfirm(t('sect.confirmVote', { name: nomineeLabel }), () => void this.doVote(nomineeFamilyId));
+  }
 
-    async openAllyList(): Promise<void> {
-      if (!this.sect) return;
-      const sect = this.sect;
-      try {
-        this.sectsCache = await this.cb.worldApi.listSects(this.cb.worldId);
-        const candidates = this.sectsCache.filter(
-          s => s.sectId !== sect.sectId && !sect.allySectIds.includes(s.sectId),
-        );
-        this.showSectPickModal(candidates, (sid) => {
-          const target = candidates.find(s => s.sectId === sid);
-          this.confirmAlly(sid, target ? `[${target.tag}] ${target.name}` : sid);
-        }, 'sect.noSects');
-      } catch (e) {
-        this.showToast(this.errorMsg(e), C.red);
-      }
+  async doVote(nomineeFamilyId: string): Promise<void> {
+    const core = this.core;
+    if (core.bt.busy) return;
+    core.closeModal();
+    core.bt.start();
+    core.render();
+    try {
+      const res = await withTimeout(core.cb.worldApi.voteRemoveSectLeader(core.cb.worldId, nomineeFamilyId));
+      core.showToast(
+        res.passed ? t('sect.votePassed') : t('sect.voteCounted', { cur: res.voteCount, need: res.needed }),
+        res.passed ? C.accent : C.dark,
+      );
+      if (core.sect) await this.data.loadMySect(core.sect.sectId);
+    } catch (e) {
+      core.showToast(core.errorMsg(e), C.red);
+    } finally {
+      core.bt.stop();
+      core.render();
     }
+  }
 
-    /** Read-only current-allies list — open to every member (not just the leader) so regular
-     *  members can see who the sect is allied with. No unally action (management is leader-only). */
-    async openAlliesView(): Promise<void> {
-      if (!this.sect) return;
-      const sect = this.sect;
-      try {
-        this.sectsCache = await this.cb.worldApi.listSects(this.cb.worldId);
-        const allies = sect.allySectIds
-          .map(id => this.sectsCache.find(s => s.sectId === id))
-          .filter((s): s is SectView => !!s);
-        this.showSectPickModal(allies, () => {}, 'sect.noAllies', true);
-      } catch (e) {
-        this.showToast(this.errorMsg(e), C.red);
-      }
+  async openAllyList(): Promise<void> {
+    const core = this.core;
+    if (!core.sect) return;
+    const sect = core.sect;
+    try {
+      core.sectsCache = await core.cb.worldApi.listSects(core.cb.worldId);
+      const candidates = core.sectsCache.filter(
+        s => s.sectId !== sect.sectId && !sect.allySectIds.includes(s.sectId),
+      );
+      this.modals.showSectPickModal(candidates, (sid) => {
+        const target = candidates.find(s => s.sectId === sid);
+        this.confirmAlly(sid, target ? `[${target.tag}] ${target.name}` : sid);
+      }, 'sect.noSects');
+    } catch (e) {
+      core.showToast(core.errorMsg(e), C.red);
     }
+  }
 
-    confirmAlly(targetSectId: string, label: string): void {
-      this.showConfirm(t('sect.confirmAlly', { name: label }), () => void this.doAlly(targetSectId));
+  /** Read-only current-allies list — open to every member (not just the leader) so regular
+   *  members can see who the sect is allied with. No unally action (management is leader-only). */
+  async openAlliesView(): Promise<void> {
+    const core = this.core;
+    if (!core.sect) return;
+    const sect = core.sect;
+    try {
+      core.sectsCache = await core.cb.worldApi.listSects(core.cb.worldId);
+      const allies = sect.allySectIds
+        .map(id => core.sectsCache.find(s => s.sectId === id))
+        .filter((s): s is SectView => !!s);
+      this.modals.showSectPickModal(allies, () => {}, 'sect.noAllies', true);
+    } catch (e) {
+      core.showToast(core.errorMsg(e), C.red);
     }
+  }
 
-    async doAlly(targetSectId: string): Promise<void> {
-      if (this.bt.busy) return;
-      this.closeModal();
-      this.bt.start();
-      this.render();
-      try {
-        await withTimeout(this.cb.worldApi.allySect(this.cb.worldId, targetSectId));
-        if (this.sect) await this.loadMySect(this.sect.sectId);
-      } catch (e) {
-        this.showToast(this.errorMsg(e), C.red);
-      } finally {
-        this.bt.stop();
-        this.render();
-      }
-    }
+  confirmAlly(targetSectId: string, label: string): void {
+    this.modals.showConfirm(t('sect.confirmAlly', { name: label }), () => void this.doAlly(targetSectId));
+  }
 
-    async openManageAllies(): Promise<void> {
-      if (!this.sect) return;
-      const sect = this.sect;
-      try {
-        // Resolve ally ids → names via the world sect list.
-        this.sectsCache = await this.cb.worldApi.listSects(this.cb.worldId);
-        const allies = sect.allySectIds
-          .map(id => this.sectsCache.find(s => s.sectId === id))
-          .filter((s): s is SectView => !!s);
-        this.showSectPickModal(allies, (sid) => {
-          const target = allies.find(s => s.sectId === sid);
-          this.confirmUnally(sid, target ? `[${target.tag}] ${target.name}` : sid);
-        }, 'sect.noAllies');
-      } catch (e) {
-        this.showToast(this.errorMsg(e), C.red);
-      }
+  async doAlly(targetSectId: string): Promise<void> {
+    const core = this.core;
+    if (core.bt.busy) return;
+    core.closeModal();
+    core.bt.start();
+    core.render();
+    try {
+      await withTimeout(core.cb.worldApi.allySect(core.cb.worldId, targetSectId));
+      if (core.sect) await this.data.loadMySect(core.sect.sectId);
+    } catch (e) {
+      core.showToast(core.errorMsg(e), C.red);
+    } finally {
+      core.bt.stop();
+      core.render();
     }
+  }
 
-    confirmUnally(targetSectId: string, label: string): void {
-      this.showConfirm(t('sect.confirmUnally', { name: label }), () => void this.doUnally(targetSectId));
+  async openManageAllies(): Promise<void> {
+    const core = this.core;
+    if (!core.sect) return;
+    const sect = core.sect;
+    try {
+      // Resolve ally ids → names via the world sect list.
+      core.sectsCache = await core.cb.worldApi.listSects(core.cb.worldId);
+      const allies = sect.allySectIds
+        .map(id => core.sectsCache.find(s => s.sectId === id))
+        .filter((s): s is SectView => !!s);
+      this.modals.showSectPickModal(allies, (sid) => {
+        const target = allies.find(s => s.sectId === sid);
+        this.confirmUnally(sid, target ? `[${target.tag}] ${target.name}` : sid);
+      }, 'sect.noAllies');
+    } catch (e) {
+      core.showToast(core.errorMsg(e), C.red);
     }
+  }
 
-    async doUnally(targetSectId: string): Promise<void> {
-      if (this.bt.busy) return;
-      this.closeModal();
-      this.bt.start();
-      this.render();
-      try {
-        await withTimeout(this.cb.worldApi.unallySect(this.cb.worldId, targetSectId));
-        if (this.sect) await this.loadMySect(this.sect.sectId);
-      } catch (e) {
-        this.showToast(this.errorMsg(e), C.red);
-      } finally {
-        this.bt.stop();
-        this.render();
-      }
-    }
+  confirmUnally(targetSectId: string, label: string): void {
+    this.modals.showConfirm(t('sect.confirmUnally', { name: label }), () => void this.doUnally(targetSectId));
+  }
 
-    async doSendChannelMessage(): Promise<void> {
-      const body = this.channelInput.trim();
-      if (!body || this.channelSending || !this.sect) return;
-      if (this.hiddenInput) { this.hiddenInput.remove(); this.hiddenInput = null; }
-      this.channelActive = false;
-      this.channelSending = true;
-      this.channelStick = true; // sending always snaps to the newest line (renderChannel pins to bottom)
-      this.render();
-      try {
-        await this.cb.worldApi.sendSectMessage(this.cb.worldId, body, this.cb.playerName);
-        this.channelInput = '';
-        await this.loadChannel();
-      } catch (e) {
-        this.showToast(this.errorMsg(e), C.red);
-      } finally {
-        this.channelSending = false;
-        if (!this.destroyed) this.render();
-      }
+  async doUnally(targetSectId: string): Promise<void> {
+    const core = this.core;
+    if (core.bt.busy) return;
+    core.closeModal();
+    core.bt.start();
+    core.render();
+    try {
+      await withTimeout(core.cb.worldApi.unallySect(core.cb.worldId, targetSectId));
+      if (core.sect) await this.data.loadMySect(core.sect.sectId);
+    } catch (e) {
+      core.showToast(core.errorMsg(e), C.red);
+    } finally {
+      core.bt.stop();
+      core.render();
     }
-  };
+  }
+
+  async doSendChannelMessage(): Promise<void> {
+    const core = this.core;
+    const body = core.channelInput.trim();
+    if (!body || core.channelSending || !core.sect) return;
+    if (core.hiddenInput) { core.hiddenInput.remove(); core.hiddenInput = null; }
+    core.channelActive = false;
+    core.channelSending = true;
+    core.channelStick = true; // sending always snaps to the newest line (renderChannel pins to bottom)
+    core.render();
+    try {
+      await core.cb.worldApi.sendSectMessage(core.cb.worldId, body, core.cb.playerName);
+      core.channelInput = '';
+      await this.data.loadChannel();
+    } catch (e) {
+      core.showToast(core.errorMsg(e), C.red);
+    } finally {
+      core.channelSending = false;
+      if (!core.destroyed) core.render();
+    }
+  }
 }

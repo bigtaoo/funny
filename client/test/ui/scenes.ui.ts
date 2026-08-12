@@ -829,7 +829,7 @@ describe('LobbyScene — applyWorldAvailable', () => {
 
   it('initial state: worldOfflineBadgeLayer is empty (health not yet checked)', () => {
     const scene = buildLobby();
-    const layer = (scene as any).worldOfflineBadgeLayer as PIXI.Container;
+    const layer = (scene as any).core.worldOfflineBadgeLayer as PIXI.Container;
     expect(layer).toBeInstanceOf(PIXI.Container);
     expect(layer.children).toHaveLength(0);
     scene.destroy();
@@ -838,7 +838,7 @@ describe('LobbyScene — applyWorldAvailable', () => {
   it('applyWorldAvailable(false) draws the offline badge', () => {
     const scene = buildLobby();
     scene.applyWorldAvailable(false);
-    const layer = (scene as any).worldOfflineBadgeLayer as PIXI.Container;
+    const layer = (scene as any).core.worldOfflineBadgeLayer as PIXI.Container;
     expect(layer.children.length).toBeGreaterThan(0);
     scene.destroy();
   });
@@ -846,7 +846,7 @@ describe('LobbyScene — applyWorldAvailable', () => {
   it('applyWorldAvailable(true) keeps the badge layer empty', () => {
     const scene = buildLobby();
     scene.applyWorldAvailable(true);
-    const layer = (scene as any).worldOfflineBadgeLayer as PIXI.Container;
+    const layer = (scene as any).core.worldOfflineBadgeLayer as PIXI.Container;
     expect(layer.children).toHaveLength(0);
     scene.destroy();
   });
@@ -854,9 +854,9 @@ describe('LobbyScene — applyWorldAvailable', () => {
   it('badge is cleared after switching false → true', () => {
     const scene = buildLobby();
     scene.applyWorldAvailable(false);
-    expect((scene as any).worldOfflineBadgeLayer.children.length).toBeGreaterThan(0);
+    expect((scene as any).core.worldOfflineBadgeLayer.children.length).toBeGreaterThan(0);
     scene.applyWorldAvailable(true);
-    expect((scene as any).worldOfflineBadgeLayer.children).toHaveLength(0);
+    expect((scene as any).core.worldOfflineBadgeLayer.children).toHaveLength(0);
     scene.destroy();
   });
 
@@ -888,10 +888,10 @@ describe('LobbyScene — hit rects do not overlap', () => {
         playerName: 'Tester',
       });
 
-      const worldRect    = (scene as any).worldPillarRect  as { x: number; y: number; w: number; h: number };
-      const btnRect      = (scene as any).btnRect         as { x: number; y: number; w: number; h: number };
-      const campaignRect = (scene as any).campaignBtnRect as { x: number; y: number; w: number; h: number };
-      const dailyRect    = (scene as any).dailyBtnRect    as { x: number; y: number; w: number; h: number };
+      const worldRect    = (scene as any).core.worldPillarRect  as { x: number; y: number; w: number; h: number };
+      const btnRect      = (scene as any).core.btnRect         as { x: number; y: number; w: number; h: number };
+      const campaignRect = (scene as any).core.campaignBtnRect as { x: number; y: number; w: number; h: number };
+      const dailyRect    = (scene as any).core.dailyBtnRect    as { x: number; y: number; w: number; h: number };
 
       expect(rectsOverlap(worldRect, btnRect)).toBe(false);
       expect(rectsOverlap(worldRect, campaignRect)).toBe(false);
@@ -915,7 +915,7 @@ describe('LobbyScene — hit rects do not overlap', () => {
         playerName: 'Tester',
       });
 
-      const r = (scene as any).worldPillarRect as { x: number; y: number; w: number; h: number };
+      const r = (scene as any).core.worldPillarRect as { x: number; y: number; w: number; h: number };
       expect(r.w).toBeGreaterThan(0);
       expect(r.h).toBeGreaterThan(0);
       expect(r.x).toBeGreaterThanOrEqual(0);
@@ -953,7 +953,7 @@ describe('LobbyScene — content column width follows orientation', () => {
         playerName: 'Tester',
       });
 
-      const btnRect = (scene as any).btnRect as { x: number; y: number; w: number; h: number };
+      const btnRect = (scene as any).core.btnRect as { x: number; y: number; w: number; h: number };
       expect(btnRect.w).toBe(Math.round(layout.designWidth * expectedFrac));
 
       scene.destroy();
@@ -985,8 +985,8 @@ describe('LobbyScene — hero/pillar button size follows orientation', () => {
         playerName: 'Tester',
       });
 
-      const btnRect      = (scene as any).btnRect         as { h: number };
-      const campaignRect = (scene as any).campaignBtnRect as { h: number };
+      const btnRect      = (scene as any).core.btnRect         as { h: number };
+      const campaignRect = (scene as any).core.campaignBtnRect as { h: number };
       expect(btnRect.h).toBe(Math.round(layout.designHeight * heroFrac));
       expect(campaignRect.h).toBe(Math.round(layout.designHeight * pillarFrac));
 
@@ -1027,8 +1027,8 @@ describe('LobbyScene — identity chip row', () => {
   it('portrait: coins chip and rank chip share the same row (no longer stacked)', () => {
     const { scene } = buildOnlineLobby(...PORTRAIT);
 
-    const coinsRect = (scene as any).coinsChipRect as { x: number; y: number; w: number; h: number };
-    const rankRect  = (scene as any).rankChipRect  as { x: number; y: number; w: number; h: number };
+    const coinsRect = (scene as any).core.coinsChipRect as { x: number; y: number; w: number; h: number };
+    const rankRect  = (scene as any).core.rankChipRect  as { x: number; y: number; w: number; h: number };
 
     expect(coinsRect.w).toBeGreaterThan(0);
     expect(rankRect.w).toBeGreaterThan(0);
@@ -1042,8 +1042,8 @@ describe('LobbyScene — identity chip row', () => {
   it('portrait: rank chip is right-aligned to the header margin, profile chip is clear of both', () => {
     const { layout, scene } = buildOnlineLobby(...PORTRAIT);
 
-    const rankRect    = (scene as any).rankChipRect    as { x: number; y: number; w: number; h: number };
-    const profileRect = (scene as any).profileChipRect as { x: number; y: number; w: number; h: number };
+    const rankRect    = (scene as any).core.rankChipRect    as { x: number; y: number; w: number; h: number };
+    const profileRect = (scene as any).core.profileChipRect as { x: number; y: number; w: number; h: number };
 
     // Right-aligned to the same margin the header block uses elsewhere (w - w*0.04).
     expect(rankRect.x + rankRect.w).toBeLessThanOrEqual(Math.round(layout.designWidth * 0.96));
@@ -1058,8 +1058,8 @@ describe('LobbyScene — identity chip row', () => {
   it('landscape: coins chip and rank chip still stack vertically (unchanged)', () => {
     const { scene } = buildOnlineLobby(...LANDSCAPE);
 
-    const coinsRect = (scene as any).coinsChipRect as { x: number; y: number; w: number; h: number };
-    const rankRect  = (scene as any).rankChipRect  as { x: number; y: number; w: number; h: number };
+    const coinsRect = (scene as any).core.coinsChipRect as { x: number; y: number; w: number; h: number };
+    const rankRect  = (scene as any).core.rankChipRect  as { x: number; y: number; w: number; h: number };
 
     expect(coinsRect.y).not.toBe(rankRect.y);
     expect(rankRect.y).toBeGreaterThan(coinsRect.y); // rank sits below coins, per the 0.26/0.70 split
@@ -1085,9 +1085,9 @@ describe('LobbyScene — identity chip row', () => {
       playerName: 'tao',
     });
 
-    const profileRect = (scene as any).profileChipRect as { x: number; y: number; w: number; h: number };
-    const coinsRect   = (scene as any).coinsChipRect   as { x: number; y: number; w: number; h: number };
-    const rankRect     = (scene as any).rankChipRect     as { x: number; y: number; w: number; h: number };
+    const profileRect = (scene as any).core.profileChipRect as { x: number; y: number; w: number; h: number };
+    const coinsRect   = (scene as any).core.coinsChipRect   as { x: number; y: number; w: number; h: number };
+    const rankRect     = (scene as any).core.rankChipRect     as { x: number; y: number; w: number; h: number };
 
     expect(rectsOverlap(profileRect, coinsRect)).toBe(false);
     expect(rectsOverlap(coinsRect, rankRect)).toBe(false);
@@ -1262,26 +1262,29 @@ describe('RoomScene — code-entry keypad', () => {
   }
 });
 
-// ── EquipmentScene: mixin-split wiring ───────────────────────────────────────
-// EquipmentScene.ts (client-modules split, see claudedocs) is assembled from 5 domain
-// mixins over EquipmentSceneBase: Inventory → Craft → Detail → Assign → Reforge. The
-// cross-mixin call points below (base.render() dispatching into each domain; the detail
-// modal invoking Assign's beginAssign / Reforge's openReforgeSelect; Assign's card picker
-// calling back into Detail's doEquip) type-check purely because base.ts declares their
-// signatures via interface merging — a wrong mixin order, a missing mixin in the
-// EquipmentScene.ts chain, or a typo'd method name would still compile but throw or
-// silently no-op at runtime. These tests drive the real render dispatch + hit rects to
-// prove the wiring actually resolves to working methods, not just satisfies the compiler.
-describe('EquipmentScene — mixin-split wiring', () => {
-  it('craft tab: base.render() dispatches to CraftMixin.renderCraft, and the Craft button calls cb.craft', async () => {
+// ── EquipmentScene: domain wiring ─────────────────────────────────────────────
+// EquipmentScene.ts (client-modules split, see claudedocs) is a thin assembly composed of 5
+// domain classes over EquipmentSceneCore: InventoryPanel / CraftPanel / DetailPanel / AssignPanel /
+// ReforgePanel (2026-08-11: converted from the former `XMixin(Base)` inheritance chain to
+// composition — see claudedocs/client-modules.md's split-form priority note). The cross-domain
+// call points below (the assembly's render() dispatching into each panel; the detail modal
+// invoking AssignPanel's beginAssign / ReforgePanel's openReforgeSelect; AssignPanel's card picker
+// calling back into DetailPanel's doEquip via the lazy `core.doEquipHook`) exercise the real
+// object graph wired up in EquipmentScene's constructor — a wrong construction order or a missing
+// hook wire-up would still compile but throw or silently no-op at runtime. These tests drive the
+// real render dispatch + hit rects to prove the wiring actually resolves to working methods, not
+// just satisfies the compiler. See test/ui/composition-wiring.ui.ts for the identity-check
+// counterpart (same core/detail/assign instances shared across every panel).
+describe('EquipmentScene — domain wiring', () => {
+  it('craft tab: the assembly render() dispatches to CraftPanel.renderCraft, and the Craft button calls cb.craft', async () => {
     const { cb, calls } = buildEquipCallbacks('card1');
     const scene = new EquipmentScene(createLayout(...LANDSCAPE), new InputManager(), cb);
-    (scene as any).activeTab = 'craft';
+    (scene as any).core.activeTab = 'craft';
     (scene as any).render();
     // renderCraft must have populated hitRects with a Craft button for every affordable def.
-    const hits = (scene as any).hitRects as Array<{ action: () => void }>;
+    const hits = (scene as any).core.hitRects as Array<{ action: () => void }>;
     expect(hits.length).toBeGreaterThan(1);
-    await (scene as any).doCraft('wp_pencil');
+    await (scene as any).craft.doCraft('wp_pencil');
     expect(calls.craft).toEqual(['wp_pencil']);
     scene.destroy();
   });
@@ -1294,9 +1297,9 @@ describe('EquipmentScene — mixin-split wiring', () => {
       save.equipmentInv[`padding${i}`] = { id: `padding${i}`, defId: 'wp_pencil', rarity: 'common', level: 0, affixes: [] };
     }
     const scene = new EquipmentScene(createLayout(...LANDSCAPE), new InputManager(), cb);
-    (scene as any).activeTab = 'craft';
+    (scene as any).core.activeTab = 'craft';
     (scene as any).render();
-    const hits = (scene as any).hitRects as Array<{ owner?: string; action: () => void }>;
+    const hits = (scene as any).core.hitRects as Array<{ owner?: string; action: () => void }>;
     const pencilHit = hits.find((hh) => hh.owner === 'wp_pencil');
     expect(pencilHit).toBeDefined();
     const spy = vi.spyOn(log, 'showToastMessage');
@@ -1306,14 +1309,14 @@ describe('EquipmentScene — mixin-split wiring', () => {
     scene.destroy();
   });
 
-  it('instanceActions (equipped item): the Unequip action wired by DetailMixin calls cb.equip', async () => {
+  it('instanceActions (equipped item): the Unequip action wired by DetailPanel calls cb.equip', async () => {
     const { cb, calls } = buildEquipCallbacks('card1');
     const scene = new EquipmentScene(createLayout(...LANDSCAPE), new InputManager(), cb);
-    const save = (scene as any).cb.getSave();
+    const save = (scene as any).core.cb.getSave();
     // Actions live on the grid cell now, not the (info-only) detail modal. For this fixture
     // (fine, level 0, equipped): Enhance (materials/coins are stocked) + Unequip; not salvageable
     // or reforgeable while equipped.
-    const actions = (scene as any).instanceActions(save, save.equipmentInv.eqEquippedFine) as Array<{ key: string; fn: () => void }>;
+    const actions = (scene as any).detail.instanceActions(save, save.equipmentInv.eqEquippedFine) as Array<{ key: string; fn: () => void }>;
     expect(actions.map((a) => a.key)).toEqual(['enhance', 'unequip']);
     actions.find((a) => a.key === 'unequip')!.fn();
     await Promise.resolve();
@@ -1325,53 +1328,53 @@ describe('EquipmentScene — mixin-split wiring', () => {
   it('instanceActions(Enhance) opens the (now info+confirm) detail modal instead of firing cb.enhance directly; the modal\'s confirm button fires it with the current protect toggle', async () => {
     const { cb, calls } = buildEquipCallbacks('card1');
     const scene = new EquipmentScene(createLayout(...LANDSCAPE), new InputManager(), cb);
-    const save = (scene as any).cb.getSave();
-    const actions = (scene as any).instanceActions(save, save.equipmentInv.eqEquippedFine) as Array<{ key: string; fn: () => void }>;
+    const save = (scene as any).core.cb.getSave();
+    const actions = (scene as any).detail.instanceActions(save, save.equipmentInv.eqEquippedFine) as Array<{ key: string; fn: () => void }>;
     actions.find((a) => a.key === 'enhance')!.fn();
-    expect((scene as any).detailId).toBe('eqEquippedFine');
-    expect((scene as any).modalOpen).toBe(true);
+    expect((scene as any).core.detailId).toBe('eqEquippedFine');
+    expect((scene as any).core.modalOpen).toBe(true);
     expect(calls.enhance).toEqual([]); // opening the modal must not fire the request itself
     // No protect stones in the fixture → the toggle hit is omitted, so modalHits[0] is the confirm button.
-    const modalHits = (scene as any).modalHits as Array<{ action: () => void }>;
+    const modalHits = (scene as any).core.modalHits as Array<{ action: () => void }>;
     modalHits[0].action();
     await Promise.resolve();
     expect(calls.enhance).toEqual([['eqEquippedFine', undefined]]);
     scene.destroy();
   });
 
-  it('bag mode: instanceActions(Equip) → Assign(beginAssign) → base.render(renderAssign) → Assign(doEquipTo) → Detail(doEquip) → cb.equip', async () => {
+  it('bag mode: instanceActions(Equip) → AssignPanel(beginAssign) → assembly render(renderAssign) → AssignPanel(doEquipTo) → core.doEquipHook → DetailPanel(doEquip) → cb.equip', async () => {
     const { cb, calls } = buildEquipCallbacks(''); // '' activeCardInstanceId = bag mode
     const scene = new EquipmentScene(createLayout(...LANDSCAPE), new InputManager(), cb);
-    const save = (scene as any).cb.getSave();
+    const save = (scene as any).core.cb.getSave();
     // Unequipped common item: Enhance, Equip, Salvage (common rarity has no reforge tier → no Reforge).
-    const actions = (scene as any).instanceActions(save, save.equipmentInv.eqBagCommon) as Array<{ key: string; fn: () => void }>;
+    const actions = (scene as any).detail.instanceActions(save, save.equipmentInv.eqBagCommon) as Array<{ key: string; fn: () => void }>;
     expect(actions.map((a) => a.key)).toEqual(['enhance', 'equip', 'salvage']);
     actions.find((a) => a.key === 'equip')!.fn(); // Equip → bag mode → beginAssign('eqBagCommon', 'weapon')
-    expect((scene as any).assign).toEqual({ instId: 'eqBagCommon', slot: 'weapon' });
-    // render() dispatched to AssignMixin.renderAssign, which laid out one row per card (only card1).
+    expect((scene as any).core.assign).toEqual({ instId: 'eqBagCommon', slot: 'weapon' });
+    // render() dispatched to AssignPanel.renderAssign, which laid out one row per card (only card1).
     // renderSidebar() also always runs (even in assign mode) and only pushes a hit for the
     // INACTIVE sub-tab (drawSidebarTabs skips the active one) — so [back, Craft tab, card1 row].
-    const hits = (scene as any).hitRects as Array<{ action: () => void }>;
+    const hits = (scene as any).core.hitRects as Array<{ action: () => void }>;
     expect(hits.length).toBe(3);
     hits[2].action(); // → doEquipTo('card1') → doEquip('weapon', 'eqBagCommon', 'card1')
     await Promise.resolve();
     expect(calls.equip).toEqual([['weapon', 'eqBagCommon', 'card1']]);
-    expect((scene as any).assign).toBeNull();
+    expect((scene as any).core.assign).toBeNull();
     scene.destroy();
   });
 
-  it('reforge flow: instanceActions(Reforge) → Reforge(openReforgeSelect) → base.showConfirm → Reforge(doReforge) → cb.reforge', async () => {
+  it('reforge flow: instanceActions(Reforge) → ReforgePanel(openReforgeSelect) → core.showConfirm → ReforgePanel(doReforge) → cb.reforge', async () => {
     const { cb, calls } = buildEquipCallbacks('card1');
     const scene = new EquipmentScene(createLayout(...LANDSCAPE), new InputManager(), cb);
-    const save = (scene as any).cb.getSave();
+    const save = (scene as any).core.cb.getSave();
     // Unequipped fine item (eqBagCommon qualifies as its reforge material): Enhance, Equip, Reforge, Salvage.
-    const actions = (scene as any).instanceActions(save, save.equipmentInv.eqBagFine) as Array<{ key: string; fn: () => void }>;
+    const actions = (scene as any).detail.instanceActions(save, save.equipmentInv.eqBagFine) as Array<{ key: string; fn: () => void }>;
     expect(actions.map((a) => a.key)).toEqual(['enhance', 'equip', 'reforge', 'salvage']);
     actions.find((a) => a.key === 'reforge')!.fn(); // Reforge → openReforgeSelect(eqBagFine)
-    expect((scene as any).modalOpen).toBe(true);
-    let modalHits = (scene as any).modalHits as Array<{ action: () => void }>;
+    expect((scene as any).core.modalOpen).toBe(true);
+    let modalHits = (scene as any).core.modalHits as Array<{ action: () => void }>;
     modalHits[0].action(); // material row (eqBagCommon) → confirmReforge → showConfirm
-    modalHits = (scene as any).modalHits;
+    modalHits = (scene as any).core.modalHits;
     expect(modalHits.length).toBe(2); // showConfirm's [OK, Cancel]
     modalHits[0].action(); // OK → doReforge
     await Promise.resolve();
@@ -1384,11 +1387,11 @@ describe('EquipmentScene — mixin-split wiring', () => {
     const scene = new EquipmentScene(createLayout(...LANDSCAPE), new InputManager(), cb);
     // eqBagFine is 'fine' rarity → REFORGE_COIN_COST.fine === 80 (equipmentDefs.ts).
     save.wallet.coins = 79;
-    let actions = (scene as any).instanceActions(save, save.equipmentInv.eqBagFine) as Array<{ key: string }>;
+    let actions = (scene as any).detail.instanceActions(save, save.equipmentInv.eqBagFine) as Array<{ key: string }>;
     expect(actions.map((a) => a.key)).not.toContain('reforge');
 
     save.wallet.coins = 80;
-    actions = (scene as any).instanceActions(save, save.equipmentInv.eqBagFine) as Array<{ key: string }>;
+    actions = (scene as any).detail.instanceActions(save, save.equipmentInv.eqBagFine) as Array<{ key: string }>;
     expect(actions.map((a) => a.key)).toContain('reforge');
     scene.destroy();
   });
@@ -1396,11 +1399,11 @@ describe('EquipmentScene — mixin-split wiring', () => {
   it('regression (2026-08-03): the reforge confirm dialog states the coin cost', async () => {
     const { cb, save } = buildEquipCallbacks('card1');
     const scene = new EquipmentScene(createLayout(...LANDSCAPE), new InputManager(), cb);
-    const actions = (scene as any).instanceActions(save, save.equipmentInv.eqBagFine) as Array<{ key: string; fn: () => void }>;
+    const actions = (scene as any).detail.instanceActions(save, save.equipmentInv.eqBagFine) as Array<{ key: string; fn: () => void }>;
     actions.find((a) => a.key === 'reforge')!.fn(); // → openReforgeSelect(eqBagFine)
-    const modalHits = (scene as any).modalHits as Array<{ action: () => void }>;
+    const modalHits = (scene as any).core.modalHits as Array<{ action: () => void }>;
     modalHits[0].action(); // material row (eqBagCommon) → confirmReforge → showConfirm
-    const modalLayer = (scene as any).modalLayer as PIXI.Container;
+    const modalLayer = (scene as any).core.modalLayer as PIXI.Container;
     let sawCost = false;
     const walk = (c: PIXI.Container): void => {
       for (const ch of c.children) {
@@ -1413,15 +1416,15 @@ describe('EquipmentScene — mixin-split wiring', () => {
     scene.destroy();
   });
 
-  it('salvage flow: instanceActions(Salvage) → base.showConfirm → Detail(doSalvage) → cb.salvage', async () => {
+  it('salvage flow: instanceActions(Salvage) → core.showConfirm → DetailPanel(doSalvage) → cb.salvage', async () => {
     const { cb, calls } = buildEquipCallbacks('card1');
     const scene = new EquipmentScene(createLayout(...LANDSCAPE), new InputManager(), cb);
-    const save = (scene as any).cb.getSave();
+    const save = (scene as any).core.cb.getSave();
     // Unequipped common item, no reforge tier: Enhance, Equip, Salvage.
-    const actions = (scene as any).instanceActions(save, save.equipmentInv.eqBagCommon) as Array<{ key: string; fn: () => void }>;
+    const actions = (scene as any).detail.instanceActions(save, save.equipmentInv.eqBagCommon) as Array<{ key: string; fn: () => void }>;
     expect(actions.map((a) => a.key)).toEqual(['enhance', 'equip', 'salvage']);
     actions.find((a) => a.key === 'salvage')!.fn(); // Salvage → confirmSalvage → showConfirm
-    const modalHits = (scene as any).modalHits as Array<{ action: () => void }>;
+    const modalHits = (scene as any).core.modalHits as Array<{ action: () => void }>;
     expect(modalHits.length).toBe(2); // showConfirm's [OK, Cancel]
     modalHits[0].action(); // OK → doSalvage
     await Promise.resolve();
@@ -1436,10 +1439,10 @@ describe('EquipmentScene — mixin-split wiring', () => {
     save.equipmentInv.eqBagCommon3 = { id: 'eqBagCommon3', defId: 'wp_pencil', rarity: 'common', level: 0, affixes: [{ id: 'm_atk', value: 10 }] };
     const scene = new EquipmentScene(createLayout(...LANDSCAPE), new InputManager(), cb);
     // Action order: [Enhance, Equip, Salvage, Salvage All].
-    const actions = (scene as any).instanceActions(save, save.equipmentInv.eqBagCommon) as Array<{ key: string; fn: () => void }>;
+    const actions = (scene as any).detail.instanceActions(save, save.equipmentInv.eqBagCommon) as Array<{ key: string; fn: () => void }>;
     expect(actions.map((a) => a.key)).toEqual(['enhance', 'equip', 'salvage', 'salvageAll']);
     actions.find((a) => a.key === 'salvageAll')!.fn(); // Salvage All → confirmSalvageAll → showConfirm
-    const modalHits = (scene as any).modalHits as Array<{ action: () => void }>;
+    const modalHits = (scene as any).core.modalHits as Array<{ action: () => void }>;
     expect(modalHits.length).toBe(2); // showConfirm's [OK, Cancel]
     modalHits[0].action(); // OK → doSalvageAll
     await Promise.resolve();
@@ -1450,7 +1453,7 @@ describe('EquipmentScene — mixin-split wiring', () => {
   it('epic-rarity items never offer Salvage/Salvage All, even at +0 (ADR-050)', async () => {
     const { cb, save } = buildEquipCallbacks('card1');
     const scene = new EquipmentScene(createLayout(...LANDSCAPE), new InputManager(), cb);
-    const actions = (scene as any).instanceActions(save, save.equipmentInv.eqBagEpic) as Array<{ key: string; fn: () => void }>;
+    const actions = (scene as any).detail.instanceActions(save, save.equipmentInv.eqBagEpic) as Array<{ key: string; fn: () => void }>;
     expect(actions.map((a) => a.key)).toEqual(['enhance', 'equip']);
     scene.destroy();
   });
@@ -1459,7 +1462,7 @@ describe('EquipmentScene — mixin-split wiring', () => {
     const { cb, save } = buildEquipCallbacks('card1');
     save.equipmentInv.eqBagEpic2 = { id: 'eqBagEpic2', defId: 'wp_highlighter', rarity: 'epic', level: 0, affixes: [{ id: 'm_atk', value: 40 }] };
     const scene = new EquipmentScene(createLayout(...LANDSCAPE), new InputManager(), cb);
-    const actions = (scene as any).instanceActions(save, save.equipmentInv.eqBagEpic) as Array<{ key: string; fn: () => void }>;
+    const actions = (scene as any).detail.instanceActions(save, save.equipmentInv.eqBagEpic) as Array<{ key: string; fn: () => void }>;
     expect(actions.map((a) => a.key)).toEqual(['enhance', 'equip']);
     scene.destroy();
   });
@@ -1471,13 +1474,13 @@ describe('EquipmentScene — mixin-split wiring', () => {
   it('initialFilterSlot: defaults to "all" when absent, and seeds filterSlot when provided', () => {
     const { cb: defCb } = buildEquipCallbacks('card1');
     const defScene = new EquipmentScene(createLayout(...LANDSCAPE), new InputManager(), defCb);
-    expect((defScene as any).filterSlot).toBe('all');
+    expect((defScene as any).core.filterSlot).toBe('all');
     defScene.destroy();
 
     for (const slot of ['weapon', 'armor', 'trinket'] as const) {
       const { cb } = buildEquipCallbacks('card1');
       const scene = new EquipmentScene(createLayout(...LANDSCAPE), new InputManager(), { ...cb, initialFilterSlot: slot });
-      expect((scene as any).filterSlot).toBe(slot);
+      expect((scene as any).core.filterSlot).toBe(slot);
       // Re-render with the seeded filter live — proves it reaches renderInventory's filter path
       // (the all-weapon fixture under an armor filter exercises the empty branch) without throwing.
       expect(() => (scene as any).render()).not.toThrow();

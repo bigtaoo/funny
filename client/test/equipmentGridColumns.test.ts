@@ -1,11 +1,11 @@
-// Unit coverage for `equipGridColumns` (EquipmentScene/base.ts) — pure column-sizing math split out
+// Unit coverage for `equipGridColumns` (EquipmentScene/layout.ts) — pure column-sizing math split out
 // of InventoryMixin.renderInventory (2026-08-09 UX fix) so both the real-world portrait case and the
 // centering fallback it exists for can be pinned down without spinning up a full EquipmentScene.
 // The fallback path is never actually hit in-game today (portrait's fixed 1080 design width always
 // divides evenly into 3 columns — see the .ui.ts integration test), so this is the only place it's
 // exercised at all.
 import { describe, it, expect } from 'vitest';
-import { equipGridColumns, CELL_GAP_X, EQUIP_CELL_W_MIN, EQUIP_CELL_W_TARGET } from '../src/scenes/EquipmentScene/base';
+import { equipGridColumns, CELL_GAP_X, EQUIP_CELL_W_MIN, EQUIP_CELL_W_TARGET } from '../src/scenes/EquipmentScene/layout';
 
 describe('equipGridColumns', () => {
   it('portrait: packs 3 exact-fit columns at the real game\'s avail (~1008), no leftover / no offset', () => {

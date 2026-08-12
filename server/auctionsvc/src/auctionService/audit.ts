@@ -1,11 +1,16 @@
 // auctionsvc AuctionService split — D/G7 anomalous-trade audit scan (see ../auctionService.ts).
+//
+// Independent sibling class (2026-08-11 re-audit, converted from a linear inheritance chain to
+// composition): zero dependencies on any other layer, only `deps`.
 import { createLogger, AUDIT_WINDOW_SEC, detectAuctionAnomalies, type AuctionAnomaly, type AuctionAuditThresholds, type AuctionTradeRecord } from '@nw/shared';
 import type { AuctionDoc } from '../db';
-import { AuctionServiceTrade } from './trade';
+import type { AuctionServiceDeps } from './base';
 
 const log = createLogger('auctionsvc:service');
 
-export class AuctionServiceAudit extends AuctionServiceTrade {
+export class AuctionServiceAudit {
+  constructor(private readonly deps: AuctionServiceDeps) {}
+
   // ── D / G7 Anomalous-trade audit scan (anti-RMT, SLG_DESIGN §17.7) ─────────────────────
   /** Falls back to parsing the listing timestamp from the auctionId (`a:{sellerId}:{ts}:{seq}`) when legacy documents lack a soldAt field. */
   private soldTs(doc: AuctionDoc): number {

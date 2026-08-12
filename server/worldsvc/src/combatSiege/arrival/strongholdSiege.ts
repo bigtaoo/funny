@@ -4,7 +4,7 @@
 // cheap/engine battle + post-battle cardState write are byte-identical to applyOccupy's fight against an
 // NPC garrison (both just synthesize the defender from a garrison count and fight it), so this no longer
 // duplicates that logic locally. Takes `core` (a plain WorldCore instance) and `ctx` (the assembled
-// SiegeService, typed narrowly as SiegeServiceBase). No behavior change.
+// SiegeService, typed narrowly as SiegeCtx). No behavior change.
 import {
   strongholdGarrison,
   STRONGHOLD_LOOT_PER_LEVEL,
@@ -18,7 +18,7 @@ import type { PlayerWorldDoc, MarchDoc } from '../../db';
 import { lootSummary, emptyResources } from '../../core';
 import type { WorldCore } from '../../core';
 import { refundTroops, startReturnMarch, parkMarchInPlace } from '../../combatShared';
-import type { SiegeServiceBase } from '../base';
+import type { SiegeCtx } from '../ctx';
 import { resolveOccupationBattle, writeOccupyCardState } from '../occupationBattle';
 
 /**
@@ -31,7 +31,7 @@ import { resolveOccupationBattle, writeOccupyCardState } from '../occupationBatt
  */
 export async function applyStrongholdSiege(
   core: WorldCore,
-  ctx: SiegeServiceBase,
+  ctx: SiegeCtx,
   m: MarchDoc,
   pw: PlayerWorldDoc,
   t: number,

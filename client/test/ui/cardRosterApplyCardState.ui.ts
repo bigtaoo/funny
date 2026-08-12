@@ -42,8 +42,10 @@ function makeCard(id: string, defId: string, level: number): CardInstance {
 
 interface Rect { x: number; y: number; w: number; h: number; }
 interface SceneInternals {
-  bodyLayer: PIXI.Container;
-  hitRects: { rect: Rect; action: () => void; owner?: string }[];
+  core: {
+    bodyLayer: PIXI.Container;
+    hitRects: { rect: Rect; action: () => void; owner?: string }[];
+  };
   applyCardState(): void;
 }
 
@@ -113,8 +115,8 @@ describe('CardScene.applyCardState — late SLG fetch patches the grid in place 
 
     // Before any SLG data: neither card shows a troop count or deployed tag.
     expect(findText(scene.container, 'Deployed')).toBeNull();
-    const bodyChildrenBefore = [...internals.bodyLayer.children];
-    const cellContainers = (scene as unknown as { cellContainers: Map<string, PIXI.Container> }).cellContainers;
+    const bodyChildrenBefore = [...internals.core.bodyLayer.children];
+    const cellContainers = (scene as unknown as { list: { cellContainers: Map<string, PIXI.Container> } }).list.cellContainers;
     const containerA = cellContainers.get('a');
     const containerB = cellContainers.get('b');
     expect(containerA).toBeDefined();
@@ -135,7 +137,7 @@ describe('CardScene.applyCardState — late SLG fetch patches the grid in place 
     expect(cellContainers.get('b')).toBe(containerB);
     // Top-level bodyLayer children (sidebar tabs, per-cell containers, scroll indicator) are the
     // exact same objects in the exact same order — nothing outside the cells was touched.
-    const bodyChildrenAfter = [...internals.bodyLayer.children];
+    const bodyChildrenAfter = [...internals.core.bodyLayer.children];
     expect(bodyChildrenAfter.length).toBe(bodyChildrenBefore.length);
     expect(bodyChildrenAfter.every((c, i) => c === bodyChildrenBefore[i])).toBe(true);
 
@@ -149,7 +151,7 @@ describe('CardScene.applyCardState — late SLG fetch patches the grid in place 
     setCardState({ a: { currentTroops: 5, injuredUntil: 0, teamId: 't1' } as CardSLGState });
     internals.applyCardState();
 
-    const cellContainers = (scene as unknown as { cellContainers: Map<string, PIXI.Container> }).cellContainers;
+    const cellContainers = (scene as unknown as { list: { cellContainers: Map<string, PIXI.Container> } }).list.cellContainers;
     const containerB = cellContainers.get('b')!;
     expect(findText(containerB, 'Deployed')).toBeNull();
     expect(findText(containerB, '/')).toBeNull(); // no troop cur/cap line either
@@ -165,7 +167,7 @@ describe('CardScene.applyCardState — late SLG fetch patches the grid in place 
     internals.applyCardState();
     internals.applyCardState();
 
-    const hitsForA = internals.hitRects.filter((h) => h.owner === 'a');
+    const hitsForA = internals.core.hitRects.filter((h) => h.owner === 'a');
     expect(hitsForA).toHaveLength(1);
 
     scene.destroy();

@@ -14,7 +14,7 @@ import { createLayout } from '../../src/layout/ScalingManager';
 import { InputManager } from '../../src/inputSystem/InputManager';
 import { initI18n } from '../../src/i18n';
 import { EquipmentScene, type EquipmentCallbacks } from '../../src/scenes/EquipmentScene';
-import { MAT_BAND_H, FILTER_H, TAB_LOADOUT_GAP, LOADOUT_H } from '../../src/scenes/EquipmentScene/base';
+import { MAT_BAND_H, FILTER_H, TAB_LOADOUT_GAP, LOADOUT_H } from '../../src/scenes/EquipmentScene/layout';
 import { hubTabsHeight } from '../../src/ui/widgets/HubTabs';
 import { makeNewSave } from '../../src/game/meta/SaveData';
 import type { SaveData } from '../../src/game/meta/SaveData';
@@ -33,7 +33,7 @@ const PORTRAIT: [number, number] = [800, 1280];
 const LANDSCAPE: [number, number] = [1280, 800];
 const EQUIP_LEVEL = 8; // > 0 (stars shown), < EQUIP_MAX_LEVEL (9) so it isn't the maxed flip-animation branch
 
-interface SceneInternals { headerH: number; h: number; landscape: boolean; }
+interface SceneInternals { core: { headerH: number; h: number; landscape: boolean } }
 
 /** The loadout's enhance-star row: a plain Container (not Graphics/Sprite/Text) with exactly
  *  `count` children, positioned above the grid's own "Equipped" section item cell (which renders
@@ -93,8 +93,8 @@ describe.each([
     const internals = scene as unknown as SceneInternals;
     // Portrait's header row also draws the Inventory/Craft sub-tabs strip (hubTabsHeight) above the
     // materials band — landscape has no such strip (see renderHeaderRow).
-    const subTabsH = internals.landscape ? 0 : hubTabsHeight(internals.h);
-    const bodyTop = internals.headerH + subTabsH + MAT_BAND_H + FILTER_H + TAB_LOADOUT_GAP;
+    const subTabsH = internals.core.landscape ? 0 : hubTabsHeight(internals.core.h);
+    const bodyTop = internals.core.headerH + subTabsH + MAT_BAND_H + FILTER_H + TAB_LOADOUT_GAP;
     const cy = bodyTop + 22; // renderLoadout: const cy = y + 22
     const cellH = LOADOUT_H - 28;
     const listY = bodyTop + LOADOUT_H; // grid section starts here — anything above is the loadout strip

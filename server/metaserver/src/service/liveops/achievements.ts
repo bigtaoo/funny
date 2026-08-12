@@ -1,24 +1,13 @@
 // Live-ops achievements (S9). Split out of liveops.ts (2026-08-10, 独立函数模块 form — see liveops.ts's
-// facade comment). `claimAchievementHandler` takes an explicit `ctx` (deps + `mutateSave`/
-// `ensureCommercial`, bound by LiveOpsMixin's class body from its protected base methods). No behavior change.
+// facade comment). `claimAchievementHandler` takes `core: MetaCore` directly (2026-08-11 ctx-bind
+// cleanup — see base.ts's header: no more ctx object / bound methods, just `core.mutateSave(...)` /
+// `core.ensureCommercial(...)` as ordinary method calls). No behavior change.
 import type { FastifyReply, FastifyRequest } from 'fastify';
-import type { SaveData } from '@nw/shared';
 import { ErrorCode, err, ok, ACHIEVEMENTS, findAchievement, validateClaim } from '@nw/shared';
 import { getOrCreateSave } from '../../save.js';
 import { mirrorCoins } from '../../economy.js';
 import { grantTitleToPlayer } from '../../titles.js';
-import { accountIdOf, type ServiceDeps } from '../base.js';
-
-type MutateSaveFn = (
-  accountId: string,
-  transform: (s: SaveData) => SaveData | string,
-) => Promise<{ save: SaveData } | { error: string }>;
-
-export interface AchievementsCtx {
-  deps: ServiceDeps;
-  mutateSave: MutateSaveFn;
-  ensureCommercial: (reply: FastifyReply) => boolean;
-}
+import { accountIdOf, type ServiceDeps, type MetaCore } from '../base.js';
 
 /** Achievement definition table + my stats + claimed progress (tier computation is done client-side, §4.1/§6). */
 export async function getAchievementsHandler(deps: ServiceDeps, req: FastifyRequest) {
@@ -37,8 +26,8 @@ export async function getAchievementsHandler(deps: ServiceDeps, req: FastifyRequ
  * Record the tier first (sole winner) then deliver coins: concurrent double-taps result in only one recording and one delivery, the other sees "already claimed" and is rejected;
  * crash window (recorded but not delivered) can be compensated later via deterministic orderId — acceptable given the small one-time amount.
  */
-export async function claimAchievementHandler(ctx: AchievementsCtx, req: FastifyRequest, reply: FastifyReply) {
-  if (!ctx.ensureCommercial(reply)) return;
+export async function claimAchievementHandler(core: MetaCore, req: FastifyRequest, reply: FastifyReply) {
+  if (!core.ensureCommercial(reply)) return;
   const accountId = accountIdOf(req);
   const { achId, tier } = req.body as { achId: string; tier: number };
   if (!findAchievement(achId)) {
@@ -46,7 +35,7 @@ export async function claimAchievementHandler(ctx: AchievementsCtx, req: Fastify
   }
 
   // Atomically record the tier: equivalent to validate + $addToSet (already-claimed/not-reached checked inside transform). Success = this call is the sole winner.
-  const recorded = await ctx.mutateSave(accountId, (s) => {
+  const recorded = await core.mutateSave(accountId, (s) => {
     const claimed = s.achievements?.[achId]?.claimedTiers ?? [];
     const v = validateClaim(achId, tier, s.stats, claimed);
     if (!v.ok) return v.error; // NOT_REACHED / ALREADY_CLAIMED / BAD_REQUEST
@@ -74,7 +63,7 @@ export async function claimAchievementHandler(ctx: AchievementsCtx, req: Fastify
   // Tier recorded → deliver coins (deterministic orderId, idempotent) + mirror wallet. Amount taken from the definition (the already-validated tier).
   const def = findAchievement(achId)!;
   const coins = def.tiers[tier - 1]?.coins ?? 0;
-  const { cols, commercial, now } = ctx.deps;
+  const { cols, commercial, now } = core.deps;
   const orderId = `ach:${accountId}:${achId}:${tier}`;
   const g = await commercial.grant({ accountId, amount: coins, reason: 'achievement', orderId });
   if (!g.ok) {

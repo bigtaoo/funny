@@ -44,11 +44,17 @@ function findLabelPos(container: PIXI.Container, label: string): { x: number; y:
   return found;
 }
 
-/** Tap the tab whose visible label is `label` via the scene's real hit list. */
+/** Tap the tab whose visible label is `label` via the scene's real hit list. Shared across
+ *  GachaScene/BattlePassScene/ShopScene instances in this file, which no longer all have the same
+ *  shape: GachaScene/ShopScene keep `hits` on a composed `core` field (2026-08-11 composition
+ *  conversion — see claudedocs/client-modules.md's split-form priority note) while unconverted
+ *  scenes still carry it flattened directly on the instance — try the flattened field first, fall
+ *  back to `core.hits`. */
 function tapTab(scene: { container: PIXI.Container }, label: string): void {
   const pos = findLabelPos(scene.container, label);
   expect(pos, `tab labeled "${label}" not found in rendered tree`).not.toBeNull();
-  const hits = (scene as unknown as { hits: Hit[] }).hits;
+  const s = scene as unknown as { hits?: Hit[]; core?: { hits: Hit[] } };
+  const hits = s.hits ?? s.core!.hits;
   const hit = hits.find(({ rect: r }) =>
     pos!.x >= r.x && pos!.x <= r.x + r.w && pos!.y >= r.y && pos!.y <= r.y + r.h);
   expect(hit, `no hit rect under tab "${label}"`).toBeDefined();

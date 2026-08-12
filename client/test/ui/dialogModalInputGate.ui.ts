@@ -4,7 +4,8 @@
 //
 // Root cause: FeedbackDialog/AppealDialog are stage-level overlays (app.ts mounts them on
 // `app.stage`) sitting on top of a scene that stays alive AND still subscribed to the InputManager.
-// The Lobby routes taps through `input.onDown(...)` (LobbyScene/base.ts), fed straight from DOM
+// The Lobby routes taps through `input.onDown(...)` (LobbyScene/build.ts's handleDown, wired from
+// the outer LobbyScene.ts assembly), fed straight from DOM
 // pointer listeners by WebAdapter — PixiJS hit-testing is not involved at all, so the 2026-08-09
 // "dim backdrop swallows taps" fix (eventMode/hitArea, covered in caretRegression.ui.ts) could not
 // stop it: no display object can block an event that never enters PixiJS. Result: every tap on the
@@ -141,7 +142,7 @@ describe('Stage-level dialogs — taps must not reach the live scene underneath 
           m.fired.length = 0;
           m.input._emitDown(c.x, c.y);
           hit.push(m.fired.join(',') || '(none)');
-          (m.lobby as unknown as { state: string }).state = 'idle'; // undo onStartRanked's state latch
+          (m.lobby as unknown as { core: { state: string } }).core.state = 'idle'; // undo onStartRanked's state latch
         }
         // Pinned exactly, not just "something fired": if the Lobby layout moves these apart on its
         // own one day, this test should be re-read rather than silently keep passing on a new overlap.
@@ -155,7 +156,7 @@ describe('Stage-level dialogs — taps must not reach the live scene underneath 
 
         for (const c of m.controls) m.input._emitDown(c.x, c.y);
         expect(m.fired).toEqual([]);
-        expect((m.lobby as unknown as { state: string }).state).toBe('idle');
+        expect((m.lobby as unknown as { core: { state: string } }).core.state).toBe('idle');
         m.destroy();
       });
 
@@ -322,7 +323,7 @@ describe('FeedbackDialog — the reported open/send/reopen/close sequence (2026-
     const revived: string[] = [];
     const lobby2 = new LobbyScene(createLayout(800, 1280), a.input, lobbyCallbacks(revived));
     a.mgr.goto(lobby2);
-    const strip = (lobby2 as unknown as { feedbackStripRect: { x: number; y: number; w: number; h: number } }).feedbackStripRect;
+    const strip = (lobby2 as unknown as { core: { feedbackStripRect: { x: number; y: number; w: number; h: number } } }).core.feedbackStripRect;
     a.input._emitDown(strip.x + strip.w / 2, strip.y + strip.h / 2);
     expect(revived).toEqual(['onOpenFeedback']);
     a.destroy();
@@ -340,7 +341,7 @@ describe('FeedbackDialog — the reported open/send/reopen/close sequence (2026-
     a.input._emitDown(10, 10);
     const seen: string[] = [];
     const lobby2 = new LobbyScene(createLayout(800, 1280), a.input, lobbyCallbacks(seen));
-    const strip = (lobby2 as unknown as { feedbackStripRect: { x: number; y: number; w: number; h: number } }).feedbackStripRect;
+    const strip = (lobby2 as unknown as { core: { feedbackStripRect: { x: number; y: number; w: number; h: number } } }).core.feedbackStripRect;
     a.input._emitDown(strip.x + strip.w / 2, strip.y + strip.h / 2);
     expect(seen).toEqual([]);
     lobby2.destroy();

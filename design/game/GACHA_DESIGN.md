@@ -156,10 +156,10 @@
 
 | 项 | 值 |
 |---|---|
-| 价格 | ¥30（对标中档 IAP 档，见 `ECONOMY_BALANCE §2.2`） |
+| 价格 | **$4.99**（对标中档 IAP 档，见 `ECONOMY_BALANCE §2.2`；2026-08-11 由 ¥30 切换为 USD，中国区/CNY 定价待后续单独一轮再定） |
 | 有效期 | 购买后 **30 天**（精确到秒，服务端 `subscriptionExpiry` 字段） |
 | 每日奖励 | 登录后发 **120 coins / 天**（需当日首次登录触发，服务端按 dayKey）；最近一次领取的 UTC 日 `subscription.lastClaimDayKey` 经 `WalletView.subscriptionLastClaimDay` 镜像进 `SaveData.monetization`，客户端据此判断「今日已领取」并置灰「领取」按钮（按钮标签即状态：可领 / 今日已领取 / 未开通置灰），不再依赖点击后的模糊提示 |
-| 总价值 | 30 × 120 = **3,600 coins**（折算 120 coins/¥，等同于大档 IAP 率）|
+| 总价值 | 30 × 120 = **3,600 coins**（约 720 coins/$，与大档 IAP 率同一量级）|
 | 免费天花板对比 | 无氪日上限 ~55 coins（`ECONOMY_BALANCE §6`，2026-07-07 faucet 统一后），月卡使其 +120 → ~175/天 |
 | 立即赠送 | 购买即刻额外发 **600 coins**（= 4 抽，即时满足感） |
 | 可叠购 | **否**（全局单卡：有任意订阅卡生效期间，月卡与年卡的购买都锁定；服务端返回 `ALREADY_ACTIVE`。到期后再买——「买了必须用完才能再买」，不再叠购续期）|
@@ -168,7 +168,7 @@
 
 | 项 | 值 |
 |---|---|
-| 价格 | **¥298**（= 12 张月卡 ¥360 约 **83 折**取整；UI 上原价 ¥360 划线 + 「省 ¥62」角标）*（人民币定价待中国区上架核定，当前实际结算币种为 EUR / Paddle）* |
+| 价格 | **$49.99**（= 12 张月卡 $59.99 约 **83 折**（17% off）；UI 上原价 $59.99 划线 + 「Save $10」角标；2026-08-11 由 ¥298/¥360 切换为 USD，中国区/CNY 定价待后续单独一轮再定） |
 | 有效期 | 购买后 **365 天** |
 | 每日奖励 | 与月卡相同 **120 coins / 天**（订阅是同一字段，`/monthly-card/claim` 对年卡同样有效）|
 | 立即赠送 | 购买即刻额外发 **600 coins**（与月卡一致）|
@@ -182,7 +182,7 @@
 
 ### 5.3 定价心理
 
-月卡（3,600 coins）相对同价直购档提供更高的每金币性价比（约 +9%），但分摊到 30 天，让"每天不登录就亏了"的心理强化每日留存。*（人民币示例仅作说明；实际结算币种为 EUR / Paddle，档位金额以 IAP 档位 canon 为准，见 `IOS_RELEASE.md` 档位表；人民币定价待中国区上架核定。）*
+月卡（3,600 coins）相对同价直购档提供更高的每金币性价比（约 +9%），但分摊到 30 天，让"每天不登录就亏了"的心理强化每日留存。档位金额以 IAP 档位 canon 为准，见 `IOS_RELEASE.md` 档位表；中国区/CNY 定价待后续单独一轮再定。
 
 ---
 
@@ -190,13 +190,13 @@
 
 首次付费转化是变现的关键节点。拟设两个新手向产品：
 
-> **✅ 已接入真实扣款（2026-07-27，取代 2026-07-15 记录的 `cost: 0` 免费发放缺口）**：`POST /starter/buy` 现要求 `platform`+`receipt`，metaserver 经 `commercial.verifyNonCoinReceipt` 校验通过（apple/google 走真实商店收据；web 走 Paddle checkout + webhook，`paddle.ts` 新增 `starter_draw`/`starter_growth` 两个保留键）才会调用底层 `starterBuy` 发货——不再是"服务器直接当已授权"。客户端 `ShopScene` 相应展示为真实 ¥6 / ¥30 价格（`STARTER_DRAW_YUAN`/`STARTER_GROWTH_YUAN`，`shop.ts`），不再显示「免费」；一旦 `starterUsed` 包含该 id 仍从卡片列表移除（不变）。WeChat/CrazyGames（无支付渠道）不展示这两张卡的购买按钮。
+> **✅ 已接入真实扣款（2026-07-27，取代 2026-07-15 记录的 `cost: 0` 免费发放缺口）**：`POST /starter/buy` 现要求 `platform`+`receipt`，metaserver 经 `commercial.verifyNonCoinReceipt` 校验通过（apple/google 走真实商店收据；web 走 Paddle checkout + webhook，`paddle.ts` 新增 `starter_draw`/`starter_growth` 两个保留键）才会调用底层 `starterBuy` 发货——不再是"服务器直接当已授权"。客户端 `ShopScene` 相应展示为真实 $0.99 / $4.99 价格（`STARTER_DRAW_USD_CENTS`/`STARTER_GROWTH_USD_CENTS`，`shop.ts`；2026-08-11 由 ¥6/¥30 切换为 USD），不再显示「免费」；一旦 `starterUsed` 包含该 id 仍从卡片列表移除（不变）。WeChat/CrazyGames（无支付渠道）不展示这两张卡的购买按钮。
 
 ### 6.1 首抽包
 
 | 项 | 值 |
 |---|---|
-| 价格 | ¥6（最低 IAP 档） |
+| 价格 | $0.99（最低 IAP 档；2026-08-11 由 ¥6 切换为 USD） |
 | 内容 | 1 次**保底 rare+** 的 10 连（即：十连中至少 1 个 rare，不占正常保底） |
 | 限制 | 每账号**仅限购买 1 次** |
 | 说明 | 不走常规 pity 计数，独立判断；商业侧单独标记 `starterUsed` |
@@ -205,9 +205,9 @@
 
 | 项 | 值 |
 |---|---|
-| 价格 | ¥30 |
+| 价格 | $4.99（2026-08-11 由 ¥30 切换为 USD） |
 | 内容 | 中档 IAP 档正常金币量（见 `IOS_RELEASE.md` 档位表）+ **7 天限定月卡**（7 × 120 = 840 coins 加成） |
-| 总价值 | 中档档金币 + 840 coins 加成，实际每金币性价比高于最大常规档，用作首充漏斗钩子 *（人民币示例待中国区上架核定，当前结算币种为 EUR / Paddle）* |
+| 总价值 | 中档档金币 + 840 coins 加成，实际每金币性价比高于最大常规档，用作首充漏斗钩子；中国区/CNY 定价待后续单独一轮再定 |
 | 限制 | 账号前 7 天内可购（注册时间戳判断），**仅 1 次** |
 | 说明 | 让新用户用最优惠的价格尝鲜月卡体验，培养习惯 |
 
@@ -303,7 +303,7 @@ GachaScene 顶部区域只有 4 个彩色圆点（common/rare/epic/legendary）�
 
 | 文件 | 设计要求 |
 |---|---|
-| `banner_limited_01.png` | 横幅大图，约 900×340px（适配手机/平板横屏），左半角色立绘（首期 = 陶的限定皮肤「墨迹上将」或类似），右半池名 + 限定标签（红色"限定"印章）；笔记本页面背景，手绘笔触风格 |
+| `banner_limited_01.png` | 横幅大图，约 900×340px（适配手机/平板横屏），左半角色立绘（首期 = 涛的限定皮肤「墨迹上将」或类似），右半池名 + 限定标签（红色"限定"印章）；笔记本页面背景，手绘笔触风格 |
 
 ### 9.5 【P1 · 限定池上线前】物品图标
 
@@ -328,9 +328,9 @@ GachaScene 顶部区域只有 4 个彩色圆点（common/rare/epic/legendary）�
 
 | 物品 id | 渠道 | 角色 / 兵种 | 稀有度 | 图标设计要求 |
 |---|---|---|---|---|
-| `skin_shop_c1` | 商店直卖 300 | 李川 / Infantry | common | 陶方，灰白调 |
-| `skin_shop_r1` | 商店直卖 800 | 苏远 / Archer | rare | 陶方，蓝色调 |
-| `skin_shop_e1` | 商店直卖 1800 | 陈守 / ShieldBearer | epic | 陶方，紫色调 |
+| `skin_shop_c1` | 商店直卖 300 | 李川 / Infantry | common | 涛方，灰白调 |
+| `skin_shop_r1` | 商店直卖 800 | 苏远 / Archer | rare | 涛方，蓝色调 |
+| `skin_shop_e1` | 商店直卖 1800 | 陈守 / ShieldBearer | epic | 涛方，紫色调 |
 | `skin_e1` | 抽卡（标准池 epic） | Lena | epic | Anna 方，橙色调（原紫色调，2026-08-09 改色） |
 | `skin_e2` | 抽卡（标准池 epic） | Mara | epic | Anna 方，橙色调（原紫色调，2026-08-09 改色） |
 | `skin_l1` | 抽卡（标准池 legendary） | Max（旗舰） | legendary | Anna 方，橙色调（原金米调，2026-08-09 改色） |
@@ -365,10 +365,10 @@ GachaScene 顶部区域只有 4 个彩色圆点（common/rare/epic/legendary）�
 | legendary 基础概率 | 标准池 ≈3.22%（固定概率表 §2.1b）；限定池/扁平权重 1% | §2.1b / §4.1 |
 | 皮肤主动出售 legendary | 1,500 coins（`DUPE_REFUND_COINS.legendary`，`/skins/sell`，玩家主动发起） | [ITEM_IDENTITY_DESIGN.md](ITEM_IDENTITY_DESIGN.md) 任务1 |
 | 月卡每日 | 120 coins × 30 天 | 本文 §5 |
-| 月卡价格 | ¥30 | 本文 §5 |
-| 年卡价格 | ¥298（12 月卡 ¥360 约 83 折取整）× 365 天；人民币定价待中国区上架核定，当前结算币种为 EUR | 本文 §5.1b |
+| 月卡价格 | $4.99（2026-08-11 起 USD；中国区/CNY 待后续单独一轮再定） | 本文 §5 |
+| 年卡价格 | $49.99（12 月卡 $59.99 约 83 折取整）× 365 天 | 本文 §5.1b |
 | 订阅门控 | 全局单卡：有卡生效期间月卡/年卡均锁（`ALREADY_ACTIVE`） | 本文 §5.1 |
-| 首抽包价格 | ¥6 | 本文 §6 |
+| 首抽包价格 | $0.99 | 本文 §6 |
 
 ---
 
@@ -398,10 +398,12 @@ GachaScene 顶部区域只有 4 个彩色圆点（common/rare/epic/legendary）�
 - **限定池（G2）**：config 存 commercial 新集合 `gachaPools`（admin 建/关，关闭=夹 `endAt` 到 now，永久保留以便命运点兑换）；池内容由 `@nw/shared buildLimitedPool()` 从常驻池**纯函数派生**（无漂移）。commercial `resolvePool` 只在 `[startAt,endAt)` 窗口内返回；越窗/未知→`POOL_UNAVAILABLE`。meta `getGachaPools` 追加当期活跃限定池（含 banner 元数据）。admin 端点 `/admin/gacha/pools`(GET/POST) + `/admin/gacha/pools/close`。
 - **命运点 / 歪（G4）**：`wallet.fatePoints`（commercial 权威，镜像入 `SaveData.monetization.fatePoints`）。**限定池 legendary 层 = 主打 banner（约 50% 权重，靠 slot 重复）+ 常驻非角色卡 legendary 垫底**（`DEFAULT_LIMITED_FILLER_LEGENDARIES`）；抽到**非 banner** 的 legendary = 歪 → +1 命运点。兑换：`POST /fate/redeem`，扣 `FATE_POINT_REDEEM_COST=30`，兑换任一**历史 featured** legendary（查 `gachaPools`），meta 走 `deliverOrder(kind:'fate')` 发皮肤（幂等）。
   - **与 §2.2「大保底必出限定本体」的调和拍板**：§2.2 原描述池内 legendary 只有 1 个（则无从歪）；因用户明确要命运点，采用经典 **50/50 off-banner** 模型（歪出 → 命运点）。§2.2「下次必得」的保底翻转（需 per-pool guaranteed 标记）**本期未做**，留后续。
-- **月卡 / 年卡（G5）**：`wallet.subscription{expiry,lastClaimDayKey}`。`POST /monthly-card/buy`（30 天）与 `POST /year-card/buy`（365 天）共享 `subscriptionCardBuy`：先幂等占 orderId 槽（并发同 orderId 走 E11000 分支返回既有结果），再做**全局单卡门控**——若 `subscription.expiry > now` 则回滚已占槽并返回 `ALREADY_ACTIVE`（不叠购、不续期，「用完再买」）；否则 `applySubscription` 设 expiry + 即赠 600 coins。`POST /monthly-card/claim` 每 UTC 日一次 +120 coins（`lastClaimDayKey` 守卫，月卡年卡通用）。年卡 ¥298 仅前端展示价（服务端不扣币，真实扣款走下面的 Paddle 通道）。
+- **月卡 / 年卡（G5）**：`wallet.subscription{expiry,lastClaimDayKey}`。`POST /monthly-card/buy`（30 天）与 `POST /year-card/buy`（365 天）共享 `subscriptionCardBuy`：先幂等占 orderId 槽（并发同 orderId 走 E11000 分支返回既有结果），再做**全局单卡门控**——若 `subscription.expiry > now` 则回滚已占槽并返回 `ALREADY_ACTIVE`（不叠购、不续期，「用完再买」）；否则 `applySubscription` 设 expiry + 即赠 600 coins。`POST /monthly-card/claim` 每 UTC 日一次 +120 coins（`lastClaimDayKey` 守卫，月卡年卡通用）。年卡 $49.99 仅前端展示价（服务端不扣币，真实扣款走下面的 Paddle 通道；2026-08-11 由 ¥298 切换为 USD）。
   - **Web 接入真实 Paddle 扣款（2026-07-25）**：此前 `buyMonthlyCard`/`buyYearCard` 无论平台都直接调直购接口，"当作已授权购买"——玩家点 Buy 就直接拿到卡，没有真实支付。现在 web 端（`platform.iapKind()==='paddle'`）改走与金币充值同款的 `/shop/paddle/checkout` + `/paddle/webhook` 通道：`NW_PADDLE_PRICE_IDS` 新增保留档位键 `monthly_card`/`year_card`（见 `IAP_CREDENTIALS.md §1.1`）；checkout 创建前先查钱包 `subscriptionExpiry` 挡掉"卡生效中还想买"（不让真实扣款落在一个注定被拒发的请求上）；webhook 收到 `transaction.completed` 后用 `subscriptionForPriceId` 分流到 `monthlyCardBuy`/`yearCardBuy`（`orderId=paddle:${transactionId}` 天然幂等）。客户端 `nav/shop.ts doBuySubscription` 打开 Paddle 弹层后轮询 save 等 `subscriptionExpiry` 变化（同 `doRechargeCoins`/`pollForCoinIncrease` 的套路）；`ShopScene` 的 Buy 按钮相应从 `runDeal`（带 `withTimeout`）改用新的 `runUnboundedDeal`（不限时，Paddle 弹层用户节奏可能开好几分钟）。**原生 App（Apple/Google）与隐藏渠道（微信/CrazyGames）仍是旧的直接授权行为**——这两类平台目前没有真实订阅 IAP 基础设施，范围外，维持"当作已授权购买"。
 - **新手包（G6）**：`wallet.starterUsed[]` 单账号一次。`POST /starter/buy`：`starter_draw`=常驻池 rare+ 保底十连（不动 pity，`rollStarterPack`），meta 走 `deliverOrder(kind:'starter')` 发货；`starter_growth`=3300 coins + 7 天月卡（成长包首 7 天窗口由 meta 按 `accounts.createdAt` 把关）。
   - **修复（2026-07-15）**：窗口关闭后服务端一直只在 `POST /starter/buy` 里 403，但 ShopScene 的卡片只看 `starterUsed`，从不知道窗口已关——玩家点 Buy 只会看到一条通用「购买失败」提示，卡片却永远留在货架上，是个死胡同。现在 `mirrorWalletFrom` 顺带计算 `monetization.starterGrowthEligible`（未领且账号仍在窗口内=true），镜像进 `SaveData.monetization`；ShopScene 据此在窗口关闭后直接不渲染该卡（同「已领取即消失」的处理方式），不再暴露一个必 403 的按钮。
+  - **⚠️ 生产事故（发现于 2026-08-11）**：月卡/年卡/两款新手包在生产环境自 2026-07-25/27 上线起就**从未真正打通过**——VPS 上 `server/.env` 的 `NW_PADDLE_PRICE_IDS` 只配了金币充值档位（`t499..t9999`），从没加过 `monthly_card`/`year_card`/`starter_draw`/`starter_growth` 这四个保留键，Paddle 后台大概率也从没为这四个商品建过 Product/Price。玩家点 Buy 直接在客户端 `NW_PADDLE_PRICE_IDS` 解析前就因 `INVALID_TIER` 失败，连 Paddle 结账浮层都打不开，统一提示「购买失败，请重试」（`shop.error`）。**这也是本次顺带把这四个商品从 CNY 切到 USD 的直接触发原因**：既然要重新建 Paddle Price 才能修好，索性一并把定价单位改对（见下条）。修复需要：① 在 Paddle 后台为这四个商品建 USD Price（$4.99/$49.99/$0.99/$4.99）；② 把对应 `pri_xxx` 追加进 VPS `server/.env` 的 `NW_PADDLE_PRICE_IDS`；③ 重启 `server-metaserver-1`；④ 真实/沙盒交易验证一遍结账+webhook 发货。代码本身在这之前就是对的（`paddle.ts` 的 `subscriptionForPriceId`/`starterProductForPriceId` 逻辑没问题），纯粹是环境配置从未补全。
+  - **CNY → USD 定价切换（2026-08-11）**：月卡/年卡/两款新手包原本用 ¥（economy.ts 的 `*_PRICE_YUAN` 常量 + client `shop.ts` 的 `*_YUAN` 常量、`CardSpec.yuanPrice`/`yuanStrike` 字段）展示价格，与金币充值档位（`ShopScene.WEB_COIN_TIERS`，一直是 USD `$X.XX`）不一致。改为 USD：economy.ts 新增 `MONTHLY_CARD_PRICE_USD_CENTS=499`/`YEAR_CARD_PRICE_USD_CENTS=4999`/`YEAR_CARD_LIST_PRICE_USD_CENTS=5999`（取代三个 `*_YUAN` 常量）；client `shop.ts` 同步换成 `*_USD_CENTS`；`CardSpec` 的 `yuanPrice`/`yuanStrike` 重命名为 `usdCents`/`usdStrikeCents`，`base.ts` `drawCard()` 渲染改 `$${(cents/100).toFixed(2)}`。价位换算沿用金币档位的 `$X.99` 心理定价习惯：¥30→$4.99，¥298/¥360→$49.99/$59.99（省 $10，约 17% off，取代原「省 ¥62」角标），¥6→$0.99。**顺带修的一个副作用 bug**：年卡省钱角标原按 `toFixed(2)` 显示成「Save $10.00」，比旧版「省 ¥62」长出几个字符，在窄卡布局下压穿了年卡卡面的「365」票据图标（`drawCard()` 的角标是固定右上角贴图叠加，不做宽度自适应）——改成整数美元不带小数（`fmtUsdSavings()`，`cents % 100 === 0` 时输出 `$N`）后恢复不重叠，已用 Playwright 对 `start:e2e`（port 9096）截图验证。**中国区 / CNY 定价明确推迟**，待中国区上架单独核定（同 §5.3/§6.2 已有的措辞）。
 
 **客户端（最小可用占位）：** GachaScene 加池切换 tab（常驻/限定）+ 命运点数与「兑换限定」按钮；ShopScene 顶部「交易」块加月卡（购买/每日领取）与两款新手包按钮。真实 banner/卡面/翻牌特效（G7–G10）待美术，程序占位可跑。`SaveData.monetization` 镜像段客户端只读。
 

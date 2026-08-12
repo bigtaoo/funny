@@ -1,7 +1,7 @@
 // Unit coverage for resolveRealLayerInterlude — the pure decision extracted from
 // nav/game.ts's onGameEnd (see realLayerInterludeArt.ts) that decides whether a just-finished
 // campaign match should chain into the chapter-end illustrated interlude (world.md「章末真实
-//层：陶与 Anna」) before returning to the map. Kept separate from
+//层：涛与 Anna」) before returning to the map. Kept separate from
 // campaign-clear-pipeline.test.ts's full match-simulation coverage: chapter finale levels
 // (chN_lv10) are tuned hard enough that a baseline-AI "fresh" win isn't reliably reproducible
 // (see test/difficulty/ch1.test.ts's ch1_lv10 fresh row), so this exercises the branching

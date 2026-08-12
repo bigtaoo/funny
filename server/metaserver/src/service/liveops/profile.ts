@@ -1,25 +1,14 @@
 // Live-ops player profile: titles (S10) + avatar/skin equip + preference flags. Split out of liveops.ts
-// (2026-08-10, 独立函数模块 form — see liveops.ts's facade comment). The equip*/setFlag handlers take an
-// explicit `ctx` (deps + `mutateSave`, bound by LiveOpsMixin's class body from its protected base
-// method); getTitlesHandler only ever touched `this.deps`, so it takes plain `deps`. No behavior change.
+// (2026-08-10, 独立函数模块 form — see liveops.ts's facade comment). The equip*/setFlag handlers take
+// `core: MetaCore` directly (2026-08-11 ctx-bind cleanup — see base.ts's header) for `core.mutateSave`;
+// getTitlesHandler only ever touched `deps`, so it takes plain `deps`. No behavior change.
 import type { FastifyReply, FastifyRequest } from 'fastify';
-import type { SaveData } from '@nw/shared';
 import { ErrorCode, err, ok, parseTitleId } from '@nw/shared';
 import { getOrCreateSave, isAvatarOwned, isSkinOwned, PRESET_AVATAR_IDS } from '../../save.js';
-import { accountIdOf, type ServiceDeps } from '../base.js';
+import { accountIdOf, type ServiceDeps, type MetaCore } from '../base.js';
 
 /** Flag keys must be non-empty and reasonably short (dynamic namespace includes `featSeen.<featureId>`) — guards against a malformed client body writing garbage keys into the flags map. */
 const MAX_FLAG_KEY_LEN = 100;
-
-type MutateSaveFn = (
-  accountId: string,
-  transform: (s: SaveData) => SaveData | string,
-) => Promise<{ save: SaveData } | { error: string }>;
-
-export interface ProfileCtx {
-  deps: ServiceDeps;
-  mutateSave: MutateSaveFn;
-}
 
 /**
  * Read all titles granted to the current account (including derived source/seasonNo + obtainedAt when
@@ -42,10 +31,10 @@ export async function getTitlesHandler(deps: ServiceDeps, req: FastifyRequest) {
  * Select the active display title → write save.equipped.title → push back the full save.
  * Only granted titles are allowed; an empty string titleId is treated as unequipping (clears the equipped title).
  */
-export async function equipTitleHandler(ctx: ProfileCtx, req: FastifyRequest, reply: FastifyReply) {
+export async function equipTitleHandler(core: MetaCore, req: FastifyRequest, reply: FastifyReply) {
   const accountId = accountIdOf(req);
   const { titleId } = req.body as { titleId?: string };
-  const out = await ctx.mutateSave(accountId, (s) => {
+  const out = await core.mutateSave(accountId, (s) => {
     const owned = s.titles ?? [];
     // empty string = unequip display title
     if (titleId === '' || titleId == null) {
@@ -72,10 +61,10 @@ export async function equipTitleHandler(ctx: ProfileCtx, req: FastifyRequest, re
  * lifetime-owned records (titles[] / everOwned.* / inventory.skins) — obtained once, unlocked forever,
  * even if the item has since been salvaged/consumed/sold.
  */
-export async function equipAvatarHandler(ctx: ProfileCtx, req: FastifyRequest, reply: FastifyReply) {
+export async function equipAvatarHandler(core: MetaCore, req: FastifyRequest, reply: FastifyReply) {
   const accountId = accountIdOf(req);
   const { avatarId } = req.body as { avatarId?: string };
-  const out = await ctx.mutateSave(accountId, (s) => {
+  const out = await core.mutateSave(accountId, (s) => {
     if (avatarId === '' || avatarId == null) {
       const { avatar: _drop, ...restEquipped } = s.equipped ?? {};
       return { ...s, equipped: restEquipped };
@@ -102,14 +91,14 @@ export async function equipAvatarHandler(ctx: ProfileCtx, req: FastifyRequest, r
  * need it here, it only validates that the *skin itself* is owned (isSkinOwned), same depth as the
  * old sanitizeEquipped path this replaces.
  */
-export async function equipSkinHandler(ctx: ProfileCtx, req: FastifyRequest, reply: FastifyReply) {
+export async function equipSkinHandler(core: MetaCore, req: FastifyRequest, reply: FastifyReply) {
   const accountId = accountIdOf(req);
   const { unitType, skinId } = req.body as { unitType?: string; skinId?: string | null };
   if (!unitType) {
     return reply.code(400).send(err(ErrorCode.BAD_REQUEST, 'unitType required'));
   }
   const key = `skin:${unitType}`;
-  const out = await ctx.mutateSave(accountId, (s) => {
+  const out = await core.mutateSave(accountId, (s) => {
     if (skinId === '' || skinId == null) {
       const rest = { ...s.equipped };
       delete rest[key];
@@ -131,13 +120,13 @@ export async function equipSkinHandler(ctx: ProfileCtx, req: FastifyRequest, rep
  * Set one client-preference flag by key → write save.flags[key] → push back the full save.
  * No ownership semantics (unlike equipped.*) — onboarding/consent/tutorial-seen style booleans only.
  */
-export async function setFlagHandler(ctx: ProfileCtx, req: FastifyRequest, reply: FastifyReply) {
+export async function setFlagHandler(core: MetaCore, req: FastifyRequest, reply: FastifyReply) {
   const accountId = accountIdOf(req);
   const { key, value } = req.body as { key?: string; value?: boolean };
   if (!key || key.length > MAX_FLAG_KEY_LEN || typeof value !== 'boolean') {
     return reply.code(400).send(err(ErrorCode.BAD_REQUEST, 'invalid key/value'));
   }
-  const out = await ctx.mutateSave(accountId, (s) => ({ ...s, flags: { ...s.flags, [key]: value } }));
+  const out = await core.mutateSave(accountId, (s) => ({ ...s, flags: { ...s.flags, [key]: value } }));
   if ('error' in out) {
     return reply.code(409).send(err(ErrorCode.REV_CONFLICT, out.error));
   }

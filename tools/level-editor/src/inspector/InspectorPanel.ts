@@ -1,7 +1,7 @@
-import { ATTACK_LANES } from '@game/config';
-import { TICK_RATE } from '@game/math/fixed';
-import { UnitType } from '@game/types';
-import type { WaveEntry } from '@game/campaign/LevelDefinition';
+import { ATTACK_LANES } from '@nw/engine/config';
+import { TICK_RATE } from '@nw/engine/math/fixed';
+import { UnitType } from '@nw/engine/types';
+import type { WaveEntry } from '@nw/engine/campaign/LevelDefinition';
 import type { EditorState } from '../state/EditorState';
 import { ALL_UNITS } from '../units';
 

@@ -2,7 +2,8 @@
 # 单容器既是 SPA 主机又是反向代理：所有请求（静态 / REST / 控制面 WS / 数据面 WS）都经 nginx。
 #
 # 关键：构建上下文必须是「仓库根目录」（compose 里 context: .），因为 webpack 通过 @nw/engine
-# alias 引用 server/engine/src（确定性引擎核心，见 SLG_DESIGN §16.7），需把 server/engine 一并拷进镜像。
+# alias 引用 server/engine/src（确定性引擎核心，见 SLG_DESIGN §16.7），需把 server/engine 一并拷进镜像；
+# 同理 @nw/shared / @nw/shared/cards 引用 server/shared/src，也需一并拷入。
 # 同源部署地址（如需换 host/port，传 --build-arg 并保证与 nginx 暴露端口一致）。
 # gateway 地址由 meta 鉴权回包下发、game 地址由 ticket 下发，故 NW_GATEWAY_WS 仅作 fallback。
 
@@ -15,6 +16,8 @@ COPY client/package.json client/package-lock.json ./
 RUN npm ci
 # @nw/engine alias 解析路径：../server/engine/src（相对于 WORKDIR /app/client）
 COPY server/engine /app/server/engine
+# @nw/shared 及 @nw/shared/cards 解析路径：../server/shared/src（同上）
+COPY server/shared /app/server/shared
 COPY client/ ./
 ARG NW_API_BASE=http://localhost/api
 ARG NW_GATEWAY_WS=ws://localhost/gw

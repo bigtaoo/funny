@@ -59,13 +59,13 @@ describe('FriendsScene — entering via defaultTab kicks off the same loads as s
       defaultTab: 'world',
     });
 
-    expect(scene.tab).toBe('world');
-    expect(scene.worldLoaded).toBe(false);
+    expect(scene.core.tab).toBe('world');
+    expect(scene.core.worldLoaded).toBe(false);
 
     await Promise.resolve();
     await Promise.resolve();
 
     expect(loadWorldChatCalls).toBe(1);
-    expect(scene.worldLoaded).toBe(true);
+    expect(scene.core.worldLoaded).toBe(true);
   });
 });

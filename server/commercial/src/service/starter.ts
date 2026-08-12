@@ -11,7 +11,7 @@ import {
 } from '@nw/shared';
 import type { GachaResultEntry } from '../db';
 import { rollStarterPack } from '../gacha';
-import type { CommercialBaseCtor, Constructor, Result, WalletView } from './base';
+import type { Result, WalletView, WalletCore } from './base';
 import { walletView } from './base';
 import { effectiveCoins, rechargeChannelOf, spendChannelOf } from '../spendChannel';
 
@@ -27,8 +27,9 @@ export interface StarterHandlers {
   }): Promise<Result<{ coinsAfter: number; subscriptionExpiry: number; results: GachaResultEntry[]; wallet: WalletView }>>;
 }
 
-export function StarterMixin<TBase extends CommercialBaseCtor>(Base: TBase): TBase & Constructor<StarterHandlers> {
-  return class extends Base {
+export class StarterService {
+  constructor(private readonly core: WalletCore) {}
+
     /**
      * Buy a starter pack (GACHA_DESIGN §6), once per account (starterUsed guard).
      *  • starter_draw: a rare+ floored 10-pull on the standard pool (independent of pity); meta delivers the items.
@@ -46,7 +47,7 @@ export function StarterMixin<TBase extends CommercialBaseCtor>(Base: TBase): TBa
         return { ok: false, error: 'BAD_REQUEST' };
       }
       const displayChannel = spendChannelOf(args.clientPlatform);
-      const existing = await this.cols.orders.findOne({ _id: args.orderId });
+      const existing = await this.core.cols.orders.findOne({ _id: args.orderId });
       if (existing) {
         // Ownership check (2026-08-04 fix) — see shop.ts's shopCharge for the full rationale.
         if (existing.accountId !== args.accountId) return { ok: false, error: 'BAD_REQUEST' };
@@ -58,10 +59,10 @@ export function StarterMixin<TBase extends CommercialBaseCtor>(Base: TBase): TBa
         // call is merely slow (not crashed) must not redo applySubscription itself (double-grant); only
         // resume for real once the claim is stale enough that the original is presumed dead.
         if (existing.status === 'charged' && existing.kind === 'grant') {
-          if (this.isStaleClaim(existing.ts) && (await this.claimOrderResume(args.orderId))) {
+          if (this.core.isStaleClaim(existing.ts) && (await this.core.claimOrderResume(args.orderId))) {
             return this.finishStarterGrowth(args, existing.accountId);
           }
-          const w0 = await this.cols.wallets.findOne({ _id: existing.accountId });
+          const w0 = await this.core.cols.wallets.findOne({ _id: existing.accountId });
           return {
             ok: true,
             coinsAfter: effectiveCoins(w0, displayChannel),
@@ -70,7 +71,7 @@ export function StarterMixin<TBase extends CommercialBaseCtor>(Base: TBase): TBa
             wallet: walletView(w0, args.clientPlatform),
           };
         }
-        const w = await this.cols.wallets.findOne({ _id: existing.accountId });
+        const w = await this.core.cols.wallets.findOne({ _id: existing.accountId });
         return {
           ok: true,
           coinsAfter: effectiveCoins(w, displayChannel),
@@ -79,10 +80,10 @@ export function StarterMixin<TBase extends CommercialBaseCtor>(Base: TBase): TBa
           wallet: walletView(w, args.clientPlatform),
         };
       }
-      const now = this.now();
-      await this.ensureWallet(args.accountId);
+      const now = this.core.now();
+      await this.core.ensureWallet(args.accountId);
       // Once-per-account claim: atomically add the product to starterUsed only if not already present.
-      const claimed = await this.cols.wallets.findOneAndUpdate(
+      const claimed = await this.core.cols.wallets.findOneAndUpdate(
         { _id: args.accountId, starterUsed: { $ne: args.productId } },
         { $addToSet: { starterUsed: args.productId }, $set: { updatedAt: now } },
         { returnDocument: 'after' },
@@ -91,9 +92,9 @@ export function StarterMixin<TBase extends CommercialBaseCtor>(Base: TBase): TBa
 
       if (args.productId === PRODUCT_STARTER_DRAW) {
         const std = findGachaPool('standard')!;
-        const results = rollStarterPack(std, STARTER_DRAW_COUNT, STARTER_DRAW_FLOOR, this.rng);
+        const results = rollStarterPack(std, STARTER_DRAW_COUNT, STARTER_DRAW_FLOOR, this.core.rng);
         const coinsAfter = effectiveCoins(claimed, displayChannel);
-        await this.cols.orders.insertOne({
+        await this.core.cols.orders.insertOne({
           _id: args.orderId,
           accountId: args.accountId,
           kind: 'starter',
@@ -109,7 +110,7 @@ export function StarterMixin<TBase extends CommercialBaseCtor>(Base: TBase): TBa
       // starter_growth: coins + 7-day card. Reserve the order slot as 'charged' BEFORE applySubscription
       // runs (not after) — a crash between the two must leave a resumable 'charged' row, not report
       // fabricated success while the grant never happened (see the existing-order branch above).
-      await this.cols.orders.insertOne({
+      await this.core.cols.orders.insertOne({
         _id: args.orderId,
         accountId: args.accountId,
         kind: 'grant',
@@ -126,10 +127,10 @@ export function StarterMixin<TBase extends CommercialBaseCtor>(Base: TBase): TBa
       args: { accountId: string; orderId: string; rechargePlatform?: string; clientPlatform?: string },
       accountId: string,
     ): Promise<Result<{ coinsAfter: number; subscriptionExpiry: number; results: GachaResultEntry[]; wallet: WalletView }>> {
-      const now = this.now();
+      const now = this.core.now();
       // Real money (¥30) — fund the caller's verified recharge channel (ADR-020), not the free pool.
       const growthChannel = args.rechargePlatform ? (rechargeChannelOf(args.rechargePlatform) ?? undefined) : undefined;
-      const { coinsAfter, expiry, wallet } = await this.applySubscription(
+      const { coinsAfter, expiry, wallet } = await this.core.applySubscription(
         accountId,
         GROWTH_PACK_CARD_DAYS,
         GROWTH_PACK_COINS,
@@ -141,11 +142,10 @@ export function StarterMixin<TBase extends CommercialBaseCtor>(Base: TBase): TBa
           clientPlatform: args.clientPlatform,
         },
       );
-      await this.cols.orders.updateOne(
+      await this.core.cols.orders.updateOne(
         { _id: args.orderId },
         { $set: { status: 'delivered', coinsAfter, deliveredAt: now } },
       );
       return { ok: true, coinsAfter, subscriptionExpiry: expiry, results: [], wallet: walletView(wallet, args.clientPlatform, growthChannel) };
     }
-  };
 }

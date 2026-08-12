@@ -7,7 +7,7 @@ import {
   type AdminAccountView,
 } from '@nw/shared';
 import type { AdminAccountDoc } from '../db';
-import type { Actor, AdminBaseCtor, Constructor } from './base';
+import type { Actor, AdminCore } from './base';
 import { AdminError } from './errors';
 import { toAccountView } from './validators';
 
@@ -25,12 +25,13 @@ export interface AccountsHandlers {
   resetPassword(actor: Actor, id: string, password: string): Promise<void>;
 }
 
-export function AccountsMixin<TBase extends AdminBaseCtor>(Base: TBase): TBase & Constructor<AccountsHandlers> {
-  return class extends Base {
+export class AccountsService {
+  constructor(private readonly core: AdminCore) {}
+
     // ───────────────────────── Account management (admin.manage) ─────────────────────────
 
     async listAccounts(): Promise<AdminAccountView[]> {
-      const docs = await this.cols.adminAccounts.find({}).sort({ createdAt: 1 }).toArray();
+      const docs = await this.core.cols.adminAccounts.find({}).sort({ createdAt: 1 }).toArray();
       return docs.map(toAccountView);
     }
 
@@ -43,7 +44,7 @@ export function AccountsMixin<TBase extends AdminBaseCtor>(Base: TBase): TBase &
       if (!isAdminRole(input.role)) throw new AdminError(400, 'bad_request', 'invalid role');
       const pwErr = validatePassword(input.password);
       if (pwErr) throw new AdminError(400, 'bad_request', pwErr);
-      const exists = await this.cols.adminAccounts.findOne({ username });
+      const exists = await this.core.cols.adminAccounts.findOne({ username });
       if (exists) throw new AdminError(409, 'conflict', 'username taken');
 
       const doc: AdminAccountDoc = {
@@ -53,17 +54,17 @@ export function AccountsMixin<TBase extends AdminBaseCtor>(Base: TBase): TBase &
         role: input.role,
         displayName: (input.displayName ?? username).trim() || username,
         disabled: false,
-        createdAt: this.now(),
+        createdAt: this.core.now(),
         createdBy: actor.adminId,
       };
       try {
-        await this.cols.adminAccounts.insertOne(doc);
+        await this.core.cols.adminAccounts.insertOne(doc);
       } catch (e) {
         // Concurrent unique index violation.
         if ((e as { code?: number }).code === 11000) throw new AdminError(409, 'conflict', 'username taken');
         throw e;
       }
-      await this.audit(actor.adminId, 'account.create', {
+      await this.core.audit(actor.adminId, 'account.create', {
         target: doc._id,
         summary: `${username} (${doc.role})`,
       });
@@ -75,7 +76,7 @@ export function AccountsMixin<TBase extends AdminBaseCtor>(Base: TBase): TBase &
       id: string,
       patch: { role?: string; disabled?: boolean; displayName?: string },
     ): Promise<AdminAccountView> {
-      const doc = await this.cols.adminAccounts.findOne({ _id: id });
+      const doc = await this.core.cols.adminAccounts.findOne({ _id: id });
       if (!doc) throw new AdminError(404, 'not_found', 'no such account');
       const set: Partial<AdminAccountDoc> = {};
       if (patch.role !== undefined) {
@@ -97,8 +98,8 @@ export function AccountsMixin<TBase extends AdminBaseCtor>(Base: TBase): TBase &
         if (dn) set.displayName = dn;
       }
       if (Object.keys(set).length === 0) return toAccountView(doc);
-      await this.cols.adminAccounts.updateOne({ _id: id }, { $set: set });
-      await this.audit(actor.adminId, 'account.update', {
+      await this.core.cols.adminAccounts.updateOne({ _id: id }, { $set: set });
+      await this.core.audit(actor.adminId, 'account.update', {
         target: id,
         summary: JSON.stringify(set),
       });
@@ -108,13 +109,12 @@ export function AccountsMixin<TBase extends AdminBaseCtor>(Base: TBase): TBase &
     async resetPassword(actor: Actor, id: string, password: string): Promise<void> {
       const pwErr = validatePassword(password);
       if (pwErr) throw new AdminError(400, 'bad_request', pwErr);
-      const doc = await this.cols.adminAccounts.findOne({ _id: id });
+      const doc = await this.core.cols.adminAccounts.findOne({ _id: id });
       if (!doc) throw new AdminError(404, 'not_found', 'no such account');
-      await this.cols.adminAccounts.updateOne(
+      await this.core.cols.adminAccounts.updateOne(
         { _id: id },
         { $set: { passwordHash: await hashPassword(password) } },
       );
-      await this.audit(actor.adminId, 'account.reset_password', { target: id });
+      await this.core.audit(actor.adminId, 'account.reset_password', { target: id });
     }
-  };
 }

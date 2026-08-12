@@ -1,25 +1,23 @@
 // Economy handlers (S5): meta orchestrates → commercial deducts/randomizes → delivery → mirror
 // push-back. Shop, gacha pools/draw, fate redemption, monthly/year subscription cards, starter packs,
-// rewarded ads, IAP receipt verification, and promo codes — mixin facade.
+// rewarded ads, IAP receipt verification, and promo codes.
 //
-// Split into independent function modules (2026-08-10, 独立函数模块 form, pve.ts/liveops.ts's sibling —
-// same "already in the mixin chain but grown fat" case from claudedocs/server.md's priority doc:
-// every handler needs one or more of `this.ensureCommercial`/`this.mutateSave`/`this.bumpRetentionTask`,
-// all `protected` on MetaServiceBase, so a sibling class outside the mixin's own inheritance chain has
-// no structural way to call them (TS rejects assigning a `protected` member to any wider/interface-shaped
-// type, from any scope — see pve.ts's facade comment for the full explanation). Free functions sidestep
-// this entirely: EconomyMixin's class body — which DOES have inherited access — reads `this.deps` and
-// `.bind(this)`s the handful of protected methods each handler needs into a plain `ctx` object, then
-// hands that `ctx` to a free function living outside the class. The one private helper that only ever
-// touched `this.deps` (`reconcileRechargeCoins`) became a plain deps-parameterized function with no ctx
-// needed at all (economy/subscriptions.ts). No behavior change: every method body was moved verbatim.
+// Independent sibling class (2026-08-11 mixin-chain split, claudedocs/server.md's "拆分形态的优先级"
+// 形态②): holds `core: MetaCore` — assembled by composition in ../service.ts. Every handler here just
+// hands `this.core` straight through to a free function living in ./economy/*.ts (2026-08-11 ctx-bind
+// cleanup — see base.ts's header: the bound-`ctx`-object shape this used to build — `{ deps,
+// ensureCommercial, ... }`, each member bound off `this.core` — was forced by MetaServiceBase's
+// `protected` visibility, 2026-08-10 split; now that MetaCore's members are plain public methods, every
+// ./economy/*.ts handler just takes `core: MetaCore` and calls `core.ensureCommercial(...)`/
+// `core.mutateSave(...)`/`core.bumpRetentionTask(...)` directly — no bind, no ctx object). Applied the
+// same way across all ~20 free-function files in ./economy/, ./pve/, ./liveops/, ./auth/.
 // - economy/shop.ts:          getShopItems + shopBuy
 // - economy/gacha.ts:         getGachaPools + gachaDraw + redeemFate (GACHA_DESIGN §2/§7)
 // - economy/subscriptions.ts: monthlyCardBuy/yearCardBuy/monthlyCardClaim + claimRechargeMilestone (§5/§13)
 // - economy/starter.ts:       starterBuy (§6)
 // - economy/adsPromo.ts:      adsReward + iapVerify + redeemPromoCode
 import type { MetaHandlers } from '../generated/routes.gen.js';
-import { type Constructor, type MetaBaseCtor } from './base.js';
+import { type MetaCore } from './base.js';
 import { getShopItemsHandler, shopBuyHandler } from './economy/shop.js';
 import { getGachaPoolsHandler, gachaDrawHandler, redeemFateHandler } from './economy/gacha.js';
 import {
@@ -38,72 +36,58 @@ type EconomyHandlers = Pick<
   | 'adsReward' | 'iapVerify' | 'redeemPromoCode'
 >;
 
-export function EconomyMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase & Constructor<EconomyHandlers> {
-  return class extends Base {
+export class EconomyService {
+  constructor(private readonly core: MetaCore) {}
+
     async getShopItems(...args: Parameters<EconomyHandlers['getShopItems']>) {
-      return getShopItemsHandler(this.deps, args[0]);
+      return getShopItemsHandler(this.core.deps, args[0]);
     }
 
     async shopBuy(...args: Parameters<EconomyHandlers['shopBuy']>) {
-      return shopBuyHandler({ deps: this.deps, ensureCommercial: this.ensureCommercial.bind(this) }, ...args);
+      return shopBuyHandler(this.core, ...args);
     }
 
     async getGachaPools() {
-      return getGachaPoolsHandler(this.deps);
+      return getGachaPoolsHandler(this.core.deps);
     }
 
     async gachaDraw(...args: Parameters<EconomyHandlers['gachaDraw']>) {
-      return gachaDrawHandler(
-        {
-          deps: this.deps,
-          ensureCommercial: this.ensureCommercial.bind(this),
-          bumpRetentionTask: this.bumpRetentionTask.bind(this),
-        },
-        ...args,
-      );
+      return gachaDrawHandler(this.core, ...args);
     }
 
     async redeemFate(...args: Parameters<EconomyHandlers['redeemFate']>) {
-      return redeemFateHandler({ deps: this.deps, ensureCommercial: this.ensureCommercial.bind(this) }, ...args);
+      return redeemFateHandler(this.core, ...args);
     }
 
     async monthlyCardBuy(...args: Parameters<EconomyHandlers['monthlyCardBuy']>) {
-      return monthlyCardBuyHandler({ deps: this.deps, ensureCommercial: this.ensureCommercial.bind(this) }, ...args);
+      return monthlyCardBuyHandler(this.core, ...args);
     }
 
     async yearCardBuy(...args: Parameters<EconomyHandlers['yearCardBuy']>) {
-      return yearCardBuyHandler({ deps: this.deps, ensureCommercial: this.ensureCommercial.bind(this) }, ...args);
+      return yearCardBuyHandler(this.core, ...args);
     }
 
     async monthlyCardClaim(...args: Parameters<EconomyHandlers['monthlyCardClaim']>) {
-      return monthlyCardClaimHandler({ deps: this.deps, ensureCommercial: this.ensureCommercial.bind(this) }, ...args);
+      return monthlyCardClaimHandler(this.core, ...args);
     }
 
     async claimRechargeMilestone(...args: Parameters<EconomyHandlers['claimRechargeMilestone']>) {
-      return claimRechargeMilestoneHandler(
-        {
-          deps: this.deps,
-          ensureCommercial: this.ensureCommercial.bind(this),
-          mutateSave: this.mutateSave.bind(this),
-        },
-        ...args,
-      );
+      return claimRechargeMilestoneHandler(this.core, ...args);
     }
 
     async starterBuy(...args: Parameters<EconomyHandlers['starterBuy']>) {
-      return starterBuyHandler({ deps: this.deps, ensureCommercial: this.ensureCommercial.bind(this) }, ...args);
+      return starterBuyHandler(this.core, ...args);
     }
 
     async adsReward(...args: Parameters<EconomyHandlers['adsReward']>) {
-      return adsRewardHandler({ deps: this.deps, ensureCommercial: this.ensureCommercial.bind(this) }, ...args);
+      return adsRewardHandler(this.core, ...args);
     }
 
     async iapVerify(...args: Parameters<EconomyHandlers['iapVerify']>) {
-      return iapVerifyHandler({ deps: this.deps, ensureCommercial: this.ensureCommercial.bind(this) }, ...args);
+      return iapVerifyHandler(this.core, ...args);
     }
 
     async redeemPromoCode(...args: Parameters<EconomyHandlers['redeemPromoCode']>) {
-      return redeemPromoCodeHandler({ deps: this.deps, ensureCommercial: this.ensureCommercial.bind(this) }, ...args);
+      return redeemPromoCodeHandler(this.core, ...args);
     }
-  };
 }

@@ -53,6 +53,15 @@ export class GameState {
 
   winner: Side | null = null;
 
+  /**
+   * True until the first step() call, which fires emitInitialEvents() (opening hand deal
+   * + escort/garrison/attackerArmy/defenderBuilding spawn events) then flips this false.
+   * Lives on GameState (not the driver) because it gates sim behavior, not wall-clock
+   * playback — moved here in the setup/sim/driver split (claudedocs/server.md
+   * "engine/GameEngine") so the driver layer never needs to know it exists.
+   */
+  firstStep: boolean = true;
+
   /** Set to true when the 15-min countdown event has been emitted. */
   countdownStarted: boolean = false;
 

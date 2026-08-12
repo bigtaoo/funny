@@ -69,12 +69,12 @@ function build(cb: Partial<FriendsSceneCallbacks> = {}): any {
   });
 }
 
-/** Frames are square sketchPanel()s sized to `scene.h * 0.07` (drawMailDetail's iconSize) —
+/** Frames are square sketchPanel()s sized to `scene.core.h * 0.07` (drawMailDetail's iconSize) —
  *  everything else in the detail view (name text, wide buttons) is either not a Graphics or not
- *  square at that size. `scene.h` is the layout's design height, not the raw createLayout input —
+ *  square at that size. `scene.core.h` is the layout's design height, not the raw createLayout input —
  *  ScalingManager pins/stretches axes, so it must be read back off the scene, not recomputed. */
 function frames(scene: any): PIXI.Container[] {
-  const iconSize = Math.round(scene.h * 0.07);
+  const iconSize = Math.round(scene.core.h * 0.07);
   return (scene.container.children as PIXI.Container[]).filter(
     (c) => c instanceof PIXI.Graphics
       && Math.abs(c.width - iconSize) < 4
@@ -96,7 +96,7 @@ describe('FriendsScene mail detail — one picture per attachment, arranged hori
   it('draws one square frame per attachment, same row, strictly left-to-right and non-overlapping', () => {
     const scene = build();
     scene.container.removeChildren();
-    scene.drawMailDetail(mixedMail);
+    scene.mail.drawMailDetail(mixedMail);
 
     const fs = frames(scene);
     expect(fs.length).toBe(3);
@@ -104,7 +104,7 @@ describe('FriendsScene mail detail — one picture per attachment, arranged hori
     const ys = new Set(fs.map((f) => f.y));
     expect(ys.size).toBe(1); // one row
 
-    const iconSize = Math.round(scene.h * 0.07);
+    const iconSize = Math.round(scene.core.h * 0.07);
     const xs = fs.map((f) => f.x).sort((a, b) => a - b);
     for (let i = 1; i < xs.length; i++) expect(xs[i]).toBeGreaterThanOrEqual(xs[i - 1] + iconSize);
 
@@ -114,9 +114,9 @@ describe('FriendsScene mail detail — one picture per attachment, arranged hori
   it('each frame is immediately followed by exactly one picture on top of it', () => {
     const scene = build();
     scene.container.removeChildren();
-    scene.drawMailDetail(mixedMail);
+    scene.mail.drawMailDetail(mixedMail);
 
-    const iconSize = Math.round(scene.h * 0.07);
+    const iconSize = Math.round(scene.core.h * 0.07);
     const children = scene.container.children as PIXI.Container[];
     const frameIdxs = children
       .map((c, i) => ({ c, i }))
@@ -137,7 +137,7 @@ describe('FriendsScene mail detail — one picture per attachment, arranged hori
       attachments: [{ kind: 'item', id: 'whatever_unmapped', count: 1 }],
     } as unknown as MailView;
     scene.container.removeChildren();
-    scene.drawMailDetail(unknownMail);
+    scene.mail.drawMailDetail(unknownMail);
 
     expect(frames(scene)).toHaveLength(1);
     scene.destroy();
@@ -150,7 +150,7 @@ describe('FriendsScene mail detail — one picture per attachment, arranged hori
       createdAt: 1000, expireAt: 999999999999, read: true, claimed: false,
     } as unknown as MailView;
     scene.container.removeChildren();
-    scene.drawMailDetail(plainMail);
+    scene.mail.drawMailDetail(plainMail);
 
     expect(frames(scene)).toHaveLength(0);
     scene.destroy();
@@ -177,7 +177,7 @@ describe('FriendsScene mail detail — card attachment always uses the base port
     spy.mock.calls.length = 0;
     const scene = build();
     scene.container.removeChildren();
-    scene.drawMailDetail(cardMail);
+    scene.mail.drawMailDetail(cardMail);
 
     const cardCalls = spy.mock.calls.filter((call) => (call[0] as { defId?: string } | undefined)?.defId === 'lichuang');
     expect(cardCalls.length).toBeGreaterThan(0);
@@ -208,7 +208,7 @@ describe('FriendsScene mail detail — material attachment resolves the correct 
       spy.mock.calls.length = 0;
       const scene = build();
       scene.container.removeChildren();
-      scene.drawMailDetail(matMail(id));
+      scene.mail.drawMailDetail(matMail(id));
 
       expect(spy.mock.calls).toHaveLength(1);
       expect(spy.mock.calls[0]?.[0]).toBe(id);
@@ -221,7 +221,7 @@ describe('FriendsScene mail detail — material attachment resolves the correct 
     spy.mock.calls.length = 0;
     const scene = build();
     scene.container.removeChildren();
-    scene.drawMailDetail(matMail('mat_scrap'));
+    scene.mail.drawMailDetail(matMail('mat_scrap'));
 
     expect(spy.mock.calls).toHaveLength(0);
     scene.destroy();

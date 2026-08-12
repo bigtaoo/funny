@@ -7,7 +7,7 @@ import { craftEquipment, enhanceEquipment, salvageEquipment, equipEquipment, ref
 import { fuseCards, setCardLock } from '../cards.js';
 import { sellSkinToSystem } from '../skin.js';
 import type { MetaHandlers } from '../generated/routes.gen.js';
-import { accountIdOf, clientPlatformOf, type Constructor, type MetaBaseCtor } from './base.js';
+import { accountIdOf, clientPlatformOf, type MetaCore } from './base.js';
 
 type InventoryHandlers = Pick<
   MetaHandlers,
@@ -15,8 +15,9 @@ type InventoryHandlers = Pick<
   | 'cardsFuse' | 'cardsLock' | 'cardsUnlock' | 'sellSkin'
 >;
 
-export function InventoryMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase & Constructor<InventoryHandlers> {
-  return class extends Base {
+export class InventoryService {
+  constructor(private readonly core: MetaCore) {}
+
     /**
      * Equipment crafting (E2, EQUIPMENT_DESIGN §4/§7): deduct stationery materials → roll one +0 base equipment → store (1000-item cap).
      * idempotencyKey is idempotent (client-generated): replay returns the first result without re-deducting materials or re-rolling.
@@ -24,7 +25,7 @@ export function InventoryMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase &
     async craftEquipment(req: FastifyRequest, reply: FastifyReply) {
       const accountId = accountIdOf(req);
       const { defId, idempotencyKey } = req.body as { defId: string; idempotencyKey: string };
-      const { cols, now } = this.deps;
+      const { cols, now } = this.core.deps;
       const r = await craftEquipment(cols, now, accountId, defId, idempotencyKey);
       if ('error' in r) return reply.code(ERROR_HTTP_STATUS[r.code] ?? 400).send(err(r.code as ErrorCode, r.error));
       return ok({ save: r.save, instance: r.instance });
@@ -38,7 +39,7 @@ export function InventoryMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase &
     async enhanceEquipment(req: FastifyRequest, reply: FastifyReply) {
       const accountId = accountIdOf(req);
       const { instanceId, idempotencyKey, useProtect } = req.body as { instanceId: string; idempotencyKey: string; useProtect?: boolean };
-      const { cols, commercial, now } = this.deps;
+      const { cols, commercial, now } = this.core.deps;
       const r = await enhanceEquipment(cols, commercial, now, accountId, instanceId, idempotencyKey, useProtect === true, clientPlatformOf(req));
       if ('error' in r) return reply.code(ERROR_HTTP_STATUS[r.code] ?? 400).send(err(r.code as ErrorCode, r.error));
       return ok({ success: r.success, instance: r.instance, save: r.save });
@@ -51,7 +52,7 @@ export function InventoryMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase &
     async salvageEquipment(req: FastifyRequest, reply: FastifyReply) {
       const accountId = accountIdOf(req);
       const { instanceIds, idempotencyKey } = req.body as { instanceIds: string[]; idempotencyKey: string };
-      const { cols, now } = this.deps;
+      const { cols, now } = this.core.deps;
       const r = await salvageEquipment(cols, now, accountId, instanceIds, idempotencyKey);
       if ('error' in r) return reply.code(ERROR_HTTP_STATUS[r.code] ?? 400).send(err(r.code as ErrorCode, r.error));
       return ok({ refunded: r.refunded, save: r.save });
@@ -68,7 +69,7 @@ export function InventoryMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase &
         instanceId: string | null;
         cardInstanceId: string;
       };
-      const { cols, now } = this.deps;
+      const { cols, now } = this.core.deps;
       const r = await equipEquipment(cols, now, accountId, slot, instanceId ?? null, cardInstanceId);
       if ('error' in r) return reply.code(ERROR_HTTP_STATUS[r.code] ?? 400).send(err(r.code as ErrorCode, r.error));
       return ok({ save: r.save });
@@ -85,7 +86,7 @@ export function InventoryMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase &
         materialId: string;
         idempotencyKey: string;
       };
-      const { cols, commercial, now } = this.deps;
+      const { cols, commercial, now } = this.core.deps;
       const r = await reforgeEquipment(cols, commercial, now, accountId, targetId, materialId, idempotencyKey, clientPlatformOf(req));
       if ('error' in r) return reply.code(ERROR_HTTP_STATUS[r.code] ?? 400).send(err(r.code as ErrorCode, r.error));
       return ok({ instance: r.instance, save: r.save });
@@ -103,7 +104,7 @@ export function InventoryMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase &
         materialIds: string[];
         idempotencyKey: string;
       };
-      const { cols, now } = this.deps;
+      const { cols, now } = this.core.deps;
       const r = await fuseCards(cols, now, accountId, targetId, materialIds, idempotencyKey);
       if ('error' in r) return reply.code(ERROR_HTTP_STATUS[r.code] ?? 400).send(err(r.code as ErrorCode, r.error));
       return ok({ card: r.card, save: r.save });
@@ -116,7 +117,7 @@ export function InventoryMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase &
     async cardsLock(req: FastifyRequest, reply: FastifyReply) {
       const accountId = accountIdOf(req);
       const { cardInstanceId } = req.body as { cardInstanceId: string };
-      const { cols, now } = this.deps;
+      const { cols, now } = this.core.deps;
       const r = await setCardLock(cols, now, accountId, cardInstanceId, true);
       if ('error' in r) return reply.code(ERROR_HTTP_STATUS[r.code] ?? 400).send(err(r.code as ErrorCode, r.error));
       return ok({ save: r.save });
@@ -129,7 +130,7 @@ export function InventoryMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase &
     async cardsUnlock(req: FastifyRequest, reply: FastifyReply) {
       const accountId = accountIdOf(req);
       const { cardInstanceId } = req.body as { cardInstanceId: string };
-      const { cols, now } = this.deps;
+      const { cols, now } = this.core.deps;
       const r = await setCardLock(cols, now, accountId, cardInstanceId, false);
       if ('error' in r) return reply.code(ERROR_HTTP_STATUS[r.code] ?? 400).send(err(r.code as ErrorCode, r.error));
       return ok({ save: r.save });
@@ -144,10 +145,9 @@ export function InventoryMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase &
     async sellSkin(req: FastifyRequest, reply: FastifyReply) {
       const accountId = accountIdOf(req);
       const { skinId, idempotencyKey } = req.body as { skinId: string; idempotencyKey: string };
-      const { cols, commercial, now } = this.deps;
+      const { cols, commercial, now } = this.core.deps;
       const r = await sellSkinToSystem(cols, commercial, now, accountId, skinId, idempotencyKey);
       if ('error' in r) return reply.code(ERROR_HTTP_STATUS[r.code] ?? 400).send(err(r.code as ErrorCode, r.error));
       return ok({ credited: r.credited, coinsAfter: r.coinsAfter, save: r.save });
     }
-  };
 }

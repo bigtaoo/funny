@@ -1,6 +1,12 @@
 // worldsvc core — resource settlement & yield aggregation (WorldCore split, 2026-07-03).
 // Layer above the kernel: lazy settle-on-read, per-tile yield aggregation, and the
 // single-exit recomputeYield (tile yields → nation bonus → building mult + BP). No behavior change.
+//
+// 2026-08-11 (mixin-chain re-audit, claudedocs/server.md "拆分形态的优先级" 形态②): converted from an
+// `extends WorldCoreKernel` inheritance-chain link to composition — this layer has zero cross-layer
+// calls (only reads `core.deps`), so it takes a narrow constructor-injected `core: WorldCore`
+// reference, the same shape every other worldsvc domain sibling (ShopService/TerritoryService/etc.)
+// already uses.
 import {
   playerWorldId,
   tileYield,
@@ -15,11 +21,13 @@ import {
   type ResourceType,
   type TileType,
 } from '@nw/shared';
-import { WorldCoreKernel } from './kernel';
+import type { WorldCore } from '../core';
 import { emptyResources } from './helpers';
 import type { PlayerWorldDoc } from '../db';
 
-export class WorldCoreYield extends WorldCoreKernel {
+export class YieldService {
+  constructor(private readonly core: WorldCore) {}
+
   /** Lazy resource settlement: resources += yieldRate × dt (hours), capped at the cabinet-adjusted storage cap (SLG_CITY_DESIGN). */
   settle(doc: PlayerWorldDoc, now: number): Record<ResourceType, number> {
     const dtHours = Math.max(0, (now - doc.lastTickAt) / 3_600_000);
@@ -54,16 +62,16 @@ export class WorldCoreYield extends WorldCoreKernel {
     buildingsOverride?: Partial<Record<BuildingKey, number>>,
     hasBattlePassOverride?: boolean,
   ): Promise<Record<ResourceType, number>> {
-    const owned = await this.deps.cols.tiles.find({ worldId, ownerId: accountId }).toArray();
+    const owned = await this.core.deps.cols.tiles.find({ worldId, ownerId: accountId }).toArray();
     // Nation production bonus (§2.4 / G1, ADR-034): capitals occupied by this player → own tiles within those capitals' provinces (angle-sector + ring) receive +NATION_BONUS_PRODUCTION.
-    const ownedNations = await this.deps.cols.nations.find({ worldId, ownerId: accountId }).toArray();
+    const ownedNations = await this.core.deps.cols.nations.find({ worldId, ownerId: accountId }).toArray();
     const ownedCapIdx = new Set(ownedNations.map((n) => n.capitalIdx));
     // Building levels (SLG_CITY_DESIGN): land resources get a global yield multiplier; sticker is self-produced by the stickerShop (residential-model).
     // buildingsOverride lets a build-completion path compute the post-upgrade rate before the new levels are persisted (avoids a write-then-read ordering hazard).
     let buildings: Partial<Record<BuildingKey, number>> | undefined = buildingsOverride;
     let hasBattlePass = hasBattlePassOverride ?? false;
     if (!buildingsOverride) {
-      const doc = await this.deps.cols.playerWorld.findOne({ _id: playerWorldId(worldId, accountId) });
+      const doc = await this.core.deps.cols.playerWorld.findOne({ _id: playerWorldId(worldId, accountId) });
       buildings = doc?.buildings;
       hasBattlePass = doc?.hasBattlePass ?? false;
     }

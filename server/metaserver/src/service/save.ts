@@ -14,7 +14,7 @@ import { getDisplayName, ensurePublicId, hasFreeRename } from '../accounts.js';
 import { mirrorWalletFrom, reconcileUndelivered } from '../economy.js';
 import { nullMetaSocialsvcClient } from '../socialsvcClient.js';
 import type { MetaHandlers } from '../generated/routes.gen.js';
-import { accountIdOf, clientPlatformOf, createRateLimiter, type Constructor, type MetaBaseCtor } from './base.js';
+import { accountIdOf, clientPlatformOf, createRateLimiter, type RateLimiter, type MetaCore } from './base.js';
 
 type SaveHandlers = Pick<
   MetaHandlers,
@@ -34,22 +34,31 @@ const STATE_REPLAY_EXPIRE_DAYS = 14;
 /** Per-account share minting rate limit: maximum shares per hour. */
 const STATE_REPLAY_SHARE_PER_HOUR = 20;
 
-export function SaveMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase & Constructor<SaveHandlers> {
-  return class extends Base {
-    /**
-     * State-stream share minting rate limit (REPLAY_SHARE_DESIGN §3.1): sliding window of mint counts per
-     * account within the last 1 hour. Redis-backed when configured (2026-07-27, precise across instances);
-     * in-process fallback otherwise — see createRateLimiter in base.ts (this used to be a hand-rolled
-     * duplicate of that same sliding-window logic with the same never-evicts-idle-keys leak; consolidated).
-     */
-    private readonly stateShareRate = createRateLimiter(this.deps.redis, 'share', STATE_REPLAY_SHARE_PER_HOUR, 3_600_000);
+export class SaveService {
+  /**
+   * State-stream share minting rate limit (REPLAY_SHARE_DESIGN §3.1): sliding window of mint counts per
+   * account within the last 1 hour. Redis-backed when configured (2026-07-27, precise across instances);
+   * in-process fallback otherwise — see createRateLimiter in base.ts (this used to be a hand-rolled
+   * duplicate of that same sliding-window logic with the same never-evicts-idle-keys leak; consolidated).
+   */
+  private readonly stateShareRate: RateLimiter;
+
+  constructor(private readonly core: MetaCore) {
+    // Built in the constructor body, not as a field initializer — with `target: ES2022` this project
+    // compiles class fields with real ECMAScript semantics (useDefineForClassFields), under which ALL
+    // field initializers run before the constructor's own body (including the parameter-property
+    // assignment `this.core = core`), so a field initializer reading `this.core` would see `undefined`
+    // (tsc catches this as TS2729 "used before its initialization" — that's why this isn't a field init).
+    this.stateShareRate = createRateLimiter(this.core.deps.redis, 'share', STATE_REPLAY_SHARE_PER_HOUR, 3_600_000);
+  }
+
     private async allowStateShare(accountId: string, now: number): Promise<boolean> {
       return this.stateShareRate.allow(accountId, now);
     }
 
     async getSave(req: FastifyRequest) {
       const accountId = accountIdOf(req);
-      const { cols, commercial, now } = this.deps;
+      const { cols, commercial, now } = this.core.deps;
       // Kicked off now, awaited only where needed below (season migration check) — independent of the
       // save/wallet reconciliation chain that follows (different collection, no shared state), so there's
       // no reason to make it wait behind that chain instead of overlapping with it.
@@ -65,7 +74,7 @@ export function SaveMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase & Cons
       if (commercial.available) {
         try {
           const w = await reconcileUndelivered(
-            cols, commercial, this.deps.socialsvc ?? nullMetaSocialsvcClient, accountId, now(), clientPlatformOf(req),
+            cols, commercial, this.core.deps.socialsvc ?? nullMetaSocialsvcClient, accountId, now(), clientPlatformOf(req),
           );
           if (w) await mirrorWalletFrom(cols, accountId, w, now());
         } catch (e) {
@@ -75,7 +84,7 @@ export function SaveMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase & Cons
       let save = await getOrCreateSave(cols, accountId, now());
       // Lazy season migration (S11): if pvp.seasonNo is behind, settle previous-season rewards + soft-reset + update battle pass.
       try {
-        const socialsvc = this.deps.socialsvc ?? nullMetaSocialsvcClient;
+        const socialsvc = this.core.deps.socialsvc ?? nullMetaSocialsvcClient;
         const currentSeason = await currentSeasonPromise;
         const r = await migrateIfStale(cols, commercial, socialsvc, save, currentSeason, now());
         if (r.migrated) {
@@ -93,7 +102,7 @@ export function SaveMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase & Cons
       // mirror on response. These four reads are mutually independent (different collections/fields, none
       // consumes another's result) — same Promise.all pattern as accounts.ts's getProfile.
       const [stamina, displayName, publicId, freeRename] = await Promise.all([
-        this.readStaminaSnapshot(accountId, now()),
+        this.core.readStaminaSnapshot(accountId, now()),
         getDisplayName(cols, accountId),
         ensurePublicId(cols, accountId),
         // freeRename: the player still holds their one-time free rename (current name is a system default).
@@ -109,15 +118,15 @@ export function SaveMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase & Cons
         // queue, subscription expiry, speedup pricing, …) — see client/src/net/serverClock.ts.
         serverNow: now(),
         ...(displayName ? { displayName } : {}),
-        ...this.gatewayField,
-        ...(await this.activeMatchFieldFor(accountId)),
+        ...this.core.gatewayField,
+        ...(await this.core.activeMatchFieldFor(accountId)),
       });
     }
 
     /** Recent match history (ranked / friendly): retrieves a concise summary from archived matches from the current account's perspective. */
     async getMatchHistory(req: FastifyRequest) {
       const accountId = accountIdOf(req);
-      const { cols } = this.deps;
+      const { cols } = this.core.deps;
       const limitRaw = Number((req.query as { limit?: string | number }).limit);
       const limit = Number.isFinite(limitRaw)
         ? Math.min(50, Math.max(1, Math.floor(limitRaw)))
@@ -158,7 +167,7 @@ export function SaveMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase & Cons
      */
     async getMatchReplay(req: FastifyRequest, reply: FastifyReply) {
       const accountId = accountIdOf(req);
-      const { cols } = this.deps;
+      const { cols } = this.core.deps;
       const roomId = (req.params as { roomId?: string }).roomId;
       if (!roomId) {
         return reply.code(404).send(err(ErrorCode.NOT_FOUND, 'match not found'));
@@ -187,7 +196,7 @@ export function SaveMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase & Cons
     async createReplayShare(req: FastifyRequest, reply: FastifyReply) {
       const accountId = accountIdOf(req);
       const { roomId } = req.params as { roomId: string };
-      const { cols, now } = this.deps;
+      const { cols, now } = this.core.deps;
       const blob = await cols.replayBlobs.findOne({ _id: roomId });
       if (!blob) return reply.code(404).send(err(ErrorCode.NOT_FOUND, 'replay not found'));
       const shareId = randomUUID();
@@ -199,7 +208,7 @@ export function SaveMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase & Cons
     /** S1-RP: Retrieve a replay by shareId (no login required; automatically expires when the TTL elapses). Returns compressed `replayGz` (base64) — client decompresses. */
     async getReplayByShare(req: FastifyRequest, reply: FastifyReply) {
       const { shareId } = req.params as { shareId: string };
-      const { cols } = this.deps;
+      const { cols } = this.core.deps;
       const share = await cols.replayShares.findOne({ _id: shareId });
       if (!share) return reply.code(404).send(err(ErrorCode.NOT_FOUND, 'share not found'));
       const blob = await cols.replayBlobs.findOne({ _id: share.roomId });
@@ -219,7 +228,7 @@ export function SaveMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase & Cons
      */
     async createStateReplayShare(req: FastifyRequest, reply: FastifyReply) {
       const accountId = accountIdOf(req);
-      const { cols, now } = this.deps;
+      const { cols, now } = this.core.deps;
       const ts = now();
 
       if (!(await this.allowStateShare(accountId, ts))) {
@@ -257,12 +266,11 @@ export function SaveMixin<TBase extends MetaBaseCtor>(Base: TBase): TBase & Cons
      */
     async getStateReplayShare(req: FastifyRequest, reply: FastifyReply) {
       const { shareCode } = req.params as { shareCode: string };
-      const { cols } = this.deps;
+      const { cols } = this.core.deps;
       const doc = await cols.stateReplayShares.findOne({ _id: shareCode });
       if (!doc) return reply.code(404).send(err(ErrorCode.NOT_FOUND, 'share not found'));
       // Increment view count (non-blocking, does not delay response).
       void cols.stateReplayShares.updateOne({ _id: shareCode }, { $inc: { viewCount: 1 } });
       return ok({ blob: doc.blob });
     }
-  };
 }

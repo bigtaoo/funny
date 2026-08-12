@@ -6,37 +6,41 @@
  * band as `[topInset, h - HUD_H]` instead of `[0, h - HUD_H]`, or the map ends up
  * centered/clamped behind the now-opaque header bar.
  *
- * ViewportMixin itself has no PIXI import, but WorldMapRendererBase (its usual
- * super-class, ./WorldMapRenderer/base.ts) pulls in `@nw/shared` for the NPC-city
- * node list — unaliased in this project's default (non-`.ui.ts`) vitest config,
- * which deliberately scopes plain `.test.ts` runs to the PIXI/`@nw/shared`-free
- * game-logic core. So this test mixes ViewportMixin onto a minimal stand-in base
- * (same constructor/`cityNodes()` shape, no `@nw/shared` import) instead.
+ * WorldMapRendererViewport itself has no PIXI import, but WorldMapRendererCore (its
+ * usual constructor dependency, ./WorldMapRenderer/core.ts) pulls in `@nw/shared` for
+ * the NPC-city node list — unaliased in this project's default (non-`.ui.ts`) vitest
+ * config, which deliberately scopes plain `.test.ts` runs to the PIXI/`@nw/shared`-free
+ * game-logic core. So this test builds a minimal stand-in core (same `ctx` shape, no
+ * `@nw/shared` import) instead of the real WorldMapRendererCore.
+ *
+ * 2026-08-12: converted from the former `ViewportMixin(FakeRendererBase)` mixin-chain
+ * construction to `new WorldMapRendererViewport(fakeCore, fakePool, refreshMap)` — see
+ * claudedocs/client-modules.md's split-form priority note.
  */
 import { describe, it, expect, vi } from 'vitest';
-import { ViewportMixin } from '../src/scenes/worldmap/WorldMapRenderer/viewport';
+import { WorldMapRendererViewport } from '../src/scenes/worldmap/WorldMapRenderer/viewport';
 import { HUD_H } from '../src/scenes/worldmap/constants';
 import { tileToScreen } from '../src/render/isoGrid';
 import type { WorldMapContext } from '../src/scenes/worldmap/WorldMapContext';
+import type { WorldMapRendererCore } from '../src/scenes/worldmap/WorldMapRenderer/core';
+import type { WorldMapRendererPool } from '../src/scenes/worldmap/WorldMapRenderer/pool';
 
-class FakeRendererBase {
-  protected readonly ctx: WorldMapContext;
-  constructor(ctx: WorldMapContext) { this.ctx = ctx; }
-  protected cityNodes(): unknown[] { return []; }
+function newViewport(
+  ctx: WorldMapContext,
+  opts: { buildPool?: () => void; refreshMap?: () => void } = {},
+): WorldMapRendererViewport {
+  const fakeCore = { ctx } as unknown as WorldMapRendererCore;
+  const fakePool = { buildPool: opts.buildPool ?? vi.fn() } as unknown as WorldMapRendererPool;
+  const refreshMap = opts.refreshMap ?? vi.fn();
+  return new WorldMapRendererViewport(fakeCore, fakePool, refreshMap);
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const Renderer = ViewportMixin(FakeRendererBase as any);
-
-/** Same renderer, but clampPan is stubbed to a no-op — isolates centerAt/setZoom's own pan
- *  math from clampPan's separate (also topInset-aware, tested on its own below) clamping.
- *  A plain instance override (rather than a `class ... extends Renderer` subclass) sidesteps
- *  a TS quirk where re-extending a mixin-produced intersection constructor type loses the
- *  inherited methods' parameter types. */
-function newNoClampRenderer(ctx: WorldMapContext): InstanceType<typeof Renderer> {
-  const r = new Renderer(ctx);
-  r.clampPan = () => {};
-  return r;
+/** Same viewport, but clampPan is stubbed to a no-op — isolates centerAt/setZoom's own pan
+ *  math from clampPan's separate (also topInset-aware, tested on its own below) clamping. */
+function newNoClampViewport(ctx: WorldMapContext): WorldMapRendererViewport {
+  const v = newViewport(ctx);
+  v.clampPan = () => {};
+  return v;
 }
 
 function makeCtx(overrides: Partial<WorldMapContext> & { tp?: number } = {}): WorldMapContext {
@@ -76,8 +80,8 @@ describe('WorldMapRenderer viewport — topInset-aware camera math', () => {
     // mapW=mapH=10, tp=20 → the map's projected diamond is only 100px tall, comfortably
     // smaller than any reasonable band height, so clampPan takes the "lock centered" branch.
     const ctx = makeCtx({ mapW: 10, mapH: 10, panY: 999 /* arbitrary pre-clamp value */ });
-    const r = new Renderer(ctx);
-    r.clampPan();
+    const v = newViewport(ctx);
+    v.clampPan();
 
     const minSy = tileToScreen(0, 0, ctx.tp).y;
     const maxSy = tileToScreen(ctx.mapW, ctx.mapH, ctx.tp).y;
@@ -94,12 +98,12 @@ describe('WorldMapRenderer viewport — topInset-aware camera math', () => {
     const maxSy = tileToScreen(200, 200, 20).y;
 
     const north = makeCtx({ mapW: 200, mapH: 200, panY: 999999 }); // try to scroll past the north edge
-    new Renderer(north).clampPan();
+    newViewport(north).clampPan();
     // Clamped so the map's TOP edge sits exactly at topInset (not 0).
     expect(minSy + north.panY).toBeCloseTo(north.topInset, 5);
 
     const south = makeCtx({ mapW: 200, mapH: 200, panY: -999999 }); // try to scroll past the south edge
-    new Renderer(south).clampPan();
+    newViewport(south).clampPan();
     // Clamped so the map's BOTTOM edge sits exactly at `bottom` (h - HUD_H) — this edge
     // is untouched by topInset, only the top edge should move.
     expect(maxSy + south.panY).toBeCloseTo(BOTTOM, 5);
@@ -107,14 +111,14 @@ describe('WorldMapRenderer viewport — topInset-aware camera math', () => {
     // Regression check: with topInset=0 the north clamp lands back at the old y=0 edge —
     // proves the 80px shift above is really coming from topInset, not some other constant.
     const northNoInset = makeCtx({ mapW: 200, mapH: 200, panY: 999999, topInset: 0 });
-    new Renderer(northNoInset).clampPan();
+    newViewport(northNoInset).clampPan();
     expect(minSy + northNoInset.panY).toBeCloseTo(0, 5);
   });
 
   it('centerAt places the target tile at the vertical midpoint of the reserved band', () => {
     const ctx = makeCtx({ topInset: 80 });
-    const r = newNoClampRenderer(ctx);
-    r.centerAt(5, 5);
+    const v = newNoClampViewport(ctx);
+    v.centerAt(5, 5);
 
     const s = tileToScreen(5, 5, ctx.tp);
     expect(ctx.panX).toBeCloseTo(ctx.w / 2 - s.x, 5);
@@ -123,8 +127,8 @@ describe('WorldMapRenderer viewport — topInset-aware camera math', () => {
     // Same call with topInset=0 must land the tile higher on screen (no header reserved) —
     // guards against centerAt silently ignoring topInset.
     const ctxNoInset = makeCtx({ topInset: 0 });
-    const r2 = newNoClampRenderer(ctxNoInset);
-    r2.centerAt(5, 5);
+    const v2 = newNoClampViewport(ctxNoInset);
+    v2.centerAt(5, 5);
     expect(ctxNoInset.panY).toBeLessThan(ctx.panY);
   });
 
@@ -134,25 +138,21 @@ describe('WorldMapRenderer viewport — topInset-aware camera math', () => {
     // shifts when topInset changes — if topInset were ignored, both calls below would
     // report the same center tile.
     const big = { mapW: 400, mapH: 400 };
-    const withInset = new Renderer(makeCtx({ ...big, topInset: 80, panX: -2000, panY: -2000 })).viewportCenter();
-    const noInset = new Renderer(makeCtx({ ...big, topInset: 0, panX: -2000, panY: -2000 })).viewportCenter();
+    const withInset = newViewport(makeCtx({ ...big, topInset: 80, panX: -2000, panY: -2000 })).viewportCenter();
+    const noInset = newViewport(makeCtx({ ...big, topInset: 0, panX: -2000, panY: -2000 })).viewportCenter();
     expect(withInset.cy).not.toBe(noInset.cy);
   });
 
   it('setZoom re-centers using the reserved-band midpoint, not the full-screen midpoint', () => {
     const ctx = makeCtx({ zoom: 1, topInset: 80, panX: 0, panY: 0 });
-    const r = newNoClampRenderer(ctx);
-    (r as unknown as { buildPool(): void }).buildPool = vi.fn();
-    (r as unknown as { invalidatePool(): void }).invalidatePool = vi.fn();
-    r.setZoom(2);
+    const v = newNoClampViewport(ctx);
+    v.setZoom(2);
     expect(ctx.zoom).toBe(2);
     expect(ctx.panels.renderHud).toHaveBeenCalled();
 
     const ctxNoInset = makeCtx({ zoom: 1, topInset: 0, panX: 0, panY: 0 });
-    const r2 = newNoClampRenderer(ctxNoInset);
-    (r2 as unknown as { buildPool(): void }).buildPool = vi.fn();
-    (r2 as unknown as { invalidatePool(): void }).invalidatePool = vi.fn();
-    r2.setZoom(2);
+    const v2 = newNoClampViewport(ctxNoInset);
+    v2.setZoom(2);
 
     // Both start centered on the same tile (0,0) at zoom 1 with panX=panY=0; re-centering
     // after the zoom change should still land on that same tile, but the topInset=80 run's

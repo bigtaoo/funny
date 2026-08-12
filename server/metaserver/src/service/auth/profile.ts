@@ -1,5 +1,6 @@
 // profileRename (2026-08-11 split of service/auth.ts — see auth.ts's shell comment for the overall
-// split rationale/module map).
+// split rationale/module map). Takes `core: MetaCore` directly (2026-08-11 ctx-bind cleanup — see
+// base.ts's header, for `core.ensureCommercial`).
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { randomUUID } from 'node:crypto';
 import { ErrorCode, err, ok } from '@nw/shared';
@@ -9,12 +10,7 @@ import { RENAME_COST } from '@nw/shared';
 import { getOrCreateSave } from '../../save.js';
 import { hasFreeRename, setDisplayName } from '../../accounts.js';
 import { mirrorCoins } from '../../economy.js';
-import { accountIdOf, clientPlatformOf, type ServiceDeps } from '../base.js';
-
-export interface ProfileCtx {
-  deps: ServiceDeps;
-  ensureCommercial: (reply: FastifyReply) => boolean;
-}
+import { accountIdOf, clientPlatformOf, type MetaCore } from '../base.js';
 
 /**
  * Change display name. The first rename for a player who never deliberately chose a name (guests,
@@ -22,7 +18,7 @@ export interface ProfileCtx {
  * default) is **free**; every rename after that costs RENAME_COST coins. Requires login; the paid path
  * additionally requires the commercial service.
  */
-export async function profileRenameHandler(ctx: ProfileCtx, req: FastifyRequest, reply: FastifyReply) {
+export async function profileRenameHandler(core: MetaCore, req: FastifyRequest, reply: FastifyReply) {
   const accountId = accountIdOf(req);
   const { displayName } = req.body as { displayName: string };
   const nameErr = validateDisplayName(displayName);
@@ -35,11 +31,11 @@ export async function profileRenameHandler(ctx: ProfileCtx, req: FastifyRequest,
   // (unlike censorChat's mask-and-deliver policy for chat) a hit here REJECTS the rename outright rather
   // than saving a masked "****" as a permanent name. Checked before the paid path spends any coins.
   const region = regionFromAcceptLanguage(req.headers['accept-language']);
-  if (censorChat(name, region, ctx.deps.wordlists ?? undefined).hit) {
+  if (censorChat(name, region, core.deps.wordlists ?? undefined).hit) {
     return reply.code(400).send(err(ErrorCode.BAD_REQUEST, 'display name contains disallowed words'));
   }
 
-  const { cols, commercial, now } = ctx.deps;
+  const { cols, commercial, now } = core.deps;
 
   // One-time free rename for players who still carry a default name (never chose one).
   if (await hasFreeRename(cols, accountId)) {
@@ -48,7 +44,7 @@ export async function profileRenameHandler(ctx: ProfileCtx, req: FastifyRequest,
     return ok({ save, displayName: name, freeRename: false });
   }
 
-  if (!ctx.ensureCommercial(reply)) return;
+  if (!core.ensureCommercial(reply)) return;
   const orderId = randomUUID();
   const charge = await commercial.spend({ accountId, amount: RENAME_COST, reason: 'rename', orderId, clientPlatform: clientPlatformOf(req) });
   if (!charge.ok) {

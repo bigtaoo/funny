@@ -1,6 +1,6 @@
-import { ATTACK_LANES, BOARD_ROWS, CARD_DEFINITIONS, SPELL_CARD_DEFS } from '@game/config';
-import { TICK_RATE } from '@game/math/fixed';
-import type { EscortSpec, HazardSpec, LevelDefinition, LevelRewards } from '@game/campaign/LevelDefinition';
+import { ATTACK_LANES, BOARD_ROWS, CARD_DEFINITIONS, SPELL_CARD_DEFS } from '@nw/engine/config';
+import { TICK_RATE } from '@nw/engine/math/fixed';
+import type { EscortSpec, HazardSpec, LevelDefinition, LevelRewards } from '@nw/engine/campaign/LevelDefinition';
 import type { EditorState } from '../state/EditorState';
 
 /**

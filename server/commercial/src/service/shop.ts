@@ -2,7 +2,7 @@
 // reserve the order slot BEFORE debiting so concurrent same-orderId calls cannot double-charge.
 import { findShopItem, SHOP_BUY_MAX_QTY } from '@nw/shared';
 import type { OrderDoc } from '../db';
-import type { CommercialBaseCtor, Constructor, Result } from './base';
+import type { Result, WalletCore } from './base';
 import { effectiveCoins, spendChannelOf } from '../spendChannel';
 
 export interface ShopHandlers {
@@ -31,8 +31,9 @@ export interface ShopHandlers {
   }): Promise<Result<{ coinsAfter: number }>>;
 }
 
-export function ShopMixin<TBase extends CommercialBaseCtor>(Base: TBase): TBase & Constructor<ShopHandlers> {
-  return class extends Base {
+export class ShopService {
+  constructor(private readonly core: WalletCore) {}
+
     /**
      * Direct shop purchase: debit coins + record order(kind:'shop'). Item delivery is handled by meta.
      * `qty` (2026-08-10, bulk-buy) charges/records several units atomically in this one call — `cost` is
@@ -48,7 +49,7 @@ export function ShopMixin<TBase extends CommercialBaseCtor>(Base: TBase): TBase 
       orderId: string;
       clientPlatform?: string;
     }): Promise<Result<{ orderId: string; coinsAfter: number; status: OrderDoc['status'] }>> {
-      const existing = await this.cols.orders.findOne({ _id: args.orderId });
+      const existing = await this.core.cols.orders.findOne({ _id: args.orderId });
       if (existing) {
         // Ownership check (2026-08-04 fix, mirrors recharge.ts's existing accountId guard): orderId is a
         // raw client/meta-supplied string with no structural binding to the caller — every current caller
@@ -68,11 +69,11 @@ export function ShopMixin<TBase extends CommercialBaseCtor>(Base: TBase): TBase 
       if (!Number.isInteger(qty) || qty < 1 || qty > SHOP_BUY_MAX_QTY) return { ok: false, error: 'BAD_REQUEST' };
       const totalCost = def.cost * qty;
 
-      await this.ensureWallet(args.accountId);
+      await this.core.ensureWallet(args.accountId);
       // Insert-first idempotency (§6.5): claim the orderId slot BEFORE debiting so two concurrent calls with the
       // same orderId cannot both pass the "existing?" check and double-charge. E11000 → replay the existing order.
       try {
-        await this.cols.orders.insertOne({
+        await this.core.cols.orders.insertOne({
           _id: args.orderId,
           accountId: args.accountId,
           kind: 'shop',
@@ -80,33 +81,33 @@ export function ShopMixin<TBase extends CommercialBaseCtor>(Base: TBase): TBase 
           status: 'charged',
           coinsAfter: 0, // back-filled after the debit succeeds
           result: { itemId: def.grants, qty },
-          ts: this.now(),
+          ts: this.core.now(),
         });
       } catch (e) {
         if ((e as { code?: number }).code === 11000) {
-          const o = await this.cols.orders.findOne({ _id: args.orderId });
+          const o = await this.core.cols.orders.findOne({ _id: args.orderId });
           if (o && o.accountId !== args.accountId) return { ok: false, error: 'BAD_REQUEST' };
           return { ok: true, orderId: args.orderId, coinsAfter: o?.coinsAfter ?? 0, status: o?.status ?? 'charged' };
         }
         throw e;
       }
       const channel = spendChannelOf(args.clientPlatform);
-      const charged = await this.debitEffective(args.accountId, totalCost, channel);
+      const charged = await this.core.debitEffective(args.accountId, totalCost, channel);
       if (!charged) {
         // Insufficient funds: release the reserved slot so a later top-up can retry the same orderId.
-        await this.cols.orders.deleteOne({ _id: args.orderId });
+        await this.core.cols.orders.deleteOne({ _id: args.orderId });
         return { ok: false, error: 'INSUFFICIENT_FUNDS' };
       }
       const coinsAfter = effectiveCoins(charged, channel);
 
-      await this.cols.orders.updateOne({ _id: args.orderId }, { $set: { coinsAfter } });
-      await this.cols.ledger.insertOne({
+      await this.core.cols.orders.updateOne({ _id: args.orderId }, { $set: { coinsAfter } });
+      await this.core.cols.ledger.insertOne({
         accountId: args.accountId,
         delta: -totalCost,
         balanceAfter: coinsAfter,
         reason: 'shop',
         orderId: args.orderId,
-        ts: this.now(),
+        ts: this.core.now(),
       });
       return { ok: true, orderId: args.orderId, coinsAfter, status: 'charged' };
     }
@@ -122,7 +123,7 @@ export function ShopMixin<TBase extends CommercialBaseCtor>(Base: TBase): TBase 
       orderId: string;
       clientPlatform?: string;
     }): Promise<Result<{ coinsAfter: number }>> {
-      const existing = await this.cols.orders.findOne({ _id: args.orderId });
+      const existing = await this.core.cols.orders.findOne({ _id: args.orderId });
       // Ownership check (2026-08-04 fix) — see shopCharge's identical guard above for the full rationale.
       if (existing) {
         if (existing.accountId !== args.accountId) return { ok: false, error: 'BAD_REQUEST' };
@@ -132,10 +133,10 @@ export function ShopMixin<TBase extends CommercialBaseCtor>(Base: TBase): TBase 
       const amount = Number.isFinite(args.amount) ? Math.max(0, Math.floor(args.amount)) : 0;
       if (amount === 0) return { ok: false, error: 'BAD_REQUEST' };
 
-      await this.ensureWallet(args.accountId);
+      await this.core.ensureWallet(args.accountId);
       // Insert-first idempotency (§6.5): reserve the orderId slot before debiting; E11000 → replay the existing order.
       try {
-        await this.cols.orders.insertOne({
+        await this.core.cols.orders.insertOne({
           _id: args.orderId,
           accountId: args.accountId,
           kind: 'sink',
@@ -143,34 +144,34 @@ export function ShopMixin<TBase extends CommercialBaseCtor>(Base: TBase): TBase 
           status: 'delivered',
           coinsAfter: 0, // back-filled after the debit succeeds
           result: {},
-          deliveredAt: this.now(),
-          ts: this.now(),
+          deliveredAt: this.core.now(),
+          ts: this.core.now(),
         });
       } catch (e) {
         if ((e as { code?: number }).code === 11000) {
-          const o = await this.cols.orders.findOne({ _id: args.orderId });
+          const o = await this.core.cols.orders.findOne({ _id: args.orderId });
           if (o && o.accountId !== args.accountId) return { ok: false, error: 'BAD_REQUEST' };
           return { ok: true, coinsAfter: o?.coinsAfter ?? 0 };
         }
         throw e;
       }
       const channel = spendChannelOf(args.clientPlatform);
-      const charged = await this.debitEffective(args.accountId, amount, channel);
+      const charged = await this.core.debitEffective(args.accountId, amount, channel);
       if (!charged) {
         // Insufficient funds: release the reserved slot so a later top-up can retry the same orderId.
-        await this.cols.orders.deleteOne({ _id: args.orderId });
+        await this.core.cols.orders.deleteOne({ _id: args.orderId });
         return { ok: false, error: 'INSUFFICIENT_FUNDS' };
       }
       const coinsAfter = effectiveCoins(charged, channel);
 
-      await this.cols.orders.updateOne({ _id: args.orderId }, { $set: { coinsAfter } });
-      await this.cols.ledger.insertOne({
+      await this.core.cols.orders.updateOne({ _id: args.orderId }, { $set: { coinsAfter } });
+      await this.core.cols.ledger.insertOne({
         accountId: args.accountId,
         delta: -amount,
         balanceAfter: coinsAfter,
         reason: args.reason,
         orderId: args.orderId,
-        ts: this.now(),
+        ts: this.core.now(),
       });
       return { ok: true, coinsAfter };
     }
@@ -187,7 +188,7 @@ export function ShopMixin<TBase extends CommercialBaseCtor>(Base: TBase): TBase 
       orderId: string;
       clientPlatform?: string;
     }): Promise<Result<{ coinsAfter: number }>> {
-      const existing = await this.cols.orders.findOne({ _id: args.orderId });
+      const existing = await this.core.cols.orders.findOne({ _id: args.orderId });
       // Ownership check (2026-08-04 fix) — see shopCharge's identical guard above for the full rationale.
       if (existing) {
         if (existing.accountId !== args.accountId) return { ok: false, error: 'BAD_REQUEST' };
@@ -199,7 +200,7 @@ export function ShopMixin<TBase extends CommercialBaseCtor>(Base: TBase): TBase 
       const amount = Number.isFinite(args.amount) ? Math.max(0, Math.floor(args.amount)) : 0;
       // First claim the idempotent order slot (unique _id prevents concurrent duplicate grants), then credit coins + backfill coinsAfter.
       try {
-        await this.cols.orders.insertOne({
+        await this.core.cols.orders.insertOne({
           _id: args.orderId,
           accountId: args.accountId,
           kind: 'grant',
@@ -207,12 +208,12 @@ export function ShopMixin<TBase extends CommercialBaseCtor>(Base: TBase): TBase 
           status: 'delivered',
           coinsAfter: 0,
           result: {},
-          deliveredAt: this.now(),
-          ts: this.now(),
+          deliveredAt: this.core.now(),
+          ts: this.core.now(),
         });
       } catch (e) {
         if ((e as { code?: number }).code === 11000) {
-          const o = await this.cols.orders.findOne({ _id: args.orderId });
+          const o = await this.core.cols.orders.findOne({ _id: args.orderId });
           if (o && o.accountId !== args.accountId) return { ok: false, error: 'BAD_REQUEST' };
           return { ok: true, coinsAfter: o?.coinsAfter ?? 0 };
         }
@@ -220,10 +221,9 @@ export function ShopMixin<TBase extends CommercialBaseCtor>(Base: TBase): TBase 
       }
       const coinsAfter =
         amount > 0
-          ? await this.credit(args.accountId, amount, args.reason, { orderId: args.orderId, clientPlatform: args.clientPlatform })
-          : effectiveCoins(await this.ensureWallet(args.accountId), spendChannelOf(args.clientPlatform));
-      await this.cols.orders.updateOne({ _id: args.orderId }, { $set: { coinsAfter } });
+          ? await this.core.credit(args.accountId, amount, args.reason, { orderId: args.orderId, clientPlatform: args.clientPlatform })
+          : effectiveCoins(await this.core.ensureWallet(args.accountId), spendChannelOf(args.clientPlatform));
+      await this.core.cols.orders.updateOne({ _id: args.orderId }, { $set: { coinsAfter } });
       return { ok: true, coinsAfter };
     }
-  };
 }

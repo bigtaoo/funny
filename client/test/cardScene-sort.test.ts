@@ -3,7 +3,7 @@
 // level desc, then hero (CARD_DEFS declaration order) so duplicate instances of the same hero sit
 // together, then id.
 import { describe, it, expect } from 'vitest';
-import { sortCards } from '../src/scenes/CardScene/base';
+import { sortCards } from '../src/scenes/CardScene/core';
 import type { CardInstance, EquipmentInstance } from '../src/game/meta/SaveData';
 import type { CardSLGState } from '../src/net/WorldApiClient';
 

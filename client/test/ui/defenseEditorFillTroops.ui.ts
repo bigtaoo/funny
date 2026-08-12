@@ -24,6 +24,16 @@ const memStore = (() => {
 })();
 initI18n('en', memStore, ['zh', 'en', 'de']);
 
+/** Reaches through the outer scene private core/data fields (2026-08-11: DefenseEditorScene
+ *  converted from a mixin-chain extends to composition - see claudedocs/client-modules.md split-form
+ *  priority note). committedTroops/troops/teamCapacity/hits -> core; doFillTroops -> data. */
+function internals(scene: DefenseEditorScene): {
+  core: { committedTroops(): number; troops: number; teamCapacity(): number; hits: { action: () => void }[] };
+  data: { doFillTroops(): Promise<void> };
+} {
+  return scene as unknown as ReturnType<typeof internals>;
+}
+
 const WORLD_ID = 'world:1:0';
 
 function buildSave(cardDefs: { id: string; level?: number }[]): SaveData {
@@ -73,7 +83,7 @@ describe('DefenseEditorScene attack mode — fill troops (§6.5, 2026-07-18)', (
       teams: [{ id: 't1', name: 'Team 1', army: [{ cardInstanceId: 'c0', col: 0, row: 8 }] }],
     });
     await flush();
-    const committed = (scene as unknown as { committedTroops(): number }).committedTroops();
+    const committed = internals(scene).core.committedTroops();
     expect(committed).toBe(0); // reproduces the "No teams yet" symptom upstream in WorldMapNet
   });
 
@@ -89,7 +99,7 @@ describe('DefenseEditorScene attack mode — fill troops (§6.5, 2026-07-18)', (
     });
     await flush();
 
-    await (scene as unknown as { doFillTroops(): Promise<void> }).doFillTroops();
+    await internals(scene).data.doFillTroops();
 
     expect(distributeTroops).toHaveBeenCalledTimes(1);
     const [, allocations] = distributeTroops.mock.calls[0] as [string, Record<string, number>];
@@ -97,9 +107,9 @@ describe('DefenseEditorScene attack mode — fill troops (§6.5, 2026-07-18)', (
     expect(allocations.c1).toBe(100);
     expect(allocations.c0).toBeUndefined();
 
-    const committed = (scene as unknown as { committedTroops(): number }).committedTroops();
+    const committed = internals(scene).core.committedTroops();
     expect(committed).toBe(100);
-    expect((scene as unknown as { troops: number }).troops).toBe(0);
+    expect(internals(scene).core.troops).toBe(0);
   });
 
   it('does nothing and does not call the API when the pool is empty', async () => {
@@ -111,7 +121,7 @@ describe('DefenseEditorScene attack mode — fill troops (§6.5, 2026-07-18)', (
     });
     await flush();
 
-    await (scene as unknown as { doFillTroops(): Promise<void> }).doFillTroops();
+    await internals(scene).data.doFillTroops();
     expect(distributeTroops).not.toHaveBeenCalled();
   });
 
@@ -124,9 +134,9 @@ describe('DefenseEditorScene attack mode — fill troops (§6.5, 2026-07-18)', (
     });
     await flush();
 
-    await (scene as unknown as { doFillTroops(): Promise<void> }).doFillTroops();
+    await internals(scene).data.doFillTroops();
     expect(distributeTroops).not.toHaveBeenCalled();
-    expect((scene as unknown as { troops: number }).troops).toBe(500);
+    expect(internals(scene).core.troops).toBe(500);
   });
 
   it('spills the remainder onto the next card once the highest-power card is topped off', async () => {
@@ -142,13 +152,13 @@ describe('DefenseEditorScene attack mode — fill troops (§6.5, 2026-07-18)', (
     });
     await flush();
 
-    await (scene as unknown as { doFillTroops(): Promise<void> }).doFillTroops();
+    await internals(scene).data.doFillTroops();
 
     const [, allocations] = distributeTroops.mock.calls[0] as [string, Record<string, number>];
     expect(allocations.c1).toBe(400); // higher power, filled to its cap first
     expect(allocations.c0).toBe(50);  // remaining pool spills onto the next card
-    expect((scene as unknown as { committedTroops(): number }).committedTroops()).toBe(450);
-    expect((scene as unknown as { troops: number }).troops).toBe(0);
+    expect(internals(scene).core.committedTroops()).toBe(450);
+    expect(internals(scene).core.troops).toBe(0);
   });
 
   it('only tops up the gap for a card that already carries some troops, not the full cap', async () => {
@@ -160,12 +170,12 @@ describe('DefenseEditorScene attack mode — fill troops (§6.5, 2026-07-18)', (
     });
     await flush();
 
-    await (scene as unknown as { doFillTroops(): Promise<void> }).doFillTroops();
+    await internals(scene).data.doFillTroops();
 
     const [, allocations] = distributeTroops.mock.calls[0] as [string, Record<string, number>];
     expect(allocations.c0).toBe(50); // 200 cap - 150 already carried, not the full 200
-    expect((scene as unknown as { committedTroops(): number }).committedTroops()).toBe(200);
-    expect((scene as unknown as { troops: number }).troops).toBe(450);
+    expect(internals(scene).core.committedTroops()).toBe(200);
+    expect(internals(scene).core.troops).toBe(450);
   });
 
   it('a rejected distributeTroops call leaves cardState/troops untouched and can be retried', async () => {
@@ -178,15 +188,15 @@ describe('DefenseEditorScene attack mode — fill troops (§6.5, 2026-07-18)', (
     distributeTroops.mockRejectedValueOnce(new Error('network error'));
     await flush();
 
-    await (scene as unknown as { doFillTroops(): Promise<void> }).doFillTroops();
+    await internals(scene).data.doFillTroops();
     expect(distributeTroops).toHaveBeenCalledTimes(1);
-    expect((scene as unknown as { committedTroops(): number }).committedTroops()).toBe(0);
-    expect((scene as unknown as { troops: number }).troops).toBe(500);
+    expect(internals(scene).core.committedTroops()).toBe(0);
+    expect(internals(scene).core.troops).toBe(500);
 
     // Retry succeeds once the transient error clears.
-    await (scene as unknown as { doFillTroops(): Promise<void> }).doFillTroops();
+    await internals(scene).data.doFillTroops();
     expect(distributeTroops).toHaveBeenCalledTimes(2);
-    expect((scene as unknown as { committedTroops(): number }).committedTroops()).toBe(200);
+    expect(internals(scene).core.committedTroops()).toBe(200);
   });
 });
 
@@ -203,7 +213,7 @@ describe('DefenseEditorScene attack mode — troop readout + Fill-troops disable
       }],
     });
     await flush();
-    const capacity = (scene as unknown as { teamCapacity(): number }).teamCapacity();
+    const capacity = internals(scene).core.teamCapacity();
     expect(capacity).toBe(400);
   });
 
@@ -215,7 +225,7 @@ describe('DefenseEditorScene attack mode — troop readout + Fill-troops disable
       troops: 500,
     });
     await flush();
-    const hits = (scene as unknown as { hits: { action: () => void }[] }).hits;
+    const hits = internals(scene).core.hits;
     expect(hits.some((h) => h.action.toString().includes('doFillTroops'))).toBe(true);
   });
 
@@ -227,7 +237,7 @@ describe('DefenseEditorScene attack mode — troop readout + Fill-troops disable
       troops: 500,
     });
     await flush();
-    const hits = (scene as unknown as { hits: { action: () => void }[] }).hits;
+    const hits = internals(scene).core.hits;
     expect(hits.some((h) => h.action.toString().includes('doFillTroops'))).toBe(false);
   });
 });

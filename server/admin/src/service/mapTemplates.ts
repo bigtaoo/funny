@@ -3,7 +3,7 @@
 // active template, viewport/diff-save size caps) live in worldsvc's MapTemplateService — this layer only
 // adds capability gating (enforced again at httpApi.ts) + audit trail.
 import type { MapTemplateSummary, MapTemplateTile } from '@nw/shared';
-import type { AdminBaseCtor, Constructor } from './base';
+import type { AdminCore } from './base';
 
 export interface MapTemplatesHandlers {
   slgListMapTemplates(): Promise<MapTemplateSummary[]>;
@@ -14,44 +14,44 @@ export interface MapTemplatesHandlers {
   slgDeleteMapTemplate(actor: string, templateId: string): Promise<void>;
 }
 
-export function MapTemplatesMixin<TBase extends AdminBaseCtor>(Base: TBase): TBase & Constructor<MapTemplatesHandlers> {
-  return class extends Base {
+export class MapTemplatesService {
+  constructor(private readonly core: AdminCore) {}
+
     /** List template metadata (capability slg.map.view). Returns empty if worldsvc is unreachable. */
     async slgListMapTemplates(): Promise<MapTemplateSummary[]> {
-      if (!this.world.available) return [];
-      return this.world.listMapTemplates();
+      if (!this.core.world.available) return [];
+      return this.core.world.listMapTemplates();
     }
 
     /** Generate (or regenerate) a template's seed tiles from proceduralTile (capability slg.map.manage, high-risk: replaces existing tiles for this templateId). Audited. */
     async slgGenerateMapTemplate(actor: string, templateId: string, width: number, height: number): Promise<MapTemplateSummary> {
-      const summary = await this.world.generateMapTemplate(templateId, width, height);
-      await this.audit(actor, 'slg.map.template.generate', { target: templateId, summary: `${width}x${height} tiles=${summary.tileCount}` });
+      const summary = await this.core.world.generateMapTemplate(templateId, width, height);
+      await this.core.audit(actor, 'slg.map.template.generate', { target: templateId, summary: `${width}x${height} tiles=${summary.tileCount}` });
       return summary;
     }
 
     /** Viewport bbox read for the editor canvas (capability slg.map.view). */
     async slgGetMapTemplateTiles(templateId: string, x: number, y: number, w: number, h: number): Promise<MapTemplateTile[]> {
-      if (!this.world.available) return [];
-      return this.world.getMapTemplateTiles(templateId, x, y, w, h);
+      if (!this.core.world.available) return [];
+      return this.core.world.getMapTemplateTiles(templateId, x, y, w, h);
     }
 
     /** Diff-save the tiles the editor changed (capability slg.map.manage). Audited. */
     async slgSaveMapTemplateTiles(actor: string, templateId: string, tiles: MapTemplateTile[]): Promise<{ updated: number }> {
-      const result = await this.world.saveMapTemplateTiles(templateId, tiles);
-      await this.audit(actor, 'slg.map.template.save', { target: templateId, summary: `${result.updated} tiles` });
+      const result = await this.core.world.saveMapTemplateTiles(templateId, tiles);
+      await this.core.audit(actor, 'slg.map.template.save', { target: templateId, summary: `${result.updated} tiles` });
       return result;
     }
 
     /** Mark templateId as the one new worlds clone at open time (capability slg.map.manage). Audited. */
     async slgActivateMapTemplate(actor: string, templateId: string): Promise<void> {
-      await this.world.activateMapTemplate(templateId);
-      await this.audit(actor, 'slg.map.template.activate', { target: templateId });
+      await this.core.world.activateMapTemplate(templateId);
+      await this.core.audit(actor, 'slg.map.template.activate', { target: templateId });
     }
 
     /** Delete a template (capability slg.map.manage, high-risk). worldsvc rejects if it is the active template. Audited. */
     async slgDeleteMapTemplate(actor: string, templateId: string): Promise<void> {
-      await this.world.deleteMapTemplate(templateId);
-      await this.audit(actor, 'slg.map.template.delete', { target: templateId });
+      await this.core.world.deleteMapTemplate(templateId);
+      await this.core.audit(actor, 'slg.map.template.delete', { target: templateId });
     }
-  };
 }

@@ -15,7 +15,8 @@ import { createLayout } from '../../src/layout/ScalingManager';
 import { InputManager } from '../../src/inputSystem/InputManager';
 import { initI18n, t } from '../../src/i18n';
 import { DefenseEditorScene, type DefenseEditorCallbacks } from '../../src/scenes/DefenseEditorScene';
-import { msCountdown } from '../../src/scenes/DefenseEditorScene/base';
+import { msCountdown } from '../../src/scenes/DefenseEditorScene/core';
+import * as gridModule from '../../src/scenes/DefenseEditorScene/grid';
 import { makeNewSave, type SaveData } from '../../src/game/meta/SaveData';
 import { WorldApiError, type WorldApiClient, type TeamTemplate, type CardSLGState, type PlayerWorldView } from '../../src/net/WorldApiClient';
 import * as log from '../../src/net/log';
@@ -42,10 +43,7 @@ function buildSave(cardCount: number): SaveData {
 }
 
 function buildHarness(opts: {
-  cardCount?: number;
-  cardState?: Record<string, CardSLGState>;
-  teams?: TeamTemplate[];
-  teamName?: string;
+  cardCount?: number; cardState?: Record<string, CardSLGState>; teams?: TeamTemplate[]; teamName?: string;
 } = {}) {
   const save = buildSave(opts.cardCount ?? 3);
   const setTeams = vi.fn().mockResolvedValue(undefined);
@@ -64,29 +62,61 @@ function buildHarness(opts: {
   return { scene, cb, save, setTeams, getTeams, getMe };
 }
 
+/**
+ * Reaches through the outer scene's private `core`/`renderPanel`/`input`/`data` fields (TS privacy
+ * is compile-time only) — 2026-08-11: DefenseEditorScene converted from a mixin-chain `extends` to
+ * composition (see claudedocs/client-modules.md's split-form priority note), so what used to be
+ * flattened directly onto the scene instance now lives on one of these four composed fields.
+ * `gridX`/`gridY`/`cellW`/`cellH`/`gRows`/`bodyLayer`/`scrollY`/`tool`/`garrison`/`leaderCardId`/
+ * `render`/`availableCards`/`effectiveLeaderId` -> core; `drawArtFit` -> renderPanel; `onGridTap` ->
+ * input; `doSave` -> data.
+ */
+function internals(scene: DefenseEditorScene): {
+  core: {
+    gridX: number; gridY: number; cellW: number; cellH: number; gRows: readonly number[];
+    bodyLayer: PIXI.Container; scrollY: number; tool: unknown;
+    garrison: Map<string, { cardInstanceId?: string; hp: number }>;
+    leaderCardId: string | null;
+    render(): void;
+    availableCards(): { card: { id: string }; unitType: string }[];
+    effectiveLeaderId(): string | undefined;
+  };
+  renderPanel: { drawArtFit(url: string, x: number, y: number, boxW: number, boxH: number): void };
+  input: { onGridTap(x: number, y: number): void };
+  data: { doSave(): Promise<void> };
+} {
+  return scene as unknown as ReturnType<typeof internals>;
+}
+
 /** Grid geometry is private; read it back post-render (TS privacy is compile-time only). */
 function cellCenter(scene: DefenseEditorScene, col: number, dr: number): [number, number] {
-  const s = scene as unknown as { gridX: number; gridY: number; cellW: number; cellH: number };
-  return [s.gridX + col * s.cellW + s.cellW / 2, s.gridY + dr * s.cellH + s.cellH / 2];
+  const { core } = internals(scene);
+  return [core.gridX + col * core.cellW + core.cellW / 2, core.gridY + dr * core.cellH + core.cellH / 2];
 }
 
 async function flush(): Promise<void> {
-  await Promise.resolve(); await Promise.resolve(); await Promise.resolve();
+  await Promise.resolve();
+  await Promise.resolve();
+  await Promise.resolve();
 }
 
 describe('DefenseEditorScene attack mode — card-based formation (2026-07-17 migration)', () => {
   it('selecting a roster card then tapping a grid cell places it; save sends {cardInstanceId, col, row} only', async () => {
-    const { scene, setTeams } = buildHarness({ cardCount: 1, cardState: { c0: { currentTroops: 200 } } });
+    const { scene, setTeams } = buildHarness({
+      cardCount: 1,
+      cardState: { c0: { currentTroops: 200 } },
+    });
     await flush();
 
-    const available = (scene as unknown as { availableCards(): { card: { id: string }; unitType: string }[] }).availableCards();
+    const { core, input, data } = internals(scene);
+    const available = core.availableCards();
     expect(available.map((c) => c.card.id)).toEqual(['c0']);
-    (scene as unknown as { tool: unknown }).tool = { kind: 'card', cardInstanceId: available[0]!.card.id, unitType: available[0]!.unitType };
+    core.tool = { kind: 'card', cardInstanceId: available[0]!.card.id, unitType: available[0]!.unitType };
 
     const [sx, sy] = cellCenter(scene, 0, 0);
-    (scene as unknown as { onGridTap(x: number, y: number): void }).onGridTap(sx, sy);
+    input.onGridTap(sx, sy);
 
-    await (scene as unknown as { doSave(): Promise<void> }).doSave();
+    await data.doSave();
     expect(setTeams).toHaveBeenCalledTimes(1);
     const [, teams] = setTeams.mock.calls[0] as [string, TeamTemplate[]];
     const saved = teams.find((tm) => tm.id === 't1')!;
@@ -107,12 +137,13 @@ describe('DefenseEditorScene attack mode — card-based formation (2026-07-17 mi
     });
     await flush();
 
-    const available = (scene as unknown as { availableCards(): { card: { id: string }; unitType: string }[] }).availableCards();
-    (scene as unknown as { tool: unknown }).tool = { kind: 'card', cardInstanceId: available[0]!.card.id, unitType: available[0]!.unitType };
+    const { core, input, data } = internals(scene);
+    const available = core.availableCards();
+    core.tool = { kind: 'card', cardInstanceId: available[0]!.card.id, unitType: available[0]!.unitType };
     const [sx, sy] = cellCenter(scene, 0, 0);
-    (scene as unknown as { onGridTap(x: number, y: number): void }).onGridTap(sx, sy);
+    input.onGridTap(sx, sy);
 
-    await (scene as unknown as { doSave(): Promise<void> }).doSave();
+    await data.doSave();
     const [, teams] = setTeams.mock.calls[0] as [string, TeamTemplate[]];
     const saved = teams.find((tm) => tm.id === 't1')!;
     expect(saved.name).toBe('');
@@ -125,7 +156,7 @@ describe('DefenseEditorScene attack mode — card-based formation (2026-07-17 mi
       teams: [{ id: 't1', name: 'Team 1', army: [{ cardInstanceId: 'c0', col: 0, row: 8 }] }],
     });
     await flush();
-    const garrison = (scene as unknown as { garrison: Map<string, { cardInstanceId?: string; hp: number }> }).garrison;
+    const garrison = internals(scene).core.garrison;
     expect(garrison.size).toBe(1);
     const entry = garrison.get('0:8')!;
     expect(entry.cardInstanceId).toBe('c0');
@@ -138,7 +169,7 @@ describe('DefenseEditorScene attack mode — card-based formation (2026-07-17 mi
       cardState: { c0: {}, c1: { teamId: 't2' } } as unknown as Record<string, CardSLGState>,
     });
     await flush();
-    const available = (scene as unknown as { availableCards(): { card: { id: string } }[] }).availableCards();
+    const available = internals(scene).core.availableCards();
     expect(available.map((c) => c.card.id)).toEqual(['c0']);
   });
 
@@ -148,7 +179,7 @@ describe('DefenseEditorScene attack mode — card-based formation (2026-07-17 mi
       cardState: { c0: {}, c1: { injuredUntil: Date.now() + 60_000 } } as unknown as Record<string, CardSLGState>,
     });
     await flush();
-    const available = (scene as unknown as { availableCards(): { card: { id: string } }[] }).availableCards();
+    const available = internals(scene).core.availableCards();
     expect(available.map((c) => c.card.id)).toEqual(['c0']);
   });
 
@@ -160,7 +191,7 @@ describe('DefenseEditorScene attack mode — card-based formation (2026-07-17 mi
     save.cardInv!['c1']!.level = 9;
     save.cardInv!['c2']!.level = 4;
     await flush();
-    const available = (scene as unknown as { availableCards(): { card: { id: string } }[] }).availableCards();
+    const available = internals(scene).core.availableCards();
     expect(available.map((c) => c.card.id)).toEqual(['c1', 'c2', 'c0']);
   });
 
@@ -171,10 +202,11 @@ describe('DefenseEditorScene attack mode — card-based formation (2026-07-17 mi
       teams: [{ id: 't1', name: 'Team 1', army: [{ cardInstanceId: 'c0', col: 0, row: 8 }] }],
     });
     await flush();
-    (scene as unknown as { tool: unknown }).tool = { kind: 'card', cardInstanceId: 'c0', unitType: 'infantry' };
+    const { core, input } = internals(scene);
+    core.tool = { kind: 'card', cardInstanceId: 'c0', unitType: 'infantry' };
     const [sx, sy] = cellCenter(scene, 1, 0); // move to a different lane, same row
-    (scene as unknown as { onGridTap(x: number, y: number): void }).onGridTap(sx, sy);
-    const garrison = (scene as unknown as { garrison: Map<string, unknown> }).garrison;
+    input.onGridTap(sx, sy);
+    const garrison = core.garrison;
     expect(garrison.size).toBe(1);
     expect(garrison.has('0:8')).toBe(false);
     expect(garrison.has('1:8')).toBe(true);
@@ -183,27 +215,23 @@ describe('DefenseEditorScene attack mode — card-based formation (2026-07-17 mi
   it('placing more than CARD_TEAM_MAX_SIZE cards is rejected with a toast', async () => {
     const { scene } = buildHarness({ cardCount: 13, cardState: {} });
     await flush();
-    const s = scene as unknown as {
-      tool: unknown;
-      onGridTap(x: number, y: number): void;
-      garrison: Map<string, unknown>;
-    };
+    const { core, input } = internals(scene);
     const lanes = [0, 1, 2, 3, 4, 7, 8, 9, 10, 11];
     let i = 0;
     for (const row of [0, 1]) {
       for (const col of lanes) {
         if (i >= 12) break;
-        s.tool = { kind: 'card', cardInstanceId: `c${i}`, unitType: 'infantry' };
+        core.tool = { kind: 'card', cardInstanceId: `c${i}`, unitType: 'infantry' };
         const [sx, sy] = cellCenter(scene, col, row);
-        s.onGridTap(sx, sy);
+        input.onGridTap(sx, sy);
         i++;
       }
     }
-    expect(s.garrison.size).toBe(12);
-    s.tool = { kind: 'card', cardInstanceId: 'c12', unitType: 'infantry' };
+    expect(core.garrison.size).toBe(12);
+    core.tool = { kind: 'card', cardInstanceId: 'c12', unitType: 'infantry' };
     const [sx, sy] = cellCenter(scene, lanes[0]!, 2);
-    s.onGridTap(sx, sy);
-    expect(s.garrison.size).toBe(12); // rejected — cap held
+    input.onGridTap(sx, sy);
+    expect(core.garrison.size).toBe(12); // rejected — cap held
   });
 });
 
@@ -211,21 +239,27 @@ describe('DefenseEditorScene attack mode — card-based formation (2026-07-17 mi
 // team lists. It is an identity marker on the TeamTemplate, deliberately NOT a fixed "leader cell" on
 // the grid — the player can rearrange the formation freely without changing who leads.
 describe('DefenseEditorScene attack mode — team leader', () => {
-  const teamWithTwo = [{
-    id: 't1', name: 'Team 1',
-    army: [{ cardInstanceId: 'c0', col: 0, row: 8 }, { cardInstanceId: 'c1', col: 1, row: 8 }],
-  }];
+  const teamWithTwo = [
+    {
+      id: 't1',
+      name: 'Team 1',
+      army: [
+        { cardInstanceId: 'c0', col: 0, row: 8 },
+        { cardInstanceId: 'c1', col: 1, row: 8 },
+      ],
+    },
+  ];
 
   it('tapping a placed card with the leader tool marks it, and save persists leaderCardId', async () => {
     const { scene, setTeams } = buildHarness({ cardCount: 2, cardState: {}, teams: teamWithTwo });
     await flush();
-    const s = scene as unknown as { tool: unknown; onGridTap(x: number, y: number): void; leaderCardId: string | null };
-    s.tool = { kind: 'leader' };
+    const { core, input, data } = internals(scene);
+    core.tool = { kind: 'leader' };
     const [sx, sy] = cellCenter(scene, 1, 0); // the cell holding c1
-    s.onGridTap(sx, sy);
-    expect(s.leaderCardId).toBe('c1');
+    input.onGridTap(sx, sy);
+    expect(core.leaderCardId).toBe('c1');
 
-    await (scene as unknown as { doSave(): Promise<void> }).doSave();
+    await data.doSave();
     const [, teams] = setTeams.mock.calls[0] as [string, TeamTemplate[]];
     expect(teams.find((tm) => tm.id === 't1')!.leaderCardId).toBe('c1');
   });
@@ -233,37 +267,40 @@ describe('DefenseEditorScene attack mode — team leader', () => {
   it('the leader tool does nothing on an empty cell', async () => {
     const { scene } = buildHarness({ cardCount: 2, cardState: {}, teams: teamWithTwo });
     await flush();
-    const s = scene as unknown as { tool: unknown; onGridTap(x: number, y: number): void; leaderCardId: string | null };
-    s.tool = { kind: 'leader' };
+    const { core, input } = internals(scene);
+    core.tool = { kind: 'leader' };
     const [sx, sy] = cellCenter(scene, 4, 3); // empty lane/row
-    s.onGridTap(sx, sy);
-    expect(s.leaderCardId).toBeNull();
+    input.onGridTap(sx, sy);
+    expect(core.leaderCardId).toBeNull();
   });
 
   it('an existing leaderCardId is loaded from the team and round-trips through save', async () => {
     const { scene, setTeams } = buildHarness({
-      cardCount: 2, cardState: {},
+      cardCount: 2,
+      cardState: {},
       teams: [{ ...teamWithTwo[0]!, leaderCardId: 'c0' }],
     });
     await flush();
-    expect((scene as unknown as { leaderCardId: string | null }).leaderCardId).toBe('c0');
-    await (scene as unknown as { doSave(): Promise<void> }).doSave();
+    const { core, data } = internals(scene);
+    expect(core.leaderCardId).toBe('c0');
+    await data.doSave();
     const [, teams] = setTeams.mock.calls[0] as [string, TeamTemplate[]];
     expect(teams.find((tm) => tm.id === 't1')!.leaderCardId).toBe('c0');
   });
 
   it('a leader erased from the formation is dropped on save (server would clear it anyway)', async () => {
     const { scene, setTeams } = buildHarness({
-      cardCount: 2, cardState: {},
+      cardCount: 2,
+      cardState: {},
       teams: [{ ...teamWithTwo[0]!, leaderCardId: 'c0' }],
     });
     await flush();
-    const s = scene as unknown as { tool: unknown; onGridTap(x: number, y: number): void };
-    s.tool = { kind: 'erase' };
+    const { core, input, data } = internals(scene);
+    core.tool = { kind: 'erase' };
     const [sx, sy] = cellCenter(scene, 0, 0); // the cell holding the leader c0
-    s.onGridTap(sx, sy);
+    input.onGridTap(sx, sy);
 
-    await (scene as unknown as { doSave(): Promise<void> }).doSave();
+    await data.doSave();
     const [, teams] = setTeams.mock.calls[0] as [string, TeamTemplate[]];
     expect(teams.find((tm) => tm.id === 't1')!.leaderCardId).toBeUndefined();
   });
@@ -272,7 +309,7 @@ describe('DefenseEditorScene attack mode — team leader', () => {
     const { scene, save } = buildHarness({ cardCount: 2, cardState: {}, teams: teamWithTwo });
     save.cardInv!['c1']!.level = 5; // c1 outranks c0 → it becomes the fallback leader
     await flush();
-    expect((scene as unknown as { effectiveLeaderId(): string | undefined }).effectiveLeaderId()).toBe('c1');
+    expect(internals(scene).core.effectiveLeaderId()).toBe('c1');
   });
 });
 
@@ -291,19 +328,16 @@ describe('DefenseEditorScene attack mode — CARD_INJURED save error (2026-08-01
     });
     await flush();
     const untilMs = Date.now() + 4 * 60_000;
-    setTeams.mockRejectedValueOnce(
-      new WorldApiError('CARD_INJURED', `Card c0 is injured and cannot be assigned until ${untilMs}`),
-    );
+    setTeams.mockRejectedValueOnce(new WorldApiError('CARD_INJURED', `Card c0 is injured and cannot be assigned until ${untilMs}`));
     const spy = vi.spyOn(log, 'showToastMessage');
 
-    await (scene as unknown as { doSave(): Promise<void> }).doSave();
+    const { core, data } = internals(scene);
+    await data.doSave();
 
-    const garrison = (scene as unknown as { garrison: Map<string, unknown> }).garrison;
+    const garrison = core.garrison;
     expect(garrison.has('0:8')).toBe(false); // this team's own card, genuinely injured — removed
 
-    const expected = t('world.team.cardInjuredRemoved')
-      .replace('{name}', t('card.lichuang.name'))
-      .replace('{time}', msCountdown(untilMs, Date.now()));
+    const expected = t('world.team.cardInjuredRemoved').replace('{name}', t('card.lichuang.name')).replace('{time}', msCountdown(untilMs, Date.now()));
     expect(spy).toHaveBeenCalledWith(expected, 'error');
   });
 
@@ -317,14 +351,13 @@ describe('DefenseEditorScene attack mode — CARD_INJURED save error (2026-08-01
     const untilMs = Date.now() + 60_000;
     // c1 is not part of this team's grid at all (it's on unrelated team t2) — simulates the exact
     // shape of error the pre-fix server could return while editing team t1.
-    setTeams.mockRejectedValueOnce(
-      new WorldApiError('CARD_INJURED', `Card c1 is injured and cannot be assigned until ${untilMs}`),
-    );
+    setTeams.mockRejectedValueOnce(new WorldApiError('CARD_INJURED', `Card c1 is injured and cannot be assigned until ${untilMs}`));
     const spy = vi.spyOn(log, 'showToastMessage');
 
-    await (scene as unknown as { doSave(): Promise<void> }).doSave();
+    const { core, data } = internals(scene);
+    await data.doSave();
 
-    const garrison = (scene as unknown as { garrison: Map<string, unknown> }).garrison;
+    const garrison = core.garrison;
     expect(garrison.has('0:8')).toBe(true); // this team's own placement is untouched
     expect(garrison.size).toBe(1);
     expect(spy).toHaveBeenCalledTimes(1); // still surfaces something rather than failing silently
@@ -339,10 +372,10 @@ describe('DefenseEditorScene attack mode — roster panel scroll clipping (2026-
   it('renders the card roster behind a mask so an overscrolled row cannot bleed above the list', async () => {
     const { scene } = buildHarness({ cardCount: 30, cardState: {} });
     await flush();
-    const s = scene as unknown as { scrollY: number; render(): void; bodyLayer: PIXI.Container };
-    s.scrollY = 40; // partway into the overflowing list — the exact scroll offset the old bug hit
-    s.render();
-    const masked = s.bodyLayer.children.some((c) => (c as PIXI.Container).mask != null);
+    const { core } = internals(scene);
+    core.scrollY = 40; // partway into the overflowing list — the exact scroll offset the old bug hit
+    core.render();
+    const masked = core.bodyLayer.children.some((c) => (c as PIXI.Container).mask != null);
     expect(masked).toBe(true);
   });
 });
@@ -356,29 +389,30 @@ describe('DefenseEditorScene attack mode — base icon replaces the frontRow lab
   it('draws the base icon spanning the base columns at the home-edge row, and drops the old text label', async () => {
     const { scene } = buildHarness({ cardCount: 0, cardState: {} });
     await flush();
-    const s = scene as unknown as {
-      drawArtFit(url: string, x: number, y: number, boxW: number, boxH: number): void;
-      render(): void;
-      gridX: number; gridY: number; cellW: number; cellH: number;
-      gRows: readonly number[];
-      bodyLayer: PIXI.Container;
-    };
-    const spy = vi.spyOn(s, 'drawArtFit');
-    s.render();
+    const { core } = internals(scene);
+    // drawArtFit is a free function in grid.ts (2026-08-11 composition conversion — see
+    // claudedocs/client-modules.md's split-form priority note): renderGrid calls it directly, not
+    // through RenderPanel.drawArtFit, so the spy has to sit on the module export itself — grid.ts
+    // routes that one call through a self-import (`gridSelf.drawArtFit`) specifically so this
+    // module-level spy can see it (a bare in-module call isn't patchable this way). Its signature
+    // also gained a leading `core` param vs. the old method, so the destructures below shift by
+    // one position.
+    const spy = vi.spyOn(gridModule, 'drawArtFit');
+    core.render();
 
     // The base icon is the only drawArtFit call sized to 2 grid columns wide (unit/roster art is
     // always drawn into a single square-ish cell) — find it by that shape rather than by url, since
     // the test harness's binary-asset stub collapses every png import to one identical data: URI.
-    const rows = s.gRows.length; // attack mode: no building row, so this is the full row count
-    const baseCall = spy.mock.calls.find(([, , , boxW]) => Math.abs(boxW - s.cellW * 2) < 0.01);
+    const rows = core.gRows.length; // attack mode: no building row, so this is the full row count
+    const baseCall = spy.mock.calls.find(([, , , , boxW]) => Math.abs(boxW - core.cellW * 2) < 0.01);
     expect(baseCall).toBeTruthy();
-    const [, px, py, boxW, boxH] = baseCall!;
-    expect(px).toBeCloseTo(s.gridX + BASE_COLS[0] * s.cellW);
-    expect(py).toBeCloseTo(s.gridY + (rows - 1) * s.cellH);
-    expect(boxW).toBeCloseTo(s.cellW * 2);
-    expect(boxH).toBeCloseTo(s.cellH);
+    const [, , px, py, boxW, boxH] = baseCall!;
+    expect(px).toBeCloseTo(core.gridX + BASE_COLS[0] * core.cellW);
+    expect(py).toBeCloseTo(core.gridY + (rows - 1) * core.cellH);
+    expect(boxW).toBeCloseTo(core.cellW * 2);
+    expect(boxH).toBeCloseTo(core.cellH);
 
-    const hasOldLabel = s.bodyLayer.children.some((c) => (c as PIXI.Text).text === 'Deploy');
+    const hasOldLabel = core.bodyLayer.children.some((c) => (c as PIXI.Text).text === 'Deploy');
     expect(hasOldLabel).toBe(false);
   });
 });
@@ -407,21 +441,20 @@ describe('DefenseEditorScene defense mode — buildRow label + base icon untouch
   it('still renders the "Build" row label at the building row, and never draws the base icon', async () => {
     const { scene } = buildDefenseHarness();
     await flush();
-    const s = scene as unknown as {
-      drawArtFit(url: string, x: number, y: number, boxW: number, boxH: number): void;
-      render(): void;
-      cellW: number;
-      bodyLayer: PIXI.Container;
-    };
-    const spy = vi.spyOn(s, 'drawArtFit');
-    s.render();
+    const { core } = internals(scene);
+    // drawArtFit is a free function in grid.ts (2026-08-11 composition conversion — see
+    // claudedocs/client-modules.md's split-form priority note) — spy on the module export, not
+    // RenderPanel.drawArtFit (see the attack-mode test above for the full reasoning).
+    const spy = vi.spyOn(gridModule, 'drawArtFit');
+    core.render();
 
-    const hasBuildLabel = s.bodyLayer.children.some((c) => (c as PIXI.Text).text === t('world.defense.buildRow'));
+    const hasBuildLabel = core.bodyLayer.children.some((c) => (c as PIXI.Text).text === t('world.defense.buildRow'));
     expect(hasBuildLabel).toBe(true);
 
     // Same "2 grid columns wide" shape check the attack-mode test uses to spot the base icon —
-    // it must never appear here, since hasBuildingRow guards it off in defense mode.
-    const baseCall = spy.mock.calls.find(([, , , boxW]) => Math.abs(boxW - s.cellW * 2) < 0.01);
+    // it must never appear here, since hasBuildingRow guards it off in defense mode. `boxW` is at
+    // index 4, not 3, since drawArtFit's free-function signature has a leading `core` param.
+    const baseCall = spy.mock.calls.find(([, , , , boxW]) => Math.abs(boxW - core.cellW * 2) < 0.01);
     expect(baseCall).toBeUndefined();
   });
 });

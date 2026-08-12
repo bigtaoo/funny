@@ -1,8 +1,8 @@
 // Gacha pools + draw + Fate Point redemption (GACHA_DESIGN §2/§7). Split out of service/economy.ts
-// (2026-08-10, 独立函数模块 form — see economy.ts's facade comment). `gachaDrawHandler` takes an
-// explicit `ctx` (deps + `ensureCommercial`/`bumpRetentionTask`, bound by EconomyMixin's class body
-// from its protected base methods); `redeemFateHandler` only needs `ensureCommercial` + `deps`;
-// `getGachaPoolsHandler` only ever touches `deps` so it takes that directly. No behavior change.
+// (2026-08-10, 独立函数模块 form — see economy.ts's facade comment). `gachaDrawHandler`/
+// `redeemFateHandler` take `core: MetaCore` directly (2026-08-11 ctx-bind cleanup — see base.ts's
+// header, for `core.ensureCommercial`/`core.bumpRetentionTask`); `getGachaPoolsHandler` only ever
+// touches `deps` so it takes that directly. No behavior change.
 import { randomUUID } from 'node:crypto';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import {
@@ -13,12 +13,16 @@ import { getOrCreateSave } from '../../save.js';
 import type { GachaPoolView } from '../../commercialClient.js';
 import { markDuplicates, unionOwnershipForDuplicateCheck, deliverLootBox, deliverOrder } from '../../economy.js';
 import { nullMetaSocialsvcClient } from '../../socialsvcClient.js';
-import { accountIdOf, clientPlatformOf, type ServiceDeps } from '../base.js';
+import { accountIdOf, clientPlatformOf, type ServiceDeps, type MetaCore } from '../base.js';
 
 const log = createLogger('meta:economy');
 
-/** Client-facing gacha pool view (GACHA_DESIGN §2 + §8): static + active limited pools with per-entry odds. */
-interface PoolView {
+/** Client-facing gacha pool view (GACHA_DESIGN §2 + §8): static + active limited pools with per-entry odds.
+ * Exported (2026-08-11 mixin-chain split) so EconomyService.getGachaPools's inferred return type can be
+ * named in the .d.ts — under the old mixin form, EconomyMixin's explicit `Constructor<EconomyHandlers>`
+ * return-type annotation erased this internal detail from declaration emit; a plain class method has no
+ * such annotation, so tsc must be able to name every type it infers. */
+export interface PoolView {
   id: string;
   costSingle: number;
   costTen: number;
@@ -29,17 +33,6 @@ interface PoolView {
   featuredLegendary?: string;
   endAt?: number;
   entries: { itemId: string; weight: number; rarity: string; probability: number }[];
-}
-
-export interface GachaDrawCtx {
-  deps: ServiceDeps;
-  ensureCommercial: (reply: FastifyReply) => boolean;
-  bumpRetentionTask: (accountId: string, taskId: import('@nw/shared').DailyTaskId) => Promise<void>;
-}
-
-export interface RedeemFateCtx {
-  deps: ServiceDeps;
-  ensureCommercial: (reply: FastifyReply) => boolean;
 }
 
 /** Gacha pool list (entries expanded for client display). Includes active limited pools (GACHA_DESIGN §2.2) with banner metadata. */
@@ -97,8 +90,8 @@ export async function getGachaPoolsHandler(deps: ServiceDeps) {
   return ok({ pools });
 }
 
-export async function gachaDrawHandler(ctx: GachaDrawCtx, req: FastifyRequest, reply: FastifyReply) {
-  if (!ctx.ensureCommercial(reply)) return;
+export async function gachaDrawHandler(core: MetaCore, req: FastifyRequest, reply: FastifyReply) {
+  if (!core.ensureCommercial(reply)) return;
   const accountId = accountIdOf(req);
   const { poolId, count } = req.body as { poolId: string; count: number };
   // Static pools validate here; limited pools exist only in commercial (validated there → POOL_UNAVAILABLE).
@@ -107,7 +100,7 @@ export async function gachaDrawHandler(ctx: GachaDrawCtx, req: FastifyRequest, r
   }
   void gachaCost; // cost is authoritative in commercial (computed per pool); here we only validate the draw count.
 
-  const { cols, commercial, now } = ctx.deps;
+  const { cols, commercial, now } = core.deps;
   const orderId = randomUUID();
   // getOrCreateSave doesn't depend on the draw result — kick it off alongside the commercial HTTP round-trip
   // instead of waiting for the response first (was serialized, adding a full Mongo round-trip to the critical path).
@@ -144,7 +137,7 @@ export async function gachaDrawHandler(ctx: GachaDrawCtx, req: FastifyRequest, r
   const { save, overflow, cardGrants, equipmentGrants } = await deliverLootBox(
     cols,
     commercial,
-    ctx.deps.socialsvc ?? nullMetaSocialsvcClient,
+    core.deps.socialsvc ?? nullMetaSocialsvcClient,
     accountId,
     orderId,
     draw.results,
@@ -163,7 +156,7 @@ export async function gachaDrawHandler(ctx: GachaDrawCtx, req: FastifyRequest, r
   });
   // B5: record daily task "open gacha" (best-effort, does not block the response — see bumpRetentionTask).
   // The retention state merged into the response below is computed locally, independent of this write landing.
-  void ctx.bumpRetentionTask(accountId, 'gacha.draw');
+  void core.bumpRetentionTask(accountId, 'gacha.draw');
   const nextRetention2 = accrueRetentionTask(save.retention, 'gacha.draw', now());
   let saveWithRet2 = nextRetention2 !== save.retention ? { ...save, retention: nextRetention2 } : save;
   // Fate points (§7): reflect the freshly-credited balance immediately (mirror catches up fully on next GET /save).
@@ -194,13 +187,13 @@ export async function gachaDrawHandler(ctx: GachaDrawCtx, req: FastifyRequest, r
 }
 
 /** Fate Point redemption (GACHA_DESIGN §7): 30 points → one self-chosen past-featured legendary skin. */
-export async function redeemFateHandler(ctx: RedeemFateCtx, req: FastifyRequest, reply: FastifyReply) {
-  if (!ctx.ensureCommercial(reply)) return;
+export async function redeemFateHandler(core: MetaCore, req: FastifyRequest, reply: FastifyReply) {
+  if (!core.ensureCommercial(reply)) return;
   const accountId = accountIdOf(req);
   const { itemId } = req.body as { itemId: string };
   if (!itemId) return reply.code(400).send(err(ErrorCode.BAD_REQUEST, 'missing itemId'));
 
-  const { cols, commercial, now } = ctx.deps;
+  const { cols, commercial, now } = core.deps;
   const orderId = randomUUID();
   const r = await commercial.redeemFate({ accountId, itemId, orderId, clientPlatform: clientPlatformOf(req) });
   if (!r.ok) {
@@ -215,7 +208,7 @@ export async function redeemFateHandler(ctx: RedeemFateCtx, req: FastifyRequest,
   await getOrCreateSave(cols, accountId, now());
   // Deliver the chosen skin idempotently (shared routing), then reflect the new fate balance immediately.
   let { save } = await deliverOrder(
-    cols, commercial, ctx.deps.socialsvc ?? nullMetaSocialsvcClient, accountId,
+    cols, commercial, core.deps.socialsvc ?? nullMetaSocialsvcClient, accountId,
     { _id: orderId, kind: 'fate', result: { itemId } },
     r.coinsAfter, null, now(),
   );

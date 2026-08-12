@@ -1,5 +1,5 @@
-import { parseLevelDefinition, LevelParseError } from '@game/campaign/levelSchema';
-import type { LevelDefinition } from '@game/campaign/LevelDefinition';
+import { parseLevelDefinition, LevelParseError } from '@nw/engine/campaign/levelSchema';
+import type { LevelDefinition } from '@nw/engine/campaign/LevelDefinition';
 import sampleLevel from '@game/campaign/levels/ch1_lv1.json';
 import { EditorState } from './state/EditorState';
 import { BoardPanel } from './board/BoardPanel';

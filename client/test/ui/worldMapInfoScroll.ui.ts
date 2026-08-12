@@ -295,7 +295,12 @@ describe('WorldMapInput — in-list button tap-vs-drag (infoScrollPendingTap)', 
   function nationsHarness() {
     const { ctx, panels, input } = buildHarness({ nations: makeNationsOneMine(15) });
     panels.renderTerritoryPanel();
-    const openRenameInput = vi.spyOn(panels, 'openRenameInput').mockImplementation(() => {});
+    // TerritoryPanel's own rename button callback calls `this.openRenameInput(...)` on itself
+    // (2026-08-11 composition conversion — see shopIconApi's doc comment in
+    // worldMapShopPanel.ui.ts), not `panels.openRenameInput(...)`, so the spy must sit on the
+    // inner `territory` domain instance the callback actually closes over.
+    const territory = (panels as unknown as { territory: { openRenameInput: () => void } }).territory;
+    const openRenameInput = vi.spyOn(territory, 'openRenameInput').mockImplementation(() => {});
     const sr = ctx.infoScrollRect!;
     const inSr = (r: { x: number; y: number; w: number; h: number }): boolean => {
       const cx = r.x + r.w / 2, cy = r.y + r.h / 2;

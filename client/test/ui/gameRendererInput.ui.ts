@@ -58,7 +58,7 @@ describe('GameRenderer InputMixin — drag to place', () => {
     const { engine, layout, input, renderer } = buildRenderer();
     const playCard = vi.spyOn(engine, 'playCard');
 
-    const from = (renderer as any).handView.slotCenter(SLOT_UNIT_SHIELDBEARER);
+    const from = (renderer as any).core.handView.slotCenter(SLOT_UNIT_SHIELDBEARER);
     const to   = layout.gridToScreen(1, 1); // col 1 is an attack lane; row 1 = bottom spawn row
 
     input._emitDown(from.x, from.y);
@@ -66,7 +66,7 @@ describe('GameRenderer InputMixin — drag to place', () => {
     input._emitUp(to.x, to.y);
 
     expect(playCard).toHaveBeenCalledWith(SLOT_UNIT_SHIELDBEARER, 1);
-    expect((renderer as any).drag).toBeNull();
+    expect((renderer as any).input.drag).toBeNull();
     renderer.destroy();
   });
 
@@ -74,7 +74,7 @@ describe('GameRenderer InputMixin — drag to place', () => {
     const { engine, layout, input, renderer } = buildRenderer();
     const playCard = vi.spyOn(engine, 'playCard');
 
-    const from = (renderer as any).handView.slotCenter(SLOT_BUILDING_TOWER_A);
+    const from = (renderer as any).core.handView.slotCenter(SLOT_BUILDING_TOWER_A);
     const to   = layout.gridToScreen(3, 0); // row 0 = bottom building row
 
     input._emitDown(from.x, from.y);
@@ -92,7 +92,7 @@ describe('GameRenderer InputMixin — drag to place', () => {
     const buildRect = layout.gridToScreen(col, 0);
 
     // First building lands normally.
-    const from1 = (renderer as any).handView.slotCenter(SLOT_BUILDING_TOWER_A);
+    const from1 = (renderer as any).core.handView.slotCenter(SLOT_BUILDING_TOWER_A);
     input._emitDown(from1.x, from1.y);
     input._emitMove(buildRect.x, buildRect.y);
     input._emitUp(buildRect.x, buildRect.y);
@@ -105,7 +105,7 @@ describe('GameRenderer InputMixin — drag to place', () => {
 
     // Second building dragged onto the SAME cell must be rejected by
     // commitCardPlay's hasBuildingAt() guard — no second engine.playCard call.
-    const from2 = (renderer as any).handView.slotCenter(SLOT_BUILDING_TOWER_B);
+    const from2 = (renderer as any).core.handView.slotCenter(SLOT_BUILDING_TOWER_B);
     input._emitDown(from2.x, from2.y);
     input._emitMove(buildRect.x, buildRect.y);
     input._emitUp(buildRect.x, buildRect.y);
@@ -118,7 +118,7 @@ describe('GameRenderer InputMixin — drag to place', () => {
     const { engine, layout, input, renderer } = buildRenderer();
     const playCard = vi.spyOn(engine, 'playCard');
 
-    const from = (renderer as any).handView.slotCenter(SLOT_BUILDING_TOWER_A);
+    const from = (renderer as any).core.handView.slotCenter(SLOT_BUILDING_TOWER_A);
     // Base columns are never a legal building lane — see ATTACK_LANES in commands.ts.
     const to = layout.gridToScreen(BASE_COLS[0], 0); // row 0 = bottom building row
 
@@ -134,15 +134,15 @@ describe('GameRenderer InputMixin — drag to place', () => {
     const { engine, renderer, input } = buildRenderer();
     const playCard = vi.spyOn(engine, 'playCard');
 
-    const from    = (renderer as any).handView.slotCenter(SLOT_BUILDING_TOWER_A);
+    const from    = (renderer as any).core.handView.slotCenter(SLOT_BUILDING_TOWER_A);
     const outside = { x: -5000, y: -5000 };
     input._emitDown(from.x, from.y);
     input._emitMove(outside.x, outside.y); // far past DRAG_THRESHOLD → starts a card drag
     input._emitUp(outside.x, outside.y);
 
     expect(playCard).not.toHaveBeenCalled();
-    expect((renderer as any).drag).toBeNull();
-    expect((renderer as any).pendingCardDown).toBeNull();
+    expect((renderer as any).input.drag).toBeNull();
+    expect((renderer as any).input.pendingCardDown).toBeNull();
     renderer.destroy();
   });
 });
@@ -150,33 +150,33 @@ describe('GameRenderer InputMixin — drag to place', () => {
 describe('GameRenderer InputMixin — tap-select to place', () => {
   it('tapping the same hand card twice toggles the selection off', () => {
     const { renderer, input } = buildRenderer();
-    const center = (renderer as any).handView.slotCenter(SLOT_UNIT_SHIELDBEARER);
+    const center = (renderer as any).core.handView.slotCenter(SLOT_UNIT_SHIELDBEARER);
 
     input._emitDown(center.x, center.y);
     input._emitUp(center.x, center.y);
-    expect((renderer as any).tapSelect?.handIndex).toBe(SLOT_UNIT_SHIELDBEARER);
+    expect((renderer as any).input.tapSelect?.handIndex).toBe(SLOT_UNIT_SHIELDBEARER);
 
     input._emitDown(center.x, center.y);
     input._emitUp(center.x, center.y);
-    expect((renderer as any).tapSelect).toBeNull();
+    expect((renderer as any).input.tapSelect).toBeNull();
     renderer.destroy();
   });
 
   it('tap-select a unit card, then tap a board lane, calls engine.playCard(handIndex, col)', () => {
     const { engine, layout, renderer, input } = buildRenderer();
     const playCard = vi.spyOn(engine, 'playCard');
-    const center = (renderer as any).handView.slotCenter(SLOT_UNIT_SHIELDBEARER);
+    const center = (renderer as any).core.handView.slotCenter(SLOT_UNIT_SHIELDBEARER);
 
     input._emitDown(center.x, center.y);
     input._emitUp(center.x, center.y);
-    expect((renderer as any).tapSelect?.handIndex).toBe(SLOT_UNIT_SHIELDBEARER);
+    expect((renderer as any).input.tapSelect?.handIndex).toBe(SLOT_UNIT_SHIELDBEARER);
 
     const boardPt = layout.gridToScreen(1, 1);
     input._emitDown(boardPt.x, boardPt.y);
     input._emitUp(boardPt.x, boardPt.y);
 
     expect(playCard).toHaveBeenCalledWith(SLOT_UNIT_SHIELDBEARER, 1);
-    expect((renderer as any).tapSelect).toBeNull();
+    expect((renderer as any).input.tapSelect).toBeNull();
     renderer.destroy();
   });
 });
@@ -184,21 +184,21 @@ describe('GameRenderer InputMixin — tap-select to place', () => {
 describe('GameRenderer InputMixin — placement highlight stays in sync with board state', () => {
   it('a lane blocked by an occupied spawn-row cell un-blocks on the next tick once the cell frees up, with no pointer movement', () => {
     const { engine, layout, renderer } = buildRenderer();
-    const boardView = (renderer as any).boardView;
+    const boardView = (renderer as any).core.boardView;
     const spy = vi.spyOn(boardView, 'showUnitLaneHighlights');
     const lane = 1;
-    const spawnRow = (renderer as any).localSpawnRow;
+    const spawnRow = (renderer as any).core.localSpawnRow;
     const unitGrid = (engine.state.board as any).unitGrid;
 
     // Fake-occupy the spawn-row cell directly (equivalent to a unit currently standing there).
     // unitGrid is multi-occupant since the ghost-fix (Board stores number[] | null per cell).
     unitGrid[spawnRow][lane] = [12345];
 
-    const from = (renderer as any).handView.slotCenter(SLOT_UNIT_SHIELDBEARER);
+    const from = (renderer as any).core.handView.slotCenter(SLOT_UNIT_SHIELDBEARER);
     const to   = layout.gridToScreen(lane, 1);
     // handleDown/handleMove — same drag-start path as the "drag to place" tests above.
-    (renderer as any).handleDown(from.x, from.y);
-    (renderer as any).handleMove(to.x, to.y);
+    (renderer as any).input.handleDown(from.x, from.y);
+    (renderer as any).input.handleMove(to.x, to.y);
 
     expect(spy).toHaveBeenLastCalledWith(expect.anything(), new Set([lane]), lane);
 
@@ -217,7 +217,7 @@ describe('GameRenderer InputMixin — upgrade button (tap, no drag)', () => {
   it('a plain tap on the upgrade button calls engine.upgradeBase() immediately', () => {
     const { engine, renderer, input } = buildRenderer();
     const upgradeBase = vi.spyOn(engine, 'upgradeBase');
-    const hudView = (renderer as any).hudView;
+    const hudView = (renderer as any).core.hudView;
 
     expect(hudView.upgradeEnabled).toBe(true); // ch1_lv1 startInk 40 >= level-1 cost 30
     const rect = hudView.getUpgradeRect();
@@ -228,14 +228,14 @@ describe('GameRenderer InputMixin — upgrade button (tap, no drag)', () => {
     input._emitUp(x, y); // release at the SAME point — a tap, not a drag onto the base
 
     expect(upgradeBase).toHaveBeenCalledTimes(1);
-    expect((renderer as any).drag).toBeNull();
+    expect((renderer as any).input.drag).toBeNull();
     renderer.destroy();
   });
 
   it('tapping the upgrade button while unaffordable does not call engine.upgradeBase()', () => {
     const { engine, renderer, input } = buildRenderer();
     const upgradeBase = vi.spyOn(engine, 'upgradeBase');
-    const hudView = (renderer as any).hudView;
+    const hudView = (renderer as any).core.hudView;
     hudView.upgradeEnabled = false; // simulate insufficient ink
 
     const rect = hudView.getUpgradeRect();

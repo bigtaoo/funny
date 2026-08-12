@@ -35,7 +35,7 @@ function makeCard(id: string, defId: string, level: number): CardInstance {
 
 interface Rect { x: number; y: number; w: number; h: number; }
 interface HitRect { rect: Rect; action: () => void; owner?: string; }
-interface SceneInternals { hitRects: HitRect[]; }
+interface SceneInternals { core: { hitRects: HitRect[] }; }
 
 /** Named nodes anywhere in the tree, in scene-graph order. */
 function findByName(container: PIXI.Container, name: string): PIXI.DisplayObject[] {
@@ -84,7 +84,7 @@ describe('CardScene roster list — gear icons are individually clickable, strai
 
       const icon = findByName(scene.container, `gearIcon:${slot}`)[0]!;
       expect(icon).toBeDefined();
-      const { hit } = hitRectAt(internals.hitRects, icon);
+      const { hit } = hitRectAt(internals.core.hitRects, icon);
       expect(hit, `no hit rect covers the "${slot}" icon`).toBeDefined();
 
       hit!.action();
@@ -102,7 +102,7 @@ describe('CardScene roster list — gear icons are individually clickable, strai
     // renderCardCell pushes the 3 gear-icon hit rects (in weapon/armor/trinket order) and only then
     // the whole-cell hit rect — base.ts's handlePointerDown takes the *first* rect in `hitRects` whose
     // bounds contain the tap, so registration order doubles as click priority here.
-    const ownedByA = internals.hitRects.filter((h) => h.owner === 'a');
+    const ownedByA = internals.core.hitRects.filter((h) => h.owner === 'a');
     expect(ownedByA).toHaveLength(4); // 3 gear icons + 1 whole-cell, single card in this scene
     const wholeCellRect = ownedByA[3]!.rect;
     const cellIsWholeCard = wholeCellRect.w > 200 && wholeCellRect.h > 200; // vs. a ~44px icon box
@@ -113,8 +113,8 @@ describe('CardScene roster list — gear icons are individually clickable, strai
       const icon = findByName(scene.container, `gearIcon:${slot}`)[0]!;
       // The icon's own hit rect (index i within ownedByA) sits at a global index strictly before the
       // whole-cell one (index 3 within ownedByA) — first-match iteration hits the icon first.
-      const globalIconIndex = internals.hitRects.indexOf(ownedByA[i]!);
-      const globalCellIndex = internals.hitRects.indexOf(ownedByA[3]!);
+      const globalIconIndex = internals.core.hitRects.indexOf(ownedByA[i]!);
+      const globalCellIndex = internals.core.hitRects.indexOf(ownedByA[3]!);
       expect(globalIconIndex).toBeLessThan(globalCellIndex);
       // Sanity: that hit rect really is the one covering this icon.
       expect(icon.x).toBeGreaterThanOrEqual(ownedByA[i]!.rect.x);
@@ -132,7 +132,7 @@ describe('CardScene roster list — gear icons are individually clickable, strai
       expect(findByName(scene.container, `gearIcon:${slot}`)[0]).toBeDefined();
     }
 
-    const ownedByA = internals.hitRects.filter((h) => h.owner === 'a');
+    const ownedByA = internals.core.hitRects.filter((h) => h.owner === 'a');
     expect(ownedByA).toHaveLength(1); // whole-cell only
 
     scene.destroy();

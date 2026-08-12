@@ -56,7 +56,7 @@ function probe(localSide: Side, whoUpgrades: 'bottom' | 'top') {
   engine.state[whoUpgrades === 'bottom' ? 'bottomPlayer' : 'topPlayer'].upgradeLevel = 1;
   for (let i = 0; i < 3; i++) renderer.update(1 / 30);
 
-  const bv: any = (renderer as any).boardView;
+  const bv: any = (renderer as any).core.boardView;
   // The base whose owner just upgraded, in this client's local frame.
   const upgraded = (whoUpgrades === 'bottom') === (localSide === Side.Bottom) ? bv.playerBase : bv.enemyBase;
   const r = {
@@ -117,7 +117,7 @@ describe('battle base upgrade — one-shot level-up effect routing', () => {
     renderer.init();
     for (let i = 0; i < 5; i++) renderer.update(1 / 30);
 
-    const bv: any = (renderer as any).boardView;
+    const bv: any = (renderer as any).core.boardView;
     const kids = (b: any) => (b.sprite.parent?.children.length ?? 0);
     const before = { player: kids(bv.playerBase), enemy: kids(bv.enemyBase) };
     bv.playBaseUpgradeEffect(owner);

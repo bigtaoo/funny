@@ -31,7 +31,7 @@ function makeCard(id: string, defId: string, level: number): CardInstance {
 }
 
 interface SceneInternals {
-  cellRects: Map<string, { x: number; y: number; w: number }>;
+  list: { cellRects: Map<string, { x: number; y: number; w: number }> };
 }
 
 /**
@@ -39,7 +39,7 @@ interface SceneInternals {
  * from the roster's last renderList() layout pass.
  */
 function renderedOrder(scene: CardScene): string[] {
-  const { cellRects } = scene as unknown as SceneInternals;
+  const { cellRects } = (scene as unknown as SceneInternals).list;
   return [...cellRects.entries()]
     .sort(([, a], [, b]) => (a.y !== b.y ? a.y - b.y : a.x - b.x))
     .map(([id]) => id);

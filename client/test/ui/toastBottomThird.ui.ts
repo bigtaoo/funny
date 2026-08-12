@@ -101,9 +101,12 @@ describe('scene showToast() routes to the global toast sink (success/error kind)
       activeCardInstanceId: '',
     };
     const scene = new EquipmentScene(createLayout(W, H), new InputManager(), cb) as any;
-    scene.showToast(MSG);
+    // `showToast` lives on the composed `core` field (2026-08-11: EquipmentScene converted from a
+    // mixin-chain `extends` to composition — see claudedocs/client-modules.md's split-form
+    // priority note), not the outer scene instance.
+    scene.core.showToast(MSG);
     expect(sink).toHaveBeenLastCalledWith(MSG, 'success');
-    scene.showToast(MSG, C.red);
+    scene.core.showToast(MSG, C.red);
     expect(sink).toHaveBeenLastCalledWith(MSG, 'error');
     scene.destroy();
   });
@@ -115,9 +118,12 @@ describe('scene showToast() routes to the global toast sink (success/error kind)
       getFriendPublicIds: async () => new Set<string>(),
     };
     const scene = new FamilyScene(createLayout(W, H), new InputManager(), cb as any) as any;
-    scene.showToast(MSG);
+    // `showToast` lives on the composed `core` field (2026-08-11: FamilyScene converted from a
+    // mixin-chain `extends` to composition — see claudedocs/client-modules.md's split-form
+    // priority note), not the outer scene instance.
+    scene.core.showToast(MSG);
     expect(sink).toHaveBeenLastCalledWith(MSG, 'success');
-    scene.showToast(MSG, C.red);
+    scene.core.showToast(MSG, C.red);
     expect(sink).toHaveBeenLastCalledWith(MSG, 'error');
     scene.destroy();
   });
@@ -135,9 +141,12 @@ describe('scene showToast() routes to the global toast sink (success/error kind)
     } as unknown as WorldApiClient;
     const cb: CitySceneCallbacks = { onBack: () => {}, worldApi, worldId: 'world:1:0' };
     const scene = new CityScene(createLayout(W, H), new InputManager(), cb) as any;
-    scene.showToast(MSG);
+    // `showToast` lives on the composed `core` field (2026-08-11: CityScene converted from a
+    // mixin-chain `extends` to composition — see claudedocs/client-modules.md's split-form
+    // priority note), not the outer scene instance.
+    scene.core.showToast(MSG);
     expect(sink).toHaveBeenLastCalledWith(MSG, 'error');
-    scene.showToast(MSG, C.green);
+    scene.core.showToast(MSG, C.green);
     expect(sink).toHaveBeenLastCalledWith(MSG, 'success');
     scene.destroy();
   });

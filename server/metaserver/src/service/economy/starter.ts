@@ -1,6 +1,6 @@
 // Starter pack purchase (GACHA_DESIGN §6). Split out of service/economy.ts (2026-08-10, 独立函数模块
-// form — see economy.ts's facade comment). `starterBuyHandler` takes an explicit `ctx` (deps +
-// `ensureCommercial`, bound by EconomyMixin's class body from its protected base method). No behavior
+// form — see economy.ts's facade comment). `starterBuyHandler` takes `core: MetaCore` directly
+// (2026-08-11 ctx-bind cleanup — see base.ts's header, for `core.ensureCommercial`). No behavior
 // change.
 import { randomUUID } from 'node:crypto';
 import type { FastifyReply, FastifyRequest } from 'fastify';
@@ -8,12 +8,7 @@ import { ErrorCode, err, ok, PRODUCT_STARTER_GROWTH, GROWTH_PACK_WINDOW_DAYS } f
 import { getOrCreateSave } from '../../save.js';
 import { markDuplicates, unionOwnershipForDuplicateCheck, deliverOrder, mirrorWalletFrom } from '../../economy.js';
 import { nullMetaSocialsvcClient } from '../../socialsvcClient.js';
-import { accountIdOf, clientPlatformOf, type ServiceDeps } from '../base.js';
-
-export interface StarterCtx {
-  deps: ServiceDeps;
-  ensureCommercial: (reply: FastifyReply) => boolean;
-}
+import { accountIdOf, clientPlatformOf, type MetaCore } from '../base.js';
 
 /**
  * Buy a starter pack (GACHA_DESIGN §6): starter_draw (¥6, rare+ floored 10-pull) or starter_growth
@@ -21,8 +16,8 @@ export interface StarterCtx {
  * a verified store receipt (same gate as monthlyCardBuy/yearCardBuy; previously this endpoint granted
  * both packs on `cost: 0` with no payment at all — see GACHA_DESIGN §6 implementation note).
  */
-export async function starterBuyHandler(ctx: StarterCtx, req: FastifyRequest, reply: FastifyReply) {
-  if (!ctx.ensureCommercial(reply)) return;
+export async function starterBuyHandler(core: MetaCore, req: FastifyRequest, reply: FastifyReply) {
+  if (!core.ensureCommercial(reply)) return;
   const accountId = accountIdOf(req);
   const { productId, platform, receipt } = req.body as {
     productId: string; platform?: string; receipt?: string;
@@ -33,7 +28,7 @@ export async function starterBuyHandler(ctx: StarterCtx, req: FastifyRequest, re
   if (!platform || !receipt) {
     return reply.code(400).send(err(ErrorCode.BAD_REQUEST, 'missing platform/receipt'));
   }
-  const { cols, commercial, now } = ctx.deps;
+  const { cols, commercial, now } = core.deps;
 
   // Growth pack: enforce the first-N-days account-age window (best-effort; absent account → allow).
   if (productId === PRODUCT_STARTER_GROWTH) {
@@ -75,7 +70,7 @@ export async function starterBuyHandler(ctx: StarterCtx, req: FastifyRequest, re
   // starter_draw delivers pack items (loot-box routing); starter_growth grants coins/subscription only (no items).
   if (r.results.length > 0) {
     await deliverOrder(
-      cols, commercial, ctx.deps.socialsvc ?? nullMetaSocialsvcClient, accountId,
+      cols, commercial, core.deps.socialsvc ?? nullMetaSocialsvcClient, accountId,
       { _id: orderId, kind: 'starter', result: { results: r.results, poolId: 'standard' } },
       r.coinsAfter, null, now(),
     );

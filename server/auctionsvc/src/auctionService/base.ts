@@ -1,8 +1,11 @@
-// auctionsvc AuctionService split — shared kernel (2026-08-09, AuctionService god-class split).
-// Base layer of the linear inheritance chain (same convention as worldsvc's WorldCore /
-// metaserver's MarchService — see claudedocs/server.md): deps, view/deps types, and the
-// stateless doc↔view mapping helpers every higher layer builds on. No behavior change —
-// methods copied verbatim from the original auctionService.ts.
+// auctionsvc AuctionService split — shared kernel (2026-08-09, AuctionService god-class split;
+// 2026-08-11 re-audited and converted from a linear inheritance chain to composition, see
+// claudedocs/server.md's 2026-08-11 note). Holds the deps/view types and the stateless doc↔view
+// mapping helpers every sibling class builds on — no behavior change, methods copied verbatim
+// from the original auctionService.ts. `AuctionServiceDeps` has no methods of its own (unlike
+// AdminCore/WalletCore/MetaCore in the other 6 chains converted the same day), so there's no
+// need for a wrapper "Core" class here — every sibling just takes `deps: AuctionServiceDeps`
+// directly in its constructor.
 import { type AuctionListingAdminView, type AuctionStatus, type EquipmentInstance, type CardInstance } from '@nw/shared';
 import type { AuctionCollections, AuctionDoc } from '../db';
 import type { AuctionCommercialClient } from '../commercialClient';
@@ -150,6 +153,3 @@ export function docToView(doc: AuctionDoc): AuctionView {
   };
 }
 
-export class AuctionServiceBase {
-  constructor(protected readonly deps: AuctionServiceDeps) {}
-}

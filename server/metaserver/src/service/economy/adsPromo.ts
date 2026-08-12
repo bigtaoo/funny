@@ -1,26 +1,21 @@
 // Rewarded ads, IAP receipt verification, promo codes (C2/B-PROMO). Split out of service/economy.ts
-// (2026-08-10, 独立函数模块 form — see economy.ts's facade comment). All three handlers only need
-// `ensureCommercial` + `deps`, bound by EconomyMixin's class body from its protected base method. No
-// behavior change.
+// (2026-08-10, 独立函数模块 form — see economy.ts's facade comment). All three handlers take `core:
+// MetaCore` directly (2026-08-11 ctx-bind cleanup — see base.ts's header, for `core.ensureCommercial`).
+// No behavior change.
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { ErrorCode, err, ok, ADS_REWARD_COINS, ADS_DAILY_CAP, ADS_MIN_INTERVAL_MS } from '@nw/shared';
 import { accrueEventTask } from '../../events.js';
 import { verifyAdPlatformToken } from '../../ads.js';
 import { adsDayKey, bumpAdsCap, hashAdToken, recordAdToken, checkAdInterval, mirrorCoins } from '../../economy.js';
-import { accountIdOf, clientPlatformOf, type ServiceDeps } from '../base.js';
+import { accountIdOf, clientPlatformOf, type MetaCore } from '../base.js';
 
-export interface AdsPromoCtx {
-  deps: ServiceDeps;
-  ensureCommercial: (reply: FastifyReply) => boolean;
-}
-
-export async function adsRewardHandler(ctx: AdsPromoCtx, req: FastifyRequest, reply: FastifyReply) {
-  if (!ctx.ensureCommercial(reply)) return;
+export async function adsRewardHandler(core: MetaCore, req: FastifyRequest, reply: FastifyReply) {
+  if (!core.ensureCommercial(reply)) return;
   const accountId = accountIdOf(req);
   const { adToken, platform } = req.body as { adToken: string; platform?: string };
   if (!adToken) return reply.code(400).send(err(ErrorCode.BAD_REQUEST, 'missing adToken'));
 
-  const { cols, commercial, now, redis } = ctx.deps;
+  const { cols, commercial, now, redis } = core.deps;
   const ts = now();
   const dayKey = adsDayKey(ts);
 
@@ -58,14 +53,14 @@ export async function adsRewardHandler(ctx: AdsPromoCtx, req: FastifyRequest, re
   return ok({ save, granted: ADS_REWARD_COINS });
 }
 
-export async function iapVerifyHandler(ctx: AdsPromoCtx, req: FastifyRequest, reply: FastifyReply) {
-  if (!ctx.ensureCommercial(reply)) return;
+export async function iapVerifyHandler(core: MetaCore, req: FastifyRequest, reply: FastifyReply) {
+  if (!core.ensureCommercial(reply)) return;
   const accountId = accountIdOf(req);
   const { platform, receipt } = req.body as { platform: string; receipt: string };
   if (!platform || !receipt) {
     return reply.code(400).send(err(ErrorCode.BAD_REQUEST, 'missing platform/receipt'));
   }
-  const { cols, commercial, now } = ctx.deps;
+  const { cols, commercial, now } = core.deps;
   // receiptId = unique platform receipt id (idempotency key). The dev stub uses platform:receipt; real channel integration uses the platform transaction id.
   const receiptId = `${platform}:${receipt}`;
   const v = await commercial.rechargeVerify({ accountId, platform, receipt, receiptId, clientPlatform: clientPlatformOf(req) });
@@ -80,14 +75,14 @@ export async function iapVerifyHandler(ctx: AdsPromoCtx, req: FastifyRequest, re
 }
 
 /** Promo code redemption (B-PROMO): validate → grant coins → push back save. */
-export async function redeemPromoCodeHandler(ctx: AdsPromoCtx, req: FastifyRequest, reply: FastifyReply) {
-  if (!ctx.ensureCommercial(reply)) return;
+export async function redeemPromoCodeHandler(core: MetaCore, req: FastifyRequest, reply: FastifyReply) {
+  if (!core.ensureCommercial(reply)) return;
   const accountId = accountIdOf(req);
   const { code } = req.body as { code: string };
   if (!code || typeof code !== 'string') {
     return reply.code(400).send(err(ErrorCode.BAD_REQUEST, 'code required'));
   }
-  const { cols, commercial, now } = ctx.deps;
+  const { cols, commercial, now } = core.deps;
   const v = await commercial.promoRedeem({ accountId, code, clientPlatform: clientPlatformOf(req) });
   if (!v.ok) {
     const statusMap: Record<string, number> = {

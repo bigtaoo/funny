@@ -10,8 +10,19 @@
 //                  push/schedule infra, settle/yield, nations
 //
 // Domain method groups (combat / territory / city / season / shop) are peeled off
-// WorldCore into their own files incrementally; WorldService composes them while
-// inheriting the shared core surface.
+// WorldCore into their own files incrementally; WorldService composes them.
+//
+// 2026-08-11 (独立类+组合 re-audit, claudedocs/server.md's "拆分形态的优先级"): this was the last
+// `extends` in server/ outside of `class XxxError extends Error` — `WorldService extends WorldCore`
+// bought nothing (WorldCore was already itself composition-based, see core.ts's header; this was one
+// more level of inheritance over an already-composed class, purely to reuse its forwarded surface).
+// Converted to holding `core: WorldCore` by composition, same as every sibling domain class in this
+// file already does. External call sites (httpApi/index/scheduler + this package's own e2e tests) only
+// ever reach 12 of WorldCore's ~46 forwarded methods directly on the service instance (grep-verified
+// against test/*.test.ts + httpApi/**): getMe/getTile/getMap/getMapSparse/setNationName/
+// applyNationChange/addCover/removeCover/initNations/getNations/capitalsFor/pickSpawnTile — those are
+// re-forwarded below, one line each, same shape as the domain-class forwards later in this file.
+// `deps`/`coordX`/`coordY` are also forwarded (used internally by `enterWorld` below).
 import { WorldCore } from './core';
 import { ShopService } from './shop';
 import { TerritoryService } from './territory';
@@ -19,21 +30,65 @@ import { SeasonService } from './season';
 import { CityService } from './city';
 import { CombatService } from './combat';
 import { TransferService, type ShardSummary } from './transfer';
-import type { PlayerWorldView, WorldTileView, MarchView, OccupationView, StationedView } from './worldTypes';
-import type { SLG_SHOP_ITEMS, BuildingKey, MarchKind } from '@nw/shared';
-import type { TeamTemplate } from './db';
+import type { PlayerWorldView, WorldTileView, MarchView, OccupationView, StationedView, WorldMapView, WorldMapSparseView, WorldServiceDeps } from './worldTypes';
+import type { SLG_SHOP_ITEMS, BuildingKey, MarchKind, ChatRegion } from '@nw/shared';
+import type { TeamTemplate, NationDoc } from './db';
 
 // Re-export the response/deps types so existing `import { ... } from './service'` keeps working.
 export * from './worldTypes';
 export { WorldCore } from './core';
 
-export class WorldService extends WorldCore {
-  private readonly shop = new ShopService(this);
-  private readonly territory = new TerritoryService(this);
-  private readonly season = new SeasonService(this, this.territory);
-  private readonly city = new CityService(this);
-  private readonly combat = new CombatService(this);
-  private readonly transfer = new TransferService(this, this.territory);
+export class WorldService {
+  private readonly core: WorldCore;
+  private readonly shop: ShopService;
+  private readonly territory: TerritoryService;
+  private readonly season: SeasonService;
+  private readonly city: CityService;
+  private readonly combat: CombatService;
+  private readonly transfer: TransferService;
+
+  constructor(deps: WorldServiceDeps) {
+    // Field initializers run before this body under ES2022 class-fields semantics (useDefineForClassFields)
+    // — `this.core` must be assigned first, in the body, or every sibling below would see it as
+    // undefined (TS2729, same trap noted in claudedocs/server.md's "2026-08-11 metaserver ctx-bind
+    // cleanup" §base-field-initializer note).
+    this.core = new WorldCore(deps);
+    this.shop = new ShopService(this.core);
+    this.territory = new TerritoryService(this.core);
+    this.season = new SeasonService(this.core, this.territory);
+    this.city = new CityService(this.core);
+    this.combat = new CombatService(this.core);
+    this.transfer = new TransferService(this.core, this.territory);
+  }
+
+  // ── WorldCore surface reached directly by external callers (httpApi/index/scheduler/e2e tests) ─
+  get deps(): WorldServiceDeps { return this.core.deps; }
+  coordX(tid: string): number { return this.core.coordX(tid); }
+  coordY(tid: string): number { return this.core.coordY(tid); }
+  capitalsFor(worldId: string): readonly [number, number][] { return this.core.capitalsFor(worldId); }
+  getMe(worldId: string, accountId: string): Promise<PlayerWorldView> { return this.core.getMe(worldId, accountId); }
+  getTile(worldId: string, accountId: string, x: number, y: number): Promise<WorldTileView> {
+    return this.core.getTile(worldId, accountId, x, y);
+  }
+  getMap(...args: Parameters<WorldCore['getMap']>): Promise<WorldMapView> { return this.core.getMap(...args); }
+  getMapSparse(...args: Parameters<WorldCore['getMapSparse']>): Promise<WorldMapSparseView> {
+    return this.core.getMapSparse(...args);
+  }
+  getNations(worldId: string): Promise<NationDoc[]> { return this.core.getNations(worldId); }
+  initNations(worldId: string): Promise<void> { return this.core.initNations(worldId); }
+  applyNationChange(worldId: string, x: number, y: number, winnerAccountId: string, winnerFamilyId?: string): Promise<boolean> {
+    return this.core.applyNationChange(worldId, x, y, winnerAccountId, winnerFamilyId);
+  }
+  setNationName(worldId: string, accountId: string, capitalIdx: number, name: string, region?: ChatRegion): Promise<void> {
+    return this.core.setNationName(worldId, accountId, capitalIdx, name, region);
+  }
+  addCover(...args: Parameters<WorldCore['addCover']>): ReturnType<WorldCore['addCover']> { return this.core.addCover(...args); }
+  removeCover(...args: Parameters<WorldCore['removeCover']>): ReturnType<WorldCore['removeCover']> {
+    return this.core.removeCover(...args);
+  }
+  pickSpawnTile(...args: Parameters<WorldCore['pickSpawnTile']>): ReturnType<WorldCore['pickSpawnTile']> {
+    return this.core.pickSpawnTile(...args);
+  }
 
   // ── marches / siege / defense / replay (combat.ts) ───────────
   startMarch(

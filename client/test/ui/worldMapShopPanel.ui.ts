@@ -93,11 +93,15 @@ function buildHarness(opts: { shopItems?: SlgShopItemView[]; hasBattlePass?: boo
   return { ctx, panels, input, doBuyShopItem, getShopItems };
 }
 
-/** `shopIcon`/`shopBadgeLabel` are private on the ShopMixin class expression — TS privacy is
- *  erased at runtime, so the plain cast used throughout this file (see `worldMapReplayPanel.ui.ts`
- *  and the other private-method tests linked from claudedocs/client-testing.md) reaches them directly. */
+/** `shopIcon`/`shopBadgeLabel` are private on `ShopPanel` (2026-08-11: `WorldMapPanels` converted
+ *  from a mixin-chain `extends` to composition — `ShopPanel` is now a private field, not a
+ *  flattened-in prototype method). TS privacy is erased at runtime for both the outer field and
+ *  ShopPanel's own private methods, so the plain cast used throughout this file (see
+ *  `worldMapReplayPanel.ui.ts` and the other private-method tests linked from
+ *  claudedocs/client-testing.md) reaches through both layers directly. */
 function shopIconApi(panels: WorldMapPanels) {
-  return panels as unknown as {
+  const shop = (panels as unknown as { shop: unknown }).shop;
+  return shop as {
     shopIcon(it: SlgShopItemView): IconKind;
     shopBadgeLabel(it: SlgShopItemView): string | null;
   };
@@ -247,7 +251,11 @@ describe('WorldMapPanels — shop battle-pass card once already owned', () => {
 
   it('already owned (ctx.me.hasBattlePass): tapping the card shows a toast instead of buying again', () => {
     const { ctx, panels, input, doBuyShopItem } = buildHarness({ shopItems: [makeBattlePassItem()], hasBattlePass: true });
-    const showToast = vi.spyOn(panels, 'showToast').mockImplementation(() => {});
+    // ShopPanel calls `this.core.showToast(...)` directly (2026-08-11 composition conversion — see
+    // shopIconApi's doc comment above), not `panels.showToast(...)`, so the spy must sit on the
+    // shared `core` instance the domain classes actually hold, not on the outer forwarding facade.
+    const core = (panels as unknown as { core: { showToast: () => void } }).core;
+    const showToast = vi.spyOn(core, 'showToast').mockImplementation(() => {});
     panels.renderShopPanel();
     const btn = ctx.modalBtnRects[0]!;
     const cx = btn.rect.x + btn.rect.w / 2, cy = btn.rect.y + btn.rect.h / 2;

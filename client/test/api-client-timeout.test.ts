@@ -1,4 +1,4 @@
-// ApiClientBase.fetchRaw timeout + rate-gate wiring (ADR-058). Before this, fetchRaw had no
+// ApiClientCore.fetchRaw timeout + rate-gate wiring (ADR-058). Before this, fetchRaw had no
 // timeout at all — a hung metaserver request would wait forever. Uses a fake global fetch (same
 // pattern as api-client.test.ts) — no real network calls.
 import { describe, it, expect, vi, afterEach } from 'vitest';
@@ -10,7 +10,7 @@ afterEach(() => {
   delete (globalThis as Record<string, unknown>).fetch;
 });
 
-describe('ApiClientBase.fetchRaw — 10s timeout', () => {
+describe('ApiClientCore.fetchRaw — 10s timeout', () => {
   it('aborts and rejects an unresponsive request after 10 seconds', async () => {
     let aborted = false;
     globalThis.fetch = (async (_url: string, init: RequestInit) => new Promise((_res, rej) => {
@@ -51,7 +51,7 @@ describe('ApiClientBase.fetchRaw — 10s timeout', () => {
   });
 });
 
-describe('ApiClientBase.fetchRaw — rate gate wiring', () => {
+describe('ApiClientCore.fetchRaw — rate gate wiring', () => {
   it('acquires a slot from the global gate before issuing the fetch', async () => {
     vi.resetModules();
     const acquire = vi.fn().mockResolvedValue(undefined);

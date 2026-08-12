@@ -1,10 +1,10 @@
 // ADR-026 main-base siege: in-base, non-injured defender teams (t1..t5) fight the attacker in waves.
 // Split out of arrival.ts (2026-08-10, 独立函数模块 form — applyBaseSiege is private, called only from
 // applySiege in the same file, so there is no mixin-interface constraint on lifting it out entirely).
-// Takes `core` (a plain WorldCore instance) and `ctx` (the assembled SiegeService, typed narrowly as
-// SiegeServiceBase so only its declared cross-mixin methods — recordSiege here — are reachable; `this`
-// passed in from arrival.ts's applySiege is a valid SiegeServiceBase since the class extends it). No
-// behavior change — this is the exact method body, moved verbatim.
+// Takes `core` (a plain WorldCore instance) and `ctx` (a narrow SiegeCtx exposing only the handful of
+// methods this function needs — recordSiege here; 2026-08-11 mixin-chain split: ArrivalService builds
+// one `ctx` object with each method `.bind()`-ed to whichever sibling class owns it, see ../ctx.ts).
+// No behavior change — this is the exact method body, moved verbatim.
 import {
   playerWorldId,
   resolveSiege,
@@ -25,7 +25,7 @@ import type { WorldCore } from '../../core';
 import type { SiegeReplayInputs } from '../../worldTypes';
 import type { SaveFields } from '../../metaClient';
 import { startReturnMarch } from '../../combatShared';
-import type { SiegeServiceBase } from '../base';
+import type { SiegeCtx } from '../ctx';
 
 /**
  * ADR-026 main-base siege: in-base, non-injured defender teams (t1..t5) fight the attacker in waves; the attacker's
@@ -37,7 +37,7 @@ import type { SiegeServiceBase } from '../base';
  */
 export async function applyBaseSiege(
   core: WorldCore,
-  ctx: SiegeServiceBase,
+  ctx: SiegeCtx,
   m: MarchDoc,
   pw: PlayerWorldDoc,
   baseTile: TileDoc,

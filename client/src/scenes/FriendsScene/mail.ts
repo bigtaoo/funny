@@ -1,4 +1,9 @@
 // Mail tab: the mail list + rows, opening a mail, and the mail detail view (attachments + claim/delete).
+//
+// MailPanel depends on NetworkPanel (via NetworkHandlers — doClaim/doMailDelete) but NetworkPanel
+// has no dependency back on it: one-way, so a plain independent class over `core` + `network`
+// (2026-08-11 converted from the former `XMixin(Base)` inheritance chain, per
+// claudedocs/client-modules.md's split-form priority note).
 import * as PIXI from 'pixi.js-legacy';
 import { t, TranslationKey } from '../../i18n';
 import { ui as C, txt, sketchPanel, sketchAccentBar, seedFor } from '../../render/sketchUi';
@@ -10,7 +15,9 @@ import { buildEquipIcon } from '../../render/atlas/equipmentAtlas';
 import { cardInstanceArtUrl, getArtTexture } from '../../render/cardArt';
 import { buildMaterialIcon, type MaterialKind } from '../../render/atlas/materialAtlas';
 import type { MailView, MailAttachmentView } from '../../net/ApiClient';
-import { type Constructor, type FriendsSceneBaseCtor } from './base';
+import type { FriendsSceneCore } from './core';
+import { addButton, centerLabel, scrollRegion } from './chrome';
+import type { NetworkHandlers } from './network';
 
 /**
  * itemId → material icon glyph. Every server system that sends a `kind: 'material'` mail
@@ -24,219 +31,219 @@ const MAT_ITEM_ICON: Record<string, MaterialKind> = {
   scrap: 'scrap', lead: 'lead', binding: 'binding',
 };
 
-export interface MailHandlers {
-  drawMailList(): void;
-  drawMailDetail(m: MailView): void;
-}
+export class MailPanel {
+  /** Card art textures load async; tracks which URLs already have a re-render hooked on load. */
+  private mailArtHooked = new Set<string>();
 
-export function MailMixin<TBase extends FriendsSceneBaseCtor>(Base: TBase): TBase & Constructor<MailHandlers> {
-  return class extends Base {
-    /** Card art textures load async; tracks which URLs already have a re-render hooked on load. */
-    private mailArtHooked = new Set<string>();
+  constructor(private readonly core: FriendsSceneCore, private readonly network: NetworkHandlers) {}
 
-    // ── Mail tab ──────────────────────────────────────────────────────────────────
+  // ── Mail tab ──────────────────────────────────────────────────────────────────
 
-    drawMailList(): void {
-      const { w, h } = this;
-      this.regionTop = this.bodyTop + Math.round(h * 0.01);
-      this.regionBottom = this.bodyBottom;
-      const regionH = this.regionBottom - this.regionTop;
-      const { layer } = this.scrollRegion(regionH);
+  drawMailList(): void {
+    const core = this.core;
+    const { h } = core;
+    core.regionTop = core.bodyTop + Math.round(h * 0.01);
+    core.regionBottom = core.bodyBottom;
+    const regionH = core.regionBottom - core.regionTop;
+    const { layer } = scrollRegion(core, regionH);
 
-      if (this.loading) { this.centerLabel(layer, 'friends.loading', regionH); this.maxScroll = 0; return; }
-      if (this.mail.length === 0) { this.centerLabel(layer, 'mail.empty', regionH); this.maxScroll = 0; return; }
+    if (core.loading) { centerLabel(core, layer, 'friends.loading', regionH); core.maxScroll = 0; return; }
+    if (core.mail.length === 0) { centerLabel(core, layer, 'mail.empty', regionH); core.maxScroll = 0; return; }
 
-      let cy = Math.round(h * 0.01);
-      const screenY = (c: number) => this.regionTop + c - this.scrollY;
-      const rowGap = Math.round(h * 0.014);
-      const rh = Math.round(h * 0.10);
-      for (const m of this.mail) {
-        const sy = screenY(cy);
-        if (this.rowVisible(sy, rh)) this.drawMailRow(layer, m, sy);
-        cy += rh + rowGap;
-      }
-      this.maxScroll = Math.max(0, cy - regionH);
-      if (this.scrollY > this.maxScroll) this.scrollY = this.maxScroll;
+    let cy = Math.round(h * 0.01);
+    const screenY = (c: number) => core.regionTop + c - core.scrollY;
+    const rowGap = Math.round(h * 0.014);
+    const rh = Math.round(h * 0.10);
+    for (const m of core.mail) {
+      const sy = screenY(cy);
+      if (core.rowVisible(sy, rh)) this.drawMailRow(layer, m, sy);
+      cy += rh + rowGap;
     }
+    core.maxScroll = Math.max(0, cy - regionH);
+    if (core.scrollY > core.maxScroll) core.scrollY = core.maxScroll;
+  }
 
-    private drawMailRow(layer: PIXI.Container, m: MailView, y: number): void {
-      const { h } = this;
-      const rh = Math.round(h * 0.10);
-      const rx = this.cX;
-      const rw = this.cW;
-      const hasAtt = !!m.attachments && m.attachments.length > 0;
-      const unclaimed = hasAtt && !m.claimed;
-      const accent = !m.read ? C.gold : unclaimed ? C.green : C.mid;
-      const bg = sketchPanel(rw, rh, { fill: C.paper, border: accent, width: 2, seed: seedFor(rx, 3, rw) });
-      bg.x = rx; bg.y = y;
-      sketchAccentBar(bg, rh, accent, seedFor(rx, rh, 11));
-      layer.addChild(bg);
+  private drawMailRow(layer: PIXI.Container, m: MailView, y: number): void {
+    const core = this.core;
+    const { h } = core;
+    const rh = Math.round(h * 0.10);
+    const rx = core.cX;
+    const rw = core.cW;
+    const hasAtt = !!m.attachments && m.attachments.length > 0;
+    const unclaimed = hasAtt && !m.claimed;
+    const accent = !m.read ? C.gold : unclaimed ? C.green : C.mid;
+    const bg = sketchPanel(rw, rh, { fill: C.paper, border: accent, width: 2, seed: seedFor(rx, 3, rw) });
+    bg.x = rx; bg.y = y;
+    sketchAccentBar(bg, rh, accent, seedFor(rx, rh, 11));
+    layer.addChild(bg);
 
-      if (!m.read) {
-        const dot = new PIXI.Graphics();
-        dot.beginFill(C.gold); dot.drawCircle(rx + Math.round(rw * 0.05), y + rh / 2, Math.round(rh * 0.08)); dot.endFill();
-        layer.addChild(dot);
-      }
-      const tx = rx + 18;
-      // Attachment marker: a hand-drawn gift glyph before the subject (replaces the 🎁 emoji).
-      let subjX = tx;
-      if (hasAtt) {
-        const giftSz = Math.round(rh * 0.34);
-        const gi = buildIcon('gift', giftSz, C.gold);
-        gi.x = tx; gi.y = y + rh * 0.34 - giftSz / 2;
-        layer.addChild(gi);
-        subjX = tx + giftSz + Math.round(rw * 0.015);
-      }
-      const subj = txt(mailText(m.subject), snapFont(Math.round(rh * 0.3)), C.dark, true);
-      subj.anchor.set(0, 0.5); subj.x = subjX; subj.y = y + rh * 0.34;
-      layer.addChild(subj);
-      const from = txt(m.fromName || (m.from === 'system' ? t('mail.system') : `#${m.from}`), snapFont(Math.round(rh * 0.22)), C.mid);
-      from.anchor.set(0, 0.5); from.x = tx; from.y = y + rh * 0.70;
-      layer.addChild(from);
-
-      this.hits.push({ rect: { x: rx, y, w: rw, h: rh }, scroll: true, fn: () => this.openMail(m) });
+    if (!m.read) {
+      const dot = new PIXI.Graphics();
+      dot.beginFill(C.gold); dot.drawCircle(rx + Math.round(rw * 0.05), y + rh / 2, Math.round(rh * 0.08)); dot.endFill();
+      layer.addChild(dot);
     }
-
-    private openMail(m: MailView): void {
-      this.openMailItem = m;
-      this.scrollY = 0;
-      if (!m.read) {
-        void this.cb.markMailRead(m.mailId).then(() => {
-          m.read = true;
-          // Decrement the cached badge count immediately (2026-08-03 fix) — previously only the
-          // individual mail's own `read` flag was updated, so the Mail-tab/lobby badge stayed at its
-          // stale pre-read count until some other trigger forced a full refresh() (e.g. a tab switch),
-          // making the unread dot appear stuck even after the player had read everything.
-          this.mailUnread = Math.max(0, this.mailUnread - 1);
-          this.render();
-        });
-      }
-      this.render();
+    const tx = rx + 18;
+    // Attachment marker: a hand-drawn gift glyph before the subject (replaces the 🎁 emoji).
+    let subjX = tx;
+    if (hasAtt) {
+      const giftSz = Math.round(rh * 0.34);
+      const gi = buildIcon('gift', giftSz, C.gold);
+      gi.x = tx; gi.y = y + rh * 0.34 - giftSz / 2;
+      layer.addChild(gi);
+      subjX = tx + giftSz + Math.round(rw * 0.015);
     }
+    const subj = txt(mailText(m.subject), snapFont(Math.round(rh * 0.3)), C.dark, true);
+    subj.anchor.set(0, 0.5); subj.x = subjX; subj.y = y + rh * 0.34;
+    layer.addChild(subj);
+    const from = txt(m.fromName || (m.from === 'system' ? t('mail.system') : `#${m.from}`), snapFont(Math.round(rh * 0.22)), C.mid);
+    from.anchor.set(0, 0.5); from.x = tx; from.y = y + rh * 0.70;
+    layer.addChild(from);
 
-    drawMailDetail(m: MailView): void {
-      const { w, h } = this;
-      const top = this.bodyTop + Math.round(h * 0.02);
-      const px = this.cX;
-      const panelW = this.cW;
+    core.hits.push({ rect: { x: rx, y, w: rw, h: rh }, scroll: true, fn: () => this.openMail(m) });
+  }
 
-      const subj = txt(mailText(m.subject), FS.headline, C.dark, true);
-      subj.anchor.set(0, 0); subj.x = px; subj.y = top;
-      this.container.addChild(subj);
-      const from = txt(m.fromName || (m.from === 'system' ? t('mail.system') : `#${m.from}`), FS.heading, C.mid);
-      from.anchor.set(0, 0); from.x = px; from.y = top + Math.round(h * 0.05);
-      this.container.addChild(from);
-
-      const bodyTxt = makeText(mailText(m.body), {
-        fontSize: FS.heading, fill: C.dark, fontFamily: 'monospace',
-        wordWrap: true, wordWrapWidth: panelW, breakWords: true,
+  private openMail(m: MailView): void {
+    const core = this.core;
+    core.openMailItem = m;
+    core.scrollY = 0;
+    if (!m.read) {
+      void core.cb.markMailRead(m.mailId).then(() => {
+        m.read = true;
+        // Decrement the cached badge count immediately (2026-08-03 fix) — previously only the
+        // individual mail's own `read` flag was updated, so the Mail-tab/lobby badge stayed at its
+        // stale pre-read count until some other trigger forced a full refresh() (e.g. a tab switch),
+        // making the unread dot appear stuck even after the player had read everything.
+        core.mailUnread = Math.max(0, core.mailUnread - 1);
+        core.render();
       });
-      bodyTxt.x = px; bodyTxt.y = top + Math.round(h * 0.10);
-      this.container.addChild(bodyTxt);
+    }
+    core.render();
+  }
 
-      let cy = bodyTxt.y + bodyTxt.height + Math.round(h * 0.03);
-      const hasAtt = !!m.attachments && m.attachments.length > 0;
-      if (hasAtt) {
-        const label = txt(t('mail.attachments'), FS.heading, C.mid, true);
-        label.anchor.set(0, 0); label.x = px; label.y = cy;
-        this.container.addChild(label);
+  drawMailDetail(m: MailView): void {
+    const core = this.core;
+    const { w, h } = core;
+    const top = core.bodyTop + Math.round(h * 0.02);
+    const px = core.cX;
+    const panelW = core.cW;
+
+    const subj = txt(mailText(m.subject), FS.headline, C.dark, true);
+    subj.anchor.set(0, 0); subj.x = px; subj.y = top;
+    core.container.addChild(subj);
+    const from = txt(m.fromName || (m.from === 'system' ? t('mail.system') : `#${m.from}`), FS.heading, C.mid);
+    from.anchor.set(0, 0); from.x = px; from.y = top + Math.round(h * 0.05);
+    core.container.addChild(from);
+
+    const bodyTxt = makeText(mailText(m.body), {
+      fontSize: FS.heading, fill: C.dark, fontFamily: 'monospace',
+      wordWrap: true, wordWrapWidth: panelW, breakWords: true,
+    });
+    bodyTxt.x = px; bodyTxt.y = top + Math.round(h * 0.10);
+    core.container.addChild(bodyTxt);
+
+    let cy = bodyTxt.y + bodyTxt.height + Math.round(h * 0.03);
+    const hasAtt = !!m.attachments && m.attachments.length > 0;
+    if (hasAtt) {
+      const label = txt(t('mail.attachments'), FS.heading, C.mid, true);
+      label.anchor.set(0, 0); label.x = px; label.y = cy;
+      core.container.addChild(label);
+      cy += Math.round(h * 0.04);
+      for (const a of m.attachments!) {
+        const desc = attachmentLabel(a);
+        const row = txt('· ' + desc, FS.heading, C.dark);
+        row.anchor.set(0, 0); row.x = px + Math.round(w * 0.02); row.y = cy;
+        core.container.addChild(row);
         cy += Math.round(h * 0.04);
-        for (const a of m.attachments!) {
-          const desc = attachmentLabel(a);
-          const row = txt('· ' + desc, FS.heading, C.dark);
-          row.anchor.set(0, 0); row.x = px + Math.round(w * 0.02); row.y = cy;
-          this.container.addChild(row);
-          cy += Math.round(h * 0.04);
-        }
-        // One picture per attachment, laid out left-to-right below the name list.
-        const iconSize = Math.round(h * 0.07);
-        const iconGap = Math.round(w * 0.015);
-        let ix = px + Math.round(w * 0.02);
-        for (const a of m.attachments!) {
-          this.drawAttachmentIcon(a, ix, cy, iconSize, seedFor(ix, cy, iconSize));
-          ix += iconSize + iconGap;
-        }
-        cy += iconSize + Math.round(h * 0.02);
-        const bH = Math.round(h * 0.08);
-        if (m.claimed) {
-          const done = txt(t('mail.claimed'), FS.title, C.green, true);
-          done.anchor.set(0.5, 0.5); done.x = this.cCX; done.y = cy + bH / 2;
-          this.container.addChild(done);
-        } else {
-          this.addButton(t('mail.claim'), px, cy, panelW, bH, C.green, C.green, () => void this.doClaim(m), 0xffffff);
-        }
-        cy += bH + Math.round(h * 0.02);
       }
-
-      const dH = Math.round(h * 0.07);
-      const deleteBlocked = hasAtt && !m.claimed;
-      this.addButton(t('mail.delete'), px, this.bodyBottom - dH - Math.round(h * 0.01), panelW, dH, C.paper, deleteBlocked ? C.mid : C.red,
-        () => deleteBlocked ? this.toast('mail.deleteBlockedAttachment') : void this.doMailDelete(m), deleteBlocked ? C.mid : C.red);
+      // One picture per attachment, laid out left-to-right below the name list.
+      const iconSize = Math.round(h * 0.07);
+      const iconGap = Math.round(w * 0.015);
+      let ix = px + Math.round(w * 0.02);
+      for (const a of m.attachments!) {
+        this.drawAttachmentIcon(a, ix, cy, iconSize, seedFor(ix, cy, iconSize));
+        ix += iconSize + iconGap;
+      }
+      cy += iconSize + Math.round(h * 0.02);
+      const bH = Math.round(h * 0.08);
+      if (m.claimed) {
+        const done = txt(t('mail.claimed'), FS.title, C.green, true);
+        done.anchor.set(0.5, 0.5); done.x = core.cCX; done.y = cy + bH / 2;
+        core.container.addChild(done);
+      } else {
+        addButton(core, t('mail.claim'), px, cy, panelW, bH, C.green, C.green, () => void this.network.doClaim(m), 0xffffff);
+      }
+      cy += bH + Math.round(h * 0.02);
     }
 
-    /**
-     * A single attachment's picture (framed square). Reuses the same "single source of truth"
-     * resolvers as Equipment/Auction/Gacha (buildEquipIcon / card art / buildMaterialIcon) so a
-     * claimed item's mail thumbnail matches how it looks everywhere else, instead of inventing a
-     * mail-only art path.
-     */
-    private drawAttachmentIcon(a: MailAttachmentView, x: number, y: number, size: number, seed: number): void {
-      const frame = sketchPanel(size, size, { fill: C.paper, border: C.mid, seed });
-      frame.x = x; frame.y = y;
-      this.container.addChild(frame);
-      const cx = x + size / 2;
-      const cy = y + size / 2;
-      const picSize = Math.round(size * 0.7);
+    const dH = Math.round(h * 0.07);
+    const deleteBlocked = hasAtt && !m.claimed;
+    addButton(core, t('mail.delete'), px, core.bodyBottom - dH - Math.round(h * 0.01), panelW, dH, C.paper, deleteBlocked ? C.mid : C.red,
+      () => deleteBlocked ? core.toast('mail.deleteBlockedAttachment') : void this.network.doMailDelete(m), deleteBlocked ? C.mid : C.red);
+  }
 
-      if (a.kind === 'equipment' && a.instance) {
-        const def = getEquipDef(a.instance.defId);
-        if (def) {
-          const icon = buildEquipIcon(a.instance.defId, def.slot, def.rarity, picSize, seed);
-          icon.x = cx; icon.y = cy;
-          this.container.addChild(icon);
-          return;
-        }
-      } else if (a.kind === 'card' && a.instance) {
-        const artUrl = cardInstanceArtUrl(a.instance) ?? undefined;
-        if (artUrl) {
-          const tex = getArtTexture(artUrl);
-          if (tex.baseTexture.valid) {
-            const scale = Math.min(picSize / tex.width, picSize / tex.height);
-            const sp = new PIXI.Sprite(tex);
-            sp.anchor.set(0.5); sp.scale.set(scale); sp.position.set(cx, cy);
-            this.container.addChild(sp);
-            return;
-          }
-          if (!this.mailArtHooked.has(artUrl)) {
-            this.mailArtHooked.add(artUrl);
-            tex.baseTexture.once('loaded', () => this.render());
-          }
-        }
-      } else if (a.kind === 'material') {
-        const matKind = MAT_ITEM_ICON[a.id ?? ''];
-        if (matKind) {
-          const icon = buildMaterialIcon(matKind, picSize, C.dark);
-          icon.x = cx - picSize / 2; icon.y = cy - picSize / 2;
-          this.container.addChild(icon);
-          return;
-        }
-      } else if (a.kind === 'coins') {
-        const icon = buildIcon('coins', picSize, C.gold);
-        icon.x = cx - picSize / 2; icon.y = cy - picSize / 2;
-        this.container.addChild(icon);
-        return;
-      } else if (a.kind === 'skin') {
-        const icon = buildIcon('brush', picSize, C.dark);
-        icon.x = cx - picSize / 2; icon.y = cy - picSize / 2;
-        this.container.addChild(icon);
+  /**
+   * A single attachment's picture (framed square). Reuses the same "single source of truth"
+   * resolvers as Equipment/Auction/Gacha (buildEquipIcon / card art / buildMaterialIcon) so a
+   * claimed item's mail thumbnail matches how it looks everywhere else, instead of inventing a
+   * mail-only art path.
+   */
+  private drawAttachmentIcon(a: MailAttachmentView, x: number, y: number, size: number, seed: number): void {
+    const core = this.core;
+    const frame = sketchPanel(size, size, { fill: C.paper, border: C.mid, seed });
+    frame.x = x; frame.y = y;
+    core.container.addChild(frame);
+    const cx = x + size / 2;
+    const cy = y + size / 2;
+    const picSize = Math.round(size * 0.7);
+
+    if (a.kind === 'equipment' && a.instance) {
+      const def = getEquipDef(a.instance.defId);
+      if (def) {
+        const icon = buildEquipIcon(a.instance.defId, def.slot, def.rarity, picSize, seed);
+        icon.x = cx; icon.y = cy;
+        core.container.addChild(icon);
         return;
       }
-      // Unresolvable kind (generic "item", or an equipment/card def that vanished) → generic glyph.
-      const icon = buildIcon('capsule', picSize, C.dark);
+    } else if (a.kind === 'card' && a.instance) {
+      const artUrl = cardInstanceArtUrl(a.instance) ?? undefined;
+      if (artUrl) {
+        const tex = getArtTexture(artUrl);
+        if (tex.baseTexture.valid) {
+          const scale = Math.min(picSize / tex.width, picSize / tex.height);
+          const sp = new PIXI.Sprite(tex);
+          sp.anchor.set(0.5); sp.scale.set(scale); sp.position.set(cx, cy);
+          core.container.addChild(sp);
+          return;
+        }
+        if (!this.mailArtHooked.has(artUrl)) {
+          this.mailArtHooked.add(artUrl);
+          tex.baseTexture.once('loaded', () => core.render());
+        }
+      }
+    } else if (a.kind === 'material') {
+      const matKind = MAT_ITEM_ICON[a.id ?? ''];
+      if (matKind) {
+        const icon = buildMaterialIcon(matKind, picSize, C.dark);
+        icon.x = cx - picSize / 2; icon.y = cy - picSize / 2;
+        core.container.addChild(icon);
+        return;
+      }
+    } else if (a.kind === 'coins') {
+      const icon = buildIcon('coins', picSize, C.gold);
       icon.x = cx - picSize / 2; icon.y = cy - picSize / 2;
-      this.container.addChild(icon);
+      core.container.addChild(icon);
+      return;
+    } else if (a.kind === 'skin') {
+      const icon = buildIcon('brush', picSize, C.dark);
+      icon.x = cx - picSize / 2; icon.y = cy - picSize / 2;
+      core.container.addChild(icon);
+      return;
     }
-  };
+    // Unresolvable kind (generic "item", or an equipment/card def that vanished) → generic glyph.
+    const icon = buildIcon('capsule', picSize, C.dark);
+    icon.x = cx - picSize / 2; icon.y = cy - picSize / 2;
+    core.container.addChild(icon);
+  }
 }
 
 // ── helpers ────────────────────────────────────────────────────────────────────

@@ -15,7 +15,7 @@ import type {
   TradeAuditTicketView,
 } from '@nw/shared';
 import type { TradeAuditTicketDoc } from '../db';
-import type { Actor, AdminBaseCtor, Constructor } from './base';
+import type { Actor, AdminCore } from './base';
 import { AdminError } from './errors';
 import { validateAuditSnapshot } from './validators';
 
@@ -27,8 +27,9 @@ export interface SlgAuditHandlers {
   slgResolveAuditTicket(actor: Actor, id: string, disposition: string, note: string): Promise<TradeAuditTicketView>;
 }
 
-export function SlgAuditMixin<TBase extends AdminBaseCtor>(Base: TBase): TBase & Constructor<SlgAuditHandlers> {
-  return class extends Base {
+export class SlgAuditService {
+  constructor(private readonly core: AdminCore) {}
+
     // ───────────────── SLG anomalous trade audit (G7 anti-RMT, §17.7) ─────────────────
 
     /**
@@ -37,8 +38,8 @@ export function SlgAuditMixin<TBase extends AdminBaseCtor>(Base: TBase): TBase &
      * moved this scan from the worldsvc worldId-scoped implementation to auctionsvc's global scan.
      */
     async slgScanAnomalies(worldId: string, windowSec?: number): Promise<AuctionAnomaly[]> {
-      if (!this.auction.available) return [];
-      return this.auction.scanAnomalies(windowSec);
+      if (!this.core.auction.available) return [];
+      return this.core.auction.scanAnomalies(windowSec);
     }
 
     /**
@@ -48,8 +49,8 @@ export function SlgAuditMixin<TBase extends AdminBaseCtor>(Base: TBase): TBase &
      * record — including designatedBuyerId — regardless of whether it has sold yet.
      */
     async slgQueryAuctionListings(filter: AuctionListingQuery): Promise<AuctionListingAdminView[]> {
-      if (!this.auction.available) return [];
-      return this.auction.queryListings(filter);
+      if (!this.core.auction.available) return [];
+      return this.core.auction.queryListings(filter);
     }
 
     /**
@@ -59,7 +60,7 @@ export function SlgAuditMixin<TBase extends AdminBaseCtor>(Base: TBase): TBase &
     async slgFileAuditTicket(actor: Actor, snapshot: TradeAuditSnapshot): Promise<TradeAuditTicketView> {
       const snap = validateAuditSnapshot(snapshot);
       const pairKey = `${snap.worldId}:${snap.sellerId}:${snap.buyerId}`;
-      const existing = await this.cols.tradeAuditTickets.findOne({ pairKey, status: 'open' });
+      const existing = await this.core.cols.tradeAuditTickets.findOne({ pairKey, status: 'open' });
       if (existing) return this.toAuditTicketView(existing);
       const doc: TradeAuditTicketDoc = {
         _id: randomUUID(),
@@ -67,10 +68,10 @@ export function SlgAuditMixin<TBase extends AdminBaseCtor>(Base: TBase): TBase &
         snapshot: snap,
         status: 'open',
         filedBy: actor.adminId,
-        filedAt: this.now(),
+        filedAt: this.core.now(),
       };
-      await this.cols.tradeAuditTickets.insertOne(doc);
-      await this.audit(actor.adminId, 'slg.audit.file', {
+      await this.core.cols.tradeAuditTickets.insertOne(doc);
+      await this.core.audit(actor.adminId, 'slg.audit.file', {
         target: doc._id,
         summary: `${snap.worldId} ${snap.sellerId}→${snap.buyerId} ${snap.severity} coins=${snap.totalCoins}`,
       });
@@ -86,7 +87,7 @@ export function SlgAuditMixin<TBase extends AdminBaseCtor>(Base: TBase): TBase &
         }
         q.status = filter.status;
       }
-      const docs = await this.cols.tradeAuditTickets.find(q).sort({ filedAt: -1 }).limit(200).toArray();
+      const docs = await this.core.cols.tradeAuditTickets.find(q).sort({ filedAt: -1 }).limit(200).toArray();
       return Promise.all(docs.map((d) => this.toAuditTicketView(d)));
     }
 
@@ -104,20 +105,20 @@ export function SlgAuditMixin<TBase extends AdminBaseCtor>(Base: TBase): TBase &
       if (disposition !== 'dismissed' && disposition !== 'actioned') {
         throw new AdminError(400, 'bad_request', 'disposition must be dismissed|actioned');
       }
-      const doc = await this.cols.tradeAuditTickets.findOne({ _id: id });
+      const doc = await this.core.cols.tradeAuditTickets.findOne({ _id: id });
       if (!doc) throw new AdminError(404, 'not_found', 'no such ticket');
       if (doc.status !== 'open') throw new AdminError(409, 'conflict', `ticket is ${doc.status}`);
       const trimmedNote = (note ?? '').trim();
 
       // Atomic status transition first (wins the race against a concurrent resolve of the same ticket);
       // enforcement only runs for whichever call actually wins this update, so accounts are never double-banned.
-      let res = await this.cols.tradeAuditTickets.findOneAndUpdate(
+      let res = await this.core.cols.tradeAuditTickets.findOneAndUpdate(
         { _id: id, status: 'open' },
         {
           $set: {
             status: disposition,
             resolvedBy: actor.adminId,
-            resolvedAt: this.now(),
+            resolvedAt: this.core.now(),
             ...(trimmedNote ? { note: trimmedNote } : {}),
           },
         },
@@ -129,20 +130,20 @@ export function SlgAuditMixin<TBase extends AdminBaseCtor>(Base: TBase): TBase &
       if (disposition === 'actioned') {
         const { sellerId, buyerId } = res.snapshot;
         const [sellerRes, buyerRes] = await Promise.all([
-          this.suspiciousPve.banAccount(sellerId),
-          this.suspiciousPve.banAccount(buyerId),
+          this.core.suspiciousPve.banAccount(sellerId),
+          this.core.suspiciousPve.banAccount(buyerId),
         ]);
         enforcement = { sellerBanned: sellerRes.ok, buyerBanned: buyerRes.ok };
-        if (sellerRes.ok) await this.audit(actor.adminId, 'account.ban', { target: sellerId, summary: `slg audit ${id}: seller auto-ban` });
-        if (buyerRes.ok) await this.audit(actor.adminId, 'account.ban', { target: buyerId, summary: `slg audit ${id}: buyer auto-ban` });
-        res = (await this.cols.tradeAuditTickets.findOneAndUpdate(
+        if (sellerRes.ok) await this.core.audit(actor.adminId, 'account.ban', { target: sellerId, summary: `slg audit ${id}: seller auto-ban` });
+        if (buyerRes.ok) await this.core.audit(actor.adminId, 'account.ban', { target: buyerId, summary: `slg audit ${id}: buyer auto-ban` });
+        res = (await this.core.cols.tradeAuditTickets.findOneAndUpdate(
           { _id: id },
           { $set: { enforcement } },
           { returnDocument: 'after' },
         )) ?? res;
       }
 
-      await this.audit(actor.adminId, 'slg.audit.resolve', {
+      await this.core.audit(actor.adminId, 'slg.audit.resolve', {
         target: id,
         summary: `${disposition}${trimmedNote ? `: ${trimmedNote}` : ''}${enforcement ? ` (seller banned=${enforcement.sellerBanned}, buyer banned=${enforcement.buyerBanned})` : ''}`,
       });
@@ -150,7 +151,7 @@ export function SlgAuditMixin<TBase extends AdminBaseCtor>(Base: TBase): TBase &
     }
 
     private async toAuditTicketView(doc: TradeAuditTicketDoc): Promise<TradeAuditTicketView> {
-      const names = await this.actorNames([doc.filedBy, doc.resolvedBy].filter((x): x is string => !!x));
+      const names = await this.core.actorNames([doc.filedBy, doc.resolvedBy].filter((x): x is string => !!x));
       return {
         id: doc._id,
         snapshot: doc.snapshot,
@@ -165,5 +166,4 @@ export function SlgAuditMixin<TBase extends AdminBaseCtor>(Base: TBase): TBase &
         ...(doc.enforcement ? { enforcement: doc.enforcement } : {}),
       };
     }
-  };
 }

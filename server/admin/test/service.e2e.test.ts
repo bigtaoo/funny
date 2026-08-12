@@ -164,8 +164,10 @@ describe.skipIf(!mongo)('admin service e2e', () => {
     for (let i = 0; i < 20; i++) {
       await expect(svc.authenticate(`nosuchuser-${i}`, 'wrong')).rejects.toMatchObject({ status: 401 });
     }
+    // 2026-08-11 mixin-chain split: loginAttempts moved from AdminService (inherited from
+    // AdminServiceBase) to a private field on AuthService, held by AdminService's `auth` field.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const attempts = (svc as any).loginAttempts as Map<string, unknown>;
+    const attempts = (svc as any).auth.loginAttempts as Map<string, unknown>;
     expect(attempts.size).toBeGreaterThanOrEqual(20);
 
     t += LOGIN_WINDOW_MS + 1000; // past the window — every entry above is now stale and unlocked

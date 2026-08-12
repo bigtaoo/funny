@@ -57,17 +57,28 @@ function buildFriends(
   });
 }
 
-type SearchInternals = {
-  hits: Array<{ rect: { x: number; y: number; w: number; h: number }; scroll?: boolean }>;
-  maxScroll: number;
-  regionTop: number;
-  regionBottom: number;
-  searchDigits: string[];
-  searchResult: unknown;
-  render(): void;
-  openSearch(): void;
-  doSearch(): Promise<void>;
-};
+/** Reach FriendsScene's composed `core`/`search`/`network` fields (2026-08-11 composition
+ *  conversion — see claudedocs/client-modules.md's split-form priority note): state (hits/
+ *  maxScroll/regionTop/regionBottom/searchDigits/searchResult/w/h/scrollY/render) lives on `core`;
+ *  openSearch on the SearchPanel instance; doSearch on the NetworkPanel instance. */
+function internals(scene: FriendsScene): {
+  core: {
+    hits: Array<{ rect: { x: number; y: number; w: number; h: number }; scroll?: boolean }>;
+    maxScroll: number;
+    regionTop: number;
+    regionBottom: number;
+    searchDigits: string[];
+    searchResult: unknown;
+    render(): void;
+    w: number;
+    h: number;
+    scrollY: number;
+  };
+  search: { openSearch(): void };
+  network: { doSearch(): Promise<void> };
+} {
+  return scene as unknown as ReturnType<typeof internals>;
+}
 
 describe('FriendsScene — search subview keypad + result fit on screen', () => {
   // createLayout()'s screenW/screenH are the *safe drawable area* it fits to, not the
@@ -78,14 +89,14 @@ describe('FriendsScene — search subview keypad + result fit on screen', () => 
   for (const [screenW, screenH] of [[1920, 1040], [2400, 1080], [608, 1080]] as const) {
     it(`every search-view hit rect stays within the design bounds at ${screenW}x${screenH}`, () => {
       const scene = buildFriends(new InputManager(), screenW, screenH);
-      const s = scene as unknown as SearchInternals & { w: number; h: number };
-      s.openSearch();
+      const { core, search } = internals(scene);
+      search.openSearch();
 
-      for (const hit of s.hits) {
+      for (const hit of core.hits) {
         expect(hit.rect.y).toBeGreaterThanOrEqual(0);
-        expect(hit.rect.y + hit.rect.h).toBeLessThanOrEqual(s.h);
+        expect(hit.rect.y + hit.rect.h).toBeLessThanOrEqual(core.h);
         expect(hit.rect.x).toBeGreaterThanOrEqual(0);
-        expect(hit.rect.x + hit.rect.w).toBeLessThanOrEqual(s.w);
+        expect(hit.rect.x + hit.rect.w).toBeLessThanOrEqual(core.w);
       }
       scene.destroy();
     });
@@ -93,14 +104,14 @@ describe('FriendsScene — search subview keypad + result fit on screen', () => 
 
   it('the result card (with its Add button) fits within the screen once a search resolves', async () => {
     const scene = buildFriends(new InputManager(), 1920, 1040);
-    const s = scene as unknown as SearchInternals & { h: number };
-    s.openSearch();
-    s.searchDigits = ['2', '3', '3', '7', '8', '4', '9', '8', '6'];
-    await s.doSearch();
+    const { core, search, network } = internals(scene);
+    search.openSearch();
+    core.searchDigits = ['2', '3', '3', '7', '8', '4', '9', '8', '6'];
+    await network.doSearch();
 
-    expect(s.searchResult).not.toBeNull();
-    for (const hit of s.hits) {
-      expect(hit.rect.y + hit.rect.h).toBeLessThanOrEqual(s.h);
+    expect(core.searchResult).not.toBeNull();
+    for (const hit of core.hits) {
+      expect(hit.rect.y + hit.rect.h).toBeLessThanOrEqual(core.h);
     }
     scene.destroy();
   });
@@ -109,34 +120,34 @@ describe('FriendsScene — search subview keypad + result fit on screen', () => 
 describe('FriendsScene — search subview is wired into the shared scroll mechanism', () => {
   it('sets regionTop/regionBottom and a defined maxScroll (not left stale/unset)', () => {
     const scene = buildFriends(new InputManager(), 1920, 1040);
-    const s = scene as unknown as SearchInternals;
-    s.openSearch();
+    const { core, search } = internals(scene);
+    search.openSearch();
 
-    expect(s.regionBottom).toBeGreaterThan(s.regionTop);
-    expect(s.maxScroll).toBeGreaterThanOrEqual(0);
+    expect(core.regionBottom).toBeGreaterThan(core.regionTop);
+    expect(core.maxScroll).toBeGreaterThanOrEqual(0);
     scene.destroy();
   });
 
   it('marks every keypad/search/result hit as scrollable (scroll: true), so drag-scroll stays correct if content ever overflows', async () => {
     const scene = buildFriends(new InputManager(), 1920, 1040);
-    const s = scene as unknown as SearchInternals;
-    s.openSearch();
-    s.searchDigits = ['2', '3', '3', '7', '8', '4', '9', '8', '6'];
-    await s.doSearch();
+    const { core, search, network } = internals(scene);
+    search.openSearch();
+    core.searchDigits = ['2', '3', '3', '7', '8', '4', '9', '8', '6'];
+    await network.doSearch();
 
     // Every hit in the search view lives inside the scrollable layer (back button in the
     // header is the only non-scroll hit, drawn separately by drawHeader()).
-    const scrollableHits = s.hits.filter((h) => h.scroll);
+    const scrollableHits = core.hits.filter((h) => h.scroll);
     expect(scrollableHits.length).toBeGreaterThanOrEqual(13); // 12 keys + Search + Add
   });
 
   it('resets scrollY when re-opening the search view', () => {
     const scene = buildFriends(new InputManager(), 1920, 1040);
-    const s = scene as unknown as SearchInternals & { scrollY: number };
-    s.openSearch();
-    s.scrollY = 42;
-    s.openSearch();
-    expect(s.scrollY).toBe(0);
+    const { core, search } = internals(scene);
+    search.openSearch();
+    core.scrollY = 42;
+    search.openSearch();
+    expect(core.scrollY).toBe(0);
     scene.destroy();
   });
 });
