@@ -77,8 +77,8 @@ describe('ResultScene builder call sites — correct field threading (form① sp
     const expectedIconSize = Math.round(H * 0.065);
     const wrongIconSize = Math.round(W * 0.065);
     expect(expectedIconSize).not.toBe(wrongIconSize); // sanity: distinguishable
-    const expectedGlyph = buildIcon(badgeIcon, expectedIconSize, 0x555555);
-    const wrongGlyph = buildIcon(badgeIcon, wrongIconSize, 0x555555);
+    const expectedGlyph = buildIcon(badgeIcon, expectedIconSize, 0x555555) as PIXI.Container;
+    const wrongGlyph = buildIcon(badgeIcon, wrongIconSize, 0x555555) as PIXI.Container;
     expect(expectedGlyph.width).not.toBeCloseTo(wrongGlyph.width, 0); // sanity: the two references differ
 
     expect(glyph.width).toBeCloseTo(expectedGlyph.width, 0);

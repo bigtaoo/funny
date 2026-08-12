@@ -69,7 +69,7 @@ describe('FamilyScene Send button — doSendMsg()', () => {
     const data = fakeData();
     const input = new InputPanel(core, data);
     const removeSpy = vi.fn();
-    core.sendInput = { value: '  hello family  ', remove: removeSpy };
+    core.sendInput = { value: '  hello family  ', remove: removeSpy } as unknown as HTMLInputElement;
     core.sendText = '  hello family  ';
 
     await input.doSendMsg();
@@ -117,7 +117,7 @@ describe('FamilyScene Send button — doSendMsg()', () => {
     const core = fakeCore();
     const input = new InputPanel(core, fakeData());
     vi.spyOn(input, 'openSendInput').mockImplementation(() => {});
-    core.sendInput = { value: '   ', remove: vi.fn() };
+    core.sendInput = { value: '   ', remove: vi.fn() } as unknown as HTMLInputElement;
     core.sendText = '   ';
 
     await input.doSendMsg();
@@ -130,7 +130,7 @@ describe('FamilyScene Send button — doSendMsg()', () => {
     const data = fakeData();
     const input = new InputPanel(core, data);
     (core.cb.worldApi.sendFamilyMessage as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new Error('network down'));
-    core.sendInput = { value: 'hi', remove: vi.fn() };
+    core.sendInput = { value: 'hi', remove: vi.fn() } as unknown as HTMLInputElement;
     core.sendText = 'hi';
 
     await input.doSendMsg();
