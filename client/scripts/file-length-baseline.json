@@ -10,7 +10,6 @@
   "src/render/stickman/StickmanRuntime.ts": 535,
   "src/render/TutorialDirector.ts": 503,
   "src/render/UnitView.ts": 843,
-  "src/scenes/BattlePassScene.ts": 623,
   "src/scenes/CardScene/core.ts": 519,
   "src/scenes/CityScene/core.ts": 753,
   "src/scenes/DailyScene.ts": 711,
