@@ -24,6 +24,7 @@ import { txt, tearDownChildren, buildPaperBackground, marginLineX } from '../ren
 import { drawSceneHeader, HEADER_ACCENT } from '../ui/widgets/SceneHeader';
 import { FS } from '../render/fontScale';
 import { buildDecorCLayer } from '../render/decorCLayer';
+import { GuideOverlay } from '../render/GuideOverlay';
 import { CitySceneCore } from './CityScene/core';
 import type { CitySceneCallbacks, Hit } from './CityScene/core';
 import { RenderPanel } from './CityScene/render';
@@ -43,8 +44,15 @@ export class CityScene implements Scene {
   private readonly modals: ModalsPanel;
 
   constructor(layout: ILayout, input: InputManager, cb: CitySceneCallbacks) {
-    this.core = new CitySceneCore(layout, input, cb, () => this.render());
-    this.container = this.core.container;
+    const guide = new GuideOverlay();
+    this.core = new CitySceneCore(layout, input, cb, () => this.render(), guide);
+    // Wrapper container, NOT `core.container` directly: render() below does a full
+    // `tearDownChildren(core.container)` + rebuild on every state change, which would wipe out any
+    // guide ring/bubble added straight into it. `guide.root` is a second, never-torn-down sibling
+    // added after `core.container` so it renders on top (ONBOARDING_DESIGN §4.2 step2/step3).
+    this.container = new PIXI.Container();
+    this.container.addChild(this.core.container);
+    this.container.addChild(guide.root);
     this.renderPanel = new RenderPanel(this.core);
     this.modals = new ModalsPanel(this.core);
 
@@ -83,11 +91,28 @@ export class CityScene implements Scene {
       y: hdr.backRect.y,
       w: hdr.backRect.w,
       h: hdr.backRect.h,
-      fn: () => core.cb.onBack(),
+      fn: () => {
+        if (!core.cb.getFlag('guide.world.step3')) core.cb.setFlag('guide.world.step3', true);
+        core.cb.onBack();
+      },
     };
     core.hits.push(backHit);
     // Base durability (D-CITY-8) rides in the header bar's free right side.
     this.renderPanel.renderHeaderDurability(hdr.headerH);
+
+    // SLG opening guide chain step3 (ONBOARDING_DESIGN §4.2): once step2 (renderBuildingGrid, below)
+    // is done, highlight the way back out. Decided fresh every render() pass — the `!step2` case is
+    // a deliberate no-op here (renderBuildingGrid owns showing its own ring then); the "both done"
+    // case explicitly hides so a stale ring from an earlier pass never lingers.
+    if (!core.cb.getFlag('guide.world.step2')) {
+      // renderBuildingGrid (below) will call guide.showAt for its own target.
+    } else if (!core.cb.getFlag('guide.world.step3')) {
+      core.guide.showAt(hdr.backRect, t('guide.world.step3.body'), { w, h }, {
+        onSkip: () => core.cb.setFlag('guide.world.step3', true),
+      });
+    } else {
+      core.guide.hide();
+    }
 
     core.contentX = marginLineX(w);
     const y = hdr.headerH + 8;
@@ -130,5 +155,11 @@ export class CityScene implements Scene {
       lbl.y = h / 2 - 21;
       core.container.addChild(lbl);
     }
+
+    // SLG opening guide chain (ONBOARDING_DESIGN §4.2): splice whatever guide.showAt/showCard call
+    // above (here or in renderBuildingGrid) left as the current action into this render pass's own
+    // hit list — first-match-wins, so this must win over any grid cell it happens to overlap.
+    const guideHit = core.guide.currentAction();
+    if (guideHit) core.hits.unshift({ ...guideHit.rect, fn: guideHit.fn });
   }
 }

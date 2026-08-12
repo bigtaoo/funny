@@ -51,6 +51,7 @@ import { showToastMessage } from '../../net/log';
 import { ScrollTapGesture } from '../../ui/scrollTapGesture';
 import { wheelScrollY } from '../../ui/wheelScroll';
 import { buildIcon, type IconKind } from '../../render/icons';
+import { GuideOverlay } from '../../render/GuideOverlay';
 import { loadResAtlas, getResTexture } from '../../render/atlas/resAtlasLoader';
 import { loadCityBldAtlas, getCityBldTexture } from '../../render/atlas/cityBldAtlasLoader';
 import { getArtTexture } from '../../render/cardArt';
@@ -71,6 +72,9 @@ export interface CitySceneCallbacks {
   getSave?(): SaveData;
   /** Subscribe to SaveManager writes; re-renders this scene when a concurrently-mounted peer scene (e.g. Auction opened as a sibling overlay) changes the wallet. Push the returned unsub onto `unsubs`. */
   onSaveChanged?(listener: () => void): () => void;
+  /** SLG opening guide chain (ONBOARDING_DESIGN §4.2) — thin pass-through to SaveManager.getFlag/setFlag, reusing the existing flags channel for `guide.world.step{2,3}`. */
+  getFlag(key: string): boolean;
+  setFlag(key: string, value: boolean): void;
 }
 
 // ── Constants ────────────────────────────────────────────────────────────────
@@ -245,12 +249,16 @@ export class CitySceneCore {
    *  dispatcher, since it's the only thing that knows about all domain classes) — Core and the
    *  domain classes call `this.render()`/`this.core.render()` wherever the old flattened class
    *  called its own `render()` method verbatim. Does NOT auto-fire the initial render/load — the
-   *  outer assembly does that once domains exist (see ../CityScene.ts). */
+   *  outer assembly does that once domains exist (see ../CityScene.ts).
+   *  @param guide SLG opening guide chain (ONBOARDING_DESIGN §4.2) — also injected by the outer
+   *  assembly, which mounts `guide.root` as a sibling of `container` that survives every
+   *  `tearDownChildren(core.container)` call inside render() (see ../CityScene.ts's constructor). */
   constructor(
     layout: ILayout,
     input: InputManager,
     cb: CitySceneCallbacks,
-    readonly render: () => void
+    readonly render: () => void,
+    readonly guide: GuideOverlay
   ) {
     this.container = new PIXI.Container();
     this.w = layout.designWidth;
@@ -287,6 +295,10 @@ export class CitySceneCore {
   }
 
   update(dt: number): void {
+    // SLG opening guide chain (ONBOARDING_DESIGN §4.2) — advance the ring's breathing animation
+    // every frame regardless of whether a full render() fires this tick (render() decides *what* to
+    // show; this just keeps whatever is showing animated).
+    this.guide.update(dt);
     if (this.scrollDirty) {
       this.scrollDirty = false;
       this.render();
@@ -380,6 +392,9 @@ export class CitySceneCore {
     // the long-lived WorldMapScene, so an un-freed screenful of Text leaks on every close (§mem-leak).
     tearDownChildren(this.container);
     this.container.destroy({ children: true });
+    // guide.root is mounted on the outer wrapper container (../CityScene.ts's constructor), not
+    // `this.container` above — destroy it explicitly, it does not fall out of the line above.
+    this.guide.destroy();
   }
 
   // ── Data loading ──────────────────────────────────────────────────────────

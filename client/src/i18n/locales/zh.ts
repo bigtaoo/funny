@@ -250,7 +250,12 @@ export const zh = {
   'guide.daily.title': '每日签到',
   'guide.daily.body': '每天登录领奖励，连续签到更划算。完成每日任务再拿一份。',
   'guide.world.title': '大世界',
-  'guide.world.body': '开放大世界：占地、建宗门、围攻。最重的玩法，慢慢来。',
+  'guide.world.body': '开放大世界：先点击地图上你的主城开始建设，再占地、建宗门、围攻。最重的玩法，慢慢来。',
+  // ── SLG opening guide chain (ONBOARDING_DESIGN §4.2) — spotlight bubbles, no title, body-only ──
+  'guide.world.step1.body': '这是你的主城，点击它开始建设',
+  'guide.world.step2.body': '点击建筑卡，建造或升级；点训练格可以练兵',
+  'guide.world.step3.body': '点这里返回大世界地图',
+  'guide.world.step4.body': '在主城旁的空地上点击，就能出兵占地',
 
   // ── Friend room (online co-op, S1) ───────────────────────────────────────
   'room.title': '好友对战',

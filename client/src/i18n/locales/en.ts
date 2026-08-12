@@ -246,7 +246,12 @@ export const en: Record<TranslationKey, string> = {
   'guide.daily.title': 'Daily check-in',
   'guide.daily.body': 'Log in daily for rewards; streaks pay more. Finish daily tasks for an extra batch.',
   'guide.world.title': 'The Great World',
-  'guide.world.body': 'An open world: claim land, build a clan, lay sieges. The heaviest mode — take your time.',
+  'guide.world.body': 'An open world: tap your main city on the map to start building, then claim land, build a clan, lay sieges. The heaviest mode — take your time.',
+  // ── SLG opening guide chain (ONBOARDING_DESIGN §4.2) — spotlight bubbles, no title, body-only ──
+  'guide.world.step1.body': "This is your main city — tap it to start building",
+  'guide.world.step2.body': 'Tap a building card to build or upgrade; tap the training tile to train troops',
+  'guide.world.step3.body': 'Tap here to return to the world map',
+  'guide.world.step4.body': 'Tap empty land near your city to send troops and claim it',
 
   // ── Friend room (online, S1) ──────────────────────────────────────────────
   'room.title': 'Friend Match',

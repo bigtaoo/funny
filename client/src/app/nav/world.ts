@@ -126,6 +126,8 @@ export function createWorldNav(ctx: AppCtx): WorldNav {
         getCoins: () => saveManager.get().wallet.coins,
         getSave: () => saveManager.get(),
         onSaveChanged: (listener: () => void) => saveManager.subscribe(listener),
+        getFlag: (key: string) => saveManager.getFlag(key),
+        setFlag: (key: string, value: boolean) => saveManager.setFlag(key, value),
       }, { overlay: true });
     };
 
@@ -146,6 +148,8 @@ export function createWorldNav(ctx: AppCtx): WorldNav {
       getCoins: () => saveManager.get().wallet.coins,
       getSave: () => saveManager.get(),
       storage: platform.storage,
+      getFlag: (key: string) => saveManager.getFlag(key),
+      setFlag: (key: string, value: boolean) => saveManager.setFlag(key, value),
     });
     bindMapNet();
   }

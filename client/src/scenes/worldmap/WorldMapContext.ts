@@ -16,6 +16,7 @@ import type { StickmanRuntime } from '../../render/stickman/StickmanRuntime';
 import type { IStorage } from '../../platform/IPlatform';
 import type { SaveData } from '../../game/meta/SaveData';
 import type { EraseCrumb } from './WorldMapRenderer/loadingReveal';
+import { GuideOverlay } from '../../render/GuideOverlay';
 
 /**
  * A live march/occupy/stationed token (fog.ts syncMarchTokens/syncOccupyTokens/syncStationedTokens).
@@ -63,6 +64,10 @@ export interface WorldMapCallbacks {
   /** Platform storage (IPlatform.storage) — world-chat read-marker persistence must go through this,
    * not the global `localStorage`, so it also works under the WeChat mini-game runtime (no DOM storage). */
   storage: IStorage;
+  /** SLG opening guide chain (ONBOARDING_DESIGN §4.2) — thin pass-through to SaveManager.getFlag/setFlag,
+   * reusing the existing flags channel (no SaveData schema change) for `guide.world.step{1,4}`. */
+  getFlag(key: string): boolean;
+  setFlag(key: string, value: boolean): void;
 }
 
 /** March kinds the deploy dialog can dispatch (occupy/reinforce/attack/sweep). */
@@ -251,6 +256,12 @@ export class WorldMapContext {
   infoScrollPendingTap: (() => void) | null = null;
   /** Which panel's scroll list is currently active — WorldMapInput calls this instead of hardcoding a render method, so any modal hosting a beginScrollList region re-renders correctly. Set by beginScrollList, cleared by closeModal. */
   infoScrollRerender: (() => void) | null = null;
+
+  // ── SLG opening guide chain (ONBOARDING_DESIGN §4.2) ─────────────────────────
+  /** Non-null while step1 ("tap your main city") is actively highlighted; cleared once the base tile is tapped (WorldMapInput.onTileClick) or skipped. step4 (the closing "occupy nearby land" tip) has no ring/step state of its own — lifecycle.update derives it straight from flags. */
+  guideStep: 'step1' | null = null;
+  /** Mounted once in WorldMapRenderer/build.ts, right after the vignette layer — the topmost persistent child of `container`, so it survives every pool/city-layer/HUD refresh and never needs rebuilding. */
+  guide!: GuideOverlay;
 
   // Collaborators (assigned by WorldMapScene right after construction).
   view!: WorldMapRenderer;
