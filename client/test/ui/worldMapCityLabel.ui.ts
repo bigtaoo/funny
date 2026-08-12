@@ -106,18 +106,29 @@ describe('WorldMap city name/level label (2026-08-01)', () => {
     expect(label.text).toBe('Tao Lv.9');
   });
 
-  it('another player\'s base shows their ownerName + level', () => {
+  it('another player\'s base shows their ownerName + desk level, not the decoy terrain `level`', () => {
     const ctx = buildScene();
-    placeBase(ctx, 110, 110, { mine: false, occupied: true, level: 5, ownerName: 'Bob' });
+    // `level: 5` here is the same decoy as the own-base regression test above: another player's
+    // base label must read `deskLevel`, never the tile's terrain-generation `level`.
+    placeBase(ctx, 110, 110, { mine: false, occupied: true, level: 5, deskLevel: 3, ownerName: 'Bob' });
     const label = renderLabel(ctx, 110, 110);
-    expect(label.text).toBe('Bob Lv.5');
+    expect(label.text).toBe('Bob Lv.3');
+  });
+
+  it('another player\'s base falls back to Lv.1 when deskLevel is absent, regardless of terrain `level` ' +
+     '(regression, 2026-08-12): a brand-new account can spawn on a high terrain-level tile purely by map ' +
+     'seed chance, which must never read as a high-level base to other players', () => {
+    const ctx = buildScene();
+    placeBase(ctx, 111, 111, { mine: false, occupied: true, level: 9, ownerName: 'Bob' }); // deskLevel absent
+    const label = renderLabel(ctx, 111, 111);
+    expect(label.text).toBe('Bob Lv.1');
   });
 
   it('an enemy base with no resolved ownerName falls back to just the level (no stray leading space)', () => {
     const ctx = buildScene();
-    placeBase(ctx, 120, 120, { mine: false, occupied: true, level: 2 }); // ownerName absent (meta unavailable)
+    placeBase(ctx, 120, 120, { mine: false, occupied: true, level: 2 }); // ownerName + deskLevel absent
     const label = renderLabel(ctx, 120, 120);
-    expect(label.text).toBe('Lv.2');
+    expect(label.text).toBe('Lv.1');
   });
 
   it('ink color follows ownership: mine=blue, ally=green, sectmate=purple, allySect=amber, occupied=red, neutral=gray (ADR-003 iron rule)', () => {

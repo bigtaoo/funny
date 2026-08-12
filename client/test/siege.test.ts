@@ -84,8 +84,8 @@ describe('siege progression blueprints — monotonicity + ladder red-line (SLG7 
 
   it('higher progression → stronger siege blueprints (HP / attack)', () => {
     const sg = buildSiegeBlueprints(cardsAtLevel(UNIT_MAX_LEVEL));
-    expect(sg[UnitType.Infantry].hp).toBeGreaterThan(UNIT_BLUEPRINTS[UnitType.Infantry].hp);
-    expect(sg[UnitType.Archer].attack).toBeGreaterThan(UNIT_BLUEPRINTS[UnitType.Archer].attack);
+    expect(sg[UnitType.Infantry].hp_fp).toBeGreaterThan(UNIT_BLUEPRINTS[UnitType.Infantry].hp_fp);
+    expect(sg[UnitType.Archer].attack_fp).toBeGreaterThan(UNIT_BLUEPRINTS[UnitType.Archer].attack_fp);
   });
 
   it('after maxed siege blueprints, PvP blueprints still equal the constant baseline (+ static §5 override; red-line intact)', () => {
@@ -98,8 +98,8 @@ describe('siege progression blueprints — monotonicity + ladder red-line (SLG7 
     const eng = createGameEngine(
       { seed: 1, players: [{ id: 0 }, { id: 1 }], mode: 'siege', level: lvl, cardInstances: cardsAtLevel(UNIT_MAX_LEVEL) },
     ) as unknown as { state: { unitBlueprints: typeof UNIT_BLUEPRINTS } };
-    expect(eng.state.unitBlueprints[UnitType.Infantry].hp).toBeGreaterThan(
-      UNIT_BLUEPRINTS[UnitType.Infantry].hp,
+    expect(eng.state.unitBlueprints[UnitType.Infantry].hp_fp).toBeGreaterThan(
+      UNIT_BLUEPRINTS[UnitType.Infantry].hp_fp,
     );
   });
 });

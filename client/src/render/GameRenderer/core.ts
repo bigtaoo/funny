@@ -318,8 +318,8 @@ export class GameRendererCore {
     this.boardView.setBaseUpgradeLevel(1, state.topPlayer.upgradeLevel);
     // Critical-HP ring on the board (both bases): one haste-rush from ending. Threshold is a fraction of each
     // player's own maxBaseHp (not the global BASE_HP) — an NPC tile's defender base can scale above/below 100.
-    this.boardView.setBaseCritical(0, state.bottomPlayer.baseHp > 0 && state.bottomPlayer.baseHp <= state.bottomPlayer.maxBaseHp * BASE_CRITICAL_RATIO);
-    this.boardView.setBaseCritical(1, state.topPlayer.baseHp > 0 && state.topPlayer.baseHp <= state.topPlayer.maxBaseHp * BASE_CRITICAL_RATIO);
+    this.boardView.setBaseCritical(0, state.bottomPlayer.baseHp_fp > 0 && state.bottomPlayer.baseHp_fp <= state.bottomPlayer.maxBaseHp_fp * BASE_CRITICAL_RATIO);
+    this.boardView.setBaseCritical(1, state.topPlayer.baseHp_fp > 0 && state.topPlayer.baseHp_fp <= state.topPlayer.maxBaseHp_fp * BASE_CRITICAL_RATIO);
     this.vfxSystem.update(dt);
     if (this.events.vignetteAlpha > 0) {
       this.events.vignetteAlpha = Math.max(0, this.events.vignetteAlpha - dt / GameRendererCore.VIGNETTE_FADE);

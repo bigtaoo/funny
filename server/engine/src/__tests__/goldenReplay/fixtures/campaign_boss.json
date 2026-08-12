@@ -6,7 +6,7 @@
     ],
     "bottomInkRegenMult": 1,
     "bottomPlayer": {
-      "baseHp": 100,
+      "baseHp_fp": 100000,
       "hand": [
         {
           "cardId": "runner",
@@ -35,7 +35,7 @@
       ],
       "ink": 6,
       "isDead": false,
-      "maxBaseHp": 100,
+      "maxBaseHp_fp": 100000,
       "side": "bottom",
       "upgradeLevel": 0
     },
@@ -78,7 +78,7 @@
       "escortMinHpPct": null
     },
     "topPlayer": {
-      "baseHp": 100,
+      "baseHp_fp": 100000,
       "hand": [
         {
           "cardId": "archer_2",
@@ -107,7 +107,7 @@
       ],
       "ink": 19,
       "isDead": false,
-      "maxBaseHp": 100,
+      "maxBaseHp_fp": 100000,
       "side": "top",
       "upgradeLevel": 0
     },
@@ -117,7 +117,7 @@
         "col": 0,
         "detourDir": 0,
         "detourTargetCol": null,
-        "hp": 60,
+        "hp_fp": 60000,
         "id": 1000,
         "isBoss": true,
         "isDead": false,
@@ -134,7 +134,7 @@
         "col": 10,
         "detourDir": 0,
         "detourTargetCol": null,
-        "hp": 60,
+        "hp_fp": 60000,
         "id": 1001,
         "isBoss": false,
         "isDead": false,
@@ -151,7 +151,7 @@
         "col": 10,
         "detourDir": 0,
         "detourTargetCol": null,
-        "hp": 60,
+        "hp_fp": 60000,
         "id": 1002,
         "isBoss": false,
         "isDead": false,
@@ -168,7 +168,7 @@
         "col": 7,
         "detourDir": 0,
         "detourTargetCol": null,
-        "hp": 190,
+        "hp_fp": 190000,
         "id": 1003,
         "isBoss": false,
         "isDead": false,
@@ -185,7 +185,7 @@
         "col": 2,
         "detourDir": 0,
         "detourTargetCol": null,
-        "hp": 30,
+        "hp_fp": 30000,
         "id": 1004,
         "isBoss": false,
         "isDead": false,
@@ -200,7 +200,7 @@
     ],
     "winner": null
   },
-  "finalStateHash": "5811dc0c7e63bcd7bbd11957e62a452ff602610d8cab925c94df87ae8ef479f9",
+  "finalStateHash": "79af07dc5135fe60ffaef92f8442d69e35fff4579934223ad74b84ec589d93f7",
   "name": "campaign_boss",
   "tickHashes": [
     "08f97616603ff04a1ea2beac430453b3c07f6c90b0c9e0c9e306259da0a0bc1f",

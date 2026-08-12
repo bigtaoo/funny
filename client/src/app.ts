@@ -49,6 +49,7 @@ import { ConsentDialog, type ConsentCallbacks } from './ui/dialogs/ConsentDialog
 import { ReconnectPromptDialog, type ReconnectPromptCallbacks } from './ui/dialogs/ReconnectPromptDialog';
 import { OwnerId, ownerToSide, Side } from './game';
 import type { Replay, LevelDefinition } from './game';
+import type { EngineCardInstance, EngineEquipInv } from '@nw/engine';
 import { ScalingManager, createLayout, resettledLayout } from './layout/ScalingManager';
 import { InputManager } from './inputSystem/InputManager';
 import type { ILayout } from './layout/ILayout';
@@ -255,9 +256,15 @@ class PixiAppViews implements AppViews {
     this.manager.goto(this.timedBuild('EventScene', () => new EventScene(this.layout, this.input, cb)));
   }
 
-  showReplay(replay: Replay, cb: ReplaySceneCallbacks, level?: LevelDefinition, equippedSkins?: readonly string[]): void {
+  showReplay(
+    replay: Replay, cb: ReplaySceneCallbacks, level?: LevelDefinition, equippedSkins?: readonly string[],
+    cardInstances?: EngineCardInstance[], equipmentInv?: EngineEquipInv,
+    siegeAcademy?: { hp: number; damage: number; siege: number },
+  ): void {
     this.leaveLobby();
-    this.manager.goto(this.timedBuild('ReplayScene', () => new ReplayScene(this.layout, this.input, replay, cb, level, equippedSkins)));
+    this.manager.goto(this.timedBuild('ReplayScene', () => new ReplayScene(
+      this.layout, this.input, replay, cb, level, equippedSkins, cardInstances, equipmentInv, siegeAcademy,
+    )));
   }
 
   showStatePlayer(replay: StateReplay, cb: StatePlayerSceneCallbacks, encoded?: EncodedStateReplay): void {

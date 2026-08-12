@@ -16,11 +16,14 @@ import {
   TOP_SPAWN_ROW,
   UNIT_BLUEPRINTS,
   parseLevelDefinition,
+  fromFp,
   type GarrisonEntry,
 } from '@nw/engine';
 import { buildSiegeBattle, npcGarrison, npcBaseHp, SLG_MAP_MAX_LEVEL } from '@nw/shared';
 
-const HP_PER_UNIT = UNIT_BLUEPRINTS[UnitType.Infantry].hp;
+// ADR-065: UNIT_BLUEPRINTS is fp-scaled internally; this script's own troop/hp math (like
+// worldsvc's siegeEngine.ts) stays real units — fromFp() converts at this boundary.
+const HP_PER_UNIT = fromFp(UNIT_BLUEPRINTS[UnitType.Infantry].hp_fp);
 const TICK_MARGIN = 600;
 
 /**

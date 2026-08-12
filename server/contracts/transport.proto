@@ -233,10 +233,13 @@ message MailNew { string mail_id = 1; bool has_attachment = 2; }
 // Friend-challenge ("切磋") invite pushed to the invited friend; a plain accept/decline turns straight
 // into MatchFound (via matchsvc's existing startMatch), so there is no separate "duel accepted" push.
 message DuelInvited { string invite_id = 1; string from_public_id = 2; string from_name = 3; }
-// Pushed back to the inviter on the unhappy path only (accept never reaches here — see DuelInvited doc).
+// Pushed back to the inviter on the unhappy path only, EXCEPT reason:'busy' (see below) which goes to
+// the invitee instead.
 // reason: declined | timeout | offline | not_found | lost (matchsvc restarted and this outstanding sent
 // invite could not be recovered — see PreMatchLost below; the inviter's client treats it the same as any
-// other unhappy-path cancellation).
+// other unhappy-path cancellation) | rate_limited | busy (matchmaking-mutex-audit, 2026-08-12: pushed to
+// the *invitee* when their accept was rejected because either side is already in a room or the ranked
+// queue — see matchsvc's duel.ts).
 message DuelCancelled { string invite_id = 1; string reason = 2; }
 
 // ── matchsvc restart-safety (matchsvc-prematch-persist, 2026-07-29) ──────────

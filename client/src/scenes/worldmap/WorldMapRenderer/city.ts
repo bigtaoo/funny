@@ -69,10 +69,18 @@ export class WorldMapRendererCity implements CityHandlers {
         seen.add(cacheKey);
 
         const lv = tile.level ?? 1;
-        // The requester's own base renders from the separate "stationery fortress" playerbase_atlas,
-        // keyed by desk building level rather than the tile's terrain-generated `level` (see
-        // TileDoc.deskLevel). Other players' bases and NPC map cities keep the shared city_atlas below.
-        const playerBaseTex = tile.mine ? getPlayerBaseTextureForLevel(tile.deskLevel ?? 1) : null;
+        // Every DB base tile reaching this loop belongs to a real player account — own or another
+        // player's; NPC/procedural cities are handled entirely by the separate cityNodes() loop
+        // below, never here. So always render from the "stationery fortress" playerbase_atlas,
+        // keyed by desk building level (see TileDoc.deskLevel), not `tile.level` — that's the
+        // tile's terrain-generated level, frozen at spawn/relocation and never updated afterward,
+        // so it drifts arbitrarily far from the account's real progress. This used to be
+        // `tile.mine ? ... : null`, so viewing any OTHER player's base fell back to the tier-based
+        // city_atlas keyed off that stale terrain level — e.g. a brand-new Lv.1 account whose spawn
+        // tile happened to land on a high terrain-level cell rendered as a max-tier fortress to
+        // everyone else (reported 2026-08-12). The `?? getCityTextureForLevel` fallback below now
+        // only matters while the playerbase atlas PNG hasn't finished decoding yet.
+        const playerBaseTex = getPlayerBaseTextureForLevel(tile.deskLevel ?? 1);
         const tex = playerBaseTex ?? getCityTextureForLevel(lv);
         if (!tex) continue;
         // Which atlas actually supplied `tex` (see the fallback above) decides whose contentTop
@@ -160,14 +168,17 @@ export class WorldMapRendererCity implements CityHandlers {
         // (whether or not the bar is actually showing this frame) so the label doesn't
         // jump up/down as a siege starts or ends.
         const label = cityC.getChildByName('label') as PIXI.Text;
-        // Mirror the texture-selection branch above (line 69): for the requester's own base the
-        // player-facing level is the desk building level (1-10, updated on every desk upgrade), not
-        // `tile.level` — that field is the tile's terrain-generation level, written once at spawn/
-        // relocation and never touched again by desk upgrades (server/worldsvc/src/core/spawn.ts).
-        // Using `lv` unconditionally here left the label frozen at the spawn-time value forever while
-        // the sprite (already on `deskLevel`) correctly advanced — reported 2026-08-09 on a real lvl-9
-        // base still showing "Lv.1".
-        const labelLv = tile.mine ? (tile.deskLevel ?? 1) : lv;
+        // Mirror the texture-selection branch above: the player-facing level for ANY base tile here
+        // is the desk building level (1-10, updated on every desk upgrade), not `tile.level` — that
+        // field is the tile's terrain-generation level, written once at spawn/relocation and never
+        // touched again by desk upgrades (server/worldsvc/src/core/spawn.ts). This used to fall back
+        // to `lv` for other players' bases too, which left their label (and, separately, their
+        // sprite — see above) stuck on the stale terrain level instead of tracking their real
+        // progress. `?? 1`, not `?? lv`: the server only ever writes `deskLevel` once a desk upgrade
+        // completes (city/buildings.ts) — a base whose desk is still at its untouched starting level
+        // has no `deskLevel` field at all, and the desk building itself always starts at level 1
+        // (shared/src/slg/city.ts's buildingLevel default), never at the terrain-generated `level`.
+        const labelLv = tile.deskLevel ?? 1;
         const levelStr = t('city.lvlLabel').replace('{lvl}', String(labelLv));
         const ownerStr = tile.mine ? ctx.cb.playerName : (tile.ownerName ?? '');
         label.text = ownerStr ? `${ownerStr} ${levelStr}` : levelStr;

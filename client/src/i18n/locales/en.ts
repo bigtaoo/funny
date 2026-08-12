@@ -246,7 +246,12 @@ export const en: Record<TranslationKey, string> = {
   'guide.daily.title': 'Daily check-in',
   'guide.daily.body': 'Log in daily for rewards; streaks pay more. Finish daily tasks for an extra batch.',
   'guide.world.title': 'The Great World',
-  'guide.world.body': 'An open world: claim land, build a clan, lay sieges. The heaviest mode — take your time.',
+  'guide.world.body': 'An open world: tap your main city on the map to start building, then claim land, build a clan, lay sieges. The heaviest mode — take your time.',
+  // ── SLG opening guide chain (ONBOARDING_DESIGN §4.2) — spotlight bubbles, no title, body-only ──
+  'guide.world.step1.body': "This is your main city — tap it to start building",
+  'guide.world.step2.body': 'Tap a building card to build or upgrade; tap the training tile to train troops',
+  'guide.world.step3.body': 'Tap here to return to the world map',
+  'guide.world.step4.body': 'Tap empty land near your city to send troops and claim it',
 
   // ── Friend room (online, S1) ──────────────────────────────────────────────
   'room.title': 'Friend Match',
@@ -756,6 +761,8 @@ export const en: Record<TranslationKey, string> = {
   'friends.duel.notFound': 'Player not found',
   'friends.duel.lost': 'Duel invite lost — please try again',
   'friends.duel.rateLimited': 'Too many duel invites — please wait a moment',
+  // Room/ranked-queue mutex (matchmaking-mutex-audit, 2026-08-12): either side is already in a room or queue.
+  'friends.duel.busy': 'Cannot duel: leave your room or cancel matchmaking first',
   // Global toast (any scene, P0-8): the in-scene banner (friends.duelInviteBanner) only shows while
   // sitting on FriendsScene, so this fires everywhere else the invite arrives.
   'friends.duel.invitedToast': '{name} challenged you to a duel — check Friends',
@@ -853,6 +860,7 @@ export const en: Record<TranslationKey, string> = {
   'world.marchKindReinforce': 'Reinforce',
   'world.marchTime': '~{sec}s travel',
   'world.myBase': 'My Base',
+  'world.home': 'Home',
   'world.occupied': 'Occupied',
   'world.occupying': 'Being occupied ({sec}s left)',
   'world.occupyingMine': 'Your occupation holds ({sec}s until it lands)',

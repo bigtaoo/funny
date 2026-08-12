@@ -12,6 +12,7 @@ import type { EquipmentInstance } from './SaveData';
 import type { EngineCardInstance, UnitType } from '@nw/engine';
 import { CARD_INV_CAP, CARD_INV_OVERFLOW_BUFFER, MAX_CARD_LEVEL, FUSION_MATERIAL_COUNT } from '@nw/shared/cards';
 import { UNIT_BLUEPRINTS } from '@nw/engine/config';
+import { fromFp } from '@nw/engine';
 
 export { CARD_INV_CAP, CARD_INV_OVERFLOW_BUFFER, MAX_CARD_LEVEL, FUSION_MATERIAL_COUNT };
 
@@ -66,25 +67,30 @@ export function troopCap(card: CardInstance): number {
   return def.troopCapBase + def.troopCapGrowth * (lv - 1);
 }
 
-/** Base HP for a card's unit type (engine blueprint — see UNIT_BLUEPRINTS[unitType].hp, not per-level). */
+/**
+ * Base HP for a card's unit type (engine blueprint — see UNIT_BLUEPRINTS[unitType].hp_fp, not
+ * per-level). ADR-065: the engine blueprint is fp-scaled internally; fromFp() converts back to
+ * real units here — the single choke point, so every caller of cardHp() sees the same real-unit
+ * number it always has (no visible change for players).
+ */
 export function cardHp(card: CardInstance): number {
   const def = CARD_DEFS[card.defId];
   if (!def) return 0;
-  return UNIT_BLUEPRINTS[def.unitType as UnitType]?.hp ?? 0;
+  return fromFp(UNIT_BLUEPRINTS[def.unitType as UnitType]?.hp_fp ?? 0);
 }
 
-/** Structure-damage rating for a card's unit type (engine blueprint — see UNIT_BLUEPRINTS[unitType].siegeValue). */
+/** Structure-damage rating for a card's unit type (engine blueprint — see UNIT_BLUEPRINTS[unitType].siegeValue_fp). */
 export function cardSiegeValue(card: CardInstance): number {
   const def = CARD_DEFS[card.defId];
   if (!def) return 0;
-  return UNIT_BLUEPRINTS[def.unitType as UnitType]?.siegeValue ?? 0;
+  return fromFp(UNIT_BLUEPRINTS[def.unitType as UnitType]?.siegeValue_fp ?? 0);
 }
 
-/** Base attack for a card's unit type (engine blueprint — see UNIT_BLUEPRINTS[unitType].attack, not per-level). */
+/** Base attack for a card's unit type (engine blueprint — see UNIT_BLUEPRINTS[unitType].attack_fp, not per-level). */
 export function cardAttack(card: CardInstance): number {
   const def = CARD_DEFS[card.defId];
   if (!def) return 0;
-  return UNIT_BLUEPRINTS[def.unitType as UnitType]?.attack ?? 0;
+  return fromFp(UNIT_BLUEPRINTS[def.unitType as UnitType]?.attack_fp ?? 0);
 }
 
 /** Approximate combat power score (CHARACTER_CARDS_DESIGN §2.4). Same proxy formula as server/shared/src/cards.ts. */

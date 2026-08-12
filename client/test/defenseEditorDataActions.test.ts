@@ -24,6 +24,7 @@ import {
 } from '../src/scenes/DefenseEditorScene/core';
 import type { DefenseEditorSceneCore } from '../src/scenes/DefenseEditorScene/core';
 import { UNIT_BLUEPRINTS } from '@nw/engine/config';
+import { fromFp } from '@nw/engine/math/fixed';
 import { WorldApiError } from '../src/net/WorldApiClient';
 
 const memStore = (() => {
@@ -142,7 +143,7 @@ describe('DefenseEditorScene — applyConfig() decode/sanitization', () => {
 
     expect(scene.garrison.get(`${LANE}:${ROW}`)).toEqual({
       unitType: UNIT,
-      hp: UNIT_BLUEPRINTS[UNIT].hp,
+      hp: fromFp(UNIT_BLUEPRINTS[UNIT].hp_fp),
     });
   });
 

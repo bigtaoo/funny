@@ -194,7 +194,7 @@ describe('Rockslide spell effect', () => {
     const col4Unit  = units.find(u => u.col === 4 && u.side === Side.Top);
 
     expect(col3Units.length).toBeGreaterThanOrEqual(1);
-    const col3Hp = col3Units.map(u => u.hp);
+    const col3Hp = col3Units.map(u => u.hp_fp);
 
     // Find rockslide in bottom player hand
     const slots = engine.state.bottomPlayer.hand.slots;
@@ -207,12 +207,12 @@ describe('Rockslide spell effect', () => {
     // col 3 units took damage
     const col3After = [...engine.state.board.units.values()].filter(u => u.col === 3 && u.side === Side.Top);
     for (const u of col3After) {
-      if (!u.isDead) expect(u.hp).toBeLessThan(col3Hp[0] ?? u.hp + 1);
+      if (!u.isDead) expect(u.hp_fp).toBeLessThan(col3Hp[0] ?? u.hp_fp + 1);
     }
 
     // col 4 unit untouched
     if (col4Unit && !col4Unit.isDead) {
-      expect(col4Unit.hp).toBe(col4Unit.maxHp ?? col4Unit.hp);
+      expect(col4Unit.hp_fp).toBe(col4Unit.maxHp_fp ?? col4Unit.hp_fp);
     }
   });
 });

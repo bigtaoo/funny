@@ -257,11 +257,23 @@ describe('FriendsScene — duel invite ("切磋")', () => {
     scene.destroy();
   });
 
+  it('applyDuelCancelled(reason=busy) clears the invitee\'s own incoming banner (matchmaking-mutex-audit, 2026-08-12: this reason is pushed to the invitee, not the inviter)', async () => {
+    const { scene } = buildFriendsScene([]);
+    await flush();
+    (scene as any).applyDuelInvited({ inviteId: 'inv-4', fromPublicId: '100000009', fromName: 'Carl' });
+    expect((scene as any).core.incomingDuelInvite).not.toBeNull();
+
+    (scene as any).applyDuelCancelled({ inviteId: 'inv-4', reason: 'busy' });
+    expect((scene as any).core.incomingDuelInvite).toBeNull();
+    scene.destroy();
+  });
+
   it.each([
     ['declined', 'friends.duel.declined'],
     ['timeout', 'friends.duel.timeout'],
     ['offline', 'friends.duel.offline'],
     ['not_found', 'friends.duel.notFound'],
+    ['busy', 'friends.duel.busy'], // matchmaking-mutex-audit, 2026-08-12: either side already in room/queue
     ['some-unrecognized-reason', 'friends.duel.notFound'], // unknown reason falls back to notFound
   ] as const)('applyDuelCancelled(reason=%s) toasts %s', async (reason, key) => {
     const { scene } = buildFriendsScene([]);

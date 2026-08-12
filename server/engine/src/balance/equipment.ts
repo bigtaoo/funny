@@ -23,6 +23,7 @@
 // (README §0 three iron rules: numbers live in code).
 
 import { UnitType, type UnitBlueprint } from '../types';
+import { type Fp, toFp, fromFp, addFp, mulFp, maxFp, minFp, clampFp, divFpByInt } from '../math/fixed';
 import { TRAIT_BREAKPOINTS } from './progression';
 
 // ── Affix id vocabulary (EQUIPMENT_DESIGN §7.4 / §7.5 / §7.6) ──────────────────────
@@ -98,22 +99,25 @@ export const AFFIX_FIELD_MAP: Readonly<Record<string, AffixDef>> = {
  * "awakening" breakpoint, and +7~+9 accelerates steeply. The payoff has to outrun the success-rate/
  * cost/demote-risk curve at high levels (see enhanceDemoteChance in @nw/shared) or nobody has a
  * reason to push past +6 — see DECISIONS.md ADR-063 for the discussion. +9 ≈ ×5.00 base.
+ *
+ * ADR-065: table entries are `Fp` (the affix values they scale become fp fields on the
+ * blueprint) — `enhanceMultiplier()` returns `Fp`, callers use `mulFp` to apply it.
  */
-export const ENHANCE_LEVEL_MULTIPLIER: readonly number[] = [
-  1.00, // +0
-  1.08, // +1
-  1.17, // +2
-  1.28, // +3
-  1.41, // +4
-  1.56, // +5
-  1.76, // +6 (breakpoint)
-  2.11, // +7
-  2.76, // +8
-  5.00, // +9 (2026-08-10 bump from 4.06 — the last level's payoff needed to read as an even bigger spike)
+export const ENHANCE_LEVEL_MULTIPLIER: readonly Fp[] = [
+  toFp(1.00), // +0
+  toFp(1.08), // +1
+  toFp(1.17), // +2
+  toFp(1.28), // +3
+  toFp(1.41), // +4
+  toFp(1.56), // +5
+  toFp(1.76), // +6 (breakpoint)
+  toFp(2.11), // +7
+  toFp(2.76), // +8
+  toFp(5.00), // +9 (2026-08-10 bump from 4.06 — the last level's payoff needed to read as an even bigger spike)
 ];
 
 /** Cumulative enhancement multiplier for `level` (clamped to the table's range: [0, ENHANCE_LEVEL_MULTIPLIER.length-1]). */
-export function enhanceMultiplier(level: number): number {
+export function enhanceMultiplier(level: number): Fp {
   const lv = Math.max(0, Math.min(Math.round(level), ENHANCE_LEVEL_MULTIPLIER.length - 1));
   return ENHANCE_LEVEL_MULTIPLIER[lv]!;
 }
@@ -135,23 +139,29 @@ export function enhanceMultiplier(level: number): number {
 //    equipment-only caps + lifestealPct/critPct/critMult cross-source caps; full cross-source
 //    unification of the multiplicative fields awaits trait numeric table alignment
 //    (§7.7 limits belong to ECONOMY_NUMBERS §5).
+/**
+ * ADR-065: fields that clamp fp blueprint fields (`atkPct_fp`/`siegePct_fp`/`hpPct_fp`/
+ * `lifestealPct_fp`/`armorFlat_fp`/`critPct_fp`/`critMult_fp`) are `Fp`. `atkspdPct` stays
+ * plain — it clamps the equipment attack-speed accumulator, which feeds `attackInterval`
+ * (a plain field, outside ADR-065's scope).
+ */
 export const EFFECT_CAPS = {
   /** Attack % equipment contribution cap (§7.7 ≤ +60%). */
-  atkPct: 0.6,
+  atkPct_fp: toFp(0.6),
   /** Siege value % equipment contribution cap (ADR-026, mirrors atkPct ≤ +60%). */
-  siegePct: 0.6,
+  siegePct_fp: toFp(0.6),
   /** HP % equipment contribution cap (§7.7 ≤ +60%). */
-  hpPct: 0.6,
-  /** Attack speed % equipment contribution cap (§7.7 ≤ +40%). */
+  hpPct_fp: toFp(0.6),
+  /** Attack speed % equipment contribution cap (§7.7 ≤ +40%). Plain — see doc comment above. */
   atkspdPct: 0.4,
   /** Lifesteal % all-source (trait T6 + secondary affix + skill proc) summed cap (§7.7 ≤ 30). */
-  lifestealPct: 30,
+  lifestealPct_fp: toFp(30),
   /** Armor flat equipment contribution cap (S12-E tightened: progression changed to armor:1/level, L9=+8; equipment cap 12 → combined total ≤20). */
-  armorFlat: 12,
+  armorFlat_fp: toFp(12),
   /** Crit chance all-source (trait T3 + trinket main m_crit + sub-affix) summed cap (§7.7 ≤ 50, 0–100 scale). */
-  critPct: 50,
+  critPct_fp: toFp(50),
   /** Crit damage multiplier all-source cap (T3 base 1.5× + s_critmult bonuses); prevents crit-damage explosion (§7.7 DRAFT). */
-  critMult: 2.5,
+  critMult_fp: toFp(2.5),
 } as const;
 
 // ── Player unit types eligible for card-based equipment bonuses ───────────────────────────
@@ -221,24 +231,34 @@ export interface EngineEquipmentInput {
 
 // ── Injection ─────────────────────────────────────────────────────────────────────
 
-/** Per-unit-type effect accumulator (percentages as decimals: 0.12 = +12%; flat values are raw). */
+/**
+ * Per-unit-type effect accumulator. ADR-065: fields feeding fp blueprint fields
+ * (attack_fp/siegeValue_fp/hp_fp/armor_fp/lifestealPct_fp/critPct_fp/critMult_fp) are `Fp`
+ * fractions (e.g. toFp(0.12) = +12%) or fp points; `atkspdPct`/`spdPct`/`regenFlat` stay
+ * plain — they feed `attackInterval`/`speed`/`regenPerSec`, which are outside ADR-065's scope.
+ */
 interface EffectAccum {
-  atkPct: number;
-  siegePct: number;
-  hpPct: number;
+  atkPct_fp: Fp;
+  siegePct_fp: Fp;
+  hpPct_fp: Fp;
   atkspdPct: number;
   spdPct: number;
-  armorFlat: number;
-  lifestealFlat: number;
+  armorFlat_fp: Fp;
+  lifestealFlat_fp: Fp;
   regenFlat: number;
-  /** Crit chance points (0–100 scale), additive across equipped items (§7.7①). */
-  critPctFlat: number;
-  /** Crit damage multiplier bonus (decimal, e.g. 0.20 = +20% crit damage), additive across items. */
-  critMultBonus: number;
+  /** Crit chance points (0–100 scale, fp), additive across equipped items (§7.7①). */
+  critPctFlat_fp: Fp;
+  /** Crit damage multiplier bonus (fp fraction, e.g. toFp(0.20) = +20% crit damage), additive across items. */
+  critMultBonus_fp: Fp;
 }
 
 function zeroAccum(): EffectAccum {
-  return { atkPct: 0, siegePct: 0, hpPct: 0, atkspdPct: 0, spdPct: 0, armorFlat: 0, lifestealFlat: 0, regenFlat: 0, critPctFlat: 0, critMultBonus: 0 };
+  return {
+    atkPct_fp: toFp(0), siegePct_fp: toFp(0), hpPct_fp: toFp(0),
+    atkspdPct: 0, spdPct: 0,
+    armorFlat_fp: toFp(0), lifestealFlat_fp: toFp(0), regenFlat: 0,
+    critPctFlat_fp: toFp(0), critMultBonus_fp: toFp(0),
+  };
 }
 
 /** Accumulates all affixes of one equipped item into acc (primary affixes scaled by enhancement level; utility/skill/unknown skipped). */
@@ -247,38 +267,42 @@ function accumInstance(acc: EffectAccum, inst: EngineEquipInstance): void {
   for (const affix of inst.affixes ?? []) {
     const def = AFFIX_FIELD_MAP[affix.id];
     if (!def) continue; // Unknown affix: silently ignored
-    // Primary affixes scale with enhancement level; secondary affixes are fixed.
-    const effective = def.main ? affix.value * enhanceMultiplier(level) : affix.value;
+    // Primary affixes scale with enhancement level (fp × fp via mulFp); secondary affixes are fixed
+    // (just the raw rolled value, lifted into fp).
+    const effective_fp = def.main ? mulFp(toFp(affix.value), enhanceMultiplier(level)) : toFp(affix.value);
     switch (def.kind) {
       case 'mult_atk':
-        acc.atkPct += effective / 100;
+        acc.atkPct_fp = addFp(acc.atkPct_fp, divFpByInt(effective_fp, 100));
         break;
       case 'mult_siege':
-        acc.siegePct += effective / 100;
+        acc.siegePct_fp = addFp(acc.siegePct_fp, divFpByInt(effective_fp, 100));
         break;
       case 'mult_hp':
-        acc.hpPct += effective / 100;
+        acc.hpPct_fp = addFp(acc.hpPct_fp, divFpByInt(effective_fp, 100));
         break;
       case 'mult_atkspd':
-        acc.atkspdPct += effective / 100;
+        // Plain accumulator (feeds attackInterval, outside ADR-065's scope) — unscale back to decimal.
+        acc.atkspdPct += fromFp(effective_fp) / 100;
         break;
       case 'mult_spd':
-        acc.spdPct += effective / 100;
+        // Plain accumulator (feeds speed, outside ADR-065's scope) — unscale back to decimal.
+        acc.spdPct += fromFp(effective_fp) / 100;
         break;
       case 'flat_armor':
-        acc.armorFlat += effective;
+        acc.armorFlat_fp = addFp(acc.armorFlat_fp, effective_fp);
         break;
       case 'flat_lifesteal':
-        acc.lifestealFlat += effective;
+        acc.lifestealFlat_fp = addFp(acc.lifestealFlat_fp, effective_fp);
         break;
       case 'flat_regen':
-        acc.regenFlat += effective;
+        // Plain accumulator (feeds regenPerSec, outside ADR-065's scope) — unscale back to HP/s.
+        acc.regenFlat += fromFp(effective_fp);
         break;
       case 'crit': // Crit chance (m_crit, trinket main): additive points; scaled by enhancement (main affix).
-        acc.critPctFlat += effective;
+        acc.critPctFlat_fp = addFp(acc.critPctFlat_fp, effective_fp);
         break;
-      case 'crit_mult': // Crit damage (s_critmult, sub-affix): fixed points → decimal bonus (value/100).
-        acc.critMultBonus += effective / 100;
+      case 'crit_mult': // Crit damage (s_critmult, sub-affix): fixed points → fp fraction bonus (value/100).
+        acc.critMultBonus_fp = addFp(acc.critMultBonus_fp, divFpByInt(effective_fp, 100));
         break;
       case 'noncombat': // Utility (material drop / stamina refund): not injected into combat blueprint (§7.5)
         break;
@@ -286,6 +310,7 @@ function accumInstance(acc: EffectAccum, inst: EngineEquipInstance): void {
   }
 }
 
+/** Plain-domain clamp (for the handful of accumulator fields still outside ADR-065's fp scope). */
 function clamp(v: number, max: number): number {
   return v > max ? max : v < 0 ? 0 : v;
 }
@@ -324,30 +349,31 @@ export function applyEquipment(
   if (!u) return; // Unknown unit type (e.g. PvE-only enemy): silently ignored
 
   // Multiplicative fields: equipment contribution clamped here (§7.7 clamping site ①).
-  u.attack = Math.round(u.attack * (1 + clamp(acc.atkPct, EFFECT_CAPS.atkPct)));
+  u.attack_fp = mulFp(u.attack_fp, addFp(toFp(1), clampFp(acc.atkPct_fp, EFFECT_CAPS.atkPct_fp)));
   // Siege value: own gear channel (ADR-026), same multiplicative arithmetic + cap as attack.
-  u.siegeValue = Math.round(u.siegeValue * (1 + clamp(acc.siegePct, EFFECT_CAPS.siegePct)));
-  u.hp = Math.round(u.hp * (1 + clamp(acc.hpPct, EFFECT_CAPS.hpPct)));
-  // Attack speed: percentage reduces attackInterval (§7.4 "multiplicative (reduces interval)"); lower bound prevents 0/negative.
+  u.siegeValue_fp = mulFp(u.siegeValue_fp, addFp(toFp(1), clampFp(acc.siegePct_fp, EFFECT_CAPS.siegePct_fp)));
+  u.hp_fp = mulFp(u.hp_fp, addFp(toFp(1), clampFp(acc.hpPct_fp, EFFECT_CAPS.hpPct_fp)));
+  // Attack speed: percentage reduces attackInterval (§7.4 "multiplicative (reduces interval)"); plain
+  // field (outside ADR-065's scope), lower bound prevents 0/negative.
   const atkspd = clamp(acc.atkspdPct, EFFECT_CAPS.atkspdPct);
   if (atkspd > 0) u.attackInterval = u.attackInterval / (1 + atkspd);
-  // Move speed: §7.7 table lists no cap → not clamped.
+  // Move speed: plain field (outside ADR-065's scope); §7.7 table lists no cap → not clamped.
   if (acc.spdPct !== 0) u.speed = u.speed * (1 + acc.spdPct);
   // Absolute fields: accumulated, unified clamping deferred to clampEffectCaps (cross-source sum cap, §7.7④).
-  if (acc.armorFlat !== 0) u.armor = (u.armor ?? 0) + acc.armorFlat;
-  if (acc.lifestealFlat !== 0) u.lifestealPct = (u.lifestealPct ?? 0) + acc.lifestealFlat;
+  if (acc.armorFlat_fp !== 0) u.armor_fp = addFp(u.armor_fp ?? toFp(0), acc.armorFlat_fp);
+  if (acc.lifestealFlat_fp !== 0) u.lifestealPct_fp = addFp(u.lifestealPct_fp ?? toFp(0), acc.lifestealFlat_fp);
   if (acc.regenFlat !== 0) u.regenPerSec = (u.regenPerSec ?? 0) + acc.regenFlat;
 
   // Crit (§7.7①): chance is additive across all sources (trait T3 already baked by applyUnitLevels
   // + this equipment contribution), the ≤50 sum-cap is applied later in clampEffectCaps. An m_crit
   // trinket also establishes the T3 base multiplier (1.5×) so it crits meaningfully even on a unit
-  // below the T3 breakpoint; s_critmult then adds on top. combatPrng only advances when critPct>0,
-  // so PvP (no equipment, critPct stays 0) replays remain bit-identical (hardwall test).
-  if (acc.critPctFlat > 0) {
-    u.critPct = (u.critPct ?? 0) + acc.critPctFlat;
-    u.critMult = Math.max(u.critMult ?? 1, TRAIT_BREAKPOINTS.crit.mult);
+  // below the T3 breakpoint; s_critmult then adds on top. combatPrng only advances when critPct_fp>0,
+  // so PvP (no equipment, critPct_fp stays 0) replays remain bit-identical (hardwall test).
+  if (acc.critPctFlat_fp > 0) {
+    u.critPct_fp = addFp(u.critPct_fp ?? toFp(0), acc.critPctFlat_fp);
+    u.critMult_fp = maxFp(u.critMult_fp ?? toFp(1), TRAIT_BREAKPOINTS.crit.mult);
   }
-  if (acc.critMultBonus > 0) u.critMult = (u.critMult ?? 1) + acc.critMultBonus;
+  if (acc.critMultBonus_fp > 0) u.critMult_fp = addFp(u.critMult_fp ?? toFp(1), acc.critMultBonus_fp);
 }
 
 /**
@@ -361,20 +387,20 @@ export function applyEquipment(
 export function clampEffectCaps(bp: Record<UnitType, UnitBlueprint>): void {
   for (const unitType of Object.keys(bp) as UnitType[]) {
     const u = bp[unitType];
-    if (u.lifestealPct !== undefined) {
-      u.lifestealPct = clamp(u.lifestealPct, EFFECT_CAPS.lifestealPct);
+    if (u.lifestealPct_fp !== undefined) {
+      u.lifestealPct_fp = clampFp(u.lifestealPct_fp, EFFECT_CAPS.lifestealPct_fp);
     }
-    if (u.armor !== undefined) {
+    if (u.armor_fp !== undefined) {
       // Armor flat all-source cap (base armor + equipment); prevents late-game damage-reduction overflow (§7.7).
-      u.armor = Math.min(u.armor, EFFECT_CAPS.armorFlat);
+      u.armor_fp = minFp(u.armor_fp, EFFECT_CAPS.armorFlat_fp);
     }
-    if (u.critPct !== undefined) {
+    if (u.critPct_fp !== undefined) {
       // Crit chance all-source sum cap (trait T3 + equipment), §7.7① ≤50 (0–100 scale).
-      u.critPct = Math.min(u.critPct, EFFECT_CAPS.critPct);
+      u.critPct_fp = minFp(u.critPct_fp, EFFECT_CAPS.critPct_fp);
     }
-    if (u.critMult !== undefined) {
+    if (u.critMult_fp !== undefined) {
       // Crit damage multiplier all-source cap (§7.7 DRAFT); prevents crit-damage explosion.
-      u.critMult = Math.min(u.critMult, EFFECT_CAPS.critMult);
+      u.critMult_fp = minFp(u.critMult_fp, EFFECT_CAPS.critMult_fp);
     }
   }
 }

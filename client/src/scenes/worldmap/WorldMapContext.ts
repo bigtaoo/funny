@@ -15,6 +15,8 @@ import type { WorldMapInput } from './WorldMapInput';
 import type { StickmanRuntime } from '../../render/stickman/StickmanRuntime';
 import type { IStorage } from '../../platform/IPlatform';
 import type { SaveData } from '../../game/meta/SaveData';
+import type { EraseCrumb } from './WorldMapRenderer/loadingReveal';
+import { GuideOverlay } from '../../render/GuideOverlay';
 
 /**
  * A live march/occupy/stationed token (fog.ts syncMarchTokens/syncOccupyTokens/syncStationedTokens).
@@ -62,6 +64,13 @@ export interface WorldMapCallbacks {
   /** Platform storage (IPlatform.storage) — world-chat read-marker persistence must go through this,
    * not the global `localStorage`, so it also works under the WeChat mini-game runtime (no DOM storage). */
   storage: IStorage;
+  /** SLG opening guide chain (ONBOARDING_DESIGN §4.2) — thin pass-through to SaveManager.getFlag/setFlag,
+   * reusing the existing flags channel (no SaveData schema change) for `guide.world.step{1,4}`.
+   * Optional (unlike the rest of the guide plumbing) purely so the many existing WorldMapScene UI
+   * test fixtures that predate this feature don't all need updating; production wiring
+   * (app/nav/world.ts) always provides both. */
+  getFlag?(key: string): boolean;
+  setFlag?(key: string, value: boolean): void;
 }
 
 /** March kinds the deploy dialog can dispatch (occupy/reinforce/attack/sweep). */
@@ -171,6 +180,17 @@ export class WorldMapContext {
   loadingLayer: PIXI.Container | null = null;
   loadingSpinner: PIXI.Graphics | null = null;
   loadingAngle = 0;
+  /** Non-null only while the loading cover's eraser-wipe reveal is in flight — see
+   *  WorldMapRenderer/loadingReveal.ts. `loadingEraseLayer` is the handed-off paper sheet (masked
+   *  by `loadingEraseMask`); `loadingEraseCrumbs` draws the trailing rubber-fleck particles
+   *  (state in `loadingEraseCrumbData`, spawn accumulator in `loadingEraseCrumbSpawnAcc`).
+   *  `loadingEraseT` is wipe progress, 0 (untouched) → 1 (fully erased). */
+  loadingEraseLayer: PIXI.Container | null = null;
+  loadingEraseMask: PIXI.Graphics | null = null;
+  loadingEraseCrumbs: PIXI.Graphics | null = null;
+  loadingEraseCrumbData: EraseCrumb[] = [];
+  loadingEraseCrumbSpawnAcc = 0;
+  loadingEraseT = 0;
   /** Screen-edge red vignette (D-CITY-8): flashed when the player's own main-base durability is
    * deducted by a settled siege hit. Mirrors the battle scene's base-damage vignette (GameRenderer/events.ts). */
   vignetteGfx!: PIXI.Graphics;
@@ -191,6 +211,8 @@ export class WorldMapContext {
   aucBtnRect: { x: number; y: number; w: number; h: number } = { x: 0, y: 0, w: 0, h: 0 };
   /** Header-bar "Shop" entry (left of the auction button) — opens the standalone shop panel. */
   shopBtnRect: { x: number; y: number; w: number; h: number } = { x: 0, y: 0, w: 0, h: 0 };
+  /** Header-bar "Home" entry (left of the shop button) — recenters the camera on the player's own base. */
+  homeBtnRect: { x: number; y: number; w: number; h: number } = { x: 0, y: 0, w: 0, h: 0 };
   zoomBtnRect: { x: number; y: number; w: number; h: number } = { x: 0, y: 0, w: 0, h: 0 };
   marchBadgeRect: { x: number; y: number; w: number; h: number } = { x: 0, y: 0, w: 0, h: 0 };
   /** Top-right "battle replays" badge (below the marches badge) — tapping it opens the last-100 replay browser. */
@@ -237,6 +259,12 @@ export class WorldMapContext {
   infoScrollPendingTap: (() => void) | null = null;
   /** Which panel's scroll list is currently active — WorldMapInput calls this instead of hardcoding a render method, so any modal hosting a beginScrollList region re-renders correctly. Set by beginScrollList, cleared by closeModal. */
   infoScrollRerender: (() => void) | null = null;
+
+  // ── SLG opening guide chain (ONBOARDING_DESIGN §4.2) ─────────────────────────
+  /** Non-null while step1 ("tap your main city") is actively highlighted; cleared once the base tile is tapped (WorldMapInput.onTileClick) or skipped. step4 (the closing "occupy nearby land" tip) has no ring/step state of its own — lifecycle.update derives it straight from flags. */
+  guideStep: 'step1' | null = null;
+  /** Mounted once in WorldMapRenderer/build.ts, right after the vignette layer — the topmost persistent child of `container`, so it survives every pool/city-layer/HUD refresh and never needs rebuilding. */
+  guide!: GuideOverlay;
 
   // Collaborators (assigned by WorldMapScene right after construction).
   view!: WorldMapRenderer;

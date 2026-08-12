@@ -749,7 +749,7 @@ export class UnitView {
     const hpFill = sprite.getChildByName('hpFill') as PIXI.Graphics | null;
     if (!hpFill) return;
     hpFill.clear();
-    const ratio = Math.max(0, unit.hp / unit.maxHp);
+    const ratio = Math.max(0, unit.hp_fp / unit.maxHp_fp);
     hpFill.beginFill(ratio > 0.4 ? fx.hpHigh : fx.hpLow);
 
     // Determine HP bar Y offset: stickman containers have their own y offset baked in.

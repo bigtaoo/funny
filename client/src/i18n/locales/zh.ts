@@ -250,7 +250,12 @@ export const zh = {
   'guide.daily.title': '每日签到',
   'guide.daily.body': '每天登录领奖励，连续签到更划算。完成每日任务再拿一份。',
   'guide.world.title': '大世界',
-  'guide.world.body': '开放大世界：占地、建宗门、围攻。最重的玩法，慢慢来。',
+  'guide.world.body': '开放大世界：先点击地图上你的主城开始建设，再占地、建宗门、围攻。最重的玩法，慢慢来。',
+  // ── SLG opening guide chain (ONBOARDING_DESIGN §4.2) — spotlight bubbles, no title, body-only ──
+  'guide.world.step1.body': '这是你的主城，点击它开始建设',
+  'guide.world.step2.body': '点击建筑卡，建造或升级；点训练格可以练兵',
+  'guide.world.step3.body': '点这里返回大世界地图',
+  'guide.world.step4.body': '在主城旁的空地上点击，就能出兵占地',
 
   // ── Friend room (online co-op, S1) ───────────────────────────────────────
   'room.title': '好友对战',
@@ -764,6 +769,8 @@ export const zh = {
   // 服务器重启后原有切磋邀请丢失（matchsvc-prematch-persist），提示邀请方重新发起。
   'friends.duel.lost': '切磋邀请已失效，请重新发起',
   'friends.duel.rateLimited': '切磋邀请过于频繁，请稍后再试',
+  // 房间/排位队列互斥（matchmaking-mutex-audit，2026-08-12）：任一方已在房间或匹配队列中，需先手动退出。
+  'friends.duel.busy': '无法切磋：请先退出房间或取消匹配',
   // Global toast (any scene, P0-8): the in-scene banner (friends.duelInviteBanner) only shows while
   // sitting on FriendsScene, so this fires everywhere else the invite arrives.
   'friends.duel.invitedToast': '{name} 邀请你切磋，去好友页查看',
@@ -866,6 +873,7 @@ export const zh = {
   'world.marchKindReinforce': '增援',
   'world.marchTime': '旅途约 {sec} 秒',
   'world.myBase': '我的主城',
+  'world.home': '回家',
   'world.occupied': '已占领',
   'world.occupying': '占领中（{sec}s 后结算）',
   'world.occupyingMine': '我方占领中（{sec}s 后落地）',

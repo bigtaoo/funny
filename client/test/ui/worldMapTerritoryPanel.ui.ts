@@ -88,6 +88,7 @@ function buildHarness(opts: {
     backRect: { x: 0, y: 0, w: 0, h: 0 },
     aucBtnRect: { x: 0, y: 0, w: 0, h: 0 },
     shopBtnRect: { x: 0, y: 0, w: 0, h: 0 },
+    homeBtnRect: { x: 0, y: 0, w: 0, h: 0 },
     marchBadgeRect: { x: 0, y: 0, w: 0, h: 0 },
     replayBadgeRect: { x: 0, y: 0, w: 0, h: 0 },
     chatBarRect: { x: 0, y: 0, w: 0, h: 0 },

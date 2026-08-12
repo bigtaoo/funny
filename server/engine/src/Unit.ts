@@ -1,4 +1,4 @@
-import { fp, FP_SCALE, fromFp, toFp, TICK_RATE, type Fp } from './math/fixed';
+import { fp, FP_SCALE, fromFp, toFp, addFp, subFp, mulFp, maxFp, minFp, TICK_RATE, type Fp } from './math/fixed';
 import { UNIT_BLUEPRINTS } from './config';
 import { Side, UnitState, UnitType, type TraitSpec, type UnitBlueprint } from './types';
 
@@ -41,14 +41,14 @@ export class Unit {
   /** Collision radius in fp. Two units don't overlap when radii don't intersect. */
   readonly radius_fp: Fp;
 
-  // ── Stats ──────────────────────────────────────────────────────────────────
+  // ── Stats (ADR-065: fp, scale = FP_SCALE = 1000) ────────────────────────────
 
-  hp: number;
-  readonly maxHp: number;
-  readonly attack: number;
+  hp_fp: Fp;
+  readonly maxHp_fp: Fp;
+  readonly attack_fp: Fp;
 
   /** siege value (ADR-026): base HP knocked off the enemy base on arrival. Decoupled from `attack`. */
-  readonly siegeValue: number;
+  readonly siegeValue_fp: Fp;
 
   /**
    * Attack interval in integer ticks.
@@ -110,36 +110,36 @@ export class Unit {
   readonly flying: boolean;
   /** Unit can target flying enemies (archers = true, melee = false). */
   readonly canTargetFlying: boolean;
-  /** Flat damage reduction per hit; absorbed damage minimum 1. */
-  readonly armor: number;
+  /** Flat damage reduction per hit (fp); absorbed damage minimum toFp(1). ADR-065. */
+  readonly armor_fp: Fp;
   /** Enemy findTarget prefers this unit as the attack target. */
   readonly taunt: boolean;
   /** Survive first lethal hit with 1 HP; flag cleared after use (PvE). */
   readonly undying: boolean;
-  /** HP fraction 0–1; attack speed ×1.5 when HP < threshold. 0 = disabled. */
-  readonly berserkerThreshold: number;
-  /** HP fraction 0–1; below this, effectiveArmor adds armorEnrageBonus. 0 = disabled (ShieldBearer T9 progression trait). */
-  readonly armorEnrageThreshold: number;
-  /** Flat armor added while below armorEnrageThreshold. */
-  readonly armorEnrageBonus: number;
-  /** 0–100; % of actual damage taken reflected back onto the attacker (Lena T9 progression trait). 0 = disabled. */
-  readonly reflectPct: number;
+  /** HP fraction 0–1 (fp); attack speed ×1.5 when HP < threshold. 0 = disabled. ADR-065. */
+  readonly berserkerThreshold_fp: Fp;
+  /** HP fraction 0–1 (fp); below this, effectiveArmor adds armorEnrageBonus_fp. 0 = disabled (ShieldBearer T9 progression trait). ADR-065. */
+  readonly armorEnrageThreshold_fp: Fp;
+  /** Flat armor (fp) added while below armorEnrageThreshold_fp. ADR-065. */
+  readonly armorEnrageBonus_fp: Fp;
+  /** 0–100 points (fp); % of actual damage taken reflected back onto the attacker (Lena T9 progression trait). 0 = disabled. ADR-065. */
+  readonly reflectPct_fp: Fp;
   /** Spawn N units of given type on death (PvE). */
   readonly onDeathSpawn: { type: UnitType; count: number } | null;
-  /** Crit chance 0–100 (unit progression T3); 0 = no crit roll (PvP units always 0). */
-  readonly critPct: number;
-  /** Crit damage multiplier applied when a crit lands. */
-  readonly critMult: number;
+  /** Crit chance 0–100 points (fp, unit progression T3); 0 = no crit roll (PvP units always 0). ADR-065. */
+  readonly critPct_fp: Fp;
+  /** Crit damage multiplier applied when a crit lands (fp). ADR-065. */
+  readonly critMult_fp: Fp;
   /** Chebyshev radius of bonus splash damage applied around the primary target. 0 = no splash. */
   readonly splashRadius: number;
   /** Hit all enemies in the same column on each attack (PvE). */
   readonly piercing: boolean;
-  /** Slow attacker-target speed on hit: mult × baseSpeed for durationTicks (PvE). */
-  readonly slowOnHit: { mult: number; durationTicks: number } | null;
-  /** HP regen in fp/tick (accumulated into healAccFp). 0 = no regen. */
-  readonly regenFpPerTick: number;
-  /** Heal self by this % of damage dealt to Units. 0 = no lifesteal. */
-  readonly lifestealPct: number;
+  /** Slow attacker-target speed on hit: mult_fp × baseSpeed for durationTicks (PvE). ADR-065. */
+  readonly slowOnHit: { mult_fp: Fp; durationTicks: number } | null;
+  /** HP regen in fp/tick — same fp domain as hp_fp, added directly each tick (no separate accumulator needed, ADR-065). 0 = no regen. */
+  readonly regenFpPerTick: Fp;
+  /** Heal self by this % of damage dealt to Units (fp). 0 = no lifesteal. ADR-065. */
+  readonly lifestealPct_fp: Fp;
   /** Extensible trait descriptors (e.g. aura_heal). */
   readonly traits: readonly TraitSpec[];
   /** Invisible to findTarget at Chebyshev dist > 2 (PvE). */
@@ -148,8 +148,8 @@ export class Unit {
   readonly summonOnTimer: { type: UnitType; intervalTicks: number } | null;
   /** 2× damage when only one live enemy remains (Max, A6). */
   readonly burstOnSingle: boolean;
-  /** Multiplier burstOnSingle applies (default 2; Max T9 progression trait bumps to 2.5). */
-  readonly burstOnSingleMult: number;
+  /** Multiplier burstOnSingle applies (fp; default toFp(2); Max T9 progression trait bumps to toFp(2.5)). ADR-065. */
+  readonly burstOnSingleMult_fp: Fp;
   /** Marks target on hit; marked units take +25 % damage for 3 s (Mara, A6). */
   readonly markEnemies: boolean;
 
@@ -161,8 +161,6 @@ export class Unit {
   slowRemainingTicks: number = 0;
   /** Countdown until next summonOnTimer spawn. Set to intervalTicks on construction. */
   summonCooldownTicks: number = 0;
-  /** Fractional HP accumulator for regen and aura_heal (fp units = 1/1000 HP). */
-  healAccFp: number = 0;
   /** Ticks remaining on Mara's mark debuff. 0 = not marked. */
   markedTicks: number = 0;
 
@@ -195,11 +193,13 @@ export class Unit {
 
     const bp = blueprint;
     // Troops = HP (§16.1): allotted troops set starting HP, capped at the blueprint
-    // full capacity. maxHp stays the cap so combat / regen / UI bars are unchanged.
-    this.hp       = initialHp !== undefined ? Math.min(initialHp, bp.hp) : bp.hp;
-    this.maxHp    = bp.hp;
-    this.attack   = bp.attack;
-    this.siegeValue = bp.siegeValue;
+    // full capacity. maxHp_fp stays the cap so combat / regen / UI bars are unchanged.
+    // initialHp is a plain real-unit number (ADR-065 boundary: it arrives from outside the
+    // blueprint-bake pipeline — worldsvc's siege troop allotment — so it's converted to fp here).
+    this.hp_fp    = initialHp !== undefined ? minFp(toFp(initialHp), bp.hp_fp) : bp.hp_fp;
+    this.maxHp_fp = bp.hp_fp;
+    this.attack_fp = bp.attack_fp;
+    this.siegeValue_fp = bp.siegeValue_fp;
     this.range    = bp.range;
 
     // Convert seconds → ticks (integer, no float retained)
@@ -221,25 +221,28 @@ export class Unit {
       : null;
     this.flying          = bp.flying          ?? false;
     this.canTargetFlying = bp.canTargetFlying ?? false;
-    this.armor           = bp.armor           ?? 0;
+    this.armor_fp        = bp.armor_fp        ?? toFp(0);
     this.taunt           = bp.taunt           ?? false;
     this.undying         = bp.undying         ?? false;
-    this.berserkerThreshold = bp.berserkerThreshold ?? 0;
-    this.armorEnrageThreshold = bp.armorEnrageThreshold ?? 0;
-    this.armorEnrageBonus  = bp.armorEnrageBonus  ?? 0;
-    this.reflectPct         = bp.reflectPct         ?? 0;
+    this.berserkerThreshold_fp = bp.berserkerThreshold_fp ?? toFp(0);
+    this.armorEnrageThreshold_fp = bp.armorEnrageThreshold_fp ?? toFp(0);
+    this.armorEnrageBonus_fp  = bp.armorEnrageBonus_fp  ?? toFp(0);
+    this.reflectPct_fp         = bp.reflectPct_fp         ?? toFp(0);
     this.onDeathSpawn    = bp.onDeathSpawn    ?? null;
-    this.critPct         = bp.critPct         ?? 0;
-    this.critMult        = bp.critMult        ?? 1;
+    this.critPct_fp      = bp.critPct_fp      ?? toFp(0);
+    this.critMult_fp     = bp.critMult_fp     ?? toFp(1);
     this.splashRadius    = bp.splashRadius    ?? 0;
     this.piercing        = bp.piercing        ?? false;
     this.slowOnHit       = bp.slowOnHit
-      ? { mult: bp.slowOnHit.mult, durationTicks: Math.round(bp.slowOnHit.durationSec * TICK_RATE) }
+      ? { mult_fp: bp.slowOnHit.mult_fp, durationTicks: Math.round(bp.slowOnHit.durationSec * TICK_RATE) }
       : null;
+    // regenFpPerTick lands in the SAME fp domain as hp_fp (both ×FP_SCALE) — added directly
+    // to hp_fp each tick by TraitSystem, no separate accumulator needed (ADR-065 simplification;
+    // pre-ADR-065 this used a dedicated healAccFp that drained 1 whole HP point at a time).
     this.regenFpPerTick  = bp.regenPerSec
-      ? Math.round(bp.regenPerSec * FP_SCALE / TICK_RATE)
-      : 0;
-    this.lifestealPct    = bp.lifestealPct    ?? 0;
+      ? Math.round(bp.regenPerSec * FP_SCALE / TICK_RATE) as Fp
+      : toFp(0);
+    this.lifestealPct_fp = bp.lifestealPct_fp ?? toFp(0);
     this.traits          = bp.traits          ?? [];
     this.stealth         = bp.stealth         ?? false;
     this.summonOnTimer   = bp.summonOnTimer
@@ -247,7 +250,7 @@ export class Unit {
       : null;
     this.summonCooldownTicks = this.summonOnTimer?.intervalTicks ?? 0;
     this.burstOnSingle   = bp.burstOnSingle   ?? false;
-    this.burstOnSingleMult = bp.burstOnSingleMult ?? 2;
+    this.burstOnSingleMult_fp = bp.burstOnSingleMult_fp ?? toFp(2);
     this.markEnemies     = bp.markEnemies     ?? false;
   }
 
@@ -276,7 +279,7 @@ export class Unit {
   }
 
   get isDead(): boolean {
-    return this.hp <= 0;
+    return this.hp_fp <= 0;
   }
 
   /** Attack range taking fog-hazard reduction into account. Always >= 1. */
@@ -289,7 +292,7 @@ export class Unit {
    * ×1.5 speed = ÷1.5 interval when HP < berserkerThreshold fraction.
    */
   get effectiveAttackIntervalTicks(): number {
-    if (this.berserkerThreshold > 0 && this.hp < this.maxHp * this.berserkerThreshold) {
+    if (this.berserkerThreshold_fp > 0 && this.hp_fp < mulFp(this.maxHp_fp, this.berserkerThreshold_fp)) {
       return Math.max(1, Math.round(this.attackIntervalTicks * 2 / 3));
     }
     return this.attackIntervalTicks;
@@ -300,11 +303,11 @@ export class Unit {
    * HP-threshold-driven-getter shape as effectiveAttackIntervalTicks/berserkerThreshold above,
    * applied to armor instead of attack speed).
    */
-  get effectiveArmor(): number {
-    if (this.armorEnrageThreshold > 0 && this.hp < this.maxHp * this.armorEnrageThreshold) {
-      return this.armor + this.armorEnrageBonus;
+  get effectiveArmor(): Fp {
+    if (this.armorEnrageThreshold_fp > 0 && this.hp_fp < mulFp(this.maxHp_fp, this.armorEnrageThreshold_fp)) {
+      return addFp(this.armor_fp, this.armorEnrageBonus_fp);
     }
-    return this.armor;
+    return this.armor_fp;
   }
 
   // ── Mutation helpers ───────────────────────────────────────────────────────
@@ -313,21 +316,21 @@ export class Unit {
    * Apply damage to this unit, accounting for armor and undying.
    * Returns the actual HP lost (after armor reduction, capped to current HP).
    */
-  takeDamage(rawAmount: number): number {
+  takeDamage(rawAmount: Fp): Fp {
     const armor = this.effectiveArmor;
-    const effective = armor > 0 ? Math.max(1, rawAmount - armor) : rawAmount;
+    const effective = armor > 0 ? maxFp(toFp(1), subFp(rawAmount, armor)) : rawAmount;
 
     // Undying: survive first lethal hit at 1 HP.
-    if (this.undying && !this.undyingTriggered && this.hp - effective <= 0) {
-      const lost = this.hp - 1;
-      this.hp = 1;
+    if (this.undying && !this.undyingTriggered && this.hp_fp - effective <= 0) {
+      const lost = subFp(this.hp_fp, toFp(1));
+      this.hp_fp = toFp(1);
       this.undyingTriggered = true;
-      return Math.max(0, lost);
+      return maxFp(toFp(0), lost);
     }
 
-    const actual = Math.min(this.hp, effective);
-    this.hp = Math.max(0, this.hp - effective);
-    if (this.hp === 0) this.state = UnitState.Dead;
+    const actual = minFp(this.hp_fp, effective);
+    this.hp_fp = maxFp(toFp(0), subFp(this.hp_fp, effective));
+    if (this.hp_fp === 0) this.state = UnitState.Dead;
     return actual;
   }
 

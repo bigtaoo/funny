@@ -231,3 +231,8 @@ POST /internal/match/report
 - **publicId → accountId 解析在 gateway，不在 matchsvc**：好友列表页只知道对方的 publicId（matchsvc 从来不认识 publicId 之外的身份，符合"不连库"的既有约束）。gateway 新增 `MetaClient.resolveByPublicId()`，直接复用 metaserver 已有的 `GET /internal/account/by-public-id/:publicId`（socialsvc 的 `SocialMetaClient.resolveByPublicId` 早就在用同一个端点）——**没有新建 metaserver 接口**。目标好友不在线 / 查无此人 → gateway 直接短路回 `duel_cancelled{reason:'offline'|'not_found'}`，不会在 matchsvc 里创建一条永远等不到回应的邀请。
 - **新协议消息**（`transport.proto`，紧邻 `RoomCreate/RoomJoin` 与 `FriendRequestPush` 之后）：`DuelInvite`/`DuelRespond`（client→server）、`DuelInvited`/`DuelCancelled`（server→client）。**接受邀请没有单独的"已接受"推送**——直接沿用 `MatchFound`，客户端既有的 `onMatchStart` 处理链路不用改一行。
 - **好友关系不做服务端二次校验**（v1 有意为之）：好友列表页面本身已经限定了只有好友才能点到这个按钮，与现有 friend-request 流程同一信任边界（客户端侧把关，控制面命令不重复鉴权）。若后续要收紧，需要 gateway → socialsvc 新增一条跨服务调用核实好友关系，是独立的后续项，不在本次范围内。
+- **房间/排位队列互斥补漏（matchmaking-mutex-audit，2026-08-12）**：v1 上线时切磋邀请完全不检查房间/队列状态（"未新建任何撮合路径"只覆盖了撮合本身，漏了前置的"是否已在别处"检查）——账号 A 排位搜索中收到好友切磋邀请并接受，会直接开一局新对局，但 A 在 `Matchmaking` 里的队列条目/房间条目不会被清理，导致后续 `tick()` 配对或房间广播仍把 A 当作"可用"，同一账号同时挂在两套前置状态上。现在 `DuelService` 注入 `rooms`/`queue` 两个只读窄接口（`RoomLookupPort`/`QueueLookupPort`，与 `queue.ts` 读 `rooms.ts` 同一种单向依赖形状），策略与 `ALREADY_IN_ROOM` 一致——**拒绝 + 提示手动先退出**，不做自动踢出：
+  - `duelInvite()`：发起方若已在房间/队列中 → 直接拒绝创建邀请，推 `duel_cancelled{reason:'busy'}` 给发起方。
+  - `duelRespond(accept=true)`：接受前二次检查双方（受邀方 or 发起方，覆盖"发起邀请后又新开房间/排队"这种邀请挂起期间才变忙的时序）——命中则不销毁邀请（保留可重试），推 `duel_cancelled{reason:'busy'}` 给受邀方。
+  - 客户端 `FriendsScene.applyDuelCancelled` 新增 `reason:'busy'` 分支（i18n `friends.duel.busy`）——是 `duel_cancelled` 唯一一个推给受邀方而非发起方的例外（其余 reason 均遵循"只讲给发起人"的既有约定，见 core.ts 对应注释）。
+  - 回归见 `matchsvc.test.ts`「room/queue busy-guard」（发起方忙 / 受邀方忙 / 邀请挂起期间发起方才变忙，三种时序各一条）。

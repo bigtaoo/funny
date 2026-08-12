@@ -21,6 +21,7 @@ import { InputManager } from '../../src/inputSystem/InputManager';
 import { initI18n } from '../../src/i18n';
 import { GameScene } from '../../src/scenes/GameScene';
 import { createLocalMatch } from '../../src/app/matchEngine';
+import { toFp } from '@nw/engine/math/fixed';
 
 const memStore = (() => {
   const m = new Map<string, string>();
@@ -39,7 +40,7 @@ const SEED = 0x1234abcd;
  *  ticks the scene once so GameRenderer's events.ts processes the resulting event for real. */
 function driveToGameOver(scene: GameScene, renderer: any): void {
   const engine = renderer.core.engine;
-  engine.state.bottomPlayer.baseHp = 0;
+  engine.state.bottomPlayer.baseHp_fp = toFp(0); // ADR-065: baseHp is now fp-scaled
   scene.update(1 / 30);
 }
 

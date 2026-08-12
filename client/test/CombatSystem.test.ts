@@ -7,6 +7,7 @@ import { SpellSystem } from '@nw/engine/systems/SpellSystem';
 import { ATTACK_MULT_THRESHOLD_TICKS, UNIT_BLUEPRINTS, BUILDING_BLUEPRINTS } from '@nw/engine/config';
 import { Side, UnitType, BuildingType, UnitState, SpellType } from '@nw/engine/types';
 import { achievementStatDelta } from '../src/game';
+import { toFp } from '@nw/engine/math/fixed';
 
 /**
  * Advance the combat system until `cond` holds (or `max` ticks elapse). Ranged
@@ -27,10 +28,10 @@ describe('CombatSystem — units', () => {
     state.board.addUnit(me);
     state.board.addUnit(enemy);
 
-    const enemyHp0 = enemy.hp;
+    const enemyHp0 = enemy.hp_fp;
     sys.tick(state); // cooldown starts at 0 → immediate hit
     expect(me.state).toBe(UnitState.Attacking);
-    expect(enemy.hp).toBe(enemyHp0 - UNIT_BLUEPRINTS[UnitType.Infantry].attack);
+    expect(enemy.hp_fp).toBe(enemyHp0 - UNIT_BLUEPRINTS[UnitType.Infantry].attack_fp);
   });
 
   it('respects the attack cooldown between hits', () => {
@@ -42,13 +43,13 @@ describe('CombatSystem — units', () => {
     state.board.addUnit(enemy);
 
     sys.tick(state); // hit 1
-    const hpAfter1 = enemy.hp;
+    const hpAfter1 = enemy.hp_fp;
     sys.tick(state); // cooldown — no hit
-    expect(enemy.hp).toBe(hpAfter1);
+    expect(enemy.hp_fp).toBe(hpAfter1);
 
     // After attackIntervalTicks (1.0s = 30 ticks) it hits again.
     for (let i = 0; i < me.attackIntervalTicks; i++) sys.tick(state);
-    expect(enemy.hp).toBeLessThan(hpAfter1);
+    expect(enemy.hp_fp).toBeLessThan(hpAfter1);
   });
 
   it('kills a unit at 0 HP, removes it, and credits the kill', () => {
@@ -56,7 +57,7 @@ describe('CombatSystem — units', () => {
     const sys = new CombatSystem();
     const me = new Unit(UnitType.Archer, Side.Bottom, 0, 5);
     const enemy = new Unit(UnitType.Archer, Side.Top, 0, 6);
-    enemy.hp = 1; // one arrow kills
+    enemy.hp_fp = toFp(1); // one arrow kills
     state.board.addUnit(me);
     state.board.addUnit(enemy);
 
@@ -90,8 +91,8 @@ describe('CombatSystem — units', () => {
     sys.tick(normal);
     sys.tick(late);
 
-    const normalDmg = e1.maxHp - e1.hp;
-    const lateDmg = e2.maxHp - e2.hp;
+    const normalDmg = e1.maxHp_fp - e1.hp_fp;
+    const lateDmg = e2.maxHp_fp - e2.hp_fp;
     expect(lateDmg).toBe(normalDmg * 2);
   });
 });
@@ -115,8 +116,8 @@ describe('achievement per-type tracking (S9-3b / S9-6)', () => {
     // apart that the two archers don't both lock onto the same target before the arrows
     // land (projectile-semantic overkill) — each attacks its own target.
     const archer = new Unit(UnitType.Archer, Side.Bottom, 0, 5);
-    const e1 = new Unit(UnitType.Archer, Side.Top, 0, 6); e1.hp = 1;
-    const e2 = new Unit(UnitType.ShieldBearer, Side.Top, 5, 6); e2.hp = 1;
+    const e1 = new Unit(UnitType.Archer, Side.Top, 0, 6); e1.hp_fp = toFp(1);
+    const e2 = new Unit(UnitType.ShieldBearer, Side.Top, 5, 6); e2.hp_fp = toFp(1);
     const archer2 = new Unit(UnitType.Archer, Side.Bottom, 5, 5);
     state.board.addUnit(archer); state.board.addUnit(e1);
     state.board.addUnit(archer2); state.board.addUnit(e2);
@@ -147,10 +148,10 @@ describe('CombatSystem — arrow tower (Chebyshev all-direction targeting)', () 
     state.board.addBuilding(tower);
     state.board.addUnit(enemy);
 
-    const hp0 = enemy.hp;
+    const hp0 = enemy.hp_fp;
     // Tower fires this tick; its arrow then flies to the (2-cell-away) target.
-    tickUntil(sys, state, () => enemy.hp < hp0);
-    expect(enemy.hp).toBe(hp0 - BUILDING_BLUEPRINTS[BuildingType.ArrowTower].attack!);
+    tickUntil(sys, state, () => enemy.hp_fp < hp0);
+    expect(enemy.hp_fp).toBe(hp0 - BUILDING_BLUEPRINTS[BuildingType.ArrowTower].attack_fp!);
   });
 
   it('hits an enemy in Crossing state moving horizontally past the tower', () => {
@@ -163,12 +164,12 @@ describe('CombatSystem — arrow tower (Chebyshev all-direction targeting)', () 
     state.board.addBuilding(tower);
     state.board.addUnit(crosser);
 
-    const hp0 = crosser.hp;
+    const hp0 = crosser.hp_fp;
     // Targeting is grid/Chebyshev-based and state-agnostic — the crossing enemy
     // is hit (the original forward-only scan would have missed it entirely). The
     // tower's arrow flies a tick or two before it lands.
-    tickUntil(sys, state, () => crosser.hp < hp0);
-    expect(crosser.hp).toBeLessThan(hp0);
+    tickUntil(sys, state, () => crosser.hp_fp < hp0);
+    expect(crosser.hp_fp).toBeLessThan(hp0);
   });
 
   it('does not target out-of-range enemies', () => {
@@ -179,8 +180,8 @@ describe('CombatSystem — arrow tower (Chebyshev all-direction targeting)', () 
     state.board.addBuilding(tower);
     state.board.addUnit(enemy);
 
-    const hp0 = enemy.hp;
+    const hp0 = enemy.hp_fp;
     sys.tick(state);
-    expect(enemy.hp).toBe(hp0);
+    expect(enemy.hp_fp).toBe(hp0);
   });
 });

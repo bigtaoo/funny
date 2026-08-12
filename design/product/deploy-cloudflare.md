@@ -156,7 +156,7 @@ cd .. && npx wrangler deploy -c wrangler/client.jsonc
 
 #### 自动发布（GitHub Action，免手敲命令）
 
-`.github/workflows/client-deploy.yml`：push 到 `main` 且改动落在 `client/**` / `wrangler/client.jsonc` / 该 workflow 时自动 `npm ci → build:web（地址烘焙到 api.gamestao.com）→ wrangler deploy`；也可在 Actions 页手动 Run（`workflow_dispatch`）。与 ops-deploy 同套路：
+`.github/workflows/client-deploy.yml`：CI（`ci.yml` 的 build-test + e2e）在 `main` 上跑绿、且该 commit 改动落在 `client/**` / `server/engine/src/**` / `server/shared/src/slg/**` / `wrangler/client.jsonc` / 该 workflow 时自动 `npm ci → build:web（地址烘焙到 api.gamestao.com）→ wrangler deploy`；也可在 Actions 页手动 Run（`workflow_dispatch`，跳过 CI 门禁）。**2026-08-12 起改为 `workflow_run` 触发**（原先是 `push: branches:[main]` 直触发，与 CI 完全并行、不等结果——CI 的 e2e job 最长 25 分钟，deploy 几分钟就跑完，红码可能先于 CI 报错就已上线；详见 `.github/actions/paths-changed-since`，该改动同时把 8 个 `*-deploy.yml` 的路径过滤从 `push.paths`（`workflow_run` 不支持）挪进了 job 内的 `git diff` 判断）。与 ops-deploy 同套路：
 
 1. **复用 ops 那套 secrets**：`CLOUDFLARE_API_TOKEN` + `CLOUDFLARE_ACCOUNT_ID` 已配（同一 CF 账号 `e64b61f1...`，"Edit Cloudflare Workers" token 是账号级 Workers 写权限，覆盖 `nivara-client`，**无需新建 token**）。
 2. **开关**：设 repo variable `CLIENT_DEPLOY_ENABLED = true`（未设则 job 跳过）。
@@ -202,7 +202,7 @@ npx wrangler secret put ADMIN_PROXY_SECRET -c wrangler/ops.jsonc
 
 #### 自动发布（GitHub Action，免手敲命令）
 
-`.github/workflows/ops-deploy.yml`：push 到 `main` 且改动落在 `tools/ops/**` / `wrangler/ops.jsonc` / `wrangler/worker.ops.js` 时自动 `npm ci → build → wrangler deploy`；也可在 GitHub **Actions 页手动 Run**（`workflow_dispatch`）。一次性配置：
+`.github/workflows/ops-deploy.yml`：CI 在 `main` 上跑绿、且该 commit 改动落在 `tools/ops/**` / `wrangler/ops.jsonc` / `wrangler/worker.ops.js` 时自动 `npm ci → build → wrangler deploy`；也可在 GitHub **Actions 页手动 Run**（`workflow_dispatch`，跳过 CI 门禁）。触发方式见 client-deploy 小节的 2026-08-12 改动说明。一次性配置：
 
 1. **CF API Token**：Cloudflare「My Profile → API Tokens」用 *Edit Cloudflare Workers* 模板建一个 → 存为 repo secret `CLOUDFLARE_API_TOKEN`；账号 ID 存 `CLOUDFLARE_ACCOUNT_ID`（CF 控制台右栏，即 `e64b61f1...`）。
 2. **开关**：设 repo variable `OPS_DEPLOY_ENABLED = true`（未设则 job 跳过，避免配好前每次 push 报红，与 `anim-sync` 同套路）。
@@ -471,7 +471,7 @@ docker compose -f docker-compose.cloud.yml --env-file .env up -d
 
 #### 自动发布（GitHub Action，免手敲命令）
 
-`.github/workflows/server-deploy.yml`：push 到 `main` 且改动落在 `server/**` / 该 workflow 时，自动 SSH 进 VPS 跑 `git fetch + reset --hard origin/main → docker compose -f docker-compose.cloud.yml --env-file .env up -d --build → docker compose restart caddy`；也可在 Actions 页手动 Run（`workflow_dispatch`）。与 client-deploy / ops-deploy 同理念（裸 ssh，不用第三方 action，报错原样可见）。
+`.github/workflows/server-deploy.yml`：CI 在 `main` 上跑绿、且该 commit 改动落在 `server/**`（`server/observability/**` 除外，那部分走 grafana-deploy）/ 该 workflow 时，自动 SSH 进 VPS 跑 `git fetch + reset --hard origin/main → docker compose -f docker-compose.cloud.yml --env-file .env up -d --build → docker compose restart caddy`；也可在 Actions 页手动 Run（`workflow_dispatch`，跳过 CI 门禁）。触发方式见 client-deploy 小节的 2026-08-12 改动说明。与 client-deploy / ops-deploy 同理念（裸 ssh，不用第三方 action，报错原样可见）。
 
 > `restart caddy` 是必需的、不是可选优化：Caddyfile 走 bind mount，`up` 只在 compose 服务定义本身变化时才重建/重启容器，文件**内容**变了但挂载路径没变，compose 侦测不到，caddy 就会照旧跑着旧配置——2026-07-03 两次 Caddyfile 修复（`/health`、`/sect` `/nation` 反代）都是重启前的修复：合入 main、CI 部署跑完、但 caddy 容器仍在跑 10 天前的旧配置，直到手动 `docker compose restart caddy` 才生效。
 

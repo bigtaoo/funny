@@ -110,7 +110,16 @@ export async function applyBaseSiege(
         res = resolveSiege(deployedHp, sumArmyHp(defArmy));
       }
     }
-    replays.push({ seed, attackerArmy: survivorArmy, defenderConfig, tileLevel });
+    // 2026-08-12 fix: cardInstances/equipmentInv/siegeAcademy are the same attacker loadout fed into
+    // runSiegeBattle a few lines up for every wave — omitting them from the stored replay made a
+    // from-scratch reconstruction fall back to plain baseline blueprints (see SiegeReplayInputs' doc
+    // comment, worldTypes.ts).
+    replays.push({
+      seed, attackerArmy: survivorArmy, defenderConfig, tileLevel,
+      ...(cardInstances ? { cardInstances } : {}),
+      ...(cardEquipInv ? { equipmentInv: cardEquipInv } : {}),
+      ...(siegeAcademy ? { siegeAcademy } : {}),
+    });
     attackerSurvivors = res.attackerSurvivors;
     if (res.outcome === 'attacker_win') {
       defeatedTeamIds.push(tm.id);

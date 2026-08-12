@@ -130,7 +130,7 @@ export class EventsPanel {
       case 'building_hp_changed':
         break;
       case 'base_hp_changed':
-        this.core.boardView.playBaseCrackEffect(event.owner, event.hp, event.maxHp);
+        this.core.boardView.playBaseCrackEffect(event.owner, event.hp_fp, event.maxHp_fp);
         if (event.owner === this.core.localOwner) {
           this.vignetteAlpha = 1.0;
           this.drawVignette();
@@ -186,7 +186,7 @@ export class EventsPanel {
       }
       case 'escort_spawned': {
         const pos = this.core.boardView.gridToScreen(fromFp(event.col_fp), fromFp(event.row_fp));
-        const sprite = this.buildEscortSprite(pos.x, pos.y, event.hp, event.maxHp);
+        const sprite = this.buildEscortSprite(pos.x, pos.y, event.hp_fp, event.maxHp_fp);
         this.escortSprites.set(event.escortId, sprite);
         this.escortLayer.addChild(sprite);
         break;
@@ -201,7 +201,7 @@ export class EventsPanel {
       }
       case 'escort_hp_changed': {
         const sprite = this.escortSprites.get(event.escortId);
-        if (sprite) this.setEscortHpBar(sprite, event.hp, event.maxHp);
+        if (sprite) this.setEscortHpBar(sprite, event.hp_fp, event.maxHp_fp);
         break;
       }
       case 'escort_died': {

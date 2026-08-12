@@ -246,7 +246,12 @@ export const de: Record<TranslationKey, string> = {
   'guide.daily.title': 'Täglich einloggen',
   'guide.daily.body': 'Täglich einloggen für Belohnungen; Serien zahlen mehr. Tagesaufgaben bringen extra.',
   'guide.world.title': 'Die Große Welt',
-  'guide.world.body': 'Eine offene Welt: Land beanspruchen, Klan bauen, belagern. Der schwerste Modus — lass dir Zeit.',
+  'guide.world.body': 'Eine offene Welt: Tippe zuerst auf deine Hauptstadt auf der Karte, um mit dem Bauen zu beginnen, dann Land beanspruchen, Klan bauen, belagern. Der schwerste Modus — lass dir Zeit.',
+  // ── SLG opening guide chain (ONBOARDING_DESIGN §4.2) — spotlight bubbles, no title, body-only ──
+  'guide.world.step1.body': 'Das ist deine Hauptstadt — tippe darauf, um mit dem Bauen zu beginnen',
+  'guide.world.step2.body': 'Tippe auf eine Gebäudekarte zum Bauen/Aufwerten; tippe auf das Ausbildungsfeld, um Truppen auszubilden',
+  'guide.world.step3.body': 'Tippe hier, um zur Weltkarte zurückzukehren',
+  'guide.world.step4.body': 'Tippe auf freies Land neben deiner Stadt, um Truppen zu entsenden und es zu erobern',
 
   // ── Freundesraum (Online, S1) ─────────────────────────────────────────────
   'room.title': 'Freundesduell',
@@ -756,6 +761,8 @@ export const de: Record<TranslationKey, string> = {
   'friends.duel.notFound': 'Spieler nicht gefunden',
   'friends.duel.lost': 'Duell-Einladung verloren — bitte erneut versuchen',
   'friends.duel.rateLimited': 'Zu viele Duell-Einladungen — bitte kurz warten',
+  // Raum/Rangliste-Warteschlange-Sperre (matchmaking-mutex-audit, 2026-08-12): eine Seite ist bereits im Raum oder in der Warteschlange.
+  'friends.duel.busy': 'Duell nicht möglich: bitte zuerst den Raum verlassen oder die Suche abbrechen',
   // Global toast (any scene, P0-8): the in-scene banner (friends.duelInviteBanner) only shows while
   // sitting on FriendsScene, so this fires everywhere else the invite arrives.
   'friends.duel.invitedToast': '{name} fordert dich zum Duell heraus — sieh bei Freunden nach',
@@ -853,6 +860,7 @@ export const de: Record<TranslationKey, string> = {
   'world.marchKindReinforce': 'Verstärken',
   'world.marchTime': '~{sec}s Marsch',
   'world.myBase': 'Meine Basis',
+  'world.home': 'Heim',
   'world.occupied': 'Besetzt',
   'world.occupying': 'Wird besetzt (noch {sec}s)',
   'world.occupyingMine': 'Deine Besetzung hält (noch {sec}s bis Übernahme)',

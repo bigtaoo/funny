@@ -146,6 +146,7 @@ vi.mock('../../src/assets/decor/decor_merged_atlas.json', () => ({ default: { fr
 
 import { HUDView } from '../../src/render/HUDView';
 import { BASE_HP } from '@nw/engine/config';
+import { toFp } from '@nw/engine/math/fixed';
 import { factionInk } from '../../src/render/theme';
 import type { ILayout, Rect } from '../../src/layout/ILayout';
 import type { GameState } from '@nw/engine/GameState';
@@ -165,10 +166,12 @@ function fakeLayout(): ILayout {
 }
 
 function fakeState(baseHp: number): GameState {
+  // ADR-065: HUDView reads baseHp_fp (fp, scale FP_SCALE=1000) via fromFp() — see drawHpBar callers.
+  const baseHp_fp = toFp(baseHp);
   return {
     elapsedTicks: 0,
-    bottomPlayer: { baseHp, ink: 0, nextUpgradeCost: 30 },
-    topPlayer:    { baseHp, ink: 0, nextUpgradeCost: 30 },
+    bottomPlayer: { baseHp_fp, ink: 0, nextUpgradeCost: 30 },
+    topPlayer:    { baseHp_fp, ink: 0, nextUpgradeCost: 30 },
   } as unknown as GameState;
 }
 

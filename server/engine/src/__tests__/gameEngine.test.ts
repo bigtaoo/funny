@@ -138,11 +138,11 @@ test('siege defenderBaseHp initializes the Top base HP + maxBaseHp; default stay
   const engine = createGameEngine(config);
   engine.step(0, []);
 
-  assert.equal(engine.state.topPlayer.maxBaseHp, 40, 'defender base ceiling scaled to defenderBaseHp');
-  assert.equal(engine.state.topPlayer.baseHp, 40, 'defender base starts full at the scaled ceiling');
+  assert.equal(engine.state.topPlayer.maxBaseHp_fp, toFp(40), 'defender base ceiling scaled to defenderBaseHp');
+  assert.equal(engine.state.topPlayer.baseHp_fp, toFp(40), 'defender base starts full at the scaled ceiling');
   // Attacker (Bottom) base is untouched → global BASE_HP default.
-  assert.equal(engine.state.bottomPlayer.maxBaseHp, engine.state.bottomPlayer.baseHp, 'attacker base full at its default ceiling');
-  assert.equal(engine.state.bottomPlayer.baseHp, BASE_HP, 'attacker base defaults to BASE_HP');
+  assert.equal(engine.state.bottomPlayer.maxBaseHp_fp, engine.state.bottomPlayer.baseHp_fp, 'attacker base full at its default ceiling');
+  assert.equal(engine.state.bottomPlayer.baseHp_fp, toFp(BASE_HP), 'attacker base defaults to BASE_HP');
 });
 
 test('base_hp_changed carries the scaled defender maxBaseHp when an attacker reaches the base', () => {
@@ -161,17 +161,17 @@ test('base_hp_changed carries the scaled defender maxBaseHp when an attacker rea
   const config: GameConfig = { seed: 11, mode: 'siege', players: [{ id: 0 }, { id: 1 }], level };
   const engine = createGameEngine(config);
 
-  let hpEvent: { hp: number; maxHp: number; owner: number } | undefined;
+  let hpEvent: { hp_fp: number; maxHp_fp: number; owner: number } | undefined;
   for (let tick = 0; tick < 2000 && !hpEvent; tick++) {
     for (const ev of engine.step(tick, [])) {
-      if (ev.type === 'base_hp_changed') { hpEvent = { hp: ev.hp, maxHp: ev.maxHp, owner: ev.owner }; break; }
+      if (ev.type === 'base_hp_changed') { hpEvent = { hp_fp: ev.hp_fp, maxHp_fp: ev.maxHp_fp, owner: ev.owner }; break; }
     }
   }
 
   assert.ok(hpEvent, 'the attacker reached the base and emitted base_hp_changed');
   assert.equal(hpEvent!.owner, 1, 'the damaged base is the defender (owner1/Top)');
-  assert.equal(hpEvent!.maxHp, 40, 'maxHp reflects the scaled defenderBaseHp, not the flat BASE_HP=100');
-  assert.equal(hpEvent!.hp, 40 - UNIT_BLUEPRINTS[UnitType.Infantry].siegeValue, 'first infantry hit deals its siege value off the scaled ceiling');
+  assert.equal(hpEvent!.maxHp_fp, toFp(40), 'maxHp reflects the scaled defenderBaseHp, not the flat BASE_HP=100');
+  assert.equal(hpEvent!.hp_fp, toFp(40) - UNIT_BLUEPRINTS[UnitType.Infantry].siegeValue_fp, 'first infantry hit deals its siege value off the scaled ceiling');
 });
 
 test('destroy_base ends immediately once the attacker army is wiped, without waiting for battleTimeoutTicks', () => {
@@ -299,8 +299,8 @@ test('snapshotSummary().escortMinHpPct is the lowest survival ratio across escor
 
   // Damage one escort but not the other — min must reflect the weaker one, not an average.
   const [e1, e2] = engine.state.escorts;
-  e1!.takeDamage(90); // 100 -> 10 (10%)
-  e2!.takeDamage(20); // 100 -> 80 (80%)
+  e1!.takeDamage(toFp(90)); // 100 -> 10 (10%)
+  e2!.takeDamage(toFp(20)); // 100 -> 80 (80%)
 
   const summary = engine.state.snapshotSummary();
   assert.equal(summary.escortMinHpPct, 10, 'reports the lowest ratio (e1 at 10%), not e2\'s 80% or an average');

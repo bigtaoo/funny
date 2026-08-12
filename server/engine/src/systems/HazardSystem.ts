@@ -1,4 +1,4 @@
-import { TICK_RATE, type Fp } from '../math/fixed';
+import { TICK_RATE, toFp, mulFp } from '../math/fixed';
 import { GameState } from '../GameState';
 
 /**
@@ -32,14 +32,20 @@ export class HazardSystem {
 
         switch (h.effect) {
           case 'speed':
-            unit.speed_fp = Math.round(unit.baseSpeed_fp * (h.speedMult ?? 0.5)) as Fp;
+            // ADR-065 fixes this call site's pre-existing hand-rolled Math.round + `as Fp`
+            // cast (mixed fp × plain-decimal-ratio) — mulFp now that the ratio is toFp'd at
+            // the point of use (h.speedMult is a one-off hazard-config ratio, never persisted
+            // as fp, same pattern as buildSiegeBlueprints' siegeAcademy / enemyScale).
+            unit.speed_fp = mulFp(unit.baseSpeed_fp, toFp(h.speedMult ?? 0.5));
             break;
           case 'fog':
             unit.rangeMod += h.rangeMod ?? -1;
             break;
           case 'lava': {
-            const dmgPerTick = Math.ceil((h.dps ?? 5) / TICK_RATE);
-            unit.takeDamage(dmgPerTick);
+            // Preserves the pre-ADR-065 "round up to whole real HP points per tick" behavior
+            // exactly — only the representation changed (Fp passed to takeDamage now).
+            const dmgPerTick_fp = toFp(Math.ceil((h.dps ?? 5) / TICK_RATE));
+            unit.takeDamage(dmgPerTick_fp);
             break;
           }
         }

@@ -7,11 +7,23 @@
 //
 // Runs under the headless PIXI adapter (vitest.ui.config.ts setupFiles).
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
+import * as PIXI from 'pixi.js-legacy';
 import { createLayout } from '../../src/layout/ScalingManager';
 import { InputManager } from '../../src/inputSystem/InputManager';
 import { initI18n } from '../../src/i18n';
 import { BattlePassScene, type BattlePassCallbacks } from '../../src/scenes/BattlePassScene';
+import { BATTLEPASS_MAX_LEVEL } from '../../src/game/balance/battlepassDefs';
+
+function countTexts(container: PIXI.Container): number {
+  let n = 0;
+  const walk = (node: PIXI.Container): void => {
+    if (node instanceof PIXI.Text) n++;
+    for (const c of node.children) walk(c as PIXI.Container);
+  };
+  walk(container);
+  return n;
+}
 
 const memStore = (() => {
   const m = new Map<string, string>();
@@ -293,6 +305,80 @@ describe('BattlePassScene — drag-scroll perf fast path', () => {
 
     expect(claimed.length).toBe(1);
     expect(claimed[0]![1]).toBe(30);
+    scene.destroy();
+  });
+});
+
+// Regression coverage (2026-08-12 bug report): render() used to build all 30 levels × 2 tracks
+// (up to 3 PIXI.Text + a Graphics border each — ~150-200 GPU objects) unconditionally on every
+// call, regardless of scroll position. Mobile WebViews (iOS Safari in particular) treat that many
+// textures created in one frame as a memory spike and kill/reload the whole tab, which is what
+// made opening the Battle Pass page on a phone browser reload the page. Fix mirrors
+// LeaderboardScene's builtRows/updateVisibleRows virtualization: only rows within one viewport of
+// the visible area become real PIXI DisplayObjects; scrollCellDefs (hit-test, cheap) still covers
+// every level regardless of visibility, as before.
+describe('BattlePassScene — reward row virtualization (mobile OOM fix)', () => {
+  it('does not build all 30 levels of rows up front — builtRows stays well under BATTLEPASS_MAX_LEVEL', () => {
+    // Maxed level + everything claimable so nothing is skipped by cellState — if virtualization
+    // weren't in effect, this is the case that would build all 60 cells.
+    const scene = buildBattlePass(new InputManager(), {
+      getBattlePass: () => ({ seasonNo: 1, xp: 17999, level: 30, hasPass: true, claimedFree: [], claimedPaid: [] }),
+    });
+    const s = scene as unknown as { rowViz: { size: number } };
+    expect(s.rowViz.size).toBeGreaterThan(0);
+    expect(s.rowViz.size).toBeLessThan(BATTLEPASS_MAX_LEVEL);
+    scene.destroy();
+  });
+
+  it('keeps total PIXI.Text count far below the ~90+ an unvirtualized full build would create', () => {
+    const scene = buildBattlePass(new InputManager(), {
+      getBattlePass: () => ({ seasonNo: 1, xp: 17999, level: 30, hasPass: true, claimedFree: [], claimedPaid: [] }),
+    });
+    // Each built row can carry up to ~6 PIXI.Text (lvlTxt + reward count + state label, per
+    // track) — an unvirtualized render would be near BATTLEPASS_MAX_LEVEL * 6 = 180. Bounding it
+    // well under that (leaving headroom for however many rows the viewport+buffer covers) proves
+    // virtualization is active without hard-coding the exact viewport math.
+    const textCount = countTexts(scene.container);
+    expect(textCount).toBeGreaterThan(0);
+    expect(textCount).toBeLessThan(BATTLEPASS_MAX_LEVEL * 4);
+    scene.destroy();
+  });
+
+  it('destroys rows scrolled out of the top and builds rows scrolled into the bottom', () => {
+    const input = new InputManager();
+    // Level 2 (near the bottom of the track) pins the initial auto-scroll at scrollY=0 (clamped —
+    // see "early levels stay pinned at the top" above), so row 0 (level 1) starts inside the
+    // viewport and must be built.
+    const scene = buildBattlePass(input, {
+      getBattlePass: () => ({ seasonNo: 1, xp: 600, level: 2, hasPass: true, claimedFree: [], claimedPaid: [] }),
+    });
+    const s = scene as unknown as { rowViz: { has(i: number): boolean } };
+    expect(s.rowViz.has(0)).toBe(true);
+
+    // Drag all the way to the bottom of the track.
+    input._emitDown(700, 50);
+    input._emitMove(700, 50 - 1_000_000);
+    input._emitUp(700, 50 - 1_000_000);
+
+    // The last level's row (index BATTLEPASS_MAX_LEVEL - 1) must now be built, and the first
+    // row must have been torn down since it's long scrolled out of the buffer zone.
+    expect(s.rowViz.has(BATTLEPASS_MAX_LEVEL - 1)).toBe(true);
+    expect(s.rowViz.has(0)).toBe(false);
+    scene.destroy();
+  });
+
+  it('drag-scroll never calls render() (virtualization runs off the reposition-only fast path)', () => {
+    const input = new InputManager();
+    const scene = buildBattlePass(input, {
+      getBattlePass: () => ({ seasonNo: 1, xp: 17999, level: 30, hasPass: true, claimedFree: [], claimedPaid: [] }),
+    });
+    const renderSpy = vi.spyOn(scene as unknown as { render(): void }, 'render');
+
+    input._emitDown(700, 50);
+    input._emitMove(700, 50 - 200);
+    input._emitMove(700, 50 - 400);
+
+    expect(renderSpy).not.toHaveBeenCalled();
     scene.destroy();
   });
 });

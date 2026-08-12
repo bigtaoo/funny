@@ -1,10 +1,10 @@
 {
-  "eventLogHash": "71d795bdb2ae0be0f8f716876fff1131b8e416962de016e790a252209b7cf09b",
+  "eventLogHash": "1ff9dfa4a8b397974c4c624982ef95b85d56f66eb736a36f3b646f8b5a0aeeb2",
   "finalSnapshot": {
     "bossUnitIds": [],
     "bottomInkRegenMult": 1,
     "bottomPlayer": {
-      "baseHp": 100,
+      "baseHp_fp": 100000,
       "hand": [
         {
           "cardId": "medic",
@@ -33,7 +33,7 @@
       ],
       "ink": 13,
       "isDead": false,
-      "maxBaseHp": 100,
+      "maxBaseHp_fp": 100000,
       "side": "bottom",
       "upgradeLevel": 0
     },
@@ -44,14 +44,14 @@
     "escorts": [
       {
         "col_fp": 0,
-        "hp": 100,
+        "hp_fp": 100000,
         "id": "e1",
         "row_fp": 15200,
         "status": "moving"
       },
       {
         "col_fp": 7000,
-        "hp": 100,
+        "hp_fp": 100000,
         "id": "e2",
         "row_fp": 15200,
         "status": "moving"
@@ -91,7 +91,7 @@
       "escortMinHpPct": 100
     },
     "topPlayer": {
-      "baseHp": 100,
+      "baseHp_fp": 100000,
       "hand": [
         {
           "cardId": "infantry_1",
@@ -120,17 +120,17 @@
       ],
       "ink": 13,
       "isDead": false,
-      "maxBaseHp": 100,
+      "maxBaseHp_fp": 100000,
       "side": "top",
       "upgradeLevel": 0
     },
     "units": [],
     "winner": null
   },
-  "finalStateHash": "a87b968f21ec68af5c514d8a6d843feeab2f478ff2f72baad843369779d885fb",
+  "finalStateHash": "ced10699e4e5f300ad2280db36635e39d5e5b8c657c6d65d3b21b2e0bce68b55",
   "name": "campaign_escort",
   "tickHashes": [
-    "ba028f042c8ec15d49594564cd821b8451c0804c29542245bdae49bbd179954d",
+    "5c5aa68f51701c772b60f7cc6d883899a535c5eb8155f8e96a5547bdfcbec78c",
     "13e0df4fc0423bb81fcb3a1dd339ee5e07e3571aacd960dfe788fe4a0b7ef799",
     "9f77ca64dda27e2f318d44fb27ac89f3df73a04385d28ba4d12c821ab4ad3f3d",
     "f2c65024ed1987f7fb717057d086ac51c752228909786dd68e8badb0039e958e",

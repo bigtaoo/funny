@@ -61,7 +61,7 @@ export class SpellSystem {
       if (unit.side === side) continue; // never hit own units
       if (unit.col >= centerCol && unit.col <= maxCol &&
           unit.row >= centerRow && unit.row <= maxRow) {
-        unit.takeDamage(METEOR_DAMAGE);
+        unit.takeDamage(toFp(METEOR_DAMAGE));
         hitsCount++;
       }
     }
@@ -70,7 +70,7 @@ export class SpellSystem {
     for (let dc = 0; dc <= 1; dc++) {
       for (let dr = 0; dr <= 1; dr++) {
         const building = board.getBuildingAt(centerCol + dc, centerRow + dr);
-        if (building && !building.isDead && building.side !== side) building.takeDamage(METEOR_DAMAGE);
+        if (building && !building.isDead && building.side !== side) building.takeDamage(toFp(METEOR_DAMAGE));
       }
     }
 
@@ -92,7 +92,7 @@ export class SpellSystem {
     let hits = 0;
     for (const unit of state.board.units.values()) {
       if (unit.isDead) continue;
-      if (unit.col === col) { unit.takeDamage(ROCKSLIDE_DAMAGE); hits++; }
+      if (unit.col === col) { unit.takeDamage(toFp(ROCKSLIDE_DAMAGE)); hits++; }
     }
     state.stats[owner].spellHits += hits;
     bumpCast(state, owner, SpellType.Rockslide);

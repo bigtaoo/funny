@@ -27,6 +27,7 @@ import {
   type EngineAffix,
 } from '@nw/engine/balance/equipment';
 import { card } from './cardHelpers';
+import { toFp, mulFp, addFp, divFpByInt, clampFp } from '@nw/engine/math/fixed';
 
 /** Equip one item (id 'i1') in the weapon slot of every player card — the CC-1 analog of the old "global" loadout. */
 function equipAll(
@@ -68,8 +69,8 @@ describe('Equipment combat-power monotonicity (§8)', () => {
   it('equipping one attack main affix → player unit attack > base', () => {
     const { cards, inv } = equipAll([{ id: 'm_atk', value: 20 }]);
     const camp = buildCampaignBlueprints(cards, inv);
-    expect(camp[UnitType.Infantry].attack).toBeGreaterThan(UNIT_BLUEPRINTS[UnitType.Infantry].attack);
-    expect(camp[UnitType.Archer].attack).toBeGreaterThan(UNIT_BLUEPRINTS[UnitType.Archer].attack);
+    expect(camp[UnitType.Infantry].attack_fp).toBeGreaterThan(UNIT_BLUEPRINTS[UnitType.Infantry].attack_fp);
+    expect(camp[UnitType.Archer].attack_fp).toBeGreaterThan(UNIT_BLUEPRINTS[UnitType.Archer].attack_fp);
   });
 
   it('campaign and siege share the same injection chain → same equipment yields same result', () => {
@@ -82,7 +83,7 @@ describe('Equipment combat-power monotonicity (§8)', () => {
     const lv5 = equipAll([{ id: 'm_atk', value: 20 }], 5);
     const bp0 = buildCampaignBlueprints(lv0.cards, lv0.inv);
     const bp5 = buildCampaignBlueprints(lv5.cards, lv5.inv);
-    expect(bp5[UnitType.Infantry].attack).toBeGreaterThan(bp0[UnitType.Infantry].attack);
+    expect(bp5[UnitType.Infantry].attack_fp).toBeGreaterThan(bp0[UnitType.Infantry].attack_fp);
   });
 
   it('main affix scaling follows base × (1 + value/100 × ENHANCE_LEVEL_MULTIPLIER[level])', () => {
@@ -90,16 +91,18 @@ describe('Equipment combat-power monotonicity (§8)', () => {
     const level = 5;
     const { cards, inv } = equipAll([{ id: 'm_atk', value }], level);
     const camp = buildCampaignBlueprints(cards, inv);
-    const effPct = (value / 100) * enhanceMultiplier(level);
-    const expected = Math.round(UNIT_BLUEPRINTS[UnitType.Infantry].attack * (1 + effPct));
-    expect(camp[UnitType.Infantry].attack).toBe(expected);
+    const effPct_fp = divFpByInt(mulFp(toFp(value), enhanceMultiplier(level)), 100);
+    const expected = mulFp(UNIT_BLUEPRINTS[UnitType.Infantry].attack_fp, addFp(toFp(1), effPct_fp));
+    expect(camp[UnitType.Infantry].attack_fp).toBe(expected);
   });
 
   it('ENHANCE_LEVEL_MULTIPLIER pins the exact non-linear curve (ADR-063): slow +0~+5, breakpoint at +6, steep +7~+9, +9 = 5.00x', () => {
     // Pinned, not derived — a formula-based re-check (e.g. "increases by X per level") would happily
     // pass even if the curve's actual shape drifted back toward linear; this locks the real numbers
     // the design decided on, so any accidental edit to the table shows up as a failing assertion here.
-    expect(ENHANCE_LEVEL_MULTIPLIER).toEqual([1.0, 1.08, 1.17, 1.28, 1.41, 1.56, 1.76, 2.11, 2.76, 5.0]);
+    expect(ENHANCE_LEVEL_MULTIPLIER).toEqual(
+      [1.0, 1.08, 1.17, 1.28, 1.41, 1.56, 1.76, 2.11, 2.76, 5.0].map(toFp),
+    );
   });
 
   it('ENHANCE_LEVEL_MULTIPLIER is strictly increasing, and each step from +6 on is bigger than the last (steep tail, no plateau)', () => {
@@ -116,8 +119,8 @@ describe('Equipment combat-power monotonicity (§8)', () => {
   });
 
   it('enhanceMultiplier clamps out-of-range levels into the table (never throws, never extrapolates)', () => {
-    expect(enhanceMultiplier(0)).toBe(1.0);
-    expect(enhanceMultiplier(9)).toBe(5.0);
+    expect(enhanceMultiplier(0)).toBe(toFp(1.0));
+    expect(enhanceMultiplier(9)).toBe(toFp(5.0));
     expect(enhanceMultiplier(-3)).toBe(enhanceMultiplier(0));
     expect(enhanceMultiplier(999)).toBe(enhanceMultiplier(9));
   });
@@ -127,7 +130,7 @@ describe('Equipment combat-power monotonicity (§8)', () => {
     const lv9 = equipAll([{ id: 's_atk', value: 20 }], 9);
     const bp0 = buildCampaignBlueprints(lv0.cards, lv0.inv);
     const bp9 = buildCampaignBlueprints(lv9.cards, lv9.inv);
-    expect(bp9[UnitType.Infantry].attack).toBe(bp0[UnitType.Infantry].attack);
+    expect(bp9[UnitType.Infantry].attack_fp).toBe(bp0[UnitType.Infantry].attack_fp);
   });
 
   it('attack-speed main affix reduces attack interval (§7.4 multiplicative interval reduction)', () => {
@@ -141,14 +144,14 @@ describe('Equipment combat-power monotonicity (§8)', () => {
   it('siege affix buffs siegeValue only, not attack (ADR-026 gear channel is orthogonal to attack)', () => {
     const { cards, inv } = equipAll([{ id: 'm_siege', value: 20 }]);
     const camp = buildCampaignBlueprints(cards, inv);
-    expect(camp[UnitType.Infantry].siegeValue).toBeGreaterThan(UNIT_BLUEPRINTS[UnitType.Infantry].siegeValue);
-    expect(camp[UnitType.Infantry].attack).toBe(UNIT_BLUEPRINTS[UnitType.Infantry].attack);
+    expect(camp[UnitType.Infantry].siegeValue_fp).toBeGreaterThan(UNIT_BLUEPRINTS[UnitType.Infantry].siegeValue_fp);
+    expect(camp[UnitType.Infantry].attack_fp).toBe(UNIT_BLUEPRINTS[UnitType.Infantry].attack_fp);
   });
 
   it('siege sub affix (s_siege) also scales siegeValue', () => {
     const { cards, inv } = equipAll([{ id: 's_siege', value: 20 }]);
     const camp = buildCampaignBlueprints(cards, inv);
-    expect(camp[UnitType.Archer].siegeValue).toBeGreaterThan(UNIT_BLUEPRINTS[UnitType.Archer].siegeValue);
+    expect(camp[UnitType.Archer].siegeValue_fp).toBeGreaterThan(UNIT_BLUEPRINTS[UnitType.Archer].siegeValue_fp);
   });
 });
 
@@ -156,28 +159,28 @@ describe('Cross-system cap (§7.7)', () => {
   it('attack% equipment contribution clamped to EFFECT_CAPS.atkPct (sky-high affixes cannot break the cap)', () => {
     const { cards, inv } = equipAll([{ id: 'm_atk', value: 100000 }], 9);
     const camp = buildCampaignBlueprints(cards, inv);
-    const capped = Math.round(UNIT_BLUEPRINTS[UnitType.Infantry].attack * (1 + EFFECT_CAPS.atkPct));
-    expect(camp[UnitType.Infantry].attack).toBe(capped);
+    const capped = mulFp(UNIT_BLUEPRINTS[UnitType.Infantry].attack_fp, addFp(toFp(1), EFFECT_CAPS.atkPct_fp));
+    expect(camp[UnitType.Infantry].attack_fp).toBe(capped);
   });
 
   it('siege% equipment contribution clamped to EFFECT_CAPS.siegePct', () => {
     const { cards, inv } = equipAll([{ id: 'm_siege', value: 100000 }], 9);
     const camp = buildCampaignBlueprints(cards, inv);
-    const capped = Math.round(UNIT_BLUEPRINTS[UnitType.Infantry].siegeValue * (1 + EFFECT_CAPS.siegePct));
-    expect(camp[UnitType.Infantry].siegeValue).toBe(capped);
+    const capped = mulFp(UNIT_BLUEPRINTS[UnitType.Infantry].siegeValue_fp, addFp(toFp(1), EFFECT_CAPS.siegePct_fp));
+    expect(camp[UnitType.Infantry].siegeValue_fp).toBe(capped);
   });
 
   it('lifesteal summed from all sources clamped to EFFECT_CAPS.lifestealPct (clampEffectCaps applies a unified cross-source clamp)', () => {
     const { cards, inv } = equipAll([{ id: 's_lifesteal', value: 999 }]);
     const camp = buildCampaignBlueprints(cards, inv);
-    expect(camp[UnitType.Infantry].lifestealPct).toBe(EFFECT_CAPS.lifestealPct);
+    expect(camp[UnitType.Infantry].lifestealPct_fp).toBe(EFFECT_CAPS.lifestealPct_fp);
   });
 
   it('clampEffectCaps clamps directly: base-provided + excess lifesteal → clamped to cap', () => {
     const bp = buildPvpBlueprints();
-    bp[UnitType.Infantry].lifestealPct = 80; // simulate an over-cap value after trait + equipment sum
+    bp[UnitType.Infantry].lifestealPct_fp = toFp(80); // simulate an over-cap value after trait + equipment sum
     clampEffectCaps(bp);
-    expect(bp[UnitType.Infantry].lifestealPct).toBe(EFFECT_CAPS.lifestealPct);
+    expect(bp[UnitType.Infantry].lifestealPct_fp).toBe(EFFECT_CAPS.lifestealPct_fp);
   });
 });
 
@@ -225,10 +228,10 @@ describe('Scope and error tolerance', () => {
     };
     const camp = buildCampaignBlueprints(cards, inv);
     // Archer's card (+50%), Infantry's card (+10%).
-    const arc = Math.round(UNIT_BLUEPRINTS[UnitType.Archer].attack * 1.5);
-    const inf = Math.round(UNIT_BLUEPRINTS[UnitType.Infantry].attack * 1.1);
-    expect(camp[UnitType.Archer].attack).toBe(arc);
-    expect(camp[UnitType.Infantry].attack).toBe(inf);
+    const arc = mulFp(UNIT_BLUEPRINTS[UnitType.Archer].attack_fp, toFp(1.5));
+    const inf = mulFp(UNIT_BLUEPRINTS[UnitType.Infantry].attack_fp, toFp(1.1));
+    expect(camp[UnitType.Archer].attack_fp).toBe(arc);
+    expect(camp[UnitType.Infantry].attack_fp).toBe(inf);
   });
 });
 
@@ -236,12 +239,12 @@ describe('Academy siege buff (ADR-026 §5 P2 — siege path only)', () => {
   it('siegeAcademy.siege multiplies siegeValue on the siege path; campaign (no academy param) is unaffected', () => {
     const cards = bareCards();
     const withAcademy = buildSiegeBlueprints(cards, undefined, { hp: 0, damage: 0, siege: 0.2 });
-    expect(withAcademy[UnitType.Infantry].siegeValue).toBe(
-      Math.round(UNIT_BLUEPRINTS[UnitType.Infantry].siegeValue * 1.2),
+    expect(withAcademy[UnitType.Infantry].siegeValue_fp).toBe(
+      mulFp(UNIT_BLUEPRINTS[UnitType.Infantry].siegeValue_fp, toFp(1.2)),
     );
     // Campaign path never receives the academy buff.
-    expect(buildCampaignBlueprints(cards)[UnitType.Infantry].siegeValue).toBe(
-      UNIT_BLUEPRINTS[UnitType.Infantry].siegeValue,
+    expect(buildCampaignBlueprints(cards)[UnitType.Infantry].siegeValue_fp).toBe(
+      UNIT_BLUEPRINTS[UnitType.Infantry].siegeValue_fp,
     );
   });
 
@@ -250,6 +253,6 @@ describe('Academy siege buff (ADR-026 §5 P2 — siege path only)', () => {
     const inv: EngineEquipInv = { i1: { defId: 'wp_pencil', level: 0, affixes: [{ id: 's_siege', value: 20 }] } };
     const gearOnly = buildSiegeBlueprints(cards, inv);
     const gearPlusAcademy = buildSiegeBlueprints(cards, inv, { hp: 0, damage: 0, siege: 0.2 });
-    expect(gearPlusAcademy[UnitType.Infantry].siegeValue).toBeGreaterThan(gearOnly[UnitType.Infantry].siegeValue);
+    expect(gearPlusAcademy[UnitType.Infantry].siegeValue_fp).toBeGreaterThan(gearOnly[UnitType.Infantry].siegeValue_fp);
   });
 });

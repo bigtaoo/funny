@@ -257,21 +257,21 @@ export class MovementSystem {
         if (unit.attackCooldownTicks === 0) {
           const mult   = state.elapsedTicks >= ATTACK_MULT_THRESHOLD_TICKS
             ? ATTACK_MULT_LATE_GAME : 1;
-          const damage = unit.attack * mult;
+          const damage = scaleFp(mult, unit.attack_fp);
           enemyBuilding.takeDamage(damage);
           state.pushEvent({
-            type:              'unit_attack_hit',
-            unitId:            unit.id,
-            targetId:          enemyBuilding.id,
-            damage,
-            targetHpRemaining: enemyBuilding.hp,
+            type:                 'unit_attack_hit',
+            unitId:               unit.id,
+            targetId:             enemyBuilding.id,
+            damage_fp:            damage,
+            targetHpRemaining_fp: enemyBuilding.hp_fp,
           });
           if (!enemyBuilding.isDead) {
             state.pushEvent({
               type:       'building_hp_changed',
               buildingId: enemyBuilding.id,
-              hp:         enemyBuilding.hp,
-              maxHp:      enemyBuilding.maxHp,
+              hp_fp:      enemyBuilding.hp_fp,
+              maxHp_fp:   enemyBuilding.maxHp_fp,
             });
           }
           unit.attackCooldownTicks = unit.attackIntervalTicks;
@@ -326,23 +326,28 @@ export class MovementSystem {
       // siege value (ADR-026): base damage on arrival is the unit's siege value, decoupled
       // from combat attack, so siege cost-efficiency is an independent balance lever.
       // Same in every mode (pvp/campaign/siege); PvP uses the read-only base constant.
-      const damage        = unit.siegeValue;
+      const damage_fp     = unit.siegeValue_fp;
 
       // Track enemy leaks for the campaign `leak_limit` objective.
       if (unit.side === Side.Top) state.enemyLeaks++;
 
-      opponent.takeDamage(damage);
-      state.stats[attackerOwner].damageDealtToBase += damage;
-      state.stats[defenderOwner].damageTakenByBase += damage;
+      opponent.takeDamage(damage_fp);
+      // ADR-065: damageDealtToBase/damageTakenByBase are match-summary REPORTING stats
+      // (client ResultScene badges, campaignRewards.remainingHpPct against the real-unit
+      // BASE_HP constant) — kept in real units, not fp, so nothing downstream of the engine
+      // needs to change. fromFp() converts back at this boundary, same as any other
+      // engine→outside-system crossing (worldsvc troop tally, client display reads).
+      state.stats[attackerOwner].damageDealtToBase += fromFp(damage_fp);
+      state.stats[defenderOwner].damageTakenByBase += fromFp(damage_fp);
 
       state.pushEvent({
-        type:  'base_hp_changed',
-        owner: defenderOwner,
-        hp:    opponent.baseHp,
-        maxHp: opponent.maxBaseHp,
+        type:     'base_hp_changed',
+        owner:    defenderOwner,
+        hp_fp:    opponent.baseHp_fp,
+        maxHp_fp: opponent.maxBaseHp_fp,
       });
 
-      unit.hp    = 0;
+      unit.hp_fp = toFp(0);
       unit.state = UnitState.Dead;
       state.board.removeUnit(unit);
     }

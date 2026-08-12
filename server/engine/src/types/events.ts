@@ -33,7 +33,8 @@ export type GameEvent =
 
   | { type: 'unit_attack_hit';
       unitId: number; targetId: number;
-      damage: number; targetHpRemaining: number }
+      /** ADR-065: fp (scale = FP_SCALE = 1000). Render layer divides by 1000 for display. */
+      damage_fp: Fp; targetHpRemaining_fp: Fp }
 
   // ── Projectiles (ranged attacks) ─────────────────────────────────────────────
   /** A homing projectile was launched. Render spawns an arrow at `from`, then
@@ -61,7 +62,8 @@ export type GameEvent =
       buildingType: BuildingType; col: number; row: number }
 
   | { type: 'building_hp_changed';
-      buildingId: number; hp: number; maxHp: number }
+      /** ADR-065: fp. */
+      buildingId: number; hp_fp: Fp; maxHp_fp: Fp }
 
   | { type: 'building_destroyed';
       buildingId: number; col: number; row: number }
@@ -75,7 +77,8 @@ export type GameEvent =
 
   // ── Base ───────────────────────────────────────────────────────────────────
   | { type: 'base_hp_changed';
-      owner: OwnerId; hp: number; maxHp: number }
+      /** ADR-065: fp. */
+      owner: OwnerId; hp_fp: Fp; maxHp_fp: Fp }
 
   /** Emitted once when a base upgrade succeeds. `level` is the new upgradeLevel.
    *  The persistent tier texture is reconciled from `player.upgradeLevel` via
@@ -121,7 +124,8 @@ export type GameEvent =
   // ── Escort units (§4.9.3) ──────────────────────────────────────────────────
   /** Emitted once at game start for each escort defined in the level. */
   | { type: 'escort_spawned';
-      escortId: string; col_fp: Fp; row_fp: Fp; hp: number; maxHp: number }
+      /** hp/maxHp are ADR-065 fp. */
+      escortId: string; col_fp: Fp; row_fp: Fp; hp_fp: Fp; maxHp_fp: Fp }
 
   /** Emitted every tick while the escort is moving (renderer tracks smooth position). */
   | { type: 'escort_moved';
@@ -129,7 +133,8 @@ export type GameEvent =
 
   /** Emitted when an escort takes damage. */
   | { type: 'escort_hp_changed';
-      escortId: string; hp: number; maxHp: number }
+      /** ADR-065: fp. */
+      escortId: string; hp_fp: Fp; maxHp_fp: Fp }
 
   /** Emitted when an escort's HP reaches 0 — it is gone and cannot arrive. */
   | { type: 'escort_died';

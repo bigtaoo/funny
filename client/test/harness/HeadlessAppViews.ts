@@ -18,7 +18,8 @@ import type { RoomState, RoomError } from '../../src/net/proto/transport';
 import type { NetState } from '../../src/net/NetClient';
 import { createLocalMatch } from '../../src/app/matchEngine';
 import { createGameEngine, getLevel, ReplayInputSource } from '../../src/game';
-import type { IGameEngine, MatchSummary, OwnerId, PlayerStats, Replay } from '../../src/game';
+import type { IGameEngine, MatchSummary, OwnerId, PlayerStats, Replay, LevelDefinition } from '../../src/game';
+import type { EngineCardInstance, EngineEquipInv } from '@nw/engine';
 
 import type { IntroSceneCallbacks } from '../../src/scenes/IntroScene';
 import type { IllustratedInterludeCallbacks } from '../../src/scenes/IllustratedInterludeScene';
@@ -177,16 +178,30 @@ export class HeadlessAppViews implements AppViews {
   showCity(_cb: CitySceneCallbacks, _opts?: MountOpts): void { this.screen = 'city'; }
   /** Pop any SLG overlay panel — the base scene underneath is always the world map. */
   hideOverlay(): void { this.screen = 'worldMap'; }
-  showReplay(replay: Replay, cb: ReplaySceneCallbacks): void {
+  showReplay(
+    replay: Replay, cb: ReplaySceneCallbacks, providedLevel?: LevelDefinition, _equippedSkins?: readonly string[],
+    // 2026-08-12 fix: mirror ReplayScene's real constructor params so a headless test can drive a
+    // siege replay through the exact same GameConfig-construction path and assert on the resulting
+    // engine.state.unitBlueprints — see ReplayScene's doc comment for the incident this closes.
+    cardInstances?: EngineCardInstance[], equipmentInv?: EngineEquipInv,
+    siegeAcademy?: { hp: number; damage: number; siege: number },
+  ): void {
     this.screen = 'replay';
     this.replay = cb;
     // Mirror ReplayScene: rebuild a fresh engine on the replay's seed+mode and
     // drive it with a ReplayInputSource — minus the GameRenderer (headless). Lets
     // the test drive the recorded match back and assert it advances to endFrame.
     const src = new ReplayInputSource(replay);
-    const level = replay.mode === 'campaign' && replay.meta?.levelId ? getLevel(replay.meta.levelId) : null;
+    const level = providedLevel
+      ?? (replay.mode === 'campaign' && replay.meta?.levelId ? getLevel(replay.meta.levelId) : null);
     const engine = createGameEngine(
-      { seed: replay.seed, players: [{ id: 0 }, { id: 1 }], mode: replay.mode, ...(level ? { level } : {}) },
+      {
+        seed: replay.seed, players: [{ id: 0 }, { id: 1 }], mode: replay.mode,
+        ...(level ? { level } : {}),
+        ...(cardInstances ? { cardInstances } : {}),
+        ...(equipmentInv ? { equipmentInv } : {}),
+        ...(siegeAcademy ? { siegeAcademy } : {}),
+      },
       src,
     );
     this.replayMatch = { engine, endFrame: Math.max(1, src.endFrame) };
@@ -280,6 +295,9 @@ export class HeadlessAppViews implements AppViews {
 
   /** Recorded length (frames) of the replay being played back, if any. */
   get replayEndFrame(): number | null { return this.replayMatch?.endFrame ?? null; }
+
+  /** Active replay-playback engine (2026-08-12: for asserting on engine.state.unitBlueprints — the siege-replay-fidelity fix). */
+  get replayEngine(): IGameEngine | null { return this.replayMatch?.engine ?? null; }
 
   /**
    * Drive the playback engine built in showReplay (ReplayInputSource-fed) until it

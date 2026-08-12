@@ -133,3 +133,10 @@ export interface MatchStarterPort {
 export interface RoomLookupPort {
   hasRoom(accountId: string): boolean;
 }
+
+/** Narrow read-only view of queue.ts's RankedQueue — the one predicate duel.ts needs ("is this
+ *  account already committed to the ranked queue?") before honoring a duel invite/accept. Same
+ *  one-directional shape as RoomLookupPort (duel.ts never gets imported back by queue.ts). */
+export interface QueueLookupPort {
+  hasQueued(accountId: string): boolean;
+}

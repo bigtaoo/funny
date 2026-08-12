@@ -2,7 +2,7 @@
 // Extracted verbatim from service.ts (god-class split, 2026-07-03). No behavior change:
 // these are the REST response shapes returned by WorldService and the DI surface it is constructed with.
 import type { BuildingKey, TileType, ResourceType, ObstacleKind, MarchKind, SlgShopPriceCache, SiegeOutcome, WordlistCache } from '@nw/shared';
-import type { GarrisonEntry } from '@nw/engine';
+import type { GarrisonEntry, EngineCardInstance, EngineEquipInv } from '@nw/engine';
 import type { WorldCollections, MarchDoc, CardSLGState } from './db';
 import type { WorldRedis } from './redis';
 import type { WorldGatewayClient } from './gatewayClient';
@@ -11,12 +11,34 @@ import type { WorldCommercialClient } from './commercialClient';
 import type { WorldMailClient } from './mailClient';
 import type { WorldSocialsvcClient } from './socialsvcClient';
 
-/** Replayable inputs for a decisive siege (G3-2c): seed + both sides' formations + tile level, persisted to SiegeDoc for client-side replay spectating. */
+/**
+ * Replayable inputs for a decisive siege (G3-2c): seed + both sides' formations + tile level, persisted
+ * to SiegeDoc for client-side replay spectating.
+ *
+ * 2026-08-12 fix (replay-fidelity gap found alongside the NPC-garrison-blueprint-leak incident, see
+ * `combatSiege/occupationBattle.ts` resolveOccupationBattle / `combatSiege/arrival.ts` applySiege): the
+ * ACTUAL battle settlement always resolves `unitBlueprints` from `cardInstances`/`equipmentInv`/
+ * `siegeAcademy` (buildSiegeBlueprints) whenever the attacker fields a real card team — but this struct
+ * used to omit all three, storing only `attackerArmy`'s per-unit initialHp. A card-army replay
+ * reconstructed from that alone re-derives every unit's attack/armor/abilities from PLAIN BASELINE
+ * blueprints instead of the attacker's actual leveled/equipped stats, so the client's replay is not a
+ * faithful reconstruction of what worldsvc actually ran — confirmed to be able to flip the recorded
+ * winner outright (a real production case, zihao1's 2026-08-12 occupy loss: replay showed attacker_win,
+ * recorded settlement was defender_win). Now always stored alongside seed/attackerArmy/defenderConfig/
+ * tileLevel, mirroring the "traceability over cheap storage" decision already made for the
+ * cheap-formula/crash-fallback paths (see this field's own history / SLG_DESIGN_LOG.md).
+ */
 export interface SiegeReplayInputs {
   seed: number;
   attackerArmy: GarrisonEntry[];
   defenderConfig: { garrison?: unknown; defenderBuildings?: unknown; defenderBaseLevel?: unknown; defenderBaseHp?: unknown } | null;
   tileLevel: number;
+  /** Attacker's card instances (level/equipment injection) — absent for a flat/synthesized army. */
+  cardInstances?: EngineCardInstance[];
+  /** Attacker's equipment inventory for gear-slot resolution. Absent when cardInstances is absent, or the attacker had no equipment inventory available at battle time. */
+  equipmentInv?: EngineEquipInv;
+  /** Attacker's academy seasonal buff (siege path only). Absent = no academy bonus was active. */
+  siegeAcademy?: { hp: number; damage: number; siege: number };
 }
 
 /**

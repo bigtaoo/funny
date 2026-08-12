@@ -148,3 +148,51 @@ Loki `type=mem` 埋点显示：`baseTexTop` 里按 URL 的资源纹理桶（`a.g
 **修复**：`GameRendererBase` 新增 `private gameEndTimer` 字段 + `protected scheduleGameEnd(fn, delayMs)` helper（`base.ts`/`events.ts`统一改用它代替裸 `setTimeout`），`destroy()` 里 `clearTimeout(this.gameEndTimer)` + `this.onGameEnd = null`；`input.ts` 的 `handleDown` 顶部补 `if (this.gameEnded) return`，结算横幅出现后不再响应任何输入（含投降）。
 
 **回归**：目前靠 `tsc --noEmit` + 现有 `test/ui/gameScenes.ui.ts`/`sceneManager.ui.ts` 冒烟通过（没有专门断言"延迟计时器被取消"的新测试——如需要更强保证，可仿 §7 的 `sceneManager.ui.ts` 假 ticker 手法，用假 `setTimeout`/`vi.useFakeTimers()` 断言 `destroy()` 后计时器不再触发 `onGameEnd`）。
+
+## 9. 第三类：可滚动列表全量构建 → 移动端 GPU 对象峰值 → 整页崩溃重载（2026-08-12）
+
+> 状态：已修复（`BattlePassScene`/`ChatScene`；`LeaderboardScene` 早前已修复，是本类问题的第一个已知案例）。与第 1/8 节都**不是同一类** —— 前两类是"该释放的没释放"（tick 钉住场景图 / Text 纹理漏 `texture:true`），这一类是"根本不该建的，一次性建太多"：单次 `render()` 内同步创建的 PIXI 显示对象（尤其 `PIXI.Text`，每个独占一张 canvas 纹理）数量过多，超出移动端 WebView 的 WebGL 纹理/内存预算，浏览器直接把整个标签页杀掉重载——**不会抛 JS 异常**，表现就是"打开这个页面，整个网页突然刷新/白屏"，比前两类内存泄漏更难定位（没有可复现的报错堆栈，只能靠"打开哪个页面必现"反推）。
+
+### 9.1 症状与定位
+用户反馈：手机浏览器打开"战令"（BattlePassScene）页面，整个网页直接刷新；同样在手机上打开内容更多的"角色卡背包"（CardScene）却没事。**数据量更大的页面反而没事**，排除了"数据太多"这个第一直觉，指向"背包做了视口裁剪、战令没做"。
+
+### 9.2 根因
+`BattlePassScene.render()` 无条件把 30 级 × 2 轨道 = 60 个奖励格全部构建成真实显示对象（每格 `sketchPanel` 一个 `Graphics` 描边 + 最多 3 个 `PIXI.Text`），不管当前滚动位置——单次 `render()` 同步创建 ~150-200 个 GPU 对象。对比 `CardScene/list.ts` 背包列表：数据量可能更大，但只对滚动进可视区域（`if (y+h>=listY && y<=listY+availH)`）的格子才真正构建，同一帧内存活对象反而更少。
+
+`ChatScene.drawThread()` 是同一反模式的更危险变体：消息列表**没有硬性上限**——`loadEarlier()` 每次"查看更早消息"都往数组头部追加 `PAGE=30` 条、永不淘汰；而且 `render()` 不止在打开页面时跑一次，**每次滚动拖动帧、composer 每 ~0.5s 光标闪烁**都会全量重建一次。历史消息刷得越久，风险越大，且是持续性的（不是一次性开屏成本）。
+
+`LeaderboardScene`（Top-100 排行榜）是这类问题最早的案例，commit `6c42450d` 已修复，修复说明原文：
+
+> Building all Top-100 rows up front... created hundreds of textures/GPU objects in one frame, which iOS Safari treats as a memory spike and kills the tab (reported as reload-on-open on iPhone 13 Safari).
+
+`BattlePassScene`/`ChatScene` 当时没有同步应用同款修复。2026-08-12 排查时顺带扫了一遍其余可滚动列表场景，确认 `AuctionScene`/`EquipmentScene`/`FamilyScene`/`SectScene`/`FriendsScene`/`TitlesScene`/`ShopScene`/`CardScene`/`DefenseEditorScene`/`worldmap/WorldMapPanels/*` 等均已有视口裁剪，不受影响；`CardCodexScene`/`DeckBuilderScene`/`CityScene/render.ts` 是同款反模式（列表项构建循环无视口判断），数据量当前被卡池/建筑格常量硬顶在 10~20 以内，远低于本节的风险量级，起初判为中/低风险未处理，同日晚些时候用户要求"同款视口裁剪，每个场景补测试"一并补上（见 §9.6）。
+
+### 9.3 修复
+两种列表的行高特性不同，用了两种不同粒度的虚拟化：
+
+1. **`BattlePassScene`（固定行高，30 级已知）**：照抄 `LeaderboardScene` 的 `builtRows: Map<number, Container>` + `updateVisibleRows()` 模式，抽成独立类 `RewardRowVirtualizer`（[`BattlePassScene/rows.ts`](../client/src/scenes/BattlePassScene/rows.ts)，client-modules.md①独立函数模块/②独立类+组合优先级），只对视口 ±半屏内的关卡格构建真实对象，滚出立即 `destroy({children:true})`；命中检测用的 `scrollCellDefs`（纯数字，廉价）仍对全部 30 级照算不误。
+2. **`ChatScene`（可变行高，消息数无上限）**：不能像上面那样靠"行高已知"直接算视口范围，需要先测量再裁剪。新增 [`ChatScene/thread.ts`](../client/src/scenes/ChatScene/thread.ts) 的 `measureRows()`——用 `PIXI.TextMetrics.measureText()` 算每条消息的宽高（不创建 `PIXI.Text`、不产生 canvas 纹理，pixiText.ts 的 padding 设计本就保证它和真实 `makeText()` 报告的宽高一致），算出全部消息的内容高度后，只对落在视口 ±半屏内的消息调用 `buildBubble()`（真正建 `Graphics`+`Text`）。`ChatScene` 本来就没有 `BattlePassScene`/`LeaderboardScene` 那条"拖动只重定位、不重建"的性能快路径（每次拖动帧都整帧重渲染），所以这次测量+裁剪的拆分就够了，不需要跨帧缓存已建对象的 Map。
+
+### 9.4 验证
+- `test/ui/battlePassScroll.ui.ts` 新增 4 条：`rowViz.size` 恒小于 `BATTLEPASS_MAX_LEVEL`、Text 总数远低于未虚拟化的理论上限、滚到底部时首行被销毁+末行被构建、拖动全程不触发 `render()`。
+- `test/ui/chatThreadVirtualization.ui.ts` 新增 4 条：200/600 条消息时 Text 总数仍 <60、初始只看到最新消息滚到顶部才看到最早消息、composer 光标闪烁触发的周期性 `render()` 同样不重建全量历史。
+- 两处修复都跑过全量 `client` UI 测试套件（170 文件/1534 条，2026-08-12）确认无回归。
+
+### 9.5 给后人的教训
+`mask` 只裁剪像素，不裁剪对象/纹理创建——任何"可滚动列表"新建场景前，先确认列表项构建循环有没有视口判断，而不是只看有没有加 `mask`。判断标准：数据量有没有硬上限（`_CAP`/`_MAX` 常量）且足够小（远低于本节 ~150-200 个对象量级的经验阈值）；没有硬上限、或上限较大，就必须做视口裁剪，行高固定用 §9.3 point 1 的整数索引 `Map`，行高可变先用 `PIXI.TextMetrics.measureText()`（不是真的构造 `PIXI.Text`）量出几何再裁剪。
+
+### 9.6 中/低风险三处补齐（2026-08-12，同日晚些时候）
+
+> 状态：已修复。`CardCodexScene`/`DeckBuilderScene`/`CityScene/render.ts` 补上同款视口裁剪，用户明确要求"同款视口裁剪，每个场景补测试"，不再留作日后风险。
+
+三处的行高都是固定的（同 §9.3 point 1 的形态），但各自的滚动机制不同，裁剪的落点也不同：
+
+1. **`CardCodexScene`**：唯一一处真正做成 `Map<number, {container, faces}>` 增量构建/销毁（同 BattlePassScene 的 `RewardRowVirtualizer` 形态）——因为它的 `handleMove`/`handleWheel` 只挪 `layer.y`、不走全量 `render()`，必须有跨帧缓存才能在拖动时补建新滚入的行。拆出 `CardCodexScene/tile.ts`（`drawCardTile`/`drawTileFace`/`drawArtFit`/`storyText`/`cardStats`/`drawStatChips`，form① 纯函数，art-load 去重 `Set` 和重渲染回调都改成显式参数）把 `CardCodexScene.ts` 从改造后一度冲到 576 行拉回 385 行。**过程中一个单测直接揪出一个真 bug**：`updateVisibleTiles()` 最初把 `rowY`（含 `top`/`contentTop` 绝对屏幕偏移）直接拿去跟 `scrollY±buffer`（不含该偏移）比较，缺了 `top` 这一项——真实分辨率下 buffer margin 够大，这个偏移误差被盖住从来没触发过；直到写"强制极小 viewport"的单测（`scrollView.h=60`）才让 0 行命中，抓到并修正为 `viewTop/viewBottom` 都加上 `top`。
+2. **`DeckBuilderScene`/`CityScene/render.ts`**：这两处的滚动都是"拖动即全量 `render()`重建"（`scrollDirty`/`core.scrollDirty` 走 `update()`），不需要跨帧对象缓存——直接在既有构建循环里加一行"screenY 落在视口±半屏缓冲外就 `return`/`continue`"即可，形态上和 ChatScene 的修法完全一致。`CityScene/render.ts` 的 `renderBuildingGrid()` 还顺手补了一句代码注释解释：`GRID_BUILDING_KEYS`（11 格 + train 拼 1 = 12）在两种布局设计画布下都结构性地填不满一屏（`CARD_H`/`CARD_GAP`/`GRID_PAD` 是绝对像素常量，不随分辨率缩放；`renderBuildingGrid` 自己每次 `render()` 还会把 `scrollY` 强制夹回 `scrollMax`），这个裁剪在生产环境目前是真正的死代码——纯粹是防御性地补齐同款反模式，不是修一个能被踩中的 bug。
+
+**验证时的技术要点**（其余场景用真实几何/真实拖动就能触发裁剪，这两处的"内容天生填不满一屏"结构性地挡住了自然复现，只能构造式验证）：
+- CardCodexScene：用 `s.scrollView = {...s.scrollView, h: 60}` 强制极小视口后手动调 `updateVisibleTiles()`，暴露了上面 9.6.1 的偏移 bug。
+- CityScene：`renderBuildingGrid()` 每次都会把 `core.scrollY` 夹回 `core.scrollMax`（这里恒为 0），单纯赋值 `core.scrollY = 1_000_000` 会在同一次 `render()` 内被立刻改回 0——改用 `Object.defineProperty(core, 'scrollY', { get: () => 1_000_000, set: () => {} })`，让夹回的写操作变成空操作，读到的仍是构造的极大值，从而真正跑到裁剪判断那一行。
+- DeckBuilderScene：数据量刚好卡在"buffer 也覆盖得住"的区间，同样靠强制 `scrollY` 到超大值验证裁剪确实会减少构建数量。
+
+**回归测试**：`test/ui/cardCodexVirtualization.ui.ts`（4 条：测量态永远缓存全部 entries、`tileRows.size` 不超过行数上限、强制极小视口后确认命中裁剪、拖到底部驱逐首行+构建末行、`destroy()` 不重复销毁）、`test/ui/deckBuilderVirtualization.ui.ts`（3 条：真实屏幕本就 `scrollMax>0`、拖到底部仍能看到最后一张卡、强制超大 `scrollY` 后构建的 Text 数量确实下降）、`test/ui/cityBuildingGridVirtualization.ui.ts`（2 条：`scrollY` getter 劫持后 Text 数量下降、极端滚动值不抛异常）；`cardCodexFlip.ui.ts`/`cardCodexScene.ui.ts`/`cardCodexPortraitWidthAndText.ui.ts`/`deckBuilderScroll.ui.ts`/`deckBuilderEloRelock.ui.ts`/`cityScene.ui.ts`/`cityFillAllTeams.ui.ts`/`cityTrainTroops.ui.ts` 等既有测试全部复跑确认无回归；`checkFileLength.mjs`/`tsc --noEmit`/全量 `client` UI 测试套件（173 文件/1549 条）均绿。

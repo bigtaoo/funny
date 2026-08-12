@@ -7,7 +7,9 @@ import { buildPaperBackground } from '../../../render/sketchUi';
 import { makeText } from '../../../render/pixiText';
 import { FS } from '../../../render/fontScale';
 import { drawSceneHeader, HEADER_ACCENT } from '../../../ui/widgets/SceneHeader';
+import { GuideOverlay } from '../../../render/GuideOverlay';
 import { HUD_H } from '../constants';
+import { beginLoadingErase } from './loadingReveal';
 import type { WorldMapRendererCore } from './core';
 import type { WorldMapRendererPool } from './pool';
 
@@ -103,6 +105,12 @@ export class WorldMapRendererBuild implements BuildHandlers {
     ctx.vignetteGfx = new PIXI.Graphics();
     ctx.container.addChild(ctx.vignetteGfx);
 
+    // SLG opening guide chain (ONBOARDING_DESIGN §4.2) — topmost persistent layer, above HUD/modals
+    // too, so its highlight ring/bubble always reads on top; mounted once here (never touched by
+    // refreshPool/refreshCityLayer/renderHud, all of which tear down other layers, not this one).
+    ctx.guide = new GuideOverlay();
+    ctx.container.addChild(ctx.guide.root);
+
     // Loading cover — top-most so the half-built / untextured map never peeks through.
     this.buildLoadingOverlay();
 
@@ -147,14 +155,12 @@ export class WorldMapRendererBuild implements BuildHandlers {
     ctx.loadingSpinner = spinner;
   }
 
-  /** Remove the first-paint loading cover (idempotent); clears the safety timeout. */
+  /** Reveal the map: clears the safety timeout and hands the first-paint loading cover off to its
+   *  eraser-wipe reveal (loadingReveal.ts) instead of popping it away outright. Idempotent — see
+   *  beginLoadingErase's doc comment. */
   hideLoading(): void {
     const ctx = this.core.ctx;
     if (ctx.loadingTimeout) { clearTimeout(ctx.loadingTimeout); ctx.loadingTimeout = null; }
-    if (ctx.loadingLayer) {
-      ctx.loadingLayer.destroy({ children: true });
-      ctx.loadingLayer = null;
-      ctx.loadingSpinner = null;
-    }
+    beginLoadingErase(ctx);
   }
 }

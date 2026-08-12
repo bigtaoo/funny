@@ -1,11 +1,11 @@
 # 决策日志（ADR）
 
-> 状态：实现中 · 权威：本文 · 更新：2026-08-01
+> 状态：实现中 · 权威：本文 · 更新：2026-08-12
 
 记录**会造成文档间漂移**的关键拍板：改数值口径、改命名、改架构、废弃旧方案。
 每条 ADR 注明：日期、决策、影响的文档、为什么。新拍板追加在末尾，不改旧条目（要改就加一条新的 *Supersedes*）。
 
-格式：`ADR-NNN 标题 — 状态(Accepted/Superseded) — 日期`
+格式：`ADR-NNN 标题 — 状态(Accepted/Superseded) — 日期`（`Proposed` = 已登记、未拍板的候选提案，不代表当前实现，实施前需另开确认）
 
 ---
 
@@ -746,4 +746,57 @@
   - 文档数字同步：`design/game/{EQUIPMENT_DESIGN.md,SERVER_API.md}`、`design/game/ECONOMY_NUMBERS.md`、`design/game/CHARACTER_CARDS_DESIGN.md` 里描述装备库存上限的各处 300 改为 1000（并标注本 ADR 出处），存储体量估算随之从 ~45KB 更新为 ~150KB（1000 实例 × ~150B）。
 - **为什么**：用户直接拍板扩容数字，不改变治理机制本身——与 ADR-043（角色卡背包 150→500）同类操作，先加测试锁住新值再改常量，避免"改了数字但测试还断言旧值"的静默漂移。
 - **验证**：`server/shared` 装备单测 62 例全绿；`server/metaserver` 装备 e2e **49 例**（含新增 2 例）+ economy e2e **70 例**（含 4 处改写的 equipment-overflow 用例）全绿；`client` UI 套件 `scenes.ui.ts`（120 例，含改写的满仓灰化用例）+ `gachaInvFullToast.ui.ts`（7 例）全绿；`server`（全 11 服务 + engine/shared workspaces）`typecheck` 与 `client` `tsc --noEmit` + `npm run build:web` 均无错误。纯数值调参 + 文案数字变化，未起 dev server 截图（三语 toast/头部计数器的排版逻辑不变，只是数字本身变长，走既有自适应文本渡染，无需人工核对布局）。
+
+## ADR-066 8 个 CD workflow 改为依赖 CI（`workflow_run`），不再与 `ci.yml` 并行竞速 — Accepted — 2026-08-12
+
+- **背景**：`ci.yml`（build-test + e2e，e2e 最长 25 分钟）与 8 个 `*-deploy.yml`（server/client/animator/level-editor/map-editor/ops/vfx/grafana）此前都是独立的 `on: push: branches:[main]` + `paths:` 触发，彼此没有 `needs`/`workflow_run` 关联——只是共享了同一个 push 事件。deploy job 通常几分钟内跑完，e2e 却要 25 分钟，实际构成竞态：**deploy 大概率先于 e2e 出结果就已把代码送上 VPS/Cloudflare**；就算 build-test 很快挂了，deploy 也完全不会被拦，唯一共同前提只是"这个 commit 在 main 上"。用户原话"现在的 pipeline 里 CI 和 CD 掺和在一起了"，问题不在某文件内部把步骤写混，而在编排层面 CD 没有真正依赖 CI 产出。
+- **决策**：8 个 deploy workflow 的触发方式统一由 `push: branches:[main]` 改为：
+  ```yaml
+  on:
+    workflow_run:
+      workflows: ["CI"]
+      types: [completed]
+      branches: [main]
+    workflow_dispatch: {}
+  ```
+  `workflow_run` 是 GitHub 原生的跨 workflow 依赖机制，不引入第三方 action（与仓库一贯"不用第三方 ssh-action/wrangler-action，怕吞掉真实报错"的原则一致）。每个 deploy workflow 内部拆成两个 job：
+  - `check`：`if: vars.XXX_DEPLOY_ENABLED == 'true' && (workflow_dispatch || github.event.workflow_run.conclusion == 'success')`——CI 整体结论（build-test **与** e2e 都算在内，只要其中一个失败，`ci.yml` 这次 run 的 `conclusion` 就不是 `success`）先过一遍，再用新增的 composite action `.github/actions/paths-changed-since` 对 `github.event.workflow_run.head_sha` 相对其 parent 跑 `git diff --name-only`，替代原来的 `push.paths`（`workflow_run` 事件不支持原生 `paths:` 过滤，只能挪进 job 里手写）。
+  - `deploy`：`needs: check`，`if: needs.check.outputs.changed == 'true' || workflow_dispatch`，其余步骤不变；但 `actions/checkout` 的 `ref` 必须显式指定 `github.event.workflow_run.head_sha`——`workflow_run` 事件下 `github.sha` 指向触发时 default branch 的 HEAD，不是被检查的那个 commit，沿用旧代码隐式 checkout 会部署错 commit。
+  - 保留 `workflow_dispatch` 手动触发，跳过 CI 门禁（紧急场景兜底）。
+  - `server-deploy`/`grafana-deploy` 两个纯 SSH 部署（VPS 上 `git fetch + reset --hard origin/main`，不依赖本地 checkout 构建产物）在这次改动前就不含 `actions/checkout`；`check` job 里新增的 checkout 只是为了本地跑 `git diff` 判断路径，不影响它们原有的部署语义（VPS 上永远拉 origin/main 最新 tip，不是特意对齐 head_sha——这是既有行为，本次未改）。
+- **为什么不是其他方案**：
+  - 轮询式（`gh api .../check-runs` 等 CI 完成再继续）改动更集中在单个 step，但需要在每个 deploy job 顶部起一个等待循环，语义上不如 `workflow_run` 直接；且轮询期间仍占用一个 runner，`workflow_run` 是事件驱动、无需占用等待时间。
+  - 把 8 个 deploy 合并进 `ci.yml` 同一个 workflow 用 job-level `needs` 能达到同样的门禁效果，但会破坏"每个产物独立 workflow、可单独看日志/单独重跑"的现状结构，改动/维护成本远大于收益，未采用。
+  - GitHub Environments 的 required reviewers 是人工审批阀门，能作为额外安全网但解决的是"是否有人愿意让红码上线"，不是"CD 是否等 CI 出结果"，两者不是同一个问题，未采用（但建议后续视需要叠加）。
+- **已知取舍（未处理，仅记录）**：
+  1. `workflow_run` 只认 **default branch（main）上已合并的 workflow 定义**——这批文件改完必须先合并进 `main` 才会生效，无法在 PR 分支上直接验证触发是否生效（诊断逻辑本身已用真实 commit 离线验证过，见下）。
+  2. 本次让 deploy 等 CI **全部**（build-test + e2e）通过再放行，日常小改动也要等 e2e 跑完（最长 25 分钟）——用户已确认接受这个延迟换正确性的取舍（可选替代：只等 build-test，未采用）。
+  3. `server-deploy`/`grafana-deploy` 部署时永远拉 VPS 上 origin/main 的最新 tip，而非严格对齐触发这次 run 的 `head_sha`——若两次 push 紧挨着落地，理论上会把"更新的一次 commit"也一并带上（该次 commit 自己的 CI/CD run 会再单独把它重新过一遍，不会有代码丢失，只是先后顺序上略有重叠），这是改动前就有的既有行为，本次未改。
+  4. main 分支是否已开 branch protection + required status checks（PR 合并前强制 CI 绿）超出本次改动范围，建议用户自行核实 GitHub 仓库设置——那是挡在"合并前"的第一道门，`workflow_run` 门禁是挡在"部署前"的第二道，两者互补、缺一不完整。
+- **实现**：新增 `.github/actions/paths-changed-since/action.yml`（`git diff --name-only sha^ sha` + `grep -E` include/exclude，替代 `push.paths`）；改写 `.github/workflows/{server,client,animator,level-editor,map-editor,ops,vfx,grafana}-deploy.yml`（触发方式 + `check`/`deploy` 两 job 拆分 + `checkout ref` 显式指定 `head_sha`）；`ci.yml` 本身未改（原本就没有部署步骤，只是编排层缺了依赖关系）。
+- **验证**：8 个改写后的 workflow + 新增 composite action 用 PyYAML `yaml.safe_load` 全部解析通过（纯语法校验，GitHub 未提供本地跑 `workflow_run` 事件的方式）；`paths-changed-since` 的 include/exclude/无匹配三种分支用 bash 脚本沙盒模拟数据跑过一遍，行为符合预期；额外用本仓库真实提交 `2a1f20bb`（只改了 `client/test/**`）验证了两个方向——套 server-deploy 的 include/exclude 规则判定为 `changed=false`（应跳过）、套 client-deploy 的规则判定为 `changed=true`（应触发），均与预期一致。未做端到端 GitHub Actions 真实触发验证（需要合并进 `main` 才能生效，见上「已知取舍」第 1 条）。
+- **影响**：`.github/actions/paths-changed-since/action.yml`（新增）；`.github/workflows/{server,client,animator,level-editor,map-editor,ops,vfx,grafana}-deploy.yml`；`design/product/deploy-cloudflare.md`（client-deploy/ops-deploy/server-deploy 触发方式描述同步）。
 - **验证**：`server/shared` 装备单测 62 例全绿（新增 `enhanceDemoteChance`/`rollEnhanceDemote` 覆盖，含"两个骰子流互相独立"回归）；`server/metaserver` 装备 e2e 47 例全绿（新增 +7 掉级/不掉级/保护道具挡掉级三例）；`server/auctionsvc` e2e 65 例全绿（`equipEnhanceExpectedCost` 依赖的 `enhanceCost`/`enhanceSuccessRate` 未改，价格逻辑不受影响）；`server/tools/econ-sim` 18 例全绿；`client` 装备相关 vitest（`test/equipment.test.ts` 22 例 + UI 套件 `equipmentDetailProtectLabel`/`shopScene`/`shopActions` 共 68 例）全绿；`server`（engine/shared/metaserver/auctionsvc）`tsc -b` 与 `client` `tsc --noEmit` 均无错误。未起 dev server 截图（纯数值/规则改动，无新增可视化布局需要人工核对，掉级警示文案的排版走既有弹窗高度自适应逻辑）。
+
+## ADR-065 引擎战斗数值全面定点化（所有连续型战斗数值 ×FP_SCALE=1000，统一复用现有定点域） — Accepted — 2026-08-12
+
+- **背景**：`server/engine` 原先只有"需要逐 tick 累积小数进度"的量走 `FP_SCALE`（=1000）定点整数——位置 `y_fp`/`col_fp`、速度 `speed_fp`、回血累加器、墨水 `_ink_fp`；HP/攻击力/护甲/暴击/强化倍率等"一次性 bake 进 blueprint"的量是普通浮点/整数，只在写回字段前 `Math.round()` 一次。修 `equip_crit.test.ts` 陈旧断言（ADR-063 强化倍率表改非线性后测试期望值未同步）时，用户提出应统一到同一套定点体系（理由：内部一致性，不是部分字段定点、部分不定点）。三轮讨论拍板了完整设计并明确"现在就实施"。
+- **已核实、推翻早期顾虑的事实**：`server/contracts/*.proto`（game/replay/transport）完全不携带 hp/attack 等战斗数值——线上协议只传不透明的输入指令字节流 + JSON 元数据，**不用改协议、不用重新 codegen**；客户端从不从网络反序列化这些数值，本地跑确定性引擎，画面数字全部来自本地 `Unit`/`GameState`/`GameEvent`。
+- **拍板的设计原则**：
+  1. `config.ts` 保持人类可读真实单位（`hp: 60`），DB/SaveData 装备卡牌数据保持真实单位不变；转换只发生在 blueprint bake 阶段（`balance/pveUpgrades.ts` 的 `buildPvpBlueprints`/`buildCampaignBlueprints`/`buildSiegeBlueprints`）。
+  2. 统一复用现有 `FP_SCALE`/`math/fixed.ts` 定点域（不给比率类数值另开一套），新增 `divFpByInt`/`growFp`/`maxFp`/`minFp`/`clampFp` 五个小工具补齐现有 `toFp/fp/addFp/subFp/mulFp/scaleFp/negFp` 家族。
+  3. 不追旧回放兼容——线上已存历史回放 hash 失效是预期代价。
+  4. 客户端视觉表现维持现状——不新增"更精细数字"展示功能，展示层统一在读取点 `fromFp()` 换算。
+  5. 进定点字段：`hp/maxHp`、`attack`、`siegeValue`、`armor`、`armorEnrageBonus`、`critPct`、`critMult`、`lifestealPct`、`reflectPct`、`burstOnSingleMult`、`berserkerThreshold`、`armorEnrageThreshold`、`slowOnHit.mult`（`Unit`/`Building`/`EscortUnit`/`Player.baseHp`/`maxBaseHp` 同步）；`ENHANCE_LEVEL_MULTIPLIER`、`EFFECT_CAPS`、`STAT_GROWTH_PER_LEVEL`（除 `atkspd`/`spd`，见下）、`TRAIT_BREAKPOINTS.{crit,lifesteal}`、`PveUpgradeDef.effectPerLevel` 等比率常量。不进定点（维持现状）：离散整格量 `range`/`splashRadius`/`spawnCount`；已走"一次性换算成 tick/fp"既有模式的 `attackInterval`/`speed`/`radius_fp`/`slowOnHit.durationSec`/`summonOnTimer.intervalSec`；纯整数全局系数 `ATTACK_MULT_LATE_GAME`。`PlayerStats.damageDealtToBase/damageTakenByBase`（match-summary 报表统计，client ResultScene 徽章直接显示）也保持真实单位，在 `MovementSystem.ts` 记账处 `fromFp()` 换算，不往下游（client/judgeRunner/campaignRewards）传播。
+  6. 副产品修正：`HazardSystem.ts`/`hitResolution.ts` 两处既有"`Fp` × 普通小数比率"手写 `Math.round`+类型断言 hack，借这次统一改用 `mulFp`。
+  7. 暴击等"百分点"字段与 PRNG 交互：`combatPrng.nextInt(100) * 1000 < critPct_fp`（放大骰子侧而非截断 stat 侧），精度不丢失、PRNG 抽取节奏不变。
+  8. 回血机制简化：`hp_fp` 本身已有千分之一 HP 粒度，`TraitSystem.ts` 去掉了原来的 `healAccFp` 累积器，`regenFpPerTick` 每 tick 直接加进 `hp_fp`（clamp 到 `maxHp_fp`）。
+- **实现（5 个检查点顺序落地，每步验证后再进入下一步）**：
+  - **检查点 A（引擎核心）**：`math/fixed.ts` 新增 5 个 helper；`types/blueprints.ts`/`config.ts`（拆分 `RAW_UNIT_BLUEPRINTS` 人类可读表 + `bakeUnitBlueprint()` 转换函数，导出已 baked 的 `UNIT_BLUEPRINTS`）/`balance/{progression,pveUpgrades,equipment}.ts`/`engine/setup/blueprints.ts`/`Unit.ts`/`Building.ts`/`EscortUnit.ts`/`Player.ts`/`systems/combat/{hitResolution,tick}.ts`/`systems/{TraitSystem,HazardSystem,SpellSystem,AISystem,ai/cardSelection}.ts`/`types/events.ts`/`Projectile.ts`/`engine/sim/step.ts`/`GameState.ts`（`snapshotSummary` 比例计算）全部改定点。`server/engine` `tsc -b` 干净。
+  - **检查点 B（下游服务端包）**：`server/worldsvc/src/siegeEngine.ts`（新增 `blueprintFullHp()` 换算函数，§16.5 存活血量→存活兵力换算处 `fromFp()`）、`server/tools/econ-sim/src/{occupyBaseHpRun,strongholdCombat}.ts` 同样换算；`server/botsvc` 不涉及数值读取，无需改动；`server/shared` 的 `siegeValueBase` 卡牌元数据镜像确认是独立真实单位，未受影响。全 11 服务 + engine/shared workspaces `typecheck` 全绿。
+  - **检查点 C（黄金回放 + 引擎单测）**：`goldenReplay/snapshot.ts` 字段改名；新增一次性验证脚本 `goldenReplay/verifyFpMigration.ts`（保留在仓库，非测试套件的一部分）——换算新引擎输出回真实单位后逐字段 diff 旧 fixture：11 个场景里 8 个逐字节完全一致，3 个 PvP/netplay 场景仅 Max 单位在 burstOnSingleMult×markEnemies 连续加成链上出现 <1 点的小数级 HP 偏移（不再在中间步骤取整，正是本次改动的设计目标，不是 bug）——胜负/tick 数/死亡/击杀数全部零偏差，确认后才用 `generateFixtures.ts` 正式重新生成全部 11 个 fixture。改写 7 个引擎测试文件（`equip_crit`/`trait-system`/`armor`/`pvp_hardwall`/`gameEngine`/`unit_t9_traits`/`escort-system`）+ 3 个未预期的（`ghost_untargetable`/`projectile-escort-id-per-instance`/`escort-system`）。`npm test`（server/engine）123/123 全绿。
+  - **检查点 D（客户端展示层 + 客户端测试）**：`client/src/game/meta/cardDefs.ts`（`cardHp/cardAttack/cardSiegeValue` 加 `fromFp()`，唯一收口点）、`EquipmentScene/helpers.ts` 的 `affixDesc()`（`enhanceMultiplier()` 现在返回 `Fp`，之前的写法编译能过但数值会错 1000 倍——`Fp` 结构上是 `number` 的子类型，TS 不会报错，靠 UI 测试跑出来才发现）、`StateRecorder.ts`（回放录制侧 `quantizeHp(fromFp(...))`）、`HUDView.ts`/`TutorialDirector.ts`/`GameRenderer/{core,events}.ts`/`BuildingView.ts`/`UnitView.ts`/`CardCodexScene.ts`/`DefenseEditorScene/{data,input}.ts` 等展示/HP 条/阈值判断处按"比例计算不用换算、绝对数字展示要 `fromFp()`"原则逐一处理。客户端 21 个测试文件的字段改名/字面量换算（4 个并行 agent 分批完成，人工复核+修正 3 处 agent 引入的公式错误：`hardwall.test.ts` 的 `growFp` 用法、`stateRecorder.test.ts`/`hudHeartHpBar.test.ts`/`gameRendererSurrenderRace.ui.ts` 里因 `any` 类型转换绕过 tsc 检查而遗漏的 mock 数据字段改名——这几处只有跑测试才能发现，tsc 编译干净不代表数值正确）。`client` `tsc --noEmit`/`typecheck` 全绿，`npm test` 1293/1293、`npm run test:ui` 1502/1502 全绿，`npm run build:web` 生产构建成功。
+  - **检查点 E（文档）**：本条 ADR 由 Proposed 转 Accepted；`BALANCE.md`/`ECONOMY_NUMBERS.md`/`EQUIPMENT_DESIGN.md` 补充指向本 ADR 的说明（数字口径本身不用改，仍是真实单位）。
+- **风险与教训**：TypeScript 的结构化类型对 `Fp`（`number & {brand}`）品牌类型在**普通算术运算**里形同虚设——`plainNumber * fpValue` 照样编译通过，只是数值错 1000 倍，这类"类型正确但数值错误"的 bug 只能靠跑测试（尤其是断言具体数值、而非仅断言类型的测试）才能发现，`tsc --noEmit` 干净不是数值正确的充分证明。本次修改过程中在客户端出现过 4 处这类问题（`EquipmentScene/helpers.ts` 生产代码 1 处 + 3 处测试 mock 数据），全部靠运行完整测试套件定位。
+- **影响**：`server/engine/src/{math/fixed.ts,types/{blueprints,events}.ts,config.ts,Unit.ts,Building.ts,EscortUnit.ts,Player.ts,Projectile.ts,GameState.ts,balance/{equipment,pveUpgrades,progression}.ts,engine/{setup/{blueprints,preplaced},sim/step}.ts,systems/{combat/{hitResolution,tick},TraitSystem,HazardSystem,SpellSystem,AISystem,ai/cardSelection,MovementSystem,EscortSystem}.ts}`；`server/worldsvc/src/siegeEngine.ts`；`server/tools/econ-sim/src/{occupyBaseHpRun,strongholdCombat}.ts`；`client/src/{game/meta/cardDefs.ts,game/replay/StateRecorder.ts,scenes/EquipmentScene/helpers.ts,scenes/CardCodexScene.ts,scenes/DefenseEditorScene/{data,input}.ts,render/{HUDView,TutorialDirector,UnitView,BuildingView,GameRenderer/{core,events}}.ts}`；`server/engine/src/__tests__/`（10 个文件改写 + 新增 `goldenReplay/verifyFpMigration.ts` + 11 个 fixture 重新生成）；`client/test/`（21 个文件改名/换算 + 3 处运行时发现的 mock 数据修正）；`design/game/{BALANCE.md,ECONOMY_NUMBERS.md,EQUIPMENT_DESIGN.md}`。
+- **后续补充（同日）**：「风险与教训」提到的这类 bug 此前只能靠跑*间接*测试（断言游戏结果，不断言 helper 本身）撞见，两个最相关的文件此前都没有直接单测：`math/fixed.ts`（本次改动新增的 5 个 helper 之前只被其他测试当作构造期望值的工具函数间接调用）、`EquipmentScene/helpers.ts`（production bug 实际发生的文件）。补了两个直接单测文件：`server/engine/src/__tests__/fixed.test.ts`（12 例，逐个 helper 钉截断方向/负数/边界值，已加入 `server/engine/package.json` 的 `test` 脚本）、`client/test/equipmentSceneHelpers.test.ts`（17 例，`affixDesc` 专门钉了 level 9/×5.00 档"应为 +50% 不是 +50000%"这个具体数字，正是本次 bug 的复现场景）。engine 139/139、client 1293+17 全绿。

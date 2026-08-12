@@ -109,7 +109,7 @@ test('death: hp<=0 flips status to dead and emits escort_died once; a dead escor
 
   const spec: EscortSpec = { id: 'e4', hp: 100, speed: 1, startCol: 1, startRow: 5 };
   const escort = new EscortUnit(spec, state.allocEscortId());
-  escort.hp = 0; // simulate CombatSystem having already dropped hp to 0 earlier this tick
+  escort.hp_fp = toFp(0); // simulate CombatSystem having already dropped hp to 0 earlier this tick
   state.escorts.push(escort);
 
   const rowBefore = escort.row_fp;

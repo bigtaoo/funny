@@ -7,7 +7,7 @@ import { Unit } from '../../Unit';
 import { Building } from '../../Building';
 import { EscortUnit } from '../../EscortUnit';
 import { type ProjectilePayload } from '../../Projectile';
-import { fp, toFp } from '../../math/fixed';
+import { fp, toFp, scaleFp, mulFp, divFpByInt, maxFp, minFp, addFp, type Fp } from '../../math/fixed';
 import { fireProjectile } from './projectiles';
 
 export function performUnitAttack(
@@ -16,13 +16,17 @@ export function performUnitAttack(
   state: GameState,
   attackMult: number,
 ): void {
-  // Crit roll (unit progression T3): deterministic PRNG roll under critPct → ×critMult.
-  // critPct is 0 for all PvP units, so combatPrng never advances in PvP — existing
+  // Crit roll (unit progression T3): deterministic PRNG roll under critPct_fp → ×critMult_fp.
+  // critPct_fp is 0 for all PvP units, so combatPrng never advances in PvP — existing
   // PvP replays stay bit-identical. Crit boosts rawDamage, so splash/pierce/lifesteal
   // (all derived from rawDamage/actualDamage below) inherit the crit consistently.
-  let rawDamage = attacker.attack * attackMult;
-  if (attacker.critPct > 0 && state.combatPrng.nextInt(100) < attacker.critPct) {
-    rawDamage = Math.round(rawDamage * attacker.critMult);
+  // ADR-065: attackMult is a plain safe-integer coefficient (1 or 2, ATTACK_MULT_LATE_GAME)
+  // → scaleFp, not mulFp. The roll side (nextInt(100)) is scaled ×1000 to compare against the
+  // fp critPct_fp WITHOUT truncating critPct_fp's precision and WITHOUT changing how many/which
+  // PRNG draws happen (nextInt(100)'s range is unchanged — only the comparison threshold moved).
+  let rawDamage: Fp = scaleFp(attackMult, attacker.attack_fp);
+  if (attacker.critPct_fp > 0 && state.combatPrng.nextInt(100) * 1000 < attacker.critPct_fp) {
+    rawDamage = mulFp(rawDamage, attacker.critMult_fp);
   }
 
   // Snapshot the hit payload at fire time (crit + traits frozen). Ranged units
@@ -34,10 +38,10 @@ export function performUnitAttack(
     rawDamage,
     splashRadius:  attacker.splashRadius,
     piercing:      attacker.piercing,
-    lifestealPct:  attacker.lifestealPct,
+    lifestealPct:  attacker.lifestealPct_fp,
     slowOnHit:     attacker.slowOnHit,
     burstOnSingle: attacker.burstOnSingle,
-    burstOnSingleMult: attacker.burstOnSingleMult,
+    burstOnSingleMult: attacker.burstOnSingleMult_fp,
     markEnemies:   attacker.markEnemies,
   };
 
@@ -58,13 +62,13 @@ export function performBuildingAttack(
   const payload: ProjectilePayload = {
     attackerId:    building.id,
     side:          building.side,
-    rawDamage:     building.attack * attackMult,
+    rawDamage:     scaleFp(attackMult, building.attack_fp),
     splashRadius:  0,
     piercing:      false,
-    lifestealPct:  0,
+    lifestealPct:  toFp(0),
     slowOnHit:     null,
     burstOnSingle: false,
-    burstOnSingleMult: 2,
+    burstOnSingleMult: toFp(2),
     markEnemies:   false,
   };
 
@@ -86,7 +90,7 @@ export function resolveAttackHit(
   payload: ProjectilePayload,
   target: Unit | Building | EscortUnit,
 ): void {
-  let rawDamage = payload.rawDamage;
+  let rawDamage: Fp = payload.rawDamage;
 
   // burstOnSingle (Max): ×burstOnSingleMult damage (default 2, T9 progression bumps to 2.5)
   // when only one live enemy remains on target side.
@@ -95,16 +99,17 @@ export function resolveAttackHit(
     for (const u of state.board.units.values()) {
       if (!u.isDead && u.side === target.side) { liveCount++; if (liveCount > 1) break; }
     }
-    if (liveCount === 1) rawDamage = rawDamage * payload.burstOnSingleMult;
+    if (liveCount === 1) rawDamage = mulFp(rawDamage, payload.burstOnSingleMult);
   }
 
-  // markEnemies (Mara): +25 % bonus damage on a marked target.
+  // markEnemies (Mara): +25 % bonus damage on a marked target. 1.25 is a hardcoded literal
+  // ratio (not a blueprint field) — toFp() at the call site.
   if (target instanceof Unit && target.markedTicks > 0) {
-    rawDamage = Math.round(rawDamage * 1.25);
+    rawDamage = mulFp(rawDamage, toFp(1.25));
   }
 
   // Apply damage to primary target; capture actual HP lost (after armor) for lifesteal + events.
-  let actualDamage: number;
+  let actualDamage: Fp;
   if (target instanceof Unit) {
     actualDamage = target.takeDamage(rawDamage);
   } else if (target instanceof Building) {
@@ -116,33 +121,33 @@ export function resolveAttackHit(
 
   if (target instanceof EscortUnit) {
     state.pushEvent({
-      type:              'unit_attack_hit',
-      unitId:            payload.attackerId,
-      targetId:          target.numericId,
-      damage:            actualDamage,
-      targetHpRemaining: target.hp,
+      type:                 'unit_attack_hit',
+      unitId:               payload.attackerId,
+      targetId:             target.numericId,
+      damage_fp:            actualDamage,
+      targetHpRemaining_fp: target.hp_fp,
     });
     state.pushEvent({
       type:     'escort_hp_changed',
       escortId: target.id,
-      hp:       target.hp,
-      maxHp:    target.maxHp,
+      hp_fp:    target.hp_fp,
+      maxHp_fp: target.maxHp_fp,
     });
   } else {
     state.pushEvent({
-      type:              'unit_attack_hit',
-      unitId:            payload.attackerId,
-      targetId:          target.id,
-      damage:            actualDamage,
-      targetHpRemaining: target.hp,
+      type:                 'unit_attack_hit',
+      unitId:               payload.attackerId,
+      targetId:             target.id,
+      damage_fp:            actualDamage,
+      targetHpRemaining_fp: target.hp_fp,
     });
 
     if (target instanceof Building && !target.isDead) {
       state.pushEvent({
         type:       'building_hp_changed',
         buildingId: target.id,
-        hp:         target.hp,
-        maxHp:      target.maxHp,
+        hp_fp:      target.hp_fp,
+        maxHp_fp:   target.maxHp_fp,
       });
     }
   }
@@ -155,19 +160,22 @@ export function resolveAttackHit(
   // ── Offensive trait effects (applied after primary hit) ───────────────
 
   // Lifesteal: heal the firing unit by % of actual damage dealt — only if it is
-  // still alive on the board (a projectile may outlive its archer).
+  // still alive on the board (a projectile may outlive its archer). payload.lifestealPct
+  // is fp points (0–100 scale); mulFp then ÷100 (divFpByInt) converts to an fp heal amount.
   if (payload.lifestealPct > 0 && actualDamage > 0) {
     const attacker = state.board.units.get(payload.attackerId);
     if (attacker && !attacker.isDead) {
-      const heal = Math.floor(actualDamage * payload.lifestealPct / 100);
-      if (heal > 0) attacker.hp = Math.min(attacker.maxHp, attacker.hp + heal);
+      const heal_fp = divFpByInt(mulFp(actualDamage, payload.lifestealPct), 100);
+      if (heal_fp > 0) attacker.hp_fp = minFp(attacker.maxHp_fp, addFp(attacker.hp_fp, heal_fp));
     }
   }
 
-  // Slow on hit: reduce target speed for N ticks (Units only).
+  // Slow on hit: reduce target speed for N ticks (Units only). mulFp replaces the old
+  // hand-rolled Math.round(baseSpeed_fp × plain-decimal-mult) — same fp × fp domain now
+  // that slowOnHit.mult is fp too (ADR-065).
   if (payload.slowOnHit && target instanceof Unit) {
     target.slowRemainingTicks = payload.slowOnHit.durationTicks;
-    target.speed_fp = fp(Math.max(1, Math.round(target.baseSpeed_fp * payload.slowOnHit.mult)));
+    target.speed_fp = maxFp(fp(1), mulFp(target.baseSpeed_fp, payload.slowOnHit.mult_fp));
   }
 
   // Reflect (Lena T9 progression trait): a defensive trait read off the *target*, not the
@@ -175,8 +183,8 @@ export function resolveAttackHit(
   // traits carried in the payload. Reflects a % of actual damage taken back onto whoever
   // fired (Unit or Building — arrow towers can be reflected onto too), through the normal
   // takeDamage()/armor pipeline so reflected damage is not itself armor-piercing.
-  if (target instanceof Unit && target.reflectPct > 0 && actualDamage > 0 && !target.isDead) {
-    const reflectDamage = Math.floor(actualDamage * target.reflectPct / 100);
+  if (target instanceof Unit && target.reflectPct_fp > 0 && actualDamage > 0 && !target.isDead) {
+    const reflectDamage = divFpByInt(mulFp(actualDamage, target.reflectPct_fp), 100);
     if (reflectDamage > 0) {
       const attackerUnit = state.board.units.get(payload.attackerId);
       if (attackerUnit && !attackerUnit.isDead) {
@@ -197,11 +205,11 @@ export function resolveAttackHit(
       if (payload.splashRadius < Math.max(Math.abs(u.row - tRow), Math.abs(u.col - tCol))) continue;
       const splashActual = u.takeDamage(rawDamage);
       state.pushEvent({
-        type:              'unit_attack_hit',
-        unitId:            payload.attackerId,
-        targetId:          u.id,
-        damage:            splashActual,
-        targetHpRemaining: u.hp,
+        type:                 'unit_attack_hit',
+        unitId:               payload.attackerId,
+        targetId:             u.id,
+        damage_fp:            splashActual,
+        targetHpRemaining_fp: u.hp_fp,
       });
     }
   }
@@ -214,11 +222,11 @@ export function resolveAttackHit(
       if (u.col !== tCol) continue;
       const pierceActual = u.takeDamage(rawDamage);
       state.pushEvent({
-        type:              'unit_attack_hit',
-        unitId:            payload.attackerId,
-        targetId:          u.id,
-        damage:            pierceActual,
-        targetHpRemaining: u.hp,
+        type:                 'unit_attack_hit',
+        unitId:               payload.attackerId,
+        targetId:             u.id,
+        damage_fp:            pierceActual,
+        targetHpRemaining_fp: u.hp_fp,
       });
     }
   }

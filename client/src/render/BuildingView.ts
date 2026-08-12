@@ -184,7 +184,7 @@ export class BuildingView {
 
     const hpFill = c.getChildByName('hpFill') as PIXI.Graphics;
     hpFill.clear();
-    const ratio = Math.max(0, building.hp / building.maxHp);
+    const ratio = Math.max(0, building.hp_fp / building.maxHp_fp);
     hpFill.beginFill(ratio > 0.4 ? 0x44cc44 : 0xcc4444);
     hpFill.drawRect(-HP_BAR_W / 2, HP_BAR_Y, HP_BAR_W * ratio, 4);
     hpFill.endFill();
