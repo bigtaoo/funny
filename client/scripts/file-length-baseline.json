@@ -18,6 +18,5 @@
   "src/scenes/LoginScene.ts": 531,
   "src/scenes/RoomScene.ts": 569,
   "src/scenes/SettingsScene.ts": 852,
-  "src/scenes/worldmap/WorldMapInput.ts": 510,
   "src/scenes/worldmap/WorldMapNet.ts": 740
 }

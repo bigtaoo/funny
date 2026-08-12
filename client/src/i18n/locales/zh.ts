@@ -866,6 +866,7 @@ export const zh = {
   'world.marchKindReinforce': '增援',
   'world.marchTime': '旅途约 {sec} 秒',
   'world.myBase': '我的主城',
+  'world.home': '回家',
   'world.occupied': '已占领',
   'world.occupying': '占领中（{sec}s 后结算）',
   'world.occupyingMine': '我方占领中（{sec}s 后落地）',

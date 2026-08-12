@@ -853,6 +853,7 @@ export const en: Record<TranslationKey, string> = {
   'world.marchKindReinforce': 'Reinforce',
   'world.marchTime': '~{sec}s travel',
   'world.myBase': 'My Base',
+  'world.home': 'Home',
   'world.occupied': 'Occupied',
   'world.occupying': 'Being occupied ({sec}s left)',
   'world.occupyingMine': 'Your occupation holds ({sec}s until it lands)',

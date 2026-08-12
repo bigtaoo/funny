@@ -1953,3 +1953,15 @@ cols.tiles.find({ worldId, type: 'base', ownerId: { $nin: excludeOwners } })
 - 兵力/领地卡片：卡高从 56px 涨到 88px，横屏固定的 1080 矮画布是这 32px 增量最吃紧的场景——补一条断言右侧整条列（状态卡→Marches→Battle replays）依然完整落在可视区域内，没有被挤出屏幕；另外两条确认数值分离渲染、Battle replays 配色修复在横屏尺寸下同样成立。
 
 `tsc --noEmit` 全绿；`vitest run --config vitest.ui.config.ts` 全量 161 文件/1466 例全绿。
+
+## 2026-08-12：header 加「回家」按钮——一键把相机跳回主城
+
+用户截图（世界地图顶部，商城/拍卖行按钮左侧一片空白，红圈标出）要求在那个位置加一个"回家"按钮，点击后相机直接跳转到自己的主城位置——地图缩放/平移过后经常找不到自己基地在哪，此前唯一的回主城手段是打开右上「Marches」列表点某条行军行的 click-to-center，或者退出再重进世界地图（`WorldMapNet.loadData` 只在**进入世界**那一刻才自动 `centerAt(mainBaseTile)`），地图内没有直接的"回家"入口。
+
+**实现**（`WorldMapPanels/headerHud.ts::renderHeaderHud`）：新增 Home 按钮，紧贴在商城按钮左侧（跟"商城/拍卖行"同一组视觉——同尺寸 `sketchButton`、`home` 图标复用 `icons/ui.ts` 已有的 `drawHome`），只在玩家已落地（`me.mainBaseTile` 存在）时渲染，否则留零矩形（`ctx.homeBtnRect`）、资源产量簇的右边界回退到商城按钮——跟"未加入世界时不画拍卖行"是同一种防御写法。中间产量簇的 shrink-to-fit 右边界（`rightBound`）同步改成"有 Home 按钮就卡在它左边，没有就卡在商城左边"，避免新按钮把产量数字继续往外挤。
+
+点击行为（`WorldMapInput.ts` → 新抽出的 `WorldMapInput/headerButtons.ts::hitTestHeaderButtons`）：解析 `me.mainBaseTile`（跟 `WorldMapNet.loadData` 进图时自动居中用的同一个 `ctx.parseTileId` + `ctx.view.centerAt`），`renderMap()` 重绘。**顺手做的文件拆分**：`WorldMapInput.ts` 加进这段前正好卡在 500 行基线的 510（`file-length-baseline.json` 记录值），直接塞会跨到 522——把 `handleDown` 里 Zoom/资源簇/Back/商城/回家/拍卖行/行军徽章/回放徽章/聊天条这一串纯"读 ctx 矩形→调 ctx.panels/cb/view/net"的 header/HUD 按钮命中测试整块挖成 form① 自由函数模块（跟 `headerHud.ts` 当天早些时候的拆分同一手法），`WorldMapInput.ts` 回落到 457 行，`file-length-baseline.json` 摘除这条记录。
+
+i18n：三语新增 `world.home`（en "Home" / zh "回家" / de "Heim"）。
+
+**验证**：`tsc --noEmit` 全绿；新建 `worldMapHomeButton.ui.ts`（7 例：按钮渲染在商城左侧+无主城时不渲染+产量簇不被挤到按钮下面+重渲染不漏 child；`handleDown` 命中按钮真的调 `centerAt(bx,by)`+`renderMap()`、未命中落回拖拽起始判定、无主城时点击仍被按钮矩形吞掉但不触发居中）；既有 `worldMapHeaderProduction.ui.ts`/`worldMapHeaderInset.ui.ts`/`worldMapTerritoryPanel.ui.ts`（后两者补了 `homeBtnRect` 的零矩形默认值，否则 `handleDown` 读 `undefined.w` 会炸）+ 全量 `test/ui/worldMap*` 31 文件/284 例全绿。跟 §2026-08-11 那条一样，本环境拉起完整 worldsvc 后端截图成本过高（且 §93 范围红线本就把 SLG 截图/视觉回归排除在浏览器冒烟外），本次同样只做代码/headless 测试验证，未做真实像素级截图核对。

@@ -15,6 +15,7 @@ import type { WorldMapInput } from './WorldMapInput';
 import type { StickmanRuntime } from '../../render/stickman/StickmanRuntime';
 import type { IStorage } from '../../platform/IPlatform';
 import type { SaveData } from '../../game/meta/SaveData';
+import type { EraseCrumb } from './WorldMapRenderer/loadingReveal';
 
 /**
  * A live march/occupy/stationed token (fog.ts syncMarchTokens/syncOccupyTokens/syncStationedTokens).
@@ -171,6 +172,17 @@ export class WorldMapContext {
   loadingLayer: PIXI.Container | null = null;
   loadingSpinner: PIXI.Graphics | null = null;
   loadingAngle = 0;
+  /** Non-null only while the loading cover's eraser-wipe reveal is in flight — see
+   *  WorldMapRenderer/loadingReveal.ts. `loadingEraseLayer` is the handed-off paper sheet (masked
+   *  by `loadingEraseMask`); `loadingEraseCrumbs` draws the trailing rubber-fleck particles
+   *  (state in `loadingEraseCrumbData`, spawn accumulator in `loadingEraseCrumbSpawnAcc`).
+   *  `loadingEraseT` is wipe progress, 0 (untouched) → 1 (fully erased). */
+  loadingEraseLayer: PIXI.Container | null = null;
+  loadingEraseMask: PIXI.Graphics | null = null;
+  loadingEraseCrumbs: PIXI.Graphics | null = null;
+  loadingEraseCrumbData: EraseCrumb[] = [];
+  loadingEraseCrumbSpawnAcc = 0;
+  loadingEraseT = 0;
   /** Screen-edge red vignette (D-CITY-8): flashed when the player's own main-base durability is
    * deducted by a settled siege hit. Mirrors the battle scene's base-damage vignette (GameRenderer/events.ts). */
   vignetteGfx!: PIXI.Graphics;
@@ -191,6 +203,8 @@ export class WorldMapContext {
   aucBtnRect: { x: number; y: number; w: number; h: number } = { x: 0, y: 0, w: 0, h: 0 };
   /** Header-bar "Shop" entry (left of the auction button) — opens the standalone shop panel. */
   shopBtnRect: { x: number; y: number; w: number; h: number } = { x: 0, y: 0, w: 0, h: 0 };
+  /** Header-bar "Home" entry (left of the shop button) — recenters the camera on the player's own base. */
+  homeBtnRect: { x: number; y: number; w: number; h: number } = { x: 0, y: 0, w: 0, h: 0 };
   zoomBtnRect: { x: number; y: number; w: number; h: number } = { x: 0, y: 0, w: 0, h: 0 };
   marchBadgeRect: { x: number; y: number; w: number; h: number } = { x: 0, y: 0, w: 0, h: 0 };
   /** Top-right "battle replays" badge (below the marches badge) — tapping it opens the last-100 replay browser. */

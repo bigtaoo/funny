@@ -20,6 +20,7 @@ import type { ProceduralTile } from '@nw/shared';
 import type { TerrainTextureName } from '../../render/atlas/terrainAtlasLoader';
 import type { ZoomCfg, PoolSlot } from './zoom';
 import type { WorldMapContext, WorldMapCallbacks, DeployKind } from './WorldMapContext';
+import { hitTestHeaderButtons } from './WorldMapInput/headerButtons';
 
 export class WorldMapInput {
   constructor(private readonly ctx: WorldMapContext) {}
@@ -344,63 +345,9 @@ export class WorldMapInput {
       return;
     }
 
-    // Zoom button (top-left over the map)
-    const zb = this.ctx.zoomBtnRect;
-    if (zb.w > 0 && x >= zb.x && x <= zb.x + zb.w && y >= zb.y && y <= zb.y + zb.h) {
-      this.ctx.view.setZoom(((this.ctx.zoom % 3) + 1) as 1 | 2 | 3);
-      return;
-    }
-
-    // Header resource cluster — opens the Territory Overview panel (SLG_DESIGN_LOG.md §26)
-    const rc = this.ctx.resClusterRect;
-    if (rc.w > 0 && x >= rc.x && x <= rc.x + rc.w && y >= rc.y && y <= rc.y + rc.h) {
-      this.ctx.panels.openTerritoryPanel();
-      return;
-    }
-
-    // Back button (floating top-left chip, drawn on topLayer — see WorldMapRenderer)
-    const b = this.ctx.backRect;
-    if (x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h) {
-      this.ctx.cb.onBack();
-      return;
-    }
-
-    // Shop button (header bar, immediately left of the auction button)
-    const sb = this.ctx.shopBtnRect;
-    if (x >= sb.x && x <= sb.x + sb.w && y >= sb.y && y <= sb.y + sb.h) {
-      this.ctx.panels.openShopPanel();
-      return;
-    }
-
-    // Auction button (left column)
-    const a = this.ctx.aucBtnRect;
-    if (x >= a.x && x <= a.x + a.w && y >= a.y && y <= a.y + a.h) {
-      this.ctx.cb.onOpenAuction();
-      return;
-    }
-
-    // Marches badge (right column) — toggles the expanded list
-    const mb = this.ctx.marchBadgeRect;
-    if (mb.w > 0 && x >= mb.x && x <= mb.x + mb.w && y >= mb.y && y <= mb.y + mb.h) {
-      this.ctx.marchesExpanded = !this.ctx.marchesExpanded;
-      this.ctx.panels.renderHud();
-      return;
-    }
-
-    // Battle-replays badge (right column, below marches) — opens the last-100 replay browser
-    const rb = this.ctx.replayBadgeRect;
-    if (rb.w > 0 && x >= rb.x && x <= rb.x + rb.w && y >= rb.y && y <= rb.y + rb.h) {
-      this.ctx.panels.openReplayPanel();
-      return;
-    }
-
-    // Bottom chat bar — opens the social overlay (also the entry point to family management)
-    const cbr = this.ctx.chatBarRect;
-    if (cbr.w > 0 && x >= cbr.x && x <= cbr.x + cbr.w && y >= cbr.y && y <= cbr.y + cbr.h) {
-      this.ctx.markWorldChatSeen();
-      this.ctx.cb.onOpenChat();
-      return;
-    }
+    // Zoom / resource-cluster / back / shop / home / auction / marches-badge / replay-badge /
+    // chat-bar hit-tests — see headerButtons.ts.
+    if (hitTestHeaderButtons(this.ctx, x, y)) return;
 
     // March row hit detection (recall / instant-return button, or click-to-center)
     for (const entry of this.ctx.marchRowRects) {

@@ -68,6 +68,32 @@ export function renderHeaderHud(ctx: WorldMapContext): void {
   layer.addChild(sTxt);
   ctx.shopBtnRect = { x: shopBtn.x, y: shopBtn.y, w: shopW, h: aucH };
 
+  // Home button — immediately left of the shop button, same group. Recenters the camera on the
+  // player's own base (mainBaseTile) without leaving the world map, for whenever panning/zooming
+  // has drifted the view away from it. Omitted before the player has actually joined/placed a base.
+  if (ctx.me?.mainBaseTile) {
+    const hIconSize = aIconSize;
+    const hIcon = buildIcon('home', hIconSize, C.light);
+    const hTxt = txt(t('world.home'), snapFont(Math.round(aucH * 0.34)), C.light);
+    hTxt.anchor.set(0, 0.5);
+    const hGrpW = hIconSize + 4 + hTxt.width;
+    const homeW = Math.ceil(hGrpW) + 24;
+    const homeBtn = sketchButton(homeW, aucH, seedFor(1, 2, homeW));
+    homeBtn.x = shopBtn.x - homeW - 8;
+    homeBtn.y = aucBtn.y;
+    layer.addChild(homeBtn);
+    const hGx = homeBtn.x + (homeW - hGrpW) / 2;
+    hIcon.x = hGx;
+    hIcon.y = homeBtn.y + (aucH - hIconSize) / 2;
+    hTxt.x = hGx + hIconSize + 4;
+    hTxt.y = homeBtn.y + aucH / 2;
+    layer.addChild(hIcon);
+    layer.addChild(hTxt);
+    ctx.homeBtnRect = { x: homeBtn.x, y: homeBtn.y, w: homeW, h: aucH };
+  } else {
+    ctx.homeBtnRect = { x: 0, y: 0, w: 0, h: 0 };
+  }
+
   // Per-resource readout — centered between the back button and the shop button,
   // replacing the old "World" title text. Two stacked lines per resource: production
   // rate on top, current stockpile total underneath (2026-08-09: the total used to live
@@ -105,7 +131,7 @@ export function renderHeaderHud(ctx: WorldMapContext): void {
   }
   cx -= gap;
   const leftBound = ctx.backRect.x + ctx.backRect.w + 8;
-  const rightBound = shopBtn.x - 8;
+  const rightBound = (ctx.homeBtnRect.w > 0 ? ctx.homeBtnRect.x : shopBtn.x) - 8;
 
   // Shrink-to-fit (2026-08-11 portrait clipping fix): at nominal sizes, 5 resources'
   // rate+total labels can badly overflow the narrow portrait design width (1080) once

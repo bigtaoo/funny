@@ -853,6 +853,7 @@ export const de: Record<TranslationKey, string> = {
   'world.marchKindReinforce': 'Verstärken',
   'world.marchTime': '~{sec}s Marsch',
   'world.myBase': 'Meine Basis',
+  'world.home': 'Heim',
   'world.occupied': 'Besetzt',
   'world.occupying': 'Wird besetzt (noch {sec}s)',
   'world.occupyingMine': 'Deine Besetzung hält (noch {sec}s bis Übernahme)',
