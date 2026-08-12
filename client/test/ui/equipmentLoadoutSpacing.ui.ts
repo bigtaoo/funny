@@ -16,7 +16,7 @@ import { createLayout } from '../../src/layout/ScalingManager';
 import { InputManager } from '../../src/inputSystem/InputManager';
 import { initI18n, t } from '../../src/i18n';
 import { EquipmentScene, type EquipmentCallbacks } from '../../src/scenes/EquipmentScene';
-import { MAT_BAND_H, FILTER_H, TAB_LOADOUT_GAP, LOADOUT_H, LIST_TOP_PAD, SECTION_H } from '../../src/scenes/EquipmentScene/base';
+import { MAT_BAND_H, FILTER_H, TAB_LOADOUT_GAP, LOADOUT_H, LIST_TOP_PAD, SECTION_H } from '../../src/scenes/EquipmentScene/layout';
 import { makeNewSave } from '../../src/game/meta/SaveData';
 import type { SaveData } from '../../src/game/meta/SaveData';
 
@@ -34,9 +34,11 @@ const LANDSCAPE: [number, number] = [1280, 800];
 
 interface Rect { x: number; y: number; w: number; h: number; }
 interface SceneInternals {
-  headerH: number;
-  w: number;
-  hitRects: { rect: Rect; action: () => void }[];
+  core: {
+    headerH: number;
+    w: number;
+    hitRects: { rect: Rect; action: () => void }[];
+  };
 }
 
 /** Every PIXI.Text node whose text matches `label`, with its render position. */
@@ -53,8 +55,8 @@ function findLabelPositions(container: PIXI.Container, label: string): Array<{ x
 /** Section-header hit rects: full-width (x=0), height SECTION_H — see InventoryMixin.renderSectionHeader.
  *  Item cells, the loadout strip and the filter bar all use different heights/x-offsets. */
 function findSectionHeaderYs(internals: SceneInternals): number[] {
-  return internals.hitRects
-    .filter((h) => h.rect.x === 0 && h.rect.w === internals.w && h.rect.h === SECTION_H)
+  return internals.core.hitRects
+    .filter((h) => h.rect.x === 0 && h.rect.w === internals.core.w && h.rect.h === SECTION_H)
     .map((h) => h.rect.y)
     .sort((a, b) => a - b);
 }
@@ -92,7 +94,7 @@ describe('EquipmentScene — gap between the filter tabs and the loadout strip (
   it('the loadout caption sits TAB_LOADOUT_GAP below the filter bar, not flush against it', () => {
     const scene = buildScene('card1');
     const internals = scene as unknown as SceneInternals;
-    const expectedBodyTop = internals.headerH + MAT_BAND_H + FILTER_H + TAB_LOADOUT_GAP;
+    const expectedBodyTop = internals.core.headerH + MAT_BAND_H + FILTER_H + TAB_LOADOUT_GAP;
 
     // renderLoadout draws its "Equipped" caption at (left+10, bodyTop+4).
     const positions = findLabelPositions(scene.container, t('equip.loadout'));
@@ -108,7 +110,7 @@ describe('EquipmentScene — gap between the filter tabs and the loadout strip (
   it('bag mode (no loadout strip) is unaffected — the filter bar still returns FILTER_H + TAB_LOADOUT_GAP as bodyTop', () => {
     const scene = buildScene('');
     const internals = scene as unknown as SceneInternals;
-    const expectedBodyTop = internals.headerH + MAT_BAND_H + FILTER_H + TAB_LOADOUT_GAP;
+    const expectedBodyTop = internals.core.headerH + MAT_BAND_H + FILTER_H + TAB_LOADOUT_GAP;
 
     const headerYs = findSectionHeaderYs(internals);
     expect(headerYs.length).toBeGreaterThanOrEqual(1);
@@ -122,7 +124,7 @@ describe('EquipmentScene — top padding above the first section header (LIST_TO
   it('the "Equipped" header sits LIST_TOP_PAD (not CELL_GAP) below the loadout strip', () => {
     const scene = buildScene('card1');
     const internals = scene as unknown as SceneInternals;
-    const bodyTop = internals.headerH + MAT_BAND_H + FILTER_H + TAB_LOADOUT_GAP;
+    const bodyTop = internals.core.headerH + MAT_BAND_H + FILTER_H + TAB_LOADOUT_GAP;
     const listY = bodyTop + LOADOUT_H;
 
     const headerYs = findSectionHeaderYs(internals);

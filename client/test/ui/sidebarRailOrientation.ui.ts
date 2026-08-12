@@ -145,7 +145,7 @@ function buildEquipmentScene(w: number, h: number): EquipmentScene {
 describe('EquipmentScene — [<peer>|Equipment] group rail/bottom-bar by orientation', () => {
   it('renders the peer tab at the short-edge-pegged rail width in landscape', () => {
     const landscapeScene = buildEquipmentScene(...LANDSCAPE);
-    const landscapeHits = (landscapeScene as unknown as { hitRects: Hit[] }).hitRects;
+    const landscapeHits = (landscapeScene as unknown as { core: { hitRects: Hit[] } }).core.hitRects;
     const landscapeRect = hitRectForLabel(landscapeScene.container, landscapeHits, t('roster.title'));
     expect(landscapeRect.w).toBe(EXPECTED_RAIL_W);
     landscapeScene.destroy();
@@ -154,7 +154,7 @@ describe('EquipmentScene — [<peer>|Equipment] group rail/bottom-bar by orienta
   it('renders the peer tab as part of a full-width bottom nav bar in portrait (§18), not the narrow rail', () => {
     const portraitScene = buildEquipmentScene(...PORTRAIT);
     const layout = createLayout(...PORTRAIT);
-    const portraitHits = (portraitScene as unknown as { hitRects: Hit[] }).hitRects;
+    const portraitHits = (portraitScene as unknown as { core: { hitRects: Hit[] } }).core.hitRects;
     const portraitRect = hitRectForLabel(portraitScene.container, portraitHits, t('roster.title'));
     expect(portraitRect.y).toBeGreaterThan(layout.designHeight * 0.85);
     expect(portraitRect.w).toBeGreaterThan(EXPECTED_RAIL_W);

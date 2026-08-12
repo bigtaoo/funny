@@ -14,7 +14,7 @@ import { createLayout } from '../../src/layout/ScalingManager';
 import { InputManager } from '../../src/inputSystem/InputManager';
 import { initI18n } from '../../src/i18n';
 import { EquipmentScene, type EquipmentCallbacks } from '../../src/scenes/EquipmentScene';
-import { CELL_GAP, CELL_GAP_X, EQUIP_CELL_H, EQUIP_CELL_W_MIN, EQUIP_CELL_W_TARGET, CRAFT_CELL_H } from '../../src/scenes/EquipmentScene/base';
+import { CELL_GAP, CELL_GAP_X, EQUIP_CELL_H, EQUIP_CELL_W_MIN, EQUIP_CELL_W_TARGET, CRAFT_CELL_H } from '../../src/scenes/EquipmentScene/layout';
 import { makeNewSave } from '../../src/game/meta/SaveData';
 import type { SaveData, EquipRarity } from '../../src/game/meta/SaveData';
 
@@ -33,10 +33,12 @@ const PORTRAIT: [number, number] = [375, 812];
 
 interface Rect { x: number; y: number; w: number; h: number; }
 interface SceneInternals {
-  hitRects: { rect: Rect; action: () => void }[];
-  headerH: number;
-  scrollY: number;
-  activeTab: 'inv' | 'craft';
+  core: {
+    hitRects: { rect: Rect; action: () => void }[];
+    headerH: number;
+    scrollY: number;
+    activeTab: 'inv' | 'craft';
+  };
   render(): void;
 }
 
@@ -121,7 +123,7 @@ function groupByRow(cells: Rect[]): Rect[][] {
 describe('EquipmentScene — inventory grid: horizontal-only gap doubling', () => {
   it('cells in the same row sit CELL_GAP_X apart horizontally; rows stay CELL_GAP apart vertically', () => {
     const scene = buildScene(...LANDSCAPE);
-    const cells = (scene as unknown as SceneInternals).hitRects
+    const cells = (scene as unknown as SceneInternals).core.hitRects
       .map((h) => h.rect)
       .filter((r) => r.h === EQUIP_CELL_H);
     expect(cells.length).toBeGreaterThan(4); // several rows × several columns
@@ -148,14 +150,14 @@ describe('EquipmentScene — inventory grid: horizontal-only gap doubling', () =
     const scene = buildScene(...LANDSCAPE);
     const internals = scene as unknown as SceneInternals;
     // Scroll to a value that lands a row mid-straddle across the old unclipped boundary.
-    internals.scrollY = Math.round(EQUIP_CELL_H / 2);
+    internals.core.scrollY = Math.round(EQUIP_CELL_H / 2);
     internals.render();
 
     const masked = findMaskedLayers(scene.container);
     expect(masked.length).toBeGreaterThan(0);
     // At least one masked layer's clip rect starts below the header — i.e. it is confined to
     // the body list band, not covering the whole screen (which would defeat the point).
-    expect(masked.some((m) => m.maskRect.y > internals.headerH)).toBe(true);
+    expect(masked.some((m) => m.maskRect.y > internals.core.headerH)).toBe(true);
     scene.destroy();
   });
 });
@@ -164,7 +166,7 @@ describe('EquipmentScene — craft grid: horizontal-only gap doubling + scroll m
   it('craft cells in the same row sit CELL_GAP_X apart horizontally; rows stay CELL_GAP apart vertically', () => {
     const scene = buildScene(...LANDSCAPE);
     const internals = scene as unknown as SceneInternals;
-    internals.activeTab = 'craft';
+    internals.core.activeTab = 'craft';
     internals.render();
 
     const cells = findCellPanels(scene.container, CRAFT_CELL_H);
@@ -191,13 +193,13 @@ describe('EquipmentScene — craft grid: horizontal-only gap doubling + scroll m
   it('the craft grid renders into a layer masked to the visible list band', () => {
     const scene = buildScene(...LANDSCAPE);
     const internals = scene as unknown as SceneInternals;
-    internals.activeTab = 'craft';
-    internals.scrollY = Math.round(CRAFT_CELL_H / 2);
+    internals.core.activeTab = 'craft';
+    internals.core.scrollY = Math.round(CRAFT_CELL_H / 2);
     internals.render();
 
     const masked = findMaskedLayers(scene.container);
     expect(masked.length).toBeGreaterThan(0);
-    expect(masked.some((m) => m.maskRect.y > internals.headerH)).toBe(true);
+    expect(masked.some((m) => m.maskRect.y > internals.core.headerH)).toBe(true);
     scene.destroy();
   });
 });
@@ -208,7 +210,7 @@ describe('EquipmentScene — craft grid: horizontal-only gap doubling + scroll m
 describe('EquipmentScene — inventory grid: portrait fits a 3rd, narrower column instead of a blank band', () => {
   it('packs 3 columns per row, each within [EQUIP_CELL_W_MIN, EQUIP_CELL_W_TARGET], filling the row with no leftover blank band', () => {
     const scene = buildScene(...PORTRAIT);
-    const cells = (scene as unknown as SceneInternals).hitRects
+    const cells = (scene as unknown as SceneInternals).core.hitRects
       .map((h) => h.rect)
       .filter((r) => r.h === EQUIP_CELL_H);
     const rows = groupByRow(cells);

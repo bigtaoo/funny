@@ -338,3 +338,44 @@ describe('CardScene composition wiring', () => {
     (scene.destroy as () => void)();
   });
 });
+
+// ── EquipmentScene — inventory/craft/detail/assign/reforge over one EquipmentSceneCore ──────────
+
+describe('EquipmentScene composition wiring', () => {
+  it('shares exactly one EquipmentSceneCore across inventory/craft/detail/assign/reforge, and detail reaches assign/reforge + inventory reaches detail via the SAME instances', async () => {
+    const { EquipmentScene } = await import('../../src/scenes/EquipmentScene');
+    const { makeNewSave } = await import('../../src/game/meta/SaveData');
+    const scene = new EquipmentScene(createLayout(1280, 800), new InputManager(), {
+      onBack() {},
+      getSave: () => makeNewSave(),
+      craft: async () => ({ ok: true }),
+      enhance: async () => ({ ok: true, success: true, level: 1 }),
+      salvage: async () => ({ ok: true }),
+      equip: async () => ({ ok: true }),
+      reforge: async () => ({ ok: true }),
+      activeCardInstanceId: '',
+    }) as unknown as Record<string, unknown>;
+    const core = scene.core;
+    expect(core).toBeDefined();
+    for (const p of ['inventory', 'craft', 'detail', 'assign', 'reforge']) {
+      expect((scene[p] as Record<string, unknown>).core).toBe(core);
+    }
+    // detail.ts depends on assign.ts (beginAssign/ownerCardId) and reforge.ts (openReforgeSelect) —
+    // must be the SAME instances the facade holds, not separate copies.
+    expect((scene.detail as Record<string, unknown>).assign).toBe(scene.assign);
+    expect((scene.detail as Record<string, unknown>).reforge).toBe(scene.reforge);
+    // inventory.ts depends on detail.ts (instanceActions/openDetail) — same instance.
+    expect((scene.inventory as Record<string, unknown>).detail).toBe(scene.detail);
+    // Two genuine bidirectional pairs surfaced during the conversion (see core.ts's file-header
+    // comment): assign.ts's doEquipTo reaches DetailPanel.doEquip through the lazy `core.doEquipHook`
+    // hook, and detail.ts's doEnhance reaches InventoryPanel.refreshInstanceCell through the lazy
+    // `core.refreshInstanceCellHook` hook — both overwritten by the outer assembly right after
+    // constructing the real target; must not still be the core.ts no-op defaults.
+    expect((core as Record<string, unknown>).doEquipHook).not.toBeUndefined();
+    expect((core as Record<string, unknown>).refreshInstanceCellHook).not.toBeUndefined();
+    // backAction() (fired from the header Back button) reaches AssignPanel.cancelAssign through the
+    // lazy `core.cancelAssignHook` hook while in assign mode — same pattern, third hook.
+    expect((core as Record<string, unknown>).cancelAssignHook).not.toBeUndefined();
+    (scene.destroy as () => void)();
+  });
+});

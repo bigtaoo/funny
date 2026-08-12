@@ -481,6 +481,14 @@ buildSiegeBlueprints(levels, equipped, inv)
 - `client/test/ui/equipmentGridLayout.ui.ts` 竖屏用例（复用整场景渲染）——断言背包网格整行铺满 3 列、每列宽度落在 `[EQUIP_CELL_W_MIN, EQUIP_CELL_W_TARGET]` 区间，且行右边缘正好落在竖屏设计宽（1080）减一个 `CELL_GAP` 处（无残留空白）。
 - 连同既有横屏用例（列数/间距/遮罩不变）一起跑通，`tsc --noEmit` + webpack 生产构建验证。
 
+### 11.6 实现记录（2026-08-11，✅）— mixin 继承链改判为组合
+
+`EquipmentScene` 由 `XMixin(Base)` 继承链（`base.ts`=`EquipmentSceneBase` + `Inventory/Craft/Detail/Assign/ReforgeMixin` 五段接口声明合并）改判为独立类+组合，见 `claudedocs/client-modules.md`"单文件 500 行收敛 + 拆分形态优先级"条目。文件对照：`base.ts`→`core.ts`（`EquipmentSceneCore`，`render()`/`update()` 派发上移到装配壳 `EquipmentScene.ts`）+ 二次拆出的 `types.ts`（纯接口）/`layout.ts`（网格常量+`equipGridColumns`）/`helpers.ts`（`itemName`/`itemLabel`/`affixDesc`/`equippedIds`/`stackSiblingIds`/`canAffordEnhance` 等纯函数，均无 Core 状态依赖）；`InventoryMixin`→`inventory.ts`=`InventoryPanel`（+ 二次拆出的 `cells.ts`：`renderInstanceCell`/`renderLoadout` 两个最大的格子绘制函数，显式 `(core, detail, ...)` 传参）；`CraftMixin`→`craft.ts`=`CraftPanel`；`DetailMixin`→`detail.ts`=`DetailPanel`；`AssignMixin`→`assign.ts`=`AssignPanel`；`ReforgeMixin`→`reforge.ts`=`ReforgePanel`。本文档上方各条历史记录里出现的 `EquipmentSceneBase`/`InventoryMixin`/`DetailMixin`/`AssignMixin` 等类名，现分别对应 `EquipmentSceneCore`/`InventoryPanel`/`DetailPanel`/`AssignPanel`，机制描述本身不变，不逐条改写。
+
+转换中发现两对真双向依赖（`inventory.ts`↔`detail.ts`：前者的 `renderInstanceCell` 调后者的 `instanceActions`/`openDetail`，后者的 `doEnhance` 调前者的单格增量重绘 `refreshInstanceCell`；`detail.ts`↔`assign.ts`：前者的 `instanceActions` 调后者的 `beginAssign`/`ownerCardId`，后者的 `doEquipTo` 调前者的 `doEquip`），均用 Core 惰性钩子（`refreshInstanceCellHook`/`doEquipHook`，同 `CardScene` 的 `doFuse`/`AuctionScene` 的 `reopenCreateForm` 手法）切断，装配顺序 `reforge → assign → detail → inventory → craft`。§11.3/§11.4 记录的单格增量重绘优化（`refreshInstanceCell`）逻辑原样保留，未因这次转换而简化或回退成全量 `render()`。
+
+测试：`client/test/ui/composition-wiring.ui.ts` 新增identity-check 描述块（每个兄弟类持有装配壳同一个 `core`/被依赖兄弟实例，三个惰性钩子均已被覆盖）；既有 ~30 个 `test/ui/equipment*.ui.ts` + `scenes.ui.ts` 的 EquipmentScene 用例改走 `.core.xxx`/`.detail.xxx`/`.assign.xxx`/`.reforge.xxx` 字段路径，行为断言不变。`tsc --noEmit` + `npm run test:ui`（全量 156 文件/1426 项）+ `npm test`（160 文件/1275 项）+ `npm run build:web` 均通过。
+
 ---
 
 ## 12. 经济联动

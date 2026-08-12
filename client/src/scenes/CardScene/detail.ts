@@ -11,7 +11,7 @@ import { buildIcon } from '../../render/icons';
 import { buildLevelStars } from '../../render/levelStars';
 import { buildEquipIcon } from '../../render/atlas/equipmentAtlas';
 import { buildFactionIcon, FACTION_COLOR } from '../../render/factionIcon';
-import { RARITY_COLOR } from '../EquipmentScene/base';
+import { RARITY_COLOR } from '../EquipmentScene/layout';
 import type { SaveData, CardInstance, EquipSlot } from '../../game/meta/SaveData';
 import { CARD_DEFS, MAX_CARD_LEVEL, FUSION_MATERIAL_COUNT, fusionMaterialCandidates, troopCap, cardPower, cardHp, cardSiegeValue } from '../../game/meta/cardDefs';
 import { skinsForUnitType, skinDisplayName } from '../../game/meta/skinDefs';

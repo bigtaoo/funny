@@ -56,7 +56,7 @@ describe('EquipmentScene detail modal — demote-risk warning (ADR-063)', () => 
     const scene = buildEquipmentSceneWithInstance({
       id: 'i7', defId: 'ar_cardstock', rarity: 'fine', level: 7, affixes: [{ id: 'm_hp', value: 10 }],
     });
-    scene.openDetail('i7');
+    (scene as unknown as { detail: { openDetail(id: string): void } }).detail.openDetail('i7');
 
     const expected = t('equip.enhanceDemoteWarn').replace('{pct}', '20');
     const label = findLabel(scene.container, (text) => text.includes('drop 1 level'));
@@ -69,7 +69,7 @@ describe('EquipmentScene detail modal — demote-risk warning (ADR-063)', () => 
     const scene = buildEquipmentSceneWithInstance({
       id: 'i8', defId: 'ar_cardstock', rarity: 'fine', level: 8, affixes: [{ id: 'm_hp', value: 10 }],
     });
-    scene.openDetail('i8');
+    (scene as unknown as { detail: { openDetail(id: string): void } }).detail.openDetail('i8');
 
     const expected = t('equip.enhanceDemoteWarn').replace('{pct}', '25');
     const label = findLabel(scene.container, (text) => text.includes('drop 1 level'));
@@ -82,7 +82,7 @@ describe('EquipmentScene detail modal — demote-risk warning (ADR-063)', () => 
     const scene = buildEquipmentSceneWithInstance({
       id: 'i6', defId: 'ar_cardstock', rarity: 'fine', level: 6, affixes: [{ id: 'm_hp', value: 10 }],
     });
-    scene.openDetail('i6');
+    (scene as unknown as { detail: { openDetail(id: string): void } }).detail.openDetail('i6');
 
     const label = findLabel(scene.container, (text) => text.includes('drop 1 level'));
     expect(label).toBeNull();

@@ -11,7 +11,7 @@ import { createLayout } from '../../src/layout/ScalingManager';
 import { InputManager } from '../../src/inputSystem/InputManager';
 import { initI18n } from '../../src/i18n';
 import { EquipmentScene, type EquipmentCallbacks } from '../../src/scenes/EquipmentScene';
-import { EQUIP_CELL_H } from '../../src/scenes/EquipmentScene/base';
+import { EQUIP_CELL_H } from '../../src/scenes/EquipmentScene/layout';
 import { makeNewSave } from '../../src/game/meta/SaveData';
 import type { SaveData } from '../../src/game/meta/SaveData';
 
@@ -99,7 +99,7 @@ describe('EquipmentScene — equipped-tag text stays within its cell', () => {
       const scene = buildScene(w, h);
       // The Equipped section starts collapsed by default (2026-08-01) — expand it so its item
       // cells (under test here) actually render; unrelated to the tag-overflow fix this pins.
-      (scene as unknown as { collapsedSections: Set<string>; render(): void }).collapsedSections.delete('equipped');
+      (scene as unknown as { core: { collapsedSections: Set<string> } }).core.collapsedSections.delete('equipped');
       (scene as unknown as { render(): void }).render();
       const cells = findCellPanels(scene.container);
       const tags = findEquippedTags(scene.container);

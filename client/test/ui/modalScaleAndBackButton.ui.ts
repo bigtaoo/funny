@@ -57,8 +57,10 @@ type SceneInternals = {
   handleUp(): void;
 };
 
+/** EquipmentScene (2026-08-11 composition conversion) keeps this same shape, but on `core`, not the
+ *  scene instance itself — see EquipmentScene/core.ts. */
 function internals(scene: EquipmentScene): SceneInternals {
-  return scene as unknown as SceneInternals;
+  return (scene as unknown as { core: SceneInternals }).core;
 }
 
 /** CardScene (2026-08-11 composition conversion) keeps this same shape, but on `core`, not the
@@ -140,7 +142,7 @@ describe('Back button stays reachable while a detail modal is open', () => {
 
   it('EquipmentScene: tapping Back with the item detail modal open calls onBack', () => {
     const { scene, calls } = buildEquipmentScene(...LANDSCAPE);
-    (scene as unknown as { openDetail(id: string): void }).openDetail('i1');
+    (scene as unknown as { detail: { openDetail(id: string): void } }).detail.openDetail('i1');
     expect(internals(scene).modalOpen).toBe(true);
 
     tapCenter(internals(scene), internals(scene).backRect);
@@ -151,8 +153,8 @@ describe('Back button stays reachable while a detail modal is open', () => {
 
   it('EquipmentScene: tapping Back with the reforge modal open calls onBack', () => {
     const { scene, calls } = buildEquipmentScene(...LANDSCAPE);
-    const save = (scene as unknown as { cb: EquipmentCallbacks }).cb.getSave();
-    (scene as unknown as { openReforgeSelect(inst: unknown): void }).openReforgeSelect(save.equipmentInv['i1']);
+    const save = (scene as unknown as { core: { cb: EquipmentCallbacks } }).core.cb.getSave();
+    (scene as unknown as { reforge: { openReforgeSelect(inst: unknown): void } }).reforge.openReforgeSelect(save.equipmentInv['i1']);
     expect(internals(scene).modalOpen).toBe(true);
 
     tapCenter(internals(scene), internals(scene).backRect);
@@ -225,7 +227,7 @@ describe('Detail/reforge modal panel scales to 80% of the constrained screen axi
 
   it('EquipmentScene item detail: landscape fills 80% of screen height', () => {
     const { scene } = buildEquipmentScene(...LANDSCAPE);
-    (scene as unknown as { openDetail(id: string): void }).openDetail('i1');
+    (scene as unknown as { detail: { openDetail(id: string): void } }).detail.openDetail('i1');
     const inner = internals(scene);
     expect(inner.landscape).toBe(true);
 
@@ -245,7 +247,7 @@ describe('Detail/reforge modal panel scales to 80% of the constrained screen axi
 
   it('EquipmentScene item detail: portrait fills 80% of screen width', () => {
     const { scene } = buildEquipmentScene(...PORTRAIT);
-    (scene as unknown as { openDetail(id: string): void }).openDetail('i1');
+    (scene as unknown as { detail: { openDetail(id: string): void } }).detail.openDetail('i1');
     const inner = internals(scene);
     expect(inner.landscape).toBe(false);
 
@@ -261,8 +263,8 @@ describe('Detail/reforge modal panel scales to 80% of the constrained screen axi
   it('EquipmentScene reforge picker: landscape fills 80% of screen height, portrait fills 80% of width', () => {
     const build = (w: number, h: number) => {
       const { scene } = buildEquipmentScene(w, h);
-      const save = (scene as unknown as { cb: EquipmentCallbacks }).cb.getSave();
-      (scene as unknown as { openReforgeSelect(inst: unknown): void }).openReforgeSelect(save.equipmentInv['i1']);
+      const save = (scene as unknown as { core: { cb: EquipmentCallbacks } }).core.cb.getSave();
+      (scene as unknown as { reforge: { openReforgeSelect(inst: unknown): void } }).reforge.openReforgeSelect(save.equipmentInv['i1']);
       return scene;
     };
 
@@ -313,7 +315,7 @@ describe('EquipmentScene modal — press-drag-release', () => {
 
   it('a clean tap outside the panel (down+up, no drag) closes the modal on release', () => {
     const { scene, input } = buildWithInput(...LANDSCAPE);
-    (scene as unknown as { openDetail(id: string): void }).openDetail('i1');
+    (scene as unknown as { detail: { openDetail(id: string): void } }).detail.openDetail('i1');
     expect(internals(scene).modalOpen).toBe(true);
 
     input._emitDown(internals(scene).w - 2, internals(scene).h - 2);
@@ -326,7 +328,7 @@ describe('EquipmentScene modal — press-drag-release', () => {
 
   it('a drag started outside the panel does NOT close the modal', () => {
     const { scene, input } = buildWithInput(...LANDSCAPE);
-    (scene as unknown as { openDetail(id: string): void }).openDetail('i1');
+    (scene as unknown as { detail: { openDetail(id: string): void } }).detail.openDetail('i1');
 
     const x = internals(scene).w - 2;
     const y = internals(scene).h - 2;
