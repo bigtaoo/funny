@@ -33,7 +33,7 @@ const LANDSCAPE_TOP_INSET = 130;
 function buildHudHarness(
   yieldRate: Record<string, number> = {},
   resources: Record<string, number> = {},
-  dims: { w?: number; topInset?: number } = {},
+  dims: { w?: number; topInset?: number; mainBaseTile?: string } = {},
 ) {
   const w = dims.w ?? W;
   const topInset = dims.topInset ?? TOP_INSET;
@@ -46,10 +46,10 @@ function buildHudHarness(
     worldChatLatest: null,
     worldChatUnread: 0,
     zoom: 1 as const,
-    me: { joined: true, troops: 10, troopCap: 100, territoryCount: 1, resources, yieldRate },
+    me: { joined: true, mainBaseTile: dims.mainBaseTile, troops: 10, troopCap: 100, territoryCount: 1, resources, yieldRate },
     marches: [],
     marchesExpanded: false,
-    parseTileId: (id: string) => { const p = id.split(':'); return [Number(p[1]), Number(p[2])]; },
+    parseTileId: (id: string) => { const p = id.split(':'); return [Number(p[p.length - 2]), Number(p[p.length - 1])]; },
     cb: { accountId: 'me', getCoins: () => 0 },
   } as unknown as WorldMapContext;
 
@@ -174,5 +174,42 @@ describe('WorldMapPanels.renderHud — resource stockpile totals moved into the 
     expect(texts).toEqual(
       expect.arrayContaining(['45859', '136108', '144207', '135884', '999999'])
     );
+  });
+
+  // 2026-08-12 follow-up: the new "回家" (home) button (headerHud.ts) sits between the resource
+  // cluster and the shop button once the player has a base, so the cluster's actual available
+  // width shrinks further than these tests above ever exercised (they never set mainBaseTile,
+  // so homeBtnRect stayed a zero rect and the shrink-to-fit right bound fell back to the shop
+  // button, same as before the home button existed). Rerun the exact overflow scenario with a
+  // base placed to confirm the fit now respects the tighter home-button boundary instead.
+  it('with a base placed (home button present), the same 6-digit totals shrink to fit against the home button, not the shop button', () => {
+    const { ctx, panels } = buildHudHarness(
+      { ink: 100, paper: 0, graphite: 600, metal: 0, sticker: 0 },
+      { ink: 45859, paper: 136108, graphite: 144207, metal: 135884, sticker: 999999 },
+      { mainBaseTile: 'world:1:0:30:40' },
+    );
+    panels.renderHud();
+    expect(ctx.homeBtnRect.w).toBeGreaterThan(0); // sanity: home button actually rendered
+    const cluster = findCluster(ctx);
+    expect(cluster.x).toBeGreaterThanOrEqual(ctx.backRect.x + ctx.backRect.w);
+    // The tighter bound: home button, not shop button (which now sits further right, past home).
+    expect(cluster.x + cluster.width).toBeLessThanOrEqual(ctx.homeBtnRect.x);
+    const texts = clusterTexts(ctx);
+    expect(texts).toEqual(
+      expect.arrayContaining(['45859', '136108', '144207', '135884', '999999'])
+    );
+  });
+
+  it('landscape + base placed: the same 6-digit totals still fit at full scale against the home button', () => {
+    const { ctx, panels } = buildHudHarness(
+      { ink: 100, paper: 0, graphite: 600, metal: 0, sticker: 0 },
+      { ink: 45859, paper: 136108, graphite: 144207, metal: 135884, sticker: 999999 },
+      { w: LANDSCAPE_W, topInset: LANDSCAPE_TOP_INSET, mainBaseTile: 'world:1:0:30:40' },
+    );
+    panels.renderHud();
+    expect(ctx.homeBtnRect.w).toBeGreaterThan(0);
+    const cluster = findCluster(ctx);
+    expect(cluster.scale.x).toBe(1);
+    expect(cluster.x + cluster.width).toBeLessThanOrEqual(ctx.homeBtnRect.x);
   });
 });

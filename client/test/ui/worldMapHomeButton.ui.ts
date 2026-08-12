@@ -13,7 +13,10 @@ import * as PIXI from 'pixi.js-legacy';
 import { initI18n } from '../../src/i18n';
 import { WorldMapPanels } from '../../src/scenes/worldmap/WorldMapPanels';
 import { WorldMapInput } from '../../src/scenes/worldmap/WorldMapInput';
-import type { WorldMapContext } from '../../src/scenes/worldmap/WorldMapContext';
+import { WorldMapContext, type WorldMapCallbacks } from '../../src/scenes/worldmap/WorldMapContext';
+import { WorldMapRenderer } from '../../src/scenes/worldmap/WorldMapRenderer';
+import { HUD_H } from '../../src/scenes/worldmap/constants';
+import type { ILayout } from '../../src/layout/ILayout';
 
 const memStore = (() => {
   const m = new Map<string, string>();
@@ -149,5 +152,94 @@ describe('WorldMapInput.handleDown — home button recenters the camera on the p
     expect(centerAt).not.toHaveBeenCalled();
     // Consumed by the homeBtnRect hit-test, not passed through to the drag-begin gate.
     expect(ctx.dragging).toBe(false);
+  });
+
+  // Boundary check: headerHud.ts lays the two buttons out with an 8px gap between them
+  // (`shopBtn.x = homeBtn.x + homeW + 8` — see renderHeaderHud), so a tap right at either
+  // button's own edge must fire only that button, never bleed into its neighbour.
+  it('adjacent shop/home buttons each fire only their own action at their shared boundary', () => {
+    const homeBtnRect = { x: 300, y: 10, w: 100, h: 40 };
+    const shopBtnRect = { x: homeBtnRect.x + homeBtnRect.w + 8, y: 10, w: 100, h: 40 };
+    const { ctx, input, centerAt } = buildInputHarness({ mainBaseTile: `${WORLD_ID}:${BASE.x}:${BASE.y}`, homeBtnRect });
+    (ctx as unknown as { shopBtnRect: typeof shopBtnRect }).shopBtnRect = shopBtnRect;
+    const openShopPanel = vi.fn();
+    (ctx.panels as unknown as { openShopPanel: () => void }).openShopPanel = openShopPanel;
+
+    // Rightmost pixel of the home button — still home, not shop.
+    input.handleDown(homeBtnRect.x + homeBtnRect.w - 1, homeBtnRect.y + homeBtnRect.h / 2);
+    expect(centerAt).toHaveBeenCalledTimes(1);
+    expect(openShopPanel).not.toHaveBeenCalled();
+
+    // Leftmost pixel of the shop button (8px further right, across the gap) — now shop, not home.
+    input.handleDown(shopBtnRect.x, shopBtnRect.y + shopBtnRect.h / 2);
+    expect(openShopPanel).toHaveBeenCalledTimes(1);
+    expect(centerAt).toHaveBeenCalledTimes(1); // unchanged — still just the first tap
+  });
+
+  // The header-button hit-tests were pulled into headerButtons.ts (hitTestHeaderButtons) so
+  // WorldMapInput.ts would fit back under the 500-line convention; guard that the extraction
+  // didn't disturb handleDown's fallthrough to the march-row loop that runs right after it.
+  it('a tap that misses every header button still falls through to march-row click-to-center', () => {
+    const { ctx, input, centerAt: homeCenterAt } = buildInputHarness({ mainBaseTile: `${WORLD_ID}:${BASE.x}:${BASE.y}` });
+    const rowRect = { x: 10, y: TOP_INSET + 5, w: 50, h: 20 };
+    (ctx as unknown as { marchRowRects: unknown[] }).marchRowRects = [
+      { marchId: 'm1', worldId: WORLD_ID, destX: 77, destY: 88, rowRect, recallRect: null, instantReturnRect: null },
+    ];
+    input.handleDown(rowRect.x + 5, rowRect.y + 5);
+    expect(homeCenterAt).toHaveBeenCalledWith(77, 88);
+  });
+});
+
+// End-to-end sanity check through the REAL wiring (WorldMapContext + WorldMapRenderer +
+// WorldMapPanels + WorldMapInput — mirrors worldMapZoom3CityAnchor.ui.ts's harness), not a
+// hand-rolled ctx: proves the header actually renders a clickable home button at the rect it
+// reports, and that clicking it through the full handleDown→hitTestHeaderButtons→view.centerAt
+// chain really moves the camera, not just that the mocked collaborators were called.
+describe('WorldMap home button — real scene wiring end-to-end', () => {
+  const LAYOUT = { designWidth: 1280, designHeight: 800 } as ILayout;
+  const CB: WorldMapCallbacks = {
+    onBack() {}, onOpenChat() {}, onOpenAuction() {}, onReplaySiege() {}, onOpenCity() {},
+    onOpenDefense() {}, worldApi: {} as WorldMapCallbacks['worldApi'],
+    worldId: WORLD_ID, playerName: 'dbg', accountId: 'acc_dbg', storage: memStore,
+  };
+
+  function buildScene(mainBaseTile: string | undefined): WorldMapContext {
+    const ctx = new WorldMapContext(LAYOUT, CB);
+    ctx.view = new WorldMapRenderer(ctx);
+    ctx.panels = new WorldMapPanels(ctx);
+    ctx.input = new WorldMapInput(ctx);
+    ctx.net = { loadMapViewport: async () => {} } as WorldMapContext['net'];
+    ctx.view.build();
+    ctx.me = { joined: true, mainBaseTile, troops: 10, troopCap: 100, territoryCount: 1, resources: {}, yieldRate: {} } as WorldMapContext['me'];
+    return ctx;
+  }
+
+  it('clicking the rendered home button recenters the viewport on the real base tile', () => {
+    const ctx = buildScene(`${WORLD_ID}:${BASE.x}:${BASE.y}`);
+    // Start centered somewhere else entirely, then confirm the click actually moves us.
+    ctx.view.centerAt(200, 200);
+    const screenCx = ctx.w / 2;
+    const screenCy = (ctx.topInset + ctx.h - HUD_H) / 2;
+    expect(ctx.view.screenToTile(screenCx, screenCy)).not.toEqual({ x: BASE.x, y: BASE.y });
+
+    ctx.panels.renderHud();
+    const r = ctx.homeBtnRect;
+    expect(r.w).toBeGreaterThan(0); // sanity: the real render actually produced a clickable rect
+    ctx.input.handleDown(r.x + r.w / 2, r.y + r.h / 2);
+
+    expect(ctx.view.screenToTile(screenCx, screenCy)).toEqual({ x: BASE.x, y: BASE.y });
+  });
+
+  it('has no clickable home rect (and a click there is a no-op) before a base is placed', () => {
+    const ctx = buildScene(undefined);
+    ctx.view.centerAt(200, 200);
+    ctx.panels.renderHud();
+    expect(ctx.homeBtnRect).toEqual({ x: 0, y: 0, w: 0, h: 0 });
+    const screenCx = ctx.w / 2;
+    const screenCy = (ctx.topInset + ctx.h - HUD_H) / 2;
+    const before = ctx.view.screenToTile(screenCx, screenCy);
+    // Clicking where the button would have been (top-right cluster of the header) changes nothing.
+    ctx.input.handleDown(ctx.w - 60, ctx.topInset / 2);
+    expect(ctx.view.screenToTile(screenCx, screenCy)).toEqual(before);
   });
 });
