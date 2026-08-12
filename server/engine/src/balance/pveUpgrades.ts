@@ -11,6 +11,7 @@
 
 import { UNIT_BLUEPRINTS } from '../config';
 import { UnitType, type UnitBlueprint } from '../types';
+import { type Fp, toFp, fromFp, addFp, mulFp, growFp } from '../math/fixed';
 import { applyEquipment, clampEffectCaps, type EngineCardInstance, type EngineEquipInv } from './equipment';
 import { applyUnitLevels } from './progression';
 
@@ -40,8 +41,13 @@ export interface PveUpgradeDef {
   unitType: UnitType;
   stat: 'hp' | 'damage' | 'speed';
   maxLevel: number;
-  /** +x per level (fractional; multiplicatively stacked on the base value: mult = 1 + effectPerLevel × level). */
-  effectPerLevel: number;
+  /**
+   * +x per level (fp; multiplicatively stacked on the base value: mult = 1 + effectPerLevel × level,
+   * via growFp). ADR-065: fp because 'hp'/'damage' scale the now-fp `hp_fp`/`attack_fp` fields; the
+   * 'speed' stat case (applyPveUpgrades) unscales it back to a plain decimal since `speed` itself is
+   * outside ADR-065's scope — no current PVE_UPGRADE_DEFS entry actually uses 'speed'.
+   */
+  effectPerLevel: Fp;
   /** Material consumed by this upgrade. */
   material: MaterialId;
   /** Material cost for level n→n+1 = baseCost × (n+1) (linearly increasing sink). */
@@ -54,14 +60,14 @@ export interface PveUpgradeDef {
  */
 export const PVE_UPGRADE_DEFS: PveUpgradeDef[] = [
   // Infantry
-  { id: 'inf_hp',   unitType: UnitType.Infantry,     stat: 'hp',     maxLevel: 5, effectPerLevel: 0.10, material: MATERIALS.scrap, baseCost: 3 },
-  { id: 'inf_dmg',  unitType: UnitType.Infantry,     stat: 'damage', maxLevel: 5, effectPerLevel: 0.10, material: MATERIALS.scrap, baseCost: 3 },
+  { id: 'inf_hp',   unitType: UnitType.Infantry,     stat: 'hp',     maxLevel: 5, effectPerLevel: toFp(0.10), material: MATERIALS.scrap, baseCost: 3 },
+  { id: 'inf_dmg',  unitType: UnitType.Infantry,     stat: 'damage', maxLevel: 5, effectPerLevel: toFp(0.10), material: MATERIALS.scrap, baseCost: 3 },
   // ShieldBearer
-  { id: 'shd_hp',   unitType: UnitType.ShieldBearer, stat: 'hp',     maxLevel: 5, effectPerLevel: 0.12, material: MATERIALS.lead,  baseCost: 2 },
-  { id: 'shd_dmg',  unitType: UnitType.ShieldBearer, stat: 'damage', maxLevel: 5, effectPerLevel: 0.10, material: MATERIALS.lead,  baseCost: 2 },
+  { id: 'shd_hp',   unitType: UnitType.ShieldBearer, stat: 'hp',     maxLevel: 5, effectPerLevel: toFp(0.12), material: MATERIALS.lead,  baseCost: 2 },
+  { id: 'shd_dmg',  unitType: UnitType.ShieldBearer, stat: 'damage', maxLevel: 5, effectPerLevel: toFp(0.10), material: MATERIALS.lead,  baseCost: 2 },
   // Archer
-  { id: 'arc_dmg',  unitType: UnitType.Archer,       stat: 'damage', maxLevel: 5, effectPerLevel: 0.12, material: MATERIALS.binding, baseCost: 1 },
-  { id: 'arc_hp',   unitType: UnitType.Archer,       stat: 'hp',     maxLevel: 5, effectPerLevel: 0.10, material: MATERIALS.binding, baseCost: 1 },
+  { id: 'arc_dmg',  unitType: UnitType.Archer,       stat: 'damage', maxLevel: 5, effectPerLevel: toFp(0.12), material: MATERIALS.binding, baseCost: 1 },
+  { id: 'arc_hp',   unitType: UnitType.Archer,       stat: 'hp',     maxLevel: 5, effectPerLevel: toFp(0.10), material: MATERIALS.binding, baseCost: 1 },
 ];
 
 /** Looks up an upgrade definition by id. */
@@ -106,7 +112,7 @@ export function buildPvpBlueprints(): Record<UnitType, UnitBlueprint> {
   // punching bag — attack 4 / interval 1.2 / range 1 (DPS ≈ 3.3). The PvP duel sim
   // showed the Medic is non-oppressive at cost 6 (≈27% equal-ink, and adding one to
   // an army does not tip a stomp), so the aura (8 HP/s, radius 2) is left untouched.
-  bp[UnitType.Medic].attack         = 4;
+  bp[UnitType.Medic].attack_fp      = toFp(4);
   bp[UnitType.Medic].attackInterval = 1.2;
   bp[UnitType.Medic].range          = 1;
 
@@ -160,6 +166,10 @@ export function buildCampaignBlueprints(
  * @param equipmentInv   Attacker's equipment inventory for gear lookups. Optional.
  * @param siegeAcademy   Academy building seasonal buff (SLG_CITY_DESIGN P2): fractional hp/damage/siege bonuses
  *                       applied after clampEffectCaps as a post-cap layer. Ignored on other paths.
+ *                       Plain decimal ratios (ADR-065: a transient one-off input from worldsvc's academy
+ *                       level, converted to fp at this call site only — same "boundary conversion at
+ *                       point of use" pattern as engine/setup/blueprints.ts's enemyScale, not persisted
+ *                       as an fp constant anywhere).
  */
 export function buildSiegeBlueprints(
   cardInstances: EngineCardInstance[],
@@ -169,10 +179,10 @@ export function buildSiegeBlueprints(
   const bp = buildCampaignBlueprints(cardInstances, equipmentInv);
   if (siegeAcademy && (siegeAcademy.hp > 0 || siegeAcademy.damage > 0 || siegeAcademy.siege > 0)) {
     for (const unit of Object.values(bp) as UnitBlueprint[]) {
-      if (siegeAcademy.hp > 0) unit.hp = Math.round(unit.hp * (1 + siegeAcademy.hp));
-      if (siegeAcademy.damage > 0) unit.attack = Math.round(unit.attack * (1 + siegeAcademy.damage));
+      if (siegeAcademy.hp > 0) unit.hp_fp = mulFp(unit.hp_fp, addFp(toFp(1), toFp(siegeAcademy.hp)));
+      if (siegeAcademy.damage > 0) unit.attack_fp = mulFp(unit.attack_fp, addFp(toFp(1), toFp(siegeAcademy.damage)));
       // Siege value gets its own academy channel (ADR-026 "pending"): mirrors attack, on the siege path only.
-      if (siegeAcademy.siege > 0) unit.siegeValue = Math.round(unit.siegeValue * (1 + siegeAcademy.siege));
+      if (siegeAcademy.siege > 0) unit.siegeValue_fp = mulFp(unit.siegeValue_fp, addFp(toFp(1), toFp(siegeAcademy.siege)));
     }
   }
   return bp;
@@ -189,17 +199,18 @@ export function applyPveUpgrades(
   for (const def of PVE_UPGRADE_DEFS) {
     const lvl = Math.max(0, Math.min(levels[def.id] ?? 0, def.maxLevel));
     if (lvl === 0) continue;
-    const mult = 1 + def.effectPerLevel * lvl;
     const u = bp[def.unitType];
     switch (def.stat) {
       case 'hp':
-        u.hp = Math.round(u.hp * mult);
+        u.hp_fp = growFp(u.hp_fp, def.effectPerLevel, lvl);
         break;
       case 'damage':
-        u.attack = Math.round(u.attack * mult);
+        u.attack_fp = growFp(u.attack_fp, def.effectPerLevel, lvl);
         break;
       case 'speed':
-        u.speed = u.speed * mult;
+        // `speed` stays outside ADR-065's fp scope (see blueprints.ts) — unscale the fp rate back to
+        // a plain decimal for this one still-plain field. No PVE_UPGRADE_DEFS entry currently uses this.
+        u.speed = u.speed * (1 + fromFp(def.effectPerLevel) * lvl);
         break;
     }
   }

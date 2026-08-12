@@ -3,6 +3,7 @@ import { createGameEngine } from '@nw/engine/GameEngine';
 import { CAMPAIGN_LEVELS, CAMPAIGN_LEVEL_ORDER } from '../src/game/campaign/levels';
 import type { GameConfig } from '@nw/engine/types';
 import { Side } from '@nw/engine/types';
+import { toFp } from '@nw/engine/math/fixed';
 
 /**
  * Campaign (PvE) mode determinism + wiring guard.
@@ -25,13 +26,13 @@ function fingerprint(levelId: string, ticks: number): unknown {
   for (let i = 0; i < ticks; i++) engine.tick(TICK_DT);
   const s = engine.state;
   const units = Array.from(s.board.units.values())
-    .map((u) => `${u.id}:${u.unitType}:${u.side}:${u.col}:${u.y_fp}:${u.x_fp}:${u.hp}:${u.state}`)
+    .map((u) => `${u.id}:${u.unitType}:${u.side}:${u.col}:${u.y_fp}:${u.x_fp}:${u.hp_fp}:${u.state}`)
     .sort();
   return {
     elapsedTicks: s.elapsedTicks,
     phase: s.phase,
     winner: s.winner,
-    bottomBaseHp: s.bottomPlayer.baseHp,
+    bottomBaseHp: s.bottomPlayer.baseHp_fp,
     units,
     stats: s.snapshotStats(),
   };
@@ -66,7 +67,7 @@ describe('campaign mode', () => {
     // No player commands → the base should take damage over a long run.
     const engine = createGameEngine(campaignConfig('ch1_lv1'));
     for (let i = 0; i < 3000; i++) engine.tick(TICK_DT);
-    expect(engine.state.bottomPlayer.baseHp).toBeLessThan(100);
+    expect(engine.state.bottomPlayer.baseHp_fp).toBeLessThan(toFp(100));
   });
 
   it('the stress level forms a large concurrent swarm and stays deterministic', () => {

@@ -10,12 +10,13 @@
 // buildPvpBlueprints) so the comparison stays an independent guard rather than a tautology.
 import { UNIT_BLUEPRINTS } from '@nw/engine/config';
 import { UnitType } from '@nw/engine/types';
+import { toFp } from '@nw/engine/math/fixed';
 
 /** UNIT_BLUEPRINTS plus the documented static PvP overrides (PVP_LOADOUT_DESIGN §5). */
 export function pvpExpectedBlueprints(): typeof UNIT_BLUEPRINTS {
   const exp = JSON.parse(JSON.stringify(UNIT_BLUEPRINTS)) as typeof UNIT_BLUEPRINTS;
   // Medic PvP override (P4-finalized): token melee poke so it is not a 0-attack dead card.
-  exp[UnitType.Medic].attack = 4;
+  exp[UnitType.Medic].attack_fp = toFp(4);
   exp[UnitType.Medic].attackInterval = 1.2;
   exp[UnitType.Medic].range = 1;
   return exp;

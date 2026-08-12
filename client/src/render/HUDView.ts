@@ -1,6 +1,7 @@
 import * as PIXI from 'pixi.js-legacy';
 import { makeText } from './pixiText';
 import { BASE_HP, BASE_UPGRADE_COSTS, HAND_REFRESH_COST } from '@nw/engine/config';
+import { fromFp } from '@nw/engine/math/fixed';
 import { GameState } from '@nw/engine/GameState';
 import { OwnerId } from '@nw/engine/types';
 import { ILayout, Rect } from '../layout/ILayout';
@@ -166,8 +167,8 @@ export class HUDView {
     // bar blinking, NOT by turning red — otherwise our own low-HP warning would
     // collide with the enemy's red. Critical (last cell) escalates to a fast blink
     // plus an amber ⚠. See drawHpBar.
-    this.drawHpBar(this.playerHpGfx, p.baseHp, BASE_HP, factionInk.friend, pulse, pulseFast);
-    this.drawHpBar(this.enemyHpGfx,  e.baseHp, BASE_HP, factionInk.enemy,  pulse, pulseFast);
+    this.drawHpBar(this.playerHpGfx, fromFp(p.baseHp_fp), BASE_HP, factionInk.friend, pulse, pulseFast);
+    this.drawHpBar(this.enemyHpGfx,  fromFp(e.baseHp_fp), BASE_HP, factionInk.enemy,  pulse, pulseFast);
 
     const cost = p.nextUpgradeCost;
     if (cost === null) {

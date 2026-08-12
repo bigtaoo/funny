@@ -28,17 +28,17 @@ function pvpConfig(seed: number): GameConfig {
 function fingerprint(engine: IGameEngine): unknown {
   const s = engine.state;
   const units = Array.from(s.board.units.values())
-    .map((u) => `${u.id}:${u.unitType}:${u.side}:${u.col}:${u.y_fp}:${u.x_fp}:${u.hp}:${u.state}`)
+    .map((u) => `${u.id}:${u.unitType}:${u.side}:${u.col}:${u.y_fp}:${u.x_fp}:${u.hp_fp}:${u.state}`)
     .sort();
   const buildings = Array.from(s.board.buildings.values())
-    .map((b) => `${b.id}:${b.buildingType}:${b.side}:${b.col}:${b.row}:${b.hp}`)
+    .map((b) => `${b.id}:${b.buildingType}:${b.side}:${b.col}:${b.row}:${b.hp_fp}`)
     .sort();
   return {
     elapsedTicks: s.elapsedTicks,
     phase: s.phase,
     winner: s.winner,
-    bottomBaseHp: s.bottomPlayer.baseHp,
-    topBaseHp: s.topPlayer.baseHp,
+    bottomBaseHp: s.bottomPlayer.baseHp_fp,
+    topBaseHp: s.topPlayer.baseHp_fp,
     bottomInk: s.bottomPlayer.ink,
     topInk: s.topPlayer.ink,
     units,

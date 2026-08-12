@@ -32,6 +32,7 @@ import type { GameConfig, IGameEngine } from '@nw/engine/types';
 import type { LevelDefinition } from '@nw/engine/campaign/LevelDefinition';
 import { UNIT_BLUEPRINTS, CARD_DEFINITIONS } from '@nw/engine/config';
 import { buildPvpBlueprints } from '@nw/engine/balance/pveUpgrades';
+import { fromFp } from '@nw/engine/math/fixed';
 
 const TICK_DT = 1 / 30;
 const TICK_RATE = 30;
@@ -161,8 +162,8 @@ function census(engine: IGameEngine): ArmyCensus {
   let bottomHp = 0, topHp = 0, bottomCount = 0, topCount = 0;
   for (const u of engine.state.board.units.values()) {
     if (u.isDead) continue;
-    if (u.side === Side.Bottom) { bottomHp += u.hp; bottomCount++; }
-    else { topHp += u.hp; topCount++; }
+    if (u.side === Side.Bottom) { bottomHp += fromFp(u.hp_fp); bottomCount++; }
+    else { topHp += fromFp(u.hp_fp); topCount++; }
   }
   return { bottomHp, topHp, bottomCount, topCount };
 }
@@ -420,12 +421,14 @@ export function combatPowerTable(roster: PvpUnitCard[], refHit = 12): CombatPowe
   return withPvpBlueprints(() => {
     const raw = roster.map((u) => {
       const bp = UNIT_BLUEPRINTS[u.unitType];
-      const armor = bp.armor ?? 0;
+      const armor = bp.armor_fp !== undefined ? fromFp(bp.armor_fp) : 0;
       const perHit = Math.max(1, refHit - armor);
-      const ehp = bp.hp * (refHit / perHit); // hits-to-kill × refHit
-      const dps = bp.attack > 0 && bp.attackInterval > 0 ? bp.attack / bp.attackInterval : 0.5; // medic token
+      const hp = fromFp(bp.hp_fp);
+      const attack = fromFp(bp.attack_fp);
+      const ehp = hp * (refHit / perHit); // hits-to-kill × refHit
+      const dps = attack > 0 && bp.attackInterval > 0 ? attack / bp.attackInterval : 0.5; // medic token
       const cardCp = Math.sqrt(ehp * dps) * u.spawnCount;
-      return { u, bp, armor, ehp, dps, cardCp };
+      return { u, bp, hp, armor, ehp, dps, cardCp };
     });
     const inf = raw.find((r) => r.u.cardId === 'infantry_1')!;
     const norm = inf.cardCp / inf.u.cost; // infantry cpPerInk → 1.0
@@ -434,7 +437,7 @@ export function combatPowerTable(roster: PvpUnitCard[], refHit = 12): CombatPowe
       unitType: r.u.unitType,
       cost: r.u.cost,
       spawnCount: r.u.spawnCount,
-      hp: r.bp.hp,
+      hp: r.hp,
       armor: r.armor,
       dps: Math.round(r.dps * 100) / 100,
       cardCp: Math.round(r.cardCp * 10) / 10,

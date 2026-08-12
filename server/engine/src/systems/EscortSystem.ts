@@ -23,7 +23,7 @@ export class EscortSystem {
       if (escort.status !== 'moving') continue;
 
       // Death check (damage applied by CombatSystem in the same tick before this runs).
-      if (escort.hp <= 0) {
+      if (escort.hp_fp <= 0) {
         escort.status = 'dead';
         state.pushEvent({ type: 'escort_died', escortId: escort.id });
         continue;

@@ -14,6 +14,7 @@ import { sidebarNavW, bottomNavH } from '../ui/widgets/HubTabs';
 import { drawScrollIndicator } from '../ui/widgets/ScrollIndicator';
 import { wheelScrollY } from '../ui/wheelScroll';
 import { CARD_DEFINITIONS, UNIT_BLUEPRINTS, BUILDING_BLUEPRINTS } from '@nw/engine/config';
+import { fromFp } from '@nw/engine/math/fixed';
 import { CardType, type CardDefinition } from '@nw/engine/types';
 
 // ── CardCodexScene — read-only full card compendium ─────────────────────────────
@@ -418,18 +419,18 @@ export class CardCodexScene implements Scene {
     if (card.cardType === CardType.Unit && card.unitType !== undefined) {
       const b = UNIT_BLUEPRINTS[card.unitType];
       return [
-        { icon: 'hp', label: t('collection.stat.hp'), value: b.hp },
-        { icon: 'atk', label: t('collection.stat.atk'), value: b.attack },
+        { icon: 'hp', label: t('collection.stat.hp'), value: fromFp(b.hp_fp) },
+        { icon: 'atk', label: t('collection.stat.atk'), value: fromFp(b.attack_fp) },
         { icon: null, label: t('collection.stat.range'), value: b.range },
       ];
     }
     if (card.cardType === CardType.Building && card.buildingType !== undefined) {
       const b = BUILDING_BLUEPRINTS[card.buildingType];
       const out: { icon: IconKind | null; label: string; value: number }[] = [
-        { icon: 'hp', label: t('collection.stat.hp'), value: b.hp },
+        { icon: 'hp', label: t('collection.stat.hp'), value: fromFp(b.hp_fp) },
       ];
-      if (b.attack !== undefined) {
-        out.push({ icon: 'atk', label: t('collection.stat.atk'), value: b.attack });
+      if (b.attack_fp !== undefined) {
+        out.push({ icon: 'atk', label: t('collection.stat.atk'), value: fromFp(b.attack_fp) });
         if (b.attackRange !== undefined) out.push({ icon: null, label: t('collection.stat.range'), value: b.attackRange });
       }
       return out;

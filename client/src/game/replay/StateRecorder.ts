@@ -17,7 +17,7 @@
  */
 
 import { BOARD_COLS, BOARD_ROWS, ATTACK_LANES } from '@nw/engine/config';
-import { TICK_RATE } from '@nw/engine/math/fixed';
+import { TICK_RATE, fromFp } from '@nw/engine/math/fixed';
 import { sideToOwner } from '@nw/engine/types';
 import type { GameState } from '@nw/engine/GameState';
 import {
@@ -101,8 +101,8 @@ class StateRecorder {
     if (this.frames.length === 0) {
       // Anchor the base full-HP baseline on the first frame.
       this.baseMaxHp = [
-        Math.max(1, quantizeHp(state.bottomPlayer.baseHp)),
-        Math.max(1, quantizeHp(state.topPlayer.baseHp)),
+        Math.max(1, quantizeHp(fromFp(state.bottomPlayer.baseHp_fp))),
+        Math.max(1, quantizeHp(fromFp(state.topPlayer.baseHp_fp))),
       ];
     }
 
@@ -149,8 +149,8 @@ class StateRecorder {
         side: sideToOwner(u.side),
         col: quantizePos(u.colExact),
         row: quantizePos(u.rowExact),
-        hp: quantizeHp(u.hp),
-        maxHp: quantizeHp(u.maxHp),
+        hp: quantizeHp(fromFp(u.hp_fp)),
+        maxHp: quantizeHp(fromFp(u.maxHp_fp)),
         state: u.state,
       });
     }
@@ -163,14 +163,14 @@ class StateRecorder {
         side: sideToOwner(b.side),
         col: b.col,
         row: b.row,
-        hp: quantizeHp(b.hp),
-        maxHp: quantizeHp(b.maxHp),
+        hp: quantizeHp(fromFp(b.hp_fp)),
+        maxHp: quantizeHp(fromFp(b.maxHp_fp)),
       });
     }
 
     const bases: StateBase[] = [
-      { owner: 0, hp: quantizeHp(state.bottomPlayer.baseHp), maxHp: this.baseMaxHp[0] },
-      { owner: 1, hp: quantizeHp(state.topPlayer.baseHp), maxHp: this.baseMaxHp[1] },
+      { owner: 0, hp: quantizeHp(fromFp(state.bottomPlayer.baseHp_fp)), maxHp: this.baseMaxHp[0] },
+      { owner: 1, hp: quantizeHp(fromFp(state.topPlayer.baseHp_fp)), maxHp: this.baseMaxHp[1] },
     ];
 
     return { tick, units, buildings, bases };

@@ -220,7 +220,8 @@ export class GameState {
   snapshotSummary(): MatchSummary {
     let escortMinHpPct: number | null = null;
     for (const e of this.escorts) {
-      const pct = e.maxHp > 0 ? (e.hp / e.maxHp) * 100 : 0;
+      // Ratio of two fp fields — scale-invariant, no fp helper needed (ADR-065).
+      const pct = e.maxHp_fp > 0 ? (e.hp_fp / e.maxHp_fp) * 100 : 0;
       if (escortMinHpPct === null || pct < escortMinHpPct) escortMinHpPct = pct;
     }
     return { elapsedTicks: this.elapsedTicks, enemyLeaks: this.enemyLeaks, escortMinHpPct };

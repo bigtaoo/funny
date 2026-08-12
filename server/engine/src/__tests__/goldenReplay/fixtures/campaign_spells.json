@@ -4,7 +4,7 @@
     "bossUnitIds": [],
     "bottomInkRegenMult": 1,
     "bottomPlayer": {
-      "baseHp": 100,
+      "baseHp_fp": 100000,
       "hand": [
         {
           "cardId": "rockslide",
@@ -33,7 +33,7 @@
       ],
       "ink": 13,
       "isDead": false,
-      "maxBaseHp": 100,
+      "maxBaseHp_fp": 100000,
       "side": "bottom",
       "upgradeLevel": 0
     },
@@ -76,7 +76,7 @@
       "escortMinHpPct": null
     },
     "topPlayer": {
-      "baseHp": 100,
+      "baseHp_fp": 100000,
       "hand": [
         {
           "cardId": "barracks_2",
@@ -105,7 +105,7 @@
       ],
       "ink": 13,
       "isDead": false,
-      "maxBaseHp": 100,
+      "maxBaseHp_fp": 100000,
       "side": "top",
       "upgradeLevel": 0
     },
@@ -115,7 +115,7 @@
         "col": 0,
         "detourDir": 0,
         "detourTargetCol": null,
-        "hp": 60,
+        "hp_fp": 60000,
         "id": 1000,
         "isBoss": false,
         "isDead": false,
@@ -132,7 +132,7 @@
         "col": 0,
         "detourDir": 0,
         "detourTargetCol": null,
-        "hp": 60,
+        "hp_fp": 60000,
         "id": 1001,
         "isBoss": false,
         "isDead": false,
@@ -149,7 +149,7 @@
         "col": 0,
         "detourDir": 0,
         "detourTargetCol": null,
-        "hp": 60,
+        "hp_fp": 60000,
         "id": 1002,
         "isBoss": false,
         "isDead": false,
@@ -166,7 +166,7 @@
         "col": 0,
         "detourDir": 0,
         "detourTargetCol": null,
-        "hp": 60,
+        "hp_fp": 60000,
         "id": 1003,
         "isBoss": false,
         "isDead": false,
@@ -181,7 +181,7 @@
     ],
     "winner": null
   },
-  "finalStateHash": "224770cdafaa930abf57c9bb83a5cd661f6d8d473a39464156061769c383b9b9",
+  "finalStateHash": "8715076ea018fe8f8153c2595f5b6a969ace1367995a62f324360186b4cfa907",
   "name": "campaign_spells",
   "tickHashes": [
     "e7544278650ac20f238d09a5d27b481ddd4bacd02a0f13d23b10e19f8c06318e",

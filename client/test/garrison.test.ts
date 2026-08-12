@@ -222,7 +222,7 @@ describe('defenderBuildings — pre-placed defender buildings', () => {
 
     const attacker = Array.from(engine.state.board.units.values()).find(u => u.side === Side.Bottom);
     expect(attacker).toBeDefined();
-    const startHp = attacker!.hp;
+    const startHp = attacker!.hp_fp;
     const attackerId = attacker!.id;
 
     for (let i = 0; i < 300; i++) engine.tick(TICK_DT);
@@ -230,7 +230,7 @@ describe('defenderBuildings — pre-placed defender buildings', () => {
     // The tower must actually have dealt damage: the attacker either died or lost HP relative
     // to its spawn value (a bare "engine didn't crash" check has no assertion power here).
     const after = engine.state.board.units.get(attackerId);
-    const damaged = !after || after.isDead || after.hp < startHp;
+    const damaged = !after || after.isDead || after.hp_fp < startHp;
     expect(damaged).toBe(true);
 
     const topBuildings = Array.from(engine.state.board.buildings.values())

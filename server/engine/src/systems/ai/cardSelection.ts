@@ -4,6 +4,7 @@
 // (pickUnitCard takes `useCounterPicking` explicitly instead of reading `this.params`).
 import { GameState } from '../../GameState';
 import { CardDefinition, CardType, UnitBlueprint, Side } from '../../types';
+import { toFp, subFp, maxFp } from '../../math/fixed';
 import { LEGACY_DEFENSE_PREFERENCE, LEGACY_OFFENSE_PREFERENCE } from './types';
 
 /** First affordable hand slot matching `pred`, or null. */
@@ -81,12 +82,18 @@ export function counterScore(candidate: UnitBlueprint, enemies: UnitBlueprint[])
   if (enemies.length === 0) return 0;
   let score = 0;
   for (const enemy of enemies) {
-    const dmgToEnemy = Math.max(1, candidate.attack - (enemy.armor ?? 0));
-    const dmgFromEnemy = Math.max(1, enemy.attack - (candidate.armor ?? 0));
+    // ADR-065: attack_fp/armor_fp/hp_fp are fp (×1000). This heuristic's ratio terms
+    // (timeToKill/timeToDie = hp_fp/dps_fp) are scale-invariant — the ×1000 cancels
+    // exactly, so `score` comes out numerically identical to the pre-ADR-065 real-unit
+    // calculation. The two floors below are the only places that need explicit ×1000
+    // scaling to preserve behavior: "at least 1 damage point" → toFp(1); "at least 0.01
+    // DPS" (guards a divide-by-near-zero for 0-attack units like Medic) → toFp(0.01).
+    const dmgToEnemy = maxFp(toFp(1), subFp(candidate.attack_fp, enemy.armor_fp ?? toFp(0)));
+    const dmgFromEnemy = maxFp(toFp(1), subFp(enemy.attack_fp, candidate.armor_fp ?? toFp(0)));
     const candidateDps = dmgToEnemy / candidate.attackInterval;
     const enemyDps = dmgFromEnemy / enemy.attackInterval;
-    const timeToKill = enemy.hp / Math.max(0.01, candidateDps);
-    const timeToDie = candidate.hp / Math.max(0.01, enemyDps);
+    const timeToKill = enemy.hp_fp / Math.max(toFp(0.01), candidateDps);
+    const timeToDie = candidate.hp_fp / Math.max(toFp(0.01), enemyDps);
     score += timeToDie - timeToKill;
     // Range advantage: hits before the enemy can reply.
     score += (candidate.range - enemy.range) * 2;

@@ -15,7 +15,7 @@ function unitSnapshot(u: Unit) {
     col: u.col,
     x_fp: u.x_fp,
     y_fp: u.y_fp,
-    hp: u.hp,
+    hp_fp: u.hp_fp,
     state: u.state,
     isDead: u.isDead,
     isBoss: u.isBoss,
@@ -34,7 +34,7 @@ function buildingSnapshot(b: Building) {
     side: b.side,
     col: b.col,
     row: b.row,
-    hp: b.hp,
+    hp_fp: b.hp_fp,
     isDead: b.isDead,
     attackCooldownTicks: b.attackCooldownTicks,
     spawnCooldownTicks: b.spawnCooldownTicks,
@@ -46,8 +46,8 @@ function playerSnapshot(p: Player) {
     side: p.side,
     ink: p.ink,
     upgradeLevel: p.upgradeLevel,
-    baseHp: p.baseHp,
-    maxBaseHp: p.maxBaseHp,
+    baseHp_fp: p.baseHp_fp,
+    maxBaseHp_fp: p.maxBaseHp_fp,
     isDead: p.isDead,
     hand: p.hand.slots.map((s) => (s ? { cardId: s.card.id, refreshRemainingTicks: s.refreshRemainingTicks } : null)),
   };
@@ -73,7 +73,7 @@ export function snapshotState(state: GameState) {
     buildings: Array.from(state.board.buildings.values())
       .map(buildingSnapshot)
       .sort((a, b) => a.id - b.id),
-    escorts: state.escorts.map((e) => ({ id: e.id, hp: e.hp, col_fp: e.col_fp, row_fp: e.row_fp, status: e.status })),
+    escorts: state.escorts.map((e) => ({ id: e.id, hp_fp: e.hp_fp, col_fp: e.col_fp, row_fp: e.row_fp, status: e.status })),
     projectiles: state.projectiles.map((p) => ({ id: p.id, x_fp: p.x_fp, y_fp: p.y_fp })),
   };
 }

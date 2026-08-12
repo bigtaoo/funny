@@ -32,13 +32,13 @@ const ZERO_FP = toFp(0);
 const PAYLOAD = {
   attackerId: 1,
   side: Side.Bottom,
-  rawDamage: 10,
+  rawDamage: toFp(10),
   splashRadius: 0,
   piercing: false,
-  lifestealPct: 0,
+  lifestealPct: toFp(0),
   slowOnHit: null,
   burstOnSingle: false,
-  burstOnSingleMult: 2,
+  burstOnSingleMult: toFp(2),
   markEnemies: false,
 };
 

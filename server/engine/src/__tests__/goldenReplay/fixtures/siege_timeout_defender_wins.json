@@ -4,7 +4,7 @@
     "bossUnitIds": [],
     "bottomInkRegenMult": 1,
     "bottomPlayer": {
-      "baseHp": 100,
+      "baseHp_fp": 100000,
       "hand": [
         {
           "cardId": "harpy",
@@ -33,7 +33,7 @@
       ],
       "ink": 13,
       "isDead": false,
-      "maxBaseHp": 100,
+      "maxBaseHp_fp": 100000,
       "side": "bottom",
       "upgradeLevel": 0
     },
@@ -76,7 +76,7 @@
       "escortMinHpPct": null
     },
     "topPlayer": {
-      "baseHp": 100,
+      "baseHp_fp": 100000,
       "hand": [
         {
           "cardId": "infantry_2",
@@ -105,14 +105,14 @@
       ],
       "ink": 13,
       "isDead": false,
-      "maxBaseHp": 100,
+      "maxBaseHp_fp": 100000,
       "side": "top",
       "upgradeLevel": 0
     },
     "units": [],
     "winner": "top"
   },
-  "finalStateHash": "65b57b27062e895635298814f6ea3bdcbd382db7a793debf325809c7da6e8e50",
+  "finalStateHash": "4b294637331b84f3cf4b6a647b4066b3a760cf0eeb502a288bcbca8d7fb1b97a",
   "name": "siege_timeout_defender_wins",
   "tickHashes": [
     "a958c35e858543a004b22af7d385da6da4c7c68fb6ec285f4ab507cf7fe23792",

@@ -27,6 +27,7 @@ import {
   TOP_SPAWN_ROW,
   UNIT_BLUEPRINTS,
   parseLevelDefinition,
+  fromFp,
   type GarrisonEntry,
   type EngineEquipmentInput,
   type EngineCardInstance,
@@ -46,9 +47,18 @@ import {
 import type { ArmyEntry, CardSLGState } from './db';
 import { getSiegeWorkerPool } from './siegeWorkerPool';
 
+/**
+ * Real-unit full HP for a blueprint unit type. ADR-065: `@nw/engine`'s `UNIT_BLUEPRINTS` is
+ * fp-scaled internally; worldsvc's own troop/HP model (§16.1 "troops = HP") stays real units,
+ * so every read of a blueprint's `.hp_fp` from this file goes through this boundary conversion.
+ */
+function blueprintFullHp(unitType: UnitType): number {
+  return fromFp(UNIT_BLUEPRINTS[unitType].hp_fp);
+}
+
 /** Default synthesized unit type = Infantry (basic melee, full HP 60 = unit troop equivalent). §16.5 full-HP capacity table is pending tuning. */
 const SYNTH_UNIT = UnitType.Infantry;
-const HP_PER_UNIT = UNIT_BLUEPRINTS[SYNTH_UNIT].hp;
+const HP_PER_UNIT = blueprintFullHp(SYNTH_UNIT);
 
 /** Extra tick margin for bad army layouts / pathological stalemates (same pattern as §16.6 judgeRunner: time limit + margin to prevent infinite loops). */
 const TICK_MARGIN = 600;
@@ -186,7 +196,7 @@ export function scaleArmyHp(
   if (factor <= 1) return army.map((e) => ({ ...e }));
   return army.map((e) => ({
     ...e,
-    initialHp: Math.max(1, Math.floor((e.initialHp ?? UNIT_BLUEPRINTS[e.unitType].hp) * factor)),
+    initialHp: Math.max(1, Math.floor((e.initialHp ?? blueprintFullHp(e.unitType)) * factor)),
   }));
 }
 
@@ -209,7 +219,7 @@ export function toDefenderFormation(army: ReadonlyArray<GarrisonEntry>): Garriso
 /** Total deployed HP of an army layout = sum of each unit's initialHp (falling back to its blueprint full HP). Pure. (ADR-026 wave carry-over.) */
 export function sumArmyHp(army: ReadonlyArray<GarrisonEntry>): number {
   let hp = 0;
-  for (const e of army) hp += Math.max(0, Math.floor(e.initialHp ?? UNIT_BLUEPRINTS[e.unitType].hp));
+  for (const e of army) hp += Math.max(0, Math.floor(e.initialHp ?? blueprintFullHp(e.unitType)));
   return hp;
 }
 
@@ -221,7 +231,7 @@ export function scaleArmyByRatio(army: ReadonlyArray<GarrisonEntry>, ratio: numb
   const r = Math.max(0, Math.min(1, ratio));
   const out: GarrisonEntry[] = [];
   for (const e of army) {
-    const full = e.initialHp ?? UNIT_BLUEPRINTS[e.unitType].hp;
+    const full = e.initialHp ?? blueprintFullHp(e.unitType);
     const hp = Math.floor(full * r);
     if (hp >= 1) out.push({ ...e, initialHp: hp });
   }
@@ -399,12 +409,14 @@ export function runSiegeBattleSync(input: SiegeBattleInput): SiegeResolution {
   );
 
   // Accumulate surviving unit HP for both sides = real surviving troops (§16.5 survivor return to pool).
+  // ADR-065: unit.hp_fp is fp — fromFp() converts back to real units at this boundary, same as
+  // blueprintFullHp() above.
   let atkHp = 0;
   let defHp = 0;
   for (const unit of engine.state.board.units.values()) {
     if (unit.isDead) continue;
-    if (unit.side === Side.Bottom) atkHp += unit.hp;
-    else defHp += unit.hp;
+    if (unit.side === Side.Bottom) atkHp += fromFp(unit.hp_fp);
+    else defHp += fromFp(unit.hp_fp);
   }
 
   // winner=Bottom(owner0) = attacker destroyed the base and captured the tile; all other cases (Top wins / timeout / null fallback) = defense holds.

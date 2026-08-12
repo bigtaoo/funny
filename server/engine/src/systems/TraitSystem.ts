@@ -1,5 +1,5 @@
 import { BOTTOM_BUILDING_ROW, TOP_BUILDING_ROW } from '../config';
-import { FP_SCALE, TICK_RATE, toFp } from '../math/fixed';
+import { FP_SCALE, TICK_RATE, toFp, fp, addFp, minFp } from '../math/fixed';
 import { GameState } from '../GameState';
 import { Unit } from '../Unit';
 import { Side } from '../types';
@@ -11,25 +11,28 @@ import { Side } from '../types';
  * damage is resolved.
  *
  * Handles:
- *   - regenPerSec:    self HP regen (fp accumulation → integer drain)
+ *   - regenPerSec:    self HP regen (added directly into hp_fp each tick, ADR-065)
  *   - aura_heal:      heal nearby friendlies each tick
  *   - slow expiry:    decrement slowRemainingTicks, resetSpeed on expiry
  *   - summonOnTimer:  countdown; spawn unit at summoner's position when ready
  */
 export class TraitSystem {
   tick(state: GameState): void {
-    // ── Aura heal: each healer adds fp to nearby friendlies' healAccFp ─────
+    // ── Aura heal: each healer adds its heal-per-tick directly into nearby friendlies'
+    // hp_fp (clamped to maxHp_fp). ADR-065: hp_fp already carries milli-HP precision (same
+    // fp domain as healFpPerTick), so no separate accumulator is needed — pre-ADR-065 this
+    // drained a dedicated healAccFp one whole HP point at a time.
     for (const unit of state.board.units.values()) {
       if (unit.isDead || unit.traits.length === 0) continue;
       for (const trait of unit.traits) {
         if (trait.type === 'aura_heal') {
-          const healFpPerTick = Math.round(trait.hps * FP_SCALE / TICK_RATE);
+          const healFpPerTick = fp(Math.round(trait.hps * FP_SCALE / TICK_RATE));
           if (healFpPerTick <= 0) continue;
           for (const ally of state.board.units.values()) {
             if (ally.isDead || ally.side !== unit.side || ally === unit) continue;
             const dist = Math.max(Math.abs(ally.row - unit.row), Math.abs(ally.col - unit.col));
             if (dist <= trait.radius) {
-              ally.healAccFp += healFpPerTick;
+              ally.hp_fp = minFp(ally.maxHp_fp, addFp(ally.hp_fp, healFpPerTick));
             }
           }
         }
@@ -40,16 +43,9 @@ export class TraitSystem {
     for (const unit of state.board.units.values()) {
       if (unit.isDead) continue;
 
-      // Regen: add fp to accumulator.
+      // Regen: add directly into hp_fp each tick (ADR-065 — see class doc comment).
       if (unit.regenFpPerTick > 0) {
-        unit.healAccFp += unit.regenFpPerTick;
-      }
-
-      // Drain accumulated heal into integer HP.
-      if (unit.healAccFp >= FP_SCALE) {
-        const healHp = Math.trunc(unit.healAccFp / FP_SCALE);
-        unit.healAccFp = unit.healAccFp % FP_SCALE;
-        unit.hp = Math.min(unit.maxHp, unit.hp + healHp);
+        unit.hp_fp = minFp(unit.maxHp_fp, addFp(unit.hp_fp, unit.regenFpPerTick));
       }
 
       // Slow expiry: reset speed when countdown reaches 0.

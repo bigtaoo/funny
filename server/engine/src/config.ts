@@ -1,4 +1,4 @@
-import { FP_SCALE, TICK_RATE } from './math/fixed';
+import { FP_SCALE, TICK_RATE, toFp } from './math/fixed';
 import {
   BuildingType,
   CardType,
@@ -130,8 +130,70 @@ export const ARROW_TOWER_ATTACK_INTERVAL_TICKS = Math.round(1.5 * TICK_RATE);   
 export const HASTE_DURATION_TICKS = 5 * TICK_RATE;  // 150 ticks
 
 // ─── Unit blueprints ──────────────────────────────────────────────────────────
+//
+// ADR-065: this table is the human-authored, REAL-UNIT source of truth (hp: 60,
+// not 60000) — exactly the pre-ADR-065 shape, so it stays the single legible
+// place to tune numbers and cross-check against BALANCE.md/ECONOMY_NUMBERS.md.
+// `bakeUnitBlueprint` converts it once, at module load, into the fp-scaled
+// `UnitBlueprint` shape (`hp_fp`, `attack_fp`, …) that the rest of the engine
+// (balance/*.ts, Unit.ts, combat systems) consumes. Discrete/already-converted
+// fields (attackInterval, speed, range, spawnCount, radius_fp, splashRadius,
+// projectile.speed, summonOnTimer.intervalSec, slowOnHit.durationSec) pass
+// through unchanged — they were never part of this ADR's scope.
 
-export const UNIT_BLUEPRINTS: Record<UnitType, UnitBlueprint> = {
+/** Real-unit authoring shape for `UnitBlueprint` (ADR-065) — see comment above. */
+type RawUnitBlueprint = Omit<UnitBlueprint,
+  | 'hp_fp' | 'attack_fp' | 'siegeValue_fp' | 'armor_fp' | 'armorEnrageBonus_fp'
+  | 'berserkerThreshold_fp' | 'armorEnrageThreshold_fp' | 'reflectPct_fp'
+  | 'critPct_fp' | 'critMult_fp' | 'lifestealPct_fp' | 'burstOnSingleMult_fp' | 'slowOnHit'
+> & {
+  hp: number;
+  attack: number;
+  siegeValue: number;
+  armor?: number;
+  armorEnrageBonus?: number;
+  berserkerThreshold?: number;
+  armorEnrageThreshold?: number;
+  reflectPct?: number;
+  critPct?: number;
+  critMult?: number;
+  lifestealPct?: number;
+  burstOnSingleMult?: number;
+  slowOnHit?: { mult: number; durationSec: number };
+};
+
+/** Converts one real-unit `RawUnitBlueprint` into the fp-scaled `UnitBlueprint` (ADR-065). */
+function bakeUnitBlueprint(raw: RawUnitBlueprint): UnitBlueprint {
+  const {
+    hp, attack, siegeValue, armor, armorEnrageBonus, berserkerThreshold,
+    armorEnrageThreshold, reflectPct, critPct, critMult, lifestealPct,
+    burstOnSingleMult, slowOnHit, ...rest
+  } = raw;
+  return {
+    ...rest,
+    hp_fp: toFp(hp),
+    attack_fp: toFp(attack),
+    siegeValue_fp: toFp(siegeValue),
+    armor_fp: armor !== undefined ? toFp(armor) : undefined,
+    armorEnrageBonus_fp: armorEnrageBonus !== undefined ? toFp(armorEnrageBonus) : undefined,
+    berserkerThreshold_fp: berserkerThreshold !== undefined ? toFp(berserkerThreshold) : undefined,
+    armorEnrageThreshold_fp: armorEnrageThreshold !== undefined ? toFp(armorEnrageThreshold) : undefined,
+    reflectPct_fp: reflectPct !== undefined ? toFp(reflectPct) : undefined,
+    critPct_fp: critPct !== undefined ? toFp(critPct) : undefined,
+    critMult_fp: critMult !== undefined ? toFp(critMult) : undefined,
+    lifestealPct_fp: lifestealPct !== undefined ? toFp(lifestealPct) : undefined,
+    burstOnSingleMult_fp: burstOnSingleMult !== undefined ? toFp(burstOnSingleMult) : undefined,
+    slowOnHit: slowOnHit ? { mult_fp: toFp(slowOnHit.mult), durationSec: slowOnHit.durationSec } : undefined,
+  };
+}
+
+function bakeUnitBlueprints(raw: Record<UnitType, RawUnitBlueprint>): Record<UnitType, UnitBlueprint> {
+  const out = {} as Record<UnitType, UnitBlueprint>;
+  for (const key of Object.keys(raw) as UnitType[]) out[key] = bakeUnitBlueprint(raw[key]);
+  return out;
+}
+
+const RAW_UNIT_BLUEPRINTS: Record<UnitType, RawUnitBlueprint> = {
   [UnitType.Infantry]: {
     type: UnitType.Infantry,
     hp: 60,
@@ -333,9 +395,40 @@ export const UNIT_BLUEPRINTS: Record<UnitType, UnitBlueprint> = {
   },
 };
 
-// ─── Building blueprints ──────────────────────────────────────────────────────
+/** fp-scaled `UnitBlueprint` table (ADR-065) — see `RAW_UNIT_BLUEPRINTS` comment above. */
+export const UNIT_BLUEPRINTS: Record<UnitType, UnitBlueprint> = bakeUnitBlueprints(RAW_UNIT_BLUEPRINTS);
 
-export const BUILDING_BLUEPRINTS: Record<BuildingType, BuildingBlueprint> = {
+// ─── Building blueprints ──────────────────────────────────────────────────────
+//
+// ADR-065: same raw-table/bake split as UNIT_BLUEPRINTS above — real units here,
+// `bakeBuildingBlueprint` produces the fp-scaled `BuildingBlueprint` consumed by
+// the engine.
+
+/** Real-unit authoring shape for `BuildingBlueprint` (ADR-065). */
+type RawBuildingBlueprint = Omit<BuildingBlueprint, 'hp_fp' | 'attack_fp' | 'armor_fp'> & {
+  hp: number;
+  attack?: number;
+  armor?: number;
+};
+
+/** Converts one real-unit `RawBuildingBlueprint` into the fp-scaled `BuildingBlueprint` (ADR-065). */
+function bakeBuildingBlueprint(raw: RawBuildingBlueprint): BuildingBlueprint {
+  const { hp, attack, armor, ...rest } = raw;
+  return {
+    ...rest,
+    hp_fp: toFp(hp),
+    attack_fp: attack !== undefined ? toFp(attack) : undefined,
+    armor_fp: armor !== undefined ? toFp(armor) : undefined,
+  };
+}
+
+function bakeBuildingBlueprints(raw: Record<BuildingType, RawBuildingBlueprint>): Record<BuildingType, BuildingBlueprint> {
+  const out = {} as Record<BuildingType, BuildingBlueprint>;
+  for (const key of Object.keys(raw) as BuildingType[]) out[key] = bakeBuildingBlueprint(raw[key]);
+  return out;
+}
+
+const RAW_BUILDING_BLUEPRINTS: Record<BuildingType, RawBuildingBlueprint> = {
   [BuildingType.Barracks]: {
     type: BuildingType.Barracks,
     hp: 200,
@@ -353,6 +446,9 @@ export const BUILDING_BLUEPRINTS: Record<BuildingType, BuildingBlueprint> = {
     projectile: { speed: 14, kind: 'arrow' },
   },
 };
+
+/** fp-scaled `BuildingBlueprint` table (ADR-065) — see `RAW_BUILDING_BLUEPRINTS` comment above. */
+export const BUILDING_BLUEPRINTS: Record<BuildingType, BuildingBlueprint> = bakeBuildingBlueprints(RAW_BUILDING_BLUEPRINTS);
 
 // ─── Card definitions (pool) ──────────────────────────────────────────────────
 

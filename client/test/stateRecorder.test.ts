@@ -6,15 +6,20 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { stateRecorder } from '../src/game/replay/StateRecorder';
 import { decodeStateReplay, type EncodedStateReplay } from '../src/game/replay/StateReplay';
 import { Side, UnitType, UnitState, BuildingType } from '../src/game';
+import { toFp, type Fp } from '@nw/engine/math/fixed';
 import type { GameState } from '../src/game';
 
+// ADR-065: StateRecorder reads hp_fp/baseHp_fp (fp, scale FP_SCALE=1000) off the real Unit/Building/
+// Player types — these fakes mirror that fp shape so `stateRecorder.capture()` (which now calls
+// fromFp() on these fields) sees the same real-unit numbers it always has. Test assertions below stay
+// in real units, since StateRecorder quantizes back to real units before it ever reaches StateFrame.
 interface FakeUnit {
   id: number; unitType: UnitType; side: Side;
-  colExact: number; rowExact: number; hp: number; maxHp: number; state: UnitState;
+  colExact: number; rowExact: number; hp_fp: Fp; maxHp_fp: Fp; state: UnitState;
 }
 interface FakeBuilding {
   id: number; buildingType: BuildingType; side: Side;
-  col: number; row: number; hp: number; maxHp: number;
+  col: number; row: number; hp_fp: Fp; maxHp_fp: Fp;
 }
 
 function mkState(
@@ -26,8 +31,8 @@ function mkState(
 ): GameState {
   return {
     elapsedTicks: tick,
-    bottomPlayer: { baseHp: baseBottom },
-    topPlayer: { baseHp: baseTop },
+    bottomPlayer: { baseHp_fp: toFp(baseBottom) },
+    topPlayer: { baseHp_fp: toFp(baseTop) },
     board: {
       units: new Map(units.map((u) => [u.id, u])),
       buildings: new Map(buildings.map((b) => [b.id, b])),
@@ -35,10 +40,13 @@ function mkState(
   } as unknown as GameState;
 }
 
-const unit = (over: Partial<FakeUnit> = {}): FakeUnit => ({
-  id: 1000, unitType: UnitType.Infantry, side: Side.Bottom,
-  colExact: 3, rowExact: 1, hp: 100, maxHp: 100, state: UnitState.Moving, ...over,
-});
+const unit = (over: Partial<{ colExact: number; rowExact: number; hp: number; maxHp: number }> = {}): FakeUnit => {
+  const { hp = 100, maxHp = 100, colExact = 3, rowExact = 1 } = over;
+  return {
+    id: 1000, unitType: UnitType.Infantry, side: Side.Bottom,
+    colExact, rowExact, hp_fp: toFp(hp), maxHp_fp: toFp(maxHp), state: UnitState.Moving,
+  };
+};
 
 describe('StateRecorder', () => {
   beforeEach(() => stateRecorder.reset());
@@ -68,7 +76,7 @@ describe('StateRecorder', () => {
 
   it('records buildings and both bases', () => {
     const b: FakeBuilding = {
-      id: 1, buildingType: BuildingType.Barracks, side: Side.Bottom, col: 3, row: 0, hp: 200, maxHp: 200,
+      id: 1, buildingType: BuildingType.Barracks, side: Side.Bottom, col: 3, row: 0, hp_fp: toFp(200), maxHp_fp: toFp(200),
     };
     stateRecorder.capture(mkState(0, [], [b], 95, 100));
     const f = decodeStateReplay(stateRecorder.build()!).frames[0]!;

@@ -2,6 +2,7 @@
 // constructor (§5.2/§6.1 hard wall: this is the ONLY place PvE upgrades enter the
 // engine; PvP/netplay always get the read-only constants).
 import { buildPvpBlueprints, buildCampaignBlueprints, buildSiegeBlueprints } from '../../balance/pveUpgrades';
+import { toFp, mulFp, maxFp } from '../../math/fixed';
 import type { GameConfig, GameMode, UnitBlueprint, UnitType } from '../../types';
 
 export interface ResolvedBlueprints {
@@ -31,8 +32,11 @@ export function resolveBlueprints(config: GameConfig, mode: GameMode): ResolvedB
     const scaled = buildPvpBlueprints();
     for (const key of Object.keys(scaled) as UnitType[]) {
       const bp = scaled[key];
-      bp.hp     = Math.max(1, Math.round(bp.hp * hpMult));
-      bp.attack = Math.max(1, Math.round(bp.attack * dmgMult));
+      // ADR-065: hp_fp/attack_fp are fp; the "at least 1" floor is toFp(1) (1 real HP/attack
+      // point), not the plain integer 1 — hpMult/dmgMult are one-off local ratios (never
+      // persisted as fp), converted at this call site only.
+      bp.hp_fp     = maxFp(toFp(1), mulFp(bp.hp_fp, toFp(hpMult)));
+      bp.attack_fp = maxFp(toFp(1), mulFp(bp.attack_fp, toFp(dmgMult)));
     }
     enemyWaveBlueprints = scaled;
   }

@@ -14,6 +14,7 @@ import { initI18n, t } from '../../src/i18n';
 import { CardCodexScene, type CardCodexCallbacks } from '../../src/scenes/CardCodexScene';
 import { CARD_DEFINITIONS, UNIT_BLUEPRINTS } from '@nw/engine/config';
 import { CardType, UnitType } from '@nw/engine/types';
+import { fromFp } from '@nw/engine/math/fixed';
 
 const memStore = (() => {
   const m = new Map<string, string>();
@@ -57,7 +58,7 @@ describe('CardCodexScene — locked/unlocked card compendium', () => {
     const scene = new CardCodexScene(createLayout(1920, 1080), new InputManager(), baseCb(['lena', 'max']));
     expect(countText(scene.container, t('collection.locked' as never))).toBe(DISTINCT_UNIT_TYPES.length - 2);
     // An unlocked entry shows its stat-chip row (HP value text); locked entries never draw it.
-    const lenaHp = String(UNIT_BLUEPRINTS[UnitType.Lena].hp);
+    const lenaHp = String(fromFp(UNIT_BLUEPRINTS[UnitType.Lena].hp_fp));
     expect(countText(scene.container, lenaHp)).toBeGreaterThan(0);
   });
 

@@ -44,6 +44,7 @@ import {
   TOP_SPAWN_ROW,
   UNIT_BLUEPRINTS,
   parseLevelDefinition,
+  fromFp,
   type GarrisonEntry,
 } from '@nw/engine';
 import {
@@ -64,7 +65,8 @@ export const STRONGHOLD_GARRISON = strongholdGarrison(STRONGHOLD_LEVEL);
 export const CROSSING_GARRISON = passageGarrison(CROSSING_LEVEL);
 
 // Default synthesized unit = Infantry (mirrors worldsvc/src/siegeEngine.ts SYNTH_UNIT; troops = HP, §16.1).
-const HP_PER_UNIT = UNIT_BLUEPRINTS[UnitType.Infantry].hp;
+// ADR-065: UNIT_BLUEPRINTS is fp-scaled internally; fromFp() converts back to real units here.
+const HP_PER_UNIT = fromFp(UNIT_BLUEPRINTS[UnitType.Infantry].hp_fp);
 const TICK_MARGIN = 600; // same margin as siegeEngine.ts, guards against pathological stalemates
 
 /**
@@ -167,7 +169,8 @@ export function simulateCapture(garrison: number, tileLevel: number, scenario: P
   const { engine } = runHeadless({ seed, players: [{ id: 0 }, { id: 1 }], mode: 'siege', level }, input, timeout + TICK_MARGIN);
   let atkHp = 0;
   for (const unit of engine.state.board.units.values()) {
-    if (unit.side === Side.Bottom) atkHp += unit.hp;
+    // ADR-065: unit.hp_fp is fp — fromFp() converts back to real units at this boundary.
+    if (unit.side === Side.Bottom) atkHp += fromFp(unit.hp_fp);
   }
   return { attackerWin: engine.state.winner === Side.Bottom, attackerSurvivors: atkHp };
 }

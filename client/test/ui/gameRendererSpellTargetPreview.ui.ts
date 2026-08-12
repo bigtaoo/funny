@@ -182,7 +182,7 @@ describe('GameRenderer InputMixin — spell target unit preview', () => {
     forceHandSlot(engine, meteorCard);
 
     const dead = new Unit(UnitType.Infantry, Side.Top, 4, 6);
-    dead.hp = 0; // isDead → true; mirrors SpellSystem.castMeteor's `if (unit.isDead) continue`
+    dead.hp_fp = toFp(0); // isDead → true; mirrors SpellSystem.castMeteor's `if (unit.isDead) continue`
     engine.state.board.addUnit(dead);
 
     const from = (renderer as any).core.handView.slotCenter(0);
@@ -266,7 +266,7 @@ describe('GameRenderer InputMixin — spell target unit preview', () => {
     p.addInkFp(toFp(100));
 
     const dead = new Unit(UnitType.Infantry, Side.Top, 5, 6);
-    dead.hp = 0; // mirrors SpellSystem.castRockslide's `if (unit.isDead) continue`
+    dead.hp_fp = toFp(0); // mirrors SpellSystem.castRockslide's `if (unit.isDead) continue`
     engine.state.board.addUnit(dead);
 
     const from    = (renderer as any).core.handView.slotCenter(0);

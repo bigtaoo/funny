@@ -1,4 +1,4 @@
-import { toFp, type Fp } from './math/fixed';
+import { toFp, maxFp, subFp, type Fp } from './math/fixed';
 import type { EscortSpec } from './campaign/LevelDefinition';
 
 // Real match spawns get their id from the owning GameState's per-instance counter
@@ -34,8 +34,9 @@ export class EscortUnit {
   readonly numericId: number;
   /** Matches EscortSpec.id — stable string key for renderer and JSON. */
   readonly id: string;
-  hp: number;
-  readonly maxHp: number;
+  /** ADR-065: fp (EscortSpec.hp is the plain real-unit level-design value; this constructor is the boundary). */
+  hp_fp: Fp;
+  readonly maxHp_fp: Fp;
   /** Fixed-point column position (cells). Updated each tick by EscortSystem. */
   col_fp: Fp;
   /** Fixed-point row position (cells). Increases each tick (toward enemy side). */
@@ -57,8 +58,8 @@ export class EscortUnit {
   ) {
     this.numericId = id ?? nextNumericId++;
     this.id        = spec.id;
-    this.hp        = spec.hp;
-    this.maxHp     = spec.hp;
+    this.hp_fp     = toFp(spec.hp);
+    this.maxHp_fp  = toFp(spec.hp);
     this.col_fp    = toFp(spec.startCol);
     this.row_fp    = toFp(spec.startRow);
     this.speed_fp  = toFp(spec.speed);
@@ -68,7 +69,7 @@ export class EscortUnit {
       : [];
   }
 
-  takeDamage(amount: number): void {
-    this.hp = Math.max(0, this.hp - amount);
+  takeDamage(amount: Fp): void {
+    this.hp_fp = maxFp(toFp(0), subFp(this.hp_fp, amount));
   }
 }

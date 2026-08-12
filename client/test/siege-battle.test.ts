@@ -17,6 +17,7 @@ import type { LevelDefinition } from '@nw/engine/campaign/LevelDefinition';
 import { UNIT_BLUEPRINTS } from '@nw/engine/config';
 import { buildPvpBlueprints } from '@nw/engine/balance/pveUpgrades';
 import { pvpExpectedBlueprints } from './pvpBlueprintExpected';
+import { toFp } from '@nw/engine/math/fixed';
 
 const TICK_DT = 1 / 30;
 const GameOver = GamePhase.GameOver;
@@ -38,7 +39,7 @@ function baseHpTrace(engine: IGameEngine, maxTicks: number): string[] {
   const trace: string[] = [];
   for (let i = 0; i < maxTicks && engine.state.phase !== GameOver; i++) {
     engine.tick(TICK_DT);
-    trace.push(`${engine.state.bottomPlayer.baseHp}/${engine.state.topPlayer.baseHp}`);
+    trace.push(`${engine.state.bottomPlayer.baseHp_fp}/${engine.state.topPlayer.baseHp_fp}`);
   }
   return trace;
 }
@@ -111,13 +112,13 @@ describe('Siege auto-battle — determinism (§16.1, same layout + same seed)', 
       battleTimeoutTicks: 30,
     });
     const eng = createGameEngine(siegeConfig(level)) as unknown as {
-      state: { board: { units: Map<number, { unitType: UnitType; hp: number; maxHp: number; col: number }> } };
+      state: { board: { units: Map<number, { unitType: UnitType; hp_fp: number; maxHp_fp: number; col: number }> } };
     };
     const placed = [...eng.state.board.units.values()].filter((u) => u.unitType === UnitType.Infantry);
     const byCol = (c: number) => placed.find((u) => u.col === c)!;
-    expect(byCol(2).hp).toBe(50);
-    expect(byCol(2).maxHp).toBe(UNIT_BLUEPRINTS[UnitType.Infantry].hp);
-    expect(byCol(3).hp).toBe(UNIT_BLUEPRINTS[UnitType.Infantry].hp); // 999 capped to max HP
+    expect(byCol(2).hp_fp).toBe(toFp(50));
+    expect(byCol(2).maxHp_fp).toBe(UNIT_BLUEPRINTS[UnitType.Infantry].hp_fp);
+    expect(byCol(3).hp_fp).toBe(UNIT_BLUEPRINTS[UnitType.Infantry].hp_fp); // 999 capped to max HP
   });
 });
 

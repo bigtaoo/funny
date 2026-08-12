@@ -7,7 +7,8 @@
  *   ✗  Math.random()          → use Prng
  *   ✗  Date.now() / new Date  → forbidden in logic layer
  *   ✗  Assigning raw number to an Fp field  → TypeScript will error
- *   ✓  Use toFp / fp / addFp / subFp / mulFp / scaleFp / negFp for all fp ops
+ *   ✓  Use the helpers below (toFp / fp / addFp / subFp / mulFp / scaleFp / negFp / growFp /
+ *      divFpByInt / maxFp / minFp / clampFp / …) for all fp ops — never a raw JS operator
  */
 
 // ── Constants ────────────────────────────────────────────────────────────────
@@ -94,6 +95,44 @@ export function scaleFp(intMultiplier: number, a: Fp): Fp {
 /** Negate an fp value: -a */
 export function negFp(a: Fp): Fp {
   return (-a) as Fp;
+}
+
+/** max(a, b), both fp → fp. */
+export function maxFp(a: Fp, b: Fp): Fp {
+  return Math.max(a, b) as Fp;
+}
+
+/** min(a, b), both fp → fp. */
+export function minFp(a: Fp, b: Fp): Fp {
+  return Math.min(a, b) as Fp;
+}
+
+/** Clamp `a` to [0, max], both fp → fp. Matches the engine's existing `clamp(v, max)` (0-floor, max-ceiling) convention used for cross-source effect caps (ADR-065). */
+export function clampFp(a: Fp, max: Fp): Fp {
+  return (a > max ? max : a < 0 ? 0 : a) as Fp;
+}
+
+/**
+ * Compound a base Fp value by a linear per-step growth rate over `steps` discrete
+ * steps — `base × (1 + perStepRate × steps)`. This is the engine's standard "1 +
+ * rate×steps" per-level/per-upgrade-level growth shape (balance/{progression,
+ * pveUpgrades,equipment}.ts, ADR-065), expressed once so every call site stays
+ * consistent instead of hand-rolling `mulFp(base, addFp(toFp(1), scaleFp(...)))`.
+ * `steps` must be a safe integer (never a float/Fp).
+ */
+export function growFp(base: Fp, perStepRate: Fp, steps: number): Fp {
+  return mulFp(base, addFp(toFp(1), scaleFp(steps, perStepRate)));
+}
+
+/**
+ * Divide an Fp value by a plain positive integer, staying in the fp domain.
+ * Use for "percentage-points ÷ 100" patterns (crit/lifesteal/reflect damage math,
+ * ADR-065): e.g. `divFpByInt(mulFp(damage_fp, critMultBonusPts_fp), 100)` converts
+ * a points-on-a-0..100-scale Fp value into the fraction it represents, without an
+ * intermediate float. `n` must be a safe positive integer (never a float/Fp).
+ */
+export function divFpByInt(a: Fp, n: number): Fp {
+  return Math.trunc(a / n) as Fp;
 }
 
 /**

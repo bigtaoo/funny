@@ -8,6 +8,7 @@ import { t, type TranslationKey } from '../../i18n';
 import type { SaveData, EquipmentInstance } from '../../game/meta/SaveData';
 import { affixKind, EQUIP_MAX_LEVEL, type EnhanceCost } from '../../game/meta/equipmentDefs';
 import { enhanceMultiplier } from '@nw/engine/balance/equipment';
+import { fromFp } from '@nw/engine/math/fixed';
 import { levelStarsText } from '../../render/levelStars';
 import { SLOTS } from './layout';
 
@@ -28,8 +29,13 @@ export function itemLabel(defId: string, level: number): string {
 
 /** Affix description: i18n `affix.<id>` template with {v}; main affixes are scaled up by level. */
 export function affixDesc(id: string, value: number, level: number): string {
+  // ADR-065: enhanceMultiplier() now returns an fp value (e.g. 5000 for ×5.00); `value` here is the
+  // raw affix value from SaveData (never itself fp — this preview path is independent of the engine's
+  // blueprint-bake pipeline), so fromFp() unscales the multiplier back to a plain decimal before the
+  // ordinary multiplication. Without this, `value * enhanceMultiplier(level)` would silently be 1000×
+  // too large — it still type-checks (Fp is structurally a `number`), so nothing would flag it.
   const shown = affixKind(id) === 'main'
-    ? Math.round(value * enhanceMultiplier(level))
+    ? Math.round(value * fromFp(enhanceMultiplier(level)))
     : value;
   const key = `affix.${id}` as TranslationKey;
   const s = t(key, { v: shown });

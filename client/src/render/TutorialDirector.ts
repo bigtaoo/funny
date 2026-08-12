@@ -3,6 +3,7 @@ import { makeText } from './pixiText';
 import { tearDownChildren } from './sketchUi';
 import { CardType, SpellType, GameState } from '../game';
 import { TOP_SPAWN_ROW } from '@nw/engine/config';
+import { toFp } from '@nw/engine/math/fixed';
 import { ILayout, Rect } from '../layout/ILayout';
 import { t, type TranslationKey } from '../i18n';
 import { drawHudButton, hudButtonText } from '../ui/widgets/hudButton';
@@ -193,8 +194,8 @@ export class TutorialDirector {
     }
 
     // Never-fail: clamp base HP from below (§3.5 presentation-layer fallback).
-    if (state.bottomPlayer.baseHp < NEVER_FAIL_BASE_FLOOR) {
-      state.bottomPlayer.baseHp = NEVER_FAIL_BASE_FLOOR;
+    if (state.bottomPlayer.baseHp_fp < toFp(NEVER_FAIL_BASE_FLOOR)) {
+      state.bottomPlayer.baseHp_fp = toFp(NEVER_FAIL_BASE_FLOOR);
     }
 
     this.pulse += dt;

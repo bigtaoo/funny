@@ -5,6 +5,7 @@ import { ui as C } from '../../render/sketchUi';
 import type { ArmyEntry } from '../../net/WorldApiClient';
 import { WorldApiError } from '../../net/WorldApiClient';
 import { ATTACK_LANES, UNIT_BLUEPRINTS } from '@nw/engine/config';
+import { fromFp } from '@nw/engine/math/fixed';
 import { UnitType, BuildingType } from '@nw/engine/types';
 import type { CardInstance } from '../../game/meta/SaveData';
 import { CARD_DEFS, troopCap, cardPower } from '../../game/meta/cardDefs';
@@ -104,7 +105,7 @@ export class DataPanel implements DataHandlers {
           (core.gRows as readonly number[]).includes(row)
         ) {
           const ut = unitType as UnitType;
-          core.garrison.set(`${col}:${row}`, { unitType: ut, hp: UNIT_BLUEPRINTS[ut].hp });
+          core.garrison.set(`${col}:${row}`, { unitType: ut, hp: fromFp(UNIT_BLUEPRINTS[ut].hp_fp) });
         }
       }
     }

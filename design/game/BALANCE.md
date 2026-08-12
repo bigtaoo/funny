@@ -3,6 +3,7 @@
 > 状态：实现中 · **权威：`server/engine/src/config.ts`（`@nw/engine`；本文是它的快照，非权威）** · 更新：2026-07-02（PvP 锚点平衡：Max 攻 22→14 + 费 5→6，等墨胜率 91%→54%；infantry 保持不动，判定为竞技场 swarm 伪迹）
 >
 > ⚠️ 改数值改 `config.ts`，然后同步本文 + 注明日期。**不要**只改本文。
+> ⚠️ ADR-065（2026-08-12）：引擎内部（`Unit`/`Building`/blueprint）把 HP/攻击等连续型战斗数值改成了定点整数（×1000, `_fp` 后缀字段），但 `config.ts` 的人类可读表和本文数字口径**都不受影响**——仍是真实单位（`hp: 60`），定点化只发生在 blueprint bake 之后的引擎运行时表示，代码里的 `hp_fp: 60000` 对应本文/`config.ts` 的 `60`。
 > 本文取代 `product/v1-balance.md`（未落地）与 `core-gameplay-loop.md` 内联数值（设计意图）作为文档侧数值参考。
 > 引擎已抽成 `@nw/engine`（G3-2b-0，2026-06-21）：config.ts 真身在 `server/engine/src/`，client 经 alias 引用、旧 `@nw/engine/config.ts` 留 re-export shim。
 
