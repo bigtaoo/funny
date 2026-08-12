@@ -122,6 +122,7 @@ export class WorldMapRendererLifecycle implements LifecycleHandlers {
    */
   private updateGuide(dt: number): void {
     const ctx = this.core.ctx;
+    if (!ctx.guide) return; // only assigned by WorldMapRendererBuild.build() — some UI tests skip it
     const viewport = { w: ctx.w, h: ctx.h };
     ctx.guide.update(dt);
     if (ctx.guideStep === 'step1' && ctx.me?.mainBaseTile) {
@@ -136,15 +137,15 @@ export class WorldMapRendererLifecycle implements LifecycleHandlers {
           { x: cx - size / 2, y: groundY - size, w: size, h: size },
           t('guide.world.step1.body'),
           viewport,
-          { onSkip: () => { ctx.cb.setFlag('guide.world.step1', true); ctx.guideStep = null; } },
+          { onSkip: () => { ctx.cb.setFlag?.('guide.world.step1', true); ctx.guideStep = null; } },
         );
       }
       return;
     }
-    if (ctx.cb.getFlag('guide.world.step3') && !ctx.cb.getFlag('guide.world.step4')) {
+    if ((ctx.cb.getFlag?.('guide.world.step3') ?? false) && !(ctx.cb.getFlag?.('guide.world.step4') ?? false)) {
       ctx.guide.showCard(
         t('guide.world.step4.body'), t('guide.gotIt'),
-        () => ctx.cb.setFlag('guide.world.step4', true),
+        () => ctx.cb.setFlag?.('guide.world.step4', true),
         viewport,
       );
       return;

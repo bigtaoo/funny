@@ -118,7 +118,7 @@ export class WorldMapInput {
         // SLG opening guide chain step1 (ONBOARDING_DESIGN §4.2): tapping the highlighted base is
         // exactly the completion condition — mark it seen before handing off to CityScene.
         if (this.ctx.guideStep === 'step1') {
-          this.ctx.cb.setFlag('guide.world.step1', true);
+          this.ctx.cb.setFlag?.('guide.world.step1', true);
           this.ctx.guideStep = null;
         }
         this.ctx.cb.onOpenCity();
@@ -322,8 +322,10 @@ export class WorldMapInput {
 
   handleDown(x: number, y: number): void {
     // SLG opening guide chain (ONBOARDING_DESIGN §4.2) — its skip glyph / card button must win
-    // before any other hit-test, mirroring the modal-button priority right below.
-    const guideHit = this.ctx.guide.currentAction();
+    // before any other hit-test, mirroring the modal-button priority right below. `ctx.guide` is
+    // only assigned by WorldMapRendererBuild.build() (real scene construction) — optional-chained
+    // since a number of UI tests construct WorldMapContext/WorldMapInput directly without it.
+    const guideHit = this.ctx.guide?.currentAction();
     if (guideHit && x >= guideHit.rect.x && x <= guideHit.rect.x + guideHit.rect.w && y >= guideHit.rect.y && y <= guideHit.rect.y + guideHit.rect.h) {
       guideHit.fn();
       return;

@@ -190,6 +190,22 @@
 - **形式**：与教学关一致的轻提示风格（聚光灯/卡片），可随时关闭；不阻断玩家用功能。
 - **i18n**：`guide.<featureId>.*` 全语种。
 
+### 4.2 SLG 开局多步引导链
+
+大世界的 §4.1 首次引导（大厅入口那张 `guide.world` 说明卡）只覆盖"点开大世界前"这一刻——2026-08-12 用户反馈：新玩家进了大世界，连自己的主城在哪、要点哪里都不知道。§4.1 的机制（一次性整屏卡片，无地图内高亮）解决不了"在地图上找不到具体点哪"这类空间性问题，因此在其基础上加一条**进图之后**的多步引导链，专门覆盖开局前几步操作：找到主城 → 建造 → 返回 → 占地。
+
+| 步骤 | 触发条件 | 高亮目标 | 完成条件 | 持久化 key |
+|---|---|---|---|---|
+| step1 | 进入大世界、`me.mainBaseTile` 已知且未见过 | 主城 3×3 footprint（随镜头 pan/zoom 跟随） | 点击主城，或点气泡的跳过 | `guide.world.step1` |
+| step2 | 进入 CityScene、step1 已完成且未见过 | 建筑格子网格第一张卡 | 点击任意建筑格/训练格，或跳过 | `guide.world.step2` |
+| step3 | step2 已完成且未见过 | 页面头部"返回"按钮 | 点击返回，或跳过 | `guide.world.step3` |
+| step4 | 回到大世界、step3 已完成且未见过 | 无固定目标（占地目标因人而异）→ 底部纯文字提示卡，"知道了"按钮 | 点"知道了" | `guide.world.step4` |
+
+- **形式**：呼吸描边高亮环 + 小气泡（自动上/下避让，带跳过角标），画法参考战斗教学关 `TutorialDirector` 的卡片/呼吸环技巧，但重写成独立轻量组件 `client/src/render/GuideOverlay.ts`（不复用 `TutorialDirector` 本体——那是战斗专属，且会拦截全部输入）。**不拦截输入**：高亮只是视觉提示，玩家仍可随时点地图上任何东西，完全符合 §4.1 "轻提示…不阻断玩家用功能" 的既定原则；每步也都能跳过。
+- **持久化**：四个 key 都是普通 `SaveData.flags` 布尔值（`guide.world.step{1..4}`），复用 `SaveManager.getFlag/setFlag` 现有通道，**未改 `SaveData` schema、未改服务端**。
+- **与 §4.1 的关系**：两层独立生效——大厅入口卡片（`guide.world.title/body`，文案已改为提到"点击你的主城"）先给一句话预期，进图后这条链再给具体的空间指引；互不依赖，任一层被跳过不影响另一层。
+- **接线要点**：WorldMapScene 侧（step1/step4）状态挂在 `WorldMapContext.guideStep` + 每帧在 `WorldMapRendererLifecycle.update()` 里现算主城屏幕坐标；CityScene 侧（step2/step3）因为 `render()` 每次全量 `tearDownChildren` 重建，引导层挂在一个从不被清空的独立 sibling container（`CityScene.ts` 构造函数里 `guide.root` 单独 addChild，不进 `core.container`）。
+
 ---
 
 ## 5. 首胜 / 回访钩子（与 RETENTION 对齐）
@@ -259,6 +275,7 @@
 | 教学关永不失败兜底（基地不可破） | ✅ 已建。导演每 tick 夹 `baseHp≥1` + GameRenderer 未毕业时吞 `game_over/game_draw`（导演独占终局） |
 | SLG 软门槛（通 ch1 解锁）+ 灰显气泡 | ✅ 已接。`progress.isFirstChapterCleared` + 大厅 `worldLocked` 灰显 + `showInfoToast`「通关第一章解锁」 |
 | **首次功能引导机制（`flags.featSeen.*`）** | ✅ 机制已建。`SaveManager.featSeen/markFeatSeen` + 大厅 `showFeatureGuide` + `withGuide`（match/shop/social/cards/daily/world）+ `guide.*` 全语种 + `feature_guide_shown/closed` 埋点（design-doc-audit-2026-07 补齐，见 §7）。**各子页内「?」按钮未逐页接**（见 §10），因此 `feature_guide_replay` 事件暂无调用点 |
+| **SLG 开局多步引导链（§4.2，2026-08-12）** | ✅ 已建。新组件 `client/src/render/GuideOverlay.ts`（呼吸高亮环+气泡，不拦截输入）+ `guide.world.step{1..4}` flags + WorldMapScene/CityScene 接线；无独立埋点（复用已有 `feature_guide_*`/`screen_view` 口径即可回答"引导链有没有被看到"，未单独加 per-step 埋点，若后续要看逐步流失率再补） |
 | 首胜奖励 + 签到入口引出 | 🟡 毕业=首胜走既有结算链；签到由大厅红点承载，未新增金币龙头（§5） |
 | 年龄门 + EU/UK 同意弹窗 | ❌ 待建（合规，归 COMPLIANCE，开机层） |
 | **作者欢迎邮件**（首次真正通关+1000金币，§5.1） | ✅ 已建（`server/metaserver/src/service/pve.ts` `pveClear`，e2e `test/pve.e2e.test.ts`） |
@@ -275,6 +292,7 @@
 5. **合规开机层**（年龄门 + EU/UK 同意，与 COMPLIANCE 联动，海外测试前必须）。
 6. ~~FTUE 漏斗埋点接入~~ ✅ 已完成（`tutorial_start/complete/skip` + 逐 beat `tutorial_step` 全部已埋，见 §8「FTUE 漏斗埋点」行——design-doc-audit-2026-07 核实此条目此前是过期记录）。
 7. 依教学完成率与 D1 数据迭代 beat 脚本与提示文案。
+8. ✅ **SLG 开局多步引导链**（§4.2，2026-08-12，用户反馈"进大世界不知道点主城"后新增）：主城→建造→返回→占地四步高亮，`GuideOverlay` 组件 + `guide.world.step{1..4}` flags。
 
 ---
 

@@ -408,9 +408,9 @@ export class RenderPanel implements RenderHandlers {
         // SLG opening guide chain step2 (ONBOARDING_DESIGN §4.2): highlight the very first grid card
         // until any card/train tile is opened. CityScene.ts's own header block leaves the guide alone
         // whenever step2 is still pending — this is the only call that decides its content in that case.
-        if (i === 0 && !this.core.cb.getFlag('guide.world.step2')) {
+        if (i === 0 && !(this.core.cb.getFlag?.('guide.world.step2') ?? false)) {
           this.core.guide.showAt(cardRect, t('guide.world.step2.body'), { w: this.core.w, h: this.core.h }, {
-            onSkip: () => this.core.cb.setFlag('guide.world.step2', true),
+            onSkip: () => this.core.cb.setFlag?.('guide.world.step2', true),
           });
         }
         this.core.hits.push({
@@ -418,12 +418,12 @@ export class RenderPanel implements RenderHandlers {
           fn:
             tile.kind === 'bld'
               ? () => {
-                  if (!this.core.cb.getFlag('guide.world.step2')) this.core.cb.setFlag('guide.world.step2', true);
+                  this.core.cb.setFlag?.('guide.world.step2', true);
                   this.core.selectedBuilding = tile.key;
                   this.core.render();
                 }
               : () => {
-                  if (!this.core.cb.getFlag('guide.world.step2')) this.core.cb.setFlag('guide.world.step2', true);
+                  this.core.cb.setFlag?.('guide.world.step2', true);
                   this.core.selectedTrain = true;
                   this.core.render();
                 },

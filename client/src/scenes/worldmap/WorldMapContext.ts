@@ -65,9 +65,12 @@ export interface WorldMapCallbacks {
    * not the global `localStorage`, so it also works under the WeChat mini-game runtime (no DOM storage). */
   storage: IStorage;
   /** SLG opening guide chain (ONBOARDING_DESIGN §4.2) — thin pass-through to SaveManager.getFlag/setFlag,
-   * reusing the existing flags channel (no SaveData schema change) for `guide.world.step{1,4}`. */
-  getFlag(key: string): boolean;
-  setFlag(key: string, value: boolean): void;
+   * reusing the existing flags channel (no SaveData schema change) for `guide.world.step{1,4}`.
+   * Optional (unlike the rest of the guide plumbing) purely so the many existing WorldMapScene UI
+   * test fixtures that predate this feature don't all need updating; production wiring
+   * (app/nav/world.ts) always provides both. */
+  getFlag?(key: string): boolean;
+  setFlag?(key: string, value: boolean): void;
 }
 
 /** March kinds the deploy dialog can dispatch (occupy/reinforce/attack/sweep). */

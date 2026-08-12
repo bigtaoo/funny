@@ -72,9 +72,12 @@ export interface CitySceneCallbacks {
   getSave?(): SaveData;
   /** Subscribe to SaveManager writes; re-renders this scene when a concurrently-mounted peer scene (e.g. Auction opened as a sibling overlay) changes the wallet. Push the returned unsub onto `unsubs`. */
   onSaveChanged?(listener: () => void): () => void;
-  /** SLG opening guide chain (ONBOARDING_DESIGN §4.2) — thin pass-through to SaveManager.getFlag/setFlag, reusing the existing flags channel for `guide.world.step{2,3}`. */
-  getFlag(key: string): boolean;
-  setFlag(key: string, value: boolean): void;
+  /** SLG opening guide chain (ONBOARDING_DESIGN §4.2) — thin pass-through to SaveManager.getFlag/setFlag,
+   * reusing the existing flags channel for `guide.world.step{2,3}`. Optional purely so the many
+   * existing CityScene UI test fixtures that predate this feature don't all need updating;
+   * production wiring (app/nav/world.ts) always provides both. */
+  getFlag?(key: string): boolean;
+  setFlag?(key: string, value: boolean): void;
 }
 
 // ── Constants ────────────────────────────────────────────────────────────────

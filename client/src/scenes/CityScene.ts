@@ -65,7 +65,11 @@ export class CityScene implements Scene {
   }
 
   destroy(): void {
+    // core.destroy() frees core.container + guide.root (both children of the wrapper below), but
+    // never touches the wrapper itself — without this, `this.container` (what SceneManager/tests
+    // actually hold as this scene's exposed container) never flips `.destroyed`.
     this.core.destroy();
+    this.container.destroy({ children: true });
   }
 
   private render(): void {
@@ -92,7 +96,7 @@ export class CityScene implements Scene {
       w: hdr.backRect.w,
       h: hdr.backRect.h,
       fn: () => {
-        if (!core.cb.getFlag('guide.world.step3')) core.cb.setFlag('guide.world.step3', true);
+        core.cb.setFlag?.('guide.world.step3', true);
         core.cb.onBack();
       },
     };
@@ -104,11 +108,11 @@ export class CityScene implements Scene {
     // is done, highlight the way back out. Decided fresh every render() pass — the `!step2` case is
     // a deliberate no-op here (renderBuildingGrid owns showing its own ring then); the "both done"
     // case explicitly hides so a stale ring from an earlier pass never lingers.
-    if (!core.cb.getFlag('guide.world.step2')) {
+    if (!(core.cb.getFlag?.('guide.world.step2') ?? false)) {
       // renderBuildingGrid (below) will call guide.showAt for its own target.
-    } else if (!core.cb.getFlag('guide.world.step3')) {
+    } else if (!(core.cb.getFlag?.('guide.world.step3') ?? false)) {
       core.guide.showAt(hdr.backRect, t('guide.world.step3.body'), { w, h }, {
-        onSkip: () => core.cb.setFlag('guide.world.step3', true),
+        onSkip: () => core.cb.setFlag?.('guide.world.step3', true),
       });
     } else {
       core.guide.hide();
@@ -137,9 +141,15 @@ export class CityScene implements Scene {
     // a building card (incl. academy/tech-tree) or the train tile routes through here.
     if (core.selectedBuilding) {
       core.hits = [backHit];
+      // renderBuildingGrid (above) may have just called guide.showAt for step2's ring on tile 0 —
+      // a modal opening supersedes it outright (same reasoning as the hits reset above: nothing
+      // else on the page should be tappable while it's up), so drop it before it can end up
+      // shadowing one of the modal's own buttons via the currentAction() splice at the end of render().
+      core.guide.hide();
       this.modals.renderDetailModal(core.selectedBuilding);
     } else if (core.selectedTrain) {
       core.hits = [backHit];
+      core.guide.hide();
       this.modals.renderTrainModal();
     }
 
@@ -158,8 +168,11 @@ export class CityScene implements Scene {
 
     // SLG opening guide chain (ONBOARDING_DESIGN §4.2): splice whatever guide.showAt/showCard call
     // above (here or in renderBuildingGrid) left as the current action into this render pass's own
-    // hit list — first-match-wins, so this must win over any grid cell it happens to overlap.
+    // hit list. Appended, not unshifted: the guide's bubble/skip glyph is always positioned outside
+    // its target rect (positionBubble's above/below placement), so in practice it never overlaps
+    // another hit — appending preserves the long-standing `hits[0] === backHit` assumption several
+    // existing tests rely on (see cityScene.ui.ts's modal-hit-gating describe block).
     const guideHit = core.guide.currentAction();
-    if (guideHit) core.hits.unshift({ ...guideHit.rect, fn: guideHit.fn });
+    if (guideHit) core.hits.push({ ...guideHit.rect, fn: guideHit.fn });
   }
 }
