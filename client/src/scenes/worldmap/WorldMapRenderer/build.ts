@@ -8,7 +8,8 @@ import { makeText } from '../../../render/pixiText';
 import { FS } from '../../../render/fontScale';
 import { drawSceneHeader, HEADER_ACCENT } from '../../../ui/widgets/SceneHeader';
 import { HUD_H } from '../constants';
-import { type Constructor, type WorldMapRendererBaseCtor } from './base';
+import type { WorldMapRendererCore } from './core';
+import type { WorldMapRendererPool } from './pool';
 
 export interface BuildHandlers {
   build(): void;
@@ -16,135 +17,144 @@ export interface BuildHandlers {
   hideLoading(): void;
 }
 
-export function BuildMixin<TBase extends WorldMapRendererBaseCtor>(Base: TBase): TBase & Constructor<BuildHandlers> {
-  return class extends Base {
-    build(): void {
-      const { w, h } = this.ctx;
+export class WorldMapRendererBuild implements BuildHandlers {
+  constructor(
+    private readonly core: WorldMapRendererCore,
+    private readonly pool: WorldMapRendererPool,
+    /** Full pool+city+overlay refresh (WorldMapRenderer.invalidatePool()) — build() needs it as
+     *  its very last step, same as the pre-conversion `this.invalidatePool()` mixin call did. */
+    private readonly refreshMap: () => void,
+  ) {}
 
-      // Paper background
-      const bg = buildPaperBackground('worldmap', w, h, { marginLine: false });
-      this.ctx.container.addChild(bg);
+  build(): void {
+    const ctx = this.core.ctx;
+    const { w, h } = ctx;
 
-      // Top-left back button + bar chrome — same SceneHeader every other scene uses, so the
-      // title-row height reads consistently app-wide. No title text: the bar instead shows
-      // live per-resource production (see renderHeaderHud) with the auction button pinned to
-      // its far right. Drawn before the map so topInset is known when the map mask/loading
-      // overlay below are sized.
-      this.ctx.topLayer = new PIXI.Container();
-      const hdr = drawSceneHeader(this.ctx.topLayer, w, h, null, { accent: HEADER_ACCENT.slg });
-      this.ctx.backRect = hdr.backRect;
-      this.ctx.topInset = hdr.headerH;
+    // Paper background
+    const bg = buildPaperBackground('worldmap', w, h, { marginLine: false });
+    ctx.container.addChild(bg);
 
-      // Map area (clip to the band between the header and the bottom chat HUD)
-      const mapClip = new PIXI.Container();
-      const mask = new PIXI.Graphics();
-      mask.beginFill(0xffffff).drawRect(0, this.ctx.topInset, w, h - HUD_H - this.ctx.topInset).endFill();
-      mapClip.mask = mask;
-      mapClip.addChild(mask);
-      this.ctx.container.addChild(mapClip);
+    // Top-left back button + bar chrome — same SceneHeader every other scene uses, so the
+    // title-row height reads consistently app-wide. No title text: the bar instead shows
+    // live per-resource production (see renderHeaderHud) with the auction button pinned to
+    // its far right. Drawn before the map so topInset is known when the map mask/loading
+    // overlay below are sized.
+    ctx.topLayer = new PIXI.Container();
+    const hdr = drawSceneHeader(ctx.topLayer, w, h, null, { accent: HEADER_ACCENT.slg });
+    ctx.backRect = hdr.backRect;
+    ctx.topInset = hdr.headerH;
 
-      // L3 overview graphics (underneath pool)
-      this.ctx.mapGfxL3 = new PIXI.Graphics();
-      mapClip.addChild(this.ctx.mapGfxL3);
+    // Map area (clip to the band between the header and the bottom chat HUD)
+    const mapClip = new PIXI.Container();
+    const mask = new PIXI.Graphics();
+    mask.beginFill(0xffffff).drawRect(0, ctx.topInset, w, h - HUD_H - ctx.topInset).endFill();
+    mapClip.mask = mask;
+    mapClip.addChild(mask);
+    ctx.container.addChild(mapClip);
 
-      // Tile pool container (L1/L2)
-      this.ctx.poolContainer = new PIXI.Container();
-      mapClip.addChild(this.ctx.poolContainer);
+    // L3 overview graphics (underneath pool)
+    ctx.mapGfxL3 = new PIXI.Graphics();
+    mapClip.addChild(ctx.mapGfxL3);
 
-      // City building sprites (above tiles, below overlay). sortableChildren + zIndex
-      // (set per-sprite in refreshCityLayer) gives isometric-correct back-to-front draw order.
-      this.ctx.cityLayer = new PIXI.Container();
-      this.ctx.cityLayer.sortableChildren = true;
-      mapClip.addChild(this.ctx.cityLayer);
+    // Tile pool container (L1/L2)
+    ctx.poolContainer = new PIXI.Container();
+    mapClip.addChild(ctx.poolContainer);
 
-      // Off-map cloud veil (above tiles/cities, below the interactive overlay so march
-      // arrows / capital stars / selection — all on-map — always read on top).
-      this.ctx.fogGfx = new PIXI.Graphics();
-      mapClip.addChild(this.ctx.fogGfx);
+    // City building sprites (above tiles, below overlay). sortableChildren + zIndex
+    // (set per-sprite in refreshCityLayer) gives isometric-correct back-to-front draw order.
+    ctx.cityLayer = new PIXI.Container();
+    ctx.cityLayer.sortableChildren = true;
+    mapClip.addChild(ctx.cityLayer);
 
-      // Overlay: capitals, march arrows, selected tile highlight
-      this.ctx.overlayGfx = new PIXI.Graphics();
-      mapClip.addChild(this.ctx.overlayGfx);
+    // Off-map cloud veil (above tiles/cities, below the interactive overlay so march
+    // arrows / capital stars / selection — all on-map — always read on top).
+    ctx.fogGfx = new PIXI.Graphics();
+    mapClip.addChild(ctx.fogGfx);
 
-      // March walk-cycle sprites (StickmanRuntime containers), above the route line/arrowhead.
-      this.ctx.marchTokenLayer = new PIXI.Container();
-      mapClip.addChild(this.ctx.marchTokenLayer);
+    // Overlay: capitals, march arrows, selected tile highlight
+    ctx.overlayGfx = new PIXI.Graphics();
+    mapClip.addChild(ctx.overlayGfx);
 
-      // HUD bar
-      this.ctx.hudLayer = new PIXI.Container();
-      this.ctx.container.addChild(this.ctx.hudLayer);
+    // March walk-cycle sprites (StickmanRuntime containers), above the route line/arrowhead.
+    ctx.marchTokenLayer = new PIXI.Container();
+    mapClip.addChild(ctx.marchTokenLayer);
 
-      // Header bar (built above, before the map) sits above the map/HUD layers.
-      this.ctx.container.addChild(this.ctx.topLayer);
+    // HUD bar
+    ctx.hudLayer = new PIXI.Container();
+    ctx.container.addChild(ctx.hudLayer);
 
-      // Production readout + auction button drawn on top of the header chrome; rebuilt
-      // alongside hudLayer (renderHud) so production stays live, but layered after topLayer
-      // so the header's paper fill doesn't hide it.
-      this.ctx.headerHudLayer = new PIXI.Container();
-      this.ctx.container.addChild(this.ctx.headerHudLayer);
+    // Header bar (built above, before the map) sits above the map/HUD layers.
+    ctx.container.addChild(ctx.topLayer);
 
-      this.ctx.modalLayer = new PIXI.Container();
-      this.ctx.container.addChild(this.ctx.modalLayer);
+    // Production readout + auction button drawn on top of the header chrome; rebuilt
+    // alongside hudLayer (renderHud) so production stays live, but layered after topLayer
+    // so the header's paper fill doesn't hide it.
+    ctx.headerHudLayer = new PIXI.Container();
+    ctx.container.addChild(ctx.headerHudLayer);
 
-      this.ctx.toastLayer = new PIXI.Container();
-      this.ctx.container.addChild(this.ctx.toastLayer);
+    ctx.modalLayer = new PIXI.Container();
+    ctx.container.addChild(ctx.modalLayer);
 
-      // Base-damage vignette (D-CITY-8) — screen-edge red flash, above every other layer
-      // (including HUD/modals) so a siege hit reads even while a panel is open.
-      this.ctx.vignetteGfx = new PIXI.Graphics();
-      this.ctx.container.addChild(this.ctx.vignetteGfx);
+    ctx.toastLayer = new PIXI.Container();
+    ctx.container.addChild(ctx.toastLayer);
 
-      // Loading cover — top-most so the half-built / untextured map never peeks through.
-      this.buildLoadingOverlay();
+    // Base-damage vignette (D-CITY-8) — screen-edge red flash, above every other layer
+    // (including HUD/modals) so a siege hit reads even while a panel is open.
+    ctx.vignetteGfx = new PIXI.Graphics();
+    ctx.container.addChild(ctx.vignetteGfx);
 
-      this.buildPool();
-      this.ctx.panels.renderHud();
-      this.invalidatePool();
+    // Loading cover — top-most so the half-built / untextured map never peeks through.
+    this.buildLoadingOverlay();
+
+    this.pool.buildPool();
+    ctx.panels.renderHud();
+    this.refreshMap();
+  }
+
+  /**
+   * The first-paint loading cover: an opaque notebook-paper sheet + a hand-drawn
+   * spinning ink ring + localized "loading map…" caption. Hidden by hideLoading()
+   * once the map atlases have settled (see constructor). Sized to the full scene so
+   * nothing underneath — flat color tiles, fog, half-loaded city sprites — shows.
+   */
+  buildLoadingOverlay(): void {
+    const ctx = this.core.ctx;
+    const { w, h } = ctx;
+    const layer = new PIXI.Container();
+
+    const sheet = buildPaperBackground('worldmap-loading', w, h, { marginLine: false });
+    layer.addChild(sheet);
+
+    const cx = w / 2;
+    const cy = (ctx.topInset + h - HUD_H) / 2;
+
+    // Broken ink ring (open arc) — rotated each frame in update() while active.
+    const spinner = new PIXI.Graphics();
+    spinner.lineStyle(3, 0x3a3a3a, 0.9);
+    spinner.arc(0, 0, 22, -Math.PI * 0.15, Math.PI * 1.25);
+    spinner.position.set(cx, cy);
+    layer.addChild(spinner);
+
+    const label = makeText(t('world.loading'), {
+      fontFamily: 'sans-serif', fontSize: FS.body, fill: 0x3a3a3a,
+    });
+    label.anchor.set(0.5);
+    label.position.set(cx, cy + 50);
+    layer.addChild(label);
+
+    ctx.container.addChild(layer);
+    ctx.loadingLayer = layer;
+    ctx.loadingSpinner = spinner;
+  }
+
+  /** Remove the first-paint loading cover (idempotent); clears the safety timeout. */
+  hideLoading(): void {
+    const ctx = this.core.ctx;
+    if (ctx.loadingTimeout) { clearTimeout(ctx.loadingTimeout); ctx.loadingTimeout = null; }
+    if (ctx.loadingLayer) {
+      ctx.loadingLayer.destroy({ children: true });
+      ctx.loadingLayer = null;
+      ctx.loadingSpinner = null;
     }
-
-    /**
-     * The first-paint loading cover: an opaque notebook-paper sheet + a hand-drawn
-     * spinning ink ring + localized "loading map…" caption. Hidden by hideLoading()
-     * once the map atlases have settled (see constructor). Sized to the full scene so
-     * nothing underneath — flat color tiles, fog, half-loaded city sprites — shows.
-     */
-    buildLoadingOverlay(): void {
-      const { w, h } = this.ctx;
-      const layer = new PIXI.Container();
-
-      const sheet = buildPaperBackground('worldmap-loading', w, h, { marginLine: false });
-      layer.addChild(sheet);
-
-      const cx = w / 2;
-      const cy = (this.ctx.topInset + h - HUD_H) / 2;
-
-      // Broken ink ring (open arc) — rotated each frame in update() while active.
-      const spinner = new PIXI.Graphics();
-      spinner.lineStyle(3, 0x3a3a3a, 0.9);
-      spinner.arc(0, 0, 22, -Math.PI * 0.15, Math.PI * 1.25);
-      spinner.position.set(cx, cy);
-      layer.addChild(spinner);
-
-      const label = makeText(t('world.loading'), {
-        fontFamily: 'sans-serif', fontSize: FS.body, fill: 0x3a3a3a,
-      });
-      label.anchor.set(0.5);
-      label.position.set(cx, cy + 50);
-      layer.addChild(label);
-
-      this.ctx.container.addChild(layer);
-      this.ctx.loadingLayer = layer;
-      this.ctx.loadingSpinner = spinner;
-    }
-
-    /** Remove the first-paint loading cover (idempotent); clears the safety timeout. */
-    hideLoading(): void {
-      if (this.ctx.loadingTimeout) { clearTimeout(this.ctx.loadingTimeout); this.ctx.loadingTimeout = null; }
-      if (this.ctx.loadingLayer) {
-        this.ctx.loadingLayer.destroy({ children: true });
-        this.ctx.loadingLayer = null;
-        this.ctx.loadingSpinner = null;
-      }
-    }
-  };
+  }
 }

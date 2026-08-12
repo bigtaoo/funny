@@ -93,6 +93,46 @@ describe('WorldMapPanels composition wiring', () => {
   });
 });
 
+// ── WorldMapRenderer — build/viewport/pool/city/fog/vignette/lifecycle over one Core ─────────
+
+describe('WorldMapRenderer composition wiring', () => {
+  it('shares exactly one WorldMapRendererCore across all 7 domain classes, with city→pool and the build/viewport/lifecycle→refreshMap bundle reaching the SAME instances', async () => {
+    const { WorldMapContext } = await import('../../src/scenes/worldmap/WorldMapContext');
+    const { WorldMapRenderer } = await import('../../src/scenes/worldmap/WorldMapRenderer');
+    const layout = { designWidth: 1280, designHeight: 800 } as unknown as ConstructorParameters<typeof WorldMapContext>[0];
+    const cb = {
+      onBack() {}, onOpenChat() {}, onOpenAuction() {}, onReplaySiege() {}, onOpenCity() {},
+      onOpenDefense() {}, worldApi: stubWorldApi(), worldId: 'world:1:0', playerName: 'tester',
+      accountId: 'acc_test', storage: memStore,
+    } as unknown as ConstructorParameters<typeof WorldMapContext>[1];
+    const ctx = new WorldMapContext(layout, cb);
+    const view = new WorldMapRenderer(ctx) as unknown as Record<string, unknown>;
+    const core = view.core;
+    expect(core).toBeDefined();
+    for (const p of ['pool', 'city', 'fog', 'vignette', 'buildPanel', 'viewport', 'lifecycle']) {
+      expect((view[p] as Record<string, unknown>).core).toBe(core);
+    }
+    // The chain's two genuine bidirectional pairs (both hubbed on the old pool.ts — pool↔city over
+    // refreshCityLayer()/isBaseAnchor(), pool↔fog over renderOverlay()/invalidatePool(), see
+    // WorldMapRenderer.ts's file-header comment) were resolved by hoisting the "refresh everything"
+    // trigger to this assembly rather than adding lazy hooks: pool no longer references city or fog
+    // at all. city.ts's one-directional dependency on pool (isBaseAnchor) is the only surviving
+    // cross-domain reference among pool/city/fog — must be the SAME pool instance the facade holds.
+    expect((view.city as Record<string, unknown>).pool).toBe(view.pool);
+    // build.ts/viewport.ts/lifecycle.ts each need the pool+city+fog "refresh everything" bundle
+    // mid-method (build()/setZoom()/bootstrap()) — injected as a `refreshMap` closure over the
+    // assembly itself (safe: like every sibling here, those methods only ever run after `new
+    // WorldMapRenderer(ctx)` has fully returned). build.ts/viewport.ts also need pool directly
+    // (buildPool()); lifecycle.ts needs fog/vignette directly (its per-frame update() calls
+    // fog.renderMapL3()/renderOverlay() and vignette.updateVignette() without the full bundle).
+    expect((view.buildPanel as Record<string, unknown>).pool).toBe(view.pool);
+    expect((view.viewport as Record<string, unknown>).pool).toBe(view.pool);
+    expect((view.lifecycle as Record<string, unknown>).fog).toBe(view.fog);
+    expect((view.lifecycle as Record<string, unknown>).vignette).toBe(view.vignette);
+    expect((view.lifecycle as Record<string, unknown>).build).toBe(view.buildPanel);
+  });
+});
+
 // ── GachaScene — page/odds/reveal over one GachaSceneCore ────────────────────────
 
 describe('GachaScene composition wiring', () => {

@@ -24,6 +24,5 @@
   "src/scenes/SettingsScene.ts": 852,
   "src/scenes/worldmap/tileGraphics.ts": 724,
   "src/scenes/worldmap/WorldMapInput.ts": 510,
-  "src/scenes/worldmap/WorldMapNet.ts": 740,
-  "src/scenes/worldmap/WorldMapRenderer/fog.ts": 613
+  "src/scenes/worldmap/WorldMapNet.ts": 740
 }
