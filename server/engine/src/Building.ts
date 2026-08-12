@@ -1,4 +1,4 @@
-import { toFp, TICK_RATE } from './math/fixed';
+import { toFp, subFp, maxFp, minFp, TICK_RATE, type Fp } from './math/fixed';
 import { BUILDING_BLUEPRINTS } from './config';
 import { BuildingBlueprint, BuildingType, Side, Vec2_fp } from './types';
 
@@ -33,9 +33,9 @@ export class Building {
   readonly col: number;
   readonly row: number;
 
-  hp: number;
-  readonly maxHp: number;
-  readonly attack: number;
+  hp_fp: Fp;
+  readonly maxHp_fp: Fp;
+  readonly attack_fp: Fp;
   readonly attackRange: number;
   readonly canTargetFlying: boolean;
   /** Ranged defender: fire a homing projectile instead of instant damage. null = none. */
@@ -59,8 +59,8 @@ export class Building {
    */
   spawnCooldownTicks: number = 0;
 
-  /** Flat damage reduction per hit; absorbed damage minimum 1. */
-  readonly armor: number;
+  /** Flat damage reduction per hit (fp); absorbed damage minimum toFp(1). ADR-065. */
+  readonly armor_fp: Fp;
 
   constructor(
     buildingType: BuildingType,
@@ -79,12 +79,12 @@ export class Building {
     this.row          = row;
 
     const bp = blueprint;
-    this.hp               = bp.hp;
-    this.maxHp            = bp.hp;
-    this.attack           = bp.attack ?? 0;
+    this.hp_fp             = bp.hp_fp;
+    this.maxHp_fp          = bp.hp_fp;
+    this.attack_fp         = bp.attack_fp ?? toFp(0);
     this.attackRange      = bp.attackRange ?? 0;
     this.canTargetFlying  = bp.canTargetFlying ?? false;
-    this.armor            = bp.armor ?? 0;
+    this.armor_fp          = bp.armor_fp ?? toFp(0);
     this.projectile       = bp.projectile
       ? { speed: bp.projectile.speed, kind: bp.projectile.kind }
       : null;
@@ -96,7 +96,7 @@ export class Building {
   }
 
   get isDead(): boolean {
-    return this.hp <= 0;
+    return this.hp_fp <= 0;
   }
 
   get isBarracks(): boolean {
@@ -116,10 +116,10 @@ export class Building {
    * Apply damage, accounting for armor (flat reduction, minimum 1 per hit).
    * Returns actual HP lost.
    */
-  takeDamage(amount: number): number {
-    const effective = this.armor > 0 ? Math.max(1, amount - this.armor) : amount;
-    const actual = Math.min(this.hp, effective);
-    this.hp = Math.max(0, this.hp - effective);
+  takeDamage(amount: Fp): Fp {
+    const effective = this.armor_fp > 0 ? maxFp(toFp(1), subFp(amount, this.armor_fp)) : amount;
+    const actual = minFp(this.hp_fp, effective);
+    this.hp_fp = maxFp(toFp(0), subFp(this.hp_fp, effective));
     return actual;
   }
 }

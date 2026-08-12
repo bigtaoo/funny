@@ -7,6 +7,7 @@
 // same as before) AND returned so the caller can wire them into EngineCtx for
 // emitInitialEvents' one-shot spawn events.
 import { TOP_BUILDING_ROW } from '../../config';
+import { toFp } from '../../math/fixed';
 import { Building } from '../../Building';
 import { EscortUnit } from '../../EscortUnit';
 import type { GameState } from '../../GameState';
@@ -92,11 +93,12 @@ export function createPreplacedEntities(
   }
 
   // Defender base HP ceiling: NPC tiles scale their base HP with tile level (SLG option 2,
-  // 2026-07-17). Sets both current and max so the HP bar reads full (hp/maxBaseHp) at
-  // start; independent of upgradeLevel.
+  // 2026-07-17). Sets both current and max so the HP bar reads full (hp_fp/maxBaseHp_fp) at
+  // start; independent of upgradeLevel. level.defenderBaseHp is the plain real-unit level-
+  // schema value (ADR-065 boundary: converted here).
   if (level.defenderBaseHp && level.defenderBaseHp > 0) {
-    state.topPlayer.maxBaseHp = level.defenderBaseHp;
-    state.topPlayer.baseHp = level.defenderBaseHp;
+    state.topPlayer.maxBaseHp_fp = toFp(level.defenderBaseHp);
+    state.topPlayer.baseHp_fp = toFp(level.defenderBaseHp);
   }
 
   return { garrisonUnits, attackerArmyUnits, defenderBuildingList };

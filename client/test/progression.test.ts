@@ -13,6 +13,7 @@ import {
   clampUnitLevel,
 } from '@nw/engine/balance/progression';
 import { card, cardsAtLevel } from './cardHelpers';
+import { toFp, growFp } from '@nw/engine/math/fixed';
 
 describe('unit progression — hard wall preserved', () => {
   it('buildPvpBlueprints() ignores card levels entirely (signature has no card param)', () => {
@@ -28,8 +29,8 @@ describe('unit progression — hard wall preserved', () => {
   it('a maxed campaign build buffs stats but never mutates the constant', () => {
     const before = JSON.parse(JSON.stringify(UNIT_BLUEPRINTS));
     const camp = buildCampaignBlueprints(cardsAtLevel(UNIT_MAX_LEVEL));
-    expect(camp[UnitType.Infantry].hp).toBeGreaterThan(UNIT_BLUEPRINTS[UnitType.Infantry].hp);
-    expect(camp[UnitType.Archer].attack).toBeGreaterThan(UNIT_BLUEPRINTS[UnitType.Archer].attack);
+    expect(camp[UnitType.Infantry].hp_fp).toBeGreaterThan(UNIT_BLUEPRINTS[UnitType.Infantry].hp_fp);
+    expect(camp[UnitType.Archer].attack_fp).toBeGreaterThan(UNIT_BLUEPRINTS[UnitType.Archer].attack_fp);
     expect(UNIT_BLUEPRINTS).toEqual(before);
     expect(buildPvpBlueprints()).toEqual(pvpExpectedBlueprints());
   });
@@ -47,10 +48,10 @@ describe('applyUnitLevels — stat scaling', () => {
   it('applies the linear formula mult = 1 + perLevel × (level − 1)', () => {
     const camp = buildCampaignBlueprints([card(UnitType.Infantry, 5)]);
     const steps = 5 - 1;
-    const expectedHp = Math.round(UNIT_BLUEPRINTS[UnitType.Infantry].hp * (1 + STAT_GROWTH_PER_LEVEL.hp * steps));
-    const expectedAtk = Math.round(UNIT_BLUEPRINTS[UnitType.Infantry].attack * (1 + STAT_GROWTH_PER_LEVEL.attack * steps));
-    expect(camp[UnitType.Infantry].hp).toBe(expectedHp);
-    expect(camp[UnitType.Infantry].attack).toBe(expectedAtk);
+    const expectedHp = growFp(UNIT_BLUEPRINTS[UnitType.Infantry].hp_fp, STAT_GROWTH_PER_LEVEL.hp, steps);
+    const expectedAtk = growFp(UNIT_BLUEPRINTS[UnitType.Infantry].attack_fp, STAT_GROWTH_PER_LEVEL.attack, steps);
+    expect(camp[UnitType.Infantry].hp_fp).toBe(expectedHp);
+    expect(camp[UnitType.Infantry].attack_fp).toBe(expectedAtk);
   });
 
   it('clamps level above max and below 1', () => {
@@ -73,17 +74,17 @@ describe('applyUnitLevels — stat scaling', () => {
 describe('applyUnitLevels — trait breakpoints T3 / T6 / T9', () => {
   it('crit (T3) unlocks at L3, not before', () => {
     const below = buildCampaignBlueprints([card(UnitType.Infantry, TRAIT_BREAKPOINTS.crit.level - 1)]);
-    expect(below[UnitType.Infantry].critPct ?? 0).toBe(0);
+    expect(below[UnitType.Infantry].critPct_fp ?? toFp(0)).toBe(toFp(0));
     const at = buildCampaignBlueprints([card(UnitType.Infantry, TRAIT_BREAKPOINTS.crit.level)]);
-    expect(at[UnitType.Infantry].critPct).toBe(TRAIT_BREAKPOINTS.crit.pct);
-    expect(at[UnitType.Infantry].critMult).toBe(TRAIT_BREAKPOINTS.crit.mult);
+    expect(at[UnitType.Infantry].critPct_fp).toBe(TRAIT_BREAKPOINTS.crit.pct);
+    expect(at[UnitType.Infantry].critMult_fp).toBe(TRAIT_BREAKPOINTS.crit.mult);
   });
 
   it('lifesteal (T6) unlocks at L6 and is capped by clampEffectCaps (≤30)', () => {
     const below = buildCampaignBlueprints([card(UnitType.Archer, TRAIT_BREAKPOINTS.lifesteal.level - 1)]);
-    expect(below[UnitType.Archer].lifestealPct ?? 0).toBe(0);
+    expect(below[UnitType.Archer].lifestealPct_fp ?? toFp(0)).toBe(toFp(0));
     const at = buildCampaignBlueprints([card(UnitType.Archer, TRAIT_BREAKPOINTS.lifesteal.level)]);
-    expect(at[UnitType.Archer].lifestealPct).toBe(TRAIT_BREAKPOINTS.lifesteal.pct);
+    expect(at[UnitType.Archer].lifestealPct_fp).toBe(TRAIT_BREAKPOINTS.lifesteal.pct);
   });
 
   it('+1 spawn (T9) only at max level', () => {
@@ -98,13 +99,13 @@ describe('crit fields propagate blueprint → Unit', () => {
   it('a crit-capable blueprint produces a Unit with critPct/critMult set', () => {
     const camp = buildCampaignBlueprints(cardsAtLevel(UNIT_MAX_LEVEL));
     const u = new Unit(UnitType.Infantry, Side.Bottom, 0, 0, camp[UnitType.Infantry]);
-    expect(u.critPct).toBe(TRAIT_BREAKPOINTS.crit.pct);
-    expect(u.critMult).toBe(TRAIT_BREAKPOINTS.crit.mult);
+    expect(u.critPct_fp).toBe(TRAIT_BREAKPOINTS.crit.pct);
+    expect(u.critMult_fp).toBe(TRAIT_BREAKPOINTS.crit.mult);
   });
 
   it('a plain PvP blueprint produces a Unit with no crit (0 / 1)', () => {
     const u = new Unit(UnitType.Infantry, Side.Bottom, 0, 0, buildPvpBlueprints()[UnitType.Infantry]);
-    expect(u.critPct).toBe(0);
-    expect(u.critMult).toBe(1);
+    expect(u.critPct_fp).toBe(toFp(0));
+    expect(u.critMult_fp).toBe(toFp(1));
   });
 });

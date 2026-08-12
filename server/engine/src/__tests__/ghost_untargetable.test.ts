@@ -110,8 +110,8 @@ test('an arrow tower can damage a stacked enemy that would otherwise be a ghost'
   state.board.addBuilding(tower);
   assert.ok(tower.isDefender && tower.attackRange >= 2, 'tower must be a defender with range');
 
-  const aStartHp = a.hp;
-  const bStartHp = b.hp;
+  const aStartHp = a.hp_fp;
+  const bStartHp = b.hp_fp;
 
   // Freeze the units in place so the test isolates targeting, not movement: keep
   // re-pinning their positions each tick and only run the combat phase.
@@ -122,8 +122,8 @@ test('an arrow tower can damage a stacked enemy that would otherwise be a ghost'
     if (a.isDead && b.isDead) break;
   }
 
-  assert.ok(a.hp < aStartHp, 'stacked unit A never took tower fire (still a ghost)');
-  assert.ok(b.hp < bStartHp, 'stacked unit B never took tower fire (still a ghost)');
+  assert.ok(a.hp_fp < aStartHp, 'stacked unit A never took tower fire (still a ghost)');
+  assert.ok(b.hp_fp < bStartHp, 'stacked unit B never took tower fire (still a ghost)');
 });
 
 test('a unit engages an enemy that shares a cell with a lower-id friendly', () => {
@@ -148,8 +148,8 @@ test('a unit engages an enemy that shares a cell with a lower-id friendly', () =
   state.board.addUnit(attacker);
   assert.ok(enemy.id > friendly.id, 'test setup: enemy must have the higher id');
 
-  const enemyStartHp    = enemy.hp;
-  const friendlyStartHp = friendly.hp;
+  const enemyStartHp    = enemy.hp_fp;
+  const friendlyStartHp = friendly.hp_fp;
 
   // Freeze positions and run only combat: isolates target selection from movement.
   for (let i = 0; i < 60; i++) {
@@ -159,7 +159,7 @@ test('a unit engages an enemy that shares a cell with a lower-id friendly', () =
     if (enemy.isDead) break;
   }
 
-  assert.ok(enemy.hp < enemyStartHp, 'attacker never hit the enemy hidden behind a friendly');
-  assert.equal(friendly.hp, friendlyStartHp, 'attacker must never damage its own side');
+  assert.ok(enemy.hp_fp < enemyStartHp, 'attacker never hit the enemy hidden behind a friendly');
+  assert.equal(friendly.hp_fp, friendlyStartHp, 'attacker must never damage its own side');
   (void movement);
 });

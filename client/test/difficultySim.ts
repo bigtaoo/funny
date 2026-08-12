@@ -55,7 +55,7 @@ function classifyRole(hp: number, attack: number, range: number): UnitRole {
 const ROLE_MAP: Record<UnitType, UnitRole> = Object.fromEntries(
   (Object.keys(UNIT_BLUEPRINTS) as UnitType[]).map((ut) => {
     const bp = UNIT_BLUEPRINTS[ut];
-    return [ut, classifyRole(bp.hp, bp.attack, bp.range)];
+    return [ut, classifyRole(fromFp(bp.hp_fp), fromFp(bp.attack_fp), bp.range)];
   }),
 ) as Record<UnitType, UnitRole>;
 
@@ -328,7 +328,7 @@ export class BaselinePlayer {
       if (!t) continue;
       if (u.side === Side.Top) {
         t.count++;
-        t.totalHp += u.hp;
+        t.totalHp += fromFp(u.hp_fp);
         if (u.flying) t.flyingCount++;
         // Enemies advance from row 17 toward row 0; smaller row = closer to our base.
         if (u.row < t.closestRow) t.closestRow = u.row;
@@ -500,12 +500,12 @@ export function simulateLevel(levelOrId: string | LevelDefinition, opts: SimOpti
 
   const maxTicks = opts.maxTicks ?? autoMaxTicks(level);
 
-  let minBaseHp = engine.state.bottomPlayer.baseHp;
+  let minBaseHp = fromFp(engine.state.bottomPlayer.baseHp_fp);
   let firstHitTick: number | null = null;
   let peakEnemies = 0;
   let peakEnemyHp = 0;
   let escortMinHp: number | null = engine.state.escorts.length > 0
-    ? Math.min(...engine.state.escorts.map((e) => e.hp))
+    ? Math.min(...engine.state.escorts.map((e) => fromFp(e.hp_fp)))
     : null;
   let tick = 0;
 
@@ -516,7 +516,7 @@ export function simulateLevel(levelOrId: string | LevelDefinition, opts: SimOpti
     if (tick % 3 === 0) {
       let cnt = 0, hp = 0;
       for (const u of engine.state.board.units.values()) {
-        if (u.side === Side.Top && !u.isDead) { cnt++; hp += u.hp; }
+        if (u.side === Side.Top && !u.isDead) { cnt++; hp += fromFp(u.hp_fp); }
       }
       if (cnt > peakEnemies) peakEnemies = cnt;
       if (hp > peakEnemyHp) peakEnemyHp = hp;
@@ -525,16 +525,16 @@ export function simulateLevel(levelOrId: string | LevelDefinition, opts: SimOpti
     engine.tick(TICK_DT);
     tick++;
 
-    const bh = engine.state.bottomPlayer.baseHp;
+    const bh = fromFp(engine.state.bottomPlayer.baseHp_fp);
     if (bh < minBaseHp) minBaseHp = bh;
     if (firstHitTick === null && bh < 100) firstHitTick = tick;
     if (escortMinHp !== null) {
-      for (const e of engine.state.escorts) if (e.hp < escortMinHp) escortMinHp = e.hp;
+      for (const e of engine.state.escorts) { const eHp = fromFp(e.hp_fp); if (eHp < escortMinHp) escortMinHp = eHp; }
     }
   }
 
   const win = engine.state.winner === Side.Bottom;
-  const finalBaseHp = engine.state.bottomPlayer.baseHp;
+  const finalBaseHp = fromFp(engine.state.bottomPlayer.baseHp_fp);
   // Composite star scoring (STAR_SCORING.md): build the same ctx the judge recomputes from.
   const endStats = engine.state.snapshotStats();
   const summary = engine.state.snapshotSummary();

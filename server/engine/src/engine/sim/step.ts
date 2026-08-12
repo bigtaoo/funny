@@ -180,8 +180,8 @@ function emitInitialEvents(ctx: EngineCtx): void {
       escortId: escort.id,
       col_fp:   escort.col_fp,
       row_fp:   escort.row_fp,
-      hp:       escort.hp,
-      maxHp:    escort.maxHp,
+      hp_fp:    escort.hp_fp,
+      maxHp_fp: escort.maxHp_fp,
     });
   }
 

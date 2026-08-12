@@ -3,6 +3,7 @@ import { createGameEngine } from '@nw/engine/GameEngine';
 import { CAMPAIGN_LEVELS } from '../src/game/campaign/levels';
 import type { GameConfig } from '@nw/engine/types';
 import { Side, GamePhase } from '@nw/engine/types';
+import { fromFp } from '@nw/engine/math/fixed';
 import { BaselinePlayer, DEFAULT_AI, progressionCards } from './difficultySim';
 
 const TICK_DT = 1 / 30;
@@ -49,10 +50,10 @@ describe(`timeline inspection ${LEVEL_ID} (${PRESET})`, () => {
         }
         for (const b of engine.state.board.buildings.values())
           if (b.side === Side.Bottom && b.buildingType === 'arrow_tower') myT++;
-        console.log(` ${String(tick / 30).padStart(4)} | ${String(p.ink).padStart(3)} | ${String(p.baseHp).padStart(4)} | ${String(myU).padStart(4)} | ${String(myT).padStart(4)} | ${String(enU).padStart(4)}`);
+        console.log(` ${String(tick / 30).padStart(4)} | ${String(p.ink).padStart(3)} | ${String(fromFp(p.baseHp_fp)).padStart(4)} | ${String(myU).padStart(4)} | ${String(myT).padStart(4)} | ${String(enU).padStart(4)}`);
       }
     }
     console.log('\nAction tally:', JSON.stringify(tally));
-    console.log(`End winner=${engine.state.winner} baseHp=${engine.state.bottomPlayer.baseHp}\n`);
+    console.log(`End winner=${engine.state.winner} baseHp=${fromFp(engine.state.bottomPlayer.baseHp_fp)}\n`);
   });
 });

@@ -1,4 +1,5 @@
 import { INK_CAP } from '../config';
+import { toFp } from '../math/fixed';
 import { Prng } from '../math/prng';
 import { GameState } from '../GameState';
 import { BuildingType, CardType, OwnerId, PlayerCommand, SpellType } from '../types';
@@ -90,7 +91,9 @@ export class AISystem {
     if (ctx.params.useThreatMemory) recordThreatHistory(ctx.threatHistory, threat);
     const totalThreat = threat.reduce((a, b) => a + b, 0);
     const imminent = countNearBaseEnemies(state, ctx.params.dangerRow);
-    const underPressure = imminent > 0 || player.baseHp <= ctx.params.lowBaseHp;
+    // ADR-065: ctx.params.lowBaseHp is DIFFICULTY's plain real-unit tuning table (ai/types.ts)
+    // — converted at this comparison site, same pattern as siegeAcademy/enemyScale.
+    const underPressure = imminent > 0 || player.baseHp_fp <= toFp(ctx.params.lowBaseHp);
 
     // ── 1. Emergency defense ─────────────────────────────────────────────────
     if (underPressure) {

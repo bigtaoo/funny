@@ -33,15 +33,16 @@ export interface ProjectilePayload {
   attackerId: number;
   /** Attacker's side — used to skip allies in splash/pierce. */
   side: Side;
-  /** Pre-rolled damage (crit already applied). */
-  rawDamage: number;
+  /** Pre-rolled damage (crit already applied). ADR-065: fp. */
+  rawDamage: Fp;
   splashRadius: number;
   piercing: boolean;
-  lifestealPct: number;
-  slowOnHit: { mult: number; durationTicks: number } | null;
+  /** ADR-065: fp (0–100 points scale, same as Unit.lifestealPct_fp). */
+  lifestealPct: Fp;
+  slowOnHit: { mult_fp: Fp; durationTicks: number } | null;
   burstOnSingle: boolean;
-  /** Multiplier burstOnSingle applies (default 2 at the call site when burstOnSingle is set). */
-  burstOnSingleMult: number;
+  /** Multiplier burstOnSingle applies (fp; default toFp(2) at the call site when burstOnSingle is set). ADR-065. */
+  burstOnSingleMult: Fp;
   markEnemies: boolean;
 }
 

@@ -8,7 +8,7 @@ import { GameState } from '@nw/engine/GameState';
 import { Unit, resetUnitIds } from '@nw/engine/Unit';
 import { MovementSystem } from '@nw/engine/systems/MovementSystem';
 import { HazardSystem } from '@nw/engine/systems/HazardSystem';
-import { toFp, fromFp, mulFp, TICK_DT_FP } from '@nw/engine/math/fixed';
+import { toFp, fromFp, mulFp, subFp, TICK_DT_FP } from '@nw/engine/math/fixed';
 import { Side, UnitState, UnitType } from '@nw/engine/types';
 
 beforeEach(() => {
@@ -286,14 +286,14 @@ describe('HazardSystem — lava zone (DoT)', () => {
 
     const u = new Unit(UnitType.Infantry, Side.Bottom, 4, 6);
     state.board.addUnit(u);
-    const startHp = u.hp;
+    const startHp = u.hp_fp;
 
     state.hazards = [{ col: 4, rowRange: [5, 8], effect: 'lava', dps: 30 }];
 
     hazSys.tick(state);
 
     // TICK_RATE = 30, so dmgPerTick = ceil(30/30) = 1
-    expect(u.hp).toBe(startHp - 1);
+    expect(u.hp_fp).toBe(subFp(startHp, toFp(1)));
   });
 
   it('lava does not damage units outside its row range', () => {
@@ -302,13 +302,13 @@ describe('HazardSystem — lava zone (DoT)', () => {
 
     const u = new Unit(UnitType.Infantry, Side.Bottom, 4, 2);
     state.board.addUnit(u);
-    const startHp = u.hp;
+    const startHp = u.hp_fp;
 
     state.hazards = [{ col: 4, rowRange: [5, 8], effect: 'lava', dps: 30 }];
 
     hazSys.tick(state);
 
-    expect(u.hp).toBe(startHp);
+    expect(u.hp_fp).toBe(startHp);
   });
 
   it('accumulates lava damage over multiple ticks until unit dies', () => {
@@ -323,7 +323,7 @@ describe('HazardSystem — lava zone (DoT)', () => {
     state.hazards = [{ col: 3, rowRange: [3, 8], effect: 'lava', dps: 600 }];
 
     hazSys.tick(state); // 30 - 20 = 10 hp
-    expect(u.hp).toBe(10);
+    expect(u.hp_fp).toBe(toFp(10));
     hazSys.tick(state); // 10 - 20 = dead (takeDamage clamps hp to 0 / sets isDead)
     expect(u.isDead).toBe(true);
   });
@@ -333,10 +333,10 @@ describe('HazardSystem — lava zone (DoT)', () => {
     const hazSys = new HazardSystem();
 
     const u = new Unit(UnitType.Infantry, Side.Bottom, 4, 6);
-    u.hp = 0;
+    u.hp_fp = toFp(0);
     // Force isDead — takeDamage will do it; simulate by setting hp then calling takeDamage(0):
-    u.takeDamage(0); // hp already 0, sets isDead via the check
-    const preHp = u.hp;
+    u.takeDamage(toFp(0)); // hp already 0, sets isDead via the check
+    const preHp = u.hp_fp;
     state.board.addUnit(u);
 
     state.hazards = [{ col: 4, rowRange: [4, 8], effect: 'lava', dps: 900 }];
@@ -344,7 +344,7 @@ describe('HazardSystem — lava zone (DoT)', () => {
     hazSys.tick(state);
 
     // hp unchanged (dead units skipped)
-    expect(u.hp).toBe(preHp);
+    expect(u.hp_fp).toBe(preHp);
   });
 });
 
@@ -358,13 +358,13 @@ describe('HazardSystem — no-op when state.hazards is empty', () => {
     const u = new Unit(UnitType.Infantry, Side.Bottom, 4, 5);
     state.board.addUnit(u);
     const speedBefore = u.speed_fp;
-    const hpBefore = u.hp;
+    const hpBefore = u.hp_fp;
 
     // state.hazards defaults to [] — no hazards configured.
     hazSys.tick(state);
 
     expect(u.speed_fp).toBe(speedBefore);
-    expect(u.hp).toBe(hpBefore);
+    expect(u.hp_fp).toBe(hpBefore);
     expect(u.rangeMod).toBe(0);
   });
 });

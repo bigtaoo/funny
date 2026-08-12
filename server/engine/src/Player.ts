@@ -3,7 +3,7 @@ import {
   BASE_UPGRADE_COSTS,
   INK_CAP,
 } from './config';
-import { FP_SCALE } from './math/fixed';
+import { FP_SCALE, toFp, maxFp, subFp, type Fp } from './math/fixed';
 import { Hand, UniformCardDrawPolicy, type ICardDrawPolicy } from './Card';
 import { Prng } from './math/prng';
 import { Side } from './types';
@@ -17,14 +17,16 @@ export class Player {
    */
   private _ink_fp: number = 0;
 
-  baseHp: number = BASE_HP;
+  /** ADR-065: fp. `BASE_HP` (config.ts) is the real-unit constant, converted once here. */
+  baseHp_fp: Fp = toFp(BASE_HP);
 
   /**
    * Base HP ceiling for this player (drives the HP-bar denominator in `base_hp_changed`). Defaults to the
    * global {@link BASE_HP}; a siege level can raise the DEFENDER's ceiling via `defenderBaseLevel`→`base.ts`
-   * so an NPC tile's base scales with its level (SLG option 2, 2026-07-17). Set together with `baseHp` at init.
+   * so an NPC tile's base scales with its level (SLG option 2, 2026-07-17). Set together with `baseHp_fp` at
+   * init. ADR-065: fp.
    */
-  maxBaseHp: number = BASE_HP;
+  maxBaseHp_fp: Fp = toFp(BASE_HP);
 
   /** 0 = no upgrade, max BASE_UPGRADE_COSTS.length */
   upgradeLevel: number = 0;
@@ -56,7 +58,7 @@ export class Player {
   }
 
   get isDead(): boolean {
-    return this.baseHp <= 0;
+    return this.baseHp_fp <= 0;
   }
 
   // ── Mutation helpers ───────────────────────────────────────────────────────
@@ -73,8 +75,8 @@ export class Player {
     return true;
   }
 
-  takeDamage(amount: number): void {
-    this.baseHp = Math.max(0, this.baseHp - amount);
+  takeDamage(amount: Fp): void {
+    this.baseHp_fp = maxFp(toFp(0), subFp(this.baseHp_fp, amount));
   }
 
   canUpgradeBase(): boolean {

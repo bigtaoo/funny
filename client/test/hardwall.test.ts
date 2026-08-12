@@ -12,6 +12,7 @@ import {
 } from '@nw/engine/balance/pveUpgrades';
 import { UNIT_MAX_LEVEL } from '@nw/engine/balance/progression';
 import { createGameEngine } from '@nw/engine/GameEngine';
+import { toFp, growFp } from '@nw/engine/math/fixed';
 import { CAMPAIGN_LEVELS, CAMPAIGN_LEVEL_ORDER } from '../src/game/campaign/levels';
 import { pvpExpectedBlueprints as pvpExpected } from './pvpBlueprintExpected';
 import { cardsAtLevel } from './cardHelpers';
@@ -37,14 +38,14 @@ describe('hard wall — PvP blueprints never see PvE upgrades', () => {
 
   it('buildCampaignBlueprints(maxed cards) buffs at least one stat above the constant', () => {
     const camp = buildCampaignBlueprints(cardsAtLevel(UNIT_MAX_LEVEL));
-    expect(camp[UnitType.Infantry].hp).toBeGreaterThan(UNIT_BLUEPRINTS[UnitType.Infantry].hp);
-    expect(camp[UnitType.Archer].attack).toBeGreaterThan(UNIT_BLUEPRINTS[UnitType.Archer].attack);
+    expect(camp[UnitType.Infantry].hp_fp).toBeGreaterThan(UNIT_BLUEPRINTS[UnitType.Infantry].hp_fp);
+    expect(camp[UnitType.Archer].attack_fp).toBeGreaterThan(UNIT_BLUEPRINTS[UnitType.Archer].attack_fp);
   });
 
   it('builders return fresh clones — never mutate the global constant', () => {
     const before = JSON.parse(JSON.stringify(UNIT_BLUEPRINTS));
     const camp = buildCampaignBlueprints(cardsAtLevel(UNIT_MAX_LEVEL));
-    camp[UnitType.Infantry].hp = 99999; // tamper with the clone
+    camp[UnitType.Infantry].hp_fp = toFp(99999); // tamper with the clone
     expect(UNIT_BLUEPRINTS).toEqual(before); // constant untouched
     // A PvP build after a campaign build is still pristine (constants + static §5 overrides).
     expect(buildPvpBlueprints()).toEqual(pvpExpected());
@@ -82,8 +83,10 @@ describe('applyPveUpgrades — clamping & math (deprecated tree, direct calls)',
     const def = getUpgradeDef('inf_hp')!;
     const bp = buildPvpBlueprints();
     applyPveUpgrades(bp, { inf_hp: 3 });
-    const expected = Math.round(UNIT_BLUEPRINTS[UnitType.Infantry].hp * (1 + def.effectPerLevel * 3));
-    expect(bp[UnitType.Infantry].hp).toBe(expected);
+    // def.effectPerLevel is already fp (ADR-065) — growFp computes base_fp × (1 + rate_fp×steps)
+    // entirely in the fp domain; do not re-wrap it in toFp() (that would double-scale it).
+    const expected = growFp(UNIT_BLUEPRINTS[UnitType.Infantry].hp_fp, def.effectPerLevel, 3);
+    expect(bp[UnitType.Infantry].hp_fp).toBe(expected);
   });
 });
 

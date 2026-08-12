@@ -1,10 +1,10 @@
 {
-  "eventLogHash": "59fcc69352bfca69442b851b167fa7b5d2e393cf47bd26c11df21eaa4e524185",
+  "eventLogHash": "6397d3b3463994ba1be7849a0f50b2b07dc39885262823a472eccf61a1ad54f1",
   "finalSnapshot": {
     "bossUnitIds": [],
     "bottomInkRegenMult": 1,
     "bottomPlayer": {
-      "baseHp": 94,
+      "baseHp_fp": 94000,
       "hand": [
         {
           "cardId": "max_2",
@@ -33,7 +33,7 @@
       ],
       "ink": 6,
       "isDead": false,
-      "maxBaseHp": 100,
+      "maxBaseHp_fp": 100000,
       "side": "bottom",
       "upgradeLevel": 0
     },
@@ -76,7 +76,7 @@
       "escortMinHpPct": null
     },
     "topPlayer": {
-      "baseHp": 100,
+      "baseHp_fp": 100000,
       "hand": [
         {
           "cardId": "mara_1",
@@ -105,14 +105,14 @@
       ],
       "ink": 6,
       "isDead": false,
-      "maxBaseHp": 100,
+      "maxBaseHp_fp": 100000,
       "side": "top",
       "upgradeLevel": 0
     },
     "units": [],
     "winner": "top"
   },
-  "finalStateHash": "4129acd546cd444e2e773cd88f22562cae8b405f3f0c465fb62794a4d4286463",
+  "finalStateHash": "f9ac95b8bc3db0b4f1d472e7c42654fdd3235c87aa379b06827231192785d937",
   "name": "campaign_leak_limit",
   "tickHashes": [
     "4c14a354df7e2b7ad3e42fc1769e594d4b1007d7a48226dec68e0aebd229d362",
@@ -214,7 +214,7 @@
     "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
     "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
     "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
-    "5ae2860be65d71a600749bc8d09f8ffe0235d2106ac43d0214f427686d449c2a",
+    "f1c0b239710694757bed171f05afde8af26559188b5afd9c0f03d3be765d12d1",
     "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
     "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
     "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",

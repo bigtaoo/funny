@@ -5,6 +5,7 @@ import { t } from '../../i18n';
 import { ui as C, sketchPanel, seedFor } from '../../render/sketchUi';
 import { unitPortraitUrl, equippedSkinIdFor, getArtTexture } from '../../render/cardArt';
 import { ATTACK_LANES, UNIT_BLUEPRINTS } from '@nw/engine/config';
+import { fromFp } from '@nw/engine/math/fixed';
 import { CARD_TEAM_MAX_SIZE } from '@nw/shared';
 import { MAX_GARRISON } from './core';
 import type { DefenseEditorSceneCore } from './core';
@@ -81,7 +82,7 @@ export class InputPanel implements InputHandlers {
           core.showToast(t('world.defense.full'), C.red);
           return;
         }
-        const maxHp = UNIT_BLUEPRINTS[core.tool.type].hp;
+        const maxHp = fromFp(UNIT_BLUEPRINTS[core.tool.type].hp_fp);
         core.garrison.set(key, { unitType: core.tool.type, hp: maxHp });
       } else {
         core.showToast(t('world.defense.buildingsNotHere'), C.red);

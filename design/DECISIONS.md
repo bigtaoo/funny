@@ -1,11 +1,11 @@
 # 决策日志（ADR）
 
-> 状态：实现中 · 权威：本文 · 更新：2026-08-01
+> 状态：实现中 · 权威：本文 · 更新：2026-08-12
 
 记录**会造成文档间漂移**的关键拍板：改数值口径、改命名、改架构、废弃旧方案。
 每条 ADR 注明：日期、决策、影响的文档、为什么。新拍板追加在末尾，不改旧条目（要改就加一条新的 *Supersedes*）。
 
-格式：`ADR-NNN 标题 — 状态(Accepted/Superseded) — 日期`
+格式：`ADR-NNN 标题 — 状态(Accepted/Superseded) — 日期`（`Proposed` = 已登记、未拍板的候选提案，不代表当前实现，实施前需另开确认）
 
 ---
 
@@ -777,3 +777,25 @@
 - **验证**：8 个改写后的 workflow + 新增 composite action 用 PyYAML `yaml.safe_load` 全部解析通过（纯语法校验，GitHub 未提供本地跑 `workflow_run` 事件的方式）；`paths-changed-since` 的 include/exclude/无匹配三种分支用 bash 脚本沙盒模拟数据跑过一遍，行为符合预期；额外用本仓库真实提交 `2a1f20bb`（只改了 `client/test/**`）验证了两个方向——套 server-deploy 的 include/exclude 规则判定为 `changed=false`（应跳过）、套 client-deploy 的规则判定为 `changed=true`（应触发），均与预期一致。未做端到端 GitHub Actions 真实触发验证（需要合并进 `main` 才能生效，见上「已知取舍」第 1 条）。
 - **影响**：`.github/actions/paths-changed-since/action.yml`（新增）；`.github/workflows/{server,client,animator,level-editor,map-editor,ops,vfx,grafana}-deploy.yml`；`design/product/deploy-cloudflare.md`（client-deploy/ops-deploy/server-deploy 触发方式描述同步）。
 - **验证**：`server/shared` 装备单测 62 例全绿（新增 `enhanceDemoteChance`/`rollEnhanceDemote` 覆盖，含"两个骰子流互相独立"回归）；`server/metaserver` 装备 e2e 47 例全绿（新增 +7 掉级/不掉级/保护道具挡掉级三例）；`server/auctionsvc` e2e 65 例全绿（`equipEnhanceExpectedCost` 依赖的 `enhanceCost`/`enhanceSuccessRate` 未改，价格逻辑不受影响）；`server/tools/econ-sim` 18 例全绿；`client` 装备相关 vitest（`test/equipment.test.ts` 22 例 + UI 套件 `equipmentDetailProtectLabel`/`shopScene`/`shopActions` 共 68 例）全绿；`server`（engine/shared/metaserver/auctionsvc）`tsc -b` 与 `client` `tsc --noEmit` 均无错误。未起 dev server 截图（纯数值/规则改动，无新增可视化布局需要人工核对，掉级警示文案的排版走既有弹窗高度自适应逻辑）。
+
+## ADR-065 引擎战斗数值全面定点化（所有连续型战斗数值 ×FP_SCALE=1000，统一复用现有定点域） — Accepted — 2026-08-12
+
+- **背景**：`server/engine` 原先只有"需要逐 tick 累积小数进度"的量走 `FP_SCALE`（=1000）定点整数——位置 `y_fp`/`col_fp`、速度 `speed_fp`、回血累加器、墨水 `_ink_fp`；HP/攻击力/护甲/暴击/强化倍率等"一次性 bake 进 blueprint"的量是普通浮点/整数，只在写回字段前 `Math.round()` 一次。修 `equip_crit.test.ts` 陈旧断言（ADR-063 强化倍率表改非线性后测试期望值未同步）时，用户提出应统一到同一套定点体系（理由：内部一致性，不是部分字段定点、部分不定点）。三轮讨论拍板了完整设计并明确"现在就实施"。
+- **已核实、推翻早期顾虑的事实**：`server/contracts/*.proto`（game/replay/transport）完全不携带 hp/attack 等战斗数值——线上协议只传不透明的输入指令字节流 + JSON 元数据，**不用改协议、不用重新 codegen**；客户端从不从网络反序列化这些数值，本地跑确定性引擎，画面数字全部来自本地 `Unit`/`GameState`/`GameEvent`。
+- **拍板的设计原则**：
+  1. `config.ts` 保持人类可读真实单位（`hp: 60`），DB/SaveData 装备卡牌数据保持真实单位不变；转换只发生在 blueprint bake 阶段（`balance/pveUpgrades.ts` 的 `buildPvpBlueprints`/`buildCampaignBlueprints`/`buildSiegeBlueprints`）。
+  2. 统一复用现有 `FP_SCALE`/`math/fixed.ts` 定点域（不给比率类数值另开一套），新增 `divFpByInt`/`growFp`/`maxFp`/`minFp`/`clampFp` 五个小工具补齐现有 `toFp/fp/addFp/subFp/mulFp/scaleFp/negFp` 家族。
+  3. 不追旧回放兼容——线上已存历史回放 hash 失效是预期代价。
+  4. 客户端视觉表现维持现状——不新增"更精细数字"展示功能，展示层统一在读取点 `fromFp()` 换算。
+  5. 进定点字段：`hp/maxHp`、`attack`、`siegeValue`、`armor`、`armorEnrageBonus`、`critPct`、`critMult`、`lifestealPct`、`reflectPct`、`burstOnSingleMult`、`berserkerThreshold`、`armorEnrageThreshold`、`slowOnHit.mult`（`Unit`/`Building`/`EscortUnit`/`Player.baseHp`/`maxBaseHp` 同步）；`ENHANCE_LEVEL_MULTIPLIER`、`EFFECT_CAPS`、`STAT_GROWTH_PER_LEVEL`（除 `atkspd`/`spd`，见下）、`TRAIT_BREAKPOINTS.{crit,lifesteal}`、`PveUpgradeDef.effectPerLevel` 等比率常量。不进定点（维持现状）：离散整格量 `range`/`splashRadius`/`spawnCount`；已走"一次性换算成 tick/fp"既有模式的 `attackInterval`/`speed`/`radius_fp`/`slowOnHit.durationSec`/`summonOnTimer.intervalSec`；纯整数全局系数 `ATTACK_MULT_LATE_GAME`。`PlayerStats.damageDealtToBase/damageTakenByBase`（match-summary 报表统计，client ResultScene 徽章直接显示）也保持真实单位，在 `MovementSystem.ts` 记账处 `fromFp()` 换算，不往下游（client/judgeRunner/campaignRewards）传播。
+  6. 副产品修正：`HazardSystem.ts`/`hitResolution.ts` 两处既有"`Fp` × 普通小数比率"手写 `Math.round`+类型断言 hack，借这次统一改用 `mulFp`。
+  7. 暴击等"百分点"字段与 PRNG 交互：`combatPrng.nextInt(100) * 1000 < critPct_fp`（放大骰子侧而非截断 stat 侧），精度不丢失、PRNG 抽取节奏不变。
+  8. 回血机制简化：`hp_fp` 本身已有千分之一 HP 粒度，`TraitSystem.ts` 去掉了原来的 `healAccFp` 累积器，`regenFpPerTick` 每 tick 直接加进 `hp_fp`（clamp 到 `maxHp_fp`）。
+- **实现（5 个检查点顺序落地，每步验证后再进入下一步）**：
+  - **检查点 A（引擎核心）**：`math/fixed.ts` 新增 5 个 helper；`types/blueprints.ts`/`config.ts`（拆分 `RAW_UNIT_BLUEPRINTS` 人类可读表 + `bakeUnitBlueprint()` 转换函数，导出已 baked 的 `UNIT_BLUEPRINTS`）/`balance/{progression,pveUpgrades,equipment}.ts`/`engine/setup/blueprints.ts`/`Unit.ts`/`Building.ts`/`EscortUnit.ts`/`Player.ts`/`systems/combat/{hitResolution,tick}.ts`/`systems/{TraitSystem,HazardSystem,SpellSystem,AISystem,ai/cardSelection}.ts`/`types/events.ts`/`Projectile.ts`/`engine/sim/step.ts`/`GameState.ts`（`snapshotSummary` 比例计算）全部改定点。`server/engine` `tsc -b` 干净。
+  - **检查点 B（下游服务端包）**：`server/worldsvc/src/siegeEngine.ts`（新增 `blueprintFullHp()` 换算函数，§16.5 存活血量→存活兵力换算处 `fromFp()`）、`server/tools/econ-sim/src/{occupyBaseHpRun,strongholdCombat}.ts` 同样换算；`server/botsvc` 不涉及数值读取，无需改动；`server/shared` 的 `siegeValueBase` 卡牌元数据镜像确认是独立真实单位，未受影响。全 11 服务 + engine/shared workspaces `typecheck` 全绿。
+  - **检查点 C（黄金回放 + 引擎单测）**：`goldenReplay/snapshot.ts` 字段改名；新增一次性验证脚本 `goldenReplay/verifyFpMigration.ts`（保留在仓库，非测试套件的一部分）——换算新引擎输出回真实单位后逐字段 diff 旧 fixture：11 个场景里 8 个逐字节完全一致，3 个 PvP/netplay 场景仅 Max 单位在 burstOnSingleMult×markEnemies 连续加成链上出现 <1 点的小数级 HP 偏移（不再在中间步骤取整，正是本次改动的设计目标，不是 bug）——胜负/tick 数/死亡/击杀数全部零偏差，确认后才用 `generateFixtures.ts` 正式重新生成全部 11 个 fixture。改写 7 个引擎测试文件（`equip_crit`/`trait-system`/`armor`/`pvp_hardwall`/`gameEngine`/`unit_t9_traits`/`escort-system`）+ 3 个未预期的（`ghost_untargetable`/`projectile-escort-id-per-instance`/`escort-system`）。`npm test`（server/engine）123/123 全绿。
+  - **检查点 D（客户端展示层 + 客户端测试）**：`client/src/game/meta/cardDefs.ts`（`cardHp/cardAttack/cardSiegeValue` 加 `fromFp()`，唯一收口点）、`EquipmentScene/helpers.ts` 的 `affixDesc()`（`enhanceMultiplier()` 现在返回 `Fp`，之前的写法编译能过但数值会错 1000 倍——`Fp` 结构上是 `number` 的子类型，TS 不会报错，靠 UI 测试跑出来才发现）、`StateRecorder.ts`（回放录制侧 `quantizeHp(fromFp(...))`）、`HUDView.ts`/`TutorialDirector.ts`/`GameRenderer/{core,events}.ts`/`BuildingView.ts`/`UnitView.ts`/`CardCodexScene.ts`/`DefenseEditorScene/{data,input}.ts` 等展示/HP 条/阈值判断处按"比例计算不用换算、绝对数字展示要 `fromFp()`"原则逐一处理。客户端 21 个测试文件的字段改名/字面量换算（4 个并行 agent 分批完成，人工复核+修正 3 处 agent 引入的公式错误：`hardwall.test.ts` 的 `growFp` 用法、`stateRecorder.test.ts`/`hudHeartHpBar.test.ts`/`gameRendererSurrenderRace.ui.ts` 里因 `any` 类型转换绕过 tsc 检查而遗漏的 mock 数据字段改名——这几处只有跑测试才能发现，tsc 编译干净不代表数值正确）。`client` `tsc --noEmit`/`typecheck` 全绿，`npm test` 1293/1293、`npm run test:ui` 1502/1502 全绿，`npm run build:web` 生产构建成功。
+  - **检查点 E（文档）**：本条 ADR 由 Proposed 转 Accepted；`BALANCE.md`/`ECONOMY_NUMBERS.md`/`EQUIPMENT_DESIGN.md` 补充指向本 ADR 的说明（数字口径本身不用改，仍是真实单位）。
+- **风险与教训**：TypeScript 的结构化类型对 `Fp`（`number & {brand}`）品牌类型在**普通算术运算**里形同虚设——`plainNumber * fpValue` 照样编译通过，只是数值错 1000 倍，这类"类型正确但数值错误"的 bug 只能靠跑测试（尤其是断言具体数值、而非仅断言类型的测试）才能发现，`tsc --noEmit` 干净不是数值正确的充分证明。本次修改过程中在客户端出现过 4 处这类问题（`EquipmentScene/helpers.ts` 生产代码 1 处 + 3 处测试 mock 数据），全部靠运行完整测试套件定位。
+- **影响**：`server/engine/src/{math/fixed.ts,types/{blueprints,events}.ts,config.ts,Unit.ts,Building.ts,EscortUnit.ts,Player.ts,Projectile.ts,GameState.ts,balance/{equipment,pveUpgrades,progression}.ts,engine/{setup/{blueprints,preplaced},sim/step}.ts,systems/{combat/{hitResolution,tick},TraitSystem,HazardSystem,SpellSystem,AISystem,ai/cardSelection,MovementSystem,EscortSystem}.ts}`；`server/worldsvc/src/siegeEngine.ts`；`server/tools/econ-sim/src/{occupyBaseHpRun,strongholdCombat}.ts`；`client/src/{game/meta/cardDefs.ts,game/replay/StateRecorder.ts,scenes/EquipmentScene/helpers.ts,scenes/CardCodexScene.ts,scenes/DefenseEditorScene/{data,input}.ts,render/{HUDView,TutorialDirector,UnitView,BuildingView,GameRenderer/{core,events}}.ts}`；`server/engine/src/__tests__/`（10 个文件改写 + 新增 `goldenReplay/verifyFpMigration.ts` + 11 个 fixture 重新生成）；`client/test/`（21 个文件改名/换算 + 3 处运行时发现的 mock 数据修正）；`design/game/{BALANCE.md,ECONOMY_NUMBERS.md,EQUIPMENT_DESIGN.md}`。

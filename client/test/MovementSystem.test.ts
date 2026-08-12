@@ -3,7 +3,7 @@ import { GameState } from '@nw/engine/GameState';
 import { Unit } from '@nw/engine/Unit';
 import { Building } from '@nw/engine/Building';
 import { MovementSystem } from '@nw/engine/systems/MovementSystem';
-import { toFp, mulFp, TICK_DT_FP } from '@nw/engine/math/fixed';
+import { toFp, mulFp, subFp, TICK_DT_FP } from '@nw/engine/math/fixed';
 import { BASE_HP, BASE_COLS, TOP_BUILDING_ROW } from '@nw/engine/config';
 import { Side, UnitType, UnitState, BuildingType } from '@nw/engine/types';
 
@@ -48,13 +48,13 @@ describe('MovementSystem — forward movement', () => {
     const u = new Unit(UnitType.Infantry, Side.Bottom, 0, TOP_BUILDING_ROW); // start at threshold
     state.board.addUnit(u);
 
-    const before = state.topPlayer.baseHp;
+    const before = state.topPlayer.baseHp_fp;
     // From col 0 to base col 5 = 5000 fp at 33 fp/tick ≈ 152 ticks; give margin.
     tickN(state, sys, 220);
 
-    expect(state.topPlayer.baseHp).toBeLessThan(before);
+    expect(state.topPlayer.baseHp_fp).toBeLessThan(before);
     // Base damage on arrival is the unit's siege value, not combat attack (ADR-026).
-    expect(state.topPlayer.baseHp).toBe(before - u.siegeValue);
+    expect(state.topPlayer.baseHp_fp).toBe(subFp(before, u.siegeValue_fp));
     expect(state.board.units.has(u.id)).toBe(false); // despawned
     expect(BASE_COLS).toContain(5);
     expect(BASE_HP).toBe(100);

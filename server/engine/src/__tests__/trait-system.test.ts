@@ -3,6 +3,11 @@
  * only client-side VFX-id string checks existed, nothing that actually ran TraitSystem.tick()
  * against a real GameState/Unit and asserted the resulting state change. This file drives the
  * real system for several ticks and checks the numbers it produces.
+ *
+ * ADR-065: hp/maxHp/regenFpPerTick are fp (scale = FP_SCALE = 1000). The regen mechanism itself
+ * changed shape: hp_fp now carries milli-HP precision directly, so `regenFpPerTick` is added
+ * straight into `hp_fp` every tick (clamped to `maxHp_fp`) — there is no more separate `healAccFp`
+ * accumulator/remainder to drain (that was a pre-ADR-065 artifact of `hp` being a whole integer).
  */
 
 import { strict as assert } from 'node:assert';
@@ -13,7 +18,7 @@ import { Unit, resetUnitIds } from '../Unit';
 import { TraitSystem } from '../systems/TraitSystem';
 import { UNIT_BLUEPRINTS } from '../config';
 import { UnitType, Side } from '../types';
-import { TICK_RATE, type Fp } from '../math/fixed';
+import { TICK_RATE, toFp, mulFp } from '../math/fixed';
 
 // ── aura_heal ────────────────────────────────────────────────────────────────────────────────
 
@@ -23,21 +28,20 @@ test('aura_heal: a wounded ally inside the radius is healed each tick; out-of-ra
   const traitSystem = new TraitSystem();
 
   // hps=30 -> healFpPerTick = round(30 * FP_SCALE / TICK_RATE) = round(30 * 1000 / 30) = 1000,
-  // exactly FP_SCALE — the accumulator crosses the threshold on every single tick, so +1 HP is
-  // observable immediately without needing multiple ticks to cross FP_SCALE.
+  // exactly toFp(1) — +1 HP is observable immediately after a single tick.
   const healer = new Unit(UnitType.Medic, Side.Bottom, 5, 5, {
     ...UNIT_BLUEPRINTS[UnitType.Medic],
     traits: [{ type: 'aura_heal', radius: 2, hps: 30 }],
   });
 
-  const nearAlly = new Unit(UnitType.Infantry, Side.Bottom, 6, 5, { ...UNIT_BLUEPRINTS[UnitType.Infantry], hp: 100 });
-  nearAlly.hp = 50; // Chebyshev distance 1 from healer — inside radius 2.
+  const nearAlly = new Unit(UnitType.Infantry, Side.Bottom, 6, 5, { ...UNIT_BLUEPRINTS[UnitType.Infantry], hp_fp: toFp(100) });
+  nearAlly.hp_fp = toFp(50); // Chebyshev distance 1 from healer — inside radius 2.
 
-  const farAlly = new Unit(UnitType.Infantry, Side.Bottom, 9, 5, { ...UNIT_BLUEPRINTS[UnitType.Infantry], hp: 100 });
-  farAlly.hp = 50; // distance 4 — outside radius 2.
+  const farAlly = new Unit(UnitType.Infantry, Side.Bottom, 9, 5, { ...UNIT_BLUEPRINTS[UnitType.Infantry], hp_fp: toFp(100) });
+  farAlly.hp_fp = toFp(50); // distance 4 — outside radius 2.
 
-  const enemy = new Unit(UnitType.Infantry, Side.Top, 6, 6, { ...UNIT_BLUEPRINTS[UnitType.Infantry], hp: 100 });
-  enemy.hp = 50; // distance 1 — inside radius, but wrong side.
+  const enemy = new Unit(UnitType.Infantry, Side.Top, 6, 6, { ...UNIT_BLUEPRINTS[UnitType.Infantry], hp_fp: toFp(100) });
+  enemy.hp_fp = toFp(50); // distance 1 — inside radius, but wrong side.
 
   state.board.addUnit(healer);
   state.board.addUnit(nearAlly);
@@ -46,9 +50,9 @@ test('aura_heal: a wounded ally inside the radius is healed each tick; out-of-ra
 
   traitSystem.tick(state);
 
-  assert.equal(nearAlly.hp, 51, 'ally within the aura radius should gain 1 HP this tick');
-  assert.equal(farAlly.hp, 50, 'ally outside the aura radius must not be healed');
-  assert.equal(enemy.hp, 50, 'an enemy unit must never be healed by a friendly aura');
+  assert.equal(nearAlly.hp_fp, toFp(51), 'ally within the aura radius should gain 1 HP this tick');
+  assert.equal(farAlly.hp_fp, toFp(50), 'ally outside the aura radius must not be healed');
+  assert.equal(enemy.hp_fp, toFp(50), 'an enemy unit must never be healed by a friendly aura');
 });
 
 test('aura_heal: the healer itself is not healed by its own aura', () => {
@@ -58,51 +62,41 @@ test('aura_heal: the healer itself is not healed by its own aura', () => {
 
   const healer = new Unit(UnitType.Medic, Side.Bottom, 5, 5, {
     ...UNIT_BLUEPRINTS[UnitType.Medic],
-    hp: 100,
+    hp_fp: toFp(100),
     traits: [{ type: 'aura_heal', radius: 2, hps: 30 }],
   });
-  healer.hp = 50;
+  healer.hp_fp = toFp(50);
   state.board.addUnit(healer);
 
   traitSystem.tick(state);
 
-  assert.equal(healer.hp, 50, 'aura_heal excludes the source unit itself (ally === unit guard)');
+  assert.equal(healer.hp_fp, toFp(50), 'aura_heal excludes the source unit itself (ally === unit guard)');
 });
 
-// ── regen drain ──────────────────────────────────────────────────────────────────────────────
+// ── regen ────────────────────────────────────────────────────────────────────────────────────
 
-test('regen: healAccFp accumulates fp per tick and converts to integer HP once it crosses FP_SCALE, with a correct modulo remainder', () => {
+test('regen: hp_fp gains exactly regenFpPerTick every tick (no separate accumulator, ADR-065)', () => {
   resetUnitIds();
   const state = new GameState(1);
   const traitSystem = new TraitSystem();
 
-  // regenPerSec=45 -> regenFpPerTick = round(45 * 1000 / 30) = 1500 (1.5x FP_SCALE per tick),
-  // so each tick crosses the threshold with a non-zero, non-trivial remainder.
+  // regenPerSec=45 -> regenFpPerTick = round(45 * 1000 / 30) = 1500 fp/tick (= 1.5 HP/tick).
   const unit = new Unit(UnitType.Infantry, Side.Bottom, 3, 3, {
-    ...UNIT_BLUEPRINTS[UnitType.Infantry], hp: 100, regenPerSec: 45,
+    ...UNIT_BLUEPRINTS[UnitType.Infantry], hp_fp: toFp(100), regenPerSec: 45,
   });
-  unit.hp = 50;
+  unit.hp_fp = toFp(50);
   assert.equal(unit.regenFpPerTick, 1500, 'sanity: constructor derives fp/tick from regenPerSec');
 
   state.board.addUnit(unit);
 
-  traitSystem.tick(state); // healAccFp: 0 + 1500 = 1500 -> +1 HP, remainder 500
-  const healAccAfterTick1 = unit.healAccFp;
-  const hpAfterTick1 = unit.hp;
-  assert.equal(healAccAfterTick1, 500);
-  assert.equal(hpAfterTick1, 51);
+  traitSystem.tick(state);
+  assert.equal(unit.hp_fp, toFp(50) + 1500, 'hp_fp gains exactly regenFpPerTick this tick');
 
-  traitSystem.tick(state); // healAccFp: 500 + 1500 = 2000 -> +2 HP, remainder 0
-  const healAccAfterTick2 = unit.healAccFp;
-  const hpAfterTick2 = unit.hp;
-  assert.equal(healAccAfterTick2, 0);
-  assert.equal(hpAfterTick2, 53);
+  traitSystem.tick(state);
+  assert.equal(unit.hp_fp, toFp(50) + 1500 * 2, 'hp_fp keeps gaining regenFpPerTick every tick — no threshold/remainder logic anymore');
 
-  traitSystem.tick(state); // healAccFp: 0 + 1500 = 1500 -> +1 HP, remainder 500 (cycle repeats)
-  const healAccAfterTick3 = unit.healAccFp;
-  const hpAfterTick3 = unit.hp;
-  assert.equal(healAccAfterTick3, 500);
-  assert.equal(hpAfterTick3, 54);
+  traitSystem.tick(state);
+  assert.equal(unit.hp_fp, toFp(50) + 1500 * 3);
 });
 
 test('regen: healing never pushes hp above maxHp', () => {
@@ -111,15 +105,15 @@ test('regen: healing never pushes hp above maxHp', () => {
   const traitSystem = new TraitSystem();
 
   const unit = new Unit(UnitType.Infantry, Side.Bottom, 3, 3, {
-    ...UNIT_BLUEPRINTS[UnitType.Infantry], hp: 100, regenPerSec: 45,
+    ...UNIT_BLUEPRINTS[UnitType.Infantry], hp_fp: toFp(100), regenPerSec: 45,
   });
-  unit.hp = 100; // already full
+  unit.hp_fp = toFp(100); // already full
   state.board.addUnit(unit);
 
   traitSystem.tick(state);
   traitSystem.tick(state);
 
-  assert.equal(unit.hp, 100, 'hp must be clamped at maxHp even while healAccFp keeps accumulating');
+  assert.equal(unit.hp_fp, toFp(100), 'hp_fp must be clamped at maxHp_fp every tick, not just eventually');
 });
 
 // ── slow expiry ──────────────────────────────────────────────────────────────────────────────
@@ -133,7 +127,7 @@ test('slow expiry: slowRemainingTicks counts down to 0, then resetSpeed() restor
   state.board.addUnit(unit);
 
   const baseSpeed = unit.baseSpeed_fp;
-  unit.speed_fp = Math.round(baseSpeed * 0.5) as Fp; // simulate an already-applied slow
+  unit.speed_fp = mulFp(baseSpeed, toFp(0.5)); // simulate an already-applied slow
   unit.slowRemainingTicks = 2;
 
   traitSystem.tick(state); // 2 -> 1, not expired yet
