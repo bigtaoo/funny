@@ -2,19 +2,18 @@ import * as PIXI from 'pixi.js-legacy';
 import { Scene } from './SceneManager';
 import { ILayout, Rect } from '../layout/ILayout';
 import { InputManager } from '../inputSystem/InputManager';
-import { t, TranslationKey } from '../i18n';
-import { ui as C, txt, buildPaperBackground, sketchPanel, sketchAccentBar, seedFor, tearDownChildren } from '../render/sketchUi';
+import { t } from '../i18n';
+import { ui as C, buildPaperBackground, tearDownChildren } from '../render/sketchUi';
 import { buildDecorCLayer } from '../render/decorCLayer';
-import { snapFont } from '../render/fontScale';
-import { buildIcon, type IconKind } from '../render/icons';
-import { cardArtUrl, getArtTexture, preloadL1CardArtTextures } from '../render/cardArt';
+import { cardArtUrl, preloadL1CardArtTextures } from '../render/cardArt';
 import { drawSceneHeader } from '../ui/widgets/SceneHeader';
 import { drawCareerTabs, type CareerNavCallbacks } from '../ui/widgets/CareerTabs';
 import { sidebarNavW, bottomNavH } from '../ui/widgets/HubTabs';
 import { drawScrollIndicator } from '../ui/widgets/ScrollIndicator';
 import { wheelScrollY } from '../ui/wheelScroll';
-import { CARD_DEFINITIONS, UNIT_BLUEPRINTS, BUILDING_BLUEPRINTS } from '@nw/engine/config';
+import { CARD_DEFINITIONS } from '@nw/engine/config';
 import { CardType, type CardDefinition } from '@nw/engine/types';
+import { type CodexEntry, codexFaceBox, storyText, drawTileFace, drawCardTile } from './CardCodexScene/tile';
 
 // ── CardCodexScene — read-only full card compendium ─────────────────────────────
 //
@@ -43,7 +42,6 @@ export interface CardCodexCallbacks {
 }
 
 interface Hit { rect: Rect; fn: () => void; scroll?: boolean; }
-interface CodexEntry { card: CardDefinition; locked: boolean; }
 
 export class CardCodexScene implements Scene {
   readonly container: PIXI.Container;
@@ -74,6 +72,23 @@ export class CardCodexScene implements Scene {
   /** Active flip animation cleanups, keyed by the same nameKey, so a re-render can cancel in-flight ticks. */
   private readonly flipCleanups = new Map<string, () => void>();
 
+  // Row virtualization (2026-08-12, same fix as BattlePassScene/LeaderboardScene): CARD_DEFINITIONS
+  // dedups to a small fixed set today (~16 cards), never a crash risk in practice, but
+  // renderCards() had the same missing-viewport-cull shape everything else in this bug class did —
+  // every tile's frame/face/info-panel/stat-chips got built unconditionally regardless of scroll
+  // position. Unlike DeckBuilderScene/CityScene (which rebuild everything on every scroll-drag
+  // frame anyway), this scene's drag/wheel handlers only reposition `layer.y` without a full
+  // render() — so virtualizing needs the same Map-based incremental build/destroy BattlePassScene
+  // uses, keyed by grid row index; `codexEntries`/`codexGeom` cache the (cheap, content-fixed)
+  // measure pass so handleMove/handleWheel can re-run just the build/destroy step on every scroll
+  // tick without a full tearDownChildren+rebuild. `faces` inside each built row lets flipTileAt()
+  // find a tapped tile's illustration container without capturing a stale reference at hit-creation
+  // time (hits are computed once per render() for every unlocked entry — cheap, pure geometry — and
+  // only ever fire for on-screen taps, so the looked-up row is guaranteed to be currently built).
+  private codexEntries: CodexEntry[] = [];
+  private codexGeom: { left: number; top: number; tileW: number; tileH: number; colGap: number; rowGap: number; cols: number } | null = null;
+  private readonly tileRows: Map<number, { container: PIXI.Container; faces: Map<number, PIXI.Container> }> = new Map();
+
   constructor(layout: ILayout, input: InputManager, cb: CardCodexCallbacks) {
     this.container = new PIXI.Container();
     this.w = layout.designWidth;
@@ -93,6 +108,7 @@ export class CardCodexScene implements Scene {
     this.destroyed = true;
     this.cancelAllFlips();
     this.unsubs.forEach((u) => u());
+    this.tileRows.clear();
     this.container.destroy({ children: true });
   }
 
@@ -117,6 +133,7 @@ export class CardCodexScene implements Scene {
       this.layer.y = -this.scrollY;
       if (this.scrollbar) { this.scrollbar.destroy(); this.scrollbar = null; }
       this.scrollbar = drawScrollIndicator(this.container, this.scrollView, this.scrollY, this.maxScroll);
+      this.updateVisibleTiles();
     }
   }
 
@@ -129,6 +146,7 @@ export class CardCodexScene implements Scene {
     this.layer.y = -this.scrollY;
     if (this.scrollbar) { this.scrollbar.destroy(); this.scrollbar = null; }
     this.scrollbar = drawScrollIndicator(this.container, this.scrollView, this.scrollY, this.maxScroll);
+    this.updateVisibleTiles();
   }
 
   private handleUp(x: number, y: number): void {
@@ -143,23 +161,6 @@ export class CardCodexScene implements Scene {
     }
   }
 
-  private drawArtFit(url: string, x: number, y: number, box: number, target: PIXI.Container = this.layer): void {
-    const tex = getArtTexture(url);
-    if (!tex.baseTexture.valid) {
-      if (!this.artHooked.has(url)) {
-        this.artHooked.add(url);
-        tex.baseTexture.once('loaded', () => this.render());
-      }
-      return;
-    }
-    const scale = Math.min(box / tex.width, box / tex.height);
-    const sp = new PIXI.Sprite(tex);
-    sp.anchor.set(0.5);
-    sp.scale.set(scale);
-    sp.position.set(x + box / 2, y + box / 2);
-    target.addChild(sp);
-  }
-
   private render(): void {
     if (this.destroyed) return;
     // A re-render rebuilds every tile's faceLayer from scratch; cancel any in-flight flip tick first so
@@ -167,6 +168,7 @@ export class CardCodexScene implements Scene {
     this.cancelAllFlips();
     tearDownChildren(this.container);
     this.hits = [];
+    this.tileRows.clear(); // rows already destroyed by tearDownChildren above; just drop refs
     const { w, h } = this;
     const hasSidebar = this.hasSidebar();
 
@@ -216,7 +218,7 @@ export class CardCodexScene implements Scene {
     this.layer = layer;
 
     const avail = this.landscape ? w - contentX - Math.round(w * 0.03) : fullContentW;
-    const bottom = this.renderCards(contentX, contentTop, avail);
+    const bottom = this.measureCodex(contentX, contentTop, avail);
 
     const bottomPad = Math.round(h * 0.03);
     this.maxScroll = Math.max(0, bottom + bottomPad - viewBottom);
@@ -225,11 +227,17 @@ export class CardCodexScene implements Scene {
 
     this.scrollView = { x: contentX, y: contentTop, w: w - contentX, h: viewBottom - contentTop };
     this.scrollbar = drawScrollIndicator(this.container, this.scrollView, this.scrollY, this.maxScroll);
+    this.updateVisibleTiles();
+    this.hits.push(...this.computeTileHits());
   }
 
   // ── Cards codex ────────────────────────────────────────────────────────────────
 
-  private renderCards(left: number, top: number, avail: number): number {
+  /**
+   * Measure pass only — computes `codexEntries`/`codexGeom` (cached for updateVisibleTiles() and
+   * every subsequent scroll tick) and returns the total content height. Builds nothing.
+   */
+  private measureCodex(left: number, top: number, avail: number): number {
     const { w, h } = this;
     const owned = this.cb.getOwnedUnitTypes();
 
@@ -254,130 +262,96 @@ export class CardCodexScene implements Scene {
     // right-hand info panel down to a sliver too narrow for a card name to fit (09.08.2026 fix).
     const tileH = Math.round((this.landscape ? h : w) * 0.19);
     const rowGap = Math.round(h * 0.022);
-    let y = top;
 
-    entries.forEach((entry, i) => {
-      const col = i % cols;
-      const x = left + col * (tileW + gap);
-      if (col === 0 && i > 0) y += tileH + rowGap;
-      this.drawCardTile(entry, x, y, tileW, tileH);
-    });
-    return y + tileH;
+    this.codexEntries = entries;
+    this.codexGeom = { left, top, tileW, tileH, colGap: gap, rowGap, cols };
+
+    const rows = Math.ceil(entries.length / cols);
+    return rows > 0 ? top + rows * tileH + (rows - 1) * rowGap : top;
   }
 
   /**
-   * A read-only codex tile: a full-height illustration on the left (tap-to-flip → story text, when
-   * unlocked) and a separate info panel on the right (name + type·cost header, key stats). Locked
-   * entries grey out, show a lock over the art, and don't flip.
+   * Builds/destroys tile-row visuals so only rows within one viewport of the visible band actually
+   * exist as PIXI DisplayObjects — see the `tileRows` field doc for why. Called once at the end of
+   * render() and again on every scroll tick (handleMove/handleWheel).
    */
-  private drawCardTile(entry: CodexEntry, x: number, y: number, w: number, h: number): void {
-    const { card, locked } = entry;
-    const accent = locked ? C.mid
-      : card.cardType === CardType.Unit ? C.accent
-      : card.cardType === CardType.Building ? C.gold : C.red;
-
-    const key = card.nameKey;
-    const art = cardArtUrl(card);
-    const story = this.storyText(card);
-
-    // ── Illustration (left, full tile height) ──
-    const imgBox = h;
-    const frame = sketchPanel(imgBox, h, { fill: locked ? 0xf0efe9 : 0xf7f5ee, border: locked ? C.mid : C.line, width: 1.6, seed: seedFor(x, y, imgBox) });
-    frame.x = x; frame.y = y;
-    this.layer.addChild(frame);
-
-    const inset = Math.round(imgBox * 0.06);
-    const faceBox = imgBox - inset * 2;
-    const face = new PIXI.Container();
-    face.position.set(x + imgBox / 2, y + h / 2);
-    this.layer.addChild(face);
-    this.drawTileFace(face, faceBox, card, art, story, !locked && this.flipped.has(key));
-
-    if (locked) {
-      const dim = new PIXI.Graphics();
-      dim.beginFill(0xf0efe9, 0.55).drawRect(x + inset, y + inset, faceBox, faceBox).endFill();
-      this.layer.addChild(dim);
-      const lkSize = Math.round(imgBox * 0.28);
-      const lk = buildIcon('lock', lkSize, C.mid);
-      lk.x = x + (imgBox - lkSize) / 2; lk.y = y + (h - lkSize) / 2;
-      this.layer.addChild(lk);
-    } else {
-      // Tap the illustration to flip between art and the card's story text.
-      this.hits.push({
-        scroll: true,
-        rect: { x, y, w: imgBox, h },
-        fn: () => this.flipTile(key, face, faceBox, card, art, story),
-      });
+  private updateVisibleTiles(): void {
+    const geom = this.codexGeom;
+    if (!geom) return;
+    const { left, top, tileW, tileH, colGap, rowGap, cols } = geom;
+    const stride = tileH + rowGap;
+    const viewH = this.scrollView.h;
+    const buffer = viewH * 0.5;
+    // rowY below is `top`-relative (absolute content-space, same as `layer`'s children — layer.y
+    // is set to `-scrollY`, NOT `top - scrollY`), so the visible screen band [top, top+viewH] in
+    // content-space is [top + scrollY, top + scrollY + viewH] — offset by `top`, not just scrollY.
+    // (Caught by a unit test forcing a tiny synthetic viewport — real screen sizes have generous
+    // enough buffer margins that this offset error stayed masked in practice.)
+    const viewTop = top + this.scrollY - buffer;
+    const viewBottom = top + this.scrollY + viewH + buffer;
+    const rows = Math.ceil(this.codexEntries.length / cols);
+    const needed = new Set<number>();
+    for (let r = 0; r < rows; r++) {
+      const rowY = top + r * stride;
+      if (rowY + tileH < viewTop || rowY > viewBottom) continue;
+      needed.add(r);
+      if (!this.tileRows.has(r)) {
+        const rowC = new PIXI.Container();
+        rowC.y = rowY;
+        const faces = new Map<number, PIXI.Container>();
+        for (let c = 0; c < cols; c++) {
+          const idx = r * cols + c;
+          const entry = this.codexEntries[idx];
+          if (!entry) continue;
+          const x = left + c * (tileW + colGap);
+          const face = drawCardTile(entry, x, 0, tileW, tileH, rowC, this.flipped, this.artHooked, () => this.render());
+          if (face) faces.set(c, face);
+        }
+        this.layer.addChild(rowC);
+        this.tileRows.set(r, { container: rowC, faces });
+      }
     }
-
-    // ── Info panel (right, its own separately-drawn background) ──
-    const infoGap = Math.round(w * 0.03);
-    const infoX = x + imgBox + infoGap;
-    const infoW = w - imgBox - infoGap;
-    const info = sketchPanel(infoW, h, { fill: locked ? 0xf0efe9 : C.paper, border: locked ? C.mid : C.line, width: 1.6, seed: seedFor(infoX, y, infoW) });
-    info.x = infoX; info.y = y;
-    sketchAccentBar(info, h, accent, seedFor(infoX, h, 6));
-    this.layer.addChild(info);
-
-    const pad = Math.round(infoW * 0.06);
-    const textX = infoX + pad;
-
-    const name = txt(t(card.nameKey as TranslationKey), snapFont(Math.round(h * 0.15)), locked ? C.mid : C.dark, true);
-    name.anchor.set(0, 0); name.x = textX; name.y = y + Math.round(h * 0.12);
-    // Belt-and-suspenders against a long localized name outrunning the panel (mirrors the shrink-to-fit
-    // guard HubTabs.ts already applies to its own nav labels) — the tileH fix above is the real cure,
-    // this just makes sure nothing overflows even at the width's edge case.
-    const maxNameW = infoW - pad * 2;
-    if (name.width > maxNameW) name.scale.set(maxNameW / name.width);
-    this.layer.addChild(name);
-
-    const typeLabel = card.cardType === CardType.Unit ? t('collection.cardType.unit')
-      : card.cardType === CardType.Building ? t('collection.cardType.building')
-      : t('collection.cardType.spell');
-    const sub = txt(`${typeLabel} · ${t('collection.stat.cost')} ${card.cost}`, snapFont(Math.round(h * 0.12)), accent, true);
-    sub.anchor.set(0, 0); sub.x = textX; sub.y = y + Math.round(h * 0.34);
-    this.layer.addChild(sub);
-
-    if (locked) {
-      const lockedLbl = txt(t('collection.locked'), snapFont(Math.round(h * 0.11)), C.mid, true);
-      lockedLbl.anchor.set(0, 0); lockedLbl.x = textX; lockedLbl.y = y + Math.round(h * 0.62);
-      this.layer.addChild(lockedLbl);
-      return;
-    }
-
-    const stats = this.cardStats(card);
-    if (stats) {
-      this.drawStatChips(stats, textX, y + Math.round(h * 0.60), infoW - pad * 2, Math.round(h * 0.15));
+    for (const [r, row] of this.tileRows) {
+      if (needed.has(r)) continue;
+      row.container.destroy({ children: true });
+      this.tileRows.delete(r);
     }
   }
 
-  /** The card's story text for the flip's back face: the character lore when it exists, else the card blurb. */
-  private storyText(card: CardDefinition): string {
-    const loreKey = card.nameKey.replace(/\.name$/, '.lore');
-    const lore = t(loreKey as TranslationKey);
-    return lore !== loreKey ? lore : t(card.descKey as TranslationKey);
+  /**
+   * Flip-tap hit rects for every unlocked entry, computed unconditionally from geometry alone (no
+   * PIXI objects touched — cheap, mirrors BattlePassScene's scrollCellDefs). A hit can only ever
+   * fire for an on-screen tap, and anything on-screen is guaranteed built by updateVisibleTiles()'s
+   * buffer margin, so flipTileAt() looking up the row from `tileRows` at call time is always safe.
+   */
+  private computeTileHits(): Hit[] {
+    const geom = this.codexGeom;
+    if (!geom) return [];
+    const { left, top, tileW, tileH, colGap, rowGap, cols } = geom;
+    const stride = tileH + rowGap;
+    const hits: Hit[] = [];
+    this.codexEntries.forEach((entry, i) => {
+      if (entry.locked) return;
+      const row = Math.floor(i / cols);
+      const col = i % cols;
+      const x = left + col * (tileW + colGap);
+      const y = top + row * stride;
+      hits.push({ scroll: true, rect: { x, y, w: tileH, h: tileH }, fn: () => this.flipTileAt(i) });
+    });
+    return hits;
   }
 
-  /** Draw the illustration face: art (front) or word-wrapped story text (back), centred on the container origin. */
-  private drawTileFace(container: PIXI.Container, box: number, card: CardDefinition, art: string | null, story: string, showStory: boolean): void {
-    tearDownChildren(container);
-    if (!showStory) {
-      if (art) { this.drawArtFit(art, -box / 2, -box / 2, box, container); return; }
-      // No illustration for this card yet — a faded monogram keeps the frame from reading as broken.
-      const initial = t(card.nameKey as TranslationKey).charAt(0).toUpperCase();
-      const mono = txt(initial, snapFont(Math.round(box * 0.5)), C.mid, true);
-      mono.anchor.set(0.5, 0.5); mono.alpha = 0.35;
-      container.addChild(mono);
-      return;
-    }
-    const bg = new PIXI.Graphics();
-    bg.beginFill(0xf7f5ee).drawRect(-box / 2, -box / 2, box, box).endFill();
-    container.addChild(bg);
-    const lore = txt(story, snapFont(Math.round(box * 0.085)), C.mid);
-    lore.style.wordWrap = true;
-    lore.style.wordWrapWidth = box - 12;
-    lore.x = -box / 2 + 6; lore.y = -box / 2 + 6;
-    container.addChild(lore);
+  private flipTileAt(i: number): void {
+    const geom = this.codexGeom;
+    const entry = this.codexEntries[i];
+    if (!geom || !entry || entry.locked) return;
+    const row = Math.floor(i / geom.cols);
+    const col = i % geom.cols;
+    const face = this.tileRows.get(row)?.faces.get(col);
+    if (!face) return; // scrolled away between tap-down and tap-up; no-op
+    const art = cardArtUrl(entry.card);
+    const story = storyText(entry.card);
+    this.flipTile(entry.card.nameKey, face, codexFaceBox(geom.tileH), entry.card, art, story);
   }
 
   /** Squash-flip a tile's illustration (scaleX 1→0→1, swapping art⇄story at the midpoint) via PIXI.Ticker.shared. */
@@ -392,7 +366,7 @@ export class CardCodexScene implements Scene {
       if (!swapped && p >= 0.5) {
         swapped = true;
         if (this.flipped.has(key)) this.flipped.delete(key); else this.flipped.add(key);
-        this.drawTileFace(container, box, card, art, story, this.flipped.has(key));
+        drawTileFace(container, box, card, art, story, this.flipped.has(key), this.artHooked, () => this.render());
       }
       container.scale.x = Math.max(0.02, p < 0.5 ? 1 - p / 0.5 : (p - 0.5) / 0.5);
       if (p >= 1) {
@@ -412,57 +386,5 @@ export class CardCodexScene implements Scene {
   private cancelAllFlips(): void {
     this.flipCleanups.forEach((c) => c());
     this.flipCleanups.clear();
-  }
-
-  private cardStats(card: CardDefinition): { icon: IconKind | null; label: string; value: number }[] | null {
-    if (card.cardType === CardType.Unit && card.unitType !== undefined) {
-      const b = UNIT_BLUEPRINTS[card.unitType];
-      return [
-        { icon: 'hp', label: t('collection.stat.hp'), value: b.hp },
-        { icon: 'atk', label: t('collection.stat.atk'), value: b.attack },
-        { icon: null, label: t('collection.stat.range'), value: b.range },
-      ];
-    }
-    if (card.cardType === CardType.Building && card.buildingType !== undefined) {
-      const b = BUILDING_BLUEPRINTS[card.buildingType];
-      const out: { icon: IconKind | null; label: string; value: number }[] = [
-        { icon: 'hp', label: t('collection.stat.hp'), value: b.hp },
-      ];
-      if (b.attack !== undefined) {
-        out.push({ icon: 'atk', label: t('collection.stat.atk'), value: b.attack });
-        if (b.attackRange !== undefined) out.push({ icon: null, label: t('collection.stat.range'), value: b.attackRange });
-      }
-      return out;
-    }
-    return null;
-  }
-
-  private drawStatChips(
-    stats: { icon: IconKind | null; label: string; value: number }[],
-    x: number, y: number, maxW: number, size: number,
-  ): void {
-    const row = new PIXI.Container();
-    const gap = Math.round(size * 0.28);
-    const chipGap = Math.round(size * 0.75);
-    const valSize = snapFont(Math.round(size * 0.74));
-    let cx = 0;
-    stats.forEach((s, i) => {
-      if (i > 0) cx += chipGap;
-      if (s.icon) {
-        const ic = buildIcon(s.icon, size, C.mid);
-        ic.x = cx; ic.y = 0; row.addChild(ic);
-        cx += size + gap;
-      } else {
-        const lbl = txt(s.label, valSize, C.mid);
-        lbl.anchor.set(0, 0.5); lbl.x = cx; lbl.y = size / 2; row.addChild(lbl);
-        cx += lbl.width + gap;
-      }
-      const val = txt(String(s.value), valSize, C.dark, true);
-      val.anchor.set(0, 0.5); val.x = cx; val.y = size / 2; row.addChild(val);
-      cx += val.width;
-    });
-    row.x = x; row.y = y;
-    if (row.width > maxW) row.scale.set(maxW / row.width);
-    this.layer.addChild(row);
   }
 }

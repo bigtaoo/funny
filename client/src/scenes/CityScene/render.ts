@@ -286,12 +286,21 @@ export class RenderPanel implements RenderHandlers {
     gridLayer.mask = maskG;
     this.core.container.addChild(gridLayer);
 
+    // Viewport cull (2026-08-12, same fix as BattlePassScene/LeaderboardScene/ChatScene/
+    // DeckBuilderScene): GRID_BUILDING_KEYS is a fixed ~11-entry list today, never a crash risk in
+    // practice — but it's the same missing-cull shape (every tile's panel+bars+icon+2 Text got
+    // built unconditionally regardless of scroll position). Core has no reposition-only drag fast
+    // path (scrollDirty triggers a full render() per drag frame, see core.ts), so a plain
+    // skip-if-off-screen check here is enough — no cross-render object cache needed.
+    const cullBuffer = viewH * 0.5;
     tiles.forEach((tile, i) => {
       const col = i % cols;
       const row = Math.floor(i / cols);
       const cx = GRID_PAD + col * (cellW + CARD_GAP);
       // Local to gridLayer (which is itself offset by viewY - scrollY), so this is NOT absolute screen space.
       const cy = row * (CARD_H + CARD_GAP);
+      const cullY = viewY - this.core.scrollY + cy;
+      if (cullY + CARD_H < viewY - cullBuffer || cullY > viewY + viewH + cullBuffer) return;
 
       // "Active" ring: a queued build for buildings, or an in-progress training batch for the train tile.
       const active =

@@ -235,11 +235,22 @@ export class DeckBuilderScene implements Scene {
     listContainer.x = 0;
     listContainer.y = listY - this.scrollY;
 
+    // Viewport cull (2026-08-12, same fix as BattlePassScene/LeaderboardScene/ChatScene): with
+    // ALL_PVP_CARDS bounded to ~16-20 today this was never a crash risk in practice, but it's the
+    // same missing-cull shape — every card's panel+Text(+icon) got built unconditionally on every
+    // render(), and render() already reruns on every scroll-drag frame (`scrollDirty`, see
+    // update()), so a future larger card pool would hit the same mobile GPU-object-spike bug. This
+    // scene has no reposition-only drag fast path (unlike BattlePassScene), so — like ChatScene —
+    // a plain skip-if-off-screen check in the existing per-render build loop is enough; no
+    // cross-render object cache needed.
+    const cullBuffer = this.listH * 0.5;
     ALL_PVP_CARDS.forEach((id, idx) => {
       const col = idx % cols;
       const row = Math.floor(idx / cols);
       const cx = pad + col * (cardW + pad);
       const cy = row * (cardH + gapY);
+      const screenY = cy - this.scrollY;
+      if (screenY + cardH < -cullBuffer || screenY > this.listH + cullBuffer) return;
 
       const isUnlocked = unlocked.has(id);
       const isSelected = this.selected.has(id);
