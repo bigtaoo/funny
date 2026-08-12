@@ -20,7 +20,8 @@ import {
   BP_XP_PER_RANKED_WIN, BP_XP_PER_RANKED_LOSS,
   xpToLevel, xpToNextLevel,
 } from '../game/balance/battlepassDefs';
-import { cellState, drawCurrentLevelFrame, drawCell } from './BattlePassScene/cell';
+import { cellState } from './BattlePassScene/cell';
+import { RewardRowVirtualizer, type RowVizContext } from './BattlePassScene/rows';
 
 // ── BattlePassScene — Battle Pass panel (SE-9) ────────────────────────────────
 //
@@ -109,6 +110,16 @@ export class BattlePassScene implements Scene {
   private scrollView: Rect = { x: 0, y: 0, w: 0, h: 0 };
   private scrollbar: PIXI.Graphics | null = null;
 
+  // Reward-cell virtualization (see BattlePassScene/rows.ts for the why — mobile OOM/reload bug,
+  // 2026-08-12): only rows within one viewport of the visible area are built as real PIXI
+  // DisplayObjects; scrollCellDefs above (hit-test only, cheap) still covers all levels
+  // unconditionally as before. Composed rather than inlined so this class stays under the
+  // 500-line convention (client-modules.md). `rowCtx` caches the per-render level/track state
+  // sync() needs, since it's also called from the drag/wheel fast path (updateScrollPosition),
+  // not just from render().
+  private readonly rowViz = new RewardRowVirtualizer();
+  private rowCtx: RowVizContext | null = null;
+
   constructor(layout: ILayout, input: InputManager, cb: BattlePassCallbacks) {
     this.container = new PIXI.Container();
     this.w = layout.designWidth;
@@ -130,6 +141,7 @@ export class BattlePassScene implements Scene {
   destroy(): void {
     this.destroyed = true;
     this.unsubs.forEach((u) => u());
+    this.rowViz.clear();
     this.container.destroy({ children: true });
   }
 
@@ -171,6 +183,7 @@ export class BattlePassScene implements Scene {
     );
     if (this.scrollbar) { this.scrollbar.destroy(); this.scrollbar = null; }
     this.scrollbar = drawScrollIndicator(this.container, this.scrollView, sy, this.scrollMax);
+    if (this.rowCtx) this.rowViz.sync(this.scrollContainer, this.scrollY, this.scrollMax, this.scrollView.h, this.rowCtx);
   }
 
   private handleUp(): void {
@@ -249,6 +262,7 @@ export class BattlePassScene implements Scene {
     this.scrollContainer = null;
     this.scrollCellDefs = [];
     this.scrollbar = null; // torn down with the container above; drop the stale ref
+    this.rowViz.clear(); // rows already destroyed by tearDownChildren above; just drop refs
     const { w, h, landscape } = this;
 
     // Landscape only for now — see ShopScene.drawBackground / LOBBY_IA_REDESIGN §14.
@@ -421,27 +435,23 @@ export class BattlePassScene implements Scene {
     paidHdr.anchor.set(0.5, 0.5); paidHdr.x = paidX + halfW / 2; paidHdr.y = headerH / 2;
     scrollContainer.addChild(paidHdr);
 
-    // Level rows. Cache every claimable cell's def regardless of whether it's within the
-    // *current* render's viewport — updateScrollPosition() re-derives absolute hit rects from
-    // this cache on every drag move without a full re-render, so a cell that scrolls into view
-    // later still needs an entry (off-screen taps are already rejected by handleDown's bounds
-    // check against the live pointer position, so caching unconditionally is safe).
+    // Level rows: cache every claimable cell's *hit-test* def regardless of whether it's within
+    // the current render's viewport (cheap — pure numbers) — updateScrollPosition() re-derives
+    // absolute hit rects from this cache on every drag move without a full re-render, so a cell
+    // that scrolls into view later still needs an entry. The actual display objects are NOT built
+    // here — that's virtualized, see BattlePassScene/rows.ts's RewardRowVirtualizer.
+    this.rowCtx = { currentLevel, claimedFree, claimedPaid, hasPass, headerH, cellH, cellGap, freeX, paidX, halfW };
     for (let i = 0; i < BATTLEPASS_MAX_LEVEL; i++) {
       const def = BATTLEPASS_DEFS[i]!;
       const lvl = def.level;
       const cellY = headerH + i * (cellH + cellGap);
-      if (lvl === currentLevel) drawCurrentLevelFrame(scrollContainer, freeX, paidX, halfW, cellY, cellH);
 
-      // Free track
       const freeState = cellState('free', lvl, currentLevel, claimedFree, claimedPaid, hasPass, !!def.free);
-      drawCell(scrollContainer, freeX, cellY, halfW, cellH, lvl, def.free ?? null, freeState);
       if (this.cb.onClaim && freeState === 'claimable') {
         this.scrollCellDefs.push({ x: freeX, cellY, w: halfW, h: cellH, fn: () => this.doClaim('free', lvl) });
       }
 
-      // Paid track
       const paidState = cellState('paid', lvl, currentLevel, claimedFree, claimedPaid, hasPass, !!def.paid);
-      drawCell(scrollContainer, paidX, cellY, halfW, cellH, lvl, def.paid ?? null, paidState);
       if (this.cb.onClaim && paidState === 'claimable') {
         this.scrollCellDefs.push({ x: paidX, cellY, w: halfW, h: cellH, fn: () => this.doClaim('paid', lvl) });
       }

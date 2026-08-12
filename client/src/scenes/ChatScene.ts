@@ -1,5 +1,4 @@
 import * as PIXI from 'pixi.js-legacy';
-import { makeText } from '../render/pixiText';
 import { Scene } from './SceneManager';
 import { ILayout, Rect } from '../layout/ILayout';
 import { InputManager } from '../inputSystem/InputManager';
@@ -14,6 +13,7 @@ import { FS, snapFont } from '../render/fontScale';
 import type { ChatMessageView } from '../net/ApiClient';
 import type { ChatMessagePush } from '../net/proto/transport';
 import { wheelScrollY } from '../ui/wheelScroll';
+import { measureRows, buildBubble } from './ChatScene/thread';
 
 // ── ChatScene (S6-2) — a 1:1 conversation window ──────────────────────────────
 //
@@ -304,91 +304,44 @@ export class ChatScene implements Scene {
       return;
     }
 
-    // Measure pass: build each row's display object + content-space y, so the total
-    // content height is known before settling scrollY (stickBottom pins to latest).
-    const built: { node: PIXI.DisplayObject; cy: number; hitFn?: () => void; hitH?: number }[] = [];
-    let cy = Math.round(h * 0.012);
-
-    if (this.hasMore) {
-      const lbl = txt(t('chat.loadEarlier'), FS.heading, C.accent, true);
-      lbl.anchor.set(0.5, 0);
-      built.push({ node: lbl, cy, hitFn: () => void this.loadEarlier(), hitH: Math.round(h * 0.04) });
-      cy += Math.round(h * 0.05);
-    }
-
-    if (this.messages.length === 0) {
-      const e = txt(t('chat.empty'), FS.heading, C.mid);
-      e.anchor.set(0.5, 0);
-      built.push({ node: e, cy: cy + Math.round(h * 0.04) });
-      cy += Math.round(h * 0.1);
-    } else {
-      for (const m of this.messages) {
-        const { node, height } = this.buildBubble(m);
-        built.push({ node, cy });
-        cy += height + Math.round(h * 0.012);
-      }
-    }
-
-    this.maxScroll = Math.max(0, cy - regionH);
+    // Measure pass: cheap geometry only (no PIXI.Text/Graphics) over the *entire*, possibly
+    // unbounded message list — see ChatScene/thread.ts's header comment for why building all of
+    // it unconditionally (the pre-2026-08-12 behaviour) was the same GPU-object-spike bug that
+    // crashed BattlePassScene/LeaderboardScene on mobile, just triggered by chat history growth.
+    const { rows, totalH } = measureRows(this.messages, this.hasMore, this.failedMessageIds, w, h);
+    this.maxScroll = Math.max(0, totalH - regionH);
     if (this.stickBottom) this.scrollY = this.maxScroll;
     else if (this.scrollY > this.maxScroll) this.scrollY = this.maxScroll;
 
-    // Place pass: position each row at the settled scroll.
-    for (const b of built) {
-      const sy = this.regionTop + b.cy - this.scrollY;
-      // Centered single nodes (txt with anchor 0.5,0) want x = w/2; bubbles carry own x.
-      if (b.node instanceof PIXI.Text && (b.node.anchor.x === 0.5)) b.node.x = w / 2;
-      b.node.y = sy;
-      layer.addChild(b.node);
-      if (b.hitFn) {
-        this.hits.push({ rect: { x: w * 0.2, y: sy - 4, w: w * 0.6, h: b.hitH ?? Math.round(h * 0.04) }, scroll: true, fn: b.hitFn });
+    // Build pass: only rows within one viewport of the visible band become real PIXI
+    // DisplayObjects. ChatScene has no reposition-only scroll fast path (every drag frame already
+    // calls render(), see update()'s scrollDirty), so this measure+cull split alone is enough —
+    // there's no cross-render built-object cache to maintain, unlike BattlePassScene/
+    // LeaderboardScene's builtRows.
+    const buffer = regionH * 0.5;
+    const viewTop = this.scrollY - buffer;
+    const viewBottom = this.scrollY + regionH + buffer;
+    for (const row of rows) {
+      if (row.cy + row.h < viewTop || row.cy > viewBottom) continue;
+      const sy = this.regionTop + row.cy - this.scrollY;
+      if (row.kind === 'loadEarlier') {
+        const lbl = txt(t('chat.loadEarlier'), FS.heading, C.accent, true);
+        lbl.anchor.set(0.5, 0); lbl.x = w / 2; lbl.y = sy;
+        layer.addChild(lbl);
+        this.hits.push({ rect: { x: w * 0.2, y: sy - 4, w: w * 0.6, h: row.hitH ?? Math.round(h * 0.04) }, scroll: true, fn: () => void this.loadEarlier() });
+      } else if (row.kind === 'empty') {
+        const e = txt(t('chat.empty'), FS.heading, C.mid);
+        e.anchor.set(0.5, 0); e.x = w / 2; e.y = sy;
+        layer.addChild(e);
+      } else if (row.msg) {
+        const failed = this.failedMessageIds.has(row.msg.messageId);
+        const { node } = buildBubble(row.msg, w, h, this.cb.myPublicId, failed);
+        node.y = sy;
+        layer.addChild(node);
       }
     }
 
     drawScrollIndicator(this.container, { x: 0, y: this.regionTop, w, h: regionH }, this.scrollY, this.maxScroll);
-  }
-
-  /** Build a message bubble container; returns it + its height (positioned later). */
-  private buildBubble(m: ChatMessageView): { node: PIXI.Container; height: number } {
-    const { w } = this;
-    const mine = m.fromPublicId === this.cb.myPublicId;
-    const failed = this.failedMessageIds.has(m.messageId);
-    const maxW = Math.round(w * 0.68);
-    const padX = Math.round(w * 0.03);
-    const padY = Math.round(this.h * 0.012);
-    const body = makeText(m.body, {
-      fontSize: FS.heading, fill: mine ? 0xffffff : C.dark,
-      fontFamily: 'monospace', wordWrap: true, wordWrapWidth: maxW - padX * 2, breakWords: true,
-    });
-    const bw = Math.min(maxW, Math.ceil(body.width) + padX * 2);
-    const bh = Math.ceil(body.height) + padY * 2;
-    // Peer bubbles left-align just right of the red binding line so no content spills into the
-    // notebook margin; mine right-align near the right edge.
-    const leftEdge = marginLineX(w) + Math.round(w * 0.02);
-    const bx = mine ? w - Math.round(w * 0.04) - bw : leftEdge;
-    const node = new PIXI.Container();
-    node.x = bx;
-    const bg = sketchPanel(bw, bh, {
-      fill: mine ? C.accent : C.paper, border: mine ? C.accent : C.line, width: 2,
-      seed: seedFor(bx, Math.round(m.ts % 9973), bw),
-    });
-    node.addChild(bg);
-    body.x = padX; body.y = padY;
-    node.addChild(body);
-    let height = bh;
-    if (failed) {
-      // Dim the bubble + caption it "Not delivered" instead of leaving a failed send looking exactly
-      // like a normally delivered message (2026-08-03 fix — see failedMessageIds' doc comment).
-      bg.alpha = 0.55;
-      body.alpha = 0.55;
-      const capGap = Math.round(this.h * 0.004);
-      const failLbl = txt(t('chat.sendFailed'), snapFont(Math.round(this.h * 0.018)), 0xaa2222, true);
-      failLbl.anchor.set(1, 0);
-      failLbl.x = bw; failLbl.y = bh + capGap;
-      node.addChild(failLbl);
-      height = bh + capGap + Math.ceil(failLbl.height);
-    }
-    return { node, height };
   }
 
   private drawComposer(): void {
