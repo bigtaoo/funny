@@ -21,7 +21,9 @@ const ERASE_ROWS = 16;
  *  both t=0 and t=1 (see drawEraseFrame) — rows visibly lead/lag mid-stroke but always start from
  *  "fully covered" and always converge to "fully erased" together. */
 const ROW_JITTER_FRAC = 0.08;
-const MAX_CRUMBS = 40;
+/** Live-particle cap — exported so tests can assert the cap holds without duplicating the magic
+ *  number (see worldMapLoadingErase.ui.ts). */
+export const MAX_CRUMBS = 40;
 /** Crumbs spawned per second of wipe while the stroke is actively rubbing (not at its very start/end). */
 const CRUMB_SPAWN_RATE = 26;
 
