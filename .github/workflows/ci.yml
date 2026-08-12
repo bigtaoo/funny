@@ -74,6 +74,14 @@ jobs:
       - name: client install
         working-directory: client
         run: npm ci
+      # claudedocs/client-modules.md "单文件 500 行收敛" (ported from claudedocs/server.md's
+      # convention of the same name): baseline-drift check, not a hard <=500 gate — only fails
+      # on a NEW file crossing 500 lines or a known baseline file growing past its recorded
+      # count (client/scripts/file-length-baseline.json); the 41 pre-existing over-limit files
+      # are tracked debt, not blocked on.
+      - name: client file length check
+        working-directory: client
+        run: npm run check:filelength
       # vitest (esbuild) and webpack don't type-check, and tsconfig.json's include is src-only,
       # so test/** blueprint/DTO drift stays latent. tsconfig.test.json pulls src + test/** into
       # one program so this step fails on that drift (see CC-1 card-instance migration).
