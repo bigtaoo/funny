@@ -17,6 +17,7 @@
     "proto:gen": "node scripts/gen-proto.mjs",
     "proto:vectors": "node scripts/gen-proto-vectors.mjs",
     "rest:gen": "node scripts/gen-openapi.mjs",
+    "check:filelength": "node scripts/checkFileLength.mjs",
     "format": "prettier --write .",
     "lint": "eslint src --ext .ts",
     "check:filelength": "node scripts/checkFileLength.mjs",

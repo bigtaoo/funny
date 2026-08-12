@@ -76,9 +76,10 @@ jobs:
         run: npm ci
       # claudedocs/client-modules.md "单文件 500 行收敛": same baseline-drift check as the server
       # step above (client/scripts/file-length-baseline.json) — only fails on a NEW file crossing
-      # 500 lines or a known baseline file growing past its recorded count; the 38 pre-existing
-      # over-limit files (17 of them mixin-chain base/domain files being worked through per the
-      # composition-priority note) are tracked debt, not blocked on.
+      # 500 lines or a known baseline file growing past its recorded count; the 19 remaining
+      # baseline entries (mostly justified single-shared-state-root / thin-forwarding-facade
+      # exceptions per the composition-priority note, after the 2026-08-11/12 splitting pass)
+      # are tracked debt, not blocked on.
       - name: client file length check
         working-directory: client
         run: npm run check:filelength
