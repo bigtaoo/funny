@@ -2,12 +2,19 @@ name: grafana-deploy
 
 # Auto-redeploy the observability stack (Loki + Alloy + Grafana + optional cloudflared) to the Hetzner VPS (/root/funny).
 # Decoupled from the main stack: separate compose, separate trigger (only runs when observability/ changes), never touches game backend containers.
-# Trigger: push to main touching observability-related files, or manual Run from the Actions page.
+# Trigger: CI ("build + unit tests" + "full-link E2E") finishing successfully on main and having touched
+# observability-related files, or manual Run from the Actions page.
 # Flow: SSH into VPS → git reset --hard origin/main → docker compose -f observability/... up -d --force-recreate.
 #   · Uses pre-built images, no --build needed (unlike the main stack's on-VPS build).
 #   · --force-recreate: if mounted alloy/loki/grafana config files changed but container definitions didn't,
 #     `up` won't auto-restart → force-recreate is needed to apply the new config (obs containers have no game traffic, so recreating has zero impact).
 # Deployment details: server/observability/README.md "Phase 2 deployment".
+#
+# Gated on CI (not on push directly): CI's e2e job takes up to 25 minutes while this deploy job takes
+# a couple of minutes, so a plain `push: branches: [main]` trigger would race a still-running/still-red
+# CI and could ship a broken commit before CI ever reported failure. `workflow_run` waits for CI's overall
+# conclusion first. See .github/actions/paths-changed-since for why the path filter moved into the job body
+# (workflow_run has no native `paths:`).
 #
 # Reuses server-deploy SSH secret/variables (same VPS, same CI deploy key):
 #   secret  VPS_SSH_KEY
@@ -19,11 +26,10 @@ name: grafana-deploy
 #                                 (requires a valid CF_TUNNEL_TOKEN in .env). If not set, only loki/alloy/grafana start.
 
 on:
-  push:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
     branches: [main]
-    paths:
-      - 'server/observability/**'
-      - '.github/workflows/grafana-deploy.yml'
   workflow_dispatch: {}
 
 # Only one obs deployment runs at a time; new run cancels the old one.
@@ -32,9 +38,35 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  deploy:
+  # Gate: enable switch + CI-passed + "did this commit actually touch server/observability/**". Split out
+  # of `deploy` so the real deploy steps only need one `if:` (on the job) instead of one per step.
+  check:
     runs-on: ubuntu-latest
-    if: ${{ vars.OBS_DEPLOY_ENABLED == 'true' }}
+    if: ${{ vars.OBS_DEPLOY_ENABLED == 'true' && (github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success') }}
+    outputs:
+      changed: ${{ steps.paths.outputs.changed }}
+    steps:
+      # workflow_dispatch has no head_sha / prior commit to diff against — always proceeds, so no checkout needed.
+      - uses: actions/checkout@v5
+        if: github.event_name != 'workflow_dispatch'
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          fetch-depth: 2
+
+      - name: check whether server/observability/** changed in this commit
+        id: paths
+        if: github.event_name != 'workflow_dispatch'
+        uses: ./.github/actions/paths-changed-since
+        with:
+          sha: ${{ github.event.workflow_run.head_sha }}
+          include: |
+            ^server/observability/
+            ^\.github/workflows/grafana-deploy\.yml$
+
+  deploy:
+    needs: check
+    runs-on: ubuntu-latest
+    if: ${{ needs.check.result == 'success' && (github.event_name == 'workflow_dispatch' || needs.check.outputs.changed == 'true') }}
     steps:
       - name: set up SSH
         env:

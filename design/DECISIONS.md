@@ -746,4 +746,34 @@
   - 文档数字同步：`design/game/{EQUIPMENT_DESIGN.md,SERVER_API.md}`、`design/game/ECONOMY_NUMBERS.md`、`design/game/CHARACTER_CARDS_DESIGN.md` 里描述装备库存上限的各处 300 改为 1000（并标注本 ADR 出处），存储体量估算随之从 ~45KB 更新为 ~150KB（1000 实例 × ~150B）。
 - **为什么**：用户直接拍板扩容数字，不改变治理机制本身——与 ADR-043（角色卡背包 150→500）同类操作，先加测试锁住新值再改常量，避免"改了数字但测试还断言旧值"的静默漂移。
 - **验证**：`server/shared` 装备单测 62 例全绿；`server/metaserver` 装备 e2e **49 例**（含新增 2 例）+ economy e2e **70 例**（含 4 处改写的 equipment-overflow 用例）全绿；`client` UI 套件 `scenes.ui.ts`（120 例，含改写的满仓灰化用例）+ `gachaInvFullToast.ui.ts`（7 例）全绿；`server`（全 11 服务 + engine/shared workspaces）`typecheck` 与 `client` `tsc --noEmit` + `npm run build:web` 均无错误。纯数值调参 + 文案数字变化，未起 dev server 截图（三语 toast/头部计数器的排版逻辑不变，只是数字本身变长，走既有自适应文本渡染，无需人工核对布局）。
+
+## ADR-066 8 个 CD workflow 改为依赖 CI（`workflow_run`），不再与 `ci.yml` 并行竞速 — Accepted — 2026-08-12
+
+- **背景**：`ci.yml`（build-test + e2e，e2e 最长 25 分钟）与 8 个 `*-deploy.yml`（server/client/animator/level-editor/map-editor/ops/vfx/grafana）此前都是独立的 `on: push: branches:[main]` + `paths:` 触发，彼此没有 `needs`/`workflow_run` 关联——只是共享了同一个 push 事件。deploy job 通常几分钟内跑完，e2e 却要 25 分钟，实际构成竞态：**deploy 大概率先于 e2e 出结果就已把代码送上 VPS/Cloudflare**；就算 build-test 很快挂了，deploy 也完全不会被拦，唯一共同前提只是"这个 commit 在 main 上"。用户原话"现在的 pipeline 里 CI 和 CD 掺和在一起了"，问题不在某文件内部把步骤写混，而在编排层面 CD 没有真正依赖 CI 产出。
+- **决策**：8 个 deploy workflow 的触发方式统一由 `push: branches:[main]` 改为：
+  ```yaml
+  on:
+    workflow_run:
+      workflows: ["CI"]
+      types: [completed]
+      branches: [main]
+    workflow_dispatch: {}
+  ```
+  `workflow_run` 是 GitHub 原生的跨 workflow 依赖机制，不引入第三方 action（与仓库一贯"不用第三方 ssh-action/wrangler-action，怕吞掉真实报错"的原则一致）。每个 deploy workflow 内部拆成两个 job：
+  - `check`：`if: vars.XXX_DEPLOY_ENABLED == 'true' && (workflow_dispatch || github.event.workflow_run.conclusion == 'success')`——CI 整体结论（build-test **与** e2e 都算在内，只要其中一个失败，`ci.yml` 这次 run 的 `conclusion` 就不是 `success`）先过一遍，再用新增的 composite action `.github/actions/paths-changed-since` 对 `github.event.workflow_run.head_sha` 相对其 parent 跑 `git diff --name-only`，替代原来的 `push.paths`（`workflow_run` 事件不支持原生 `paths:` 过滤，只能挪进 job 里手写）。
+  - `deploy`：`needs: check`，`if: needs.check.outputs.changed == 'true' || workflow_dispatch`，其余步骤不变；但 `actions/checkout` 的 `ref` 必须显式指定 `github.event.workflow_run.head_sha`——`workflow_run` 事件下 `github.sha` 指向触发时 default branch 的 HEAD，不是被检查的那个 commit，沿用旧代码隐式 checkout 会部署错 commit。
+  - 保留 `workflow_dispatch` 手动触发，跳过 CI 门禁（紧急场景兜底）。
+  - `server-deploy`/`grafana-deploy` 两个纯 SSH 部署（VPS 上 `git fetch + reset --hard origin/main`，不依赖本地 checkout 构建产物）在这次改动前就不含 `actions/checkout`；`check` job 里新增的 checkout 只是为了本地跑 `git diff` 判断路径，不影响它们原有的部署语义（VPS 上永远拉 origin/main 最新 tip，不是特意对齐 head_sha——这是既有行为，本次未改）。
+- **为什么不是其他方案**：
+  - 轮询式（`gh api .../check-runs` 等 CI 完成再继续）改动更集中在单个 step，但需要在每个 deploy job 顶部起一个等待循环，语义上不如 `workflow_run` 直接；且轮询期间仍占用一个 runner，`workflow_run` 是事件驱动、无需占用等待时间。
+  - 把 8 个 deploy 合并进 `ci.yml` 同一个 workflow 用 job-level `needs` 能达到同样的门禁效果，但会破坏"每个产物独立 workflow、可单独看日志/单独重跑"的现状结构，改动/维护成本远大于收益，未采用。
+  - GitHub Environments 的 required reviewers 是人工审批阀门，能作为额外安全网但解决的是"是否有人愿意让红码上线"，不是"CD 是否等 CI 出结果"，两者不是同一个问题，未采用（但建议后续视需要叠加）。
+- **已知取舍（未处理，仅记录）**：
+  1. `workflow_run` 只认 **default branch（main）上已合并的 workflow 定义**——这批文件改完必须先合并进 `main` 才会生效，无法在 PR 分支上直接验证触发是否生效（诊断逻辑本身已用真实 commit 离线验证过，见下）。
+  2. 本次让 deploy 等 CI **全部**（build-test + e2e）通过再放行，日常小改动也要等 e2e 跑完（最长 25 分钟）——用户已确认接受这个延迟换正确性的取舍（可选替代：只等 build-test，未采用）。
+  3. `server-deploy`/`grafana-deploy` 部署时永远拉 VPS 上 origin/main 的最新 tip，而非严格对齐触发这次 run 的 `head_sha`——若两次 push 紧挨着落地，理论上会把"更新的一次 commit"也一并带上（该次 commit 自己的 CI/CD run 会再单独把它重新过一遍，不会有代码丢失，只是先后顺序上略有重叠），这是改动前就有的既有行为，本次未改。
+  4. main 分支是否已开 branch protection + required status checks（PR 合并前强制 CI 绿）超出本次改动范围，建议用户自行核实 GitHub 仓库设置——那是挡在"合并前"的第一道门，`workflow_run` 门禁是挡在"部署前"的第二道，两者互补、缺一不完整。
+- **实现**：新增 `.github/actions/paths-changed-since/action.yml`（`git diff --name-only sha^ sha` + `grep -E` include/exclude，替代 `push.paths`）；改写 `.github/workflows/{server,client,animator,level-editor,map-editor,ops,vfx,grafana}-deploy.yml`（触发方式 + `check`/`deploy` 两 job 拆分 + `checkout ref` 显式指定 `head_sha`）；`ci.yml` 本身未改（原本就没有部署步骤，只是编排层缺了依赖关系）。
+- **验证**：8 个改写后的 workflow + 新增 composite action 用 PyYAML `yaml.safe_load` 全部解析通过（纯语法校验，GitHub 未提供本地跑 `workflow_run` 事件的方式）；`paths-changed-since` 的 include/exclude/无匹配三种分支用 bash 脚本沙盒模拟数据跑过一遍，行为符合预期；额外用本仓库真实提交 `2a1f20bb`（只改了 `client/test/**`）验证了两个方向——套 server-deploy 的 include/exclude 规则判定为 `changed=false`（应跳过）、套 client-deploy 的规则判定为 `changed=true`（应触发），均与预期一致。未做端到端 GitHub Actions 真实触发验证（需要合并进 `main` 才能生效，见上「已知取舍」第 1 条）。
+- **影响**：`.github/actions/paths-changed-since/action.yml`（新增）；`.github/workflows/{server,client,animator,level-editor,map-editor,ops,vfx,grafana}-deploy.yml`；`design/product/deploy-cloudflare.md`（client-deploy/ops-deploy/server-deploy 触发方式描述同步）。
 - **验证**：`server/shared` 装备单测 62 例全绿（新增 `enhanceDemoteChance`/`rollEnhanceDemote` 覆盖，含"两个骰子流互相独立"回归）；`server/metaserver` 装备 e2e 47 例全绿（新增 +7 掉级/不掉级/保护道具挡掉级三例）；`server/auctionsvc` e2e 65 例全绿（`equipEnhanceExpectedCost` 依赖的 `enhanceCost`/`enhanceSuccessRate` 未改，价格逻辑不受影响）；`server/tools/econ-sim` 18 例全绿；`client` 装备相关 vitest（`test/equipment.test.ts` 22 例 + UI 套件 `equipmentDetailProtectLabel`/`shopScene`/`shopActions` 共 68 例）全绿；`server`（engine/shared/metaserver/auctionsvc）`tsc -b` 与 `client` `tsc --noEmit` 均无错误。未起 dev server 截图（纯数值/规则改动，无新增可视化布局需要人工核对，掉级警示文案的排版走既有弹窗高度自适应逻辑）。

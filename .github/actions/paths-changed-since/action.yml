@@ -1,0 +1,56 @@
+name: paths-changed-since
+description: >
+  Check whether a commit (diffed against its first parent) touched any path matching
+  `include` and not matching `exclude`. Replaces push-event `paths:` filtering for
+  workflows triggered by `workflow_run`, which has no native paths filter — so the
+  per-service deploy workflows can still skip themselves when the commit CI just
+  validated didn't touch their slice of the repo.
+#
+# Caller must `actions/checkout` with `ref: <sha>` and `fetch-depth: 2` (or more) before
+# using this action, so both the commit and its first parent exist locally for the diff.
+
+inputs:
+  sha:
+    description: Commit SHA to diff against its first parent (usually github.event.workflow_run.head_sha).
+    required: true
+  include:
+    description: Newline-separated extended-regex patterns (grep -E). Matches if any changed path matches ANY pattern.
+    required: true
+  exclude:
+    description: Newline-separated extended-regex patterns (grep -E). A changed path matching any of these is dropped even if it matched include.
+    required: false
+    default: ''
+
+outputs:
+  changed:
+    description: "'true' if any changed path matched include (after exclude), else 'false'."
+    value: ${{ steps.check.outputs.changed }}
+
+runs:
+  using: composite
+  steps:
+    - id: check
+      shell: bash
+      env:
+        NW_SHA: ${{ inputs.sha }}
+        NW_INCLUDE: ${{ inputs.include }}
+        NW_EXCLUDE: ${{ inputs.exclude }}
+      run: |
+        set -euo pipefail
+        files="$(git diff --name-only "${NW_SHA}^" "${NW_SHA}")"
+        include_re="$(printf '%s\n' "$NW_INCLUDE" | grep -v '^[[:space:]]*$' | paste -sd'|' -)"
+        matched="$(printf '%s\n' "$files" | grep -E "$include_re" || true)"
+        if [ -n "$NW_EXCLUDE" ]; then
+          exclude_re="$(printf '%s\n' "$NW_EXCLUDE" | grep -v '^[[:space:]]*$' | paste -sd'|' -)"
+          if [ -n "$exclude_re" ]; then
+            matched="$(printf '%s\n' "$matched" | grep -Ev "$exclude_re" || true)"
+          fi
+        fi
+        if [ -n "$matched" ]; then
+          echo "changed=true" >> "$GITHUB_OUTPUT"
+          echo "paths-changed-since: matched changed files for ${NW_SHA}:"
+          printf '  %s\n' "$matched"
+        else
+          echo "changed=false" >> "$GITHUB_OUTPUT"
+          echo "paths-changed-since: no changed files matched include patterns for ${NW_SHA}"
+        fi

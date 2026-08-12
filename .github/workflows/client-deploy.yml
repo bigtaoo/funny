@@ -1,9 +1,16 @@
 name: client-deploy
 
 # Auto-publish the main game client (web bundle, Worker nivara-client) to Cloudflare, served at a.gamestao.com.
-# Trigger: push to main touching client-related files, or manual Run from the Actions page.
+# Trigger: CI ("build + unit tests" + "full-link E2E") finishing successfully on main and having touched
+# client-related files, or manual Run from the Actions page.
 # Flow: npm ci → npm run build:web (bakes production API/WS addresses into the bundle) → wrangler deploy.
 # Deployment details / address baking variables: design/product/deploy-cloudflare.md §6.
+#
+# Gated on CI (not on push directly): CI's e2e job takes up to 25 minutes while this deploy job takes
+# a couple of minutes, so a plain `push: branches: [main]` trigger would race a still-running/still-red
+# CI and could ship a broken commit before CI ever reported failure. `workflow_run` waits for CI's overall
+# conclusion first. See .github/actions/paths-changed-since for why the path filter moved into the job body
+# (workflow_run has no native `paths:`).
 #
 # Reuses the ops repo secrets (same CF account e64b61f1...; "Edit Cloudflare Workers" token covers all account Workers):
 #   CLOUDFLARE_API_TOKEN   — Requires at least Workers Scripts:Edit (account-level; also works for nivara-client, no new token needed)
@@ -11,19 +18,10 @@ name: client-deploy
 # Enable switch: repo variable CLIENT_DEPLOY_ENABLED = true (job skipped if not set, to avoid red builds before setup is complete).
 
 on:
-  push:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
     branches: [main]
-    paths:
-      - 'client/**'
-      # The web bundle inlines the deterministic engine + SLG shared code via the
-      # webpack alias @nw/engine → server/engine/src (and server/shared/src/slg).
-      # An engine-only change (e.g. the lockstep catch-up fix) still ships to
-      # players ONLY through this client bundle, so it must retrigger the deploy —
-      # otherwise the fix sits on main while prod keeps serving the old engine.
-      - 'server/engine/src/**'
-      - 'server/shared/src/slg/**'
-      - 'wrangler/client.jsonc'
-      - '.github/workflows/client-deploy.yml'
   workflow_dispatch: {}
 
 # Only one client deployment runs at a time; new run cancels the old one to prevent concurrent deploy conflicts.
@@ -32,12 +30,46 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  deploy:
+  # Gate: enable switch + CI-passed + "did this commit actually touch client/**". Split out of `deploy`
+  # so the real deploy steps only need one `if:` (on the job) instead of one per step.
+  check:
     runs-on: ubuntu-latest
-    # Skip the entire job if repo variable CLIENT_DEPLOY_ENABLED is not set to true (avoids red builds before setup is complete).
-    if: ${{ vars.CLIENT_DEPLOY_ENABLED == 'true' }}
+    if: ${{ vars.CLIENT_DEPLOY_ENABLED == 'true' && (github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success') }}
+    outputs:
+      changed: ${{ steps.paths.outputs.changed }}
+    steps:
+      # workflow_dispatch has no head_sha / prior commit to diff against — always proceeds, so no checkout needed.
+      - uses: actions/checkout@v5
+        if: github.event_name != 'workflow_dispatch'
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          fetch-depth: 2
+
+      - name: check whether client/** changed in this commit
+        id: paths
+        if: github.event_name != 'workflow_dispatch'
+        uses: ./.github/actions/paths-changed-since
+        with:
+          sha: ${{ github.event.workflow_run.head_sha }}
+          # The web bundle inlines the deterministic engine + SLG shared code via the webpack alias
+          # @nw/engine → server/engine/src (and server/shared/src/slg). An engine-only change (e.g. the
+          # lockstep catch-up fix) still ships to players ONLY through this client bundle, so it must
+          # retrigger the deploy — otherwise the fix sits on main while prod keeps serving the old engine.
+          include: |
+            ^client/
+            ^server/engine/src/
+            ^server/shared/src/slg/
+            ^wrangler/client\.jsonc$
+            ^\.github/workflows/client-deploy\.yml$
+
+  deploy:
+    needs: check
+    runs-on: ubuntu-latest
+    if: ${{ needs.check.result == 'success' && (github.event_name == 'workflow_dispatch' || needs.check.outputs.changed == 'true') }}
     steps:
       - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
 
       - uses: actions/setup-node@v5
         with:

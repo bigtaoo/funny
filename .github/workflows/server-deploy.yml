@@ -1,10 +1,17 @@
 name: server-deploy
 
 # Auto-redeploy the 9 backend processes + Redis + Caddy (docker compose) to the Hetzner VPS (/root/funny).
-# Trigger: push to main touching server-related files, or manual Run from the Actions page.
+# Trigger: CI ("build + unit tests" + "full-link E2E") finishing successfully on main and having touched
+# server-related files, or manual Run from the Actions page.
 # Flow: SSH into VPS → git fetch + reset --hard origin/main → docker compose up -d --build.
 # Images are built on the VPS itself (consistent with manual ops commands; 2-core + 2G swap handles it fine).
 # .env is gitignored, so reset --hard never touches it. Deployment details / ops reference: design/product/deploy-cloudflare.md §8.
+#
+# Gated on CI (not on push directly): CI's e2e job takes up to 25 minutes while this deploy job takes
+# a couple of minutes, so a plain `push: branches: [main]` trigger would race a still-running/still-red
+# CI and could ship a broken commit before CI ever reported failure. `workflow_run` waits for CI's overall
+# conclusion first. See .github/actions/paths-changed-since for why the path filter moved into the job body
+# (workflow_run has no native `paths:`).
 #
 # Required repo secrets:
 #   VPS_SSH_KEY        — Dedicated CI deploy private key (ed25519, nivara_ci_deploy, isolated from daily dev key).
@@ -13,19 +20,17 @@ name: server-deploy
 # Required repo variables:
 #   SERVER_DEPLOY_ENABLED = true   — Enable switch (job is skipped if not set, to avoid red builds before setup is complete).
 #   VPS_HOST              = 128.140.41.98   — VPS public IP (or api.gamestao.com; hostname works when proxied).
-#   VPS_USER              = root            — Login user (defaults to root).
-#   VPS_DEPLOY_PATH       = /root/funny     — Clone path on the VPS (defaults to /root/funny).
+#   VPS_USER               = root            — Login user (defaults to root).
+#   VPS_DEPLOY_PATH        = /root/funny     — Clone path on the VPS (defaults to /root/funny).
 #
 # Not using a third-party ssh-action (they swallow real errors and often expire at runtime); using the
 # runner's built-in ssh instead so errors are visible — same philosophy as ops-deploy / client-deploy bare npx wrangler.
 
 on:
-  push:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
     branches: [main]
-    paths:
-      - 'server/**'
-      - '!server/observability/**'   # observability stack uses grafana-deploy.yml; skip to avoid rebuilding the entire backend for it
-      - '.github/workflows/server-deploy.yml'
   workflow_dispatch: {}
 
 # Only one server deployment runs at a time; new run cancels the old one to prevent concurrent docker compose conflicts.
@@ -34,10 +39,37 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  deploy:
+  # Gate: enable switch + CI-passed + "did this commit actually touch server/**". Split out of `deploy`
+  # so the real deploy steps only need one `if:` (on the job) instead of one per step.
+  check:
     runs-on: ubuntu-latest
-    # Skip the entire job if repo variable SERVER_DEPLOY_ENABLED is not set to true.
-    if: ${{ vars.SERVER_DEPLOY_ENABLED == 'true' }}
+    if: ${{ vars.SERVER_DEPLOY_ENABLED == 'true' && (github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success') }}
+    outputs:
+      changed: ${{ steps.paths.outputs.changed }}
+    steps:
+      # workflow_dispatch has no head_sha / prior commit to diff against — always proceeds, so no checkout needed.
+      - uses: actions/checkout@v5
+        if: github.event_name != 'workflow_dispatch'
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          fetch-depth: 2
+
+      - name: check whether server/** changed in this commit
+        id: paths
+        if: github.event_name != 'workflow_dispatch'
+        uses: ./.github/actions/paths-changed-since
+        with:
+          sha: ${{ github.event.workflow_run.head_sha }}
+          include: |
+            ^server/
+            ^\.github/workflows/server-deploy\.yml$
+          exclude: |
+            ^server/observability/
+
+  deploy:
+    needs: check
+    runs-on: ubuntu-latest
+    if: ${{ needs.check.result == 'success' && (github.event_name == 'workflow_dispatch' || needs.check.outputs.changed == 'true') }}
     steps:
       # Write the private key and pin the VPS host key into known_hosts via ssh-keyscan (prevents TOFU/MITM).
       - name: set up SSH
@@ -52,7 +84,9 @@ jobs:
           ssh-keyscan -H "$VPS_HOST" >> ~/.ssh/known_hosts 2>/dev/null
 
       # Pull new code on the VPS and redeploy. git fetch + reset --hard origin/main eliminates workspace drift;
-      # .env (gitignored) is not affected. docker compose uses the cloud config + .env.
+      # .env (gitignored) is not affected. docker compose uses the cloud config + .env. Always pulls the current
+      # tip of origin/main (not specifically head_sha) — fine in practice since this only runs after CI has
+      # passed on that tip; a fast-follow commit landing mid-run just means the newer commit's own CI gates it.
       - name: deploy on VPS
         env:
           VPS_HOST: ${{ vars.VPS_HOST }}
