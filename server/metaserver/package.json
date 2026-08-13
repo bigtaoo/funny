@@ -14,6 +14,7 @@
     "start": "node dist/index.js",
     "pretest": "npm run gen:api:contracts && npm run gen:api:server",
     "test": "tsc -b && vitest run",
+    "test:coverage": "npm run pretest --if-present && tsc -b && vitest run --coverage",
     "gen:api:contracts": "node ../contracts/scripts/bundle-openapi.mjs",
     "gen:api:contracts:check": "node ../contracts/scripts/bundle-openapi.mjs --check",
     "gen:api:server": "node ../contracts/scripts/gen-openapi-server.mjs",

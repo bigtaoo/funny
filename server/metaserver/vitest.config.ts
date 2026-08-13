@@ -1,8 +1,14 @@
-import { defineConfig } from 'vitest/config';
+import { defineConfig, coverageConfigDefaults } from 'vitest/config';
 
 export default defineConfig({
   test: {
     include: ['test/**/*.test.ts'],
+    coverage: {
+      provider: 'v8',
+      reporter: ['text', 'lcov', 'html', 'json-summary'],
+      reportsDirectory: './coverage',
+      exclude: [...coverageConfigDefaults.exclude, 'src/generated/**'],
+    },
     // e2e tests need a real Mongo (rs0). globalSetup spins one up via mongodb-memory-server
     // unless NW_MONGO_URI points at an external DB; setupEnv bridges the URI into each worker.
     // Serial execution prevents cross-test DB races.

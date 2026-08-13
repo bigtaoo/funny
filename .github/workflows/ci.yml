@@ -105,7 +105,7 @@ jobs:
         env:
           NW_REQUIRE_DB: '1'
           NW_REDIS_URL: redis://127.0.0.1:6379
-        run: npm test
+        run: npm run test:coverage
 
       # —— Client: type-check + unit tests + web build ——
       - name: client install
@@ -131,7 +131,7 @@ jobs:
         run: npm run typecheck
       - name: client unit tests
         working-directory: client
-        run: npm test
+        run: npm run test:coverage
       # UI smoke: headless PIXI adapter constructs real scenes in pure Node to prove each scene starts correctly.
       # No Docker / browser / live stack needed, so this lives in the fast path.
       - name: client UI smoke tests
@@ -172,6 +172,15 @@ jobs:
       - name: tools file length check
         working-directory: tools
         run: node scripts/checkFileLength.mjs
+
+      # Final step of this job: read the coverage/coverage-summary.json (vitest) and coverage/
+      # lcov.info (engine, Node's built-in test coverage) every test:coverage step above just
+      # produced, and print one consolidated table to the run's summary page. Pure reporting —
+      # scripts/coverageSummary.mjs never throws, so `if: always()` lets it still render a
+      # (possibly partial) table even if an earlier step in this job failed.
+      - name: test coverage report
+        if: always()
+        run: node scripts/coverageSummary.mjs
 
   # Slow path: docker compose brings up the full stack (mongo + meta + commercial + gateway + matchsvc + game),
   # then runs the real client orchestration core (createAppCore) as a Node process on the runner host for full end-to-end tests.

@@ -7,7 +7,8 @@
   "scripts": {
     "build": "tsc -b",
     "typecheck": "tsc --noEmit",
-    "test": "tsc -b && tsc -p tsconfig.test.json && node -e \"require('fs').cpSync('src/__tests__/goldenReplay/fixtures','dist/__tests__/goldenReplay/fixtures',{recursive:true})\" && node scripts/runTests.mjs"
+    "test": "tsc -b && tsc -p tsconfig.test.json && node -e \"require('fs').cpSync('src/__tests__/goldenReplay/fixtures','dist/__tests__/goldenReplay/fixtures',{recursive:true})\" && node scripts/runTests.mjs",
+    "test:coverage": "tsc -b && tsc -p tsconfig.test.json && node -e \"require('fs').cpSync('src/__tests__/goldenReplay/fixtures','dist/__tests__/goldenReplay/fixtures',{recursive:true})\" && node scripts/runTests.mjs --coverage"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",
