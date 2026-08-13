@@ -882,3 +882,17 @@ and spire tips, notebook doodle aesthetic, no text.
 | `citadel_diamond_doodle_1024.png` | Lv.10 | 3.08 | 0.94（满宽） | 宽度达标，但外接框比 Lv.9 平了一倍多——画面主体比 Lv.9 矮很多，跟"Lv.10 不该比 Lv.9 矮"的硬规有点冲突，构图内容也换成了链环+台阶（不是原 prompt 的钢笔造型）。**待用户确认**是否满意这个方向 |
 
 数字自检（"整体外接框宽高比≥1.7，不够就把塔尖压更矮"）这次效果明显比上一轮的"squat"形容词好——Lv.6 一次命中。Lv.9/Lv.10 两张候选先留在 `art/ui/slg-playerbase/`（未改名，不是 playerbase_lN 也不是 leftover），等用户决定采用/重出再处理。
+
+### 2026-08-13（同日第六轮）：新出的 Lv.10 候选比例精准命中，采用；Lv.9 仍待定
+
+用户又用 GPT Image 2 单独重出一张 Lv.10（webp 格式），离线核对：
+
+| 候选 | 目标等级 | 内容外接框宽高比 | contentWidthFrac | contentTop | 结论 |
+|---|---|---|---|---|---|
+| `Abh9kQ...na1fn...1024.webp` | Lv.10 | **1.78** | **0.94（满宽）** | 0.47 | 采用——跟 `playerbase_l1`/`l4`（宽高比 1.8~1.84）几乎同一区间，不是靠"压极扁"取巧命中宽度，是真按 2:1 菱形比例画出来的 |
+
+跟上一版 `citadel_diamond_doodle_1024`（宽高比 3.08，靠整体压得极扁凑满宽，破坏"Lv.10 不该比 Lv.9 矮"的硬规）不同，这次比例、构图（钢笔金尖居中、四周铅笔角塔、订书机门楼+台阶）、画风（蓝墨线+淡黄绿水彩，金色点缀限定在钢笔/铅笔尖）都跟原 prompt 和现有 `l1`/`l4`/`l6` 一致，直接采用。
+
+打包脚本原生支持 `.webp` 源文件（见脚本头注释"mixed png/webp AI-generation batch"），直接改名 `playerbase_l10.webp` 覆盖旧的 `playerbase_l10.png`（无需转格式），重跑 `pack_playerbase_atlas.js` + `patchMergedAtlas.js` 入库，并从合并后的 `world_atlas.png` 截出实际 cell 像素核对（菱形贴边，跟 `l1`/`l4`/`l6` 同一水准）。被替换的旧图从 git 历史取出存进 `art/leftover/playerbase_l10_pre20260813.png`；上一版走偏的 `citadel_diamond_doodle_1024.png` 候选也移入 `art/leftover/`。
+
+**Lv.9 仍待定**：`citadel_diamond_doodle.png` 候选（0.86，比现有 0.83 好但未到满宽）还留在 `art/ui/slg-playerbase/`，等用户决定接受还是再出一版冲满宽。**至此 10 张里已有 9 张（Lv.1/2/3/4/5/6/7/8/10）达到或接近满宽，只剩 Lv.9 待收尾。**
