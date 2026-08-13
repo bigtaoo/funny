@@ -25,6 +25,11 @@ cd tools/animator && npm run start   # 端口 9091
 
 四者其余部分（`core/{AppState,CommandManager,EventBus}.ts`、`interaction/`、`rendering/`、`ui/*`、ops 的 18 个 `pages/*.ts`、level-editor 的 `board/`/`inspector/`/`timeline/`）留给后续 Phase，按"状态管理类→业务页面→渲染/交互层"的性价比顺序推进。
 
+**逐步补测试 Phase 2（2026-08-13 同日追加）**：状态管理类的直接契约测试（此前只被 IO 测试当真实依赖捎带跑过，从未钉过自己的边界）：
+
+- `animator`：`EventBus.test.ts`（10 条，`on`/`off`/`emit` 的 Set 去重、void-payload 事件、mid-emit 自退订不影响其他订阅者）+ `CommandManager.test.ts`（12 条，真实 `EventBus<AppEvents>` 实例；execute/undo/redo 的 LIFO 顺序、`undoLabel`/`redoLabel` 兜底文案、`clear()` 恒发事件、**`MAX_STACK=100` 溢出边界**——push 101 条命令后 undo 100 次，最早一条已被挤出栈，最终停在第 2 条的状态而非第 1 条）。累计 109 条。
+- `vfx-editor`：`ProjectStore.test.ts`（7 条）+ `Library.test.ts`（25 条）。`ProjectStore.ts` 新增 `fake-indexeddb`（`^6.2.5`，仅 vfx-editor 的 devDependency）驱动真实（内存态）IndexedDB，不是手搓 store API 的假对象——同 animator 用真 JSZip 的思路。**踩坑记录**：最初用 `indexedDB.deleteDatabase()` 做每测试重置，六个用例集体挂死——`ProjectStore` 从不 `close()` 它开的连接，delete 请求撞上仍存活的连接只会触发 `onblocked` 从不真正 `onsuccess`，而 fake-indexeddb 会把同名 db 后续的每个 `open()`/事务排到这个"卡住的 delete"后面，一直挂到 hook 超时（用一个不建立在 `ProjectStore` 之上的最小复现脚本单独钉死了这个成因）；换成"开一条短命连接、`clear()` 该 object store、立即 `close()`"就不再卡死。`Library.test.ts` 为了能用 `vi.useFakeTimers()`（否则要真等 `DEBOUNCE_MS=1200ms`）又踩了第二个坑：**fake timers 和 `fake-indexeddb` 混用会直接挂死**（`fake-indexeddb` 内部异步模拟自己也是靠计时器排队的，被接管后再也不会被排到）——单独脚本复现确认后，`Library.test.ts` 改用一个只实现 `list/get/put/delete/count` 五个方法的内存态 `FakeStore`（`ProjectStore` 本身的正确性已经在它自己的测试文件里用真 IndexedDB 钉过了），`window`/`document`/`localStorage` 走 `vi.stubGlobal`（同 `fileIO.test.ts` 先例）。覆盖 `bootstrap`（seed builtins/恢复 lastId/回退最新一条）、`switchTo`/`createNew`/`duplicateActive`/`removeActive` 的真实状态转移、**`suspended` 标志**（`loadFresh` 期间 model 自己的 `emit()` 不能反过来把刚加载的项目标脏——这条防护只有在"切换到另一个已经激活过的项目"时才可观察，第一次 switchTo 因为 `currentId` 还是 `null` 会被另一条 guard 掩盖，写检验测试时专门补了这个区分）、debounce 合并连续编辑为一次落盘 + 显式 `clearTimeout` 重排（对每条关键断言都做了 red-then-green 实测：临时删掉对应源码行确认测试真的会红，再还原）、tab hide/close 时的兜底 flush。累计 89 条。
+
 ## 参数两层模型
 
 **Binding（静态，所有帧共用）**：`anchorX/Y`（挂点比例，允许超出 0–1）、`rotation`（静态偏移）、`scaleX/Y`、`flipX`、`zOrder`
