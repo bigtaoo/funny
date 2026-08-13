@@ -745,3 +745,128 @@ doodle illustration with fountain pen blue ink outlines and cross-hatching,
 single pale yellow-green watercolor wash fill only, strictly two-tone (blue
 ink + pale yellow-green, no other colors), notebook doodle aesthetic, no text.
 ```
+
+### 2026-08-13（同日第四轮）：Lv.6/9/10 用 v4 开头仍不够扁——竖起来的构件把外接框顶高了，出 v5
+
+用户按 v4 开头（"squashed FLAT"）+ 各自 v3 物体描述重出了 Lv.6/9/10（`2d100fae`→Lv.6、`2972edb1`→Lv.9、`83228644`→Lv.10）。离线核对，三张**都不如现在线上的图**，未采用：
+
+| 候选 | 目标等级 | 内容外接框宽高比 | contentWidthFrac | 对比现有线上图 |
+|---|---|---|---|---|
+| `2d100fae` | Lv.6 | 1.37 | 0.77 | 现有 0.85，新图更差 |
+| `2972edb1` | Lv.9 | 1.34 | 0.75 | 现有 0.83，新图更差 |
+| `83228644` | Lv.10 | 1.34 | 0.75 | 现有 0.84，新图更差 |
+
+跟 Lv.2/3 那次不是同一个病：地台本身压得还行（不再是接近1:1的陡菱形），但 Lv.6/9/10 都比 Lv.2/3 多了**立起来的构件**——Lv.6 的修正带卷角楼、Lv.9/10 的铅笔角塔+旗子/笔尖——这些竖直元素把整体外接框往上抻高，宽高比停在 1.34~1.37，还是够不到命中满宽需要的 ≥1.667 门槛（对比 `playerbase_l1`/`l4`/`l7`——同样带旗子/塔尖但压得更矮，宽高比 1.67~1.84）。
+
+修法：v4 的"压扁地台"开头不变，在物体描述段落后面加一句**具体的整体外接框比例自检**（"画一个包住画面里所有非白色内容——包括地台本身和任何竖起来的塔尖/旗子——的最小外框，宽必须至少是高的1.7倍；不够就把塔尖压得更矮"），逼着生成工具把塔尖/角楼画得更矮，而不是停留在"squat"这种形容词上。三张未采用的候选已移入 `art/leftover/`，图集未改动（现有 Lv.6/9/10 虽未满宽但比这批新候选更好，暂不替换）。
+
+### `playerbase_l6` v5
+```
+Top-down isometric view on a SQUARE 1:1 canvas (1024x1024px): the whole scene
+sits on ONE ROTATED DIAMOND-SHAPED ground plate — a rhombus like a diamond
+playing-card symbol, but squashed FLAT: its own top-to-bottom corner distance
+is only about HALF of its own left-to-right corner distance (a wide 2:1
+diamond, not a rotated square). The diamond's left and right corners touch the
+very edges of the frame, but its top corner sits only about a quarter of the
+way down from the top of the canvas and its bottom corner about three-quarters
+of the way down. This is NOT a front-facing tabletop diorama — no horizon, no
+receding table edge; camera looks straight down at a gentle 25-degree tilt.
+
+A stone-like fortress of thick hardcover books fills the diamond edge to edge:
+its outer wall reaches the diamond's far-left and far-right corners, with a
+correction-tape roll lying on its side as a squat round corner tower AT each
+of those two corners (half a tower may crop off the frame edge, that's fine),
+a broad low binder as the central keep, a ruler-and-compass drawbridge across
+the front between the two corner towers. Heavy cross-hatching for stony
+texture.
+
+Self-check before finishing: draw an imaginary tight box around EVERYTHING
+non-white in the picture, including the plate itself and every tower sticking
+up from it — that box's width must be at least 1.7 times its height. If the
+corner towers you drew would make that box taller than that, shrink them:
+make them noticeably SQUATTER and shorter, no taller than roughly one-fifth of
+the plate's own width, until the whole silhouette reads clearly wider than
+tall at that ratio.
+
+Solid pure-white background, no grid lines anywhere on the plate, hand-drawn
+doodle illustration with fountain pen blue ink outlines and cross-hatching,
+single pale yellow-green watercolor wash fill only, strictly two-tone (blue
+ink + pale yellow-green, no other colors), notebook doodle aesthetic, no text.
+```
+
+### `playerbase_l9` v5
+```
+Top-down isometric view on a SQUARE 1:1 canvas (1024x1024px): the whole scene
+sits on ONE ROTATED DIAMOND-SHAPED ground plate — a rhombus like a diamond
+playing-card symbol, but squashed FLAT: its own top-to-bottom corner distance
+is only about HALF of its own left-to-right corner distance (a wide 2:1
+diamond, not a rotated square). The diamond's left and right corners touch the
+very edges of the frame, but its top corner sits only about a quarter of the
+way down from the top of the canvas and its bottom corner about three-quarters
+of the way down. This is NOT a front-facing tabletop diorama — no horizon, no
+receding table edge; camera looks straight down at a gentle 25-degree tilt.
+
+An elaborate citadel complex overflows the diamond: several broad book-stack
+blocks connected by ruler-walls into wings and courtyards that reach the
+diamond's far-left and far-right corners, with one short pencil stub standing
+upright AT the far-left corner and another AT the far-right corner (tips may
+crop off the very edge, that's fine), two more pencil stubs at the back
+corners as stumpy spires of barely varying height, a wide central binder-keep
+flying a paper pennant, dense parallel ruler-lines everywhere suggesting
+grandeur. A single small gold-ink accent on the far-right pencil tip as the
+only exception to the two-tone palette.
+
+Self-check before finishing: draw an imaginary tight box around EVERYTHING
+non-white in the picture, including the plate itself and every pencil stub or
+pennant sticking up from it — that box's width must be at least 1.7 times its
+height. If the pencil stubs/pennant you drew would make that box taller than
+that, shrink them: make them noticeably SQUATTER and shorter, no taller than
+roughly one-fifth of the plate's own width, until the whole silhouette reads
+clearly wider than tall at that ratio — grandeur through sprawl and line
+density, nothing towers.
+
+Solid pure-white background, no grid lines anywhere on the plate, hand-drawn
+doodle illustration with fountain pen blue ink outlines and cross-hatching,
+single pale yellow-green watercolor wash fill, otherwise strictly two-tone
+(blue ink + pale yellow-green) apart from the small gold accent, notebook
+doodle aesthetic, no text.
+```
+
+### `playerbase_l10` v5
+```
+Top-down isometric view on a SQUARE 1:1 canvas (1024x1024px): the whole scene
+sits on ONE ROTATED DIAMOND-SHAPED ground plate — a rhombus like a diamond
+playing-card symbol, but squashed FLAT: its own top-to-bottom corner distance
+is only about HALF of its own left-to-right corner distance (a wide 2:1
+diamond, not a rotated square) — NOT a circle or oval either. The diamond's
+left and right corners touch the very edges of the frame, but its top corner
+sits only about a quarter of the way down from the top of the canvas and its
+bottom corner about three-quarters of the way down. This is NOT a
+front-facing tabletop diorama — no horizon, no receding table edge; camera
+looks straight down at a gentle 25-degree tilt.
+
+The grandest capital complex packs the diamond edge to edge: concentric rings
+of book-walls enclosing dense courtyards of binders and rulers, the outermost
+ring reaching the diamond's far-left and far-right corners — put one short pen
+or pencil stub standing upright AT the far-left corner and another AT the
+far-right corner (half a stub may crop off the frame edge, that's fine), four
+more stubby spires of near-equal height spaced around the rest of the ring, a
+broad central fountain-pen laid at a shallow angle with its golden nib
+pointing forward, a monumental stapler-gatehouse spanning the front between
+the inner rings, dense ruler-line cross-hatching throughout.
+
+Self-check before finishing: draw an imaginary tight box around EVERYTHING
+non-white in the picture, including the plate itself and every spire or pen
+sticking up from it — that box's width must be at least 1.7 times its height.
+If the spires you drew would make that box taller than that, shrink them:
+make every spire noticeably SQUATTER and shorter, no taller than roughly
+one-fifth of the plate's own width, until the whole silhouette reads clearly
+wider than tall at that ratio — it must not be taller than Lv9's silhouette.
+The stubby spires may be filled solid deep blue as the pinnacle signal.
+
+Solid pure-white background, no grid lines anywhere on the plate, hand-drawn
+doodle illustration with fountain pen blue ink outlines and cross-hatching,
+single pale yellow-green watercolor wash fill, otherwise strictly two-tone
+(blue ink + pale yellow-green) apart from small gold accents on the pen nib
+and spire tips, notebook doodle aesthetic, no text.
+```
