@@ -1,0 +1,8 @@
+// tsc program covering src + test together. The main tsconfig.json only includes `src/**`, so
+// without this the test layer would never be type-checked (vitest runs through esbuild, which
+// erases types without checking them) — same drift trap client/tsconfig.test.json and
+// tools/map-editor/tsconfig.test.json exist to close, see claudedocs/client-testing.md.
+{
+  "extends": "./tsconfig.json",
+  "include": ["src/**/*", "test/**/*"]
+}

@@ -148,17 +148,21 @@ jobs:
           for d in animator level-editor map-editor ops vfx-editor desktop-shell; do
             (cd "$d" && npm ci)
           done
-      # Only map-editor and ops have a dedicated typecheck script (see claudedocs/ tools notes);
-      # the other four are webpack-only projects — `webpack --mode production` below still fails
-      # on type errors since ts-loader type-checks during bundling, so build IS their typecheck.
-      - name: tools typecheck (map-editor, ops)
+      # 2026-08-13 follow-up: animator/level-editor/vfx-editor gained the same typecheck+test
+      # scripts as map-editor/ops (io/ split coverage + a bootstrap pure-module test each — see
+      # claudedocs/animator.md). desktop-shell remains build-only (webpack ts-loader is its typecheck).
+      - name: tools typecheck (animator, level-editor, map-editor, ops, vfx-editor)
         working-directory: tools
         run: |
-          (cd map-editor && npm run typecheck)
-          (cd ops && npm run typecheck)
-      - name: tools unit tests (map-editor — the only tools/ project with a test script)
-        working-directory: tools/map-editor
-        run: npm test
+          for d in animator level-editor map-editor ops vfx-editor; do
+            (cd "$d" && npm run typecheck)
+          done
+      - name: tools unit tests (animator, level-editor, map-editor, ops, vfx-editor)
+        working-directory: tools
+        run: |
+          for d in animator level-editor map-editor ops vfx-editor; do
+            (cd "$d" && npm test)
+          done
       - name: tools build (animator/level-editor/vfx-editor/desktop-shell)
         working-directory: tools
         run: |
