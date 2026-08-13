@@ -24,9 +24,9 @@ import { unitMeta } from '../units';
  * deliberately honest about how busy a lane gets, to judge lanes-vs-groups.
  */
 
-const GUTTER_W = 56;
-const RULER_H = 22;
-const LANE_H = 30;
+export const GUTTER_W = 56;
+export const RULER_H = 22;
+export const LANE_H = 30;
 const SNAP_TICKS = 3; // 0.1s
 const MIN_PPS = 12;
 const MAX_PPS = 400;
@@ -49,6 +49,45 @@ interface Drag {
   index: number;
   startMouseTick: number;
   origAtTick: number;
+}
+
+// ── Pure coordinate/hit-test math (extracted so it's testable without a canvas/
+// DOM) ── mirrors the TimelinePanel instance methods of the same name 1:1, just
+// with `pxPerSec`/`scrollX` passed explicitly instead of read off `this`.
+
+export function tickToX(tick: number, pxPerSec: number, scrollX: number): number {
+  return GUTTER_W + (tick / TICK_RATE) * pxPerSec - scrollX;
+}
+export function xToTick(x: number, pxPerSec: number, scrollX: number): number {
+  return ((x - GUTTER_W + scrollX) / pxPerSec) * TICK_RATE;
+}
+export function laneIndex(col: number): number {
+  return (ATTACK_LANES as readonly number[]).indexOf(col);
+}
+export function yToLaneIndex(y: number): number {
+  return Math.floor((y - RULER_H) / LANE_H);
+}
+export function entryEndTick(e: WaveEntry): number {
+  return e.atTick + Math.max(0, e.count - 1) * (e.spacingTicks ?? 0);
+}
+
+/** Topmost/last block under the cursor, on whichever lane row it falls in. */
+export function hitTest(
+  x: number, y: number,
+  entries: readonly WaveEntry[], laneCount: number,
+  pxPerSec: number, scrollX: number,
+): number | null {
+  const li = yToLaneIndex(y);
+  if (li < 0 || li >= laneCount) return null;
+  const lane = (ATTACK_LANES as readonly number[])[li]!;
+  for (let i = entries.length - 1; i >= 0; i--) {
+    const e = entries[i]!;
+    if (e.col !== lane) continue;
+    const x0 = tickToX(e.atTick, pxPerSec, scrollX);
+    const x1 = Math.max(x0 + 18, tickToX(entryEndTick(e), pxPerSec, scrollX) + 18);
+    if (x >= x0 - 4 && x <= x1) return i;
+  }
+  return null;
 }
 
 export class TimelinePanel {
@@ -91,35 +130,24 @@ export class TimelinePanel {
 
   // ── coordinate transforms ──
   private tickToX(tick: number): number {
-    return GUTTER_W + (tick / TICK_RATE) * this.pxPerSec - this.scrollX;
+    return tickToX(tick, this.pxPerSec, this.scrollX);
   }
   private xToTick(x: number): number {
-    return ((x - GUTTER_W + this.scrollX) / this.pxPerSec) * TICK_RATE;
+    return xToTick(x, this.pxPerSec, this.scrollX);
   }
   private laneIndex(col: number): number {
-    return (ATTACK_LANES as readonly number[]).indexOf(col);
+    return laneIndex(col);
   }
   private yToLaneIndex(y: number): number {
-    return Math.floor((y - RULER_H) / LANE_H);
+    return yToLaneIndex(y);
   }
   private entryEndTick(e: WaveEntry): number {
-    return e.atTick + Math.max(0, e.count - 1) * (e.spacingTicks ?? 0);
+    return entryEndTick(e);
   }
 
   // ── hit test (reverse order so the topmost/last block wins) ──
   private hitTest(x: number, y: number): number | null {
-    const li = this.yToLaneIndex(y);
-    if (li < 0 || li >= this.laneCount) return null;
-    const lane = (ATTACK_LANES as readonly number[])[li]!;
-    const entries = this.state.waves;
-    for (let i = entries.length - 1; i >= 0; i--) {
-      const e = entries[i]!;
-      if (e.col !== lane) continue;
-      const x0 = this.tickToX(e.atTick);
-      const x1 = Math.max(x0 + 18, this.tickToX(this.entryEndTick(e)) + 18);
-      if (x >= x0 - 4 && x <= x1) return i;
-    }
-    return null;
+    return hitTest(x, y, this.state.waves, this.laneCount, this.pxPerSec, this.scrollX);
   }
 
   private localXY(e: MouseEvent): { x: number; y: number } {

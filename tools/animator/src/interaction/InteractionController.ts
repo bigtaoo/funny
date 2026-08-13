@@ -296,37 +296,13 @@ export class InteractionController {
     y: number,
     worldPose: ReturnType<typeof Skeleton.computeFK>,
   ): string | null {
-    // Check head first (circle)
-    const head = worldPose.get('head');
-    if (head) {
-      const dx = x - head.ex, dy = y - head.ey;
-      if (Math.sqrt(dx * dx + dy * dy) <= Skeleton.HEAD_R + 4) return 'head';
-    }
-
-    // Check tubular bones — closest segment in reversed draw order (front first)
-    let best: string | null = null;
-    let bestDist = Infinity;
-
-    for (const boneId of getDrawOrderReversed()) {
-      if (boneId === 'head') continue;
-      if (!Skeleton.SELECTABLE_BONES.includes(boneId)) continue;
-      const pos = worldPose.get(boneId);
-      if (!pos) continue;
-
-      const dist = pointToSegmentDist(x, y, pos.sx, pos.sy, pos.ex, pos.ey);
-      if (dist < HIT_RADIUS && dist < bestDist) {
-        bestDist = dist;
-        best = boneId;
-      }
-    }
-
-    return best;
+    return findBoneAt(x, y, worldPose);
   }
 }
 
 // ── Geometry helper ───────────────────────────────────────────────────────────
 
-function pointToSegmentDist(
+export function pointToSegmentDist(
   px: number, py: number,
   ax: number, ay: number,
   bx: number, by: number,
@@ -336,4 +312,40 @@ function pointToSegmentDist(
   if (lenSq === 0) return Math.hypot(px - ax, py - ay);
   const t = Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / lenSq));
   return Math.hypot(px - (ax + t * dx), py - (ay + t * dy));
+}
+
+/** Nearest hit-testable bone at a stage point (head circle first, then closest
+ *  tubular-bone segment within HIT_RADIUS, front-first draw order). Doesn't
+ *  depend on controller state — free function so it's testable without wiring
+ *  up canvas/window listeners. */
+export function findBoneAt(
+  x: number,
+  y: number,
+  worldPose: ReturnType<typeof Skeleton.computeFK>,
+): string | null {
+  // Check head first (circle)
+  const head = worldPose.get('head');
+  if (head) {
+    const dx = x - head.ex, dy = y - head.ey;
+    if (Math.sqrt(dx * dx + dy * dy) <= Skeleton.HEAD_R + 4) return 'head';
+  }
+
+  // Check tubular bones — closest segment in reversed draw order (front first)
+  let best: string | null = null;
+  let bestDist = Infinity;
+
+  for (const boneId of getDrawOrderReversed()) {
+    if (boneId === 'head') continue;
+    if (!Skeleton.SELECTABLE_BONES.includes(boneId)) continue;
+    const pos = worldPose.get(boneId);
+    if (!pos) continue;
+
+    const dist = pointToSegmentDist(x, y, pos.sx, pos.sy, pos.ex, pos.ey);
+    if (dist < HIT_RADIUS && dist < bestDist) {
+      bestDist = dist;
+      best = boneId;
+    }
+  }
+
+  return best;
 }
