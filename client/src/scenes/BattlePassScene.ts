@@ -7,7 +7,7 @@ import { ui as C, txt, buildPaperBackground, sketchPanel, sketchAccentBar, seedF
 import { FS, snapFont } from '../render/fontScale';
 import { buildDecorCLayer } from '../render/decorCLayer';
 import { drawSceneHeader, drawHeaderCurrency, HEADER_ACCENT } from '../ui/widgets/SceneHeader';
-import { drawSidebarTabs, drawBottomNavTabs, sidebarNavW, bottomNavH, type HubTab } from '../ui/widgets/HubTabs';
+import { sidebarNavW, bottomNavH } from '../ui/widgets/HubTabs';
 import { drawScrollIndicator } from '../ui/widgets/ScrollIndicator';
 import { BusyTracker, withTimeout, TimeoutError } from '../ui/busyTracker';
 import { showToastMessage, type ToastKind } from '../net/log';
@@ -22,6 +22,7 @@ import {
 } from '../game/balance/battlepassDefs';
 import { cellState } from './BattlePassScene/cell';
 import { RewardRowVirtualizer, type RowVizContext } from './BattlePassScene/rows';
+import { drawSidebar, contentBounds, type NavHost } from './BattlePassScene/nav';
 
 // ── BattlePassScene — Battle Pass panel (SE-9) ────────────────────────────────
 //
@@ -201,57 +202,22 @@ export class BattlePassScene implements Scene {
     showToastMessage(msg, kind);
   }
 
-  /**
-   * Shop group nav [Shop|Coins|Gacha|BattlePass] (LOBBY_IA_REDESIGN §9), battle pass active. Only
-   * drawn in group context (openShop injected). Landscape: a vertical rail (`sidebarNavW`, matching
-   * every other hub's left tab rail) — consumes no vertical space, render() shifts body content
-   * start x instead. Portrait: a bottom nav bar instead (§18), drawn after the body (see render())
-   * so it's never run under by the scroll track; hits are unshifted to the front to match.
-   */
-  private drawSidebar(tbH: number): void {
-    if (!this.cb.openShop) return;
-    const { w, h, landscape } = this;
-    const tabs: HubTab[] = [{ label: t('shop.title'), active: false, icon: 'tag', badge: this.cb.getShopBadge?.() ?? false }];
-    const actions: Array<() => void> = [() => this.cb.openShop?.()];
-    if (this.cb.openCoins) {
-      tabs.push({ label: t('shop.coinsTab'), active: false, icon: 'coin' });
-      actions.push(() => this.cb.openCoins?.());
-    }
-    tabs.push({ label: t('gacha.title'), active: false, icon: 'capsule' });
-    actions.push(() => this.cb.openGacha?.());
-    tabs.push({ label: t('battlepass.title'), active: true, icon: 'trophy' });
-    actions.push(() => {});
-    if (this.cb.openRecharge) {
-      tabs.push({ label: t('recharge.title'), active: false, icon: 'coinChest', badge: this.cb.getRechargeBadge?.() ?? false });
-      actions.push(() => this.cb.openRecharge?.());
-    }
-    const onSelect = (i: number): void => actions[i]?.();
-    if (!landscape) {
-      const barH = bottomNavH(h);
-      const { hits } = drawBottomNavTabs(this.container, w, h - barH, barH, tabs, onSelect);
-      // Kept in navHits (see field doc) rather than unshifted into `this.hits` directly — the
-      // scroll-content render path rebuilds `this.hits` via updateScrollPosition() right after this
-      // call, which folds navHits back in; the no-scroll early-return path never calls
-      // updateScrollPosition(), so it also unshifts directly here to take effect immediately.
-      this.navHits = hits.map((hit) => ({ rect: hit.rect, fn: hit.fn }));
-      this.hits.unshift(...hits);
-      return;
-    }
-    const sidebarW = sidebarNavW(w, h, true);
-    const { hits } = drawSidebarTabs(this.container, sidebarW, tbH, h, tabs, onSelect);
-    this.hits.push(...hits);
+  private navHost(): NavHost {
+    const self = this;
+    return {
+      container: this.container,
+      cb: this.cb,
+      w: this.w,
+      h: this.h,
+      landscape: this.landscape,
+      hits: this.hits,
+      get navHits() { return self.navHits; },
+      set navHits(v: { rect: Rect; fn: () => void }[]) { self.navHits = v; },
+    };
   }
 
-  /**
-   * Content column bounds: left edge shifts right of the sidebar rail when in the shop group AND
-   * landscape (portrait's bottom bar reserves no width — else the standalone 5%-of-w pad); right
-   * edge always keeps the 5%-of-w pad.
-   */
-  private contentBounds(): { x0: number; w: number } {
-    const { w, h, landscape } = this;
-    const rightPad = Math.round(w * 0.05);
-    const x0 = this.cb.openShop && landscape ? sidebarNavW(w, h, true) + Math.round(w * 0.02) : rightPad;
-    return { x0, w: w - x0 - rightPad };
+  private drawSidebar(tbH: number): void {
+    drawSidebar(this.navHost(), tbH);
   }
 
   private render(): void {
@@ -284,7 +250,7 @@ export class BattlePassScene implements Scene {
     // body (see bottom of this method) so the bottom bar paints on top.
     if (landscape) this.drawSidebar(tbH);
     const top = tbH;
-    const { x0: cx0, w: cw } = this.contentBounds();
+    const { x0: cx0, w: cw } = contentBounds(this.navHost());
     const centerX = cx0 + cw / 2;
 
     // ── Auth / offline guard ──────────────────────────────────────────────────
