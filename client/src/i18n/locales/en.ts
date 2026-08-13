@@ -543,7 +543,7 @@ export const en: Record<TranslationKey, string> = {
   'progression.trait.lifesteal': 'Lifesteal T6',
   'progression.trait.spawn': '+Spawn T9',
 
-  'material.scrap': 'Scraps',
+  'material.scrap': 'Tatter',
   'material.lead': 'Lead',
   'material.binding': 'Binding',
 
