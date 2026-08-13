@@ -1,8 +1,14 @@
-import { defineConfig } from 'vitest/config';
+import { defineConfig, coverageConfigDefaults } from 'vitest/config';
 
 export default defineConfig({
   test: {
     include: ['test/**/*.test.ts'],
+    coverage: {
+      provider: 'v8',
+      reporter: ['text', 'lcov', 'html', 'json-summary'],
+      reportsDirectory: './coverage',
+      exclude: [...coverageConfigDefaults.exclude, 'src/generated/**'],
+    },
     // e2e tests need a real Mongo. globalSetup spins up a standalone mongod via
     // mongodb-memory-server (admin uses only single-document atomic ops — no
     // multi-doc transactions — so a replica set is unnecessary) unless NW_MONGO_URI

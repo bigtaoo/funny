@@ -4,3 +4,6 @@ dist/
 
 # git worktree 工作目录（并行开发，见 claudedocs/worktrees.md）
 .claude/worktrees/
+
+# 测试覆盖率报告（client + 每个 server workspace 各自生成，见 claudedocs/client-testing.md / server.md）
+coverage/
