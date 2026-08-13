@@ -1,238 +1,37 @@
 import * as PIXI from 'pixi.js-legacy';
 import { Board } from '@nw/engine/Board';
 import { Unit } from '@nw/engine/Unit';
-import { Side, UnitState, UnitType } from '@nw/engine/types';
+import { Side, UnitType } from '@nw/engine/types';
 import { BoardView } from './BoardView';
 import { ObjectPool } from '../cache/ObjectPool';
 import { registerPool } from '../cache/poolRegistry';
 import { StickmanRuntime } from './stickman/StickmanRuntime';
 import type { TaoAsset, GearGlyphSpec } from './stickman/StickmanRuntime';
-import { PLAYER_EQUIPPABLE_UNITS, TICK_RATE } from '@nw/engine';
+import { TICK_RATE } from '@nw/engine';
 import type { EngineCardInstance, EngineEquipInv } from '@nw/engine';
-import { getEquipDef } from '../game/meta/equipmentDefs';
-import type { EquipSlot } from '../game/meta/SaveData';
-import infantryTaoUrl from '../assets/units/infantry.tao';
-import archerTaoUrl from '../assets/units/archer.tao';
-import shieldBearerTaoUrl from '../assets/units/shieldbearer.tao';
-import maxTaoUrl from '../assets/units/max.tao';
-import lenaTaoUrl from '../assets/units/lena.tao';
-import maraTaoUrl from '../assets/units/mara.tao';
-import ironcladTaoUrl from '../assets/units/ironclad.tao';
-import runnerTaoUrl from '../assets/units/runner.tao';
-import harpyTaoUrl from '../assets/units/harpy.tao';
-import medicTaoUrl from '../assets/units/medic.tao';
-import berserkerTaoUrl from '../assets/units/berserker.tao';
-import splitterTaoUrl from '../assets/units/splitter.tao';
-import skinInfantryTaoUrl from '../assets/units/skins/skin_infantry.tao';
-import skinArcherTaoUrl from '../assets/units/skins/skin_archer.tao';
-import skinShieldBearerTaoUrl from '../assets/units/skins/skin_shieldbearer.tao';
-import skinLenaTaoUrl from '../assets/units/skins/skin_lena.tao';
-import skinMaraTaoUrl from '../assets/units/skins/skin_mara.tao';
-import skinMaxTaoUrl from '../assets/units/skins/skin_max.tao';
-import { fx, factionInk } from './theme';
+import { fx } from './theme';
 import { drawStickmanDraft } from './stickmanDraft';
 import { targetScreenHeight } from './unitSize';
+import {
+  STICKMAN_ASSETS, resolveSkinOverrides, DRAFT_SEED, drawFactionMarker, stickmanHpBarY,
+  createUnitContainer, resetUnitContainer,
+  RADIUS, MARKER_Y, HP_BAR_WIDTH, HP_BAR_HEIGHT, HP_BAR_Y, HP_TOTAL_FRAMES, HP_FADE_FRAMES,
+} from './UnitView/assets';
+import {
+  setSpellTargetPreview, playHitEffect, playDeathEffect, getHitPoint, NO_SPELL_TARGETS, type EffectsHost,
+} from './UnitView/effects';
+import { applyGear, type GearHost } from './UnitView/gear';
 
-/**
- * .tao skeletal-animation bundle URL per unit type. Types listed here render as
- * animated stickmen; types absent fall back to the colored-circle placeholder.
- * Exported for reuse by WorldMapRenderer/fog.ts (march-token art picks the deployed
- * team's leader unit-type from this same set, 2026-07-26).
- */
-export const STICKMAN_ASSETS: Partial<Record<UnitType, string>> = {
-  [UnitType.Infantry]: infantryTaoUrl     as unknown as string,
-  [UnitType.Archer]:    archerTaoUrl       as unknown as string,
-  [UnitType.ShieldBearer]:  shieldBearerTaoUrl as unknown as string, // shield bearer
-  // Anna faction trio — each with a separate .tao animation (A6, individually re-exported in the animator)
-  [UnitType.Max]:   maxTaoUrl  as unknown as string,
-  [UnitType.Lena]:  lenaTaoUrl as unknown as string,
-  [UnitType.Mara]:  maraTaoUrl as unknown as string,
-  // PvE myth creatures (PVP-P5 art) — 6 units authored 2026-07, wired in 2026-07-27.
-  [UnitType.Ironclad]:  ironcladTaoUrl as unknown as string,
-  [UnitType.Runner]:    runnerTaoUrl   as unknown as string,
-  [UnitType.Harpy]:     harpyTaoUrl    as unknown as string,
-  [UnitType.Medic]:     medicTaoUrl    as unknown as string,
-  [UnitType.Berserker]: berserkerTaoUrl as unknown as string,
-  [UnitType.Splitter]:  splitterTaoUrl as unknown as string,
-};
-
-/**
- * Skin → per-type .tao override (S3-4). Each equipped skin (SaveData.equipped, one slot per
- * character — game/meta/skinDefs.ts, LOBBY_IA_REDESIGN §15) swaps ONLY that character's texture
- * bundle — never stats — so a skin carried into PvP changes nothing but the picture (hard wall,
- * §5.2). Since a skin never targets more than one UnitType, several can be equipped at once
- * (one per character) with no risk of one overriding another's entry. An unknown / unmapped skin
- * falls back to the default look in STICKMAN_ASSETS.
- *
- * LAUNCH SKIN CATALOGUE (owner decision 2026-07-02, GACHA_DESIGN §9.5): one skin per
- * character, 6 total, each a full .tao (procedural recolor retired post-v0.4, see
- * art-direction §9.1). Rigged onto each character's base skeleton (animator, 2026-07-30) —
- * see art/skins/<character>/ for the .tao.editor sources.
- */
-const SKIN_ASSETS: Record<string, Partial<Record<UnitType, string>>> = {
-  skin_shop_c1: { [UnitType.Infantry]:     skinInfantryTaoUrl     as unknown as string }, // Tao/Lichuang  (shop, common)
-  skin_shop_r1: { [UnitType.Archer]:       skinArcherTaoUrl       as unknown as string }, // Tao/Suyuan    (shop, rare)
-  skin_shop_e1: { [UnitType.ShieldBearer]: skinShieldBearerTaoUrl as unknown as string }, // Tao/Chenshou  (shop, epic)
-  skin_e1:      { [UnitType.Lena]:         skinLenaTaoUrl         as unknown as string }, // Anna/Lena     (gacha, epic)
-  skin_e2:      { [UnitType.Mara]:         skinMaraTaoUrl         as unknown as string }, // Anna/Mara     (gacha, epic)
-  skin_l1:      { [UnitType.Max]:          skinMaxTaoUrl          as unknown as string }, // Anna/Max      (gacha, legendary)
-};
-
-/**
- * Per-type skin-override asset URLs for a set of equipped skin ids — overrides ONLY (not merged with
- * the default STICKMAN_ASSETS bundle); a type absent from the result has no equipped skin and falls
- * back to the default at the call site. Kept separate from the default set so the two can be loaded
- * into distinct side-scoped maps (see the {@link UnitView} constructor / {@link acquireSprite}).
- *
- * Exported for reuse by `assets/battleAssets.ts` (pre-match asset-readiness gate, ASSET_PACKAGING
- * §10) — it needs the exact same skin→url resolution to pre-warm StickmanRuntime's cache before
- * the scene is shown, so it doesn't compute this independently.
- */
-export function resolveSkinOverrides(equippedSkins: readonly string[]): Partial<Record<UnitType, string>> {
-  let overrides: Partial<Record<UnitType, string>> = {};
-  for (const id of equippedSkins) {
-    const skin = SKIN_ASSETS[id];
-    if (skin) overrides = { ...overrides, ...skin };
-  }
-  return overrides;
-}
-
-/**
- * Faction ink fills the unit body — blue = us, red = enemy (art-direction §3.2,
- * the primary readability rule). Sourced from theme so a re-skin can't break the
- * friend/foe split. NOTE: Bottom/Top here are render sides, not owners; the local
- * player always sits at Bottom after the localSide-aware layout flip.
- *
- * Placeholder units (PvE-only Ironclad/Runner, or any stickman type before its
- * .tao bundle loads) draw the procedural skeleton draft (stickmanDraft.ts) in
- * faction ink. The figure height now comes from the unit's size tier
- * (targetScreenHeight → unitSize.ts), the SAME source the .tao runtime path uses,
- * so a draft and its eventual .tao render at consistent tiered heights instead of
- * the old hand-tuned per-type px (art-direction §4.5.3 A). Tier still gives the
- * silhouette cue (§3.2: types by silhouette, not color — color is the faction).
- */
-
-/** Stable pen seed per type so each draft scrawls consistently. */
-const DRAFT_SEED: Record<UnitType, number> = {
-  [UnitType.Infantry]:     1011,
-  [UnitType.ShieldBearer]: 2027,
-  [UnitType.Archer]:       3041,
-  [UnitType.Ironclad]:     4057,
-  [UnitType.Runner]:       5077,
-  [UnitType.Harpy]:        6089,
-  [UnitType.Medic]:        7103,
-  [UnitType.Berserker]:    8117,
-  [UnitType.Splitter]:     9131,
-  [UnitType.Max]:          10147,
-  [UnitType.Lena]:         11161,
-  [UnitType.Mara]:         12173,
-};
-
-const RADIUS        = 10;
-
-/**
- * Faction ground marker — a soft highlighter-style color wash under the unit's
- * feet (blue = us / red = enemy). This is the friend/foe signal for full-color
- * art sprites that can't be body-tinted (art-direction §3.2). A low-frequency
- * ground blob deliberately replaces the old per-bone contour outline: a thin
- * traced line competed with the hand-drawn ink linework (high-frequency "moiré"
- * vibration → eye strain); a marker patch at the feet reads instantly without
- * touching the character art, and matches the stationery look.
- */
-const MARKER_Y = 12;   // fallback feet ground Y (circle units / no shadow)
-
-/**
- * Hit-flash outline color — a hot orange impact spark. NOT white: the detached
- * contour sits over the paper-colored gap, where white is near-invisible against
- * the aged-paper background; a saturated warm tone reads instantly as a hit.
- */
-const HIT_FLASH_COLOR = 0xff5a2b;
-
-/**
- * Spell-target-preview outline color/alpha — reuses `fx.meteor` (same hue as the
- * 2×2/column target-rect fill in BoardView) so the unit outline and the board-cell
- * highlight read as one signal: "this is what the AoE spell you're aiming will hit".
- * Sustained (not a fade) while the player hovers/drags an AoE spell — see
- * {@link UnitView.setSpellTargetPreview} — as opposed to HIT_FLASH_COLOR's brief
- * post-impact pop.
- */
-const SPELL_TARGET_COLOR = fx.meteor;
-const SPELL_TARGET_ALPHA = 0.6;
-
-/** Shared empty set — avoids an allocation on every no-AoE-selected highlight refresh. */
-const NO_SPELL_TARGETS: ReadonlySet<number> = new Set();
-
-/**
- * Faction ground marker — a highlighter wash overlaid on the unit's shadow
- * (cx, cy = shadow center; rx, ry = wash half-extents). Three stacked ellipses:
- * a wide soft halo, a stronger mid disc, and a saturated core, so every unit
- * casts an unmistakable blue (us) or red (enemy) footprint readable at a glance
- * across a busy board — this is the primary friend/foe signal for full-colour
- * sprites (art-direction §3.2). Alphas raised from the old faint 0.16/0.22 wash.
- */
-function drawFactionMarker(
-  g: PIXI.Graphics, side: Side,
-  cx: number, cy: number, rx: number, ry: number,
-): void {
-  const color = side === Side.Bottom ? factionInk.friend : factionInk.enemy;
-  g.clear();
-  g.beginFill(color, 0.22); g.drawEllipse(cx,       cy,       rx * 1.12, ry * 1.12); g.endFill();
-  g.beginFill(color, 0.38); g.drawEllipse(cx + 1.0, cy + 0.4, rx * 0.82, ry * 0.82); g.endFill();
-  g.beginFill(color, 0.55); g.drawEllipse(cx + 1.5, cy + 0.6, rx * 0.5,  ry * 0.5);  g.endFill();
-}
-
-const HP_BAR_WIDTH  = 20;
-const HP_BAR_HEIGHT = 3;
-/** HP bar Y offset above the unit centre (circle placeholder units). */
-const HP_BAR_Y      = -(RADIUS + 8);
-
-/**
- * HP bar Y for a stickman unit — sits just above the crown. Now that each tier
- * renders at its own height (art-direction §4.5.3 A), this scales with the unit's
- * target height instead of the old flat -32 (which would let an L/XL figure's head
- * poke through the bar). ~0.6× target clears the crown for the shared rig
- * proportions (head tip ≈ 0.54·H_nat above root → 0.54·target on screen).
- */
-function stickmanHpBarY(type: UnitType): number {
-  return -Math.round(targetScreenHeight(type) * 0.6);
-}
-/** Render frames the HP bar stays fully visible after a hit (~2 s at 60 fps). */
-const HP_SHOW_FRAMES  = 120;
-/** Render frames to fade out after HP_SHOW_FRAMES. */
-const HP_FADE_FRAMES  = 30;
-const HP_TOTAL_FRAMES = HP_SHOW_FRAMES + HP_FADE_FRAMES;
-
-// ── Pool factory / resetter (circle placeholder for non-stickman unit types) ───
-
-function createUnitContainer(): PIXI.Container {
-  const c = new PIXI.Container();
-
-  const body   = new PIXI.Graphics(); body.name   = 'body';
-  const ring   = new PIXI.Graphics(); ring.name   = 'ring';
-  const hpBg   = new PIXI.Graphics(); hpBg.name   = 'hpBg';
-  const hpFill = new PIXI.Graphics(); hpFill.name = 'hpFill';
-
-  hpBg.beginFill(0xcccccc, 0.7);
-  hpBg.drawRect(-HP_BAR_WIDTH / 2, HP_BAR_Y, HP_BAR_WIDTH, HP_BAR_HEIGHT);
-  hpBg.endFill();
-  hpBg.visible  = false;
-  hpFill.visible = false;
-
-  c.addChild(body, ring, hpBg, hpFill);
-  return c;
-}
-
-function resetUnitContainer(c: PIXI.Container): void {
-  c.removeFromParent();
-  c.alpha   = 1;
-  c.scale.set(1);
-  c.visible = false;
-  (c.getChildByName('hpFill') as PIXI.Graphics).clear();
-  (c.getChildByName('hpBg')   as PIXI.Graphics).visible  = false;
-  (c.getChildByName('hpFill') as PIXI.Graphics).visible  = false;
-}
+export { STICKMAN_ASSETS, resolveSkinOverrides } from './UnitView/assets';
 
 // ── UnitView ──────────────────────────────────────────────────────────────────
+//
+// 2026-08-13: per-unit-type asset URL tables + the pool factory/faction-marker/HP-bar-Y pure
+// helpers were pulled out into UnitView/assets.ts; the event-driven effects (spell-target outline/
+// hit flash/death fade) into UnitView/effects.ts; the equipment-overlay glyph resolution into
+// UnitView/gear.ts — all form① (claudedocs/client-modules.md "单文件 500 行收敛"). This file kept
+// the per-frame sync, stickman pooling/spawn, and sprite-position/HP-bar update logic that ties
+// the three together.
 
 export class UnitView {
   readonly container: PIXI.Container;
@@ -428,7 +227,7 @@ export class UnitView {
     }
   }
 
-  // ── Event-driven effects ──────────────────────────────────────────────────
+  // ── Event-driven effects — see render/UnitView/effects.ts ──────────────────
 
   /**
    * Show the HP bar for `unitId` for ~3 seconds, then fade out.
@@ -438,127 +237,32 @@ export class UnitView {
     this.hpTimers.set(unitId, HP_TOTAL_FRAMES);
   }
 
-  /**
-   * Screen position of the unit's `hit` attachment point (torso), for spawning
-   * the hit spark on the body rather than the grid-cell centre. Falls back to
-   * the unit's container origin when the unit has no stickman runtime (circle
-   * placeholder / PvE-only types) or the .tao defines no `hit` attachment.
-   * Returns null if the unit has no live sprite.
-   */
   getHitPoint(unitId: number): { x: number; y: number } | null {
-    const sprite = this.sprites.get(unitId);
-    if (!sprite) return null;
-    const runtime = this.stickmanRuntimes.get(unitId);
-    if (runtime) {
-      const off = runtime.getAttachmentOffset('hit');
-      if (off) return { x: sprite.x + off.x, y: sprite.y + off.y };
-    }
-    return { x: sprite.x, y: sprite.y };
+    return getHitPoint(this.effectsHost(), unitId);
   }
 
-  /**
-   * Outline exactly the units that fall inside the currently hovered/dragged AoE
-   * spell's footprint (2×2 meteor anchor, rockslide column, …) — requested fix:
-   * the 2×2 target-rect fill alone doesn't tell the player which units' centers
-   * actually sit inside it, so a frequently-used spell like Meteor kept missing
-   * the intended target. Called every time GameRenderer/input.ts recomputes the
-   * placement highlight (pointer move + the 10Hz board-state refresh), so this is
-   * a plain diff against the previous call, not an animation.
-   *
-   * Only stickman-rendered units (the vast majority — see STICKMAN_ASSETS) get the
-   * outline; it reuses the same outline-sprite texture as {@link playHitEffect}'s
-   * hit-flash via `setOutlineFlash`, just held steady instead of faded. Circle
-   * placeholder units (pre-.tao-load fallback) have no outline texture and are
-   * silently skipped, same limitation `playHitEffect` already accepts.
-   */
   setSpellTargetPreview(unitIds: ReadonlySet<number>): void {
-    if (unitIds === this.previewUnitIds) return;
-    for (const id of this.previewUnitIds) {
-      if (unitIds.has(id)) continue;
-      this.stickmanRuntimes.get(id)?.setOutlineFlash(null);
-    }
-    for (const id of unitIds) {
-      this.stickmanRuntimes.get(id)?.setOutlineFlash(SPELL_TARGET_COLOR, SPELL_TARGET_ALPHA);
-    }
-    this.previewUnitIds = unitIds;
+    setSpellTargetPreview(this.effectsHost(), unitIds);
   }
 
   playHitEffect(unitId: number): void {
-    const sprite = this.sprites.get(unitId);
-    if (!sprite) return;
-
-    const runtime = this.stickmanRuntimes.get(unitId);
-    if (runtime) {
-      // Hit-impact contour flash: a hot outline pops around the figure for a few
-      // frames, fading out. Reuses the (otherwise idle) outline textures — the
-      // right home for the outline look. Kept short + soft (peak alpha < 1) so
-      // dense melee, where both fighters take damage every exchange, isn't noisy.
-      const TOTAL = 4;
-      const PEAK  = 0.7;
-      let frames  = TOTAL;
-      const tick = (): void => {
-        if (!this.sprites.has(unitId)) { this.removeEffectTick(tick); runtime.setOutlineFlash(null); return; }
-        runtime.setOutlineFlash(HIT_FLASH_COLOR, (frames / TOTAL) * PEAK);
-        if (--frames <= 0) {
-          this.removeEffectTick(tick);
-          runtime.setOutlineFlash(null);
-        }
-      };
-      this.addEffectTick(tick);
-      return;
-    }
-
-    // Circle / draft placeholder units (no outline textures): alpha blink fallback.
-    let frames = 6;
-    const tick = (): void => {
-      if (!this.sprites.has(unitId)) { this.removeEffectTick(tick); return; }
-      sprite.alpha = frames % 2 === 0 ? 0.3 : 1;
-      if (--frames <= 0) {
-        this.removeEffectTick(tick);
-        sprite.alpha = 1;
-      }
-    };
-    this.addEffectTick(tick);
+    playHitEffect(this.effectsHost(), unitId);
   }
 
   playDeathEffect(unitId: number): void {
-    const sprite = this.sprites.get(unitId);
-    if (!sprite) return;
+    playDeathEffect(this.effectsHost(), unitId);
+  }
 
-    // Take ownership: drop from the live maps so sync() (the unit is already gone
-    // from board.units) doesn't release the sprite out from under this animation.
-    this.sprites.delete(unitId);
-    this.hpTimers.delete(unitId);
-    const hpBg   = sprite.getChildByName('hpBg')   as PIXI.Graphics | null;
-    const hpFill = sprite.getChildByName('hpFill') as PIXI.Graphics | null;
-    if (hpBg)   hpBg.visible   = false;
-    if (hpFill) hpFill.visible = false;
-
-    // Switch to the death clip. The runtime is no longer ticked by sync() (the unit
-    // left board.units), so we must advance its clock here for the clip to play.
-    const runtime = this.stickmanRuntimes.get(unitId);
-    if (runtime) runtime.play('death');
-
-    const deathDur = runtime ? runtime.currentDuration : 0; // seconds
-    const HOLD_SEC = 1.0;   // linger after the death clip finishes (requested)
-    const FADE_SEC = 0.4;   // fade out over the tail of the hold
-    const total    = deathDur + HOLD_SEC;
-
-    let elapsed = 0;
-    const tick = (): void => {
-      const dt = PIXI.Ticker.shared.deltaMS / 1000;
-      elapsed += dt;
-      if (runtime) runtime.update(dt); // advance the (non-loop) death clip; clamps at its end
-
-      const remaining = total - elapsed;
-      sprite.alpha = remaining < FADE_SEC ? Math.max(0, remaining / FADE_SEC) : 1;
-
-      if (elapsed >= total) {
-        this.removeEffectTick(tick);
-        this.releaseUnit(unitId, sprite);
-      }
+  /** Bundles what effects.ts's functions need instead of them closing over `this`. */
+  private effectsHost(): EffectsHost {
+    const view = this;
+    return {
+      sprites: this.sprites, stickmanRuntimes: this.stickmanRuntimes, hpTimers: this.hpTimers,
+      effectTicks: this.effectTicks,
+      get previewUnitIds() { return view.previewUnitIds; },
+      set previewUnitIds(v) { view.previewUnitIds = v; },
+      releaseUnit: (unitId: number, sprite: PIXI.Container) => this.releaseUnit(unitId, sprite),
     };
-    this.addEffectTick(tick);
   }
 
   // ── Private helpers ───────────────────────────────────────────────────────
@@ -584,53 +288,16 @@ export class UnitView {
     else   drawFactionMarker(marker, side, 0, MARKER_Y, 12, 4.4);
   }
 
-  /**
-   * Resolve the equipment overlay glyphs for a unit type (§20.4): mirror
-   * buildCampaignBlueprints (CC-1) by picking the highest-level card of this unit type,
-   * then reading its per-card gear → each slot's instance → defId → {slot, rarity}.
-   * Using the same best-card selection the engine uses keeps the drawn gear consistent
-   * with the affixes actually applied to stats. Restricted to PLAYER_EQUIPPABLE_UNITS.
-   * Memoized — gear is constant per match. Returns [] when there's no card/equipment
-   * data (PvP) or nothing worn.
-   */
-  private gearSpecsFor(unitType: UnitType): GearGlyphSpec[] {
-    const cached = this.gearSpecCache.get(unitType);
-    if (cached) return cached;
-
-    const specs: GearGlyphSpec[] = [];
-    const cards = this.cardInstances;
-    const inv = this.equipmentInv;
-    if (cards && inv && (PLAYER_EQUIPPABLE_UNITS as readonly UnitType[]).includes(unitType)) {
-      let best: EngineCardInstance | undefined;
-      for (const c of cards) {
-        if (c.unitType !== unitType) continue;
-        if (!best || c.level > best.level) best = c;
-      }
-      if (best) {
-        for (const slot of ['weapon', 'armor', 'trinket'] as EquipSlot[]) {
-          const instId = best.gear[slot];
-          if (!instId) continue;
-          const inst = inv[instId];
-          if (!inst) continue;
-          const def = getEquipDef(inst.defId);
-          if (!def) continue;
-          specs.push({ slot: def.slot, rarity: def.rarity });
-        }
-      }
-    }
-    this.gearSpecCache.set(unitType, specs);
-    return specs;
+  /** Bundles what gear.ts's functions need instead of them closing over `this`. */
+  private gearHost(): GearHost {
+    return {
+      localSide: this.localSide, cardInstances: this.cardInstances, equipmentInv: this.equipmentInv,
+      gearSpecCache: this.gearSpecCache,
+    };
   }
 
-  /**
-   * Reconcile a runtime's equipment overlay (§20.4) to the unit it's now driving.
-   * The player's own army wears their loadout (§8); a same-type *enemy* shows none
-   * (its empty key clears any stale decals from a prior local-side life — pools are
-   * keyed by type, not side, so a runtime can flip sides on reuse). setGear is
-   * idempotent, so the common pooled-reuse-same-side case is a no-op.
-   */
   private applyGear(runtime: StickmanRuntime, unit: Unit): void {
-    runtime.setGear(unit.side === this.localSide ? this.gearSpecsFor(unit.unitType) : []);
+    applyGear(this.gearHost(), runtime, unit);
   }
 
   /**
@@ -790,18 +457,6 @@ export class UnitView {
     } else {
       this.pool.release(sprite);
     }
-  }
-
-  // ─── Effect-tick bookkeeping ──────────────────────────────────────────────
-
-  private addEffectTick(tick: () => void): void {
-    this.effectTicks.add(tick);
-    PIXI.Ticker.shared.add(tick);
-  }
-
-  private removeEffectTick(tick: () => void): void {
-    PIXI.Ticker.shared.remove(tick);
-    this.effectTicks.delete(tick);
   }
 
   // ─── Teardown ─────────────────────────────────────────────────────────────
