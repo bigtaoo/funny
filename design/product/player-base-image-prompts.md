@@ -525,3 +525,142 @@ tips are the only exception to the two-tone palette.
 ```
 
 **待办**：用户拿这 5 条 prompt 出图后，按 8-08 第三轮的流程核对（离线复现几何 + `contentWidthFrac`，达到或接近 0.9375 才采用），落地后照旧跑 `pack_playerbase_atlas.js` + `patchMergedAtlas.js`，未采用的候选图和被替换的旧图移入 `art/leftover/`。
+
+### 2026-08-13（同日第二轮）：v2 prompt 出的图机位整体错了，未采用
+
+用户按上面 5 条 v2 prompt 出图放进 `art/ui/slg-playerbase/`（`1790904c`→Lv.2、`fadb8a8c`→Lv.3、`8bca89bc`→Lv.6、`ac069d0a`→Lv.9、`a3e07823`→Lv.10）。目测核对，5 张全部**机位不对，未采用**，问题比"宽度不够"更根本：
+
+- **画布不是正方形**：现有全套（`playerbase_l1` 等）都是 1254×1254；这 5 张是 1672×941 / 1536×1024 / 1704×923 等**横版长方形**。
+- **构图不是旋转菱形地台**：现有正确图的地台画的是旋转45°的菱形（四角指向画布上/下/左/右，像扑克牌"♦"），这 5 张画的是"正面/略俯视看一张平铺长方形垫子"——有地平线、往远处延伸的透视，不是俯视机位。拼进等轴测地图后 `cityPlotMaskPoints` 拿菱形去裁一张长方形画面，形状对不上。
+- **另外两张有独立的风格违规**：Lv.6（`8bca89bc`）、Lv.9（`ac069d0a`）地台上画出了方格网格线，违反"no grid lines"硬规；Lv.9 那张基本是纯蓝线稿，没有淡黄绿水彩填充，违反"严格双色调"硬规。
+
+好消息：**宽度锚点这部分做对了**——护栏/书墙/塔尖确实顶到了画面边缘甚至裁出画布，v2 prompt 里"远端插旗/贴边裁切"那套指令本身有效，只是被套进了错的画布形状/机位里。因此 v3 不推翻内容，只把"旋转菱形地台 + 正方形画布 + 俯视机位"这条最关键的指令挪到每条 prompt **最前面**（原来只在末尾通用 style 里提一句"isometric diamond ground plate"，这次的生成工具显然没吃到），并在每条里点名参照 `playerbase_l1.png`/`l4.png`/`l7.png` 的机位；锚点内容原样保留。
+
+### `playerbase_l2` v3
+```
+Top-down isometric view on a SQUARE 1:1 canvas (1024x1024px): the whole scene
+sits on ONE ROTATED DIAMOND-SHAPED ground plate — a rhombus like a diamond
+playing-card symbol, its four corners pointing to the top, bottom, left and
+right edges of the square frame. This is NOT a front-facing tabletop diorama —
+there is no horizon, no receding table edge, no vanishing point behind the
+objects; the camera looks straight down at a gentle 25-degree tilt, matching
+the look of playerbase_l1.png / playerbase_l4.png / playerbase_l7.png.
+
+A low camp covers about a third of the diamond: an open pencil case wall
+extended by a row of laid-down pencils as a short palisade running out toward
+the diamond's own far-left and far-right corners, with a tiny paper flag stuck
+at each of those two corner tips (a flag may crop off the very edge of the
+square frame, that's fine), a ruler laid flat as a bridge/gate at the front, a
+squat ink bottle at one back corner, a small flat tent inside. Everything hugs
+the plate and stays low; the diamond's left and right corners are the widest
+points of the whole image.
+
+Solid pure-white background, no grid lines anywhere on the plate, hand-drawn
+doodle illustration with fountain pen blue ink outlines and cross-hatching,
+single pale yellow-green watercolor wash fill only, strictly two-tone (blue
+ink + pale yellow-green, no other colors), notebook doodle aesthetic, no text.
+```
+
+### `playerbase_l3` v3
+```
+Top-down isometric view on a SQUARE 1:1 canvas (1024x1024px): the whole scene
+sits on ONE ROTATED DIAMOND-SHAPED ground plate — a rhombus like a diamond
+playing-card symbol, its four corners pointing to the top, bottom, left and
+right edges of the square frame. NOT a front-facing tabletop diorama — no
+horizon, no receding table edge; camera looks straight down at a gentle
+25-degree tilt, matching playerbase_l1.png / playerbase_l4.png / playerbase_l7.png.
+
+A low stronghold of flat stacked notebooks covers about half the diamond,
+forming a wall stretched so its own two ends reach the diamond's far-left and
+far-right corners (put a single upright pencil stub at each of those two
+corners, tip poking just past the frame edge if needed), book spines making
+crenellations along the top, a stapler set into the middle of the wall as a
+gate. Wide and squat — the wall is only two or three books high, and the
+diamond's left/right corners are the widest points in the image.
+
+Solid pure-white background, no grid lines anywhere on the plate, hand-drawn
+doodle illustration with fountain pen blue ink outlines and cross-hatching,
+single pale yellow-green watercolor wash fill only, strictly two-tone (blue
+ink + pale yellow-green, no other colors), notebook doodle aesthetic, no text.
+```
+
+### `playerbase_l6` v3
+```
+Top-down isometric view on a SQUARE 1:1 canvas (1024x1024px): the whole scene
+sits on ONE ROTATED DIAMOND-SHAPED ground plate — a rhombus like a diamond
+playing-card symbol, its four corners pointing to the top, bottom, left and
+right edges of the square frame. NOT a front-facing tabletop diorama — no
+horizon, no receding table edge; camera looks straight down at a gentle
+25-degree tilt, matching playerbase_l1.png / playerbase_l4.png / playerbase_l7.png.
+
+A stone-like fortress of thick hardcover books fills the diamond edge to edge:
+its outer wall reaches the diamond's far-left and far-right corners, with a
+correction-tape roll lying on its side as a squat round corner tower AT each
+of those two corners (half a tower may crop off the frame edge, that's fine),
+a broad low binder as the central keep, a ruler-and-compass drawbridge across
+the front between the two corner towers. Heavy cross-hatching for stony
+texture. Wide, heavy, low — the diamond's left/right corners are the widest
+points of the whole image.
+
+Solid pure-white background, no grid lines anywhere on the plate, hand-drawn
+doodle illustration with fountain pen blue ink outlines and cross-hatching,
+single pale yellow-green watercolor wash fill only, strictly two-tone (blue
+ink + pale yellow-green, no other colors), notebook doodle aesthetic, no text.
+```
+
+### `playerbase_l9` v3
+```
+Top-down isometric view on a SQUARE 1:1 canvas (1024x1024px): the whole scene
+sits on ONE ROTATED DIAMOND-SHAPED ground plate — a rhombus like a diamond
+playing-card symbol, its four corners pointing to the top, bottom, left and
+right edges of the square frame. NOT a front-facing tabletop diorama — no
+horizon, no receding table edge; camera looks straight down at a gentle
+25-degree tilt, matching playerbase_l1.png / playerbase_l4.png / playerbase_l7.png.
+
+An elaborate citadel complex overflows the diamond: several broad book-stack
+blocks connected by ruler-walls into wings and courtyards that reach the
+diamond's far-left and far-right corners, with one short pencil stub standing
+upright AT the far-left corner and another AT the far-right corner (tips may
+crop off the very edge, that's fine), two more pencil stubs at the back
+corners as stumpy spires of barely varying height, a wide central binder-keep
+flying a paper pennant, dense parallel ruler-lines suggesting grandeur. A
+single small gold-ink accent on the far-right pencil tip as the only exception
+to the two-tone palette. The diamond's left/right corners are the widest
+points of the whole image.
+
+Solid pure-white background, no grid lines anywhere on the plate, hand-drawn
+doodle illustration with fountain pen blue ink outlines and cross-hatching,
+single pale yellow-green watercolor wash fill, otherwise strictly two-tone
+(blue ink + pale yellow-green) apart from the small gold accent, notebook
+doodle aesthetic, no text.
+```
+
+### `playerbase_l10` v3
+```
+Top-down isometric view on a SQUARE 1:1 canvas (1024x1024px): the whole scene
+sits on ONE ROTATED DIAMOND-SHAPED ground plate — a rhombus like a diamond
+playing-card symbol, its four corners pointing to the top, bottom, left and
+right edges of the square frame — NOT a circle or oval, and NOT a front-facing
+tabletop diorama with a horizon; camera looks straight down at a gentle
+25-degree tilt, matching playerbase_l1.png / playerbase_l4.png / playerbase_l7.png.
+
+The grandest capital complex packs the diamond edge to edge: concentric rings
+of book-walls enclosing dense courtyards of binders and rulers, the outermost
+ring reaching the diamond's far-left and far-right corners — put one short pen
+or pencil stub standing upright AT the far-left corner and another AT the
+far-right corner (half a stub may crop off the frame edge, that's fine), four
+more stubby spires of near-equal height spaced around the rest of the ring, a
+broad central fountain-pen laid at a shallow angle with its golden nib
+pointing forward, a monumental stapler-gatehouse spanning the front between
+the inner rings, dense ruler-line cross-hatching throughout. NOT taller than
+Lv9. The diamond's left/right corners are the widest points of the whole
+image. The stubby spires may be filled solid deep blue as the pinnacle signal.
+
+Solid pure-white background, no grid lines anywhere on the plate, hand-drawn
+doodle illustration with fountain pen blue ink outlines and cross-hatching,
+single pale yellow-green watercolor wash fill, otherwise strictly two-tone
+(blue ink + pale yellow-green) apart from small gold accents on the pen nib
+and spire tips, notebook doodle aesthetic, no text.
+```
+
+**建议**：若生图工具支持传参考图，直接把 `playerbase_l1.png`/`l4.png` 当机位参考图传入，比纯文字描述"旋转菱形"更可靠——本轮翻车大概率是文字机位指令没被生成工具吃到，参考图能直接锁镜头角度。5 张未采用的候选图已移入 `art/leftover/`（保留原 UUID 文件名）。
