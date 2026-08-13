@@ -22,6 +22,8 @@
 
 本地跑 `npm run test:coverage`，产物在 `client/coverage/`（`index.html` 逐行高亮）。`@nw/engine`（`server/engine/src`，本套件通过 alias 直接引用其源码）的覆盖率不计入这份报告——它有自己独立的 `test:coverage`（见 `claudedocs/server.md` "测试覆盖率百分比工具"一节），避免同一份源码在两份报告里重复计数。
 
+**首次实测基线（2026-08-13）**：行覆盖 91.2% / 分支 87.8% / 函数 84.4%——`src/game/**` 范围内已经相当健康，主要缺口是 `game/meta/skinDefs.ts`（64%）、`equipmentDefs.ts`（59%）、`rechargeMilestone.ts`（33%）三个数值表模块，没有阻塞性问题，留作后续按需补测的候选。全部 14 个包（client+13 个 server workspace）的完整基线表见 `claudedocs/server.md` 同一节。
+
 CI（`.github/workflows/ci.yml`）的 `client unit tests` 步已切到 `npm run test:coverage`；job 最后一步汇总所有 client+server 包的覆盖率百分比写进 GitHub Actions 运行摘要，细节见 `claudedocs/server.md` 同一节（该聚合脚本是仓库根 `scripts/coverageSummary.mjs`，两侧共用同一份）。
 
 ## 静态类型检查（`npm run typecheck` / CI）

@@ -562,4 +562,26 @@ commercial 此前完全没有 Redis 依赖，本次新增：`config.ts` 补 `NW_
 - **`.gitignore`**：仓库根加了不带 `/` 前缀的 `coverage/`，一次性盖住 `client/coverage/`、每个 `server/*/coverage/` 和 `server/engine/coverage/`。
 - **本地用法**：任意 workspace 目录下 `npm run test:coverage`；产物在该目录的 `coverage/`（`index.html` 可直接浏览器打开看逐行高亮，同 C#/coverlet 的体验）。
 
+**首次实测基线（2026-08-13，行覆盖 %，本地跑出，用于对照未来回归）**：
+
+| 包 | 行覆盖 | 分支 | 函数 |
+|---|---|---|---|
+| client（`src/game/**`） | 91.2% | 87.8% | 84.4% |
+| engine | 86.5% | 83.0% | 81.2% |
+| shared | 82.3% | 93.0% | 73.9% |
+| worldsvc | 82.9% | 78.3% | 86.9% |
+| analyticsvc | 87.6% | 84.2% | 95.8% |
+| matchsvc | 88.3% | 91.1% | 97.2% |
+| commercial | 81.4% | 76.9% | 91.8% |
+| socialsvc | 78.4% | 84.9% | 84.8% |
+| botsvc | 70.0% | 83.6% | 83.2% |
+| auctionsvc | 72.3% | 76.9% | 68.2% |
+| gateway | 65.9% | 70.3% | 76.8% |
+| gameserver | 62.5% | 80.3% | 82.0% |
+| admin | 47.1% | 74.6% | 44.3% |
+| metaserver | 35.1% | 78.4% | 32.3% |
+| **加权总计** | **~70%** | **~82%** | **~71%** |
+
+**metaserver 明显偏低**：`src/equipment/{craft,enhance,equip,reforge,salvage,trade}.ts`、`src/paddle/*`、`src/service/auth/{credential,helpers,oauthBind,profile,support}.ts`、`src/service/economy/*` 大片 0~10%——不是这轮改动引入的缺口，是这个包本身路由面最大（9 个 mixin/69 测试文件）但装备/Paddle/OAuth 这几块此前的 e2e 覆盖没跟上。**admin 47%**次低，同理。两者列为下一轮"server 端测试覆盖审计"（见上文 2026-08-05/08-10 两节）的优先输入，本轮不展开修——这次的目标只是把量出百分比的工具接上，不是把百分比刷高。
+
 **`engine/src/config.ts`（522→204 行，2026-08-12，独立函数模块范式）**：0 超限收尾后的第二例新增超限（第一例是上面的 `metaserver/src/service/auth.ts`）——ADR-065 引擎定点化迁移给 `config.ts` 加了 102 行（unit/building blueprint 从"人类可读表直接导出"改成"人类可读原始表 + `bakeXxxBlueprint()` 转换函数"两段式），从合入时未被察觉地推过 500 行界，直到下一次 PR 的 CI 才被 `checkFileLength.mjs`（新文件不在基线里）拦下。判断跟 `paddle.ts`/`economy.ts` 同款——unit/building blueprint 的原始表+bake 函数+类型定义（约 320 行）零共享状态、只被 `config.ts` 内部消费，没有交叉调用需要判断优先级，直接搬进新文件 `blueprintDefs.ts`；`config.ts` 里只留 `export { UNIT_BLUEPRINTS, BUILDING_BLUEPRINTS } from './blueprintDefs'` 一行 re-export，全部约 11 个外部消费者（`balance/pveUpgrades.ts`/`Building.ts`/`GameState.ts`/`Unit.ts`/`systems/BuildingProductionSystem.ts` + 6 个测试文件）导入路径零改动。**验证**：`npx tsc -b` 干净；`npm test` 139/139（含新增的 `fixed.test.ts`）全绿；`node scripts/checkFileLength.mjs` 0 超限（566 源文件，比改动前多 1——新增 `blueprintDefs.ts`）；额外核对了下游消费方 `worldsvc`/`client` 的 `tsc --noEmit` 均干净（`UNIT_BLUEPRINTS`/`BUILDING_BLUEPRINTS` 的 re-export 对它们透明）。第⑤步：纯移动，两个导出符号的值/类型零变化，不适用，未新增测试。
