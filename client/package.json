@@ -20,7 +20,6 @@
     "check:filelength": "node scripts/checkFileLength.mjs",
     "format": "prettier --write .",
     "lint": "eslint src --ext .ts",
-    "check:filelength": "node scripts/checkFileLength.mjs",
     "typecheck": "tsc --noEmit -p tsconfig.test.json",
     "test": "vitest run",
     "test:render": "vitest run --config vitest.render.config.ts",
