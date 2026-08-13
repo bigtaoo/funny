@@ -3,7 +3,7 @@ import { clear, fmtTime, h, pill } from '../dom';
 import type { EventDoc, EventInput, EventRewardDef, EventTaskDef } from '../types';
 import { localInputToMs, msToLocalInput, showErr, type Ctx } from './shared';
 
-function eventStatus(ev: { windowStart: number; windowEnd: number }): { label: string; cls: string } {
+export function eventStatus(ev: { windowStart: number; windowEnd: number }): { label: string; cls: string } {
   const now = Date.now();
   if (now < ev.windowStart) return { label: 'Not started', cls: 'info' };
   if (now >= ev.windowEnd) return { label: 'Ended', cls: '' };

@@ -461,7 +461,7 @@ function renderStepFunnel(
   return h('div', { class: 'card' }, h('div', { class: 'muted' }, title), t);
 }
 
-function pct(rate: number): string {
+export function pct(rate: number): string {
   return (rate * 100).toFixed(1) + '%';
 }
 

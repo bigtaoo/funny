@@ -63,7 +63,7 @@ export async function pagePvpBalance(ctx: Ctx): Promise<void> {
   await refresh();
 }
 
-function winRate(r: PvpCardStatRow): number {
+export function winRate(r: PvpCardStatRow): number {
   return r.games > 0 ? r.wins / r.games : 0;
 }
 

@@ -27,14 +27,14 @@ interface DraftCat {
 }
 type Draft = Record<GachaCategory, DraftCat>;
 
-function emptyDraft(): Draft {
+export function emptyDraft(): Draft {
   return Object.fromEntries(
     GACHA_CATEGORY_ORDER.map((c) => [c, { enabled: false, weight: 1, items: [] as DraftItem[] }]),
   ) as Draft;
 }
 
 /** Rebuild a draft from a stored custom pool (for editing). */
-function draftFromPool(pool: AdminGachaPool): Draft {
+export function draftFromPool(pool: AdminGachaPool): Draft {
   const d = emptyDraft();
   for (const cat of pool.categories ?? []) {
     d[cat.category] = { enabled: true, weight: cat.weight, items: cat.items.map((it) => ({ ...it })) };
@@ -42,7 +42,7 @@ function draftFromPool(pool: AdminGachaPool): Draft {
   return d;
 }
 
-function poolStatus(pool: { startAt: number; endAt: number; closedAt?: number }): { label: string; cls: string } {
+export function poolStatus(pool: { startAt: number; endAt: number; closedAt?: number }): { label: string; cls: string } {
   const now = Date.now();
   if (pool.closedAt || now >= pool.endAt) return { label: 'Ended', cls: '' };
   if (now < pool.startAt) return { label: 'Not started', cls: 'info' };

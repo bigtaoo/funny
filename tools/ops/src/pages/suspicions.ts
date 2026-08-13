@@ -4,7 +4,7 @@ import type { AntiCheatReviewView } from '../types';
 import { showErr, showOk, type Ctx } from './shared';
 
 /** Render a statKey→count map as compact text (empty → —). */
-function fmtStats(m: Record<string, number> | undefined): string {
+export function fmtStats(m: Record<string, number> | undefined): string {
   const ks = Object.keys(m ?? {});
   if (ks.length === 0) return '—';
   return ks.map((k) => `${k}:${m![k]}`).join(', ');
