@@ -10,12 +10,32 @@
 // same precedent as worldMapErrorMsg.ui.ts / worldMapOccupyTeamPicker.ui.ts (real `new
 // WorldMapNet(ctx)` against a hand-rolled plain-object `ctx`, no headless PIXI scene needed).
 
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { initI18n, t } from '../../src/i18n';
 import { ui as C } from '../../src/render/sketchUi';
 import { WorldMapNet } from '../../src/scenes/worldmap/WorldMapNet';
+import * as loaders from '../../src/scenes/worldmap/net/loaders';
 import type { WorldMapContext } from '../../src/scenes/worldmap/WorldMapContext';
 import type { PlayerWorldView, EnterWorldView } from '../../src/net/WorldApiClient';
+
+// 2026-08-13 (claudedocs/client-modules.md "单文件 500 行收敛" split): WorldMapNet's methods are now
+// thin delegates that call net/loaders.ts's free functions directly (module-scope, not `this.xxx`),
+// so the old `vi.spyOn(net, 'loadMapViewport')` no longer intercepts anything — doRelocate/
+// doWatchtower/doAbandon's own `loadMapViewport(ctx)` calls (in structures.ts) bypass the instance
+// entirely. Mock the module instead, wrapping the real implementation by default
+// (`vi.fn(actual.loadMapViewport)`) so tests that don't touch it still get the genuine behavior; the
+// handful below that need call-count assertions or a stubbed-out implementation call
+// `vi.mocked(loaders.loadMapViewport)` directly.
+vi.mock('../../src/scenes/worldmap/net/loaders', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../src/scenes/worldmap/net/loaders')>();
+  return { ...actual, loadMapViewport: vi.fn(actual.loadMapViewport) };
+});
+
+// No project-wide restoreMocks/clearMocks config — the module mock above is a single instance
+// shared across every test in this file (unlike the old per-test `vi.spyOn(net, ...)`, which was
+// fresh per test since buildHarness() made a new instance each time), so call-count assertions
+// would leak across tests without this.
+beforeEach(() => { vi.mocked(loaders.loadMapViewport).mockClear(); });
 
 const memStore = (() => {
   const m = new Map<string, string>();
@@ -208,7 +228,7 @@ describe('WorldMapNet.doRelocate()', () => {
     const { ctx, net, closeModal, relocateBase, renderMap, renderHud, showToast, centerAt } = buildHarness();
     ctx.tileCache.set('1:1', { x: 1, y: 1 } as never);
     relocateBase.mockResolvedValueOnce(makeMe({ mainBaseTile: `${WORLD_ID}:9:9` }));
-    const loadMapViewport = vi.spyOn(net, 'loadMapViewport').mockResolvedValue(undefined);
+    const loadMapViewport = vi.mocked(loaders.loadMapViewport).mockResolvedValue(undefined);
 
     await net.doRelocate(9, 9);
 
@@ -225,7 +245,7 @@ describe('WorldMapNet.doRelocate()', () => {
   it('skips re-centering when the response has no mainBaseTile', async () => {
     const { net, relocateBase, centerAt } = buildHarness();
     relocateBase.mockResolvedValueOnce(makeMe({ mainBaseTile: undefined }));
-    vi.spyOn(net, 'loadMapViewport').mockResolvedValue(undefined);
+    vi.mocked(loaders.loadMapViewport).mockResolvedValue(undefined);
 
     await net.doRelocate(2, 2);
 
@@ -235,7 +255,7 @@ describe('WorldMapNet.doRelocate()', () => {
   it('on failure: toasts the mapped error in red and never reaches the refetch/success toast', async () => {
     const { net, relocateBase, showToast, renderMap } = buildHarness();
     relocateBase.mockRejectedValueOnce(new Error('boom'));
-    const loadMapViewport = vi.spyOn(net, 'loadMapViewport').mockResolvedValue(undefined);
+    const loadMapViewport = vi.mocked(loaders.loadMapViewport).mockResolvedValue(undefined);
 
     await net.doRelocate(9, 9);
 
@@ -254,7 +274,7 @@ describe('WorldMapNet.doWatchtower()', () => {
     ctx.tileCache.set('1:1', { x: 1, y: 1 } as never);
     const newMe = makeMe({ mainBaseTile: `${WORLD_ID}:0:0` });
     buildWatchtower.mockResolvedValueOnce({ me: newMe });
-    const loadMapViewport = vi.spyOn(net, 'loadMapViewport').mockResolvedValue(undefined);
+    const loadMapViewport = vi.mocked(loaders.loadMapViewport).mockResolvedValue(undefined);
 
     await net.doWatchtower(4, 4);
 
@@ -273,7 +293,7 @@ describe('WorldMapNet.doWatchtower()', () => {
     const prevMe = makeMe({ mainBaseTile: `${WORLD_ID}:1:1` });
     ctx.me = prevMe;
     buildWatchtower.mockResolvedValueOnce({ me: undefined as unknown as PlayerWorldView });
-    vi.spyOn(net, 'loadMapViewport').mockResolvedValue(undefined);
+    vi.mocked(loaders.loadMapViewport).mockResolvedValue(undefined);
 
     await net.doWatchtower(4, 4);
 
@@ -283,7 +303,7 @@ describe('WorldMapNet.doWatchtower()', () => {
   it('on failure: toasts the mapped error and never refetches', async () => {
     const { net, buildWatchtower, showToast } = buildHarness();
     buildWatchtower.mockRejectedValueOnce(new Error('insufficient resources'));
-    const loadMapViewport = vi.spyOn(net, 'loadMapViewport').mockResolvedValue(undefined);
+    const loadMapViewport = vi.mocked(loaders.loadMapViewport).mockResolvedValue(undefined);
 
     await net.doWatchtower(4, 4);
 
@@ -301,7 +321,7 @@ describe('WorldMapNet.doAbandon()', () => {
     ctx.tileCache.set('9:9', { x: 9, y: 9 } as never); // unrelated tile — must survive
     const newMe = makeMe();
     abandonTile.mockResolvedValueOnce(newMe);
-    const loadMapViewport = vi.spyOn(net, 'loadMapViewport').mockResolvedValue(undefined);
+    const loadMapViewport = vi.mocked(loaders.loadMapViewport).mockResolvedValue(undefined);
 
     await net.doAbandon(4, 4);
 
@@ -320,7 +340,7 @@ describe('WorldMapNet.doAbandon()', () => {
     const { ctx, net, abandonTile, showToast } = buildHarness();
     ctx.tileCache.set('4:4', { x: 4, y: 4 } as never);
     abandonTile.mockRejectedValueOnce(new Error('not owned'));
-    const loadMapViewport = vi.spyOn(net, 'loadMapViewport').mockResolvedValue(undefined);
+    const loadMapViewport = vi.mocked(loaders.loadMapViewport).mockResolvedValue(undefined);
 
     await net.doAbandon(4, 4);
 

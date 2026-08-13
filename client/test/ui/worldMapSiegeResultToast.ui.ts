@@ -24,6 +24,17 @@ import { WorldMapNet } from '../../src/scenes/worldmap/WorldMapNet';
 import type { WorldMapContext } from '../../src/scenes/worldmap/WorldMapContext';
 import type { SiegeResult } from '../../src/net/proto/transport';
 
+// 2026-08-13 (claudedocs/client-modules.md "单文件 500 行收敛" split): applySiegeResult's own
+// loadMapViewport/refreshMe/refreshMarches calls (in net/push.ts) are now direct module-scope calls
+// into net/loaders.ts, not `this.xxx` — the old `vi.spyOn(net, 'loadMapViewport')` etc. no longer
+// intercepts them. None of the tests in this file assert call counts on these three (they're only
+// stubbed so the fake `ctx` — which has no `worldApi`/`view.viewportCenter` wired — doesn't crash),
+// so a straight no-op module mock (not wrapping the real implementation) is enough here.
+vi.mock('../../src/scenes/worldmap/net/loaders', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../src/scenes/worldmap/net/loaders')>();
+  return { ...actual, loadMapViewport: vi.fn(async () => {}), refreshMe: vi.fn(async () => {}), refreshMarches: vi.fn(async () => {}) };
+});
+
 const memStore = (() => {
   const m = new Map<string, string>();
   return {
@@ -67,11 +78,10 @@ function buildHarness() {
   } as unknown as WorldMapContext;
 
   const net = new WorldMapNet(ctx);
-  // loadMapViewport is awaited (2026-08-09: no longer fire-and-forget — the attack-win branch needs
-  // the refetch to land before classifying); refreshMe/refreshMarches stay fire-and-forget stubs.
-  vi.spyOn(net, 'loadMapViewport').mockResolvedValue(undefined);
-  vi.spyOn(net, 'refreshMe').mockResolvedValue(undefined);
-  vi.spyOn(net, 'refreshMarches').mockResolvedValue(undefined);
+  // loadMapViewport/refreshMe/refreshMarches are stubbed no-ops at the module level (see the
+  // vi.mock('.../net/loaders') block above) — applySiegeResult awaits loadMapViewport (2026-08-09:
+  // no longer fire-and-forget, the attack-win branch needs the refetch to land before classifying),
+  // refreshMe/refreshMarches stay fire-and-forget.
   return { ctx, net, showModal, showToast, onReplaySiege, tileCache };
 }
 
