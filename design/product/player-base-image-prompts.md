@@ -436,3 +436,92 @@ flat — the two bastions are the widest points of the entire image.
 ### 2026-08-08（收尾）：真机截图复核，而非只有离线几何模拟
 
 上面三轮的判定都是靠离线复现 `citySpriteTiles`/`cityPlotMaskPoints` 几何叠加真实图集像素，没有实机截图。收尾前补了一次真机验证：临时给 `client/src/entries/web.ts` 加了个 `?worldmapdebug` 分支（构造真实 `WorldMapScene`，reject-fast 的 `WorldApiClient` stub 跳过登录/后端，在地图上摆 10 个"我的基地"测试块，每级一个），Playwright 依次把镜头切到每个基地截图——走的是客户端真正的渲染代码路径（`playerbase_atlas` → `getPlayerBaseTextureForLevel` → `WorldMapRenderer/city.ts` 的 `tile.mine` 分支），不是模拟。10 级截图里"连接己方领地"的绿色虚线框正好是每个基地自己的地块边界，肉眼确认全部贴边，跟离线核算的结论一致。调试脚手架（临时文件 + `web.ts` 分支 + Playwright 脚本）验证完已删除/还原，不留痕迹。
+
+## 2026-08-13：仍有 5 张没顶满，出 v2 prompt
+
+用户反馈"还有几张图没法完全铺到格子上"。核对 8-08 收尾时记的 `contentWidthFrac`（满宽目标 0.9375）：Lv.1 0.94 / Lv.4 0.94 / Lv.7 0.94 已满宽；Lv.5 0.91 / Lv.8 0.91 够接近，之前判定"达标"未再返工；但 **Lv.3 0.82（最窄）/ Lv.9 0.83 / Lv.10 0.84 / Lv.6 0.85 / Lv.2 0.89** 明显偏窄，两侧仍留白。
+
+沿用 8-08 第三轮已验证有效的套路——抽象宽高比数字（如"12:7"）AI 出图对不齐，得换成**具体锚点指令**（远端插旗/物体贴边、允许被画幅边缘裁掉一半）——给这 5 级各写一条 v2 prompt，只改构图锚点部分，画风/特征物延续原 prompt：
+
+### `playerbase_l2` v2「文具围栏」
+```
+A wide desk-pad ground plate with a low camp covering about a third of it: an
+open pencil case wall extended left and right by a row of laid-down pencils as
+a short palisade that runs the full width of the frame, its far-left and
+far-right pencil tips touching the very edges of the picture (put a tiny paper
+flag stuck at each of those two outer tips so the width reads clearly,
+cropping half a flag off the edge is fine), a ruler laid flat as a bridge/gate
+at the front, a squat ink bottle at one back corner, a small flat tent inside.
+Everything hugs the plate and stays low; the fence's two ends are the widest
+points of the whole image, not the tent or bottle.
+[+ style]
+```
+
+### `playerbase_l3` v2「书本壁垒」
+```
+A wide desk-pad ground plate about half covered by a low stronghold of flat
+stacked notebooks forming a wall drawn as a WIDE FLAT RECTANGLE, not a square —
+stretch it so the wall's own left and right ends touch the very left and right
+edges of the picture frame (put a single upright pencil stub at each of those
+two far corners, tip poking just past the frame edge if needed), book spines
+making crenellations along the top the whole way across, a stapler set into
+the middle of the front wall as a gate. Wide and squat — the wall is only two
+or three books high, and its two far corners are the widest points in the
+image, wider than Lv2's fence.
+[+ style]
+```
+
+### `playerbase_l6` v2「文具石堡」
+```
+A wide desk-pad ground plate filled edge to edge by a stone-like fortress of
+thick hardcover books laid flat, drawn as a wide flat rectangle rather than a
+block — its outer wall's left and right corners touch the very left and right
+edges of the picture frame, with a correction-tape roll lying on its side as a
+squat round corner tower AT each of those two far corners (half a tower may
+crop off the frame edge, that's fine, it must not float with empty plate
+beside it), a broad low binder as the central keep, a ruler-and-compass
+drawbridge across the front between the two corner towers. Heavy
+cross-hatching for stony texture. Wide, heavy, low — the two corner towers are
+the widest points of the whole image, clearly wider than Lv5's fortress.
+[+ style]
+```
+
+### `playerbase_l9` v2「书院巨城」
+```
+A wide desk-pad ground plate overflowing with an elaborate citadel complex:
+several broad book-stack blocks connected by ruler-walls into wings and
+courtyards that run the FULL WIDTH of the picture frame, with one short
+pencil stub standing upright AT the far-left edge and another AT the
+far-right edge of the frame (their tips may crop off the very edge, that's
+fine — they must not float with empty plate beside them), two more pencil
+stubs at the back corners as stumpy spires of barely varying height, a wide
+central binder-keep flying a paper pennant, dense parallel ruler-lines
+everywhere suggesting grandeur. A single small gold-ink accent on the
+far-right pencil tip as the only exception to the two-tone palette. The two
+outermost pencil stubs are the widest points of the whole image — grandeur
+through sprawl and line density, nothing towers.
+[+ style with gold-accent exception]
+```
+
+### `playerbase_l10` v2「文具帝都」
+```
+A wide desk-pad ground plate packed edge to edge with the grandest capital
+complex: concentric rings of book-walls enclosing dense courtyards of binders
+and rulers, stretched into a wide flat oval so the outermost ring's left and
+right sides touch the very left and right edges of the picture frame — put
+one short pen or pencil stub standing upright AT the far-left tip and another
+AT the far-right tip of that ring (half a stub may crop off the frame edge,
+that's fine), four more stubby spires of near-equal height spaced around the
+rest of the ring, a broad central fountain-pen laid at a shallow angle with
+its golden nib pointing forward, a monumental stapler-gatehouse spanning the
+front edge between the inner rings, and dense ruler-line cross-hatching
+throughout. The most magnificent of the set through density, layering and
+footprint — NOT through height; no taller than Lv9. The two outermost spires
+(far-left and far-right tips) are the widest points of the whole image,
+clearly wider than Lv9. The stubby spires may be filled solid deep blue as
+the pinnacle signal. Small gold-ink accents on the pen nib and a few spire
+tips are the only exception to the two-tone palette.
+[+ style with gold-accent exception]
+```
+
+**待办**：用户拿这 5 条 prompt 出图后，按 8-08 第三轮的流程核对（离线复现几何 + `contentWidthFrac`，达到或接近 0.9375 才采用），落地后照旧跑 `pack_playerbase_atlas.js` + `patchMergedAtlas.js`，未采用的候选图和被替换的旧图移入 `art/leftover/`。
