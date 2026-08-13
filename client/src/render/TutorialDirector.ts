@@ -1,13 +1,11 @@
 import * as PIXI from 'pixi.js-legacy';
-import { makeText } from './pixiText';
-import { tearDownChildren } from './sketchUi';
 import { CardType, SpellType, GameState } from '../game';
 import { TOP_SPAWN_ROW } from '@nw/engine/config';
 import { toFp } from '@nw/engine/math/fixed';
 import { ILayout, Rect } from '../layout/ILayout';
 import { t, type TranslationKey } from '../i18n';
-import { drawHudButton, hudButtonText } from '../ui/widgets/hudButton';
-import { snapFont } from './fontScale';
+import type { Phase } from './TutorialDirector/types';
+import { buildLayers, drawPanel, clearPanel, type PanelHost } from './TutorialDirector/panels';
 
 /**
  * TutorialDirector — presentation-layer orchestrator for the tutorial level `ch0_tutorial` (ONBOARDING_DESIGN §3.4).
@@ -56,8 +54,6 @@ export interface TutorialHost {
   onStepChange?(stepKey: string): void;
 }
 
-type Phase = 'orientation' | 'beat' | 'freeplay' | 'done';
-
 interface BeatSpec {
   cardId: string;
   cardType: CardType;
@@ -97,11 +93,9 @@ const ORIENTATION_STEPS = 7; // O1–O7
 // Base never falls: clamp HP to this floor when it drops below (§3.5 fallback).
 const NEVER_FAIL_BASE_FLOOR = 1;
 
-// Handwritten notebook palette (local copy to avoid cross-module coupling). Blue = player highlight.
-const C_PAPER  = 0xf6efdd;
-const C_DARK   = 0x2b2b2b;
+// Handwritten notebook palette (local copy to avoid cross-module coupling). Blue = player
+// highlight — panels.ts has its own inlined copy of this same value for the instruction card border.
 const C_BLUE   = 0x4a7fc1;
-const C_MID    = 0x6b6b6b;
 
 export class TutorialDirector {
   private readonly host: TutorialHost;
@@ -144,13 +138,36 @@ export class TutorialDirector {
     this.layout = host.layout;
     this.root = new PIXI.Container();
     host.container.addChild(this.root);
-    this.buildLayers();
+    buildLayers(this.panelHost());
     this.renderOrientation();
     this.emitStep('orientation_1');
   }
 
   private emitStep(key: string): void {
     this.host.onStepChange?.(key);
+  }
+
+  /** Bundles what panels.ts's build/draw functions need instead of them closing over `this`. */
+  private panelHost(): PanelHost {
+    const director = this;
+    return {
+      root: this.root, layout: this.layout, phase: this.phase,
+      get dim() { return director.dim; },
+      set dim(v) { director.dim = v; },
+      get slotRing() { return director.slotRing; },
+      set slotRing(v) { director.slotRing = v; },
+      get clusterRing() { return director.clusterRing; },
+      set clusterRing(v) { director.clusterRing = v; },
+      get cardPanel() { return director.cardPanel; },
+      set cardPanel(v) { director.cardPanel = v; },
+      get skipBtnRect() { return director.skipBtnRect; },
+      set skipBtnRect(v) { director.skipBtnRect = v; },
+      get nextBtnRect() { return director.nextBtnRect; },
+      set nextBtnRect(v) { director.nextBtnRect = v; },
+      get actionBtnRect() { return director.actionBtnRect; },
+      set actionBtnRect(v) { director.actionBtnRect = v; },
+      onSkip: () => this.host.onSkip(),
+    };
   }
 
   get isFinished(): boolean { return this.phase === 'done'; }
@@ -278,7 +295,7 @@ export class TutorialDirector {
 
   private graduate(): void {
     this.phase = 'done';
-    this.clearPanel();
+    clearPanel(this.panelHost());
     this.dim.visible = false;
     this.slotRing.visible = false;
     this.clusterRing.visible = false;
@@ -295,7 +312,8 @@ export class TutorialDirector {
     const LANDSCAPE_STEPS = new Set([1, 2, 4, 5]);
     const titleKey = (ls && n === 5) ? `tutorial.o${n}.title.landscape` : `tutorial.o${n}.title`;
     const bodyKey  = (ls && LANDSCAPE_STEPS.has(n)) ? `tutorial.o${n}.body.landscape` : `tutorial.o${n}.body`;
-    this.drawPanel(
+    drawPanel(
+      this.panelHost(),
       tk(titleKey),
       tk(bodyKey),
       t('tutorial.next' as TranslationKey),
@@ -309,7 +327,7 @@ export class TutorialDirector {
     const i = this.beatIndex + 1; // 1..3
     const ls = this.layout.orientation === 'landscape';
     const bodyKey = (ls && i === 1) ? `tutorial.beat${i}.body.landscape` : `tutorial.beat${i}.body`;
-    this.drawPanel(tk(`tutorial.beat${i}.title`), tk(bodyKey), null, 'beat');
+    drawPanel(this.panelHost(), tk(`tutorial.beat${i}.title`), tk(bodyKey), null, 'beat');
 
     // Highlight the target lane.
     if (beat.kind === 'unit') this.host.highlightUnitLane(beat.col);
@@ -335,12 +353,13 @@ export class TutorialDirector {
     const i = this.beatIndex + 1;
     const ls = this.layout.orientation === 'landscape';
     const doneKey = (ls && i === 1) ? `tutorial.beat${i}.done.landscape` : `tutorial.beat${i}.done`;
-    this.drawPanel(tk(`tutorial.beat${i}.title`), tk(doneKey), null, 'beat');
+    drawPanel(this.panelHost(), tk(`tutorial.beat${i}.title`), tk(doneKey), null, 'beat');
   }
 
   private renderFreePlay(): void {
     this.dim.visible = false;
-    this.drawPanel(
+    drawPanel(
+      this.panelHost(),
       t('tutorial.free.title' as TranslationKey),
       t('tutorial.free.body' as TranslationKey),
       t('tutorial.complete' as TranslationKey),
@@ -348,112 +367,7 @@ export class TutorialDirector {
     );
   }
 
-  // ── UI construction ─────────────────────────────────────────────────────────────────
-  private buildLayers(): void {
-    const { designWidth: W, designHeight: H } = this.layout;
-
-    this.dim = new PIXI.Graphics();
-    this.dim.beginFill(0x000000, 0.55).drawRect(0, 0, W, H).endFill();
-    this.dim.visible = false;
-    this.root.addChild(this.dim);
-
-    this.slotRing = new PIXI.Graphics();
-    this.slotRing.visible = false;
-    this.root.addChild(this.slotRing);
-
-    this.clusterRing = new PIXI.Graphics();
-    this.clusterRing.visible = false;
-    this.root.addChild(this.clusterRing);
-
-    this.cardPanel = new PIXI.Container();
-    this.root.addChild(this.cardPanel);
-
-    // Persistent skip button (top-right).
-    this.drawSkipButton();
-  }
-
-  private drawSkipButton(): void {
-    const { designWidth: W } = this.layout;
-    const bw = Math.round(W * 0.18);
-    const bh = Math.round(bw * 0.42);
-    const bx = W - bw - Math.round(W * 0.03);
-    const by = Math.round(bh * 0.6);
-    this.skipBtnRect = { x: bx, y: by, w: bw, h: bh };
-    const g = new PIXI.Graphics();
-    drawHudButton(g, bw, bh, 'primary', { radius: bh * 0.3, fillAlpha: 0.78 });
-    g.x = bx; g.y = by;
-    this.root.addChild(g);
-    const lbl = makeText(t('tutorial.skip' as TranslationKey), {
-      fontFamily: 'monospace', fontSize: snapFont(Math.round(bh * 0.42)), fill: hudButtonText('primary'),
-    });
-    lbl.anchor.set(0.5);
-    lbl.x = bx + bw / 2; lbl.y = by + bh / 2;
-    this.root.addChild(lbl);
-  }
-
-  /** Instruction card: centered at the bottom (phases B/C do not obscure the upper board), containing title + body + optional button. */
-  private drawPanel(title: string, body: string, btnLabel: string | null, btnKind: 'next' | 'action' | 'beat'): void {
-    this.clearPanel();
-    const { designWidth: W, designHeight: H } = this.layout;
-    const pw = Math.round(W * 0.86);
-    const px = (W - pw) / 2;
-    const hasBtn = !!btnLabel;
-    const ph = Math.round(H * (hasBtn ? 0.22 : 0.15));
-    // Phase B: card panel sits just above the hand area (below the board); orientation/free-play: centered toward the bottom.
-    const py = this.phase === 'beat'
-      ? Math.round(this.layout.handRect.y - ph - H * 0.02)
-      : Math.round(H * 0.6);
-
-    const bg = new PIXI.Graphics();
-    bg.beginFill(C_PAPER, 0.97);
-    bg.lineStyle(2.4, C_BLUE, 1);
-    bg.drawRoundedRect(px, py, pw, ph, 12).endFill();
-    this.cardPanel.addChild(bg);
-
-    const titleLbl = makeText(title, {
-      fontFamily: 'monospace', fontSize: snapFont(Math.round(ph * 0.18)), fontWeight: 'bold', fill: C_DARK,
-      wordWrap: true, wordWrapWidth: pw - 32,
-    });
-    titleLbl.x = px + 16; titleLbl.y = py + 14;
-    this.cardPanel.addChild(titleLbl);
-
-    const bodyLbl = makeText(body, {
-      fontFamily: 'monospace', fontSize: snapFont(Math.round(ph * 0.13)), fill: C_MID,
-      wordWrap: true, wordWrapWidth: pw - 32,
-    });
-    bodyLbl.x = px + 16; bodyLbl.y = py + 14 + Math.round(ph * 0.26);
-    this.cardPanel.addChild(bodyLbl);
-
-    this.nextBtnRect = null;
-    this.actionBtnRect = null;
-    if (hasBtn) {
-      const bw = Math.round(pw * 0.32);
-      const bh = Math.round(ph * 0.28);
-      const bx = px + pw - bw - 16;
-      const by = py + ph - bh - 14;
-      const btn = new PIXI.Graphics();
-      drawHudButton(btn, bw, bh, 'accent', { radius: bh * 0.3 });
-      btn.x = bx; btn.y = by;
-      this.cardPanel.addChild(btn);
-      const bl = makeText(btnLabel!, {
-        fontFamily: 'monospace', fontSize: snapFont(Math.round(bh * 0.46)), fontWeight: 'bold', fill: hudButtonText('accent'),
-      });
-      bl.anchor.set(0.5);
-      bl.x = bx + bw / 2; bl.y = by + bh / 2;
-      this.cardPanel.addChild(bl);
-      const rect = { x: bx, y: by, w: bw, h: bh };
-      if (btnKind === 'next') this.nextBtnRect = rect;
-      else if (btnKind === 'action') this.actionBtnRect = rect;
-    }
-  }
-
-  private clearPanel(): void {
-    // tearDownChildren frees each Text's baseTexture (texture:true); the prior removeChildren().forEach(destroy)
-    // used the default texture:false, orphaning the panel's makeText labels on every tutorial-beat advance.
-    tearDownChildren(this.cardPanel);
-    this.nextBtnRect = null;
-    this.actionBtnRect = null;
-  }
+  // ── UI construction — see render/TutorialDirector/panels.ts's buildLayers()/drawPanel() ──────
 
   /** Pulse animation: breathing rings for the guided card slot and the spell enemy cluster. */
   private animatePulse(): void {
