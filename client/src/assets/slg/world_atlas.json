@@ -371,8 +371,8 @@
         "w": 256,
         "h": 256
       },
-      "contentTop": 0.4375,
-      "contentWidthFrac": 0.89453125
+      "contentTop": 0.5546875,
+      "contentWidthFrac": 0.9375
     },
     "playerbase_l3": {
       "frame": {
@@ -393,8 +393,8 @@
         "w": 256,
         "h": 256
       },
-      "contentTop": 0.4375,
-      "contentWidthFrac": 0.81640625
+      "contentTop": 0.546875,
+      "contentWidthFrac": 0.9375
     },
     "playerbase_l4": {
       "frame": {

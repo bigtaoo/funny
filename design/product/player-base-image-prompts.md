@@ -664,3 +664,84 @@ and spire tips, notebook doodle aesthetic, no text.
 ```
 
 **建议**：若生图工具支持传参考图，直接把 `playerbase_l1.png`/`l4.png` 当机位参考图传入，比纯文字描述"旋转菱形"更可靠——本轮翻车大概率是文字机位指令没被生成工具吃到，参考图能直接锁镜头角度。5 张未采用的候选图已移入 `art/leftover/`（保留原 UUID 文件名）。
+
+### 2026-08-13（同日第三轮）：机位对了，但地台画得太陡——量出新问题、出 v4、Lv.2/3 命中
+
+用户按 v3 prompt 先出了 Lv.2/Lv.3 两张（`7ffc6c01`→Lv.2、`135d6f06`→Lv.3）探路。机位终于对了（旋转菱形，不再是横版桌面），但离线核对 `contentWidthFrac` 反而比 v2 那批更差：
+
+| 候选 | 目标等级 | 内容外接框宽高比 | contentWidthFrac |
+|---|---|---|---|
+| `7ffc6c01` | Lv.2 | 1.21 | 0.68（比 v2 的 0.89 还差） |
+| `135d6f06` | Lv.3 | 1.17 | 0.66（比 v2 的 0.82 还差） |
+
+排查：打包脚本按高度预算（`CONTENT_H_FRAC=0.5625`）和宽度预算（`CONTENT_W_FRAC=0.9375`）取先触底的一个整体等比缩放（`fit:'inside'`）——两者的比值 `0.9375/0.5625 ≈ 1.667` 就是"内容外接框宽高比"必须达到的门槛，低于它就会被高度先卡住、连带宽度也缩没了。能满宽的参照图（`playerbase_l1`/`l4`，宽高比 1.8~1.84）地台画得"扁"，上尖大致在画布 25% 高、下尖 75% 高；这两张新图的地台画得"陡"，上尖几乎顶到画布顶部（~8%）、下尖几乎顶到底部（~92%），外接框宽高比只有 1.17~1.21——机位对了，但地台自身的高宽比还停留在接近"正方形旋转45°"，没做成 2:1 的扁菱形。
+
+修法：v3 prompt 开头那段"旋转菱形"指令后面追加"squashed FLAT"的具体比例锚点（上尖约在画布 1/4 高、下尖约在 3/4 高，参照 `playerbase_l1.png`/`l4.png` 的扁度），物体描述段落不变。用户按这条 v4 重出 Lv.2/Lv.3（`bf10f349`→Lv.2、`5ab60853`→Lv.3），离线核对：
+
+| 候选 | 目标等级 | 内容外接框宽高比 | contentWidthFrac | 结论 |
+|---|---|---|---|---|
+| `bf10f349` | Lv.2 | 2.07 | **0.94（满宽）** | 采用 |
+| `5ab60853` | Lv.3 | 2.11 | **0.94（满宽）** | 采用 |
+
+两次失败的候选（v2 那批 `7ffc6c01`/`135d6f06`、更早的横版长方形批次）全部移入 `art/leftover/`。已改名覆盖 `playerbase_l2/3.png`，重跑 `pack_playerbase_atlas.js` + `patchMergedAtlas.js` 入库；额外从合并后的 `world_atlas.png` 按 frame 坐标截出这两个 cell 的实际像素核对（不是只信打包脚本报的数字）——菱形贴边到 cell 边界，旗子/笔尖精确在角上裁出画布，跟 `playerbase_l1`/`l4` 一致。
+
+**Lv.6/9/10 待办**：直接沿用这条 v4 的"压扁菱形"开头（"squashed FLAT... top corner ~1/4 down, bottom corner ~3/4 down"）替换各自 v3 prompt 的开头段落，物体描述段落不变，出图后重复同样的核对流程。
+
+### `playerbase_l2` v4（已采用，供 l6/9/10 抄开头段落）
+```
+Top-down isometric view on a SQUARE 1:1 canvas (1024x1024px): the whole scene
+sits on ONE ROTATED DIAMOND-SHAPED ground plate — a rhombus like a diamond
+playing-card symbol, but squashed FLAT: its own top-to-bottom corner distance
+is only about HALF of its own left-to-right corner distance (a wide 2:1
+diamond, not a rotated square). The diamond's left and right corners touch the
+very edges of the frame, but its top corner sits only about a quarter of the
+way down from the top of the canvas and its bottom corner about three-quarters
+of the way down — leaving a generous margin of white space above and below,
+matching the flat diamond proportions of playerbase_l1.png / playerbase_l4.png
+(NOT the steeper, taller diamond you may have drawn before). This is NOT a
+front-facing tabletop diorama — no horizon, no receding table edge; camera
+looks straight down at a gentle 25-degree tilt onto that flat diamond.
+
+A low camp covers about a third of the diamond: an open pencil case wall
+extended by a row of laid-down pencils as a short palisade running out toward
+the diamond's own far-left and far-right corners, with a tiny paper flag stuck
+at each of those two corner tips (a flag may crop off the very edge of the
+square frame, that's fine), a ruler laid flat as a bridge/gate at the front, a
+squat ink bottle at one back corner, a small flat tent inside. Everything hugs
+the plate and stays low; the diamond's left and right corners are the widest
+points of the whole image.
+
+Solid pure-white background, no grid lines anywhere on the plate, hand-drawn
+doodle illustration with fountain pen blue ink outlines and cross-hatching,
+single pale yellow-green watercolor wash fill only, strictly two-tone (blue
+ink + pale yellow-green, no other colors), notebook doodle aesthetic, no text.
+```
+
+### `playerbase_l3` v4（已采用）
+```
+Top-down isometric view on a SQUARE 1:1 canvas (1024x1024px): the whole scene
+sits on ONE ROTATED DIAMOND-SHAPED ground plate — a rhombus like a diamond
+playing-card symbol, but squashed FLAT: its own top-to-bottom corner distance
+is only about HALF of its own left-to-right corner distance (a wide 2:1
+diamond, not a rotated square). The diamond's left and right corners touch the
+very edges of the frame, but its top corner sits only about a quarter of the
+way down from the top of the canvas and its bottom corner about three-quarters
+of the way down — leaving a generous margin of white space above and below,
+matching the flat diamond proportions of playerbase_l1.png / playerbase_l4.png
+(NOT the steeper, taller diamond you may have drawn before). This is NOT a
+front-facing tabletop diorama — no horizon, no receding table edge; camera
+looks straight down at a gentle 25-degree tilt onto that flat diamond.
+
+A low stronghold of flat stacked notebooks covers about half the diamond,
+forming a wall stretched so its own two ends reach the diamond's far-left and
+far-right corners (put a single upright pencil stub at each of those two
+corners, tip poking just past the frame edge if needed), book spines making
+crenellations along the top, a stapler set into the middle of the wall as a
+gate. Wide and squat — the wall is only two or three books high, and the
+diamond's left/right corners are the widest points in the image.
+
+Solid pure-white background, no grid lines anywhere on the plate, hand-drawn
+doodle illustration with fountain pen blue ink outlines and cross-hatching,
+single pale yellow-green watercolor wash fill only, strictly two-tone (blue
+ink + pale yellow-green, no other colors), notebook doodle aesthetic, no text.
+```
