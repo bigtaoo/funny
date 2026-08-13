@@ -33,7 +33,8 @@ const DB = 'nw_auction_e2e_test';
 async function tryConnect(): Promise<AuctionMongo | null> {
   try {
     return await createAuctionMongo(URI, DB, { serverSelectionTimeoutMS: 1500 });
-  } catch {
+  } catch (err) {
+    if (process.env.NW_REQUIRE_DB) throw err;
     return null;
   }
 }

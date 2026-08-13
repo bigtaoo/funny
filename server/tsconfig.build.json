@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json.schemastore.org/tsconfig",
+  "//": "Solution file: no own source (files: []), just references every workspace so `tsc -b tsconfig.build.json` typechecks all of them in dependency order with one command. CI and `npm run typecheck` should point here instead of hand-enumerating workspace names — see scripts/checkWorkspaceCoverage.mjs, which fails CI if this list drifts from package.json's `workspaces` array.",
+  "files": [],
+  "references": [
+    { "path": "shared" },
+    { "path": "engine" },
+    { "path": "metaserver" },
+    { "path": "gateway" },
+    { "path": "matchsvc" },
+    { "path": "gameserver" },
+    { "path": "commercial" },
+    { "path": "worldsvc" },
+    { "path": "auctionsvc" },
+    { "path": "admin" },
+    { "path": "analyticsvc" },
+    { "path": "socialsvc" },
+    { "path": "botsvc" }
+  ]
+}

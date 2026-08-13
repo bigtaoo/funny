@@ -20,8 +20,9 @@
   ],
   "scripts": {
     "build": "npm run build --workspaces --if-present",
-    "typecheck": "npm run typecheck --workspaces --if-present",
+    "typecheck": "tsc -b tsconfig.build.json",
     "check:filelength": "node scripts/checkFileLength.mjs",
+    "check:workspacecoverage": "node scripts/checkWorkspaceCoverage.mjs",
     "dev:meta": "npm run dev --workspace @nw/metaserver",
     "dev:game": "npm run dev --workspace @nw/gameserver",
     "dev:gateway": "npm run dev --workspace @nw/gateway",

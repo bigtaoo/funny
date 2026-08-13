@@ -141,7 +141,8 @@ async function tryConnectRedis(): Promise<unknown | null> {
     const client = new Redis(REDIS_URL) as { ping(): Promise<string>; quit(): Promise<unknown> };
     await client.ping();
     return client;
-  } catch {
+  } catch (err) {
+    if (process.env.NW_REQUIRE_DB) throw err;
     return null;
   }
 }

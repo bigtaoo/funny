@@ -29,7 +29,8 @@ async function tryConnect(): Promise<SocialMongo | null> {
     const m = await createSocialMongo(URI, DB);
     await m.collections.families.estimatedDocumentCount();
     return m;
-  } catch {
+  } catch (err) {
+    if (process.env.NW_REQUIRE_DB) throw err;
     return null;
   }
 }
