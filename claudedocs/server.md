@@ -584,4 +584,21 @@ commercial 此前完全没有 Redis 依赖，本次新增：`config.ts` 补 `NW_
 
 **metaserver 明显偏低**：`src/equipment/{craft,enhance,equip,reforge,salvage,trade}.ts`、`src/paddle/*`、`src/service/auth/{credential,helpers,oauthBind,profile,support}.ts`、`src/service/economy/*` 大片 0~10%——不是这轮改动引入的缺口，是这个包本身路由面最大（9 个 mixin/69 测试文件）但装备/Paddle/OAuth 这几块此前的 e2e 覆盖没跟上。**admin 47%**次低，同理。两者列为下一轮"server 端测试覆盖审计"（见上文 2026-08-05/08-10 两节）的优先输入，本轮不展开修——这次的目标只是把量出百分比的工具接上，不是把百分比刷高。
 
+## metaserver 补测：equipment/auth/economy/paddle 从 0~10% 拉到 90%+（2026-08-13，同日追加）
+
+上一节标的四块「大片 0~10%」查下来**不是没测**——`equipment.e2e.test.ts`/`economy.e2e.test.ts`/`paddle-routes.e2e.test.ts`/`auth-oauth-wx.e2e.test.ts` 等既有 e2e 早就把这些模块的成功/幂等/边界/拒绝分支测得很彻底，只是这批 e2e 全部 `import { buildApp } from '../dist/app.js'`（从 tsc 编译产物导入，配真实 Mongo）。vitest 的 v8 coverage provider 只对它自己用 Vite 转换加载的模块做 source-map 归因——`dist/*.js` 走 Node 原生 ESM 加载执行，覆盖率不会被记回 `src/*.ts`，于是"测得很彻底"和"报出来 0~10%"两个事实同时为真，互不矛盾。
+
+**修法**：不重新发明这些场景，而是新增一批**直接 `import ... from '../src/...'`（不是 `../dist/...`）** 的单测，复用已有 e2e 想清楚的业务语义、但让同样的分支被 vitest 直接执行从而被 v8 正确记到 src 头上；顺带补了 e2e 没试到的错误码/边界分支。四组并行做（各自新增文件，互不touch）：
+
+- `test/equipment-{craft,enhance,equip,reforge,salvage,trade,helpers}-unit.test.ts`（112 例）+ 新增共享 helper `test/helpers/fakeEquipCols.ts`（给 `FakeCollection` 补了 `deleteMany`/`$ne` 支持）、`test/helpers/fakeEquipCommercial.ts`（带 `getWallet`/`spend` 的假 commercial）→ `src/equipment` 0~10% → **98.53% 行 / 90.33% 分支**。
+- `test/auth-credential-unit.test.ts` + `test/auth-oauthbind-unit.test.ts`（75 例）→ `src/service/auth/*`（含顺手覆盖的 `accountLifecycle.ts`）0~10% → **100% 语句/分支/函数/行**。
+- `test/economy-service-unit.test.ts`（70 例）→ `src/service/economy/*` 0~10% → **90.54% 行 / 76.02% 分支**（少数 fire-and-forget 的 `.catch(log.warn)` 日志分支需要人为注入网络异常才能触发，未继续追，收益递减）。
+- `test/paddle-unit.test.ts`（73 例）→ `src/paddle/{checkoutRoute,priceIds,signature,webhookRoute}.ts` 0~10% → **100% 行**（`webhookRoute.ts` 分支 95%，剩 2 处 `?? ''` 防御性兜底未覆盖）。
+
+metaserver 整体行覆盖率 **35.1% → 61.17%**（`npx vitest run --coverage`，81 test files / 1256 tests 全绿，`tsc -b` 干净）。这批测试全部走 `FakeCollection`/注入的假 commercial+gateway 客户端（无需真实 Mongo），只有 paddle 的 checkout/webhook 路由测试沿用了 e2e 同款的真实 Mongo + 真实 fastify app（因为要验证真实的幂等/并发写路径）。
+
+**过程中发现的测试基建缺陷**（未在本次修，已知，供下次碰到时参考）：`test/helpers/fakeCollection.ts` 的 `updateOne` 在 upsert 时若 `filter` 不含 `_id`（`accounts.ts` 的 `resolveByDevice`/`resolveByOpenid`/`resolveByOAuth`/`registerWithPassword` 全是这种按 `deviceId`/`openid`/`oauth.provider+sub`/`password.loginId` 匹配的写法）会把新文档存进 Map 的 `undefined` 键、且返回值从不带真实 driver 会带的 `upsertedId`（`accounts/password.ts:52` 靠 `!res.upsertedId` 判断注册成功与否，用这个 fake 直测会把首次注册误判成"已占用"）；`docMatches` 也不支持 Mongo 对数组字段的隐式元素级匹配（`oauth: [{provider,sub}]` 这种）。之前所有用到 `fakeCollection.ts` 的测试都只按 `_id` 单键查询，没触发过这几点。这次两个 auth 测试文件各自用一个只作用于本文件 `accounts` 集合的子类包装绕过，未改动共享的 `fakeCollection.ts` 本体。
+
+**仍然明显偏低、本轮未覆盖**（下一轮候选）：`src/service/{liveops,pve}/*`（大片 0~10%，retention/achievements/pve 系列，同类"e2e 走 dist 导入"问题，`test/pve-anticheat.test.ts` 等已有 e2e 但同样没记到 src）、`src/{moderation,reputationDecay,anticheatAudit,oauth,gatewayClient,socialsvcClient}.ts`、`src/cards/fuse.ts`。admin 包（47.1%）仍未动。
+
 **`engine/src/config.ts`（522→204 行，2026-08-12，独立函数模块范式）**：0 超限收尾后的第二例新增超限（第一例是上面的 `metaserver/src/service/auth.ts`）——ADR-065 引擎定点化迁移给 `config.ts` 加了 102 行（unit/building blueprint 从"人类可读表直接导出"改成"人类可读原始表 + `bakeXxxBlueprint()` 转换函数"两段式），从合入时未被察觉地推过 500 行界，直到下一次 PR 的 CI 才被 `checkFileLength.mjs`（新文件不在基线里）拦下。判断跟 `paddle.ts`/`economy.ts` 同款——unit/building blueprint 的原始表+bake 函数+类型定义（约 320 行）零共享状态、只被 `config.ts` 内部消费，没有交叉调用需要判断优先级，直接搬进新文件 `blueprintDefs.ts`；`config.ts` 里只留 `export { UNIT_BLUEPRINTS, BUILDING_BLUEPRINTS } from './blueprintDefs'` 一行 re-export，全部约 11 个外部消费者（`balance/pveUpgrades.ts`/`Building.ts`/`GameState.ts`/`Unit.ts`/`systems/BuildingProductionSystem.ts` + 6 个测试文件）导入路径零改动。**验证**：`npx tsc -b` 干净；`npm test` 139/139（含新增的 `fixed.test.ts`）全绿；`node scripts/checkFileLength.mjs` 0 超限（566 源文件，比改动前多 1——新增 `blueprintDefs.ts`）；额外核对了下游消费方 `worldsvc`/`client` 的 `tsc --noEmit` 均干净（`UNIT_BLUEPRINTS`/`BUILDING_BLUEPRINTS` 的 re-export 对它们透明）。第⑤步：纯移动，两个导出符号的值/类型零变化，不适用，未新增测试。
