@@ -870,3 +870,15 @@ single pale yellow-green watercolor wash fill, otherwise strictly two-tone
 (blue ink + pale yellow-green) apart from small gold accents on the pen nib
 and spire tips, notebook doodle aesthetic, no text.
 ```
+
+### 2026-08-13（同日第五轮）：换用户出图工具为 GPT Image 2，v5 数字自检明显更好用；Lv.6 命中，Lv.9/10 待定
+
+用户改用 GPT Image 2 出图，按 v5 prompt（含"外接框宽高比≥1.7 自检"那句）重出 Lv.6/9/10：
+
+| 候选 | 目标等级 | 内容外接框宽高比 | contentWidthFrac | 结论 |
+|---|---|---|---|---|
+| `isometric_book_fortress.png` | Lv.6 | 1.66 | **0.93** | 采用，覆盖 `playerbase_l6.png`，已重跑 `pack_playerbase_atlas.js` + `patchMergedAtlas.js` 入库 |
+| `citadel_diamond_doodle.png` | Lv.9 | 1.53 | 0.86 | 比现有 0.83 有改善，但未到满宽，**待用户拍板**是否接受或再出一版 |
+| `citadel_diamond_doodle_1024.png` | Lv.10 | 3.08 | 0.94（满宽） | 宽度达标，但外接框比 Lv.9 平了一倍多——画面主体比 Lv.9 矮很多，跟"Lv.10 不该比 Lv.9 矮"的硬规有点冲突，构图内容也换成了链环+台阶（不是原 prompt 的钢笔造型）。**待用户确认**是否满意这个方向 |
+
+数字自检（"整体外接框宽高比≥1.7，不够就把塔尖压更矮"）这次效果明显比上一轮的"squat"形容词好——Lv.6 一次命中。Lv.9/Lv.10 两张候选先留在 `art/ui/slg-playerbase/`（未改名，不是 playerbase_lN 也不是 leftover），等用户决定采用/重出再处理。
