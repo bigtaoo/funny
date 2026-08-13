@@ -896,3 +896,19 @@ and spire tips, notebook doodle aesthetic, no text.
 打包脚本原生支持 `.webp` 源文件（见脚本头注释"mixed png/webp AI-generation batch"），直接改名 `playerbase_l10.webp` 覆盖旧的 `playerbase_l10.png`（无需转格式），重跑 `pack_playerbase_atlas.js` + `patchMergedAtlas.js` 入库，并从合并后的 `world_atlas.png` 截出实际 cell 像素核对（菱形贴边，跟 `l1`/`l4`/`l6` 同一水准）。被替换的旧图从 git 历史取出存进 `art/leftover/playerbase_l10_pre20260813.png`；上一版走偏的 `citadel_diamond_doodle_1024.png` 候选也移入 `art/leftover/`。
 
 **Lv.9 仍待定**：`citadel_diamond_doodle.png` 候选（0.86，比现有 0.83 好但未到满宽）还留在 `art/ui/slg-playerbase/`，等用户决定接受还是再出一版冲满宽。**至此 10 张里已有 9 张（Lv.1/2/3/4/5/6/7/8/10）达到或接近满宽，只剩 Lv.9 待收尾。**
+
+### 2026-08-13（同日第七轮）：Lv.9 v6 prompt 命中，10 张全部达标收口
+
+针对上一轮 Lv.9 候选（0.86，宽高比 1.53）未到满宽的问题，出了 v6 prompt——在 v5 基础上做两处修改：①开头直接点名参照刚采用的 `playerbase_l10.png`（同样是"环形+四角立件"构图，比例已验证对了）；②自检句把目标提到 1.75:1 并明确"比照 l10 的 1.78:1"，追加"院落建筑也要压低压平"（怀疑上次不只是塔尖高，中间院落方块也偏高）。
+
+用户用 GPT Image 2 按 v6 重出（`isometric_citadel_wide_diamond.png`），离线核对：
+
+| 候选 | 目标等级 | 内容外接框宽高比 | contentWidthFrac | 结论 |
+|---|---|---|---|---|
+| `isometric_citadel_wide_diamond.png` | Lv.9 | **1.75** | **0.94（满宽）** | 采用——跟 Lv.10 的 1.78/0.94 几乎同一水准，"参照已命中的同构图等级 + 把自检数字提高"这个套路一次成功 |
+
+覆盖 `playerbase_l9.png`，重跑 `pack_playerbase_atlas.js` + `patchMergedAtlas.js` 入库，`world_atlas.png` 实际 cell 像素核对贴边无误。旧图存进 `art/leftover/playerbase_l9_pre20260813.png`，上一版未采用的 `citadel_diamond_doodle.png` 候选一并归档。
+
+**10 张玩家基地图全部收口**，最终 `contentWidthFrac`：Lv.1 0.94 / Lv.2 0.94 / Lv.3 0.94 / Lv.4 0.94 / Lv.5 0.91 / Lv.6 0.93 / Lv.7 0.94 / Lv.8 0.91 / Lv.9 0.94 / Lv.10 0.94——全部达到或非常接近满宽（0.9375），且比例都落在 `l1`/`l4`/`l10` 那种真实 2:1 菱形区间内，不是靠压扁取巧。这轮返工过程中沉淀的两条经验，供以后同类返工参考：
+1. **数字自检比形容词好使**："外接框宽高比≥X:1"这种可验证的具体数字，比"squat"/"wide"这类形容词更容易让生图工具真正执行到位（尤其是换到 GPT Image 2 之后更明显）。
+2. **拿同批里已经命中的构图相近的等级当参照**，比抽象数字更直接——Lv.9/10 都是"环形+四角立件"构图，Lv.10 先命中后，直接让 Lv.9 参照它，一次成功。
