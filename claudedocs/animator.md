@@ -54,7 +54,11 @@ cd tools/animator && npm run start   # 端口 9091
 | `src/animation/AnimationController.ts` | clip CRUD + 播放 + 关键帧操作 |
 | `src/animation/interpolate.ts` | `sampleClip` 插值（无依赖，游戏侧共享） |
 | `src/images/ImageController.ts` | 逐张 PNG 导入、Blob + PIXI.Texture 管理 |
-| `src/io/IOController.ts` | `.tao` 导出；`.tao.editor` 存档（`buildEditorBlob`/`loadEditorBlob` 复用）；桌面壳 `window.nwDesktop.fs` / 浏览器 File System Access API 双路径 |
+| `src/io/IOController.ts` | 装配壳（2026-08-13 起，`单文件 500 行收敛` form①，771→123）：只留 `editorFilePath`/`editorFileHandle`/`taoFileHandle` 三个磁盘身份字段 + 两个 host builder，逻辑全下沉到 `src/io/{fileIO,clipSerialization,editorProject,taoExport}.ts` |
+| `src/io/fileIO.ts` | 磁盘 / File System Access API 工具函数（`isDesktop`/`saveWithPicker`/`basename`/`deriveTaoPath` 等），纯函数，无需 host |
+| `src/io/clipSerialization.ts` | clip↔JSON 互转（`serializeClip`/`deserializeClip`），纯函数，无需 host |
+| `src/io/editorProject.ts` | `.tao.editor` 存档读写（`buildEditorBlob`/`loadEditorBlob` 复用），`EditorProjectHost` |
+| `src/io/taoExport.ts` | `.tao` 导出 + 贴图烘焙 + 精灵表打包，`TaoExportHost`；桌面壳 `window.nwDesktop.fs` / 浏览器 File System Access API 双路径 |
 | `src/io/ProjectStore.ts` | IndexedDB 工程库（`meta`+`blobs` 两 store） |
 | `src/io/AutoSaveController.ts` | 多工程自动保存 + 切换 + 启动恢复 |
 | `src/ui/ProjectPanel.ts` | 底部栏工程下拉 + 增删改复制 + 自动保存状态点 |
