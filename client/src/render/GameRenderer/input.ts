@@ -10,12 +10,13 @@
 // method the outer assembly calls AFTER `core.update(dt)` — same order, no `super` needed.
 import * as PIXI from 'pixi.js-legacy';
 import { makeText } from '../pixiText';
-import { ATTACK_LANES, BOARD_COLS } from '@nw/engine/config';
+import { ATTACK_LANES } from '@nw/engine/config';
 import { CardType, SpellType } from '../../game';
 import { Rect } from '../../layout/ILayout';
 import { t, type TranslationKey } from '../../i18n';
 import type { GameRendererCore } from './core';
 import { FS } from '../fontScale';
+import { EMPTY_UNIT_IDS, updatePlacementHighlights as updatePlacementHighlightsImpl } from './placementHighlights';
 
 // ── Drag state ─────────────────────────────────────────────────────────────────
 
@@ -43,9 +44,6 @@ const DRAG_THRESHOLD = 8; // px in design space before a press becomes a drag
 // display-only staleness fix (occupancy can change while the pointer holds still), not
 // something that needs per-frame precision, so recompute at ~10Hz instead of every tick.
 const HIGHLIGHT_REFRESH_INTERVAL = 0.1;
-
-/** Shared empty set passed to UnitView.setSpellTargetPreview when no AoE spell is being aimed. */
-const EMPTY_UNIT_IDS: ReadonlySet<number> = new Set();
 
 export class InputPanel {
   drag:      DragState | null = null;
@@ -359,77 +357,12 @@ export class InputPanel {
     }
   }
 
+  /** See ./placementHighlights.ts for the actual highlight logic. */
   private updatePlacementHighlights(
     cardType: CardType, spellType: SpellType | undefined,
     col: number, row: number, x: number, y: number,
   ): void {
-    this.core.boardView.clearHighlights();
-    let spellTargets: Set<number> | null = null;
-
-    switch (cardType) {
-      case CardType.Unit: {
-        const blocked = new Set<number>();
-        for (const lane of ATTACK_LANES) {
-          if (this.core.engine.state.board.isCellOccupiedByUnit(lane, this.core.localSpawnRow)) blocked.add(lane);
-        }
-        this.core.boardView.showUnitLaneHighlights(Array.from(ATTACK_LANES), blocked, col);
-        break;
-      }
-      case CardType.Building: {
-        const valid: number[] = [];
-        for (let c = 0; c < BOARD_COLS; c++) {
-          if (!(ATTACK_LANES as readonly number[]).includes(c)) continue;
-          if (this.core.engine.state.board.isNoBuild(c, this.core.localBuildRow)) continue;
-          if (!this.core.engine.state.board.hasBuildingAt(c, this.core.localBuildRow)) valid.push(c);
-        }
-        this.core.boardView.showBuildingHighlights(valid, this.core.localBuildRow);
-        break;
-      }
-      case CardType.Spell: {
-        if (spellType === SpellType.Meteor && !this.core.layout.isOutsideBoard(x, y)) {
-          this.core.boardView.showMeteorTargetHighlight(col, row);
-          spellTargets = this.meteorTargetUnits(col, row);
-        } else if (
-          (spellType === SpellType.Rockslide || spellType === SpellType.BridgeCollapse)
-          && !this.core.layout.isOutsideBoard(x, y)
-        ) {
-          this.core.boardView.showColumnTargetHighlight(col);
-          // Rockslide (unlike Meteor) hits every unit in the column regardless of side
-          // (SpellSystem.castRockslide has no side filter); BridgeCollapse only blocks
-          // movement, it deals no damage, so there's no "units hit" set to preview.
-          if (spellType === SpellType.Rockslide) spellTargets = this.columnTargetUnits(col);
-        }
-        break;
-      }
-    }
-
-    // Outline the units actually inside the hovered AoE footprint — the target-rect
-    // fill alone doesn't show which units' centers fall inside it (2026-08-08 fix:
-    // the frequently-used 2×2 Meteor kept missing its intended target because of this).
-    this.core.unitView.setSpellTargetPreview(spellTargets ?? EMPTY_UNIT_IDS);
-  }
-
-  /** Enemy units (Meteor spares the caster's own side) whose integer cell falls in the 2×2 area anchored at (col, row) — mirrors SpellSystem.castMeteor's hit test. */
-  private meteorTargetUnits(col: number, row: number): Set<number> {
-    const targets = new Set<number>();
-    const maxCol = col + 1;
-    const maxRow = row + 1;
-    for (const unit of this.core.engine.state.board.units.values()) {
-      if (unit.isDead) continue;
-      if (unit.side === this.core.layout.localSide) continue; // never hit own units — see SpellSystem.castMeteor
-      if (unit.col >= col && unit.col <= maxCol && unit.row >= row && unit.row <= maxRow) targets.add(unit.id);
-    }
-    return targets;
-  }
-
-  /** All units (both sides) standing in `col` — mirrors SpellSystem.castRockslide's hit test (no side filter). */
-  private columnTargetUnits(col: number): Set<number> {
-    const targets = new Set<number>();
-    for (const unit of this.core.engine.state.board.units.values()) {
-      if (unit.isDead) continue;
-      if (unit.col === col) targets.add(unit.id);
-    }
-    return targets;
+    updatePlacementHighlightsImpl(this.core, cardType, spellType, col, row, x, y);
   }
 
   // ── Helpers ────────────────────────────────────────────────────────────────

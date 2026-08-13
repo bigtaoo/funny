@@ -13,7 +13,8 @@ export async function tryConnect(db: string): Promise<SocialMongo | null> {
     // Force a real round-trip so an unreachable DB skips the suite instead of hanging later.
     await m.collections.families.estimatedDocumentCount();
     return m;
-  } catch {
+  } catch (err) {
+    if (process.env.NW_REQUIRE_DB) throw err;
     return null;
   }
 }

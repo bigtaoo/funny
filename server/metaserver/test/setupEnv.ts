@@ -16,6 +16,10 @@ if (!process.env.NW_MONGO_URI) {
   }
 }
 
+if (process.env.NW_REQUIRE_DB && !process.env.NW_MONGO_URI) {
+  throw new Error("NW_REQUIRE_DB set but NW_MONGO_URI is still unset after globalSetup handshake — mongod likely failed to start (see globalSetup.ts).");
+}
+
 // replayArchive.ts reads NW_REPLAY_ARCHIVE_DIR once at module load — set it here (before any test
 // module imports app.js/replayArchive.js) so the cold-tier disk-archive path is exercisable in tests,
 // same as it would be in prod with the docker volume mounted. Harmless for every other test file: the

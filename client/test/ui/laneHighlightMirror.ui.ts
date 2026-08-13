@@ -14,13 +14,16 @@
 // for Side.Top before the mirror fix.
 //
 // Headless: constructs the real BoardView (pixiHeadless adapter via
-// vitest.ui.config.ts setupFiles), same approach as gameScenes.ui.ts. laneRect is
-// private; we reach it via `(bv as any)` — this is a geometry unit test, not a
-// public-API contract.
+// vitest.ui.config.ts setupFiles), same approach as gameScenes.ui.ts. laneRect
+// itself is exported from render/BoardView/highlights.ts (2026-08-13 split,
+// claudedocs/client-modules.md "单文件 500 行收敛") — a pure function of
+// (layout, col), no BoardView instance needed; BoardView is still constructed
+// here to exercise the real construction path alongside the geometry check.
 
 import { describe, it, expect } from 'vitest';
 import { createLayout } from '../../src/layout/ScalingManager';
 import { BoardView } from '../../src/render/BoardView';
+import { laneRect } from '../../src/render/BoardView/highlights';
 import { Side } from '../../src/game';
 import {
   ATTACK_LANES,
@@ -53,7 +56,7 @@ for (const c of CASES) {
         const bv = new BoardView(layout);
         try {
           for (const col of ATTACK_LANES) {
-            const rect = (bv as any).laneRect(col) as Rect;
+            const rect = laneRect(layout, col);
             const pos  = layout.gridToScreen(col, spawnRow);
             expect(
               contains(rect, pos.x, pos.y),
@@ -70,14 +73,16 @@ for (const c of CASES) {
       // Guards the actual fix: an off-center lane must land on the opposite band for
       // the joiner. Pre-fix laneRect ignored localSide, so host and joiner bands
       // were identical and this would fail.
-      const host   = new BoardView(createLayout(c.screenW, c.screenH, Side.Bottom));
-      const joiner = new BoardView(createLayout(c.screenW, c.screenH, Side.Top));
+      const hostLayout   = createLayout(c.screenW, c.screenH, Side.Bottom);
+      const joinerLayout = createLayout(c.screenW, c.screenH, Side.Top);
+      const host   = new BoardView(hostLayout);
+      const joiner = new BoardView(joinerLayout);
       try {
         const col = ATTACK_LANES[0]!; // 0 — maximally off-center, clearest mirror
-        const hostRect   = (host   as any).laneRect(col) as Rect;
-        const joinerRect = (joiner as any).laneRect(col) as Rect;
+        const hostRect   = laneRect(hostLayout, col);
+        const joinerRect = laneRect(joinerLayout, col);
         // The joiner band for col N must equal the host band for the mirrored col.
-        const hostMirror = (host as any).laneRect(BOARD_COLS - 1 - col) as Rect;
+        const hostMirror = laneRect(hostLayout, BOARD_COLS - 1 - col);
         expect({ x: joinerRect.x, y: joinerRect.y }).toEqual({ x: hostMirror.x, y: hostMirror.y });
         expect({ x: joinerRect.x, y: joinerRect.y }).not.toEqual({ x: hostRect.x, y: hostRect.y });
       } finally {

@@ -26,7 +26,8 @@ const DB = 'nw_meta_accounts_race_test';
 async function tryConnect(): Promise<MongoHandle | null> {
   try {
     return await createMongo(URI, DB, { serverSelectionTimeoutMS: 1500 });
-  } catch {
+  } catch (err) {
+    if (process.env.NW_REQUIRE_DB) throw err;
     return null;
   }
 }

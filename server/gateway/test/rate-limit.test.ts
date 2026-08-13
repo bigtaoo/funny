@@ -219,7 +219,8 @@ const REDIS_URL = process.env.NW_REDIS_URL ?? 'redis://127.0.0.1:6379';
 async function tryConnect(): Promise<GatewaySubscriber | null> {
   try {
     return await connectGatewaySubscriber(REDIS_URL, () => {}, () => {});
-  } catch {
+  } catch (err) {
+    if (process.env.NW_REQUIRE_DB) throw err;
     return null;
   }
 }

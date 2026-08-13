@@ -29,7 +29,8 @@ const W = 'sect-test';
 async function tryConnect(): Promise<WorldMongo | null> {
   try {
     return await createWorldMongo(URI, DB, { serverSelectionTimeoutMS: 1500 });
-  } catch {
+  } catch (err) {
+    if (process.env.NW_REQUIRE_DB) throw err;
     return null;
   }
 }

@@ -18,7 +18,8 @@ const jwt: JwtConfig = { secret: 'test-secret' };
 async function tryConnect(): Promise<GatewaySubscriber | null> {
   try {
     return await connectGatewaySubscriber(REDIS_URL, () => {}, () => {});
-  } catch {
+  } catch (err) {
+    if (process.env.NW_REQUIRE_DB) throw err;
     return null;
   }
 }

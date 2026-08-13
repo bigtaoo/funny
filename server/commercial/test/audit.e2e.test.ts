@@ -11,7 +11,8 @@ const DB = 'nw_commercial_audit_test';
 async function tryConnect(): Promise<CommercialMongo | null> {
   try {
     return await createCommercialMongo(URI, DB, { serverSelectionTimeoutMS: 1500 });
-  } catch {
+  } catch (err) {
+    if (process.env.NW_REQUIRE_DB) throw err;
     return null;
   }
 }
