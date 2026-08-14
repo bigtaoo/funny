@@ -1,0 +1,255 @@
+# 玩家头像美术 — 图片生成 Prompt 文档
+
+> 创建：2026-08-14
+> 背景：现状审计——`preset` 8 张线稿图标里有 4 个 key/图案错位（`art/ui/head/pack_avatar_atlas.cjs` 的 `MAP`），且线稿*物件*（书/奖杯/城堡…）本来就不适合当"脸"；`hero`/`skin` 两类直接裁剪战斗/皮肤立绘，风格三套打架（涂鸦火柴人 vs 写实数位画），`skin` 页签还偷懒复用了 `hero` 的图（`avatar.ts` 从未接 `cardArt.ts` 的 `SKIN_PORTRAIT_ART`）；`equip`/`material` 两类语义最弱、还会随装备/材料更新持续追加。owner 拍板**一次性做到位，以后不用回头改这块**（2026-08-14 对话）。
+> 同类文档：[`family-emblem-art-prompts.md`](family-emblem-art-prompts.md)（同一批量出图+接入的文档格式）· [`skin-art-prompts.md`](skin-art-prompts.md)（6 位角色的体型/站姿/发型/道具人设，本文档的 `hero` 类目直接复用其人设结论）· [`characters.md`](characters.md)（人物性格）
+> 美术总纲：[`art-direction.md`](art-direction.md) §〇（AI 图 vs 程序绘制分工）、§9.1（皮肤=文具/媒材轴）
+> 数据结构依据：[`client/src/render/avatar.ts`](../../client/src/render/avatar.ts)（`AvatarCategory`/`buildAvatar`）、[`client/src/scenes/SettingsScene/avatarPicker.ts`](../../client/src/scenes/SettingsScene/avatarPicker.ts)（选择器 UI）、`UI_DESIGN.md` §"avatarId 数据格式"
+
+---
+
+## 产品方案（已与用户确认，2026-08-14）
+
+| 分类 | 现状 | 本次方案 |
+|---|---|---|
+| `preset`（免费池） | 8 张线稿物件，4 个错位 | **全部替换**：20 张全新原创角色胸像（不是物件），notebook 涂鸦画风 |
+| `hero`（抽到角色解锁） | 直接裁战斗/卡面立绘，三套画风打架 | **6 张全新专属胸像**，"日常/便装"版本（非战斗立绘、非付费皮肤），画风延续该角色已定的人设规范 |
+| `skin`（拥有皮肤解锁） | 复用 `hero` 的图（bug：从未读 `SKIN_PORTRAIT_ART`） | **从已定稿的皮肤全身立绘裁一张专属胸像**（沿用皮肤配色，不重新出图），接线读 `SKIN_PORTRAIT_ART` |
+| `title`（称号解锁） | 独立勋章画风，语义自洽 | **不动** |
+| `equip`（装备解锁） | 装备图标当头像，语义弱 | **整个分类删除**——装备随平衡性调整持续增删，头像跟着补图是填不完的坑 |
+| `material`（材料解锁） | 3 种材料图标当头像，语义弱 | **整个分类删除**，理由同上 |
+
+四类里 preset/hero/skin 是"脸"，title 是"勋章"——两种语义天然不同，不强求统一画风；但 preset/hero/skin 三者之间要统一**渲染契约**（见下）。
+
+---
+
+## 渲染契约：从"白线单色图标"改为"全彩胸像 + 运行时圆形裁切"
+
+现状 `preset` 走的是 `pack_avatar_atlas.cjs` 的白线单色管线（复刻 emblem/faction 图腾那套——AI 出白底深墨线 → 丢弃原墨色只留 alpha → 重建纯白线 → 运行时铺在染色圆盘上）。**这套契约只适用于图标/图腾**，不适用于本次的人物胸像（人脸需要肤色/发色/表情，不能压成单色剪影）。
+
+新契约改成与 `hero`/`skin` 已有的落地方式一致——**全彩位图 + 运行时圆形裁切**（`avatar.ts` 的 `buildPortraitIcon`）：
+
+- 三类头像（preset/hero/skin）均为**独立 PNG**（不再打包进图集——数量小、且圆形裁切要求原图干净无相邻帧串色），仿照 `cardArt.ts` 的 `UNIT_ART_URLS` 单图 import 写法。
+- **构图**：肩以上胸像，头部占画面上 2/3、留一点顶部余白（呼应 `buildPortraitIcon` 现有的 3% headroom），左右居中，纯白底方便 `buildPortraitIcon` 直接按宽度铺满 + 顶部对齐做圆形裁切——不需要额外裁剪脚本。
+- **不需要透明底/去白底处理**：`buildPortraitIcon` 本身用 `PIXI.Graphics` 遮罩裁圆，白色背景会被圆形遮罩天然裁掉，不必像图腾那样单独抠透明。
+- 退回逻辑不变：`buildAvatarIcon`/`categoryIcon` 找不到贴图时仍降级到字母头像（`buildAvatar` 已有兜底），三类头像各自独立失败不互相影响。
+- **淘汰** `art/ui/head/pack_avatar_atlas.cjs` 与 `client/src/assets/avatars/`（旧的白线图集），`art/ui/head/` 下 8 张旧线稿源图归档到 `art/leftover/`。
+
+---
+
+## Prompt 通用规范
+
+沿用 `skin-art-prompts.md` 已验证的两套脸部规范（不重新发明）——按角色所属阵营选用对应一套，**新画的 20 个 preset 角色统一走"涛方简笔卡通脸"**（原创角色，不含阵营叙事包袱，用更省成本、更贴合"课堂涂鸦"总基调的一套即可，也是与 hero/skin 已有头像同风格、避免选择器里再打架的关键）。
+
+> **对"无鼻无嘴"规则的一处刻意例外**：`skin-art-prompts.md` 的涛方共用前缀是 `no nose, no mouth`——这条规则在**全身立绘**里成立，因为辨识度由体型/站姿/发型扛（该文档 §"区分三人的核心原则"明说了这一点），脸本身只是个占位的圆。但**胸像头像里没有身体/站姿可看，脸就是全部画面**——20 个 preset 人设要读出"个性"，必须靠表情。故本文档的胸像版规范**保留无鼻**（维持辨识度不靠五官细节的既定审美），**但加回一条简笔嘴线**（同一支墨笔、单线勾勒，不画嘴唇/牙齿细节），按各人设的性格换笑/抿/撇等不同嘴型。这条例外只适用于本文档的胸像构图，不影响 `skin-art-prompts.md` 全身立绘的既有规则。
+
+### 涛方简笔卡通脸（preset 全部 + hero 的李川/苏远/陈守）
+
+```
+Head-and-shoulders bust portrait, facing forward or a gentle three-quarter
+turn, on a plain pure-white background, vertical framing with the head
+filling about two-thirds of the frame and a little headroom above.
+Rendering: clean confident dark-ink outlines of medium weight (not
+sketchy-wobbly), flat color fills with cross-hatch pencil shading for
+volume, matte paper look — no gradient, no glossy highlights, no glow, no
+cel-shading, no airbrush, no photorealism.
+Face: large round head, warm tan skin with light cross-hatching under the
+jaw, two small solid-black dot eyes, no nose, small visible ear, and a
+simple single-line mouth drawn in the same minimal doodle economy (not
+naturalistic lips or teeth) — its shape is the main way this character's
+personality/mood reads, see per-character description below.
+Shoulders show a simple flat-color top with hand-stitched dashed seam
+lines at the collar, matching the game's "notebook" costume language.
+Soft flat white background, no scenery, no text, no watermark.
+```
+
+### Anna 方写实脸（hero 的 Max/Lena/Mara，沿用 `skin-art-prompts.md` 已定的写实脸规范）
+
+```
+Head-and-shoulders bust portrait, a calm three-quarter turn, on a plain
+pure-white background, vertical framing with the head filling about
+two-thirds of the frame and a little headroom above.
+Rendering: clean confident dark-ink outlines of medium weight, flat color
+fills with cross-hatch pencil shading for volume, matte picture-book look
+— no gradient, no glossy highlights, no glow, no cel-shading, no airbrush.
+Face: a realistic young European face with a soft natural eye, light
+eyebrow, a small straight nose, a calm closed mouth — ordinary grounded
+proportions, not stylized/cartoon.
+Shoulders show a simple flat-color top, no armor, no weapon, no scenery.
+Plain white background, no text, no watermark.
+```
+
+### 共用负向提示
+
+```
+gradient, glossy highlights, shiny, glow, painterly, soft airbrush shading,
+watercolor, 3d render, full body, cropped at chest only showing collarbone,
+weapon in frame, background scenery, multiple people, text, watermark,
+sexualized, revealing clothing
+```
+
+每张建议生成 3-4 个变体择优（同项目惯例）。
+
+---
+
+## 一、hero 类目 — 6 张专属"日常胸像"
+
+不复用战斗立绘/付费皮肤，画一版**便装、无武器、无战斗姿态**的胸像，代表"这个角色本身"。人设（发型/体型气质/表情）直接继承 `skin-art-prompts.md` 已拍板的辨识三件套结论，只取头部+发型这部分（体型/站姿/道具在胸像构图里用不上）。
+
+| 帧名建议 | 角色 | 画风 | 辨识要点（继承自 skin 文档） |
+|---|---|---|---|
+| `hero_infantry` | 李川 | 涛方卡通脸 | 四散炸开的乱发（躁动），随性咧嘴的表情 |
+| `hero_archer` | 苏远 | 涛方卡通脸 | 平顺侧分短发（克制精准），目光略微望向一侧 |
+| `hero_shieldbearer` | 陈守 | 涛方卡通脸 | 近乎理平的寸头（纪律），沉稳表情 |
+| `hero_max` | Max | Anna 写实脸 | 冷静果决的眼神，短发利落，不苟言笑 |
+| `hero_lena` | Lena | Anna 写实脸 | 战辫（沿用皮肤发型），沉稳自信的神情 |
+| `hero_mara` | Mara | Anna 写实脸 | 松散半扎波浪卷发，望向远处、略带思索的神情 |
+
+### `hero_infantry` — 李川
+
+```
+[涛方简笔卡通脸 前缀]
+Messy spiky brown hair rendered with short scratchy ink strokes, sticking
+out in several directions. Mouth drawn as a wide open-corner grin, one
+simple upward-curved line — restless, ready to talk before he's finished
+thinking. Wears a plain slate-gray crew-neck top.
+[共用负向]
+```
+
+### `hero_archer` — 苏远
+
+```
+[涛方简笔卡通脸 前缀]
+Short, neat hair smoothed down and combed to one side with a clean even
+side part, staying above the eyebrows, hugging the round head evenly — no
+spiky tufts. His gaze is turned very slightly to one side, calm and
+watchful. Mouth drawn as a short flat closed line, neither smiling nor
+frowning — composed and unreadable. Wears a plain royal-blue sleeveless
+top.
+[共用负向]
+```
+
+### `hero_shieldbearer` — 陈守
+
+```
+[涛方简笔卡通脸 前缀]
+Hair cropped very short and neat, almost buzzed close to the scalp — a
+disciplined, compact rounded silhouette. A calm, grounded expression.
+Mouth drawn as a short straight line held level and firm, the ink pressed
+slightly heavier than the rest of the face — steady, unmoving, the look
+of someone who has already decided to stand there. Wears a plain
+deep-purple padded vest collar over a gray undershirt.
+[共用负向]
+```
+
+### `hero_max` — Max
+
+```
+[Anna 写实脸 前缀]
+Short neat hair, groomed and controlled. A calm, decisive, no-nonsense
+expression — the look of someone who has already assessed the room.
+Wears a plain steel-gray collared top.
+[共用负向]
+```
+
+### `hero_lena` — Lena
+
+```
+[Anna 写实脸 前缀]
+Hair pulled back into a tight, neat war braid at the nape of the neck, no
+loose strands. A composed, quietly confident expression, steady eyes.
+Wears a plain deep-blue collared top.
+[共用负向]
+```
+
+### `hero_mara` — Mara
+
+```
+[Anna 写实脸 前缀]
+Hair loose and wavy, half pulled back and half falling free, a few
+flowing ink strokes, no shine. Her gaze is lifted slightly, looking off
+into the distance past the viewer — watchful, a little wistful. Wears a
+plain sky-blue collared top.
+[共用负向]
+```
+
+---
+
+## 二、preset 类目 — 20 张全新原创角色胸像
+
+**定位**：这不是"抽到的角色"，是**免费送给所有玩家的默认头像池**，代表玩家自己。2026-08-14 复盘：初版按"优等生/运动健将/摄影爱好者"这类**身份标签**分组，问题是身份标签描述的是"在做什么"，不是"是什么样的人"——放在一张只有脸的胸像里，靠换个随身小物根本撑不起 20 个人的辨识度，也辜负了 art-direction.md §二"13～22 岁、个性感最强的年纪"这个定位。**改为直接从性格切入**：每个人设是一种鲜明的**情绪底色/待人姿态**，靠**表情（眼神+简笔嘴型，本文档专属例外见上）+ 一个配合性格的手势/小动作**表达，发型退居辅助辨识，不再需要"随身物"这根拐杖。20 张全部走**涛方简笔卡通脸**画风（与 hero/skin 头像同源，避免选择器里再打架）。
+
+命名沿用 `avatar.ts` 的 key 风格（简短英文 slug），按情绪基调分四组各 5 个：
+
+### A 组 — 张扬外放型（5）
+
+| 帧名 | 性格切片 | 表情 + 手势 |
+|---|---|---|
+| `preset_gogetter` | 想到就做的行动派 | 眼神发亮，身体微微前倾，嘴角扬起一个自信的斜笑，像下一秒就要冲出画面 |
+| `preset_sunny` | 走到哪笑到哪的开心果 | 张大嘴开怀大笑，眼睛弯成月牙 |
+| `preset_hype` | 永远元气满满的应援担当 | 瞪大发亮的眼睛，一只手攥拳贴在脸颊旁，像随时要欢呼出声 |
+| `preset_fanboy` | 追星追到走火入魔 | 星星眼，双手捧着自己的脸颊，陶醉又有点害羞的笑 |
+| `preset_chuuni` | 中二病晚期 | 眼神凌厉地望向画面外远方，嘴角绷紧，一本正经摆出"身负使命"的架势 |
+
+### B 组 — 内敛细腻型（5）
+
+| 帧名 | 性格切片 | 表情 + 手势 |
+|---|---|---|
+| `preset_observer` | 慢热的安静观察者 | 目光落在画面外一点，神情专注但不冷漠，嘴角有一丝几乎看不出的浅笑 |
+| `preset_emo` | 忧郁的诗人型 | 微微低头，刘海半遮一只眼睛，嘴角紧闭，若有所思 |
+| `preset_dreamer` | 活在自己世界的白日梦想家 | 望向远方，眼神有点飘忽，嘴角挂着一个自己都没察觉的笑 |
+| `preset_shy` | 一戳就红的敏感体质 | 眼神低垂，微微蹙眉，嘴唇抿起，一副欲言又止的样子 |
+| `preset_lazy` | 佛系躺平选手 | 半闭着眼，头懒洋洋地歪向一侧，嘴巴微张，一副刚睡醒的模样 |
+
+### C 组 — 棱角鲜明型（5）
+
+| 帧名 | 性格切片 | 表情 + 手势 |
+|---|---|---|
+| `preset_aloof` | 谁也懒得搭理的高冷酷盖 | 半眯着眼，嘴角微微向下撇，一种谁都别来烦我的松弛感 |
+| `preset_hothead` | 一点就着的暴脾气 | 皱眉瞪眼，嘴角向下绷紧，一只手在脸颊旁攥成拳头 |
+| `preset_perfectionist` | 眼里揉不得沙的完美主义者 | 一丝不苟的表情，眉头习惯性地微蹙，嘴唇抿成一条精确的直线 |
+| `preset_snark` | 见谁都能怼两句的毒舌学霸 | 似笑非笑，嘴角单边微微上扬，眼神里带着看好戏的促狭 |
+| `preset_sly` | 打得一手好算盘的心机小狐狸 | 眯眼笑着，嘴角上扬带一点狡黠的弧度 |
+
+### D 组 — 反差萌型（5）
+
+| 帧名 | 性格切片 | 表情 + 手势 |
+|---|---|---|
+| `preset_tsundere` | 嘴硬心软的傲娇 | 侧过脸不看镜头，嘴角别扭地绷着，脸颊却泛起两抹藏不住的红晕 |
+| `preset_peacemaker` | 谁都护着的老好人 | 温和舒展的笑容，眉眼放松，让人一看就安心 |
+| `preset_nerdcrush` | 闷骚的学术型宅 | 眼镜滑到鼻尖，眼神专注地望向画面外，嘴角却藏不住一点得意的翘起 |
+| `preset_softie` | 面冷心热、绷不住的类型 | 嘴角刻意绷紧装冷淡，眼神里却漏出一点藏不住的温柔/委屈 |
+| `preset_curious` | 十万个为什么本人 | 瞪大眼睛，头微微歪向一侧，嘴巴张成一个小圆，像刚发现新大陆 |
+
+> **性别**：本组不锁性别，20 个人设按气质自然分配（发型/五官不刻意做男女二元区分，出图时不必额外声明性别）。**发型**只需保证 20 张之间彼此不撞（炸毛/寸头/双马尾/齐刘海/波浪长发…轮流用，具体哪张配哪个发型出图时按当次效果自由分配，不强制锁死一一对应表），核心辨识度由上表的表情+手势描述扛。**出图 prompt 结构**：涛方简笔卡通脸前缀（其中"a simple single-line mouth"按该行"表情+手势"描述替换）+ 该行手势描述接在 `Shoulders show...` 之前 + 共用负向；20 条不逐一展开重复模板，结构与上方 `hero_*` 完全一致。
+
+---
+
+## 三、skin 类目 — 6 张胸像（从已定稿皮肤立绘裁切，非重新出图）
+
+`skin-art-prompts.md` 的 6 款付费皮肤全身立绘里，4 款（`skin_shop_c1`/`skin_e1`/`skin_e2`/`skin_l1`）已出图定稿，2 款（`skin_shop_r1`/`skin_shop_e1`）仍在打磨头部问题（该文档 pending 事项）。本类目**不重新出图**，等 6 款全部定稿后，从每张成品立绘上**裁一版专属胸像**：
+
+- 裁切区域：肩线以上（头部 + 一点点肩甲/领口），构图与本文档 §渲染契约的"胸像居中、顶部留白"一致。
+- 若直接裁切后构图/留白不理想（例如头盔占比过大、肩部道具伸进画面），可对该角色**单独补一次小范围重绘**（只改裁切区域附近，不是重新出整张立绘），不算重新走一遍出图流程。
+- 输出仍是独立 PNG（`avatar_skin_shop_c1.png` 等），供 `avatar.ts` 的 `categoryIcon('skin', ...)` 直接引用——**接线时要修的 bug**：现在 `categoryIcon` 的 `skin` 分支查的是 `UNIT_ART_URLS[SKIN_TARGET_UNIT[key]]`（即 hero 的图，跟皮肤本身完全无关），改完后应直接查新建的皮肤专属胸像表（类似 `cardArt.ts` 已有的 `SKIN_PORTRAIT_ART`，只是那张表现在存的是全身立绘 url，需要新增一张"裁好的胸像 url"表，或者复用同一 url 靠 `buildPortraitIcon` 的裁切逻辑二次裁剪）。
+
+| 帧名建议 | 皮肤 | 依赖状态 |
+|---|---|---|
+| `avatar_skin_shop_c1` | 李川皮肤 | ✅ 立绘已定稿，可直接裁 |
+| `avatar_skin_shop_r1` | 苏远皮肤 | 🟡 待 `skin-art-prompts.md` §2 pending 事项定稿 |
+| `avatar_skin_shop_e1` | 陈守皮肤 | 🟡 待该文档"肤色/发色统一"的重出定稿 |
+| `avatar_skin_e1` | Lena 皮肤 | ✅ 立绘已定稿，可直接裁 |
+| `avatar_skin_e2` | Mara 皮肤 | ✅ 立绘已定稿，可直接裁 |
+| `avatar_skin_l1` | Max 皮肤 | ✅ 立绘已定稿，可直接裁 |
+
+---
+
+## 四、功能实现待办（本文档只覆盖美术+渲染契约，以下留给功能实现阶段）
+
+1. **删除 `equip`/`material` 分类**：`client/src/render/avatar.ts`（`AvatarCategory` 类型、`CATEGORY_BG`、`categoryIcon`）、`client/src/scenes/SettingsScene/types.ts`（`AVATAR_TABS`/`AVATAR_TAB_LABEL_KEY`/`AVATAR_LOCKED_KEY`）、`avatarPicker.ts` 的 `pickerItems()` 里对应两个 `case` 一并删除；已装配 `equip:*`/`material:*` 头像的存量账号需要一个迁移/兜底（服务器端 `equipAvatar` 校验或读取时遇到未知分类 → 回退到某个 preset 默认值，避免头像消失变空白）。
+2. **`pack_avatar_atlas.cjs` 退役**：`art/ui/head/pack_avatar_atlas.cjs` + `client/src/assets/avatars/{avatars.png,avatars.json}` + `client/src/render/atlas/avatarAtlas.ts` 整体删除；`art/ui/head/` 下 8 张旧源图归档 `art/leftover/`。`bootManifest.ts` L0 对应的图集加载项一并摘除。
+3. **新增独立 PNG import**：仿 `cardArt.ts` 写法，新增 `client/src/render/presetAvatarArt.ts`（20 张 `preset_*` 胸像）+ 在 `cardArt.ts` 旁或新文件里补 6 张 `hero_*` 胸像 url 表（区别于现有 `UNIT_ART_URLS`——那张表是战斗/卡面立绘，不要复用）+ 皮肤胸像 url 表（§三）。
+4. **`avatar.ts` 改造**：`AVATAR_DEFS`（8 项 icon+bg）整个替换成 20 项 preset 胸像表；`buildAvatar` 里 `presetDef` 分支从"图标+染色圆盘"改成直接调用 `buildPortraitIcon`（与 hero/skin 同一渲染路径），`categoryIcon('hero', ...)` 改查新的 hero 胸像表（不再是 `UNIT_ART_URLS`），`categoryIcon('skin', ...)` 改查新的皮肤胸像表（不再兜底到 hero）。
+5. **`i18n`**：`AVATAR_TAB_LABEL_KEY` 摘除 equip/material 两个 key；若 UI 文案有埋"共 8 个预设"之类的写死数字，一并检查更新为 20。
+6. **`UI_DESIGN.md` §"avatarId 数据格式"**：随代码改动同步更新（分类枚举、渲染契约描述、`avatarAtlas.ts` 引用）。
+7. **验证**：`tsc --noEmit` + webpack 构建；起 dev server 打开设置页头像选择器，截图核对 20 preset + 6 hero + 6 skin（或已定稿的几张）网格显示正常、圆形裁切无变形、锁定态/选中态样式不受影响。
