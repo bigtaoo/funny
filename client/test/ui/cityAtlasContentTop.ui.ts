@@ -12,7 +12,7 @@
 // comments), so this needs neither loadCityAtlas() nor loadPlayerBaseAtlas().
 
 import { describe, it, expect } from 'vitest';
-import { cityTier, BASE_FOOTPRINT } from '@nw/shared';
+import { BASE_FOOTPRINT } from '@nw/shared';
 import { getCityContentTopFracForLevel } from '../../src/render/atlas/cityAtlasLoader';
 import { getPlayerBaseContentTopFracForLevel, getPlayerBaseContentWidthFracForLevel } from '../../src/render/atlas/playerBaseAtlasLoader';
 import { ISO_RATIO } from '../../src/render/isoGrid';
@@ -38,16 +38,10 @@ describe('cityAtlasLoader.getCityContentTopFracForLevel (real atlas data)', () =
     }
   });
 
-  it('per-level frames (city_l2/4/5/7/8/10) return that frame\'s own contentTop, not the tier fallback', () => {
-    for (const lv of [2, 4, 5, 7, 8, 10]) {
+  it('every level 1-10 has its own dedicated frame (city_l{level}) and returns that frame\'s own contentTop — no tier fallback since the 2026-08-14 naming unification', () => {
+    for (let lv = 1; lv <= 10; lv++) {
+      expect(cityFrames[`city_l${lv}`], `city_l${lv}`).toBeDefined();
       expect(getCityContentTopFracForLevel(lv)).toBe(cityFrames[`city_l${lv}`].contentTop);
-    }
-  });
-
-  it('levels without a per-level frame (1/3/6/9) fall back to their TIER frame\'s contentTop', () => {
-    for (const lv of [1, 3, 6, 9]) {
-      const tierFrame = cityFrames[`city_lv${cityTier(lv)}`];
-      expect(getCityContentTopFracForLevel(lv)).toBe(tierFrame.contentTop);
     }
   });
 

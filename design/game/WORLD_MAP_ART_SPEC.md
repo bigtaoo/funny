@@ -75,7 +75,7 @@
 
 | 资产名 | 描述 | 状态 |
 |---|---|---|
-| `city_lv1..4` | 我/敌/盟主城（4 级建筑，归属靠程序上色） | ✅ 已接入 `city_atlas`（3×3 base 锚点，深度排序图层） |
+| `city_l1..l10` | 我/敌/盟主城 + NPC 可攻占城池（每级一张，10 级，归属靠程序上色） | ✅ 已接入 `city_atlas`（3×3 base 锚点，深度排序图层；2026-08-14 起统一命名，无档位回退） |
 | `building_keep` | 战略要点/咽喉点建筑（城楼门楼） | ✅ 已接入 `building_atlas`（2026-07-03） |
 | `building_stronghold` | 险地 NPC 据点（暗色石垒） | ✅ 已接入 `building_atlas`（2026-07-03） |
 | `icon_watchtower` | 己方瞭望塔（扩视野） | ✅ 改版完成——3/4 俯视宽脚架构图，详见 [`slg-building-art.md`](../product/slg-building-art.md) |

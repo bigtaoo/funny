@@ -5,7 +5,7 @@ import { buildIcon } from '../../render/icons';
 import { WorldApiError } from '../../net/WorldApiClient';
 import { baseFootprintCells, baseFootprintInBounds, npcGarrison } from '@nw/shared';
 import { loadResAtlas, getResTexture, isResAtlasReady } from '../../render/atlas/resAtlasLoader';
-import { loadCityAtlas, getCityTexture, isCityAtlasReady } from '../../render/atlas/cityAtlasLoader';
+import { loadCityAtlas, isCityAtlasReady } from '../../render/atlas/cityAtlasLoader';
 import { loadTerrainAtlas, getTerrainTexture, isTerrainAtlasReady } from '../../render/atlas/terrainAtlasLoader';
 import { loadBuildingAtlas, getBuildingTexture, isBuildingAtlasReady } from '../../render/atlas/buildingAtlasLoader';
 import { ISO_RATIO, tileToScreen, screenToTile, screenToTileF, diamondPath, diamondVertices, visibleTileBounds } from '../../render/isoGrid';

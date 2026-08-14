@@ -1,12 +1,12 @@
 #!/usr/bin/env node
 // pack_city_atlas.js — process the SLG city images into a PixiJS spritesheet atlas.
 //
-// Frames (see design/product/city-image-prompts.md):
-//   city_lv1..city_lv4  — the original 4 tier images (fallback when a per-level frame is absent):
-//                         camp / wooden fort / stone castle / grand citadel (lv 1-2 / 3-5 / 6-8 / 9-10).
-//   city_l2/l4/l5/l7/l8/l10 — per-level art so adjacent levels visibly progress. getCityTextureForLevel()
-//                         prefers city_l{level} and falls back to city_lv{tier}, so missing levels
-//                         (1/3/6/9) still render their tier image.
+// Frames (see design/product/city-image-prompts.md): city_l1..city_l10 — one dedicated image per
+// level, so adjacent levels visibly progress. Until 2026-08-14 this was split across two naming
+// schemes (4 pre-redesign "tier fallback" frames city_lv1..lv4 covering levels 1/3/6/9, plus 6
+// per-level frames for the rest, with getCityTextureForLevel() falling back tier-wise for the
+// missing 4) — unified into a flat city_l{level} set once all 10 levels had their own art, dropping
+// the fallback entirely (see cityAtlasLoader.ts).
 //
 // Backgrounds vary per source (light graph paper, dark vignette, solid blue-grey, already-cut webp).
 // We remove the background with a region-growing flood fill seeded from the image border: a pixel joins
@@ -38,15 +38,15 @@ const PRECUT_ALPHA_FRAC = 0.02; // if >2% pixels are already transparent, treat 
 const HALO_ALPHA = 110;         // in pre-cut images, alpha below this is treated as background halo
 
 const FILES = [
-  { file: 'city_lv1.png',  name: 'city_lv1' },
-  { file: 'city_lv2.png',  name: 'city_lv2' },
-  { file: 'city_lv3.webp', name: 'city_lv3' },
-  { file: 'city_lv4.png',  name: 'city_lv4' },
+  { file: 'city_l1.png',   name: 'city_l1'  },
   { file: 'city_l2.png',   name: 'city_l2'  },
+  { file: 'city_l3.png',   name: 'city_l3'  },
   { file: 'city_l4.png',   name: 'city_l4'  },
   { file: 'city_l5.png',   name: 'city_l5'  },
+  { file: 'city_l6.webp',  name: 'city_l6'  },
   { file: 'city_l7.png',   name: 'city_l7'  },
   { file: 'city_l8.png',   name: 'city_l8'  },
+  { file: 'city_l9.png',   name: 'city_l9'  },
   { file: 'city_l10.webp', name: 'city_l10' },
 ];
 

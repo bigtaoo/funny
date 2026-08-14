@@ -171,14 +171,6 @@ export function cityFootprint(level: number): number {
   return 9;
 }
 
-/** City art tier (1..4) by level — 4 tier bands span the 10 levels (design/product/city-image-prompts.md). */
-export function cityTier(level: number): 1 | 2 | 3 | 4 {
-  if (level <= 2) return 1;
-  if (level <= 5) return 2;
-  if (level <= 8) return 3;
-  return 4;
-}
-
 // ── City sprite placement geometry — single source of truth for client + map-editor. This math used to
 // be hand-copied across 4 call sites (client base-city / node-city branches × map-editor's own two
 // branches); a coefficient tweak in one left the other three stale, which is why the city-sprite

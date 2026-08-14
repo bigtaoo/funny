@@ -145,7 +145,7 @@ detail layers, prominent gold accents on the tallest spires.
 
 ## 接入说明（已实现）
 
-代码已接入：`getCityTextureForLevel(level)`（`client/src/render/atlas/cityAtlasLoader.ts` + `tools/map-editor/src/render/atlas/cityAtlasLoader.ts`）按等级取 `city_l{level}`，回退 `city_lv{tier}`。
+代码已接入：`getCityTextureForLevel(level)`（`client/src/render/atlas/cityAtlasLoader.ts` + `tools/map-editor/src/render/atlas/cityAtlasLoader.ts`）按等级直取 `city_l{level}`（2026-08-14 起 10 级均有专属帧，无档位回退，见下方"命名统一"）。
 - **游戏内**：`WorldMapRenderer.refreshCityLayer` 为玩家主城（`base`）**和** NPC 城池节点（`allCityNodes`：州府/关隘城/分级城/世界中心）各放一个精灵，尺寸按 `footprint/BASE_FOOTPRINT × BASE_SPRITE_TILES` 缩放（城越高越大）。
 - **编辑器**：`refreshCitySprites`（`tools/map-editor/src/index.ts`）用同一函数、同一缩放规则画城池——所见即游戏内所见。
 - 阵营 tint（自己蓝 `0x224488` / 友军绿 `0x2e8b40` / 敌方红 `0xcc2222`，ADR-003 铁律）目前只作用于玩家主城的动态层，NPC 城池按原图渲染。
@@ -271,3 +271,21 @@ v2 把风格约束（"是涂鸦速写不是精细插画"）挪到全文最前面
 - 旧 `city_lv3.png`（2026-07-06 之前的老图，简单单堡+两角楼版本）移入 `art/leftover/city_lv3_pre-2026-08-14-lv6-fix.png`，未删
 - 重跑 `pack_city_atlas.js` + `patchMergedAtlas.js`，补丁进 `client/src/assets/slg/world_atlas.{png,json}`；`tools/map-editor/src/assets/slg/city_atlas.{png,json}` 由打包脚本自动同步写入
 - 从合并后的 `world_atlas.png` 按 frame 坐标重新 extract 实际像素核对（不是只信打包脚本打印的数字）：`city_lv3` 帧宽高比 1.771（打包时因取整 -1px 级误差，跟源图直测的 1.797 一致），`contentTop=0.4453`，肉眼确认跟前面候选阶段的预览一致，去背干净
+
+## 命名统一（2026-08-14）——源图 + 帧名 + 运行时全部改成 `city_l1..city_l10`，档位回退彻底退休
+
+前面的排查过程中，用户发现 `art/ui/slg-building/` 目录下的 10 个源文件一直分两套命名——`city_lv1/2/3/4`（4 张 2026-07-06 之前的老"档位回退"图，对应 Lv1/3/6/9）+ `city_l2/4/5/7/8/10`（6 张 2026-07-06 起的专属图）——这正是最早"2 级和 4 级有两张、6 级却没有"那次困惑的根源。既然 10 级现在都有各自专属的正确美术（含刚修完的 Lv6），双命名体系已经没有存在理由，借这次机会彻底拉平。
+
+**改动范围（源文件 → 帧名 → 运行时，三层一起改，不是只挪文件名）**：
+
+1. **源文件重命名**：`city_lv1.png→city_l1.png`、`city_lv2.png→city_l3.png`、`city_lv3.webp→city_l6.webp`、`city_lv4.png→city_l9.png`（其余 6 个本来就叫 `city_l{level}`，不动）。`pack_city_atlas.js` 的 `FILES` 列表同步更新（`file`+`name` 两个字段），并按 l1→l10 顺序重排，头部注释也删掉"tier fallback"的描述。
+2. **图集帧名同步改名**：重跑 `pack_city_atlas.js` 生成新帧名的中间产物；`world_atlas.json`（client 用的合并图集）里旧的 4 个 `city_lv*` 帧名不能直接"改名"（`patchMergedAtlas.js` 按名字匹配、找不到同名旧帧会跳过），改用 `art/scripts/appendAtlasFrames.js` 把 4 个新名字（`city_l1/l3/l6/l9`）追加进页面（shelf-pack，页面从 2048×3782 长高到 2048×4038），再手动删掉 JSON 里的 4 个旧 `city_lv*` key（对应的旧像素留在 PNG 里不管，未被任何帧引用，无害，只是白占了点空间）。`tools/map-editor/src/assets/slg/city_atlas.{png,json}` 由打包脚本整体重新生成，直接就是新帧名，不需要这套 append/delete 手术。
+   - 验证：重新用审计脚本核对了新帧名对应的实际像素（宽高比/`contentTop`），10 项数值跟改名前逐一比对完全一致，确认只是换了 key，没有动到任何像素。
+3. **运行时代码简化**：`getCityTextureForLevel(level)` 现在直接 `atlas.getTexture('city_l'+level)`，去掉了 `?? atlas.getTexture('city_lv'+cityTier(level))` 这条永远不会再命中的回退分支（`client/src/render/atlas/cityAtlasLoader.ts` + `tools/map-editor/src/render/cityAtlasLoader.ts` 两份都改）。连带清理：
+   - `getCityTexture(tier)`（`cityAtlasLoader.ts` 里另一个按档位取图的导出函数）——检查后发现只有 `WorldMapInput.ts` 引用过它，且从未被实际调用过（纯 dead import），一并删除，`WorldMapInput.ts` 的 import 同步瘦身。
+   - `cityTier(level)`（`server/shared/src/slg/core.ts`）——排查全仓库，唯一的调用方就是上面两个 loader 和它们的测试，改完之后彻底无人引用，按项目"不留死代码"的约定直接删掉这个导出函数。
+4. **测试同步**：`client/test/ui/cityAtlasContentTop.ui.ts` 里"专属帧"和"档位回退"两条分开的断言合并成一条"10 级都有专属帧"；`cityAtlasContentTopFallback.ui.ts` 的 mock 帧集合从 `city_lv1..lv4` 换成 `city_l1`/`city_l10`（该文件测的是"帧存在但缺 `contentTop` 字段"这个边界情况，跟档位回退无关，只是 mock 数据顺手一起改名保持一致）。
+
+**验证**：`tsc -b shared`（server）+ `tsc --noEmit`（client、map-editor）三处全绿；client UI 测试套件 177 个文件 1594 例全绿（含改过的 2 个文件）；map-editor 测试套件 7 个文件 125 例全绿。
+
+**不属于这次改动范围、刻意没动的东西**：`design/game/SLG_DESIGN_LOG.md`、`design/DECISIONS.md`、`design/tools/map-editor/DESIGN.md` 里提到 `city_lv1..4`/`cityTier` 的历史记录条目——那些是带日期的过程记录，写的是"当时发生了什么"，不是"现在架构是什么"，不应该被事后改写；只更新了 `WORLD_MAP_ART_SPEC.md` 里那条**当前状态**参考表（改成 `city_l1..l10`）和本文档的"接入说明"。
