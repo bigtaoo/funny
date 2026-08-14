@@ -582,7 +582,7 @@ commercial 此前完全没有 Redis 依赖，本次新增：`config.ts` 补 `NW_
 | worldsvc | 82.9% | 78.3% | 86.9% |
 | analyticsvc | 87.6% | 84.2% | 95.8% |
 | matchsvc | 88.3% | 91.1% | 97.2% |
-| commercial | 81.4% | 76.9% | 91.8% |
+| commercial | ~~81.4%~~ **93.64%**（2026-08-14 补测，见下） | 76.9% | 91.8% |
 | socialsvc | ~~78.4%~~ **94.71%**（2026-08-14 补测，见下） | 84.9% | 84.8% |
 | botsvc | ~~70.0%~~ **92.74%**（2026-08-14 补测，见下） | 83.6% | 83.2% |
 | auctionsvc | ~~72.3%~~ **92.0%**（2026-08-14 补测，见下） | 76.9% | 68.2% |
@@ -789,3 +789,19 @@ auctionsvc 补到 92.0% 后，核对完整基线发现比 auctionsvc 更早、�
 **留意但未继续追的残余缺口**：`index.ts`（98 行，进程 bootstrap，同前几个包先例不单独起集成测试）；`friend/relations.ts`/`friend/chat.ts`/`family/membership.ts`/`family/internal.ts` 各剩几行防御性分支或需要精确并发时序才能触发的路径（同类形态在 `family.e2e.test.ts`/`friend.e2e.test.ts` 里已有等价覆盖），性价比递减未继续追；`family/types.ts`/`friend/types.ts` 两个纯类型文件（0 可执行行，覆盖率工具报 0/0 属正常，非真实缺口）。
 
 socialsvc 整体行覆盖率 **78.4% → 94.71%**（`npx vitest run --coverage`，14 test files / 216 tests 全绿——新增 58 例，原有 158 例零改动；`npx tsc --noEmit` 干净）。分支覆盖 89.22%、函数覆盖 99.39%。
+
+## commercial 补测：internalHttp.ts 路由层从 33.1% + config/devStub 从 0~57%，从 81.4% 拉到 93.64%（2026-08-14，worktree `feat/commercial-coverage`）
+
+socialsvc 补到 94.71% 后，剩余未处理的几个包（client/engine/shared/worldsvc/analyticsvc/matchsvc/commercial）里 **commercial（81.4%）最低**——本节按"根据覆盖率结果修复最低"处理这个包。
+
+**根因跟 admin/gateway/botsvc/auctionsvc/socialsvc 同一种模式，但这次几乎全部集中在一个文件**：`internalHttp.ts`（33.1%，378 行的 node:http 路由分发层，meta 是唯一调用方）——既有 `internalHttp.e2e.test.ts`（8 例）只驱动了 `GET /internal/wallet`/`POST /internal/recharge/verify`/`POST /internal/shop/charge`/`GET /internal/orders/undelivered` 四条 + 401/404 边界，`CommercialService` 自身另外 26 个方法（spend/grant/gacha draw/order delivered/非金币收据校验/广告激励/胜场奖励/promo 码增删查兑换/paddle 完成+退款+事件记录+事件查询/自定义卡池创建+关闭/命定点数兑换/月卡年卡购买+领取/新手礼包购买/卡池列表/审计异常币异动）全部只被 `service.e2e.test.ts`/`service-idempotency.e2e.test.ts`/`promo.test.ts`/`audit.e2e.test.ts` 这些**直调 `CommercialService`**（绕开 `internalHttp.ts` 的 HTTP 解析/路由匹配层）的文件测过，从未通过真实 HTTP 请求走过一次；`config.ts`（0%，没有专属测试文件）；`iap/devStub.ts`（57.1%）——`product:` 前缀分支（非金币收据的 dev-stub 校验，月卡/年卡/新手礼包走这条）虽然被 `verifyNonCoinReceipt` 的 e2e 间接跑过，但从未被直接单测过。
+
+**修法**：
+
+- **`test/internalHttpRoutesGaps.e2e.test.ts`**（新文件，23 例，真实 `node:http` server + 真实 Mongo，同 `internalHttp.e2e.test.ts` 既有约定）：`GET /health`（无需鉴权）+ 剩余 22 条业务路由各来一遍成功路径（`spend`/`grant`/`gacha/draw`/`order/delivered`/`nonCoinReceipt/verify`（含坏 `expectedProduct` → 400）/`ads/credit`/`victory/credit`/`promo/codes`（GET+POST）+`promo/redeem`（含未知码）/`paddle/complete`+`paddle/event`+`paddle/events`（GET，按 accountId/transactionId 过滤）+`paddle/refund`/`gacha/pools`（GET，含 `?active=1`）+`gacha/pool/custom`（含"不能顶替静态卡池 id"400）+`gacha/pool/close`/`fate/redeem`（零命定点数的兜底拒绝，深层命定点数累积逻辑留给 `service.e2e.test.ts`）/`monthly-card/buy`+`monthly-card/claim`（同日二次领取 `ok:true` 但 `claimed:0`，不是错误——踩了一次把这个当 `ok:false` 断言错的坑）/`year-card/buy`/`starter/buy`（starter_draw + starter_growth）/`audit/coin-gains`（缺 `dayKey`→400）。这一批只验证每条路由能不能走通 + 请求体解析对不对，不重新验证业务规则深度（四眼/幂等/并发去重等已在直调 service 的 e2e 里覆盖）。`internalHttp.ts` 33.1%→97.16%。
+- **`test/config.test.ts`**（2 例）：`loadCommercialEnv()` 默认值 + 全量覆盖，同前几个包先例。100%。
+- **`test/devStub.test.ts`**（6 例）：`devVerify()` 纯函数单测——空收据/`product:`前缀（4 种已知 kind + 1 种未知）/`tier:`前缀（已知 tier + 未知 tier 兜底默认档位）/无前缀兜底。100%。
+
+**留意但未继续追的残余缺口**：`index.ts`（60 行，进程 bootstrap，同前几个包先例不单独起集成测试）；`iap/apple.ts`/`iap/google.ts`/`iap/productResolve.ts`/`service/promo.ts`/`service/recharge.ts`/`service/starter.ts` 各剩几行第三方支付网关的防御性错误分支或需要精确并发时序才能触发的路径，性价比递减未继续追。
+
+commercial 整体行覆盖率 **81.4% → 93.64%**（`npx vitest run --coverage`，16 test files / 213 tests 全绿——新增 31 例，原有 182 例零改动；`npx tsc --noEmit` 干净）。分支覆盖 81.25%、函数覆盖 99.25%。
