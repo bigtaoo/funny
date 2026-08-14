@@ -283,6 +283,8 @@ commercial 此前完全没有 Redis 依赖，本次新增：`config.ts` 补 `NW_
 
 - **装备复制漏权**：`equipEquipment`（metaserver）从不调用项目自己写好的 `isEquipped()` 占用检查，同一装备实例可同时装到两张卡上复制战力。补检查。
 - **commercial 资金丢失风险（6 处）**：rechargeVerify/paddleComplete/promoRedeem/orderDelivered/subscriptionCardBuy/starterBuy growth 均是"先落地已发放记录、再执行 credit 副作用"，崩溃在两步之间会让钱永久丢失且无法重放补发。引入 `isStaleClaim` 宽限窗口（15s，`CommercialServiceBase`）：窗口内维持原状（不与真正的并发赢家抢跑），窗口外验证 ledger/order 状态并补发（verify-and-heal）。
+
+  **2026-08-14 追加修复（`recharge.ts` `paddleComplete`，与上面这条同一函数、不同 bug）**：PR #99 的 CI 真跑 e2e 时抓到——`service-idempotency.e2e.test.ts` 10 个并发相同 `transactionId` 的 `paddleComplete` 调用，期望首充 2× 奖励只发一次且金额正确，实测拿到 550（未加成）而非 1100。根因：`paddleComplete` 原来先 `ensureWallet`+`claimFirstPurchaseBonus`（算出 `isFirst`/`coinsGranted`），**之后**才靠 `recharges.insertOne` 的唯一键冲突决出这个 `transactionId` 真正的"赢家"——两个 CAS（钱包 `firstPurchasedAt` 的赢家、`recharges._id` 唯一键的赢家）互不关联，并发下极可能是两个不同的调用方各自赢一场：真正执行 `credit()` 的是 `recharges` 插入的赢家，它用的却是**自己**算出的 `isFirst`（往往是 `false`，因为它可能刚好是 `firstPurchasedAt` 那场 CAS 的输家）。同文件里的 `rechargeVerify`（上面一个函数）早就是对的写法：先插入 `recharges`（占坑价用未加成金额），只有这场唯一键竞争的赢家才去认领首充加成、再回填 `coinsGranted`——`paddleComplete` 只是顺序写反了，照抄 `rechargeVerify` 的顺序改过来。验证：`service-idempotency.e2e.test.ts` 并发用例连跑 5 次稳定绿；commercial 全量 13 文件/182 测试绿。
 - **worldsvc troops 并发扣负**：`startMarch`/`occupyTile` 是 check-then-act，并发双发可把 troops 打成负数；改用 `city.ts` 训练花费已用的 `findOneAndUpdate({troops:{$gte:cost}})` 原子写法。
 - **gateway/gameserver `maxPayload` 缺失**：WebSocketServer 未设置，补 1MB。
 - **socialsvc CORS 头漏 `x-nw-platform`**：07-28 修了 worldsvc/auctionsvc，socialsvc 被漏，补上。
@@ -339,6 +341,8 @@ commercial 此前完全没有 Redis 依赖，本次新增：`config.ts` 补 `NW_
 - **确定性**：同 seed+同双方阵容+同引擎代码，只是换了执行线程——`siegeWorkerPool.test.ts` 直接断言 `pool.submit(input)` 的结果与主线程 `runSiegeBattleSync(input)` 逐字段相等；原有 `siege`/`base-siege`/`stronghold`/`passage`/`nation-bonus`/`field-encounter` 等 e2e 断言值全部不变（执行位置改动，非数值改动）。
 - **新增测试** `worldsvc/test/siegeWorkerPool.test.ts`（10 例）+ 两个测试 fixture worker（`test/fixtures/{crashWorker,hangWorker}.ts`，仅测试用，让崩溃/挂起可确定性复现）：基本调度（提交→结果、单 worker 排队多任务、坏输入 reject 不拖垮 worker）、崩溃自愈（单/双 worker 各自崩溃后 `pool.size` 不变、坏 worker 只影响自己在飞的任务）、任务超时强制替换、`close()` 语义、以及"白拿的好处"验证——6 个满板大规模战斗（`SIEGE_SYNTH_ARMY_MAX_TROOPS` 双方）在 6-worker 池上 warm-up 后并发耗时 vs 同款输入主线程串行 `runSiegeBattleSync` 循环耗时，断言并行版本快过串行版本 30% 以上（真实跨核，而非池内排队假并行）——这也印证了 `scheduler.ts` 的 `Promise.allSettled` 现在能真正跨核并行多场攻城，不再是同线程抢时间片。
 - **验证**：`worldsvc` 47 文件/360 测试全绿（含新增 10 例）；`tsc -b` 全 13 个 server 包全绿。
+
+**2026-08-14 修复：`siegeWorker.ts` 在 Linux CI 上 100% 复现崩溃**（本机开发环境是 Windows，本地一直全绿，`NW_REQUIRE_DB` 让 e2e 真正在 CI 跑起来之前这条路径显然从未在 Linux 上被真正跑过）：`SiegeWorkerPool` 每一个任务都失败，报 `Cannot find module '.../siegeEngine' imported from '.../siegeWorker.ts'`，连带 `nation-bonus.e2e.test.ts`/`teams.e2e.test.ts`（都经这个池落地攻城结果）一起炸；`siegeWorkerPool.test.ts` 自身 8/11 例失败。根因没能在 Linux 上完全查清（没有现成 Linux 盒子可供 bisect tsx 内部行为），但确认是 `siegeWorker.ts` 内部那句无扩展名的静态 `import './siegeEngine'`（本仓库到处都这么写，唯独这一处经 `--import tsx` 在 worker_thread 里加载时在 Linux 上解析不了）；上面 §dev/prod 双模路径 那段其实早就在用"运行时算出扩展名"这招解决了*worker 自己入口路径*的同一类歧义（`.ts` under tsx/vitest, `.js` after `tsc -b`），只是没有同步用到 worker 内部这处兄弟 import 上。修复：把这行改成运行时算扩展名的动态 `import()`（`await import(`./siegeEngine${ext}`)`，包进 `async function main()`，模块顶层不能用顶层 await——`tsconfig` 是 `module: CommonJS`）——静态写 `./siegeEngine.ts` 会被 `tsc -b` 硬拒（TS5097，需要 `allowImportingTsExtensions`，与本项目真实产出 `.js` 冲突），但模板字符串拼出来的 specifier 不受静态扩展名检查约束。验证：`siegeWorkerPool.test.ts` 11/11、`worldsvc` 全量 59 文件/486 测试本地（Windows）全绿，`tsc -b` 干净；Linux CI 侧验证见 PR #99。
 
 ## 三日重构复核 + 追加修复（2026-07-29，audit-followup-fixes-0729）
 

@@ -142,7 +142,9 @@
 > 兵种素材暂时二选一（`MARCH_TOKEN_ASSET`）：`kind==='attack'` 用盾兵 `shieldbearer.tao`（代表"攻城兵种"，
 > 目前没有专门的攻城兵种，盾兵是最接近"破城"定位的单位）；其余全部行军用普通兵 `infantry.tao`。
 > **TODO（美术）**：等专门的行军动画素材（含旗帜/头像等帮会标识）出图后替换 `MARCH_TOKEN_ASSET`；
-> 目前旗帜/头像暂不做，涉及帮会图标体系，留待后续。
+> 帮会图标体系的 prompt 方案见 [`family-emblem-art-prompts.md`](../product/family-emblem-art-prompts.md)
+> （2026-08-14，24 套图腾固定池，白线单色+运行时 tint，家族/宗门共用池——出图仍未执行，接入
+> `MARCH_TOKEN_ASSET`/`buildDotToken` 需等图集打包完成 + `emblemKey` 字段落地）。
 >
 > **按队伍真实领队兵种显示 — ✅ 已接入（2026-07-26，零新增美术，复用已有 6 种骨骼资产）**：
 > 上面"兵种素材暂时二选一"的写死映射已废弃。`worldsvc` 在 `startMarch` 派发时（`combatMarch.ts`）用

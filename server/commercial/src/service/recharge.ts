@@ -253,17 +253,24 @@ export class RechargeService {
         return { ok: true, coinsAfter, coinsGranted: existing.coinsGranted };
       }
 
-      await this.core.ensureWallet(args.accountId);
-      const isFirst = await this.claimFirstPurchaseBonus(args.accountId);
-      const coinsGranted = isFirst ? args.coins * FIRST_PURCHASE_BONUS_MULTIPLIER : args.coins;
       const usdCents = args.usdCents ?? 0;
 
+      // 2026-08-14 fix (concurrent-replay CI failure): reserve the receiptId FIRST, same order as
+      // rechargeVerify's identical pattern above — claimFirstPurchaseBonus used to run for every
+      // concurrent caller *before* this insertOne race decided a winner, so under true concurrency
+      // (10 parallel calls, same transactionId) the caller that won the wallet's firstPurchasedAt
+      // CAS and the caller that won this receiptId's uniqueness race could be two DIFFERENT callers.
+      // Whichever one actually reached credit() below used ITS OWN isFirst (frequently false, since
+      // the isFirst=true winner often lost the receiptId race and just healed off the loser's
+      // pre-bonus coinsGranted instead) — silently dropping the first-purchase bonus on a genuine
+      // first purchase. Only the receiptId race's winner may now claim the bonus, exactly mirroring
+      // rechargeVerify's insert-with-placeholder-then-back-fill shape below.
       try {
         await this.core.cols.recharges.insertOne({
           _id: receiptId,
           accountId: args.accountId,
           platform: 'paddle',
-          coinsGranted,
+          coinsGranted: args.coins,
           status: 'granted',
           rawReceipt: args.transactionId,
           ts: this.core.now(),
@@ -276,9 +283,19 @@ export class RechargeService {
           const coinsAfter = r
             ? await this.healRechargeCredit(r, receiptId, undefined)
             : effectiveCoins(await this.core.cols.wallets.findOne({ _id: args.accountId }), 'web');
-          return { ok: true, coinsAfter, coinsGranted: r?.coinsGranted ?? coinsGranted };
+          return { ok: true, coinsAfter, coinsGranted: r?.coinsGranted ?? args.coins };
         }
         throw e;
+      }
+      // Won the receiptId race — now, and only now, claim the first-purchase bonus.
+      await this.core.ensureWallet(args.accountId);
+      const isFirst = await this.claimFirstPurchaseBonus(args.accountId);
+      const coinsGranted = isFirst ? args.coins * FIRST_PURCHASE_BONUS_MULTIPLIER : args.coins;
+      // The receipt slot was reserved above with the pre-bonus args.coins; back-fill the actual
+      // granted amount so a later idempotent replay reports the bonus-inclusive value (mirrors
+      // rechargeVerify's identical back-fill above).
+      if (coinsGranted !== args.coins) {
+        await this.core.cols.recharges.updateOne({ _id: receiptId }, { $set: { coinsGranted } });
       }
       // Paddle only serves the web build — always the 'web' bucket (ADR-020), never a client-declared platform.
       const coinsAfter = await this.core.credit(args.accountId, coinsGranted, 'recharge', {
