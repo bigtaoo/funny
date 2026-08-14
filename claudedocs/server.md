@@ -588,7 +588,7 @@ commercial 此前完全没有 Redis 依赖，本次新增：`config.ts` 补 `NW_
 | auctionsvc | 72.3% | 76.9% | 68.2% |
 | gateway | 65.9% | 70.3% | 76.8% |
 | gameserver | ~~62.5%~~ **91.9%**（2026-08-14 补测，见下） | 91.4% | 95.9% |
-| admin | 47.1% | 74.6% | 44.3% |
+| admin | ~~47.1%~~ **93.39%**（2026-08-14 两轮补测，见下） | 74.6% | 44.3% |
 | metaserver | ~~35.1%~~ **90.84%**（2026-08-14 两轮补测，见下） | 78.4% | 32.3% |
 | **加权总计** | **~70%** | **~82%** | **~71%** |
 
@@ -681,3 +681,22 @@ metaserver 整体行覆盖率 **61.27% → 90.84%**（`npx vitest run --coverage
 - `anticheatAudit.ts` 剩 4 行未覆盖：`parsePerSideStats` 兜底 catch 里的防御性单行 + 两处可选字段展开分支，与已覆盖分支功能等价，再测等于同一分支换个名字测两遍。
 
 **仍待处理（下一轮候选，此时应已不是全仓库最低）**：`src/index.ts`（149 行）/`src/config.ts`（19 行）——纯 env 读取 + 启动装配，参照 gateway/gameserver 的先例，价值存疑，暂不建议为它专门起真实 server 集成测试。
+
+## admin 补测第二轮：src/httpApi/*Routes.ts 从 0~2% 拉到 90%+（2026-08-14，worktree `feat/admin-coverage2`）
+
+上一轮（"admin 补测：src/clients/* 从 15~25% 拉到 90%+"一节）把 admin 从 47.1% 拉到 64.92% 后，14 包基线里最低的又变回了 **admin**（其余包均已 ≥70%）。本轮按"根据覆盖率结果修复最低"处理这个包的第二大缺口。
+
+**根因**：`src/httpApi.ts`（2026-08-10 已从单文件拆成 `httpApi/` 下 8 个按业务域分文件的路由处理器 + `session.ts`/`helpers.ts`，见"单文件 500 行收敛"一节）本身是一层 `node:http` 请求分发——但**所有既有 e2e 测试（`service.e2e`/`season-ops.e2e`/`season-audit.e2e`/`comp-mail.e2e`/`moderation.e2e`/`shop.e2e`/`feedback.e2e`）全部直接 `new AdminService(...)` 调用其方法，完全绕开了这层 `node:http` 分发链**；唯一起真实 server 的 `internalHttp.e2e.test.ts` 也只覆盖 `handlePreAuth` 里三条 X-Internal-Key 内部端点（不需要 admin JWT）。结果：`monitorRoutes.ts`/`playerRoutes.ts`/`trustSafetyRoutes.ts`/`compRoutes.ts`/`opsConfigRoutes.ts`/`accountRoutes.ts`/`slgRoutes.ts`/`commerceRoutes.ts`（合计 877 行，对 ops 前端暴露的全部业务路由）连同 `handleLogin`/`handleSession` 和 `httpApi.ts` 自身的分发/错误映射，此前只有 8 行被踩到。
+
+**修法**：新增 `test/httpRoutes.e2e.test.ts`（46 例）——真实 `startHttpApi()` server（真实 Mongo，`AdminServiceDeps` 的全部 18 个业务 client 依赖各配一个最小但形状真实的 fake）+ 真实 `POST /admin/login` 拿到的 Bearer token，对每条路由发一次真实 HTTP 请求：
+- **成功路径**用持有全部能力的 `super` 角色（root）驱动一遍全部 40+ 条路由（session 的 login/me/logout；monitor 的 live/trend/summary/events/pvp-card-stats；player 的 search/detail/reset-password/ban-unban；trustSafety 的 anticheat/report/appeal/feedback 四条审核队列——各自预置一条 open 状态记录，list+resolve 都真跑；comp 的 initiate→approve/reject/cancel/retry 全状态机（含"失败→重试"需要 FakeMail 一次性拒绝）+ preview；opsConfig 的 audit/flags/slg-shop/wordlists；account 的 create/patch/reset-password；slg 的 ladder season + season 全 6 个操作 + audit 三件套（anomalies/listings/tickets，`resolve disposition:'actioned'` 触发自动封禁双方）+ map-template 五件套；commerce 的 paddle events / events CRUD / gacha pools）。
+- **capability 拒绝路径**：额外建一个 `support` 角色账号（此角色缺 `admin.manage`/`slg.season.manage`/`anticheat.view`/`reports.action` 等），驱动 4 条 403。
+- **`httpApi.ts` 自身的分发/错误映射分支**：无 Bearer→401、伪造 token→401、未知路由→404、`EventsClientError`（在 FakeEvents 里对特定输入主动抛出）→透传其自身状态码 422、未预期的普通 `Error`（FakeAnalytics 对特定 query type 主动抛出）→兜底 500。
+- **四眼原则的真实分支**：种了两个有审批能力的账号（root=super、ops2=ops）——用真实的"另一个有资格审批人存在"分支验证 root 不能自我审批（403），再用 ops2 完成审批/驳回，而不是像其他 e2e 那样靠"全仓库只有一个 super"的单例例外走自我审批捷径。
+
+顺带补了两个 0% 的纯函数模块（同一 worktree，性价比高，一并做）：
+- **`test/config.test.ts`**（2 例）：`loadAdminEnv()` 默认值 + 全量 env 覆盖两条路径，同 `gameserver/test/config.test.ts` 先例。
+- **`test/seed.test.ts`**（7 例）：`seedSuperAdmin()` 此前只被各 e2e 文件的 `beforeEach` 在"全新空库 + user/pass 已配置"这一条路径上间接跑过；新增未配置 user/pass（0 账号告警 / 已有账号静默跳过）、已存在账号的两条幂等分支（补种 `seed` 标记 / 已标记直接跳过）、并发插入唯一索引冲突（`code:11000` 吞掉 vs 其它错误照常抛出）——纯内存 fake collection（只实现 seed.ts 真正调用的 4 个方法），不需要真实 Mongo。
+
+`src/httpApi` 整体行覆盖率 **~5% → 96.47%**；admin 包整体行覆盖率 **64.92% → 93.39%**（`npx vitest run --coverage`，18 test files / 203 tests 全绿——新增 55 例，原有 148 例零改动；`npx tsc --noEmit` 干净）。`src/index.ts`（66 行，进程 bootstrap：`main()` 里连库/起 20 个 HTTP client/装配 `AdminService`/起 server/起采样定时器，写死在顶层立即执行）继续沿用 gateway/gameserver 的先例不单独起集成测试——它是全包里唯一仍是 0% 的文件，但只占 66/3150 行（2.1%），即便完全不测,其余文件即使不到 100% 也早已把整包拉过 90% 门槛，专门为它搭 mock 装配意义不大。
+
