@@ -35,6 +35,8 @@ export class SectQueryService {
       leaderId: f.leaderId,
       memberCount: f.memberCount,
       territoryCount: f.territoryCount ?? 0,
+      ...(f.emblemKey ? { emblemKey: f.emblemKey } : {}),
+      ...(f.emblemColor != null ? { emblemColor: f.emblemColor } : {}),
     }));
     const view: SectDetailView = { ...docToView(doc), memberFamilies };
     if (doc.removalVote) {

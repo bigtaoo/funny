@@ -6,6 +6,7 @@ import * as PIXI from 'pixi.js-legacy';
 import { t } from '../../i18n';
 import { ui as C, txt, sketchPanel, seedFor } from '../../render/sketchUi';
 import { buildIcon } from '../../render/icons';
+import { buildEmblemIcon, type EmblemKey } from '../../render/emblemIcon';
 import { FS } from '../../render/fontScale';
 import type { SectSceneCore } from './core';
 
@@ -43,6 +44,26 @@ export function drawHeaderTitle(core: SectSceneCore, headerH: number): void {
   const titleNode = add(txt(t('sect.title'), FS.headline, C.dark, true));
   let clusterW = titleNode.width;
 
+  // Emblem badge (family-emblem-art-prompts.md, 2026-08-14): same tinted-icon-or-dashed-placeholder
+  // affordance as FamilyScene/header.ts — sect-leader-only tap target (isSectLeader, not just any
+  // family leader), since the user decision restricts changing the sect badge to the sect leader.
+  let emblemNode: PIXI.DisplayObject | null = null;
+  const emblemSize = Math.round(h * 0.034);
+  const isSectLeader = core.isSectLeader;
+  if (sect) {
+    const key = sect.emblemKey as EmblemKey | undefined;
+    emblemNode = key ? buildEmblemIcon(key, emblemSize, sect.emblemColor ?? C.dark) : null;
+    if (!emblemNode && isSectLeader) {
+      const ph = new PIXI.Graphics();
+      ph.lineStyle(1.4, C.mid, 0.9);
+      ph.drawCircle(emblemSize / 2, emblemSize / 2, emblemSize / 2 - 1);
+      ph.moveTo(emblemSize * 0.3, emblemSize / 2).lineTo(emblemSize * 0.7, emblemSize / 2);
+      ph.moveTo(emblemSize / 2, emblemSize * 0.3).lineTo(emblemSize / 2, emblemSize * 0.7);
+      emblemNode = ph;
+    }
+    if (emblemNode) { add(emblemNode); clusterW += emblemSize + 8; }
+  }
+
   let nameNode: PIXI.Text | null = null;
   let famNode: PIXI.Text | null = null;
   let star: PIXI.DisplayObject | null = null;
@@ -70,6 +91,11 @@ export function drawHeaderTitle(core: SectSceneCore, headerH: number): void {
 
   if (sect && nameNode && famNode && star && prosNode) {
     x += gap;
+    if (emblemNode) {
+      emblemNode.x = x; emblemNode.y = midY - emblemSize / 2;
+      if (isSectLeader) core.hitRects.push({ rect: { x, y: midY - emblemSize / 2, w: emblemSize, h: emblemSize }, action: () => core.emblemHooks.openEmblemPicker() });
+      x += emblemSize + 8;
+    }
     nameNode.anchor.set(0, 0.5); nameNode.x = x; nameNode.y = midY;
     x += nameNode.width + gap;
 

@@ -250,6 +250,14 @@ describe('SectScene composition wiring', () => {
     // wires right after constructing ActionsPanel — must not still be the core.ts no-op default.
     const hooks = (core as Record<string, unknown>).allianceHooks as Record<string, () => Promise<void>>;
     expect(hooks.openManageAllies).not.toBeUndefined();
+    // Same lazy-binding trick, separate field (family-emblem-art-prompts.md, 2026-08-14): calling it
+    // reaches ActionsPanel.openEmblemPicker for real (not the core.ts no-op default, which would
+    // return silently either way — the meaningful check is that it doesn't throw reaching into
+    // `this.actions` before the assembly assigned it, the actual risk this lazy-hook pattern guards
+    // against). No sect/leader loaded here, so the real method just early-returns without opening a modal.
+    const emblemHooks = (core as Record<string, unknown>).emblemHooks as { openEmblemPicker: () => void };
+    expect(() => emblemHooks.openEmblemPicker()).not.toThrow();
+    expect((core as Record<string, unknown>).modalOpen).toBe(false);
     (scene.destroy as () => void)();
   });
 });
@@ -278,6 +286,12 @@ describe('FamilyScene composition wiring', () => {
     expect((scene.input as Record<string, unknown>).data).toBe(scene.data);
     expect((scene.renderPanel as Record<string, unknown>).actions).toBe(scene.actions);
     expect((scene.renderPanel as Record<string, unknown>).input).toBe(scene.input);
+    // header.ts (drawn from Core, before ActionsPanel exists) opens the emblem-picker modal through
+    // this same lazy-callback trick as `render` (family-emblem-art-prompts.md, 2026-08-14) — must
+    // reach the real ActionsPanel.openEmblemPicker without throwing (no family loaded here, so it
+    // just early-returns rather than opening a modal).
+    expect(() => ((core as Record<string, unknown>).openEmblemPicker as () => void)()).not.toThrow();
+    expect((core as Record<string, unknown>).modalOpen).toBe(false);
     (scene.destroy as () => void)();
   });
 });

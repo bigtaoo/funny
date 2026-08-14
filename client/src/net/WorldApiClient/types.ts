@@ -71,6 +71,10 @@ export interface PlayerProfileExtra {
   elo?: number;
   familyName?: string;
   sectName?: string;
+  /** The player's family's badge, if any (family-emblem-art-prompts.md, 2026-08-14). No sect-badge
+   *  equivalent — see ProfileExtraView's schema doc comment for why. */
+  familyEmblemKey?: string;
+  familyEmblemColor?: number;
 }
 
 export interface WorldChatMessage {

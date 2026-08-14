@@ -23,7 +23,7 @@ import {
 import type { TileDoc, PlayerWorldDoc, MarchDoc, OccupationDoc, StationedDoc } from '../db';
 import { WorldCore } from '../core';
 import type { SiegeReplayInputs, OccupationView } from '../worldTypes';
-import { refundTroops, startReturnMarch, parkMarchInPlace } from '../combatShared';
+import { refundTroops, startReturnMarch, parkMarchInPlace, resolveOwnerEmblems } from '../combatShared';
 import type { SiegeHelpersService } from './helpers';
 import { writeOccupyCardState, resolveOccupationBattle } from './occupationBattle';
 
@@ -353,7 +353,7 @@ export class OccupationService {
   async getOccupations(worldId: string, accountId: string): Promise<OccupationView[]> {
     const { cols } = this.core.deps;
     const own = await cols.occupations.find({ worldId, ownerId: accountId }).toArray();
-    return own.map((d) => ({
+    const result: OccupationView[] = own.map((d) => ({
       tile: d.tile,
       x: d.x,
       y: d.y,
@@ -363,6 +363,11 @@ export class OccupationService {
       ...(d.teamId ? { teamId: d.teamId } : {}),
       ...(d.leaderUnitType ? { leaderUnitType: d.leaderUnitType } : {}),
     }));
+    // getOccupations is own-holds-only, so this is always the requester's own family badge (map-token
+    // corner badge, family-emblem-art-prompts.md 2026-08-14) — still resolved via the shared batch
+    // helper for consistency with getMarches/getStationed rather than a bespoke single-owner lookup.
+    const emblems = await resolveOwnerEmblems(this.core, worldId, own.map((d) => d.ownerId));
+    return result.map((v, i) => (emblems[i] ? { ...v, ...emblems[i] } : v));
   }
 
   /** Finalize a settled OccupationDoc into real TileDoc ownership. Re-validates contestedBy to guard against a lost race. */

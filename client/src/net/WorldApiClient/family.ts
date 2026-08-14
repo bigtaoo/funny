@@ -111,6 +111,11 @@ export class FamilyService {
     return this.core.req('POST', '/social/family/disband', {}, 10_000, getSocialBaseUrl());
   }
 
+  /** Leader-only (family-emblem-art-prompts.md, 2026-08-14): pick one of @nw/shared EMBLEM_KEYS + an accent colour from EMBLEM_COLORS. */
+  async setFamilyEmblem(emblemKey: string, emblemColor: number): Promise<{ ok: true }> {
+    return this.core.req('POST', '/social/family/emblem', { emblemKey, emblemColor }, 10_000, getSocialBaseUrl());
+  }
+
   async sendFamilyMessage(
     familyId: string,
     body: string,

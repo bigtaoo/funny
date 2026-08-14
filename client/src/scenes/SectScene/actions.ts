@@ -10,6 +10,8 @@ import { t } from '../../i18n';
 import { ui as C } from '../../render/sketchUi';
 import type { SectView } from '../../net/WorldApiClient';
 import { withTimeout } from '../../ui/busyTracker';
+import { EMBLEM_KEYS, EMBLEM_COLORS, loadEmblemAtlas, type EmblemKey } from '../../render/emblemIcon';
+import { drawEmblemPickerDialog, type EmblemPickerState } from '../../ui/dialogs/emblemPickerDialog';
 import type { SectSceneCore } from './core';
 import type { DataHandlers } from './data';
 import type { ModalsHandlers } from './modals';
@@ -32,6 +34,7 @@ export interface ActionsHandlers {
   confirmUnally(targetSectId: string, label: string): void;
   doUnally(targetSectId: string): Promise<void>;
   doSendChannelMessage(): Promise<void>;
+  openEmblemPicker(): void;
 }
 
 export class ActionsPanel implements ActionsHandlers {
@@ -276,6 +279,58 @@ export class ActionsPanel implements ActionsHandlers {
     } finally {
       core.channelSending = false;
       if (!core.destroyed) core.render();
+    }
+  }
+
+  /** In-progress pick for the emblem-picker modal (see emblemPickerDialog.ts) — reset each time the modal opens. */
+  private pendingEmblem: EmblemPickerState = { key: EMBLEM_KEYS[0], color: EMBLEM_COLORS[0] };
+
+  /** Sect-leader-only (family-emblem-art-prompts.md, 2026-08-14): opens the shared emblem-picker
+   *  modal seeded with the sect's current badge (or the first key/colour if none chosen yet). */
+  openEmblemPicker(): void {
+    const core = this.core;
+    if (!core.sect || !core.isSectLeader) return;
+    this.pendingEmblem = {
+      key: (core.sect.emblemKey as EmblemKey | undefined) ?? EMBLEM_KEYS[0],
+      color: core.sect.emblemColor ?? EMBLEM_COLORS[0],
+    };
+    core.modalOpen = true;
+    // Atlas is lazy-loaded (not boot L0 — see emblemAtlas.ts) — the dialog draws a tinted
+    // placeholder per cell until this resolves, then redraws with the real icons.
+    void loadEmblemAtlas().then(() => { if (core.modalOpen) this.redrawEmblemPicker(); }).catch(() => { /* placeholder stays */ });
+    this.redrawEmblemPicker();
+  }
+
+  /** Redraws the emblem-picker modal in place — called after every tap (pick icon/colour) and while
+   *  the confirm POST is in flight (mirrors FamilyScene/actions.ts's identical pattern). */
+  private redrawEmblemPicker(): void {
+    const core = this.core;
+    core.modalHits = drawEmblemPickerDialog(
+      core.modalLayer, core.w, core.h, this.pendingEmblem, core.bt.busy,
+      (key) => { this.pendingEmblem = { ...this.pendingEmblem, key }; this.redrawEmblemPicker(); },
+      (color) => { this.pendingEmblem = { ...this.pendingEmblem, color }; this.redrawEmblemPicker(); },
+      () => void this.doSetEmblem(),
+      () => core.closeModal(),
+    );
+  }
+
+  private async doSetEmblem(): Promise<void> {
+    const core = this.core;
+    if (core.bt.busy || !core.sect) return;
+    core.bt.start();
+    this.redrawEmblemPicker();
+    try {
+      const { key, color } = this.pendingEmblem;
+      await withTimeout(core.cb.worldApi.setSectEmblem(core.cb.worldId, key, color));
+      core.sect = { ...core.sect, emblemKey: key, emblemColor: color };
+      core.closeModal();
+      core.showToast(t('sect.emblemUpdated'), C.dark);
+      core.render(); // header/summary-row badge needs the fresh sect object
+    } catch (e) {
+      core.showToast(core.errorMsg(e), C.red);
+    } finally {
+      core.bt.stop();
+      if (core.modalOpen) this.redrawEmblemPicker();
     }
   }
 }

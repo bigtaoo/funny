@@ -141,11 +141,15 @@
 > `render/stickman/StickmanRuntime.ts`），播放 `walk` 循环，沿路线插值位置并按行进方向左右镜像朝向。
 > 兵种素材暂时二选一（`MARCH_TOKEN_ASSET`）：`kind==='attack'` 用盾兵 `shieldbearer.tao`（代表"攻城兵种"，
 > 目前没有专门的攻城兵种，盾兵是最接近"破城"定位的单位）；其余全部行军用普通兵 `infantry.tao`。
-> **TODO（功能接入，美术已完成）**：帮会图标体系的 24 套图腾已出图并打包接入（2026-08-14，
-> [`family-emblem-art-prompts.md`](../product/family-emblem-art-prompts.md)），`client/src/render/emblemIcon.ts`
-> 已可用（`EMBLEM_KEYS`/`buildEmblemIcon`）。**替换 `MARCH_TOKEN_ASSET`/`buildDotToken` 仍未做**——
-> 还差 `emblemKey` 字段落到家族/宗门文档 + 建家族/建宗门 UI 的选择器，这两块完成后才能真正把行军令牌
-> 上的旗帜/头像换成徽章图集。
+> **帮会徽章角标 — ✅ 已接入（2026-08-14，见下方"按队伍真实领队兵种显示"决策，两者不冲突）**：
+> 帮会图标体系的 24 套图腾出图并打包接入后（[`family-emblem-art-prompts.md`](../product/family-emblem-art-prompts.md)），
+> **没有替换 `MARCH_TOKEN_ASSET`/`buildDotToken`**——那会倒退下面 2026-07-26 才刚落地的"按真实领队兵种
+> 显示"决策，`tokens.ts` 头部注释已挑明"帮会/旗帜有意排除在外，这只替换 6 种已授权骨骼中的哪一种代表
+> 令牌"。改成叠加一个不影响令牌本身的**角标**：`WorldMapRenderer/tokens.ts::syncEmblemBadge()` 在令牌
+> 右下角画一个独立的顶层 `buildEmblemIcon` 精灵（不挂在会跟随行进方向左右镜像的 stickman 容器下，避免
+> 徽章图案跟着镜像翻转），三套令牌（march/occupy/stationed）各自的数据来自 `worldsvc` 新增的
+> `combatShared.ts::resolveOwnerEmblems()`——按 `PlayerWorldDoc.familyId` 只读镖像批量解析
+> ownerId→family→emblemKey/Color，贴回各自 View。
 >
 > **按队伍真实领队兵种显示 — ✅ 已接入（2026-07-26，零新增美术，复用已有 6 种骨骼资产）**：
 > 上面"兵种素材暂时二选一"的写死映射已废弃。`worldsvc` 在 `startMarch` 派发时（`combatMarch.ts`）用

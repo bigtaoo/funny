@@ -42,6 +42,11 @@ export class SectService {
     return this.core.req('POST', '/sect/vote-remove-leader', { worldId, nomineeFamilyId });
   }
 
+  /** Sect-leader-only (family-emblem-art-prompts.md, 2026-08-14): pick one of @nw/shared EMBLEM_KEYS + an accent colour from EMBLEM_COLORS. */
+  async setSectEmblem(worldId: string, emblemKey: string, emblemColor: number): Promise<{ ok: true }> {
+    return this.core.req('POST', '/sect/emblem', { worldId, emblemKey, emblemColor });
+  }
+
   async sendSectMessage(
     worldId: string,
     body: string,

@@ -13,7 +13,10 @@ import {
   orgNameWidth,
   SlgError,
   censorChat,
+  isEmblemKey,
+  isEmblemColor,
   type ChatRegion,
+  type EmblemKey,
 } from '@nw/shared';
 import type { SectDoc } from '../db';
 import { nullWorldCommercialClient, type WorldCommercialClient } from '../commercialClient';
@@ -96,6 +99,8 @@ export class SectMembershipService {
     return { ...docToView(doc), memberFamilies: [{
       familyId: fam.familyId, name: fam.name, tag: fam.tag, leaderId: fam.leaderId,
       memberCount: fam.memberCount, territoryCount: 0,
+      ...(fam.emblemKey ? { emblemKey: fam.emblemKey } : {}),
+      ...(fam.emblemColor != null ? { emblemColor: fam.emblemColor } : {}),
     }] };
   }
 
@@ -246,5 +251,17 @@ export class SectMembershipService {
       if (attempt === MAX_ATTEMPTS - 1) throw new SlgError('REV_CONFLICT', 'Concurrent vote, please retry');
     }
     throw new SlgError('REV_CONFLICT', 'Concurrent vote, please retry');
+  }
+
+  /** Set the sect's badge (sect leader only — same permission tier as dissolveSect/allySect, not just any family leader). */
+  async setEmblem(worldId: string, requesterId: string, emblemKey: EmblemKey, emblemColor: number): Promise<void> {
+    if (!isEmblemKey(emblemKey)) throw new SlgError('BAD_REQUEST');
+    if (!isEmblemColor(emblemColor)) throw new SlgError('BAD_REQUEST');
+    const fam = await this.requireFamilyLeader(requesterId);
+    if (!fam.sectId) throw new SlgError('NOT_IN_SECT');
+    const sect = await this.deps.cols.sects.findOne({ _id: fam.sectId, worldId });
+    if (!sect) throw new SlgError('NOT_FOUND');
+    if (sect.leaderId !== requesterId) throw new SlgError('NO_PERMISSION', 'Only the sect leader can change the sect emblem');
+    await this.deps.cols.sects.updateOne({ _id: sect._id }, { $set: { emblemKey, emblemColor } });
   }
 }

@@ -3,7 +3,7 @@
 // shapes (family/sect/nation) + the per-capital nation record. Family identity/roster itself lives in
 // socialsvc (see the removed-mirror note this file inherited from db.ts's header history).
 import type { Collection } from 'mongodb';
-import { FAMILY_MSG_RETENTION_SEC } from '@nw/shared';
+import { FAMILY_MSG_RETENTION_SEC, type EmblemKey } from '@nw/shared';
 
 /** Sect (S8-4b, §2.1/§8.2): a faction organisation composed of families within a region. Members = families whose sectId (mirrored on socialsvc's FamilyDoc) points to this sect. */
 export interface SectDoc {
@@ -18,6 +18,13 @@ export interface SectDoc {
   prosperity: number;     // prosperity = sum of member family prosperity (G2/§17.4, aggregated and refreshed on settle/sect-creation/G6 allocation)
   /** Vote to remove the sect leader (§8.2, requires >2/3 family-leader agreement + nomination). Cleared after a leadership change or resolution. */
   removalVote?: { nomineeFamilyId: string; voterFamilyIds: string[] };
+  /**
+   * Sect badge, picked from the same 24-design fixed pool families choose from (family-emblem-art-prompts.md,
+   * 2026-08-14). Sect-leader-only (setEmblem). Absent = no badge chosen yet.
+   */
+  emblemKey?: EmblemKey;
+  /** Accent colour (one of EMBLEM_COLORS) the emblem art is tinted with; absent while emblemKey is absent. */
+  emblemColor?: number;
   rev: number;
 }
 

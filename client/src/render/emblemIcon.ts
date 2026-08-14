@@ -14,17 +14,13 @@
  * L0 (see emblemAtlas.ts).
  */
 import * as PIXI from 'pixi.js-legacy';
+import { EMBLEM_KEYS, EMBLEM_COLORS, type EmblemKey } from '@nw/shared';
 import { emblemAtlas as atlas } from './atlas/emblemAtlas';
 
-/** The 24 fixed-pool emblem keys, in the same order as the source art / atlas grid. */
-export const EMBLEM_KEYS = [
-  'emblem_anchor', 'emblem_bear', 'emblem_boar', 'emblem_crossedpens', 'emblem_crown', 'emblem_flame',
-  'emblem_fox', 'emblem_inkdrop', 'emblem_laurel', 'emblem_lightning', 'emblem_magnifier', 'emblem_moonstar',
-  'emblem_mountain', 'emblem_openbook', 'emblem_owl', 'emblem_penquill', 'emblem_scorpion', 'emblem_shark',
-  'emblem_shield', 'emblem_skull', 'emblem_snake', 'emblem_stag', 'emblem_starcircle', 'emblem_wave',
-] as const;
-
-export type EmblemKey = (typeof EMBLEM_KEYS)[number];
+/** The 24 fixed-pool emblem keys, in the same order as the source art / atlas grid (canonical
+ *  copy lives in @nw/shared so the server can validate the same set — see EMBLEM_KEYS there). */
+export { EMBLEM_KEYS, EMBLEM_COLORS };
+export type { EmblemKey };
 
 /** True once the atlas PNG has decoded and frames are parsed. */
 export const isEmblemAtlasReady = atlas.isReady;

@@ -1,6 +1,6 @@
 // worldsvc httpApi split — sect (S8-4b, see ../httpApi.ts for the module overview).
 // No behavior change — copied verbatim from the original httpApi.ts.
-import { ErrorCode, ok, regionFromAcceptLanguage } from '@nw/shared';
+import { ErrorCode, ok, regionFromAcceptLanguage, type EmblemKey } from '@nw/shared';
 import { readJson, send, sendErr, sanitizeSenderNameFallback, numQ, type RouteCtx } from './helpers';
 
 /** Returns true once matched + a response was sent; false lets the next handler in the chain try. */
@@ -79,6 +79,16 @@ export async function handleSectRoutes(ctx: RouteCtx): Promise<boolean> {
     const nomineeFamilyId = typeof body.nomineeFamilyId === 'string' ? body.nomineeFamilyId : null;
     if (!worldId || !nomineeFamilyId) { sendErr(res, ErrorCode.BAD_REQUEST, 'worldId + nomineeFamilyId required'); return true; }
     send(res, 200, ok(await sectSvc.voteRemoveLeader(worldId, accountId, nomineeFamilyId)));
+    return true;
+  }
+  if (method === 'POST' && path === '/sect/emblem') {
+    const body = await readJson(req);
+    const worldId = typeof body.worldId === 'string' ? body.worldId : null;
+    const emblemKey = typeof body.emblemKey === 'string' ? body.emblemKey : null;
+    const emblemColor = typeof body.emblemColor === 'number' ? body.emblemColor : null;
+    if (!worldId || emblemKey == null || emblemColor == null) { sendErr(res, ErrorCode.BAD_REQUEST, 'worldId + emblemKey + emblemColor required'); return true; }
+    await sectSvc.setEmblem(worldId, accountId, emblemKey as EmblemKey, emblemColor);
+    send(res, 200, ok({}));
     return true;
   }
   if (method === 'POST' && path === '/sect/message') {

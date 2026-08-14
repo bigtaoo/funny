@@ -15,6 +15,7 @@ import { UnitType } from '@nw/engine/types';
 import { targetScreenHeight } from '../../../render/unitSize';
 import { STICKMAN_ASSETS } from '../../../render/UnitView';
 import { buildAvatar, makeAvatarId } from '../../../render/avatar';
+import { buildEmblemIcon, loadEmblemAtlas, type EmblemKey } from '../../../render/emblemIcon';
 import type { MapTokenEntry } from '../WorldMapContext';
 import type { WorldMapRendererCore } from './core';
 
@@ -61,6 +62,51 @@ function buildDotToken(tp: number, unitType: UnitType): PIXI.Container {
 export function destroyTokenEntry(entry: MapTokenEntry): void {
   if (entry.mode === 'stickman') entry.runtime?.destroy();
   else entry.sprite.destroy({ children: true });
+  entry.badge?.sprite.destroy();
+}
+
+/** Corner-badge size as a fraction of the token's own pixel size (small enough to read as a badge, not compete with the unit rig). */
+const BADGE_SCALE = 0.42;
+
+/**
+ * March/occupy/stationed map-token family-emblem corner badge (family-emblem-art-prompts.md,
+ * 2026-08-14 TODO item 4 — WORLD_MAP_ART_SPEC.md §五). A small tinted overlay in the token's
+ * bottom-right corner, NOT a replacement of the unit-rig token itself (that would regress the
+ * 2026-07-26 "show the deployed team's real leader unit-type" decision this module already
+ * implements — see resolveMarchUnitType's doc comment). Its own top-level display object on
+ * `ctx.marchTokenLayer` (not a child of the stickman/dot container) so the stickman's
+ * facing-direction mirror flip never mirrors the badge art; repositioned every frame independent
+ * of that flip. No-op (and tears down any existing badge) when the owner has no emblem.
+ */
+function syncEmblemBadge(
+  core: WorldMapRendererCore,
+  entry: MapTokenEntry,
+  emblemKey: string | undefined,
+  emblemColor: number | undefined,
+  cx: number,
+  cy: number,
+  tokenSize: number,
+): void {
+  const ctx = core.ctx;
+  if (!emblemKey) {
+    if (entry.badge) { entry.badge.sprite.destroy(); entry.badge = undefined; }
+    return;
+  }
+  // Atlas is lazy-loaded (not boot L0 — see emblemAtlas.ts); this runs every frame there's a live
+  // token with a badge to show, so a plain load() kick here (idempotent — cheap no-op once
+  // resolved/in-flight) is enough to eventually surface it, no separate scene-entry wiring needed.
+  void loadEmblemAtlas().catch(() => {});
+  const size = Math.max(10, Math.round(tokenSize * BADGE_SCALE));
+  if (!entry.badge || entry.badge.key !== emblemKey) {
+    entry.badge?.sprite.destroy();
+    const icon = buildEmblemIcon(emblemKey as EmblemKey, size, emblemColor ?? 0x2f2a26);
+    if (!icon) { entry.badge = undefined; return; } // atlas not loaded yet — next frame retries once it is
+    ctx.marchTokenLayer.addChild(icon);
+    entry.badge = { sprite: icon, key: emblemKey };
+  }
+  // Bottom-right corner of the token's own footprint.
+  entry.badge.sprite.x = cx + tokenSize * 0.22;
+  entry.badge.sprite.y = cy + tokenSize * 0.22;
 }
 
 /** Shared mutable counter threaded through a single renderOverlay(dt) pass (see STICKMAN_TOKEN_BUDGET). */
@@ -145,6 +191,7 @@ export function syncMarchTokens(core: WorldMapRendererCore, dt: number, budget: 
       } else {
         entry.sprite.position.set(hx - entry.sprite.width / 2, hy - entry.sprite.height / 2);
       }
+      syncEmblemBadge(core, entry, march.emblemKey, march.emblemColor, hx, hy, tp * MAP_TOKEN_SCALE);
     }
   }
   const now = Date.now();
@@ -225,6 +272,7 @@ export function syncOccupyTokens(core: WorldMapRendererCore, dt: number, budget:
       } else {
         entry.sprite.position.set(cx - entry.sprite.width / 2, cy - entry.sprite.height / 2);
       }
+      syncEmblemBadge(core, entry, o.emblemKey, o.emblemColor, cx, cy, tp * MAP_TOKEN_SCALE);
     }
   }
   for (const [key, entry] of ctx.occupyTokenRuntimes) {
@@ -295,6 +343,7 @@ export function syncStationedTokens(core: WorldMapRendererCore, dt: number, budg
       } else {
         entry.sprite.position.set(cx - entry.sprite.width / 2, cy - entry.sprite.height / 2);
       }
+      syncEmblemBadge(core, entry, s.emblemKey, s.emblemColor, cx, cy, tp * MAP_TOKEN_SCALE);
     }
   }
   for (const [key, entry] of ctx.stationedTokenRuntimes) {

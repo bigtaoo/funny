@@ -9,8 +9,11 @@ import {
   orgNameWidth,
   SlgError,
   censorChat,
+  isEmblemKey,
+  isEmblemColor,
   type FamilyRole,
   type ChatRegion,
+  type EmblemKey,
 } from '@nw/shared';
 import type { FamilyDoc, FamilyMemberDoc, FamilyJoinRequestDoc } from '../db';
 import type { SocialMetaClient } from '../metaClient';
@@ -301,5 +304,18 @@ export class FamilyMembershipService {
     if (!mem) throw new SlgError('NOT_IN_FAMILY');
     if (mem.role === 'member') throw new SlgError('NO_PERMISSION');
     await this.deps.cols.families.updateOne({ _id: mem.familyId }, { $set: { announcement } });
+  }
+
+  /**
+   * Set the family's badge (leader only — stricter than setAnnouncement's leader/elder, per the
+   * 2026-08-14 product decision that emblem identity is a leader-level call, not an elder one).
+   */
+  async setEmblem(requesterId: string, emblemKey: EmblemKey, emblemColor: number): Promise<void> {
+    if (!isEmblemKey(emblemKey)) throw new SlgError('BAD_REQUEST');
+    if (!isEmblemColor(emblemColor)) throw new SlgError('BAD_REQUEST');
+    const mem = await this.deps.cols.familyMembers.findOne({ _id: requesterId });
+    if (!mem) throw new SlgError('NOT_IN_FAMILY');
+    if (mem.role !== 'leader') throw new SlgError('NO_PERMISSION');
+    await this.deps.cols.families.updateOne({ _id: mem.familyId }, { $set: { emblemKey, emblemColor } });
   }
 }

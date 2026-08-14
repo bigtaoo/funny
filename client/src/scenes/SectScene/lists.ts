@@ -10,6 +10,7 @@ import { drawScrollIndicator } from '../../ui/widgets/ScrollIndicator';
 import { peekViewportH } from '../../ui/widgets/scrollPeek';
 import { caretDisplay } from '../../ui/inputDisplay';
 import { drawChatLine } from '../../ui/widgets/chatRow';
+import { buildEmblemIcon, type EmblemKey } from '../../render/emblemIcon';
 import { FS } from '../../render/fontScale';
 import type { SectSceneCore } from './core';
 import { ROW_H } from './core';
@@ -58,9 +59,21 @@ export function renderFamiliesList(
       bar.x = x0 + 6; bar.y = cy + 3;
       list.addChild(bar);
 
-      // Row 1: family name, with the "Leader family" tag inline to its right.
+      // Row 1: emblem badge (if the family picked one) + family name, with the "Leader family" tag
+      // inline to its right (family-emblem-art-prompts.md, 2026-08-14).
+      let nameX = x0 + 18;
+      const emblemKey = fam.emblemKey as EmblemKey | undefined;
+      if (emblemKey) {
+        const emblemSize = Math.round(FS.heading * 1.1);
+        const badge = buildEmblemIcon(emblemKey, emblemSize, fam.emblemColor ?? C.dark);
+        if (badge) {
+          badge.x = nameX; badge.y = cy + 8;
+          list.addChild(badge);
+          nameX += emblemSize + 6;
+        }
+      }
       const nameLbl = txt(`[${fam.tag}] ${fam.name}`, FS.heading, C.dark);
-      nameLbl.x = x0 + 18; nameLbl.y = cy + 8;
+      nameLbl.x = nameX; nameLbl.y = cy + 8;
       list.addChild(nameLbl);
       if (isLeaderFam) {
         const ldr = txt(t('sect.leaderFamily'), FS.small, C.accent);

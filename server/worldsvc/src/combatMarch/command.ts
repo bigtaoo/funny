@@ -10,7 +10,7 @@ import type { MarchDoc, ArmyEntry, StationedDoc } from '../db';
 import { WorldCore } from '../core';
 import { MARCHABLE_KINDS } from '../core';
 import type { MarchView, PlayerWorldView } from '../worldTypes';
-import { refundTroops, computeMarchPath } from '../combatShared';
+import { refundTroops, computeMarchPath, resolveOwnerEmblems } from '../combatShared';
 import { legBox, sourcesBoundingBox } from '../core/helpers';
 import { resolveLeaderUnitType } from '../leaderUnit';
 import { validateMarchTarget } from './startMarchValidation';
@@ -369,6 +369,9 @@ export class CommandService {
     const { cols, mapW, mapH, now } = this.core.deps;
     const own = await cols.marches.find({ worldId, ownerId: accountId }).sort({ arriveAt: 1 }).toArray();
     const result: MarchView[] = own.map((d) => ({ ...this.core.marchView(d), mine: true }));
+    // Parallel to `result` (same index) — feeds the emblem batch-resolve at the end (map-token
+    // corner badge, family-emblem-art-prompts.md 2026-08-14).
+    const ownerIds: string[] = own.map((d) => d.ownerId);
 
     // G5: enemy marches within vision (after reverse-push, the client renders these via refreshMarches). Family ally marches are excluded
     // (ally determination relies on the family set); only genuinely non-family others' in-transit marches whose interpolated current position falls within our vision are included.
@@ -401,8 +404,10 @@ export class CommandService {
         this.core.coordX(d.toTile), this.core.coordY(d.toTile),
         d.departAt, d.arriveAt, t,
       );
-      if (isInVision(sources, pos.x, pos.y)) result.push({ ...this.core.marchView(d), mine: false });
+      if (isInVision(sources, pos.x, pos.y)) { result.push({ ...this.core.marchView(d), mine: false }); ownerIds.push(d.ownerId); }
     }
-    return result;
+
+    const emblems = await resolveOwnerEmblems(this.core, worldId, ownerIds);
+    return result.map((v, i) => (emblems[i] ? { ...v, ...emblems[i] } : v));
   }
 }

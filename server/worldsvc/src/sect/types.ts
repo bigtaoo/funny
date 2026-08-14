@@ -1,7 +1,7 @@
 // Sect business layer — shared view/deps types (S8-4b, SLG_DESIGN §2.1/§8.2). The service itself is
 // split by domain into query.ts / membership.ts / chat.ts (composed by the facade in
 // ../sectService.ts, familyService.ts's sibling); this file holds the types all three share.
-import type { WordlistCache } from '@nw/shared';
+import type { WordlistCache, EmblemKey } from '@nw/shared';
 import type { WorldCollections } from '../db';
 import type { WorldCommercialClient } from '../commercialClient';
 import type { WorldGatewayClient } from '../gatewayClient';
@@ -18,6 +18,10 @@ export interface SectView {
   memberFamilyCount: number;
   allySectIds: string[];
   prosperity: number;
+  /** Sect badge (family-emblem-art-prompts.md, 2026-08-14); absent = no badge chosen yet. Sect-leader-only (setEmblem). */
+  emblemKey?: EmblemKey;
+  /** Accent colour the emblem art is tinted with; absent while emblemKey is absent. */
+  emblemColor?: number;
 }
 
 export interface SectMemberFamilyView {
@@ -27,6 +31,10 @@ export interface SectMemberFamilyView {
   leaderId: string;
   memberCount: number;
   territoryCount: number;
+  /** Family badge (mirrored from socialsvc's FamilyView via getFamiliesByIds/getFamiliesBySect); absent = no badge chosen. */
+  emblemKey?: EmblemKey;
+  /** Accent colour the emblem art is tinted with; absent while emblemKey is absent. */
+  emblemColor?: number;
 }
 
 export interface SectDetailView extends SectView {
