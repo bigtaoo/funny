@@ -1,6 +1,8 @@
 # 家族/宗门徽章美术 — 图片生成 Prompt 文档
 
-> 创建：2026-08-14
+> 创建：2026-08-14 · **✅ 24/24 出图完成 + 已打包接入（2026-08-14 同日）**：源图在 `art/icons/`（命名
+> `emblem_<key>.webp`），图集见 §「产出 → 接入流程」。功能接入（`emblemKey` 字段/选择器 UI/
+> `MARCH_TOKEN_ASSET` 替换）仍未做，见该节末尾 TODO。
 > 缺口来源：[`design/game/WORLD_MAP_ART_SPEC.md`](../game/WORLD_MAP_ART_SPEC.md) §五 TODO（"等专门的行军动画素材（含旗帜/头像等帮会标识）出图后替换 `MARCH_TOKEN_ASSET`；目前旗帜/头像暂不做，涉及帮会图标体系，留待后续"）
 > 数据结构依据：[`server/shared/src/slg/core.ts`](../../server/shared/src/slg/core.ts)（`familyId`/`sectId`/`FamilyRole`）、[`SLG_DESIGN.md`](../game/SLG_DESIGN.md) §2/§4（宗门≤30家族≤900人，家族≤30人）
 > 美术总纲：[`art-direction.md`](art-direction.md)
@@ -19,7 +21,7 @@
 沿用阵营图腾（dragon/eagle）已验证的契约，而不是重新定规范：
 
 1. **单色线稿**：AI 出图为深色墨线 + 纯白底（复用 `art-direction.md` §6.2 共用 prompt 前缀/负向提示），**不在 AI 阶段上色**。
-2. **打包时转白线+透明底**：抠图脚本丢弃 RGB、只保留 alpha，重建为白线-on-transparent（同 `pack_faction_atlas.js` 的 `whiteLineFrame()` 逻辑），供客户端运行时 `tint` 成家族/宗门选定的强调色。**好处**：24 张单色图 × 任意强调色 = 视觉上远超24种的可辨认组合，不增加出图成本。
+2. **打包时转白线+透明底**：GPT Image 2 出的源图是不透明的白底深墨线（没有现成 alpha 通道，跟阵营图腾的源图不一样），实际打包脚本（`art/icons/pack_emblem_atlas.js`）综合了两套现成逻辑——先按 `pack_decos.cjs` 的口径把白底转透明（`alpha = 255 - luminance`），再按 `pack_faction_atlas.js` 的 `whiteLineFrame()` 口径丢弃原墨色只留 alpha、重建为纯白线，供客户端运行时 `tint` 成家族/宗门选定的强调色。**好处**：24 张单色图 × 任意强调色 = 视觉上远超24种的可辨认组合，不增加出图成本。
 3. **不在图内画徽章底座/边框**：徽章底座（圆形/盾形程序绘制）由 UI 侧统一加，不同图案共用同一个底座保证一致性，也不需要 24 张各画一次边框（同项目里装备稀有度边框"程序叠加"的既定做法）。
 4. **尺寸**：跟随 `pack_faction_atlas.js` 现有约定——256px 图集格子，图腾主体占约 224px（留 16px 透明边距）。图腾本身**不需要方向感**（不像士兵朝向），构图居中对称即可。
 
@@ -97,6 +99,8 @@ painterly shading, no photorealism, no clean vector look, no drop shadow.
 | `emblem_crown` | a simple three-point crown, front view |
 | `emblem_laurel` | a laurel wreath, two curved leafy branches meeting at the bottom, open at the top |
 | `emblem_anchor` | a ship anchor, doodle style, simple curved flukes |
+
+> **出图记录（2026-08-14）**：`emblem_mountain` 出了两版候选（简单三角旗 / 双燕尾旗），采用了细节量级跟其他23张更一致的双燕尾旗版，另一版存档 `art/leftover/`。`emblem_inkdrop` 经过3轮迭代——首版纯泪滴形状太空、容易被认成水滴；改成"实心填色+尖刺盾形"跑偏了风格（不是线稿，废弃）；最终版在轮廓内加了一道高光弧线+顶部甩尾小勾+两个实心小墨点才定稿，首版草稿存档 `art/leftover/`。
 
 ---
 
@@ -234,13 +238,16 @@ Hand-drawn doodle in a worn school notebook, single dark-ink pen line art, sligh
 
 ---
 
-## 产出 → 接入流程
+## 产出 → 接入流程（✅ 2026-08-14 已完成 1-3）
 
-1. AI 出图（GPT Image 2，24 套 × 3-4 变体择优），白底深墨线，命名 `emblem_<key>.png` 落 `art/ui/emblems/`（新建目录，仿 `art/ui/camps/` 组织方式）。
-2. 新写打包脚本 `art/ui/emblems/pack_emblem_atlas.js`，逻辑直接照抄 `art/ui/camps/pack_faction_atlas.js` 的 `whiteLineFrame()`（抠白底→取 alpha→重建白线透明→按 224/256 居中）+ shelf-pack 24 帧到一张图集。
-3. 产出 `client/src/assets/emblems/emblems.png` + `emblems.json`（TexturePacker JSON-Hash，帧名即 `emblem_<key>`），供 `getEmblemTexture(key)` 之类的读取函数按帧名直接取用（沿用本项目"帧名即约定 key，出现即生效"的零改代码接线模式）。
-4. **本文档范围到此为止**——以下是后续功能实现阶段需要做、但不在本次美术任务里的事项，先记录在这里避免遗漏：
+1. ✅ AI 出图（GPT Image 2），白底深墨线，命名 `emblem_<key>.webp`，**留在 `art/icons/`**（用户直接在这个落地目录里重命名，未新建 `art/ui/emblems/`——跟原计划的目录不同，改这条记录对齐实际路径）。候选/废弃版本存 `art/leftover/`（见上方「出图记录」）。
+2. ✅ 打包脚本 `art/icons/pack_emblem_atlas.js`——源图是不透明白底图（没有现成 alpha），逻辑综合 `pack_decos.cjs` 的白底转透明（`alpha = 255 - luminance`）+ `pack_faction_atlas.js` 的 `whiteLineFrame()`（丢弃原墨色只留 alpha、重建纯白线、224/256 居中），24 帧按 6×4 网格布局（不需要 shelf-pack——所有帧尺寸一致）。`node art/icons/pack_emblem_atlas.js` 运行，产物用 `{ palette: true, quality: 90, effort: 10, compressionLevel: 9 }` 压缩（同 `art/scripts/appendAtlasFrames.js` 的压缩口径）。
+3. ✅ 产出 `client/src/assets/emblems/emblems.png`（1536×1024，~195KB）+ `emblems.json`（TexturePacker JSON-Hash，帧名即 `emblem_<key>`）。接入两个新模块：
+   - [`client/src/render/atlas/emblemAtlas.ts`](../../client/src/render/atlas/emblemAtlas.ts)——`createAtlasLoader` 薄封装，同 `iconsAtlas.ts` 的写法；
+   - [`client/src/render/emblemIcon.ts`](../../client/src/render/emblemIcon.ts)——导出 `EMBLEM_KEYS`（24 个 key 的 union type）/`loadEmblemAtlas`/`getEmblemIconTexture`/`buildEmblemIcon(key,size,tint)`，`tint` 参数就是让家族/宗门自选强调色，同 `factionIcon.ts` 的 `buildFactionIcon` 契约（无程序回退图，因为还没有消费方）。
+   - **故意不接入 `bootManifest.ts` L0**：`preloadBoot` 的注释明确写着"不需要的东西不要放这里，每条都拖慢首屏"，而这套图集目前还没有任何调用方（没有 `emblemKey` 字段、没有选择器 UI），放 L0 只会白白多一次首屏请求。等真正的消费方（下面第4点）落地后，按该场景的 L1 lazy-load 套路接（参考 `cityAtlasLoader.ts` 等在场景入口加载的写法），不要放 L0。
+   - 验证：`tsc --noEmit` 全绿、`npm run typecheck` 全绿、`webpack --mode production` 构建通过（2 条 warning 是这个项目一直有的大图资源体积提醒，跟本次改动无关）；因为还没有 UI 消费这套图集，没有可视化改动可截图核对。
+4. **本文档范围到此为止**——以下是后续功能实现阶段需要做、但不在本次美术/资源接入任务里的事项，先记录在这里避免遗漏：
    - `server/shared/src/slg/core.ts` 的家族/宗门文档需要加 `emblemKey`（+ 可选 `emblemColor` 强调色）字段；
-   - 建家族/建宗门 UI 需要加"选徽章+选强调色"的选择器；
-   - `WORLD_MAP_ART_SPEC.md` §五提到的 `MARCH_TOKEN_ASSET` 占位替换、`buildDotToken` 静态头像圆点，接入后应改为读取徽章图集而非复用兵种骨骼资产；
-   - 需要更新 `WORLD_MAP_ART_SPEC.md` §五，把"留待后续"的 TODO 改成指向本文档。
+   - 建家族/建宗门 UI 需要加"选徽章+选强调色"的选择器，消费 `EMBLEM_KEYS`/`buildEmblemIcon`；
+   - `WORLD_MAP_ART_SPEC.md` §五提到的 `MARCH_TOKEN_ASSET` 占位替换、`buildDotToken` 静态头像圆点，接入后应改为读取徽章图集而非复用兵种骨骼资产（该节 TODO 已指向本文档，随本文档状态一起更新）。
