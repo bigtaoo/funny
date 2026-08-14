@@ -96,6 +96,9 @@ jobs:
   server-test:
     name: server test (${{ matrix.shard.name }})
     runs-on: ubuntu-latest
+    env:
+      # See TEST_SCRIPT's rationale on client-test below — same PR-vs-pre-CD split, same reason.
+      TEST_SCRIPT: ${{ github.event_name == 'pull_request' && 'test' || 'test:coverage' }}
     strategy:
       fail-fast: false
       matrix:
@@ -185,13 +188,14 @@ jobs:
         run: |
           args=()
           for w in ${{ matrix.shard.workspaces }}; do args+=(-w "$w"); done
-          npm run test:coverage "${args[@]}" --if-present
+          npm run "$TEST_SCRIPT" "${args[@]}" --if-present
 
       # coverage-report (below) needs every shard's coverage/ output on one filesystem; each
       # shard only produces coverage dirs for the workspaces it actually ran, so the glob below
-      # naturally scopes to just those.
+      # naturally scopes to just those. Skipped on PRs, where TEST_SCRIPT produced no coverage/ at
+      # all (`if-no-files-found: ignore` would otherwise make this a silent no-op every PR).
       - name: upload coverage artifact (${{ matrix.shard.name }})
-        if: always()
+        if: always() && github.event_name != 'pull_request'
         uses: actions/upload-artifact@v4
         with:
           name: server-coverage-${{ matrix.shard.name }}
@@ -203,6 +207,22 @@ jobs:
   client-test:
     name: client test + build
     runs-on: ubuntu-latest
+    env:
+      # 2026-08-14: coverage runs only on the pre-CD CI pass (push to main — the run whose success
+      # gates all 8 *-deploy.yml workflows via workflow_run — plus manual dispatch), NOT on PRs.
+      #
+      # Why: measured on this repo, `vitest run --coverage` costs client's suite 188s -> 668s (3.6x,
+      # +8min). The v8 instrumentation tax lands hardest on exactly the slowest tests —
+      # test/difficulty/ch1-6 and pvpSim run whole headless battle simulations (ch6 alone: 331s), so
+      # they pay it on every tick of a many-thousand-tick engine loop. Meanwhile the coverage output
+      # is, by its own design (see claudedocs/server.md "测试覆盖率百分比工具"), a REPORT with no
+      # threshold gate: it can never fail a run, so on a PR it was buying a Markdown table at the
+      # price of tripling the critical path. On the pre-CD pass — where the number is actually read
+      # as a release-quality signal, and nobody is blocked waiting on it — that trade is worth it.
+      #
+      # `test` and `test:coverage` exist side by side in client/package.json and in every server
+      # workspace's, so this is a pure script swap: same test files, same assertions, same failures.
+      TEST_SCRIPT: ${{ github.event_name == 'pull_request' && 'test' || 'test:coverage' }}
     steps:
       - uses: actions/checkout@v5
 
@@ -249,7 +269,7 @@ jobs:
         run: npm run typecheck
       - name: client unit tests
         working-directory: client
-        run: npm run test:coverage
+        run: npm run "$TEST_SCRIPT"
       # UI smoke: headless PIXI adapter constructs real scenes in pure Node to prove each scene starts correctly.
       # No Docker / browser / live stack needed, so this lives in the fast path.
       - name: client UI smoke tests
@@ -259,8 +279,9 @@ jobs:
         working-directory: client
         run: npm run build:web
 
+      # Skipped on PRs — see TEST_SCRIPT above; no coverage/ is produced there.
       - name: upload coverage artifact (client)
-        if: always()
+        if: always() && github.event_name != 'pull_request'
         uses: actions/upload-artifact@v4
         with:
           name: client-coverage
@@ -315,10 +336,12 @@ jobs:
   # consolidated table the old single-job "test coverage report" step did.
   # scripts/coverageSummary.mjs never throws, so `if: always()` + downloading whatever artifacts
   # did get produced lets it still render a (possibly partial) table even if a shard failed.
+  # Pre-CD pass only (push to main / manual dispatch), matching where TEST_SCRIPT actually produces
+  # coverage — on a PR every artifact would be absent and the table would be all "—".
   coverage-report:
     name: test coverage report
     needs: [server-test, client-test]
-    if: always()
+    if: always() && github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
