@@ -589,7 +589,7 @@ commercial 此前完全没有 Redis 依赖，本次新增：`config.ts` 补 `NW_
 | gateway | 65.9% | 70.3% | 76.8% |
 | gameserver | ~~62.5%~~ **91.9%**（2026-08-14 补测，见下） | 91.4% | 95.9% |
 | admin | 47.1% | 74.6% | 44.3% |
-| metaserver | 35.1% | 78.4% | 32.3% |
+| metaserver | ~~35.1%~~ **90.84%**（2026-08-14 两轮补测，见下） | 78.4% | 32.3% |
 | **加权总计** | **~70%** | **~82%** | **~71%** |
 
 > 上表是 2026-08-13 的一次性基线快照，未逐行回填每次补测后的新值（metaserver→61.17%、admin→64.92% 均见下方各自小节）；gameserver 这行例外标了删除线，因为下一节紧接着就是它。
@@ -611,7 +611,7 @@ metaserver 整体行覆盖率 **35.1% → 61.17%**（`npx vitest run --coverage`
 
 **过程中发现的测试基建缺陷，已于 2026-08-14 通用修复**：`test/helpers/fakeCollection.ts` 的 `updateOne` 在 upsert 时若 `filter` 不含 `_id`（`accounts.ts` 的 `resolveByDevice`/`resolveByOpenid`/`resolveByOAuth`/`registerWithPassword` 全是这种按 `deviceId`/`openid`/`oauth.provider+sub`/`password.loginId` 匹配的写法）会把新文档存进 Map 的 `undefined` 键、且返回值从不带真实 driver 会带的 `upsertedId`（`accounts/password.ts:52` 靠 `!res.upsertedId` 判断注册成功与否，用这个 fake 直测会把首次注册误判成"已占用"）；`docMatches` 也不支持 Mongo 对数组字段的隐式元素级匹配（`oauth: [{provider,sub}]` 这种）。之前所有用到 `fakeCollection.ts` 的测试都只按 `_id` 单键查询，没触发过这几点。当时两个 auth 测试文件各自用一个只作用于本文件 `accounts` 集合的子类包装绕过，未改动共享的 `fakeCollection.ts` 本体——**2026-08-14 把三处都折回了共享实现**：`updateOne` 的 upsert 新增 `buildDocFromFilter`（按真实 Mongo 语义从 filter 的实际字段构造新文档，而不是只用 `{_id: filter._id}`）、返回值补上 `upsertedId`；`docMatches` 新增数组分组匹配（点路径键共享同一个数组类型前缀时，要求同一个数组元素同时满足）。两个 auth 测试文件里原来的 `AccountsFakeCollection` 包装类已删除，直接用通用的 `FakeCollection`。新增 `test/helpers/fakeCollection.test.ts`（12 例）直接对 `fakeCollection.ts` 本体做单测——之前这个共享 helper 零专属测试，三处修复只能靠 auth 测试间接验证；新文件覆盖：无 `_id` filter 的 upsert 正确落到真实 `_id`（而非 `undefined` 键）、`upsertedId` 有/无的两种返回形状、`docMatches` 数组分组匹配（同元素 vs 跨元素不匹配）、以及 `_id`/非数组点路径的既有行为回归防护。`npx tsc --noEmit` 干净，`npx vitest run` 82 test files / 1268 tests 全绿。
 
-**仍然明显偏低、本轮未覆盖**（下一轮候选）：`src/service/{liveops,pve}/*`（大片 0~10%，retention/achievements/pve 系列，同类"e2e 走 dist 导入"问题，`test/pve-anticheat.test.ts` 等已有 e2e 但同样没记到 src）、`src/{moderation,reputationDecay,anticheatAudit,oauth,gatewayClient,socialsvcClient}.ts`、`src/cards/fuse.ts`。
+**仍然明显偏低、本轮未覆盖**（下一轮候选，已于 2026-08-14 第二轮补完，见下方"metaserver 补测第二轮"一节）：`src/service/{liveops,pve}/*`（大片 0~10%，retention/achievements/pve 系列，同类"e2e 走 dist 导入"问题，`test/pve-anticheat.test.ts` 等已有 e2e 但同样没记到 src）、`src/{moderation,reputationDecay,anticheatAudit,oauth,gatewayClient,socialsvcClient}.ts`、`src/cards/fuse.ts`。
 
 ## admin 补测：src/clients/* 从 15~25% 拉到 90%+（2026-08-14，worktree `feat/admin-coverage`）
 
@@ -652,3 +652,32 @@ gameserver 整体行覆盖率 **62.52% → 91.88%**（`npx vitest run --coverage
 **发现**：这次量出来 metaserver 实际是 **61.27%**（上一节文档写 61.17%，两次独立跑测的正常误差），一直是全仓库真正最低，只是排查顺序上先被 gameserver 抢跑——留档提醒：以"最低覆盖率"为目标排查时，先把 `npm run test:coverage --workspaces --if-present` 完整跑一轮出全量数字，再挑最低的动手，不要在某个包的跑批因为个别 flaky e2e 失败、没吐出 `coverage-summary.json` 时就跳过它、凭旧数据估算。metaserver 的 liveops/pve 模块（见上一节"下一轮候选"）仍待处理。
 
 **`engine/src/config.ts`（522→204 行，2026-08-12，独立函数模块范式）**：0 超限收尾后的第二例新增超限（第一例是上面的 `metaserver/src/service/auth.ts`）——ADR-065 引擎定点化迁移给 `config.ts` 加了 102 行（unit/building blueprint 从"人类可读表直接导出"改成"人类可读原始表 + `bakeXxxBlueprint()` 转换函数"两段式），从合入时未被察觉地推过 500 行界，直到下一次 PR 的 CI 才被 `checkFileLength.mjs`（新文件不在基线里）拦下。判断跟 `paddle.ts`/`economy.ts` 同款——unit/building blueprint 的原始表+bake 函数+类型定义（约 320 行）零共享状态、只被 `config.ts` 内部消费，没有交叉调用需要判断优先级，直接搬进新文件 `blueprintDefs.ts`；`config.ts` 里只留 `export { UNIT_BLUEPRINTS, BUILDING_BLUEPRINTS } from './blueprintDefs'` 一行 re-export，全部约 11 个外部消费者（`balance/pveUpgrades.ts`/`Building.ts`/`GameState.ts`/`Unit.ts`/`systems/BuildingProductionSystem.ts` + 6 个测试文件）导入路径零改动。**验证**：`npx tsc -b` 干净；`npm test` 139/139（含新增的 `fixed.test.ts`）全绿；`node scripts/checkFileLength.mjs` 0 超限（566 源文件，比改动前多 1——新增 `blueprintDefs.ts`）；额外核对了下游消费方 `worldsvc`/`client` 的 `tsc --noEmit` 均干净（`UNIT_BLUEPRINTS`/`BUILDING_BLUEPRINTS` 的 re-export 对它们透明）。第⑤步：纯移动，两个导出符号的值/类型零变化，不适用，未新增测试。
+
+## metaserver 补测第二轮：liveops/pve/安全社交/卡牌皮肤/客户端封装/杂项 从 61.27% 拉到 90.84%（2026-08-14，worktree `feat/metaserver-coverage`）
+
+gameserver 补到 91.9% 后重新跑一次全量基线，确认 **metaserver（61.27%，8937 行里 5476 行覆盖）仍是全仓库真正最低**——上一节末尾早就标好了"下一轮候选"清单（`src/service/{liveops,pve}/*`、`src/{moderation,reputationDecay,anticheatAudit,oauth,gatewayClient,socialsvcClient}.ts`、`src/cards/fuse.ts`），本节把它连同顺手发现的几个同类小文件一起清完。根因和上一轮 metaserver 那次相同（**不是没测，是 e2e 走 `../dist/app.js` 编译产物导入，vitest v8 coverage provider 记不回 `src/*.ts`**）——继续复用同一套修法：新增 `test/*-unit.test.ts` 直接 `import ... from '../src/...'`。
+
+**先排除一次性脚本**：仿照 gameserver 的先例，`vitest.config.ts` 的 `coverage.exclude` 加 `'scripts/**'`（`gen-proto.mjs`/`backfillMatchExpiry.ts`/`migrateEquipmentInv.ts`/`samplePvpReplays.ts`，约 259 行一次性代码生成/迁移/抽样脚本，非应用代码，不占分母）。
+
+**技术方案上一个新点**：这轮 6 组任务全部并行派发（各自新增互不重叠的文件），而不是像上一轮四组那样顺序做完。6 个并发 `vitest run` 进程各自走 `globalSetup.ts` 会各自起一个 `MongoMemoryReplSet`（慢，且都会去写同一个 tmpdir 里固定文件名的握手文件 `nw-metaserver-mongo-uri`，互相覆盖导致 worker 连到错的/已停的 mongod）——**规避**：先用一个独立脚本单独起**一个共享的** `MongoMemoryReplSet`，把它的 URI 直接通过 `NW_MONGO_URI` 环境变量传给每个并行 agent（而不是让它们各自触发 `globalSetup.ts` 的自动起停逻辑——`globalSetup.ts` 本身设计成"检测到 `NW_MONGO_URI` 已设置就直接跳过"，天然支持这种复用），每个 agent 的新测试文件各自用不同的 Mongo DB 名（`nw_meta_<module>_unit_test` 前缀）避免同一个 mongod 实例上的跨文件数据污染。6 个 agent 全部在同一个 worktree 里工作，写各自独立的新文件，无冲突。
+
+按 6 组并行完成，均新增文件、不改动既有文件：
+
+- **Group A liveops**（`test/liveops-retention-unit.test.ts` 24 例 + `test/liveops-achievements-unit.test.ts` 14 例 + `test/liveops-events-lobbybadges-unit.test.ts` 16 例，54 例）：`retention.ts` 0.3%→**94.98%**、`achievements.ts` 1.8%→**96.36%**、`events.ts`/`lobbyBadges.ts`/liveops `helpers.ts` →**100%**。前两个用 `FakeCollection`（无需真实 Mongo），events/lobbyBadges 因 `claimEventReward` 用了 `$elemMatch`/`$expr`（`FakeCollection` 不支持）改用共享 Mongo。
+- **Group B pve**（`test/pve-service-unit.test.ts` 单文件 53 例）：`clear.ts`/`verify.ts`→**100%**、`helpers.ts`→**99.35%**、`stamina.ts`→**96.07%**，真实 Mongo（`claimIfNotClaimed` 等原子守卫需要）。
+- **Group C 安全/社交**（`test/anticheat-audit-unit.test.ts` 21 例 + `test/moderation-unit.test.ts` 14 例 + `test/reputation-decay-unit.test.ts` 12 例 + `test/social-service-unit.test.ts` 40 例，87 例）：`anticheatAudit.ts` 0%→**97.95%**、`moderation.ts`/`reputationDecay.ts`→**100%**（`FakeCollection`）、`social.ts`→**100%**（真实 Mongo，`claimMail`→`deliverMailGrant` 的 `{$ne: orderId}` 幂等守卫 + `$addToSet`-with-`$each` 需要）。发现并绕开一处 `FakeCollection` 语义缺陷：真实 Mongo 的 `null` 等值查询会匹配"字段确实缺失"，`FakeCollection` 走严格 `===`不会——两个测试文件改为显式在 fixture 里补 `flags.moderationRev: 0` 绕过，未改动共享 helper。
+- **Group D 卡牌/皮肤**（`test/cards-fuse-unit.test.ts` 19 例 + `test/cards-lock-unit.test.ts` 7 例 + `test/skin-unit.test.ts` 41 例，67 例）：`fuse.ts`/`lock.ts`/`skin.ts` 三个文件均达到或接近 **100%**（真实 Mongo；沿用 `economy-service-unit.test.ts`/`cards.e2e.test.ts` regression 测试里"包一层真实 collection 方法、其余原样透传"的手法，确定性复现并发幂等竞态/唯一键冲突分支，不依赖真并发）。
+- **Group E 客户端封装**（`test/commercial-client-unit.test.ts` 14 例 + `test/socialsvc-client-unit.test.ts` 19 例 + `test/gateway-client-unit.test.ts` 8 例 + `test/oauth-unit.test.ts` 14 例，55 例）：`commercialClient.ts`/`socialsvcClient.ts`/`gatewayClient.ts`/`oauth.ts` 四个纯 HTTP 客户端封装全部拉到 **100% 行覆盖**（起真实 `node:http` fixture server 而非 mock `fetch`，不碰 Mongo）。
+- **Group F 杂项**（`test/save-service-unit.test.ts` 29 例 + `test/inventory-service-unit.test.ts` 18 例 + `test/replayArchive-unit.test.ts` 16 例 + `test/cardStats-unit.test.ts` 6 例 + `test/wxAuth-unit.test.ts` 4 例 + `test/paddleEventRoutes-unit.test.ts` 5 例，78 例）：`replayArchive.ts`/`cardStats.ts`/`wxAuth.ts`/`paddleEventRoutes.ts` →95~100%，`save.ts`→**97.75%**，`inventory.ts`→**100%**（分支 65.5%，剩余是等价路径的 `??`/`||` 备用操作数）。
+
+metaserver 整体行覆盖率 **61.27% → 90.84%**（`npx vitest run --coverage`，103 test files / 1662 tests 全绿，`npx tsc --noEmit` 干净；总行数因排除 `scripts/**` 从 8937 降到 8586，覆盖行数 5476 → 7800）。分支覆盖 85.35%、函数覆盖 96.67%。
+
+**留意但未继续追的残余缺口**（性价比递减，均为不可达的防御性分支或需要真实并发/精确时序才能触发，逐一记录避免下轮重复排查）：
+- `retention.ts` 的 `settleCheckinReward`/`claimCheckinHandler` 里 `reward.kind==='coins'`/`'stamina'` 分支——死代码，`CHECKIN_REWARDS` 从未定义过这两种 kind，只是给旧存档快照留的向后兼容判断。
+- `stamina.ts` 的 `purchaseStaminaHandler` 里 `amount!==60` 分支——openapi schema 把 `amount` 约束成 `enum:[60]`，Fastify 请求校验层先于 handler 拦截，HTTP 路径不可达。
+- pve `helpers.ts` 的 `deductStamina` 里 `newRegenAt=...:0` 的 else 分支——只有 `cost<=0` 才会走到，但当前所有 `PveLevelConfig`（`server/shared/src/pveRewards.ts`）都省略 `staminaCost`（默认 10）或非零，实际关卡表打不到。
+- `save.ts` 的 `getMatchHistory` 的 `Math.min/max`/`Number.isFinite` clamp 分支 + `createStateReplayShare` 的 `typeof blob!=='string'` 检查——openapi schema 已经把 `limit`/`blob` 的类型/范围约束死，ajv 校验层先于 handler 拦截，HTTP 路径不可达。
+- `save.ts` 里 `currentSeasonPromise`/`migrateIfStale` 外层 catch——人为造错会触发 Node 的 `PromiseRejectionHandledWarning`（源码里这个 promise 是"先建后跨多个 await 才用"的既有写法，不是测试的锅），改用同类的 reconcile/getWallet 抛错分支验证同一种"best-effort 记日志继续"模式，规避这个时序坑。
+- `anticheatAudit.ts` 剩 4 行未覆盖：`parsePerSideStats` 兜底 catch 里的防御性单行 + 两处可选字段展开分支，与已覆盖分支功能等价，再测等于同一分支换个名字测两遍。
+
+**仍待处理（下一轮候选，此时应已不是全仓库最低）**：`src/index.ts`（149 行）/`src/config.ts`（19 行）——纯 env 读取 + 启动装配，参照 gateway/gameserver 的先例，价值存疑，暂不建议为它专门起真实 server 集成测试。

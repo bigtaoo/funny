@@ -7,7 +7,10 @@ export default defineConfig({
       provider: 'v8',
       reporter: ['text', 'lcov', 'html', 'json-summary'],
       reportsDirectory: './coverage',
-      exclude: [...coverageConfigDefaults.exclude, 'src/generated/**'],
+      // scripts/*.mjs|ts are one-shot codegen/migration/sampling tools (gen-proto, backfill,
+      // migrate, sample) invoked manually, never imported by app code or tests — same rationale
+      // as excluding src/generated/**, its output. Precedent: gameserver/vitest.config.ts.
+      exclude: [...coverageConfigDefaults.exclude, 'src/generated/**', 'scripts/**'],
     },
     // e2e tests need a real Mongo (rs0). globalSetup spins one up via mongodb-memory-server
     // unless NW_MONGO_URI points at an external DB; setupEnv bridges the URI into each worker.
