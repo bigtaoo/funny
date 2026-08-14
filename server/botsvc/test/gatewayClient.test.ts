@@ -68,4 +68,46 @@ describe('GatewayClient.enqueueRanked', () => {
     const client = new GatewayClient();
     await expect(client.enqueueRanked(listening.url, 'test-jwt', [])).rejects.toThrow(/closed/);
   });
+
+  it('rejects with a specific message on match_bot (queue-wait exceeded matchsvc\'s bot-fallback threshold)', async () => {
+    const listening = await listen();
+    wss = listening.wss;
+    wss.on('connection', (ws) => {
+      ws.on('message', () => {
+        ws.send(
+          Envelope.encode(
+            Envelope.fromPartial({ server: { matchBot: { seed: 1, opponentName: 'AI', elo: 1000, difficulty: '5' } } }),
+          ).finish(),
+        );
+      });
+    });
+
+    const client = new GatewayClient();
+    await expect(client.enqueueRanked(listening.url, 'test-jwt', [])).rejects.toThrow(/bot-fallback/);
+  });
+
+  it('rejects on timeout when no server response ever arrives, and closes the socket', async () => {
+    const listening = await listen();
+    wss = listening.wss;
+    let serverSideClosed = false;
+    wss.on('connection', (ws) => {
+      ws.on('message', () => {}); // never responds
+      ws.on('close', () => { serverSideClosed = true; });
+    });
+
+    const client = new GatewayClient();
+    await expect(client.enqueueRanked(listening.url, 'test-jwt', [], 30)).rejects.toThrow(/timed out/);
+    await new Promise((r) => setTimeout(r, 20));
+    expect(serverSideClosed).toBe(true);
+  });
+
+  it('rejects immediately if the underlying connect itself fails (nothing listening)', async () => {
+    const client = new GatewayClient();
+    await expect(client.enqueueRanked('ws://127.0.0.1:1', 'test-jwt', [])).rejects.toThrow();
+  });
+
+  it('close() before any connection resolves is a no-op (no throw)', () => {
+    const client = new GatewayClient();
+    expect(() => client.close()).not.toThrow();
+  });
 });

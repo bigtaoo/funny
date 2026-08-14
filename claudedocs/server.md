@@ -584,7 +584,7 @@ commercial 此前完全没有 Redis 依赖，本次新增：`config.ts` 补 `NW_
 | matchsvc | 88.3% | 91.1% | 97.2% |
 | commercial | 81.4% | 76.9% | 91.8% |
 | socialsvc | 78.4% | 84.9% | 84.8% |
-| botsvc | 70.0% | 83.6% | 83.2% |
+| botsvc | ~~70.0%~~ **92.74%**（2026-08-14 补测，见下） | 83.6% | 83.2% |
 | auctionsvc | 72.3% | 76.9% | 68.2% |
 | gateway | ~~65.9%~~ **93.07%**（2026-08-14 补测，见下） | 70.3% | 76.8% |
 | gameserver | ~~62.5%~~ **91.9%**（2026-08-14 补测，见下） | 91.4% | 95.9% |
@@ -726,3 +726,23 @@ admin 补到 93.39% 后，14 包基线里最低的变成了 **gateway（65.9%）
 - `src/index.ts`（74 行，进程 bootstrap，同 admin/gameserver 先例）继续不单独起集成测试。
 
 gateway 整体行覆盖率 **65.9% → 93.07%**（`npx vitest run --coverage`，13 test files / 188 tests，181 passed + 7 skipped——7 个 skip 全部是既有的"无本地 Redis 则跳过"用例，跳过状态未变；新增 128 例，原有 60 例零改动；`npx tsc --noEmit` 干净）。分支覆盖 91.03%、函数覆盖 97.05%。
+
+## botsvc 补测：commercialClient/metaClient/socialClient/config 从 0% + worldClient/scheduler 等分支缺口，从 70.0% 拉到 92.74%（2026-08-14，worktree `feat/botsvc-coverage`）
+
+gateway 补到 93.07% 后，14 包基线里最低的变成了 **botsvc（70.0%）**——本节按"根据覆盖率结果修复最低"处理这个包。
+
+**根因跟 gateway 类似——七八个中小文件各自零星缺，外加四个"从没写过测试文件"的纯 0%**：`commercialClient.ts`/`metaClient.ts`/`socialClient.ts`/`config.ts` 四个文件（`test/` 目录下压根没有对应的 `*.test.ts`）——`bot.test.ts` 里 `fakeMeta()`/`fakeSocial()`/`fakeCommercial()` 全是手搓的 plain-object stub，从未调用过这三个真实 HTTP client 的实现；`worldClient.ts`（36.6%，既有 `worldClient.test.ts` 只测了 `baseCoords`/`pickAttackTarget` 两个纯函数，6 个真正发 HTTP 请求的方法从未被直接调用过，只在 `bot.test.ts` 里被同样手搓的假 `world` 对象绕过）；`scheduler.ts`（80.2%，`pause`/`resume`/`drainAll`、capacity 信号失败的一次性告警 + 降级到不限流、`despawnDownTo` 缩容路径均未测）；`gatewayClient.ts`/`gameServerClient.ts`（各 80%/82%，超时分支、`match_bot` 兜底、连接本身失败的分支均未测——已有测试只覆盖"连上之后"的几条 happy/error path）；`bot.ts`（89.6%，`tickFamily` 整个方法 + 三档 `paymentTier` 购买分支 + 购买失败静默重试均未测）。
+
+**修法**：4 个新文件 + 5 个既有文件追加用例：
+
+- **`test/commercialClient.test.ts`**（3 例）+ **`test/metaClient.test.ts`**（3 例）+ **`test/socialClient.test.ts`**（7 例）+ **`test/config.test.ts`**（2 例）：mock `globalThis.fetch`（同 gateway 各 client 测试的既有约定），覆盖每个方法的成功/`ok:false`/无错误信息兜底三态；`config.test.ts` 同 admin/gateway/gameserver 先例，纯 env 默认值 + 全量覆盖两条路径。均 100%。
+- **`test/worldClient.test.ts`**（追加 8 例）：6 个 HTTP 方法（`getActiveSeason`/`joinSeason`/`getWorldMe`/`upgradeBuilding`/`getWorldMapSparse`/`startMarchAttack`）各自的请求路径/方法/body/token 头 + 失败分支（`ok:false` 带错误信息 / 不带）。100%。
+- **`test/gatewayClient.test.ts`** + **`test/gameServerClient.test.ts`**（各追加 4 例）：`match_bot` 兜底拒绝、`match_start`/`match_found` 超时拒绝（真实关闭底层 socket，非 mock 计时器）、连接本身失败（连到一个没人监听的端口）、`close()` 的幂等/抑制 `onDisconnect` 分支。均达到或接近 100%。
+- **`test/scheduler.test.ts`**（追加 5 例）：`pause()`→`drainAll()`（全员登出，capacity/spawn/upkeep 整段跳过）→`resume()`恢复正常；`capacity.onlineCount()` 抛错→降级到不限流的满目标 + `capacityWarned` 一次性告警标记（重复失败只警告一次）；`despawnDownTo` 缩容到新目标 + 其自身也受 `batchSize` 限速（用连续几次小批量 tick 先把全员喂上线，规避"生成也受同一个 batchSize 限制"这个容易踩的坑）。100%。
+- **`test/bot.test.ts`**（追加 10 例）：`tickFamily` 全部分支（无 token 不动 / 无家族→搜索并加入第一个候选 / 搜索为空则不加入 / 高繁荣度家族不动 / 低繁荣度家族离开且同一 tick 不重新搜索）；`bootstrapPaymentTier` 三档（`free`不购买 / `monthly_card`/`starter_growth` 各自的 orderId 格式 `bot-{deviceId}-{tier}`）+ 购买失败不影响登录成功 + 下次登录重试（未标记 bootstrapped）+ 购买成功后不重复购买（幂等）。达到 100%。
+
+**`vitest.config.ts` 新增 `scripts/**` 排除**（同 gameserver/metaserver/gateway 先例）：`scripts/gen-proto.mjs` 一次性生成脚本不计入分母。
+
+**留意但未继续追的残余缺口**：`index.ts`（60 行，进程 bootstrap，同 admin/gameserver/gateway 先例不单独起集成测试）；`engineDriver.ts`/`protoCodec.ts`/`internalHttp.ts`/`envelopeSocket.ts`/`pool.ts`/`gameServerClient.ts` 各剩几行防御性分支或等价路径变体，性价比递减未继续追。
+
+botsvc 整体行覆盖率 **70.0% → 92.74%**（`npx vitest run --coverage`，16 test files / 119 tests 全绿——新增 47 例，原有 72 例零改动；`npx tsc --noEmit` 干净）。分支覆盖 89.39%、函数覆盖 98.07%。
