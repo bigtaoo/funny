@@ -8,7 +8,9 @@ export default defineConfig({
       provider: 'v8',
       reporter: ['text', 'lcov', 'html', 'json-summary'],
       reportsDirectory: './coverage',
-      exclude: [...coverageConfigDefaults.exclude, 'src/generated/**'],
+      // scripts/gen-proto.mjs is a one-shot codegen tool (invoked by `npm run proto:gen`, never
+      // imported by app code or tests) — same rationale as excluding src/generated/**, its output.
+      exclude: [...coverageConfigDefaults.exclude, 'src/generated/**', 'scripts/**'],
     },
   },
 });

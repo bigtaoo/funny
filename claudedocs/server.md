@@ -587,10 +587,12 @@ commercial 此前完全没有 Redis 依赖，本次新增：`config.ts` 补 `NW_
 | botsvc | 70.0% | 83.6% | 83.2% |
 | auctionsvc | 72.3% | 76.9% | 68.2% |
 | gateway | 65.9% | 70.3% | 76.8% |
-| gameserver | 62.5% | 80.3% | 82.0% |
+| gameserver | ~~62.5%~~ **91.9%**（2026-08-14 补测，见下） | 91.4% | 95.9% |
 | admin | 47.1% | 74.6% | 44.3% |
 | metaserver | 35.1% | 78.4% | 32.3% |
 | **加权总计** | **~70%** | **~82%** | **~71%** |
+
+> 上表是 2026-08-13 的一次性基线快照，未逐行回填每次补测后的新值（metaserver→61.17%、admin→64.92% 均见下方各自小节）；gameserver 这行例外标了删除线，因为下一节紧接着就是它。
 
 **metaserver 明显偏低**：`src/equipment/{craft,enhance,equip,reforge,salvage,trade}.ts`、`src/paddle/*`、`src/service/auth/{credential,helpers,oauthBind,profile,support}.ts`、`src/service/economy/*` 大片 0~10%——不是这轮改动引入的缺口，是这个包本身路由面最大（9 个 mixin/69 测试文件）但装备/Paddle/OAuth 这几块此前的 e2e 覆盖没跟上。**admin 47%**次低，同理。两者列为下一轮"server 端测试覆盖审计"（见上文 2026-08-05/08-10 两节）的优先输入，本轮不展开修——这次的目标只是把量出百分比的工具接上，不是把百分比刷高。
 
@@ -627,5 +629,26 @@ metaserver 补到 61.17% 后，14 包基线里最低的变成了 **admin（47.1%
 `src/clients` 整体行覆盖率 **26.14% → 97.7%**；admin 包整体行覆盖率 **47.11% → 64.92%**（`npx vitest run --coverage`，15 test files / 148 tests 全绿——新增 54 例，原有 94 例零改动；`npx tsc --noEmit` 干净）。
 
 **仍然明显偏低、本轮未覆盖（下一轮候选，此时应已不是全仓库最低）**：`src/httpApi/*Routes.ts`（fastify 路由处理器本体，仍 0~2%——测试要么需要真起 fastify app 用 `.inject()`，要么把路由处理函数单独导出直接调用，两者都比 client 层这次的"mock 一个函数"重得多）、`src/httpApi/session.ts`（44.31%）、`src/config.ts`/`src/index.ts`（0%，纯 env 读取 + 启动装配，价值存疑）、`src/service/{events,flags,gacha,ladder,mapTemplates,promo,paddleEvents}.ts`（21~50%，同"e2e 传 null 跳过真实分支"模式，但在 service 层而非 client 层）。
+
+## gameserver 补测：index.ts 拆分 + 从 62.5% 拉到 91.9%（2026-08-14）
+
+admin 补到 64.92% 后重新量了一次全量基线，发现 **metaserver 实际是 61.17%**（上一节的数字），仍然低于 admin，但当时 metaserver 那次的 e2e-import-dist 根因已经处理完，一时没有更便宜的下一刀；同批数据里 **gameserver（62.5%）** 是唯一一个"根因不是测量假象、真的几乎没测"的包，且体量小（7 个 src 文件，几百行），性价比最高，本节先处理它。
+
+**根因和 admin/metaserver 都不同**：gameserver 的 `Room`/`RoomManager`/`transport.ts` 等纯逻辑早就测得不错（85~100%），拖后腿的是 `src/index.ts`（171 行，0%）——整个 WS 服务端的进程 bootstrap（ticket 握手鉴权、消息路由、心跳 sweep、优雅关闭）全部写成 `main()` 函数体里的一次性闭包，`main();` 在模块顶层无条件调用，导致**任何**测试文件只要 import 它（哪怕只是想复用其中一个 helper）就会带着真实 `http.listen()`/`WebSocketServer`/`SIGINT` 副作用跑起来——这也是它和同样"index.ts 0%"的 gateway（74 行，`Gateway` 类早已抽出、index.ts 只剩瘦身份 wiring）本质的区别：gateway 的 0% 无所谓（体量小），gameserver 的 0% 是因为该抽的核心逻辑压根没抽出来。
+
+**修法**：照搬 gateway 的形态（类/纯函数 + 真实对象注入 wiring），把 `main()` 闭包体按职责拆成 4 个新文件，全部是接受最小接口的纯函数/类，不需要真 socket 就能单测（同 `RoomManager`/`Room` 测试早就用的"假 Connection 对象"技巧）：
+
+- `src/connectionHandler.ts`：`resolveConnection`（ticket 验签 + exp 校验 + `manager.join`，失败即 `ws.close()` 返回 null）、`routeMessage`（二进制帧解码路由 / 非二进制丢弃 / 解码失败静默丢弃）、`wireConnection`（握手成功后挂 message/pong/close/error 四个监听）、`getConnections`（从 `wss.clients` 反查已标记的 Connection）、`sweepHeartbeat`（两次未应答 pong 则 terminate，否则 ping）。
+- `src/httpHealth.ts`：`GET /health` 存活探针 + 其余请求 426 的纯 handler。
+- `src/matchsvcRegistration.ts`：`registerWithMatchsvc`（启动注册，指数退避重试，4xx 不重试）+ `reportLoadHeartbeat`（周期性上报负载，best-effort）——独立成文件而非留在 index.ts 里 `export`，是因为 `index.ts` 底部 `main();` 无条件执行，`export` 出来的函数一旦被测试文件 import 就会触发真实启动。
+- `src/lifecycle.ts`：`createShutdownHandler`（SIGINT/SIGTERM 去重 + 清定时器 + 快照在线 accountId + `destroyAll` + 关 wss/http + bounded flush/abandon + exit，全部注入依赖，可用假 manager/reporter/wss/http 断言调用顺序和"调用两次只执行一次"）。
+
+`index.ts` 收缩到 **69 行**纯 wiring（env 读取 + 真实 `http`/`WebSocketServer` 构造 + 调用上面四个模块 + `main();`），保留 0% 覆盖但体量已经小到不影响包整体百分比——和 gateway 的 74 行 index.ts 处境一致，是这条代码路径唯一被认为"不值得为覆盖率专门起真实 socket 集成测试"的部分。`scripts/gen-proto.mjs`（buf 生成脚手架，33 行，非应用代码）比照既有 `src/generated/**` 的排除逻辑一并从覆盖率分母移除（`vitest.config.ts` 加 `'scripts/**'`）。
+
+同时顺手补了几个既有文件的残余分支缺口（`RoomManager.handle` 的 `match_result`/`conn_resume`/`room_leave`/`ping`/default 分支、`MetaReporter` 的 `flush`/`drain` 重试队列路径、`room/base.ts` 的 `playerSlotsOut`/`broadcast`——后者标注"死代码"但仍是纯导出函数，直接单测无害）。
+
+gameserver 整体行覆盖率 **62.52% → 91.88%**（`npx vitest run --coverage`，11 test files / 127 tests 全绿，`npx tsc --noEmit` 干净；`Connection.ts`/`RoomManager.ts`/`config.ts`/`connectionHandler.ts`/`lifecycle.ts`/`matchsvcRegistration.ts`/`httpHealth.ts`/`room/base.ts` 均 100%，`metaReport.ts` 94.8%）。
+
+**发现**：这次量出来 metaserver 实际是 **61.27%**（上一节文档写 61.17%，两次独立跑测的正常误差），一直是全仓库真正最低，只是排查顺序上先被 gameserver 抢跑——留档提醒：以"最低覆盖率"为目标排查时，先把 `npm run test:coverage --workspaces --if-present` 完整跑一轮出全量数字，再挑最低的动手，不要在某个包的跑批因为个别 flaky e2e 失败、没吐出 `coverage-summary.json` 时就跳过它、凭旧数据估算。metaserver 的 liveops/pve 模块（见上一节"下一轮候选"）仍待处理。
 
 **`engine/src/config.ts`（522→204 行，2026-08-12，独立函数模块范式）**：0 超限收尾后的第二例新增超限（第一例是上面的 `metaserver/src/service/auth.ts`）——ADR-065 引擎定点化迁移给 `config.ts` 加了 102 行（unit/building blueprint 从"人类可读表直接导出"改成"人类可读原始表 + `bakeXxxBlueprint()` 转换函数"两段式），从合入时未被察觉地推过 500 行界，直到下一次 PR 的 CI 才被 `checkFileLength.mjs`（新文件不在基线里）拦下。判断跟 `paddle.ts`/`economy.ts` 同款——unit/building blueprint 的原始表+bake 函数+类型定义（约 320 行）零共享状态、只被 `config.ts` 内部消费，没有交叉调用需要判断优先级，直接搬进新文件 `blueprintDefs.ts`；`config.ts` 里只留 `export { UNIT_BLUEPRINTS, BUILDING_BLUEPRINTS } from './blueprintDefs'` 一行 re-export，全部约 11 个外部消费者（`balance/pveUpgrades.ts`/`Building.ts`/`GameState.ts`/`Unit.ts`/`systems/BuildingProductionSystem.ts` + 6 个测试文件）导入路径零改动。**验证**：`npx tsc -b` 干净；`npm test` 139/139（含新增的 `fixed.test.ts`）全绿；`node scripts/checkFileLength.mjs` 0 超限（566 源文件，比改动前多 1——新增 `blueprintDefs.ts`）；额外核对了下游消费方 `worldsvc`/`client` 的 `tsc --noEmit` 均干净（`UNIT_BLUEPRINTS`/`BUILDING_BLUEPRINTS` 的 re-export 对它们透明）。第⑤步：纯移动，两个导出符号的值/类型零变化，不适用，未新增测试。
