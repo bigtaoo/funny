@@ -155,6 +155,24 @@ jobs:
         with:
           path: ~/.cache/mongodb-binaries
           key: mongod-${{ runner.os }}-v7.0.14
+      # 2026-08-14 fix: this looked redundant with server-checks' own "server typecheck" step, but
+      # server-checks runs on a SEPARATE runner with its own ephemeral filesystem — its build
+      # output (each workspace's gitignored dist/) never reaches these runners. Several workspaces
+      # (metaserver, botsvc, ...) import @nw/engine via plain node_modules resolution — the actual
+      # symlinked package.json#main points at dist/index.js — without declaring it as a
+      # tsconfig.json `references` entry (only gateway/worldsvc do), so it's not something each
+      # shard's own scoped `tsc -b` (run inside its `test:coverage` script) picks up as a build
+      # dependency either. First cut of this split skipped this step and every shard whose tests
+      # import @nw/engine failed immediately with "Cannot find module '@nw/engine'" (dist/ never
+      # built). `npm run typecheck` here is the same root solution-file `tsc -b` as server-checks —
+      # walks all 13 workspaces' project references in dependency order, materializing dist/ for
+      # engine/shared/etc. Duplicated per shard (~13s each) rather than shared via artifact
+      # upload/download from server-checks: dist/ is small and fast to rebuild, so the extra
+      # complexity of shipping it between jobs isn't worth it — and the 13s runs in parallel across
+      # shards, so it costs shared runner-minutes, not wall-clock.
+      - name: server typecheck (tsc -b, solution file — builds dist/ the tests import)
+        working-directory: server
+        run: npm run typecheck
       # NW_REQUIRE_DB makes every e2e suite's DB-connect helper re-throw instead of silently
       # `describe.skipIf`-ing itself out when Mongo/Redis is unreachable (see claudedocs/server.md,
       # "单文件 500 行收敛" 附近的 CI 门禁记录) — without it, a broken mongod download or an
