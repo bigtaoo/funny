@@ -22,7 +22,7 @@ import { authOAuthHandler, authBindHandler, type OAuthCtx } from '../src/service
 import { MetaCore, type ServiceDeps } from '../src/service/base.js';
 import { AccountCache } from '../src/accountCache.js';
 import { OAuthError, type OAuthService } from '../src/oauth.js';
-import { FakeCollection, setDotted } from './helpers/fakeCollection.js';
+import { FakeCollection } from './helpers/fakeCollection.js';
 import { fakeCommercial, fakeGateway } from './helpers/fakeClients.js';
 
 const jwt = { secret: 'test-secret' };
@@ -40,72 +40,8 @@ interface AccountSeed {
   flags?: { banned?: boolean; bannedUntil?: number };
 }
 
-/**
- * FakeCollection's generic dotted-path matcher (`getDotted`) walks plain nested objects — it has no
- * notion of "does any element of this array match", so a query like `{'oauth.provider': p, 'oauth.sub':
- * s}` against `doc.oauth: {provider,sub}[]` (exactly resolveByOAuth's and bindOAuth's shape) never
- * matches, even against a doc that plainly satisfies it under real MongoDB's implicit array semantics.
- * That silently breaks isNew detection, existing-account lookup (banned/grace/displayName), and the
- * already_bound branch. Special-cased here (accounts collection only, this test file only) rather than
- * touching the shared fakeCollection.ts helper. Also carries the same upsert-mis-keying fix used in
- * auth-credential-unit.test.ts's AccountsFakeCollection for the non-oauth-dotted path (kept local to
- * this file since it's a different Collections/AccountSeed shape).
- */
-function hasOAuthDottedKeys(q: Record<string, unknown>): boolean {
-  return 'oauth.provider' in q && 'oauth.sub' in q;
-}
-
-function matchesOAuth(doc: AccountSeed, q: Record<string, unknown>): boolean {
-  return (doc.oauth ?? []).some((o) => o.provider === q['oauth.provider'] && o.sub === q['oauth.sub']);
-}
-
-class AccountsFakeCollection extends FakeCollection<AccountSeed & { _id: string }> {
-  async findOne(query: Record<string, unknown> = {}, opts?: unknown): Promise<(AccountSeed & { _id: string }) | null> {
-    if (hasOAuthDottedKeys(query)) {
-      for (const d of this.docs.values()) if (matchesOAuth(d, query)) return d;
-      return null;
-    }
-    return super.findOne(query, opts);
-  }
-
-  async updateOne(
-    filter: Record<string, unknown>,
-    update: Record<string, Record<string, unknown>>,
-    opts?: { upsert?: boolean },
-  ): Promise<{ matchedCount: number; modifiedCount: number; upsertedCount: number; upsertedId?: string }> {
-    if (hasOAuthDottedKeys(filter)) {
-      const existing = [...this.docs.values()].find((x) => matchesOAuth(x, filter));
-      const existed = !!existing;
-      const rec = (existing ?? {}) as unknown as Record<string, unknown>;
-      if (update.$setOnInsert && !existed) Object.assign(rec, update.$setOnInsert);
-      if (update.$set) for (const [k, v] of Object.entries(update.$set)) setDotted(rec, k, v);
-      if (!existed) {
-        if (!opts?.upsert) return { matchedCount: 0, modifiedCount: 0, upsertedCount: 0 };
-        this.docs.set(rec._id as string, rec as AccountSeed & { _id: string });
-      }
-      return {
-        matchedCount: existed ? 1 : 0,
-        modifiedCount: existed ? 1 : 0,
-        upsertedCount: existed ? 0 : 1,
-        upsertedId: existed ? undefined : (rec._id as string),
-      };
-    }
-    const res = await super.updateOne(filter, update, opts);
-    if (res.upsertedCount === 1) {
-      for (const [key, doc] of [...this.docs.entries()]) {
-        if (key !== doc._id) {
-          this.docs.delete(key);
-          this.docs.set(doc._id, doc);
-          return { ...res, upsertedId: doc._id };
-        }
-      }
-    }
-    return res;
-  }
-}
-
 function fakeCols(opts: { accounts?: AccountSeed[] } = {}): Collections {
-  const accounts = new AccountsFakeCollection();
+  const accounts = new FakeCollection<AccountSeed & { _id: string }>();
   if (opts.accounts) accounts.seed(...opts.accounts);
   const saves = new FakeCollection<{ _id: string; save: SaveData; rev: number }>();
   const cardInstances = new FakeCollection<{ _id: string; accountId: string; [k: string]: unknown }>();
