@@ -48,7 +48,9 @@ export function drawCareerTabs(
   const tabs: HubTab[] = [
     { label: t('stats.title'), active: active === 'stats', icon: 'book' },
     { label: t('stats.titles'), active: active === 'titles', icon: 'medal' },
-    { label: t('collection.title'), active: active === 'codex', icon: 'cards' },
+    // 'cards' generic glyph → rosterIcon (AI art pilot batch 2, design/product/tab-icon-art-prompts.md
+    // §batch2): the codex is a card compendium, same "卡" concept the roster tab's AI icon already draws.
+    { label: t('collection.title'), active: active === 'codex', icon: 'rosterIcon' },
     { label: t('stats.achievements'), active: active === 'achievements', icon: 'trophy', badge: !!cb.hasClaimableAchievement },
   ];
   const onSelect = (i: number) => {
