@@ -181,3 +181,93 @@ playerbase_atlas 折腾 8 个子回合（[[slg-playerbase-oversized-fix-2026-07-
 **结论**：`city_atlas` 设计初衷（"图自带地台，地台=地块，整体矮宽"）成立，未发现 playerbase 那类"建筑铺不满地块"的缺陷，任务到此收尾，不需要改 `pack_city_atlas.js`、不需要重出图。审计脚本为抛弃式临时文件，未入库。
 
 **顺带清理**：`art/ui/slg-building/` 目录里另有 2 个 UUID 命名的 `.webp`（悬崖栈道 / 石拱桥，黑白铅笔素描），既不在 `pack_city_atlas.js` 的 `FILES` 列表里、画风也跟 `city_atlas` 蓝墨线等轴测涂鸦完全不符——不是这次审计的产物，大概率是"桥/栈道"（`building_bridge`/`building_plankway`，真正管线在 `art/ui/slg-map/pack_buildings.cjs`）早期探索时误放在这个目录、画风不对被搁置的草稿。已按约定移入 `art/leftover/`（保留原文件名，未删）。
+
+## 递进审计（2026-08-14）——Lv6 比 Lv5 简化，违反"越级越宏伟"，需重出图
+
+铺格审计之外，用户追问"10 张图是否真的一级一张"，顺带核实了一遍**覆盖完整性**（哈希比对 10 帧原始像素，全部互不相同，一一对应 10 级，无重复无缺失——`city_lv1/2/3/4` 虽然沿用旧的"档位回退"命名，但内容本来就是各自档位**最低那一级**的专属图，不是临时顶替）和**跨档边界的视觉递进**（每档"顶配"vs 下一档"入门"是否读得出"更宏伟"）：
+
+| 边界 | 前一级 | 后一级 | 结论 |
+|---|---|---|---|
+| Lv2→Lv3 | `city_l2`（帐篷营地） | `city_lv2`（木寨小镇，真房子+烟囱） | 正常，明显更发达 |
+| **Lv5→Lv6** | `city_l5`（大型木寨，多建筑+市集+瞭望塔，画面很满） | `city_lv3`（单个主堡+两座角楼，构图简单） | **反常——Lv6 比 Lv5 简单** |
+| Lv8→Lv9 | `city_l8`（大型石堡+护城河） | `city_lv4`（多塔蓝色城堡） | 大致相当，过渡自然 |
+
+**根因**：`city_lv3.png` 是 2026-07-06"每级一张"改版前的老图，当初的定位只是"石头堡垒档"里画得最朴素的入门代表，从没跟同档已经很饱满的 Lv5 放在一起比较过。Lv6 的地块从 5×5 跳到 7×7（渲染时精灵线性放大，画面在屏幕上确实变大），但画面内容本身（建筑数量、细节密度）明显比 Lv5 少，玩家会读出"升级了城反而变简单"的错觉。
+
+**结论**：9 张图（含另外 3 张旧档回退图 `city_lv1/2/4`）在各自位置过渡正常，唯独 `city_lv3.png`（Lv6）建议重新出图，衔接住 Lv5 的饱满度，向 Lv7（双层同心环+三塔）过渡。
+
+### `city_lv3` 重出 prompt — Lv6「石头堡垒」（衔接 Lv5→Lv7，替换现有 `city_lv3.png`）
+
+```
+A proper stone fortress town, not a single lonely keep: thick crenellated
+outer walls enclosing a busy courtyard with AT LEAST 5 distinct structures —
+a central keep taller than the walls with a peaked roof and pennant, two
+round corner towers with arrow-slit windows flanking a stone gatehouse with
+a drawbridge and portcullis (grid of lines), plus a barracks building, a
+storehouse, and a small well or market stall tucked inside the walls. Heavy
+cross-hatching on all stone surfaces for texture. The finished silhouette
+must read AT LEAST as full and detailed as a large developed wooden town —
+match the building-count and density of city_l5.png, do not make it simpler
+or emptier than that reference — this is the first STONE tier and must never
+look plainer or smaller than the wood tier's peak that came right before it,
+while still clearly reading more fortified and stony. Sits on its own wide
+isometric ground plate, same camera framing as city_l5.png/city_l7.png (top-
+down rotated diamond, not a front elevation). Blue ink outline, cool grey-blue
+fill for stone, warm brown accent only on the wooden gate/drawbridge beams.
+[+ style]
+```
+
+要点沿用 playerbase 那次摸出来的"数字自检 > 形容词"经验：明确写"至少 5 个独立建筑"这种可数的硬指标，并直接点名"参照 `city_l5.png` 的密度，不能比它更空"，比抽象描述"宏伟"更容易在生图时命中。
+
+**待办**：用户出图后按同样方法核对（跟 `city_l5`/`city_l7` 放一起肉眼比对饱满度，另外过一遍铺格审计的 bbox 宽高比 ≥0.9375 判据），落地后 `node art/ui/slg-building/pack_city_atlas.js` 重新打包 + `patchMergedAtlas.js` 补丁进 `world_atlas`，旧 `city_lv3.png` 移入 `art/leftover/`。
+
+**第一版候选（2026-08-14）——画风不对，不采用**：用户按上面的 prompt 出了一版，内容/密度达标（多建筑、井、市集摊位、锻造炉，明显比旧图丰富），但**整体画风是精细写实上色插画**（石材渐变光影、仿真质感、专业原画级别层次），跟 `city_atlas` 全系列"钢笔蓝墨线速写 + 单色/双色水彩淡填充、无光影渐变"的扁平涂鸦风格完全不是一种媒介，放进图集会非常突兀。
+
+根因分析：跟 playerbase 那次"机位指令埋在结尾没吃到"是同一类坑——风格约束（"hand-drawn doodle illustration...fountain pen blue ink lines...watercolor marker fill"）只放在末尾通用 `[+ style]` 段落里，正文描述内容本身没有任何风格限定词，生成工具显然只认了内容、没认风格。
+
+### `city_lv3` v2 prompt（风格约束前置 + 具体负面排除）
+
+```
+A loose hand-drawn ink DOODLE sketch on graph paper — NOT a detailed painted
+illustration, NOT realistic shading, NOT rendered stone texture with light/
+dark gradients. Flat, scratchy fountain-pen blue ink outlines with occasional
+cross-hatching for texture ONLY (no smooth shading, no gradients, no
+photorealism), filled with simple FLAT single-tone watercolor washes (cool
+grey-blue for stone, warm orange-brown for wood roofs/beams) — like a
+student's notebook margin doodle, matching the exact rendering style of
+city_l5.png and city_l7.png (same medium, same flatness, same line
+weight — NOT a game-art render, NOT a book illustration).
+
+Subject: a proper stone fortress town, not a single lonely keep — thick
+crenellated outer walls enclosing a busy courtyard with AT LEAST 5 distinct
+structures: a central keep taller than the walls with a peaked roof and
+pennant, two round corner towers with arrow-slit windows flanking a stone
+gatehouse with a drawbridge and portcullis (grid of lines), plus a barracks
+building, a storehouse, and a small well or market stall tucked inside the
+walls. The finished silhouette must read AT LEAST as full and detailed as a
+large developed wooden town — match the building-count and density of
+city_l5.png, do not make it simpler or emptier than that reference — this is
+the first STONE tier and must never look plainer or smaller than the wood
+tier's peak that came right before it. Sits on its own wide isometric ground
+plate, same top-down rotated-diamond camera as city_l5.png/city_l7.png (NOT
+a front elevation).
+[+ style]
+```
+
+v2 把风格约束（"是涂鸦速写不是精细插画"）挪到全文最前面并用具体负面词排除（"NOT realistic shading/rendered texture/game-art render/book illustration"），内容段落原样保留（已验证密度达标）。
+
+**v2 候选（2026-08-14，采用）**：用户按 v2 prompt 重出一版，画风这次对上了（蓝墨线+交叉排线+扁平色块，跟 `city_l5.png` 同一媒介），方格纸背景（`pack_city_atlas.js` 的去背算法专为此设计，不是问题）。用真实打包管线核对（不是肉眼）：
+
+| 项 | 数值 | 判定 |
+|---|---|---|
+| 去背（真实跑 `cutBackground` 区域生长算法） | 干净，方格纸完全清除，无残留、无吃穿建筑 | PASS |
+| 内容外接框宽高比 | 2557×1423 → 1.797 | PASS（远超 ≥0.9375 阈值） |
+| 宽度填充 `fittedW/CELL` | 1.0（宽度触底，自动贴满整格） | PASS |
+
+内容密度也核对过（跟 `city_l5.png`/`city_l7.png` 放同一显示尺度对比）：新图建筑数量/细节明显超过 Lv5（多了锻造炉小屋、水井、更多市集摊位），原先"Lv6 比 Lv5 简单"的问题解决。**唯一花絮**：新图外接框偏"扁"（宽高比 1.797，比 Lv5 的 1.0/Lv7 的 0.988 都更矮胖）——Lv6/Lv7 同属 7×7 地块档、精灵尺寸相同，所以实机会看到 Lv6 明显比 Lv7 更低矮；不违反任何硬性指标（宽度照样贴满），也符合 city 建筑"矮宽、地台=地块"的定位，记录在案，暂不处理。
+
+**已采用并落地**：
+- 源图（webp 格式，未转 png，避免有损转码）改名为 `city_lv3.webp`，`pack_city_atlas.js` 的 `FILES` 列表同步把 `city_lv3.png` 改成 `city_lv3.webp`（沿用 `city_l10.webp` 已验证过的 webp 支持路径）
+- 旧 `city_lv3.png`（2026-07-06 之前的老图，简单单堡+两角楼版本）移入 `art/leftover/city_lv3_pre-2026-08-14-lv6-fix.png`，未删
+- 重跑 `pack_city_atlas.js` + `patchMergedAtlas.js`，补丁进 `client/src/assets/slg/world_atlas.{png,json}`；`tools/map-editor/src/assets/slg/city_atlas.{png,json}` 由打包脚本自动同步写入
+- 从合并后的 `world_atlas.png` 按 frame 坐标重新 extract 实际像素核对（不是只信打包脚本打印的数字）：`city_lv3` 帧宽高比 1.771（打包时因取整 -1px 级误差，跟源图直测的 1.797 一致），`contentTop=0.4453`，肉眼确认跟前面候选阶段的预览一致，去背干净

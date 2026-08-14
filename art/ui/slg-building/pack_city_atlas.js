@@ -40,7 +40,7 @@ const HALO_ALPHA = 110;         // in pre-cut images, alpha below this is treate
 const FILES = [
   { file: 'city_lv1.png',  name: 'city_lv1' },
   { file: 'city_lv2.png',  name: 'city_lv2' },
-  { file: 'city_lv3.png',  name: 'city_lv3' },
+  { file: 'city_lv3.webp', name: 'city_lv3' },
   { file: 'city_lv4.png',  name: 'city_lv4' },
   { file: 'city_l2.png',   name: 'city_l2'  },
   { file: 'city_l4.png',   name: 'city_l4'  },
