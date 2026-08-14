@@ -26,6 +26,8 @@ export async function handleProfileRoutes(ctx: RouteCtx): Promise<boolean> {
       ...(resolved.elo !== undefined ? { elo: resolved.elo } : {}),
       ...(mem?.name ? { familyName: mem.name } : {}),
       ...(mem?.sectName ? { sectName: mem.sectName } : {}),
+      ...(mem?.emblemKey ? { familyEmblemKey: mem.emblemKey } : {}),
+      ...(mem?.emblemColor != null ? { familyEmblemColor: mem.emblemColor } : {}),
     }));
     return true;
   }

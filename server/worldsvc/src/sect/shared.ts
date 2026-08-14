@@ -14,5 +14,7 @@ export function docToView(doc: SectDoc): SectView {
     memberFamilyCount: doc.memberFamilyCount,
     allySectIds: doc.allySectIds,
     prosperity: doc.prosperity,
+    ...(doc.emblemKey ? { emblemKey: doc.emblemKey } : {}),
+    ...(doc.emblemColor != null ? { emblemColor: doc.emblemColor } : {}),
   };
 }

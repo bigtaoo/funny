@@ -2,7 +2,7 @@
 // Internal API (/internal/*): X-Internal-Key, used to look up familyId/membership, delegate channel pushes,
 // and (sect follow-up) mirror sectId + refresh prosperity — worldsvc no longer keeps its own family/familyMembers
 // mirror (dead since the P4 family→socialsvc migration; see SLG_DESIGN §8.2 note).
-import { fetchInternalJson, type FamilyRole } from '@nw/shared';
+import { fetchInternalJson, type FamilyRole, type EmblemKey } from '@nw/shared';
 
 /** Push channel descriptor (the channel field in the /internal/push request body). */
 export type SocialsvcChannel =
@@ -22,6 +22,10 @@ export interface FamilyMembership {
   /** Sect the family belongs to, if any (comm-audit batch F item 8 — lets callers read sectId straight off
    *  getMember instead of a separate getFamiliesByIds([familyId]) round trip). */
   sectId?: string;
+  /** Family badge (family-emblem-art-prompts.md, 2026-08-14); absent = no badge chosen yet. */
+  emblemKey?: EmblemKey;
+  /** Accent colour the emblem art is tinted with; absent while emblemKey is absent. */
+  emblemColor?: number;
 }
 
 /** Family identity + SLG mirror fields (mirrors socialsvc's FamilyView). */
@@ -36,6 +40,10 @@ export interface FamilySummary {
   territoryCount?: number;
   sectId?: string;
   sectName?: string;
+  /** Family badge (family-emblem-art-prompts.md, 2026-08-14); absent = no badge chosen yet. */
+  emblemKey?: EmblemKey;
+  /** Accent colour the emblem art is tinted with; absent while emblemKey is absent. */
+  emblemColor?: number;
 }
 
 export interface WorldSocialsvcClient {

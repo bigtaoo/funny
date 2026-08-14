@@ -113,6 +113,16 @@ export async function handleFamilyRoutes(ctx: RouteCtx): Promise<boolean> {
     return true;
   }
 
+  if (method === 'POST' && path === '/social/family/emblem') {
+    const body = await readJson(req);
+    const emblemKey = typeof body.emblemKey === 'string' ? body.emblemKey : null;
+    const emblemColor = typeof body.emblemColor === 'number' ? body.emblemColor : null;
+    if (emblemKey == null || emblemColor == null) { sendErr(res, ErrorCode.BAD_REQUEST, 'emblemKey + emblemColor required'); return true; }
+    await familySvc.setEmblem(accountId, emblemKey as import('@nw/shared').EmblemKey, emblemColor);
+    send(res, 200, ok({}));
+    return true;
+  }
+
   {
     const m = /^\/social\/family\/([^/]+)\/messages$/.exec(path);
     if (m) {

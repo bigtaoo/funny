@@ -21,6 +21,8 @@ export function docToView(doc: FamilyDoc): FamilyView {
     ...(doc.sectId ? { sectId: doc.sectId } : {}),
     ...(doc.sectName ? { sectName: doc.sectName } : {}),
     ...(doc.announcement ? { announcement: doc.announcement } : {}),
+    ...(doc.emblemKey ? { emblemKey: doc.emblemKey } : {}),
+    ...(doc.emblemColor != null ? { emblemColor: doc.emblemColor } : {}),
   };
 }
 

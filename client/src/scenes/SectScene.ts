@@ -57,6 +57,7 @@ export class SectScene implements Scene {
       openAllyList: () => this.actions.openAllyList(),
       openAlliesView: () => this.actions.openAlliesView(),
     };
+    this.core.emblemHooks = { openEmblemPicker: () => this.actions.openEmblemPicker() };
 
     void this.data.loadData();
   }

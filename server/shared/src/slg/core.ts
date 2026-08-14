@@ -360,6 +360,45 @@ export const SECT_LEADER_PENALTY_RATE = 0.5;
 /** Vote threshold to remove the sect leader (family-leader votes / number of families ≥ this ratio; §8.2 requires >2/3). */
 export const SECT_REMOVAL_VOTE_RATIO = 2 / 3;
 
+// ── Family / sect emblem (family-emblem-art-prompts.md, 2026-08-14) ──────────────────
+/**
+ * The 24 fixed-pool emblem keys a family or sect leader can pick for their badge, in the same
+ * order as the source art / atlas grid (`client/src/render/atlas/emblemAtlas.ts`). Single source
+ * of truth for both server-side validation (`isEmblemKey`) and the client's picker UI/atlas lookup
+ * (`client/src/render/emblemIcon.ts` re-exports this array rather than keeping its own copy).
+ */
+export const EMBLEM_KEYS = [
+  'emblem_anchor', 'emblem_bear', 'emblem_boar', 'emblem_crossedpens', 'emblem_crown', 'emblem_flame',
+  'emblem_fox', 'emblem_inkdrop', 'emblem_laurel', 'emblem_lightning', 'emblem_magnifier', 'emblem_moonstar',
+  'emblem_mountain', 'emblem_openbook', 'emblem_owl', 'emblem_penquill', 'emblem_scorpion', 'emblem_shark',
+  'emblem_shield', 'emblem_skull', 'emblem_snake', 'emblem_stag', 'emblem_starcircle', 'emblem_wave',
+] as const;
+export type EmblemKey = (typeof EMBLEM_KEYS)[number];
+export function isEmblemKey(v: string): v is EmblemKey {
+  return (EMBLEM_KEYS as readonly string[]).includes(v);
+}
+
+/**
+ * Preset accent-colour swatches offered alongside the emblem picker (the emblem art is white
+ * line-on-transparent, tinted at runtime — see family-emblem-art-prompts.md §视觉方案 item 2).
+ * A curated palette (not a free colour-wheel) keeps every combination legible against the paper
+ * background and matches the project's hand-drawn-notebook art direction; same rationale as
+ * faction totems only ever using their two fixed tints.
+ */
+export const EMBLEM_COLORS = [
+  0x2f2a26, // ink (near-black, default)
+  0xa9750f, // amber (matches family.prosperity accent)
+  0xcc3333, // red
+  0x44aacc, // blue
+  0x2f8f4e, // green
+  0x9b59b6, // purple
+  0xd4772f, // orange
+  0x5a574f, // muted grey
+] as const;
+export function isEmblemColor(v: number): boolean {
+  return (EMBLEM_COLORS as readonly number[]).includes(v);
+}
+
 export const GARRISON_PER_TILE = 500;
 /** Minimum garrison required to occupy a tile (becomes that tile's garrison upon arrival; march is rejected if insufficient). */
 export const OCCUPY_MIN_TROOPS = GARRISON_PER_TILE;

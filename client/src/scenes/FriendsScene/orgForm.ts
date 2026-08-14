@@ -10,6 +10,7 @@ import { t } from '../../i18n';
 import { ui as C, txt, sketchPanel, seedFor } from '../../render/sketchUi';
 import { FS, snapFont } from '../../render/fontScale';
 import { caretDisplay } from '../../ui/inputDisplay';
+import { buildEmblemIcon, loadEmblemAtlas, type EmblemKey } from '../../render/emblemIcon';
 import type { FamilyDetailView } from '../../net/WorldApiClient';
 import type { FriendsSceneCore } from './core';
 import { addButton, centerLabelFixed, openHiddenInput } from './chrome';
@@ -221,9 +222,21 @@ export class OrgFormPanel {
       row.x = px; row.y = cy;
       core.container.addChild(row);
 
+      let nameX = px + Math.round(panelW * 0.04);
+      const emblemSize = Math.round(rowH * 0.34);
+      const emblemKey = fam.emblemKey as EmblemKey | undefined;
+      if (emblemKey) {
+        const badge = buildEmblemIcon(emblemKey, emblemSize, fam.emblemColor ?? C.dark);
+        if (badge) {
+          badge.x = nameX; badge.y = cy + rowH * 0.36 - emblemSize / 2;
+          core.container.addChild(badge);
+          nameX += emblemSize + 6;
+        }
+      }
+
       const name = truncateOrgName(fam.name, ORG_NAME_WIDTH_MAX);
       const nameLbl = txt(`[${fam.tag}] ${name}`, FS.label, C.dark, true);
-      nameLbl.anchor.set(0, 0.5); nameLbl.x = px + Math.round(panelW * 0.04); nameLbl.y = cy + rowH * 0.36;
+      nameLbl.anchor.set(0, 0.5); nameLbl.x = nameX; nameLbl.y = cy + rowH * 0.36;
       core.container.addChild(nameLbl);
 
       const info = txt(`${t('family.members', { n: fam.memberCount })} · ${fam.prosperity}`, FS.tiny, C.mid);
@@ -249,7 +262,10 @@ export class OrgFormPanel {
     core.familyDetailLoading = true;
     core.render();
     void core.cb.viewFamily(familyId)
-      .then((fam) => { core.familyDetailLoading = false; core.familyDetailView = fam; core.render(); })
+      .then((fam) => {
+        core.familyDetailLoading = false; core.familyDetailView = fam; core.render();
+        if (fam.emblemKey) void loadEmblemAtlas().then(() => { if (!core.dead) core.render(); }).catch(() => {});
+      })
       .catch(() => { core.familyDetailLoading = false; core.toast('social.family.joinFail'); core.render(); });
   }
 
@@ -260,9 +276,21 @@ export class OrgFormPanel {
     const panelW = core.cW;
     let cy = core.regionTop + Math.round(h * 0.03);
 
+    let titleX = px;
+    const detailEmblemSize = Math.round(h * 0.045);
+    const detailEmblemKey = fam.emblemKey as EmblemKey | undefined;
+    if (detailEmblemKey) {
+      const badge = buildEmblemIcon(detailEmblemKey, detailEmblemSize, fam.emblemColor ?? C.dark);
+      if (badge) {
+        badge.x = titleX; badge.y = cy + 2;
+        core.container.addChild(badge);
+        titleX += detailEmblemSize + 8;
+      }
+    }
+
     const name = truncateOrgName(fam.name, ORG_NAME_WIDTH_MAX);
     const title = txt(`[${fam.tag}] ${name}`, FS.title, C.dark, true);
-    title.anchor.set(0, 0); title.x = px; title.y = cy;
+    title.anchor.set(0, 0); title.x = titleX; title.y = cy;
     core.container.addChild(title);
     cy += Math.round(h * 0.06);
 

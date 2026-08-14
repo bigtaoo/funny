@@ -10,6 +10,7 @@ import { t } from '../../i18n';
 import { ui as C, txt, sketchPanel, sketchButton, seedFor } from '../../render/sketchUi';
 import { FS } from '../../render/fontScale';
 import { buildIcon } from '../../render/icons';
+import { buildEmblemIcon, type EmblemKey } from '../../render/emblemIcon';
 import { caretDisplay } from '../../ui/inputDisplay';
 import { FAMILY_CAP } from '@nw/shared';
 import type { FamilySceneCore, FamilyTab } from './core';
@@ -290,9 +291,32 @@ export class RenderPanel {
     countLbl.anchor.set(1, 0); countLbl.x = w - 12; countLbl.y = y0 + Math.round(B * 0.08);
     core.bodyLayer.addChild(countLbl);
 
-    const maxNameW = Math.max(40, w - 12 - (left + 12) - countLbl.width - 16);
+    // Emblem badge (family-emblem-art-prompts.md, 2026-08-14) — same tap-to-open-picker affordance
+    // as the landscape header (drawHeaderTitle), just laid out inline in this row instead.
+    let nameX = left + 12;
+    const emblemSize = Math.round(B * 0.42);
+    const key = fam.emblemKey as EmblemKey | undefined;
+    const emblemNode = key ? buildEmblemIcon(key, emblemSize, fam.emblemColor ?? C.dark) : null;
+    if (emblemNode || core.isFamilyLeader) {
+      const badge = emblemNode ?? (() => {
+        const ph = new PIXI.Graphics();
+        ph.lineStyle(1.4, C.mid, 0.9);
+        ph.drawCircle(emblemSize / 2, emblemSize / 2, emblemSize / 2 - 1);
+        ph.moveTo(emblemSize * 0.3, emblemSize / 2).lineTo(emblemSize * 0.7, emblemSize / 2);
+        ph.moveTo(emblemSize / 2, emblemSize * 0.3).lineTo(emblemSize / 2, emblemSize * 0.7);
+        return ph;
+      })();
+      badge.x = nameX; badge.y = y0 + Math.round(B * 0.06);
+      core.bodyLayer.addChild(badge);
+      if (core.isFamilyLeader) {
+        core.hitRects.push({ rect: { x: badge.x, y: badge.y, w: emblemSize, h: emblemSize }, action: () => core.openEmblemPicker() });
+      }
+      nameX += emblemSize + 8;
+    }
+
+    const maxNameW = Math.max(40, w - 12 - nameX - countLbl.width - 16);
     const nameLbl = truncateToWidth(`[${fam.tag}] ${fam.name}`, FS.title, C.dark, maxNameW);
-    nameLbl.x = left + 12; nameLbl.y = y0 + Math.round(B * 0.05);
+    nameLbl.x = nameX; nameLbl.y = y0 + Math.round(B * 0.05);
     core.bodyLayer.addChild(nameLbl);
 
     const starSize = core.fs(0.024);

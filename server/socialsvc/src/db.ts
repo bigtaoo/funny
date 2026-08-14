@@ -2,7 +2,7 @@
 // P1 collections: families / familyMembers / familyMessages (no worldId).
 // P2 collections: friendEdges / friendRequests / blockList / conversations / chatMessages / mails / reports.
 import { MongoClient, Db, Collection } from 'mongodb';
-import type { FamilyRole, MailDoc } from '@nw/shared';
+import type { FamilyRole, MailDoc, EmblemKey } from '@nw/shared';
 import { FAMILY_MSG_RETENTION_SEC, CHAT_RETENTION_SEC } from '@nw/shared';
 
 // ── P2 document types (originally in @nw/shared, moved here locally to decouple) ─────────────────────────────
@@ -117,6 +117,14 @@ export interface FamilyDoc {
   sectId?: string;
   /** Display name of the sect above, mirrored alongside sectId so clients can show it without a second lookup. */
   sectName?: string;
+  /**
+   * Family badge, picked from the 24-design fixed pool (family-emblem-art-prompts.md, 2026-08-14).
+   * Leader-only (setEmblem). Absent = no badge chosen yet (renders as nothing, no procedural
+   * fallback glyph — see client/src/render/emblemIcon.ts's buildEmblemIcon doc comment).
+   */
+  emblemKey?: EmblemKey;
+  /** Accent colour (one of EMBLEM_COLORS) the emblem art is tinted with at runtime; absent while emblemKey is absent. */
+  emblemColor?: number;
   createdAt: number;
   rev: number;
 }

@@ -212,6 +212,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/social/family/emblem": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["setFamilyEmblem"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/social/family/{familyId}/messages": {
         parameters: {
             query?: never;
@@ -562,6 +578,10 @@ export interface components {
             /** @description Display name of the sect above, mirrored alongside sectId */
             sectName?: string;
             announcement?: string;
+            /** @description Family badge, one of the 24-design fixed pool (see @nw/shared EMBLEM_KEYS); absent = no badge chosen yet. Leader-only (POST /social/family/emblem). */
+            emblemKey?: string;
+            /** @description Accent colour (one of @nw/shared EMBLEM_COLORS) the emblem art is tinted with; absent while emblemKey is absent. */
+            emblemColor?: number;
         };
         FamilyMemberView: {
             /** @description Omitted when the requester is not a member of this family (GET /social/family/:id is a public route reachable for any family id; internal accountIds are only exposed within the family itself). */
@@ -600,6 +620,9 @@ export interface components {
             elo?: number;
             familyName?: string;
             sectName?: string;
+            /** @description The player's family's badge, if any (family-emblem-art-prompts.md, 2026-08-14). No sect-badge equivalent here — socialsvc only mirrors sectId/sectName onto FamilyDoc (set once at join-sect time), not the sect's own live fields, so a sect emblem change isn't visible from this endpoint (same pre-existing limitation as any other sect field beyond its name). */
+            familyEmblemKey?: string;
+            familyEmblemColor?: number;
         };
         ProfileView: {
             publicId: string;
@@ -1056,6 +1079,39 @@ export interface operations {
         };
         responses: {
             /** @description Announcement updated */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OkResponse"];
+                };
+            };
+            400: components["responses"]["ErrorResp"];
+            401: components["responses"]["ErrorResp"];
+            403: components["responses"]["ErrorResp"];
+            500: components["responses"]["ErrorResp"];
+        };
+    };
+    setFamilyEmblem: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description One of @nw/shared EMBLEM_KEYS */
+                    emblemKey: string;
+                    /** @description One of @nw/shared EMBLEM_COLORS */
+                    emblemColor: number;
+                };
+            };
+        };
+        responses: {
+            /** @description Emblem updated (leader only) */
             200: {
                 headers: {
                     [name: string]: unknown;

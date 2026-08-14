@@ -22,7 +22,7 @@
 // sect/membership.ts / sect/chat.ts. This class is a thin delegating facade so external callers
 // (httpApi routes, this package's own tests) keep importing `SectService` from this one path with an
 // unchanged public API and behavior.
-import type { ChatRegion } from '@nw/shared';
+import type { ChatRegion, EmblemKey } from '@nw/shared';
 import type { SectServiceDeps } from './sect/types';
 import { SectQueryService } from './sect/query';
 import { SectMembershipService } from './sect/membership';
@@ -70,6 +70,9 @@ export class SectService {
   }
   voteRemoveLeader(worldId: string, requesterId: string, nomineeFamilyId: string) {
     return this.membership.voteRemoveLeader(worldId, requesterId, nomineeFamilyId);
+  }
+  setEmblem(worldId: string, requesterId: string, emblemKey: EmblemKey, emblemColor: number) {
+    return this.membership.setEmblem(worldId, requesterId, emblemKey, emblemColor);
   }
 
   // --- channel (sect/chat.ts) ---

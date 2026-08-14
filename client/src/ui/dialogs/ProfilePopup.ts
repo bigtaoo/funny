@@ -25,6 +25,7 @@ import { getTitleKeys, formatLadderTitle } from '../../game/meta/titles';
 import { tearDownChildren } from '../../render/sketchUi';
 import { snapFont } from '../../render/fontScale';
 import { drawHudButton, hudButtonText } from '../widgets/hudButton';
+import { buildEmblemIcon, loadEmblemAtlas, type EmblemKey } from '../../render/emblemIcon';
 
 export interface ProfileData {
   /** Display name (nickname). */
@@ -51,6 +52,10 @@ export interface ProfileData {
   familyName?: string;
   /** Sect (帮会/宗门) name, if the player's family is in one; omit to hide the line. See `rankKey`. */
   sectName?: string;
+  /** The player's family's badge, if any (family-emblem-art-prompts.md, 2026-08-14); drawn just left
+   *  of the family/sect line. No sect-badge equivalent — see ProfileExtra's doc comment for why. */
+  familyEmblemKey?: string;
+  familyEmblemColor?: number;
   /**
    * Optional action buttons rendered above Close (e.g. Send Message / Block from the friends
    * list). Each runs its `fn` then auto-closes the popup. Omit for display-only cards.
@@ -71,6 +76,11 @@ export interface ProfileExtra {
   elo?: number;
   familyName?: string;
   sectName?: string;
+  /** See ProfileData.familyEmblemKey — no sect-badge equivalent (socialsvc only mirrors sectId/
+   *  sectName onto FamilyDoc, not the sect's own live fields, so a sect emblem change never reaches
+   *  this endpoint; same pre-existing limitation as any other sect field beyond its name). */
+  familyEmblemKey?: string;
+  familyEmblemColor?: number;
 }
 
 export class ProfilePopup {
@@ -133,13 +143,20 @@ export class ProfilePopup {
     if (this.fetchExtra && data.publicId) {
       void this.fetchExtra(data.publicId).then((extra) => {
         if (this.showToken !== token) return; // popup closed / reopened for someone else meanwhile
-        this.renderCard({
+        const patched: ProfileData = {
           ...data,
           ...(extra.rank ? { rankKey: extra.rank } : {}),
           ...(extra.elo !== undefined ? { elo: extra.elo } : {}),
           ...(extra.familyName ? { familyName: extra.familyName } : {}),
           ...(extra.sectName ? { sectName: extra.sectName } : {}),
-        });
+          ...(extra.familyEmblemKey ? { familyEmblemKey: extra.familyEmblemKey, familyEmblemColor: extra.familyEmblemColor } : {}),
+        };
+        this.renderCard(patched);
+        // Emblem atlas is lazy-loaded (not boot L0 — see emblemAtlas.ts); kick it off once we know
+        // there's a badge to show, redrawing this same card once it resolves.
+        if (patched.familyEmblemKey) {
+          void loadEmblemAtlas().then(() => { if (this.showToken === token) this.renderCard(patched); }).catch(() => {});
+        }
       }).catch(() => { /* best-effort — card stays without the extras row */ });
     }
   }
@@ -241,17 +258,31 @@ export class ProfilePopup {
       yBottom = rankLine.y + rankLine.height;
     }
 
-    // Family (家族) / sect (帮会) line (optional — either or both may be present).
+    // Family (家族) / sect (帮会) line (optional — either or both may be present), with the family's
+    // emblem badge (if any) prefixed — the whole [badge][text] block is centered as one unit, so the
+    // badge shifts the text's anchor rather than sitting outside a still-centered line.
     if (data.familyName || data.sectName) {
       const parts: string[] = [];
       if (data.familyName) parts.push(`${t('profile.family')} ${data.familyName}`);
       if (data.sectName) parts.push(`${t('profile.sect')} ${data.sectName}`);
+      const orgFontSize = snapFont(Math.round(cardH * 0.05));
       const orgLine = makeText(parts.join('   '), {
-        fontSize: snapFont(Math.round(cardH * 0.05)), fill: palette.pencil, fontFamily: 'monospace',
+        fontSize: orgFontSize, fill: palette.pencil, fontFamily: 'monospace',
       });
-      orgLine.anchor.set(0.5, 0);
-      orgLine.x = cardW / 2;
-      orgLine.y = yBottom + cardH * 0.025;
+      const orgY = yBottom + cardH * 0.025;
+      const emblemSize = Math.round(orgFontSize * 1.3);
+      const emblemNode = data.familyEmblemKey
+        ? buildEmblemIcon(data.familyEmblemKey as EmblemKey, emblemSize, data.familyEmblemColor ?? palette.pencil)
+        : null;
+      const blockW = orgLine.width + (emblemNode ? emblemSize + 6 : 0);
+      const blockX = cardW / 2 - blockW / 2;
+      if (emblemNode) {
+        emblemNode.x = blockX; emblemNode.y = orgY + (orgLine.height - emblemSize) / 2;
+        this.card.addChild(emblemNode);
+      }
+      orgLine.anchor.set(0, 0);
+      orgLine.x = blockX + (emblemNode ? emblemSize + 6 : 0);
+      orgLine.y = orgY;
       this.card.addChild(orgLine);
       yBottom = orgLine.y + orgLine.height;
     }

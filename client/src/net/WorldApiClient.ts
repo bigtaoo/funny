@@ -410,6 +410,10 @@ export class WorldApiClient {
     return this.family.dissolveFamily();
   }
 
+  setFamilyEmblem(emblemKey: string, emblemColor: number): Promise<{ ok: true }> {
+    return this.family.setFamilyEmblem(emblemKey, emblemColor);
+  }
+
   sendFamilyMessage(familyId: string, body: string, senderName?: string): Promise<{ id: string }> {
     return this.family.sendFamilyMessage(familyId, body, senderName);
   }
@@ -503,6 +507,10 @@ export class WorldApiClient {
 
   voteRemoveSectLeader(worldId: string, nomineeFamilyId: string): Promise<SectVoteResult> {
     return this.sect.voteRemoveSectLeader(worldId, nomineeFamilyId);
+  }
+
+  setSectEmblem(worldId: string, emblemKey: string, emblemColor: number): Promise<{ ok: true }> {
+    return this.sect.setSectEmblem(worldId, emblemKey, emblemColor);
   }
 
   sendSectMessage(worldId: string, body: string, senderName?: string): Promise<SectMessageView> {

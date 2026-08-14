@@ -4,6 +4,7 @@
 // (2026-08-11 converted from the former `XMixin(Base)` inheritance chain to an independent class
 // over `core`, per claudedocs/client-modules.md's split-form priority note).
 import type { FamilyDetailView, FamilyMessageView } from '../../net/WorldApiClient';
+import { loadEmblemAtlas } from '../../render/emblemIcon';
 import type { FamilySceneCore } from './core';
 
 export interface DataHandlers {
@@ -55,6 +56,11 @@ export class DataPanel implements DataHandlers {
     // round-trip, so don't hold the whole scene blank on it. loadData()/doJoin() render again
     // once loadChannel() lands, filling the message list in.
     if (!core.destroyed) core.render();
+    // Emblem atlas is lazy-loaded (not boot L0 — see emblemAtlas.ts); kick it off as soon as we
+    // know the family (which may already have a badge picked), re-rendering once it resolves so
+    // the header/info-band badge (drawHeaderTitle / renderInfoBand) doesn't stay blank until the
+    // player happens to open the picker. Idempotent — a no-op if already loaded/loading.
+    if (fam.emblemKey) void loadEmblemAtlas().then(() => { if (!core.destroyed) core.render(); }).catch(() => {});
     await this.loadChannel();
     await this.loadJoinRequests();
   }

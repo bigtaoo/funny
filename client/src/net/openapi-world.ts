@@ -770,6 +770,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/sect/emblem": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["setSectEmblem"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/sect/message": {
         parameters: {
             query?: never;
@@ -975,6 +991,9 @@ export interface components {
             teamId?: string;
             /** @description March-token art (2026-07-26): the deployed team's leader unit-type (engine UnitType string, e.g. 'infantry'/'archer'/'max'), resolved server-side once at dispatch and frozen onto the march. Present for own AND enemy marches (reveals only a unit-type enum, not team/card identity). Absent on flat-troop marches (no team attached). */
             leaderUnitType?: string;
+            /** @description Map-token corner badge (family-emblem-art-prompts.md, 2026-08-14): the march owner's family emblem, resolved live per-response (not frozen at dispatch, unlike leaderUnitType — family identity isn't sensitive). Absent if the owner has no family or the family has no badge chosen. */
+            emblemKey?: string;
+            emblemColor?: number;
         };
         OccupationView: {
             tile: string;
@@ -987,6 +1006,9 @@ export interface components {
             teamId?: string;
             /** @description March-token art (2026-07-26): carried over from the winning march's leaderUnitType — see MarchView.leaderUnitType. */
             leaderUnitType?: string;
+            /** @description Map-token corner badge — see MarchView.emblemKey. getOccupations is own-holds-only, so this is always the requester's own family badge. */
+            emblemKey?: string;
+            emblemColor?: number;
         };
         TileStructureView: {
             /**
@@ -1021,6 +1043,9 @@ export interface components {
             mine?: boolean;
             /** @description March-token art (2026-07-26): carried over from the originating march's leaderUnitType — see MarchView.leaderUnitType. Not blanked for enemy teams (reveals only a unit-type enum, not team/card identity). */
             leaderUnitType?: string;
+            /** @description Map-token corner badge — see MarchView.emblemKey. Present for own AND enemy stationed teams (family identity isn't sensitive, unlike teamId). */
+            emblemKey?: string;
+            emblemColor?: number;
         };
         SectView: {
             sectId: string;
@@ -1032,6 +1057,10 @@ export interface components {
             memberFamilyCount: number;
             allySectIds: string[];
             prosperity: number;
+            /** @description Sect badge, one of the 24-design fixed pool (see @nw/shared EMBLEM_KEYS, same pool families choose from); absent = no badge chosen yet. Sect-leader-only (POST /sect/emblem). */
+            emblemKey?: string;
+            /** @description Accent colour (one of @nw/shared EMBLEM_COLORS) the emblem art is tinted with; absent while emblemKey is absent. */
+            emblemColor?: number;
         };
         SectMemberFamilyView: {
             familyId: string;
@@ -1040,6 +1069,10 @@ export interface components {
             leaderId: string;
             memberCount: number;
             territoryCount: number;
+            /** @description Family badge (mirrored from socialsvc's FamilyView); absent = no badge chosen yet. */
+            emblemKey?: string;
+            /** @description Accent colour the emblem art is tinted with; absent while emblemKey is absent. */
+            emblemColor?: number;
         };
         SectDetailView: components["schemas"]["SectView"] & {
             memberFamilies: components["schemas"]["SectMemberFamilyView"][];
@@ -2819,6 +2852,41 @@ export interface operations {
                     "application/json": components["schemas"]["OkResponse"] & {
                         data?: components["schemas"]["SectVoteResult"];
                     };
+                };
+            };
+            400: components["responses"]["ErrorResp"];
+            401: components["responses"]["ErrorResp"];
+            403: components["responses"]["ErrorResp"];
+            404: components["responses"]["ErrorResp"];
+            500: components["responses"]["ErrorResp"];
+        };
+    };
+    setSectEmblem: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    worldId: string;
+                    /** @description One of @nw/shared EMBLEM_KEYS */
+                    emblemKey: string;
+                    /** @description One of @nw/shared EMBLEM_COLORS */
+                    emblemColor: number;
+                };
+            };
+        };
+        responses: {
+            /** @description Emblem updated (sect leader only) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OkResponse"];
                 };
             };
             400: components["responses"]["ErrorResp"];

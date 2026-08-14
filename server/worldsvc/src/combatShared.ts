@@ -18,6 +18,7 @@ import {
   SlgError,
   type ResourceType,
   type PathCell,
+  type EmblemKey,
 } from '@nw/shared';
 import type { PlayerWorldDoc, MarchDoc, StationedDoc, ArmyEntry } from './db';
 import type { WorldCore } from './core';
@@ -265,4 +266,50 @@ export async function parkMarchInPlace(core: WorldCore, m: MarchDoc, survivors: 
     leaveAt: Number.MAX_SAFE_INTEGER,
   });
   void core.pushMarch(m.ownerId, core.marchView({ ...m, status: 'arrived' }));
+}
+
+/**
+ * March/occupy/stationed map-token family-emblem badge (family-emblem-art-prompts.md, 2026-08-14
+ * TODO list item 3 — see design/game/WORLD_MAP_ART_SPEC.md §五): given a list of `ownerId`s in the
+ * same order as a `getMarches`/`getOccupations`/`getStationed` result array, resolves each owner's
+ * family badge and returns a same-length array of `{emblemKey, emblemColor}` (or `undefined` for
+ * an owner with no family / no badge chosen) to spread onto each corresponding view entry.
+ *
+ * Two round trips regardless of list size: one local `playerWorld` query for the ownerId→familyId
+ * mirror (same "resolved once at joinWorld, read-only" mirror `familyMemberIds`/`allySectMemberIds`
+ * already rely on — a family change after joinWorld is not reflected here, an accepted tradeoff
+ * shared with every other consumer of this mirror), then one `getFamiliesByIds` batch call for the
+ * distinct familyIds. Never throws — a socialsvc hiccup degrades to "no badges this response" rather
+ * than failing the whole list (badges are cosmetic; the unit-rig token itself never depends on this).
+ */
+export async function resolveOwnerEmblems(
+  core: WorldCore,
+  worldId: string,
+  ownerIds: string[],
+): Promise<Array<{ emblemKey: EmblemKey; emblemColor: number } | undefined>> {
+  if (ownerIds.length === 0) return [];
+  try {
+    const distinctOwners = Array.from(new Set(ownerIds));
+    const pwDocs = await core.deps.cols.playerWorld
+      .find(
+        { _id: { $in: distinctOwners.map((id) => playerWorldId(worldId, id)) } },
+        { projection: { accountId: 1, familyId: 1 } },
+      )
+      .toArray();
+    const familyIdByOwner = new Map(pwDocs.filter((d) => d.familyId).map((d) => [d.accountId, d.familyId!]));
+    const familyIds = Array.from(new Set(familyIdByOwner.values()));
+    if (familyIds.length === 0) return ownerIds.map(() => undefined);
+    const fams = await core.socialsvc.getFamiliesByIds(familyIds);
+    const embByFamily = new Map(
+      fams
+        .filter((f) => f.emblemKey)
+        .map((f) => [f.familyId, { emblemKey: f.emblemKey as EmblemKey, emblemColor: f.emblemColor ?? 0 }]),
+    );
+    return ownerIds.map((id) => {
+      const fid = familyIdByOwner.get(id);
+      return fid ? embByFamily.get(fid) : undefined;
+    });
+  } catch {
+    return ownerIds.map(() => undefined); // best-effort — badges are cosmetic, never fail the list for this
+  }
 }

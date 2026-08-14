@@ -12,6 +12,8 @@ import {
   SLG_MAP_W,
   SLG_MAP_H,
   familyProsperity,
+  EMBLEM_KEYS,
+  EMBLEM_COLORS,
   type FamilyRole,
 } from '@nw/shared';
 import { createWorldMongo, type WorldMongo, type NationDoc } from '../src/db';
@@ -307,6 +309,20 @@ describe.skipIf(!mongo)('SectService e2e', () => {
     expect(fBob!.sectId).toBeUndefined();
     expect(fBob!.sectName).toBeUndefined();
     await expect(sect.leaveSect(W, 'alice')).rejects.toMatchObject({ code: 'BAD_REQUEST' });
+  });
+
+  it('setEmblem: sect-leader-only (a member family leader who is NOT the sect leader is denied), validates key + colour against the fixed pools', async () => {
+    await makeFamily('alice', 'A', 'AA');
+    await makeFamily('bob', 'B', 'BB');
+    const s = await sect.createSect(W, 'alice', 'Sky', 'SKY');
+    await sect.joinSect(W, 'bob', s.sectId);
+    await expect(sect.setEmblem(W, 'bob', EMBLEM_KEYS[0]!, EMBLEM_COLORS[0]!)).rejects.toMatchObject({ code: 'NO_PERMISSION' });
+    await expect(sect.setEmblem(W, 'alice', 'not_a_real_key' as never, EMBLEM_COLORS[0]!)).rejects.toMatchObject({ code: 'BAD_REQUEST' });
+    await expect(sect.setEmblem(W, 'alice', EMBLEM_KEYS[0]!, 0x123456)).rejects.toMatchObject({ code: 'BAD_REQUEST' }); // not in EMBLEM_COLORS
+    await sect.setEmblem(W, 'alice', EMBLEM_KEYS[5]!, EMBLEM_COLORS[3]!);
+    const detail = await sect.getSect(s.sectId);
+    expect(detail!.emblemKey).toBe(EMBLEM_KEYS[5]);
+    expect(detail!.emblemColor).toBe(EMBLEM_COLORS[3]);
   });
 
   it('alliance: bidirectional + cap SECT_ALLY_CAP', async () => {
