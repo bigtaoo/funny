@@ -161,6 +161,99 @@ describe('Scheduler bounded-concurrency upkeep', () => {
   });
 });
 
+describe('Scheduler pause/resume', () => {
+  it('while paused, tick() logs everyone out (drainAll) instead of the normal spawn/upkeep pass', async () => {
+    const pool = Array.from({ length: 3 }, (_, i) => fakeSession(i));
+    const onlineCount = vi.fn(async () => 10);
+    const scheduler = new Scheduler(pool.map((f) => f.session), fakeCapacity(onlineCount), OPTS);
+
+    await scheduler.tick(); // spawns up to targetOnline first, so there's something to drain
+    expect(scheduler.status().online).toBe(3);
+
+    scheduler.pause();
+    await scheduler.tick();
+
+    expect(scheduler.status()).toMatchObject({ online: 0, paused: true });
+    expect(pool.every((f) => (f.session as unknown as { state: string }).state === 'offline')).toBe(true);
+    // The capacity/spawn/upkeep path is skipped entirely on the paused tick — onlineCount (called once
+    // by the first, unpaused tick above) is never called again.
+    expect(onlineCount).toHaveBeenCalledTimes(1);
+  });
+
+  it('resume() restores the normal tick path', async () => {
+    const pool = [fakeSession(0)];
+    const scheduler = new Scheduler(pool.map((f) => f.session), fakeCapacity(async () => 10), OPTS);
+    scheduler.pause();
+    await scheduler.tick();
+    expect(scheduler.status().paused).toBe(true);
+
+    scheduler.resume();
+    await scheduler.tick();
+
+    expect(scheduler.status()).toMatchObject({ online: 1, paused: false });
+    expect(pool[0]!.familyCalls).toBe(1);
+  });
+});
+
+describe('Scheduler capacity-signal failure', () => {
+  it('falls back to the undiminished targetOnline (no shedding) when the capacity signal throws', async () => {
+    const pool = Array.from({ length: 5 }, (_, i) => fakeSession(i));
+    const onlineCount = vi.fn(async () => { throw new Error('gateway unreachable'); });
+    const scheduler = new Scheduler(pool.map((f) => f.session), fakeCapacity(onlineCount), OPTS);
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+
+    await scheduler.tick();
+
+    expect(scheduler.status().effectiveTarget).toBe(OPTS.targetOnline);
+    expect(scheduler.status().online).toBe(pool.length); // spawned up to the full target, no shedding
+    warn.mockRestore();
+  });
+
+  it('warns only once across repeated failing ticks (capacityWarned one-shot flag)', async () => {
+    const pool = [fakeSession(0)];
+    const onlineCount = vi.fn(async () => { throw new Error('gateway unreachable'); });
+    const scheduler = new Scheduler(pool.map((f) => f.session), fakeCapacity(onlineCount), OPTS);
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+
+    await scheduler.tick();
+    await scheduler.tick();
+    await scheduler.tick();
+
+    expect(warn).toHaveBeenCalledTimes(1);
+    warn.mockRestore();
+  });
+});
+
+describe('Scheduler despawnDownTo', () => {
+  it('logs sessions out down to a lowered target, capped at batchSize per tick', async () => {
+    const pool = Array.from({ length: 6 }, (_, i) => fakeSession(i));
+    const scheduler = new Scheduler(pool.map((f) => f.session), fakeCapacity(async () => 10), { ...OPTS, targetOnline: 6, batchSize: 10 });
+    await scheduler.tick(); // spawn all 6 online
+
+    scheduler.setTargetOnline(2);
+    await scheduler.tick(); // despawn 4, down to 2
+
+    expect(scheduler.status().online).toBe(2);
+    const loggedOut = pool.filter((f) => (f.session as unknown as { state: string }).state === 'offline');
+    expect(loggedOut).toHaveLength(4);
+  });
+
+  it('despawn itself is capped at batchSize per tick, even if further above target', async () => {
+    const pool = Array.from({ length: 6 }, (_, i) => fakeSession(i));
+    const scheduler = new Scheduler(pool.map((f) => f.session), fakeCapacity(async () => 10), { ...OPTS, targetOnline: 6, batchSize: 2 });
+    // spawnUpTo is capped by the same batchSize, so it takes 3 ticks to bring all 6 online.
+    await scheduler.tick();
+    await scheduler.tick();
+    await scheduler.tick();
+    expect(scheduler.status().online).toBe(6);
+
+    scheduler.setTargetOnline(0);
+    await scheduler.tick(); // only 2 despawned this pass (batchSize cap)
+
+    expect(scheduler.status().online).toBe(4);
+  });
+});
+
 describe('Scheduler upkeep rotation', () => {
   it('spreads upkeep across upkeepRotations ticks instead of touching everyone every tick', async () => {
     const pool = Array.from({ length: 9 }, (_, i) => fakeSession(i));
