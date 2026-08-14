@@ -585,7 +585,7 @@ commercial 此前完全没有 Redis 依赖，本次新增：`config.ts` 补 `NW_
 | commercial | 81.4% | 76.9% | 91.8% |
 | socialsvc | 78.4% | 84.9% | 84.8% |
 | botsvc | ~~70.0%~~ **92.74%**（2026-08-14 补测，见下） | 83.6% | 83.2% |
-| auctionsvc | 72.3% | 76.9% | 68.2% |
+| auctionsvc | ~~72.3%~~ **92.0%**（2026-08-14 补测，见下） | 76.9% | 68.2% |
 | gateway | ~~65.9%~~ **93.07%**（2026-08-14 补测，见下） | 70.3% | 76.8% |
 | gameserver | ~~62.5%~~ **91.9%**（2026-08-14 补测，见下） | 91.4% | 95.9% |
 | admin | ~~47.1%~~ **93.39%**（2026-08-14 两轮补测，见下） | 74.6% | 44.3% |
@@ -746,3 +746,27 @@ gateway 补到 93.07% 后，14 包基线里最低的变成了 **botsvc（70.0%�
 **留意但未继续追的残余缺口**：`index.ts`（60 行，进程 bootstrap，同 admin/gameserver/gateway 先例不单独起集成测试）；`engineDriver.ts`/`protoCodec.ts`/`internalHttp.ts`/`envelopeSocket.ts`/`pool.ts`/`gameServerClient.ts` 各剩几行防御性分支或等价路径变体，性价比递减未继续追。
 
 botsvc 整体行覆盖率 **70.0% → 92.74%**（`npx vitest run --coverage`，16 test files / 119 tests 全绿——新增 47 例，原有 72 例零改动；`npx tsc --noEmit` 干净）。分支覆盖 89.39%、函数覆盖 98.07%。
+
+## auctionsvc 补测：mailClient/scheduler/config 从 0% + metaClient/httpApi 路由/queryListings 等分支缺口，从 72.3% 拉到 92.0%（2026-08-14，worktree `feat/auctionsvc-coverage`）
+
+botsvc 补到 92.74% 后，14 包基线里最低的变成了 **auctionsvc（72.3%）**——本节按"根据覆盖率结果修复最低"处理这个包。
+
+**根因跟前几个包同一种模式——三个"从没写过测试"的 0% 文件，外加 httpApi.ts 路由验证层/`queryListings` 内部审计端点这两处此前只被 `AuctionService` 直调 e2e（`auction.e2e.test.ts`）或"真实客户端只会走的 happy path" e2e（`auction-fulllink.e2e.test.ts`）绕过的缺口**：
+
+- **`mailClient.ts`（27%）/`scheduler.ts`（0%）/`config.ts`（0%）**：`mailClient.ts` 没有专属测试文件（`auction.e2e.test.ts` 里用的是手搓 stub，从未调用真实 `HttpAuctionMailClient` 实现）；`scheduler.ts`（两个独立 `setInterval` 循环 + 各自的重入guard/错误吞掉分支）和 `config.ts`（纯 env 解析）此前压根没有测试文件。
+- **`metaClient.ts`（36.4%）**：既有 `meta-client.test.ts` 只测了 `deductMaterial` 一个方法（该文件本身是为 [[business-errors-surface-as-500-2026-08-02]] 这条回归写的），escrow*/grant*（equipment/card/skin 三组×2）、`available` getter、`nullAuctionMetaClient` 均未测。
+- **`httpApi.ts`（77.8%）**：`/internal/audit/listings`（ops 审计拉取路由，admin 的 `slgAudit.slgQueryAuctionListings` 在 auctionsvc 这一侧的对应端点）、`GET /auction/refprice`、`POST /auction/create` 的输入校验分支（itemType/item/qty/durationSec 必填、fixed 模式缺 price、auction 模式缺 startPrice）、未知路由 404——`auction.e2e.test.ts` 直调 `AuctionService`（绕开 httpApi 这层 HTTP 解析/校验），`auction-fulllink.e2e.test.ts` 虽起了真实 HTTP server，但只驱动真实客户端会走的合法请求，从不发送校验会拒绝的畸形请求。
+- **`auctionService/listing.ts`/`base.ts` 的 `queryListings`/`docToAdminView`（listing.ts 74.6%，base.ts 64.6%）**：`/internal/audit/listings` 路由本身没被真实调过（见上），连带它唯一调用的业务方法 `queryListings`（DB 级 sellerId/itemType/status 过滤 + itemName 的内存子串过滤 + limit 钳制）和其映射函数 `docToAdminView`（按 itemType 派生 itemName：material/equipment/card/skin 四种）也完全零覆盖。
+
+**修法**：
+
+- **`test/config.test.ts`**（3 例）+ **`test/scheduler.test.ts`**（9 例，`vi.useFakeTimers()` 驱动两个独立循环——过期拍卖处理每 `tickMs`、已关闭记录清理每固定 1 小时——各自的重入 guard + 失败吞掉分支）+ **`test/mailClient.test.ts`**（7 例，真实 `node:http` fixture server，覆盖 `available`/not-configured no-op/请求体形状/HTTP 失败吞掉/HTTP 200 但 `{ok:false}` 吞掉/`nullAuctionMailClient`）。均 100%。
+- **`test/meta-client.test.ts`** 追加 33 例：escrow*/grant*（equipment/card/skin 三组，每组的成功/已知错误码→`SlgError`/未知错误→`SlgError(BAD_REQUEST)`/`baseUrl` 未配置/`grant*` 失败吞掉分支）+ `nullAuctionMetaClient` 的抛错 vs no-op 两类方法。
+- **`test/commercial-client.test.ts`** 追加 4 例：`available` getter、`baseUrl` 未配置直接抛错、网络层失败（连到无人监听的端口）不静默放行、`clientPlatform` 透传。
+- **`test/readjson-size-guard.test.ts`** 追加 4 例：空 body→`{}`、畸形 JSON→拒绝、流 `error` 事件→拒绝、size-cap 触发后到达的 `error` 事件不覆盖已有的拒绝（同一个 `rejected` 标志位的另一个分支）。
+- **`test/httpApi-routes.test.ts`**（新文件，17 例，复用 `httpApi-error-sanitization.test.ts` 的 `Partial<AuctionService>` mock 免 Mongo 套路）：`/internal/audit/listings` 的查询过滤转发 + 无 key/错 key→401 + 非 GET→404；`GET /auction/refprice` 的 category 转发；`POST /auction/create` 六条校验 400（itemType/item/qty/durationSec 缺失、fixed 缺 price、auction 缺 startPrice）+ 一条校验通过样例；未知路由 404；畸形 JSON body→500（`readJson` 自身的 `JSON.parse` 失败经统一 catch-all 脱敏）。这一份只验证 httpApi.ts 自己的路由分发/校验逻辑，不重新验证业务语义。
+- **`test/auction-query-listings.e2e.test.ts`**（新文件，7 例，真实 Mongo，同 `auction-audit.e2e.test.ts` 直接 seed `AuctionDoc` 的套路）：`queryListings` 的 sellerId/itemType/status DB 级过滤、itemName 内存子串过滤（大小写不敏感，material/equipment/card/skin 四种派生名各测一次）、limit 钳制到 `[1,200]`、`docToAdminView` 可选字段（`designatedBuyerId`/`buyerId`/`soldAt`/`closedAt`/`startPrice`/`buyoutPrice`/`topBid`）仅在存在时展开 vs 普通 fixed listing 全部省略、`getMyListings` 按卖家过滤+按 `expireAt` 降序。这一份补的是上面 httpApi 路由测试特意没碰的"真实业务实现"半边。
+
+**留意但未继续追的残余缺口**：`index.ts`（66 行，进程 bootstrap，同 admin/gameserver/gateway/botsvc 先例不单独起集成测试——66/1125 行仅占 5.9%，即便完全不测也早已把整包拉过 90% 门槛）；`create.ts`/`trade.ts`/`pricing.ts`/`audit.ts` 各剩几行防御性分支或需要精确并发时序才能触发的路径，性价比递减未继续追。
+
+auctionsvc 整体行覆盖率 **72.3% → 92.0%**（`npx vitest run --coverage`，15 test files / 181 tests 全绿——新增 81 例，原有 100 例零改动；`npx tsc --noEmit` 干净）。分支覆盖 86.02%、函数覆盖 97.75%。

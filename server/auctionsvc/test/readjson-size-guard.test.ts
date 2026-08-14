@@ -53,4 +53,35 @@ describe('readJson payload-size guard', () => {
     await expect(promise).resolves.toEqual({ hello: 'world' });
     expect(req.destroy).not.toHaveBeenCalled();
   });
+
+  it('an empty body resolves to {} rather than throwing on JSON.parse', async () => {
+    const req = fakeRequest();
+    const promise = readJson(req);
+    req.emit('end');
+    await expect(promise).resolves.toEqual({});
+  });
+
+  it('malformed JSON under the cap rejects with the JSON.parse error', async () => {
+    const req = fakeRequest();
+    const promise = readJson(req);
+    req.emit('data', Buffer.from('{not valid json'));
+    req.emit('end');
+    await expect(promise).rejects.toThrow(/JSON/);
+  });
+
+  it("a stream 'error' event rejects the promise", async () => {
+    const req = fakeRequest();
+    const promise = readJson(req);
+    req.emit('error', new Error('socket hang up'));
+    await expect(promise).rejects.toThrow('socket hang up');
+  });
+
+  it("a stream 'error' event after the size cap already tripped is a no-op (does not override the rejection)", async () => {
+    const req = fakeRequest();
+    const promise = readJson(req);
+    const chunk = Buffer.alloc((1 << 20) + 1024).fill('a');
+    req.emit('data', chunk);
+    req.emit('error', new Error('irrelevant, arrives after destroy()'));
+    await expect(promise).rejects.toThrow('payload too large');
+  });
 });
