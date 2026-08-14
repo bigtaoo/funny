@@ -25,6 +25,7 @@ import { GEAR_PLACEMENT, gearTemplate, type GearPlacement } from './gearOverlay'
 import { STICKMAN_SCALE, STATE_ANIM } from './constants';
 import { parseTaoAsset } from './assetLoader';
 import type { TaoAsset, StickmanOptions, GearGlyphSpec } from './runtimeTypes';
+import { applyPose } from './pose';
 
 // Re-export the public runtime types so existing importers of
 // './StickmanRuntime' keep working unchanged.
@@ -34,20 +35,25 @@ export class StickmanRuntime {
   /** PIXI.Container to add to your scene. Position it at the unit's screen coords. */
   readonly container: PIXI.Container;
 
-  private readonly sprites: Map<string, PIXI.Sprite> = new Map();
+  // The 7 fields below are `public` (not `private`) so render/stickman/pose.ts's applyPose() can
+  // read them through its narrow `PoseHost` interface — a private field can't satisfy an external
+  // module's structural interface (same visibility bump every mixin→composition/form① conversion
+  // in this codebase has needed). They're still internal-only in practice: nothing outside
+  // StickmanRuntime and pose.ts has any reason to touch them.
+  readonly sprites: Map<string, PIXI.Sprite> = new Map();
   /** Hit-flash outline sprites, keyed by boneId (parallel to {@link sprites}). */
-  private readonly outlineSprites: Map<string, PIXI.Sprite> = new Map();
+  readonly outlineSprites: Map<string, PIXI.Sprite> = new Map();
   /** Container holding all outline sprites, in front of the bones (the flash pops over the body). */
   private readonly outlineLayer: PIXI.Container;
   /** When false, outline sprites are hidden and not synced (the common case). */
-  private outlineFlashing = false;
+  outlineFlashing = false;
   /** Equipment overlay glyphs (§20.4), each with its skeleton placement. Empty = no gear. */
-  private readonly gearSprites: Array<{ sprite: PIXI.Graphics; placement: GearPlacement }> = [];
+  readonly gearSprites: Array<{ sprite: PIXI.Graphics; placement: GearPlacement }> = [];
   /** Identity of the currently-applied gear, so {@link setGear} is a no-op when unchanged. */
   private gearKey = '';
   /** Container holding the gear decals, between the bones and the hit-flash outline. */
   private readonly gearLayer: PIXI.Container;
-  private readonly asset:   TaoAsset;
+  readonly asset:   TaoAsset;
 
   /**
    * Unsigned per-unit base scale = targetHeight / asset.naturalHeight (or the flat
@@ -56,9 +62,9 @@ export class StickmanRuntime {
    */
   private readonly baseScale: number;
 
-  private currentClip:     AnimationClip | null = null;
+  currentClip:     AnimationClip | null = null;
   private currentClipName  = '';
-  private time             = 0;
+  time             = 0;
   /** See {@link setAttackInterval}. */
   private attackIntervalSec = 0;
 
@@ -136,7 +142,7 @@ export class StickmanRuntime {
    * Toggle the momentary hit-flash outline. `color` tints the contour (a hot
    * impact color reads better than white, which is near-invisible over the paper
    * gap); `alpha` fades it out across the flash. `null` clears the flash.
-   * Outline transforms are synced in {@link _applyPose} only while flashing, so
+   * Outline transforms are synced in {@link applyPose} only while flashing, so
    * an idle unit pays nothing for this.
    */
   setOutlineFlash(color: number | null, alpha = 1): void {
@@ -181,7 +187,7 @@ export class StickmanRuntime {
       this.gearSprites.push({ sprite, placement });
     }
     // Position immediately so a freshly-equipped unit isn't a frame late.
-    if (this.gearSprites.length && this.currentClip) this._applyPose();
+    if (this.gearSprites.length && this.currentClip) applyPose(this);
   }
 
   /**
@@ -232,7 +238,7 @@ export class StickmanRuntime {
       this.currentClip = clip;
       for (const kf of clip.keyframes) {
         this.time = kf.time;
-        this._applyPose();
+        applyPose(this);
         accumulate();
       }
     }
@@ -240,7 +246,7 @@ export class StickmanRuntime {
     this.currentClip     = savedClip;
     this.currentClipName = savedName;
     this.time            = savedTime;
-    if (savedClip) this._applyPose();
+    if (savedClip) applyPose(this);
 
     if (!Number.isFinite(minX)) {
       const b = this.container.getLocalBounds();
@@ -345,7 +351,7 @@ export class StickmanRuntime {
       this.time = Math.min(this.time, this.currentClip.duration);
     }
 
-    this._applyPose();
+    applyPose(this);
   }
 
   destroy(): void {
@@ -397,111 +403,7 @@ export class StickmanRuntime {
     };
   }
 
-  // ── Pose evaluation ───────────────────────────────────────────────────────
-
-  private _applyPose(): void {
-    if (!this.currentClip) return;
-
-    const transforms = sampleClip(this.currentClip, this.time);
-    const worldPos   = Skeleton.computeFK(0, 0, transforms, this.asset.boneLengthScales);
-
-    for (const [boneId, sprite] of this.sprites) {
-      // ── Shadow attachment point — special rendering ───────────────────────
-      if (boneId === 'shadow') {
-        this._applyShadowPose(sprite, worldPos);
-        continue;
-      }
-
-      // ── Normal bone sprite — composite formula (matches animator Renderer.ts)
-      //   sprite.x        = bone_pivot.x + kf.translateX + binding.offsetX
-      //   sprite.y        = bone_pivot.y + kf.translateY + binding.offsetY
-      //   sprite.rotation = (bone_wa + kf.rotation + binding.rotation) * PI/180
-      //   sprite.scale    = kf.scale × binding.scale  (× -1 for flipX)
-      const pose    = worldPos.get(boneId);
-      const binding = this.asset.bindings.get(boneId);
-      const xform   = transforms.get(boneId);
-      if (!pose || !binding) continue;
-
-      sprite.x = pose.sx + (xform?.translateX ?? 0) + binding.offsetX;
-      sprite.y = pose.sy + (xform?.translateY ?? 0) + binding.offsetY;
-
-      sprite.rotation = (
-        (pose.wa + (xform?.rotation ?? 0) + binding.rotation) * Math.PI
-      ) / 180;
-
-      sprite.scale.set(
-        (binding.flipX ? -1 : 1) * (xform?.scaleX ?? 1) * binding.scaleX,
-        (xform?.scaleY ?? 1) * binding.scaleY,
-      );
-
-      const alpha   = xform?.alpha ?? 1;
-      sprite.alpha   = alpha;
-      sprite.visible = alpha > 0;
-
-      // While a hit flash is active, the outline sprite shares the bone's
-      // pivot/transform; its own (bordered) anchor was pre-computed so identical
-      // x/y/rotation/scale align them. Skipped entirely when not flashing.
-      if (this.outlineFlashing) {
-        const outline = this.outlineSprites.get(boneId);
-        if (outline) {
-          outline.x        = sprite.x;
-          outline.y        = sprite.y;
-          outline.rotation = sprite.rotation;
-          outline.scale.set(sprite.scale.x, sprite.scale.y);
-          outline.visible  = alpha > 0;
-        }
-      }
-    }
-
-    // ── Equipment overlay glyphs (§20.4) — reuse the FK we just computed ───────
-    // Translate-only decals anchored to a bone; mirroring + scale come from the
-    // container transform (same as the body sprites). Skipped entirely when the
-    // unit carries no gear, so an unequipped swarm pays nothing.
-    for (const { sprite, placement } of this.gearSprites) {
-      const pose = worldPos.get(placement.bone)
-        ?? worldPos.get('spine')
-        ?? worldPos.get('root');
-      if (!pose) { sprite.visible = false; continue; }
-      const ax = placement.anchor === 'mid' ? (pose.sx + pose.ex) / 2 : pose.ex;
-      const ay = placement.anchor === 'mid' ? (pose.sy + pose.ey) / 2 : pose.ey;
-      sprite.x       = ax + placement.ox;
-      sprite.y       = ay + placement.oy;
-      sprite.visible = true;
-    }
-  }
-
-  /**
-   * Position and scale the shadow sprite according to the attachment point data.
-   * Matches the animator's Renderer.ts shadow rendering logic:
-   *   position = parentBone.tip + (offsetX, offsetY)
-   *   scaleX   = (shadowW * 2) / tex.width
-   *   scaleY   = (shadowH * 2) / tex.height
-   */
-  private _applyShadowPose(
-    sprite:   PIXI.Sprite,
-    worldPos: ReturnType<typeof Skeleton.computeFK>,
-  ): void {
-    const shadowPt = this.asset.attachmentPoints.get('shadow');
-    const tex      = getShadowTexture();
-    if (!shadowPt) { sprite.visible = false; return; }
-
-    const parent = worldPos.get(shadowPt.parentBone) ?? worldPos.get('root');
-    if (!parent) { sprite.visible = false; return; }
-
-    sprite.x        = parent.ex + shadowPt.offsetX;
-    sprite.y        = parent.ey + shadowPt.offsetY;
-    sprite.rotation = 0;
-    sprite.alpha    = 0.55;
-    sprite.visible  = true;
-
-    // Use exported shadowW/H; fall back to a reasonable default if missing.
-    const sw = shadowPt.shadowW ?? 20;
-    const sh = shadowPt.shadowH ?? 6;
-    sprite.scale.set(
-      (sw * 2) / tex.width,
-      (sh * 2) / tex.height,
-    );
-  }
+  // ── Pose evaluation — see render/stickman/pose.ts's applyPose() ────────────
 
   // ── Static asset loading (cached) ─────────────────────────────────────────
 

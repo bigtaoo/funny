@@ -283,6 +283,8 @@ commercial 此前完全没有 Redis 依赖，本次新增：`config.ts` 补 `NW_
 
 - **装备复制漏权**：`equipEquipment`（metaserver）从不调用项目自己写好的 `isEquipped()` 占用检查，同一装备实例可同时装到两张卡上复制战力。补检查。
 - **commercial 资金丢失风险（6 处）**：rechargeVerify/paddleComplete/promoRedeem/orderDelivered/subscriptionCardBuy/starterBuy growth 均是"先落地已发放记录、再执行 credit 副作用"，崩溃在两步之间会让钱永久丢失且无法重放补发。引入 `isStaleClaim` 宽限窗口（15s，`CommercialServiceBase`）：窗口内维持原状（不与真正的并发赢家抢跑），窗口外验证 ledger/order 状态并补发（verify-and-heal）。
+
+  **2026-08-14 追加修复（`recharge.ts` `paddleComplete`，与上面这条同一函数、不同 bug）**：PR #99 的 CI 真跑 e2e 时抓到——`service-idempotency.e2e.test.ts` 10 个并发相同 `transactionId` 的 `paddleComplete` 调用，期望首充 2× 奖励只发一次且金额正确，实测拿到 550（未加成）而非 1100。根因：`paddleComplete` 原来先 `ensureWallet`+`claimFirstPurchaseBonus`（算出 `isFirst`/`coinsGranted`），**之后**才靠 `recharges.insertOne` 的唯一键冲突决出这个 `transactionId` 真正的"赢家"——两个 CAS（钱包 `firstPurchasedAt` 的赢家、`recharges._id` 唯一键的赢家）互不关联，并发下极可能是两个不同的调用方各自赢一场：真正执行 `credit()` 的是 `recharges` 插入的赢家，它用的却是**自己**算出的 `isFirst`（往往是 `false`，因为它可能刚好是 `firstPurchasedAt` 那场 CAS 的输家）。同文件里的 `rechargeVerify`（上面一个函数）早就是对的写法：先插入 `recharges`（占坑价用未加成金额），只有这场唯一键竞争的赢家才去认领首充加成、再回填 `coinsGranted`——`paddleComplete` 只是顺序写反了，照抄 `rechargeVerify` 的顺序改过来。验证：`service-idempotency.e2e.test.ts` 并发用例连跑 5 次稳定绿；commercial 全量 13 文件/182 测试绿。
 - **worldsvc troops 并发扣负**：`startMarch`/`occupyTile` 是 check-then-act，并发双发可把 troops 打成负数；改用 `city.ts` 训练花费已用的 `findOneAndUpdate({troops:{$gte:cost}})` 原子写法。
 - **gateway/gameserver `maxPayload` 缺失**：WebSocketServer 未设置，补 1MB。
 - **socialsvc CORS 头漏 `x-nw-platform`**：07-28 修了 worldsvc/auctionsvc，socialsvc 被漏，补上。
@@ -339,6 +341,8 @@ commercial 此前完全没有 Redis 依赖，本次新增：`config.ts` 补 `NW_
 - **确定性**：同 seed+同双方阵容+同引擎代码，只是换了执行线程——`siegeWorkerPool.test.ts` 直接断言 `pool.submit(input)` 的结果与主线程 `runSiegeBattleSync(input)` 逐字段相等；原有 `siege`/`base-siege`/`stronghold`/`passage`/`nation-bonus`/`field-encounter` 等 e2e 断言值全部不变（执行位置改动，非数值改动）。
 - **新增测试** `worldsvc/test/siegeWorkerPool.test.ts`（10 例）+ 两个测试 fixture worker（`test/fixtures/{crashWorker,hangWorker}.ts`，仅测试用，让崩溃/挂起可确定性复现）：基本调度（提交→结果、单 worker 排队多任务、坏输入 reject 不拖垮 worker）、崩溃自愈（单/双 worker 各自崩溃后 `pool.size` 不变、坏 worker 只影响自己在飞的任务）、任务超时强制替换、`close()` 语义、以及"白拿的好处"验证——6 个满板大规模战斗（`SIEGE_SYNTH_ARMY_MAX_TROOPS` 双方）在 6-worker 池上 warm-up 后并发耗时 vs 同款输入主线程串行 `runSiegeBattleSync` 循环耗时，断言并行版本快过串行版本 30% 以上（真实跨核，而非池内排队假并行）——这也印证了 `scheduler.ts` 的 `Promise.allSettled` 现在能真正跨核并行多场攻城，不再是同线程抢时间片。
 - **验证**：`worldsvc` 47 文件/360 测试全绿（含新增 10 例）；`tsc -b` 全 13 个 server 包全绿。
+
+**2026-08-14 修复：`siegeWorker.ts` 在 Linux CI 上 100% 复现崩溃**（本机开发环境是 Windows，本地一直全绿，`NW_REQUIRE_DB` 让 e2e 真正在 CI 跑起来之前这条路径显然从未在 Linux 上被真正跑过）：`SiegeWorkerPool` 每一个任务都失败，报 `Cannot find module '.../siegeEngine' imported from '.../siegeWorker.ts'`，连带 `nation-bonus.e2e.test.ts`/`teams.e2e.test.ts`（都经这个池落地攻城结果）一起炸；`siegeWorkerPool.test.ts` 自身 8/11 例失败。根因没能在 Linux 上完全查清（没有现成 Linux 盒子可供 bisect tsx 内部行为），但确认是 `siegeWorker.ts` 内部那句无扩展名的静态 `import './siegeEngine'`（本仓库到处都这么写，唯独这一处经 `--import tsx` 在 worker_thread 里加载时在 Linux 上解析不了）；上面 §dev/prod 双模路径 那段其实早就在用"运行时算出扩展名"这招解决了*worker 自己入口路径*的同一类歧义（`.ts` under tsx/vitest, `.js` after `tsc -b`），只是没有同步用到 worker 内部这处兄弟 import 上。修复：把这行改成运行时算扩展名的动态 `import()`（`await import(`./siegeEngine${ext}`)`，包进 `async function main()`，模块顶层不能用顶层 await——`tsconfig` 是 `module: CommonJS`）——静态写 `./siegeEngine.ts` 会被 `tsc -b` 硬拒（TS5097，需要 `allowImportingTsExtensions`，与本项目真实产出 `.js` 冲突），但模板字符串拼出来的 specifier 不受静态扩展名检查约束。验证：`siegeWorkerPool.test.ts` 11/11、`worldsvc` 全量 59 文件/486 测试本地（Windows）全绿，`tsc -b` 干净；Linux CI 侧验证见 PR #99。
 
 ## 三日重构复核 + 追加修复（2026-07-29，audit-followup-fixes-0729）
 
@@ -410,6 +414,8 @@ commercial 此前完全没有 Redis 依赖，本次新增：`config.ts` 补 `NW_
 **已知遗留**：`tsc -b --noEmit` 组合对 `gateway`/`matchsvc` 等含 project references 的包会报 `TS6310: Referenced project '...' may not disable emit`——用 `git stash` 验证过这是仓库预置问题（本次改动前就存在，与本任务无关），本质是 TypeScript `--build` 模式与顶层 `--noEmit` 标志组合的已知限制；本次统一改用 `tsc --noEmit -p tsconfig.json`（或 `npm run typecheck`）验证，效果等价。`analyticsvc` 的 `events_count` 低估 bug（见上第 3 条）已于 2026-08-10 后续任务修复，不再是遗留项。
 
 ## 单文件 500 行收敛（2026-08-09 起，用户明确要求）
+
+**2026-08-13 CI 门禁复查**：server 侧原 30 文件积压当时已于 2026-08-11 全部拆完，baseline 归零，未发现新增无理由债务。但 client 侧同一份约定被发现有 11 个文件在 baseline 里躺了 2+ 天、连一个字的理由都没有（详见 `claudedocs/client-modules.md` 同名章节的对应条目）——根因是 baseline 条目本身只是裸数字，没有强制写理由的机制。修复：`file-length-baseline.json` schema 改为 `{"path": {"lines": N, "reason": "..."}}`，三份近乎重复的 `checkFileLength.mjs`（client/server/tools）合并成仓库根 `scripts/checkFileLength.mjs` 一份共享实现（各自留一个几行的 wrapper 传 `--root`/`--baseline`/排除项），新增两条硬规则：条目必须有非空 `reason`（脚本按长度粗略校验，不是形式主义打勾）；`lines` 超过 800 的文件一律拒绝进 baseline，不允许"例外"，只能拆。`tools/` 同日首次接入这套检查（此前 0 覆盖），发现 `animator/src/io/IOController.ts`(771) 未审计过、`level-editor/src/board/BoardPanel.ts`(516) 记为例外（单一 canvas 输入+渲染面板，超限仅 16 行）。**收尾（同日）**：`IOController.ts`(771→123) 按其四个既有小节（`.tao.editor` 存档/`.tao` 导出/clip 序列化/磁盘 I/O 工具函数）拆成 `io/{editorProject,taoExport,clipSerialization,fileIO}.ts`——全部是模块级或纯函数逻辑，唯一跨文件共享的可变状态（`editorFilePath`/`editorFileHandle`/`taoFileHandle` 三个磁盘身份字段）留在 `IOController` 本身，靠两个 host builder（`editorProjectHost()`/`taoExportHost()`）以 getter/setter 暴露给拆出去的两个 flow；`tools/animator` 无测试基建（`package.json` 无 `test` script），靠 `tsc --noEmit` + `webpack --mode production` + `checkFileLength.mjs` 三件套验证，详见 `claudedocs/animator.md`。同时补了两个长期存在的 CI 盲区：`server/tsconfig.build.json`（solution 文件，13 个 workspace 全部 `references`，`scripts/checkWorkspaceCoverage.mjs` 校验它与 `package.json#workspaces` 不漂移——起因是 `socialsvc`/`botsvc` 曾在 CI 手写枚举的 `tsc -b` 命令行里静默缺席数周无人发现）；`server/**/test/*.e2e.test.ts` 里 112 处复制粘贴的 `tryConnect()` 连库探测此前失败即静默 `describe.skipIf` 跳过、CI 从不真正跑这批 e2e——新增 `NW_REQUIRE_DB` 环境变量，CI 设置后连库失败直接 `throw` 而非返回 `null`，之前 CI 从未跑过 `server/` 的 `npm test`（只跑 codegen check + file-length + `tsc -b`），这批测试第一次真正在 CI 里执行。
 
 **约定**：服务端代码（`server/`，不含 `generated/` 生成产物与测试文件）单文件尽量不超过 500 行。审计当时排除生成产物/测试后共 369 个源文件，30 个（约 8%）超限，集中在 metaserver(8)/worldsvc(7)/engine(4)/socialsvc(3)/shared(2)/commercial(2)/matchsvc/gateway/auctionsvc/admin(各1)。拆分统一走本文档已有的**"薄装配壳 + 关注点分层"**范式（见上文 `WorldCore`/`combatMarch`/`AnalyticsService`/`MetaService` 各条），不发明新规则；原文件收编为几十行装配壳并 `export *`，外部导入路径零改动。**2026-08-10：原始 30 个超限文件全部拆完（30/30），`server/scripts/file-length-baseline.json` 已清空（仅保留 `_readme`）——`checkFileLength.mjs` 之后就是纯粹的"零已知超限文件"状态，任何新增超限都会直接报错，不再有历史包袱。**
 
@@ -549,5 +555,54 @@ commercial 此前完全没有 Redis 依赖，本次新增：`config.ts` 补 `NW_
 - **`shared/src/economy.ts`（486→27 行装配壳，独立函数模块范式）**：全文件是一组零共享私有状态的经济配置常量+纯函数（gacha 卡池/直购商店/IAP 档位/胜场金币/限时池/命定点数+订阅+新手礼包/杂项小项），跟 `mongo.ts`/`db.ts`/`mapgen.ts` 同款形态——按业务域切成 `economy/{rarity,gacha,limitedPools,shop,iapTiers,victoryCoins,subscriptions,misc}.ts` 八个文件。依赖方向是一条短链而非放射状：`rarity.ts`（`RARITY_ORDER`/`RARITY_WEIGHTS`，零依赖）→`gacha.ts`（依赖 `rarity.ts`）→`limitedPools.ts`（依赖 `gacha.ts` 的 `GACHA_POOLS` 派生限时池内容，避免抽卡池内容漂移）；`shop.ts`/`iapTiers.ts`/`victoryCoins.ts`/`subscriptions.ts`/`misc.ts` 五个对其它 economy/*.ts 零依赖。`economy.ts` 收编成 27 行 `export *` 壳；`@nw/shared`（`index.ts` 的 `export * from './economy'`）+ 全仓库 `from '@nw/shared'` 导入路径零改动。**跨 workspace 影响面最大的一次**：`@nw/shared` 被 metaserver/commercial/admin/botsvc/worldsvc 等多个 server workspace 消费（`GACHA_POOLS`/`IAP_TIERS`/`SHOP_ITEMS`/`VICTORY_COINS_BY_RANK` 等），验证相应加码：先 `@nw/shared` 自身 `tsc -b` + 36 test files / 742 passed + 5 skipped(本机无 Redis)；再逐一 `tsc -b` 全部 12 个 server workspace 确认零编译错误；再对 grep 确认真正引用 economy 导出符号的 5 个消费者（`commercial`/`admin`/`botsvc`/`metaserver`/`worldsvc`）逐一重跑测试：commercial 13/182、admin 11/94、botsvc 12/72、metaserver 70/926、worldsvc 57/470，全部与改动前数量一致。第⑤步：纯数据/函数重排，无路由层改动，不适用。
 
 **结论**：至此 `server/` 内 mixin 链、"继承复用转发面"两类历史模式全部清零——全仓库 grep `class \w+ extends` 只剩 7 处 `class XxxError extends Error`；`checkFileLength.mjs` 扫描 565 个源文件、0 超限、基线为空。
+
+## 测试覆盖率百分比工具（2026-08-13）
+
+不要与前两节"server 端测试**覆盖审计**（2026-08-05/08-10）"混淆——那两节是人工审计"哪些代码路径完全没测过"，这里是 CI 里自动量出**行/分支/函数覆盖率百分比**的工具接入，client 同一批改动见 `claudedocs/client-testing.md` 对应章节。
+
+- **12 个 vitest workspace**（`shared`/`admin`/`analyticsvc`/`auctionsvc`/`botsvc`/`commercial`/`gameserver`/`gateway`/`matchsvc`/`metaserver`/`socialsvc`/`worldsvc`）：`vitest.config.ts` 加 `coverage: { provider: 'v8', reporter: ['text','lcov','html','json-summary'], exclude: [...coverageConfigDefaults.exclude, 'src/generated/**'] }`（proto/openapi 生成代码排除在外，不占分母）；`package.json` 加 `"test:coverage": "npm run pretest --if-present && vitest run --coverage"`（保留各自原有的 `pretest` codegen/proto:gen 步骤）。`@vitest/coverage-v8` 只在 `server/package.json` 根加一次 devDependency，靠 npm workspaces 的 node_modules 提升让 12 个子包都能解析到，不逐包重复声明。
+- **`engine`**（唯一非 vitest workspace，走 `tsc -b` 编译到 `dist/` 后用 `node --test` 跑）：没有额外引入 c8/istanbul 依赖，直接用 Node 自带的 `--experimental-test-coverage`——`scripts/runTests.mjs` 新增 `--coverage` 参数，命中时给 `node --test` 追加 `--experimental-test-coverage --test-coverage-exclude=**/__tests__/** --test-reporter=spec --test-reporter-destination=stdout --test-reporter=lcov --test-reporter-destination=coverage/lcov.info`（spec reporter 保留原有终端输出+文本覆盖率表，lcov reporter 额外落一份文件供 CI 汇总脚本读）。`package.json` 的 `test:coverage` 在既有 `test` 脚本末尾加 `--coverage` 转发给 runTests.mjs。
+- **CI**（`.github/workflows/ci.yml`，`build-test` job）：`server unit + e2e tests` / `client unit tests` 两步从 `npm test` 换成 `npm run test:coverage`（`npm run test:coverage --workspaces --if-present` 在 server 根一次触发 12 个子包）；job 最后新增 `test coverage report` 步（`if: always()`），跑仓库根 `scripts/coverageSummary.mjs` 读每个包的 `coverage/coverage-summary.json`（vitest json-summary）或 `coverage/lcov.info`（engine），拼成一张 Markdown 表写进 `$GITHUB_STEP_SUMMARY`（GitHub Actions 跑完后运行摘要页可见），外加一行整体加权百分比。**纯报告，不设硬性阈值门槛**——某个包这次没跑测试（文件缺失）显示 `—` 而不是让整个 job 变红，脚本本身永不 throw。
+- **`.gitignore`**：仓库根加了不带 `/` 前缀的 `coverage/`，一次性盖住 `client/coverage/`、每个 `server/*/coverage/` 和 `server/engine/coverage/`。
+- **本地用法**：任意 workspace 目录下 `npm run test:coverage`；产物在该目录的 `coverage/`（`index.html` 可直接浏览器打开看逐行高亮，同 C#/coverlet 的体验）。
+
+**首次实测基线（2026-08-13，行覆盖 %，本地跑出，用于对照未来回归）**：
+
+| 包 | 行覆盖 | 分支 | 函数 |
+|---|---|---|---|
+| client（`src/game/**`） | 91.2% | 87.8% | 84.4% |
+| engine | 86.5% | 83.0% | 81.2% |
+| shared | 82.3% | 93.0% | 73.9% |
+| worldsvc | 82.9% | 78.3% | 86.9% |
+| analyticsvc | 87.6% | 84.2% | 95.8% |
+| matchsvc | 88.3% | 91.1% | 97.2% |
+| commercial | 81.4% | 76.9% | 91.8% |
+| socialsvc | 78.4% | 84.9% | 84.8% |
+| botsvc | 70.0% | 83.6% | 83.2% |
+| auctionsvc | 72.3% | 76.9% | 68.2% |
+| gateway | 65.9% | 70.3% | 76.8% |
+| gameserver | 62.5% | 80.3% | 82.0% |
+| admin | 47.1% | 74.6% | 44.3% |
+| metaserver | 35.1% | 78.4% | 32.3% |
+| **加权总计** | **~70%** | **~82%** | **~71%** |
+
+**metaserver 明显偏低**：`src/equipment/{craft,enhance,equip,reforge,salvage,trade}.ts`、`src/paddle/*`、`src/service/auth/{credential,helpers,oauthBind,profile,support}.ts`、`src/service/economy/*` 大片 0~10%——不是这轮改动引入的缺口，是这个包本身路由面最大（9 个 mixin/69 测试文件）但装备/Paddle/OAuth 这几块此前的 e2e 覆盖没跟上。**admin 47%**次低，同理。两者列为下一轮"server 端测试覆盖审计"（见上文 2026-08-05/08-10 两节）的优先输入，本轮不展开修——这次的目标只是把量出百分比的工具接上，不是把百分比刷高。
+
+## metaserver 补测：equipment/auth/economy/paddle 从 0~10% 拉到 90%+（2026-08-13，同日追加）
+
+上一节标的四块「大片 0~10%」查下来**不是没测**——`equipment.e2e.test.ts`/`economy.e2e.test.ts`/`paddle-routes.e2e.test.ts`/`auth-oauth-wx.e2e.test.ts` 等既有 e2e 早就把这些模块的成功/幂等/边界/拒绝分支测得很彻底，只是这批 e2e 全部 `import { buildApp } from '../dist/app.js'`（从 tsc 编译产物导入，配真实 Mongo）。vitest 的 v8 coverage provider 只对它自己用 Vite 转换加载的模块做 source-map 归因——`dist/*.js` 走 Node 原生 ESM 加载执行，覆盖率不会被记回 `src/*.ts`，于是"测得很彻底"和"报出来 0~10%"两个事实同时为真，互不矛盾。
+
+**修法**：不重新发明这些场景，而是新增一批**直接 `import ... from '../src/...'`（不是 `../dist/...`）** 的单测，复用已有 e2e 想清楚的业务语义、但让同样的分支被 vitest 直接执行从而被 v8 正确记到 src 头上；顺带补了 e2e 没试到的错误码/边界分支。四组并行做（各自新增文件，互不touch）：
+
+- `test/equipment-{craft,enhance,equip,reforge,salvage,trade,helpers}-unit.test.ts`（112 例）+ 新增共享 helper `test/helpers/fakeEquipCols.ts`（给 `FakeCollection` 补了 `deleteMany`/`$ne` 支持）、`test/helpers/fakeEquipCommercial.ts`（带 `getWallet`/`spend` 的假 commercial）→ `src/equipment` 0~10% → **98.53% 行 / 90.33% 分支**。
+- `test/auth-credential-unit.test.ts` + `test/auth-oauthbind-unit.test.ts`（75 例）→ `src/service/auth/*`（含顺手覆盖的 `accountLifecycle.ts`）0~10% → **100% 语句/分支/函数/行**。
+- `test/economy-service-unit.test.ts`（70 例）→ `src/service/economy/*` 0~10% → **90.54% 行 / 76.02% 分支**（少数 fire-and-forget 的 `.catch(log.warn)` 日志分支需要人为注入网络异常才能触发，未继续追，收益递减）。
+- `test/paddle-unit.test.ts`（73 例）→ `src/paddle/{checkoutRoute,priceIds,signature,webhookRoute}.ts` 0~10% → **100% 行**（`webhookRoute.ts` 分支 95%，剩 2 处 `?? ''` 防御性兜底未覆盖）。
+
+metaserver 整体行覆盖率 **35.1% → 61.17%**（`npx vitest run --coverage`，81 test files / 1256 tests 全绿，`tsc -b` 干净）。这批测试全部走 `FakeCollection`/注入的假 commercial+gateway 客户端（无需真实 Mongo），只有 paddle 的 checkout/webhook 路由测试沿用了 e2e 同款的真实 Mongo + 真实 fastify app（因为要验证真实的幂等/并发写路径）。
+
+**过程中发现的测试基建缺陷**（未在本次修，已知，供下次碰到时参考）：`test/helpers/fakeCollection.ts` 的 `updateOne` 在 upsert 时若 `filter` 不含 `_id`（`accounts.ts` 的 `resolveByDevice`/`resolveByOpenid`/`resolveByOAuth`/`registerWithPassword` 全是这种按 `deviceId`/`openid`/`oauth.provider+sub`/`password.loginId` 匹配的写法）会把新文档存进 Map 的 `undefined` 键、且返回值从不带真实 driver 会带的 `upsertedId`（`accounts/password.ts:52` 靠 `!res.upsertedId` 判断注册成功与否，用这个 fake 直测会把首次注册误判成"已占用"）；`docMatches` 也不支持 Mongo 对数组字段的隐式元素级匹配（`oauth: [{provider,sub}]` 这种）。之前所有用到 `fakeCollection.ts` 的测试都只按 `_id` 单键查询，没触发过这几点。这次两个 auth 测试文件各自用一个只作用于本文件 `accounts` 集合的子类包装绕过，未改动共享的 `fakeCollection.ts` 本体。
+
+**仍然明显偏低、本轮未覆盖**（下一轮候选）：`src/service/{liveops,pve}/*`（大片 0~10%，retention/achievements/pve 系列，同类"e2e 走 dist 导入"问题，`test/pve-anticheat.test.ts` 等已有 e2e 但同样没记到 src）、`src/{moderation,reputationDecay,anticheatAudit,oauth,gatewayClient,socialsvcClient}.ts`、`src/cards/fuse.ts`。admin 包（47.1%）仍未动。
 
 **`engine/src/config.ts`（522→204 行，2026-08-12，独立函数模块范式）**：0 超限收尾后的第二例新增超限（第一例是上面的 `metaserver/src/service/auth.ts`）——ADR-065 引擎定点化迁移给 `config.ts` 加了 102 行（unit/building blueprint 从"人类可读表直接导出"改成"人类可读原始表 + `bakeXxxBlueprint()` 转换函数"两段式），从合入时未被察觉地推过 500 行界，直到下一次 PR 的 CI 才被 `checkFileLength.mjs`（新文件不在基线里）拦下。判断跟 `paddle.ts`/`economy.ts` 同款——unit/building blueprint 的原始表+bake 函数+类型定义（约 320 行）零共享状态、只被 `config.ts` 内部消费，没有交叉调用需要判断优先级，直接搬进新文件 `blueprintDefs.ts`；`config.ts` 里只留 `export { UNIT_BLUEPRINTS, BUILDING_BLUEPRINTS } from './blueprintDefs'` 一行 re-export，全部约 11 个外部消费者（`balance/pveUpgrades.ts`/`Building.ts`/`GameState.ts`/`Unit.ts`/`systems/BuildingProductionSystem.ts` + 6 个测试文件）导入路径零改动。**验证**：`npx tsc -b` 干净；`npm test` 139/139（含新增的 `fixed.test.ts`）全绿；`node scripts/checkFileLength.mjs` 0 超限（566 源文件，比改动前多 1——新增 `blueprintDefs.ts`）；额外核对了下游消费方 `worldsvc`/`client` 的 `tsc --noEmit` 均干净（`UNIT_BLUEPRINTS`/`BUILDING_BLUEPRINTS` 的 re-export 对它们透明）。第⑤步：纯移动，两个导出符号的值/类型零变化，不适用，未新增测试。

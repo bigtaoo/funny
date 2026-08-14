@@ -15,7 +15,8 @@ const DB = 'nw_admin_audit_test';
 async function tryConnect(): Promise<AdminMongo | null> {
   try {
     return await createAdminMongo(URI, DB, { serverSelectionTimeoutMS: 1500 });
-  } catch {
+  } catch (err) {
+    if (process.env.NW_REQUIRE_DB) throw err;
     return null;
   }
 }

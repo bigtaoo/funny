@@ -28,8 +28,7 @@ import * as PIXI from 'pixi.js-legacy';
 import type { ILayout } from '../../layout/ILayout';
 import type { InputManager } from '../../inputSystem/InputManager';
 import { t } from '../../i18n';
-import { ui as C, txt, sketchPanel, seedFor, tearDownChildren } from '../../render/sketchUi';
-import { FS, snapFont } from '../../render/fontScale';
+import { ui as C, tearDownChildren } from '../../render/sketchUi';
 import type {
   WorldApiClient,
   PlayerWorldView,
@@ -38,11 +37,8 @@ import type {
   MarchView,
   OccupationView,
 } from '../../net/WorldApiClient';
-import { carriedTroops } from '../../game/meta/teamTroops';
-import { troopCap, cardPower } from '../../game/meta/cardDefs';
 import {
   BUILDING_KEYS,
-  BUILD_SPEEDUP_SECS_PER_COIN,
   resourceCapFor,
   type ResourceType,
 } from '@nw/shared';
@@ -50,14 +46,14 @@ import { BusyTracker } from '../../ui/busyTracker';
 import { showToastMessage } from '../../net/log';
 import { ScrollTapGesture } from '../../ui/scrollTapGesture';
 import { wheelScrollY } from '../../ui/wheelScroll';
-import { buildIcon, type IconKind } from '../../render/icons';
 import { GuideOverlay } from '../../render/GuideOverlay';
-import { loadResAtlas, getResTexture } from '../../render/atlas/resAtlasLoader';
-import { loadCityBldAtlas, getCityBldTexture } from '../../render/atlas/cityBldAtlasLoader';
-import { getArtTexture } from '../../render/cardArt';
-import { serverNow } from '../../net/serverClock';
-import type { SaveData, CardInstance } from '../../game/meta/SaveData';
-import { teamSlotId, TEAM_CAP } from '../../game/meta/teamTroops';
+import { loadResAtlas } from '../../render/atlas/resAtlasLoader';
+import { loadCityBldAtlas } from '../../render/atlas/cityBldAtlasLoader';
+import type { SaveData } from '../../game/meta/SaveData';
+import * as actions from './actions';
+import * as helpers from './helpers';
+import * as icons from './icons';
+import * as data from './data';
 
 // ── Public interface ─────────────────────────────────────────────────────────
 
@@ -82,65 +78,7 @@ export interface CitySceneCallbacks {
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
-export const RES_COLORS: Readonly<Record<ResourceType, number>> = {
-  ink: 0xa8d870,
-  paper: 0x90b860,
-  graphite: 0xb0b0a8,
-  metal: 0xa0b8c8,
-  sticker: 0xe6b8d0,
-};
-
-// Emoji fallbacks — only used while res_atlas is still decoding (rare: the atlas is
-// a module singleton usually already loaded by WorldMapScene before city entry).
-const RES_ICON: Readonly<Record<ResourceType, string>> = {
-  ink: '🖊',
-  paper: '📄',
-  graphite: '✏️',
-  metal: '🔩',
-  sticker: '🏷',
-};
-
-const BLD_ICON: Readonly<Record<BuildingKey, string>> = {
-  desk: '🗂',
-  inkPot: '🖊',
-  paperTray: '📄',
-  graphiteMill: '✏️',
-  metalForge: '🔩',
-  stickerShop: '🏷',
-  cabinet: '🗄',
-  drillYard: '⚔️',
-  wall: '🏯',
-  academy: '📚',
-  satchel: '🎒',
-};
-
-// Building glyph source: the five resource-producer buildings reuse the res_atlas
-// motif of what they yield (strong resource↔building visual link, zero new art);
-// the rest use hand-drawn icons.ts line-art.
-const BLD_RES: Partial<Record<BuildingKey, ResourceType>> = {
-  inkPot: 'ink',
-  paperTray: 'paper',
-  graphiteMill: 'graphite',
-  metalForge: 'metal',
-  stickerShop: 'sticker',
-};
-const BLD_GLYPH: Partial<Record<BuildingKey, IconKind>> = {
-  desk: 'desk',
-  cabinet: 'cabinet',
-  drillYard: 'swords',
-  wall: 'castle',
-  academy: 'book',
-};
-
-// Hand-drawn atlas art (art/ui/slg-desk → city_bld_atlas) supersedes the BLD_GLYPH
-// programmatic line-art / emoji fallback for these five once the atlas has decoded.
-const BLD_ATLAS: Partial<Record<BuildingKey, string>> = {
-  desk: 'bld_desk',
-  cabinet: 'bld_cabinet',
-  drillYard: 'bld_drillYard',
-  wall: 'bld_wall',
-  satchel: 'bld_satchel',
-};
+export { RES_COLORS, bldAccentColor } from './icons';
 
 // Card-grid sizing — matches the CardScene/Skins wardrobe language (dynamic
 // column count from a target width, rather than CityScene's old fixed 4-col table).
@@ -152,17 +90,6 @@ export const GRID_PAD = 8;
 // the synthetic train tile), leaving a half-empty last row. Capping columns widens the cards
 // instead of adding more of them, so 12 tiles always lay out as clean full rows (currently 2×6).
 export const MAX_GRID_COLS = 6;
-
-// Category accent for the building grid's level-progress stripe (2026-08-01 card redesign): ties
-// producer cards to the resource-bar color language above them, and gives the remaining buildings
-// a category tint so the grid reads as groups rather than one undifferentiated row of look-alikes.
-const MILITARY_COLOR = 0xb85c38;
-export function bldAccentColor(key: BuildingKey): number {
-  const res = BLD_RES[key];
-  if (res) return RES_COLORS[res];
-  if (key === 'drillYard' || key === 'wall') return MILITARY_COLOR;
-  return C.accent as number;
-}
 
 // The building grid holds every building (incl. academy). D-CITY-12 briefly pulled academy
 // out into a standalone tech-tree panel on a separate military page; once that military page
@@ -414,245 +341,53 @@ export class CitySceneCore {
    * getTeams goes first because the team row is what the player is waiting on here.
    */
   load(): void {
-    // Resource / producer-building glyphs reuse the res_atlas motifs; re-render once decoded.
-    void loadResAtlas()
-      .then(() => this.render())
-      .catch(() => {
-        /* color/emoji fallback */
-      });
-    void loadCityBldAtlas()
-      .then(() => this.render())
-      .catch(() => {
-        /* icons.ts/emoji fallback */
-      });
-
-    const paint = (): void => {
-      if (!this.destroyed) this.render();
-    };
-
-    void this.cb.worldApi
-      .getTeams(this.cb.worldId)
-      .then((teams) => {
-        this.teams = teams;
-      })
-      .catch(() => {
-        /* offline — the row falls through to its real empty state */
-      })
-      .finally(() => {
-        this.teamsLoaded = true;
-        paint();
-      });
-
-    void this.cb.worldApi
-      .getMe(this.cb.worldId)
-      .then((me) => {
-        this.setMe(me);
-        paint();
-      })
-      .catch(() => {
-        /* offline — resource bar / building grid keep their pre-load zeros */
-      });
-
-    // marches + occupations both feed teamOrder(), so `ordersLoaded` only flips once both have
-    // settled — see the field's doc comment for why the status line waits on that.
-    let ordersPending = 2;
-    const orderSettled = (): void => {
-      if (--ordersPending === 0) this.ordersLoaded = true;
-      paint();
-    };
-    void this.cb.worldApi
-      .getMarches(this.cb.worldId)
-      .then((marches) => {
-        this.marches = marches;
-      })
-      .catch(() => {
-        /* offline — treated as no active march */
-      })
-      .finally(orderSettled);
-    void this.cb.worldApi
-      .getOccupations(this.cb.worldId)
-      .then((occupations) => {
-        this.occupations = occupations;
-      })
-      .catch(() => {
-        /* offline — treated as no active hold */
-      })
-      .finally(orderSettled);
+    const core = this;
+    data.load({
+      cb: this.cb,
+      get destroyed() { return core.destroyed; },
+      get teams() { return core.teams; },
+      set teams(v) { core.teams = v; },
+      get marches() { return core.marches; },
+      set marches(v) { core.marches = v; },
+      get occupations() { return core.occupations; },
+      set occupations(v) { core.occupations = v; },
+      get teamsLoaded() { return core.teamsLoaded; },
+      set teamsLoaded(v) { core.teamsLoaded = v; },
+      get ordersLoaded() { return core.ordersLoaded; },
+      set ordersLoaded(v) { core.ordersLoaded = v; },
+      setMe: (me) => this.setMe(me),
+      render: () => this.render(),
+    });
   }
 
-  // ── Icon resolution ─────────────────────────────────────────────────────────
+  // ── Icon resolution — see CityScene/icons.ts ───────────────────────────────
 
-  /** Resource glyph: res_atlas motif sprite when decoded, else the emoji fallback. */
   resIcon(rt: ResourceType, size: number): PIXI.DisplayObject {
-    const tex = getResTexture(rt);
-    if (tex) {
-      const sp = new PIXI.Sprite(tex);
-      sp.width = sp.height = size;
-      return sp;
-    }
-    return txt(RES_ICON[rt], snapFont(Math.round(size * 0.85)), C.dark);
+    return icons.resIcon(rt, size);
   }
 
-  /** Building glyph: producer→res_atlas motif, hand-drawn city_bld_atlas art, then icons.ts line-art, emoji as last resort. */
   bldIcon(key: BuildingKey, size: number, color: number): PIXI.DisplayObject {
-    const res = BLD_RES[key];
-    if (res) return this.resIcon(res, size);
-    const frame = BLD_ATLAS[key];
-    const tex = frame ? getCityBldTexture(frame) : null;
-    if (tex) {
-      const sp = new PIXI.Sprite(tex);
-      sp.width = sp.height = size;
-      return sp;
-    }
-    const kind = BLD_GLYPH[key];
-    if (kind) return buildIcon(kind, size, color);
-    return txt(BLD_ICON[key], snapFont(Math.round(size * 0.85)), color);
+    return icons.bldIcon(key, size, color);
   }
 
-  async doUpgrade(key: BuildingKey): Promise<void> {
-    if (this.bt.busy) return;
-    this.bt.start();
-    this.render();
-    try {
-      this.setMe(await this.cb.worldApi.upgradeBuilding(this.cb.worldId, key));
-      this.showToast(t('city.upgrading'), C.green as number);
-    } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : '';
-      if (msg.includes('resources')) this.showToast(t('city.err.noResources'), C.red as number);
-      else if (msg.includes('queue')) this.showToast(t('city.err.queueFull'), C.red as number);
-      else if (msg.includes('desk')) this.showToast(t('city.err.deskGate'), C.red as number);
-      else this.showToast(t('city.err.generic'), C.red as number);
-    } finally {
-      this.bt.stop();
-    }
-    this.render();
+  /** Bundles what actions.ts's network-action functions need instead of them closing over `this`. */
+  private actionsHost(): actions.ActionsHost {
+    const core = this;
+    return {
+      bt: this.bt, cb: this.cb, teams: this.teams,
+      get me() { return core.me; },
+      set me(v) { core.me = v; },
+      setMe: (me) => this.setMe(me),
+      render: () => this.render(),
+      showToast: (msg, color) => this.showToast(msg, color),
+    };
   }
 
-  async doSpeedup(key: BuildingKey): Promise<void> {
-    if (this.bt.busy) return;
-    const entry = this.me?.buildQueue?.find((q) => q.key === key);
-    if (!entry) return;
-    // serverNow() (P1-1): this determines how many coins are actually charged, so it must use the
-    // same server-corrected clock as the price the player was shown (render.ts's renderBuildQueue) —
-    // a client with a fast/slow local clock would otherwise over/under-charge relative to the
-    // server's real remaining time (comm-audit-2026-07-27 finding).
-    const secsLeft = Math.max(0, Math.ceil((entry.completeAt - serverNow()) / 1000));
-    const coins = Math.ceil(secsLeft / BUILD_SPEEDUP_SECS_PER_COIN);
-    this.bt.start();
-    this.render();
-    try {
-      this.setMe(await this.cb.worldApi.speedupBuild(this.cb.worldId, key, coins));
-      this.showToast(t('city.speedupDone'), C.green as number);
-    } catch {
-      this.showToast(t('city.err.generic'), C.red as number);
-    } finally {
-      this.bt.stop();
-    }
-    this.render();
-  }
-
-  async doTrain(qty: number): Promise<void> {
-    if (this.bt.busy || qty <= 0) return;
-    this.bt.start();
-    this.render();
-    try {
-      this.setMe(await this.cb.worldApi.trainTroops(this.cb.worldId, qty));
-    } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : '';
-      if (msg.includes('cap')) this.showToast(t('city.err.troopCap'), C.red as number);
-      else if (msg.includes('queue')) this.showToast(t('city.err.trainQueueFull'), C.red as number);
-      else if (msg.includes('Insufficient'))
-        this.showToast(t('city.err.noResources'), C.red as number);
-      else this.showToast(t('city.err.generic'), C.red as number);
-    } finally {
-      this.bt.stop();
-    }
-    this.render();
-  }
-
-  async doSpeedupTraining(coins: number): Promise<void> {
-    if (this.bt.busy) return;
-    this.bt.start();
-    this.render();
-    try {
-      this.setMe(await this.cb.worldApi.speedupTraining(this.cb.worldId, coins));
-      this.showToast(t('city.speedupDone'), C.green as number);
-    } catch {
-      this.showToast(t('city.err.generic'), C.red as number);
-    } finally {
-      this.bt.stop();
-    }
-    this.render();
-  }
-
-  /**
-   * "填满所有队伍" — distribute the home troop pool across all 5 teams in slot order (t1..t5),
-   * highest combat-power card first within each team (mirrors DefenseEditorScene's §6.5 一键补满).
-   * A team only takes what's left in the pool once earlier teams are topped up, so an exhausted
-   * pool partially fills whichever team is next in line and leaves the rest untouched.
-   */
-  async doFillAllTeams(): Promise<void> {
-    if (this.bt.busy) return;
-    const save = this.cb.getSave?.();
-    const cardInv = save?.cardInv ?? {};
-    const equipmentInv = save?.equipmentInv ?? {};
-    const cardState = this.me?.cardState ?? {};
-    let pool = this.me?.troops ?? 0;
-    const allocations: Record<string, number> = {};
-    const filledTeamIds = new Set<string>();
-
-    for (let i = 0; i < TEAM_CAP && pool > 0; i++) {
-      const team = this.teams.find((tm) => tm.id === teamSlotId(i));
-      if (!team) continue;
-      const placed = team.army
-        .filter((e) => !!e.cardInstanceId)
-        .map((e) => ({ id: e.cardInstanceId!, card: cardInv[e.cardInstanceId!] }))
-        .filter((x): x is { id: string; card: CardInstance } => !!x.card);
-      if (placed.length === 0) continue;
-      placed.sort((a, b) => cardPower(b.card, equipmentInv) - cardPower(a.card, equipmentInv));
-      for (const { id, card } of placed) {
-        if (pool <= 0) break;
-        const current = cardState[id]?.currentTroops ?? 0;
-        const gap = Math.max(0, troopCap(card) - current);
-        if (gap <= 0) continue;
-        const amount = Math.min(gap, pool);
-        allocations[id] = amount;
-        pool -= amount;
-        filledTeamIds.add(team.id);
-      }
-    }
-
-    if (Object.keys(allocations).length === 0) {
-      this.showToast(t('city.military.fillAllTeamsNone'), C.red as number);
-      return;
-    }
-
-    this.bt.start();
-    this.render();
-    try {
-      await this.cb.worldApi.distributeTroops(this.cb.worldId, allocations);
-      let total = 0;
-      const nextCardState = { ...cardState };
-      for (const [id, amount] of Object.entries(allocations)) {
-        total += amount;
-        const cs = nextCardState[id];
-        nextCardState[id] = { ...cs, currentTroops: (cs?.currentTroops ?? 0) + amount };
-      }
-      if (this.me)
-        this.me = { ...this.me, troops: (this.me.troops ?? 0) - total, cardState: nextCardState };
-      this.showToast(
-        t('city.military.fillAllTeamsDone')
-          .replace('{n}', String(total))
-          .replace('{teams}', String(filledTeamIds.size)),
-        C.green as number
-      );
-    } catch {
-      this.showToast(t('city.err.generic'), C.red as number);
-    } finally {
-      this.bt.stop();
-    }
-    this.render();
-  }
+  async doUpgrade(key: BuildingKey): Promise<void> { return actions.doUpgrade(this.actionsHost(), key); }
+  async doSpeedup(key: BuildingKey): Promise<void> { return actions.doSpeedup(this.actionsHost(), key); }
+  async doTrain(qty: number): Promise<void> { return actions.doTrain(this.actionsHost(), qty); }
+  async doSpeedupTraining(coins: number): Promise<void> { return actions.doSpeedupTraining(this.actionsHost(), coins); }
+  async doFillAllTeams(): Promise<void> { return actions.doFillAllTeams(this.actionsHost()); }
 
   showToast(msg: string, color: number = C.red as number): void {
     showToastMessage(msg, color === (C.red as number) ? 'error' : 'success');
@@ -689,40 +424,28 @@ export class CitySceneCore {
     this.gesture.up()?.();
   }
 
-  // ── Shared helpers ────────────────────────────────────────────────────────
+  // ── Shared helpers — see CityScene/helpers.ts ──────────────────────────────
 
-  /** Current order tying up a team, if any — mirrors TeamsScene.teamOrder (server's TEAM_BUSY predicate). */
   teamOrder(teamId: string): { march: MarchView } | { occ: OccupationView } | null {
-    const march = this.marches.find((m) => m.mine !== false && m.teamId === teamId);
-    if (march) return { march };
-    const occ = this.occupations.find((o) => o.teamId === teamId);
-    if (occ) return { occ };
-    return null;
+    return helpers.teamOrder(this.marches, this.occupations, teamId);
   }
 
-  /** Total troops committed across a team's cards — legacy non-card entries count 0 (see teamTroops.ts). */
   committedTroops(army: TeamTemplate['army']): number {
-    return carriedTroops(army, this.me?.cardState);
+    return helpers.committedTroops(this.me, army);
   }
 
-  /** Draw a card portrait centred inside a box; re-render once its texture decodes (mirrors DefenseEditorScene). */
+  /** Bundles what helpers.ts's drawArtFit/addBtn need instead of them closing over `this`. */
+  private artHost(): helpers.ArtHost {
+    const core = this;
+    return {
+      container: this.container,
+      get destroyed() { return core.destroyed; },
+      artHooked: this.artHooked, hits: this.hits, render: () => this.render(),
+    };
+  }
+
   drawArtFit(url: string, x: number, y: number, boxW: number, boxH: number): void {
-    const tex = getArtTexture(url);
-    if (!tex.baseTexture.valid) {
-      if (!this.artHooked.has(url)) {
-        this.artHooked.add(url);
-        tex.baseTexture.once('loaded', () => {
-          if (!this.destroyed) this.render();
-        });
-      }
-      return;
-    }
-    const scale = Math.min(boxW / tex.width, boxH / tex.height);
-    const sp = new PIXI.Sprite(tex);
-    sp.anchor.set(0.5);
-    sp.scale.set(scale);
-    sp.position.set(x + boxW / 2, y + boxH / 2);
-    this.container.addChild(sp);
+    helpers.drawArtFit(this.artHost(), url, x, y, boxW, boxH);
   }
 
   addBtn(
@@ -735,28 +458,15 @@ export class CitySceneCore {
     fill: number,
     fn: () => void
   ): void {
-    const g = sketchPanel(w, h, { fill, border: C.line, width: 1, seed: seedFor(x, y, w) });
-    g.x = x;
-    g.y = y;
-    this.container.addChild(g);
-    const lbl = txt(label, FS.body, textColor, true);
-    lbl.x = x + 12;
-    lbl.y = y + (h - 22) / 2;
-    this.container.addChild(lbl);
-    this.hits.push({ x, y, w, h, fn });
+    helpers.addBtn(this.artHost(), x, y, w, h, label, textColor, fill, fn);
   }
 
   fmtNum(n: number): string {
-    if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
-    if (n >= 1_000) return `${Math.floor(n / 1_000)}k`;
-    return String(Math.floor(n));
+    return helpers.fmtNum(n);
   }
 
   modalScaleFor(mw: number, mh: number): number {
-    const { w, h } = this;
-    const ref = Math.min(w, h); // fitted axis — 1080 for both portrait & landscape
-    const target = (ref * 0.8) / mw; // popup ≈ 80% of the fitted axis wide (matches old portrait)
-    return Math.min(target, (w * 0.92) / mw, (h * 0.92) / mh);
+    return helpers.modalScaleFor(this.w, this.h, mw, mh);
   }
 
   /** Convert a rect drawn in the modal's local (unscaled) frame into real screen space. */
@@ -766,6 +476,6 @@ export class CitySceneCore {
     originY: number,
     scale: number
   ): { x: number; y: number; w: number; h: number } {
-    return { x: originX + r.x * scale, y: originY + r.y * scale, w: r.w * scale, h: r.h * scale };
+    return helpers.toScreen(r, originX, originY, scale);
   }
 }

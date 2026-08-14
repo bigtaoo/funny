@@ -6,7 +6,7 @@ import { showErr, showOk, type Ctx } from './shared';
 const FLAG_PLATFORMS: FlagPlatform[] = ['web', 'wechat', 'crazygames'];
 
 /** Comma- or newline-separated string → trimmed, non-empty array. */
-function parseList(raw: string): string[] {
+export function parseList(raw: string): string[] {
   return raw
     .split(/[\n,]/)
     .map((s) => s.trim())

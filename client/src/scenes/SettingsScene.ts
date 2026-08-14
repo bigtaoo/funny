@@ -1,50 +1,23 @@
 import * as PIXI from 'pixi.js-legacy';
-import { makeText } from '../render/pixiText';
 import { Scene } from './SceneManager';
 import { ILayout, Rect } from '../layout/ILayout';
 import { InputManager } from '../inputSystem/InputManager';
-import { t, getLocale, setLocale, getSupportedLocales, Locale, TranslationKey } from '../i18n';
+import { t, TranslationKey } from '../i18n';
 import { SketchPen } from '../render/sketch';
 import { palette } from '../render/theme';
-import { sketchPanel, drawLoadingOverlay, tearDownChildren, ui as C } from '../render/sketchUi';
+import { drawLoadingOverlay, tearDownChildren, ui as C } from '../render/sketchUi';
 import { drawSceneHeader } from '../ui/widgets/SceneHeader';
-import { caretDisplay } from '../ui/inputDisplay';
 import { BusyTracker, withTimeout, TimeoutError } from '../ui/busyTracker';
 import { showToastMessage } from '../net/log';
-import { buildAvatar, AVATAR_COUNT, makeAvatarId, parseAvatarId, type AvatarCategory } from '../render/avatar';
-import { buildIcon } from '../render/icons';
-import { drawHubTabs, hubTabsHeight, type HubTab } from '../ui/widgets/HubTabs';
-import { drawScrollIndicator } from '../ui/widgets/ScrollIndicator';
+import type { AvatarCategory } from '../render/avatar';
 import { ScrollTapGesture } from '../ui/scrollTapGesture';
 import { wheelScrollY } from '../ui/wheelScroll';
-import { CARD_DEFS } from '../game/meta/cardDefs';
-import { EQUIPMENT_DEFS } from '../game/meta/equipmentDefs';
-import { SKIN_TARGET_UNIT } from '../game/meta/skinDefs';
-import { allTitleIds } from '../game/meta/titles';
-import { FS, snapFont } from '../render/fontScale';
+import type { SettingsSceneCallbacks, RenameOutcome, Hit } from './SettingsScene/types';
+import { drawProfile, drawLanguage, drawHelp, drawAccount, type PanelHost } from './SettingsScene/panels';
+import { drawAvatarPickerOverlay, showLockToast, type PickerHost } from './SettingsScene/avatarPicker';
+import { drawRenameOverlay, drawDeleteConfirm, type OverlayHost } from './SettingsScene/overlays';
 
-/** One selectable item in the avatar picker grid, regardless of category. */
-interface AvatarPickerItem {
-  id: string;
-  locked: boolean;
-}
-
-const AVATAR_TABS: AvatarCategory[] = ['preset', 'title', 'hero', 'equip', 'material', 'skin'];
-const AVATAR_TAB_LABEL_KEY: Record<AvatarCategory, TranslationKey> = {
-  preset: 'settings.avatarTab.preset',
-  title: 'settings.avatarTab.title',
-  hero: 'settings.avatarTab.hero',
-  equip: 'settings.avatarTab.equip',
-  material: 'settings.avatarTab.material',
-  skin: 'settings.avatarTab.skin',
-};
-const AVATAR_LOCKED_KEY: Record<Exclude<AvatarCategory, 'preset'>, TranslationKey> = {
-  title: 'settings.avatarLocked.title',
-  hero: 'settings.avatarLocked.hero',
-  equip: 'settings.avatarLocked.equip',
-  material: 'settings.avatarLocked.material',
-  skin: 'settings.avatarLocked.skin',
-};
+export type { SettingsSceneCallbacks, RenameOutcome } from './SettingsScene/types';
 
 // ── SettingsScene — personal profile + settings ────────────────────────────────
 //
@@ -52,118 +25,56 @@ const AVATAR_LOCKED_KEY: Record<Exclude<AvatarCategory, 'preset'>, TranslationKe
 // a render()-on-change tree with a flat hit-list, plus a hidden <input> for the
 // rename overlay. Shows the player's avatar + name, a rename action (spends coins,
 // online only), a language switcher, and an account action (log in / log out).
-
-const LOCALE_LABEL: Record<Locale, string> = { zh: '中文', en: 'English', de: 'Deutsch' };
-
-function txt(label: string, size: number, color: number, bold = false): PIXI.Text {
-  return makeText(label, {
-    fontSize: size, fill: color, fontFamily: 'monospace',
-    fontWeight: bold ? 'bold' : 'normal',
-  });
-}
-
-/** Outcome of a rename attempt — ok with the accepted name, or a message key to toast. */
-export type RenameOutcome =
-  | { ok: true; name: string }
-  | { ok: false; key: TranslationKey };
-
-export interface SettingsSceneCallbacks {
-  onBack(): void;
-  /** Display name shown next to the avatar. */
-  playerName: string;
-  /**
-   * 9-digit public id — DISPLAY ONLY (player-facing identifier for chat / reports).
-   * Never used as an identifier anywhere else; all interactions key off the uuid
-   * (accountId). Absent → no id line. Shown here, on the profile screen, only.
-   */
-  publicId?: string;
-  /** Ladder standing (logged-in only) for a small rank line under the name. */
-  pvp?: { rank: string; elo: number };
-  /** SA-4 offline mode — show a login entry instead of logout. */
-  offline?: boolean;
-  onLogin?(): void;
-  onLogout?(): void;
-  /**
-   * Delete account (C5-b, Apple 5.1.1(v)). Only available when logged in online; called after a second confirmation.
-   * On success, core clears local state and jumps to the login page, so no navigation return value is needed —
-   * on failure returns ok:false to trigger a toast.
-   */
-  onDeleteAccount?(): Promise<{ ok: boolean }>;
-  /** Replay the onboarding tutorial (ONBOARDING_DESIGN §3.4); absent = not shown. */
-  onReplayTutorial?(): void;
-  /** Currently selected avatar id (composite "<category>:<key>", see render/avatar.ts); absent = letter-initial fallback. */
-  avatarId?: string;
-  /** Called when the player picks a new avatar; absent = picker is read-only. */
-  onSetAvatar?(id: string): void;
-  /** Owned title ids (save.titles) — unlocks the title tab's items. */
-  ownedTitles?: string[];
-  /** Currently owned skin ids (save.inventory.skins) — unlocks the skin tab's items alongside everOwned.skin. */
-  ownedSkins?: string[];
-  /** Currently owned hero def ids (save.cardInv[*].defId) — unlocks the hero tab's items alongside everOwned.hero; needed because everOwned wasn't backfilled for pre-existing rosters when the ledger shipped. */
-  ownedHeroes?: string[];
-  /** Currently owned equipment def ids (save.equipmentInv[*].defId) — unlocks the equip tab's items alongside everOwned.equipment; see ownedHeroes for why the fallback is needed. */
-  ownedEquipment?: string[];
-  /** Currently held material kinds (save.materials, count > 0) — unlocks the material tab's items alongside everOwned.material; see ownedHeroes for why the fallback is needed. */
-  ownedMaterials?: string[];
-  /** Lifetime-owned ledger (save.everOwned) — unlocks the hero/equipment/material/skin tabs' items even after the item itself is gone from inventory. */
-  everOwned?: { hero?: string[]; equipment?: string[]; material?: string[]; skin?: string[] };
-  // ── rename (online only; absent → no rename UI) ──
-  /** Coin cost of a rename; presence enables the rename button. */
-  renameCost?: number;
-  /**
-   * True when the player still holds their one-time free rename (their current name is a system-assigned
-   * default they never chose). While true the rename button is free and always enabled regardless of balance.
-   */
-  freeRename?: boolean;
-  /** Current server-authoritative coin balance. */
-  getCoins?(): number;
-  /** Subscribe to SaveManager writes; re-renders this scene when the wallet changes elsewhere. Push the returned unsub onto `unsubs`. */
-  onSaveChanged?(listener: () => void): () => void;
-  /** Spend coins to change the display name. */
-  onRename?(name: string): Promise<RenameOutcome>;
-}
-
-interface Hit { rect: Rect; fn: () => void; }
+//
+// 2026-08-13: the avatar-picker modal, rename/delete overlays, and profile/language/help/account
+// panels were pulled out into SettingsScene/{avatarPicker,overlays,panels}.ts as form① free
+// functions (claudedocs/client-modules.md "单文件 500 行收敛") — this file kept scene lifecycle,
+// input routing, and the open/close/submit state transitions those modules call back into. The
+// fields those modules touch went `private` → `public` (same visibility bump every mixin→
+// composition/form① conversion in this codebase has needed — a `private` field can't satisfy an
+// external module's structural interface).
 
 export class SettingsScene implements Scene {
   readonly container: PIXI.Container;
 
-  private readonly w: number;
-  private readonly h: number;
-  private readonly cb: SettingsSceneCallbacks;
+  readonly w: number;
+  readonly h: number;
+  readonly cb: SettingsSceneCallbacks;
 
   /** Mutable so a successful rename updates the on-screen name without leaving. */
-  private playerName: string;
+  playerName: string;
   /** Mutable: tracks the locally-selected avatar so the picker re-renders immediately. */
-  private currentAvatarId: string | undefined;
+  currentAvatarId: string | undefined;
 
-  private hits: Hit[] = [];
+  hits: Hit[] = [];
   private readonly unsubs: Array<() => void> = [];
   /** Set in destroy(); guards render() against any late (caret/async) re-render into a torn-down container. */
   private destroyed = false;
 
   // Rename overlay state.
   private renameOpen = false;
-  private renameText = '';
+  renameText = '';
   /** Avatar picker overlay — opened by tapping the profile avatar. */
   private avatarPickerOpen = false;
   /** Active picker tab + its scroll offset (each tab keeps its own scroll — switching tabs resets to 0). */
-  private pickerTab: AvatarCategory = 'preset';
-  private pickerScrollY = 0;
-  private pickerMaxScroll = 0;
+  pickerTab: AvatarCategory = 'preset';
+  pickerScrollY = 0;
+  pickerMaxScroll = 0;
   /** Grid viewport + per-cell hit list for the current picker render — read by handleDown/Move for drag-scroll vs tap. */
-  private pickerViewRect: Rect | null = null;
-  private pickerCellHits: Array<{ rect: Rect; fn: () => void }> = [];
+  pickerViewRect: Rect | null = null;
+  pickerCellHits: Array<{ rect: Rect; fn: () => void }> = [];
   private readonly pickerGesture = new ScrollTapGesture();
   /** Transient "why is this locked" hint shown under the grid; cleared after a couple seconds. */
-  private toastMsg: string | null = null;
-  private toastTimer = 0;
+  toastMsg: string | null = null;
+  toastTimer = 0;
   /** Delete-account confirmation overlay (C5-b). */
   private deleteConfirmOpen = false;
   private readonly bt = new BusyTracker();
-  private caretOn = true;
+  caretOn = true;
   private caretTimer = 0;
-  private hiddenInput: HTMLInputElement | null = null;
+  hiddenInput: HTMLInputElement | null = null;
+
+  get busy(): boolean { return this.bt.busy; }
 
   constructor(layout: ILayout, input: InputManager, cb: SettingsSceneCallbacks) {
     this.container = new PIXI.Container();
@@ -269,7 +180,7 @@ export class SettingsScene implements Scene {
     this.hiddenInput = el;
   }
 
-  private openRename(): void {
+  openRename(): void {
     this.renameOpen = true;
     this.renameText = '';
     this.caretOn = true; this.caretTimer = 0;
@@ -278,13 +189,13 @@ export class SettingsScene implements Scene {
     this.render();
   }
 
-  private closeRename(): void {
+  closeRename(): void {
     this.renameOpen = false;
     this.hiddenInput?.blur();
     this.render();
   }
 
-  private async submitRename(): Promise<void> {
+  async submitRename(): Promise<void> {
     if (this.bt.busy || !this.cb.onRename) return;
     const name = this.renameText.trim();
     if (!name) { this.closeRename(); return; }
@@ -310,21 +221,82 @@ export class SettingsScene implements Scene {
 
   // ── Render ─────────────────────────────────────────────────────────────────
 
-  private render(): void {
+  render(): void {
     if (this.destroyed) return;
     tearDownChildren(this.container); // caret blink (~2×/s) + per-keystroke rename field → free Text textures
     this.hits = [];
 
     this.drawBackground();
     const tbH = this.drawHeader();
-    this.drawProfile(tbH);
-    this.drawLanguage();
-    if (this.cb.onReplayTutorial) this.drawHelp();
-    this.drawAccount();
-    if (this.avatarPickerOpen) this.drawAvatarPickerOverlay();
-    if (this.renameOpen) this.drawRenameOverlay();
-    if (this.deleteConfirmOpen) this.drawDeleteConfirm();
+    drawProfile(this.asPanelHost(), tbH);
+    drawLanguage(this.asPanelHost());
+    if (this.cb.onReplayTutorial) drawHelp(this.asPanelHost());
+    drawAccount(this.asPanelHost());
+    if (this.avatarPickerOpen) drawAvatarPickerOverlay(this.asPickerHost());
+    if (this.renameOpen) drawRenameOverlay(this.asOverlayHost());
+    if (this.deleteConfirmOpen) drawDeleteConfirm(this.asOverlayHost());
     if (this.bt.loadingVisible) drawLoadingOverlay(this.container, this.w, this.h, this.bt.dots, t('common.processing'));
+  }
+
+  // asXxxHost() are cheap object literals (not stored) — each render() call gets a fresh one so
+  // `hits`/other mutable fields always reflect the current instance state; the panels/overlays
+  // mutate through these references exactly as they used to mutate `this` directly.
+  private asPanelHost(): PanelHost {
+    return {
+      container: this.container, w: this.w, h: this.h, cb: this.cb,
+      playerName: this.playerName, currentAvatarId: this.currentAvatarId, busy: this.bt.busy,
+      hits: this.hits,
+      render: () => this.render(),
+      openAvatarPicker: () => this.openAvatarPicker(),
+      openRename: () => this.openRename(),
+      openDelete: () => this.openDelete(),
+    };
+  }
+
+  private asPickerHost(): PickerHost {
+    const scene = this;
+    return {
+      container: this.container, w: this.w, h: this.h, cb: this.cb,
+      get currentAvatarId() { return scene.currentAvatarId; },
+      set currentAvatarId(v) { scene.currentAvatarId = v; },
+      get hits() { return scene.hits; },
+      set hits(v) { scene.hits = v; },
+      get pickerTab() { return scene.pickerTab; },
+      set pickerTab(v) { scene.pickerTab = v; },
+      get pickerScrollY() { return scene.pickerScrollY; },
+      set pickerScrollY(v) { scene.pickerScrollY = v; },
+      get pickerMaxScroll() { return scene.pickerMaxScroll; },
+      set pickerMaxScroll(v) { scene.pickerMaxScroll = v; },
+      get pickerViewRect() { return scene.pickerViewRect; },
+      set pickerViewRect(v) { scene.pickerViewRect = v; },
+      get pickerCellHits() { return scene.pickerCellHits; },
+      set pickerCellHits(v) { scene.pickerCellHits = v; },
+      get toastMsg() { return scene.toastMsg; },
+      set toastMsg(v) { scene.toastMsg = v; },
+      get toastTimer() { return scene.toastTimer; },
+      set toastTimer(v) { scene.toastTimer = v; },
+      render: () => this.render(),
+      closeAvatarPicker: () => this.closeAvatarPicker(),
+    };
+  }
+
+  private asOverlayHost(): OverlayHost {
+    const scene = this;
+    return {
+      container: this.container, w: this.w, h: this.h,
+      renameText: this.renameText, caretOn: this.caretOn, hiddenInput: this.hiddenInput,
+      // Getter/setter, not a plain property: drawRenameOverlay/drawDeleteConfirm reassign
+      // `host.hits = []` wholesale (not just `.push()`) to discard base-scene hits for the modal —
+      // a plain copied property would only rebind this throwaway object literal, never reaching
+      // back to `scene.hits`, and handleDown() (which reads `scene.hits` directly) would then never
+      // see the modal's own button hits. Same reasoning as PickerHost.hits below.
+      get hits() { return scene.hits; },
+      set hits(v) { scene.hits = v; },
+      submitRename: () => void this.submitRename(),
+      closeRename: () => this.closeRename(),
+      submitDelete: () => void this.submitDelete(),
+      closeDelete: () => this.closeDelete(),
+    };
   }
 
   private drawBackground(): void {
@@ -350,76 +322,7 @@ export class SettingsScene implements Scene {
     return tbH;
   }
 
-  private drawProfile(tbH: number): void {
-    const { w, h } = this;
-    const cardX = Math.round(w * 0.12);
-    const cardY = tbH + Math.round(h * 0.05);
-    const av = Math.round(h * 0.12);
-
-    const avatar = buildAvatar(av, this.playerName, 21, this.currentAvatarId);
-    avatar.x = cardX; avatar.y = cardY;
-    this.container.addChild(avatar);
-
-    // Tapping the avatar opens the picker. A small pencil badge hints it's editable;
-    // only shown when picking is enabled (onSetAvatar present).
-    if (this.cb.onSetAvatar) {
-      const badgeR = Math.round(av * 0.16);
-      const bcx = cardX + av - badgeR, bcy = cardY + av - badgeR;
-      const badge = new PIXI.Graphics();
-      badge.beginFill(C.accent); badge.drawCircle(bcx, bcy, badgeR); badge.endFill();
-      this.container.addChild(badge);
-      const pencil = txt('✎', snapFont(Math.round(badgeR * 1.4)), 0xffffff, true);
-      pencil.anchor.set(0.5, 0.5); pencil.x = bcx; pencil.y = bcy;
-      this.container.addChild(pencil);
-      this.hits.push({ rect: { x: cardX, y: cardY, w: av, h: av }, fn: () => this.openAvatarPicker() });
-    }
-
-    const nameX = cardX + av + Math.round(w * 0.04);
-    const hasId = !!this.cb.publicId;
-    const hasRank = !this.cb.offline && !!this.cb.pvp;
-    // Stack name / #id / rank vertically next to the avatar; top line rises when
-    // there are more lines so the block stays vertically centred on the avatar.
-    const nameY = cardY + av * (hasId || hasRank ? 0.28 : 0.34);
-    const name = txt(this.playerName, FS.headline, C.dark, true);
-    name.anchor.set(0, 0.5); name.x = nameX; name.y = nameY;
-    this.container.addChild(name);
-
-    if (hasId) {
-      // Display-only public id (#123456789); the uuid stays server-internal.
-      const idLine = txt(t('settings.playerId', { id: this.cb.publicId! }), FS.heading, C.mid);
-      idLine.anchor.set(0, 0.5); idLine.x = nameX; idLine.y = cardY + av * 0.56;
-      this.container.addChild(idLine);
-    }
-
-    if (hasRank) {
-      const pvp = this.cb.pvp!;
-      const rankName = t(('rank.' + pvp.rank) as TranslationKey);
-      const sub = pvp.rank === 'unranked' ? rankName : `${rankName} · ${pvp.elo}`;
-      const rank = txt(sub, FS.heading, C.gold, true);
-      rank.anchor.set(0, 0.5); rank.x = nameX; rank.y = cardY + av * (hasId ? 0.82 : 0.68);
-      this.container.addChild(rank);
-    }
-
-    // Rename button (online only). Free first rename for players who never chose a name; otherwise
-    // shows the coin cost and is disabled if the balance is short.
-    if (this.cb.onRename && this.cb.renameCost != null) {
-      const cost = this.cb.renameCost;
-      const free = this.cb.freeRename === true;
-      const coins = this.cb.getCoins?.() ?? 0;
-      const enabled = (free || coins >= cost) && !this.bt.busy;
-      const btnY = cardY + av + Math.round(h * 0.02);
-      const label = free ? t('settings.renameFree') : t('settings.rename', { cost });
-      this.addButton(label, btnY, enabled ? C.accent : C.light, enabled ? () => this.openRename() : null, Math.round(w * 0.46));
-
-      // Free rename: show a hint instead of the balance line.
-      const sub = free ? t('settings.renameFreeHint') : t('settings.coins', { coins });
-      const bal = txt(sub, FS.label, C.mid);
-      bal.anchor.set(0, 0.5); bal.x = cardX; bal.y = btnY + Math.round(h * 0.07) + Math.round(h * 0.022);
-      this.container.addChild(bal);
-    }
-  }
-
-  private openAvatarPicker(): void {
+  openAvatarPicker(): void {
     this.avatarPickerOpen = true;
     this.pickerTab = 'preset';
     this.pickerScrollY = 0;
@@ -427,277 +330,24 @@ export class SettingsScene implements Scene {
     this.render();
   }
 
-  private closeAvatarPicker(): void {
+  closeAvatarPicker(): void {
     this.avatarPickerOpen = false;
     this.pickerViewRect = null;
     this.pickerCellHits = [];
     this.render();
   }
 
-  private showLockToast(category: Exclude<AvatarCategory, 'preset'>): void {
-    this.toastMsg = t(AVATAR_LOCKED_KEY[category]);
-    this.toastTimer = 2.2;
-    this.render();
-  }
-
-  /** The full candidate list + lock state for one tab (preset is always all-unlocked). */
-  private pickerItems(category: AvatarCategory): AvatarPickerItem[] {
-    const everOwned = this.cb.everOwned ?? {};
-    switch (category) {
-      case 'preset':
-        return Array.from({ length: AVATAR_COUNT }, (_, i) => ({ id: makeAvatarId('preset', String(i)), locked: false }));
-      case 'title': {
-        const owned = new Set(this.cb.ownedTitles ?? []);
-        return allTitleIds(this.cb.ownedTitles ?? []).map((id) => ({ id: makeAvatarId('title', id), locked: !owned.has(id) }));
-      }
-      case 'hero': {
-        // everOwned.hero + cardInv are keyed by CARD_DEFS id (e.g. 'lichuang'), NOT unitType — only
-        // check against d.id, even though the avatarId itself is keyed by d.unitType (art lookup key).
-        const owned = new Set([...(this.cb.ownedHeroes ?? []), ...(everOwned.hero ?? [])]);
-        return Object.values(CARD_DEFS).map((d) => ({ id: makeAvatarId('hero', d.unitType), locked: !owned.has(d.id) }));
-      }
-      case 'equip': {
-        const owned = new Set([...(this.cb.ownedEquipment ?? []), ...(everOwned.equipment ?? [])]);
-        return Object.values(EQUIPMENT_DEFS).map((d) => ({ id: makeAvatarId('equip', d.defId), locked: !owned.has(d.defId) }));
-      }
-      case 'material': {
-        const owned = new Set([...(this.cb.ownedMaterials ?? []), ...(everOwned.material ?? [])]);
-        return (['scrap', 'lead', 'binding'] as const).map((kind) => ({ id: makeAvatarId('material', kind), locked: !owned.has(kind) }));
-      }
-      case 'skin': {
-        const owned = new Set([...(this.cb.ownedSkins ?? []), ...(everOwned.skin ?? [])]);
-        return Object.keys(SKIN_TARGET_UNIT).map((id) => ({ id: makeAvatarId('skin', id), locked: !owned.has(id) }));
-      }
-    }
-  }
-
-  /** Modal avatar picker — category tabs + a scrollable icon grid, with locked (never-owned) items greyed out. */
-  private drawAvatarPickerOverlay(): void {
-    const { w, h } = this;
-    // Modal: discard base-scene hits so only the overlay's controls are tappable; the grid itself
-    // uses pickerCellHits/pickerViewRect (checked in handleDown) instead of this.hits.
-    this.hits = [];
-    this.pickerCellHits = [];
-
-    const dim = new PIXI.Graphics();
-    dim.beginFill(0x000000, 0.7); dim.drawRect(0, 0, w, h); dim.endFill();
-    this.container.addChild(dim);
-
-    const pw = Math.round(w * 0.88), ph = Math.round(h * 0.68);
-    const px = (w - pw) / 2, py = (h - ph) / 2;
-    const panel = sketchPanel(pw, ph, { fill: C.paper, border: C.dark, width: 2.4, seed: 42 });
-    panel.x = px; panel.y = py;
-    this.container.addChild(panel);
-
-    const title = txt(t('settings.avatar'), FS.title, C.dark, true);
-    title.anchor.set(0.5, 0); title.x = w / 2; title.y = py + Math.round(h * 0.022);
-    this.container.addChild(title);
-
-    // Category tabs, drawn in a sub-container offset to the panel so drawHubTabs' own (0-based)
-    // layout math just works; its returned hit rects are local to that sub-container, so they're
-    // translated back to stage space before landing in this.hits.
-    const tabY = py + Math.round(h * 0.06);
-    const tabStripH = hubTabsHeight(h);
-    const tabLayer = new PIXI.Container();
-    this.container.addChild(tabLayer);
-    const tabs: HubTab[] = AVATAR_TABS.map((cat) => ({ label: t(AVATAR_TAB_LABEL_KEY[cat]), active: cat === this.pickerTab }));
-    const tabHits = drawHubTabs(tabLayer, pw, 0, tabStripH, tabs, (i) => {
-      this.pickerTab = AVATAR_TABS[i]!;
-      this.pickerScrollY = 0;
-      this.toastMsg = null;
-      this.render();
-    });
-    tabLayer.x = px; tabLayer.y = tabY;
-    this.hits.push(...tabHits.map((hit) => ({ rect: { x: hit.rect.x + px, y: hit.rect.y + tabY, w: hit.rect.w, h: hit.rect.h }, fn: hit.fn })));
-
-    // Scrollable icon grid below the tabs.
-    const gridTop = tabY + tabStripH + Math.round(h * 0.02);
-    const toastH = Math.round(h * 0.045);
-    const closeAreaH = Math.round(h * 0.09);
-    const gridH = py + ph - closeAreaH - toastH - gridTop;
-    const gridPad = Math.round(pw * 0.05);
-    const gridInnerW = pw - gridPad * 2;
-    const view: Rect = { x: px + gridPad, y: gridTop, w: gridInnerW, h: gridH };
-
-    const clip = new PIXI.Graphics();
-    clip.beginFill(0xffffff); clip.drawRect(view.x, view.y, view.w, view.h); clip.endFill();
-    this.container.addChild(clip);
-    const gridLayer = new PIXI.Container();
-    gridLayer.mask = clip;
-    this.container.addChild(gridLayer);
-
-    const items = this.pickerItems(this.pickerTab);
-    const avS = Math.round(h * 0.085);
-    const cellGap = Math.round(avS * 0.35);
-    const cols = Math.max(1, Math.floor((gridInnerW + cellGap) / (avS + cellGap)));
-    const rowH = avS + cellGap;
-    const rows = Math.ceil(items.length / cols);
-    const contentH = rows * rowH;
-    this.pickerMaxScroll = Math.max(0, contentH - gridH);
-    this.pickerScrollY = Math.min(this.pickerScrollY, this.pickerMaxScroll);
-
-    items.forEach((item, i) => {
-      const col = i % cols;
-      const row = Math.floor(i / cols);
-      const ax = view.x + col * (avS + cellGap);
-      const ay = view.y + row * rowH - this.pickerScrollY;
-      if (ay + avS < view.y || ay > view.y + view.h) return; // culled — off-screen row
-
-      const selected = this.currentAvatarId === item.id;
-      if (selected) {
-        const ring = new PIXI.Graphics();
-        ring.lineStyle(Math.max(2, Math.round(avS * 0.07)), C.gold, 1);
-        ring.drawCircle(ax + avS / 2, ay + avS / 2, avS / 2 + Math.round(avS * 0.06));
-        gridLayer.addChild(ring);
-      }
-
-      const av = buildAvatar(avS, '', 10 + i, item.id);
-      av.x = ax; av.y = ay;
-      av.alpha = item.locked ? 0.32 : (!this.cb.onSetAvatar ? 0.75 : (selected ? 1.0 : 0.82));
-      gridLayer.addChild(av);
-
-      if (item.locked) {
-        const lockS = Math.round(avS * 0.42);
-        const lockBadge = new PIXI.Graphics();
-        lockBadge.beginFill(0x000000, 0.5);
-        lockBadge.drawCircle(ax + avS / 2, ay + avS / 2, lockS / 2 + 3);
-        lockBadge.endFill();
-        gridLayer.addChild(lockBadge);
-        const lock = buildIcon('lock', lockS, 0xffffff);
-        lock.x = ax + avS / 2 - lockS / 2; lock.y = ay + avS / 2 - lockS / 2;
-        gridLayer.addChild(lock);
-      }
-
-      if (this.cb.onSetAvatar && !selected) {
-        const cat = this.pickerTab;
-        this.pickerCellHits.push({
-          rect: { x: ax, y: ay, w: avS, h: avS }, // ay is already on-screen position for this render
-          fn: item.locked
-            ? () => this.showLockToast(cat as Exclude<AvatarCategory, 'preset'>)
-            : () => {
-              this.currentAvatarId = item.id;
-              this.cb.onSetAvatar!(item.id);
-              this.closeAvatarPicker(); // pick + dismiss
-            },
-        });
-      }
-    });
-    this.pickerViewRect = view;
-
-    drawScrollIndicator(this.container, view, this.pickerScrollY, this.pickerMaxScroll);
-
-    // Transient lock-reason toast, between the grid and the close button.
-    if (this.toastMsg) {
-      const toast = txt(this.toastMsg, snapFont(Math.round(toastH * 0.5)), C.red, true);
-      toast.anchor.set(0.5, 0.5);
-      toast.x = w / 2; toast.y = gridTop + gridH + toastH / 2;
-      this.container.addChild(toast);
-    }
-
-    // Close button.
-    const btnW = Math.round(pw * 0.5), btnH = Math.round(closeAreaH * 0.62);
-    const bxx = px + (pw - btnW) / 2, byy = py + ph - btnH - Math.round(h * 0.02);
-    const cBox = new PIXI.Graphics();
-    cBox.beginFill(C.dark); cBox.drawRect(bxx, byy, btnW, btnH); cBox.endFill();
-    this.container.addChild(cBox);
-    const cLbl = txt(t('common.close'), snapFont(Math.round(btnH * 0.36)), 0xffffff, true);
-    cLbl.anchor.set(0.5, 0.5); cLbl.x = bxx + btnW / 2; cLbl.y = byy + btnH / 2;
-    this.container.addChild(cLbl);
-    this.hits.push({ rect: { x: bxx, y: byy, w: btnW, h: btnH }, fn: () => this.closeAvatarPicker() });
-
-    // Tap outside panel = close (registered last so specific hits win — first-match-wins).
-    this.hits.push({ rect: { x: 0, y: 0, w, h }, fn: () => this.closeAvatarPicker() });
-  }
-
-  private drawLanguage(): void {
-    const { w, h } = this;
-    const secY = Math.round(h * 0.48);
-    const label = txt(t('settings.language'), FS.title, C.dark, true);
-    label.anchor.set(0, 0.5); label.x = Math.round(w * 0.12); label.y = secY;
-    this.container.addChild(label);
-
-    const locales = getSupportedLocales();
-    const btnH = Math.round(h * 0.062);
-    const gap  = Math.round(w * 0.03);
-    const btnW = Math.round(w * 0.22);
-    const startX = Math.round(w * 0.12);
-    const btnY = secY + Math.round(h * 0.045);
-    const active = getLocale();
-
-    locales.forEach((loc, i) => {
-      const bx = startX + i * (btnW + gap);
-      const on = loc === active;
-      const box = new PIXI.Graphics();
-      box.beginFill(on ? C.accent : C.paper);
-      box.drawRect(0, 0, btnW, btnH);
-      box.endFill();
-      new SketchPen(box, 71 + i).rect(2, 2, btnW - 4, btnH - 4, {
-        color: on ? C.gold : C.dark, width: on ? 2.8 : 2, jitter: 1.0,
-      });
-      box.x = bx; box.y = btnY;
-      this.container.addChild(box);
-
-      const lbl = txt(LOCALE_LABEL[loc], snapFont(Math.round(btnH * 0.36)), on ? 0xffffff : C.dark, on);
-      lbl.anchor.set(0.5, 0.5); lbl.x = bx + btnW / 2; lbl.y = btnY + btnH / 2;
-      this.container.addChild(lbl);
-
-      if (!on) {
-        this.hits.push({
-          rect: { x: bx, y: btnY, w: btnW, h: btnH },
-          fn: () => { setLocale(loc); this.render(); },
-        });
-      }
-    });
-  }
-
-  // Help (left) and Account (right) sit side by side on the same row so the
-  // help block no longer pushes account down when the tutorial replay is shown.
-  private drawHelp(): void {
-    const { w, h } = this;
-    const secY = Math.round(h * 0.73);
-    const x = Math.round(w * 0.56);
-    const label = txt(t('settings.help'), FS.title, C.dark, true);
-    label.anchor.set(0, 0.5); label.x = x; label.y = secY;
-    this.container.addChild(label);
-    this.addButton(t('settings.replayTutorial'), secY + Math.round(h * 0.045), C.accent, () => this.cb.onReplayTutorial!(), Math.round(w * 0.4), x);
-  }
-
-  private drawAccount(): void {
-    const { w, h } = this;
-    const secY = Math.round(h * 0.73);
-    const x = Math.round(w * 0.12);
-    const btnW = Math.round(w * 0.4);
-    const label = txt(t('settings.account'), FS.title, C.dark, true);
-    label.anchor.set(0, 0.5); label.x = x; label.y = secY;
-    this.container.addChild(label);
-
-    if (this.cb.offline) {
-      const hint = txt(t('settings.offlineHint'), FS.label, C.mid);
-      hint.anchor.set(0, 0.5); hint.x = x; hint.y = secY + Math.round(h * 0.045);
-      this.container.addChild(hint);
-      if (this.cb.onLogin) {
-        this.addButton(t('auth.loginEntry'), secY + Math.round(h * 0.09), C.gold, () => this.cb.onLogin!(), btnW, x);
-      }
-    } else if (this.cb.onLogout) {
-      this.addButton(t('auth.logout'), secY + Math.round(h * 0.045), C.dark, () => this.cb.onLogout!(), btnW, x);
-      // Account deletion (C5-b, Apple 5.1.1(v)) — danger entry below logout, online only.
-      if (this.cb.onDeleteAccount) {
-        this.addButton(t('settings.deleteAccount'), secY + Math.round(h * 0.125), C.red, () => this.openDelete(), btnW, x);
-      }
-    }
-  }
-
-  private openDelete(): void {
+  openDelete(): void {
     this.deleteConfirmOpen = true;
     this.render();
   }
 
-  private closeDelete(): void {
+  closeDelete(): void {
     this.deleteConfirmOpen = false;
     this.render();
   }
 
-  private async submitDelete(): Promise<void> {
+  async submitDelete(): Promise<void> {
     if (this.bt.busy || !this.cb.onDeleteAccount) return;
     this.deleteConfirmOpen = false;
     this.bt.start();
@@ -713,140 +363,5 @@ export class SettingsScene implements Scene {
       this.bt.stop();
       this.render();
     }
-  }
-
-  private drawDeleteConfirm(): void {
-    const { w, h } = this;
-    // Modal: discard base-scene hits so only the overlay's controls are tappable.
-    this.hits = [];
-
-    const dim = new PIXI.Graphics();
-    dim.beginFill(0x000000, 0.7); dim.drawRect(0, 0, w, h); dim.endFill();
-    this.container.addChild(dim);
-
-    const pw = Math.round(w * 0.78), ph = Math.round(h * 0.36);
-    const px = (w - pw) / 2, py = (h - ph) / 2;
-    const panel = sketchPanel(pw, ph, { fill: C.paper, border: C.red, width: 2.6, seed: 37 });
-    panel.x = px; panel.y = py;
-    this.container.addChild(panel);
-
-    const title = txt(t('settings.deleteAccount.confirmTitle'), FS.title, C.red, true);
-    title.anchor.set(0.5, 0); title.x = w / 2; title.y = py + Math.round(h * 0.03);
-    this.container.addChild(title);
-
-    const body = makeText(t('settings.deleteAccount.confirmBody'), {
-      fontSize: FS.heading, fill: C.dark, fontFamily: 'monospace',
-      wordWrap: true, wordWrapWidth: pw * 0.86, align: 'center', lineHeight: Math.round(h * 0.036),
-    });
-    body.anchor.set(0.5, 0); body.x = w / 2; body.y = py + Math.round(ph * 0.26);
-    this.container.addChild(body);
-
-    // Confirm (danger) / cancel.
-    const btnW = Math.round(pw * 0.4), btnH = Math.round(h * 0.06);
-    const byy = py + ph - btnH - Math.round(h * 0.03);
-    const delX = px + Math.round(pw * 0.08), cancelX = px + pw - Math.round(pw * 0.08) - btnW;
-
-    const delBox = new PIXI.Graphics();
-    delBox.beginFill(C.red); delBox.drawRect(delX, byy, btnW, btnH); delBox.endFill();
-    this.container.addChild(delBox);
-    const delLbl = txt(t('settings.deleteAccount.confirm'), snapFont(Math.round(btnH * 0.32)), 0xffffff, true);
-    delLbl.anchor.set(0.5, 0.5); delLbl.x = delX + btnW / 2; delLbl.y = byy + btnH / 2;
-    this.container.addChild(delLbl);
-    this.hits.push({ rect: { x: delX, y: byy, w: btnW, h: btnH }, fn: () => void this.submitDelete() });
-
-    const cBox = new PIXI.Graphics();
-    cBox.beginFill(C.mid); cBox.drawRect(cancelX, byy, btnW, btnH); cBox.endFill();
-    this.container.addChild(cBox);
-    const cLbl = txt(t('settings.deleteAccount.cancel'), snapFont(Math.round(btnH * 0.36)), 0xffffff, true);
-    cLbl.anchor.set(0.5, 0.5); cLbl.x = cancelX + btnW / 2; cLbl.y = byy + btnH / 2;
-    this.container.addChild(cLbl);
-    this.hits.push({ rect: { x: cancelX, y: byy, w: btnW, h: btnH }, fn: () => this.closeDelete() });
-
-    // Tap outside panel = cancel (registered last so the buttons win — first-match-wins).
-    this.hits.push({ rect: { x: 0, y: 0, w, h }, fn: () => this.closeDelete() });
-  }
-
-  /** A dark button with a hand-drawn border. `fn = null` → disabled (greyed, inert). */
-  private addButton(label: string, y: number, border: number, fn: (() => void) | null, width?: number, x?: number): void {
-    const { w, h } = this;
-    const btnW = width ?? Math.round(w * 0.5);
-    const btnH = Math.round(h * 0.07);
-    const bx = x ?? Math.round(w * 0.12);
-    const enabled = fn !== null;
-    const box = new PIXI.Graphics();
-    box.beginFill(enabled ? C.dark : 0xbbbbbb);
-    box.drawRect(0, 0, btnW, btnH);
-    box.endFill();
-    box.alpha = enabled ? 1 : 0.6;
-    new SketchPen(box, 91).rect(2, 2, btnW - 4, btnH - 4, { color: border, width: 2.6, jitter: 1.0 });
-    box.x = bx; box.y = y;
-    this.container.addChild(box);
-
-    const lbl = txt(label, snapFont(Math.round(btnH * 0.34)), 0xffffff, true);
-    lbl.anchor.set(0.5, 0.5); lbl.x = bx + btnW / 2; lbl.y = y + btnH / 2;
-    lbl.alpha = enabled ? 1 : 0.6;
-    this.container.addChild(lbl);
-
-    if (enabled) this.hits.push({ rect: { x: bx, y, w: btnW, h: btnH }, fn });
-  }
-
-  private drawRenameOverlay(): void {
-    const { w, h } = this;
-    // Modal: discard the base-scene hits so only the overlay's controls are tappable.
-    this.hits = [];
-
-    const dim = new PIXI.Graphics();
-    dim.beginFill(0x000000, 0.7); dim.drawRect(0, 0, w, h); dim.endFill();
-    this.container.addChild(dim);
-
-    const pw = Math.round(w * 0.72), ph = Math.round(h * 0.34);
-    const px = (w - pw) / 2, py = (h - ph) / 2;
-    const panel = sketchPanel(pw, ph, { fill: C.paper, border: C.dark, width: 2.4, seed: 33 });
-    panel.x = px; panel.y = py;
-    this.container.addChild(panel);
-
-    const title = txt(t('settings.renameTitle'), FS.title, C.dark, true);
-    title.anchor.set(0.5, 0); title.x = w / 2; title.y = py + Math.round(h * 0.03);
-    this.container.addChild(title);
-
-    // Input box.
-    const ibX = px + Math.round(pw * 0.08), ibW = pw - 2 * Math.round(pw * 0.08);
-    const ibY = py + Math.round(ph * 0.34), ibH = Math.round(h * 0.06);
-    const ib = new PIXI.Graphics();
-    ib.beginFill(0xffffff); ib.drawRect(ibX, ibY, ibW, ibH); ib.endFill();
-    new SketchPen(ib, 34).rect(ibX + 2, ibY + 2, ibW - 4, ibH - 4, { color: C.accent, width: 2, jitter: 0.8 });
-    this.container.addChild(ib);
-    // Tapping the field (re)focuses the hidden input on touch devices.
-    this.hits.push({ rect: { x: ibX, y: ibY, w: ibW, h: ibH }, fn: () => this.hiddenInput?.focus() });
-
-    const display = caretDisplay(this.renameText, this.caretOn, t('settings.renamePlaceholder'));
-    const field = txt(display, snapFont(Math.round(ibH * 0.42)), (this.renameText || this.caretOn) ? C.dark : C.mid);
-    field.anchor.set(0, 0.5); field.x = ibX + Math.round(ibW * 0.04); field.y = ibY + ibH / 2;
-    this.container.addChild(field);
-
-    // Confirm / cancel.
-    const btnW = Math.round(pw * 0.4), btnH = Math.round(h * 0.06);
-    const byy = py + ph - btnH - Math.round(h * 0.03);
-    const okX = px + Math.round(pw * 0.08), cancelX = px + pw - Math.round(pw * 0.08) - btnW;
-
-    const okBox = new PIXI.Graphics();
-    okBox.beginFill(C.green); okBox.drawRect(okX, byy, btnW, btnH); okBox.endFill();
-    this.container.addChild(okBox);
-    const okLbl = txt(t('settings.renameConfirm'), snapFont(Math.round(btnH * 0.36)), 0xffffff, true);
-    okLbl.anchor.set(0.5, 0.5); okLbl.x = okX + btnW / 2; okLbl.y = byy + btnH / 2;
-    this.container.addChild(okLbl);
-    this.hits.push({ rect: { x: okX, y: byy, w: btnW, h: btnH }, fn: () => void this.submitRename() });
-
-    const cBox = new PIXI.Graphics();
-    cBox.beginFill(C.mid); cBox.drawRect(cancelX, byy, btnW, btnH); cBox.endFill();
-    this.container.addChild(cBox);
-    const cLbl = txt(t('settings.renameCancel'), snapFont(Math.round(btnH * 0.36)), 0xffffff, true);
-    cLbl.anchor.set(0.5, 0.5); cLbl.x = cancelX + btnW / 2; cLbl.y = byy + btnH / 2;
-    this.container.addChild(cLbl);
-    this.hits.push({ rect: { x: cancelX, y: byy, w: btnW, h: btnH }, fn: () => this.closeRename() });
-
-    // Tap anywhere outside the panel/buttons closes the overlay — registered LAST so the
-    // specific button hits above take priority (handleDown is first-match-wins).
-    this.hits.push({ rect: { x: 0, y: 0, w, h }, fn: () => this.closeRename() });
   }
 }

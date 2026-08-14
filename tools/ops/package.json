@@ -5,12 +5,15 @@
   "scripts": {
     "start": "webpack serve --mode development --port 9093",
     "build": "webpack --mode production",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit -p tsconfig.test.json",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "devDependencies": {
     "html-webpack-plugin": "^5.6.6",
     "ts-loader": "^9.5.4",
     "typescript": "^5.9.3",
+    "vitest": "^2.1.9",
     "webpack": "^5.105.4",
     "webpack-cli": "^7.0.2",
     "webpack-dev-server": "^5.2.3"

@@ -149,3 +149,33 @@ detail layers, prominent gold accents on the tallest spires.
 - **游戏内**：`WorldMapRenderer.refreshCityLayer` 为玩家主城（`base`）**和** NPC 城池节点（`allCityNodes`：州府/关隘城/分级城/世界中心）各放一个精灵，尺寸按 `footprint/BASE_FOOTPRINT × BASE_SPRITE_TILES` 缩放（城越高越大）。
 - **编辑器**：`refreshCitySprites`（`tools/map-editor/src/index.ts`）用同一函数、同一缩放规则画城池——所见即游戏内所见。
 - 阵营 tint（自己蓝 `0x224488` / 友军绿 `0x2e8b40` / 敌方红 `0xcc2222`，ADR-003 铁律）目前只作用于玩家主城的动态层，NPC 城池按原图渲染。
+
+## 铺格审计（2026-08-13）——结论：10 帧全部健康，未返工
+
+playerbase_atlas 折腾 8 个子回合（[[slg-playerbase-oversized-fix-2026-07-17]]）解决"desk 贴图铺不满 3×3 地块"后，用同一套方法论回头审计 `city_atlas`（NPC 可攻占城池）是否有同类问题。**结论：没有，10 帧全部贴合自己的等轴测地块，无需重出图或改打包脚本**——因为 city_atlas 从一开始就走了另一条设计路线，两个关键差异让它天然不会踩 playerbase 踩过的坑：
+
+1. **`citySpriteTiles(footprint, BASE_SPRITE_TILES)` 是线性缩放**（`(footprint/BASE_FOOTPRINT) × BASE_SPRITE_TILES`），精灵方形边长与自身地块宽度的比值恒为 `BASE_SPRITE_TILES/BASE_FOOTPRINT = 3.2/3 ≈ 1.067`，与 footprint 具体取值（3×3/5×5/7×7/9×9 四档）无关——这 6.7% 就是 `cityPlotMaskPoints` 文档里说的"故意画得比地块宽 7%，靠裁剪菱形收边"。**因此判定阈值只需算一遍，对全部 10 级、四档 footprint 通用**，不像 playerbase 那样要按等级分别验证。
+2. **打包脚本 `pack_city_atlas.js` 用单轴 `fit:'inside'` 塞进正方形 CELL**（不像 `pack_playerbase_atlas.js` 有独立的 `CONTENT_W_FRAC`/`CONTENT_H_FRAC`）。由此可推出一个简洁的判据：设内容外接框宽高比为 `aspect = cw/ch`——
+   - `aspect ≥ 1`（内容本身不比高更窄）时，宽度必然是 `fit:'inside'` 的触底轴，`fittedW/CELL` 恒为 `1.0`，自动打满整格宽度（略超 7%，交给 mask 裁边，正是设计预期的"贴边"效果）；
+   - `aspect < 1` 时，`fittedW/CELL = aspect` 本身。
+   
+   代入"贴满地块宽度"的目标（`fittedW/CELL ≥ BASE_FOOTPRINT/BASE_SPRITE_TILES = 3/3.2 = 0.9375`），两种情况合并为一条统一判据：**内容外接框宽高比 `cw/ch ≥ 0.9375` 即视为贴满**。
+
+**审计方法**：抛弃式 node+sharp 脚本，直接从当前线上 `client/src/assets/slg/world_atlas.png`（不是中间产物 `city_atlas.png`）按 `world_atlas.json` 里 10 个 `city_*` 帧坐标 `extract`，测每帧 alpha>10 的内容外接框（因为打包时已去背，无需重跑区域生长）：
+
+| 帧 | 外接框 (px) | 宽高比 | 判据 (≥0.9375) | contentTop |
+|---|---|---|---|---|
+| city_l2 | 251×168 | 1.494 | PASS | 0.32 |
+| city_l4 | 246×185 | 1.330 | PASS | 0.26 |
+| city_l5 | 256×256 | 1.000 | PASS | 0.00 |
+| city_l7 | 247×250 | 0.988 | PASS（贴近阈值） | 0.00 |
+| city_l8 | 256×254 | 1.008 | PASS | 0.01 |
+| city_l10 | 253×253 | 1.000 | PASS | 0.01 |
+| city_lv1 | 246×122 | 2.016 | PASS | 0.50 |
+| city_lv2 | 256×249 | 1.028 | PASS | 0.01 |
+| city_lv3 | 246×204 | 1.206 | PASS | 0.19 |
+| city_lv4 | 244×245 | 0.996 | PASS（贴近阈值） | 0.02 |
+
+10 帧宽高比落在 0.988~2.016，全部 ≥ 0.9375（多数直接是 1.0 附近，即宽度轴触底、自动打满整格）；仅 `city_l7`（0.988）/`city_lv4`（0.996）贴近阈值但仍在安全边内。抽样把 5 帧（l2/l5/l7/lv1/l10）放大到 512px 肉眼复核，确认每帧确实自带一块清晰的等轴测菱形地台，建筑/围栏铺到地台边缘——数字判据与肉眼观察一致，不是背景抠图残留像素撑大了外接框。
+
+**结论**：`city_atlas` 设计初衷（"图自带地台，地台=地块，整体矮宽"）成立，未发现 playerbase 那类"建筑铺不满地块"的缺陷，任务到此收尾，不需要改 `pack_city_atlas.js`、不需要重出图。审计脚本为抛弃式临时文件，未入库。

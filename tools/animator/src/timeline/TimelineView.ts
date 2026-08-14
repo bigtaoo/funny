@@ -457,7 +457,7 @@ export class TimelineView {
  *   #89b4fa (blue)   – scale
  *   #89899a (gray)   – rotation only / default
  */
-function getKfColors(bkf: BoneKeyframe): string[] {
+export function getKfColors(bkf: BoneKeyframe): string[] {
   const out: string[] = [];
 
   if ((bkf.translateX ?? 0) !== 0 || (bkf.translateY ?? 0) !== 0)       out.push('#f9e2af');

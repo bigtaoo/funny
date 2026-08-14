@@ -15,3 +15,7 @@ if (!process.env.NW_MONGO_URI) {
     // No handshake file — leave unset; e2e files fall back to their default URI and skip if down.
   }
 }
+
+if (process.env.NW_REQUIRE_DB && !process.env.NW_MONGO_URI) {
+  throw new Error("NW_REQUIRE_DB set but NW_MONGO_URI is still unset after globalSetup handshake — mongod likely failed to start (see globalSetup.ts).");
+}

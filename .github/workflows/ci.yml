@@ -13,9 +13,20 @@ concurrency:
 
 jobs:
   # Fast path: type-check + unit tests + build, no Docker needed, results within a few minutes.
+  # server's own e2e suite needs Redis for gateway/redis-presence.e2e.test.ts (mongo is provided
+  # per-workspace by mongodb-memory-server via globalSetup.ts, no service container needed for that).
   build-test:
     name: build + unit tests
     runs-on: ubuntu-latest
+    services:
+      redis:
+        image: redis:7
+        ports: ['6379:6379']
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 5
     steps:
       - uses: actions/checkout@v5
 
@@ -27,10 +38,18 @@ jobs:
             client/package-lock.json
             server/package-lock.json
 
-      # —— Server: tsc -b across eleven packages (including deterministic engine @nw/engine) ——
+      # —— Server: tsc -b across all thirteen workspaces + unit/e2e tests ——
       - name: server install
         working-directory: server
         run: npm ci
+      # mongodb-memory-server (used by admin/analyticsvc/auctionsvc/commercial/metaserver/socialsvc/
+      # worldsvc's e2e globalSetup.ts) downloads a pinned mongod binary on first use; cache it so
+      # repeat CI runs don't re-download ~100MB every time.
+      - name: cache mongod binaries
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/mongodb-binaries
+          key: mongod-${{ runner.os }}-v7.0.14
       # metaserver openapi.yml is bundled from per-domain fragments in server/contracts/openapi/
       # (one per MetaService mixin); this must pass before the routes.gen.ts check below.
       - name: server codegen check (metaserver openapi bundle)
@@ -61,14 +80,32 @@ jobs:
           git diff --exit-code gateway/src/generated gameserver/src/generated
       # claudedocs/server.md "单文件 500 行收敛": baseline-drift check, not a hard <=500 gate —
       # only fails on a NEW file crossing 500 lines or a known baseline file growing past its
-      # recorded count (server/scripts/file-length-baseline.json); the 27 pre-existing over-limit
-      # files are tracked debt, not blocked on.
+      # recorded count (server/scripts/file-length-baseline.json). 2026-08-13: the original
+      # 30-file backlog is fully split (0 tracked entries) — this step is now a hard 0-over-500
+      # gate for server/ in practice, not "tracked debt, not blocked on" anymore.
       - name: server file length check
         working-directory: server
         run: npm run check:filelength
-      - name: server typecheck (tsc -b)
+      # Guards against a workspace silently getting zero CI type-checking (socialsvc/botsvc were
+      # missing from this step's old hand-enumerated package list for weeks before anyone noticed —
+      # see claudedocs/server.md). Fails if tsconfig.build.json's references drift from
+      # package.json#workspaces in either direction.
+      - name: server workspace coverage check
         working-directory: server
-        run: npx tsc -b shared engine metaserver gateway matchsvc gameserver commercial worldsvc auctionsvc admin analyticsvc
+        run: npm run check:workspacecoverage
+      - name: server typecheck (tsc -b, solution file — all 13 workspaces)
+        working-directory: server
+        run: npm run typecheck
+      # NW_REQUIRE_DB makes every e2e suite's DB-connect helper re-throw instead of silently
+      # `describe.skipIf`-ing itself out when Mongo/Redis is unreachable (see claudedocs/server.md,
+      # "单文件 500 行收敛" 附近的 CI 门禁记录) — without it, a broken mongod download or an
+      # unreachable Redis service just makes these ~110 e2e cases vanish with exit code 0.
+      - name: server unit + e2e tests
+        working-directory: server
+        env:
+          NW_REQUIRE_DB: '1'
+          NW_REDIS_URL: redis://127.0.0.1:6379
+        run: npm run test:coverage
 
       # —— Client: type-check + unit tests + web build ——
       - name: client install
@@ -76,10 +113,13 @@ jobs:
         run: npm ci
       # claudedocs/client-modules.md "单文件 500 行收敛": same baseline-drift check as the server
       # step above (client/scripts/file-length-baseline.json) — only fails on a NEW file crossing
-      # 500 lines or a known baseline file growing past its recorded count; the 19 remaining
-      # baseline entries (mostly justified single-shared-state-root / thin-forwarding-facade
-      # exceptions per the composition-priority note, after the 2026-08-11/12 splitting pass)
-      # are tracked debt, not blocked on.
+      # 500 lines or a known baseline file growing past its recorded count. 2026-08-13: schema now
+      # requires every baseline entry to carry a written "reason" (checkFileLength.mjs rejects
+      # entries without one, and rejects any entry over the 800-line hard cap outright) — a
+      # 2026-08-13 audit found 11 of the then-19 entries had accumulated with zero justification,
+      # some for 2+ days, before anyone noticed. Those 11 were split out of the baseline entirely
+      # (not "documented", actually removed by splitting the files); the 7 remaining entries are
+      # genuinely justified exceptions (thin forwarding facades / single shared-state roots).
       - name: client file length check
         working-directory: client
         run: npm run check:filelength
@@ -91,7 +131,7 @@ jobs:
         run: npm run typecheck
       - name: client unit tests
         working-directory: client
-        run: npm test
+        run: npm run test:coverage
       # UI smoke: headless PIXI adapter constructs real scenes in pure Node to prove each scene starts correctly.
       # No Docker / browser / live stack needed, so this lives in the fast path.
       - name: client UI smoke tests
@@ -100,6 +140,47 @@ jobs:
       - name: client web build
         working-directory: client
         run: npm run build:web
+
+      # —— tools: type-check + build + file-length gate (2026-08-13 — previously zero CI coverage) ——
+      - name: tools install (animator/level-editor/map-editor/ops/vfx-editor/desktop-shell)
+        working-directory: tools
+        run: |
+          for d in animator level-editor map-editor ops vfx-editor desktop-shell; do
+            (cd "$d" && npm ci)
+          done
+      # 2026-08-13 follow-up: animator/level-editor/vfx-editor gained the same typecheck+test
+      # scripts as map-editor/ops (io/ split coverage + a bootstrap pure-module test each — see
+      # claudedocs/animator.md). desktop-shell remains build-only (webpack ts-loader is its typecheck).
+      - name: tools typecheck (animator, level-editor, map-editor, ops, vfx-editor)
+        working-directory: tools
+        run: |
+          for d in animator level-editor map-editor ops vfx-editor; do
+            (cd "$d" && npm run typecheck)
+          done
+      - name: tools unit tests (animator, level-editor, map-editor, ops, vfx-editor)
+        working-directory: tools
+        run: |
+          for d in animator level-editor map-editor ops vfx-editor; do
+            (cd "$d" && npm test)
+          done
+      - name: tools build (animator/level-editor/vfx-editor/desktop-shell)
+        working-directory: tools
+        run: |
+          for d in animator level-editor vfx-editor desktop-shell; do
+            (cd "$d" && npm run build)
+          done
+      - name: tools file length check
+        working-directory: tools
+        run: node scripts/checkFileLength.mjs
+
+      # Final step of this job: read the coverage/coverage-summary.json (vitest) and coverage/
+      # lcov.info (engine, Node's built-in test coverage) every test:coverage step above just
+      # produced, and print one consolidated table to the run's summary page. Pure reporting —
+      # scripts/coverageSummary.mjs never throws, so `if: always()` lets it still render a
+      # (possibly partial) table even if an earlier step in this job failed.
+      - name: test coverage report
+        if: always()
+        run: node scripts/coverageSummary.mjs
 
   # Slow path: docker compose brings up the full stack (mongo + meta + commercial + gateway + matchsvc + game),
   # then runs the real client orchestration core (createAppCore) as a Node process on the runner host for full end-to-end tests.

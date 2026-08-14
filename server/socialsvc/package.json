@@ -13,6 +13,7 @@
     "start": "node dist/index.js",
     "pretest": "npm run gen:api:social",
     "test": "vitest run",
+    "test:coverage": "npm run pretest --if-present && vitest run --coverage",
     "gen:api:social": "node ../contracts/scripts/gen-openapi-social.mjs",
     "gen:api:social:check": "node ../contracts/scripts/gen-openapi-social.mjs --check"
   },

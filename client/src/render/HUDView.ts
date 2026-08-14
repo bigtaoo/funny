@@ -6,16 +6,18 @@ import { GameState } from '@nw/engine/GameState';
 import { OwnerId } from '@nw/engine/types';
 import { ILayout, Rect } from '../layout/ILayout';
 import { t } from '../i18n';
-import { getLabelTexture } from './labelDecor';
 import { drawHudButton, hudButtonText, HudButtonVariant } from '../ui/widgets/hudButton';
 import { FS, snapFont } from './fontScale';
 import { factionInk, fx } from './theme';
 import { drawInk } from './icons/currency';
+import { drawHpBar, HP_BAR_W } from './HUDView/hpBar';
+import { showSurrenderConfirm, hideSurrenderConfirm, showGameOver, type OverlayHost } from './HUDView/overlays';
+
+export { heartPoints, clipPolygonRight } from './HUDView/hpBar';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
 const TEXT_STYLE  = { fontSize: FS.tiny, fill: 0x222222, fontFamily: 'monospace' } as const;
-const SMALL_STYLE = { fontSize: FS.micro, fill: 0x555555, fontFamily: 'monospace' } as const;
 // Surrender button — top strip. Taller than the old 30 so it's an easier tap target.
 const BTN_W       = 100;
 const BTN_H       = 44;
@@ -24,40 +26,7 @@ const INK_ICON_S  = 28;
 // Bottom action buttons (upgrade / refresh) — larger, laid out inside hudBottomRightRect.
 const ACTION_LABEL_STYLE = { fontSize: FS.title, fill: 0x555555, fontFamily: 'monospace', fontWeight: 'bold' } as const;
 
-const HP_CELLS    = 10;
-const HP_CELL_W   = 21;
 const HP_CELL_H   = 15;
-const HP_CELL_GAP = 3;
-const HP_BAR_W    = HP_CELLS * (HP_CELL_W + HP_CELL_GAP) - HP_CELL_GAP;
-
-/** Parametric heart outline (same curve as icons/equipment.ts drawHp), as plain points for fill/clip. */
-export function heartPoints(s: number): { x: number; y: number }[] {
-  const cx = s / 2, cy = s * 0.46, k = s * 0.025;
-  const pts: { x: number; y: number }[] = [];
-  for (let i = 0; i < 24; i++) {
-    const tt = (Math.PI * 2 * i) / 24;
-    const hx = 16 * Math.pow(Math.sin(tt), 3);
-    const hy = 13 * Math.cos(tt) - 5 * Math.cos(2 * tt) - 2 * Math.cos(3 * tt) - Math.cos(4 * tt);
-    pts.push({ x: cx + hx * k, y: cy - hy * k });
-  }
-  return pts;
-}
-
-/** Sutherland–Hodgman clip of a closed polygon to the half-plane x <= clipX. */
-export function clipPolygonRight(pts: { x: number; y: number }[], clipX: number): { x: number; y: number }[] {
-  const out: { x: number; y: number }[] = [];
-  const n = pts.length;
-  for (let i = 0; i < n; i++) {
-    const cur = pts[i]!, prev = pts[(i - 1 + n) % n]!;
-    const curIn = cur.x <= clipX, prevIn = prev.x <= clipX;
-    if (curIn !== prevIn) {
-      const t = (clipX - prev.x) / (cur.x - prev.x);
-      out.push({ x: clipX, y: prev.y + t * (cur.y - prev.y) });
-    }
-    if (curIn) out.push(cur);
-  }
-  return out;
-}
 
 // ── HUDView ────────────────────────────────────────────────────────────────────
 
@@ -167,8 +136,8 @@ export class HUDView {
     // bar blinking, NOT by turning red — otherwise our own low-HP warning would
     // collide with the enemy's red. Critical (last cell) escalates to a fast blink
     // plus an amber ⚠. See drawHpBar.
-    this.drawHpBar(this.playerHpGfx, fromFp(p.baseHp_fp), BASE_HP, factionInk.friend, pulse, pulseFast);
-    this.drawHpBar(this.enemyHpGfx,  fromFp(e.baseHp_fp), BASE_HP, factionInk.enemy,  pulse, pulseFast);
+    drawHpBar(this.playerHpGfx, fromFp(p.baseHp_fp), BASE_HP, factionInk.friend, pulse, pulseFast);
+    drawHpBar(this.enemyHpGfx,  fromFp(e.baseHp_fp), BASE_HP, factionInk.enemy,  pulse, pulseFast);
 
     const cost = p.nextUpgradeCost;
     if (cost === null) {
@@ -223,95 +192,33 @@ export class HUDView {
   // ── Surrender confirmation overlay ────────────────────────────────────────
 
   showSurrenderConfirm(): void {
-    if (this.surrenderOverlay) return;
-    const dw = this.layout.designWidth;
-    const dh = this.layout.designHeight;
-    const overlay = new PIXI.Container();
-
-    const dim = new PIXI.Graphics();
-    dim.beginFill(0x000000, 0.6);
-    dim.drawRect(0, 0, dw, dh);
-    dim.endFill();
-    overlay.addChild(dim);
-
-    const pW = Math.round(dw * 0.55);
-    const pH = Math.round(dh * 0.30);
-    const pX = (dw - pW) / 2;
-    const pY = (dh - pH) / 2;
-
-    const panel = new PIXI.Graphics();
-    panel.beginFill(0xfaf6ee);
-    panel.lineStyle(2, 0x333333);
-    panel.drawRoundedRect(pX, pY, pW, pH, 8);
-    panel.endFill();
-    overlay.addChild(panel);
-
-    const title = makeText(t(this.campaign ? 'hud.exitLevelTitle' : 'hud.surrenderTitle'), {
-      fontSize: snapFont(Math.round(pH * 0.18)), fill: 0x222222,
-      fontWeight: 'bold', fontFamily: 'monospace',
-    });
-    title.anchor.set(0.5, 0);
-    title.x = dw / 2;
-    title.y = pY + pH * 0.08;
-    overlay.addChild(title);
-
-    const bW = Math.round(pW * 0.72);
-    const bH = Math.round(pH * 0.20);
-    const gap = Math.round(pH * 0.06);
-    const y1  = pY + pH * 0.38;
-    const y2  = y1 + bH + gap;
-    const bX  = (dw - bW) / 2;
-
-    overlay.addChild(this.makeBtn(bX, y1, bW, bH, 'secondary', t('hud.surrenderCancel')));
-    overlay.addChild(this.makeBtn(bX, y2, bW, bH, 'primary',   t(this.campaign ? 'hud.exitLevelConfirm' : 'hud.surrenderConfirm')));
-
-    this._surrenderCancelRect  = { x: bX, y: y1, w: bW, h: bH };
-    this._surrenderConfirmRect = { x: bX, y: y2, w: bW, h: bH };
-
-    this.container.addChild(overlay);
-    this.surrenderOverlay = overlay;
+    showSurrenderConfirm(this.overlayHost());
   }
 
   hideSurrenderConfirm(): void {
-    if (!this.surrenderOverlay) return;
-    this.container.removeChild(this.surrenderOverlay);
-    this.surrenderOverlay.destroy({ children: true });
-    this.surrenderOverlay      = null;
-    this._surrenderCancelRect  = null;
-    this._surrenderConfirmRect = null;
+    hideSurrenderConfirm(this.overlayHost());
   }
 
   get isPaused(): boolean { return this.surrenderOverlay !== null; }
 
   showGameOver(winner: OwnerId | null, localOwner: OwnerId = 0): void {
-    if (this.gameOverOverlay) return;
-    const overlay = new PIXI.Container();
-    const bg = new PIXI.Graphics();
-    bg.beginFill(0x000000, 0.55);
-    bg.drawRoundedRect(-160, -50, 320, 100, 8);
-    bg.endFill();
-    const msg  = winner === null ? t('hud.draw') : (winner === localOwner ? t('hud.win') : t('hud.lose'));
-    const text = makeText(msg, { fontSize: FS.headline, fill: 0xffffff, fontWeight: 'bold' });
-    text.anchor.set(0.5);
-    overlay.addChild(bg, text);
+    showGameOver(this.overlayHost(), winner, localOwner);
+  }
 
-    // Hand-drawn `WIN!` flourish above the box on a local victory (art-direction
-    // §6.2 group B). Cosmetic — skipped silently if the label PNG hasn't loaded.
-    if (winner === localOwner) {
-      const winTex = getLabelTexture('label_win');
-      if (winTex) {
-        const win = new PIXI.Sprite(winTex);
-        win.anchor.set(0.5);
-        win.scale.set(Math.min(200 / winTex.width, 96 / winTex.height));
-        win.rotation = -0.06;
-        win.y = -50 - win.height / 2 - 12;
-        overlay.addChild(win);
-      }
-    }
-    overlay.x = this.layout.designWidth  / 2;
-    overlay.y = this.layout.designHeight / 2;
-    this.container.addChild(overlay);
-    this.gameOverOverlay = overlay;
+  /** Bundles what overlays.ts's show/hide functions need instead of them closing over `this`. */
+  private overlayHost(): OverlayHost {
+    const view = this;
+    return {
+      container: this.container, layout: this.layout, campaign: this.campaign,
+      get surrenderOverlay() { return view.surrenderOverlay; },
+      set surrenderOverlay(v) { view.surrenderOverlay = v; },
+      get gameOverOverlay() { return view.gameOverOverlay; },
+      set gameOverOverlay(v) { view.gameOverOverlay = v; },
+      get surrenderCancelRect() { return view._surrenderCancelRect; },
+      set surrenderCancelRect(v) { view._surrenderCancelRect = v; },
+      get surrenderConfirmRect() { return view._surrenderConfirmRect; },
+      set surrenderConfirmRect(v) { view._surrenderConfirmRect = v; },
+    };
   }
 
   // ── Private build ──────────────────────────────────────────────────────────
@@ -478,87 +385,7 @@ export class HUDView {
     return r.x + r.w / 2;
   }
 
-  private makeBtn(
-    x: number, y: number, w: number, h: number,
-    variant: HudButtonVariant, label: string,
-  ): PIXI.Container {
-    const c = new PIXI.Container();
-    const bg = new PIXI.Graphics();
-    drawHudButton(bg, w, h, variant, { radius: 6 });
-    const txt = makeText(label, {
-      fontSize: snapFont(Math.round(h * 0.42)), fill: hudButtonText(variant), fontWeight: 'bold', fontFamily: 'monospace',
-    });
-    txt.anchor.set(0.5, 0.5);
-    txt.x = w / 2; txt.y = h / 2;
-    c.addChild(bg, txt);
-    c.x = x; c.y = y;
-    return c;
-  }
-
-  /**
-   * HP bar in the faction hue (us = blue, enemy = red). Danger is signalled by the
-   * filled cells *blinking* (alpha throb) — never by changing hue — so our low-HP
-   * alarm can't be mistaken for the enemy's red. Two tiers:
-   *   low      (≤3 cells): gentle blink on `pulse`.
-   *   critical (last cell): urgent fast blink on `pulseFast` + an amber ⚠ above the
-   *     bar. The last cell is the "one haste-rush from over" moment for BOTH bases,
-   *     so the enemy bar escalates too (it also gets a base-ring on the board).
-   *
-   * Each cell is a heart (not a plain rect): the boundary heart fills left-to-right
-   * by HP fraction (e.g. one third gray) instead of snapping fully on/off, so partial
-   * HP within a pip is visible. Hearts are re-clipped every call (blink alpha animates
-   * continuously) so the shape must stay jitter-free — no SketchPen here.
-   */
-  private drawHpBar(
-    gfx: PIXI.Graphics, hp: number, maxHp: number, color: number, pulse: number, pulseFast: number,
-  ): void {
-    gfx.clear();
-    const totalFrac = Math.max(0, hp / maxHp) * HP_CELLS;
-    const filledFull = Math.floor(totalFrac);
-    const partial     = totalFrac - filledFull;
-    const filledCeil  = Math.ceil(totalFrac);
-    const critical = hp > 0 && filledCeil <= 1;
-    const low      = hp > 0 && filledCeil <= 3 && !critical;
-    const fillAlpha = critical ? 0.25 + 0.75 * pulseFast : low ? 0.35 + 0.6 * pulse : 0.9;
-    for (let i = 0; i < HP_CELLS; i++) {
-      const frac = i < filledFull ? 1 : i === filledFull ? partial : 0;
-      this.drawHeartPip(gfx, i * (HP_CELL_W + HP_CELL_GAP), frac, color, fillAlpha);
-    }
-    if (critical) this.drawHpWarning(gfx, pulseFast);
-  }
-
-  /** A single heart-shaped HP pip, filled left-to-right by `frac` (0..1). */
-  private drawHeartPip(gfx: PIXI.Graphics, x: number, frac: number, color: number, alpha: number): void {
-    const pts = heartPoints(HP_CELL_W);
-    gfx.lineStyle(1, 0x888888, 0.4);
-    gfx.beginFill(0xdddddd, 0.4);
-    gfx.drawPolygon(pts.map(p => new PIXI.Point(x + p.x, p.y)));
-    gfx.endFill();
-    if (frac <= 0) return;
-    const clipped = frac >= 1 ? pts : clipPolygonRight(pts, frac * HP_CELL_W);
-    if (clipped.length < 3) return;
-    gfx.lineStyle(frac >= 1 ? 1 : 0, 0x888888, 0.4);
-    gfx.beginFill(color, alpha);
-    gfx.drawPolygon(clipped.map(p => new PIXI.Point(x + p.x, p.y)));
-    gfx.endFill();
-  }
-
-  /** Amber ⚠ centred above the bar, blinking on `pulseFast` — the critical-HP alarm. */
-  private drawHpWarning(gfx: PIXI.Graphics, pulseFast: number): void {
-    const cx = HP_BAR_W / 2;
-    const tw = 16, th = 13, topY = -th - 4;
-    const a = 0.4 + 0.6 * pulseFast;
-    gfx.beginFill(0xffb300, a);
-    gfx.moveTo(cx, topY);
-    gfx.lineTo(cx - tw / 2, topY + th);
-    gfx.lineTo(cx + tw / 2, topY + th);
-    gfx.closePath();
-    gfx.endFill();
-    gfx.beginFill(0x4a3200, a); // the "!" inside
-    gfx.drawRect(cx - 1, topY + 3, 2, th - 7);
-    gfx.drawRect(cx - 1, topY + th - 3, 2, 2);
-    gfx.endFill();
-  }
+  // ── HP bar — see render/HUDView/hpBar.ts's drawHpBar() ─────────────────────
 
   private drawSurrenderBtn(): void {
     this.surrenderBtnBg.clear();

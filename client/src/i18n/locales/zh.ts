@@ -546,8 +546,8 @@ export const zh = {
   'progression.trait.crit': '暴击 T3',
   'progression.trait.lifesteal': '吸血 T6',
   'progression.trait.spawn': '+出兵 T9',
-  'material.scrap': '碎屑',
-  'material.lead': '铅芯',
+  'material.scrap': '旧纸片',
+  'material.lead': '铅笔芯',
   'material.binding': '装订线',
 
   // ── Equipment system (E5, EQUIPMENT_DESIGN §11) ───────────────────────────────

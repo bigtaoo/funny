@@ -32,7 +32,7 @@ const PADDING = 24; // board-mount horizontal padding (12px each side)
 /** Header strip height as a fraction of cell size (lane on/off toggles). */
 const HEADER_RATIO = 0.7;
 
-const C = {
+export const C = {
   grid: '#3a3a58',
   combat: '#222234',
   attack: '#26263c',
@@ -63,13 +63,64 @@ const PATH = {
 };
 
 /** A draggable path node surfaced by the active path tool. */
-type Handle =
+export type Handle =
   | { kind: 'wp'; k: number; col: number; row: number }
   | { kind: 'escortStart'; i: number; col: number; row: number }
   | { kind: 'escortWp'; i: number; j: number; col: number; row: number };
 
 const BASE_COL_SET = new Set<number>(BASE_COLS as readonly number[]);
 const ATTACK_SET = new Set<number>(ATTACK_LANES as readonly number[]);
+
+// ── Pure grid math (extracted so it's testable without a canvas/DOM) ──────────
+// These mirror the BoardPanel instance methods of the same name 1:1, just with
+// `cell`/`header` passed explicitly instead of read off `this`.
+
+/** Screen Y (within grid area) for a board row — row 0 at the bottom. */
+export function rowToY(row: number, cell: number, header: number): number {
+  return header + (BOARD_ROWS - 1 - row) * cell;
+}
+
+export function cellAt(px: number, py: number, cell: number, header: number): { col: number; row: number } | null {
+  if (py < header) return null;
+  const col = Math.floor(px / cell);
+  const screenRow = Math.floor((py - header) / cell);
+  const row = BOARD_ROWS - 1 - screenRow;
+  if (col < 0 || col >= BOARD_COLS || row < 0 || row >= BOARD_ROWS) return null;
+  return { col, row };
+}
+
+export function laneHeaderAt(px: number, py: number, cell: number, header: number): number | null {
+  if (py >= header) return null;
+  const col = Math.floor(px / cell);
+  return ATTACK_SET.has(col) ? col : null;
+}
+
+/** Screen centre of a board cell. */
+export function cellCenter(col: number, row: number, cell: number, header: number): { x: number; y: number } {
+  return { x: col * cell + cell / 2, y: rowToY(row, cell, header) + cell / 2 };
+}
+
+/** Nearest path node under the cursor (within half a cell), topmost first. */
+export function hitHandle(px: number, py: number, cell: number, header: number, handles: Handle[]): Handle | null {
+  const r = cell * 0.5;
+  for (let i = handles.length - 1; i >= 0; i--) {
+    const h = handles[i]!;
+    const c = cellCenter(h.col, h.row, cell, header);
+    if (Math.hypot(px - c.x, py - c.y) <= r) return h;
+  }
+  return null;
+}
+
+/** Zone tint for a board cell (base column, building/spawn rows, attack lane, or combat). */
+export function baseTint(col: number, row: number): string {
+  if (BASE_COL_SET.has(col)) return C.base;
+  if (row === BOTTOM_BUILDING_ROW) return C.playerRow;
+  if (row === BOTTOM_SPAWN_ROW) return C.playerSpawn;
+  if (row === TOP_BUILDING_ROW) return C.enemyRow;
+  if (row === TOP_SPAWN_ROW) return C.enemySpawn;
+  if (ATTACK_SET.has(col)) return C.attack;
+  return C.combat;
+}
 
 export class BoardPanel {
   readonly canvas = document.createElement('canvas');
@@ -138,22 +189,15 @@ export class BoardPanel {
 
   /** Screen Y (within grid area) for a board row — row 0 at the bottom. */
   private rowToY(row: number): number {
-    return this.header + (BOARD_ROWS - 1 - row) * this.cell;
+    return rowToY(row, this.cell, this.header);
   }
 
   private cellAt(px: number, py: number): { col: number; row: number } | null {
-    if (py < this.header) return null;
-    const col = Math.floor(px / this.cell);
-    const screenRow = Math.floor((py - this.header) / this.cell);
-    const row = BOARD_ROWS - 1 - screenRow;
-    if (col < 0 || col >= BOARD_COLS || row < 0 || row >= BOARD_ROWS) return null;
-    return { col, row };
+    return cellAt(px, py, this.cell, this.header);
   }
 
   private laneHeaderAt(px: number, py: number): number | null {
-    if (py >= this.header) return null;
-    const col = Math.floor(px / this.cell);
-    return ATTACK_SET.has(col) ? col : null;
+    return laneHeaderAt(px, py, this.cell, this.header);
   }
 
   private onDown(e: MouseEvent): void {
@@ -208,7 +252,7 @@ export class BoardPanel {
 
   /** Screen centre of a board cell. */
   private cellCenter(col: number, row: number): { x: number; y: number } {
-    return { x: col * this.cell + this.cell / 2, y: this.rowToY(row) + this.cell / 2 };
+    return cellCenter(col, row, this.cell, this.header);
   }
 
   /** Draggable nodes for the active path tool (none for paint tools). */
@@ -229,14 +273,7 @@ export class BoardPanel {
 
   /** Nearest path node under the cursor (within half a cell), topmost first. */
   private hitHandle(px: number, py: number): Handle | null {
-    const r = this.cell * 0.5;
-    const handles = this.activeHandles();
-    for (let i = handles.length - 1; i >= 0; i--) {
-      const h = handles[i]!;
-      const c = this.cellCenter(h.col, h.row);
-      if (Math.hypot(px - c.x, py - c.y) <= r) return h;
-    }
-    return null;
+    return hitHandle(px, py, this.cell, this.header, this.activeHandles());
   }
 
   private onPathDown(x: number, y: number): void {
@@ -286,16 +323,6 @@ export class BoardPanel {
     // escortStart is removed by deleting the escort in the form, not here.
   }
 
-  private baseTint(col: number, row: number): string {
-    if (BASE_COL_SET.has(col)) return C.base;
-    if (row === BOTTOM_BUILDING_ROW) return C.playerRow;
-    if (row === BOTTOM_SPAWN_ROW) return C.playerSpawn;
-    if (row === TOP_BUILDING_ROW) return C.enemyRow;
-    if (row === TOP_SPAWN_ROW) return C.enemySpawn;
-    if (ATTACK_SET.has(col)) return C.attack;
-    return C.combat;
-  }
-
   render(): void {
     const ctx = this.ctx;
     const cell = this.cell;
@@ -327,7 +354,7 @@ export class BoardPanel {
         const yy = this.rowToY(row);
         const laneInactive = ATTACK_SET.has(col) && !this.state.isLaneActive(col);
 
-        ctx.fillStyle = this.baseTint(col, row);
+        ctx.fillStyle = baseTint(col, row);
         ctx.fillRect(x, yy, cell, cell);
         if (laneInactive) {
           ctx.fillStyle = 'rgba(0,0,0,0.55)';

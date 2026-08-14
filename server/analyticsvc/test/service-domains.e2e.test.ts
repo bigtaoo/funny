@@ -16,7 +16,8 @@ const DB = 'nw_analytics_test_domains';
 async function tryConnect(): Promise<AnalyticsMongo | null> {
   try {
     return await createAnalyticsMongo(URI, DB);
-  } catch {
+  } catch (err) {
+    if (process.env.NW_REQUIRE_DB) throw err;
     return null;
   }
 }

@@ -11,7 +11,7 @@
 | 皮肤 id | 角色 / 兵种 | 稀有度 | 配色 | 状态 |
 |---|---|---|---|---|
 | `skin_shop_c1` | 李川 / Infantry | common | 灰白调 | ✅ 已出图定稿，[`art/skins/infantry.png`](../../art/skins/infantry.png)；§1 prompt 为此图基准 |
-| `skin_shop_r1` | 苏远 / Archer | rare | 蓝色调 | ✅ 已出图定稿，[`art/skins/archer.png`](../../art/skins/archer.png)；§2 v3 prompt 命中（3/4 侧身回望 + 侧分短发 + 弓上弦） |
+| `skin_shop_r1` | 苏远 / Archer | rare | 蓝色调 | 🟡 已出图 [`art/skins/archer.png`](../../art/skins/archer.png)（§2 v3 prompt，3/4 侧身回望 + 侧分短发 + 弓上弦全对）；**owner 反馈头部违和**（2026-08-13）：脖子过细过长像接上去的、头转向和肩线角度不协调、耳朵贴得太低靠近下颌、发型右侧一撮不对称翘毛破坏头部圆润轮廓——§2 v4 prompt 待用 GPT Image 2 重出 |
 | `skin_shop_e1` | 陈守 / ShieldBearer | epic | 紫色调 | 🟡 已出图 [`art/skins/shieldbearer.png`](../../art/skins/shieldbearer.png)（§3 v2 prompt，体型/叉腿盾墙/寸头全中）；**留 1 项待调**：肤色偏深 + 黑卷发，与另两人（浅暖褐肤 + 棕发）不一致，破坏"方家三兄弟"读感，重出时加 `light warm tan skin matching his friends, brown hair not black` |
 | `skin_e1` | Anna·Lena | epic | 橙色调（原紫色调） | ✅ 已出图定稿（2026-07-26），2026-08-09 改色为橙，[`art/skins/lena.png`](../../art/skins/lena.png)；§6 v2 prompt 命中 |
 | `skin_e2` | Anna·Mara | epic | 橙色调（原紫色调） | ✅ 已出图定稿（2026-07-26），2026-08-09 改色为橙，[`art/skins/mara.png`](../../art/skins/mara.png)；§5 v2 prompt 命中 |
@@ -166,6 +166,69 @@ royal-blue string-wrap accent.
 - **⚠️ 踩坑①（弓）**：`unstrung`/`relaxed tension` 会被理解成"卸了弦"，弓变成没弦、垂地的软棍（参照 [`art/units/game_archer.jpg`](../../art/units/game_archer.jpg)，弓必须有清晰弦+反曲弧度）。已用 `strung, taut visible bowstring ... held upright, NOT drawn`。还垮就加负向 `unstrung, no visible string, limp, bent branch`。
 - **⚠️ 踩坑②（性别）**：只写"瘦小安静"模型默认画成女孩（侧分长刘海垂脸+收腰）。苏远通篇是「他」，男孩。已加 `young BOY, clearly male` + 平顺短发但明确"男孩短发/不过眉/不垂脸" + 禁收腰。还偏女性化就加 `androgynous, delicate features, girl` 到负向、正向补 `plain boyish face`。
 - **⚠️ 踩坑③（发型撞李川）**：苏远若又出炸毛，就和李川一个样。务必强调 `neat flat side-parted short cut, smooth, NOT spiky, NOT puffy`。
+
+> 2026-08-13 v4（owner 反馈头部违和，出图工具换成 **GPT Image 2**，故不再用 Midjourney 的 `--ar`/`--no` 参数语法，负向诉求改写成正向描述句直接摆进正文）：v3 的姿态/发型方向本身没错（回望 + 侧分短发），问题出在落地细节——脖子被画成又细又长的"接头"、头转的角度比肩线转的角度大太多导致脖子拧巴、耳朵位置滑到接近下颌线、侧分发型右侧多长了一撮不对称的翘毛让头顶轮廓不圆。v4 保留 v3 的建置/姿态/服装/武器描述，只重写"脖子+头身角度+耳朵+发型轮廓"这四句，并把整条转成 GPT Image 2 友好的连续段落式描述（不用符号化负向列表，用"must/should NOT"直接写进句子里）。
+
+```
+Full-body character illustration of a young boy archer, three-quarter side
+view, his body turned about 45 degrees to the left so one shoulder is closer
+to the viewer, on a plain pure-white background, vertical portrait
+composition about a 2:3 ratio; full body visible head to boots, centered,
+filling most of the frame.
+Rendering: clean confident dark-ink outlines of medium weight, not
+sketchy-wobbly, flat color fills with cross-hatch pencil shading for volume
+and folds, matte paper picture-book look. Do not use any gradient, glossy
+highlight, glow, cel-shading, or airbrush effect anywhere in the image.
+Face and neck (rewritten — this is the part to get right): large round
+head, warm tan skin with light cross-hatching under the jaw, two small
+solid-black dot eyes, no nose, no mouth, small visible ear placed at the
+mid-height of the head, level with the eyes, not sliding down toward the
+jawline. His neck must be short and a normal, sturdy thickness that matches
+a child's proportions — it should look like the head is firmly attached to
+the shoulders, not a thin long stalk with the head balanced on top like a
+bobblehead. His head is turned to gaze off to one side, over and past his
+own shoulder, but the turn is gentle — only a little more rotated than his
+shoulder line, so the neck stays relaxed and straight rather than twisting
+at a sharp angle. This is a young BOY, clearly male, NOT a girl.
+Build (most important): the smallest and slightest of three friends — a
+small, short, skinny little boy with thin arms and legs, a narrow chest and
+narrow shoulders, noticeably petite and clearly a full head shorter and much
+skinnier than an average child. He should not look muscular, average-sized,
+tall, or have a curvy or feminine figure — just a small skinny kid.
+Pose: a closed, self-contained, reserved standing pose that takes up as
+little space as possible — feet together nearly touching, both arms held in
+close to his body, shoulders slightly drawn in, gazing calmly into the
+distance as if quietly watching something far away — a still, watchful,
+introverted stance. He should not be facing forward, looking at the viewer,
+standing at attention with feet apart, walking, mid-stride, or drawing the
+bow.
+Hair (rewritten): short, neat and tidy, smoothed down and combed to one side
+with a clean, even side part, lying flat and staying above the eyebrows —
+the head's overall silhouette should stay smooth and rounded all the way
+around, like a single clean dome. Do not add any extra tuft, cowlick, flip,
+or stray clump of hair sticking up or out on either side — the hairline
+should be even and symmetrical in how closely it hugs the head, not bulkier
+or spikier on one side than the other. This is a controlled, precise boy's
+haircut, not a big spiky puffy explosion of hair, not buzzed to the scalp,
+not long bangs over the face.
+Clothing: a sleeveless royal-blue athletic top with hand-stitched dashed
+seams at the collar and armholes, and neutral gray-blue shorts with a
+stitched hem. A single plain brown leather bracer on his bow-arm forearm —
+the only piece of gear, nothing else added. Tall brown leather lace-up boots
+with a folded cuff and cross-hatch shading. Soft cross-hatched oval ground
+shadow beneath the feet, otherwise empty background.
+Weapon: a slim quiver holding a few fletched arrows on his back; he holds a
+clearly recognizable recurve bow — strung, with a taut visible bowstring
+running the full length from tip to tip and distinct curved wooden limbs,
+the classic recurve-bow silhouette — held upright and quietly at his side in
+one hand, its lower tip a few inches off the ground. The bow must not be
+drawn back, not nocked with an arrow, not aiming, and must stay rigid and
+clearly bow-shaped rather than floppy or bent like a whip or stick, and must
+not touch the ground. Wood-brown bow with a small royal-blue string-wrap
+accent.
+```
+
+**如果 v4 还是没收住**：优先检查是不是只改对了一半——脖子变粗了但头身角度还是拧巴，或者发型对称了但脖子还是细长，四处要同时读出来才算过；单独截图头部区域放大自检，对照 [`art/skins/infantry.png`](../../art/skins/infantry.png)（李川头部是这条线里唯一没被吐槽过的，脖子短粗、头身角度基本正对，可以当"正常"的参照基准）。
 
 ---
 

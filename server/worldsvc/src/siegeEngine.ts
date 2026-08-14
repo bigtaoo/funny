@@ -45,7 +45,9 @@ import {
   type CardInstance,
 } from '@nw/shared';
 import type { ArmyEntry, CardSLGState } from './db';
-import { getSiegeWorkerPool } from './siegeWorkerPool';
+// NOT a top-level import (see runSiegeBattle below for why) — deliberately deferred to a lazy
+// dynamic import inside that function's body instead of `import { getSiegeWorkerPool } from
+// './siegeWorkerPool'` up here.
 
 /**
  * Real-unit full HP for a blueprint unit type. ADR-065: `@nw/engine`'s `UNIT_BLUEPRINTS` is
@@ -440,7 +442,21 @@ export function runSiegeBattleSync(input: SiegeBattleInput): SiegeResolution {
  * Determinism is unaffected: same seed + same armies + same engine code → identical result, only the
  * thread it runs on changed. Rejects (instead of throwing) on bad input (level validation failure) or pool
  * failure (worker crash/timeout) — callers' existing catch blocks handle both identically to a thrown error.
+ *
+ * 2026-08-14 fix (real Linux CI failure): `getSiegeWorkerPool` used to be a top-level import from
+ * `./siegeWorkerPool`. siegeWorker.ts (the worker-thread entry) dynamically imports THIS file — this
+ * one, `siegeEngine.ts` — to reach `runSiegeBattleSync`; loading this module inside the worker means
+ * every one of its top-level imports gets evaluated too, including one it never actually needs
+ * on that thread. That transitive `./siegeWorkerPool` import is exactly the kind of extensionless
+ * relative specifier that tsx's `--import` hook fails to resolve inside a worker_thread on Linux (the
+ * same disease siegeWorker.ts's own fix already worked around for its direct import of this file) —
+ * confirmed by the crash message literally naming this file: "Cannot find module '.../siegeWorkerPool'
+ * imported from '.../siegeEngine.ts'". Deferred to a dynamic import inside the function body instead:
+ * this only ever actually runs on the MAIN thread (the worker never calls runSiegeBattle, only
+ * runSiegeBattleSync directly) — a real, non-worker Node process, where extensionless resolution has
+ * never had this problem — so laziness alone sidesteps needing an explicit-extension workaround here.
  */
 export async function runSiegeBattle(input: SiegeBattleInput): Promise<SiegeResolution> {
+  const { getSiegeWorkerPool } = await import('./siegeWorkerPool');
   return getSiegeWorkerPool().submit(input);
 }

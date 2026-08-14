@@ -148,8 +148,8 @@ type SlotMap = Partial<Record<EquipSlot, string /*instanceId*/>>;
 
 | 材料 id | 文具 | 档位 | 主来源 |
 |---|---|---|---|
-| `scrap` 碎屑 | 铅笔屑/橡皮 | 低 | 关卡常掉 |
-| `lead` 铅芯 | 笔芯 | 中 | 中期关 |
+| `scrap` 旧纸片 | 旧纸片 | 低 | 关卡常掉 |
+| `lead` 铅笔芯 | 笔芯 | 中 | 中期关 |
 | `binding` 装订线 | 订书钉/线 | 高（稀有） | Boss/后期 |
 
 材料同时是单位升级（`PVE_UPGRADE_DEFS`）与装备合成/强化的共用燃料，PvE↔SLG 统一流转、可上拍卖行（赛季资源粮/铁/木**不可**上拍卖）。
@@ -1002,3 +1002,15 @@ buildSiegeBlueprints(levels, equipped, inv)
 落地：置灰按钮不再是死区——`renderCraftCell` 给按钮补一条禁用态命中区（`owner: defId`，供测试按 defId 定位），点按后 `showToast` 弹出对应原因：满仓→`equip.err.full`（"背包已满（300）"，与服务器 `INVENTORY_FULL` 错误码复用同一 i18n key，见 `app/nav/game.ts` 的错误码映射），未满但材料不足→`equip.err.materials`（与 chip 变红的提示重复，但补上一次明确文案，不新增 key）。启用态按钮命中区同步打上 `owner: defId`（原先没有），纯测试可定位性增强，不改行为。
 
 验证：client `tsc --noEmit` 全绿。`test/ui/scenes.ui.ts` 新增一条覆盖：把 `equipmentInv` 填到 300 上限后渲染锻造 tab，按 `owner === 'wp_pencil'` 取到禁用态命中区，触发后断言 `cb.craft` 未被调用、`showToastMessage` 以 `'error'` kind 调用——120/120（含既有两条 craft-tab 用例）全绿。因触发条件需要背包恰好达 300 上限，本机会话后端未起也无法快速摆出这一存档态，浏览器面板 compositing 也不可用（同 §20.14），未做游戏内截图，改用同一份 headless PIXI 场景测试覆盖渲染＋点击＋toast 全链路作为等价验证。
+
+### 20.16 实现记录（2026-08-13，✅）— `scrap` 改名「碎屑→旧纸片」+ `lead` 改名「铅芯→铅笔芯」
+
+背景：用户反馈最低档通用材料 `scrap` 中文名「碎屑」偏负面，让最便宜材料显得一文不值；且该材料美术图早已是「一张旧的小纸片」，名字与图不符。
+
+落地：仅改三语显示名，不改材料 id / 数值 / 图标：
+- `scrap`：中 碎屑→**旧纸片**；英 Scraps→**Tatter**；德 Schnipsel→**Fetzen**（三者都取「旧/边角料」而非「垃圾残渣」的调性，且与既有美术一致）。
+- `lead`：中 铅芯→**铅笔芯**，更明确对应「铅笔」这一文具原型；英文 `Lead`、德文 `Blei` 本身在各自语言里已经是「铅笔芯」的惯用说法（英语 "pencil lead" 口语径直简称 lead；德语 `Bleistift`＝铅笔，字面即「铅芯棒」），故未改动。
+- `binding`（装订线）本次不涉及，维持原名。
+- 同步更新本文档 §5 材料表（[EQUIPMENT_DESIGN.md:151-152](../../design/game/EQUIPMENT_DESIGN.md)）与 `ECONOMY_BALANCE.md` §5.2 材料说明。
+
+验证：纯 i18n 字符串 + 文档改动，不涉及逻辑；`client tsc --noEmit` 全绿。

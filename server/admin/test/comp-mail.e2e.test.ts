@@ -43,21 +43,24 @@ const jwt: JwtConfig = { secret: 'comp-test-secret' };
 async function tryMeta(): Promise<MongoHandle | null> {
   try {
     return await createMongo(URI, META_DB, { serverSelectionTimeoutMS: 1500 });
-  } catch {
+  } catch (err) {
+    if (process.env.NW_REQUIRE_DB) throw err;
     return null;
   }
 }
 async function tryAdmin(): Promise<AdminMongo | null> {
   try {
     return await createAdminMongo(URI, ADMIN_DB, { serverSelectionTimeoutMS: 1500 });
-  } catch {
+  } catch (err) {
+    if (process.env.NW_REQUIRE_DB) throw err;
     return null;
   }
 }
 async function trySocial(): Promise<SocialMongo | null> {
   try {
     return await createSocialMongo(URI, SOCIAL_DB);
-  } catch {
+  } catch (err) {
+    if (process.env.NW_REQUIRE_DB) throw err;
     return null;
   }
 }

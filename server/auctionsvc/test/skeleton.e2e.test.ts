@@ -15,7 +15,8 @@ const DB = 'nw_auction_test';
 async function tryConnect(): Promise<AuctionMongo | null> {
   try {
     return await createAuctionMongo(URI, DB);
-  } catch {
+  } catch (err) {
+    if (process.env.NW_REQUIRE_DB) throw err;
     return null;
   }
 }

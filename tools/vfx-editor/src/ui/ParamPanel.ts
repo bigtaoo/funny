@@ -13,21 +13,21 @@ import { EffectModel } from '../model/EffectModel';
 import { defaultParamValue, PARAM_HINTS } from '../model/paramHints';
 
 const EASES: Ease[] = ['linear', 'easeIn', 'easeOut', 'easeInOut'];
-type Form = 'const' | 'ramp' | 'keys';
+export type Form = 'const' | 'ramp' | 'keys';
 
-function formOf(track: ParamTrack): Form {
+export function formOf(track: ParamTrack): Form {
   if (typeof track === 'number') return 'const';
   if (Array.isArray(track)) return 'keys';
   return 'ramp';
 }
 
 /** First representative value of a track, for lossy form conversion. */
-function firstValue(track: ParamTrack): number {
+export function firstValue(track: ParamTrack): number {
   if (typeof track === 'number') return track;
   if (Array.isArray(track)) return track[0]?.v ?? 0;
   return track.from;
 }
-function lastValue(track: ParamTrack): number {
+export function lastValue(track: ParamTrack): number {
   if (typeof track === 'number') return track;
   if (Array.isArray(track)) return track[track.length - 1]?.v ?? 0;
   return track.to;
@@ -227,4 +227,4 @@ export class ParamPanel {
 }
 
 function clone<T>(v: T): T { return JSON.parse(JSON.stringify(v)) as T; }
-function sortKfs(kfs: Keyframe[]): Keyframe[] { return [...kfs].sort((a, b) => a.t - b.t); }
+export function sortKfs(kfs: Keyframe[]): Keyframe[] { return [...kfs].sort((a, b) => a.t - b.t); }

@@ -49,10 +49,10 @@ const jwt: JwtConfig = { secret: 'test-secret' };
 const IK = 'k';
 
 async function tryConnectMeta(): Promise<MongoHandle | null> {
-  try { return await createMongo(URI, META_DB, { serverSelectionTimeoutMS: 1500 }); } catch { return null; }
+  try { return await createMongo(URI, META_DB, { serverSelectionTimeoutMS: 1500 }); } catch (err) { if (process.env.NW_REQUIRE_DB) throw err; return null; }
 }
 async function tryConnectSocial(): Promise<SocialMongo | null> {
-  try { return await createSocialMongo(URI, SOCIAL_DB); } catch { return null; }
+  try { return await createSocialMongo(URI, SOCIAL_DB); } catch (err) { if (process.env.NW_REQUIRE_DB) throw err; return null; }
 }
 const meta = await tryConnectMeta();
 const social = await tryConnectSocial();

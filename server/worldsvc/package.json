@@ -13,6 +13,7 @@
     "start": "node dist/index.js",
     "pretest": "npm run gen:api:world",
     "test": "vitest run",
+    "test:coverage": "npm run pretest --if-present && vitest run --coverage",
     "gen:api:world": "node ../contracts/scripts/gen-openapi-world.mjs",
     "gen:api:world:check": "node ../contracts/scripts/gen-openapi-world.mjs --check"
   },

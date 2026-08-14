@@ -39,10 +39,10 @@ export async function pageTickets(ctx: Ctx): Promise<void> {
   await reload();
 }
 
-function describeTarget(target: CompTarget): string {
+export function describeTarget(target: CompTarget): string {
   return 'publicId' in target ? '#' + target.publicId : `all-server(${target.filter.kind})`;
 }
-function describeAttachments(att: CompAttachment[]): string {
+export function describeAttachments(att: CompAttachment[]): string {
   return att.map((a) => (a.kind === 'coins' ? `${a.count ?? 0} coins` : `${a.kind}:${a.id ?? '?'}×${a.count ?? 1}`)).join(', ') || 'none';
 }
 

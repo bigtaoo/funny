@@ -4,7 +4,7 @@ import { clear, fmtTime, h, pill } from '../dom';
 import type { AppealView } from '../types';
 import { showErr, showOk, type Ctx } from './shared';
 
-function fmtSnapshot(s: AppealView['enforcementSnapshot']): string {
+export function fmtSnapshot(s: AppealView['enforcementSnapshot']): string {
   const parts: string[] = [];
   if (s.banned) parts.push('banned (permanent)');
   if (s.bannedUntil) parts.push(`temp-banned until ${new Date(s.bannedUntil).toLocaleString()}`);
