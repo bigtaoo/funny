@@ -179,3 +179,5 @@ playerbase_atlas 折腾 8 个子回合（[[slg-playerbase-oversized-fix-2026-07-
 10 帧宽高比落在 0.988~2.016，全部 ≥ 0.9375（多数直接是 1.0 附近，即宽度轴触底、自动打满整格）；仅 `city_l7`（0.988）/`city_lv4`（0.996）贴近阈值但仍在安全边内。抽样把 5 帧（l2/l5/l7/lv1/l10）放大到 512px 肉眼复核，确认每帧确实自带一块清晰的等轴测菱形地台，建筑/围栏铺到地台边缘——数字判据与肉眼观察一致，不是背景抠图残留像素撑大了外接框。
 
 **结论**：`city_atlas` 设计初衷（"图自带地台，地台=地块，整体矮宽"）成立，未发现 playerbase 那类"建筑铺不满地块"的缺陷，任务到此收尾，不需要改 `pack_city_atlas.js`、不需要重出图。审计脚本为抛弃式临时文件，未入库。
+
+**顺带清理**：`art/ui/slg-building/` 目录里另有 2 个 UUID 命名的 `.webp`（悬崖栈道 / 石拱桥，黑白铅笔素描），既不在 `pack_city_atlas.js` 的 `FILES` 列表里、画风也跟 `city_atlas` 蓝墨线等轴测涂鸦完全不符——不是这次审计的产物，大概率是"桥/栈道"（`building_bridge`/`building_plankway`，真正管线在 `art/ui/slg-map/pack_buildings.cjs`）早期探索时误放在这个目录、画风不对被搁置的草稿。已按约定移入 `art/leftover/`（保留原文件名，未删）。
