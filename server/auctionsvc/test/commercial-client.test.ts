@@ -77,4 +77,35 @@ describe('HttpAuctionCommercialClient.spend', () => {
       expect((e as Error).message).toBe('something weird commercial never actually returns');
     }
   });
+
+  it('available reflects whether baseUrl is configured', () => {
+    expect(new HttpAuctionCommercialClient(base, KEY).available).toBe(true);
+    expect(new HttpAuctionCommercialClient(null, KEY).available).toBe(false);
+  });
+
+  it('baseUrl not configured -> throws before ever making a request', async () => {
+    await expect(new HttpAuctionCommercialClient(null, KEY).spend('buyer1', 1200, 'x')).rejects.toThrow('commercial service not configured');
+  });
+
+  it('a network-level failure (body never arrives) throws, does not silently pass money through', async () => {
+    // Point at a port nothing is listening on so fetchInternalJson's own catch produces {body:null}.
+    const c = new HttpAuctionCommercialClient('http://127.0.0.1:1', KEY);
+    await expect(c.spend('buyer1', 1200, 'x')).rejects.toThrow();
+  });
+
+  it('clientPlatform, when provided, is forwarded in the request body', async () => {
+    nextSpendBody = { ok: true };
+    let received: Record<string, unknown> | undefined;
+    const original = globalThis.fetch;
+    globalThis.fetch = (async (url: string | URL | Request, init?: RequestInit) => {
+      received = JSON.parse(String(init?.body ?? '{}'));
+      return original(url, init);
+    }) as typeof fetch;
+    try {
+      await new HttpAuctionCommercialClient(base, KEY).spend('buyer1', 500, 'x', 'wechat');
+      expect(received).toMatchObject({ clientPlatform: 'wechat' });
+    } finally {
+      globalThis.fetch = original;
+    }
+  });
 });
