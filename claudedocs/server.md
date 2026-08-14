@@ -586,7 +586,7 @@ commercial 此前完全没有 Redis 依赖，本次新增：`config.ts` 补 `NW_
 | socialsvc | 78.4% | 84.9% | 84.8% |
 | botsvc | 70.0% | 83.6% | 83.2% |
 | auctionsvc | 72.3% | 76.9% | 68.2% |
-| gateway | 65.9% | 70.3% | 76.8% |
+| gateway | ~~65.9%~~ **93.07%**（2026-08-14 补测，见下） | 70.3% | 76.8% |
 | gameserver | ~~62.5%~~ **91.9%**（2026-08-14 补测，见下） | 91.4% | 95.9% |
 | admin | ~~47.1%~~ **93.39%**（2026-08-14 两轮补测，见下） | 74.6% | 44.3% |
 | metaserver | ~~35.1%~~ **90.84%**（2026-08-14 两轮补测，见下） | 78.4% | 32.3% |
@@ -700,3 +700,29 @@ metaserver 整体行覆盖率 **61.27% → 90.84%**（`npx vitest run --coverage
 
 `src/httpApi` 整体行覆盖率 **~5% → 96.47%**；admin 包整体行覆盖率 **64.92% → 93.39%**（`npx vitest run --coverage`，18 test files / 203 tests 全绿——新增 55 例，原有 148 例零改动；`npx tsc --noEmit` 干净）。`src/index.ts`（66 行，进程 bootstrap：`main()` 里连库/起 20 个 HTTP client/装配 `AdminService`/起 server/起采样定时器，写死在顶层立即执行）继续沿用 gateway/gameserver 的先例不单独起集成测试——它是全包里唯一仍是 0% 的文件，但只占 66/3150 行（2.1%），即便完全不测,其余文件即使不到 100% 也早已把整包拉过 90% 门槛，专门为它搭 mock 装配意义不大。
 
+
+## gateway 补测：redis.ts/proto.ts/types.ts/metaClient.ts 等从 65.9% 拉到 93.07%（2026-08-14，worktree `feat/gateway-coverage`）
+
+admin 补到 93.39% 后，14 包基线里最低的变成了 **gateway（65.9%）**——本节按"根据覆盖率结果修复最低"处理这个包。
+
+**根因分布，跟 admin/metaserver 都不同——没有单一大缺口，是七八个中等文件各自零星缺**：`redis.ts`（30.1%，Redis 订阅/发布/presence 原语——`redis-presence.e2e.test.ts` 覆盖了真实 Redis 的 happy path，但整套件 `describe.skipIf(!probe)` 在没有本地 Redis 时（本次会话环境正是如此）完全跳过，消息分发/发布失败吞掉/连接失败三类分支从未被任何测试真正跑过一次）、`src/gateway/types.ts`（27.1%，`toServerMsg` 这个 20+ 分支的纯映射函数，此前只被 `gateway-routing.test.ts`/`judge.test.ts` 的少数几条端到端场景顺带跑过 room_error/match_found/judge_verdict 几种）、`proto.ts`（65.1%，`decodeClient`/`encodeServer` 同理，社交/SLG 推送的十几个 case 从未被编解码过）、`metaClient.ts`（69.6%，`gateway-routing.test.ts` 的 `FakeMeta`/`FakeMetaWithDirectory` 全是子类重写方法，从未调用过真实 HTTP 实现）、`socialsvcClient.ts`（0%）、`config.ts`（0%）、`connRegistry.ts`（69.0%，`routeBroadcast` 从未被任何测试调用过一次；`presenceOf` 的 cross-instance 分支同样只能被真实 Redis 的 e2e 覆盖，同样被跳过）、`gateway/presenceBroadcaster.ts`（70.2%，P3 socialsvc 委托路径 + 缓存复用/失效分支从未测过）。
+
+**修法**：8 个新测试文件，按文件规模从小到大：
+
+- **`test/config.test.ts`**（3 例）：`loadGatewayEnv()` 默认值/全量 env 覆盖/`""` 落空转 `undefined`，同 admin/gameserver 先例。100%。
+- **`test/socialsvcClient.test.ts`**（4 例）：`notifyOnline`/`notifyOffline` 的真实 POST 请求体 + `baseUrl=null` 时零请求，mock `globalThis.fetch`（同 `matchsvcClient.test.ts` 既有先例，没有引入新的 mock 风格）。100%。
+- **`test/metaClient.test.ts`**（20 例）：6 个方法（`getElo`/`getProfile`/`getMatchIdentity`/`resolveByPublicId`/`getFriends` + `available`）各自的 not-configured/success/degraded-on-failure 三分支，同样 mock `fetch`。100%。
+- **`test/presenceBroadcaster.test.ts`**（11 例）：P3 socialsvc 委托路径（配置且可用 → 直接转发，不碰 meta）；fallback 路径（socialsvc 未配置 或 配置了但 `available:false` 都会落到这里）；`meta` 不可用整体 no-op；我自己的 `publicId` 为空整体不广播；好友 socket 不在线/不存在时跳过；好友在线时收到 `friend_presence` 且我自己收到"回放快照"（仅 connect 路径，disconnect 路径不回放）；`friendsCache`/`publicIdCache` 复用（重复调用不重新查 meta）；`notifyOffline` 收尾清缓存（下次重新查）；`invalidateFriends` 只清好友缓存。全部纯逻辑（手搓 `ConnLookup`/`Push`/`MetaClient`/`SocialsvcClient` 假对象），不需要真实 WS/HTTP。100%。
+- **`test/proto-and-types.test.ts`**（56 例）：`decodeClient` 全部 9 个 `ClientMsg` oneof 分支（room_create/join/ready/leave/start/ping/duel_invite/duel_respond/client_caps/judge_verdict + 空 envelope→unknown + data-plane-only case→unknown）+ `encodeServer` 全部 19 个 `ServerMsg` oneof 分支，直接用 proto.ts 自己引用的同一份 ts-proto `Envelope`（而不是像 `gateway-routing.test.ts` 那样另起一份 protobufjs 解析——那是因为那边要模拟"真实客户端从零构造"，这边只需要构造/校验 wire 数据，两者用途不同）；`toServerMsg` 全部 20 个 `PushMsg.kind` 分支，每条额外 `encodeServer(toServerMsg(msg))` 验证真实推送链路（`connRegistry.push` 就是这么调的）不会在运行期报错；`displayName` 两条截断分支。`proto.ts`/`types.ts` 均 100%。
+- **`test/redis-unit.test.ts`**（16 例）：mock `ioredis`（`redis.ts` 动态 `import('ioredis')`，`vi.mock('ioredis', …)` 对静态/动态 import 一视同仁，都能拦截到），手写一个内存 `FakeRedis`（自制极简 `SimpleEmitter`，不依赖 `node:events`，用 `vi.hoisted()` 承载共享状态规避 mock factory 的变量提升限制）支持 `subscribe`/`duplicate`/`publish`/`set`/`del`/`pexpire`/`pipeline`/`quit`，`duplicate()` 出的三个连接共享同一个内存 `store`（对应真实 Redis 的同一个 keyspace）。覆盖：无 URL→null；`subscribe` 失败→外层 catch 返回 null；消息分发的 push/kick 两种 envelope + 非法 JSON + 无法识别的合法 JSON 三类静默分支；`publishKick`/`markOnline`/`markOffline`/`refreshOnline` 的成功路径 + 失败吞掉路径；`onlineAccountIds` 的空输入短路/混合批量/pipeline 失败 fail-closed；`quit()` 关闭全部三个连接。这一份彻底不依赖真实 Redis，本地/CI 任何环境都能跑，不再被 `describe.skipIf` 挡住。`redis.ts` 100%。
+- **`test/connRegistry-unit.test.ts`**（9 例）：`push` 到完全没连接过的 accountId→静默丢弃不抛错；`routeBroadcast`（此前零覆盖）只投给真正在线的收件人，离线的跳过不抛错；`presenceOf` 三态（本地命中不查 presence store / 本地未命中查 store 的 cross-instance 分支 / 混合批量）+ 未挂 store 时未命中默认全部离线；一帧非法二进制帧（`decodeClient` 内部抛错）被静默吞掉且连接后续仍正常（ping→pong 验证）；WS 握手缺 token / token 非法均 4401。复用 `gateway-routing.test.ts` 的真实 Gateway + 真实 `ws` 客户端 + protobufjs 编解码 harness，未引入新 harness。`connRegistry.ts` 69.0% → 87.5%（`sweep()` 心跳扫描——`alive`/`ping`/`terminate`/`refreshOnline`——仍未覆盖，见下）。
+
+**`vitest.config.ts` 新增 `scripts/**` 排除**（同 gameserver/metaserver 先例）：`scripts/gen-proto.mjs` 是 `npm run proto:gen` 触发的一次性生成脚本，从不被 app 代码或测试导入，计入分母只会拉低数字、不反映真实测试缺口。
+
+**留意但未继续追的残余缺口**：
+- `connRegistry.ts` 的 `sweep()`（心跳扫描，30s 一次，`HEARTBEAT_MS` 硬编码常量非构造参数）——要测就得等 30 秒或者上 `vi.useFakeTimers()`，而后者和真实 `ws`/`WebSocketServer` 的内部计时器（ping/pong 超时、底层 socket）混在一起风险不小，性价比判断后放弃，留给下一轮如果专门做 timer 相关改动时再一并处理。
+- `connRegistry.ts` 里 `push` 的 `ws.send` 失败 catch（83-84 行）——需要在真实 socket "刚检查完 `readyState===OPEN`、`send()` 调用本身却同步抛错"这个窄窗口里造错，没有干净的钩子能从测试侧触发。
+- `matchCommands.ts`/`peerJudge.ts`/`dispatcher.ts` 各剩几行防御性分支（未知 duel 邀请 id、判定超时边界等），均为已在 `judge.test.ts`/`gateway-routing.test.ts` 里被其它分支间接覆盖的等价路径变体，性价比递减。
+- `src/index.ts`（74 行，进程 bootstrap，同 admin/gameserver 先例）继续不单独起集成测试。
+
+gateway 整体行覆盖率 **65.9% → 93.07%**（`npx vitest run --coverage`，13 test files / 188 tests，181 passed + 7 skipped——7 个 skip 全部是既有的"无本地 Redis 则跳过"用例，跳过状态未变；新增 128 例，原有 60 例零改动；`npx tsc --noEmit` 干净）。分支覆盖 91.03%、函数覆盖 97.05%。
