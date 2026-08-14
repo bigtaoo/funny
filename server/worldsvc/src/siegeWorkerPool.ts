@@ -115,7 +115,20 @@ export class SiegeWorkerPool {
   }
 
   private spawnWorker(): void {
-    const worker = new Worker(this.workerPath, { execArgv: this.workerExecArgv });
+    // 2026-08-14 fix (see siegeWorker.ts's own comment): pass the dev/prod extension as workerData
+    // instead of letting siegeWorker.ts recompute it via `__filename.endsWith('.ts')` — confirmed on
+    // real Linux CI that tsx's `--import` hook runs the worker's entry module under ESM semantics
+    // (even though the file is .ts and the nearest package.json has no "type": "module"), where
+    // `__filename` is simply undefined; `import.meta.url` would be the ESM-safe equivalent, but this
+    // project's tsconfig targets `module: CommonJS` and TS rejects `import.meta` syntax outright
+    // under that setting (same TS5097-style incompatibility as the earlier `.ts`-extension attempt).
+    // workerData sidesteps needing either global inside the worker at all: this file (siegeWorkerPool.ts)
+    // is always the true entry, always runs on the main thread in real CommonJS, so `IS_TS_RUNTIME`
+    // computed here is reliable.
+    const worker = new Worker(this.workerPath, {
+      execArgv: this.workerExecArgv,
+      workerData: { ext: IS_TS_RUNTIME ? '.ts' : '.js' },
+    });
     const entry: PoolWorker = { worker, currentTaskId: null, retiring: false };
     worker.on('message', (msg: TaskResponse) => this.onMessage(entry, msg));
     worker.on('error', (err) => this.onWorkerDown(entry, err));
