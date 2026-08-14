@@ -143,7 +143,7 @@ export class InventoryPanel {
         peers.push({ label: t(core.cb.peerTab.labelKey), active: false, icon: core.cb.peerTab.icon });
         actions.push(() => core.cb.peerTab?.onSelect());
       }
-      peers.push({ label: t('equip.title'), active: true, icon: 'armor' });
+      peers.push({ label: t('equip.title'), active: true, icon: 'equipIcon' });
       actions.push(() => {});
       for (const p of core.cb.trailingPeers ?? []) {
         peers.push({ label: t(p.labelKey), active: false, icon: p.icon });
@@ -161,7 +161,7 @@ export class InventoryPanel {
     if (core.showGroup && core.cb.peerTab) {
       const groupTabs: HubTab[] = [
         { label: t(core.cb.peerTab.labelKey), active: false, icon: core.cb.peerTab.icon },
-        { label: t('equip.title'), active: true, icon: 'armor' },
+        { label: t('equip.title'), active: true, icon: 'equipIcon' },
       ];
       const group = drawSidebarTabs(core.bodyLayer, sidebarW, y, h, groupTabs, (i) => {
         if (i === 0) core.cb.peerTab?.onSelect();

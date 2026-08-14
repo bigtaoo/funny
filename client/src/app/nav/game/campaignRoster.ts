@@ -295,10 +295,10 @@ export function createCampaignRosterNav(ctx: AppCtx): CampaignRosterNav {
     // (trailingPeers, below Equipment's Inventory/Craft sub-tabs) so it stays visible instead of being
     // dropped. Campaign / per-card entry injects neither → plain back, no rail.
     const peerTab = group === 'roster'
-      ? { labelKey: 'roster.title' as TranslationKey, icon: 'cards' as IconKind, onSelect: () => back() }
+      ? { labelKey: 'roster.title' as TranslationKey, icon: 'rosterIcon' as IconKind, onSelect: () => back() }
       : undefined;
     const trailingPeers = group === 'roster' && onSkins
-      ? [{ labelKey: 'roster.tab.skins' as TranslationKey, icon: 'brush' as IconKind, onSelect: onSkins }]
+      ? [{ labelKey: 'roster.tab.skins' as TranslationKey, icon: 'skinIcon' as IconKind, onSelect: onSkins }]
       : undefined;
     views.showEquipment({
       onBack() { back(); },

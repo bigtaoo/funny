@@ -94,9 +94,9 @@ export class ListPanel {
     const { w, h, landscape } = core;
     const hasEquip = !!core.cb.openEquipmentBag;
     const tabs: HubTab[] = [
-      { label: t('roster.title'), active: core.tab === 'list', icon: 'cards' },
-      ...(hasEquip ? [{ label: t('equip.title'), active: false, icon: 'armor' as const }] : []),
-      { label: t('roster.tab.skins'), active: core.tab === 'skins', icon: 'brush' },
+      { label: t('roster.title'), active: core.tab === 'list', icon: 'rosterIcon' },
+      ...(hasEquip ? [{ label: t('equip.title'), active: false, icon: 'equipIcon' as const }] : []),
+      { label: t('roster.tab.skins'), active: core.tab === 'skins', icon: 'skinIcon' },
     ];
     const onSelect = (i: number): void => {
       if (i === 0) { core.tab = 'list'; core.render(); return; }
