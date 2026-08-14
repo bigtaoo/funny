@@ -5,7 +5,7 @@
 //
 // No Mongo/DB access here and none should ever be added — all persistence stays on the main thread in
 // combatSiege/{arrival,occupation,encounter}.ts; this file's only job is the pure CPU-bound computation.
-import { parentPort } from 'node:worker_threads';
+import { parentPort, workerData } from 'node:worker_threads';
 import type { SiegeBattleInput } from './siegeEngine';
 import type { SiegeResolution } from '@nw/shared';
 
@@ -38,7 +38,17 @@ async function main(): Promise<void> {
   // compiles to real .js (not just type-checks), so a STATIC `.ts`-suffixed specifier is a hard `tsc
   // -b` error (TS5097, needs `allowImportingTsExtensions` — incompatible with real emit); a
   // template-literal specifier isn't statically analyzable, so TS doesn't apply that check to it.
-  const ext = __filename.endsWith('.ts') ? '.ts' : '.js';
+  //
+  // 2026-08-14 follow-up (caught on real Linux CI): the extension can't be recomputed here via
+  // `__filename.endsWith('.ts')` the way siegeWorkerPool.ts does for the worker's own entry path —
+  // confirmed that tsx's `--import` hook runs this module under ESM semantics (despite it being .ts
+  // with no "type": "module" anywhere), where `__filename` is simply undefined ("__filename is not
+  // defined"). `import.meta.url` would be the ESM-safe equivalent, but this project's `module:
+  // CommonJS` tsconfig rejects `import.meta` syntax outright (same incompatibility as the `.ts`-
+  // extension idea above). Sidestep needing either global in here at all: siegeWorkerPool.ts (always
+  // the true entry, always plain CommonJS on the main thread) computes it reliably and hands it down
+  // via `workerData` instead.
+  const ext = (workerData as { ext: '.ts' | '.js' }).ext;
   const { runSiegeBattleSync } = (await import(`./siegeEngine${ext}`)) as typeof import('./siegeEngine');
 
   parentPort!.on('message', (msg: TaskRequest) => {
