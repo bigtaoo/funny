@@ -7,7 +7,10 @@ export default defineConfig({
       provider: 'v8',
       reporter: ['text', 'lcov', 'html', 'json-summary'],
       reportsDirectory: './coverage',
-      exclude: [...coverageConfigDefaults.exclude, 'src/generated/**'],
+      // scripts/migrateFamily.ts + migrateSocial.ts are one-shot migration tools (invoked manually,
+      // never imported by app code or tests) — same rationale as excluding src/generated/**, its
+      // output. Precedent: gameserver/metaserver/gateway/botsvc/auctionsvc's vitest.config.ts.
+      exclude: [...coverageConfigDefaults.exclude, 'src/generated/**', 'scripts/**'],
     },
     // e2e tests need a real Mongo. globalSetup spins up a standalone mongod via
     // mongodb-memory-server (socialsvc uses only single-document atomic ops — no

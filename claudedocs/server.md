@@ -583,7 +583,7 @@ commercial 此前完全没有 Redis 依赖，本次新增：`config.ts` 补 `NW_
 | analyticsvc | 87.6% | 84.2% | 95.8% |
 | matchsvc | 88.3% | 91.1% | 97.2% |
 | commercial | 81.4% | 76.9% | 91.8% |
-| socialsvc | 78.4% | 84.9% | 84.8% |
+| socialsvc | ~~78.4%~~ **94.71%**（2026-08-14 补测，见下） | 84.9% | 84.8% |
 | botsvc | ~~70.0%~~ **92.74%**（2026-08-14 补测，见下） | 83.6% | 83.2% |
 | auctionsvc | ~~72.3%~~ **92.0%**（2026-08-14 补测，见下） | 76.9% | 68.2% |
 | gateway | ~~65.9%~~ **93.07%**（2026-08-14 补测，见下） | 70.3% | 76.8% |
@@ -770,3 +770,22 @@ botsvc 补到 92.74% 后，14 包基线里最低的变成了 **auctionsvc（72.3
 **留意但未继续追的残余缺口**：`index.ts`（66 行，进程 bootstrap，同 admin/gameserver/gateway/botsvc 先例不单独起集成测试——66/1125 行仅占 5.9%，即便完全不测也早已把整包拉过 90% 门槛）；`create.ts`/`trade.ts`/`pricing.ts`/`audit.ts` 各剩几行防御性分支或需要精确并发时序才能触发的路径，性价比递减未继续追。
 
 auctionsvc 整体行覆盖率 **72.3% → 92.0%**（`npx vitest run --coverage`，15 test files / 181 tests 全绿——新增 81 例，原有 100 例零改动；`npx tsc --noEmit` 干净）。分支覆盖 86.02%、函数覆盖 97.75%。
+
+## socialsvc 补测：config/metaClient/gatewayClient 从 0~25% + family/mail 路由分支缺口，从 78.4% 拉到 94.71%（2026-08-14，worktree `feat/socialsvc-coverage`）
+
+auctionsvc 补到 92.0% 后，核对完整基线发现比 auctionsvc 更早、从未被这一批任务处理过的几个包（client/engine/shared/worldsvc/analyticsvc/matchsvc/commercial/socialsvc）里，**socialsvc（78.4%）才是真正最低**——本节按"根据覆盖率结果修复最低"处理这个包。
+
+**根因同一种模式**：`config.ts`（0%，没有专属测试文件）；`metaClient.ts`（25%）/`gatewayClient.ts`（31%）——所有 e2e 套件清一色用 `test/harness.ts` 的内存 `FakeMeta`/`FakeGateway`（这两个 fake 本身测得很扎实，被十个 e2e 文件反复复用），真实的 `HttpSocialMetaClient`/`HttpSocialGatewayClient` fetch 实现从未被调用过一次；`httpApi/internalMailRoutes.ts`（39.7%）/`mailRoutes.ts`（51.1%）——`mailHttp.e2e.test.ts` 原本只测了 `DELETE /mail/:id` 一条路由（专门为 16.07.2026 的未领取附件回归写的），`GET /social/mail`、`POST /mail/:id/read`、`POST /mail/send`、`/internal/mail/:id/claim` 的三种错误分支、`/internal/mail/:id/unclaim`、`/internal/mail/system`、`/internal/mail/system/bulk` 全部零覆盖；`httpApi/familyRoutes.ts`（81.5%）——`familyHttp.e2e.test.ts` 只覆盖 browse/emblem/get-by-id/join/requests 几条，`mine`/`search`/创建家族/`leave`/`kick`/`role`/`disband`/`announcement`/家族频道消息收发全部只在**直调 `FamilyService`**（绕开 httpApi 路由层）的 `family.e2e.test.ts` 里测过，从未通过真实 HTTP 请求走过一次。
+
+**修法**：
+
+- **`test/config.test.ts`**（3 例）：`loadSocialsvcEnv()` 默认值/全量覆盖/falsy 空串兜底，同前几个包先例。100%。
+- **`test/metaClient.test.ts`**（11 例）+ **`test/gatewayClient.test.ts`**（15 例）：真实 `node:http` fixture server（metaClient）/mock `globalThis.fetch`（gatewayClient，同 gateway 包自己 `matchsvcClient.test.ts` 的约定），覆盖 `resolveByPublicId`/`batchProfiles`/`getPlayerRankByPublicId` 三方法 + `push`/`pushMany`/`pushBatch`/`presence`/`invalidateFriends` 五方法的成功/失败/`baseUrl` 未配置/空输入短路分支，外加两个 `nullXxxClient` 兜底对象。均 100%（或仅剩 1 行防御性分支）。
+- **`test/mailHttp.e2e.test.ts`** 追加两个 describe 块、17 例（复用既有文件的 `FamilyService`/`FriendService`/`MailService`/`startHttpApi` + `FakeMeta`/`FakeGateway` 组装方式，注意第二个新增的 describe 块与原有块共享同一个 `mongo` 连接——原 `afterAll` 里的 `m.close()` 挪到最后一个块，否则第二块的 `beforeAll` 会撞上"连接已关闭"）：`GET /social/mail`（列表）、`POST /mail/:id/read`（成功 + 未知 id→404）、`POST /mail/send`（缺字段 400、目标 publicId 未找到 404、非好友 403、真实好友边成功发信）、`/internal/mail/:id/claim` 三种失败分支（NOT_FOUND/NO_ATTACHMENT/ALREADY_CLAIMED，靠一次性 seed 一封无附件的信 + 对同一封信 claim 两次触发）、`/internal/mail/:id/unclaim`（缺字段 400 + 回滚后可重新 claim）、`/internal/mail/system`（缺字段 400 + 成功送达收件箱）、`/internal/mail/system/bulk`（缺字段 400 + 成功批量送达 + 通过 `FakeGateway.ofKind('mail_new')` 验证 fire-and-forget 的 `pushBatch` 确实被调用）。`internalMailRoutes.ts` 100%，`mailRoutes.ts` 51.1%→89.4%。
+- **`test/familyHttpRoutesGaps.e2e.test.ts`**（新文件，12 例，独立 DB + 独立账号，避免打乱既有 `familyHttp.e2e.test.ts` 的家族生命周期叙事）：一条流畅场景走完 `POST /social/family` 创建（缺 name/tag→400 + 成功 201）→ `GET /mine` → `GET /search`（缺 tag→400 + 命中）→ `announcement`（缺字段→400 + 成功）→ 真实 join+leader-accept 流程拉入 member1 → `role`（缺字段→400 + 提升为 elder）→ 家族频道 `GET/POST /:id/messages`（空历史 → 缺 body→400 + 成功发送并通过 `FakeGateway.ofKind('family_msg')` 验证真实推送）→ member2 加入后 `kick`（缺 targetId→400 + 成功踢出）→ member3 加入后 `leave`（成功退出）→ 最后 `disband`（会长解散）。`familyRoutes.ts` 81.5%→100%。
+
+**`vitest.config.ts` 新增 `scripts/**` 排除**（同前几个包先例）：`scripts/migrateFamily.ts`/`migrateSocial.ts` 是一次性迁移脚本，不计入分母。
+
+**留意但未继续追的残余缺口**：`index.ts`（98 行，进程 bootstrap，同前几个包先例不单独起集成测试）；`friend/relations.ts`/`friend/chat.ts`/`family/membership.ts`/`family/internal.ts` 各剩几行防御性分支或需要精确并发时序才能触发的路径（同类形态在 `family.e2e.test.ts`/`friend.e2e.test.ts` 里已有等价覆盖），性价比递减未继续追；`family/types.ts`/`friend/types.ts` 两个纯类型文件（0 可执行行，覆盖率工具报 0/0 属正常，非真实缺口）。
+
+socialsvc 整体行覆盖率 **78.4% → 94.71%**（`npx vitest run --coverage`，14 test files / 216 tests 全绿——新增 58 例，原有 158 例零改动；`npx tsc --noEmit` 干净）。分支覆盖 89.22%、函数覆盖 99.39%。
