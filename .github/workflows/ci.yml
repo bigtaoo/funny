@@ -12,21 +12,13 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # Fast path: type-check + unit tests + build, no Docker needed, results within a few minutes.
-  # server's own e2e suite needs Redis for gateway/redis-presence.e2e.test.ts (mongo is provided
-  # per-workspace by mongodb-memory-server via globalSetup.ts, no service container needed for that).
-  build-test:
-    name: build + unit tests
+  # Fast checks only: codegen staleness + file-length + tsc -b across all 13 workspaces. No
+  # tests, no Docker, done in well under a minute — kept separate from server-test (below) so a
+  # typecheck failure surfaces immediately without waiting on the slowest test shard, and so it
+  # doesn't get needlessly repeated on every test-matrix runner.
+  server-checks:
+    name: server codegen/typecheck checks
     runs-on: ubuntu-latest
-    services:
-      redis:
-        image: redis:7
-        ports: ['6379:6379']
-        options: >-
-          --health-cmd "redis-cli ping"
-          --health-interval 5s
-          --health-timeout 3s
-          --health-retries 5
     steps:
       - uses: actions/checkout@v5
 
@@ -34,22 +26,11 @@ jobs:
         with:
           node-version: 22
           cache: npm
-          cache-dependency-path: |
-            client/package-lock.json
-            server/package-lock.json
+          cache-dependency-path: server/package-lock.json
 
-      # —— Server: tsc -b across all thirteen workspaces + unit/e2e tests ——
       - name: server install
         working-directory: server
         run: npm ci
-      # mongodb-memory-server (used by admin/analyticsvc/auctionsvc/commercial/metaserver/socialsvc/
-      # worldsvc's e2e globalSetup.ts) downloads a pinned mongod binary on first use; cache it so
-      # repeat CI runs don't re-download ~100MB every time.
-      - name: cache mongod binaries
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/mongodb-binaries
-          key: mongod-${{ runner.os }}-v7.0.14
       # metaserver openapi.yml is bundled from per-domain fragments in server/contracts/openapi/
       # (one per MetaService mixin); this must pass before the routes.gen.ts check below.
       - name: server codegen check (metaserver openapi bundle)
@@ -96,18 +77,123 @@ jobs:
       - name: server typecheck (tsc -b, solution file — all 13 workspaces)
         working-directory: server
         run: npm run typecheck
+
+  # 2026-08-14: split out of the old single "build + unit tests" job (see claudedocs/server.md) —
+  # `npm run test:coverage --workspaces` used to run all 13 server workspaces back-to-back on one
+  # runner (~11-12 min), then client and tools tests ran AFTER that on the SAME runner, serially,
+  # even though none of the three depend on each other. metaserver (~6.3 min) and worldsvc (~3.3
+  # min) alone were ~85% of that time — both set `fileParallelism: false` in their vitest config
+  # (a real Mongo-race guard, not incidental slowness; see the comment in their vitest.config.ts —
+  # do not flip this without re-auditing every e2e test's DB isolation) so they can't be sped up
+  # by just letting vitest use more cores in-process. Splitting them onto their own CI runners
+  # sidesteps that: each matrix job gets its own mongodb-memory-server instance, so the
+  # same-process DB-race concern the serial flag guards against doesn't apply across runners.
+  # Rest of the workspaces (each well under a minute) share one "rest" shard rather than each
+  # getting a runner of their own — CI job startup (checkout+node+npm ci, ~20-30s) would dominate
+  # actual test time at that granularity. Net effect: server test wall-clock ~11-12min -> ~6.3min
+  # (bounded by the metaserver shard), running concurrently with client-test/tools-test below
+  # instead of after them.
+  server-test:
+    name: server test (${{ matrix.shard.name }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        shard:
+          - name: metaserver
+            workspaces: metaserver
+            # upload-artifact roots the artifact at the least-common-ancestor of these paths; a
+            # single directory here means that directory's CONTENTS become the artifact root
+            # (coverage-report's download step below accounts for that per shard).
+            coverage_paths: server/metaserver/coverage
+          - name: worldsvc
+            workspaces: worldsvc
+            coverage_paths: server/worldsvc/coverage
+          - name: rest
+            workspaces: shared engine gateway matchsvc gameserver commercial admin analyticsvc socialsvc auctionsvc botsvc
+            # 11 explicit dirs sharing ancestor `server/` -> artifact preserves each `<pkg>/coverage/`
+            # subpath relative to `server/` (unlike the single-dir shards above).
+            coverage_paths: |
+              server/shared/coverage
+              server/engine/coverage
+              server/gateway/coverage
+              server/matchsvc/coverage
+              server/gameserver/coverage
+              server/commercial/coverage
+              server/admin/coverage
+              server/analyticsvc/coverage
+              server/socialsvc/coverage
+              server/auctionsvc/coverage
+              server/botsvc/coverage
+    services:
+      redis:
+        image: redis:7
+        ports: ['6379:6379']
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: server/package-lock.json
+
+      - name: server install
+        working-directory: server
+        run: npm ci
+      # mongodb-memory-server (used by admin/analyticsvc/auctionsvc/commercial/metaserver/socialsvc/
+      # worldsvc's e2e globalSetup.ts) downloads a pinned mongod binary on first use; cache it so
+      # repeat CI runs don't re-download ~100MB every time. Shared across shards by cache key (not
+      # workspace-scoped) since it's the same pinned binary regardless of which shard downloads it.
+      - name: cache mongod binaries
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/mongodb-binaries
+          key: mongod-${{ runner.os }}-v7.0.14
       # NW_REQUIRE_DB makes every e2e suite's DB-connect helper re-throw instead of silently
       # `describe.skipIf`-ing itself out when Mongo/Redis is unreachable (see claudedocs/server.md,
       # "单文件 500 行收敛" 附近的 CI 门禁记录) — without it, a broken mongod download or an
       # unreachable Redis service just makes these ~110 e2e cases vanish with exit code 0.
-      - name: server unit + e2e tests
+      - name: server unit + e2e tests (${{ matrix.shard.name }})
         working-directory: server
         env:
           NW_REQUIRE_DB: '1'
           NW_REDIS_URL: redis://127.0.0.1:6379
-        run: npm run test:coverage
+        run: |
+          args=()
+          for w in ${{ matrix.shard.workspaces }}; do args+=(-w "$w"); done
+          npm run test:coverage "${args[@]}" --if-present
 
-      # —— Client: type-check + unit tests + web build ——
+      # coverage-report (below) needs every shard's coverage/ output on one filesystem; each
+      # shard only produces coverage dirs for the workspaces it actually ran, so the glob below
+      # naturally scopes to just those.
+      - name: upload coverage artifact (${{ matrix.shard.name }})
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: server-coverage-${{ matrix.shard.name }}
+          path: ${{ matrix.shard.coverage_paths }}
+          if-no-files-found: ignore
+          retention-days: 1
+
+  # —— Client: type-check + unit tests + web build —— (own runner, parallel with server-test/tools-test)
+  client-test:
+    name: client test + build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: client/package-lock.json
+
       - name: client install
         working-directory: client
         run: npm ci
@@ -141,7 +227,26 @@ jobs:
         working-directory: client
         run: npm run build:web
 
-      # —— tools: type-check + build + file-length gate (2026-08-13 — previously zero CI coverage) ——
+      - name: upload coverage artifact (client)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: client-coverage
+          path: client/coverage/**
+          if-no-files-found: ignore
+          retention-days: 1
+
+  # —— tools: type-check + build + file-length gate —— (own runner, parallel with server-test/client-test)
+  tools-test:
+    name: tools typecheck + test + build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+
       - name: tools install (animator/level-editor/map-editor/ops/vfx-editor/desktop-shell)
         working-directory: tools
         run: |
@@ -173,13 +278,50 @@ jobs:
         working-directory: tools
         run: node scripts/checkFileLength.mjs
 
-      # Final step of this job: read the coverage/coverage-summary.json (vitest) and coverage/
-      # lcov.info (engine, Node's built-in test coverage) every test:coverage step above just
-      # produced, and print one consolidated table to the run's summary page. Pure reporting —
-      # scripts/coverageSummary.mjs never throws, so `if: always()` lets it still render a
-      # (possibly partial) table even if an earlier step in this job failed.
+  # Reads every server-test shard's + client-test's uploaded coverage/ artifacts (each shard only
+  # produced coverage for the workspaces it ran) back onto one filesystem, then prints the same
+  # consolidated table the old single-job "test coverage report" step did.
+  # scripts/coverageSummary.mjs never throws, so `if: always()` + downloading whatever artifacts
+  # did get produced lets it still render a (possibly partial) table even if a shard failed.
+  coverage-report:
+    name: test coverage report
+    needs: [server-test, client-test]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      # Each download target below matches how upload-artifact rooted that shard's artifact (see
+      # the comments on `coverage_paths` and the upload step in server-test/client-test): the
+      # metaserver/worldsvc/client shards each uploaded a single directory's contents (so they're
+      # downloaded straight into that same directory), while the "rest" shard uploaded 11 dirs
+      # sharing the `server/` ancestor (so it's downloaded back into `server/` to reconstruct each
+      # `<pkg>/coverage/` subpath). `if-no-files-found: ignore` on upload plus continue-on-error
+      # here means a shard that produced no coverage (e.g. it failed before running) just leaves
+      # that package's row as "—" in the report instead of failing this job.
+      - uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          name: server-coverage-metaserver
+          path: server/metaserver/coverage
+      - uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          name: server-coverage-worldsvc
+          path: server/worldsvc/coverage
+      - uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          name: server-coverage-rest
+          path: server
+      - uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          name: client-coverage
+          path: client/coverage
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
       - name: test coverage report
-        if: always()
         run: node scripts/coverageSummary.mjs
 
   # Slow path: docker compose brings up the full stack (mongo + meta + commercial + gateway + matchsvc + game),
