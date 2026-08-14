@@ -11,7 +11,7 @@
 | 皮肤 id | 角色 / 兵种 | 稀有度 | 配色 | 状态 |
 |---|---|---|---|---|
 | `skin_shop_c1` | 李川 / Infantry | common | 灰白调 | ✅ 已出图定稿，[`art/skins/infantry.png`](../../art/skins/infantry.png)；§1 prompt 为此图基准 |
-| `skin_shop_r1` | 苏远 / Archer | rare | 蓝色调 | 🟡 已出图 [`art/skins/archer.png`](../../art/skins/archer.png)（§2 v3 prompt，3/4 侧身回望 + 侧分短发 + 弓上弦全对）；**owner 反馈头部违和**（2026-08-13）：脖子过细过长像接上去的、头转向和肩线角度不协调、耳朵贴得太低靠近下颌、发型右侧一撮不对称翘毛破坏头部圆润轮廓——§2 v4 prompt 待用 GPT Image 2 重出 |
+| `skin_shop_r1` | 苏远 / Archer | rare | 蓝色调 | 🟡 头部问题已收敛（§2 v6 prompt，2026-08-14），**owner 站在出图工具里看过，pending：①最终 3/4 侧身还是正面站姿拍板 ②把选定的成品图存回 [`art/skins/archer.png`](../../art/skins/archer.png) 覆盖旧版**，之后才进 GIMP 切件；旧版 v3 图暂留仓库当占位 |
 | `skin_shop_e1` | 陈守 / ShieldBearer | epic | 紫色调 | 🟡 已出图 [`art/skins/shieldbearer.png`](../../art/skins/shieldbearer.png)（§3 v2 prompt，体型/叉腿盾墙/寸头全中）；**留 1 项待调**：肤色偏深 + 黑卷发，与另两人（浅暖褐肤 + 棕发）不一致，破坏"方家三兄弟"读感，重出时加 `light warm tan skin matching his friends, brown hair not black` |
 | `skin_e1` | Anna·Lena | epic | 橙色调（原紫色调） | ✅ 已出图定稿（2026-07-26），2026-08-09 改色为橙，[`art/skins/lena.png`](../../art/skins/lena.png)；§6 v2 prompt 命中 |
 | `skin_e2` | Anna·Mara | epic | 橙色调（原紫色调） | ✅ 已出图定稿（2026-07-26），2026-08-09 改色为橙，[`art/skins/mara.png`](../../art/skins/mara.png)；§5 v2 prompt 命中 |
@@ -229,6 +229,86 @@ accent.
 ```
 
 **如果 v4 还是没收住**：优先检查是不是只改对了一半——脖子变粗了但头身角度还是拧巴，或者发型对称了但脖子还是细长，四处要同时读出来才算过；单独截图头部区域放大自检，对照 [`art/skins/infantry.png`](../../art/skins/infantry.png)（李川头部是这条线里唯一没被吐槽过的，脖子短粗、头身角度基本正对，可以当"正常"的参照基准）。
+
+> **v4 实测反馈（2026-08-14）**：owner 用 GPT Image 2 出图后，脖子粗细/角度确实改了，但暴露出更深一层问题——头的**几何形状**本身跟家族脸模板不是一回事：出来的是椭圆脸+明显下颌线+尖下巴+一节独立圆柱脖子，读起来是"缩小的写实人类少年头"，不是 `infantry.png`/`shieldbearer.png` 那种"一整个圆、无下颌、头几乎焊在肩上"的画法。这不是脖子粗细的问题，是 prompt 从没把"头是完整的圆"这条硬性状语锁死过，模型会自然滑向它更熟悉的写实人类头比例。期间 owner 也提出了一个方向性问题——要不要把苏远的神话身份（`MYTHOLOGY_DESIGN.md` §3：苏远 → 后羿，"射日之眼，看得准，箭不早不晚"）提前融进这款 rare 皮肤——**拍板：不提前，神话仍作为以后单独的神力皮肤层，这次只在人设层面（安静/观察/精准）重设计**，见 [`MYTHOLOGY_DESIGN.md`](../game/MYTHOLOGY_DESIGN.md) §1。
+
+> 2026-08-14 v5（把"头是一个圆"写死，反复用不同措辞锁住"整圆、无下颌线、无下巴尖、几乎无脖子"，发型也从个体发丝改回跟衣服一样的平涂+交叉线画法）：头部几何这次真的收对了——整圆、无下颌尖、耳朵位置、发型平涂全部对齐了家族脸。但 v3/v4 一直保留的"回望"pose（身体 3/4 转，头转得更多、越过肩膀往后看）在"头几乎无脖子、头身焊死"的画法下天然打架——头转的角度比身体多，中间必须有一截脖子去补这个角度差，脖子再短也会被逼出一个拧巴的弯，这版就是"脖子角度诡异"。v5 的头部描述本身是对的，不需要再改，问题移到了 pose 那句。
+
+> 2026-08-14 v6（放弃"回望"这个动作，改成头身完全同向、不独立转动脖子，靠并脚抱臂的站姿去传达"安静观察"）：头部几何 + 脖子角度这次一起收住了，owner 确认头部不再违和。副作用是**站姿变成了接近正面站立**，不再是 v1~v5 一直想要的 3/4 侧身回望——这是主动的取舍（详见下方 pending），不是意外。
+
+```
+Full-body character illustration of a young boy archer, three-quarter side
+view, his body turned about 45 degrees to the left so one shoulder is closer
+to the viewer, on a plain pure-white background, vertical portrait
+composition about a 2:3 ratio; full body visible head to boots, centered,
+filling most of the frame.
+Rendering: clean confident dark-ink outlines of medium weight, not
+sketchy-wobbly, flat color fills with cross-hatch pencil shading for volume
+and folds, matte paper picture-book look, like a hand-drawn notebook
+illustration. Do not use any gradient, glossy highlight, glow, cel-shading,
+airbrush effect, or realistic rendering anywhere in the image.
+Head shape (most important, read this twice): the head is one single large
+smooth circle, the same simple round balloon shape from every angle — the
+width near the eyes and the width near the chin are basically the same,
+like a circle or a filled-in "O". The bottom of the face curves back inward
+smoothly like the bottom arc of a circle; it does NOT taper, narrow, or come
+to a point at the chin. There is NO jawline contour line, NO cheekbone
+shading, NO chin crease.
+Neck and head-body connection (most important, this is the part that keeps
+going wrong): the head must face the exact same direction as the body, with
+no independent rotation or twisting of the neck at all — do not turn or tilt
+the head to look back over the shoulder, do not have the head face a
+different direction than the torso. Treat the head and body as one rigid
+unit that turns together, like a single snowman shape: the round head sits
+almost flush on top of the shoulders with only the smallest possible gap,
+the same simple flush connection used for the rest of his body's joints. Any
+sense of him "watching" or "observing" should come only from his closed,
+still posture, never from twisting his head or neck to look elsewhere.
+Face: two small solid-black dot eyes, no nose, no mouth, no eyebrows, a
+small simple visible ear placed at the mid-height of the head, level with
+the eyes.
+Hair: short, neat and tidy, smoothed down and combed to one side with a
+clean, even side part, lying flat and staying above the eyebrows. Draw the
+hair as one flat solid-color shape with a clean ink outline and a few
+simple cross-hatch pencil lines for shading, the same simplified flat-fill
+technique used for the clothing — NOT rendered as many fine individual
+hair strands or realistic hair texture. The hair shape should hug the round
+head evenly all the way around with no extra tuft, cowlick, flip, or stray
+clump sticking up or out on either side.
+This is a young BOY, clearly male, NOT a girl.
+Build (most important): the smallest and slightest of three friends — a
+small, short, skinny little boy with thin arms and legs, a narrow chest and
+narrow shoulders, noticeably petite and clearly a full head shorter and much
+skinnier than an average child. He should not look muscular, average-sized,
+tall, or have a curvy or feminine figure — just a small skinny kid.
+Pose: a closed, self-contained, reserved standing pose that takes up as
+little space as possible — feet together nearly touching, both arms held in
+close to his body, shoulders slightly drawn in, head and body both facing
+the same forward-left direction, calm and still. He should not be facing
+the viewer, standing at attention with feet apart, walking, mid-stride, or
+drawing the bow.
+Clothing: a sleeveless royal-blue athletic top with hand-stitched dashed
+seams at the collar and armholes, and neutral gray-blue shorts with a
+stitched hem. A single plain brown leather bracer on his bow-arm forearm —
+the only piece of gear, nothing else added. Tall brown leather lace-up boots
+with a folded cuff and cross-hatch shading. Soft cross-hatched oval ground
+shadow beneath the feet, otherwise empty background.
+Weapon: a slim quiver holding a few fletched arrows on his back; he holds a
+clearly recognizable recurve bow — strung, with a taut visible bowstring
+running the full length from tip to tip and distinct curved wooden limbs,
+the classic recurve-bow silhouette — held upright and quietly at his side in
+one hand, its lower tip a few inches off the ground. The bow must not be
+drawn back, not nocked with an arrow, not aiming, and must stay rigid and
+clearly bow-shaped rather than floppy or bent like a whip or stick, and must
+not touch the ground. Wood-brown bow with a small royal-blue string-wrap
+accent.
+```
+
+**⚠️ v6 prompt 里 "three-quarter side view, body turned about 45 degrees" 这句和 Pose 段的实际描述已经不一致**（Pose 段改成了"头身同向、正面站姿"倾向），GPT Image 2 实测结果是接近正面站姿——说明当前这版落地效果比开头那句字面描述更偏正面。**下次重出前先决定 pending 里的①**，如果选"就要正面站姿"，应该把开头这句一并改成 front-ish stance 以消除自相矛盾；如果选"还要 3/4 侧身"，则要在保留"头身同向不独立转脖子"这条硬约束的前提下，把身体转向和头部朝向都同步转 45 度（不要只转身体），再试一版。
+
+**Pending（下次接手时先做这两件事）**：
+1. **拍板站姿**：v6 的正面站姿 vs 找回 3/4 侧身（见上方 ⚠️）——owner 尚未最终确认，只说"头部不再违和，先这样吧"。
+2. **落盘成品图**：owner 是在 GPT Image 2 工具里出的图，还没有把最终选定的那张存回仓库——`art/skins/archer.png` 目前仍是 v3 的旧图（头部违和的那版）。选定站姿后先把 PNG 存回该路径（同时更新 `art/skins/archer/archer.png` 那份，两处都要覆盖），再进 GIMP 切件 → animator 绑骨 → `UnitView.ts` `SKIN_ASSETS` / `shop.ts` 接线（见文档末尾"出图后流程"）。
 
 ---
 
