@@ -4,7 +4,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { Server } from 'http';
 import type { AddressInfo } from 'net';
-import { signToken, internalHeaders, familyProsperity } from '@nw/shared';
+import { signToken, internalHeaders, familyProsperity, EMBLEM_KEYS, EMBLEM_COLORS } from '@nw/shared';
 import { createSocialMongo, type SocialMongo } from '../src/db';
 import { FamilyService } from '../src/familyService';
 import { FriendService } from '../src/friendService';
@@ -213,6 +213,81 @@ describe.skipIf(!mongo)('socialsvc family HTTP routes e2e', () => {
     expect(fam.members.map((mem) => mem.accountId)).toContain('applicant-a');
   });
 
+  it('POST /social/family/emblem: leader sets emblemKey+emblemColor; a plain member is denied (wire-level)', async () => {
+    // member-b was direct-added to fam:BETA in an earlier test (POST /respond: 403 for plain member).
+    const memberToken = signToken('member-b', { secret: SECRET });
+    const memberAuth = { authorization: `Bearer ${memberToken}` };
+    const leaderBToken = signToken('leader-b', { secret: SECRET });
+    const leaderBAuth = { authorization: `Bearer ${leaderBToken}` };
+
+    const asMember = await fetch(`${base}/social/family/emblem`, {
+      method: 'POST',
+      headers: { ...memberAuth, 'content-type': 'application/json' },
+      body: JSON.stringify({ emblemKey: EMBLEM_KEYS[2], emblemColor: EMBLEM_COLORS[1] }),
+    });
+    expect(asMember.status).toBe(403);
+    expect((await asMember.json()).error.code).toBe('NO_PERMISSION');
+
+    const asLeader = await fetch(`${base}/social/family/emblem`, {
+      method: 'POST',
+      headers: { ...leaderBAuth, 'content-type': 'application/json' },
+      body: JSON.stringify({ emblemKey: EMBLEM_KEYS[2], emblemColor: EMBLEM_COLORS[1] }),
+    });
+    expect(asLeader.status).toBe(200);
+
+    const famRes = await fetch(`${base}/social/family/fam:BETA`, { headers: auth });
+    const fam = (await famRes.json()).data as { emblemKey?: string; emblemColor?: number };
+    expect(fam.emblemKey).toBe(EMBLEM_KEYS[2]);
+    expect(fam.emblemColor).toBe(EMBLEM_COLORS[1]);
+  });
+
+  it('POST /social/family/emblem: missing body fields → 400; a key/colour outside the fixed pools → 400', async () => {
+    const leaderBToken = signToken('leader-b', { secret: SECRET });
+    const leaderBAuth = { authorization: `Bearer ${leaderBToken}` };
+
+    const missing = await fetch(`${base}/social/family/emblem`, {
+      method: 'POST',
+      headers: { ...leaderBAuth, 'content-type': 'application/json' },
+      body: JSON.stringify({ emblemKey: EMBLEM_KEYS[0] }), // no emblemColor
+    });
+    expect(missing.status).toBe(400);
+    expect((await missing.json()).error.code).toBe('BAD_REQUEST');
+
+    const badKey = await fetch(`${base}/social/family/emblem`, {
+      method: 'POST',
+      headers: { ...leaderBAuth, 'content-type': 'application/json' },
+      body: JSON.stringify({ emblemKey: 'not_a_real_key', emblemColor: EMBLEM_COLORS[0] }),
+    });
+    expect(badKey.status).toBe(400);
+    expect((await badKey.json()).error.code).toBe('BAD_REQUEST');
+
+    const badColor = await fetch(`${base}/social/family/emblem`, {
+      method: 'POST',
+      headers: { ...leaderBAuth, 'content-type': 'application/json' },
+      body: JSON.stringify({ emblemKey: EMBLEM_KEYS[0], emblemColor: 0x123456 }),
+    });
+    expect(badColor.status).toBe(400);
+    expect((await badColor.json()).error.code).toBe('BAD_REQUEST');
+  });
+
+  it('POST /social/family/emblem: no token → 401', async () => {
+    const r = await fetch(`${base}/social/family/emblem`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ emblemKey: EMBLEM_KEYS[0], emblemColor: EMBLEM_COLORS[0] }),
+    });
+    expect(r.status).toBe(401);
+  });
+
+  it('GET /social/profile/:publicId/extra: family with an emblem → familyEmblemKey/Color included (BetaRaiders got one above)', async () => {
+    const leaderBToken = signToken('leader-b', { secret: SECRET });
+    const r = await fetch(`${base}/social/profile/P-B/extra`, { headers: { authorization: `Bearer ${leaderBToken}` } });
+    expect(r.status).toBe(200);
+    expect((await r.json()).data).toEqual({
+      familyName: 'BetaRaiders', familyEmblemKey: EMBLEM_KEYS[2], familyEmblemColor: EMBLEM_COLORS[1],
+    });
+  });
+
   it('POST /internal/family/:id/sect: mirrors sectId + sectName; clearing wipes both (wire-level)', async () => {
     const internalAuth = internalHeaders('worldsvc', INTERNAL_KEY);
 
@@ -305,6 +380,18 @@ describe.skipIf(!mongo)('socialsvc family HTTP routes e2e', () => {
       expect(r.status).toBe(200);
       const { families } = (await r.json()).data as { families: Array<{ familyId: string }> };
       expect(families.map((f) => f.familyId)).toEqual(['fam:GAMA']);
+    });
+
+    it('POST /internal/family/batch: emblemKey/emblemColor pass through for a family that has one set (worldsvc reads this for map-token badges)', async () => {
+      const internalAuth = internalHeaders('worldsvc', INTERNAL_KEY);
+      const r = await fetch(`${base}/internal/family/batch`, {
+        method: 'POST',
+        headers: { ...internalAuth, 'content-type': 'application/json' },
+        body: JSON.stringify({ familyIds: ['fam:BETA'] }), // emblem set by the /social/family/emblem test above
+      });
+      expect(r.status).toBe(200);
+      const { families } = (await r.json()).data as { families: Array<{ familyId: string; emblemKey?: string; emblemColor?: number }> };
+      expect(families).toEqual([expect.objectContaining({ familyId: 'fam:BETA', emblemKey: EMBLEM_KEYS[2], emblemColor: EMBLEM_COLORS[1] })]);
     });
 
     it('GET /internal/family/by-sect/:sectId: all families currently in that sect (wire-level)', async () => {
