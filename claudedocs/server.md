@@ -562,6 +562,11 @@ commercial 此前完全没有 Redis 依赖，本次新增：`config.ts` 补 `NW_
 - **`.gitignore`**：仓库根加了不带 `/` 前缀的 `coverage/`，一次性盖住 `client/coverage/`、每个 `server/*/coverage/` 和 `server/engine/coverage/`。
 - **本地用法**：任意 workspace 目录下 `npm run test:coverage`；产物在该目录的 `coverage/`（`index.html` 可直接浏览器打开看逐行高亮，同 C#/coverlet 的体验）。
 
+**2026-08-14 CI 并行拆分**（单 job 累计 10+ 分钟后的响应）：原单一 `build-test` job 里 server→client→tools 三段 `npm run test:coverage`/typecheck/build 全部挤在同一个 runner 上顺序跑；用实测数据定位瓶颈——`server unit + e2e tests` 这一步单独就要 ~11-12 分钟，其中 `metaserver`（~6.3 分钟）+ `worldsvc`（~3.3 分钟）两个包占了 ~85%（两者 `vitest.config.ts` 都设了 `fileParallelism: false`，注释写明是为了防止同进程内多个 e2e 文件抢同一个 mongodb-memory-server 实例产生数据竞争——**不是**意外遗留的慢速开关，不要不经排查直接打开）。拆分方案：
+  - `build-test` 拆成 5 个独立 job：`server-checks`（codegen/filelength/typecheck，快，~40s，不含测试）、`server-test`（**matrix 三分片**：`metaserver` / `worldsvc` / 剩余 11 个包合成一组 `rest`，各自独立 runner + 各自的 mongodb-memory-server 实例，互不共享——分片跑在不同 runner 上，`fileParallelism:false` 那条"同进程内不许并发"的约束天然不适用，不用碰 vitest 配置）、`client-test`（typecheck/unit/UI smoke/build）、`tools-test`（5 个工具的 typecheck/test + 4 个的 build）、`coverage-report`（`needs: [server-test, client-test]`，聚合前四者上传的 coverage artifact 后跑同一份 `scripts/coverageSummary.mjs`）。GitHub Actions 里没有 `needs` 依赖的 job 默认并发跑在各自 runner 上，四个测试类 job 从"顺序执行"变成"并发执行"，服务端总耗时从 ~11-12 分钟降到受最慢分片（`metaserver`，~6.3 分钟）限制。
+  - **coverage artifact 拼接细节**（容易踩坑的地方）：`actions/upload-artifact` 会把 artifact 内部路径"归一化"到所给 `path` 的最小公共祖先——单个目录当 `path` 时，产物会被拍平成该目录的**内容**（丢失目录本身这层前缀）；多个显式路径共享同一祖先时，则保留各自相对该祖先的子路径。`metaserver`/`worldsvc`/`client` 三个分片各自只上传一个包的 `coverage/` 目录（触发"拍平"），下载时对应地各自 `path:` 指到目标包自己的 `coverage/` 目录；`rest` 分片一次上传 11 个包的 `coverage/`（共同祖先是 `server/`），下载时整体 `path: server` 才能还原出 `server/<pkg>/coverage/...` 结构给 `coverageSummary.mjs` 读。四个下载步骤各自 `continue-on-error: true`——某个分片这次没跑起来（比如提前失败）就让对应包在报告里显示 `—`，不拖累整个聚合 job。
+  - **有意不做的事**：没有进一步把 `metaserver`/`worldsvc` 各自内部再用 vitest 原生 `--shard` 切成更小分片——那样能把两者都压到 ~3 分钟左右，但每个分片各自产出的 `coverage-summary.json` 只反映它跑到的那部分测试文件，`coverageSummary.mjs` 现有的 `readLcov`/`readJsonSummary` 都是整包读一份文件、不做跨分片按文件去重合并，会导致覆盖率数字失真（尤其 lcov 按 SF: 块求和的写法，同一源文件被两个分片各自命中一部分会重复计入分母）——如果以后真需要再压这两个分片的时间，要先给 `coverageSummary.mjs` 补上按文件路径去重合并的逻辑，而不是简单再加一层 matrix。
+
 **首次实测基线（2026-08-13，行覆盖 %，本地跑出，用于对照未来回归）**：
 
 | 包 | 行覆盖 | 分支 | 函数 |
