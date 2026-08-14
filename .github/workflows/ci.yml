@@ -210,8 +210,22 @@ jobs:
         with:
           node-version: 22
           cache: npm
-          cache-dependency-path: client/package-lock.json
+          cache-dependency-path: |
+            client/package-lock.json
+            server/package-lock.json
 
+      # 2026-08-14 fix: client/vitest.config.ts aliases @nw/engine and @nw/shared straight to their
+      # server/ TS SOURCE (../server/engine/src, ../server/shared/src/slg/index.ts) rather than the
+      # built npm packages — so client's own test run needs server/'s node_modules on disk too (e.g.
+      # @nw/shared's slg barrel pulls in jwt.ts -> the `jsonwebtoken` package). The old single job got
+      # this for free because "server install" ran earlier in the SAME job/runner; client-test is now
+      # a separate runner that never touched server/ at all. First cut of this split skipped this and
+      # "client UI smoke tests" failed with "Failed to load url jsonwebtoken ... Does the file exist?"
+      # (confirmed via an actual workflow_dispatch run) — plain "client unit tests" happened to pass
+      # since none of those specific tests exercise the jwt-touching corner of @nw/shared's barrel.
+      - name: server install (client's @nw/engine + @nw/shared aliases resolve to server/ TS source)
+        working-directory: server
+        run: npm ci
       - name: client install
         working-directory: client
         run: npm ci
