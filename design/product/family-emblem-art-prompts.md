@@ -23,36 +23,25 @@
 3. **不在图内画徽章底座/边框**：徽章底座（圆形/盾形程序绘制）由 UI 侧统一加，不同图案共用同一个底座保证一致性，也不需要 24 张各画一次边框（同项目里装备稀有度边框"程序叠加"的既定做法）。
 4. **尺寸**：跟随 `pack_faction_atlas.js` 现有约定——256px 图集格子，图腾主体占约 224px（留 16px 透明边距）。图腾本身**不需要方向感**（不像士兵朝向），构图居中对称即可。
 
-## Prompt 模板
+## Prompt 模板（GPT Image 2 版）
 
-复用 `art-direction.md` §6.2 共用前缀（贴在每条主体前）：
+> 出图工具为 **GPT Image 2**（非 Midjourney），不支持 `--ar`/`--style raw`/`--no` 这类参数标记——
+> 下面把 `art-direction.md` §6.2 共用前缀 + 徽章主体 + 负向提示，合并成**一段可直接复制的完整自然语言
+> prompt**（否定项写成句子而非 flag）。24 条完整 prompt 见下表后的代码块（每条独立、开箱可用）。
 
-```
-Hand-drawn doodle in a worn school notebook, single dark-ink pen line art,
-slightly wobbly imperfect strokes like a teenager sketching in the margins
-during class, quick careless 5-second sketch, very loose, no shading or only
-light pencil hatching, no outline cleanup. Isolated single object, centered,
-on a plain pure-white background, no grid lines, no other elements. Flat 2D,
-no 3D, no gradients, no glossy highlights, no thick cartoon outline. Style of
-West of Loathing / doodle art.
-```
-
-徽章专用主体模板（描述图腾本身，替换 `[图腾描述]`）：
+统一句式（`{SYMBOL}` 是唯一变量）：
 
 ```
-A single bold ink-line doodle of [图腾描述], drawn as a small heraldic emblem/badge icon.
-Front-facing or profile silhouette, symmetrical or clearly centered composition, simple
-and graphic — must read clearly as a small icon at ~64×64px display size, minimal interior
-line detail, no fine texture.
---ar 1:1 --style raw --no gradient, glow, 3D, shading, color, frame, border, multiple objects, text, background pattern
-```
-
-共用负向提示（同 §6.2）：
-
-```
-color, painterly, shading, gradient, 3d render, photorealistic, thick bold
-outline, clean vector, multiple objects, text watermark, gray background,
-notebook grid lines, drop shadow
+Hand-drawn doodle in a worn school notebook, single dark-ink pen line art, slightly wobbly
+imperfect strokes like a teenager quickly sketching in the margins during class, a very loose
+sketch, no shading or only light pencil hatching, no outline cleanup. Subject: {SYMBOL}, drawn
+as a small heraldic emblem/badge icon — front-facing or profile silhouette, symmetrical or
+clearly centered composition, simple and graphic so it still reads clearly as a small icon at
+64x64px display size, minimal interior line detail, no fine texture. Isolated single object,
+centered, on a plain pure-white background, square 1:1 image, no grid lines, no other objects
+in frame, no border or frame drawn around it, no text, no watermark. Flat 2D illustration
+only — no 3D, no gradients, no glossy highlights, no thick cartoon outline, no color, no
+painterly shading, no photorealism, no clean vector look, no drop shadow.
 ```
 
 每张建议生成 3-4 个变体择优（同项目惯例）。
@@ -111,9 +100,143 @@ notebook grid lines, drop shadow
 
 ---
 
+## 24 条完整 Prompt（GPT Image 2，直接复制）
+
+已把统一句式代入每个图腾描述，逐条可直接复制粘贴，不用再手动拼接。
+
+### A 组 — 动物图腾
+
+`emblem_fox`
+```
+Hand-drawn doodle in a worn school notebook, single dark-ink pen line art, slightly wobbly imperfect strokes like a teenager quickly sketching in the margins during class, a very loose sketch, no shading or only light pencil hatching, no outline cleanup. Subject: a fox head in profile, pointed ears, alert expression, drawn as a small heraldic emblem/badge icon — front-facing or profile silhouette, symmetrical or clearly centered composition, simple and graphic so it still reads clearly as a small icon at 64x64px display size, minimal interior line detail, no fine texture. Isolated single object, centered, on a plain pure-white background, square 1:1 image, no grid lines, no other objects in frame, no border or frame drawn around it, no text, no watermark. Flat 2D illustration only — no 3D, no gradients, no glossy highlights, no thick cartoon outline, no color, no painterly shading, no photorealism, no clean vector look, no drop shadow.
+```
+
+`emblem_bear`
+```
+Hand-drawn doodle in a worn school notebook, single dark-ink pen line art, slightly wobbly imperfect strokes like a teenager quickly sketching in the margins during class, a very loose sketch, no shading or only light pencil hatching, no outline cleanup. Subject: a bear head facing forward, round ears, a simple snout, drawn as a small heraldic emblem/badge icon — front-facing or profile silhouette, symmetrical or clearly centered composition, simple and graphic so it still reads clearly as a small icon at 64x64px display size, minimal interior line detail, no fine texture. Isolated single object, centered, on a plain pure-white background, square 1:1 image, no grid lines, no other objects in frame, no border or frame drawn around it, no text, no watermark. Flat 2D illustration only — no 3D, no gradients, no glossy highlights, no thick cartoon outline, no color, no painterly shading, no photorealism, no clean vector look, no drop shadow.
+```
+
+`emblem_owl`
+```
+Hand-drawn doodle in a worn school notebook, single dark-ink pen line art, slightly wobbly imperfect strokes like a teenager quickly sketching in the margins during class, a very loose sketch, no shading or only light pencil hatching, no outline cleanup. Subject: an owl facing forward, large round eyes, a small hooked beak, wings folded, drawn as a small heraldic emblem/badge icon — front-facing or profile silhouette, symmetrical or clearly centered composition, simple and graphic so it still reads clearly as a small icon at 64x64px display size, minimal interior line detail, no fine texture. Isolated single object, centered, on a plain pure-white background, square 1:1 image, no grid lines, no other objects in frame, no border or frame drawn around it, no text, no watermark. Flat 2D illustration only — no 3D, no gradients, no glossy highlights, no thick cartoon outline, no color, no painterly shading, no photorealism, no clean vector look, no drop shadow.
+```
+
+`emblem_shark`
+```
+Hand-drawn doodle in a worn school notebook, single dark-ink pen line art, slightly wobbly imperfect strokes like a teenager quickly sketching in the margins during class, a very loose sketch, no shading or only light pencil hatching, no outline cleanup. Subject: a shark head in profile with visible triangular teeth and a hint of a dorsal fin, drawn as a small heraldic emblem/badge icon — front-facing or profile silhouette, symmetrical or clearly centered composition, simple and graphic so it still reads clearly as a small icon at 64x64px display size, minimal interior line detail, no fine texture. Isolated single object, centered, on a plain pure-white background, square 1:1 image, no grid lines, no other objects in frame, no border or frame drawn around it, no text, no watermark. Flat 2D illustration only — no 3D, no gradients, no glossy highlights, no thick cartoon outline, no color, no painterly shading, no photorealism, no clean vector look, no drop shadow.
+```
+
+`emblem_boar`
+```
+Hand-drawn doodle in a worn school notebook, single dark-ink pen line art, slightly wobbly imperfect strokes like a teenager quickly sketching in the margins during class, a very loose sketch, no shading or only light pencil hatching, no outline cleanup. Subject: a wild boar head in profile with two curved tusks, drawn as a small heraldic emblem/badge icon — front-facing or profile silhouette, symmetrical or clearly centered composition, simple and graphic so it still reads clearly as a small icon at 64x64px display size, minimal interior line detail, no fine texture. Isolated single object, centered, on a plain pure-white background, square 1:1 image, no grid lines, no other objects in frame, no border or frame drawn around it, no text, no watermark. Flat 2D illustration only — no 3D, no gradients, no glossy highlights, no thick cartoon outline, no color, no painterly shading, no photorealism, no clean vector look, no drop shadow.
+```
+
+`emblem_stag`
+```
+Hand-drawn doodle in a worn school notebook, single dark-ink pen line art, slightly wobbly imperfect strokes like a teenager quickly sketching in the margins during class, a very loose sketch, no shading or only light pencil hatching, no outline cleanup. Subject: a stag head facing forward with a full branching set of antlers, drawn as a small heraldic emblem/badge icon — front-facing or profile silhouette, symmetrical or clearly centered composition, simple and graphic so it still reads clearly as a small icon at 64x64px display size, minimal interior line detail, no fine texture. Isolated single object, centered, on a plain pure-white background, square 1:1 image, no grid lines, no other objects in frame, no border or frame drawn around it, no text, no watermark. Flat 2D illustration only — no 3D, no gradients, no glossy highlights, no thick cartoon outline, no color, no painterly shading, no photorealism, no clean vector look, no drop shadow.
+```
+
+`emblem_snake`
+```
+Hand-drawn doodle in a worn school notebook, single dark-ink pen line art, slightly wobbly imperfect strokes like a teenager quickly sketching in the margins during class, a very loose sketch, no shading or only light pencil hatching, no outline cleanup. Subject: a coiled snake forming a rough circle, head raised, forked tongue out, drawn as a small heraldic emblem/badge icon — front-facing or profile silhouette, symmetrical or clearly centered composition, simple and graphic so it still reads clearly as a small icon at 64x64px display size, minimal interior line detail, no fine texture. Isolated single object, centered, on a plain pure-white background, square 1:1 image, no grid lines, no other objects in frame, no border or frame drawn around it, no text, no watermark. Flat 2D illustration only — no 3D, no gradients, no glossy highlights, no thick cartoon outline, no color, no painterly shading, no photorealism, no clean vector look, no drop shadow.
+```
+
+`emblem_scorpion`
+```
+Hand-drawn doodle in a worn school notebook, single dark-ink pen line art, slightly wobbly imperfect strokes like a teenager quickly sketching in the margins during class, a very loose sketch, no shading or only light pencil hatching, no outline cleanup. Subject: a scorpion viewed from above, raised tail with a stinger, claws forward, drawn as a small heraldic emblem/badge icon — front-facing or profile silhouette, symmetrical or clearly centered composition, simple and graphic so it still reads clearly as a small icon at 64x64px display size, minimal interior line detail, no fine texture. Isolated single object, centered, on a plain pure-white background, square 1:1 image, no grid lines, no other objects in frame, no border or frame drawn around it, no text, no watermark. Flat 2D illustration only — no 3D, no gradients, no glossy highlights, no thick cartoon outline, no color, no painterly shading, no photorealism, no clean vector look, no drop shadow.
+```
+
+### B 组 — 自然/元素
+
+`emblem_flame`
+```
+Hand-drawn doodle in a worn school notebook, single dark-ink pen line art, slightly wobbly imperfect strokes like a teenager quickly sketching in the margins during class, a very loose sketch, no shading or only light pencil hatching, no outline cleanup. Subject: a single stylized flame, licking upward, drawn as a small heraldic emblem/badge icon — front-facing or profile silhouette, symmetrical or clearly centered composition, simple and graphic so it still reads clearly as a small icon at 64x64px display size, minimal interior line detail, no fine texture. Isolated single object, centered, on a plain pure-white background, square 1:1 image, no grid lines, no other objects in frame, no border or frame drawn around it, no text, no watermark. Flat 2D illustration only — no 3D, no gradients, no glossy highlights, no thick cartoon outline, no color, no painterly shading, no photorealism, no clean vector look, no drop shadow.
+```
+
+`emblem_lightning`
+```
+Hand-drawn doodle in a worn school notebook, single dark-ink pen line art, slightly wobbly imperfect strokes like a teenager quickly sketching in the margins during class, a very loose sketch, no shading or only light pencil hatching, no outline cleanup. Subject: a bold jagged lightning bolt, diagonal, drawn as a small heraldic emblem/badge icon — front-facing or profile silhouette, symmetrical or clearly centered composition, simple and graphic so it still reads clearly as a small icon at 64x64px display size, minimal interior line detail, no fine texture. Isolated single object, centered, on a plain pure-white background, square 1:1 image, no grid lines, no other objects in frame, no border or frame drawn around it, no text, no watermark. Flat 2D illustration only — no 3D, no gradients, no glossy highlights, no thick cartoon outline, no color, no painterly shading, no photorealism, no clean vector look, no drop shadow.
+```
+
+`emblem_skull`
+```
+Hand-drawn doodle in a worn school notebook, single dark-ink pen line art, slightly wobbly imperfect strokes like a teenager quickly sketching in the margins during class, a very loose sketch, no shading or only light pencil hatching, no outline cleanup. Subject: a simple front-facing skull with round eye sockets, drawn as a small heraldic emblem/badge icon — front-facing or profile silhouette, symmetrical or clearly centered composition, simple and graphic so it still reads clearly as a small icon at 64x64px display size, minimal interior line detail, no fine texture. Isolated single object, centered, on a plain pure-white background, square 1:1 image, no grid lines, no other objects in frame, no border or frame drawn around it, no text, no watermark. Flat 2D illustration only — no 3D, no gradients, no glossy highlights, no thick cartoon outline, no color, no painterly shading, no photorealism, no clean vector look, no drop shadow.
+```
+
+`emblem_mountain`
+```
+Hand-drawn doodle in a worn school notebook, single dark-ink pen line art, slightly wobbly imperfect strokes like a teenager quickly sketching in the margins during class, a very loose sketch, no shading or only light pencil hatching, no outline cleanup. Subject: a stylized twin-peak mountain silhouette with a small flag on top, drawn as a small heraldic emblem/badge icon — front-facing or profile silhouette, symmetrical or clearly centered composition, simple and graphic so it still reads clearly as a small icon at 64x64px display size, minimal interior line detail, no fine texture. Isolated single object, centered, on a plain pure-white background, square 1:1 image, no grid lines, no other objects in frame, no border or frame drawn around it, no text, no watermark. Flat 2D illustration only — no 3D, no gradients, no glossy highlights, no thick cartoon outline, no color, no painterly shading, no photorealism, no clean vector look, no drop shadow.
+```
+
+`emblem_wave`
+```
+Hand-drawn doodle in a worn school notebook, single dark-ink pen line art, slightly wobbly imperfect strokes like a teenager quickly sketching in the margins during class, a very loose sketch, no shading or only light pencil hatching, no outline cleanup. Subject: a single stylized ocean wave curling over, drawn as a small heraldic emblem/badge icon — front-facing or profile silhouette, symmetrical or clearly centered composition, simple and graphic so it still reads clearly as a small icon at 64x64px display size, minimal interior line detail, no fine texture. Isolated single object, centered, on a plain pure-white background, square 1:1 image, no grid lines, no other objects in frame, no border or frame drawn around it, no text, no watermark. Flat 2D illustration only — no 3D, no gradients, no glossy highlights, no thick cartoon outline, no color, no painterly shading, no photorealism, no clean vector look, no drop shadow.
+```
+
+`emblem_moonstar`
+```
+Hand-drawn doodle in a worn school notebook, single dark-ink pen line art, slightly wobbly imperfect strokes like a teenager quickly sketching in the margins during class, a very loose sketch, no shading or only light pencil hatching, no outline cleanup. Subject: a crescent moon with a small five-pointed star nested beside it, drawn as a small heraldic emblem/badge icon — front-facing or profile silhouette, symmetrical or clearly centered composition, simple and graphic so it still reads clearly as a small icon at 64x64px display size, minimal interior line detail, no fine texture. Isolated single object, centered, on a plain pure-white background, square 1:1 image, no grid lines, no other objects in frame, no border or frame drawn around it, no text, no watermark. Flat 2D illustration only — no 3D, no gradients, no glossy highlights, no thick cartoon outline, no color, no painterly shading, no photorealism, no clean vector look, no drop shadow.
+```
+
+### C 组 — 文具/校园符号
+
+`emblem_crossedpens`
+```
+Hand-drawn doodle in a worn school notebook, single dark-ink pen line art, slightly wobbly imperfect strokes like a teenager quickly sketching in the margins during class, a very loose sketch, no shading or only light pencil hatching, no outline cleanup. Subject: two writing pens crossed in an X shape, nibs pointing outward, drawn as a small heraldic emblem/badge icon — front-facing or profile silhouette, symmetrical or clearly centered composition, simple and graphic so it still reads clearly as a small icon at 64x64px display size, minimal interior line detail, no fine texture. Isolated single object, centered, on a plain pure-white background, square 1:1 image, no grid lines, no other objects in frame, no border or frame drawn around it, no text, no watermark. Flat 2D illustration only — no 3D, no gradients, no glossy highlights, no thick cartoon outline, no color, no painterly shading, no photorealism, no clean vector look, no drop shadow.
+```
+
+`emblem_penquill`
+```
+Hand-drawn doodle in a worn school notebook, single dark-ink pen line art, slightly wobbly imperfect strokes like a teenager quickly sketching in the margins during class, a very loose sketch, no shading or only light pencil hatching, no outline cleanup. Subject: a single feather quill pen standing upright, an ink drop at the tip, drawn as a small heraldic emblem/badge icon — front-facing or profile silhouette, symmetrical or clearly centered composition, simple and graphic so it still reads clearly as a small icon at 64x64px display size, minimal interior line detail, no fine texture. Isolated single object, centered, on a plain pure-white background, square 1:1 image, no grid lines, no other objects in frame, no border or frame drawn around it, no text, no watermark. Flat 2D illustration only — no 3D, no gradients, no glossy highlights, no thick cartoon outline, no color, no painterly shading, no photorealism, no clean vector look, no drop shadow.
+```
+
+`emblem_inkdrop`
+```
+Hand-drawn doodle in a worn school notebook, single dark-ink pen line art, slightly wobbly imperfect strokes like a teenager quickly sketching in the margins during class, a very loose sketch, no shading or only light pencil hatching, no outline cleanup. Subject: a single bold ink drop/blob shape with a small highlight line, drawn as a small heraldic emblem/badge icon — front-facing or profile silhouette, symmetrical or clearly centered composition, simple and graphic so it still reads clearly as a small icon at 64x64px display size, minimal interior line detail, no fine texture. Isolated single object, centered, on a plain pure-white background, square 1:1 image, no grid lines, no other objects in frame, no border or frame drawn around it, no text, no watermark. Flat 2D illustration only — no 3D, no gradients, no glossy highlights, no thick cartoon outline, no color, no painterly shading, no photorealism, no clean vector look, no drop shadow.
+```
+
+`emblem_openbook`
+```
+Hand-drawn doodle in a worn school notebook, single dark-ink pen line art, slightly wobbly imperfect strokes like a teenager quickly sketching in the margins during class, a very loose sketch, no shading or only light pencil hatching, no outline cleanup. Subject: an open book viewed from the front, a bookmark ribbon hanging down the middle, drawn as a small heraldic emblem/badge icon — front-facing or profile silhouette, symmetrical or clearly centered composition, simple and graphic so it still reads clearly as a small icon at 64x64px display size, minimal interior line detail, no fine texture. Isolated single object, centered, on a plain pure-white background, square 1:1 image, no grid lines, no other objects in frame, no border or frame drawn around it, no text, no watermark. Flat 2D illustration only — no 3D, no gradients, no glossy highlights, no thick cartoon outline, no color, no painterly shading, no photorealism, no clean vector look, no drop shadow.
+```
+
+`emblem_magnifier`
+```
+Hand-drawn doodle in a worn school notebook, single dark-ink pen line art, slightly wobbly imperfect strokes like a teenager quickly sketching in the margins during class, a very loose sketch, no shading or only light pencil hatching, no outline cleanup. Subject: a magnifying glass, a round lens with a handle, drawn as a small heraldic emblem/badge icon — front-facing or profile silhouette, symmetrical or clearly centered composition, simple and graphic so it still reads clearly as a small icon at 64x64px display size, minimal interior line detail, no fine texture. Isolated single object, centered, on a plain pure-white background, square 1:1 image, no grid lines, no other objects in frame, no border or frame drawn around it, no text, no watermark. Flat 2D illustration only — no 3D, no gradients, no glossy highlights, no thick cartoon outline, no color, no painterly shading, no photorealism, no clean vector look, no drop shadow.
+```
+
+### D 组 — 几何/纹章符号
+
+`emblem_shield`
+```
+Hand-drawn doodle in a worn school notebook, single dark-ink pen line art, slightly wobbly imperfect strokes like a teenager quickly sketching in the margins during class, a very loose sketch, no shading or only light pencil hatching, no outline cleanup. Subject: a simple heraldic shield outline split by a single vertical line down the middle, drawn as a small heraldic emblem/badge icon — front-facing or profile silhouette, symmetrical or clearly centered composition, simple and graphic so it still reads clearly as a small icon at 64x64px display size, minimal interior line detail, no fine texture. Isolated single object, centered, on a plain pure-white background, square 1:1 image, no grid lines, no other objects in frame, no border or frame drawn around it, no text, no watermark. Flat 2D illustration only — no 3D, no gradients, no glossy highlights, no thick cartoon outline, no color, no painterly shading, no photorealism, no clean vector look, no drop shadow.
+```
+
+`emblem_starcircle`
+```
+Hand-drawn doodle in a worn school notebook, single dark-ink pen line art, slightly wobbly imperfect strokes like a teenager quickly sketching in the margins during class, a very loose sketch, no shading or only light pencil hatching, no outline cleanup. Subject: a five-pointed star inscribed inside a single circle outline, drawn as a small heraldic emblem/badge icon — front-facing or profile silhouette, symmetrical or clearly centered composition, simple and graphic so it still reads clearly as a small icon at 64x64px display size, minimal interior line detail, no fine texture. Isolated single object, centered, on a plain pure-white background, square 1:1 image, no grid lines, no other objects in frame, no border or frame drawn around it, no text, no watermark. Flat 2D illustration only — no 3D, no gradients, no glossy highlights, no thick cartoon outline, no color, no painterly shading, no photorealism, no clean vector look, no drop shadow.
+```
+
+`emblem_crown`
+```
+Hand-drawn doodle in a worn school notebook, single dark-ink pen line art, slightly wobbly imperfect strokes like a teenager quickly sketching in the margins during class, a very loose sketch, no shading or only light pencil hatching, no outline cleanup. Subject: a simple three-point crown, front view, drawn as a small heraldic emblem/badge icon — front-facing or profile silhouette, symmetrical or clearly centered composition, simple and graphic so it still reads clearly as a small icon at 64x64px display size, minimal interior line detail, no fine texture. Isolated single object, centered, on a plain pure-white background, square 1:1 image, no grid lines, no other objects in frame, no border or frame drawn around it, no text, no watermark. Flat 2D illustration only — no 3D, no gradients, no glossy highlights, no thick cartoon outline, no color, no painterly shading, no photorealism, no clean vector look, no drop shadow.
+```
+
+`emblem_laurel`
+```
+Hand-drawn doodle in a worn school notebook, single dark-ink pen line art, slightly wobbly imperfect strokes like a teenager quickly sketching in the margins during class, a very loose sketch, no shading or only light pencil hatching, no outline cleanup. Subject: a laurel wreath, two curved leafy branches meeting at the bottom and open at the top, drawn as a small heraldic emblem/badge icon — front-facing or profile silhouette, symmetrical or clearly centered composition, simple and graphic so it still reads clearly as a small icon at 64x64px display size, minimal interior line detail, no fine texture. Isolated single object, centered, on a plain pure-white background, square 1:1 image, no grid lines, no other objects in frame, no border or frame drawn around it, no text, no watermark. Flat 2D illustration only — no 3D, no gradients, no glossy highlights, no thick cartoon outline, no color, no painterly shading, no photorealism, no clean vector look, no drop shadow.
+```
+
+`emblem_anchor`
+```
+Hand-drawn doodle in a worn school notebook, single dark-ink pen line art, slightly wobbly imperfect strokes like a teenager quickly sketching in the margins during class, a very loose sketch, no shading or only light pencil hatching, no outline cleanup. Subject: a ship anchor with simple curved flukes, drawn as a small heraldic emblem/badge icon — front-facing or profile silhouette, symmetrical or clearly centered composition, simple and graphic so it still reads clearly as a small icon at 64x64px display size, minimal interior line detail, no fine texture. Isolated single object, centered, on a plain pure-white background, square 1:1 image, no grid lines, no other objects in frame, no border or frame drawn around it, no text, no watermark. Flat 2D illustration only — no 3D, no gradients, no glossy highlights, no thick cartoon outline, no color, no painterly shading, no photorealism, no clean vector look, no drop shadow.
+```
+
+---
+
 ## 产出 → 接入流程
 
-1. AI 出图（Midjourney，24 套 × 3-4 变体择优），白底深墨线，命名 `emblem_<key>.png` 落 `art/ui/emblems/`（新建目录，仿 `art/ui/camps/` 组织方式）。
+1. AI 出图（GPT Image 2，24 套 × 3-4 变体择优），白底深墨线，命名 `emblem_<key>.png` 落 `art/ui/emblems/`（新建目录，仿 `art/ui/camps/` 组织方式）。
 2. 新写打包脚本 `art/ui/emblems/pack_emblem_atlas.js`，逻辑直接照抄 `art/ui/camps/pack_faction_atlas.js` 的 `whiteLineFrame()`（抠白底→取 alpha→重建白线透明→按 224/256 居中）+ shelf-pack 24 帧到一张图集。
 3. 产出 `client/src/assets/emblems/emblems.png` + `emblems.json`（TexturePacker JSON-Hash，帧名即 `emblem_<key>`），供 `getEmblemTexture(key)` 之类的读取函数按帧名直接取用（沿用本项目"帧名即约定 key，出现即生效"的零改代码接线模式）。
 4. **本文档范围到此为止**——以下是后续功能实现阶段需要做、但不在本次美术任务里的事项，先记录在这里避免遗漏：
