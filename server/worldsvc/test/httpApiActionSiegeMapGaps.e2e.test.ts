@@ -131,9 +131,19 @@ describe.skipIf(!mongo)('worldsvc httpApi route-dispatch gaps: actionRoutes + si
     await new Promise<void>((res) => server.on('listening', res));
     base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
 
-    const jr = await fetch(`${base}/world/join`, { method: 'POST', headers: auth, body: JSON.stringify({ worldId: W }) });
-    const data = (await jr.json()).data as { mainBaseTile: string };
-    const parts = data.mainBaseTile.split(':');
+    // Capital placed EXPLICITLY, not via POST /world/join's auto-placement (§3.4). Auto-placement
+    // rolls `Math.random()` (core/spawn.ts pickRandomEmptyTile), so baseX/baseY landed somewhere
+    // different on every run — and every test below picks its target relative to the capital
+    // (`findCoord(…, baseX + 30, baseY + 30)`) and marches to it, so the terrain between the two,
+    // and therefore whether a path exists at all, was a per-run coin flip. That is what made this
+    // file fail on main 2026-08-15 (run 31902034760: `SlgError: PATH_BLOCKED` + three cascading
+    // assertion failures) minutes after the very same commit went green on its PR. A fixed anchor
+    // makes the whole file deterministic: it either passes on every run or fails on every run.
+    // The auto-placement path itself stays covered by httpApi.e2e.test.ts's own POST /world/join
+    // case (and is separately pinnable via WorldServiceDeps.rng).
+    const anchor = findCoord((tl) => tl.type === 'neutral' || tl.type === 'resource', CENTER_X + 200, CENTER_Y + 200);
+    const me = await svc.joinWorld(W, 'acct-1', anchor.x, anchor.y);
+    const parts = me.mainBaseTile!.split(':');
     baseX = Number(parts[parts.length - 2]);
     baseY = Number(parts[parts.length - 1]);
   });

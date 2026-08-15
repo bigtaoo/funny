@@ -1,0 +1,184 @@
+name: flake-hunt
+
+# Nightly nondeterminism detector (2026-08-15).
+#
+# CI runs each suite ONCE per commit, which makes it a bad instrument for finding flaky tests: a
+# test that fails 5% of the time looks green all week and then takes down the pre-CD pass of an
+# already-merged PR (2026-08-15: two main runs in one day, three distinct flaky causes — a
+# fire-and-forget read race, a TOCTOU assertion, and an unseeded random spawn point). This workflow
+# is the opposite instrument: same suites, same runner image, N times in a row, on a schedule where
+# nobody is waiting. Anything that fails here is nondeterministic BY DEFINITION — the tree didn't
+# change between iterations.
+#
+# It also collects `flaky-report.json` (scripts/flakyReporter.mjs), i.e. tests that only passed
+# because of vitest's `retry: 1`. Those never fail CI, so this is the only place they surface.
+#
+# Runs with coverage, like CI does, on purpose: v8 instrumentation stretches every await window
+# (worldsvc 184s -> 226s), so a hunt without it would under-sample exactly the timing-sensitive
+# cases CI actually hits.
+#
+# Fixing what it finds: see claudedocs/server.md "CI 稳定性" — the two accepted patterns are
+# `vi.waitFor` for async tails and an injected hook/seed for anything that would otherwise depend on
+# the scheduler, the clock, or Math.random.
+
+on:
+  schedule:
+    # 02:00 UTC daily (04:00 Europe/Berlin) — after the day's merges, before the next morning.
+    - cron: '0 2 * * *'
+  workflow_dispatch:
+    inputs:
+      runs:
+        description: 'Iterations per suite'
+        required: false
+        default: '3'
+      shard:
+        description: 'Limit to one shard (metaserver | worldsvc | rest | client | all)'
+        required: false
+        default: 'all'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: flake-hunt
+  cancel-in-progress: false
+
+jobs:
+  server:
+    name: flake-hunt server (${{ matrix.shard.name }})
+    # Coarse filter only — the `matrix` context is NOT available in a job-level `if`, so the
+    # per-shard selection happens in the `gate` step below.
+    if: ${{ github.event_name != 'workflow_dispatch' || inputs.shard != 'client' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        shard:
+          - name: metaserver
+            workspaces: metaserver
+          - name: worldsvc
+            workspaces: worldsvc
+          - name: rest
+            workspaces: shared engine gateway matchsvc gameserver commercial admin analyticsvc socialsvc auctionsvc botsvc
+    services:
+      redis:
+        image: redis:7
+        ports: ['6379:6379']
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: server/package-lock.json
+      - name: skip shards not selected by dispatch
+        id: gate
+        run: |
+          want='${{ github.event_name == 'workflow_dispatch' && inputs.shard || 'all' }}'
+          if [ "$want" = 'all' ] || [ "$want" = '${{ matrix.shard.name }}' ]; then echo 'run=true' >> "$GITHUB_OUTPUT";
+          else echo 'run=false' >> "$GITHUB_OUTPUT"; fi
+      - name: server install
+        if: steps.gate.outputs.run == 'true'
+        working-directory: server
+        run: npm ci
+      - name: cache mongod binaries
+        if: steps.gate.outputs.run == 'true'
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/mongodb-binaries
+          key: mongod-${{ runner.os }}-v7.0.14
+      - name: server typecheck (builds dist/ the tests import)
+        if: steps.gate.outputs.run == 'true'
+        working-directory: server
+        run: npm run typecheck
+      # Every iteration runs to completion even after a failure (`|| fail=1`) — one flaky test
+      # shouldn't hide how often it actually fails, and the count is the whole point of this job.
+      - name: run suite ${{ github.event_name == 'workflow_dispatch' && inputs.runs || '3' }}x (${{ matrix.shard.name }})
+        if: steps.gate.outputs.run == 'true'
+        working-directory: server
+        env:
+          NW_REQUIRE_DB: '1'
+          NW_REDIS_URL: redis://127.0.0.1:6379
+          RUNS: ${{ github.event_name == 'workflow_dispatch' && inputs.runs || '3' }}
+        run: |
+          args=()
+          for w in ${{ matrix.shard.workspaces }}; do args+=(-w "$w"); done
+          fail=0
+          failed_iters=''
+          for i in $(seq 1 "$RUNS"); do
+            echo "::group::iteration $i/$RUNS — ${{ matrix.shard.name }}"
+            if npm run test:coverage "${args[@]}" --if-present; then
+              echo "iteration $i: pass"
+            else
+              fail=1
+              failed_iters="$failed_iters $i"
+              echo "::warning::flake-hunt ${{ matrix.shard.name }}: iteration $i FAILED"
+            fi
+            echo '::endgroup::'
+          done
+          if [ "$fail" = 1 ]; then
+            echo "### ❌ flake-hunt \`${{ matrix.shard.name }}\`: failed on iteration(s)$failed_iters of $RUNS" >> "$GITHUB_STEP_SUMMARY"
+            echo 'The tree did not change between iterations, so every failure here is nondeterministic — fix the test, do not re-run.' >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+          echo "### ✅ flake-hunt \`${{ matrix.shard.name }}\`: $RUNS/$RUNS clean" >> "$GITHUB_STEP_SUMMARY"
+      # Tests that only passed thanks to `retry: 1` — invisible in CI by design, collected here.
+      - name: upload flaky-test report (${{ matrix.shard.name }})
+        if: always() && steps.gate.outputs.run == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: flake-hunt-${{ matrix.shard.name }}
+          path: server/*/flaky-report.json
+          if-no-files-found: ignore
+          retention-days: 30
+
+  client:
+    name: flake-hunt client
+    if: ${{ github.event_name != 'workflow_dispatch' || inputs.shard == 'all' || inputs.shard == 'client' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            client/package-lock.json
+            server/package-lock.json
+      # client/vitest.config.ts aliases @nw/engine + @nw/shared to server/ TS source — see ci.yml.
+      - name: server install
+        working-directory: server
+        run: npm ci
+      - name: client install
+        working-directory: client
+        run: npm ci
+      - name: run client suite ${{ github.event_name == 'workflow_dispatch' && inputs.runs || '3' }}x
+        working-directory: client
+        env:
+          RUNS: ${{ github.event_name == 'workflow_dispatch' && inputs.runs || '3' }}
+        run: |
+          fail=0
+          failed_iters=''
+          for i in $(seq 1 "$RUNS"); do
+            echo "::group::iteration $i/$RUNS — client"
+            if npm run test:coverage && npm run test:ui; then
+              echo "iteration $i: pass"
+            else
+              fail=1
+              failed_iters="$failed_iters $i"
+              echo "::warning::flake-hunt client: iteration $i FAILED"
+            fi
+            echo '::endgroup::'
+          done
+          if [ "$fail" = 1 ]; then
+            echo "### ❌ flake-hunt \`client\`: failed on iteration(s)$failed_iters of $RUNS" >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+          echo "### ✅ flake-hunt \`client\`: $RUNS/$RUNS clean" >> "$GITHUB_STEP_SUMMARY"

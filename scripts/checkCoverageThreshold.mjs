@@ -1,10 +1,10 @@
 #!/usr/bin/env node
 // CI gate (2026-08-15): fails the job if any tracked package's LINE coverage is below the
 // threshold. Runs alongside coverageSummary.mjs (same coverage/ artifacts, same package lists —
-// see coverageLib.mjs) in the `coverage-report` job, which only runs on the pre-CD pass (push to
-// main / manual dispatch) per claudedocs/server.md's "PR 上一律跑无 coverage 的 npm test" note —
-// so this script only ever runs when every package's test:coverage step was actually supposed to
-// have produced output. Unlike coverageSummary.mjs (pure report, deliberately never fails), this
+// see coverageLib.mjs) in the `coverage-report` job. Since the same-day CI-stability pass it runs
+// on PRs as well as on the pre-CD push: every event now runs `test:coverage`, so a coverage
+// regression is caught by the PR that causes it instead of by the merge that ships it.
+// Unlike coverageSummary.mjs (pure report, deliberately never fails), this
 // script DOES exit 1, and — because ci.yml's deploy workflows gate on `workflow_run.conclusion ==
 // 'success'` — a failure here blocks every `*-deploy.yml` from firing, i.e. this is the mechanism
 // that turns "90% is our bar" from a read-only report line into an actual release gate.
@@ -28,8 +28,21 @@ const THRESHOLD = Number(process.env.COVERAGE_THRESHOLD ?? 90);
 const ROOT = process.cwd();
 const rows = collectRows(ROOT);
 
+// ci.yml sets TESTS_OK=false when any test job in this run failed. In that case a package with no
+// coverage/ output is a CONSEQUENCE of that failure (the shard died before writing it), not
+// independent evidence of a broken pipeline — reporting it as a second failure buries the real
+// cause under a louder, wronger one (run 31887181835: "no coverage/ output found for
+// server/metaserver", actual cause: one flaky e2e case in the metaserver shard). The run is already
+// red and no *-deploy.yml can fire, so this gate has nothing left to protect: report and exit 0.
+// Unset (local runs) is treated as 'true' — fail closed, same as before.
+const TESTS_OK = (process.env.TESTS_OK ?? 'true') !== 'false';
+
 const results = rows.map((row) => {
-  if (row.missing) return { pkg: row.pkg, ok: false, reason: 'no coverage/ output found' };
+  if (row.missing) {
+    return TESTS_OK
+      ? { pkg: row.pkg, ok: false, reason: 'no coverage/ output found' }
+      : { pkg: row.pkg, ok: true, reason: 'not evaluated — its test job failed' };
+  }
   const pct = row.lines.pct;
   return { pkg: row.pkg, ok: pct >= THRESHOLD, pct };
 });
@@ -43,13 +56,21 @@ lines.push('| Package | Lines | Status |');
 lines.push('|---|---|---|');
 for (const r of results) {
   const pctStr = r.pct === undefined ? '—' : `${r.pct.toFixed(1)}%`;
-  const status = r.ok ? '✅' : `❌ ${r.reason ?? `below ${THRESHOLD}%`}`;
+  const status = r.ok ? (r.reason ? `⏭️ ${r.reason}` : '✅') : `❌ ${r.reason ?? `below ${THRESHOLD}%`}`;
   lines.push(`| ${r.pkg} | ${pctStr} | ${status} |`);
 }
 lines.push('');
+if (!TESTS_OK) {
+  lines.push('_A test job in this run failed, so packages without coverage output are skipped rather than reported as gate failures — the run is already red. Fix the failing tests; this gate re-arms on the next run._');
+  lines.push('');
+}
 
+const skipped = results.filter((r) => r.ok && r.reason).length;
+const measured = results.length - skipped;
 if (failures.length > 0) {
   lines.push(`**FAILED** — ${failures.length} package(s) below the ${THRESHOLD}% line-coverage bar: ${failures.map((f) => f.pkg).join(', ')}.`);
+} else if (skipped > 0) {
+  lines.push(`**NOT ENFORCED** — ${measured} package(s) measured and at or above ${THRESHOLD}%, ${skipped} skipped because their test job failed.`);
 } else {
   lines.push(`**PASSED** — all ${results.length} packages are at or above ${THRESHOLD}% line coverage.`);
 }
@@ -65,4 +86,8 @@ if (failures.length > 0) {
   console.error(`checkCoverageThreshold: ${failures.length} package(s) below ${THRESHOLD}%: ${failures.map((f) => `${f.pkg} (${f.reason ?? f.pct.toFixed(1) + '%'})`).join(', ')}`);
   process.exit(1);
 }
-console.log(`checkCoverageThreshold: OK — all ${results.length} packages >= ${THRESHOLD}%.`);
+console.log(
+  skipped > 0
+    ? `checkCoverageThreshold: not enforced — ${measured} package(s) >= ${THRESHOLD}%, ${skipped} skipped (their test job failed).`
+    : `checkCoverageThreshold: OK — all ${results.length} packages >= ${THRESHOLD}%.`,
+);
