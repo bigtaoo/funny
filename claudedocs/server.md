@@ -580,8 +580,8 @@ commercial 此前完全没有 Redis 依赖，本次新增：`config.ts` 补 `NW_
 | engine | ~~86.5%~~ **92.98%**（2026-08-15 补测，见下） | 92.21% | 91.72% |
 | shared | ~~82.3%~~ **98.96%**（2026-08-15 补测，见下） | 94.8% | 97.67% |
 | worldsvc | ~~82.9%~~ **95.82%**（2026-08-15 补测，见下） | 87.57% | 97.93% |
-| analyticsvc | 87.6% | 84.2% | 95.8% |
-| matchsvc | 88.3% | 91.1% | 97.2% |
+| analyticsvc | ~~87.6%~~ **95.61%**（2026-08-15 补测，见下） | 97.56% | 98.64% |
+| matchsvc | ~~88.3%~~ **93.99%**（2026-08-15 补测，见下） | 97.53% | 99.05% |
 | commercial | ~~81.4%~~ **93.64%**（2026-08-14 补测，见下） | 76.9% | 91.8% |
 | socialsvc | ~~78.4%~~ **94.71%**（2026-08-14 补测，见下） | 84.9% | 84.8% |
 | botsvc | ~~70.0%~~ **92.74%**（2026-08-14 补测，见下） | 83.6% | 83.2% |
@@ -853,3 +853,25 @@ engine 是目前处理过的包里**唯一非 vitest** 的一个（`tsc -b && ts
 engine 整体行覆盖率 **86.49% → 92.98%**（`node --test --experimental-test-coverage`，205 test files 全绿——新增 24 个测试文件、约 165 例，原有约 165 例零改动；`tsc -b`/`tsc --noEmit` 均干净）。分支覆盖 83.01%→92.21%、函数覆盖 81.17%→91.72%。
 
 **留意但未继续追的残余缺口**：`src/campaign/levelSchema.ts` 及其 `levelSchema/{board,escorts,garrison,hazards,helpers,objective,rewards,waves}.ts` 子模块（18%~85% 不等）——这是本轮任务清单（基于上一次跑分时被 `tail -N` 截断的输出）里遗漏的一块，核实后确认是本轮开工前就存在的既有缺口，不是这次改动引入的。这些文件是"JSON 加载的关卡定义"运行时校验器（`design/tools/level-editor/DESIGN.md`），当前覆盖集中在 happy-path，各字段的拒绝/报错分支大多未测——真实缺口，留给下一轮。另外 `Card.js`（94.44%）、`Building.js`（96.33%）、`campaign/levelSchema.js` 门面（60.45%）、`engine/driver/realtimeDriver.ts`（91.67%）、`engine/setup/blueprints.ts`（73.47%）也顺带浮现出来，同一批留待下一轮核实是否需要优先处理。**⚠️ 一次性观察到的 coverage 报告抖动**：某个 agent 反馈同一份测试代码、零源码改动，`AISystem.js` 有时报 100% 行、有时报 96.82%（缺 109-113 行）；本次收尾时又跑了 2 次全量 `test:coverage` 均稳定 100%，判断是 Node `--experimental-test-coverage` 在重负载/`tsc -b` 增量编译交互下的瞬时抖动，同 worldsvc 那次 `SlgError: No viable path found` 一次性 flaky 一样未继续深挖根因，如果后续在 CI 上复现从这里开始排查。
+
+## matchsvc 补测：persist.ts Redis 失败分支 + config.ts + rooms/Matchmaking/matchStarter/queue/duel/gatewayClient 分支缺口，从 88.32% 拉到 93.99%（2026-08-15，worktree `feat/matchsvc-coverage`）
+
+engine 补到 92.98% 后重新核实一遍全部 14 包，**matchsvc（88.32%）** 与 **analyticsvc（87.59%）** 是仅剩的两个低于 90% 的包（其余全部 ≥90%）——本节 + 下一节各自处理一个。matchsvc 是"私有匹配大脑，不连库"（M17，架构表见本文档开头），全套测试走 vitest + 依赖注入的假对象（假 Redis/假 push 回调/假 matchStarter），没有 globalSetup/真实 Mongo，因此两个并行 agent 可以直接共享同一个 worktree、同一个工作目录并发跑 `vitest run`，不需要 engine 那次的"每 agent 一个 worktree"或 worldsvc/analyticsvc 那次的"共享 mongod"任何一种隔离手段——按缺口分两组：
+
+- **persist.ts + config.ts**：`persist.ts`（317 行，Redis 写穿透/rehydrate 原语，此前 84.9%，本包最大缺口）→ **100/100/100**——根因是文件本体每个函数都是`if(!redis) return` 空跑保护 + `try{...}catch(e){warn(...)}` best-effort 包一层，未覆盖的行几乎全是 `catch` 分支；修法是给既有 `test/persist.test.ts` 里的 `fakeRedis()` 假客户端加一个 `fail` 标志位（每个方法可按需抛错），对每个 catch 点补一例"Redis 抛错时函数吞掉异常、只是 warn 日志、不影响调用方"的断言。`config.ts`（0%，`loadMatchsvcEnv()` 纯 env 读取）→ **100/100/100**。1 个新文件（`test/config.test.ts`）+ `test/persist.test.ts` 追加 18 例。
+- **rooms/Matchmaking/matchStarter/queue/duel/gatewayClient**（同一 worktree、同一目录并发跑的第二个 agent，与上一组互不touch）：`rooms.ts`（`RoomRegistry` 类，289→290 行，89.7%）→ 96.56%（分支 92.59%，剩 132-138 行——追查后确认是死代码：两个 slot 都 ready 时 `roomReady` 的自动开局早已在唯一一次 `await` 之前同步销毁了房间，`roomStart` 走到"两人都 ready 且房间还活着"这个分支在公开 API 下不可达，方法保留原样但成功路径已证明打不到）；`Matchmaking.ts`（97.22%，funcs 91.66%，`clear()` 此前从未被任何测试调用）→ **100/100/100**；`matchStarter.ts`（96.49%）→ **100/100/100**；`queue.ts`（分支 96.42%）→ **100/100/100**；`duel.ts`（分支 93.33%）→ 100% 行，96.96% 分支（剩 `cancelDuel` 的"invite 找不到"守卫，追查后确认 `duelInvites`/`pendingDuelByAccount` 两个 Map 永远成对写入/删除，不存在只有后者没有前者的状态，是另一处不可达死代码——注意它的姊妹守卫在 `expireDuel` 里*是*可达的，靠两条 `hydrateAll()` 记录共享同一个 inviteId 这种"真实 Redis 数据不会出现、但作为防御性代码值得测"的场景触发）；`gatewayClient.ts`（分支 86.66%）→ **100/100/100**。6 个新/追加文件，约 32 例。
+
+matchsvc 整体行覆盖率 **88.32% → 93.99%**（`npx vitest run --coverage`，14 test files / 197 tests 全绿——原有 165 例零改动；`npx tsc --noEmit` 干净）。分支覆盖 91.08%→97.53%、函数覆盖 97.16%→99.05%。**未继续追**（均为验证过的死代码，非真实缺口）：`rooms.ts` 132-138 行、`duel.ts` 114 行（见上）；`internalHttp.ts`（99.23%，剩 1 行）、`index.ts`（0%，进程 bootstrap，同前几个包先例不单独起集成测试）本轮未处理（原本就不在任务清单内，本来就 ≥99%/属于 bootstrap 类，非本轮重点）。
+
+## analyticsvc 补测：config/scheduler 从 0% + httpApi 路由分发/service 四文件分支缺口，从 87.59% 拉到 95.61%（2026-08-15，worktree `feat/analyticsvc-coverage`）
+
+matchsvc 那一节的姊妹任务，同一次重新核实里 **analyticsvc（87.59%）** 是当时唯一还没处理的低于 90% 的包。analyticsvc 用 vitest + 单机 `mongodb-memory-server`（非副本集，无事务）当 `globalSetup`，两个并行 agent 若各自独立跑 `vitest run` 会在共享的 URI 握手文件上竞态（同 [[parallel-vitest-agents-shared-mongo-2026-08-14]] 描述的那类问题）——按该技巧，主会话自己在 `server/analyticsvc/_scratch_mongo.mjs`（未提交，收尾前删除）起了一个共享 `MongoMemoryServer`，把 URI 喂给两个 agent，都设 `NW_MONGO_URI=<uri>` 跳过 `globalSetup.ts` 自己的 mongod 握手。按缺口分两组：
+
+- **config.ts + scheduler.ts**（其实这组的两个文件都不需要真 Mongo——`config.ts` 是纯 env 读取，`scheduler.ts` 的 `startEtlScheduler()` 只需要一个带 `runFunnelEtl(dateStr)` 方法的桩对象——但仍统一设了共享 URI，纯粹是为了让这个 agent 自己的 `vitest run` 调用不触发 `globalSetup.ts` 自己的 mongod 握手、跟另一个真正需要 Mongo 的 agent 抢跑）：`config.ts`（0%）→ **100/100/100**；`scheduler.ts`（0% 行，分支反而 100%——意味着 `startEtlScheduler()` 本体从未被任何测试真正调用过）→ **100/100/100**（`vi.useFakeTimers()` 验证立即执行+每小时重跑+重入保护+错误吞掉+清理函数停表，5 个场景）。2 个新文件，8 例。
+- **httpApi.ts + service/{dist,funnel,ingest,traffic}.ts**（需要真实 Mongo）：`httpApi.ts`（219 行，此前 80.23%，`GET /internal/query?type=...` 分发链尾部几个查询类型分支 + 边界处理未测）→ 100% 行（分支 92.47%，剩 7 行——逐条验证均为"真实 HTTP 语境下结构性不可达"：`clientIp` 的 `Array.isArray(xff)` 分支（Node 会把重复的 `X-Forwarded-For` header 自动拼成一个逗号分隔字符串，永远不会以数组形式出现在 `req.headers`）、`remoteAddress`/`resolveGeo` 的空 IP 兜底（真实已建立的 TCP 连接恒有 `remoteAddress`）、`ERROR_HTTP_STATUS[code] ?? 400`（该文件用到的三个错误码在 `@nw/shared/src/api.ts` 里全部有映射）、`req.method`/`req.url` 的空值兜底（Node 恒会填充这两个字段）——均逐条验证过确实不可达，不是偷懒跳过）；`service/dist.ts`（分支 80.95%）→ **100/100/100**；`service/funnel.ts`（分支 86.56%）→ **100/100/100**；`service/ingest.ts`（分支 80.39%）→ **100/100/100**；`service/traffic.ts`（funcs 85.71%）→ **100/100/100**。扩展了既有的 `test/analytics.e2e.test.ts`（25→43 例）+ `test/service-domains.e2e.test.ts`（24→32 例），未新建文件。
+
+analyticsvc 整体行覆盖率 **87.59% → 95.61%**（`npx vitest run --coverage`，6 test files / 98 tests 全绿——原有 49 例零改动；`npx tsc --noEmit` 干净）。分支覆盖 84.16%→97.56%、函数覆盖 95.83%→98.64%。**未继续追**：`db.ts`（90%，本轮未列入任务清单，非新增缺口）、`index.ts`（0%，bootstrap，同前几个包先例不追）。
+
+---
+
+**里程碑（2026-08-15）**：至此 **14 个包（client + 13 个 server workspace）全部 ≥90% 行覆盖率**——本节工具接入以来跑的"修最低覆盖率"轮次到此告一段落，此后除非有改动引入回归，不必再按"哪个包最低"排队处理；各包仍标注的"未继续追"残余缺口（`levelSchema/*`、`mapTemplateService.ts`、`httpApi/*Routes.ts` 等）留作按需处理，不再是"最低优先级"驱动。
