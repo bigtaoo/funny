@@ -83,6 +83,10 @@ vi.mock('pixi.js-legacy', () => {
     LINE_CAP: { ROUND: 'round', SQUARE: 'square', BUTT: 'butt' },
     LINE_JOIN: { ROUND: 'round', MITER: 'miter', BEVEL: 'bevel' },
     SCALE_MODES: { NEAREST: 0, LINEAR: 1 },
+    // icons.ts (imported transitively via core.ts's HubTabs icons) now pulls in
+    // cardArt.ts -> preloadTextures.ts for the raster tab-icon art (batch 2/3), which
+    // reads this at module scope for ART_TEX_OPTIONS.
+    MIPMAP_MODES: { OFF: 0, POW2: 1, ON: 2, ON_MANUAL: 3 },
     WRAP_MODES: { CLAMP: 0 },
   };
 });
