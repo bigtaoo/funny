@@ -1,17 +1,46 @@
 name: paths-changed-since
 description: >
-  Check whether a commit (diffed against its first parent) touched any path matching
-  `include` and not matching `exclude`. Replaces push-event `paths:` filtering for
-  workflows triggered by `workflow_run`, which has no native paths filter — so the
-  per-service deploy workflows can still skip themselves when the commit CI just
-  validated didn't touch their slice of the repo.
+  Decide whether a per-service deploy workflow should run: does the tree at `sha` differ from the
+  tree that is CURRENTLY DEPLOYED, within the paths matching `include` (minus `exclude`)?
+  Replaces push-event `paths:` filtering for workflows triggered by `workflow_run`, which has no
+  native paths filter — so the per-service deploy workflows can still skip themselves when nothing
+  in their slice of the repo has moved since the last time they actually shipped.
 #
-# Caller must `actions/checkout` with `ref: <sha>` and `fetch-depth: 2` (or more) before
-# using this action, so both the commit and its first parent exist locally for the diff.
+# WHY "since the last deploy" AND NOT "in this commit" (2026-08-15 — a real prod incident):
+#
+# This action used to diff `sha^..sha`, i.e. "did THIS ONE commit touch client/**". That silently
+# drops a deploy whenever a commit that DID touch the paths never reaches the deploy job — CI red,
+# run cancelled by `cancel-in-progress`, deploy job failed, enable-switch off at the time. The next
+# merge then re-evaluates only ITS OWN commit, sees nothing relevant, and skips too. The missed
+# deploy is never retried and prod silently keeps serving the old build.
+#
+# That is exactly what happened to the avatar redesign: it merged in PR #101 (f99177a3) whose CI
+# failed, so client-deploy was skipped by the `workflow_run.conclusion == 'success'` gate; the next
+# merge (#102, ac5cae8e) was a metaserver-only test fix, so the path filter skipped it too — and the
+# workflow still reported "success" (only its `deploy` job was skipped), so nothing looked wrong.
+# a.gamestao.com stayed on 220cf459 for over a day with the new code sitting on main.
+#
+# The baseline is therefore the head_sha of the most recent run of THIS workflow whose deploy job
+# actually concluded `success` — not the parent commit. Properties that follow:
+#   · self-healing — a skipped/failed/cancelled deploy is picked up by the next run, however it was
+#     skipped, because the baseline only advances when something really shipped;
+#   · idempotent — redeploying the same sha is a no-op (`changed=false` when baseline == sha);
+#   · fail-open — no baseline found (first run ever, >`scan-limit` runs since, 90-day run retention
+#     expired) or the baseline commit no longer fetchable (history rewritten) ⇒ `changed=true`.
+#     Deploying something already deployed costs a couple of minutes; NOT deploying is the incident.
+#
+# It is a TREE diff (`git diff <baseline> <sha>`), not a history walk: "does prod's tree differ from
+# this tree in these paths". That needs only the two commit objects, so both sides stay shallow
+# (`fetch-depth: 1` + a `--depth=1` fetch of the baseline) and it stays correct across force-pushes,
+# reverts and non-linear history alike.
+#
+# Caller must `actions/checkout` with `ref: <sha>` before using this action (any fetch-depth ≥ 1;
+# the baseline commit is fetched by this action itself). Needs `actions: read` on the job token to
+# read its own workflow's run/job history.
 
 inputs:
   sha:
-    description: Commit SHA to diff against its first parent (usually github.event.workflow_run.head_sha).
+    description: Commit SHA to evaluate (usually github.event.workflow_run.head_sha).
     required: true
   include:
     description: Newline-separated extended-regex patterns (grep -E). Matches if any changed path matches ANY pattern.
@@ -20,11 +49,30 @@ inputs:
     description: Newline-separated extended-regex patterns (grep -E). A changed path matching any of these is dropped even if it matched include.
     required: false
     default: ''
+  deploy-job:
+    description: Name of the job in this workflow that performs the actual deployment; a run counts as "deployed" only if that job concluded success.
+    required: false
+    default: deploy
+  workflow:
+    description: Workflow file name to read the deploy history of (e.g. client-deploy.yml). Defaults to the calling workflow, derived from GITHUB_WORKFLOW_REF.
+    required: false
+    default: ''
+  scan-limit:
+    description: How many recent runs of the workflow to scan for the last successful deploy before giving up and failing open. Max 100 (one API page).
+    required: false
+    default: '60'
+  token:
+    description: "Token used for the Actions API lookups; needs `actions: read`."
+    required: false
+    default: ${{ github.token }}
 
 outputs:
   changed:
-    description: "'true' if any changed path matched include (after exclude), else 'false'."
+    description: "'true' if any path changed since the last deploy matched include (after exclude), else 'false'."
     value: ${{ steps.check.outputs.changed }}
+  baseline:
+    description: The currently-deployed SHA the diff was taken against; empty when none was found (fail-open case).
+    value: ${{ steps.check.outputs.baseline }}
 
 runs:
   using: composite
@@ -35,9 +83,68 @@ runs:
         NW_SHA: ${{ inputs.sha }}
         NW_INCLUDE: ${{ inputs.include }}
         NW_EXCLUDE: ${{ inputs.exclude }}
+        NW_DEPLOY_JOB: ${{ inputs.deploy-job }}
+        NW_WORKFLOW: ${{ inputs.workflow }}
+        NW_SCAN_LIMIT: ${{ inputs.scan-limit }}
+        GH_TOKEN: ${{ inputs.token }}
       run: |
         set -euo pipefail
-        files="$(git diff --name-only "${NW_SHA}^" "${NW_SHA}")"
+
+        emit() { # $1 = true|false, $2 = baseline sha (may be empty)
+          echo "changed=$1" >> "$GITHUB_OUTPUT"
+          echo "baseline=${2:-}" >> "$GITHUB_OUTPUT"
+        }
+
+        # Workflow file name. GITHUB_WORKFLOW_REF looks like
+        # "owner/repo/.github/workflows/client-deploy.yml@refs/heads/main" — strip the @ref, then the dirs.
+        wf="$NW_WORKFLOW"
+        if [ -z "$wf" ]; then
+          wf="${GITHUB_WORKFLOW_REF%%@*}"
+          wf="${wf##*/}"
+        fi
+
+        # ── 1. Baseline = head_sha of the latest completed run of this workflow that really deployed.
+        # `status=completed` excludes the in-flight run this step belongs to (its deploy job is still
+        # pending), so the current run can never be its own baseline.
+        baseline=''
+        runs="$(gh api "repos/${GITHUB_REPOSITORY}/actions/workflows/${wf}/runs?per_page=${NW_SCAN_LIMIT}&status=completed" \
+                  --jq '.workflow_runs[] | "\(.id) \(.head_sha)"' || true)"
+        scanned=0
+        # Herestring (not a heredoc): a heredoc terminator has to sit at column 0, which is a trap
+        # inside a YAML block scalar. Also keeps the loop in this shell so `baseline` survives it.
+        while read -r run_id run_sha; do
+          [ -n "${run_id:-}" ] || continue
+          scanned=$((scanned + 1))
+          concl="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${run_id}/jobs" \
+                     --jq ".jobs[] | select(.name == \"${NW_DEPLOY_JOB}\") | .conclusion" || true)"
+          if printf '%s\n' "$concl" | grep -qx 'success'; then
+            baseline="$run_sha"
+            echo "paths-changed-since: last successful '${NW_DEPLOY_JOB}' of ${wf} = run ${run_id} @ ${run_sha} (${scanned} run(s) back)"
+            break
+          fi
+        done <<< "$runs"
+
+        if [ -z "$baseline" ]; then
+          echo "paths-changed-since: no run of ${wf} in the last ${scanned} scanned has a successful '${NW_DEPLOY_JOB}' job → deploying (fail-open)"
+          emit true ''
+          exit 0
+        fi
+
+        if [ "$baseline" = "$NW_SHA" ]; then
+          echo "paths-changed-since: ${NW_SHA} is already the deployed commit → nothing to do"
+          emit false "$baseline"
+          exit 0
+        fi
+
+        # ── 2. Tree diff deployed..head. Shallow-fetch the baseline commit; `git diff` only needs the
+        # two commit objects and their trees, not the history between them.
+        if ! git fetch --no-tags --depth=1 origin "$baseline" >/dev/null 2>&1; then
+          echo "paths-changed-since: deployed commit ${baseline} is no longer fetchable (rewritten/GC'd) → deploying (fail-open)"
+          emit true "$baseline"
+          exit 0
+        fi
+
+        files="$(git diff --name-only "$baseline" "$NW_SHA")"
         include_re="$(printf '%s\n' "$NW_INCLUDE" | grep -v '^[[:space:]]*$' | paste -sd'|' -)"
         matched="$(printf '%s\n' "$files" | grep -E "$include_re" || true)"
         if [ -n "$NW_EXCLUDE" ]; then
@@ -46,11 +153,12 @@ runs:
             matched="$(printf '%s\n' "$matched" | grep -Ev "$exclude_re" || true)"
           fi
         fi
+
         if [ -n "$matched" ]; then
-          echo "changed=true" >> "$GITHUB_OUTPUT"
-          echo "paths-changed-since: matched changed files for ${NW_SHA}:"
-          printf '  %s\n' "$matched"
+          emit true "$baseline"
+          echo "paths-changed-since: matched files changed between ${baseline}..${NW_SHA}:"
+          printf '%s\n' "$matched" | sed 's/^/  /'
         else
-          echo "changed=false" >> "$GITHUB_OUTPUT"
-          echo "paths-changed-since: no changed files matched include patterns for ${NW_SHA}"
+          emit false "$baseline"
+          echo "paths-changed-since: nothing matching include changed between ${baseline}..${NW_SHA}"
         fi

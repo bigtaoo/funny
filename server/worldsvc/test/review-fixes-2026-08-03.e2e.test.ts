@@ -120,9 +120,15 @@ describe.skipIf(!mongo)('worldsvc review-fixes regression (2026-08-03)', () => {
   let spent: { accountId: string; amount: number }[];
   let granted: { accountId: string; amount: number }[];
 
+  // Hook fired inside spend(), i.e. exactly between buySlgShopItem's cheap pre-check and its
+  // authoritative post-spend re-read — the only await in that window. Lets a test land a competing
+  // write in that gap deterministically, instead of hoping the driver schedules a real concurrent
+  // call into it (see the shop TOCTOU tests below).
+  let onSpend: (() => Promise<void>) | null;
+
   const fakeCommercial: WorldCommercialClient = {
     available: true,
-    async spend(accountId, amount) { spent.push({ accountId, amount }); },
+    async spend(accountId, amount) { spent.push({ accountId, amount }); if (onSpend) await onSpend(); },
     async grant(accountId, amount) { granted.push({ accountId, amount }); },
   };
 
@@ -132,6 +138,7 @@ describe.skipIf(!mongo)('worldsvc review-fixes regression (2026-08-03)', () => {
     nowMs = 1_000_000;
     spent = [];
     granted = [];
+    onSpend = null;
     redis = new FakeRedis();
     svc = new WorldService({ cols: m.collections, redis, commercial: fakeCommercial, mapW: SLG_MAP_W, mapH: SLG_MAP_H, now });
   });
@@ -395,13 +402,50 @@ describe.skipIf(!mongo)('worldsvc review-fixes regression (2026-08-03)', () => {
       expect(rejected).toHaveLength(2);
       for (const r of rejected) expect((r.reason as { code?: string }).code).toBe('SHOP_LIMIT_REACHED');
 
-      // All 3 attempts paid the pre-check spend; the 2 that lost the race were refunded.
-      expect(spent).toHaveLength(3);
-      expect(granted).toHaveLength(2);
+      // Coin conservation: every attempt that got past the cheap pre-check paid, and every one of
+      // those that then lost the race got refunded — so exactly one net spend, whatever the
+      // interleaving. How many attempts clear the pre-check is deliberately NOT asserted: it is a
+      // cheap early rejection against a possibly-stale read (see shop.ts), so an attempt whose read
+      // lands after the winner's write rejects for free without ever spending. Pinning it to 3 made
+      // this test flaky — it failed on CI 2026-08-15 with spent=2 when the driver's connection pool
+      // happened to serve one findOne after the winner had already committed. The refund path itself
+      // is covered deterministically by the next test.
+      expect(spent.length).toBeGreaterThanOrEqual(1);
+      expect(spent.length).toBeLessThanOrEqual(3);
+      expect(granted).toHaveLength(spent.length - 1);
       expect(granted.every((g) => g.amount === item.cost)).toBe(true);
 
       const pw = await m.collections.playerWorld.findOne({ _id: playerWorldId(W, 'a') });
       expect(pw!.shopPurchaseCounts!['slg_res_s']!.count).toBe(item.dailyLimit); // capped exactly at the limit
+    });
+
+    it('an attempt that passes the pre-check but loses the race is refunded, not oversold', async () => {
+      await svc.joinWorld(W, 'a', 10, 10);
+      const item = SLG_SHOP_ITEMS.find((i) => i.id === 'slg_res_s')!;
+      const today = Math.floor(now() / 86_400_000);
+      await m.collections.playerWorld.updateOne(
+        { _id: playerWorldId(W, 'a') },
+        { $set: { shopPurchaseCounts: { slg_res_s: { day: today, count: item.dailyLimit! - 1 } } } },
+      );
+
+      // The pre-check reads count = limit-1 and lets the purchase through; the competing buy then
+      // fills the last slot while this one is inside spend(). No timing assumptions: onSpend fires
+      // in exactly that window by construction.
+      onSpend = async () => {
+        await m.collections.playerWorld.updateOne(
+          { _id: playerWorldId(W, 'a') },
+          { $set: { shopPurchaseCounts: { slg_res_s: { day: today, count: item.dailyLimit! } } } },
+        );
+      };
+
+      await expect(svc.buySlgShopItem(W, 'a', 'slg_res_s')).rejects.toMatchObject({ code: 'SHOP_LIMIT_REACHED' });
+
+      expect(spent).toHaveLength(1); // it did pay...
+      expect(granted).toHaveLength(1); // ...and got every coin back
+      expect(granted[0]!.amount).toBe(item.cost);
+
+      const pw = await m.collections.playerWorld.findOne({ _id: playerWorldId(W, 'a') });
+      expect(pw!.shopPurchaseCounts!['slg_res_s']!.count).toBe(item.dailyLimit); // no oversell
     });
   });
 

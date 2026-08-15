@@ -1,16 +1,18 @@
 name: map-editor-deploy
 
 # Auto-publish the SLG map editor map-editor (Worker nivara-map-editor, pure static assets) to Cloudflare.
-# Trigger: CI ("build + unit tests" + "full-link E2E") finishing successfully on main and having touched
-# map-editor-related files, or manual Run from the Actions page.
+# Trigger: CI ("build + unit tests" + "full-link E2E") finishing successfully on main, when the map-editor-related
+# paths differ from the commit this workflow last successfully deployed, or manual Run from the Actions page.
 # Flow: npm ci → npm run build (webpack production, outputs tools/map-editor/dist) → wrangler deploy.
 # Deployment details: design/product/deploy-cloudflare.md §6, design/tools/map-editor/DESIGN.md.
 #
 # Gated on CI (not on push directly): CI's e2e job takes up to 25 minutes while this deploy job takes
 # a couple of minutes, so a plain `push: branches: [main]` trigger would race a still-running/still-red
 # CI and could ship a broken commit before CI ever reported failure. `workflow_run` waits for CI's overall
-# conclusion first. See .github/actions/paths-changed-since for why the path filter moved into the job body
-# (workflow_run has no native `paths:`).
+# conclusion first. See .github/actions/paths-changed-since for why the path filter lives in the job body
+# (workflow_run has no native `paths:`), and why it diffs against the last SUCCESSFULLY DEPLOYED commit
+# instead of against this commit's parent — the old parent-diff silently dropped a deploy for good
+# whenever the commit that touched these paths never reached the deploy job (CI red, run cancelled).
 #
 # Reuses the ops/client/animator/vfx/level-editor repo secrets (same CF account; "Edit Cloudflare Workers" token covers all account Workers):
 #   CLOUDFLARE_API_TOKEN   — Requires at least Workers Scripts:Edit (account-level; also works for map-editor, no new token needed)
@@ -26,13 +28,20 @@ on:
     branches: [main]
   workflow_dispatch: {}
 
+# Least-privilege token: the deploy step authenticates with its own secret, and `check` only needs to
+# read this workflow's own run history to find the last commit that actually shipped
+# (see .github/actions/paths-changed-since).
+permissions:
+  contents: read
+  actions: read
+
 # Only one map-editor deployment runs at a time; new run cancels the old one to prevent concurrent deploy conflicts.
 concurrency:
   group: map-editor-deploy
   cancel-in-progress: true
 
 jobs:
-  # Gate: enable switch + CI-passed + "did this commit actually touch tools/map-editor/**". Split out of
+  # Gate: enable switch + CI-passed + "has tools/map-editor/** moved since the last successful deploy". Split out of
   # `deploy` so the real deploy steps only need one `if:` (on the job) instead of one per step.
   check:
     runs-on: ubuntu-latest
@@ -40,14 +49,15 @@ jobs:
     outputs:
       changed: ${{ steps.paths.outputs.changed }}
     steps:
-      # workflow_dispatch has no head_sha / prior commit to diff against — always proceeds, so no checkout needed.
+      # workflow_dispatch has no deployed-vs-head comparison to make — always proceeds, so no checkout needed.
       - uses: actions/checkout@v5
         if: github.event_name != 'workflow_dispatch'
         with:
           ref: ${{ github.event.workflow_run.head_sha }}
-          fetch-depth: 2
+          # Head commit only; paths-changed-since shallow-fetches the deployed baseline itself.
+          fetch-depth: 1
 
-      - name: check whether tools/map-editor/** changed in this commit
+      - name: check whether tools/map-editor/** changed since the last successful deploy
         id: paths
         if: github.event_name != 'workflow_dispatch'
         uses: ./.github/actions/paths-changed-since
@@ -57,6 +67,7 @@ jobs:
             ^tools/map-editor/
             ^wrangler/map-editor\.jsonc$
             ^\.github/workflows/map-editor-deploy\.yml$
+            ^\.github/actions/paths-changed-since/
 
   deploy:
     needs: check
