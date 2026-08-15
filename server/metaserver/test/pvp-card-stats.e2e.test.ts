@@ -1,7 +1,7 @@
 // PvP card win-rate pipeline e2e (BALANCE data pipeline P1): /internal/match/report accrues pvpCardStats from
 // each side's deck → GET /internal/pvp-card-stats returns the aggregated per-card totals.
 // Requires `cd server && docker compose up -d` + `tsc -b` first (imports from dist).
-import { afterAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createMongo, compressReplayDoc, type JwtConfig, type MatchReplayDoc, type MongoHandle } from '@nw/shared';
 import type { FastifyInstance } from 'fastify';
 import { buildApp } from '../dist/app.js';
@@ -79,9 +79,15 @@ describe.skipIf(!mongo)('pvp card stats e2e', () => {
     const decks = { top: ['infantry_2', 'max_1'], bottom: ['archer_1', 'shieldbearer_1'] };
     await app.inject({ method: 'POST', url: '/internal/match/report', headers: { 'x-internal-key': KEY }, payload: reportPayload('PC1', idA, idB, 0, decks) });
 
-    const res = await app.inject({ method: 'GET', url: '/internal/pvp-card-stats', headers: { 'x-internal-key': KEY } });
-    expect(res.statusCode).toBe(200);
-    const cards = body(res).cards as { cardId: string; games: number; wins: number }[];
+    // accruePvpCardStats is fire-and-forget (reportRoute.ts, "runs after the response is already
+    // sent") — poll until the background write lands instead of assuming it beat this GET.
+    let cards: { cardId: string; games: number; wins: number }[] = [];
+    await vi.waitFor(async () => {
+      const res = await app.inject({ method: 'GET', url: '/internal/pvp-card-stats', headers: { 'x-internal-key': KEY } });
+      expect(res.statusCode).toBe(200);
+      cards = body(res).cards as { cardId: string; games: number; wins: number }[];
+      expect(cards.length).toBeGreaterThan(0);
+    });
     const byId = Object.fromEntries(cards.map((c) => [c.cardId, c]));
     expect(byId.infantry_2).toEqual({ cardId: 'infantry_2', games: 1, wins: 1 });
     expect(byId.max_1).toEqual({ cardId: 'max_1', games: 1, wins: 1 });

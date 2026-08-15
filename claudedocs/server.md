@@ -296,6 +296,7 @@ commercial 此前完全没有 Redis 依赖，本次新增：`config.ts` 补 `NW_
 - **readJson 内存泄漏遗漏面**：07-28 只修了 gateway/matchsvc 的 `destroy()` 缺失，这轮补齐 socialsvc/analyticsvc/commercial/botsvc 四个内部端口。
 - **admin `retryTicket` 无原子 claim**：并发点击可重复触发 `mail.send`；补 `retryLockedAt` CAS（mirrors `approveTicket` 既有状态 CAS）。
 - **尝试后回退**：`decompressReplayDoc` 异步化在 `matchReport.ts` 的每场排位赛热路径上暴露了 `pvp-card-stats.e2e.test.ts` 对该 fire-and-forget 链路"近乎同步完成"的隐含时序假设——改成真异步后测试断言跑在链路完成前。已回退保持同步；根治需要连带把测试改成 poll 或引入更强的一致性保证，留独立任务。
+  **2026-08-15 补做**：即便 `reportRoute.ts` 保持同步，`accruePvpCardStats(...)` 调用本身仍是特意不 `await` 的 fire-and-forget（见该处注释），CI runner 上偶发比 GET 慢，main 分支 push 触发的 CI 就因此在这条用例上 flaky failure 过一次（覆盖率产物连带没生成，级联拖垮整个 CI job，下游一串 `*-deploy` workflow 因门槛未过被 skip）。把该用例的正向断言（"两侧卡组各计 1 场"）改成 `vi.waitFor` 轮询 GET 直到非空，与 `server/gameserver/test/lifecycle.test.ts` 里同款"async tail resolves on a later tick"套路一致；否定式断言（disputed/无限定牌组/mode 过滤那三例）不受影响未改。`test:coverage` 全绿，metaserver 行覆盖率 90.88%。
 
 **未处理（更大改动或更低优先级，非本轮范围）**：~~matchsvc 赛前状态纯内存无持久化~~（同日以独立分支解决，见下文"matchsvc 赛前状态持久化"节）；~~worldsvc `getMarches`/`getStationed` 全服拉取 + `computeMarchPath` 缺索引扫描~~（同日以独立分支解决，见"SLG worldsvc 要点"对应条目）；~~`siegeEngine` 势均力敌攻城同步阻塞事件循环~~（同日以独立分支解决，见下方"siegeEngine 移入 worker_threads 池"节）；~~gateway 控制消息无 per-connection 限流~~（同日以独立分支解决，见下条）；admin 四眼审批例外（策略决策）；`dailyCounter.LocalBackend` 长期 Redis 故障下无界增长（概率低）。
 
