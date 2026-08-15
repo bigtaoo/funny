@@ -903,7 +903,8 @@ analyticsvc 整体行覆盖率 **87.59% → 95.61%**（`npx vitest run --coverag
 - **级联假红**：`checkCoverageThreshold.mjs` 读 `TESTS_OK`（ci.yml 用 `needs.*.result` 传入）。测试 job 已挂时缺产物记为"跳过"、退出 0（run 反正已经红、也不会部署）；测试全绿时缺产物仍 fail-closed（那才是真的"覆盖率悄悄不产出了"）。
 - **主动发现**：`.github/workflows/flake-hunt.yml`，每晚 02:00 UTC 把 metaserver/worldsvc/rest/client 各连跑 3 次（带 coverage，复现同样的时序），失败即报——树没变，所以任何一次挂都是不确定性；同时收集各 shard 的 `flaky-report.json`（保留 30 天）。可 `workflow_dispatch` 指定 `runs`/`shard` 手动追查。
 - **兜底**：`.github/workflows/ci-rerun-once.yml`，main 上失败的 CI run 自动 `gh run rerun --failed` 一次（`run_attempt == 1` 卡住上限，只对 `push` 事件，PR 不自动重跑）。覆盖的是 vitest retry 够不到的那层——runner 抽风、docker pull 超时、mongod 下载中断。重跑成功会重新发一次 `workflow_run: completed`，deploy 照常触发，不需要在 8 个 deploy workflow 那边做任何改动。
-- **结构性（开关待打开）**：`ci.yml` 加了 `merge_group:` 触发器。仓库设置里启用 merge queue 后，CI 跑在真正要落 main 的那个 commit 上、绿了才合并，"PR 绿 main 红"从原理上消失（挂的是合并，不是 main）。没启用时该触发器不产生任何影响。
+- **结构性（本仓库暂时用不了，已确认）**：`ci.yml` 加了 `merge_group:` 触发器，但**GitHub merge queue 只对「组织（organization）名下的仓库」开放，个人账号名下的仓库无论公开与否都用不了**——`bigtaoo/funny` 属于个人账号，API 建 `merge_queue` 规则一律 422 `Invalid rule 'merge_queue'`（同一次调用里其它规则改动能成功，排除了权限问题；GraphQL `repository.mergeQueue` 恒为 null）。想要就得把仓库转到一个组织下（公开仓库转组织后免费可用）。触发器留着，转组织当天即生效，不用改 workflow。
+- **替代品（已启用）**：ruleset `Only PR` 的必需检查里补上了 `test coverage report`（此前不在列表里，覆盖率门禁挡不住 PR），且该 ruleset 本来就开着 `strict_required_status_checks_policy: true`——**分支必须先与 main 同步才能合并**，等于强制 PR 的 CI 跑在「已经包含最新 main」的树上。在本仓库这种单人、日均 1~2 个 PR 的节奏下，这条已经覆盖了 merge queue 的绝大部分收益（差别只剩「CI 跑在真正的 merge commit 上」+ 串行排队）。
 
 **写测试时的确定性规则（本轮沉淀，评审按这个看）**：
 

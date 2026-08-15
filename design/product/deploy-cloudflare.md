@@ -203,7 +203,7 @@ cd .. && npx wrangler deploy -c wrangler/client.jsonc
 4. **级联假红**：`checkCoverageThreshold.mjs` 读 `TESTS_OK`，测试 job 已经挂了时只报表不 `exit 1`（run 反正已经红了、也不会部署）；测试全绿时缺产物仍然 fail-closed。
 5. **主动发现**：`flake-hunt.yml` 每晚把各 shard 连跑 3 次（带 coverage，复现同样的时序），任何一次挂就是不确定性——树没变。
 6. **兜底**：`ci-rerun-once.yml` 对 main 上失败的 CI run 自动 `gh run rerun --failed` 一次（`run_attempt == 1` 卡死上限，PR 不自动重跑）。重跑成功会重新发一次 `workflow_run: completed`，deploy 照常触发。
-7. **结构性（待开启）**：`ci.yml` 已挂上 `merge_group:` 触发器，仓库设置里打开 merge queue 后，CI 会跑在真正要落 main 的那个 commit 上、绿了才合并——"PR 绿 main 红"这一类从原理上消失。开关没打时该触发器不产生任何影响。
+7. **结构性（确认本仓库暂时用不了）**：`ci.yml` 已挂上 `merge_group:` 触发器，但 **GitHub merge queue 只对组织名下的仓库开放**，`bigtaoo/funny` 在个人账号下（公开也不行）——建 `merge_queue` 规则一律 422，同一次请求里其它规则能改成功，排除权限问题。要用得把仓库转到组织下；触发器留着，届时无需改 workflow。**替代措施已启用**：ruleset `Only PR` 的必需检查补上 `test coverage report`（此前覆盖率门禁挡不住 PR），加上它本来就开着的 `strict_required_status_checks_policy`（分支必须先与 main 同步才能合并），已经覆盖了 merge queue 在本仓库节奏下的绝大部分收益。
 
 ### ops 部署（Cloudflare Worker + static assets，对外 `ops.gamestao.com`）
 
