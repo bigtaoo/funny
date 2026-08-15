@@ -115,7 +115,6 @@ export class MetaService implements MetaHandlers {
   cardsFuse(...args: Parameters<InventoryService['cardsFuse']>) { return this.inventorySvc.cardsFuse(...args); }
   cardsLock(...args: Parameters<InventoryService['cardsLock']>) { return this.inventorySvc.cardsLock(...args); }
   cardsUnlock(...args: Parameters<InventoryService['cardsUnlock']>) { return this.inventorySvc.cardsUnlock(...args); }
-  sellSkin(...args: Parameters<InventoryService['sellSkin']>) { return this.inventorySvc.sellSkin(...args); }
 
   // ── progression ──
   getLeaderboard(...args: Parameters<ProgressionService['getLeaderboard']>) { return this.progressionSvc.getLeaderboard(...args); }

@@ -302,13 +302,6 @@ export class ApiClient {
     return this.equipmentSvc.reforgeEquipment(targetId, materialId, idempotencyKey);
   }
 
-  sellSkin(
-    skinId: string,
-    idempotencyKey: string
-  ): Promise<{ credited: number; coinsAfter: number; save: SaveData }> {
-    return this.equipmentSvc.sellSkin(skinId, idempotencyKey);
-  }
-
   // ── Shop / ads / IAP / promo (./ApiClient/shop.ts) ────────────────────────
   getShopItems(): Promise<ShopItem[]> {
     return this.shopSvc.getShopItems();

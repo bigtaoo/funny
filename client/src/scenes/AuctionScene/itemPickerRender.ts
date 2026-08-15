@@ -61,13 +61,6 @@ export interface PickEntry {
   /** Skin id (cls === 'skin') — skins have no defId/instance, just a catalogue id (see skinDefs.ts). */
   skinId?: string;
   onPick: () => void;
-  /**
-   * Sell this skin to the system for coins (ITEM_IDENTITY_DESIGN.md task1, 2026-08-08) — only ever
-   * set for cls==='skin' entries, and only when `cb.sellSkin` is wired (present). Every skin that
-   * reaches the picker at all is already sellable under the identical "not equipped, or a surplus
-   * copy" guard `listableSkins()` applies for auctioning — no separate eligibility check needed here.
-   */
-  onSell?: () => void;
 }
 
 /** Equipment instances eligible for listing: not locked and not equipped by any card (mirrors server escrow guard). */
@@ -197,11 +190,10 @@ export function buildPickEntries(core: AuctionSceneCore): PickEntry[] {
   }
 
   // Skins: `inventory.skins` is still an owned/not-owned set (at most one entry per skinId here —
-  // escrow/sell always take exactly one unit regardless of which instance backs it), but a
-  // duplicate gacha pull can now leave a skinId with 2+ real instances (ITEM_IDENTITY_DESIGN.md
-  // task1, 2026-08-08) — surfaced via skinCounts, mirrors the "×N" treatment equipment/card groups
-  // get above. Every entry that reaches the picker is already sellable under the same guard as
-  // listing (see listableSkins), so onSell is offered whenever the callback is wired.
+  // escrow always takes exactly one unit regardless of which instance backs it), but a duplicate
+  // gacha pull can leave a skinId with 2+ real instances (ITEM_IDENTITY_DESIGN.md task1,
+  // 2026-08-08) — surfaced via skinCounts, mirrors the "×N" treatment equipment/card groups get
+  // above.
   const skinCounts = core.cb.getSave?.()?.skinCounts ?? {};
   for (const skinId of listableSkins(core)) {
     const count = skinCounts[skinId] ?? 1;
@@ -210,7 +202,6 @@ export function buildPickEntries(core: AuctionSceneCore): PickEntry[] {
       skinId, label: count > 1 ? `${base} ×${count}` : base,
       value: SKIN_VALUE, locked: false, cls: 'skin',
       onPick: () => pickAndReturn(core, () => { core.createClass = 'skin'; core.createSkinId = skinId; }),
-      onSell: core.cb.sellSkin ? () => sellSkinFromPicker(core, skinId) : undefined,
     });
   }
 
@@ -357,25 +348,9 @@ function renderPickCard(core: AuctionSceneCore, entry: PickEntry, x: number, y: 
   if (nameLbl.width > cardW - 18) nameLbl.scale.set((cardW - 18) / nameLbl.width);
   core.bodyLayer.addChild(nameLbl);
 
-  // Skins with a wired sellSkin callback get a second action (ITEM_IDENTITY_DESIGN.md task1,
-  // 2026-08-08): split the bottom hint row into "list on market" (left) / "sell to system" (right),
-  // each with their own hit zone pushed BEFORE the full-card catch-all below so a tap on either
-  // half is intercepted first (hitRects resolve in push order, first match wins — see core.handleDown).
-  if (entry.onSell) {
-    const half = cardW / 2;
-    const auctionHint = txt(t('auction.pickHint'), FS.small, C.accent, true);
-    auctionHint.anchor.set(0.5, 1); auctionHint.x = x + half / 2; auctionHint.y = y + CARD_H - 8;
-    core.bodyLayer.addChild(auctionHint);
-    const sellHint = txt(t('auction.sellHint'), FS.small, C.mid, true);
-    sellHint.anchor.set(0.5, 1); sellHint.x = x + half + half / 2; sellHint.y = y + CARD_H - 8;
-    core.bodyLayer.addChild(sellHint);
-    core.hitRects.push({ rect: { x, y: y + CARD_H - 28, w: half, h: 28 }, action: entry.onPick });
-    core.hitRects.push({ rect: { x: x + half, y: y + CARD_H - 28, w: half, h: 28 }, action: entry.onSell });
-  } else {
-    const hint = txt(t('auction.pickHint'), FS.small, C.accent, true);
-    hint.anchor.set(0.5, 1); hint.x = x + cardW / 2; hint.y = y + CARD_H - 8;
-    core.bodyLayer.addChild(hint);
-  }
+  const hint = txt(t('auction.pickHint'), FS.small, C.accent, true);
+  hint.anchor.set(0.5, 1); hint.x = x + cardW / 2; hint.y = y + CARD_H - 8;
+  core.bodyLayer.addChild(hint);
 
   core.hitRects.push({ rect: { x, y, w: cardW, h: CARD_H }, action: entry.onPick });
 }
@@ -428,24 +403,4 @@ export function renderItemPicker(core: AuctionSceneCore): void {
   });
 
   drawScrollIndicator(core.bodyLayer, { x: contentX + pad, y: listY, w: avail, h: availH }, core.scrollY, Math.max(0, totalH - availH));
-}
-
-/**
- * Sell one surplus skin instance to the system for coins (ITEM_IDENTITY_DESIGN.md task1, 2026-08-08).
- * Guarded by `sellBusy` against a double-tap firing two concurrent sales for the same skinId before
- * the first response (and its save/picker refresh) lands.
- */
-export async function sellSkinFromPicker(core: AuctionSceneCore, skinId: string): Promise<void> {
-  if (core.sellBusy.has(skinId)) return;
-  core.sellBusy.add(skinId);
-  try {
-    const { credited } = await core.cb.sellSkin!(skinId);
-    await core.cb.reloadSave?.();
-    core.showToast(t('auction.sellSuccess', { coins: String(credited) }));
-    if (core.itemPickerOpen) core.render();
-  } catch (e) {
-    core.showToast(core.errorMsg(e), C.red);
-  } finally {
-    core.sellBusy.delete(skinId);
-  }
 }

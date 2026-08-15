@@ -69,7 +69,7 @@ function saveWithSkins(skins: string[], equipped: Record<string, string> = {}, s
 
 type PickEntry = {
   cls: 'material' | 'equipment' | 'card' | 'skin'; label: string; value: number; locked: boolean;
-  defId?: string; skinId?: string; material?: string; onPick: () => void; onSell?: () => void;
+  defId?: string; skinId?: string; material?: string; onPick: () => void;
 };
 
 describe('AuctionScene picker — equipment/card dedupe (buildPickEntries)', () => {
@@ -278,51 +278,29 @@ describe('AuctionScene picker — skin instance counts (ITEM_IDENTITY_DESIGN.md 
     scene.destroy();
   });
 
-  it('onSell is offered only when cb.sellSkin is wired, and calls it with the picked skinId', async () => {
+  // 2026-08-15: the skin cards' second action ("出售 ›" — sell one surplus copy to the system for
+  // DUPE_REFUND_COINS) is gone, client and server both. The payout table it reused sits far below a
+  // skin's real market value (a 10000-coin skin refunded 200), so the shortcut only ever destroyed
+  // value by accident; a surplus skin's one outlet is now the auction house, exactly like every other
+  // item class. Guards against the split hint row coming back: one full-card hit zone, nothing else.
+  // A `sellSkin` callback is deliberately still handed in (the callbacks type no longer declares one,
+  // hence the untyped cb bag) — that was the exact condition the old code branched on, so this fails
+  // if the sell action is ever rewired, instead of passing vacuously on "nobody wired it up".
+  it('a skin card offers only the pick action — no sell half-row (2026-08-15)', () => {
     const save = saveWithSkins(['skin_e2'], {}, { skin_e2: 2 });
-    const withoutSell = buildScene({ getSave: () => save });
-    expect(buildPickEntries(withoutSell.core).find((e: PickEntry) => e.cls === 'skin')!.onSell).toBeUndefined();
-    withoutSell.destroy();
-
-    const sellSkin = vi.fn(async () => ({ credited: 400 }));
-    const withSell = buildScene({ getSave: () => save, sellSkin, reloadSave: vi.fn(async () => {}) });
-    const entry = buildPickEntries(withSell.core).find((e: PickEntry) => e.cls === 'skin')!;
-    expect(entry.onSell).toBeDefined();
-    await entry.onSell!();
-    expect(sellSkin).toHaveBeenCalledWith('skin_e2');
-    withSell.destroy();
-  });
-
-  it('rendering the picker with a sellable skin entry (split hint row + sell hit zone) does not throw, and the right-half zone triggers sellSkin', () => {
-    const save = saveWithSkins(['skin_e2'], {}, { skin_e2: 2 });
-    const sellSkin = vi.fn(async () => ({ credited: 400 }));
-    const scene = buildScene({ getSave: () => save, sellSkin, reloadSave: vi.fn(async () => {}) });
+    const scene = buildScene({
+      getSave: () => save,
+      reloadSave: vi.fn(async () => {}),
+      sellSkin: vi.fn(async () => ({ credited: 400 })),
+    });
     openItemPicker(scene.core);
     scene.core.pickerFilter = 'skin';
     expect(() => scene.render()).not.toThrow();
-    // Split-row layout pushes two 28px-tall half-width hit zones (list-half then sell-half, in that
-    // push order) ahead of the full-card catch-all — find them by geometry (not identity:
-    // buildPickEntries mints a fresh closure per call, so scene.core.hitRects' onSell is never
-    // reference-equal to a separately-built entry's), then take the right-hand (larger x) one.
-    const splitHalves = scene.core.hitRects.filter((h: { rect: { h: number } }) => h.rect.h === 28);
-    expect(splitHalves.length).toBe(2);
-    const sellHalf = splitHalves.reduce((a: { rect: { x: number } }, b: { rect: { x: number } }) => (b.rect.x > a.rect.x ? b : a));
-    sellHalf.action();
-    expect(sellSkin).toHaveBeenCalledWith('skin_e2');
-    scene.destroy();
-  });
-
-  it('a double-tap on sell while the first call is in flight fires only once (sellBusy guard)', async () => {
-    const save = saveWithSkins(['skin_e2'], {}, { skin_e2: 2 });
-    let resolveSell: (v: { credited: number }) => void;
-    const sellSkin = vi.fn(() => new Promise<{ credited: number }>((res) => { resolveSell = res; }));
-    const scene = buildScene({ getSave: () => save, sellSkin, reloadSave: vi.fn(async () => {}) });
-    const entry = buildPickEntries(scene.core).find((e: PickEntry) => e.cls === 'skin')!;
-    const p1 = entry.onSell!();
-    const p2 = entry.onSell!(); // fired before p1 resolves — must be a no-op, not a second sale
-    resolveSell!({ credited: 400 });
-    await Promise.all([p1, p2]);
-    expect(sellSkin).toHaveBeenCalledTimes(1);
+    // itemPickerRender's CARD_H (156, not exported) — the full-card catch-all is the only zone a
+    // picker card pushes now; the old sell/list split pushed two 28px-tall half-width ones on top.
+    const cardHits = scene.core.hitRects.filter((h: { rect: { h: number } }) => h.rect.h === 156);
+    expect(cardHits.length).toBe(1);
+    expect(scene.core.hitRects.some((h: { rect: { h: number } }) => h.rect.h === 28)).toBe(false);
     scene.destroy();
   });
 });

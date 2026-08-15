@@ -20,20 +20,20 @@
 //                        fungible (no level/affixes to distinguish them).
 //   · grantSkin         auction trade transfer / listing cancellation·expiry return: mints a fresh
 //                        instance (fungible — need not be the SAME one that was escrowed).
-//   · sellSkinToSystem  NEW: player-initiated sale of one surplus instance for coins (DUPE_REFUND_COINS
-//                        by the skin's catalogue rarity) — never automatic; a gacha duplicate only ever
-//                        grants an instance, exactly like a first pull (ADR-059 follow-up decision).
 //   · countSkinInstances / assembleSkinCounts: read helpers for the GET /save skinCounts join.
+//
+// A surplus skin has exactly one outlet: listing it on the auction house. The former "sell to system
+// for DUPE_REFUND_COINS" shortcut (POST /skins/sell, 2026-08-08 — ITEM_IDENTITY_DESIGN.md task1) was
+// removed on 2026-08-15: the duplicate-refund table it reused pays out far below what a skin is
+// actually worth on the market, so the shortcut only ever served to destroy value by accident.
 import { randomUUID } from 'node:crypto';
 import {
-  DUPE_REFUND_COINS, EQUIPMENT_IDEM_TTL_SEC, catalogItem,
+  EQUIPMENT_IDEM_TTL_SEC,
   type Collections, type SaveData, type SkinInstance, type SkinInstanceDoc,
 } from '@nw/shared';
-import { getOrCreateSave } from './save.js';
-import type { CommercialClient } from './commercialClient.js';
 
 export type SkinErrorCode =
-  | 'BAD_REQUEST' | 'NOT_FOUND' | 'NOT_IMPLEMENTED' | 'SKIN_NOT_FOUND' | 'SKIN_IN_USE' | 'REV_CONFLICT';
+  | 'BAD_REQUEST' | 'NOT_FOUND' | 'SKIN_NOT_FOUND' | 'SKIN_IN_USE' | 'REV_CONFLICT';
 
 export interface SkinError {
   error: string;
@@ -216,97 +216,4 @@ export async function grantSkin(
     if (res) return { ok: true };
   }
   return { error: 'rev conflict, retry', code: 'REV_CONFLICT' };
-}
-
-/**
- * Player-initiated sale of one surplus skin instance for coins (ITEM_IDENTITY_DESIGN.md task1 /
- * ADR-059 follow-up, 2026-08-08): gacha duplicates now always grant a real instance instead of an
- * automatic coin refund — a player must explicitly cash one in here. Never triggered automatically.
- * Payout = DUPE_REFUND_COINS[catalogue rarity] — reuses the table GACHA_DESIGN §4.3 already specified
- * for "duplicate → coins" instead of inventing new numbers.
- * Same equipped-guard as escrowSkin (refuses to sell the last remaining instance of an equipped skin).
- * idempotencyKey idempotent, ordering mirrors enhanceEquipment: claim the idem slot BEFORE the
- * destructive removal (unlike escrowSkin, this op also owes a coin credit, so a concurrent duplicate
- * must not slip through and sell a second instance for free), then credit via commercial.grant (itself
- * orderId-idempotent, so a crash between removal and credit just needs the credit call replayed).
- */
-export async function sellSkinToSystem(
-  cols: Collections,
-  commercial: CommercialClient,
-  now: () => number,
-  accountId: string,
-  skinId: string,
-  idempotencyKey: string,
-): Promise<{ credited: number; coinsAfter: number; save: SaveData } | SkinError> {
-  if (!skinId) return { error: 'skinId required', code: 'BAD_REQUEST' };
-  if (!idempotencyKey) return { error: 'idempotencyKey required', code: 'BAD_REQUEST' };
-
-  const rarity = catalogItem(skinId)?.rarity ?? 'common';
-  const credited = DUPE_REFUND_COINS[rarity];
-
-  const replay = await cols.equipmentIdem.findOne({ _id: idempotencyKey });
-  if (replay?.op === 'skin_sell' && replay.committed) {
-    const g = await commercial.grant({ accountId, amount: credited, reason: 'skin_sell', orderId: idempotencyKey });
-    const save = await getOrCreateSave(cols, accountId, now());
-    return { credited, coinsAfter: g.ok ? g.coinsAfter : (save.wallet?.coins ?? 0), save };
-  }
-  if (replay?.op === 'skin_sell' && !replay.committed) {
-    return { error: 'sell already in progress, retry', code: 'REV_CONFLICT' };
-  }
-  if (!commercial.available) return { error: 'commercial service unavailable', code: 'NOT_IMPLEMENTED' };
-
-  const doc0 = await cols.saves.findOne({ _id: accountId });
-  if (!doc0) return { error: 'save not found', code: 'NOT_FOUND' };
-  if (!(doc0.save.inventory?.skins ?? []).includes(skinId)) return { error: 'skin not owned', code: 'SKIN_NOT_FOUND' };
-  const count = await countSkinInstances(cols, accountId, skinId);
-  const effectiveCount = Math.max(count, 1); // legacy self-heal — see assembleSkinCounts
-  if (isSkinEquipped(doc0.save, skinId) && effectiveCount <= 1) {
-    return { error: 'skin is equipped', code: 'SKIN_IN_USE' };
-  }
-
-  try {
-    await cols.equipmentIdem.insertOne({
-      _id: idempotencyKey,
-      accountId,
-      op: 'skin_sell',
-      result: { skinId, credited },
-      committed: false,
-      expireAt: idemExpireAt(now()),
-    });
-  } catch (e) {
-    if ((e as { code?: number }).code === 11000) return { error: 'sell already in progress, retry', code: 'REV_CONFLICT' };
-    throw e;
-  }
-
-  // Destructive removal up front, once (idempotent — mirrors escrowSkin/escrowEquipment).
-  const inst = await cols.skinInstances.findOne({ accountId, skinId });
-  if (inst) await cols.skinInstances.deleteOne({ _id: inst._id });
-  const remaining = effectiveCount - 1;
-
-  for (let attempt = 0; attempt < REV_RETRIES; attempt++) {
-    const doc = await cols.saves.findOne({ _id: accountId });
-    if (!doc) break;
-    const save = doc.save;
-    const nextSkins = remaining > 0
-      ? (save.inventory?.skins ?? [])
-      : (save.inventory?.skins ?? []).filter((id) => id !== skinId);
-    const next: SaveData = {
-      ...save,
-      rev: save.rev + 1,
-      updatedAt: now(),
-      inventory: { ...(save.inventory ?? { items: {} }), skins: nextSkins },
-    };
-    const res = await cols.saves.findOneAndUpdate(
-      { _id: accountId, rev: doc.rev },
-      { $set: { save: next, rev: next.rev } },
-    );
-    if (res) break;
-    // rev conflict → re-read and retry the membership-array update only (the delete above never repeats).
-  }
-  // Removal committed unconditionally above regardless of whether the retry loop landed
-  // (inventory.skins self-heals via assembleSkinCounts) — mark committed, then credit coins.
-  await cols.equipmentIdem.updateOne({ _id: idempotencyKey }, { $set: { committed: true } });
-  const g = await commercial.grant({ accountId, amount: credited, reason: 'skin_sell', orderId: idempotencyKey });
-  const save = await getOrCreateSave(cols, accountId, now());
-  return { credited, coinsAfter: g.ok ? g.coinsAfter : (save.wallet?.coins ?? 0), save };
 }

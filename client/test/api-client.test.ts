@@ -164,13 +164,4 @@ describe('ApiClient card/equipment request bodies (CC-1/E3/E6)', () => {
     expect(calls[1]!.url).toBe('https://h/api/cards/unlock');
     expect(calls[1]!.body).toEqual({ cardInstanceId: 'card-1' });
   });
-
-  it('sellSkin: POST /skins/sell with skinId/idempotencyKey (ITEM_IDENTITY_DESIGN.md task1, 2026-08-08)', async () => {
-    const calls = installFetch(() => ({ json: { ok: true, data: { credited: 1500, coinsAfter: 1500, save: {} } } }));
-    const api = new ApiClient('https://h/api');
-    await api.sellSkin('skin_l1', 'idem-7');
-    expect(calls[0]!.url).toBe('https://h/api/skins/sell');
-    expect(calls[0]!.method).toBe('POST');
-    expect(calls[0]!.body).toEqual({ skinId: 'skin_l1', idempotencyKey: 'idem-7' });
-  });
 });

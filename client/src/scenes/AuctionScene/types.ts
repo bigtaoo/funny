@@ -26,13 +26,6 @@ export interface AuctionSceneCallbacks {
    * client-side from the already-loaded market list. Optional; without it the tab is empty.
    */
   myAccountId?: string;
-  /**
-   * Sell one surplus skin instance to the system for coins (ITEM_IDENTITY_DESIGN.md task1,
-   * 2026-08-08) — a separate, player-initiated action alongside listing on the market; never
-   * automatic. Optional: without it, the picker only offers auctioning, not the sell shortcut
-   * (e.g. tests, or a lobby-entry context that hasn't wired the metaserver client through).
-   */
-  sellSkin?(skinId: string): Promise<{ credited: number }>;
 }
 
 export type AucTab = 'all' | 'mine' | 'bids';

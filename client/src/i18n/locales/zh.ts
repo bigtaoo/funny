@@ -1265,8 +1265,6 @@ export const zh = {
   'auction.tapChoose': '点击选择物品',
   'auction.pickItem': '选择要出售的物品',
   'auction.pickHint': '选择 ›',
-  'auction.sellHint': '出售 ›',
-  'auction.sellSuccess': '已出售，获得 {coins} 金币',
   'auction.noItems': '没有可出售的物品',
 
   // ── Campaign level names & briefings ─────────────────────────────────────

@@ -11,8 +11,8 @@
 //  • Skin duplicates (ITEM_IDENTITY_DESIGN.md task1, 2026-08-08): every gacha skin result — first
 //    pull or dupe alike — now grants a real SkinInstance (see skin.ts); the old design where a
 //    duplicate was silently dropped (no item, no coin refund, despite GACHA_DESIGN §4.3 describing an
-//    auto-refund that was never actually wired up) is gone. Cashing in a surplus copy for coins is a
-//    separate, player-initiated action (skin.ts sellSkinToSystem), never automatic.
+//    auto-refund that was never actually wired up) is gone. A surplus copy is disposed of by listing
+//    it on the auction house — there is no sell-to-system path at all (removed 2026-08-15, see skin.ts).
 //
 // ── Split (2026-08-10, independent function module range: last two of the original 30-file audit) ──
 // This file was already a set of mutually-independent exported functions grouped by concern (no class,

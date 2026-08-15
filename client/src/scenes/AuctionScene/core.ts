@@ -50,7 +50,6 @@ import { drawSceneHeader, sceneHeaderHeight, HEADER_ACCENT, drawHeaderCurrency }
 import { sidebarNavW } from '../../ui/widgets/HubTabs';
 import type { AuctionView } from '../../net/WorldApiClient';
 import { WorldApiError } from '../../net/WorldApiClient';
-import { ApiError } from '../../net/ApiClient';
 import { ScrollTapGesture } from '../../ui/scrollTapGesture';
 import { wheelScrollY } from '../../ui/wheelScroll';
 import { BusyTracker, TimeoutError } from '../../ui/busyTracker';
@@ -101,10 +100,6 @@ export class AuctionSceneCore {
 
   /** Async card-art texture URLs already hooked for a re-render on load (avoids double-subscribing). */
   readonly artHooked = new Set<string>();
-
-  /** skinIds with an in-flight sellSkin call (ITEM_IDENTITY_DESIGN.md task1, 2026-08-08) — guards the
-   *  picker's sell button against a double-tap firing two concurrent sales before the first lands. */
-  readonly sellBusy = new Set<string>();
 
   // Create form state
   createClass: ItemClass = 'material';
@@ -333,17 +328,6 @@ export class AuctionSceneCore {
 
   errorMsg(e: unknown): string {
     if (e instanceof TimeoutError) return t('common.networkTimeout');
-    // sellSkin (ITEM_IDENTITY_DESIGN.md task1, 2026-08-08) talks to metaserver, not auctionsvc/worldsvc,
-    // so its errors surface as ApiError rather than WorldApiError — reuses the same skin error copy.
-    if (e instanceof ApiError) {
-      const map: Record<string, string> = {
-        SKIN_IN_USE: t('auction.err.skinInUse'),
-        SKIN_NOT_FOUND: t('auction.err.closed'),
-        INSUFFICIENT_FUNDS: t('auction.err.insufficientFunds'),
-        NOT_IMPLEMENTED: t('auction.err.notImpl'),
-      };
-      return map[e.code] ?? e.message;
-    }
     if (e instanceof WorldApiError) {
       const map: Record<string, string> = {
         AUCTION_CLOSED:          t('auction.err.closed'),

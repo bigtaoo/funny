@@ -165,8 +165,8 @@ schemas:
       cardMailOverflowCount: { type: integer, minimum: 0 }
       equipMailOverflowCount: { type: integer, minimum: 0 }
       # Skin instance counts (ITEM_IDENTITY_DESIGN.md task1, 2026-08-08). skinId→total owned instance
-      # count; >=2 means duplicates exist beyond whatever one equip slot may be holding, sellable
-      # (/skins/sell) or auctionable. `inventory.skins` below is unaffected and stays the plain
+      # count; >=2 means duplicates exist beyond whatever one equip slot may be holding, so a surplus
+      # copy is auctionable. `inventory.skins` below is unaffected and stays the plain
       # owned/not-owned view every pre-existing consumer reads — this only adds "how many" on top.
       # nullable, same phase-2 treatment as cardInv/equipmentInv: absent-on-purpose ⇒ caller already
       # knows what changed via other response fields.
