@@ -2,7 +2,9 @@
 // exported DRAW record). Asserts the DRAW table resolves a live function for every IconKind — the
 // residual risk after the split is a draw fn that fails to import (resolves to undefined at runtime,
 // which the Record<IconKind,…> type cannot catch). No pixi rendering here, so no GL/canvas needed;
-// lives in the render suite only because importing icons.ts pulls pixi.js-legacy. Run: npm run test:render
+// lives in the render suite only because importing icons.ts pulls pixi.js-legacy.
+// Run: npm test — `test/**/*.test.ts` picks this up. NOT `npm run test:render`: that config is missing
+// the `@nw/shared` aliases the other two carry, so this file dies at load there (2026-08-15).
 import { describe, it, expect } from 'vitest';
 import { DRAW, tabIconVariant, type DrawableIconKind } from '../../src/render/icons';
 // Palette values are inlined rather than imported: both `render/sketchUi` (HubTabs' `ui`) and
