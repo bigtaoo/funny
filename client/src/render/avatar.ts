@@ -32,6 +32,7 @@ import { titleIconUrl } from './titleArt';
 import { UNIT_ART_URLS, getArtTexture } from './cardArt';
 import { PRESET_AVATAR_KEYS, PRESET_AVATAR_ART_URLS, type PresetAvatarKey } from './presetAvatarArt';
 import { HERO_AVATAR_ART_URLS, type HeroAvatarKey } from './heroAvatarArt';
+import { PRESET_HEAD_BOX, HERO_HEAD_BOX, type HeadBox } from './portraitHeadBox';
 import { SKIN_TARGET_UNIT } from '../game/meta/skinDefs';
 import { snapFont } from './fontScale';
 
@@ -84,18 +85,16 @@ const CATEGORY_BG: Record<AvatarCategory, number> = {
 };
 
 /**
- * Resolve a preset avatar key to its portrait URL. Accepts the current 20 string keys, and
+ * Resolve a stored preset avatar key to one of the current 20. Accepts the string keys as-is, and
  * migrates the old pre-2026-08 numeric format (bare "0".."7" indices, from the 8-icon set this
  * replaced) by mapping the index positionally onto the new key list — old accounts land on *a*
  * valid portrait rather than the letter-initial glyph.
  */
-function resolvePresetArtUrl(key: string): string | undefined {
-  if (Object.prototype.hasOwnProperty.call(PRESET_AVATAR_ART_URLS, key)) {
-    return PRESET_AVATAR_ART_URLS[key as PresetAvatarKey];
-  }
+function resolvePresetKey(key: string): PresetAvatarKey | undefined {
+  if (Object.prototype.hasOwnProperty.call(PRESET_AVATAR_ART_URLS, key)) return key as PresetAvatarKey;
   if (/^\d+$/.test(key)) {
     const idx = parseInt(key, 10) % PRESET_AVATAR_KEYS.length;
-    return PRESET_AVATAR_ART_URLS[PRESET_AVATAR_KEYS[idx]!];
+    return PRESET_AVATAR_KEYS[idx]!;
   }
   return undefined;
 }
@@ -111,46 +110,64 @@ function spriteIcon(url: string | null, size: number): PIXI.DisplayObject | null
 }
 
 /**
- * How the source art is framed inside the circle — the two art families need different crops.
- *
- * 'bust': presetAvatarArt.ts / heroAvatarArt.ts, all 512×768 head-and-shoulders portraits drawn to
- *   one contract (head centred horizontally, hair top ~5-10% down, chin ~60-65% down). Fitting by
- *   width alone leaves the head at ~70% of the circle with a ring of the art's own paper background
- *   around it — a floating head in a white halo. A small zoom past the circle plus a nudge upward
- *   puts the face where a portrait crop expects it. Measured over all 26 portraits (a Canvas2D
- *   side-by-side of the real PNGs): 1.10/-0.04 is the most it takes before tall hair (hype's
- *   ponytail, tsundere's pigtails) starts clipping.
- * 'full': cardArt.ts UNIT_ART_URLS full-body battle renders (the skin category). Head flush against
- *   the top edge and no meaningful aspect variance in width, so fit by WIDTH and anchor to the TOP —
- *   a "cover then zoom in" fit was cropping straight through the torso on the tallest ones, cutting
- *   the head off entirely. Cropping the lower body is fine; that's the point of a bust crop.
+ * Bust framing, as fractions of the circle's diameter: the head (hair top → neck, per
+ * portraitHeadBox.ts) starts `HEAD_TOP` down and fills `HEAD_SPAN` of the circle, so the crop lands
+ * at the neck and the shoulders stay out of frame. Wide heads (tsundere's pigtails, fanboy,
+ * hero_infantry) hit `HEAD_MAX_W` first and are sized by width instead, or they'd burst the sides.
+ * Picked from a Canvas2D side-by-side of all 26 real portraits at these three values ±0.04.
  */
-type PortraitFraming = 'bust' | 'full';
-const FRAMING: Record<PortraitFraming, { zoom: number; yOff: number }> = {
-  bust: { zoom: 1.10, yOff: -0.04 },
-  full: { zoom: 1.00, yOff: 0.03 }, // slight headroom so the art's top edge isn't flush with the rim
-};
+const HEAD_TOP = 0.05;
+const HEAD_SPAN = 0.90;
+const HEAD_MAX_W = 0.88;
 
-/** A character portrait cropped to a circle of diameter `size`, framed per {@link PortraitFraming}. */
-function buildPortraitIcon(url: string, size: number, framing: PortraitFraming): PIXI.Container {
+/** Nominal bust-portrait pixel size — every one of the 26 is 512×768; used only before the real texture loads. */
+const BUST_W = 512, BUST_H = 768;
+
+/**
+ * Fit a portrait into the circle. With a head box (presets/heroes — the bust portraits) each
+ * portrait is normalised against its OWN head geometry, which varies far more than the composition
+ * brief suggests (hair top 0.03-0.13 of the image, neck 0.52-0.69, head width 0.58-0.94); one
+ * global crop constant has to clear the loosest of them and leaves all the others looking small.
+ *
+ * Without one (`head: null`) — cardArt.ts's full-body battle renders, which the skin category still
+ * borrows — fit by WIDTH and anchor to the TOP. Their heads sit flush against the top edge, so any
+ * "cover then zoom" fit crops straight through the torso and loses the head entirely; a bit of
+ * headroom keeps the art's top edge off the rim.
+ */
+function fitPortrait(sprite: PIXI.Sprite, tex: PIXI.Texture, size: number, head: HeadBox | null): void {
+  const valid = tex.baseTexture.valid && tex.width > 1;
+  if (!head) {
+    sprite.scale.set(valid ? size / tex.width : size / 256);
+    sprite.y = size * 0.03;
+    return;
+  }
+  const texW = valid ? tex.width : BUST_W, texH = valid ? tex.height : BUST_H;
+  const byHeight = (HEAD_SPAN * size) / ((head.bottom - head.top) * texH);
+  const byWidth = (HEAD_MAX_W * size) / (head.width * texW);
+  // Never below a plain width fit, or the circle's flanks would show the disc through the art.
+  const scale = Math.max(size / texW, Math.min(byHeight, byWidth));
+  sprite.scale.set(scale);
+  sprite.y = HEAD_TOP * size - head.top * texH * scale;
+}
+
+/** A character portrait cropped to a circle of diameter `size`, framed per {@link fitPortrait}. */
+function buildPortraitIcon(url: string, size: number, head: HeadBox | null): PIXI.Container {
   const c = new PIXI.Container();
   // getArtTexture (not bare Texture.from) so bust crops share the mipmap opt-in — avatar
   // circles shrink hero art hard, and a no-mipmap version winning the shared cache here
   // would drag the roster/detail portraits back down with it.
   const tex = getArtTexture(url);
-  const { zoom, yOff } = FRAMING[framing];
   const sprite = new PIXI.Sprite(tex);
   sprite.anchor.set(0.5, 0);
   sprite.x = size / 2;
-  sprite.y = size * yOff;
-  const fit = () => sprite.scale.set((tex.width > 0 ? size / tex.width : size / 256) * zoom);
+  const fit = () => fitPortrait(sprite, tex, size, head);
   fit();
   if (!tex.baseTexture.valid) {
-    // The art loads async and the placeholder texture is 1×1, so the first fit is off by however
-    // far the guessed 256 is from the real width — a 512-wide bust ends up drawn at 2× and the
-    // circle crops into the hair. Nothing re-renders an avatar (it's a leaf builder, not a scene),
-    // so re-fit in place once the real size is known; `once` + the destroyed guard keeps this from
-    // outliving the sprite when the screen is torn down mid-load.
+    // The art loads async and the placeholder texture is 1×1, so the first fit runs on assumed
+    // dimensions — exact for the busts (all 512×768), a guess for the full-body art. Nothing
+    // re-renders an avatar (it's a leaf builder, not a scene), so re-fit in place once the real
+    // size is known; `once` + the destroyed guard keeps this from outliving the sprite when the
+    // screen is torn down mid-load.
     tex.baseTexture.once('loaded', () => { if (!sprite.destroyed) fit(); });
   }
   const mask = new PIXI.Graphics();
@@ -172,19 +189,22 @@ function categoryIconSize(category: AvatarCategory, size: number, r: number): nu
 function categoryIcon(category: AvatarCategory, key: string, size: number): PIXI.DisplayObject | null {
   switch (category) {
     case 'preset': {
-      const url = resolvePresetArtUrl(key);
-      return url ? buildPortraitIcon(url, size, 'bust') : null;
+      const resolved = resolvePresetKey(key);
+      return resolved
+        ? buildPortraitIcon(PRESET_AVATAR_ART_URLS[resolved], size, PRESET_HEAD_BOX[resolved])
+        : null;
     }
     case 'title':
       return spriteIcon(titleIconUrl(key), size) ?? buildIcon('trophy', size, palette.paper);
     case 'hero': {
       const url = HERO_AVATAR_ART_URLS[key as HeroAvatarKey];
-      return url ? buildPortraitIcon(url, size, 'bust') : null;
+      return url ? buildPortraitIcon(url, size, HERO_HEAD_BOX[key as HeroAvatarKey] ?? null) : null;
     }
     case 'skin': {
+      // Full-body battle art, not a bust — no head box, so it falls back to the width fit.
       const unit = SKIN_TARGET_UNIT[key];
       const url = unit !== undefined ? UNIT_ART_URLS[unit] : undefined;
-      return url ? buildPortraitIcon(url, size, 'full') : null;
+      return url ? buildPortraitIcon(url, size, null) : null;
     }
   }
 }

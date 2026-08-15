@@ -31,7 +31,8 @@
 
 - 三类头像（preset/hero/skin）均为**独立 PNG**（不再打包进图集——数量小、且圆形裁切要求原图干净无相邻帧串色），仿照 `cardArt.ts` 的 `UNIT_ART_URLS` 单图 import 写法。
 - **构图**：肩以上胸像，头部占画面上 2/3、留一点顶部余白，左右居中，纯白底方便 `buildPortraitIcon` 直接按宽度铺满做圆形裁切——不需要额外裁剪脚本。
-- **裁切参数**（2026-08-15 视觉核对后定档，见 §四-8）：胸像走 `buildPortraitIcon` 的 `'bust'` 取景——按圆直径铺满宽度后再 **zoom 1.10、上移 4%**，把脸放到圆心而不是让它沉在下半圆；全身立绘（`skin` 分类）仍走 `'full'`——**不缩放、顶部对齐 +3% headroom**（头贴着画面顶边，缩放会切进躯干）。胸像盘面填充 = 圆盘直径的 92%，即分类色只剩一圈细边，不再是厚圆环。
+- **裁切参数**（2026-08-15 视觉核对后定档，见 §四-8/9）：胸像**按每张图自己的头部框归一化**（`client/src/render/portraitHeadBox.ts`，由 `art/scripts/measureAvatarHeadBox.mjs` 量出发顶/颈线/头宽）——发顶落在圆的 5% 处、头（发顶→颈线）占满圆的 90%，宽头的按头宽上限 88% 收，最低不低于「铺满圆宽」。效果是 26 张统一取景、裁到脖子，肩部基本不入镜。**不要退回单一全局 zoom 常数**：这批图的头部几何差异很大（发顶 0.03–0.13H、颈线 0.52–0.69H、头宽 0.58–0.94W），全局常数必须迁就最松的一张，其余就都显小。全身立绘（`skin` 分类）没有头部框，回落到**按宽度铺满 + 顶部对齐 +3% headroom**（头贴着画面顶边，缩放会切进躯干）。胸像盘面填充 = 圆盘直径的 92%，即分类色只剩一圈细边，不再是厚圆环。
+- **新增/重绘胸像时**：跑一次 `cd client && node ../art/scripts/measureAvatarHeadBox.mjs`，把输出贴进 `portraitHeadBox.ts`。漏了不会崩（缺表项回落到按宽度铺满），但那张会明显比同排的松。
 - **不需要透明底/去白底处理**：`buildPortraitIcon` 本身用 `PIXI.Graphics` 遮罩裁圆，白色背景会被圆形遮罩天然裁掉，不必像图腾那样单独抠透明。
 - 退回逻辑不变：`buildAvatarIcon`/`categoryIcon` 找不到贴图时仍降级到字母头像（`buildAvatar` 已有兜底），三类头像各自独立失败不互相影响。
 - **淘汰** `art/ui/head/pack_avatar_atlas.cjs` 与 `client/src/assets/avatars/`（旧的白线图集），`art/ui/head/` 下 8 张旧线稿源图归档到 `art/leftover/`。
@@ -282,3 +283,4 @@ plain sky-blue collared top.
    - **`buildPortraitIcon` 分 `'bust'`/`'full'` 两种取景**：胸像 zoom 1.10、上移 4%（26 张实测，再多就会切到 `hype` 马尾/`tsundere` 双马尾）；全身立绘保持原来的顶部对齐。
    - **纹理异步加载后不重新适配的 bug**：贴图未加载完时 `tex.width` 还是占位尺寸，算出的缩放比真实值大一倍，而头像是叶子构建函数、没有任何东西会重画它——冷启动第一次进设置页看到的就是"糊在头发上的特写"。改为 `baseTexture.once('loaded')` 里原地重算（带 `destroyed` 守卫）。回归用例：`client/test/ui/avatarPortraitFit.ui.ts`（撤掉修复即失败，已验证非空跑）。
    - 遗留：`skin` 分类仍在用全身立绘（§三的皮肤胸像表还没做），放大后脸依旧很小——等 skin 立绘定稿后一并解决。
+9. **头部框归一化（取景二轮）**：✅ 2026-08-15——用户反馈"边框好多了，但头像依然偏小，截取到脖子/肩部更好"。量了 26 张的实际几何后确认单一全局常数走到头了（见上方 §渲染契约的"不要退回单一全局 zoom 常数"），改为按图归一化：新增 `art/scripts/measureAvatarHeadBox.mjs`（sharp 逐行扫墨迹：发顶=首个有实质内容的行，颈线=头最宽行与肩部张开之间的最窄行，头宽=头部最宽行）+ `client/src/render/portraitHeadBox.ts`（26 项测量表）。`buildPortraitIcon` 改吃 `HeadBox | null`，null 即全身立绘的老取景。四档参数（头占圆 0.86/0.90/0.95 × 头宽上限）在 Canvas2D 对照页上比过，取 top 0.05 / span 0.90 / maxW 0.88。回归用例 `client/test/ui/avatarPortraitFit.ui.ts` 扩到 3 条，其中一条遍历全部 26 张断言"发顶在圈内、裁切落到颈线、画面铺满圆宽"——新增胸像忘了测头部框会被它抓住。真实渲染路径复核：Playwright + `__nwE2E.views.showSettings`，preset（含滚动后半屏）/hero/skin 三个页签均已截图确认。
