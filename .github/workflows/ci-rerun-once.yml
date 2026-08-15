@@ -1,0 +1,58 @@
+name: ci-rerun-once
+
+# Last line of defence for "the PR merged but nothing deployed" (2026-08-15).
+#
+# All 8 *-deploy.yml workflows fire on `workflow_run: CI … conclusion == 'success'` on main. So any
+# red CI run on main — including one caused by a runner hiccup, a Docker pull timeout, or a mongod
+# download that died halfway — silently means "this merge does not ship". vitest's `retry: 1` covers
+# flaky ASSERTIONS inside a suite; it cannot cover a job that fell over outside the test runner.
+# This workflow covers that: exactly one automatic `gh run rerun --failed` per CI run on main.
+#
+# Deliberately bounded and visible:
+#   • `run_attempt == 1` — one rerun, ever. A genuinely broken commit fails attempt 2 and stays red;
+#     this can't loop and can't paper over a real break for more than one extra attempt.
+#   • Only `push` runs on main. PR runs are NOT auto-rerun — a red PR should stay red until a human
+#     looks, and re-running PRs is how "run until green" hides flakes in the first place.
+#   • Attempt 1's failure stays in the run history and this workflow's own log, so the flake is
+#     still discoverable (and the nightly flake-hunt is what actually hunts it down).
+#
+# Re-running only the failed jobs updates the SAME run's conclusion and emits a fresh
+# `workflow_run: completed` event, so a successful attempt 2 triggers the deploy workflows normally —
+# no extra plumbing needed on their side.
+
+on:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+    branches: [main]
+
+# `actions: write` is what `gh run rerun` needs; nothing here touches repo contents.
+permissions:
+  actions: write
+  contents: read
+
+jobs:
+  rerun:
+    if: >-
+      ${{ github.event.workflow_run.conclusion == 'failure'
+          && github.event.workflow_run.event == 'push'
+          && github.event.workflow_run.run_attempt == 1 }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: re-run failed jobs once
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          RUN_ID: ${{ github.event.workflow_run.id }}
+        run: |
+          echo "CI run $RUN_ID failed on main (attempt 1) — re-running its failed jobs once."
+          echo "If attempt 2 passes, the failure was nondeterministic: check the nightly flake-hunt" \
+               "and scripts/flakyReporter.mjs output rather than assuming it's fine."
+          gh run rerun "$RUN_ID" --failed
+          {
+            echo "### 🔁 Auto re-ran CI run [$RUN_ID](${{ github.event.workflow_run.html_url }})"
+            echo ''
+            echo "Commit: \`${{ github.event.workflow_run.head_sha }}\`"
+            echo ''
+            echo 'One automatic retry per run. A failure that survives attempt 2 is a real break.'
+          } >> "$GITHUB_STEP_SUMMARY"

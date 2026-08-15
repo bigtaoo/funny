@@ -4,6 +4,11 @@ on:
   push:
     branches: [main]
   pull_request:
+  # Merge-queue support (2026-08-15). Off until the queue is enabled in repo settings + branch
+  # protection; harmless until then (the event simply never fires). With it on, CI runs against the
+  # exact commit that will land on main BEFORE it lands, so "PR green → main red" stops being
+  # possible by construction — the merge is what fails, not main, and no deploy is ever skipped.
+  merge_group:
   workflow_dispatch:
 
 # Previous runs for the same branch/PR are automatically cancelled to save runner minutes.
@@ -96,9 +101,6 @@ jobs:
   server-test:
     name: server test (${{ matrix.shard.name }})
     runs-on: ubuntu-latest
-    env:
-      # See TEST_SCRIPT's rationale on client-test below — same PR-vs-pre-CD split, same reason.
-      TEST_SCRIPT: ${{ github.event_name == 'pull_request' && 'test' || 'test:coverage' }}
     strategy:
       fail-fast: false
       matrix:
@@ -180,6 +182,17 @@ jobs:
       # `describe.skipIf`-ing itself out when Mongo/Redis is unreachable (see claudedocs/server.md,
       # "单文件 500 行收敛" 附近的 CI 门禁记录) — without it, a broken mongod download or an
       # unreachable Redis service just makes these ~110 e2e cases vanish with exit code 0.
+      # 2026-08-15: this used to be `test` on PRs and `test:coverage` everywhere else. The comment
+      # justifying that split claimed it was "a pure script swap: same test files, same assertions,
+      # same failures" — the first two are true, the third is not. v8 instrumentation stretches every
+      # await window in the suite (measured on the same commit: worldsvc 184.5s → 226.3s, collect
+      # 20s → 41s), so timing-sensitive e2e assertions are strictly likelier to fail under coverage,
+      # i.e. exactly on the pre-CD pass and never on the PR that was supposed to gate it. Worse, the
+      # 90% coverage gate itself only existed on that pass, so a coverage regression was structurally
+      # undetectable until after the merge. Both events now run the identical command: whatever main
+      # can fail on, the PR can fail on first. Cost: ~+25% on the server shards (client's share was
+      # bought back outright — see its own comment below) — paid on PRs, where waiting is cheap,
+      # instead of on an already-merged commit, where a red run means "merged but not deployed".
       - name: server unit + e2e tests (${{ matrix.shard.name }})
         working-directory: server
         env:
@@ -188,14 +201,13 @@ jobs:
         run: |
           args=()
           for w in ${{ matrix.shard.workspaces }}; do args+=(-w "$w"); done
-          npm run "$TEST_SCRIPT" "${args[@]}" --if-present
+          npm run test:coverage "${args[@]}" --if-present
 
       # coverage-report (below) needs every shard's coverage/ output on one filesystem; each
       # shard only produces coverage dirs for the workspaces it actually ran, so the glob below
-      # naturally scopes to just those. Skipped on PRs, where TEST_SCRIPT produced no coverage/ at
-      # all (`if-no-files-found: ignore` would otherwise make this a silent no-op every PR).
+      # naturally scopes to just those.
       - name: upload coverage artifact (${{ matrix.shard.name }})
-        if: always() && github.event_name != 'pull_request'
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: server-coverage-${{ matrix.shard.name }}
@@ -203,26 +215,23 @@ jobs:
           if-no-files-found: ignore
           retention-days: 1
 
+      # Written by scripts/flakyReporter.mjs only when a test failed and then passed on its retry
+      # (vitest `retry: 1`, see each vitest.config.ts). Absent on a clean run — `ignore` keeps that
+      # from being an error. Kept longer than the coverage artifacts: this is the flake ledger, and
+      # a week of history is what makes "is this test getting worse?" answerable.
+      - name: upload flaky-test report (${{ matrix.shard.name }})
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: flaky-report-server-${{ matrix.shard.name }}
+          path: server/*/flaky-report.json
+          if-no-files-found: ignore
+          retention-days: 7
+
   # —— Client: type-check + unit tests + web build —— (own runner, parallel with server-test/tools-test)
   client-test:
     name: client test + build
     runs-on: ubuntu-latest
-    env:
-      # 2026-08-14: coverage runs only on the pre-CD CI pass (push to main — the run whose success
-      # gates all 8 *-deploy.yml workflows via workflow_run — plus manual dispatch), NOT on PRs.
-      #
-      # Why: measured on this repo, `vitest run --coverage` costs client's suite 188s -> 668s (3.6x,
-      # +8min). The v8 instrumentation tax lands hardest on exactly the slowest tests —
-      # test/difficulty/ch1-6 and pvpSim run whole headless battle simulations (ch6 alone: 331s), so
-      # they pay it on every tick of a many-thousand-tick engine loop. Meanwhile the coverage output
-      # is, by its own design (see claudedocs/server.md "测试覆盖率百分比工具"), a REPORT with no
-      # threshold gate: it can never fail a run, so on a PR it was buying a Markdown table at the
-      # price of tripling the critical path. On the pre-CD pass — where the number is actually read
-      # as a release-quality signal, and nobody is blocked waiting on it — that trade is worth it.
-      #
-      # `test` and `test:coverage` exist side by side in client/package.json and in every server
-      # workspace's, so this is a pure script swap: same test files, same assertions, same failures.
-      TEST_SCRIPT: ${{ github.event_name == 'pull_request' && 'test' || 'test:coverage' }}
     steps:
       - uses: actions/checkout@v5
 
@@ -267,9 +276,16 @@ jobs:
       - name: client typecheck (src + tests)
         working-directory: client
         run: npm run typecheck
-      - name: client unit tests
+      # Always with coverage, on PRs too — see the matching comment on server-test above. The client
+      # tax used to be the blocker for that (188s -> 668s under v8), which is exactly why coverage
+      # was PR-exempt and why a coverage regression could only be caught after the merge. It is no
+      # longer a blocker: the whole-battle simulation suites that carried ~all of that cost moved to
+      # client/vitest.sim.config.ts and run WITHOUT instrumentation (still run — `test:coverage`
+      # chains them — just not measured; they were worth 0.05pp of coverage, 91.20% -> 91.15%).
+      # Net: coverage on every event for roughly the wall clock the uninstrumented run used to take.
+      - name: client unit tests (with coverage)
         working-directory: client
-        run: npm run "$TEST_SCRIPT"
+        run: npm run test:coverage
       # UI smoke: headless PIXI adapter constructs real scenes in pure Node to prove each scene starts correctly.
       # No Docker / browser / live stack needed, so this lives in the fast path.
       - name: client UI smoke tests
@@ -279,9 +295,19 @@ jobs:
         working-directory: client
         run: npm run build:web
 
-      # Skipped on PRs — see TEST_SCRIPT above; no coverage/ is produced there.
+      # Same flake ledger as the server shards — written only when client's e2e/load configs had to
+      # retry a test (the plain unit suite deliberately has no retry; see claudedocs/server.md).
+      - name: upload flaky-test report (client)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: flaky-report-client
+          path: client/flaky-report.json
+          if-no-files-found: ignore
+          retention-days: 7
+
       - name: upload coverage artifact (client)
-        if: always() && github.event_name != 'pull_request'
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: client-coverage
@@ -336,12 +362,12 @@ jobs:
   # consolidated table the old single-job "test coverage report" step did.
   # scripts/coverageSummary.mjs never throws, so `if: always()` + downloading whatever artifacts
   # did get produced lets it still render a (possibly partial) table even if a shard failed.
-  # Pre-CD pass only (push to main / manual dispatch), matching where TEST_SCRIPT actually produces
-  # coverage — on a PR every artifact would be absent and the table would be all "—".
+  # 2026-08-15: runs on PRs too, now that both events produce coverage (see server-test) — the 90%
+  # gate below is only a release gate if it can also block the PR that would breach it.
   coverage-report:
     name: test coverage report
     needs: [server-test, client-test]
-    if: always() && github.event_name != 'pull_request'
+    if: always()
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -383,7 +409,17 @@ jobs:
       # below 90%. Deliberately a separate step/script from the report above: that one must never
       # fail (see its own header comment), this one must always fail below the bar. See
       # scripts/checkCoverageThreshold.mjs and claudedocs/server.md "测试覆盖率百分比工具".
+      #
+      # TESTS_OK breaks the cascade that made every shard failure report TWICE and hid its own cause:
+      # a failed shard produces no coverage/ artifact, the gate then failed with "no coverage/ output
+      # found for server/metaserver" (run 31887181835), and that second, louder red is what people
+      # read — while the actual cause was one flaky e2e case three jobs away. When a test job failed,
+      # the run is already red and no deploy can fire, so the gate has nothing left to protect: it
+      # reports the partial table and exits 0. It still fails closed on a MISSING package when all
+      # test jobs passed — that case really is "coverage silently stopped being produced".
       - name: enforce >=90% line coverage per package
+        env:
+          TESTS_OK: ${{ needs.server-test.result == 'success' && needs.client-test.result == 'success' }}
         run: node scripts/checkCoverageThreshold.mjs
 
   # Slow path: docker compose brings up the full stack (mongo + meta + commercial + gateway + matchsvc + game),

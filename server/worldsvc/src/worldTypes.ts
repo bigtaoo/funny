@@ -304,4 +304,16 @@ export interface WorldServiceDeps {
   shopPrices?: SlgShopPriceCache;
   /** Content-moderation word list overlay cache (CONTENT_MODERATION_DESIGN.md §3.2); default = built-in REGION_WORDLISTS only. */
   wordlists?: WordlistCache;
+  /**
+   * Uniform [0,1) source for the non-replay randomness in this service — currently only spawn-point
+   * selection (core/spawn.ts: auto-placement dice + family-ring shuffles). Default = `Math.random`.
+   * Injectable so tests can pin it: an unseeded auto-placement puts the capital somewhere different
+   * on every run, which silently turns any distance-sensitive assertion downstream (march paths,
+   * `findCoord(baseX + 30, …)` targets) into a coin flip — that is exactly what made
+   * httpApiActionSiegeMapGaps.e2e.test.ts fail on main 2026-08-15 (`PATH_BLOCKED`) after passing on
+   * the PR. Tests that care about geometry should place the capital explicitly
+   * (`joinWorld(worldId, accountId, x, y)`); this hook covers the ones that must exercise the
+   * auto-placement path itself.
+   */
+  rng?: () => number;
 }
