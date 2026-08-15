@@ -378,6 +378,13 @@ jobs:
           node-version: 22
       - name: test coverage report
         run: node scripts/coverageSummary.mjs
+      # Hard gate (2026-08-15): fails this job — and therefore blocks every *-deploy.yml, which
+      # gates on `workflow_run.conclusion == 'success'` — if any package's line coverage drops
+      # below 90%. Deliberately a separate step/script from the report above: that one must never
+      # fail (see its own header comment), this one must always fail below the bar. See
+      # scripts/checkCoverageThreshold.mjs and claudedocs/server.md "测试覆盖率百分比工具".
+      - name: enforce >=90% line coverage per package
+        run: node scripts/checkCoverageThreshold.mjs
 
   # Slow path: docker compose brings up the full stack (mongo + meta + commercial + gateway + matchsvc + game),
   # then runs the real client orchestration core (createAppCore) as a Node process on the runner host for full end-to-end tests.
