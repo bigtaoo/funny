@@ -19,7 +19,7 @@ import { AUCTION_STATIC_REF_PRICE } from '@nw/shared';
 import { ui as C, txt, sketchPanel, seedFor } from '../../render/sketchUi';
 import { FS } from '../../render/fontScale';
 import { drawSidebarTabs, drawBottomNavTabs, sidebarNavW, bottomNavH, type HubTab } from '../../ui/widgets/HubTabs';
-import { t } from '../../i18n';
+import { t, type TranslationKey } from '../../i18n';
 import { buildIcon, type IconKind } from '../../render/icons';
 import { levelStarsText } from '../../render/levelStars';
 import { buildMaterialIcon } from '../../render/atlas/materialAtlas';
@@ -113,7 +113,7 @@ export function listableSkins(core: AuctionSceneCore): string[] {
 /** Label of the currently selected item (any class) for the create form, or null when none is chosen (or it is no longer listable). */
 export function selectedItemLabel(core: AuctionSceneCore): string | null {
   if (core.createClass === 'material') {
-    return t(`auction.${core.createMaterial}` as 'auction.scrap' | 'auction.lead' | 'auction.binding');
+    return t(`material.${core.createMaterial}` as TranslationKey);
   }
   if (core.createClass === 'equipment') {
     const inst = listableEquipment(core).find((e) => e.id === core.createEquipId);
@@ -153,7 +153,7 @@ export function buildPickEntries(core: AuctionSceneCore): PickEntry[] {
   const entries: PickEntry[] = [];
   for (const mat of MATERIALS) {
     entries.push({
-      material: mat, label: t(`auction.${mat}` as 'auction.scrap' | 'auction.lead' | 'auction.binding'),
+      material: mat, label: t(`material.${mat}` as TranslationKey),
       value: AUCTION_STATIC_REF_PRICE[mat] ?? 0, locked: false, cls: 'material',
       onPick: () => pickAndReturn(core, () => { core.createClass = 'material'; core.createMaterial = mat; }),
     });

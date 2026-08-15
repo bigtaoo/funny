@@ -599,6 +599,15 @@ designatedBuyerId?, expireAt(ms), status, buyerId?, rev
   - **踩坑记录**：字号断言最初直接写死 `17 * SCALE`/`13 * SCALE`（25.5/19.5），实际渲染值是 24/20——`txt()` 的字号要过 `snapFont()` 吸附到一套固定字号档位，不是原始像素值；改为用 `snapFont()` 本身计算期望值后通过。
 - **验收**：`tsc --noEmit`（含 `tsconfig.test.json`）全绿；`npm run build:web` 通过；`vitest run --config vitest.ui.config.ts` 对 `auctionScene.ui.ts`（80 例，新增 5 例）单独绿，再跑 `auctionScene.ui.ts`/`auctionActionBusyLock.ui.ts`/`auctionPickerDedupe.ui.ts`/`auctionBackButtonHitWidth.ui.ts`/`caretRegression.ui.ts`/`scenes.ui.ts` 六个拍卖/UI 相关文件合计 254 例全绿。纯测试新增，未改变任何渲染行为，不涉及浏览器截图。
 
+### 修复：拍卖行材料名自成一套，与背包/商店对不上（2026-08-15）
+
+- **问题**：用户对着「出售物品选择页」的材料一行截图画圈——"拍卖行里物品的名字是另外一套吗？为何和背包里的名字不一致"。核查确认属实：拍卖行三种材料读的是自己的一组 i18n key `auction.scrap|lead|binding`（中文"废料/铅块/绑线"），而背包（`EquipmentScene`）、商店（`ShopScene`）、抽卡（`GachaScene`）、统计（`StatsScene`）全都读共享的 `material.*`（中文"旧纸片/铅笔芯/装订线"，见 `EQUIPMENT_DESIGN.md` §材料命名定稿）。同一堆材料在两个界面叫两个名字。英文侧 `Scrap` vs `Tatter`、德文侧 `Schrott` vs `Fetzen` 同样对不上；`lead`/`binding` 的英德文恰好撞车，所以只有中文和英文 scrap 一栏能被肉眼看出来。这是拍卖行落地时另起一套 key、没有复用既有材料命名留下的分叉，不是后来改名漏改。
+- **改动**：
+  - `client/src/scenes/AuctionScene/itemLabels.ts`（`auctionLabel()` 材料分支）、`itemPickerRender.ts`（`selectedItemLabel()` + `buildPickEntries()`）三处改读 `material.${mat}`。
+  - `client/src/i18n/locales/{zh,en,de}.ts`：删掉 `auction.scrap`/`auction.lead`/`auction.binding` 三条同义 key（已无任何引用），避免以后又被人捡回去用。
+  - `client/test/ui/auctionScene.ui.ts` 两处断言里的 `t('auction.lead')`/`t('auction.scrap')` 同步换成 `material.*`。
+- **验收**：`tsc --noEmit` 全绿；新增 `client/test/ui/auctionMaterialNames.ui.ts`（4 例：选择页条目标签、创建表单已选标签、市场列表行 `"<名字> ×qty"`、以及三种语言下 `auction.*` 同义 key 确实已消失——`t()` 对缺失 key 会原样回显，正好用作断言），连同 `auctionScene.ui.ts`/`auctionPickerDedupe.ui.ts` 共 105 例全绿。未做浏览器截图：本次会话没有跑起后端（9090/18086/18080 均无监听），拍卖行需登录态 + 完整后端才能进入；headless UI 测试跑的是真实 PIXI 场景树 + 真实 i18n，已直接断言渲染出的文本。
+
 ---
 
 *本文为拍卖行机制权威，DRAFT/⚠️ 处随实现与拍板细化；数值以 `server/shared/src/slg.ts` 为准。*

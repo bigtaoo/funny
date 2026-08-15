@@ -64,7 +64,9 @@ export function auctionLabel(auc: AuctionView): string {
     return skinId ? skinDisplayName(skinId) : t('auction.filterSkin');
   }
   const mat = (auc.item?.['material'] as string | undefined) ?? 'scrap';
-  return `${t(`auction.${mat as 'scrap' | 'lead' | 'binding'}`)} ×${auc.qty}`;
+  // Same `material.*` keys the backpack/shop/gacha use — the auction used to carry its own
+  // `auction.scrap|lead|binding` synonyms, so the very same stack read "废料" here and "旧纸片" there.
+  return `${t(`material.${mat}` as TranslationKey)} ×${auc.qty}`;
 }
 
 /** Enhancement/character level for a listing (0 for material/skin, or an instance-backed listing
