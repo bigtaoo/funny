@@ -200,7 +200,7 @@ export function preloadTabIconTextures(): Promise<void> {
 }
 
 /** Every `IconKind` except the raster-only tab icons above, which skip `DRAW` entirely (see `buildIcon`). */
-type DrawableIconKind = Exclude<IconKind, RasterIconKind>;
+export type DrawableIconKind = Exclude<IconKind, RasterIconKind>;
 
 export const DRAW: Record<DrawableIconKind, (g: PIXI.Graphics, s: number, color: number) => void> = {
   book:    drawBook,

@@ -10,9 +10,9 @@
 // exercise. Run: npm run test:ui
 import { describe, it, expect } from 'vitest';
 import * as PIXI from 'pixi.js-legacy';
-import { DRAW, type IconKind } from '../../src/render/icons';
+import { DRAW, type DrawableIconKind } from '../../src/render/icons';
 
-const ALL_KINDS: IconKind[] = [
+const ALL_KINDS: DrawableIconKind[] = [
   'book', 'globe', 'coin', 'trophy', 'castle', 'pencils',
   'coins', 'coinStack', 'coinSack', 'coinChest',
   'scrap', 'lead', 'binding',

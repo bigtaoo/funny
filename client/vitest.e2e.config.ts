@@ -17,7 +17,14 @@ export default defineConfig({
       // Card catalogue constants (roster cap / fusion). Map before the barrel, same
       // reasoning as the auction alias above.
       '@nw/shared/cards': path.resolve(__dirname, '../server/shared/src/cards.ts'),
-      '@nw/shared': path.resolve(__dirname, '../server/shared/src/index.ts'),
+      // Browser-safe slice, same as webpack.config.js/vitest.config.ts — NOT the full
+      // src/index.ts barrel, which re-exports jwt.ts (-> 'jsonwebtoken', a server-only
+      // dep this job never `npm ci`s — see "bring up server stack" above, host-side only
+      // installs client/). createAppCore's scene graph pulls in plenty of bare '@nw/shared'
+      // imports (e.g. render/emblemIcon.ts); everything current resolves under slg/*, so
+      // this covers them all — a future non-slg, non-cards, non-auction export needs its
+      // own deep alias here rather than widening this one back to the full barrel.
+      '@nw/shared': path.resolve(__dirname, '../server/shared/src/slg/index.ts'),
     },
   },
   test: {

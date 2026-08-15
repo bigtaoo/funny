@@ -4,11 +4,13 @@
 // which the Record<IconKind,…> type cannot catch). No pixi rendering here, so no GL/canvas needed;
 // lives in the render suite only because importing icons.ts pulls pixi.js-legacy. Run: npm run test:render
 import { describe, it, expect } from 'vitest';
-import { DRAW, type IconKind } from '../../src/render/icons';
+import { DRAW, type DrawableIconKind } from '../../src/render/icons';
 
-// Exhaustive map of every IconKind. Typed Record<IconKind, true> so the compiler forces it to stay
-// in sync with the union — adding a kind to IconKind without updating this map fails to compile.
-const ALL_KINDS: Record<IconKind, true> = {
+// Exhaustive map of every DrawableIconKind (IconKind minus the raster-only tab icons, which skip
+// DRAW entirely — see icons.ts's TAB_ICON_RASTER). Typed Record<DrawableIconKind, true> so the
+// compiler forces it to stay in sync with the union — adding a drawable kind without updating this
+// map fails to compile.
+const ALL_KINDS: Record<DrawableIconKind, true> = {
   book: true, globe: true, coin: true, trophy: true, castle: true, pencils: true,
   coins: true, coinStack: true, coinSack: true, coinChest: true,
   scrap: true, lead: true, binding: true,
@@ -25,15 +27,15 @@ const ALL_KINDS: Record<IconKind, true> = {
 };
 
 describe('icons DRAW dispatch table', () => {
-  const kinds = Object.keys(ALL_KINDS) as IconKind[];
+  const kinds = Object.keys(ALL_KINDS) as DrawableIconKind[];
 
-  it('resolves a live draw function for every IconKind (guards icons/* import wiring)', () => {
+  it('resolves a live draw function for every DrawableIconKind (guards icons/* import wiring)', () => {
     for (const kind of kinds) {
       expect(typeof DRAW[kind], kind).toBe('function');
     }
   });
 
-  it('has exactly the IconKind union as keys — no orphan or missing entries', () => {
+  it('has exactly the DrawableIconKind union as keys — no orphan or missing entries', () => {
     expect(Object.keys(DRAW).sort()).toEqual(kinds.sort());
   });
 });
