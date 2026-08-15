@@ -283,10 +283,14 @@ describe('HttpCommercialClient — GET-based methods', () => {
     expect(lastReq?.url).toContain('transactionId=t');
     expect(lastReq?.url).toContain('limit=5');
 
-    // No optional args → none of the three `if` branches fire.
+    // No optional args → none of the three `if` branches fire. `URLSearchParams` still
+    // appends the empty query (`?`) to the request string built in listPaddleEvents, but
+    // whether that empty `?` survives onto the wire depends on the Node/undici version's
+    // URL-to-request-line serialization (observed: kept on Node 26, dropped on Node 22 CI)
+    // — assert on the path only, not that implementation detail.
     const eventsNoArgs = await client.listPaddleEvents({});
     expect(eventsNoArgs).toEqual(GENERIC_OK.events);
-    expect(lastReq?.url).toBe('/internal/paddle/events?');
+    expect(lastReq?.url).toMatch(/^\/internal\/paddle\/events\??$/);
 
     const before = requestCount;
     const nullClient = new HttpCommercialClient(null, KEY);
