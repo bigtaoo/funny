@@ -79,7 +79,11 @@ export class ListPanel {
     // 'mine' keeps the generic 'cards' glyph deliberately (AI art pilot batch 2 judged this NOT the
     // same "卡" concept as rosterIcon — "My Auctions" covers cards/equipment/materials/skins alike, not
     // specifically cards; see design/product/tab-icon-art-prompts.md §batch2 for the reasoning).
-    const icons: Record<AucTab, IconKind> = { all: 'tag', mine: 'cards', bids: 'hammer' };
+    // 'all' → shopTabIcon (AI art batch 3, pure reuse): same literal "price tag" concept as the shop-group
+    // hub's own tab, reused here rather than minting a second price-tag icon. 'bids' → bidTabIcon (AI
+    // art batch 3, new concept: auction gavel), a pure recognizability upgrade — no reuse conflict on
+    // 'hammer' itself (elsewhere it's only ever the equipment-enhance action button).
+    const icons: Record<AucTab, IconKind> = { all: 'shopTabIcon', mine: 'cards', bids: 'bidTabIcon' };
     const hubTabs: HubTab[] = tabs.map((tab) => ({ label: t(labelKeys[tab]), active: tab === core.activeTab, icon: icons[tab] }));
     const onSelect = (i: number): void => {
       const tab = tabs[i]!;

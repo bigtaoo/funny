@@ -41,6 +41,19 @@ const JOBS = [
   { src: 'tabicon_progress.webp',   name: 'progress' },
   { src: 'tabicon_honor.webp',      name: 'honor' },
   { src: 'tabicon_collection.webp', name: 'collection' },
+  // Batch 3 (design/product/tab-icon-art-prompts.md §batch3):
+  { src: 'tabicon_shop.webp',        name: 'shop' },
+  { src: 'tabicon_coin.webp',        name: 'coin' },
+  { src: 'tabicon_gacha.webp',       name: 'gacha' },
+  { src: 'tabicon_recharge.webp',    name: 'recharge' },
+  { src: 'tabicon_home.webp',        name: 'home' },
+  { src: 'tabicon_social.webp',      name: 'social' },
+  { src: 'tabicon_pvp.webp',         name: 'pvp' },
+  { src: 'tabicon_bid.webp',         name: 'bid' },
+  { src: 'tabicon_material.webp',    name: 'material' },
+  { src: 'tabicon_achievement.webp', name: 'achievement' },
+  { src: 'tabicon_battlepass.webp',  name: 'battlepass' },
+  { src: 'tabicon_pve.webp',         name: 'pve' },
 ];
 
 const OUT_DIR = path.resolve(__dirname, '../../../client/src/assets/tabicons');

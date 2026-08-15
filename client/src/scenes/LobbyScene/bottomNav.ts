@@ -44,11 +44,13 @@ export function drawBottomNav(core: LobbySceneCore, badges: BadgesPanel): void {
     // CardScene's roster tab, so it now shares that tab's own AI icon instead of an unrelated notebook glyph.
     { name: t('lobby.nav.cards'),  icon: 'rosterIcon', color: C.red,    assign: r => { core.cardsNavRect = r; } },
     { name: t('lobby.nav.shop'),   icon: 'coin',   color: C.green,  disabled: off, assign: r => { core.shopNavRect = r; } },
-    { name: t('lobby.nav.home'),   icon: 'home',   color: C.accent, active: true },
+    // 'home' → homeTabIcon (AI art batch 3): pure recognizability upgrade, no reuse conflict.
+    { name: t('lobby.nav.home'),   icon: 'homeTabIcon',   color: C.accent, active: true },
     // 'trophy' freed up for Career's Achievements tab only (AI art batch 2 dedupe) — this entry gets
     // its own new icon (bar chart) instead of sharing trophy with the achievements tab it opens into.
     { name: t('lobby.nav.stats'), icon: 'statsTabIcon', color: C.accent, disabled: off, assign: r => { core.statsNavRect = r; } },
-    { name: t('lobby.nav.social'), icon: 'globe',  color: C.gold,   disabled: off, assign: r => { core.socialNavRect = r; } },
+    // 'globe' → socialTabIcon (AI art batch 3): pure recognizability upgrade, no reuse conflict.
+    { name: t('lobby.nav.social'), icon: 'socialTabIcon',  color: C.gold,   disabled: off, assign: r => { core.socialNavRect = r; } },
   ];
 
   const n = slots.length;

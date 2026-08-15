@@ -47,20 +47,20 @@ export class PagePanel implements PageHandlers {
     const core = this.core;
     if (!core.cb.openShop) return;
     const { w, h, landscape } = core;
-    const tabs: HubTab[] = [{ label: t('shop.title'), active: false, icon: 'tag', badge: core.cb.getShopBadge?.() ?? false }];
+    const tabs: HubTab[] = [{ label: t('shop.title'), active: false, icon: 'shopTabIcon', badge: core.cb.getShopBadge?.() ?? false }];
     const actions: Array<() => void> = [() => core.cb.openShop?.()];
     if (core.cb.openCoins) {
-      tabs.push({ label: t('shop.coinsTab'), active: false, icon: 'coin' });
+      tabs.push({ label: t('shop.coinsTab'), active: false, icon: 'coinTabIcon' });
       actions.push(() => core.cb.openCoins?.());
     }
-    tabs.push({ label: t('gacha.title'), active: true, icon: 'capsule' });
+    tabs.push({ label: t('gacha.title'), active: true, icon: 'gachaTabIcon' });
     actions.push(() => {});
     if (core.cb.openBattlePass) {
-      tabs.push({ label: t('battlepass.title'), active: false, icon: 'trophy', badge: core.cb.getBattlePassBadge?.() ?? false });
+      tabs.push({ label: t('battlepass.title'), active: false, icon: 'battlepassTabIcon', badge: core.cb.getBattlePassBadge?.() ?? false });
       actions.push(() => core.cb.openBattlePass?.());
     }
     if (core.cb.openRecharge) {
-      tabs.push({ label: t('recharge.title'), active: false, icon: 'coinChest', badge: core.cb.getRechargeBadge?.() ?? false });
+      tabs.push({ label: t('recharge.title'), active: false, icon: 'rechargeTabIcon', badge: core.cb.getRechargeBadge?.() ?? false });
       actions.push(() => core.cb.openRecharge?.());
     }
     const onSelect = (i: number): void => actions[i]?.();

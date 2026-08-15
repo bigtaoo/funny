@@ -343,17 +343,17 @@ export class ShopSceneCore {
     const monthlyClaimable = !!this.cb.claimMonthlyCard && active && !claimedToday;
 
     const tabs: HubTab[] = [
-      { label: t('shop.title'), active: this.tab === 'shop', icon: 'tag', badge: monthlyClaimable },
+      { label: t('shop.title'), active: this.tab === 'shop', icon: 'shopTabIcon', badge: monthlyClaimable },
     ];
-    if (showCoins) tabs.push({ label: t('shop.coinsTab'), active: this.tab === 'coins', icon: 'coin' });
-    tabs.push({ label: t('gacha.title'), active: false, icon: 'capsule' });
+    if (showCoins) tabs.push({ label: t('shop.coinsTab'), active: this.tab === 'coins', icon: 'coinTabIcon' });
+    tabs.push({ label: t('gacha.title'), active: false, icon: 'gachaTabIcon' });
     const actions: Array<() => void> = [() => this.cb.openGacha()];
     if (this.cb.openBattlePass) {
-      tabs.push({ label: t('battlepass.title'), active: false, icon: 'trophy', badge: this.cb.getBattlePassBadge?.() ?? false });
+      tabs.push({ label: t('battlepass.title'), active: false, icon: 'battlepassTabIcon', badge: this.cb.getBattlePassBadge?.() ?? false });
       actions.push(() => this.cb.openBattlePass?.());
     }
     if (this.cb.openRecharge) {
-      tabs.push({ label: t('recharge.title'), active: false, icon: 'coinChest', badge: this.cb.getRechargeBadge?.() ?? false });
+      tabs.push({ label: t('recharge.title'), active: false, icon: 'rechargeTabIcon', badge: this.cb.getRechargeBadge?.() ?? false });
       actions.push(() => this.cb.openRecharge?.());
     }
 

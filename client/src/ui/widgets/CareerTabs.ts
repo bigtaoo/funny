@@ -46,14 +46,20 @@ export function drawCareerTabs(
   // 4th, those sub-tabs appeared below the Collection cell and looked like they belonged to
   // Collection instead (reported 14.07.2026).
   const tabs: HubTab[] = [
-    { label: t('stats.title'), active: active === 'stats', icon: 'book' },
+    // 'book' → statsTabIcon (AI art batch 3, pure reuse): this tab IS the "lobby.nav.stats" bottom-nav
+    // button's destination (nav.goStats() opens this exact StatsScene), so it shares that button's own
+    // bar-chart icon instead of the generic book glyph — same reuse logic as rosterIcon below.
+    { label: t('stats.title'), active: active === 'stats', icon: 'statsTabIcon' },
     // 'medal' freed up for LeaderboardScene's tinted rank-1/2/3 glyph only (AI art batch 2 dedupe) —
     // this tab gets its own new icon (laurel wreath) instead.
     { label: t('stats.titles'), active: active === 'titles', icon: 'honorTabIcon' },
     // 'cards' generic glyph → rosterIcon (AI art pilot batch 2, design/product/tab-icon-art-prompts.md
     // §batch2): the codex is a card compendium, same "卡" concept the roster tab's AI icon already draws.
     { label: t('collection.title'), active: active === 'codex', icon: 'rosterIcon' },
-    { label: t('stats.achievements'), active: active === 'achievements', icon: 'trophy', badge: !!cb.hasClaimableAchievement },
+    // 'trophy' → achievementTabIcon (AI art batch 3): batch 2 kept trophy here as the best-matching of
+    // what it thought was a 3-way conflict, but missed a 4th usage (shop-group hub's battlepass tab,
+    // now battlepassTabIcon) — trophy goes full-AI here to close that out properly.
+    { label: t('stats.achievements'), active: active === 'achievements', icon: 'achievementTabIcon', badge: !!cb.hasClaimableAchievement },
   ];
   const onSelect = (i: number) => {
     if (i === 0) cb.onOpenStats();

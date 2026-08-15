@@ -301,4 +301,31 @@ Hand-drawn doodle icon in a worn school notebook, single dark-ink pen line art, 
 
 用户已确认节奏：不分批打包，等这 3 张 v2 也出好、12 张齐了再一起打包+验证+接线。
 
-### 状态：9/12 过关，3 张等 v2 重出（`recharge`/`social`/`material`），出齐后一次性接线 🕐
+### 第二轮验证 + 接线（2026-08-15，全部完成 ✅）
+
+3 张 v2 图交回来，同样用 contact-sheet 方法（28/32/40/64px、`C.dark`/`C.paper`）验证，**全部过关**：
+
+- `rechargeTabIcon` v2：去掉木纹线后箱体轮廓+锁孔干净利落，28px 依然认得出锁孔。
+- `socialTabIcon` v2：经纬线真弯了，读"地球"不读"准星"。
+- `materialTabIcon` v2：光滑螺旋卷，没有锯齿也没有放射线，缩小后仍是清楚的卷曲形状。
+
+被打回的 v1 版本存档到 `art/ui/tabicons/_rejected/`（`tabicon_recharge_v1_woodgrain.webp`/`tabicon_social_v1_crosshair.webp`/`tabicon_material_v1_jagged.webp`）。12 张源图归位为 `tabicon_{shop,coin,gacha,recharge,home,social,pvp,bid,material,achievement,battlepass,pve}.webp`。
+
+**接线（已完成）**：
+1. [`pack_tab_icons.cjs`](../../art/ui/tabicons/pack_tab_icons.cjs) `JOBS` 新增 12 条，跑 `node pack_tab_icons.cjs` 产出 24 张 PNG（`client/src/assets/tabicons/`），现在总共 38 张（19 个光栅 `IconKind` × 2）。
+2. `icons.ts`：`IconKind`/`RasterIconKind`/`TAB_ICON_RASTER` 新增 12 个条目；`preloadTabIconTextures()` 注释同步改成 38 张。
+3. 逐点接线：
+   - `GachaScene/page.ts`/`RechargeScene.ts`/`BattlePassScene/nav.ts`/`ShopScene/core.ts` 四处共享的 shop-group tab：`tag`→`shopTabIcon`、`coin`→`coinTabIcon`、`capsule`→`gachaTabIcon`、`trophy`(battlepass)→`battlepassTabIcon`、`coinChest`→`rechargeTabIcon`。
+   - `LobbyScene/bottomNav.ts`：`home`→`homeTabIcon`、`globe`→`socialTabIcon`（`lobby.nav.shop` 的 `coin` 图标本次**没有**动——那是另一个独立的点，深链目的地其实是 GachaScene 默认的"扭蛋"tab 而不是"商店"tab，判断为超出这批范围，留给以后专门判断）。
+   - `CareerTabs.ts`：`book`(stats.title)→`statsTabIcon`（纯复用，代码确认深链同一个 `StatsScene`）、`trophy`(achievements)→`achievementTabIcon`（正式转 AI）。
+   - `AchievementScene.ts` `CATEGORY_ICON`：`pve: 'book'`→`'pveTabIcon'`、`pvp: 'swords'`→`'pvpTabIcon'`。
+   - `AuctionScene/itemPickerRender.ts`：`equipment: 'armor'`→`'equipIcon'`（纯复用）、`material: 'scrap'`→`'materialTabIcon'`。
+   - `AuctionScene/list.ts`：`all: 'tag'`→`'shopTabIcon'`（纯复用）、`bids: 'hammer'`→`'bidTabIcon'`（`mine` 维持通用 `cards`，批次 2 已判断过不动）。
+4. `tsc --noEmit` 通过；`vitest --config vitest.ui.config.ts` 全量 181 文件 1629 用例通过。
+5. 游戏内截图验证本次跳过——没有起后端服务（bootstrap 失败），Browser 面板当时也没在客户端那边显示，截图请求超时。风险最高的点（缩小后会不会糊）已经用跟批次 1/2 完全一致的 contact-sheet 像素级方法过了一遍，比启动整个游戏点开各个 tab 更能验证这件事。
+
+**遗留发现（不在本批范围，留给以后）**：梳理 `LobbyScene/bottomNav.ts` 时发现 `lobby.nav.shop`（底部导航"商店"按钮）当前用的是程序绘制的 `coin` 图标，点进去实际深链到的是 `GachaScene`（`nav.goGacha()`），而 GachaScene 默认激活的 tab 是"扭蛋"（`gachaTabIcon`）不是"商店"——按这批里 `lobby.nav.cards`→`rosterIcon`/`lobby.nav.stats`→`statsTabIcon` 的"深链复用"逻辑，这个点大概率也该复用 `gachaTabIcon` 而不是留着旧的 `coin`。这次没有一并处理（本次判断范围没覆盖到这个点），留作后续小任务。
+
+### 状态：批次 3 全部完成 ✅
+
+12 个页签图标（10 个纯辨识度升级 + 2 个了结 trophy/book 遗留冲突）全部出图、验证、接线完毕，另有 2 处（`armor`→`equipIcon`、`book`→`statsTabIcon`）确认为纯复用无需新图。
