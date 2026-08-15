@@ -78,7 +78,7 @@ Hand-drawn doodle icon in a worn school notebook, single dark-ink pen line art, 
 
 ## 代码接线（已完成）
 
-1. `icons.ts`：`IconKind` 新增 `'rosterIcon' | 'equipIcon' | 'skinIcon'`；`DRAW` 表类型收窄为 `Record<Exclude<IconKind, 这三个>, ...>`（这三个不走程序绘制，不需要 DRAW 条目）；`buildIcon()` 在分发给 `DRAW` 之前先查一张 `TAB_ICON_RASTER` 表，命中则返回一个按 `containScale` 居中缩放的 `PIXI.Sprite`（`color===0xffffff` 取 active 贴图，否则 inactive）；新增 `preloadTabIconTextures()`（复用 `assets/preloadTextures.ts` 的 `preloadTextureList`）供场景预热。
+1. `icons.ts`：`IconKind` 新增 `'rosterIcon' | 'equipIcon' | 'skinIcon'`；`DRAW` 表类型收窄为 `Record<Exclude<IconKind, 这三个>, ...>`（这三个不走程序绘制，不需要 DRAW 条目）；`buildIcon()` 在分发给 `DRAW` 之前先查一张 `TAB_ICON_RASTER` 表，命中则返回一个按 `containScale` 居中缩放的 `PIXI.Sprite`（调用方传的 `color` 只当作"底色深浅"的提示：浅色墨水取 active 白线图，否则取 inactive 灰线图；2026-08-15 起是亮度阈值判断，不再是 `color===0xffffff` 严格相等，原因见文末"批次 3 收尾修复"）；新增 `preloadTabIconTextures()`（复用 `assets/preloadTextures.ts` 的 `preloadTextureList`）供场景预热。
 2. `CardScene.ts` / `EquipmentScene.ts` 构造函数：`this.render()` 之后 `void preloadTabIconTextures().then(() => this.render())`——纹理是 AI PNG（异步解码），首帧可能画不出来，预热完成后补一次 render 兜底（同 `ShopScene/card.ts` `artUrl` 贴图的 `baseTexture.valid` 处理思路，只是搬到了预热层而不是逐图标挂 `once('loaded')`，因为 `buildIcon()` 是给 30+ 调用点用的同步 API，不适合为这一个用例改成异步）。
 3. `CardScene/list.ts` 三个 tab 的 `icon` 字段：`'cards'/'armor'/'brush'` → `'rosterIcon'/'equipIcon'/'skinIcon'`。
 4. `EquipmentScene/inventory.ts` 两处（竖屏底栏 + 横屏侧栏）硬编码的 `icon: 'armor'`（"Equipment" 自己那个 tab）→ `'equipIcon'`。
@@ -329,3 +329,18 @@ Hand-drawn doodle icon in a worn school notebook, single dark-ink pen line art, 
 ### 状态：批次 3 全部完成 ✅
 
 12 个页签图标（10 个纯辨识度升级 + 2 个了结 trophy/book 遗留冲突）全部出图、验证、接线完毕，另有 2 处（`armor`→`equipIcon`、`book`→`statsTabIcon`）确认为纯复用无需新图。
+
+---
+
+## 批次 3 收尾修复：深色底选错贴图（2026-08-15）
+
+**现象**：用户反馈主页底部导航"养成/商城"两个新图标几乎看不清（"生涯"的实心柱状图、"社交"的粗线地球勉强能看，线条最细的 roster 卡牌 / gacha 扭蛋球彻底糊进底色）。
+
+**根因**：`buildRasterTabIcon()` 原本用 `color === 0xffffff` 严格相等来选贴图变体，但只有 HubTabs 的 active 格子恰好传 `0xffffff`。`LobbyScene/bottomNav.ts` 的非激活槽位传的是 `C.light`（0xdddddd），落进 else 分支拿到**纸底用的 `#686868` 灰线图**，而这条底栏填的是 `C.cover`（0x3a352f，近黑）——灰线画在近黑底上，再叠 0.72 alpha，等于隐形。这不是资源问题（图本身没错），也不是"AI 图太细"，是变体选择的判定条件太窄。批次 3 那次"游戏内截图验证跳过"（见上一节第 5 条）正好漏掉的就是这一类问题：contact-sheet 只验证了"图在正确的底色上糊不糊"，验证不了"代码有没有挑到正确的那张图"。
+
+**修复**：
+1. `icons.ts`：新增 `isLightInk(color)`（Rec.601 亮度，阈值 0.70），`buildRasterTabIcon()` 改为按它选变体——调用方传的 ink 颜色被解读为"我这块底是深是浅"的提示。`C.light`(0xdddddd)/`0xffffff` 过阈值取白线图；HubTabs 非激活格的 `C.mid`(0x888888, 亮度 ≈0.53) 不过阈值，仍取纸底灰线图，行为不变。
+2. `LobbyScene/bottomNav.ts`：五个槽位（含 disabled）统一用浅色 ink，状态差异只由 alpha 表达（active 1.0 / 普通 0.85 / disabled 0.35）——原来 disabled 传 `C.mid` 同样会在深色底上消失。非激活 alpha 从 0.72 提到 0.85。
+3. 顺带修好同一个 bug 的第二处：`AuctionScene/list.ts` 的分类 chip，激活态是 `C.dark` 填充 + `C.light` 墨水，此前同样拿到灰线图画在深底上。
+
+**验证**：`tsc --noEmit` 通过；`test/render/icons.test.ts` 通过；Playwright（`start:e2e` 9096 + `window.__nwE2E.views.showLobby()`）实拍底栏截图确认五个图标全部清晰可辨——这次没有再跳过截图。
