@@ -76,4 +76,32 @@ describe('GatewayClient.push', () => {
     await new Promise((r) => setTimeout(r, 0));
     expect(global.fetch).not.toHaveBeenCalled();
   });
+
+  it('redis available, no roomId passed: publishes without a roomId field (the omitted-roomId ternary branch)', async () => {
+    const published: { channel: string; message: string }[] = [];
+    const redis = fakeRedis(async (channel, message) => {
+      published.push({ channel, message });
+      return 1; // one subscriber, delivered
+    });
+    const client = new GatewayClient('http://gateway:8090', 'key', redis);
+    client.push('acc-1', ROOM_STATE); // no roomId (3rd arg omitted)
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(published).toHaveLength(1);
+    const parsed = JSON.parse(published[0]!.message) as Record<string, unknown>;
+    expect(parsed).toEqual({ recipients: ['acc-1'], msg: ROOM_STATE }); // no `roomId` key at all
+    expect('roomId' in parsed).toBe(false);
+  });
+
+  it('match_found messages take the retries=2 branch (dedup-safe retry) on the direct HTTP fallback path', async () => {
+    const MATCH_FOUND: PushMsg = { kind: 'match_found', gameUrl: 'ws://game:1/ws', ticket: 'tkt' };
+    const client = new GatewayClient('http://gateway:8090', 'key', null); // no redis -> straight to HTTP
+    client.push('acc-1', MATCH_FOUND, 'room-9');
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(global.fetch).toHaveBeenCalledTimes(1); // succeeds on the first attempt (fetch mock returns 200)
+    const [url, init] = (global.fetch as ReturnType<typeof vi.fn>).mock.calls[0]!;
+    expect(String(url)).toContain('/gw/push');
+    expect(JSON.parse((init as RequestInit).body as string)).toMatchObject({ accountId: 'acc-1', msg: MATCH_FOUND, roomId: 'room-9' });
+  });
 });
