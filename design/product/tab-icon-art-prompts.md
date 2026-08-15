@@ -316,7 +316,7 @@ Hand-drawn doodle icon in a worn school notebook, single dark-ink pen line art, 
 2. `icons.ts`：`IconKind`/`RasterIconKind`/`TAB_ICON_RASTER` 新增 12 个条目；`preloadTabIconTextures()` 注释同步改成 38 张。
 3. 逐点接线：
    - `GachaScene/page.ts`/`RechargeScene.ts`/`BattlePassScene/nav.ts`/`ShopScene/core.ts` 四处共享的 shop-group tab：`tag`→`shopTabIcon`、`coin`→`coinTabIcon`、`capsule`→`gachaTabIcon`、`trophy`(battlepass)→`battlepassTabIcon`、`coinChest`→`rechargeTabIcon`。
-   - `LobbyScene/bottomNav.ts`：`home`→`homeTabIcon`、`globe`→`socialTabIcon`（`lobby.nav.shop` 的 `coin` 图标本次**没有**动——那是另一个独立的点，深链目的地其实是 GachaScene 默认的"扭蛋"tab 而不是"商店"tab，判断为超出这批范围，留给以后专门判断）。
+   - `LobbyScene/bottomNav.ts`：`home`→`homeTabIcon`、`globe`→`socialTabIcon`、`lobby.nav.shop`(`coin`)→`gachaTabIcon`（同日跟进，见下）。
    - `CareerTabs.ts`：`book`(stats.title)→`statsTabIcon`（纯复用，代码确认深链同一个 `StatsScene`）、`trophy`(achievements)→`achievementTabIcon`（正式转 AI）。
    - `AchievementScene.ts` `CATEGORY_ICON`：`pve: 'book'`→`'pveTabIcon'`、`pvp: 'swords'`→`'pvpTabIcon'`。
    - `AuctionScene/itemPickerRender.ts`：`equipment: 'armor'`→`'equipIcon'`（纯复用）、`material: 'scrap'`→`'materialTabIcon'`。
@@ -324,7 +324,7 @@ Hand-drawn doodle icon in a worn school notebook, single dark-ink pen line art, 
 4. `tsc --noEmit` 通过；`vitest --config vitest.ui.config.ts` 全量 181 文件 1629 用例通过。
 5. 游戏内截图验证本次跳过——没有起后端服务（bootstrap 失败），Browser 面板当时也没在客户端那边显示，截图请求超时。风险最高的点（缩小后会不会糊）已经用跟批次 1/2 完全一致的 contact-sheet 像素级方法过了一遍，比启动整个游戏点开各个 tab 更能验证这件事。
 
-**遗留发现（不在本批范围，留给以后）**：梳理 `LobbyScene/bottomNav.ts` 时发现 `lobby.nav.shop`（底部导航"商店"按钮）当前用的是程序绘制的 `coin` 图标，点进去实际深链到的是 `GachaScene`（`nav.goGacha()`），而 GachaScene 默认激活的 tab 是"扭蛋"（`gachaTabIcon`）不是"商店"——按这批里 `lobby.nav.cards`→`rosterIcon`/`lobby.nav.stats`→`statsTabIcon` 的"深链复用"逻辑，这个点大概率也该复用 `gachaTabIcon` 而不是留着旧的 `coin`。这次没有一并处理（本次判断范围没覆盖到这个点），留作后续小任务。
+**遗留发现，已同日处理**：梳理 `LobbyScene/bottomNav.ts` 时发现 `lobby.nav.shop`（底部导航"商店"按钮）当前用的是程序绘制的 `coin` 图标，点进去实际深链到的是 `GachaScene`（`nav.goGacha()`），而 `app/nav/shop/nav.ts` 的 `goGacha()` 确认 GachaScene 分组永远以 `'gacha.title'` 为激活 tab（不是"商店"）——按这批里 `lobby.nav.cards`→`rosterIcon`/`lobby.nav.stats`→`statsTabIcon` 的"深链复用"逻辑，改为复用 `gachaTabIcon`。`tsc --noEmit` + 全量 `vitest` 通过。
 
 ### 状态：批次 3 全部完成 ✅
 
