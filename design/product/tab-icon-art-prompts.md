@@ -1,10 +1,10 @@
 # 页签主图标 AI 化 — 试点 Prompt 文档
 
-> 创建：2026-08-14 · 试点批定稿+接线：2026-08-14 · 批次 2 判断+prompt 定稿：2026-08-14
+> 创建：2026-08-14 · 试点批定稿+接线：2026-08-14 · 批次 2 判断+prompt 定稿：2026-08-14 · 批次 2 出图+接线完成：2026-08-15
 > 配套代码：[`client/src/render/icons.ts`](../../client/src/render/icons.ts)（`rosterIcon`/`equipIcon`/`skinIcon` 三个新 `IconKind`）· [`client/src/scenes/CardScene/list.ts`](../../client/src/scenes/CardScene/list.ts) · [`client/src/scenes/EquipmentScene/inventory.ts`](../../client/src/scenes/EquipmentScene/inventory.ts) · [`client/src/app/nav/game/campaignRoster.ts`](../../client/src/app/nav/game/campaignRoster.ts)
 > 美术总纲：[`art-direction.md`](art-direction.md) §0（资产分工）/ §6.2（装饰物涂鸦管线，本文档打包脚本沿用其"抠白底"套路）/ §7.6（本次试点的记录条目）
 > 同类文档：[`shop-art-prompts.md`](shop-art-prompts.md) · [`gacha-art-prompts.md`](gacha-art-prompts.md)
-> 状态：**试点批（3/15）已定稿并接线**；**批次 2（trophy/book/medal/cards/brush 5 个复用槽位）判断+prompt 已定，等用户出图**——详见下方"批次 2"一节
+> 状态：**试点批（3/15）已定稿并接线**；**批次 2（trophy/book/medal/cards/brush 5 个复用槽位）已全部完成**——详见下方"批次 2"一节
 
 ## 背景
 
@@ -145,12 +145,16 @@ Hand-drawn doodle icon in a worn school notebook, single dark-ink pen line art, 
 Hand-drawn doodle icon in a worn school notebook, single dark-ink pen line art, slightly wobbly imperfect strokes, quick loose sketch — not polished. One bold, simple, highly readable silhouette, no scattered separate pieces. Subject: a single chunky jigsaw puzzle piece — one classic interlocking puzzle piece shape with one rounded tab knob sticking out on one edge and one rounded socket notch cut into an adjacent edge, roughly square overall. Just ONE puzzle piece, not a pair or a grid of pieces. Single object, centered, filling the frame, on a plain pure-white background, no grid lines, no other elements. Flat 2D, no shading or only light pencil hatching for volume. Must stay clearly recognizable when scaled down to 32x32 pixels. Style of West of Loathing / doodle art. Avoid: color, painterly rendering, gradients, glow, 3d render, photorealistic look, thick clean cartoon outline, vector-art look, multiple puzzle pieces, puzzle grid, open book shape, gear/cog shape, other objects, confetti dots, text, letters, watermark, gray background, notebook grid lines, drop shadow.
 ```
 
-### 出图后的下一步（沿用批次 1 管线，尚未执行）
+### 出图后的管线（已跑通，2026-08-15）
 
-1. 用户拿 4 条 prompt 跑 GPT Image 2，白底黑线图丢进 `art/ui/tabicons/`（文件名建议 `tabicon_stats.webp` / `tabicon_progress.webp` / `tabicon_honor.webp` / `tabicon_collection.webp`，跟批次 1 的 `tabicon_{roster,equip,skin}` 命名对齐）。
-2. 扩 [`pack_tab_icons.cjs`](../../art/ui/tabicons/pack_tab_icons.cjs) 的 `JOBS` 数组，跑 `node pack_tab_icons.cjs` 产出 `{name}_active/inactive.png` 到 `client/src/assets/tabicons/`。
-3. 小尺寸验证（28/32/40/64px contact sheet，深底/纸底两种背景）——尤其 `statsTabIcon`/`progressTabIcon` 这对要重点看它们放在一起是否真的分得清，不能只各自单独过关。
-4. `icons.ts`：`IconKind` 新增 `'statsTabIcon' | 'progressTabIcon' | 'honorTabIcon' | 'collectionTabIcon'`，`TAB_ICON_RASTER` 表新增 4 条。
-5. 接线：`LobbyScene/bottomNav.ts`（`lobby.nav.stats` → `statsTabIcon`）、`AchievementScene.ts`（`CATEGORY_ICON.progression` → `progressTabIcon`、`CATEGORY_ICON.collection` → `collectionTabIcon`）、`CareerTabs.ts`（`stats.titles` → `honorTabIcon`）。
-6. `tsc --noEmit` + `vitest --config vitest.ui.config.ts` 全量回归。
-7. 更新本文档"批次 2"状态 + `art-direction.md` §7.6，提交。
+用户用 4 条 prompt 跑 GPT Image 2 出图，文件名分别对应 `tabicon_stats.webp`（bar_chart_doodle_icon）/ `tabicon_progress.webp`（rank-up-doodle-icon-final）/ `tabicon_honor.webp`（laurel_wreath_doodle）/ `tabicon_collection.webp`（puzzle_doodle_icon），一次通过、没有反复：
+
+1. 源图丢进 `art/ui/tabicons/`，[`pack_tab_icons.cjs`](../../art/ui/tabicons/pack_tab_icons.cjs) 的 `JOBS` 数组新增 4 条，跑 `node pack_tab_icons.cjs` 产出 `{stats,progress,honor,collection}_{active,inactive}.png` 到 `client/src/assets/tabicons/`。
+2. 小尺寸验证：一次性 `sharp` contact-sheet 脚本（同批次 1 手法，未留存），28/32/40/64px 分别合成到 `C.dark`(0x2c2c2a)/`C.paper`(0xfaf6ee) 背景上截图比对。**四张全部一次过关**——`statsTabIcon`(柱状图)/`progressTabIcon`(箭头阶梯) 在 28px 依然清晰且互相不混淆；`honorTabIcon`(桂冠) 虽然是四张里细节密度最高的一张，缩到 28px 仍能读出"花环"轮廓，没有像试点批 v3 卡背包那样糊成一团；`collectionTabIcon`(拼图块) 线条比同批的柱状图/箭头明显更细（outline 而非实心剪影），跟试点批 `equipIcon`/`skinIcon` 也是细线 outline、`rosterIcon` 是实心剪影的粗细混搭先例一致，判断不算新问题，未要求重出。
+3. `icons.ts`：`IconKind` 新增 `'statsTabIcon' | 'progressTabIcon' | 'honorTabIcon' | 'collectionTabIcon'`；新增 `RasterIconKind` 联合类型统一给 `TAB_ICON_RASTER`/`DrawableIconKind` 的 `Exclude` 复用（现在是 7 个光栅图标，不再各处手写重复的联合）。
+4. 接线：`LobbyScene/bottomNav.ts`（`lobby.nav.stats` → `statsTabIcon`）、`AchievementScene.ts`（`CATEGORY_ICON.progression` → `progressTabIcon`、`CATEGORY_ICON.collection` → `collectionTabIcon`）、`CareerTabs.ts`（`stats.titles` → `honorTabIcon`）。
+5. `tsc --noEmit` 通过；`vitest --config vitest.ui.config.ts` 全量 181 文件 1629 用例通过。
+
+### 状态：批次 2 全部完成 ✅
+
+5 个复用槽位（trophy/book/medal/cards/brush）全部处理完毕：3 个纯复用接线 + 4 张新图出图/打包/验证/接线，均已落地。
