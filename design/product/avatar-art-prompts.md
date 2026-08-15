@@ -223,6 +223,21 @@ plain sky-blue collared top.
 
 > **性别**：本组不锁性别，20 个人设按气质自然分配（发型/五官不刻意做男女二元区分，出图时不必额外声明性别）。**发型**只需保证 20 张之间彼此不撞（炸毛/寸头/双马尾/齐刘海/波浪长发…轮流用，具体哪张配哪个发型出图时按当次效果自由分配，不强制锁死一一对应表），核心辨识度由上表的表情+手势描述扛。**出图 prompt 结构**：涛方简笔卡通脸前缀（其中"a simple single-line mouth"按该行"表情+手势"描述替换）+ 该行手势描述接在 `Shoulders show...` 之前 + 共用负向；20 条不逐一展开重复模板，结构与上方 `hero_*` 完全一致。
 
+### 出图记录 + 定稿状态（2026-08-15）
+
+20 张按 A~D 四组逐张出图审核，**19 张一版过、1 张迭代到二版**：
+
+- `preset_hype`：首版嘴型是纯张大的椭圆，读起来像"被吓到"而非"兴奋应援"；二版把嘴角改成上扬的呼喊弧线、眼角加简笔星芒线（纯线稿，不是玻璃光斑），改对后收录。首版草稿归档 `art/leftover/`。
+- `preset_softie`：首版"面冷"到位但"心热"没读出来——纯黑点眼睛无法单靠形状传递委屈，绷直的嘴线也没留余地。二版加了两处细节：内眼角笔触极轻微下垂（暗示压着的委屈，不到悲伤的程度）+ 嘴角绝大部分绷直但一端没压住、冒出一丝上翘的弧度（"装冷淡但没绷住"的裂缝）。改对后收录，首版草稿归档 `art/leftover/`。
+- 其余 18 张（`gogetter`/`sunny`/`fanboy`/`chuuni`/`observer`/`emo`/`dreamer`/`shy`/`lazy`/`aloof`/`hothead`/`perfectionist`/`snark`/`sly`/`tsundere`/`peacemaker`/`nerdcrush`/`curious`）首版即达标直接收录。
+
+**发型分配结果**（20 张互不撞款，供后续如需再出变体时参考，非强制锁死）：A 组＝炸毛短发后梳／双丸子头／高马尾／蓬松刘海鲍伯头／单侧遮眼长刘海；B 组＝齐肩内扣短bob／长直发单侧刘海／微卷中长波浪发／双边小辫／乱糟糟寸乱短发；C 组＝随性半长直发撩耳后／竖刺短寸头／一丝不苟齐刘海+低发髻／不对称短碎发+竖翘刘海／顺滑翘尾中长发；D 组＝高扎双马尾／蓬松圆短卷发／侧分刘海+滑框眼镜（20 张里唯一戴眼镜的）／微翘短发／短碎发单撮天线呆毛。
+
+**资产处理**（2026-08-15，与用户确认过"不打包图集，走独立 PNG"，见下方渲染契约）：
+- 20 张定稿源图在 `art/ui/head/` 原地重命名为 `preset_<key>.{png,webp}`（保留 AI 原始格式/分辨率，作为母版）；2 张迭代淘汰稿 + 8 张旧线稿源图（`house`/`book` 等物件图标，本次要淘汰的旧管线）一并移入 `art/leftover/`。
+- 母版按 512px 宽等比缩放（胸像头像展示尺寸都在 100px 量级，1024~1536px 原图对运行时纯属浪费）+ `sharp` `{ palette: true, quality: 90, effort: 10, compressionLevel: 9 }` 压缩（同 `art/scripts/appendAtlasFrames.js` 的压缩口径），产出 `client/src/assets/avatars/preset/preset_<key>.png`，20 张共 ~3.3MB（单张 100~220KB，量级对齐 `client/src/assets/units/*.png`）。
+- 新增 `client/src/render/presetAvatarArt.ts`（仿 `cardArt.ts` 的 `UNIT_ART_URLS` 写法），导出 `PRESET_AVATAR_KEYS`/`PRESET_AVATAR_ART_URLS`——**只是让这 20 张图可以被 import**，尚未接入 `avatar.ts`/`avatarPicker.ts`（`tsc --noEmit` + `webpack` 构建已过，但 `AVATAR_DEFS`/`presetDef` 渲染路径的切换、equip/material 分类删除等仍是下面「功能实现待办」的范围，未做）。
+
 ---
 
 ## 三、skin 类目 — 6 张胸像（从已定稿皮肤立绘裁切，非重新出图）
@@ -247,8 +262,8 @@ plain sky-blue collared top.
 ## 四、功能实现待办（本文档只覆盖美术+渲染契约，以下留给功能实现阶段）
 
 1. **删除 `equip`/`material` 分类**：`client/src/render/avatar.ts`（`AvatarCategory` 类型、`CATEGORY_BG`、`categoryIcon`）、`client/src/scenes/SettingsScene/types.ts`（`AVATAR_TABS`/`AVATAR_TAB_LABEL_KEY`/`AVATAR_LOCKED_KEY`）、`avatarPicker.ts` 的 `pickerItems()` 里对应两个 `case` 一并删除；已装配 `equip:*`/`material:*` 头像的存量账号需要一个迁移/兜底（服务器端 `equipAvatar` 校验或读取时遇到未知分类 → 回退到某个 preset 默认值，避免头像消失变空白）。
-2. **`pack_avatar_atlas.cjs` 退役**：`art/ui/head/pack_avatar_atlas.cjs` + `client/src/assets/avatars/{avatars.png,avatars.json}` + `client/src/render/atlas/avatarAtlas.ts` 整体删除；`art/ui/head/` 下 8 张旧源图归档 `art/leftover/`。`bootManifest.ts` L0 对应的图集加载项一并摘除。
-3. **新增独立 PNG import**：仿 `cardArt.ts` 写法，新增 `client/src/render/presetAvatarArt.ts`（20 张 `preset_*` 胸像）+ 在 `cardArt.ts` 旁或新文件里补 6 张 `hero_*` 胸像 url 表（区别于现有 `UNIT_ART_URLS`——那张表是战斗/卡面立绘，不要复用）+ 皮肤胸像 url 表（§三）。
+2. **`pack_avatar_atlas.cjs` 退役**：`art/ui/head/pack_avatar_atlas.cjs` + `client/src/assets/avatars/{avatars.png,avatars.json}` + `client/src/render/atlas/avatarAtlas.ts` 整体删除。~~`art/ui/head/` 下 8 张旧源图归档 `art/leftover/`~~ ✅ 2026-08-15 已归档（随 20 张 preset 出图一起处理，见上方「资产处理」）。`bootManifest.ts` L0 对应的图集加载项一并摘除（未做——`icons_atlas` 还merge了 equip/material/faction，删除前需确认这几个分类的删除时机，见下条）。
+3. **新增独立 PNG import**：✅ 2026-08-15 `preset_*` 20 张已完成——`client/src/render/presetAvatarArt.ts` 仿 `cardArt.ts` 写法导出 `PRESET_AVATAR_ART_URLS`（图片本身在 `client/src/assets/avatars/preset/`，见上方「资产处理」）。仍缺：`cardArt.ts` 旁或新文件里补 6 张 `hero_*` 胸像 url 表（区别于现有 `UNIT_ART_URLS`——那张表是战斗/卡面立绘，不要复用）+ 皮肤胸像 url 表（§三，等 skin 立绘定稿后再做）。
 4. **`avatar.ts` 改造**：`AVATAR_DEFS`（8 项 icon+bg）整个替换成 20 项 preset 胸像表；`buildAvatar` 里 `presetDef` 分支从"图标+染色圆盘"改成直接调用 `buildPortraitIcon`（与 hero/skin 同一渲染路径），`categoryIcon('hero', ...)` 改查新的 hero 胸像表（不再是 `UNIT_ART_URLS`），`categoryIcon('skin', ...)` 改查新的皮肤胸像表（不再兜底到 hero）。
 5. **`i18n`**：`AVATAR_TAB_LABEL_KEY` 摘除 equip/material 两个 key；若 UI 文案有埋"共 8 个预设"之类的写死数字，一并检查更新为 20。
 6. **`UI_DESIGN.md` §"avatarId 数据格式"**：随代码改动同步更新（分类枚举、渲染契约描述、`avatarAtlas.ts` 引用）。
