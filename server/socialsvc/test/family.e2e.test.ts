@@ -3,7 +3,7 @@
 // the 30-member cap, the family chat channel, and the worldsvc-facing internal API
 // (membership lookup, activity bump, sect mirror, prosperity refresh, season reset).
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
-import { FAMILY_CAP, FAMILY_MSG_BODY_MAX, familyProsperity, type ErrorCode } from '@nw/shared';
+import { FAMILY_CAP, FAMILY_MSG_BODY_MAX, familyProsperity, EMBLEM_KEYS, EMBLEM_COLORS, type ErrorCode } from '@nw/shared';
 import type { SocialMongo } from '../src/db';
 import { FamilyService } from '../src/familyService';
 import { MailService } from '../src/mailService';
@@ -355,6 +355,19 @@ describe.skipIf(!mongo)('socialsvc FamilyService e2e', () => {
     await expectErr(svc.setAnnouncement('leader', 'x'.repeat(201)), 'BAD_REQUEST');
     await svc.setAnnouncement('leader', 'Welcome, scribes.');
     expect((await svc.getFamily(fam.familyId))!.announcement).toBe('Welcome, scribes.');
+  });
+
+  it('setEmblem: leader-only (unlike setAnnouncement, elder is NOT allowed), validates key + colour against the fixed pools', async () => {
+    const fam = await svc.createFamily('leader', 'Emblems', 'EMBL');
+    await svc.joinFamily('m1', fam.familyId);
+    await svc.setRole('leader', 'm1', 'elder');
+    await expectErr(svc.setEmblem('m1', EMBLEM_KEYS[0]!, EMBLEM_COLORS[0]!), 'NO_PERMISSION'); // elder denied
+    await expectErr(svc.setEmblem('leader', 'not_a_real_key' as never, EMBLEM_COLORS[0]!), 'BAD_REQUEST');
+    await expectErr(svc.setEmblem('leader', EMBLEM_KEYS[0]!, 0x123456), 'BAD_REQUEST'); // not in EMBLEM_COLORS
+    await svc.setEmblem('leader', EMBLEM_KEYS[3]!, EMBLEM_COLORS[2]!);
+    const view = await svc.getFamily(fam.familyId);
+    expect(view!.emblemKey).toBe(EMBLEM_KEYS[3]);
+    expect(view!.emblemColor).toBe(EMBLEM_COLORS[2]);
   });
 
   // ── Chat channel ──────────────────────────────────────────────────────────────

@@ -66,6 +66,16 @@ describe('MetaReporter.abandon (login-reconnect-prompt shutdown cleanup, 2026-07
     await expect(reporter.abandon(['a'])).resolves.toBeUndefined();
   });
 
+  it('res.body.cancel() rejecting on a successful abandon is swallowed too (nested try/catch)', async () => {
+    global.fetch = vi.fn(async () => {
+      const res = new Response('{}', { status: 200 });
+      vi.spyOn(res.body!, 'cancel').mockRejectedValue(new Error('already closed'));
+      return res;
+    }) as unknown as typeof fetch;
+    const reporter = new MetaReporter('http://meta:8080', 'key');
+    await expect(reporter.abandon(['a'])).resolves.toBeUndefined();
+  });
+
   it('fetch resolves non-ok (e.g. 401) → swallowed, does not throw', async () => {
     global.fetch = vi.fn(async () => new Response('{}', { status: 401 })) as unknown as typeof fetch;
     const reporter = new MetaReporter('http://meta:8080', 'key');
@@ -97,5 +107,112 @@ describe('MetaReporter.report (smoke — existing behavior, no prior test file)'
     expect(result).toBeNull(); // friendly match report has no elo field
     const [url] = (global.fetch as ReturnType<typeof vi.fn>).mock.calls[0]!;
     expect(String(url)).toBe('http://meta:8080/internal/match/report');
+  });
+
+  it('non-ok response (e.g. 500) -> report() returns null and enqueues for retry', async () => {
+    global.fetch = vi.fn(async () => new Response('{}', { status: 500 })) as unknown as typeof fetch;
+    const reporter = new MetaReporter('http://meta:8080', 'key');
+    const result = await reporter.report(BASE_REPORT);
+    expect(result).toBeNull();
+  });
+
+  it('non-ok response whose body.cancel() also rejects -> still swallowed, returns null', async () => {
+    global.fetch = vi.fn(async () => {
+      const res = new Response('{}', { status: 500 });
+      vi.spyOn(res.body!, 'cancel').mockRejectedValue(new Error('already closed'));
+      return res;
+    }) as unknown as typeof fetch;
+    const reporter = new MetaReporter('http://meta:8080', 'key');
+    await expect(reporter.report(BASE_REPORT)).resolves.toBeNull();
+  });
+
+  it('fetch rejects (meta unreachable) -> report() returns null instead of throwing', async () => {
+    global.fetch = vi.fn(async () => {
+      throw new Error('ECONNREFUSED');
+    }) as unknown as typeof fetch;
+    const reporter = new MetaReporter('http://meta:8080', 'key');
+    await expect(reporter.report(BASE_REPORT)).resolves.toBeNull();
+  });
+
+  it('ranked match with an elo payload -> report() returns it', async () => {
+    global.fetch = vi.fn(
+      async () => new Response(JSON.stringify({ ok: true, elo: { 0: 12, 1: -12 } }), { status: 200 }),
+    ) as unknown as typeof fetch;
+    const reporter = new MetaReporter('http://meta:8080', 'key');
+    const result = await reporter.report({ ...BASE_REPORT, mode: 'ranked' });
+    expect(result).toEqual({ 0: 12, 1: -12 });
+  });
+});
+
+// flush()/drain() previously had zero coverage on the failure/retry path: a report() failure
+// enqueues the body, drain() retries it in the background with exponential backoff, and flush()
+// bounds how long shutdown waits for that background drain to finish.
+describe('MetaReporter.flush / background drain (retry queue)', () => {
+  const originalFetch = global.fetch;
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+  afterEach(() => {
+    global.fetch = originalFetch;
+    vi.useRealTimers();
+  });
+
+  it('flush() with an empty queue resolves immediately without waiting', async () => {
+    global.fetch = vi.fn(async () => new Response('{}', { status: 200 })) as unknown as typeof fetch;
+    const reporter = new MetaReporter('http://meta:8080', 'key');
+    await expect(reporter.flush(10_000)).resolves.toBeUndefined();
+  });
+
+  it('a failed report() enqueues; drain() retries in the background and eventually delivers it', async () => {
+    let call = 0;
+    global.fetch = vi.fn(async () => {
+      call++;
+      return new Response(JSON.stringify({ ok: true }), { status: call === 1 ? 500 : 200 });
+    }) as unknown as typeof fetch;
+    const reporter = new MetaReporter('http://meta:8080', 'key');
+
+    await reporter.report(BASE_REPORT); // 1st call fails -> enqueued, drain() kicked off in the background
+    expect(call).toBe(1);
+
+    // drain()'s first retry waits 5s before re-posting.
+    const flushed = reporter.flush(10_000);
+    await vi.advanceTimersByTimeAsync(5_000);
+    await flushed;
+    expect(call).toBe(2);
+  });
+
+  it('drain() retry that itself throws (not just non-ok) increments attempts and keeps retrying until it succeeds', async () => {
+    let call = 0;
+    global.fetch = vi.fn(async () => {
+      call++;
+      if (call === 1) return new Response('{}', { status: 500 }); // initial report() fails -> enqueued
+      if (call === 2) throw new Error('ECONNRESET'); // first retry: the network call itself throws
+      return new Response(JSON.stringify({ ok: true }), { status: 200 }); // second retry succeeds
+    }) as unknown as typeof fetch;
+    const reporter = new MetaReporter('http://meta:8080', 'key');
+
+    await reporter.report(BASE_REPORT);
+    expect(call).toBe(1);
+
+    const flushed = reporter.flush(30_000);
+    await vi.advanceTimersByTimeAsync(5_000); // first retry (throws) — attempts++, still queued
+    expect(call).toBe(2);
+    await vi.advanceTimersByTimeAsync(10_000); // second retry (attempts=1 -> 10s backoff) — succeeds
+    await flushed;
+    expect(call).toBe(3);
+  });
+
+  it('flush() times out with items still queued -> logs a warning, does not throw or hang', async () => {
+    global.fetch = vi.fn(async () => new Response('{}', { status: 500 })) as unknown as typeof fetch; // never succeeds
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const reporter = new MetaReporter('http://meta:8080', 'key');
+
+    await reporter.report(BASE_REPORT); // enqueued, background drain() will keep retrying forever
+    const flushed = reporter.flush(1_000);
+    await vi.advanceTimersByTimeAsync(1_000);
+    await flushed;
+
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('unreported match settlement'));
+    warn.mockRestore();
   });
 });

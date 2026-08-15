@@ -7,7 +7,7 @@ import { tileId, marchId, playerWorldId, marchDurationFromPath, isInVision, SlgE
 import type { MarchDoc } from '../db';
 import { WorldCore } from '../core';
 import type { MarchView, StationedView } from '../worldTypes';
-import { computeMarchPath } from '../combatShared';
+import { computeMarchPath, resolveOwnerEmblems } from '../combatShared';
 import { legBox, sourcesBoundingBox } from '../core/helpers';
 
 export class StationedService {
@@ -66,6 +66,9 @@ export class StationedService {
       tile: d.tile, x: d.x, y: d.y, teamId: d.teamId, troops: d.troops, sinceAt: d.sinceAt, mode: d.mode ?? 'idle', mine: true,
       ...(d.leaderUnitType ? { leaderUnitType: d.leaderUnitType } : {}),
     }));
+    // Parallel to `result` (same index) — feeds the emblem batch-resolve at the end (map-token
+    // corner badge, family-emblem-art-prompts.md 2026-08-14).
+    const ownerIds: string[] = own.map((d) => d.ownerId);
 
     // ADR-051 (P4): enemy stationed teams within vision, so the client can render enemy field troops + their
     // garrison defense zones (mirrors getMarches' vision-gated enemy-march inclusion). Family allies are excluded
@@ -93,7 +96,10 @@ export class StationedService {
         tile: d.tile, x: d.x, y: d.y, teamId: '', troops: d.troops, sinceAt: d.sinceAt, mode: d.mode ?? 'idle', mine: false,
         ...(d.leaderUnitType ? { leaderUnitType: d.leaderUnitType } : {}),
       });
+      ownerIds.push(d.ownerId);
     }
-    return result;
+
+    const emblems = await resolveOwnerEmblems(this.core, worldId, ownerIds);
+    return result.map((v, i) => (emblems[i] ? { ...v, ...emblems[i] } : v));
   }
 }

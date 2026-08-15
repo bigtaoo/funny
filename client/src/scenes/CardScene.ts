@@ -22,6 +22,7 @@ import type { ILayout } from '../layout/ILayout';
 import type { InputManager } from '../inputSystem/InputManager';
 import { t } from '../i18n';
 import { tearDownChildren, drawLoadingOverlay } from '../render/sketchUi';
+import { preloadTabIconTextures } from '../render/icons';
 import { CardSceneCore } from './CardScene/core';
 import type { CardCallbacks } from './CardScene/core';
 import { ListPanel } from './CardScene/list';
@@ -60,6 +61,10 @@ export class CardScene implements Scene {
     this.list = new ListPanel(this.core, this.detail);
 
     this.render();
+    // [Cards|Equipment|Skins] tab icons are AI-drawn PNGs (see render/icons.ts), not baked-in-drawn
+    // vectors — the very first render above may run before they've decoded (see buildIcon's raster
+    // branch), so re-render once warm to fix up an icon-less first paint.
+    void preloadTabIconTextures().then(() => this.render());
   }
 
   update(dt: number): void {

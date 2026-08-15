@@ -33,6 +33,8 @@ export class FamilyInternalService {
       memberCount: fam.memberCount,
       ...(fam.sectId ? { sectId: fam.sectId } : {}),
       ...(fam.sectName ? { sectName: fam.sectName } : {}),
+      ...(fam.emblemKey ? { emblemKey: fam.emblemKey } : {}),
+      ...(fam.emblemColor != null ? { emblemColor: fam.emblemColor } : {}),
     };
   }
 

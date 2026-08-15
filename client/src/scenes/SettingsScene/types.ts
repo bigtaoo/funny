@@ -44,12 +44,8 @@ export interface SettingsSceneCallbacks {
   ownedSkins?: string[];
   /** Currently owned hero def ids (save.cardInv[*].defId) — unlocks the hero tab's items alongside everOwned.hero; needed because everOwned wasn't backfilled for pre-existing rosters when the ledger shipped. */
   ownedHeroes?: string[];
-  /** Currently owned equipment def ids (save.equipmentInv[*].defId) — unlocks the equip tab's items alongside everOwned.equipment; see ownedHeroes for why the fallback is needed. */
-  ownedEquipment?: string[];
-  /** Currently held material kinds (save.materials, count > 0) — unlocks the material tab's items alongside everOwned.material; see ownedHeroes for why the fallback is needed. */
-  ownedMaterials?: string[];
-  /** Lifetime-owned ledger (save.everOwned) — unlocks the hero/equipment/material/skin tabs' items even after the item itself is gone from inventory. */
-  everOwned?: { hero?: string[]; equipment?: string[]; material?: string[]; skin?: string[] };
+  /** Lifetime-owned ledger (save.everOwned) — unlocks the hero/skin tabs' items even after the item itself is gone from inventory. Only the hero/skin sub-fields are read here; the full save.everOwned (which also tracks equipment/material for non-avatar purposes) is still passed through as-is. */
+  everOwned?: { hero?: string[]; skin?: string[] };
   // ── rename (online only; absent → no rename UI) ──
   /** Coin cost of a rename; presence enables the rename button. */
   renameCost?: number;
@@ -74,19 +70,15 @@ export interface AvatarPickerItem {
   locked: boolean;
 }
 
-export const AVATAR_TABS: AvatarCategory[] = ['preset', 'title', 'hero', 'equip', 'material', 'skin'];
+export const AVATAR_TABS: AvatarCategory[] = ['preset', 'title', 'hero', 'skin'];
 export const AVATAR_TAB_LABEL_KEY: Record<AvatarCategory, TranslationKey> = {
   preset: 'settings.avatarTab.preset',
   title: 'settings.avatarTab.title',
   hero: 'settings.avatarTab.hero',
-  equip: 'settings.avatarTab.equip',
-  material: 'settings.avatarTab.material',
   skin: 'settings.avatarTab.skin',
 };
 export const AVATAR_LOCKED_KEY: Record<Exclude<AvatarCategory, 'preset'>, TranslationKey> = {
   title: 'settings.avatarLocked.title',
   hero: 'settings.avatarLocked.hero',
-  equip: 'settings.avatarLocked.equip',
-  material: 'settings.avatarLocked.material',
   skin: 'settings.avatarLocked.skin',
 };

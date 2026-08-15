@@ -10,7 +10,7 @@
 // persistent `speedupUntil` buff (TRAIN_SPEEDUP_BUFF_MULT×, stacks additively like protection) that speeds up
 // the WHOLE queue — present and future batches alike — for as long as it's active; see applyTrainingSpeedupCatchup.
 // Requires `cd server && docker compose up -d`.
-import { afterAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   proceduralTile,
   playerWorldId,
@@ -359,6 +359,58 @@ describe.skipIf(!mongo)('worldsvc training-queue nextTrainingCompleteAt mirror e
     const doc = await rawDoc('a');
     expect(doc!.trainingQueue ?? []).toHaveLength(0);
     expect(doc!.troops).toBe(100);
+  });
+
+  // training.ts branch gap (2026-08-15): speedupTraining's "cascade startAt/completeAt for remaining
+  // batches after compression" loop (lines ~144-149) only runs with >= 2 entries surviving the drain —
+  // every other speedupTraining test either drains the whole (1-entry) queue or leaves it untouched.
+  // Directly seeds a 3-entry queue (bypassing trainTroops's TROOP_TRAIN_QUEUE_MAX=2 slot gate, which
+  // speedupTraining itself does not enforce) so a partial speedup can fully drain entry 1 and partially
+  // compress entry 2, forcing entry 3's startAt/completeAt to cascade off entry 2's new completion time.
+  it('speedupTraining cascades startAt/completeAt onto a 3rd queued batch after compressing the 2nd', async () => {
+    const { x, y } = findCoord(45, 15);
+    await svc.joinWorld(W, 'a', x, y);
+    await fund('a');
+    await drainTroops('a');
+
+    await m.collections.playerWorld.updateOne(
+      { _id: playerWorldId(W, 'a') },
+      {
+        $set: {
+          trainingQueue: [
+            { qty: 1, inkCost: 0, startAt: 1_000_000, completeAt: 1_005_000 },
+            { qty: 100, inkCost: 0, startAt: 1_005_000, completeAt: 1_505_000 },
+            { qty: 200, inkCost: 0, startAt: 1_505_000, completeAt: 2_505_000 },
+          ],
+          nextTrainingCompleteAt: 1_005_000,
+        },
+      },
+    );
+
+    // 1 coin = 60s = 60_000ms: fully drains entry 1 (5_000ms) then eats 55_000ms into entry 2's
+    // 500_000ms duration, leaving entry 2 partially done and entry 3 untouched by the drain loop itself.
+    await svc.speedupTraining(W, 'a', 1);
+    const doc = await rawDoc('a');
+    expect(doc!.troops).toBe(1); // entry 1's qty credited
+    expect(doc!.trainingQueue).toHaveLength(2);
+    const [second, third] = doc!.trainingQueue!;
+    expect(second).toMatchObject({ qty: 100, startAt: 1_005_000, completeAt: 1_450_000 });
+    // entry 3's startAt/completeAt cascaded off entry 2's compressed completeAt, preserving its own duration.
+    expect(third).toMatchObject({ qty: 200, startAt: 1_450_000, completeAt: 2_450_000 });
+  });
+
+  it('speedupTraining throws REV_CONFLICT when every finalize attempt loses the rev race', async () => {
+    const { x, y } = findCoord(46, 15);
+    await svc.joinWorld(W, 'a', x, y);
+    await fund('a');
+    await drainTroops('a');
+    await svc.trainTroops(W, 'a', 100);
+    const spy = vi.spyOn(m.collections.playerWorld, 'updateOne').mockResolvedValue({ matchedCount: 0 } as never);
+    try {
+      await expect(svc.speedupTraining(W, 'a', 1)).rejects.toMatchObject({ code: 'REV_CONFLICT' });
+    } finally {
+      spy.mockRestore();
+    }
   });
 
   it('ensureIndexes builds a partial index on nextTrainingCompleteAt (not a full-collection scan)', async () => {

@@ -12,6 +12,9 @@ import {
   IAP_TIERS,
   IAP_TIERS_LIST,
   DEV_STUB_DEFAULT_TIER,
+  tierIdForCoins,
+  usdCentsForTier,
+  usdCentsForCoins,
   VICTORY_COINS_BY_RANK,
   victoryCoinsForRank,
   findGachaPool,
@@ -294,6 +297,23 @@ describe('IAP tiers', () => {
 
   it('exactly one tier is flagged bestValue', () => {
     expect(IAP_TIERS_LIST.filter((t) => t.bestValue)).toHaveLength(1);
+  });
+
+  it('tierIdForCoins reverse-looks-up the tier id from its pre-bonus coin grant', () => {
+    for (const [id, coins] of Object.entries(IAP_TIERS)) {
+      expect(tierIdForCoins(coins)).toBe(id);
+    }
+    expect(tierIdForCoins(-1)).toBeUndefined(); // no tier grants a negative amount
+  });
+
+  it('usdCentsForTier returns the display price for a known tier id, 0 for unknown', () => {
+    for (const t of IAP_TIERS_LIST) expect(usdCentsForTier(t.id)).toBe(t.usdCents);
+    expect(usdCentsForTier('not-a-real-tier')).toBe(0);
+  });
+
+  it('usdCentsForCoins composes tierIdForCoins + usdCentsForTier, 0 when the amount matches no tier', () => {
+    for (const t of IAP_TIERS_LIST) expect(usdCentsForCoins(t.coins)).toBe(t.usdCents);
+    expect(usdCentsForCoins(123456789)).toBe(0);
   });
 });
 

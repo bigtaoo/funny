@@ -40,11 +40,22 @@ export function drawBottomNav(core: LobbySceneCore, badges: BadgesPanel): void {
   interface NavSlot { name: string; icon: IconKind; color: number; active?: boolean; disabled?: boolean; assign?: (r: Rect) => void; }
   const off = !!core.cb.offline;
   const slots: NavSlot[] = [
-    { name: t('lobby.nav.cards'),  icon: 'book',   color: C.red,    assign: r => { core.cardsNavRect = r; } },
-    { name: t('lobby.nav.shop'),   icon: 'coin',   color: C.green,  disabled: off, assign: r => { core.shopNavRect = r; } },
-    { name: t('lobby.nav.home'),   icon: 'home',   color: C.accent, active: true },
-    { name: t('lobby.nav.stats'), icon: 'trophy', color: C.accent, disabled: off, assign: r => { core.statsNavRect = r; } },
-    { name: t('lobby.nav.social'), icon: 'globe',  color: C.gold,   disabled: off, assign: r => { core.socialNavRect = r; } },
+    // 'book' generic glyph → rosterIcon (AI art pilot batch 2): this button deep-links straight into
+    // CardScene's roster tab, so it now shares that tab's own AI icon instead of an unrelated notebook glyph.
+    { name: t('lobby.nav.cards'),  icon: 'rosterIcon', color: C.red,    assign: r => { core.cardsNavRect = r; } },
+    // 'coin' → gachaTabIcon (AI art batch 3 follow-up, 2026-08-15): this button deep-links via
+    // nav.goGacha() into GachaScene, whose group always opens with 'gacha.title' as the active tab
+    // (see app/nav/shop/nav.ts's goGacha) — never "shop" despite the button's own label — so it shares
+    // that tab's own AI icon instead of the unrelated generic coin glyph. Same deep-link-reuse logic as
+    // lobby.nav.cards→rosterIcon / lobby.nav.stats→statsTabIcon above.
+    { name: t('lobby.nav.shop'),   icon: 'gachaTabIcon',   color: C.green,  disabled: off, assign: r => { core.shopNavRect = r; } },
+    // 'home' → homeTabIcon (AI art batch 3): pure recognizability upgrade, no reuse conflict.
+    { name: t('lobby.nav.home'),   icon: 'homeTabIcon',   color: C.accent, active: true },
+    // 'trophy' freed up for Career's Achievements tab only (AI art batch 2 dedupe) — this entry gets
+    // its own new icon (bar chart) instead of sharing trophy with the achievements tab it opens into.
+    { name: t('lobby.nav.stats'), icon: 'statsTabIcon', color: C.accent, disabled: off, assign: r => { core.statsNavRect = r; } },
+    // 'globe' → socialTabIcon (AI art batch 3): pure recognizability upgrade, no reuse conflict.
+    { name: t('lobby.nav.social'), icon: 'socialTabIcon',  color: C.gold,   disabled: off, assign: r => { core.socialNavRect = r; } },
   ];
 
   const n = slots.length;

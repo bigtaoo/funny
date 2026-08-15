@@ -160,4 +160,21 @@ describe('Matchmaking', () => {
       expect(seen).toEqual(['wechat']);
     });
   });
+
+  describe('clear()', () => {
+    it('empties the queue and stops the scan timer (never exercised by any other test)', async () => {
+      const mm = new Matchmaking(() => {}, { now: () => 0 }); // autoTick default true -> a real timer gets armed
+      await mm.enqueue('a', 'a', '', 1000); // solo, stays queued, timer stays armed
+      expect(mm.size).toBe(1);
+
+      mm.clear();
+      expect(mm.size).toBe(0);
+      expect(mm.has('a')).toBe(false);
+
+      // Timer was actually stopped, not just the queue array cleared: re-enqueuing still works normally
+      // afterward (ensureTimer() can re-arm because clear() nulled it out, not merely emptied the queue).
+      await mm.enqueue('b', 'b', '', 1000);
+      expect(mm.size).toBe(1);
+    });
+  });
 });

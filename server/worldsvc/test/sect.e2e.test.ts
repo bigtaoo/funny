@@ -4,7 +4,7 @@
 // Family identity/roster now lives in socialsvc (P4 follow-up, see db.ts note above SectDoc) — this suite fakes
 // WorldSocialsvcClient in-process instead of inserting worldsvc-local family fixtures.
 // Requires `cd server && docker compose up -d`.
-import { afterAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   sectId,
   SECT_CREATE_COST,
@@ -12,6 +12,8 @@ import {
   SLG_MAP_W,
   SLG_MAP_H,
   familyProsperity,
+  EMBLEM_KEYS,
+  EMBLEM_COLORS,
   type FamilyRole,
 } from '@nw/shared';
 import { createWorldMongo, type WorldMongo, type NationDoc } from '../src/db';
@@ -309,6 +311,20 @@ describe.skipIf(!mongo)('SectService e2e', () => {
     await expect(sect.leaveSect(W, 'alice')).rejects.toMatchObject({ code: 'BAD_REQUEST' });
   });
 
+  it('setEmblem: sect-leader-only (a member family leader who is NOT the sect leader is denied), validates key + colour against the fixed pools', async () => {
+    await makeFamily('alice', 'A', 'AA');
+    await makeFamily('bob', 'B', 'BB');
+    const s = await sect.createSect(W, 'alice', 'Sky', 'SKY');
+    await sect.joinSect(W, 'bob', s.sectId);
+    await expect(sect.setEmblem(W, 'bob', EMBLEM_KEYS[0]!, EMBLEM_COLORS[0]!)).rejects.toMatchObject({ code: 'NO_PERMISSION' });
+    await expect(sect.setEmblem(W, 'alice', 'not_a_real_key' as never, EMBLEM_COLORS[0]!)).rejects.toMatchObject({ code: 'BAD_REQUEST' });
+    await expect(sect.setEmblem(W, 'alice', EMBLEM_KEYS[0]!, 0x123456)).rejects.toMatchObject({ code: 'BAD_REQUEST' }); // not in EMBLEM_COLORS
+    await sect.setEmblem(W, 'alice', EMBLEM_KEYS[5]!, EMBLEM_COLORS[3]!);
+    const detail = await sect.getSect(s.sectId);
+    expect(detail!.emblemKey).toBe(EMBLEM_KEYS[5]);
+    expect(detail!.emblemColor).toBe(EMBLEM_COLORS[3]);
+  });
+
   it('alliance: bidirectional + cap SECT_ALLY_CAP', async () => {
     await makeFamily('alice', 'A', 'AA');
     await makeFamily('bob', 'B', 'BB');
@@ -536,5 +552,164 @@ describe.skipIf(!mongo)('SectService e2e', () => {
     // so they are populated even without meta.
     expect(result.sectName).toBe('Sky Sect');
     expect(result.familyName).toBe('Alpha');
+  });
+
+  // membership.ts branch gaps (2026-08-15): joinSect's not-found/full guard, allySect/unallySect's
+  // permission + not-found + idempotent-already-allied branches, and voteRemoveLeader's vote
+  // dedup/reset-on-changed-nominee/nominee-not-in-sect branches.
+  it('joinSect: NOT_FOUND when the target sect does not exist', async () => {
+    await makeFamily('alice', 'A', 'AA');
+    await expect(sect.joinSect(W, 'alice', sectId(W, 'NOPE'))).rejects.toMatchObject({ code: 'NOT_FOUND' });
+  });
+
+  it('joinSect: SECT_FULL when memberFamilyCount is already at SECT_FAMILY_CAP', async () => {
+    const cols = mongo!.collections;
+    await makeFamily('alice', 'A', 'AA');
+    const s = await sect.createSect(W, 'alice', 'Sky', 'SKY');
+    await cols.sects.updateOne({ _id: s.sectId }, { $set: { memberFamilyCount: 30 } });
+    await makeFamily('bob', 'B', 'BB');
+    await expect(sect.joinSect(W, 'bob', s.sectId)).rejects.toMatchObject({ code: 'SECT_FULL' });
+  });
+
+  it('allySect: self-ally, non-leader, target-not-found, and idempotent already-allied are all rejected/no-op appropriately', async () => {
+    await makeFamily('alice', 'A', 'AA');
+    await makeFamily('bob', 'B', 'BB');
+    const a = await sect.createSect(W, 'alice', 'SA', 'SA');
+    const b = await sect.createSect(W, 'bob', 'SB', 'SB');
+    await expect(sect.allySect(W, 'alice', a.sectId)).rejects.toMatchObject({ code: 'BAD_REQUEST' });
+    await expect(sect.allySect(W, 'alice', sectId(W, 'NOPE'))).rejects.toMatchObject({ code: 'NOT_FOUND' });
+
+    await makeFamily('carol', 'C', 'CC');
+    await sect.joinSect(W, 'carol', a.sectId); // carol: member, not leader, of sect A
+    await expect(sect.allySect(W, 'carol', b.sectId)).rejects.toMatchObject({ code: 'NO_PERMISSION' });
+
+    await sect.allySect(W, 'alice', b.sectId);
+    // already allied → idempotent no-op, does not throw and does not duplicate the entry.
+    await sect.allySect(W, 'alice', b.sectId);
+    expect((await sect.getSect(a.sectId))!.allySectIds).toEqual([b.sectId]);
+  });
+
+  it('allySect: NOT_IN_SECT when the requester family has no sect', async () => {
+    await makeFamily('alice', 'A', 'AA');
+    await makeFamily('bob', 'B', 'BB');
+    const b = await sect.createSect(W, 'bob', 'SB', 'SB');
+    await expect(sect.allySect(W, 'alice', b.sectId)).rejects.toMatchObject({ code: 'NOT_IN_SECT' });
+  });
+
+  it('unallySect: bidirectionally removes the alliance, and enforces leader-only + NOT_IN_SECT', async () => {
+    await makeFamily('alice', 'A', 'AA');
+    await makeFamily('bob', 'B', 'BB');
+    await makeFamily('dave', 'D', 'DD');
+    const a = await sect.createSect(W, 'alice', 'SA', 'SA');
+    const b = await sect.createSect(W, 'bob', 'SB', 'SB');
+    await sect.allySect(W, 'alice', b.sectId);
+
+    await makeFamily('carol', 'C', 'CC');
+    await sect.joinSect(W, 'carol', a.sectId);
+    await expect(sect.unallySect(W, 'carol', b.sectId)).rejects.toMatchObject({ code: 'NO_PERMISSION' });
+
+    await expect(sect.unallySect(W, 'dave', b.sectId)).rejects.toMatchObject({ code: 'NOT_IN_SECT' });
+
+    await sect.unallySect(W, 'alice', b.sectId);
+    expect((await sect.getSect(a.sectId))!.allySectIds).not.toContain(b.sectId);
+    expect((await sect.getSect(b.sectId))!.allySectIds).not.toContain(a.sectId);
+  });
+
+  it('dissolveSect: NOT_IN_SECT / NOT_FOUND / NO_PERMISSION guards', async () => {
+    await makeFamily('alice', 'A', 'AA');
+    await expect(sect.dissolveSect(W, 'alice')).rejects.toMatchObject({ code: 'NOT_IN_SECT' });
+
+    await makeFamily('bob', 'B', 'BB');
+    const s = await sect.createSect(W, 'bob', 'Sky', 'SKY');
+    await makeFamily('carol', 'C', 'CC');
+    await sect.joinSect(W, 'carol', s.sectId);
+    await expect(sect.dissolveSect(W, 'carol')).rejects.toMatchObject({ code: 'NO_PERMISSION' });
+  });
+
+  it('voteRemoveLeader: repeat votes from the same family for the same nominee do not double-count', async () => {
+    await makeFamily('alice', 'A', 'AA');
+    const bb = await makeFamily('bob', 'B', 'BB');
+    await makeFamily('carol', 'C', 'CC');
+    const s = await sect.createSect(W, 'alice', 'Sky', 'SKY');
+    await sect.joinSect(W, 'bob', s.sectId);
+    await sect.joinSect(W, 'carol', s.sectId);
+
+    const r1 = await sect.voteRemoveLeader(W, 'bob', bb);
+    expect(r1).toMatchObject({ passed: false, voteCount: 1, needed: 2 });
+    // bob votes again for the same nominee — deduplicated, still 1 vote.
+    const r2 = await sect.voteRemoveLeader(W, 'bob', bb);
+    expect(r2).toMatchObject({ passed: false, voteCount: 1, needed: 2 });
+  });
+
+  it('voteRemoveLeader: switching the nominee resets the vote tally to just the new voter', async () => {
+    await makeFamily('alice', 'A', 'AA');
+    const bb = await makeFamily('bob', 'B', 'BB');
+    const cc = await makeFamily('carol', 'C', 'CC');
+    await makeFamily('dave', 'D', 'DD');
+    const s = await sect.createSect(W, 'alice', 'Sky', 'SKY');
+    await sect.joinSect(W, 'bob', s.sectId);
+    await sect.joinSect(W, 'carol', s.sectId);
+    await sect.joinSect(W, 'dave', s.sectId);
+
+    await sect.voteRemoveLeader(W, 'bob', bb); // nominate bob
+    // carol nominates carol instead → tally resets to 1 (carol's own vote), not accumulated with bob's.
+    const r = await sect.voteRemoveLeader(W, 'carol', cc);
+    expect(r).toMatchObject({ passed: false, voteCount: 1, needed: 3 });
+  });
+
+  it('voteRemoveLeader: NOT_FOUND when the nominated family is not a member of this sect', async () => {
+    await makeFamily('alice', 'A', 'AA');
+    await makeFamily('outsider', 'O', 'OO'); // never joins the sect
+    const s = await sect.createSect(W, 'alice', 'Sky', 'SKY');
+    await expect(sect.voteRemoveLeader(W, 'alice', sectId(W, 'nope') /* not a familyId at all */))
+      .rejects.toMatchObject({ code: 'NOT_FOUND' });
+    void s;
+  });
+
+  it('voteRemoveLeader: NOT_IN_SECT when the requester family has no sect', async () => {
+    await makeFamily('alice', 'A', 'AA');
+    await expect(sect.voteRemoveLeader(W, 'alice', 'fam:XX')).rejects.toMatchObject({ code: 'NOT_IN_SECT' });
+  });
+
+  it('createSect: a non-duplicate-key insertOne failure propagates as-is (no refund, no ALREADY_IN_SECT masking)', async () => {
+    const cols = mongo!.collections;
+    await makeFamily('alice', 'A', 'AA');
+    const spy = vi.spyOn(cols.sects, 'insertOne').mockRejectedValueOnce(new Error('boom'));
+    try {
+      await expect(sect.createSect(W, 'alice', 'Sky', 'SKY')).rejects.toThrow('boom');
+    } finally {
+      spy.mockRestore();
+    }
+    expect(grants.length).toBe(0); // not a TAG collision → no refund attempted
+  });
+
+  it('sendMessage falls back to gateway.broadcast when socialsvc is unavailable', async () => {
+    await makeFamily('alice', 'A', 'AA');
+    const bb = await makeFamily('bob', 'B', 'BB');
+    const s = await sect.createSect(W, 'alice', 'Sky', 'SKY');
+    await sect.joinSect(W, 'bob', s.sectId);
+    socialsvc.available = false;
+    try {
+      await sect.sendMessage(W, 'alice', 'Alice', 'via gateway fallback');
+      expect(broadcasts.some((b) => b.kind === 'sect_msg' && b.body === 'via gateway fallback')).toBe(true);
+      expect(broadcasts[broadcasts.length - 1]!.recipients).toContain('bob');
+    } finally {
+      socialsvc.available = true;
+    }
+    void bb;
+  });
+
+  it('voteRemoveLeader: throws REV_CONFLICT when every finalize attempt loses the rev race', async () => {
+    const cols = mongo!.collections;
+    await makeFamily('alice', 'A', 'AA');
+    const bb = await makeFamily('bob', 'B', 'BB');
+    const s = await sect.createSect(W, 'alice', 'Sky', 'SKY');
+    await sect.joinSect(W, 'bob', s.sectId);
+    const spy = vi.spyOn(cols.sects, 'updateOne').mockResolvedValue({ matchedCount: 0 } as never);
+    try {
+      await expect(sect.voteRemoveLeader(W, 'bob', bb)).rejects.toMatchObject({ code: 'REV_CONFLICT' });
+    } finally {
+      spy.mockRestore();
+    }
   });
 });

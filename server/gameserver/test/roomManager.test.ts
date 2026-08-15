@@ -176,4 +176,60 @@ describe('RoomManager (ticket relay)', () => {
     mgr.destroyAll();
     expect(mgr.activeAccountIds()).toEqual([]);
   });
+
+  it('handle(match_result) routed to the room -> both sides eventually see match_over once both report', () => {
+    const mgr = newManager();
+    const c0 = makeConn('R', 0, 'a');
+    const c1 = makeConn('R', 1, 'b');
+    mgr.join(asConn(c0), 'a', '', SEED, MatchMode.FRIENDLY);
+    mgr.join(asConn(c1), 'b', '', SEED, MatchMode.FRIENDLY);
+    mgr.handle(asConn(c0), { case: 'match_result', stateHash: 'H', winnerSide: 0 });
+    mgr.handle(asConn(c1), { case: 'match_result', stateHash: 'H', winnerSide: 0 });
+    expect(has(c0, 'match_over')).toBe(true);
+    expect(has(c1, 'match_over')).toBe(true);
+  });
+
+  it('handle(conn_resume) routed to the room -> resync sent to the resuming connection', () => {
+    const mgr = newManager();
+    const c0 = makeConn('R', 0, 'a');
+    const c1 = makeConn('R', 1, 'b');
+    mgr.join(asConn(c0), 'a', '', SEED, MatchMode.FRIENDLY);
+    mgr.join(asConn(c1), 'b', '', SEED, MatchMode.FRIENDLY); // both seated -> IN_MATCH
+    const c0new = makeConn('R', 0, 'a');
+    mgr.handle(asConn(c0new), { case: 'conn_resume', roomId: 'R', lastFrame: 0 });
+    expect(has(c0new, 'conn_resync')).toBe(true);
+  });
+
+  it('handle(ping) marks the connection alive and replies with pong', () => {
+    const mgr = newManager();
+    const c0 = makeConn('R', 0, 'a');
+    c0.alive = false;
+    mgr.handle(asConn(c0), { case: 'ping' });
+    expect(c0.alive).toBe(true);
+    expect(has(c0, 'pong')).toBe(true);
+  });
+
+  it('handle(room_leave) routed to the room -> the other side sees the leaver forfeit', () => {
+    const mgr = newManager();
+    const c0 = makeConn('R', 0, 'a');
+    const c1 = makeConn('R', 1, 'b');
+    mgr.join(asConn(c0), 'a', '', SEED, MatchMode.FRIENDLY);
+    mgr.join(asConn(c1), 'b', '', SEED, MatchMode.FRIENDLY);
+    mgr.handle(asConn(c0), { case: 'room_leave' });
+    expect(has(c1, 'match_over')).toBe(true);
+  });
+
+  it('handle() on a message case with no matching room is a silent no-op (does not throw)', () => {
+    const mgr = newManager();
+    const orphan = makeConn('no-such-room', 0, 'a');
+    expect(() => mgr.handle(asConn(orphan), { case: 'cmd_submit', commands: new Uint8Array() })).not.toThrow();
+  });
+
+  it('handle() on a control-plane-only case (e.g. room_create) is ignored on the data plane (default branch)', () => {
+    const mgr = newManager();
+    const c0 = makeConn('R', 0, 'a');
+    mgr.join(asConn(c0), 'a', '', SEED, MatchMode.FRIENDLY);
+    expect(() => mgr.handle(asConn(c0), { case: 'room_create', mode: MatchMode.FRIENDLY })).not.toThrow();
+    expect(c0.outbox).toEqual([]); // no reply of any kind
+  });
 });

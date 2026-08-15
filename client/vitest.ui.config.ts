@@ -48,7 +48,13 @@ export default defineConfig({
     alias: {
       '@nw/engine': path.resolve(__dirname, '../server/engine/src'),
       '@nw/shared/cards': path.resolve(__dirname, '../server/shared/src/cards.ts'),
-      '@nw/shared': path.resolve(__dirname, '../server/shared/src/index.ts'),
+      // Browser-safe slice, same as webpack.config.js/vitest.config.ts — NOT the full
+      // src/index.ts barrel, which re-exports jwt.ts (-> 'jsonwebtoken', a server-only
+      // dep this client-side test run never installs). Every current bare '@nw/shared'
+      // import in client/src + test/ui resolves to something under slg/*, so this covers
+      // them all; a future import of a non-slg, non-cards export needs its own deep
+      // alias here (see '@nw/shared/cards' above) rather than widening this one.
+      '@nw/shared': path.resolve(__dirname, '../server/shared/src/slg/index.ts'),
     },
   },
   test: {

@@ -17,6 +17,8 @@
  */
 import * as PIXI from 'pixi.js-legacy';
 import { getCachedDisplay } from '../ui/widgets/uiCache';
+import { getArtTexture, containScale } from './cardArt';
+import { preloadTextureList } from '../assets/preloadTextures';
 import { drawCoin, drawCoins, drawCoinStack, drawCoinSack, drawCoinChest } from './icons/currency';
 import { drawBook, drawGlobe, drawTrophy, drawCastle, drawPencils } from './icons/motifs';
 import {
@@ -34,6 +36,64 @@ import {
   drawTitleStar, drawTitleMaster, drawTitleGrandmaster, drawTitleKing,
   drawTitleChampion, drawTitleTop3,
 } from './icons/titles';
+
+// Tab-icon AI art pilot (design/product/tab-icon-art-prompts.md, 2026-08-14): the [Cards|Equipment|Skins]
+// growth-group peer tabs (CardScene/list.ts + EquipmentScene/inventory.ts's mirrored peer rail) are the
+// first page-tab icons to move off procedural SketchPen glyphs onto AI-drawn line art, to fix both low
+// recognizability (thin program-drawn line work) and the `cards`/`armor`/`brush` reuse across unrelated
+// tabs (see the prompt doc's dedupe table). Colour is baked at pack time, not runtime-tinted (see
+// art/ui/tabicons/pack_tab_icons.cjs's header comment for why) — one white PNG for the active cell
+// (dark fill) and one mid-grey PNG for the inactive cell (paper fill) per icon.
+import rosterActiveUrl from '../assets/tabicons/roster_active.png';
+import rosterInactiveUrl from '../assets/tabicons/roster_inactive.png';
+import equipIconActiveUrl from '../assets/tabicons/equip_active.png';
+import equipIconInactiveUrl from '../assets/tabicons/equip_inactive.png';
+import skinIconActiveUrl from '../assets/tabicons/skin_active.png';
+import skinIconInactiveUrl from '../assets/tabicons/skin_inactive.png';
+
+// Tab-icon AI art batch 2 (design/product/tab-icon-art-prompts.md §batch2, 2026-08-15): resolves the
+// trophy(3-way)/book/medal reuse conflicts flagged after the pilot — these 4 are the genuinely new
+// meanings that had no existing AI icon to reuse (the reuse-only fixes went straight to rosterIcon/
+// skinIcon above, no new asset needed).
+import statsTabIconActiveUrl from '../assets/tabicons/stats_active.png';
+import statsTabIconInactiveUrl from '../assets/tabicons/stats_inactive.png';
+import progressTabIconActiveUrl from '../assets/tabicons/progress_active.png';
+import progressTabIconInactiveUrl from '../assets/tabicons/progress_inactive.png';
+import honorTabIconActiveUrl from '../assets/tabicons/honor_active.png';
+import honorTabIconInactiveUrl from '../assets/tabicons/honor_inactive.png';
+import collectionTabIconActiveUrl from '../assets/tabicons/collection_active.png';
+import collectionTabIconInactiveUrl from '../assets/tabicons/collection_inactive.png';
+
+// Tab-icon AI art batch 3 (design/product/tab-icon-art-prompts.md §batch3, 2026-08-15): the remaining
+// 12 page-tab icons that had no reuse conflict to resolve (10 pure recognizability upgrades) or closed
+// out the last 2 conflicts batch 2 missed (trophy was actually 4-way, not 3-way — battlepass tab was
+// never accounted for; book's achievement-wall "pve" category use was also missed). `armor`(auction
+// equipment filter)/`book`(Career stats tab) resolved via pure reuse of `equipIcon`/`statsTabIcon`
+// instead — no new asset needed for those two.
+import shopTabIconActiveUrl from '../assets/tabicons/shop_active.png';
+import shopTabIconInactiveUrl from '../assets/tabicons/shop_inactive.png';
+import coinTabIconActiveUrl from '../assets/tabicons/coin_active.png';
+import coinTabIconInactiveUrl from '../assets/tabicons/coin_inactive.png';
+import gachaTabIconActiveUrl from '../assets/tabicons/gacha_active.png';
+import gachaTabIconInactiveUrl from '../assets/tabicons/gacha_inactive.png';
+import rechargeTabIconActiveUrl from '../assets/tabicons/recharge_active.png';
+import rechargeTabIconInactiveUrl from '../assets/tabicons/recharge_inactive.png';
+import homeTabIconActiveUrl from '../assets/tabicons/home_active.png';
+import homeTabIconInactiveUrl from '../assets/tabicons/home_inactive.png';
+import socialTabIconActiveUrl from '../assets/tabicons/social_active.png';
+import socialTabIconInactiveUrl from '../assets/tabicons/social_inactive.png';
+import pvpTabIconActiveUrl from '../assets/tabicons/pvp_active.png';
+import pvpTabIconInactiveUrl from '../assets/tabicons/pvp_inactive.png';
+import bidTabIconActiveUrl from '../assets/tabicons/bid_active.png';
+import bidTabIconInactiveUrl from '../assets/tabicons/bid_inactive.png';
+import materialTabIconActiveUrl from '../assets/tabicons/material_active.png';
+import materialTabIconInactiveUrl from '../assets/tabicons/material_inactive.png';
+import achievementTabIconActiveUrl from '../assets/tabicons/achievement_active.png';
+import achievementTabIconInactiveUrl from '../assets/tabicons/achievement_inactive.png';
+import battlepassTabIconActiveUrl from '../assets/tabicons/battlepass_active.png';
+import battlepassTabIconInactiveUrl from '../assets/tabicons/battlepass_inactive.png';
+import pveTabIconActiveUrl from '../assets/tabicons/pve_active.png';
+import pveTabIconInactiveUrl from '../assets/tabicons/pve_inactive.png';
 
 export type IconKind =
   | 'book' | 'globe' | 'coin' | 'trophy' | 'castle' | 'pencils'
@@ -81,9 +141,68 @@ export type IconKind =
   | 'gift'
   // Common UI dingbats replacing bare typographic glyphs so they share the ink
   // language: close (✕) / confirm tick (✓) / replay-triangle (▶).
-  | 'close' | 'check' | 'play';
+  | 'close' | 'check' | 'play'
+  // [Cards|Equipment|Skins] peer-tab AI art pilot (see the import block above) — raster, not drawn
+  // via DRAW/SketchPen. `cards`/`armor`/`brush` above stay untouched for every other reuse site
+  // (auction "mine" tab, itemKind()'s content badges…) that batch 2 judged a different concept.
+  | 'rosterIcon' | 'equipIcon' | 'skinIcon'
+  // Tab-icon AI art batch 2 (see the import block above) — the 4 genuinely-new meanings: lobby
+  // "career/战绩" entry (bar chart), achievement "progression" category (stacked chevrons), Career
+  // "Titles" tab (laurel wreath, deliberately not a closed disc so it doesn't crowd `medal`'s round-medal
+  // look), achievement "collection" category (jigsaw puzzle piece, distinct from `book`'s pve glyph in
+  // the same tab strip).
+  | 'statsTabIcon' | 'progressTabIcon' | 'honorTabIcon' | 'collectionTabIcon'
+  // Tab-icon AI art batch 3 (see the import block above) — 10 pure recognizability upgrades (shop hub
+  // entries: shop/coins/gacha/recharge; bottom nav: home/social; achievement category: pvp; auction
+  // filters/tabs: bid/material) plus the 2 new concepts that closed batch 2's missed trophy/book
+  // conflicts: `achievementTabIcon` (trophy cup — CareerTabs "achievements" tab; trophy itself finally
+  // goes full-AI here) and `battlepassTabIcon` (ticket — shop-group hub "battlepass" tab, the trophy
+  // usage batch 2 never accounted for) split the trophy conflict; `pveTabIcon` (treasure-map scroll —
+  // achievement "pve" category, book's missed 3rd usage) plus reusing `statsTabIcon` for CareerTabs
+  // "stats" (see CareerTabs.ts) splits the book conflict.
+  | 'shopTabIcon' | 'coinTabIcon' | 'gachaTabIcon' | 'rechargeTabIcon' | 'homeTabIcon' | 'socialTabIcon'
+  | 'pvpTabIcon' | 'bidTabIcon' | 'materialTabIcon' | 'achievementTabIcon' | 'battlepassTabIcon' | 'pveTabIcon';
 
-export const DRAW: Record<IconKind, (g: PIXI.Graphics, s: number, color: number) => void> = {
+/** Raster tab-icon `IconKind`s that skip `DRAW`/`SketchPen` entirely — dispatched via `TAB_ICON_RASTER` instead. */
+type RasterIconKind =
+  | 'rosterIcon' | 'equipIcon' | 'skinIcon'
+  | 'statsTabIcon' | 'progressTabIcon' | 'honorTabIcon' | 'collectionTabIcon'
+  | 'shopTabIcon' | 'coinTabIcon' | 'gachaTabIcon' | 'rechargeTabIcon' | 'homeTabIcon' | 'socialTabIcon'
+  | 'pvpTabIcon' | 'bidTabIcon' | 'materialTabIcon' | 'achievementTabIcon' | 'battlepassTabIcon' | 'pveTabIcon';
+
+/** `{active, inactive}` PNG pair per raster tab-icon kind — see the import block above. */
+const TAB_ICON_RASTER: Record<RasterIconKind, { active: string; inactive: string }> = {
+  rosterIcon: { active: rosterActiveUrl as string, inactive: rosterInactiveUrl as string },
+  equipIcon:  { active: equipIconActiveUrl as string, inactive: equipIconInactiveUrl as string },
+  skinIcon:   { active: skinIconActiveUrl as string, inactive: skinIconInactiveUrl as string },
+  statsTabIcon:      { active: statsTabIconActiveUrl as string, inactive: statsTabIconInactiveUrl as string },
+  progressTabIcon:   { active: progressTabIconActiveUrl as string, inactive: progressTabIconInactiveUrl as string },
+  honorTabIcon:      { active: honorTabIconActiveUrl as string, inactive: honorTabIconInactiveUrl as string },
+  collectionTabIcon: { active: collectionTabIconActiveUrl as string, inactive: collectionTabIconInactiveUrl as string },
+  shopTabIcon:        { active: shopTabIconActiveUrl as string, inactive: shopTabIconInactiveUrl as string },
+  coinTabIcon:        { active: coinTabIconActiveUrl as string, inactive: coinTabIconInactiveUrl as string },
+  gachaTabIcon:       { active: gachaTabIconActiveUrl as string, inactive: gachaTabIconInactiveUrl as string },
+  rechargeTabIcon:    { active: rechargeTabIconActiveUrl as string, inactive: rechargeTabIconInactiveUrl as string },
+  homeTabIcon:        { active: homeTabIconActiveUrl as string, inactive: homeTabIconInactiveUrl as string },
+  socialTabIcon:      { active: socialTabIconActiveUrl as string, inactive: socialTabIconInactiveUrl as string },
+  pvpTabIcon:         { active: pvpTabIconActiveUrl as string, inactive: pvpTabIconInactiveUrl as string },
+  bidTabIcon:         { active: bidTabIconActiveUrl as string, inactive: bidTabIconInactiveUrl as string },
+  materialTabIcon:    { active: materialTabIconActiveUrl as string, inactive: materialTabIconInactiveUrl as string },
+  achievementTabIcon: { active: achievementTabIconActiveUrl as string, inactive: achievementTabIconInactiveUrl as string },
+  battlepassTabIcon:  { active: battlepassTabIconActiveUrl as string, inactive: battlepassTabIconInactiveUrl as string },
+  pveTabIcon:         { active: pveTabIconActiveUrl as string, inactive: pveTabIconInactiveUrl as string },
+};
+
+/** Warm the 38 tab-icon PNGs into the PIXI texture cache — call once from a scene that uses them
+ *  (CardScene, EquipmentScene) so the first render doesn't show a blank icon while it decodes. */
+export function preloadTabIconTextures(): Promise<void> {
+  return preloadTextureList(Object.values(TAB_ICON_RASTER).flatMap((v) => [v.active, v.inactive]));
+}
+
+/** Every `IconKind` except the raster-only tab icons above, which skip `DRAW` entirely (see `buildIcon`). */
+export type DrawableIconKind = Exclude<IconKind, RasterIconKind>;
+
+export const DRAW: Record<DrawableIconKind, (g: PIXI.Graphics, s: number, color: number) => void> = {
   book:    drawBook,
   globe:   drawGlobe,
   coin:    drawCoin,
@@ -146,10 +265,34 @@ export const DRAW: Record<IconKind, (g: PIXI.Graphics, s: number, color: number)
  */
 export function buildIcon(kind: IconKind, size: number, color: number): PIXI.DisplayObject {
   const s = Math.round(size);
+  const raster = (TAB_ICON_RASTER as Partial<Record<IconKind, { active: string; inactive: string }>>)[kind];
+  if (raster) return buildRasterTabIcon(raster, color, s);
   const key = `icon:${kind}:${s}:${(color >>> 0).toString(16)}`;
   return getCachedDisplay(key, () => {
     const g = new PIXI.Graphics();
-    DRAW[kind](g, s, color);
+    DRAW[kind as DrawableIconKind](g, s, color);
     return g;
   }, s, s);
+}
+
+/**
+ * A raster tab-icon sprite (`RasterIconKind` above), contain-fit and centred in an `s × s` box (same
+ * positioning contract as the procedural glyphs above). `color` picks the pre-baked variant instead
+ * of tinting — `0xffffff` (HubTabs' active-cell colour) → the active PNG, anything else → inactive.
+ * Not routed through `getCachedDisplay`/`uiCache` (that bakes a *drawn* Graphics to a texture; these
+ * are already static textures) — `PIXI.Texture.from` has its own url-keyed cache, so repeat calls are
+ * cheap. If the texture hasn't decoded yet (see `preloadTabIconTextures`), this draws nothing for that
+ * one frame rather than a garbage 0/1px-scaled sprite; the caller's next render (post-preload) fixes it.
+ */
+function buildRasterTabIcon(raster: { active: string; inactive: string }, color: number, s: number): PIXI.DisplayObject {
+  const tex = getArtTexture(color === 0xffffff ? raster.active : raster.inactive);
+  const box = new PIXI.Container();
+  if (!tex.baseTexture.valid) return box;
+  const sprite = new PIXI.Sprite(tex);
+  const scale = containScale(tex.width, tex.height, s, s);
+  sprite.scale.set(scale);
+  sprite.x = (s - tex.width * scale) / 2;
+  sprite.y = (s - tex.height * scale) / 2;
+  box.addChild(sprite);
+  return box;
 }

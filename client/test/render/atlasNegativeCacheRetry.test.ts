@@ -26,6 +26,11 @@ vi.mock('pixi.js-legacy', () => ({
     constructor(public baseTex: unknown, public data: unknown) {}
     async parse(): Promise<void> { /* no-op success */ }
   },
+  // icons.ts (imported transitively via coinIconAtlas.ts's buildIcon) now pulls in
+  // cardArt.ts -> preloadTextures.ts for the raster tab-icon art (batch 2/3), which
+  // reads these at module scope for ART_TEX_OPTIONS.
+  MIPMAP_MODES: { OFF: 0, POW2: 1, ON: 2, ON_MANUAL: 3 },
+  SCALE_MODES: { NEAREST: 0, LINEAR: 1 },
 }));
 
 function flakyThenOkIO(): AssetIO {

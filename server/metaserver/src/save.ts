@@ -27,8 +27,12 @@ export async function getOrCreateSave(
   return fresh ? fresh.save : save;
 }
 
-/** Preset avatar slot ids (avatar.ts AVATAR_DEFS, indices 0-7) — always unlocked, no ownership check.
- *  Single source of truth for isAvatarOwned below, used by service/liveops.ts's equipAvatar. */
+/** Legacy bare-digit preset avatar ids (pre-2026-08 8-icon set, indices 0-7) — always unlocked, no
+ *  ownership check. Kept for backward compat only; current preset avatarIds are "preset:<key>"
+ *  strings against the 20-key art table (client/src/render/presetAvatarArt.ts), which the `case
+ *  'preset': return true` branch in isAvatarOwned below covers unconditionally (no key validation —
+ *  preset is always free). Single source of truth for isAvatarOwned below, used by
+ *  service/liveops/profile.ts's equipAvatarHandler. */
 export const PRESET_AVATAR_IDS = new Set(['0', '1', '2', '3', '4', '5', '6', '7']);
 
 /**
@@ -46,11 +50,41 @@ export function isAvatarOwned(save: SaveData, avatarId: string): boolean {
     case 'preset': return true;
     case 'title': return (save.titles ?? []).includes(key);
     case 'hero': return (save.everOwned?.hero ?? []).includes(key);
-    case 'equip': return (save.everOwned?.equipment ?? []).includes(key);
-    case 'material': return (save.everOwned?.material ?? []).includes(key);
     case 'skin': return (save.inventory?.skins ?? []).includes(key) || (save.everOwned?.skin ?? []).includes(key);
+    // 'equip'/'material' avatar categories were retired outright (2026-08-15, see
+    // sanitizeEquippedAvatar below) — no longer grantable via PUT /avatar/equip.
     default: return false;
   }
+}
+
+/** Category prefixes still valid for an equipped avatarId, post the 2026-08-15 equip/material retirement. */
+const VALID_AVATAR_CATEGORIES = new Set(['preset', 'title', 'hero', 'skin']);
+
+/** A stable, always-unlocked fallback avatarId — the legacy bare-digit preset format (still accepted
+ *  for backward compat, see PRESET_AVATAR_IDS/isAvatarOwned above); the client's avatar.ts positionally
+ *  migrates it onto the current 20-key preset art table, so this never points at removed art. */
+const DEFAULT_AVATAR_ID = 'preset:0';
+
+/**
+ * Migration shim (2026-08-15 avatar redesign, design/product/avatar-art-prompts.md §四): the
+ * `equip`/`material` avatar categories were deleted outright (equipment/materials churn too fast
+ * for a head-shot pool to track) — accounts that had one equipped keep a now-dead
+ * `equipped.avatar = "equip:<def>"`/`"material:<kind>"` string in their stored save forever. The
+ * client already degrades this gracefully (parseAvatarId rejects unknown categories → letter-initial
+ * fallback), but a real portrait reads better than a blank initial, so app.ts's preSerialization
+ * hook calls this on every outgoing save to swap it for `DEFAULT_AVATAR_ID` — read-time-only, no DB
+ * write-back (same convention as that hook's equipmentInv/cardInv/skinCounts backfills). Bare-digit
+ * ('0'-'7') and unparseable ids are left alone: those already resolve to *something* client-side
+ * (positional preset migration / letter fallback respectively) and aren't this shim's concern.
+ */
+export function sanitizeEquippedAvatar(save: SaveData): SaveData {
+  const avatarId = save.equipped?.avatar;
+  if (!avatarId) return save;
+  const sep = avatarId.indexOf(':');
+  if (sep < 0) return save; // bare digit / no category — not this migration's concern
+  const category = avatarId.slice(0, sep);
+  if (VALID_AVATAR_CATEGORIES.has(category)) return save;
+  return { ...save, equipped: { ...save.equipped, avatar: DEFAULT_AVATAR_ID } };
 }
 
 /** Whether `skinId` is unlocked for equipping (current inventory or the lifetime-owned ledger). */

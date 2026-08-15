@@ -6,6 +6,7 @@ import * as PIXI from 'pixi.js-legacy';
 import { t } from '../../i18n';
 import { ui as C, txt } from '../../render/sketchUi';
 import { buildIcon } from '../../render/icons';
+import { buildEmblemIcon, type EmblemKey } from '../../render/emblemIcon';
 import { FS } from '../../render/fontScale';
 import { FAMILY_CAP } from '@nw/shared';
 import type { FamilySceneCore } from './core';
@@ -47,6 +48,26 @@ export function drawHeaderTitle(core: FamilySceneCore, headerH: number): void {
   const titleNode = add(txt(t('family.title'), FS.headline, C.dark, true));
   let clusterW = titleNode.width;
 
+  // Emblem badge (family-emblem-art-prompts.md, 2026-08-14): tinted with the family's chosen accent
+  // colour, or a dashed placeholder circle inviting the leader to pick one — absent entirely for
+  // non-leaders with no badge yet (nothing to tap, nothing worth showing).
+  let emblemNode: PIXI.DisplayObject | null = null;
+  const emblemSize = Math.round(h * 0.034);
+  const isLeader = core.isFamilyLeader;
+  if (fam) {
+    const key = fam.emblemKey as EmblemKey | undefined;
+    emblemNode = key ? buildEmblemIcon(key, emblemSize, fam.emblemColor ?? C.dark) : null;
+    if (!emblemNode && isLeader) {
+      const ph = new PIXI.Graphics();
+      ph.lineStyle(1.4, C.mid, 0.9);
+      ph.drawCircle(emblemSize / 2, emblemSize / 2, emblemSize / 2 - 1);
+      ph.moveTo(emblemSize * 0.3, emblemSize / 2).lineTo(emblemSize * 0.7, emblemSize / 2);
+      ph.moveTo(emblemSize / 2, emblemSize * 0.3).lineTo(emblemSize / 2, emblemSize * 0.7);
+      emblemNode = ph;
+    }
+    if (emblemNode) { add(emblemNode); clusterW += emblemSize + 8; }
+  }
+
   let nameNode: PIXI.Text | null = null;
   let star: PIXI.DisplayObject | null = null;
   let starSize = 0;
@@ -70,6 +91,11 @@ export function drawHeaderTitle(core: FamilySceneCore, headerH: number): void {
 
   if (fam && nameNode && star && prosNode && countNode) {
     x += gap;
+    if (emblemNode) {
+      emblemNode.x = x; emblemNode.y = midY - emblemSize / 2;
+      if (isLeader) core.hitRects.push({ rect: { x, y: midY - emblemSize / 2, w: emblemSize, h: emblemSize }, action: () => core.openEmblemPicker() });
+      x += emblemSize + 8;
+    }
     nameNode.anchor.set(0, 0.5); nameNode.x = x; nameNode.y = midY;
     x += nameNode.width + gap;
 

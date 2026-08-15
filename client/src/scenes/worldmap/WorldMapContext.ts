@@ -29,9 +29,19 @@ import { GuideOverlay } from '../../render/GuideOverlay';
  * as the same field name across both variants and across march/occupy/stationed for a uniform
  * kind-changed → destroy-and-rebuild check.
  */
+/** Family-emblem corner badge riding a map token (family-emblem-art-prompts.md, 2026-08-14) —
+ *  its own top-level display object (not a child of the stickman/dot container) so the stickman's
+ *  facing-direction mirror flip (see tokens.ts's mirrorX) never mirrors the badge art. `key` lets
+ *  syncEmblemBadge tell "same badge, just reposition" from "badge changed, rebuild" without a redraw
+ *  every frame. */
+export interface MapTokenBadge {
+  sprite: PIXI.DisplayObject;
+  key: string;
+}
+
 export type MapTokenEntry =
-  | { mode: 'stickman'; runtime: StickmanRuntime | null; kind: string }
-  | { mode: 'dot'; sprite: PIXI.Container; kind: string };
+  | { mode: 'stickman'; runtime: StickmanRuntime | null; kind: string; badge?: MapTokenBadge }
+  | { mode: 'dot'; sprite: PIXI.Container; kind: string; badge?: MapTokenBadge };
 
 // ── Public callbacks ────────────────────────────────────────────────────────
 export interface WorldMapCallbacks {

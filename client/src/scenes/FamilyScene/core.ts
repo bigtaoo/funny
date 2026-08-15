@@ -176,8 +176,12 @@ export class FamilySceneCore {
    *  dispatcher, since it's the only thing that knows about every domain instance) — Core and the
    *  domain classes call `this.render()`/`core.render()` wherever the old flattened class called
    *  its own `render()` method verbatim. Does NOT auto-fire the initial loadData() — the outer
-   *  assembly does that after all domain instances exist. */
-  constructor(layout: ILayout, input: InputManager, cb: FamilySceneCallbacks, readonly render: () => void) {
+   *  assembly does that after all domain instances exist.
+   *  @param openEmblemPicker Same lazy-callback trick as `render` above: header.ts (drawHeaderTitle,
+   *  owned by Core, not RenderPanel) needs to open ActionsPanel's emblem-picker modal for the leader's
+   *  badge tap, but ActionsPanel doesn't exist yet when Core is constructed — this closure is only
+   *  ever invoked later (on tap), by which point the outer assembly has assigned `this.actions`. */
+  constructor(layout: ILayout, input: InputManager, cb: FamilySceneCallbacks, readonly render: () => void, readonly openEmblemPicker: () => void) {
     this.w = layout.designWidth;
     this.h = layout.designHeight;
     this.landscape = layout.orientation === 'landscape';

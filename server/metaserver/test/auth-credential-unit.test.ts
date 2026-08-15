@@ -40,37 +40,6 @@ interface AccountSeed {
   flags?: { banned?: boolean; bannedUntil?: number; mutedUntil?: number; gdprConsent?: boolean; reputationScore?: number };
 }
 
-/**
- * FakeCollection's updateOne mis-keys an upsert-inserted doc when the upsert filter has no `_id` field
- * (the map key becomes the literal `undefined` value) — exactly the shape every accounts.ts resolveBy*
- * (device/openid/oauth) + registerWithPassword upsert uses (they match on deviceId/openid/oauth/
- * loginId, not `_id`). That mis-keying is invisible to any *multi-key* lookup (updateOne/find's slow
- * path scans by field value, not map key) but breaks the *single-key* `findOne({_id})` fast path that
- * ensurePublicId/rejectIfBanned/restoreIfWithinGrace all rely on for that same account on every
- * subsequent call — and registerWithPassword's own `if (!res.upsertedId) return {kind:'taken'}` check,
- * since the fake never populates `upsertedId` at all (unlike the real Mongo driver). Both are corrected
- * here, scoped to this test file's `accounts` collection only — fakeCollection.ts itself is untouched.
- */
-class AccountsFakeCollection extends FakeCollection<AccountSeed & { _id: string }> {
-  async updateOne(
-    filter: Record<string, unknown>,
-    update: Record<string, Record<string, unknown>>,
-    opts?: { upsert?: boolean },
-  ): Promise<{ matchedCount: number; modifiedCount: number; upsertedCount: number; upsertedId?: string }> {
-    const res = await super.updateOne(filter, update, opts);
-    if (res.upsertedCount === 1) {
-      for (const [key, doc] of [...this.docs.entries()]) {
-        if (key !== doc._id) {
-          this.docs.delete(key);
-          this.docs.set(doc._id, doc);
-          return { ...res, upsertedId: doc._id };
-        }
-      }
-    }
-    return res;
-  }
-}
-
 /** insertOne always rejects with a caller-supplied error — used to drive submitAppealHandler's E11000
  *  unique-index-race catch branch (and its non-11000 rethrow) without any real concurrency. */
 class ThrowingInsertCollection<T extends { _id: string }> extends FakeCollection<T> {
@@ -83,7 +52,7 @@ class ThrowingInsertCollection<T extends { _id: string }> extends FakeCollection
 }
 
 function fakeCols(opts: { accounts?: AccountSeed[]; saves?: { _id: string; save: SaveData; rev: number }[] } = {}): Collections {
-  const accounts = new AccountsFakeCollection();
+  const accounts = new FakeCollection<AccountSeed & { _id: string }>();
   if (opts.accounts) accounts.seed(...opts.accounts);
   const saves = new FakeCollection<{ _id: string; save: SaveData; rev: number }>();
   if (opts.saves) saves.seed(...opts.saves);

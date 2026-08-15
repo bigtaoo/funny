@@ -16,7 +16,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { Server } from 'http';
 import type { AddressInfo } from 'net';
-import { signToken, sectId, SECT_CREATE_COST, SLG_MAP_W, SLG_MAP_H, type FamilyRole } from '@nw/shared';
+import { signToken, sectId, SECT_CREATE_COST, SLG_MAP_W, SLG_MAP_H, EMBLEM_KEYS, EMBLEM_COLORS, type FamilyRole } from '@nw/shared';
 import { createWorldMongo, type WorldMongo } from '../src/db';
 import { WorldService } from '../src/service';
 import { SectService } from '../src/sectService';
@@ -307,6 +307,60 @@ describe.skipIf(!mongo)('worldsvc /sect/* httpApi e2e', () => {
       body: JSON.stringify({ worldId: W }),
     });
     expect(r.status).toBe(400);
+  });
+
+  it('POST /sect/emblem: sect leader sets emblemKey+emblemColor; a member family leader (bob, not the sect leader) is denied', async () => {
+    const asBob = await fetch(`${base}/sect/emblem`, {
+      method: 'POST',
+      headers: { ...authFor('bob'), 'content-type': 'application/json' },
+      body: JSON.stringify({ worldId: W, emblemKey: EMBLEM_KEYS[4], emblemColor: EMBLEM_COLORS[3] }),
+    });
+    expect(asBob.status).toBe(403);
+    expect((await asBob.json()).error.code).toBe('NO_PERMISSION');
+
+    const asAlice = await fetch(`${base}/sect/emblem`, {
+      method: 'POST',
+      headers: { ...authFor('alice'), 'content-type': 'application/json' },
+      body: JSON.stringify({ worldId: W, emblemKey: EMBLEM_KEYS[4], emblemColor: EMBLEM_COLORS[3] }),
+    });
+    expect(asAlice.status).toBe(200);
+
+    const getR = await fetch(`${base}/sect/${encodeURIComponent(sectId(W, 'SKY'))}`, { headers: authFor('alice') });
+    const sect = (await getR.json()).data as { emblemKey?: string; emblemColor?: number };
+    expect(sect.emblemKey).toBe(EMBLEM_KEYS[4]);
+    expect(sect.emblemColor).toBe(EMBLEM_COLORS[3]);
+  });
+
+  it('POST /sect/emblem: missing fields → 400; key/colour outside the fixed pools → 400', async () => {
+    const missingWorldId = await fetch(`${base}/sect/emblem`, {
+      method: 'POST',
+      headers: { ...authFor('alice'), 'content-type': 'application/json' },
+      body: JSON.stringify({ emblemKey: EMBLEM_KEYS[0], emblemColor: EMBLEM_COLORS[0] }),
+    });
+    expect(missingWorldId.status).toBe(400);
+
+    const badKey = await fetch(`${base}/sect/emblem`, {
+      method: 'POST',
+      headers: { ...authFor('alice'), 'content-type': 'application/json' },
+      body: JSON.stringify({ worldId: W, emblemKey: 'not_a_real_key', emblemColor: EMBLEM_COLORS[0] }),
+    });
+    expect(badKey.status).toBe(400);
+
+    const badColor = await fetch(`${base}/sect/emblem`, {
+      method: 'POST',
+      headers: { ...authFor('alice'), 'content-type': 'application/json' },
+      body: JSON.stringify({ worldId: W, emblemKey: EMBLEM_KEYS[0], emblemColor: 0x123456 }),
+    });
+    expect(badColor.status).toBe(400);
+  });
+
+  it('POST /sect/emblem: unauthenticated → 401', async () => {
+    const r = await fetch(`${base}/sect/emblem`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ worldId: W, emblemKey: EMBLEM_KEYS[0], emblemColor: EMBLEM_COLORS[0] }),
+    });
+    expect(r.status).toBe(401);
   });
 
   it('POST /sect/leave happy path: a non-leader family leaves, memberFamilyCount decrements', async () => {

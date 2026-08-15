@@ -14,12 +14,20 @@ import { drawSidebarTabs, drawHubTabs, hubTabsHeight, sidebarNavW, type HubTab }
 import type { AchievementsView, Achievement } from '../net/ApiClient';
 import { tierState, achievementClaimable, type TierState } from '../game/meta/achievements';
 
-/** Category → hand-drawn tab glyph (pve = notebook, pvp = crossed swords, collection = brush, progression = trophy). */
+// collection/progression moved off 'brush'/'trophy' to their own AI icons (AI art batch 2 dedupe,
+// design/product/tab-icon-art-prompts.md §batch2) — 'brush' meant "皮肤" elsewhere (now skinIcon), not
+// "收藏进度", and 'trophy' stays reserved for Career's Achievements tab (the parent of this category strip).
+// pve/pvp moved off 'book'/'swords' to their own AI icons too (AI art batch 3): batch 2's judgment
+// table missed that 'book' had a 3rd usage here (Career's "stats" tab reuses statsTabIcon instead, see
+// CareerTabs.ts, so 'book' was never actually free) — pve gets a treasure-map scroll, distinct from the
+// book/stats-chart glyphs elsewhere in this same Career hub; pvp gets a crossed-swords AI icon as a pure
+// recognizability upgrade (no reuse conflict — 'swords' elsewhere is only ever a content badge/action icon).
+/** Category → hand-drawn tab glyph (pve = treasure map, pvp = crossed swords, collection = jigsaw puzzle piece, progression = stacked chevrons). */
 const CATEGORY_ICON: Record<Achievement['category'], IconKind> = {
-  pve: 'book',
-  pvp: 'swords',
-  collection: 'brush',
-  progression: 'trophy',
+  pve: 'pveTabIcon',
+  pvp: 'pvpTabIcon',
+  collection: 'collectionTabIcon',
+  progression: 'progressTabIcon',
 };
 
 // ── AchievementScene — achievement wall (personal view, ACHIEVEMENT_DESIGN §7) ──────────────────────

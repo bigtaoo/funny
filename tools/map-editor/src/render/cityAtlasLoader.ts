@@ -5,13 +5,12 @@
  * assetIO indirection dropped — the editor is web-only, so the atlas URL is used directly as a
  * PIXI.BaseTexture source (same simplification as terrainAtlasLoader.ts).
  *
- * The bundled atlas ships 4 tier frames (city_lv1..city_lv4, camp/fort/castle/citadel spanning levels
- * 1-2/3-5/6-8/9-10) plus per-level frames city_l2/l4/l5/l7/l8/l10. getCityTextureForLevel() prefers a
- * per-level frame `city_l{level}` and otherwise falls back to the tier frame, so levels without their own
- * art (1/3/6/9) still render their tier image. Repacked by art/ui/slg-building/pack_city_atlas.js.
+ * The bundled atlas ships one dedicated frame per level (`city_l1..city_l10`). Until 2026-08-14
+ * levels 1/3/6/9 had no dedicated art and fell back to 4 pre-redesign "tier" frames
+ * (`city_lv1..lv4`); once the last of those was redrawn, all 10 levels were unified onto this flat
+ * naming and the tier fallback was dropped. Repacked by art/ui/slg-building/pack_city_atlas.js.
  */
 import * as PIXI from 'pixi.js-legacy';
-import { cityTier } from '@nw/shared/slg';
 import atlasUrl from '../assets/slg/city_atlas.png';
 import atlasData from '../assets/slg/city_atlas.json';
 
@@ -22,11 +21,11 @@ export function isCityAtlasReady(): boolean {
   return sheet !== null;
 }
 
-/** Texture for a specific city LEVEL (1–10): per-level frame `city_l{level}` if present, else the tier frame `city_lv{tier}`. */
+/** Texture for a specific city LEVEL (1–10): the dedicated frame `city_l{level}`. */
 export function getCityTextureForLevel(level: number): PIXI.Texture | null {
   if (!sheet) return null;
   const lv = Math.max(1, Math.min(10, Math.round(level)));
-  return sheet.textures[`city_l${lv}`] ?? sheet.textures[`city_lv${cityTier(lv)}`] ?? null;
+  return sheet.textures[`city_l${lv}`] ?? null;
 }
 
 export async function loadCityAtlas(): Promise<void> {

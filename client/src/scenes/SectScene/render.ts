@@ -10,6 +10,7 @@ import * as PIXI from 'pixi.js-legacy';
 import { SECT_CREATE_COST } from '@nw/shared';
 import { t } from '../../i18n';
 import { ui as C, txt, sketchPanel, sketchButton, seedFor } from '../../render/sketchUi';
+import { buildEmblemIcon, type EmblemKey } from '../../render/emblemIcon';
 import { caretDisplay } from '../../ui/inputDisplay';
 import { FS } from '../../render/fontScale';
 import type { SectSceneCore, SectTab } from './core';
@@ -307,11 +308,35 @@ export class RenderPanel {
     // see SectSceneCore.drawHeaderTitle), so it stays here, but no longer behind a decorative
     // hand-drawn band (see the 25.07.2026 header-declutter pass).
     const summaryH = Math.round(FS.label * 1.6);
+    let summaryX = left + 18;
+
+    // Emblem badge (family-emblem-art-prompts.md, 2026-08-14) — same affordance as the landscape
+    // header (drawHeaderTitle), just inline at the start of this row for portrait.
+    const emblemSize = Math.round(summaryH * 0.9);
+    const key = sect.emblemKey as EmblemKey | undefined;
+    const emblemNode = key ? buildEmblemIcon(key, emblemSize, sect.emblemColor ?? C.dark) : null;
+    if (emblemNode || core.isSectLeader) {
+      const badge = emblemNode ?? (() => {
+        const ph = new PIXI.Graphics();
+        ph.lineStyle(1.4, C.mid, 0.9);
+        ph.drawCircle(emblemSize / 2, emblemSize / 2, emblemSize / 2 - 1);
+        ph.moveTo(emblemSize * 0.3, emblemSize / 2).lineTo(emblemSize * 0.7, emblemSize / 2);
+        ph.moveTo(emblemSize / 2, emblemSize * 0.3).lineTo(emblemSize / 2, emblemSize * 0.7);
+        return ph;
+      })();
+      badge.x = summaryX; badge.y = y0 + (summaryH - emblemSize) / 2;
+      core.bodyLayer.addChild(badge);
+      if (core.isSectLeader) {
+        core.hitRects.push({ rect: { x: badge.x, y: badge.y, w: emblemSize, h: emblemSize }, action: () => core.emblemHooks.openEmblemPicker() });
+      }
+      summaryX += emblemSize + 8;
+    }
+
     const summary = txt(
       `[${sect.tag}] ${sect.name}   ${t('sect.families', { n: sect.memberFamilyCount })}   ${t('sect.prosperity', { n: sect.prosperity })}`,
       FS.label, C.dark,
     );
-    summary.anchor.set(0, 0.5); summary.x = left + 18; summary.y = y0 + summaryH / 2;
+    summary.anchor.set(0, 0.5); summary.x = summaryX; summary.y = y0 + summaryH / 2;
     core.bodyLayer.addChild(summary);
     this.drawAllianceControlsRow(w - 8, y0, summaryH);
 

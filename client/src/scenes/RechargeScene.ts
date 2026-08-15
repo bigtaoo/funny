@@ -182,19 +182,19 @@ export class RechargeScene implements Scene {
   private drawSidebar(tbH: number): void {
     if (!this.cb.openShop) return;
     const { w, h, landscape } = this;
-    const tabs: HubTab[] = [{ label: t('shop.title'), active: false, icon: 'tag', badge: this.cb.getShopBadge?.() ?? false }];
+    const tabs: HubTab[] = [{ label: t('shop.title'), active: false, icon: 'shopTabIcon', badge: this.cb.getShopBadge?.() ?? false }];
     const actions: Array<() => void> = [() => this.cb.openShop?.()];
     if (this.cb.openCoins) {
-      tabs.push({ label: t('shop.coinsTab'), active: false, icon: 'coin' });
+      tabs.push({ label: t('shop.coinsTab'), active: false, icon: 'coinTabIcon' });
       actions.push(() => this.cb.openCoins?.());
     }
-    tabs.push({ label: t('gacha.title'), active: false, icon: 'capsule' });
+    tabs.push({ label: t('gacha.title'), active: false, icon: 'gachaTabIcon' });
     actions.push(() => this.cb.openGacha?.());
     if (this.cb.openBattlePass) {
-      tabs.push({ label: t('battlepass.title'), active: false, icon: 'trophy', badge: this.cb.getBattlePassBadge?.() ?? false });
+      tabs.push({ label: t('battlepass.title'), active: false, icon: 'battlepassTabIcon', badge: this.cb.getBattlePassBadge?.() ?? false });
       actions.push(() => this.cb.openBattlePass?.());
     }
-    tabs.push({ label: t('recharge.title'), active: true, icon: 'coinChest' });
+    tabs.push({ label: t('recharge.title'), active: true, icon: 'rechargeTabIcon' });
     actions.push(() => {});
     const onSelect = (i: number): void => actions[i]?.();
     if (!landscape) {

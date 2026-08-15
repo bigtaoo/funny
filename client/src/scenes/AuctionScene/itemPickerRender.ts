@@ -247,7 +247,12 @@ function renderPickerSidebar(core: AuctionSceneCore): number {
   const keys: Record<AucFilter, 'auction.filterAll' | 'auction.filterEquipment' | 'auction.filterCard' | 'auction.filterMaterial' | 'auction.filterSkin'> = {
     '': 'auction.filterAll', equipment: 'auction.filterEquipment', card: 'auction.filterCard', material: 'auction.filterMaterial', skin: 'auction.filterSkin',
   };
-  const icons: Partial<Record<AucFilter, IconKind>> = { equipment: 'armor', card: 'cards', material: 'scrap', skin: 'brush' };
+  // card/skin filters → rosterIcon/skinIcon (AI art pilot batch 2): same "卡"/"皮肤" concept the
+  // [Cards|Equipment|Skins] tabs already draw with the dedicated AI art, reused here rather than the
+  // generic drawn 'cards'/'brush' glyphs. equipment filter → equipIcon (AI art batch 3, pure reuse):
+  // same "这是装备" concept, no new art needed. material filter → materialTabIcon (AI art batch 3, new
+  // concept: pencil-shaving curl), a pure recognizability upgrade — no reuse conflict on 'scrap' itself.
+  const icons: Partial<Record<AucFilter, IconKind>> = { equipment: 'equipIcon', card: 'rosterIcon', material: 'materialTabIcon', skin: 'skinIcon' };
   const hubTabs: HubTab[] = FILTERS.map((f) => ({ label: t(keys[f]), active: f === core.pickerFilter, icon: icons[f] }));
   const onSelect = (i: number): void => {
     const f = FILTERS[i]!;

@@ -12,10 +12,8 @@ import { describe, it, expect, vi } from 'vitest';
 vi.mock('../../src/assets/slg/world_atlas.json', () => ({
   default: {
     frames: {
-      city_lv1: { frame: { x: 0, y: 0, w: 256, h: 256 } },
-      city_lv2: { frame: { x: 256, y: 0, w: 256, h: 256 } },
-      city_lv3: { frame: { x: 512, y: 0, w: 256, h: 256 } },
-      city_lv4: { frame: { x: 768, y: 0, w: 256, h: 256 } },
+      city_l1: { frame: { x: 0, y: 0, w: 256, h: 256 } },
+      city_l10: { frame: { x: 256, y: 0, w: 256, h: 256 } },
       playerbase_l1: { frame: { x: 0, y: 256, w: 256, h: 256 } },
     },
   },
@@ -25,7 +23,7 @@ describe('content-top getters fall back to 0 on a pre-fix atlas (no contentTop f
   it('getCityContentTopFracForLevel returns 0, not undefined/NaN', async () => {
     const { getCityContentTopFracForLevel } = await import('../../src/render/atlas/cityAtlasLoader');
     expect(getCityContentTopFracForLevel(1)).toBe(0);
-    expect(getCityContentTopFracForLevel(10)).toBe(0); // tier-4 fallback frame, also fieldless
+    expect(getCityContentTopFracForLevel(10)).toBe(0); // fieldless mock frame, same as level 1
   });
 
   it('getPlayerBaseContentTopFracForLevel returns 0, not undefined/NaN', async () => {

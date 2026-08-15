@@ -75,7 +75,7 @@
 
 | 资产名 | 描述 | 状态 |
 |---|---|---|
-| `city_lv1..4` | 我/敌/盟主城（4 级建筑，归属靠程序上色） | ✅ 已接入 `city_atlas`（3×3 base 锚点，深度排序图层） |
+| `city_l1..l10` | 我/敌/盟主城 + NPC 可攻占城池（每级一张，10 级，归属靠程序上色） | ✅ 已接入 `city_atlas`（3×3 base 锚点，深度排序图层；2026-08-14 起统一命名，无档位回退） |
 | `building_keep` | 战略要点/咽喉点建筑（城楼门楼） | ✅ 已接入 `building_atlas`（2026-07-03） |
 | `building_stronghold` | 险地 NPC 据点（暗色石垒） | ✅ 已接入 `building_atlas`（2026-07-03） |
 | `icon_watchtower` | 己方瞭望塔（扩视野） | ✅ 改版完成——3/4 俯视宽脚架构图，详见 [`slg-building-art.md`](../product/slg-building-art.md) |
@@ -141,10 +141,15 @@
 > `render/stickman/StickmanRuntime.ts`），播放 `walk` 循环，沿路线插值位置并按行进方向左右镜像朝向。
 > 兵种素材暂时二选一（`MARCH_TOKEN_ASSET`）：`kind==='attack'` 用盾兵 `shieldbearer.tao`（代表"攻城兵种"，
 > 目前没有专门的攻城兵种，盾兵是最接近"破城"定位的单位）；其余全部行军用普通兵 `infantry.tao`。
-> **TODO（美术）**：等专门的行军动画素材（含旗帜/头像等帮会标识）出图后替换 `MARCH_TOKEN_ASSET`；
-> 帮会图标体系的 prompt 方案见 [`family-emblem-art-prompts.md`](../product/family-emblem-art-prompts.md)
-> （2026-08-14，24 套图腾固定池，白线单色+运行时 tint，家族/宗门共用池——出图仍未执行，接入
-> `MARCH_TOKEN_ASSET`/`buildDotToken` 需等图集打包完成 + `emblemKey` 字段落地）。
+> **帮会徽章角标 — ✅ 已接入（2026-08-14，见下方"按队伍真实领队兵种显示"决策，两者不冲突）**：
+> 帮会图标体系的 24 套图腾出图并打包接入后（[`family-emblem-art-prompts.md`](../product/family-emblem-art-prompts.md)），
+> **没有替换 `MARCH_TOKEN_ASSET`/`buildDotToken`**——那会倒退下面 2026-07-26 才刚落地的"按真实领队兵种
+> 显示"决策，`tokens.ts` 头部注释已挑明"帮会/旗帜有意排除在外，这只替换 6 种已授权骨骼中的哪一种代表
+> 令牌"。改成叠加一个不影响令牌本身的**角标**：`WorldMapRenderer/tokens.ts::syncEmblemBadge()` 在令牌
+> 右下角画一个独立的顶层 `buildEmblemIcon` 精灵（不挂在会跟随行进方向左右镜像的 stickman 容器下，避免
+> 徽章图案跟着镜像翻转），三套令牌（march/occupy/stationed）各自的数据来自 `worldsvc` 新增的
+> `combatShared.ts::resolveOwnerEmblems()`——按 `PlayerWorldDoc.familyId` 只读镖像批量解析
+> ownerId→family→emblemKey/Color，贴回各自 View。
 >
 > **按队伍真实领队兵种显示 — ✅ 已接入（2026-07-26，零新增美术，复用已有 6 种骨骼资产）**：
 > 上面"兵种素材暂时二选一"的写死映射已废弃。`worldsvc` 在 `startMarch` 派发时（`combatMarch.ts`）用

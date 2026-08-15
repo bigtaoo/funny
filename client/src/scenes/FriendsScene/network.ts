@@ -9,6 +9,7 @@ import { TranslationKey } from '../../i18n';
 import type { FriendsSceneCore } from './core';
 import type { MailView } from '../../net/ApiClient';
 import { WorldApiError } from '../../net/WorldApiClient';
+import { loadEmblemAtlas } from '../../render/emblemIcon';
 
 export interface NetworkHandlers {
   refresh(): Promise<void>;
@@ -198,6 +199,11 @@ export class NetworkPanel implements NetworkHandlers {
     } finally {
       core.familyBrowseLoading = false;
       core.familyBrowseLoaded = true;
+    }
+    // Emblem atlas is lazy-loaded (not boot L0 — see emblemAtlas.ts); kick it off once any browsed
+    // family shows a badge, re-rendering once it resolves (orgForm.ts's drawFamilyBrowseList badges).
+    if (core.familyBrowseResults.some((f) => f.emblemKey)) {
+      void loadEmblemAtlas().then(() => { if (!core.dead) core.render(); }).catch(() => {});
     }
     if (!core.dead) core.render();
   }

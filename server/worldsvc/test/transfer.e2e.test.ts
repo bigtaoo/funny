@@ -5,12 +5,13 @@
 //     transfer in a different season.
 //   • mergeShard: moves every remaining player out of the source shard into the target, force-clearing
 //     in-flight marches/occupations first, then closes the source shard (excluded from future join routing).
-import { afterAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   playerWorldId, SLG_MAP_W, SLG_MAP_H, SHARD_TRANSFER_COOLDOWN_MS,
 } from '@nw/shared';
 import { createWorldMongo, type WorldMongo, type MarchDoc, type OccupationDoc, type StationedDoc } from '../src/db';
 import { WorldService } from '../src/service';
+import { TerritoryService } from '../src/territory';
 
 const URI = process.env.NW_MONGO_URI ?? 'mongodb://127.0.0.1:27017/?replicaSet=rs0';
 const DB = 'nw_world_transfer_test';
@@ -203,6 +204,36 @@ describe.skipIf(!mongo)('worldsvc G6 shard transfer/merge e2e (§27)', () => {
     // A closed shard is excluded from future join routing (§17.3 status filter, already-existing behavior).
     const resolved = await svc.resolveSeasonShard(30, 'newbie');
     expect(resolved.worldId).not.toBe(a);
+  });
+
+  it('mergeShard: one player failing to join the target is logged + reported in `failed`, without aborting the rest', async () => {
+    const [a, b] = await twoShards(35);
+    await svc.joinWorld(a, 'p1');
+    await svc.joinWorld(a, 'p2');
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    // Fail only p1's join; delegate to the real implementation for everyone else, so the rest of the
+    // merge (p2) still goes through normally.
+    const real = TerritoryService.prototype.joinWorld;
+    const spy = vi.spyOn(TerritoryService.prototype, 'joinWorld').mockImplementation(function (
+      this: TerritoryService, worldId: string, accountId: string, x?: number, y?: number,
+    ) {
+      if (accountId === 'p1') return Promise.reject(new Error('simulated join failure'));
+      return real.call(this, worldId, accountId, x, y);
+    });
+    try {
+      const r = await svc.mergeShard(a, b);
+      expect(r.moved).toBe(1);
+      expect(r.failed).toEqual(['p1']);
+      expect(errSpy).toHaveBeenCalledWith(
+        '[worldsvc] mergeShard: failed to move player',
+        expect.objectContaining({ sourceWorldId: a, targetWorldId: b, accountId: 'p1' }),
+      );
+      // p2 (the non-failing account) did make it to the target shard.
+      expect(await m.collections.playerWorld.findOne({ _id: playerWorldId(b, 'p2') })).toBeTruthy();
+    } finally {
+      spy.mockRestore();
+      errSpy.mockRestore();
+    }
   });
 
   it('mergeShard rejects when the target lacks room for everyone remaining', async () => {

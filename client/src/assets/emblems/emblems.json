@@ -1,0 +1,494 @@
+{
+  "frames": {
+    "emblem_anchor": {
+      "frame": {
+        "x": 0,
+        "y": 0,
+        "w": 256,
+        "h": 256
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 256,
+        "h": 256
+      },
+      "sourceSize": {
+        "w": 256,
+        "h": 256
+      }
+    },
+    "emblem_bear": {
+      "frame": {
+        "x": 256,
+        "y": 0,
+        "w": 256,
+        "h": 256
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 256,
+        "h": 256
+      },
+      "sourceSize": {
+        "w": 256,
+        "h": 256
+      }
+    },
+    "emblem_boar": {
+      "frame": {
+        "x": 512,
+        "y": 0,
+        "w": 256,
+        "h": 256
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 256,
+        "h": 256
+      },
+      "sourceSize": {
+        "w": 256,
+        "h": 256
+      }
+    },
+    "emblem_crossedpens": {
+      "frame": {
+        "x": 768,
+        "y": 0,
+        "w": 256,
+        "h": 256
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 256,
+        "h": 256
+      },
+      "sourceSize": {
+        "w": 256,
+        "h": 256
+      }
+    },
+    "emblem_crown": {
+      "frame": {
+        "x": 1024,
+        "y": 0,
+        "w": 256,
+        "h": 256
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 256,
+        "h": 256
+      },
+      "sourceSize": {
+        "w": 256,
+        "h": 256
+      }
+    },
+    "emblem_flame": {
+      "frame": {
+        "x": 1280,
+        "y": 0,
+        "w": 256,
+        "h": 256
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 256,
+        "h": 256
+      },
+      "sourceSize": {
+        "w": 256,
+        "h": 256
+      }
+    },
+    "emblem_fox": {
+      "frame": {
+        "x": 0,
+        "y": 256,
+        "w": 256,
+        "h": 256
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 256,
+        "h": 256
+      },
+      "sourceSize": {
+        "w": 256,
+        "h": 256
+      }
+    },
+    "emblem_inkdrop": {
+      "frame": {
+        "x": 256,
+        "y": 256,
+        "w": 256,
+        "h": 256
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 256,
+        "h": 256
+      },
+      "sourceSize": {
+        "w": 256,
+        "h": 256
+      }
+    },
+    "emblem_laurel": {
+      "frame": {
+        "x": 512,
+        "y": 256,
+        "w": 256,
+        "h": 256
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 256,
+        "h": 256
+      },
+      "sourceSize": {
+        "w": 256,
+        "h": 256
+      }
+    },
+    "emblem_lightning": {
+      "frame": {
+        "x": 768,
+        "y": 256,
+        "w": 256,
+        "h": 256
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 256,
+        "h": 256
+      },
+      "sourceSize": {
+        "w": 256,
+        "h": 256
+      }
+    },
+    "emblem_magnifier": {
+      "frame": {
+        "x": 1024,
+        "y": 256,
+        "w": 256,
+        "h": 256
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 256,
+        "h": 256
+      },
+      "sourceSize": {
+        "w": 256,
+        "h": 256
+      }
+    },
+    "emblem_moonstar": {
+      "frame": {
+        "x": 1280,
+        "y": 256,
+        "w": 256,
+        "h": 256
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 256,
+        "h": 256
+      },
+      "sourceSize": {
+        "w": 256,
+        "h": 256
+      }
+    },
+    "emblem_mountain": {
+      "frame": {
+        "x": 0,
+        "y": 512,
+        "w": 256,
+        "h": 256
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 256,
+        "h": 256
+      },
+      "sourceSize": {
+        "w": 256,
+        "h": 256
+      }
+    },
+    "emblem_openbook": {
+      "frame": {
+        "x": 256,
+        "y": 512,
+        "w": 256,
+        "h": 256
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 256,
+        "h": 256
+      },
+      "sourceSize": {
+        "w": 256,
+        "h": 256
+      }
+    },
+    "emblem_owl": {
+      "frame": {
+        "x": 512,
+        "y": 512,
+        "w": 256,
+        "h": 256
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 256,
+        "h": 256
+      },
+      "sourceSize": {
+        "w": 256,
+        "h": 256
+      }
+    },
+    "emblem_penquill": {
+      "frame": {
+        "x": 768,
+        "y": 512,
+        "w": 256,
+        "h": 256
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 256,
+        "h": 256
+      },
+      "sourceSize": {
+        "w": 256,
+        "h": 256
+      }
+    },
+    "emblem_scorpion": {
+      "frame": {
+        "x": 1024,
+        "y": 512,
+        "w": 256,
+        "h": 256
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 256,
+        "h": 256
+      },
+      "sourceSize": {
+        "w": 256,
+        "h": 256
+      }
+    },
+    "emblem_shark": {
+      "frame": {
+        "x": 1280,
+        "y": 512,
+        "w": 256,
+        "h": 256
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 256,
+        "h": 256
+      },
+      "sourceSize": {
+        "w": 256,
+        "h": 256
+      }
+    },
+    "emblem_shield": {
+      "frame": {
+        "x": 0,
+        "y": 768,
+        "w": 256,
+        "h": 256
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 256,
+        "h": 256
+      },
+      "sourceSize": {
+        "w": 256,
+        "h": 256
+      }
+    },
+    "emblem_skull": {
+      "frame": {
+        "x": 256,
+        "y": 768,
+        "w": 256,
+        "h": 256
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 256,
+        "h": 256
+      },
+      "sourceSize": {
+        "w": 256,
+        "h": 256
+      }
+    },
+    "emblem_snake": {
+      "frame": {
+        "x": 512,
+        "y": 768,
+        "w": 256,
+        "h": 256
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 256,
+        "h": 256
+      },
+      "sourceSize": {
+        "w": 256,
+        "h": 256
+      }
+    },
+    "emblem_stag": {
+      "frame": {
+        "x": 768,
+        "y": 768,
+        "w": 256,
+        "h": 256
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 256,
+        "h": 256
+      },
+      "sourceSize": {
+        "w": 256,
+        "h": 256
+      }
+    },
+    "emblem_starcircle": {
+      "frame": {
+        "x": 1024,
+        "y": 768,
+        "w": 256,
+        "h": 256
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 256,
+        "h": 256
+      },
+      "sourceSize": {
+        "w": 256,
+        "h": 256
+      }
+    },
+    "emblem_wave": {
+      "frame": {
+        "x": 1280,
+        "y": 768,
+        "w": 256,
+        "h": 256
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 256,
+        "h": 256
+      },
+      "sourceSize": {
+        "w": 256,
+        "h": 256
+      }
+    }
+  },
+  "meta": {
+    "app": "pack_emblem_atlas.js",
+    "image": "emblems.png",
+    "format": "RGBA8888",
+    "size": {
+      "w": 1536,
+      "h": 1024
+    },
+    "scale": "1"
+  }
+}

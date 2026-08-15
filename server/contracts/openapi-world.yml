@@ -335,6 +335,11 @@ components:
         leaderUnitType:
           type: string
           description: "March-token art (2026-07-26): the deployed team's leader unit-type (engine UnitType string, e.g. 'infantry'/'archer'/'max'), resolved server-side once at dispatch and frozen onto the march. Present for own AND enemy marches (reveals only a unit-type enum, not team/card identity). Absent on flat-troop marches (no team attached)."
+        emblemKey:
+          type: string
+          description: "Map-token corner badge (family-emblem-art-prompts.md, 2026-08-14): the march owner's family emblem, resolved live per-response (not frozen at dispatch, unlike leaderUnitType — family identity isn't sensitive). Absent if the owner has no family or the family has no badge chosen."
+        emblemColor:
+          type: integer
 
     OccupationView:
       type: object
@@ -358,6 +363,11 @@ components:
         leaderUnitType:
           type: string
           description: "March-token art (2026-07-26): carried over from the winning march's leaderUnitType — see MarchView.leaderUnitType."
+        emblemKey:
+          type: string
+          description: "Map-token corner badge — see MarchView.emblemKey. getOccupations is own-holds-only, so this is always the requester's own family badge."
+        emblemColor:
+          type: integer
 
     # ADR-051 (P5): a player-built structure overlaid on a tile (arrowTower / blocker). Rendered map-wide
     # (public static layer); hp/hpMax are intel-gated (omitted for tiles outside the requester's vision).
@@ -413,6 +423,11 @@ components:
         leaderUnitType:
           type: string
           description: "March-token art (2026-07-26): carried over from the originating march's leaderUnitType — see MarchView.leaderUnitType. Not blanked for enemy teams (reveals only a unit-type enum, not team/card identity)."
+        emblemKey:
+          type: string
+          description: "Map-token corner badge — see MarchView.emblemKey. Present for own AND enemy stationed teams (family identity isn't sensitive, unlike teamId)."
+        emblemColor:
+          type: integer
 
     # ── Sect (S8-4b) ────────────────────────────────────────────────────────────
 
@@ -440,6 +455,14 @@ components:
             type: string
         prosperity:
           type: number
+        emblemKey:
+          type: string
+          description: >-
+            Sect badge, one of the 24-design fixed pool (see @nw/shared EMBLEM_KEYS, same pool families choose
+            from); absent = no badge chosen yet. Sect-leader-only (POST /sect/emblem).
+        emblemColor:
+          type: integer
+          description: Accent colour (one of @nw/shared EMBLEM_COLORS) the emblem art is tinted with; absent while emblemKey is absent.
 
     SectMemberFamilyView:
       type: object
@@ -457,6 +480,12 @@ components:
           type: integer
         territoryCount:
           type: integer
+        emblemKey:
+          type: string
+          description: Family badge (mirrored from socialsvc's FamilyView); absent = no badge chosen yet.
+        emblemColor:
+          type: integer
+          description: Accent colour the emblem art is tinted with; absent while emblemKey is absent.
 
     SectDetailView:
       allOf:
@@ -2192,6 +2221,33 @@ paths:
                   - type: object
                     properties:
                       data: { $ref: '#/components/schemas/SectVoteResult' }
+        '400': { $ref: '#/components/responses/ErrorResp' }
+        '401': { $ref: '#/components/responses/ErrorResp' }
+        '403': { $ref: '#/components/responses/ErrorResp' }
+        '404': { $ref: '#/components/responses/ErrorResp' }
+        '500': { $ref: '#/components/responses/ErrorResp' }
+
+  /sect/emblem:
+    post:
+      operationId: setSectEmblem
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [worldId, emblemKey, emblemColor]
+              properties:
+                worldId: { type: string }
+                emblemKey: { type: string, description: 'One of @nw/shared EMBLEM_KEYS' }
+                emblemColor: { type: integer, description: 'One of @nw/shared EMBLEM_COLORS' }
+      responses:
+        '200':
+          description: Emblem updated (sect leader only)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OkResponse' }
         '400': { $ref: '#/components/responses/ErrorResp' }
         '401': { $ref: '#/components/responses/ErrorResp' }
         '403': { $ref: '#/components/responses/ErrorResp' }

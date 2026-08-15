@@ -244,6 +244,10 @@ export class SectSceneCore {
     openAlliesView: async () => {},
   };
 
+  /** Same lazy-binding trick as allianceHooks above — the emblem badge's leader-only tap target
+   *  (family-emblem-art-prompts.md, 2026-08-14) also lives in drawHeaderTitle. */
+  emblemHooks: { openEmblemPicker(): void } = { openEmblemPicker: () => {} };
+
   // ── Permission helpers ──────────────────────────────────────────────────────
 
   get isFamilyLeader(): boolean { return this.myFamilyRole === 'leader'; }

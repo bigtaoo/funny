@@ -41,7 +41,7 @@ export class FamilyScene implements Scene {
   private readonly renderPanel: RenderPanel;
 
   constructor(layout: ILayout, input: InputManager, cb: FamilySceneCallbacks) {
-    this.core = new FamilySceneCore(layout, input, cb, () => this.render());
+    this.core = new FamilySceneCore(layout, input, cb, () => this.render(), () => this.actions.openEmblemPicker());
     this.container = this.core.container;
     this.data = new DataPanel(this.core);
     this.actions = new ActionsPanel(this.core, this.data);

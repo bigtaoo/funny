@@ -9,7 +9,7 @@
 // / family/membership.ts / family/chat.ts / family/internal.ts. This class is a thin delegating
 // facade so external callers (httpApi routes, this package's own tests) keep importing `FamilyService`
 // from this one path with an unchanged public API and behavior.
-import type { FamilyRole, ChatRegion } from '@nw/shared';
+import type { FamilyRole, ChatRegion, EmblemKey } from '@nw/shared';
 import type { FamilyServiceDeps } from './family/types';
 import { FamilyQueryService } from './family/query';
 import { FamilyMembershipService } from './family/membership';
@@ -75,6 +75,9 @@ export class FamilyService {
   }
   setAnnouncement(requesterId: string, announcement: string) {
     return this.membership.setAnnouncement(requesterId, announcement);
+  }
+  setEmblem(requesterId: string, emblemKey: EmblemKey, emblemColor: number) {
+    return this.membership.setEmblem(requesterId, emblemKey, emblemColor);
   }
 
   // --- family chat channel (family/chat.ts) ---

@@ -5,6 +5,7 @@
 // converted from the former `XMixin(Base)` inheritance chain to an independent class over `core`,
 // per claudedocs/client-modules.md's split-form priority note).
 import type { SectMessageView } from '../../net/WorldApiClient';
+import { loadEmblemAtlas } from '../../render/emblemIcon';
 import type { SectSceneCore } from './core';
 
 export interface DataHandlers {
@@ -48,6 +49,13 @@ export class DataPanel implements DataHandlers {
     const sect = await core.cb.worldApi.getSect(sectId);
     core.sect = sect;
     core.mode = 'mySect';
+    // Emblem atlas is lazy-loaded (not boot L0 — see emblemAtlas.ts); kick it off once we know the
+    // sect's own badge or any member family's badge is set, re-rendering once it resolves so the
+    // header/summary-row/family-list badges (header.ts / render.ts / lists.ts) don't stay blank.
+    // Idempotent — a no-op if already loaded/loading.
+    if (sect.emblemKey || sect.memberFamilies.some((f) => f.emblemKey)) {
+      void loadEmblemAtlas().then(() => { if (!core.destroyed) core.render(); }).catch(() => {});
+    }
     await this.loadChannel();
   }
 

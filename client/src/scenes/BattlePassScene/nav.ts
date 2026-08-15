@@ -32,18 +32,18 @@ export interface NavHost {
 export function drawSidebar(host: NavHost, tbH: number): void {
   if (!host.cb.openShop) return;
   const { w, h, landscape } = host;
-  const tabs: HubTab[] = [{ label: t('shop.title'), active: false, icon: 'tag', badge: host.cb.getShopBadge?.() ?? false }];
+  const tabs: HubTab[] = [{ label: t('shop.title'), active: false, icon: 'shopTabIcon', badge: host.cb.getShopBadge?.() ?? false }];
   const actions: Array<() => void> = [() => host.cb.openShop?.()];
   if (host.cb.openCoins) {
-    tabs.push({ label: t('shop.coinsTab'), active: false, icon: 'coin' });
+    tabs.push({ label: t('shop.coinsTab'), active: false, icon: 'coinTabIcon' });
     actions.push(() => host.cb.openCoins?.());
   }
-  tabs.push({ label: t('gacha.title'), active: false, icon: 'capsule' });
+  tabs.push({ label: t('gacha.title'), active: false, icon: 'gachaTabIcon' });
   actions.push(() => host.cb.openGacha?.());
-  tabs.push({ label: t('battlepass.title'), active: true, icon: 'trophy' });
+  tabs.push({ label: t('battlepass.title'), active: true, icon: 'battlepassTabIcon' });
   actions.push(() => {});
   if (host.cb.openRecharge) {
-    tabs.push({ label: t('recharge.title'), active: false, icon: 'coinChest', badge: host.cb.getRechargeBadge?.() ?? false });
+    tabs.push({ label: t('recharge.title'), active: false, icon: 'rechargeTabIcon', badge: host.cb.getRechargeBadge?.() ?? false });
     actions.push(() => host.cb.openRecharge?.());
   }
   const onSelect = (i: number): void => actions[i]?.();

@@ -44,6 +44,12 @@ vi.mock('pixi.js-legacy', () => {
     Graphics: FakeGraphics,
     Text: FakeText,
     settings: { ADAPTER: {} },
+    // icons.ts (imported transitively via badges.ts's HubTabs icons) now pulls in
+    // cardArt.ts -> preloadTextures.ts for the raster tab-icon art (batch 2/3), which
+    // reads these at module scope for ART_TEX_OPTIONS — without them the import throws
+    // before this test's own mocks/imports even run.
+    MIPMAP_MODES: { OFF: 0, POW2: 1, ON: 2, ON_MANUAL: 3 },
+    SCALE_MODES: { NEAREST: 0, LINEAR: 1 },
   };
 });
 
