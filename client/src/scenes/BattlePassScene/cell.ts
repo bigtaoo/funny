@@ -1,10 +1,9 @@
 import * as PIXI from 'pixi.js-legacy';
 import { t } from '../../i18n';
 import { ui as C, txt, sketchPanel, seedFor } from '../../render/sketchUi';
-import { buildIcon, type IconKind } from '../../render/icons';
-import { buildMaterialIcon, type MaterialKind } from '../../render/atlas/materialAtlas';
+import { buildIcon } from '../../render/icons';
 import { snapFont } from '../../render/fontScale';
-import { buildCoinIcon } from '../../render/atlas/coinIconAtlas';
+import { buildRewardIcon } from '../../render/rewardIcon';
 
 // ── Pure reward-cell drawing helpers for BattlePassScene ──────────────────────
 //
@@ -14,18 +13,6 @@ import { buildCoinIcon } from '../../render/atlas/coinIconAtlas';
 
 /** Four cell states for a single reward cell */
 export type CellState = 'claimable' | 'claimed' | 'locked' | 'pass_required';
-
-/**
- * Coin reward → escalating pile glyph so larger payouts read visibly richer at a glance
- * (single coin → cluster → stack → sack → chest). Milestone jackpots become chests.
- */
-function coinIconTier(count: number): IconKind {
-  if (count >= 300) return 'coinChest';
-  if (count >= 150) return 'coinSack';
-  if (count >= 80) return 'coinStack';
-  if (count >= 40) return 'coins';
-  return 'coin';
-}
 
 export function cellState(
   track: 'free' | 'paid',
@@ -95,23 +82,17 @@ export function drawCell(
     parent.addChild(star);
   }
 
-  // Reward: hand-drawn glyph + amount. Coins use an escalating pile icon (coinIconTier) so a
-  // 20-coin drop and a 520-coin jackpot read differently; materials use their craft icon.
+  // Reward: picture + amount, resolved through the shared `buildRewardIcon` (render/rewardIcon.ts)
+  // so a battle-pass coin/material/skin looks identical to the same reward on the daily, event and
+  // recharge screens. Coins get an escalating pile icon so a 20-coin drop and a 520-coin jackpot
+  // read differently.
   if (reward) {
-    const iconKind: IconKind =
-      reward.kind === 'coins' ? coinIconTier(reward.count)
-        : reward.kind === 'skin' ? 'brush'
-          : reward.id === 'lead' ? 'lead'
-            : reward.id === 'binding' ? 'binding'
-              : 'scrap';
     const rewardColor = state === 'claimed' ? C.mid : reward.kind === 'coins' ? C.gold : C.accent;
     const cy = y + h * 0.62;
     const ic = Math.round(h * 0.5);
-    const glyph = reward.kind === 'coins'
-      ? buildCoinIcon(iconKind, ic, rewardColor)
-      : (iconKind === 'scrap' || iconKind === 'lead' || iconKind === 'binding')
-        ? buildMaterialIcon(iconKind as MaterialKind, ic, rewardColor)
-        : buildIcon(iconKind, ic, rewardColor);
+    // `BpRewardKind` is a closed coins|material|skin union, so the null branch is only reachable
+    // if the server grows a kind this client doesn't know — same generic glyph mail.ts uses there.
+    const glyph = buildRewardIcon(reward, ic, rewardColor) ?? buildIcon('capsule', ic, rewardColor);
     if (reward.kind === 'skin') {
       // Skins are singletons — glyph alone, centred.
       glyph.x = x + w / 2 - ic / 2; glyph.y = cy - ic / 2;

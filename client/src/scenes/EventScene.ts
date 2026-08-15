@@ -4,18 +4,12 @@ import { ILayout } from '../layout/ILayout';
 import { InputManager } from '../inputSystem/InputManager';
 import { t } from '../i18n';
 import { ui as C, txt, buildPaperBackground, sketchPanel, seedFor, drawLoadingOverlay, tearDownChildren } from '../render/sketchUi';
-import { buildIcon, type IconKind } from '../render/icons';
-import { buildMaterialIcon, type MaterialKind } from '../render/atlas/materialAtlas';
+import { buildRewardIcon, preloadRewardIconArt } from '../render/rewardIcon';
 import { buildDecorCLayer } from '../render/decorCLayer';
 import { BusyTracker, withTimeout, TimeoutError } from '../ui/busyTracker';
 import { showToastMessage, type ToastKind } from '../net/log';
 import { drawSceneHeader } from '../ui/widgets/SceneHeader';
 import { FS, snapFont } from '../render/fontScale';
-
-/** Map a reward's craft-material id to its icon kind (scrap / lead / binding), else null. */
-function materialIcon(id: string | undefined): MaterialKind | null {
-  return id === 'scrap' || id === 'lead' || id === 'binding' ? id : null;
-}
 
 // ── EventScene — limited-time events (B6, ADR-014) ────────────────────────────
 //
@@ -86,6 +80,9 @@ export class EventScene implements Scene {
     this.cb = cb;
     this.unsubs.push(input.onDown((x, y) => this.handleDown(x, y)));
     this.render();
+    // Reward pictures come from AI art (coin/material atlases + shared tab-icon PNGs) — warm them
+    // and repaint once decoded, else the first frame draws the procedural fallbacks.
+    void preloadRewardIconArt().then(() => { if (!this.destroyed) this.render(); });
     void this.load();
   }
 
@@ -295,17 +292,15 @@ export class EventScene implements Scene {
       const rewardLabel = reward.kind === 'coins' ? t('event.rewards.coins', { n: reward.count ?? 0 })
         : reward.kind === 'skin' ? t('event.rewards.skin', { id: reward.id ?? '' })
         : t('event.rewards.material', { id: reward.id ?? reward.kind, n: reward.count ?? 1 });
-      // Type glyph prefix (coins → coin, craft material → its icon, skin → brush) when mappable.
-      const rk: IconKind | null = reward.kind === 'coins' ? 'coin'
-        : reward.kind === 'skin' ? 'brush'
-          : materialIcon(reward.id) ?? materialIcon(reward.kind);
+      // Type picture prefix, via the shared resolver (render/rewardIcon.ts) so an event coin /
+      // material / skin matches the same reward on the daily, battle-pass and recharge screens.
+      // `materialFallback: null` keeps the pre-existing behaviour that an unrecognised item id
+      // degrades to a text-only row rather than mislabelling it as scrap.
       let labelX = PAD + cardW * 0.04;
-      if (rk) {
-        const ic = Math.round(cardH * 0.42);
-        const glyphColor = exhausted ? C.mid : reward.kind === 'coins' ? C.gold : C.accent;
-        const glyph = (rk === 'scrap' || rk === 'lead' || rk === 'binding')
-          ? buildMaterialIcon(rk, ic, glyphColor)
-          : buildIcon(rk, ic, glyphColor);
+      const ic = Math.round(cardH * 0.42);
+      const glyphColor = exhausted ? C.mid : reward.kind === 'coins' ? C.gold : C.accent;
+      const glyph = buildRewardIcon(reward, ic, glyphColor, { materialFallback: null });
+      if (glyph) {
         glyph.x = labelX; glyph.y = cy + cardH * 0.5 - ic / 2;
         this.container.addChild(glyph);
         labelX += ic + Math.round(cardH * 0.12);

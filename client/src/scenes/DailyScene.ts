@@ -15,6 +15,7 @@ import type { RetentionView } from '../net/ApiClient';
 import { nextCheckinDay, dailyRewardClaimable, weeklyClaimableTiers } from '../game/meta/retention';
 import type { DailyCallbacks } from './DailyScene/types';
 import { renderCheckin, renderDailyTasks, renderWeekly, renderAds, type DailyPanelCtx, type Hit } from './DailyScene/panels';
+import { preloadRewardIconArt } from '../render/rewardIcon';
 
 export type { DailyCallbacks } from './DailyScene/types';
 
@@ -71,6 +72,9 @@ export class DailyScene implements Scene {
     this.unsubs.push(input.onDown((x, y) => this.handleDown(x, y)));
     if (cb.onSaveChanged) this.unsubs.push(cb.onSaveChanged(() => { if (!this.destroyed) this.render(); }));
     this.render();
+    // Reward glyphs come from AI art (coin/material atlases + the shared tab-icon PNGs) — warm
+    // them and repaint once decoded, else the first frame draws the procedural fallbacks.
+    void preloadRewardIconArt().then(() => { if (!this.destroyed) this.render(); });
     void this.load();
   }
 

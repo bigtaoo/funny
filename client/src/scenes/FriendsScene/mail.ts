@@ -13,23 +13,18 @@ import { makeText } from '../../render/pixiText';
 import { getEquipDef } from '../../game/meta/equipmentDefs';
 import { buildEquipIcon } from '../../render/atlas/equipmentAtlas';
 import { cardInstanceArtUrl, getArtTexture } from '../../render/cardArt';
-import { buildMaterialIcon, type MaterialKind } from '../../render/atlas/materialAtlas';
+import { buildRewardIcon } from '../../render/rewardIcon';
 import type { MailView, MailAttachmentView } from '../../net/ApiClient';
 import type { FriendsSceneCore } from './core';
 import { addButton, centerLabel, scrollRegion } from './chrome';
 import type { NetworkHandlers } from './network';
 
-/**
- * itemId → material icon glyph. Every server system that sends a `kind: 'material'` mail
- * attachment (auctionsvc, worldsvc season rewards, battlepass, retention, events) uses the short
- * `scrap`/`lead`/`binding` id — NOT the `mat_`-prefixed ids gacha grants directly into
- * SaveData.materials (see GachaScene.MATERIAL_ICON, a different id namespace for a different
- * source). Keying this table on the `mat_` ids left every real mail attachment unresolved,
- * falling back to the generic capsule glyph.
- */
-const MAT_ITEM_ICON: Record<string, MaterialKind> = {
-  scrap: 'scrap', lead: 'lead', binding: 'binding',
-};
+// ⚠️ Material-attachment id namespace: every server system that sends a `kind: 'material'` mail
+// attachment (auctionsvc, worldsvc season rewards, battlepass, retention, events) uses the short
+// `scrap`/`lead`/`binding` id — NOT the `mat_`-prefixed ids gacha grants directly into
+// SaveData.materials (see GachaScene.MATERIAL_ICON, a different id namespace for a different
+// source). Resolution now runs through `materialKind()` in render/rewardIcon.ts, which accepts the
+// short ids only; keying it on `mat_` ids would silently drop every real attachment to the capsule.
 
 export class MailPanel {
   /** Card art textures load async; tracks which URLs already have a re-render hooked on load. */
@@ -220,27 +215,14 @@ export class MailPanel {
           tex.baseTexture.once('loaded', () => core.render());
         }
       }
-    } else if (a.kind === 'material') {
-      const matKind = MAT_ITEM_ICON[a.id ?? ''];
-      if (matKind) {
-        const icon = buildMaterialIcon(matKind, picSize, C.dark);
-        icon.x = cx - picSize / 2; icon.y = cy - picSize / 2;
-        core.container.addChild(icon);
-        return;
-      }
-    } else if (a.kind === 'coins') {
-      const icon = buildIcon('coins', picSize, C.gold);
-      icon.x = cx - picSize / 2; icon.y = cy - picSize / 2;
-      core.container.addChild(icon);
-      return;
-    } else if (a.kind === 'skin') {
-      const icon = buildIcon('brush', picSize, C.dark);
-      icon.x = cx - picSize / 2; icon.y = cy - picSize / 2;
-      core.container.addChild(icon);
-      return;
     }
-    // Unresolvable kind (generic "item", or an equipment/card def that vanished) → generic glyph.
-    const icon = buildIcon('capsule', picSize, C.dark);
+    // Everything else (coins / material / skin, plus an equipment or card attachment whose
+    // instance or def has vanished) goes through the shared reward resolver, so it matches the
+    // same reward on the daily / battle-pass / event / recharge screens. `materialFallback: null`
+    // keeps an unrecognised material id on the generic capsule rather than mislabelling it as
+    // scrap — which is also the safety net for the id-namespace trap noted above the class.
+    const icon = buildRewardIcon(a, picSize, a.kind === 'coins' ? C.gold : C.dark, { materialFallback: null })
+      ?? buildIcon('capsule', picSize, C.dark);
     icon.x = cx - picSize / 2; icon.y = cy - picSize / 2;
     core.container.addChild(icon);
   }

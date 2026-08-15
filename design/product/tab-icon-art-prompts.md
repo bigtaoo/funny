@@ -343,9 +343,12 @@ Hand-drawn doodle icon in a worn school notebook, single dark-ink pen line art, 
 2. `LobbyScene/bottomNav.ts`：五个槽位（含 disabled）统一用浅色 ink，状态差异只由 alpha 表达（active 1.0 / 普通 0.85 / disabled 0.35）——原来 disabled 传 `C.mid` 同样会在深色底上消失。非激活 alpha 从 0.72 提到 0.85。
 3. 顺带修好同一个 bug 的第二处：`AuctionScene/list.ts` 的分类 chip，激活态是 `C.dark` 填充 + `C.light` 墨水，此前同样拿到灰线图画在深底上。
 
+
 **验证**：`tsc --noEmit` 通过；Playwright（`start:e2e` 9096 + `window.__nwE2E.views.showLobby()`）实拍底栏截图确认五个图标全部清晰可辨——这次没有再跳过截图。
 
 **回归测试**（两层，都确认过把 `tabIconVariant` 改回旧的严格相等判断就会红）：
 - `test/render/icons.test.ts` → `describe('tabIconVariant …')`：把阈值从两侧钉死。列出每个真实调用点传的墨水色（HubTabs 激活 `0xffffff` / 底栏 `C.light` / 拍卖 chip 的 `C.light`+`C.dark` / HubTabs 非激活 `ui.mid` 0x686868）各自该取哪张图，再加一条"≤0x888888 的灰一律取纸底图"的单调性检查——阈值放宽会让纸面页签白线画白底，收紧就是这次的深底 bug 复发。
 - `test/ui/lobbyBottomNavIconInk.ui.ts`：补另一半——**调用点实际传了什么**，这是任何针对 helper 的单元测试都看不见的部分。`vi.mock` 包一层 `buildIcon`（保留真实实现，只记录入参），构造真实 `LobbyScene`，断言五个槽位（在线 + 离线两种模式）传的墨水都解析到白线图。断言的是"解析出的变体"而不是具体色值，这样它是一条可读性契约：任何仍然读作"深底白线"的颜色都放行，而把槽位悄悄调暗的调色改动会红。
 - UI 全量套件 185 文件 1649 用例通过。
+
+
