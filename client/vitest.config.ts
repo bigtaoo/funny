@@ -18,6 +18,17 @@ export default defineConfig({
   },
   test: {
     include: ['test/**/*.test.ts'],
+    // The whole-battle simulation suites live in vitest.sim.config.ts instead (`npm run test:sim`,
+    // and both `test` and `test:coverage` chain it after this config, so nothing stops running).
+    // Why they are split out (2026-08-15): they are ~93% of this suite's wall clock (188s total, of
+    // which ~175s is these files — ch6 alone 331s under coverage) and they pay the v8 instrumentation
+    // tax on every tick of a many-thousand-tick engine loop, which is what made the full coverage run
+    // cost 668s and forced the old "no coverage on PRs" split that let a coverage regression reach
+    // main unnoticed. Measured: excluding them changes client line coverage by 0.05pp
+    // (91.20% → 91.15%) — everything they touch in src/game/** is already covered by the unit
+    // suites — while dropping the coverage run from 668s to ~13s. So CI can now afford coverage on
+    // EVERY event (see .github/workflows/ci.yml) instead of only before CD.
+    exclude: ['test/difficulty/**', 'test/pvpSim.test.ts', '**/node_modules/**', '**/dist/**'],
     environment: 'node',
     globals: false,
     coverage: {

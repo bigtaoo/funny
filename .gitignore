@@ -7,3 +7,6 @@ dist/
 
 # 测试覆盖率报告（client + 每个 server workspace 各自生成，见 claudedocs/client-testing.md / server.md）
 coverage/
+
+# Written by scripts/flakyReporter.mjs when a test only passed on a retry (CI uploads it as an artifact).
+flaky-report.json

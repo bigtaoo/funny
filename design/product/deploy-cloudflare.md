@@ -185,6 +185,26 @@ cd .. && npx wrangler deploy -c wrangler/client.jsonc
 
 > **排查手法留存**：怀疑线上是旧版时，`curl -s https://a.gamestao.com/version.json` 拿到的短 sha 就是权威答案；再 `gh run view <run-id> --json jobs` 看 **deploy job 本身**的 conclusion——**run 级别的 success 不代表部署发生了**（`check` 成功 + `deploy` skipped 也是 success）。
 
+#### ⚠ 「PR 绿了、合进 main 却红、于是不部署」——CI 稳定性治理（2026-08-15 同日第二轮）
+
+上一节把「漏掉的部署会不会自愈」修好了，但**触发条件本身**还在反复出现：同一天 main 上的 CI 红了两次（PR #101 `31887181835`、PR #103 `31902034760`），两次都发生在对应 PR 的 CI 已经绿了之后，8 个 `*-deploy.yml` 因 `workflow_run.conclusion == 'success'` 门禁全部 skip。
+
+**排查结论：不是「PR 查得少、main 查得多」，是测试套件本身不确定，外加流水线把不确定性集中砸在 main 上。**
+
+- 三次 main 红的原因两两不同：#101 是 metaserver `pvp-card-stats` 读在 fire-and-forget 写之前；#103 是 worldsvc `httpApiActionSiegeMapGaps` 的 `PATH_BLOCKED`（`POST /world/join` 自动选点掷 `Math.random()`，首都落点每次不同 → 行军路径能不能走通是每次一掷）；更早 7-29 的 #76 是 full-link E2E。
+- **PR 也一样在 flake**，只是被"重跑到绿"掩盖了：最近 100 次 CI 里 PR 失败 20 次，`31898655236`（PR）就挂在 worldsvc shop TOCTOU 上，重跑后才绿。main 每次合并只跑一次、没有筛选，所以同样的 flake 率在 main 上显形。这是观感上"PR 过 CD 挂"的第一位成因（选择偏差），不是两条流水线检查内容不同。
+- 三个系统性放大器：①`ci.yml` 的 `TEST_SCRIPT` 让 PR 跑 `test`、main 跑 `test:coverage`，两条命令不同——v8 插桩把每个 await 窗口都拉长（同 commit 实测 worldsvc 184.5s→226.3s，collect 20s→41s），时序敏感用例在 main 侧更容易挂；②90% 覆盖率门禁只在 main 存在，覆盖率回归在 PR 上structurally 测不出来；③shard 一挂就没有 coverage 产物，门禁再报一次 "no coverage/ output found"，这条更响的假红把真因盖住了。
+
+**修法（本轮，`feat/ci-stability`）**：
+
+1. **消灭不确定性**：`httpApiActionSiegeMapGaps.e2e.test.ts` 改为显式坐标建都（`joinWorld(worldId, accountId, x, y)`），不再吃自动选点的随机；`WorldServiceDeps` 新增可注入的 `rng`（默认 `Math.random`），让必须走自动选点的用例也能钉死。
+2. **PR 与 main 跑同一条命令**：两端一律 `test:coverage`，覆盖率门禁同时在 PR 生效，换来「main 能挂的，PR 一定先挂」。client 那笔 3.6 倍插桩税（188s→668s，也是当初"PR 不跑 coverage"的唯一理由）实测几乎全来自 `test/difficulty/**` + `pvpSim`，而它们只值 0.05 个百分点的覆盖率——拆进 `vitest.sim.config.ts` 照跑但不插桩后，带 coverage 的那半从 668s 掉到 ~13s。净代价只剩 server shard 的 ~+25%。
+3. **单点 flake 不再拖垮部署**：DB/网络相关的 vitest 配置加 `retry: 1`，并用 `scripts/flakyReporter.mjs` 把"重试后才过"的用例变成 `::warning::` 注解 + `flaky-report.json` 产物——重试不是用来和 flaky 共存的，是用来把它从"阻断部署"降级成"可见的待办"。
+4. **级联假红**：`checkCoverageThreshold.mjs` 读 `TESTS_OK`，测试 job 已经挂了时只报表不 `exit 1`（run 反正已经红了、也不会部署）；测试全绿时缺产物仍然 fail-closed。
+5. **主动发现**：`flake-hunt.yml` 每晚把各 shard 连跑 3 次（带 coverage，复现同样的时序），任何一次挂就是不确定性——树没变。
+6. **兜底**：`ci-rerun-once.yml` 对 main 上失败的 CI run 自动 `gh run rerun --failed` 一次（`run_attempt == 1` 卡死上限，PR 不自动重跑）。重跑成功会重新发一次 `workflow_run: completed`，deploy 照常触发。
+7. **结构性（确认本仓库暂时用不了）**：`ci.yml` 已挂上 `merge_group:` 触发器，但 **GitHub merge queue 只对组织名下的仓库开放**，`bigtaoo/funny` 在个人账号下（公开也不行）——建 `merge_queue` 规则一律 422，同一次请求里其它规则能改成功，排除权限问题。要用得把仓库转到组织下；触发器留着，届时无需改 workflow。**替代措施已启用**：ruleset `Only PR` 的必需检查补上 `test coverage report`（此前覆盖率门禁挡不住 PR），加上它本来就开着的 `strict_required_status_checks_policy`（分支必须先与 main 同步才能合并），已经覆盖了 merge queue 在本仓库节奏下的绝大部分收益。
+
 ### ops 部署（Cloudflare Worker + static assets，对外 `ops.gamestao.com`）
 
 **架构（同源反代 + CF Access）**：ops 不是纯静态，而是「静态资源 + Worker 反代」。整个 `ops.gamestao.com` 由**一个 CF Access 应用**保护（网络级登录墙），ops 自己的 admin 账号密码是**第二层**。

@@ -26,6 +26,8 @@
 
 CI（`.github/workflows/ci.yml`）的 `client unit tests` 步已切到 `npm run test:coverage`；job 最后一步汇总所有 client+server 包的覆盖率百分比写进 GitHub Actions 运行摘要，细节见 `claudedocs/server.md` 同一节（该聚合脚本是仓库根 `scripts/coverageSummary.mjs`，两侧共用同一份）。
 
+**⚠️ 2026-08-15：模拟类套件拆出去了（`vitest.sim.config.ts`）**。`test/difficulty/**`（ch1-6 + core）和 `test/pvpSim.test.ts` 跑的是整场无头战斗模拟，占这套件 188s 里的 ~175s，且插桩税按引擎 tick 线性叠加——带 `--coverage` 时整套从 188s 涨到 668s，几乎全部由它们贡献。实测把它们排除后 **client 行覆盖只掉 0.05 个百分点（91.20% → 91.15%）**：它们碰到的 `src/game/**` 早被单元测试覆盖了，它们的真实价值是行为/平衡回归（"第 6 章还打得过吗"），不是覆盖率来源。所以：`vitest.config.ts` 的 `exclude` 排掉这两处，新增 `vitest.sim.config.ts` 专收它们（不带 coverage），`package.json` 里 `test` 和 `test:coverage` **都在末尾链一条 `npm run test:sim`**——一个测试文件都没少跑，只是不再给最贵的那批插桩。带 coverage 的那半从 668s 掉到 ~13s，这才让 CI 有条件在 **PR 和 push-to-main 两端都跑 coverage**（此前 PR 上不跑，导致覆盖率回归和时序 flake 只能在合并后的 main 上暴露，连带挡掉部署——见 `claudedocs/server.md` "CI 稳定性"节）。新增只跑模拟的入口：`npm run test:sim`。
+
 ## 静态类型检查（`npm run typecheck` / CI）
 
 vitest 走 esbuild、webpack 也不做类型检查，且 `client/tsconfig.json` 的 `include` 只有 `src/**`——**`test/**` 从不被类型检查**。历史上这让 test 里对 `GameConfig` / DTO / proto 形状的引用可以运行期侥幸通过（esbuild 擦掉类型），却是潜伏 bug（典型：CC-1 把 `GameConfig.unitLevels` 换成 `cardInstances`、`JudgeRequest` 新增必填 `unitLevels` 后，多个 test 仍用旧形状）。

@@ -24,6 +24,11 @@ import type { TileDoc } from '../db';
 export class SpawnService {
   constructor(private readonly core: WorldCore) {}
 
+  /** Injected uniform [0,1) source (WorldServiceDeps.rng), falling back to Math.random. See that field's doc. */
+  private get rnd(): () => number {
+    return this.core.deps.rng ?? Math.random;
+  }
+
   async pickRandomEmptyTile(
     worldId: string,
     minDr = 0,
@@ -33,8 +38,8 @@ export class SpawnService {
     const cy = mapH / 2;
     const maxDist = Math.sqrt(cx * cx + cy * cy);
     for (let i = 0; i < 200; i++) {
-      const x = Math.floor(Math.random() * mapW);
-      const y = Math.floor(Math.random() * mapH);
+      const x = Math.floor(this.rnd() * mapW);
+      const y = Math.floor(this.rnd() * mapH);
       if (minDr > 0) {
         const dx = x - cx;
         const dy = y - cy;
@@ -120,11 +125,11 @@ export class SpawnService {
     return null;
   }
 
-  /** Fisher–Yates shuffle (not a replay path; Math.random is safe). Returns a new array; does not mutate the original. */
+  /** Fisher–Yates shuffle (not a replay path; the injected rng — Math.random by default — is safe). Returns a new array; does not mutate the original. */
   private shuffled<T>(arr: T[]): T[] {
     const out = arr.slice();
     for (let i = out.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
+      const j = Math.floor(this.rnd() * (i + 1));
       [out[i], out[j]] = [out[j]!, out[i]!];
     }
     return out;
