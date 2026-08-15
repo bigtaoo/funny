@@ -269,4 +269,36 @@ Hand-drawn doodle icon in a worn school notebook, single dark-ink pen line art, 
 6. `tsc --noEmit` + `vitest --config vitest.ui.config.ts` 全量跑一遍。
 7. 更新本文档"批次 3"状态 + `art-direction.md` §7.6。
 
-### 状态：批次 3 判断+prompt 已定，等出图 🕐
+### 出图后验证（2026-08-15，第一轮：12 张出图，9 过 3 打回）
+
+用户跑完 12 条 prompt 一次性交了图。沿用批次 1/2 的手法（`pack_tab_icons.cjs` 的抠白底+染色算法，一次性 `sharp` 脚本合成到 28/32/40/64px、`C.dark`/`C.paper` 背景，未留存）逐张验证，结果 **9 过 3 打回**：
+
+- **过关（9 张）**：`shopTabIcon`(价签)、`coinTabIcon`(硬币)、`gachaTabIcon`(扭蛋)、`homeTabIcon`(房子)、`pvpTabIcon`(交叉剑)、`bidTabIcon`(拍卖锤)、`battlepassTabIcon`(门票)、`achievementTabIcon`(奖杯)、`pveTabIcon`(藏宝图) —— 28px 下轮廓清楚，予以采用。
+- **打回重出（3 张）**：
+
+| IconKind | 问题 | 28px 实际效果 |
+|---|---|---|
+| `rechargeTabIcon`(充值/宝箱) | 箱身画满木纹平行线，密度超标 | 缩小后箱体细节糊成一团模糊噪点，箱盖弧线和锁扣快看不清——批次 1 卡背包 v3 那个"细节太密糊成一团"的坑又踩了一次 |
+| `socialTabIcon`(社交/地球) | prompt 要"经纬线弯曲"，出图给的是两条近乎笔直的线（一竖一横） | 缩小后是"圆+十字"，读成准星/靶心，不读"地球/世界"——不是糊，是语义读错 |
+| `materialTabIcon`(材料/铅笔屑) | 螺旋边缘画成锯齿状，中间加了一圈放射状短线（像"太阳芒"） | 缩小后整个变成一团模糊毛边圆点，完全看不出是螺旋卷屑——这批里最严重的一个 |
+
+3 张的 v2 prompt（收紧了具体导致糊/读错的元素——充值去掉全部木纹线只留外轮廓+锁；社交把"弯曲"要求写死成"必须明显鼓起、不能是直线"；材料把锯齿边缘和放射短线明确列进 avoid）：
+
+#### 充值（`rechargeTabIcon`，v2）
+```
+Hand-drawn doodle icon in a worn school notebook, single dark-ink pen line art, slightly wobbly imperfect strokes, quick loose sketch — not polished. One bold, simple, highly readable silhouette, no scattered separate pieces, no wood-grain texture lines. Subject: a single closed treasure chest seen from the front — a rectangular body with a curved arched lid on top, ONE single horizontal line where the lid meets the body, and one clearly bold keyhole-lock shape at the front center. No plank divisions, no wood-grain hatching, no parallel texture lines anywhere on the body or lid — just the plain outer silhouette and the one lock shape. Single object, centered, filling the frame, on a plain pure-white background, no grid lines, no other elements. Flat 2D, no shading. Must stay clearly recognizable when scaled down to 28x28 pixels — err toward too plain rather than too detailed. Style of West of Loathing / doodle art. Avoid: color, painterly rendering, gradients, glow, 3d render, photorealistic look, wood-grain lines, plank seams, multiple horizontal bands, sparkle marks, multiple objects, scattered pieces, confetti dots, text, letters, numbers, watermark, gray background, notebook grid lines, drop shadow.
+```
+
+#### 社交（`socialTabIcon`，v2）
+```
+Hand-drawn doodle icon in a worn school notebook, single dark-ink pen line art, slightly wobbly imperfect strokes, quick loose sketch — not polished. One bold, simple, highly readable silhouette. Subject: a single globe — a circle outline, with one horizontal line straight across the middle (the equator), and two vertical lines that each bow outward into a distinct lens/almond curve (NOT straight lines) — like the curved meridian lines on a world map, clearly bulging left and right, touching the circle only at top and bottom. The curve must be obvious and pronounced, not subtle. Single object, centered, filling the frame, on a plain pure-white background, no grid lines, no other elements. Flat 2D, no shading. Must stay clearly recognizable as a world globe (not a crosshair or target) when scaled down to 28x28 pixels. Style of West of Loathing / doodle art. Avoid: color, painterly rendering, gradients, glow, 3d render, photorealistic look, straight vertical line, crosshair or target look, continents drawn on the surface, stand or base underneath, multiple circles, text, letters, numbers, watermark, gray background, notebook grid lines, drop shadow.
+```
+
+#### 材料（`materialTabIcon`，v2）
+```
+Hand-drawn doodle icon in a worn school notebook, single dark-ink pen line art, slightly wobbly imperfect strokes, quick loose sketch — not polished. One bold, simple, highly readable silhouette, no scattered separate pieces, no radiating lines, no sunburst pattern. Subject: a single curled pencil shaving — one continuous spiral ribbon curl with SMOOTH curved edges (NOT jagged, NOT zigzag, NOT sawtooth), like a peeled pencil-sharpener shaving, tapering smoothly at both ends. The outline itself should be the only linework — no internal texture lines, no radiating short marks, no hatching of any kind inside or around the curl. Single object, centered, filling the frame, on a plain pure-white background, no grid lines, no other elements. Flat 2D, no shading. Must stay clearly recognizable as a smooth curl when scaled down to 28x28 pixels — err toward too plain rather than too detailed. Style of West of Loathing / doodle art. Avoid: color, painterly rendering, gradients, glow, 3d render, photorealistic look, jagged/zigzag/sawtooth edges, radiating hatch lines, sunburst pattern, the pencil itself, a sharpener body, multiple shavings, sawdust dots, straight uncurled strip, text, letters, watermark, gray background, notebook grid lines, drop shadow.
+```
+
+用户已确认节奏：不分批打包，等这 3 张 v2 也出好、12 张齐了再一起打包+验证+接线。
+
+### 状态：9/12 过关，3 张等 v2 重出（`recharge`/`social`/`material`），出齐后一次性接线 🕐
