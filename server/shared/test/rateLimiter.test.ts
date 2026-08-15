@@ -45,6 +45,15 @@ describe('SlidingRateLimiter', () => {
     const windows = (rl as unknown as { windows: Map<string, number[]> }).windows;
     expect(windows.size).toBeLessThan(10); // bounded to "keys active within the last windowMs", not 51
   });
+
+  it('limit=0 denies immediately and never leaves a phantom key behind (the win.length===0 delete branch)', async () => {
+    const rl = new SlidingRateLimiter(0, 1000);
+    expect(await rl.allow('k', 0)).toBe(false);
+    const windows = (rl as unknown as { windows: Map<string, number[]> }).windows;
+    expect(windows.has('k')).toBe(false); // deleted, not left behind as an empty array
+    // A second call for the same key hits the exact same "already absent, still denied" path.
+    expect(await rl.allow('k', 1)).toBe(false);
+  });
 });
 
 describe('createRateLimiter', () => {
@@ -55,6 +64,45 @@ describe('createRateLimiter', () => {
   it('a redis client returns a RedisSlidingRateLimiter', () => {
     const fakeRedis = { eval: vi.fn() };
     expect(createRateLimiter(fakeRedis, 'ns', 5, 1000)).toBeInstanceOf(RedisSlidingRateLimiter);
+  });
+});
+
+// ── RedisSlidingRateLimiter.allow (fake redis client; exercises the eval-script plumbing without
+// needing a real reachable Redis — mirrors dailyCounter.test.ts's fakeRedisClient() convention).
+// The "against a real local Redis" suite below additionally validates the actual Lua script, but is
+// skipped in environments (like this one) where Redis isn't reachable.
+describe('RedisSlidingRateLimiter (fake redis client)', () => {
+  it('calls eval with the namespaced key, args in order, and interprets 1/0 as allow/deny', async () => {
+    const evalFn = vi.fn(async () => 1);
+    const fakeRedis = { eval: evalFn };
+    const rl = new RedisSlidingRateLimiter(fakeRedis, 'myns', 5, 60_000);
+    expect(await rl.allow('user-1', 1000)).toBe(true);
+    expect(evalFn).toHaveBeenCalledTimes(1);
+    const args = evalFn.mock.calls[0]!;
+    expect(args[1]).toBe(1); // numKeys
+    expect(args[2]).toBe('nw:ratelimit:myns:user-1'); // KEYS[1]
+    expect(args[3]).toBe(1000); // now
+    expect(args[4]).toBe(60_000); // windowMs
+    expect(args[5]).toBe(5); // limit
+    expect(typeof args[6]).toBe('string'); // member (unique per call, not asserted verbatim)
+    expect(args[7]).toBe(Math.ceil(60_000 / 1000) + 5); // ttlSec
+  });
+
+  it('res !== 1 (e.g. 0) denies', async () => {
+    const fakeRedis = { eval: vi.fn(async () => 0) };
+    const rl = new RedisSlidingRateLimiter(fakeRedis, 'myns', 5, 1000);
+    expect(await rl.allow('user-1', 1000)).toBe(false);
+  });
+
+  it('the member argument is unique per call (avoids same-millisecond ZADD collisions)', async () => {
+    const evalFn = vi.fn(async () => 1);
+    const fakeRedis = { eval: evalFn };
+    const rl = new RedisSlidingRateLimiter(fakeRedis, 'myns', 5, 1000);
+    await rl.allow('user-1', 1000);
+    await rl.allow('user-1', 1000); // same key, same timestamp
+    const member1 = evalFn.mock.calls[0]![6];
+    const member2 = evalFn.mock.calls[1]![6];
+    expect(member1).not.toBe(member2);
   });
 });
 

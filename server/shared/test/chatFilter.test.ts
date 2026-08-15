@@ -1,6 +1,6 @@
 // Unit tests for chatFilter.ts: locale/Accept-Language → region mapping and region-aware masking
 // (SOC2/SOC10). Pure functions, no DB.
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import {
   REGION_WORDLISTS,
   regionFromLocale,
@@ -201,6 +201,48 @@ describe('WordlistCache', () => {
     const cache = new WordlistCache({ fetchAll: async () => [] });
     expect(cache.hasLoaded).toBe(false);
     expect(censorChat('shit', 'global', cache).hit).toBe(true);
+  });
+
+  it('wordsFor returns the cached overlay words for a region, empty array if none cached', async () => {
+    const cache = new WordlistCache({
+      fetchAll: async () => [{ _id: 'de', words: ['testverbot'], updatedAt: 1, updatedBy: 'admin1' }],
+    });
+    expect(cache.wordsFor('de')).toEqual([]); // nothing fetched yet
+    await cache.refresh();
+    expect(cache.wordsFor('de')).toEqual(['testverbot']);
+    expect(cache.wordsFor('en')).toEqual([]); // no overlay for this region
+  });
+
+  it('start() fetches immediately, then refreshes on the ttl timer; stop() cancels it', async () => {
+    vi.useFakeTimers();
+    try {
+      let calls = 0;
+      const cache = new WordlistCache({
+        fetchAll: async () => {
+          calls++;
+          return [{ _id: 'en', words: [`w${calls}`], updatedAt: calls, updatedBy: 'admin1' }];
+        },
+        ttlMs: 1000,
+      });
+      await cache.start();
+      expect(calls).toBe(1); // immediate fetch
+      expect(cache.wordsFor('en')).toEqual(['w1']);
+
+      // A second start() must not create a second timer (the `if (!this.timer)` guard).
+      await cache.start();
+      expect(calls).toBe(2); // refresh() still runs again, but only one interval exists
+
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(calls).toBe(3); // periodic refresh fired
+
+      cache.stop();
+      await vi.advanceTimersByTimeAsync(5000);
+      expect(calls).toBe(3); // no further refreshes after stop()
+
+      cache.stop(); // calling stop() again (timer already null) is a safe no-op
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 

@@ -3,8 +3,14 @@
 // vs real-Redis backend equivalence. Mirrors rateLimiter.test.ts's "fake in-process backend covered
 // unconditionally + real-Redis path behind it.skipIf(!redis)" pattern, since dailyCounter.ts is the
 // same shape of Redis-optional atomic-counter module.
-import { describe, it, expect, afterAll } from 'vitest';
-import { bumpCappedCounter, readCounterField, bumpGuardedTimestamp, dailyCounterKey } from '../src/dailyCounter';
+import { describe, it, expect, vi, afterAll } from 'vitest';
+import {
+  bumpCappedCounter,
+  readCounterField,
+  bumpGuardedTimestamp,
+  dailyCounterKey,
+  connectDailyCounterRedis,
+} from '../src/dailyCounter';
 
 describe('dailyCounterKey', () => {
   it('formats as nw:<ns>:<accountId>:<dayKey>', () => {
@@ -128,6 +134,86 @@ describe('bumpGuardedTimestamp (local in-process fallback, redis=null)', () => {
     expect(await bumpGuardedTimestamp(null, ns, 'acc', 'day2', 'f1', 1000, 1000)).toBe(true); // different dayKey
     expect(await bumpGuardedTimestamp(null, ns, 'acc2', 'day1', 'f1', 1000, 1000)).toBe(true); // different accountId
   });
+});
+
+// ── redisBackend wrapper (fake redis-like client; no real connection needed) ──────────────────────
+// Exercises the redisBackend() adapter itself (hincrby/hget/eval/expire plumbing) without requiring
+// a real reachable Redis — mirrors activeMatch.test.ts's fakeRedisClient() pattern. The "against a
+// real local Redis" suite below additionally validates behavior against the actual Lua script, but
+// is skipped in environments (like this one) where Redis isn't reachable.
+
+function fakeRedisClient() {
+  const hashes = new Map<string, Map<string, string>>();
+  const hashOf = (key: string) => {
+    let h = hashes.get(key);
+    if (!h) { h = new Map(); hashes.set(key, h); }
+    return h;
+  };
+  return {
+    hincrby: vi.fn(async (key: string, field: string, delta: number) => {
+      const h = hashOf(key);
+      const next = (Number(h.get(field) ?? '0')) + delta;
+      h.set(field, String(next));
+      return next;
+    }),
+    hget: vi.fn(async (key: string, field: string) => hashOf(key).get(field) ?? null),
+    // Minimal stand-in for the GUARDED_TS_SCRIPT's semantics (real Lua tested against real Redis below).
+    eval: vi.fn(async (_script: string, _numKeys: number, key: string, field: string, now: number, minInterval: number) => {
+      const h = hashOf(key);
+      const last = Number(h.get(field) ?? '0');
+      if (last > 0 && now - last < minInterval) return 0;
+      h.set(field, String(now));
+      return 1;
+    }),
+    expire: vi.fn(async (_key: string, _ttlSec: number) => 'OK'),
+  };
+}
+
+describe('bumpCappedCounter / readCounterField (fake redis client, exercises the redisBackend adapter)', () => {
+  it('allows up to the cap, denies and rolls back the overshoot via hincrby/expire', async () => {
+    const client = fakeRedisClient();
+    const ns = `test-fake-cap-${Math.random()}`;
+    expect(await bumpCappedCounter(client, ns, 'acc', 'day1', 'f', 2)).toBe(true); // -> 1
+    expect(await bumpCappedCounter(client, ns, 'acc', 'day1', 'f', 2)).toBe(true); // -> 2, at cap
+    expect(await bumpCappedCounter(client, ns, 'acc', 'day1', 'f', 2)).toBe(false); // would be 3 > cap 2
+    expect(await readCounterField(client, ns, 'acc', 'day1', 'f')).toBe(2); // rolled back to the cap
+    expect(client.expire).toHaveBeenCalled();
+  });
+
+  it('readCounterField returns 0 for an unwritten field via hget', async () => {
+    const client = fakeRedisClient();
+    expect(await readCounterField(client, `test-fake-${Math.random()}`, 'acc', 'day1', 'never')).toBe(0);
+  });
+});
+
+describe('bumpGuardedTimestamp (fake redis client, exercises the eval-based guardedTimestampSet adapter)', () => {
+  it('gates via the eval script wrapper, same boundary semantics as the local fallback', async () => {
+    const client = fakeRedisClient();
+    const ns = `test-fake-guard-${Math.random()}`;
+    expect(await bumpGuardedTimestamp(client, ns, 'acc', 'day1', 'f', 500, 1000)).toBe(true);
+    expect(await bumpGuardedTimestamp(client, ns, 'acc', 'day1', 'f', 500, 1499)).toBe(false);
+    expect(await bumpGuardedTimestamp(client, ns, 'acc', 'day1', 'f', 500, 1500)).toBe(true);
+    expect(client.eval).toHaveBeenCalled();
+  });
+});
+
+// ── connectDailyCounterRedis ────────────────────────────────────────────────────────────────────
+
+describe('connectDailyCounterRedis', () => {
+  it('returns null immediately when no url is provided', async () => {
+    expect(await connectDailyCounterRedis(null)).toBeNull();
+  });
+
+  // Same environment-independent shape as activeMatch.test.ts's connectActiveMatchRedis test: degrades
+  // to null (never throws) when unreachable, or connects (and is cleaned up) when Redis is available.
+  it('degrades to null (never throws) when Redis is unreachable, or connects when it is available', async () => {
+    const client = await connectDailyCounterRedis(REDIS_URL);
+    if (client) {
+      await (client as { quit(): Promise<unknown> }).quit();
+    } else {
+      expect(client).toBeNull();
+    }
+  }, 15000);
 });
 
 // ── Redis-vs-local-fallback equivalence (against a real local Redis, skipped if unreachable) ──────
