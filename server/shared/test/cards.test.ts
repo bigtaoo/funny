@@ -7,6 +7,7 @@ import {
   applyFusion,
   cardPower,
   selectBestCard,
+  cardInvCount,
 } from '../src/cards';
 import type { CardInstance } from '../src/types';
 import type { EquipmentInstance } from '../src/types';
@@ -169,5 +170,13 @@ describe('selectBestCard', () => {
     const maxCard = makeCard('max', 4);
     const cardInv = { a: makeCard('lichuang', 9), b: maxCard };
     expect(selectBestCard('max', cardInv)).toBe(maxCard);
+  });
+});
+
+describe('cardInvCount', () => {
+  it('counts the number of CardInstances in an inventory record', () => {
+    expect(cardInvCount({})).toBe(0);
+    expect(cardInvCount({ a: makeCard('lichuang', 1) })).toBe(1);
+    expect(cardInvCount({ a: makeCard('lichuang', 1), b: makeCard('chenshou', 2) })).toBe(2);
   });
 });

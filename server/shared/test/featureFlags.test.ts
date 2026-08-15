@@ -162,4 +162,46 @@ describe('FeatureFlagCache', () => {
     expect(cache.isOn(KEY, { accountId: 'a' })).toBe(true); // region defaults to cache.region
     expect(cache.isOn(KEY, { accountId: 'a', region: 'cn' })).toBe(false); // explicit override
   });
+
+  it('rawDoc exposes the cached rule document for admin tooling, or null if absent', async () => {
+    const cache = new FeatureFlagCache({
+      fetchAll: async () => [{ _id: KEY, enabled: true, rollout: { pct: 42 } }],
+    });
+    expect(cache.rawDoc(KEY)).toBeNull(); // nothing fetched yet
+    await cache.refresh();
+    expect(cache.rawDoc(KEY)).toMatchObject({ _id: KEY, enabled: true });
+    expect(cache.rawDoc('made_up_key' as FlagKey)).toBeNull();
+  });
+
+  it('start() fetches immediately, then refreshes on the ttl timer; stop() cancels it', async () => {
+    vi.useFakeTimers();
+    try {
+      let calls = 0;
+      const cache = new FeatureFlagCache({
+        fetchAll: async () => {
+          calls++;
+          return [{ _id: KEY, enabled: true, rollout: { pct: 100 } }];
+        },
+        ttlMs: 1000,
+      });
+      await cache.start();
+      expect(calls).toBe(1); // immediate fetch
+      expect(cache.hasLoaded).toBe(true);
+
+      // A second start() must not create a second timer (the `if (!this.timer)` guard).
+      await cache.start();
+      expect(calls).toBe(2); // refresh() still runs again, but only one interval exists
+
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(calls).toBe(3); // periodic refresh fired
+
+      cache.stop();
+      await vi.advanceTimersByTimeAsync(5000);
+      expect(calls).toBe(3); // no further refreshes after stop()
+
+      cache.stop(); // calling stop() again (timer already null) is a safe no-op
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });

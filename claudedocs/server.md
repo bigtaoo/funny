@@ -578,7 +578,7 @@ commercial 此前完全没有 Redis 依赖，本次新增：`config.ts` 补 `NW_
 |---|---|---|---|
 | client（`src/game/**`） | 91.2% | 87.8% | 84.4% |
 | engine | 86.5% | 83.0% | 81.2% |
-| shared | 82.3% | 93.0% | 73.9% |
+| shared | ~~82.3%~~ **98.96%**（2026-08-15 补测，见下） | 94.8% | 97.67% |
 | worldsvc | 82.9% | 78.3% | 86.9% |
 | analyticsvc | 87.6% | 84.2% | 95.8% |
 | matchsvc | 88.3% | 91.1% | 97.2% |
@@ -805,3 +805,16 @@ socialsvc 补到 94.71% 后，剩余未处理的几个包（client/engine/shared
 **留意但未继续追的残余缺口**：`index.ts`（60 行，进程 bootstrap，同前几个包先例不单独起集成测试）；`iap/apple.ts`/`iap/google.ts`/`iap/productResolve.ts`/`service/promo.ts`/`service/recharge.ts`/`service/starter.ts` 各剩几行第三方支付网关的防御性错误分支或需要精确并发时序才能触发的路径，性价比递减未继续追。
 
 commercial 整体行覆盖率 **81.4% → 93.64%**（`npx vitest run --coverage`，16 test files / 213 tests 全绿——新增 31 例，原有 182 例零改动；`npx tsc --noEmit` 干净）。分支覆盖 81.25%、函数覆盖 99.25%。
+
+## shared 补测：boundedConcurrency/config/heartbeat/jwt/password/ticket/internalAuth/logger/mongo/slg 全面拉高，从 82.3% 拉到 98.96%（2026-08-15，worktree `feat/shared-coverage`）
+
+commercial 补到 93.64% 后，剩余未处理的几个包（client/engine/worldsvc/analyticsvc/matchsvc）里 **shared（82.3%）最低**——本节按"根据覆盖率结果修复最低"处理这个包。跟其它包不同，`@nw/shared` 是纯 library（无路由层、无进程 bootstrap），缺口分散在一堆此前完全没有对应测试文件的小模块 + 两个大文件（`slg/march.ts`/`slg/core.ts`）函数覆盖率极低（10.86%/14.28%），外加整个 `src/mongo/*`（索引创建，~0%——此前没有真实 Mongo 可跑）。四路并行做（各自新增/追加文件，互不touch；mongo 一路涉及配置改动，单独串行做）：
+
+- **纯工具函数**（`test/{boundedConcurrency,config,heartbeat,jwt,password,ticket,internalAuth,social,saveData}.test.ts`，9 个新文件 96 例）：`runBounded` 有限并发语义、`loadServerEnv`/`required()`（发现 `required` 的 throw 分支实际可达——`process.env[name] ?? fallback` 的 `??` 只在 `undefined`/`null` 时才用 fallback，显式设成 `''` 仍会命中 throw，之前的任务描述猜错了）、`startHeartbeat`（fake timers + `extra()` 抛错不影响心跳）、`signToken`/`verifyToken`/`extractBearer`、`password.ts` 全部纯函数 + `hashPassword`/`verifyPassword`（含格式错误 stored 串的三种防御分支 + `DUMMY_PASSWORD_HASH` 侧信道用法）、`signTicket`/`verifyTicket`（含 `ignoreExpiration` 分支 + 类型错误 payload）、`internalAuth.ts` 全部导出（`parseInternalKeys`/`outboundInternalKey`/`createInternalAuth` 的 strict/fallback 两种模式，用 `vi.resetModules()` 隔离 `envKeysCache` 模块级缓存）、`social.ts` 的 id 派生函数、`types.ts` 唯一的运行时函数 `makeNewSave`。
+- **`test/logger.test.ts`**（新文件，23 例）：console 双 sink（`debug`/`info`/`warn`/`error` 四级 + 级别阈值 + `child()`）+ 文件 sink（`NW_LOG_DIR` 未设时禁用、真实 ENOTDIR 触发 `ensureDir` 失败、`vi.mock('node:fs')` 稳定触发 `createWriteStream`/`stream.write()` 抛错分支、root 分组复用、`fmtData`/`normData` 的 Error/循环引用/换行折叠分支）。`threshold`/`LOG_DIR` 是模块加载时求值的模块级常量，改 env 后必须 `vi.resetModules()` + 动态 `import()` 才能生效。logger.ts 25.24%→100%。
+- **`test/mongo.test.ts`**（新文件，8 例）+ 配置改动：`src/mongo/*`（`client.ts`/`accountDocs.ts`/`matchDocs.ts`/`integrityDocs.ts`/`commsDocs.ts`/`inventoryDocs.ts`/`balanceDocs.ts`/`miscDocs.ts`，此前全部接近 0%）只有 `createIndex` 调用，此前没有真实 Mongo 可跑。仿照 commercial/socialsvc 的 `mongodb-memory-server` 套路，新增 `test/globalSetup.ts`（standalone mongod，`NW_MONGO_URI` 已设时跳过）+ `test/setupEnv.ts`（跨 worker 桥接 URI 的握手文件）+ `vitest.config.ts` 加 `globalSetup`/`setupFiles`/`testTimeout`/`hookTimeout`（`mongodb-memory-server` 加进 `devDependencies`，实测此前已经靠 npm workspaces 提升能从 `server/shared` 解析到，但显式声明更稳妥）；`test/mongo.test.ts` 验证 `createMongo()` 接好全部 26 个 collection + `ensureIndexes()` 跑遍 8 个 domain 文件真实建出索引（逐个 spot-check key/name/unique/TTL）、`ensureIndexes()` 两次调用不重复建索引、连接失败时 `console.error` 输出脱敏后的 URI（不含 user:pass）、`isAnonymousAccount` 四个分支。`src/mongo` 整体 ~1%→100%（`collections.ts` 例外，纯 interface 声明、无可执行行，0% 属预期）。
+- **slg 游戏逻辑缺口**（`test/march.test.ts` 9→33 例、新建 `test/core.test.ts` 24 例、新建 `test/transfer.test.ts` 4 例，另追加 `activeMatch`/`dailyCounter`/`rateLimiter`/`cards`/`chatFilter`/`featureFlags`/`mapEdit`/`economy` 既有测试文件 + 新建 `test/cities.test.ts`/`test/tileGen.test.ts`）：`march.ts`（10.86%→100%，`vi.mock('../src/slg/mapgen')` 手工构造障碍/围困/桥梁/城门/`blockedBaseKeys`(ADR-025) 各种地形组合，不用在真实 1500×1500 程序化地图上找坐标）、`core.ts`（74.13%→100%，函数覆盖 14.28%→100%，补了 `SlgError`、一串确定性 id 派生函数、地基/城市精灵几何 helper、徽记校验器）、`transfer.ts`（42.85%→100%）。
+
+**留意但未继续追的残余缺口**（性价比递减，均为等价路径变体或需要真实并发/精确时序才能触发）：`src/economy/gacha.ts`（89.32%，181-191 行）、`src/slg/shop.ts`（88.42%，145-157 行）、`src/slg/mapgen/biome.ts`/`levelDist.ts`（92.6%/88.9%，各剩 2 行）、`achievements.ts`/`battlepass.ts`/`events.ts`/`retention.ts`/`equipment.ts`/`unitCards.ts` 等此前已有测试的文件各剩 1~6 行防御性分支；`src/mongo/collections.ts`（0%，纯 `interface` 声明，无可执行行，不是真实缺口）。
+
+shared 整体行覆盖率 **82.41% → 98.96%**（`npx vitest run --coverage`，51 test files / 952 tests 全绿 + 5 skipped（既有的"无本地 Redis 则跳过"用例，跳过状态未变）——新增 15 个测试文件、210 例，原有 36 文件 / 742 例零改动；`npx tsc --noEmit` 干净）。分支覆盖 94.8%、函数覆盖 97.67%。

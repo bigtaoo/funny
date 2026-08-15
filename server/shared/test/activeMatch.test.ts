@@ -6,6 +6,7 @@ import {
   setActiveMatch,
   getActiveMatch,
   clearActiveMatch,
+  connectActiveMatchRedis,
   type ActiveMatchRecord,
 } from '../src/activeMatch';
 
@@ -81,4 +82,27 @@ describe('null redis (feature unconfigured) degrades silently', () => {
     await expect(getActiveMatch(null, 'a')).resolves.toBeNull();
     await expect(clearActiveMatch(null, 'a')).resolves.toBeUndefined();
   });
+});
+
+// ── connectActiveMatchRedis ──────────────────────────────────────────────────────────────────
+
+describe('connectActiveMatchRedis', () => {
+  it('returns null immediately when no url is provided (never attempts a connection)', async () => {
+    expect(await connectActiveMatchRedis(null)).toBeNull();
+  });
+
+  // No real Redis is assumed to be running in the test environment; connecting to an unreachable
+  // URL exercises the same catch/degrade path a real outage would (returns null, logs, never throws
+  // — mirrors dailyCounter.test.ts / rateLimiter.test.ts's "unreachable → skip/degrade" convention).
+  // If a real local Redis DOES happen to be reachable here, the connection succeeds instead — handle
+  // both outcomes so this test is environment-independent, and always clean up any real connection.
+  it('degrades to null (never throws) when Redis is unreachable, or connects when it is available', async () => {
+    const REDIS_URL = process.env.NW_REDIS_URL ?? 'redis://127.0.0.1:6379';
+    const client = await connectActiveMatchRedis(REDIS_URL);
+    if (client) {
+      await (client as { quit(): Promise<unknown> }).quit();
+    } else {
+      expect(client).toBeNull();
+    }
+  }, 15000);
 });
