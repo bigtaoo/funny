@@ -577,7 +577,7 @@ commercial 此前完全没有 Redis 依赖，本次新增：`config.ts` 补 `NW_
 | 包 | 行覆盖 | 分支 | 函数 |
 |---|---|---|---|
 | client（`src/game/**`） | 91.2% | 87.8% | 84.4% |
-| engine | 86.5% | 83.0% | 81.2% |
+| engine | ~~86.5%~~ **92.98%**（2026-08-15 补测，见下） | 92.21% | 91.72% |
 | shared | ~~82.3%~~ **98.96%**（2026-08-15 补测，见下） | 94.8% | 97.67% |
 | worldsvc | ~~82.9%~~ **95.82%**（2026-08-15 补测，见下） | 87.57% | 97.93% |
 | analyticsvc | 87.6% | 84.2% | 95.8% |
@@ -837,3 +837,19 @@ shared 补到 98.96% 后，剩余未处理的几个包（client/engine/analytics
 **⚠️ 一次性发现的 flaky 测试**：`httpApiActionSiegeMapGaps.e2e.test.ts` 在全量 `--coverage` 跑法（重活 CPU 负载下）里出现过一次 `SlgError: No viable path found`（`combatMarch/command.ts` 的 `startMarch`），单独跑该文件、以及随后 3 次全量重跑（含 2 次 `--coverage`）均全绿——判断是重负载下的瞬时环境抖动，不是确定性 bug，未继续深挖根因；如果未来这个文件在 CI 上复现类似失败，从这里开始排查。
 
 worldsvc 整体行覆盖率 **83.03% → 95.82%**（`npx vitest run --coverage`，85 test files / 916 tests 全绿——新增 24 个测试文件、415 例，原有 61 文件 / 501 例零改动；`npx tsc --noEmit` 干净）。分支覆盖 87.57%、函数覆盖 97.93%。
+
+## engine 补测：combat/ai/hazard+spell+movement/setup+math/sim 五路缺口，从 86.49% 拉到 92.98%（2026-08-15，worktree `feat/engine-coverage`）
+
+worldsvc 补到 95.82% 后重新核实一遍全部 14 包，**engine（86.49%）** 是唯一仍低于 90% 的一个（analyticsvc 87.59%、matchsvc 88.32% 次之，其余全部 ≥90%）——本节按"根据覆盖率结果修复最低"处理这个包。
+
+engine 是目前处理过的包里**唯一非 vitest** 的一个（`tsc -b && tsc -p tsconfig.test.json` 编译到共享 `dist/` 再用 `node --test` 跑，见本文档"测试覆盖率百分比工具"一节），这意味着 metaserver/worldsvc 那套"N 个 agent 各自 `npx vitest run test/<file>.test.ts`、按需接一个共享 mongod"的并行方案不适用——vitest 按文件即时转译、互不冲突，但 engine 的多个 agent 若在同一个工作目录里各自并发跑 `npm run test:coverage`，会在同一个 `dist/` 输出目录上产生编译竞态（同 [[parallel-vitest-agents-shared-mongo-2026-08-14]] 讲的共享 mongod 握手文件竞态是同一类问题，只是这次撞的是 tsc 的输出目录而不是 mongod 的 URI 文件）。engine 本身是纯计算库，无 Mongo/HTTP/其它 `@nw/*` 运行时依赖，`npm install` 只装 `typescript`+`@types/node`，代价很小——于是这次改用**每个 agent 各自独立 git worktree**（`feat/engine-coverage-{a..e}`，各自 `New-Item -ItemType Junction` 指到主检出 `server/node_modules`），从根源上避免 `dist/` 竞态，而不是像 vitest 系那样共享一个工作目录。5 路并行，按缺口分组（各自新增文件，互不touch，完工后 `git merge --no-ff` 五个分支回 `feat/engine-coverage`，无冲突）：
+
+- **combat**（`hitResolution.ts` 66.51%、`projectiles.ts` 79.35%、`targeting.ts` 87.80%、`CombatSystem.ts` 函数覆盖仅 12.5%）→ 全部 **100/100/100**。3 个新文件、42 例。`CombatSystem.ts` 的函数覆盖缺口根因：既有测试只调过它的 `tick()`，从未直接调用它转发的 `findTarget`/`performBuildingAttack`/`fireProjectile`/`tickProjectiles` 等具名导出——新测试改成从 `CombatSystem`（barrel re-export）而非各 `combat/*` 子模块导入，一并把这条函数覆盖缺口堵上。
+- **ai**（`ai/defense.ts` 67.12%、`ai/threatAssessment.ts` 74.63%、`ai/meteorTargeting.ts` 81.94%（函数仅 40%）、`AISystem.ts` 96.18%）→ 全部 **100% 行**（分支 88.89%~96.97%，剩余是 `findMeteorTarget`/`freeBuildingLane` 内层扫描的越界防御分支，锚点扫描循环自身的边界条件保证其不可达，未继续追）。4 个新文件、20 例。
+- **hazard+spell+movement+resource+building**（本轮缺口最大的一组：`HazardSystem.ts` 仅 43.10%、`SpellSystem.ts` 仅 57.60%（函数 42.86%）、`MovementSystem.ts` 80.33%、`ResourceSystem.ts`/`BuildingProductionSystem.ts` 分支覆盖分别只有 63.64%/80%）→ 全部 **100% 行/函数**（`MovementSystem.ts` 分支 96.38%，剩余是 `predictStopY` 多敌方同车道扫描的边缘排列组合，行/函数已全覆盖，性价比递减未追）。5 个新文件、39 例。过程中发现一处测试本身的坑（非源码 bug）：`MovementSystem.tick()` 按 `Map` 插入顺序逐个访问单位，"前车"在同一 tick 内先完成自身推进、"后车"的碰撞检测才跟着跑——最初的"友军碰撞"测试用前车 tick 前的位置算期望间距，间歇性失败，改成用前车 tick 后的位置算期望值即修复。
+- **setup+math**（`setup/board.ts` 87.50%（分支 42.86%）、`setup/drawPolicy.ts` 83.70%、`setup/buildCtx.ts` 分支仅 87.5%、`math/prng.ts` 80.95%）→ 全部 **100/100/100**。4 个新文件、40 例，含 `prng.ts` 此前完全零覆盖的 `shuffle()`（含同种子确定性、跨种子发散断言）。
+- **sim+misc**（`sim/campaign.ts`/`sim/commands.ts`（函数仅 62.5%）/`sim/hand.ts`/`sim/step.ts`/`sim/winCondition.ts`（本组最大缺口）/`Player.ts`/`Unit.ts`（函数仅 83.33%）/`runHeadless.ts`/`GameState.ts` 分支缺口/`types.ts`）→ 除 `types.ts` 外全部 **100/100/100**。8 个新文件、约 35 例。`types.ts` 10-11 行留白：追到编译产物 `dist/types.js`，落在 TS 给每个 `export * from './types/xxx'` 桶文件自动生成的 `__createBinding` ES5 兼容兜底分支（`Object.create ? ... : (else 分支)`）——Node 下 `Object.create` 恒真，else 分支是所有 TS 桶文件都有的死代码，不是真实缺口，不追（同 shared 的 `mongo/collections.ts`、worldsvc 的 `combatSiege/ctx.ts` 等"纯声明/工具链死分支不算真实缺口"的先例）。
+
+engine 整体行覆盖率 **86.49% → 92.98%**（`node --test --experimental-test-coverage`，205 test files 全绿——新增 24 个测试文件、约 165 例，原有约 165 例零改动；`tsc -b`/`tsc --noEmit` 均干净）。分支覆盖 83.01%→92.21%、函数覆盖 81.17%→91.72%。
+
+**留意但未继续追的残余缺口**：`src/campaign/levelSchema.ts` 及其 `levelSchema/{board,escorts,garrison,hazards,helpers,objective,rewards,waves}.ts` 子模块（18%~85% 不等）——这是本轮任务清单（基于上一次跑分时被 `tail -N` 截断的输出）里遗漏的一块，核实后确认是本轮开工前就存在的既有缺口，不是这次改动引入的。这些文件是"JSON 加载的关卡定义"运行时校验器（`design/tools/level-editor/DESIGN.md`），当前覆盖集中在 happy-path，各字段的拒绝/报错分支大多未测——真实缺口，留给下一轮。另外 `Card.js`（94.44%）、`Building.js`（96.33%）、`campaign/levelSchema.js` 门面（60.45%）、`engine/driver/realtimeDriver.ts`（91.67%）、`engine/setup/blueprints.ts`（73.47%）也顺带浮现出来，同一批留待下一轮核实是否需要优先处理。**⚠️ 一次性观察到的 coverage 报告抖动**：某个 agent 反馈同一份测试代码、零源码改动，`AISystem.js` 有时报 100% 行、有时报 96.82%（缺 109-113 行）；本次收尾时又跑了 2 次全量 `test:coverage` 均稳定 100%，判断是 Node `--experimental-test-coverage` 在重负载/`tsc -b` 增量编译交互下的瞬时抖动，同 worldsvc 那次 `SlgError: No viable path found` 一次性 flaky 一样未继续深挖根因，如果后续在 CI 上复现从这里开始排查。
