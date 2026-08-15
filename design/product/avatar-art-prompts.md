@@ -173,6 +173,14 @@ plain sky-blue collared top.
 [共用负向]
 ```
 
+> **二版迭代（2026-08-15）**：首版"半扎"读不出来（近乎纯散发，跟 prompt 描述的辨识点没对上），上衣颜色也偏深、跟 Max 的钢灰/Lena 的深蓝层次不够。二版把发型描述改成强约束——"挽起的部分必须能看出与散发的视觉分界"（明确写"小发髻/发夹"），颜色改用更精确的 pale sky-blue/powder-blue 参照词，负向提示里额外排除 dark navy blue 和"纯散发无扎起"两种回退结果。改对后收录，首版草稿归档 `art/leftover/hero_mara_draft1.webp`。
+
+### 出图记录 + 定稿状态（2026-08-15）
+
+6 张按上表逐张出图审核，**5 张一版过、`hero_mara` 迭代到二版**（见上方迭代记录）。
+
+**资产处理**：6 张定稿源图在 `art/ui/head/` 原地重命名为 `hero_<key>.{png,webp}`（保留 AI 原始格式/分辨率，作为母版；`hero_mara` 首版草稿归档 `art/leftover/hero_mara_draft1.webp`）；母版按 512px 宽等比缩放 + `sharp` `{ palette: true, quality: 90, effort: 10, compressionLevel: 9 }` 压缩（同 preset 批次口径），产出 `client/src/assets/avatars/hero/hero_<key>.png`（单张 159~223KB）。新增 `client/src/render/heroAvatarArt.ts`（仿 `presetAvatarArt.ts` 写法），导出 `HERO_AVATAR_KEYS`/`HERO_AVATAR_ART_URLS`（key 沿用 `cardArt.ts` `UNIT_ART_URLS` 的 unit-id 命名：`infantry`/`archer`/`shieldbearer`/`max`/`lena`/`mara`）——**只是让这 6 张图可以被 import**，尚未接入 `avatar.ts`（`categoryIcon('hero', ...)` 仍读 `UNIT_ART_URLS` 战斗立绘），渲染路径切换留给下面「功能实现待办」。`tsc --noEmit` + webpack 生产构建已过。
+
 ---
 
 ## 二、preset 类目 — 20 张全新原创角色胸像
@@ -263,7 +271,7 @@ plain sky-blue collared top.
 
 1. **删除 `equip`/`material` 分类**：`client/src/render/avatar.ts`（`AvatarCategory` 类型、`CATEGORY_BG`、`categoryIcon`）、`client/src/scenes/SettingsScene/types.ts`（`AVATAR_TABS`/`AVATAR_TAB_LABEL_KEY`/`AVATAR_LOCKED_KEY`）、`avatarPicker.ts` 的 `pickerItems()` 里对应两个 `case` 一并删除；已装配 `equip:*`/`material:*` 头像的存量账号需要一个迁移/兜底（服务器端 `equipAvatar` 校验或读取时遇到未知分类 → 回退到某个 preset 默认值，避免头像消失变空白）。
 2. **`pack_avatar_atlas.cjs` 退役**：`art/ui/head/pack_avatar_atlas.cjs` + `client/src/assets/avatars/{avatars.png,avatars.json}` + `client/src/render/atlas/avatarAtlas.ts` 整体删除。~~`art/ui/head/` 下 8 张旧源图归档 `art/leftover/`~~ ✅ 2026-08-15 已归档（随 20 张 preset 出图一起处理，见上方「资产处理」）。`bootManifest.ts` L0 对应的图集加载项一并摘除（未做——`icons_atlas` 还merge了 equip/material/faction，删除前需确认这几个分类的删除时机，见下条）。
-3. **新增独立 PNG import**：✅ 2026-08-15 `preset_*` 20 张已完成——`client/src/render/presetAvatarArt.ts` 仿 `cardArt.ts` 写法导出 `PRESET_AVATAR_ART_URLS`（图片本身在 `client/src/assets/avatars/preset/`，见上方「资产处理」）。仍缺：`cardArt.ts` 旁或新文件里补 6 张 `hero_*` 胸像 url 表（区别于现有 `UNIT_ART_URLS`——那张表是战斗/卡面立绘，不要复用）+ 皮肤胸像 url 表（§三，等 skin 立绘定稿后再做）。
+3. **新增独立 PNG import**：✅ 2026-08-15 `preset_*` 20 张 + `hero_*` 6 张均已完成——`client/src/render/presetAvatarArt.ts`/`heroAvatarArt.ts` 仿 `cardArt.ts` 写法分别导出 `PRESET_AVATAR_ART_URLS`/`HERO_AVATAR_ART_URLS`（图片分别在 `client/src/assets/avatars/preset/`、`client/src/assets/avatars/hero/`，见上方「资产处理」）。仍缺：皮肤胸像 url 表（§三，等 skin 立绘定稿后再做）。
 4. **`avatar.ts` 改造**：`AVATAR_DEFS`（8 项 icon+bg）整个替换成 20 项 preset 胸像表；`buildAvatar` 里 `presetDef` 分支从"图标+染色圆盘"改成直接调用 `buildPortraitIcon`（与 hero/skin 同一渲染路径），`categoryIcon('hero', ...)` 改查新的 hero 胸像表（不再是 `UNIT_ART_URLS`），`categoryIcon('skin', ...)` 改查新的皮肤胸像表（不再兜底到 hero）。
 5. **`i18n`**：`AVATAR_TAB_LABEL_KEY` 摘除 equip/material 两个 key；若 UI 文案有埋"共 8 个预设"之类的写死数字，一并检查更新为 20。
 6. **`UI_DESIGN.md` §"avatarId 数据格式"**：随代码改动同步更新（分类枚举、渲染契约描述、`avatarAtlas.ts` 引用）。
