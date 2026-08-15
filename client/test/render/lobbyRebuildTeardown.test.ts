@@ -21,7 +21,7 @@
  * `core.rebuild()` like any other caller. This test targets LobbySceneCore
  * directly instead of the old BadgesMixin.
  *
- * Run with: npm run test:render
+ * Run with: npm test — the default suite's include covers every *.test.ts under test/.
  */
 
 import { describe, it, expect, vi } from 'vitest';

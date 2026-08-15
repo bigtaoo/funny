@@ -8,8 +8,8 @@
 //
 // No pixi rendering here — the assertions are on the resolver's *routing*, not on pixels. Lives in
 // test/render only because importing rewardIcon.ts pulls pixi.js-legacy.
-// Run: npm test — `test/**/*.test.ts` picks this up. NOT `npm run test:render`: that config is
-// missing the `@nw/shared` aliases the other two carry (same note as icons.test.ts's header).
+// Run: npm test — the default suite's `test/**/*.test.ts` include picks this up. There is no
+// separate render suite (vitest.render.config.ts was deleted 2026-08-15; see icons.test.ts).
 import { describe, it, expect, vi } from 'vitest';
 
 const buildIcon = vi.fn(() => ({ kind: 'drawn' }));

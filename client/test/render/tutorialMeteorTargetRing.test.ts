@@ -15,7 +15,7 @@
  * transform with that exact row (not a re-derived guess), and that the ring is
  * placed at whatever screen point that transform returns.
  *
- * Run with: npm run test:render
+ * Run with: npm test — the default suite's include covers every *.test.ts under test/.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 

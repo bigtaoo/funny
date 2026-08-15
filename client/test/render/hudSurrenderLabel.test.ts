@@ -13,7 +13,7 @@
  * The critical invariant (user requirement): the PvP / net path — HUDView built
  * WITHOUT the flag — must be untouched and keep the original 投降/surrender text.
  *
- * Run with: npm run test:render
+ * Run with: npm test — the default suite's include covers every *.test.ts under test/.
  */
 
 import { describe, it, expect, vi } from 'vitest';

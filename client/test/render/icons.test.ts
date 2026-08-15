@@ -2,15 +2,18 @@
 // exported DRAW record). Asserts the DRAW table resolves a live function for every IconKind — the
 // residual risk after the split is a draw fn that fails to import (resolves to undefined at runtime,
 // which the Record<IconKind,…> type cannot catch). No pixi rendering here, so no GL/canvas needed;
-// lives in the render suite only because importing icons.ts pulls pixi.js-legacy.
-// Run: npm test — `test/**/*.test.ts` picks this up. NOT `npm run test:render`: that config is missing
-// the `@nw/shared` aliases the other two carry, so this file dies at load there (2026-08-15).
+// lives in test/render only because importing icons.ts pulls pixi.js-legacy.
+// Run: npm test — the default suite's `test/**/*.test.ts` include picks this up. There is no
+// separate render suite: the never-run vitest.render.config.ts this header used to warn about
+// was deleted 2026-08-15.
 import { describe, it, expect } from 'vitest';
 import { DRAW, tabIconVariant, type DrawableIconKind } from '../../src/render/icons';
-// Palette values are inlined rather than imported: both `render/sketchUi` (HubTabs' `ui`) and
-// `scenes/LobbyScene/core` (`C`) transitively pull module graphs this config has no loader/alias for
-// (`@nw/shared/cards`, `.tao` assets). Each case names its source constant so a palette retune is
-// still traceable here.
+// Palette values are inlined rather than imported from `render/sketchUi` (HubTabs' `ui`) and
+// `scenes/LobbyScene/core` (`C`). That began as a hard constraint under the old render config,
+// which lacked the aliases those module graphs need; under the default config both now import
+// cleanly (verified 2026-08-15), so it is kept only to hold this dispatch-table guard independent
+// of the much heavier scene/palette graphs. Each case names its source constant so a palette
+// retune is still traceable here.
 
 // Exhaustive map of every DrawableIconKind (IconKind minus the raster-only tab icons, which skip
 // DRAW entirely — see icons.ts's TAB_ICON_RASTER). Typed Record<DrawableIconKind, true> so the

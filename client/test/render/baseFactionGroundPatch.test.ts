@@ -13,7 +13,7 @@
  * records every fill call, without constructing the full BoardView (which pulls in
  * several bitmap/atlas asset imports not relevant here).
  *
- * Run with: npm run test:render
+ * Run with: npm test — the default suite's include covers every *.test.ts under test/.
  */
 import { describe, it, expect } from 'vitest';
 
