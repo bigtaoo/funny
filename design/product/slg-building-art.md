@@ -117,6 +117,9 @@ notebook grid lines, ruled lines
 
 **叠放顺序**。`WorldMapRenderer/pool.ts` 的瓦片池是**取模环绕**的，槽位在 `poolContainer.children` 里的次序跟屏幕深度无关，而且随平移变化——后排的塔可能画在前排之上，平移时还会翻转。格子内的画法都不出菱形时无所谓，但建筑精灵会往上长。已改为 `slot.g.zIndex = tx + ty`（等距下屏幕 y ∝ `tx+ty`）+ `poolContainer.sortableChildren = true`，前排最后画。zIndex 只在平移换格时变，L1 约 600 个槽位，不是每帧排序。
 
-**回归护栏**：`client/test/ui/worldMapStructureIcons.ui.ts` 新增一组 mock 掉 `buildingAtlasLoader`（伪装图集就绪）的用例，断言两个精灵的屏幕宽度 ≤ `tp*0.7`（邻格间距 `tp/2` + 30% 溢出容差），防止系数再被调大。
+**回归护栏**（两个文件，共 +11 例；改动回退时分别有 2 例 / 5 例转红）：
+
+- `client/test/ui/worldMapStructureIcons.ui.ts` 新增一组 mock 掉 `buildingAtlasLoader`（伪装图集就绪）的用例——这条精灵分支此前**完全没有覆盖**（测试环境从不加载图集，老用例只走得到几何回退）。断言：两个精灵屏宽 ≤ `tp*0.7`（邻格间距 `tp/2` + 30% 溢出容差）、尺寸纯按 `tp` 等比缩放（防止有人拿像素常量"修"尺寸问题）、bottom-center 锚在菱形内、fog 下两者都不画（动态层，跟地形不同）、`arrowTower` 即使图集对任何名字都有响应也不取精灵、图集就绪但缺帧仍回退几何占位。
+- `client/test/ui/worldMapPoolDepthOrder.ui.ts`（新增）驱动真实 `WorldMapRenderer`，断的是用户可见性质而非实现：排序后瓦片池**严格由远及近**绘制。**在 5 个不同平移量下各验一次**——取模环绕的映射在可视窗口起点恰好是池尺寸整数倍时本来就是 y 有序的，单个偏移量能蒙混过关，这正是这个 bug 一直没被发现的原因。另覆盖每槽 `zIndex = tx+ty`、最前排最后画、`setZoom()` 重建池后依然成立、以及 zoom 3 走批量 L3 不建池的旧路径。
 
 **核对方式**：`npm run start:e2e` + Playwright 驱动 `window.__nwE2E.views.showWorldMap()`（reject-fast 的 `worldApi` stub，无后端），种一块 7×7 己方领地、内 5×5 全建同类结构，逐个系数截图对比——详见会话记忆 `worldmap-standalone-debug-render`。
