@@ -467,13 +467,15 @@ client/src/assets/decor/   # 最终透明 PNG / 图集
 - 首个落地参考实现：登录/注册场景 `client/src/scenes/LoginScene.ts`（`submitEnabled()` 判定 + `addButton(enabled)` 灰显 + `press` 放大回弹）。
 - **全屏场景共享原语**：所有 canvas 绘制的全屏场景（login / room / shop / gacha / result / replay / intro / settings）统一从 `client/src/render/sketchUi.ts` 取手绘 UI 原语——`buildPaperBackground`（纸底 + 抖动格线 + 红装订线，bake 缓存）、`sketchPanel`（平涂 + `SketchPen.rect` 涂鸦边框，**替代 `drawRoundedRect`**，落实「按钮非完美圆角」）、`sketchAccentBar`、`ui` 调色板（纸底/格线/红色引自 `theme.palette`）、`seedFor`（稳定 seed 防重渲染抖动）。新场景一律复用，不再各自手画背景/圆角按钮或硬编码调色板。**字体暂留 `monospace`**（手写字体需打包字体面，单列任务）。
 
-### 7.6 页签主图标 AI 化（v0.7 试点 · 2026-08-14，状态：试点批 + 批次 2 均已定稿并接线）
+### 7.6 页签主图标 AI 化（v0.7 试点 · 2026-08-14，状态：试点批 + 批次 2 已接线，批次 3 判断+prompt 已定）
 
 页签条（HubTabs/CareerTabs/底部导航）上的图标此前全走 §〇 分工里"UI=程序绘制"这条路，反馈辨识度/完成度不够——起因一是线稿本身简单，二是同一图标被多处复用成不同含义（如 `trophy` 身兼战绩/成就/通行证/进阶 4 职）。**本次扩大 §〇 分工边界**：页签主图标比照角色立绘的理由（辨识度要求高、程序笔触画不出足够细节）改走 AI 图，复用点借机拆开一图一义；逐批出图，先出一个 3 图小批（`[Cards|Equipment|Skins]` 同伴组：卡背包/装备/皮肤）验证风格和小尺寸（真实设备 20-33px，见 prompt 文档）效果。管线沿用 §6.2 的"抠白底"套路，但换成"一张源图打包时吐 active(白)/inactive(灰) 两份"（B 组"打包时改色"的直接复用，不是运行时 tint——项目里没有运行时 tint AI 位图的先例）。
 
 试点过程中卡背包/皮肤各反复了 3-4 版才定稿——卡背包先后踩了"读成扑克牌""读成工牌/证件""细节太密缩小糊成一团"三个坑，才收敛到"单张卡+挥剑小人粗剪影"；皮肤则是"文具/画笔"这条思路本身跟装备材料图标（也是文具）语义撞车，改走"戏剧面具"完全跳出文具语言才定案。详见 [`tab-icon-art-prompts.md`](tab-icon-art-prompts.md)（定稿 prompt + 反复记录 + 打包脚本 + 已完成的接线改动）。
 
 **批次 2**（2026-08-14 判断+prompt，2026-08-15 出图+接线）铺开 `trophy`/`book`/`medal`/`cards`/`brush` 5 个复用槽位：能确认跟已出的 `rosterIcon`/`skinIcon` 是同一概念的直接复用接线（Career 图鉴、拍卖筛选卡牌/皮肤、首页"养成"入口），判断为不同概念的留一张不动（如拍卖"我的"tab 仍用通用 `cards`），真正需要新概念的 4 张（战绩入口=柱状图/成就"进阶"分类=箭头阶梯/Career"称号"=桂冠/成就"收藏"分类=拼图块）出图一次通过、contact-sheet 28px 验证全部过关，已接线。详见 `tab-icon-art-prompts.md` "批次 2"一节。
+
+**批次 3**（2026-08-15 判断+prompt定稿，等出图）系统性梳理 `HubTabs`/`CareerTabs`/底部导航/成就墙分类条/拍卖筛选条后确认还有 12 个页签级图标仍是程序绘制。梳理中顺带发现批次 2 留了两处漏判：`trophy` 其实是 4 职不是 3 职（本节第一段一开始就写着"战绩/成就/通行证/进阶"4 职，但批次 2 的判断表只处理了 3 个，通行证 tab 一直没人管）；`book` 也漏了成就墙"pve"分类这第 3 个用法。这次一并了结：`armor`(拍卖装备筛选)/`book`(Career统计页签) 两处确认是深链同一目的地，直接复用 `equipIcon`/`statsTabIcon`，不必新出图；`trophy` 让"成就"用新出的 `achievementTabIcon`(奖杯) 正式转 AI，"通行证"另出 `battlepassTabIcon`(门票)；`book` 让"统计"复用 statsTabIcon，"pve 分类"另出 `pveTabIcon`(藏宝图)；其余 10 个单一含义、纯粹为了辨识度（商店/金币直充/扭蛋/充值/首页/社交/pvp分类/拍卖出价/拍卖材料）逐一出新图。详见 `tab-icon-art-prompts.md` "批次 3"一节。
 
 ---
 

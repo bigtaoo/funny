@@ -1,10 +1,10 @@
 # 页签主图标 AI 化 — 试点 Prompt 文档
 
-> 创建：2026-08-14 · 试点批定稿+接线：2026-08-14 · 批次 2 判断+prompt 定稿：2026-08-14 · 批次 2 出图+接线完成：2026-08-15
+> 创建：2026-08-14 · 试点批定稿+接线：2026-08-14 · 批次 2 判断+prompt 定稿：2026-08-14 · 批次 2 出图+接线完成：2026-08-15 · 批次 3 判断+prompt 定稿：2026-08-15
 > 配套代码：[`client/src/render/icons.ts`](../../client/src/render/icons.ts)（`rosterIcon`/`equipIcon`/`skinIcon` 三个新 `IconKind`）· [`client/src/scenes/CardScene/list.ts`](../../client/src/scenes/CardScene/list.ts) · [`client/src/scenes/EquipmentScene/inventory.ts`](../../client/src/scenes/EquipmentScene/inventory.ts) · [`client/src/app/nav/game/campaignRoster.ts`](../../client/src/app/nav/game/campaignRoster.ts)
 > 美术总纲：[`art-direction.md`](art-direction.md) §0（资产分工）/ §6.2（装饰物涂鸦管线，本文档打包脚本沿用其"抠白底"套路）/ §7.6（本次试点的记录条目）
 > 同类文档：[`shop-art-prompts.md`](shop-art-prompts.md) · [`gacha-art-prompts.md`](gacha-art-prompts.md)
-> 状态：**试点批（3/15）已定稿并接线**；**批次 2（trophy/book/medal/cards/brush 5 个复用槽位）已全部完成**——详见下方"批次 2"一节
+> 状态：**试点批（3/15）已定稿并接线**；**批次 2（trophy/book/medal/cards/brush 5 个复用槽位）已全部完成**；**批次 3（铺开剩余 12 个页签主图标，判断+prompt 已定，等出图）**——详见下方"批次 3"一节
 
 ## 背景
 
@@ -158,3 +158,115 @@ Hand-drawn doodle icon in a worn school notebook, single dark-ink pen line art, 
 ### 状态：批次 2 全部完成 ✅
 
 5 个复用槽位（trophy/book/medal/cards/brush）全部处理完毕：3 个纯复用接线 + 4 张新图出图/打包/验证/接线，均已落地。
+
+---
+
+## 批次 3（2026-08-15 · 状态：判断+prompt 已定，等出图）
+
+铺开试点批文档一直提的"剩下的页签图标"：把 `icons.ts` 的 `IconKind` 列表和 `HubTabs`/`CareerTabs`/底部导航/`AchievementScene`分类条/`AuctionScene`筛选条的接线点全部过一遍（结算页动作按钮、装备强化按钮、头像底色、内容态数值徽标这些不算"页签"，排除在外），确认还有 **12 个页签级图标仍是 `SketchPen` 程序绘制**。逐个判断复用 vs 新概念，结论如下。
+
+### 判断结果总表
+
+| 槽位 | 位置 | 处理 | 备注 |
+|---|---|---|---|
+| `armor` | 拍卖筛选"装备"（`itemPickerRender.ts`） | **纯复用，直接接线为 `equipIcon`** | 跟批次 2 里 cards/brush 复用 rosterIcon/skinIcon 是同一道理——字面就是"这是装备"，不需要新概念、不需要新出图 |
+| `book` | Career"统计"页签（`stats.title`） | **纯复用，直接接线为 `statsTabIcon`** | 查代码确认 `lobby.nav.stats` 底部导航按钮就是深链到这同一个"统计"页签（`nav.goStats()` → `StatsScene`，跟 `CareerTabs.stats.title` 同一个目的地），不是勉强套用，是本来就同一个东西，跟"首页养成入口复用 rosterIcon"同一模式。这样 book 的 2 义冲突（批次 2 只判断了 Career统计/首页卡牌入口 2 义，漏了下面这第 3 义）就只剩下面 `pve` 分类那一边需要新概念 |
+| `book` | 成就墙"pve"分类（`AchievementScene.ts` `CATEGORY_ICON.pve`） | **新图 `pveTabIcon`** | 批次 2 判断表遗漏的第 3 个 book 用法。book 让给"统计"义（上面已复用），这里跳出"书"这条线，改走"藏宝图"——PvE 关卡=闯关地图，跟 pvp 分类的交叉剑（下面）、其余分类图标（进阶=箭头阶梯/收藏=拼图块）都不撞 |
+| `trophy` | Career"成就"页签（`stats.achievements`） | **新图 `achievementTabIcon`**，正式转 AI | 批次 2 判断"3 义里最贴的一个，留给它、继续用程序图标"；这次批次 3 是系统性铺开，顺带发现这不是 3 义而是 4 义（漏了下面这条），干脆把 achievements 也转成 AI 图，彻底了结冲突而不是再拖一次 |
+| `trophy` | Shop组hub"通行证"tab（`battlepass.title`，4 个场景文件共享同一条 tab 定义：`GachaScene/page.ts`/`RechargeScene.ts`/`BattlePassScene/nav.ts`/`ShopScene/core.ts`） | **新图 `battlepassTabIcon`** | 批次 2 判断表完全没算到这个用法——trophy 实际上是 4 义不是 3 义。战令跟"成就"是不同概念（战令=订阅制通行证，成就=荣誉奖杯），造型走"门票"，避免跟 `achievementTabIcon`(奖杯)/`honorTabIcon`(桂冠，称号用)/`medal`(圆形奖牌) 挤在同一堆"奖章/荣誉"语言里 |
+| `tag` | Shop组hub"商店"tab（同上 4 文件共享） | **新图 `shopTabIcon`** | 单一含义，纯粹辨识度升级 |
+| `tag` | 拍卖"全部"筛选（`list.ts` `all`） | **复用同一张 `shopTabIcon`** | 跟上面商店 tab 字面同一个"价签"概念，两处不同屏，参照批次 1/2 的复用模式一并接线，不单独出图 |
+| `coin` | Shop组hub"金币直充"tab | **新图 `coinTabIcon`** | 单一含义，纯粹辨识度升级 |
+| `capsule` | Shop组hub"扭蛋"tab | **新图 `gachaTabIcon`** | 同上 |
+| `coinChest` | Shop组hub"充值"tab | **新图 `rechargeTabIcon`** | 同上 |
+| `home` | 底部导航"首页" | **新图 `homeTabIcon`** | 同上 |
+| `globe` | 底部导航"社交" | **新图 `socialTabIcon`** | 同上 |
+| `swords` | 成就墙"pvp"分类 | **新图 `pvpTabIcon`** | 同上 |
+| `hammer` | 拍卖"我的出价"tab（`list.ts` `bids`） | **新图 `bidTabIcon`** | 同上 |
+| `scrap` | 拍卖筛选"材料" | **新图 `materialTabIcon`** | 同上 |
+
+**没有一并处理的相邻点**（判断时顺手确认过，判定不在这批范围）：`atk`/`hp`/`spd`/`atkspd`/`armorHeavy`/`lock`/`star`/`zoom`/`gift`/`flag`/`desk`/`cabinet`/`hourglass*`/`titleXxx` 系列/`close`/`check`/`play` 这些要么是内容态数值徽标（装备属性、结算奖励行），要么是动作按钮（结算页操作、装备强化/卸下），要么是头像底色装饰——不是导航页签，不在"页签主图标"范围内，维持程序绘制。
+
+批次 3 落地后，`trophy`/`book`/`armor`/`swords`/`hammer`/`scrap`/`tag`/`coin`/`capsule`/`coinChest`/`home`/`globe` 这些 `SketchPen` 常量仍然保留在 `DRAW` 表里——只是不再有任何**页签**指向它们，全部改指向对应的新光栅 `IconKind`；这些常量继续服务于头像底色、结算页动作按钮/奖励行、装备属性显示、GachaScene 稀有度标记等非页签场景。
+
+### 待出图（12 张新概念，草案 prompt）
+
+延续前两批的共用骨架（手绘涂鸦、单色墨线、粗糙抖动笔触、单一大剪影、纯白底、缩到 32px 仍可辨）。互相之间刻意避让：`pveTabIcon`(藏宝图) 不画成书/册页避免撞回 `book`；`achievementTabIcon`(奖杯) / `battlepassTabIcon`(门票) / `honorTabIcon`(桂冠，已有) / `medal`(圆牌，程序绘制) 四者要在同一堆"荣誉类"视觉里各自留出辨识空间——奖杯保留最经典的双耳杯身，门票是矩形+虚线撕口，都不画成圆形奖章或桂冠。
+
+#### 商店入口（`shopTabIcon`）
+```
+Hand-drawn doodle icon in a worn school notebook, single dark-ink pen line art, slightly wobbly imperfect strokes, quick loose sketch — not polished. One bold, simple, highly readable silhouette, no scattered separate pieces. Subject: a single classic price tag — a rounded-corner tag shape with one small circular hole punched near the top and a short loop of string threaded through the hole, hanging at a slight tilt. Single object, centered, filling the frame, on a plain pure-white background, no grid lines, no other elements. Flat 2D, no shading or only light pencil hatching for volume. Must stay clearly recognizable when scaled down to 32x32 pixels. Style of West of Loathing / doodle art. Avoid: color, painterly rendering, gradients, glow, 3d render, photorealistic look, thick clean cartoon outline, vector-art look, shopping bag, shopping cart, storefront or awning, dollar sign, percent sign, multiple tags, multiple objects, scattered pieces, confetti dots, text, letters, numbers, watermark, gray background, notebook grid lines, drop shadow.
+```
+
+#### 金币直充（`coinTabIcon`）
+```
+Hand-drawn doodle icon in a worn school notebook, single dark-ink pen line art, slightly wobbly imperfect strokes, quick loose sketch — not polished. One bold, simple, highly readable silhouette, no scattered separate pieces. Subject: a single thick coin seen face-on — a bold circle outline with one plain concentric inner circle (embossed rim) inside it, nothing engraved on the face. Single object, centered, filling the frame, on a plain pure-white background, no grid lines, no other elements. Flat 2D, no shading or only light pencil hatching for volume. Must stay clearly recognizable when scaled down to 32x32 pixels. Style of West of Loathing / doodle art. Avoid: color, painterly rendering, gradients, glow, 3d render, photorealistic look, thick clean cartoon outline, vector-art look, dollar sign or any currency symbol, stack of coins, piggy bank, coin slot, sparkle marks, multiple objects, scattered pieces, confetti dots, text, letters, numbers, watermark, gray background, notebook grid lines, drop shadow.
+```
+
+#### 扭蛋（`gachaTabIcon`）
+```
+Hand-drawn doodle icon in a worn school notebook, single dark-ink pen line art, slightly wobbly imperfect strokes, quick loose sketch — not polished. One bold, simple, highly readable silhouette, no scattered separate pieces. Subject: a single round gashapon capsule toy — a circle divided by one horizontal line straight across the middle into a top half and a bottom half, like a vending-machine capsule. Single object, centered, filling the frame, on a plain pure-white background, no grid lines, no other elements. Flat 2D, no shading or only light pencil hatching for volume. Must stay clearly recognizable when scaled down to 32x32 pixels. Style of West of Loathing / doodle art. Avoid: color, painterly rendering, gradients, glow, 3d render, photorealistic look, thick clean cartoon outline, vector-art look, vending machine body, multiple capsules, egg shape, stars or sparkles, closed solid circle with no dividing line, multiple objects, scattered pieces, confetti dots, text, letters, numbers, watermark, gray background, notebook grid lines, drop shadow.
+```
+
+#### 充值（`rechargeTabIcon`）
+```
+Hand-drawn doodle icon in a worn school notebook, single dark-ink pen line art, slightly wobbly imperfect strokes, quick loose sketch — not polished. One bold, simple, highly readable silhouette, no scattered separate pieces. Subject: a single closed treasure chest seen from the front — a rectangular body with a curved arched lid on top and one small latch or lock detail at the front center. Single object, centered, filling the frame, on a plain pure-white background, no grid lines, no other elements. Flat 2D, no shading or only light pencil hatching for volume. Must stay clearly recognizable when scaled down to 32x32 pixels. Style of West of Loathing / doodle art. Avoid: color, painterly rendering, gradients, glow, 3d render, photorealistic look, thick clean cartoon outline, vector-art look, open lid with gold/contents spilling out, coins scattered around it, sparkle marks, separate hanging padlock shape, multiple objects, scattered pieces, confetti dots, text, letters, numbers, watermark, gray background, notebook grid lines, drop shadow.
+```
+
+#### 底部导航·首页（`homeTabIcon`）
+```
+Hand-drawn doodle icon in a worn school notebook, single dark-ink pen line art, slightly wobbly imperfect strokes, quick loose sketch — not polished. One bold, simple, highly readable silhouette, no scattered separate pieces. Subject: a single simple house — a triangular roof sitting on a square body, with one small rectangular doorway notch cut into the bottom center, no windows. Single object, centered, filling the frame, on a plain pure-white background, no grid lines, no other elements. Flat 2D, no shading or only light pencil hatching for volume. Must stay clearly recognizable when scaled down to 32x32 pixels. Style of West of Loathing / doodle art. Avoid: color, painterly rendering, gradients, glow, 3d render, photorealistic look, thick clean cartoon outline, vector-art look, chimney, window details, door handle, tree or landscape elements, turret or castle-like crenellations, multiple objects, scattered pieces, confetti dots, text, letters, numbers, watermark, gray background, notebook grid lines, drop shadow.
+```
+
+#### 底部导航·社交（`socialTabIcon`）
+```
+Hand-drawn doodle icon in a worn school notebook, single dark-ink pen line art, slightly wobbly imperfect strokes, quick loose sketch — not polished. One bold, simple, highly readable silhouette, no scattered separate pieces. Subject: a single globe — a circle outline with one horizontal curved line and one vertical curved line crossing through the middle like a simple latitude/longitude grid, evoking a world globe. Single object, centered, filling the frame, on a plain pure-white background, no grid lines, no other elements. Flat 2D, no shading or only light pencil hatching for volume. Must stay clearly recognizable when scaled down to 32x32 pixels. Style of West of Loathing / doodle art. Avoid: color, painterly rendering, gradients, glow, 3d render, photorealistic look, thick clean cartoon outline, vector-art look, continents or landmasses drawn on the surface, stand or base underneath, speech-bubble shape, multiple circles, multiple objects, scattered pieces, confetti dots, text, letters, numbers, watermark, gray background, notebook grid lines, drop shadow.
+```
+
+#### 成就墙·pvp分类（`pvpTabIcon`）
+```
+Hand-drawn doodle icon in a worn school notebook, single dark-ink pen line art, slightly wobbly imperfect strokes, quick loose sketch — not polished. One bold, simple, highly readable silhouette, no scattered separate pieces. Subject: two simple swords crossed in an X shape, each with a straight blade and one small crossguard, meeting at the center. Single object, centered, filling the frame, on a plain pure-white background, no grid lines, no other elements. Flat 2D, no shading or only light pencil hatching for volume. Must stay clearly recognizable when scaled down to 32x32 pixels. Style of West of Loathing / doodle art. Avoid: color, painterly rendering, gradients, glow, 3d render, photorealistic look, thick clean cartoon outline, vector-art look, single sword, shield behind the swords, spark or impact marks at the crossing point, scabbard, more than two weapons, multiple objects, scattered pieces, confetti dots, text, letters, watermark, gray background, notebook grid lines, drop shadow.
+```
+
+#### 拍卖·我的出价（`bidTabIcon`）
+```
+Hand-drawn doodle icon in a worn school notebook, single dark-ink pen line art, slightly wobbly imperfect strokes, quick loose sketch — not polished. One bold, simple, highly readable silhouette, no scattered separate pieces. Subject: a single auction gavel — a cylindrical mallet head with a short handle, resting at a slight diagonal angle, no sound block or striking plate beneath it. Single object, centered, filling the frame, on a plain pure-white background, no grid lines, no other elements. Flat 2D, no shading or only light pencil hatching for volume. Must stay clearly recognizable when scaled down to 32x32 pixels. Style of West of Loathing / doodle art. Avoid: color, painterly rendering, gradients, glow, 3d render, photorealistic look, thick clean cartoon outline, vector-art look, sound block or striking plate, judge's robe or a hand holding it, claw hammer / carpenter's tool look, multiple gavels, multiple objects, scattered pieces, confetti dots, text, letters, watermark, gray background, notebook grid lines, drop shadow.
+```
+
+#### 拍卖·材料筛选（`materialTabIcon`）
+```
+Hand-drawn doodle icon in a worn school notebook, single dark-ink pen line art, slightly wobbly imperfect strokes, quick loose sketch — not polished. One bold, simple, highly readable silhouette, no scattered separate pieces. Subject: a single curled pencil shaving — one continuous spiral ribbon curl, like a peeled pencil-sharpener shaving, tapering at both ends. Single object, centered, filling the frame, on a plain pure-white background, no grid lines, no other elements. Flat 2D, no shading or only light pencil hatching for volume. Must stay clearly recognizable when scaled down to 32x32 pixels. Style of West of Loathing / doodle art. Avoid: color, painterly rendering, gradients, glow, 3d render, photorealistic look, thick clean cartoon outline, vector-art look, the pencil itself, a sharpener body, multiple shavings or a pile, sawdust dots, straight uncurled strip, multiple objects, scattered pieces, confetti dots, text, letters, watermark, gray background, notebook grid lines, drop shadow.
+```
+
+#### Career·成就（`achievementTabIcon`）
+```
+Hand-drawn doodle icon in a worn school notebook, single dark-ink pen line art, slightly wobbly imperfect strokes, quick loose sketch — not polished. One bold, simple, highly readable silhouette, no scattered separate pieces. Subject: a single classic trophy cup — a wide cup bowl with two curved side handles, sitting on a short stem and a small round base, nothing engraved on the cup. Single object, centered, filling the frame, on a plain pure-white background, no grid lines, no other elements. Flat 2D, no shading or only light pencil hatching for volume. Must stay clearly recognizable when scaled down to 32x32 pixels. Style of West of Loathing / doodle art. Avoid: color, painterly rendering, gradients, glow, 3d render, photorealistic look, thick clean cartoon outline, vector-art look, star or laurel decoration on the cup, confetti or sparkle marks, ribbon or medal hanging from it, multiple trophies, text or numbers on the base, watermark, gray background, notebook grid lines, drop shadow.
+```
+
+#### Shop组hub·通行证（`battlepassTabIcon`）
+```
+Hand-drawn doodle icon in a worn school notebook, single dark-ink pen line art, slightly wobbly imperfect strokes, quick loose sketch — not polished. One bold, simple, highly readable silhouette, no scattered separate pieces. Subject: a single rectangular admission ticket, oriented horizontally, with one vertical dashed perforation line dividing it into a larger main section and a smaller stub, and one small round punch-hole near the stub edge. Single object, centered, filling the frame, on a plain pure-white background, no grid lines, no other elements. Flat 2D, no shading or only light pencil hatching for volume. Must stay clearly recognizable when scaled down to 32x32 pixels. Style of West of Loathing / doodle art. Avoid: color, painterly rendering, gradients, glow, 3d render, photorealistic look, thick clean cartoon outline, vector-art look, circular medal or disc shape, wristband or lanyard, star or trophy shapes, multiple tickets, text or numbers printed on the ticket, watermark, gray background, notebook grid lines, drop shadow.
+```
+
+#### 成就墙·pve分类（`pveTabIcon`）
+```
+Hand-drawn doodle icon in a worn school notebook, single dark-ink pen line art, slightly wobbly imperfect strokes, quick loose sketch — not polished. One bold, simple, highly readable silhouette, no scattered separate pieces. Subject: a single rolled parchment scroll, partly unrolled to reveal a short dotted path line ending in a small X mark, like a simplified treasure map — rolled tube ends on the left and right, a flat unrolled section in the middle showing the path. Single object, centered, filling the frame, on a plain pure-white background, no grid lines, no other elements. Flat 2D, no shading or only light pencil hatching for volume. Must stay clearly recognizable when scaled down to 32x32 pixels. Style of West of Loathing / doodle art. Avoid: color, painterly rendering, gradients, glow, 3d render, photorealistic look, thick clean cartoon outline, vector-art look, closed book or book-with-pages shape, flag or castle drawn on the map, sword or crossed swords, compass rose, text or numbers on the map, multiple objects, scattered pieces, confetti dots, watermark, gray background, notebook grid lines, drop shadow.
+```
+
+### 出图后的流程（沿用批次 1/2，等图片）
+
+1. 用户跑 12 条 prompt，源图丢进 `art/ui/tabicons/`（命名建议 `tabicon_{shop,coin,gacha,recharge,home,social,pvp,bid,material,achievement,battlepass,pve}.webp`）。
+2. [`pack_tab_icons.cjs`](../../art/ui/tabicons/pack_tab_icons.cjs) 的 `JOBS` 数组新增 12 条，跑 `node pack_tab_icons.cjs`。
+3. 一次性 `sharp` contact-sheet 脚本，28/32/40/64px 分别合成到 `C.dark`/`C.paper` 背景上截图比对（同前两批手法）。
+4. `icons.ts`：`IconKind`/`RasterIconKind` 新增 12 个；`TAB_ICON_RASTER` 补对应条目。
+5. 接线：
+   - `GachaScene/page.ts` / `RechargeScene.ts` / `BattlePassScene/nav.ts` / `ShopScene/core.ts` 四处共享的 shop-group tab 定义：`tag`→`shopTabIcon`、`coin`→`coinTabIcon`、`capsule`→`gachaTabIcon`、`trophy`(battlepass)→`battlepassTabIcon`、`coinChest`→`rechargeTabIcon`。
+   - `LobbyScene/bottomNav.ts`：`home`→`homeTabIcon`、`globe`→`socialTabIcon`。
+   - `CareerTabs.ts`：`book`(stats.title)→`statsTabIcon`（纯复用）、`trophy`(achievements)→`achievementTabIcon`。
+   - `AchievementScene.ts` `CATEGORY_ICON`：`pve: 'book'`→`'pveTabIcon'`、`pvp: 'swords'`→`'pvpTabIcon'`。
+   - `AuctionScene/itemPickerRender.ts`：`equipment: 'armor'`→`'equipIcon'`（纯复用）、`material: 'scrap'`→`'materialTabIcon'`。
+   - `AuctionScene/list.ts`：`all: 'tag'`→`'shopTabIcon'`（纯复用）、`bids: 'hammer'`→`'bidTabIcon'`。
+6. `tsc --noEmit` + `vitest --config vitest.ui.config.ts` 全量跑一遍。
+7. 更新本文档"批次 3"状态 + `art-direction.md` §7.6。
+
+### 状态：批次 3 判断+prompt 已定，等出图 🕐
