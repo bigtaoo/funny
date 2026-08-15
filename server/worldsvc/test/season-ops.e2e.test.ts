@@ -241,6 +241,53 @@ describe.skipIf(!mongo)('worldsvc season ops e2e', () => {
     expect(bpMails.find((x) => x.accountId === 'bob')).toBeUndefined();
   });
 
+  // management.ts branch gap (2026-08-15): the `if (w)` branch of settleSeason's sect-scope aggregation
+  // (prosperity snapshot + memberFamilyIds persisted onto both the sect doc and seasonResults) is only
+  // exercised by test/sect.e2e.test.ts's own settleSeason case, which calls it with NO world document at
+  // all (so the whole `if (w)` persistence block — seasonResults/reward mail/BP mail — is skipped there).
+  // This seeds a real 'active' world with a sect-affiliated family so the sect branch runs alongside
+  // the persistence side effects.
+  it('settle: a sect-scoped ranking entry gets its prosperity snapshot + memberFamilyIds persisted (seasonResults + sect doc)', async () => {
+    await seed('active');
+    const famAA = familyId(W, 'AA');
+    const sectId = `sect:${W}:SKY`;
+    await m.collections.sects.insertOne({
+      _id: sectId, worldId: W, name: 'Sky Sect', tag: 'SKY', leaderFamilyId: famAA, leaderId: 'alice',
+      memberFamilyCount: 1, allySectIds: [], prosperity: 0, rev: 1,
+    });
+    await socialsvc.setSect(famAA, sectId);
+
+    const ranking = await svc.settleSeason(W);
+    expect(ranking[0]).toMatchObject({ scope: 'sect', familyId: sectId, nationCount: 2 });
+
+    // seasonResults' sect-scope row carries prosperity + memberFamilyIds (only spread for scope:'sect').
+    const doc = await m.collections.seasonResults.findOne({ _id: `${W}:s${SEASON}` });
+    const sectRow = doc!.ranking.find((r) => r.scope === 'sect')!;
+    expect(sectRow.memberFamilyIds).toEqual([famAA]);
+    expect(typeof sectRow.prosperity).toBe('number');
+
+    // The sect doc's own prosperity field was refreshed too.
+    const sectDoc = await m.collections.sects.findOne({ _id: sectId });
+    expect(sectDoc!.prosperity).toBe(sectRow.prosperity);
+  });
+
+  it('getActiveSeasonNo: highest season among open/active worlds; falls back to 1 with no worlds at all', async () => {
+    await seed('active'); // world W = season 5, status active
+    await m.collections.worlds.insertOne({
+      _id: 's3-ops', season: 3, shard: 0, status: 'open', mapW: SLG_MAP_W, mapH: SLG_MAP_H,
+      openAt: 1, capacity: 100, population: 0, rev: 0,
+    });
+    await m.collections.worlds.insertOne({
+      _id: 's9-ops', season: 9, shard: 0, status: 'closed', mapW: SLG_MAP_W, mapH: SLG_MAP_H,
+      openAt: 1, capacity: 100, population: 0, rev: 0,
+    });
+    // season 9 is closed (excluded); the highest OPEN/ACTIVE season is 5 (W), not the closed season 9.
+    await expect(svc.getActiveSeasonNo()).resolves.toBe(5);
+
+    await m.collections.worlds.deleteMany({});
+    await expect(svc.getActiveSeasonNo()).resolves.toBe(1); // no worlds at all → dev/test fallback
+  });
+
   it('auto-settle: processDueSeasonSettlement settles only due active worlds, idempotently (§17.14)', async () => {
     await seed('active');
     const NOW = 1_700_000_000_000; // matches the fixed WorldService clock in beforeEach

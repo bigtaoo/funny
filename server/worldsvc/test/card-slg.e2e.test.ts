@@ -186,6 +186,19 @@ describe.skipIf(!mongo)('CC-3 card-based SLG e2e', () => {
     expect((pw as { baseTroopStock?: number } | null)?.baseTroopStock).toBeUndefined();
   });
 
+  it('runMigrations: a legacy doc missing `troops` entirely (undefined, not just 0) is treated as a 0 base when folding baseTroopStock', async () => {
+    const pwId = playerWorldId(W, 'a');
+    await svc.joinWorld(W, 'a', 5, 5);
+    // Simulate an even older doc shape: baseTroopStock present, but `troops` was never written at all.
+    await m.collections.playerWorld.updateOne({ _id: pwId }, { $unset: { troops: '' } as never });
+    await m.collections.playerWorld.updateOne({ _id: pwId }, { $set: { baseTroopStock: 3000 } as never });
+    await m.runMigrations();
+    const pw = await m.collections.playerWorld.findOne({ _id: pwId });
+    // min(troopCap, (troops ?? 0) + 3000) = min(TROOP_CAP_BASE, 0 + 3000) = 3000.
+    expect(pw?.troops).toBe(3000);
+    expect((pw as { baseTroopStock?: number } | null)?.baseTroopStock).toBeUndefined();
+  });
+
   it('setTeams with cardInstanceId — validates uniqueness across teams', async () => {
     await svc.joinWorld(W, 'a', 5, 5);
     const teams: TeamTemplate[] = [
@@ -290,6 +303,31 @@ describe.skipIf(!mongo)('CC-3 card-based SLG e2e', () => {
     const pw = await m.collections.playerWorld.findOne({ _id: pwId });
     expect(pw?.troops).toBe(200);
     expect(pw?.cardState?.['card-race']?.currentTroops).toBe(300);
+  });
+
+  it('distributeTroops: a no-op allocation (empty, or all zero amounts) short-circuits without touching the pool', async () => {
+    const pwId = playerWorldId(W, 'a');
+    await svc.joinWorld(W, 'a', 5, 5);
+    await m.collections.playerWorld.updateOne(
+      { _id: pwId },
+      { $set: { 'cardState.card-zero': { currentTroops: 0, teamId: 't1' } as CardSLGState } },
+    );
+    const before = await m.collections.playerWorld.findOne({ _id: pwId });
+    await svc.distributeTroops(W, 'a', {}); // empty allocations object
+    await svc.distributeTroops(W, 'a', { 'card-zero': 0 }); // present but zero amount
+    const after = await m.collections.playerWorld.findOne({ _id: pwId });
+    expect(after?.troops).toBe(before?.troops);
+    expect(after?.rev).toBe(before?.rev); // no $inc rev — the write was never issued
+  });
+
+  it('distributeTroops: BAD_REQUEST on a negative or non-integer troop count', async () => {
+    await svc.joinWorld(W, 'a', 5, 5);
+    await m.collections.playerWorld.updateOne(
+      { _id: playerWorldId(W, 'a') },
+      { $set: { 'cardState.card-bad': { currentTroops: 0, teamId: 't1' } as CardSLGState } },
+    );
+    await expect(svc.distributeTroops(W, 'a', { 'card-bad': -5 })).rejects.toMatchObject({ code: 'BAD_REQUEST' });
+    await expect(svc.distributeTroops(W, 'a', { 'card-bad': 1.5 })).rejects.toMatchObject({ code: 'BAD_REQUEST' });
   });
 
   it('setTeams rejects injured card', async () => {

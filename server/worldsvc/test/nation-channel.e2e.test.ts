@@ -2,7 +2,7 @@
 // Covers send/read (basic happy path) and publicId resolution: meta-available → uses publicId;
 // meta unavailable → fromPublicId is empty string (not the raw accountId).
 // Requires `cd server && docker compose up -d`.
-import { afterAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createWorldMongo, type WorldMongo, type NationMessageDoc } from '../src/db';
 import { NationChannelService } from '../src/nationChannelService';
 import { nullWorldCommercialClient, type WorldCommercialClient } from '../src/commercialClient';
@@ -154,6 +154,36 @@ describe.skipIf(!mongo)('NationChannelService e2e', () => {
       const history = await svc.getChannel(W, 'alice');
       expect(history).toHaveLength(0);
     });
+  });
+
+  // nationChannelService.ts branch gap (2026-08-15): if the message write itself fails after coins were
+  // already charged, sendMessage refunds via commercial.grant instead of silently keeping the charge for
+  // a post that never appears — mirrors the same pattern in sect/chat.ts and family chat.
+  it('refunds WORLD_CHAT_COST and rethrows when the message insert fails after coins were charged', async () => {
+    const grants: Array<{ accountId: string; amount: number; orderId: string }> = [];
+    const refundingCommercial: WorldCommercialClient = {
+      available: true,
+      async spend(accountId, amount) { spends.push({ accountId, amount }); },
+      async grant(accountId, amount, orderId) { grants.push({ accountId, amount, orderId: orderId ?? '' }); },
+    };
+    const svc = new NationChannelService({
+      cols: mongo!.collections,
+      gateway: fakeGateway,
+      commercial: refundingCommercial,
+      now: () => 1150,
+    });
+    const insertSpy = vi.spyOn(mongo!.collections.nationMessages, 'insertOne').mockRejectedValueOnce(new Error('simulated write failure'));
+    try {
+      await expect(svc.sendMessage(W, 'alice', 'Alice', 'boom')).rejects.toThrow('simulated write failure');
+    } finally {
+      insertSpy.mockRestore();
+    }
+    expect(spends).toEqual([{ accountId: 'alice', amount: 50 }]); // coins were charged
+    expect(grants).toHaveLength(1); // and then refunded
+    expect(grants[0]).toMatchObject({ accountId: 'alice', amount: 50 });
+    expect(grants[0]!.orderId).toMatch(/:refund$/);
+    // Nothing persisted for the failed post.
+    expect(await svc.getChannel(W, 'alice')).toHaveLength(0);
   });
 
   // Regression (2026-07-18, account tao1 hit 403 on a fresh account that never entered the SLG

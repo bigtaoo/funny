@@ -4,7 +4,7 @@
 //   ③ drillYard raises troopCap on completion; ④ desk gate rejects over-level upgrades; ⑤ insufficient resources rejected;
 //   ⑥ speedupBuild (coins → time) finishes a build immediately; ⑦ season reset wipes the playerWorld doc (buildings cleared).
 // Requires `cd server && docker compose up -d`.
-import { afterAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   proceduralTile,
   playerWorldId,
@@ -251,5 +251,116 @@ describe.skipIf(!mongo)('worldsvc home-city buildings e2e', () => {
       { $set: { resources: { ink: RESOURCE_CAP + 50_000, paper: 0, graphite: 0, metal: 0, sticker: 0 }, lastTickAt: nowMs } },
     );
     expect((await svc.getMe(W, 'a')).resources!.ink).toBeGreaterThan(RESOURCE_CAP);
+  });
+
+  // D-CITY-8: a completed `wall` upgrade raises durabilityMax and the anchor tile's durability is
+  // regened up to now, then the delta (newMax - oldMax) is added on top — preserving absolute damage
+  // already taken rather than resetting to full (buildings.ts lines ~185-199).
+  it('wall upgrade completion regens + raises the main-base tile durabilityMax by the delta', async () => {
+    const { x, y } = findCoord(80, 80);
+    const me = await svc.joinWorld(W, 'a', x, y);
+    await fund('a');
+    const oldMax = (await svc.getMe(W, 'a')).maxHp;
+    // Chip the base's durability down so we can observe both regen and the level-up delta.
+    await m.collections.tiles.updateOne(
+      { _id: me.mainBaseTile! },
+      { $set: { durability: 10, durabilityMax: oldMax, durabilityRegenAt: nowMs } },
+    );
+    await svc.upgradeBuilding(W, 'a', 'wall');
+    nowMs += buildTimeSec('wall', 1) * 1000 + 1;
+    const applied = await svc.processCompletedBuilds();
+    expect(applied).toBe(1);
+    const tile = await m.collections.tiles.findOne({ _id: me.mainBaseTile! });
+    const newMax = (await svc.getMe(W, 'a')).maxHp!;
+    expect(newMax).toBeGreaterThan(oldMax!);
+    expect(tile!.durabilityMax).toBe(newMax);
+    // regened (from 10, over the elapsed build time) plus the raw (newMax-oldMax) delta, capped at newMax.
+    expect(tile!.durability!).toBeGreaterThan(10);
+    expect(tile!.durability!).toBeLessThanOrEqual(newMax);
+  });
+
+  // Mirrors the new desk level onto the anchor tile (TileDoc.deskLevel) so the world map can render
+  // the matching player-base art frame (buildings.ts lines ~202-207).
+  it('desk upgrade completion mirrors the new level onto the anchor tile as deskLevel', async () => {
+    const { x, y } = findCoord(85, 85);
+    const me = await svc.joinWorld(W, 'a', x, y);
+    await fund('a');
+    await svc.upgradeBuilding(W, 'a', 'desk');
+    nowMs += buildTimeSec('desk', 2) * 1000 + 1;
+    await svc.processCompletedBuilds();
+    const tile = await m.collections.tiles.findOne({ _id: me.mainBaseTile! });
+    expect((tile as unknown as { deskLevel?: number }).deskLevel).toBe(2);
+  });
+
+  it('speedupBuild: a partial speedup only trims time off the front, without finishing the build', async () => {
+    const { x, y } = findCoord(90, 90);
+    await svc.joinWorld(W, 'a', x, y);
+    await fund('a');
+    await svc.upgradeBuilding(W, 'a', 'cabinet');
+    const before = (await svc.getMe(W, 'a')).buildQueue![0]!.completeAt;
+    // 1 coin → BUILD_SPEEDUP_SECS_PER_COIN(60)s, far short of cabinet's full build time.
+    const after = await svc.speedupBuild(W, 'a', 1);
+    const me = await svc.getMe(W, 'a');
+    expect(me.buildings).toEqual({ desk: 1 }); // not yet applied
+    expect(me.buildQueue).toHaveLength(1);
+    expect(me.buildQueue![0]!.completeAt).toBeLessThan(before);
+    expect(after.buildQueue![0]!.completeAt).toBe(me.buildQueue![0]!.completeAt);
+  });
+
+  // applyDueBuilds is idempotent: re-entry against a doc whose buildQueue has already been drained
+  // (e.g. a stale nextBuildCompleteAt mirror pointing at an already-cleared queue) is a no-op that
+  // returns 0 rather than throwing (buildings.ts line ~166).
+  it('processCompletedBuilds no-ops (returns 0 applied) for a doc with an empty buildQueue', async () => {
+    const { x, y } = findCoord(95, 95);
+    await svc.joinWorld(W, 'a', x, y);
+    await fund('a');
+    // Simulate a stale mirror: nextBuildCompleteAt due, but buildQueue already empty.
+    await m.collections.playerWorld.updateOne(
+      { _id: playerWorldId(W, 'a') },
+      { $set: { nextBuildCompleteAt: nowMs - 1, buildQueue: [] } },
+    );
+    const applied = await svc.processCompletedBuilds();
+    expect(applied).toBe(0);
+  });
+
+  // speedupBuild's finalize retry loop re-reads the doc fresh each attempt; if the doc vanished
+  // between the initial read and a retry (e.g. season reset raced in), it bails out via getMe
+  // instead of throwing (buildings.ts line ~93).
+  it('speedupBuild bails via getMe when the playerWorld doc vanishes mid-retry', async () => {
+    const { x, y } = findCoord(96, 12);
+    await svc.joinWorld(W, 'a', x, y);
+    await fund('a');
+    await svc.upgradeBuilding(W, 'a', 'cabinet');
+    const originalSpend = fakeCommercial.spend;
+    fakeCommercial.spend = async (accountId, amount) => {
+      spent.push({ accountId, amount });
+      // Delete the doc so the loop's fresh findOne comes back null.
+      await m.collections.playerWorld.deleteOne({ _id: playerWorldId(W, 'a') });
+    };
+    try {
+      const result = await svc.speedupBuild(W, 'a', 100_000);
+      // getMe on a missing doc re-derives a fresh view rather than throwing.
+      expect(result).toBeTruthy();
+    } finally {
+      fakeCommercial.spend = originalSpend;
+    }
+  });
+
+  // Every rev-guarded finalize write in speedupBuild's retry loop losing the race (MAX_ATTEMPTS
+  // times) throws REV_CONFLICT rather than silently stranding the already-spent coins
+  // (buildings.ts line ~130).
+  it('speedupBuild throws REV_CONFLICT when every finalize attempt loses the rev race', async () => {
+    const { x, y } = findCoord(97, 40);
+    await svc.joinWorld(W, 'a', x, y);
+    await fund('a');
+    await svc.upgradeBuilding(W, 'a', 'cabinet');
+    const spy = vi.spyOn(m.collections.playerWorld, 'updateOne').mockResolvedValue({ matchedCount: 0 } as never);
+    try {
+      await expect(svc.speedupBuild(W, 'a', 100_000)).rejects.toMatchObject({ code: 'REV_CONFLICT' });
+    } finally {
+      spy.mockRestore();
+    }
+    // the spend already went through — coins were not refunded, matching upgradeBuilding's own comment.
+    expect(spent.length).toBe(1);
   });
 });
