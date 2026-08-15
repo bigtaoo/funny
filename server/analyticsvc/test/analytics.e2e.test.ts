@@ -73,6 +73,23 @@ describe.skipIf(!mongo)('analyticsvc e2e', () => {
     expect(body.service).toBe('analyticsvc');
   });
 
+  // ─── CORS preflight ─────────────────────────────────────────────────────────
+
+  it('OPTIONS any path → 204 (CORS preflight, handled before route dispatch)', async () => {
+    const res = await fetch(`${base}/analytics/events`, { method: 'OPTIONS' });
+    expect(res.status).toBe(204);
+    expect(res.headers.get('access-control-allow-methods')).toContain('POST');
+  });
+
+  // ─── Unmatched route ────────────────────────────────────────────────────────
+
+  it('GET an unmatched route → 404 not found (final fallback, past the /internal/query block)', async () => {
+    const res = await fetch(`${base}/no-such-route`);
+    expect(res.status).toBe(404);
+    const body = (await res.json()) as { ok: boolean; error: { code: string } };
+    expect(body.ok).toBe(false);
+  });
+
   // ─── Config endpoint ────────────────────────────────────────────────────────────
 
   it('GET /analytics/config returns sampling configuration', async () => {
@@ -245,6 +262,100 @@ describe.skipIf(!mongo)('analyticsvc e2e', () => {
     expect(res.status).toBe(400);
   });
 
+  it('POST /analytics/events with no body at all → 400 (readJson resolves {} on empty body, then events check fails)', async () => {
+    const res = await fetch(`${base}/analytics/events`, { method: 'POST', headers: { 'content-type': 'application/json' } });
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { ok: boolean };
+    expect(body.ok).toBe(false);
+  });
+
+  it('POST /analytics/events with malformed JSON body → 400 invalid JSON', async () => {
+    const res = await fetch(`${base}/analytics/events`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: '{not valid json',
+    });
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { ok: boolean };
+    expect(body.ok).toBe(false);
+  });
+
+  // readJson's req.destroy()/reject('payload too large') branch (P0-9 OOM guard) — body over the 1MiB cap.
+  // req.destroy() tears down the shared request/response socket, so the client never receives an HTTP
+  // response at all (connection reset) — this is the correct behavior of the OOM guard, not a bug to
+  // route around; the request-level fetch() call itself rejects rather than resolving with a status.
+  it('POST /analytics/events with an oversized (>1MiB) body resets the connection rather than buffering forever', async () => {
+    const hugeProp = 'x'.repeat(1 << 20); // 1MiB of padding alone exceeds the cap once framed in JSON
+    await expect(
+      fetch(`${base}/analytics/events`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          session_id: 'sess-oversized', device_id: 'dev-oversized', platform: 'web', os: '', game_version: '', locale: '',
+          events: [{ event: 'x', ts: Date.now(), props: { pad: hugeProp } }],
+        }),
+      }),
+    ).rejects.toThrow();
+  });
+
+  it('POST /analytics/events with more than 100 events in one batch → 400', async () => {
+    const now = Date.now();
+    const events = Array.from({ length: 101 }, (_, i) => ({ event: 'ui_click', ts: now + i }));
+    const res = await fetch(`${base}/analytics/events`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ session_id: 'sess-max-events', device_id: 'dev-max-events', platform: 'web', os: '', game_version: '', locale: '', events }),
+    });
+    expect(res.status).toBe(400);
+  });
+
+  // An invalid/garbage bearer token must not reject the request — the JWT verify catch swallows it and
+  // the batch is treated as anonymous (analytics data is lenient, see the handler's comment).
+  // Reuses dev-001 (already counted toward today's DAU by the first ingestion test) and a non-funnel-step
+  // event name so this doesn't perturb the exact-total assertions later in this file (event_counts/dau/
+  // funnel/login_hour/retention all hardcode totals against session_start count and DAU for "today").
+  it('POST /analytics/events with an invalid bearer token is treated as anonymous (JWT verify catch), not rejected', async () => {
+    const now = Date.now();
+    const res = await fetch(`${base}/analytics/events`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', authorization: 'Bearer not-a-real-jwt' },
+      body: JSON.stringify({
+        session_id: 'sess-bad-jwt', device_id: 'dev-001', platform: 'web', os: '', game_version: '', locale: '',
+        events: [{ event: 'anon_fallback_marker', ts: now }],
+      }),
+    });
+    expect(res.status).toBe(200);
+    await new Promise((r) => setTimeout(r, 200));
+    // Persisted as anonymous (no consent needed, since userId ends up undefined after the failed verify).
+    const count = await mongo!.collections.events.countDocuments({ session_id: 'sess-bad-jwt' });
+    expect(count).toBe(1);
+  });
+
+  // clientIp() reads X-Forwarded-For when present (Caddy-injected first hop); resolveGeo then looks it
+  // up via geoip-lite. 61.135.169.121 is a fixed geoip-lite fixture IP with country+region+city all
+  // populated (Beijing, CN) so this also exercises resolveGeo's `hit?.field || undefined` truthy side.
+  // Reuses dev-002 (already counted toward today's DAU) and a non-funnel-step/non-session_start event
+  // name for the same reason as the invalid-bearer-token test above — the sessions-doc upsert this test
+  // asserts on doesn't require a session_start event, only a truthy session_id (see ingest.ts).
+  it('POST /analytics/events with X-Forwarded-For resolves full geo (country+region+city) onto the session doc', async () => {
+    const now = Date.now();
+    const res = await fetch(`${base}/analytics/events`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-forwarded-for': '61.135.169.121' },
+      body: JSON.stringify({
+        session_id: 'sess-geo-xff', device_id: 'dev-002', platform: 'web', os: 'Windows', game_version: '0.1.0', locale: 'zh',
+        events: [{ event: 'geo_probe_marker', ts: now }],
+      }),
+    });
+    expect(res.status).toBe(200);
+    await new Promise((r) => setTimeout(r, 200));
+    const doc = await mongo!.collections.sessions.findOne({ _id: 'sess-geo-xff' });
+    expect(doc?.ip).toBe('61.135.169.121');
+    expect(doc?.geo_country).toBe('CN');
+    expect(doc?.geo_region).toBe('BJ');
+    expect(doc?.geo_city).toBe('Beijing');
+  });
+
   // ─── /internal/query auth ────────────────────────────────────────────────
 
   it('GET /internal/query missing key → 401', async () => {
@@ -257,6 +368,15 @@ describe.skipIf(!mongo)('analyticsvc e2e', () => {
       headers: { 'x-internal-key': INTERNAL_KEY },
     });
     expect(res.status).toBe(400);
+  });
+
+  it('GET /internal/query with no type param defaults to event_counts', async () => {
+    const res = await fetch(`${base}/internal/query?days=7`, {
+      headers: { 'x-internal-key': INTERNAL_KEY },
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { ok: boolean; data: { type: string } };
+    expect(body.data.type).toBe('event_counts');
   });
 
   // ─── event_counts ────────────────────────────────────────────────────────
@@ -346,6 +466,32 @@ describe.skipIf(!mongo)('analyticsvc e2e', () => {
     const ssRow = rows.find((r) => r.funnel_step === 'session_start' && r.platform === 'web');
     // counts unchanged after rerun
     expect(ssRow?.count).toBe(2);
+  });
+
+  // A platform that only ever emits the funnel's first step: every downstream step is absent from the
+  // ETL's per-platform `counts` map entirely (not merely zero), exercising the `counts.get(step) ?? 0`
+  // fallback in runFunnelEtl (funnel.ts) — the happy-path platform above ('web') has every step present.
+  // Anchored on a fixed past date (own AnalyticsService clock) with events inserted directly (acknowledged
+  // write) rather than through today's shared HTTP/DAU fixtures, so this can't perturb the exact-total
+  // assertions (event_counts/dau/login_hour/retention) that run later in this file against real "today".
+  it('runFunnelEtl fills in 0 for funnel steps a platform never emitted at all', async () => {
+    const ANCHOR_DATE = '2022-06-15';
+    const anchorMs = Date.parse(ANCHOR_DATE + 'T12:00:00Z');
+    await mongo!.collections.events.insertOne({
+      session_id: 'sess-etl-partial', device_id: 'dev-etl-partial', platform: 'wechat-etl-partial',
+      os: '', game_version: '', locale: '', event: 'session_start', props: {}, ts: new Date(anchorMs),
+      // no game_start / level_attempt / level_complete for this platform
+    });
+
+    const etlSvc = new AnalyticsService(mongo!.collections, () => anchorMs);
+    await etlSvc.runFunnelEtl(ANCHOR_DATE);
+    const rows = await etlSvc.queryFunnel(1);
+    const partialRows = rows.filter((r) => r.platform === 'wechat-etl-partial');
+    const ssRow = partialRows.find((r) => r.funnel_step === 'session_start');
+    const gsRow = partialRows.find((r) => r.funnel_step === 'game_start');
+    expect(ssRow?.count).toBe(1);
+    expect(gsRow?.count).toBe(0); // step never emitted for this platform → counts.get() undefined → ?? 0
+    expect(gsRow?.conversion_rate).toBe(0); // 0 / 1 (prevCount session_start=1 > 0) — defined, just zero
   });
 
   // ─── region_dist ─────────────────────────────────────────────────────────
@@ -449,6 +595,67 @@ describe.skipIf(!mongo)('analyticsvc e2e', () => {
     expect(social?.shown).toBe(1);
     expect(social?.closed).toBe(1);
     expect(social?.close_rate).toBeCloseTo(1);
+  });
+
+  // ─── remaining /internal/query type dispatch (httpApi.ts A9-9 tail) ──────
+  // These types are already covered by direct svc.* calls in service-domains.e2e.test.ts — these
+  // additions only exercise the HTTP dispatch branch itself (httpApi.ts:172-203), not the underlying
+  // aggregation logic, so a bare 200 + `type` echo is sufficient.
+
+  it('GET /internal/query?type=first_session dispatches to queryFirstSession', async () => {
+    const res = await fetch(`${base}/internal/query?type=first_session&days=7`, { headers: { 'x-internal-key': INTERNAL_KEY } });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { ok: boolean; data: { type: string; first_session: { cohort_size: number } } };
+    expect(body.data.type).toBe('first_session');
+    expect(typeof body.data.first_session.cohort_size).toBe('number');
+  });
+
+  it('GET /internal/query?type=level_funnel dispatches to queryLevelFunnel', async () => {
+    const res = await fetch(`${base}/internal/query?type=level_funnel&days=7`, { headers: { 'x-internal-key': INTERNAL_KEY } });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { ok: boolean; data: { type: string; level_funnel: unknown[] } };
+    expect(body.data.type).toBe('level_funnel');
+    expect(Array.isArray(body.data.level_funnel)).toBe(true);
+  });
+
+  it('GET /internal/query?type=tutorial_funnel dispatches to queryTutorialFunnel', async () => {
+    const res = await fetch(`${base}/internal/query?type=tutorial_funnel&days=7`, { headers: { 'x-internal-key': INTERNAL_KEY } });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { ok: boolean; data: { type: string; tutorial_funnel: { cohort_size: number } } };
+    expect(body.data.type).toBe('tutorial_funnel');
+    expect(typeof body.data.tutorial_funnel.cohort_size).toBe('number');
+  });
+
+  it('GET /internal/query?type=scene_funnel dispatches to querySceneFunnel', async () => {
+    const res = await fetch(`${base}/internal/query?type=scene_funnel&days=7`, { headers: { 'x-internal-key': INTERNAL_KEY } });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { ok: boolean; data: { type: string; scene_funnel: { cohort_size: number } } };
+    expect(body.data.type).toBe('scene_funnel');
+    expect(typeof body.data.scene_funnel.cohort_size).toBe('number');
+  });
+
+  it('GET /internal/query?type=browser_dist dispatches to queryBrowserDist', async () => {
+    const res = await fetch(`${base}/internal/query?type=browser_dist&days=7`, { headers: { 'x-internal-key': INTERNAL_KEY } });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { ok: boolean; data: { type: string; browser_dist: unknown[] } };
+    expect(body.data.type).toBe('browser_dist');
+    expect(Array.isArray(body.data.browser_dist)).toBe(true);
+  });
+
+  it('GET /internal/query?type=device_type_dist dispatches to queryDeviceTypeDist', async () => {
+    const res = await fetch(`${base}/internal/query?type=device_type_dist&days=7`, { headers: { 'x-internal-key': INTERNAL_KEY } });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { ok: boolean; data: { type: string; device_type_dist: unknown[] } };
+    expect(body.data.type).toBe('device_type_dist');
+    expect(Array.isArray(body.data.device_type_dist)).toBe(true);
+  });
+
+  it('GET /internal/query?type=geo_dist dispatches to queryGeoDist', async () => {
+    const res = await fetch(`${base}/internal/query?type=geo_dist&days=7`, { headers: { 'x-internal-key': INTERNAL_KEY } });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { ok: boolean; data: { type: string; geo_dist: unknown[] } };
+    expect(body.data.type).toBe('geo_dist');
+    expect(Array.isArray(body.data.geo_dist)).toBe(true);
   });
 
   // ─── login_hour ──────────────────────────────────────────────────────────
@@ -622,5 +829,19 @@ describe.skipIf(!mongo)('analyticsvc e2e', () => {
     expect(act('session_start')).toBeUndefined();
     // Sorted by reach descending.
     expect(res.actions[0].devices).toBeGreaterThanOrEqual(res.actions[res.actions.length - 1].devices);
+  });
+
+  it('queryFirstSession returns a zero-filled result (empty funnel, no actions) when no device\'s first session falls in-window', async () => {
+    // Anchor far in the future — the events window (queryFirstSession's cohortRows $match) never finds a
+    // session_start whose firstTs lands inside [windowStart, windowEnd), so cohortSize === 0 and the
+    // early-return branch (traffic.ts) fires before pass 2 runs at all.
+    const farFuture = Date.now() + 400 * 86400_000;
+    const emptySvc = new AnalyticsService(mongo!.collections, () => farFuture);
+    const res = await emptySvc.queryFirstSession(1);
+    expect(res.cohort_size).toBe(0);
+    expect(res.actions).toEqual([]);
+    expect(res.funnel.length).toBeGreaterThan(0);
+    expect(res.funnel.every((f) => f.count === 0)).toBe(true);
+    expect(res.funnel.every((f) => f.conversion_rate === undefined)).toBe(true);
   });
 });

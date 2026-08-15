@@ -187,6 +187,87 @@ describe.skipIf(!mongo)('analyticsvc service domains (funnel / dist / sessions w
       const webRows = await svc.queryLevelFunnel(7, 'web');
       expect(webRows.find((r) => r.level_id === 'LP')?.attempts).toBe(1);
     });
+
+    // funnel.ts: completion_rate is undefined when a level has 0 attempts (only complete/abandon events
+    // exist for it, e.g. an attempt event that fell outside the sampling/window) — and the sort
+    // comparator's `?? 1` fallback must treat it as a 1.0 (not crash on `undefined - number`, and not
+    // spuriously sort it first as if it were a 0% completion rate).
+    it('a level with 0 attempts (only complete/abandon events) has completion_rate undefined and does not break the ascending sort', async () => {
+      await mongo!.collections.events.insertMany([
+        // L-ZERO / L-ZERO-2: two levels with no level_attempt at all, only a complete — attempts stays 0
+        // for both, so the sort comparator's `?? 1` fallback runs on both sides of at least one
+        // comparison (a-side and b-side), not just one.
+        evDoc('lvl-zero', 'dev-lvl-zero', 'level_complete', { level_id: 'L-ZERO' }),
+        evDoc('lvl-zero-2', 'dev-lvl-zero-2', 'level_complete', { level_id: 'L-ZERO-2' }),
+        // L-LOW: a real, lower-than-1.0 completion rate to anchor the ordering check below.
+        evDoc('lvl-low-1', 'dev-lvl-low-1', 'level_attempt', { level_id: 'L-LOW' }),
+        evDoc('lvl-low-2', 'dev-lvl-low-2', 'level_attempt', { level_id: 'L-LOW' }),
+        evDoc('lvl-low-1', 'dev-lvl-low-1', 'level_complete', { level_id: 'L-LOW' }, 10),
+        // A couple more varied real rates so the sort exercises enough distinct pairwise comparisons.
+        evDoc('lvl-mid-1', 'dev-lvl-mid-1', 'level_attempt', { level_id: 'L-MID' }),
+        evDoc('lvl-mid-2', 'dev-lvl-mid-2', 'level_attempt', { level_id: 'L-MID' }),
+        evDoc('lvl-mid-3', 'dev-lvl-mid-3', 'level_attempt', { level_id: 'L-MID' }),
+        evDoc('lvl-mid-4', 'dev-lvl-mid-4', 'level_attempt', { level_id: 'L-MID' }),
+        evDoc('lvl-mid-1', 'dev-lvl-mid-1', 'level_complete', { level_id: 'L-MID' }, 10),
+        evDoc('lvl-mid-2', 'dev-lvl-mid-2', 'level_complete', { level_id: 'L-MID' }, 10),
+        evDoc('lvl-mid-3', 'dev-lvl-mid-3', 'level_complete', { level_id: 'L-MID' }, 10),
+      ]);
+      const rows = await svc.queryLevelFunnel(7);
+      const zero = rows.find((r) => r.level_id === 'L-ZERO');
+      const low = rows.find((r) => r.level_id === 'L-LOW');
+      expect(zero).toMatchObject({ attempts: 0, completes: 1 });
+      expect(zero?.completion_rate).toBeUndefined();
+      expect(low?.completion_rate).toBeCloseTo(0.5);
+      // ?? 1 fallback: the undefined-rate row is treated as 1.0, so it must sort strictly after any row
+      // with a real completion_rate below 1.0 (L-LOW at 0.5) — proves the fallback isn't silently 0.
+      const iZero = rows.findIndex((r) => r.level_id === 'L-ZERO');
+      const iLow = rows.findIndex((r) => r.level_id === 'L-LOW');
+      expect(iZero).toBeGreaterThan(iLow);
+      // The whole result stays non-decreasing under the same `?? 1` substitution the comparator uses.
+      const effRate = (r: (typeof rows)[number]) => r.completion_rate ?? 1;
+      for (let i = 1; i < rows.length; i++) {
+        expect(effRate(rows[i])).toBeGreaterThanOrEqual(effRate(rows[i - 1]));
+      }
+    });
+  });
+
+  // ─── queryFeatureGuideFunnel ────────────────────────────────────────────────
+
+  describe('queryFeatureGuideFunnel', () => {
+    it('filters by platform', async () => {
+      await mongo!.collections.events.insertMany([
+        { ...evDoc('fg-plat-1', 'dev-fg-plat-1', 'feature_guide_shown', { feature: 'shop-plat' }), platform: 'wechat' },
+        { ...evDoc('fg-plat-2', 'dev-fg-plat-2', 'feature_guide_shown', { feature: 'shop-plat' }), platform: 'web' },
+      ]);
+      const webRows = await svc.queryFeatureGuideFunnel(7, 'web');
+      expect(webRows.find((r) => r.feature === 'shop-plat')?.shown).toBe(1);
+    });
+
+    // funnel.ts: close_rate is undefined when a feature has 0 `shown` (only a replay was ever logged for
+    // it, e.g. the re-open "?" button fired with no prior guide-shown event in window) — and the entry
+    // still tracks `replays` via the third (feature_guide_replay) branch of the shown/closed/replay if-chain.
+    it('a feature with 0 shown (only a replay event) has close_rate undefined and its replays counted', async () => {
+      await mongo!.collections.events.insertMany([
+        evDoc('fg-replay-only', 'dev-fg-replay-only', 'feature_guide_replay', { feature: 'daily-replay-only' }),
+        // A second 0-shown feature so the sort comparator's `?? 1` fallback runs on both sides (a and b)
+        // of at least one comparison, not just one.
+        evDoc('fg-replay-only-2', 'dev-fg-replay-only-2', 'feature_guide_replay', { feature: 'social-replay-only' }),
+        // A few normal (real close_rate) features alongside them for varied pairwise comparisons.
+        evDoc('fg-normal-1', 'dev-fg-normal-1', 'feature_guide_shown', { feature: 'cards-normal' }),
+        evDoc('fg-normal-1', 'dev-fg-normal-1', 'feature_guide_closed', { feature: 'cards-normal' }, 10),
+        evDoc('fg-normal-2', 'dev-fg-normal-2', 'feature_guide_shown', { feature: 'world-normal' }),
+        evDoc('fg-normal-3', 'dev-fg-normal-3', 'feature_guide_shown', { feature: 'world-normal' }),
+        evDoc('fg-normal-2', 'dev-fg-normal-2', 'feature_guide_closed', { feature: 'world-normal' }, 10),
+      ]);
+      const rows = await svc.queryFeatureGuideFunnel(7);
+      const replayOnly = rows.find((r) => r.feature === 'daily-replay-only');
+      const replayOnly2 = rows.find((r) => r.feature === 'social-replay-only');
+      const normal = rows.find((r) => r.feature === 'cards-normal');
+      expect(replayOnly).toMatchObject({ shown: 0, closed: 0, replays: 1 });
+      expect(replayOnly?.close_rate).toBeUndefined();
+      expect(replayOnly2?.close_rate).toBeUndefined();
+      expect(normal?.close_rate).toBeCloseTo(1);
+    });
   });
 
   // ─── browser / device-type / geo distributions ────────────────────────────
@@ -263,6 +344,39 @@ describe.skipIf(!mongo)('analyticsvc service domains (funnel / dist / sessions w
     });
   });
 
+  // ─── os_dist ───────────────────────────────────────────────────────────────
+
+  describe('queryOsDist', () => {
+    // dist.ts: `os: r._id || 'unknown'` — a session_start doc whose os field is empty/missing groups
+    // under Mongo's `null` _id, falling back to the 'unknown' bucket (distinct from a real OS name).
+    it('a session_start event with no os value falls into the unknown bucket', async () => {
+      await mongo!.collections.events.insertMany([
+        evDoc('os-unknown-1', 'dev-os-unknown-1', 'session_start'), // evDoc defaults os to 'test' — override below
+      ].map((d) => ({ ...d, os: '' })));
+      const osDist = await svc.queryOsDist(7);
+      const unknown = osDist.find((r) => r.os === 'unknown');
+      expect(unknown).toBeDefined();
+      expect(unknown!.devices).toBeGreaterThanOrEqual(1);
+    });
+  });
+
+  // ─── badge_dist ──────────────────────────────────────────────────────────
+
+  describe('queryBadgeDist', () => {
+    // dist.ts: mode/result/badge each independently fall back ('unknown'/'unknown'/'none') when the
+    // match_badges event's props are missing that field — distinct from the fully-populated happy path
+    // already covered via HTTP in analytics.e2e.test.ts.
+    it('a match_badges event missing mode/result/hero props falls back to unknown/unknown/none', async () => {
+      await mongo!.collections.events.insertMany([
+        evDoc('badge-bare', 'dev-badge-bare', 'match_badges', {}), // no mode/result/hero at all
+      ]);
+      const dist = await svc.queryBadgeDist(7);
+      const row = dist.find((r) => r.mode === 'unknown' && r.result === 'unknown' && r.badge === 'none');
+      expect(row).toBeDefined();
+      expect(row!.count).toBeGreaterThanOrEqual(1);
+    });
+  });
+
   // ─── sessions collection write path (ingestEvents) ────────────────────────
 
   describe('sessions collection write path', () => {
@@ -316,6 +430,68 @@ describe.skipIf(!mongo)('analyticsvc service domains (funnel / dist / sessions w
       expect(Object.prototype.hasOwnProperty.call(doc, 'device_type')).toBe(false);
       expect(Object.prototype.hasOwnProperty.call(doc, 'geo_country')).toBe(false);
       expect(Object.prototype.hasOwnProperty.call(doc, 'ip')).toBe(false);
+    });
+
+    // ingest.ts: every `batch.<field> ?? <default>` fallback in the EventDoc map (session_id/device_id/
+    // platform/os/game_version/locale) — EventBatch types these as required strings, but the HTTP layer
+    // casts an untyped JSON body straight to EventBatch (httpApi.ts), so a real client omitting a field
+    // entirely delivers `undefined` at runtime despite the compile-time type. `as any` below simulates
+    // that same wire-level gap directly against the service.
+    it('a batch missing session_id/device_id/platform/os/game_version/locale entirely falls back to their defaults on the event doc', async () => {
+      await svc.ingestEvents(
+        {
+          events: [{ event: 'bare_fields_marker', ts: Date.now() }],
+        } as any,
+        undefined,
+      );
+      const doc = await mongo!.collections.events.findOne({ event: 'bare_fields_marker' });
+      expect(doc).toBeTruthy();
+      expect(doc?.session_id).toBe('');
+      expect(doc?.device_id).toBe('');
+      expect(doc?.platform).toBe('web');
+      expect(doc?.os).toBe('');
+      expect(doc?.game_version).toBe('');
+      expect(doc?.locale).toBe('');
+    });
+
+    // Same fallback family, but inside the sessions $setOnInsert doc (device_id/platform/os) — requires a
+    // real session_id so the session-upsert branch actually runs.
+    it('a NEW session whose batch omits device_id/platform/os falls back to their defaults on the sessions doc', async () => {
+      await svc.ingestEvents(
+        {
+          session_id: 'sess-bare-setoninsert',
+          events: [{ event: 'session_start', ts: Date.now() }],
+        } as any,
+        undefined,
+      );
+      const doc = await mongo!.collections.sessions.findOne({ _id: 'sess-bare-setoninsert' });
+      expect(doc).toBeTruthy();
+      expect(doc?.device_id).toBe('');
+      expect(doc?.platform).toBe('web');
+      expect(doc?.os).toBe('');
+    });
+
+    // ingest.ts: `sessionEnd.props ?? {}` — a session_end event with no `props` key at all (not even an
+    // empty object), distinct from the "malformed props" test below which does supply a props object.
+    it('a session_end event with no props field at all still sets ended_at, leaving duration_sec/scenes_visited untouched', async () => {
+      await svc.ingestEvents(
+        {
+          session_id: 'sess-end-no-props', device_id: 'dev-end-no-props', platform: 'web', os: 'Windows', game_version: '1', locale: 'en',
+          events: [{ event: 'session_start', ts: Date.now() }],
+        },
+        undefined,
+      );
+      await svc.ingestEvents(
+        {
+          session_id: 'sess-end-no-props', device_id: 'dev-end-no-props', platform: 'web', os: 'Windows', game_version: '1', locale: 'en',
+          events: [{ event: 'session_end', ts: Date.now() + 1000 }], // no `props` key
+        },
+        undefined,
+      );
+      const doc = await mongo!.collections.sessions.findOne({ _id: 'sess-end-no-props' });
+      expect(doc?.ended_at).toBeInstanceOf(Date);
+      expect(doc?.duration_sec).toBeUndefined();
+      expect(doc?.scenes_visited).toEqual([]);
     });
 
     // Fixed 2026-08-10 (was pinned as a documented bug): events_count used to $inc only inside the
