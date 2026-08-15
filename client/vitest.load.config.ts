@@ -17,7 +17,10 @@ export default defineConfig({
       '@nw/engine': path.resolve(__dirname, '../server/engine/src'),
       // Card catalogue constants (roster cap / fusion) — mirrors vitest.e2e.config.ts.
       '@nw/shared/cards': path.resolve(__dirname, '../server/shared/src/cards.ts'),
-      '@nw/shared': path.resolve(__dirname, '../server/shared/src/index.ts'),
+      // Browser-safe slice, same as webpack.config.js/vitest.config.ts/vitest.e2e.config.ts —
+      // NOT the full src/index.ts barrel, which re-exports jwt.ts (-> 'jsonwebtoken', a
+      // server-only dep this job never `npm ci`s). See vitest.e2e.config.ts's comment.
+      '@nw/shared': path.resolve(__dirname, '../server/shared/src/slg/index.ts'),
     },
   },
   test: {
