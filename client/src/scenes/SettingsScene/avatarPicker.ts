@@ -8,13 +8,13 @@ import { makeText } from '../../render/pixiText';
 import { Rect } from '../../layout/ILayout';
 import { t } from '../../i18n';
 import { ui as C, sketchPanel } from '../../render/sketchUi';
-import { buildAvatar, AVATAR_COUNT, makeAvatarId, type AvatarCategory } from '../../render/avatar';
+import { buildAvatar, makeAvatarId, type AvatarCategory } from '../../render/avatar';
+import { PRESET_AVATAR_KEYS } from '../../render/presetAvatarArt';
 import { buildIcon } from '../../render/icons';
 import { drawHubTabs, hubTabsHeight, type HubTab } from '../../ui/widgets/HubTabs';
 import { drawScrollIndicator } from '../../ui/widgets/ScrollIndicator';
 import { FS, snapFont } from '../../render/fontScale';
 import { CARD_DEFS } from '../../game/meta/cardDefs';
-import { EQUIPMENT_DEFS } from '../../game/meta/equipmentDefs';
 import { SKIN_TARGET_UNIT } from '../../game/meta/skinDefs';
 import { allTitleIds } from '../../game/meta/titles';
 import type { SettingsSceneCallbacks, Hit, AvatarPickerItem } from './types';
@@ -57,7 +57,7 @@ export function pickerItems(cb: SettingsSceneCallbacks, category: AvatarCategory
   const everOwned = cb.everOwned ?? {};
   switch (category) {
     case 'preset':
-      return Array.from({ length: AVATAR_COUNT }, (_, i) => ({ id: makeAvatarId('preset', String(i)), locked: false }));
+      return PRESET_AVATAR_KEYS.map((key) => ({ id: makeAvatarId('preset', key), locked: false }));
     case 'title': {
       const owned = new Set(cb.ownedTitles ?? []);
       return allTitleIds(cb.ownedTitles ?? []).map((id) => ({ id: makeAvatarId('title', id), locked: !owned.has(id) }));
@@ -67,14 +67,6 @@ export function pickerItems(cb: SettingsSceneCallbacks, category: AvatarCategory
       // check against d.id, even though the avatarId itself is keyed by d.unitType (art lookup key).
       const owned = new Set([...(cb.ownedHeroes ?? []), ...(everOwned.hero ?? [])]);
       return Object.values(CARD_DEFS).map((d) => ({ id: makeAvatarId('hero', d.unitType), locked: !owned.has(d.id) }));
-    }
-    case 'equip': {
-      const owned = new Set([...(cb.ownedEquipment ?? []), ...(everOwned.equipment ?? [])]);
-      return Object.values(EQUIPMENT_DEFS).map((d) => ({ id: makeAvatarId('equip', d.defId), locked: !owned.has(d.defId) }));
-    }
-    case 'material': {
-      const owned = new Set([...(cb.ownedMaterials ?? []), ...(everOwned.material ?? [])]);
-      return (['scrap', 'lead', 'binding'] as const).map((kind) => ({ id: makeAvatarId('material', kind), locked: !owned.has(kind) }));
     }
     case 'skin': {
       const owned = new Set([...(cb.ownedSkins ?? []), ...(everOwned.skin ?? [])]);

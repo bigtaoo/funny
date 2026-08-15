@@ -55,11 +55,15 @@ export async function equipTitleHandler(core: MetaCore, req: FastifyRequest, rep
 
 /**
  * Select the displayed avatar → write save.equipped.avatar → push back the full save.
- * avatarId is a composite "<category>:<key>" (preset/title/hero/equip/material/skin), with bare
- * digits ('0'-'7') accepted for backward compat with the old localStorage-only preset picker.
- * `preset` is always allowed; every other category requires the key to appear in the account's
- * lifetime-owned records (titles[] / everOwned.* / inventory.skins) — obtained once, unlocked forever,
- * even if the item has since been salvaged/consumed/sold.
+ * avatarId is a composite "<category>:<key>" (preset/title/hero/skin), with bare digits ('0'-'7')
+ * accepted for backward compat with the old localStorage-only preset picker. `preset` is always
+ * allowed; every other category requires the key to appear in the account's lifetime-owned records
+ * (titles[] / everOwned.* / inventory.skins) — obtained once, unlocked forever, even if the item has
+ * since been salvaged/consumed/sold. `equip`/`material` avatar categories were deleted outright
+ * (2026-08-15, design/product/avatar-art-prompts.md §四) — isAvatarOwned's default case now rejects
+ * them, so this handler 403s any attempt (stale client, replayed request) to set one; accounts that
+ * already had one equipped get silently swapped to a preset default on read (save.ts's
+ * sanitizeEquippedAvatar, wired into app.ts's preSerialization hook).
  */
 export async function equipAvatarHandler(core: MetaCore, req: FastifyRequest, reply: FastifyReply) {
   const accountId = accountIdOf(req);
