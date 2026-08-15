@@ -417,4 +417,56 @@ describe.skipIf(!mongo)('worldsvc garrison coverage e2e (ADR-051 P3a)', () => {
     expect(st?.teamId).toBe('t1');
     expect(st?.mode).toBe('garrison');
   });
+
+  // arrival.ts branch gaps (2026-08-15): the reinforce-arrival "target invalidated" disposition
+  // (parkMarchInPlace for a team-dispatched march vs refundTroops for a flat one). startMarch itself
+  // never lets a 'reinforce' order carry a teamId (command.ts's team-kind gate only covers
+  // attack/occupy/move), so the team-dispatched half is unreachable through the public API — these
+  // insert the MarchDoc directly (as if a future team-reinforce feature existed) to exercise both
+  // halves of arrival.ts's `if (m.teamId)` branch.
+  describe('reinforce arrival: target invalidated between dispatch and arrival', () => {
+    it('a team-carrying reinforce march parks in place instead of refunding (defensive branch, no live dispatch path)', async () => {
+      await svc.joinWorld(W, 'a', 5, 5);
+      const terr = findCoord((t) => t.type === 'resource' || t.type === 'neutral', 20, 20);
+      const tid = tileId(W, terr.x, terr.y);
+      // Owned by 'a' at dispatch time, then captured by someone else before arrival.
+      await m.collections.tiles.insertOne({ _id: tid, worldId: W, x: terr.x, y: terr.y, type: 'territory', level: 1, ownerId: 'a', garrison: 100, rev: 0 } as TileDoc);
+      await setupTeam('t1', 'card-1');
+      await m.collections.marches.insertOne({
+        _id: 'mreinforce1', worldId: W, ownerId: 'a', fromTile: tileId(W, 5, 5), toTile: tid,
+        kind: 'reinforce', troops: 300, teamId: 't1', departAt: nowMs, arriveAt: nowMs + 1000, status: 'marching', rev: 0,
+      } as unknown as import('../src/db').MarchDoc);
+      await m.collections.tiles.updateOne({ _id: tid }, { $set: { ownerId: 'rival' } }); // invalidated before arrival
+
+      nowMs += 1000;
+      expect(await svc.processDueArrivals()).toBe(1);
+      // Parked at the (invalidated) destination tile rather than refunded to the pool.
+      const st = await m.collections.stationed.findOne({ _id: tid });
+      expect(st?.ownerId).toBe('a');
+      expect(st?.troops).toBe(300);
+      expect(await m.collections.marches.findOne({ _id: 'mreinforce1' })).toBeNull();
+    });
+
+    it('a flat (teamless) reinforce march refunds troops to the pool + pushes a recalled march_update', async () => {
+      await svc.joinWorld(W, 'a', 5, 5);
+      const terr = findCoord((t) => t.type === 'resource' || t.type === 'neutral', 22, 22);
+      const tid = tileId(W, terr.x, terr.y);
+      await m.collections.tiles.insertOne({ _id: tid, worldId: W, x: terr.x, y: terr.y, type: 'territory', level: 1, ownerId: 'a', garrison: 100, rev: 0 } as TileDoc);
+      // Drain the pool first (as a real departure would have) so the refund is observable — the pool
+      // otherwise already sits at troopCap and refundTroops' Math.min cap would silently swallow it.
+      await m.collections.playerWorld.updateOne({ _id: playerWorldId(W, 'a') }, { $set: { troops: 0 } });
+      const before = (await svc.getMe(W, 'a')).troops;
+
+      await m.collections.marches.insertOne({
+        _id: 'mreinforce2', worldId: W, ownerId: 'a', fromTile: tileId(W, 5, 5), toTile: tid,
+        kind: 'reinforce', troops: 300, departAt: nowMs, arriveAt: nowMs + 1000, status: 'marching', rev: 0,
+      } as unknown as import('../src/db').MarchDoc);
+      await m.collections.tiles.updateOne({ _id: tid }, { $set: { ownerId: 'rival' } });
+
+      nowMs += 1000;
+      expect(await svc.processDueArrivals()).toBe(1);
+      expect((await svc.getMe(W, 'a')).troops).toBe(before + 300);
+      expect(pushes.some((p) => p.msg.kind === 'march_update' && p.msg.status === 'recalled')).toBe(true);
+    });
+  });
 });

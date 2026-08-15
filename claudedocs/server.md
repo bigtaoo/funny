@@ -579,7 +579,7 @@ commercial 此前完全没有 Redis 依赖，本次新增：`config.ts` 补 `NW_
 | client（`src/game/**`） | 91.2% | 87.8% | 84.4% |
 | engine | 86.5% | 83.0% | 81.2% |
 | shared | ~~82.3%~~ **98.96%**（2026-08-15 补测，见下） | 94.8% | 97.67% |
-| worldsvc | 82.9% | 78.3% | 86.9% |
+| worldsvc | ~~82.9%~~ **95.82%**（2026-08-15 补测，见下） | 87.57% | 97.93% |
 | analyticsvc | 87.6% | 84.2% | 95.8% |
 | matchsvc | 88.3% | 91.1% | 97.2% |
 | commercial | ~~81.4%~~ **93.64%**（2026-08-14 补测，见下） | 76.9% | 91.8% |
@@ -818,3 +818,22 @@ commercial 补到 93.64% 后，剩余未处理的几个包（client/engine/world
 **留意但未继续追的残余缺口**（性价比递减，均为等价路径变体或需要真实并发/精确时序才能触发）：`src/economy/gacha.ts`（89.32%，181-191 行）、`src/slg/shop.ts`（88.42%，145-157 行）、`src/slg/mapgen/biome.ts`/`levelDist.ts`（92.6%/88.9%，各剩 2 行）、`achievements.ts`/`battlepass.ts`/`events.ts`/`retention.ts`/`equipment.ts`/`unitCards.ts` 等此前已有测试的文件各剩 1~6 行防御性分支；`src/mongo/collections.ts`（0%，纯 `interface` 声明，无可执行行，不是真实缺口）。
 
 shared 整体行覆盖率 **82.41% → 98.96%**（`npx vitest run --coverage`，51 test files / 952 tests 全绿 + 5 skipped（既有的"无本地 Redis 则跳过"用例，跳过状态未变）——新增 15 个测试文件、210 例，原有 36 文件 / 742 例零改动；`npx tsc --noEmit` 干净）。分支覆盖 94.8%、函数覆盖 97.67%。
+
+## worldsvc 补测：httpApi 路由层 + 客户端封装 + config/redis/scheduler + siege/misc 分支缺口，从 82.9% 拉到 95.82%（2026-08-15，worktree `feat/worldsvc-coverage`）
+
+shared 补到 98.96% 后，剩余未处理的几个包（client/engine/analyticsvc/matchsvc）里 **worldsvc（82.9%）最低**——本节按"根据覆盖率结果修复最低"处理这个包。worldsvc 是目前处理过的包里规模最大的一个（`fileParallelism:false` + 真实 rs0 副本集，全量套件单跑约 200s），缺口分布也最散：`src/httpApi/*Routes.ts` 路由分发层 29.8%~66.7%（和 commercial 的 `internalHttp.ts`/其它包的路由层同一种模式）、四个内部 HTTP 客户端封装 23.6%~39.5%、`config.ts`/`redis.ts`/`scheduler.ts` 完全 0%（此前没有专属测试文件）、以及分散在 siege 战斗计算 + 一长串杂项文件里的分支缺口。五路并行做（各自新增/追加文件，互不touch）：
+
+- **共享 mongod 副本集**（本次新技巧，见 [[parallel-vitest-agents-shared-mongo-2026-08-14]] 的做法）：worldsvc 需要真实 Mongo 的 agent 不算少，为避免 N 个并行 agent 各自触发 `test/globalSetup.ts` 重复起 rs0（慢 + 握手文件竞态），主会话自己先用一个独立脚本（`node _shared-mongo-scratch.mjs`，跑在 worktree 内、后台、任务完成后删除+不提交）起一个共享的 `MongoMemoryReplSet`，把打印出来的 URI 喂给每个需要 Mongo 的 agent，让它们各自 `NW_MONGO_URI=<uri> npx vitest run test/<file>.test.ts` 时命中 `globalSetup.ts` 的 `if (process.env.NW_MONGO_URI) return` 短路，全部连到同一个物理 mongod（各自建独一无二的 db 名隔离数据）。跑 `.mjs` 脚本本身有个坑：脚本文件必须放在有 `node_modules` 可解析到 `mongodb-memory-server` 的目录下（即 `server/worldsvc/` 内部），放到仓库外的 scratchpad 目录会因为 ESM 相对路径解析规则直接 `ERR_MODULE_NOT_FOUND`。
+- **`src/httpApi/*Routes.ts`**（3 个新 e2e 文件，46 例）：`economyRoutes.ts`/`seasonRoutes.ts`/`siegeRoutes.ts`/`actionRoutes.ts`/`mapRoutes.ts`/`nationRoutes.ts` 全部拉到 100% 行覆盖，`admin.ts` 74.64%→90.84%（剩 `/admin/world/*` 几条 ops 路由的"真实非 SlgError 异常"catch 分支，需要往 service 层注入故障才能触发，未继续追）。技术路线同 `test/httpApi.e2e.test.ts`：真实 `node:http` server + 真实 Mongo，复用已有专门 e2e 文件（`teams.e2e.test.ts`/`siege-replay-cardinstances.e2e.test.ts` 等）已经想清楚的业务场景，只是让请求走一遍 HTTP 分发层本身。
+- **内部 HTTP 客户端封装**（4 个新文件，79 例）：`socialsvcClient.ts`/`gatewayClient.ts`/`mailClient.ts`/`metaClient.ts` 全部拉到 **100%**（含 `nullWorldXxxClient` 的每个 no-op）。沿用本包既有的 `test/commercial-client.test.ts`/`test/meta-client-save-fields.test.ts` 范本——起一个真实 `node:http` fixture server（`.listen(0)`）断言客户端实际发出的请求，而不是 `vi.mock('@nw/shared', ...)`（admin 包当初用过 mock 的方式，但 worldsvc 已有的两个客户端测试文件都是 fixture-server 风格，延续现有风格）。
+- **`config.ts`/`redis.ts`/`scheduler.ts`/`prosperity.ts`**（4 个新文件，24 例）：全部拉到 ~100%。`redis.ts` 用 `vi.mock('ioredis', ...)` 拦截函数内部的动态 `import('ioredis')`（确认可行，同 `gateway/test/redis-unit.test.ts` 先例）——真正的坑不是拦截失败，而是"轮询判断 mock 实例是否已构造好"这种写法在 Vitest 模块运行时下时机不确定、间歇性 flaky，改成让 `FakeRedis` 自己在构造函数里 `process.nextTick` 触发 `ready`/`error` 事件、测试直接 `await connectRedis(...)` 就不用赛跑；`scheduler.ts` 用 `vi.useFakeTimers()` 验证了 5~6 个任务的定时调度 + 重入保护（用手动可控的 deferred promise 卡住一个 tick，验证下一个 tick 被跳过）+ `Promise.allSettled` 逐任务失败隔离。
+- **siege 战斗计算分支缺口**（5 个新文件，158 例，全部走假 ctx/fake-core 单测，不连 Mongo，仅一处真跑一次引擎）：`combatSiege/damage.ts`（分支 34.78%→100%）、`helpers.ts`（64.15%→94.87%）、`arrival/{crossingSiege,strongholdSiege,sweep,landSiege,baseSiege}.ts` 五个到达变体、`combatSiege.ts` 门面类的 17 个转发方法（函数覆盖 63.15%→100%，逐个 spy 断言参数/返回值原样转发）、`occupation.ts`/`encounter.ts`/`occupationBattle.ts`、`siegeEngine.ts` 的 `runSiegeBattleSync` 两种胜负分支。技术路线延续 [[worldsvc-domain-service-unit-testable-no-mongo]]：siege 计算大多是纯函数或只依赖注入的 ctx，不需要真实持久化就能测分支；只有"防御方战败但仍有真实幸存者"这类分支明确记录为"只有真实无头引擎才会走到，作弊算法（`resolveSiege`）恒定判负方 0 幸存"，未强求覆盖。
+- **杂项分支缺口**（16 个新建/追加文件，约 100+ 例）：`combatDefense.ts`（60.52%→100%）、`combatShared.ts`、`territory.ts`（72.89%→86.95%，新建 e2e）、`season/shard.ts`、`sect/query.ts`、`core/helpers.ts`、`core/nation.ts`、`db/client.ts`+`db/combatDocs.ts`（33.33%→100%），另在既有文件里追加：`city-buildings.e2e.test.ts`（55.55%→75%）、`city-training.e2e.test.ts`、`sect.e2e.test.ts`（65.85%→87.12%）、`season-ops.e2e.test.ts`、`field-garrison.e2e.test.ts`、`transfer.e2e.test.ts`、`nation-channel.e2e.test.ts`、`card-slg.e2e.test.ts`。因时间/优先级预算，`combatMarch/command.ts`/`combatMarch/stationed.ts`/`core/push.ts`/`core/spawn.ts`/`core/vision.ts`/`core/yield.ts`/`db/playerDocs.ts`（仅迁移函数部分）/`siegeWorkerPool.ts`/`mapTemplateService.ts` 未继续追，如实记录未做。
+
+**config 追加**：`vitest.config.ts` 的 `coverage.exclude` 补了 `scripts/**`（`migrateMapBaselinesToRle.ts`/`migrateMarchBbox.ts` 是一次性迁移脚本，不是应用代码，同 gameserver/metaserver 排除 `scripts/**` 的先例）。
+
+**留意但未继续追的残余缺口**（性价比递减，均为等价路径变体、真实并发/精确时序、或需要往 service 层注入故障才能触发）：`index.ts`（0%，进程 bootstrap，同前几个包先例不单独起集成测试）、`siegeWorker.ts`（0%，worker_thread 入口，顶部有 `if (!parentPort) throw` 守卫，脱离真实 worker_thread 语境几乎无法直接 import 测试，同 index.ts 归为 bootstrap 类不追）、`combatSiege/ctx.ts`/`db/collections.ts`/`sect/types.ts`（均 0%，纯 `interface` 声明，无可执行行，不是真实缺口，同 shared 的 `mongo/collections.ts` 先例）、`mapTemplateService.ts`（73.91%→74.46%，小幅改善但仍是本包分支覆盖率最低的文件之一，多为地图模板导入的边界分支，留给下一轮）、`siegeWorkerPool.ts`（83.33%，worker 池管理，多为 worker 崩溃恢复的时序分支）。
+
+**⚠️ 一次性发现的 flaky 测试**：`httpApiActionSiegeMapGaps.e2e.test.ts` 在全量 `--coverage` 跑法（重活 CPU 负载下）里出现过一次 `SlgError: No viable path found`（`combatMarch/command.ts` 的 `startMarch`），单独跑该文件、以及随后 3 次全量重跑（含 2 次 `--coverage`）均全绿——判断是重负载下的瞬时环境抖动，不是确定性 bug，未继续深挖根因；如果未来这个文件在 CI 上复现类似失败，从这里开始排查。
+
+worldsvc 整体行覆盖率 **83.03% → 95.82%**（`npx vitest run --coverage`，85 test files / 916 tests 全绿——新增 24 个测试文件、415 例，原有 61 文件 / 501 例零改动；`npx tsc --noEmit` 干净）。分支覆盖 87.57%、函数覆盖 97.93%。

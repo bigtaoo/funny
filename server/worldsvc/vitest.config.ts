@@ -7,7 +7,9 @@ export default defineConfig({
       provider: 'v8',
       reporter: ['text', 'lcov', 'html', 'json-summary'],
       reportsDirectory: './coverage',
-      exclude: [...coverageConfigDefaults.exclude, 'src/generated/**'],
+      // scripts/** are one-off migration/codegen tools, not app code (same precedent as
+      // gameserver/metaserver's coverage.exclude for their scripts/**).
+      exclude: [...coverageConfigDefaults.exclude, 'src/generated/**', 'scripts/**'],
     },
     // e2e tests need a real Mongo (rs0). globalSetup spins one up via mongodb-memory-server
     // unless NW_MONGO_URI points at an external DB; setupEnv bridges the URI into each worker.
