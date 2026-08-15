@@ -7,10 +7,10 @@
  * needs a clean source image, and this set is small enough that a spritesheet buys nothing),
  * imported the same way `cardArt.ts` imports `UNIT_ART_URLS`.
  *
- * Not yet wired into avatar.ts/avatarPicker.ts — that's the functional-implementation pass
- * described in avatar-art-prompts.md §四 (deleting the equip/material categories, switching
- * `AVATAR_DEFS`/`presetDef` over to this table via `buildPortraitIcon`, i18n, migration for
- * stored `equip:*`/`material:*` avatarIds). This file only makes the art importable.
+ * Wired into avatar.ts (`resolvePresetArtUrl` → `buildPortraitIcon`) and avatarPicker.ts (the
+ * preset tab's item list) since 98a8975a, which also completed the rest of avatar-art-prompts.md
+ * §四: the equip/material categories are gone and stored `equip:*`/`material:*` avatarIds are
+ * migrated server-side (metaserver `sanitizeEquippedAvatar`).
  */
 import gogetterArtUrl from '../assets/avatars/preset/preset_gogetter.png';
 import sunnyArtUrl from '../assets/avatars/preset/preset_sunny.png';

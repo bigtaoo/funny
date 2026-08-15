@@ -14,9 +14,10 @@
  * still land on a real portrait instead of the letter-initial fallback.
  * The `equip`/`material` avatar categories that used to exist here were deleted outright (2026-08
  * redesign, design/product/avatar-art-prompts.md) — equipment/materials change too often for a
- * head-shot pool to track. Accounts with a stored `equip:*`/`material:*` avatarId now fail to
- * parse (parseAvatarId returns null) and fall back to the letter-initial style client-side; the
- * server-side migration that resets those to a preset default on read/write is tracked separately.
+ * head-shot pool to track. Accounts with a stored `equip:*`/`material:*` avatarId fail to parse
+ * here (parseAvatarId returns null) and would fall back to the letter-initial style, but in
+ * practice never reach this code: metaserver's `sanitizeEquippedAvatar` (server/metaserver/src/
+ * save.ts) rewrites those to `preset:0` on every outgoing save — read-time only, no DB write-back.
  * Anything else unresolved (unknown key, category with no art) falls back to the letter-initial style.
  *
  * Deterministic per (name, seed) so the same player always gets the same doodle when no avatarId
