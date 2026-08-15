@@ -21,6 +21,7 @@ import {
   xpToLevel, xpToNextLevel,
 } from '../game/balance/battlepassDefs';
 import { cellState } from './BattlePassScene/cell';
+import { preloadRewardIconArt } from '../render/rewardIcon';
 import { RewardRowVirtualizer, type RowVizContext } from './BattlePassScene/rows';
 import { drawSidebar, contentBounds, type NavHost } from './BattlePassScene/nav';
 
@@ -133,6 +134,9 @@ export class BattlePassScene implements Scene {
     this.unsubs.push(input.onWheel((_x, y, deltaY) => this.handleWheel(y, deltaY)));
     if (cb.onSaveChanged) this.unsubs.push(cb.onSaveChanged(() => this.render()));
     this.render();
+    // Reward pictures come from AI art (coin/material atlases + shared tab-icon PNGs) — warm them
+    // and repaint once decoded, else the first frame draws the procedural fallbacks.
+    void preloadRewardIconArt().then(() => { if (!this.destroyed) this.render(); });
   }
 
   update(dt: number): void {

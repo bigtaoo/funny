@@ -25,6 +25,7 @@ import { OrgFormPanel } from './FriendsScene/orgForm';
 import { WorldChatPanel } from './FriendsScene/worldChat';
 import { MailPanel } from './FriendsScene/mail';
 import { beginRender, drawTabBar, endRender } from './FriendsScene/chrome';
+import { preloadRewardIconArt } from '../render/rewardIcon';
 
 export type { SLGSocialStatus, FriendsSceneCallbacks } from './FriendsScene/core';
 
@@ -55,6 +56,9 @@ export class FriendsScene implements Scene {
     this.mail = new MailPanel(this.core, this.network);
 
     this.render();
+    // Mail attachment thumbnails come from AI art (coin/material atlases + shared tab-icon PNGs) —
+    // warm them and repaint once decoded, else the first frame draws the procedural fallbacks.
+    void preloadRewardIconArt().then(() => { if (!this.core.dead) this.render(); });
     void this.network.refresh();
     this.core.triggerTabLoads(this.core.tab);
   }

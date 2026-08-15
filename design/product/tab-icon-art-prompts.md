@@ -344,3 +344,46 @@ Hand-drawn doodle icon in a worn school notebook, single dark-ink pen line art, 
 3. 顺带修好同一个 bug 的第二处：`AuctionScene/list.ts` 的分类 chip，激活态是 `C.dark` 填充 + `C.light` 墨水，此前同样拿到灰线图画在深底上。
 
 **验证**：`tsc --noEmit` 通过；`test/render/icons.test.ts` 通过；Playwright（`start:e2e` 9096 + `window.__nwE2E.views.showLobby()`）实拍底栏截图确认五个图标全部清晰可辨——这次没有再跳过截图。
+
+---
+
+## 批次 4：奖励图标统一出处（2026-08-15，无新出图）
+
+**起因**：用户截图圈出"周常宝箱"tab 的第 2/3 档奖励图标——"这里的图标还是用的旧的程序绘制的，我反复强调所有的图标走统一出处"。截图里同一个 tab 上，第 1 档的材料（铅笔芯）是 AI 位图，第 2/3 档的装备/卡牌却是细线程序 glyph（`armor`/`cards`），并排放着一眼看得出两套画法。
+
+**为什么前三批漏了它**：批次 3 的梳理范围写死在"页签级图标"，开头就明确排除了"结算页动作按钮、装备强化/分解按钮、头像背景 glyph、属性徽章"——奖励行也在这条排除线的另一侧，从来没被点名过。
+
+**根因不是"少接一处线"，是没有出口**。奖励行出现在 6 个互不相干的屏幕上，每个屏幕自己手写一张 `kind → IconKind` 表：
+
+| 屏幕 | coins | material | card | equipment | skin |
+|---|---|---|---|---|---|
+| `DailyScene/panels.ts`（签到日历 + 周常宝箱） | ✗ `buildIcon('coin')` | ✓ `buildMaterialIcon` | ✗ `cards` | ✗ `armor` | ✗ `brush` |
+| `BattlePassScene/cell.ts` | ✓ `buildCoinIcon` | ✓ | — | — | ✗ `brush` |
+| `EventScene.ts` | ✗ `buildIcon('coin')` | ✓ | — | — | ✗ `brush` |
+| `RechargeScene.ts` | ✓ | ✓ | — | — | — |
+| `FriendsScene/mail.ts`（附件缩略图） | ✗ `buildIcon('coins')` | ✓ | ✓ 真卡图 | ✓ `buildEquipIcon` | ✗ `brush` |
+| `AchievementScene.ts`（成就奖励币） | ✗ `buildIcon('coin')` | — | — | — | — |
+
+`coins`/`material` 各自早就有统一出口（`buildCoinIcon`/`buildMaterialIcon`，见 `equipment-icon-unified-source` 那条记忆总结的"两个统一出口"），但**没人负责 `card`/`equipment`/`skin`**，于是它们一直躺在程序 glyph 上——即便批次 1 出的 `rosterIcon`/`equipIcon`/`skinIcon` 正是这三个概念的 AI 图。另外 `buildCoinIcon` 明明存在，还是有 4 处直接调了 `buildIcon('coin')`，这也说明"靠每个调用点自己记得挑对函数"这条路本身就不成立。
+
+**修法：新增第四个统一出口，而不是逐屏替换。** `client/src/render/rewardIcon.ts`：
+
+```ts
+buildRewardIcon(reward: {kind, id?, count?}, size, color, opts?) : DisplayObject | null
+  coins     → buildCoinIcon(opts.coinKind ?? coinIconTier(count))   // AI 金币图集
+  material  → buildMaterialIcon(materialKind(id) ?? 'scrap')        // AI 材料图集
+  card      → buildIcon('rosterIcon')  ┐
+  equipment → buildIcon('equipIcon')   ├ 批次 1 的 AI 页签图，纯复用（同批次 2/3 的复用判据：
+  skin      → buildIcon('skinIcon')    ┘ 同一个概念就不再出新图）
+  stamina / 未知 kind → null（调用方画纯 "+N" 文本，不画错图）
+```
+
+两个 `opts` 旋钮对应两处真实的既有差异，不是预留的抽象：`coinKind` 让 `RechargeScene` 保留自己那套更粗的金币档位阈值（它的面额到五位数，用通用阈值会全部触顶变宝箱）；`materialFallback: null` 让 `EventScene`/邮件在材料 id 不认识时退化成纯文字行，而不是错标成碎屑。
+
+**顺带修掉的两类问题**：
+1. **光栅图第一帧空白**：`buildRasterTabIcon` 走的是 `Texture.from` 懒加载，纹理没解码时画空。此前只有 `CardScene`/`EquipmentScene` 调了 `preloadTabIconTextures()`，其余用 AI 页签图的场景（含成就墙分类条）第一帧其实是空的，靠后续重绘自愈。新增 `preloadRewardIconArt()`（`allSettled` 并发预热页签 PNG + 金币图集 + 材料图集，永不 reject），6 个奖励屏幕在构造器里调一次并在 resolve 后重绘。
+2. **邮件的 `MAT_ITEM_ICON` 表删除**，材料解析统一走 `materialKind()`（同样只认 `scrap`/`lead`/`binding` 短 id，`mat_` 前缀是 gacha 的另一套命名空间——那条注释保留在 `mail.ts` 类上方）。
+
+**验证**：`tsc --noEmit` 通过；`vitest`（157 文件 1308 用例）+ `vitest --config vitest.ui.config.ts`（182 文件 1631 用例）全绿；新增 `test/render/rewardIcon.test.ts`（10 用例）钉死"三种物品奖励必须落到 AI 图、不许回落程序 glyph"这条路由。**实拍验证**：Playwright（worktree 里 `TARGET=web-e2e` + `NW_API_BASE` 指向 public API，注册一次性账号 → `lobbyCb.onOpenDaily()` → 点 sidebar 各 tab）截了签到日历/周常宝箱两屏，确认第 2/3 档已是 AI 盾牌/卡牌图，日历里 14 日（卡牌）/30 日（装备）/里程碑金币角标同样全部转 AI。脚本踩到两个坑记在这里：① 新账号被 `goLobby()` 反复弹回 FTUE 教程（boot 资源加载完成后还会再弹一次，落在第一次 `onExitToLobby()` 之后），要循环 dismiss 到 lobby 连续稳定几秒才能继续；② `IntroScene` 的插图 `once('loaded')` 回调在场景销毁后读 `sprite.scale` 抛异常，会打死 PIXI ticker 让画面定格（既有 bug，与本次改动无关），脚本里靠"在 intro 多停 4 秒等纹理解码"绕开。
+
+**遗留可选项（未做，需美术拍板）**：AI 页签图只烘了 active(白) / inactive(`#686868` 灰) 两种墨色，奖励行拿到的是灰色那份——放在纸底上比旁边的全彩材料/金币位图要淡一档。要让它们同样"实"，得在 `pack_tab_icons.cjs` 里加第三种 content 墨色（如 `#3a3632` 铅笔灰）再出一批 PNG。本次没做，因为这是一次美术口径决定而不是接线漏洞。
