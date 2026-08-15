@@ -1,8 +1,13 @@
 import path from 'path';
 import { defineConfig, coverageConfigDefaults } from 'vitest/config';
 
-// Tests cover ONLY the pure game-logic core (@nw/engine + src/game/**), which has
-// no PIXI dependency. Render-layer files are intentionally out of scope.
+// Mostly the pure game-logic core (@nw/engine + src/game/**), which has no PIXI dependency —
+// but not exclusively: `test/render/**` matches the include below too, and those files do import
+// pixi.js-legacy (faked per-file via vi.mock in most of them, real in icons/rewardIcon.test.ts).
+// They used to also have a vitest.render.config.ts of their own; deleted 2026-08-15. Nothing ever
+// ran it — no CI step, no script chain — so its alias list silently drifted behind this one's and
+// 4 of the 11 files died at load there, while this config had been running all 11 green the whole
+// time. Deleting it removes the second place for that alias list to rot; there is now one suite.
 export default defineConfig({
   // @nw/engine resolves to its TS source (server/engine/src) — the engine moved
   // out of client into the workspace package (§16.7) and is imported directly;
@@ -35,11 +40,12 @@ export default defineConfig({
       provider: 'v8',
       reporter: ['text', 'lcov', 'html', 'json-summary'],
       reportsDirectory: './coverage',
-      // Mirrors the test `include` above and the file header comment: this suite only ever
-      // exercises the pure game-logic core (src/game/**), never the PIXI render/UI/scene layers
-      // (those have their own suites — test:ui/test:render/test:e2e). Scoping coverage.include
-      // to match keeps the % honest instead of drowning it in 0%-covered render-layer files
-      // this config was never meant to touch.
+      // Deliberately NARROWER than the test `include` above. `test/render/**` does run in this
+      // suite and does touch src/render/**, but only as a handful of narrow regression guards that
+      // mock most of PIXI away — the coverage they would report over the render layer is sparse
+      // and misleading. Systematic render/UI/scene coverage is test:ui/test:e2e's job (neither
+      // reports coverage). Scoping to src/game/** keeps the % honest instead of drowning it in
+      // near-0% render-layer files this suite only brushes against.
       include: ['src/game/**'],
       exclude: [...coverageConfigDefaults.exclude],
     },

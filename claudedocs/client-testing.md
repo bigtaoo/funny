@@ -6,13 +6,18 @@
 
 | 套件 | 命令 | include | 环境 | 测什么 | 真 PIXI？ |
 |---|---|---|---|---|---|
-| 单元 | `npm test` | `test/**/*.test.ts` | node | 纯游戏逻辑（无 PIXI 依赖） | 否 |
+| 单元 | `npm test` | `test/**/*.test.ts`（**含 `test/render/**`**） | node | 纯游戏逻辑；外加 `test/render/**` 那批渲染层窄回归（BaseTexture 监听器 / blob URL 泄漏、HUD 几何、图标 dispatch 表…） | 多数文件 `vi.mock` 掉 PIXI；`icons`/`rewardIcon` 真 import `pixi.js-legacy` |
 | UI 冒烟 | `npm run test:ui` | `test/ui/**/*.ui.ts` | node + `pixiHeadless` | **真实场景构造 / update / destroy + 命中矩形回归** | 真对象树，**无渲染器** |
-| 渲染泄漏 | `npm run test:render` | `test/render/**/*.test.ts` | node（每文件 `vi.mock` PIXI） | BaseTexture 监听器 / blob URL 泄漏回归 | mock |
 | 全链路 E2E | `npm run test:e2e`（opt-in） | `test/e2e/**/*.e2e.ts` | node | `createAppCore` 全链路对接活服务器（meta+gateway+matchsvc+game+commercial+mongo） | headless orchestration |
 | 手动调参脚本 | `npm run test:manual`（opt-in，非回归） | `test/**/*.manual.ts` | node | console.log 输出的难度曲线/A-B 对比表，**零 `expect()`**，人工读表用 | 否 |
 
 `npm test` 只跑 `*.test.ts`；`*.ui.ts` / `*.e2e.ts` / `*.manual.ts` 用各自命名后缀隔离，默认套件不会误收。
+
+**⚠️ 2026-08-15：`test:render` / `vitest.render.config.ts` 已删除**。`test/render/**` 曾经额外挂着一份独立配置（`npm run test:render`），但它的存在理由——"把主套件跟 PIXI 依赖隔开"——从来就没成立过：`vitest.config.ts` 的 include 是 `test/**/*.test.ts`，本来就把 `test/render/**` 全收了，两边跑的是同一批文件。真正的问题是**没有任何东西引用 `test:render`**（CI 没有这一步，`test`/`test:coverage` 的链里也没有），于是它的 `resolve.alias` 悄悄落后于 `vitest.config.ts`：后者陆续补上了 `@nw/shared/cards` 和 `@nw/shared`，前者始终只有 `@nw/engine`。到删除前实测，11 个文件里有 4 个在这份配置下**加载即失败**（`Failed to load url @nw/shared/cards … in src/game/meta/cardDefs.ts`），而同样这 11 个文件在 `npm test` 里一直全绿——腐烂了多久没人知道，因为没人跑过。
+
+修法选了"删"而不是"补齐 alias + 接进 CI"：后者要补的不只是两条 alias，还得反过来在 `vitest.config.ts` 的 `exclude` 里排掉 `test/render/**` 才能兑现它自称的隔离，再加一条 CI 步骤——**配置面更大，覆盖面一模一样**。删掉之后 `test/render/**` 只有一个运行入口，alias 只有一份，没有第二处可腐烂。各文件头部的 `Run with: npm run test:render` 注释同步改成 `npm test`；`icons.test.ts`/`rewardIcon.test.ts` 里那两条"NOT `npm run test:render`"的警告（发现问题时手写的）也一并删掉。
+
+> 顺带纠正两条当时被这份配置带偏的注释：①它的头部注释称二进制资产"由各测试文件的 `vi.mock()` 打桩"，对 `icons.test.ts` 并不成立——那个文件靠的是 Vite 内置的 `.png` → URL 字符串处理，从没 mock 过资产（真正做资产打桩的是 `vitest.ui.config.ts` 的 `stubBinaryAssets` 插件）。②`icons.test.ts` 里"调色板值内联而非 import，因为本配置没有 `@nw/shared/cards` / `.tao` 的 loader/alias"——这描述的是那份已删配置；在默认配置下 `render/sketchUi` 和 `scenes/LobbyScene/core` 都能正常 import（2026-08-15 实测），内联现在纯粹是"不让这条 dispatch 表回归拖进更重的场景/调色板模块图"的主动取舍。
 
 **手动调参脚本层（2026-08-05 新增分层）**：`test/diag.manual.ts`（单关卡逐秒时间线 + 出牌统计）和 `test/experiment.manual.ts`（ch1_lv1 难度削减方案 A/B 对比）本质是拿 vitest 当脚本 runner 用来打印表格，从来没有 `expect()` 断言——之前挂着 `.test.ts` 后缀混进 `npm test`，会让"141 passed"的通过数里悄悄含着两条什么都没验证的"测试"。改用独立后缀 + `vitest.manual.config.ts`（同 `vitest.config.ts` 的 `@nw/engine` alias）+ `npm run test:manual`，与 `test:ui`/`test:e2e` 同一模式：需要调参时显式跑，不再计入默认套件的通过率。
 
