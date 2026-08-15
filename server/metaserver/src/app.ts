@@ -9,6 +9,7 @@ import { MetaService } from './service.js';
 import { assembleEquipmentInv } from './equipment.js';
 import { assembleCardInv } from './cards.js';
 import { assembleSkinCounts } from './skin.js';
+import { sanitizeEquippedAvatar } from './save.js';
 import { registerAdCallbackRoutes } from './ads.js';
 import { registerPaddleRoutes } from './paddle.js';
 
@@ -145,6 +146,10 @@ export async function buildApp(opts: BuildAppOpts): Promise<FastifyInstance> {
     // stub, not the full interface) — skip gracefully rather than throwing, same defensive style as the
     // rest of this codebase's optional-dependency checks (e.g. `commercial.available`).
     if (save && typeof save === 'object' && save.accountId) {
+      // Avatar-category retirement migration shim (2026-08-15, save.ts's sanitizeEquippedAvatar doc
+      // comment) — read-time-only, no DB write-back, same convention as the backfills below.
+      const sanitized = sanitizeEquippedAvatar(save);
+      if (sanitized !== save) save.equipped = sanitized.equipped;
       // `undefined` = "forgot to populate" (fully migrated accounts store no embedded field at all,
       // so this is the normal case) → full backfill from the split collection. `null` = "explicitly
       // opted out" (lean response, see leanSave doc comment) → left untouched. A present-but-non-null

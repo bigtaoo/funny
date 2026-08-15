@@ -611,36 +611,32 @@ LeaderboardScene 前三名用 🥇🥈🥉 emoji。新增 **1 个** `icons.ts` �
 - ✅ NavBar 图标美术（2026-06-28）：复用 `icons.ts` 手绘字形，无需单独美术资产。
 - [ ] 盲盒开箱动画的炫度分级（legendary 特效预算）。
 
-## 11. 头像系统（2026-06-28；2026-07-20 重做：新美术 + 服务端同步 + 多品类头像）
+## 11. 头像系统（2026-06-28；2026-07-20 重做：新美术 + 服务端同步 + 多品类头像；2026-08-15 二次重做：胸像美术 + 品类精简）
 
-**结论**：已实现。8 种预设头像换成 AI 手绘插画；头像选择跨玩家可见（服务端同步）；新增称号/角色/装备/材料/皮肤共 5 个品类可选作头像，未解锁（从未拥有过）置灰 + 点击提示解锁方式，解锁判定为**终身制**（历史上拥有过一次即永久解锁，即使当前背包已无该物品）。
+**结论**：已实现。当前 4 个品类可选作头像——预设（20 张免费原创角色胸像）/称号/角色（6 张专属日常胸像）/皮肤，未解锁（从未拥有过）置灰 + 点击提示解锁方式，解锁判定为**终身制**（历史上拥有过一次即永久解锁，即使当前背包已无该物品）。`装备`/`材料`两个品类已于 2026-08-15 整个删除——这两类会随平衡性调整持续增删，头像跟着补图是填不完的坑（见 [`design/product/avatar-art-prompts.md`](../product/avatar-art-prompts.md) 完整改造记录）。
 
 ### avatarId 数据格式
 
-复合字符串 `"<category>:<key>"`：`preset:0`~`preset:7` / `title:<titleId>` / `hero:<unitType>` / `equip:<equipDefId>` / `material:<kind>` / `skin:<skinId>`。旧的纯数字字符串（`'0'`~`'7'`，改造前 localStorage 里已有的值）按 `preset:<n>` 兼容解析（`render/avatar.ts` 的 `parseAvatarId`）。
+复合字符串 `"<category>:<key>"`：`preset:<key>`（20 个原创角色 slug，如 `preset:gogetter`）/ `title:<titleId>` / `hero:<unitType>` / `skin:<skinId>`。旧的纯数字字符串（`'0'`~`'7'`，2026-07 改造前 localStorage 里已有的值，对应彼时 8 种预设图标）按 `preset:<n>` 兼容解析（`render/avatar.ts` 的 `parseAvatarId`），并**位置迁移**到新 20 键列表上（`resolvePresetArtUrl` 按 `n % 20` 取键）——存量账号仍能落到一张真实胸像，而不是退化成首字母兜底。`equip:*`/`material:*`（2026-08-15 前设过的头像）现在解析不到分类，客户端自动退化到首字母兜底；服务端另有一道读时净化（见下方「服务端同步」）。
 
-### 预设头像美术（8 种，Phase A）
+### 预设头像美术（20 张，2026-08-15 二次重做）
 
-`art/ui/head/` 下 8 张 AI 手绘线稿（白线透明底），经 `pack_avatar_atlas.cjs` 打包进 `client/src/assets/avatars/avatars.png`+`.json`；`client/src/render/atlas/avatarAtlas.ts`（镜像 `materialAtlas.ts`/`equipmentAtlas.ts` 的加载范式）在 bootManifest L0 阶段加载，`buildAvatarIcon(key, size, color)` 提供纹理，未加载完成前降级到旧的 `buildIcon()` 程序化图标。`AVATAR_DEFS`（icon key + 底色）本身不变：
+不再是白线图标+染色圆盘：20 张全新原创角色**全彩胸像**（涛方简笔卡通脸画风，按情绪基调分 A~D 四组各 5 个，见 `avatar-art-prompts.md` §二），作为独立 PNG（不打包图集——数量小、且圆形裁切要求原图干净无相邻帧串色）存在 `client/src/assets/avatars/preset/preset_<key>.png`，`client/src/render/presetAvatarArt.ts`（仿 `cardArt.ts` 的 `UNIT_ART_URLS` 写法）导出 `PRESET_AVATAR_KEYS`/`PRESET_AVATAR_ART_URLS`。渲染统一走 `buildPortraitIcon()`（原来 hero/skin 已用的运行时圆形裁切），不再有专属底色——`avatar.ts` 的 `CATEGORY_BG` 里 `preset` 现在也是单一中性色（`palette.inkBlue`），与 title/hero/skin 三个分类同一套视觉处理。旧的 8 图标白线管线（`art/ui/head/pack_avatar_atlas.cjs` + `client/src/render/atlas/avatarAtlas.ts`）已整体删除；旧源图归档 `art/leftover/`。
 
-| ID | 图标 | 底色 | 别名 |
-|----|------|------|------|
-| 0 | book | 0x4477cc (inkBlue) | 学者 |
-| 1 | trophy | 0xcc9900 (gold) | 冠军 |
-| 2 | swords | 0xcc3333 (red) | 战士 |
-| 3 | castle | 0x4a9e4a (green) | 王者 |
-| 4 | pencils | 0x9955cc (purple) | 创作者 |
-| 5 | globe | 0x44aacc (cyan) | 探险家 |
-| 6 | coin | 0xcc6633 (orange) | 商人 |
-| 7 | home | 0x667788 (grey-blue) | 守护者 |
+### 角色头像美术（6 张，2026-08-15 新增）
 
-### 服务端同步（Phase B）
+此前"角色"分类直接裁战斗/卡面立绘（`cardArt.ts` 的 `UNIT_ART_URLS`）当头像，三套画风打架（涂鸦火柴人 vs 写实数位画）。现改为 6 张专属**日常/便装**胸像（无武器、无战斗姿态，代表"这个角色本身"，人设发型延续 `skin-art-prompts.md` 的辨识三件套），独立 PNG 存 `client/src/assets/avatars/hero/hero_<key>.png`，`client/src/render/heroAvatarArt.ts` 导出 `HERO_AVATAR_KEYS`/`HERO_AVATAR_ART_URLS`（key 沿用 `UNIT_ART_URLS` 的 unit-id 命名：`infantry`/`archer`/`shieldbearer`/`max`/`lena`/`mara`）。`avatar.ts` 的 `categoryIcon('hero', ...)` 查这张新表，不再查 `UNIT_ART_URLS`。
+
+> **已知遗留 bug**（未在本次修复）："皮肤"分类目前仍查 `UNIT_ART_URLS[SKIN_TARGET_UNIT[key]]`（即角色的战斗立绘，跟皮肤本身的配色完全无关），因为专属皮肤胸像裁切表要等 `skin-art-prompts.md` 里还没定稿的 2 款皮肤重绘完才能做（见 `avatar-art-prompts.md` §三）。
+
+### 服务端同步（Phase B，2026-08-15 更新）
 
 - `save.equipped.avatar`（复用既有 `equipped: Record<string,string>` 通用装配袋，同 `equipped.title` 的写法，无需 schema 迁移）。
-- `PUT /avatar/equip`（`server/metaserver/src/service/liveops.ts` 的 `equipAvatar`，仿照 `equipTitle` 结构）：`preset:*` 恒许可；其余品类校验 `titles[]`/`everOwned.*`/`inventory.skins`，不满足 → 403。**客户端自 ADR-056（2026-07-28）起直接调用此端点**——`onSetAvatar` 走 `saveManager.equipAvatar(id)`（先写本地镜像即时反馈，再后台调用 `PUT /avatar/equip` 确认）；此前有一段时期该端点已实现但客户端并未接入，实际写路径是通用 `PUT /save`（同 `equipTitle` 当时的状况），该通用端点已随 ADR-056 整个下线。
+- `PUT /avatar/equip`（`server/metaserver/src/service/liveops/profile.ts` 的 `equipAvatarHandler`，仿照 `equipTitleHandler` 结构）：`preset:*` 恒许可；`title`/`hero`/`skin` 校验 `titles[]`/`everOwned.*`/`inventory.skins`，不满足 → 403。**`equip`/`material` 已整体从 `isAvatarOwned`（`save.ts`）的 switch 里删除，落到 `default: return false`**——无论是否曾经拥有过该装备/材料，尝试设置这两类头像一律 403（不再是"未拥有则 403、拥有则放行"，而是分类本身不再存在）。客户端自 ADR-056（2026-07-28）起直接调用此端点——`onSetAvatar` 走 `saveManager.equipAvatar(id)`（先写本地镜像即时反馈，再后台调用 `PUT /avatar/equip` 确认）。
+- **存量 `equip:*`/`material:* ` avatarId 的读时净化**（`save.ts` 的 `sanitizeEquippedAvatar`，接进 `app.ts` 的 `preSerialization` 钩子——与 `equipmentInv`/`cardInv`/`skinCounts` 的读时回填同一约定）：账号历史上装配过的 `equip:*`/`material:*` 头像，字符串本身永久留在存档里；每次任意接口把 `save` 序列化回客户端时，这个钩子检测到分类不在 `preset`/`title`/`hero`/`skin` 白名单内，就把它换成 `preset:0`（位置迁移到新 20 键表的第一张）——只读不改库，幂等，不需要一次性迁移脚本。
 - `ProfileView`/`FriendView`（`server/shared/src/social.ts` + `openapi/schemas.yml`）加 `avatarId?`；`profileOf()`/`getProfile()`（metaserver `social.ts`/`accounts.ts`）比照 `equippedTitle` 读取 `equipped.avatar`；`FamilyMemberView`（socialsvc `familyService.ts`）、`getFriends()`（socialsvc `friendService.ts`）同步透传。
 - 对战对手信息：`opponentAvatarId` 沿 `opponentTitle` 的既有链路整条打通——`gateway/metaClient.ts` → `Gateway.ts` → `matchsvc`（`Matchmaking.ts`/`Matchsvc.ts`/`internalHttp.ts`）→ `TicketClaims`（`server/shared/src/ticket.ts`）→ `gameserver`（`RoomManager.ts`/`Room.ts`）→ `transport.proto`（`MatchStart.opponent_avatar_id = 11`）→ 客户端 `NetInputSource.ts`/`nav/result.ts`。
-- 客户端展示：`ProfilePopup.ProfileData.avatarId`（此前完全未接，永远走首字母兜底——本次一并修掉）、`FriendsScene`/`FamilyScene` 的成员行头像。
+- 客户端展示：`ProfilePopup.ProfileData.avatarId`、`FriendsScene`/`FamilyScene` 的成员行头像。
 
 ### 终身拥有记录 everOwned（Phase C）
 
@@ -652,9 +648,11 @@ LeaderboardScene 前三名用 🥇🥈🥉 emoji。新增 **1 个** `icons.ts` �
 - 材料：签到/邮件/PvE 奖励/gacha 交付（`liveops.ts`/`economy.ts` 的 `deliverGrant`/`deliverMailGrant`）+ 内部经济路由（`internal/economyRoutes.ts`）写入 `everOwned.material`。
 - 皮肤：`grantSkin`（`skin.ts`）+ gacha/mail 交付写入 `everOwned.skin`；`escrowSkin`（拍卖行寄售）**不**从 `everOwned.skin` 删——只有这个类别的"当前拥有"和"终身拥有"会分叉。
 
-### 选择器 UI（Phase D）
+> **2026-08-15 更新**：`equipment`/`material` 两个子字段**没有被删除、也没有停止写入**——它们仍在为 gacha 重复检测（`economy/duplicates.ts` 等）服务，跟头像无关的另一套用途。改动只是头像相关代码（`isAvatarOwned`/`SettingsSceneCallbacks`）不再读这两个子字段。
 
-`client/src/scenes/SettingsScene.ts` 的 `drawAvatarPickerOverlay()` 从固定 2×4 网格重写为：6 个分类 tab（预设/称号/角色/装备/材料/皮肤，复用 `HubTabs.drawHubTabs`）+ 可滚动网格（`ScrollTapGesture` 拖动手势 + `ScrollIndicator` 滚动条，同 `CardScene/list.ts` 的范式）。未解锁项整体降低透明度并叠加锁形图标（`buildIcon('lock', ...)`），点击弹出 2.2 秒的解锁提示 toast（场景本地状态，非全局 `showToastMessage`）。`buildAvatar()`（`render/avatar.ts`）按 category 分派图标来源：称号→`titleArt.ts`，角色/皮肤→`cardArt.ts` 的 `UNIT_ART_URLS`（人物立绘裁圆，皮肤复用同一角色立绘——皮肤没有独立 2D 美术），装备→`equipmentAtlas.ts`，材料→`materialAtlas.ts`。
+### 选择器 UI（Phase D，2026-08-15 更新）
+
+`client/src/scenes/SettingsScene.ts` 的 `drawAvatarPickerOverlay()`：**4** 个分类 tab（预设/称号/角色/皮肤，复用 `HubTabs.drawHubTabs`；`装备`/`材料`两个 tab 已删除）+ 可滚动网格（`ScrollTapGesture` 拖动手势 + `ScrollIndicator` 滚动条，同 `CardScene/list.ts` 的范式）。未解锁项整体降低透明度并叠加锁形图标（`buildIcon('lock', ...)`），点击弹出 2.2 秒的解锁提示 toast（场景本地状态，非全局 `showToastMessage`）。`buildAvatar()`（`render/avatar.ts`）按 category 分派图标来源：预设→`presetAvatarArt.ts`（20 张原创胸像），称号→`titleArt.ts`，角色→`heroAvatarArt.ts`（6 张专属日常胸像），皮肤→`cardArt.ts` 的 `UNIT_ART_URLS`（仍是遗留 bug，见上方「角色头像美术」小节）。四类均经 `buildPortraitIcon()`/`buildIcon()` 统一走圆形裁切。
 
 ### 上线次日修复（2026-07-20 补丁）
 

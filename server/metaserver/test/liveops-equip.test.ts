@@ -49,23 +49,46 @@ describe('PUT /avatar/equip', () => {
     await app.close();
   });
 
-  it('title/equip/material/skin categories each check their own lifetime-owned bucket', async () => {
+  it('title/skin categories each check their own lifetime-owned bucket', async () => {
     const cols = fakeCols({
       accountId: ACC,
       mutate: (s) => {
         s.titles = ['season1_gold'];
-        s.everOwned = { equipment: ['sword_def'], material: ['scrap'] };
         s.inventory.skins = ['owned_skin'];
       },
     });
     const app = await makeApp(cols);
-    for (const avatarId of ['title:season1_gold', 'equip:sword_def', 'material:scrap', 'skin:owned_skin']) {
+    for (const avatarId of ['title:season1_gold', 'skin:owned_skin']) {
       const res = await app.inject({ method: 'PUT', url: '/avatar/equip', headers: auth, payload: { avatarId } });
       expect(res.statusCode).toBe(200);
       expect(res.json().data.save.equipped.avatar).toBe(avatarId);
     }
-    const unowned = await app.inject({ method: 'PUT', url: '/avatar/equip', headers: auth, payload: { avatarId: 'material:never_had' } });
+    const unowned = await app.inject({ method: 'PUT', url: '/avatar/equip', headers: auth, payload: { avatarId: 'skin:never_had' } });
     expect(unowned.statusCode).toBe(403);
+    await app.close();
+  });
+
+  it('equip/material avatar categories were retired (2026-08-15) → always 403, even if the item is owned', async () => {
+    const cols = fakeCols({
+      accountId: ACC,
+      mutate: (s) => { s.everOwned = { equipment: ['sword_def'], material: ['scrap'] }; },
+    });
+    const app = await makeApp(cols);
+    for (const avatarId of ['equip:sword_def', 'material:scrap']) {
+      const res = await app.inject({ method: 'PUT', url: '/avatar/equip', headers: auth, payload: { avatarId } });
+      expect(res.statusCode).toBe(403);
+    }
+    await app.close();
+  });
+
+  it('a stored equip:*/material:* avatarId (from before the 2026-08-15 retirement) is silently swapped to the preset default on read', async () => {
+    const cols = fakeCols({ accountId: ACC, mutate: (s) => { s.equipped = { avatar: 'equip:sword_def' }; } });
+    const app = await makeApp(cols);
+    // Any endpoint returning `data.save` exercises the preSerialization hook — PUT /flags is a
+    // neutral one that doesn't touch equipped.avatar itself.
+    const res = await app.inject({ method: 'PUT', url: '/flags', headers: auth, payload: { key: 'x', value: true } });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().data.save.equipped.avatar).toBe('preset:0');
     await app.close();
   });
 

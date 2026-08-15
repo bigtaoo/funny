@@ -2,13 +2,21 @@
  * avatar.ts — player avatar (notebook doodle style).
  *
  * avatarId is a composite string "<category>:<key>":
- *   preset:0-7   — one of 8 hand-picked icon tokens (icon + background colour), the original set.
+ *   preset:<key> — one of 20 free bust portraits (presetAvatarArt.ts), cropped to a circle.
  *   title:<id>   — an owned title's medal art (titleArt.ts) on a neutral disc.
- *   hero:<unit>  — a hero's card portrait (cardArt.ts UNIT_ART_URLS), cropped to a circle.
- *   equip:<def>  — an equipment icon (equipmentAtlas.ts), on a neutral disc.
- *   material:<k> — a crafting-material icon (materialAtlas.ts), on a neutral disc.
- *   skin:<id>    — the re-skinned character's portrait (skins have no separate 2D art).
- * Bare digit strings ('0'-'7', the pre-sync localStorage format) are treated as "preset:<n>".
+ *   hero:<unit>  — a hero's dedicated "everyday clothes" bust portrait (heroAvatarArt.ts),
+ *                  cropped to a circle — NOT the battle/card illustration (cardArt.ts UNIT_ART_URLS).
+ *   skin:<id>    — the re-skinned character's portrait (skins have no separate 2D art; still
+ *                  reads the hero's battle art via SKIN_TARGET_UNIT — a known bug, see
+ *                  design/product/avatar-art-prompts.md §三, pending the 2 unfinished skin repaints).
+ * Bare digit strings ('0'-'7', the pre-2026-08 localStorage format) are treated as "preset:<n>"
+ * and positionally migrated onto the new 20-key list (see resolvePresetArtUrl) so old accounts
+ * still land on a real portrait instead of the letter-initial fallback.
+ * The `equip`/`material` avatar categories that used to exist here were deleted outright (2026-08
+ * redesign, design/product/avatar-art-prompts.md) — equipment/materials change too often for a
+ * head-shot pool to track. Accounts with a stored `equip:*`/`material:*` avatarId now fail to
+ * parse (parseAvatarId returns null) and fall back to the letter-initial style client-side; the
+ * server-side migration that resets those to a preset default on read/write is tracked separately.
  * Anything else unresolved (unknown key, category with no art) falls back to the letter-initial style.
  *
  * Deterministic per (name, seed) so the same player always gets the same doodle when no avatarId
@@ -18,13 +26,11 @@ import * as PIXI from 'pixi.js-legacy';
 import { makeText } from './pixiText';
 import { SketchPen } from './sketch';
 import { palette } from './theme';
-import { buildIcon, IconKind } from './icons';
-import { buildAvatarIcon } from './atlas/avatarAtlas';
-import { buildMaterialIcon, type MaterialKind } from './atlas/materialAtlas';
-import { buildEquipIcon } from './atlas/equipmentAtlas';
+import { buildIcon } from './icons';
 import { titleIconUrl } from './titleArt';
 import { UNIT_ART_URLS, getArtTexture } from './cardArt';
-import { EQUIPMENT_DEFS } from '../game/meta/equipmentDefs';
+import { PRESET_AVATAR_KEYS, PRESET_AVATAR_ART_URLS, type PresetAvatarKey } from './presetAvatarArt';
+import { HERO_AVATAR_ART_URLS, type HeroAvatarKey } from './heroAvatarArt';
 import { SKIN_TARGET_UNIT } from '../game/meta/skinDefs';
 import { snapFont } from './fontScale';
 
@@ -35,22 +41,7 @@ function initial(name: string): string {
   return Array.from(trimmed)[0]!.toUpperCase();
 }
 
-/** 8 hand-crafted avatar tokens (icon + background colour), indices 0-7. */
-const AVATAR_DEFS: Array<{ icon: IconKind; bg: number }> = [
-  { icon: 'book',    bg: 0x4477cc },  // 0 scholar inkBlue (default-compatible)
-  { icon: 'trophy',  bg: 0xcc9900 },  // 1 champion gold
-  { icon: 'swords',  bg: 0xcc3333 },  // 2 warrior red
-  { icon: 'castle',  bg: 0x4a9e4a },  // 3 sovereign green
-  { icon: 'pencils', bg: 0x9955cc },  // 4 creator purple
-  { icon: 'globe',   bg: 0x44aacc },  // 5 explorer cyan
-  { icon: 'coin',    bg: 0xcc6633 },  // 6 merchant orange
-  { icon: 'home',    bg: 0x667788 },  // 7 guardian grey-blue
-];
-
-/** Total number of preset avatar tokens available (for UI pickers). */
-export const AVATAR_COUNT = AVATAR_DEFS.length;
-
-export type AvatarCategory = 'preset' | 'title' | 'hero' | 'equip' | 'material' | 'skin';
+export type AvatarCategory = 'preset' | 'title' | 'hero' | 'skin';
 
 /** Composite avatarId "<category>:<key>", or a bare preset digit for backward compat. */
 export function makeAvatarId(category: AvatarCategory, key: string): string {
@@ -64,21 +55,36 @@ export function parseAvatarId(id: string): { category: AvatarCategory; key: stri
   if (sep < 0) return null;
   const category = id.slice(0, sep);
   const key = id.slice(sep + 1);
-  if (category === 'preset' || category === 'title' || category === 'hero' ||
-      category === 'equip' || category === 'material' || category === 'skin') {
+  if (category === 'preset' || category === 'title' || category === 'hero' || category === 'skin') {
     return { category, key };
   }
   return null;
 }
 
-/** Neutral disc background shared by every non-preset category (presets keep their own per-icon colour). */
-const CATEGORY_BG: Record<Exclude<AvatarCategory, 'preset'>, number> = {
+/** Neutral disc background shared by every avatar category (portraits/icons sit on top, at ~62% width). */
+const CATEGORY_BG: Record<AvatarCategory, number> = {
+  preset: palette.inkBlue,
   title: 0xd4a030,
   hero: 0x4477cc,
-  equip: 0x667788,
-  material: 0x8a6d3b,
   skin: 0x9955cc,
 };
+
+/**
+ * Resolve a preset avatar key to its portrait URL. Accepts the current 20 string keys, and
+ * migrates the old pre-2026-08 numeric format (bare "0".."7" indices, from the 8-icon set this
+ * replaced) by mapping the index positionally onto the new key list — old accounts land on *a*
+ * valid portrait rather than the letter-initial glyph.
+ */
+function resolvePresetArtUrl(key: string): string | undefined {
+  if (Object.prototype.hasOwnProperty.call(PRESET_AVATAR_ART_URLS, key)) {
+    return PRESET_AVATAR_ART_URLS[key as PresetAvatarKey];
+  }
+  if (/^\d+$/.test(key)) {
+    const idx = parseInt(key, 10) % PRESET_AVATAR_KEYS.length;
+    return PRESET_AVATAR_ART_URLS[PRESET_AVATAR_KEYS[idx]!];
+  }
+  return undefined;
+}
 
 /** A size×size PIXI sprite from `url`, top-left origin (matches buildIcon's contract), or null if unresolved. */
 function spriteIcon(url: string | null, size: number): PIXI.DisplayObject | null {
@@ -119,28 +125,19 @@ function buildPortraitIcon(url: string, size: number): PIXI.Container {
   return c;
 }
 
-/** Resolve the centred icon/portrait for a non-preset category, or null if the key has no art (→ letter fallback). */
-function categoryIcon(category: Exclude<AvatarCategory, 'preset'>, key: string, size: number): PIXI.DisplayObject | null {
+/** Resolve the centred icon/portrait for any avatar category, or null if the key has no art (→ letter fallback). */
+function categoryIcon(category: AvatarCategory, key: string, size: number): PIXI.DisplayObject | null {
   switch (category) {
+    case 'preset': {
+      const url = resolvePresetArtUrl(key);
+      return url ? buildPortraitIcon(url, size) : null;
+    }
     case 'title':
       return spriteIcon(titleIconUrl(key), size) ?? buildIcon('trophy', size, palette.paper);
     case 'hero': {
-      const url = UNIT_ART_URLS[key];
+      const url = HERO_AVATAR_ART_URLS[key as HeroAvatarKey];
       return url ? buildPortraitIcon(url, size) : null;
     }
-    case 'equip': {
-      const def = EQUIPMENT_DEFS[key];
-      if (!def) return null;
-      const icon = buildEquipIcon(def.defId, def.slot, def.rarity, size);
-      // buildEquipIcon is centre-anchored (unlike buildIcon's top-left contract) — wrap it so the
-      // caller can still position this return value by its top-left corner like every other case.
-      const wrap = new PIXI.Container();
-      icon.x = size / 2; icon.y = size / 2;
-      wrap.addChild(icon);
-      return wrap;
-    }
-    case 'material':
-      return buildMaterialIcon(key as MaterialKind, size, palette.paper);
     case 'skin': {
       const unit = SKIN_TARGET_UNIT[key];
       const url = unit !== undefined ? UNIT_ART_URLS[unit] : undefined;
@@ -152,9 +149,9 @@ function categoryIcon(category: Exclude<AvatarCategory, 'preset'>, key: string, 
 /**
  * Build a square avatar container of side `size`, centred on (size/2, size/2).
  *
- * `avatarId` selects what's drawn: a preset icon, or an owned title/hero/equipment/material/skin's
- * art on a neutral disc. Anything unresolved (absent, unparseable, or unknown key) falls back to an
- * ink circle with the name's first letter.
+ * `avatarId` selects what's drawn: a preset/hero/title/skin's portrait or medal art on a neutral
+ * disc. Anything unresolved (absent, unparseable, or unknown key) falls back to an ink circle with
+ * the name's first letter.
  */
 export function buildAvatar(size: number, name: string, seed = 7, avatarId?: string): PIXI.Container {
   const c = new PIXI.Container();
@@ -162,16 +159,11 @@ export function buildAvatar(size: number, name: string, seed = 7, avatarId?: str
   const cx = size / 2, cy = size / 2;
 
   const parsed = avatarId ? parseAvatarId(avatarId) : null;
-  const presetIdx = parsed?.category === 'preset' ? parseInt(parsed.key, 10) : -1;
-  const presetDef = (presetIdx >= 0 && presetIdx < AVATAR_DEFS.length) ? AVATAR_DEFS[presetIdx] : null;
 
   const iconS = Math.round(size * 0.62);
   let icon: PIXI.DisplayObject | null = null;
   let bg: number = palette.inkBlue;
-  if (presetDef) {
-    bg = presetDef.bg;
-    icon = buildAvatarIcon(presetDef.icon, iconS, palette.paper);
-  } else if (parsed && parsed.category !== 'preset') {
+  if (parsed) {
     icon = categoryIcon(parsed.category, parsed.key, iconS);
     if (icon) bg = CATEGORY_BG[parsed.category];
   }
