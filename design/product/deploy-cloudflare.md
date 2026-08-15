@@ -156,13 +156,34 @@ cd .. && npx wrangler deploy -c wrangler/client.jsonc
 
 #### 自动发布（GitHub Action，免手敲命令）
 
-`.github/workflows/client-deploy.yml`：CI（`ci.yml` 的 build-test + e2e）在 `main` 上跑绿、且该 commit 改动落在 `client/**` / `server/engine/src/**` / `server/shared/src/slg/**` / `wrangler/client.jsonc` / 该 workflow 时自动 `npm ci → build:web（地址烘焙到 api.gamestao.com）→ wrangler deploy`；也可在 Actions 页手动 Run（`workflow_dispatch`，跳过 CI 门禁）。**2026-08-12 起改为 `workflow_run` 触发**（原先是 `push: branches:[main]` 直触发，与 CI 完全并行、不等结果——CI 的 e2e job 最长 25 分钟，deploy 几分钟就跑完，红码可能先于 CI 报错就已上线；详见 `.github/actions/paths-changed-since`，该改动同时把 8 个 `*-deploy.yml` 的路径过滤从 `push.paths`（`workflow_run` 不支持）挪进了 job 内的 `git diff` 判断）。与 ops-deploy 同套路：
+`.github/workflows/client-deploy.yml`：CI（`ci.yml` 的 build-test + e2e）在 `main` 上跑绿、且 `client/**` / `server/engine/src/**` / `server/shared/src/slg/**` / `wrangler/client.jsonc` / 该 workflow / `.github/actions/paths-changed-since/` 这些路径**相对「上次真正部署成功的那个 commit」有差异**时自动 `npm ci → build:web（地址烘焙到 api.gamestao.com）→ wrangler deploy`；也可在 Actions 页手动 Run（`workflow_dispatch`，跳过 CI 门禁与路径判断）。**2026-08-12 起改为 `workflow_run` 触发**（原先是 `push: branches:[main]` 直触发，与 CI 完全并行、不等结果——CI 的 e2e job 最长 25 分钟，deploy 几分钟就跑完，红码可能先于 CI 报错就已上线；详见 `.github/actions/paths-changed-since`，该改动同时把 8 个 `*-deploy.yml` 的路径过滤从 `push.paths`（`workflow_run` 不支持）挪进了 job 内的 `git diff` 判断）。与 ops-deploy 同套路：
 
 1. **复用 ops 那套 secrets**：`CLOUDFLARE_API_TOKEN` + `CLOUDFLARE_ACCOUNT_ID` 已配（同一 CF 账号 `e64b61f1...`，"Edit Cloudflare Workers" token 是账号级 Workers 写权限，覆盖 `nivara-client`，**无需新建 token**）。
 2. **开关**：设 repo variable `CLIENT_DEPLOY_ENABLED = true`（未设则 job 跳过）。
 3. 地址烘焙的三个构建期环境变量写死在 workflow 里（与手动命令同值），改地址改 workflow 即可。
 
 > 手动两条命令的老路仍可用（上面命令块），适合本机临时发布或 CI 不可用时兜底。
+
+#### ⚠ 部署基线为什么是「上次部署成功的 commit」而不是「上一个 commit」（2026-08-15 线上事故）
+
+**现象**：头像改版（20 张预设立绘 + 删掉 装备/材料 分类）已经在 `main` 上躺了一天多，`a.gamestao.com/version.json` 却还是 `220cf45`，玩家看到的仍是旧的 8 图标 / 6 页签选择器。期间 Actions 页面上 client-deploy 一路显示 **success**，没有任何红码。
+
+**成因（两次连环漏掉）**：
+
+1. 头像改动走 PR #101（`f99177a3`）进 main，**那次 CI 是红的**（`server test (metaserver)` 挂了，与客户端无关）。client-deploy 的门禁是 `github.event.workflow_run.conclusion == 'success'`，于是整个 workflow 被 skip，`client/**` 的这次改动从未进过 deploy job。
+2. 下一次合并 PR #102（`ac5cae8e`）CI 绿了，client-deploy 也触发了——但当时的路径过滤是 `git diff <sha>^ <sha>`，**只看这一个 commit 碰了什么**。#102 里只有 metaserver 的测试修复，一行 `client/**` 都没有 → `deploy` job 被 skip。而 `check` job 是成功的，所以整个 run 的结论仍是 success，看上去像"部署过了"。
+
+**根因**：`sha^..sha` 这个基线假设「每个 commit 都有机会被部署」。只要有任何一次机会被吃掉（CI 红、`cancel-in-progress` 取消、deploy job 失败、开关当时没开），那次改动就**永久**错过部署——后续 commit 只审视自己，不会替它补上。而且失败是静默的。
+
+**修法（2026-08-15）**：`paths-changed-since` 的基线改为**「本 workflow 最近一次 `deploy` job 真正 `success` 的那个 run 的 head_sha」**（通过 Actions API 反查，`status=completed` 天然排除当前 in-flight 的 run），再做 `git diff <baseline> <head>` 的**树对比**。由此得到三条性质：
+
+- **自愈**：无论上次是怎么被跳过的，只要东西还没上线，下一次 run 就会把它带上去——基线只在真正发布成功时才前进。
+- **幂等**：`baseline == head` 时直接 `changed=false`，不会重复发。
+- **失败开放（fail-open）**：查不到基线（首次运行、超出 `scan-limit`、Actions run 90 天保留期过期）或基线 commit 已不可 fetch（历史被改写）时一律 `changed=true`。多发一次几分钟，不发才是事故。
+
+树对比（而非历史遍历）只需要两个 commit 对象，所以 `check` job 保持 `fetch-depth: 1`，基线由 action 自己 `git fetch --depth=1` 拉；force-push / revert / 非线性历史下语义都还是「线上那棵树和这棵树在这些路径上是否不同」。8 个 `*-deploy.yml` 全部同步改造，并各自把 `.github/actions/paths-changed-since/` 加进 include（判定逻辑本身变了就该重新发一次）；`check` job 需要 `actions: read` 读自己的 run 历史，已在 workflow 级 `permissions` 显式声明。
+
+> **排查手法留存**：怀疑线上是旧版时，`curl -s https://a.gamestao.com/version.json` 拿到的短 sha 就是权威答案；再 `gh run view <run-id> --json jobs` 看 **deploy job 本身**的 conclusion——**run 级别的 success 不代表部署发生了**（`check` 成功 + `deploy` skipped 也是 success）。
 
 ### ops 部署（Cloudflare Worker + static assets，对外 `ops.gamestao.com`）
 
