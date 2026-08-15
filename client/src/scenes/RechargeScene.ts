@@ -4,10 +4,9 @@ import { ILayout, Rect } from '../layout/ILayout';
 import { InputManager } from '../inputSystem/InputManager';
 import { t } from '../i18n';
 import { ui as C, txt, buildPaperBackground, sketchPanel, seedFor, drawLoadingOverlay, tearDownChildren } from '../render/sketchUi';
-import type { IconKind } from '../render/icons';
-import { buildMaterialIcon, type MaterialKind } from '../render/atlas/materialAtlas';
+import { buildIcon, type IconKind } from '../render/icons';
 import { FS, snapFont } from '../render/fontScale';
-import { buildCoinIcon } from '../render/atlas/coinIconAtlas';
+import { buildRewardIcon, preloadRewardIconArt } from '../render/rewardIcon';
 import { buildDecorCLayer } from '../render/decorCLayer';
 import { drawSceneHeader, drawHeaderCurrency, HEADER_ACCENT } from '../ui/widgets/SceneHeader';
 import { drawSidebarTabs, drawBottomNavTabs, sidebarNavW, bottomNavH, type HubTab } from '../ui/widgets/HubTabs';
@@ -113,6 +112,9 @@ export class RechargeScene implements Scene {
     }));
     if (cb.onSaveChanged) this.unsubs.push(cb.onSaveChanged(() => this.render()));
     this.render();
+    // Reward pictures come from AI art (coin/material atlases + shared tab-icon PNGs) — warm them
+    // and repaint once decoded, else the first frame draws the procedural fallbacks.
+    void preloadRewardIconArt().then(() => { if (!this.destroyed) this.render(); });
   }
 
   update(dt: number): void {
@@ -347,12 +349,11 @@ export class RechargeScene implements Scene {
     const ry = y + Math.round(h * 0.5);
     const ic = Math.round(h * 0.36);
     for (const reward of def.rewards) {
-      const iconKind: IconKind = reward.kind === 'coins' ? coinIconTier(reward.count)
-        : reward.id === 'lead' ? 'lead' : reward.id === 'binding' ? 'binding' : 'scrap';
       const color = state === 'claimed' ? C.mid : reward.kind === 'coins' ? C.gold : C.accent;
-      const glyph = reward.kind === 'coins'
-        ? buildCoinIcon(iconKind, ic, color)
-        : buildMaterialIcon(iconKind as MaterialKind, ic, color);
+      // Shared resolver (render/rewardIcon.ts), but with this scene's own coin tier scale — see
+      // coinIconTier above for why recharge payouts need coarser thresholds than gameplay drops.
+      const glyph = buildRewardIcon(reward, ic, color, { coinKind: coinIconTier(reward.count) })
+        ?? buildIcon('capsule', ic, color);
       glyph.x = rx; glyph.y = ry;
       parent.addChild(glyph);
       const amt = txt(`×${reward.count}`, snapFont(Math.round(h * 0.22)), color, state === 'claimable');

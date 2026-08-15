@@ -6,8 +6,9 @@ import * as PIXI from 'pixi.js-legacy';
 import { makeText } from '../../render/pixiText';
 import { t, TranslationKey } from '../../i18n';
 import { ui as C, txt, sketchPanel, seedFor } from '../../render/sketchUi';
-import { buildIcon, type IconKind } from '../../render/icons';
-import { buildMaterialIcon, type MaterialKind } from '../../render/atlas/materialAtlas';
+import { buildIcon } from '../../render/icons';
+import { buildCoinIcon } from '../../render/atlas/coinIconAtlas';
+import { buildRewardIcon } from '../../render/rewardIcon';
 import { FS, snapFont } from '../../render/fontScale';
 import type { SaveData } from '../../game/meta/SaveData';
 import type { RetentionView } from '../../net/ApiClient';
@@ -32,26 +33,12 @@ export interface DailyPanelCtx {
   doWatchAd(): void;
 }
 
-function isMaterialKind(kind: IconKind): kind is MaterialKind {
-  return kind === 'scrap' || kind === 'lead' || kind === 'binding';
-}
-
 /** Formats a remaining-ms duration as "mm:ss" for the ads-tab cooldown button label. */
 export function formatCooldown(ms: number): string {
   const totalSec = Math.max(0, Math.ceil(ms / 1000));
   const m = Math.floor(totalSec / 60);
   const s = totalSec % 60;
   return `${m}:${String(s).padStart(2, '0')}`;
-}
-
-/** Reward-kind glyph (mirrors BattlePassScene/EventScene's kind→IconKind mapping). */
-function rewardIcon(kind: string, id?: string): IconKind | null {
-  if (kind === 'coins') return 'coin';
-  if (kind === 'material') return id === 'lead' ? 'lead' : id === 'binding' ? 'binding' : 'scrap';
-  if (kind === 'card') return 'cards';
-  if (kind === 'equipment') return 'armor';
-  if (kind === 'skin') return 'brush'; // mirrors BattlePassScene's skin reward glyph
-  return null; // stamina: plain "+N" text, no glyph
 }
 
 export function renderCheckin(ctx: DailyPanelCtx, areaX: number, top: number, areaW: number, areaH: number, save: SaveData, nowMs: number): void {
@@ -125,16 +112,13 @@ export function renderCheckin(ctx: DailyPanelCtx, areaX: number, top: number, ar
 
     const reward = rewards[day - 1];
     if (reward) {
-      const icon = rewardIcon(reward.kind, reward.id);
       // Card/equipment milestones are single items (drawn randomly at claim time) — glyph only,
       // no "+1" (mirrors BattlePassScene's skin reward: single item, no count).
       const singleItem = reward.kind === 'card' || reward.kind === 'equipment';
       const baseY = y + ch * 0.92;
-      if (icon) {
-        const rc = Math.round(ch * 0.26);
-        const ic = isMaterialKind(icon)
-          ? buildMaterialIcon(icon, rc, 0x336644)
-          : buildIcon(icon, rc, reward.kind === 'coins' ? C.gold : 0x336644);
+      const rc = Math.round(ch * 0.26);
+      const ic = buildRewardIcon(reward, rc, reward.kind === 'coins' ? C.gold : 0x336644);
+      if (ic) {
         if (singleItem) {
           ic.x = cx - rc / 2; ic.y = baseY - rc;
           container.addChild(ic);
@@ -159,7 +143,7 @@ export function renderCheckin(ctx: DailyPanelCtx, areaX: number, top: number, ar
     // alongside (not replacing) the primary reward drawn above.
     if (reward?.bonusCoins) {
       const rc = Math.round(ch * 0.18);
-      const ic = buildIcon('coin', rc, C.gold);
+      const ic = buildCoinIcon('coin', rc, C.gold);
       const rt = txt(`+${reward.bonusCoins}`, snapFont(Math.round(ch * 0.18)), 0x8a7020);
       rt.anchor.set(0, 0);
       const groupW = rc + Math.round(ch * 0.02) + rt.width;
@@ -325,14 +309,11 @@ export function renderWeekly(ctx: DailyPanelCtx, areaX: number, top: number, are
     container.addChild(label);
 
     if (def) {
-      const icon = rewardIcon(def.reward.kind, def.reward.id);
       const singleItem = def.reward.kind === 'equipment' || def.reward.kind === 'card';
       const iconY = cy + cardH * 0.58;
-      if (icon) {
-        const rc = Math.round(cardH * 0.3);
-        const ic = isMaterialKind(icon)
-          ? buildMaterialIcon(icon, rc, 0x336644)
-          : buildIcon(icon, rc, 0x336644);
+      const rc = Math.round(cardH * 0.3);
+      const ic = buildRewardIcon(def.reward, rc, 0x336644);
+      if (ic) {
         ic.x = PAD + cardW * 0.05; ic.y = iconY;
         container.addChild(ic);
         if (!singleItem) {

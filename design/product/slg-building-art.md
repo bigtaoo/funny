@@ -88,10 +88,10 @@ notebook grid lines, ruled lines
    - 实际做法：新写了一个更小范围的一次性脚本 [`art/scripts/appendAtlasFrames.js`](../../art/scripts/appendAtlasFrames.js)——只处理明确点名的帧：尺寸不变的就照 `patchMergedAtlas.js` 的办法原位覆盖像素；尺寸变了/全新的就在页面底部铅笔式追加一条新行（画布长高，其余已有内容原样保留，不移动、不重新排版）。跑法：`NODE_PATH="$(pwd)/client/node_modules" node art/scripts/appendAtlasFrames.js client/src/assets/slg/building_atlas.json client/src/assets/slg/world_atlas.json icon_watchtower icon_blocker`。跑完后**删掉了**临时生成的 `building_atlas.{png,json}`（这两个文件本来就不进仓库，见上面"已从仓库删除"）。
    - 验证：跑完后逐帧比对了 `world_atlas.json`（86 帧不变 + `icon_watchtower` 尺寸更新 + `icon_blocker` 新增，无其它字段变化）和抽样帧的原始像素（`building_keep`/`building_stronghold`/`terrain_grass`/`res_ink_l5`/`city_lv1` 等，坐标未变的帧内容一致；受益于 PNG 重新走 `palette` 压缩，个别通道有 ≤4/255 的量化噪声，肉眼不可见，跟 `patchMergedAtlas.js` 本来就有的同款副作用一致，不是本次改动引入的新问题）。
 4. 渲染层挂点已就位：`tileGraphics.ts` 的 `icon_blocker` 走 `placeBuildingSprite(g, 'icon_blocker', tp, hh, tp * 0.5, false)`，图集未就位/帧缺失时自动回退原几何 X 撑木占位。
-5. **渲染常量**（已按实际出图尺寸核对）：
-   - `icon_watchtower` 目标高度 `tp * 0.95`（[`tileGraphics.ts:190`](../../client/src/scenes/worldmap/tileGraphics.ts:190)）不变——新图裁边后 256×198（~1.29:1），单靠新构图比例，同样的目标高度换算出的宽度已经跟 `building_keep`（229×256，targetH `tp*1.3`）同量级，不用再调这个系数。
-   - `icon_blocker` 目标高度 `tp * 0.5`（[`tileGraphics.ts:236`](../../client/src/scenes/worldmap/tileGraphics.ts:236)）不变——新图裁边后 256×88（~2.9:1），换算下来屏幕宽度约 `1.45×tp`，占菱形格全宽（`2×tp`）的 ~73%，符合"横向铺满"的诉求，不用再调。
-   - 这两个数字是算出来的估算，还没有拿真实后端+浏览器截图核对过（本环境这次也没能截图，见会话记忆）；如果之后有人在真机上看着不对，再回来微调。
+5. **渲染常量**（2026-08-09 的估算已被 2026-08-15 推翻，见 §5）：
+   - ~~`icon_watchtower` 目标高度 `tp * 0.95`~~ → **`0.40`**（`tileGraphics.ts` 的 `WATCHTOWER_H`）。
+   - ~~`icon_blocker` 目标高度 `tp * 0.5`~~ → **`0.22`**（同文件 `BLOCKER_H`）。
+   - 当时那两个数字是纸面估算、没有真机截图核对过（原话："如果之后有人在真机上看着不对，再回来微调"）——用户 8/15 反馈"乱糟糟"，截图核对后确认要调，理由见 §5。
 
 ---
 
@@ -99,3 +99,27 @@ notebook grid lines, ruled lines
 
 - **`icon_watchtower` v2（2026-08-09，通过）**：改成宽脚架高台望楼，3/4 俯视透视，四足向外撑开撑满画面，两侧各挂一副布幡装饰；裁边后 256×198（~1.29:1），跟 `building_keep`/`building_stronghold` 的构图语言统一，解决了 v1 正视立面「又细又空」的问题。旧图归档 `art/leftover/icon_watchtower_v1_frontal_2026-08-09.png`。
 - **`icon_blocker` v1（2026-08-09，通过）**：一排交叉削尖的木桩（画成铅笔形状，呼应游戏"文具战争"母题）用绳索绑扎，横向贯穿画面；裁边后 256×88（~2.9:1），是这批里最宽幅/最扁的一张，符合"路障=挡路的横向障碍"的语义，比 v1 起一直用的几何 X 撑木占位更有细节、也更宽。用铅笔当木桩这个处理没有写进 §2 的 prompt 里（当时只写了泛用的"wooden stakes"），但完全贴合项目的文具母题，判定通过，不要求重出。
+
+---
+
+## 5. 尺寸修正：`tp * 0.95` / `tp * 0.5` 太大（2026-08-15）
+
+反馈（用户截图标注）：地图上一排瞭望塔 + 拒马"表现太奇怪了，看起来乱糟糟的"。两张图本身没问题，**问题在 §3.5 那两个目标高度**，以及叠放顺序。
+
+**尺寸**。§3.5 当时拿 `building_keep`（targetH `tp*1.3`）当参照，但那是**每片区域只有一个**的地标地形；瞭望塔/拒马是玩家能沿边界**连着一格一格造**的。等距 2:1 投影下，相邻两格锚点的**屏幕横向间距只有 `tp/2`**，不是菱形格的全宽 `tp`——所以"占菱形格全宽的 73%"这个验收标准从一开始就用错了参照系：
+
+| | 帧尺寸 | 旧 targetH | 旧屏宽 | 新 targetH | 新屏宽 |
+|---|---|---|---|---|---|
+| `icon_watchtower` | 256×198 (1.29:1) | `tp*0.95` | `1.23 tp`（≈2.5× 邻格间距） | **`tp*0.40`** | `0.52 tp` |
+| `icon_blocker` | 256×88 (2.91:1) | `tp*0.5` | `1.45 tp`（≈2.9× 邻格间距） | **`tp*0.22`** | `0.64 tp` |
+
+旧值下每座塔要盖住左右各 ~2 格的邻居，5×5 一片瞭望塔在屏幕上糊成一坨看不出个数的排线团；同样一片拒马糊成一张黑毯。新值下每座塔/每道拒马各自站在自己格子里，能一眼数清——与旁边纯几何绘制的 `arrowTower`（`tp*0.42` 高、`tp*0.16` 宽，一直没人抱怨过）读感一致。
+
+**叠放顺序**。`WorldMapRenderer/pool.ts` 的瓦片池是**取模环绕**的，槽位在 `poolContainer.children` 里的次序跟屏幕深度无关，而且随平移变化——后排的塔可能画在前排之上，平移时还会翻转。格子内的画法都不出菱形时无所谓，但建筑精灵会往上长。已改为 `slot.g.zIndex = tx + ty`（等距下屏幕 y ∝ `tx+ty`）+ `poolContainer.sortableChildren = true`，前排最后画。zIndex 只在平移换格时变，L1 约 600 个槽位，不是每帧排序。
+
+**回归护栏**（两个文件，共 +11 例；改动回退时分别有 2 例 / 5 例转红）：
+
+- `client/test/ui/worldMapStructureIcons.ui.ts` 新增一组 mock 掉 `buildingAtlasLoader`（伪装图集就绪）的用例——这条精灵分支此前**完全没有覆盖**（测试环境从不加载图集，老用例只走得到几何回退）。断言：两个精灵屏宽 ≤ `tp*0.7`（邻格间距 `tp/2` + 30% 溢出容差）、尺寸纯按 `tp` 等比缩放（防止有人拿像素常量"修"尺寸问题）、bottom-center 锚在菱形内、fog 下两者都不画（动态层，跟地形不同）、`arrowTower` 即使图集对任何名字都有响应也不取精灵、图集就绪但缺帧仍回退几何占位。
+- `client/test/ui/worldMapPoolDepthOrder.ui.ts`（新增）驱动真实 `WorldMapRenderer`，断的是用户可见性质而非实现：排序后瓦片池**严格由远及近**绘制。**在 5 个不同平移量下各验一次**——取模环绕的映射在可视窗口起点恰好是池尺寸整数倍时本来就是 y 有序的，单个偏移量能蒙混过关，这正是这个 bug 一直没被发现的原因。另覆盖每槽 `zIndex = tx+ty`、最前排最后画、`setZoom()` 重建池后依然成立、以及 zoom 3 走批量 L3 不建池的旧路径。
+
+**核对方式**：`npm run start:e2e` + Playwright 驱动 `window.__nwE2E.views.showWorldMap()`（reject-fast 的 `worldApi` stub，无后端），种一块 7×7 己方领地、内 5×5 全建同类结构，逐个系数截图对比——详见会话记忆 `worldmap-standalone-debug-render`。

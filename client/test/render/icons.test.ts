@@ -2,9 +2,15 @@
 // exported DRAW record). Asserts the DRAW table resolves a live function for every IconKind — the
 // residual risk after the split is a draw fn that fails to import (resolves to undefined at runtime,
 // which the Record<IconKind,…> type cannot catch). No pixi rendering here, so no GL/canvas needed;
-// lives in the render suite only because importing icons.ts pulls pixi.js-legacy. Run: npm run test:render
+// lives in the render suite only because importing icons.ts pulls pixi.js-legacy.
+// Run: npm test — `test/**/*.test.ts` picks this up. NOT `npm run test:render`: that config is missing
+// the `@nw/shared` aliases the other two carry, so this file dies at load there (2026-08-15).
 import { describe, it, expect } from 'vitest';
-import { DRAW, type DrawableIconKind } from '../../src/render/icons';
+import { DRAW, tabIconVariant, type DrawableIconKind } from '../../src/render/icons';
+// Palette values are inlined rather than imported: both `render/sketchUi` (HubTabs' `ui`) and
+// `scenes/LobbyScene/core` (`C`) transitively pull module graphs this config has no loader/alias for
+// (`@nw/shared/cards`, `.tao` assets). Each case names its source constant so a palette retune is
+// still traceable here.
 
 // Exhaustive map of every DrawableIconKind (IconKind minus the raster-only tab icons, which skip
 // DRAW entirely — see icons.ts's TAB_ICON_RASTER). Typed Record<DrawableIconKind, true> so the
@@ -37,6 +43,35 @@ describe('icons DRAW dispatch table', () => {
 
   it('has exactly the DrawableIconKind union as keys — no orphan or missing entries', () => {
     expect(Object.keys(DRAW).sort()).toEqual(kinds.sort());
+  });
+});
+
+// Raster tab icons (`TAB_ICON_RASTER`) are coloured at PACK time into a white `*_active.png` for dark
+// fills and a #686868 `*_inactive.png` for paper fills, so `buildIcon`'s `color` argument can only act
+// as a hint about which of the two the caller needs. That pick used to be `color === 0xffffff`, which
+// silently gave the lobby bottom nav — a near-black bar whose slots ask for `C.light` — the paper-grey
+// art, making 养成/商城 unreadable (2026-08-15). These cases pin the threshold from BOTH sides: widen
+// it and HubTabs' paper cells go white-on-white, narrow it and the dark-bar regression comes back.
+describe('tabIconVariant — which pre-baked ink a requested colour asks for', () => {
+  const cases: Array<[string, number, 'active' | 'inactive']> = [
+    ['0xffffff — HubTabs active cell, on its C.dark fill',              0xffffff, 'active'],
+    ['C.light 0xdddddd — lobby bottom nav slots, on the C.cover bar',   0xdddddd, 'active'],
+    ['C.light 0xdddddd — auction category chip, active (C.dark fill)',  0xdddddd, 'active'],
+    ['ui.mid 0x686868 — HubTabs inactive cell, on paper',               0x686868, 'inactive'],
+    ["C.mid 0x888888 — LobbyScene's own lighter mid grey",              0x888888, 'inactive'],
+    ['C.dark 0x2c2c2a — auction category chip, inactive (on paper)',    0x2c2c2a, 'inactive'],
+  ];
+
+  for (const [label, color, expected] of cases) {
+    it(`${label} → ${expected}`, () => {
+      expect(tabIconVariant(color)).toBe(expected);
+    });
+  }
+
+  it("is monotonic in lightness — no grey at or below LobbyScene's C.mid asks for the white art", () => {
+    for (let v = 0; v <= 0x88; v += 0x08) {
+      expect(tabIconVariant((v << 16) | (v << 8) | v), `#${v.toString(16)}`).toBe('inactive');
+    }
   });
 });
 

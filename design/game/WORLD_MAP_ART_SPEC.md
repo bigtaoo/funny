@@ -89,6 +89,14 @@
 > - watchtower/blocker 属**动态层**（`tile.watchtower` / `tile.structure`），fog 下隐藏，atlas 未就绪回落原几何占位；
 > - 五张均为中性墨线**不 tint**，归属由格下水洗表达；bottom-center 锚在菱形下部使建筑「立」在格上。
 >
+> **目标高度的定尺规则（2026-08-15 修正）**：玩家能在**相邻格连片建造**的东西（`icon_watchtower` / `icon_blocker`），
+> 精灵屏幕宽度（`targetH × 帧宽高比`）要贴着**邻格锚点间距 `tp/2`** 来定，而不是菱形格全宽 `tp`——等距 2:1 下这两个
+> 数差一倍。地标地形（`building_keep`/`building_stronghold`，`tp*1.3`）每片区域只有一个，可以放宽。原先按地标的
+> 尺度给了 `tp*0.95` / `tp*0.5`（屏宽 1.23 tp / 1.45 tp），一排瞭望塔/拒马糊成一团排线，现为
+> `WATCHTOWER_H = 0.40` / `BLOCKER_H = 0.22`（`tileGraphics/tiles.ts`），推导与截图见
+> [`slg-building-art.md` §5](../product/slg-building-art.md)。
+> 同批修正：瓦片池是取模环绕的，槽位次序 ≠ 屏幕深度，已按 `zIndex = tx + ty` 排序，前排最后画。
+>
 > 旧规划里 `building_base_mine/enemy/ally.png` 三张**作废**——主城改由 `city_atlas`（4 级 × 程序上色）承担，
 > 不再按阵营出三份。原 64×64 尺寸列亦作废（打包按长边 256、渲染期按 tile 尺寸缩放）。
 

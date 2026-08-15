@@ -8,9 +8,9 @@
  * Max/Lena/Mara use the Anna realistic face). Each portrait is an independent PNG, imported the
  * same way `cardArt.ts` imports `UNIT_ART_URLS`.
  *
- * Not yet wired into avatar.ts — `categoryIcon('hero', ...)` still reads `UNIT_ART_URLS` (the
- * battle art). Switching it over to this table is part of the functional-implementation pass
- * described in avatar-art-prompts.md §四. This file only makes the art importable.
+ * Wired into avatar.ts — `categoryIcon('hero', ...)` reads this table (the `'bust'` framing branch
+ * of `buildPortraitIcon`), not `UNIT_ART_URLS`. Only the `skin` category still falls back to the
+ * battle art, per avatar-art-prompts.md §三.
  */
 import infantryArtUrl from '../assets/avatars/hero/hero_infantry.png';
 import archerArtUrl from '../assets/avatars/hero/hero_archer.png';

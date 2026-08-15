@@ -6,6 +6,8 @@ import { t, TranslationKey } from '../i18n';
 import { ui as C, txt, buildPaperBackground, sketchPanel, sketchAccentBar, seedFor, tearDownChildren } from '../render/sketchUi';
 import { showToastMessage, type ToastKind } from '../net/log';
 import { buildIcon, type IconKind } from '../render/icons';
+import { buildCoinIcon } from '../render/atlas/coinIconAtlas';
+import { preloadRewardIconArt } from '../render/rewardIcon';
 import { FS, snapFont } from '../render/fontScale';
 import { buildDecorCLayer } from '../render/decorCLayer';
 import { drawSceneHeader } from '../ui/widgets/SceneHeader';
@@ -94,6 +96,9 @@ export class AchievementScene implements Scene {
     this.cb = cb;
     this.unsubs.push(input.onDown((x, y) => this.handleDown(x, y)));
     this.render();
+    // The category strip's AI tab icons + the reward coin glyph are raster art — warm them and
+    // repaint once decoded, else the first frame draws blanks / procedural fallbacks.
+    void preloadRewardIconArt().then(() => { if (!this.destroyed) this.render(); });
     if (this.cb.loadAchievements) void this.fetch();
   }
 
@@ -388,7 +393,7 @@ export class AchievementScene implements Scene {
       amt.anchor.set(1, 0.5); amt.x = rightX; amt.y = cy;
       this.container.addChild(amt);
       const icS = Math.round(rowH * 0.4);
-      const ic = buildIcon('coin', icS, C.gold);
+      const ic = buildCoinIcon('coin', icS, C.gold);
       ic.x = rightX - amt.width - Math.round(rowH * 0.15) - icS; ic.y = cy - icS / 2;
       this.container.addChild(ic);
     }
