@@ -276,31 +276,34 @@ export function buildIcon(kind: IconKind, size: number, color: number): PIXI.Dis
 }
 
 /**
- * Is this requested ink colour "light" — i.e. does the caller intend it to sit on a dark fill?
- * Rec. 601 luma at a deliberately high cut (0.70): white/near-white inks (0xffffff, `C.light`
- * 0xdddddd) pass, mid greys (`C.mid` 0x888888 ≈ 0.53, drawn on paper) do not.
+ * Which pre-baked variant of a raster tab icon a caller's requested ink colour asks for. The art is
+ * coloured at PACK time, not runtime-tinted (see the import block above), so `color` can't be applied
+ * literally — it's read as a light/dark HINT about the surface the icon will sit on: a light ink means
+ * "this sits on a dark fill" → the white `*_active.png`; anything darker → the mid-grey
+ * `*_inactive.png` baked for paper fills.
+ *
+ * Rec. 601 luma at a deliberately high cut (0.70), NOT `=== 0xffffff`: only HubTabs' active cell
+ * happens to pass exactly white, so the strict test handed the lobby bottom nav (which asks for
+ * `C.light` 0xdddddd on its near-black `C.cover` bar) the paper-grey art, leaving the thin-lined
+ * icons 养成/商城 invisible on it (2026-08-15). HubTabs' inactive `C.mid` (0x888888 ≈ 0.53) stays
+ * below the cut and keeps its paper variant. Exported for the regression test.
  */
-function isLightInk(color: number): boolean {
+export function tabIconVariant(color: number): 'active' | 'inactive' {
   const r = ((color >> 16) & 0xff) / 255, g = ((color >> 8) & 0xff) / 255, b = (color & 0xff) / 255;
-  return 0.299 * r + 0.587 * g + 0.114 * b >= 0.70;
+  return 0.299 * r + 0.587 * g + 0.114 * b >= 0.70 ? 'active' : 'inactive';
 }
 
 /**
  * A raster tab-icon sprite (`RasterIconKind` above), contain-fit and centred in an `s × s` box (same
- * positioning contract as the procedural glyphs above). `color` picks the pre-baked variant instead
- * of tinting: the caller's requested ink is read as a light/dark HINT about the surface behind it —
- * a light ink (the caller means "this sits on a dark fill") → the white active PNG, anything darker
- * → the mid-grey inactive PNG meant for paper. Threshold, not `=== 0xffffff`: the lobby bottom nav
- * asks for `C.light` (0xdddddd) on its dark cover-coloured bar and used to get the grey-on-dark
- * variant, which left the thin-lined icons (养成/商城) all but invisible (2026-08-15). HubTabs'
- * inactive `C.mid` (0x888888) stays below the threshold and keeps its paper variant.
+ * positioning contract as the procedural glyphs above). `color` picks the pre-baked variant (see
+ * `tabIconVariant`) instead of tinting.
  * Not routed through `getCachedDisplay`/`uiCache` (that bakes a *drawn* Graphics to a texture; these
  * are already static textures) — `PIXI.Texture.from` has its own url-keyed cache, so repeat calls are
  * cheap. If the texture hasn't decoded yet (see `preloadTabIconTextures`), this draws nothing for that
  * one frame rather than a garbage 0/1px-scaled sprite; the caller's next render (post-preload) fixes it.
  */
 function buildRasterTabIcon(raster: { active: string; inactive: string }, color: number, s: number): PIXI.DisplayObject {
-  const tex = getArtTexture(isLightInk(color) ? raster.active : raster.inactive);
+  const tex = getArtTexture(raster[tabIconVariant(color)]);
   const box = new PIXI.Container();
   if (!tex.baseTexture.valid) return box;
   const sprite = new PIXI.Sprite(tex);
