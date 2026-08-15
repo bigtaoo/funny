@@ -1,10 +1,10 @@
 # 页签主图标 AI 化 — 试点 Prompt 文档
 
-> 创建：2026-08-14 · 定稿+接线：2026-08-14
+> 创建：2026-08-14 · 试点批定稿+接线：2026-08-14 · 批次 2 判断+prompt 定稿：2026-08-14 · 批次 2 出图+接线完成：2026-08-15
 > 配套代码：[`client/src/render/icons.ts`](../../client/src/render/icons.ts)（`rosterIcon`/`equipIcon`/`skinIcon` 三个新 `IconKind`）· [`client/src/scenes/CardScene/list.ts`](../../client/src/scenes/CardScene/list.ts) · [`client/src/scenes/EquipmentScene/inventory.ts`](../../client/src/scenes/EquipmentScene/inventory.ts) · [`client/src/app/nav/game/campaignRoster.ts`](../../client/src/app/nav/game/campaignRoster.ts)
 > 美术总纲：[`art-direction.md`](art-direction.md) §0（资产分工）/ §6.2（装饰物涂鸦管线，本文档打包脚本沿用其"抠白底"套路）/ §7.6（本次试点的记录条目）
 > 同类文档：[`shop-art-prompts.md`](shop-art-prompts.md) · [`gacha-art-prompts.md`](gacha-art-prompts.md)
-> 状态：**试点批（3/15）已定稿并接线**——铺开剩下 12 个图标是否要做、复用点是否跟进拆分，等这 3 个上线观察后再定
+> 状态：**试点批（3/15）已定稿并接线**；**批次 2（trophy/book/medal/cards/brush 5 个复用槽位）已全部完成**——详见下方"批次 2"一节
 
 ## 背景
 
@@ -90,4 +90,71 @@ Hand-drawn doodle icon in a worn school notebook, single dark-ink pen line art, 
 - [x] 在 active（深底白线）和 inactive（纸底灰线）两种背景上单独看一眼都能认出是"卡/盾/面具"。
 - [x] 缩到 28-32px（真实设备的常见尺寸，见上）依然不糊成色块。
 - [x] 三张放一起风格统一（线宽、抖动幅度、细节密度接近）。
-- [ ] 上线观察：铺开剩下 12 个图标，还是先给其它复用点（Career图鉴/拍卖筛选/成就分类）定去重方案——留到下一批。
+- [x] 上线观察后拍板：铺开第二批（见下）。
+
+---
+
+## 批次 2（2026-08-14 · 状态：判断+prompt 已定，等出图）
+
+范围：`trophy`（3 义撞车）/ `book`（2 义撞车）/ `medal`（2 义撞车）/ `cards` 剩余复用点 / `brush` 剩余复用点，共 5 个槽位。逐个判断"复用现成 3 张图 vs 需要新概念"，结论如下。
+
+### 判断结果总表
+
+| 槽位 | 冲突方 | 处理 | 备注 |
+|---|---|---|---|
+| `trophy` | Career"成就"页签（`stats.achievements`） | **不动，保留 trophy** | 3 义里语义最贴的一个，留给它 |
+| | 首页底栏"战绩"入口（`lobby.nav.stats`） | 新图 `statsTabIcon` | 见下 prompt |
+| | 成就分类"进阶"（`progression`） | 新图 `progressTabIcon` | 见下 prompt |
+| `book` | Career"统计"页签（`stats.title`） | **不动，保留 book** | |
+| | 首页底栏"卡牌/养成"入口（`lobby.nav.cards`） | **复用 `rosterIcon`**（已接线） | 这个入口本来就是深链到 CardScene 的卡背包 tab，跟目标页共享同一张图，比新画一张更合理 |
+| `medal` | 排行榜前三名奖牌（`LeaderboardScene`） | **不动，保留 medal** | 按名次染色（金/银/铜），"名次奖牌"是这个词最本分的含义 |
+| | Career"称号"页签（`stats.titles`） | 新图 `honorTabIcon` | 见下 prompt。`TitlesScene.ts` 里"未收录称号兜底显示 medal"的那处**没有一并改**——那是称号墙内部单张称号卡的兜底图标，不是页签，且换了容易造成"点进称号 tab 看到新图标，墙上未知称号却是旧 medal"的不一致，留到称号系统本身要动的时候再看 |
+| `cards` 剩余复用点 | Career"图鉴"（`collection.title`） | **复用 `rosterIcon`**（已接线） | 图鉴 = 角色卡合集，跟卡背包同一个"卡"概念 |
+| | 拍卖筛选"卡牌"（主列表筛选条 `list.ts` + 建单选品 `itemPickerRender.ts` 两处） | **复用 `rosterIcon`**（已接线） | 同样是"这是一张角色卡"这个字面概念 |
+| | 拍卖行"我的"tab（`list.ts` `mine`） | **不动，保留通用 `cards`** | 判断为不同概念——"我的挂单"包含卡/装备/材料/皮肤全部我的东西，不特指"卡"，硬套 `rosterIcon` 会在这个 tab 上出现一张具体的"战斗小人卡"图，反而制造新的语义偏差。留作未来"我的"专属图标的候选项，不在本批处理 |
+| `brush` 剩余复用点 | 拍卖筛选"皮肤"（同上两处） | **复用 `skinIcon`**（已接线） | 字面"这是一件皮肤"概念 |
+| | 成就分类"收藏"（`collection`） | 新图 `collectionTabIcon` | 见下 prompt；这个含义是"收藏/收集进度"（集齐N张卡/N款皮肤这类成就），不是"皮肤"本身，`skinIcon` 的戏剧面具在这里语义不对 |
+
+**没有一并处理的相邻点**（同一批判断时顺手确认过，判定为超出"页签图标"范围，不动）：`itemLabels.ts` 的 `itemKind()` 本身（`card`→`cards`/`skin`→`brush`）保持不变，它同时喂给拍卖行的"单条挂单内容小图标"（`list.ts:417`）和建单表单的"品类小图标"（`createListing.ts:100`），这两处是内容态小徽标不是导航页签，没有验证过缩放到极小尺寸的效果，不在这批范围内；筛选条本身通过一个局部覆盖表（`FILTER_ICON_OVERRIDE`/`itemPickerRender.ts` 的 `icons` 表)单独指向新图标，不改 `itemKind()` 这个共享函数，两边互不影响。
+
+### 已接线的纯复用改动（无需新图，已完成）
+
+代码：[`CareerTabs.ts`](../../client/src/ui/widgets/CareerTabs.ts)（`collection.title` → `rosterIcon`）、[`LobbyScene/bottomNav.ts`](../../client/src/scenes/LobbyScene/bottomNav.ts)（`lobby.nav.cards` → `rosterIcon`）、[`AuctionScene/itemPickerRender.ts`](../../client/src/scenes/AuctionScene/itemPickerRender.ts)（筛选条 `icons` 表：`card`→`rosterIcon`、`skin`→`skinIcon`）、[`AuctionScene/list.ts`](../../client/src/scenes/AuctionScene/list.ts)（新增 `FILTER_ICON_OVERRIDE` 局部表，同样覆盖主筛选条的 `card`/`skin`）。`tsc --noEmit` 通过；`vitest --config vitest.ui.config.ts` 全量 181 文件 1629 用例通过。
+
+### 待出图（4 张新概念，草案 prompt）
+
+延续批次 1 的共用骨架（"手绘涂鸦、单色墨线、粗糙抖动笔触、单一大剪影、纯白底、缩到 32px 仍可辨"），四张互相之间也要避免撞视觉语言——尤其 `statsTabIcon`(柱状图) 与 `progressTabIcon`(箭头阶梯) 这两个"向上"母题在导航路径上是父子关系（首页"战绩"→成就墙"进阶"分类），必须一眼区分开；`honorTabIcon`(桂冠) 特意选了不同于圆形奖牌的开口造型，避免跟 `medal` 挤在同一堆"奖章"语言里；`collectionTabIcon`(拼图块) 特意避开本来就在同一个成就分类条上的 `book`(pve) 造型。
+
+#### 战绩入口（`statsTabIcon`）
+```
+Hand-drawn doodle icon in a worn school notebook, single dark-ink pen line art, slightly wobbly imperfect strokes, quick loose sketch — not polished. One bold, simple, highly readable silhouette, no scattered separate pieces. Subject: a simple bar chart — three solid vertical bars of ascending height side by side, evenly spaced, no baseline, no axis lines, no numbers, no grid. Single object, centered, filling the frame, on a plain pure-white background, no grid lines, no other elements. Flat 2D, no shading or only light pencil hatching for volume. Must stay clearly recognizable when scaled down to 32x32 pixels. Style of West of Loathing / doodle art. Avoid: color, painterly rendering, gradients, glow, 3d render, photorealistic look, thick clean cartoon outline, vector-art look, pie chart, line graph with dots, upward arrow, trophy, coins, money bag, multiple objects, scattered pieces, confetti dots, text, letters, numbers, watermark, gray background, notebook grid lines, drop shadow.
+```
+
+#### 成就分类·进阶（`progressTabIcon`）
+```
+Hand-drawn doodle icon in a worn school notebook, single dark-ink pen line art, slightly wobbly imperfect strokes, quick loose sketch — not polished. One bold, simple, highly readable silhouette, no scattered separate pieces. Subject: three upward-pointing chevron arrows (like stacked ^ ^ ^ shapes) stacked vertically with a small even gap between each, all the same size, all pointing straight up — a rank-up/level-up insignia. Single object, centered, filling the frame, on a plain pure-white background, no grid lines, no other elements. Flat 2D, no shading or only light pencil hatching for volume. Must stay clearly recognizable when scaled down to 32x32 pixels. Style of West of Loathing / doodle art. Avoid: color, painterly rendering, gradients, glow, 3d render, photorealistic look, thick clean cartoon outline, vector-art look, single arrow, circular badge, star shape, bar chart, crown, wings, multiple unrelated objects, confetti dots, text, letters, watermark, gray background, notebook grid lines, drop shadow.
+```
+
+#### Career·称号（`honorTabIcon`）
+```
+Hand-drawn doodle icon in a worn school notebook, single dark-ink pen line art, slightly wobbly imperfect strokes, quick loose sketch — not polished. One bold, simple, highly readable silhouette, no scattered separate pieces. Subject: a simple laurel wreath — two curved leafy branches meeting and slightly overlapping at the bottom, open at the top (NOT a closed circle/ring), a few small simple leaf notches along each branch, symmetrical left-right. Single object, centered, filling the frame, on a plain pure-white background, no grid lines, no other elements. Flat 2D, no shading or only light pencil hatching for volume. Must stay clearly recognizable when scaled down to 32x32 pixels. Style of West of Loathing / doodle art. Avoid: color, painterly rendering, gradients, glow, 3d render, photorealistic look, thick clean cartoon outline, vector-art look, closed circular medal disc, round badge, hanging ribbon tails, crown, human face, text or letters inside the wreath, multiple objects, confetti dots, watermark, gray background, notebook grid lines, drop shadow.
+```
+
+#### 成就分类·收藏（`collectionTabIcon`）
+```
+Hand-drawn doodle icon in a worn school notebook, single dark-ink pen line art, slightly wobbly imperfect strokes, quick loose sketch — not polished. One bold, simple, highly readable silhouette, no scattered separate pieces. Subject: a single chunky jigsaw puzzle piece — one classic interlocking puzzle piece shape with one rounded tab knob sticking out on one edge and one rounded socket notch cut into an adjacent edge, roughly square overall. Just ONE puzzle piece, not a pair or a grid of pieces. Single object, centered, filling the frame, on a plain pure-white background, no grid lines, no other elements. Flat 2D, no shading or only light pencil hatching for volume. Must stay clearly recognizable when scaled down to 32x32 pixels. Style of West of Loathing / doodle art. Avoid: color, painterly rendering, gradients, glow, 3d render, photorealistic look, thick clean cartoon outline, vector-art look, multiple puzzle pieces, puzzle grid, open book shape, gear/cog shape, other objects, confetti dots, text, letters, watermark, gray background, notebook grid lines, drop shadow.
+```
+
+### 出图后的管线（已跑通，2026-08-15）
+
+用户用 4 条 prompt 跑 GPT Image 2 出图，文件名分别对应 `tabicon_stats.webp`（bar_chart_doodle_icon）/ `tabicon_progress.webp`（rank-up-doodle-icon-final）/ `tabicon_honor.webp`（laurel_wreath_doodle）/ `tabicon_collection.webp`（puzzle_doodle_icon），一次通过、没有反复：
+
+1. 源图丢进 `art/ui/tabicons/`，[`pack_tab_icons.cjs`](../../art/ui/tabicons/pack_tab_icons.cjs) 的 `JOBS` 数组新增 4 条，跑 `node pack_tab_icons.cjs` 产出 `{stats,progress,honor,collection}_{active,inactive}.png` 到 `client/src/assets/tabicons/`。
+2. 小尺寸验证：一次性 `sharp` contact-sheet 脚本（同批次 1 手法，未留存），28/32/40/64px 分别合成到 `C.dark`(0x2c2c2a)/`C.paper`(0xfaf6ee) 背景上截图比对。**四张全部一次过关**——`statsTabIcon`(柱状图)/`progressTabIcon`(箭头阶梯) 在 28px 依然清晰且互相不混淆；`honorTabIcon`(桂冠) 虽然是四张里细节密度最高的一张，缩到 28px 仍能读出"花环"轮廓，没有像试点批 v3 卡背包那样糊成一团；`collectionTabIcon`(拼图块) 线条比同批的柱状图/箭头明显更细（outline 而非实心剪影），跟试点批 `equipIcon`/`skinIcon` 也是细线 outline、`rosterIcon` 是实心剪影的粗细混搭先例一致，判断不算新问题，未要求重出。
+3. `icons.ts`：`IconKind` 新增 `'statsTabIcon' | 'progressTabIcon' | 'honorTabIcon' | 'collectionTabIcon'`；新增 `RasterIconKind` 联合类型统一给 `TAB_ICON_RASTER`/`DrawableIconKind` 的 `Exclude` 复用（现在是 7 个光栅图标，不再各处手写重复的联合）。
+4. 接线：`LobbyScene/bottomNav.ts`（`lobby.nav.stats` → `statsTabIcon`）、`AchievementScene.ts`（`CATEGORY_ICON.progression` → `progressTabIcon`、`CATEGORY_ICON.collection` → `collectionTabIcon`）、`CareerTabs.ts`（`stats.titles` → `honorTabIcon`）。
+5. `tsc --noEmit` 通过；`vitest --config vitest.ui.config.ts` 全量 181 文件 1629 用例通过。
+
+### 状态：批次 2 全部完成 ✅
+
+5 个复用槽位（trophy/book/medal/cards/brush）全部处理完毕：3 个纯复用接线 + 4 张新图出图/打包/验证/接线，均已落地。

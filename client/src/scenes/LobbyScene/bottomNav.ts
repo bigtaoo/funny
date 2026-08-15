@@ -40,10 +40,14 @@ export function drawBottomNav(core: LobbySceneCore, badges: BadgesPanel): void {
   interface NavSlot { name: string; icon: IconKind; color: number; active?: boolean; disabled?: boolean; assign?: (r: Rect) => void; }
   const off = !!core.cb.offline;
   const slots: NavSlot[] = [
-    { name: t('lobby.nav.cards'),  icon: 'book',   color: C.red,    assign: r => { core.cardsNavRect = r; } },
+    // 'book' generic glyph → rosterIcon (AI art pilot batch 2): this button deep-links straight into
+    // CardScene's roster tab, so it now shares that tab's own AI icon instead of an unrelated notebook glyph.
+    { name: t('lobby.nav.cards'),  icon: 'rosterIcon', color: C.red,    assign: r => { core.cardsNavRect = r; } },
     { name: t('lobby.nav.shop'),   icon: 'coin',   color: C.green,  disabled: off, assign: r => { core.shopNavRect = r; } },
     { name: t('lobby.nav.home'),   icon: 'home',   color: C.accent, active: true },
-    { name: t('lobby.nav.stats'), icon: 'trophy', color: C.accent, disabled: off, assign: r => { core.statsNavRect = r; } },
+    // 'trophy' freed up for Career's Achievements tab only (AI art batch 2 dedupe) — this entry gets
+    // its own new icon (bar chart) instead of sharing trophy with the achievements tab it opens into.
+    { name: t('lobby.nav.stats'), icon: 'statsTabIcon', color: C.accent, disabled: off, assign: r => { core.statsNavRect = r; } },
     { name: t('lobby.nav.social'), icon: 'globe',  color: C.gold,   disabled: off, assign: r => { core.socialNavRect = r; } },
   ];
 

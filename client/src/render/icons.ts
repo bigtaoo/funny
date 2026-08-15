@@ -51,6 +51,19 @@ import equipIconInactiveUrl from '../assets/tabicons/equip_inactive.png';
 import skinIconActiveUrl from '../assets/tabicons/skin_active.png';
 import skinIconInactiveUrl from '../assets/tabicons/skin_inactive.png';
 
+// Tab-icon AI art batch 2 (design/product/tab-icon-art-prompts.md §batch2, 2026-08-15): resolves the
+// trophy(3-way)/book/medal reuse conflicts flagged after the pilot — these 4 are the genuinely new
+// meanings that had no existing AI icon to reuse (the reuse-only fixes went straight to rosterIcon/
+// skinIcon above, no new asset needed).
+import statsTabIconActiveUrl from '../assets/tabicons/stats_active.png';
+import statsTabIconInactiveUrl from '../assets/tabicons/stats_inactive.png';
+import progressTabIconActiveUrl from '../assets/tabicons/progress_active.png';
+import progressTabIconInactiveUrl from '../assets/tabicons/progress_inactive.png';
+import honorTabIconActiveUrl from '../assets/tabicons/honor_active.png';
+import honorTabIconInactiveUrl from '../assets/tabicons/honor_inactive.png';
+import collectionTabIconActiveUrl from '../assets/tabicons/collection_active.png';
+import collectionTabIconInactiveUrl from '../assets/tabicons/collection_inactive.png';
+
 export type IconKind =
   | 'book' | 'globe' | 'coin' | 'trophy' | 'castle' | 'pencils'
   // Recharge tiers (ShopScene): escalating treasure to make bigger tiers read richer.
@@ -100,24 +113,37 @@ export type IconKind =
   | 'close' | 'check' | 'play'
   // [Cards|Equipment|Skins] peer-tab AI art pilot (see the import block above) — raster, not drawn
   // via DRAW/SketchPen. `cards`/`armor`/`brush` above stay untouched for every other reuse site
-  // (Career codex, auction filters, achievement category…), only this one peer group moved.
-  | 'rosterIcon' | 'equipIcon' | 'skinIcon';
+  // (auction "mine" tab, itemKind()'s content badges…) that batch 2 judged a different concept.
+  | 'rosterIcon' | 'equipIcon' | 'skinIcon'
+  // Tab-icon AI art batch 2 (see the import block above) — the 4 genuinely-new meanings: lobby
+  // "career/战绩" entry (bar chart), achievement "progression" category (stacked chevrons), Career
+  // "Titles" tab (laurel wreath, deliberately not a closed disc so it doesn't crowd `medal`'s round-medal
+  // look), achievement "collection" category (jigsaw puzzle piece, distinct from `book`'s pve glyph in
+  // the same tab strip).
+  | 'statsTabIcon' | 'progressTabIcon' | 'honorTabIcon' | 'collectionTabIcon';
+
+/** Raster tab-icon `IconKind`s that skip `DRAW`/`SketchPen` entirely — dispatched via `TAB_ICON_RASTER` instead. */
+type RasterIconKind = 'rosterIcon' | 'equipIcon' | 'skinIcon' | 'statsTabIcon' | 'progressTabIcon' | 'honorTabIcon' | 'collectionTabIcon';
 
 /** `{active, inactive}` PNG pair per raster tab-icon kind — see the import block above. */
-const TAB_ICON_RASTER: Record<'rosterIcon' | 'equipIcon' | 'skinIcon', { active: string; inactive: string }> = {
+const TAB_ICON_RASTER: Record<RasterIconKind, { active: string; inactive: string }> = {
   rosterIcon: { active: rosterActiveUrl as string, inactive: rosterInactiveUrl as string },
   equipIcon:  { active: equipIconActiveUrl as string, inactive: equipIconInactiveUrl as string },
   skinIcon:   { active: skinIconActiveUrl as string, inactive: skinIconInactiveUrl as string },
+  statsTabIcon:      { active: statsTabIconActiveUrl as string, inactive: statsTabIconInactiveUrl as string },
+  progressTabIcon:   { active: progressTabIconActiveUrl as string, inactive: progressTabIconInactiveUrl as string },
+  honorTabIcon:      { active: honorTabIconActiveUrl as string, inactive: honorTabIconInactiveUrl as string },
+  collectionTabIcon: { active: collectionTabIconActiveUrl as string, inactive: collectionTabIconInactiveUrl as string },
 };
 
-/** Warm the 6 tab-icon PNGs into the PIXI texture cache — call once from a scene that uses them
+/** Warm the 14 tab-icon PNGs into the PIXI texture cache — call once from a scene that uses them
  *  (CardScene, EquipmentScene) so the first render doesn't show a blank icon while it decodes. */
 export function preloadTabIconTextures(): Promise<void> {
   return preloadTextureList(Object.values(TAB_ICON_RASTER).flatMap((v) => [v.active, v.inactive]));
 }
 
 /** Every `IconKind` except the raster-only tab icons above, which skip `DRAW` entirely (see `buildIcon`). */
-type DrawableIconKind = Exclude<IconKind, 'rosterIcon' | 'equipIcon' | 'skinIcon'>;
+type DrawableIconKind = Exclude<IconKind, RasterIconKind>;
 
 export const DRAW: Record<DrawableIconKind, (g: PIXI.Graphics, s: number, color: number) => void> = {
   book:    drawBook,
@@ -193,7 +219,7 @@ export function buildIcon(kind: IconKind, size: number, color: number): PIXI.Dis
 }
 
 /**
- * A `rosterIcon`/`equipIcon`/`skinIcon` sprite, contain-fit and centred in an `s × s` box (same
+ * A raster tab-icon sprite (`RasterIconKind` above), contain-fit and centred in an `s × s` box (same
  * positioning contract as the procedural glyphs above). `color` picks the pre-baked variant instead
  * of tinting — `0xffffff` (HubTabs' active-cell colour) → the active PNG, anything else → inactive.
  * Not routed through `getCachedDisplay`/`uiCache` (that bakes a *drawn* Graphics to a texture; these

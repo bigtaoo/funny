@@ -40,6 +40,12 @@ export interface CreateFormOpener {
   openCreateForm(): void;
 }
 
+// card/skin filter chips → rosterIcon/skinIcon (AI art pilot batch 2, design/product/tab-icon-art-prompts.md
+// §batch2): same "卡"/"皮肤" concept the [Cards|Equipment|Skins] peer tabs already draw with dedicated AI
+// art. itemKind() itself stays generic 'cards'/'brush' — it also feeds the per-row item-type badge and
+// the create-listing content badge (different render context, not part of this tab-icon batch).
+const FILTER_ICON_OVERRIDE: Partial<Record<AucFilter, IconKind>> = { card: 'rosterIcon', skin: 'skinIcon' };
+
 export class ListPanel {
   constructor(
     private readonly core: AuctionSceneCore,
@@ -70,6 +76,9 @@ export class ListPanel {
     const labelKeys: Record<AucTab, 'auction.tabAll' | 'auction.tabMine' | 'auction.tabBids'> = {
       all: 'auction.tabAll', mine: 'auction.tabMine', bids: 'auction.tabBids',
     };
+    // 'mine' keeps the generic 'cards' glyph deliberately (AI art pilot batch 2 judged this NOT the
+    // same "卡" concept as rosterIcon — "My Auctions" covers cards/equipment/materials/skins alike, not
+    // specifically cards; see design/product/tab-icon-art-prompts.md §batch2 for the reasoning).
     const icons: Record<AucTab, IconKind> = { all: 'tag', mine: 'cards', bids: 'hammer' };
     const hubTabs: HubTab[] = tabs.map((tab) => ({ label: t(labelKeys[tab]), active: tab === core.activeTab, icon: icons[tab] }));
     const onSelect = (i: number): void => {
@@ -114,7 +123,7 @@ export class ListPanel {
       const iconGap = hasIcon ? iconSize + 8 : 0;
       // Category glyph prefix (the 'all' filter stays text-only).
       if (hasIcon) {
-        const fi = buildIcon(itemKind(f), iconSize, active ? C.light : C.dark);
+        const fi = buildIcon(FILTER_ICON_OVERRIDE[f] ?? itemKind(f), iconSize, active ? C.light : C.dark);
         fi.x = contentX + i * chipW + pad / 2 + 12; fi.y = midY - iconSize / 2;
         core.bodyLayer.addChild(fi);
       }

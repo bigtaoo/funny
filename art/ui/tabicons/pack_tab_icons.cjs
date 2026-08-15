@@ -36,6 +36,11 @@ const JOBS = [
   { src: 'tabicon_roster.webp', name: 'roster' },
   { src: 'tabicon_equip.webp',  name: 'equip' },
   { src: 'tabicon_skin.webp',   name: 'skin' },
+  // Batch 2 (design/product/tab-icon-art-prompts.md §batch2):
+  { src: 'tabicon_stats.webp',      name: 'stats' },
+  { src: 'tabicon_progress.webp',   name: 'progress' },
+  { src: 'tabicon_honor.webp',      name: 'honor' },
+  { src: 'tabicon_collection.webp', name: 'collection' },
 ];
 
 const OUT_DIR = path.resolve(__dirname, '../../../client/src/assets/tabicons');

@@ -47,8 +47,12 @@ export function drawCareerTabs(
   // Collection instead (reported 14.07.2026).
   const tabs: HubTab[] = [
     { label: t('stats.title'), active: active === 'stats', icon: 'book' },
-    { label: t('stats.titles'), active: active === 'titles', icon: 'medal' },
-    { label: t('collection.title'), active: active === 'codex', icon: 'cards' },
+    // 'medal' freed up for LeaderboardScene's tinted rank-1/2/3 glyph only (AI art batch 2 dedupe) —
+    // this tab gets its own new icon (laurel wreath) instead.
+    { label: t('stats.titles'), active: active === 'titles', icon: 'honorTabIcon' },
+    // 'cards' generic glyph → rosterIcon (AI art pilot batch 2, design/product/tab-icon-art-prompts.md
+    // §batch2): the codex is a card compendium, same "卡" concept the roster tab's AI icon already draws.
+    { label: t('collection.title'), active: active === 'codex', icon: 'rosterIcon' },
     { label: t('stats.achievements'), active: active === 'achievements', icon: 'trophy', badge: !!cb.hasClaimableAchievement },
   ];
   const onSelect = (i: number) => {
