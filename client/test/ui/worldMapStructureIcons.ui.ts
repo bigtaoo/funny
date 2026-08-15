@@ -102,3 +102,47 @@ describe('drawTileL1 structure/watchtower markers — geometric fallback (2026-0
     expect(beginFills.some((f) => f.color === 0xe8dcc0)).toBe(false);
   });
 });
+
+// ── Atlas-sprite path: on-screen footprint (2026-08-15 "乱糟糟" fix) ─────────────────
+// The suite above only exercises the geometric fallback. These lock the SPRITE branch's
+// size, which is the thing that actually broke: a player can line up watchtowers/blockers
+// on adjacent tiles, and under the 2:1 iso projection two neighbours' anchors are only
+// TP/2 apart on screen — so a sprite much wider than that buries its neighbours and a
+// defensive line renders as one unreadable hatch blob instead of N countable buildings.
+describe('drawTileL1 structure/watchtower markers — atlas sprite footprint', () => {
+  /** A texture of the given packed-frame size; never rendered, so no GL context is needed. */
+  function fakeTex(w: number, h: number): PIXI.Texture {
+    return new PIXI.Texture(new PIXI.BaseTexture(undefined, { width: w, height: h }));
+  }
+
+  /** Draw `tile` with the building atlas reporting ready, and return the sprite it added. */
+  async function spriteFor(tile: WorldTileView, texW: number, texH: number): Promise<PIXI.Sprite> {
+    vi.resetModules();
+    vi.doMock('../../src/render/atlas/buildingAtlasLoader', () => ({
+      isBuildingAtlasReady: () => true,
+      getBuildingTexture: () => fakeTex(texW, texH),
+    }));
+    const { drawTileL1: draw } = await import('../../src/scenes/worldmap/tileGraphics');
+    const g = new PIXI.Graphics();
+    draw(g, tile, 0xffffff, 0x4477cc, false, TP, false, 'terrain_grass', null, 5, 5, 'w1');
+    const sprites = g.children.filter((c): c is PIXI.Sprite => c instanceof PIXI.Sprite);
+    return sprites[sprites.length - 1]!; // the structure sprite is added after any resource motif
+  }
+
+  // TP/2 is the x-distance between two diagonally adjacent tiles' anchors; allow ~30% spill
+  // (iso art is expected to lean on its neighbours a little, just not to swallow them).
+  const MAX_W = TP * 0.7;
+
+  it('the watchtower sprite stays within ~one neighbour spacing wide (256×198 frame)', async () => {
+    const sp = await spriteFor(baseTile({ watchtower: true }), 256, 198);
+    expect(sp.width).toBeGreaterThan(0);
+    expect(sp.width).toBeLessThanOrEqual(MAX_W);
+  });
+
+  it('the blocker sprite stays within ~one neighbour spacing wide (256×88 frame)', async () => {
+    const tile = baseTile({ mine: true, structure: { kind: 'blocker', level: 1 } as WorldTileView['structure'] });
+    const sp = await spriteFor(tile, 256, 88);
+    expect(sp.width).toBeGreaterThan(0);
+    expect(sp.width).toBeLessThanOrEqual(MAX_W);
+  });
+});
