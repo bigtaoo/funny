@@ -143,7 +143,7 @@ Collection  Stats     Lobby    Shop/Gacha    Room
 > **返回按钮放大 1.5x + 标题字号统一（2026-07-12）**：
 > - **返回按钮放大**：`backSize(h)` 从 `h*0.026` 改为 `h*0.039`（1.5×），驱动 `drawSceneHeader`/`drawFloatingBackButton` 两条路径，全场景（含悬浮版）一次性放大，无需逐场景改。
 > - **标题字号统一**：此前 5 个场景显式传 `titleSize` 覆盖默认值——`Settings`/`Titles` 0.042、`Room`/`Friends` 0.04、`LevelPrep` 0.032——跨页字号不一致。本次删掉这 5 处覆盖，全部回落默认 `h*0.034`，与 Shop/Gacha/Equipment 等场景完全一致。
-> - **EventScene 补迁**：`EventScene` 此前完全绕开 `SceneHeader`，自绘标题（`h*0.045`）与返回文字（`h*0.032`，位置 `x=w*0.05,y=h*0.04`，私有 i18n key `event.back`），是唯一未接入共享组件的二级场景。本次改用 `drawSceneHeader(this.container, w, h, t('event.title'))`，回退按钮/标题/栏高与其余场景完全一致；`event.back` i18n key 不再使用（未删，供未来复用）。
+> - **EventScene 补迁**：`EventScene` 此前完全绕开 `SceneHeader`，自绘标题（`h*0.045`）与返回文字（`h*0.032`，位置 `x=w*0.05,y=h*0.04`，私有 i18n key `event.back`），是唯一未接入共享组件的二级场景。本次改用 `drawSceneHeader(this.container, w, h, t('event.title'))`，回退按钮/标题/栏高与其余场景完全一致；`event.back` i18n key 不再使用（**2026-08-16 审计已删**，见 §33——"供未来复用"三周内没人复用，返回文案统一走 `common.back`）。
 > - **未动**：Card/Equipment 的 `drawHeaderCurrency` 紧凑 scale（`100/headerH`，见上「栏高统一」条目）——两场景互为对开页且有明确的溢出规避理由，不属于本次"跨页不一致"的范畴，维持现状。
 
 ---
@@ -1036,3 +1036,22 @@ const rowY  = isPortrait
 | 竖屏 iPad 类 834×1194 | ≈143px | 14.6px | ≈42.9px |
 
 **验证**：`npx tsc --noEmit` 全绿；`npm run test:ui`（156 文件/1422 例）+ `npx vitest run`（主单测 160 文件/1275 例）全绿，无回归；`npm run build:web` 生产构建通过。新增 `client/test/ui/sceneHeaderPortraitContentScale.ui.ts`（5 例）：横屏/紧凑栏字号不变、竖屏高栏字号按 `Math.round(headerH*0.30)` 精确放大、`titleSize` 覆写仍优先、返回按钮字号同步放大（不只是标题）、`drawFloatingBackButton` 与 `drawSceneHeader` 在同一屏幕高度下返回按钮大小一致——`git stash` 临时回退 `SceneHeader.ts` 复跑，5 例里 2 例如预期报错（`expected 42 to be greater than 42`），确认不是空断言。真实浏览器截图：本次会话 Browser 面板同样报"pane 未显示、无法合成帧"（同 §23/§26/§27/§28/§29/§30/§31 的环境限制，非本次改动引入），改用上表的真实缩放公式算值替代像素级截图核对。金币簇（右上角）的"钉死绝对大小"例外本次未动，如需一并放大需先确认竖屏下跟标题是否会挤在一起。
+
+## 33. i18n 死 key 审计：删掉 139 个（1595 → 1456），补一条防回归的 spec（2026-08-16）
+
+**背景**：2026-08-15 删皮肤"卖给系统"功能（`f258e27b`）时顺手扫了一遍 `zh.ts`，发现 1595 个 key 里有一大批全仓库搜不到引用。当时的扫描很粗（只匹配字面量、靠前缀排除模板拼接），~295 个候选里混了大量误报，没有当场删。本次做完整审计。
+
+**为什么这类垃圾会攒下来**：三个 locale 的 **key 集合**是编译期强制的（`en.ts`/`de.ts` 是 `Record<TranslationKey, string>`），15.08 又补了 `i18n-placeholder-parity.test.ts` 锁住字符串**里面**的 `{param}`；但"这个 key 还有没有人用"没有任何机制管——没人引用的 key 照样 `tsc` 全绿、照样三语齐全，可以活到天荒地老。删掉的多半是**场景重做后留下的整块**：`prep.*`（12 个）和 `progression.*`（10 个）是 `LevelPrepScene` 早已不再绘制的单位升级/合成面板；~28 个 `world.*` 是世界地图重做前的行军/占领弹窗文案；十几个各场景私有的 `*.back`，是返回按钮统一到 `SceneHeader`（§7 / 上文 2026-07-05 那条）共用 `common.back` 之后剩下的。
+
+**审计方法（两轮，第二轮才是关键）**：
+
+1. **第一轮·扫字面量**：把 `client/` + `server/` + `tools/` 全部 `.ts/.js/.json` 里的引号字符串抽成一个集合，逐 key 查在不在。两个坑：① 模板串内部的 `${t('roster.capacity')}` 必须算引用（按整串 backtick 取会把里面的 `'...'` 吞掉，导致 `roster.*` 等一批被误判成死 key）；② 反过来，`t(\`card.${defId}.name\`)` 这类动态拼 key 的调用点，必须把能拼出来的 key 也算活的。得到 125 个候选。
+2. **第二轮·给每个"洞"定值域**：第一轮对动态模板的处理是"前缀放行"，而这正是漏网的原因——`client/test/ui/auctionMaterialNames.ui.ts` 里有个 `t(\`auction.${mat}\`)`（而且它是条**反向断言**，专门断言这些 key 不存在），按前缀放行就等于替 `auction.back`/`auction.seller`/`auction.tax` 全体作保，而 `mat` 只可能是 `scrap|lead|binding`。把每个动态调用点的洞对上真实值域（card/equip defId、`BUILDING_KEYS`、`ACHIEVEMENTS` 的 id、成员角色枚举…）逐个核，又多挖出 14 个：`achievement.back`/`reward`、`family.back`/`myFamily`/`sendMsg`/`changeEmblem`/`err.leaderCannotLeave`、`auction.back`/`seller`/`expires`/`tax`/`auctionTag`/`noBid`/`err.selfBuy`。
+
+**留下没删的**（116 个只靠动态拼接引用，扫描器看不见）：`card.<defId>.{name,desc,lore}`、`equip.<defId>.name`、`affix.<id>`、`rank.*`、`rarity.*`、`city.bld.*`、`achievement.ach.*`、`tutorial.o<n>/beat<i>.*`、`title.slg.*` 等。两个特例值得单记：
+- **`achievement.category.collection`**：`AchievementScene.CATEGORY_ORDER` 里有 `'collection'`，但服务端 `ACHIEVEMENTS` 目前没有一条属于该分类，而空分类会被自动隐藏——**今天确实到不了**。仍然保留：分类是 `AchCategory` 类型的正式成员，链路整条通着，服务端加一条成就页签当场就出来。
+- **`slg.settle.body` / `family.mail.rejected.body`**：服务端发系统邮件时写成 `key|rank=1|nations=2` 这种带参形式（`FriendsScene/mail.ts` 的 `mailText()` 先按 `|` 切开再 `t()`），所以两边都搜不到裸字面量。
+
+**防回归 spec**：新增 [`client/test/i18n-no-dead-keys.test.ts`](../../client/test/i18n-no-dead-keys.test.ts)——扫 `client/src` + `client/test` + `server`，断言 `zh.ts` 每个 key 要么有字面量引用，要么被 `DYNAMIC_FAMILIES` 表里某一条**声明过的动态族**生成。刻意**不做**成"允许的前缀列表"：上面第二轮挖出来的那 14 个就是被前缀放行盖住的，前缀白名单等于把这次审计的主要发现重新埋回去。每条族记的是**形状 + 值域**，值域能从真常量拿的就直接 import（`CARD_DEFS`/`EQUIPMENT_DEFS`/`ACHIEVEMENTS`/`BUILDING_KEYS`/`AFFIX_FIELD_MAP`/`RANK_TIERS`——加张卡、加栋建筑不用动这个文件），只有槽位/稀有度/成员角色这类闭合小枚举是手写的，而且新增成员时这条 spec 报错正是想要的效果：说明少了一份翻译。扫描刻意宽松（注释里提到 key 也算引用），偏向"少删"而不是"敢删"。
+
+**验证**：`npx tsc --noEmit` + `tsc --noEmit -p tsconfig.test.json` 全绿；`npx vitest run`（160 文件 / 1339 例）+ `npm run test:ui`（186 文件 / 1651 例）全绿；`npm run build:web` 生产构建通过。新 spec 有效性用真失败验证过：往三个 locale 塞一个 `zzz.unused.probe` 后如期报 `expected [ 'zzz.unused.probe' ] to deeply equal []`，删掉后恢复绿。无可见改动（纯删无引用文案），未起 dev server 截图。
