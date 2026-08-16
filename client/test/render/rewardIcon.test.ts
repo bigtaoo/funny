@@ -11,6 +11,19 @@
 // Run: npm test — the default suite's `test/**/*.test.ts` include picks this up. There is no
 // separate render suite (vitest.render.config.ts was deleted 2026-08-15; see icons.test.ts).
 import { describe, it, expect, vi } from 'vitest';
+// The two real atlas manifests, imported for their frame *names* only (no decode). The kind strings
+// this module hands to buildCoinIcon/buildMaterialIcon have to exist in these, or the atlas lookup
+// misses and every coin/material reward silently falls back to a procedural glyph — the exact 2026-08-15
+// bug, just on the routes the faked builders below can't see.
+import coinAtlasData from '../../src/assets/shop/coins.json';
+import iconsAtlasData from '../../src/assets/icons/icons_atlas.json';
+// Type-only (erased at runtime, so no server module is loaded): the reward-kind unions of every
+// endpoint that feeds a reward row, used for the exhaustiveness table at the end of the first block.
+// Not via `@nw/shared` — that alias points at the browser-safe SLG slice only (see vitest.config.ts).
+import type { CheckinRewardKind, WeeklyChestRewardKind } from '../../../server/shared/src/retention';
+import type { BpRewardKind } from '../../../server/shared/src/battlepass';
+import type { RechargeRewardKind } from '../../../server/shared/src/rechargeMilestone';
+import type { MailAttachmentKind } from '../../../server/shared/src/social';
 
 // All three builders share the real `(kind, size, color)` shape. Spell the params out (rather than
 // `vi.fn(() => …)`) so vitest infers a 3-tuple for `mock.calls` — a zero-arg mock infers `[]` and
@@ -95,6 +108,17 @@ describe('buildRewardIcon — single source of truth for reward pictures', () =>
     expect(buildMaterialIcon.mock.calls.map((c) => c.slice(1))).toEqual([[43, 0x333333], [44, 0x444444]]);
   });
 
+  // RechargeScene passes `{ coinKind: … }` for *every* reward in a tier, not just the coin ones
+  // (RechargeScene.ts drawTierCard), so the coin override has to stay inert on the other routes —
+  // hoisting that lookup above the kind dispatch would repaint its card/material rows as coin piles.
+  it('ignores opts.coinKind on every non-coin route', () => {
+    buildIcon.mockClear(); buildMaterialIcon.mockClear();
+    buildRewardIcon({ kind: 'card', count: 1 }, 40, 0x336644, { coinKind: 'coinChest' });
+    buildRewardIcon({ kind: 'material', id: 'lead', count: 1 }, 40, 0x336644, { coinKind: 'coinChest' });
+    expect(buildIcon.mock.calls[0][0]).toBe('rosterIcon');
+    expect(buildMaterialIcon.mock.calls[0][0]).toBe('lead');
+  });
+
   it('routes coins through buildCoinIcon (AI coin atlas), never buildIcon', () => {
     buildIcon.mockClear(); buildCoinIcon.mockClear();
     buildRewardIcon({ kind: 'coins', count: 20 }, 40, 0xd4a030);
@@ -157,6 +181,34 @@ describe('buildRewardIcon — single source of truth for reward pictures', () =>
     expect(buildRewardIcon({ kind: 'stamina', count: 5 }, 40, 0x336644)).toBeNull();
     expect(buildRewardIcon({ kind: 'something_new', count: 1 }, 40, 0x336644)).toBeNull();
   });
+
+  // `RewardLike.kind` is a bare `string`, so nothing in the type system connects this resolver to
+  // the five server-side kind unions that feed it — a new kind ('ticket', a new currency…) added on
+  // the server compiles fine here and renders as a pictureless row on all six screens. This table is
+  // that missing link: `Record<Union, …>` makes TS demand a decision for every member (a new server
+  // kind fails `npm run typecheck` until someone lands here), and the assertion checks the decision
+  // is what the resolver actually does. 'text' means deliberately pictureless — the caller draws a
+  // capsule or a bare "+N" — not "unimplemented".
+  const SERVER_REWARD_KINDS: Record<
+    CheckinRewardKind | WeeklyChestRewardKind | BpRewardKind | RechargeRewardKind | MailAttachmentKind,
+    'picture' | 'text'
+  > = {
+    coins: 'picture',
+    material: 'picture',
+    card: 'picture',
+    equipment: 'picture',
+    skin: 'picture',
+    stamina: 'text', // a clock/bolt would just repeat the "+N 体力" label next to it
+    item: 'text', // auction/system mail's catch-all kind; mail.ts draws its generic capsule
+  };
+
+  it('draws a picture for every reward kind any server endpoint can emit', () => {
+    const misrouted = Object.entries(SERVER_REWARD_KINDS).filter(([kind, want]) => {
+      const drawn = buildRewardIcon({ kind, count: 1 }, 40, 0x336644) !== null;
+      return drawn !== (want === 'picture');
+    });
+    expect(misrouted).toEqual([]);
+  });
 });
 
 describe('coinIconTier / materialKind', () => {
@@ -172,6 +224,24 @@ describe('coinIconTier / materialKind', () => {
     expect([39, 79, 149, 299].map(coinIconTier))
       .toEqual(['coin', 'coins', 'coinStack', 'coinSack']);
     expect([0, -1].map(coinIconTier)).toEqual(['coin', 'coin']);
+  });
+
+  // The DRAW cross-check above does this for the three item rewards; these two do it for the coin
+  // and material routes. buildCoinIcon/buildMaterialIcon are faked here, so a tier renamed (or a
+  // sixth tier added) without matching art would pass every other assertion in this file and then
+  // miss the atlas frame at runtime — degrading to the procedural glyph with nothing going red.
+  it('only names coin tiers the AI coin atlas has a frame for', () => {
+    const frames = Object.keys(coinAtlasData.frames);
+    const tiers = [...new Set([0, 40, 80, 150, 300, 99999].map(coinIconTier))];
+    expect(tiers.filter((k) => !frames.includes(k))).toEqual([]);
+  });
+
+  it('only names materials the shared icons atlas has a frame for', () => {
+    const frames = Object.keys(iconsAtlasData.frames);
+    // Every id materialKind() accepts — the MaterialKind union, spelled out (it is a type, so it
+    // cannot be enumerated at runtime); the assertion below keeps this list honest against the atlas.
+    const mats = ['scrap', 'lead', 'binding'].map((id) => materialKind(id));
+    expect(mats.filter((k) => k === null || !frames.includes(k))).toEqual([]);
   });
 
   it('accepts only the short material ids the server actually sends', () => {
