@@ -1055,3 +1055,18 @@ const rowY  = isPortrait
 **防回归 spec**：新增 [`client/test/i18n-no-dead-keys.test.ts`](../../client/test/i18n-no-dead-keys.test.ts)——扫 `client/src` + `client/test` + `server`，断言 `zh.ts` 每个 key 要么有字面量引用，要么被 `DYNAMIC_FAMILIES` 表里某一条**声明过的动态族**生成。刻意**不做**成"允许的前缀列表"：上面第二轮挖出来的那 14 个就是被前缀放行盖住的，前缀白名单等于把这次审计的主要发现重新埋回去。每条族记的是**形状 + 值域**，值域能从真常量拿的就直接 import（`CARD_DEFS`/`EQUIPMENT_DEFS`/`ACHIEVEMENTS`/`BUILDING_KEYS`/`AFFIX_FIELD_MAP`/`RANK_TIERS`——加张卡、加栋建筑不用动这个文件），只有槽位/稀有度/成员角色这类闭合小枚举是手写的，而且新增成员时这条 spec 报错正是想要的效果：说明少了一份翻译。扫描刻意宽松（注释里提到 key 也算引用），偏向"少删"而不是"敢删"。
 
 **验证**：`npx tsc --noEmit` + `tsc --noEmit -p tsconfig.test.json` 全绿；`npx vitest run`（160 文件 / 1339 例）+ `npm run test:ui`（186 文件 / 1651 例）全绿；`npm run build:web` 生产构建通过。新 spec 有效性用真失败验证过：往三个 locale 塞一个 `zzz.unused.probe` 后如期报 `expected [ 'zzz.unused.probe' ] to deeply equal []`，删掉后恢复绿。无可见改动（纯删无引用文案），未起 dev server 截图。
+
+### 33.1 反向补漏：服务端选 key、客户端没翻译（2026-08-16 同日追加）
+
+§33 那条 spec 管的是"key 没人用"，反过来"有人用、字典里没有"当时没管。补了两条，各抓到一处真问题。
+
+**① 系统邮件的 key 是服务端选的，两边没人对账**——`sendSystemMail(..., { subject: 'card.mail.rosterFull.subject' })`。服务端编译过、e2e 过（断言的就是 key 字符串本身）、客户端也编译过，错配只在玩家收件箱里显形：`mailText()` 发现 `t()` 原样吐回 key 就退回显示原串，所以不崩，只是**标题直接写着 `slg.city.durabilityBreached.subject`**。新 spec [`client/test/i18n-server-mail-keys.test.ts`](../../client/test/i18n-server-mail-keys.test.ts) 扫 `server/**/src` 里 `subject:`/`body:` 的字面量（单引号和反引号两种写法都收，`|param=` 先切掉），断言三语都有。当场抓到两对从没翻译过的：
+
+- `slg.city.durabilityBreached.{subject,body}`（`worldsvc/src/combatSiege/helpers.ts` 两处，配套 e2e 两条）——就是 §D-CITY-8 里那封"此前玩家对该结果**没有任何通知**"专门补的信，结果通知本身发出去是生 key。两个分支（找得到落点强制迁城 / 找不到连主城一起没）共用同一对 key，所以正文不写死迁去哪了。
+- `mail.season.settle.{subject,body}`（`metaserver/src/ladderSeason.ts`，PvP 天梯赛季结算，金币走附件）——写成**反引号**无洞模板串，只匹配单引号的临时 grep 会漏，spec 的正则两种都收才抓到。注意跟大区 SLG 赛季的 `slg.settle.*` 是两套。
+
+**② 动态族的正向覆盖**——§33 的 `DYNAMIC_FAMILIES` 原本只用来解释"这个 key 谁在拼"，现在同一张表加一维 `coverage` 跑第二个方向：`'complete'` 的族，其值域能拼出的每个 key 都必须有翻译（加卡/加建筑/加成就忘了写文案 → 当场红，即 `s_siege` 那个 bug 的反向）。18 个族标 complete，2 个标 partial 且都写了理由：`affix.*`（`AFFIX_FIELD_MAP` 里 6 个前向兼容 id 没有 roll 表能产出，可产出的子集由 `i18n.test.ts` 按 `MAIN_AFFIX_BY_SLOT`+`SUB_AFFIX_POOL` 单独钉死）、`tutorial.*`（`.landscape`/`.done` 变体由字典决定走多远，TutorialDirector 探测不到就回退）。
+
+顺带记一个**跨文件的巧合不变量**：`card.<id>.desc` 只有 `CardScene/detail.ts` 的技能行会读，条件是 `faction === 'anna' && skillGrowth 有非零值`。三个涛方角色是 `NO_SKILL`，所以它们没有 `.desc` 不是遗漏——但这条"够用"是 `cardDefs.ts` 和 `zh.ts` 两个文件各存一半凑出来的，给涛方角色配上技能曲线的那天就会碎。该族的 key 集合现在按渲染器的原条件生成，那天会直接报错要 desc。`card.<id>.lore` 反过来是**必需**的：`detail.ts` 把它直接喂给卡背翻面，没有兜底（`CardCodexScene` 的 `storyText()` 有兜底，容易看岔）。
+
+**验证**：两个新断言都用真删除验过——摘掉 `card.max.desc` 和 `slg.city.durabilityBreached.body` 后如期报错，且消息带上了发信文件路径（`(sent by worldsvc/src/combatSiege/helpers.ts)`）。`tsc --noEmit` 双 config + `vitest run`（163 文件 / 1363 例）+ `test:ui`（188 文件 / 1665 例）全绿。另外量过但**今天没抓到东西**、故未加的：en/de 混入 CJK（0 处）、空字符串值（0 处）。

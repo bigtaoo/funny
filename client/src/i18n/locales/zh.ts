@@ -786,6 +786,10 @@ export const zh = {
   'mail.alreadyClaimed': '已经领取过了',
   'mail.delete': '删除邮件',
   'mail.deleteBlockedAttachment': '请先领取附件再删除邮件',
+  // PvP 天梯赛季结算（metaserver ladderSeason.ts 下发，金币走附件）。注意与大区 SLG 赛季的
+  // `slg.settle.*` 是两套东西，别混用。
+  'mail.season.settle.subject': '天梯赛季结算',
+  'mail.season.settle.body': '上一个天梯赛季已结束，你的赛季奖励已随信附上。',
   'mail.welcome.author.subject': '来自作者的一封信',
   'mail.welcome.author.body': '你好，我是这个游戏的作者涛。谢谢你玩到这里，也谢谢你愿意花时间探索这个故事。这里有一点小心意——不管你有什么想法、建议，还是只是想聊聊，都欢迎写信给我（tao@gamestao.com），或者在大厅的"反馈"页面留言，我们都看得到。祝你游戏愉快！',
   // ── SLG overworld (S8) ────────────────────────────────────────────────────
@@ -1441,6 +1445,10 @@ export const zh = {
   'slg.settle.body': '你在大区赛季大比中位列第 {rank} 名，占据 {nations} 座首府，赛季奖励已随信附上。',
   'slg.settle.bp.subject': '战令赛季奖励',
   'slg.settle.bp.body': '作为战令持有者，这是你的赛季末额外奖励。',
+  // 主城耐久归零后的通知（D-CITY-8；worldsvc combatSiege/helpers.ts 下发）。两个分支共用这对
+  // key——找得到落点就强制迁城，找不到就连主城一起没了——所以正文不能写死"已迁往何处"。
+  'slg.city.durabilityBreached.subject': '主城被攻破',
+  'slg.city.durabilityBreached.body': '你的主城耐久已归零，城池被摧毁，全部领地失守。请前往大地图确认主城位置并重新布防。',
 
   // ── Limited-time events (B6) ──────────────────────────────────────────────────
   'event.title': '限时活动',

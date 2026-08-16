@@ -773,6 +773,8 @@ export const de: Record<TranslationKey, string> = {
   'mail.alreadyClaimed': 'Bereits abgeholt',
   'mail.delete': 'Löschen',
   'mail.deleteBlockedAttachment': 'Anhang zuerst abholen, bevor diese Mail gelöscht wird',
+  'mail.season.settle.subject': 'Ranglisten-Saison abgerechnet',
+  'mail.season.settle.body': 'Die vorherige Ranglisten-Saison ist beendet. Deine Saisonbelohnungen liegen bei.',
   'mail.welcome.author.subject': 'Ein Brief vom Autor',
   'mail.welcome.author.body': 'Hallo, ich bin Tao, der Entwickler dieses Spiels. Danke, dass du bis hierhin gespielt und dir die Zeit genommen hast, die Geschichte zu entdecken. Hier ist eine kleine Aufmerksamkeit für dich — wenn du Gedanken oder Feedback hast, oder einfach nur Hallo sagen willst, schreib mir gerne an tao@gamestao.com, oder hinterlass eine Nachricht auf der Feedback-Seite in der Lobby. Viel Spaß weiterhin!',
   // SLG-Welt (S8)
@@ -1426,6 +1428,8 @@ export const de: Record<TranslationKey, string> = {
   'slg.settle.body': 'Du belegtest Platz {rank} im regionalen Wettstreit und hältst {nations} Hauptstadt/Hauptstädte. Deine Saisonbelohnungen sind beigefügt.',
   'slg.settle.bp.subject': 'Battle-Pass-Saisonbonus',
   'slg.settle.bp.body': 'Als Battle-Pass-Inhaber erhältst du diese zusätzliche Saisonend-Belohnung.',
+  'slg.city.durabilityBreached.subject': 'Hauptstadt gefallen',
+  'slg.city.durabilityBreached.body': 'Die Haltbarkeit deiner Hauptstadt ist auf null gefallen. Die Stadt wurde zerstört und dein gesamtes Territorium ist verloren. Öffne die Weltkarte, um zu sehen, wo deine Hauptstadt jetzt steht, und baue deine Verteidigung neu auf.',
 
   // ── Zeitlich begrenzte Events (B6) ──────────────────────────────────────
   'event.title': 'Events',

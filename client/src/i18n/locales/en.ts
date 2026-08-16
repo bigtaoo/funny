@@ -773,6 +773,8 @@ export const en: Record<TranslationKey, string> = {
   'mail.alreadyClaimed': 'Already claimed',
   'mail.delete': 'Delete',
   'mail.deleteBlockedAttachment': 'Claim the attachment before deleting this mail',
+  'mail.season.settle.subject': 'Ladder Season Results',
+  'mail.season.settle.body': 'The previous ladder season has ended. Your season rewards are attached.',
   'mail.welcome.author.subject': 'A note from the author',
   'mail.welcome.author.body': "Hi, I'm Tao, the person who made this game. Thank you for playing this far, and for taking the time to explore the story. Here's a little something for you — if you ever have thoughts, feedback, or just want to say hi, feel free to email me at tao@gamestao.com, or leave a note on the Feedback page in the lobby. Have fun!",
   // SLG World (S8)
@@ -1426,6 +1428,8 @@ export const en: Record<TranslationKey, string> = {
   'slg.settle.body': 'You placed #{rank} in the regional grand contest, holding {nations} capital(s). Your season rewards are attached.',
   'slg.settle.bp.subject': 'Battle Pass Season Bonus',
   'slg.settle.bp.body': 'As a Battle Pass holder, here is your extra end-of-season reward.',
+  'slg.city.durabilityBreached.subject': 'Capital Breached',
+  'slg.city.durabilityBreached.body': 'The durability of your capital has hit zero. The city was destroyed and all of your territory is lost. Open the world map to see where your capital stands now and rebuild your defenses.',
 
   // ── Limited-time events (B6) ─────────────────────────────────────────────
   'event.title': 'Events',

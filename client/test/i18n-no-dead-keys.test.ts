@@ -79,37 +79,66 @@ function literalStrings(): Set<string> {
 const cross = (...parts: ReadonlyArray<readonly string[]>): string[] =>
   parts.reduce<string[]>((acc, p) => acc.flatMap((a) => p.map((b) => a + b)), ['']);
 
-/** Key shapes built at runtime, each paired with the exact value domain its call site can supply. */
-const DYNAMIC_FAMILIES: ReadonlyArray<{ why: string; keys: string[] }> = [
+const CARD_IDS = Object.keys(CARD_DEFS);
+/** CardScene/detail.ts renders the skill line from `card.<id>.desc` only under this exact condition. */
+const CARDS_WITH_SKILL = CARD_IDS.filter(
+  (id) => CARD_DEFS[id]!.faction === 'anna' && CARD_DEFS[id]!.skillGrowth.some((v) => v > 0),
+);
+
+/**
+ * Key shapes built at runtime, each paired with the exact value domain its call site can supply.
+ *
+ * `coverage` runs the table in the other direction as well:
+ *  - 'complete' — every key the family can build must exist in the dictionary. This is the guard
+ *    against the s_siege bug class (a domain grows, the translation does not, and the raw id goes
+ *    on screen). Add an anna card or a building and this is what tells you a string is missing.
+ *  - 'partial'  — the family deliberately outruns the dictionary; only liveness is checked. Both
+ *    cases are justified inline, and 'partial' is not a place to park an unexplained hole.
+ */
+const DYNAMIC_FAMILIES: ReadonlyArray<{ why: string; keys: string[]; coverage: 'complete' | 'partial' }> = [
   // CardScene/detail.ts, list.ts, skins.ts, GachaScene, AuctionScene, DefenseEditorScene, mail.ts.
   // (Engine-roster cards — infantry/archer/… — are literal `nameKey:`/`descKey:` values in
   // engine/config.ts, so they need no family here; these are the meta character cards.)
-  { why: 't(`card.${defId}.{name,desc,lore}`)', keys: cross(['card.'], Object.keys(CARD_DEFS), ['.name', '.desc', '.lore']) },
-  { why: 't(`equip.${defId}.name`)', keys: cross(['equip.'], Object.keys(EQUIPMENT_DEFS), ['.name']) },
-  { why: 't(`equip.slot.${slot}`)', keys: cross(['equip.slot.'], ['weapon', 'armor', 'trinket']) },
-  { why: 't(`equip.rarity.${rarity}`)', keys: cross(['equip.rarity.'], ['common', 'fine', 'rare', 'epic']) },
-  { why: 't(`affix.${id}`) — EquipmentScene/helpers.ts affixDesc', keys: cross(['affix.'], Object.keys(AFFIX_FIELD_MAP)) },
-  { why: "t('material.' + kind)", keys: cross(['material.'], ['scrap', 'lead', 'binding']) },
-  { why: "t('rarity.' + rarity) — GachaScene/page.ts", keys: cross(['rarity.'], ['common', 'rare', 'epic', 'legendary']) },
+  // .lore is required, not decorative: CardScene/detail.ts feeds it to the card's flip side with no
+  // fallback, unlike CardCodexScene's storyText() which falls back to the blurb.
+  { why: 't(`card.${defId}.{name,lore}`)', keys: cross(['card.'], CARD_IDS, ['.name', '.lore']), coverage: 'complete' },
+  // Scoped to the cards that can actually reach the skill line — the tao roster is NO_SKILL, so it
+  // renders roster.skillNone and a `card.<tao id>.desc` would be dead weight. Give a tao card a
+  // skill growth curve and this family starts requiring its desc, which is the point.
+  { why: 't(`card.${defId}.desc`) — skill line, anna faction with a nonzero skill curve', keys: cross(['card.'], CARDS_WITH_SKILL, ['.desc']), coverage: 'complete' },
+  { why: 't(`equip.${defId}.name`)', keys: cross(['equip.'], Object.keys(EQUIPMENT_DEFS), ['.name']) , coverage: 'complete' },
+  { why: 't(`equip.slot.${slot}`)', keys: cross(['equip.slot.'], ['weapon', 'armor', 'trinket']) , coverage: 'complete' },
+  { why: 't(`equip.rarity.${rarity}`)', keys: cross(['equip.rarity.'], ['common', 'fine', 'rare', 'epic']) , coverage: 'complete' },
+  // AFFIX_FIELD_MAP carries forward-compat ids (m_armor, s_lifesteal, s_regen,
+  // s_matdrop, s_stamina, m_atkspd) that no roll table can currently produce, so they have no copy
+  // yet. The rollable subset IS pinned complete — by i18n.test.ts, off MAIN_AFFIX_BY_SLOT +
+  // SUB_AFFIX_POOL, which is the set that can actually reach a player's item.
+  { why: 't(`affix.${id}`) — EquipmentScene/helpers.ts affixDesc', keys: cross(['affix.'], Object.keys(AFFIX_FIELD_MAP)) , coverage: 'partial' },
+  { why: "t('material.' + kind)", keys: cross(['material.'], ['scrap', 'lead', 'binding']) , coverage: 'complete' },
+  { why: "t('rarity.' + rarity) — GachaScene/page.ts", keys: cross(['rarity.'], ['common', 'rare', 'epic', 'legendary']) , coverage: 'complete' },
   // 'unranked' is the makeNewSave default (SaveData.ts / shared types.ts), not a RANK_TIERS entry.
-  { why: "t('rank.' + rank)", keys: cross(['rank.'], ['unranked', ...RANK_TIERS.map((r) => r.id)]) },
-  { why: "t('achievement.' + def.id + '.{name,desc}')", keys: cross(['achievement.'], ACHIEVEMENTS.map((a) => a.id), ['.name', '.desc']) },
+  { why: "t('rank.' + rank)", keys: cross(['rank.'], ['unranked', ...RANK_TIERS.map((r) => r.id)]) , coverage: 'complete' },
+  { why: "t('achievement.' + def.id + '.{name,desc}')", keys: cross(['achievement.'], ACHIEVEMENTS.map((a) => a.id), ['.name', '.desc']) , coverage: 'complete' },
   // CATEGORY_ORDER in AchievementScene.ts, filtered to categories present in the server's defs —
   // 'collection' has no achievements yet but the tab is wired and appears as soon as one lands.
-  { why: "t('achievement.category.' + cat)", keys: cross(['achievement.category.'], ['pve', 'pvp', 'collection', 'progression']) },
-  { why: 't(`city.bld.${key}`) — CityScene render/modals', keys: cross(['city.bld.'], BUILDING_KEYS) },
-  { why: 't(`event.tasks.${task.kind}`)', keys: cross(['event.tasks.'], ['pve.clear', 'pvp.win', 'ad.watch']) },
-  { why: 't(`friends.tab.${tab}`)', keys: cross(['friends.tab.'], ['friends', 'family', 'sect', 'world', 'mail']) },
-  { why: 't(`world.season.${status}`)', keys: cross(['world.season.'], ['open', 'active', 'settling', 'closed']) },
-  { why: 't(`family.${member.role}`) — FamilyScene/lists.ts', keys: cross(['family.'], ['leader', 'member', 'elder']) },
+  { why: "t('achievement.category.' + cat)", keys: cross(['achievement.category.'], ['pve', 'pvp', 'collection', 'progression']) , coverage: 'complete' },
+  { why: 't(`city.bld.${key}`) — CityScene render/modals', keys: cross(['city.bld.'], BUILDING_KEYS) , coverage: 'complete' },
+  { why: 't(`event.tasks.${task.kind}`)', keys: cross(['event.tasks.'], ['pve.clear', 'pvp.win', 'ad.watch']) , coverage: 'complete' },
+  { why: 't(`friends.tab.${tab}`)', keys: cross(['friends.tab.'], ['friends', 'family', 'sect', 'world', 'mail']) , coverage: 'complete' },
+  { why: 't(`world.season.${status}`)', keys: cross(['world.season.'], ['open', 'active', 'settling', 'closed']) , coverage: 'complete' },
+  { why: 't(`family.${member.role}`) — FamilyScene/lists.ts', keys: cross(['family.'], ['leader', 'member', 'elder']) , coverage: 'complete' },
   // TutorialDirector walks objective/beat indices; the dictionary decides how far the walk goes.
-  { why: 't(`tutorial.o${n}.…`) / t(`tutorial.beat${i}.…`)', keys: cross(['tutorial.'], ['o1', 'o2', 'o3', 'o4', 'o5', 'o6', 'o7', 'beat1', 'beat2', 'beat3'], ['.title', '.body', '.done'], ['', '.landscape']) },
-  { why: 'slgTitleKey() in shared/titles.ts → t(`title.slg.${id}.{full,short}`)', keys: cross(['title.slg.'], ['champion', 'top3'], ['.full', '.short']) },
-  { why: 't(`auction.mail.${reason}.{subject,body}`) — FriendsScene/mail.ts', keys: cross(['auction.mail.'], ['sold', 'returned', 'proceeds', 'refund'], ['.subject', '.body']) },
+  // TutorialDirector probes each variant and falls back when it echoes, so the
+  // dictionary decides how far the walk goes: .done exists only for beats, .landscape only where a
+  // wide-screen rewrite was actually needed. Requiring the full cross product would demand ~30
+  // strings nobody wants written.
+  { why: 't(`tutorial.o${n}.…`) / t(`tutorial.beat${i}.…`)', keys: cross(['tutorial.'], ['o1', 'o2', 'o3', 'o4', 'o5', 'o6', 'o7', 'beat1', 'beat2', 'beat3'], ['.title', '.body', '.done'], ['', '.landscape']) , coverage: 'partial' },
+  { why: 'slgTitleKey() in shared/titles.ts → t(`title.slg.${id}.{full,short}`)', keys: cross(['title.slg.'], ['champion', 'top3'], ['.full', '.short']) , coverage: 'complete' },
+  { why: 't(`auction.mail.${reason}.{subject,body}`) — FriendsScene/mail.ts', keys: cross(['auction.mail.'], ['sold', 'returned', 'proceeds', 'refund'], ['.subject', '.body']) , coverage: 'complete' },
   // Server mail whose body carries interpolation params is sent as `key|name=value|name2=value2`
   // (worldsvc season settlement, socialsvc join rejection); FriendsScene/mail.ts mailText() splits
   // the params off before t(), so these keys never appear as a bare literal on either side.
-  { why: 'server mail sent in `key|param=value` form', keys: ['slg.settle.body', 'family.mail.rejected.body'] },
+  { why: 'server mail sent in `key|param=value` form', keys: ['slg.settle.body', 'family.mail.rejected.body'] , coverage: 'complete' },
 ];
 
 describe('i18n dictionary has no dead keys', () => {
@@ -131,6 +160,17 @@ describe('i18n dictionary has no dead keys', () => {
   it('every zh.ts key is referenced by a literal or generated by a declared dynamic family', () => {
     const dead = Object.keys(zh).filter((k) => !referenced.has(k) && !generated.has(k));
     expect(dead).toEqual([]);
+  });
+
+  it('every key a `complete` family can build is actually translated', () => {
+    // The other direction, and the one a player feels: a domain grows (new card, new building, new
+    // achievement) but the copy does not, and t() renders the key itself on screen — the s_siege
+    // bug in reverse. i18n.test.ts pins this for rollable affixes only; this extends it to every
+    // family whose domain the dictionary is supposed to cover fully.
+    const missing = DYNAMIC_FAMILIES
+      .filter((f) => f.coverage === 'complete')
+      .flatMap((f) => f.keys.filter((k) => !(k in zh)).map((k) => `${k}  (${f.why})`));
+    expect(missing).toEqual([]);
   });
 
   it('every dynamic family still matches keys that exist (renamed prefixes stop vouching silently)', () => {
