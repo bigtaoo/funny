@@ -31,7 +31,10 @@ import type { MailAttachmentKind } from '../../../server/shared/src/social';
 // invisible to `npm test` (esbuild strips types), so it only ever surfaces in CI's typecheck step,
 // which is how this file shipped red on 2026-08-15. Keep the params typed when adding a fake here.
 type BuildIconArgs = [kind: string, size: number, color: number];
-const buildIcon = vi.fn((..._a: BuildIconArgs) => ({ kind: 'drawn' }));
+// buildIcon alone takes a 4th arg: which pre-baked ink a raster tab icon should use (added
+// 2026-08-16 along with the `content` variant). Optional, so the atlas fakes keep the 3-tuple shape.
+type BuildIconVariantArgs = [...BuildIconArgs, opts?: { variant?: string }];
+const buildIcon = vi.fn((..._a: BuildIconVariantArgs) => ({ kind: 'drawn' }));
 const buildCoinIcon = vi.fn((..._a: BuildIconArgs) => ({ kind: 'coin' }));
 const buildMaterialIcon = vi.fn((..._a: BuildIconArgs) => ({ kind: 'material' }));
 
@@ -42,8 +45,14 @@ const loadCoinIconAtlas = vi.fn((): Promise<void> => Promise.resolve());
 const loadMaterialAtlas = vi.fn((): Promise<void> => Promise.resolve());
 
 vi.mock('../../src/render/icons', () => ({
-  buildIcon: (...a: BuildIconArgs) => buildIcon(...a),
+  buildIcon: (...a: BuildIconVariantArgs) => buildIcon(...a),
   preloadTabIconTextures: () => preloadTabIconTextures(),
+  // Real implementation, not a stub — which pre-baked ink a reward row asks for is decided by this
+  // luma test, so faking it would hollow out the variant assertions below.
+  tabIconVariant: (color: number): 'active' | 'inactive' => {
+    const r = ((color >> 16) & 0xff) / 255, g = ((color >> 8) & 0xff) / 255, b = (color & 0xff) / 255;
+    return 0.299 * r + 0.587 * g + 0.114 * b >= 0.70 ? 'active' : 'inactive';
+  },
 }));
 vi.mock('../../src/render/atlas/coinIconAtlas', () => ({
   buildCoinIcon: (...a: BuildIconArgs) => buildCoinIcon(...a),
@@ -94,6 +103,31 @@ describe('buildRewardIcon — single source of truth for reward pictures', () =>
     expect(regressedToProcedural).toEqual([]);
   });
 
+  // Which of the three pre-baked inks the raster art is drawn in (2026-08-16). The `inactive` grey
+  // is deliberately de-emphasised for a tab cell the player is NOT on; a reward row is content and
+  // must get `content` (C.dark, the same ink as the label beside it), or it reads a notch washed out
+  // next to the full-colour material/coin bitmaps — the complaint that started this whole batch.
+  it.each(Object.keys(AI_ITEM_ICON))(
+    'asks for the full-strength `content` ink for a %s reward, not the de-emphasised tab grey',
+    (kind) => {
+      buildIcon.mockClear();
+      // Every ink a reward row actually passes on its paper fill today: the daily/weekly green,
+      // C.dark, and C.mid. None may fall through to the inactive-tab art.
+      for (const ink of [0x336644, 0x2c2c2a, 0x686868]) buildRewardIcon({ kind, count: 1 }, 40, ink);
+      expect(buildIcon.mock.calls.map((c) => c[3])).toEqual(
+        Array(3).fill({ variant: 'content' }),
+      );
+    },
+  );
+
+  it('still asks for the white `active` art when the caller signals a dark surface', () => {
+    // Not a hypothetical: handing a near-black-backed slot the paper-ink art is exactly the bug the
+    // lobby bottom nav shipped in tab-icon batch 3. A reward row on a dark fill must not repeat it.
+    buildIcon.mockClear();
+    buildRewardIcon({ kind: 'equipment', count: 1 }, 40, 0xdddddd); // C.light = "I'm on a dark fill"
+    expect(buildIcon.mock.calls[0][3]).toEqual({ variant: 'active' });
+  });
+
   // Only arg 0 (the kind) was ever asserted, so every route could drop or transpose the size/ink and
   // no test would notice — reward rows would silently render at the wrong scale or in the wrong ink.
   // Distinct values per route so a cross-wired forward (coin size reaching the material call) fails.
@@ -103,7 +137,7 @@ describe('buildRewardIcon — single source of truth for reward pictures', () =>
     buildRewardIcon({ kind: 'coins', count: 20 }, 42, 0x222222);
     buildRewardIcon({ kind: 'material', id: 'lead', count: 1 }, 43, 0x333333);
     buildRewardIcon({ kind: 'binding', count: 1 }, 44, 0x444444); // bare-material-as-kind route
-    expect(buildIcon.mock.calls[0].slice(1)).toEqual([41, 0x111111]);
+    expect(buildIcon.mock.calls[0].slice(1)).toEqual([41, 0x111111, { variant: 'content' }]);
     expect(buildCoinIcon.mock.calls[0].slice(1)).toEqual([42, 0x222222]);
     expect(buildMaterialIcon.mock.calls.map((c) => c.slice(1))).toEqual([[43, 0x333333], [44, 0x444444]]);
   });
