@@ -77,6 +77,10 @@ export class SectScene implements Scene {
 
   private render(): void {
     const core = this.core;
+    // The single throttle point for every redraw entry (菜单场景生命周期契约) — core's
+    // onSaveChanged already guards itself, but the guard belongs here so any future deferred
+    // redraw is covered without having to remember.
+    if (core.destroyed) return;
     core.beginRender();
     core.drawRail();
     switch (core.mode) {
