@@ -51,6 +51,7 @@ export class IllustratedInterludeScene implements Scene {
   private hintPulse     = 0;
   private skipRect:     Rect = { x: 0, y: 0, w: 0, h: 0 };
   private finished      = false;
+  private destroyed     = false;
 
   private readonly unsubs: Array<() => void> = [];
 
@@ -100,6 +101,7 @@ export class IllustratedInterludeScene implements Scene {
   }
 
   destroy(): void {
+    this.destroyed = true;
     this.unsubs.forEach((u) => u());
     this.container.destroy({ children: true });
   }
@@ -161,11 +163,20 @@ export class IllustratedInterludeScene implements Scene {
     this.illustration.x = w / 2;
     this.illustration.y = h / 2;
     const fitIllustration = (): void => {
+      // The texture can finish decoding after this scene was torn down (tap straight through the
+      // interlude on a cold cache) — touching a destroyed Sprite throws from inside a PIXI Runner
+      // on the shared ticker, which kills Ticker.shared and freezes the canvas until a page reload.
+      // See 菜单场景生命周期契约 in claudedocs/client-modules.md.
+      if (this.destroyed) return;
       const scale = Math.max(w / illustrationTex.width, h / illustrationTex.height);
       this.illustration.scale.set(scale);
     };
     if (illustrationTex.baseTexture.valid) fitIllustration();
-    else illustrationTex.baseTexture.once('loaded', fitIllustration);
+    else {
+      const base = illustrationTex.baseTexture;
+      base.once('loaded', fitIllustration);
+      this.unsubs.push(() => base.off('loaded', fitIllustration));
+    }
     this.container.addChild(this.illustration);
 
     // Narration — one beat revealed at a time, stacking downward from the top of the blank band
