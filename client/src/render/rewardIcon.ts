@@ -19,6 +19,7 @@
  *   skin     → `skinIcon`    ┘ Equipment / Skins page tabs use — identical concepts, so reused
  *                              rather than re-generated (same call the auction equipment filter
  *                              and the lobby nav make; see design/product/tab-icon-art-prompts.md).
+ *                              Drawn in the `content` ink, not the tab greys — see below.
  *   stamina / anything else → null (caller falls back to a bare "+N" label)
  *
  * Every one of those resolvers degrades to a procedural glyph on its own when its art has not
@@ -27,7 +28,7 @@
  * preloader once in their constructor and re-render on resolve.
  */
 import * as PIXI from 'pixi.js-legacy';
-import { buildIcon, preloadTabIconTextures, type IconKind } from './icons';
+import { buildIcon, preloadTabIconTextures, tabIconVariant, type IconKind } from './icons';
 import { buildCoinIcon, loadCoinIconAtlas } from './atlas/coinIconAtlas';
 import { buildMaterialIcon, loadMaterialAtlas, type MaterialKind } from './atlas/materialAtlas';
 
@@ -64,7 +65,7 @@ export function materialKind(id: string | undefined): MaterialKind | null {
  * (stamina, or a server kind this client doesn't know) — callers draw a bare "+N" for those.
  *
  * `color` is the requested ink: it tints the procedural fallbacks and, for the raster tab-icon
- * art, picks the light-on-dark vs dark-on-paper pre-baked variant (see `buildRasterTabIcon`).
+ * art, is read as a light/dark hint about the surface behind the icon (see `tabIconVariant`).
  *
  * `opts.materialFallback` decides what an unrecognised `material` id draws as: most screens want
  * `'scrap'` (the reward *is* a material, we just don't know which), but EventScene's redemption
@@ -82,9 +83,16 @@ export function buildRewardIcon(
     const mat = materialKind(id) ?? (opts?.materialFallback === undefined ? 'scrap' : opts.materialFallback);
     return mat ? buildMaterialIcon(mat, size, color) : null;
   }
-  if (kind === 'card') return buildIcon('rosterIcon', size, color);
-  if (kind === 'equipment') return buildIcon('equipIcon', size, color);
-  if (kind === 'skin') return buildIcon('skinIcon', size, color);
+  // The three item rewards reuse the AI tab-icon art, but as page CONTENT — every reward row today
+  // is drawn on a paper fill next to full-colour material/coin bitmaps and the primary label, where
+  // the de-emphasised tab grey `tabIconVariant` would pick reads a notch washed out (2026-08-15
+  // follow-up). Ask for the `C.dark` `content` ink instead. The `'active'` branch is not dead
+  // weight: a caller drawing a reward on a dark fill still passes a light ink and still needs the
+  // white art — `content` on near-black would be the same invisible-icon bug batch 3 shipped.
+  const variant = tabIconVariant(color) === 'active' ? 'active' : 'content';
+  if (kind === 'card') return buildIcon('rosterIcon', size, color, { variant });
+  if (kind === 'equipment') return buildIcon('equipIcon', size, color, { variant });
+  if (kind === 'skin') return buildIcon('skinIcon', size, color, { variant });
   // Servers also hand out bare material ids as the `kind` itself on some endpoints (events).
   const bareMaterial = materialKind(kind);
   if (bareMaterial) return buildMaterialIcon(bareMaterial, size, color);
