@@ -82,6 +82,9 @@ export class FriendsScene implements Scene {
 
   private render(): void {
     const core = this.core;
+    // Deferred redraws (fetch completions, mail card art's texture 'loaded' hook) can land after
+    // teardown; beginRender would then removeChild/tearDownChildren on a destroyed container.
+    if (core.dead) return;
     beginRender(core);
 
     if (core.tab === 'friends' && core.view === 'search') {
