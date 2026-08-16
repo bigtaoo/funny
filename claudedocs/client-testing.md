@@ -39,6 +39,14 @@ vitest 走 esbuild、webpack 也不做类型检查，且 `client/tsconfig.json` 
 
 `client/tsconfig.test.json`（extends 主 tsconfig，`include` 追加 `test/**`）把 `src` + `test` 拉进同一个 program 做 `tsc --noEmit`。`npm run typecheck` 跑它，CI `build-test` job 在单测前执行——**test 层的蓝图/DTO 漂移现在会让 CI 红**。改了引擎/网络层的类型后，本地先 `npm run typecheck` 再提交。
 
+### ⚠️ 坑：零参 `vi.fn(() => …)` 会把 `mock.calls` 类型推成空元组 `[]`（2026-08-15 实测踩过）
+
+`test/render/rewardIcon.test.ts` 用 `const buildIcon = vi.fn(() => ({ kind: 'drawn' }))` 声明替身，**没写参数**。vitest 从这个签名推断"这个函数被调用时收到的实参元组"，零参就推成 `[]`；于是文件里每一处 `buildIcon.mock.calls[0][0]`（读回"它被传了哪个 IconKind"，正是这批断言的全部意义）都成了 `error TS2493: Tuple type '[]' of length '0' has no element at index '0'`。
+
+**为什么危险**：esbuild 擦类型，所以 `npm test` 一路全绿（该文件 11 个渲染测试文件里跑得好好的），**只有 `npm run typecheck` 看得见**——而它在 CI `build-test` 里跑在单测之前。结果就是"测试全过、CI 却红在一个测试全过的文件上"，且症状容易被误判成当次 PR 引入的回归。这份文件从 2026-08-15 加进来那天起就是红的，一天后才被发现（当时在做另一件事：删除失效的 `vitest.render.config.ts`）。
+
+**写法**：替身要照抄被替代函数的参数表，`vi.fn((_kind: string, _size: number, _color: number) => …)`。顺带好处是 `vi.mock` 工厂里那些 `(...a: unknown[]) => fn(...(a as []))` 的强转也可以一并删掉，直接按真实签名转发。**加新替身时记得本地先跑一次 `npm run typecheck`**——单测绿不代表这层绿。
+
 ## UI 冒烟层（test:ui）—— 价值与边界
 
 **思路**：`test/harness/pixiHeadless.ts` 把 PIXI 的 DOM adapter 换成纯 JS 桩（canvas/context/measureText 都是 no-op 但返回 real-ish 尺寸），让真实场景代码在纯 Node 里构建 PIXI 树、量文字、布局。**从不创建 Renderer**，所以 WebGL/GPU 全程不碰。
@@ -225,3 +233,15 @@ UI 冒烟层够不着的硬故障——只有**真渲染器 / 真 WebGL** 才暴
 - **`test/familySendButton.test.ts` 新增 "the merged text-entry + send unit" describe（3 条）** —— FamilyScene 的双向依赖是用**合并类**（不是 hook）解的：`doSendMsg`/`submitMessage` 从 actions.ts 搬到了 `InputPanel`，和 `openSendInput`/`openInputFor` 同居。原有测试两半各测一边，而且"还没有草稿 → 打开输入框"那条**把 `openSendInput` mock 掉了**，所以两半从来没在真实类上互相驱动过一次。新用例跑完整往返（第一次点 Send 打开真实隐藏 input → 输入 → blur（真实点击时 blur 先把 `core.sendInput` 置空）→ 第二次点 Send 提交刚输入的内容），外加 Enter 键这另一张脸。合并**新引入**的风险就是两条路径共享 Core 上的 `sendText`/`sendInput` 且**动作顺序是有意义的**：`doSendMsg()` 必须在移交给 `openSendInput()` **之前**清 `sendText`（后者用它给新 DOM input 播种），把这两句换个顺序，重开的输入框就会带着刚发出去的旧草稿——用例特意用"纯空格草稿"入场把这个顺序变得可观测（实测：不用空格草稿的话换顺序不变红）。
 
 **每一条新用例都做了 red-then-green 实测**（逐个临时破坏对应接线/断言目标，确认变红，再还原）——具体破坏点见各文件头部注释。收尾验证：`tsc --noEmit` 干净，`npm run test:ui` 163 文件 / 1491 条绿，`npm test` 161 文件 / 1283 条绿，`npm run build:web` OK。
+
+## `rewardIcon.test.ts` 补测（2026-08-16）
+
+修上面那条 TS2493 时顺手审了一遍 `render/rewardIcon.ts` 的覆盖面（9 → 21 条）。原有用例只断言"每种 reward 走到哪个 IconKind"，剩下的契约全是空白：
+
+- **`preloadRewardIconArt()` 此前零覆盖**，而它的全部价值就在失败路径：六个场景都是 `void preloadRewardIconArt().then(() => this.render())` 这样 fire-and-forget 调的，一旦它往外抛，单个 atlas 404 就会变成六块不相干屏幕上的 unhandled rejection——而这个失败本来只该表现为"程序化 glyph 多画一两帧"。撑住这件事的是 `Promise.allSettled`，改成 `Promise.all` 是一个词的编辑，此前没有任何测试会发现。新增 5 条：三个 loader 各失败一次 + 三个全失败，都断言仍然 resolve，且**其余 loader 照样被调用**（不因一个坏源短路）。
+- **`size` / `color` 透传此前零覆盖**——只断言过实参 0（kind），所以任何一条路线把尺寸/墨色丢掉或调换顺序都没人管。新用例给四条路线（tab-icon / coin / material / 裸材质 kind）各喂一组不同的 size+color，串线也能抓。
+- **`materialFallback` 不得盖过已识别的 id**：源码是 `materialKind(id) ?? fallback`，两者顺序调换会让 EventScene 的 `materialFallback: null` 把**所有**材质行都清空（而不只是不认识的那些）。
+- 另补 `count` 缺失时的 `?? 0` 分支、`material` 无 id 时回落 scrap、以及 `coinIconTier` 各档**阈值下方一格**（原有用例正好压在阈值上，只钉住 `>=`→`>`，钉不住"阈值被悄悄调低"）。
+- **一条"测试自己的测试"**：原有断言把期望值写成字面量 `'rosterIcon'`，而 `buildIcon` 在本文件里是被 mock 掉的——也就是说把源码和期望表**一起**改回程序化的 `'cards'`/`'armor'`/`'brush'`（这正是 2026-08-15 那个 bug 的原貌），整份文件照样全绿。新用例用 `vi.importActual` 读真实 `icons.ts`，断言这三个 IconKind **不在导出的 `DRAW` 表里**——`DrawableIconKind = Exclude<IconKind, RasterIconKind>`，所以"是 DRAW 的 key"等价于"是程序化 glyph"。实测：把 card 改回 `'cards'` 并同步改期望表，只有这一条变红。
+
+六条新断言全部做了 red-then-green 实测（逐个破坏源码确认变红再还原，破坏点见上）。收尾验证：`npm run typecheck` 干净，`npm test` 158 文件 / 1335 条绿。
