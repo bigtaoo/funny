@@ -12,20 +12,24 @@
 // separate render suite (vitest.render.config.ts was deleted 2026-08-15; see icons.test.ts).
 import { describe, it, expect, vi } from 'vitest';
 
-const buildIcon = vi.fn(() => ({ kind: 'drawn' }));
-const buildCoinIcon = vi.fn(() => ({ kind: 'coin' }));
-const buildMaterialIcon = vi.fn(() => ({ kind: 'material' }));
+// All three builders share the real `(kind, size, color)` shape. Spell the params out (rather than
+// `vi.fn(() => …)`) so vitest infers a 3-tuple for `mock.calls` — a zero-arg mock infers `[]` and
+// every `calls[0][0]` assertion below becomes a TS2493 under `npm run typecheck`.
+type BuildIconArgs = [kind: string, size: number, color: number];
+const buildIcon = vi.fn((..._a: BuildIconArgs) => ({ kind: 'drawn' }));
+const buildCoinIcon = vi.fn((..._a: BuildIconArgs) => ({ kind: 'coin' }));
+const buildMaterialIcon = vi.fn((..._a: BuildIconArgs) => ({ kind: 'material' }));
 
 vi.mock('../../src/render/icons', () => ({
-  buildIcon: (...a: unknown[]) => buildIcon(...(a as [])),
+  buildIcon: (...a: BuildIconArgs) => buildIcon(...a),
   preloadTabIconTextures: () => Promise.resolve(),
 }));
 vi.mock('../../src/render/atlas/coinIconAtlas', () => ({
-  buildCoinIcon: (...a: unknown[]) => buildCoinIcon(...(a as [])),
+  buildCoinIcon: (...a: BuildIconArgs) => buildCoinIcon(...a),
   loadCoinIconAtlas: () => Promise.resolve(),
 }));
 vi.mock('../../src/render/atlas/materialAtlas', () => ({
-  buildMaterialIcon: (...a: unknown[]) => buildMaterialIcon(...(a as [])),
+  buildMaterialIcon: (...a: BuildIconArgs) => buildMaterialIcon(...a),
   loadMaterialAtlas: () => Promise.resolve(),
 }));
 
