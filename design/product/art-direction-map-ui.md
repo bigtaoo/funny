@@ -204,7 +204,7 @@ client/src/assets/decor/   # 最终透明 PNG / 图集
 - 首个落地参考实现：登录/注册场景 `client/src/scenes/LoginScene.ts`（`submitEnabled()` 判定 + `addButton(enabled)` 灰显 + `press` 放大回弹）。
 - **全屏场景共享原语**：所有 canvas 绘制的全屏场景（login / room / shop / gacha / result / replay / intro / settings）统一从 `client/src/render/sketchUi.ts` 取手绘 UI 原语——`buildPaperBackground`（纸底 + 抖动格线 + 红装订线，bake 缓存）、`sketchPanel`（平涂 + `SketchPen.rect` 涂鸦边框，**替代 `drawRoundedRect`**，落实「按钮非完美圆角」）、`sketchAccentBar`、`ui` 调色板（纸底/格线/红色引自 `theme.palette`）、`seedFor`（稳定 seed 防重渲染抖动）。新场景一律复用，不再各自手画背景/圆角按钮或硬编码调色板。**字体暂留 `monospace`**（手写字体需打包字体面，单列任务）。
 
-### 7.6 页签主图标 AI 化（v0.7 试点 · 2026-08-14，状态：试点批 + 批次 2 + 批次 3 + 批次 4「奖励图标」均已接线完成；批次 5「页面标题」出口已开、等出图）
+### 7.6 页签主图标 AI 化（v0.7 试点 · 2026-08-14，状态：试点批 + 批次 2/3/4/5 全部出图并接线完成；共 43 个光栅图标 / 129 张 PNG）
 
 页签条（HubTabs/CareerTabs/底部导航）上的图标此前全走 §〇 分工里"UI=程序绘制"这条路，反馈辨识度/完成度不够——起因一是线稿本身简单，二是同一图标被多处复用成不同含义（如 `trophy` 身兼战绩/成就/通行证/进阶 4 职）。**本次扩大 §〇 分工边界**：页签主图标比照角色立绘的理由（辨识度要求高、程序笔触画不出足够细节）改走 AI 图，复用点借机拆开一图一义；逐批出图，先出一个 3 图小批（`[Cards|Equipment|Skins]` 同伴组：卡背包/装备/皮肤）验证风格和小尺寸（真实设备 20-33px，见 prompt 文档）效果。管线沿用 §6.2 的"抠白底"套路，但换成"一张源图打包时吐 active(白)/inactive(灰) 两份"（B 组"打包时改色"的直接复用，不是运行时 tint——项目里没有运行时 tint AI 位图的先例）。
 
@@ -217,6 +217,8 @@ client/src/assets/decor/   # 最终透明 PNG / 图集
 **批次 4：奖励图标统一出处**（2026-08-15，用户报"周常宝箱这里的图标还是程序绘制的"）。批次 1-3 只梳理了**页签级**图标，明确把"奖励行里的图标"排除在外了——于是奖励行成了唯一还在画程序线稿的地方：日常签到日历、周常宝箱、通行证轨道、活动兑换、充值里程碑、邮件附件这 6 个屏幕，各自手写一张 `kind → IconKind` 表，`coins`/`material` 早就分别收敛到 `buildCoinIcon`/`buildMaterialIcon` 两个统一出口，但 `card`/`equipment`/`skin` 三种一直落在 `cards`/`armor`/`brush` 三个程序 glyph 上，明明 AI 图（`rosterIcon`/`equipIcon`/`skinIcon`）早就有了。视觉后果就是用户截图里那样：同一张卡片上，AI 画的铅笔芯位图和程序画的细线盾牌并排。**修法不是逐屏替换**（那正是漂移的根源），而是新增第四个统一出口 `client/src/render/rewardIcon.ts` 的 `buildRewardIcon(reward, size, color)`，内部按 kind 分派到既有的三个域出口 + 三张 AI 页签图，6 个屏幕全部改走它。**规则：任何新的"奖励图标"落点必须调 `buildRewardIcon`，不许再写 kind→IconKind 表。** 详见 `tab-icon-art-prompts.md` "批次 4"一节。 **追加（2026-08-16）**：AI 页签图原本只烘 active(白)/inactive(灰) 两种墨色，奖励行拿到的是页签非激活态那份刻意压暗的灰，放在纸面内容里比旁边全彩的材料/金币位图淡一档。加了第三种 `content` 墨（`C.dark` = `#2c2c2a`，同一行主文案的墨色），19 个图标各多出一张 PNG，共 57 张。**这一种永远不会被颜色判据自动选中**——content 和 inactive 都是纸底深墨，任何基于颜色的判据都分不开，只能由调用点显式声明 `{ variant: 'content' }`。
 
 **批次 5：页面标题图标**（2026-08-17，用户圈图指出"所有页面类似位置都该有图标"）。前四批的范围一直是"页签条上的图标"，**页面标题从来没进过范围**——`drawSceneHeader` 只画文字，31 个标题态一个图标都没有；同类漏网的还有装备页的部位筛选条和背包/锻造二级导航。这次先把出口做出来再等图（批次 4 "没有出口"那条教训的直接应用）：`drawSceneHeader` 新增 `opts.icon`，把 `[图标][间距][标题]` 当一个组排版，并在两端设边界——不压返回按钮胶囊、不越右侧货币簇预留区，放不下就图标和文字一起等比缩小（沿用 `HubTabs` 给页签标签"缩到装得下"的做法）；`buildTitleIcon` 导出给三个自绘标题的场景（战役地图/家族/宗门）。**这两条边界都是实拍才暴露的**：只居中 → 图标画在"返回"字上；只钳左边 → 英文 `Hero Roster` 顶出右边界。同时把 `preloadTabIconTextures()` 挂进 `LobbyScene` 并把 `idlePrefetch` 的图标波次提到 battle 之前——所有二级场景都从大厅进入，而"设置/关卡准备/房间"这类只渲染一次的场景等不到第二次重绘，晚到的解码就是永久空白。14 处标题 + 6 格页签确认为纯复用已接线；24 张新图的判断表和 prompt 见 [`tab-icon-art-prompts-batch5.md`](tab-icon-art-prompts-batch5.md)（单独文件，500 行文档约定）。
+
+**批次 5 出图结果（2026-08-17 当日完成）**：24 张一次过关，**前四批各有 3 张在 contact-sheet 阶段被打回，这批零打回**——判断阶段就点名的三对高危撞车（领奖台 vs 柱状图、礼物盒 vs 拱盖宝箱、铁砧 vs 拍卖锤）在 prompt 里逐条写进 Avoid 后，28px 并排看全部拉得开。至此光栅图标 43 个 / PNG 129 张。接线覆盖 11 个 `drawSceneHeader` 标题（其中 DailyScene 按激活 tab 四选一、FriendsScene 按 tab 五选一）、2 个自绘标题（家族/宗门，走 `buildTitleIcon`）、社交 rail 5 格、日常 4 格、装备背包/锻造 + 部位筛选 4 格、头像预设 1 格。**接线时发现的一处结构陷阱**：装备页的「背包/锻造」在横屏走侧栏 `drawSidebarTabs`、竖屏走顶部 `drawHubTabs` 两条**各写一份 tab 数组**的分支，只改横屏那份的话竖屏静默保持无图标（实拍才看出来）；已收敛成 `EquipmentScene/types.ts` 的 `EQUIP_SUBTABS` 单一表，两条分支都读它。同类的"一个控件两处画"还有社交 rail（已是单表 `SOCIAL_TAB_ICON`，标题和页签共用）。
 
 ---
 

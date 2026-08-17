@@ -175,8 +175,19 @@ export class RenderPanel {
       tp.x = tx; tp.y = core.headerH;
       core.bodyLayer.addChild(tp);
       const tabLabel = t(tab === 'members' ? 'family.tabMembers' : 'family.channel');
-      const tl = txt(tabLabel, fitSize(tabLabel, FS.heading, tabW - 16), active ? C.accent : C.dark);
-      tl.anchor.set(0.5, 0.5); tl.x = tx + tabW / 2; tl.y = core.headerH + tabH / 2;
+      const fg = active ? C.accent : C.dark;
+      // Icon + label as one centred group, same [icon][gap][label] shape (and same
+      // colour-picks-the-baked-ink rule) as HubTabs' own cells — this strip is hand-rolled because it
+      // predates the shared widget, so it repeats the layout rather than the ink logic.
+      // 'members' reuses the two-person friends glyph: on two different screens it is the same
+      // literal concept, and a second multi-person silhouette would just collide with it.
+      const iconSize = Math.round(tabH * 0.6), gapIL = 8;
+      const icon = buildIcon(tab === 'members' ? 'friendsTabIcon' : 'channelTabIcon', iconSize, fg);
+      const tl = txt(tabLabel, fitSize(tabLabel, FS.heading, tabW - 16 - iconSize - gapIL), fg);
+      const groupX = tx + Math.round((tabW - (iconSize + gapIL + tl.width)) / 2);
+      icon.x = groupX; icon.y = core.headerH + Math.round((tabH - iconSize) / 2);
+      core.bodyLayer.addChild(icon);
+      tl.anchor.set(0, 0.5); tl.x = groupX + iconSize + gapIL; tl.y = core.headerH + tabH / 2;
       core.bodyLayer.addChild(tl);
       core.hitRects.push({ rect: { x: tx, y: core.headerH, w: tabW, h: tabH }, action: () => { core.activeTab = tab; core.scrollY = 0; core.channelStick = true; core.render(); } });
     }

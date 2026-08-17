@@ -129,7 +129,7 @@ export class EventScene implements Scene {
     const decoC = buildDecorCLayer(w, h);
     if (decoC) this.container.addChild(decoC);
 
-    const hdr = drawSceneHeader(this.container, w, h, t('event.title'));
+    const hdr = drawSceneHeader(this.container, w, h, t('event.title'), { icon: 'eventTabIcon' });
     this.hits.push({ ...hdr.backRect, fn: () => this.cb.onBack() });
 
     if (this.events.length === 0) {

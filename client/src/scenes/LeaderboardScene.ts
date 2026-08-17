@@ -315,7 +315,7 @@ export class LeaderboardScene implements Scene {
     if (decoC) this.container.addChild(decoC);
 
     // ── Title bar ────────────────────────────────────────────────────────────
-    const hdr = drawSceneHeader(this.container, w, h, t('leaderboard.title'));
+    const hdr = drawSceneHeader(this.container, w, h, t('leaderboard.title'), { icon: 'leaderboardTabIcon' });
     const tbH = hdr.headerH;
     this.hits.push({ rect: hdr.backRect, fn: () => this.cb.onBack() });
 

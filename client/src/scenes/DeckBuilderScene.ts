@@ -178,7 +178,7 @@ export class DeckBuilderScene implements Scene {
     const decoC = buildDecorCLayer(w, h);
     if (decoC) this.container.addChild(decoC);
 
-    const hdr = drawSceneHeader(this.container, w, h, t('pvp.deckBuilder' as TranslationKey));
+    const hdr = drawSceneHeader(this.container, w, h, t('pvp.deckBuilder' as TranslationKey), { icon: 'deckTabIcon' });
     this.hits.push({ rect: hdr.backRect, fn: () => this.cb.onBack() });
     const tbH = hdr.headerH;
 

@@ -32,6 +32,7 @@ import { preloadTabIconTextures } from '../render/icons';
 import { drawHubTabs, hubTabsHeight, sidebarNavW, type HubTab } from '../ui/widgets/HubTabs';
 import { EquipmentSceneCore } from './EquipmentScene/core';
 import type { EquipmentCallbacks, EquipTab } from './EquipmentScene/core';
+import { EQUIP_SUBTABS } from './EquipmentScene/types';
 import { FILTER_H, MAT_BAND_H, TAB_LOADOUT_GAP } from './EquipmentScene/layout';
 import { InventoryPanel } from './EquipmentScene/inventory';
 import { CraftPanel } from './EquipmentScene/craft';
@@ -142,10 +143,9 @@ export class EquipmentScene implements Scene {
 
     if (!landscape) {
       const stripH = hubTabsHeight(h);
-      const subTabs: HubTab[] = [
-        { label: t('equip.tabInv'), active: core.activeTab === 'inv' },
-        { label: t('equip.tabCraft'), active: core.activeTab === 'craft' },
-      ];
+      const subTabs: HubTab[] = EQUIP_SUBTABS.map((tab) => ({
+        label: t(tab.label), active: core.activeTab === tab.key, icon: tab.icon,
+      }));
       const hits = drawHubTabs(core.bodyLayer, w, top, stripH, subTabs, (i) => {
         const key: EquipTab = i === 0 ? 'inv' : 'craft';
         if (core.activeTab !== key) { core.activeTab = key; core.scrollY = 0; core.render(); }

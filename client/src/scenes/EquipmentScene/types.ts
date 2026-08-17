@@ -52,6 +52,20 @@ export interface EquipmentCallbacks {
 }
 
 export type EquipTab = 'inv' | 'craft';
+
+/**
+ * Label + glyph for the two sub-tabs, shared by BOTH strips that draw them: landscape's sidebar rail
+ * (InventoryPanel.renderSidebar) and portrait's header strip (the assembly's renderHeaderRow, §18).
+ * One table because they are one control drawn two ways — the batch-5 wiring first landed only on the
+ * sidebar, and portrait silently kept its label-only cells.
+ *
+ * The glyphs are a backpack and an anvil. Never a hammer for the forge: that shape is already
+ * `bidTabIcon`, the auction gavel (design/product/tab-icon-art-prompts-batch5.md).
+ */
+export const EQUIP_SUBTABS: { key: EquipTab; label: TranslationKey; icon: IconKind }[] = [
+  { key: 'inv', label: 'equip.tabInv', icon: 'bagTabIcon' },
+  { key: 'craft', label: 'equip.tabCraft', icon: 'craftTabIcon' },
+];
 export type SectionKey = 'equipped' | 'bag';
 
 export interface Rect { x: number; y: number; w: number; h: number; }

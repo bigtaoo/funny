@@ -59,16 +59,19 @@ function findLabelPositions(container: PIXI.Container, label: string): Array<{ x
  * assertion below can stay about "centred on the design width" instead of hardcoding the icon size.
  */
 function headerTitleGroupSpan(container: PIXI.Container, label: string): { left: number; right: number } {
-  let found: { parent: PIXI.Container; index: number; node: PIXI.Text } | null = null;
-  const walk = (node: PIXI.Container): void => {
-    node.children.forEach((child, i) => {
-      if (child instanceof PIXI.Text && child.text === label && !found) {
-        found = { parent: node, index: i, node: child };
-      }
-      walk(child as PIXI.Container);
-    });
+  // Returns from the recursion rather than filling a captured `let`: TS's control-flow analysis
+  // doesn't see assignments made inside a callback, so the captured-variable version narrowed to
+  // `never` after the null check and failed `npm run typecheck` (which `npm test` doesn't run).
+  const find = (node: PIXI.Container): { parent: PIXI.Container; index: number; node: PIXI.Text } | null => {
+    for (let i = 0; i < node.children.length; i++) {
+      const child = node.children[i] as PIXI.Container;
+      if (child instanceof PIXI.Text && child.text === label) return { parent: node, index: i, node: child };
+      const deeper = find(child);
+      if (deeper) return deeper;
+    }
+    return null;
   };
-  walk(container);
+  const found = find(container);
   if (!found) throw new Error(`no text node "${label}" found`);
   const { parent, index, node } = found;
   const lead = index > 0 ? (parent.children[index - 1] as PIXI.Container) : null;

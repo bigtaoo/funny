@@ -1,10 +1,10 @@
 # 批次 5：页面标题图标 + 剩余二级页签 — Prompt 文档
 
-> 创建：2026-08-17 · 判断+prompt 定稿：2026-08-17 · 代码出口已先行落地（见下"出口"一节）
+> 创建：2026-08-17 · 判断+prompt 定稿：2026-08-17 · 出图+接线完成：2026-08-17
 > 前四批：[`tab-icon-art-prompts.md`](tab-icon-art-prompts.md)（试点/批次 2/批次 3/批次 4，共 19 个光栅图标）
 > 配套代码：[`client/src/ui/widgets/SceneHeader.ts`](../../client/src/ui/widgets/SceneHeader.ts)（`opts.icon` + `buildTitleIcon`）· [`client/src/render/icons.ts`](../../client/src/render/icons.ts) · [`art/ui/tabicons/pack_tab_icons.cjs`](../../art/ui/tabicons/pack_tab_icons.cjs)
 > 美术总纲：[`art-direction.md`](art-direction.md) §0 / §7.6
-> 状态：**出口已开 + 纯复用已接线**；**24 张新图判断+prompt 已定，等出图**
+> 状态：**全部完成**（24 张图 0 打回，43 个光栅图标 / 129 张 PNG，接线+实拍已验收；结果见文末「出图结果」一节）
 
 ## 背景：这一批跟前四批不是同一类位置
 
@@ -200,6 +200,33 @@ Hand-drawn doodle icon in a worn school notebook, single dark-ink pen line art, 
 ```
 Hand-drawn doodle icon in a worn school notebook, single dark-ink pen line art, slightly wobbly imperfect strokes, quick loose sketch — not polished. One bold, simple, highly readable silhouette. Subject: ONE speech bubble — a rounded-corner rectangle with a short tail pointing down-left from its bottom edge, and three small dots in a horizontal row inside it. Single object, centered, filling the frame, on a plain pure-white background, no grid lines, no other elements. Flat 2D, no shading. Must stay clearly recognizable when scaled down to 28x28 pixels. Style of West of Loathing / doodle art. Avoid: color, painterly rendering, gradients, glow, 3d render, photorealistic look, thick clean cartoon outline, vector-art look, two overlapping bubbles, a thought-bubble with trailing circles, more than three dots, lines of text inside, a person or head next to it, envelope shape, megaphone, text, letters, numbers, confetti dots, watermark, gray background, notebook grid lines, drop shadow.
 ```
+
+## 出图结果（2026-08-17，全部完成）
+
+**24 张一次过关，零打回**——前三批各有 3 张是在 contact-sheet 阶段才被打回重出的，这批一张都没有。差别在于判断阶段点名的高危撞车被逐条写进了 prompt 的 Avoid 段（`ascending or staircase-shaped bars`、`treasure chest with an arched lid`、`a hammer or mallet of any kind`），而不是只写在文档的"避让"列里。
+
+28px 并排复核结论（本文档第 3 条要求的那几对）：
+
+| 对照 | 结论 |
+|---|---|
+| #3 领奖台 vs `statsTabIcon` 柱状图 | 拉得开——领奖台是**空心对称**三块，柱状图是**实心递增**，填充和对称性两条都不同 |
+| #11 礼物盒 vs `rechargeTabIcon` 宝箱 | 拉得开——十字丝带+蝴蝶结 vs 拱盖+锁孔 |
+| #18 铁砧 vs `bidTabIcon` 拍卖锤 | 拉得开——无柄矮墩 vs 有柄敲头 |
+| #13 好友 vs #14 家族（同屏相邻，rail 里紧挨着） | 拉得开——2 个等高头肩 vs 3 个（中间明显大、两侧下沉） |
+| #2 主城 vs `homeTabIcon` 房子 vs #15 宗门宝塔 | 三者互不撞；宝塔是 24 张里线最细的一张，28px 偏淡但形还在，判为可用 |
+
+**最终接线清单**（比第 5 条的计划多两处，见下）：
+
+- 标题（`drawSceneHeader({icon})`）：拍卖场、主城、排行榜、个人设置、限时活动、构筑卡组、好友对战（排位那半仍是 `pvpTabIcon`）、主城防守/队伍编辑、每日（按激活 tab 四选一）、社交五个 tab（与 rail 共用一张表）、私聊（气泡）。
+- 自绘标题（`buildTitleIcon`）：家族、宗门——各自 header 里 `[图标][间距][标题]` 手排，size/gap/墨色规则全部取自共享 builder。
+- 页签：社交 rail 5 格（新增 `SOCIAL_TAB_ICON`，标题和 rail 同一出处）、日常 4 格（`TAB_ICON`，同表喂标题）、装备背包/锻造（`EQUIP_SUBTABS`）、装备部位筛选 4 格、家族「成员/频道」、宗门「成员家族/频道」、头像「预设」。
+
+**接线阶段发现的两处计划外情况**：
+
+1. **装备「背包/锻造」是两条各写一份 tab 数组的分支**：横屏走侧栏 `drawSidebarTabs`，竖屏走顶部 `drawHubTabs`（§18 的竖屏改造），第 5 条只写了 `EquipmentScene/inventory.ts`——照着改完竖屏静默保持无图标，**实拍才发现**。已收敛成 `EquipmentScene/types.ts` 的 `EQUIP_SUBTABS` 单表，两条分支都读它。以后给这类"一个控件两处画"的 tab 加东西，先 grep 一遍 label 的 i18n key 有几个调用点。
+2. **家族/宗门场景在真机上够不到**：`openFamilyHub`/`openSectHub` 要求账号已加入 SLG 世界且真的有家族，为了截一张图去 prod 建家族会给真实玩家的家族列表留垃圾数据。改为用新增的 `client/test/ui/orgHeaderTitleIcon.ui.ts` 覆盖：断言标题图标出现在 `[图标][间距][标题]` 的首位（位置按 `buildTitleIcon` 的两个 ratio 反算，不靠"前一个兄弟节点"——headless 下光栅图标的纹理永不解码，返回的是空 Container，和 header chrome 无法按类型区分），且让它在把 `add(titleIcon.node)` 注掉时确实失败过。
+
+**验收**：`tsc --noEmit` + `npm run typecheck` + 1439 + 1728 全绿；Playwright 实拍 20 张（竖屏 430×932 / 横屏 1280×800 各一轮，覆盖每日/装备/社交/排行榜/拍卖/主城/防守/设置/活动/好友对战/卡牌/世界地图）。看广告 tab 在 web 平台整条隐藏（无激励视频集成），其标题图标只有 contact-sheet 验证。
 
 ## 出图后的流程（沿用前四批）
 
