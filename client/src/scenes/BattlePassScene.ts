@@ -242,7 +242,7 @@ export class BattlePassScene implements Scene {
     if (decoC) this.container.addChild(decoC);
 
     // ── Title bar ────────────────────────────────────────────────────────────
-    const hdr = drawSceneHeader(this.container, w, h, t('battlepass.title'), { accent: HEADER_ACCENT.spend });
+    const hdr = drawSceneHeader(this.container, w, h, t('battlepass.title'), { accent: HEADER_ACCENT.spend, icon: 'battlepassTabIcon' });
     const tbH = hdr.headerH;
     this.hits.push({ rect: hdr.backRect, fn: () => this.cb.onBack() });
 

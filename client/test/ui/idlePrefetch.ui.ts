@@ -33,7 +33,11 @@ vi.mock('../../src/render/atlas/worldAtlas', () => ({ worldAtlas: { load: () => 
 // After vi.mock (hoisted regardless of physical order — same pattern as battleGate.ui.ts).
 import { startIdlePrefetch, resetIdlePrefetchForTest } from '../../src/assets/idlePrefetch';
 
-const WAVE_ORDER = ['boot:background', 'battle', 'icons:reward', 'slg:world', 'gacha'];
+// `icons:reward` moved ahead of `battle` with the scene-title icon pass: it is both the smallest
+// wave (~430 KB) and the one every menu screen draws from the moment it opens, and some of those
+// screens render exactly once, so a late decode there is a permanently blank glyph rather than a
+// one-frame flash. See the ordering rationale in idlePrefetch.ts's WAVES table.
+const WAVE_ORDER = ['boot:background', 'icons:reward', 'battle', 'slg:world', 'gacha'];
 
 /**
  * Drain enough turns of the event loop for a settled wave to schedule its idle callback
@@ -102,9 +106,9 @@ describe('idlePrefetch', () => {
     void startIdlePrefetch();
     await flush();
 
-    expect(events).toEqual(['start:boot:background', 'start:battle']);
-    await finish('battle');
-    expect(events).toContain('start:icons:reward');
+    expect(events).toEqual(['start:boot:background', 'start:icons:reward']);
+    await finish('icons:reward');
+    expect(events).toContain('start:battle');
   });
 
   it('does nothing on a save-data / 2g connection', async () => {

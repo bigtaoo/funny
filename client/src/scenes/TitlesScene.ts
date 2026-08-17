@@ -207,7 +207,7 @@ export class TitlesScene implements Scene {
 
   private drawHeader(): number {
     const { w, h } = this;
-    const hdr = drawSceneHeader(this.container, w, h, t('titles.title'));
+    const hdr = drawSceneHeader(this.container, w, h, t('titles.title'), { icon: 'honorTabIcon' });
     this.hits.push({ rect: hdr.backRect, fn: () => this.cb.onBack() });
     return hdr.headerH;
   }

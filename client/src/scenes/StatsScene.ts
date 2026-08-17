@@ -197,7 +197,7 @@ export class StatsScene implements Scene {
     const decoC = buildDecorCLayer(w, h);
     if (decoC) this.container.addChild(decoC);
 
-    const hdr = drawSceneHeader(this.container, w, h, t('stats.title'));
+    const hdr = drawSceneHeader(this.container, w, h, t('stats.title'), { icon: 'statsTabIcon' });
     const tbH = hdr.headerH;
     this.hits.push({ rect: hdr.backRect, fn: () => this.cb.onBack() });
 
