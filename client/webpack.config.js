@@ -116,6 +116,20 @@ module.exports = (env, argv) => {
       clean: false,
       iife: true,
       globalObject: 'globalThis',
+      // asyncChunks:false enforces the "single self-executing file" contract above (ASSET_PACKAGING
+      // §4.0) instead of merely describing it: any `import()` reachable from the wechat entry is
+      // inlined into pixigame.js rather than split into a `<id>.pixigame.js` sibling. Without this,
+      // one third-party dynamic import silently (a) emits an extra chunk file that game.js never
+      // requires and project.config never packs, and (b) drags webpack's JSONP chunk-loading runtime
+      // (document.createElement('script') / importScripts) into the bundle — neither exists in the
+      // WeChat runtime, so the first chunk request would throw rather than degrade.
+      // Real case (2026-08-17): @capacitor/local-notifications registers its web implementation as
+      // `web: () => import('./web')` (Capacitor's standard lazy-impl pattern), and
+      // platform/localReminders.ts imports it on every target, not just mobile — that alone produced
+      // a stray `90.pixigame.js`. It happened to be unreachable (every call site is behind
+      // `Capacitor.isNativePlatform()`, and the loader only runs when a plugin method is actually
+      // called), but "unreachable" is a property of today's call sites, not of the build.
+      asyncChunks: false,
     } : {
       filename: isProd ? '[contenthash].js' : 'index.js',
       path: path.resolve(__dirname, 'dist'),
