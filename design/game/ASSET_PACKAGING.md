@@ -1,6 +1,6 @@
 # 资源分包与加载策略（ASSET_PACKAGING）
 
-> 状态：实现中 · 权威：本文（资源分层/加载/分包的单一来源）· 更新：2026-08-17（§11 首屏加载策略优化：preload 提示 + L0 双层 + L1 空闲预取）
+> 状态：实现中 · 权威：本文（资源分层/加载/分包的单一来源）· 更新：2026-08-17（§11 首屏加载策略优化：preload 提示 + L0 双层 + L1 空闲预取；§11.4 补齐回归测试）
 
 游戏要在 **Web（含 CrazyGames）/ 微信小游戏 / 手机套壳** 三个平台发布，三者对"资源何时进内存"的约束完全不同。本文锁定：
 
@@ -38,6 +38,8 @@ webpack 当前对图片 / `.tao` 用 `asset/resource`，每个资源被发成**�
 | **L2 永不进包** | — | `art/` 下全部 `.xcf` GIMP 源、`.tao.editor` 编辑元数据、地图/概念源图 | ~47 MB |
 
 **L0 清单的单一来源 = `client/src/assets/bootManifest.ts`**。新增"开局必现"的资源往该清单加一条；其余一律默认 L1（不进闸门）。**保持 L0 极小**是这套设计的纪律——每加一条都拖慢首屏。
+
+> ⚠ **L0 自 2026-08-17 起内部再分两层**（§11.2）：`STEPS` 阻塞加载进度条，`BACKGROUND_STEPS` 在闸门之后才起、由 `enterBattle` 闸门（§10）重新 await。上表"L0 归属"一列列出的装饰 atlas 和三兵 `.tao` 现在都在**背景层**。往 `bootManifest.ts` 加资源时先问"**玩家必须等它吗**"而不是"它是不是 L0"——大厅不画的一律进背景层，且必须确认 `ensureBattleAssets` 也会 await 它（`bootManifestTiers.ui.ts` 会强制这一点）。
 
 ---
 
@@ -118,9 +120,12 @@ interface AssetIO {
 |---|---|
 | `client/src/assets/assetIO.ts` | `AssetIO` 接口 + `WebAssetIO` 默认实现 + 模块级单例（`setAssetIO`/`assetIO`） |
 | `client/src/assets/WechatAssetIO.ts` | 微信 `downloadFile` + `USER_DATA_PATH` 本地缓存（无 fetch）；含包内相对路径回退 |
-| `client/src/assets/bootManifest.ts` | **L0 启动清单单一来源** + `preloadBoot(onProgress)` |
-| `client/src/ui/LoadingOverlay.ts` | PIXI 手绘加载界面（进度条） |
-| `client/src/app.ts` | `startApp` 内嵌 L0 闸门（构造 overlay → `await preloadBoot` → 销毁 → 进首屏） |
+| `client/src/assets/bootManifest.ts` | **L0 启动清单单一来源**：`STEPS`（阻塞层）+ `BACKGROUND_STEPS`（背景层）+ `preloadBoot(onProgress)` / `preloadBootBackground()`（见 §11.2） |
+| `client/build/preloadBootAssets.js` | webpack 插件：把两层清单写成 `<link rel=preload>` 进 HTML head（见 §11.1）。**清单是副本**，由 `test/bootPreloadManifest.test.ts` 守住不漂移 |
+| `client/src/assets/idlePrefetch.ts` | 首屏之后的 L1 空闲预取（串行 + idle 调度 + 计费链路跳过，见 §11.3） |
+| `client/src/assets/battleAssets.ts` | `ensureBattleAssets`：进战斗前的资源闸门（§10），同时是背景层的兜底保证（§11.2） |
+| `client/src/ui/LoadingOverlay.ts` | PIXI 手绘加载界面（进度条），L0 闸门与 `enterBattle` 闸门共用 |
+| `client/src/app.ts` | `startApp` 内嵌 L0 闸门（构造 overlay → `await preloadBoot` → 销毁 → 进首屏）+ 首屏后 `void startIdlePrefetch()` |
 | `client/src/render/stickman/StickmanRuntime.ts` | `_parse` 经 `assetIO().loadBinary` 取字节 |
 | `client/src/render/atlas/spriteAtlas.ts` | **`createAtlasLoader` 工厂**——每个 PixiJS Spritesheet atlas 的解码/缓存/idempotent-load 单一实现，所有 atlas loader 模块都是它的薄封装 |
 | `client/src/render/{decorMergedAtlas,iconsAtlas,worldAtlas}.ts` | 三组合并 atlas 的共享加载实例（见 §8），纹理源经 `assetIO().textureSource` |
@@ -255,9 +260,24 @@ frame 名称互不冲突（合并前用脚本核对过），故直接共享一�
 
 ### 11.4 回归测试
 
-- `client/test/bootPreloadManifest.test.ts`（node 主套件）：插件的 preload 清单是 `bootManifest.ts` 的**副本**（插件是 JS，不能 import TS + PIXI 资源图），副本悄悄烂掉比不做 preload 更糟——资源改名后 preload 静默失效，什么都不会报错。该测试从 `bootManifest.ts` 源码文本反推两层清单（含每项属于哪一层，因为层决定 `fetchpriority`），与插件源码里的两个数组逐一比对；另外校验清单里的文件都真实存在、两层不重叠。正则本身也有兜底断言（推导结果为空即失败），避免"两个空集合相等"式的假绿。
-- `client/test/ui/idlePrefetch.ui.ts`：5 波全 mock，只测调度契约——串行顺序、失败不断链、metered 跳过、无 `requestIdleCallback` 时的 timer 回退、重复调用只跑一次。
+本节三处改动**没有一处会在出错时报错**——preload 属性写错只是悄悄多下一遍、L0 分层出错只在**冷缓存的第一局**露馅、预取没接上只是回到原来的速度。所以测试全部按"这条烂掉了谁会发现"来设计，五个文件各守一层：
+
+| 文件 | 套件 | 守什么 |
+|---|---|---|
+| `test/bootPreloadManifest.test.ts` | node | 插件的资源**清单**不跟 `bootManifest.ts` 漂移 |
+| `test/preloadBootAssetsPlugin.test.ts` | node | 插件生成的**标签属性**正确 |
+| `test/appAssetGateWiring.test.ts` | node | `app.ts` 里两个调用点还在、顺序还对 |
+| `test/ui/bootManifestTiers.ui.ts` | ui | 闸门只等阻塞层 + **背景层被战斗闸门全覆盖** |
+| `test/ui/idlePrefetch.ui.ts` | ui | 预取的调度契约 |
+
+- **清单漂移守卫**（`bootPreloadManifest`）：插件是 JS、不能 import TS + PIXI 资源图，只能自带一份清单副本；副本悄悄烂掉比不做 preload 更糟。该测试从 `bootManifest.ts` 源码文本反推两层清单（含每项属于哪一层，因为层决定 `fetchpriority`），与插件源码里的两个数组比对，另校验文件真实存在、两层不重叠。正则本身有兜底断言（推导结果为空即失败），避免"两个空集合相等"式假绿。
+- **插件行为守卫**（`preloadBootAssetsPlugin`）：用假 compiler/compilation 驱动插件（`HtmlWebpackPlugin.getHooks()` 接受任意对象挂 hook；真构建一个 target 要 18s，这样是毫秒级）。断言 `crossorigin=anonymous`（§11.1 那个 bug 的回归锁）、`as` 与消费方一致、`fetchpriority` 高优先在前、publicPath 前缀与 `auto` 处理、`.hires` 重定向、缺项只 warn 不影响其余标签。喂给它的产物表是 `src/assets` 下**全部** png/tao 而非清单副本，所以这个文件跟"当前哪些资源在哪一层"解耦。
+- **`app.ts` 接线守卫**（`appAssetGateWiring`）：`startApp()` 需要真 canvas/平台/后端，端到端测不了（同 `appTickerDialogWiring.test.ts` 的理由），所以走源码文本静态检查：闸门被 await、overlay 在首屏前 destroy、`startIdlePrefetch()` 在 `core.start()` **之后**且是 `void` 不是 `await`。
+- **分层安全性守卫**（`bootManifestTiers`）：最后一条测试是整个 §11.2 的**安全论证本身**——把 `preloadBootBackground()` 与 `ensureBattleAssets({})` 各自驱动的 loader 记下来，断言前者 ⊆ 后者。将来往 `BACKGROUND_STEPS` 加一项却忘了让战斗闸门也 await，会在这里红，而不是在某个冷缓存玩家的第一局里变成占位图。按 loader **种类**而非 URL 比对：`vitest.ui.config` 的资源桩把所有 `.png`/`.tao` 映射成同一个 data URI，URL 在该环境下没有区分度（`battleAssets.ui.ts` 已记录同一现象）。同文件另测：闸门进度只统计阻塞层、背景层永不阻塞闸门（把背景 loader 挂成永不 resolve，闸门照样 resolve）、背景层在闸门 resolve **之后**才起、两层任一步失败都不 reject。
+- **预取调度守卫**（`idlePrefetch`）：5 波全 mock，只测契约——串行顺序、失败不断链、`saveData`/2g 跳过而 3g/4g 不跳过（边界，防止有人把跳过条件放宽成"非 wifi 全跳"）、无 `requestIdleCallback` 时的 timer 回退、重复调用只跑一次。
 - `client/test/ui/battleAssets.ui.ts`：补 `decorMergedAtlas.load()` 这一步的断言 + 进度总数 +1。
+
+> 三条关键守卫都做过**反向验证**（把被守护的东西删掉，确认测试变红）：删 `crossorigin` → 插件测试红；从 `ensureBattleAssets` 删掉 `decorMergedAtlas.load()` → 分层测试红且报出 `background-tier loaders not re-awaited by ensureBattleAssets: decor`；删 `app.ts` 里的 `void startIdlePrefetch()` → 接线测试红。
 
 ### 11.5 遗留
 
