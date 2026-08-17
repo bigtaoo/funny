@@ -39,6 +39,11 @@ const LAST_SHOWN_KEY = 'nw_sub_reminder_day';
  * prompt on desktop Chrome/Firefox), so a bare try/catch would not reliably no-op here; WeChat's
  * environment has no `Notification` global and would fail closed anyway, but iOS is the only
  * platform this is meant to run on, so check for it up front rather than relying on that.
+ *
+ * Non-mobile builds no longer even contain that web implementation: webpack swaps both @capacitor
+ * packages for no-op stubs on every target but `mobile` (ASSET_PACKAGING §4.0). That is a
+ * bundle-size measure only — this gate stays the semantic guarantee, and the module reads exactly
+ * the same on the target where the plugin is real.
  */
 export async function scheduleSubscriptionReminder(expiryMs: number): Promise<void> {
   if (!Capacitor.isNativePlatform()) return;

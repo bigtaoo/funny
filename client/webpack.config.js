@@ -199,6 +199,29 @@ module.exports = (env, argv) => {
           },
         ),
       ] : []),
+      // Native-only Capacitor packages → no-op stubs on every non-mobile target. Mirror image of the
+      // `.hires` swap above: same "one source tree, several targets" idiom, applied to code instead
+      // of art. Capacitor's runtime only means anything inside the iOS shell, which loads the
+      // `mobile` build alone, so on web/crazygames/wechat these packages are dead weight — but an
+      // unconditional top-level `import` puts them in the graph regardless, and a bundler cannot know
+      // that the *web* implementation they ship (a real browser-Notification-API one, in
+      // local-notifications' case) is unreachable behind `Capacitor.isNativePlatform()`. Swapping the
+      // request drops ~12 KB from three bundles at once; it matters most for wechat, the one with a
+      // hard budget (main package ≤4 MB, ASSET_PACKAGING §4). Each stub documents the surface it
+      // covers and the rule for extending it.
+      // Scope: these two are what platform/localReminders.ts imports — the only unconditional
+      // Capacitor import in the shared graph. platform/ota.ts (@capgo/capacitor-updater) is already
+      // mobile-only by *reachability*: entries/mobile.ts is its sole importer, so the other entries
+      // never pull it in. platform/nativeAds.ts / iap.ts have no package behind them at all — they
+      // read `window.NWAds` / `window.NWBilling` globals injected by the shell. Add a row here (plus
+      // a stub) if a native-only package ever joins the shared graph.
+      ...(isMobile ? [] : [
+        [/^@capacitor\/core$/, 'src/platform/stubs/capacitorCore.ts'],
+        [/^@capacitor\/local-notifications$/, 'src/platform/stubs/localNotifications.ts'],
+      ].map(([pkg, stub]) => new webpack.NormalModuleReplacementPlugin(
+        pkg,
+        path.resolve(__dirname, stub),
+      ))),
       new webpack.DefinePlugin({
         TARGET: JSON.stringify(targetPlatform),
         'globalThis.__NW_API_BASE__': JSON.stringify(apiBase),
