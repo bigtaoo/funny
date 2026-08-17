@@ -1,8 +1,9 @@
 // Coverage for `client/src/app/battleGate.ts` (ASSET_PACKAGING §10) — the pre-match
-// asset-readiness gate extracted out of `PixiAppViews.showGame`/`showGameNet` in app.ts.
+// asset-readiness gate extracted out of `PixiAppViews.showGame`/`showGameNet`
+// (client/src/app/PixiAppViews.ts, split out of app.ts on 2026-08-17).
 //
-// Deliberately tests this module in isolation rather than importing app.ts directly: app.ts
-// pulls in ~30 scene classes for its other show* methods (WorldMapScene/FamilyScene/etc.),
+// Deliberately tests this module in isolation rather than importing PixiAppViews directly: that
+// file pulls in ~30 scene classes for its other show* methods (WorldMapScene/FamilyScene/etc.),
 // whose import graphs reach `@nw/shared` and would require `server/node_modules` just to
 // resolve — battleGate.ts only needs SceneManager/InputManager/LoadingOverlay/battleAssets,
 // so this file (and its mocks) stay cheap.
