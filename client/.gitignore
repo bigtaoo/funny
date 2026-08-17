@@ -2,9 +2,12 @@
 /dist
 wechatgame/project.config.json
 # 微信构建产物（build:wechat 生成，勿入库；与 dist/ 同理）
-wechatgame/pixigame.js
-wechatgame/pixigame.js.map
-wechatgame/pixigame.js.LICENSE.txt
+# 通配而非逐个列名：webpack 的 output.asyncChunks:false 保证正常情况下只有 pixigame.js
+# 一个 chunk，但万一哪天该保证被绕过（见 webpack.config.js output.isWechat 注释），
+# 多出来的 `<id>.pixigame.js` 也不会变成 untracked 噪声。
+wechatgame/*pixigame.js
+wechatgame/*pixigame.js.map
+wechatgame/*pixigame.js.LICENSE.txt
 wechatgame/cdn/
 .DS_Store
 # Playwright artifacts (client/test/browser smoke, see claudedocs/client-testing.md 缺口B)

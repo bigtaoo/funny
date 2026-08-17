@@ -4,6 +4,7 @@ const HtmlWebpackPlugin = require('html-webpack-plugin');
 const webpack = require('webpack');
 const CopyPlugin = require('copy-webpack-plugin');
 const TerserPlugin = require('terser-webpack-plugin');
+const PreloadBootAssetsPlugin = require('./build/preloadBootAssets');
 
 module.exports = (env, argv) => {
   const isProd = argv.mode === 'production';
@@ -115,6 +116,20 @@ module.exports = (env, argv) => {
       clean: false,
       iife: true,
       globalObject: 'globalThis',
+      // asyncChunks:false enforces the "single self-executing file" contract above (ASSET_PACKAGING
+      // §4.0) instead of merely describing it: any `import()` reachable from the wechat entry is
+      // inlined into pixigame.js rather than split into a `<id>.pixigame.js` sibling. Without this,
+      // one third-party dynamic import silently (a) emits an extra chunk file that game.js never
+      // requires and project.config never packs, and (b) drags webpack's JSONP chunk-loading runtime
+      // (document.createElement('script') / importScripts) into the bundle — neither exists in the
+      // WeChat runtime, so the first chunk request would throw rather than degrade.
+      // Real case (2026-08-17): @capacitor/local-notifications registers its web implementation as
+      // `web: () => import('./web')` (Capacitor's standard lazy-impl pattern), and
+      // platform/localReminders.ts imports it on every target, not just mobile — that alone produced
+      // a stray `90.pixigame.js`. It happened to be unreachable (every call site is behind
+      // `Capacitor.isNativePlatform()`, and the loader only runs when a plugin method is actually
+      // called), but "unreachable" is a property of today's call sites, not of the build.
+      asyncChunks: false,
     } : {
       filename: isProd ? '[contenthash].js' : 'index.js',
       path: path.resolve(__dirname, 'dist'),
@@ -123,6 +138,10 @@ module.exports = (env, argv) => {
     plugins: [
       // WeChat has no HTML host (game.js requires pixigame.js); HtmlWebpackPlugin / version.json / _headers are Web-only.
       ...(isWechat ? [] : [new HtmlWebpackPlugin({ template: `./public/${targetPlatform}/index.html` })]),
+      // <link rel="preload"> for the boot-tier assets, so the browser starts fetching them
+      // during the bundle download instead of after startApp() runs (ASSET_PACKAGING §11).
+      // Needs HtmlWebpackPlugin's hooks, hence WeChat (no HTML host) is excluded.
+      ...(isWechat ? [] : [new PreloadBootAssetsPlugin()]),
       // Copy marketing landing (home) + legal pages (terms/privacy/refunds/pricing) + branding icons
       // (favicon / apple-touch / PWA manifest, referenced by <link> in the HTML templates) to dist root.
       // home.html is the crawler-readable site Paddle reviews (the game root / is a bare canvas).
@@ -180,6 +199,29 @@ module.exports = (env, argv) => {
           },
         ),
       ] : []),
+      // Native-only Capacitor packages → no-op stubs on every non-mobile target. Mirror image of the
+      // `.hires` swap above: same "one source tree, several targets" idiom, applied to code instead
+      // of art. Capacitor's runtime only means anything inside the iOS shell, which loads the
+      // `mobile` build alone, so on web/crazygames/wechat these packages are dead weight — but an
+      // unconditional top-level `import` puts them in the graph regardless, and a bundler cannot know
+      // that the *web* implementation they ship (a real browser-Notification-API one, in
+      // local-notifications' case) is unreachable behind `Capacitor.isNativePlatform()`. Swapping the
+      // request drops ~12 KB from three bundles at once; it matters most for wechat, the one with a
+      // hard budget (main package ≤4 MB, ASSET_PACKAGING §4). Each stub documents the surface it
+      // covers and the rule for extending it.
+      // Scope: these two are what platform/localReminders.ts imports — the only unconditional
+      // Capacitor import in the shared graph. platform/ota.ts (@capgo/capacitor-updater) is already
+      // mobile-only by *reachability*: entries/mobile.ts is its sole importer, so the other entries
+      // never pull it in. platform/nativeAds.ts / iap.ts have no package behind them at all — they
+      // read `window.NWAds` / `window.NWBilling` globals injected by the shell. Add a row here (plus
+      // a stub) if a native-only package ever joins the shared graph.
+      ...(isMobile ? [] : [
+        [/^@capacitor\/core$/, 'src/platform/stubs/capacitorCore.ts'],
+        [/^@capacitor\/local-notifications$/, 'src/platform/stubs/localNotifications.ts'],
+      ].map(([pkg, stub]) => new webpack.NormalModuleReplacementPlugin(
+        pkg,
+        path.resolve(__dirname, stub),
+      ))),
       new webpack.DefinePlugin({
         TARGET: JSON.stringify(targetPlatform),
         'globalThis.__NW_API_BASE__': JSON.stringify(apiBase),

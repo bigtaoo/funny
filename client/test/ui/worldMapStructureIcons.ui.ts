@@ -7,6 +7,9 @@
 // test env — the building atlas is never loaded here, so isBuildingAtlasReady() is false
 // and placeBuildingSprite always returns false) so the atlas-sprite wiring can't silently
 // have dropped or altered the existing marker for anyone still on the fallback.
+//
+// 2026-08-17: `arrowTower` got its own real art (`icon_arrowTower`) and is now wired the same
+// way — see the "atlas sprite footprint" describe block below for its sprite-path coverage.
 import { describe, it, expect, vi } from 'vitest';
 import * as PIXI from 'pixi.js-legacy';
 import { drawTileL1 } from '../../src/scenes/worldmap/tileGraphics';
@@ -75,7 +78,7 @@ describe('drawTileL1 structure/watchtower markers — geometric fallback (2026-0
     expect(lineStyles.some((l) => l.color === 0x4477cc)).toBe(false);
   });
 
-  it('an arrowTower structure keeps drawing its own pointed-roof marker, untouched by the icon_blocker fallback branch', () => {
+  it('an arrowTower structure keeps drawing its own pointed-roof marker, untouched by the icon_blocker fallback branch, when the atlas is not ready', () => {
     const g = new PIXI.Graphics();
     const beginFills = spyBeginFill(g);
     const tile = baseTile({ mine: true, structure: { kind: 'arrowTower', level: 1 } as WorldTileView['structure'] });
@@ -138,6 +141,8 @@ describe('drawTileL1 structure/watchtower markers — atlas sprite footprint', (
 
   const blockerTile = (): WorldTileView =>
     baseTile({ mine: true, structure: { kind: 'blocker', level: 1 } as WorldTileView['structure'] });
+  const arrowTowerTile = (): WorldTileView =>
+    baseTile({ mine: true, structure: { kind: 'arrowTower', level: 1 } as WorldTileView['structure'] });
 
   // TP/2 is the x-distance between two diagonally adjacent tiles' anchors; allow ~30% spill
   // (iso art is expected to lean on its neighbours a little, just not to swallow them).
@@ -151,6 +156,12 @@ describe('drawTileL1 structure/watchtower markers — atlas sprite footprint', (
 
   it('the blocker sprite stays within ~one neighbour spacing wide (256×88 frame)', async () => {
     const sp = await spriteFor(blockerTile(), 256, 88);
+    expect(sp.width).toBeGreaterThan(0);
+    expect(sp.width).toBeLessThanOrEqual(MAX_W);
+  });
+
+  it('the arrowTower sprite stays within ~one neighbour spacing wide (129×256 frame)', async () => {
+    const sp = await spriteFor(arrowTowerTile(), 129, 256);
     expect(sp.width).toBeGreaterThan(0);
     expect(sp.width).toBeLessThanOrEqual(MAX_W);
   });
@@ -172,11 +183,12 @@ describe('drawTileL1 structure/watchtower markers — atlas sprite footprint', (
     expect(widthAt(152) / 152).toBeCloseTo(widthAt(76) / 76, 5);
   });
 
-  it('anchors both sprites bottom-center inside the diamond, so they stand on the tile', async () => {
+  it('anchors all three sprites bottom-center inside the diamond, so they stand on the tile', async () => {
     const hh = (TP * 0.5) / 2; // diamond half-height (ISO_RATIO = 0.5)
     for (const [tile, w, h] of [
       [baseTile({ watchtower: true }), 256, 198],
       [blockerTile(), 256, 88],
+      [arrowTowerTile(), 129, 256],
     ] as const) {
       const sp = await spriteFor(tile, w, h);
       expect(sp.anchor.x).toBe(0.5);
@@ -187,17 +199,36 @@ describe('drawTileL1 structure/watchtower markers — atlas sprite footprint', (
     }
   });
 
-  it('draws no watchtower/blocker sprite under fog — both are dynamic-layer state', async () => {
+  it('draws no watchtower/blocker/arrowTower sprite under fog — all three are dynamic-layer state', async () => {
     // Terrain (ground texture, landmark buildings) survives fog; who built what does not.
     expect(await spritesFor(baseTile({ watchtower: true }), 256, 198, true)).toHaveLength(0);
     expect(await spritesFor(blockerTile(), 256, 88, true)).toHaveLength(0);
+    expect(await spritesFor(arrowTowerTile(), 129, 256, true)).toHaveLength(0);
   });
 
-  it('an arrowTower draws no atlas sprite even when the atlas is ready — it has no art yet', async () => {
-    // getBuildingTexture is mocked to answer for ANY name here, so this would catch the
-    // arrowTower branch accidentally falling into the blocker branch's placeBuildingSprite call.
-    const tile = baseTile({ mine: true, structure: { kind: 'arrowTower', level: 1 } as WorldTileView['structure'] });
-    expect(await spritesFor(tile, 256, 88)).toHaveLength(0);
+  it('an arrowTower now takes the icon_arrowTower sprite when the atlas is ready (2026-08-17 — first real art for it)', async () => {
+    const sp = await spriteFor(arrowTowerTile(), 129, 256);
+    expect(sp.width).toBeGreaterThan(0);
+    expect(sp.height).toBeGreaterThan(0);
+  });
+
+  it('an arrowTower sprite is neutral ink, not ownership-tinted — unlike its geometric fallback', async () => {
+    // The sprite path skips the fallback's beginFill(col, ...) roof entirely (no fills at all,
+    // just the one Sprite child) — ownership is the tile wash underneath, same convention as
+    // the other building_atlas frames.
+    vi.resetModules();
+    vi.doMock('../../src/render/atlas/buildingAtlasLoader', () => ({
+      isBuildingAtlasReady: () => true,
+      getBuildingTexture: () => new PIXI.Texture(new PIXI.BaseTexture(undefined, { width: 129, height: 256 })),
+    }));
+    const { drawTileL1: draw } = await import('../../src/scenes/worldmap/tileGraphics');
+    const g = new PIXI.Graphics();
+    const beginFills = spyBeginFill(g);
+    draw(g, arrowTowerTile(), 0xffffff, 0x4477cc, false, TP, false, 'terrain_grass', null, 5, 5, 'w1');
+    // 0x4477cc still shows up from the unrelated territory-wash fill (alpha 0.16/0.26) — check
+    // specifically for the geometric fallback's roof fill (alpha 0.95), which the sprite path
+    // must not draw.
+    expect(beginFills.some((f) => f.color === 0x4477cc && f.alpha === 0.95)).toBe(false);
   });
 
   it('falls back to the geometric markers when the atlas reports ready but the frame is missing', async () => {

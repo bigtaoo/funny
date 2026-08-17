@@ -39,6 +39,7 @@ const JOBS = [
   { src: 'cee04bf0-1cfb-4dc8-947d-a345a402fb3a.png', name: 'bld_drillYard' },
   { src: '5f9b776c-ce01-4963-97cd-b25246d2ca84.png', name: 'bld_wall' },
   { src: '4ca138ad-89f7-4da7-9875-227af987e22f.png', name: 'bld_satchel' },
+  { src: '8ade8567-ffbf-4a6a-b06b-c6e8b5e121eb.png', name: 'bld_academy' }, // 2026-08-17: stacked books + mortarboard
 ];
 
 const nextPow2 = (n) => { let p = 1; while (p < n) p <<= 1; return p; };

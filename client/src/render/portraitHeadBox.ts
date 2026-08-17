@@ -1,13 +1,14 @@
 /**
  * portraitHeadBox.ts — where the head sits inside each bust portrait.
  *
- * The 26 bust portraits (presetAvatarArt.ts + heroAvatarArt.ts) follow one composition brief, but
- * the actual geometry varies far more than the brief implies: hair top ranges 0.03-0.13 of the
- * image height, the chin/neck 0.52-0.69, head width 0.58-0.94 of the image width. A single global
- * crop constant therefore has to leave headroom for the loosest portrait, which leaves every other
- * one looking small inside its circle — the "头像偏小" the avatar picker showed even after the
- * 2026-08-15 rim/zoom pass. `buildPortraitIcon` normalises each portrait against its own head box
- * instead, so all 26 frame identically: hair top just inside the rim, crop landing at the neck.
+ * The 32 bust portraits (presetAvatarArt.ts + heroAvatarArt.ts + skinAvatarArt.ts) follow one
+ * composition brief, but the actual geometry varies far more than the brief implies: hair top
+ * ranges 0.03-0.13 of the image height, the chin/neck 0.52-0.69, head width 0.58-0.94 of the image
+ * width. A single global crop constant therefore has to leave headroom for the loosest portrait,
+ * which leaves every other one looking small inside its circle — the "头像偏小" the avatar picker
+ * showed even after the 2026-08-15 rim/zoom pass. `buildPortraitIcon` normalises each portrait
+ * against its own head box instead, so all 32 frame identically: hair top just inside the rim,
+ * crop landing at the neck.
  *
  * Measured, not hand-tuned: `art/scripts/measureAvatarHeadBox.mjs` finds the hair top (first row
  * with real ink), the neck (narrowest row between the head's widest row and the shoulders flaring
@@ -16,6 +17,7 @@
  */
 import type { PresetAvatarKey } from './presetAvatarArt';
 import type { HeroAvatarKey } from './heroAvatarArt';
+import type { SkinAvatarKey } from './skinAvatarArt';
 
 /** Head extents as fractions of the source image: hair top, neck, and the head's widest row. */
 export interface HeadBox {
@@ -54,4 +56,13 @@ export const HERO_HEAD_BOX: Record<HeroAvatarKey, HeadBox> = {
   max: { top: 0.0625, bottom: 0.5208, width: 0.5859 },
   lena: { top: 0.0339, bottom: 0.5313, width: 0.5801 },
   mara: { top: 0.0625, bottom: 0.599, width: 0.752 },
+};
+
+export const SKIN_HEAD_BOX: Record<SkinAvatarKey, HeadBox> = {
+  skin_shop_c1: { top: 0.0391, bottom: 0.6549, width: 0.8359 },
+  skin_shop_r1: { top: 0.0729, bottom: 0.625, width: 0.7227 },
+  skin_shop_e1: { top: 0.0571, bottom: 0.5139, width: 0.6484 },
+  skin_e1: { top: 0.0625, bottom: 0.6133, width: 0.7051 },
+  skin_e2: { top: 0.0547, bottom: 0.5898, width: 0.7832 },
+  skin_l1: { top: 0.0365, bottom: 0.5781, width: 0.6875 },
 };

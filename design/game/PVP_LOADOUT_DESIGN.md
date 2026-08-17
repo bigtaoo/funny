@@ -191,7 +191,7 @@
    - `client/src/scenes/DeckBuilderScene.ts`（新）：2列卡格、段位锁标、切换选中/取消、10张验证、确认回调。
    - `client/src/app/AppViews.ts`：增 `showDeckBuilder(cb)`。
    - `client/src/app/createAppCore.ts`：`goDeckBuilder()` 函数；`onStartRanked` 路由进构筑 UI；`queueRanked`/`createRanked` 透传 `getSavedDeck()`。
-   - `client/src/app.ts`（PixiAppViews）：`showDeckBuilder` 实现。
+   - `client/src/app/PixiAppViews.ts`（2026-08-17 前在 `client/src/app.ts`）：`showDeckBuilder` 实现。
    - `client/src/game/meta/SaveData.ts`：`pvpDeck?: string[]`（本地字段，不入 SyncPatch）。
    - `client/src/game/meta/SaveManager.ts`：`patchLocal()`；`reconcile`/`adoptCloud` 保留 `pvpDeck`。
    - `client/src/net/NetClient.ts`/`NetSession.ts`：`createRoom`/`createRanked` 支持 `deck` 参数。

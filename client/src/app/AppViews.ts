@@ -3,7 +3,7 @@
 // *what* callbacks/business-logic each screen runs; an AppViews implementation
 // decides *how* to present it.
 //
-//   PixiAppViews (app.ts)        — real game: manager.goto(new XxxScene(...))
+//   PixiAppViews (PixiAppViews.ts) — real game: manager.goto(new XxxScene(...))
 //   HeadlessAppViews (test)      — full-link E2E: records the current screen +
 //                                  exposes the callbacks so a test can drive it
 //                                  without PixiJS / rendering.

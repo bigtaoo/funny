@@ -97,13 +97,13 @@ background, notebook grid lines, ruled lines, drop shadow, ground line, baseline
 
 ## 4. 出图后的管线（✅ 已落地，沿用 decor 口径）
 
-1. 源图（白底 png/webp）放 `art/ui/slg-map/`，语义名 `res_ink.png` / `res_paper.png` / `res_graphite.png` / `res_metal.png` / `res_sticker.webp`。
-2. 打包脚本 `art/ui/slg-map/pack_resources.cjs`（复用 client 的 sharp）：近白→透明（`alpha=255-luma`，保留原墨色）+ 裁透明边 + 等比缩放长边 **128** + shelf-pack → 图集宽 512。
+1. 源图（白底 png/webp）放 `art/slg/slg-map/`，语义名 `res_ink.png` / `res_paper.png` / `res_graphite.png` / `res_metal.png` / `res_sticker.webp`。
+2. 打包脚本 `art/slg/slg-map/pack_resources.cjs`（复用 client 的 sharp）：近白→透明（`alpha=255-luma`，保留原墨色）+ 裁透明边 + 等比缩放长边 **128** + shelf-pack → 图集宽 512。
 3. 产物**直接输出**到 `client/src/assets/slg/res_atlas.png`（palette+压缩，~40 KB）+ `res_atlas.json`（TexturePacker JSON-Hash，帧名不带扩展名，如 `res_ink`）。改图后重跑 `node pack_resources.cjs` 即覆盖。
 4. 线条为原墨色、**不 tint**；作淡显时由渲染期 alpha 压淡（同 A/C 组）。
 5. 加载可复刻 `client/src/render/atlas/decorCAtlas.ts`（`PIXI.Spritesheet`，改 import 路径到 `slg/res_atlas.{png,json}`）。
 
-> **✅ 出图验收（2026-07-01）**：5 张全部合格。墨水/纸/金属/贴纸 4 张原版合格；石墨 `res_graphite` 已更新为手绘棱块墨线版（带切面的矿石块状，右侧少量斜排线表示切面，白底单色线条，无灰色填充无投影），符合 §1.2 规范，剪影可与金属夹子一眼区分。`art/ui/slg-map/res_graphite.png` + atlas 已同步。
+> **✅ 出图验收（2026-07-01）**：5 张全部合格。墨水/纸/金属/贴纸 4 张原版合格；石墨 `res_graphite` 已更新为手绘棱块墨线版（带切面的矿石块状，右侧少量斜排线表示切面，白底单色线条，无灰色填充无投影），符合 §1.2 规范，剪影可与金属夹子一眼区分。`art/slg/slg-map/res_graphite.png` + atlas 已同步。
 >
 > **✅ 地图格渲染接入已落地（2026-06-30，commit `b8b726c0`）**：`client/src/render/atlas/resAtlasLoader.ts`（懒加载，色块兜底）+ `WorldMapScene.drawResMotif`（仅 L1）实现母题加载 + 丰度轴（lv1→4 个精灵成簇）+ 守备轴（lv4+ 栅栏 / lv7+ 桩刻度 / lv8–10 红角）+ 10 级合成；母题墨线不 tint。5 种资源母题全部就位，渲染管线无遗留。
 
@@ -175,7 +175,7 @@ background, notebook grid lines, ruled lines, drop shadow, ground line, baseline
 > - graphite：`A single small angular chunk of graphite ore, faceted like a rough crystal, a couple of short hatching strokes on one facet` / `A single small modest chunk of graphite ore, a low rough angular block, one tiny broken ore shard lying beside it` / `A single larger faceted graphite ore chunk with a few small ore shards scattered at its base` / `A single bigger boulder-like faceted graphite ore chunk standing taller, a couple of shards at its base` / `One large faceted graphite ore chunk with a small loose scatter of ore shards heaped around its base`
 > - metal：`A single metal binder clip (foldback clip), a chunky triangular body with two thin looped wire handles sticking up` / `A single metal binder clip with one small loose paper fastener or metal bit lying beside it` / `A single metal binder clip with a couple of small metal bits scattered at its base` / `A single larger foldback clip standing taller, two looped wire handles up, a small metal bit or two at its base` / `One metal binder clip standing amid a big loose heap of assorted small metal hardware piled and spilling all around its base`
 >
-> 剪影铁律（同 §5.7）：paper=层叠扁矩形 / ink=圆肚瓶罐 / graphite=尖锐棱块 / metal=三角夹身+两根线圈，四者一眼互不撞。**替换单张成本极低**（丢 `res_{type}_l{n}.{png,webp}` 进 `art/ui/slg-map/` 重跑脚本即可，零改代码）。
+> 剪影铁律（同 §5.7）：paper=层叠扁矩形 / ink=圆肚瓶罐 / graphite=尖锐棱块 / metal=三角夹身+两根线圈，四者一眼互不撞。**替换单张成本极低**（丢 `res_{type}_l{n}.{png,webp}` 进 `art/slg/slg-map/` 重跑脚本即可，零改代码）。
 
 ### 5.5 共用前缀（分级版，接在每条主体前）
 
@@ -290,7 +290,7 @@ shadow, ground line, baseline
 
 > 6–10 每条抽 3–5 张挑 1，每级都要读得出「三角夹身 + 两根细线圈」这个金属剪影，别糊成实心块（撞 graphite 棱块）或方盒。剪影最易撞的是 `metal` 夹堆 vs `graphite` 矿块堆 vs `ink` 圆瓶堆——出图时并排比一下确保「线圈夹子」感能一眼分开。托盘背景抽图确保**空**（夹子由脚本叠），托盘轮廓别和 token 的夹身糊在一起。
 
-**落地清单（待出图后执行，2026-07-07）**：照 §5.9「专属出图后落地清单」——源图 `res_metal_l6..l10` + 空容器 `resbg_metal_a/b`（白底 png/webp）放 `art/ui/slg-map/` → `pack_resources.cjs` 里 (a) `BAKE` 加 `{ type:'metal', token:'res_metal', bgA:'resbg_metal_a', bgB:'resbg_metal_b' }`，(b) 从 `HEAP_TYPES` 删 `metal`（专属帧接管），(c) `tintLevelFrame` 的 l6–10 免色带正则加 `metal`（专属手绘保原墨色）→ 重跑 `node art/ui/slg-map/pack_resources.cjs`，client + map-editor 两份 atlas 逐字节一致。**零改运行时代码**（`getResLevelTexture('metal',1..10)` 命中即画）。
+**落地清单（待出图后执行，2026-07-07）**：照 §5.9「专属出图后落地清单」——源图 `res_metal_l6..l10` + 空容器 `resbg_metal_a/b`（白底 png/webp）放 `art/slg/slg-map/` → `pack_resources.cjs` 里 (a) `BAKE` 加 `{ type:'metal', token:'res_metal', bgA:'resbg_metal_a', bgB:'resbg_metal_b' }`，(b) 从 `HEAP_TYPES` 删 `metal`（专属帧接管），(c) `tintLevelFrame` 的 l6–10 免色带正则加 `metal`（专属手绘保原墨色）→ 重跑 `node art/slg/slg-map/pack_resources.cjs`，client + map-editor 两份 atlas 逐字节一致。**零改运行时代码**（`getResLevelTexture('metal',1..10)` 命中即画）。
 
 ### 5.7-sticker 铜钱/铜矿 = `sticker`（**仅 l6–10** · ✅ 已出图上线 2026-07-07）
 
@@ -313,7 +313,7 @@ shadow, ground line, baseline
 > **色带（与 paper/ink/graphite 专属帧不同 → 保留）**：铜钱是货币资源，`tintLevelFrame` 的按级色带（l6 tan → l10 gold）恰好把琥珀→金读成「铜/金钱」，主题加分 → 铜矿 l6–10 **不豁免**，专属帧照上色带（即 `tintLevelFrame` 免色带正则**保持不含** sticker）。
 
 **落地（✅ 已执行，2026-07-07）**：
-1. ✅ 源图 5 张按丰度定级重命名进 `art/ui/slg-map/`：l6=`res_sticker_l6.webp`(短叠~4+2散) / l7=`res_sticker_l7`(一叠+8散,无卷) / l8=`res_sticker_l8`(单卷半展+3散) / l9=`res_sticker_l9`(卷+一高叠+~10散) / l10=`res_sticker_l10`(大卷+多高叠+满地散)。主扫描 `loadSprite` 自动收。
+1. ✅ 源图 5 张按丰度定级重命名进 `art/slg/slg-map/`：l6=`res_sticker_l6.webp`(短叠~4+2散) / l7=`res_sticker_l7`(一叠+8散,无卷) / l8=`res_sticker_l8`(单卷半展+3散) / l9=`res_sticker_l9`(卷+一高叠+~10散) / l10=`res_sticker_l10`(大卷+多高叠+满地散)。主扫描 `loadSprite` 自动收。
 2. ✅ `pack_resources.cjs`：从 `HEAP_TYPES` 删掉 `sticker`（专属帧接管）；未加 `BAKE`（无 l1–5 托盘）；`tintLevelFrame` 免色带正则保持 `res_(paper|ink|graphite)_`（**不含** sticker → 专属帧照上色带）。
 3. ✅ 重跑脚本 → **50 帧 / 512×2048 / ~290 KB**（sticker 由 10 堆叠帧降为 5 专属，净 −5 帧），client + map-editor 两份 atlas 逐字节一致；`res_sticker_l6..l10` 就位、无 l1–5。**零改运行时代码**（`getResLevelTexture('sticker',6..10)` 命中即画）。
 4. ✅ **worldsvc 生成门槛已落地**（2026-07-07）：`mapgen.ts` 新增 `resTypeFor(x,y,seed,level)`——resource 格在 `level ≥ SLG_GEN.copperMinLevel`(=6) 时按 `copperShare`(=0.3) 抽取覆盖为 `sticker`，否则四种生物群系陆地资源。plain resource 格才应用（stronghold/familyKeep/center 保生物群系资源、画建筑不画资源母题）。产出侧 `tileYield` 对任何 resType 通用（铜矿格自然产铜钱）。全图扫描验证：铜矿 =资源格 3.4%（≈≥6 格的 30%），**level<6 的 sticker = 0**；shared 544 + worldsvc 192 全绿。
@@ -321,8 +321,8 @@ shadow, ground line, baseline
 ### 5.8 打包管线（2026-07-17 简化 · 纯手绘帧，无合成）
 
 **所有帧同一条路**（母题 + 各资源 l1–l10 + sticker l6–10 全是白底手绘真图）：
-1. 白底 png/webp `res_<type>_l<n>.{png,webp}` 放 `art/ui/slg-map/`（文件名即帧名，去扩展）。
-2. 重跑 `node art/ui/slg-map/pack_resources.cjs`：主扫描 `^res_.*\.(webp|png)$` 逐张 `loadSprite`（近白→透明 `alpha=255−luma` 保原墨色 + 裁透明边 + 等比缩长边 128）→ `tintLevelFrame`（**仅 sticker 上色带**，其余保黑墨）→ shelf-pack → 写两份字节一致的 atlas。
+1. 白底 png/webp `res_<type>_l<n>.{png,webp}` 放 `art/slg/slg-map/`（文件名即帧名，去扩展）。
+2. 重跑 `node art/slg/slg-map/pack_resources.cjs`：主扫描 `^res_.*\.(webp|png)$` 逐张 `loadSprite`（近白→透明 `alpha=255−luma` 保原墨色 + 裁透明边 + 等比缩长边 128）→ `tintLevelFrame`（**仅 sticker 上色带**，其余保黑墨）→ shelf-pack → 写两份字节一致的 atlas。
 3. **零改运行时代码**——`getResLevelTexture('<type>',n)` 命中 `res_<type>_l<n>` 即画。
 4. **替换/新增单张成本极低**：丢新图进目录、重跑脚本即可。
 

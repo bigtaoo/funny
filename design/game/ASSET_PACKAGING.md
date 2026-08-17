@@ -1,6 +1,6 @@
 # 资源分包与加载策略（ASSET_PACKAGING）
 
-> 状态：实现中 · 权威：本文（资源分层/加载/分包的单一来源）· 更新：2026-08-08（§10 新增 PvP/PvE 进场资源闸门）
+> 状态：实现中 · 权威：本文（资源分层/加载/分包的单一来源）· 更新：2026-08-17（§11 首屏加载策略优化：preload 提示 + L0 双层 + L1 空闲预取；§11.4 补齐回归测试）
 
 游戏要在 **Web（含 CrazyGames）/ 微信小游戏 / 手机套壳** 三个平台发布，三者对"资源何时进内存"的约束完全不同。本文锁定：
 
@@ -39,6 +39,8 @@ webpack 当前对图片 / `.tao` 用 `asset/resource`，每个资源被发成**�
 
 **L0 清单的单一来源 = `client/src/assets/bootManifest.ts`**。新增"开局必现"的资源往该清单加一条；其余一律默认 L1（不进闸门）。**保持 L0 极小**是这套设计的纪律——每加一条都拖慢首屏。
 
+> ⚠ **L0 自 2026-08-17 起内部再分两层**（§11.2）：`STEPS` 阻塞加载进度条，`BACKGROUND_STEPS` 在闸门之后才起、由 `enterBattle` 闸门（§10）重新 await。上表"L0 归属"一列列出的装饰 atlas 和三兵 `.tao` 现在都在**背景层**。往 `bootManifest.ts` 加资源时先问"**玩家必须等它吗**"而不是"它是不是 L0"——大厅不画的一律进背景层，且必须确认 `ensureBattleAssets` 也会 await 它（`bootManifestTiers.ui.ts` 会强制这一点）。
+
 ---
 
 ## 3. Web / CrazyGames —— 加载界面 + L0 闸门
@@ -68,6 +70,15 @@ webpack 当前对图片 / `.tao` 用 `asset/resource`，每个资源被发成**�
 
 - **入口**：`src/entries/wechat.ts`（首行 `@pixi/unsafe-eval`，适配微信无 `eval` 运行时）。
 - **输出**：单 IIFE → `wechatgame/pixigame.js`（壳层 `game.js` 里 `require('./pixigame.js')` 自执行）；`clean:false` 保住 `game.js/game.json`；`globalObject:'globalThis'` 适配微信运行时。
+- **`asyncChunks: false`（"单文件"不是描述而是约束，2026-08-17 补）**：微信运行时**没有动态 import / chunk 加载能力**，壳层也只 `require('./pixigame.js')` 这一个文件、`project.private.config.json` 也只打这一个文件——所以从 wechat 入口可达的任何 `import()` 都必须内联，不能分裂出 `<id>.pixigame.js`。分裂的后果有两层：① 多出来的 chunk 文件既不会被 `game.js` require、也不进主包；② 更要紧的是 webpack 会把 JSONP chunk 加载运行时（`document.createElement('script')` / `importScripts`）打进主包，而微信两者都没有，真去请求 chunk 时是**直接抛错**而非优雅降级。**实测踩过**：`@capacitor/local-notifications` 用 Capacitor 标准的惰性 web 实现写法 `web: () => import('./web')` 注册插件，而 `platform/localReminders.ts` 是**无条件 import**（没按 target 分叉，只在函数体内用 `Capacitor.isNativePlatform()` 兜住调用），于是每次 `build:wechat` 都产出一个 3.5 KB 的 `90.pixigame.js`。该 chunk 当时**确实不可达**（`registerPlugin` 的 web loader 只在插件方法真被调用时才触发，而所有调用点都在 native 判断之后；iOS 上 `platform='ios'` 不在 `{web:...}` 里、走原生桥，也不会加载它）——但"不可达"是**当下调用点**的性质、不是构建的性质，所以改成由 `output.asyncChunks:false` 从构建层面兜死，而不是逐个第三方依赖打补丁。副作用是 web 实现（约 3.5 KB）被内联进主包，同时省掉 chunk 加载运行时，净体积基本持平（这批字节由下一条彻底摘掉）。`client/.gitignore` 里微信产物同步改成 `wechatgame/*pixigame.js*` 通配，万一哪天该保证被绕过也不会变成 untracked 噪声。**回归守卫**：`client/test/wechatSingleBundle.test.ts`（默认 suite，约 0.3s）——`createRequire` 加载 `webpack.config.js` 本体断言 wechat 分支 `asyncChunks:false`（外加"单入口 + 无 splitChunks"，这是另外两条能绕出第二个文件的路），并反向断言 web/crazygames/mobile **不**关分包（那三个跑在真浏览器里、chunk 能正常加载、还落在已 gitignore 的 `dist/`，分包是净收益，别顺手"统一"掉）；ignore 规则那半用 `git check-ignore --no-index` 问 git 本身而不是匹配 pattern 文本，正反都测——既确认 `90.pixigame.js` 被忽略，也确认同目录下**已入库**的 `game.js`/`game.json`/`project.private.config.json` 没被过宽的通配吞掉。不跑真实构建：一次 `build:wechat` 约 20s + 吐 ~23 MiB CDN 资源，而它能证明的东西配置层已经决定了；真正要防的是有人手动删掉/"统一"这个选项。
+- **原生插件 stub：非 mobile target 不打 Capacitor（2026-08-17 补，紧接上一条）**：`asyncChunks:false` 只是把 chunk 内联，**字节还在**。根因是 `platform/localReminders.ts` 无条件 import 了两个只在 iOS 套壳里有意义的包——`@capacitor/local-notifications` 以及它 `registerPlugin` 依赖的 `@capacitor/core`。`webpack.config.js` 在**所有非 mobile target**（web / crazygames / wechat / web-e2e）上用一张 `NormalModuleReplacementPlugin` 表把这两个包换成 `client/src/platform/stubs/` 下的空实现，与同文件里 `.hires` 美术替换是同一套 target-conditional 惯例：
+  - **计量**（`npm run build:wechat` / `build:web`，production）：微信主包 `pixigame.js` 2,148,531 → **2,135,947 B（−12.3 KB）**；web 主 bundle 2,147,523 → 2,138,362 B，且那个 3,526 B 的死 chunk **整个消失**（合计 −12.4 KB，dist 里只剩 `sketchDemo` 一个真·动态 chunk）。两个包里 `@capacitor/core` 占大头（约 9 KB），插件本体约 3.5 KB。
+  - **为什么 stub 是安全的**：非 mobile 包里 `Capacitor.isNativePlatform()` **恒为 false**（套壳只加载 `build:mobile` 产物，`.hires`/绝对后端地址等一整套 mobile 分支也都基于这个前提），所以两个 native 分支本来就是死代码；stub 只把这个常量答案写实。插件方法一律 `throw` 而非静默 resolve——真被调到时落进 `localReminders.ts` 已有的 try/catch，降级成与"权限被拒"完全相同的路径，但日志里看得见，不会假装排程成功。验证：web 构建里 `window.Capacitor` 全局已不存在（真 core 会在 initBridge 里挂上它），游戏照常起、控制台除后端未启动的连接拒绝外无报错。
+  - **mobile target 一个替换都不加**，真插件原样保留（实测 `build:mobile` 产物里 `LocalNotificationsWeb` chunk、9001/9002/9003 三个通知 ID 都在，stub 的标记串一处不见）。iOS 的排程链路完全没动。
+  - **另外两类原生依赖不需要 stub**：`platform/ota.ts`（`@capgo/capacitor-updater`）靠**可达性**隔离——只有 `entries/mobile.ts` import 它，因此只有 mobile 产物里出现那个 5.4 KB 的 `CapacitorUpdaterWeb` chunk；`platform/nativeAds.ts` / `iap.ts` 背后根本没有包，只是套壳注入的 `window.NWAds` / `window.NWBilling` 全局。
+  - **回归护栏** `client/test/capacitorStubs.test.ts`：直接 `require` `webpack.config.js` 取各 target 的替换表来断言——①共享图里出现的每个 native 包在每个非 mobile target 上都有 stub（新包漏配即红）；②mobile 表里一个 stub 都没有（误伤 iOS 即红，这是这里唯一玩家能感知的故障）；③`ota.ts` 的 importer 只有 `entries/mobile.ts`（谁把它拉进共享图就红）；④调用点用到的每个插件方法 stub 都有定义（方法漂移即红）。这层测试是必要的，因为**配错只掉字节、不掉功能**：正常测试全绿、游戏照跑，只有对比包体积的人才会发现。
+  - **回归护栏之二（真编译）** `client/test/capacitorStubCompile.test.ts`：上面那层只能证明**替换表写对了**，证明不了"表对了但替换没生效"（webpack 升级改了插件挂钩时机、后来有人加的 `resolve.alias` 抢了先、正则匹配得上测试里写的 specifier 却匹配不上代码里真写的那个）。而 `NormalModuleReplacementPlugin` 挂在 module factory 上、不在 resolver 上，只有真跑一次编译才会走到。于是用同一份 config 编译一个 3 行 fixture（`test/fixtures/capacitorProbe.ts`，只 import 那两个包）：**6 个 target 合计约 0.9s**——因为只覆盖 entry/output/devtool 和 `ts-loader{transpileOnly}` 这些纯产出/类型侧的东西，模块解析链路一字未改。断言不去搜产物文本（写法随 mode/压缩而变），而是读 `stats.compilation.modules` 里每个模块**真正解析到的绝对路径**：非 mobile 必须只出现两个 stub、`node_modules/@capacitor/` 一个都不许有；mobile 反过来。另外单独断言 **wechat 只产出 1 个 asset，且是在 output 覆盖已经把 `asyncChunks:false` 一起丢掉的前提下**——故意的：那是兜底，不能让"依赖层面已经没有分裂点"这个结论靠兜底蒙对。实测把替换关掉，这 5 条全红。
+  - `client/test/localReminders.test.ts` 同步补上了 `scheduleSubscriptionReminder` 的覆盖（此前只测了 in-app toast 兜底和每日提醒的文案拼装）：T-3d/T-0 两条通知的时间戳与 id、每次重排前先 cancel 两个 id（续费不会重复触发）、已进入 3 天窗口时只排 T-0、已过期只 cancel 且**不弹权限框**、权限被拒/待询、以及插件抛错（非 mobile 上的 stub 正是抛错）时静默降级不外泄。这批断言现在是这套排程数学**在 iOS 设备之外唯一被执行的地方**。
 - **资源 → CDN（方案 A 核心）**：`asset/resource` 的 `publicPath = NW_ASSET_CDN`、`filename = 'cdn/[contenthash][ext]'`。于是每个 `import x from '*.png/.tao'` **在构建期就烘焙成 `<CDN>/cdn/<hash>.png` 绝对 URL**，资源文件发到 `wechatgame/cdn/`（由 `project.private.config.json` 的 `packOptions.ignore` 排除出主包，单独上传 CDN）。主包因此是**纯代码 ~1.5 MB**，远在 4 MB 红线内。
 - 资源更新只换 CDN 文件 + 改一处资源（contenthash 变）重传，主包过审周期不受影响。
 - `NW_ASSET_CDN` 留空时 `publicPath=''` → 包内相对路径（整包跑，仅本地 IDE 自测用）。
@@ -118,9 +129,12 @@ interface AssetIO {
 |---|---|
 | `client/src/assets/assetIO.ts` | `AssetIO` 接口 + `WebAssetIO` 默认实现 + 模块级单例（`setAssetIO`/`assetIO`） |
 | `client/src/assets/WechatAssetIO.ts` | 微信 `downloadFile` + `USER_DATA_PATH` 本地缓存（无 fetch）；含包内相对路径回退 |
-| `client/src/assets/bootManifest.ts` | **L0 启动清单单一来源** + `preloadBoot(onProgress)` |
-| `client/src/ui/LoadingOverlay.ts` | PIXI 手绘加载界面（进度条） |
-| `client/src/app.ts` | `startApp` 内嵌 L0 闸门（构造 overlay → `await preloadBoot` → 销毁 → 进首屏） |
+| `client/src/assets/bootManifest.ts` | **L0 启动清单单一来源**：`STEPS`（阻塞层）+ `BACKGROUND_STEPS`（背景层）+ `preloadBoot(onProgress)` / `preloadBootBackground()`（见 §11.2） |
+| `client/build/preloadBootAssets.js` | webpack 插件：把两层清单写成 `<link rel=preload>` 进 HTML head（见 §11.1）。**清单是副本**，由 `test/bootPreloadManifest.test.ts` 守住不漂移 |
+| `client/src/assets/idlePrefetch.ts` | 首屏之后的 L1 空闲预取（串行 + idle 调度 + 计费链路跳过，见 §11.3） |
+| `client/src/assets/battleAssets.ts` | `ensureBattleAssets`：进战斗前的资源闸门（§10），同时是背景层的兜底保证（§11.2） |
+| `client/src/ui/LoadingOverlay.ts` | PIXI 手绘加载界面（进度条），L0 闸门与 `enterBattle` 闸门共用 |
+| `client/src/app.ts` | `startApp` 内嵌 L0 闸门（构造 overlay → `await preloadBoot` → 销毁 → 进首屏）+ 首屏后 `void startIdlePrefetch()` |
 | `client/src/render/stickman/StickmanRuntime.ts` | `_parse` 经 `assetIO().loadBinary` 取字节 |
 | `client/src/render/atlas/spriteAtlas.ts` | **`createAtlasLoader` 工厂**——每个 PixiJS Spritesheet atlas 的解码/缓存/idempotent-load 单一实现，所有 atlas loader 模块都是它的薄封装 |
 | `client/src/render/{decorMergedAtlas,iconsAtlas,worldAtlas}.ts` | 三组合并 atlas 的共享加载实例（见 §8），纹理源经 `assetIO().textureSource` |
@@ -204,3 +218,77 @@ frame 名称互不冲突（合并前用脚本核对过），故直接共享一�
   - `client/test/ui/battleGate.ui.ts`（mock `ensureBattleAssets` 手动控制 resolve 时机）：`enterBattle` 在资源就绪前不 `build()`/不 `goto()` 但立即 `suppress(true)`；overlay 在 `goto` 前已 `destroy()`（断言 `goto` 触发时 `app.stage.children.length===0`）；resolve 后返回造好的场景。`DeferredSceneCalls`：`resolve()` 前的 `call()` 排队且按序 flush，`resolve()` 后的 `call()` 立即执行，回调都拿到同一个已 resolve 的场景对象。
 
 **未覆盖范围**（有意不做，避免蔓延）：`CityScene`（SLG 内政面板）的 `resAtlas`/`cityBldAtlas` 加载依旧是文档已注明的"有意 fire-and-forget，先用文字/emoji 占位再补图标"渐进增强模式，不属于本次"进大场景"闸门的范围；社交类子面板（Family/Sect/Auction/DefenseEditor）同理未动。
+
+> §11 起 `ensureBattleAssets` 多了一步 `decorMergedAtlas.load()`——该 atlas 从 L0 阻塞层降级成背景层后，本闸门就是"战斗首帧前它一定解码好"的唯一保证（原先靠 L0 闸门顺带保证）。
+
+---
+
+## 11. 首屏加载策略优化（2026-08-17）
+
+**动机**：用户问"要不要加个 splash 多争取点下载时间"。结论是不加——现有遮挡已经无缝（`#boot` CSS 占位 → `LoadingOverlay` 进度条 → 首屏），splash 只是换个底图，**不会凭空多出带宽**，只有主动拖时长才"争取"得到，那等于让玩家多等。真正能省时间的是三件跟遮挡无关的事，本节全部落地。平台相关的 splash（发行商 logo / 微信 / CrazyGames 硬性 splash 期）留到上线时按平台再定，与本节无关。
+
+### 11.1 `<link rel="preload">`：让资源和 bundle 并行下载
+
+**问题**：L0 资源的第一个请求要等到 bundle **下载完 + 解析完 + 执行到** `startApp` 里的 `preloadBoot()` 才发得出去。手机上 ~2 MB bundle 的解析执行本身就是几百 ms，加上一个 RTT，全是白等。
+
+**做法**：新增 webpack 插件 `client/build/preloadBootAssets.js`，构建期把 L0 资源写成 `<link rel="preload">` 塞进 HTML `<head>`（放在 bundle 的 `<script>` **之前**，让预扫描器先看到）。资源名是 contenthash，静态 HTML 里写不了，插件从 webpack 的产物表里按 `assetInfo.sourceFilename`（`asset/resource` 模块会记录源文件相对路径）查出真实文件名。微信没有 HTML 宿主、URL 构建期已烘焙成 CDN 绝对地址，故只对 HTML target 生效。
+
+- `fetchpriority` 区分两层（见 §11.2）：阻塞层 `high`、背景层 `low`，避免背景层抢走玩家真正在等的带宽。不支持该属性的浏览器只是退化成两条普通 preload，仍然优于没有。
+- **`mobile` target 要跟着 §9 的 `.hires` 约定走**：该 target 会把有 `<name>.hires.<ext>` 兄弟文件的资源在 resolve 阶段换掉，产物表里记的是兄弟文件的路径，按基础文件名查会扑空（`logo.png` 正是这种情况，第一版实测漏了一条 preload + 一条构建 warning）。插件查不到时按同一约定回退查 `.hires` 兄弟，而不是给每个 target 各维护一份清单。
+- 清单里某项查不到产物时**只 warn 不 throw**：清单过期不应该有能力弄挂发布构建。这条 warning 也确实是上面 `.hires` 问题的发现方式。
+- **⚠ `crossorigin="anonymous"` 是必需的，漏了整个优化会反向生效**：不带 `crossorigin` 的 preload，credentials mode 是 `include`；而两个消费方要的都是 `same-origin`（PIXI `ImageResource` 会给 `<img>` 赋 `crossOrigin`（空串 ≡ anonymous）；`StickmanRuntime` 用默认 `fetch()`）。两边对不上，浏览器会**丢弃预载结果、把文件重新下一遍**——比不做 preload 更慢。实测第一版就踩了这个坑，Chrome 控制台明确报 `A preload for '...' is found, but is not used because the request credentials mode does not match`，加上 `crossorigin="anonymous"` 后两边都落到 `same-origin`，`performance.getEntriesByType('resource')` 里每个 URL 只剩一条记录（改前是每个都两条）。**验收方法就用这条**：数 resource timing 条目，有重复就是没生效。
+
+### 11.2 L0 拆成"阻塞层 + 背景层"
+
+**问题**：`preloadBoot` 的各 step 是 `Promise.all` 并行的，所以在带宽受限的链路上闸门时长 ≈ **该层总字节数 / 带宽**。于是每一项都该问的不是"它是不是 L0"，而是"**玩家必须等它吗**"。原 L0 共 ~1.65 MB，其中开局三兵的 `.tao`（~0.41 MB）+ decor 合并 atlas（~0.10 MB）**大厅一个像素都不画**——它们进 L0 的理由是 §2 的"第一局不许出现占位圆圈"，而这条早已被 2026-08-08 才加的 §10 进场闸门**重复保证**了一遍。
+
+**做法**：`bootManifest.ts` 拆成两个清单：
+
+| 层 | 内容 | 体量 | 谁在等 |
+|---|---|---|---|
+| `STEPS`（阻塞） | 三兵卡图 + 3 张建筑卡图 + logo + `icons_atlas` | ~1.14 MB | 加载进度条 |
+| `BACKGROUND_STEPS`（非阻塞） | 三兵 `.tao` + `decor_merged_atlas` | ~0.51 MB | 无——`enterBattle` 闸门（§10）再等一次 |
+
+背景层由 `preloadBoot` 在**闸门 resolve 之后**才 `void` 掉（不是同时开跑：同时开跑等于继续跟玩家在等的那批抢带宽，白拆）。配合 §11.1 的 `fetchpriority=low` preload，这一步通常直接命中 HTTP 缓存。
+
+**为什么不会退化**：`StickmanRuntime.loadAsset` / `preloadTexture` / atlas loader 全部按 URL 幂等缓存，`ensureBattleAssets` 会把这两项原样再 await 一遍（`decorMergedAtlas.load()` 是本次为此**新加**的一步）。所以"第一局绝不出现占位圆圈"的保证一点没变，只是改由**真正挨着战斗的那道闸门**兑现，而不是由挨着大厅的那道顺手兑现。**净效果：阻塞闸门 −31% 字节，零可见回归。**
+
+### 11.3 L1 空闲预取
+
+**问题**：L0 之外的资源都是进场景才拉，所以第一次进战斗 / 第一次开世界地图 / 第一次抽卡，各自都要现场等一道闸门——哪怕网速很好，因为**下载是等玩家开口之后才开始的**。而首屏出来之后那几秒几乎纯空闲：玩家在看一个静态界面，socket 也没事干。
+
+**做法**：新增 `client/src/assets/idlePrefetch.ts`，`startIdlePrefetch()` 在 `core.start()` 之后 fire-and-forget。刻意保守——抢了正经请求的预取比不预取更糟：
+
+1. **严格串行**：一波 await 完才起下一波。并行预取会跟玩家接下来真正的操作抢连接。
+2. **空闲调度**：每波从 `requestIdleCallback` 起（没有该 API 的环境如微信退化成 timer），主线程忙就自动往后推。首波额外留 3s，避开首屏场景自己的构造和开屏 API 调用。
+3. **先便宜后贵**：`boot 背景层` → `battle`（12 兵 `.tao` + 英雄/法术卡图，即 `enterBattle` 要等的全集）→ `icons:reward`（tab 图标 + 金币/材料 atlas）→ `slg:world`（1.2 MB 世界地图 atlas）→ `gacha`（3.3 MB，最大且最不常用，放最后）。
+4. **计费链路直接跳过**：`navigator.connection` 的 `saveData` 或 `effectiveType` 为 `2g`/`slow-2g` 时整体不跑（该 API 在 Safari/Firefox/微信不存在，视为普通链路照常预取）。
+5. **永不 reject**：单波失败只打 warn，链路继续（同 `preloadBoot` 的容错写法）。
+
+因为所有 loader 都是 URL 幂等的，玩家"抢先"进了某个场景也不亏：场景自己的闸门会 join 到同一个 in-flight promise，不会重复请求。
+
+### 11.4 回归测试
+
+本节三处改动**没有一处会在出错时报错**——preload 属性写错只是悄悄多下一遍、L0 分层出错只在**冷缓存的第一局**露馅、预取没接上只是回到原来的速度。所以测试全部按"这条烂掉了谁会发现"来设计，五个文件各守一层：
+
+| 文件 | 套件 | 守什么 |
+|---|---|---|
+| `test/bootPreloadManifest.test.ts` | node | 插件的资源**清单**不跟 `bootManifest.ts` 漂移 |
+| `test/preloadBootAssetsPlugin.test.ts` | node | 插件生成的**标签属性**正确 |
+| `test/appAssetGateWiring.test.ts` | node | `app.ts` 里两个调用点还在、顺序还对 |
+| `test/ui/bootManifestTiers.ui.ts` | ui | 闸门只等阻塞层 + **背景层被战斗闸门全覆盖** |
+| `test/ui/idlePrefetch.ui.ts` | ui | 预取的调度契约 |
+
+- **清单漂移守卫**（`bootPreloadManifest`）：插件是 JS、不能 import TS + PIXI 资源图，只能自带一份清单副本；副本悄悄烂掉比不做 preload 更糟。该测试从 `bootManifest.ts` 源码文本反推两层清单（含每项属于哪一层，因为层决定 `fetchpriority`），与插件源码里的两个数组比对，另校验文件真实存在、两层不重叠。正则本身有兜底断言（推导结果为空即失败），避免"两个空集合相等"式假绿。
+- **插件行为守卫**（`preloadBootAssetsPlugin`）：用假 compiler/compilation 驱动插件（`HtmlWebpackPlugin.getHooks()` 接受任意对象挂 hook；真构建一个 target 要 18s，这样是毫秒级）。断言 `crossorigin=anonymous`（§11.1 那个 bug 的回归锁）、`as` 与消费方一致、`fetchpriority` 高优先在前、publicPath 前缀与 `auto` 处理、`.hires` 重定向、缺项只 warn 不影响其余标签。喂给它的产物表是 `src/assets` 下**全部** png/tao 而非清单副本，所以这个文件跟"当前哪些资源在哪一层"解耦。
+- **`app.ts` 接线守卫**（`appAssetGateWiring`）：`startApp()` 需要真 canvas/平台/后端，端到端测不了（同 `appTickerDialogWiring.test.ts` 的理由），所以走源码文本静态检查：闸门被 await、overlay 在首屏前 destroy、`startIdlePrefetch()` 在 `core.start()` **之后**且是 `void` 不是 `await`。
+- **分层安全性守卫**（`bootManifestTiers`）：最后一条测试是整个 §11.2 的**安全论证本身**——把 `preloadBootBackground()` 与 `ensureBattleAssets({})` 各自驱动的 loader 记下来，断言前者 ⊆ 后者。将来往 `BACKGROUND_STEPS` 加一项却忘了让战斗闸门也 await，会在这里红，而不是在某个冷缓存玩家的第一局里变成占位图。按 loader **种类**而非 URL 比对：`vitest.ui.config` 的资源桩把所有 `.png`/`.tao` 映射成同一个 data URI，URL 在该环境下没有区分度（`battleAssets.ui.ts` 已记录同一现象）。同文件另测：闸门进度只统计阻塞层、背景层永不阻塞闸门（把背景 loader 挂成永不 resolve，闸门照样 resolve）、背景层在闸门 resolve **之后**才起、两层任一步失败都不 reject。
+- **预取调度守卫**（`idlePrefetch`）：5 波全 mock，只测契约——串行顺序、失败不断链、`saveData`/2g 跳过而 3g/4g 不跳过（边界，防止有人把跳过条件放宽成"非 wifi 全跳"）、无 `requestIdleCallback` 时的 timer 回退、重复调用只跑一次。
+- `client/test/ui/battleAssets.ui.ts`：补 `decorMergedAtlas.load()` 这一步的断言 + 进度总数 +1。
+
+> 三条关键守卫都做过**反向验证**（把被守护的东西删掉，确认测试变红）：删 `crossorigin` → 插件测试红；从 `ensureBattleAssets` 删掉 `decorMergedAtlas.load()` → 分层测试红且报出 `background-tier loaders not re-awaited by ensureBattleAssets: decor`；删 `app.ts` 里的 `void startIdlePrefetch()` → 接线测试红。
+
+### 11.5 遗留
+
+- `client/public/index.html` 不是任何 target 的 HtmlWebpackPlugin 模板（模板是 `public/<target>/index.html`），疑似历史残留；`public/crazygames/index.html` 也缺 `#boot` 预占位（web/mobile 两个有），但 CrazyGames 有 SDK 自己的 splash 兜底，暂不动。
+- §7 的"L0 瘦身复核"由本节 §11.2 执行了一轮；下次复核时同样按"玩家必须等它吗"而不是"它是不是 L0"来判。

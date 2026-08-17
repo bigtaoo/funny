@@ -446,7 +446,7 @@ client_log_debug: { default: false, desc: '客户端日志上报-debug', side: '
 
 **盲区定位**：`recordFrameSample` 只计时 `SceneManager.onTick` 里的 `scene.update()` 调用，但 `goto()` 导航还有另一段完全同步、且完全没被计时的路径——`new XxxScene(...)` 构造函数本身（`client/src/app.ts` `PixiAppViews` 的每个 `showXxx()` 方法都是 `new XxxScene(...)` 后立即 `manager.goto()`）。场景构造函数在挂载/被 tick 之前就跑完了列表建行、布局、文本纹理等全部同步 UI 搭建工作，这条路径此前完全是黑的。
 
-**新增 `longConstructMs`/`longConstructScene`**：`net/anomaly.ts` 新增 `recordConstructSample(scene, ms)`（同 `recordFrameSample` 的模式，≥200ms 才记，60s 内附到下一次 `anr` 上报）；`app.ts` `PixiAppViews` 新增私有 `timedBuild(name, build)` helper，包住全部 ~30 处 `new XxxScene(...)` 调用计时。**若 `longConstructMs` 接近 `stallMs`，说明卡顿其实发生在场景构造阶段（可复现、可优化，大概率是某个场景进入时同步建了太多 UI/纹理）；若仍然缺席，才真正指向 GC/系统级停顿或渲染代码之外的阻塞**。
+**新增 `longConstructMs`/`longConstructScene`**：`net/anomaly.ts` 新增 `recordConstructSample(scene, ms)`（同 `recordFrameSample` 的模式，≥200ms 才记，60s 内附到下一次 `anr` 上报）；`PixiAppViews` 新增私有 `timedBuild(name, build)` helper，包住全部 ~30 处 `new XxxScene(...)` 调用计时（当时在 `app.ts` 里；2026-08-17 起 `PixiAppViews` 整体搬到 `client/src/app/PixiAppViews.ts`，行为不变，覆盖见 `test/ui/pixiAppViews.ui.ts`）。**若 `longConstructMs` 接近 `stallMs`，说明卡顿其实发生在场景构造阶段（可复现、可优化，大概率是某个场景进入时同步建了太多 UI/纹理）；若仍然缺席，才真正指向 GC/系统级停顿或渲染代码之外的阻塞**。
 
 `tsc --noEmit` clean。**下一步**：等下一批线上 `anr` 日志读 `longConstructMs`——这应该能把 LobbyScene/FriendsScene/LeaderboardScene 反复出现的卡顿最终定位到"哪个场景的构造函数"或彻底排除掉这条路径。
 
