@@ -125,6 +125,20 @@ describe('idlePrefetch', () => {
     expect(events).toContain('start:boot:background');
   });
 
+  it('still prefetches on 3g and up — only 2g/save-data opt out', async () => {
+    // Pins the boundary: the skip is for links where speculative bytes genuinely hurt, not for
+    // "anything short of wifi". Widening it silently would turn the prefetch off for most phones.
+    for (const effectiveType of ['3g', '4g']) {
+      resetIdlePrefetchForTest();
+      events.length = 0;
+      pending.clear();
+      setConnection({ effectiveType });
+      void startIdlePrefetch();
+      await flush();
+      expect(events, `effectiveType=${effectiveType} should still prefetch`).toContain('start:boot:background');
+    }
+  });
+
   it('only ever starts once', async () => {
     void startIdlePrefetch();
     void startIdlePrefetch();
