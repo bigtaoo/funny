@@ -424,6 +424,8 @@ sexualized, revealing clothing
 
 新增 `client/src/render/skinAvatarArt.ts`（仿 `heroAvatarArt.ts`，导出 `SKIN_AVATAR_KEYS`/`SKIN_AVATAR_ART_URLS`，key 用皮肤 id 本身，跟 `SKIN_TARGET_UNIT` 的 key 对齐）；`portraitHeadBox.ts` 新增 `SKIN_HEAD_BOX`（`measureAvatarHeadBox.mjs` 加了一个 `SKINS` 分组，跟 `PRESET`/`HERO` 并列）；`avatar.ts` 的 `categoryIcon('skin', ...)` 改成直接查 `SKIN_AVATAR_ART_URLS[key]` + `SKIN_HEAD_BOX[key] ?? null`，**修掉了"接线时要修的 bug"**（旧代码经 `SKIN_TARGET_UNIT` 转到 unitType 再查 `UNIT_ART_URLS`，读的是英雄战斗立绘，跟皮肤配色无关）——`UNIT_ART_URLS`/`SKIN_TARGET_UNIT` 两个 import 从 `avatar.ts` 里一并删除（后者仍在 `avatarPicker.ts`/`skinDefs.ts` 里为战斗渲染服务，只是不再被头像模块引用）。`tsc --noEmit` + `webpack build:web` 生产构建均过，新 PNG 资产已正确进包。**截图核对未完成**——本次会话 Browser pane 同样未能 compositing（环境限制，与 2026-08-15 §四-7 那次同一个问题），改为读 6 张母版源图逐张核对内容（配色/道具/发型是否对上对应皮肤）+ 编译/构建验证；实机点开选择器"皮肤"tab 的视觉核对留给下次有可用 Browser pane 的会话补做。
 
+**测试**（2026-08-17）：这次接线让"皮肤给全部头部框"这个新前提，**让 `client/test/ui/avatarPortraitFit.ui.ts` 原有一条用例断言过期报错**——那条用例专门用来钉住"`skin` 分类走全身立绘+无头部框的宽度兜底取景"的旧行为（`skin_shop_c1` + 571×695 的战斗立绘尺寸），接线后 `skin` 也有头部框了，旧断言的数字全部不对。已改成驱动 `skin_shop_e1`（它的母版长宽比跟另外 31 张不一样，512×683 而非 512×768，冷启动占位尺寸 vs 真实尺寸的差异仍然能被观察到，继续验证"贴图异步加载完再重新拟合一次"这条行为）；穷举取景测试（发丝顶部在圈内/裁切落在颈线/铺满圆宽）的 `cases` 列表也加上了 `SKIN_AVATAR_KEYS`/`SKIN_HEAD_BOX`，跟 preset/hero 走一样的回归覆盖。`npm run test:ui`（190/190）、默认 `npx vitest run`（169/169）、`tsc -p tsconfig.test.json` 均过。
+
 ---
 
 ## 四、功能实现待办（本文档只覆盖美术+渲染契约，以下留给功能实现阶段）
