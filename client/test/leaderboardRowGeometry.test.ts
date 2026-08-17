@@ -127,16 +127,5 @@ describe('fitNameAndTitle', () => {
   });
 });
 
-describe('title short labels stay inside the ≤4-character budget (TITLE_DESIGN §6)', () => {
-  // Monospace ⇒ characters are width. zh runs 1em per glyph and en/de 0.55em, so 4 is the ceiling
-  // for the widest of them; the budget is stated in characters because that is what a translator
-  // can check. Enforced as copy rather than runtime truncation so "Rangliste" becomes a chosen
-  // "Rang" instead of a hard slice.
-  for (const [locale, dict] of Object.entries({ zh, en, de }) as Array<[string, Record<string, string>]>) {
-    for (const key of Object.keys(dict).filter((k) => k.startsWith('title.') && k.endsWith('.short'))) {
-      it(`${locale} ${key}`, () => {
-        expect([...dict[key]!].length).toBeLessThanOrEqual(4);
-      });
-    }
-  }
-});
+// The ≤4-character budget these clearances assume is pinned separately, in
+// titleShortLabels.test.ts — it is a property of the copy, not of the row.

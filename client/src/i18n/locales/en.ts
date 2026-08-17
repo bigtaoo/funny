@@ -1420,7 +1420,7 @@ export const en: Record<TranslationKey, string> = {
   'title.ladder.short': 'Rank',
   // SLG regional-season titles (slg.s{N}.{key}); per settlement tier (SLG_DESIGN §8.3).
   'title.slg.champion.full': 'Season Champion',
-  'title.slg.champion.short': 'Top1',
+  'title.slg.champion.short': 'Chmp',
   'title.slg.top3.full': 'Season Top 3',
   'title.slg.top3.short': 'Top3',
   // SLG season settlement mail (worldsvc dispatches these keys; body carries |rank=|nations= params).

@@ -1420,7 +1420,7 @@ export const de: Record<TranslationKey, string> = {
   'title.ladder.short': 'Rang',
   // SLG-Regionssaison-Titel (slg.s{N}.{key}), nach Abrechnungsstufe (SLG_DESIGN §8.3).
   'title.slg.champion.full': 'Saisonchampion',
-  'title.slg.champion.short': 'Top1',
+  'title.slg.champion.short': 'Chmp',
   'title.slg.top3.full': 'Saison-Top-3',
   'title.slg.top3.short': 'Top3',
   // SLG-Saisonabrechnungs-Mail (worldsvc sendet diese Keys; Text mit |rank=|nations= Parametern).
