@@ -26,6 +26,7 @@ import { StickmanRuntime } from '../render/stickman/StickmanRuntime';
 import { STICKMAN_ASSETS, resolveSkinOverrides } from '../render/UnitView';
 import { targetScreenHeight } from '../render/unitSize';
 import { preloadL1CardArtTextures } from '../render/cardArt';
+import { decorMergedAtlas } from '../render/atlas/decorMergedAtlas';
 
 export interface BattleAssetOptions {
   /** Local player's equipped skin ids (LOBBY_IA_REDESIGN §15). */
@@ -57,6 +58,11 @@ export function ensureBattleAssets(
   const steps: Array<() => Promise<unknown>> = [
     ...Array.from(urls, ([url, h]) => () => StickmanRuntime.loadAsset(url, h)),
     () => preloadL1CardArtTextures(),
+    // Battle ambience + corner labels (decorLayer/decorCLayer/battleLabels/HUD, and
+    // ResultScene right after). Used to ride the L0 boot gate; since it became a
+    // background-tier boot step (ASSET_PACKAGING §11) this gate is what guarantees it
+    // is decoded before the battle draws its first frame. Idempotent — free when warm.
+    () => decorMergedAtlas.load(),
   ];
   const total = steps.length;
   let done = 0;

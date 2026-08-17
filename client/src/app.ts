@@ -62,6 +62,7 @@ import { ui as C } from './render/sketchUi';
 import { setBakeRenderer } from './render/bake';
 import { installTextPaddingFloor } from './render/pixiText';
 import { preloadBoot } from './assets/bootManifest';
+import { startIdlePrefetch } from './assets/idlePrefetch';
 import { enterBattle, DeferredSceneCalls } from './app/battleGate';
 import { LoadingOverlay } from './ui/LoadingOverlay';
 import { createAppCore } from './app/createAppCore';
@@ -502,11 +503,12 @@ export async function startApp(
   const manager = new SceneManager(app, scaling.gameLayer, input, dialogGate);
   platform.setupInput(app, input, (sx, sy) => scaling.toDesignSpace(sx, sy));
 
-  // ── L0 boot-tier preload gate (ASSET_PACKAGING §3) ──────────────────────────
+  // ── L0 boot-tier preload gate (ASSET_PACKAGING §3, §11) ─────────────────────
   // Show a loading screen (top-most: built after all other layers) and await the
-  // minimal asset set the first lobby + first battle need, so no unit ever renders
-  // as a placeholder circle on the player's first match. The three battle/lobby
-  // decor atlases (formerly fire-and-forget here) are part of this set now.
+  // minimal asset set the first LOBBY PAINT needs. Battle-only L0 assets (starter
+  // rigs + decor atlas) are no longer awaited here: preloadBoot kicks them off
+  // afterwards and enterBattle's own gate re-awaits them before any match, so the
+  // "never a placeholder circle" guarantee holds without the lobby paying for it.
   // preloadBoot never rejects — a flaky asset advances progress and degrades
   // gracefully rather than wedging boot. On CrazyGames the SDK loading splash is
   // dismissed by onLoadingComplete() *after* this gate, so it covers our preload.
@@ -611,4 +613,11 @@ export async function startApp(
   });
 
   core.start();
+
+  // ── L1 idle prefetch (ASSET_PACKAGING §11) ──────────────────────────────────
+  // The first scene is now up and the player is reading it. Spend that idle window
+  // warming what the next gates (enterBattle / WorldMapScene / GachaScene) would
+  // otherwise download only once the player asks for the scene. Strictly serial,
+  // idle-scheduled and never rejecting — see idlePrefetch.ts.
+  void startIdlePrefetch();
 }

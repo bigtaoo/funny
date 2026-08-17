@@ -4,6 +4,7 @@ const HtmlWebpackPlugin = require('html-webpack-plugin');
 const webpack = require('webpack');
 const CopyPlugin = require('copy-webpack-plugin');
 const TerserPlugin = require('terser-webpack-plugin');
+const PreloadBootAssetsPlugin = require('./build/preloadBootAssets');
 
 module.exports = (env, argv) => {
   const isProd = argv.mode === 'production';
@@ -123,6 +124,10 @@ module.exports = (env, argv) => {
     plugins: [
       // WeChat has no HTML host (game.js requires pixigame.js); HtmlWebpackPlugin / version.json / _headers are Web-only.
       ...(isWechat ? [] : [new HtmlWebpackPlugin({ template: `./public/${targetPlatform}/index.html` })]),
+      // <link rel="preload"> for the boot-tier assets, so the browser starts fetching them
+      // during the bundle download instead of after startApp() runs (ASSET_PACKAGING §11).
+      // Needs HtmlWebpackPlugin's hooks, hence WeChat (no HTML host) is excluded.
+      ...(isWechat ? [] : [new PreloadBootAssetsPlugin()]),
       // Copy marketing landing (home) + legal pages (terms/privacy/refunds/pricing) + branding icons
       // (favicon / apple-touch / PWA manifest, referenced by <link> in the HTML templates) to dist root.
       // home.html is the crawler-readable site Paddle reviews (the game root / is a bare canvas).

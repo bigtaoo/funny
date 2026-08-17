@@ -27,19 +27,30 @@ vi.mock('../../src/render/cardArt', () => ({
   preloadL1CardArtTextures: vi.fn(() => { cardArtCalls.push(1); return Promise.resolve(); }),
 }));
 
+// Battle ambience/corner labels, a background-tier boot step since ASSET_PACKAGING §11 — so this
+// gate is now what guarantees it before the first battle frame. Mocked for the same reason as the
+// two above, and additionally because the real loader would hand PIXI.Spritesheet the stub 1×1
+// data URI and never resolve.
+const decorAtlasCalls: number[] = [];
+vi.mock('../../src/render/atlas/decorMergedAtlas', () => ({
+  decorMergedAtlas: { load: vi.fn(() => { decorAtlasCalls.push(1); return Promise.resolve(); }) },
+}));
+
 // Imported AFTER vi.mock (vitest hoists mock registration above all imports regardless of
 // physical order — see marchTokenScale.ui.ts for the same pattern).
 import { ensureBattleAssets } from '../../src/assets/battleAssets';
 import { STICKMAN_ASSETS, resolveSkinOverrides } from '../../src/render/UnitView';
 
 describe('ensureBattleAssets', () => {
-  it('warms every default unit .tao plus L1 card art when no skins are equipped', async () => {
+  it('warms every default unit .tao plus L1 card art and the decor atlas when no skins are equipped', async () => {
     loadAssetCalls.length = 0;
     cardArtCalls.length = 0;
+    decorAtlasCalls.length = 0;
     await ensureBattleAssets({});
     const urls = new Set(loadAssetCalls.map((c) => c.url));
     for (const url of Object.values(STICKMAN_ASSETS)) expect(urls.has(url as string)).toBe(true);
     expect(cardArtCalls.length).toBe(1);
+    expect(decorAtlasCalls.length).toBe(1);
   });
 
   it('also warms local + opponent equipped-skin overrides', async () => {
@@ -62,14 +73,14 @@ describe('ensureBattleAssets', () => {
     failUrl = null;
   });
 
-  it('reports progress from 0 to total, one step per unique asset URL (units + card art)', async () => {
+  it('reports progress from 0 to total, one step per unique asset URL (units + card art + decor)', async () => {
     // ensureBattleAssets dedups by URL (StickmanRuntime.loadAsset is URL-cached, so requesting the
     // same url twice would be wasted work) — compute the expected total the same way rather than
     // counting UnitType keys: vitest.ui.config's binary-asset stub maps every `.tao` import to the
     // same placeholder data URI, so in THIS test environment all of STICKMAN_ASSETS collapses to
     // one unique url (unlike production, where webpack content-hashes each file to a distinct URL).
     const uniqueUrls = new Set(Object.values(STICKMAN_ASSETS));
-    const total = uniqueUrls.size + 1; // + card art step
+    const total = uniqueUrls.size + 2; // + card art step + decor atlas step
     const seen: Array<[number, number]> = [];
     await ensureBattleAssets({}, (done, t) => seen.push([done, t]));
     expect(seen[0]).toEqual([0, total]);
