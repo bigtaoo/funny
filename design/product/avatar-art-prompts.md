@@ -426,6 +426,8 @@ sexualized, revealing clothing
 
 **测试**（2026-08-17）：这次接线让"皮肤给全部头部框"这个新前提，**让 `client/test/ui/avatarPortraitFit.ui.ts` 原有一条用例断言过期报错**——那条用例专门用来钉住"`skin` 分类走全身立绘+无头部框的宽度兜底取景"的旧行为（`skin_shop_c1` + 571×695 的战斗立绘尺寸），接线后 `skin` 也有头部框了，旧断言的数字全部不对。已改成驱动 `skin_shop_e1`（它的母版长宽比跟另外 31 张不一样，512×683 而非 512×768，冷启动占位尺寸 vs 真实尺寸的差异仍然能被观察到，继续验证"贴图异步加载完再重新拟合一次"这条行为）；穷举取景测试（发丝顶部在圈内/裁切落在颈线/铺满圆宽）的 `cases` 列表也加上了 `SKIN_AVATAR_KEYS`/`SKIN_HEAD_BOX`，跟 preset/hero 走一样的回归覆盖。`npm run test:ui`（190/190）、默认 `npx vitest run`（169/169）、`tsc -p tsconfig.test.json` 均过。
 
+补的第二批测试（同日）：`categoryIcon`/`buildPortraitIcon` 之前只靠 `buildAvatar` 间接覆盖，但选择器自己的 tab 列表（`AVATAR_TABS`）和每个分类的解锁逻辑（`pickerItems()`）完全没测过——新增 `client/test/ui/avatarPickerItems.ui.ts`：纯逻辑断言"`AVATAR_TABS` 不含 title、恰好是 preset/hero/skin 三个"+ pickerItems 在 preset/hero/skin 三个分类下的解锁规则（`ownedHeroes`/`ownedSkins`/`everOwned.*` 生效，`HERO_AVATAR_KEYS`/`SKIN_AVATAR_KEYS` 每一项都能在 pickerItems 的结果里找到对应项，防的正是"某个英雄/皮肤有了但头像没接"这类漏洞）；再加一条真实构建 `SettingsScene`、打开选择器、扫描渲染出来的文字，确认三个 tab 标签原样显示且没有"称号"——连 i18n key 映射本身的接线也测到了，不只是 pickerItems 自己的数据。`npm run test:ui`（191/191）、`tsc -p tsconfig.test.json` 均过。
+
 ---
 
 ## 四、功能实现待办（本文档只覆盖美术+渲染契约，以下留给功能实现阶段）
