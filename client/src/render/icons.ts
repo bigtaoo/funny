@@ -193,6 +193,24 @@ import channelTabIconActiveUrl from '../assets/tabicons/channel_active.png';
 import channelTabIconInactiveUrl from '../assets/tabicons/channel_inactive.png';
 import channelTabIconContentUrl from '../assets/tabicons/channel_content.png';
 
+// Tab-icon AI art batch 6 (design/product/tab-icon-art-prompts-batch6.md, 2026-08-17): the lobby home
+// screen itself, which batches 1–5 never touched — they scoped themselves to second-level pages, so
+// the three most-looked-at glyphs in the game (the hero button's watermark + both pillar cards) were
+// still procedural `pencils`/`book`/`castle` sitting right beside the already-AI coin bitmap, which
+// made the thin program-drawn line work obvious. These render LARGE (the pillar motif is 60% of the
+// card height), not at 28px, so the source art carries a little more detail than earlier batches.
+// The 4th glyph the same review flagged — the rank chip's `trophy` — deliberately gets no new art:
+// it reuses `leaderboardTabIcon` (the chip opens the leaderboard), see LobbyScene/header.ts.
+import duelTabIconActiveUrl from '../assets/tabicons/duel_active.png';
+import duelTabIconInactiveUrl from '../assets/tabicons/duel_inactive.png';
+import duelTabIconContentUrl from '../assets/tabicons/duel_content.png';
+import campaignTabIconActiveUrl from '../assets/tabicons/campaign_active.png';
+import campaignTabIconInactiveUrl from '../assets/tabicons/campaign_inactive.png';
+import campaignTabIconContentUrl from '../assets/tabicons/campaign_content.png';
+import worldTabIconActiveUrl from '../assets/tabicons/world_active.png';
+import worldTabIconInactiveUrl from '../assets/tabicons/world_inactive.png';
+import worldTabIconContentUrl from '../assets/tabicons/world_content.png';
+
 export type IconKind =
   | 'book' | 'globe' | 'coin' | 'trophy' | 'castle' | 'pencils'
   // Recharge tiers (ShopScene): escalating treasure to make bigger tiers read richer.
@@ -273,7 +291,13 @@ export type IconKind =
   | 'deckTabIcon' | 'roomTabIcon' | 'defenseTabIcon' | 'checkinTabIcon' | 'tasksTabIcon'
   | 'weeklyTabIcon' | 'adsTabIcon' | 'friendsTabIcon' | 'familyTabIcon' | 'sectTabIcon' | 'mailTabIcon'
   | 'bagTabIcon' | 'craftTabIcon' | 'allTabIcon' | 'weaponTabIcon' | 'armorslotTabIcon'
-  | 'trinketTabIcon' | 'avatarTabIcon' | 'channelTabIcon';
+  | 'trinketTabIcon' | 'avatarTabIcon' | 'channelTabIcon'
+  // Tab-icon AI art batch 6 (see the import block above) — the lobby home screen: crossed pencils with
+  // an ink splat at the clash point (hero "start match" watermark, replaces `pencils`), an open spiral
+  // exercise book (战役 pillar, replaces `book` — deliberately the splayed-open notebook, NOT
+  // `pveTabIcon`'s rolled treasure-map scroll), and an unfolded paper map with a dotted route + pennant
+  // (大世界 pillar, replaces `castle` — not `cityTabIcon`'s gatehouse, not `socialTabIcon`'s globe).
+  | 'duelTabIcon' | 'campaignTabIcon' | 'worldTabIcon';
 
 /** Raster tab-icon `IconKind`s that skip `DRAW`/`SketchPen` entirely — dispatched via `TAB_ICON_RASTER` instead. */
 export type RasterIconKind =
@@ -285,7 +309,8 @@ export type RasterIconKind =
   | 'deckTabIcon' | 'roomTabIcon' | 'defenseTabIcon' | 'checkinTabIcon' | 'tasksTabIcon'
   | 'weeklyTabIcon' | 'adsTabIcon' | 'friendsTabIcon' | 'familyTabIcon' | 'sectTabIcon' | 'mailTabIcon'
   | 'bagTabIcon' | 'craftTabIcon' | 'allTabIcon' | 'weaponTabIcon' | 'armorslotTabIcon'
-  | 'trinketTabIcon' | 'avatarTabIcon' | 'channelTabIcon';
+  | 'trinketTabIcon' | 'avatarTabIcon' | 'channelTabIcon'
+  | 'duelTabIcon' | 'campaignTabIcon' | 'worldTabIcon';
 
 /**
  * Which pre-baked ink a raster icon is drawn in. All three come from the same source art, recoloured
@@ -349,9 +374,12 @@ export const TAB_ICON_RASTER: Record<RasterIconKind, Record<RasterIconVariant, s
   trinketTabIcon:     { active: trinketTabIconActiveUrl as string, inactive: trinketTabIconInactiveUrl as string, content: trinketTabIconContentUrl as string },
   avatarTabIcon:      { active: avatarTabIconActiveUrl as string, inactive: avatarTabIconInactiveUrl as string, content: avatarTabIconContentUrl as string },
   channelTabIcon:     { active: channelTabIconActiveUrl as string, inactive: channelTabIconInactiveUrl as string, content: channelTabIconContentUrl as string },
+  duelTabIcon:        { active: duelTabIconActiveUrl as string, inactive: duelTabIconInactiveUrl as string, content: duelTabIconContentUrl as string },
+  campaignTabIcon:    { active: campaignTabIconActiveUrl as string, inactive: campaignTabIconInactiveUrl as string, content: campaignTabIconContentUrl as string },
+  worldTabIcon:       { active: worldTabIconActiveUrl as string, inactive: worldTabIconInactiveUrl as string, content: worldTabIconContentUrl as string },
 };
 
-/** Warm the 129 tab-icon PNGs (43 kinds × 3 inks) into the PIXI texture cache — call once from a
+/** Warm the 138 tab-icon PNGs (46 kinds × 3 inks) into the PIXI texture cache — call once from a
  *  scene that uses them (`LobbyScene` does it for every second-level page, since they all enter from
  *  the lobby; CardScene/EquipmentScene and any reward row via `preloadRewardIconArt` also do)
  *  so the first render doesn't show a blank icon while it decodes. */

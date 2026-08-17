@@ -148,7 +148,14 @@ export function drawHeaderChrome(core: LobbySceneCore): void {
         rankBg.x = core.rankChipRect.x; rankBg.y = core.rankChipRect.y;
         core.container.addChild(rankBg);
       }
-      const rankIcon = buildIcon('trophy', iconSz, tierColor);
+      // Podium glyph, not a trophy: the chip's tap target IS the leaderboard, so it reuses
+      // `leaderboardTabIcon` rather than earning a 4th trophy-ish piece of art next to
+      // `achievementTabIcon`/`honorTabIcon`/`medal` (batch 6 review, 2026-08-17). The raster ink is
+      // baked, so the icon no longer carries the tier colour — no information is lost, the chip's
+      // border and the `青铜 · 1425` label beside it are both still drawn in `tierColor`. Forced to
+      // the white `active` art: this sits on the near-black header bar, and `tierColor` would read
+      // "dark" by luma (gold ≈ 0.59) and select the paper-grey variant.
+      const rankIcon = buildIcon('leaderboardTabIcon', iconSz, C.light, { variant: 'active' });
       rankIcon.x = rankChipX + chipPad; rankIcon.y = rankIconY;
       core.container.addChild(rankIcon);
       badgeLabel.anchor.set(0, 0.5);
@@ -232,9 +239,10 @@ export function drawHeaderChrome(core: LobbySceneCore): void {
         rankBg.x = core.rankChipRect.x; rankBg.y = core.rankChipRect.y;
         core.container.addChild(rankBg);
       }
-      // Trophy icon at the same left edge as the coin icon so both chips read as
-      // the same component with a swapped glyph/color.
-      const rankIcon = buildIcon('trophy', iconSz, tierColor);
+      // Rank icon at the same left edge as the coin icon so both chips read as
+      // the same component with a swapped glyph. See the portrait branch above for why this is
+      // the leaderboard podium in fixed white ink rather than a tier-coloured trophy.
+      const rankIcon = buildIcon('leaderboardTabIcon', iconSz, C.light, { variant: 'active' });
       rankIcon.x = contentLeft; rankIcon.y = rankIconY;
       core.container.addChild(rankIcon);
       badgeLabel.anchor.set(0, 0.5);

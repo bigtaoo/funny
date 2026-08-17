@@ -220,6 +220,8 @@ client/src/assets/decor/   # 最终透明 PNG / 图集
 
 **批次 5 出图结果（2026-08-17 当日完成）**：24 张一次过关，**前四批各有 3 张在 contact-sheet 阶段被打回，这批零打回**——判断阶段就点名的三对高危撞车（领奖台 vs 柱状图、礼物盒 vs 拱盖宝箱、铁砧 vs 拍卖锤）在 prompt 里逐条写进 Avoid 后，28px 并排看全部拉得开。至此光栅图标 43 个 / PNG 129 张。接线覆盖 11 个 `drawSceneHeader` 标题（其中 DailyScene 按激活 tab 四选一、FriendsScene 按 tab 五选一）、2 个自绘标题（家族/宗门，走 `buildTitleIcon`）、社交 rail 5 格、日常 4 格、装备背包/锻造 + 部位筛选 4 格、头像预设 1 格。**接线时发现的一处结构陷阱**：装备页的「背包/锻造」在横屏走侧栏 `drawSidebarTabs`、竖屏走顶部 `drawHubTabs` 两条**各写一份 tab 数组**的分支，只改横屏那份的话竖屏静默保持无图标（实拍才看出来）；已收敛成 `EquipmentScene/types.ts` 的 `EQUIP_SUBTABS` 单一表，两条分支都读它。同类的"一个控件两处画"还有社交 rail（已是单表 `SOCIAL_TAB_ICON`，标题和页签共用）。
 
+**批次 6：大厅首页主视觉**（2026-08-17，用户圈图指出首页那几个图标是不是图片）。前五批的范围全在**二级页面**（1–4 批是页签条，第 5 批是页面标题），于是全游戏被看得最多的那一屏一张 AI 图都没有：`开始匹配` 按钮水印、`战役`/`大世界` 两张 pillar 卡片、右上角段位 chip 四处仍是程序 `pencils`/`book`/`castle`/`trophy`——而**右上角金币早就是 AI 位图**，并排时程序图的单薄一眼可见。3 张新图（交叉铅笔+墨渍 / 摊开的线圈本 / 摊开的纸地图带虚线路线+小旗），段位 chip 判为纯复用 `leaderboardTabIcon`（点它就是进排行榜，且"奖杯类"造型已有奖杯/桂冠/圆牌三张，再加必撞）。**这批跟前五批有两点结构性不同**：①不是 28px 页签格子而是大尺寸主视觉（pillar motif = 卡片高的 60%），源图允许多一点线条细节；②这四处原本都是**运行时染色**（战役金/大世界蓝/hero accent/段位 `TIER_COLORS`），而光栅墨色是打包时烤死的——**结论是不给 pack 脚本加烤色**，改由调用点显式声明变体（近黑底的 hero 水印和段位 chip 强制 `active` 白墨，纸面 pillar 用 `content`，软锁的大世界卡用 `inactive`），颜色语言由卡片边框/左边缘墨条/chip 边框和文字继续承担，信息不丢。详见 [`tab-icon-art-prompts-batch6.md`](tab-icon-art-prompts-batch6.md)。
+
 ---
 
 ## 八、特效规范
