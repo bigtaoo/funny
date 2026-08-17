@@ -1,6 +1,6 @@
 # SLG 主城内政建筑格图标 — city_bld_atlas prompt
 
-状态：**5/6 已出图，`academy`（书院）待出图**——2026-07-17 那批（`desk`/`cabinet`/`drillYard`/`wall`/`satchel`）是用户直接投喂的 AI 成图，没有留过书面 prompt；`academy` 当时被漏掉，一直还是 `icons.ts` 的程序化线稿字形（`book`）+ emoji 兜底（`📚`），是目前 SLG 范围内唯一还没出图的真缺口（2026-08-17 全量审计确认）。本文档 §1 补写现有 5 张的风格规范（供以后重出/校验用），§2 给 `academy` 的新 prompt。
+状态：**6/6 已出图、已接入（2026-08-17）**——2026-07-17 那批（`desk`/`cabinet`/`drillYard`/`wall`/`satchel`）是用户直接投喂的 AI 成图，没有留过书面 prompt；`academy` 当时被漏掉，一直还是 `icons.ts` 的程序化线稿字形（`book`）+ emoji 兜底（`📚`），是当时 SLG 范围内唯一还没出图的真缺口（2026-08-17 全量审计确认）。同日用户投喂了 §2 这版 prompt 的成图，验证可用并已接入，见 §3。本文档 §1 补写现有 6 张的风格规范（供以后重出/校验用）。
 
 关联：接入管线见 [`SLG_CITY_DESIGN.md` "建筑图标出图（2026-07-17）"](../game/SLG_CITY_DESIGN.md)；渲染代码 [`CityScene/icons.ts`](../../client/src/scenes/CityScene/icons.ts)（`BLD_GLYPH`/`BLD_ATLAS` 映射）；打包脚本 [`pack_city_bld.cjs`](../../art/slg/slg-desk/pack_city_bld.cjs)；踩坑记录见会话记忆 `city-bld-icons-pack-pipeline-2026-07-17`。
 
@@ -62,10 +62,17 @@ filling the entire frame edge to edge, empty stark black background
 3. 语义上跟 `drillYard`（尺规演武场）、`wall`（笔记本城墙）不撞构图/母题——书本堆叠 + 学士帽是"学问"的具象，不是又一堆铅笔/尺子。
 4. 出图后用 [`client-run-and-visual-verify`] 同款方法（构造一个 headless `CityScene` 渲染建筑网格，`toDataURL()` 截图核对）或直接对照 `res_atlas`/`city_bld_atlas` 已有帧做像素级降采样模拟（同 `icon_arrowTower` 那次的方法），确认在实际渲染尺寸（约 60px）下不糊成看不出轮廓的墨团。
 
-### 接入步骤（拿到图之后）
+---
 
-1. 源图落 `art/slg/slg-desk/`，语义命名或沿用 UUID 均可（`pack_city_bld.cjs` 的 `JOBS` 表按文件名映射帧名，加一行 `{ src: '<file>', name: 'bld_academy' }`）。
+## 3. 出图验收记录（2026-08-17，通过，已接入）
+
+用户投喂源图 `art/slg/slg-desk/8ade8567-ffbf-4a6a-b06b-c6e8b5e121eb.png`（1254×1254，白底无 alpha），跟 prompt 描述高度吻合：书本堆叠成小屋轮廓，歪戴的学士帽当屋顶，钢笔立在帽子后面当尖塔，摊开的书当门槛/台阶，放大镜靠在一侧。裁边后 784×1115（0.70:1）——比现有最窄的 `bld_cabinet`（0.67:1）略宽，在同一批已验收的宽高比范围内（现有 5 张 0.67～1.03 不等），`bldIcon()` 渲染时统一强制拉伸成正方形图标（`sp.width=sp.height=size`），跟 cabinet 的先例一致，不是新问题。
+
+**验证方法**：跑 `pack_city_bld.cjs` 实际管线（硬阈值抠图 + 连通域降噪 + 裁边 + 缩放）模拟一遍，再把打包帧降采样到真实渲染尺寸（45/60/75px）配 6x 最近邻放大检查——45px 时轮廓已经很清楚（学士帽、书堆、放大镜圆环都能一眼认出），比同一方法测出的 `icon_arrowTower`/`icon_watchtower` 在各自真实尺寸下的糊度还清晰，判定**可用**，不要求重出。
+
+**接入**（已执行）：
+1. `pack_city_bld.cjs` 的 `JOBS` 加一行 `{ src: '8ade8567-ffbf-4a6a-b06b-c6e8b5e121eb.png', name: 'bld_academy' }`，源图沿用 UUID 文件名，不重命名（跟现有 5 张的命名习惯一致）。
 2. `node art/slg/slg-desk/pack_city_bld.cjs` 重新打包 `city_bld_atlas.{png,json}`（6 帧）。
-3. 合并进 `world_atlas`——`cityBldAtlasLoader.ts` 复用的是共享 `worldAtlas` 单例（`bld_*` 帧和 `building_*`/`icon_*`/`res_*`/`terrain_*`/`city_*` 同一张图集），不是独立文件，所以这步不能跳过。`bld_academy` 是全新帧，照 `icon_arrowTower` 那次的做法：`NODE_PATH="$(pwd)/client/node_modules" node art/scripts/appendAtlasFrames.js client/src/assets/slg/city_bld_atlas.json client/src/assets/slg/world_atlas.json bld_academy`，跑完删掉临时的 `city_bld_atlas.{png,json}`（本不进仓库）。
+3. `NODE_PATH="$(pwd)/client/node_modules" node art/scripts/appendAtlasFrames.js client/src/assets/slg/city_bld_atlas.json client/src/assets/slg/world_atlas.json bld_academy`——全新帧，走追加新条带分支（页面 2048×4294 → 2048×4550，其余 88 帧字节不变）。临时的 `city_bld_atlas.{png,json}` 用完即删（本不进仓库）。
 4. `CityScene/icons.ts` 的 `BLD_ATLAS` 加一行 `academy: 'bld_academy'`。
-5. 更新本文档状态行 + `SLG_CITY_DESIGN.md` 建筑图标出图那条记录，把 `academy` 加进"已出图"名单。
+5. 新增 `client/test/ui/cityBldIcon.ui.ts`——这块代码此前对全部 6 个 `BLD_ATLAS` key 都**零测试覆盖**，顺手补上：图集就绪时 6 个 key 各自取到对应精灵（用精确 `constructor === PIXI.Sprite` 而非 `instanceof` 判断，因为 `satchel` 的兜底路径是 `PIXI.Text`，在 PixiJS 里 `Text` 继承自 `Sprite`，`instanceof` 判断会把兜底误判成命中精灵）；图集就绪但帧缺失时回落程序化图标/emoji；5 座资源建筑（`inkPot` 等）无论图集状态如何都不触碰 `getCityBldTexture`。13/13 全绿，`npx vitest run --config vitest.ui.config.ts cityScene` 46/46 同步保持绿。

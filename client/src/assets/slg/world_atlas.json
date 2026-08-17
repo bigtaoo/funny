@@ -1789,6 +1789,26 @@
         "w": 129,
         "h": 256
       }
+    },
+    "bld_academy": {
+      "frame": {
+        "x": 0,
+        "y": 4294,
+        "w": 180,
+        "h": 256
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 180,
+        "h": 256
+      },
+      "sourceSize": {
+        "w": 180,
+        "h": 256
+      }
     }
   },
   "meta": {
@@ -1797,7 +1817,7 @@
     "format": "RGBA8888",
     "size": {
       "w": 2048,
-      "h": 4294
+      "h": 4550
     },
     "scale": "1"
   }

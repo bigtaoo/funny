@@ -61,13 +61,16 @@ const BLD_GLYPH: Partial<Record<BuildingKey, IconKind>> = {
 };
 
 // Hand-drawn atlas art (art/slg/slg-desk → city_bld_atlas) supersedes the BLD_GLYPH
-// programmatic line-art / emoji fallback for these five once the atlas has decoded.
+// programmatic line-art / emoji fallback once the atlas has decoded. `academy` added
+// 2026-08-17 — it was the one BuildingKey left out of the 2026-07-17 batch with no
+// rationale on record (see design/product/slg-citybld-icon-prompts.md); now closed.
 const BLD_ATLAS: Partial<Record<BuildingKey, string>> = {
   desk: 'bld_desk',
   cabinet: 'bld_cabinet',
   drillYard: 'bld_drillYard',
   wall: 'bld_wall',
   satchel: 'bld_satchel',
+  academy: 'bld_academy',
 };
 
 // Category accent for the building grid's level-progress stripe (2026-08-01 card redesign): ties

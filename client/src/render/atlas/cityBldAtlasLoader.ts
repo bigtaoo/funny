@@ -1,11 +1,11 @@
 /**
  * cityBldAtlasLoader.ts — CityScene ("Home Desk") building icon atlas loader.
  *
- * Five hand-drawn stationery-themed building icons, packed into the shared
+ * Six hand-drawn stationery-themed building icons, packed into the shared
  * worldAtlas (see that module) as the `bld_*` frames: bld_desk / bld_cabinet /
- * bld_drillYard / bld_wall / bld_satchel. Replaces the programmatic icons.ts
- * line-art (desk/cabinet/drillYard/wall) and emoji fallback (satchel) previously
- * used by CityScene.bldIcon().
+ * bld_drillYard / bld_wall / bld_satchel / bld_academy (added 2026-08-17).
+ * Replaces the programmatic icons.ts line-art (desk/cabinet/drillYard/wall/academy)
+ * and emoji fallback (satchel) previously used by CityScene.bldIcon().
  *
  * Loading is fire-and-forget (called from CityScene.load()). A decode failure falls
  * back to the pre-existing programmatic/emoji icon — see CityScene.bldIcon().
