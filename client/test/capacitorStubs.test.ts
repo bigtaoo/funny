@@ -13,6 +13,12 @@
  *      which is the one failure here that a player would notice;
  *   3. a call site starts using a plugin method the stub does not define → `x is not a function`
  *      on web only.
+ *
+ * Sibling to wechatSingleBundle.test.ts, which reads the same config for the neighbouring contract
+ * (wechat emits exactly one JS file). Both came out of the same stray `90.pixigame.js`: that file
+ * pins the build-level backstop (`asyncChunks:false` inlines any split point), this one removes the
+ * dependency that produced it. Kept separate because they fail for different reasons and a reader
+ * chasing one shouldn't have to read the other.
  */
 import { describe, it, expect } from 'vitest';
 import fs from 'fs';
