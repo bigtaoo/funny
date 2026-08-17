@@ -276,7 +276,9 @@ export class ChatScene implements Scene {
 
   private drawHeader(): void {
     const { w, h } = this;
-    const hdr = drawSceneHeader(this.container, w, h, this.cb.peerName || `#${this.cb.peerPublicId}`);
+    // Title is the PEER's name, so the glyph stands in for "a conversation", not for a page concept —
+    // the same speech bubble the family/sect channel tabs use (batch 5).
+    const hdr = drawSceneHeader(this.container, w, h, this.cb.peerName || `#${this.cb.peerPublicId}`, { icon: 'channelTabIcon' });
     const tbH = hdr.headerH;
     this.hits.push({ rect: hdr.backRect, fn: () => this.cb.onBack() });
   }

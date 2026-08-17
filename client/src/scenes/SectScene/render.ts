@@ -11,6 +11,7 @@ import { SECT_CREATE_COST } from '@nw/shared';
 import { t } from '../../i18n';
 import { ui as C, txt, sketchPanel, sketchButton, seedFor } from '../../render/sketchUi';
 import { buildEmblemIcon, type EmblemKey } from '../../render/emblemIcon';
+import { buildIcon } from '../../render/icons';
 import { caretDisplay } from '../../ui/inputDisplay';
 import { FS } from '../../render/fontScale';
 import type { SectSceneCore, SectTab } from './core';
@@ -208,8 +209,17 @@ export class RenderPanel {
       const tp = sketchPanel(tabW, tabH, { fill: active ? C.paper : 0xddddcc, border: C.mid, seed: seedFor(i, 0, tabW) });
       tp.x = tx; tp.y = core.headerH;
       core.bodyLayer.addChild(tp);
-      const tl = txt(t(tab === 'families' ? 'sect.tabFamilies' : 'sect.tabChannel'), FS.label, active ? C.accent : C.dark);
-      tl.anchor.set(0.5, 0.5); tl.x = tx + tabW / 2; tl.y = core.headerH + tabH / 2;
+      const fg = active ? C.accent : C.dark;
+      // Icon + label as one centred group, same [icon][gap][label] shape as HubTabs' own cells (this
+      // strip is hand-rolled, predating the shared widget). 'families' reuses the family glyph —
+      // a sect IS a group of families, so it is literally the same concept one level up.
+      const iconSize = Math.round(tabH * 0.6), gapIL = 8;
+      const icon = buildIcon(tab === 'families' ? 'familyTabIcon' : 'channelTabIcon', iconSize, fg);
+      const tl = txt(t(tab === 'families' ? 'sect.tabFamilies' : 'sect.tabChannel'), FS.label, fg);
+      const groupX = tx + Math.round((tabW - (iconSize + gapIL + tl.width)) / 2);
+      icon.x = groupX; icon.y = core.headerH + Math.round((tabH - iconSize) / 2);
+      core.bodyLayer.addChild(icon);
+      tl.anchor.set(0, 0.5); tl.x = groupX + iconSize + gapIL; tl.y = core.headerH + tabH / 2;
       core.bodyLayer.addChild(tl);
       core.hitRects.push({ rect: { x: tx, y: core.headerH, w: tabW, h: tabH }, action: () => { core.activeTab = tab; core.scrollY = 0; core.channelStick = true; core.render(); } });
     }

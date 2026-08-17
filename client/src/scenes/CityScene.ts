@@ -89,6 +89,7 @@ export class CityScene implements Scene {
     const hdr = drawSceneHeader(core.container, w, h, t('city.title'), {
       variant: 'paper',
       accent: HEADER_ACCENT.slg,
+      icon: 'cityTabIcon',
     });
     const backHit: Hit = {
       x: hdr.backRect.x,

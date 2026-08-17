@@ -7,6 +7,7 @@ import { t } from '../../i18n';
 import { ui as C, txt, sketchPanel, seedFor } from '../../render/sketchUi';
 import { buildIcon } from '../../render/icons';
 import { buildEmblemIcon, type EmblemKey } from '../../render/emblemIcon';
+import { buildTitleIcon } from '../../ui/widgets/SceneHeader';
 import { FS } from '../../render/fontScale';
 import type { SectSceneCore } from './core';
 
@@ -41,8 +42,13 @@ export function drawHeaderTitle(core: SectSceneCore, headerH: number): void {
 
   // Build every node up front (unpositioned) so the whole cluster's width can be measured and
   // centered in the space between the back pill and the alliance buttons.
+  // Batch-5 title glyph (pagoda), laid out as the same [icon][gap][title] group `drawSceneHeader`
+  // builds — this scene passes `title: null` and owns the layout, so it positions the group itself
+  // but takes `size`/`gap`/the ink rule from the shared builder.
+  const titleIcon = buildTitleIcon('sectTabIcon', FS.headline, C.dark);
+  add(titleIcon.node);
   const titleNode = add(txt(t('sect.title'), FS.headline, C.dark, true));
-  let clusterW = titleNode.width;
+  let clusterW = titleIcon.size + titleIcon.gap + titleNode.width;
 
   // Emblem badge (family-emblem-art-prompts.md, 2026-08-14): same tinted-icon-or-dashed-placeholder
   // affordance as FamilyScene/header.ts — sect-leader-only tap target (isSectLeader, not just any
@@ -86,6 +92,8 @@ export function drawHeaderTitle(core: SectSceneCore, headerH: number): void {
   const available = rightBound - leftBound;
   let x = leftBound + Math.max(0, (available - clusterW) / 2);
 
+  titleIcon.node.x = x; titleIcon.node.y = Math.round(midY - titleIcon.size / 2);
+  x += titleIcon.size + titleIcon.gap;
   titleNode.anchor.set(0, 0.5); titleNode.x = x; titleNode.y = midY;
   x += titleNode.width;
 

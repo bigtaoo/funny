@@ -4,8 +4,8 @@
 > 配套代码：[`client/src/render/icons.ts`](../../client/src/render/icons.ts)（`rosterIcon`/`equipIcon`/`skinIcon` 三个新 `IconKind`）· [`client/src/scenes/CardScene/list.ts`](../../client/src/scenes/CardScene/list.ts) · [`client/src/scenes/EquipmentScene/inventory.ts`](../../client/src/scenes/EquipmentScene/inventory.ts) · [`client/src/app/nav/game/campaignRoster.ts`](../../client/src/app/nav/game/campaignRoster.ts)
 > 美术总纲：[`art-direction.md`](art-direction.md) §0（资产分工）/ §6.2（装饰物涂鸦管线，本文档打包脚本沿用其"抠白底"套路）/ §7.6（本次试点的记录条目）
 > 同类文档：[`shop-art-prompts.md`](shop-art-prompts.md) · [`gacha-art-prompts.md`](gacha-art-prompts.md)
-> 状态：**试点批（3/15）已定稿并接线**；**批次 2（trophy/book/medal/cards/brush 5 个复用槽位）已全部完成**；**批次 3（铺开剩余 12 个页签主图标，判断+prompt 已定，等出图）**——详见下方"批次 3"一节
-> **批次 5 在单独文件**：[`tab-icon-art-prompts-batch5.md`](tab-icon-art-prompts-batch5.md) —— 页面**标题**图标（本文档四批从未覆盖过的位置）+ 剩余二级页签，24 张新图，代码出口已先行落地。本文档保持 1–4 批的记录不动（500 行文档约定，ADR-067）。
+> 状态：本文档记录的 **1–4 批全部已定稿并接线**（试点批 3 张 · 批次 2 的 trophy/book/medal/cards/brush 5 个复用槽位 · 批次 3 的 12 个页签主图标 · 批次 4 的奖励图标统一出口 + 第三种 `content` 墨）——各批收尾结论见下方对应小节。
+> **批次 5 在单独文件**：[`tab-icon-art-prompts-batch5.md`](tab-icon-art-prompts-batch5.md) —— 页面**标题**图标（本文档四批从未覆盖过的位置）+ 剩余二级页签，24 张新图，**2026-08-17 出图+接线全部完成（0 打回）**，至此光栅图标共 43 个 / 129 张 PNG。本文档保持 1–4 批的记录不动（500 行文档约定，ADR-067）。
 
 ## 背景
 

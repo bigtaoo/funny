@@ -6,9 +6,10 @@
 // single-cell in-place redraw optimization detail.ts's doEnhance uses) is wired onto
 // `core.refreshInstanceCellHook` by the outer assembly right after this class is constructed.
 import * as PIXI from 'pixi.js-legacy';
-import { t, type TranslationKey } from '../../i18n';
+import { t } from '../../i18n';
 import { ui as C, txt, marginLineX, tearDownChildren } from '../../render/sketchUi';
 import { FS } from '../../render/fontScale';
+import { buildIcon, type IconKind } from '../../render/icons';
 import { drawSidebarTabs, drawBottomNavTabs, sidebarNavW, bottomNavH, type HubTab } from '../../ui/widgets/HubTabs';
 import { drawScrollIndicator } from '../../ui/widgets/ScrollIndicator';
 import { peekViewportH } from '../../ui/widgets/scrollPeek';
@@ -18,7 +19,7 @@ import {
   LOADOUT_H, FILTER_H, SECTION_H, CELL_GAP, CELL_GAP_X, EQUIP_CELL_H, equipGridColumns, LIST_TOP_PAD,
 } from './layout';
 import { equippedIds } from './helpers';
-import type { EquipTab, SectionKey } from './types';
+import { EQUIP_SUBTABS, type SectionKey } from './types';
 import type { EquipmentSceneCore } from './core';
 import type { DetailPanel } from './detail';
 import { renderInstanceCell, renderLoadout } from './cells';
@@ -170,15 +171,11 @@ export class InventoryPanel {
       y = group.bottom + Math.round(h * 0.03);
     }
 
-    const subTabs: { key: EquipTab; label: TranslationKey }[] = [
-      { key: 'inv', label: 'equip.tabInv' },
-      { key: 'craft', label: 'equip.tabCraft' },
-    ];
     const sub = drawSidebarTabs(
       core.bodyLayer, sidebarW, y, h,
-      subTabs.map((tab) => ({ label: t(tab.label), active: tab.key === core.activeTab })),
+      EQUIP_SUBTABS.map((tab) => ({ label: t(tab.label), active: tab.key === core.activeTab, icon: tab.icon })),
       (i) => {
-        const key = subTabs[i].key;
+        const key = EQUIP_SUBTABS[i]!.key;
         if (core.activeTab !== key) { core.activeTab = key; core.scrollY = 0; core.render(); }
       },
       { sub: true },
@@ -307,11 +304,15 @@ export class InventoryPanel {
   /** Slot filter bar (All / Weapon / Armor / Trinket), confined to [x, x+w) — the right column. */
   renderSlotFilter(x: number, y: number, w: number): void {
     const core = this.core;
-    const filters: { key: EquipSlot | 'all'; label: string }[] = [
-      { key: 'all',     label: t('equip.filterAll') },
-      { key: 'weapon',  label: t('equip.slot.weapon') },
-      { key: 'armor',   label: t('equip.slot.armor') },
-      { key: 'trinket', label: t('equip.slot.trinket') },
+    // Batch-5 glyphs. `armor` is deliberately a BREASTPLATE, not a shield: the page title and the
+    // peer tab on this very screen are already `equipIcon`'s kite shield, and `weapon` is ONE upright
+    // sword so it can't be read as `pvpTabIcon`'s crossed pair. `all` (2x2 grid) is generic on
+    // purpose — other pages' "All" filters can reuse it.
+    const filters: { key: EquipSlot | 'all'; label: string; icon: IconKind }[] = [
+      { key: 'all',     label: t('equip.filterAll'),      icon: 'allTabIcon' },
+      { key: 'weapon',  label: t('equip.slot.weapon'),     icon: 'weaponTabIcon' },
+      { key: 'armor',   label: t('equip.slot.armor'),      icon: 'armorslotTabIcon' },
+      { key: 'trinket', label: t('equip.slot.trinket'),    icon: 'trinketTabIcon' },
     ];
     const fw = w / filters.length;
     const bg = new PIXI.Graphics();
@@ -326,8 +327,19 @@ export class InventoryPanel {
         hlt.beginFill(0xfaf9f5).drawRoundedRect(fx + 3, y + 3, fw - 6, FILTER_H - 6, 3).endFill();
         core.bodyLayer.addChild(hlt);
       }
-      const lbl = txt(f.label, FS.label, active ? C.accent : C.dark, active);
-      lbl.anchor.set(0.5, 0.5); lbl.x = fx + fw / 2; lbl.y = y + FILTER_H / 2;
+      const fg = active ? C.accent : C.dark;
+      // [icon][gap][label] centred in the cell, same shape as HubTabs' cells (this strip is
+      // hand-rolled — it isn't a HubTab). Four cells share the column, so the label scales down
+      // rather than pushing the group past the cell edge (de/en labels run much longer than zh).
+      const lbl = txt(f.label, FS.label, fg, active);
+      const iconSize = Math.round(FILTER_H * 0.5), gapIL = 6;
+      const maxLblW = fw - 8 - iconSize - gapIL;
+      if (lbl.width > maxLblW) lbl.scale.set(maxLblW / lbl.width);
+      const groupX = fx + Math.round((fw - (iconSize + gapIL + lbl.width)) / 2);
+      const icon = buildIcon(f.icon, iconSize, fg);
+      icon.x = groupX; icon.y = y + Math.round((FILTER_H - iconSize) / 2);
+      core.bodyLayer.addChild(icon);
+      lbl.anchor.set(0, 0.5); lbl.x = groupX + iconSize + gapIL; lbl.y = y + FILTER_H / 2;
       core.bodyLayer.addChild(lbl);
       core.hitRects.push({
         rect: { x: fx, y, w: fw, h: FILTER_H },

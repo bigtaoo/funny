@@ -60,6 +60,19 @@ describe('TAB_ICON_RASTER — the code side of the same contract', () => {
     }
   });
 
+  // Batch 5 added 24 icons across two hand-maintained lists (pack_tab_icons.cjs's JOBS and this
+  // table). A JOBS row with no table entry packs three PNGs nobody can draw; the reverse fails the
+  // webpack build, so only this direction needs a test. Kind name is the asset base plus the
+  // `Icon`/`TabIcon` suffix — the pilot trio uses the short form, everything since uses the long one.
+  it('has exactly one TAB_ICON_RASTER kind per packed icon (no orphan art)', () => {
+    const packed = [...new Set(fs.readdirSync(ASSET_DIR).filter((f) => f.endsWith('.png'))
+      .map((f) => f.replace(/_(active|inactive|content)\.png$/, '')))].sort();
+    expect(kinds.length).toBe(packed.length);
+    for (const base of packed) {
+      expect(kinds.filter((k) => k === `${base}Icon` || k === `${base}TabIcon`), base).toHaveLength(1);
+    }
+  });
+
   it('points each variant at a distinct import (catches a row reusing the inactive url for content)', () => {
     // Under webpack these are three different urls; under vitest's asset stub all `.png` imports
     // collapse to one data URI, so assert distinctness only when the bundler actually resolved them

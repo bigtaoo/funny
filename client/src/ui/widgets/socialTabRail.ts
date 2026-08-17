@@ -19,15 +19,27 @@ import type { IconKind } from '../../render/icons';
 
 export type SocialTab = 'friends' | 'family' | 'sect' | 'world' | 'mail';
 
-// `icon` is the AI tab art (see render/icons.ts). Only World has one today — the globe the
-// lobby's Social button already uses, and the same glyph FriendsScene puts on the World tab's
-// page title. Friends/family/sect/mail are awaiting art (design/product/tab-icon-art-prompts-batch5.md);
-// they render label-only until then rather than borrowing a glyph that means something else.
-const TAB_DEFS: { id: SocialTab; key: TranslationKey; icon?: IconKind }[] = [
+/**
+ * The AI tab art per social tab (see render/icons.ts). Exported because these five cells and the
+ * five page TITLES they lead to are the same five concepts — FriendsScene's header reads this same
+ * table (chrome.ts) so a tab and its title can never drift apart. World reuses the globe the lobby's
+ * Social button already has; the other four came with batch 5, and are drawn far enough apart to
+ * survive being stacked in one rail: two heads (friends) vs a three-person cluster with a larger
+ * centre figure (family) vs a pagoda (sect) vs an envelope (mail).
+ */
+export const SOCIAL_TAB_ICON: Record<SocialTab, IconKind> = {
+  friends: 'friendsTabIcon',
+  family: 'familyTabIcon',
+  sect: 'sectTabIcon',
+  world: 'socialTabIcon',
+  mail: 'mailTabIcon',
+};
+
+const TAB_DEFS: { id: SocialTab; key: TranslationKey }[] = [
   { id: 'friends', key: 'friends.tab.friends' },
   { id: 'family',  key: 'friends.tab.family' },
   { id: 'sect',    key: 'friends.tab.sect' },
-  { id: 'world',   key: 'friends.tab.world', icon: 'socialTabIcon' },
+  { id: 'world',   key: 'friends.tab.world' },
   { id: 'mail',    key: 'friends.tab.mail' },
 ];
 
@@ -56,7 +68,7 @@ export function drawSocialTabRail(
   const tabs: HubTab[] = defs.map((tabDef) => ({
     label: t(tabDef.key),
     active: active === tabDef.id,
-    icon: tabDef.icon,
+    icon: SOCIAL_TAB_ICON[tabDef.id],
     badge: (badges[tabDef.id] ?? 0) > 0,
   }));
 
